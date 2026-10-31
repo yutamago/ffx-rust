@@ -5205,3 +5205,104 @@ pub const CLOCK_DONE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Which of two of the game's lists holds the id `ecx`: slot 288 `(9,
+/// &n)` gives the first list of `n` signed bytes, slot 288 `(11, &n)` the
+/// second (the counts in the frame) (internal). Returns 1 for the first,
+/// 0 for the second, -1 for neither.
+///
+/// `magic_0098` 0x10002b10 (137 bytes; 2 DLLs).
+pub fn id_list<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let id = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    for (table, kind, count, found) in [(0xd, 9, 4, 1), (0x42, 0xb, 8, 0)] {
+        let at = ebp.wrapping_sub(count);
+        let list = slot_call(g, img, f, (table, 288), &[kind, at]).eax;
+        let n = g.read::<i32>(at);
+        for i in 0..n.max(0).cast_unsigned() {
+            let b = g.read::<u8>(list.wrapping_add(i)).cast_signed();
+            if i32::from(b).cast_unsigned() == id {
+                return Ret::eax(found);
+            }
+        }
+    }
+    Ret::eax(u32::MAX)
+}
+
+/// [`id_list`].
+pub const ID_LIST: Sig = Sig {
+    len: 137,
+    hash: 0xe63d_951b_088f_50ac,
+    calls: &[],
+    imports: &[],
+};
+
+/// Three of the DLL's floats 1.0 (operands `+0x1c`, `+0x26`, `+0x30`),
+/// slot 786 `(a, b, c)` on three of its words (operands `+0x16`, `+0x11`,
+/// `+0x6`), then slots 788, 787, 789 and 790 each give a float (ST0)
+/// stored to the DLL (operands `+0x4c`, `+0x5f`, `+0x72`, `+0x85`) (no
+/// arguments). Returns slot 790's `eax`.
+///
+/// `magic_0098` 0x10001000 (138 bytes; 2 DLLs).
+pub fn camera_floats<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    for o in [0x1c, 0x26, 0x30] {
+        g.write::<u32>(op(img, f, o), 0x3f80_0000);
+    }
+    let words = [op(img, f, 0x16), op(img, f, 0x11), op(img, f, 0x6)];
+    let mut eax = slot_call(g, img, f, (0x1, 786), &words).eax;
+    for (table, slot, dst) in [
+        (0x3b, 788, 0x4c),
+        (0x51, 787, 0x5f),
+        (0x64, 789, 0x72),
+        (0x77, 790, 0x85),
+    ] {
+        let out = slot_call(g, img, f, (table, slot), &[]);
+        g.write::<u32>(op(img, f, dst), st0_f32(out));
+        eax = out.eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`camera_floats`].
+pub const CAMERA_FLOATS: Sig = Sig {
+    len: 138,
+    hash: 0x011b_e51f_1242_0437,
+    calls: &[],
+    imports: &[],
+};
+
+/// The actor's model (slot 168 `(*(*G + 0x24))` gives the handle `h`)
+/// gets back its own value (slot 169 `(h)`, a float) through slot 170
+/// `(h, x)`; then the DLL's handle `G_X`, when set, is released (slot
+/// 804 `(G_X)`), slot 817, the byte `+0x11` of `*G_B` and `G_X` cleared
+/// (no arguments). Returns `*G_B`.
+///
+/// `magic_0148` 0x10001820 (139 bytes; 2 DLLs).
+pub fn model_reset_release<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let base = g.read::<u32>(op(img, f, 0x5));
+    let x24 = g.read::<u32>(base.wrapping_add(0x24));
+    let h = slot_call(g, img, f, (0xe, 168), &[x24]).eax;
+    let x = st0_f32(slot_call(g, img, f, (0x1c, 169), &[h, x24]));
+    slot_call(g, img, f, (0x34, 170), &[h, x]);
+    let handle = g.read::<u32>(op(img, f, 0x4a));
+    if handle != 0 {
+        slot_call(g, img, f, (0x58, 804), &[handle]);
+    }
+    // the float slot 170 got is still on the stack
+    slot_call(g, img, f, (0x68, 817), &[x]);
+    let b = g.read::<u32>(op(img, f, 0x75));
+    g.write::<u8>(b.wrapping_add(0x11), 0);
+    g.write::<u32>(op(img, f, 0x7f), 0);
+    Ret::eax(b)
+}
+
+/// [`model_reset_release`].
+pub const MODEL_RESET_RELEASE: Sig = Sig {
+    len: 139,
+    hash: 0x3981_7b96_8bbb_338b,
+    calls: &[],
+    imports: &[],
+};

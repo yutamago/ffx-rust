@@ -2380,3 +2380,53 @@ fn handles_tracks_clocks() {
         t.check_entry(f, c, &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn lists_floats_releases() {
+    let Some(mut t) = twin(98) else { return };
+    let f = t.at(0x2b10);
+    let lists = SCRATCH + 0x300;
+    t.write(lists, &[3, 0xfe, 7, 0, 0, 0, 0, 0, 5, 0x80, 9]);
+    let counts = SCRATCH + 0x80;
+    rec(&mut t, 288, 2, move |m, a| {
+        let n = m.r32(counts + 4 * (a[0] & 2) / 2);
+        m.w32(a[1], n);
+        if a[0] == 9 { lists } else { lists + 8 }
+    });
+    for (n1, n2, id) in [
+        (3u32, 3u32, 7u32),
+        (3, 3, 0xffff_fffe),
+        (3, 3, 9),
+        (3, 3, 0xffff_ff80),
+        (3, 3, 4),
+        (0, 0, 3),
+        (2, 2, 7),
+    ] {
+        t.set_u32(counts, n1);
+        t.set_u32(counts + 4, n2);
+        t.check(f, Call::this(id), &[], Eax::Checked, s4_small::id_list);
+    }
+    let f = t.at(0x1000);
+    recs(&mut t, &[(786, 3)]);
+    for (s, v) in [(788u32, 1.5f64), (787, -2.0), (789, 0.25), (790, 1e3)] {
+        rec(&mut t, s, 0, move |_, _| s);
+        t.stub_st0(s, move |_, _| v);
+    }
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(148) else { return };
+    let f = t.at(0x1820);
+    let base = SCRATCH + 0x200;
+    t.set_u32(op(&t, f, 0x5), base);
+    t.set_u32(base + 0x24, 0x0024_0001);
+    recs(&mut t, &[(168, 1), (170, 2), (804, 1), (817, 0)]);
+    rec(&mut t, 169, 1, |_, _| 0x169);
+    t.stub_st0(169, |_, _| 0.75);
+    let b = SCRATCH + 0x300;
+    t.write(b, &[0x55; 0x20]);
+    t.set_u32(op(&t, f, 0x75), b);
+    for h in [0u32, 0x0804_0001] {
+        t.set_u32(op(&t, f, 0x4a), h);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

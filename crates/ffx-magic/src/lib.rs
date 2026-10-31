@@ -1116,6 +1116,8 @@ ports! {
     "part handles" => s4_small::PART_HANDLES, s4_small::part_handles;
     "handles 0x3011, 0x3013" => s4_small::HANDLES_3011_3013, s4_small::handles_3011_3013;
     "clock done" => s4_small::CLOCK_DONE, s4_small::clock_done;
+    "camera floats" => s4_small::CAMERA_FLOATS, s4_small::camera_floats;
+    "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;
     "thunk: table object" => s4_wrap::JMP_TABLE_OBJECT, s4_wrap::ecx_field_jmp;
@@ -1503,6 +1505,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("walk and ring write", &s4_small::WALK_RING),
     ("record take", &s4_small::RECORD_TAKE),
     ("walk and track", &s4_small::WALK_TRACK),
+    ("id list", &s4_small::ID_LIST),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
