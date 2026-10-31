@@ -8232,3 +8232,162 @@ pub const CAMERA_BEHIND_PARTY: Sig = Sig {
     calls: &[(0x3ee, Callee::Any)],
     imports: &[],
 };
+
+/// [`thrown_effect`]'s twin with the nodes further on (internal: `ecx` =
+/// the object, `edx` = the user's record, `xmm2` = a size; an aligned
+/// frame): the task node, the nodes `+0x220` and `+0x278` on the DLL's
+/// list, `+0x294..+0x29c = 1.0`, the node `+0x2d0` inserted
+/// ([`node_insert`]). The models the byte table maps to the direct way,
+/// and the others slot 534 says so for, take the point 0x11 (slot 268
+/// into `+0x23c`, `w` 1) with `y += (frnd - K1) K2 - K3`, program 2 and
+/// `+0x2a0 = size K4 K5`; the rest take `y` from slot 12 (ST0) less
+/// `K6`, program 1 and `+0x2a0 = size K7 K8`. Then the particle `+0x20`
+/// ([`particle_node`]), the effect node `+0x57c` ([`effect_node`],
+/// vtable `VT3`, `+0x2c |= 1`, `+0x30 = 0`), `+0x23c` and `+0x244` moved
+/// by `(frnd - K1) K2 - K3` (slot 307, ST0), `+0x578 = rec`, `+0x568`,
+/// `+0x570`, `+0x574` cleared and `+0x56c` the size. Returns `rec`.
+///
+/// `magic_0439` 0x10006cd0 (1016 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's nodes, one by one
+pub fn thrown_effect_far<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let (obj, rec) = (fr.ecx, fr.edx);
+    let size = fr.xmm[2] as u32;
+    g.write::<u32>(obj + 8, obj);
+    g.write::<u32>(obj + 4, obj);
+    g.write::<u32>(obj, w(0x18));
+    g.write::<u32>(obj + 0x10, w(0x1f));
+    g.write::<u32>(obj + 0x14, obj);
+    let tail = g.read::<u32>(w(0x27));
+    g.write::<u32>(obj + 8, tail);
+    g.write::<u32>(obj + 4, w(0x31));
+    let tail = g.read::<u32>(w(0x36));
+    g.write::<u32>(tail.wrapping_add(4), obj);
+    let fl = g.read::<u32>(w(0x45)) & !1;
+    g.write::<u32>(w(0x45), fl);
+    g.write::<u32>(w(0x4c), obj);
+    let first = obj.wrapping_add(0x220);
+    list_push(
+        g,
+        img,
+        f,
+        first,
+        [0x5f, 0x66, 0x6b, 0x73, 0x82, 0x8a, 0x96, 0x9c, 0xa2],
+    );
+    let second = obj.wrapping_add(0x278);
+    list_push(
+        g,
+        img,
+        f,
+        second,
+        [0xbb, 0xc2, 0xc7, 0xcf, 0xd4, 0xdc, 0xe8, 0xee, 0xf4],
+    );
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let group = top.wrapping_sub(0x18);
+    g.write::<u32>(group + 0x14, second);
+    for o in [0x294u32, 0x298, 0x29c] {
+        g.write::<u32>(obj + o, 0x3f80_0000);
+    }
+    let node = obj.wrapping_add(0x2d0);
+    for (i, v) in (0u32..).zip([node, w(0x12c), w(0x134), first, w(0x140)]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x145),
+            esp: top.wrapping_sub(0x34),
+            ecx: group,
+            ..*fr
+        },
+    );
+    let h = g.read::<u32>(rec.wrapping_add(0x50));
+    let id = slot_call(g, img, f, (0x14a, 390), &[h]).eax;
+    let i = id.wrapping_sub(0x1071);
+    // the switch's tables are in the code: the byte table, then the
+    // jump table's two ways
+    let direct = i <= 0x1b && {
+        let b = img.word(w(0x16a).wrapping_add(i)) & 0xff;
+        img.word(w(0x171).wrapping_add(4 * b)) == f + 0x18e
+    };
+    let pt = obj.wrapping_add(0x23c);
+    let frnd = |g: &mut G, t: u32| st0_f32(slot_call(g, img, f, (t, 307), &[]));
+    let jitter =
+        |g: &G, r: f32, ks: [u32; 3]| sub(mul(sub(r, k(g, ks[0])), k(g, ks[1])), k(g, ks[2]));
+    let sz = f32::from_bits(size);
+    let (program, x) = if direct || slot_call(g, img, f, (0x176, 534), &[h]).eax != 0 {
+        let p = g.read::<u32>(rec.wrapping_add(0x54));
+        slot_call(g, img, f, (0x19f, 268), &[p, 0x11, pt]);
+        g.write::<u32>(pt + 0xc, 0x3f80_0000);
+        let r = frnd(g, 0x1ac);
+        let y = add(
+            jitter(g, r, [0x1d0, 0x1e0, 0x1e8]),
+            g.read::<f32>(obj + 0x240),
+        );
+        g.write::<f32>(obj + 0x240, y);
+        (2, mul(mul(sz, k(g, 0x206)), k(g, 0x20e)))
+    } else {
+        let p = g.read::<u32>(rec.wrapping_add(0x54));
+        slot_call(g, img, f, (0x220, 268), &[p, 0x11, pt]);
+        g.write::<u32>(obj + 0x248, 0x3f80_0000);
+        let p = g.read::<u32>(rec.wrapping_add(0x54));
+        let y = st0_f32(slot_call(g, img, f, (0x232, 12), &[p]));
+        g.write::<f32>(obj + 0x240, y);
+        let y = sub(g.read::<f32>(obj + 0x240), k(g, 0x25d));
+        g.write::<f32>(obj + 0x240, y);
+        (1, mul(mul(sz, k(g, 0x27e)), k(g, 0x286)))
+    };
+    g.write::<u32>(group + 0x14, program);
+    let part = obj.wrapping_add(0x20);
+    let o = g.read::<u32>(w(0x298));
+    g.write::<f32>(obj + 0x2a0, x);
+    for (i, v) in (0u32..).zip([part, w(0x2b6), node, o, w(0x2c2)]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    g.write::<u32>(part, w(0x2aa));
+    particle_node(g, img, img.rel32_target(f + 0x2c7), group);
+    let en = obj.wrapping_add(0x57c);
+    for (i, v) in (0u32..).zip([en, w(0x2dd), w(0x2e5), first, w(0x2f1), 0]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    effect_node(g, img, img.rel32_target(f + 0x2fe), group);
+    let n = g.read::<u32>(group);
+    g.write::<u32>(n, w(0x308));
+    let fl = g.read::<u32>(en + 0x2c) | 1;
+    g.write::<u32>(en + 0x2c, fl);
+    g.write::<u32>(en + 0x30, 0);
+    let r = frnd(g, 0x30d);
+    let x = add(
+        jitter(g, r, [0x332, 0x33f, 0x347]),
+        g.read::<f32>(obj + 0x23c),
+    );
+    g.write::<f32>(obj + 0x23c, x);
+    let r = frnd(g, 0x337);
+    g.write::<u32>(obj + 0x578, rec);
+    for o in [0x568u32, 0x570, 0x574] {
+        g.write::<u32>(obj + o, 0);
+    }
+    let z = add(
+        jitter(g, r, [0x371, 0x397, 0x3a9]),
+        g.read::<f32>(obj + 0x244),
+    );
+    g.write::<f32>(obj + 0x244, z);
+    g.write::<u32>(obj + 0x56c, size);
+    rec
+}
+
+/// [`thrown_effect_far`] (the `rel32`s: [`node_insert`],
+/// [`particle_node`] and [`effect_node`]).
+pub const THROWN_EFFECT_FAR: Sig = Sig {
+    len: 1016,
+    hash: 0x7bd5_6367_4b5a_a6e5,
+    calls: &[
+        (0x145, Callee::Sig(&INSERT)),
+        (0x2c7, Callee::Sig(&PARTICLE_NODE)),
+        (0x2fe, Callee::Sig(&EFFECT_NODE)),
+    ],
+    imports: &[],
+};

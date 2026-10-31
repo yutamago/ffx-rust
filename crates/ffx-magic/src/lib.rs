@@ -1725,6 +1725,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("thrown effect", &s5_misc::THROWN_EFFECT),
     ("burst records", &s5_misc::BURST_RECORDS),
     ("parts vertices", &s5_misc::PARTS_VERTICES),
+    ("thrown effect (far nodes)", &s5_misc::THROWN_EFFECT_FAR),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
