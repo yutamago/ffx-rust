@@ -4142,3 +4142,40 @@ fn object_models_and_key_curves() {
         t.check(f, c, &[], Eax::Checked, s4_small::key_curve);
     }
 }
+
+#[test]
+fn light_objects() {
+    let Some(mut t) = twin(578) else { return };
+    let f = t.at(0x7fb0);
+    recs(&mut t, &[(235, 1), (357, 3), (356, 6), (362, 4), (704, 4)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 363, 3, move |m, _| m.r32(answer));
+    let rp = SCRATCH + 0x380;
+    t.set_u32(rp, 0xffff_4321);
+    rec(&mut t, 719, 3, move |_, _| rp);
+    let (obj, lm, tail, s) = (
+        SCRATCH + 0x1000,
+        SCRATCH + 0x300,
+        SCRATCH + 0x600,
+        SCRATCH + 0x700,
+    );
+    t.set_u32(lm + 0x54, 0x0054_0001);
+    t.set_u32(op(&t, f, 0x88), s);
+    t.set_u32(s, 0x0055_0000);
+    let parent = op(&t, f, 0x6a);
+    for level in [0x7_0000u32, 5] {
+        t.write(obj, &[0x11; 0x100]);
+        t.write(tail, &[0x22; 0x10]);
+        t.set_u32(op(&t, f, 0x21), tail);
+        t.set_u32(op(&t, f, 0x3d), 0xffff_ffff);
+        t.set_u32(parent + 0x10, parent);
+        t.set_u32(parent + 0xc, parent);
+        t.set_u32(answer, level);
+        let c = Call {
+            ecx: obj,
+            edx: lm,
+            ..Call::default()
+        };
+        t.check(f, c, &[0x0b0b], Eax::Checked, s4_small::light_object);
+    }
+}

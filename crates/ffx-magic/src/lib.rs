@@ -1607,6 +1607,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("summon nodes (b)", &s4_small::SUMMON_NODES_B),
     ("start host object", &s4_small::START_HOST_OBJECT),
     ("key curve", &s4_small::KEY_CURVE),
+    ("light object", &s4_small::LIGHT_OBJECT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

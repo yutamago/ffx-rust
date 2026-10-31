@@ -8920,3 +8920,77 @@ pub const KEY_CURVE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A light object set up (internal: `ecx` = the object, `edx` = its
+/// model, cdecl `(b)`): the object's header (vtable, links to itself,
+/// callback `+0x10`, `+0x14` itself) and the object appended to the ring
+/// (`G_TAIL`, head operand `+0x2b`, bit 0 of `G_FLAGS` cleared); its node
+/// `+0x48` set up as a light under `G_PARENT` ([`light_node`] with the
+/// model, `b` and slot 719 `(R, 2, 2)`), given its vtable and its level
+/// ([`light_level`] with the record `[node, L, 0x60000, 0xf0000, 0xbb800,
+/// 2, **G_S, 1]`); then `+0x44` the model, `+0xc0` 0x802080, `+0x30` and
+/// `+0x18` 0. Returns [`light_level`]'s `eax`.
+///
+/// `magic_0578` 0x10007fb0 (232 bytes; 2 DLLs).
+pub fn light_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (obj, model) = (fr.ecx, fr.edx);
+    let at = |o: u32| obj.wrapping_add(o);
+    let w = |o: u32| op(img, f, o);
+    g.write::<u32>(at(8), obj);
+    g.write::<u32>(at(4), obj);
+    g.write::<u32>(obj, w(0x12));
+    g.write::<u32>(at(0x10), w(0x19));
+    g.write::<u32>(at(0x14), obj);
+    let tail = g.read::<u32>(w(0x21));
+    g.write::<u32>(at(8), tail);
+    g.write::<u32>(at(4), w(0x2b));
+    let tail = g.read::<u32>(w(0x30));
+    g.write::<u32>(tail.wrapping_add(4), obj);
+    let b = fr.arg(g, 0);
+    let flags = g.read::<u32>(w(0x3d)) & !1;
+    g.write::<u32>(w(0x3d), flags);
+    // push ebp; sub esp, 0x28: the records are [ebp - 0x18] and [ebp - 0x24]
+    let ebp = fr.esp.wrapping_sub(4);
+    let rec = ebp.wrapping_sub(0x18);
+    g.write::<u32>(rec + 0xc, b);
+    g.write::<u32>(w(0x50), obj);
+    let node = at(0x48);
+    g.write::<u32>(rec, node);
+    g.write::<u32>(rec + 4, w(0x6a));
+    g.write::<u32>(rec + 8, model);
+    let c = slot_call(g, img, f, (0x46, 719), &[w(0x60), 2, 2]).eax;
+    g.write::<u32>(rec + 0x10, c);
+    g.write::<u32>(node, w(0x7e));
+    // push ebx, esi, edi: the callees' esp is 0x10 below the records
+    let callee = |at: u32, ecx: u32| Frame {
+        at,
+        esp: ebp.wrapping_sub(0x38),
+        ecx,
+        ..*fr
+    };
+    light_node(g, img, &callee(img.rel32_target(f + 0x83), rec));
+    let s = g.read::<u32>(g.read::<u32>(w(0x88)));
+    let rec = ebp.wrapping_sub(0x24);
+    let words = [node, w(0x97), 0x60000, 0xf0000, 0xbb800, 2, s, 1];
+    for (i, x) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, x);
+    }
+    let r = light_level(g, img, &callee(img.rel32_target(f + 0xc2), rec));
+    g.write::<u32>(at(0x44), model);
+    g.write::<u32>(at(0xc0), 0x0080_2080);
+    g.write::<u32>(at(0x30), 0);
+    g.write::<u32>(at(0x18), 0);
+    r
+}
+
+/// [`light_object`].
+pub const LIGHT_OBJECT: Sig = Sig {
+    len: 232,
+    hash: 0x4406_799f_22ba_7d5f,
+    calls: &[
+        (0x83, Callee::Sig(&LIGHT_NODE)),
+        (0xc2, Callee::Sig(&LIGHT_LEVEL)),
+    ],
+    imports: &[],
+};
