@@ -70,6 +70,8 @@ fn move_start() {
             #[allow(clippy::cast_precision_loss)]
             t.set_u32(node + 4 * i, f(0.5 + (i + 7 * k) as f32 * 1.25));
         }
+        // the flags with bit 0 set (the start clears it)
+        t.set_u32(node + 0xac, 0x8000_0003);
         let c = Call {
             eax: 0x00ea_0000 + k,
             ecx: node,
@@ -102,7 +104,9 @@ fn sub_node_visit() {
     rec(&mut t, 1000, 1, |m, a| {
         let c = m.r32(SCRATCH + 0x37fc).wrapping_add(1);
         m.w32(SCRATCH + 0x37fc, c);
-        m.w32(SCRATCH + 0x3780 + 4 * (c % 16), m.r32(a[0]));
+        // the cursor's node and its pass byte
+        let pass = (m.r32(a[0] + 4) >> 8) & 0xff;
+        m.w32(SCRATCH + 0x3780 + 4 * (c % 16), m.r32(a[0]) ^ (pass << 24));
         0x1000 + c
     });
     rec(&mut t, 1001, 2, |m, a| {
@@ -164,6 +168,8 @@ fn sub_node_visit() {
         t.set_u32(cur, node);
         t.set_u8(cur + 4, 0x7f);
         t.set_u8(cur + 5, if same { 5 } else { 6 });
+        // junk under the entry: the frame's locals must be written
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
         t.check_entry(at, Call::this(cur), &[cur], Eax::Checked);
     }
 }
