@@ -1758,3 +1758,63 @@ fn statics_strips_faders() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn colour_tasks_and_fades() {
+    let Some(mut t) = twin(53) else { return };
+    let f = t.at(0x2af0);
+    let take = t.img.rel32_target(f + 0x2c);
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x32), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x49), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x32), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(168) else { return };
+    recs(&mut t, &[(332, 1)]);
+    let f = t.at(0x1e60);
+    let s = SCRATCH + 0x100;
+    for (k, n) in [
+        (5u32, 8u32),
+        (1, 8),
+        (0, 8),
+        (0xffff_fffe, 3),
+        (3, 0x7fff_ffff),
+    ] {
+        t.write(s, &[0x55; 0x40]);
+        for i in 0..3 {
+            t.set_u32(s + 0x10 + 4 * i, 0x40 + 0x30 * i);
+            t.set_u32(s + 0x20 + 4 * i, 0xffff_ff00 + 0x11 * i);
+        }
+        t.set_u32(s + 0x30, n);
+        t.set_u32(s + 0x34, k);
+        t.check(f, Call::this(s), &[], Eax::Checked, s4_small::int_fade);
+    }
+    drop(t);
+    let Some(mut t) = twin(146) else { return };
+    recs(&mut t, &[(942, 1)]);
+    let f = t.at(0x6ca0);
+    let node = SCRATCH + 0x100;
+    for empty in [true, false] {
+        t.write(node, &[0x66; 0x50]);
+        t.write(SCRATCH + 0x300, &[0x77; 0x10]);
+        let parent = op(&t, f, 0x34);
+        t.set_u32(
+            op(&t, f, 0x2f),
+            if empty { parent } else { SCRATCH + 0x300 },
+        );
+        t.check(
+            f,
+            Call::this(node),
+            &[0x003c_0001],
+            Eax::Checked,
+            s4_small::link_node_942,
+        );
+    }
+}

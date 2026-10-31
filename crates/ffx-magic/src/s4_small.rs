@@ -3993,3 +3993,112 @@ pub const RECORDS_CLEAR_1000: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The colour `G_C` (three floats, operands `+0x9`, `+0x13`, `+0x1d`)
+/// 1.0, `u16 G_T` 0, and a task node for the callback (operand `+0x3`;
+/// [`take`]) with `+0x14` the DLL's block (operand `+0x3a`) appended to
+/// the task list (operands `+0x32`, `+0x49`, `+0x53`; `+0x62`, `+0x67`
+/// when it was empty) (no arguments). Returns the node.
+///
+/// `magic_0053` 0x10002af0 (111 bytes; 4 DLLs).
+pub fn colour_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    for o in [0x9, 0x13, 0x1d] {
+        g.write::<u32>(op(img, f, o), 0x3f80_0000);
+    }
+    g.write::<u16>(op(img, f, 0x27), 0);
+    let node = take(g, img, img.rel32_target(f + 0x2c), op(img, f, 0x3));
+    let empty = g.read::<u32>(op(img, f, 0x32)) == 0;
+    g.write::<u32>(node.wrapping_add(0x14), op(img, f, 0x3a));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if empty {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(op(img, f, 0x62), node);
+        g.write::<u32>(op(img, f, 0x67), node);
+    } else {
+        let tail = g.read::<u32>(op(img, f, 0x49));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(op(img, f, 0x53), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`colour_task`].
+pub const COLOUR_TASK: Sig = Sig {
+    len: 111,
+    hash: 0x6bdd_c410_0fa1_9ef6,
+    calls: &[(0x2c, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// One step of an integer colour fade (internal, `ecx` = the fade: the
+/// steps left `+0x34`, counted down while above 0, of `+0x30`): each of
+/// the three channels `+0x0..+0x8` = `((n - k) * to + from * k) / n`
+/// (`to` at `+0x20`, `from` at `+0x10`, signed `idiv`), `+0xc` 0x80; then
+/// slot 332 `(fade)`. Returns slot 332's `eax`.
+///
+/// `magic_0168` 0x10001e60 (119 bytes; 3 DLLs).
+pub fn int_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let s = fr.ecx;
+    let int = |g: &G, o: u32| g.read::<i32>(s.wrapping_add(o));
+    let k = int(g, 0x34);
+    if k > 0 {
+        g.write::<i32>(s.wrapping_add(0x34), k - 1);
+    }
+    for i in 0..3 {
+        let (n, k) = (int(g, 0x30), int(g, 0x34));
+        let to = int(g, 0x20 + 4 * i);
+        let from = int(g, 0x10 + 4 * i);
+        let mixed = n
+            .wrapping_sub(k)
+            .wrapping_mul(to)
+            .wrapping_add(from.wrapping_mul(k));
+        // idiv: a zero step count faults in the original as well
+        g.write::<i32>(s.wrapping_add(4 * i), mixed.wrapping_div(n));
+    }
+    g.write::<u32>(s.wrapping_add(0xc), 0x80);
+    through(slot_call(g, img, fr.at, (0x65, 332), &[s]))
+}
+
+/// [`int_fade`].
+pub const INT_FADE: Sig = Sig {
+    len: 119,
+    hash: 0xd5be_90c9_f4b8_e190,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node with its handler table (operand `+0x8`) put last in the DLL's
+/// list ([`link_last`]), `+0x3c` = x, `+0x40` 0 and `+0x38` slot 942's
+/// answer for 0 (internal, `ecx` = the node, cdecl `(x)`). Returns that
+/// answer.
+///
+/// `magic_0146` 0x10006ca0 (119 bytes; 2 DLLs).
+pub fn link_node_942<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    g.write::<u32>(n, op(img, f, 0x8));
+    let o = LinkOps {
+        parent: (0x1b, 0x22),
+        last: (0x27, 0x2f),
+        empty: 0x34,
+        first: 0x3c,
+        count: 0x48,
+        tail: 0x51,
+    };
+    link_last(g, img, f, n, &o);
+    g.write::<u32>(n.wrapping_add(0x3c), fr.arg(g, 0));
+    g.write::<u32>(n.wrapping_add(0x40), 0);
+    let h = slot_call(g, img, f, (0x59, 942), &[0]).eax;
+    g.write::<u32>(n.wrapping_add(0x38), h);
+    Ret::eax(h)
+}
+
+/// [`link_node_942`].
+pub const LINK_NODE_942: Sig = Sig {
+    len: 119,
+    hash: 0x69c9_d6d9_d7b6_579d,
+    calls: &[],
+    imports: &[],
+};

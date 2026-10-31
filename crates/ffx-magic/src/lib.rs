@@ -1094,6 +1094,7 @@ ports! {
     "static node link (c)" => s4_small::STATIC_NODE_LINK_C, s4_small::static_node_link_c;
     "records clear 500" => s4_small::RECORDS_CLEAR_500, s4_small::records_clear;
     "records clear 1000" => s4_small::RECORDS_CLEAR_1000, s4_small::records_clear;
+    "colour task" => s4_small::COLOUR_TASK, s4_small::colour_task;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
@@ -1465,6 +1466,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("fader task", &s4_small::FADER_TASK),
     ("fader task 40", &s4_small::FADER_TASK_40),
     ("fader task 50", &s4_small::FADER_TASK_50),
+    ("int fade", &s4_small::INT_FADE),
+    ("link node, slot 942", &s4_small::LINK_NODE_942),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
