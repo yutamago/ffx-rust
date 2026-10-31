@@ -201,7 +201,19 @@ pub mod m0587;
 pub mod m0588;
 pub mod m0589;
 pub mod m0596;
+pub mod m0597;
+pub mod m0598;
+pub mod m0601;
+pub mod m0602;
 pub mod m0604;
+pub mod m0605;
+pub mod m0606;
+pub mod m0608;
+pub mod m0609;
+pub mod m0610;
+pub mod m0613;
+pub mod m0616;
+pub mod m0617;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -1000,6 +1012,17 @@ ports! {
     "m0588 colours" => m0588::COLOURS, m0588::colours;
     "m0589 flash" => m0589::FLASH, m0589::flash;
     "m0589 two parts" => m0589::TWO_PARTS, m0589::two_parts;
+    "m0588 light" => m0588::LIGHT, m0588::light;
+    "m0597 frame" => m0597::FRAME, m0597::frame;
+    "m0598 fade out" => m0598::FADE_OUT, m0598::fade_out;
+    "m0601 end" => m0601::END, m0601::end;
+    "m0605 end" => m0605::END, m0605::end;
+    "m0606 show targets" => m0606::SHOW_TARGETS, m0606::show_targets;
+    "m0606 camera points" => m0606::CAMERA_POINTS, m0606::camera_points;
+    "m0608 start" => m0608::START, m0608::start;
+    "m0616 frame" => m0616::FRAME, m0616::frame;
+    "m0616 start up" => m0616::START_UP, m0616::start_up;
+    "m0617 frame" => m0617::FRAME, m0617::frame;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2008,6 +2031,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0585 glow clear", &m0585::GLOW_CLEAR),
     ("m0587 camera reset", &m0587::CAMERA_RESET),
     ("m0587 load groups", &m0587::LOAD_GROUPS),
+    ("m0601 static node", &m0601::STATIC_NODE),
+    ("m0602 sounds free", &m0602::SOUNDS_FREE),
+    ("m0602 sounds stop", &m0602::SOUNDS_STOP),
+    ("m0605 move pieces", &m0605::MOVE_PIECES),
+    ("m0605 actor part", &m0605::ACTOR_PART),
+    ("m0609 task start", &m0609::TASK_START),
+    ("m0610 check targets", &m0610::CHECK_TARGETS),
+    ("m0613 task start", &m0613::TASK_START),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),

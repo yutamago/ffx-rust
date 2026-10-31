@@ -5,6 +5,9 @@ use crate::runtime::slot_target;
 use crate::sa_pool::take;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
+/// `1.0f32`'s bits.
+const ONE: u32 = 0x3f80_0000;
+
 /// The current actor's word in the actor table: `TABLE[(*G_E)[1]]` (the
 /// byte `+0x1` of the record at `*G_E`, the table at `table`).
 fn actor<G: Game>(g: &mut G, e_at: u32, table: u32) -> u32 {
@@ -121,5 +124,55 @@ pub const COLOURS: Sig = Sig {
     len: 96,
     hash: 0x1b62_3950_7bdc_7d08,
     calls: &[],
+    imports: &[],
+};
+
+/// Places the effect's light (0x10002860, an overlay table entry, no
+/// arguments; a frame with a stack cookie; the record `R = *G_R`,
+/// operand `+0x11`): the matrix `m` at `ebp - 0x64` reset (slot 235)
+/// and turned by X 0 (slot 328 `(m, m, 0)`) and Y `R[0xdf4]` (slot 329);
+/// the vector (-20, 0, -10, 1) at `ebp - 0x14` through it into `ebp -
+/// 0x24` (slot 229); slot 248 `(P, P, that)` with `P = R + 0xbd4`, then
+/// `P[0xc]` 1.0. Each call sees the words the earlier ones left. Returns
+/// slot 248's `eax`.
+pub fn light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, v, o) = (
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x24),
+    );
+    let r = g.read::<u32>(w(0x11));
+    let y = g.read::<u32>(r + 0xdf4);
+    let p = r + 0xbd4;
+    g.write::<u32>(ebp.wrapping_sub(0x68), y);
+    for (i, b) in (0u32..).zip([0xc1a0_0000, 0, 0xc120_0000, ONE]) {
+        g.write::<u32>(v + 4 * i, b);
+    }
+    let t = slot_target(g, w(0x29), 235);
+    g.call(t, 0, &[m]);
+    let t = slot_target(g, w(0x63), 328);
+    g.call(t, 0, &[m, m, 0]);
+    let t = slot_target(g, w(0x82), 329);
+    g.call(t, 0, &[m, m, y]);
+    g.write::<u32>(v + 0xc, ONE);
+    let t = slot_target(g, w(0x9b), 229);
+    let mut stack = vec![o, m, v, m, m, y];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0xb3), 248);
+    stack.splice(0..0, [p, p, o]);
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let eax = g.call(t, 0, &stack).eax;
+    g.write::<u32>(p + 0xc, ONE);
+    Ret::eax(eax)
+}
+
+/// [`light`] (218 bytes, 1 overlay).
+pub const LIGHT: Sig = Sig {
+    len: 218,
+    hash: 0xa678_fa68_60fe_3d30,
+    // __security_check_cookie
+    calls: &[(0xd2, Callee::Any)],
     imports: &[],
 };

@@ -51,6 +51,7 @@ fn init() {
         t.write(last, &[0x1c; 0x20]);
         t.set_u32(w(&t, 0x6b), if full { last } else { sentinel });
         t.set_u16(w(&t, 0x8f), 3);
+        t.set_u32(w(&t, 0x45), 0x8765_4321);
         let c = Call {
             ecx: obj,
             edx: e,

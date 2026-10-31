@@ -80,3 +80,16 @@ fn colours() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10002860: one record.
+#[test]
+fn light() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2860);
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 6), (248, 9)]);
+    let r = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(at + 0x11), r);
+    t.write(r + 0xb00, &[0x3e; 0x400]);
+    t.set_u32(r + 0xdf4, 0x3fc9_0fdb);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}
