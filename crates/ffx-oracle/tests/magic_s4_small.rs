@@ -1895,7 +1895,7 @@ fn defaults_rings_links() {
         t.set_u16(r + 0x24, wi);
         t.set_u16(r + 0x26, fill);
         t.set_u16(r + 0x2a, ri);
-        t.set_u8(r + 0x28, 0xf6);
+        t.set_u8(r + 0x28, if size == 4 { 0xf7 } else { 0xf6 });
         t.check(f, Call::this(w), &[], Eax::Checked, s4_small::ring_write);
     }
     drop(t);
@@ -2607,6 +2607,7 @@ fn loads_particles_squares() {
         (1, 0, 1, 0, 0, 0),
         (1, 0, 0, 0, 0, 0),
         (1, 1, 0, 1, 0, 2),
+        (1, 1, 0, 1, 0, 1),
         (1, 1, 0, 1, 2, 1),
         (1, 1, 0, 0, 3, 1),
     ] {
@@ -2819,7 +2820,12 @@ fn falls_and_headings() {
     let Some(mut t) = twin(515) else { return };
     let f = t.at(0x3980);
     let p = SCRATCH + 0x100;
+    // the stop bound `K` (an f64 constant): just below it and at it
+    let ka = op(&t, f, 0x20);
+    let k = f64::from_bits(u64::from(t.u32(ka)) | (u64::from(t.u32(ka + 4)) << 32)) as f32;
     for (time, step) in [
+        (k - 1.0, 0.0),
+        (k, 0.0),
         (0.0f32, 0.5f32),
         (-50.0, 0.1),
         (5.0, -20.0),
