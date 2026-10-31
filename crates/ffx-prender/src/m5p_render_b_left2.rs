@@ -153,8 +153,25 @@ pub const SAMPLER_DATA: [u32; 4] = [0x00c9_98e8, 0x00b7_62d0, 0x00b3_018c, 0x47]
 /// frame from its lowest address).
 pub const SAMPLER_FRAME_WORDS: u32 = 12;
 
+/// `0x006e5be0`'s callees and data: `ClusterManager::GetInstance()`
+/// (cdecl), `ClusterManager::loadPCluster(name)` (thiscall, ret 4),
+/// `PApplication::GetApplication()`, `PApplication_FixupClusters(&c, n)`
+/// (cdecl), `PhyreSceneCursor_Seek3` (thiscall on the cursor), the
+/// cluster global, the class the cursor walks, the global it sets.
+pub const LIGHT_CLUSTER: [u32; 8] = [
+    0x0069_a1a0,
+    0x0069_b940,
+    0x0062_3b90,
+    0x0062_3580,
+    0x0065_ec40,
+    0x00ce_63cc,
+    0x00ca_5ff0,
+    0x00ce_63d4,
+];
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::LIGHT_CLUSTER;
     use super::{
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
@@ -325,5 +342,48 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `0x006e5be0` (cdecl `()`, the light setup's cluster load; reached
+    /// by a tail jump from `0x006e5df0`, which unloads the old one first):
+    /// `[0x00ce63cc] = loadPCluster(GetInstance(); name)`; with a cluster,
+    /// `GetApplication()`, `PApplication_FixupClusters(&[0x00ce63cc], 1)`,
+    /// then a scene cursor over the cluster's object list (`+0x1c`, empty
+    /// when it points at itself) for the class `0x00ca5ff0`
+    /// (`PhyreSceneCursor_Seek3`); when it finds one (cursor `+0xc` set),
+    /// `[0x00ce63d4]` = cursor `+0x10` + cursor `+0`.
+    ///
+    /// The name the original passes is `[ebp-4]`, a frame word it never
+    /// writes (stale stack: the caller's last return address, or older);
+    /// the port passes 0 (the junk-read policy, brief 2026-10-24).
+    ///
+    /// `frame` is the cursor, 8 words (the original's `ebp - 0x24`).
+    pub fn load_light_cluster(h: &mut impl Host, frame: u32) {
+        let manager = h.call_sym(LIGHT_CLUSTER[0], Conv::Cdecl, &[]);
+        let name = 0; // junk read: [ebp-0x4] never written; 0 (brief 2026-10-24)
+        let cluster = h.call_sym(LIGHT_CLUSTER[1], Conv::Thiscall(manager), &[name]);
+        let global = h.rebase(LIGHT_CLUSTER[5]);
+        h.write(global, cluster);
+        if cluster == 0 {
+            return;
+        }
+        h.call_sym(LIGHT_CLUSTER[2], Conv::Cdecl, &[]);
+        h.call_sym(LIGHT_CLUSTER[3], Conv::Cdecl, &[global, 1]);
+        let cluster: u32 = h.read(global);
+        let list = cluster.wrapping_add(0x1c);
+        let first: u32 = h.read(list);
+        let first = if first == list { 0 } else { first };
+        let class = h.rebase(LIGHT_CLUSTER[6]);
+        for (i, w) in [0, 0, 0, 0, 0, list, first, class].into_iter().enumerate() {
+            h.write(frame + 4 * i as u32, w);
+        }
+        h.call_sym(LIGHT_CLUSTER[4], Conv::Thiscall(frame), &[]);
+        if h.read::<u32>(frame + 0xc) != 0 {
+            let v = h
+                .read::<u32>(frame + 0x10)
+                .wrapping_add(h.read::<u32>(frame));
+            let at = h.rebase(LIGHT_CLUSTER[7]);
+            h.write(at, v);
+        }
     }
 }

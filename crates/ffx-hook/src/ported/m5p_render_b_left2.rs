@@ -24,4 +24,10 @@ ported! {
         let mut f = StackFrame::<{ lf::SAMPLER_FRAME_WORDS as usize }>::new();
         lb::init_sampler_shaders(&mut mem(), &const { lf::sampler_shaders_of(0x00a1_a830) }, this, cluster, effect, f.at())
     }
+    /// The light setup's cluster load `()` (its name argument is a junk
+    /// read: 0).
+    Phyre_PS2LightingSetup_loadCluster_006e5be0 @ 0x006e_5be0 => extern "C" fn load_light_cluster() {
+        let mut f = StackFrame::<8>::new();
+        lb::load_light_cluster(&mut mem(), f.at());
+    }
 }

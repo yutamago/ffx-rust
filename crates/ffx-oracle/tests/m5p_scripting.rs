@@ -3861,3 +3861,116 @@ fn left2_matrix_index_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_matrix_mul_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let floats = |t: &mut Twins, base: f32, n: u16| {
+            t.alloc(
+                &(0..n)
+                    .flat_map(|i| (base + f32::from(i) * 0.75 - 3.0).to_bits().to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let ma = floats(&mut t, 0.5, 16);
+        let mb = floats(&mut t, -1.25, 16);
+        let v = floats(&mut t, 2.0, 4);
+        let nums = t.alloc(
+            &[0.0f32, 2.5, -0.375]
+                .iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        // (argument 1, argument 2: 0 none / 1 matrix / 2 vector, whether
+        // argument 1's metatable matches, the new userdata made, the copy
+        // stubbed)
+        for (one, two, eq1, made, stub_copy) in [
+            (true, 1u8, true, true, false),
+            (true, 1, true, false, true),
+            (true, 2, true, true, false),
+            (true, 0, true, true, false),
+            (true, 0, true, false, true),
+            (false, 1, true, true, false),
+            (false, 1, true, false, true),
+            (true, 1, false, true, false),
+            (false, 2, true, true, false),
+            (false, 0, true, true, false),
+            (true, 2, false, true, false),
+        ] {
+            let mut table = [0u32; 16];
+            table[1] = if one { ma } else { 0 };
+            table[2] = match two {
+                1 => mb,
+                2 => v,
+                _ => 0,
+            };
+            index_stub(&mut t, s::LUA_TOUSERDATA, 1, &table);
+            t.stub(mid::LUA_GETMETATABLE, false, 2, 0, 1);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            let mut eqs = Vec::new();
+            if one {
+                eqs.push(u32::from(eq1));
+            }
+            if two != 0 {
+                eqs.push(u32::from(two == 1));
+                eqs.push(u32::from(two == 2));
+            }
+            eqs.push(0);
+            seq_stub(&mut t, mid::LUA_RAWEQUAL, &eqs);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            let ud = if made { t.junk(0x40, 7) } else { 0 };
+            t.stub(l2::LUA_MORE[6], false, 2, 0, ud);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            t.stub_float_table(l2::MATRIX_NEW[0], 2, 1, nums);
+            let nv = t.junk(0x10, 9);
+            t.stub(l2::MATRIX_INDEX[1], false, 1, 0, nv);
+            let nm = if made { t.junk(0x40, 11) } else { 0 };
+            t.stub(l2::MATRIX_MUL[0], false, 1, 0, nm);
+            if stub_copy {
+                t.stub_deref0(l2::MATRIX_NEW[2], 1, 1, 0);
+            }
+            let what = format!("{label}: matrix mul {one} {two} eq1 {eq1} made {made}");
+            t.cdecl(&what, 0x0057_1a60, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_mul(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_vector_index_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut keys: Vec<u32> = ["0", "3", "4", "x", "y", "z", "w", "q", "", "dot", "dot3x"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        keys.push(0);
+        for &(name, _) in &l2::VECTOR_INDEX_METHODS {
+            keys.push(t.rebase(name));
+        }
+        let v = t.alloc(
+            &[1.5f32, -0.0, 7.25e-3, f32::INFINITY]
+                .iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for vector in [true, false] {
+            for &key in &keys {
+                t.stub(l2::LUA_TOLSTRING, false, 3, 0, key);
+                t.stub(l2::VECTOR_INDEX[0], false, 2, 0, if vector { v } else { 0 });
+                t.stub(l2::VECTOR_INDEX[2], false, 2, 0, 0);
+                t.stub(l2::LUA_INDEX[7], false, 3, 0, 0);
+                t.stub(l2::LUA_MORE[4], false, 3, 0, 0);
+                let what = format!("{label}: vector index vector {vector} key {key:#x}");
+                t.cdecl(&what, 0x0057_2e70, &[l], |g| Some(l2b::vector_index(g, l)));
+                t.unstub();
+            }
+        }
+    }
+}

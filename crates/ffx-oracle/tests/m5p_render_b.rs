@@ -4865,3 +4865,75 @@ fn place(t: &mut Twins, sym: u32, code: u32) {
     t.saved.entry(at).or_insert(old);
     t.write(at, &j);
 }
+
+/// The light setup's cluster load `0x006e5be0`: no cluster; an empty
+/// object list; a list whose first node is of the cursor's class (found,
+/// the global set) or of another class (not found). The original's
+/// never-written name word `[ebp-4]` is 0 in its frame (the junk-read
+/// policy), the cursor compared in the original's frame.
+#[test]
+fn left2_light_cluster_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let class = t.rebase(l2::LIGHT_CLUSTER[6]);
+        let other = t.zeros(0x90);
+        for case in 0..5u32 {
+            let cluster = if case == 0 { 0 } else { t.junk(0x80, 5) };
+            // the fixup moves the cluster: the port must read it again
+            let moved = if case == 0 { 0 } else { t.junk(0x80, 6) };
+            if cluster != 0 {
+                let list = moved + 0x1c;
+                if case == 1 {
+                    // empty: the list head itself would pass as a node
+                    t.w32(list, list);
+                    t.w32(list + 0x2c, class);
+                    t.w32(list + 0x40, 2);
+                } else {
+                    let node = t.junk(0x50, 9);
+                    t.w32(list, node);
+                    t.w32(node, list);
+                    t.w32(node + 0x2c, if case == 3 { other } else { class });
+                    t.w32(node + 0x40, if case == 4 { 0 } else { 2 });
+                    // +8 differs from +0x34: SetNode does not step
+                    t.w32(node + 0x08, 0x1234);
+                    t.w32(node + 0x34, 0x5678);
+                    t.w32(node + 0x3c, 3);
+                }
+            }
+            t.stub(l2::LIGHT_CLUSTER[0], false, 0, 0, 0x00e0_0000);
+            t.stub(l2::LIGHT_CLUSTER[1], true, 1, 1, cluster);
+            t.stub(l2::LIGHT_CLUSTER[2], false, 0, 0, 0x00e1_0000);
+            t.stub(l2::LIGHT_CLUSTER[3], false, 2, 0, 0);
+            // the fixup stub stores `moved` through its first word first
+            let fix = t.rebase(l2::LIGHT_CLUSTER[3]);
+            let logger = t.stub_code(l2::LIGHT_CLUSTER[3], false, 2, 0, 0);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], moved
+            c.extend(moved.to_le_bytes());
+            let code = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), code);
+            c.push(0xe9);
+            c.extend(logger.wrapping_sub(code + 15).to_le_bytes()); // jmp logger
+            t.write(code, &c);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(fix + 5).to_le_bytes());
+            t.write(fix, &j);
+            let ebp = t.ebp_for(0);
+            t.w32(ebp - 4, 0);
+            let what = format!("{label}: light cluster case {case}");
+            t.check_frame(
+                &what,
+                0x006e_5be0,
+                Conv::Cdecl,
+                &[],
+                ebp,
+                0x40,
+                (0x24, 4),
+                |g| {
+                    l2b::load_light_cluster(g, ebp - 0x24);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}
