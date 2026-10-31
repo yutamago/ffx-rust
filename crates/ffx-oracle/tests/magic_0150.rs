@@ -31,7 +31,7 @@ fn start_up() {
         t.set_u32(w(&t, 0x04), tail);
         t.set_u32(w(&t, 0x3d), if filled { other } else { root });
         t.set_u16(w(&t, 0xbc), 3);
-        for op in [0x09, 0x23, 0x57, 0xcf, 0xd6] {
+        for op in [0x09, 0x23, 0x43, 0x57, 0xcf, 0xd6] {
             t.set_u32(w(&t, op), 0x5a5a_5a5b);
         }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
@@ -85,6 +85,10 @@ fn load_frame() {
         t.set_u32(w(&t, 0xb8), flag);
         t.set_u8(w(&t, 0x9f), 0x41);
         t.set_u32(w(&t, 0x71), 0x0071_0000);
+        // the word copied to +0xc4 and the flags whose bit 0 it sets
+        t.set_u32(w(&t, 0xaa), 0x00aa_0001);
+        t.set_u32(w(&t, 0xc4), 0x5a5a_5a5b);
+        t.set_u32(w(&t, 0x107), 0x10);
         for i in 0..kids {
             t.write(kid(i), &[0x22; 0x40]);
             t.set_u32(kid(i), vt);
@@ -133,6 +137,12 @@ fn model_start() {
         t.set_u32(w(&t, 0x04), tail);
         t.set_u32(w(&t, 0x3d), if filled { other } else { root });
         t.set_u32(root + 0x10, if filled { other } else { root });
+        // the words it stores hold junk (each store must show)
+        for op in [
+            0x43, 0x57, 0x5f, 0xde, 0xe8, 0xf3, 0xfb, 0x10c, 0x116, 0x120,
+        ] {
+            t.set_u32(w(&t, op), 0x5a5a_5a5b);
+        }
         t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }

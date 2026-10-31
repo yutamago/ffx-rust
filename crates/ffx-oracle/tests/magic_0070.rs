@@ -670,6 +670,11 @@ fn summon_frame_376() {
             if s != 253 {
                 m.w32(row + 4 * (c % 8), a[0]);
             }
+            // slot 253 (did the binding fail?) decides the summon flag the
+            // frame reads at +0x43: the case's answer
+            if s == 253 {
+                return m.r32(SCRATCH + 0x37f0);
+            }
             0x0300_0000 + s
         });
     }
@@ -702,6 +707,8 @@ fn summon_frame_376() {
     ] {
         t.set_u32(w(&t, 0x0b), phase);
         t.set_u32(w(&t, 0x43), flag);
+        // the binding sets the flag again: slot 253 answers 0 for flag 1
+        t.set_u32(SCRATCH + 0x37f0, u32::from(flag == 0));
         // the done bit starts clear except in the phase-6 case
         t.set_u32(w(&t, 0x88), 0x10 | u32::from(phase == 6));
         t.set_u32(w(&t, 0xcb), 0x20 | a);

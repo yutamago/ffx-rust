@@ -20,6 +20,8 @@ fn node_cleared() {
     for (p, l) in [(0u32, 0u32), (parent, parent), (parent, last)] {
         t.write(node, &[0x5a; 0x48]);
         t.write(parent, &[0x3c; 0x20]);
+        // the child count (u16 +0x18) differs from its neighbours
+        t.set_u16(parent + 0x18, 5);
         t.write(last, &[0x77; 0x10]);
         t.set_u32(parent + 0x10, l);
         t.set_u32(r, node);
@@ -82,6 +84,8 @@ fn node_abc() {
     for (p, l) in [(0u32, 0u32), (parent, parent), (parent, last)] {
         t.write(node, &[0x5a; 0x60]);
         t.write(parent, &[0x3c; 0x20]);
+        // the child count (u16 +0x18) differs from its neighbours
+        t.set_u16(parent + 0x18, 5);
         t.write(last, &[0x77; 0x10]);
         t.set_u32(parent + 0x10, l);
         for (i, v) in (0u32..).zip([node, p, 0xa, 0xb, 0xc]) {
