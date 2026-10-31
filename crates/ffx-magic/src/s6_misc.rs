@@ -3,7 +3,7 @@
 //! address it was ported from, its size and how many DLLs carry it;
 //! "`G`" is a global of the DLL (an operand of the code).
 
-use crate::l5_objhost::{LIST_REMOVE, POOL_ALLOC, list_remove};
+use crate::l5_objhost::{LIST_CUR, LIST_REMOVE, POOL_ALLOC, list_cur, list_remove};
 use crate::nodes::{INSERT, node_insert};
 use crate::opu_parts::{START_PART, start_part};
 use crate::s3_misc::{COLOUR_NODE, colour_node};
@@ -14,7 +14,9 @@ use crate::s4_misc::{
 use crate::s4_small::{FADER_TASK, fader_task};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
+use crate::sa_misc::{SPRITE_FADE, sprite_fade};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
+use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
@@ -1071,5 +1073,365 @@ pub const START_OBJECT_ANIM_2: Sig = Sig {
         (0x91, Callee::Sig(&ANIM_RESET_2)),
         (0x99, Callee::Sig(&POOL_ALLOC)),
     ],
+    imports: &[],
+};
+
+/// Every object on the DLL's object list freed (cdecl, no arguments; the
+/// list `L` an immediate: head, tail, cursor, count). The cursor starts
+/// at the head; for each object [`list_cur`] gives: `*G_P = ITEM`, slot
+/// 713 `(obj)` frees it, bit 15 of its `+0x124` is cleared, and the node
+/// holding it leaves the list as the overlays inline it (head, tail or
+/// middle; the cursor steps past it; the free count `*G_FREE` up, `L`'s
+/// count down). The cursor steps once more when it still shows the same
+/// object, and the next object is the cursor's. Returns the number of
+/// objects.
+///
+/// `magic_0430` 0x10007f70 (324 bytes; 7 DLLs).
+pub fn objects_freed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let list = w(0x8);
+    let head = g.read::<u32>(w(0x1));
+    g.write::<u32>(w(0xd), head);
+    let mut n = 0u32;
+    let mut obj = list_cur(g, list);
+    while obj != 0 {
+        g.write::<u32>(g.read::<u32>(w(0x31)), w(0x38));
+        slot(g, img, f, 0x3d, 713, &[obj]);
+        let v = g.read::<u16>(obj + 0x124) & 0x7fff;
+        g.write::<u16>(obj + 0x124, v);
+        let head = g.read::<u32>(w(0x52));
+        let mut node = head;
+        while node != 0 && g.read::<u32>(node + 8) != obj {
+            node = g.read::<u32>(node + 4);
+        }
+        if node != 0 {
+            // the head or the tail: relinked, then the cursor checked
+            let end = if node == head {
+                let next = g.read::<u32>(node + 4);
+                g.write::<u32>(w(0x7c), next);
+                if next == 0 {
+                    g.write::<u32>(w(0x85), 0);
+                } else {
+                    g.write::<u32>(next, 0);
+                }
+                true
+            } else if node == g.read::<u32>(w(0xad)) {
+                let prev = g.read::<u32>(node);
+                g.write::<u32>(w(0xbc), prev);
+                if prev == 0 {
+                    g.write::<u32>(w(0xc5), 0);
+                } else {
+                    g.write::<u32>(prev + 4, 0);
+                }
+                true
+            } else {
+                false
+            };
+            if end {
+                let cur = g.read::<u32>(w(0x92));
+                if cur == node {
+                    let next = g.read::<u32>(cur + 4);
+                    g.write::<u32>(w(0x9e), next);
+                }
+            } else {
+                let cur = g.read::<u32>(w(0xd6));
+                if cur == node {
+                    let next = g.read::<u32>(cur + 4);
+                    g.write::<u32>(w(0xe3), next);
+                }
+                let (prev, next) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+                g.write::<u32>(prev.wrapping_add(4), next);
+                let (next, prev) = (g.read::<u32>(node + 4), g.read::<u32>(node));
+                g.write::<u32>(next, prev);
+            }
+            g.write::<u32>(node + 8, 0);
+            let free = g.read::<u16>(w(0x100)).wrapping_add(1);
+            g.write::<u16>(w(0x100), free);
+            let count = g.read::<u32>(w(0x106)).wrapping_sub(1);
+            g.write::<u32>(w(0x106), count);
+        }
+        n += 1;
+        if list_cur(g, list) == obj {
+            let cur = g.read::<u32>(w(0x11a));
+            if cur != 0 {
+                let next = g.read::<u32>(cur + 4);
+                g.write::<u32>(w(0x126), next);
+            }
+        }
+        obj = list_cur(g, list);
+    }
+    Ret::eax(n)
+}
+
+/// [`objects_freed`] (the `rel32`s: three [`list_cur`]s; the `jmp rel32`
+/// inside stays in the hash).
+pub const OBJECTS_FREED: Sig = Sig {
+    len: 324,
+    hash: 0x1086_f60c_242b_8368,
+    calls: &[
+        (0x14, Callee::Sig(&LIST_CUR)),
+        (0x111, Callee::Sig(&LIST_CUR)),
+        (0x130, Callee::Sig(&LIST_CUR)),
+    ],
+    imports: &[],
+};
+
+/// A sprite system's step (internal, `ecx` = the system: count `+0`,
+/// the sprites `+4` (0x94 bytes each), gravity on `+8` and its step
+/// `+0xc`, a speed cap on `+0x10` and its limit `+0x14`). For each live
+/// sprite (word `+0` set): its fade ([`sprite_fade`]); one that ended is
+/// released (slot 941 `(+0x30)`'s table and the sprite's index to slot
+/// 772, the 64-bit handle to slot 779 with the game lock held) and
+/// cleared (0x94 bytes). Otherwise gravity adds to `+0x18`, and with the
+/// cap the velocity `v = +0x14..+0x1c` of length `l` (not 0) becomes `v
+/// (l - limit) / l` when `l` is at least the limit (or unordered), else
+/// `v 0 / l`. Returns the `eax` the original leaves: the entry's with no
+/// sprite, the fade's or the cleared sprite's address; after the square
+/// root it is the CRT's with the flags in `ah` (junk: the port gives 0).
+///
+/// `magic_0370` 0x10002d90 (368 bytes, `ecx` = the system; 7 DLLs).
+pub fn sprites_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let sys = fr.ecx;
+    let mut eax = fr.eax;
+    let mut p = g.read::<u32>(sys + 4);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(sys) {
+        if g.read::<u32>(p) != 0 {
+            let fade = sprite_fade(g, img, img.rel32_target(f + 0x2c), p);
+            eax = fade;
+            if fade == 0 {
+                let d = g.read::<u32>(p + 0x30);
+                let table = slot(g, img, f, 0x35, 941, &[d]).eax;
+                let h = slot(g, img, f, 0x4a, 772, &[table, i]);
+                let lock = g.read::<u32>(w(0x58));
+                let saved = g.read::<u32>(lock);
+                g.write::<u32>(lock, 1);
+                slot(g, img, f, 0x61, 779, &[h.eax, h.edx]);
+                g.write::<u32>(g.read::<u32>(w(0x74)), saved);
+                g.write_bytes(p, &[0u8; 0x94]);
+                eax = p;
+                g.write::<u32>(p, 0);
+            } else {
+                if g.read::<u32>(sys + 8) != 0 {
+                    let y = add(g.read::<f32>(sys + 0xc), g.read::<f32>(p + 0x18));
+                    g.write::<f32>(p + 0x18, y);
+                }
+                if g.read::<u32>(sys + 0x10) != 0 {
+                    let v = [0x14u32, 0x18, 0x1c].map(|o| g.read::<f32>(p + o));
+                    let s = add(add(mul(v[0], v[0]), mul(v[1], v[1])), mul(v[2], v[2]));
+                    let l = f64::from(s).sqrt() as f32;
+                    // eax: the CRT's, with lahf's flags (junk; 0 here)
+                    eax = 0;
+                    // ucomiss; lahf; test ah, 0x44; jnp: skipped when 0
+                    #[allow(clippy::float_cmp)] // the original's exact test
+                    if l != 0.0 {
+                        let d = sub(l, g.read::<f32>(sys + 0x14));
+                        // comiss 0, d; jbe: the excess kept when 0 <= d or
+                        // unordered, else 0
+                        let top = if 0.0 > d { 0.0 } else { d };
+                        let k = div(top, l);
+                        for (o, x) in [0x14u32, 0x18, 0x1c].into_iter().zip(v) {
+                            g.write::<f32>(p + o, mul(x, k));
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+        p = p.wrapping_add(0x94);
+    }
+    eax
+}
+
+/// [`sprites_step`] (the `rel32`s: [`sprite_fade`], `memset` and the
+/// square root; the `jmp rel32` inside stays in the hash).
+pub const SPRITES_STEP: Sig = Sig {
+    len: 368,
+    hash: 0x2919_7cda_4268_3f62,
+    calls: &[
+        (0x2c, Callee::Sig(&SPRITE_FADE)),
+        (0x83, Callee::Import("memset")),
+        (0xfe, Callee::Import("_libm_sse2_sqrt_precise")),
+    ],
+    imports: &[],
+};
+
+/// A screen tint by a countdown (cdecl, no arguments): once (`*G_ON`)
+/// slot 628 `(1)`; slot 821 `(1)`; with `v = 10 - *G_T`, slot 915 `(0,
+/// 0, 0, (v * 64 / 10) K, 0x44)` and slot 802 `(v * 128 / 10)` (each
+/// division truncating, as the original's multiply by 0x66666667 does),
+/// the second seeing the first's words. Returns slot 802's `eax`.
+///
+/// `magic_0393` 0x100013e0 (197 bytes; 6 DLLs).
+pub fn countdown_tint<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    if g.read::<u32>(w(0x2)) == 0 {
+        slot(g, img, f, 0xa, 628, &[1]);
+        g.write::<u32>(w(0x1d), 1);
+    }
+    slot(g, img, f, 0x26, 821, &[1]);
+    let v = |g: &G, o: u32| 10i32.wrapping_sub(g.read::<i32>(w(o)));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let x = mul(
+        (v(g, 0x3e).wrapping_shl(6) / 10) as f32,
+        g.read::<f32>(w(0x70)),
+    );
+    slot(g, img, f, 0x4e, 915, &[0, 0, 0, x.to_bits(), 0x44]);
+    let b = (v(g, 0x9a).wrapping_shl(7) / 10).cast_unsigned();
+    let eax = slot(g, img, f, 0xb4, 802, &[b, 0, 0, 0, x.to_bits(), 0x44]).eax;
+    Ret::eax(eax)
+}
+
+/// [`countdown_tint`].
+pub const COUNTDOWN_TINT: Sig = Sig {
+    len: 197,
+    hash: 0x39be_2d11_c49d_81af,
+    calls: &[],
+    imports: &[],
+};
+
+/// A timed actor effect's task (cdecl `(task)`, `task[5]` the state `S`:
+/// the point `+0..+8`, its second point `+0xc..+0x14`, a word `+0x18`,
+/// three waits `+0x1c`, `+0x24`, `+0x2c`, the actor `+0x28`, a word
+/// `+0x20`). The first wait counts down; at 0 slot 256 `(the actor's
+/// object (*G_OWN for -1, else the table entry of the selection's
+/// byte), the point, +0x18)` runs; then the second counts down; at 0
+/// [`actor_slot256`] `(actor, +0x20, the second point)` and the third
+/// wait is `+0x20`; then the third counts down, and at the end bit 15 of
+/// u16 `+0x30` is set and the task node goes back to the pool (a tail
+/// jump to [`give_back`]). Returns the count left or the last call's
+/// `eax`.
+///
+/// `magic_0053` 0x10002b60 (201 bytes; 6 DLLs).
+pub fn actor_timed_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let first = g.read::<i32>(s + 0x1c);
+    if first > 0 {
+        g.write::<i32>(s + 0x1c, first - 1);
+        return Ret::eax((first - 1).cast_unsigned());
+    }
+    if first == 0 {
+        let id = g.read::<u32>(s + 0x28);
+        let p = [0u32, 4, 8].map(|o| g.read::<u32>(s + o));
+        let ch = if id == u32::MAX {
+            g.read::<u32>(w(0x31))
+        } else {
+            let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x38)).wrapping_add(id)));
+            g.read::<u32>(w(0x43).wrapping_add(4 * b))
+        };
+        let x = g.read::<u32>(s + 0x18);
+        let eax = slot(g, img, f, 0x60, 256, &[ch, p[0], p[1], p[2], x]).eax;
+        let n = g.read::<u32>(s + 0x1c).wrapping_sub(1);
+        g.write::<u32>(s + 0x1c, n);
+        return Ret::eax(eax);
+    }
+    let second = g.read::<i32>(s + 0x24);
+    if second > 0 {
+        g.write::<i32>(s + 0x24, second - 1);
+        return Ret::eax((second - 1).cast_unsigned());
+    }
+    if second == 0 {
+        let v = [0x14u32, 0x10, 0xc].map(|o| u128::from(g.read::<u32>(s + o)));
+        let call = Frame {
+            at: img.rel32_target(f + 0x9b),
+            esp: fr.esp.wrapping_sub(0xc),
+            edx: g.read::<u32>(s + 0x20),
+            ecx: g.read::<u32>(s + 0x28),
+            xmm: [fr.xmm[0], v[2], v[1], v[0]],
+            ..*fr
+        };
+        actor_slot256(g, img, &call);
+        let x = g.read::<u32>(s + 0x20);
+        let n = g.read::<u32>(s + 0x24).wrapping_sub(1);
+        g.write::<u32>(s + 0x24, n);
+        g.write::<u32>(s + 0x2c, x);
+        return Ret::eax(x);
+    }
+    let third = g.read::<i32>(s + 0x2c);
+    if third > 0 {
+        g.write::<i32>(s + 0x2c, third - 1);
+        return Ret::eax((third - 1).cast_unsigned());
+    }
+    let fl = g.read::<u16>(s + 0x30) | 0x8000;
+    g.write::<u16>(s + 0x30, fl);
+    // jmp give_back: the caller's stack, `(task)`
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0xc5), task))
+}
+
+/// [`actor_timed_task`] (the `rel32`s: [`actor_slot256`] and the tail
+/// jump to [`give_back`]).
+pub const ACTOR_TIMED_TASK: Sig = Sig {
+    len: 201,
+    hash: 0xf965_5647_22bd_8e52,
+    calls: &[
+        (0x9b, Callee::Sig(&ACTOR_SLOT256)),
+        (0xc5, Callee::Sig(&GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// [`targets_mean_offset`](crate::s5_misc::targets_mean_offset) with the
+/// point in `edx` (internal: `ecx` = `out`, `edx` = the point; a /GS
+/// frame): `v` = a copy of the point (slot 325, a local), and for each
+/// of the `*G_N` targets `G_IDS[i]` (bytes) that slot 684 says is live,
+/// its battle position (slot 531, a local) minus `v` is summed; `out = v
+/// + sum * (K / n)` (`n` the live count), `w = 1`. Returns the last
+/// slot's `eax`.
+///
+/// `magic_0106` 0x100069b0 (352 bytes, `ecx` = `out`, `edx` = the point;
+/// 6 DLLs).
+pub fn targets_mean_offset_of<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let out = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    let p = ebp.wrapping_sub(0x24);
+    let mut eax = slot(g, img, f, 0x19, 325, &[v, fr.edx]).eax;
+    let (mut sx, mut sy, mut sz) = (0.0f32, 0.0f32, 0.0f32);
+    let mut n = 0i32;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0x48)) {
+        let id = |g: &G, o: u32| u32::from(g.read::<u8>(w(o).wrapping_add(i)));
+        let t = id(g, 0x55);
+        eax = slot(g, img, f, 0x5b, 684, &[t]).eax;
+        if eax != 0 {
+            let t = id(g, 0x75);
+            eax = slot(g, img, f, 0x7b, 531, &[t, p]).eax;
+            let dy = sub(g.read::<f32>(p + 4), g.read::<f32>(v + 4));
+            let dz = sub(g.read::<f32>(p + 8), g.read::<f32>(v + 8));
+            let dx = sub(g.read::<f32>(p), g.read::<f32>(v));
+            n += 1;
+            g.write::<f32>(p + 4, dy);
+            sy = add(dy, sy);
+            g.write::<f32>(p + 8, dz);
+            sz = add(dz, sz);
+            g.write::<f32>(p, dx);
+            sx = add(dx, sx);
+        }
+        i += 1;
+    }
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let k = div(g.read::<f32>(w(0xfe)), n as f32);
+    let [vx, vy, vz] = [0u32, 4, 8].map(|o| g.read::<f32>(v + o));
+    g.write::<f32>(out, add(vx, mul(k, sx)));
+    g.write::<u32>(out + 0xc, 0x3f80_0000);
+    g.write::<f32>(out + 4, add(vy, mul(k, sy)));
+    g.write::<f32>(out + 8, add(vz, mul(k, sz)));
+    eax
+}
+
+/// [`targets_mean_offset_of`] (the `rel32`: `__security_check_cookie`).
+pub const TARGETS_MEAN_OFFSET_OF: Sig = Sig {
+    len: 352,
+    hash: 0x24ce_1d62_2215_2740,
+    calls: &[(0x158, Callee::Any)],
     imports: &[],
 };

@@ -722,3 +722,281 @@ fn objects_started_anim_2() {
         });
     }
 }
+
+/// Row 90: `magic_0430`'s objects freed: an empty list, one and three
+/// objects, the same object twice (the cursor stepping again), and the
+/// free slot changing the list so that the node found is in the middle,
+/// is the tail, or is not there.
+#[test]
+fn objects_all_freed() {
+    let Some(mut t) = twin(430) else { return };
+    let f = t.at(0x7f70);
+    let poison = SCRATCH + 0x7e0;
+    rec(&mut t, 713, 1, move |m, a| {
+        // the game's free may take the object off a node itself
+        let p = m.r32(poison);
+        if p != 0 {
+            m.w32(p + 8, 0x0bad_0713);
+            m.w32(poison, 0);
+        }
+        0x0713_0000 ^ a[0]
+    });
+    t.set_u32(op(&t, f, 0x31), SCRATCH + 0x2f0);
+    let list = op(&t, f, 0x8);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x20 * i;
+    let obj = |i: u32| SCRATCH + 0x2000 + 0x200 * i;
+    // (the objects the nodes hold, the node the free slot changes)
+    let cases: [(&[u32], Option<u32>); 6] = [
+        (&[], None),
+        (&[1], None),
+        (&[1, 2, 3], None),
+        (&[1, 1, 2], None),
+        (&[1, 1, 2], Some(0)),
+        (&[1, 1], Some(0)),
+    ];
+    for (k, (items, changed)) in (0u32..).zip(cases) {
+        let n = items.len() as u32;
+        for (i, &o) in (0u32..).zip(items) {
+            t.write(node(i), &varied(0x20, i + k));
+            t.set_u32(node(i), if i == 0 { 0 } else { node(i - 1) });
+            t.set_u32(node(i) + 4, if i + 1 == n { 0 } else { node(i + 1) });
+            t.set_u32(node(i) + 8, obj(o));
+            t.write(obj(o), &varied(0x200, o + k));
+            t.set_u16(obj(o) + 0x124, 0x8123 + o as u16);
+        }
+        let (head, tail) = if n == 0 {
+            (0, 0)
+        } else {
+            (node(0), node(n - 1))
+        };
+        t.set_u32(list, head);
+        t.set_u32(list + 4, tail);
+        t.set_u32(list + 8, 0x0bad_0008);
+        t.set_u32(list + 0xc, n + 5);
+        t.set_u32(poison, changed.map_or(0, node));
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// Row 91: `magic_0370`'s sprite system step: no sprites, a sprite that
+/// ends (released and cleared), a dead one, and held ones with gravity
+/// and the speed cap on and off (velocities above, below and at 0
+/// against the limit). The original's `eax` after the square root is
+/// the CRT's (junk).
+#[test]
+fn sprite_systems_stepped() {
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x2d90);
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x248
+    });
+    let table = SCRATCH + 0x3400;
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(op(&t, f, 0x58), lock);
+    rec_lock(&mut t, 779, 2, lock, |_, _| 0x779);
+    let sys = SCRATCH + 0x300;
+    let parts = SCRATCH + 0x1000;
+    for (k, (count, gravity, cap)) in [
+        (0u32, 0u32, 0u32),
+        (4, 1, 0),
+        (4, 0, 1),
+        (4, 1, 1),
+        (3, 0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.write(sys, &varied(0x20, k));
+        for (o, v) in [(0u32, count), (4, parts), (8, gravity), (0x10, cap)] {
+            t.set_u32(sys + o, v);
+        }
+        t.set_u32(sys + 0xc, (-0.5f32).to_bits());
+        t.set_u32(sys + 0x14, 2.0f32.to_bits());
+        // (live, held, the velocity)
+        for (i, (live, hold, v)) in [
+            (1u32, 0u32, [1.0f32, 2.0, 2.0]),
+            (0, 1, [1.0, 1.0, 1.0]),
+            (1, 1, [3.0, 4.0, 0.0]),
+            (1, 1, [0.5, 0.25, -0.5]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let p = parts + 0x94 * i as u32;
+            t.write(p, &varied(0x94, i as u32 + k));
+            t.set_u32(p, live * (0x100 + i as u32));
+            t.set_u32(p + 0x2c, hold);
+            t.set_u32(p + 0x28, 1);
+            t.set_u32(p + 0x30, 0x0300_0000 + i as u32);
+            for (j, x) in (0u32..).zip(v) {
+                t.set_u32(p + 0x14 + 4 * j, x.to_bits());
+            }
+        }
+        // a sprite at rest: the cap's zero length
+        if k == 3 {
+            for j in 0..3u32 {
+                t.set_u32(parts + 0x94 + 0x14 + 4 * j, 0);
+            }
+            t.set_u32(parts + 0x94, 0x101);
+            t.set_u32(sys + 0xc, 0);
+        }
+        let eax = if cap != 0 { Eax::Junk } else { Eax::Checked };
+        let c = Call {
+            ecx: sys,
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], eax, |g, img, fr| {
+            Ret::eax(s6_misc::sprites_step(g, img, fr))
+        });
+    }
+}
+
+/// Row 103: `magic_0393`'s countdown tint, before and after its first
+/// call, for counts below, at and past 10 (negative quotients truncate).
+#[test]
+fn countdown_tints() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x13e0);
+    rec(&mut t, 628, 1, |_, a| 0x0628_0000 ^ a[0]);
+    rec(&mut t, 821, 1, |_, a| 0x0821_0000 ^ a[0]);
+    rec(&mut t, 915, 5, |_, a| 0x0915_0000 ^ a[3]);
+    rec(&mut t, 802, 6, |_, a| 0x0802_0000 ^ a[0]);
+    // the tint's scale: one that is not 1
+    t.set_u32(op(&t, f, 0x70), 0.75f32.to_bits());
+    for (on, count) in [
+        (0u32, 0i32),
+        (1, 3),
+        (1, 10),
+        (0, 17),
+        (1, -0x0200_0001),
+        (1, i32::MIN),
+    ] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(op(&t, f, 0x3e), count.cast_unsigned());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// Row 104: `magic_0053`'s timed actor task through its three waits:
+/// counting, each one's moment (the actor -1 and a selected one), and
+/// the end (the node given back).
+#[test]
+fn actor_timed_tasks() {
+    let Some(mut t) = twin(53) else { return };
+    let f = t.at(0x2b60);
+    rec(&mut t, 256, 5, |_, a| 0x0256_0000 ^ a[0]);
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[3, 1, 2, 0]);
+    let a256 = t.img.rel32_target(f + 0x9b);
+    for (fo, base) in [(f, (0x31u32, 0x38u32, 0x43u32)), (a256, (0x06, 0x0d, 0x18))] {
+        t.set_u32(op(&t, fo, base.0), 0x0ab0_0000);
+        t.set_u32(op(&t, fo, base.1), sel);
+        for i in 0..4 {
+            t.set_u32(op(&t, fo, base.2) + 4 * i, 0x0cc0_0000 + i);
+        }
+    }
+    let task = SCRATCH + 0x300;
+    let s = SCRATCH + 0x1000;
+    for (k, (a, b, c, actor)) in [
+        (2i32, 0i32, 0i32, 1u32),
+        (0, 0, 0, u32::MAX),
+        (0, 0, 0, 2),
+        (-1, 3, 0, 1),
+        (-1, 0, 0, u32::MAX),
+        (-1, 0, 0, 3),
+        (-1, -1, 4, 0),
+        (-1, -1, 0, 0),
+        (-1, -1, -2, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &varied(0x40, k));
+        t.set_u32(s + 0x1c, a.cast_unsigned());
+        t.set_u32(s + 0x24, b.cast_unsigned());
+        t.set_u32(s + 0x2c, c.cast_unsigned());
+        t.set_u32(s + 0x28, actor);
+        t.write(task, &varied(0x20, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.set_u32(task + 0x14, s);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// Row 106: `magic_0106`'s mean target offset of a point in `edx`: no
+/// targets, some live, none live (0/0), all live, a negative count.
+#[test]
+fn targets_mean_offsets_of() {
+    let Some(mut t) = twin(106) else { return };
+    let f = t.at(0x69b0);
+    let live = SCRATCH + 0x7e0;
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec(&mut t, 684, 1, move |m, a| m.r32(live) >> (a[0] & 7) & 1);
+    let log = SCRATCH + 0x3000;
+    rec(&mut t, 531, 2, move |m, a| {
+        let k = m.r32(log);
+        m.w32(log, k + 1);
+        for i in 0..3 {
+            let old = m.r32(a[1] + 4 * i);
+            m.w32(log + 4 + 0x10 * (k % 8) + 4 * i, old);
+            m.w32(a[1] + 4 * i, (a[0] as f32 * 1.25 - i as f32).to_bits());
+        }
+        0x531 ^ a[0]
+    });
+    // the mean's scale: one that is not 1
+    t.set_u32(op(&t, f, 0xfe), 1.5f32.to_bits());
+    let out = SCRATCH + 0x300;
+    let point = SCRATCH + 0x340;
+    let ids = op(&t, f, 0x55);
+    for (n, mask) in [
+        (0u32, 0u32),
+        (3, 0b101),
+        (5, 0),
+        (4, 0xff),
+        (0x8000_0000, 1),
+    ] {
+        for i in 0..8u32 {
+            t.set_u8(ids + i, (i * 3 % 8) as u8);
+        }
+        t.set_u32(op(&t, f, 0x48), n);
+        t.set_u32(live, mask);
+        t.write(out, &varied(0x10, n));
+        for (i, v) in (0u32..).zip([0.5f32, -2.0, 3.25, 7.0]) {
+            t.set_u32(point + 4 * i, (v + n as f32).to_bits());
+        }
+        let c = Call {
+            ecx: out,
+            edx: point,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::targets_mean_offset_of(g, img, fr))
+        });
+    }
+}

@@ -1768,6 +1768,9 @@ ports! {
     "three points around" => s6_misc::THREE_POINTS_AROUND, s6_misc::three_points_around;
     "sprite fan start" => s6_misc::SPRITE_FAN_START, s6_misc::sprite_fan_start;
     "sprite fan task" => s6_misc::SPRITE_FAN_TASK, s6_misc::sprite_fan_task;
+    "objects freed" => s6_misc::OBJECTS_FREED, s6_misc::objects_freed;
+    "countdown tint" => s6_misc::COUNTDOWN_TINT, s6_misc::countdown_tint;
+    "actor timed task" => s6_misc::ACTOR_TIMED_TASK, s6_misc::actor_timed_task;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2349,6 +2352,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("part motion", &s6_misc::PART_MOTION),
     ("motion sequence step", &s6_misc::MOTION_SEQUENCE_STEP),
     ("start object (anim 2)", &s6_misc::START_OBJECT_ANIM_2),
+    ("sprites step", &s6_misc::SPRITES_STEP),
+    (
+        "targets mean offset (edx)",
+        &s6_misc::TARGETS_MEAN_OFFSET_OF,
+    ),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
