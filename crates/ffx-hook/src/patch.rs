@@ -1,6 +1,7 @@
 //! Writing the patches.
 
 use std::ffi::c_void;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
 use windows_sys::Win32::System::Diagnostics::Debug::FlushInstructionCache;
@@ -74,6 +75,13 @@ pub unsafe fn install(
         .collect())
 }
 
+/// The sites this process has patched (absolute addresses). A `ported!`
+/// entry carries no prologue to compare with, so a second install of the
+/// same site could not be told from the first by its bytes; the patcher
+/// remembers its own writes instead. It also keeps a second hook at the
+/// same address from taking the first one's `jmp` for original code.
+static PATCHED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
 /// Builds `stolen bytes; jmp site + len` in fresh executable memory.
 unsafe fn trampoline(site: usize, stolen: &[u8]) -> Option<usize> {
     // SAFETY: plain allocation call.
@@ -105,6 +113,17 @@ unsafe fn trampoline(site: usize, stolen: &[u8]) -> Option<usize> {
 unsafe fn patch(base: usize, hook: &Hook) -> Outcome {
     let site = base + (hook.address - IMAGE_BASE) as usize;
     let site_ptr = site as *mut u8;
+    if PATCHED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(&site)
+    {
+        // SAFETY: the site is inside the mapped, readable image and holds
+        // the five bytes of our own `jmp`.
+        return Outcome::PrologueMismatch(
+            unsafe { std::slice::from_raw_parts(site_ptr, 5) }.to_vec(),
+        );
+    }
     let len = hook.prologue.len();
     // SAFETY: the site is inside the mapped, readable image.
     let current = unsafe { std::slice::from_raw_parts(site_ptr, len) }.to_vec();
@@ -149,5 +168,9 @@ unsafe fn patch(base: usize, hook: &Hook) -> Outcome {
         VirtualProtect(site_ptr.cast::<c_void>(), 5, old, &raw mut old);
         FlushInstructionCache(GetCurrentProcess(), site_ptr.cast::<c_void>(), 5);
     }
+    PATCHED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(site);
     Outcome::Installed
 }

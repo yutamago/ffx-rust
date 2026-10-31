@@ -11,7 +11,8 @@ the sizes of modules are estimates until most of the code is named.
 
 Counts:
   named     the function has a name in symbols/ffx.sym
-  replaced  a Rust function runs instead of it (hook without a trampoline)
+  replaced  a Rust function runs instead of it (hook without a trampoline, or a
+            wrapper that calls a port: `<name>_port` in crates/ffx-hook/src)
   wrapped   a Rust function runs in front of it and calls the original
   to port   logic functions (symbols/classes.tsv, tools/classify.py) not
             replaced yet: what is left to port exactly; glue, platform,
@@ -122,6 +123,28 @@ def hooks(tree=WORKTREE):
             out[int(addr[1].replace("_", ""), 16)] = "wrapped" if wrapped else "replaced"
     for a in ported(tree):
         out[a] = "replaced"
+    for a in wrapper_ports(tree):
+        out[a] = "replaced"
+    return out
+
+
+def wrapper_ports(tree=WORKTREE):
+    """name by address of every hand-written wrapper that has a port: a
+    `Hook` (any file of crates/ffx-hook/src) named N whose port is switched
+    by the name `N_port` (docs/hooking.md, "Wrapper-owned addresses"), which
+    some string literal in crates/ffx-hook/src or its ported/ holds. The
+    wrapper calls that port instead of its trampoline, so the address is
+    ported, not wrapped; a new wrapper port needs no change here."""
+    files = [f for d in ("crates/ffx-hook/src", "crates/ffx-hook/src/ported") for f in tree.ls(d, ".rs")]
+    texts = [tree.read(f) or "" for f in files]
+    switches = set()
+    for text in texts:
+        switches.update(re.findall(r'"(\w+_port)"', text))
+    out = {}
+    for text in texts:
+        for name, addr in re.findall(r'name: "(\w+)",\s*address: 0x([0-9a-f_]+),', text):
+            if f"{name}_port" in switches:
+                out[int(addr.replace("_", ""), 16)] = name
     return out
 
 

@@ -27,7 +27,9 @@ any game code runs. Its `DllMain`:
 3. checks that each hand-written hook's site still holds the original
    prologue (the `ported!` entries carry none; `tools/check-ported.py`
    checks instead that each is a function start of at least five bytes,
-   by the dump's sizes and `symbols/sizes.tsv`);
+   by the dump's sizes and `symbols/sizes.tsv`), and refuses a site it has
+   already patched in this process (a second install, or a second hook at
+   the same address, leaves the first `jmp` alone and reports a mismatch);
 4. overwrites the first five bytes with `jmp rel32` to the Rust shim.
 
 A replacement never calls its original again. A wrapper that does

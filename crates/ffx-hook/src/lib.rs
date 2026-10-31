@@ -98,7 +98,9 @@ pub enum Outcome {
     Installed,
     /// Turned off through `FFX_HOOK_DISABLE`.
     Disabled,
-    /// The site did not hold the expected bytes, so it was left alone.
+    /// The site did not hold the expected bytes, or this process had
+    /// already patched it (the bytes are then our own `jmp`), so it was left
+    /// alone.
     PrologueMismatch(Vec<u8>),
     /// `VirtualProtect` or `VirtualAlloc` failed.
     ProtectFailed,

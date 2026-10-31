@@ -109,7 +109,9 @@ mod windows {
                 &mut failures,
             );
         }
-        // A second install finds the jmp instead of the prologue and leaves it alone.
+        // A second install leaves every patched site alone: the patcher remembers its
+        // own writes (the `ported!` entries have no prologue to compare), and the
+        // bytes it reports are the first install's jmp.
         // SAFETY: as above.
         let again = unsafe { ffx_hook::install(base, &ffx_hook::hooks(), &[]) }.unwrap_or_default();
         check(
