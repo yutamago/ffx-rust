@@ -7860,3 +7860,374 @@ impl Twins {
         self.jump(sym, at);
     }
 }
+
+// ---- big-game round: the large game functions left by system-b r3 ----
+
+/// A random f32 that is not a signalling NaN (the emulator keeps those),
+/// often a small exact value, sometimes an edge (zero, infinity, a quiet
+/// NaN, a denormal, a huge value).
+fn bg_float(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => [
+            0,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc0_1234,
+            0x0000_0123,
+            0x7f7f_ffff,
+            0x3f80_0000,
+        ][rng.below(8) as usize],
+        1..=3 => (f32::from(rng.next() as i16) / 64.0).to_bits(),
+        _ => {
+            let b = rng.next();
+            if b & 0x7f80_0000 == 0x7f80_0000 && b & 0x0040_0000 == 0 {
+                b | 0x0040_0000
+            } else {
+                b
+            }
+        }
+    }
+}
+
+/// `n` random floats ([`bg_float`]) as bytes.
+fn bg_floats(rng: &mut Rng, n: usize) -> Vec<u8> {
+    (0..n).flat_map(|_| bg_float(rng).to_le_bytes()).collect()
+}
+
+#[test]
+fn bg1_md0_ref_fill_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b601);
+        // group triangle counts per case; the model's total may differ
+        let cases: [(&[i16], i16); 7] = [
+            (&[], 0),
+            (&[3], -2),
+            (&[3], 3),
+            (&[0, 2, 0, 5], 7),
+            (&[4, 4, 4], 9),
+            (&[1, 6, 2], 2),
+            (&[40, 3, 25], 68),
+        ];
+        let pos_tab = bg_floats(&mut rng, 0x1_0000 * 4 + 4);
+        let pos_tab = t.alloc(&pos_tab);
+        let uv_tab = bg_floats(&mut rng, 0x1_0000 * 4 + 4);
+        let uv_tab = t.alloc(&uv_tab);
+        for (case, &(groups, total)) in cases.iter().enumerate() {
+            t.reset();
+            let tri_n: usize = groups.iter().map(|&g| g as usize).sum();
+            let n = tri_n.max(1);
+            let pos = t.zeros(n * 0x24);
+            let col = t.zeros(n * 0x30);
+            let uv = t.zeros(n * 0x18);
+            let idx = t.zeros(n * 6);
+            let block = t.words(&[0, 0, 0, pos, 0, col, uv, idx]);
+            // the model: a 0x20-byte head, then the groups
+            let mut m = vec![0u8; 0x20];
+            m[4..8].copy_from_slice(&0x20u32.to_le_bytes());
+            m[0x10..0x12].copy_from_slice(&total.to_le_bytes());
+            for &g in groups {
+                let mut head = [0u8; 0x20];
+                for b in &mut head {
+                    *b = rng.next() as u8;
+                }
+                head[2..4].copy_from_slice(&g.to_le_bytes());
+                m.extend(head);
+                for _ in 0..g {
+                    let mut tri = [0u8; 0x1c];
+                    for b in &mut tri {
+                        *b = rng.next() as u8;
+                    }
+                    m.extend(tri);
+                }
+            }
+            m.extend([0u8; 0x20]);
+            let model = t.alloc(&m);
+            let mut job = vec![0u32, 0, 0, 0, block, model, pos_tab, uv_tab];
+            for _ in 0..12 {
+                job.push(bg_float(&mut rng));
+            }
+            if case == 0 {
+                job[19] = 0x1234_5678;
+            }
+            // tiny colours: a * b + c / 128 lands in the subnormals, where
+            // the rounding before the division shows
+            if case >= 5 {
+                for v in &mut job[8..20] {
+                    *v = 0x0080_0000 | (rng.next() & 0x807f_ffff);
+                }
+                job[12..16].copy_from_slice(&[0x3f80_0000; 4]);
+            }
+            let job = t.words(&job);
+            t.check(
+                &format!("md0 ref fill #{case}"),
+                0x0072_82d0,
+                Conv::Cdecl,
+                &[job],
+                |m| Out::U32(pcb::md0_ref_fill(m, job)),
+            );
+        }
+    });
+}
+
+#[test]
+fn bg2_shp_model_fill_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b602);
+        let cases: [(&[i16], i16); 7] = [
+            (&[], 0),
+            (&[3], -2),
+            (&[3], 3),
+            (&[0, 2, 0, 5], 7),
+            (&[4, 4, 4], 9),
+            (&[1, 6, 2], 2),
+            (&[40, 3, 25], 68),
+        ];
+        let pos_tab = bg_floats(&mut rng, 0x1_0000 * 4 + 4);
+        let pos_tab = t.alloc(&pos_tab);
+        let col_tab = bg_floats(&mut rng, 0x1_0000 * 4 + 4);
+        let col_tab = t.alloc(&col_tab);
+        // the parts: entries -8..56 of 0x60 bytes around `parts`
+        let raw: Vec<u8> = (0..0x60 * 64 + 0x100).map(|_| rng.next() as u8).collect();
+        let parts_base = t.alloc(&raw);
+        let parts = parts_base + 0x60 * 8;
+        for (case, &(groups, total)) in cases.iter().enumerate() {
+            t.reset();
+            let tri_n: usize = groups.iter().map(|&g| g as usize).sum();
+            let n = tri_n.max(1);
+            let pos = t.zeros(n * 0x24);
+            let col = t.zeros(n * 0x30);
+            let uv = t.zeros(n * 0x18);
+            let fill: Vec<u8> = (0..n * 6).map(|_| rng.next() as u8).collect();
+            let idx = t.alloc(&fill);
+            let block = t.words(&[0, 0, 0, pos, 0, col, uv, idx]);
+            let number = rng.below(5);
+            let list: Vec<u8> = (0..number as usize + n)
+                .flat_map(|_| {
+                    let e: i16 = match rng.below(6) {
+                        0 => -2,
+                        1 => -1,
+                        2 => -8 + rng.below(8) as i16,
+                        _ => rng.below(56) as i16,
+                    };
+                    e.to_le_bytes()
+                })
+                .collect();
+            let list = t.alloc(&list);
+            t.put(parts + 0xc, &[list]);
+            let mut m = vec![0u8; 0x20];
+            m[4..8].copy_from_slice(&0x20u32.to_le_bytes());
+            m[0x10..0x12].copy_from_slice(&total.to_le_bytes());
+            for (gi, &g) in groups.iter().enumerate() {
+                let mut head = [0u8; 0x20];
+                for b in &mut head {
+                    *b = rng.next() as u8;
+                }
+                head[2..4].copy_from_slice(&g.to_le_bytes());
+                // the full-scale kind (0x24 in bits 26..29, low nibble 8),
+                // or one of its halves
+                let kind = rng.next() & !0x3c00_0000;
+                let (kind, sub) = match (gi + case) % 4 {
+                    0 => (kind | 0x2400_0000, 0x08 | (rng.next() as u8 & 0xf0)),
+                    1 => (kind | 0x2400_0000, 0x09),
+                    2 => (kind | 0x2000_0000, 0x18),
+                    _ => (rng.next(), rng.next() as u8),
+                };
+                head[8..12].copy_from_slice(&kind.to_le_bytes());
+                head[0xc] = sub;
+                m.extend(head);
+                for _ in 0..g {
+                    let mut tri = [0u8; 0x1c];
+                    for b in &mut tri {
+                        *b = rng.next() as u8;
+                    }
+                    m.extend(tri);
+                }
+            }
+            m.extend([0u8; 0x20]);
+            let model = t.alloc(&m);
+            let job = t.words(&[0, 0, 0, 0, block, model, parts, pos_tab, col_tab, number]);
+            t.check_fs(
+                &format!("shp model fill #{case}"),
+                0x0071_ee80,
+                &[job],
+                0,
+                0,
+                |m, _, slots| Out::U32(pcb::shp_model_fill(m, slots, job)),
+            );
+        }
+    });
+}
+
+/// [`Twins::check`] for an original with an aligned frame (`and esp,
+/// -16` behind `push ebx`): its `ebp` is `(esp at entry - 12) & !0xf`.
+/// The port gets that `ebp`; `low` bytes below it (less the top `skip`,
+/// the cookie) are compared after the call.
+fn bg_check_aligned(
+    t: &mut Twins,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    low: u32,
+    skip: u32,
+    bridge: impl FnOnce(&mut G, u32) -> Out,
+) {
+    let entry = t.frame_ebp(args.len()) + 4;
+    let ebp = (entry - 12) & !0xf;
+    let lo = ebp - low;
+    t.write(lo, &vec![0; low as usize]);
+    t.b.set_call_top(Some(lo - 0x100));
+    t.check(what, sym, Conv::Cdecl, args, |m| bridge(m, ebp));
+    t.b.set_call_top(None);
+    let n = (low - skip) as usize;
+    let mut x = vec![0; n];
+    let mut y = vec![0; n];
+    Mem::read_bytes(&t.a, lo, &mut x);
+    Mem::read_bytes(&t.b, lo, &mut y);
+    if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+        panic!(
+            "{what}: frame byte ebp - {:#x}: {} != {}",
+            low - i as u32,
+            x[i],
+            y[i]
+        );
+    }
+}
+
+/// A recording stub over `TOSkipCode(p)` returning `p + 1`.
+fn bg_skip_stub(t: &mut Twins) {
+    let log_stub = t.stub_code(mnc::NEXT_CHAR, false, 1, 0, 0);
+    let mut c = vec![0xff, 0x74, 0x24, 0x04]; // push dword [esp+4]
+    c.push(0xe8);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // call log_stub
+    c.extend([0x83, 0xc4, 0x04]); // add esp, 4
+    c.extend([0x8b, 0x44, 0x24, 0x04, 0x40, 0xc3]); // mov eax, [esp+4]; inc eax; ret
+    let at = t.cave_code(&c);
+    t.jump(mnc::NEXT_CHAR, at);
+}
+
+#[test]
+fn bg3_movie_message_wait_namesp_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b603);
+        for case in 0..96u32 {
+            t.reset();
+            // the text: tabs (9) with high and low second bytes among others
+            let text: Vec<u8> = (0..400)
+                .map(|_| match rng.below(5) {
+                    0 => 9,
+                    1 => 0xbf + rng.below(0x41) as u8,
+                    2 => 0xbf,
+                    _ => rng.next() as u8,
+                })
+                .collect();
+            let text = t.alloc(&text);
+            let groups: Vec<u32> = (0..400)
+                .map(|_| match rng.below(10) {
+                    0..=3 => 4,
+                    4 | 5 => 1,
+                    6 | 7 => 2,
+                    8 => 3,
+                    _ => [0, 5, 3][rng.below(3) as usize],
+                })
+                .collect();
+            t.stub_seq(mnc::CHAR_CLASS, 1, 0, &groups);
+            bg_skip_stub(t);
+            let counts: Vec<u32> = (0..400).map(|_| rng.below(3)).collect();
+            t.stub_seq(mnc::MACRO_WORD_COUNT, 2, 0, &counts);
+            let albhed: Vec<u32> = (0..400).map(|_| rng.below(4)).collect();
+            t.stub_seq(mnc::CONV_ALBHED, 2, 0, &albhed);
+            let r = rng.next();
+            t.stub(mnc::CHANGE_MACRO2, false, 3, 0, r);
+            t.stub(mnc::FIRST_INIT_NORMAL, false, 3, 0, r ^ 1);
+            t.stub(mnc::SET_DRAW_INFO, false, 3, 0, r ^ 2);
+            t.stub(mnc::MOVIE_CHANGE_MACRO2, false, 3, 0, r ^ 3);
+            t.stub(mnc::FONT_INFO, false, 2, 0, r ^ 4);
+            t.stub(mnc::MOVIE_FONT_1612, false, 2, 0, r ^ 5);
+            let mut w: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            w[0x94 / 4] = text;
+            let small = |rng: &mut Rng| -> f32 { f32::from(rng.next() as i16) / 64.0 };
+            for o in [0x48usize, 0x4c, 0x50, 0x54, 0x58] {
+                w[o / 4] = small(&mut rng).to_bits();
+            }
+            // kind +0x22 (u16) and +0x24 (i16), +0xe, the Al Bhed +0x10
+            let kind = rng.below(3);
+            let more = [0u32, 1, 0xffff][rng.below(3) as usize];
+            w[0x20 / 4] = (w[0x20 / 4] & 0xffff) | (kind << 16);
+            w[0x24 / 4] = (w[0x24 / 4] & 0xffff_0000) | more;
+            let first = rng.below(3);
+            w[0xc / 4] = (w[0xc / 4] & 0xffff) | (first << 16);
+            let al = if rng.chance(2) {
+                0x4000
+            } else {
+                rng.below(0x8000)
+            };
+            w[0x10 / 4] = (w[0x10 / 4] & 0xffff_0000) | al;
+            // the counts: +0xa0 to reach, +0xa4 the edge, +0xa8 the limit
+            let shown = if case == 0 { 0 } else { rng.below(20) };
+            w[0xa0 / 4] = shown;
+            w[0xa4 / 4] = rng.below(6);
+            w[0xa8 / 4] = shown + rng.below(8);
+            w[0xac / 4] = u32::from(rng.chance(3));
+            w[0xb4 / 4] = u32::from(rng.chance(3));
+            let win = t.words(&w);
+            bg_check_aligned(
+                t,
+                &format!("movie message wait namesp #{case}"),
+                0x008d_fea0,
+                &[win],
+                0x6c,
+                4,
+                |m, ebp| Out::U32(mnb::movie_message_wait_namesp(m, ebp, win)),
+            );
+        }
+    });
+}
+
+/// A recording stub over a float function of one f32 argument (`sym`,
+/// cdecl) returning `arg + add` in `ST0`.
+fn bg_remap_stub(t: &mut Twins, sym: u32, add: f32) {
+    let log_stub = t.stub_code(sym, false, 1, 0, 0);
+    let cell = t.words(&[add.to_bits()]);
+    let mut c = vec![0xff, 0x74, 0x24, 0x04]; // push dword [esp+4]
+    c.push(0xe8);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // call log_stub
+    c.extend([0x83, 0xc4, 0x04]); // add esp, 4
+    c.extend([0xd9, 0x44, 0x24, 0x04]); // fld dword [esp+4]
+    c.extend([0xd8, 0x05]);
+    c.extend(cell.to_le_bytes()); // fadd dword [cell]
+    c.push(0xc3);
+    let at = t.cave_code(&c);
+    t.jump(sym, at);
+}
+
+#[test]
+fn bg4_draw_libra_win_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b604);
+        for case in 0..8u32 {
+            t.reset();
+            let langs = [rng.below(2), rng.below(2) * 3];
+            t.stub_seq(mnc::GET_FFX_LANG_JMP, 0, 0, &langs);
+            t.stub_float(mnc::GET_TIME, f32::from(rng.next() as i16) / 7.0);
+            bg_remap_stub(t, mnc::REMAP_X2, 0.5);
+            bg_remap_stub(t, mnc::REMAP_Y2, 0.25);
+            let r = rng.next();
+            t.stub(mnc::ROTATE_SHAPE, false, 12, 0, r);
+            t.stub(mnc::SHAPE_XYWHUV_C2, false, 11, 0, r ^ 1);
+            t.stub(mnc::NET_WINDOW, false, 5, 0, r ^ 2);
+            let slide = [0u16, 1, 3, 0xffff, 2, 0, 7, 0x8000][case as usize];
+            let at = t.rebase(mnc::LIBRA_SLIDE);
+            t.write(at, &slide.to_le_bytes());
+            t.check(
+                &format!("draw libra win #{case}"),
+                0x0089_bc80,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mnb::draw_libra_win(m)),
+            );
+        }
+    });
+}

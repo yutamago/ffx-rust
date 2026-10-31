@@ -1361,6 +1361,27 @@ ported! {
         let mut f = StackFrame::<0x1b>::new();
         hd::copy_dvd_files(&mut mem(), f.at() + 0x6c)
     }
+
+    // ---- big-game round: the large game functions ----
+    /// `(job)`: a model's triangles into the effect vertex block.
+    JobSchedule_pppPart_fillBuffer_md0_ref_0279 @ 0x0072_82d0 => extern "C" fn md0_ref_fill(job: u32) -> u32 {
+        pc::md0_ref_fill(&mut mem(), job)
+    }
+    /// `(job)`: a shape model's triangles into the effect vertex block;
+    /// the triangle pointer goes into the argument slot.
+    JobSchedule_pppPart_fillBuffer_drawShp @ 0x0071_ee80 => extern "C" fn shp_model_fill(job: u32; slots: u32) -> u32 {
+        pc::shp_model_fill(&mut mem(), slots, job)
+    }
+    /// `(win)`: frame `ebp - 0x6c` (the Al Bhed word, the saved x, the
+    /// line count, the font info, the pen; the cookie at `ebp - 4`).
+    TODrawMovieMessageWaitNamesp @ 0x008d_fea0 => extern "C" fn movie_message_wait_namesp(win: u32) -> u32 {
+        let mut f = StackFrame::<0x1b>::new();
+        mn::movie_message_wait_namesp(&mut mem(), f.at() + 0x6c, win)
+    }
+    /// `()`: the Scan window; 0 while it slides in, else 1.
+    ToDrawLibraWin @ 0x0089_bc80 => extern "C" fn draw_libra_win() -> u32 {
+        mn::draw_libra_win(&mut mem())
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

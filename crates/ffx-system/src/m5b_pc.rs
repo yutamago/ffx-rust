@@ -217,6 +217,9 @@ pub const SHP_Y_DROP: u32 = 0x00b3_eb60;
 pub const SHP_ALPHA_SCALE: u32 = 0x00b1_70c0;
 pub const SHP_SIZE_SCALE: u32 = 0x00b1_70b8;
 pub const SHP_HALF: u32 = 0x00b9_2194;
+/// `JobSchedule_pppPart_fillBuffer_drawShp`'s f64 1/4096 (texture
+/// coordinates and alpha in 1/4096).
+pub const SHP_UV_SCALE: u32 = 0x00b5_0190;
 
 /// `rcbgDebugDrawLayerTex_0092c960`'s: `Yn_DepthToScreen`,
 /// `rcbgTexGetLog2Size`, `rcbgTrxSetNo`, `rcbgPalSetNo`, the packet data's
@@ -1328,6 +1331,254 @@ pub mod bridge {
         }
         r
     }
+    /// A triangle's u16 table number at `tri + o`, times 4 in 16 bits
+    /// (`shl ax, 2`): the f32 index of its 16-byte table entry.
+    fn tri_entry(h: &impl Host, tri: u32, o: u32) -> u32 {
+        u32::from(h.read::<u16>(tri.wrapping_add(o)).wrapping_shl(2))
+    }
+
+    /// `JobSchedule_pppPart_fillBuffer_md0_ref_0279(job)`: a model's
+    /// triangles into the vertex block `job + 0x10` (positions `+0xc`
+    /// stride 0x24, colours `+0x14` stride 0x30, texture coordinates
+    /// `+0x18` stride 0x18, u16 index triples `+0x1c` stride 6). The model
+    /// `job + 0x14` (`+4` the offset of its groups, i16 `+0x10` the
+    /// triangles in all) has groups of a 0x20-byte head (i16 `+2` the
+    /// triangles) and 0x1c-byte triangles: u16 position numbers `+0`,
+    /// `+2`, `+4` and texture numbers `+0x14`, `+0x16`, `+0x18` into the
+    /// 16-byte tables `job + 0x18` (x, y, z copied) and `job + 0x1c` (u,
+    /// `1 - v`). Every vertex gets the colour `(a * b + c) / 128` from
+    /// the f32s `job + 0x20` (a), `+0x30` (b) and `+0x40` (c), the alpha
+    /// halved. Returns `eax`: `7 *` the last group's count, or the word
+    /// `job + 0x4c` when the model has no triangles.
+    #[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)]
+    pub fn md0_ref_fill(h: &mut impl Host, job: u32) -> u32 {
+        use ffx_bridge::x87;
+        let block: u32 = h.read(job.wrapping_add(0x10));
+        let model: u32 = h.read(job.wrapping_add(0x14));
+        let pos_tab: u32 = h.read(job.wrapping_add(0x18));
+        let uv_tab: u32 = h.read(job.wrapping_add(0x1c));
+        let f: [f64; 12] =
+            core::array::from_fn(|k| shp_load(h, job.wrapping_add(0x20 + 4 * k as u32)));
+        let last: u32 = h.read(job.wrapping_add(0x4c));
+        let mut group = model.wrapping_add(h.read::<u32>(model.wrapping_add(4)));
+        let mut left = i32::from(h.read::<i16>(model.wrapping_add(0x10)));
+        if left <= 0 {
+            return last;
+        }
+        let scale = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_SIZE_SCALE)));
+        let half = f64::from_bits(h.read::<u64>(h.rebase(super::HALF)));
+        // each channel: a * b + c rounded to f32, then / 128 (the alpha
+        // rounded once more before the halving)
+        let channel = |k: usize| {
+            let sum = x87::store(x87::add(x87::mul(f[k], f[k + 4]), f[k + 8]));
+            x87::mul(x87::load(sum), scale)
+        };
+        let colour = [
+            x87::store(channel(0)),
+            x87::store(channel(1)),
+            x87::store(channel(2)),
+            x87::store(x87::mul(x87::load(x87::store(channel(3))), half)),
+        ];
+        let mut n = 0u32;
+        loop {
+            let mut k = 0i32;
+            let mut tri = group.wrapping_add(0x20);
+            while k < i32::from(h.read::<i16>(group.wrapping_add(2))) {
+                let pos_out = h
+                    .read::<u32>(block.wrapping_add(0xc))
+                    .wrapping_add(n.wrapping_mul(0x24));
+                let uv_out = h
+                    .read::<u32>(block.wrapping_add(0x18))
+                    .wrapping_add(n.wrapping_mul(0x18));
+                let col_out = h
+                    .read::<u32>(block.wrapping_add(0x14))
+                    .wrapping_add(n.wrapping_mul(0x30));
+                let pos = [0u32, 2, 4].map(|o| tri_entry(h, tri, o));
+                let uv = [0x14u32, 0x16, 0x18].map(|o| tri_entry(h, tri, o));
+                for (v, &e) in (0u32..).zip(&pos) {
+                    for c in 0..3u32 {
+                        let w = shp_copy(h, pos_tab.wrapping_add((e + c) * 4));
+                        h.write(pos_out.wrapping_add(12 * v + 4 * c), w);
+                    }
+                }
+                for (v, &e) in (0u32..).zip(&uv) {
+                    let u = shp_copy(h, uv_tab.wrapping_add(e * 4));
+                    h.write(uv_out.wrapping_add(8 * v), u);
+                    let t = shp_load(h, uv_tab.wrapping_add((e + 1) * 4));
+                    h.write(uv_out.wrapping_add(8 * v + 4), x87::store(x87::sub(1.0, t)));
+                }
+                for (c, &w) in (0u32..).zip(&colour) {
+                    let order: &[u32] = if c == 3 { &[0, 1, 2] } else { &[2, 1, 0] };
+                    for &v in order {
+                        h.write(col_out.wrapping_add(0x10 * v + 4 * c), w);
+                    }
+                }
+                let first = n.wrapping_mul(3);
+                for j in 0..3u32 {
+                    let idx: u32 = h.read(block.wrapping_add(0x1c));
+                    h.write(
+                        idx.wrapping_add(n.wrapping_mul(6)).wrapping_add(2 * j),
+                        first.wrapping_add(j) as u16,
+                    );
+                }
+                n = n.wrapping_add(1);
+                k += 1;
+                tri = tri.wrapping_add(0x1c);
+            }
+            let count = i32::from(h.read::<i16>(group.wrapping_add(2)));
+            left = left.wrapping_sub(count);
+            group = group
+                .wrapping_add(0x20)
+                .wrapping_add(count.cast_unsigned().wrapping_mul(0x1c));
+            if left <= 0 {
+                return count.cast_unsigned().wrapping_mul(7);
+            }
+        }
+    }
+    /// `JobSchedule_pppPart_fillBuffer_drawShp(job)` with the caller's
+    /// argument slot at `slot`: a shape model's triangles into the vertex
+    /// block `job + 0x10` (positions `+0xc` stride 0x24, colours `+0x14`
+    /// stride 0x30, texture coordinates `+0x18` stride 0x18, u16 index
+    /// triples `+0x1c` stride 6). The model `job + 0x14` is laid out as
+    /// in [`md0_ref_fill`]; a triangle's u16 at `+0`, `+2`, `+4` number
+    /// its positions (table `job + 0x1c`, x, y, z copied), the six at
+    /// `+8..+0x12` are its texture coordinates in 1/4096 and the three
+    /// at `+0x14..+0x18` number its colours (table `job + 0x20`, r, g, b
+    /// copied). Each triangle takes the next entry of the i16 list
+    /// `[job + 0x18] + 0xc` from the running number `job + 0x24`: -2
+    /// leaves the triangle out (index triple zeroed), -1 gives it the
+    /// alpha 0.5, any other `e` the alpha `u16 [job + 0x18] + 0x8e +
+    /// 0x60 e` / 8192. Groups whose word `+8` has type 0x24 in bits
+    /// 26..29 and whose byte `+0xc` ends in 8 take the coordinates at
+    /// full scale from `v = 0.5` down, others at half scale from 0. The
+    /// indices go `3n, 3n + 2, 3n + 1`. The original keeps the triangle
+    /// pointer (`+4`) in its argument slot. Returns `eax`: the triangle
+    /// count left over (0 or less).
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
+    pub fn shp_model_fill(h: &mut impl Host, slot: u32, job: u32) -> u32 {
+        use ffx_bridge::x87;
+        let model: u32 = h.read(job.wrapping_add(0x14));
+        let block: u32 = h.read(job.wrapping_add(0x10));
+        let parts: u32 = h.read(job.wrapping_add(0x18));
+        let pos_tab: u32 = h.read(job.wrapping_add(0x1c));
+        let col_tab: u32 = h.read(job.wrapping_add(0x20));
+        let mut number: u32 = h.read(job.wrapping_add(0x24));
+        let mut group = model.wrapping_add(h.read::<u32>(model.wrapping_add(4)));
+        let total = i32::from(h.read::<i16>(model.wrapping_add(0x10)));
+        let mut left = total;
+        if left <= 0 {
+            return total.cast_unsigned();
+        }
+        let half = x87::load(h.read(h.rebase(super::SHP_HALF)));
+        let q = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_UV_SCALE)));
+        let half64 = f64::from_bits(h.read::<u64>(h.rebase(super::HALF)));
+        let mut n = 0u32;
+        loop {
+            let kind: u32 = h.read(group.wrapping_add(8));
+            let sub: u8 = h.read(group.wrapping_add(0xc));
+            // (v offset, u scale): f32 frame copies of the constants
+            let (top, scale) = if kind & 0x3c00_0000 == 0x2400_0000 && sub & 0xf == 8 {
+                (half, 1.0)
+            } else {
+                (0.0, half)
+            };
+            let one_minus_top = x87::sub(1.0, top);
+            let mut k = 0i32;
+            let mut tri = group.wrapping_add(0x20);
+            while k < i32::from(h.read::<i16>(group.wrapping_add(2))) {
+                let list: u32 = h.read(parts.wrapping_add(0xc));
+                let entry: u16 = h.read(list.wrapping_add(number.wrapping_mul(2)));
+                if entry == 0xfffe {
+                    let idx: u32 = h.read(block.wrapping_add(0x1c));
+                    h.write(idx.wrapping_add(n.wrapping_mul(6)), 0u32);
+                    h.write(idx.wrapping_add(n.wrapping_mul(6)).wrapping_add(4), 0u16);
+                } else {
+                    let uv_out = h
+                        .read::<u32>(block.wrapping_add(0x18))
+                        .wrapping_add(n.wrapping_mul(0x18));
+                    let col_out = h
+                        .read::<u32>(block.wrapping_add(0x14))
+                        .wrapping_add(n.wrapping_mul(0x30));
+                    let pos_out = h
+                        .read::<u32>(block.wrapping_add(0xc))
+                        .wrapping_add(n.wrapping_mul(0x24));
+                    let pos = [0u32, 2, 4].map(|o| tri_entry(h, tri, o));
+                    let col = [0x14u32, 0x16, 0x18].map(|o| tri_entry(h, tri, o));
+                    for (v, &e) in (0u32..).zip(&pos) {
+                        for c in 0..3u32 {
+                            let w = shp_copy(h, pos_tab.wrapping_add((e + c) * 4));
+                            h.write(pos_out.wrapping_add(12 * v + 4 * c), w);
+                        }
+                    }
+                    // u and 1 - v in 1/4096, each rounded to f32
+                    let mut uv = [0u32; 6];
+                    for (k2, w) in (0u32..).zip(&mut uv) {
+                        let raw = f64::from(h.read::<u16>(tri.wrapping_add(8 + 2 * k2)));
+                        *w = if k2 % 2 == 0 {
+                            x87::store(x87::mul(raw, q))
+                        } else {
+                            x87::store(x87::sub(1.0, x87::mul(raw, q)))
+                        };
+                    }
+                    for (k2, &w) in (0u32..).zip(&uv) {
+                        let out = if k2 % 2 == 0 {
+                            x87::add(x87::mul(scale, x87::load(w)), 0.0)
+                        } else {
+                            x87::sub(one_minus_top, x87::mul(x87::load(w), half64))
+                        };
+                        h.write(uv_out.wrapping_add(4 * k2), x87::store(out));
+                    }
+                    let rgb = col.map(|e| {
+                        [0u32, 1, 2].map(|c| shp_copy(h, col_tab.wrapping_add((e + c) * 4)))
+                    });
+                    let alpha = if entry == 0xffff {
+                        x87::store(half)
+                    } else {
+                        let at = parts.wrapping_add(0x8e).wrapping_add(
+                            i32::from(entry.cast_signed())
+                                .cast_unsigned()
+                                .wrapping_mul(0x60),
+                        );
+                        let w = f64::from(h.read::<u16>(at));
+                        x87::store(x87::mul(x87::mul(w, q), half64))
+                    };
+                    for (v, c) in (0u32..).zip(&rgb) {
+                        let o = col_out.wrapping_add(0x10 * v);
+                        h.write(o, c[0]);
+                        h.write(o.wrapping_add(4), c[1]);
+                        h.write(o.wrapping_add(8), c[2]);
+                        h.write(o.wrapping_add(0xc), alpha);
+                    }
+                    let first = n.wrapping_mul(3);
+                    for (j, add) in [(0u32, 0u32), (1, 2), (2, 1)] {
+                        let idx: u32 = h.read(block.wrapping_add(0x1c));
+                        h.write(
+                            idx.wrapping_add(n.wrapping_mul(6)).wrapping_add(2 * j),
+                            first.wrapping_add(add) as u16,
+                        );
+                    }
+                }
+                n = n.wrapping_add(1);
+                number = number.wrapping_add(1);
+                k += 1;
+                tri = tri.wrapping_add(0x1c);
+                h.write(slot, tri.wrapping_add(4));
+            }
+            let count = i32::from(h.read::<i16>(group.wrapping_add(2)));
+            left = left.wrapping_sub(count);
+            group = group
+                .wrapping_add(0x20)
+                .wrapping_add(count.cast_unsigned().wrapping_mul(0x1c));
+            if left <= 0 {
+                return left.cast_unsigned();
+            }
+        }
+    }
+
     /// `rcbgDebugDrawLayerTex_0092c960(layer)` with its frame at `ebp`
     /// (the debug overlay's layer texture): `Yn_DepthToScreen(0.1)` into
     /// `ebp - 0x18`; without a map (`g_YnMapSystem`'s first word) its

@@ -397,6 +397,68 @@ pub const CHANGE_MACRO2: u32 = 0x008b_5960;
 pub const FONT_INFO: u32 = 0x008b_7240;
 pub const MOVIE_FONT_1612: u32 = 0x008f_d960;
 
+/// `TODrawMovieMessageWaitNamesp`'s: `TOConvAlbhedWord`,
+/// `TOFirstInitMessageNormal`, `TOSetDrawInfo`,
+/// `TOGetChangeMacroWordCount`, `TODrawMovieChangeMacro2` (all cdecl) and
+/// the pen's colour word `0x025d09bc` handed to `TODrawChangeMacro2`.
+pub const CONV_ALBHED: u32 = 0x0090_6780;
+pub const FIRST_INIT_NORMAL: u32 = 0x008d_f520;
+pub const SET_DRAW_INFO: u32 = 0x008d_f8f0;
+pub const MACRO_WORD_COUNT: u32 = 0x008b_6b00;
+pub const MOVIE_CHANGE_MACRO2: u32 = 0x008b_5ea0;
+pub const PEN_COLOUR: u32 = 0x025d_09bc;
+
+/// `ToDrawLibraWin`'s: `TOMkpRotateShapeXYWHUVC2`, `TOMkpShapeXYWHUVC2`,
+/// `TODrawBtlNetWindowXYWHType` (cdecl), the window's slide count
+/// `0x0133f702` (i16) and its f32 constants: the two rings (x, w, u0,
+/// v0, u1, v1), the two bars (y, w, h, u0, v0, u1, v1), the window (h,
+/// y, w per language).
+pub const ROTATE_SHAPE: u32 = 0x0090_2ef0;
+pub const SHAPE_XYWHUV_C2: u32 = 0x0090_3ee0;
+pub const NET_WINDOW: u32 = 0x008f_41b0;
+pub const LIBRA_SLIDE: u32 = 0x0133_f702;
+pub const LIBRA_RINGS: [[u32; 6]; 2] = [
+    [
+        0x00b5_ef88,
+        0x00b5_eec0,
+        1,
+        0x00b5_eea0,
+        0x00b5_eee4,
+        0x00b5_ef00,
+    ],
+    [
+        0x00b5_ef8c,
+        0x00b5_eea4,
+        0x00b5_f038,
+        1,
+        0x00b5_f03c,
+        0x00b5_eecc,
+    ],
+];
+pub const LIBRA_BARS: [[u32; 7]; 2] = [
+    [
+        0x00b5_ef74,
+        0x00b5_ef80,
+        0x00b5_eefc,
+        0,
+        0x00b5_ee04,
+        0x00b5_edb8,
+        0x00b5_ee14,
+    ],
+    [
+        0x00b5_ef98,
+        0x00b5_ef04,
+        0x00b5_4f90,
+        0x00b5_ed64,
+        0x00b5_edf4,
+        0x00b5_ed88,
+        0x00b5_edfc,
+    ],
+];
+pub const LIBRA_WIN_H: u32 = 0x00b5_ef68;
+pub const LIBRA_WIN_Y: u32 = 0x00b5_efac;
+pub const LIBRA_WIN_W: [u32; 2] = [0x00b5_effc, 0x00b1_f2cc];
+
 /// `FUN_008ea680`'s: `TOMakePktFont1612Shadow_00906290`,
 /// `TOMakePktFont1612Font_00906270`, `setButtonData`, `resetButtonData`,
 /// `TOAdpButtonIcon_008e9970`, `TOAddPktChangeMacro`, the line step 16.0
@@ -3362,5 +3424,273 @@ pub mod bridge {
         uv(h, 0xf2, 0x35);
         at(h, x3, y2);
         h.read(h.rebase(PKT_CURSOR))
+    }
+
+    /// `TODrawMovieMessageWaitNamesp(win)` with its frame at `ebp` (an
+    /// aligned frame: the Al Bhed word at `ebp - 0x6c`, the saved x
+    /// `ebp - 0x68`, the line count `ebp - 0x64`, `TOGetFontInfo`'s out
+    /// `ebp - 0x60`, the pen `ebp - 0x20`, 7 words): a movie message
+    /// window's text pass. The cursor `+0x8c` starts at `+0x94`, the pen
+    /// from `+0xb8` with `+0x58`, `+0x48..+0x54` and the colour byte
+    /// `+0x1a`; the x `ftol(+0x48)` is kept. Codes by `TOGetGroup` until
+    /// `+0x9c` reaches `+0xa0` (each followed by `TOSkipCode`): 1 a line
+    /// break (the first line: `TODrawChangeMacro2(win, 0x025d09bc, pen)`
+    /// for kind `+0x22` 1 with `+0x24 > 0`, the x taken from the pen;
+    /// later lines: the pen back at the x, 16.0 lower;
+    /// `TOFirstInitMessageNormal(win, cursor + 1, pen)` for `+0xe` 1); 2
+    /// `TOSetDrawInfo(code, win, pen)`, a tab (9) checked against the
+    /// reveal edge `+0xa4` (above 0xbf it counts, at the edge it draws and
+    /// moves `+0xa0`); 3 a macro (`TOGetChangeMacroWordCount` added to
+    /// `+0x9c` on a first line of kind 0, else `TODrawMovieChangeMacro2`,
+    /// the Al Bhed colour 0x56 after the first line of a `+0x10` 0x4000
+    /// window); 4 a glyph (`+0x9c` up, `+0xa0` up to `+0xa8` while `+0xb4`
+    /// and `+0xac` are clear; drawn by `TOGetFontInfo` and
+    /// `TOMakePktMovieFont1612`: on the first line only for kind 1, in Al
+    /// Bhed windows the colour cleared; later lines of Al Bhed windows
+    /// through `TOConvAlbhedWord`, colour 0x60 for 0/1, 0x56 for 2). Then
+    /// `+0xa4 = +0xa0` and the pen back to `+0xd4`. Returns 0.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn movie_message_wait_namesp(h: &mut impl Host, ebp: u32, win: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let w = |o: u32| win.wrapping_add(o);
+        let pen = f(0x20);
+        let (alb, info) = (f(0x6c), f(0x60));
+        let start: u32 = h.read(w(0x94));
+        h.write(w(0x8c), start);
+        for k in 0..7u32 {
+            let v: u32 = h.read(w(0xb8 + 4 * k));
+            h.write(pen.wrapping_add(4 * k), v);
+        }
+        let mut lines = 0u32;
+        h.write(f(0x64), lines);
+        for (to, from) in [
+            (4u32, 0x48u32),
+            (8, 0x4c),
+            (0xc, 0x50),
+            (0x10, 0x54),
+            (0, 0x58),
+        ] {
+            let v: u32 = h.read(w(from));
+            h.write(pen.wrapping_add(to), v);
+        }
+        let colour: u8 = h.read(w(0x1a));
+        h.write(pen.wrapping_add(0x1a), colour);
+        let x0: u32 = h.read(w(0x48));
+        let mut x = ftol(h, ffx_bridge::x87::load(x0)) & 0xffff;
+        h.write(f(0x68), x);
+        h.write(w(0x9c), 0u32);
+        if h.read::<u32>(w(0xa0)).cast_signed() > 0 {
+            loop {
+                let code: u32 = h.read(w(0x8c));
+                let c = u32::from(h.read::<u8>(code));
+                match cdecl(h, super::CHAR_CLASS, &[c]) {
+                    1 => {
+                        if lines == 0 {
+                            if h.read::<u16>(w(0x22)) == 1 && h.read::<i16>(w(0x24)) > 0 {
+                                let colour = h.rebase(super::PEN_COLOUR);
+                                cdecl(h, super::CHANGE_MACRO2, &[win, colour, pen]);
+                            }
+                            let px: u32 = h.read(pen.wrapping_add(4));
+                            x = ftol(h, ffx_bridge::x87::load(px)) & 0xffff;
+                            h.write(f(0x68), x);
+                        } else {
+                            let back = (x as u16).cast_signed();
+                            h.write(f(0x64), i32::from(back));
+                            h.write(pen.wrapping_add(4), f32::from(back).to_bits());
+                            let step = f64::from_bits(h.read::<u64>(h.rebase(super::LINE_STEP)));
+                            let y = ffx_bridge::x87::load(h.read(pen.wrapping_add(8)));
+                            h.write(
+                                pen.wrapping_add(8),
+                                ffx_bridge::x87::store(ffx_bridge::x87::add(y, step)),
+                            );
+                        }
+                        lines += 1;
+                        h.write(f(0x64), lines);
+                        if h.read::<u16>(w(0xe)) == 1 {
+                            let next = h.read::<u32>(w(0x8c)).wrapping_add(1);
+                            cdecl(h, super::FIRST_INIT_NORMAL, &[win, next, pen]);
+                        }
+                    }
+                    2 => {
+                        let done: i32 = h.read(w(0x9c));
+                        let edge: i32 = h.read(w(0xa4));
+                        if h.read::<u8>(code) != 9 {
+                            cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                        } else if h.read::<u8>(code.wrapping_add(1)) > 0xbf {
+                            if done < edge {
+                                h.write(w(0x9c), done.wrapping_add(1));
+                            } else {
+                                cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                                let done = h.read::<i32>(w(0x9c)).wrapping_add(1);
+                                h.write(w(0x9c), done);
+                                let done: u32 = h.read(w(0x9c));
+                                h.write(w(0xa0), done);
+                            }
+                        } else if done >= edge {
+                            cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                        }
+                    }
+                    3 => {
+                        if lines == 0 && h.read::<u16>(w(0x22)) == 0 {
+                            let kind = i32::from(h.read::<i16>(w(4))).cast_unsigned();
+                            let n = cdecl(h, super::MACRO_WORD_COUNT, &[kind, code]);
+                            let done = h.read::<u32>(w(0x9c)).wrapping_add(n);
+                            h.write(w(0x9c), done);
+                        } else {
+                            if h.read::<u16>(w(0x10)) == 0x4000 && lines.cast_signed() > 0 {
+                                h.write(pen.wrapping_add(0x1b), 0x56u8);
+                            }
+                            cdecl(h, super::MOVIE_CHANGE_MACRO2, &[win, code, pen]);
+                        }
+                    }
+                    4 => {
+                        let done = h.read::<u32>(w(0x9c)).wrapping_add(1);
+                        h.write(w(0x9c), done);
+                        if h.read::<u32>(w(0xb4)) == 0 && h.read::<u32>(w(0xac)) == 0 {
+                            let shown: i32 = h.read(w(0xa0));
+                            if shown < h.read::<i32>(w(0xa8)) {
+                                h.write(w(0xa0), shown.wrapping_add(1));
+                            }
+                        }
+                        let src = if lines == 0 {
+                            if h.read::<u16>(w(0x22)) == 1 {
+                                let keep: u8 = if h.read::<u16>(w(0x10)) == 0x4000 {
+                                    0
+                                } else {
+                                    0xff
+                                };
+                                let c: u8 = h.read(pen.wrapping_add(0x1b));
+                                h.write(pen.wrapping_add(0x1b), c & keep);
+                                Some(code)
+                            } else {
+                                None
+                            }
+                        } else if h.read::<u16>(w(0x10)) == 0x4000 {
+                            match cdecl(h, super::CONV_ALBHED, &[code, alb]) {
+                                0 | 1 => h.write(pen.wrapping_add(0x1b), 0x60u8),
+                                2 => h.write(pen.wrapping_add(0x1b), 0x56u8),
+                                _ => {}
+                            }
+                            Some(alb)
+                        } else {
+                            Some(code)
+                        };
+                        if let Some(src) = src {
+                            cdecl(h, super::FONT_INFO, &[src, info]);
+                            cdecl(h, super::MOVIE_FONT_1612, &[pen, info]);
+                        }
+                    }
+                    _ => {}
+                }
+                let cursor: u32 = h.read(w(0x8c));
+                let next = cdecl(h, super::NEXT_CHAR, &[cursor]);
+                h.write(w(0x8c), next);
+                if h.read::<i32>(w(0x9c)) >= h.read::<i32>(w(0xa0)) {
+                    break;
+                }
+            }
+        }
+        let shown: u32 = h.read(w(0xa0));
+        h.write(w(0xa4), shown);
+        for k in 0..7u32 {
+            let v: u32 = h.read(pen.wrapping_add(4 * k));
+            h.write(w(0xd4 + 4 * k), v);
+        }
+        0
+    }
+
+    /// `graphicUiRemapX2`/`Y2` (`f`) of the f32 bits `c`, stored as an
+    /// f32 (`fstp dword`): its bits.
+    fn remap_f32(h: &mut impl Host, f: u32, c: u32) -> u32 {
+        h.call_sym_st0(f, Conv::Cdecl, &[c]).to_bits()
+    }
+
+    /// An f32 constant of the image: its bits at `sym`, or 0.0 for the
+    /// table entry 0 (`fldz`) and 1.0 for 1 (`fld1`).
+    fn libra_const(h: &impl Host, sym: u32) -> u32 {
+        match sym {
+            0 => 0,
+            1 => 0x3f80_0000,
+            _ => h.read(h.rebase(sym)),
+        }
+    }
+
+    /// `ToDrawLibraWin()`: the Scan window. Its left edge `base` is 0x1c6
+    /// (0x18a when `TOGetFFXLangJmp` is nonzero) less 0x50 per slide step
+    /// left (i16 `0x0133f702`). Two rings turning with `graphicGetTime`
+    /// (the second backwards) by `TOMkpRotateShapeXYWHUVC2(-1, base +
+    /// 0x28 / + 0x2f, ...)`, two bars by `TOMkpShapeXYWHUVC2(400, ...)` at
+    /// `base` and `base + 0x41` (each coordinate through
+    /// `graphicUiRemapX2`/`Y2`: h, w, y, x in that order), the window by
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, 0)` at `base + 0x47` (w
+    /// 880 or 1000 by the language). Then a slide step is used up:
+    /// returns 0 while one was left, else 1.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn draw_libra_win(h: &mut impl Host) -> u32 {
+        use ffx_bridge::x87;
+        const GREY: u32 = 0x8080_8080;
+        let lang = cdecl(h, GET_FFX_LANG_JMP, &[]);
+        let slide = i32::from(h.read::<i16>(h.rebase(super::LIBRA_SLIDE)));
+        let base =
+            (if lang == 0 { 0x1c6i32 } else { 0x18a }).wrapping_sub(slide.wrapping_mul(0x50));
+        let at = |d: i32| x87::store(f64::from(base.wrapping_add(d)));
+        for (ring, d) in [(0usize, 0x28i32), (1, 0x2f)] {
+            let t = h.call_sym_st0(super::GET_TIME, Conv::Cdecl, &[]);
+            let angle = if ring == 0 { t } else { -t };
+            let c = super::LIBRA_RINGS[ring];
+            let w = libra_const(h, c[1]);
+            let args = [
+                u32::MAX,
+                at(d),
+                libra_const(h, c[0]),
+                w,
+                w,
+                libra_const(h, c[2]),
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                GREY,
+                GREY,
+                angle.to_bits(),
+            ];
+            cdecl(h, super::ROTATE_SHAPE, &args);
+        }
+        for (bar, d) in [(0usize, 0i32), (1, 0x41)] {
+            let c = super::LIBRA_BARS[bar];
+            let uv = [
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                libra_const(h, c[6]),
+            ];
+            let ht = libra_const(h, c[2]);
+            let ht = remap_f32(h, super::REMAP_Y2, ht);
+            let w = libra_const(h, c[1]);
+            let w = remap_f32(h, super::REMAP_X2, w);
+            let y = libra_const(h, c[0]);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = remap_f32(h, super::REMAP_X2, at(d));
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[400, x, y, w, ht, uv[0], uv[1], uv[2], uv[3], GREY, GREY],
+            );
+        }
+        let lang = cdecl(h, GET_FFX_LANG_JMP, &[]);
+        let ht = libra_const(h, super::LIBRA_WIN_H);
+        let ht = remap_f32(h, super::REMAP_Y2, ht);
+        let w = libra_const(h, super::LIBRA_WIN_W[usize::from(lang != 0)]);
+        let w = remap_f32(h, super::REMAP_X2, w);
+        let y = libra_const(h, super::LIBRA_WIN_Y);
+        let y = remap_f32(h, super::REMAP_Y2, y);
+        let x = remap_f32(h, super::REMAP_X2, at(0x47));
+        cdecl(h, super::NET_WINDOW, &[x, y, w, ht, 0]);
+        let cell = h.rebase(super::LIBRA_SLIDE);
+        let left: u16 = h.read(cell);
+        if left == 0 {
+            return 1;
+        }
+        h.write(cell, left.wrapping_sub(1));
+        0
     }
 }
