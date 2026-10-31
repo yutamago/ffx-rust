@@ -8234,3 +8234,109 @@ pub const PULSE_COLOUR: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A task's object (`task + 4`) on a clock (cdecl `(task)`): its clock
+/// `+0x568` steps by `K` (operand `+0x17`); in mode 0 (`+0x574`), once
+/// the clock reaches `K2` (operand `+0x99`), slot 239 `(*G, part, 0x20)`
+/// with its part `*(+0x578) + 0x50` and the mode moves on; in mode 1
+/// with flag bit 2 (byte `+0x108`) its four nodes leave their parents
+/// ([`crate::sa_misc::leave`]), the task's node leaves its ring and the
+/// mode becomes 0xff. Returns slot 239's `eax`, the ring's last link,
+/// or the mode minus 1.
+///
+/// `magic_0411` 0x10006a20 (202 bytes; 2 DLLs).
+pub fn clock_mode_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let task = fr.arg(g, 0);
+    let obj = g.read::<u32>(task.wrapping_add(4));
+    let at = |o: u32| obj.wrapping_add(o);
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let c = crate::sb_sse::add(fl(g, at(0x568)), fl(g, op(img, f, 0x17)));
+    let mode = g.read::<u32>(at(0x574));
+    g.write::<u32>(at(0x568), c.to_bits());
+    if mode == 0 {
+        // comiss clock, K2; jb: not yet (NaN included)
+        let due = c >= fl(g, op(img, f, 0x99));
+        if !due {
+            return Ret::eax(0);
+        }
+        let part = g.read::<u32>(g.read::<u32>(at(0x578)).wrapping_add(0x50));
+        let x = g.read::<u32>(op(img, f, 0xb1));
+        let out = slot_call(g, img, f, (0xab, 239), &[x, part, 0x20]);
+        let m = g.read::<u32>(at(0x574)).wrapping_add(1);
+        g.write::<u32>(at(0x574), m);
+        return through(out);
+    }
+    if mode != 1 || g.read::<u8>(at(0x108)) & 4 == 0 {
+        return Ret::eax(mode.wrapping_sub(1));
+    }
+    let mut eax = 0;
+    for off in [0x220, 0x278, 0x2d0, 0x57c] {
+        eax = crate::sa_misc::leave(g, at(off), eax);
+    }
+    let node = g.read::<u32>(task);
+    let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+    g.write::<u32>(prev + 8, next);
+    let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+    g.write::<u32>(next + 4, prev);
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 4, node);
+    g.write::<u32>(at(0x574), 0xff);
+    Ret::eax(prev)
+}
+
+/// [`clock_mode_task`].
+pub const CLOCK_MODE_TASK: Sig = Sig {
+    len: 202,
+    hash: 0x288a_c1a3_709a_6142,
+    calls: &[
+        (0x49, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x54, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5f, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x6a, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};
+
+/// An object's colours white (`+0x130..` and `+0x170..`, alpha 0), its
+/// drift `+0x18c` = `K / (n / 4)` (`n` the word `G_N`), slot 440 `(*G,
+/// obj, 0, 3)`, slot 450 `(obj, callback)` and slot 451 `(obj, n / 4)`,
+/// each call seeing the words the earlier ones left (cdecl `(obj)`).
+/// Returns slot 451's `eax`.
+///
+/// `magic_0384` 0x10001f20 (206 bytes; 3 DLLs).
+pub fn white_and_count<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let quarter = |g: &G, o: u32| g.read::<i32>(op(img, f, o)) / 4;
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0xc)));
+    let drift = crate::sb_sse::div(k, crate::sb_sse::cvt(quarter(g, 0x4).cast_unsigned()));
+    let obj = fr.arg(g, 0);
+    let b = g.read::<u32>(op(img, f, 0x3a));
+    for base in [0x130, 0x170] {
+        for i in 0..3 {
+            g.write::<u32>(obj.wrapping_add(base + 4 * i), 0x3f80_0000);
+        }
+        g.write::<u32>(obj.wrapping_add(base + 0xc), 0);
+    }
+    g.write::<u32>(obj.wrapping_add(0x18c), drift.to_bits());
+    slot_call(g, img, f, (0x21, 440), &[b, obj, 0, 3]);
+    let cb = op(img, f, 0x9e);
+    slot_call(g, img, f, (0x99, 450), &[obj, cb, b, obj, 0, 3]);
+    let n = quarter(g, 0xac).cast_unsigned();
+    // call width: 8 (the earlier calls' words stay on the stack)
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0xbb, 451),
+        &[obj, n, obj, cb, b, obj, 0, 3],
+    ))
+}
+
+/// [`white_and_count`].
+pub const WHITE_AND_COUNT: Sig = Sig {
+    len: 206,
+    hash: 0xd95f_225b_1353_f1b2,
+    calls: &[],
+    imports: &[],
+};

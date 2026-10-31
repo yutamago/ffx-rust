@@ -1172,6 +1172,8 @@ ports! {
     "particles start, sound" => s4_small::PARTICLES_START_SOUND, s4_small::particles_start_sound;
     "motion set (b)" => s4_small::MOTION_SET_B, s4_small::motion_set_b;
     "camera boxes" => s4_small::CAMERA_BOXES, s4_small::camera_boxes;
+    "clock mode task" => s4_small::CLOCK_MODE_TASK, s4_small::clock_mode_task;
+    "white and count" => s4_small::WHITE_AND_COUNT, s4_small::white_and_count;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;

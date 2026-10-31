@@ -3800,3 +3800,51 @@ fn move_ends_and_pulses() {
         );
     }
 }
+
+#[test]
+fn clock_modes_and_whites() {
+    let Some(mut t) = twin(411) else { return };
+    let f = t.at(0x6a20);
+    recs(&mut t, &[(239, 3)]);
+    t.set_u32(op(&t, f, 0xb1), 0x0239_00b1);
+    let (task, obj, node, part) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    for (clock, mode, flag) in [
+        (0.0f32, 0u32, 0u8),
+        (1e9, 0, 0),
+        (f32::NAN, 0, 0),
+        (0.0, 1, 4),
+        (0.0, 1, 0),
+        (0.0, 2, 4),
+    ] {
+        t.write(obj, &vec![0; 0x600]);
+        t.set_u32(obj + 0x568, clock.to_bits());
+        t.set_u32(obj + 0x574, mode);
+        t.set_u8(obj + 0x108, flag);
+        t.set_u32(obj + 0x578, part);
+        t.set_u32(part + 0x50, 0x0050_0001);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, obj);
+        t.set_u32(node + 4, SCRATCH + 0x280);
+        t.set_u32(node + 8, SCRATCH + 0x2c0);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[task], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(384) else { return };
+    let f = t.at(0x1f20);
+    recs(&mut t, &[(440, 4), (450, 2), (451, 4)]);
+    let obj = SCRATCH + 0x100;
+    for n in [9u32, 3, 0xffff_fff9] {
+        t.write(obj, &[0x55; 0x200]);
+        t.set_u32(op(&t, f, 0x4), n);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
