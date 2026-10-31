@@ -80,6 +80,7 @@ pub mod s4_summon;
 pub mod s4_wrap;
 // the shared work list's fifth round (shared-5: rows 737 on)
 pub mod s5_misc;
+pub mod s6_misc;
 
 // round 4, the own work list's families (o4_*)
 pub mod o4_ctor;
@@ -1760,6 +1761,13 @@ ports! {
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
+    "staged nodes task" => s6_misc::STAGED_NODES_TASK, s6_misc::staged_nodes_task;
+    "staged nodes task (b)" => s6_misc::STAGED_NODES_TASK_B, s6_misc::staged_nodes_task;
+    "part centres" => s6_misc::PART_CENTRES, s6_misc::part_centres;
+    "spin stage two" => s6_misc::SPIN_STAGE_TWO, s6_misc::spin_stage_two;
+    "three points around" => s6_misc::THREE_POINTS_AROUND, s6_misc::three_points_around;
+    "sprite fan start" => s6_misc::SPRITE_FAN_START, s6_misc::sprite_fan_start;
+    "sprite fan task" => s6_misc::SPRITE_FAN_TASK, s6_misc::sprite_fan_task;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2338,6 +2346,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("burst records", &s5_misc::BURST_RECORDS),
     ("parts vertices", &s5_misc::PARTS_VERTICES),
     ("thrown effect (far nodes)", &s5_misc::THROWN_EFFECT_FAR),
+    ("part motion", &s6_misc::PART_MOTION),
+    ("motion sequence step", &s6_misc::MOTION_SEQUENCE_STEP),
+    ("start object (anim 2)", &s6_misc::START_OBJECT_ANIM_2),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -6891,7 +6891,7 @@ pub const CAMERA_RECORDS_START: Sig = Sig {
 /// 0xff`, `+0xc` and `+0x10` itself, `+0x14` and `+0x4` the sentinel,
 /// `+0x8` the old last (whose `+4` it becomes, or the list's first when
 /// the list was empty), the count up, `node[0] = VT`.
-fn list_push<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+pub(crate) fn list_push<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
     let w = |o: u32| op(img, f, o);
     let [ls, ls2, last, last2, lcmp, first, count, last_store, vt] = ops;
     g.write::<u16>(node + 0x1a, 0xff);

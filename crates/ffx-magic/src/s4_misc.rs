@@ -77,7 +77,7 @@ fn append_object<G: Game>(
 /// ([`pool_alloc`]'s `rel32` at `pool`, the list's operands `list`).
 /// Returns the object.
 #[allow(clippy::too_many_arguments)] // the original's registers, stack words and operands
-fn start_object<G: Game>(
+pub(crate) fn start_object<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
