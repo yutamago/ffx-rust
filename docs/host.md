@@ -1087,7 +1087,8 @@ compared with PC2's own original recordings (`replay-compare.py`,
 
 Not run: battle-magic, battle-overdrive and event-besaid (after the
 battle-attack finding), boot and event-cliff (`realtime`: ffx-rust has only
-the virtual clock).
+the virtual clock). All of them ran in the next round ("The battle
+replays on PC2").
 
 - **menu-save** first stopped at the save: the save machine
   (`g_SaveMachineState` `0x00ce72e8`) stayed in state 4,
@@ -1145,6 +1146,9 @@ shots of it):
 | battle-overdrive | same (14 ranges) | 9 of 9, 0 pixels | 1,198 s |
 | battle-ifrit | same (10 ranges) | 4 of 4, 0 pixels | (not kept) |
 | event-besaid (three runs) | same (9 ranges) | 4 of 5; shot 4 differs on Tidus's cloth (2,071-2,087 pixels, below) | 435-485 s |
+| menu-save | same (14 ranges) | 6 of 6, 0 pixels | 1,590 s |
+| event-cliff (`realtime`) | same (8 ranges) | no recording on PC2 | 627 s |
+| boot (`realtime`) | (no trace recorded) | 3 of 4; shot 4 the title's cursor glow (27 pixels) | 896 s |
 
 What it took:
 
@@ -1182,8 +1186,24 @@ What it took:
   then). Under emulation the race goes the other way in every run. Not a
   host bug; ordering the cloth jobs against their readers would fix both
   programs.
+- **menu-save** passes now, shots 4 and 6 included (the first round's
+  cursor-glow and header-band differences). Which of this round's
+  changes did it was not isolated.
+- **Real time.** boot and event-cliff are `realtime` replays: the
+  original keeps time with its music and voice streams, which FMOD plays
+  in real time, so they run at the game's own rate. ffx-rust has only the
+  virtual clock, but its mixer is on that clock too (one block a
+  boundary, "FMOD"), so the streams and the scenes that follow them move
+  together by construction. Both replays pass that way: event-cliff with
+  the original's trace events, boot's opening and campfire shots pixel for
+  pixel; boot-4, the title, differs in the Load cursor's glow phase only
+  (the menu timer, `0x01840884`, counts the title's updates, which a
+  real-time run doesn't have in the same number). A wall-clock mode
+  wouldn't help: the emulated build runs below the game's rate in most
+  scenes, so the frames would not line up with a real-time recording
+  either. Left as is.
 - **The stop at update 197** of the first round's first battle run did
-  not come back: none of this round's runs (eleven with ffx-rust.exe)
+  not come back: none of this round's runs (sixteen with ffx-rust.exe)
   stopped advancing.
 
 #### The first comparison
