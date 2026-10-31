@@ -143,7 +143,7 @@ The hand-written hooks:
 | `zlib_uncompress` | `0x00405e20` | Replaced (`ffx-core`): 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
 | `Path_ToLowerAscii` | `0x00607d50` | Replaced (`ffx-core`): NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
 | `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
-| `CDfileSize_CD`, `CDfileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
+| `CDfileSize_CD`, `CDfileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game`. Other files go to the ports (`ffx_system::m5b_hdd` `file_size_cd`/`file_size_pc`, `ported/m5_system_b.rs`) instead of the trampolines; their names for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` are `CDfileSize_CD_port` and `CDfileSize_PC_port`, and `replacements` turns them off too |
 | `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`) |
 | `Phyre_PTimerWin32_GetTime` | `0x0042fd80` | Wrapped for the harness: adds the skipped time |
 | `Rng_ClockSeed` | `0x00798950` | Wrapped for the harness: `FFX_HARNESS_SEED` instead of the clock |

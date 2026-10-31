@@ -128,6 +128,376 @@ pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
 pub const DMA_SEND: u32 = 0x0062_f710;
 pub const GS_SYNC_PATH: u32 = 0x0062_f880;
 
+/// Round 3: the HDD reader's requests. `get_hdd_name`, `hd_file_read_th`'s
+/// two messages; `sceOpen`, `sceLseek64`, `sceLseek`, `sceClose`, the
+/// descriptor cell `0x02310c9c`, `hd_file_read_th_main`'s two messages;
+/// `sceDevctl` (`0x0062f6d0`) and `FUN_00777610`'s three messages.
+pub const HDD_NAME: u32 = 0x0077_7eb0;
+pub const READ_TH_MSG: [u32; 2] = [0x00b5_36c0, 0x00b5_36d8];
+pub const SCE_OPEN: u32 = 0x0062_fa30;
+pub const SCE_LSEEK64: u32 = 0x0062_f8f0;
+pub const SCE_LSEEK: u32 = 0x0062_f8e0;
+pub const SCE_CLOSE: u32 = 0x0062_f610;
+pub const READ_FD: u32 = 0x0231_0c9c;
+pub const READ_TH_MAIN_MSG: [u32; 2] = [0x00b5_3700, 0x00b5_3718];
+pub const SCE_DEVCTL: u32 = 0x0062_f6d0;
+pub const FREE_SPACE_MSG: [u32; 3] = [0x00b5_3aec, 0x00b5_3af8, 0x00b5_3b04];
+/// `FUN_0076cff0`: the CD flag `0x02310c58`, `PcReadFunc_set`, and the
+/// file layer's function table entries (cell, function) for the CD and
+/// for both.
+pub const READ_FUNCS_CD: u32 = 0x0231_0c58;
+pub const PC_READ_FUNC_SET: u32 = 0x00a4_2ba0;
+pub const READ_FUNCS_CD_TABLE: [(u32, u32); 9] = [
+    (0x0231_0c54, 0x0076_c320),
+    (0x0231_0c98, 0x0076_b960),
+    (0x0231_0ca8, 0x0076_e780),
+    (0x0231_0c94, 0x0076_b940),
+    (0x0231_0ca0, 0x0076_b920),
+    (0x0231_0c44, 0x0076_c250),
+    (0x0231_0cb8, 0x0076_bdd0),
+    (0x0231_0cc8, 0x0076_cf60),
+    (0x0231_0ccc, 0x0076_ce20),
+];
+pub const READ_FUNCS_SHARED: [(u32, u32); 11] = [
+    (0x0231_0c48, 0x0076_c490),
+    (0x0231_0c5c, 0x0076_e130),
+    (0x0231_0c40, 0x0076_b970),
+    (0x0231_0cd0, 0x0076_bf70),
+    (0x0231_0ca4, 0x0076_dcb0),
+    (0x0231_0c4c, 0x0076_cff0),
+    (0x0231_0c50, 0x0076_c510),
+    (0x0231_0cbc, 0x0076_cfa0),
+    (0x0231_0cc4, 0x0076_cf80),
+    (0x0231_0cc0, 0x0076_d0e0),
+    (0x0231_0cac, 0x0076_c270),
+];
+
+/// Round 3, batch 4: the disk-change result `0x0112a4ec`; the sector
+/// stream (`0x0112a4b4` sector, `0x0112a4d8` bytes used, the read mode
+/// `0x00c41748`, `CdReadSectors_00777080`); `hdd_ReadModuleFiles`; the
+/// install wall (`0x02310c18` mark, `0x02310c14` frame, its draw
+/// `0x007798b0`, message, `hdd_DrawWallSprite_00776740`).
+pub const DISK_RESULT: u32 = 0x0112_a4ec;
+pub const STREAM_SECTOR: u32 = 0x0112_a4b4;
+pub const STREAM_USED: u32 = 0x0112_a4d8;
+pub const STREAM_MODE: u32 = 0x00c4_1748;
+pub const READ_SECTORS: u32 = 0x0077_7080;
+pub const READ_MODULE_FILES: u32 = 0x0077_7f00;
+pub const WALL_MARK: u32 = 0x0231_0c18;
+pub const WALL_FRAME: u32 = 0x0231_0c14;
+pub const WALL_DRAW: u32 = 0x0077_98b0;
+pub const WALL_MSG: u32 = 0x00b5_3d84;
+pub const WALL_SPRITE: u32 = 0x0077_6740;
+
+/// `hdd_install_init`'s: the saved mode byte `0x0112a808`, `0x00778980`,
+/// the word `0x0112a514`, its message; `hdd_mount`'s: `0x00779a80`, the
+/// device `0x00c41758` and its partition name `0x00779ca0`, the CRT's
+/// `sprintf` (import slot), `0x00777940`, the message call `0x00777680`,
+/// "pfs0:", the mount `0x0062fa20`, its six messages.
+pub const HDD_MODE_SAVE: u32 = 0x0112_a808;
+pub const INSTALL_KIND: u32 = 0x0077_8980;
+pub const WORD_A514: u32 = 0x0112_a514;
+pub const INSTALL_MODE_MSG: u32 = 0x00b5_3b7c;
+pub const MOUNT_PREPARE: u32 = 0x0077_9a80;
+pub const MOUNT_DEVICE: u32 = 0x00c4_1758;
+pub const PARTITION_NAME: u32 = 0x0077_9ca0;
+pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+pub const MOUNT_PRE2: u32 = 0x0077_7940;
+pub const MOUNT_LOG: u32 = 0x0077_7680;
+pub const PFS: u32 = 0x00b5_3618;
+pub const SCE_MOUNT: u32 = 0x0062_fa20;
+pub const MOUNT_MSG: [u32; 6] = [
+    0x00b5_35f0,
+    0x00b5_35fc,
+    0x00b5_3608,
+    0x00b5_3620,
+    0x00b5_3634,
+    0x00b5_3650,
+];
+
+/// `file_offset_get`'s: `sceCdSearchFile`, `TkSyncV`, the three offsets
+/// (`0x01128ab4`, `0x01128a98`/`9c`, `0x01128aa0`/`a4`).
+pub const CD_SEARCH_FILE: u32 = 0x00a4_47d0;
+pub const SYNC_V: u32 = 0x0088_7f00;
+pub const FILE_OFFSETS: [u32; 5] = [
+    0x0112_8ab4,
+    0x0112_8a98,
+    0x0112_8a9c,
+    0x0112_8aa0,
+    0x0112_8aa4,
+];
+/// `hdd_install_check`'s: the byte `0x0112a509`, `hdd_unmount`,
+/// `hdd_ins_check`, the byte `0x01128a86`, `TkRefreshHDDMode`, its three
+/// messages; `0x007787c0`'s: `hdd_rmode_get`, its messages.
+pub const INSTALL_RESULT: u32 = 0x0112_a509;
+pub const HDD_UNMOUNT: u32 = 0x0077_9730;
+pub const INS_CHECK: u32 = 0x0077_8d70;
+pub const BYTE_8A86: u32 = 0x0112_8a86;
+pub const VERIFY_FILES: u32 = 0x0077_87c0;
+pub const INSTALL_CHECK_MSG: [u32; 3] = [0x00b5_3c4c, 0x00b5_3c64, 0x00b5_3c78];
+pub const VERIFY_MSG: [u32; 7] = [
+    0x00b5_3bd0,
+    0x00b5_3a70,
+    0x00b5_3be4,
+    0x00b5_3c00,
+    0x00b5_3c10,
+    0x00b5_3c1c,
+    0x00b5_3c38,
+];
+
+/// `hdd_OpenFfxPartition`'s: the partition "ffxpassr" (`0x00c41764`),
+/// its name format, `sceIoctl2`, the close `0x0062f630`,
+/// `hdd_InstalledMb2_00778fb0`, the free-space check `0x00777610` and its
+/// device, the five messages.
+pub const FFX_PARTITION: u32 = 0x00c4_1764;
+pub const PARTITION_FMT: u32 = 0x00b5_3b10;
+pub const SCE_IOCTL2: u32 = 0x0062_f8b0;
+pub const SCE_DCLOSE: u32 = 0x0062_f630;
+pub const INSTALLED_MB: u32 = 0x0077_8fb0;
+pub const FREE_SPACE_OK: u32 = 0x0077_7610;
+pub const FREE_SPACE_DEVICE: u32 = 0x00b5_3b74;
+pub const OPEN_PARTITION_MSG: [u32; 5] = [
+    0x00b5_3b1c,
+    0x00b5_3b30,
+    0x00b5_3b48,
+    0x00b5_3b5c,
+    0x00b5_3b6c,
+];
+/// `FUN_00779ad0`'s: the help tables `0x0112a048` and picture buffer
+/// `0x0112a030`, `crt_memset_thunk`, `sceGsSetDefLoadImage`,
+/// `sceGsExecLoadImage`.
+pub const HELP_TABLE: u32 = 0x0112_a048;
+pub const HELP_PICTURE: u32 = 0x0112_a030;
+pub const SET_LOAD_IMAGE: u32 = 0x0062_f820;
+pub const EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+
+/// `hdd_thread_main`'s: `0x00778a10`, the read-function setter cell
+/// `0x02310c4c` (called through), `0x00777980`, its device format,
+/// `0x00779d20`, the status word `0x0112a520`, its four messages.
+pub const INSTALL_SETUP: u32 = 0x0077_8a10;
+pub const SET_READ_FUNCS_CELL: u32 = 0x0231_0c4c;
+pub const INSTALL_COPY: u32 = 0x0077_7980;
+pub const FULL_PARTITION_FMT: u32 = 0x00b5_38ac;
+pub const INSTALL_FINISH: u32 = 0x0077_9d20;
+pub const INSTALL_BUSY: u32 = 0x0112_a520;
+pub const THREAD_MSG: [u32; 4] = [0x00b5_3d28, 0x00b5_3d3c, 0x00b5_3d5c, 0x00b5_3d74];
+/// `FUN_0076ccb0`'s: `0x00a44810`, the disk flag `0x01128a87`, the check
+/// byte `0x01128aac`, the expected header `0x0112a064`, the read buffer
+/// cell `0x01128ac8` and mode `0x00c40e18`, `sceCdRead`,
+/// `hdd_state_clear`, `cd_module_file_sector`, its five messages.
+pub const CD_STATUS: u32 = 0x00a4_4810;
+pub const DISK_FLAG: u32 = 0x0112_8a87;
+pub const DISK_CHECK_ON: u32 = 0x0112_8aac;
+pub const DISK_HEADER: u32 = 0x0112_a064;
+pub const DISK_BUFFER: u32 = 0x0112_8ac8;
+pub const DISK_READ_MODE: u32 = 0x00c4_0e18;
+pub const CD_READ: u32 = 0x00a4_47c0;
+pub const STATE_CLEAR: u32 = 0x0077_7420;
+pub const TASK_WAIT_SYM: u32 = 0x0077_a4e0;
+pub const DISK_WAIT_MSG: [u32; 5] = [
+    0x00b5_1e08,
+    0x00b5_1e1c,
+    0x00b5_1e34,
+    0x00b5_1e48,
+    0x00b5_1e64,
+];
+
+/// `FUN_007798b0`'s: the install wall's frame sizes (`i16` widths
+/// `0x00c4190c`, heights `0x00c41918`) and its pictures `0x0112a04c`.
+pub const WALL_WIDTHS: u32 = 0x00c4_190c;
+pub const WALL_HEIGHTS: u32 = 0x00c4_1918;
+pub const WALL_PICTURES: u32 = 0x0112_a04c;
+
+/// `hdd_ins_check`'s: the list reader `0x007776a0`, `crt_memcpy_thunk`,
+/// the path format `pfs0:/ex/%s`, its messages.
+pub const READ_LIST: u32 = 0x0077_76a0;
+pub const MEMCPY: u32 = 0x0094_9256;
+pub const EX_PATH_FMT: u32 = 0x00b5_1ee0;
+pub const INS_CHECK_MSG: [u32; 7] = [
+    0x00b5_3784,
+    0x00b5_3798,
+    0x00b5_37ac,
+    0x00b5_37b8,
+    0x00b5_37cc,
+    0x00b5_37dc,
+    0x00b5_37f8,
+];
+
+/// The PS2 file sizes (`CDfileSize_CD` `0x0076c320`, `CDfileSize_PC`
+/// `0x00a428a0`): `g_CdLib_FileBase`, the module cell `0x02310c64`,
+/// `g_CdLib_SectorTable`, the 24-bit size table `0x01128ae0`,
+/// `check_ex_file_size`, the Eternal Calm checks and sizes, `GetCD`,
+/// `PcFileName_00a42c00`, `CDfileSize_CD_EX`, `sceFileSize`, the PC
+/// size's message and its modules that try `CDfileSize_CD_EX` first.
+pub const FILE_BASE: u32 = 0x0231_0c60;
+pub const MODULE: u32 = 0x0231_0c64;
+pub const SECTOR_TABLE: u32 = 0x0231_0c68;
+pub const SIZE_TABLE: u32 = 0x0112_8ae0;
+pub const EX_FILE_SIZE: u32 = 0x0076_d660;
+pub const IS_CALM_MGRP: u32 = 0x0067_ab30;
+pub const CALM_MGRP_SIZE: u32 = 0x0067_aa70;
+pub const IS_CALM_SCENE: u32 = 0x0067_ab50;
+pub const CALM_SCENE_SIZE: u32 = 0x0067_aae0;
+pub const GET_CD: u32 = 0x0076_d0d0;
+pub const PC_FILE_NAME: u32 = 0x00a4_2c00;
+pub const FILE_SIZE_CD_EX: u32 = 0x0076_c410;
+pub const SCE_FILE_SIZE: u32 = 0x0062_f760;
+pub const PC_SIZE_MSG: u32 = 0x00b7_adfc;
+pub const FILE_SIZE_CD: u32 = 0x0076_c320;
+pub const EX_MODULES: [u32; 12] = [
+    0xe, 0x10, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x28, 0x29,
+];
+
+/// `FUN_00777440`'s: `sceIoctl`, `movie_wait`, `movie_csc`, `audioStop`,
+/// `TODebugGetPadPrintFlag_thunk_0077da90`, `CdDiscWait_00776f60`, the
+/// pending sector read (`0x0112a4dc` sector, `0x0112a4e4` count,
+/// `0x0112a4f0` buffer, mode `0x0112a4b0`), its four messages.
+pub const SCE_IOCTL: u32 = 0x0062_f8a0;
+pub const MOVIE_WAIT: u32 = 0x0077_daa0;
+pub const MOVIE_CSC: u32 = 0x0077_d5e0;
+pub const AUDIO_STOP: u32 = 0x0077_b170;
+pub const PAD_PRINT_FLAG: u32 = 0x0077_da90;
+pub const DISC_WAIT: u32 = 0x0077_6f60;
+pub const PENDING_SECTOR: [u32; 3] = [0x0112_a4dc, 0x0112_a4e4, 0x0112_a4f0];
+pub const PENDING_MODE: u32 = 0x0112_a4b0;
+pub const MOVIE_READ_MSG: [u32; 4] = [0x00b5_358c, 0x00b5_35b4, 0x00b5_35c4, 0x00b5_3570];
+
+/// `Sa_CdRead_task`'s: `TkSndIsRead_thunk_00887ae0`, `get_hdd_err`,
+/// `cd_CheckDisk_0076d5a0`, `sceCdStandby`, `sceCdSync`, the retry count
+/// `0x01128ab0`, its seven messages.
+pub const SND_IS_READ: u32 = 0x0088_7ae0;
+pub const GET_HDD_ERR: u32 = 0x0077_7e80;
+pub const CHECK_DISK: u32 = 0x0076_d5a0;
+pub const CD_STANDBY: u32 = 0x00a4_4800;
+pub const CD_SYNC: u32 = 0x00a4_4820;
+pub const READ_RETRIES: u32 = 0x0112_8ab0;
+pub const HDD_READ_TH: u32 = 0x0077_8610;
+pub const WAIT_DISC: u32 = 0x0076_ccb0;
+pub const CD_READ_MSG: [u32; 7] = [
+    0x00b5_1d88,
+    0x00b5_1dd4,
+    0x00b5_1e70,
+    0x00b5_1e84,
+    0x00b5_1e98,
+    0x00b5_1eb0,
+    0x00b5_1d88,
+];
+
+/// `FUN_007776a0`'s (the install list's directory walk): `sceDopen`,
+/// `sceDread`, the formats "cannot open device %s, %d", "%s%s/", "%s%s".
+pub const SCE_DOPEN: u32 = 0x0062_f740;
+pub const SCE_DREAD: u32 = 0x0062_f750;
+pub const OPEN_DEVICE_MSG: u32 = 0x00b5_3760;
+pub const SUBDIR_FMT: u32 = 0x00b5_377c;
+pub const FILE_FMT: u32 = 0x00b4_0eb0;
+
+/// `cd_ModuleFileRead_0076bf70`'s: `g_CdChannels` (64 requests of 0x38
+/// bytes; a 65th over `g_CdReadId` and what follows), `g_CdReadId`, the
+/// channel names (0x80 bytes each), `movie_err`, `CDfileName_PC`,
+/// `cd_module_file_sector_rel`, `movie_run_check`, `cd_size_from_table`,
+/// `YiAssert`; the texts `"q_cnt != READ_Q_CNT"`, `libmscd.c`, `"HDD FILE"`,
+/// `"DVD FILE"`, `"module = %d"`, `"num = %d"`, `"name = %s"`, the assert's
+/// format and `"movie running ..."`.
+pub const CD_CHANNELS: u32 = 0x0112_7c80;
+pub const CD_READ_ID: u32 = 0x0112_8a80;
+pub const CHANNEL_NAMES: u32 = 0x022f_b6c0;
+pub const MOVIE_ERR: u32 = 0x0076_efa0;
+pub const FILE_NAME_PC: u32 = 0x00a4_2830;
+pub const MODULE_SECTOR_REL: u32 = 0x0076_c250;
+pub const MOVIE_RUN_CHECK: u32 = 0x0076_f060;
+pub const SIZE_FROM_TABLE: u32 = 0x0076_dc20;
+pub const YI_ASSERT: u32 = 0x0090_ae50;
+pub const QUEUE_FULL_MSG: u32 = 0x00b5_1f04;
+pub const LIBMSCD_FILE: u32 = 0x00b5_1d30;
+pub const HDD_FILE_NAME: u32 = 0x00b5_1f18;
+pub const DVD_FILE_NAME: u32 = 0x00b5_1f24;
+pub const MOVIE_RUNNING_MSG: [u32; 5] = [
+    0x00b5_1f30,
+    0x00b5_1f40,
+    0x00b5_1f4c,
+    0x00b5_1f58,
+    0x00b5_1f74,
+];
+
+/// `hdd_init_sub_00778a10`'s: `sceRemove`, the no-op `0x0062fc60`,
+/// `hdd_InstalledMb_00778f60`, the sub partition's name `0x00c41750`,
+/// "pfs:" (`0x00b53990`) and its texts: the rule, "HDD INIT", "Open
+/// hdd0", "cannot delete sub partition, %d.", "sceRemove()=%d",
+/// "partition wronly mode open err %d", "Mount device busy", "File too
+/// large", "Permission denied", "cannot create partition code= %d",
+/// "fd=%d", "Add sub partition", "make sub partition = %d * %d = %d",
+/// "could not add partition, %d.", `"sceFormat()"`, "cannot format
+/// partition %d", `"hdd_init_sub end"`.
+pub const SCE_REMOVE: u32 = 0x0062_fc20;
+pub const NOP_FC60: u32 = 0x0062_fc60;
+pub const INSTALLED_MB_8F60: u32 = 0x0077_8f60;
+pub const SUB_PARTITION: u32 = 0x00c4_1750;
+pub const PFS_COLON: u32 = 0x00b5_3990;
+pub const INIT_SUB_MSG: [u32; 18] = [
+    0x00b5_2184,
+    0x00b5_3838,
+    0x00b5_3844,
+    0x00b5_3850,
+    0x00b5_3874,
+    0x00b5_3884,
+    0x00b5_38c4,
+    0x00b5_38d8,
+    0x00b5_38e8,
+    0x00b5_38fc,
+    0x00b5_3920,
+    0x00b5_3928,
+    0x00b5_393c,
+    0x00b5_3960,
+    0x00b5_3980,
+    0x00b5_3998,
+    0x00b5_39b4,
+    0x00b5_35fc,
+];
+
+/// `hdd_ReadModuleFiles_00777f00`'s: the per-head results (16 bytes
+/// each: done `+0`, error `+1`, read error `+2`, compare error `+3`, size
+/// error `+4`, the failing sectors `+8`/`+0xc`), the check log and its
+/// line count, `task_create`'s thunk and the check task `0x007788c0`,
+/// the CD layer's read and sync pointers, `TkGetControlerTrigHist`, the
+/// texts "size err", `"%ld sceRead() err =%d"`, "%ld cmp err %s" (twice),
+/// "%ld check ok", "======== %s check ok ========".
+pub const CHECK_RESULTS: u32 = 0x0112_a80c;
+pub const CHECK_LOG: u32 = 0x0112_a810;
+pub const CHECK_LINES: u32 = 0x0112_a814;
+pub const TASK_CREATE: u32 = 0x0077_a320;
+pub const CHECK_TASK: u32 = 0x0077_88c0;
+pub const CD_READ_PTR: u32 = 0x0231_0cb8;
+pub const CD_SYNC_PTR: u32 = 0x0231_0c48;
+pub const TRIG_HIST: u32 = 0x0088_8e80;
+pub const CHECK_MSG: [u32; 6] = [
+    0x00b5_3d94,
+    0x00b5_3da8,
+    0x00b5_3e18,
+    0x00b5_3de8,
+    0x00b5_3dcc,
+    0x00b5_3df8,
+];
+
+/// `hdd_CopyDvdFiles_00777980`'s: `TkWaitSemaBGThread`, `sceWrite`, the
+/// progress words (sector, size) the background thread reads, and its
+/// texts `"hdd_file_cnt=%d"`, "dvd file copy", "system conf ffx", "make
+/// %s", "sector=%d size=0x%x%x", "veryfy err", "w err=%d", "system conf
+/// not ffx", "Can't open file %s".
+pub const WAIT_SEMA_BG: u32 = 0x0088_8880;
+pub const SCE_WRITE: u32 = 0x0062_fdc0;
+pub const COPY_PROGRESS: [u32; 2] = [0x0112_a800, 0x0112_a804];
+pub const COPY_MSG: [u32; 9] = [
+    0x00b5_3a70,
+    0x00b5_3a84,
+    0x00b5_1e34,
+    0x00b5_3a94,
+    0x00b5_3ab4,
+    0x00b5_3acc,
+    0x00b5_3ae0,
+    0x00b5_1e48,
+    0x00b5_3aa0,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -535,5 +905,2089 @@ pub mod bridge {
             [work.wrapping_add(0x48), work.wrapping_add(0x44)],
             [0, 0, 0x200, 0x200],
         )
+    }
+    // ---- round 3: the HDD reader's requests ----
+
+    /// The request block (`0x0112a7b0`: the path, 0x40 bytes; `+0x40` the
+    /// buffer, `+0x44` the size, `+0x48` the offset), the background
+    /// thread's state byte `0x01128aad` (3 = read pending) and its wait
+    /// `task_wait(1)`.
+    const REQUEST_PATH: u32 = 0x0112_a7b0;
+    const REQUEST_BUFFER: u32 = 0x0112_a7f0;
+    const REQUEST_SIZE: u32 = 0x0112_a7f4;
+    const REQUEST_OFFSET: u32 = 0x0112_a7f8;
+    const BG_STATE: u32 = 0x0112_8aad;
+    const TASK_WAIT: u32 = 0x0077_a4e0;
+
+    /// Copies the string at `s` with its NUL to `dest`.
+    fn strcpy(h: &mut impl Host, dest: u32, s: u32) {
+        let mut i = 0u32;
+        loop {
+            let b: u8 = h.read(s.wrapping_add(i));
+            h.write(dest.wrapping_add(i), b);
+            if b == 0 {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `task_wait(1)` until the background thread's state is 0; `eax`
+    /// stays `eax` when it already is.
+    fn wait_idle(h: &mut impl Host, mut eax: u32) -> u32 {
+        while h.read::<u8>(h.rebase(BG_STATE)) != 0 {
+            eax = cdecl(h, TASK_WAIT, &[1]);
+        }
+        eax
+    }
+
+    /// Hands the request to the background thread and waits for it: idle,
+    /// state 3, `TkSignalSemaBGThread()`, idle again. The `eax` left (the
+    /// signal's or the last wait's).
+    fn run_request(h: &mut impl Host) -> u32 {
+        wait_idle(h, 0);
+        let at = h.rebase(BG_STATE);
+        h.write(at, 3u8);
+        let r = cdecl(h, SIGNAL_BG_THREAD, &[]);
+        wait_idle(h, r)
+    }
+
+    /// `hd_file_read_th(sector, buf, size, head)`: for an installed head
+    /// (`+4` of its 12-byte entry set), the read of `buf`/`size` from the
+    /// head's file (`get_hdd_name(head)`) at `(sector - its first
+    /// sector) << 11`, logged (`dbgPrintf`), done by the background
+    /// thread. Returns 0.
+    pub fn read_th(h: &mut impl Host, sector: u32, buf: u32, size: u32, head: u32) -> u32 {
+        let entry = h.rebase(HEADS).wrapping_add(head.wrapping_mul(12));
+        if h.read::<u32>(entry.wrapping_add(4)) == 0 {
+            return 0;
+        }
+        let name = cdecl(h, super::HDD_NAME, &[head]);
+        let fmt = h.rebase(super::READ_TH_MSG[0]);
+        cdecl(h, DBG_PRINTF, &[fmt, name]);
+        let first: u32 = h.read(entry);
+        let offset = sector.wrapping_sub(first) << 11;
+        let at = h.rebase(REQUEST_OFFSET);
+        h.write(at, offset);
+        let fmt = h.rebase(super::READ_TH_MSG[1]);
+        cdecl(h, DBG_PRINTF, &[fmt, sector, buf, size, offset]);
+        let path = h.rebase(REQUEST_PATH);
+        strcpy(h, path, name);
+        let at = h.rebase(REQUEST_BUFFER);
+        h.write(at, buf);
+        let at = h.rebase(REQUEST_SIZE);
+        h.write(at, size);
+        run_request(h);
+        0
+    }
+
+    /// `hd_file_read_ex_th_main(path, buf, size, offset)`: the request
+    /// (path copied) done by the background thread; the `eax` left (the
+    /// signal's or the last wait's).
+    pub fn read_ex_th(h: &mut impl Host, path: u32, buf: u32, size: u32, offset: u32) -> u32 {
+        let dest = h.rebase(REQUEST_PATH);
+        strcpy(h, dest, path);
+        for (sym, v) in [
+            (REQUEST_BUFFER, buf),
+            (REQUEST_SIZE, size),
+            (REQUEST_OFFSET, offset),
+        ] {
+            let at = h.rebase(sym);
+            h.write(at, v);
+        }
+        run_request(h)
+    }
+
+    /// `hd_file_read_th_main()` (the background thread's read): the
+    /// request's file opened (`sceOpen(path, 1)`, the descriptor in
+    /// `0x02310c9c`), sought (`sceLseek64` from 2 GB up, else `sceLseek`),
+    /// read and closed (the cell -1); an error sets `g_Hdd_Err` (an open
+    /// error returns there, `dbgPrintf`'s `eax`). Else `sceClose`'s.
+    pub fn read_th_main(h: &mut impl Host) -> u32 {
+        let size = global(h, REQUEST_SIZE);
+        let offset = global(h, REQUEST_OFFSET);
+        let buf = global(h, REQUEST_BUFFER);
+        let path = h.rebase(REQUEST_PATH);
+        let fd = cdecl(h, super::SCE_OPEN, &[path, 1]);
+        let cell = h.rebase(super::READ_FD);
+        h.write(cell, fd);
+        let err = h.rebase(HDD_ERR);
+        if fd.cast_signed() < 0 {
+            let fmt = h.rebase(super::READ_TH_MAIN_MSG[0]);
+            let r = cdecl(h, DBG_PRINTF, &[fmt, path]);
+            h.write(err, 1u8);
+            return r;
+        }
+        let seek = if offset >= 0x8000_0000 {
+            super::SCE_LSEEK64
+        } else {
+            super::SCE_LSEEK
+        };
+        if cdecl(h, seek, &[fd, offset, 0]).cast_signed() < 0 {
+            let fmt = h.rebase(super::READ_TH_MAIN_MSG[1]);
+            cdecl(h, DBG_PRINTF, &[fmt, path]);
+            h.write(err, 1u8);
+        } else {
+            let fd: u32 = h.read(cell);
+            if cdecl(h, SCE_READ, &[fd, buf, size]).cast_signed() < 0 {
+                h.write(err, 1u8);
+            }
+        }
+        let fd: u32 = h.read(cell);
+        let r = cdecl(h, super::SCE_CLOSE, &[fd]);
+        h.write(cell, u32::MAX);
+        r
+    }
+
+    /// `FUN_00777610(device, need)` with its frame at `ebp`: the device's
+    /// free space (`sceDevctl(device, 0x480a, 0, 0, ebp - 4, 4)`; a
+    /// failure returns 0) in megabytes (`free * 2 >> 19`, sectors), logged
+    /// with `need`; 1 when it is at least `need` (unsigned).
+    pub fn free_space_ok(h: &mut impl Host, ebp: u32, device: u32, need: u32) -> u32 {
+        let out = ebp.wrapping_sub(4);
+        if cdecl(h, super::SCE_DEVCTL, &[device, 0x480a, 0, 0, out, 4]) != 0 {
+            return 0;
+        }
+        let free: u32 = h.read(out);
+        let mb = free.wrapping_mul(2) >> 19;
+        let [m0, m1, m2] = super::FREE_SPACE_MSG;
+        let fmt = h.rebase(m0);
+        cdecl(h, DBG_PRINTF, &[fmt, free]);
+        let fmt = h.rebase(m1);
+        cdecl(h, DBG_PRINTF, &[fmt, need]);
+        let fmt = h.rebase(m2);
+        cdecl(h, DBG_PRINTF, &[fmt, mb]);
+        u32::from(mb >= need)
+    }
+
+    /// `FUN_0076cff0(cd)`: the file layer's function table (`0x02310c40`..)
+    /// filled for the CD (`cd` set: nine CD entries) or the PC
+    /// (`PcReadFunc_set()`), then the eleven shared entries; `cd` kept in
+    /// `0x02310c58`. Returns `cd`, or `PcReadFunc_set`'s `eax`.
+    pub fn set_read_funcs(h: &mut impl Host, cd: u32) -> u32 {
+        let at = h.rebase(super::READ_FUNCS_CD);
+        h.write(at, cd);
+        let r = if cd != 0 {
+            for (cell, f) in super::READ_FUNCS_CD_TABLE {
+                let (cell, f) = (h.rebase(cell), h.rebase(f));
+                h.write(cell, f);
+            }
+            cd
+        } else {
+            cdecl(h, super::PC_READ_FUNC_SET, &[])
+        };
+        for (cell, f) in super::READ_FUNCS_SHARED {
+            let (cell, f) = (h.rebase(cell), h.rebase(f));
+            h.write(cell, f);
+        }
+        r
+    }
+    // ---- round 3, batch 4: the disk checks, sector reads, the install wall ----
+
+    /// `FUN_007775e0(ctx)`: with the context's flag `+0x5075d` set, the
+    /// remembered result (`i8 0x0112a4ec`, sign-extended); else
+    /// `0x00777310()`: 1 when it reports a change, else the result
+    /// cleared and 0.
+    pub fn disk_changed_cached(h: &mut impl Host, ctx: u32) -> u32 {
+        let cell = h.rebase(super::DISK_RESULT);
+        if h.read::<u8>(ctx.wrapping_add(0x5_075d)) != 0 {
+            return i32::from(h.read::<i8>(cell)).cast_unsigned();
+        }
+        if cdecl(h, DISK_CHANGED, &[]) != 0 {
+            return 1;
+        }
+        h.write(cell, 0u8);
+        0
+    }
+
+    /// `FUN_00777380(offset, buf, &skip, ctx)`: a read from byte `offset`
+    /// of the stream at sector `0x0112a4b4` (with `0x0112a4d8` bytes of
+    /// its sector already used): `*skip` = the bytes left in that sector
+    /// (or 0), the sectors `offset` spans (rounded up; the remainder
+    /// kept in `0x0112a4d8`) read by `CdReadSectors_00777080(sector,
+    /// count, buf, 0x00c41748, ctx)`, the stream moved on. Returns 1.
+    pub fn stream_read(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [offset, buf, skip, ctx] = args;
+        let used_at = h.rebase(super::STREAM_USED);
+        let sector_at = h.rebase(super::STREAM_SECTOR);
+        let used: u32 = h.read(used_at);
+        let mut sector: u32 = h.read(sector_at);
+        let mut bytes = offset;
+        if used == 0 {
+            h.write(skip, 0u32);
+        } else {
+            let left = 0x800u32.wrapping_sub(used);
+            h.write(skip, left);
+            bytes = offset.wrapping_add(left);
+            sector = sector.wrapping_sub(1);
+            h.write(sector_at, sector);
+        }
+        let signed = bytes.cast_signed();
+        let mut count = signed.wrapping_div(0x800).cast_unsigned();
+        let rest = signed.wrapping_rem(0x800);
+        if rest == 0 {
+            h.write(used_at, 0u32);
+        } else {
+            h.write(used_at, 0x800i32.wrapping_sub(rest).cast_unsigned());
+            count = count.wrapping_add(1);
+        }
+        let mode = h.rebase(super::STREAM_MODE);
+        cdecl(h, super::READ_SECTORS, &[sector, count, buf, mode, ctx]);
+        let s: u32 = h.read(sector_at);
+        h.write(sector_at, s.wrapping_add(count));
+        1
+    }
+
+    /// `code_00777970()`: `jmp hdd_ReadModuleFiles_00777f00` (no stack
+    /// words).
+    pub fn read_module_files(h: &mut impl Host) -> u32 {
+        cdecl(h, super::READ_MODULE_FILES, &[])
+    }
+
+    /// `hdd_kabe_disp()`: the install progress in 64ths (`0x0112a7ac << 6 /
+    /// 0x0112a524`, signed, 0 without a total); when the next frame's
+    /// mark (`0x02310c18`) is reached, the mark moves 14 on, frame
+    /// `0x02310c14` of the wall is drawn (`0x007798b0(frame, work +
+    /// 0x44)`) and counted (past 4 the mark goes to 9999), logged. Then
+    /// the tail jump to `hdd_DrawWallSprite_00776740`.
+    pub fn kabe_disp(h: &mut impl Host) -> u32 {
+        let total = global(h, TOTAL);
+        let progress = if total == 0 {
+            0
+        } else {
+            (global(h, DONE) << 6)
+                .cast_signed()
+                .wrapping_div(total.cast_signed())
+                .cast_unsigned()
+        };
+        let mark_at = h.rebase(super::WALL_MARK);
+        let mark: u32 = h.read(mark_at);
+        if mark == progress {
+            let work = global(h, MENU_WORK);
+            let frame_at = h.rebase(super::WALL_FRAME);
+            let frame: u32 = h.read(frame_at);
+            h.write(mark_at, mark.wrapping_add(0xe));
+            cdecl(h, super::WALL_DRAW, &[frame, work.wrapping_add(0x44)]);
+            let frame = h.read::<u32>(frame_at).wrapping_add(1);
+            h.write(frame_at, frame);
+            let fmt = h.rebase(super::WALL_MSG);
+            if frame.cast_signed() > 4 {
+                h.write(mark_at, 9999u32);
+                cdecl(h, DBG_PRINTF, &[fmt, 9999]);
+            } else {
+                let mark: u32 = h.read(mark_at);
+                cdecl(h, DBG_PRINTF, &[fmt, mark]);
+            }
+        }
+        cdecl(h, super::WALL_SPRITE, &[])
+    }
+    /// `hdd_install_init()`: the install state cleared (`0x0112a50b`,
+    /// total, done, the mode `0x0112a518`; the HDD mode byte
+    /// `0x0133c913` saved to `0x0112a808` and cleared meanwhile), the mode
+    /// from `|0x00778980()| & 0xf`: 0 gives 5 when `0x0112a514` is
+    /// negative, 1..3 themselves, others keep 0; logged (`dbgPrintf`) and
+    /// the mode byte put back. Returns `dbgPrintf`'s `eax` with the byte
+    /// in `al`.
+    pub fn install_init(h: &mut impl Host) -> u32 {
+        let mode_at = h.rebase(HDD_MODE);
+        let saved = i32::from(h.read::<i8>(mode_at)).cast_unsigned();
+        let save_at = h.rebase(super::HDD_MODE_SAVE);
+        h.write(save_at, saved);
+        h.write(mode_at, 0u8);
+        let state = h.rebase(INSTALL_STATE);
+        h.write(state, 0u8);
+        for sym in [TOTAL, DONE, WORD_A518] {
+            let at = h.rebase(sym);
+            h.write(at, 0u32);
+        }
+        let r = cdecl(h, super::INSTALL_KIND, &[]);
+        let kind = r.cast_signed().unsigned_abs() & 0xf;
+        let set = match kind {
+            0 if global(h, super::WORD_A514).cast_signed() < 0 => Some(5),
+            1..=3 => Some(kind),
+            _ => None,
+        };
+        let mode = match set {
+            Some(m) => {
+                let at = h.rebase(WORD_A518);
+                h.write(at, m);
+                m
+            }
+            None => global(h, WORD_A518),
+        };
+        let fmt = h.rebase(super::INSTALL_MODE_MSG);
+        let eax = cdecl(h, DBG_PRINTF, &[fmt, mode]);
+        let b: u8 = h.read(save_at);
+        h.write(mode_at, b);
+        (eax & !0xff) | u32::from(b)
+    }
+
+    /// `hdd_mount()` with its frame at `ebp`: once (`0x0112a508`), the HDD
+    /// partition mounted: `0x00779a80()`, a log line, the device name
+    /// `sprintf(ebp - 0x84, "hdd0:%s,%s", 0x00779ca0(0x00c41758), and the
+    /// word the original leaves on its stack there, 0x00c41758)`,
+    /// `0x00777940()`, messages through `0x00777680`, then
+    /// `0x0062fa20("pfs0:", name, 0, 0, 0)`: negative logs the error and
+    /// returns 1; else the flag set. Returns 0.
+    pub fn mount(h: &mut impl Host, ebp: u32) -> u32 {
+        let flag = h.rebase(HDD_MOUNTED);
+        if h.read::<u8>(flag) != 0 {
+            return 0;
+        }
+        cdecl(h, super::MOUNT_PREPARE, &[]);
+        let [m0, m1, m2, m3, m4, m5] = super::MOUNT_MSG;
+        let fmt = h.rebase(m0);
+        cdecl(h, DBG_PRINTF, &[fmt]);
+        let dev = h.rebase(super::MOUNT_DEVICE);
+        let part = cdecl(h, super::PARTITION_NAME, &[dev]);
+        let buf = ebp.wrapping_sub(0x84);
+        let fmt = h.rebase(m1);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, part, dev]);
+        cdecl(h, super::MOUNT_PRE2, &[]);
+        let msg = h.rebase(m2);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        let pfs = h.rebase(super::PFS);
+        let r = cdecl(h, super::SCE_MOUNT, &[pfs, buf, 0, 0, 0]);
+        if r.cast_signed() < 0 {
+            let msg = h.rebase(m3);
+            cdecl(h, super::MOUNT_LOG, &[msg]);
+            let fmt = h.rebase(m4);
+            cdecl(h, DBG_PRINTF, &[fmt, r]);
+            return 1;
+        }
+        let msg = h.rebase(m5);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        h.write(flag, 1u8);
+        0
+    }
+
+    /// Searches the CD for `name` into the entry at `entry` until found
+    /// (`TkSyncV(1)` between tries).
+    fn search_file(h: &mut impl Host, entry: u32, name: u32) {
+        while cdecl(h, super::CD_SEARCH_FILE, &[entry, name]) == 0 {
+            cdecl(h, super::SYNC_V, &[1]);
+        }
+    }
+
+    /// `file_offset_get(names)` with its frame at `ebp`: the three files
+    /// `names[0..3]` searched on the CD (`sceCdSearchFile` into `ebp -
+    /// 0x28`, retried every frame); the first's sector to `0x01128ab4`,
+    /// the others' first two words to `0x01128a98`/`9c` and
+    /// `0x01128aa0`/`a4`. Returns the last word stored; with no names
+    /// the original returns its cookie word (`None`).
+    pub fn file_offset_get(h: &mut impl Host, ebp: u32, names: u32) -> Option<u32> {
+        if names == 0 {
+            return None;
+        }
+        let entry = ebp.wrapping_sub(0x28);
+        let at = super::FILE_OFFSETS.map(|s| h.rebase(s));
+        let name: u32 = h.read(names);
+        search_file(h, entry, name);
+        let v: u32 = h.read(entry);
+        h.write(at[0], v);
+        let mut last = 0;
+        for (k, pair) in [[at[1], at[2]], [at[3], at[4]]].into_iter().enumerate() {
+            let name: u32 = h.read(names.wrapping_add(4 + 4 * u32::from(k == 1)));
+            search_file(h, entry, name);
+            let lo: u32 = h.read(entry);
+            h.write(pair[0], lo);
+            last = h.read(entry.wrapping_add(4));
+            h.write(pair[1], last);
+        }
+        Some(last)
+    }
+
+    /// `FUN_007787c0()`: each installed head's file (size `+4` set and
+    /// `hdd_rmode_get(i)`) opened and its size (`sceLseek64(fd, 0, 2)`)
+    /// compared with the head's, logged; returns the number of heads that
+    /// failed to open or differ.
+    pub fn verify_files(h: &mut impl Host) -> u32 {
+        let [m0, m1, m2, m3, m4, m5, m6] = super::VERIFY_MSG;
+        let msg = h.rebase(m0);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        let fmt = h.rebase(m1);
+        let count = global(h, HEAD_COUNT);
+        cdecl(h, DBG_PRINTF, &[fmt, count]);
+        let mut bad = 0u32;
+        let mut i = 0u32;
+        while i.cast_signed() < global(h, HEAD_COUNT).cast_signed() {
+            let size: u32 = h.read(h.rebase(HEADS).wrapping_add(4 + 12 * i));
+            if size != 0 && cdecl(h, RMODE_GET, &[i]) != 0 {
+                let name = cdecl(h, super::HDD_NAME, &[i]);
+                let fd = cdecl(h, super::SCE_OPEN, &[name, 1]);
+                let fmt = h.rebase(m2);
+                cdecl(h, DBG_PRINTF, &[fmt, name]);
+                if fd.cast_signed() < 0 {
+                    bad = bad.wrapping_add(1);
+                    let fmt = h.rebase(m3);
+                    cdecl(h, DBG_PRINTF, &[fmt, fd]);
+                } else {
+                    let end = cdecl(h, super::SCE_LSEEK64, &[fd, 0, 2]);
+                    cdecl(h, super::SCE_CLOSE, &[fd]);
+                    if size == end {
+                        let fmt = h.rebase(m4);
+                        cdecl(h, DBG_PRINTF, &[fmt]);
+                    } else {
+                        let fmt = h.rebase(m5);
+                        cdecl(h, DBG_PRINTF, &[fmt, size, end]);
+                        bad = bad.wrapping_add(1);
+                    }
+                }
+            }
+            i = i.wrapping_add(1);
+        }
+        let msg = h.rebase(m6);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        bad
+    }
+
+    /// `hdd_install_check(arg)`: the install's state found: the result
+    /// byte `0x0112a509` and `0x0112a514` cleared, the kind
+    /// (`|0x00778980()| & 0xf`, logged): kind 0 mounts the HDD (failing:
+    /// HDD mode off), checks the installed files (`0x007787c0` failing:
+    /// result 2, mode off, `hdd_unmount`), else `hdd_ins_check(arg)`
+    /// (result 1; with `0x01128a86` and the CD flag 1, HDD mode on and
+    /// `TkRefreshHDDMode`); without heads the HDD is unmounted, the
+    /// answer 0 and the mode off. Kinds 1..3 turn the mode off; others
+    /// leave it. Both bytes logged; returns `hdd_ins_check`'s answer or
+    /// 0.
+    pub fn install_check(h: &mut impl Host, arg: u32) -> u32 {
+        let a514 = h.rebase(super::WORD_A514);
+        h.write(a514, 0u32);
+        let result = h.rebase(super::INSTALL_RESULT);
+        h.write(result, 0u8);
+        let r = cdecl(h, super::INSTALL_KIND, &[]);
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[0]);
+        cdecl(h, DBG_PRINTF, &[fmt, r]);
+        let kind = r.cast_signed().unsigned_abs() & 0xf;
+        let mode = h.rebase(HDD_MODE);
+        let mut answer = 0u32;
+        if kind == 0 {
+            if cdecl(h, HDD_MOUNT, &[]) != 0 {
+                h.write(mode, 0u8);
+            } else if cdecl(h, super::VERIFY_FILES, &[]) != 0 {
+                h.write(result, 2u8);
+                h.write(mode, 0u8);
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+            } else {
+                answer = cdecl(h, super::INS_CHECK, &[arg]);
+                h.write(result, 1u8);
+                let cd = global(h, super::READ_FUNCS_CD);
+                if h.read::<u8>(h.rebase(super::BYTE_8A86)) != 0 && cd == 1 {
+                    h.write(mode, 1u8);
+                    cdecl(h, REFRESH_HDD_MODE, &[]);
+                }
+            }
+            if global(h, HEAD_COUNT) == 0 {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                answer = 0;
+                h.write(mode, 0u8);
+            }
+        } else if kind <= 3 {
+            h.write(mode, 0u8);
+        }
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[1]);
+        let r = i32::from(h.read::<i8>(result)).cast_unsigned();
+        cdecl(h, DBG_PRINTF, &[fmt, r]);
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[2]);
+        let m = i32::from(h.read::<i8>(mode)).cast_unsigned();
+        cdecl(h, DBG_PRINTF, &[fmt, m, answer]);
+        answer
+    }
+    /// `hdd_OpenFfxPartition_00779000()` with its frame at `ebp`: the
+    /// HDD unmounted meanwhile when it was (and mounted again at the end),
+    /// `0x0112a514` cleared; the "ffxpassr" partition's size: its device
+    /// name (`sprintf(ebp - 0x44, "hdd0:%s,,%s", 0x00779ca0(partition),
+    /// partition)`, the second word the one left on the stack), opened
+    /// (`sceOpen(name, 1)`, failure logged), `sceIoctl2(fd, 0x6803, 0 x4)`
+    /// (negative counts 0) and closed, plus 1; the space needed
+    /// (`hdd_InstalledMb2() >> 7` less that) checked by `0x00777610` (no
+    /// room: `0x0112a514` = -1). Returns the check's or the remount's
+    /// `eax`.
+    pub fn open_ffx_partition(h: &mut impl Host, ebp: u32) -> u32 {
+        let mounted = h.read::<u8>(h.rebase(HDD_MOUNTED)) != 0;
+        let a514 = h.rebase(super::WORD_A514);
+        h.write(a514, 0u32);
+        if mounted {
+            cdecl(h, super::HDD_UNMOUNT, &[]);
+        }
+        cdecl(h, super::MOUNT_PREPARE, &[]);
+        let part = h.rebase(super::FFX_PARTITION);
+        let name = cdecl(h, super::PARTITION_NAME, &[part]);
+        let buf = ebp.wrapping_sub(0x44);
+        let fmt = h.rebase(super::PARTITION_FMT);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, name, part]);
+        let fd = cdecl(h, super::SCE_OPEN, &[buf, 1]);
+        let [m0, m1, m2, m3, m4] = super::OPEN_PARTITION_MSG;
+        let mut used = 0u32;
+        if fd.cast_signed() < 0 {
+            let msg = h.rebase(m1);
+            cdecl(h, DBG_PRINTF, &[msg, buf]);
+        } else {
+            used = cdecl(h, super::SCE_IOCTL2, &[fd, 0x6803, 0, 0, 0, 0]);
+            if used.cast_signed() < 0 {
+                let msg = h.rebase(m0);
+                cdecl(h, DBG_PRINTF, &[msg]);
+                used = 0;
+            }
+            cdecl(h, super::SCE_DCLOSE, &[fd]);
+            used = used.wrapping_add(1);
+        }
+        let msg = h.rebase(m2);
+        cdecl(h, DBG_PRINTF, &[msg, used]);
+        cdecl(h, super::MOUNT_PRE2, &[]);
+        let mb = cdecl(h, super::INSTALLED_MB, &[0]);
+        let msg = h.rebase(m3);
+        cdecl(h, DBG_PRINTF, &[msg, mb]);
+        let need = (mb >> 7).wrapping_sub(used);
+        let msg = h.rebase(m4);
+        cdecl(h, DBG_PRINTF, &[msg, need]);
+        let device = h.rebase(super::FREE_SPACE_DEVICE);
+        let mut r = cdecl(h, super::FREE_SPACE_OK, &[device, need]);
+        if r == 0 {
+            h.write(a514, u32::MAX);
+        }
+        if mounted {
+            r = cdecl(h, HDD_MOUNT, &[]);
+        }
+        r
+    }
+
+    /// `FUN_00779ad0(page, clut)` with its (16-byte aligned) frame at
+    /// `ebp`: help picture `page`: the picture buffer (`0x0112a030`)
+    /// cleared (0x4000 bytes) and filled with 97 rows of 97 bytes (rows
+    /// 0x80 apart) from the table `0x0112a048 + 0x10400 + page * 0x24c1`,
+    /// then two GS uploads through the transfer at `ebp - 0x60`: the
+    /// palette (`0x0112a048 + page << 10`, 16 x 16 at `clut`) and the
+    /// picture (0x80 x 0x80 at `clut + 4`), each `FlushCache(0)`,
+    /// `sceGsExecLoadImage`, `sceGsSyncPath(0, 0)`. The last sync's
+    /// `eax`.
+    pub fn help_picture(h: &mut impl Host, ebp: u32, page: u32, clut: u32) -> u32 {
+        let table = global(h, super::HELP_TABLE);
+        let palette = (page << 10).wrapping_add(table);
+        let mut src = table
+            .wrapping_add(0x1_0400)
+            .wrapping_add(page.wrapping_mul(0x24c1));
+        let dst = global(h, super::HELP_PICTURE);
+        cdecl(h, MEMSET, &[dst, 0, 0x4000]);
+        let mut row = 0u32;
+        while row < 0x3080 {
+            for col in 0..0x61u32 {
+                let b: u8 = h.read(src);
+                let dst = global(h, super::HELP_PICTURE);
+                h.write(dst.wrapping_add(row).wrapping_add(col), b);
+                src = src.wrapping_add(1);
+            }
+            row += 0x80;
+        }
+        let image = ebp.wrapping_sub(0x60);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, clut, 1, 0, 0, 0, 0x10, 0x10],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, palette]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0]);
+        let at = clut.wrapping_add(4);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, at, 2, 0x13, 0, 0, 0x80, 0x80],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let picture = global(h, super::HELP_PICTURE);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, picture]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0])
+    }
+    /// `hdd_thread_main()` with its frame at `ebp` (the install thread):
+    /// install state 1 and busy; `0x00778a10()`; 0 runs the copy: the
+    /// read functions for the HDD (`[0x02310c4c](1)`), the HDD mounted,
+    /// `0x00777980()`; its 0 also sets the partition up (unmounted, the
+    /// name `sprintf(ebp - 0x44, "hdd0:%s,%s,%s,128M,PFS",
+    /// 0x00779ca0(0x00c41758), 0x00c41758, 0x00c41764)` with the two
+    /// words left on the stack, `sceOpen(name, 3)`: `0x00779d20(fd)` and
+    /// `sceClose`, or a message; mounted again); the read functions put
+    /// back (`[0x02310c4c](cd)`). The two buffers freed; the result sets
+    /// the install state (0: done 2 and checked 1; 1: unmounted, -1; 2:
+    /// -2); `disk_open_check_set(0)`, a message; not busy. The message's
+    /// `eax`.
+    pub fn install_thread(h: &mut impl Host, ebp: u32) -> u32 {
+        let [m0, m1, m2, m3] = super::THREAD_MSG.map(|s| h.rebase(s));
+        cdecl(h, DBG_PRINTF, &[m0]);
+        let state = h.rebase(INSTALL_STATE);
+        h.write(state, 1u8);
+        let busy = h.rebase(super::INSTALL_BUSY);
+        h.write(busy, 1u32);
+        let mut result = cdecl(h, super::INSTALL_SETUP, &[]);
+        if result == 0 {
+            let cd = global(h, super::READ_FUNCS_CD);
+            let set = global(h, super::SET_READ_FUNCS_CELL);
+            h.call(set, Conv::Cdecl, &[1]);
+            cdecl(h, HDD_MOUNT, &[]);
+            result = cdecl(h, super::INSTALL_COPY, &[]);
+            if result == 0 {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                cdecl(h, super::MOUNT_PREPARE, &[]);
+                let (dev, part) = (
+                    h.rebase(super::MOUNT_DEVICE),
+                    h.rebase(super::FFX_PARTITION),
+                );
+                let name = cdecl(h, super::PARTITION_NAME, &[dev]);
+                let buf = ebp.wrapping_sub(0x44);
+                let fmt = h.rebase(super::FULL_PARTITION_FMT);
+                let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+                h.call(sprintf, Conv::Cdecl, &[buf, fmt, name, dev, part]);
+                cdecl(h, super::MOUNT_PRE2, &[]);
+                let fd = cdecl(h, super::SCE_OPEN, &[buf, 3]);
+                if fd.cast_signed() < 0 {
+                    cdecl(h, DBG_PRINTF, &[m1]);
+                } else {
+                    cdecl(h, super::INSTALL_FINISH, &[fd]);
+                    cdecl(h, super::SCE_CLOSE, &[fd]);
+                }
+                cdecl(h, HDD_MOUNT, &[]);
+            }
+            cdecl(h, DBG_PRINTF, &[m2]);
+            let set = global(h, super::SET_READ_FUNCS_CELL);
+            h.call(set, Conv::Cdecl, &[cd]);
+        }
+        for buffer in BUFFERS {
+            let at = h.rebase(buffer);
+            let p: u32 = h.read(at);
+            if p != 0 {
+                cdecl(h, USER_FREE, &[p]);
+                h.write(at, 0u32);
+            }
+        }
+        match result {
+            0 => {
+                let checked = h.rebase(super::INSTALL_RESULT);
+                h.write(checked, 1u8);
+                h.write(state, 2u8);
+            }
+            1 => {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                h.write(state, 0xffu8);
+            }
+            2 => h.write(state, 0xfeu8),
+            _ => {}
+        }
+        cdecl(h, DISK_OPEN_CHECK_SET, &[0]);
+        let cd = global(h, super::READ_FUNCS_CD);
+        let r = cdecl(h, DBG_PRINTF, &[m3, cd]);
+        h.write(busy, 0u32);
+        r
+    }
+
+    /// `FUN_0076ccb0()`: waits for the right disc. Not ready
+    /// (`0x00a44810() != 1`): logged, 1. Else, until the drive reports a
+    /// disc (`sceCdDiskReady(1)` 2 with `0x00a44810()` not 1; meanwhile
+    /// the flag `0x01128a87` and `task_wait(1)`): with the check off
+    /// (`0x01128aac`) 0, without an expected header 1; else the header
+    /// sector read (`sceCdRead(cd_module_file_sector(1, 1), 1, buffer,
+    /// mode)`, retried from the start on failure, its completion awaited
+    /// through `0x00777310`, -1 meaning busy), cut at 0x20 bytes and
+    /// compared with the expected 32 bytes: equal 0; else logged, the
+    /// tray waited on (`sceCdDiskReady(1)` 2) and the wait starts over.
+    pub fn wait_disc(h: &mut impl Host) -> u32 {
+        let [m0, m1, m2, m3, m4] = super::DISK_WAIT_MSG.map(|s| h.rebase(s));
+        let status = cdecl(h, super::CD_STATUS, &[]);
+        if status != 1 {
+            cdecl(h, DBG_PRINTF, &[m4, status]);
+            return 1;
+        }
+        let mut log_wait = true;
+        loop {
+            if log_wait {
+                cdecl(h, DBG_PRINTF, &[m0]);
+                // until a disc is in and the drive is past its first state
+                loop {
+                    if cdecl(h, DISK_READY, &[1]) == 2 && cdecl(h, super::CD_STATUS, &[]) != 1 {
+                        break;
+                    }
+                    let flag = h.rebase(super::DISK_FLAG);
+                    h.write(flag, 1u8);
+                    cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                }
+            }
+            log_wait = true;
+            cdecl(h, DBG_PRINTF, &[m1]);
+            if h.read::<u8>(h.rebase(super::DISK_CHECK_ON)) == 0 {
+                return 0;
+            }
+            let expected = global(h, super::DISK_HEADER);
+            if expected == 0 {
+                return 1;
+            }
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            cdecl(h, super::STATE_CLEAR, &[]);
+            let sector = cdecl(h, MODULE_FILE_SECTOR, &[1, 1]);
+            cdecl(h, FLUSH_CACHE, &[0]);
+            let buffer = global(h, super::DISK_BUFFER);
+            let mode = h.rebase(super::DISK_READ_MODE);
+            if cdecl(h, super::CD_READ, &[sector, 1, buffer, mode]) == 0 {
+                continue;
+            }
+            let mut r = cdecl(h, DISK_CHANGED, &[]);
+            while r == u32::MAX {
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                r = cdecl(h, DISK_CHANGED, &[]);
+            }
+            if r != 0 {
+                continue;
+            }
+            cdecl(h, FLUSH_CACHE, &[0]);
+            let buffer = global(h, super::DISK_BUFFER);
+            h.write(buffer.wrapping_add(0x20), 0u8);
+            let expected = global(h, super::DISK_HEADER);
+            let same = (0..8u32).all(|k| {
+                h.read::<u32>(buffer.wrapping_add(4 * k))
+                    == h.read::<u32>(expected.wrapping_add(4 * k))
+            });
+            if same {
+                cdecl(h, DBG_PRINTF, &[m2]);
+                return 0;
+            }
+            cdecl(h, DBG_PRINTF, &[m3]);
+            while cdecl(h, DISK_READY, &[1]) != 2 {
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            }
+            // a disc in: the first wait again while the drive settles,
+            // else straight to the check
+            log_wait = cdecl(h, super::CD_STATUS, &[]) == 1;
+        }
+    }
+    /// Install-wall frame `k`'s size, `w * h` of the `i16` tables.
+    fn wall_size(h: &impl Host, k: u32) -> u32 {
+        let w = i32::from(h.read::<i16>(h.rebase(super::WALL_WIDTHS).wrapping_add(2 * k)));
+        let t = i32::from(h.read::<i16>(h.rebase(super::WALL_HEIGHTS).wrapping_add(2 * k)));
+        w.wrapping_mul(t).cast_unsigned()
+    }
+
+    /// `FUN_007798b0(frame, clut)` with its (16-byte aligned) frame at
+    /// `ebp`: install-wall frame `frame`: the picture buffer cleared
+    /// (0x40000 bytes) and filled with its rows (`h` rows of `w` bytes,
+    /// 0x200 apart; `w`, `h` from the `i16` tables) from the pictures
+    /// `0x0112a04c` past the earlier frames (the sum of their `w * h`,
+    /// summed in pairs as the original does) and 0x1400; then the palette
+    /// (`pictures + frame << 10`, 16 x 16 at `clut`) and the picture
+    /// (0x200 x 0x200 at `clut + 4`, `PSM` 0x13) uploaded through the
+    /// transfer at `ebp - 0x60`. The last sync's `eax`.
+    pub fn wall_frame(h: &mut impl Host, ebp: u32, frame: u32, clut: u32) -> u32 {
+        let (mut even, mut odd, mut last) = (0u32, 0u32, 0u32);
+        let mut k = 0u32;
+        if frame.cast_signed() >= 2 {
+            while k.cast_signed() < frame.wrapping_sub(1).cast_signed() {
+                even = even.wrapping_add(wall_size(h, k));
+                odd = odd.wrapping_add(wall_size(h, k + 1));
+                k += 2;
+            }
+        }
+        if k.cast_signed() < frame.cast_signed() {
+            last = wall_size(h, k);
+        }
+        let pictures = global(h, super::WALL_PICTURES);
+        let palette = (frame << 10).wrapping_add(pictures);
+        let mut src = odd
+            .wrapping_add(even)
+            .wrapping_add(pictures)
+            .wrapping_add(last)
+            .wrapping_add(0x1400);
+        let dst = global(h, super::HELP_PICTURE);
+        cdecl(h, MEMSET, &[dst, 0, 0x4_0000]);
+        let widths = h.rebase(super::WALL_WIDTHS).wrapping_add(2 * frame);
+        let heights = h.rebase(super::WALL_HEIGHTS).wrapping_add(2 * frame);
+        let mut row = 0i32;
+        let mut offset = 0u32;
+        while row < i32::from(h.read::<i16>(heights)) {
+            let mut col = 0i32;
+            while col < i32::from(h.read::<i16>(widths)) {
+                let b: u8 = h.read(src);
+                let dst = global(h, super::HELP_PICTURE);
+                h.write(
+                    dst.wrapping_add(offset).wrapping_add(col.cast_unsigned()),
+                    b,
+                );
+                src = src.wrapping_add(1);
+                col += 1;
+            }
+            row += 1;
+            offset = offset.wrapping_add(0x200);
+        }
+        let image = ebp.wrapping_sub(0x60);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, clut, 1, 0, 0, 0, 0x10, 0x10],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, palette]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0]);
+        let at = clut.wrapping_add(4);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, at, 8, 0x13, 0, 0, 0x200, 0x200],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let picture = global(h, super::HELP_PICTURE);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, picture]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0])
+    }
+    /// `hdd_ins_check(list)` with its frame at `ebp`: the installed list
+    /// read (`0x007776a0(fmt, ebp - 0x108, list)` gives the count), copied
+    /// (`user_malloc`, `memcpy`, 0x34-byte entries), and each copied
+    /// entry's file (`sprintf(ebp - 0x104, "pfs0:/ex/%s", name +0x24)`,
+    /// `sceOpen(path, 1)`) read back: a count word (`sceRead(fd, ebp -
+    /// 0x118, 4)`), then that many 0x24-byte entries into `list` from the
+    /// running total on, each with the file's name (16 bytes cleared, then
+    /// copied) at `+0x24`. The copy freed; returns the total (0 for an
+    /// empty list).
+    pub fn ins_check(h: &mut impl Host, ebp: u32, list: u32) -> u32 {
+        let [m0, m1, m2, m3, m4, m5, m6] = super::INS_CHECK_MSG.map(|s| h.rebase(s));
+        let n_at = ebp.wrapping_sub(0x108);
+        h.write(ebp.wrapping_sub(0x120), list);
+        h.write(ebp.wrapping_sub(0x10c), 0u32);
+        cdecl(h, super::MOUNT_LOG, &[m0]);
+        h.write(n_at, 0u32);
+        cdecl(h, super::MOUNT_LOG, &[m1]);
+        cdecl(h, super::READ_LIST, &[m2, n_at, list]);
+        cdecl(h, super::MOUNT_LOG, &[m3]);
+        let n: u32 = h.read(n_at);
+        if n == 0 {
+            return 0;
+        }
+        let copy = cdecl(h, USER_MALLOC, &[n.wrapping_mul(0x34)]);
+        h.write(ebp.wrapping_sub(0x114), copy);
+        let n: u32 = h.read(n_at);
+        cdecl(h, super::MEMCPY, &[copy, list, n.wrapping_mul(0x34)]);
+        let mut total = 0u32;
+        let path = ebp.wrapping_sub(0x104);
+        let count_at = ebp.wrapping_sub(0x118);
+        let fmt = h.rebase(super::EX_PATH_FMT);
+        let mut i = 0u32;
+        h.write(ebp.wrapping_sub(0x11c), i);
+        while i.cast_signed() < h.read::<u32>(n_at).cast_signed() {
+            let name = copy.wrapping_add(0x34 * i + 0x24);
+            cdecl(h, DBG_PRINTF, &[m4, name]);
+            let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+            h.call(sprintf, Conv::Cdecl, &[path, fmt, name]);
+            let fd = cdecl(h, super::SCE_OPEN, &[path, 1]);
+            h.write(ebp.wrapping_sub(0x110), fd);
+            if fd.cast_signed() < 0 {
+                cdecl(h, DBG_PRINTF, &[m5, path]);
+            } else {
+                cdecl(h, SCE_READ, &[fd, count_at, 4]);
+                let mut k = 0u32;
+                while k.cast_signed() < h.read::<u32>(count_at).cast_signed() {
+                    let dst = list.wrapping_add(0x34 * total + 0x24);
+                    cdecl(h, SCE_READ, &[fd, dst.wrapping_sub(0x24), 0x24]);
+                    put_words(h, dst, &[0, 0, 0, 0]);
+                    strcpy(h, dst, name);
+                    total = total.wrapping_add(1);
+                    h.write(ebp.wrapping_sub(0x10c), total);
+                    k = k.wrapping_add(1);
+                }
+                cdecl(h, super::SCE_CLOSE, &[fd]);
+            }
+            i = i.wrapping_add(1);
+            h.write(ebp.wrapping_sub(0x11c), i);
+        }
+        cdecl(h, USER_FREE, &[copy]);
+        cdecl(h, super::MOUNT_LOG, &[m6]);
+        total
+    }
+
+    /// Writes `words` from `p` on.
+    fn put_words(h: &mut impl Host, p: u32, words: &[u32]) {
+        for (k, &w) in (0u32..).zip(words) {
+            h.write(p.wrapping_add(4 * k), w);
+        }
+    }
+    /// `CDfileSize_CD(number)`: the size of PS2 file `number` of the
+    /// current module. An extra file's size (`check_ex_file_size(module,
+    /// number)`) when there is one; else an Eternal Calm override (number
+    /// % 18 is 3 for a motion group, 0 for a scene, of entry number / 18,
+    /// signed) or 0, unless the sector table's entry (`base + number`)
+    /// has flag `0x400000` (the 24-bit size `0x01128ae0[3 (base +
+    /// number)] << 3`) or not `0x800000` (the sector span less the last
+    /// sector's unused bytes, `<< 3`).
+    pub fn file_size_cd(h: &mut impl Host, number: u32) -> u32 {
+        let index = global(h, super::FILE_BASE).wrapping_add(number);
+        let ex = cdecl(h, super::EX_FILE_SIZE, &[global(h, super::MODULE), number]);
+        if ex != 0 {
+            return ex;
+        }
+        let entry = number.cast_signed().wrapping_div(18).cast_unsigned();
+        let kind = number.cast_signed().wrapping_rem(18);
+        let mut size = 0;
+        let check = match kind {
+            3 => Some((super::IS_CALM_MGRP, super::CALM_MGRP_SIZE)),
+            0 => Some((super::IS_CALM_SCENE, super::CALM_SCENE_SIZE)),
+            _ => None,
+        };
+        if let Some((is, get)) = check
+            && cdecl(h, is, &[entry]) != 0
+        {
+            size = cdecl(h, get, &[entry]);
+        }
+        let at = global(h, super::SECTOR_TABLE).wrapping_add(index.wrapping_mul(4));
+        let flags: u32 = h.read(at);
+        if flags & 0x80_0000 != 0 {
+            return size;
+        }
+        if flags & 0x40_0000 != 0 {
+            let p = global(h, super::SIZE_TABLE).wrapping_add(index.wrapping_mul(3));
+            let b = [0u32, 1, 2].map(|k| u32::from(h.read::<u8>(p.wrapping_add(k))));
+            return ((b[2] << 16) | (b[1] << 8) | b[0]) << 3;
+        }
+        let next: u32 = h.read(at.wrapping_add(4));
+        let span = (next & 0x3f_ffff).wrapping_sub(flags & 0x3f_ffff);
+        let unused = u32::from(h.read::<u8>(at.wrapping_add(3)));
+        ((span << 8).wrapping_sub(unused)) << 3
+    }
+
+    /// `CDfileSize_PC(number)`: an extra file's size when there is one;
+    /// with the HDD mode on `CDfileSize_CD(number)`; else, with the CD
+    /// record's `+0x30` set, the PC file of entry `[GetCD() + 0x20] +
+    /// number` (`PcFileName_00a42c00`, none 0): in some modules
+    /// `CDfileSize_CD_EX(number)` unless -1; else opened (`sceOpen(name,
+    /// 1)`, 0 logs and gives 0), its `sceFileSize` rounded up to 16
+    /// (signed), closed.
+    pub fn file_size_pc(h: &mut impl Host, number: u32) -> u32 {
+        let cd = cdecl(h, super::GET_CD, &[]);
+        let ex = cdecl(h, super::EX_FILE_SIZE, &[global(h, super::MODULE), number]);
+        if ex != 0 {
+            return ex;
+        }
+        if h.read::<u8>(h.rebase(HDD_MODE)) != 0 {
+            return cdecl(h, super::FILE_SIZE_CD, &[number]);
+        }
+        let index = h.read::<u32>(cd.wrapping_add(0x20)).wrapping_add(number);
+        let cd = cdecl(h, super::GET_CD, &[]);
+        if h.read::<u32>(cd.wrapping_add(0x30)) == 0 {
+            return 0;
+        }
+        let name = cdecl(h, super::PC_FILE_NAME, &[index]);
+        if name == 0 {
+            return 0;
+        }
+        if super::EX_MODULES.contains(&global(h, super::MODULE)) {
+            let size = cdecl(h, super::FILE_SIZE_CD_EX, &[number]);
+            if size != u32::MAX {
+                return size;
+            }
+        }
+        let fd = cdecl(h, super::SCE_OPEN, &[name, 1]);
+        if fd == 0 {
+            let fmt = h.rebase(super::PC_SIZE_MSG);
+            cdecl(h, DBG_PRINTF, &[fmt, name]);
+            return 0;
+        }
+        let size = cdecl(h, super::SCE_FILE_SIZE, &[fd]).wrapping_add(0xf);
+        let round = if size.cast_signed() < 0 { 0xf } else { 0 };
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        size.wrapping_add(round) & !0xf
+    }
+    /// [`movie_disc_wait`]'s state across its passes (the original's
+    /// registers and locals).
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct DiscWaitState {
+        /// The passes since the last read (`esi`).
+        pub since_read: u32,
+        /// The waiting message printed (`ebx`).
+        pub logged: bool,
+        /// The passes (`[ebp - 4]`).
+        pub passes: u32,
+        /// The audio stopped (`[ebp - 8]`).
+        pub audio_stopped: bool,
+    }
+
+    /// The pending sector read again (`CdReadSectors_00777080(sector,
+    /// count, buffer, 0x0112a4b0, ctx)`).
+    fn reread(h: &mut impl Host, ctx: u32) {
+        let [s, n, b] = super::PENDING_SECTOR.map(|sym| global(h, sym));
+        let mode = h.rebase(super::PENDING_MODE);
+        cdecl(h, super::READ_SECTORS, &[s, n, b, mode, ctx]);
+    }
+
+    /// The part of a wait pass before `movie_wait`: with a disc error
+    /// (`changed` not -1) the read state cleared, the error byte set and
+    /// printed, `CdDiscWait_00776f60(ctx)`, the read again; the waiting
+    /// message once; the pass counted.
+    pub fn disc_wait_pre(h: &mut impl Host, ctx: u32, changed: u32, st: &mut DiscWaitState) {
+        let [m0, m1, ..] = super::MOVIE_READ_MSG.map(|s| h.rebase(s));
+        if changed != u32::MAX {
+            cdecl(h, super::STATE_CLEAR, &[]);
+            let at = h.rebase(super::DISK_RESULT);
+            h.write(at, 1u8);
+            cdecl(h, DBG_PRINTF, &[m0]);
+            cdecl(h, super::DISC_WAIT, &[ctx]);
+            reread(h, ctx);
+            st.since_read = 0;
+        }
+        if !st.logged {
+            cdecl(h, DBG_PRINTF, &[m1]);
+            st.logged = true;
+        }
+        st.passes = st.passes.wrapping_add(1);
+    }
+
+    /// The rest of a wait pass: `movie_wait()`; with `play` the audio
+    /// stopped once, `movie_csc()`, the pad print flag; after 150 passes
+    /// a message and the read again.
+    pub fn disc_wait_post(h: &mut impl Host, play: u32, ctx: u32, st: &mut DiscWaitState) {
+        cdecl(h, super::MOVIE_WAIT, &[]);
+        if play != 0 {
+            if !st.audio_stopped {
+                st.audio_stopped = true;
+                cdecl(h, super::AUDIO_STOP, &[ctx]);
+            }
+            cdecl(h, super::MOVIE_CSC, &[]);
+            cdecl(h, super::PAD_PRINT_FLAG, &[]);
+        }
+        st.since_read = st.since_read.wrapping_add(1);
+        if st.since_read >= 0x96 {
+            let msg = h.rebase(super::MOVIE_READ_MSG[2]);
+            cdecl(h, DBG_PRINTF, &[msg]);
+            reread(h, ctx);
+            st.since_read = 0;
+        }
+    }
+
+    /// The disc check [`movie_disc_wait`] starts its wait with
+    /// (`0x00777310()`: 0 no error, -1 busy, else an error).
+    pub fn disc_wait_first(h: &mut impl Host) -> u32 {
+        cdecl(h, DISK_CHANGED, &[])
+    }
+
+    /// `FUN_00777440(play, ctx; slots)` (the movie reader's disc wait).
+    /// With the context's flag `+0x5075d`: while the stream's ioctl
+    /// (`sceIoctl([ctx + 0x50544], 1, &ctx's argument slot)`) reports
+    /// data, `movie_wait()` and with `play` the audio stopped once and
+    /// `movie_csc()`. Else, after `0x00777310()` reports no error, the
+    /// passes are logged. Either way the error byte `0x0112a4ec` cleared,
+    /// returns 1. When `0x00777310()` reports an error the original never returns
+    /// (the result is never read again): passes of [`disc_wait_pre`] and
+    /// [`disc_wait_post`] for ever.
+    pub fn movie_disc_wait(h: &mut impl Host, play: u32, ctx: u32, slots: u32) -> u32 {
+        let result = h.rebase(super::DISK_RESULT);
+        if h.read::<u8>(ctx.wrapping_add(0x5_075d)) != 0 {
+            let out = slots.wrapping_add(4);
+            let mut stopped = false;
+            let stream: u32 = h.read(ctx.wrapping_add(0x5_0544));
+            cdecl(h, super::SCE_IOCTL, &[stream, 1, out]);
+            while h.read::<u32>(out) != 0 {
+                cdecl(h, super::MOVIE_WAIT, &[]);
+                if play != 0 {
+                    if !stopped {
+                        stopped = true;
+                        cdecl(h, super::AUDIO_STOP, &[ctx]);
+                    }
+                    cdecl(h, super::MOVIE_CSC, &[]);
+                }
+                let stream: u32 = h.read(ctx.wrapping_add(0x5_0544));
+                cdecl(h, super::SCE_IOCTL, &[stream, 1, out]);
+            }
+            h.write(result, 0u8);
+            return 1;
+        }
+        let changed = disc_wait_first(h);
+        if changed == 0 {
+            h.write(result, 0u8);
+            let msg = h.rebase(super::MOVIE_READ_MSG[3]);
+            cdecl(h, DBG_PRINTF, &[msg, 0]);
+            return 1;
+        }
+        let mut st = DiscWaitState::default();
+        loop {
+            disc_wait_pre(h, ctx, changed, &mut st);
+            disc_wait_post(h, play, ctx, &mut st);
+        }
+    }
+    /// `Sa_CdRead_task(sector, size, buf, mode, head; slots)`: a PS2 file
+    /// read. Waits while sound data is read (`task_wait(1)`), warns about
+    /// a buffer not 64-byte aligned, notes the read (`0x01128acc`: sector,
+    /// size, buffer, `[mode]`); the sector count (`size / 0x800`, signed)
+    /// replaces `mode`'s argument slot. From the HDD when its mode is on
+    /// and the head is installed (`hd_file_read_th`), done unless
+    /// `get_hdd_err()` (which turns the HDD mode off). Else from the disc:
+    /// up to 60 tries of `sceCdRead(sector, count, buf, mode)` while
+    /// `sceCdDiskReady(1)` is 2 (each miss: `0x0076ccb0()`, the retry
+    /// count `0x01128ab0` up, the disc flag 2, a wait), then up to
+    /// `[size's slot]` waits until `cd_CheckDisk` reports it done (then
+    /// 1). A failed attempt is logged and reset (`0x00a447a0`); after 3,
+    /// each failure also restarts the drive (`sceCdStandby`, `sceCdSync`,
+    /// up to 60 and 120 waits) and goes on with the mode `0x01128aa8` and
+    /// 600 waits. The disc never giving the data loops for ever, as the
+    /// original does. Returns 1.
+    pub fn cd_read_task(h: &mut impl Host, args: [u32; 5], slots: u32) -> u32 {
+        let [sector, size, buf, mode, head] = args;
+        let msg = super::CD_READ_MSG.map(|s| h.rebase(s));
+        while cdecl(h, super::SND_IS_READ, &[]) != 0 {
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+        }
+        if buf & 0x3f != 0 {
+            for m in [msg[0], msg[1], msg[6]] {
+                cdecl(h, DBG_PRINTF, &[m]);
+            }
+        }
+        let first: u32 = h.read(mode);
+        let pending = h.rebase(PENDING_READ);
+        put_words(h, pending, &[sector, size, buf, first]);
+        let count = size.cast_signed().wrapping_div(0x800).cast_unsigned();
+        h.write(slots.wrapping_add(0xc), count);
+        let installed = cdecl(h, RMODE_GET, &[head]);
+        if h.read::<u8>(h.rebase(HDD_MODE)) != 0 && installed != 0 {
+            cdecl(h, super::STATE_CLEAR, &[]);
+            cdecl(h, super::HDD_READ_TH, &[sector, buf, count << 11, head]);
+            if cdecl(h, super::GET_HDD_ERR, &[]) == 0 {
+                return 1;
+            }
+            let at = h.rebase(HDD_MODE);
+            h.write(at, 0u8);
+            cdecl(h, REFRESH_HDD_MODE, &[]);
+        }
+        let flag = h.rebase(super::DISK_FLAG);
+        let retries = h.rebase(super::READ_RETRIES);
+        h.write(flag, 0u8);
+        h.write(retries, 0u32);
+        let mut failures = 0u32;
+        let mut tries = 0x3c_u32;
+        let mut mode = mode;
+        h.write(slots.wrapping_add(4), 0x1c2u32);
+        loop {
+            let mut read = false;
+            for _ in 0..tries {
+                if cdecl(h, DISK_READY, &[1]) == 2 {
+                    cdecl(h, super::STATE_CLEAR, &[]);
+                    cdecl(h, FLUSH_CACHE, &[0]);
+                    let count: u32 = h.read(slots.wrapping_add(0xc));
+                    let buf: u32 = h.read(slots.wrapping_add(8));
+                    if cdecl(h, super::CD_READ, &[sector, count, buf, mode]) == 1 {
+                        read = true;
+                        break;
+                    }
+                }
+                cdecl(h, super::WAIT_DISC, &[]);
+                let n = h.read::<u32>(retries).wrapping_add(1);
+                h.write(retries, n);
+                h.write(flag, 2u8);
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            }
+            if read {
+                let limit: u32 = h.read(slots.wrapping_add(4));
+                let mut k = 0i32;
+                while k < limit.cast_signed() {
+                    if cdecl(h, super::CHECK_DISK, &[]) == 0 {
+                        return 1;
+                    }
+                    cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                    k += 1;
+                }
+            }
+            cdecl(h, DBG_PRINTF, &[msg[2], failures]);
+            cdecl(h, CD_RESET, &[]);
+            h.write(flag, 2u8);
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            if failures.cast_signed() <= 2 {
+                failures = failures.wrapping_add(1);
+                continue;
+            }
+            tries = 0x78;
+            h.write(slots.wrapping_add(4), 0x258u32);
+            let mut k = 0;
+            while k < 0x3c {
+                if cdecl(h, super::CD_STANDBY, &[]) != 0 {
+                    cdecl(h, DBG_PRINTF, &[msg[3]]);
+                    break;
+                }
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                k += 1;
+            }
+            let mut k = 0;
+            while k < 0x78 {
+                if cdecl(h, super::CD_SYNC, &[1]) == 0 {
+                    cdecl(h, DBG_PRINTF, &[msg[4]]);
+                    break;
+                }
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                k += 1;
+            }
+            cdecl(h, DBG_PRINTF, &[msg[5]]);
+            mode = h.rebase(READ_MODE);
+        }
+    }
+    /// `sceDopen(path)`; a negative descriptor logged ("cannot open device
+    /// %s, %d") and `None`.
+    fn open_dir(h: &mut impl Host, path: u32) -> Option<u32> {
+        let fd = cdecl(h, super::SCE_DOPEN, &[path]);
+        if fd.cast_signed() < 0 {
+            let fmt = h.rebase(super::OPEN_DEVICE_MSG);
+            cdecl(h, DBG_PRINTF, &[fmt, path, fd]);
+            return None;
+        }
+        Some(fd)
+    }
+
+    /// `FUN_007776a0(path, &count, list)` with its frame at `ebp`: the
+    /// files under the directory `path`, recursively: its entries counted
+    /// (`sceDopen`, `sceDread` into `ebp - 0x148` until it returns 0 or
+    /// less, `sceDclose`; none 0), then read again into a table
+    /// (`user_malloc(n * 0x84)`: the name, `+0x80` the directory bit
+    /// `0x20` of the entry's mode `+4`). Each subdirectory not starting
+    /// with `.` is walked (`"%s%s/"`; a failure stops the walk with its
+    /// result); each file's name (`"%s%s"` past its first 9 characters)
+    /// goes to `list + 0x34 * count + 0x24`, `count` up. An unopenable
+    /// directory is logged and gives 1. The buffers freed; the result (0
+    /// when every walk succeeded).
+    pub fn walk_install_dir(h: &mut impl Host, ebp: u32, path: u32, count: u32, list: u32) -> u32 {
+        h.write(ebp.wrapping_sub(0x150), count);
+        h.write(ebp.wrapping_sub(0x160), path);
+        h.write(ebp.wrapping_sub(0x154), list);
+        h.write(ebp.wrapping_sub(0x158), 0u32);
+        let entry = ebp.wrapping_sub(0x148);
+        let Some(fd) = open_dir(h, path) else {
+            return 1;
+        };
+        let mut n = 0u32;
+        while cdecl(h, super::SCE_DREAD, &[fd, entry]).cast_signed() > 0 {
+            n = n.wrapping_add(1);
+        }
+        cdecl(h, super::SCE_DCLOSE, &[fd]);
+        if n == 0 {
+            return 0;
+        }
+        let Some(fd) = open_dir(h, path) else {
+            return 1;
+        };
+        let table = cdecl(h, USER_MALLOC, &[n.wrapping_mul(0x84)]);
+        h.write(ebp.wrapping_sub(0x15c), table);
+        let mut k = 0u32;
+        h.write(ebp.wrapping_sub(0x14c), k);
+        let mut at = table;
+        while cdecl(h, super::SCE_DREAD, &[fd, entry]).cast_signed() > 0 {
+            let mode: u32 = h.read(entry.wrapping_add(4));
+            h.write(at.wrapping_add(0x80), mode & 0x20);
+            strcpy(h, at, entry.wrapping_add(0x40));
+            k = k.wrapping_add(1);
+            at = at.wrapping_add(0x84);
+        }
+        h.write(ebp.wrapping_sub(0x14c), k);
+        cdecl(h, super::SCE_DCLOSE, &[fd]);
+        let buf = cdecl(h, USER_MALLOC, &[0x100]);
+        let mut result = 0;
+        let mut i = 0u32;
+        while i.cast_signed() < k.cast_signed() {
+            let item = table.wrapping_add(0x84 * i);
+            if h.read::<u32>(item.wrapping_add(0x80)) != 0 {
+                if h.read::<u8>(item) != b'.' {
+                    cdecl(h, MEMSET, &[buf, 0, 0x100]);
+                    let fmt = h.rebase(super::SUBDIR_FMT);
+                    let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+                    h.call(sprintf, Conv::Cdecl, &[buf, fmt, path, item]);
+                    result = cdecl(h, super::READ_LIST, &[buf, count, list]);
+                    h.write(ebp.wrapping_sub(0x158), result);
+                    if result != 0 {
+                        break;
+                    }
+                }
+            } else {
+                cdecl(h, MEMSET, &[buf, 0, 0x100]);
+                let fmt = h.rebase(super::FILE_FMT);
+                let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+                h.call(sprintf, Conv::Cdecl, &[buf, fmt, path, item]);
+                let n: u32 = h.read(count);
+                let dst = list.wrapping_add(n.wrapping_mul(0x34)).wrapping_add(0x24);
+                strcpy(h, dst, buf.wrapping_add(9));
+                h.write(count, n.wrapping_add(1));
+            }
+            i = i.wrapping_add(1);
+        }
+        cdecl(h, USER_FREE, &[buf]);
+        cdecl(h, USER_FREE, &[table]);
+        result
+    }
+    /// `cd_ModuleFileRead_0076bf70(file, buffer, offset, size, callback,
+    /// opts)`: a read of the current module's file `file` queued in the
+    /// first free `g_CdChannels` request (both busy bytes `+0x31`, `+0x32`
+    /// clear; none: `movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x645)`
+    /// and request 64 written anyway): `+4` buffer, `+8` file, `+0x28` the
+    /// module, opts' words `+0xc..+0x18` (or 0), `+0x20` callback, the id
+    /// `+0x24` (`g_CdReadId + 1`, 1 past 0xffff). With `0x02310c58` 0:
+    /// the PC name (`CDfileName_PC`, then `SyncV(2)`) and `+0x1c` the
+    /// offset in sectors, or under `g_FFXHddMode` the module sector plus
+    /// it and "HDD FILE"; either name copied to the channel's 0x80 bytes.
+    /// With 1: the sector, "DVD FILE", no copy. `+0` and `+0x2c` the size
+    /// (not with another mode). A running movie is reported and asserted.
+    /// `+0x34` `cd_size_from_table(file)`, `+0x35` and `+0x32` cleared;
+    /// `g_CdReadId` returned. The fields in the original's order (request
+    /// 64 overlaps the id).
+    pub fn module_file_read(h: &mut impl Host, args: [u32; 6]) -> u32 {
+        let [file, buffer, offset, size, callback, opts] = args;
+        let channels = h.rebase(super::CD_CHANNELS);
+        let n = (0..64u32)
+            .find(|&n| {
+                let at = channels.wrapping_add(n * 0x38);
+                h.read::<u8>(at.wrapping_add(0x31)) == 0 && h.read::<u8>(at.wrapping_add(0x32)) == 0
+            })
+            .unwrap_or(64);
+        if n == 64 {
+            let msg = h.rebase(super::QUEUE_FULL_MSG);
+            let lib = h.rebase(super::LIBMSCD_FILE);
+            cdecl(h, super::MOVIE_ERR, &[msg, lib, 0x645]);
+        }
+        let r = channels.wrapping_add(n * 0x38);
+        let at = |o: u32| r.wrapping_add(o);
+        h.write(at(4), buffer);
+        let module = global(h, super::MODULE);
+        h.write(at(0x31), 1u8);
+        h.write(at(8), file);
+        h.write(at(0x28), module);
+        let words: [u32; 4] = if opts == 0 {
+            [0; 4]
+        } else {
+            [0xcu32, 0x10, 0x14, 0x18].map(|o| h.read(opts.wrapping_add(o)))
+        };
+        for (o, w) in [0xcu32, 0x10, 0x14, 0x18].into_iter().zip(words) {
+            h.write(at(o), w);
+        }
+        h.write(at(0x20), callback);
+        let id_at = h.rebase(super::CD_READ_ID);
+        let mut id = h.read::<u32>(id_at).wrapping_add(1);
+        h.write(at(0x30), 0u8);
+        h.write(id_at, id);
+        if id.cast_signed() > 0xffff {
+            id = 1;
+            h.write(id_at, id);
+        }
+        h.write(at(0x24), id);
+        let sectors = offset.cast_signed().wrapping_div(0x800).cast_unsigned();
+        let name = match global(h, super::READ_FUNCS_CD) {
+            0 => {
+                let name = if h.read::<u8>(h.rebase(HDD_MODE)) == 0 {
+                    h.write(at(0), size);
+                    h.write(at(0x2c), size);
+                    h.write(at(0x1c), sectors);
+                    let name = cdecl(h, super::FILE_NAME_PC, &[file]);
+                    cdecl(h, super::SYNC_V, &[2]);
+                    name
+                } else {
+                    h.write(at(0), size);
+                    let sector = cdecl(h, super::MODULE_SECTOR_REL, &[file]);
+                    h.write(at(0x2c), size);
+                    h.write(at(0x1c), sector.wrapping_add(sectors));
+                    h.rebase(super::HDD_FILE_NAME)
+                };
+                let names = h.rebase(super::CHANNEL_NAMES).wrapping_add(n << 7);
+                for i in 0..0x80u32 {
+                    let b: u8 = h.read(name.wrapping_add(i));
+                    h.write(names.wrapping_add(i), b);
+                    if b == 0 {
+                        break;
+                    }
+                }
+                name
+            }
+            1 => {
+                h.write(at(0), size);
+                let sector = cdecl(h, super::MODULE_SECTOR_REL, &[file]);
+                h.write(at(0x2c), size);
+                h.write(at(0x1c), sector.wrapping_add(sectors));
+                h.rebase(super::DVD_FILE_NAME)
+            }
+            _ => 0,
+        };
+        if cdecl(h, super::MOVIE_RUN_CHECK, &[]) != 0 {
+            let [module_fmt, num_fmt, name_fmt, assert_fmt, running] =
+                super::MOVIE_RUNNING_MSG.map(|s| h.rebase(s));
+            let module = global(h, super::MODULE);
+            cdecl(h, DBG_PRINTF, &[module_fmt, module]);
+            cdecl(h, DBG_PRINTF, &[num_fmt, file]);
+            cdecl(h, DBG_PRINTF, &[name_fmt, name]);
+            let module = global(h, super::MODULE);
+            cdecl(
+                h,
+                super::YI_ASSERT,
+                &[1, running, assert_fmt, name, module, file],
+            );
+        }
+        let sized = cdecl(h, super::SIZE_FROM_TABLE, &[file]);
+        h.write(at(0x34), sized.to_le_bytes()[0]);
+        let id: u32 = h.read(id_at);
+        h.write(at(0x35), 0u8);
+        h.write(at(0x32), 0u8);
+        id
+    }
+    /// The length of the C string at `s`.
+    fn strlen(h: &impl Host, s: u32) -> u32 {
+        let mut n = 0u32;
+        while h.read::<u8>(s.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// `hdd_init_sub_00778a10()` with its frame at `ebp` (name buffer
+    /// `ebp - 0x84`, the format's zone size `ebp - 0x90` = 0x2000, the busy
+    /// retries `ebp - 0x88`, the add failures `ebp - 0x8c`): the FFX
+    /// partition made anew. "HDD INIT" between rules, the pass names, "Open
+    /// hdd0", `hdd_unmount`; the old `hdd0:<code>,ffxpassf` opened (mode
+    /// 2): its sub partitions deleted (`sceIoctl2(fd, 0x6802)`), closed
+    /// and removed, else the open error printed. Then `hdd0:<code>,
+    /// ffxpassf,ffxpassr,128M,PFS` created (mode 0x203): -16 (busy)
+    /// unmounts and retries up to 4 more times (then 1), -27 unmounts and
+    /// gives 2, -13 gives 1, another error prints, sets the pass names and
+    /// gives 1. Created: `hdd_InstalledMb / 128` sub partitions added
+    /// (`sceIoctl2(fd, 0x6801, name, len + 1)`); a failure deletes them,
+    /// closes, removes and starts over (a second failure: 2). Closed;
+    /// `sceFormat("pfs:", name, &zone, 4)` (failing: printed, pass names,
+    /// 1); `0x0062fc60(name, 0)`, the pass names, `"hdd_init_sub end"`, 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn init_sub(h: &mut impl Host, ebp: u32) -> u32 {
+        let m = super::INIT_SUB_MSG.map(|s| h.rebase(s));
+        let print = |h: &mut _, args: &[u32]| {
+            cdecl(h, DBG_PRINTF, args);
+        };
+        let buf = ebp.wrapping_sub(0x84);
+        let busy = ebp.wrapping_sub(0x88);
+        let failed = ebp.wrapping_sub(0x8c);
+        let zone = ebp.wrapping_sub(0x90);
+        h.write(zone, 0x2000u32);
+        print(h, &[m[0]]);
+        print(h, &[m[1]]);
+        print(h, &[m[0]]);
+        cdecl(h, super::MOUNT_PREPARE, &[]);
+        print(h, &[m[2]]);
+        cdecl(h, super::HDD_UNMOUNT, &[]);
+        let dev = h.rebase(super::MOUNT_DEVICE);
+        let part = h.rebase(super::FFX_PARTITION);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        // the partition name's call leaves its word on the stack, which the
+        // format's second `%s` reads
+        let code = cdecl(h, super::PARTITION_NAME, &[dev]);
+        h.call(sprintf, Conv::Cdecl, &[buf, m[17], code, dev]);
+        let fd = cdecl(h, super::SCE_OPEN, &[buf, 2]);
+        let remove = |h: &mut _, fd: u32| {
+            let r = cdecl(h, super::SCE_IOCTL2, &[fd, 0x6802, 0, 0, 0, 0]);
+            if r.cast_signed() < 0 {
+                cdecl(h, DBG_PRINTF, &[m[3], r]);
+            }
+            cdecl(h, super::SCE_CLOSE, &[fd]);
+            let r = cdecl(h, super::SCE_REMOVE, &[buf]);
+            cdecl(h, DBG_PRINTF, &[m[4], r]);
+        };
+        if fd.cast_signed() >= 0 {
+            remove(h, fd);
+        } else {
+            print(h, &[m[5], fd]);
+        }
+        let mut tries = 0u32;
+        h.write(busy, tries);
+        h.write(failed, 0u32);
+        let fd = loop {
+            let code = cdecl(h, super::PARTITION_NAME, &[dev, part]);
+            let fmt = h.rebase(super::FULL_PARTITION_FMT);
+            h.call(sprintf, Conv::Cdecl, &[buf, fmt, code, dev, part]);
+            let fd = cdecl(h, super::SCE_OPEN, &[buf, 0x203]);
+            if fd.cast_signed() < 0 {
+                match fd.cast_signed() {
+                    -27 => {
+                        cdecl(h, super::HDD_UNMOUNT, &[]);
+                        print(h, &[m[7]]);
+                        return 2;
+                    }
+                    -16 => {
+                        print(h, &[m[6]]);
+                        cdecl(h, super::HDD_UNMOUNT, &[]);
+                        tries = tries.wrapping_add(1);
+                        h.write(busy, tries);
+                        if tries.cast_signed() > 4 {
+                            return 1;
+                        }
+                        continue;
+                    }
+                    -13 => {
+                        print(h, &[m[8]]);
+                        return 1;
+                    }
+                    _ => {
+                        print(h, &[m[9], fd]);
+                        cdecl(h, super::MOUNT_PRE2, &[]);
+                        return 1;
+                    }
+                }
+            }
+            print(h, &[m[10], fd]);
+            print(h, &[m[11]]);
+            let mb = cdecl(h, super::INSTALLED_MB_8F60, &[0]);
+            let n = mb.cast_signed().wrapping_div(0x80);
+            print(
+                h,
+                &[
+                    m[12],
+                    0x80,
+                    n.cast_unsigned(),
+                    n.wrapping_mul(0x80).cast_unsigned(),
+                ],
+            );
+            let name = h.rebase(super::SUB_PARTITION);
+            let mut ok = true;
+            for _ in 0..n.max(0) {
+                let len = strlen(h, name).wrapping_add(1);
+                let r = cdecl(h, super::SCE_IOCTL2, &[fd, 0x6801, name, len, 0, 0]);
+                if r.cast_signed() < 0 {
+                    print(h, &[m[13], r]);
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                break fd;
+            }
+            remove(h, fd);
+            let k = h.read::<u32>(failed).wrapping_add(1);
+            h.write(failed, k);
+            if k.cast_signed() > 1 {
+                return 2;
+            }
+            tries = h.read(busy);
+        };
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        print(h, &[m[14]]);
+        let code = cdecl(h, super::PARTITION_NAME, &[dev]);
+        h.call(sprintf, Conv::Cdecl, &[buf, m[17], code, dev]);
+        let pfs = h.rebase(super::PFS_COLON);
+        let r = cdecl(h, SCE_FORMAT, &[pfs, buf, zone, 4]);
+        if r.cast_signed() < 0 {
+            print(h, &[m[15], r]);
+            cdecl(h, super::MOUNT_PRE2, &[]);
+            return 1;
+        }
+        cdecl(h, super::NOP_FC60, &[buf, 0]);
+        cdecl(h, super::MOUNT_PRE2, &[]);
+        print(h, &[m[16]]);
+        0
+    }
+    /// Whether the `len` bytes at `first` and `second` are equal (the inline
+    /// `memcmp`'s answer).
+    fn same_bytes(h: &impl Host, first: u32, second: u32, len: u32) -> bool {
+        let mut left = vec![0u8; len as usize];
+        let mut right = vec![0u8; len as usize];
+        h.read_bytes(first, &mut left);
+        h.read_bytes(second, &mut right);
+        left == right
+    }
+
+    /// The CD layer's read of `size` bytes at `sector` into `buf` through
+    /// its pointer (`0x02310cb8`), its sync pointer polled with
+    /// `task_wait(1)`, then `FlushCache(0)`.
+    fn check_cd_read(h: &mut impl Host, sector: u32, buf: u32, size: u32) {
+        let read: u32 = h.read(h.rebase(super::CD_READ_PTR));
+        h.call(read, Conv::Cdecl, &[sector, buf, size, 0, 0]);
+        loop {
+            let sync: u32 = h.read(h.rebase(super::CD_SYNC_PTR));
+            if h.call(sync, Conv::Cdecl, &[1]) == 0 {
+                break;
+            }
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+        }
+        cdecl(h, FLUSH_CACHE, &[0]);
+    }
+
+    /// The byte `o` of the check results (their pointer re-read) set to `v`.
+    fn check_res(h: &mut impl Host, o: u32, v: u8) {
+        let res: u32 = h.read(h.rebase(super::CHECK_RESULTS));
+        h.write(res.wrapping_add(o), v);
+    }
+
+    /// One mark in the check log (`'c'` or `'o'` and a NUL at `at`);
+    /// the log re-read from its global.
+    fn check_mark(h: &mut impl Host, at: u32, mark: u16) {
+        let log: u32 = h.read(h.rebase(super::CHECK_LOG));
+        h.write(log.wrapping_add(at), mark);
+    }
+
+    /// `hdd_ReadModuleFiles_00777f00()` with its frame at `ebp` (the
+    /// installed files checked against the disc): `hdd_mount`, the results
+    /// (`user_malloc(16 n)`, words `+0` and bytes `+4` cleared), two 1 MiB
+    /// buffers (`Sg_MemSetAlign(0x40)` each), the log (0x1000 bytes,
+    /// emptied, no lines) and the check task (`task_create(0x007788c0, 0,
+    /// 0)`). Each head with a size and `hdd_rmode_get` set: its file
+    /// opened (`get_hdd_name`, mode 1), the size checked (`sceLseek64(fd,
+    /// 0, 2)`; "size err" marks `+1`, `+4`), then read in 1 MiB chunks and
+    /// the rest (`sceRead` into the second buffer, the disc through the CD
+    /// layer into the first), each chunk compared: a difference marks `+1`,
+    /// `+3`, its sector `+0xc` and logs `'c'`, else "check ok" and `'o'`,
+    /// 41 marks to a line. A read error marks `+1`, `+2` and its sector
+    /// `+8`; a read of 0 ends the file. Closed, `+0` set, `task_wait(1)`.
+    /// Then the log emptied, the pad waited on (`TkGetControlerTrigHist`'s
+    /// bit 0x40, `task_wait(1)`), the four buffers freed, the results
+    /// pointer cleared; 0. The frame's words end as the original leaves
+    /// them.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn read_module_files_check(h: &mut impl Host, ebp: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let [size_err, read_err, cmp_err, check_ok, cmp_err2, file_ok] =
+            super::CHECK_MSG.map(|s| h.rebase(s));
+        let results = h.rebase(super::CHECK_RESULTS);
+        let log_at = h.rebase(super::CHECK_LOG);
+        let lines = h.rebase(super::CHECK_LINES);
+        cdecl(h, HDD_MOUNT, &[]);
+        let n: u32 = h.read(h.rebase(HEAD_COUNT));
+        h.write(f(0x2c), n);
+        let res = cdecl(h, USER_MALLOC, &[n << 4]);
+        h.write(results, res);
+        for k in 0..n.cast_signed().max(0).cast_unsigned() {
+            h.write(res.wrapping_add(16 * k), 0u32);
+            h.write(res.wrapping_add(16 * k + 4), 0u8);
+        }
+        cdecl(h, MEM_SET_ALIGN, &[0x40]);
+        let disc = cdecl(h, USER_MALLOC, &[0x10_0800]);
+        h.write(f(0x20), disc);
+        cdecl(h, MEM_SET_ALIGN, &[0x40]);
+        let file = cdecl(h, USER_MALLOC, &[0x10_0800]);
+        h.write(f(0x10), file);
+        let log = cdecl(h, USER_MALLOC, &[0x1000]);
+        h.write(log_at, log);
+        h.write(log, 0u8);
+        h.write(lines, 0u32);
+        let task = h.rebase(super::CHECK_TASK);
+        cdecl(h, super::TASK_CREATE, &[task, 0, 0]);
+        h.write(f(0x1c), 0u32);
+        let heads = h.rebase(HEADS);
+        let mut k = 0u32;
+        let mut entry = heads;
+        let mut off = 0u32;
+        if n.cast_signed() > 0 {
+            h.write(f(8), off);
+            h.write(f(0x28), entry);
+        }
+        while k.cast_signed() < n.cast_signed() {
+            let log: u32 = h.read(log_at);
+            h.write(log, 0u8);
+            let mut size: u32 = h.read(entry.wrapping_add(4));
+            h.write(lines, 0u32);
+            h.write(f(0xc), 0u32);
+            if size != 0 && cdecl(h, RMODE_GET, &[k]) != 0 {
+                let mut sector: u32 = h.read(entry);
+                h.write(f(4), sector);
+                let name = cdecl(h, super::HDD_NAME, &[k]);
+                h.write(f(0x14), name);
+                let fmt = h.rebase(super::READ_TH_MSG[0]);
+                cdecl(h, DBG_PRINTF, &[fmt, name]);
+                let fd = cdecl(h, super::SCE_OPEN, &[name, 1]);
+                h.write(f(0x18), fd);
+                let total = cdecl(h, super::SCE_LSEEK64, &[fd, 0, 2]);
+                cdecl(h, super::SCE_LSEEK, &[fd, 0, 0]);
+                if size != total {
+                    cdecl(h, DBG_PRINTF, &[size_err]);
+                    check_res(h, off + 1, 1);
+                    check_res(h, off + 4, 1);
+                }
+                h.write(f(0x24), 0u32);
+                let mut at = 0u32;
+                let mut col = 0u32;
+                let mut done = false;
+                while size.cast_signed() > 0x10_0000 {
+                    let r = cdecl(h, SCE_READ, &[fd, file, 0x10_0000]);
+                    if r == 0 {
+                        cdecl(h, DBG_PRINTF, &[file_ok, name]);
+                        done = true;
+                        break;
+                    }
+                    if r.cast_signed() < 0 {
+                        let sector: u32 = h.read(f(4));
+                        cdecl(h, DBG_PRINTF, &[read_err, sector, r]);
+                        let res: u32 = h.read(results);
+                        h.write(res.wrapping_add(off + 1), 0x101u16);
+                        h.write(res.wrapping_add(off + 8), sector);
+                        done = true;
+                        break;
+                    }
+                    check_cd_read(h, sector, disc, 0x10_0000);
+                    let mut bad = false;
+                    if !same_bytes(h, disc, file, 0x10_0000) {
+                        cdecl(h, DBG_PRINTF, &[cmp_err, sector, name]);
+                        check_res(h, off + 1, 1);
+                        check_res(h, off + 3, 1);
+                        let res: u32 = h.read(results);
+                        h.write(res.wrapping_add(off + 0xc), sector);
+                        col = col.wrapping_add(1);
+                        check_mark(h, at, u16::from(b'c'));
+                        at = at.wrapping_add(1);
+                        h.write(f(0x24), 1u32);
+                        bad = true;
+                        h.write(f(0xc), col);
+                        if col.cast_signed() > 0x28 {
+                            let v: u32 = h.read(lines);
+                            h.write(lines, v.wrapping_add(1));
+                            col = 0;
+                            check_mark(h, at, 0);
+                            h.write(f(0xc), col);
+                            at = at.wrapping_add(1);
+                        }
+                    }
+                    size = size.wrapping_sub(0x10_0000);
+                    if !bad {
+                        cdecl(h, DBG_PRINTF, &[check_ok, sector]);
+                        col = col.wrapping_add(1);
+                        check_mark(h, at, u16::from(b'o'));
+                        at = at.wrapping_add(1);
+                        h.write(f(0xc), col);
+                        if col.cast_signed() > 0x28 {
+                            let v: u32 = h.read(lines);
+                            h.write(lines, v.wrapping_add(1));
+                            col = 0;
+                            check_mark(h, at, 0);
+                            h.write(f(0xc), col);
+                            at = at.wrapping_add(1);
+                        }
+                    }
+                    sector = sector.wrapping_add(0x200);
+                    h.write(f(4), sector);
+                    h.write(f(0x24), 0u32);
+                }
+                if !done {
+                    let r = cdecl(h, SCE_READ, &[fd, file, size]);
+                    if r.cast_signed() < 0 {
+                        let res: u32 = h.read(results);
+                        h.write(res.wrapping_add(off + 1), 0x101u16);
+                        h.write(res.wrapping_add(off + 8), sector);
+                        cdecl(h, DBG_PRINTF, &[read_err, sector, r]);
+                    } else {
+                        if r != 0 {
+                            check_cd_read(h, sector, disc, size);
+                            let lines_up = if same_bytes(h, disc, file, size) {
+                                cdecl(h, DBG_PRINTF, &[check_ok, sector]);
+                                check_mark(h, at, u16::from(b'o'));
+                                col.wrapping_add(1).cast_signed() > 0x28
+                            } else {
+                                cdecl(h, DBG_PRINTF, &[cmp_err2, sector, name]);
+                                check_res(h, off + 1, 1);
+                                check_res(h, off + 3, 1);
+                                let res: u32 = h.read(results);
+                                h.write(res.wrapping_add(off + 0xc), sector);
+                                check_mark(h, at, u16::from(b'c'));
+                                col.wrapping_add(1).cast_signed() > 0x28
+                            };
+                            if lines_up {
+                                check_mark(h, at.wrapping_add(1), 0);
+                                let v: u32 = h.read(lines);
+                                h.write(lines, v.wrapping_add(1));
+                            }
+                        }
+                        cdecl(h, DBG_PRINTF, &[file_ok, name]);
+                    }
+                }
+                let fd: u32 = h.read(f(0x18));
+                cdecl(h, super::SCE_CLOSE, &[fd]);
+                check_res(h, off, 1);
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            }
+            k = k.wrapping_add(1);
+            entry = entry.wrapping_add(0xc);
+            off = off.wrapping_add(0x10);
+            h.write(f(0x1c), k);
+            h.write(f(0x28), entry);
+            h.write(f(8), off);
+        }
+        let log: u32 = h.read(log_at);
+        h.write(log, 0u8);
+        while cdecl(h, super::TRIG_HIST, &[0, 0, 0]) & 0x40 == 0 {
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+        }
+        let log: u32 = h.read(log_at);
+        cdecl(h, USER_FREE, &[log]);
+        cdecl(h, USER_FREE, &[file]);
+        cdecl(h, USER_FREE, &[disc]);
+        let res: u32 = h.read(results);
+        cdecl(h, USER_FREE, &[res]);
+        h.write(results, 0u32);
+        0
+    }
+    /// What one attempt at a file of `hdd_CopyDvdFiles_00777980` leads to.
+    enum CopyStep {
+        /// The next head (`0x00777e20`).
+        Next,
+        /// The head again from its size and `hdd_rmode_get` (`0x00777e07`).
+        Again(u32),
+        /// The function's result.
+        Done(u32),
+    }
+
+    /// The size word of head `i`.
+    fn head_size(h: &impl Host, i: u32) -> u32 {
+        h.read(h.rebase(HEADS).wrapping_add(12 * i + 4))
+    }
+
+    /// Too many verify errors (`0x00777dd6`): the file closed and removed
+    /// (failing: 1), else the head again.
+    fn copy_give_up(h: &mut impl Host, ebp: u32, fd: u32) -> CopyStep {
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        let name: u32 = h.read(ebp.wrapping_sub(0x6c));
+        if cdecl(h, super::SCE_REMOVE, &[name]) != 0 {
+            return CopyStep::Done(1);
+        }
+        CopyStep::Again(h.read(ebp.wrapping_sub(0x48)))
+    }
+
+    /// `hdd_CopyDvdFiles_00777980`'s attempt at head `k` (`0x00777a42`):
+    /// the background thread waited on (state 2), the disc's system conf
+    /// (`0x0112a064`, none: 0) compared with the first buffer's 32 bytes
+    /// (different: "not ffx", back to head 0), the file made
+    /// (`get_hdd_name`, `sceOpen(name, 0x603, 0x1ff)`; failing: 0), its
+    /// size logged, the copied heads before it summed (`ebp - 0x54`); then
+    /// 1 MiB chunks and the rest: the progress words set (state 1, the
+    /// done count `0x0112a7ac` raised to the sum), written, read back and
+    /// compared, a difference rewinding and retrying (more than 3: the
+    /// file closed and removed, again). The end (`0x00777d4e`): closed,
+    /// `0x0062fc60(name buffer, 0)`; a negative result prints "w err",
+    /// counts (3: 1) and removes the file (failing: 1) to try again.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    fn copy_attempt(h: &mut impl Host, ebp: u32, k: u32, m: &[u32; 9]) -> CopyStep {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let heads = h.rebase(HEADS);
+        let state = h.rebase(BYTE_7FC);
+        h.write(state, 2u8);
+        cdecl(h, super::WAIT_SEMA_BG, &[]);
+        let header: u32 = h.read(h.rebase(super::DISK_HEADER));
+        if header == 0 {
+            return CopyStep::Done(0);
+        }
+        let first: u32 = h.read(h.rebase(BUFFERS[0]));
+        if !same_bytes(h, first, header, 0x20) {
+            cdecl(h, DBG_PRINTF, &[m[7]]);
+            h.write(f(0x48), 0u32);
+            h.write(f(0x64), 0u32);
+            return CopyStep::Again(0);
+        }
+        cdecl(h, DBG_PRINTF, &[m[2]]);
+        let name = cdecl(h, super::HDD_NAME, &[k]);
+        h.write(f(0x6c), name);
+        cdecl(h, DBG_PRINTF, &[m[3], name]);
+        let fd = cdecl(h, super::SCE_OPEN, &[name, 0x603, 0x1ff]);
+        if fd.cast_signed() < 0 {
+            cdecl(h, DBG_PRINTF, &[m[8], name]);
+            return CopyStep::Done(0);
+        }
+        let sector: u32 = h.read(heads.wrapping_add(12 * k));
+        h.write(f(0x4c), sector);
+        let size: u32 = h.read(f(0x50));
+        let sign = if size.cast_signed() < 0 { u32::MAX } else { 0 };
+        cdecl(h, DBG_PRINTF, &[m[4], sector, sign, size]);
+        let mut acc = 0u32;
+        h.write(f(0x58), 0u32);
+        h.write(f(0x54), acc);
+        for i in 0..k.cast_signed().max(0).cast_unsigned() {
+            if head_size(h, i) != 0 && cdecl(h, RMODE_GET, &[i]) != 0 {
+                acc = acc.wrapping_add(head_size(h, i));
+                h.write(f(0x54), acc);
+            }
+        }
+        let mut size: u32 = h.read(f(0x50));
+        let mut sector: u32 = h.read(f(0x4c));
+        let done_at = h.rebase(DONE);
+        let [progress_sector, progress_size] = super::COPY_PROGRESS.map(|s| h.rebase(s));
+        let back_mb = 0x10_0000u32.wrapping_neg();
+        let r = 'end: {
+            if size.cast_signed() > 0x10_0000 {
+                loop {
+                    acc = acc.wrapping_add(0x10_0000);
+                    h.write(f(0x54), acc);
+                    let done: u32 = h.read(done_at);
+                    if acc.cast_signed() > done.cast_signed() {
+                        h.write(done_at, done.wrapping_add(0x10_0000));
+                    }
+                    h.write(progress_sector, sector);
+                    h.write(progress_size, 0x10_0000u32);
+                    h.write(state, 1u8);
+                    cdecl(h, super::WAIT_SEMA_BG, &[]);
+                    loop {
+                        let a: u32 = h.read(f(0x60));
+                        let r = cdecl(h, super::SCE_WRITE, &[fd, a, 0x10_0000]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let r = cdecl(h, super::SCE_LSEEK, &[fd, back_mb, 1]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let b: u32 = h.read(f(0x5c));
+                        let r = cdecl(h, SCE_READ, &[fd, b, 0x10_0000]);
+                        if r != 0x10_0000 {
+                            break 'end r;
+                        }
+                        if same_bytes(h, a, b, 0x10_0000) {
+                            break;
+                        }
+                        cdecl(h, DBG_PRINTF, &[m[5]]);
+                        let r = cdecl(h, super::SCE_LSEEK, &[fd, back_mb, 1]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let tries = h.read::<u32>(f(0x58)).wrapping_add(1);
+                        h.write(f(0x58), tries);
+                        if tries.cast_signed() > 3 {
+                            return copy_give_up(h, ebp, fd);
+                        }
+                    }
+                    size = h.read::<u32>(f(0x50)).wrapping_sub(0x10_0000);
+                    sector = h.read::<u32>(f(0x4c)).wrapping_add(0x200);
+                    h.write(f(0x50), size);
+                    h.write(f(0x4c), sector);
+                    if size.cast_signed() <= 0 {
+                        break 'end 0x10_0000;
+                    }
+                    acc = h.read(f(0x54));
+                    if size.cast_signed() <= 0x10_0000 {
+                        break;
+                    }
+                }
+            }
+            let sum = h.read::<u32>(f(0x54)).wrapping_add(size);
+            let done: u32 = h.read(done_at);
+            if sum.cast_signed() > done.cast_signed() {
+                h.write(done_at, done.wrapping_add(size));
+            }
+            h.write(progress_sector, sector);
+            h.write(progress_size, size);
+            h.write(state, 1u8);
+            cdecl(h, super::WAIT_SEMA_BG, &[]);
+            let a: u32 = h.read(f(0x60));
+            let r = cdecl(h, super::SCE_WRITE, &[fd, a, size]);
+            if r.cast_signed() < 0 {
+                break 'end r;
+            }
+            let mut back = size.wrapping_neg();
+            h.write(f(0x4c), back);
+            loop {
+                let r = cdecl(h, super::SCE_LSEEK, &[fd, back, 1]);
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+                let b: u32 = h.read(f(0x5c));
+                let r = cdecl(h, SCE_READ, &[fd, b, size]);
+                if r != size {
+                    break 'end r;
+                }
+                let a: u32 = h.read(f(0x60));
+                if same_bytes(h, a, b, size) {
+                    break 'end r;
+                }
+                cdecl(h, DBG_PRINTF, &[m[5]]);
+                let back_now: u32 = h.read(f(0x4c));
+                let r = cdecl(h, super::SCE_LSEEK, &[fd, back_now, 1]);
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+                let tries = h.read::<u32>(f(0x58)).wrapping_add(1);
+                h.write(f(0x58), tries);
+                if tries.cast_signed() > 3 {
+                    return copy_give_up(h, ebp, fd);
+                }
+                size = h.read(f(0x50));
+                let a: u32 = h.read(f(0x60));
+                let r = cdecl(h, super::SCE_WRITE, &[fd, a, size]);
+                back = h.read(f(0x4c));
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+            }
+        };
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        cdecl(h, super::NOP_FC60, &[f(0x44), 0]);
+        if r.cast_signed() >= 0 {
+            return CopyStep::Next;
+        }
+        cdecl(h, DBG_PRINTF, &[m[6], r]);
+        let fails = h.read::<u32>(f(0x64)).wrapping_add(1);
+        h.write(f(0x64), fails);
+        if fails.cast_signed() >= 3 {
+            return CopyStep::Done(1);
+        }
+        let name: u32 = h.read(f(0x6c));
+        if cdecl(h, super::SCE_REMOVE, &[name]) != 0 {
+            return CopyStep::Done(1);
+        }
+        CopyStep::Again(h.read(f(0x48)))
+    }
+
+    /// `hdd_CopyDvdFiles_00777980()` with its frame at `ebp` (name buffer
+    /// `ebp - 0x44`, the cookie at `ebp - 4`): the installer's copy of the
+    /// disc's files to the HDD. The device name (`"hdd0:%s,%s"`, the
+    /// product code and the word its call left on the stack); the copied
+    /// heads' sizes added to `0x0112a524`; `"hdd_file_cnt"`, the two buffers
+    /// (`ebp - 0x60`, `ebp - 0x5c`), "dvd file copy"; each head with a size
+    /// and `hdd_rmode_get` set attempted (see `copy_attempt`); 0 at the
+    /// end.
+    #[allow(clippy::many_single_char_names)]
+    pub fn copy_dvd_files(h: &mut impl Host, ebp: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let m = super::COPY_MSG.map(|s| h.rebase(s));
+        let dev = h.rebase(super::MOUNT_DEVICE);
+        let code = cdecl(h, super::PARTITION_NAME, &[dev]);
+        let fmt = h.rebase(super::INIT_SUB_MSG[17]);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[f(0x44), fmt, code, dev]);
+        let n: u32 = h.read(h.rebase(HEAD_COUNT));
+        h.write(f(0x68), n);
+        if n.cast_signed() > 0 {
+            let total_at = h.rebase(TOTAL);
+            let mut total: u32 = h.read(total_at);
+            for i in 0..n {
+                if cdecl(h, RMODE_GET, &[i]) != 0 {
+                    total = total.wrapping_add(head_size(h, i));
+                }
+            }
+            h.write(total_at, total);
+        }
+        cdecl(h, DBG_PRINTF, &[m[0], n]);
+        let [a, b] = BUFFERS.map(|s| h.rebase(s));
+        let a: u32 = h.read(a);
+        h.write(f(0x60), a);
+        let b: u32 = h.read(b);
+        h.write(f(0x5c), b);
+        cdecl(h, DBG_PRINTF, &[m[1]]);
+        let mut k = 0u32;
+        h.write(f(0x48), k);
+        if n.cast_signed() <= 0 {
+            return 0;
+        }
+        let mut fresh = true;
+        loop {
+            let attempt = if fresh {
+                h.write(f(0x64), 0u32);
+                let size = head_size(h, k);
+                h.write(f(0x50), size);
+                size != 0 && cdecl(h, RMODE_GET, &[k]) != 0
+            } else {
+                cdecl(h, RMODE_GET, &[k]) != 0
+            };
+            if attempt {
+                match copy_attempt(h, ebp, k, &m) {
+                    CopyStep::Next => {}
+                    CopyStep::Done(r) => return r,
+                    CopyStep::Again(again) => {
+                        k = again;
+                        let size = head_size(h, k);
+                        h.write(f(0x50), size);
+                        if size != 0 {
+                            fresh = false;
+                            continue;
+                        }
+                    }
+                }
+            }
+            k = k.wrapping_add(1);
+            h.write(f(0x48), k);
+            if k.cast_signed() >= n.cast_signed() {
+                return 0;
+            }
+            fresh = true;
+        }
     }
 }

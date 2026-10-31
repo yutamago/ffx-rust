@@ -3500,3 +3500,4363 @@ fn r2_hdd_mount_and_heads_match_the_original() {
         }
     });
 }
+
+// ---- round 3: menu wrappers and table entries (`ffx_system::m5b_menu`) ----
+//
+// The packet wrappers ran in the menus; the table entries (the HDD menu,
+// the option menu, the sphere grid's) mostly never did. Every branch runs
+// on synthetic globals; the snapshots repeat the cases over their memory.
+
+use ffx_system::m5b_menu::{self as mnc, bridge as mnb};
+
+/// `TOCtrlPkt`'s state by `case % 4`: packets not added; added with the
+/// cursor below the limit; added with the limit 0 (`TODrawKick`); added
+/// with the limit at `cursor`, the cursor the call leaves (`TODrawKick`).
+fn ctrl_state(t: &mut Twins, case: u32, cursor: u32) {
+    let (add, limit) = [(0, 0), (1, 0xffff_ffff), (1, 0), (1, cursor)][(case % 4) as usize];
+    t.g32(mnc::ADD_PKT, add);
+    t.g32(mnc::PKT_LIMIT, limit);
+}
+
+#[test]
+fn r3_menu_packet_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0401);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::VALUE_FONT_M, 5),
+                (mnc::FONT_8F2BF0, 5),
+                (mnc::EASY_SHAPE, 8),
+                (mnc::BASE_MES_FONT, 5),
+                (mnc::MES_FONT_8ED120, 6),
+                (mnc::STR_FONT_M, 9),
+                (mnc::DRAW_KICK, 0),
+                (mnc::CHANGE_SEQ_ANM, 3),
+                (mnc::TRANS_IMAGE_HL, 7),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                // one cursor for all, so that the limit can equal it
+                t.stub(
+                    sym,
+                    false,
+                    n,
+                    0,
+                    if sym == mnc::DRAW_KICK {
+                        r ^ (k as u32 * 0x111)
+                    } else {
+                        r
+                    },
+                );
+            }
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, r);
+            ctrl_state(t, case, r);
+            let w: Vec<u32> = (0..7).map(|_| rng.word()).collect();
+            let w4 = [w[0], w[1], w[2], w[3]];
+            t.check("value font", 0x0090_42e0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::value_font_m_clut_right(m, w4))
+            });
+            t.check("font 902810", 0x0090_2810, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::font_902810(m, w4))
+            });
+            let w7 = [w[0], w[1], w[2], w[3], w[4], w[5], w[6]];
+            t.check("shape", 0x0090_3b70, Conv::Cdecl, &w7, |m| {
+                Out::U32(mnb::shape_xywhc2(m, w7))
+            });
+            t.check("base mes font", 0x0090_1cb0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::base_mes_font(m, w4))
+            });
+            let w5 = [w[0], w[1], w[2], w[3], w[4]];
+            t.check("mes font", 0x0090_1d10, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::mes_font_901d10(m, w5))
+            });
+            t.check("str font 4", 0x0090_1f80, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::str_font_m4(m, w4))
+            });
+            t.check("easy str font", 0x0090_1f40, Conv::Cdecl, &w4[..3], |m| {
+                Out::U32(mnb::easy_str_font_m(m, w[0], w[1], w[2]))
+            });
+            let prim = t.zeros(0x20);
+            let halves: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+            t.write(prim, &halves);
+            t.check("seq prim func", 0x008f_e040, Conv::Cdecl, &[prim], |m| {
+                Out::U32(mnb::seq_prim_func(m, prim))
+            });
+            t.check("seq prim mes", 0x008f_e080, Conv::Cdecl, &[prim], |m| {
+                Out::U32(mnb::seq_prim_mes(m, prim))
+            });
+            t.check("small face", 0x0090_1160, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::trans_small_face(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3_menu_str_font_m_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0402);
+        for (case, text) in [&b"\0"[..], b"A\0", b"Gil 123\0", b"\xff\x01\0"]
+            .into_iter()
+            .enumerate()
+        {
+            t.reset();
+            t.stub(mnc::IDENTITY, false, 1, 0, rng.next());
+            t.stub(mnc::FONT_M_ASCII, false, 9, 0, rng.next());
+            let s = t.alloc(text);
+            let out = t.zeros(0x80);
+            let rest: [u32; 6] = std::array::from_fn(|_| rng.word());
+            let cur = rng.next();
+            let mut args = vec![cur, s, out];
+            args.extend(rest);
+            t.check(
+                &format!("str font #{case}"),
+                0x008e_dfc0,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::str_font_m(m, cur, s, out, rest)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_menu_table_entries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0403);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::CD_SIZE_KB, 0),
+                (mnc::MC_SET_DEBUG_LOCK, 1),
+                (mnc::PKT_8EB4E0, 1),
+                (mnc::DRAW_KICK, 0),
+                (mnc::CLOSE_WINDOW, 0),
+                (mnc::CLOSE_WINDOW3, 0),
+                (mnc::CLOSE_WINDOW2, 0),
+                (mnc::CLOSE_SUB_CMD, 0),
+                (mnc::SEQ_STOP_SCENE, 2),
+                (mnc::ITEM_LIST_MAX, 0),
+                (mnc::SHADE_RATIO_DIFF, 1),
+                (mnc::SHADE_RATIO_STEP, 1),
+                (mnc::OPTION_MENU, 1),
+                (mnc::MAIN_HELP, 1),
+                (mnc::SET_HELP, 1),
+                (mnc::SCREEN_X2, 1),
+                (mnc::IGNORE_JOIN, 1),
+                (mnc::SEQ_INIT_SCENE, 1),
+                (mnc::SEQ_STOP_EXEC, 1),
+                (mnc::ABM_EXIT, 0),
+                (mnc::ET_CHR_SHOW, 1),
+                (mnc::TEX_VDISP_LOAD, 1),
+                (mnc::PPP_INIT_DATA, 3),
+                (mnc::FONT_1612_EDGE, 2),
+                (mnc::DBG_PRINTF, 1),
+                (mnc::GET_FFX_LANG_JMP, 0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x1001));
+            }
+            let consts: [(u32, u32); 5] = [
+                (0x008a_c7a0, mnc::STR_B62CF4),
+                (0x008b_7c90, mnc::STR_B62CF4),
+                (0x008d_f680, mnc::STR_B62CF4),
+                (0x008f_a4e0, mnc::STR_B66B30),
+                (0x0090_6c10, mnc::STR_B66B30),
+            ];
+            for (sym, v) in consts {
+                t.check("constant", sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(mnb::constant(m, v))
+                });
+            }
+            let none: [(u32, Thunk0); 14] = [
+                (0x008b_34f0, |m| mnb::update_save_need(m)),
+                (0x008b_3600, |m| mnb::mc_unlock(m)),
+                (0x008c_66c0, |m| mnb::close_item_windows(m)),
+                (0x008c_6700, |m| mnb::item_list_max(m)),
+                (0x008e_1910, |m| mnb::option_enter(m)),
+                (0x008e_1950, |m| mnb::option_open(m)),
+                (0x008e_19b0, |m| mnb::option_close(m)),
+                (0x008e_19d0, |m| mnb::option_leave(m)),
+                (0x008e_27b0, |m| mnb::abm_exit(m)),
+                (0x008e_27c0, |m| mnb::abm_enter(m)),
+                (0x008e_27d0, |m| mnb::abm_leave(m)),
+                (0x0076_ef90, |m| mnb::print_b53060(m)),
+                (0x008d_fe10, |m| mnb::get_ffx_lang(m)),
+                (0x008b_f0a0, |m| mnb::hdd_menu_func(m)),
+            ];
+            // the option window (or none), the words the entries write
+            let win = t.alloc(&[0xa5; 0x50]);
+            let wcell = t.rebase(mnc::OPT_WINDOW);
+            t.w32(wcell, if case & 1 == 0 { win } else { 0 });
+            for sym in [
+                mnc::OPT_WORD_44,
+                mnc::OPT_WORD_54,
+                mnc::OPT_WORD_5C,
+                mnc::OPT_WORD_60,
+                mnc::WORD_134085C,
+                mnc::BYTE_1340858,
+                mnc::WORD_186A22C,
+                mnc::WORD_186A230,
+            ] {
+                let at = t.rebase(sym);
+                t.w32(at, 0x5a5a_5a5a);
+            }
+            let item = t.rebase(mnc::OPT_ITEM);
+            t.w32(item, rng.below(8));
+            // the sphere grid's leave: its once-flag, the record's first byte
+            t.g32(mnc::ABM_RUNNING, 0x5a5a_5a5a);
+            t.g32(mnc::ABM_LEAVE_DONE, u32::from(case & 2 != 0));
+            let mut rec = [0xa5u8; 0x10];
+            rec[0] = u8::from(case & 4 != 0);
+            let rec = t.alloc(&rec);
+            t.g32(mnc::ABM_PPP_RECORD, rec);
+            // PKT_8EB4E0 is stub 2 above
+            ctrl_state(t, case, r ^ 0x2002);
+            t.g32(mnc::PKT_CURSOR, rng.next());
+            // the two HDD menu pointers: recording stubs
+            let f1 = t.stub_code(0x0e0f_0101, false, 0, 0, r ^ 0x77);
+            let f2 = t.stub_code(0x0e0f_0102, false, 0, 0, r ^ 0x78);
+            let p1 = t.rebase(mnc::HDD_MENU_ENTER);
+            t.patch(p1, &f1.to_le_bytes());
+            let p2 = t.rebase(mnc::HDD_MENU_FUNC);
+            t.patch(p2, &f2.to_le_bytes());
+            for (sym, f) in none {
+                t.check(
+                    &format!("entry {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(f(m)),
+                );
+            }
+            t.check("hdd menu enter", 0x008b_f050, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::hdd_menu_enter(m))
+            });
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check("pkt 8eb4e0", 0x008b_e250, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::pkt_8eb4e0(m))
+            });
+            t.check("font 1612 edge", 0x0090_6260, Conv::Cdecl, &w6[..2], |m| {
+                Out::U32(mnb::font_1612_edge(m, w6[0], w6[1]))
+            });
+            // the callback object
+            let cb = t.stub_code(0x0e0f_0103, false, 1, 0, r ^ 0x79);
+            let obj = t.words(&[0, 0, cb]);
+            let ocell = t.rebase(mnc::CALLBACK_OBJECT);
+            t.w32(ocell, obj);
+            t.check("callback one", 0x008a_bb00, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::callback_one(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3_menu_font_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0404);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::MES_FONT_8ED190, false, 11, 0, r);
+            t.stub(mnc::FONT_8F1880, false, 8, 0, r ^ 1);
+            t.stub(mnc::UNLOAD_TEXTURE, false, 1, 0, r ^ 2);
+            t.stub(mnc::GLYPH_A, false, 2, 0, r ^ 3);
+            t.stub(mnc::GLYPH_B, false, 2, 0, r ^ 4);
+            t.stub(mnc::GLYPH_C, false, 2, 0, r ^ 5);
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check("mes font 8ed120", 0x008e_d120, Conv::Cdecl, &w6, |m| {
+                Out::U32(mnb::mes_font_8ed120(m, w6))
+            });
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, rng.next());
+            t.check("font 8f8870", 0x008f_8870, Conv::Cdecl, &w6[..3], |m| {
+                Out::U32(mnb::font_8f8870(m, w6[0], w6[1], w6[2]))
+            });
+            let count = t.rebase(mnc::WAKKA_COUNT);
+            t.w32(count, [0, 1, 3, 0xffff_ffff][(case % 4) as usize]);
+            t.check("wakka unloaded", 0x008e_89d0, Conv::Cdecl, &[], |m| {
+                mnb::wakka_textures_unloaded(m).map_or(Out::None, Out::U32)
+            });
+            let glyph = t.zeros(0x28);
+            // 2^60 and -2^60: the sum's order shows (the pad is lost in 2^60)
+            let adv = [0.0f32, 1.5, -3.25, 1_152_921_504_606_846_976.0][(case % 4) as usize];
+            t.w32(glyph + 0x1c, adv.to_bits());
+            let flags = [0u16, 1, 2, 4, 0xfffc][(case % 5) as usize];
+            t.write(glyph + 0x26, &flags.to_le_bytes());
+            let pos = t.zeros(8);
+            let x = [0.0f32, 100.25, -7.0, -1_152_921_504_606_846_976.0][(case / 4 % 4) as usize];
+            t.w32(pos + 4, x.to_bits());
+            t.check(
+                "glyph advance",
+                0x008f_c770,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_advance(m, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_menu_shape_pairs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0405);
+        for _ in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+            let info = t.zeros(0x10);
+            let ww = (rng.below(0x80) as u16).to_le_bytes();
+            t.write(info + 8, &ww);
+            t.stub(mnc::SHAPE_INFO, false, 1, 0, info);
+            t.stub(mnc::SHAPE_INFO_ID, false, 1, 0, info);
+            let w8: [u32; 8] = std::array::from_fn(|_| rng.word());
+            let w6 = [w8[0], w8[1], w8[2], w8[3], w8[4], w8[5]];
+            for sym in [0x008f_1a90u32, 0x008f_1af0] {
+                t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+                t.check("shape da db", sym, Conv::Cdecl, &w6, |m| {
+                    Out::U32(mnb::shape_da_db(m, w6))
+                });
+            }
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+            t.check("shape ids", 0x008f_0990, Conv::Cdecl, &w8, |m| {
+                Out::U32(mnb::shape_ids(m, w8))
+            });
+        }
+    });
+}
+
+// ---- round 3: magic-file preloads, VFX vector cells (`ffx_system::m5b_pc`) ----
+
+#[test]
+fn r3_magic_preloads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0501);
+        for case in 0..24u32 {
+            t.reset();
+            imp(t, pcs::IOB_FUNC_IAT, 0, false, 0x0e10_0000);
+            imp(t, pcs::FPRINTF_IAT, 6, false, 0x11);
+            t.stub(pcs::UNLOAD_PRX, false, 2, 0, 0x12);
+            let on = t.rebase(pcs::PRELOAD_ON);
+            t.w32(on, u32::from(case % 6 != 0));
+            let table = t.rebase(pcs::PRELOAD_TABLE);
+            let counts = t.rebase(pcs::PRELOAD_COUNTS);
+            let handles = t.rebase(pcs::PRELOAD_HANDLES);
+            for i in 0..12 {
+                t.put(table + 12 * i, &[rng.below(4), rng.next(), rng.below(3)]);
+                let c = [0, 1, 3, 0xffff_ffff][rng.below(4) as usize];
+                t.w32(counts + 4 * i, c);
+                t.w32(handles + 4 * i, rng.next());
+            }
+            let magic = [0, 1, 3, 0xffff_ffff][(case % 4) as usize];
+            let file = [0, 2, 0x8000_0000][(case / 4 % 3) as usize];
+            if case & 1 == 0 {
+                t.check(
+                    &format!("clear #{case}"),
+                    0x009d_acc0,
+                    Conv::Cdecl,
+                    &[magic, file],
+                    |m| pcb::clear_preloaded(m, magic, file).map_or(Out::None, Out::U32),
+                );
+            } else {
+                t.check(
+                    &format!("clear all #{case}"),
+                    0x009d_aca0,
+                    Conv::Cdecl,
+                    &[magic],
+                    |m| pcb::clear_all_preloaded(m, magic).map_or(Out::None, Out::U32),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r3_magic_dll_loaded_matches_the_original() {
+    Twins::each(|t| {
+        for module in [0u32, 0x1000_0000] {
+            t.reset();
+            imp(t, pcs::GET_LAST_ERROR_IAT, 0, true, 0x7e);
+            imp(t, pcs::PRINTF_IAT, 3, false, 0x21);
+            imp(t, pcs::GET_PROC_ADDRESS_IAT, 2, true, 0x1000_1234);
+            t.check(
+                &format!("dll loaded {module:#x}"),
+                0x009d_b110,
+                Conv::Cdecl,
+                &[module],
+                |m| Out::U32(pcb::on_magic_dll_loaded(m, module)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_vfx_vector_cells_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0502);
+        for _ in 0..4 {
+            t.reset();
+            let src = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let dst = t.zeros(16);
+            t.check("copy c0a004", 0x0092_cc20, Conv::Cdecl, &[dst], |m| {
+                Out::U32(pcb::copy_c0a004(m, dst))
+            });
+            t.check(
+                "copy via c8f980",
+                0x0092_cbf0,
+                Conv::Cdecl,
+                &[dst, src],
+                |m| Out::U32(pcb::copy_via_c8f980(m, dst, src)),
+            );
+        }
+    });
+}
+
+// ---- round 3, batch 2: packet builders and menu draws (`ffx_system::m5b_menu`) ----
+//
+// None of these ran in a coverage run but the battle plate and the
+// windows; every branch runs on synthetic globals and recording stubs
+// (the face slot past 7, a window under 16 wide, a save slot not in use,
+// each `TOCtrlPkt` state, the languages), and the snapshots repeat them
+// over their memory.
+
+impl Twins {
+    /// A recording stub (cdecl) that writes a string into the buffer its
+    /// word `buf` points to: `count` bytes of `src` (its word `count_word`
+    /// masked to 0..15 when given, else `fixed`), then a NUL. Logs `n`
+    /// words, returns `ret`; returns its address.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_code(
+        &mut self,
+        tag: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) -> u32 {
+        let log_stub = self.stub_code(tag, false, n, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, 0xc + 4 * buf]); // mov edi, [esp+0xc+4buf]
+        if let Some(w) = count_word {
+            c.extend([0x8b, 0x4c, 0x24, 0xc + 4 * w]); // mov ecx, [esp+0xc+4w]
+            c.extend([0x83, 0xe1, 0x0f]); // and ecx, 0xf
+        } else {
+            c.push(0xb9);
+            c.extend(fixed.to_le_bytes()); // mov ecx, fixed
+        }
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0xc6, 0x07, 0x00]); // mov byte [edi], 0
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        self.cave_code(&c)
+    }
+
+    /// A recording stub over `sym` (no words) that first sets the word at
+    /// the `ffx.sym` address `global` to `value`; returns `ret`.
+    fn stub_store_global(&mut self, sym: u32, global: u32, value: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 0, 0, ret);
+        let mut c = vec![0xc7, 0x05];
+        c.extend(self.rebase(global).to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [global], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// [`Twins::fill_code`] bound to the import slot `slot` (tag `slot`).
+    #[allow(clippy::too_many_arguments)]
+    fn fill_import(
+        &mut self,
+        slot: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) {
+        let addr = self.fill_code(slot, n, buf, count_word, fixed, src, ret);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// [`Twins::fill_code`] over the original at `sym`.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_stub(
+        &mut self,
+        sym: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) {
+        let addr = self.fill_code(sym, n, buf, count_word, fixed, src, ret);
+        self.jump(sym, addr);
+    }
+
+    /// [`Twins::check`] of a cdecl original with a frame of `low` bytes
+    /// below its `ebp` (zeroed in both; the top `skip` bytes, the
+    /// security cookie, left out of the comparison) and its argument
+    /// slots: the bridge gets `ebp` and the slots' address (B holds the
+    /// same argument words there, its own calls go below the frame), and
+    /// both the frame and the slots must agree afterwards.
+    fn check_fs(
+        &mut self,
+        what: &str,
+        sym: u32,
+        args: &[u32],
+        low: u32,
+        skip: u32,
+        bridge: impl FnOnce(&mut G, u32, u32) -> Out,
+    ) {
+        let ebp = self.frame_ebp(args.len());
+        let slots = ebp + 8;
+        let lo = ebp - low;
+        self.write(lo, &vec![0; low as usize]);
+        let words: Vec<u8> = args.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.b.write(slots, &words).unwrap();
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, Conv::Cdecl, args, |m| bridge(m, ebp, slots));
+        self.b.set_call_top(None);
+        for (from, n) in [(lo, low - skip), (slots, 4 * args.len() as u32)] {
+            let mut x = vec![0; n as usize];
+            let mut y = vec![0; n as usize];
+            Mem::read_bytes(&self.a, from, &mut x);
+            Mem::read_bytes(&self.b, from, &mut y);
+            if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+                panic!(
+                    "{what}: stack byte {:#x}: {} != {}",
+                    from + i as u32,
+                    x[i],
+                    y[i]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r3b2_packet_words_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0601);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x200);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 0x99);
+            // TOGsTEXFLUSH moves the cursor: a stub that sets it
+            let moved = buf + 0x40;
+            t.stub_store_global(mnc::GS_TEXFLUSH, mnc::PKT_CURSOR, moved, r ^ 1);
+            t.check(
+                &format!("tex flush #{case}"),
+                0x008e_b4e0,
+                Conv::Cdecl,
+                &[buf],
+                |m| Out::U32(mnb::tex_flush_alpha(m, buf)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, buf + 0x60);
+            t.check(
+                &format!("plain regs #{case}"),
+                0x0090_46e0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mnb::plain_draw_regs(m)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            for (sym, n) in [(mnc::GS_ALPHA, 5), (mnc::GS_WORDS4, 4)] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3, r ^ 4, r ^ 5]);
+            ctrl_state(t, case, r ^ 5);
+            let w4: [u32; 4] = std::array::from_fn(|_| rng.word());
+            t.check(
+                &format!("blue window #{case}"),
+                0x008f_de50,
+                Conv::Cdecl,
+                &w4,
+                |m| Out::U32(mnb::sample_blue_window(m, w4)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_face_sprite_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0602);
+        for slot in [0u32, 1, 2, 3, 4, 5, 6, 7, 8, 0xffff_ffff, 0x8000_0003] {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::ADP_TEST, false, 9, 0, r);
+            let p = t.zeros(0x80);
+            t.stub(mnc::ADP_TEX0, false, 13, 0, p + 0x20);
+            t.stub(mnc::ADP_WORDS4, false, 5, 0, r ^ 1);
+            t.stub_seq(mnc::ADP_XY2, 3, 0, &[r ^ 2, r ^ 3]);
+            t.stub_seq(mnc::ADP_XYZ2_OFFSET, 3, 0, &[r ^ 4, r ^ 5]);
+            let mut args = [p, slot, 0, 0, 0, 0, 0, 0];
+            for a in &mut args[2..] {
+                *a = rng.word();
+            }
+            t.check_fs(
+                &format!("face sprite {slot:#x}"),
+                0x008f_1880,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::face_sprite(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_menu_shapes_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0603);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let info = t.zeros(0x10);
+            let ww = [0u16, 4, 0x20, 0xffff][(case % 4) as usize];
+            let hh = [0u16, 6, 0x30, 0x8000][(case / 4 % 3) as usize];
+            t.write(info + 8, &ww.to_le_bytes());
+            t.write(info + 0xa, &hh.to_le_bytes());
+            t.stub(mnc::SHAPE_INFO, false, 1, 0, info);
+            t.stub(mnc::WINDOW_LAYOUT, false, 1, 0, info);
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+            let w: [u32; 7] = std::array::from_fn(|_| rng.word());
+            let w6 = [w[0], w[1], w[2], w[3], w[4], w[5]];
+            for (sym, id) in [(0x008f_1990u32, 0x10b), (0x008f_1a10, 0x10a)] {
+                t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+                t.check(
+                    &format!("da db icon {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &w6,
+                    |m| Out::U32(mnb::shape_da_db_icon(m, w6, id)),
+                );
+            }
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, rng.next());
+            t.check(
+                &format!("left right #{case}"),
+                0x008f_5e90,
+                Conv::Cdecl,
+                &w,
+                |m| Out::U32(mnb::shape_left_right(m, w)),
+            );
+            // the windows: widths below, at and past 16
+            t.stub_seq(mnc::MKP_SHAPE_XYWHC2, 7, 0, &[r ^ 3, r ^ 4, r ^ 5, r ^ 6]);
+            t.stub_seq(mnc::SHAPE_901C10, 7, 0, &[r ^ 7, r ^ 8]);
+            t.g32(mnc::WINDOW_COLOUR, rng.next());
+            t.g32(mnc::WINDOW_COLOUR2, rng.next());
+            ctrl_state(t, case, r ^ 6);
+            let width = [0u32, 0xf, 0x10, 0x40, 0xffff_fff0, 0x7fff_ffff][(case % 6) as usize];
+            let fr = [w[0], w[1], width, w[3], w[4], w[5]];
+            t.check_fs(
+                &format!("window frame #{case}"),
+                0x008f_9b60,
+                &fr,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window_frame(m, fr, s)),
+            );
+            t.stub_seq(mnc::MKP_SHAPE_XYWHC2, 7, 0, &[r ^ 3, r ^ 4, r ^ 5, r ^ 6]);
+            let wp = [w[0], w[1], width, w[3]];
+            let last = if width.cast_signed() < 0x10 {
+                r ^ 8
+            } else {
+                r ^ 6
+            };
+            ctrl_state(t, case, last);
+            t.check_fs(
+                &format!("window plain #{case}"),
+                0x008f_9a40,
+                &wp,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window_plain(m, wp, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_battle_plate_and_save_faces_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0604);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::BLUE_WINDOW, 4),
+                (mnc::MKP_SHAPE_XY, 3),
+                (mnc::SAVE_CHR_NAME, 1),
+                (mnc::MES_FONT_L_CENTER, 3),
+                (mnc::PARAM_PLATE, 3),
+                (mnc::SMALL_FACE, 0),
+                (mnc::PKT_SCISSOR, 4),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x101));
+            }
+            let w3: [u32; 3] = std::array::from_fn(|_| rng.word());
+            t.check(
+                &format!("change seq anm #{case}"),
+                0x0089_28b0,
+                Conv::Cdecl,
+                &w3,
+                |m| Out::U32(mnb::change_seq_anm(m, w3[0], w3[1], w3[2])),
+            );
+            // the save file: its index, info (faces from +5, the flag +0x1e)
+            let idx = [0u16, 3, 0x62, 0xffff][(case % 4) as usize];
+            let save = t.zeros(0x50);
+            t.write(save + 0x48, &idx.to_le_bytes());
+            let mut faces = [0u8; 0x20];
+            for (i, f) in faces[5..12].iter_mut().enumerate() {
+                *f = [6, 0xff, 1, 6, 0xff, 7, 0xff][(i + case as usize) % 7];
+            }
+            faces[0x1e] = u8::from(case & 2 != 0);
+            if case == 7 {
+                faces[11] = 2; // the last face drawn
+            }
+            let info = t.alloc(&faces);
+            t.stub(mnc::SAVE_FILE_INFO, false, 1, 0, info);
+            let slots_at = t.rebase(mnc::SAVE_SLOTS);
+            let state = i32::from(idx.cast_signed()).cast_unsigned();
+            t.write(
+                slots_at.wrapping_add(state),
+                &[if case & 4 == 0 { 1 } else { 3 }],
+            );
+            t.stub_seq(
+                mnc::FONT_8F8870,
+                3,
+                0,
+                &[
+                    r ^ 0x10,
+                    r ^ 0x11,
+                    r ^ 0x12,
+                    r ^ 0x13,
+                    r ^ 0x14,
+                    r ^ 0x15,
+                    r ^ 0x16,
+                ],
+            );
+            let args = [save, rng.word(), rng.word()];
+            t.check_fs(
+                &format!("save faces #{case}"),
+                0x008b_37d0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::save_party_faces(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_number_printers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0605);
+        // digits with a letter and a sign among them
+        let src = t.alloc(b"19a4:-/7890123456789");
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.fill_import(mnc::SPRINTF_IAT, 3, 0, Some(2), 0, src, r ^ 0x55);
+            t.stub(mnc::STR_FONT_M, false, 9, 0, r);
+            t.stub(mnc::FONT3D80_STRING, false, 9, 0, r ^ 1);
+            t.stub(mnc::MKP_SHAPE_XYC2, false, 5, 0, r ^ 2);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 3);
+            let value = [0u32, 1, 3, 8, 9, 11, 15, 0x1234_5670][(case % 8) as usize];
+            let w5 = [rng.next(), value, rng.word(), rng.word(), rng.word()];
+            t.check_fs(
+                &format!("value font m #{case}"),
+                0x008f_3280,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_m(m, ebp, w5)),
+            );
+            t.check_fs(
+                &format!("value font 3d80 #{case}"),
+                0x008f_3390,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_3d80(m, ebp, w5)),
+            );
+            ctrl_state(t, case, 0);
+            t.g32(mnc::PKT_CURSOR, r ^ 2);
+            // at most 7 characters: an eighth and its NUL would reach the
+            // security cookie at ebp - 4 (the original's 8-character path
+            // needs a 9-byte "%02d", which breaks the cookie in the game too)
+            let w4 = [case % 8, rng.word(), rng.word(), rng.word()];
+            t.check_fs(
+                &format!("lulu counter #{case}"),
+                0x0090_1280,
+                &w4,
+                0xc,
+                4,
+                |m, ebp, _| Out::U32(mnb::lulu_counter(m, ebp, w4)),
+            );
+            // TOValueToMesFontL writes the digits; the language and the
+            // English config choose the width
+            t.fill_stub(mnc::VALUE_TO_MES_FONT_L, 3, 1, Some(0), 0, src, r ^ 4);
+            t.stub(
+                mnc::GET_FFX_LANG_JMP,
+                false,
+                0,
+                0,
+                [0, 0, 9, 1][(case % 4) as usize],
+            );
+            // MsGetSaveConfigEnglish is `xor eax, eax; ret`: the stub's jump
+            // covers two bytes past it, put back by the reset
+            t.stub(
+                mnc::SAVE_CONFIG_ENGLISH,
+                false,
+                0,
+                0,
+                u32::from(case & 4 != 0),
+            );
+            t.stub(mnc::BASE_MES_FONT_RGBA, false, 11, 0, r ^ 5);
+            t.check_fs(
+                &format!("value font l #{case}"),
+                0x008f_30b0,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_l_clut_right(m, ebp, w5)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_string_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0606);
+        let path = t.alloc(b"ffx/font/abc/name.dat\0");
+        let replaced = t.alloc(b"/FFX_Data/new.dat\0");
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::CROSS_STR_FONT_S, false, 10, 0, r);
+            let xy = [
+                (0u32, 0u32),
+                (5, 0xffff_fffb),
+                (0x7fff_ffff, 0x8000_0000),
+                (0x0123_4567, 3),
+            ][(case % 4) as usize];
+            let args = [rng.next(), xy.0, xy.1];
+            t.check_fs(
+                &format!("str font s #{case}"),
+                0x0090_2040,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::easy_str_font_s(m, args[0], args[1], args[2], s)),
+            );
+            // the width TOGetMessageWH writes, both x87 and SSE truncation
+            let width = [0.0f32, 13.0, 7.5, -3.25, 1e10, 3.0][(case % 6) as usize];
+            t.stub_store(
+                mnc::MESSAGE_WH,
+                None,
+                2,
+                width.to_bits(),
+                false,
+                6,
+                0,
+                r ^ 1,
+            );
+            t.stub(mnc::BASE_MES_FONT_PLAIN, false, 4, 0, r ^ 2);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 3);
+            ctrl_state(t, case, r ^ 2);
+            let sse = t.rebase(0x0193_ed20); // __sse2_available
+            // 1e10 (case 4 and 10) under both truncations
+            t.w32(sse, (case >> 1) & 1);
+            t.check_fs(
+                &format!("mes font l center #{case}"),
+                0x0090_1c50,
+                &args,
+                8,
+                0,
+                |m, ebp, s| Out::U32(mnb::easy_mes_font_l_center(m, ebp, args, s)),
+            );
+            // the font paths: languages 0, 9, 10 and another
+            t.stub(
+                mnc::GET_FFX_LANG_JMP,
+                false,
+                0,
+                0,
+                [0, 9, 10, 1][(case % 4) as usize],
+            );
+            t.stub(mnc::STR_REPLACE, false, 3, 0, replaced);
+            t.fill_stub(mnc::UNIFY_FILENAME, 3, 1, None, 22, path, r ^ 4);
+            let ebp = t.frame_ebp(1);
+            // strrchr: the last '/' of the unified path
+            imp(t, mnc::STRRCHR_IAT, 2, false, ebp - 0x204 + 12);
+            t.stub(mnc::USER_FREE, false, 1, 0, r ^ 5);
+            let (sym, table) = if case & 1 == 0 {
+                (0x008a_d780u32, &mnc::BATTLE_FONTS)
+            } else {
+                (0x008a_d840, &mnc::EVENT_FONTS)
+            };
+            let dest = t.rebase(table.dest);
+            t.write(dest, &[0xa5; 0x20]);
+            t.check_fs(
+                &format!("font path #{case}"),
+                sym,
+                &[path],
+                0x204,
+                4,
+                |m, ebp, _| Out::U32(mnb::init_font_path(m, ebp, path, table)),
+            );
+        }
+    });
+}
+
+// ---- round 3, batch 3: glyph packets, UI quads (`ffx_system::m5b_menu`) ----
+
+/// A glyph position record (7 words: colour bytes, x, y, ..., the
+/// nibbles at `+0x1b`) and a glyph (UV and size floats, `i16 +2`, `+4`,
+/// the flags at `+0x26`) from `rng`, with some awkward floats.
+fn glyph_pair(t: &mut Twins, rng: &mut Rng, case: u32) -> (u32, u32) {
+    let fl = [0.0f32, 1.5, -2.75, 300.25, 1e10, -0.0, 7.0, 0.49];
+    let mut pos = [0u32; 7];
+    pos[0] = rng.next();
+    pos[1] = fl[(case % 8) as usize].to_bits();
+    pos[2] = fl[((case + 3) % 8) as usize].to_bits();
+    pos[6] = rng.next();
+    let pos = t.words(&pos);
+    let mut g = [0u32; 10];
+    g[0] = rng.next();
+    g[1] = [0x8000_7fff, 0x0001_fffe, 0, rng.next()][(case % 4) as usize];
+    for k in 2..9 {
+        g[k] = fl[((case as usize) + k) % 8].to_bits();
+    }
+    g[9] = u32::from([0u16, 1, 2, 0xffff][(case / 2 % 4) as usize]) << 16;
+    let glyph = t.words(&g);
+    (pos, glyph)
+}
+
+#[test]
+fn r3b3_glyph_packets_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0701);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x80);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3]);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 4);
+            ctrl_state(t, case, buf + 0x50);
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.check(
+                &format!("glyph edge #{case}"),
+                0x0090_5ef0,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_edge(m, pos, glyph)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3]);
+            t.check(
+                &format!("glyph fill #{case}"),
+                0x0090_60f0,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_fill(m, pos, glyph)),
+            );
+            // the two passes as stubs: the copy they get is on the frame
+            t.stub(mnc::GLYPH_A, false, 2, 0, r ^ 5);
+            t.stub(mnc::GLYPH_B, false, 2, 0, r ^ 6);
+            t.check_fs(
+                &format!("glyph draw #{case}"),
+                0x0090_6050,
+                &[pos, glyph],
+                0x1c,
+                0,
+                |m, ebp, _| Out::U32(mnb::glyph_draw(m, ebp, pos, glyph)),
+            );
+            for sym in [
+                mnc::ITALIC_EDGE,
+                mnc::ITALIC_FONT,
+                mnc::MOVIE_EDGE,
+                mnc::MOVIE_FONT,
+            ] {
+                t.stub(sym, false, 2, 0, r ^ sym);
+            }
+            let kind = [0u8, 1, 3, 2, 0xff, 3, 4, 3][(case % 8) as usize];
+            t.write(pos + 0x1a, &[kind]);
+            t.check_fs(
+                &format!("movie font #{case}"),
+                0x008f_d960,
+                &[pos, glyph],
+                0x1c,
+                0,
+                |m, ebp, _| Out::U32(mnb::movie_font_1612(m, ebp, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_ui_quads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0702);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            t.stub(
+                mnc::BEGIN_SCISSOR,
+                false,
+                4,
+                0,
+                [0, 1, 0xffff_ffff][(case % 3) as usize],
+            );
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check_fs(
+                &format!("ui box #{case}"),
+                0x008f_d390,
+                &w6,
+                0xa0,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_box(m, ebp, w6)),
+            );
+            let w8: [u32; 8] = std::array::from_fn(|_| rng.word());
+            t.check_fs(
+                &format!("ui rect #{case}"),
+                0x008f_b090,
+                &w8,
+                0x9c,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_rect(m, ebp, w8)),
+            );
+            // the picture: its size as TOGetImageWH writes it (0 and
+            // negatives for the x87 division's NaN and sign rules)
+            let wh =
+                [(512.0f32, 416.0f32), (0.0, 2.0), (-3.5, 0.0), (1e-30, 7.0)][(case % 4) as usize];
+            t.stub(mnc::SHAP_TEXTURE_NAME, false, 1, 0, r ^ 1);
+            image_wh_stub(t, wh.0.to_bits(), wh.1.to_bits(), r ^ 2);
+            let w5 = [rng.next(), rng.word(), rng.word(), rng.next(), rng.next()];
+            t.check_fs(
+                &format!("ui picture #{case}"),
+                0x008f_2bf0,
+                &w5,
+                0xa8,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_picture(m, ebp, w5)),
+            );
+        }
+    });
+}
+
+/// A `TOGetImageWH(id, &w, &h)` stub: writes `w` and `h`, logs the three
+/// words, returns `ret`.
+fn image_wh_stub(t: &mut Twins, w: u32, h: u32, ret: u32) {
+    let log_stub = t.stub_code(mnc::IMAGE_WH, false, 3, 0, ret);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    c.extend([0xc7, 0x00]);
+    c.extend(w.to_le_bytes()); // mov dword [eax], w
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+    c.extend([0xc7, 0x00]);
+    c.extend(h.to_le_bytes()); // mov dword [eax], h
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let addr = t.cave_code(&c);
+    t.jump(mnc::IMAGE_WH, addr);
+}
+
+#[test]
+fn r3b3_scroll_bar_and_vector_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0703);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            t.stub_seq(mnc::UI_RECT, 8, 0, &[r, r ^ 1]);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 2);
+            ctrl_state(t, case, 0);
+            // first, count, total: empty, partial, to the end, past it,
+            // count >= total, a zero total under a negative count
+            let (first, count, total) = [
+                (0u32, 3u32, 10u32),
+                (2, 3, 10),
+                (7, 3, 10),
+                (9, 5, 10),
+                (0, 10, 10),
+                (0, 0xffff_fffe, 0),
+                (1, 5, 6),
+                (0x7fff_ffff, 1, 0x7fff_fff0),
+            ][(case % 8) as usize];
+            let mut args = [
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                first,
+                count,
+                total,
+            ];
+            if total == 6 {
+                // y 0, h 1: the thumb's end sums to 0.9999999999999999,
+                // so only the full-length rule gives 1
+                args[1] = 0;
+                args[3] = 1;
+            }
+            t.check_fs(
+                &format!("scroll bar #{case}"),
+                0x0090_2700,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::scroll_bar(m, args, s)),
+            );
+            // the by-value vector
+            t.stub(mnc::COPY16_FROM_SYM, false, 2, 0, r ^ 3);
+            t.stub_copy16(mnc::COPY16_TO_B, r ^ 4);
+            t.stub(mnc::VU0_MUL_X, false, 6, 0, r ^ 5);
+            t.stub(mnc::COPY16_TO_SYM, false, 2, 0, r ^ 6);
+            let args = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("vec mul x #{case}"),
+                0x0092_cc40,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::vec_mul_x(m, args[0], args[1], s)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A `(src, dst)` 16-byte copy stub over `sym` that logs both words;
+    /// returns `ret`.
+    fn stub_copy16(&mut self, sym: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 2, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x74, 0x24, 0x0c]); // mov esi, [esp+0xc] (src)
+        c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10] (dst)
+        c.extend([0xb9, 4, 0, 0, 0]); // mov ecx, 4
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+// ---- round 3, batch 3: the HDD reader's requests (`ffx_system::m5b_hdd`) ----
+
+const BG_STATE: u32 = 0x0112_8aad;
+const TASK_WAIT: u32 = 0x0077_a4e0;
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that first clears the byte
+    /// at the `ffx.sym` address `at`; returns `ret`.
+    fn stub_clear_byte(&mut self, sym: u32, at: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xc6, 0x05];
+        c.extend(self.rebase(at).to_le_bytes());
+        c.push(0); // mov byte [at], 0
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (`n` words) that first decrements the
+    /// byte at the `ffx.sym` address `at`; returns `ret`.
+    fn stub_dec_byte(&mut self, sym: u32, at: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xfe, 0x0d];
+        c.extend(self.rebase(at).to_le_bytes()); // dec byte [at]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b3_hdd_requests_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0801);
+        let name = t.alloc(b"/hdd0/ffx/data0\0");
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_two(hdc::DBG_PRINTF, 2, 5, r);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            // the waits clear the state; the signal does in some cases
+            // each wait takes the state one step down: 3 after the signal
+            // needs three
+            t.stub_dec_byte(TASK_WAIT, BG_STATE, 1, r ^ 1);
+            if case & 2 == 0 {
+                t.stub(hdc::SIGNAL_BG_THREAD, false, 0, 0, r ^ 2);
+            } else {
+                t.stub_clear_byte(hdc::SIGNAL_BG_THREAD, BG_STATE, 0, r ^ 2);
+            }
+            let head = case % 3;
+            let heads = t.rebase(hdc::HEADS);
+            t.put(heads + 12 * head, &[0x100, u32::from(case & 4 == 0), 7]);
+            t.write(t.rebase(BG_STATE), &[[0, 2][(case & 1) as usize]]);
+            // the path's old bytes: the copy's NUL must land
+            t.write(t.rebase(0x0112_a7b0), &[0xa5; 0x20]);
+            let args = [0x100 + rng.below(0x40), rng.next(), rng.next(), head];
+            t.check(
+                &format!("read th #{case}"),
+                0x0077_8610,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::read_th(m, args[0], args[1], args[2], args[3])),
+            );
+            t.write(t.rebase(BG_STATE), &[[0, 2][(case & 1) as usize]]);
+            t.write(t.rebase(0x0112_a7b0), &[0xa5; 0x20]);
+            let args = [name, rng.next(), rng.next(), rng.next()];
+            t.check(
+                &format!("read ex th #{case}"),
+                0x0077_8550,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::read_ex_th(m, args[0], args[1], args[2], args[3])),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_hdd_read_main_and_space_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0802);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r);
+            // open fails, seek fails, read fails, all fine; under and
+            // over 2 GB
+            let (open, seek, read) = [
+                (0xffff_ffffu32, 0u32, 0u32),
+                (3, 0xffff_fffe, 0),
+                (4, 0, 0x8000_0000),
+                (5, 0x10, 0x20),
+            ][(case % 4) as usize];
+            t.stub(hdc::SCE_OPEN, false, 2, 0, open);
+            t.stub(hdc::SCE_LSEEK, false, 3, 0, seek);
+            t.stub(hdc::SCE_LSEEK64, false, 3, 0, seek);
+            t.stub(hdc::SCE_READ, false, 3, 0, read);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 1);
+            t.write(t.rebase(hdc::HDD_ERR), &[0]);
+            let offset = [0x800u32, 0x7fff_ffff, 0x8000_0000, 0xffff_f800][(case / 4) as usize];
+            t.put(t.rebase(0x0112_a7f0), &[rng.next(), rng.next(), offset]);
+            t.check(
+                &format!("read th main #{case}"),
+                0x0077_86f0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::read_th_main(m)),
+            );
+            // free space: devctl fails or writes the free sectors
+            let free = [0u32, 0x8_0000, 0x7f_ffff, 0xffff_ffff][(case % 4) as usize];
+            let fails = case & 4 != 0;
+            t.stub_store(
+                hdc::SCE_DEVCTL,
+                None,
+                4,
+                free,
+                false,
+                6,
+                0,
+                if fails { 0x8000_0002 } else { 0 },
+            );
+            let need = [0u32, 1, 2, 0xffff_ffff][(case / 4 % 4) as usize];
+            let args = [rng.next(), need];
+            t.check_fs(
+                &format!("free space #{case}"),
+                0x0077_7610,
+                &args,
+                4,
+                0,
+                |m, ebp, _| Out::U32(hdb::free_space_ok(m, ebp, args[0], args[1])),
+            );
+            // the read-function table
+            t.stub(hdc::PC_READ_FUNC_SET, false, 0, 0, r ^ 2);
+            let cd = [0u32, 1, 0xffff_ffff, 0x100][(case % 4) as usize];
+            t.check(
+                &format!("read funcs #{case}"),
+                0x0076_cff0,
+                Conv::Cdecl,
+                &[cd],
+                |m| Out::U32(hdb::set_read_funcs(m, cd)),
+            );
+        }
+    });
+}
+
+// ---- round 3, batch 3: RadialBlur's draws, the sphere grid's item check (`ffx_system::m5b_pc`) ----
+
+#[test]
+fn r3b3_blur_draws_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0901);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(pcs::SET_PARAM58, true, 4, 4, r);
+            t.stub(pcs::SET_TEXTURE_PARAM, true, 2, 2, r ^ 1);
+            t.stub(pcs::SET_PARAM5C, true, 4, 4, r ^ 2);
+            t.stub(pcs::SET_COLOR_TARGET, true, 2, 2, r ^ 3);
+            t.stub(pcs::SET_DEPTH_TARGET, true, 1, 1, r ^ 4);
+            t.stub(pcs::BEGIN_SCENE, true, 1, 1, [0, 7][(case & 1) as usize]);
+            t.stub(pcs::RENDER_MESH_INSTANCE, true, 4, 4, r ^ 5);
+            t.stub(pcs::END_SCENE, true, 1, 1, r ^ 6);
+            let words: Vec<u32> = (0..0x50).map(|i| 0x5a5a_0000 + i).collect();
+            let renderer = t.words(&words);
+            let mesh = t.words(&[1, 2, 3, 4, rng.next()]);
+            // the scales: plain, zero (x87 division by zero), negative,
+            // a NaN
+            let (sx, sy) = [
+                (2.0f32.to_bits(), 4.0f32.to_bits()),
+                (0, 1.5f32.to_bits()),
+                ((-3.0f32).to_bits(), 0x8000_0000),
+                (0x7fc0_1234, 0.1f32.to_bits()),
+            ][(case / 2 % 4) as usize];
+            let mut this = [0u32; 0x1c];
+            this[0] = u32::from(case % 6 != 5);
+            for w in &mut this[1..5] {
+                *w = rng.next();
+            }
+            this[5] = sx;
+            this[6] = sy;
+            this[7] = renderer;
+            this[0x19] = rng.next();
+            this[0x1a] = rng.next();
+            this[0x1b] = mesh;
+            let this = t.words(&this);
+            let tex = rng.next();
+            let check = |t: &mut Twins,
+                         what: &str,
+                         sym: u32,
+                         args: &[u32],
+                         low: u32,
+                         bridge: &dyn Fn(&mut G, u32) -> u32| {
+                let ebp = t.frame_ebp(args.len());
+                let lo = ebp - low;
+                t.write(lo, &vec![0; low as usize]);
+                t.b.set_call_top(Some(lo - 0x100));
+                t.check(what, sym, Conv::Thiscall(this), args, |m| {
+                    Out::U32(bridge(m, ebp))
+                });
+                t.b.set_call_top(None);
+                let n = (low - 0xc) as usize;
+                let mut x = vec![0; n];
+                let mut y = vec![0; n];
+                Mem::read_bytes(&t.a, lo, &mut x);
+                Mem::read_bytes(&t.b, lo, &mut y);
+                assert_eq!(x, y, "{what}: frame");
+            };
+            check(
+                t,
+                &format!("blur draw #{case}"),
+                0x0070_30e0,
+                &[tex, rng.next()],
+                0x2c,
+                &|m, ebp| pcb::blur_draw(m, ebp, this, tex),
+            );
+            check(
+                t,
+                &format!("blur draw scaled #{case}"),
+                0x0070_3480,
+                &[tex],
+                0x3c,
+                &|m, ebp| pcb::blur_draw_scaled(m, ebp, this, tex),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_abmap_item_check_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0902);
+        for case in 0..10u32 {
+            t.reset();
+            let r = rng.next();
+            // the grid: the character byte, its node table
+            let abmap = t.zeros(0x11600);
+            let chr = [0u8, 2, 6, 0x21][(case % 4) as usize];
+            t.write(abmap + 0x115bc, &[chr]);
+            t.write(
+                abmap + u32::from(chr) * 80 + 0x110cc,
+                &(0x1234u16 + case as u16).to_le_bytes(),
+            );
+            t.g32(pcs::ABMAP, abmap);
+            let count = [0i16, 1, 3, 5, -1][(case % 5) as usize];
+            let pad = t.zeros(0x1a44 + 12 * 6);
+            t.write(pad + 0x1a1e, &count.to_le_bytes());
+            for k in 0..6u32 {
+                t.write(pad + 0x1a44 + 12 * k, &[0xa5, 0, 0, 0]);
+                t.write(pad + 0x1a48 + 12 * k, &(0x2000u16 + k as u16).to_le_bytes());
+            }
+            t.g32(pcs::ABMAP_PAD, pad);
+            t.g32(pcs::ABMAP_RUNNING, u32::from(case != 9));
+            // stock, the item's ability byte, its record's kind
+            t.stub_seq(pcs::SAVE_ITEM_NUM, 1, 0, &[1, 0, 3, 2, 1, 1]);
+            let rom = t.zeros(0x60);
+            t.write(rom + 0x5d, &[[0xff, 3][(case & 1) as usize]]);
+            t.stub(pcs::ROM_ITEM, false, 2, 0, rom);
+            let rec = t.zeros(0x10);
+            t.write(rec + 0xc, &[[0x20, 1][((case / 2) & 1) as usize]]);
+            t.stub_seq(pcs::EXCEL_DATA, 3, 0, &[rec, 0, rec, rec, 0, rec]);
+            // the walks set the found flag (ctx + 0xc), one of them not
+            let found = u32::from(case % 3 != 0);
+            t.stub_store_into(pcs::FOR_EACH_NODE, 1, 0xc, found, 2, r ^ 7);
+            t.stub_store_into(pcs::FOR_NODE_AND_LINKED, 2, 0xc, 1 - found, 3, r ^ 8);
+            // the menu refill puts the count back, or leaves it emptied
+            if case & 1 == 0 {
+                t.stub_store_abs(
+                    pcs::FILL_USE_ITEM_MENU,
+                    pad + 0x1a1e,
+                    u32::from(count.cast_unsigned()),
+                    2,
+                    r ^ 9,
+                );
+            } else {
+                t.stub(pcs::FILL_USE_ITEM_MENU, false, 2, 0, r ^ 9);
+            }
+            t.check_fs(
+                &format!("item usable #{case}"),
+                0x00a4_4d30,
+                &[],
+                0x24,
+                0,
+                |m, ebp, _| Out::U32(pcb::abmap_item_usable(m, ebp)),
+            );
+            t.write(pad + 0x1a1e, &count.to_le_bytes());
+            t.check_fs(
+                &format!("refresh items #{case}"),
+                0x00a4_4ea0,
+                &[],
+                // the frame holds AbmapFillUseItemMenu's call words in the original: not compared
+                0,
+                0,
+                |m, ebp, _| pcb::abmap_refresh_items(m, ebp).map_or(Out::None, Out::U32),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that first stores `value`
+    /// at `[word + off]` (its stack word `word` a pointer); returns `ret`.
+    fn stub_store_into(&mut self, sym: u32, word: u8, off: u8, value: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * word]; // mov eax, [esp+4+4word]
+        c.extend([0xc7, 0x40, off]);
+        c.extend(value.to_le_bytes()); // mov dword [eax+off], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (`n` words) that first stores the word
+    /// `value` at the absolute address `at`; returns `ret`.
+    fn stub_store_abs(&mut self, sym: u32, at: u32, value: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xc7, 0x05];
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [at], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+// ---- round 3, batch 4: small menu wrappers, disk checks, sector reads, the install wall ----
+
+#[test]
+fn r3b4_menu_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a01);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::WAIT_WIN_MAIN, 1),
+                (mnc::MENU_ICON, 4),
+                (mnc::MOVIE_MESSAGE_IMAGE, 6),
+                (mnc::FONT_8EBC00, 8),
+                (mnc::MES_FONT_1612, 9),
+                (mnc::FONT_8EA680, 10),
+                (mnc::DAPS_STRING, 1),
+                (mnc::GS_TEST, 8),
+                (mnc::GS_WORDS4, 4),
+                (mnc::DRAW_KICK, 0),
+                (mnc::SET_STORE_IMAGE, 8),
+                (mnc::GS_FLUSH_CACHE, 1),
+                (mnc::EXEC_STORE_IMAGE, 2),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x10101));
+            }
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 0x55, r ^ 0x66]);
+            t.stub_seq(mnc::GS_SYNC_PATH, 2, 0, &[r ^ 0x77, r ^ 0x88]);
+            let w: [u32; 8] = std::array::from_fn(|_| rng.word());
+            let win = t.zeros(0x90);
+            t.check("wait win start", 0x008a_8750, Conv::Cdecl, &[win], |m| {
+                Out::U32(mnb::wait_win_start(m, win))
+            });
+            let buf = t.zeros(0x40);
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, r ^ 0x10101);
+            let w3 = [w[0], w[1], w[2]];
+            t.check("menu icon", 0x008f_d4d0, Conv::Cdecl, &w3, |m| {
+                Out::U32(mnb::menu_icon(m, w3))
+            });
+            let w5 = [w[0], w[1], w[2], w[3], w[4]];
+            t.check("movie image", 0x0090_2840, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::movie_message_image(m, w5))
+            });
+            let w4 = [w[0], w[1], w[2], w[3]];
+            t.check("font 8ebc00", 0x008e_bbd0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::font_8ebc00(m, w4))
+            });
+            t.check("mes font 1612", 0x008e_9fd0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::mes_font_1612(m, w4))
+            });
+            t.check("font 8ea680", 0x008e_a5c0, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::font_8ea680(m, w5))
+            });
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, r ^ 0x66);
+            t.check("flat rect", 0x008f_c6a0, Conv::Cdecl, &w, |m| {
+                Out::U32(mnb::flat_rect(m, w))
+            });
+            // the message width: TOGetMessageWH writes the float width;
+            // and the height word (its low half signed)
+            let width = [0.0f32, 13.5, -7.25, 70000.0, 1e10][(case % 5) as usize];
+            let height = [0x0000_0010u32, 0xfffe_8123, 0x7fff][(case % 3) as usize];
+            t.stub_store2(mnc::MESSAGE_WH, [width.to_bits(), height], 6, r ^ 1);
+            // 1e10 (case 4) under SSE, past i32 under both rules
+            t.g32(0x0193_ed20, (case >> 2) & 1); // __sse2_available
+            let w2 = [w[0], w[1]];
+            t.check_fs("width ext", 0x008b_8070, &w2, 8, 0, |m, ebp, _| {
+                Out::U32(mnb::width_ext_mes_1612(m, ebp, w2[0], w2[1]))
+            });
+            // TODapsPrintf: vsprintf gets the caller's word list
+            imp(t, mnc::VSPRINTF_IAT, 3, false, r ^ 2);
+            let daps = [w[0], w[1], w[2], w[3]];
+            t.check_fs("daps printf", 0x0089_dde0, &daps, 0x104, 4, |m, ebp, s| {
+                Out::U32(mnb::daps_printf(m, ebp, daps[0], s + 4))
+            });
+            // TOTransImageLH: its frame is aligned to 16 bytes
+            let a5 = [0u32, 64, 100, 0xffff_ffc1, 0x8000_0000][(case % 5) as usize];
+            let lh = [w[0], w[1], w[2], w[3], w[4], a5, w[5]];
+            let entry = t.frame_ebp(lh.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs("trans image lh", 0x008b_0da0, &lh, 0, 0, |m, _, _| {
+                Out::U32(mnb::trans_image_lh(m, ebp, lh))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3b4_disk_stream_and_wall_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a02);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // the cached disk check
+            let ctx = t.zeros(0x5_0760);
+            t.write(ctx + 0x5_075d, &[u8::from(case & 1 != 0)]);
+            t.write(
+                t.rebase(hdc::DISK_RESULT),
+                &[[0x80u8, 1, 0xff, 0][((case >> 1) % 4) as usize]],
+            );
+            t.stub(
+                hdc::DISK_CHANGED,
+                false,
+                0,
+                0,
+                [0, 1, 0, 0x100][(case / 2 % 4) as usize],
+            );
+            t.check("disk changed", 0x0077_75e0, Conv::Cdecl, &[ctx], |m| {
+                Out::U32(hdb::disk_changed_cached(m, ctx))
+            });
+            // the sector stream: used bytes and offsets around sector ends
+            let used = [0u32, 1, 0x7ff, 0x400][(case % 4) as usize];
+            let offset = [0u32, 0x800, 0x801, 0x7ff, 0xffff_f000, 0x1234][(case % 6) as usize];
+            t.g32(hdc::STREAM_USED, used);
+            t.g32(hdc::STREAM_SECTOR, 0x100 + case);
+            t.stub(hdc::READ_SECTORS, false, 5, 0, r);
+            let skip = t.words(&[0xa5a5_a5a5]);
+            let args = [offset, rng.next(), skip, rng.next()];
+            t.check("stream read", 0x0077_7380, Conv::Cdecl, &args, |m| {
+                Out::U32(hdb::stream_read(m, args))
+            });
+            t.stub(hdc::READ_MODULE_FILES, false, 0, 0, r ^ 1);
+            t.check("read module files", 0x0077_7970, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::read_module_files(m))
+            });
+            // the wall: progress at, past and before the mark
+            let (done, total) =
+                [(0u32, 0u32), (5, 10), (10, 10), (0xffff_fff0, 3)][(case % 4) as usize];
+            t.g32(hdc::DONE, done);
+            t.g32(hdc::TOTAL, total);
+            let progress = if total == 0 {
+                0
+            } else {
+                ((done << 6) as i32 / total as i32) as u32
+            };
+            let mark = if case & 4 == 0 {
+                progress
+            } else {
+                progress + 1
+            };
+            t.g32(hdc::WALL_MARK, mark);
+            t.g32(
+                hdc::WALL_FRAME,
+                [0u32, 3, 4, 0xffff_fffe][(case % 4) as usize],
+            );
+            t.g32(hdc::MENU_WORK, rng.next());
+            t.stub(hdc::WALL_DRAW, false, 2, 0, r ^ 2);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 3);
+            t.stub(hdc::WALL_SPRITE, false, 0, 0, r ^ 4);
+            t.check("kabe disp", 0x0077_93c0, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::kabe_disp(m))
+            });
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, `n` words) that first writes
+    /// `v[0]` through its third word and `v[1]` through its fourth (the
+    /// `&w`, `&h` of `TOGetMessageWH`); returns `ret`.
+    fn stub_store2(&mut self, sym: u32, v: [u32; 2], n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c]; // mov eax, [esp+0xc]
+        c.extend([0xc7, 0x00]);
+        c.extend(v[0].to_le_bytes()); // mov dword [eax], v0
+        c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+        c.extend([0xc7, 0x00]);
+        c.extend(v[1].to_le_bytes()); // mov dword [eax], v1
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b4_frame_buffer_install_mount_main_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a03);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::FRAME_BUFFER_ARG, false, 0, 0, r);
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r ^ 1);
+            t.g32(mnc::FRAME_BUFFER_RGB, rng.next());
+            t.check_fs("frame buffer", 0x008a_92a0, &[], 0x9c, 4, |m, ebp, _| {
+                Out::U32(mnb::real_frame_buffer(m, ebp))
+            });
+            // the install mode: each kind, negative ones, 0x0112a514
+            let kind = [0u32, 1, 2, 3, 4, 0xffff_fffe, 0x8000_0000, 0x13][(case % 8) as usize];
+            t.stub(hdc::INSTALL_KIND, false, 0, 0, kind);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 0x200);
+            t.g32(hdc::WORD_A514, [0u32, 0xffff_ffff][(case / 4 % 2) as usize]);
+            t.write(t.rebase(hdc::HDD_MODE), &[[0x80u8, 1][(case & 1) as usize]]);
+            t.g32(hdc::WORD_A518, 0x77);
+            t.check("install init", 0x0077_92e0, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::install_init(m))
+            });
+            // the mount: mounted, failing, succeeding
+            t.write(t.rebase(hdc::HDD_MOUNTED), &[u8::from(case % 3 == 0)]);
+            t.stub(hdc::MOUNT_PREPARE, false, 0, 0, r ^ 2);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 3);
+            imp(t, hdc::SPRINTF_IAT, 4, false, r ^ 4);
+            t.stub(hdc::MOUNT_PRE2, false, 0, 0, r ^ 5);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r ^ 6);
+            t.stub_two(hdc::DBG_PRINTF, 1, 2, r ^ 7);
+            t.stub(
+                hdc::SCE_MOUNT,
+                false,
+                5,
+                0,
+                [0u32, 0xffff_fffb, 7][(case % 3) as usize],
+            );
+            t.check_fs("mount", 0x0077_9490, &[], 0x84, 4, |m, ebp, _| {
+                Out::U32(hdb::mount(m, ebp))
+            });
+            // main: count 0..2, "debug", "DEBUG", "debu", "debugs"
+            let words = [&b"debug\0"[..], b"DEBUG\0", b"debu\0", b"debugs\0"];
+            let arg = t.alloc(words[((case / 2 + case) % 4) as usize]);
+            let argv = t.words(&[rng.next(), arg]);
+            let count = [2u32, 1, 3, 0xffff_ffff][(case / 2 % 4) as usize];
+            t.stub(pcs::MAIN_PREPARE, false, 0, 0, r ^ 8);
+            t.stub(pcs::MAIN_INIT, false, 2, 0, r ^ 9);
+            t.stub(pcs::MAIN_LOOP, false, 2, 0, r ^ 0xa);
+            t.check("main", 0x0082_2490, Conv::Cdecl, &[count, argv], |m| {
+                Out::U32(pcb::game_main(m, count, argv))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3b5_capture_offsets_install_check_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b01);
+        for case in 0..18u32 {
+            t.reset();
+            let r = rng.next();
+            // the capture: off, on by the menu flag or the option, the
+            // display modes 0, 6 and others
+            let menu = t.words(&[[0u32, 0x200, 0xffff_fdff][(case % 3) as usize]]);
+            t.stub(mnc::SAVE_MENU, false, 0, 0, menu);
+            t.g32(mnc::CAPTURE_OPTION, u32::from(case % 4 == 3));
+            t.stub_seq(
+                mnc::DISP_MODE,
+                0,
+                0,
+                &[
+                    [0u32, 1, 6, 2][(case / 3 % 4) as usize],
+                    [3, 6, 1, 6][(case % 4) as usize],
+                ],
+            );
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r);
+            t.stub(mnc::TRANS_IMAGE_LH, false, 7, 0, r ^ 1);
+            t.stub(mnc::MESSAGE_WINDOW_MODE, false, 1, 0, r ^ 2);
+            t.g32(mnc::CAPTURE_BUF[0], rng.next());
+            let xy = [rng.next(), rng.next()];
+            t.check(
+                &format!("capture #{case}"),
+                0x008a_daf0,
+                Conv::Cdecl,
+                &xy,
+                |m| Out::U32(mnb::capture_screen(m, xy[0], xy[1])),
+            );
+            // the CD offsets: found at once or after a wait
+            t.stub_seq(
+                hdc::CD_SEARCH_FILE,
+                2,
+                0,
+                &[1, 0, 1, u32::from(case & 1 == 0), 1, 1],
+            );
+            t.stub(hdc::SYNC_V, false, 1, 0, r ^ 3);
+            for sym in hdc::FILE_OFFSETS {
+                t.g32(sym, 0x5a5a_5a5a);
+            }
+            let names = if case % 5 == 4 {
+                0
+            } else {
+                t.words(&[rng.next(), rng.next(), rng.next()])
+            };
+            t.check_fs(
+                &format!("file offsets #{case}"),
+                0x0076_db40,
+                &[names],
+                0x28,
+                4,
+                |m, ebp, _| hdb::file_offset_get(m, ebp, names).map_or(Out::None, Out::U32),
+            );
+            // the installed files: heads with sizes, read modes, opens
+            let heads = t.rebase(hdc::HEADS);
+            let n = [0u32, 2, 3, 0xffff_ffff][(case % 4) as usize];
+            t.g32(hdc::HEAD_COUNT, n);
+            for k in 0..3u32 {
+                t.put(
+                    heads + 12 * k,
+                    &[0x10, [0, 0x800, 0x1000][((k + case) % 3) as usize], 0],
+                );
+            }
+            t.stub_seq(hdc::RMODE_GET, 1, 0, &[1, u32::from(case & 2 != 0), 1]);
+            t.stub(hdc::HDD_NAME, false, 1, 0, r ^ 4);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                2,
+                0,
+                &[3, [0x8000_0001, 4][(case & 1) as usize], 5],
+            );
+            t.stub_seq(hdc::SCE_LSEEK64, 3, 0, &[0x800, 0x1000, 0x7ff]);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r ^ 6);
+            // the format alone: the calls pass one to three words
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 7);
+            t.check(
+                &format!("verify files #{case}"),
+                0x0077_87c0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::verify_files(m)),
+            );
+            // the install check
+            let kind = [0u32, 0x10, 0xffff_fff1, 3, 4, 0][(case % 6) as usize];
+            t.stub(hdc::INSTALL_KIND, false, 0, 0, kind);
+            t.stub(hdc::HDD_MOUNT, false, 0, 0, u32::from(case % 4 == 1));
+            t.stub(hdc::VERIFY_FILES, false, 0, 0, u32::from(case % 4 == 2));
+            t.stub(hdc::INS_CHECK, false, 1, 0, r ^ 8);
+            t.stub(hdc::HDD_UNMOUNT, false, 0, 0, r ^ 9);
+            t.stub(hdc::REFRESH_HDD_MODE, false, 0, 0, r ^ 0xa);
+            // kind 0 reaching hdd_ins_check: cases 0 (both set), 11 (CD 0),
+            // 12 (byte 0)
+            t.write(t.rebase(hdc::BYTE_8A86), &[u8::from(case != 12)]);
+            t.g32(hdc::READ_FUNCS_CD, u32::from(case != 11));
+            t.g32(hdc::WORD_A514, 0x5a5a);
+            t.write(t.rebase(hdc::HDD_MODE), &[0x55]);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 0xb);
+            t.check(
+                &format!("install check #{case}"),
+                0x0077_91a0,
+                Conv::Cdecl,
+                &[r],
+                |m| Out::U32(hdb::install_check(m, r)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b5_partition_help_picture_map_reload_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b02);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            // the partition: mounted or not, open failing, ioctl failing,
+            // space or not
+            t.write(t.rebase(hdc::HDD_MOUNTED), &[u8::from(case & 1 != 0)]);
+            t.g32(hdc::WORD_A514, 0x5a5a);
+            for (k, sym) in [
+                hdc::HDD_UNMOUNT,
+                hdc::MOUNT_PREPARE,
+                hdc::MOUNT_PRE2,
+                hdc::HDD_MOUNT,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, 0, 0, r ^ (k as u32 + 1));
+            }
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 5);
+            imp(t, hdc::SPRINTF_IAT, 4, false, r ^ 6);
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [3u32, 0x8000_0000][((case >> 1) & 1) as usize],
+            );
+            t.stub(
+                hdc::SCE_IOCTL2,
+                false,
+                6,
+                0,
+                [0x40u32, 0xffff_fff0][((case >> 2) & 1) as usize],
+            );
+            t.stub(hdc::SCE_DCLOSE, false, 1, 0, r ^ 7);
+            t.stub(hdc::INSTALLED_MB, false, 1, 0, 0x1234_5678 ^ r);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 8);
+            t.stub(hdc::FREE_SPACE_OK, false, 2, 0, u32::from(case % 3 != 0));
+            t.check_fs(
+                &format!("open partition #{case}"),
+                0x0077_9000,
+                &[],
+                0x44,
+                4,
+                |m, ebp, _| Out::U32(hdb::open_ffx_partition(m, ebp)),
+            );
+            // the help picture: tables of known bytes
+            let table = t.zeros(0x1_0400 + 0x24c1 * 3);
+            let bytes: Vec<u8> = (0..0x24c1 * 3).map(|_| rng.next() as u8).collect();
+            t.write(table + 0x1_0400, &bytes);
+            t.g32(hdc::HELP_TABLE, table);
+            let picture = t.alloc(&[0xa5; 0x4000]);
+            t.g32(hdc::HELP_PICTURE, picture);
+            t.stub_copy_fill(hdc::MEMSET);
+            t.stub(hdc::SET_LOAD_IMAGE, false, 8, 0, r ^ 9);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 0xa);
+            t.stub(hdc::EXEC_LOAD_IMAGE, false, 2, 0, r ^ 0xb);
+            t.stub_seq(hdc::GS_SYNC_PATH, 2, 0, &[r ^ 0xc, r ^ 0xd]);
+            let args = [case % 3, rng.next()];
+            let entry = t.frame_ebp(args.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs(
+                &format!("help picture #{case}"),
+                0x0077_9ad0,
+                &args,
+                0,
+                0,
+                |m, _, _| Out::U32(hdb::help_picture(m, ebp, args[0], args[1])),
+            );
+            // the map objects: unknown map, a chunk held, loaded or not
+            t.stub_store(
+                pcs::EVENT_JUMP_MAP,
+                None,
+                0,
+                0x8061_7a41 ^ (case << 8),
+                false,
+                1,
+                0,
+                r ^ 0xe,
+            );
+            t.stub(pcs::STAGE_NAME, false, 2, 0, u32::from(case % 4 != 3));
+            imp(t, pcs::SPRINTF_IAT, 7, false, r ^ 0xf);
+            let map = t.words(&[0, 0, 0]);
+            let guide = t.words(&[0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67]);
+            t.put(map + 8, &[guide]);
+            let system = t.words(&[map, rng.next(), 0, 0, 0, [0u32, 5][(case & 1) as usize]]);
+            t.g32(pcs::YN_MAP_SYSTEM, system);
+            t.stub(pcs::RC_PRINT, false, 1, 0, r ^ 0x10);
+            let chunk = if case & 4 == 0 {
+                t.words(&[rng.next(), 0])
+            } else {
+                0
+            };
+            t.stub(pcs::CHUNK_NEW, false, 0, 0, chunk);
+            t.stub(
+                pcs::CHUNK_LOAD,
+                false,
+                2,
+                0,
+                u32::from(case & 2 != 0 && chunk != 0),
+            );
+            t.stub(pcs::BG_LOAD_BIN, false, 1, 0, r ^ 0x11);
+            t.stub(pcs::GUIDE_SET_MODEL, false, 2, 0, r ^ 0x12);
+            t.stub(pcs::CHUNK_DELETE, false, 1, 0, r ^ 0x13);
+            t.check_fs(
+                &format!("map reload #{case}"),
+                0x0092_cdd0,
+                &[],
+                0x10c,
+                4,
+                |m, ebp, _| Out::U32(pcb::reload_map_objects(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A `memset(dst, c, n)` stub over `sym` (cdecl): fills and logs the
+    /// three words; returns `dst`.
+    fn stub_copy_fill(&mut self, sym: u32) {
+        let log_stub = self.stub_code(sym, false, 3, 0, 0);
+        let mut c = vec![0x57]; // push edi
+        c.extend([0x8b, 0x7c, 0x24, 0x08]); // mov edi, [esp+8] (dst)
+        c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc] (c)
+        c.extend([0x8b, 0x4c, 0x24, 0x10]); // mov ecx, [esp+0x10] (n)
+        c.extend([0xf3, 0xaa]); // rep stosb
+        c.push(0x5f); // pop edi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b5_printf2_install_thread_disc_wait_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b03);
+        let text = t.alloc(b"MAP: loaded field ffx_base 0123456789 abcdefghij\0");
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // printf2: vsprintf writes the line; the switches and filters
+            t.fill_import(mnc::VSPRINTF_IAT, 3, 0, Some(2), 0, text, r);
+            t.stub_import_copy(mnc::STRNCPY_IAT);
+            t.g32(mnc::LOG_INDEX, [0u32, 5, 0x7f, 0x80][(case % 4) as usize]);
+            t.stub(
+                mnc::DEBUG_SWITCH,
+                false,
+                0,
+                0,
+                // mode 4 (cases 2, 3, 10, 11) sees 1 and 2
+                [1u32, 0, 1, 2][((case / 4 + case) % 4) as usize],
+            );
+            let config = t.words(&[0, 0, 0x0100_0000 * (case & 1), 0]);
+            t.stub(mnc::FFX_CONFIG, false, 0, 0, config);
+            let filter: &[u8] = [
+                &b"\0"[..],
+                b"MAP\0",
+                b"MAP: loaded field ffx_base 0123456789 abcdefghij\0",
+                b"XX\0",
+            ][(case % 4) as usize];
+            t.write(t.rebase(mnc::LOG_FILTER), filter);
+            t.write(t.rebase(mnc::LOG_FILTER_SENSE), &[u8::from(case & 2 != 0)]);
+            t.write(
+                t.rebase(mnc::LOG_MODE),
+                &[[3u8, 4, 0, 0xff][(case / 2 % 4) as usize]],
+            );
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 1);
+            t.stub(mnc::LOG_SEND, false, 3, 0, r ^ 2);
+            t.stub(mnc::LOG_DUMP, false, 2, 0, r ^ 3);
+            let args = [rng.next(), [0u32, 3, 15, 0x1f][(case % 4) as usize]];
+            t.check_fs(
+                &format!("printf2 #{case}"),
+                0x0076_dd10,
+                &args,
+                0x204,
+                4,
+                |m, ebp, _| Out::U32(mnb::printf2(m, ebp, args[0], args[1])),
+            );
+            // the install thread: each setup and copy result
+            let setup = [0u32, 1, 2, 3][(case % 4) as usize];
+            let copy = [0u32, 1, 2, 0][(case / 4 % 4) as usize];
+            t.stub(hdc::INSTALL_SETUP, false, 0, 0, setup);
+            let setter = t.stub_code(0x0e0f_0201, false, 1, 0, r ^ 4);
+            t.g32(hdc::SET_READ_FUNCS_CELL, setter);
+            t.g32(hdc::READ_FUNCS_CD, rng.next());
+            for (k, sym) in [
+                hdc::HDD_MOUNT,
+                hdc::HDD_UNMOUNT,
+                hdc::MOUNT_PREPARE,
+                hdc::MOUNT_PRE2,
+                hdc::DISK_OPEN_CHECK_SET,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(
+                    sym,
+                    false,
+                    u32::from(sym == hdc::DISK_OPEN_CHECK_SET),
+                    0,
+                    r ^ (0x10 + k as u32),
+                );
+            }
+            t.stub(hdc::INSTALL_COPY, false, 0, 0, copy);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 5);
+            imp(t, hdc::SPRINTF_IAT, 5, false, r ^ 6);
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [3u32, 0xffff_fff0][((case / 4) & 1) as usize],
+            );
+            t.stub(hdc::INSTALL_FINISH, false, 1, 0, r ^ 7);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 8);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 9);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 0xa);
+            t.put(
+                t.rebase(hdc::BUFFERS[0]),
+                &[[0u32, 0x1234][(case & 1) as usize]],
+            );
+            t.put(
+                t.rebase(hdc::BUFFERS[1]),
+                &[[0x5678u32, 0][(case & 1) as usize]],
+            );
+            t.check_fs(
+                &format!("install thread #{case}"),
+                0x0077_95b0,
+                &[],
+                0x44,
+                4,
+                |m, ebp, _| Out::U32(hdb::install_thread(m, ebp)),
+            );
+            // the disc wait: status, readiness, read and compare outcomes
+            let off = [[0u32, 2][(case / 4 % 2) as usize]];
+            let status: &[u32] =
+                [&off[..], &[1, 0, 0, 0], &[1, 1, 0, 0, 0], &[1, 0, 1, 0, 0]][(case % 4) as usize];
+            t.stub_seq(hdc::CD_STATUS, 0, 0, &[status, &[0; 8][..]].concat());
+            t.stub_seq(hdc::DISK_READY, 1, 0, &[0, 2, 2, 2, 2, 2, 2, 2]);
+            t.stub(hdc::TASK_WAIT_SYM, false, 1, 0, r ^ 0xb);
+            t.write(t.rebase(hdc::DISK_CHECK_ON), &[u8::from(case % 8 != 1)]);
+            let header: Vec<u32> = (0..8).map(|k| 0x4000 + k).collect();
+            let expected = if case % 8 == 2 { 0 } else { t.words(&header) };
+            t.g32(hdc::DISK_HEADER, expected);
+            let mut read = header.clone();
+            if case & 4 != 0 {
+                read[7] ^= 1;
+            }
+            let buffer = t.words(&[read, vec![0xa5a5_a5a5; 4]].concat());
+            t.g32(hdc::DISK_BUFFER, buffer);
+            t.stub(hdc::STATE_CLEAR, false, 0, 0, r ^ 0xc);
+            t.stub(hdc::MODULE_FILE_SECTOR, false, 2, 0, 0x99);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 0xd);
+            t.stub_seq(hdc::CD_READ, 4, 0, &[u32::from(case & 8 == 0), 1, 1, 1]);
+            t.stub_seq(
+                hdc::DISK_CHANGED,
+                0,
+                0,
+                &[
+                    0xffff_ffff,
+                    0xffff_ffff,
+                    [0u32, 5][(case & 1) as usize],
+                    0,
+                    0,
+                    0,
+                ],
+            );
+            // a mismatch would wait forever: the mismatch message (the
+            // n-th print of the case) puts the right word in
+            let nth = match case {
+                6 => 3,
+                5 | 7 | 14 => 5,
+                13 | 15 => 7,
+                _ => 0,
+            };
+            t.stub_store_nth(hdc::DBG_PRINTF, buffer + 28, header[7], nth, r ^ 0xe);
+            t.check(
+                &format!("disc wait #{case}"),
+                0x0076_ccb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::wait_disc(m)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, one word logged) that on its
+    /// `nth` call (1-based; 0 never) first stores `value` at the absolute
+    /// address `at`; returns `ret`.
+    fn stub_store_nth(&mut self, sym: u32, at: u32, value: u32, nth: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 1, 0, ret);
+        let ctr = self.words(&[0]);
+        let mut c = vec![0xff, 0x05];
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.extend([0x81, 0x3d]);
+        c.extend(ctr.to_le_bytes());
+        c.extend(nth.to_le_bytes()); // cmp dword [ctr], nth
+        c.extend([0x75, 0x0a]); // jne +10
+        c.extend([0xc7, 0x05]);
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [at], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b6_box_textured_wall_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c01);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            let full = [1u32, 0x40, 3, 0xffff_ffff][(case % 4) as usize];
+            let w = [0u32, 0x20, 0x40, 0xffff_fff0][(case / 4 % 3) as usize];
+            let args = [
+                rng.word(),
+                rng.word(),
+                w,
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                full,
+            ];
+            t.check_fs(
+                &format!("box fw #{case}"),
+                0x008f_3eb0,
+                &args,
+                0xa4,
+                4,
+                |m, ebp, _| Out::U32(mnb::box_fill_width(m, ebp, args)),
+            );
+            let size = [1u32, 0x10, 0xffff_ffff, 0x7fff_ffff][(case % 4) as usize];
+            let args = [
+                rng.word(),
+                rng.word(),
+                size,
+                [3u32, 1, 0x8000_0000][(case % 3) as usize],
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("ui textured #{case}"),
+                0x0077_4520,
+                &args,
+                0xa0,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_textured(m, ebp, args)),
+            );
+            // the wall: 6 frames of small sizes
+            let widths = [4i16, 3, 5, 2, 1, 6];
+            let heights = [2i16, 3, 1, 4, 0, 2];
+            for k in 0..6u32 {
+                t.write(
+                    t.rebase(hdc::WALL_WIDTHS) + 2 * k,
+                    &widths[k as usize].to_le_bytes(),
+                );
+                t.write(
+                    t.rebase(hdc::WALL_HEIGHTS) + 2 * k,
+                    &heights[k as usize].to_le_bytes(),
+                );
+            }
+            let bytes: Vec<u8> = (0..0x1500).map(|_| rng.next() as u8).collect();
+            let pictures = t.alloc(&bytes);
+            t.g32(hdc::WALL_PICTURES, pictures);
+            let picture = t.alloc(&vec![0xa5; 0x4_0000]);
+            t.g32(hdc::HELP_PICTURE, picture);
+            t.stub_copy_fill(hdc::MEMSET);
+            t.stub(hdc::SET_LOAD_IMAGE, false, 8, 0, r ^ 1);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 2);
+            t.stub(hdc::EXEC_LOAD_IMAGE, false, 2, 0, r ^ 3);
+            t.stub_seq(hdc::GS_SYNC_PATH, 2, 0, &[r ^ 4, r ^ 5]);
+            let args = [case % 6, rng.next()];
+            let entry = t.frame_ebp(args.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs(
+                &format!("wall frame #{case}"),
+                0x0077_98b0,
+                &args,
+                0,
+                0,
+                |m, _, _| Out::U32(hdb::wall_frame(m, ebp, args[0], args[1])),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b6_limit_gauge_param_plate_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c02);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let layout: Vec<u8> = (0..0x30).map(|_| rng.next() as u8).collect();
+            t.write(t.rebase(mnc::PLATE_LAYOUT), &layout);
+            t.stub_seq(mnc::BOX_RGBA, 8, 0, &[r, r ^ 1]);
+            t.stub(mnc::BOX_FILL_WIDTH, false, 7, 0, r ^ 2);
+            // max, value: zero ones, full, past full, partial
+            let (max, now) = [
+                (0u32, 5u32),
+                (7, 0),
+                (7, 7),
+                (7, 9),
+                (9, 4),
+                (0x7fff_ffff, 3),
+            ][(case % 6) as usize];
+            t.stub(mnc::LIMIT_MAX, false, 1, 0, max);
+            t.stub(mnc::LIMIT_NOW, false, 1, 0, now);
+            t.g32(0x0193_ed20, (case / 6) & 1); // __sse2_available
+            let args = [rng.next(), rng.next(), rng.next()];
+            t.check_fs(
+                &format!("limit gauge #{case}"),
+                0x0089_5480,
+                &args,
+                0,
+                0,
+                |m, _, s| {
+                    mnb::limit_gauge(m, args[0], args[1], args[2], s).map_or(Out::None, Out::U32)
+                },
+            );
+            t.stub(mnc::MKP_SHAPE_XY, false, 3, 0, r ^ 3);
+            t.stub(mnc::HP_MAX, false, 1, 0, r ^ 4);
+            t.stub(mnc::HP_NOW, false, 1, 0, r ^ 5);
+            t.stub(
+                mnc::WEAK_LEVEL,
+                false,
+                2,
+                0,
+                [0u32, 1, 2, 3, 4, 0xffff_ffff][(case % 6) as usize],
+            );
+            t.stub(mnc::MP_NOW, false, 1, 0, r ^ 6);
+            t.stub(mnc::VALUE_FONT_M_CLUT_RIGHT, false, 4, 0, r ^ 7);
+            t.stub(mnc::LIMIT_GAUGE, false, 3, 0, r ^ 8);
+            t.check_fs(
+                &format!("param plate #{case}"),
+                0x0089_5940,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::param_plate(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b6_movie_image_bar_caps_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c03);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            let p = t.zeros(0x80);
+            t.stub(mnc::ADP_TEX0, false, 13, 0, p + 0x40);
+            t.stub_seq(mnc::ADP_WORDS4, 5, 0, &[r, r ^ 1, r ^ 2, r ^ 3]);
+            t.stub_seq(mnc::ADP_XY2, 3, 0, &[r ^ 4, r ^ 5, r ^ 6, r ^ 7]);
+            t.stub_seq(
+                mnc::ADP_XYZ2_OFFSET,
+                3,
+                0,
+                &[r ^ 8, r ^ 9, r ^ 0xa, r ^ 0xb],
+            );
+            let args = [
+                p,
+                rng.next(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+            ];
+            t.check(
+                &format!("movie image #{case}"),
+                0x008f_2e10,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::movie_image(m, args)),
+            );
+            // the bar: the alpha call moves the cursor in some cases
+            let q = t.zeros(0x80);
+            if case & 1 == 0 {
+                t.stub(mnc::GS_ALPHA, false, 5, 0, r ^ 0xc);
+            } else {
+                t.stub_store_global(mnc::GS_ALPHA, mnc::PKT_CURSOR, q + 0x40, r ^ 0xc);
+            }
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r ^ 0xd);
+            // the real TOGs* calls move the cursor: odd cases
+            if case & 1 == 0 {
+                t.stub(mnc::GS_XY2, false, 2, 0, r ^ 0xe);
+            } else {
+                t.stub_store_global(mnc::GS_XY2, mnc::PKT_CURSOR, r, r ^ 0xe);
+            }
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 0xf);
+            let args = [
+                q,
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("bar caps #{case}"),
+                0x008e_bc00,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::bar_caps(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b6_mes_font_inter_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c04);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            let scale_x = [1.0f32, 0.75, 2.5, 0.0][(case % 4) as usize];
+            t.stub_store_into(mnc::GLYPH_LOOKUP, 1, 0x1c, scale_x.to_bits(), 3, r);
+            t.stub(mnc::PASS_EDGE, false, 3, 0, r ^ 1);
+            // the real passes move the cursor: odd cases
+            if case & 1 == 0 {
+                t.stub(mnc::PASS_FONT, false, 3, 0, r ^ 2);
+            } else {
+                t.stub_store_global(mnc::PASS_FONT, mnc::PKT_CURSOR, r ^ 3, r ^ 2);
+            }
+            let text = t.alloc(&[[0u8, b'A'][usize::from(case != 0)], b'B', b'C', 0]);
+            t.stub_seq(mnc::NEXT_CHAR, 1, 0, &[text + 1, text + 2, text + 3]);
+            t.g32(
+                mnc::FONT_SPACING,
+                [0.0f32, 1.5, -2.0, 3.25][(case % 4) as usize].to_bits(),
+            );
+            t.g32(
+                mnc::WIDTH_FACTOR,
+                [12.0f32, 7.0, 0.5, 9.75][(case / 2 % 4) as usize].to_bits(),
+            );
+            let scale = [0u32, 0x10, 0xffff_ffff, 7][(case % 4) as usize];
+            let args = [
+                rng.next(),
+                text,
+                rng.word(),
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.word(),
+                scale,
+            ];
+            t.check_fs(
+                &format!("mes font inter #{case}"),
+                0x008e_d190,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::mes_font_inter(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b7_movie_font_glyph_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0d01);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x40);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, (case >> 3) & 1); // __sse2_available
+            for (sym, n) in [
+                (mnc::GS_TEST, 8),
+                (mnc::GS_ALPHA, 5),
+                (mnc::GS_WORDS4, 4),
+                (mnc::DRAW_KICK, 0),
+            ] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            t.stub(mnc::GS_TEX0, false, 12, 0, r ^ 1);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 2);
+            t.stub(mnc::GS_XYZ_OFFSET, false, 3, 0, r ^ 3);
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 4);
+            ctrl_state(t, case, r ^ 4);
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.write(
+                pos + 0x1b,
+                &[[0u8, 7, 8, 0x1f, 0xff, 0x9a][(case % 6) as usize]],
+            );
+            t.check_fs(
+                &format!("movie font glyph #{case}"),
+                0x008f_dc00,
+                &[pos, glyph],
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::movie_font_glyph(m, pos, glyph, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b7_shape_by_kind_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0d02);
+        for kind in 0..0x22u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, sym) in mnc::KIND_SHAPES.into_iter().enumerate() {
+                t.stub(sym, false, 6, 0, r ^ k as u32);
+            }
+            for sym in mnc::KIND_COLOURS {
+                t.g32(sym, rng.next());
+                t.g32(sym - 4, rng.next());
+            }
+            let args = [
+                rng.next(),
+                rng.word(),
+                rng.word(),
+                if kind == 0x21 { 0xffff_ffff } else { kind },
+            ];
+            t.check(
+                &format!("shape by kind {kind:#x}"),
+                0x008f_1b50,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::shape_by_kind(m, args)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b8_cross_box_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e01);
+        for case in 0..13u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            let fl = [0.0f32, 12.5, -3.25, 1e9, 640.0, 0.1];
+            let full = [1u32, 0x40, 3, 0xffff_ffff, 0][(case % 5) as usize];
+            let mut args = [
+                fl[(case % 6) as usize].to_bits(),
+                fl[((case + 1) % 6) as usize].to_bits(),
+                fl[((case + 2) % 6) as usize].to_bits(),
+                fl[((case + 3) % 6) as usize].to_bits(),
+                rng.next(),
+                rng.next(),
+                full,
+            ];
+            if case == 12 {
+                // (1 * 49) / 49 is 1, (1 / 49) * 49 just under: the order shows
+                args = [0, 0, 49.0f32.to_bits(), 0, 0, 1, 49];
+            }
+            t.check_fs(
+                &format!("cross box #{case}"),
+                0x008f_4c40,
+                &args,
+                0xb0,
+                4,
+                |m, ebp, _| Out::U32(mnb::cross_box_fill_width(m, ebp, args)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b8_important_icon_name_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e02);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let record = t.zeros(0x20);
+            t.write(record, &(0x120u16 + case as u16).to_le_bytes());
+            t.write(record + 0x12, &[case as u8 * 7]);
+            t.stub_store(
+                mnc::IMPORTANT_PTR,
+                None,
+                1,
+                0x1000 * case,
+                false,
+                2,
+                0,
+                record,
+            );
+            t.stub_float(
+                mnc::REMAP_Y2,
+                [0.5f32, -12.25, 3e6, 0.0][(case % 4) as usize],
+            );
+            t.stub_float(
+                mnc::REMAP_X2,
+                [1.75f32, 7.0, -0.125, 1e-3][(case / 2 % 4) as usize],
+            );
+            t.stub(mnc::CROSS_MENU_ICON, false, 9, 0, r);
+            t.stub(mnc::BTL_EASY_FONT, false, 6, 0, r ^ 1);
+            let fl = [0.0f32, 100.5, -33.25, 1e7];
+            let args = [
+                rng.next(),
+                fl[(case % 4) as usize].to_bits(),
+                fl[((case + 1) % 4) as usize].to_bits(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("important icon #{case}"),
+                0x008f_50f0,
+                &args,
+                8,
+                0,
+                |m, ebp, s| Out::U32(mnb::important_icon_name(m, ebp, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b8_hdd_ins_check_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e03);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let n = [0u32, 1, 3, 2][(case % 4) as usize];
+            let mut list = vec![0u8; 0x34 * 8];
+            for (k, e) in list.chunks_mut(0x34).enumerate() {
+                e[..0x24].fill(0x10 + k as u8);
+                e[0x24..].fill(0xee);
+                let name = format!("file{k}.bin");
+                e[0x24..0x24 + name.len()].copy_from_slice(name.as_bytes());
+                e[0x24 + name.len()] = 0;
+            }
+            let list = t.alloc(&list);
+            let copy = t.zeros(0x34 * 8);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r);
+            t.stub_store(hdc::READ_LIST, None, 1, n, false, 3, 0, r ^ 1);
+            t.stub(hdc::USER_MALLOC, false, 1, 0, copy);
+            t.stub_copy(hdc::MEMCPY);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 2);
+            imp(t, hdc::SPRINTF_IAT, 3, false, r ^ 3);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                2,
+                0,
+                &[3, [0xffff_ffff, 4][(case / 4) as usize], 5],
+            );
+            // the count word, and the entries' first words (both sides alike)
+            t.stub_store(
+                hdc::SCE_READ,
+                None,
+                1,
+                [2u32, 0, 1, 0xffff_ffff][(case % 4) as usize],
+                false,
+                3,
+                0,
+                r ^ 4,
+            );
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 6);
+            t.check_fs(
+                &format!("ins check #{case}"),
+                0x0077_8d70,
+                &[list],
+                0x120,
+                4,
+                |m, ebp, _| Out::U32(hdb::ins_check(m, ebp, list)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b9_wakka_frame_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0f01);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            // constant remaps, or ones that hand back their argument (the
+            // results then tell the constants apart)
+            if case < 2 {
+                t.stub_float(mnc::REMAP_Y2, [0.5f32, -12.25][case as usize]);
+                t.stub_float(mnc::REMAP_X2, [1.75f32, 7.0][case as usize]);
+            } else {
+                for sym in [mnc::REMAP_Y2, mnc::REMAP_X2] {
+                    let at = t.cave_code(&[0xd9, 0x44, 0x24, 0x04, 0xc3]); // fld dword [esp+4]; ret
+                    t.jump(sym, at);
+                }
+            }
+            t.stub_seq(mnc::SHAPE_XYWHUV, 9, 0, &[r, r ^ 1, r ^ 2, r ^ 3]);
+            t.check(
+                &format!("wakka frame #{case}"),
+                0x008a_1e50,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mnb::wakka_frame(m)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b9_movie_change_macro_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0f02);
+        for case in 0..15u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            // the text: codes 7 + step, nested macros, glyphs; empty, none
+            let text = t.alloc(&[0x41, 7, 0xe3, 0x42, 7, 0xf0, 0x43, 0x44, 0]);
+            let empty = t.alloc(&[0]);
+            let found = match case % 5 {
+                _ if case >= 10 => text,
+                0 => 0,
+                1 => empty,
+                _ => text,
+            };
+            t.stub(mnc::CHANGE_MACRO_ADDRESS, false, 2, 0, found);
+            t.stub_seq(
+                mnc::NEXT_CHAR,
+                1,
+                0,
+                &[text + 1, text + 3, text + 4, text + 6, text + 7, text + 8],
+            );
+            // the class: the argument's upper bytes are the caller's, so not logged
+            t.stub_seq(
+                mnc::CHAR_CLASS,
+                0,
+                0,
+                &[[1u32, 3][(case & 1) as usize], 1, 2, 3, 1],
+            );
+            t.stub(mnc::CHANGE_MACRO2, false, 3, 0, r);
+            t.stub(mnc::FONT_INFO, false, 2, 0, r ^ 1);
+            t.stub(mnc::MOVIE_FONT_1612, false, 2, 0, r ^ 2);
+            let win = t.zeros(0xc0);
+            let (count, limit, most) = [
+                (0u32, 9u32, 9u32),
+                (0, 2, 9),
+                (1, 1, 2),
+                (0, 1, 3),
+                (3, 2, 1),
+            ][(case % 5) as usize];
+            // cases 10..14: the limit's growth: stopped by +0xb4, by +0xac,
+            // free up to 3, held at 1, free
+            let (count, limit, most) = if case >= 10 {
+                (0, 1, if case == 13 { 1 } else { 3 })
+            } else {
+                (count, limit, most)
+            };
+            t.put(win + 0x9c, &[count, limit]);
+            t.put(
+                win + 0xa8,
+                &[most, u32::from(case == 11), 0, u32::from(case == 10)],
+            );
+            let pos = t.words(&[0, 2.5f32.to_bits(), 0, 0, 0, 0, 0]);
+            let args = [win, rng.next(), pos];
+            t.check_fs(
+                &format!("change macro #{case}"),
+                0x008b_5ea0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::movie_change_macro(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b10_font_1612_text_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1001);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            // the characters and their classes: a glyph, a new line, the
+            // control codes (macro, colour, icon, other), a macro
+            let text = t.alloc(&[
+                0x41,
+                0x0d,
+                0x10,
+                0x52,
+                0x0a,
+                [0x35, 0x40, 0x7f, 0x00, 0x91, 0x0f][case as usize],
+                0x0b,
+                0x07,
+                0x09,
+                0x12,
+                0x10,
+                0x20,
+                0x42,
+                0,
+            ]);
+            let steps = [1u32, 2, 4, 6, 8, 9, 10, 12, 13];
+            let next: Vec<u32> = steps.iter().map(|k| text + k).collect();
+            t.stub_seq(mnc::NEXT_CHAR, 1, 0, &next);
+            t.stub_seq(
+                mnc::CHAR_CLASS,
+                0,
+                0,
+                &[4, 1, 2, 2, 2, 2, 3, 2, [4, 0][(case & 1) as usize]],
+            );
+            let sx = [1.0f32, 0.75, 12.5][(case % 3) as usize];
+            t.stub_store_into(mnc::FONT_INFO, 1, 0x1c, sx.to_bits(), 2, r);
+            t.stub(mnc::FONT1612_SHADOW, false, 2, 0, r ^ 1);
+            t.stub(mnc::FONT1612_FONT, false, 2, 0, r ^ 2);
+            t.stub(mnc::SET_BUTTON_DATA, false, 2, 0, r ^ 3);
+            t.stub(mnc::RESET_BUTTON_DATA, false, 0, 0, r ^ 4);
+            t.stub(mnc::BUTTON_ICON, false, 4, 0, r ^ 5);
+            t.stub(mnc::CHANGE_MACRO, false, 3, 0, r ^ 6);
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            let fl = [0u32, 30, 0xffff_ffe0, 0x7fff_ffff];
+            let args = [
+                rng.next(),
+                rng.next(),
+                text,
+                fl[(case % 4) as usize],
+                fl[((case + 1) % 4) as usize],
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("font 1612 text #{case}"),
+                0x008e_a680,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::font_1612_text(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b11_job_worker_loop_and_file_read_main_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1101);
+        for passes in 1..5u32 {
+            t.reset();
+            let r = rng.next();
+            let sched = t.zeros(0x40);
+            t.g32(pcs::JOB_SCHEDULER, sched);
+            let jobs: Vec<u32> = (0..4).map(|k| r ^ (k << 4)).collect();
+            t.stub(pcs::THREAD_CALL_RUN, true, 0, 0, r ^ 1);
+            t.stub(pcs::QUEUE_PUSH, true, 2, 2, r ^ 2);
+            // the pop stub ends the original at pop number passes + 1,
+            // before logging it: dec [count]; jg pop; add esp, 8; pop edi;
+            // pop esi; pop ebx; ret (out of the loop to the test's caller)
+            let pop = t.stub_seq_code(pcs::QUEUE_POP, 1, 1, &jobs);
+            let count = t.words(&[passes + 1]);
+            let mut c = vec![0xff, 0x0d];
+            c.extend(count.to_le_bytes());
+            c.extend([0x0f, 0x8f]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(pop.wrapping_sub(here).to_le_bytes()); // jg pop
+            c.extend([0x83, 0xc4, 0x08, 0x5f, 0x5e, 0x5b, 0xc3]);
+            let at = t.cave_code(&c);
+            t.jump(pcs::QUEUE_POP, at);
+            let this = t.words(&[0, 0, 0, 0, rng.below(3)]);
+            // `before` pushes the original's queue log alike: the bridge
+            // runs the same passes
+            let poison = t.rebase(POISON_AT);
+            let ra =
+                t.a.call(t.rebase(0x0070_3a20), Conv::Thiscall(this), &[])
+                    .unwrap();
+            let _ = ra;
+            {
+                let mut g = G(&mut t.b, poison);
+                let sched: u32 = Mem::read(&g, g.rebase(pcs::JOB_SCHEDULER));
+                for _ in 0..passes {
+                    pcb::job_worker_pass(&mut g, sched, this);
+                }
+            }
+            // the count cell: the original's stub counted it down
+            t.b.write(count, &0u32.to_le_bytes()).unwrap();
+            // b's pops ran the sequence stub directly: its counter cell
+            // is the only other difference, written alike above
+            t.diff(&format!("job worker loop x{passes}"));
+            // FileReadMain: the step through the task record
+            let step = t.stub_code(0x0e0f_1101, false, 2, 0, r ^ 3);
+            let task = t.words(&[step, rng.next()]);
+            t.g32(pcs::READ_TASK, task);
+            t.check(
+                &format!("file read main #{passes}"),
+                0x0076_cfd0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(pcb::file_read_main(m)),
+            );
+        }
+    });
+}
+impl Twins {
+    /// [`Twins::stub_seq`]'s code without the jump over `sym`; its address.
+    fn stub_seq_code(&mut self, sym: u32, n: u32, pops: u32, seq: &[u32]) -> u32 {
+        self.stub_seq(sym, n, pops, seq);
+        let at = self.rebase(sym);
+        let rel: u32 = Mem::read(&self.a, at + 1);
+        at.wrapping_add(5).wrapping_add(rel)
+    }
+}
+
+#[test]
+fn r3b12_cd_file_sizes_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1201);
+        for case in 0..24u32 {
+            t.reset();
+            let r = rng.next();
+            let numbers = [0u32, 3, 21, 36, 5, 0xffff_fff1, 18 * 7 + 3, 0xffff_ffdc];
+            let number = numbers[(case % 8) as usize];
+            t.g32(hdc::FILE_BASE, [0u32, 0x10, 2][(case % 3) as usize]);
+            let module = [0x10u32, 4, 0x29, 0x1b, 0xe][(case / 3 % 5) as usize];
+            t.g32(hdc::MODULE, module);
+            t.stub(
+                hdc::EX_FILE_SIZE,
+                false,
+                2,
+                0,
+                if case % 8 == 6 { 0x4321 } else { 0 },
+            );
+            t.stub(hdc::IS_CALM_MGRP, false, 1, 0, case & 1);
+            t.stub(hdc::CALM_MGRP_SIZE, false, 1, 0, r);
+            t.stub(hdc::IS_CALM_SCENE, false, 1, 0, (case >> 1) & 1);
+            t.stub(hdc::CALM_SCENE_SIZE, false, 1, 0, r ^ 1);
+            // the sector table and the 24-bit sizes around every index used
+            let words: Vec<u32> = (0..0x100)
+                .map(|k| {
+                    let flag = [0u32, 0x40_0000, 0x80_0000, 0xc0_0000][((k + case) % 4) as usize];
+                    flag | (rng.next() & 0xff3f_ffff)
+                })
+                .collect();
+            let table = t.words(&words);
+            // a negative number reaches below the table: point it inside
+            t.g32(hdc::SECTOR_TABLE, table + 0x200);
+            let sizes: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+            let sizes_at = t.alloc(&sizes);
+            t.g32(hdc::SIZE_TABLE, sizes_at + 0x180);
+            t.check(
+                &format!("size cd #{case}"),
+                0x0076_c320,
+                Conv::Cdecl,
+                &[number],
+                |m| Out::U32(hdb::file_size_cd(m, number)),
+            );
+            // the PC size
+            let cd = t.words(&[0; 16]);
+            t.put(cd + 0x20, &[rng.below(4)]);
+            t.put(cd + 0x30, &[u32::from(case % 5 != 4)]);
+            t.stub(hdc::GET_CD, false, 0, 0, cd);
+            t.write(t.rebase(hdc::HDD_MODE), &[u8::from(case % 6 == 5)]);
+            t.stub(hdc::FILE_SIZE_CD, false, 1, 0, r ^ 2);
+            t.stub(
+                hdc::PC_FILE_NAME,
+                false,
+                1,
+                0,
+                if case % 9 == 8 { 0 } else { r ^ 3 },
+            );
+            t.stub(
+                hdc::FILE_SIZE_CD_EX,
+                false,
+                1,
+                0,
+                [0xffff_ffffu32, 0x777][(case & 1) as usize],
+            );
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [0u32, 5, 0xffff_ffff][(case % 3) as usize],
+            );
+            t.stub(
+                hdc::SCE_FILE_SIZE,
+                false,
+                1,
+                0,
+                [0u32, 1, 0x10, 0xffff_fff8, 0x7fff_fff5, 0x8000_0000][(case % 6) as usize],
+            );
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 4);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 5);
+            t.check(
+                &format!("size pc #{case}"),
+                0x00a4_28a0,
+                Conv::Cdecl,
+                &[number],
+                |m| Out::U32(hdb::file_size_pc(m, number)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b13_movie_message_end_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1301);
+        t.a.map_zeroed(mnc::GS_PMODE, 0x1000).unwrap();
+        t.b.map_zeroed(mnc::GS_PMODE, 0x1000).unwrap();
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::CLEAR_MESSAGE_SLOT, false, 1, 0, r);
+            t.stub(mnc::TRANS_IMAGE_HL, false, 7, 0, r ^ 1);
+            t.stub(mnc::MESSAGE_WINDOW_MODE, false, 1, 0, r ^ 2);
+            t.g32(mnc::MOVIE_IMAGE, rng.next());
+            t.w32(mnc::GS_PMODE, rng.next());
+            t.w32(mnc::GS_PMODE + 4, rng.next());
+            for (k, sym) in mnc::CAPTURE_FLAGS.into_iter().enumerate() {
+                let v = [0u8, 1, 2][((case >> k) & 1) as usize + usize::from(k == 2 && case == 7)];
+                t.write(t.rebase(sym), &[v]);
+            }
+            // the frame's two never-written words are 0 in both (brief 2026-10-24)
+            t.check_fs(
+                &format!("movie message end #{case}"),
+                0x008a_b860,
+                &[],
+                8,
+                0,
+                |m, ebp, _| Out::U32(mnb::movie_message_end(m, ebp)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b13_movie_disc_wait_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1302);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let ctx = t.zeros(0x5_0760);
+            let streaming = case < 4;
+            t.write(ctx + 0x5_075d, &[u8::from(streaming)]);
+            t.put(ctx + 0x5_0544, &[rng.next()]);
+            for (k, sym) in [hdc::MOVIE_CSC, hdc::PAD_PRINT_FLAG, hdc::STATE_CLEAR]
+                .into_iter()
+                .enumerate()
+            {
+                t.stub(sym, false, 0, 0, r ^ k as u32);
+            }
+            t.stub(hdc::AUDIO_STOP, false, 1, 0, r ^ 4);
+            t.stub(hdc::DISC_WAIT, false, 1, 0, r ^ 5);
+            t.stub(hdc::READ_SECTORS, false, 5, 0, r ^ 6);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 7);
+            for sym in hdc::PENDING_SECTOR {
+                t.g32(sym, rng.next());
+            }
+            t.write(t.rebase(hdc::DISK_RESULT), &[0x55]);
+            let play = u32::from(case & 1 != 0);
+            if streaming {
+                // the ioctl writes 3, 2, 1, then 0 through its third word
+                let left = t.words(&[[0u32, 2, 3, 1][case as usize]]);
+                let log = t.stub_code(hdc::SCE_IOCTL, false, 3, 0, r ^ 8);
+                let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]; // mov eax, [esp+0xc]; mov ecx, [left]
+                c.extend(left.to_le_bytes());
+                c.extend([0x89, 0x08, 0x85, 0xc9, 0x74, 0x06, 0xff, 0x0d]); // mov [eax], ecx; test; jz +6; dec [left]
+                c.extend(left.to_le_bytes());
+                c.push(0xe9);
+                let here = t.cave_next + c.len() as u32 + 4;
+                c.extend(log.wrapping_sub(here).to_le_bytes());
+                let at = t.cave_code(&c);
+                t.jump(hdc::SCE_IOCTL, at);
+                t.stub(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+                let args = [play, ctx];
+                t.check_fs(
+                    &format!("disc wait stream #{case}"),
+                    0x0077_7440,
+                    &args,
+                    0,
+                    0,
+                    |m, _, s| Out::U32(hdb::movie_disc_wait(m, play, ctx, s)),
+                );
+                continue;
+            }
+            let changed = [0u32, 0xffff_ffff, 5][(case % 3) as usize];
+            t.stub(hdc::DISK_CHANGED, false, 0, 0, changed);
+            if changed == 0 {
+                t.stub(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+                t.check_fs(
+                    &format!("disc wait ok #{case}"),
+                    0x0077_7440,
+                    &[play, ctx],
+                    0,
+                    0,
+                    |m, _, s| Out::U32(hdb::movie_disc_wait(m, play, ctx, s)),
+                );
+                continue;
+            }
+            // the never-ending wait: the original stopped at its k-th
+            // movie_wait (out of the function through its frame), the
+            // bridge's passes run up to the same point
+            let k = [1u32, 2, 151, 152, 300][(case % 5) as usize];
+            let log = t.stub_code(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+            let count = t.words(&[k]);
+            let mut c = vec![0xff, 0x0d];
+            c.extend(count.to_le_bytes());
+            c.extend([0x0f, 0x85]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jnz log
+            // lea esp, [ebp - 0x18]; pop edi; pop esi; pop ebx; mov esp, ebp; pop ebp; ret
+            c.extend([0x8d, 0x65, 0xe8, 0x5f, 0x5e, 0x5b, 0x8b, 0xe5, 0x5d, 0xc3]);
+            let at = t.cave_code(&c);
+            t.jump(hdc::MOVIE_WAIT, at);
+            let at = t.rebase(0x0077_7440);
+            t.a.call(at, Conv::Cdecl, &[play, ctx]).unwrap();
+            {
+                let poison = t.rebase(POISON_AT);
+                let mut g = G(&mut t.b, poison);
+                let changed2 = hdb::disc_wait_first(&mut g);
+                let mut st = hdb::DiscWaitState::default();
+                for _ in 1..k {
+                    hdb::disc_wait_pre(&mut g, ctx, changed2, &mut st);
+                    hdb::disc_wait_post(&mut g, play, ctx, &mut st);
+                }
+                hdb::disc_wait_pre(&mut g, ctx, changed2, &mut st);
+            }
+            t.b.write(count, &0u32.to_le_bytes()).unwrap();
+            t.diff(&format!("disc wait forever #{case} k {k}"));
+        }
+    });
+}
+
+#[test]
+fn r3b14_akaza_scr_flt_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1401);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            let pos = t.zeros(33 * 33 * 12);
+            let col = t.zeros(33 * 33 * 16);
+            let tex = t.zeros(33 * 33 * 8);
+            let idx = t.zeros(32 * 32 * 12);
+            let rec = t.words(&[0, rng.next(), rng.next(), pos, 0, col, tex, idx]);
+            let data = t.zeros(0x100);
+            t.put(data + 0x94, &[rec]);
+            t.stub(
+                pcs::RENDER_DATA_BY_INSTANCE,
+                false,
+                2,
+                0,
+                if case == 0 { 0 } else { data },
+            );
+            t.stub(pcs::BUFFER_FOR_SEGMENT, false, 4, 0, u32::from(case != 1));
+            t.stub(pcs::VFX_SET_VISIBLE, false, 3, 0, r);
+            let uvs: Vec<u32> = (0..33 * 33 * 2).map(|_| rng.next()).collect();
+            let uv = t.words(&uvs);
+            let colour = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let args = [rng.next(), rng.next(), uv, colour];
+            t.check_fs(
+                &format!("akaza #{case}"),
+                0x0071_ce20,
+                &args,
+                0x10,
+                0,
+                |m, ebp, s| Out::U32(pcb::akaza_scr_flt(m, ebp, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b15_guide_marker_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1501);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            let chr = rng.next();
+            let work = t.zeros(0x900);
+            let list = case % 3;
+            t.put(work + 0x8b0, &[list]);
+            t.put(
+                work + 0x870 + 4 * list,
+                &[if case & 1 == 0 { chr } else { chr ^ 1 }],
+            );
+            t.g32(pcs::RCUI_WORK, work);
+            t.stub(pcs::ROOT_MATRIX, false, 2, 0, r);
+            t.stub(pcs::SCALE_MATRIX100, false, 1, 0, r ^ 1);
+            t.stub_float(
+                pcs::THICKNESS_BTL,
+                [0.75f32, 3.5, 0.0, -1.25, 12.0, 1e-3][case as usize],
+            );
+            t.stub_copy_fill(pcs::CRT_MEMSET);
+            t.stub(pcs::COPY_VIA_C8F980, false, 2, 0, r ^ 2);
+            // the draws keep a copy of the points they get (0x50 bytes each)
+            let seen = t.zeros(0xa0);
+            let log = t.stub_code(pcs::DRAW_LINES, false, 5, 0, r ^ 3);
+            let slot = t.words(&[seen]);
+            let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+            c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp+0x14] (points)
+            c.push(0x8b);
+            c.push(0x3d);
+            c.extend(slot.to_le_bytes()); // mov edi, [slot]
+            c.extend([0xb9, 0x50, 0, 0, 0, 0xf3, 0xa4]); // mov ecx, 0x50; rep movsb
+            c.push(0x89);
+            c.push(0x3d);
+            c.extend(slot.to_le_bytes()); // mov [slot], edi
+            c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(pcs::DRAW_LINES, at);
+            t.check_fs(
+                &format!("guide marker #{case}"),
+                0x0092_c740,
+                &[r ^ 5, chr],
+                0x25c,
+                4,
+                |m, ebp, _| Out::U32(pcb::guide_marker(m, ebp, r ^ 5, chr)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b16_movie_font_edge_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1601);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x80);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, (case >> 2) & 1); // __sse2_available
+            for (sym, n) in [(mnc::GS_TEST, 8), (mnc::GS_WORDS4, 4), (mnc::DRAW_KICK, 0)] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            // TOGsALPHA moves the cursor in some cases
+            if case & 1 == 0 {
+                t.stub(mnc::GS_ALPHA, false, 5, 0, r);
+            } else {
+                t.stub_store_global(mnc::GS_ALPHA, mnc::PKT_CURSOR, buf + 0x40, r);
+            }
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub_seq(
+                mnc::GS_XYZ2_OFFSET,
+                2,
+                0,
+                &(0..20).map(|k| r ^ (k << 8)).collect::<Vec<_>>(),
+            );
+            ctrl_state(t, case, r ^ (19 << 8));
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.write(pos + 0x1b, &[[0u8, 0x70, 0x8f, 0xff][(case % 4) as usize]]);
+            t.check_fs(
+                &format!("movie font edge #{case}"),
+                0x008f_d9f0,
+                &[pos, glyph],
+                0x28,
+                4,
+                |m, ebp, _| Out::U32(mnb::movie_font_edge(m, ebp, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b17_alpha_bg_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1701);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            // the quads the draws get: copied for the comparison
+            let seen = t.zeros(4 * 0x70);
+            t.stub_snapshot(mnc::DRAW_UI_ELEMENT, 5, 0, 0x70, seen, r);
+            let alpha = [0u32, 0x80, 0xff, 0x1234_5601][case as usize];
+            t.check_fs(
+                &format!("alpha bg #{case}"),
+                0x008f_3a50,
+                &[alpha],
+                0x9c,
+                4,
+                |m, ebp, _| Out::U32(mnb::alpha_bg(m, ebp, alpha)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, `n` words, returns `ret`) that
+    /// first copies `len` bytes from its word `word`'s pointer to `dst`,
+    /// the next call after it.
+    fn stub_snapshot(&mut self, sym: u32, n: u32, word: u8, len: u32, dst: u32, ret: u32) {
+        let log = self.stub_code(sym, false, n, 0, ret);
+        let slot = self.words(&[dst]);
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8b, 0x74, 0x24, 0x10 + 4 * word]); // mov esi, [esp+0x10+4word]
+        c.extend([0x8b, 0x3d]);
+        c.extend(slot.to_le_bytes()); // mov edi, [slot]
+        c.push(0xb9);
+        c.extend(len.to_le_bytes()); // mov ecx, len
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x89, 0x3d]);
+        c.extend(slot.to_le_bytes()); // mov [slot], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes());
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+#[test]
+fn r3b18_wait_win_prepare_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1801);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_float(mnc::GET_TIME, [10.5f32, 3.0, 7.25][(case % 3) as usize]);
+            t.stub(mnc::DRAW_COMMAND_WINDOW, false, 1, 0, r);
+            // constant remaps, or ones that hand back their argument
+            if case < 6 {
+                t.stub_float(mnc::REMAP_X2, [12.5f32, 33.0, 0.75][(case % 3) as usize]);
+                t.stub_float(mnc::REMAP_Y2, [20.0f32, 7.5, 1.25][(case / 3 % 3) as usize]);
+            } else {
+                for sym in [mnc::REMAP_X2, mnc::REMAP_Y2] {
+                    let at = t.cave_code(&[0xd9, 0x44, 0x24, 0x04, 0xc3]); // fld dword [esp+4]; ret
+                    t.jump(sym, at);
+                }
+            }
+            t.stub(mnc::SET_CUR_POS, false, 3, 0, r ^ 1);
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            t.g32(mnc::SG_FRAME, case & 1);
+            let win = t.zeros(0x100);
+            t.write(win + 0xb, &[[0u8, 3, 5, 0xff][(case % 4) as usize]]);
+            let cells: [u16; 5] = [0, 4, 7, 12, 0xffff];
+            for (k, c) in cells.iter().enumerate() {
+                t.write(win + 0xe + 2 * k as u32, &c.to_le_bytes());
+            }
+            for (off, v) in [
+                (0x38u32, 3i16),
+                (0x3a, 3),
+                (0x40, [1i16, 0, 4][(case % 3) as usize]),
+                (0x42, [2i16, -1, 9, 11][(case % 4) as usize]),
+            ] {
+                t.write(win + off, &v.to_le_bytes());
+            }
+            t.put(
+                win + 0x78,
+                &[
+                    [100.5f32, -3.25, 7.0][(case % 3) as usize].to_bits(),
+                    40.0f32.to_bits(),
+                ],
+            );
+            t.put(
+                win + 0xdc,
+                &[[0.0f32, 2.5, -1.0, f32::NAN][(case % 4) as usize].to_bits()],
+            );
+            t.check(
+                &format!("wait win prepare #{case}"),
+                0x008a_6870,
+                Conv::Cdecl,
+                &[win],
+                |m| Out::U32(mnb::wait_win_prepare(m, win)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b19_cd_read_task_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1901);
+        for case in 0..10u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_seq(hdc::SND_IS_READ, 0, 0, &[u32::from(case & 1 != 0), 0]);
+            // the many waits and misses: quiet stubs (the log holds 1024 calls)
+            for (k, sym) in [
+                hdc::TASK_WAIT_SYM,
+                hdc::STATE_CLEAR,
+                hdc::FLUSH_CACHE,
+                hdc::WAIT_DISC,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_quiet(sym, r ^ k as u32);
+            }
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case % 3 != 0));
+            t.write(t.rebase(hdc::HDD_MODE), &[u8::from(case % 4 < 2)]);
+            t.stub(hdc::HDD_READ_TH, false, 4, 0, r ^ 3);
+            t.stub(hdc::GET_HDD_ERR, false, 0, 0, u32::from(case % 5 == 1));
+            t.stub(hdc::REFRESH_HDD_MODE, false, 0, 0, r ^ 4);
+            // the disc: not ready twice, then the reads failing that many
+            // times (70: one failed attempt; 330: four, then the restart and 92 tries)
+            t.stub_after(hdc::DISK_READY, 0, 2, 1, 2);
+            let fail_reads = [0u32, 5, 70, 330, 1][(case % 5) as usize];
+            t.stub_after(hdc::CD_READ, 4, fail_reads, 0, 1);
+            let checks: Vec<u32> = (0..64).map(|k| u32::from(k % 4 != 3)).collect();
+            t.stub_seq(hdc::CHECK_DISK, 0, 0, &checks);
+            t.stub(hdc::CD_RESET, false, 0, 0, r ^ 7);
+            t.stub_seq(hdc::CD_STANDBY, 0, 0, &[0, 0, 1, 0, 1, 1]);
+            t.stub_seq(hdc::CD_SYNC, 1, 0, &[1, 0, 1, 1, 0, 0]);
+            let mode = t.words(&[rng.next()]);
+            let buf = [0x1000u32, 0x1004, 0x2020][(case % 3) as usize];
+            // the failure message passes the count, the others one word
+            let fail_fmt = t.rebase(hdc::CD_READ_MSG[2]);
+            t.stub_by_first(hdc::DBG_PRINTF, fail_fmt, 2, 1, r ^ 0x11);
+            let args = [
+                rng.next(),
+                [0x800u32, 0x1fff, 0xffff_f000][(case % 3) as usize],
+                buf,
+                mode,
+                rng.below(4),
+            ];
+            t.check_fs(
+                &format!("cd read task #{case}"),
+                0x0076_d200,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(hdb::cd_read_task(m, args, s)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stub over `sym` returning `ret`, logging nothing.
+    fn stub_quiet(&mut self, sym: u32, ret: u32) {
+        let mut c = vec![0xb8];
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc3);
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+
+    /// A stub over `sym` (cdecl, `n` words logged) returning `before` on
+    /// its first `count` calls, then `after`.
+    fn stub_after(&mut self, sym: u32, n: u32, count: u32, before: u32, after: u32) {
+        let early = self.stub_code(sym, false, n, 0, before);
+        let late = self.stub_code(sym, false, n, 0, after);
+        let left = self.words(&[count]);
+        let mut c = vec![0x83, 0x3d];
+        c.extend(left.to_le_bytes());
+        c.push(0); // cmp dword [left], 0
+        c.extend([0x0f, 0x84]);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(late.wrapping_sub(here).to_le_bytes()); // je late
+        c.extend([0xff, 0x0d]);
+        c.extend(left.to_le_bytes()); // dec dword [left]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(early.wrapping_sub(here).to_le_bytes()); // jmp early
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl) logging `n_match` words when its
+    /// first word is `first`, else `n_other`; returns `ret`.
+    fn stub_by_first(&mut self, sym: u32, first: u32, n_match: u32, n_other: u32, ret: u32) {
+        let two = self.stub_code(sym, false, n_match, 0, ret);
+        let one = self.stub_code(sym, false, n_other, 0, ret);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+        c.extend(first.to_le_bytes()); // cmp dword [esp+4], first
+        c.extend([0x0f, 0x84]);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(two.wrapping_sub(here).to_le_bytes()); // je two
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(one.wrapping_sub(here).to_le_bytes()); // jmp one
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+#[test]
+fn r3b20_walk_install_dir_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2001);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            // the directory's entries (0x80 bytes: mode +4, name +0x40):
+            // files, a "." entry, a subdirectory
+            let names: [(&[u8], u32); 4] = [
+                (b"abcdefghij.bin", 0x10),
+                (b".", 0x20),
+                (b"sub", 0x20),
+                (b"klmnopqrstuv", 0),
+            ];
+            let n = [0usize, 1, 2, 4, 4, 3, 4, 2][case as usize];
+            let mut ents = vec![0u8; 0x80 * 4];
+            for (k, (name, mode)) in names.iter().enumerate() {
+                ents[0x80 * k + 4..0x80 * k + 8].copy_from_slice(&mode.to_le_bytes());
+                ents[0x80 * k + 0x40..0x80 * k + 0x40 + name.len()].copy_from_slice(name);
+            }
+            let tbl = t.alloc(&ents);
+            let ctr = t.words(&[0, n as u32]);
+            // sceDopen: the counter reset, a descriptor (or failing)
+            // the second open fails in #7
+            let fd = [
+                [7u32, 7],
+                [7, 7],
+                [7, 7],
+                [9, 9],
+                [0x8000_0000, 7],
+                [7, 7],
+                [7, 7],
+                [7, 0xffff_ffff],
+            ][case as usize];
+            let open_log = t.stub_seq_code(hdc::SCE_DOPEN, 1, 0, &fd);
+            let mut c = vec![0xc7, 0x05];
+            c.extend(ctr.to_le_bytes());
+            c.extend(0u32.to_le_bytes()); // mov dword [ctr], 0
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(open_log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(hdc::SCE_DOPEN, at);
+            // sceDread: entry [ctr] copied to its second word, 1; past n, 0
+            let read_log = t.stub_code(hdc::SCE_DREAD, false, 2, 0, 1);
+            let none = t.stub_code(hdc::SCE_DREAD, false, 2, 0, 0);
+            let mut c = vec![0xa1];
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x3b, 0x05]);
+            c.extend((ctr + 4).to_le_bytes()); // cmp eax, [ctr+4]
+            c.extend([0x0f, 0x8d]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(none.wrapping_sub(here).to_le_bytes()); // jge none
+            c.extend([0x56, 0x57, 0x51]); // push esi; push edi; push ecx
+            c.extend([0xc1, 0xe0, 0x07]); // shl eax, 7
+            c.push(0x05);
+            c.extend(tbl.to_le_bytes()); // add eax, tbl
+            c.extend([0x89, 0xc6]); // mov esi, eax
+            c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+            c.extend([0xb9, 0x80, 0, 0, 0, 0xf3, 0xa4]); // mov ecx, 0x80; rep movsb
+            c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(read_log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(hdc::SCE_DREAD, at);
+            t.stub(hdc::SCE_DCLOSE, false, 1, 0, r);
+            let table = t.zeros(0x84 * 4);
+            let buf = t.zeros(0x100);
+            t.stub_seq(hdc::USER_MALLOC, 1, 0, &[table, buf, table, buf]);
+            t.stub_copy_fill(hdc::MEMSET);
+            // sprintf: "pfs0:/ex/" and the name, as the format would
+            let text = t.alloc(b"pfs0:/ex/dir/nameXYZ\0");
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 20, text, r ^ 1);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 2);
+            t.stub(hdc::DBG_PRINTF, false, 3, 0, r ^ 3);
+            // the subdirectory's walk calls the original itself: its entry
+            // runs the original the first time (the flag set), a recording
+            // stub after; the bridge's side starts with the flag set
+            let flag = t.words(&[0]);
+            let rec = t.stub_code(hdc::READ_LIST, false, 3, 0, u32::from(case == 6));
+            let mut c = vec![0x83, 0x3d];
+            c.extend(flag.to_le_bytes());
+            c.push(0); // cmp dword [flag], 0
+            c.extend([0x0f, 0x85]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(rec.wrapping_sub(here).to_le_bytes()); // jne rec
+            c.extend([0xc7, 0x05]);
+            c.extend(flag.to_le_bytes());
+            c.extend(1u32.to_le_bytes()); // mov dword [flag], 1
+            c.extend([0x55, 0x8b, 0xec, 0x81, 0xec, 0x60, 0x01, 0, 0]); // push ebp; mov ebp, esp; sub esp, 0x160
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(t.rebase(0x0077_76a9).wrapping_sub(here).to_le_bytes()); // jmp past the prologue
+            let at = t.cave_code(&c);
+            t.jump(hdc::READ_LIST, at);
+            t.b.write(flag, &1u32.to_le_bytes()).unwrap();
+            let count = t.words(&[[0u32, 2][(case & 1) as usize]]);
+            let list = t.zeros(0x34 * 8);
+            let path = t.alloc(b"pfs0:/ex/\0");
+            let args = [path, count, list];
+            t.check_fs(
+                &format!("walk dir #{case}"),
+                0x0077_76a0,
+                &args,
+                0x160,
+                4,
+                |m, ebp, _| Out::U32(hdb::walk_install_dir(m, ebp, path, count, list)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b21_draw_movie_message_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2101);
+        for case in 0..32u32 {
+            t.reset();
+            let r = rng.next();
+            // the display buffer: random fields
+            let dc = t.alloc(&(0..0x200).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let parity = [1u32, 2][(case / 16) as usize] | (r & 0xffff_fff0);
+            t.stub_store_into(mnc::SG_DBUFF, 0, 0, parity, 1, dc);
+            // the display mode per call: the first, the check, the third,
+            // then the two before the second packet
+            let modes = [
+                [0u32, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1],
+                [1, 0, 0, 0, 0],
+                [2, 2, 6, 6, 6],
+                [6, 6, 6, 6, 6],
+                [1, 3, 5, 0, 0],
+                [0, 4, 4, 4, 6],
+                [2, 2, 2, 6, 2],
+            ][(case % 8) as usize];
+            t.stub_seq(mnc::DISP_MODE, 0, 0, &modes);
+            t.stub(mnc::DAPS_DRAW, false, 0, 0, r ^ 1);
+            t.write(
+                t.rebase(mnc::CAPTURE_FLAGS[0]),
+                &[[0u8, 1, 1, 1, 1, 1, 1, 1][(case / 2 % 8) as usize]],
+            );
+            let menu = t.words(&[[0x200u32, 0, 0x1ff, 0xffff_ffff][(case / 4 % 4) as usize]]);
+            t.stub(mnc::SAVE_MENU, false, 0, 0, menu);
+            t.g32(mnc::CAPTURE_OPTION, [1u32, 0, 2, 1][(case % 4) as usize]);
+            t.stub(mnc::TRANS_TEXTURE, false, 0, 0, r ^ 2);
+            t.g32(mnc::PKT_BUFF_ADRS[0], rng.next());
+            t.g32(
+                mnc::PKT_BUFF_ADRS[1],
+                [0x1_0000u32, 0xffff_fff3, 7, 0x8000_0001][(case % 4) as usize],
+            );
+            t.stub(mnc::SET_PKT_BUFF, false, 3, 0, r ^ 3);
+            t.stub(mnc::OPEN_PKT, false, 0, 0, r ^ 4);
+            t.stub(mnc::PKT_SCISSOR, false, 4, 0, r ^ 5);
+            t.stub(mnc::FRAME_PKT, false, 4, 0, r ^ 6);
+            t.stub(mnc::XYOFFSET, false, 2, 0, r ^ 7);
+            t.stub(mnc::FLAT_RECT, false, 8, 0, r ^ 8);
+            t.stub(mnc::SET_REG_FONT1612, false, 0, 0, r ^ 9);
+            t.stub(mnc::DRAW_WINDOW, false, 1, 0, r ^ 0xa);
+            t.stub(mnc::DRAW_MESSAGE, false, 1, 0, r ^ 0xb);
+            t.stub(mnc::CLOSE_PKT, false, 0, 0, r ^ 0xc);
+            t.stub_seq(mnc::DRAW_KICK, 0, 0, &[r ^ 0xd, r ^ 0xe]);
+            t.stub(mnc::MKP_MOVIE_IMAGE, false, 5, 0, r ^ 0xf);
+            t.write(t.rebase(mnc::MOVIE_DRAWN), &[0]);
+            t.check_fs(
+                &format!("draw movie message #{case}"),
+                0x008a_bf30,
+                &[],
+                4,
+                0,
+                |m, ebp, _| Out::U32(mnb::draw_movie_message(m, ebp)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b22_draw_shp_fill_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2201);
+        for case in 0..7u32 {
+            t.reset();
+            let mut blocks = [0u32; 3];
+            for b in &mut blocks {
+                let pos = t.zeros(3000 * 0x18);
+                let col = t.zeros(3000 * 0x20);
+                let fill: Vec<u8> = (0..3000 * 4).map(|_| rng.next() as u8).collect();
+                let idx = t.alloc(&fill);
+                *b = t.words(&[0, 0, 0, pos, 0, col, 0, idx]);
+            }
+            // 3003: a block switch with no restart after; 2999: one index pair left
+            let count = [0u32, 40, 3100, 9050, 0x8000_0000, 3003, 2999][case as usize];
+            let n = if case == 4 { 0 } else { count as usize };
+            let ages: [u16; 12] = [0xfffb, 0, 1, 5, 15, 16, 17, 31, 32, 0x7fff, 0x8000, 9];
+            let mut parts = Vec::with_capacity(n * 0x20);
+            for k in 0..n {
+                let mut p = [0u8; 0x20];
+                for w in 0..7 {
+                    let b = rng.next().to_le_bytes();
+                    let v = f32::from(i16::from_le_bytes([b[0], b[1]])) / 64.0;
+                    p[4 * w..4 * w + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+                }
+                p[0xe] = rng.next() as u8;
+                // the large runs: every particle drawn
+                let age = if case >= 2 {
+                    1 + (k % 30) as u16
+                } else {
+                    ages[k % 12]
+                };
+                p[0x1c..0x1e].copy_from_slice(&age.to_le_bytes());
+                parts.extend(p);
+            }
+            let parts = if n == 0 {
+                t.zeros(0x20)
+            } else {
+                t.alloc(&parts)
+            };
+            let job = t.words(&[0, 0, 0, 0, blocks[0], blocks[1], blocks[2], parts, count]);
+            t.check_fs(
+                &format!("draw shp fill #{case}"),
+                0x0072_87b0,
+                &[job],
+                0x1c,
+                0,
+                |m, ebp, _| Out::U32(pcb::draw_shp_fill(m, ebp, job)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b23_debug_layer_tex_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2301);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let layers: Vec<u8> = (0..0xc0 * 4).map(|_| rng.next() as u8).collect();
+            let layers = t.alloc(&layers);
+            // small or negative sizes and offsets, as the sign-extended ORs see
+            let pick = |rng: &mut Rng| {
+                [
+                    0u32,
+                    1,
+                    0x40,
+                    0x200,
+                    0xffff_fff0,
+                    0x3ff,
+                    0x8000_0000,
+                    0xffff_ffff,
+                ][(rng.next() % 8) as usize]
+            };
+            for k in 0..4u32 {
+                for o in [4u32, 8, 0x24, 0x28] {
+                    let v = pick(&mut rng);
+                    t.put(layers + 0xc0 * k + o, &[v]);
+                }
+            }
+            let list = t.words(&[0, 0, layers]);
+            let map = t.words(&[0, 0, list]);
+            let sys = t.words(&[if case == 0 { 0 } else { map }]);
+            t.g32(pcs::YN_MAP_SYSTEM, if case == 1 { 0 } else { sys });
+            t.stub(pcs::YN_DEPTH_TO_SCREEN, false, 1, 0, r);
+            // the log2 sizes: written through its three pointers
+            let logs = [pick(&mut rng), pick(&mut rng), pick(&mut rng)];
+            let st = t.stub_code(pcs::TEX_LOG2_SIZE, false, 5, 0, r ^ 1);
+            let mut c = Vec::new();
+            for (k, v) in logs.into_iter().enumerate() {
+                c.extend([0x8b, 0x44, 0x24, (0xc + 4 * k) as u8]); // mov eax, [esp+0xc+4k]
+                c.extend([0xc7, 0x00]);
+                c.extend(v.to_le_bytes()); // mov dword [eax], v
+            }
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(st.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(pcs::TEX_LOG2_SIZE, at);
+            t.stub(pcs::TRX_SET_NO, false, 2, 0, r ^ 2);
+            t.stub(pcs::PAL_SET_NO, false, 2, 0, r ^ 3);
+            // the packet data: init sets its cursor
+            let buf = t.zeros(0x100);
+            t.stub_store_into(pcs::PKT_DATA_INIT, 0, 4, buf, 1, r ^ 4);
+            t.stub(pcs::PKT_DATA_OPEN, false, 2, 0, r ^ 5);
+            t.g32(pcs::PKT_DATA_ADR, rng.next());
+            t.stub(pcs::PKT_DATA_CLOSE, false, 1, 0, r ^ 6);
+            t.stub(pcs::PKT_DATA_DRAW, false, 1, 0, r ^ 7);
+            let layer = case % 4;
+            t.check_fs(
+                &format!("debug layer tex #{case}"),
+                0x0092_c960,
+                &[layer],
+                0x20,
+                0,
+                |m, ebp, _| Out::U32(pcb::debug_layer_tex(m, ebp, layer)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b24_module_file_read_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2401);
+        let channels = t.rebase(hdc::CD_CHANNELS);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // the busy bytes: requests up to `free` busy (one of the two
+            // bytes), the rest random-free; 64 none free
+            let free = [0u32, 5, 63, 64, 2, 17, 64, 1][(case % 8) as usize];
+            // every request's other bytes random (request 64 over the id
+            // and what follows too)
+            let junk: Vec<u8> = (0..65 * 0x38).map(|_| rng.next() as u8).collect();
+            t.write(channels, &junk);
+            for k in 0..64u32 {
+                let busy = if k < free {
+                    [[1u8, 0], [0, 1], [1, 1]][(k % 3) as usize]
+                } else {
+                    [0, 0]
+                };
+                t.write(channels + k * 0x38 + 0x31, &busy);
+            }
+            t.write(
+                t.rebase(hdc::CD_READ_ID),
+                &[0xffff_u32, 7, 0xfffe, 0x8000_0000][(case % 4) as usize].to_le_bytes(),
+            );
+            t.g32(hdc::READ_FUNCS_CD, [0u32, 0, 1, 2][(case / 4 % 4) as usize]);
+            t.write(
+                t.rebase(hdc::HDD_MODE),
+                &[[0u8, 0, 1, 2][(case % 4) as usize]],
+            );
+            t.g32(hdc::MODULE, rng.next() % 8);
+            t.stub(hdc::MOVIE_ERR, false, 3, 0, r);
+            // the PC name: short, or 0x80 bytes and more without a NUL
+            let long: Vec<u8> = (0..0x90).map(|k| b'a' + (k % 26) as u8).collect();
+            let name = if case & 1 != 0 {
+                t.alloc(&long)
+            } else {
+                t.alloc(b"ffx_ps2/ffx/master/jppc/x.bin\0")
+            };
+            t.stub(hdc::FILE_NAME_PC, false, 1, 0, name);
+            t.stub(hdc::SYNC_V, false, 1, 0, r ^ 1);
+            t.stub(hdc::MODULE_SECTOR_REL, false, 1, 0, rng.next() >> 4);
+            t.stub(
+                hdc::MOVIE_RUN_CHECK,
+                false,
+                0,
+                0,
+                u32::from(case % 5 == 1 || case == 13),
+            );
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 2);
+            t.stub(hdc::YI_ASSERT, false, 6, 0, r ^ 3);
+            t.stub(hdc::SIZE_FROM_TABLE, false, 1, 0, 0x100 | (case & 1));
+            let opts = if case % 3 == 0 {
+                0
+            } else {
+                t.words(&[
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                ])
+            };
+            let offset =
+                [0u32, 0x800, 0x7ff, 0xffff_f001, 0x1234_5678, 0x8000_0000][(case % 6) as usize];
+            let args = [
+                rng.next() % 0x400,
+                rng.next(),
+                offset,
+                rng.next(),
+                rng.next(),
+                opts,
+            ];
+            t.check(
+                &format!("module file read #{case}"),
+                0x0076_bf70,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::module_file_read(m, args)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b25_init_sub_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2501);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // the prints: the formats with one argument log two words,
+            // "make sub partition" four, the others one
+            let two: Vec<u32> = [3usize, 4, 5, 9, 10, 13, 15]
+                .iter()
+                .map(|&k| t.rebase(hdc::INIT_SUB_MSG[k]))
+                .collect();
+            let four = t.rebase(hdc::INIT_SUB_MSG[12]);
+            t.stub_by_counts(hdc::DBG_PRINTF, &two, four, r);
+            t.stub(hdc::MOUNT_PREPARE, false, 0, 0, r ^ 1);
+            t.stub(hdc::HDD_UNMOUNT, false, 0, 0, r ^ 2);
+            t.stub(hdc::MOUNT_PRE2, false, 0, 0, r ^ 3);
+            let code = t.alloc(b"BASLUS-20312\0");
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, code);
+            let text = t.alloc(b"hdd0:BASLUS-20312,ffxpassf,ffxpassr\0");
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 20, text, r ^ 4);
+            // the opens: the old partition, then the creations
+            let opens: [[u32; 7]; 16] = [
+                [3, 4, 0, 0, 0, 0, 0],
+                [0xffff_fffe, 4, 0, 0, 0, 0, 0],
+                [3, 0xffff_ffe5, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 4, 0, 0, 0, 0],
+                [
+                    3,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0,
+                ],
+                [3, 0xffff_fff3, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff1, 0, 0, 0, 0, 0],
+                [3, 4, 5, 6, 0, 0, 0],
+                [0xffff_ffff, 4, 5, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 0xffff_fff0, 4, 5, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 4, 5, 6, 0, 0],
+                [3, 4, 5, 0, 0, 0, 0],
+                [0, 4, 0, 0, 0, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+            ];
+            t.stub_seq(hdc::SCE_OPEN, 2, 0, &opens[case as usize]);
+            // the ioctls: deletes and adds; a negative add fails in 7, 8, 9, 12, 13
+            let fail = matches!(case, 7 | 8 | 9 | 12 | 13);
+            let mut io = vec![[0u32, 0x8000_0000][(case % 2) as usize]];
+            for k in 0..40u32 {
+                io.push(if fail && (k == 2 || k == 6) {
+                    0xffff_fff0
+                } else {
+                    k
+                });
+            }
+            t.stub_seq(hdc::SCE_IOCTL2, 6, 0, &io);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::SCE_REMOVE, false, 1, 0, r ^ 6);
+            let mb = if fail {
+                0x200
+            } else {
+                [0x200u32, 0x7f, 0x80, 0xffff_ff00, 0x281, 0][(case % 6) as usize]
+            };
+            t.stub(hdc::INSTALLED_MB_8F60, false, 1, 0, mb);
+            t.stub(
+                hdc::SCE_FORMAT,
+                false,
+                4,
+                0,
+                if case == 10 {
+                    0xffff_fffb
+                } else {
+                    r & 0x7fff_ffff
+                },
+            );
+            t.stub(hdc::NOP_FC60, false, 2, 0, 0);
+            t.check_fs(
+                &format!("init sub #{case}"),
+                0x0077_8a10,
+                &[],
+                0x90,
+                4,
+                |m, ebp, _| Out::U32(hdb::init_sub(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording `dbgPrintf` stub over `sym`: two words logged when its
+    /// first word is one of `two`, four when it is `four`, else one;
+    /// returns `ret`.
+    fn stub_by_counts(&mut self, sym: u32, two: &[u32], four: u32, ret: u32) {
+        let s2 = self.stub_code(sym, false, 2, 0, ret);
+        let s4 = self.stub_code(sym, false, 4, 0, ret);
+        let s1 = self.stub_code(sym, false, 1, 0, ret);
+        let mut c = Vec::new();
+        for (&first, to) in two.iter().map(|f| (f, s2)).chain([(&four, s4)]) {
+            c.extend([0x81, 0x7c, 0x24, 0x04]);
+            c.extend(first.to_le_bytes()); // cmp dword [esp+4], first
+            c.extend([0x0f, 0x84]);
+            let here = self.cave_next + c.len() as u32 + 4;
+            c.extend(to.wrapping_sub(here).to_le_bytes()); // je
+        }
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(s1.wrapping_sub(here).to_le_bytes()); // jmp s1
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+#[test]
+fn r3b26_read_module_files_check_matches_the_original() {
+    read_module_files_cases(0..12);
+}
+
+/// Files of 40 and 41 chunks: the log's 41-mark lines wrap in the chunks
+/// and at the tail.
+#[test]
+fn r3b26_read_module_files_check_wraps_match_the_original() {
+    read_module_files_cases(12..16);
+}
+
+fn read_module_files_cases(cases: std::ops::Range<u32>) {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2601);
+        // the buffers, made once (the oracle's heap is not reset)
+        let res = t.zeros(0x40);
+        let disc = t.zeros(0x10_0800);
+        let file = t.zeros(0x10_0800);
+        let log = t.zeros(0x1000);
+        let name = t.alloc(b"pfs0:/ffx/x.bin\0");
+        let pattern: Vec<u8> = (0..0x10_0100u32)
+            .map(|i| (i * 7 + (i >> 9)) as u8)
+            .collect();
+        let src = t.alloc(&pattern);
+        let mut others = [src; 3];
+        for (k, at) in [(1usize, 0x10usize), (2, 0x30)] {
+            let mut other = pattern.clone();
+            other[at] ^= 0x81;
+            others[k] = t.alloc(&other);
+        }
+        for case in cases.clone() {
+            t.reset();
+            let r = rng.next();
+            // the heads: sizes over and under a chunk, zero, odd tails
+            // (the last head read keeps its log marks past the first)
+            let sizes: [[u32; 3]; 4] = [
+                [0x31, 0, 0x20_0001],
+                [0x40, 8, 0x10_0033],
+                [3, 0x10_0000, 0x30_0005],
+                [0x7f, 0x10_0001, 0x20_0020],
+            ];
+            // 12..: one file of 40 or 41 chunks and a tail, the log's
+            // 41-mark lines wrapping in the chunks or at the tail
+            let big = [0x280_0010u32, 0x290_0010, 0x290_0010, 0x280_0020];
+            let s = if case >= 12 {
+                [big[(case % 4) as usize], 0, 0]
+            } else {
+                sizes[(case % 4) as usize]
+            };
+            let n = if case >= 12 {
+                1
+            } else if case == 11 {
+                0
+            } else {
+                [3u32, 2, 3][(case / 4 % 3) as usize]
+            };
+            let mut heads = Vec::new();
+            for (k, size) in (0u32..).zip(s.iter()) {
+                heads.extend([0x100 * k + (r & 0xff), *size, 0]);
+            }
+            t.write(
+                t.rebase(hdc::HEADS),
+                &heads
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.g32(hdc::HEAD_COUNT, n);
+            t.stub(hdc::HDD_MOUNT, false, 0, 0, r);
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case != 5));
+            t.stub_seq(hdc::USER_MALLOC, 1, 0, &[res, disc, file, log]);
+            t.stub(hdc::MEM_SET_ALIGN, false, 1, 0, r ^ 1);
+            t.stub(hdc::TASK_CREATE, false, 3, 0, 0);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 2);
+            t.stub(hdc::SCE_OPEN, false, 2, 0, 7 + case);
+            // the size: right, or off by one in 3, 7
+            let lseek = if case % 4 == 3 { 5 } else { 0 };
+            t.stub_seq(hdc::SCE_LSEEK64, 3, 0, &[s[0] + lseek, s[1], s[2]]);
+            t.stub(hdc::SCE_LSEEK, false, 3, 0, 0);
+            // the file's bytes and the disc's: equal, or one byte apart
+            let pick = if case >= 12 {
+                usize::from(case % 2 == 1)
+            } else {
+                (case % 3) as usize
+            };
+            let src2 = others[pick];
+            // sceRead(fd, buf, n): n bytes of the file copied; a positive
+            // count (case 9: an error; case 10: 0)
+            let read_ret = match case {
+                9 => 0xffff_fffb,
+                10 => 0,
+                _ => 0x1234,
+            };
+            let log_read = t.stub_code(hdc::SCE_READ, false, 3, 0, read_ret);
+            let copy = t.copy_code(src, log_read);
+            t.jump(hdc::SCE_READ, copy);
+            // the disc read through the CD layer's pointer
+            let cd = t.stub_code(hdc::CD_READ_PTR, false, 5, 0, 0);
+            let copy = t.copy_code(src2, cd);
+            t.w32(t.rebase(hdc::CD_READ_PTR), copy);
+            let sync = t.stub_seq_code(
+                hdc::CD_SYNC_PTR,
+                1,
+                0,
+                &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            );
+            t.w32(t.rebase(hdc::CD_SYNC_PTR), sync);
+            t.stub(hdc::TASK_WAIT_SYM, false, 1, 0, 0);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, 0);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, 0);
+            t.stub_seq(hdc::TRIG_HIST, 3, 0, &[0, 0x20, 0x40]);
+            t.stub(hdc::USER_FREE, false, 1, 0, 0);
+            t.check_fs(
+                &format!("read module files check #{case}"),
+                0x0077_7f00,
+                &[],
+                0x2c,
+                0,
+                |m, ebp, _| Out::U32(hdb::read_module_files_check(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// Code that copies `[esp+0xc]` bytes from `src` to `[esp+8]` (the
+    /// CD layer's read: sector, buffer, size), then jumps to `log`; its
+    /// address.
+    fn copy_code(&mut self, src: u32, log: u32) -> u32 {
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+        c.extend([0x8b, 0x4c, 0x24, 0x18]); // mov ecx, [esp+0x18]
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes());
+        self.cave_code(&c)
+    }
+}
+
+#[test]
+fn r3b27_window1612_frame_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2701);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let packet = t.zeros(0x40);
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 2);
+            let args = [
+                packet,
+                rng.next() & 0xfff,
+                rng.next() & 0xfff,
+                [0x40u32, 0x16, 0, 0x200][(case % 4) as usize],
+                [0x30u32, 9, 0, 0x1a0][(case / 2 % 4) as usize],
+            ];
+            t.check_fs(
+                &format!("window 1612 frame #{case}"),
+                0x008e_adf0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window1612_frame(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b28_copy_dvd_files_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2801);
+        // the buffers, made once (the oracle's heap is not reset)
+        let pattern: Vec<u8> = (0..0x10_0100u32)
+            .map(|i| (i * 13 + (i >> 8)) as u8)
+            .collect();
+        let good = t.alloc(&pattern);
+        // read back wrong: early in the bytes, or only in a 0x20 tail's last
+        let mut other = pattern.clone();
+        other[0x18] ^= 0x41;
+        let bad = t.alloc(&other);
+        let mut other = pattern.clone();
+        other[0x1f] ^= 0x41;
+        let bad_last = t.alloc(&other);
+        let back = t.zeros(0x10_0100);
+        let header = t.alloc(&pattern[..0x20]);
+        let mut wrong = pattern[..0x20].to_vec();
+        wrong[0x1c] ^= 1;
+        let wrong = t.alloc(&wrong);
+        let name = t.alloc(b"pfs0:/ffx/master/x.bin\0");
+        let code = t.alloc(b"BASLUS-20312\0");
+        let text = t.alloc(b"hdd0:BASLUS-20312,ffxpassf\0");
+        for case in 0..17u32 {
+            t.reset();
+            let r = rng.next();
+            // heads: a small file and one of a chunk and a tail (12: the big
+            // one first; 14: a file of exactly a chunk)
+            let sizes = match case {
+                12 => [0x10_0020, 0x30],
+                14 => [0x30, 0x10_0000],
+                _ => [0x30, 0x10_0020],
+            };
+            let heads = [
+                rng.next() & 0xffff,
+                sizes[0],
+                0,
+                rng.next() & 0xffff,
+                sizes[1],
+                0,
+            ];
+            t.write(
+                t.rebase(hdc::HEADS),
+                &heads
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.g32(hdc::HEAD_COUNT, if case == 11 { 0 } else { 2 });
+            t.g32(hdc::TOTAL, r & 0xfff);
+            // the done count: below, at (0x100030: the second file's first
+            // chunk) and above the sums
+            t.g32(
+                hdc::DONE,
+                [0x10_0030u32, 0x10_0000, 0x7fff_ffff][(case % 3) as usize],
+            );
+            t.g32(hdc::BUFFERS[0], good);
+            t.g32(hdc::BUFFERS[1], back);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, code);
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 26, text, r ^ 1);
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case != 10));
+            let one: Vec<u32> = [0usize, 3, 6, 8]
+                .iter()
+                .map(|&k| t.rebase(hdc::COPY_MSG[k]))
+                .collect();
+            let four = t.rebase(hdc::COPY_MSG[4]);
+            t.stub_by_counts(hdc::DBG_PRINTF, &one, four, r ^ 2);
+            // the conf header per wait: wrong at the first (1), none (3),
+            // wrong at the second file's attempt (15; 16: then the open fails)
+            let mut headers = vec![header; 64];
+            match case {
+                1 => headers[0] = wrong,
+                3 => headers[0] = 0,
+                15 | 16 => headers[2] = wrong,
+                _ => {}
+            }
+            let header_at = t.rebase(hdc::DISK_HEADER);
+            t.stub_store_seq0(hdc::WAIT_SEMA_BG, header_at, &headers, r ^ 3);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                3,
+                0,
+                &[
+                    if case == 2 { 0xffff_fffe } else { 9 },
+                    if case == 16 { 0xffff_fffe } else { 9 },
+                    9,
+                    9,
+                    9,
+                    9,
+                    9,
+                    9,
+                ],
+            );
+            // writes: negative ones in 8 (once), 9 and 12 (always)
+            let mut writes = vec![0x40u32; 48];
+            match case {
+                8 => writes[0] = 0xffff_fffb,
+                9 | 12 => writes.iter_mut().for_each(|w| *w = 0xffff_fffb),
+                _ => {}
+            }
+            t.stub_seq(hdc::SCE_WRITE, 3, 0, &writes);
+            // seeks: a failing one in 7
+            let mut seeks = vec![0u32; 64];
+            if case == 7 {
+                seeks[1] = 0xffff_ffff;
+            }
+            t.stub_seq(hdc::SCE_LSEEK, 3, 0, &seeks);
+            // the reads back: the wrong bytes for the first few (4: twice in
+            // the chunk; 5: five times, past the retries; 6: the tail once,
+            // in its last byte; 13: the tail four times); 14: the first
+            // reads nothing (0 = no copy, 0 returned)
+            let bads = match case {
+                4 => vec![1usize, 2],
+                5 => vec![1, 2, 3, 4, 5],
+                6 => vec![2],
+                13 => vec![2, 3, 4, 5],
+                _ => vec![],
+            };
+            let srcs: Vec<u32> = (0..64)
+                .map(|k| match (case, k) {
+                    (14, 0) => 0,
+                    (6, _) if bads.contains(&k) => bad_last,
+                    _ if bads.contains(&k) => bad,
+                    _ => good,
+                })
+                .collect();
+            t.stub_read_from(hdc::SCE_READ, &srcs);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 4);
+            t.stub(hdc::NOP_FC60, false, 2, 0, 0);
+            let removes = match case {
+                9 => [0, 1, 1, 1],
+                13 => [1, 1, 1, 1],
+                _ => [0, 0, 1, 1],
+            };
+            t.stub_seq(hdc::SCE_REMOVE, 1, 0, &removes);
+            t.check_fs(
+                &format!("copy dvd files #{case}"),
+                0x0077_7980,
+                &[],
+                0x6c,
+                4,
+                |m, ebp, _| Out::U32(hdb::copy_dvd_files(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (no words) that first stores
+    /// `values[k]` at `at` on its `k`-th call; returns `ret`.
+    fn stub_store_seq0(&mut self, sym: u32, at: u32, values: &[u32], ret: u32) {
+        let log_stub = self.stub_code(sym, false, 0, 0, ret);
+        let ctr = self.words(&[0]);
+        let tbl = self.words(values);
+        let mut c = vec![0xa1];
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+        c.push(0xa3);
+        c.extend(at.to_le_bytes()); // mov [at], eax
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+impl Twins {
+    /// A `sceRead(fd, buf, n)` stub over `sym`: logs the three words,
+    /// copies `n` bytes from `srcs[k]` on its `k`-th call and returns `n`
+    /// (a 0 source: nothing copied, 0 returned).
+    fn stub_read_from(&mut self, sym: u32, srcs: &[u32]) {
+        let log_stub = self.stub_code(sym, false, 3, 0, 0);
+        let ctr = self.words(&[0]);
+        let tbl = self.words(srcs);
+        let mut c = Vec::new();
+        for _ in 0..3 {
+            c.extend([0xff, 0x74, 0x24, 0x0c]); // push dword [esp+0xc]
+        }
+        c.push(0xe8);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // call log_stub
+        c.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+        c.extend([0x56, 0x57, 0x51]); // push esi; push edi; push ecx
+        c.push(0xa1);
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x34, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov esi, [tbl + eax*4]
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.extend([0x85, 0xf6, 0x74, 0x12]); // test esi, esi; jz none
+        c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+        c.extend([0x8b, 0x4c, 0x24, 0x18]); // mov ecx, [esp+0x18]
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc3]); // mov eax, [esp+0xc]; ret
+        c.extend([0x59, 0x5f, 0x5e, 0x31, 0xc0, 0xc3]); // none: pops; xor eax, eax; ret
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}

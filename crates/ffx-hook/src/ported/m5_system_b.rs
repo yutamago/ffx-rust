@@ -10,6 +10,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
 use ffx_system::m5b_hdd::bridge as hd;
+use ffx_system::m5b_menu::bridge as mn;
 use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_movie::bridge as mv;
 use ffx_system::m5b_pc::bridge as pc;
@@ -654,6 +655,712 @@ ported! {
         let own = ffx_bridge::Mem::rebase(&m, 0x0077_9120);
         hd::install_start(&mut m).unwrap_or(own)
     }
+
+    // ---- round 3: menu wrappers and table entries ----
+    /// `(a, b, c, d)`.
+    TOMkpValueFontMClutRight @ 0x0090_42e0 => extern "C" fn value_font_m_clut_right(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::value_font_m_clut_right(&mut mem(), [a, b, c, d])
+    }
+    /// `(a, b, c, d)`.
+    TOMkpFont_00902810 @ 0x0090_2810 => extern "C" fn font_902810(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::font_902810(&mut mem(), [a, b, c, d])
+    }
+    /// `(id, x, y, w, h, c0, c1)`.
+    TOMkpShapeXYWHC2 @ 0x0090_3b70 => extern "C" fn shape_xywhc2(id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        mn::shape_xywhc2(&mut mem(), [id, x, y, w, h, c0, c1])
+    }
+    /// `(text, x, y, colour)`.
+    TOMkpBaseMesFont_00901cb0 @ 0x0090_1cb0 => extern "C" fn base_mes_font(text: u32, x: u32, y: u32, colour: u32) -> u32 {
+        mn::base_mes_font(&mut mem(), [text, x, y, colour])
+    }
+    /// `(a, b, c, d, e)`.
+    TOMkpMesFont_00901d10 @ 0x0090_1d10 => extern "C" fn mes_font_901d10(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::mes_font_901d10(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(text, out, x, y)`.
+    TOMkpStrFontM_00901f80 @ 0x0090_1f80 => extern "C" fn str_font_m4(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::str_font_m4(&mut mem(), [a, b, c, d])
+    }
+    /// `(text, x, y)`.
+    TOMkpEasyStrFontM @ 0x0090_1f40 => extern "C" fn easy_str_font_m(text: u32, x: u32, y: u32) -> u32 {
+        mn::easy_str_font_m(&mut mem(), text, x, y)
+    }
+    /// `(prim)`.
+    TOMakePktSeqPrimFunc @ 0x008f_e040 => extern "C" fn seq_prim_func(prim: u32) -> u32 {
+        mn::seq_prim_func(&mut mem(), prim)
+    }
+    /// `(prim)`.
+    TOMakePktSeqPrimMes @ 0x008f_e080 => extern "C" fn seq_prim_mes(prim: u32) -> u32 {
+        mn::seq_prim_mes(&mut mem(), prim)
+    }
+    /// `()`.
+    TOMenuTransSmallFacePlyTex @ 0x0090_1160 => extern "C" fn trans_small_face() -> u32 {
+        mn::trans_small_face(&mut mem())
+    }
+    /// `(cursor, text, out, a, b, c, d, e, f)`.
+    TOAdpStrFontM_008edfc0 @ 0x008e_dfc0 => extern "C" fn str_font_m(cursor: u32, text: u32, out: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        mn::str_font_m(&mut mem(), cursor, text, out, [a, b, c, d, e, f])
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008ac7a0 @ 0x008a_c7a0 => extern "C" fn const_8ac7a0() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008b7c90 @ 0x008b_7c90 => extern "C" fn const_8b7c90() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008df680 @ 0x008d_f680 => extern "C" fn const_8df680() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB66b30_008fa4e0 @ 0x008f_a4e0 => extern "C" fn const_8fa4e0() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B66B30)
+    }
+    /// `()`: a constant.
+    ConstB66b30_00906c10 @ 0x0090_6c10 => extern "C" fn const_906c10() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B66B30)
+    }
+    /// `()`.
+    TkMenuUpdateSaveNeed_008b34f0 @ 0x008b_34f0 => extern "C" fn update_save_need() -> u32 {
+        mn::update_save_need(&mut mem())
+    }
+    /// `()`.
+    TkMcUnlock_008b3600 @ 0x008b_3600 => extern "C" fn mc_unlock() -> u32 {
+        mn::mc_unlock(&mut mem())
+    }
+    /// `()`: `jmp 0x008fd500` (no stack words; the target's code inline).
+    TOMkpPkt8eb4e0_008be250 @ 0x008b_e250 => extern "C" fn pkt_8eb4e0() -> u32 {
+        mn::pkt_8eb4e0(&mut mem())
+    }
+    /// `()`.
+    HddMenuEnter_008bf050 @ 0x008b_f050 => extern "C" fn hdd_menu_enter() -> u32 {
+        mn::hdd_menu_enter(&mut mem())
+    }
+    /// `()`.
+    HddMenuFunc_008bf0a0 @ 0x008b_f0a0 => extern "C" fn hdd_menu_func() -> u32 {
+        mn::hdd_menu_func(&mut mem())
+    }
+    /// `()`.
+    TkMenuCloseItemWindows_008c66c0 @ 0x008c_66c0 => extern "C" fn close_item_windows() -> u32 {
+        mn::close_item_windows(&mut mem())
+    }
+    /// `()`: `jmp TOAmapGetItemListMax`.
+    Thunk_TOAmapGetItemListMax_008c6700 @ 0x008c_6700 => extern "C" fn item_list_max() -> u32 {
+        mn::item_list_max(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionEnter_008e1910 @ 0x008e_1910 => extern "C" fn option_enter() -> u32 {
+        mn::option_enter(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionOpen_008e1950 @ 0x008e_1950 => extern "C" fn option_open() -> u32 {
+        mn::option_open(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionClose_008e19b0 @ 0x008e_19b0 => extern "C" fn option_close() -> u32 {
+        mn::option_close(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionLeave_008e19d0 @ 0x008e_19d0 => extern "C" fn option_leave() -> u32 {
+        mn::option_leave(&mut mem())
+    }
+    /// `()`.
+    TkMenuAbmExit_008e27b0 @ 0x008e_27b0 => extern "C" fn abm_exit() -> u32 {
+        mn::abm_exit(&mut mem())
+    }
+    /// `()`: `jmp 0x00a56030` (the target's code inline).
+    TkMenuAbmEnter_008e27c0 @ 0x008e_27c0 => extern "C" fn abm_enter() -> u32 {
+        mn::abm_enter(&mut mem())
+    }
+    /// `()`: `jmp 0x00a54760` (the target's code inline).
+    TkMenuAbmLeave_008e27d0 @ 0x008e_27d0 => extern "C" fn abm_leave() -> u32 {
+        mn::abm_leave(&mut mem())
+    }
+    /// `(a, b)`: `jmp TOMakePktFont1612Edge`.
+    Thunk_TOMakePktFont1612Edge_00906260 @ 0x0090_6260 => extern "C" fn font_1612_edge(a: u32, b: u32) -> u32 {
+        mn::font_1612_edge(&mut mem(), a, b)
+    }
+    /// `()`.
+    PrintB53060_0076ef90 @ 0x0076_ef90 => extern "C" fn print_b53060() -> u32 {
+        mn::print_b53060(&mut mem())
+    }
+    /// `()`: `jmp TOGetFFXLangJmp`.
+    TOGetFFXLang_008dfe10 @ 0x008d_fe10 => extern "C" fn get_ffx_lang() -> u32 {
+        mn::get_ffx_lang(&mut mem())
+    }
+    /// `()`.
+    CallbackOne_008abb00 @ 0x008a_bb00 => extern "C" fn callback_one() -> u32 {
+        mn::callback_one(&mut mem())
+    }
+    /// `(cursor, a, b, c, d, e)`.
+    TOAdpMesFont_008ed120 @ 0x008e_d120 => extern "C" fn mes_font_8ed120(cursor: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::mes_font_8ed120(&mut mem(), [cursor, a, b, c, d, e])
+    }
+    /// `(a, b, c)`.
+    TOMkpFont_008f8870 @ 0x008f_8870 => extern "C" fn font_8f8870(a: u32, b: u32, c: u32) -> u32 {
+        mn::font_8f8870(&mut mem(), a, b, c)
+    }
+    /// `()`: with no names `eax` untouched.
+    SetWakkalimitMagicFileTexturesUnloaded @ 0x008e_89d0 => extern "C" fn wakka_textures_unloaded() {
+        let _ = mn::wakka_textures_unloaded(&mut mem());
+    }
+    /// `(pos, glyph)`.
+    TOGlyphAdvance_008fc770 @ 0x008f_c770 => extern "C" fn glyph_advance(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_advance(&mut mem(), pos, glyph)
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDb_008f1a90 @ 0x008f_1a90 => extern "C" fn shape_da_db_8f1a90(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db(&mut mem(), [cursor, x, y, w, c, c1])
+    }
+    /// `(cursor, x, y, w, c, c1)`: the same code.
+    TOAdpShapeDaDb_008f1af0 @ 0x008f_1af0 => extern "C" fn shape_da_db_8f1af0(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db(&mut mem(), [cursor, x, y, w, c, c1])
+    }
+    /// `(cursor, id1, id2, x, y, w, c, c1)`.
+    TOAdpShapePair_008f0990 @ 0x008f_0990 => extern "C" fn shape_ids(cursor: u32, id1: u32, id2: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_ids(&mut mem(), [cursor, id1, id2, x, y, w, c, c1])
+    }
+
+    // ---- round 3: magic files, VFX vector cells ----
+    /// `(magic)`: off, `eax` untouched.
+    MagicFile_clearAllPreloadedPrx @ 0x009d_aca0 => extern "C" fn clear_all_preloaded(magic: u32) {
+        let _ = pc::clear_all_preloaded(&mut mem(), magic);
+    }
+    /// `(magic, file)`: off, `eax` untouched.
+    MagicFile_ClearPreloadedPrx_009dacc0 @ 0x009d_acc0 => extern "C" fn clear_preloaded(magic: u32, file: u32) {
+        let _ = pc::clear_preloaded(&mut mem(), magic, file);
+    }
+    /// `(module)`.
+    onMagicDLLLoaded @ 0x009d_b110 => extern "C" fn on_magic_dll_loaded(module: u32) -> u32 {
+        pc::on_magic_dll_loaded(&mut mem(), module)
+    }
+    /// `(dst)`.
+    VFX_CopyC0a004_0092cc20 @ 0x0092_cc20 => extern "C" fn copy_c0a004(dst: u32) -> u32 {
+        pc::copy_c0a004(&mut mem(), dst)
+    }
+    /// `(dst, src)`.
+    VFX_CopyViaC8f980_0092cbf0 @ 0x0092_cbf0 => extern "C" fn copy_via_c8f980(dst: u32, src: u32) -> u32 {
+        pc::copy_via_c8f980(&mut mem(), dst, src)
+    }
+
+    // ---- round 3, batch 2: packet builders and menu draws ----
+    /// `(cursor)`.
+    TOAdpTexFlushAlpha_008eb4e0 @ 0x008e_b4e0 => extern "C" fn tex_flush_alpha(cursor: u32) -> u32 {
+        mn::tex_flush_alpha(&mut mem(), cursor)
+    }
+    /// `()`.
+    TOMkpPlainDrawRegs_009046e0 @ 0x0090_46e0 => extern "C" fn plain_draw_regs() -> u32 {
+        mn::plain_draw_regs(&mut mem())
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDbIcon10b_008f1990 @ 0x008f_1990 => extern "C" fn shape_da_db_10b(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db_icon(&mut mem(), [cursor, x, y, w, c, c1], 0x10b)
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDbIcon10a_008f1a10 @ 0x008f_1a10 => extern "C" fn shape_da_db_10a(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db_icon(&mut mem(), [cursor, x, y, w, c, c1], 0x10a)
+    }
+    /// `(a, b, x, y, w, c, c1)`.
+    TOMkpShapeLeftRight_008f5e90 @ 0x008f_5e90 => extern "C" fn shape_left_right(a: u32, b: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_left_right(&mut mem(), [a, b, x, y, w, c, c1])
+    }
+    /// `(x, y, w, h, c, c1)`: `w` clamped in its argument slot.
+    TOMkpWindowFrame_008f9b60 @ 0x008f_9b60 => extern "C" fn window_frame(x: u32, y: u32, w: u32, h: u32, c: u32, c1: u32; slots: u32) -> u32 {
+        mn::window_frame(&mut mem(), [x, y, w, h, c, c1], slots)
+    }
+    /// `(x, y, w, h)`: `w` less the corner in its argument slot.
+    TOMkpWindowPlain_008f9a40 @ 0x008f_9a40 => extern "C" fn window_plain(x: u32, y: u32, w: u32, h: u32; slots: u32) -> u32 {
+        mn::window_plain(&mut mem(), [x, y, w, h], slots)
+    }
+    /// `(x0, y0, x1, y1)`.
+    TOMakePktSampleBlueWindowXY2 @ 0x008f_de50 => extern "C" fn sample_blue_window(x0: u32, y0: u32, x1: u32, y1: u32) -> u32 {
+        mn::sample_blue_window(&mut mem(), [x0, y0, x1, y1])
+    }
+    /// `(chr, x, y)`.
+    TOBtlDrawChangeSeqAnm0 @ 0x0089_28b0 => extern "C" fn change_seq_anm(chr: u32, x: u32, y: u32) -> u32 {
+        mn::change_seq_anm(&mut mem(), chr, x, y)
+    }
+    /// `(save, x, y)`: the info kept in the first argument slot.
+    TkMenuDrawSavePartyFaces_008b37d0 @ 0x008b_37d0 => extern "C" fn save_party_faces(save: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::save_party_faces(&mut mem(), save, x, y, slots)
+    }
+    /// `(p, slot, x, y, c0, c1, c2, c3)`: the cell's `u` in the slot's
+    /// argument slot.
+    TOAdpFaceSprite_008f1880 @ 0x008f_1880 => extern "C" fn face_sprite(p: u32, slot: u32, x: u32, y: u32, c0: u32, c1: u32, c2: u32, c3: u32; slots: u32) -> u32 {
+        mn::face_sprite(&mut mem(), [p, slot, x, y, c0, c1, c2, c3], slots)
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFontMClutRight_008f3280 @ 0x008f_3280 => extern "C" fn value_font_m(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_m(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFont3d80_008f3390 @ 0x008f_3390 => extern "C" fn value_font_3d80(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_3d80(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(value, x, y, c)`: frame `ebp - 0xc`.
+    TOMkpBtlLimitLuluMidareCounter @ 0x0090_1280 => extern "C" fn lulu_counter(value: u32, x: u32, y: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        mn::lulu_counter(&mut mem(), f.at() + 0xc, [value, x, y, c])
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFontLClutRight @ 0x008f_30b0 => extern "C" fn value_font_l_clut_right(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_l_clut_right(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(text, x, y)`: `f32 x` left in the `y` argument slot.
+    TOMkpEasyStrFontS @ 0x0090_2040 => extern "C" fn easy_str_font_s(text: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::easy_str_font_s(&mut mem(), text, x, y, slots)
+    }
+    /// `(text, x, y)`: frame `ebp - 8`; `f32 x` left in its argument slot.
+    TOMkpEasyMesFontLCenter @ 0x0090_1c50 => extern "C" fn easy_mes_font_l_center(text: u32, x: u32, y: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::easy_mes_font_l_center(&mut mem(), f.at() + 8, [text, x, y], slots)
+    }
+    /// `(path)`: frame `ebp - 0x204`.
+    TOInitBattleFontPath @ 0x008a_d780 => extern "C" fn init_battle_font_path(path: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::init_font_path(&mut mem(), f.at() + 0x204, path, &ffx_system::m5b_menu::BATTLE_FONTS)
+    }
+    /// `(path)`: frame `ebp - 0x204`.
+    TOInitEventFontPath @ 0x008a_d840 => extern "C" fn init_event_font_path(path: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::init_font_path(&mut mem(), f.at() + 0x204, path, &ffx_system::m5b_menu::EVENT_FONTS)
+    }
+
+    // ---- round 3, batch 3: glyph packets, UI quads ----
+    /// `(pos, glyph)`.
+    TOAdpGlyphEdge_00905ef0 @ 0x0090_5ef0 => extern "C" fn glyph_edge(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_edge(&mut mem(), pos, glyph)
+    }
+    /// `(pos, glyph)`.
+    TOAdpGlyphFill_009060f0 @ 0x0090_60f0 => extern "C" fn glyph_fill(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_fill(&mut mem(), pos, glyph)
+    }
+    /// `(pos, glyph)`: frame `ebp - 0x1c`.
+    TOAdpGlyphDraw_00906050 @ 0x0090_6050 => extern "C" fn glyph_draw(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        mn::glyph_draw(&mut mem(), f.at() + 0x1c, pos, glyph)
+    }
+    /// `(pos, glyph)`: frame `ebp - 0x1c`.
+    TOMakePktMovieFont1612 @ 0x008f_d960 => extern "C" fn movie_font_1612(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        mn::movie_font_1612(&mut mem(), f.at() + 0x1c, pos, glyph)
+    }
+    /// `(x, y, w, h, c0, c1)`: frame `ebp - 0xa0`.
+    TODrawUIBox_008fd390 @ 0x008f_d390 => extern "C" fn ui_box(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        mn::ui_box(&mut mem(), f.at() + 0xa0, [x, y, w, h, c0, c1])
+    }
+    /// `(x0, y0, x1, y1, r, g, b, a)`: frame `ebp - 0x9c`.
+    TODrawUIRect_008fb090 @ 0x008f_b090 => extern "C" fn ui_rect(x0: u32, y0: u32, x1: u32, y1: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::ui_rect(&mut mem(), f.at() + 0x9c, [x0, y0, x1, y1, r, g, b, a])
+    }
+    /// `(cursor, x, y, c0, c1)`: frame `ebp - 0xa8`.
+    TODrawUIPicture_008f2bf0 @ 0x008f_2bf0 => extern "C" fn ui_picture(cursor: u32, x: u32, y: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x2a>::new();
+        mn::ui_picture(&mut mem(), f.at() + 0xa8, [cursor, x, y, c0, c1])
+    }
+    /// `(x, y, w, h, first, count, total)`: `x + w - 1` left in the `h`
+    /// argument slot.
+    TODrawScrollBar_00902700 @ 0x0090_2700 => extern "C" fn scroll_bar(x: u32, y: u32, w: u32, h: u32, first: u32, count: u32, total: u32; slots: u32) -> u32 {
+        mn::scroll_bar(&mut mem(), [x, y, w, h, first, count, total], slots)
+    }
+    /// `(dst, src, v0, v1, v2, v3)`: the vector is read in its argument
+    /// slots.
+    VFX_MulXByValue_0092cc40 @ 0x0092_cc40 => extern "C" fn vec_mul_x(dst: u32, src: u32, _v0: u32, _v1: u32, _v2: u32, _v3: u32; slots: u32) -> u32 {
+        mn::vec_mul_x(&mut mem(), dst, src, slots)
+    }
+
+    // ---- round 3, batch 3: the HDD reader's requests ----
+    /// `(sector, buf, size, head)`.
+    hd_file_read_th @ 0x0077_8610 => extern "C" fn read_th(sector: u32, buf: u32, size: u32, head: u32) -> u32 {
+        hd::read_th(&mut mem(), sector, buf, size, head)
+    }
+    /// `(path, buf, size, offset)`.
+    hd_file_read_ex_th_main @ 0x0077_8550 => extern "C" fn read_ex_th(path: u32, buf: u32, size: u32, offset: u32) -> u32 {
+        hd::read_ex_th(&mut mem(), path, buf, size, offset)
+    }
+    /// `()`: the background thread's read.
+    hd_file_read_th_main @ 0x0077_86f0 => extern "C" fn read_th_main() -> u32 {
+        hd::read_th_main(&mut mem())
+    }
+    /// `(device, need)`: frame `ebp - 4`.
+    hdd_FreeSpaceOk_00777610 @ 0x0077_7610 => extern "C" fn free_space_ok(device: u32, need: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        hd::free_space_ok(&mut mem(), f.at() + 4, device, need)
+    }
+    /// `(cd)`.
+    CdSetReadFuncs_0076cff0 @ 0x0076_cff0 => extern "C" fn set_read_funcs(cd: u32) -> u32 {
+        hd::set_read_funcs(&mut mem(), cd)
+    }
+
+    // ---- round 3, batch 3: RadialBlur's draws, the sphere grid's item check ----
+    /// `(this; texture, _)` (`ret 8`): frame `ebp - 0x2c`.
+    RadialBlur_draw_007030e0 @ 0x0070_30e0 => extern "thiscall" fn radial_blur_draw(this: u32, texture: u32, _unused: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        pc::blur_draw(&mut mem(), f.at() + 0x2c, this, texture)
+    }
+    /// `(this; target)` (`ret 4`): frame `ebp - 0x3c`.
+    RadialBlur_drawScaled_00703480 @ 0x0070_3480 => extern "thiscall" fn radial_blur_draw_scaled(this: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        pc::blur_draw_scaled(&mut mem(), f.at() + 0x3c, this, target)
+    }
+    /// `()`: frame `ebp - 0x24`.
+    AbmapItemUsable_00a44d30 @ 0x00a4_4d30 => extern "C" fn abmap_item_usable() -> u32 {
+        let mut f = StackFrame::<9>::new();
+        pc::abmap_item_usable(&mut mem(), f.at() + 0x24)
+    }
+    /// `()`: not running, `eax` untouched.
+    AbmapRefreshItems_00a44ea0 @ 0x00a4_4ea0 => extern "C" fn abmap_refresh_items() {
+        let mut f = StackFrame::<9>::new();
+        let _ = pc::abmap_refresh_items(&mut mem(), f.at() + 0x24);
+    }
+
+    // ---- round 3, batch 4: small menu wrappers ----
+    /// `(win)`.
+    TOWaitBtlWinStart_008a8750 @ 0x008a_8750 => extern "C" fn wait_win_start(win: u32) -> u32 {
+        mn::wait_win_start(&mut mem(), win)
+    }
+    /// `(a, b, c)`.
+    TOMkpMenuIcon_008fd4d0 @ 0x008f_d4d0 => extern "C" fn menu_icon(a: u32, b: u32, c: u32) -> u32 {
+        mn::menu_icon(&mut mem(), [a, b, c])
+    }
+    /// `(a, b, c, d, e)`.
+    TOMkpMovieMessageImage @ 0x0090_2840 => extern "C" fn movie_message_image(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::movie_message_image(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(a, b, c, d)`.
+    TOAdpFont8ebc00_008ebbd0 @ 0x008e_bbd0 => extern "C" fn font_8ebc00(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::font_8ebc00(&mut mem(), [a, b, c, d])
+    }
+    /// `(cursor, text, x, y)`.
+    TOAdpMesFont1612_008e9fd0 @ 0x008e_9fd0 => extern "C" fn mes_font_1612(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::mes_font_1612(&mut mem(), [a, b, c, d])
+    }
+    /// `(a, b, c, d, e)`.
+    TOAdpFont8ea680_008ea5c0 @ 0x008e_a5c0 => extern "C" fn font_8ea680(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::font_8ea680(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(a, text)`: frame `ebp - 8`.
+    TOGetWidthExtMes1612 @ 0x008b_8070 => extern "C" fn width_ext_mes_1612(a: u32, text: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::width_ext_mes_1612(&mut mem(), f.at() + 8, a, text)
+    }
+    /// `(fmt, ...)`: the variable words stay the caller's (`vsprintf`
+    /// reads them from `slots + 4`); frame `ebp - 0x104`.
+    TODapsPrintf @ 0x0089_dde0 => extern "C" fn daps_printf(fmt: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        mn::daps_printf(&mut mem(), f.at() + 0x104, fmt, slots.wrapping_add(4))
+    }
+    /// `(x, y, w, h, r, g, b, a)`.
+    TOMkpFlatRect_008fc6a0 @ 0x008f_c6a0 => extern "C" fn flat_rect(x: u32, y: u32, w: u32, h: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        mn::flat_rect(&mut mem(), [x, y, w, h, r, g, b, a])
+    }
+    /// `(page, a1, a2, a3, a4, a5, a6)`: frame `ebp - 0x70`.
+    TOTransImageLH @ 0x008b_0da0 => extern "C" fn trans_image_lh(page: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        let mut f = StackFrame::<0x1c>::new();
+        mn::trans_image_lh(&mut mem(), f.at() + 0x70, [page, a1, a2, a3, a4, a5, a6])
+    }
+
+    // ---- round 3, batch 4: the disk checks, sector reads, the install wall ----
+    /// `(ctx)`.
+    hdd_DiskChangedCached_007775e0 @ 0x0077_75e0 => extern "C" fn disk_changed_cached(ctx: u32) -> u32 {
+        hd::disk_changed_cached(&mut mem(), ctx)
+    }
+    /// `(offset, buf, skip, ctx)`.
+    hdd_StreamRead_00777380 @ 0x0077_7380 => extern "C" fn stream_read(offset: u32, buf: u32, skip: u32, ctx: u32) -> u32 {
+        hd::stream_read(&mut mem(), [offset, buf, skip, ctx])
+    }
+    /// `()`: `jmp hdd_ReadModuleFiles_00777f00`.
+    Thunk_hdd_ReadModuleFiles_00777970 @ 0x0077_7970 => extern "C" fn read_module_files() -> u32 {
+        hd::read_module_files(&mut mem())
+    }
+    /// `()`.
+    hdd_kabe_disp @ 0x0077_93c0 => extern "C" fn kabe_disp() -> u32 {
+        hd::kabe_disp(&mut mem())
+    }
+
+    // ---- round 3, batch 4: the frame-buffer quad, the HDD install mode and mount, main ----
+    /// `()`: frame `ebp - 0x9c`.
+    TODrawRealFrameBuffer_008a92a0 @ 0x008a_92a0 => extern "C" fn real_frame_buffer() -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::real_frame_buffer(&mut mem(), f.at() + 0x9c)
+    }
+    /// `()`.
+    hdd_install_init @ 0x0077_92e0 => extern "C" fn install_init() -> u32 {
+        hd::install_init(&mut mem())
+    }
+    /// `()`: frame `ebp - 0x84`.
+    hdd_mount @ 0x0077_9490 => extern "C" fn mount() -> u32 {
+        let mut f = StackFrame::<0x21>::new();
+        hd::mount(&mut mem(), f.at() + 0x84)
+    }
+    /// `(argc, argv)`: the game's `main`.
+    GameMain_00822490 @ 0x0082_2490 => extern "C" fn game_main(argc: u32, argv: u32) -> u32 {
+        pc::game_main(&mut mem(), argc, argv)
+    }
+
+    // ---- round 3, batch 5: the screen capture, the CD offsets, the install check ----
+    /// `(x, y)`.
+    TOCaptureScreen_008adaf0 @ 0x008a_daf0 => extern "C" fn capture_screen(x: u32, y: u32) -> u32 {
+        mn::capture_screen(&mut mem(), x, y)
+    }
+    /// `(names)`: frame `ebp - 0x28`; without names `eax` untouched.
+    file_offset_get @ 0x0076_db40 => extern "C" fn file_offset_get(names: u32) {
+        let mut f = StackFrame::<0xa>::new();
+        let _ = hd::file_offset_get(&mut mem(), f.at() + 0x28, names);
+    }
+    /// `()`.
+    hdd_VerifyFiles_007787c0 @ 0x0077_87c0 => extern "C" fn verify_files() -> u32 {
+        hd::verify_files(&mut mem())
+    }
+    /// `(arg)`.
+    hdd_install_check @ 0x0077_91a0 => extern "C" fn install_check(arg: u32) -> u32 {
+        hd::install_check(&mut mem(), arg)
+    }
+
+    // ---- round 3, batch 5: the partition size, the help picture, the map-object reload ----
+    /// `()`: frame `ebp - 0x44`.
+    hdd_OpenFfxPartition_00779000 @ 0x0077_9000 => extern "C" fn open_ffx_partition() -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        hd::open_ffx_partition(&mut mem(), f.at() + 0x44)
+    }
+    /// `(page, clut)`: frame `ebp - 0x68` (16-byte aligned).
+    hdd_HelpPicture_00779ad0 @ 0x0077_9ad0 => extern "C" fn help_picture(page: u32, clut: u32) -> u32 {
+        let mut f = StackFrame::<0x1a>::new();
+        hd::help_picture(&mut mem(), f.at() + 0x68, page, clut)
+    }
+    /// `()`: frame `ebp - 0x10c`.
+    rcReloadMapObjects_0092cdd0 @ 0x0092_cdd0 => extern "C" fn reload_map_objects() -> u32 {
+        let mut f = StackFrame::<0x43>::new();
+        pc::reload_map_objects(&mut mem(), f.at() + 0x10c)
+    }
+
+    // ---- round 3, batch 5: printf2, the install thread, the disc wait ----
+    /// `(fmt, args)`: frame `ebp - 0x204`.
+    printf2 @ 0x0076_dd10 => extern "C" fn printf2(fmt: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::printf2(&mut mem(), f.at() + 0x204, fmt, args)
+    }
+    /// `()`: the install thread; frame `ebp - 0x44`.
+    hdd_thread_main @ 0x0077_95b0 => extern "C" fn install_thread() -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        hd::install_thread(&mut mem(), f.at() + 0x44)
+    }
+    /// `()`.
+    CdWaitDisc_0076ccb0 @ 0x0076_ccb0 => extern "C" fn wait_disc() -> u32 {
+        hd::wait_disc(&mut mem())
+    }
+
+    // ---- round 3, batch 6: the gradient box, the textured quad, the wall frame ----
+    /// `(x, y, w, h, c0, c1, full)`: frame `ebp - 0xa4`.
+    TODrawBoxXYWHC2FW @ 0x008f_3eb0 => extern "C" fn box_fill_width(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32, full: u32) -> u32 {
+        let mut f = StackFrame::<0x29>::new();
+        mn::box_fill_width(&mut mem(), f.at() + 0xa4, [x, y, w, h, c0, c1, full])
+    }
+    /// `(x, y, w, h, texture)`: frame `ebp - 0xa0`.
+    TODrawUITextured_00774520 @ 0x0077_4520 => extern "C" fn ui_textured(x: u32, y: u32, w: u32, h: u32, texture: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        mn::ui_textured(&mut mem(), f.at() + 0xa0, [x, y, w, h, texture])
+    }
+    /// `(frame, clut)`: frame `ebp - 0x6c` (16-byte aligned).
+    hdd_WallFrame_007798b0 @ 0x0077_98b0 => extern "C" fn wall_frame(frame: u32, clut: u32) -> u32 {
+        let mut f = StackFrame::<0x1b>::new();
+        hd::wall_frame(&mut mem(), f.at() + 0x6c, frame, clut)
+    }
+
+    /// `(chr, x, y)`: 16-bit sums in the argument slots; without a bar
+    /// `eax` is the FPU status word (the shim leaves the caller's).
+    TOBtlDrawLimitGauge @ 0x0089_5480 => extern "C" fn limit_gauge(chr: u32, x: u32, y: u32; slots: u32) {
+        let _ = mn::limit_gauge(&mut mem(), chr, x, y, slots);
+    }
+    /// `(chr, x, y)`: the HP's `y` in the high half of `y`'s slot.
+    TOBtlDrawParamPlate @ 0x0089_5940 => extern "C" fn param_plate(chr: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::param_plate(&mut mem(), chr, x, y, slots)
+    }
+
+    /// `(cursor, page, x, y, w, h)`.
+    TOAdpMovieImage_008f2e10 @ 0x008f_2e10 => extern "C" fn movie_image(cursor: u32, page: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        mn::movie_image(&mut mem(), [cursor, page, x, y, w, h])
+    }
+    /// `(cursor, x, y, w, r, g, b, a)`: the colour bytes and `y - 3` left in
+    /// the argument slots.
+    TOAdpBarCaps_008ebc00 @ 0x008e_bc00 => extern "C" fn bar_caps(cursor: u32, x: u32, y: u32, w: u32, r: u32, g: u32, b: u32, a: u32; slots: u32) -> u32 {
+        mn::bar_caps(&mut mem(), [cursor, x, y, w, r, g, b, a], slots)
+    }
+
+    /// `(cursor, text, x, y, flag, r, g, b, a, kind, scale)`: `f32 scale`
+    /// left in the cursor's argument slot.
+    TOAdpEasyMesFontLClutRGBAInterMode @ 0x008e_d190 => extern "C" fn mes_font_inter(cursor: u32, text: u32, x: u32, y: u32, flag: u32, r: u32, g: u32, b: u32, a: u32, kind: u32, scale: u32; slots: u32) -> u32 {
+        mn::mes_font_inter(&mut mem(), [cursor, text, x, y, flag, r, g, b, a, kind, scale], slots)
+    }
+
+    /// `(pos, glyph)`: the font page left in `pos`'s argument slot.
+    TOMakePktMovieFont1612Font @ 0x008f_dc00 => extern "C" fn movie_font_glyph(pos: u32, glyph: u32; slots: u32) -> u32 {
+        mn::movie_font_glyph(&mut mem(), pos, glyph, slots)
+    }
+
+    /// `(cursor, x, y, kind)`.
+    TOAdpShapeByKind_008f1b50 @ 0x008f_1b50 => extern "C" fn shape_by_kind(cursor: u32, x: u32, y: u32, kind: u32) -> u32 {
+        mn::shape_by_kind(&mut mem(), [cursor, x, y, kind])
+    }
+
+    /// `(x, y, w, h, c0, c1, full)` (`x`..`h` floats): frame `ebp - 0xb0`.
+    TODrawCrossBoxXYWHC2FW @ 0x008f_4c40 => extern "C" fn cross_box_fill_width(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32, full: u32) -> u32 {
+        let mut f = StackFrame::<0x2c>::new();
+        mn::cross_box_fill_width(&mut mem(), f.at() + 0xb0, [x, y, w, h, c0, c1, full])
+    }
+
+    /// `(item, x, y, colour)` (`x`, `y` floats): frame `ebp - 8`; the `y`
+    /// argument slot ends holding the name's `x`.
+    TODrawCrossMenuIconImportantName @ 0x008f_50f0 => extern "C" fn important_icon_name(item: u32, x: u32, y: u32, colour: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::important_icon_name(&mut mem(), f.at() + 8, [item, x, y, colour], slots)
+    }
+
+    /// `(list)`: frame `ebp - 0x120`.
+    hdd_ins_check @ 0x0077_8d70 => extern "C" fn ins_check(list: u32) -> u32 {
+        let mut f = StackFrame::<0x48>::new();
+        hd::ins_check(&mut mem(), f.at() + 0x120, list)
+    }
+
+    /// `()`.
+    TODrawWakkaLimitFrame_008a1e50 @ 0x008a_1e50 => extern "C" fn wakka_frame() -> u32 {
+        mn::wakka_frame(&mut mem())
+    }
+
+    /// `(win, macro, pos)`: the step left in `win`'s argument slot.
+    TODrawMovieChangeMacro2 @ 0x008b_5ea0 => extern "C" fn movie_change_macro(win: u32, macro_id: u32, pos: u32; slots: u32) -> u32 {
+        mn::movie_change_macro(&mut mem(), win, macro_id, pos, slots)
+    }
+
+    /// `(cursor, key, text, x, y, flag, r, g, b, a)`: `f32 x` kept in
+    /// `cursor`'s argument slot.
+    TOAdpFont1612Text_008ea680 @ 0x008e_a680 => extern "C" fn font_1612_text(cursor: u32, key: u32, text: u32, x: u32, y: u32, flag: u32, r: u32, g: u32, b: u32, a: u32; slots: u32) -> u32 {
+        mn::font_1612_text(&mut mem(), [cursor, key, text, x, y, flag, r, g, b, a], slots)
+    }
+
+    // ---- round 3, batch 11: JobWorker's thread loop, FileReadMain ----
+    /// `(this)`: never returns.
+    ThreadLoop_00703a20 @ 0x0070_3a20 => extern "thiscall" fn job_worker_loop(this: u32) {
+        pc::job_worker_loop(&mut mem(), this);
+    }
+    /// `()`: `jmp [[0x01128adc]]`.
+    FileReadMain @ 0x0076_cfd0 => extern "C" fn file_read_main() -> u32 {
+        pc::file_read_main(&mut mem())
+    }
+
+    // ---- round 3, batch 13: the movie message's end, the movie disc wait ----
+    /// `()`: frame `ebp - 8` (never written: 0).
+    TOMovieMessageEnd_008ab860 @ 0x008a_b860 => extern "C" fn movie_message_end() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::movie_message_end(&mut mem(), f.at() + 8)
+    }
+    /// `(play, ctx)`: the ioctl's result goes into `ctx`'s argument slot.
+    hdd_MovieDiscWait_00777440 @ 0x0077_7440 => extern "C" fn movie_disc_wait(play: u32, ctx: u32; slots: u32) -> u32 {
+        hd::movie_disc_wait(&mut mem(), play, ctx, slots)
+    }
+
+    /// `(lo, hi, uv, colour)`: frame `ebp - 0x10`; `uv` advanced in its
+    /// argument slot.
+    updateVFXRenderData_AkazaScrFlt @ 0x0071_ce20 => extern "C" fn akaza_scr_flt(lo: u32, hi: u32, uv: u32, colour: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        pc::akaza_scr_flt(&mut mem(), f.at() + 0x10, [lo, hi, uv, colour], slots)
+    }
+
+    /// `(out, chr)`: frame `ebp - 0x25c`.
+    rcbgGuideMarker_0092c740 @ 0x0092_c740 => extern "C" fn guide_marker(out: u32, chr: u32) -> u32 {
+        let mut f = StackFrame::<0x97>::new();
+        pc::guide_marker(&mut mem(), f.at() + 0x25c, out, chr)
+    }
+
+    /// `(pos, glyph)`: frame `ebp - 0x28`.
+    TOMakePktMovieFont1612Edge @ 0x008f_d9f0 => extern "C" fn movie_font_edge(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        mn::movie_font_edge(&mut mem(), f.at() + 0x28, pos, glyph)
+    }
+
+    /// `(alpha)`: frame `ebp - 0x9c`.
+    TODrawAlphaBG @ 0x008f_3a50 => extern "C" fn alpha_bg(alpha: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::alpha_bg(&mut mem(), f.at() + 0x9c, alpha)
+    }
+
+    /// `(win)`.
+    TODrawWaitBtlWinPrepare @ 0x008a_6870 => extern "C" fn wait_win_prepare(win: u32) -> u32 {
+        mn::wait_win_prepare(&mut mem(), win)
+    }
+
+    /// `(sector, size, buf, mode, head)`: the sector count and the wait
+    /// limit go into `mode`'s and `size`'s argument slots.
+    Sa_CdRead_task @ 0x0076_d200 => extern "C" fn cd_read_task(sector: u32, size: u32, buf: u32, mode: u32, head: u32; slots: u32) -> u32 {
+        hd::cd_read_task(&mut mem(), [sector, size, buf, mode, head], slots)
+    }
+
+    /// `(path, count, list)`: frame `ebp - 0x160`.
+    hdd_WalkInstallDir_007776a0 @ 0x0077_76a0 => extern "C" fn walk_install_dir(path: u32, count: u32, list: u32) -> u32 {
+        let mut f = StackFrame::<0x58>::new();
+        hd::walk_install_dir(&mut mem(), f.at() + 0x160, path, count, list)
+    }
+
+    // ---- round 3, batch 21: the movie message's draw ----
+    /// `()`: frame `ebp - 4` (written by `Sg_GetDBuffDC`).
+    TODrawMovieMessage @ 0x008a_bf30 => extern "C" fn draw_movie_message() -> u32 {
+        let mut f = StackFrame::<1>::new();
+        mn::draw_movie_message(&mut mem(), f.at() + 4)
+    }
+
+    // ---- round 3, batch 22: the particle shapes' fill job ----
+    /// `(job)`: frame `ebp - 0x1c`.
+    JobSchedule_pppPart_fillBuffer_drawShp_007287b0 @ 0x0072_87b0 => extern "C" fn draw_shp_fill(job: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        pc::draw_shp_fill(&mut mem(), f.at() + 0x1c, job)
+    }
+
+    // ---- round 3, batch 23: the debug overlay's layer texture ----
+    /// `(layer)`: frame `ebp - 0x20`.
+    rcbgDebugDrawLayerTex_0092c960 @ 0x0092_c960 => extern "C" fn debug_layer_tex(layer: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        pc::debug_layer_tex(&mut mem(), f.at() + 0x20, layer)
+    }
+
+    // ---- round 3, batch 24: the module file read request ----
+    /// `(file, buffer, offset, size, callback, opts)`.
+    cd_ModuleFileRead_0076bf70 @ 0x0076_bf70 => extern "C" fn module_file_read(file: u32, buffer: u32, offset: u32, size: u32, callback: u32, opts: u32) -> u32 {
+        hd::module_file_read(&mut mem(), [file, buffer, offset, size, callback, opts])
+    }
+
+    // ---- round 3, batch 25: the FFX partition's set-up ----
+    /// `()`: frame `ebp - 0x90` (the cookie at `ebp - 4`).
+    hdd_init_sub_00778a10 @ 0x0077_8a10 => extern "C" fn init_sub() -> u32 {
+        let mut f = StackFrame::<0x24>::new();
+        hd::init_sub(&mut mem(), f.at() + 0x90)
+    }
+
+    // ---- round 3, batch 26: the installed files' check ----
+    /// `()`: frame `ebp - 0x2c`.
+    hdd_ReadModuleFiles_00777f00 @ 0x0077_7f00 => extern "C" fn read_module_files_check() -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        hd::read_module_files_check(&mut mem(), f.at() + 0x2c)
+    }
+
+    // ---- round 3, batch 27: the 1612 window's frame ----
+    /// `(packet, x, y, w, h)`: the columns and the third row go into the
+    /// argument slots.
+    TOMkpWindow1612Frame_008eadf0 @ 0x008e_adf0 => extern "C" fn window1612_frame(packet: u32, x: u32, y: u32, w: u32, h: u32; slots: u32) -> u32 {
+        mn::window1612_frame(&mut mem(), [packet, x, y, w, h], slots)
+    }
+
+    // ---- round 3, batch 28: the installer's copy of the disc's files ----
+    /// `()`: frame `ebp - 0x6c` (the cookie at `ebp - 4`).
+    hdd_CopyDvdFiles_00777980 @ 0x0077_7980 => extern "C" fn copy_dvd_files() -> u32 {
+        let mut f = StackFrame::<0x1b>::new();
+        hd::copy_dvd_files(&mut mem(), f.at() + 0x6c)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
@@ -680,4 +1387,41 @@ pub(crate) fn loader_thread_main_on() -> bool {
 /// entry) in Rust (`ffx_system::m5b_async::bridge::thread_main`).
 pub(crate) fn loader_thread_main() -> u32 {
     ab::thread_main(&mut mem())
+}
+
+/// Whether the port named `name` is on (`FFX_HOOK_DISABLE` with it or
+/// `replacements` turns it off; `FFX_HOOK_ONLY` without it too).
+fn wrapped_port_on(name: &str) -> bool {
+    let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
+    let only = crate::hook_only().is_none_or(|names| names.iter().any(|n| n == name));
+    only && !off
+        .split(',')
+        .map(str::trim)
+        .any(|n| n == "replacements" || n == name)
+}
+
+/// The names that turn the PS2 file-size ports off or on alone: the mod
+/// wrappers (`mods.rs`) own `CDfileSize_CD`'s and `CDfileSize_PC`'s
+/// addresses and call these ports instead of their trampolines.
+pub(crate) const CD_FILE_SIZE_CD_NAME: &str = "CDfileSize_CD_port";
+pub(crate) const CD_FILE_SIZE_PC_NAME: &str = "CDfileSize_PC_port";
+
+/// `CDfileSize_CD(number)` in Rust (`ffx_system::m5b_hdd::bridge::
+/// file_size_cd`), or `None` when turned off.
+pub(crate) fn cd_file_size_cd_port(number: u32) -> Option<u32> {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| wrapped_port_on(CD_FILE_SIZE_CD_NAME)) {
+        return None;
+    }
+    Some(hd::file_size_cd(&mut mem(), number))
+}
+
+/// `CDfileSize_PC(number)` in Rust (`ffx_system::m5b_hdd::bridge::
+/// file_size_pc`), or `None` when turned off.
+pub(crate) fn cd_file_size_pc_port(number: u32) -> Option<u32> {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| wrapped_port_on(CD_FILE_SIZE_PC_NAME)) {
+        return None;
+    }
+    Some(hd::file_size_pc(&mut mem(), number))
 }

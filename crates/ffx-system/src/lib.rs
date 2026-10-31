@@ -33,6 +33,7 @@ pub mod m5a_ui;
 pub mod m5a_vfs;
 pub mod m5b_async;
 pub mod m5b_hdd;
+pub mod m5b_menu;
 pub mod m5b_misc;
 pub mod m5b_movie;
 pub mod m5b_pc;

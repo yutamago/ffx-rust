@@ -143,7 +143,9 @@ pub(crate) use battle::ms_screen_process;
 pub(crate) use m5_main::{
     animate as ffx_application_animate, animate_on as ffx_application_animate_on,
 };
-pub(crate) use m5_system_b::{loader_thread_main, loader_thread_main_on};
+pub(crate) use m5_system_b::{
+    cd_file_size_cd_port, cd_file_size_pc_port, loader_thread_main, loader_thread_main_on,
+};
 #[cfg(not(ffx_host))]
 pub(crate) use map::rcbg_guide_update_ex;
 #[cfg(not(ffx_host))]
