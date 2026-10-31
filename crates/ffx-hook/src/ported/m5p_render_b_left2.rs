@@ -49,4 +49,14 @@ ported! {
         let mut f = StackFrame::<{ lf::DEPTH_FRAME_WORDS as usize }>::new();
         lb::update_depth_transform(&mut mem(), this, renderer, m, color, f.at())
     }
+    /// The deferred lighting's texture parameters `(renderer, unused)`.
+    Phyre_PPostProcessing_PDeferredLighting_setTextureParameters_00a13400 @ 0x00a1_3400 => extern "thiscall" fn set_texture_params(this: u32, renderer: u32, _unused: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::TEXTURE_FRAME_WORDS as usize }>::new();
+        lb::set_texture_params(&mut mem(), this, renderer, f.at())
+    }
+    /// The profiles raised into a height line `(this, tables; values,
+    /// floors, out, bias)`.
+    HeightProfiles_raise_00a965d0 @ 0x00a9_65d0 => extern "fastcall-caller-pops" fn raise_profiles(this: u32, tables: u32, values: u32, floors: u32, out: u32, bias: u32) {
+        lb::raise_profiles(&mut mem(), this, tables, values, floors, out, bias);
+    }
 }

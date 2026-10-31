@@ -209,15 +209,27 @@ pub const DEPTH_CALLS: [u32; 2] = [0x004c_9c20, 0x004f_93f0];
 /// The words of `0x0059a390`'s frame.
 pub const DEPTH_FRAME_WORDS: u32 = 0x45;
 
+/// `0x00a13400`'s data and callees: what the renderer's `+0x48` is set
+/// to, the tile setup `0x005b6620` (thiscall on the renderer, ret 0x14),
+/// `PParameterBuffer_writeParameter(parameter, src)` (thiscall, ret 8).
+pub const TEXTURE_PARAMS: [u32; 3] = [0x0194_4c3c, 0x005b_6620, 0x004d_57d0];
+/// The words of `0x00a13400`'s frame.
+pub const TEXTURE_FRAME_WORDS: u32 = 21;
+
+/// `0x00a965d0`'s constants in the image: 6.0 (`float`), 30.0 and 0.1
+/// (doubles), 16.0 (`float`).
+pub const PROFILE_CONSTS: [u32; 4] = [0x00b9_2308, 0x00b9_22c8, 0x00b9_21f0, 0x00b9_231c];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
+    use super::PROFILE_CONSTS;
     use super::{COMMON_CALLS, COMMON_PARAMS};
     use super::{
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
-    use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET};
+    use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -689,6 +701,221 @@ pub mod bridge {
         for i in 0..n {
             let x = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
             h.write(dst + 4 * i, x.to_bits());
+        }
+    }
+
+    /// One texture parameter record `{tag, 0, 0, value, 0}` staged at
+    /// `rec` (five words, as the original's frame) and copied into the
+    /// material's buffer at the parameter's offset (`memcpy`, its size
+    /// `+0xa & 0x1fff`); `false` (error 3) when it does not fit or the
+    /// offset is under 4.
+    fn put_texture(
+        h: &mut impl Host,
+        param: u32,
+        buffer: u32,
+        rec: u32,
+        tag: u32,
+        value: u32,
+    ) -> bool {
+        for (i, w) in [tag, 0, 0, value, 0].into_iter().enumerate() {
+            h.write(rec + 4 * i as u32, w);
+        }
+        put_block(h, param, buffer, rec)
+    }
+
+    /// `0x00a13400` (thiscall `(this; renderer, unused)`, ret 8): the
+    /// deferred lighting's texture parameters set in its material's
+    /// buffer (`[[+0x3ed8] + 4]`): `+0x4024` (tag 0x48, the texture
+    /// `+0x4034`) and `+0x403c` (`+0x4038`), each only of type `'H'`
+    /// (else 5); `+0x4014` (tag 0x49, the shadow texture `+0x3fd0`, which
+    /// must have flag 8 at `+8` when there is one) of type `'I'`, 0x14 or
+    /// 0x15; each failing copy's 3 returned. Then the renderer's `+0x48`
+    /// set to `0x01944c3c` and `0x005b6620([mat], [mat + 4], ceil(w / 8),
+    /// ceil(h / 8), 1)` with the size of the target `[+0x3fc4]` (its
+    /// object `+0`, none when the byte `+4` is set; `+0x1c`, `+0x20`);
+    /// its error returned; then `+0x4010` (tag 0x48, `+0x3fd0`, type
+    /// `'H'`) written with `PParameterBuffer_writeParameter`. 0.
+    ///
+    /// `frame` is 21 words, the original's `ebp - 0x54`: the records at
+    /// `+0x3c`, `+0x28`, `+0x14`, `+0` in the order above (a copy longer
+    /// than 20 bytes reads past its record into the original's stale
+    /// stack; the game's parameters are 16 bytes).
+    pub fn set_texture_params(h: &mut impl Host, this: u32, renderer: u32, frame: u32) -> u32 {
+        for (param, value, rec) in [(0x4024, 0x4034, 0x3c), (0x403c, 0x4038, 0x28)] {
+            let p: u32 = h.read(this + param);
+            if p == 0 {
+                continue;
+            }
+            let value: u32 = h.read(this + value);
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            if h.read::<u8>(p + 2) != b'H' {
+                return 5;
+            }
+            if !put_texture(h, p, buffer, frame + rec, 0x48, value) {
+                return 3;
+            }
+        }
+        let p: u32 = h.read(this + 0x4014);
+        if p != 0 {
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            let shadow: u32 = h.read(this + 0x3fd0);
+            let ty: u8 = h.read(p + 2);
+            if ty != 0x49 && ty != 0x14 && ty != 0x15 {
+                return 5;
+            }
+            if shadow != 0 && h.read::<u8>(shadow + 8) & 8 == 0 {
+                return 5;
+            }
+            if !put_texture(h, p, buffer, frame + 0x14, 0x49, shadow) {
+                return 3;
+            }
+        }
+        let target: u32 = h.read(this + 0x3fc4);
+        let object: u32 = if h.read::<u8>(target + 4) == 0 {
+            h.read(target)
+        } else {
+            0
+        };
+        let w: u32 = h.read(object.wrapping_add(0x1c));
+        let ht: u32 = h.read(object.wrapping_add(0x20));
+        let at = h.rebase(TEXTURE_PARAMS[0]);
+        h.write(renderer + 0x48, at);
+        let material: u32 = h.read(this + 0x3ed8);
+        let (first, second): (u32, u32) = (h.read(material), h.read(material + 4));
+        let tiles = |n: u32| (n >> 3) + u32::from(n & 7 != 0);
+        let r = h.call_sym(
+            TEXTURE_PARAMS[1],
+            Conv::Thiscall(renderer),
+            &[first, second, tiles(w), tiles(ht), 1],
+        );
+        if r != 0 {
+            return r;
+        }
+        let p: u32 = h.read(this + 0x4010);
+        if p != 0 {
+            let shadow: u32 = h.read(this + 0x3fd0);
+            for (i, word) in [0x48, 0, 0, shadow, 0].into_iter().enumerate() {
+                h.write(frame + 4 * i as u32, word);
+            }
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            if h.read::<u8>(p + 2) != b'H' {
+                return 5;
+            }
+            let r = h.call_sym(TEXTURE_PARAMS[2], Conv::Thiscall(buffer), &[p, frame]);
+            if r != 0 {
+                return r;
+            }
+        }
+        0
+    }
+
+    /// `cvttss2si`: truncation toward zero, `0x80000000` for NaN and
+    /// values out of the `i32` range.
+    fn cvtt(x: f32) -> i32 {
+        ffx_bridge::x87::cvttsd2si(f64::from(x)).cast_signed()
+    }
+
+    /// A float of game memory.
+    fn rf(h: &impl ffx_bridge::Mem, at: u32) -> f32 {
+        f32::from_bits(h.read(at))
+    }
+
+    /// `0x00a965d0` (fastcall `(this, tables; values, floors, out,
+    /// bias)`, the caller pops; SSE): for each run of equal keys
+    /// (`[+0x14]`, `[+0]` of them) the largest value of the run (`values`,
+    /// `comiss`); when it plus 6 beats the floor at the run's last index,
+    /// a profile is chosen (row: the key `>> [+0x20]` clamped to 0..16;
+    /// level: `cvttsd2si((f64(v + off) - 30) * 0.1)` clamped to 0..7,
+    /// `off` = `[[+4] + 0x1f0] - bias`; `[[tables + 4 row] + 4 level]`:
+    /// `{first, end, heights...}` as floats) and its heights plus the
+    /// value raised into `out` from the position
+    /// `(key - [+0x1c]) + (first - 16) * stride - stride / 2` (`stride`
+    /// `[+0x24]`) on, one per
+    /// height, every `stride`, while under `[+0x28]` (positions under 1
+    /// skipped). Each operation one SSE instruction: `f32` arithmetic,
+    /// `cvtdq2ps` for the integers, truncating conversions. The 6, 30,
+    /// 0.1 and 16 are read from the image.
+    pub fn raise_profiles(
+        h: &mut impl Host,
+        this: u32,
+        tables: u32,
+        values: u32,
+        floors: u32,
+        out: u32,
+        bias: u32,
+    ) {
+        let n: i32 = h.read::<u32>(this).cast_signed();
+        let owner: u32 = h.read(this + 4);
+        let off = rf(h, owner + 0x1f0) - f32::from_bits(bias);
+        let six = rf(h, h.rebase(PROFILE_CONSTS[0]));
+        let thirty = f64::from_bits(h.read(h.rebase(PROFILE_CONSTS[1])));
+        let tenth = f64::from_bits(h.read(h.rebase(PROFILE_CONSTS[2])));
+        let sixteen = rf(h, h.rebase(PROFILE_CONSTS[3]));
+        let mut i: i32 = 0;
+        while i < n {
+            let keys: u32 = h.read(this + 0x14);
+            let at = |i: i32| i.cast_unsigned().wrapping_mul(4);
+            let mut v = rf(h, values.wrapping_add(at(i)));
+            let key: i32 = h.read::<u32>(keys.wrapping_add(at(i))).cast_signed();
+            while i + 1 < n && h.read::<u32>(keys.wrapping_add(at(i + 1))).cast_signed() == key {
+                i += 1;
+                let x = rf(h, values.wrapping_add(at(i)));
+                if x > v {
+                    v = x;
+                }
+            }
+            let floor = rf(h, floors.wrapping_add(at(i)));
+            if v + six > floor {
+                let shift = h.read::<u32>(this + 0x20) & 31;
+                let row = key >> shift;
+                let row = if row >= 0x11 {
+                    0x10
+                } else if row < 0 {
+                    0
+                } else {
+                    row
+                };
+                let limit: i32 = h.read::<u32>(this + 0x28).cast_signed();
+                let stride: i32 = h.read::<u32>(this + 0x24).cast_signed();
+                let e =
+                    ffx_bridge::x87::cvttsd2si((f64::from(v + off) - thirty) * tenth).cast_signed();
+                let level = if e > 0 { e } else { 0 };
+                let level = if level < 7 { level } else { 7 };
+                let rows: u32 = h.read(tables.wrapping_add(at(row)));
+                let profile: u32 = h.read(rows.wrapping_add(at(level)));
+                let first = rf(h, profile);
+                let end = cvtt(rf(h, profile + 4));
+                #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+                let pos = {
+                    let base: i32 = h.read::<u32>(this + 0x1c).cast_signed();
+                    let here = h
+                        .read::<u32>(keys.wrapping_add(at(i)))
+                        .cast_signed()
+                        .wrapping_sub(base);
+                    let x = here as f32 + (first - sixteen) * stride as f32;
+                    x - (stride >> 1) as f32
+                };
+                let mut pos = cvtt(pos);
+                let mut j = cvtt(first);
+                while j < end {
+                    if pos > 0 {
+                        let x = rf(h, profile.wrapping_add(at(j)).wrapping_add(8)) + v;
+                        let dst = out.wrapping_add(at(pos));
+                        if x > rf(h, dst) {
+                            h.write(dst, x.to_bits());
+                        }
+                    }
+                    pos = pos.wrapping_add(stride);
+                    if pos >= limit {
+                        break;
+                    }
+                    j += 1;
+                }
+            }
+            i += 1;
         }
     }
 }

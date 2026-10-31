@@ -5221,3 +5221,282 @@ fn big_depth_transform_matches_the_original() {
         }
     }
 }
+
+/// `0x00a13400` (the deferred lighting's texture parameters) against the
+/// original: the copies and `PParameterBuffer_writeParameter` run as the
+/// game's code into a real buffer; each parameter missing, of a wrong
+/// type, not fitting or under offset 4; the shadow texture without its
+/// flag or absent; the tile setup failing.
+#[test]
+fn big_texture_params_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (which parameter is changed: 0..3 = +0x4024, +0x403c, +0x4014,
+    // +0x4010, 9 none; how: 0 missing, 1 wrong type, 2 too far, 3 offset
+    // under 4; the shadow: 0 none, 1 flagged, 2 unflagged; tile error)
+    let cases: [(u32, u32, u32, u32); 16] = [
+        (9, 0, 1, 0),
+        (9, 0, 0, 0),
+        (9, 0, 2, 0),
+        (9, 0, 1, 7),
+        (0, 0, 1, 0),
+        (0, 1, 1, 0),
+        (0, 2, 1, 0),
+        (1, 1, 1, 0),
+        (1, 3, 1, 0),
+        (2, 0, 1, 0),
+        (2, 1, 1, 0),
+        (2, 2, 1, 0),
+        (3, 0, 1, 0),
+        (3, 1, 1, 0),
+        (3, 2, 1, 0),
+        (2, 4, 1, 0),
+    ];
+    for (which, how, shadow_kind, tiles) in cases {
+        for (label, mut t) in Twins::all() {
+            let this = t.zeros(0x4040);
+            let buffer = t.junk(0x100, 3);
+            t.w32(buffer, 0xc0);
+            let material = t.zeros(8);
+            t.w32(material, 0x0044_0000);
+            t.w32(material + 4, buffer);
+            t.w32(this + 0x3ed8, material);
+            for (i, (field, ty, off)) in [
+                (0x4024u32, b'H', 0x10u16),
+                (0x403c, b'H', 0x24),
+                (0x4014, b'I', 0x38),
+                (0x4010, b'H', 0x4c),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let i = i as u32;
+                if i == which && how == 0 {
+                    continue;
+                }
+                let p = t.zeros(0x10);
+                let ty = match (i == which, how) {
+                    (true, 1) => b'J',
+                    (true, 4) => 0x15,
+                    _ => ty,
+                };
+                let off = match (i == which, how) {
+                    (true, 2) => 0xb8,
+                    (true, 3) => 2,
+                    _ => off,
+                };
+                t.w8(p + 2, ty);
+                t.write(p + 8, &off.to_le_bytes());
+                t.write(p + 0xa, &(0xe010u16).to_le_bytes());
+                t.w32(this + field, p);
+            }
+            let shadow = match shadow_kind {
+                0 => 0,
+                k => {
+                    let s = t.zeros(0x10);
+                    t.w8(s + 8, if k == 1 { 0x0c } else { 0x04 });
+                    s
+                }
+            };
+            t.w32(this + 0x3fd0, shadow);
+            t.w32(this + 0x4034, 0x0101_0101);
+            t.w32(this + 0x4038, 0x0202_0202);
+            let object = t.zeros(0x24);
+            t.w32(object + 0x1c, 0x41);
+            t.w32(object + 0x20, 0x38);
+            let target = t.zeros(8);
+            t.w32(target, object);
+            t.w32(this + 0x3fc4, target);
+            let renderer = t.zeros(0x50);
+            t.stub(l2::TEXTURE_PARAMS[1], true, 5, 5, tiles);
+            let what = format!(
+                "{label}: texture params which {which} how {how} shadow {shadow_kind} tiles {tiles}"
+            );
+            t.check(
+                &what,
+                0x00a1_3400,
+                Conv::Thiscall(this),
+                &[renderer, 0x99],
+                |g| {
+                    let frame = ffx_graphic::host::Host::scratch(g);
+                    Out::U32(l2b::set_texture_params(g, this, renderer, frame))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a965d0` (the profiles raised into a height line; SSE) against
+/// the original: runs of equal keys (their largest value, a quiet NaN
+/// among them), floors beaten or not, rows clamped at both ends, levels
+/// clamped at 0 and 7, fractional profile bounds, positions under 1 and
+/// past the limit.
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn big_raise_profiles_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x0f1e_2d3cu32;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for case in 0..4u32 {
+            let keys: [i32; 12] = [
+                0x40, 0x40, 0x55, 0x80, 0x80, 0x80, -0x10, 0x900, 0x31, 0x33, 0x33, 0x7f,
+            ];
+            let n = keys.len() as u32;
+            let fbytes = |v: &[f32]| {
+                v.iter()
+                    .flat_map(|x| x.to_bits().to_le_bytes())
+                    .collect::<Vec<u8>>()
+            };
+            let mut values: Vec<f32> = (0..n).map(|_| (next() % 1000) as f32 * 0.1 - 5.0).collect();
+            if case == 1 {
+                values[4] = f32::from_bits(0x7fc0_0042);
+            }
+            let floors: Vec<f32> = (0..n)
+                .map(|k| {
+                    if (k + case) % 3 == 0 {
+                        500.0
+                    } else {
+                        (next() % 600) as f32 * 0.1 - 10.0
+                    }
+                })
+                .collect();
+            let kbytes: Vec<u8> = keys.iter().flat_map(|k| k.to_le_bytes()).collect();
+            let keys_at = t.alloc(&kbytes);
+            let values_at = t.alloc(&fbytes(&values));
+            let floors_at = t.alloc(&fbytes(&floors));
+            let out = t.alloc(&fbytes(&vec![1.0f32; 0x110]));
+            // three row tables of eight profiles {first, end, heights}
+            let mut rows = Vec::new();
+            for r in 0..3u32 {
+                let mut levels = Vec::new();
+                for l in 0..8u32 {
+                    let first = [0.0f32, 1.5, 3.0, 2.25][((r + l + case) % 4) as usize];
+                    let end = first + 4.0 + (l % 3) as f32;
+                    let mut p = vec![first, end];
+                    p.extend((0..12).map(|_| (next() % 400) as f32 * 0.25 - 20.0));
+                    levels.push(t.alloc(&fbytes(&p)));
+                }
+                rows.push(
+                    t.alloc(
+                        &levels
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    ),
+                );
+            }
+            let table: Vec<u32> = (0..17).map(|k| rows[k % 3]).collect();
+            let tables = t.alloc(
+                &table
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let owner = t.zeros(0x200);
+            t.w32(owner + 0x1f0, (50.0f32 + case as f32 * 7.0).to_bits());
+            let this = t.zeros(0x30);
+            t.w32(this, n);
+            t.w32(this + 4, owner);
+            t.w32(this + 0x14, keys_at);
+            t.w32(this + 0x1c, 0x30);
+            t.w32(this + 0x20, 4);
+            t.w32(this + 0x24, 3 + case);
+            t.w32(this + 0x28, [0x100, 0x40, 0x100, 0x90][case as usize]);
+            let bias = (10.0f32 + case as f32 * 15.0).to_bits();
+            let what = format!("{label}: raise profiles case {case}");
+            t.check(
+                &what,
+                0x00a9_65d0,
+                Conv::FastcallCallerPops,
+                &[this, tables, values_at, floors_at, out, bias],
+                |g| {
+                    l2b::raise_profiles(g, this, tables, values_at, floors_at, out, bias);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+/// `0x00a965d0`'s edges, built by hand: a value exactly 6 under its
+/// floor (not raised), a row under 0 and one at 16 (clamped), level 1
+/// (`trunc(v * 0.1)` with the offset cancelling the 30), a store of -0
+/// over +0 (not greater), a position landing exactly on the limit.
+#[test]
+fn big_raise_profiles_edges_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let fbytes = |v: &[f32]| {
+            v.iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<u8>>()
+        };
+        let keys: [i32; 6] = [0x50, 0x50, -0x30, 0x105, 0x60, 0x60];
+        let values = [10.0f32, 10.0, 25.0, -0.0, 3.0, 2.0];
+        let floors = [-100.0f32, -100.0, -100.0, -100.0, -100.0, 9.0];
+        let kbytes: Vec<u8> = keys.iter().flat_map(|k| k.to_le_bytes()).collect();
+        let keys_at = t.alloc(&kbytes);
+        let values_at = t.alloc(&fbytes(&values));
+        let floors_at = t.alloc(&fbytes(&floors));
+        let out = t.alloc(&fbytes(&[0.0f32; 0x110]));
+        let mut table = Vec::new();
+        for k in 0..17u16 {
+            let mut levels = Vec::new();
+            for l in 0..8u16 {
+                let first = if k <= 1 { 30.0f32 } else { 1.0 };
+                let mut p = vec![first, first + 4.0];
+                p.extend((0..40u16).map(|i| {
+                    if k == 16 {
+                        -0.0
+                    } else {
+                        0.25 * f32::from(k * 8 + l) + 0.01 * f32::from(i)
+                    }
+                }));
+                levels.push(t.alloc(&fbytes(&p)));
+            }
+            table.push(
+                t.alloc(
+                    &levels
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                ),
+            );
+        }
+        let tables = t.alloc(
+            &table
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let owner = t.zeros(0x200);
+        t.w32(owner + 0x1f0, 40.0f32.to_bits());
+        let this = t.zeros(0x30);
+        t.w32(this, keys.len() as u32);
+        t.w32(this + 4, owner);
+        t.w32(this + 0x14, keys_at);
+        t.w32(this + 0x1c, 0);
+        t.w32(this + 0x20, 4);
+        t.w32(this + 0x24, 4);
+        t.w32(this + 0x28, 26);
+        let bias = 10.0f32.to_bits();
+        t.check(
+            &format!("{label}: raise profiles edges"),
+            0x00a9_65d0,
+            Conv::FastcallCallerPops,
+            &[this, tables, values_at, floors_at, out, bias],
+            |g| {
+                l2b::raise_profiles(g, this, tables, values_at, floors_at, out, bias);
+                Out::None
+            },
+        );
+        t.reset();
+    }
+}
