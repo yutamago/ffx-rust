@@ -1763,6 +1763,8 @@ ports! {
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
     "staged nodes task" => s6_misc::STAGED_NODES_TASK, s6_misc::staged_nodes_task;
     "staged nodes task (b)" => s6_misc::STAGED_NODES_TASK_B, s6_misc::staged_nodes_task;
+    "staged nodes task (c)" => s6_misc::STAGED_NODES_TASK_C, s6_misc::staged_nodes_task;
+    "staged nodes task (d)" => s6_misc::STAGED_NODES_TASK_D, s6_misc::staged_nodes_task;
     "part centres" => s6_misc::PART_CENTRES, s6_misc::part_centres;
     "spin stage two" => s6_misc::SPIN_STAGE_TWO, s6_misc::spin_stage_two;
     "three points around" => s6_misc::THREE_POINTS_AROUND, s6_misc::three_points_around;

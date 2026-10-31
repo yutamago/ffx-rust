@@ -261,10 +261,24 @@ pub const STAGED_NODES_TASK: Sig = Sig {
     imports: &[],
 };
 
-/// [`staged_nodes_task`]'s copy in `magic_0426` 0x10007130 (another
-/// colour immediate).
+/// [`staged_nodes_task`]'s copy in `magic_0426` 0x10007130 and `magic_0404`
+/// 0x10006960 (another colour immediate).
 pub const STAGED_NODES_TASK_B: Sig = Sig {
     hash: 0x60a4_0c9f_7a13_2d1a,
+    ..STAGED_NODES_TASK
+};
+
+/// [`staged_nodes_task`]'s copy in `magic_0400` 0x10006960 (another
+/// colour immediate; an own row of that DLL).
+pub const STAGED_NODES_TASK_C: Sig = Sig {
+    hash: 0x1d43_486b_415a_0b57,
+    ..STAGED_NODES_TASK
+};
+
+/// [`staged_nodes_task`]'s copy in `magic_0428` 0x10006960 (another
+/// colour immediate; an own row of that DLL).
+pub const STAGED_NODES_TASK_D: Sig = Sig {
+    hash: 0x0700_3223_8f08_ced0,
     ..STAGED_NODES_TASK
 };
 

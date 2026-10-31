@@ -91,7 +91,14 @@ fn rec_mem(t: &mut Twin, slot: u32, n: usize, words: u32, fill: Option<usize>) {
 #[test]
 #[allow(clippy::too_many_lines)] // the slots the callees reach
 fn staged_nodes_tasks() {
-    for (dll, rva) in [(401u16, 0x6960u32), (426, 0x7130)] {
+    // (0400, 0404 and 0428: the same code in own rows of those DLLs)
+    for (dll, rva) in [
+        (401u16, 0x6960u32),
+        (426, 0x7130),
+        (400, 0x6960),
+        (404, 0x6960),
+        (428, 0x6960),
+    ] {
         staged_nodes_in(dll, rva);
     }
 }
