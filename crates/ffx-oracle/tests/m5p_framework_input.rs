@@ -3650,3 +3650,64 @@ fn left2_path_rotation_and_transform_match_the_original() {
         t.reset();
     }
 }
+
+/// Code (thiscall, 2 stack words) writing `words` at its first argument,
+/// answering that argument.
+fn writer_code(t: &mut Twins, words: &[u32]) -> u32 {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for (i, w) in words.iter().enumerate() {
+        c.extend([0xc7, 0x40, (4 * i) as u8]);
+        c.extend(w.to_le_bytes()); // mov dword [eax+4i], w
+    }
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+#[test]
+fn left2_path_frame_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    let f = |v: f32| v.to_bits();
+    for (label, mut t) in Twins::all() {
+        let dirs: [[f32; 3]; 5] = [
+            [0.0, 0.0, 1.0],
+            [0.6, 0.0, 0.8],
+            [0.3, -0.5, 0.81],
+            [1.0, 0.0, 0.0],
+            [f32::NAN, 0.0, 1.0],
+        ];
+        let ups: [[f32; 3]; 3] = [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.1, 0.9, -0.2]];
+        for (i, dv) in dirs.iter().enumerate() {
+            for (j, uv) in ups.iter().enumerate() {
+                let d = writer_code(&mut t, &[f(dv[0]), f(dv[1]), f(dv[2]), f(7.0)]);
+                let mut m = vec![f(uv[0]), f(uv[1]), f(uv[2]), f(9.0)];
+                for k in 0..12u16 {
+                    m.push(f(f32::from(k) * 0.5));
+                }
+                let tr = writer_code(&mut t, &m);
+                let p = writer_code(&mut t, &[f(1.5), f(-2.5), f(3.25), f(4.0)]);
+                place_code(&mut t, l2::PATH_CALLS[5], d);
+                place_code(&mut t, l2::PATH_CALLS[7], tr);
+                place_code(&mut t, l2::PATH_CALLS[6], p);
+                let this = t.zeros(0x30);
+                let out = t.junk(0x40, 3);
+                let tv = f(0.75);
+                let what = format!("{label}: path frame dir {i} up {j}");
+                t.frame_len = 0x7c;
+                t.check_frame(
+                    &what,
+                    0x0054_b320,
+                    Conv::Thiscall(this),
+                    &[tv, out],
+                    0x8c,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_frame(g, this, tv, out, frame))
+                    },
+                );
+                t.reset();
+            }
+        }
+    }
+}

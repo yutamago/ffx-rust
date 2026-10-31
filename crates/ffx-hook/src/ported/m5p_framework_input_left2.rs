@@ -91,4 +91,9 @@ ported! {
         let mut f = StackFrame::<{ lf::PATH_TRANSFORM_WORDS as usize }>::new();
         lb::path_transform(&mut mem(), this, out, t, f.at())
     }
+    /// A gameplay path's frame `(t, out)`.
+    Phyre_PGameplay_PPath_getFrame_0054b320 @ 0x0054_b320 => extern "thiscall" fn path_frame(this: u32, t: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::PATH_FRAME_WORDS as usize }>::new();
+        lb::path_frame(&mut mem(), this, t, out, f.at())
+    }
 }

@@ -176,16 +176,22 @@ pub const PATH_DATA: [u32; 2] = [0x00b1_1f14, 0x00b2_6080];
 /// The gameplay path's callees: the quaternion slerp (cdecl, 5 words),
 /// `Matrix3` from a quaternion (thiscall), the 4x4 of a 3x4 (thiscall),
 /// the path's rotation `0x0054b550` (thiscall), the 3x3 product
-/// (thiscall).
-pub const PATH_CALLS: [u32; 5] = [
+/// (thiscall); the spline's direction and position at a distance and the
+/// path's transform `0x0054b690` (thiscall, `(out, t)`).
+pub const PATH_CALLS: [u32; 8] = [
     0x0050_ed70,
     0x0053_0c30,
     0x0045_1080,
     0x0054_b550,
     0x0054_7870,
+    0x0054_b860,
+    0x0054_ba40,
+    0x0054_b690,
 ];
 /// The words of [`bridge::path_rotation`]'s frame.
 pub const PATH_ROTATION_WORDS: u32 = 12;
+/// The words of [`bridge::path_frame`]'s frame.
+pub const PATH_FRAME_WORDS: u32 = 31;
 /// The words of [`bridge::path_transform`]'s frame.
 pub const PATH_TRANSFORM_WORDS: u32 = 28;
 
@@ -1102,6 +1108,104 @@ pub mod bridge {
             &[frame + 0x10, t.to_bits()],
         );
         h.call_sym(PATH_CALLS[4], Conv::Thiscall(frame + 0x40), &[out, r]);
+        out
+    }
+
+    fn read_f32(h: &impl Mem, at: u32) -> f32 {
+        f32::from_bits(h.read(at))
+    }
+
+    /// `a x b`-style cross product as the original orders it: component
+    /// `i` is `f32(l[i].0 * l[i].1 - l[i].2 * l[i].3)`, each product of
+    /// two registers.
+    fn cross(terms: [[f32; 4]; 3]) -> [f32; 3] {
+        terms.map(|[a, b, c, d]| {
+            let p = Reg::load(a) * Reg::load(b);
+            let q = Reg::load(c) * Reg::load(d);
+            (p - q).store()
+        })
+    }
+
+    /// `v / |v|` as the original computes it: the squared length summed
+    /// with a float store after each step, `_CIsqrt`, `1 / length` stored,
+    /// then the components scaled (the last as `inverse * z`).
+    fn normalize3(h: &mut impl Host, v: [f32; 3]) -> [f32; 3] {
+        let s = (Reg::load(v[0]) * Reg::load(v[0])).store();
+        let s = (Reg::load(s) + Reg::load(v[1]) * Reg::load(v[1])).store();
+        let s = (Reg::load(s) + Reg::load(v[2]) * Reg::load(v[2])).store();
+        let addr = h.rebase(CI_SQRT);
+        let len = h.call_intrinsic(addr, Reg::load(s).value());
+        let inv = (Reg::ONE / Reg::load(len)).store();
+        let inv = Reg::load(inv);
+        [
+            (Reg::load(v[0]) * inv).store(),
+            (Reg::load(v[1]) * inv).store(),
+            inv.mul_m32(v[2]).store(),
+        ]
+    }
+
+    /// A gameplay path's frame at time `t` (`0x0054b320`, thiscall `(t,
+    /// out)`, `ret 8`): the direction `d` (`0x0054b860`), the transform's
+    /// first row `u` (`0x0054b690`), `n = normalize(u x d)`, `m =
+    /// normalize(n x d)` and the position (`0x0054ba40`) as the 4x4 rows
+    /// `{m, 0}, {n, 0}, {d, 0}, {p, 1}` in `out`. `frame` is 31 words (the
+    /// original's `ebp - 0x7c`: the transform at `+0`, `n` at `+0x30`,
+    /// the position at `+0x40`, `d` at `+0x50`, `u` then `m` at `+0x60`,
+    /// `m` again at `+0x78` down). `out`.
+    pub fn path_frame(h: &mut impl Host, this: u32, t: u32, out: u32, frame: u32) -> u32 {
+        let tr = ffx_bridge::x87::round_trip(f32::from_bits(t)).to_bits();
+        let d_at = frame + 0x50;
+        h.call_sym(PATH_CALLS[5], Conv::Thiscall(this), &[d_at, tr]);
+        let m = h.call_sym(PATH_CALLS[7], Conv::Thiscall(this), &[frame, tr]);
+        for i in 0..4 {
+            let w: u32 = h.read(m + 4 * i);
+            h.write(frame + 0x60 + 4 * i, w);
+        }
+        let d = [
+            read_f32(h, d_at),
+            read_f32(h, d_at + 4),
+            read_f32(h, d_at + 8),
+        ];
+        let u = [
+            read_f32(h, frame + 0x60),
+            read_f32(h, frame + 0x64),
+            read_f32(h, frame + 0x68),
+        ];
+        let c = cross([
+            [u[2], d[1], d[2], u[1]],
+            [d[2], u[0], u[2], d[0]],
+            [u[1], d[0], u[0], d[1]],
+        ]);
+        let n = normalize3(h, c);
+        for (i, v) in n.iter().enumerate() {
+            h.write(frame + 0x30 + 4 * i as u32, v.to_bits());
+        }
+        let e = cross([
+            [n[1], d[2], n[2], d[1]],
+            [n[2], d[0], d[2], n[0]],
+            [d[1], n[0], n[1], d[0]],
+        ]);
+        let mv = normalize3(h, e);
+        for (i, v) in mv.iter().enumerate() {
+            h.write(frame + 0x78 - 4 * i as u32, v.to_bits());
+            h.write(frame + 0x60 + 4 * i as u32, v.to_bits());
+        }
+        let p_at = frame + 0x40;
+        h.call_sym(PATH_CALLS[6], Conv::Thiscall(this), &[p_at, tr]);
+        let p = [
+            read_f32(h, p_at),
+            read_f32(h, p_at + 4),
+            read_f32(h, p_at + 8),
+        ];
+        let one = 1.0f32.to_bits();
+        for (row, (v, w)) in [(mv, 0), (n, 0), (d, 0), (p, one)].into_iter().enumerate() {
+            let at = out + 0x10 * row as u32;
+            for (i, x) in v.iter().enumerate() {
+                let x = ffx_bridge::x87::round_trip(*x);
+                h.write(at + 4 * i as u32, x.to_bits());
+            }
+            h.write(at + 0xc, w);
+        }
         out
     }
 }
