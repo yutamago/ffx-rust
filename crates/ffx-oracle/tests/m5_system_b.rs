@@ -6861,3 +6861,229 @@ fn r3b18_wait_win_prepare_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b19_cd_read_task_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1901);
+        for case in 0..10u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_seq(hdc::SND_IS_READ, 0, 0, &[u32::from(case & 1 != 0), 0]);
+            // the many waits and misses: quiet stubs (the log holds 1024 calls)
+            for (k, sym) in [
+                hdc::TASK_WAIT_SYM,
+                hdc::STATE_CLEAR,
+                hdc::FLUSH_CACHE,
+                hdc::WAIT_DISC,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_quiet(sym, r ^ k as u32);
+            }
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case % 3 != 0));
+            t.write(t.rebase(hdc::HDD_MODE), &[u8::from(case % 4 < 2)]);
+            t.stub(hdc::HDD_READ_TH, false, 4, 0, r ^ 3);
+            t.stub(hdc::GET_HDD_ERR, false, 0, 0, u32::from(case % 5 == 1));
+            t.stub(hdc::REFRESH_HDD_MODE, false, 0, 0, r ^ 4);
+            // the disc: not ready twice, then the reads failing that many
+            // times (70: one failed attempt; 330: four, then the restart and 92 tries)
+            t.stub_after(hdc::DISK_READY, 0, 2, 1, 2);
+            let fail_reads = [0u32, 5, 70, 330, 1][(case % 5) as usize];
+            t.stub_after(hdc::CD_READ, 4, fail_reads, 0, 1);
+            let checks: Vec<u32> = (0..64).map(|k| u32::from(k % 4 != 3)).collect();
+            t.stub_seq(hdc::CHECK_DISK, 0, 0, &checks);
+            t.stub(hdc::CD_RESET, false, 0, 0, r ^ 7);
+            t.stub_seq(hdc::CD_STANDBY, 0, 0, &[0, 0, 1, 0, 1, 1]);
+            t.stub_seq(hdc::CD_SYNC, 1, 0, &[1, 0, 1, 1, 0, 0]);
+            let mode = t.words(&[rng.next()]);
+            let buf = [0x1000u32, 0x1004, 0x2020][(case % 3) as usize];
+            // the failure message passes the count, the others one word
+            let fail_fmt = t.rebase(hdc::CD_READ_MSG[2]);
+            t.stub_by_first(hdc::DBG_PRINTF, fail_fmt, 2, 1, r ^ 0x11);
+            let args = [
+                rng.next(),
+                [0x800u32, 0x1fff, 0xffff_f000][(case % 3) as usize],
+                buf,
+                mode,
+                rng.below(4),
+            ];
+            t.check_fs(
+                &format!("cd read task #{case}"),
+                0x0076_d200,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(hdb::cd_read_task(m, args, s)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stub over `sym` returning `ret`, logging nothing.
+    fn stub_quiet(&mut self, sym: u32, ret: u32) {
+        let mut c = vec![0xb8];
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc3);
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+
+    /// A stub over `sym` (cdecl, `n` words logged) returning `before` on
+    /// its first `count` calls, then `after`.
+    fn stub_after(&mut self, sym: u32, n: u32, count: u32, before: u32, after: u32) {
+        let early = self.stub_code(sym, false, n, 0, before);
+        let late = self.stub_code(sym, false, n, 0, after);
+        let left = self.words(&[count]);
+        let mut c = vec![0x83, 0x3d];
+        c.extend(left.to_le_bytes());
+        c.push(0); // cmp dword [left], 0
+        c.extend([0x0f, 0x84]);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(late.wrapping_sub(here).to_le_bytes()); // je late
+        c.extend([0xff, 0x0d]);
+        c.extend(left.to_le_bytes()); // dec dword [left]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(early.wrapping_sub(here).to_le_bytes()); // jmp early
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl) logging `n_match` words when its
+    /// first word is `first`, else `n_other`; returns `ret`.
+    fn stub_by_first(&mut self, sym: u32, first: u32, n_match: u32, n_other: u32, ret: u32) {
+        let two = self.stub_code(sym, false, n_match, 0, ret);
+        let one = self.stub_code(sym, false, n_other, 0, ret);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+        c.extend(first.to_le_bytes()); // cmp dword [esp+4], first
+        c.extend([0x0f, 0x84]);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(two.wrapping_sub(here).to_le_bytes()); // je two
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(one.wrapping_sub(here).to_le_bytes()); // jmp one
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+#[test]
+fn r3b20_walk_install_dir_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2001);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            // the directory's entries (0x80 bytes: mode +4, name +0x40):
+            // files, a "." entry, a subdirectory
+            let names: [(&[u8], u32); 4] = [
+                (b"abcdefghij.bin", 0x10),
+                (b".", 0x20),
+                (b"sub", 0x20),
+                (b"klmnopqrstuv", 0),
+            ];
+            let n = [0usize, 1, 2, 4, 4, 3, 4, 2][case as usize];
+            let mut ents = vec![0u8; 0x80 * 4];
+            for (k, (name, mode)) in names.iter().enumerate() {
+                ents[0x80 * k + 4..0x80 * k + 8].copy_from_slice(&mode.to_le_bytes());
+                ents[0x80 * k + 0x40..0x80 * k + 0x40 + name.len()].copy_from_slice(name);
+            }
+            let tbl = t.alloc(&ents);
+            let ctr = t.words(&[0, n as u32]);
+            // sceDopen: the counter reset, a descriptor (or failing)
+            // the second open fails in #7
+            let fd = [
+                [7u32, 7],
+                [7, 7],
+                [7, 7],
+                [9, 9],
+                [0x8000_0000, 7],
+                [7, 7],
+                [7, 7],
+                [7, 0xffff_ffff],
+            ][case as usize];
+            let open_log = t.stub_seq_code(hdc::SCE_DOPEN, 1, 0, &fd);
+            let mut c = vec![0xc7, 0x05];
+            c.extend(ctr.to_le_bytes());
+            c.extend(0u32.to_le_bytes()); // mov dword [ctr], 0
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(open_log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(hdc::SCE_DOPEN, at);
+            // sceDread: entry [ctr] copied to its second word, 1; past n, 0
+            let read_log = t.stub_code(hdc::SCE_DREAD, false, 2, 0, 1);
+            let none = t.stub_code(hdc::SCE_DREAD, false, 2, 0, 0);
+            let mut c = vec![0xa1];
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x3b, 0x05]);
+            c.extend((ctr + 4).to_le_bytes()); // cmp eax, [ctr+4]
+            c.extend([0x0f, 0x8d]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(none.wrapping_sub(here).to_le_bytes()); // jge none
+            c.extend([0x56, 0x57, 0x51]); // push esi; push edi; push ecx
+            c.extend([0xc1, 0xe0, 0x07]); // shl eax, 7
+            c.push(0x05);
+            c.extend(tbl.to_le_bytes()); // add eax, tbl
+            c.extend([0x89, 0xc6]); // mov esi, eax
+            c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+            c.extend([0xb9, 0x80, 0, 0, 0, 0xf3, 0xa4]); // mov ecx, 0x80; rep movsb
+            c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(read_log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(hdc::SCE_DREAD, at);
+            t.stub(hdc::SCE_DCLOSE, false, 1, 0, r);
+            let table = t.zeros(0x84 * 4);
+            let buf = t.zeros(0x100);
+            t.stub_seq(hdc::USER_MALLOC, 1, 0, &[table, buf, table, buf]);
+            t.stub_copy_fill(hdc::MEMSET);
+            // sprintf: "pfs0:/ex/" and the name, as the format would
+            let text = t.alloc(b"pfs0:/ex/dir/nameXYZ\0");
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 20, text, r ^ 1);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 2);
+            t.stub(hdc::DBG_PRINTF, false, 3, 0, r ^ 3);
+            // the subdirectory's walk calls the original itself: its entry
+            // runs the original the first time (the flag set), a recording
+            // stub after; the bridge's side starts with the flag set
+            let flag = t.words(&[0]);
+            let rec = t.stub_code(hdc::READ_LIST, false, 3, 0, u32::from(case == 6));
+            let mut c = vec![0x83, 0x3d];
+            c.extend(flag.to_le_bytes());
+            c.push(0); // cmp dword [flag], 0
+            c.extend([0x0f, 0x85]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(rec.wrapping_sub(here).to_le_bytes()); // jne rec
+            c.extend([0xc7, 0x05]);
+            c.extend(flag.to_le_bytes());
+            c.extend(1u32.to_le_bytes()); // mov dword [flag], 1
+            c.extend([0x55, 0x8b, 0xec, 0x81, 0xec, 0x60, 0x01, 0, 0]); // push ebp; mov ebp, esp; sub esp, 0x160
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(t.rebase(0x0077_76a9).wrapping_sub(here).to_le_bytes()); // jmp past the prologue
+            let at = t.cave_code(&c);
+            t.jump(hdc::READ_LIST, at);
+            t.b.write(flag, &1u32.to_le_bytes()).unwrap();
+            let count = t.words(&[[0u32, 2][(case & 1) as usize]]);
+            let list = t.zeros(0x34 * 8);
+            let path = t.alloc(b"pfs0:/ex/\0");
+            let args = [path, count, list];
+            t.check_fs(
+                &format!("walk dir #{case}"),
+                0x0077_76a0,
+                &args,
+                0x160,
+                4,
+                |m, ebp, _| Out::U32(hdb::walk_install_dir(m, ebp, path, count, list)),
+            );
+        }
+    });
+}

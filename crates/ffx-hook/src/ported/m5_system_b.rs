@@ -1294,6 +1294,18 @@ ported! {
     TODrawWaitBtlWinPrepare @ 0x008a_6870 => extern "C" fn wait_win_prepare(win: u32) -> u32 {
         mn::wait_win_prepare(&mut mem(), win)
     }
+
+    /// `(sector, size, buf, mode, head)`: the sector count and the wait
+    /// limit go into `mode`'s and `size`'s argument slots.
+    Sa_CdRead_task @ 0x0076_d200 => extern "C" fn cd_read_task(sector: u32, size: u32, buf: u32, mode: u32, head: u32; slots: u32) -> u32 {
+        hd::cd_read_task(&mut mem(), [sector, size, buf, mode, head], slots)
+    }
+
+    /// `(path, count, list)`: frame `ebp - 0x160`.
+    hdd_WalkInstallDir_007776a0 @ 0x0077_76a0 => extern "C" fn walk_install_dir(path: u32, count: u32, list: u32) -> u32 {
+        let mut f = StackFrame::<0x58>::new();
+        hd::walk_install_dir(&mut mem(), f.at() + 0x160, path, count, list)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
