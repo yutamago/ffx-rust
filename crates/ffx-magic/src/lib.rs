@@ -84,6 +84,7 @@ pub mod o4_flags;
 pub mod o4_list;
 pub mod o4_misc;
 pub mod o4_more;
+pub mod o4_more2;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_rcef2;
@@ -1389,6 +1390,9 @@ ports! {
     "o4 list timer_unlink 0513@6d50" => o4_list::TIMER_UNLINK_0513_6D50, o4_list::timer_unlink;
     "o4 list table_reset 0523@21b0" => o4_list::TABLE_RESET_0523_21B0, o4_list::table_reset;
     "o4 list this_flag_step 0273@7390" => o4_list::THIS_FLAG_STEP_0273_7390, o4_list::this_flag_step;
+    "o4 more2 count_fade 0673@1c70" => o4_more2::COUNT_FADE_0673_1C70, o4_more2::count_fade;
+    "o4 more2 clear_halves_slot 0519@2cf0" => o4_more2::CLEAR_HALVES_SLOT_0519_2CF0, o4_more2::clear_halves_slot;
+    "o4 more2 slot_chain_jump 0446@4d30" => o4_more2::SLOT_CHAIN_JUMP_0446_4D30, o4_more2::slot_chain_jump;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
