@@ -1277,6 +1277,18 @@ ported! {
         let mut f = StackFrame::<0x97>::new();
         pc::guide_marker(&mut mem(), f.at() + 0x25c, out, chr)
     }
+
+    /// `(pos, glyph)`: frame `ebp - 0x28`.
+    TOMakePktMovieFont1612Edge @ 0x008f_d9f0 => extern "C" fn movie_font_edge(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        mn::movie_font_edge(&mut mem(), f.at() + 0x28, pos, glyph)
+    }
+
+    /// `(alpha)`: frame `ebp - 0x9c`.
+    TODrawAlphaBG @ 0x008f_3a50 => extern "C" fn alpha_bg(alpha: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::alpha_bg(&mut mem(), f.at() + 0x9c, alpha)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

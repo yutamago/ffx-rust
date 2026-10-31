@@ -417,6 +417,12 @@ pub const CLEAR_MESSAGE_SLOT: u32 = 0x008a_b800;
 pub const GS_PMODE: u32 = 0x1200_0000;
 pub const MOVIE_IMAGE: u32 = 0x0186_5f0c;
 
+/// `TODrawAlphaBG`'s band edges (floats): 0x00b43db4, 0x00b58cd8,
+/// 0x00b65898, 0x00b65d8c, and the screen size 0x00b41d9c/0x00b41d98.
+pub const ALPHA_BG_EDGES: [u32; 4] = [0x00b4_3db4, 0x00b5_8cd8, 0x00b6_5898, 0x00b6_5d8c];
+pub const SCREEN_W: u32 = 0x00b4_1d9c;
+pub const SCREEN_H: u32 = 0x00b4_1d98;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2922,6 +2928,136 @@ pub mod bridge {
         let r = cdecl(h, super::MESSAGE_WINDOW_MODE, &[0]);
         h.write(stored, 0u8);
         h.write(shown, 0u8);
+        r
+    }
+    /// `TOMakePktMovieFont1612Edge(pos, glyph)` with its frame at `ebp`: the
+    /// movie font's outline: a GS tag and two TEX0 words at
+    /// `g_TOPktCursor` (from the glyph's `i16 +0`, `+2`, `+4` and the high
+    /// nibble of `pos + 0x1b`), `TOGsALPHA(0, 1, 0, 1, 0x80)`,
+    /// `TOGsTEST(1, 7, 0 x6)`, `TOGsWords4(0x80, 0x80, 0x80, 0x28)`, a
+    /// sprite tag; then the glyph drawn at ten offsets (the signed byte
+    /// pairs at `ebp - 0x18`: (-1, -1), (0, -1), (1, -1), (-1, 0), ...),
+    /// each `TOGsXY2`/`TOGsXYZ2Offset` of the UV box and the screen box
+    /// moved by the offset (x87, `ftol`); then `TOCtrlPkt`. Its `eax`.
+    pub fn movie_font_edge(h: &mut impl Host, ebp: u32, pos: u32, glyph: u32) -> u32 {
+        use ffx_bridge::x87;
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let sign = |v: u32| if v.cast_signed() < 0 { u32::MAX } else { 0 };
+        let g0 = i16_at(h, glyph, 0);
+        let g2 = i16_at(h, glyph, 2);
+        let nibble = u32::from(h.read::<u8>(pos.wrapping_add(0x1b))) >> 4;
+        let page = i16_at(h, glyph, 4).wrapping_add(nibble * 2);
+        let hi = (((page << 4) | sign(g2)) << 20) | (g2 >> 12) | sign(g0) | 0x5_d706;
+        let lo = (g2 << 20) | g0 | 0x9c00_8000;
+        put_words(
+            h,
+            p,
+            &[
+                0x8001,
+                0x5000_4000,
+                0x1_eeee,
+                0,
+                g0 | 0x9d30_8000,
+                sign(g0) | 0x2005_d786,
+                6,
+                0,
+                lo,
+                hi,
+                6,
+                0,
+            ],
+        );
+        let offsets = [
+            0xff00_ffffu32,
+            0x00fe_ff01,
+            0x00ff_0002,
+            0x01ff_0001,
+            0x0101_0100,
+        ];
+        put_words(h, ebp.wrapping_sub(0x18), &offsets);
+        h.write(cell, p.wrapping_add(0x30));
+        cdecl(h, super::GS_ALPHA, &[0, 1, 0, 1, 0x80]);
+        cdecl(h, super::GS_TEST, &[1, 7, 0, 0, 0, 0, 0, 0]);
+        cdecl(h, super::GS_WORDS4, &[0x80, 0x80, 0x80, 0x28]);
+        let q: u32 = h.read(cell);
+        put_words(h, q, &[0x800a, 0x40af_4000, 0x4343, 0]);
+        h.write(cell, q.wrapping_add(0x10));
+        let mut r = 0;
+        for i in 0..10u32 {
+            let (u, v) = (
+                f32_at(h, glyph.wrapping_add(8)),
+                f32_at(h, glyph.wrapping_add(0xc)),
+            );
+            let (u, v) = (ftol(h, u), ftol(h, v));
+            cdecl(h, super::GS_XY2, &[u, v]);
+            let dy = h.read::<i8>(ebp.wrapping_sub(0x17).wrapping_add(2 * i));
+            let dx = h.read::<i8>(ebp.wrapping_sub(0x18).wrapping_add(2 * i));
+            h.write(ebp.wrapping_sub(0x1c), i32::from(dx));
+            let (fy, fx) = (f64::from(dy), f64::from(dx));
+            h.write(ebp.wrapping_sub(0x28), fy.to_bits());
+            h.write(ebp.wrapping_sub(0x20), fx.to_bits());
+            let px = x87::load(h.read(pos.wrapping_add(4)));
+            let py = x87::load(h.read(pos.wrapping_add(8)));
+            let y = x87::add(x87::add(py, f32_at(h, glyph.wrapping_add(0x18))), fy);
+            let y = ftol(h, y);
+            let x = ftol(h, x87::add(fx, px));
+            cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+            let (u, v) = (
+                f32_at(h, glyph.wrapping_add(0x10)),
+                f32_at(h, glyph.wrapping_add(0x14)),
+            );
+            let (u, v) = (ftol(h, u), ftol(h, v));
+            cdecl(h, super::GS_XY2, &[u, v]);
+            let y = x87::add(
+                x87::add(
+                    x87::add(py, f32_at(h, glyph.wrapping_add(0x18))),
+                    f32_at(h, glyph.wrapping_add(0x20)),
+                ),
+                fy,
+            );
+            let y = ftol(h, y);
+            let x = ftol(
+                h,
+                x87::add(x87::add(f32_at(h, glyph.wrapping_add(0x1c)), px), fx),
+            );
+            r = cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        }
+        ctrl_pkt(h, r)
+    }
+    /// `TODrawAlphaBG(alpha)` with its frame at `ebp`: four black bands
+    /// across the screen (`graphicDrawUIElement(quad, 0, 1, 2, 0)` with
+    /// the quad at `ebp - 0x9c`; `+0x80` = 1000): a fade from `alpha` to 0
+    /// between the edges `e0` and `e1`, a fade from 0 to `alpha` between
+    /// `e2` and `e3`, and solid `alpha` from the top to `e0` and from
+    /// `e3` to the bottom. The edges are the floats `0x00b43db4`,
+    /// `0x00b58cd8`, `0x00b65898`, `0x00b65d8c`; the screen size
+    /// `0x00b41d9c` by `0x00b41d98`. The last draw's `eax`.
+    /// junk read: the quad's UVs and vertices 2-3 never written; 0 (brief
+    /// 2026-10-24)
+    pub fn alpha_bg(h: &mut impl Host, ebp: u32, alpha: u32) -> u32 {
+        let a = alpha & 0xff;
+        let q = ebp.wrapping_sub(QUAD);
+        let [e0, e1, e2, e3] = super::ALPHA_BG_EDGES.map(|s| float_copy(h, s));
+        let w = float_copy(h, super::SCREEN_W);
+        let bottom = float_copy(h, super::SCREEN_H);
+        for (off, v) in [(0xcu32, 0u32), (8, 0), (0x1c, 0x3e8), (0x14, 0)] {
+            h.write(ebp.wrapping_sub(off), v);
+        }
+        let bands = [
+            (e0, e1, a, 0),
+            (e2, e3, 0, a),
+            (0, e0, a, a),
+            (e3, bottom, a, a),
+        ];
+        let mut r = 0;
+        for (y0, y1, a0, a1) in bands {
+            put_words(h, q, &[0, y0]);
+            put_words(h, q.wrapping_add(0x20), &[w, y1]);
+            put_words(h, q.wrapping_add(0x10), &[0, 0, 0, a0]);
+            put_words(h, q.wrapping_add(0x30), &[0, 0, 0, a1]);
+            r = cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 2, 0]);
+        }
         r
     }
 }

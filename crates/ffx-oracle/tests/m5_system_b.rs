@@ -6714,3 +6714,92 @@ fn r3b15_guide_marker_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b16_movie_font_edge_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1601);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x80);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, (case >> 2) & 1); // __sse2_available
+            for (sym, n) in [(mnc::GS_TEST, 8), (mnc::GS_WORDS4, 4), (mnc::DRAW_KICK, 0)] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            // TOGsALPHA moves the cursor in some cases
+            if case & 1 == 0 {
+                t.stub(mnc::GS_ALPHA, false, 5, 0, r);
+            } else {
+                t.stub_store_global(mnc::GS_ALPHA, mnc::PKT_CURSOR, buf + 0x40, r);
+            }
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub_seq(
+                mnc::GS_XYZ2_OFFSET,
+                2,
+                0,
+                &(0..20).map(|k| r ^ (k << 8)).collect::<Vec<_>>(),
+            );
+            ctrl_state(t, case, r ^ (19 << 8));
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.write(pos + 0x1b, &[[0u8, 0x70, 0x8f, 0xff][(case % 4) as usize]]);
+            t.check_fs(
+                &format!("movie font edge #{case}"),
+                0x008f_d9f0,
+                &[pos, glyph],
+                0x28,
+                4,
+                |m, ebp, _| Out::U32(mnb::movie_font_edge(m, ebp, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b17_alpha_bg_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1701);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            // the quads the draws get: copied for the comparison
+            let seen = t.zeros(4 * 0x70);
+            t.stub_snapshot(mnc::DRAW_UI_ELEMENT, 5, 0, 0x70, seen, r);
+            let alpha = [0u32, 0x80, 0xff, 0x1234_5601][case as usize];
+            t.check_fs(
+                &format!("alpha bg #{case}"),
+                0x008f_3a50,
+                &[alpha],
+                0x9c,
+                4,
+                |m, ebp, _| Out::U32(mnb::alpha_bg(m, ebp, alpha)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, `n` words, returns `ret`) that
+    /// first copies `len` bytes from its word `word`'s pointer to `dst`,
+    /// the next call after it.
+    fn stub_snapshot(&mut self, sym: u32, n: u32, word: u8, len: u32, dst: u32, ret: u32) {
+        let log = self.stub_code(sym, false, n, 0, ret);
+        let slot = self.words(&[dst]);
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8b, 0x74, 0x24, 0x10 + 4 * word]); // mov esi, [esp+0x10+4word]
+        c.extend([0x8b, 0x3d]);
+        c.extend(slot.to_le_bytes()); // mov edi, [slot]
+        c.push(0xb9);
+        c.extend(len.to_le_bytes()); // mov ecx, len
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x89, 0x3d]);
+        c.extend(slot.to_le_bytes()); // mov [slot], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes());
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
