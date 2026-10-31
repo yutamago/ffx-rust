@@ -12,7 +12,7 @@ mod ownb;
 
 use magic::{Call, Eax, SCRATCH, Twin};
 use o4::{copies, dlls, fill};
-use ownb::rec;
+use ownb::{rec, rec_seq, reset_counters};
 
 const STORE_IMM: &[(u16, u32)] = &[(168, 0x3400), (673, 0x2030), (673, 0x2060), (673, 0x2070)];
 const SLOT_IMM: &[(u16, u32)] = &[(303, 0x14b0), (473, 0x20c0), (511, 0x2b20)];
@@ -28,7 +28,10 @@ const STATIC_RECORD_NODE: &[(u16, u32)] =
 const PART_AND_VECTORS: &[(u16, u32)] =
     &[(477, 0x11c0), (477, 0x13a0), (486, 0x11c0), (486, 0x1360)];
 
+const FADE_START: &[(u16, u32)] = &[(596, 0x70f0), (602, 0x8460), (606, 0x77b0)];
+
 const ALL: &[&[(u16, u32)]] = &[
+    FADE_START,
     STORE_IMM,
     SLOT_IMM,
     SLOT_IMM_RET1,
@@ -205,11 +208,33 @@ fn part_and_vectors() {
 }
 
 #[test]
+fn fade_start() {
+    each("o4 fade start", FADE_START, 2, &[], |t, f, case| {
+        reset_counters(t);
+        rec_seq(t, 371, &[2, 4], |_, a| a[0] ^ 0x371);
+        t.set_u32(t.img.word(f + 0x0e), P);
+        let rec_at = P + t.img.word(f + 0x43);
+        fill(t, rec_at, 16, f ^ case);
+        let fade = t.img.rel32_target(f + 0x4d);
+        ring(t, t.img.rel32_target(fade + 0x75));
+        let head = t.img.word(fade + 0x7b);
+        let node8 = SCRATCH + 0x1200;
+        t.write(node8, &[0x77; 0x1c]);
+        t.set_u32(head, if case == 0 { 0 } else { node8 });
+        t.set_u32(t.img.word(fade + 0x93), node8);
+        // the floats the fade keeps: one not above 0 the second time
+        let (a, b) = (t.img.word(f + 0x3b), t.img.word(f + 0x33));
+        t.set_u32(a, if case == 0 { 0.5f32 } else { -1.0 }.to_bits());
+        t.set_u32(b, 2.0f32.to_bits());
+    });
+}
+
+#[test]
 fn dll_main_writes_only_crt_state() {
     for n in dlls(ALL) {
         magic_l3::dll_main(n);
     }
 }
 
-// Mutation testing (M5 magic round 4, tools/mutants.py): 50 mutants, all
+// Mutation testing (M5 magic round 4, tools/mutants.py): 57 mutants, all
 // killed.

@@ -5,6 +5,7 @@
 use crate::o4_parts::disp8;
 use crate::opu_parts::start_part;
 use crate::runtime::slot_target;
+use crate::s3_misc::fade_task;
 use crate::sa_pool::take;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
@@ -256,6 +257,40 @@ pub fn part_and_vectors<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let s268 = slot_target(g, w(0x3e), 268);
     g.call(s268, fr.ecx, &[h, 6, w(0x61), program, 1, 0, d]);
     Ret::eax(1)
+}
+
+/// No arguments (`magic_0596` 0x100070f0, 86 bytes; 3 copies): slot 371
+/// with `(0, 0x10000)` and `(1, 0x20000)` (the first call's words left
+/// on the stack), then a fade record on `*G + D` (`D` at `+0x43`) started
+/// ([`fade_task`], the `rel32` at `+0x4d`: `xmm1`/`xmm2` the floats at
+/// operands `+0x3b`/`+0x33`, `edx` the immediate at `+0x48`, the stack
+/// word 0). The words it is handed are written where the original pushes
+/// them. Returns the fade's node.
+pub fn fade_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let p = g.read::<u32>(w(0x0e));
+    let s371 = slot_target(g, w(0x01), 371);
+    g.call(s371, fr.ecx, &[0, 0x1_0000]);
+    let s371 = slot_target(g, w(0x1c), 371);
+    g.call(s371, fr.ecx, &[1, 0x2_0000, 0, 0x1_0000]);
+    let rec = p.wrapping_add(w(0x43));
+    let (x2, x1) = (g.read::<u32>(w(0x33)), g.read::<u32>(w(0x3b)));
+    // push esi; push 0x10000; push 0; push 0x20000; push 1; push 0
+    let esp = fr.esp;
+    for (k, v) in (1u32..).zip([0x1_0000, 0, 0x2_0000, 1, 0]) {
+        g.write::<u32>(esp.wrapping_sub(4 + 4 * k), v);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x4d),
+        // the call's return address, below the six pushes
+        esp: esp.wrapping_sub(0x1c),
+        eax: 0,
+        ecx: rec,
+        edx: w(0x48),
+        xmm: [0, u128::from(x1), u128::from(x2), 0],
+    };
+    Ret::eax(fade_task(g, img, &callee))
 }
 
 /// [`store_imm`] in `magic_0168` (0x10003400, 16 bytes).
@@ -567,5 +602,29 @@ pub const PART_AND_VECTORS_0486_1360: Sig = Sig {
     len: 133,
     hash: 0xec72_c61b_a05f_1b3d,
     calls: &[(0x32, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`fade_start`] in `magic_0596` (0x100070f0, 86 bytes).
+pub const FADE_START_0596_70F0: Sig = Sig {
+    len: 86,
+    hash: 0xb6ea_c1a9_3003_7ef7,
+    calls: &[(0x4d, Callee::Sig(&crate::s3_misc::FADE_TASK))],
+    imports: &[],
+};
+
+/// [`fade_start`] in `magic_0602` (0x10008460, 86 bytes).
+pub const FADE_START_0602_8460: Sig = Sig {
+    len: 86,
+    hash: 0x5124_58c3_1e66_bb17,
+    calls: &[(0x4d, Callee::Sig(&crate::s3_misc::FADE_TASK))],
+    imports: &[],
+};
+
+/// [`fade_start`] in `magic_0606` (0x100077b0, 86 bytes).
+pub const FADE_START_0606_77B0: Sig = Sig {
+    len: 86,
+    hash: 0xdb2f_0041_a665_de53,
+    calls: &[(0x4d, Callee::Sig(&crate::s3_misc::FADE_TASK))],
     imports: &[],
 };

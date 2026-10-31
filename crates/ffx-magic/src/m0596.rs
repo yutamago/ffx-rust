@@ -477,3 +477,69 @@ pub const PLACE_PAIR: Sig = Sig {
     calls: &[(0x62c, Callee::Any)],
     imports: &[],
 };
+
+/// An object placed with a particle part (0x10005200, internal: `edx` =
+/// the object, `xmm3` = its scale): translation `+0x40..+0x48` 0 and
+/// `+0x4c` 1.0, `+0x50..+0x5c` 0, the scale in `+0x60..+0x6c`; `*G_P =
+/// ITEM` (operands `+0x01`, `+0x56`), part `list[2]` (slot 941 of `*G_D +
+/// 0x10`, `G_D` at `+0x5b`) started on it (`pppStartPart(obj, 0x1000,
+/// program, 1)`, the wrapper's `rel32` at `+0x7e`), its fields set
+/// ([`object_init`], `+0x88`); then a node of the object pool
+/// ([`host::pool_alloc`], `+0x90`) appended to the object list (`G_FIRST`
+/// `+0xae`, `G_LAST` `+0x9b`/`+0xb4`/`+0xc8`/`+0xd1`), its `+0x8` the
+/// object, the count (`+0xbd`/`+0xda`) up by one. Without a free node the
+/// object stays off the list. Returns the object.
+pub fn place_object<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, scale: f32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let p = g.read::<u32>(w(0x01));
+    for off in [0x48, 0x44, 0x40] {
+        g.write::<u32>(obj + off, 0);
+    }
+    g.write::<u32>(obj + 0x4c, ONE);
+    for off in [0x5c, 0x58, 0x54, 0x50] {
+        g.write::<u32>(obj + off, 0);
+    }
+    for off in [0x6c, 0x68, 0x64, 0x60] {
+        g.write::<u32>(obj + off, scale.to_bits());
+    }
+    g.write::<u32>(p, w(0x56));
+    let d = g.read::<u32>(g.read::<u32>(w(0x5b)).wrapping_add(0x10));
+    let s941 = slot_target(g, w(0x63), 941);
+    let programs = g.call(s941, 0, &[d]).eax;
+    let program = g.read::<u32>(programs.wrapping_add(8));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x7e), obj, 0x1000, program, 1);
+    object_init(g, obj);
+    let node = host::pool_alloc(g, img, img.rel32_target(f + 0x90));
+    if node == 0 {
+        return obj;
+    }
+    let last = g.read::<u32>(w(0x9b));
+    g.write::<u32>(node + 4, 0);
+    if last == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0xae), node);
+        g.write::<u32>(w(0xb4), node);
+    } else {
+        g.write::<u32>(node, last);
+        let last = g.read::<u32>(w(0xc8));
+        g.write::<u32>(last + 4, node);
+        g.write::<u32>(w(0xd1), node);
+    }
+    g.write::<u32>(node + 8, obj);
+    let count = if last == 0 { w(0xbd) } else { w(0xda) };
+    let n = g.read::<u32>(count);
+    g.write::<u32>(count, n.wrapping_add(1));
+    obj
+}
+
+/// [`place_object`] (226 bytes, 1 overlay).
+pub const PLACE_OBJECT: Sig = Sig {
+    len: 226,
+    hash: 0xf5ee_280a_b104_4879,
+    calls: &[
+        (0x7e, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x88, Callee::Sig(&OBJECT_INIT)),
+        (0x90, Callee::Sig(&host::POOL_ALLOC)),
+    ],
+    imports: &[],
+};

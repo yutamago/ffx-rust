@@ -4,9 +4,10 @@
 
 use crate::magic::Twin;
 
-/// Every copy `(DLL, RVA)` of a family, each checked to bind to a port
-/// whose name starts with `label` (the family's ports are named
-/// `"<label> NNNN@AAAA"`). Empty without `FFX_GAME_DIR`.
+/// Every copy `(DLL, RVA)` of a family, each checked to bind to one of
+/// the family's ports (named `"<label> NNNN@AAAA"`, the copy's own or,
+/// for a copy whose code is the same as another's, that one's). Empty
+/// without `FFX_GAME_DIR`.
 pub fn copies(label: &str, list: &[(u16, u32)]) -> Vec<(u16, u32)> {
     let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
         return Vec::new();
@@ -19,8 +20,13 @@ pub fn copies(label: &str, list: &[(u16, u32)]) -> Vec<(u16, u32)> {
         let img = ffx_magic::Image::new(&name, &file, pe.preferred_base).expect("an image");
         let a = img.at(rva);
         let i = ffx_magic::bind(&img, a).unwrap_or_else(|| panic!("{n}: nothing binds at {a:#x}"));
-        let want = format!("{label} {n:04}@{:04x}", rva & 0xffff);
-        assert_eq!(ffx_magic::PORTS[i].0, want, "{n}: {a:#x}");
+        let name = ffx_magic::PORTS[i].0;
+        assert!(
+            name.strip_prefix(label)
+                .and_then(|r| r.strip_prefix(' '))
+                .is_some_and(|r| r.len() == 9 && r.as_bytes()[4] == b'@'),
+            "{n}: {a:#x} binds to {name}, not {label}"
+        );
     }
     list.to_vec()
 }

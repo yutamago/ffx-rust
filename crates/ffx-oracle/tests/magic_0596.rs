@@ -279,3 +279,61 @@ fn place_pair() {
     // unmapped; the game's only caller, 0x10007360, sets the state to
     // the DLL's own block 0x1024a170, so they never run)
 }
+
+#[test]
+fn place_object() {
+    let Some(mut t) = magic_l3::twin(N) else {
+        return;
+    };
+    let f = t.at(0x5200);
+    let w = |t: &Twin, off: u32| t.img.word(f + off);
+    t.set_u32(w(&t, 0x01), SCRATCH + 0x200);
+    t.set_u32(w(&t, 0x5b), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cd00);
+    let programs = SCRATCH + 0x600;
+    fill(&mut t, programs, 8, 0x5200);
+    rec(&mut t, 941, 1, move |_, _| programs);
+    let wrapper = t.img.rel32_target(f + 0x7e);
+    t.set_u32(t.img.word(wrapper + 0x04), SCRATCH + 0x204);
+    t.set_u32(SCRATCH + 0x204, 9);
+    rec(&mut t, 714, 5, |m, _| {
+        let v = m.r32(SCRATCH + 0x204);
+        m.w32(SCRATCH + 0x220, v);
+        0x714
+    });
+    let alloc = t.img.rel32_target(f + 0x90);
+    let (free, nodes) = (t.img.word(alloc + 0x04), t.img.word(alloc + 0x27));
+    let obj = SCRATCH + 0x2000;
+    let last = SCRATCH + 0x3000;
+    // free nodes and an empty list, a list with a last node, no free node
+    for (k, (n_free, tail)) in [(5u16, 0u32), (5, last), (0, last)].into_iter().enumerate() {
+        fill(&mut t, obj, 0x50, 0x77 + k as u32);
+        // the nodes' payloads all free (the free count lies just past them)
+        t.write(nodes - 8, &vec![0; 12 * 0x3ff]);
+        for i in 0..0x3ff {
+            t.set_u32(nodes - 8 + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes - 4 + 12 * i, 0x0ee0_0000 + i);
+        }
+        t.set_u16(free, n_free);
+        t.set_u32(w(&t, 0x9b), tail);
+        t.set_u32(last + 4, 0x5a5a);
+        t.set_u32(w(&t, 0xbd), 3);
+        let c = Call {
+            edx: obj,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(1.75),
+        ]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            let scale = fr.xmm_f32(3);
+            Ret::eax(m0596::place_object(g, img, fr.at, fr.edx, scale))
+        });
+    }
+}
+
+// Mutation testing of `place_object` (M5 magic round 4, tools/mutants.py):
+// 16 mutants, all killed.
