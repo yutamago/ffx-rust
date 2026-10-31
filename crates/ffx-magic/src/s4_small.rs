@@ -8696,3 +8696,104 @@ pub const START_PART_WITH_SOUND: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Two objects counted down (cdecl `(task)`): the task's count `+0x2c`
+/// drops; while it stays above 0 the six sizes `B + 0x400..0x404` and
+/// `B + 0x530..0x534` (u16, `B` the word at operand `+0xd`) become
+/// `(count << 12) / 10`; at 0 the objects `B + 0x390` and `B + 0x4c0`
+/// each leave the object list ([`list_remove`]) and, when listed, are
+/// handed to slot 713 with `*G_P` = `ITEM` and lose bit 15 of `+0x124`;
+/// then byte `+0x56` of the task is set. Returns the size, 0x7fff after a
+/// removal, or [`list_remove`]'s 0.
+///
+/// `magic_0168` 0x10003410 (227 bytes; 2 DLLs).
+pub fn count_down_two_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let task = fr.arg(g, 0);
+    let n = g.read::<u32>(task.wrapping_add(0x2c)).wrapping_sub(1);
+    let b = g.read::<u32>(op(img, f, 0xd));
+    if n != 0 {
+        g.write::<u32>(task.wrapping_add(0x2c), n);
+        let size = (n << 12).cast_signed() / 10;
+        for o in [0x404u32, 0x402, 0x400, 0x534, 0x532, 0x530] {
+            g.write::<u16>(b.wrapping_add(o), size.cast_unsigned() as u16);
+        }
+        return Ret::eax(size.cast_unsigned());
+    }
+    let mut eax = 0;
+    // (object, call, list, G_P, ITEM, table)
+    for (obj, call, list, p, item, table) in [
+        (0x390u32, 0x27u32, 0x22u32, 0x30u32, 0x37u32, 0x3cu32),
+        (0x4c0, 0x65, 0x60, 0x6f, 0x76, 0x7b),
+    ] {
+        let obj = b.wrapping_add(obj);
+        eax = list_remove(g, img, img.rel32_target(f + call), op(img, f, list), obj);
+        if eax != 0 {
+            let p = g.read::<u32>(op(img, f, p));
+            g.write::<u32>(p, op(img, f, item));
+            slot_call(g, img, f, (table, 713), &[obj]);
+            let fl = g.read::<u16>(obj.wrapping_add(0x124)) & 0x7fff;
+            g.write::<u16>(obj.wrapping_add(0x124), fl);
+            eax = 0x7fff;
+        }
+    }
+    g.write::<u8>(task.wrapping_add(0x56), 1);
+    Ret::eax(eax)
+}
+
+/// [`count_down_two_objects`].
+pub const COUNT_DOWN_TWO_OBJECTS: Sig = Sig {
+    len: 227,
+    hash: 0xfb8d_9e46_21fc_278e,
+    calls: &[
+        (0x27, Callee::Sig(&LIST_REMOVE)),
+        (0x65, Callee::Sig(&LIST_REMOVE)),
+    ],
+    imports: &[],
+};
+
+/// [`start_part_with_sound`] at a matrix's place (cdecl `(obj)`): slot
+/// 210 `(*G_M, local)` fills a local matrix, part 1 of slot 941 is
+/// started on the object, its model words set (`+0x40..` 0, 0, 0, 1.0,
+/// 0, 0, 0, the integer 1, then K, K, K, 1.0 with K = 0x3ea3d70a) and
+/// slot 393 `(*G_H, the matrix's row 3, 0x100)` plays the sound. Each
+/// call sees the words the earlier ones left. Returns 1.
+///
+/// `magic_0530` 0x100013f0 (229 bytes; 2 DLLs).
+pub fn start_part_sound_at<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    // push ebp; sub esp, 0x44: the matrix is [ebp - 0x44]
+    let local = fr.esp.wrapping_sub(0x48);
+    let obj = fr.arg(g, 0);
+    let m = rd(g, 0x1f);
+    slot_call(g, img, f, (0x19, 210), &[m, local]);
+    let p = rd(g, 0x2c);
+    g.write::<u32>(p, op(img, f, 0x32));
+    let d = g.read::<u32>(rd(g, 0x37).wrapping_add(0x10));
+    let table = slot_call(g, img, f, (0x3f, 941), &[d, m, local]).eax;
+    let program = g.read::<u32>(table.wrapping_add(4));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x5a), obj, 0x1000, program, 1);
+    let h = rd(g, 0x6e);
+    let k = 0x3ea3_d70a;
+    let words = [0, 0, 0, 0x3f80_0000, 0, 0, 0, 1, k, k, k, 0x3f80_0000];
+    for (i, w) in (0u32..).zip(words) {
+        g.write::<u32>(obj.wrapping_add(0x40 + 4 * i), w);
+    }
+    let pos = local + 0x30;
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let words = [h, pos, 0x100, program, 1, 0, d, m, local];
+    slot_call(g, img, f, (0x68, 393), &words);
+    Ret::eax(1)
+}
+
+/// [`start_part_sound_at`].
+pub const START_PART_SOUND_AT: Sig = Sig {
+    len: 229,
+    hash: 0x0141_a6f4_74c3_8832,
+    calls: &[
+        (0x5a, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xdd, Callee::Any),
+    ],
+    imports: &[],
+};

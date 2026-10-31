@@ -4019,3 +4019,76 @@ fn part_with_sound() {
     t.write(obj, &[0x5a; 0x130]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
 }
+
+#[test]
+fn count_down_objects_and_sound_at() {
+    let Some(mut t) = twin(168) else { return };
+    let f = t.at(0x3410);
+    recs(&mut t, &[(713, 1)]);
+    let b = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xd), b);
+    t.set_u32(op(&t, f, 0x30), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x6f), SCRATCH + 0x84);
+    let list = op(&t, f, 0x22);
+    let task = SCRATCH + 0x100;
+    let n1 = SCRATCH + 0x200;
+    for (count, listed) in [
+        (5u32, 0u32),
+        (0, 0),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (1, 3),
+        (0x8000_0001, 0),
+    ] {
+        t.write(b, &vec![0x3c; 0x600]);
+        t.write(task, &[0; 0x60]);
+        t.set_u32(task + 0x2c, count);
+        t.write(n1, &[0; 0x40]);
+        t.write(list, &[0; 0x10]);
+        let objs: Vec<u32> = [0x390, 0x4c0]
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| listed >> i & 1 != 0)
+            .map(|(_, o)| b + o)
+            .collect();
+        for (i, o) in objs.iter().enumerate() {
+            let node = n1 + 0x10 * i as u32;
+            t.set_u32(node + 8, *o);
+            if i > 0 {
+                t.set_u32(node - 0x10 + 4, node);
+                t.set_u32(node, node - 0x10);
+            }
+        }
+        if !objs.is_empty() {
+            t.set_u32(list, n1);
+            t.set_u32(list + 4, n1 + 0x10 * (objs.len() as u32 - 1));
+            t.set_u32(list + 0xc, objs.len() as u32);
+        }
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(530) else { return };
+    let f = t.at(0x13f0);
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[1] + 4 * i, 0x0210_0000 + i);
+        }
+        0x210
+    });
+    t.set_u32(op(&t, f, 0x2c), SCRATCH + 0x200);
+    t.set_u32(op(&t, f, 0x37), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    t.set_u32(SCRATCH + 0x404, 0x1111);
+    rec(&mut t, 941, 1, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    rec(&mut t, 393, 3, |m, a| m.r32(a[1] + 4) ^ 0x0393_0000);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x5a; 0x130]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+}
