@@ -2964,11 +2964,14 @@ pub fn root_point_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let mut st = Pushes::default();
     let ch = g.read::<u32>(w(0x26));
     st.push_all(&[r, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x20), 210), 0);
     st.push(s);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x37), 235), 0);
     st.push_all(&[s, r, r]);
     diagonal(g, 0x447a_0000);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x50), 231), 0);
     let (y, z) = if g.read::<u32>(w(0x76)) == 0 {
         (0xc120_0000u32, 0xc1e8_0000u32)
@@ -2980,15 +2983,20 @@ pub fn root_point_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let mut st = Pushes::default();
     st.push_all(&[v, r, p]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0xb9), 229), 0);
     st.push_all(&[p, q]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0xce), 325), 0);
     st.push(s);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0xdf), 235), 0);
     st.push_all(&[s, r, r]);
     diagonal(g, 0x3ea3_d70a);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0xf8), 231), 0);
     st.push_all(&[r, g.read::<u32>(w(0x127))]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x121), 230), 0);
     let [a, b, c] = [0x135u32, 0x140, 0x14c].map(|o| g.read::<u32>(w(o)));
     st.push_all(&[a, b, c]);
@@ -2996,9 +3004,11 @@ pub fn root_point_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(obj + o, 0x3ea3_d70a);
     }
     g.write::<u32>(obj + 0x6c, 0x3f80_0000);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x13a), 231), 0);
     let [b, d] = [0x170u32, 0x17b].map(|o| g.read::<u32>(w(o)));
     st.push_all(&[b, d]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot_target(g, w(0x175), 230), 0);
     let ptr = g.read::<u32>(w(0x188));
     g.write::<u32>(ptr, w(0x191));
