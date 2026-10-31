@@ -2949,3 +2949,62 @@ fn scene_lights() {
         }
     }
 }
+
+#[test]
+fn sprays_on_cue() {
+    let Some(mut t) = twin(53) else { return };
+    let f = t.at(0x14d0);
+    for (s, n) in [(530u32, 2usize), (249, 2), (719, 3)] {
+        rec_mem(&mut t, s, n, 0, None);
+    }
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.0) / 3.0
+    });
+    t.stub(941, |_, a| 0x0941_0000 ^ a[0]);
+    let take = t.img.rel32_target(f + 0xf7);
+    let recs = SCRATCH + 0x2000;
+    t.set_u32(op(&t, take, 0x37), recs);
+    let sel = SCRATCH + 0x700;
+    t.set_u32(op(&t, f, 0x4d), sel);
+    let table = op(&t, f, 0x7f);
+    for c in [3u32, 0x21] {
+        t.set_u32(table + 4 * c, 0x0cc0_0000 + c);
+    }
+    let task = SCRATCH + 0x300;
+    // (flag, tick before, cue, character, *G_X, free records)
+    for (flag, tick, cue, c, x, n) in [
+        (0x8000u32, 0u32, 0u32, 3u8, 0u32, 4u32),
+        (0x7fff, 9, 10, 3, 0, 4),
+        (0, 9, 10, 0x21, 0, 4),
+        (0, 9, 10, 3, 1, 4),
+        (0, 0x13, 10, 3, 0, 4),
+        (0, 0x23, 10, 0x21, 0, 2),
+        (0, 0x2b, 10, 3, 0, 5),
+        (0, 0x0a, 10, 3, 0, 4),
+        (0, 0x1c, 10, 3, 0, 4),
+    ] {
+        t.write(task, &varied(0x40, tick));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.set_u32(op(&t, f, 0x12), flag);
+        t.set_u32(op(&t, f, 0x34), tick);
+        t.set_u32(op(&t, f, 0x3a), cue);
+        t.set_u32(op(&t, f, 0x53), x);
+        t.set_u8(sel, c);
+        t.set_u32(op(&t, take, 0x2b), 0);
+        t.set_u32(op(&t, take, 0x08), 0);
+        t.set_u32(op(&t, take, 0x0f), n);
+        for i in 0..n {
+            t.write(recs + 0x74 * i, &varied(0x74, i + n));
+            t.set_u32(recs + 0x74 * i + 0x6c, 0);
+        }
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

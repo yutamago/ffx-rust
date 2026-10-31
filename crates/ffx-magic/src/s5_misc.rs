@@ -6273,3 +6273,122 @@ pub const SCENE_LIGHT: Sig = Sig {
     calls: &[(0x316, Callee::Any)],
     imports: &[],
 };
+
+/// A spray of four records started on cue (cdecl `(task)`; a /GS frame).
+/// With bit 15 of `*G_F` set the task is given back ([`give_back`]) and
+/// that `eax` returned. Otherwise the tick `*G_C` goes up; when it reaches
+/// `*G_E` the selected character `c = *G_SEL[0]` gets the speed 0x200
+/// (slot 530 `(c, 0x200)` while `*G_X` is 0 and `c < 0x20`, else slot 249
+/// `(T[c], 0x200)`). Only at the ticks `*G_E + 0xa`, `+0x1a` and `+0x22`
+/// does it go on (else it returns `*G_E + 0x22`): the point 1 of `T[c]`
+/// (slot 268, `w` 1) and four records from the pool ([`pool_take`]; it
+/// returns 0 when that runs out), each: `+0x30` slot 719 `(P, 9, 0)`,
+/// `+0x34 = 1`, halfwords `+0x38 = -1`, `+0x3a = 0x200`, `+0x0..+0xc` the
+/// point with `x += frnd(1)`, `z += frnd(1)`, `+0x10 = frnd(0.25) +
+/// frnd(0.25)`, `+0x14 = frnd(0.3) - K`, `+0x18` as `+0x10`, `+0x1c =
+/// frnd(pi)`, `+0x20..+0x28` the three times `K2` and the constants of
+/// its motion. `frnd` is slot 314 (ST0); after four records it returns
+/// the last call's `eax`.
+///
+/// `magic_0053` 0x100014d0 (745 bytes; 2 DLLs).
+pub fn spray_on_cue<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = g.read::<u32>(fr.esp + 4);
+    if g.read::<u32>(w(0x12)) & 0x8000 != 0 {
+        return Ret::eax(give_back(g, img, img.rel32_target(f + 0x20), task));
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let tick = g.read::<u32>(w(0x34)).wrapping_add(1);
+    g.write::<u32>(w(0x44), tick);
+    let cue = g.read::<u32>(w(0x3a));
+    if tick == cue {
+        let c = u32::from(g.read::<u8>(g.read::<u32>(w(0x4d))));
+        if g.read::<u32>(w(0x53)) == 0 && c < 0x20 {
+            slot_call(g, img, f, (0x62, 530), &[c, 0x200]);
+        } else {
+            let ch = g.read::<u32>(w(0x7f).wrapping_add(4 * c));
+            slot_call(g, img, f, (0x84, 249), &[ch, 0x200]);
+        }
+    }
+    let (tick, cue) = (g.read::<u32>(w(0x98)), g.read::<u32>(w(0x92)));
+    let go = [0xa, 0x1a, 0x22].map(|d| tick == cue.wrapping_add(d));
+    if !go.contains(&true) {
+        return Ret::eax(cue.wrapping_add(0x22));
+    }
+    let p = at(0x14);
+    let c = u32::from(g.read::<u8>(g.read::<u32>(w(0xca))));
+    let ch = g.read::<u32>(w(0xd6).wrapping_add(4 * c));
+    slot_call(g, img, f, (0xdb, 268), &[ch, 1, p]);
+    g.write::<u32>(at(8), 0x3f80_0000);
+    let mut eax = 0;
+    for _ in 0..4 {
+        let r = pool_take(g, img, img.rel32_target(f + 0xf7));
+        if r == 0 {
+            return Ret::eax(0);
+        }
+        let v = slot_call(g, img, f, (0x107, 719), &[w(0x116), 9, 0]).eax;
+        g.write::<u32>(r + 0x30, v);
+        g.write::<u32>(r + 0x34, 1);
+        g.write::<u16>(r + 0x38, 0xffff);
+        g.write::<u16>(r + 0x3a, 0x200);
+        for i in 0..4 {
+            let x = g.read::<u32>(p + 4 * i);
+            g.write::<u32>(r + 4 * i, x);
+        }
+        let mut frnd = |g: &mut G, (t, x): (u32, u32)| {
+            let out = slot_call(g, img, f, (t, 314), &[x]);
+            eax = out.eax;
+            st0_f32(out)
+        };
+        let a = frnd(g, (0x139, 0x3f80_0000));
+        let x = add(g.read::<f32>(r), a);
+        g.write::<f32>(r, x);
+        let a = frnd(g, (0x17e, 0x3f80_0000));
+        let x = add(g.read::<f32>(r + 8), a);
+        g.write::<f32>(r + 8, x);
+        let a = frnd(g, (0x1a3, 0x3e80_0000));
+        let b = frnd(g, (0x1bf, 0x3e80_0000));
+        g.write::<f32>(r + 0x10, add(b, a));
+        let a = frnd(g, (0x1e0, 0x3e99_999a));
+        g.write::<f32>(r + 0x14, sub(a, g.read::<f32>(w(0x204))));
+        let a = frnd(g, (0x209, 0x3e80_0000));
+        let b = frnd(g, (0x225, 0x3e80_0000));
+        g.write::<f32>(r + 0x18, add(b, a));
+        let a = frnd(g, (0x246, 0x4049_0fdb));
+        g.write::<f32>(r + 0x1c, a);
+        let k = g.read::<f32>(w(0x26a));
+        for o in [0x10u32, 0x14, 0x18] {
+            let x = mul(g.read::<f32>(r + o), k);
+            g.write::<f32>(r + o + 0x10, x);
+        }
+        for (o, x) in [
+            (0x2cu32, 0x3f80_0000u32),
+            (0x58, 8),
+            (0x5c, 0),
+            (0x3c, 0x3c75_c290),
+            (0x40, 0x4120_0000),
+            (0x4c, 0xffff_ffff),
+            (0x50, 0),
+            (0x60, 0),
+        ] {
+            g.write::<u32>(r + o, x);
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`spray_on_cue`] (the `rel32`s: [`give_back`], [`pool_take`] and
+/// `__security_check_cookie` twice).
+pub const SPRAY_ON_CUE: Sig = Sig {
+    len: 745,
+    hash: 0xc50c_26cc_f6d5_683d,
+    calls: &[
+        (0x20, Callee::Sig(&GIVE_BACK)),
+        (0x2a, Callee::Any),
+        (0xf7, Callee::Sig(&POOL_TAKE)),
+        (0x2e1, Callee::Any),
+    ],
+    imports: &[],
+};
