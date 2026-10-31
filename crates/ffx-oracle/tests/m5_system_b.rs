@@ -7361,3 +7361,295 @@ fn r3b24_module_file_read_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b25_init_sub_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2501);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // the prints: the formats with one argument log two words,
+            // "make sub partition" four, the others one
+            let two: Vec<u32> = [3usize, 4, 5, 9, 10, 13, 15]
+                .iter()
+                .map(|&k| t.rebase(hdc::INIT_SUB_MSG[k]))
+                .collect();
+            let four = t.rebase(hdc::INIT_SUB_MSG[12]);
+            t.stub_by_counts(hdc::DBG_PRINTF, &two, four, r);
+            t.stub(hdc::MOUNT_PREPARE, false, 0, 0, r ^ 1);
+            t.stub(hdc::HDD_UNMOUNT, false, 0, 0, r ^ 2);
+            t.stub(hdc::MOUNT_PRE2, false, 0, 0, r ^ 3);
+            let code = t.alloc(b"BASLUS-20312\0");
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, code);
+            let text = t.alloc(b"hdd0:BASLUS-20312,ffxpassf,ffxpassr\0");
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 20, text, r ^ 4);
+            // the opens: the old partition, then the creations
+            let opens: [[u32; 7]; 16] = [
+                [3, 4, 0, 0, 0, 0, 0],
+                [0xffff_fffe, 4, 0, 0, 0, 0, 0],
+                [3, 0xffff_ffe5, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 4, 0, 0, 0, 0],
+                [
+                    3,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0xffff_fff0,
+                    0,
+                ],
+                [3, 0xffff_fff3, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff1, 0, 0, 0, 0, 0],
+                [3, 4, 5, 6, 0, 0, 0],
+                [0xffff_ffff, 4, 5, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 0xffff_fff0, 4, 5, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+                [3, 0xffff_fff0, 4, 5, 6, 0, 0],
+                [3, 4, 5, 0, 0, 0, 0],
+                [0, 4, 0, 0, 0, 0, 0],
+                [3, 4, 0, 0, 0, 0, 0],
+            ];
+            t.stub_seq(hdc::SCE_OPEN, 2, 0, &opens[case as usize]);
+            // the ioctls: deletes and adds; a negative add fails in 7, 8, 9, 12, 13
+            let fail = matches!(case, 7 | 8 | 9 | 12 | 13);
+            let mut io = vec![[0u32, 0x8000_0000][(case % 2) as usize]];
+            for k in 0..40u32 {
+                io.push(if fail && (k == 2 || k == 6) {
+                    0xffff_fff0
+                } else {
+                    k
+                });
+            }
+            t.stub_seq(hdc::SCE_IOCTL2, 6, 0, &io);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::SCE_REMOVE, false, 1, 0, r ^ 6);
+            let mb = if fail {
+                0x200
+            } else {
+                [0x200u32, 0x7f, 0x80, 0xffff_ff00, 0x281, 0][(case % 6) as usize]
+            };
+            t.stub(hdc::INSTALLED_MB_8F60, false, 1, 0, mb);
+            t.stub(
+                hdc::SCE_FORMAT,
+                false,
+                4,
+                0,
+                if case == 10 {
+                    0xffff_fffb
+                } else {
+                    r & 0x7fff_ffff
+                },
+            );
+            t.stub(hdc::NOP_FC60, false, 2, 0, 0);
+            t.check_fs(
+                &format!("init sub #{case}"),
+                0x0077_8a10,
+                &[],
+                0x90,
+                4,
+                |m, ebp, _| Out::U32(hdb::init_sub(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording `dbgPrintf` stub over `sym`: two words logged when its
+    /// first word is one of `two`, four when it is `four`, else one;
+    /// returns `ret`.
+    fn stub_by_counts(&mut self, sym: u32, two: &[u32], four: u32, ret: u32) {
+        let s2 = self.stub_code(sym, false, 2, 0, ret);
+        let s4 = self.stub_code(sym, false, 4, 0, ret);
+        let s1 = self.stub_code(sym, false, 1, 0, ret);
+        let mut c = Vec::new();
+        for (&first, to) in two.iter().map(|f| (f, s2)).chain([(&four, s4)]) {
+            c.extend([0x81, 0x7c, 0x24, 0x04]);
+            c.extend(first.to_le_bytes()); // cmp dword [esp+4], first
+            c.extend([0x0f, 0x84]);
+            let here = self.cave_next + c.len() as u32 + 4;
+            c.extend(to.wrapping_sub(here).to_le_bytes()); // je
+        }
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(s1.wrapping_sub(here).to_le_bytes()); // jmp s1
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}
+
+#[test]
+fn r3b26_read_module_files_check_matches_the_original() {
+    read_module_files_cases(0..12);
+}
+
+/// Files of 40 and 41 chunks: the log's 41-mark lines wrap in the chunks
+/// and at the tail.
+#[test]
+fn r3b26_read_module_files_check_wraps_match_the_original() {
+    read_module_files_cases(12..16);
+}
+
+fn read_module_files_cases(cases: std::ops::Range<u32>) {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2601);
+        // the buffers, made once (the oracle's heap is not reset)
+        let res = t.zeros(0x40);
+        let disc = t.zeros(0x10_0800);
+        let file = t.zeros(0x10_0800);
+        let log = t.zeros(0x1000);
+        let name = t.alloc(b"pfs0:/ffx/x.bin\0");
+        let pattern: Vec<u8> = (0..0x10_0100u32)
+            .map(|i| (i * 7 + (i >> 9)) as u8)
+            .collect();
+        let src = t.alloc(&pattern);
+        let mut others = [src; 3];
+        for (k, at) in [(1usize, 0x10usize), (2, 0x30)] {
+            let mut other = pattern.clone();
+            other[at] ^= 0x81;
+            others[k] = t.alloc(&other);
+        }
+        for case in cases.clone() {
+            t.reset();
+            let r = rng.next();
+            // the heads: sizes over and under a chunk, zero, odd tails
+            // (the last head read keeps its log marks past the first)
+            let sizes: [[u32; 3]; 4] = [
+                [0x31, 0, 0x20_0001],
+                [0x40, 8, 0x10_0033],
+                [3, 0x10_0000, 0x30_0005],
+                [0x7f, 0x10_0001, 0x20_0020],
+            ];
+            // 12..: one file of 40 or 41 chunks and a tail, the log's
+            // 41-mark lines wrapping in the chunks or at the tail
+            let big = [0x280_0010u32, 0x290_0010, 0x290_0010, 0x280_0020];
+            let s = if case >= 12 {
+                [big[(case % 4) as usize], 0, 0]
+            } else {
+                sizes[(case % 4) as usize]
+            };
+            let n = if case >= 12 {
+                1
+            } else if case == 11 {
+                0
+            } else {
+                [3u32, 2, 3][(case / 4 % 3) as usize]
+            };
+            let mut heads = Vec::new();
+            for (k, size) in (0u32..).zip(s.iter()) {
+                heads.extend([0x100 * k + (r & 0xff), *size, 0]);
+            }
+            t.write(
+                t.rebase(hdc::HEADS),
+                &heads
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.g32(hdc::HEAD_COUNT, n);
+            t.stub(hdc::HDD_MOUNT, false, 0, 0, r);
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case != 5));
+            t.stub_seq(hdc::USER_MALLOC, 1, 0, &[res, disc, file, log]);
+            t.stub(hdc::MEM_SET_ALIGN, false, 1, 0, r ^ 1);
+            t.stub(hdc::TASK_CREATE, false, 3, 0, 0);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 2);
+            t.stub(hdc::SCE_OPEN, false, 2, 0, 7 + case);
+            // the size: right, or off by one in 3, 7
+            let lseek = if case % 4 == 3 { 5 } else { 0 };
+            t.stub_seq(hdc::SCE_LSEEK64, 3, 0, &[s[0] + lseek, s[1], s[2]]);
+            t.stub(hdc::SCE_LSEEK, false, 3, 0, 0);
+            // the file's bytes and the disc's: equal, or one byte apart
+            let pick = if case >= 12 {
+                usize::from(case % 2 == 1)
+            } else {
+                (case % 3) as usize
+            };
+            let src2 = others[pick];
+            // sceRead(fd, buf, n): n bytes of the file copied; a positive
+            // count (case 9: an error; case 10: 0)
+            let read_ret = match case {
+                9 => 0xffff_fffb,
+                10 => 0,
+                _ => 0x1234,
+            };
+            let log_read = t.stub_code(hdc::SCE_READ, false, 3, 0, read_ret);
+            let copy = t.copy_code(src, log_read);
+            t.jump(hdc::SCE_READ, copy);
+            // the disc read through the CD layer's pointer
+            let cd = t.stub_code(hdc::CD_READ_PTR, false, 5, 0, 0);
+            let copy = t.copy_code(src2, cd);
+            t.w32(t.rebase(hdc::CD_READ_PTR), copy);
+            let sync = t.stub_seq_code(
+                hdc::CD_SYNC_PTR,
+                1,
+                0,
+                &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            );
+            t.w32(t.rebase(hdc::CD_SYNC_PTR), sync);
+            t.stub(hdc::TASK_WAIT_SYM, false, 1, 0, 0);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, 0);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, 0);
+            t.stub_seq(hdc::TRIG_HIST, 3, 0, &[0, 0x20, 0x40]);
+            t.stub(hdc::USER_FREE, false, 1, 0, 0);
+            t.check_fs(
+                &format!("read module files check #{case}"),
+                0x0077_7f00,
+                &[],
+                0x2c,
+                0,
+                |m, ebp, _| Out::U32(hdb::read_module_files_check(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// Code that copies `[esp+0xc]` bytes from `src` to `[esp+8]` (the
+    /// CD layer's read: sector, buffer, size), then jumps to `log`; its
+    /// address.
+    fn copy_code(&mut self, src: u32, log: u32) -> u32 {
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+        c.extend([0x8b, 0x4c, 0x24, 0x18]); // mov ecx, [esp+0x18]
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes());
+        self.cave_code(&c)
+    }
+}
+
+#[test]
+fn r3b27_window1612_frame_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2701);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let packet = t.zeros(0x40);
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 2);
+            let args = [
+                packet,
+                rng.next() & 0xfff,
+                rng.next() & 0xfff,
+                [0x40u32, 0x16, 0, 0x200][(case % 4) as usize],
+                [0x30u32, 9, 0, 0x1a0][(case / 2 % 4) as usize],
+            ];
+            t.check_fs(
+                &format!("window 1612 frame #{case}"),
+                0x008e_adf0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window1612_frame(m, args, s)),
+            );
+        }
+    });
+}

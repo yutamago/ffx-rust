@@ -3264,4 +3264,103 @@ pub mod bridge {
         h.write(h.rebase(super::MOVIE_DRAWN), 1u8);
         r
     }
+    /// `TOMkpWindow1612Frame_008eadf0(packet, x, y, w, h)` (the frame of
+    /// `TkMenuDrawWindow1612`): a GS tag and the frame's TEX0/TEX1/ALPHA
+    /// words at `packet` (12 words), the packet cursor after them, then
+    /// nine sprites of the 1612 window texture: the corners, edges and
+    /// middle on columns `x`, `x + 0xb`, `x + w - 0xb`, `x + w` and rows
+    /// `y`, `y + 4`, `y + h - 5`, `y + h` (UVs 0xd8..0xf2 by 0x28..0x35;
+    /// the bottom-left's second UV `0xe2`), each `TOGsWords4(0x80 x4)`,
+    /// `TOGsXY2`, `TOGsXYZ2Offset` pairs. The columns and the third row
+    /// go into argument slots `+0`, `+0xc`, `+0x10`, `+8` as the original
+    /// keeps them. The packet cursor.
+    pub fn window1612_frame(h: &mut impl Host, args: [u32; 5], slots: u32) -> u32 {
+        let [packet, x, y, w, ht] = args;
+        put_words(
+            h,
+            packet,
+            &[
+                1,
+                0x1000_0000,
+                0xe,
+                0,
+                0x2131_3e00,
+                0x4005_d406,
+                6,
+                0,
+                0x8009,
+                0x50ab_4000,
+                0x4_3431,
+                0,
+            ],
+        );
+        h.write(h.rebase(PKT_CURSOR), packet.wrapping_add(0x30));
+        let dx = w.wrapping_sub(0x16);
+        let dy = ht.wrapping_sub(9);
+        let grey = |h: &mut _| {
+            cdecl(h, super::GS_WORDS4, &[0x80, 0x80, 0x80, 0x80]);
+        };
+        let uv = |h: &mut _, u: u32, v: u32| {
+            cdecl(h, super::GS_XY2, &[u, v]);
+        };
+        let at = |h: &mut _, px: u32, py: u32| {
+            cdecl(h, super::GS_XYZ2_OFFSET, &[px, py]);
+        };
+        let y4 = y.wrapping_add(4);
+        grey(h);
+        uv(h, 0xd8, 0x28);
+        at(h, x, y);
+        uv(h, 0xe3, 0x2c);
+        let x1 = x.wrapping_add(0xb);
+        h.write(slots, x1);
+        at(h, x1, y4);
+        grey(h);
+        uv(h, 0xe3, 0x28);
+        at(h, x1, y);
+        uv(h, 0xe6, 0x2c);
+        let x2 = x.wrapping_add(0xb).wrapping_add(dx);
+        h.write(slots.wrapping_add(0xc), x2);
+        at(h, x2, y4);
+        grey(h);
+        uv(h, 0xe7, 0x28);
+        at(h, x2, y);
+        uv(h, 0xf2, 0x2c);
+        let x3 = x.wrapping_add(0x16).wrapping_add(dx);
+        h.write(slots.wrapping_add(0x10), x3);
+        at(h, x3, y4);
+        grey(h);
+        uv(h, 0xd8, 0x2c);
+        at(h, x, y4);
+        uv(h, 0xe3, 0x2f);
+        let y1 = y4.wrapping_add(dy);
+        h.write(slots.wrapping_add(8), y1);
+        at(h, x1, y1);
+        grey(h);
+        uv(h, 0xe3, 0x2c);
+        at(h, x1, y4);
+        uv(h, 0xe6, 0x2f);
+        at(h, x2, y1);
+        grey(h);
+        uv(h, 0xe7, 0x2c);
+        at(h, x2, y4);
+        uv(h, 0xf2, 0x2f);
+        at(h, x3, y1);
+        grey(h);
+        uv(h, 0xd8, 0x30);
+        at(h, x, y1);
+        uv(h, 0xe2, 0x35);
+        let y2 = y.wrapping_add(9).wrapping_add(dy);
+        at(h, x1, y2);
+        grey(h);
+        uv(h, 0xe3, 0x30);
+        at(h, x1, y1);
+        uv(h, 0xe6, 0x35);
+        at(h, x2, y2);
+        grey(h);
+        uv(h, 0xe7, 0x30);
+        at(h, x2, y1);
+        uv(h, 0xf2, 0x35);
+        at(h, x3, y2);
+        h.read(h.rebase(PKT_CURSOR))
+    }
 }

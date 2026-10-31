@@ -1333,6 +1333,27 @@ ported! {
     cd_ModuleFileRead_0076bf70 @ 0x0076_bf70 => extern "C" fn module_file_read(file: u32, buffer: u32, offset: u32, size: u32, callback: u32, opts: u32) -> u32 {
         hd::module_file_read(&mut mem(), [file, buffer, offset, size, callback, opts])
     }
+
+    // ---- round 3, batch 25: the FFX partition's set-up ----
+    /// `()`: frame `ebp - 0x90` (the cookie at `ebp - 4`).
+    hdd_init_sub_00778a10 @ 0x0077_8a10 => extern "C" fn init_sub() -> u32 {
+        let mut f = StackFrame::<0x24>::new();
+        hd::init_sub(&mut mem(), f.at() + 0x90)
+    }
+
+    // ---- round 3, batch 26: the installed files' check ----
+    /// `()`: frame `ebp - 0x2c`.
+    hdd_ReadModuleFiles_00777f00 @ 0x0077_7f00 => extern "C" fn read_module_files_check() -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        hd::read_module_files_check(&mut mem(), f.at() + 0x2c)
+    }
+
+    // ---- round 3, batch 27: the 1612 window's frame ----
+    /// `(packet, x, y, w, h)`: the columns and the third row go into the
+    /// argument slots.
+    TOMkpWindow1612Frame_008eadf0 @ 0x008e_adf0 => extern "C" fn window1612_frame(packet: u32, x: u32, y: u32, w: u32, h: u32; slots: u32) -> u32 {
+        mn::window1612_frame(&mut mem(), [packet, x, y, w, h], slots)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
