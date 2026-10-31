@@ -1417,7 +1417,7 @@ impl Exec {
 
     /// Maps into this thread's emulator every arena region it hasn't seen
     /// (another thread's `VirtualAlloc`, stack or DLL).
-    fn sync_regions(&mut self) -> Result<()> {
+    pub(crate) fn sync_regions(&mut self) -> Result<()> {
         let g = self.shared.arena.generation();
         if g == self.generation {
             return Ok(());

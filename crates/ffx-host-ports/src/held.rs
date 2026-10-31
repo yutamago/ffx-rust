@@ -113,7 +113,6 @@ pub const HELD: &[u32] = &[
     0x0076_a690, // KeLnsLp_Update
     0x0077_5ed0, // SaMenu_loadSbinTextures_00775ed0
     0x007a_0930, // MsSEP3Dprocess
-    0x007a_fbd0, // MsCheckRikkuLimit
     0x007e_5030, // op_oef2_texture_load
     0x007e_a760, // op_vector_m
     0x007e_b580, // op_gs1_transfer

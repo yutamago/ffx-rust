@@ -32,6 +32,7 @@ pub mod harness;
 pub mod iggy;
 pub mod image;
 pub mod imports;
+pub mod library;
 pub mod log;
 pub mod ports;
 #[cfg(all(windows, target_pointer_width = "32"))]

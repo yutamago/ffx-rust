@@ -2079,7 +2079,10 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   for the main thread to reach that boundary (the hook's 5 s; the
   emulator is slower). The `open <file>` events come from
   `Phyre_PSerialization_PStreamFileWin32_openFile`, wrapped, and
-  `FFX_HARNESS_SEED` replaces `Rng_ClockSeed`, as in the hook.
+  `FFX_HARNESS_SEED` replaces `Rng_ClockSeed`, as in the hook. The cloth
+  and middle-calc jobs (`Ch_Cloth_PerCharacter`, `Ch_CalcMiddle_Batch`,
+  wrapped) run with the thread's `rand()` seeded from the character and
+  the event frame, as the hook's seeded jobs (`stats`' `seeded_jobs`).
 - **Input.** `keys`/`key` set the `DirectInput` keyboard's state that the
   layer's `GetDeviceState` returns. `pad`/`press` hold PS2 buttons through
   the clock's `Input_KeyHeld` wrapper, which answers for each held
@@ -2120,7 +2123,10 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   --rust` installs then) plays field-walk on PC2 with the same trace
   events as PC2's original recordings and screenshots within the limits
   (0.0 and 0.1), 226 s from launch (`docs/host.md`, "The 64-bit build on
-  PC2"). The i686 build still ends a few seconds past its third frame in
+  PC2"); since host-battle (2026-10-31) also the battle replays
+  (battle-attack, -magic, -overdrive, -ifrit) and event-besaid with the
+  original's trace events (`docs/host.md`, "The battle replays on PC2").
+  The i686 build still ends a few seconds past its third frame in
   an abort inside Unicorn's 32-bit translator.
 - **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
   `ffx-rust.exe` runs the game in a child process of itself
