@@ -321,6 +321,23 @@ pub const DOWNSAMPLE: [u32; 9] = [
     0x00b7_6848,
 ];
 
+/// `0x00a19620`'s data: the screen size (width, height), the global
+/// cluster, the five render targets' formats.
+pub const OWN_TARGETS: [u32; 8] = [
+    0x00c9_5100,
+    0x00c9_5104,
+    0x0194_3da0,
+    0x00ca_3274,
+    0x00ca_310c,
+    0x00ca_310c,
+    0x00ca_310c,
+    0x00ca_347c,
+];
+/// `0x00a191f0` (the targets taken), as `0x00a19620` calls it.
+pub const TAKE_TARGETS_FN: u32 = 0x00a1_91f0;
+/// The words of `0x00a19620`'s frame.
+pub const OWN_TARGETS_FRAME_WORDS: u32 = 7;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
@@ -334,6 +351,7 @@ pub mod bridge {
         TAKE_TARGETS,
     };
     use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
+    use super::{OWN_TARGETS, TAKE_TARGETS_FN};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -1717,5 +1735,116 @@ pub mod bridge {
         let half = make_utility_target(h, cluster, w >> 1, ht >> 1);
         h.write(this + 0xa8, half);
         0
+    }
+
+    /// `0x00a19620` (thiscall `(this; w, h)`, ret 8): the deferred
+    /// lighting's own targets made and taken. With the render state cache
+    /// built (as [`create_buffers`]) and the size defaulting to the
+    /// screen's (`0x00c95100`, `0x00c95104`) when 0: 0x16 when it has its
+    /// targets; else from the global cluster `0x01943da0` a depth target
+    /// (as [`make_utility_target`]) and five render targets
+    /// (`makeRenderTarget(cluster, w, h, format, 0, 0, &err)`, formats
+    /// `0x00ca3274`, `0x00ca310c` x 3, `0x00ca347c`), the six handed to
+    /// [`take_targets`] (`0x00a191f0`) in the original's order (depth,
+    /// first, third, second, fourth, fifth). A failed step's error is
+    /// returned, but a step that fails without one (no texture, no list,
+    /// no instance, a maker answering none with `err` 0) counts as done:
+    /// the flag `+0x10` set and 0, as when all went through.
+    ///
+    /// `frame` is 7 words: the six targets (the original's `ebp - 0x34`)
+    /// and the maker's error word (the original's first argument slot).
+    pub fn create_targets(h: &mut impl Host, this: u32, w: u32, ht: u32, frame: u32) -> u32 {
+        let guard = h.rebase(DEFERRED_BUFFERS[6]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(DEFERRED_BUFFERS[7]);
+            h.call_sym(DEFERRED_BUFFERS[8], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(DEFERRED_BUFFERS[9]);
+            h.call_sym(DEFERRED_BUFFERS[10], Conv::Cdecl, &[dtor]);
+        }
+        let w = if w == 0 {
+            h.read(h.rebase(OWN_TARGETS[0]))
+        } else {
+            w
+        };
+        let ht = if ht == 0 {
+            h.read(h.rebase(OWN_TARGETS[1]))
+        } else {
+            ht
+        };
+        if h.read::<u32>(this + 0x3ed4) != 0 {
+            return 0x16;
+        }
+        let r = own_targets(h, this, w, ht, frame);
+        if r != 0 {
+            return r;
+        }
+        h.write(this + 0x10, 1u8);
+        0
+    }
+
+    /// [`create_targets`]' steps; the first error (0 also when a step
+    /// fails without one).
+    fn own_targets(h: &mut impl Host, this: u32, w: u32, ht: u32, frame: u32) -> u32 {
+        let c = DOWNSAMPLE;
+        let targets = frame;
+        let err = frame + 0x18;
+        for i in 0..6 {
+            h.write(targets + 4 * i, 0u32);
+        }
+        let cluster = h.rebase(OWN_TARGETS[2]);
+        let class = h.rebase(c[0]);
+        let tex = h.call_sym(c[1], Conv::Thiscall(cluster), &[1, class, 0]);
+        if tex == 0 {
+            return 0;
+        }
+        let format = h.rebase(c[2]);
+        let r = h.call_sym(c[3], Conv::Thiscall(tex), &[w, ht, format, 0]);
+        h.write(err, r);
+        if r != 0 {
+            return r;
+        }
+        let f: u32 = h.read(tex + 0x14);
+        h.write(tex + 0x14, f & !2);
+        h.write(tex + 5, 0u8);
+        h.call_sym(c[4], Conv::Thiscall(tex), &[]);
+        let class = h.rebase(c[5]);
+        let list = h.call_sym(c[6], Conv::Thiscall(cluster), &[1, class, 0]);
+        if list == 0 {
+            return 0;
+        }
+        let depth: u32 = h.read(list + 0x34);
+        if depth == 0 {
+            return 0;
+        }
+        h.call_sym(c[7], Conv::Thiscall(depth), &[tex]);
+        h.write(depth + 5, 0u8);
+        let name = h.rebase(c[8]);
+        h.write(depth + 0xc, name);
+        let mut made = [0u32; 5];
+        for k in 0..5 {
+            let format = h.rebase(OWN_TARGETS[3 + k]);
+            let t = h.call_sym(
+                TAKE_TARGETS[3],
+                Conv::Cdecl,
+                &[cluster, w, ht, format, 0, 0, err],
+            );
+            let e: u32 = h.read(err);
+            if t == 0 || e != 0 {
+                return e;
+            }
+            made[k] = t;
+            if k == 3 {
+                for (i, v) in [depth, made[0], made[2], made[1], made[3]]
+                    .into_iter()
+                    .enumerate()
+                {
+                    h.write(targets + 4 * i as u32, v);
+                }
+            }
+        }
+        h.write(targets + 0x14, made[4]);
+        h.call_sym(TAKE_TARGETS_FN, Conv::Thiscall(this), &[cluster, targets])
     }
 }

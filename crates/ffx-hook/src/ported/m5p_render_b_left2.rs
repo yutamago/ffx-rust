@@ -95,4 +95,10 @@ ported! {
     PPostProcessUtils_createDownsampleTargets_00a179a0 @ 0x00a1_79a0 => extern "thiscall" fn create_downsample_targets(this: u32, cluster: u32, w: u32, h: u32) -> u32 {
         lb::create_downsample_targets(&mut mem(), this, cluster, w, h)
     }
+    /// The deferred lighting's own targets made and taken `(w, h)`; the
+    /// six targets and the maker's error word in a frame.
+    Phyre_PPostProcessing_PDeferredLighting_createTargets_00a19620 @ 0x00a1_9620 => extern "thiscall" fn create_targets(this: u32, w: u32, h: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::OWN_TARGETS_FRAME_WORDS as usize }>::new();
+        lb::create_targets(&mut mem(), this, w, h, f.at())
+    }
 }

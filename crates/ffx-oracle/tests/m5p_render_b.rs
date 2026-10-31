@@ -6137,3 +6137,106 @@ fn big_downsample_targets_match_the_original() {
         }
     }
 }
+
+/// `0x00a19620` (the deferred lighting's own targets) against the
+/// original: taken already; the size given and defaulted; the depth
+/// target's steps failing (no texture, a size error, no list, no
+/// instance); the k-th render target answering none or an error; all
+/// made and the take answering 0 or an error. The maker is a counting
+/// stub (it logs its first six words, stores the error through the
+/// seventh); the six targets are compared in the original's frame.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_own_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (taken, w, h, depth step failing (9 none: 0 create, 1 size, 2 list,
+    // 3 instance), maker call answering none (0 none), maker call
+    // with an error (0 none), the take's answer)
+    let cases: [(bool, u32, u32, u32, u32, u32, u32); 11] = [
+        (true, 0x100, 0x80, 9, 0, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 0, 0),
+        (false, 0, 0, 9, 0, 0, 7),
+        (false, 0x100, 0x80, 0, 0, 0, 0),
+        (false, 0x100, 0x80, 1, 0, 0, 0),
+        (false, 0x100, 0x80, 2, 0, 0, 0),
+        (false, 0x100, 0x80, 3, 0, 0, 0),
+        (false, 0x100, 0x80, 9, 1, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 3, 0),
+        (false, 0x100, 0x80, 9, 5, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 5, 0),
+    ];
+    for (taken, w, ht, depth_fail, none_at, err_at, take) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DOWNSAMPLE;
+            let tex = t.junk(0x20, 3);
+            let inst = t.junk(0x20, 4);
+            let list = t.zeros(0x40);
+            t.w32(list + 0x34, if depth_fail == 3 { 0 } else { inst });
+            t.stub(c[1], true, 3, 3, if depth_fail == 0 { 0 } else { tex });
+            t.stub(c[3], true, 4, 4, if depth_fail == 1 { 6 } else { 0 });
+            t.stub(c[4], true, 0, 0, 0);
+            t.stub(c[6], true, 3, 3, if depth_fail == 2 { 0 } else { list });
+            t.stub(c[7], true, 1, 1, inst);
+            t.stub(l2::TAKE_TARGETS_FN, true, 2, 2, take);
+            let guard = t.rebase(l2::DEFERRED_BUFFERS[6]);
+            t.w32(guard, 0x11);
+            let screen = t.rebase(l2::OWN_TARGETS[0]);
+            t.w32(screen, 0x500);
+            t.w32(screen + 4, 0x2d0);
+            // the maker
+            let cnt = t.zeros(4);
+            let logger = t.stub_code(l2::TAKE_TARGETS[3], false, 6, 0, 0);
+            let code = t.a.alloc_code(&[0xcc; 0x60]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x60]).unwrap(), code);
+            let mut k = Vec::new();
+            for _ in 0..6 {
+                k.extend([0xff, 0x74, 0x24, 0x18]); // push [esp+0x18]
+            }
+            k.push(0xe8);
+            k.extend(logger.wrapping_sub(code + 29).to_le_bytes()); // call logger
+            k.extend([0x83, 0xc4, 0x18]); // add esp, 0x18
+            k.extend([0xff, 0x05]);
+            k.extend(cnt.to_le_bytes()); // inc dword [cnt]
+            k.push(0xa1);
+            k.extend(cnt.to_le_bytes()); // mov eax, [cnt]
+            k.extend([0x8b, 0x4c, 0x24, 0x1c]); // mov ecx, [esp+0x1c]
+            k.extend([0xc7, 0x01, 0, 0, 0, 0]); // mov dword [ecx], 0
+            k.push(0x3d);
+            k.extend(err_at.to_le_bytes()); // cmp eax, err_at
+            k.extend([0x75, 0x06]); // jne +6
+            k.extend([0xc7, 0x01, 5, 0, 0, 0]); // mov dword [ecx], 5
+            k.push(0x3d);
+            k.extend(none_at.to_le_bytes()); // cmp eax, none_at
+            k.extend([0x74, 0x06]); // je zero
+            k.push(0x05);
+            k.extend(0x0088_0000u32.to_le_bytes()); // add eax, 0x880000
+            k.push(0xc3); // ret
+            k.extend([0x31, 0xc0, 0xc3]); // zero: xor eax, eax; ret
+            t.write(code, &k);
+            let at = t.rebase(l2::TAKE_TARGETS[3]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let this = t.zeros(0x4000);
+            t.w32(this + 0x3ed4, u32::from(taken));
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: own targets taken {taken} {w}x{ht} depth {depth_fail} none {none_at} err {err_at} take {take}"
+            );
+            t.check_frame(
+                &what,
+                0x00a1_9620,
+                Conv::Thiscall(this),
+                &[w, ht],
+                ebp,
+                0x60,
+                (0x34, 0x1c),
+                |g| Out::U32(l2b::create_targets(g, this, w, ht, ebp - 0x34)),
+            );
+            t.reset();
+        }
+    }
+}
