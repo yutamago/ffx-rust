@@ -76,4 +76,9 @@ ported! {
         let mut f = StackFrame::<16>::new();
         lb::matrix_new(&mut mem(), l, f.at())
     }
+    /// The script's `Matrix.LookAt(eye, target, up)` `(L)`.
+    Phyre_PScripting_Matrix_lookAt_00571200 @ 0x0057_1200 => extern "C" fn matrix_look_at(l: u32) -> u32 {
+        let mut f = StackFrame::<30>::new();
+        lb::matrix_look_at(&mut mem(), l, f.at())
+    }
 }

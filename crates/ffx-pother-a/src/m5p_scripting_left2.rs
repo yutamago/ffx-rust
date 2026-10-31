@@ -295,8 +295,9 @@ pub const CLIP_DATA: [u32; 4] = [0x00ca_b918, 0x0052_6590, 0x0051_6a20, 0x0052_6
 
 /// The `Matrix(...)` constructor's callees: `luaL_checknumber(L, i)` (the
 /// number in `ST0`, cdecl), `PMatrix4::identity(out)` (cdecl),
-/// `PMatrix4::copy(m)` (thiscall).
-pub const MATRIX_NEW: [u32; 3] = [0x0094_c9e0, 0x0045_4cf0, 0x0045_3340];
+/// `PMatrix4::copy(m)` (thiscall), `PMatrix4::lookAt(eye, target, up)`
+/// (thiscall).
+pub const MATRIX_NEW: [u32; 4] = [0x0094_c9e0, 0x0045_4cf0, 0x0045_3340, 0x0045_1c30];
 
 /// The ports over game memory.
 pub mod bridge {
@@ -1399,6 +1400,63 @@ pub mod bridge {
                 let m = h.call_sym(MATRIX_NEW[1], Conv::Cdecl, &[frame]);
                 h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[m]);
             }
+        }
+        1
+    }
+
+    /// The `Vector` userdata at stack index `i` (`lua_touserdata`, its
+    /// metatable the registry's vector one), else 0.
+    fn vector_arg(h: &mut impl Host, l: u32, i: u32) -> u32 {
+        let ud = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[l, i]);
+        if ud == 0 || h.call_sym(LUA_INDEX[1], Conv::Cdecl, &[l, i]) == 0 {
+            return 0;
+        }
+        let name = h.rebase(VM_DATA[0]);
+        h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+        let same = h.call_sym(LUA_INDEX[2], Conv::Cdecl, &[l, u32::MAX, 0xffff_fffe]) != 0;
+        h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffd]);
+        if same { ud } else { 0 }
+    }
+
+    /// The script's `Matrix.LookAt(eye, target, up)` (`0x00571200`, cdecl
+    /// `(L)`, 1 result): a new matrix userdata; with three vectors their
+    /// xyz copied into `frame` (+0x40, +0x50, +0x60; 30 words, the
+    /// original's `ebp - 0x78`) and `PMatrix4::lookAt` (`0x00451c30`);
+    /// else the identity staged at `frame` and copied (`0x00453340`). The
+    /// userdata may be 0 (the callee then gets 0 as `this`, as in the
+    /// original). 1.
+    pub fn matrix_look_at(h: &mut impl Host, l: u32, frame: u32) -> u32 {
+        let eye = vector_arg(h, l, 1);
+        let target = vector_arg(h, l, 2);
+        let up = vector_arg(h, l, 3);
+        let ud = h.call_sym(LUA_MORE[6], Conv::Cdecl, &[l, 0x40]);
+        if ud != 0 {
+            let name = h.rebase(VM_DATA[1]);
+            h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+            h.call_sym(LUA_MORE[7], Conv::Cdecl, &[l, 0xffff_fffe]);
+        }
+        if eye != 0 && target != 0 && up != 0 {
+            for (src, dst) in [
+                (up, frame + 0x60),
+                (target, frame + 0x50),
+                (eye, frame + 0x40),
+            ] {
+                for i in 0..3 {
+                    let v = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+                    h.write(dst + 4 * i, v.to_bits());
+                }
+            }
+            h.call_sym(
+                MATRIX_NEW[3],
+                Conv::Thiscall(ud),
+                &[frame + 0x40, frame + 0x50, frame + 0x60],
+            );
+        } else {
+            let one = 1.0f32.to_bits();
+            for i in 0..16 {
+                h.write(frame + 4 * i, if i % 5 == 0 { one } else { 0 });
+            }
+            h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[frame]);
         }
         1
     }

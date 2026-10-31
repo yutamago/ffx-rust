@@ -3759,3 +3759,61 @@ fn left2_matrix_new_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_matrix_look_at_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let vecs: Vec<u32> = [
+            [0.0f32, 1.0, 5.0, 9.0],
+            [0.5, 0.25, -2.0, 9.0],
+            [0.0, 1.0, 0.0, 9.0],
+        ]
+        .iter()
+        .map(|v| {
+            t.alloc(
+                &v.iter()
+                    .flat_map(|x| x.to_bits().to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+        // which arguments are vectors (touserdata), whether the metatables
+        // match (rawequal)
+        for (present, same) in [
+            ([true; 3], 1u32),
+            ([true, false, true], 1),
+            ([true; 3], 0),
+            ([false, true, true], 1),
+            ([true, true, false], 1),
+        ] {
+            let mut table = [0u32; 16];
+            for i in 0..3 {
+                if present[i] {
+                    table[i + 1] = vecs[i];
+                }
+            }
+            let bytes: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let tab = t.alloc(&bytes);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0xe0, 0x0f, 0x8b, 0x04, 0x85]; // mov eax, [esp+8]; and eax, 15; mov eax, [eax*4+tab]
+            c.extend(tab.to_le_bytes());
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(l2::LUA_INDEX[0], code);
+            t.stub(l2::LUA_INDEX[1], false, 2, 0, 1);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_INDEX[2], false, 3, 0, same);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            let ud = t.junk(0x40, 5);
+            t.stub(l2::LUA_MORE[6], false, 2, 0, ud);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            let what = format!("{label}: Matrix.LookAt {present:?} same {same}");
+            t.cdecl(&what, 0x0057_1200, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_look_at(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}
