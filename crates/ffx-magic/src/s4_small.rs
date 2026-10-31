@@ -9113,3 +9113,63 @@ pub const LIGHT_BLOCK_DEFAULTS: Sig = Sig {
     calls: &[(0xce, Callee::Sig(&SCALE_TASK_20))],
     imports: &[],
 };
+
+/// The effect's sprite record set up (no arguments): `*G_A` = 0; the
+/// first time (`G_H` 0) slot 0 `(0x3015)` gives `G_H`, slot 26
+/// `(0x3015, 1)` and slots 387, 385 `(G_H, 1)` and 386 `(G_H, 0)` set it
+/// up (each call seeing the words the earlier ones left); then the
+/// record: `+0x0` 0 and `+0x4` `G_H` (then `+0x0` the DLL's callback),
+/// the colour `+0xc0` (0.75, 0.75, 0.75, 1.0), `+0xa0..` 0 and `+0x8`,
+/// `+0xc` 0. Returns 1.
+///
+/// `magic_0443` 0x10001d60 (246 bytes; 2 DLLs).
+pub fn sprite_record_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    g.write::<u32>(w(0x7), 0);
+    let mut h = g.read::<u32>(w(0x1));
+    if h == 0 {
+        let mut words = vec![0x3015];
+        h = slot_call(g, img, f, (0x14, 0), &words).eax;
+        g.write::<u32>(w(0x22), h);
+        words.splice(0..0, [0x3015, 1]);
+        slot_call(g, img, f, (0x27, 26), &words);
+        for (table, slot, at, x) in [
+            (0x38, 387, 0x40, 1),
+            (0x4d, 385, 0x55, 1),
+            (0x62, 386, 0x6a, 0),
+        ] {
+            let h = g.read::<u32>(w(at));
+            words.splice(0..0, [h, x]);
+            // call width: 5..9 (the earlier calls' words stay on the stack)
+            slot_call(g, img, f, (table, slot), &words);
+        }
+        h = g.read::<u32>(w(0x77));
+    }
+    let a = w(0x85);
+    g.write::<u64>(a, 0);
+    g.write::<u32>(w(0x8a), h);
+    for (o, v) in [
+        (0x90, 0x3f40_0000),
+        (0x9a, 0x3f40_0000),
+        (0xa4, 0x3f40_0000),
+        (0xae, 0x3f80_0000),
+        (0xb8, 0),
+        (0xc2, 0),
+        (0xcc, 0),
+        (0xd6, 0),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    g.write::<u64>(w(0xe2), 0);
+    g.write::<u32>(w(0xe8), w(0xec));
+    Ret::eax(1)
+}
+
+/// [`sprite_record_setup`].
+pub const SPRITE_RECORD_SETUP: Sig = Sig {
+    len: 246,
+    hash: 0x36f9_b6d9_d94c_7965,
+    calls: &[],
+    imports: &[],
+};

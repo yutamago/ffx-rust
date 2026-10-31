@@ -4226,3 +4226,15 @@ fn light_block_defaults() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn sprite_record_setups() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x1d60);
+    rec(&mut t, 0, 1, |_, _| 0x0abc_0000);
+    recs(&mut t, &[(26, 2), (387, 2), (385, 2), (386, 2)]);
+    for h in [0u32, 0x0123_4567] {
+        t.set_u32(op(&t, f, 0x1), h);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
