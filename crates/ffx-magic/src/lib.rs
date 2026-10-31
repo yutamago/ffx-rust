@@ -1298,6 +1298,7 @@ ports! {
     "spray_on_cue" => s5_misc::SPRAY_ON_CUE, s5_misc::spray_on_cue;
     "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
     "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
+    "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

@@ -3107,3 +3107,71 @@ fn scene_two_records_set() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn camera_behind_starts() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x2860);
+    let data = SCRATCH + 0x800;
+    rec(&mut t, 803, 2, |_, _| 0x0200_0000);
+    recs(
+        &mut t,
+        &[(718, 1), (222, 4), (221, 4), (710, 4), (4, 1), (27, 2)],
+    );
+    rec(&mut t, 719, 3, move |_, a| data + 0x40 * (a[1] & 3));
+    let lock = SCRATCH + 0x7f0;
+    rec_lock(&mut t, 711, 3, lock, |_, a| 0x0711_0000 ^ a[0]);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 ^ a[0]);
+    rec(&mut t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    let targets = SCRATCH + 0x780;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 0x0218_4000 ^ a[0]);
+        targets
+    });
+    rec(&mut t, 367, 8, |m, a| {
+        let v = m.r32(a[4]);
+        m.w32(a[4], v ^ ((a[0] & 1) << 14));
+        0x367
+    });
+    rec_mem(&mut t, 210, 2, 16, Some(1));
+    rec_mem(&mut t, 325, 2, 4, None);
+    t.stub(325, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec_mem(&mut t, 232, 2, 4, Some(0));
+    rec_mem(&mut t, 217, 2, 4, Some(1));
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    rec_mem(&mut t, 248, 3, 4, Some(0));
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    rec_mem(&mut t, 292, 1, 4, Some(0));
+    rec_mem(&mut t, 389, 2, 0, None);
+    rec_mem(&mut t, 364, 1, 0, None);
+    t.stub_st0(364, |_, a| 7.0 + f64::from(a[0] & 3));
+    rec_mem(&mut t, 19, 1, 0, None);
+    t.stub_st0(19, |_, a| 1.25 + f64::from(a[0] & 3));
+    let lists = SCRATCH + 0x700;
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        lists + if a[0] == 9 { 0 } else { 0x10 }
+    });
+    t.write(
+        lists,
+        &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5, 6, 0],
+    );
+    let behind = t.img.rel32_target(f + 0x2ed);
+    let margin = t.img.rel32_target(behind + 0x132);
+    rec(&mut t, 390, 1, |_, a| 0x1015 + (a[0] & 1) * 0x18);
+    t.set_u32(op(&t, margin, 0xc), 0x0188_0001);
+    t.set_u32(op(&t, f, 0x102), lock);
+    for (k, target) in [(0u32, 2u8), (1, 5), (2, 4)] {
+        t.write(data, &varied(0x100, k));
+        t.set_u8(targets, target);
+        t.set_u32(lock, 0x0bad_0000 + k);
+        t.check_entry(f, Call::default(), &[0x0188_0000 + k], Eax::Checked);
+    }
+}

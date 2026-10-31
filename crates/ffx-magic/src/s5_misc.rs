@@ -18,8 +18,8 @@ use crate::s4_misc::{
     motion_script, scale_task, start_object_anim, start_object_at, trail_draw, unlist_free,
 };
 use crate::s4_small::{
-    ACTOR_INDEX, CAMERA_FACE_ACTOR, ID_LIST, NAMED_PARTS, SOUND_RECORD, actor_index,
-    camera_face_actor, id_list, named_parts, sound_record,
+    ACTOR_INDEX, BLOCK_DEFAULTS, CAMERA_FACE_ACTOR, ID_LIST, NAMED_PARTS, SOUND_RECORD,
+    actor_index, block_defaults, camera_face_actor, id_list, named_parts, sound_record,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
@@ -6622,6 +6622,181 @@ pub const SCENE_TWO_RECORDS: Sig = Sig {
         (0x2cf, Callee::Sig(&TAKE)),
         (0x300, Callee::Any),
         (0x31f, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// An effect's start with the camera behind its user (cdecl `(user)`; a
+/// 16-aligned /GS frame): slot 803 `(0x1000000, 0x10)` gives the work
+/// area, whose four 0x80000 quarters go in `G_W0..G_W3`; `G_USER =
+/// user`; `G_E = E` (slot 718 `(E)`, slots 222 and 221 `(E, 0, 1000,
+/// 0x2000)`); the effect data 6, 5 and 8 (slot 719 `(E, n, 0)`), the
+/// last `D` set up with the lock `*G_L` at 1 (slot 711 `(D, P, 0)`,
+/// the lock restored) and slot 710 `(ENV, *D, G_W0, 0x80000)`; the
+/// programs `D[5..8]` (slot 941) into three globals; slots 4 `(0x3015)`
+/// and 27 `(0x3015, 1)`. Then the user's character (slot 168), its
+/// handle (slot 215), the first target (slot 218 into a local, its first
+/// byte and slot 215), that target's root matrix (slot 210): its third
+/// row normalised and scaled by `K` into `G_V` (slots 325, 232), its last
+/// row into `G_POS` (slot 325), the target's thickness (slot 19) and
+/// height (slot 364; ST0 each) into two globals; the camera behind
+/// ([`camera_behind`]), slot 367 `(user, target, 0, 0, &local, 0, 0, 0)`
+/// with bit 14 of that local into `G_FLAG`, and the block's defaults
+/// ([`block_defaults`]). Returns 1. Each slot call sees the words the
+/// earlier ones left on the stack.
+///
+/// `magic_0188` 0x10002860 (831 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's calls, one by one
+pub fn camera_behind_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let user = fr.arg(g, 0);
+    // push ebp; and esp, -0x10; sub esp, 0x5c; push esi
+    let l = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x5c);
+    let mut s = Pushes::default();
+    s.push_all(&[0x10, 0x100_0000]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let area = s.call(g, slot_target(g, w(0x15), 803), 0).eax;
+    for (i, o) in [0x2au32, 0x34, 0x3e, 0x48].into_iter().enumerate() {
+        g.write::<u32>(w(o), area.wrapping_add(0x8_0000 * i as u32));
+    }
+    g.write::<u32>(w(0x50), user);
+    s.push(w(0x5a));
+    g.write::<u32>(w(0x66), w(0x6a));
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x55), 718), 0);
+    for (t, slot, e) in [(0x71u32, 222u32, 0x89u32), (0x90, 221, 0xa8)] {
+        let e = g.read::<u32>(w(e));
+        s.push_all(&[0x2000, 0x3e8, 0, e]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t), slot), 0);
+    }
+    for (t, n, e, to) in [(0xafu32, 6u32, 0xbfu32, 0xc6u32), (0xcb, 5, 0xdb, 0xe5)] {
+        let e = g.read::<u32>(w(e));
+        s.push_all(&[0, n, e]);
+        // call width: 12 (the most `Pushes::words` holds)
+        let v = s.call(g, slot_target(g, w(t), 719), 0).eax;
+        g.write::<u32>(w(to), v);
+    }
+    let mut s = Pushes::default();
+    let e = g.read::<u32>(w(0xfa));
+    s.push_all(&[0, 8, e]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let d = s.call(g, slot_target(g, w(0xea), 719), 0).eax;
+    let lock = g.read::<u32>(w(0x102));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x10b), d);
+    s.push_all(&[0, w(0x110), d]);
+    g.write::<u32>(lock, 1);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x116), 711), 0);
+    let lock = g.read::<u32>(w(0x129));
+    let w0 = g.read::<u32>(w(0x134));
+    s.push_all(&[0x8_0000, w0]);
+    g.write::<u32>(lock, saved);
+    let d = g.read::<u32>(w(0x13c));
+    s.push_all(&[d, w(0x146)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x141), 710), 0);
+    for (dg, o, t, to) in [
+        (0x153u32, 0x14u32, 0x15bu32, 0x168u32),
+        (0x16d, 0x18, 0x175, 0x182),
+        (0x187, 0x1c, 0x18f, 0x19c),
+    ] {
+        let p = g.read::<u32>(g.read::<u32>(w(dg)).wrapping_add(o));
+        s.push(p);
+        // call width: 12 (the most `Pushes::words` holds)
+        let v = s.call(g, slot_target(g, w(t), 941), 0).eax;
+        g.write::<u32>(w(to), v);
+    }
+    s.push(0x3015);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1a1), 4), 0);
+    s.push_all(&[1, 0x3015]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1b0), 27), 0);
+    let mut s = Pushes::default();
+    let (list, m) = (l + 8, l + 0xc);
+    s.push(g.read::<u32>(w(0x1d0)));
+    // call width: 12 (the most `Pushes::words` holds)
+    let c = s.call(g, slot_target(g, w(0x1c1), 168), 0).eax;
+    g.write::<u32>(w(0x1d7), c);
+    s.push(c);
+    // call width: 12 (the most `Pushes::words` holds)
+    let h = s.call(g, slot_target(g, w(0x1dd), 215), 0).eax;
+    g.write::<u32>(w(0x1ea), h);
+    s.push_all(&[list, g.read::<u32>(w(0x1fa))]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let p = s.call(g, slot_target(g, w(0x1f4), 218), 0).eax;
+    let target = u32::from(g.read::<u8>(p));
+    g.write::<u32>(w(0x20a), target);
+    s.push(target);
+    // call width: 12 (the most `Pushes::words` holds)
+    let th = s.call(g, slot_target(g, w(0x210), 215), 0).eax;
+    g.write::<u32>(w(0x222), th);
+    s.push_all(&[m, th]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x228), 210), 0);
+    s.push_all(&[m + 0x20, w(0x23f)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x23a), 325), 0);
+    s.push_all(&[w(0x251), w(0x25c)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x24c), 232), 0);
+    let k = g.read::<f32>(w(0x26e));
+    for (from, to) in [(0x266u32, 0x284u32), (0x28c, 0x29d), (0x2a5, 0x2b1)] {
+        let x = mul(g.read::<f32>(w(from)), k);
+        g.write::<f32>(w(to), x);
+    }
+    s.push_all(&[m + 0x30, w(0x295)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x27c), 325), 0);
+    for (h, t, slot, to) in [
+        (0x2c4u32, 0x2beu32, 19u32, 0x2d4u32),
+        (0x2da, 0x2ce, 364, 0x2e8),
+    ] {
+        s.push(g.read::<u32>(w(h)));
+        // call width: 12 (the most `Pushes::words` holds)
+        let v = st0_f32(s.call(g, slot_target(g, w(t), slot), 0));
+        g.write::<f32>(w(to), v);
+    }
+    // 15 words pushed under esi: the callee's entry is 0x44 below `l`
+    camera_behind(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x2ed),
+            esp: l.wrapping_sub(0x44),
+            ..Frame::default()
+        },
+    );
+    let (t, u) = (g.read::<u32>(w(0x30d)), g.read::<u32>(w(0x313)));
+    s.push_all(&[0, 0, 0, list, 0, 0, t, u]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x2fd), 367), 0);
+    let bit = (g.read::<i32>(list) >> 14) & 1;
+    g.write::<u32>(w(0x328), bit.cast_unsigned());
+    block_defaults(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x32d),
+            esp: l.wrapping_sub(0xc),
+            ..Frame::default()
+        },
+    );
+    Ret::eax(1)
+}
+
+/// [`camera_behind_start`] (the `rel32`s: [`camera_behind`],
+/// [`block_defaults`] and `__security_check_cookie`).
+pub const CAMERA_BEHIND_START: Sig = Sig {
+    len: 831,
+    hash: 0x8fcc_1db3_6ddf_4182,
+    calls: &[
+        (0x2ed, Callee::Sig(&CAMERA_BEHIND)),
+        (0x32d, Callee::Sig(&BLOCK_DEFAULTS)),
+        (0x341, Callee::Any),
     ],
     imports: &[],
 };
