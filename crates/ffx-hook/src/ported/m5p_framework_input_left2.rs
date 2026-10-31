@@ -77,4 +77,8 @@ ported! {
         let mut f = StackFrame::<{ rf::SAMPLER_FRAME_WORDS as usize }>::new();
         rf::bridge::init_sampler_shaders(&mut mem(), &const { rf::sampler_shaders_of(0x00a1_8c80) }, this, cluster, effect, f.at())
     }
+    /// A gameplay path's point `(out, index)`.
+    Phyre_PGameplay_PPath_getPoint_0054b080 @ 0x0054_b080 => extern "thiscall" fn path_point(this: u32, out: u32, index: u32) -> u32 {
+        lb::path_point(&mut mem(), this, out, index)
+    }
 }

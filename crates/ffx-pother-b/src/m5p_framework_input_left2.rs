@@ -907,4 +907,70 @@ pub mod bridge {
         let msg = h.rebase(msg);
         h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, index, pad]);
     }
+
+    /// The 4-float point `i` of the path's list (`+8`, 16 bytes each)
+    /// copied to `out`.
+    fn copy_point(h: &mut impl Host, pts: u32, i: u32, out: u32) {
+        let at = pts.wrapping_add(i.wrapping_mul(16));
+        for k in 0..4 {
+            let v: u32 = h.read(at + 4 * k);
+            h.write(out + 4 * k, v);
+        }
+    }
+
+    /// `a + (a - b)` per component (x, y, z), each difference stored as a
+    /// float first, as the original does; `out`'s fourth float untouched.
+    /// The y sum's operands are the other way round at the path's start
+    /// (`start`: the difference in the register) than at its end.
+    fn extrapolate(h: &mut impl Host, a: u32, b: u32, out: u32, start: bool) {
+        let mut d = [0f32; 3];
+        for (k, dk) in d.iter_mut().enumerate() {
+            let k = 4 * k as u32;
+            let av = f32::from_bits(h.read(a + k));
+            let bv = f32::from_bits(h.read(b + k));
+            *dk = Reg::load(av).sub_m32(bv).store();
+        }
+        let x = Reg::load(f32::from_bits(h.read(a))).add_m32(d[0]).store();
+        h.write(out, x.to_bits());
+        let ay = f32::from_bits(h.read(a + 4));
+        let y = if start {
+            Reg::load(d[1]).add_m32(ay)
+        } else {
+            Reg::load(ay).add_m32(d[1])
+        }
+        .store();
+        h.write(out + 4, y.to_bits());
+        let z = Reg::load(f32::from_bits(h.read(a + 8)))
+            .add_m32(d[2])
+            .store();
+        h.write(out + 8, z.to_bits());
+    }
+
+    /// A gameplay path's point (`0x0054b080`, thiscall `(out, index)`,
+    /// `ret 8`): a looping path (`+0x18`) gives point `index` modulo the
+    /// count (the last for -1); an open one the point itself, or past
+    /// either end the end point extended by its last step (index -1 and
+    /// below: before the first). `out`. A looping path with no points
+    /// divides by zero in the original (a crash); the port leaves `out`.
+    pub fn path_point(h: &mut impl Host, this: u32, out: u32, index: u32) -> u32 {
+        let count = h.read::<u32>(this + 4) & 0x7fff_ffff;
+        let pts: u32 = h.read(this + 8);
+        if h.read::<u8>(this + 0x18) != 0 {
+            if index == u32::MAX {
+                copy_point(h, pts, count.wrapping_sub(1), out);
+            } else if let Some(i) = index.checked_rem(count) {
+                copy_point(h, pts, i, out);
+            }
+            return out;
+        }
+        if index.cast_signed() <= -1 {
+            extrapolate(h, pts, pts + 16, out, true);
+        } else if index < count {
+            copy_point(h, pts, index, out);
+        } else {
+            let last = pts.wrapping_add(count.wrapping_sub(1).wrapping_mul(16));
+            extrapolate(h, last, last.wrapping_sub(16), out, false);
+        }
+        out
+    }
 }

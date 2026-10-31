@@ -3517,3 +3517,65 @@ fn left2_xinput_pad_update_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_path_point_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    let floats: [u32; 8] = [
+        0x3f80_0000,
+        0xc0a0_0000,
+        0x4b80_0001,
+        0x0000_0001,
+        0x7f7f_ffff,
+        0xff80_0000,
+        0x7fc0_1234,
+        0x3eaa_aaab,
+    ];
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x2468_ace1);
+        for looping in [0u8, 1, 0x80] {
+            for count in [1u32, 2, 5, 0x8000_0003] {
+                let n = count & 0x7fff_ffff;
+                let pts = t.zeros(16 * n as usize + 32) + 16;
+                for i in 0..(4 * n + 4) {
+                    let v = floats[(rng.next() % 8) as usize];
+                    t.w32(pts - 16 + 4 * i, v);
+                }
+                let this = t.zeros(0x20);
+                t.w32(this + 4, count);
+                t.w32(this + 8, pts);
+                t.w8(this + 0x18, looping);
+                for index in [0u32, 1, n - 1, n, n + 3, u32::MAX, 0xffff_fffe, 0x8000_0000] {
+                    let out = t.junk(16, 3);
+                    let what = format!(
+                        "{label}: path point loop {looping} count {count:#x} index {index:#x}"
+                    );
+                    t.check(
+                        &what,
+                        0x0054_b080,
+                        Conv::Thiscall(this),
+                        &[out, index],
+                        |g| Out::U32(l2b::path_point(g, this, out, index)),
+                    );
+                }
+                // the output over the points (the original reads after
+                // each store)
+                if n >= 2 && looping == 0 {
+                    for (index, out) in [(u32::MAX, pts), (n, pts + 16 * (n - 1))] {
+                        let what = format!(
+                            "{label}: path point aliased count {count:#x} index {index:#x}"
+                        );
+                        t.check(
+                            &what,
+                            0x0054_b080,
+                            Conv::Thiscall(this),
+                            &[out, index],
+                            |g| Out::U32(l2b::path_point(g, this, out, index)),
+                        );
+                    }
+                }
+            }
+        }
+        t.reset();
+    }
+}
