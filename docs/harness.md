@@ -1916,6 +1916,27 @@ after the 900 updates instead (run it without coverage mode: the image
 holds the unfired `int3`s), for harvesting (`docs/hooking.md`,
 "Harvested call states").
 
+First sweep (2026-10-31, PC2, 110 saves, 30-60 s each): every save loaded
+from the title and ran to the end; none crashed, hung or showed a dialog.
+105 sessions opened the main menu; 5 saves (22, 24, 29, 30, 72) were still in
+a scene after the 45 presses. 99 started a battle (in 25, 36 and 48 the battle's file
+opened but its phase 1 never came within 4000 updates); 11 had none (areas without encounters: `bsvr`, `djyt`, `swin`,
+`guad`, `luca`, `ptkl`; one where a battle already ran). Coverage, against
+the M4 run (all replays and sessions, 10,601 functions): 11,533 functions
+reached, 1,717 not reached before, 1,022 of them only in some saves (the
+story; the other 695 run in every session, start-up code the M4 run did not
+arm). 1,687 hooked ports ran with no real run before (993 story ones).
+Of the 4,933 functions `symbols/m5-dropped.tsv` drops, only
+`TkDebugLoadViewerSave` ran, which the `devsave` command calls itself. 51
+spell overlays loaded (50 that no replay reaches); 394 overlay entry points
+ran, 354 of them bound to an `ffx-magic` port. The results stay outside git
+(`~/ffx-work/devsaves/sweep`: per-save reports and hits, `summary.md`, the
+TSV lists). Nine snapshots of saves 17, 34, 51, 62, 76, 103 (in battle) and
+34, 62, 103 (field) gave harvested states for 17 of the story ports (20 MB
+in `~/ffx-work/harvest/dev*`); the eleven effect functions among them have
+`harvest_test!` lines in `harvested_vfx.rs`. Most story ports run once at a
+map load or a scene, not in the 60 frames a driver runs from a snapshot.
+
 ## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex
