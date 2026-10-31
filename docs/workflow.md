@@ -408,9 +408,10 @@ git, so every worktree writes the same page. From the top:
   task's free-text state is sorted into these); `main`'s last merges with
   their `pc2-<sha>.log` result; load, memory, disk and the guards;
 - "Phases and forecast": the milestones and, per phase in
-  `~/ffx-work/agents/phases.json`, what is left, the pace over 6, 24 and
-  72 h (by count and by bytes) and the date each pace gives; a burn-down
-  with the projections;
+  `~/ffx-work/agents/phases.json`, what is left, the pace over the last 1, 6
+  and 24 h of data (by count and by bytes; the windows end at the last
+  change, so a pause does not dilute them) and the date each pace gives; a
+  burn-down with the projections at the 1 h pace;
 - "Speed and time": ports per 6 h by kind, the finished agent runs in
   `metrics.tsv`, and where the machine's command time goes (the timing log
   below, by kind: time, how many ran at once, runs, mean run, failures,
