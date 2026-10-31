@@ -151,6 +151,9 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   4.3-5.2 s), with no key presses to lose, and the state matches the menu
   path's (the replays give the recorded originals' events and
   screenshots). The replays use it; `load N` (list entry N) stays.
+- Developer saves: `devsave <n>` (replay line `load devsave N [script]
+  [lockstep]`) loads one of the 110 saves the developers left in the
+  archive, by their own loader ("Developer saves" below).
 - Battles start from the field without walking into one:
   `screens::start_battle(field, group, formation)` writes the request a
   random encounter makes (`MsBattleEncountExe`, `0x00780d10`) and raises its flag;
@@ -1823,6 +1826,95 @@ extra list there.
 
 The `ffx-harness` crate's `Game::command` and `tools/harness.py` (which
 flushes whole lines) are the only clients.
+
+## Developer saves
+
+The game ships 110 saves the developers used to jump into the story
+(found by the Debug Revival mod, its `docs/research/field.md` and
+`battle.md`): `ffx_data/gamedata/ps3data/savesforviewer/1` to `110` in
+`FFX_Data.vbf`, 0x64f8 bytes each, from the opening (save 1: Baaj temple,
+scenario 42) to the end (save 110: scenario 3210). The block at `+0x40`
+is the save data as `g_SaveData` holds it: the map and entrance it jumps to
+at `+0xba` and `+0xb8`, the scenario at `+0xbec`, the place name index at
+`+0xe`. Nothing from them goes into git; they stay in the archive.
+
+Their loader is `TkDebugLoadViewerSave` (`0x008b55e0`, cdecl `(n)`), reached
+only from the PC tweak panel's "Game Section" entry. Unless `n` is the last
+save it loaded (`0x00c5a038`), it has `debugLoadForViewer` (`0x00649040`,
+cdecl `(n, buffer, size) -> 0 | -1`) read the file into `g_SaveFileBuffer`
+(`0x01597f70`, 0x6900 bytes), copies the buffer's game block (`+0x40`, 0x68c0
+bytes) over `g_SaveData`, notes `n` and jumps with `AtelSetEventJump`
+(`0x0086fec0`). `debugLoadForViewer` opens
+`<stream prefix>/FFX_Data/GameData/PS3Data/savesforviewer/<n>` with the CRT's
+`fopen`, which cannot see into the archive, so on PC it always fails and
+nothing happens. A file shorter than the buffer leaves the rest of the
+buffer as it was (`fread`): the copied block's last 0x3c8 bytes
+(`g_SaveData +0x64b8..`, PC-only fields) are whatever the buffer held.
+
+With the harness on, `ffx-hook` replaces `debugLoadForViewer`
+(`crates/ffx-hook/src/devsave.rs`, installed whatever `--hook-disable`
+says, so the original code runs under the same loader) with a reader that
+takes the same name through the game's own file layer
+(`fiosUnifyFilename`, `fiosIsFileExist`, `fiosOpen(path, 1)`, `fiosRead`,
+`fiosClose`), which finds it in the archive, with the original's results.
+The harness command `devsave <n> [lockstep]` then calls the original
+`TkDebugLoadViewerSave(n)` on the main thread between two updates:
+
+- it clears the last-save word first (a repeat would be skipped);
+- `AtelSetEventJump` acts only when the current ctrl work holds the control
+  (`*g_ScriptContext` bit 0x80) or the debug flag is on, so the command
+  takes the control as `loadsave` does (ctrl work 0, bit 0x80, the context
+  put back after the call). The debug flag stays off;
+- on the title (map `0x17`) it first runs the title script's part around
+  its Load menu, as `loadsave` does (`loadsave::leave_title`: `0x00aa(1)`,
+  `AtelSetEventMode(2)`, the music and screen fades, the map fade's frames
+  and type 0), so the title leaves as for a load;
+- `lockstep` holds the main thread at that boundary, as `loadsave <save>
+  lockstep` does;
+- the reply: `ok developer save <n> map <m> entrance <e> scenario <s> place
+  <p> context <ctx> (from the title)`.
+
+No save file is read or written: the sweep's games run with
+`copy_user_data: false` (an empty save folder in the sandbox). Saving from
+such a game afterwards would write the developer's state into the sandbox's
+slot, never the user's.
+
+The replay line `load devsave N [script] [lockstep]`
+(`screens::load_dev_save`) boots, taps Start until the title proper runs
+and sends `devsave N` there, like `load direct`. From the field the command
+works too (the developers' own use): the mod refuses it while an event
+effect plays (`maps.md`, "Effects"); the harness does not check.
+
+### The coverage sweep
+
+`tools/devsave-sweep.sh OUT [n...]` plays
+`crates/ffx-harness/examples/devsave_sweep.rs` once per save, one game after
+the other in one game slot, and on a machine other agents use too it waits
+until no `FFX.exe` or `ffx-rust.exe` runs (`tasklist.exe`) before each
+launch. Each game: the original code (`FFX_HOOK_DISABLE=replacements`),
+every function of the dump armed (coverage mode, `coverage.py candidates
+--all`), the spell overlays in Unicorn (`FFX_MAGIC_EMU=1`: each overlay's
+unload report names its entry points that ran), seed 1, fast mode, virtual
+clock. The session: `load devsave N`, 900 updates, Circle once a second
+until the player has the control (ctrl work 0 `+0` bit 1) or 45 presses
+passed, the main menu opened (Triangle) and closed (Cross), then one battle
+where the Debug Revival mod's checks allow it (no battle, the current ctrl
+work holds the control, no map change pending, no event effect, no magic
+file loaded or unloading): the battle field of the map number a random
+encounter looks up (`TkGetNowEventJumpMapNo`, `g_SaveData +4`; the event's
+own map id at `+0` is another numbering), else the area's first field (the
+event name's first four letters, as battle-ifrit fights `kami00` from the
+agency `kami0100`), group 0 formation 0, Circle through the commands, 600
+updates more. Per save `OUT/<n>.txt` (`key<TAB>value`: script, control,
+menu, battle, end, the hook log's devsave, fault and overlay lines),
+`<n>.hits` (its coverage) and `<n>.out`.
+`tools/devsave-coverage.py OUT` sums it up against the coverage before
+(the M4 run's `~/ffx-work/m4/coverage2/hits` and `symbols/hook-hits.txt`):
+`summary.md`, `new-ported.tsv`, `new-functions.tsv`, `magic-entries.tsv`.
+`devsave_sweep N REPORT snapshot <windows path>` writes a memory snapshot
+after the 900 updates instead (run it without coverage mode: the image
+holds the unfired `int3`s), for harvesting (`docs/hooking.md`,
+"Harvested call states").
 
 ## Parallel games
 
