@@ -9287,3 +9287,98 @@ pub const ACTORS_RESTORED: Sig = Sig {
     calls: &[(0xe8, Callee::Sig(&GIVE_BACK))],
     imports: &[],
 };
+
+/// The command block reset (no arguments): slot 559 `(a, b, c)` and slot
+/// 558 `(d)` fill four locals, slot 382 `(0, 0)`; the block's six
+/// 16-byte commands cleared (the first word 0x70000004, the third words
+/// 0xe, 0x4e, 8 and 0x3d of the next four), then slot 382 `(0, 0)` again.
+/// Each call sees the words the earlier ones left. Returns the last slot
+/// 382's `eax`.
+///
+/// `magic_0434` 0x10003b90 (250 bytes; 2 DLLs).
+pub fn command_block_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    // push ebp; sub esp, 0x20: the locals hang off ebp = esp - 4
+    let ebp = fr.esp.wrapping_sub(4);
+    let local = |o: u32| ebp.wrapping_sub(o);
+    let mut words = vec![local(0x1c), local(0x18), local(0x20)];
+    slot_call(g, img, f, (0x1d, 559), &words);
+    words.insert(0, local(0x14));
+    slot_call(g, img, f, (0x2e, 558), &words);
+    words.splice(0..0, [0, 0]);
+    // call width: 6 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x3b, 382), &words);
+    for o in [0x57, 0x5f] {
+        g.write::<u64>(w(o), 0);
+    }
+    g.write::<u32>(w(0x65), 0x7000_0004);
+    for (q, third, fourth, x) in [
+        (0x71, 0x77, 0x81, 0xe),
+        (0x8d, 0x93, 0x9d, 0x4e),
+        (0xa9, 0xaf, 0xb9, 8),
+        (0xc5, 0xcb, 0xd5, 0x3d),
+    ] {
+        g.write::<u64>(w(q), 0);
+        g.write::<u32>(w(third), x);
+        g.write::<u32>(w(fourth), 0);
+    }
+    words.splice(0..0, [0, 0]);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0x4c, 382), &words))
+}
+
+/// [`command_block_reset`].
+pub const COMMAND_BLOCK_RESET: Sig = Sig {
+    len: 250,
+    hash: 0xcee0_eaf1_2ac8_7db5,
+    calls: &[(0xf2, Callee::Any)],
+    imports: &[],
+};
+
+/// The block's 18 spinning records moved (no arguments): with `B` the
+/// word at operand `+0x1`, each record `B + 0x2ed0 + 0x60 k` adds its
+/// speed `+0x40` to its velocity `+0x30` and that to its place `+0x20`,
+/// then its spin `+0x10` to its angles `+0x00`, each wrapped by `T`
+/// (operand `+0x11`) above `HI` (`+0x9`) or below `LO` (`+0x19`).
+/// Returns the address past the last record's velocity.
+///
+/// `magic_0563` 0x10004c20 (251 bytes; 2 DLLs).
+pub fn spin_records_move<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::add;
+    let f = fr.at;
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let k = |g: &G, o: u32| fl(g, op(img, f, o));
+    let (hi, t, lo) = (k(g, 0x9), k(g, 0x11), k(g, 0x19));
+    let mut p = g.read::<u32>(op(img, f, 0x1)).wrapping_add(0x2f08);
+    let at = |p: u32, o: i32| p.wrapping_add_signed(o);
+    for _ in 0..0x12 {
+        // (from, to): to += from, in this order
+        for (from, to) in [
+            (8, -8),
+            (0xc, -4),
+            (0x10, 0),
+            (-8, -0x18),
+            (-4, -0x14),
+            (0, -0x10),
+        ] {
+            let v = add(fl(g, at(p, from)), fl(g, at(p, to)));
+            g.write::<u32>(at(p, to), v.to_bits());
+        }
+        for (from, to) in [(-0x28, -0x38), (-0x24, -0x34), (-0x20, -0x30)] {
+            let v = add(fl(g, at(p, from)), fl(g, at(p, to)));
+            let v = crate::m0018::wrap(v, hi, lo, t);
+            g.write::<u32>(at(p, to), v.to_bits());
+        }
+        p = p.wrapping_add(0x60);
+    }
+    Ret::eax(p)
+}
+
+/// [`spin_records_move`].
+pub const SPIN_RECORDS_MOVE: Sig = Sig {
+    len: 251,
+    hash: 0xcdb7_a84e_68a2_dccd,
+    calls: &[],
+    imports: &[],
+};

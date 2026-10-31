@@ -1187,6 +1187,8 @@ ports! {
     "sprite record setup" => s4_small::SPRITE_RECORD_SETUP, s4_small::sprite_record_setup;
     "release and remove two" => s4_small::RELEASE_AND_REMOVE_TWO, s4_small::release_and_remove_two;
     "actors restored" => s4_small::ACTORS_RESTORED, s4_small::actors_restored;
+    "command block reset" => s4_small::COMMAND_BLOCK_RESET, s4_small::command_block_reset;
+    "spin records move" => s4_small::SPIN_RECORDS_MOVE, s4_small::spin_records_move;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
