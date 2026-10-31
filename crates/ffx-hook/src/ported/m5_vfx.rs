@@ -17,6 +17,10 @@ use ffx_glue_other::m5v_g::{self as gm, bridge as g};
 use ffx_glue_other::m5v_h::bridge as gh;
 use ffx_glue_other::m5v_i::bridge as gi;
 use ffx_glue_other::m5v_j::bridge as gj;
+use ffx_glue_other::m5v_k::bridge as gk;
+use ffx_glue_other::m5v_l::bridge as gl;
+use ffx_glue_other::m5v_m::bridge as gm2;
+use ffx_glue_other::m5v_n::bridge as gn;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -676,5 +680,48 @@ ported! {
     /// `MsDbgFile_charClasses_007e12d0(table, s1, ..., s7)`.
     MsDbgFile_charClasses_007e12d0 @ 0x007e_12d0 => extern "C" fn char_classes(table: u32, s1: u32, s2: u32, s3: u32, s4: u32, s5: u32, s6: u32, s7: u32) {
         gj::char_classes(&mut mem(), table, [s1, s2, s3, s4, s5, s6, s7]);
+    }
+    // ---- round 5 batch 6 (ffx_glue_other::m5v_k) ----
+    /// `gdraw_wrapTexture_00a383a0(texture)` -> the handle: the stats in
+    /// this shim's frame.
+    gdraw_wrapTexture_00a383a0 @ 0x00a3_83a0 => extern "C" fn gdraw_wrap_texture(texture: u32) -> u32 {
+        let mut frame = StackFrame::<12>::new();
+        gk::wrap_texture(&mut mem(), frame.at(), texture)
+    }
+    /// `gdraw_destroyContext_00a37960()`: the stats in this shim's frame.
+    gdraw_destroyContext_00a37960 @ 0x00a3_7960 => extern "C" fn gdraw_destroy_context() {
+        let mut frame = StackFrame::<12>::new();
+        gk::destroy_context(&mut mem(), frame.at());
+    }
+    // ---- round 5 batch 7 (ffx_glue_other::m5v_l) ----
+    /// `opd_num_draw_queue_00a5e2e0()` -> the saved column.
+    opd_num_draw_queue_00a5e2e0 @ 0x00a5_e2e0 => extern "C" fn opd_num_draw_queue() -> u32 {
+        gl::draw_queue(&mut mem())
+    }
+    /// `opd_num_put_hex_00a5eea0(value, n, ctx, font)` -> `ctx` or the
+    /// column; writes its argument slots.
+    opd_num_put_hex_00a5eea0 @ 0x00a5_eea0 => extern "C" fn opd_num_put_hex(value: u32, n: u32, ctx: u32, font: u32; slots: u32) -> u32 {
+        gl::put_hex(&mut mem(), slots, value, n, ctx, font)
+    }
+    /// `opu_motion_etc_00804b70(host, cmd)` -> the next command: the saved
+    /// KiB in this shim's frame.
+    opu_motion_etc_00804b70 @ 0x0080_4b70 => extern "C" fn opu_motion_etc(host: u32, cmd: u32) -> u32 {
+        let mut frame = StackFrame::<0x100>::new();
+        gl::motion_etc(&mut mem(), frame.at(), host, cmd)
+    }
+    // ---- round 5 batch 8 (ffx_glue_other::m5v_m) ----
+    /// `opu_file(host, cmd)` -> the next command: the sizes and path in
+    /// this shim's frame.
+    opu_file @ 0x0081_4a00 => extern "C" fn opu_file(_host: u32, cmd: u32) -> u32 {
+        let mut frame = StackFrame::<0x89>::new();
+        gm2::opu_file(&mut mem(), frame.at(), cmd)
+    }
+    // ---- round 5 batch 9 (ffx_glue_other::m5v_n) ----
+    /// `VFXDynamicGeometry_setupMaterial_006a4240(g; n, names, clusters)`
+    /// -> 0 / 3 / 0x13 / an error: the cursor and the shader name in this
+    /// shim's frame.
+    VFXDynamicGeometry_setupMaterial_006a4240 @ 0x006a_4240 => extern "thiscall" fn vfx_setup_material(this: u32, n: u32, names: u32, clusters: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_n::FRAME / 4) as usize }>::new();
+        gn::setup_material(&mut mem(), frame.at(), this, n, names, clusters)
     }
 }

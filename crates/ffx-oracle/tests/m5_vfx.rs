@@ -36,6 +36,10 @@ use ffx_glue_other::m5v_g::{self as mg, bridge as vg};
 use ffx_glue_other::m5v_h::{self as mh, bridge as gh};
 use ffx_glue_other::m5v_i::{self as mi, bridge as gi};
 use ffx_glue_other::m5v_j::{self as mj, bridge as gj};
+use ffx_glue_other::m5v_k::{self as mk, bridge as gk};
+use ffx_glue_other::m5v_l::{self as ml, bridge as gl};
+use ffx_glue_other::m5v_m::{self as mm, bridge as gm2};
+use ffx_glue_other::m5v_n::{self as mn, bridge as gn};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -3977,6 +3981,395 @@ fn r5v_effect_debug_helpers_match_the_original() {
                     Out::None
                 },
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 6 (ffx_glue_other::m5v_k) ----
+
+#[test]
+fn r5v_gdraw_context_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a01);
+        for case in 0..16_u32 {
+            // the wrap: a handle from the pool, moved to the wrapped ring
+            let s = t.zeros(0xb00);
+            let pool = t.zeros(0x180);
+            t.w32(s + 0xab0, pool);
+            t.global(mk::GDRAW.sym, s);
+            let r = t.zeros(0x40);
+            for k in (0..0x40).step_by(4) {
+                t.w32(r + k, rng.next());
+            }
+            let (prev, next, first) = (t.zeros(0x40), t.zeros(0x40), t.zeros(0x40));
+            t.w32(r + 0x18, pool);
+            t.w32(r + 0x1c, prev);
+            t.w32(r + 0x20, next);
+            t.w32(pool + 0x128 + 0x20, first);
+            let code = memset_code();
+            t.stub_sym_x(mk::MEMSET, 1, false, 3, 0, Ret::Val(1), &code);
+            t.stub_sym(mk::POOL_ALLOC, 2, false, 3, 0, Ret::Val(r));
+            let texture = rng.next();
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "gdraw_wrapTexture_00a383a0",
+                0x00a3_83a0,
+                Conv::Cdecl,
+                &[texture],
+                |o| Out::U32(gk::wrap_texture(o, ebp - 0x30, texture)),
+            );
+            r5v_same(t, "gdraw_wrapTexture_00a383a0", ebp - 0x30, 0x30);
+            t.b_top = None;
+            t.reset();
+
+            // the teardown: no state, a state down, up with objects and pools
+            let s = if case % 5 == 0 { 0 } else { t.zeros(0xb00) };
+            if s != 0 {
+                t.w32(s, u32::from(case % 5 != 1));
+                let clear = t.stub_code(1, false, 1, 1, Ret::Val(1), false);
+                let ctx = t.object(&[clear; 0x70], 0x10);
+                t.w32(s + 4, ctx);
+                let release = t.stub_code(2, false, 1, 1, Ret::Val(2), false);
+                for off in [0x798_u32, 0x79c, 0x998, 0x9a8] {
+                    if rng.chance(2) {
+                        let obj = t.object(&[0, 0, release], 8);
+                        t.w32(s + off, obj);
+                    }
+                }
+                for off in [0xab0_u32, 0xab4] {
+                    t.w32(s + off, if rng.chance(3) { 0 } else { rng.next() });
+                }
+            }
+            t.global(mk::GDRAW.sym, s);
+            let code = memset_code();
+            t.stub_sym_x(mk::MEMSET, 3, false, 3, 0, Ret::Val(3), &code);
+            t.stub_sym(mk::RELEASE_SLOTS, 4, false, 0, 0, Ret::Val(4));
+            t.stub_sym(mk::RELEASE_SHADERS, 5, false, 0, 0, Ret::Val(5));
+            t.stub_sym(mk::FREE_RESOURCES, 6, false, 1, 0, Ret::Val(6));
+            t.stub_sym(mk::POOL_FREE_ALL, 7, false, 2, 0, Ret::Val(7));
+            t.import_sym(mk::FREE_SLOT, 8, 1, 1, Ret::Val(8));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "gdraw_destroyContext_00a37960",
+                0x00a3_7960,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    gk::destroy_context(o, ebp - 0x30);
+                    Out::None
+                },
+            );
+            r5v_same(t, "gdraw_destroyContext_00a37960", ebp - 0x30, 0x30);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 7 (ffx_glue_other::m5v_l) ----
+
+#[test]
+fn r5v_opd_num_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b01);
+        for case in 0..16_u32 {
+            // the queue: counts under and over the limit, heads anywhere
+            let queue = t.rebase(ml::QUEUE);
+            let words: Vec<u8> = (0..0x10).flat_map(|_| rng.next().to_le_bytes()).collect();
+            for k in 0..32 {
+                for w in 0..16 {
+                    let at = queue + (k << 13) + 0x200 * (w + 1);
+                    t.patch(at, &words[(4 * (w as usize % 4))..][..4]);
+                }
+            }
+            for (g, v) in [
+                (ml::PRINT_X.sym, rng.next() as u16),
+                (ml::PRINT_Y.sym, rng.next() as u16),
+                (ml::PRINT_COLUMN.sym, rng.next() as u16),
+                (ml::QUEUE_X.sym, rng.next() as u16),
+                (ml::QUEUE_Y.sym, rng.next() as u16),
+                (ml::QUEUE_COUNT.sym, rng.below(40) as u16),
+            ] {
+                t.patch(t.rebase(g), &v.to_le_bytes());
+            }
+            t.global(ml::QUEUE_HEAD.sym, rng.next());
+            t.global(
+                ml::QUEUE_LIMIT.sym,
+                if case % 3 == 0 { rng.below(8) } else { 32 },
+            );
+            t.stub_sym(ml::PREPARE, 1, false, 0, 0, Ret::Val(1));
+            let seen = t.zeros(4);
+            let mut code = vec![0x66, 0xa1];
+            code.extend(t.rebase(ml::PRINT_COLUMN.sym).to_le_bytes()); // mov ax, [column]
+            code.extend([0x66, 0xa3]);
+            code.extend(seen.to_le_bytes()); // mov [seen], ax
+            t.stub_sym_x(ml::OPD_NUM, 2, false, 14, 0, Ret::Val(2), &code);
+            t.check(
+                "opd_num_draw_queue_00a5e2e0",
+                0x00a5_e2e0,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(gl::draw_queue(o)),
+            );
+            t.reset();
+
+            // the hex digits: none, a few, negative values
+            let packet = t.zeros(0x40 * 12);
+            let ctx = t.zeros(0x14);
+            t.w32(ctx + 8, packet);
+            t.write(ctx + 0x10, &(rng.next() as u16).to_le_bytes());
+            t.write(ctx + 0x12, &(rng.next() as u16).to_le_bytes());
+            let font = t.zeros(0x1c);
+            t.w32(font + 4, rng.next());
+            for off in [0x16_u32, 0x18] {
+                t.write(font + off, &(rng.next() as u16).to_le_bytes());
+            }
+            t.w8(font + 0x1a, rng.next() as u8);
+            t.w8(font + 0x1b, rng.next() as u8);
+            let n = match case % 4 {
+                0 => 0,
+                1 => 0xffff_ffff,
+                _ => 1 + rng.below(8),
+            };
+            let value = rng.next();
+            t.stub_sym(ml::TEX_TAG, 3, false, 3, 0, Ret::Val(0x40));
+            let args = [value, n, ctx, font];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            t.check(
+                "opd_num_put_hex_00a5eea0",
+                0x00a5_eea0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gl::put_hex(o, slots, value, n, ctx, font)),
+            );
+            t.same_stack("opd_num_put_hex_00a5eea0", slots, 16);
+            t.b_top = None;
+            t.reset();
+
+            // the motion command: each nibble
+            let unit = t.zeros(0x20);
+            t.w8(unit + 0x18, rng.below(240) as u8);
+            let host = t.zeros(0x400);
+            t.w32(host + 0x220, unit);
+            let nibble = [0_u16, 0x1000, 0x2000, 0x3000, 0x4000, 0xf000][(case % 6) as usize];
+            t.write(
+                host + 0x21a,
+                &(nibble | (rng.next() as u16 & 0xfff)).to_le_bytes(),
+            );
+            let cmd = t.zeros(4);
+            t.write(cmd + 2, &(rng.next() as u16).to_le_bytes());
+            for (k, (sym, n)) in [
+                (ml::COPY_1K_SAVE, 2),
+                (ml::COPY_1K_RESTORE, 2),
+                (ml::DRAW_MAIN_EFFECT, 1),
+                (ml::DRAW_SET_SITUATION, 2),
+                (ml::EN_CLIP, 2),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_sym(sym, 4 + k as u32, false, n, 0, Ret::Val(rng.next()));
+            }
+            t.zero_frames();
+            let ebp = (call_top(&t.a) - 24) & !0xf;
+            t.b_top = Some(ebp - 0x500);
+            t.check(
+                "opu_motion_etc_00804b70",
+                0x0080_4b70,
+                Conv::Cdecl,
+                &[host, cmd],
+                |o| Out::U32(gl::motion_etc(o, ebp - 0x410, host, cmd)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 8 (ffx_glue_other::m5v_m) ----
+
+#[test]
+fn r5v_opu_file_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c01);
+        for case in 0..24_u32 {
+            let cmd = t.zeros(10);
+            t.write(cmd + 2, &u16::from(case % 6 == 0).to_le_bytes());
+            for off in [4_u32, 6, 8] {
+                t.write(cmd + off, &(rng.below(4) as u16).to_le_bytes());
+            }
+            let chr = t.rebase(mm::ET_CHR);
+            let index = if case % 5 == 1 {
+                0xffff_ffff
+            } else {
+                rng.below(0xd0)
+            };
+            // (what index -1 would read: a handle)
+            t.patch(chr - 0x20, &rng.next().to_le_bytes());
+            if index != 0xffff_ffff {
+                let handle = if case % 7 == 2 { 0 } else { rng.next() };
+                t.patch(chr + (index << 5), &handle.to_le_bytes());
+            }
+            t.stub_sym(mm::CHR_INDEX_BY_NO, 1, false, 1, 0, Ret::Val(index));
+            t.stub_sym(mm::DBG_PRINTF, 2, false, 2, 0, Ret::Val(2));
+            t.stub_sym(mm::TEX_NB_IMAGE, 3, false, 1, 0, Ret::Val(rng.below(4)));
+            t.stub_sym(mm::TEX_NB_CLUT, 4, false, 1, 0, Ret::Val(rng.below(4)));
+            // the image size and palette count through their pointers
+            let mut code = vec![0x8b, 0x4c, 0x24, 0x0c, 0xc7, 0x01];
+            code.extend(rng.below(64).to_le_bytes());
+            code.extend([0x8b, 0x4c, 0x24, 0x10, 0xc7, 0x01]);
+            code.extend(rng.below(64).to_le_bytes());
+            t.stub_sym_x(mm::TEX_IMAGE, 5, false, 4, 0, Ret::Val(rng.next()), &code);
+            let mut code = vec![0x8b, 0x4c, 0x24, 0x0c, 0xc7, 0x01];
+            code.extend(rng.below(64).to_le_bytes());
+            t.stub_sym_x(mm::TEX_CLUT, 6, false, 3, 0, Ret::Val(rng.next()), &code);
+            t.import_sym(mm::SPRINTF_SLOT, 7, 4, 0, Ret::Val(7));
+            let fds: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            let seq = t.seq(&fds);
+            t.stub_sym(mm::SCE_OPEN, 8, false, 2, 0, seq);
+            t.stub_sym(mm::SCE_WRITE, 9, false, 3, 0, Ret::Val(9));
+            t.stub_sym(mm::SCE_CLOSE, 10, false, 1, 0, Ret::Val(10));
+            let host = rng.next();
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x280);
+            t.check("opu_file", 0x0081_4a00, Conv::Cdecl, &[host, cmd], |o| {
+                Out::U32(gm2::opu_file(o, ebp - 0x224, cmd))
+            });
+            // what the callees see: the size words and the path (the rest
+            // are the original's spills)
+            r5v_same(t, "opu_file sizes", ebp - 0x220, 8);
+            r5v_same(t, "opu_file count", ebp - 0x214, 4);
+            r5v_same(t, "opu_file path", ebp - 0x204, 0x200);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 9 (ffx_glue_other::m5v_n) ----
+
+#[test]
+fn r5v_vfx_setup_material_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0d01);
+        for case in 0..24_u32 {
+            let g = t.zeros(0x60);
+            t.w32(g + 0x3c, if case % 6 == 0 { 0 } else { 0xffff_ffff });
+            let owner = t.zeros(0x30);
+            let list = owner + 0x1c;
+            t.w32(list, if case % 2 == 0 { list } else { rng.next() });
+            t.w32(g + 0x20, owner);
+            t.w32(g + 0x2c, rng.next());
+            let segs = t.zeros(0x6c * 8);
+            for k in 0..8 {
+                t.w32(segs + 0x6c * k + 0x24, rng.next());
+            }
+            let mesh = t.zeros(0x98);
+            t.w32(mesh + 0x94, segs);
+            t.w32(g + 0x24, mesh);
+            let n = match case % 5 {
+                0 => 0,
+                1 => 1,
+                _ => 2 + rng.below(4),
+            };
+            let have = if case % 7 == 3 {
+                n.saturating_sub(1)
+            } else {
+                n
+            };
+            let items: Vec<u32> = (0..have).map(|_| rng.next()).collect();
+            let array = parray(t, &items, 0);
+            t.w32(g + 0x14, array);
+            // the names: some with "GL/" and a shader name after it
+            let mut hits = vec![];
+            let names: Vec<u32> = (0..n)
+                .map(|k| {
+                    let text: Vec<u8> = if rng.chance(3) {
+                        b"plain".to_vec()
+                    } else {
+                        format!("x/GL/shader{k}").into_bytes()
+                    };
+                    let mut z = text.clone();
+                    z.push(0);
+                    let at = t.alloc(&z);
+                    hits.push(
+                        text.windows(3)
+                            .position(|w| w == b"GL/")
+                            .map_or(0, |p| at + p as u32),
+                    );
+                    at
+                })
+                .collect();
+            let names_at = if names.is_empty() {
+                t.zeros(4)
+            } else {
+                t.words(&names)
+            };
+            t.stub_sym(mn::SETUP_MATERIAL, 1, true, 3, 3, Ret::Val(rng.next()));
+            let base = t.words(&[0, rng.next()]);
+            let mut code = vec![0xc7, 0x41, 0x0c];
+            code.extend(u32::from(case % 8 != 5).to_le_bytes()); // mov [ecx+0xc], found
+            code.extend([0xc7, 0x41, 0x10]);
+            code.extend(base.to_le_bytes()); // mov [ecx+0x10], base
+            code.extend([0xc7, 0x01]);
+            code.extend(4_u32.to_le_bytes()); // mov [ecx], 4
+            t.stub_sym_x(mn::CURSOR_SEEK4, 2, true, 0, 0, Ret::Val(2), &code);
+            let resized = if case % 9 == 4 { 0xd } else { 0 };
+            t.stub_sym(mn::RESIZE_INLINE, 3, true, 1, 1, Ret::Val(resized));
+            let blocks: Vec<u32> = (0..2).map(|_| t.zeros(0x40)).collect();
+            let seq = t.seq(&blocks);
+            t.stub_sym(mn::USER_MALLOC, 4, false, 1, 0, seq);
+            let code = memset_code();
+            t.stub_sym_x(mn::MEMSET, 5, false, 3, 0, Ret::Val(5), &code);
+            let seq = t.seq(&hits);
+            t.import_sym(mn::STRSTR_SLOT, 6, 2, 0, seq);
+            let code = memcpy_code();
+            t.extra = code;
+            let s = t.stub_code(7, false, 3, 0, Ret::Val(7), false);
+            let slot = t.rebase(mn::STRNCPY_SLOT);
+            t.patch(slot, &s.to_le_bytes());
+            let mats: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            let seq = t.seq(&mats);
+            t.stub_sym(mn::CREATE_MATERIAL, 8, true, 4, 4, seq);
+            t.stub_sym(mn::SHADER_MANAGER, 9, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mn::SETUP_SPECIAL, 10, true, 4, 4, Ret::Val(10));
+            let scene = rng.next();
+            t.global(mn::SCENE.sym, scene);
+            let args = [n, names_at, rng.next()];
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 3);
+            t.a.write(ebp - 0x84, &[0xaa; 0x80]).unwrap();
+            t.b.write(ebp - 0x84, &[0xaa; 0x80]).unwrap();
+            t.b_top = Some(ebp - 0x100);
+            t.check(
+                "VFXDynamicGeometry_setupMaterial_006a4240",
+                0x006a_4240,
+                Conv::Thiscall(g),
+                &args,
+                |o| {
+                    Out::U32(gn::setup_material(
+                        o,
+                        ebp - mn::FRAME,
+                        g,
+                        args[0],
+                        args[1],
+                        args[2],
+                    ))
+                },
+            );
+            // the cursor and the name (the rest are the original's spills)
+            r5v_same(t, "setupMaterial cursor", ebp - mn::FRAME, 0x20);
+            r5v_same(t, "setupMaterial name", ebp - 0x84, 0x80);
+            t.b_top = None;
             t.reset();
         }
     });

@@ -38,6 +38,7 @@ use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::{self as md, bridge as d};
 use ffx_prender::m5m_e::{self as me, bridge as e};
 use ffx_prender::m5m_f::{self as mf, bridge as f};
+use ffx_prender::m5m_g::{self as mg, bridge as g};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3251,6 +3252,119 @@ fn r5_rcbg_texts_match_the_original() {
                 |o| Out::U32(f::trx_save2(o, ebp - 0x14, tex, fd)),
             );
             r5_same(t, "rcbgTrxSave2_009399f0", ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 3 (ffx_prender::m5m_g) ----
+
+/// A recording stub over `sym` that returns the float at `cell` in ST0.
+fn r5_float_stub(t: &mut Twins, sym: u32, tag: u32, n: u32, cell: u32) {
+    let s = t.stub_code(tag, false, n, 0, Ret::Val(0), false);
+    let mut code = vec![0xd9, 0x05];
+    code.extend(cell.to_le_bytes()); // fld dword [cell]
+    code.push(0xe9);
+    let at = t.a.alloc_code(&[0; 16]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+    code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes()); // jmp s
+    t.write(at, &code);
+    t.jump(sym, at);
+}
+
+#[test]
+fn r5_scene_config_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f601);
+        for case in 0..24_u32 {
+            // the object keys: every keyword, unknown ones, the end
+            let obj = t.zeros(0xc0);
+            let n = rng.below(6);
+            let mut keys: Vec<u32> = (0..n)
+                .map(|_| match rng.below(12) {
+                    10 => 0xffff_ffff,
+                    11 => 9,
+                    k => k,
+                })
+                .collect();
+            if case % 4 == 0 {
+                keys.insert(0, 6);
+            }
+            keys.push(9);
+            let mut ends: Vec<u32> = (0..n).map(|_| 0).collect();
+            ends.insert(0, u32::from(case % 7 == 0));
+            ends.push(1);
+            let seq = t.seq(&keys);
+            t.stub_sym(mg::GET_KEYWORD, 1, false, 2, 0, seq);
+            let seq = t.seq(&ends);
+            t.stub_sym(mg::IS_END, 2, false, 1, 0, seq);
+            let ints: Vec<u32> = (0..8).map(|_| 0x8000_0000 ^ rng.word()).collect();
+            let seq = t.seq(&ints);
+            t.stub_sym(mg::GET_INT, 3, false, 1, 0, seq);
+            let cell = t.words(&[float_word(&mut rng)]);
+            r5_float_stub(t, mg::GET_FLOAT, 4, 1, cell);
+            t.stub_sym(mg::NEXT_TOKEN, 5, false, 1, 0, Ret::Val(5));
+            t.stub_sym(mg::ANIME_LOAD_CONFIG, 6, false, 2, 0, Ret::Val(6));
+            t.stub_sym(mg::PAL_LOAD_CONFIG, 7, false, 2, 0, Ret::Val(7));
+            let p = rng.next();
+            t.check(
+                "rcbgSceneLoadTextObjConfig_0093ab80",
+                0x0093_ab80,
+                Conv::Cdecl,
+                &[obj, p],
+                |o| Out::U32(g::obj_config(o, obj, p)),
+            );
+            t.reset();
+
+            // the file: not loaded, sections 0, 1 (up to the object count)
+            // and others
+            let objs = t.zeros(0xc0 * 3);
+            let scene = t.zeros(0x10);
+            t.w32(scene + 4, if case % 3 == 0 { 3 } else { rng.below(4) });
+            t.w32(scene + 8, objs);
+            let n = rng.below(6);
+            let keys: Vec<u32> = (0..n)
+                .map(|_| if case % 3 == 0 { 1 } else { rng.below(3) })
+                .collect();
+            let mut ends: Vec<u32> = vec![0; n as usize];
+            ends.push(1);
+            let seq = t.seq(&keys);
+            t.stub_sym(mg::GET_KEYWORD, 1, false, 2, 0, seq);
+            let seq = t.seq(&ends);
+            t.stub_sym(mg::IS_END, 2, false, 1, 0, seq);
+            for (k, sym) in [
+                mg::CHUNK_INIT,
+                mg::PARSE_INIT,
+                mg::PARSE_SET_MODE,
+                mg::PARSE_SET,
+                mg::CHUNK_FINI,
+                mg::PARSE_FINI,
+                mg::SCENE_CONFIG_KEYS,
+                mg::OBJ_CONFIG,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let words = match sym {
+                    mg::CHUNK_INIT | mg::PARSE_INIT | mg::CHUNK_FINI | mg::PARSE_FINI => 1,
+                    _ => 2,
+                };
+                t.stub_sym(sym, 3 + k as u32, false, words, 0, Ret::Val(k as u32));
+            }
+            let loaded = u32::from(case % 4 != 0);
+            t.stub_sym(mg::CHUNK_LOAD, 11, false, 2, 0, Ret::Val(loaded));
+            let name = rng.next();
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x100);
+            t.check(
+                "rcbgSceneLoadTextSubConfig",
+                0x0093_b590,
+                Conv::Cdecl,
+                &[scene, name],
+                |o| Out::U32(g::load_text_sub_config(o, ebp - 0x98, scene, name)),
+            );
             t.b_top = None;
             t.reset();
         }

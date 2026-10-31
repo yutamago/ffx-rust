@@ -178,6 +178,7 @@
 0x008005f0	10	0	op_debug_reset_008005f0
 0x00800970	73	0	opu_free_all_pobjects_00800970
 0x00800a30	71	0	opu_run_battle_host_00800a30
+0x00804b70	274	0	opu_motion_etc_00804b70
 0x0080a4b0	30	0	opus_map_back_color_restore_0080a4b0
 0x0080a4d0	141	0	opus_map_back_color_set_0080a4d0
 0x0081f760	16	0	SqsStraightStreamingRecord_0081f760

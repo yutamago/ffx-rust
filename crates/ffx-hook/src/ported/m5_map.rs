@@ -13,6 +13,7 @@ use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::bridge as d;
 use ffx_prender::m5m_e::bridge as e;
 use ffx_prender::m5m_f::bridge as f;
+use ffx_prender::m5m_g::bridge as g;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -498,5 +499,17 @@ ported! {
     rcbgTrxSave2_009399f0 @ 0x0093_99f0 => extern "C" fn trx_save2(t: u32, fd: u32) -> u32 {
         let mut frame = StackFrame::<4>::new();
         f::trx_save2(&mut mem(), frame.at(), t, fd)
+    }
+    // ---- round 5 batch 3 (ffx_prender::m5m_g) ----
+    /// `rcbgSceneLoadTextObjConfig_0093ab80(obj, p)` -> `rcdtParseIsEnd`'s
+    /// `eax` or 9.
+    rcbgSceneLoadTextObjConfig_0093ab80 @ 0x0093_ab80 => extern "C" fn obj_config(obj: u32, p: u32) -> u32 {
+        g::obj_config(&mut mem(), obj, p)
+    }
+    /// `rcbgSceneLoadTextSubConfig(scene, name)` -> 1/0: the chunk and
+    /// parser in this shim's frame.
+    rcbgSceneLoadTextSubConfig @ 0x0093_b590 => extern "C" fn load_text_sub_config(scene: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<0x26>::new();
+        g::load_text_sub_config(&mut mem(), frame.at(), scene, name)
     }
 }
