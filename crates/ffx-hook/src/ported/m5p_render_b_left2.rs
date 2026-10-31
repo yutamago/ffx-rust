@@ -19,4 +19,9 @@ ported! {
         let mut f = StackFrame::<{ lf::SAMPLER_FRAME_WORDS as usize }>::new();
         lb::init_sampler_shaders(&mut mem(), &const { lf::sampler_shaders_of(0x00a1_ae00) }, this, cluster, effect, f.at())
     }
+    /// `PGlowBase::initializeShaders(cluster, effect)`.
+    Phyre_PPostProcessing_PGlowBase_initializeShaders @ 0x00a1_a830 => extern "thiscall" fn init_glow_shaders(this: u32, cluster: u32, effect: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::SAMPLER_FRAME_WORDS as usize }>::new();
+        lb::init_sampler_shaders(&mut mem(), &const { lf::sampler_shaders_of(0x00a1_a830) }, this, cluster, effect, f.at())
+    }
 }

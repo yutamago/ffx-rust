@@ -4730,6 +4730,11 @@ fn left2_sampler_shaders_match_the_original() {
                 let this = t.junk(c.buffer as usize + 0x40, 3);
                 let guard_obj = t.zeros(0x20);
                 t.w32(this + c.base, if guard { guard_obj } else { 0 });
+                if c.guard_call != 0 {
+                    // the guard's getter (cdecl, the cluster)
+                    t.w32(this + c.base, 0x0bad_0bad);
+                    t.stub(c.guard_call, false, 1, 0, if guard { guard_obj } else { 0 });
+                }
                 // the constant buffer: {.., +4 data}; data [0] its size
                 let data = t.junk(0x80, 4);
                 t.w32(data, 0x80);
@@ -4765,6 +4770,18 @@ fn left2_sampler_shaders_match_the_original() {
                 t.write(p2 + 0xa, &o2[1].to_le_bytes());
                 let r1 = if has1 { p1 } else { 0 };
                 let r2 = if has2 { p2 } else { 0 };
+                // the vector parameter (the third copy): fits, none, does
+                // not fit
+                let p3 = t.zeros(0x10);
+                let (o3, sz3) = if k % 3 == 2 {
+                    (0x7cu16, 16u16)
+                } else {
+                    (0x40, 16)
+                };
+                t.write(p3 + 8, &o3.to_le_bytes());
+                t.write(p3 + 0xa, &sz3.to_le_bytes());
+                let r3 = if k % 3 == 1 { 0 } else { p3 };
+                let n3 = t.rebase(0x00b4_25e4);
                 let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
                 code.extend(n1.to_le_bytes()); // cmp eax, n1
                 code.extend([0x75, 0x08, 0xb8]); // jne +8; mov eax, r1
@@ -4773,6 +4790,10 @@ fn left2_sampler_shaders_match_the_original() {
                 code.extend(n2.to_le_bytes());
                 code.extend([0x75, 0x08, 0xb8]); // jne +8; mov eax, r2
                 code.extend(r2.to_le_bytes());
+                code.extend([0xc2, 0x04, 0x00, 0x3d]); // ret 4; cmp eax, n3
+                code.extend(n3.to_le_bytes());
+                code.extend([0x75, 0x08, 0xb8]); // jne +8; mov eax, r3
+                code.extend(r3.to_le_bytes());
                 code.extend([0xc2, 0x04, 0x00, 0x35]); // ret 4; xor eax, imm
                 code.extend(0x5a5a_0000u32.to_le_bytes());
                 code.extend([0xc2, 0x04, 0x00]); // ret 4
@@ -4789,14 +4810,20 @@ fn left2_sampler_shaders_match_the_original() {
                         .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
                 let top = t.b.stack_range().end - 0x100;
                 t.b.set_call_top(Some(top - 0x400));
-                let frame = top - 0x30;
+                // the records 0x20 (0x30 with the vector) under ebp
+                let frame = top - if c.vec_param != 0 { 0x40 } else { 0x30 };
                 let out =
                     l2b::init_sampler_shaders(&mut G(&mut t.b), &c, this, cluster, effect, frame);
                 t.b.set_call_top(None);
                 assert_eq!(ra.eax, out, "{what}: eax");
                 if guard && regs == [0, 0] && has1 && has2 && o1[0] >= 4 && o2[0] < 0x70 {
-                    let fa = Oracle::read(&mut t.a, frame, 0x20).unwrap();
-                    let fb = Oracle::read(&mut t.b, frame, 0x20).unwrap();
+                    let n = if c.vec_param != 0 && r3 != 0 {
+                        0x30
+                    } else {
+                        0x20
+                    };
+                    let fa = Oracle::read(&mut t.a, frame, n).unwrap();
+                    let fb = Oracle::read(&mut t.b, frame, n).unwrap();
                     assert_eq!(fa, fb, "{what}: the records");
                 }
                 t.diff(&what);

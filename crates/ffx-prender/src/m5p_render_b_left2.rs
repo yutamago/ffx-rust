@@ -47,21 +47,32 @@ pub const NVN_PARAMS: [(u32, u32); 22] = [
 pub struct SamplerShaders {
     /// The original's address.
     pub at: u32,
-    /// The sampler pair's base field (`+G`: the guard; `+G+4` and
-    /// `+G+0x28` the two sampler states; `[+G] + 0x10` the array).
+    /// The guard's field (`[+G] + 0x10` takes the instance array).
     pub base: u32,
+    /// 0: the guard is the field as it is; else a cdecl `(cluster)`
+    /// whose answer is stored there first.
+    pub guard_call: u32,
+    /// The two sampler states.
+    pub samplers: [u32; 2],
+    /// 0, or the field of a parameter that takes `{1, 1, 0, 0}` before
+    /// the samplers are registered.
+    pub vec_param: u32,
     /// Where the effect's constant buffer goes.
     pub buffer: u32,
     /// The parameters looked up by name and their fields.
     pub params: &'static [(u32, u32)],
 }
 
-/// The copies: `PMotionBlurBase::initializeCommonShaders` and
-/// `PScreenSpaceReflectionBase::initializeShaders`.
-pub const SAMPLER_SHADERS: [SamplerShaders; 2] = [
+/// The copies: `PMotionBlurBase::initializeCommonShaders`,
+/// `PScreenSpaceReflectionBase::initializeShaders` and
+/// `PGlowBase::initializeShaders`.
+pub const SAMPLER_SHADERS: [SamplerShaders; 3] = [
     SamplerShaders {
         at: 0x00a1_8c80,
         base: 0xcdc,
+        guard_call: 0,
+        samplers: [0xce0, 0xd04],
+        vec_param: 0,
         buffer: 0xd28,
         params: &[
             (0x00b4_25d8, 0xd2c),
@@ -77,6 +88,9 @@ pub const SAMPLER_SHADERS: [SamplerShaders; 2] = [
     SamplerShaders {
         at: 0x00a1_ae00,
         base: 0x1c,
+        guard_call: 0,
+        samplers: [0x20, 0x44],
+        vec_param: 0,
         buffer: 0x74,
         params: &[
             (0x00b4_25d8, 0x78),
@@ -86,6 +100,23 @@ pub const SAMPLER_SHADERS: [SamplerShaders; 2] = [
             (0x00b7_6c30, 0x88),
             (0x00b7_6c40, 0x8c),
             (0x00b7_6c54, 0x90),
+        ],
+    },
+    SamplerShaders {
+        at: 0x00a1_a830,
+        base: 0x5c,
+        guard_call: 0x00a0_6120,
+        samplers: [0x14, 0x38],
+        vec_param: 0x84,
+        buffer: 0x60,
+        params: &[
+            (0x00b7_6a8c, 0x74),
+            (0x00b4_25d8, 0x78),
+            (0x00b7_6a98, 0x7c),
+            (0x00b4_94d8, 0x80),
+            (0x00b4_25e4, 0x84),
+            (0x00b7_6aac, 0x88),
+            (0x00b7_6ac0, 0x8c),
         ],
     },
 ];
@@ -117,8 +148,10 @@ pub const SAMPLER_CALLS: [u32; 5] = [
 ];
 /// See [`SAMPLER_CALLS`].
 pub const SAMPLER_DATA: [u32; 4] = [0x00c9_98e8, 0x00b7_62d0, 0x00b3_018c, 0x47];
-/// The words of the shape's frame: the two 16-byte sampler records.
-pub const SAMPLER_FRAME_WORDS: u32 = 8;
+/// The words of the shape's frame: the second sampler's record, the
+/// first's, the `{1, 1, 0, 0}` vector (16 bytes each, as the original's
+/// frame from its lowest address).
+pub const SAMPLER_FRAME_WORDS: u32 = 12;
 
 /// The ports over game memory.
 pub mod bridge {
@@ -162,13 +195,26 @@ pub mod bridge {
         h.write(rec + 4, 0u32);
         h.write(rec + 8, sampler);
         h.write(rec + 0xc, 0u32);
+        copy_param(h, off, size, data, rec)
+    }
+
+    /// A parameter's bytes (offset `+8`, size `+0xa` 13 bits) copied from
+    /// `src` into the constant buffer `data`; `false` (error 3) when they
+    /// do not fit or the offset is under 4.
+    fn put_block(h: &mut impl Host, param: u32, data: u32, src: u32) -> bool {
+        let off = u32::from(h.read::<u16>(param + 8));
+        let size = u32::from(h.read::<u16>(param + 0xa) & 0x1fff);
+        copy_param(h, off, size, data, src)
+    }
+
+    fn copy_param(h: &mut impl Host, off: u32, size: u32, data: u32, src: u32) -> bool {
         if off.wrapping_add(size) > h.read::<u32>(data) || off < 4 {
             return false;
         }
         h.call_sym(
             SAMPLER_CALLS[1],
             Conv::Cdecl,
-            &[data.wrapping_add(off), rec, size],
+            &[data.wrapping_add(off), src, size],
         );
         true
     }
@@ -191,6 +237,10 @@ pub mod bridge {
         effect: u32,
         frame: u32,
     ) -> u32 {
+        if c.guard_call != 0 {
+            let g = h.call_sym(c.guard_call, Conv::Cdecl, &[cluster]);
+            h.write(this + c.base, g);
+        }
         if h.read::<u32>(this + c.base) == 0 {
             return NOT_READY;
         }
@@ -237,8 +287,23 @@ pub mod bridge {
         }
         let guard: u32 = h.read(this + c.base);
         h.write(guard + 0x10, arr);
-        let first = this + c.base + 4;
-        let second = this + c.base + 0x28;
+        if c.vec_param != 0 {
+            let p: u32 = h.read(this + c.vec_param);
+            if p != 0 {
+                let buf: u32 = h.read(this + c.buffer);
+                let data: u32 = h.read(buf + 4);
+                let v = frame + 0x20;
+                let one = 1.0f32.to_bits();
+                for (i, w) in [one, one, 0, 0].into_iter().enumerate() {
+                    h.write(v + 4 * i as u32, w);
+                }
+                if !put_block(h, p, data, v) {
+                    return 3;
+                }
+            }
+        }
+        let first = this + c.samplers[0];
+        let second = this + c.samplers[1];
         for s in [first, second] {
             let r = h.call_sym(SAMPLER_CALLS[4], Conv::Thiscall(s), &[]);
             if r != 0 {
