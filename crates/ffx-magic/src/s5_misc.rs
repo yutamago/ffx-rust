@@ -5894,11 +5894,11 @@ pub const ACTOR_CLIP_DRAW: Sig = Sig {
 /// slot 262 fills it, `y` = slot 268's point 6 `y` less `K3` times the
 /// height (slot 364 times slot 16, ST0 each), then `p.x = h` and `p.z = h
 /// K4` with `h` the same product again; the colour `(1, 1, 1, 1)`, the
-/// level `-((h + K5) a + (1 - a) K6 + p.y)` and the light colour `(b K7
-/// + 1 - b, b K7 + 1 - b, b K8 + 1 - b)` go to slot 818 `(slot 825 (ch),
-/// colour, light, &level, p)` with the lock `*G_L` held at 1. Each call
-/// sees the words the earlier ones left on the stack. Returns the lock's
-/// address.
+/// level `-((h + K5) a + (1 - a) K6 + p.y)` and the light colour
+/// `(b K7 + 1 - b, b K7 + 1 - b, b K8 + 1 - b)` go to slot 818
+/// `(slot 825 (ch), colour, light, &level, p)` with the lock `*G_L` held
+/// at 1. Each call sees the words the earlier ones left on the stack.
+/// Returns the lock's address.
 ///
 /// `magic_0052` 0x100015c0 (715 bytes; 2 DLLs).
 #[allow(clippy::too_many_lines)] // the original's sequence of slots and floats
