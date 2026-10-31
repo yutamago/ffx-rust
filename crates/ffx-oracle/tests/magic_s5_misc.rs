@@ -2634,3 +2634,17 @@ fn look_parts() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+#[test]
+fn wave_tables() {
+    let Some(mut t) = twin(430) else { return };
+    let f = t.at(0x1480);
+    let out = SCRATCH + 0x2000;
+    for a in [0.7f32, -2.5] {
+        t.write(out, &varied(33 * 33 * 8, a.to_bits()));
+        let c = Call::this(out).with_xmm(&[Xmm::f32(9.0), Xmm::f32(a)]);
+        t.check(f, c, &[], Eax::Junk, |g, img, fr| {
+            Ret::eax(s5_misc::wave_table(g, img, fr.at, fr.ecx, fr.xmm_f32(1)))
+        });
+    }
+}

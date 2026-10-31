@@ -27,7 +27,7 @@ use crate::sb_misc::{NODE_APPEND, POOL_TAKE, node_append, pool_take};
 use crate::sb_misc::{TIMELINE_STOP_GLOBAL, timeline_stop_global};
 use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
-use crate::{Callee, Frame, Game, Image, Out, Ret, Sig, Xmm};
+use crate::{Callee, Frame, Game, Image, Libm, Out, Ret, Sig, Xmm};
 
 /// The word at `f + off` of the code (an operand).
 fn op(img: &Image, f: u32, off: u32) -> u32 {
@@ -5537,5 +5537,102 @@ pub const LOOK_PART: Sig = Sig {
     len: 659,
     hash: 0xc9a5_d153_f55a_b190,
     calls: &[(0x28b, Callee::Any)],
+    imports: &[],
+};
+
+/// `f32` of `_libm_sse2_sin_precise` of `x` (the original's
+/// `cvtps2pd`/`cvtss2sd`, the call, `cvtsd2ss`).
+fn sin_f32<G: Game>(g: &mut G, x: f32) -> f32 {
+    g.libm(Libm::Sin, f64::from(x)) as f32
+}
+
+/// A 33 x 33 table of wave pairs (internal: `ecx` = the table, 8 bytes
+/// per entry; `xmm1` = the phase `a`). With `S = sin a`, for the rows `i`
+/// (the outer sum `v` from 0 by `K15`) and the columns (the inner sum
+/// `u` from 0 by `K1`), each entry is a pair of nested sines of the row
+/// and column angles (`s1 = sin(i K1 K2)`, `s2 = sin(u K2)`, blends of
+/// them by `K4`..`K7`, `K9`, `K10`), the first clamped to `[0, K3]`, the
+/// second to `[L, K13]` and divided by `K13`; every sine is
+/// `_libm_sse2_sin_precise` in double, rounded to `f32`. (`eax` is what
+/// the last sine left; the port returns 0.)
+///
+/// `magic_0430` 0x10001480 (675 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's nested sines, step by step
+pub fn wave_table<G: Game>(g: &mut G, img: &Image, f: u32, out: u32, a: f32) -> u32 {
+    let k = |g: &G, o: u32| g.read::<f32>(op(img, f, o));
+    let s = sin_f32(g, a);
+    let mut v = 0.0f32;
+    let mut out = out;
+    for i in 0..=0x20i32 {
+        let mut u = 0.0f32;
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+        let x = mul(mul(i as f32, k(g, 0x1b)), k(g, 0x46));
+        let s1 = sin_f32(g, x);
+        let t = sub(k(g, 0x56), s1);
+        let big_a = add(mul(t, k(g, 0x7c)), mul(s1, k(g, 0x6c)));
+        let big_b = add(mul(t, k(g, 0x84)), mul(s1, k(g, 0x93)));
+        let c = mul(mul(sin_f32(g, big_b), big_b), s);
+        for _ in 0..0x21 {
+            let s2 = sin_f32(g, mul(u, k(g, 0xd4)));
+            let w2 = add(mul(sub(k(g, 0xe4), s2), k(g, 0x101)), mul(s2, k(g, 0xf9)));
+            let p = mul(mul(sin_f32(g, w2), w2), s);
+            let q = sin_f32(g, p);
+            let r = sin_f32(g, mul(mul(q, big_a), s));
+            let r2 = sin_f32(g, mul(r, q));
+            let val = add(mul(mul(r2, k(g, 0x16b)), s2), u);
+            let one = k(g, 0x181);
+            let val = if 0.0 > val {
+                0.0
+            } else if val > one {
+                one
+            } else {
+                val
+            };
+            g.write::<f32>(out, val);
+            let s3 = sin_f32(g, u);
+            let c2 = sin_f32(g, c);
+            let m = add(mul(sub(k(g, 0x1bf), s3), k(g, 0x1d8)), mul(s3, k(g, 0x1cb)));
+            let m = mul(mul(m, c2), s);
+            let z = mul(sin_f32(g, m), c2);
+            let z2 = sin_f32(g, z);
+            let val2 = add(mul(mul(z2, k(g, 0x218)), s1), v);
+            let low = k(g, 0x20c);
+            let top = k(g, 0x258);
+            let num = if low > val2 {
+                low
+            } else if 0.0 > val2 {
+                0.0
+            } else if val2 > k(g, 0x236) {
+                k(g, 0x250)
+            } else {
+                val2
+            };
+            g.write::<f32>(out + 4, div(num, top));
+            u = add(u, k(g, 0x264));
+            out = out.wrapping_add(8);
+        }
+        v = add(v, k(g, 0x289));
+    }
+    0
+}
+
+/// [`wave_table`] (the `rel32`s: twelve `_libm_sse2_sin_precise`s).
+pub const WAVE_TABLE: Sig = Sig {
+    len: 675,
+    hash: 0x9003_a8f3_bcfe_c411,
+    calls: &[
+        (0x13, Callee::Import("_libm_sse2_sin_precise")),
+        (0x4e, Callee::Import("_libm_sse2_sin_precise")),
+        (0xa9, Callee::Import("_libm_sse2_sin_precise")),
+        (0xdc, Callee::Import("_libm_sse2_sin_precise")),
+        (0x112, Callee::Import("_libm_sse2_sin_precise")),
+        (0x129, Callee::Import("_libm_sse2_sin_precise")),
+        (0x145, Callee::Import("_libm_sse2_sin_precise")),
+        (0x157, Callee::Import("_libm_sse2_sin_precise")),
+        (0x195, Callee::Import("_libm_sse2_sin_precise")),
+        (0x1ab, Callee::Import("_libm_sse2_sin_precise")),
+        (0x1ed, Callee::Import("_libm_sse2_sin_precise")),
+        (0x1ff, Callee::Import("_libm_sse2_sin_precise")),
+    ],
     imports: &[],
 };
