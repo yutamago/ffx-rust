@@ -70,4 +70,11 @@ ported! {
         let mut f = StackFrame::<{ lf::XINPUT_FRAME_WORDS as usize }>::new();
         lb::xinput_pad_update(&mut mem(), this, f.at());
     }
+    /// `PMotionBlurBase::initializeCommonShaders(cluster, effect)` (the
+    /// generic two-sampler port in `ffx_prender::m5p_render_b_left2`).
+    Phyre_PPostProcessing_PMotionBlurBase_initializeCommonShaders @ 0x00a1_8c80 => extern "thiscall" fn init_motion_blur_shaders(this: u32, cluster: u32, effect: u32) -> u32 {
+        use ffx_prender::m5p_render_b_left2 as rf;
+        let mut f = StackFrame::<{ rf::SAMPLER_FRAME_WORDS as usize }>::new();
+        rf::bridge::init_sampler_shaders(&mut mem(), &const { rf::sampler_shaders_of(0x00a1_8c80) }, this, cluster, effect, f.at())
+    }
 }

@@ -4662,3 +4662,179 @@ fn left2_nvn_shaders_match_the_original() {
         t.reset();
     }
 }
+
+/// The two-sampler `initializeShaders` copies against their own
+/// originals: no guard, the previous buffer copied or not, the instance
+/// array's shapes, a sampler registration failing, the samplers fitting
+/// or not; the records compared in the original's frame when both are
+/// written.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case, columns named above
+fn left2_sampler_shaders_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for c in l2::SAMPLER_SHADERS {
+            // (guard, prev sizes equal, array head, registrations, p1, p2,
+            //  p1 offset/size, p2 offset/size)
+            let cases: [(
+                bool,
+                Option<bool>,
+                u32,
+                [u32; 2],
+                bool,
+                bool,
+                [u16; 2],
+                [u16; 2],
+            ); 12] = [
+                (false, None, 1, [0, 0], true, true, [8, 16], [0x20, 16]),
+                (true, None, 1, [0, 0], true, true, [8, 16], [0x20, 16]),
+                (true, Some(true), 0, [0, 0], true, true, [8, 16], [0x20, 16]),
+                (
+                    true,
+                    Some(false),
+                    2,
+                    [0, 0],
+                    true,
+                    true,
+                    [8, 0xe010],
+                    [0x20, 32],
+                ),
+                (
+                    true,
+                    None,
+                    0x8000_0003,
+                    [0, 0],
+                    true,
+                    true,
+                    [8, 16],
+                    [0x20, 16],
+                ),
+                (
+                    true,
+                    None,
+                    0x8000_0001,
+                    [5, 0],
+                    true,
+                    true,
+                    [8, 16],
+                    [0x20, 16],
+                ),
+                (true, None, 1, [0, 6], true, true, [8, 16], [0x20, 16]),
+                (true, None, 1, [0, 0], false, true, [8, 16], [0x20, 16]),
+                (true, None, 1, [0, 0], true, false, [2, 16], [0x20, 16]),
+                (true, None, 1, [0, 0], true, true, [8, 16], [0x78, 16]),
+                (true, None, 1, [0, 0], false, false, [8, 16], [0x20, 16]),
+                (true, None, 1, [0, 0], true, true, [8, 16], [0x70, 16]),
+            ];
+            for (k, &(guard, prev, head, regs, has1, has2, o1, o2)) in cases.iter().enumerate() {
+                let this = t.junk(c.buffer as usize + 0x40, 3);
+                let guard_obj = t.zeros(0x20);
+                t.w32(this + c.base, if guard { guard_obj } else { 0 });
+                // the constant buffer: {.., +4 data}; data [0] its size
+                let data = t.junk(0x80, 4);
+                t.w32(data, 0x80);
+                t.w32(data + 8, 0x8000_0010);
+                let buf = t.zeros(0x10);
+                t.w32(buf + 4, data);
+                t.stub(l2::SAMPLER_CALLS[0], true, 3, 3, buf);
+                if let Some(same) = prev {
+                    let src = t.junk(0x20, 5);
+                    t.w32(src, 0x10);
+                    t.w32(src + 8, if same { 0x10 } else { 0x11 });
+                    let p = t.zeros(8);
+                    t.w32(p + 4, src);
+                    t.w32(this + 8, p);
+                } else {
+                    t.w32(this + 8, 0);
+                }
+                let arr = t.junk(0x10, 6);
+                t.w32(arr, head);
+                t.stub(l2::SAMPLER_CALLS[2], true, 3, 3, arr);
+                t.stub(l2::SAMPLER_CALLS[3], false, 1, 0, 0);
+                let reg = seq_code(&mut t, regs);
+                place(&mut t, l2::SAMPLER_CALLS[4], reg);
+                // the parameter lookup: the two sampler names answer their
+                // records, the others name ^ 0x5a5a0000
+                let n1 = t.rebase(l2::SAMPLER_DATA[1]);
+                let n2 = t.rebase(l2::SAMPLER_DATA[2]);
+                let p1 = t.zeros(0x10);
+                t.write(p1 + 8, &o1[0].to_le_bytes());
+                t.write(p1 + 0xa, &o1[1].to_le_bytes());
+                let p2 = t.zeros(0x10);
+                t.write(p2 + 8, &o2[0].to_le_bytes());
+                t.write(p2 + 0xa, &o2[1].to_le_bytes());
+                let r1 = if has1 { p1 } else { 0 };
+                let r2 = if has2 { p2 } else { 0 };
+                let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
+                code.extend(n1.to_le_bytes()); // cmp eax, n1
+                code.extend([0x75, 0x08, 0xb8]); // jne +8; mov eax, r1
+                code.extend(r1.to_le_bytes());
+                code.extend([0xc2, 0x04, 0x00, 0x3d]); // ret 4; cmp eax, n2
+                code.extend(n2.to_le_bytes());
+                code.extend([0x75, 0x08, 0xb8]); // jne +8; mov eax, r2
+                code.extend(r2.to_le_bytes());
+                code.extend([0xc2, 0x04, 0x00, 0x35]); // ret 4; xor eax, imm
+                code.extend(0x5a5a_0000u32.to_le_bytes());
+                code.extend([0xc2, 0x04, 0x00]); // ret 4
+                let find = t.a.alloc_code(&code).unwrap();
+                assert_eq!(t.b.alloc_code(&code).unwrap(), find);
+                place(&mut t, l2::FIND_PARAM, find);
+                let (cluster, effect) = (0x0012_0000, 0x0034_0000);
+                let what = format!("{label}: sampler shaders {:#x} case {k}", c.at);
+                // the call pushes 2 words, the return address and ebp:
+                // the frame is 0x20 bytes under that
+                let addr = t.rebase(c.at);
+                let ra =
+                    t.a.call(addr, Conv::Thiscall(this), &[cluster, effect])
+                        .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+                let top = t.b.stack_range().end - 0x100;
+                t.b.set_call_top(Some(top - 0x400));
+                let frame = top - 0x30;
+                let out =
+                    l2b::init_sampler_shaders(&mut G(&mut t.b), &c, this, cluster, effect, frame);
+                t.b.set_call_top(None);
+                assert_eq!(ra.eax, out, "{what}: eax");
+                if guard && regs == [0, 0] && has1 && has2 && o1[0] >= 4 && o2[0] < 0x70 {
+                    let fa = Oracle::read(&mut t.a, frame, 0x20).unwrap();
+                    let fb = Oracle::read(&mut t.b, frame, 0x20).unwrap();
+                    assert_eq!(fa, fb, "{what}: the records");
+                }
+                t.diff(&what);
+                t.reset();
+            }
+        }
+    }
+}
+
+/// Code answering `values` in turn (then the last one again), no
+/// arguments popped; nothing logged.
+fn seq_code(t: &mut Twins, values: [u32; 2]) -> u32 {
+    let tab = t.alloc(
+        &[values[0], values[1], values[1]]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>(),
+    );
+    let cell = t.zeros(4);
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x83, 0xf8, 0x02, 0x74, 0x06]); // cmp eax, 2; je +6
+    c.extend([0xff, 0x05]);
+    c.extend(cell.to_le_bytes()); // inc dword [cell]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    c.push(0xc3);
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A `jmp` at `sym` to `code`.
+fn place(t: &mut Twins, sym: u32, code: u32) {
+    let at = t.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut t.a, at, 5).unwrap();
+    t.saved.entry(at).or_insert(old);
+    t.write(at, &j);
+}
