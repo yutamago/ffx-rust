@@ -3322,3 +3322,108 @@ fn left2_particle_system_ctor_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_dinput_pad_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::DINPUT_PAD[1], true, 0, 0, 3);
+        t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+        t.stub(l2::PRINTF, false, 3, 0, 0);
+        let povs = [
+            0u32,
+            4500,
+            9000,
+            13500,
+            18000,
+            22500,
+            27000,
+            31500,
+            1,
+            0xffff_ffff,
+        ];
+        // (connected answer, the flag, poll fails, acquire answers)
+        for (k, &pov) in povs.iter().enumerate() {
+            for (conn, flag, poll_fails) in [
+                (0u32, 0u8, false),
+                (0, 1, false),
+                (5, 1, true),
+                (5, 0, false),
+            ] {
+                // the DirectInput object: vt[5] (this, guid) answers conn
+                let di_vt: Vec<u32> = (0..6)
+                    .map(|i| t.stub_code(0x7200 + i, false, 2, 2, conn))
+                    .collect();
+                let di_vt = t.alloc(
+                    &di_vt
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let di = t.zeros(8);
+                t.w32(di, di_vt);
+                let cell = t.rebase(l2::DINPUT_PAD[0]);
+                t.w32(cell, di);
+                // the device: Acquire (slot 7) answers INPUTLOST twice;
+                // GetDeviceState (slot 9) fills the state; Poll (slot 25)
+                let mut words = vec![1u32; 26];
+                words[9] = 3;
+                let dev = t.com_object(&words);
+                let vt = t.r32(dev);
+                let acquire = seq_code(&mut t, 1, &[l2::DIERR_INPUTLOST, l2::DIERR_INPUTLOST, 0]);
+                let poll = t.stub_code(
+                    0x7300,
+                    false,
+                    1,
+                    1,
+                    if poll_fails {
+                        0x8000_0001
+                    } else {
+                        u32::from(conn != 0)
+                    },
+                );
+                // GetDeviceState: copy 0x110 bytes from `src` into [esp+0xc]
+                let src = t.junk(0x110, k as u8);
+                t.w32(src + 0x20, pov);
+                let mut c = vec![0x56, 0x57]; // push esi; push edi
+                c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+                c.push(0xbe);
+                c.extend(src.to_le_bytes()); // mov esi, src
+                c.push(0xb9);
+                c.extend(0x44u32.to_le_bytes()); // mov ecx, 0x44
+                c.extend([0xf3, 0xa5, 0x5f, 0x5e]); // rep movsd; pop edi; pop esi
+                c.extend([0x31, 0xc0, 0xc2, 0x0c, 0x00]); // xor eax, eax; ret 0xc
+                let get = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), get);
+                t.w32(vt + 7 * 4, acquire);
+                t.w32(vt + 9 * 4, get);
+                t.w32(vt + 25 * 4, poll);
+                let this = t.junk(0x3b0, 5);
+                t.w32(this + 0x14, dev);
+                t.w8(this + 0x69, flag);
+                let what = format!(
+                    "{label}: dinput pad pov {pov} conn {conn} flag {flag} poll fails {poll_fails}"
+                );
+                t.frame_len = 0x110;
+                t.check_frame(&what, 0x0062_d9d0, Conv::Thiscall(this), &[], 0x11c, |g| {
+                    let state = g.1;
+                    l2b::dinput_pad_update(g, this, state);
+                    Out::None
+                });
+            }
+        }
+        let this = t.junk(0x3b0, 6);
+        t.w32(this + 0x14, 0);
+        t.check(
+            &format!("{label}: dinput pad no device"),
+            0x0062_d9d0,
+            Conv::Thiscall(this),
+            &[],
+            |g| {
+                l2b::dinput_pad_update(g, this, 0);
+                Out::None
+            },
+        );
+        t.reset();
+    }
+}

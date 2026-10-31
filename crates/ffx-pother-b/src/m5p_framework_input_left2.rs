@@ -117,6 +117,21 @@ pub const PARTICLE_CALLS: [u32; 2] = [0x009f_c970, 0x0058_3b20];
 /// Its vtable and the float it puts in four words.
 pub const PARTICLE_DATA: [u32; 2] = [0x00b7_51b8, 0x00b4_12c4];
 
+/// The `DirectInput` pad's update: the `DirectInput` object's cell, the pad
+/// index getter (thiscall), the mappings' update (thiscall), the
+/// connected and disconnected messages.
+pub const DINPUT_PAD: [u32; 5] = [
+    0x00cc_9cd4,
+    0x0062_8170,
+    0x0062_d550,
+    0x00b4_109c,
+    0x00b4_10d8,
+];
+/// `DIERR_INPUTLOST`.
+pub const DIERR_INPUTLOST: u32 = 0x8007_001e;
+/// The words of `DIJOYSTATE2` ([`bridge::dinput_pad_update`]'s frame).
+pub const DIJOYSTATE2_WORDS: u32 = 0x44;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -125,6 +140,7 @@ pub mod bridge {
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
+    use super::{DIERR_INPUTLOST, DINPUT_PAD};
     use ffx_bridge::x87::Reg;
 
     fn import(h: &impl Mem, slot: u32) -> u32 {
@@ -682,5 +698,78 @@ pub mod bridge {
             }
         }
         this
+    }
+
+    /// `PInputDevicePadDirectInput::update` (`0x0062d9d0`, thiscall, the
+    /// device vtable's `+0x14`): with a `DirectInput` device (`+0x14`): the
+    /// connection state from the `DirectInput` object's `vt[5](guid +0x130)`
+    /// (a message when it changes, `+0x69`); a `DIJOYSTATE2` in `state`
+    /// (0x110 bytes, zeroed; the port's frame, the original's) filled by
+    /// `GetDeviceState` after a successful `Poll`, else the device
+    /// acquired again until it stops answering `DIERR_INPUTLOST`; the
+    /// axes (`+0x370/+0x37c/+0x374/+0x380`), the 16 buttons' top bits
+    /// (`+0x398`) and the POV's eight directions (`+0x3a4..+0x3a7`); then
+    /// the mappings updated (`0x0062d550`).
+    pub fn dinput_pad_update(h: &mut impl Host, this: u32, state: u32) {
+        let dev: u32 = h.read(this + 0x14);
+        if dev == 0 {
+            return;
+        }
+        let di: u32 = h.read(h.rebase(DINPUT_PAD[0]));
+        let vt: u32 = h.read(di);
+        let f: u32 = h.read(vt + 0x14);
+        let r = h.call(f, Conv::Stdcall, &[di, this + 0x130]);
+        let connected: u8 = h.read(this + 0x69);
+        let change = if r == 0 {
+            connected == 0
+        } else {
+            connected != 0
+        };
+        if change {
+            let index = h.call_sym(DINPUT_PAD[1], Conv::Thiscall(this), &[]);
+            let msg = h.rebase(if r == 0 { DINPUT_PAD[3] } else { DINPUT_PAD[4] });
+            h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, index]);
+            h.write(this + 0x69, u8::from(r == 0));
+        }
+        h.call_sym(MEMSET, Conv::Cdecl, &[state, 0, 0x110]);
+        let vt: u32 = h.read(dev);
+        let poll: u32 = h.read(vt + 0x64);
+        if h.call(poll, Conv::Stdcall, &[dev]).cast_signed() < 0 {
+            loop {
+                let vt: u32 = h.read(dev);
+                let acquire: u32 = h.read(vt + 0x1c);
+                if h.call(acquire, Conv::Stdcall, &[dev]) != DIERR_INPUTLOST {
+                    break;
+                }
+            }
+        } else {
+            let get: u32 = h.read(vt + 0x24);
+            h.call(get, Conv::Stdcall, &[dev, 0x110, state]);
+        }
+        for (from, to) in [(0, 0x370), (4, 0x37c), (8, 0x374), (0x14, 0x380)] {
+            let v: u32 = h.read(state + from);
+            h.write(this + to, v);
+        }
+        for i in 0..16 {
+            let b: u8 = h.read(state + 0x30 + i);
+            h.write(this + 0x398 + i, b >> 7);
+        }
+        let pov: u32 = h.read(state + 0x20);
+        h.write(this + 0x3a4, 0u32);
+        let set: &[u32] = match pov {
+            0 => &[0],
+            4500 => &[0, 1],
+            9000 => &[1],
+            13500 => &[1, 2],
+            18000 => &[2],
+            22500 => &[2, 3],
+            27000 => &[3],
+            31500 => &[0, 3],
+            _ => &[],
+        };
+        for &d in set {
+            h.write(this + 0x3a4 + d, 1u8);
+        }
+        h.call_sym(DINPUT_PAD[2], Conv::Thiscall(this), &[]);
     }
 }

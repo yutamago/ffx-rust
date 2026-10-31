@@ -60,4 +60,9 @@ ported! {
     Phyre_PPostProcessing_PMeshParticleSystemBase_ctor_009fc9e0 @ 0x009f_c9e0 => extern "thiscall" fn particle_system_ctor(this: u32) -> u32 {
         lb::particle_system_ctor(&mut mem(), this)
     }
+    /// `PInputDevicePadDirectInput::update()`.
+    PInputDevicePadDirectInput_update @ 0x0062_d9d0 => extern "thiscall" fn dinput_pad_update(this: u32) {
+        let mut f = StackFrame::<{ lf::DIJOYSTATE2_WORDS as usize }>::new();
+        lb::dinput_pad_update(&mut mem(), this, f.at());
+    }
 }
