@@ -1354,6 +1354,11 @@ ported! {
         let mut f = StackFrame::<{ (ui::FINAL_FRAME / 4) as usize }>::new();
         ui::graphic_final(&mut mem(), f.at() + ui::FINAL_FRAME, this)
     }
+    /// `Virtuos_InputManager_updateInput(this)`: frame `ebp - 0x24`.
+    Virtuos_InputManager_updateInput @ 0x0063_2a30 => extern "thiscall" fn update_input(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::UPDATE_FRAME / 4) as usize }>::new();
+        ip::update_input(&mut mem(), f.at() + ip::UPDATE_FRAME, this)
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's

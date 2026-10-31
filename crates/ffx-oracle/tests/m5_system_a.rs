@@ -7293,3 +7293,148 @@ fn ui_graphic_final_matches_the_original() {
         }
     });
 }
+
+// ---- round 3 (ffx_system::m5a_input: the pad update) ----
+
+/// A recording stub over the original at `sym` (`ecx`, `n` words, `pops`)
+/// returning `seq[k]` in `ST0` on its `k`-th call.
+fn stub_float_seq(t: &mut Twins, sym: u32, n: u32, pops: u32, seq: &[u32]) {
+    let log_stub = t.stub_code(sym, true, n, pops, 0);
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let mut c = vec![0xa1];
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0xd9, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // fld dword [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let addr = t.cave_code(&c);
+    t.jump(sym, addr);
+}
+
+/// `Virtuos_InputManager_updateInput` (framed: the axes, the callback's
+/// answer, the loop offsets; the SEH words skipped): the key aliases'
+/// latches, the callback absent, skipping or not, the free camera there,
+/// missing (created) and active or not, the escape menu, the pause and
+/// the controller thread on or off, the Eternal Calm scenes; the keys a
+/// sequence of answers (`al` 0 with high bits set now and then), the
+/// axes zeros, signed zeros, quiet NaNs or values (no signalling NaN: the
+/// emulator's `fld` keeps it signalling, the bridge's `ST0` read quiets
+/// it, and the stick axes are never one).
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the paths
+fn input_update_input_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0f01);
+        for case in 0..240 {
+            t.reset();
+            let app = rng.next();
+            t.stub(ip::GET_APPLICATION, false, 0, 0, app);
+            let dense = [0, 1, 3, 8, 24][rng.below(5) as usize];
+            let answer = |rng: &mut Rng| {
+                if dense > 0 && rng.below(dense) == 0 {
+                    rng.next() | 1
+                } else if rng.chance(3) {
+                    rng.next() & !0xff
+                } else {
+                    0
+                }
+            };
+            let held: Vec<u32> = (0..90).map(|_| answer(&mut rng)).collect();
+            stub_seq(t, ip::KEY_HELD, true, 2, 2, &held);
+            let down: Vec<u32> = (0..24).map(|_| answer(&mut rng)).collect();
+            stub_seq(t, ip::KEY_DOWN, true, 2, 2, &down);
+            let stick = |rng: &mut Rng| match rng.below(8) {
+                0..=3 => 0u32,
+                4 => 0x8000_0000,
+                5 => 0x7fc0_0001,
+                6 => 0xffc0_0000,
+                _ => (f32::from(rng.next() as i16) / 4096.0).to_bits(),
+            };
+            let axes: Vec<u32> = (0..4).map(|_| stick(&mut rng)).collect();
+            stub_float_seq(t, ip::AXIS, 2, 2, &axes);
+            let manager = rng.next();
+            t.stubs(&[
+                (ip::SET_KEY, true, 3, 3, rng.next()),
+                (ip::CLEAR_HOLD_TIMERS, true, 0, 0, rng.next()),
+                (ip::UPDATE_HOLD_TIMERS, true, 0, 0, rng.next()),
+                (ip::PUSH_CONTROLLER_INFO, true, 5, 5, rng.next()),
+                (ip::CONTROLLER_MANAGER, false, 0, 0, manager),
+                (
+                    ip::IS_ETERNAL_CALM,
+                    false,
+                    1,
+                    0,
+                    rng.next() * u32::from(rng.chance(2)),
+                ),
+            ]);
+            // the aliases' latches
+            let aliases = t.rebase(ip::KEY_ALIASES);
+            for k in 0..4 {
+                let latch = [0u8, 1, 1, 2][rng.below(4) as usize];
+                t.patch(aliases + 12 * k + 8, &[latch]);
+            }
+            // the free camera
+            let mut cam = vec![0u8; 0x340];
+            let flags = rng.below(8);
+            cam[0x338] = u8::from(flags & 1 != 0);
+            cam[0x33c] = u8::from(flags & 2 != 0);
+            cam[rng.below(4) as usize] = u8::from(flags & 4 != 0) << rng.below(8);
+            let cam = t.alloc(&cam);
+            if rng.chance(4) {
+                t.g32(ip::FREE_CAMERA, 0);
+                let block = t.alloc(&[0x5a; 0x340]);
+                t.stub(ip::OPERATOR_NEW, false, 1, 0, block);
+                t.stub(ip::FREE_CAMERA_CTOR, true, 0, 0, cam);
+            } else {
+                t.g32(ip::FREE_CAMERA, cam);
+            }
+            let mut menu = vec![0u8; 0x80];
+            menu[0x70] = u8::from(rng.chance(4)) << rng.below(8);
+            let menu = t.alloc(&menu);
+            t.g32(ip::ESC_MENU, menu);
+            t.g32(ip::PAUSE_ENTERED, rng.next() * u32::from(rng.chance(3)));
+            t.g32(
+                ip::ASYNC_CONTROLLER_ON,
+                rng.next() * u32::from(rng.chance(3)),
+            );
+            t.g32(ip::CURRENT_MAP, rng.next());
+            t.g32(ip::FORCED_ENCOUNT, rng.next());
+            // the bindings' bits single bits, so the pause's mask leaves some
+            let mapper: Vec<u32> = (0..0x240 / 4)
+                .map(|k| {
+                    if k % 2 == 1 {
+                        1 << rng.below(32)
+                    } else {
+                        rng.next()
+                    }
+                })
+                .collect();
+            let mapper = t.words(&mapper);
+            let mut words: Vec<u32> = (0..0xb8 / 4).map(|_| rng.next()).collect();
+            words[0xa4 / 4] = mapper;
+            words[0xb4 / 4] = if rng.chance(3) {
+                let skip = [0, 0x100 << rng.below(24), rng.next() | 1][rng.below(3) as usize];
+                let skip = t.words(&[skip]);
+                t.stub_code_writes(0x5600, false, 3, 0, rng.next(), 2, skip, 4)
+            } else {
+                0
+            };
+            let this = t.words(&words);
+            t.skip = 0xc;
+            let what = format!("Virtuos_InputManager_updateInput #{case}");
+            t.check_framed(
+                &what,
+                0x0063_2a30,
+                Conv::Thiscall(this),
+                &[],
+                ip::UPDATE_FRAME,
+                |m, ebp| Out::U32(ip::update_input(m, ebp, this)),
+            );
+            t.skip = 0;
+        }
+    });
+}

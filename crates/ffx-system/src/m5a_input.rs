@@ -5,6 +5,7 @@
 
 /// The originals over game memory and the original callees.
 pub mod bridge {
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     /// `KERNEL32!GetModuleHandleA`, `KERNEL32!InitializeCriticalSection`
@@ -916,5 +917,249 @@ pub mod bridge {
                 return h.read(at(0x20));
             }
         }
+    }
+
+    /// `Virtuos_InputManager_updateInput`'s callees (thiscall unless
+    /// noted): `Input_KeyHeld`, `Input_KeyDown` (`ret 8`, `al`),
+    /// `PInputMapper_setKey` (`ret 0xc`), `Phyre_PFramework_PApplication_isKeyDown`
+    /// (`ret 8`, `ST0`: a stick axis), `FreeCamera_FreeCamera`,
+    /// `InputManager_ClearHoldTimers`, `InputManager_UpdateHoldTimers`,
+    /// `AsyncControllerTaskManager_PushControllerInfo` (`ret 0x14`),
+    /// `isEternalCalmScene` (cdecl); and the globals it reads.
+    pub const KEY_HELD: u32 = 0x0062_9d50;
+    pub const KEY_DOWN: u32 = 0x0062_9ca0;
+    pub const SET_KEY: u32 = 0x0062_c990;
+    pub const AXIS: u32 = 0x0062_8460;
+    pub const FREE_CAMERA_CTOR: u32 = 0x0067_fe70;
+    pub const CLEAR_HOLD_TIMERS: u32 = 0x0063_1270;
+    pub const UPDATE_HOLD_TIMERS: u32 = 0x0063_30e0;
+    pub const PUSH_CONTROLLER_INFO: u32 = 0x0068_cc10;
+    pub const IS_ETERNAL_CALM: u32 = 0x0067_ab50;
+    pub const KEY_ALIASES: u32 = 0x00c3_2270;
+    pub const FREE_CAMERA: u32 = 0x00cc_c830;
+    pub const ESC_MENU: u32 = 0x00cc_c870;
+    pub const PAUSE_ENTERED: u32 = 0x0134_084c;
+    pub const ASYNC_CONTROLLER_ON: u32 = 0x0133_c930;
+    pub const FORCED_ENCOUNT: u32 = 0x0112_ca20;
+    pub const CURRENT_MAP: u32 = 0x012f_bc40;
+    /// `Phyre_PFramework_PApplication_GetApplication`,
+    /// `AsyncControllerTaskManager_sGetInstance` (cdecl, no arguments).
+    pub const GET_APPLICATION: u32 = 0x0062_3b90;
+    pub const CONTROLLER_MANAGER: u32 = 0x0068_dc10;
+    /// The frame of `updateInput`: the four axes at `ebp - 0x24..-0x18`,
+    /// the callback's answer at `ebp - 0x14`, the scratch word at `ebp -
+    /// 0x10` (the loop offsets, the new free camera).
+    pub const UPDATE_FRAME: u32 = 0x24;
+    /// The free camera's keys (`(binding, bit)` offsets in the mapper).
+    const CAMERA_KEYS: [(u32, u32); 11] = [
+        (0x140, 0x144),
+        (0xf0, 0xf4),
+        (0x100, 0x104),
+        (0xf8, 0xfc),
+        (0xe8, 0xec),
+        (0xe0, 0xe4),
+        (0x208, 0x20c),
+        (0x218, 0x21c),
+        (0x210, 0x214),
+        (0x200, 0x204),
+        (0x1f8, 0x1fc),
+    ];
+    /// The mapper words the pause leaves out of the pad word.
+    const PAUSE_MASKED: [u32; 14] = [
+        0x22c, 0x224, 0x21c, 0x214, 0x20c, 0x204, 0x1fc, 0x114, 0x10c, 0x104, 0xfc, 0xf4, 0xec,
+        0xe4,
+    ];
+
+    fn cdecl(h: &mut impl Host, f: u32, args: &[u32]) -> u32 {
+        h.call_sym(f, Conv::Cdecl, args)
+    }
+
+    fn app(h: &mut impl Host) -> u32 {
+        cdecl(h, GET_APPLICATION, &[])
+    }
+
+    /// `Input_KeyHeld` / `Input_KeyDown(app; binding, 0)`'s `al`.
+    fn key(h: &mut impl Host, f: u32, binding: u32) -> bool {
+        let a = app(h);
+        h.call_sym(f, Conv::Thiscall(a), &[binding, 0])
+            .to_le_bytes()[0]
+            != 0
+    }
+
+    /// The bits of the mapper's bindings `from..to` (8-byte `{binding,
+    /// bit}` entries) whose key `f` reports, the frame's scratch word
+    /// following the offset; `a8` set to the value given on each hit.
+    fn binding_bits(
+        h: &mut impl Host,
+        this: u32,
+        scratch: u32,
+        f: u32,
+        range: (u32, u32),
+        a8: Option<u32>,
+    ) -> u32 {
+        let mut bits = 0;
+        let mut off = range.0;
+        h.write(scratch, off);
+        while off < range.1 {
+            let m: u32 = h.read(this.wrapping_add(0xa4));
+            let binding: u32 = h.read(m.wrapping_add(off));
+            if key(h, f, binding) {
+                let m: u32 = h.read(this.wrapping_add(0xa4));
+                bits |= h.read::<u32>(m.wrapping_add(off + 4));
+                if let Some(v) = a8 {
+                    h.write(this.wrapping_add(0xa8), v);
+                }
+            }
+            off += 8;
+            h.write(scratch, off);
+        }
+        bits
+    }
+
+    /// `Virtuos_InputManager_updateInput(this)` (thiscall): the key
+    /// aliases (right Alt/Ctrl/Shift, keypad Enter) mapped onto their
+    /// left keys; the hook callback (`+0xb4(+0xac, +0xb0, &skip)`) may
+    /// skip the frame. With the free camera active (created on first
+    /// use) and no escape menu or pause, the pad word (`+0`, the old one
+    /// to `+4`) is the camera keys' bits and the axes 0. Otherwise the
+    /// pad: `g_BtlForcedEncount2` from key 0x10, the four stick axes,
+    /// the pad bindings (`+0x70..0xe0`, which set `+0xa8`), with no
+    /// button and no stick the keyboard bindings (`0..0x70`,
+    /// `0x188..0x1f8`, clearing `+0xa8`), then `0xe0..0x148` and
+    /// `0x1f8..0x238`; the axes and the word stored, or handed to the
+    /// controller thread (`g_AsyncControllerOn`); in the Eternal Calm
+    /// scenes the word is cleared unless the escape menu is up or keys
+    /// 0xf, 0x10 and 0x14 are all down, during the pause the menu
+    /// bindings' bits are left out. Ends with the hold timers (cleared
+    /// on the skip and camera paths, updated otherwise); their `eax`.
+    #[allow(clippy::too_many_lines)] // the original's two input paths
+    pub fn update_input(h: &mut impl Host, ebp: u32, this: u32) -> u32 {
+        let at = |off: u32| ebp.wrapping_sub(off);
+        let scratch = at(0x10);
+        let a = app(h);
+        let aliases = h.rebase(KEY_ALIASES);
+        for k in 0..4u32 {
+            let e = aliases.wrapping_add(12 * k);
+            let (src, dst): (u32, u32) = (h.read(e), h.read(e.wrapping_add(4)));
+            if h.call_sym(KEY_HELD, Conv::Thiscall(a), &[src, 0])
+                .to_le_bytes()[0]
+                != 0
+            {
+                h.call_sym(SET_KEY, Conv::Thiscall(a), &[dst, 1, 0]);
+                h.write(e.wrapping_add(8), 1u8);
+            } else {
+                let held = h
+                    .call_sym(KEY_HELD, Conv::Thiscall(a), &[src, 0])
+                    .to_le_bytes()[0];
+                if held == 0 && h.read::<u8>(e.wrapping_add(8)) == 1 {
+                    h.write(e.wrapping_add(8), held);
+                    h.call_sym(SET_KEY, Conv::Thiscall(a), &[dst, 0, 0]);
+                }
+            }
+        }
+        let cb: u32 = h.read(this.wrapping_add(0xb4));
+        if cb != 0 {
+            h.write(at(0x14), 0u32);
+            let x: u32 = h.read(this.wrapping_add(0xac));
+            let y: u32 = h.read(this.wrapping_add(0xb0));
+            h.call(cb, Conv::Cdecl, &[x, y, at(0x14)]);
+            if h.read::<u32>(at(0x14)) != 0 {
+                return h.call_sym(CLEAR_HOLD_TIMERS, Conv::Thiscall(this), &[]);
+            }
+        }
+        let cam_at = h.rebase(FREE_CAMERA);
+        let mut cam: u32 = h.read(cam_at);
+        if cam == 0 {
+            let p = cdecl(h, OPERATOR_NEW, &[0x340]);
+            h.write(scratch, p);
+            cam = if p == 0 {
+                0
+            } else {
+                h.call_sym(FREE_CAMERA_CTOR, Conv::Thiscall(p), &[])
+            };
+            h.write(cam_at, cam);
+        }
+        let menu: u32 = h.read(h.rebase(ESC_MENU));
+        let camera = (h.read::<u8>(cam.wrapping_add(0x338)) != 0
+            || h.read::<u8>(cam.wrapping_add(0x33c)) != 0
+            || h.read::<u32>(cam) != 0)
+            && h.read::<u8>(menu.wrapping_add(0x70)) == 0
+            && h.read::<u32>(h.rebase(PAUSE_ENTERED)) == 0;
+        if camera {
+            let mut bits = 0u32;
+            for (binding, bit) in CAMERA_KEYS {
+                let m: u32 = h.read(this.wrapping_add(0xa4));
+                let b: u32 = h.read(m.wrapping_add(binding));
+                if key(h, KEY_HELD, b) {
+                    let m: u32 = h.read(this.wrapping_add(0xa4));
+                    bits |= h.read::<u32>(m.wrapping_add(bit));
+                }
+            }
+            if h.read::<u32>(h.rebase(ASYNC_CONTROLLER_ON)) == 0 {
+                let old: u32 = h.read(this);
+                h.write(this.wrapping_add(4), old);
+                h.write(this, bits);
+                if h.read::<u32>(h.rebase(ASYNC_CONTROLLER_ON)) == 0 {
+                    for off in [0x8cu32, 0x90, 0x94, 0x98] {
+                        h.write(this.wrapping_add(off), 0u32);
+                    }
+                }
+            }
+            return h.call_sym(CLEAR_HOLD_TIMERS, Conv::Thiscall(this), &[]);
+        }
+        let forced = u32::from(key(h, KEY_DOWN, 0x10));
+        let out = h.rebase(FORCED_ENCOUNT);
+        h.write(out, forced);
+        let mut axes = [0u32; 4];
+        for (k, v) in (0u32..).zip(axes.iter_mut()) {
+            let a = app(h);
+            *v = h.call_sym_st0(AXIS, Conv::Thiscall(a), &[k, 0]).to_bits();
+            h.write(at(0x24 - 4 * k), *v);
+        }
+        let mut bits = binding_bits(h, this, scratch, KEY_DOWN, (0x70, 0xe0), Some(1));
+        let still = |v: u32| x87::load(v) == 0.0;
+        if bits == 0 && still(axes[0]) && still(axes[1]) {
+            bits |= binding_bits(h, this, scratch, KEY_HELD, (0, 0x70), Some(0));
+            bits |= binding_bits(h, this, scratch, KEY_HELD, (0x188, 0x1f8), Some(0));
+        }
+        bits |= binding_bits(h, this, scratch, KEY_HELD, (0xe0, 0x148), None);
+        bits |= binding_bits(h, this, scratch, KEY_HELD, (0x1f8, 0x238), None);
+        if h.read::<u32>(h.rebase(ASYNC_CONTROLLER_ON)) == 0 {
+            // `fld`/`fstp` of words an `fstp` wrote (never a signalling NaN):
+            // the same bits
+            for (k, v) in (0u32..).zip(axes) {
+                h.write(this.wrapping_add(0x8c + 4 * k), v);
+            }
+        } else {
+            let m = cdecl(h, CONTROLLER_MANAGER, &[]);
+            h.call_sym(
+                PUSH_CONTROLLER_INFO,
+                Conv::Thiscall(m),
+                &[bits, axes[0], axes[1], axes[2], axes[3]],
+            );
+        }
+        let map: u32 = h.read(h.rebase(CURRENT_MAP));
+        if cdecl(h, IS_ETERNAL_CALM, &[map]) != 0
+            && !(key(h, KEY_DOWN, 0xf) && key(h, KEY_DOWN, 0x10) && key(h, KEY_DOWN, 0x14))
+        {
+            let menu: u32 = h.read(h.rebase(ESC_MENU));
+            if h.read::<u8>(menu.wrapping_add(0x70)) == 0 {
+                bits = 0;
+            }
+        }
+        if h.read::<u32>(h.rebase(PAUSE_ENTERED)) != 0 {
+            let m: u32 = h.read(this.wrapping_add(0xa4));
+            let mut mask = 0u32;
+            for off in PAUSE_MASKED {
+                mask |= h.read::<u32>(m.wrapping_add(off));
+            }
+            bits &= !mask;
+        }
+        if h.read::<u32>(h.rebase(ASYNC_CONTROLLER_ON)) == 0 {
+            let old: u32 = h.read(this);
+            h.write(this.wrapping_add(4), old);
+            h.write(this, bits);
+        }
+        h.call_sym(UPDATE_HOLD_TIMERS, Conv::Thiscall(this), &[])
     }
 }
