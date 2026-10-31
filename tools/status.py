@@ -79,8 +79,9 @@ CACHE_VERSION = 4
 STATES = ["library", "unnamed", "named", "wrapped", "replaced"]
 # listed there, a function counts as done for a phase: not ported on purpose
 RESOLVED_FILES = ["symbols/m4-not-portable.tsv", "symbols/m5-not-portable.tsv", "symbols/m5-dropped.tsv"]
-# the forecast's paces: functions per day over the last N hours
-PACES = [6, 24, 72]
+# the forecast's paces: functions per day over the last N hours of data (the
+# first one is the headline)
+PACES = [1, 6, 24]
 # the timing log's top-level commands, by what they are for
 TIME_GROUPS = [
     ("Parity tests", lambda k: k == "cargo test"),
@@ -280,21 +281,25 @@ def addresses(text):
     return out
 
 
-def forecast(series, now, col=1):
+def forecast(series, col=1):
     """series: [[t, left, ...]] oldest first, col the column to use. The pace
-    over each of PACES (left gone per day; a window reaching before the
-    series counts from its start) and when the rest is done at it."""
-    out, left_now = [], series[-1][col]
+    over each of PACES (left gone per day) and when the rest is done at it.
+    The windows end at the last point, not now: a pause leaves the pace of
+    the last work, not a pace diluted by the idle days. Between two points
+    the value is interpolated; a window reaching before the series counts
+    from its start."""
+    out, (t_end, left_now) = [], (series[-1][0], series[-1][col])
     for h in PACES:
-        t0 = max(now - h * 3600, series[0][0])
+        t0 = max(t_end - h * 3600, series[0][0])
         before = series[0][col]
-        for point in series:
-            if point[0] <= t0:
-                before = point[col]
-        span = (now - t0) / 86400
-        rate = (before - left_now) / span if span > 1 / 24 else 0
+        for a, b in zip(series, series[1:]):
+            if a[0] <= t0 <= b[0]:
+                before = a[col] + (b[col] - a[col]) * (t0 - a[0]) / (b[0] - a[0] or 1)
+                break
+        span = (t_end - t0) / 86400
+        rate = (before - left_now) / span if span > 0 else 0
         out.append({"hours": h, "span": round(span * 24, 1), "per_day": round(rate, 1),
-                    "eta": int(now + left_now / rate * 86400) if rate > 0 and left_now else None})
+                    "eta": int(t_end + left_now / rate * 86400) if rate > 0 and left_now else None})
     return out
 
 
@@ -346,7 +351,7 @@ def list_phase(p, hooked, resolved, history, size_of, now):
                       "done_bytes": sum(size_of.get(a, 0) for a in d)})
     return {"unit": "functions", "total": len(target), "done": len(done_now), "left": left,
             "bytes": total_bytes, "done_bytes": done_bytes, "series": series,
-            "pace": forecast(series, now), "pace_bytes": forecast(series, now, 2), "lists": lists,
+            "pace": forecast(series), "pace_bytes": forecast(series, 2), "lists": lists,
             "targets": {a: (1 if a in done_now else 0) for a in target}}
 
 
@@ -379,9 +384,8 @@ def magic_phase(p, now):
         out.update(dlls=n, dlls_done=done, instances=fns, covered=covered)
     # the units' total is not in the files: the first run's left plus what
     # the ports covered by then is unknown, so the bar is the DLLs' functions
-    # paced at the last run: between runs nothing is measured
     series = [[t, units] for t, units, _ in snaps]
-    out.update(series=series, pace=forecast(series, series[-1][0]),
+    out.update(series=series, pace=forecast(series),
                snapshots=len(snaps), measured=snaps[-1][0])
     return out
 
