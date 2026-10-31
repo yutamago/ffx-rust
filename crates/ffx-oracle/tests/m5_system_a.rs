@@ -32,8 +32,10 @@ use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
+use ffx_system::m5a_savedata3::bridge as s3;
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_ui::bridge as ui;
 use ffx_system::m5a_vfs::bridge as vf;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -6283,6 +6285,271 @@ fn input_add_pad_device_matches_the_original() {
                 ip::PAD_FRAME,
                 |m, ebp| {
                     ip::add_pad_device(m, ebp, instance);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_ui) ----
+
+/// `0x0067ad30` (the graphic UI constructor): the record initialisers
+/// stubbed without a log (2,804 calls; each returns its buffer argument
+/// xor a constant, so the stored words show the buffers passed), the
+/// buffer allocation stubbed to set the buffers and record sizes, the
+/// aligned allocations a sequence (one failing now and then: both fault,
+/// so that case is left out).
+#[test]
+fn ui_ctor_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0701);
+        for case in 0..6 {
+            t.reset();
+            let this = t.alloc(&(0..0x2ec34).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let (b0, b1) = (rng.next(), rng.next());
+            let (s0, s1) = (rng.below(0x400), rng.below(0x400));
+            let mut c = Vec::new();
+            for (off, v) in [(0x5b80u32, b0), (0x5b84, b1), (0x5b94, s0), (0x5b98, s1)] {
+                c.extend([0xc7, 0x81]);
+                c.extend(off.to_le_bytes());
+                c.extend(v.to_le_bytes()); // mov dword [ecx+off], v
+            }
+            c.push(0xc3);
+            let alloc = t.cave_code(&c);
+            t.jump(ui::ALLOC_BUFFERS, alloc);
+            for (sym, k) in [
+                (ui::INIT_SINGLE, 0x5111_1111u32),
+                (ui::INIT_MULTI, 0x2222_2222),
+            ] {
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x35]; // mov eax, [esp+4]; xor eax, k
+                c.extend(k.to_le_bytes());
+                c.extend([0xc2, 0x04, 0x00]); // ret 4
+                let at = t.cave_code(&c);
+                t.jump(sym, at);
+            }
+            let blocks = [
+                t.zeros(0x960),
+                t.zeros(0xc80),
+                t.zeros(0x960),
+                t.zeros(0xc80),
+            ];
+            stub_seq(t, ui::MALLOC_ALIGNED, false, 2, 0, &blocks);
+            t.stub(ui::PHYRE_FREE, false, 1, 0, rng.next());
+            t.stub(ui::MEMSET, false, 3, 0, rng.next());
+            let what = format!("0x0067ad30 #{case}");
+            t.check(&what, 0x0067_ad30, Conv::Thiscall(this), &[], |m| {
+                Out::U32(ui::ctor(m, this))
+            });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_savedata3) ----
+
+/// `SaveDataMachine_ScanFiles` (framed: the time zone, file time and
+/// `SYSTEMTIME`s the stubs write, the path): about one file in eight
+/// there (file 0 or not), `GetFileTime` failing now and then (the local
+/// time then the previous file's, or the zeroed frame's), the save state
+/// or another, the list full or not.
+#[test]
+fn save3_scan_files_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0801);
+        for case in 0..16 {
+            t.reset();
+            t.g32(s2::FOLDER_SET, 1);
+            let full = rng.chance(3);
+            // one file missing: 198 besides file 0, just short of full
+            let gap = if rng.chance(2) {
+                1 + rng.below(199)
+            } else {
+                1000
+            };
+            let files: Vec<u32> = (0..200)
+                .map(|i| {
+                    let there = if full {
+                        (i > 0 && i != gap) || rng.chance(2)
+                    } else {
+                        (i == 0 && rng.chance(2)) || rng.chance(8)
+                    };
+                    if there { 0x100 + i } else { u32::MAX }
+                })
+                .collect();
+            t.stub_import(s3::GET_TIME_ZONE_IAT, false, 1, 1, rng.next());
+            // wsprintfW unlogged (the log holds 1,024 calls): the path
+            // reaches CreateFileW, which logs it
+            // it counts each file number and keeps the last of its other words
+            let numbers = t.zeros(0x100);
+            let last = t.zeros(16);
+            let k = rng.next();
+            let mut c = Vec::new();
+            for (i, off) in [(0u32, 4u8), (1, 8), (2, 0xc), (3, 0x10)] {
+                c.extend([0x8b, 0x4c, 0x24, off]); // mov ecx, [esp+off]
+                c.extend([0x89, 0x0d]);
+                c.extend((last + 4 * i).to_le_bytes()); // mov [last+4i], ecx
+            }
+            c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14]
+            c.extend([0xfe, 0x80]);
+            c.extend(numbers.to_le_bytes()); // inc byte [eax+numbers]
+            c.push(0xb8);
+            c.extend(k.to_le_bytes()); // mov eax, k
+            c.push(0xc3);
+            let ws = t.cave_code(&c);
+            let at = t.rebase(s3::WSPRINTFW_IAT);
+            t.patch(at, &ws.to_le_bytes());
+            t.stub_import_seq(s3::CREATE_FILE_IAT, 7, 7, &files);
+            let times: Vec<u32> = (0..200).map(|_| u32::from(!rng.chance(4))).collect();
+            t.stub_import_seq(s3::GET_FILE_TIME_IAT, 4, 4, &times);
+            t.stub_import(s3::FILE_TIME_TO_SYSTEM_TIME_IAT, false, 2, 2, rng.next());
+            let st: Vec<u8> = [
+                2000 + rng.below(30),
+                1 + rng.below(12),
+                rng.below(7),
+                1 + rng.below(28),
+                rng.below(24),
+                rng.below(60),
+                rng.below(60),
+                rng.below(1000),
+            ]
+            .iter()
+            .flat_map(|&v| (v as u16).to_le_bytes())
+            .collect();
+            let src = t.alloc(&st);
+            let r = rng.next();
+            let s = t.stub_code_writes(s3::TO_LOCAL_TIME_IAT, false, 3, 3, r, 2, src, 16);
+            let at = t.rebase(s3::TO_LOCAL_TIME_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(s3::CLOSE_HANDLE_IAT, false, 1, 1, rng.next());
+            t.g32(sv::STATE, if rng.chance(2) { 1 } else { rng.below(30) });
+            // _chkstk leaves its own words at ebp - 8 (the cookie at ebp - 4)
+            t.skip = 8;
+            let what = format!("ScanFiles #{case} full {full}");
+            t.check_framed(
+                &what,
+                0x006f_0a70,
+                Conv::Cdecl,
+                &[],
+                s3::SCAN_FRAME,
+                |m, ebp| Out::U32(s3::scan_files(m, ebp)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// An `sprintf` stub bound to `slot`: logs the buffer, the format and
+/// the words each of the game's formats takes (`counts`: format address
+/// and its word count after the format; others 1).
+fn stub_sprintf(t: &mut Twins, slot: u32, counts: &[(u32, u32)]) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(slot.to_le_bytes()); // mov [eax], tag
+    let word = |c: &mut Vec<u8>, i: u32| {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    };
+    for i in 0..3 {
+        word(&mut c, i);
+    }
+    for &(fmt, n) in counts {
+        let mut rest = Vec::new();
+        for i in 3..2 + n {
+            word(&mut rest, i);
+        }
+        c.extend([0x81, 0x7c, 0x24, 0x08]);
+        c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+        c.extend([0x75, rest.len() as u8]); // jne past
+        c.extend(rest);
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+    let addr = t.cave_code(&c);
+    let at = t.rebase(slot);
+    t.patch(at, &addr.to_le_bytes());
+}
+
+/// `SaveDataMachine_ReadHeaders` (framed: the header `fread` fills, the
+/// path): rows from 0 in the save state (full or not) and from later
+/// rows, files that don't open, maps 0 or not, short headers, every
+/// picture case, file 0 in the load states and others; the callees and
+/// imports stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the row texts
+fn save3_read_headers_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0802);
+        for case in 0..60 {
+            t.reset();
+            t.g32(s2::FOLDER_SET, 1);
+            t.g32(
+                sv::STATE,
+                [1, 0xb, 0x15, rng.below(30)][rng.below(4) as usize],
+            );
+            t.g32(sv::FULL, u32::from(rng.chance(3)));
+            let files: Vec<u32> = (0..12)
+                .flat_map(|_| {
+                    [
+                        rng.below(200),
+                        rng.next() >> rng.below(32),
+                        rng.below(90_000),
+                    ]
+                })
+                .collect();
+            let at = t.rebase(sv::FILES);
+            let bytes: Vec<u8> = files.iter().flat_map(|w| w.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            t.stub_import(s3::WSPRINTFW_IAT, false, 5, 0, rng.next());
+            let opens: Vec<u32> = (0..12)
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        0x7700 + rng.below(0x100)
+                    }
+                })
+                .collect();
+            t.stub_import_seq(s3::WFOPEN_IAT, 2, 0, &opens);
+            let mut hdr: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            if rng.chance(3) {
+                hdr[0x18] = 0;
+                hdr[0x19] = 0;
+            }
+            let src = t.alloc(&hdr);
+            let max = if rng.chance(4) { rng.below(0x40) } else { 0x40 };
+            t.stub_import_fill(s3::FREAD_IAT, src, max, rng.next());
+            t.stub_import(s3::FCLOSE_IAT, false, 1, 0, rng.next());
+            let counts = [(t.rebase(s3::F_DATE), 6), (t.rebase(s3::F_TIME), 4)];
+            stub_sprintf(t, s3::SPRINTF_IAT, &counts);
+            let pic = [0, 1, 999, 1000, 1001, rng.below(3000)][rng.below(6) as usize];
+            t.stubs(&[
+                (s3::NEW_FILE_ROW, false, 0, 0, rng.next()),
+                (s3::FILE_ROW, false, 12, 0, rng.next()),
+                (s3::SAVE_DIC_NAME, false, 2, 0, rng.next()),
+                (s3::TO_UTF8, false, 2, 0, rng.next()),
+                (s3::GET_LOC, false, 2, 0, rng.next()),
+                (s3::FIX_MAPPIC, false, 1, 0, pic),
+                (s3::JAPAN_LOGO, false, 0, 0, u32::from(rng.chance(2))),
+            ]);
+            let first = if rng.chance(2) { 0 } else { rng.below(4) };
+            let end = first + rng.below(8);
+            t.skip = 4;
+            let what = format!("ReadHeaders #{case} {first}..{end} pic {pic}");
+            t.check_framed(
+                &what,
+                0x006f_0c60,
+                Conv::Cdecl,
+                &[first, end],
+                s3::HEADERS_FRAME,
+                |m, ebp| {
+                    s3::read_headers(m, ebp, first, end);
                     Out::None
                 },
             );

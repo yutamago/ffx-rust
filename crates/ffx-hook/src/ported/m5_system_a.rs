@@ -17,8 +17,10 @@ use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
+use ffx_system::m5a_savedata3::bridge as s3;
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_ui::bridge as ui;
 use ffx_system::m5a_vfs::bridge as vf;
 
 ported! {
@@ -1299,6 +1301,20 @@ ported! {
     Input_AddPadDevice @ 0x0062_40e0 => extern "C" fn add_pad_device(instance: u32) {
         let mut f = StackFrame::<{ (ip::PAD_FRAME / 4) as usize }>::new();
         ip::add_pad_device(&mut mem(), f.at() + ip::PAD_FRAME, instance);
+    }
+    /// `0x0067ad30(this)`: the graphic UI object's constructor.
+    GraphicUi_ctor_0067ad30 @ 0x0067_ad30 => extern "thiscall" fn graphic_ui_ctor(this: u32) -> u32 {
+        ui::ctor(&mut mem(), this)
+    }
+    /// `SaveDataMachine_ScanFiles()`: frame `ebp - 0x4dc`.
+    SaveDataMachine_ScanFiles @ 0x006f_0a70 => extern "C" fn scan_files() -> u32 {
+        let mut f = StackFrame::<{ (s3::SCAN_FRAME / 4) as usize }>::new();
+        s3::scan_files(&mut mem(), f.at() + s3::SCAN_FRAME)
+    }
+    /// `SaveDataMachine_ReadHeaders(first, end)`: frame `ebp - 0x444`.
+    SaveDataMachine_ReadHeaders @ 0x006f_0c60 => extern "C" fn read_headers(first: u32, end: u32) {
+        let mut f = StackFrame::<{ (s3::HEADERS_FRAME / 4) as usize }>::new();
+        s3::read_headers(&mut mem(), f.at() + s3::HEADERS_FRAME, first, end);
     }
 }
 
