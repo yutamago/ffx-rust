@@ -3101,3 +3101,28 @@ fn particles_e_and_camera_places() {
     t.write(obj, &[0x33; 0x100]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
 }
+
+#[test]
+fn trail_steps() {
+    for (n, rva, count_at, points, flag_at) in [
+        (180u16, 0x2a20u32, 0x248u32, 0x24u32, 0x284u32),
+        (18, 0x3630, 0x354, 0x130, 0x394),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        recs(&mut t, &[(235, 1)]);
+        let (task, trail) = (SCRATCH + 0x100, SCRATCH + 0x1000);
+        for count in [0u32, 0xffff_ffff, 40] {
+            t.write(trail, &[0; 0x400]);
+            t.set_u32(trail + count_at, count);
+            t.set_u16(trail + flag_at, 0x0101);
+            // no sprites: the draw ends at once
+            t.set_u32(trail + points + 0x224, 0);
+            t.write(task, &[0; 0x20]);
+            t.write(task + 0x100, &[0; 0x20]);
+            t.set_u32(task + 8, task + 0x100);
+            t.set_u32(task + 0x14, trail);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}

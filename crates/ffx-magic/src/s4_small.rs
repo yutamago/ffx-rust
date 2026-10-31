@@ -6681,3 +6681,91 @@ pub const CAMERA_PLACE: Sig = Sig {
     calls: &[(0x9f, Callee::Any)],
     imports: &[],
 };
+
+/// A trail task's step (cdecl `(task)`; a /GS frame; the trail `task +
+/// 0x14`, its fields the displacements of the code): while its count is
+/// above 0, the count is scaled by `K` (operand `+0x2c`, truncated), slot
+/// 235 fills a frame matrix whose diagonal becomes the trail's scale and
+/// the trail is drawn ([`crate::s4_misc::trail_draw`], `ecx` the trail's
+/// points, `edx` the matrix, its place on the stack); else the trail is
+/// flagged done (bit 15) and the task given back ([`give_back`]).
+/// `long` is whether the points' displacement is 32-bit (3 bytes more of
+/// code from there on). Returns the draw's or the give-back's `eax`.
+fn trail_step<G: Game>(g: &mut G, img: &Image, fr: &Frame, long: bool) -> Ret {
+    use crate::sb_sse::{cvt, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let sh = if long { 3 } else { 0 };
+    let task = fr.arg(g, 0);
+    let trail = g.read::<u32>(task.wrapping_add(0x14));
+    let count_at = trail.wrapping_add(w(0x19));
+    let n = g.read::<i32>(count_at);
+    if n <= 0 {
+        let flags = trail.wrapping_add(w(0x8e + sh));
+        let v = g.read::<u16>(flags);
+        g.write::<u16>(flags, v | 0x8000);
+        return Ret::eax(give_back(g, img, img.rel32_target(f + 0x93 + sh), task));
+    }
+    let k = f32::from_bits(g.read::<u32>(w(0x2c)));
+    g.write::<u32>(count_at, trunc(mul(cvt(n.cast_unsigned()), k)));
+    let ebp = fr.esp.wrapping_sub(4);
+    let m = ebp.wrapping_sub(0x4c);
+    slot_call(g, img, f, (0x3f, 235), &[m]);
+    let scale = g.read::<u32>(trail.wrapping_add(w(0x4f)));
+    for off in [0x28, 0x14, 0] {
+        g.write::<u32>(m + off, scale);
+    }
+    let points = trail.wrapping_add(if long { w(0x5c) } else { w(0x5c) & 0xff });
+    // push esi, slot 235's word, the place, then the call
+    let esp = ebp.wrapping_sub(0x60);
+    g.write::<u32>(esp + 4, trail.wrapping_add(w(0x55)));
+    g.write::<u32>(esp + 8, m);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x70 + sh),
+        esp,
+        ecx: points,
+        edx: m,
+        ..*fr
+    };
+    Ret::eax(crate::s4_misc::trail_draw(g, img, &callee))
+}
+
+/// [`trail_step`] with the points at `+0x24`.
+///
+/// `magic_0180` 0x10002a20 (166 bytes; 2 DLLs).
+pub fn trail_step_short<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    trail_step(g, img, fr, false)
+}
+
+/// [`trail_step_short`] (the cookie checks `Any`).
+pub const TRAIL_STEP_SHORT: Sig = Sig {
+    len: 166,
+    hash: 0x6603_0c4b_f580_622e,
+    calls: &[
+        (0x70, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x7e, Callee::Any),
+        (0x93, Callee::Sig(&GIVE_BACK)),
+        (0x9e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_step`] with the points at `+0x130`.
+///
+/// `magic_0018` 0x10003630 (169 bytes; 4 DLLs).
+pub fn trail_step_long<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    trail_step(g, img, fr, true)
+}
+
+/// [`trail_step_long`].
+pub const TRAIL_STEP_LONG: Sig = Sig {
+    len: 169,
+    hash: 0xd9ef_74d7_bc57_0ca9,
+    calls: &[
+        (0x73, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x81, Callee::Any),
+        (0x96, Callee::Sig(&GIVE_BACK)),
+        (0xa1, Callee::Any),
+    ],
+    imports: &[],
+};

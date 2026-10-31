@@ -1153,6 +1153,8 @@ ports! {
     "colour state task" => s4_small::COLOUR_STATE_TASK, s4_small::colour_state_task;
     "particles start (e)" => s4_small::PARTICLES_START_E, s4_small::particles_start_e;
     "camera place" => s4_small::CAMERA_PLACE, s4_small::camera_place;
+    "trail step (short)" => s4_small::TRAIL_STEP_SHORT, s4_small::trail_step_short;
+    "trail step (long)" => s4_small::TRAIL_STEP_LONG, s4_small::trail_step_long;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
