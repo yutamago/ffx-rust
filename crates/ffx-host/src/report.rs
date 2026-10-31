@@ -273,6 +273,9 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
             let _ = writeln!(out, "  {n}");
         }
     }
+    for line in crate::library::summary() {
+        let _ = writeln!(out, "{line}");
+    }
     let _ = writeln!(out, "message boxes: {:?}", st.messages);
     let _ = writeln!(out, "files tried: {:?}", exec.files().log);
     let dlls: Vec<String> = shared

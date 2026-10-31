@@ -1315,6 +1315,10 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
 /// Ends the process at once (the hook's `quit` does the same: the game's
 /// own shutdown from the harness thread can deadlock).
 fn quit() {
+    // the overlays' Rust/Unicorn call counts (the report is never written)
+    for line in crate::library::summary() {
+        eprintln!("{line}");
+    }
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};

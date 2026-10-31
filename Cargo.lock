@@ -1029,6 +1029,7 @@ dependencies = [
  "ffx-gfx",
  "ffx-host-ports",
  "ffx-kernel",
+ "ffx-magic",
  "ffx-pcore",
  "ffx-sound",
  "ffx-swf",
