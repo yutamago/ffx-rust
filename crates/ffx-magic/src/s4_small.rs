@@ -7192,3 +7192,96 @@ pub const EFFECT_FRAME_261: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The block's colour state (`*G + 0x1590`: grey colours, `+0x88` 0x28,
+/// `u16 +0x98` 0x48, `+0x90`/`+0x8c` 20, `+0x94` 0) and its task node
+/// (the callback operand `+0x9`; [`take`], `+0x14` the state) appended
+/// to the task list (operands `+0x5f`, `+0x72`; `+0x84` when it was
+/// empty; the tail `+0xa4`), then the block's scale task (`+0x17d8`,
+/// [`scale_task`] with the scales of operands `+0x94`, `+0x8c` and the
+/// count 0x6e; no arguments). Returns the scale task's result.
+///
+/// `magic_0434` 0x10009390 (179 bytes; 2 DLLs).
+pub fn colour_and_scale_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x4));
+    let s = block.wrapping_add(0x1590);
+    let at = |o: u32| s.wrapping_add(o);
+    for (off, v) in [(0x80, 0x8080_8080), (0x84, 0x0080_8080), (0x88, 0x28)] {
+        g.write::<u32>(at(off), v);
+    }
+    g.write::<u16>(at(0x98), 0x48);
+    for (off, v) in [(0x90, 0x14), (0x8c, 0x14), (0x94, 0)] {
+        g.write::<u32>(at(off), v);
+    }
+    let node = take(g, img, img.rel32_target(f + 0x59), op(img, f, 0x9));
+    let empty = g.read::<u32>(op(img, f, 0x5f)) == 0;
+    g.write::<u32>(node.wrapping_add(0x14), s);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if empty {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(op(img, f, 0x84), node);
+    } else {
+        let tail = g.read::<u32>(op(img, f, 0x72));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(op(img, f, 0xa4), node);
+    // push esi; push edi; the count; the call
+    let esp = fr.esp.wrapping_sub(16);
+    g.write::<u32>(esp + 4, 0x6e);
+    let k = |g: &G, o: u32| u128::from(g.read::<u32>(op(img, f, o)));
+    let mut xmm = fr.xmm;
+    xmm[1] = k(g, 0x94);
+    xmm[2] = k(g, 0x8c);
+    let callee = Frame {
+        at: img.rel32_target(f + 0xa9),
+        esp,
+        ecx: block.wrapping_add(0x17d8),
+        xmm,
+        ..*fr
+    };
+    scale_task(g, img, &callee)
+}
+
+/// [`colour_and_scale_task`].
+pub const COLOUR_AND_SCALE_TASK: Sig = Sig {
+    len: 179,
+    hash: 0x4a18_2bc0_45d2_900d,
+    calls: &[(0x59, Callee::Sig(&TAKE)), (0xa9, Callee::Sig(&SCALE_TASK))],
+    imports: &[],
+};
+
+/// A light's colours copied into the block (`*G`; cdecl `(light)`; a /GS
+/// frame): `+0xe80..+0xe8c` from `+0xe70..`, `+0xe90..+0xe98` the
+/// light's `+0x2c..+0x34`, `+0xe9c` the word 0x80, `+0xea0` and `+0xea4`
+/// the light's `+0x38`. Returns the block's `+0xe7c`.
+///
+/// `magic_0168` 0x10002550 (179 bytes; 2 DLLs).
+pub fn light_copy<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let light = fr.arg(g, 0);
+    let b = g.read::<u32>(op(img, fr.at, 0x33));
+    let mut last = 0;
+    for i in 0..4 {
+        last = g.read::<u32>(b.wrapping_add(0xe70 + 4 * i));
+        g.write::<u32>(b.wrapping_add(0xe80 + 4 * i), last);
+    }
+    for i in 0..3 {
+        let x = g.read::<u32>(light.wrapping_add(0x2c + 4 * i));
+        g.write::<u32>(b.wrapping_add(0xe90 + 4 * i), x);
+    }
+    g.write::<u32>(b.wrapping_add(0xe9c), 0x80);
+    let x = g.read::<u32>(light.wrapping_add(0x38));
+    g.write::<u32>(b.wrapping_add(0xea4), x);
+    g.write::<u32>(b.wrapping_add(0xea0), x);
+    Ret::eax(last)
+}
+
+/// [`light_copy`] (the `rel32` is `__security_check_cookie`).
+pub const LIGHT_COPY: Sig = Sig {
+    len: 179,
+    hash: 0x631a_a7d6_b7de_a475,
+    calls: &[(0xab, Callee::Any)],
+    imports: &[],
+};

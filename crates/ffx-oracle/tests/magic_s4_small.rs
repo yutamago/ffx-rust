@@ -3301,3 +3301,37 @@ fn node_copies_and_frames_261() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn colour_scale_tasks_light_copies() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x9390);
+    let take = t.img.rel32_target(f + 0x59);
+    let block = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x4), block);
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        t.write(block + 0x1590, &[0x11; 0x300]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x5f), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x72), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x5f), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(168) else { return };
+    let f = t.at(0x2550);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x33), block);
+    for i in 0..4 {
+        t.set_u32(block + 0xe70 + 4 * i, 0x0e70_0000 + i);
+    }
+    let light = SCRATCH + 0x100;
+    for i in 0..4 {
+        t.set_u32(light + 0x2c + 4 * i, 0x3f00_0000 + i);
+    }
+    t.check_entry(f, Call::default(), &[light], Eax::Checked);
+}
