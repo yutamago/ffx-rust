@@ -2152,3 +2152,65 @@ fn loads_and_buffers() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn drops_and_walk_resets() {
+    let Some(mut t) = twin(243) else { return };
+    recs(&mut t, &[(711, 3), (710, 7)]);
+    let f = t.at(0x3110);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x1), lock);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(481) else { return };
+    recs(&mut t, &[(258, 1), (230, 2)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x1760);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x52), lock);
+    t.set_u32(op(&t, f, 0x45), SCRATCH + 0x88);
+    let part = SCRATCH + 0x100;
+    for a in [0u32, 1] {
+        t.write(part, &[0x44; 0x20]);
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check(f, Call::this(part), &[], Eax::Checked, s4_small::part_drop);
+    }
+    drop(t);
+    let Some(mut t) = twin(201) else { return };
+    sa::handler_stubs(&mut t);
+    for s in [538u32, 213, 211, 35, 34, 547, 276, 219, 275] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    let f = t.at(0x2fe0);
+    let (owner2, parent) = (SCRATCH + 0x4000, SCRATCH + 0x6000);
+    for (k, &(c, p, cp)) in sa::RINGS.iter().enumerate() {
+        for bit in [0u8, 1] {
+            sa::ring(&mut t, c, p, cp, 0x30 + k as u8);
+            let owner = sa::node(0);
+            t.set_u8(owner + 0x24, bit);
+            t.write(owner2, &[0; 0x500]);
+            t.set_u32(owner2 + 0x4dc, 1);
+            t.write(parent, &[0x45; 0x40]);
+            t.set_u16(parent + 0x18, 2);
+            let n0 = owner2 + 0x1c;
+            t.set_u32(n0 + 0x14, parent);
+            t.set_u32(n0 + 4, parent);
+            t.set_u32(n0 + 8, parent);
+            t.set_u32(n0 + 0x64, u32::MAX);
+            t.set_u32(owner + 0x1c, owner2);
+            t.set_u32(owner2 + 0x14, parent);
+            t.set_u32(owner2 + 4, parent);
+            t.set_u32(owner2 + 8, parent);
+            t.set_u32(owner + 0x14, 0);
+            t.check(
+                f,
+                Call::this(sa::CURSOR),
+                &[],
+                Eax::Checked,
+                s4_small::walk_reset,
+            );
+        }
+    }
+}

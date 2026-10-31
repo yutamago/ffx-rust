@@ -1110,6 +1110,7 @@ ports! {
     "load steps" => s4_small::LOAD_STEPS, s4_small::load_steps;
     "parts buffer 0x80000" => s4_small::PARTS_BUFFER_80000, s4_small::parts_buffer;
     "parts buffer 0x50000" => s4_small::PARTS_BUFFER_50000, s4_small::parts_buffer;
+    "parts buffer 0x100000" => s4_small::PARTS_BUFFER_100000, s4_small::parts_buffer;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
@@ -1489,6 +1490,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("table object", &s4_small::TABLE_OBJECT),
     ("leave and register", &s4_small::LEAVE_REGISTER),
     ("0644 start 0x260, placed", &s4_fam446::START_260_PLACED),
+    ("part drop", &s4_small::PART_DROP),
+    ("walk and reset", &s4_small::WALK_RESET),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

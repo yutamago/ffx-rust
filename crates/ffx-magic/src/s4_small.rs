@@ -4747,8 +4747,9 @@ pub const LOAD_STEPS: Sig = Sig {
 /// under), then four words 0 (operands `+0x5a`, `+0x65`, `+0x6f`, `+0x79`)
 /// (no arguments). Returns slot 710's `eax`.
 ///
-/// `magic_0149` 0x10001cb0 (size 0x80000) and `magic_0126` 0x10002100
-/// (0x50000) (131 bytes; 3 DLLs each).
+/// `magic_0149` 0x10001cb0 (size 0x80000), `magic_0126` 0x10002100
+/// (0x50000) and `magic_0243` 0x10003110 (0x100000) (131 bytes; 2-3 DLLs
+/// each).
 pub fn parts_buffer<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let lock = g.read::<u32>(op(img, f, 0x1));
@@ -4783,5 +4784,103 @@ pub const PARTS_BUFFER_50000: Sig = Sig {
     len: 131,
     hash: 0xb9de_23c5_e276_8ede,
     calls: &[],
+    imports: &[],
+};
+
+/// [`parts_buffer`] with 0x100000.
+pub const PARTS_BUFFER_100000: Sig = Sig {
+    len: 131,
+    hash: 0xbc20_74e9_f4db_ec29,
+    calls: &[],
+    imports: &[],
+};
+
+/// A part dropped (internal, `ecx` = the part): slot 258 `(part)`, slot
+/// 230 twice on the DLL's matrices (`(*G_A, *G_B)`, `(*G_C, *G_A)`), `*G_P`
+/// = `ITEM`, slot 712 `(part, 0x30)` with `**G_LOCK` 1 around it (each
+/// call seeing the words the earlier ones left); when it answers non-zero
+/// the part's `u16 +0x1e` 0. Returns 0.
+///
+/// `magic_0481` 0x10001760 (132 bytes; 2 DLLs).
+pub fn part_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let part = fr.ecx;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    slot_call(g, img, f, (0x1, 258), &[part]);
+    let (b, a) = (rd(g, 0x14), rd(g, 0x1f));
+    slot_call(g, img, f, (0x19, 230), &[a, b, part]);
+    let (a2, c) = (rd(g, 0x2d), rd(g, 0x38));
+    slot_call(g, img, f, (0x32, 230), &[c, a2, a, b, part]);
+    let p = rd(g, 0x45);
+    g.write::<u32>(p, op(img, f, 0x4d));
+    let lock = rd(g, 0x52);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let out = slot_call(g, img, f, (0x60, 712), &[part, 0x30, c, a2, a, b, part]);
+    let lock = rd(g, 0x6e);
+    g.write::<u32>(lock, saved);
+    if out.eax != 0 {
+        g.write::<u16>(part.wrapping_add(0x1e), 0);
+    }
+    Ret::eax(0)
+}
+
+/// [`part_drop`].
+pub const PART_DROP: Sig = Sig {
+    len: 132,
+    hash: 0xdf39_1e8c_95dc_ed74,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], `ecx` = the cursor); when it
+/// ran, slot 275 `(owner + 0x20)` with that word, and with the owner's
+/// bit 0 of `+0x24` its node `+0x1c` leaves its parent
+/// ([`crate::sa_misc::leave`]), that node's models are set up again
+/// ([`crate::s4_misc::nodes_reset`], a cursor on the frame) and the owner
+/// leaves its parent (internal, `ecx` = the cursor). Returns the last
+/// step's `eax`.
+///
+/// `magic_0201` 0x10002fe0 (135 bytes; 3 DLLs).
+pub fn walk_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let cursor = fr.ecx;
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let owner = g.read::<u32>(cursor);
+    let x = g.read::<u32>(owner.wrapping_add(0x20));
+    let eax = slot_call(g, img, f, (0x4c, 275), &[x]).eax;
+    if g.read::<u8>(owner.wrapping_add(0x24)) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let node = g.read::<u32>(owner.wrapping_add(0x1c));
+    // its result is replaced by the node (`mov eax, [esi + 0x1c]`)
+    crate::sa_misc::leave(g, node, eax);
+    // push ebp; push ecx; push ebx; push esi: the cursor is [ebp - 4]
+    let local = fr.esp.wrapping_sub(8);
+    let node = g.read::<u32>(owner.wrapping_add(0x1c));
+    g.write::<u32>(local, node);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x76),
+        esp: fr.esp.wrapping_sub(0x14),
+        eax: node,
+        ecx: local,
+        ..*fr
+    };
+    let eax = crate::s4_misc::nodes_reset(g, img, &callee).eax;
+    Ret::eax(crate::sa_misc::leave(g, owner, eax))
+}
+
+/// [`walk_reset`].
+pub const WALK_RESET: Sig = Sig {
+    len: 135,
+    hash: 0x9bbe_9abe_42f8_8a17,
+    calls: &[
+        (0x68, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x76, Callee::Sig(&crate::s4_misc::NODES_RESET)),
+        (0x7d, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
     imports: &[],
 };
