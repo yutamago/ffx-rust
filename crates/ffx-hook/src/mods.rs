@@ -156,6 +156,13 @@ pub unsafe extern "thiscall" fn file_open(
     if mode & 0xff != 0 && !path.is_null() && unsafe { open_mod(file, path) } {
         return 0;
     }
+    if crate::ported::open_file_on() {
+        // the port of PStreamFileWin32::openFile
+        // (ported/m5p_framework_input_df.rs) where the trampoline was: two
+        // hooks can't share an address; the three unused words stay unread
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        return crate::ported::open_file(file as usize as u32, path as usize as u32, mode);
+    }
     // SAFETY: the trampoline runs the original prologue and jumps back into
     // it, with the same arguments.
     unsafe {

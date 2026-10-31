@@ -60,6 +60,7 @@ mod m5_static_init_b;
 mod m5_static_init_c;
 mod m5_static_init_d;
 mod m5_system_a;
+mod m5_system_a_df;
 mod m5_system_a_stubs;
 mod m5_system_b;
 mod m5_vfx;
@@ -73,6 +74,7 @@ mod m5p_core_e;
 mod m5p_core_f;
 mod m5p_core_g;
 mod m5p_framework_input;
+mod m5p_framework_input_df;
 mod m5p_framework_input_left2;
 mod m5p_physics;
 mod m5p_physics_stubs;
@@ -81,11 +83,13 @@ mod m5p_registry_load_a;
 mod m5p_registry_load_a_left;
 mod m5p_render_a;
 mod m5p_render_b;
+mod m5p_render_b_df;
 mod m5p_render_b_left2;
 mod m5p_scene;
 mod m5p_scene_b;
 mod m5p_scene_c;
 mod m5p_scene_d;
+mod m5p_scene_df;
 mod m5p_scene_e;
 mod m5p_scene_f;
 mod m5p_scene_g;
@@ -97,6 +101,7 @@ mod m5p_scene_l;
 mod m5p_scene_m;
 mod m5p_scene_n;
 mod m5p_scripting;
+mod m5p_scripting_df;
 mod m5p_scripting_left2;
 mod m5p_stubs;
 mod m5p_tmpl_abstract_ab;
@@ -143,7 +148,15 @@ pub(crate) use battle::ms_screen_process;
 pub(crate) use m5_main::{
     animate as ffx_application_animate, animate_on as ffx_application_animate_on,
 };
+#[cfg(not(ffx_host))]
+pub(crate) use m5_system_a_df::{key_held, key_held_on};
 pub(crate) use m5_system_b::{loader_thread_main, loader_thread_main_on};
+#[cfg(not(ffx_host))]
+pub(crate) use m5p_framework_input_df::{get_time, get_time_on, open_file, open_file_on};
+#[cfg(not(ffx_host))]
+pub(crate) use m5p_render_b_df::{
+    FLIP_NAME, PRESENT_FLIP_NAME, flip, flip_on, present_flip, present_flip_on,
+};
 #[cfg(not(ffx_host))]
 pub(crate) use map::rcbg_guide_update_ex;
 #[cfg(not(ffx_host))]
@@ -181,11 +194,13 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_tmpl_fortype::hooks());
     all.extend(m5p_registry_b::hooks());
     all.extend(m5_system_a::hooks());
+    all.extend(m5_system_a_df::hooks());
     all.extend(m5_system_a_stubs::hooks());
     all.extend(m5_system_b::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5p_anim::hooks());
     all.extend(m5p_framework_input::hooks());
+    all.extend(m5p_framework_input_df::hooks());
     all.extend(m5p_framework_input_left2::hooks());
     all.extend(m5p_anim_left::hooks());
     all.extend(m5p_registry_load_a::hooks());
@@ -198,6 +213,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_core_f::hooks());
     all.extend(m5p_core_g::hooks());
     all.extend(m5p_render_b::hooks());
+    all.extend(m5p_render_b_df::hooks());
     all.extend(m5p_render_b_left2::hooks());
     all.extend(m5_sound::hooks());
     all.extend(m5_movie::hooks());
@@ -212,6 +228,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_physics::hooks());
     all.extend(m5p_physics_stubs::hooks());
     all.extend(m5p_scene::hooks());
+    all.extend(m5p_scene_df::hooks());
     all.extend(m5p_scene_b::hooks());
     all.extend(m5p_scene_c::hooks());
     all.extend(m5p_scene_d::hooks());
@@ -226,6 +243,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_scene_m::hooks());
     all.extend(m5p_scene_n::hooks());
     all.extend(m5p_scripting::hooks());
+    all.extend(m5p_scripting_df::hooks());
     all.extend(m5p_scripting_left2::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
@@ -327,6 +345,82 @@ impl<const W: usize> Drop for StackFrame<W> {
         let at = self.0;
         let _ = route::with(|r| r.frame_free(at));
     }
+}
+
+/// A frame sized at run time, for an original that carves its own with
+/// `_alloca_probe_16` (or `_alloca_probe_8`, `_alloca_probe`): `f` gets the
+/// address of at least `bytes` zeroed bytes, 16-byte aligned as
+/// `_alloca_probe_16` leaves them, which live until `f` returns, like the
+/// original's buffer until its `ret` (docs/porting.md, "Run-time frames
+/// and varargs"). Per call, so threads and nested calls each get their
+/// own: an inner `with_frame` lies below the outer one, as a second alloca
+/// lies below the first.
+///
+/// In the hook the bytes come from this thread's stack: the smallest of a
+/// few fixed sizes that holds them (up to 16 KB, the scripting and
+/// file-name buffers are a few dozen bytes), in its own call so only that
+/// one is reserved; beyond that from the heap (the original would need as
+/// much stack, which the 32 KB threads don't have).
+#[cfg(not(ffx_host))]
+pub(crate) fn with_frame<R>(bytes: u32, f: impl FnOnce(u32) -> R) -> R {
+    // three spare words to align the start to 16
+    let words = usize::try_from(bytes)
+        .unwrap_or(usize::MAX)
+        .div_ceil(4)
+        .saturating_add(3);
+    match words {
+        0..=16 => in_frame::<16, R>(f),
+        17..=64 => in_frame::<64, R>(f),
+        65..=256 => in_frame::<256, R>(f),
+        257..=1024 => in_frame::<1024, R>(f),
+        1025..=4096 => in_frame::<4096, R>(f),
+        _ => {
+            let mut heap = Vec::new();
+            if heap.try_reserve_exact(words).is_err() {
+                return f(0);
+            }
+            heap.resize(words, 0u32);
+            let at = u32::try_from(heap.as_mut_ptr() as usize).unwrap_or(0);
+            let r = f(at.wrapping_add(15) & !15);
+            std::hint::black_box(&mut heap);
+            r
+        }
+    }
+}
+
+/// [`with_frame`]'s fixed sizes: `W` words in this call's own frame.
+#[cfg(not(ffx_host))]
+#[inline(never)]
+fn in_frame<const W: usize, R>(f: impl FnOnce(u32) -> R) -> R {
+    let mut frame = StackFrame::<W>::new();
+    let at = frame.at();
+    f(at.wrapping_add(15) & !15)
+}
+
+/// In `ffx-host`: the router's frame on the game thread's stack in the
+/// arena ([`route::Router::frame_alloc`]: zeroed, 16-byte aligned),
+/// released when `f` returns.
+#[cfg(ffx_host)]
+pub(crate) fn with_frame<R>(bytes: u32, f: impl FnOnce(u32) -> R) -> R {
+    let at = route::with(|r| r.frame_alloc(bytes)).unwrap_or(0);
+    let r = f(at);
+    let _ = route::with(|r| r.frame_free(at));
+    r
+}
+
+/// Whether the port of a wrapper-owned address runs (docs/hooking.md, "The
+/// hook table"): a hand-written wrapper (harness, mods, captures) holds the
+/// address and calls the port where it called its trampoline, unless
+/// `FFX_HOOK_DISABLE` names `name` or `replacements`, or `FFX_HOOK_ONLY`
+/// leaves `name` out. Each port caches the answer.
+#[cfg(not(ffx_host))]
+pub(crate) fn wrapper_port_on(name: &str) -> bool {
+    let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
+    let only = crate::hook_only().is_none_or(|names| names.iter().any(|n| n == name));
+    only && !off
+        .split(',')
+        .map(str::trim)
+        .any(|n| n == "replacements" || n == name)
 }
 
 /// The game's memory, for the bridges.

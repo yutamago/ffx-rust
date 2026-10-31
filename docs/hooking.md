@@ -142,15 +142,35 @@ The hand-written hooks:
 |---|---|---|
 | `zlib_uncompress` | `0x00405e20` | Replaced (`ffx-core`): 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
 | `Path_ToLowerAscii` | `0x00607d50` | Replaced (`ffx-core`): NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
-| `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
+| `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped: mod lookup, then its port (`ported/m5p_framework_input_df.rs`, `ffx_pother_b::m5p_framework_input_df`), or with the port off (name `Phyre_PSerialization_PStreamFileWin32_openFile_port`) the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
 | `CDfileSize_CD`, `CDfileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
-| `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`) |
-| `Phyre_PTimerWin32_GetTime` | `0x0042fd80` | Wrapped for the harness: adds the skipped time |
+| `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`); the wrapper runs the port (`ported/m5_system_a_df.rs`, `ffx_system::m5a_df`; name `Input_KeyHeld_port`) |
+| `Phyre_PTimerWin32_GetTime` | `0x0042fd80` | Wrapped for the harness: adds the skipped time to the port's (`ported/m5p_framework_input_df.rs`; name `Phyre_PTimerWin32_GetTime_port`) |
 | `Rng_ClockSeed` | `0x00798950` | Wrapped for the harness: `FFX_HARNESS_SEED` instead of the clock |
 | `MsScreenProcess` | `0x007bc110` | Its port (`ffx_battle::screen`), wrapped for the external renderer's free camera (`gfx::live::cam_update`) |
 | `rcbgGuideUpdateEx` | `0x0091da80` | Its port (`ffx_field::guide_update`), wrapped for the renderer's minimap (`minimap.rs`) |
 | `Phyre_PRendering_PRenderer_renderWorldCulledSorted` | `0x009f3c30` | Wrapped for captures (`world.rs`). The wrapper calls the port (`ported/phyre_render.rs` `culled_sorted`) instead of its trampoline, since two hooks can't share an address. Its name for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` is `Phyre_PRendering_PRenderer_renderWorldCulledSorted_port`; `replacements` turns it off too. It reads only a comma list from `FFX_HOOK_ONLY`, not `@<file>`, so with a file the port is off |
 | `AsyncLoadManager_threadMain_00691360` | `0x00691360` | Wrapped for the harness's loader turn (`loader_turn.rs`: notes the loader thread). The wrapper runs the port (`ported/m5_system_b.rs`, `ffx_system::m5b_async`) instead of its trampoline; its name for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` is `AsyncLoadManager_threadMain_00691360_port`, and `replacements` turns it off too |
+
+The harness's frame-boundary wrappers (`harness.rs`, installed only with
+`FFX_HARNESS`) run ports too: `FFXApplication_animate` (name
+`FFXApplication_animate_port`), `Phyre_PRendering_PRenderer_flip`
+(`0x005b6af0`, `ported/m5p_render_b_df.rs`, name
+`Phyre_PRendering_PRenderer_flip_port`) and `Renderer_PresentFlip`
+(`0x00593760`, `ffx_prender::m5p_render_b_small`, name
+`Renderer_PresentFlip_port`). Without the harness, `harness::install`
+puts each in as a plain replacement at the same address.
+
+**Wrapper-owned addresses.** Two hooks can't share an address, and the
+hook check (`progress.duplicate_hooks`, run by check-ported and
+verify-batch) refuses a `ported!` line at an address a hand-written hook
+holds. Such a port is a `pub(crate)` function in its list's `ported/`
+file, re-exported from `ported/mod.rs` with an `_on()` that reads its
+`<name>_port` from `FFX_HOOK_DISABLE`/`FFX_HOOK_ONLY`
+(`ported::wrapper_port_on`); the wrapper calls it where it called its
+trampoline, and keeps the trampoline for when it is off. Its `ffx.sym`
+line says which wrapper calls it; it has a parity test like any port.
+`progress.py` and `reach.py` still count these addresses as wrapped.
 
 Only functions whose callers can be satisfied through their signature are
 safe to replace. A function that the game expects to touch global state
