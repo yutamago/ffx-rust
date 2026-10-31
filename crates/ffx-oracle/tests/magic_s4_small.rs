@@ -3445,7 +3445,14 @@ fn guarded_drops_and_resets() {
     rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     let rg = t.img.rel32_target(f + 0x3a);
-    t.set_u32(t.img.word(rg + 0x05), 0);
+    // a 1 x 1 grid: one record, one handle
+    t.set_u32(t.img.word(rg + 0x05), 1);
+    t.set_u32(t.img.word(rg + 0x0c), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x300, 0x0300_0001);
+    t.set_u32(t.img.word(rg + 0x53), SCRATCH + 0x84);
+    // the DLL's records: not zero, so the cleared words show
+    let first = op(&t, f, 0x3f) - 0x260;
+    let end = op(&t, f, 0xab) + 0x30;
     let r8 = t.img.rel32_target(f + 0x9f);
     t.set_u32(t.img.word(r8 + 0x21), SCRATCH + 0x80);
     let task = SCRATCH + 0x100;
@@ -3454,6 +3461,7 @@ fn guarded_drops_and_resets() {
         t.set_u32(task + 8, SCRATCH + 0x200);
         t.set_u32(t.img.word(ms + 0x02), done);
         t.set_u16(t.img.word(ms + 0x11), 5);
+        t.write(first, &vec![0x5a; (end - first) as usize]);
         objects(&mut t, ro, one);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -3547,8 +3555,12 @@ fn summon_nodes_and_light_links() {
     t.set_u32(op(&t, f, 0x2e), tail);
     let (n, a, c) = (SCRATCH + 0x100, SCRATCH + 0x400, SCRATCH + 0x500);
     t.write(n, &[0x11; 0x40]);
-    t.write(a, &[0x22; 0x60]);
+    t.write(a, &[0xff; 0x60]);
     t.write(c, &[0x33; 0x40]);
+    // every bit set: the cleared bit and the or-ed bits show
+    t.set_u32(op(&t, f, 0x37), u32::MAX);
+    t.set_u8(op(&t, f, 0x7a), 0xff);
+    t.set_u8(op(&t, f, 0x85), 0xff);
     t.check(
         f,
         Call::this(n),
@@ -3573,7 +3585,18 @@ fn place_turns_and_two_timelines() {
     for k in 0..4 {
         t.set_u32(op(&t, f, 0x81) + 4 * k, 0x0a00_0000 + k);
     }
-    for ang in [0.0f32, 3.0, -3.0, 100.0, f32::NAN] {
+    // an angle whose sum with K is exactly HI (not folded)
+    let hi = f32::from_bits(t.u32(op(&t, f, 0x26)));
+    let k = f32::from_bits(t.u32(op(&t, f, 0x1e)));
+    let mut edge = hi - k;
+    for _ in 0..64 {
+        if (edge + k).to_bits() == hi.to_bits() {
+            break;
+        }
+        edge = f32::from_bits(edge.to_bits() + 1);
+    }
+    assert_eq!((edge + k).to_bits(), hi.to_bits());
+    for ang in [0.0f32, 3.0, -3.0, 100.0, f32::NAN, edge] {
         t.set_u32(block + 0x1ee0, ang.to_bits());
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -3584,13 +3607,21 @@ fn place_turns_and_two_timelines() {
     for o in [0xd, 0x3f] {
         t.set_u32(op(&t, f, o), SCRATCH + 0x100 + o);
     }
-    for (on, which, live) in [(0u32, 0u32, 0u32), (1, 0, 0), (1, 1, 0), (1, 0, 1)] {
+    for (on, which, live) in [
+        (0u32, 0u32, 0u32),
+        (1, 0, 0),
+        (1, 1, 0),
+        (1, 0, 1),
+        (1, 1, 1),
+    ] {
         t.set_u32(op(&t, f, 0x2), on);
         t.set_u32(op(&t, f, 0x4d), which);
-        for o in [0x55, 0x5c] {
+        t.set_u32(op(&t, f, 0x70), which ^ live);
+        // only the chosen timeline is live
+        for (o, mine) in [(0x55, which == 0), (0x5c, which != 0)] {
             let tl = op(&t, f, o);
             t.write(tl, &[0; 0x10]);
-            t.set_u32(tl + 8, live);
+            t.set_u32(tl + 8, if mine { live } else { 1 - live });
         }
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -3613,6 +3644,7 @@ fn particles_f() {
     t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
     t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
     let obj = SCRATCH + 0x1000;
+    t.write(obj - 0x60, &[0x44; 0x60]);
     t.write(obj, &[0x33; 0x100]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
 }
@@ -3625,6 +3657,7 @@ fn particle_sounds_and_index_points() {
     t.set_u32(table + 8, 0x0700_0008);
     rec(&mut t, 941, 1, move |_, _| table);
     recs(&mut t, &[(714, 5), (306, 3)]);
+    t.set_u32(op(&t, f, 0x5f), 0x0123_4567);
     rec(&mut t, 325, 2, |m, a| {
         for i in 0..4 {
             m.w32(a[0] + 4 * i, 0x3f00_0000 + i);
@@ -3685,8 +3718,9 @@ fn motion_sets_b_and_camera_boxes() {
     for i in 0..3 {
         t.set_u32(block + 0x1a0 + 4 * i, 0x0a00_0000 + i);
     }
-    let obj = SCRATCH + 0x100;
-    t.write(obj, &[0; 0x140]);
+    let obj = SCRATCH + 0x400;
+    // not zero, so the cleared words show
+    t.write(obj - 0x140, &[0x5a; 0x280]);
     t.set_u32(obj + 0xac, 1);
     t.set_u32(obj + 0x3c, 2);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
@@ -3898,6 +3932,9 @@ fn summon_nodes_b_and_sound_frames() {
         (1, 0, 0, 5),
         (1, 1, 1, 5),
         (1, 0, 1, 4),
+        // the state word is the timeline's time: 4 moves on to 5
+        (1, 1, 1, 4),
+        (1, 0, 1, 5),
     ] {
         t.set_u32(op(&t, f, 0x2), on);
         t.set_u32(answer, busy);
