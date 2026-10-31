@@ -2247,3 +2247,74 @@ pub const SPARKS_ON_MODEL: Sig = Sig {
     calls: &[(0x32, Callee::Sig(&FREE_RECORD))],
     imports: &[],
 };
+
+/// A ring of parts placed on a circle (cdecl: `ecx` = the parts base,
+/// `edx` = the count `n`, `xmm3` = a radius, the stack `(-, base_angle,
+/// word)`). With `n == 1` the single part's point `+0x3c..+0x48` is the
+/// centre `G_V` (three immediates, `w` 1.0) and u16 `+0x16` the word.
+/// With `n > 1`, for each part `i` (0xcc bytes apart) the angle `a =
+/// (i << 16) / n + base_angle` (u16): `+0x3c = sin[(a + 0x4000 >> 4) &
+/// 0xfff] r + Kx`, `+0x44 = sin[(a >> 4) & 0xfff] r + Kz`, `+0x40 = Ky`,
+/// `+0x48 = 1.0`, u16 `+0x16 = word + a`. (`sin` is `*G_SIN`, Kx/Ky/Kz
+/// the centre immediates.) Returns the last `word + a` (the
+/// caller's `eax` for no parts, with the word in `ax` for one).
+///
+/// `magic_0515` 0x10002b70 (253 bytes, `ecx`/`edx`/`xmm3` and three stack
+/// words; 4 DLLs).
+pub fn parts_ring<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<u32>(w(o));
+    let base = fr.ecx;
+    let n = fr.edx;
+    let r = fr.xmm_f32(3);
+    // the stack: an unread word, the base angle, the word
+    let (base_angle, word) = (fr.arg(g, 1), fr.arg(g, 2));
+    if n == 1 {
+        g.write::<u32>(base + 0x3c, k(g, 0x15));
+        g.write::<u32>(base + 0x40, k(g, 0x26));
+        g.write::<u32>(base + 0x44, k(g, 0x33));
+        g.write::<u32>(base + 0x48, 0x3f80_0000);
+        g.write::<u16>(base + 0x16, word as u16);
+        return (fr.eax & 0xffff_0000) | (word & 0xffff);
+    }
+    if n.cast_signed() <= 0 {
+        return fr.eax;
+    }
+    let tab = g.read::<u32>(w(0x67));
+    let sin = |g: &G, idx: u32| g.read::<f32>(tab.wrapping_add(4 * (idx & 0xfff)));
+    let mut eax = fr.eax;
+    for i in 0..n {
+        let a = (i << 16)
+            .cast_signed()
+            .wrapping_div(n.cast_signed())
+            .cast_unsigned();
+        let angle = a.wrapping_add(base_angle) & 0xffff;
+        let p = base.wrapping_add(0xcc * i);
+        let cos = sin(
+            g,
+            angle
+                .wrapping_add(0x4000)
+                .cast_signed()
+                .wrapping_shr(4)
+                .cast_unsigned(),
+        );
+        let x = add(mul(cos, r), g.read::<f32>(w(0xa2)));
+        g.write::<f32>(p + 0x3c, x);
+        let z = add(mul(sin(g, angle >> 4), r), g.read::<f32>(w(0xc3)));
+        g.write::<f32>(p + 0x44, z);
+        g.write::<u32>(p + 0x40, k(g, 0xd3));
+        g.write::<u32>(p + 0x48, 0x3f80_0000);
+        eax = word.wrapping_add(angle);
+        g.write::<u16>(p + 0x16, eax as u16);
+    }
+    eax
+}
+
+/// [`parts_ring`].
+pub const PARTS_RING: Sig = Sig {
+    len: 253,
+    hash: 0xb62d_de48_5a4e_c5bd,
+    calls: &[],
+    imports: &[],
+};

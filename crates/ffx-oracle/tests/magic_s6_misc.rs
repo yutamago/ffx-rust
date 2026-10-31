@@ -1609,3 +1609,50 @@ fn sparks_spawned_on_models() {
         });
     }
 }
+
+/// Row 310: `magic_0515`'s ring of parts: one part, none (and a negative
+/// count), three and five parts with angles wrapping past 0x10000.
+#[test]
+fn parts_rings() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x2b70);
+    let tab = SCRATCH + 0x8000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, ((i as f32) * 0.0015).sin().to_bits());
+    }
+    t.set_u32(op(&t, f, 0x67), tab);
+    for (o, v) in [(0x15u32, 1.5f32), (0x26, -2.0), (0x33, 0.75)] {
+        t.set_u32(op(&t, f, o), v.to_bits());
+    }
+    let base = SCRATCH + 0x1000;
+    for (k, (n, angle)) in [
+        (1u32, 0x100u32),
+        (0, 0),
+        (0xffff_fffe, 0),
+        (3, 0xf000),
+        (5, 0x1234),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(base, &varied(0x500, k));
+        let c = Call {
+            ecx: base,
+            edx: n,
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            Xmm::f32(9.0),
+            Xmm::f32(8.0),
+            Xmm::f32(7.0),
+            Xmm::f32(2.5 + k as f32),
+        ]);
+        let args = [0x0bad_0001, angle, 0x0007_0000 + 0x111 * k];
+        scrub(&mut t);
+        t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::parts_ring(g, img, fr))
+        });
+    }
+}
