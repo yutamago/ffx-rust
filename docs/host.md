@@ -1315,7 +1315,10 @@ What it found and what was fixed:
   ball movie on: after shot 6 the scenario word stops at 20 of the
   original's 24 changes and Tidus never moves again (`waitfor` for the
   control timed out at update 2669). movie-fmv (extra list) times out
-  too, before its trace starts. **Movies are the open blocker**:
+  too, at update 264: its `holdfor *0x00cded3c+0xb0 = 30` (the
+  player's queue of decoded frames full, 60 s of host time with the main
+  thread held) never held, so the movie's reading and decoding threads
+  don't fill the queue. **Movies are the open blocker**:
   ffx-rust.exe's movie player (the reading and decoding threads on the
   ported demux loop and decoders, the frame queues, the texture update)
   has not played one through yet; event-arrival and movie-fmv are the
