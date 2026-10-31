@@ -75,4 +75,16 @@ ported! {
         let mut f = StackFrame::<{ lf::QUEUE_FRAME_WORDS as usize }>::new();
         lb::queue_pass(&mut mem(), this, material, instance, [a, b, c], f.at())
     }
+    /// A structured buffer's D3D11 buffers `(size, stride, flags, data)`;
+    /// the description, initial data and lock in a frame.
+    PStructuredBufferD3D11_create_0058f2b0 @ 0x0058_f2b0 => extern "thiscall" fn create_structured(this: u32, size: u32, stride: u32, flags: u32, data: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::STRUCTURED_FRAME_WORDS as usize }>::new();
+        lb::create_structured(&mut mem(), this, [size, stride, flags, data], f.at())
+    }
+    /// The render target read back as RGB rows `(dst)`; the mapping,
+    /// description and textures in a frame.
+    PRendererD3D11_readBackRgb_0058ec50 @ 0x0058_ec50 => extern "thiscall" fn read_back(this: u32, dst: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::READ_BACK_FRAME_WORDS as usize }>::new();
+        lb::read_back(&mut mem(), this, dst, f.at())
+    }
 }

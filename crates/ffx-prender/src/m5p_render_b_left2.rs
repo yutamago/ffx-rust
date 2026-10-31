@@ -276,6 +276,29 @@ pub const QUEUE_PASS: [u32; 10] = [
 /// slot).
 pub const QUEUE_FRAME_WORDS: u32 = 6;
 
+/// `0x0058f2b0`'s callees and data: the render scope lock's enter
+/// (thiscall on a frame word), the render state cache's guard, the
+/// cache, its constructor (thiscall), its destructor, `atexit` (cdecl),
+/// the device global, the slot count (`0x00593ba0`, thiscall), the
+/// lock's leave, `PStructuredBufferD3D11_createViews` (thiscall).
+pub const STRUCTURED: [u32; 10] = [
+    0x0046_3d50,
+    0x00c9_628c,
+    0x00c9_4f00,
+    0x004f_ee70,
+    0x00af_b710,
+    0x0094_9207,
+    0x00c9_4f6c,
+    0x0059_3ba0,
+    0x0046_3e90,
+    0x0058_f5d0,
+];
+/// The words of `0x0058f2b0`'s frame.
+pub const STRUCTURED_FRAME_WORDS: u32 = 12;
+
+/// The words of `0x0058ec50`'s frame.
+pub const READ_BACK_FRAME_WORDS: u32 = 18;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
@@ -284,7 +307,7 @@ pub mod bridge {
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
-    use super::{DEFERRED_BUFFERS, PROFILE_CONSTS, QUEUE_PASS, TAKE_TARGETS};
+    use super::{DEFERRED_BUFFERS, PROFILE_CONSTS, QUEUE_PASS, STRUCTURED, TAKE_TARGETS};
     use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
@@ -1324,5 +1347,220 @@ pub mod bridge {
             i += 1;
         }
         0
+    }
+
+    /// A structured buffer's slot array (`+0x14` count, one inline at
+    /// `+0x18`, more behind the pointer there; none when 0).
+    fn structured_slots(h: &impl ffx_bridge::Mem, this: u32) -> u32 {
+        let n = h.read::<u32>(this + 0x14) & 0x7fff_ffff;
+        match n {
+            0 => 0,
+            1 => this + 0x18,
+            _ => h.read(this + 0x18),
+        }
+    }
+
+    /// `0x0058f2b0` (thiscall `(buffer; size, stride, flags, data)`, ret
+    /// 0x10): a structured buffer's D3D11 buffers made. Keeps size,
+    /// stride and flags (`+0`, `+4`, `+8`); under the render scope lock
+    /// (`frame + 0x10`) and with the render state cache built (guard bit
+    /// 0 of `0x00c9628c`), one `ID3D11Device::CreateBuffer(&desc, data ?
+    /// &init : null, &slot)` (device `0x00c94f6c`, method `+0xc`) per slot
+    /// of the buffer's array (`+0x14` count, one when 0; data at `+0x18`,
+    /// 0x14 bytes each), each followed by the new buffer's `GetDesc(+0x2c)`
+    /// (`+0x28`); a failed create: 9. `desc` = `{size * stride, usage
+    /// (flags bit 0: 2 dynamic, else 1 with data, 0 without), 8 (shader
+    /// resource), CPU write (0x10000) when dynamic, 0x40 (structured),
+    /// stride}`, `init` = `{data, 0, 0}`. Then the views
+    /// (`PStructuredBufferD3D11_createViews`, its `eax`).
+    ///
+    /// `frame` is 12 words, the original's `ebp - 0x44`, laid out as it
+    /// is: `init` at `+0`, the device `+0xc`, the lock `+0x10`, the slot
+    /// counter `+0x14`, the data flag byte `+0x1b`, `desc` `+0x1c`. (The
+    /// original also keeps `flags & 1` in its `flags` argument slot, and
+    /// its exception frame for the lock is left out.)
+    pub fn create_structured(h: &mut impl Host, this: u32, args: [u32; 4], frame: u32) -> u32 {
+        let [size, stride, flags, data] = args;
+        let c = STRUCTURED;
+        h.write(this, size);
+        h.write(this + 4, stride);
+        h.write(this + 8, flags);
+        h.write(frame + 0x1b, u8::from(data != 0));
+        let dynamic = flags & 1 != 0;
+        let lock = frame + 0x10;
+        h.call_sym(c[0], Conv::Thiscall(lock), &[]);
+        let guard = h.rebase(c[1]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(c[2]);
+            h.call_sym(c[3], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(c[4]);
+            h.call_sym(c[5], Conv::Cdecl, &[dtor]);
+        }
+        let device: u32 = h.read(h.rebase(c[6]));
+        h.write(frame + 0xc, device);
+        let stride: u32 = h.read(this + 4);
+        let size: u32 = h.read(this);
+        let usage = if dynamic {
+            2
+        } else {
+            u32::from(h.read::<u8>(frame + 0x1b) != 0)
+        };
+        let desc = frame + 0x1c;
+        let cpu = if dynamic { 0x10000 } else { 0 };
+        for (i, w) in [size.wrapping_mul(stride), usage, 8, cpu, 0x40, stride]
+            .into_iter()
+            .enumerate()
+        {
+            h.write(desc + 4 * i as u32, w);
+        }
+        h.write(frame + 0x14, 0u32);
+        for (i, w) in [data, 0, 0].into_iter().enumerate() {
+            h.write(frame + 4 * i as u32, w);
+        }
+        if h.call_sym(c[7], Conv::Thiscall(this), &[]) != 0 {
+            let init = if data != 0 { frame } else { 0 };
+            let mut at = 0u32;
+            loop {
+                let slot = structured_slots(h, this).wrapping_add(at);
+                let vt: u32 = h.read(device);
+                let create: u32 = h.read(vt + 0xc);
+                if h.call(create, Conv::Stdcall, &[device, desc, init, slot]) != 0 {
+                    h.call_sym(c[8], Conv::Thiscall(lock), &[]);
+                    return 9;
+                }
+                let object: u32 = h.read(structured_slots(h, this).wrapping_add(at));
+                let vt: u32 = h.read(object);
+                let get_desc: u32 = h.read(vt + 0x28);
+                h.call(get_desc, Conv::Stdcall, &[object, this + 0x2c]);
+                let k = h.read::<u32>(frame + 0x14).wrapping_add(1);
+                h.write(frame + 0x14, k);
+                at = at.wrapping_add(0x14);
+                if k >= h.call_sym(c[7], Conv::Thiscall(this), &[]) {
+                    break;
+                }
+            }
+        }
+        h.call_sym(c[8], Conv::Thiscall(lock), &[]);
+        h.call_sym(c[9], Conv::Thiscall(this), &[])
+    }
+
+    /// `IUnknown::Release` (slot 2) of `obj`.
+    fn release(h: &mut impl Host, obj: u32) {
+        com(h, obj, 8, &[]);
+    }
+
+    /// `0x0058ec50` (thiscall `(renderer; dst)`, ret 4): the first render
+    /// target's texture (`+0xdc` count, `+0xe0` inline or the array) read
+    /// back into `dst` as RGB rows, bottom row first: its description
+    /// (`GetDesc`, slot `+0x28`) reused for a single-sample default
+    /// texture and a staging one (CPU read) from the device (`+0x6c`,
+    /// `CreateTexture2D` `+0x14`); on the context (`+0x70`) the target
+    /// resolved into the first (`ResolveSubresource` `+0xe4`, format
+    /// 0x1c), copied into the second (`CopyResource` `+0xbc`), mapped
+    /// (`Map` `+0x38`, read) and its pixels' first three bytes copied
+    /// (`Unmap` `+0x3c`); the textures made and the target released
+    /// (`Release`, slot 2). 1 without `dst`, else 0 (also when a step
+    /// fails).
+    ///
+    /// `frame` is 18 words, the original's `ebp - 0x4c`: the mapping at
+    /// `+0`, the target and `this` at `+0xc`, `+0x10`, the two textures
+    /// at `+0x14`, `+0x18`, the description at `+0x1c`.
+    pub fn read_back(h: &mut impl Host, this: u32, dst: u32, frame: u32) -> u32 {
+        // the original's saved copies of `this` and the target
+        h.write(frame + 0x10, this);
+        if dst == 0 {
+            return 1;
+        }
+        let n = h.read::<u32>(this + 0xdc) & 0x7fff_ffff;
+        if n == 0 {
+            return 0;
+        }
+        let arr = if n > 1 {
+            h.read(this + 0xe0)
+        } else {
+            this + 0xe0
+        };
+        let target: u32 = h.read(arr);
+        h.write(frame + 0xc, target);
+        if target == 0 {
+            return 0;
+        }
+        let (mapped, resolved, staging, desc) = (frame, frame + 0x14, frame + 0x18, frame + 0x1c);
+        h.write(resolved, 0u32);
+        h.write(staging, 0u32);
+        com(h, target, 0x28, &[desc]);
+        let device: u32 = h.read(this + 0x6c);
+        for (off, v) in [(0x20, 0u32), (0x14, 1), (0x1c, 0), (0x24, 0)] {
+            h.write(desc + off, v);
+        }
+        let hr = com_r(h, device, 0x14, &[desc, 0, resolved]);
+        if h.read::<u32>(resolved) != 0 && hr == 0 {
+            let device: u32 = h.read(this + 0x6c);
+            h.write(desc + 0x1c, 3u32);
+            h.write(desc + 0x24, 0x20000u32);
+            let hr = com_r(h, device, 0x14, &[desc, 0, staging]);
+            if h.read::<u32>(staging) != 0 && hr == 0 {
+                let ctx: u32 = h.read(this + 0x70);
+                let first: u32 = h.read(resolved);
+                com(h, ctx, 0xe4, &[first, 0, target, 0, 0x1c]);
+                let ctx: u32 = h.read(this + 0x70);
+                let (first, second): (u32, u32) = (h.read(resolved), h.read(staging));
+                com(h, ctx, 0xbc, &[second, first]);
+                let ctx: u32 = h.read(this + 0x70);
+                let second: u32 = h.read(staging);
+                if com_r(h, ctx, 0x38, &[second, 0, 1, 0, mapped]) == 0 {
+                    copy_rgb_rows(h, desc, mapped, dst);
+                    let ctx: u32 = h.read(this + 0x70);
+                    let second: u32 = h.read(staging);
+                    com(h, ctx, 0x3c, &[second, 0]);
+                }
+                let second: u32 = h.read(staging);
+                if second != 0 {
+                    release(h, second);
+                }
+            }
+            let first: u32 = h.read(resolved);
+            if first != 0 {
+                release(h, first);
+            }
+        }
+        release(h, target);
+        0
+    }
+
+    /// The mapped pixels (`desc` width `+0`, height `+4`; `mapped` data
+    /// `+0`, row pitch `+4`) as RGB bytes into `dst`, the bottom row
+    /// first.
+    fn copy_rgb_rows(h: &mut impl Host, desc: u32, mapped: u32, mut dst: u32) {
+        let width: u32 = h.read(desc);
+        let rows: u32 = h.read(desc + 4);
+        let data: u32 = h.read(mapped);
+        let pitch: u32 = h.read(mapped + 4);
+        let mut row = rows.wrapping_sub(1).wrapping_mul(pitch).wrapping_add(data);
+        let mut end = row.wrapping_add(width.wrapping_mul(4));
+        for _ in 0..rows {
+            let mut p = row;
+            while p < end {
+                for k in 0..3 {
+                    let b: u8 = h.read(p + k);
+                    h.write(dst + k, b);
+                }
+                p += 4;
+                dst += 3;
+            }
+            row = row.wrapping_sub(pitch);
+            end = end.wrapping_sub(pitch);
+        }
+    }
+
+    /// [`com`] with the method's `eax` (an `HRESULT`).
+    fn com_r(h: &mut impl Host, obj: u32, slot: u32, args: &[u32]) -> u32 {
+        let vt: u32 = h.read(obj);
+        let f: u32 = h.read(vt.wrapping_add(slot));
+        let mut words = vec![obj];
+        words.extend_from_slice(args);
+        h.call(f, Conv::Stdcall, &words)
     }
 }

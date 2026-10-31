@@ -5847,3 +5847,176 @@ fn big_queue_pass_matches_the_original() {
         }
     }
 }
+
+/// `0x0058f2b0` (a structured buffer's D3D11 buffers) against the
+/// original: one slot and two, with and without initial data, dynamic
+/// and not, the cache built or not, a failed create, the views' answer.
+/// The device and the buffers are COM objects of recording stubs; the
+/// whole frame (description, initial data, counter) is compared at the
+/// original's address.
+#[test]
+fn big_structured_buffers_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (slots, data, flags, guard set, create result, views result)
+    for (slots, data, flags, guard, hr, views) in [
+        (1u32, true, 0u32, true, 0u32, 0u32),
+        (2, false, 1, false, 0, 9),
+        (2, true, 3, true, 0, 0),
+        (1, false, 0, true, 0x8007_000e, 0),
+        (2, true, 0, true, 0x8007_0057, 0),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::STRUCTURED;
+            t.stub(c[0], true, 0, 0, 0x0042_0000);
+            let g = t.rebase(c[1]);
+            t.w32(g, if guard { 0x11 } else { 0x10 });
+            t.stub(c[3], true, 0, 0, 0);
+            t.stub(c[5], false, 1, 0, 0);
+            t.stub(c[8], true, 0, 0, 0x0043_0000);
+            t.stub(c[9], true, 0, 0, views);
+            let device = t.com_object(&[1, 1, 1, 4], &[0, 0, 0, hr]);
+            let dev_at = t.rebase(c[6]);
+            t.w32(dev_at, device);
+            let this = t.zeros(0x60);
+            let objects: Vec<u32> = (0..slots)
+                .map(|_| t.com_object(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], &[]))
+                .collect();
+            if slots == 1 {
+                t.w32(this + 0x14, 1);
+                t.w32(this + 0x18, objects[0]);
+            } else {
+                let arr = t.zeros(0x14 * slots as usize);
+                for (i, &o) in objects.iter().enumerate() {
+                    t.w32(arr + 0x14 * i as u32, o);
+                }
+                t.w32(this + 0x14, 0x8000_0000 | slots);
+                t.w32(this + 0x18, arr);
+            }
+            let ebp = t.ebp_for(4);
+            let args = [0x40, 0x10, flags, if data { 0x0044_0000 } else { 0 }];
+            let what = format!(
+                "{label}: structured slots {slots} data {data} flags {flags} guard {guard} hr {hr:#x} views {views}"
+            );
+            t.check_frame(
+                &what,
+                0x0058_f2b0,
+                Conv::Thiscall(this),
+                &args,
+                ebp,
+                0x60,
+                (0x44, 0x10),
+                |g| Out::U32(l2b::create_structured(g, this, args, ebp - 0x44)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x0058ec50` (the render target read back as RGB rows) against the
+/// original: no destination, no target, the inline target and the array,
+/// each texture creation failing (an error or no texture), the map
+/// failing, a 3 x 2 read back. The device's `CreateTexture2D` stores a
+/// texture chosen by the description's usage; `GetDesc` and `Map` fill
+/// what the real ones would.
+#[test]
+fn big_read_back_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    // (dst, targets: 0 none, 1 inline, 2 array; first texture: 0 ok,
+    // 1 error, 2 none; second likewise; map error)
+    for (with_dst, targets, first, second, map_hr) in [
+        (false, 1u32, 0u32, 0u32, 0u32),
+        (true, 0, 0, 0, 0),
+        (true, 1, 0, 0, 0),
+        (true, 2, 0, 0, 0),
+        (true, 1, 1, 0, 0),
+        (true, 1, 2, 0, 0),
+        (true, 1, 0, 1, 0),
+        (true, 2, 0, 2, 0),
+        (true, 1, 0, 0, 0x8000_4005),
+    ] {
+        for (label, mut t) in Twins::all() {
+            // a COM object whose slot `slot` runs `code` (the rest record)
+            let with_slot = |t: &mut Twins, words: &[u32], slot: usize, code: &[u8]| -> u32 {
+                let obj = t.com_object(words, &[]);
+                let at = t.a.alloc_code(code).unwrap();
+                assert_eq!(t.b.alloc_code(code).unwrap(), at);
+                let vt = t.r32(obj);
+                t.w32(vt + 4 * slot as u32, at);
+                obj
+            };
+            // GetDesc(this, desc): width 3, height 2, junk elsewhere kept
+            let mut get_desc = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            get_desc.extend([0xc7, 0x00, 3, 0, 0, 0]); // mov [eax], 3
+            get_desc.extend([0xc7, 0x40, 0x04, 2, 0, 0, 0]); // mov [eax+4], 2
+            get_desc.extend([0xc2, 0x08, 0x00]); // ret 8
+            let target = with_slot(&mut t, &[1; 11], 10, &get_desc);
+            let tex1 = t.com_object(&[1; 3], &[]);
+            let tex2 = t.com_object(&[1; 3], &[]);
+            let obj = |kind: u32, tex: u32| if kind == 2 { 0 } else { tex };
+            let hr = |kind: u32| if kind == 1 { 0x8007_000e_u32 } else { 0 };
+            // CreateTexture2D(this, desc, init, out): staging (usage 3) gets
+            // the second texture
+            let mut create = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0x78, 0x1c, 0x03]; // mov eax,[esp+8]; cmp dword [eax+0x1c], 3
+            create.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+            create.extend([0x74, 0x0e]); // je second
+            create.extend([0xc7, 0x00]);
+            create.extend(obj(first, tex1).to_le_bytes()); // mov [eax], tex1
+            create.push(0xb8);
+            create.extend(hr(first).to_le_bytes()); // mov eax, hr1
+            create.extend([0xc2, 0x10, 0x00]); // ret 0x10
+            create.extend([0xc7, 0x00]);
+            create.extend(obj(second, tex2).to_le_bytes()); // second: mov [eax], tex2
+            create.push(0xb8);
+            create.extend(hr(second).to_le_bytes()); // mov eax, hr2
+            create.extend([0xc2, 0x10, 0x00]); // ret 0x10
+            let device = with_slot(&mut t, &[1; 6], 5, &create);
+            // Map(this, res, sub, type, flags, out): the pixels
+            let pixels = t.alloc(&(0..0x40u8).collect::<Vec<_>>());
+            let mut map = vec![0x8b, 0x44, 0x24, 0x18]; // mov eax, [esp+0x18]
+            map.extend([0xc7, 0x00]);
+            map.extend(pixels.to_le_bytes()); // mov [eax], pixels
+            map.extend([0xc7, 0x40, 0x04, 0x10, 0, 0, 0]); // mov [eax+4], 16
+            map.extend([0xc7, 0x40, 0x08, 0, 0, 0, 0]); // mov [eax+8], 0
+            map.push(0xb8);
+            map.extend(map_hr.to_le_bytes()); // mov eax, hr
+            map.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let mut words = vec![1u32; 0x3a];
+            words[0xe4 / 4] = 6;
+            words[0xbc / 4] = 3;
+            words[0x3c / 4] = 3;
+            words[0x38 / 4] = 6;
+            let ctx = with_slot(&mut t, &words, 0x38 / 4, &map);
+            let this = t.zeros(0x100);
+            t.w32(this + 0x6c, device);
+            t.w32(this + 0x70, ctx);
+            match targets {
+                1 => {
+                    t.w32(this + 0xdc, 0x8000_0001);
+                    t.w32(this + 0xe0, target);
+                }
+                2 => {
+                    let arr = t.alloc(&[target.to_le_bytes(), 0u32.to_le_bytes()].concat());
+                    t.w32(this + 0xdc, 2);
+                    t.w32(this + 0xe0, arr);
+                }
+                _ => {}
+            }
+            let dst = if with_dst { t.junk(0x20, 6) } else { 0 };
+            let ebp = t.ebp_for(1);
+            let what = format!(
+                "{label}: read back dst {with_dst} targets {targets} first {first} second {second} map {map_hr:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x0058_ec50,
+                Conv::Thiscall(this),
+                &[dst],
+                ebp,
+                0x60,
+                (0x4c, 4),
+                |g| Out::U32(l2b::read_back(g, this, dst, ebp - 0x4c)),
+            );
+            t.reset();
+        }
+    }
+}
