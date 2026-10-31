@@ -16,7 +16,9 @@ use crate::s4_misc::{
     SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, scale_task, start_object_at, trail_draw,
     unlist_free,
 };
-use crate::s4_small::{CAMERA_FACE_ACTOR, SOUND_RECORD, camera_face_actor, sound_record};
+use crate::s4_small::{
+    CAMERA_FACE_ACTOR, ID_LIST, SOUND_RECORD, camera_face_actor, id_list, sound_record,
+};
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
@@ -5298,5 +5300,242 @@ pub const MODELS_AROUND_START: Sig = Sig {
     len: 653,
     hash: 0xe065_11e8_fbf0_5423,
     calls: &[],
+    imports: &[],
+};
+
+/// The camera placed behind the character, towards the other one (cdecl,
+/// no arguments; a /GS frame of locals). The character `*G_CH`'s root
+/// matrix `R` (slot 210) and its last row `q` (slot 325). When `*G_A` and
+/// `*G_B` are on the same side ([`id_list`]: both 1 or both 0) the way
+/// `v` is `R`'s third row normalised (slots 325, 232) and scaled by `K`;
+/// else it is from `*G_B` to `*G_A` (slots 217, 234), normalised. With
+/// `t = K2 + `[`thickness_margin`] (slot 364 on the character is called
+/// and its float dropped; slot 268 `(ch, 0x10, pt)`), the camera point
+/// `G_O = q + v (t + K3)` (slot 248), slot 292 `(c)`, `G_O.y -= K4`, and
+/// the camera buffer floats 0..4 = `K5, t, G_O.x, G_O.y, G_O.z` (slot 389
+/// `(i, x)`). Each call sees the words the earlier ones left on the
+/// stack. Returns the last slot's `eax`.
+///
+/// `magic_0188` 0x100016a0 (659 bytes; 2 DLLs).
+pub fn camera_behind<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (r, v, p1, p2, off, pt, c, q) = (
+        at(0xb4),
+        at(0x14),
+        at(0x54),
+        at(0x34),
+        at(0x24),
+        at(0x64),
+        at(0x74),
+        at(0x44),
+    );
+    let ch = g.read::<u32>(w(0x17));
+    let mut s = Pushes::default();
+    s.push_all(&[r, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x23), 210), 0);
+    s.push_all(&[at(0x84), q]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x3c), 325), 0);
+    let call_esp = ebp.wrapping_sub(0xc4);
+    let side = |g: &mut G, op_at: u32| {
+        let fr = Frame {
+            at: img.rel32_target(f + op_at),
+            esp: call_esp,
+            ecx: g.read::<u32>(w(if op_at == 0x52 { 0x4a } else { 0x58 })),
+            ..*fr
+        };
+        id_list(g, img, &fr).eax
+    };
+    let a = side(g, 0x52);
+    let b = side(g, 0x5f);
+    let same = (a == 1 && b == 1) || (a == 0 && b == 0);
+    let mut s = Pushes::default();
+    if same {
+        s.push_all(&[at(0x94), v]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x80), 325), 0);
+        s.push_all(&[v, v]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x92), 232), 0);
+        let kk = k(g, 0xa7);
+        for o in [0u32, 4, 8] {
+            let x = mul(g.read::<f32>(v + o), kk);
+            g.write::<f32>(v + o, x);
+        }
+    } else {
+        let bb = g.read::<u32>(w(0xe0));
+        s.push_all(&[p1, bb]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0xda), 217), 0);
+        let aa = g.read::<u32>(w(0xf7));
+        s.push_all(&[p2, aa]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0xf1), 217), 0);
+        s.push_all(&[p1, p2, v]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x110), 234), 0);
+        s.push_all(&[v, v]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x122), 232), 0);
+    }
+    let margin = thickness_margin(g, img, img.rel32_target(f + 0x132));
+    let m = margin.xmm0.map_or(0.0, |x| f32::from_bits(x.reg() as u32));
+    let t = add(k(g, 0x13a), m);
+    let mut s = Pushes::default();
+    s.push(ch);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x13f), 364), 0);
+    s.push_all(&[pt, 0x10, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x15f), 268), 0);
+    let sc = add(t, k(g, 0x17a));
+    for o in [0u32, 4, 8] {
+        let x = mul(g.read::<f32>(v + o), sc);
+        g.write::<f32>(off + o, x);
+    }
+    s.push_all(&[off, q, w(0x1a3)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x190), 248), 0);
+    s.push(c);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1c7), 292), 0);
+    let y = sub(k(g, 0x1d7), k(g, 0x1df));
+    g.write::<f32>(w(0x1f6), y);
+    s.pop(7);
+    let mut e = 0;
+    for (i, (table, x)) in (0u32..).zip([
+        (0x1e4u32, None),
+        (0x20d, Some(0)),
+        (0x22c, Some(0x227)),
+        (0x24b, Some(0x246)),
+        (0x26a, Some(0x265)),
+    ]) {
+        // K5, then t, then G_O's words as they are at each call
+        let x = match x {
+            None => 0x4133_32ff,
+            Some(0) => t.to_bits(),
+            Some(o) => g.read::<u32>(w(o)),
+        };
+        s.set_top(x);
+        s.push(i);
+        // call width: 12 (the most `Pushes::words` holds)
+        e = s.call(g, slot_target(g, w(table), 389), 0).eax;
+        s.pop(1);
+    }
+    Ret::eax(e)
+}
+
+/// [`camera_behind`] (the `rel32`s: two [`id_list`]s,
+/// [`thickness_margin`] and `__security_check_cookie`).
+pub const CAMERA_BEHIND: Sig = Sig {
+    len: 659,
+    hash: 0x436f_d15e_f525_4b58,
+    calls: &[
+        (0x52, Callee::Sig(&ID_LIST)),
+        (0x5f, Callee::Sig(&ID_LIST)),
+        (0x132, Callee::Sig(&THICKNESS_MARGIN)),
+        (0x28b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A part run looking from the camera point `G_O` at `G_X` (cdecl
+/// `(obj)`; a /GS frame of locals): `P = G_O` with `y + K` (slot 325),
+/// the way `n = normalize(G_X - G_O)` with its `y` 0 (slots 234, 232), `a
+/// = normalize(up x n)`, `b = normalize(n x a)` (slots 266, 232; `up = (0,
+/// 1, 0, 1)`), the matrix `M = (a, b, n, (0, 0, 0, 1))` moved to `P`
+/// (slot 395), times the scale matrix of 0.0535 (slots 235, 231) into
+/// `*G_A`, the DLL's matrices multiplied and copied (slots 231 `(*G_B,
+/// *G_C, *G_A)` and 230 `(*G_D, *G_B)`), `*G_P = ITEM`, and the part run
+/// (slot 712 `(obj, 0x30)`) with the lock `*G_L` held at 1. Returns 1 when
+/// the run ended (slot 712 answered 0), else 0.
+///
+/// `magic_0188` 0x100020e0 (659 bytes; 2 DLLs).
+pub fn look_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (p, m, sc, d, up, n, a, b) = (
+        at(0x94),
+        at(0x84),
+        at(0xe4),
+        at(0xa4),
+        at(0x44),
+        at(0x34),
+        at(0x14),
+        at(0x24),
+    );
+    let mut s = Pushes::default();
+    let call = |g: &mut G, s: &mut Pushes, words: &[u32], table: u32, slot: u32| {
+        s.push_all(words);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(table), slot), 0)
+    };
+    call(g, &mut s, &[w(0x1f), p], 0x25, 325);
+    let y = add(g.read::<f32>(w(0x35)), g.read::<f32>(w(0x3d)));
+    g.write::<f32>(p + 4, y);
+    call(g, &mut s, &[m], 0x49, 235);
+    call(g, &mut s, &[sc], 0x65, 235);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(sc + o, 0x3d5a_e148);
+    }
+    call(g, &mut s, &[w(0x72), w(0x7d), d], 0x83, 234);
+    g.write::<u32>(d + 4, 0);
+    for (o, v) in [(0u32, 0u32), (4, 0x3f80_0000), (8, 0), (0xc, 0x3f80_0000)] {
+        g.write::<u32>(up + o, v);
+    }
+    call(g, &mut s, &[d, n], 0xb9, 232);
+    call(g, &mut s, &[n, up, a], 0xf8, 266);
+    call(g, &mut s, &[a, n, b], 0x111, 266);
+    call(g, &mut s, &[a, a], 0x123, 232);
+    let mut s = Pushes::default();
+    call(g, &mut s, &[b, b], 0x138, 232);
+    for (row, src) in [(0u32, a), (0x10, b), (0x20, n)] {
+        for o in [0u32, 4, 8] {
+            let v = g.read::<u32>(src + o);
+            g.write::<u32>(m + row + o, v);
+        }
+    }
+    for (o, v) in [
+        (0xcu32, 0u32),
+        (0x1c, 0),
+        (0x2c, 0),
+        (0x30, 0),
+        (0x34, 0),
+        (0x38, 0),
+        (0x3c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(m + o, v);
+    }
+    call(g, &mut s, &[p, m, m], 0x1ac, 395);
+    let ga = g.read::<u32>(w(0x203));
+    call(g, &mut s, &[sc, m, ga], 0x1fd, 231);
+    let [ga, gc, gb] = [0x211u32, 0x21c, 0x228].map(|o| g.read::<u32>(w(o)));
+    call(g, &mut s, &[ga, gc, gb], 0x216, 231);
+    let [gb, gd] = [0x230u32, 0x23b].map(|o| g.read::<u32>(w(o)));
+    call(g, &mut s, &[gb, gd], 0x235, 230);
+    let ptr = g.read::<u32>(w(0x248));
+    g.write::<u32>(ptr, w(0x250));
+    let lock = g.read::<u32>(w(0x255));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let ran = call(g, &mut s, &[0x30, obj], 0x263, 712).eax;
+    let lock = g.read::<u32>(w(0x271));
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(ran == 0))
+}
+
+/// [`look_part`] (the `rel32`: `__security_check_cookie`).
+pub const LOOK_PART: Sig = Sig {
+    len: 659,
+    hash: 0xc9a5_d153_f55a_b190,
+    calls: &[(0x28b, Callee::Any)],
     imports: &[],
 };

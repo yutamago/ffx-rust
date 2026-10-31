@@ -2555,3 +2555,82 @@ fn models_around_starts() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn cameras_behind() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x16a0);
+    rec_mem(&mut t, 210, 2, 16, Some(1));
+    rec_mem(&mut t, 325, 2, 4, None);
+    t.stub(325, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec_mem(&mut t, 232, 2, 4, Some(0));
+    rec_mem(&mut t, 217, 2, 4, Some(1));
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    rec_mem(&mut t, 248, 3, 4, Some(0));
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    rec_mem(&mut t, 292, 1, 4, Some(0));
+    rec_mem(&mut t, 389, 2, 0, None);
+    rec_mem(&mut t, 364, 1, 0, None);
+    t.stub_st0(364, |_, _| 7.0);
+    // the sides: slot 288 gives the lists (9: first, 11: second)
+    let lists = SCRATCH + 0x700;
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        lists + if a[0] == 9 { 0 } else { 0x10 }
+    });
+    t.write(
+        lists,
+        &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5, 6, 0],
+    );
+    // the thickness margin's slots
+    let margin = t.img.rel32_target(f + 0x132);
+    rec(&mut t, 390, 1, |_, a| 0x1015 + (a[0] & 1) * 0x18);
+    rec(&mut t, 215, 2, |_, a| 0x0215_0000 ^ a[0]);
+    rec(&mut t, 19, 1, |_, a| 0x0019_0000 ^ a[0]);
+    t.stub_st0(19, |_, _| 1.25);
+    t.set_u32(op(&t, margin, 0xc), 0x0188_0001);
+    t.set_u32(op(&t, f, 0x17), 0x0cc0_0001);
+    for (a, b) in [(1u32, 2u32), (4, 6), (1, 5), (9, 9), (5, 3)] {
+        t.set_u32(op(&t, f, 0x4a), a);
+        t.set_u32(op(&t, f, 0x58), b);
+        t.write(op(&t, f, 0x1a3), &varied(0x10, a + b));
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn look_parts() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x20e0);
+    rec_mem(&mut t, 325, 2, 4, Some(0));
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    rec_mem(&mut t, 232, 2, 4, Some(0));
+    rec_mem(&mut t, 266, 3, 4, Some(0));
+    rec_mem(&mut t, 395, 3, 16, Some(0));
+    rec_mem(&mut t, 231, 3, 16, None);
+    rec_mem(&mut t, 230, 2, 16, None);
+    let lock = SCRATCH + 0x7f0;
+    let answer = SCRATCH + 0x7e0;
+    rec_lock(&mut t, 712, 2, lock, move |m, _| m.r32(answer));
+    let obj = SCRATCH + 0x1000;
+    for ran in [0u32, 1] {
+        t.write(obj, &varied(0x80, ran));
+        t.write(op(&t, f, 0x1f), &varied(0x10, ran + 1));
+        t.write(op(&t, f, 0x7d), &varied(0x10, ran + 2));
+        for o in [0x203u32, 0x21c, 0x228, 0x23b] {
+            t.set_u32(op(&t, f, o), SCRATCH + 0x4000 + 0x40 * (o % 16));
+        }
+        t.set_u32(op(&t, f, 0x248), SCRATCH + 0x7c0);
+        t.set_u32(op(&t, f, 0x255), lock);
+        t.set_u32(lock, 0x5a5a_0000 + ran);
+        t.set_u32(answer, ran);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}

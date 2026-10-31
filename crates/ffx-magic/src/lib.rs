@@ -1288,6 +1288,8 @@ ports! {
     "camera tree" => s5_misc::CAMERA_TREE, s5_misc::camera_tree;
     "models around" => s5_misc::MODELS_AROUND, s5_misc::models_around;
     "models around start" => s5_misc::MODELS_AROUND_START, s5_misc::models_around_start;
+    "camera behind" => s5_misc::CAMERA_BEHIND, s5_misc::camera_behind;
+    "look part" => s5_misc::LOOK_PART, s5_misc::look_part;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
