@@ -9485,3 +9485,64 @@ pub const SPRITE_NODE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The overlay's entry hooking in (cdecl `(obj, owner, kind, id)`): a
+/// debug line with `id` (the printf wrapper: slot 726 `(fmt, &args)`),
+/// the ten handlers `G_HANDLERS` cleared; when the record list (`0x40`
+/// bytes each, ended by `u16 0xffff`) has `(kind, id)` the handler `id`
+/// is the DLL's and a second debug line follows. Then `obj + 0xb4` =
+/// the game's word `T[0xbb4]`, which gets `owner`, and slot 160 `(owner,
+/// G_HANDLERS, record)` hands the table over. Returns `obj + 0xb4`.
+///
+/// `magic_0124` 0x10001960 (253 bytes; 2 DLLs).
+pub fn entry_hook_in<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let id = fr.arg(g, 3);
+    // push ebp, esi, edi; push id; push fmt: the wrapper's `&args` is
+    // the word holding `id`
+    let body = fr.esp.wrapping_sub(12);
+    let printf = img.rel32_target(f + 0xf);
+    g.write::<u32>(body.wrapping_sub(4), id);
+    g.write::<u32>(body.wrapping_sub(8), w(0xa));
+    slot_call(g, img, printf, (0x8, 726), &[w(0xa), body.wrapping_sub(4)]);
+    for i in 0..10 {
+        g.write::<u32>(w(0x1d + 0xa * i), 0);
+    }
+    let mut rec = w(0x80);
+    let kind = fr.arg(g, 2);
+    loop {
+        if g.read::<u16>(rec) == 0xffff {
+            break;
+        }
+        let hit = u32::from(g.read::<u16>(rec + 2)) == id && u32::from(g.read::<u16>(rec)) == kind;
+        if hit {
+            g.write::<u32>(w(0xb1).wrapping_add(id.wrapping_mul(4)), w(0xb5));
+            // push fmt: `&args` is the word above it, the saved edi (not
+            // known here; the format takes no argument)
+            g.write::<u32>(body.wrapping_sub(4), w(0xaa));
+            slot_call(g, img, printf, (0x8, 726), &[w(0xaa), body]);
+            break;
+        }
+        rec += 0x40;
+    }
+    let t = g.read::<u32>(w(0xc3));
+    let (obj, owner) = (fr.arg(g, 0), fr.arg(g, 1));
+    let x = g.read::<u32>(t.wrapping_add(0xbb4));
+    g.write::<u32>(obj.wrapping_add(0xb4), x);
+    let x = g.read::<u32>(t.wrapping_add(0xbb4));
+    g.write::<u32>(x, owner);
+    slot_call(g, img, f, (0xc3, 160), &[owner, w(0xe9), rec]);
+    Ret::eax(g.read::<u32>(obj.wrapping_add(0xb4)))
+}
+
+/// [`entry_hook_in`].
+pub const ENTRY_HOOK_IN: Sig = Sig {
+    len: 253,
+    hash: 0xba5b_f4e8_7d20_1b8c,
+    calls: &[
+        (0xf, Callee::Sig(&crate::opu::DEBUG_PRINTF)),
+        (0xba, Callee::Sig(&crate::opu::DEBUG_PRINTF)),
+    ],
+    imports: &[],
+};

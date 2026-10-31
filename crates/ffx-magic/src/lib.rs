@@ -1190,6 +1190,7 @@ ports! {
     "command block reset" => s4_small::COMMAND_BLOCK_RESET, s4_small::command_block_reset;
     "spin records move" => s4_small::SPIN_RECORDS_MOVE, s4_small::spin_records_move;
     "camera face actor" => s4_small::CAMERA_FACE_ACTOR, s4_small::camera_face_actor;
+    "entry hook in" => s4_small::ENTRY_HOOK_IN, s4_small::entry_hook_in;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;

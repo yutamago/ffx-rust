@@ -4381,3 +4381,33 @@ fn camera_faces_and_sprite_nodes() {
         t.check(f, Call::this(r), &[], Eax::Checked, s4_small::sprite_node);
     }
 }
+
+#[test]
+fn entry_hooks_in() {
+    let Some(mut t) = twin(124) else { return };
+    let f = t.at(0x1960);
+    recs(&mut t, &[(726, 2), (160, 3)]);
+    let api = t.img.word(f + 0xc3);
+    let api_table = t.u32(api);
+    let slot = SCRATCH + 0x80;
+    t.set_u32(api_table + 0xbb4, slot);
+    let recs_at = t.img.word(f + 0x80);
+    let obj = SCRATCH + 0x100;
+    for (first_end, kind, id) in [
+        (false, 3u32, 4u32),
+        (false, 1, 2),
+        (false, 9, 9),
+        (true, 1, 2),
+    ] {
+        t.write(recs_at, &[0; 0xc0]);
+        for (i, (k, d)) in [(1u16, 2u16), (3, 4), (0xffff, 0)].into_iter().enumerate() {
+            t.set_u16(recs_at + 0x40 * i as u32, k);
+            t.set_u16(recs_at + 0x40 * i as u32 + 2, d);
+        }
+        if first_end {
+            t.set_u16(recs_at, 0xffff);
+        }
+        t.write(obj, &[0x33; 0xc0]);
+        t.check_entry(f, Call::default(), &[obj, 0x0a0a, kind, id], Eax::Checked);
+    }
+}
