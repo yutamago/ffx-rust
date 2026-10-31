@@ -53,6 +53,7 @@ use ffx_prender::m5m_r::{self as mr, bridge as gr};
 use ffx_prender::m5m_s::{self as ms, bridge as gs};
 use ffx_prender::m5m_t::{self as mt, bridge as gt};
 use ffx_prender::m5m_u::{self as mu, bridge as gu};
+use ffx_prender::m5m_v::{self as mv, bridge as gv};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4407,6 +4408,83 @@ fn r5_guide_map_save_sub_matches_the_original() {
                 |o| Out::U32(gu::guide_map_save_sub(o, ebp, n, maps, args[2])),
             );
             r5_same(t, "rcbgGuideMapSaveSub", ebp - 0x534, 0x530);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 18 (ffx_prender::m5m_v) ----
+
+#[test]
+fn r5_guide_convert_all_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0f1);
+        for case in 0..24_u32 {
+            // the table: 16-byte lines (text at +0, the line's int at +8),
+            // header lines first, then ids
+            let mut lines = vec![];
+            for _ in 0..rng.below(3) {
+                let mut l = *b"map,id\0\0\0\0\0\0\0\0\0\0";
+                l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                lines.push(l);
+            }
+            for _ in 0..=rng.below(4) {
+                let mut l = *b"0xxxxx\0\0\0\0\0\0\0\0\0\0";
+                l[0] = b'0' + rng.below(10) as u8;
+                l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                lines.push(l);
+            }
+            let bytes: Vec<u8> = lines.iter().flatten().copied().collect();
+            let table = t.alloc(&bytes);
+            let end = table + 16 * lines.len() as u32 - 16 * u32::from(case % 4 == 1);
+            t.stub_sym(mv::CHUNK_INIT, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(
+                mv::CHUNK_LOAD,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(case % 5 != 0)),
+            );
+            t.stub_sym(mv::CHUNK_FINI, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mv::PARSE_INIT, 4, false, 1, 0, Ret::Val(4));
+            t.stub_sym(mv::PARSE_SET_MODE, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mv::PARSE_ADD_SEPARATORS, 6, false, 2, 0, Ret::Val(6));
+            t.stub_sym(mv::PARSE_FINI, 7, false, 1, 0, Ret::Val(7));
+            t.stub_sym(mv::GUIDE_MAP_CONV, 8, false, 1, 0, Ret::Val(8));
+            t.stub_sym(mv::RC_PRINT, 9, false, 1, 0, Ret::Val(9));
+            let mut set = vec![0x8b, 0x4c, 0x24, 0x04, 0xc7, 0x41, 0x04]; // mov ecx, [esp+4]; mov dword [ecx+4], table
+            set.extend(table.to_le_bytes());
+            set.push(0xc3);
+            r5_code(t, mv::PARSE_SET, &set);
+            r5_code(
+                t,
+                mv::PARSE_ADVANCE_LINE,
+                &[0x8b, 0x4c, 0x24, 0x04, 0x83, 0x41, 0x04, 0x10, 0xc3],
+            );
+            let mut is_end = vec![0x8b, 0x4c, 0x24, 0x04, 0x31, 0xc0, 0x81, 0x79, 0x04];
+            is_end.extend(end.to_le_bytes());
+            is_end.extend([0x0f, 0x93, 0xc0, 0xc3]); // setae al; ret
+            r5_code(t, mv::PARSE_IS_END, &is_end);
+            r5_code(
+                t,
+                mv::PARSE_GET_INT,
+                &[
+                    0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x41, 0x04, 0x8b, 0x40, 0x08, 0xc3,
+                ],
+            );
+            r5_zero_stack(t, 0x300);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - mv::FRAME - 0x40);
+            t.check(
+                "rcuiGuideProcConvertAll",
+                0x0093_4250,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(gv::convert_all(o, ebp)),
+            );
+            r5_same(t, "rcuiGuideProcConvertAll", ebp - 0x90, 8);
             t.b_top = None;
             t.reset();
         }

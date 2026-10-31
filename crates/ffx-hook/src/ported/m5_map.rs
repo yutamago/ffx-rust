@@ -28,6 +28,7 @@ use ffx_prender::m5m_r::bridge as gr;
 use ffx_prender::m5m_s::bridge as gs;
 use ffx_prender::m5m_t::bridge as gt;
 use ffx_prender::m5m_u::bridge as gu;
+use ffx_prender::m5m_v::bridge as gv;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -653,5 +654,13 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_u::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_u::FRAME;
         gu::guide_map_save_sub(&mut mem(), ebp, n, maps, number)
+    }
+    // ---- round 5 batch 18 (ffx_prender::m5m_v) ----
+    /// `rcuiGuideProcConvertAll()` -> `rcdtChunkFini`'s `eax` (the
+    /// original's 0x98-byte frame, its chunk and parser, in this shim's).
+    rcuiGuideProcConvertAll @ 0x0093_4250 => extern "C" fn rcui_guide_proc_convert_all() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_v::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_v::FRAME;
+        gv::convert_all(&mut mem(), ebp)
     }
 }
