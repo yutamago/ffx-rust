@@ -5388,11 +5388,15 @@ pub const PART_DROP_FIXED: Sig = Sig {
 
 /// The effect reset ([`crate::sb_misc::effect_reset`]), byte `G_B` 1,
 /// slot 235 `(V)` on the DLL's vector `V` (operand `+0x1f`), slot 329
-/// `(V, V, s)` with the block's scale `*G + 0x3150`, then the block's
-/// `+0xa90..+0xa9c` into the DLL's four floats (operands `+0x55`, `+0x65`,
-/// `+0x78`, `+0x88`) (no arguments). Returns slot 329's `eax`.
+/// `(V, V, s)` with the block's scale (`*G` plus the displacement at
+/// `+0x29`), then the block's four floats from the displacement at
+/// `+0x4d` into the DLL's (operands `+0x55`, `+0x65`, `+0x78`, `+0x88`)
+/// (no arguments). Returns slot 329's `eax`.
 ///
-/// `magic_0168` 0x10001c30 (142 bytes; 3 DLLs).
+/// `magic_0168` 0x10001c30 (scale `+0x3150`, floats `+0xa90`; 3 DLLs),
+/// `magic_0165` 0x10001a40 (`+0x5ee8`, `+0x9d0`), `magic_0511` 0x10002040
+/// (`+0x2258`, `+0x1990`) and `magic_0563` 0x10001f40 (`+0x3ba4`,
+/// `+0x2b20`) (142 bytes; 2 DLLs each).
 pub fn reset_and_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let block = g.read::<u32>(op(img, f, 0x3));
@@ -5400,10 +5404,11 @@ pub fn reset_and_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u8>(op(img, f, 0x13), 1);
     let v = op(img, f, 0x1f);
     slot_call(g, img, f, (0xd, 235), &[v]);
-    let s = g.read::<u32>(block.wrapping_add(0x3150));
+    let s = g.read::<u32>(block.wrapping_add(op(img, f, 0x29)));
     let eax = slot_call(g, img, f, (0x2e, 329), &[v, v, s]).eax;
+    let floats = block.wrapping_add(op(img, f, 0x4d));
     for (i, o) in (0u32..).zip([0x55, 0x65, 0x78, 0x88]) {
-        let x = g.read::<u32>(block.wrapping_add(0xa90 + 4 * i));
+        let x = g.read::<u32>(floats.wrapping_add(4 * i));
         g.write::<u32>(op(img, f, o), x);
     }
     Ret::eax(eax)
@@ -5413,6 +5418,30 @@ pub fn reset_and_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const RESET_AND_SCALE: Sig = Sig {
     len: 142,
     hash: 0x3679_2406_345d_17b3,
+    calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};
+
+/// [`reset_and_scale`] in `magic_0165`.
+pub const RESET_AND_SCALE_165: Sig = Sig {
+    len: 142,
+    hash: 0xafd7_a225_f47b_a9ea,
+    calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};
+
+/// [`reset_and_scale`] in `magic_0511`.
+pub const RESET_AND_SCALE_511: Sig = Sig {
+    len: 142,
+    hash: 0xb25b_15c7_a6e0_5976,
+    calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};
+
+/// [`reset_and_scale`] in `magic_0563`.
+pub const RESET_AND_SCALE_563: Sig = Sig {
+    len: 142,
+    hash: 0x6ebc_9978_673d_20f3,
     calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
     imports: &[],
 };

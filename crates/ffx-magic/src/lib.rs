@@ -1119,6 +1119,9 @@ ports! {
     "camera floats" => s4_small::CAMERA_FLOATS, s4_small::camera_floats;
     "part drop (fixed)" => s4_small::PART_DROP_FIXED, s4_small::part_drop_fixed;
     "reset and scale" => s4_small::RESET_AND_SCALE, s4_small::reset_and_scale;
+    "reset and scale (165)" => s4_small::RESET_AND_SCALE_165, s4_small::reset_and_scale;
+    "reset and scale (511)" => s4_small::RESET_AND_SCALE_511, s4_small::reset_and_scale;
+    "reset and scale (563)" => s4_small::RESET_AND_SCALE_563, s4_small::reset_and_scale;
     "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;

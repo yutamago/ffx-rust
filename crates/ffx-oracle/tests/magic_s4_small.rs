@@ -2483,3 +2483,20 @@ fn scales_drops_resets() {
     t.set_u32(block + 0x3150, 0x4000_0000);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn resets_and_scales() {
+    for (n, rva) in [(165u16, 0x1a40u32), (511, 0x2040), (563, 0x1f40)] {
+        let Some(mut t) = twin(n) else { return };
+        recs(&mut t, &[(287, 3), (283, 2), (281, 1), (235, 1), (329, 3)]);
+        let f = t.at(rva);
+        let block = SCRATCH + 0x1000;
+        t.set_u32(op(&t, f, 0x3), block);
+        let (s, v) = (op(&t, f, 0x29), op(&t, f, 0x4d));
+        for i in 0..4 {
+            t.set_u32(block + v + 4 * i, 0x3f00_0000 + i);
+        }
+        t.set_u32(block + s, 0x4000_0000);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
