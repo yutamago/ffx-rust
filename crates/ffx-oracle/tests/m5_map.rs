@@ -50,6 +50,7 @@ use ffx_prender::m5m_o::{self as mo, bridge as go};
 use ffx_prender::m5m_p::{self as mp, bridge as gp};
 use ffx_prender::m5m_q::{self as mq, bridge as gq};
 use ffx_prender::m5m_r::{self as mr, bridge as gr};
+use ffx_prender::m5m_s::{self as ms, bridge as gs};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4169,6 +4170,82 @@ fn r5_load_texture_anime_matches_the_original() {
                 |o| Out::U32(gr::load_texture_anime(o, ebp, scene, i)),
             );
             r5_same(t, "rcbgSceneLoadTextureAnime", ebp - 0x138, 0x134);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 15 (ffx_prender::m5m_s) ----
+
+#[test]
+fn r5_chk_pack_list_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0c1);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/proj/map/bsil");
+            let map: &[u8; 6] = if case % 2 == 0 { b"bsil01" } else { b"kino03" };
+            t.write(work + 0x27c, map);
+            t.global(ms::RCUI_WORK.sym, work);
+            // the table: 16-byte lines, `[packNN]` sections and map names
+            // (two of them share only 3 characters with a map)
+            let names: [&[u8; 6]; 7] = [
+                b"bsil00", b"bsil01", b"bsil12", b"kino03", b"lmyt05", b"bsix02", b"kinz04",
+            ];
+            let mut lines: Vec<[u8; 16]> = vec![];
+            for _ in 0..=rng.below(3) {
+                let mut l = *b"[pack00]\0\0\0\0\0\0\0\0";
+                l[5] = b'0' + rng.below(10) as u8;
+                l[6] = b'0' + rng.below(10) as u8;
+                lines.push(l);
+                for _ in 0..rng.below(4) {
+                    let mut l = [0_u8; 16];
+                    l[..6].copy_from_slice(names[rng.below(7) as usize]);
+                    lines.push(l);
+                }
+            }
+            let bytes: Vec<u8> = lines.iter().flatten().copied().collect();
+            let table = t.alloc(&bytes);
+            let end = table + 16 * lines.len() as u32 - 16 * u32::from(case % 7 == 6);
+            let maps = t.zeros(0x20);
+            let pack = t.words(&[rng.next()]);
+            t.stub_sym(ms::CHUNK_INIT, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(
+                ms::CHUNK_LOAD,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(case % 5 != 0)),
+            );
+            t.stub_sym(ms::CHUNK_FINI, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(ms::PARSE_INIT, 4, false, 1, 0, Ret::Val(4));
+            t.stub_sym(ms::PARSE_FINI, 5, false, 1, 0, Ret::Val(5));
+            let mut set = vec![0x8b, 0x4c, 0x24, 0x04, 0xc7, 0x41, 0x04]; // mov ecx, [esp+4]; mov dword [ecx+4], table
+            set.extend(table.to_le_bytes());
+            set.push(0xc3);
+            r5_code(t, ms::PARSE_SET, &set);
+            r5_code(
+                t,
+                ms::PARSE_ADVANCE_LINE,
+                &[0x8b, 0x4c, 0x24, 0x04, 0x83, 0x41, 0x04, 0x10, 0xc3],
+            );
+            let mut is_end = vec![0x8b, 0x4c, 0x24, 0x04, 0x31, 0xc0, 0x81, 0x79, 0x04];
+            is_end.extend(end.to_le_bytes());
+            is_end.extend([0x0f, 0x93, 0xc0, 0xc3]); // setae al; ret
+            r5_code(t, ms::PARSE_IS_END, &is_end);
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - ms::FRAME - 0x40);
+            t.check(
+                "rcbgSaveChkPackList",
+                0x0093_9480,
+                Conv::Cdecl,
+                &[maps, pack],
+                |o| Out::U32(gs::chk_pack_list(o, ebp, maps, pack)),
+            );
+            r5_same(t, "rcbgSaveChkPackList", ebp - 0x1a4, 0x1a0);
             t.b_top = None;
             t.reset();
         }

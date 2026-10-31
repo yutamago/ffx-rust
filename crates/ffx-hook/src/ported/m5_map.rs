@@ -25,6 +25,7 @@ use ffx_prender::m5m_o::bridge as go;
 use ffx_prender::m5m_p::bridge as gp;
 use ffx_prender::m5m_q::bridge as gq;
 use ffx_prender::m5m_r::bridge as gr;
+use ffx_prender::m5m_s::bridge as gs;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -623,5 +624,14 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_r::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_r::FRAME;
         gr::load_texture_anime(&mut mem(), ebp, scene, i)
+    }
+    // ---- round 5 batch 15 (ffx_prender::m5m_s) ----
+    /// `rcbgSaveChkPackList(maps, pack)` -> the map count or 0 (the
+    /// original's 0x1a4-byte frame, its chunk, parser and path, in this
+    /// shim's).
+    rcbgSaveChkPackList @ 0x0093_9480 => extern "C" fn rcbg_save_chk_pack_list(maps: u32, pack: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_s::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_s::FRAME;
+        gs::chk_pack_list(&mut mem(), ebp, maps, pack)
     }
 }
