@@ -121,4 +121,8 @@ ported! {
         let mut f = StackFrame::<1>::new();
         lb::parse_command_line(&mut mem(), this, argc, argv, config, f.at())
     }
+    /// `PApplicationScriptProxy::applyFrameInput(app, record, frame)`; `al`.
+    Phyre_PFramework_PApplicationScriptProxy_applyFrameInput @ 0x0062_6070 => extern "C" fn apply_frame_input(app: u32, rec: u32, frame: u32) -> u8 {
+        lb::apply_frame_input(&mut mem(), app, rec, frame)
+    }
 }

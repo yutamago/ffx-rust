@@ -328,6 +328,31 @@ pub const COMMAND_LINE_DATA: [u32; 11] = [
 /// The resolutions `resolution=` names (width, height, mode).
 pub const RESOLUTIONS: [(u32, u32); 4] = [(720, 480), (720, 576), (1280, 720), (1920, 1080)];
 
+/// `applyFrameInput`'s texts: `"KB"` and its line, `"IK"` and its line,
+/// the on and off words, the unmapped warning, the command line, the
+/// unknown-kind warning.
+pub const FRAME_INPUT_TEXT: [u32; 9] = [
+    0x00b4_02f0,
+    0x00b4_02f4,
+    0x00b4_031c,
+    0x00b4_0320,
+    0x00b4_0318,
+    0x00b8_f870,
+    0x00b4_0344,
+    0x00b4_0378,
+    0x00b4_0394,
+];
+/// `applyFrameInput`'s callees and data: `Phyre_PArray_at(i)`, the map's
+/// name (both thiscall), `_stricmp`'s import slot (cdecl), the
+/// unknown-kind warning's flag byte, the semantic mapping's vtable.
+pub const FRAME_INPUT_CALLS: [u32; 5] = [
+    0x009e_cc80,
+    0x009e_cc70,
+    0x00b0_c398,
+    0x00cc_9eec,
+    0x00c6_8228,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -338,7 +363,8 @@ pub mod bridge {
     };
     use super::{
         COMMAND_LINE_CALLS, COMMAND_LINE_DATA, COMMAND_LINE_HELP, COMMAND_LINE_KEYS,
-        COMMAND_LINE_TEXTS, INPUT_SHUTDOWN, ON_EXIT_CALLS, ON_EXIT_DATA, RESOLUTIONS,
+        COMMAND_LINE_TEXTS, FRAME_INPUT_CALLS, FRAME_INPUT_TEXT, INPUT_SHUTDOWN, ON_EXIT_CALLS,
+        ON_EXIT_DATA, RESOLUTIONS,
     };
     use super::{DIERR_INPUTLOST, DINPUT_PAD, KEY_LOG, MAP_TREE, PATH_CALLS, PATH_DATA};
     use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
@@ -1946,5 +1972,161 @@ pub mod bridge {
             }
             i = i.wrapping_add(1);
         }
+    }
+
+    /// `PApplicationScriptProxy::applyFrameInput(app, record, frame)`
+    /// (`0x00626070`, cdecl, `al`): one recorded input applied, each
+    /// printed first (`PhyrePrintf(0, ...)` with the frame number).
+    /// Kind 1 (`"KB"`): the key state byte `+0xa` into keyboard `+8`'s
+    /// (the input mapper `[app + 0x2b8]` `+0x80 + 4 i`) table `+0x18` at
+    /// the signed key `+9`; 1 when that keyboard exists. Kind 2 (`"IK"`):
+    /// for every input map of the mapper (`[mapper]`, `Phyre_PArray_at`)
+    /// whose name (`0x009ecc70`) is the record's (`+8`), every mapping of
+    /// the semantic type (vtable `0x00c68228` at `+8`) gets the byte
+    /// `+0x8c` in the first keyboard's table at its `+0x18` (`+0x88` 1) or
+    /// `+0x1c` (2) less 4; 1 when one was set, else a warning. Kind 3: the
+    /// command table (`[app + 0x2c]`, `+0x14` entries of 0x48 bytes, `+0x18`
+    /// of them) entry whose name (`+4`, `_stricmp`) is `+8`'s runs with
+    /// `(app, record + 0xc)`; 0. Another kind: a warning, once
+    /// (`0x00cc9eec`); 0.
+    pub fn apply_frame_input(h: &mut impl Host, app: u32, rec: u32, frame: u32) -> u8 {
+        let [kb, kb_fmt, ik, ik_fmt, on, off, unmapped, cmd_fmt, unknown] = FRAME_INPUT_TEXT;
+        let kind: u32 = h.read(rec);
+        match kind {
+            1 => {
+                let key: u8 = h.read(rec + 8);
+                let sub: u8 = h.read(rec + 9);
+                let state: u8 = h.read(rec + 0xa);
+                let (fmt, kb) = (h.rebase(kb_fmt), h.rebase(kb));
+                let id: u32 = h.read(rec + 4);
+                let sub_word = i32::from(sub.cast_signed()).cast_unsigned();
+                h.call_sym(
+                    PRINTF,
+                    Conv::Cdecl,
+                    &[
+                        0,
+                        fmt,
+                        id,
+                        kb,
+                        u32::from(key),
+                        sub_word,
+                        u32::from(state),
+                        frame,
+                    ],
+                );
+                let mapper: u32 = h.read(app + 0x2b8);
+                let key: u8 = h.read(rec + 8);
+                let dev: u32 = h.read(mapper + 0x80 + 4 * u32::from(key));
+                if dev == 0 {
+                    return 0;
+                }
+                let sub = i32::from(h.read::<u8>(rec + 9).cast_signed()).cast_unsigned();
+                let state: u8 = h.read(rec + 0xa);
+                h.write(sub.wrapping_add(dev).wrapping_add(0x18), state);
+                1
+            }
+            2 => apply_input_mapping(h, app, rec, frame, [ik, ik_fmt, on, off, unmapped]),
+            3 => {
+                let (fmt, name) = (h.rebase(cmd_fmt), h.read::<u32>(rec + 8));
+                let id: u32 = h.read(rec + 4);
+                h.call_sym(PRINTF, Conv::Cdecl, &[0, fmt, id, name, rec + 0xc, frame]);
+                let stricmp: u32 = h.read(h.rebase(FRAME_INPUT_CALLS[2]));
+                let mut i = 0u32;
+                loop {
+                    let table: u32 = h.read(app + 0x2c);
+                    if i >= h.read::<u32>(table + 0x18) {
+                        return 0;
+                    }
+                    let entries: u32 = h.read(table + 0x14);
+                    let name: u32 = h.read(rec + 8);
+                    let entry = entries.wrapping_add(0x48 * i);
+                    if h.call(stricmp, Conv::Cdecl, &[entry + 4, name]) == 0 {
+                        let table: u32 = h.read(app + 0x2c);
+                        let entries: u32 = h.read(table + 0x14);
+                        let f: u32 = h.read(entries.wrapping_add(0x48 * i));
+                        h.call(f, Conv::Cdecl, &[app, rec + 0xc]);
+                        return 0;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {
+                let once = h.rebase(FRAME_INPUT_CALLS[3]);
+                if h.read::<u8>(once) == 0 {
+                    h.write(once, 1u8);
+                    let msg = h.rebase(unknown);
+                    h.call_sym(PRINTF, Conv::Cdecl, &[1, msg]);
+                }
+                0
+            }
+        }
+    }
+
+    /// [`apply_frame_input`]'s kind 2 (`texts`: `"IK"`, the format, the
+    /// on and off words, the unmapped warning).
+    fn apply_input_mapping(
+        h: &mut impl Host,
+        app: u32,
+        rec: u32,
+        frame: u32,
+        texts: [u32; 5],
+    ) -> u8 {
+        let [ik, fmt, on, off, unmapped] = texts;
+        let name = rec + 8;
+        let pressed = h.read::<u32>(rec + 0x88) == 1;
+        let word = h.rebase(if pressed { on } else { off });
+        let value: u8 = h.read(rec + 0x8c);
+        let (fmt, ik) = (h.rebase(fmt), h.rebase(ik));
+        let id: u32 = h.read(rec + 4);
+        h.call_sym(
+            PRINTF,
+            Conv::Cdecl,
+            &[0, fmt, id, ik, name, word, u32::from(value), frame],
+        );
+        let mapper: u32 = h.read(app + 0x2b8);
+        let semantic = h.rebase(FRAME_INPUT_CALLS[4]);
+        let mut set = 0u8;
+        let list: u32 = h.read(mapper);
+        if list != 0 && h.read::<u32>(list) & 0x7fff_ffff != 0 {
+            let mut idx = 0u32;
+            loop {
+                let list: u32 = h.read(mapper);
+                let map = h.call_sym(FRAME_INPUT_CALLS[0], Conv::Thiscall(list), &[idx]);
+                let map_name = h.call_sym(FRAME_INPUT_CALLS[1], Conv::Thiscall(map), &[]);
+                if same_text(h, map_name, name) {
+                    let mut j = 0u32;
+                    while j < h.read::<u32>(map + 8) & 0x7fff_ffff {
+                        let entries: u32 = h.read(map + 0xc);
+                        let e: u32 = h.read(entries.wrapping_add(4 * j));
+                        if h.read::<u32>(e + 8) == semantic {
+                            let mapper: u32 = h.read(app + 0x2b8);
+                            let dev: u32 = h.read(mapper + 0x80);
+                            if dev != 0 {
+                                for (kind, field) in [(1u32, 0x18u32), (2, 0x1c)] {
+                                    if h.read::<u32>(rec + 0x88) == kind {
+                                        let at: u32 = h.read(e + field);
+                                        let v: u8 = h.read(rec + 0x8c);
+                                        h.write(at.wrapping_add(dev).wrapping_sub(4), v);
+                                        set = 1;
+                                    }
+                                }
+                            }
+                        }
+                        j += 1;
+                    }
+                }
+                idx += 1;
+                let list: u32 = h.read(mapper);
+                if idx >= h.read::<u32>(list) & 0x7fff_ffff {
+                    break;
+                }
+            }
+            if set != 0 {
+                return set;
+            }
+        }
+        let msg = h.rebase(unmapped);
+        h.call_sym(PRINTF, Conv::Cdecl, &[1, msg, name]);
+        set
     }
 }

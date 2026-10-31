@@ -4159,3 +4159,180 @@ fn left2_parse_command_line_matches_the_original() {
         }
     }
 }
+
+/// `strcmp(a, b)` for `_stricmp`'s import in the frame input test (the
+/// test's names differ in more than case; as field.rs's `strncmp`
+/// without the count).
+const FI_STRCMP: [u8; 0x24] = [
+    0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24,
+    0x10, // push esi; push edi; mov esi,[esp+0xc]; mov edi,[esp+0x10]
+    0x0f, 0xb6, 0x06, 0x0f, 0xb6, 0x17, 0x29, 0xd0, 0x75,
+    0x09, // l: movzx eax,[esi]; movzx edx,[edi]; sub eax,edx; jne done
+    0x85, 0xd2, 0x74, 0x05, 0x46, 0x47, 0xeb, 0xee,
+    0x90, // test edx,edx; je done; inc esi; inc edi; jmp l
+    0x5f, 0x5e, 0xc3, 0x90, 0x90, 0x90, 0x90, // done: pop edi; pop esi; ret
+];
+
+/// `applyFrameInput` against the original: a keyboard record with and
+/// without its keyboard (a negative sub-key), mapping records (pressed,
+/// released, another value; matching maps with semantic and other
+/// mappings, no match, no first keyboard, no list, an empty list), a
+/// command record found and not, an unknown kind (the warning once).
+#[test]
+#[allow(clippy::too_many_lines)]
+fn big_frame_input_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    let cstr = |t: &mut Twins, s: &str| {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        t.alloc(&b)
+    };
+    // (kind, variant)
+    let mut cases = vec![(1u32, 0u32), (1, 1), (3, 0), (3, 1), (4, 0), (4, 1), (0, 0)];
+    for v in 0..7 {
+        cases.push((2, v));
+    }
+    for (kind, variant) in cases {
+        for (label, mut t) in Twins::all() {
+            t.import_code(l2::FRAME_INPUT_CALLS[2], &FI_STRCMP);
+            // PhyrePrintf: the warnings log their 2 and 3 words, the input
+            // lines their first 6 (of 6 to 8)
+            let texts = l2::FRAME_INPUT_TEXT;
+            let (unmapped, unknown) = (t.rebase(texts[6]), t.rebase(texts[8]));
+            let logs: Vec<u32> = [6u32, 3, 2]
+                .iter()
+                .map(|&n| t.stub_code(l2::PRINTF, false, n, 0, 0x5150))
+                .collect();
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax, unmapped
+            k.extend(unmapped.to_le_bytes());
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[1].wrapping_sub(code + 15).to_le_bytes()); // je log3
+            k.push(0x3d);
+            k.extend(unknown.to_le_bytes()); // cmp eax, unknown
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[2].wrapping_sub(code + 26).to_le_bytes()); // je log2
+            k.push(0xe9);
+            k.extend(logs[0].wrapping_sub(code + 31).to_le_bytes()); // jmp log6
+            t.write(code, &k);
+            let at = t.rebase(l2::PRINTF);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            t.stub(l2::FRAME_INPUT_CALLS[1], true, 0, 0, 0);
+            let once = t.rebase(l2::FRAME_INPUT_CALLS[3]);
+            t.w8(once, u8::from(kind == 4 && variant == 1));
+            let semantic = t.rebase(l2::FRAME_INPUT_CALLS[4]);
+            let app = t.zeros(0x2c0);
+            let mapper = t.zeros(0xa0);
+            t.w32(app + 0x2b8, mapper);
+            let keyboard = t.junk(0x40, 2);
+            let no_keyboard = (kind == 1 && variant == 1) || (kind == 2 && variant == 4);
+            if !no_keyboard {
+                t.w32(mapper + 0x80, keyboard);
+                t.w32(mapper + 0x80 + 4 * 3, keyboard);
+            }
+            let rec = t.zeros(0x90);
+            t.w32(rec, kind);
+            t.w32(rec + 4, 0x77);
+            match kind {
+                1 => {
+                    t.w8(rec + 8, 3);
+                    t.w8(rec + 9, 0xfe);
+                    t.w8(rec + 0xa, 0x80);
+                }
+                2 => {
+                    t.write(rec + 8, b"Jump\0");
+                    t.w32(rec + 0x88, [1, 2, 3, 1, 1, 1, 2][variant as usize]);
+                    t.w8(rec + 0x8c, 0x5a);
+                    // two maps: "Jump" (unless variant 3) with a semantic
+                    // mapping, another one and a semantic mapping of
+                    // another map
+                    let names = [if variant == 3 { "Walk" } else { "Jump" }, "Run"];
+                    let mut maps = Vec::new();
+                    for (m, n) in names.iter().enumerate() {
+                        let name = cstr(&mut t, n);
+                        let mut entries = Vec::new();
+                        for k in 0..3u32 {
+                            let e = t.zeros(0x20);
+                            t.w32(e + 8, if k == 1 { 0x1234 } else { semantic });
+                            t.w32(e + 0x18, 0x10 + 4 * k + m as u32);
+                            t.w32(e + 0x1c, 0x20 + 4 * k + m as u32);
+                            entries.push(e);
+                        }
+                        let arr = t.alloc(
+                            &entries
+                                .iter()
+                                .flat_map(|v| v.to_le_bytes())
+                                .collect::<Vec<_>>(),
+                        );
+                        let map = t.zeros(0x10);
+                        t.w32(map + 8, 0x8000_0003);
+                        t.w32(map + 0xc, arr);
+                        // the name getter answers the map's name
+                        let at = t.a.alloc_code(&[0xcc; 8]).unwrap();
+                        assert_eq!(t.b.alloc_code(&[0xcc; 8]).unwrap(), at);
+                        let mut k = vec![0xb8];
+                        k.extend(name.to_le_bytes());
+                        k.push(0xc3);
+                        t.write(at, &k);
+                        t.w32(map + 4, at);
+                        maps.push(map);
+                    }
+                    // the name getter (0x009ecc70) runs the code at [map + 4]
+                    let getter = t.a.alloc_code(&[0xcc; 8]).unwrap();
+                    assert_eq!(t.b.alloc_code(&[0xcc; 8]).unwrap(), getter);
+                    t.write(getter, &[0xff, 0x61, 0x04]); // jmp [ecx+4]
+                    let at = t.rebase(l2::FRAME_INPUT_CALLS[1]);
+                    let mut j = vec![0xe9];
+                    j.extend(getter.wrapping_sub(at + 5).to_le_bytes());
+                    t.write(at, &j);
+                    let data = t.alloc(
+                        &maps
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+                    let list = t.zeros(8);
+                    t.w32(
+                        list,
+                        if variant == 6 {
+                            0x8000_0000
+                        } else {
+                            0x8000_0002
+                        },
+                    );
+                    t.w32(list + 4, data);
+                    if variant != 5 {
+                        t.w32(mapper, list);
+                    }
+                }
+                3 => {
+                    let name = cstr(&mut t, if variant == 0 { "reset" } else { "none" });
+                    t.w32(rec + 8, name);
+                    let f = t.stub_code(0xf00d, false, 2, 0, 0);
+                    // a third entry past the count, named as the missing command
+                    let mut entries = vec![0u8; 0x48 * 3];
+                    for (i, n) in ["load", "reset", "none"].iter().enumerate() {
+                        entries[0x48 * i..0x48 * i + 4].copy_from_slice(&f.to_le_bytes());
+                        entries[0x48 * i + 4..0x48 * i + 4 + n.len()].copy_from_slice(n.as_bytes());
+                    }
+                    let table_entries = t.alloc(&entries);
+                    let table = t.zeros(0x20);
+                    t.w32(table + 0x14, table_entries);
+                    t.w32(table + 0x18, 2);
+                    t.w32(app + 0x2c, table);
+                }
+                _ => {}
+            }
+            let what = format!("{label}: frame input kind {kind} variant {variant}");
+            t.check(&what, 0x0062_6070, Conv::Cdecl, &[app, rec, 0x99], |g| {
+                Out::Al(l2b::apply_frame_input(g, app, rec, 0x99))
+            });
+            t.reset();
+        }
+    }
+}
