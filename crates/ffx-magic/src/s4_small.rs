@@ -7025,3 +7025,84 @@ pub const TURN_POINT: Sig = Sig {
     calls: &[(0xa8, Callee::Any)],
     imports: &[],
 };
+
+/// The block's sound record (`*G + 0x3b30`): its id 0x20c, slot 562's
+/// handle at `+0x3b34`, `u16 +0x3b38` 0x8000, the volume `+0x3b48`
+/// 0x804c4c4c and the rest cleared (no arguments). Returns 0.
+///
+/// `magic_0563` 0x10001fd0 (132 bytes; 2 DLLs).
+pub fn sound_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let b = g.read::<u32>(op(img, f, 0x8));
+    let at = |o: u32| b.wrapping_add(o);
+    g.write::<u32>(at(0x3b30), 0x20c);
+    let h = slot_call(g, img, f, (0x1, 562), &[]).eax;
+    g.write::<u32>(at(0x3b34), h);
+    g.write::<u16>(at(0x3b38), 0x8000);
+    g.write::<u8>(at(0x3b3a), 0);
+    for off in [0x3b3c, 0x3b40, 0x3b44] {
+        g.write::<u32>(at(off), 0);
+    }
+    g.write::<u32>(at(0x3b48), 0x804c_4c4c);
+    for off in [
+        0x3b4c, 0x3b50, 0x3b64, 0x3b68, 0x3b6c, 0x3b70, 0x3b74, 0x3b78,
+    ] {
+        g.write::<u32>(at(off), 0);
+    }
+    Ret::eax(0)
+}
+
+/// [`sound_record`].
+pub const SOUND_RECORD: Sig = Sig {
+    len: 132,
+    hash: 0xabd2_e467_ba8d_da2f,
+    calls: &[],
+    imports: &[],
+};
+
+/// The actors' mean position on the screen (no arguments; a /GS frame):
+/// slot 327 `(m, camera)` fills a frame matrix from the DLL's camera
+/// (operand `+0x14`), the mean position of the actors
+/// ([`crate::sb_misc::mean_position`]) goes into the frame and slot 229
+/// `(v, m, mean)` turns it (the first call's words still under); `G_X`,
+/// `G_Z` take its `x`, `z` (operands `+0x53`, `+0x65`). Returns slot
+/// 229's `eax`.
+///
+/// `magic_0307` 0x100079b0 (114 bytes; 2 DLLs).
+pub fn mean_on_screen<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, mean, v) = (
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x14),
+    );
+    let cam = op(img, f, 0x14);
+    slot_call(g, img, f, (0x1a, 327), &[m, cam]);
+    // sub esp, 0x64; the camera's two words; the call
+    crate::sb_misc::mean_position(
+        g,
+        img,
+        img.rel32_target(f + 0x2a),
+        ebp.wrapping_sub(0x70),
+        mean,
+    );
+    let eax = slot_call(g, img, f, (0x3b, 229), &[v, m, mean, m, cam]).eax;
+    let x = g.read::<u32>(v);
+    g.write::<u32>(op(img, f, 0x53), x);
+    let z = g.read::<u32>(v.wrapping_add(8));
+    g.write::<u32>(op(img, f, 0x65), z);
+    Ret::eax(eax)
+}
+
+/// [`mean_on_screen`] (the `rel32` at `+0x6a` is
+/// `__security_check_cookie`).
+pub const MEAN_ON_SCREEN: Sig = Sig {
+    len: 114,
+    hash: 0xd072_7939_9675_af64,
+    calls: &[
+        (0x2a, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x6a, Callee::Any),
+    ],
+    imports: &[],
+};

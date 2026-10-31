@@ -3235,3 +3235,25 @@ fn turns() {
     };
     t.check(f, c, &[point], Eax::Checked, s4_small::turn_point);
 }
+
+#[test]
+fn sounds_and_means() {
+    let Some(mut t) = twin(563) else { return };
+    rec(&mut t, 562, 0, |_, _| 0x5620);
+    let f = t.at(0x1fd0);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x8), block);
+    t.write(block + 0x3b30, &[0x77; 0x50]);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(307) else { return };
+    let f = t.at(0x79b0);
+    recs(&mut t, &[(327, 2), (229, 3)]);
+    rec(&mut t, 262, 4, |m, a| {
+        for (i, at) in (1u8..).zip(&a[1..4]) {
+            m.w32(*at, (f32::from(i) * 0.5).to_bits());
+        }
+        0x262
+    });
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}

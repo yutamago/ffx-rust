@@ -1158,6 +1158,8 @@ ports! {
     "actors and records" => s4_small::ACTORS_RECORDS, s4_small::actors_records;
     "motion set" => s4_small::MOTION_SET, s4_small::motion_set;
     "spin and run" => s4_small::SPIN_AND_RUN, s4_small::spin_and_run;
+    "sound record" => s4_small::SOUND_RECORD, s4_small::sound_record;
+    "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
