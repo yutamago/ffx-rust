@@ -233,6 +233,49 @@ pub const TAKE_TARGETS: [u32; 6] = [
     0x004f_d8b0,
 ];
 
+/// `0x00a19cf0`'s callees and data: `PhyreMalloc(size)` (cdecl), the
+/// constant buffer's constructor, `resizeSlots(n)` (ret 4), `create(size,
+/// data)` (ret 8), the structured buffer's constructor, its setup
+/// `0x0058f2b0(a, b, c, d)` (ret 0x10; all thiscall); the render state
+/// cache's guard word, the cache, its constructor (thiscall), its
+/// destructor, `atexit` (cdecl).
+pub const DEFERRED_BUFFERS: [u32; 11] = [
+    0x0042_fb40,
+    0x0058_3240,
+    0x0059_9a80,
+    0x0058_ee20,
+    0x0058_41a0,
+    0x0058_f2b0,
+    0x00c9_628c,
+    0x00c9_4f00,
+    0x004f_ee70,
+    0x00af_b710,
+    0x0094_9207,
+];
+
+/// `0x005b6620`'s callees and data: `PEffect_findTechniqueByPass(effect)`
+/// (thiscall, ret 4), the block tree global, its entry lookup `(key, p)`
+/// (thiscall, ret 8), `InterlockedExchangeAdd`'s import slot (stdcall),
+/// `meshInstanceSizes` (cdecl, 9 words), `hasRoom(bytes, commands)`
+/// (thiscall, ret 8, `al`), the scene-wide and material capture buffers
+/// (thiscall, ret 0 / 4), `PRenderRingBufferSegmented::allocate(size)`
+/// (thiscall, ret 4), `texturePointers(base, params, out)` (cdecl).
+pub const QUEUE_PASS: [u32; 10] = [
+    0x004e_71d0,
+    0x00cb_bf58,
+    0x004e_0700,
+    0x00b0_c128,
+    0x005b_5150,
+    0x005b_6a70,
+    0x005b_86d0,
+    0x005b_7f30,
+    0x0061_3e10,
+    0x005b_53f0,
+];
+/// The words of `0x005b6620`'s frame (`ebp - 0xc` .. its first argument
+/// slot).
+pub const QUEUE_FRAME_WORDS: u32 = 6;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
@@ -241,8 +284,8 @@ pub mod bridge {
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
+    use super::{DEFERRED_BUFFERS, PROFILE_CONSTS, QUEUE_PASS, TAKE_TARGETS};
     use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
-    use super::{PROFILE_CONSTS, TAKE_TARGETS};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -1041,6 +1084,244 @@ pub mod bridge {
             let keep = u8::from(level.cast_signed() >= 0xb000);
             let f: u8 = h.read(this + flag);
             h.write(this + flag, f & keep);
+        }
+        0
+    }
+
+    /// A `PConstantBufferD3D11` (0x3c bytes, `PhyreMalloc` and its
+    /// constructor; none when the allocation fails, which the original
+    /// then dereferences) kept at `this + field`, its slot array sized to
+    /// 8 (`resizeSlots(8)` unless it holds 8 already; on success `+4`
+    /// cleared) and created with `size` bytes; `create`'s error.
+    fn new_constant_buffer(h: &mut impl Host, this: u32, field: u32, size: u32) -> u32 {
+        let p = h.call_sym(DEFERRED_BUFFERS[0], Conv::Cdecl, &[0x3c]);
+        let b = if p == 0 {
+            0
+        } else {
+            h.call_sym(DEFERRED_BUFFERS[1], Conv::Thiscall(p), &[]);
+            p
+        };
+        h.write(this + field, b);
+        let n = h.read::<u32>(b.wrapping_add(0xc)) & 0x7fff_ffff;
+        if n != 8 && h.call_sym(DEFERRED_BUFFERS[2], Conv::Thiscall(b), &[8]) == 0 {
+            h.write(b.wrapping_add(4), 0u32);
+        }
+        let b: u32 = h.read(this + field);
+        h.call_sym(DEFERRED_BUFFERS[3], Conv::Thiscall(b), &[size, 0])
+    }
+
+    /// A structured buffer (0x48 bytes, `PhyreMalloc` and its
+    /// constructor; none when the allocation fails) kept at `this +
+    /// field` and set up with `0x0058f2b0(a, b, c, 0)`; its error.
+    fn new_structured_buffer(h: &mut impl Host, this: u32, field: u32, args: [u32; 3]) -> u32 {
+        let p = h.call_sym(DEFERRED_BUFFERS[0], Conv::Cdecl, &[0x48]);
+        let b = if p == 0 {
+            0
+        } else {
+            h.call_sym(DEFERRED_BUFFERS[4], Conv::Thiscall(p), &[]);
+            p
+        };
+        h.write(this + field, b);
+        h.call_sym(
+            DEFERRED_BUFFERS[5],
+            Conv::Thiscall(b),
+            &[args[0], args[1], args[2], 0],
+        )
+    }
+
+    /// `0x00a19cf0` (thiscall `(this)`): the deferred lighting's buffers:
+    /// constant buffers of 0x2800 and 0xc00 bytes (`+0x3fc8`, `+0x3fcc`);
+    /// then, when the render state cache's level (`0x00c94fb4`; the cache
+    /// built on first use: guard bit 0 of `0x00c9628c`, `0x004fee70`,
+    /// `atexit(0x00afb710)`) is 0xb000 or more, structured buffers
+    /// `+0x4034` `(0x4000, 0xa0, 10)` and `+0x4038` `(4, 4, 8)`. The
+    /// first error, else 0. (The original's exception frame, for the
+    /// constructors, is left out.)
+    pub fn create_buffers(h: &mut impl Host, this: u32) -> u32 {
+        for (field, size) in [(0x3fc8, 0x2800), (0x3fcc, 0xc00)] {
+            let r = new_constant_buffer(h, this, field, size);
+            if r != 0 {
+                return r;
+            }
+        }
+        let guard = h.rebase(DEFERRED_BUFFERS[6]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(DEFERRED_BUFFERS[7]);
+            h.call_sym(DEFERRED_BUFFERS[8], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(DEFERRED_BUFFERS[9]);
+            h.call_sym(DEFERRED_BUFFERS[10], Conv::Cdecl, &[dtor]);
+        }
+        let cache = h.rebase(DEFERRED_BUFFERS[7]);
+        let level: u32 = h.read(cache + 0xb4);
+        if level.cast_signed() < 0xb000 {
+            return 0;
+        }
+        for (field, args) in [(0x4034, [0x4000, 0xa0, 10]), (0x4038, [4, 4, 8])] {
+            let r = new_structured_buffer(h, this, field, args);
+            if r != 0 {
+                return r;
+            }
+        }
+        0
+    }
+
+    /// [`queue_pass`]'s commands: for each of the pass's `n` passes
+    /// (`[pass + 8]`, every 0x254 bytes) that draws (`+0xc`), a 0x48-byte
+    /// command from the command ring (`+0x30`; the first and the end kept
+    /// at `+0x4c`, `+0x50`) `{3, _, pass, scene, material, 0, 0, table,
+    /// a, b, c}` (`words`: table, scene, material).
+    fn queue_commands(
+        h: &mut impl Host,
+        this: u32,
+        pass: u32,
+        n: u32,
+        words: [u32; 3],
+        args: [u32; 3],
+    ) {
+        let [buf, scene, mat] = words;
+        let mut p: u32 = h.read(pass + 8);
+        for _ in 0..n {
+            if h.read::<u32>(p + 0xc) != 0 {
+                let cmd = h.call_sym(QUEUE_PASS[8], Conv::Thiscall(this + 0x30), &[0x48]);
+                if cmd != 0 {
+                    if h.read::<u32>(this + 0x4c) == 0 {
+                        h.write(this + 0x4c, cmd);
+                    }
+                    h.write(this + 0x50, cmd + 0x48);
+                }
+                for (off, v) in [
+                    (0x20, args[0]),
+                    (0x24, args[1]),
+                    (0x28, args[2]),
+                    (0, 3),
+                    (8, p),
+                    (0x1c, buf),
+                    (0xc, scene),
+                    (0x10, mat),
+                    (0x14, 0),
+                    (0x18, 0),
+                ] {
+                    h.write(cmd.wrapping_add(off), v);
+                }
+            }
+            p = p.wrapping_add(0x254);
+        }
+    }
+
+    /// `0x005b6620` (thiscall `(renderer; material, instance, a, b, c)`,
+    /// ret 0x14): the deferred pass's draw commands queued. 0x16 while the
+    /// renderer is busy (bit 0 of `+4`), 0x15 without its effect
+    /// (`+0x48`), 7 when the material has no technique for it (its
+    /// technique table `+0x14`/`+0x18` at the effect's index `+0xc`, else
+    /// `PEffect_findTechniqueByPass`) or the technique no pass (`+8`).
+    /// With the block tree (`0x00cbbf58`), the pass's block entry
+    /// counted up (`InterlockedExchangeAdd(entry, 1)`). Then the sizes
+    /// (`meshInstanceSizes(&total, &blocks, &table, flags, instance,
+    /// material, pass, 0, 0)`, the three words in `frame`), room made
+    /// (`hasRoom(total, n)`, else the renderer's slot 2), the scene-wide
+    /// (flag 1) and material (flag 2) capture buffers, a table of
+    /// `blocks` bytes from the data ring (`+0x1c`), and for each of the
+    /// pass's `n` (`+4`) passes (`+8`, every 0x254 bytes) that draws
+    /// (`+0xc`) a 0x48-byte command from the command ring (`+0x30`; the
+    /// first and the end kept at `+0x4c`, `+0x50`): `{3, _, pass, scene,
+    /// material, 0, 0, table, a, b, c}`. The table: the scene buffer's
+    /// data (`+4`) when there is one, then the material's texture
+    /// pointers (`texturePointers`), its count first; each pointed-to
+    /// counter raised by `n`. 0.
+    ///
+    /// `frame` is 6 words, the original's `ebp - 0xc` (`table`, `blocks`
+    /// at `+0`, `+4`); `+0x14` stands for the original's first argument
+    /// slot, which it reuses for `total` and the scene buffer.
+    pub fn queue_pass(
+        h: &mut impl Host,
+        this: u32,
+        material: u32,
+        instance: u32,
+        args: [u32; 3],
+        frame: u32,
+    ) -> u32 {
+        let c = QUEUE_PASS;
+        if h.read::<u8>(this + 4) & 1 != 0 {
+            return 0x16;
+        }
+        let effect: u32 = h.read(this + 0x48);
+        if effect == 0 {
+            return 0x15;
+        }
+        let index: u32 = h.read(effect + 0xc);
+        let mut technique = 0;
+        if index != u32::MAX && index < h.read::<u32>(material + 0x14) & 0x7fff_ffff {
+            let table: u32 = h.read(material + 0x18);
+            technique = h.read(table.wrapping_add(index.wrapping_mul(4)));
+        }
+        if technique == 0 {
+            technique = h.call_sym(c[0], Conv::Thiscall(material), &[effect]);
+            if technique == 0 {
+                return 7;
+            }
+        }
+        let pass: u32 = h.read(technique + 8);
+        if pass == 0 {
+            return 7;
+        }
+        let tree: u32 = h.read(h.rebase(c[1]));
+        if tree != 0 {
+            let entry = h.call_sym(c[2], Conv::Thiscall(tree), &[technique, pass]);
+            if entry != 0 {
+                let f: u32 = h.read(h.rebase(c[3]));
+                h.call(f, Conv::Stdcall, &[entry, 1]);
+            }
+        }
+        let n = h.read::<u32>(pass + 4) & 0x7fff_ffff;
+        let flags: u32 = h.read(pass);
+        let (table, blocks, total) = (frame, frame + 4, frame + 0x14);
+        for w in [total, table, blocks] {
+            h.write(w, 0u32);
+        }
+        h.call_sym_wide(
+            c[4],
+            &[total, table, blocks, flags, instance, material, pass, 0, 0],
+        );
+        let bytes: u32 = h.read(total);
+        if h.call_sym(c[5], Conv::Thiscall(this), &[bytes, n]) as u8 == 0 {
+            let vt: u32 = h.read(this);
+            let f: u32 = h.read(vt + 8);
+            h.call(f, Conv::Thiscall(this), &[]);
+        }
+        h.write(total, 0u32);
+        h.write(table, 0u32);
+        let scene = if flags & 1 != 0 {
+            h.call_sym(c[6], Conv::Thiscall(this), &[])
+        } else {
+            0
+        };
+        h.write(total, scene);
+        let mat = if flags & 2 != 0 {
+            h.call_sym(c[7], Conv::Thiscall(this), &[instance])
+        } else {
+            0
+        };
+        h.write(table, mat);
+        let size: u32 = h.read(blocks);
+        let buf = h.call_sym(c[8], Conv::Thiscall(this + 0x1c), &[size]);
+        queue_commands(h, this, pass, n, [buf, scene, mat], args);
+        let first = buf.wrapping_add(4);
+        let mut cursor = first;
+        if scene != 0 {
+            h.write(first, scene + 4);
+            cursor = first + 4;
+        }
+        let end = h.call_sym(c[9], Conv::Cdecl, &[instance, instance + 8, cursor]);
+        let count = (end.wrapping_sub(first).cast_signed() >> 2).cast_unsigned();
+        h.write(buf, count);
+        let add: u32 = h.read(h.rebase(c[3]));
+        let mut i = 0;
+        while i < h.read::<u32>(buf) {
+            let counter: u32 = h.read(first + 4 * i);
+            h.call(add, Conv::Stdcall, &[counter, n]);
+            i += 1;
         }
         0
     }

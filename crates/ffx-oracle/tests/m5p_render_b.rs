@@ -72,6 +72,13 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
+    }
     fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
@@ -5605,6 +5612,236 @@ fn big_take_targets_match_the_original() {
                 0x20,
                 (0, 0),
                 |g| Out::U32(l2b::take_targets(g, this, 0x0055_0000, targets, ebp + 0xc)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a19cf0` (the deferred lighting's buffers) against the original:
+/// slot counts of 8 and others, the resize and each create failing, the
+/// render state cache built or not, levels on both sides of 0xb000, the
+/// structured buffers' setup failing.
+#[test]
+fn big_create_buffers_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (slot count, resize error, create error, guard set, level, setup error)
+    for (count, resize, create, guard, level, setup) in [
+        (8u32, 0u32, 0u32, true, 0xb000u32, 0u32),
+        (0, 0, 0, false, 0xb000, 0),
+        (3, 5, 0, true, 0xafff, 0),
+        (0x8000_0008, 0, 0, true, 0xc000, 4),
+        (8, 0, 9, true, 0xb000, 0),
+        (3, 0, 0, false, 0x9000, 0),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DEFERRED_BUFFERS;
+            let block = t.zeros(0x60);
+            t.w32(block + 4, 0x77);
+            t.w32(block + 0xc, count);
+            t.stub(c[0], false, 1, 0, block);
+            t.stub(c[1], true, 0, 0, block);
+            t.stub(c[2], true, 1, 1, resize);
+            t.stub(c[3], true, 2, 2, create);
+            t.stub(c[4], true, 0, 0, block);
+            t.stub(c[5], true, 4, 4, setup);
+            t.stub(c[8], true, 0, 0, 0x00c9_4f00);
+            t.stub(c[10], false, 1, 0, 0);
+            let g = t.rebase(c[6]);
+            t.w32(g, if guard { 0x11 } else { 0x10 });
+            let cache = t.rebase(c[7]);
+            t.w32(cache + 0xb4, level);
+            let this = t.zeros(0x4040);
+            let what = format!(
+                "{label}: create buffers count {count:#x} resize {resize} create {create} guard {guard} level {level:#x} setup {setup}"
+            );
+            t.check(&what, 0x00a1_9cf0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::create_buffers(g, this))
+            });
+            t.reset();
+        }
+    }
+}
+
+impl Twins {
+    /// Code in both oracles at the same address.
+    fn code_at(&mut self, c: &[u8]) -> u32 {
+        let at = self.a.alloc_code(c).unwrap();
+        assert_eq!(self.b.alloc_code(c).unwrap(), at);
+        at
+    }
+
+    /// A `jmp` at the original `sym` to `code`, put back by `reset`.
+    fn place_jmp(&mut self, sym: u32, code: u32) {
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+}
+
+/// `0x005b6620` (the deferred pass's draw commands queued) against the
+/// original: busy, no effect, the technique from the table or the finder
+/// (index -1, out of range, a null entry; none found), no pass; the block
+/// tree absent, without an entry, with one; room or not; capture flags
+/// 0..3; passes that draw and do not. Callees are recording stubs; the
+/// sizes routine writes through the three words it gets (the original's
+/// frame and first argument slot, the port's frame at the same address).
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_queue_pass_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (busy, effect, technique: 0 table, 1 index -1, 2 out of range,
+    // 3 null entry, 4 none found; pass there, tree: 0 none, 1 no entry,
+    // 2 entry; room, flags)
+    let cases: [(bool, bool, u32, bool, u32, bool, u32); 12] = [
+        (true, true, 0, true, 0, true, 0),
+        (false, false, 0, true, 0, true, 0),
+        (false, true, 0, true, 0, true, 0),
+        (false, true, 1, true, 1, true, 1),
+        (false, true, 2, true, 2, false, 2),
+        (false, true, 3, true, 2, true, 3),
+        (false, true, 4, true, 0, true, 0),
+        (false, true, 0, false, 0, true, 0),
+        (false, true, 0, true, 2, false, 3),
+        (false, true, 1, true, 0, true, 2),
+        (false, true, 3, true, 1, false, 1),
+        (false, true, 0, true, 2, true, 1),
+    ];
+    for (busy, has_effect, tech, has_pass, tree, room, flags) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::QUEUE_PASS;
+            let renderer_vt = t.object(&[0, 0, 0], &[0, 0, 0x99]);
+            let vt = t.r32(renderer_vt);
+            let this = t.zeros(0x60);
+            t.w32(this, vt);
+            t.w8(this + 4, u8::from(busy) | 0x10);
+            let effect = t.zeros(0x10);
+            t.w32(
+                effect + 0xc,
+                match tech {
+                    1 => u32::MAX,
+                    2 => 9,
+                    _ => 1,
+                },
+            );
+            if has_effect {
+                t.w32(this + 0x48, effect);
+            }
+            // the pass: flags, n (bit 31 set), the passes (0x254 apart)
+            // 257 passes: more than a byte's worth
+            let passes = t.zeros(0x254 * 0x101 + 0x10);
+            t.w32(passes + 0xc, 1);
+            t.w32(passes + 0x254 * 2 + 0xc, 5);
+            let pass = t.zeros(0x10);
+            t.w32(pass, flags | 0x40);
+            t.w32(pass + 4, 0x8000_0101);
+            t.w32(pass + 8, passes);
+            let technique = t.zeros(0x10);
+            if has_pass {
+                t.w32(technique + 8, pass);
+            }
+            let material = t.zeros(0x20);
+            // entry 9 (past the count) a technique without a pass
+            let other = t.zeros(0x10);
+            let mut entries = [0u32; 10];
+            entries[1] = if tech >= 3 { 0 } else { technique };
+            entries[9] = other;
+            let table = t.alloc(
+                &entries
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.w32(material + 0x14, 0x8000_0003);
+            t.w32(material + 0x18, table);
+            t.stub(c[0], true, 1, 1, if tech == 4 { 0 } else { technique });
+            let tree_at = t.rebase(c[1]);
+            t.w32(tree_at, if tree == 0 { 0 } else { 0x00d1_0000 });
+            t.stub(c[2], true, 2, 2, if tree == 2 { 0x00d2_0000 } else { 0 });
+            t.stub_import(c[3], 2, 2, 0);
+            // the sizes: writes total, table, blocks through its words
+            let log9 = t.stub_code(c[4], false, 6, 0, 0);
+            let mut k = Vec::new();
+            for (i, v) in [(4u8, 0x1234u32), (8, 0x5555), (0xc, 0x80)] {
+                k.extend([0x8b, 0x44, 0x24, i, 0xc7, 0x00]); // mov eax, [esp+i]; mov [eax], v
+                k.extend(v.to_le_bytes());
+            }
+            let code = t.code_at(&[0xcc; 0x40]);
+            k.push(0xe9);
+            let next = code + k.len() as u32 + 4;
+            k.extend(log9.wrapping_sub(next).to_le_bytes()); // jmp log9
+            t.write(code, &k);
+            t.place_jmp(c[4], code);
+            t.stub(c[5], true, 2, 2, u32::from(room) | 0x100);
+            t.stub(c[6], true, 0, 0, 0x00d3_0000);
+            t.stub(c[7], true, 1, 1, 0x00d4_0000);
+            // the rings: logs this and the size, the data ring answers the
+            // table, the command ring a command block
+            let buf = t.zeros(0x40);
+            let cmd = t.zeros(0x50);
+            let log1 = t.stub_code(c[8], true, 1, 0, 0);
+            let code = t.code_at(&[0xcc; 0x40]);
+            let mut k = vec![0xff, 0x74, 0x24, 0x04]; // push [esp+4]
+            k.push(0xe8);
+            k.extend(log1.wrapping_sub(code + 9).to_le_bytes()); // call log1
+            k.extend([0x83, 0xc4, 0x04]); // add esp, 4
+            k.extend([0x81, 0xf9]);
+            k.extend((this + 0x1c).to_le_bytes()); // cmp ecx, this + 0x1c
+            k.extend([0x75, 0x08]); // jne +8
+            k.push(0xb8);
+            k.extend(buf.to_le_bytes()); // mov eax, buf
+            k.extend([0xc2, 0x04, 0x00]); // ret 4
+            k.push(0xb8);
+            k.extend(cmd.to_le_bytes()); // mov eax, cmd
+            k.extend([0xc2, 0x04, 0x00]); // ret 4
+            t.write(code, &k);
+            t.place_jmp(c[8], code);
+            // the texture pointers: logs, writes two counters, answers the
+            // cursor past them
+            let log3 = t.stub_code(c[9], false, 3, 0, 0);
+            let code = t.code_at(&[0xcc; 0x40]);
+            let mut k = vec![
+                0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c,
+            ]; // push [esp+0xc] x3
+            k.push(0xe8);
+            k.extend(log3.wrapping_sub(code + 17).to_le_bytes()); // call log3
+            k.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+            k.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            k.extend([0xc7, 0x00]);
+            k.extend(0x00d5_0000u32.to_le_bytes()); // mov [eax], c1
+            k.extend([0xc7, 0x40, 0x04]);
+            k.extend(0x00d6_0000u32.to_le_bytes()); // mov [eax+4], c2
+            k.extend([0x83, 0xc0, 0x08, 0xc3]); // add eax, 8; ret
+            t.write(code, &k);
+            t.place_jmp(c[9], code);
+
+            let ebp = t.ebp_for(5);
+            let instance = 0x00d7_0000;
+            let what = format!(
+                "{label}: queue pass busy {busy} effect {has_effect} tech {tech} pass {has_pass} tree {tree} room {room} flags {flags}"
+            );
+            t.check_frame(
+                &what,
+                0x005b_6620,
+                Conv::Thiscall(this),
+                &[material, instance, 0xa1, 0xb2, 0xc3],
+                ebp,
+                0x40,
+                // the table word; the next is the original's loop counter
+                (0xc, 8),
+                |g| {
+                    Out::U32(l2b::queue_pass(
+                        g,
+                        this,
+                        material,
+                        instance,
+                        [0xa1, 0xb2, 0xc3],
+                        ebp - 0xc,
+                    ))
+                },
             );
             t.reset();
         }

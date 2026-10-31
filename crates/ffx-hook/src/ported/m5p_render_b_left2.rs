@@ -65,4 +65,14 @@ ported! {
         let mut f = StackFrame::<1>::new();
         lb::take_targets(&mut mem(), this, cluster, targets, f.at())
     }
+    /// The deferred lighting's buffers `()`.
+    Phyre_PPostProcessing_PDeferredLighting_createBuffers_00a19cf0 @ 0x00a1_9cf0 => extern "thiscall" fn create_buffers(this: u32) -> u32 {
+        lb::create_buffers(&mut mem(), this)
+    }
+    /// The deferred pass's draw commands queued `(material, instance, a,
+    /// b, c)`; the sizes' three words in a frame.
+    Phyre_PRendering_PRendererBase_queueDeferredPass_005b6620 @ 0x005b_6620 => extern "thiscall" fn queue_pass(this: u32, material: u32, instance: u32, a: u32, b: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::QUEUE_FRAME_WORDS as usize }>::new();
+        lb::queue_pass(&mut mem(), this, material, instance, [a, b, c], f.at())
+    }
 }
