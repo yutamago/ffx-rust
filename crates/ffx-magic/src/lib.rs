@@ -1282,6 +1282,9 @@ ports! {
     "sine rise" => s5_misc::SINE_RISE, s5_misc::sine_rise;
     "signed axes" => s5_misc::SIGNED_AXES, s5_misc::signed_axes;
     "shower step" => s5_misc::SHOWER_STEP, s5_misc::shower_step;
+    "sine rise start" => s5_misc::SINE_RISE_START, s5_misc::sine_rise_start;
+    "sparks thrown" => s5_misc::SPARKS_THROWN, s5_misc::sparks_thrown;
+    "targets more, tasks" => s5_misc::TARGETS_MORE_TASKS, s5_misc::targets_more_tasks;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

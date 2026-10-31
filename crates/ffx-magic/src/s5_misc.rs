@@ -16,11 +16,12 @@ use crate::s4_misc::{
     SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, scale_task, start_object_at, trail_draw,
     unlist_free,
 };
+use crate::s4_small::{CAMERA_FACE_ACTOR, camera_face_actor};
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_MODE, actor_mode};
-use crate::sb_misc::{NODE_APPEND, node_append};
+use crate::sb_misc::{NODE_APPEND, POOL_TAKE, node_append, pool_take};
 use crate::sb_misc::{TIMELINE_STOP_GLOBAL, timeline_stop_global};
 use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
@@ -4421,5 +4422,359 @@ pub const SHOWER_STEP: Sig = Sig {
         (0x1ca, Callee::Sig(&INSERT)),
         (0x208, Callee::Sig(&PARTICLE_NODE)),
     ],
+    imports: &[],
+};
+
+/// [`sine_rise`]'s start (cdecl `(p)`): the step record `k = p+0xac`
+/// restarts (count 0, `r = rand % 256` (signed), height 0), the random
+/// spin `rand / R * K1` (kept in the caller's argument word, as the
+/// original does) into `+0x108`, bit 14 of `+0xbc` set, the base point
+/// `G_P` into `+0xd0..+0xd8` (`+0xdc` 0), `+0x100`, `+0x104`, `+0x10c`
+/// cleared, the scale `rand / R * K2 + K3` into `+0x130..+0x138` and `K2 /
+/// *G_N` into `+0x140..+0x148` (their `w` 0), the colour `G_C` times
+/// `rand / R * K4 + K5` into `+0xe0..+0xe8` (`+0xec` 0), the fades `K6 /
+/// n`, `K7 / n`, `K8 / n` (`n = *G_N`) at `+0x180..+0x188` with the
+/// constants `+0x170..+0x17c`, `+0x18c` cleared; then slot 458 `(*G_M, p,
+/// 0)` and the task's sequence (slot 461 `(p, CB)`). Returns slot 461's
+/// `eax`.
+///
+/// `magic_0193` 0x10001730 (609 bytes; 2 DLLs).
+pub fn sine_rise_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let p = fr.arg(g, 0);
+    let rec = |g: &G| p.wrapping_add(g.read::<u32>(p + 0xac).wrapping_mul(0x10));
+    g.write::<u32>(rec(g).wrapping_add(0x2c), 0);
+    // and 0x800000ff; jns; dec; or -0x100; inc: the signed remainder
+    let r = g.rand().cast_signed() % 256;
+    g.write::<i32>(rec(g).wrapping_add(0x30), r);
+    g.write::<u32>(rec(g).wrapping_add(0x34), 0);
+    let spin = mul(div(rand_f32(g), k(g, 0x59)), k(g, 0x61));
+    g.write::<f32>(fr.esp + 4, spin);
+    let r3 = rand_f32(g);
+    let flags = g.read::<u32>(p + 0xbc) | 0x4000;
+    g.write::<u32>(p + 0xbc, flags);
+    let x = div(r3, k(g, 0x91));
+    g.write::<f32>(p + 0xd0, k(g, 0x7a));
+    g.write::<f32>(p + 0xd4, k(g, 0xa1));
+    g.write::<f32>(p + 0xd8, k(g, 0xb1));
+    let spin = g.read::<f32>(fr.esp + 4);
+    g.write::<f32>(p + 0x108, spin);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let n = g.read::<i32>(w(0xce)) as f32;
+    let k2 = k(g, 0x89);
+    let scale = add(mul(x, k2), k(g, 0xe1));
+    let step = div(k2, n);
+    for o in [0xdcu32, 0x100, 0x104, 0x10c] {
+        g.write::<u32>(p + o, 0);
+    }
+    for o in [0x130u32, 0x134, 0x138] {
+        g.write::<f32>(p + o, scale);
+    }
+    g.write::<u32>(p + 0x13c, 0);
+    for o in [0x140u32, 0x144, 0x148] {
+        g.write::<f32>(p + o, step);
+    }
+    g.write::<u32>(p + 0x14c, 0);
+    let s = add(mul(div(rand_f32(g), k(g, 0x166)), k(g, 0x173)), k(g, 0x17e));
+    let m = g.read::<u32>(w(0x184));
+    g.write::<f32>(p + 0xe0, mul(k(g, 0x15e), s));
+    g.write::<f32>(p + 0xe4, mul(k(g, 0x198), s));
+    g.write::<f32>(p + 0xe8, mul(k(g, 0x1ac), s));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let n = g.read::<i32>(w(0x1b8)) as f32;
+    g.write::<u32>(p + 0xec, 0);
+    g.write::<f32>(p + 0x180, div(k(g, 0x1cb), n));
+    g.write::<u32>(p + 0x170, 0x3f1c_0000);
+    g.write::<f32>(p + 0x184, div(k(g, 0x1e9), n));
+    for (o, v) in [
+        (0x174u32, 0x3f2a_0000u32),
+        (0x178, 0x3ed4_0000),
+        (0x17c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(p + o, v);
+    }
+    g.write::<f32>(p + 0x188, div(k(g, 0x207), n));
+    g.write::<u32>(p + 0x18c, 0);
+    let mut st = Pushes::default();
+    st.push_all(&[0, p, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x16b), 458), 0);
+    st.push_all(&[w(0x24d), p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let e = st.call(g, slot_target(g, w(0x248), 461), 0).eax;
+    Ret::eax(e)
+}
+
+/// [`sine_rise_start`] (the import: `rand`, through `esi`).
+pub const SINE_RISE_START: Sig = Sig {
+    len: 609,
+    hash: 0xfcf3_b067_31e3_f884,
+    calls: &[],
+    imports: &[(0x6, "rand")],
+};
+
+/// Three sparks thrown from the state's point (cdecl, no arguments; a
+/// /GS frame). For each, a record from the pool ([`pool_take`]; none:
+/// returns 0): u16 `+0x38 = 0xffff`, `+0x3a = 0x200`, `+0x30` the
+/// effect's `*(*G_A + 0x14)`, `+0x34 = 1`; the offset `(0, 0, frnd(100),
+/// 1)` turned by a unit matrix rotated by `frnd(pi)` about y (slots 235,
+/// 314, 329, 229; locals) is added to `*G_S + 0x2b40` into the position
+/// `+0x0..+0xc` (`w` copied), its `y` raised by `frnd(30) + K`; the speeds
+/// `+0x10 = frnd(0.1)`, `+0x14 = -frnd_p(0.1)` (slot 404), `+0x18 =
+/// frnd(0.1)`, the turn `+0x1c = frnd(pi)`, `+0x20..+0x2c = (0, +0x14 K2,
+/// 0, 1)`, the size `+0x3c = (frnd(0.2) + K3) K4`, and the counters
+/// `+0x40 = 0`, `+0x4c = 0x20`, `+0x50 = 0x10`, `+0x54 = -16`, `+0x58 =
+/// 0x20`, `+0x5c = 0`, byte `+0x6b = 0`. `frnd` is slot 314 (ST0); each
+/// call sees the words the earlier ones of its spark left on the stack.
+/// Returns 3.
+///
+/// `magic_0563` 0x10005400 (610 bytes; 2 DLLs).
+pub fn sparks_thrown<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x14));
+    let ebp = fr.esp.wrapping_sub(4);
+    let [v, m, out, count] = [0x14u32, 0x64, 0x24, 0x6c].map(|o| ebp.wrapping_sub(o));
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    g.write::<u32>(count, 0);
+    let pi = 0x4049_0fdb;
+    let tenth = 0x3dcc_cccd;
+    let mut i = 0u32;
+    while i < 3 {
+        let p = pool_take(g, img, img.rel32_target(f + 0x35));
+        if p == 0 {
+            return Ret::eax(0);
+        }
+        let e = g.read::<u32>(g.read::<u32>(w(0x45)).wrapping_add(0x14));
+        g.write::<u16>(p + 0x38, 0xffff);
+        g.write::<u16>(p + 0x3a, 0x200);
+        let mut st = Pushes::default();
+        st.push(m);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0x61), 235), 0);
+        g.write::<u32>(p + 0x30, e);
+        g.write::<u32>(p + 0x34, 1);
+        let frnd = |g: &mut G, st: &mut Pushes, table: u32, x: u32| {
+            st.set_top(x);
+            // call width: 12 (the most `Pushes::words` holds)
+            st0_f32(st.call(g, slot_target(g, w(table), 314), 0))
+        };
+        let a = frnd(g, &mut st, 0x78, pi);
+        st.set_top(a.to_bits());
+        st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0x9e), 329), 0);
+        st.pop(2);
+        let z = frnd(g, &mut st, 0xab, 0x42c8_0000);
+        g.write::<f32>(v + 8, z);
+        st.push_all(&[v, m, out]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0xd1), 229), 0);
+        st.pop(3);
+        let o = |g: &G, d: u32| g.read::<f32>(out + d);
+        let base = |g: &G, d: u32| g.read::<f32>(s.wrapping_add(0x2b40 + d));
+        g.write::<f32>(p, add(base(g, 0), o(g, 0)));
+        g.write::<f32>(p + 4, add(base(g, 4), o(g, 4)));
+        g.write::<f32>(p + 8, add(base(g, 8), o(g, 8)));
+        let pw = g.read::<u32>(s.wrapping_add(0x2b4c));
+        g.write::<u32>(p + 0xc, pw);
+        let r = frnd(g, &mut st, 0x126, 0x41f0_0000);
+        let y = add(add(r, k(g, 0x13e)), g.read::<f32>(p + 4));
+        g.write::<f32>(p + 4, y);
+        let x = frnd(g, &mut st, 0x143, tenth);
+        g.write::<f32>(p + 0x10, x);
+        st.set_top(tenth);
+        // call width: 12 (the most `Pushes::words` holds)
+        let q = st0_f32(st.call(g, slot_target(g, w(0x164), 404), 0));
+        let mask = g.read::<u32>(w(0x182));
+        g.write::<u32>(p + 0x14, q.to_bits() ^ mask);
+        let x = frnd(g, &mut st, 0x187, tenth);
+        g.write::<f32>(p + 0x18, x);
+        let x = frnd(g, &mut st, 0x1aa, pi);
+        g.write::<f32>(p + 0x1c, x);
+        let sp = mul(g.read::<f32>(p + 0x14), k(g, 0x1c2));
+        g.write::<u32>(p + 0x20, 0);
+        g.write::<f32>(p + 0x24, sp);
+        g.write::<u32>(p + 0x28, 0);
+        g.write::<u32>(p + 0x2c, 0x3f80_0000);
+        let r = frnd(g, &mut st, 0x1c7, 0x3e4c_cccd);
+        let n = g.read::<u32>(count).wrapping_add(1);
+        g.write::<u32>(p + 0x40, 0);
+        g.write::<u32>(p + 0x58, 0x20);
+        let size = mul(add(r, k(g, 0x203)), k(g, 0x21d));
+        g.write::<u32>(p + 0x5c, 0);
+        g.write::<u32>(p + 0x4c, 0x20);
+        g.write::<f32>(p + 0x3c, size);
+        g.write::<u32>(p + 0x50, 0x10);
+        g.write::<u32>(p + 0x54, 0xffff_fff0);
+        g.write::<u8>(p + 0x6b, 0);
+        g.write::<u32>(count, n);
+        i = n;
+    }
+    Ret::eax(i)
+}
+
+/// [`sparks_thrown`] (the `rel32`s: [`pool_take`] and
+/// `__security_check_cookie`).
+pub const SPARKS_THROWN: Sig = Sig {
+    len: 610,
+    hash: 0xf4f2_3b08_1925_81db,
+    calls: &[(0x35, Callee::Sig(&POOL_TAKE)), (0x25a, Callee::Any)],
+    imports: &[],
+};
+
+/// A part data's set-up with three more targets and two tasks (cdecl, no
+/// arguments): `*G_A = 0`, `*G_B = DB`, `*G_C = DC` (immediates); the
+/// target bytes `G_K` move up by three (copied backwards from index `n -
+/// 2` down to -1, `n = *G_N`, when `n > 0`) and `*G_N += 3`; the effect
+/// data's part data `D = slot 719 (E, 8, 0)` into `*G_D`, initialised
+/// (slot 711 `(D, G_I, 0)` with the lock `*G_L` held at 1) and its
+/// environment set (slot 710 `(G_ENV, *G_D, G_B2, 0x40000)`); four words
+/// cleared; the camera turned to the actor ([`camera_face_actor`]); `*G_F
+/// = CB`, two words and a halfword cleared, a byte set, slot 271 `(4)`.
+/// Then two task nodes from the free ring (taken inline, kinds 1 and 2,
+/// callbacks `CB1`, `CB2`) are appended to the task list. Each call sees
+/// the words the earlier ones left on the stack. Returns 0.
+///
+/// `magic_0349` 0x100056a0 (613 bytes; 2 DLLs).
+pub fn targets_more_tasks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let n = g.read::<i32>(w(0x1));
+    g.write::<u32>(w(0x7), 0);
+    g.write::<u32>(w(0x14), w(0x18));
+    g.write::<u32>(w(0x1e), w(0x22));
+    let mut count = n;
+    if n > 0 {
+        let mut i = n - 1;
+        loop {
+            i -= 1;
+            let b = g.read::<u8>(w(0x33).wrapping_add(i.cast_unsigned()));
+            g.write::<u8>(w(0x39).wrapping_add(i.cast_unsigned()), b);
+            if i < 0 {
+                break;
+            }
+        }
+        count = g.read::<i32>(w(0x40));
+    }
+    g.write::<i32>(w(0x4a), count.wrapping_add(3));
+    let mut s = Pushes::default();
+    s.push_all(&[0, 8, w(0x5e)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let d = s.call(g, slot_target(g, w(0x4f), 719), 0).eax;
+    let lock = g.read::<u32>(w(0x66));
+    g.write::<u32>(w(0x6d), d);
+    let saved = g.read::<u32>(lock);
+    s.push_all(&[0, w(0x74), d]);
+    g.write::<u32>(lock, 1);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x7a), 711), 0);
+    let lock = g.read::<u32>(w(0x8d));
+    g.write::<u32>(lock, saved);
+    let d = g.read::<u32>(w(0xa4));
+    s.push_all(&[0x40000, w(0x9e), d, w(0xaf)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x99), 710), 0);
+    for o in [0xb7u32, 0xc1, 0xcb, 0xd5] {
+        g.write::<u32>(w(o), 0);
+    }
+    // push esi, edi and the ten words above; call: the callee's frame
+    let face = Frame {
+        at: img.rel32_target(f + 0xde),
+        esp: fr.esp.wrapping_sub(0x34),
+        ..*fr
+    };
+    camera_face_actor(g, img, &face);
+    g.write::<u32>(w(0xe9), w(0xed));
+    g.write::<u32>(w(0xf3), 0);
+    g.write::<u16>(w(0xfe), 0);
+    g.write::<u8>(w(0x106), 1);
+    s.push(4);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xe3), 271), 0);
+    // the first node: taken from the free ring (none when the count is 0)
+    let mut n = g.read::<u16>(w(0x118));
+    let (first, next) = if n == 0 {
+        (0, g.read::<u32>(w(0x12a)))
+    } else {
+        let node = g.read::<u32>(w(0x134));
+        let next = unlink_free(g, node, n);
+        n = n.wrapping_sub(1);
+        g.write::<u32>(w(0x158), next);
+        reset_task_node(g, node, w(0x17d));
+        g.write::<u16>(w(0x188), n);
+        (node, next)
+    };
+    let head = g.read::<u32>(w(0x18f));
+    g.write::<u8>(first.wrapping_add(0x18), 1);
+    g.write::<u32>(first.wrapping_add(4), 0);
+    let head = if head != 0 {
+        let tail = g.read::<u32>(w(0x1a4));
+        g.write::<u32>(first, tail);
+        g.write::<u32>(tail.wrapping_add(4), first);
+        head
+    } else {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x1b9), first);
+        first
+    };
+    g.write::<u32>(first.wrapping_add(8), first);
+    let second = if n == 0 {
+        0
+    } else {
+        let node = next;
+        let next = unlink_free(g, node, n);
+        g.write::<u32>(w(if n > 1 { 0x1e3 } else { 0x1eb }), next);
+        reset_task_node(g, node, w(0x21c));
+        g.write::<u16>(w(0x227), n.wrapping_sub(1));
+        node
+    };
+    g.write::<u8>(second.wrapping_add(0x18), 2);
+    g.write::<u32>(second.wrapping_add(4), 0);
+    if head != 0 {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+    } else {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x255), second);
+    }
+    g.write::<u32>(second.wrapping_add(8), second);
+    g.write::<u32>(w(if head != 0 { 0x245 } else { 0x25d }), second);
+    Ret::eax(0)
+}
+
+/// A free-ring node unlinked (its neighbours joined); returns the ring's
+/// next head: the node's `next`, or 0 when it was the last of `n`.
+fn unlink_free<G: Game>(g: &mut G, node: u32, n: u16) -> u32 {
+    let prev = g.read::<u32>(node);
+    let next = g.read::<u32>(node + 4);
+    g.write::<u32>(prev.wrapping_add(4), next);
+    let next = g.read::<u32>(node + 4);
+    let prev = g.read::<u32>(node);
+    g.write::<u32>(next, prev);
+    if n > 1 { g.read::<u32>(node + 4) } else { 0 }
+}
+
+/// A task node taken from the free ring, cleared: links 0, `+8` itself,
+/// `+0xc`/`+0x14` 0, the callback `cb`, kind byte 0.
+fn reset_task_node<G: Game>(g: &mut G, node: u32, cb: u32) {
+    for o in [0u32, 4, 0xc, 0x14] {
+        g.write::<u32>(node + o, 0);
+    }
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 0x10, cb);
+    g.write::<u8>(node + 0x18, 0);
+}
+
+/// [`targets_more_tasks`] (the `rel32`: [`camera_face_actor`]).
+pub const TARGETS_MORE_TASKS: Sig = Sig {
+    len: 613,
+    hash: 0x3c72_b9b0_bde7_1b4d,
+    calls: &[(0xde, Callee::Sig(&CAMERA_FACE_ACTOR))],
     imports: &[],
 };

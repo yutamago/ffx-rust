@@ -2293,3 +2293,105 @@ fn shower_steps() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn sine_rise_starts() {
+    let Some(mut t) = twin(193) else { return };
+    let f = t.at(0x1730);
+    recs(&mut t, &[(458, 3), (461, 2)]);
+    let p = SCRATCH + 0x1000;
+    for (k, n) in [(0u32, 40u32), (2, 7), (1, 0)] {
+        t.write(p, &varied(0x200, k + n));
+        t.set_u32(p + 0xac, k);
+        t.set_u32(op(&t, f, 0xce), n);
+        t.set_u32(op(&t, f, 0x184), 0x0458_0000 + n);
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+    }
+}
+
+#[test]
+fn sparks_thrown_out() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x5400);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 329, 3, 16, Some(0));
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    let calls = SCRATCH + 0x7e0;
+    for s in [314u32, 404] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |m, a| {
+            let k = m.r32(calls);
+            m.w32(calls, k + 1);
+            f64::from(f32::from_bits(a[0])) * (f64::from(k % 5) - 2.0) / 2.0
+        });
+    }
+    let take = t.img.rel32_target(f + 0x35);
+    let s = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x14), s);
+    t.write(s + 0x2b40, &varied(0x10, 3));
+    t.set_u32(op(&t, f, 0x45), SCRATCH + 0x700);
+    t.set_u32(SCRATCH + 0x714, 0x0e0e_0014);
+    // the pool: `n` records of 0x74 bytes, all free or the last ones taken
+    let recs = SCRATCH + 0x2000;
+    t.set_u32(op(&t, take, 0x37), recs);
+    t.stub(941, |_, a| 0x0941_0000 ^ a[0]);
+    for (n, taken) in [(4u32, 0u32), (2, 0), (3, 1)] {
+        t.set_u32(op(&t, take, 0x2b), 0);
+        t.set_u32(op(&t, take, 0x08), 0);
+        t.set_u32(op(&t, take, 0x0f), n);
+        for i in 0..n {
+            t.write(recs + 0x74 * i, &varied(0x74, i + n));
+            t.set_u32(recs + 0x74 * i + 0x6c, u32::from(i >= n - taken));
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn targets_more_and_tasks() {
+    let Some(mut t) = twin(349) else { return };
+    let f = t.at(0x56a0);
+    let data = SCRATCH + 0x800;
+    rec(&mut t, 719, 3, move |_, _| data);
+    let lock = SCRATCH + 0x7f0;
+    rec_lock(&mut t, 711, 3, lock, |_, a| 0x0711_0000 ^ a[0]);
+    recs(&mut t, &[(710, 4), (271, 1)]);
+    // the camera's turn to the actor
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.5 - 2.0);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32).to_bits());
+        }
+        0x262
+    });
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| 0.75);
+    let face = t.img.rel32_target(f + 0xde);
+    t.set_u32(op(&t, face, 0xe), SCRATCH + 0x4000);
+    t.set_u32(op(&t, f, 0x66), lock);
+    let (head, tail) = (op(&t, f, 0x18f), op(&t, f, 0x1a4));
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for (n, count, listed) in [
+        (0u32, 3u16, false),
+        (2, 2, true),
+        (5, 3, false),
+        (1, 4, true),
+    ] {
+        t.write(op(&t, f, 0x33), &varied(0x10, n));
+        t.set_u32(op(&t, f, 0x1), n);
+        t.set_u32(lock, 0x5a5a_0000 + n);
+        for i in 0..4u32 {
+            t.write(node(i), &varied(0x1c, i + n));
+            t.set_u32(node(i), node((i + 3) % 4));
+            t.set_u32(node(i) + 4, node((i + 1) % 4));
+        }
+        t.set_u32(op(&t, f, 0x134), node(0));
+        t.set_u16(op(&t, f, 0x118), count);
+        t.write(SCRATCH + 0x1400, &varied(0x1c, 9));
+        let last = if listed { SCRATCH + 0x1400 } else { 0 };
+        t.set_u32(head, last);
+        t.set_u32(tail, last);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
