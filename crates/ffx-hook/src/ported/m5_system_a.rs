@@ -12,6 +12,7 @@ use super::{StackFrame, mem, ported};
 use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
+use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
@@ -1186,6 +1187,84 @@ ported! {
     /// `0x0061add0(this)`: a read slot's constructor.
     BigFileStream_slotCtor_0061add0 @ 0x0061_add0 => extern "thiscall" fn read_slot_ctor(this: u32) -> u32 {
         vf::slot_ctor(&mut mem(), this)
+    }
+
+    // ---- round 3: DirectInput's start, the archive handles' set-up ----
+    /// `Input_InitDirectInput()`.
+    Input_InitDirectInput @ 0x0062_4350 => extern "C" fn init_direct_input() -> u32 {
+        ip::init_direct_input(&mut mem())
+    }
+    /// `Input_EnumDevicesCallback(instance, ctx)`.
+    Input_EnumDevicesCallback @ 0x0062_3330 => extern "stdcall" fn enum_devices_callback(instance: u32, _ctx: u32) -> u32 {
+        ip::enum_devices_callback(&mut mem(), instance)
+    }
+    /// `Input_EnumAxesSetRange(object, device)`: frame `ebp - 0x1c`.
+    Input_EnumAxesSetRange @ 0x0062_33a0 => extern "stdcall" fn enum_axes_set_range(object: u32, device: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::RANGE_FRAME / 4) as usize }>::new();
+        ip::enum_axes_set_range(&mut mem(), f.at() + ip::RANGE_FRAME, object, device)
+    }
+    /// `0x00623420(out)`.
+    IntrusiveList_copy_00623420 @ 0x0062_3420 => extern "C" fn copy_list(out: u32) -> u32 {
+        ip::copy_list(&mut mem(), out)
+    }
+    /// `0x00623da0(s, prefix)`.
+    CmdLine_afterPrefix_00623da0 @ 0x0062_3da0 => extern "C" fn after_prefix(s: u32, prefix: u32) -> u32 {
+        ip::after_prefix(&mut mem(), s, prefix)
+    }
+    /// `BigFileHandle_BigFileHandle(this)`.
+    BigFileHandle_BigFileHandle @ 0x0061_d460 => extern "thiscall" fn big_file_handle_ctor(this: u32) -> u32 {
+        ip::handle_ctor(&mut mem(), this)
+    }
+    /// `BigFileStream_registerBigFile(this; path)`.
+    BigFileStream_registerBigFile @ 0x0061_c150 => extern "thiscall" fn register_big_file(this: u32, path: u32) -> u8 {
+        ip::register_big_file(&mut mem(), this, path)
+    }
+    /// `Steam_Init()`.
+    Steam_Init @ 0x0062_3470 => extern "C" fn steam_init() -> u32 {
+        ip::steam_init(&mut mem())
+    }
+    /// `0x006255d0(table, name, default)`.
+    CmdLine_findOption_006255d0 @ 0x0062_55d0 => extern "C" fn find_option(table: u32, name: u32, default: u32) -> u32 {
+        ip::find_option(&mut mem(), table, name, default)
+    }
+    /// `Input_Shutdown()`.
+    Input_Shutdown @ 0x0062_5680 => extern "C" fn input_shutdown_all() -> u32 {
+        ip::input_shutdown(&mut mem())
+    }
+    /// `Settings_SetThreadUILanguage()`.
+    Settings_SetThreadUILanguage @ 0x0062_cad0 => extern "C" fn set_thread_ui_language() -> u32 {
+        ip::set_thread_ui_language(&mut mem())
+    }
+    /// `0x00624810(app, key)`: a script key-down command.
+    ScriptKey_down_00624810 @ 0x0062_4810 => extern "C" fn script_key_down(app: u32, key: u32) -> u32 {
+        ip::set_script_key(&mut mem(), app, key, 1)
+    }
+    /// `0x00624850(app, key)`: a script key-up command.
+    ScriptKey_up_00624850 @ 0x0062_4850 => extern "C" fn script_key_up(app: u32, key: u32) -> u32 {
+        ip::set_script_key(&mut mem(), app, key, 0)
+    }
+    /// `0x00624d70(obj, arg)`: a script command.
+    ScriptCommand_00624d70 @ 0x0062_4d70 => extern "C" fn script_624d70(obj: u32, arg: u32) -> u32 {
+        ip::script_624d70(&mut mem(), obj, arg)
+    }
+    /// `Input_AddKeyboard(instance)`: frame `ebp - 4`.
+    Input_AddKeyboard @ 0x0062_3fa0 => extern "C" fn add_keyboard(instance: u32) {
+        let mut f = StackFrame::<{ (ip::KEYBOARD_FRAME / 4) as usize }>::new();
+        ip::add_keyboard(&mut mem(), f.at() + ip::KEYBOARD_FRAME, instance);
+    }
+    /// `Input_AddMouse(instance)`: frame `ebp - 0x10`.
+    Input_AddMouse @ 0x0062_4020 => extern "C" fn add_mouse(instance: u32) {
+        let mut f = StackFrame::<{ (ip::MOUSE_FRAME / 4) as usize }>::new();
+        ip::add_mouse(&mut mem(), f.at() + ip::MOUSE_FRAME, instance);
+    }
+    /// `0x00624890(app, key)`: a script key-press command.
+    ScriptKey_press_00624890 @ 0x0062_4890 => extern "C" fn script_key_press(app: u32, key: u32) -> u32 {
+        ip::script_key_press(&mut mem(), app, key)
+    }
+    /// `0x00624910(app, text)`: frame `ebp - 8`.
+    ScriptMouse_set_00624910 @ 0x0062_4910 => extern "C" fn script_mouse_set(app: u32, text: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::MOUSE_SET_FRAME / 4) as usize }>::new();
+        ip::script_mouse_set(&mut mem(), f.at() + ip::MOUSE_SET_FRAME, app, text)
     }
 }
 

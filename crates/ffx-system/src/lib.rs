@@ -21,6 +21,7 @@ pub mod intl;
 pub mod m5a_files;
 pub mod m5a_fixup;
 pub mod m5a_glue;
+pub mod m5a_input;
 pub mod m5a_platform;
 pub mod m5a_savedata;
 pub mod m5a_savedata2;

@@ -27,6 +27,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
+use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
@@ -5523,6 +5524,450 @@ fn vfs_task_read_and_slot_match_the_original() {
             t.check(&what, 0x0061_add0, Conv::Thiscall(this), &[], |m| {
                 Out::U32(vf::slot_ctor(m, this))
             });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_input) ----
+
+/// A fake COM object: its vtable's slots are recording stdcall stubs
+/// (`this` the first stack word) `(words with this, ret)`, tagged
+/// `0x5200 + slot`. Returns the object (the vtable pointer first).
+fn com_object(t: &mut Twins, slots: &[(u32, u32)]) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in slots.iter().enumerate() {
+        vt.push(t.stub_code(0x5200 + i as u32, false, n, n, ret));
+    }
+    let vt = t.words(&vt);
+    t.words(&[vt, 0, 0, 0])
+}
+
+/// `Input_InitDirectInput` (the create and the enumeration failing or
+/// not), `Input_EnumDevicesCallback` (every device type),
+/// `Input_EnumAxesSetRange` (framed: the range the stub logs a pointer
+/// to; axes or not, `SetProperty` failing or not), `0x00623420` (lists of
+/// 0..5 nodes ending at the head or a null link), `0x00623da0` (the
+/// compare answering 0 or not), `BigFileHandle_BigFileHandle` and
+/// `BigFileStream_registerBigFile` (slots full, the allocation, the
+/// construction or the initialisation failing).
+#[test]
+#[allow(clippy::too_many_lines)] // seven functions, one case setup
+fn input_start_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0501);
+        for case in 0..60 {
+            t.reset();
+            let hr = |rng: &mut Rng| {
+                if rng.chance(3) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            let r = hr(&mut rng);
+            let di = com_object(t, &[(1, 0), (1, 0), (1, 0), (1, 0), (5, r)]);
+            let src = t.words(&[di]);
+            let r = hr(&mut rng);
+            let next = t.stub_code(ip::DIRECT_INPUT8_CREATE, false, 5, 5, r);
+            let at = write_then(t, 3, src, 4, next);
+            t.jump(ip::DIRECT_INPUT8_CREATE, at);
+            t.stub_import(ip::GET_MODULE_HANDLE_IAT, false, 1, 1, rng.next());
+            t.check(
+                &format!("Input_InitDirectInput #{case}"),
+                0x0062_4350,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::init_direct_input(m)),
+            );
+            t.stubs(&[
+                (ip::ADD_MOUSE, false, 1, 0, rng.next()),
+                (ip::ADD_KEYBOARD, false, 1, 0, rng.next()),
+                (ip::ADD_PAD, false, 1, 0, rng.next()),
+            ]);
+            let kind = [
+                0x11u8,
+                0x12,
+                0x13,
+                0x14,
+                0x15,
+                0x16,
+                0x17,
+                0x18,
+                0x19,
+                rng.next() as u8,
+            ][rng.below(10) as usize];
+            let inst = t.zeros(0x40);
+            t.write(inst + 0x24, &[kind]);
+            let ctx = rng.next();
+            t.check(
+                &format!("EnumDevicesCallback #{case} {kind:#x}"),
+                0x0062_3330,
+                Conv::Stdcall,
+                &[inst, ctx],
+                |m| Out::U32(ip::enum_devices_callback(m, inst)),
+            );
+            let r = hr(&mut rng);
+            let dev = com_object(t, &[(1, 0), (1, 0), (1, 0), (1, 0), (1, 0), (1, 0), (3, r)]);
+            let obj = t.zeros(0x40);
+            t.w32(
+                obj + 0x18,
+                [0, 1, 2, 3, 4, rng.next()][rng.below(6) as usize],
+            );
+            t.skip = 4;
+            t.check_framed(
+                &format!("EnumAxesSetRange #{case}"),
+                0x0062_33a0,
+                Conv::Stdcall,
+                &[obj, dev],
+                ip::RANGE_FRAME,
+                |m, ebp| Out::U32(ip::enum_axes_set_range(m, ebp, obj, dev)),
+            );
+            t.skip = 0;
+            // the intrusive list
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(6);
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x10)).collect();
+            let end = if rng.chance(3) { 0 } else { head };
+            let first = nodes.first().map_or(end, |&x| x + 4);
+            t.w32(head, first);
+            for (k, &node) in nodes.iter().enumerate() {
+                let link = nodes.get(k + 1).map_or(end, |&x| x + 4);
+                t.w32(node + 4, link);
+            }
+            let out = t.zeros(0x20);
+            t.check(
+                &format!("0x00623420 #{case} n {n}"),
+                0x0062_3420,
+                Conv::Cdecl,
+                &[out],
+                |m| Out::U32(ip::copy_list(m, out)),
+            );
+            t.stub_import(
+                ip::STRNCMP_IAT,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let prefix: Vec<u8> = (0..rng.below(8))
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let prefix = t.alloc(&prefix);
+            let s = rng.next();
+            t.check(
+                &format!("0x00623da0 #{case}"),
+                0x0062_3da0,
+                Conv::Cdecl,
+                &[s, prefix],
+                |m| Out::U32(ip::after_prefix(m, s, prefix)),
+            );
+            // the archive handles
+            t.reset();
+            t.stub(ip::FREE_LIST_CTOR, true, 4, 4, rng.next());
+            t.stub_import(ip::INIT_CS_IAT, false, 1, 1, rng.next());
+            let this = t.words(&(0..0x18).map(|_| rng.next()).collect::<Vec<_>>());
+            t.check(
+                &format!("BigFileHandle #{case}"),
+                0x0061_d460,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(ip::handle_ctor(m, this)),
+            );
+            t.reset();
+            let p = if rng.chance(5) { 0 } else { rng.next() };
+            let made = if rng.chance(5) { 0 } else { rng.next() };
+            let ok = rng.next() & !(0xff * u32::from(rng.chance(2)));
+            t.stubs(&[
+                (ip::OPERATOR_NEW, false, 1, 0, p),
+                (ip::HANDLE_CTOR, true, 0, 0, made),
+                (ip::HANDLE_INIT, true, 1, 1, ok),
+                (ip::HANDLE_DTOR, true, 0, 0, rng.next()),
+                (ip::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let mut w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            let free = rng.below(6);
+            for k in 0..5 {
+                w[4 + k] = if k as u32 == free { 0 } else { rng.next() | 1 };
+            }
+            let stream = t.words(&w);
+            let path = rng.next();
+            t.check(
+                &format!("registerBigFile #{case} free {free}"),
+                0x0061_c150,
+                Conv::Thiscall(stream),
+                &[path],
+                |m| Out::U8(ip::register_big_file(m, stream, path)),
+            );
+        }
+    });
+}
+
+/// `Steam_Init` (each step's answer), `0x006255d0` (no table, a match at
+/// each place, none), `Input_Shutdown` (0..4 devices, a null link, no
+/// `DirectInput`), `Settings_SetThreadUILanguage` (every language and out of
+/// range), the script key commands (null app/key/state, every key byte)
+/// and `0x00624d70` (the virtual answering 0 or not, `arg` null or not).
+#[test]
+#[allow(clippy::too_many_lines)] // seven functions, one case setup
+fn input_misc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0502);
+        for case in 0..60 {
+            t.reset();
+            let utils = t.object(
+                &[(0, 0); 10]
+                    .iter()
+                    .copied()
+                    .chain([(1, rng.next())])
+                    .collect::<Vec<_>>(),
+            );
+            let user = t.object(&[(0, 0), (0, rng.next() & !(0xff * u32::from(rng.chance(2))))]);
+            let al = |rng: &mut Rng| rng.next() & !(0xff * u32::from(rng.chance(2)));
+            let (a, b) = (al(&mut rng), al(&mut rng));
+            t.stub_import(ip::STEAM_RESTART_IAT, false, 1, 0, a);
+            t.stub_import(ip::STEAM_INIT_IAT, false, 0, 0, b);
+            t.stub_import(ip::STEAM_UTILS_IAT, false, 0, 0, utils);
+            t.stub_import(ip::STEAM_USER_IAT, false, 0, 0, user);
+            t.stub_import(ip::PRINTF_IAT, false, 1, 0, rng.next());
+            t.check(
+                &format!("Steam_Init #{case}"),
+                0x0062_3470,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::steam_init(m)),
+            );
+            let n = rng.below(5);
+            let mut tbl: Vec<u32> = (0..n).flat_map(|k| [0x100 + k, rng.next()]).collect();
+            tbl.extend([0, 0]);
+            let table = if rng.chance(6) { 0 } else { t.words(&tbl) };
+            let hits: Vec<u32> = (0..6).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &hits);
+            let (name, def) = (rng.next(), rng.next());
+            t.check(
+                &format!("0x006255d0 #{case}"),
+                0x0062_55d0,
+                Conv::Cdecl,
+                &[table, name, def],
+                |m| Out::U32(ip::find_option(m, table, name, def)),
+            );
+            // the device list: circular through the head
+            t.reset();
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(5);
+            let nodes: Vec<u32> = (0..n)
+                .map(|_| {
+                    let r = rng.next();
+                    t.object(&[(1, r)])
+                })
+                .collect();
+            let null = n > 0 && rng.chance(5);
+            let link = |k: usize| if k < nodes.len() { nodes[k] + 4 } else { head };
+            for k in 0..nodes.len() {
+                t.w32(
+                    nodes[k] + 4,
+                    if null && k + 1 == nodes.len() {
+                        0
+                    } else {
+                        link(k + 1)
+                    },
+                );
+                t.w32(nodes[k] + 8, if k == 0 { head } else { link(k - 1) });
+            }
+            t.w32(head, link(0));
+            t.w32(
+                head + 4,
+                if nodes.is_empty() {
+                    head
+                } else {
+                    link(nodes.len() - 1)
+                },
+            );
+            let di = if rng.chance(3) {
+                0
+            } else {
+                let r = rng.next();
+                let v = t.stub_code(0x5300, false, 1, 1, r);
+                let vt = t.words(&[0, 0, v]);
+                t.words(&[vt])
+            };
+            t.g32(ip::DIRECT_INPUT, di);
+            if !null {
+                t.check(
+                    &format!("Input_Shutdown #{case} n {n}"),
+                    0x0062_5680,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(ip::input_shutdown(m)),
+                );
+            }
+            t.stub_import(ip::SET_THREAD_UI_LANGUAGE_IAT, false, 1, 1, rng.next());
+            let settings = t.words(&[rng.below(10)]);
+            t.g32(ip::SETTINGS, settings);
+            t.check(
+                &format!("SetThreadUILanguage #{case}"),
+                0x0062_cad0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::set_thread_ui_language(m)),
+            );
+            let state = if rng.chance(4) { 0 } else { t.zeros(0x120) + 4 };
+            let devices = t.zeros(0x100);
+            t.w32(devices + 0x80, state);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x2b8, devices);
+            let app = if rng.chance(6) { 0 } else { app };
+            let key = if rng.chance(6) {
+                0
+            } else {
+                t.alloc(&[rng.next() as u8, 0])
+            };
+            for (sym, down) in [(0x0062_4810u32, 1u8), (0x0062_4850, 0)] {
+                t.check(
+                    &format!("{sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[app, key],
+                    |m| Out::U32(ip::set_script_key(m, app, key, down)),
+                );
+            }
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let obj = t.object(
+                &[(0, 0); 8]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            t.stub(ip::SCRIPT_624DA0, false, 2, 0, rng.next());
+            let arg = if rng.chance(3) { 0 } else { rng.next() };
+            t.check(
+                &format!("0x00624d70 #{case}"),
+                0x0062_4d70,
+                Conv::Cdecl,
+                &[obj, arg],
+                |m| Out::U32(ip::script_624d70(m, obj, arg)),
+            );
+        }
+    });
+}
+
+/// `Input_AddKeyboard` and `Input_AddMouse` (framed: the device pointer
+/// `CreateDevice` writes; each COM step failing or not, the allocations
+/// failing), the script key press (the vtable answering 0 or not) and
+/// mouse set (framed: the coordinates `sscanf_s` writes).
+#[test]
+#[allow(clippy::too_many_lines)] // four functions, one case setup
+fn input_devices_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0503);
+        for case in 0..60 {
+            for mouse in [false, true] {
+                t.reset();
+                let hr = |rng: &mut Rng| {
+                    if rng.chance(5) {
+                        0x8000_4005
+                    } else {
+                        rng.below(2)
+                    }
+                };
+                let level = [0x8000_4001, 0x8000_4005, 0, 1][rng.below(4) as usize];
+                let mut slots = vec![(1, 0); 15];
+                slots[7] = (1, rng.next());
+                slots[11] = (2, hr(&mut rng));
+                slots[13] = (3, level);
+                let dev = com_object(t, &slots);
+                let src = t.words(&[dev]);
+                let r = hr(&mut rng);
+                let next = t.stub_code(0x5400, false, 4, 4, r);
+                let create = write_then(t, 2, src, 4, next);
+                let vt = t.words(&[0, 0, 0, create]);
+                let di = t.words(&[vt]);
+                t.g32(ip::DIRECT_INPUT, di);
+                t.g32(ip::HWND, rng.next());
+                let a = if rng.chance(5) { 0 } else { t.zeros(0x20) };
+                let b = if rng.chance(5) { 0 } else { rng.next() };
+                if mouse {
+                    let seq = [a, b];
+                    stub_seq(t, ip::PHYRE_MALLOC, false, 1, 0, &seq);
+                } else {
+                    t.stub(ip::PHYRE_MALLOC, false, 1, 0, b);
+                }
+                t.stubs(&[
+                    (ip::KEYBOARD_CTOR, true, 1, 1, rng.next()),
+                    (ip::MOUSE_CTOR, true, 1, 1, rng.next()),
+                ]);
+                let inst = t.zeros(0x30);
+                if mouse && a == 0 {
+                    // the record is used unchecked: both store to 0
+                    continue;
+                }
+                let (sym, low) = if mouse {
+                    (0x0062_4020u32, ip::MOUSE_FRAME)
+                } else {
+                    (0x0062_3fa0, ip::KEYBOARD_FRAME)
+                };
+                // the SEH frame and cookie below ebp have no counterpart
+                t.skip = if mouse { 0xc } else { 0 };
+                let what = format!("{sym:#x} #{case} level {level:#x}");
+                t.check_framed(&what, sym, Conv::Cdecl, &[inst], low, |m, ebp| {
+                    if mouse {
+                        ip::add_mouse(m, ebp, inst);
+                    } else {
+                        ip::add_keyboard(m, ebp, inst);
+                    }
+                    Out::None
+                });
+                t.skip = 0;
+            }
+            t.reset();
+            let state = if rng.chance(4) { 0 } else { t.zeros(0x120) + 4 };
+            let devices = t.zeros(0x100);
+            t.w32(devices + 0x80, state);
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let app = t.object(
+                &[(0, 0); 7]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let big = t.zeros(0x300);
+            let vt: u32 = Mem::read(&t.a, app);
+            t.w32(big, vt);
+            t.w32(big + 0x2b8, devices);
+            let app2 = if rng.chance(6) { 0 } else { big };
+            let key = if rng.chance(6) {
+                0
+            } else {
+                t.alloc(&[rng.next() as u8, 0])
+            };
+            t.check(
+                &format!("0x00624890 #{case}"),
+                0x0062_4890,
+                Conv::Cdecl,
+                &[app2, key],
+                |m| Out::U32(ip::script_key_press(m, app2, key)),
+            );
+            let mouse = t.zeros(0x100);
+            t.w32(big + 0x2b8, mouse);
+            let xy = t.words(&[rng.next(), rng.next()]);
+            let r = rng.next();
+            let next = t.stub_code(ip::SSCANF_S_IAT, false, 4, 0, r);
+            let next = write_then(t, 3, xy + 4, 4, next);
+            let at = write_then(t, 2, xy, 4, next);
+            let slot = t.rebase(ip::SSCANF_S_IAT);
+            t.patch(slot, &at.to_le_bytes());
+            let text = rng.next();
+            t.skip = 0;
+            t.check_framed(
+                &format!("0x00624910 #{case}"),
+                0x0062_4910,
+                Conv::Cdecl,
+                &[big, text],
+                ip::MOUSE_SET_FRAME,
+                |m, ebp| Out::U32(ip::script_mouse_set(m, ebp, big, text)),
+            );
         }
     });
 }
