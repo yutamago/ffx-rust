@@ -3425,3 +3425,54 @@ fn guarded_drops_and_resets() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn two_children_and_light_levels() {
+    let Some(mut t) = twin(146) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0x6390);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 941, 1, move |m, _| m.r32(answer));
+    let (c1, c2) = (SCRATCH + 0x5000, SCRATCH + 0x5100);
+    for &(c, p, cp) in sa::RINGS {
+        for a in [0u32, 1] {
+            sa::ring(&mut t, c, p, cp, 0x30);
+            let owner = sa::node(0);
+            for (k, ch) in [c1, c2].into_iter().enumerate() {
+                t.write(ch, &[0x41 + k as u8; 0x40]);
+                t.set_u32(ch, sa::VTABLE);
+            }
+            t.set_u32(owner + 0x3c, c1);
+            t.set_u32(owner + 0x40, c2);
+            t.set_u32(answer, a);
+            t.check_entry(f, Call::default(), &[sa::CURSOR], Eax::Checked);
+        }
+    }
+    drop(t);
+    let Some(mut t) = twin(578) else { return };
+    let f = t.at(0x2f60);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 363, 3, move |m, _| m.r32(answer));
+    recs(&mut t, &[(357, 3), (356, 6), (362, 4), (704, 4)]);
+    let (r, obj, lm, rp) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+        SCRATCH + 0x380,
+    );
+    t.set_u32(obj + 0x68, lm);
+    t.set_u32(lm + 0x54, 0x0054_0001);
+    t.set_u32(obj + 0x70, rp);
+    t.set_u32(rp, 0xffff_4321);
+    for (level, max, mode) in [(5u32, 3u32, 0u32), (2, 3, 0), (3, 3, 1)] {
+        t.write(r, &[0; 0x20]);
+        t.set_u32(r, obj);
+        t.set_u32(r + 4, 0x0004_0001);
+        t.set_u32(r + 8, max);
+        t.set_u32(r + 0x14, 0x14);
+        t.set_u32(r + 0x18, 0x18);
+        t.set_u32(r + 0x1c, mode);
+        t.set_u32(answer, level);
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::light_level);
+    }
+}

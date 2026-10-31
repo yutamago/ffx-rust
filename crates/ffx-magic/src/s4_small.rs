@@ -7494,3 +7494,108 @@ pub const STEP_DONE_RESET: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Runs the handler of `child` on the frame cursor `local` (the child, the
+/// pass byte `pass` at `+5`).
+fn child_handler<G: Game>(g: &mut G, local: u32, child: u32, pass: u8) {
+    g.write::<u32>(local, child);
+    g.write::<u8>(local + 5, pass);
+    let handler = g.read::<u32>(g.read::<u32>(child).wrapping_add(0x1c));
+    g.call(handler, local, &[local]);
+}
+
+/// The node walk ([`crate::nodes::walk`], cdecl `(cursor)`); when it ran,
+/// the owner's child `+0x3c` gets its handler, and when slot 941
+/// `(owner + 0x38)` answers non-zero the second child `+0x40` too (each
+/// handler on a cursor in the frame); the owner takes the first child's
+/// place `+0x1c..+0x24`. Returns the last word copied, or the walk's
+/// `eax`.
+///
+/// `magic_0146` 0x10006390 (183 bytes; 2 DLLs).
+pub fn walk_two_children<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let cursor = fr.arg(g, 0);
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let owner = g.read::<u32>(cursor);
+    let pass = g.read::<u8>(cursor + 5);
+    // push ebp; sub esp, 8: the cursor is [ebp - 8]
+    let local = fr.esp.wrapping_sub(0xc);
+    let first = g.read::<u32>(owner.wrapping_add(0x3c));
+    child_handler(g, local, first, pass);
+    let x = g.read::<u32>(owner.wrapping_add(0x38));
+    if slot_call(g, img, fr.at, (0x65, 941), &[x, local]).eax != 0 {
+        let second = g.read::<u32>(owner.wrapping_add(0x40));
+        child_handler(g, local, second, pass);
+    }
+    let mut last = 0;
+    for i in 0..3 {
+        let c = g.read::<u32>(owner.wrapping_add(0x3c));
+        last = g.read::<u32>(c.wrapping_add(0x1c + 4 * i));
+        g.write::<u32>(owner.wrapping_add(0x1c + 4 * i), last);
+    }
+    Ret::eax(last)
+}
+
+/// [`walk_two_children`].
+pub const WALK_TWO_CHILDREN: Sig = Sig {
+    len: 183,
+    hash: 0xdd62_51c9_298e_8f19,
+    calls: &[],
+    imports: &[],
+};
+
+/// A light's level (internal, `ecx` = `[obj, level, max, -, -, a, b,
+/// mode]`): slot 363 `(m, a, 0)` on the light model `m` (`*(obj + 0x68) +
+/// 0x54`) gives the level; above `max` nothing more; else `max` takes it,
+/// `obj + 0x74` the level word, the model's ranges are set (slots 357
+/// `(m, -1, *(obj + 0x70) & 0x3fff)`, 356 `(m, -1, 0)`), slot 704 or, in
+/// a non-zero mode, slot 362 `(level, m, a, b)` places it and the ranges go back
+/// to -1 (357 and 356 `(m, -1, -1)`). Returns the last slot's `eax`, or
+/// the level.
+///
+/// `magic_0578` 0x10002f60 (184 bytes; 2 DLLs).
+pub fn light_level<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let obj = g.read::<u32>(r);
+    let m = g.read::<u32>(g.read::<u32>(obj.wrapping_add(0x68)).wrapping_add(0x54));
+    let a = g.read::<u32>(r + 0x14);
+    let v = slot_call(g, img, f, (0x13, 363), &[m, a, 0]).eax;
+    if v.cast_signed() > g.read::<i32>(r + 8) {
+        return Ret::eax(v);
+    }
+    g.write::<u32>(r + 8, v);
+    let level = g.read::<u32>(r + 4);
+    g.write::<u32>(obj.wrapping_add(0x74), level);
+    let range = g.read::<u32>(g.read::<u32>(obj.wrapping_add(0x70))) & 0x3fff;
+    let all = u32::MAX;
+    slot_call(g, img, f, (0x41, 357), &[m, all, range]);
+    slot_call(g, img, f, (0x51, 356), &[m, all, 0, m, all, range]);
+    let b = g.read::<u32>(r + 0x18);
+    let a = g.read::<u32>(r + 0x14);
+    let level = g.read::<u32>(r + 4);
+    let slot = if g.read::<u32>(r + 0x1c) == 0 {
+        704
+    } else {
+        362
+    };
+    slot_call(g, img, f, (0x63, slot), &[level, m, a, b]);
+    slot_call(g, img, f, (0x8b, 357), &[m, all, all]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0xa0, 356),
+        &[m, all, all, m, all, all],
+    ))
+}
+
+/// [`light_level`].
+pub const LIGHT_LEVEL: Sig = Sig {
+    len: 184,
+    hash: 0x187b_fd57_ca59_fdc3,
+    calls: &[],
+    imports: &[],
+};

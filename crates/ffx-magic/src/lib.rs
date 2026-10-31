@@ -1164,6 +1164,7 @@ ports! {
     "light copy" => s4_small::LIGHT_COPY, s4_small::light_copy;
     "actors and entries" => s4_small::ACTORS_ENTRIES, s4_small::actors_entries;
     "part drop (guarded)" => s4_small::PART_DROP_GUARDED, s4_small::part_drop_guarded;
+    "walk, two children" => s4_small::WALK_TWO_CHILDREN, s4_small::walk_two_children;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
@@ -1574,6 +1575,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("turn a point", &s4_small::TURN_POINT),
     ("node copy", &s4_small::NODE_COPY),
     ("scale task (edx)", &s4_small::SCALE_TASK_EDX),
+    ("light level", &s4_small::LIGHT_LEVEL),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
