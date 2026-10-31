@@ -3562,3 +3562,24 @@ fn place_turns_and_two_timelines() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn particles_f() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x17a0);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table + 0xc, 0x0700_000c);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i));
+        }
+        0x325
+    });
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+}

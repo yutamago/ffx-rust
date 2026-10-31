@@ -7828,3 +7828,37 @@ pub const EFFECT_FRAME_TWO_TIMELINES: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`particles_placed`] with the table's `+0xc` program; the DLL's
+/// vector `V` (operands `+0x4a`..`+0x68`) set to `(0, 5.0, -8.6, 1.0)`
+/// and copied into the place (slot 325 `(obj + 0x40, V)`, operand `+0x3e`;
+/// the wrapper's words still under), rates 0.075.
+///
+/// `magic_0443` 0x100017a0 (187 bytes; 2 DLLs).
+pub fn particles_start_f<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (obj, x, program) = particles_begin(g, img, fr, (0xc, 0x36));
+    for (o, v) in [
+        (0x4a, 0),
+        (0x54, 0x409f_fff6),
+        (0x5e, 0xc109_994d),
+        (0x68, 0x3f80_0000),
+    ] {
+        g.write::<u32>(op(img, f, o), v);
+    }
+    let words = [obj.wrapping_add(0x40), op(img, f, 0x3e), program, 1, 0, x];
+    slot_call(g, img, f, (0x44, 325), &words);
+    for off in [0x50, 0x54, 0x58] {
+        g.write::<u32>(obj.wrapping_add(off), 0);
+    }
+    particles_rates(g, obj, 0x3d99_999a);
+    Ret::eax(1)
+}
+
+/// [`particles_start_f`].
+pub const PARTICLES_START_F: Sig = Sig {
+    len: 187,
+    hash: 0x2641_5ea6_e154_3ca6,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

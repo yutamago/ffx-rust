@@ -1166,6 +1166,7 @@ ports! {
     "part drop (guarded)" => s4_small::PART_DROP_GUARDED, s4_small::part_drop_guarded;
     "walk, two children" => s4_small::WALK_TWO_CHILDREN, s4_small::walk_two_children;
     "actor place and turn" => s4_small::ACTOR_PLACE_TURN, s4_small::actor_place_turn;
+    "particles start (f)" => s4_small::PARTICLES_START_F, s4_small::particles_start_f;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
