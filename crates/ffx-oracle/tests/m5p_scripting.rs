@@ -3728,3 +3728,34 @@ fn left2_set_clip_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_matrix_new_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut vals = Vec::new();
+        for i in 0..20u32 {
+            vals.extend(
+                (0.25f32 * f32::from(i as u16) - 1.0)
+                    .to_bits()
+                    .to_le_bytes(),
+            );
+        }
+        let table = t.alloc(&vals);
+        for (top, ud) in [(17u32, true), (2, true), (1, true), (5, true), (17, false)] {
+            t.stub(l2::LUA_MORE[2], false, 1, 0, top);
+            let block = if ud { t.junk(0x40, 3) } else { 0 };
+            t.stub(l2::LUA_MORE[6], false, 2, 0, block);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            t.stub_float_table(l2::MATRIX_NEW[0], 2, 1, table);
+            let what = format!("{label}: Matrix new top {top} ud {ud}");
+            t.cdecl(&what, 0x0057_0e30, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_new(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}

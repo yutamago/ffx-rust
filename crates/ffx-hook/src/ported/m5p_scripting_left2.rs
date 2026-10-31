@@ -71,4 +71,9 @@ ported! {
         let mut f = StackFrame::<2>::new();
         lb::set_clip(&mut mem(), this, clip, f.at())
     }
+    /// The script's `Matrix(...)` constructor `(L)`.
+    Phyre_PScripting_Matrix_new_00570e30 @ 0x0057_0e30 => extern "C" fn matrix_new(l: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        lb::matrix_new(&mut mem(), l, f.at())
+    }
 }

@@ -293,9 +293,15 @@ pub const RING_MAX_WAITS: u32 = 10_000;
 /// (thiscall).
 pub const CLIP_DATA: [u32; 4] = [0x00ca_b918, 0x0052_6590, 0x0051_6a20, 0x0052_65f0];
 
+/// The `Matrix(...)` constructor's callees: `luaL_checknumber(L, i)` (the
+/// number in `ST0`, cdecl), `PMatrix4::identity(out)` (cdecl),
+/// `PMatrix4::copy(m)` (thiscall).
+pub const MATRIX_NEW: [u32; 3] = [0x0094_c9e0, 0x0045_4cf0, 0x0045_3340];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::CLIP_DATA;
+    use super::MATRIX_NEW;
     use super::{
         CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
         Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
@@ -1354,5 +1360,46 @@ pub mod bridge {
                 .to_bits(),
         );
         h.call_sym(CLIP_DATA[3], Conv::Thiscall(this + 0x38), &[this + 0xc])
+    }
+
+    /// The script's `Matrix(...)` constructor (`0x00570e30`, cdecl `(L)`, 1
+    /// result): a 0x40-byte userdata with the matrix metatable; with 16
+    /// numbers after the type its 16 floats, with one number that number
+    /// in all 16, else the identity (`0x00454cf0`), staged in `frame` (16
+    /// words, the original's `ebp - 0x44`) and copied (`0x00453340`).
+    /// Nothing more when the userdata cannot be made. 1.
+    pub fn matrix_new(h: &mut impl Host, l: u32, frame: u32) -> u32 {
+        let top = h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]);
+        let ud = h.call_sym(LUA_MORE[6], Conv::Cdecl, &[l, 0x40]);
+        if ud == 0 {
+            return 1;
+        }
+        let name = h.rebase(VM_DATA[1]);
+        h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+        h.call_sym(LUA_MORE[7], Conv::Cdecl, &[l, 0xffff_fffe]);
+        match top {
+            17 => {
+                for i in 0..16 {
+                    let v = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, i + 2]);
+                    h.write(frame + 4 * i, v.to_bits());
+                }
+                for i in 0..16 {
+                    let v = ffx_bridge::x87::round_trip(f32::from_bits(h.read(frame + 4 * i)));
+                    h.write(ud + 4 * i, v.to_bits());
+                }
+            }
+            2 => {
+                let v = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, 2]);
+                for i in 0..16 {
+                    h.write(frame + 4 * i, v.to_bits());
+                }
+                h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[frame]);
+            }
+            _ => {
+                let m = h.call_sym(MATRIX_NEW[1], Conv::Cdecl, &[frame]);
+                h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[m]);
+            }
+        }
+        1
     }
 }
