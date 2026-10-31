@@ -1134,6 +1134,10 @@ ports! {
     "register square" => s4_small::REGISTER_SQUARE, s4_small::register_square;
     "particles start (b)" => s4_small::PARTICLES_START_B, s4_small::particles_start_b;
     "static link (x)" => s4_small::STATIC_LINK_X, s4_small::static_link_x;
+    "camera floats, on" => s4_small::CAMERA_FLOATS_ON, s4_small::camera_floats_on;
+    "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
+    "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
+    "thunk: walk and ring write" => s4_wrap::JMP_WALK_RING, s4_wrap::ecx_jmp;
     "0565 start kind" => s4_fam446::START_KIND_D, s4_fam446::start_kind_d;
     "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;

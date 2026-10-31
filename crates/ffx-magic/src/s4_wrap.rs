@@ -12,7 +12,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the register the thunk
 /// loaded, `esp` at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 10] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 13] {
     [
         (&s3_nodes::LEAVE_AND_RESET, |g, img, fr| {
             Ret::eax(s3_nodes::leave_and_reset(g, img, fr))
@@ -29,6 +29,9 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 10] {
         (&s4_small::WALK_275, s4_small::walk_275::<G>),
         (&s4_small::WALK_RESET, s4_small::walk_reset::<G>),
         (&s4_small::TABLE_OBJECT, s4_small::table_object::<G>),
+        (&s4_small::WALK_TRACK, s4_small::walk_track::<G>),
+        (&s4_small::WALK_CHILD_PLACE, s4_small::walk_child_place::<G>),
+        (&s4_small::WALK_RING, s4_small::walk_ring::<G>),
     ]
 }
 
@@ -104,4 +107,10 @@ thunks! {
     /// `magic_0638` 0x10003260 (2 DLLs) over [`s4_small::table_object`]
     /// ([`ecx_field_jmp`]).
     JMP_TABLE_OBJECT: 15, ECX_FIELD_JMP_HASH, 0xb => s4_small::TABLE_OBJECT;
+    /// `magic_0155` 0x100083e0 (2 DLLs) over [`s4_small::walk_track`].
+    JMP_WALK_TRACK: 12, ECX_JMP_HASH, 8 => s4_small::WALK_TRACK;
+    /// `magic_0155` 0x100049b0 (2 DLLs) over [`s4_small::walk_child_place`].
+    JMP_WALK_CHILD_PLACE: 12, ECX_JMP_HASH, 8 => s4_small::WALK_CHILD_PLACE;
+    /// `magic_0150` 0x1000aa70 (2 DLLs) over [`s4_small::walk_ring`].
+    JMP_WALK_RING: 12, ECX_JMP_HASH, 8 => s4_small::WALK_RING;
 }

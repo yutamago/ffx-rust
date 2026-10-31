@@ -5881,3 +5881,28 @@ pub const STATIC_LINK_X: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Slot 271 `(4)`, `G_A` 1.0 (operand `+0x14`), then the camera floats
+/// ([`camera_floats`]) (no arguments). Returns 1.
+///
+/// `magic_0098` 0x10001ee0 (39 bytes; 2 DLLs).
+pub fn camera_floats_on<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    slot_call(g, img, f, (0x1, 271), &[4]);
+    g.write::<u32>(op(img, f, 0x14), 0x3f80_0000);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x1d),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    camera_floats(g, img, &callee);
+    Ret::eax(1)
+}
+
+/// [`camera_floats_on`].
+pub const CAMERA_FLOATS_ON: Sig = Sig {
+    len: 39,
+    hash: 0x01dd_543b_00ba_1954,
+    calls: &[(0x1d, Callee::Sig(&CAMERA_FLOATS))],
+    imports: &[],
+};

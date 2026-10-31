@@ -2674,3 +2674,50 @@ fn particles_and_static_x() {
         t.check_entry(f, Call::default(), &[0x0006_c001], Eax::Checked);
     }
 }
+
+#[test]
+fn more_walk_thunks() {
+    let call = Call {
+        eax: 0xaabb_ccdd,
+        ecx: 0x0bad_0ecc,
+        ..Call::default()
+    };
+    let Some(mut t) = twin(155) else { return };
+    sa::handler_stubs(&mut t);
+    recs(&mut t, &[(325, 2)]);
+    for rva in [0x83e0u32, 0x49b0] {
+        let f = t.at(rva);
+        for &(c, p, cp) in sa::RINGS {
+            sa::ring(&mut t, c, p, cp, 0x30);
+            t.set_u32(sa::node(0) + 0x2c, 0);
+            t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
+        }
+    }
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0xaa70);
+    let ring = SCRATCH + 0x5000;
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x30);
+        let owner = sa::node(0);
+        t.write(ring, &[0x41; 0x40]);
+        t.set_u32(ring, sa::VTABLE);
+        t.set_u32(owner + 0x2c, ring);
+        t.set_u32(owner + 0x1c, SCRATCH + 0x6000);
+        t.set_u16(owner + 0x20, 4);
+        t.set_u16(owner + 0x22, 0x10);
+        t.set_u16(owner + 0x24, 1);
+        t.set_u16(owner + 0x26, 1);
+        t.set_u16(owner + 0x2a, 0);
+        t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(98) else { return };
+    recs(&mut t, &[(271, 1), (786, 3)]);
+    for (s, v) in [(788u32, 1.5f64), (787, -2.0), (789, 0.25), (790, 1e3)] {
+        rec(&mut t, s, 0, move |_, _| s);
+        t.stub_st0(s, move |_, _| v);
+    }
+    t.check_entry(t.at(0x1ee0), Call::default(), &[], Eax::Checked);
+}
