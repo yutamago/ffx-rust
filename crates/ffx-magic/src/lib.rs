@@ -81,6 +81,7 @@ pub mod o4_fam4;
 pub mod o4_fam5;
 pub mod o4_parts;
 pub mod o4_rcef;
+pub mod o4_single;
 pub mod o4_small;
 pub mod o4_state;
 pub mod o4_steps;
@@ -1304,6 +1305,18 @@ ports! {
     "o4 fam5 part_scale_by_index 0665@1610" => o4_fam5::PART_SCALE_BY_INDEX_0665_1610, o4_fam5::part_scale_by_index;
     "o4 fam5 attach_mode32_par_wait 0421@14d0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0421_14D0, o4_fam5::attach_mode32_par_wait;
     "o4 fam5 attach_mode32_par_wait 0535@14b0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0535_14B0, o4_fam5::attach_mode32_par_wait;
+    "o4 fam5 part_free_pair 0661@18d0" => o4_fam5::PART_FREE_PAIR_0661_18D0, o4_fam5::part_free_pair;
+    "o4 fam5 part_free_pair 0661@1990" => o4_fam5::PART_FREE_PAIR_0661_1990, o4_fam5::part_free_pair;
+    "o4 fam5 part_free_pair 0661@1b60" => o4_fam5::PART_FREE_PAIR_0661_1B60, o4_fam5::part_free_pair;
+    "o4 single record_actor_slot 0270@1c70" => o4_single::RECORD_ACTOR_SLOT_0270_1C70, o4_single::record_actor_slot;
+    "o4 single tail_free 0203@45f0" => o4_single::TAIL_FREE_0203_45F0, o4_single::tail_free;
+    "o4 single free_by_index 0351@1bf0" => o4_single::FREE_BY_INDEX_0351_1BF0, o4_single::free_by_index;
+    "o4 single find_same_id 0275@4310" => o4_single::FIND_SAME_ID_0275_4310, o4_single::find_same_id;
+    "o4 single flag_pick_slot 0601@8070" => o4_single::FLAG_PICK_SLOT_0601_8070, o4_single::flag_pick_slot;
+    "o4 single model_slots 0263@6b90" => o4_single::MODEL_SLOTS_0263_6B90, o4_single::model_slots;
+    "o4 single display_list 0598@77a0" => o4_single::DISPLAY_LIST_0598_77A0, o4_single::display_list;
+    "o4 single colour_then_run 0671@1340" => o4_single::COLOUR_THEN_RUN_0671_1340, o4_single::colour_then_run;
+    "o4 single set_then_timeline 0540@1080" => o4_single::SET_THEN_TIMELINE_0540_1080, o4_single::set_then_timeline;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1681,6 +1694,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 fam5 fade_record 0325@2250",
         &o4_fam5::FADE_RECORD_0325_2250,
+    ),
+    (
+        "o4 single actor_slot 0171@29c0",
+        &o4_single::ACTOR_SLOT_0171_29C0,
+    ),
+    (
+        "o4 single actor_slot_edx 0298@2250",
+        &o4_single::ACTOR_SLOT_EDX_0298_2250,
     ),
 ];
 

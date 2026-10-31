@@ -35,6 +35,30 @@ fn stubs(t: &mut Twin) {
 
 const CASES: &[Case] = &[
     (
+        "part_free_pair",
+        &[(661, 0x18d0), (661, 0x1990), (661, 0x1b60)],
+        3,
+        |t, f, c| {
+            t.set_u32(t.img.word(f + 0x04), SCRATCH + 0x200);
+            t.set_u32(t.img.word(f + 0x10), SCRATCH + 0x300);
+            t.set_u32(SCRATCH + 0x310, 0x00ab_cd00 ^ f);
+            let list = SCRATCH + 0x400;
+            fill(t, list, 16, f ^ c);
+            t.stub(941, move |_, _| list);
+            let wrapper = t.img.rel32_target(f + 0x36);
+            t.set_u32(t.img.word(wrapper + 0x04), SCRATCH + 0x204);
+            t.set_u32(SCRATCH + 0x204, 9);
+            fill(t, OBJ + 0x3c, 0x14, c);
+            // the pairs: (1, 0) at 5 (case 0), at 13 (1), nowhere (2)
+            let pairs = t.img.word(f + 0x40) - 4;
+            for k in 0..14u32 {
+                let hit = (c == 0 && k == 5) || (c == 1 && k == 13);
+                t.set_u32(pairs + 8 * k, if hit || k % 3 == 0 { 1 } else { 2 });
+                t.set_u32(pairs + 8 * k + 4, if hit { 0 } else { k + 1 });
+            }
+        },
+    ),
+    (
         "part_scale_by_index",
         &[(664, 0x1420), (665, 0x1610)],
         2,
@@ -213,7 +237,7 @@ fn dll_main_writes_only_crt_state() {
 }
 
 // Mutation testing (M5 magic round 4, tools/mutants.py, a few mutants per
-// code line, survivors rerun after the tests were strengthened): 125
-// mutants, 122 killed, 1 that does not compile (`add` not imported). The
+// code line, survivors rerun after the tests were strengthened): 136
+// mutants, 133 killed, 1 that does not compile (`add` not imported). The
 // 2 survivors are equivalent: `fade_record` clearing the pool node's
 // `+0x4` that `take` has just cleared (the original repeats it).

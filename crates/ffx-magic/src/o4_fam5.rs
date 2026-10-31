@@ -237,6 +237,40 @@ pub fn attach_mode32_par_wait<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Re
     Ret::eax(g.call(s, fr.ecx, &stack).eax)
 }
 
+/// `(obj)` (`magic_0661` 0x100018d0, 184 bytes; 3 copies): the part
+/// `list[d8 / 4]` started on `obj` ([`part_start`], the entry at
+/// `+0x2d`, the wrapper's `rel32` at `+0x36`); `i` = the first of 14
+/// pairs at `T` (`+0x40`; pair `k` is the words `T + 8k - 4`, `T + 8k`)
+/// that is `(1, 0)`, or -1; slot 325 (`+0x6f`) with `(obj + 0x40, BASE +
+/// 16 * i)` (`BASE` at `+0x5f`); then eight words of `obj` set (`mov
+/// dword [esi + d8], imm32` from `+0x78`, 7 bytes each). Returns 1.
+pub fn part_free_pair<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let at = PartAt {
+        gp: 0x04,
+        item: 0x0b,
+        gd: 0x10,
+        table: 0x18,
+        entry: disp8(img, f + 0x2d),
+        call: 0x36,
+    };
+    part_start(g, img, f, fr.ecx, obj, at);
+    let t = w(0x40);
+    let i = (0..14u32)
+        .find(|&k| g.read::<u32>(t + 8 * k - 4) == 1 && g.read::<u32>(t + 8 * k) == 0)
+        .unwrap_or(u32::MAX);
+    let addr = i.wrapping_shl(4).wrapping_add(w(0x5f));
+    let s = slot_target(g, w(0x69), w(0x6f) / 4);
+    g.call(s, fr.ecx, &[obj.wrapping_add(0x40), addr]);
+    for k in 0..8 {
+        let insn = f + 0x78 + 7 * k;
+        g.write::<u32>(obj.wrapping_add(disp8(img, insn + 2)), img.word(insn + 3));
+    }
+    Ret::eax(1)
+}
+
 /// [`attach_mode_wait`] in `magic_0313` (0x10001340, 180 bytes).
 pub const ATTACH_MODE_WAIT_0313_1340: Sig = Sig {
     len: 180,
@@ -330,5 +364,29 @@ pub const ATTACH_MODE32_PAR_WAIT_0535_14B0: Sig = Sig {
     len: 198,
     hash: 0x4e6d_46a2_1c46_61d1,
     calls: &[],
+    imports: &[],
+};
+
+/// [`part_free_pair`] in `magic_0661` (0x100018d0, 184 bytes).
+pub const PART_FREE_PAIR_0661_18D0: Sig = Sig {
+    len: 184,
+    hash: 0x9cd8_17f3_fce1_51bd,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`part_free_pair`] in `magic_0661` (0x10001990, 184 bytes).
+pub const PART_FREE_PAIR_0661_1990: Sig = Sig {
+    len: 184,
+    hash: 0xe6d5_5598_cfa3_85e9,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`part_free_pair`] in `magic_0661` (0x10001b60, 184 bytes).
+pub const PART_FREE_PAIR_0661_1B60: Sig = Sig {
+    len: 184,
+    hash: 0x4764_6569_cf50_2601,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
