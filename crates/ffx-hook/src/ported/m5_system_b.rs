@@ -1380,6 +1380,11 @@ ported! {
         let mut f = StackFrame::<0x1f>::new();
         pc::kagra001(&mut mem(), f.at() + 0x7c, lo, hi, holder, part)
     }
+    /// `(lo, hi, spread, _, lines, r, g, b, a)`: random noise lines and a
+    /// full-screen quad.
+    updateVFXRenderData_NoiseBlur @ 0x0071_dbd0 => extern "C" fn noise_blur(lo: u32, hi: u32, spread: u32, p4: u32, lines: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        pc::noise_blur(&mut mem(), [lo, hi, spread, p4, lines, r, g, b, a])
+    }
     /// `(job)`: a shape model's triangles into the effect vertex block;
     /// the triangle pointer goes into the argument slot.
     JobSchedule_pppPart_fillBuffer_drawShp @ 0x0071_ee80 => extern "C" fn shp_model_fill(job: u32; slots: u32) -> u32 {

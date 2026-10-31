@@ -261,6 +261,15 @@ pub const ALPHA_SCALE_INV: u32 = 0x00c3_a494;
 pub const VFX_COLOR_SCALE: u32 = 0x00c3_a488;
 pub const TWO_POW_32: u32 = 0x00b1_1f14;
 
+/// `updateVFXRenderData_NoiseBlur`'s: its flag `0x00cec19c`, the CRT
+/// `rand` import slot, the f64s 1/512, 416 and -1 and the f32 -1.
+pub const NOISE_BLUR_ON: u32 = 0x00ce_c19c;
+pub const RAND_IAT: u32 = 0x00b0_c420;
+pub const NOISE_STEP: u32 = 0x00b4_1cc0;
+pub const NOISE_SPAN: u32 = 0x00b4_1d30;
+pub const NOISE_MINUS_ONE: u32 = 0x00b9_2350;
+pub const NOISE_FLIP: u32 = 0x00b9_2340;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -2158,6 +2167,174 @@ pub mod bridge {
             for (k, &b) in (0u32..).zip(&bounds) {
                 h.write(rd.wrapping_add(0x98 + 4 * k), store(load(b)));
             }
+        }
+        cdecl(h, super::VFX_SET_VISIBLE, &[lo, hi, 1]);
+        1
+    }
+
+    /// `updateVFXRenderData_NoiseBlur(lo, hi, spread, _, lines, r, g, b,
+    /// a)`: the noise-blur effect's render data (`0x00cec19c` set first;
+    /// `graphicVFXGetRenderDataByInstance(lo, hi)`, none: 0). Segment 0
+    /// gets `8 lines + 4` vertices and `12 lines + 6` indices (written to
+    /// the table `[+0x94]` `+4`/`+8`, then
+    /// `graphicDynGeoMemManagerGetBufferForSegment`; none: 0). Each line
+    /// takes five `rand()`s: x from `-1 - (r1 % spread) / 256` to `1 +
+    /// (r2 % spread) / 256`, the third unused, the top `c = (r4 % 416) / 208`
+    /// and the height `d = (r5 % 128) / 208`: three strips (y `c - 1`, `c -
+    /// 1 + d / 2`, `c - 1 + d`) of two quads, uv `(0|1, c/2 ..)`, colour
+    /// 0.5 grey with alpha 0 at the edges and `a / 256` in the middle.
+    /// Then a full-screen quad (-1..1) in `(r, g, b, a) / 256`, and
+    /// `graphicVFXSetVisible(lo, hi, 1)`. Returns 1.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation
+    )]
+    pub fn noise_blur(h: &mut impl Host, a: [u32; 9]) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        let [lo, hi, spread, _, lines, cr, cg, cb, ca] = a;
+        h.write(h.rebase(super::NOISE_BLUR_ON), 1u32);
+        let rd = cdecl(h, super::RENDER_DATA_BY_INSTANCE, &[lo, hi]);
+        if rd == 0 {
+            return 0;
+        }
+        let tbl: u32 = h.read(rd.wrapping_add(0x94));
+        h.write(tbl.wrapping_add(4), lines.wrapping_mul(8).wrapping_add(4));
+        let tbl: u32 = h.read(rd.wrapping_add(0x94));
+        h.write(tbl.wrapping_add(8), lines.wrapping_mul(12).wrapping_add(6));
+        let tbl: u32 = h.read(rd.wrapping_add(0x94));
+        let nv: u32 = h.read(tbl.wrapping_add(4));
+        let ni: u32 = h.read(tbl.wrapping_add(8));
+        if cdecl(h, super::BUFFER_FOR_SEGMENT, &[rd, 0, nv, ni]) == 0 {
+            return 0;
+        }
+        let s = f64::from_bits(h.read::<u64>(h.rebase(super::FAKE_COLOUR_SCALE)));
+        let byte = |v: u32| f64::from(v & 0xff);
+        let rgb = [
+            store(x87::mul(byte(cr), s)),
+            store(x87::mul(byte(cg), s)),
+            store(x87::mul(byte(cb), s)),
+            store(x87::mul(s, byte(ca))),
+        ];
+        let alpha = rgb[3];
+        let two = f64::from_bits(h.read::<u64>(h.rebase(super::TWO)));
+        let step = f64::from_bits(h.read::<u64>(h.rebase(super::NOISE_STEP)));
+        let span = f64::from_bits(h.read::<u64>(h.rebase(super::NOISE_SPAN)));
+        let minus_one = f64::from_bits(h.read::<u64>(h.rebase(super::NOISE_MINUS_ONE)));
+        let half = f64::from_bits(h.read::<u64>(h.rebase(super::HALF)));
+        let grey = store(load(h.read(h.rebase(super::SHP_HALF))));
+        let one = 0x3f80_0000u32;
+        let mut n = 0u32;
+        while n.cast_signed() < lines.cast_signed() {
+            let rand_fn: u32 = h.read(h.rebase(super::RAND_IAT));
+            let r1 = h.call(rand_fn, Conv::Cdecl, &[]).cast_signed();
+            let m1 = r1.checked_rem(spread.cast_signed()).unwrap_or(0);
+            let fa = store(x87::mul(
+                x87::mul(load(fake_f32(m1.cast_unsigned())), two),
+                step,
+            ));
+            let rand_fn: u32 = h.read(h.rebase(super::RAND_IAT));
+            let r2 = h.call(rand_fn, Conv::Cdecl, &[]).cast_signed();
+            let m2 = r2.checked_rem(spread.cast_signed()).unwrap_or(0);
+            let fb = store(x87::mul(
+                x87::mul(load(fake_f32(m2.cast_unsigned())), two),
+                step,
+            ));
+            let rand_fn: u32 = h.read(h.rebase(super::RAND_IAT));
+            h.call(rand_fn, Conv::Cdecl, &[]);
+            let rand_fn: u32 = h.read(h.rebase(super::RAND_IAT));
+            let r4 = h.call(rand_fn, Conv::Cdecl, &[]).cast_signed();
+            let c = store(x87::div(
+                x87::mul(load(fake_f32((r4 % 0x1a0).cast_unsigned())), two),
+                span,
+            ));
+            let rand_fn: u32 = h.read(h.rebase(super::RAND_IAT));
+            let r5 = h.call(rand_fn, Conv::Cdecl, &[]).cast_signed();
+            let d = store(x87::div(
+                x87::mul(load(fake_f32((r5 % 0x80).cast_unsigned())), two),
+                span,
+            ));
+            let base = n << 3;
+            let iat = n.wrapping_mul(0x18);
+            for (k, add) in [0u32, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6]
+                .into_iter()
+                .enumerate()
+            {
+                let tbl: u32 = h.read(rd.wrapping_add(0x94));
+                let idx: u32 = h.read(tbl.wrapping_add(0x1c));
+                h.write(
+                    idx.wrapping_add(iat).wrapping_add(2 * k as u32),
+                    base.wrapping_add(add) as u16,
+                );
+            }
+            let (c, d) = (load(c), load(d));
+            let x0 = store(x87::sub(minus_one, load(fa)));
+            let cm1 = x87::sub(c, 1.0);
+            let y0 = store(cm1);
+            let u1 = store(x87::mul(c, half));
+            let x1 = store(x87::add(1.0, load(fb)));
+            let dh = x87::mul(d, half);
+            let y2 = store(x87::add(dh, cm1));
+            let v2 = store(x87::mul(half, x87::add(dh, c)));
+            let y3 = store(x87::add(cm1, d));
+            let v3 = store(x87::mul(x87::add(c, d), half));
+            let tbl: u32 = h.read(rd.wrapping_add(0x94));
+            let pos = h
+                .read::<u32>(tbl.wrapping_add(0xc))
+                .wrapping_add(n.wrapping_mul(0x60));
+            let uv = h
+                .read::<u32>(tbl.wrapping_add(0x18))
+                .wrapping_add(n.wrapping_mul(0x40));
+            let col = h
+                .read::<u32>(tbl.wrapping_add(0x14))
+                .wrapping_add(n.wrapping_mul(0x80));
+            let ys = [y0, y0, y2, y2, y2, y2, y3, y3];
+            let vs = [u1, u1, v2, v2, v2, v2, v3, v3];
+            for v in 0..8u32 {
+                let x = if v % 2 == 0 { x0 } else { x1 };
+                put_words(h, pos.wrapping_add(12 * v), &[x, ys[v as usize], 0]);
+                let u = if v % 2 == 0 { 0 } else { one };
+                put_words(h, uv.wrapping_add(8 * v), &[u, vs[v as usize]]);
+                let edge = !(2..6).contains(&v);
+                h.write(
+                    col.wrapping_add(0x10 * v + 0xc),
+                    if edge { 0 } else { alpha },
+                );
+            }
+            for v in 0..8u32 {
+                put_words(h, col.wrapping_add(0x10 * v), &[grey, grey, grey]);
+            }
+            n = n.wrapping_add(1);
+        }
+        // the full-screen quad
+        let tbl: u32 = h.read(rd.wrapping_add(0x94));
+        let idx: u32 = h.read(tbl.wrapping_add(0x1c));
+        let base = lines << 3;
+        let at = idx.wrapping_add(lines.wrapping_mul(0x18));
+        for (k, add) in [0u32, 1, 2, 1, 3, 2].into_iter().enumerate() {
+            h.write(at.wrapping_add(2 * k as u32), base.wrapping_add(add) as u16);
+        }
+        let m1 = store(load(h.read(h.rebase(super::NOISE_FLIP))));
+        let tbl: u32 = h.read(rd.wrapping_add(0x94));
+        let pos = h
+            .read::<u32>(tbl.wrapping_add(0xc))
+            .wrapping_add(lines.wrapping_mul(0x60));
+        let uv = h
+            .read::<u32>(tbl.wrapping_add(0x18))
+            .wrapping_add(lines.wrapping_mul(0x40));
+        let col = h
+            .read::<u32>(tbl.wrapping_add(0x14))
+            .wrapping_add(lines.wrapping_mul(0x80));
+        let corners = [
+            (m1, m1, 0, 0),
+            (one, m1, one, 0),
+            (m1, one, 0, one),
+            (one, one, one, one),
+        ];
+        for (v, (x, y, u, t)) in (0u32..).zip(corners) {
+            put_words(h, pos.wrapping_add(12 * v), &[x, y, 0]);
+            put_words(h, uv.wrapping_add(8 * v), &[u, t]);
+            put_words(h, col.wrapping_add(0x10 * v), &rgb);
         }
         cdecl(h, super::VFX_SET_VISIBLE, &[lo, hi, 1]);
         1

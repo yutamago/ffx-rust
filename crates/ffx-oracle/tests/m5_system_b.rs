@@ -8992,3 +8992,65 @@ fn bg13_kagra001_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn bg14_noise_blur_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b614);
+        for case in 0..12u32 {
+            t.reset();
+            let lines = [0u32, 1, 3, 6, 0xffff_ffff, 2][(case % 6) as usize];
+            let n = (lines.min(8) as usize + 1) * 8;
+            let table = {
+                let mut e = [0u32; 27];
+                e[3] = t.zeros(n * 12);
+                e[5] = t.zeros(n * 16);
+                e[6] = t.zeros(n * 8);
+                e[7] = t.zeros(n * 2 * 2);
+                t.words(&e)
+            };
+            let mut rd: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            rd[0x94 / 4] = table;
+            let rd = t.words(&rd);
+            t.stub(
+                pcs::RENDER_DATA_BY_INSTANCE,
+                false,
+                2,
+                0,
+                if case == 11 { 0 } else { rd },
+            );
+            t.stub(pcs::BUFFER_FOR_SEGMENT, false, 4, 0, u32::from(case != 10));
+            t.stub(pcs::VFX_SET_VISIBLE, false, 3, 0, rng.next());
+            // rand(): small, large and negative values
+            let seq: Vec<u32> = (0..64)
+                .map(|_| match rng.below(4) {
+                    0 => rng.below(0x8000),
+                    1 => rng.next(),
+                    2 => rng.next() | 0x8000_0000,
+                    _ => rng.below(16),
+                })
+                .collect();
+            t.stub_import_seq(pcs::RAND_IAT, 0, 0, &seq);
+            let spread = [1u32, 7, 300, 0xffff_fff0][(case % 4) as usize];
+            let a = [
+                rng.next(),
+                rng.next(),
+                spread,
+                rng.next(),
+                lines,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("noise blur #{case}"),
+                0x0071_dbd0,
+                &a,
+                0,
+                0,
+                |m, _, _| Out::U32(pcb::noise_blur(m, a)),
+            );
+        }
+    });
+}
