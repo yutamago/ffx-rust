@@ -3440,3 +3440,112 @@ fn burst_records_set() {
         });
     }
 }
+
+#[test]
+fn bursts_tasks() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x8530);
+    // the command block's slots
+    rec_mem(&mut t, 559, 3, 4, Some(0));
+    rec_mem(&mut t, 558, 1, 4, Some(0));
+    rec_mem(&mut t, 382, 2, 0, None);
+    for (s, n) in [
+        (530u32, 2usize),
+        (249, 2),
+        (239, 3),
+        (922, 2),
+        (931, 2),
+        (847, 2),
+        (849, 2),
+    ] {
+        rec_mem(&mut t, s, n, 0, None);
+    }
+    rec_mem(&mut t, 671, 2, 0, None);
+    rec_mem(&mut t, 929, 0, 0, None);
+    // the bursts' slots and pool
+    let burst = t.img.rel32_target(f + 0x201);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32 + (a[0] & 3) as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 719, 3, 0, None);
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.0) / 3.0
+    });
+    t.stub(941, |_, a| 0x0941_0000 ^ a[0]);
+    let take = t.img.rel32_target(burst + 0x67);
+    let pool = SCRATCH + 0x2000;
+    t.set_u32(op(&t, take, 0x37), pool);
+    let sel = SCRATCH + 0x700;
+    t.set_u32(op(&t, f, 0x5f), sel);
+    t.write(sel, &[7, 3, 0x21, 5]);
+    let table = op(&t, f, 0xa9);
+    let chars = SCRATCH + 0x8000;
+    for (k, (id, model)) in [(3u32, 0x10fbu16), (0x21, 0x1100), (5, 0x1234), (7, 0x10fe)]
+        .into_iter()
+        .enumerate()
+    {
+        let c = chars + 0x1000 * k as u32;
+        t.set_u32(table + 4 * id, c);
+        t.set_u16(c, model);
+        t.set_u32(c + 0x830, 0x0830_0000 + id);
+    }
+    let o = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x10), o);
+    t.set_u32(op(&t, f, 0xbe), 0x0dd0_0001);
+    let cam = SCRATCH + 0x780;
+    t.write(cam, &varied(0x30, 1));
+    t.set_u32(op(&t, f, 0x316), cam);
+    let task = SCRATCH + 0x300;
+    // per member: (running, +0x38, +0x3c, +0x40)
+    for (k, (n, slow, members)) in [
+        (
+            4u32,
+            0u32,
+            [(false, 1i32, 0i32, 0i32), (true, 1, 0, 5), (true, 0, 2, 5)],
+        ),
+        (4, 1, [(false, 1, 0, 0), (true, 0, 0, 3), (true, 0, 0, 0)]),
+        (4, 0, [(false, 5, 0, 0), (true, 3, 0, 1), (true, 0, 0, 1)]),
+        (3, 1, [(false, 0, 0, 0), (true, -1, 0, 2), (false, 0, 0, 0)]),
+        (1, 0, [(false, 0, 0, 0), (false, 0, 0, 0), (false, 0, 0, 0)]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(o + 0xd00, &varied(0x300, k));
+        for (i, (run, a, b, c)) in (0u32..).zip(members) {
+            let r = o + 0xd50 + 0xc8 * i;
+            t.set_u32(r + 0x44, u32::from(run));
+            t.set_u32(r + 0x38, a.cast_unsigned());
+            t.set_u32(r + 0x3c, b.cast_unsigned());
+            t.set_u32(r + 0x40, c.cast_unsigned());
+            t.set_u32(r + 0x30, (0.5 + i as f32).to_bits());
+            for (j, x) in [3.0f32, -3.1, 0.25].into_iter().enumerate() {
+                t.set_u32(r + 4 * j as u32, x.to_bits());
+                t.set_u32(r + 0x10 + 4 * j as u32, (0.5 * (i as f32 - 1.0)).to_bits());
+            }
+        }
+        t.set_u32(op(&t, f, 0x1e), n);
+        t.set_u32(op(&t, f, 0x68), slow);
+        t.set_u32(op(&t, take, 0x2b), 0);
+        t.set_u32(op(&t, take, 0x08), 0);
+        t.set_u32(op(&t, take, 0x0f), 4);
+        for i in 0..4 {
+            t.write(pool + 0x74 * i, &varied(0x74, i + k));
+            t.set_u32(pool + 0x74 * i + 0x6c, 0);
+        }
+        t.write(task, &varied(0x40, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

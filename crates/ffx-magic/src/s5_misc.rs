@@ -18,8 +18,9 @@ use crate::s4_misc::{
     motion_script, scale_task, start_object_anim, start_object_at, trail_draw, unlist_free,
 };
 use crate::s4_small::{
-    ACTOR_INDEX, BLOCK_DEFAULTS, CAMERA_FACE_ACTOR, ID_LIST, NAMED_PARTS, SOUND_RECORD,
-    actor_index, block_defaults, camera_face_actor, id_list, named_parts, sound_record,
+    ACTOR_INDEX, BLOCK_DEFAULTS, CAMERA_FACE_ACTOR, COMMAND_BLOCK_RESET, ID_LIST, NAMED_PARTS,
+    SOUND_RECORD, actor_index, block_defaults, camera_face_actor, command_block_reset, id_list,
+    named_parts, sound_record,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
@@ -7466,6 +7467,199 @@ pub const BURST_RECORDS: Sig = Sig {
         (0x67, Callee::Sig(&POOL_TAKE)),
         (0x20c, Callee::Sig(&POOL_TAKE)),
         (0x3c3, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The bursts' task (cdecl `(task)`): the command block reset
+/// ([`command_block_reset`]); then for each member `i` from 1 below
+/// `*G_N`, its record `R = *G_O + 0xd50 + 0xc8 (i - 1)` and character
+/// `c = T[*G_SEL[i]]`. A waiting record (`+0x44` 0) counts `+0x38` down;
+/// at 0 the member is slowed (slot 530 `(id, -1)` while `*G_X` is 0 and
+/// `id < 0x20`, else slot 249 `(c, -1)`, or `(c, 0x100)` with `*G_X`
+/// set) and hit (slot 239 `(*G_D, id, 0)`). A running one counts `+0x38`
+/// down the same way (hit at 0); once it is 0 its angles `+0x0..+0x8`
+/// turn by `+0x10..` (each wrapped once), `+0x3c` counts down first, then
+/// `+0x40`, whose end gives the task back ([`give_back`], `*G_O + 0x1a64
+/// = 0`, its `eax` returned); while `+0x40` runs `+0x34 = (+0x40 << 7) /
+/// 30`; `R-0x4c -= +0x1c`, `+0x1c -= +0xc` and a burst
+/// ([`burst_records`]: `(i, +0x34, +0x30)`). A running record also sets
+/// the model `m = c + 0x830`: slot 922 `(m, 0)`, slot 931 `(m, 0)` while
+/// `+0x38 > 0` else twice `(m, 1)`, slot 847 `(m, P)`, slots 849 and 671
+/// `(c, 1)` once `+0x40 <= 1`, and slot 929 for the models 0x10fb..0x10fd
+/// and 0x1100. Then slot 382 `(0, 0)`, the block's command at `G_CMD` (a
+/// 0x70000002 tag, the third word 0xe, two words of `*G_C + 0x28`, 0x4e)
+/// and slot 382 again, whose `eax` it returns. Each call sees the words
+/// the earlier ones left on the stack.
+///
+/// `magic_0434` 0x10008530 (942 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's loop, step by step
+pub fn bursts_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    // push ebp; sub esp, 8; three pushes: the callees' entry is 0x1c below
+    let inner = fr.esp.wrapping_sub(0x1c);
+    command_block_reset(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0xa),
+            esp: inner,
+            ..Frame::default()
+        },
+    );
+    let o = g.read::<u32>(w(0x10));
+    let (t, hi) = (w(0x36), w(0x3e));
+    let id_of =
+        |g: &G, sel: u32, i: u32| u32::from(g.read::<u8>(g.read::<u32>(w(sel)).wrapping_add(i)));
+    let mut i = 1u32;
+    while i.cast_signed() < g.read::<i32>(w(if i == 1 { 0x1e } else { 0x2f9 })) {
+        let r = o
+            .wrapping_add(0xd50)
+            .wrapping_add((i - 1).wrapping_mul(0xc8));
+        let rf = |g: &G, o: u32| g.read::<f32>(r.wrapping_add(o));
+        let n = g.read::<i32>(r + 0x38);
+        if g.read::<u32>(r + 0x44) == 0 {
+            if n > 0 {
+                g.write::<i32>(r + 0x38, n - 1);
+                if n == 1 {
+                    let sel = g.read::<u32>(w(0x5f));
+                    let id = u32::from(g.read::<u8>(sel.wrapping_add(i)));
+                    let slow = g.read::<u32>(w(0x68));
+                    if slow == 0 && id < 0x20 {
+                        slot_call(g, img, f, (0x85, 530), &[id, 0xffff_ffff]);
+                    } else {
+                        let c = g.read::<u32>(w(0xa9).wrapping_add(4 * id));
+                        let speed = if slow == 0 { 0xffff_ffff } else { 0x100 };
+                        slot_call(g, img, f, (0xb0, 249), &[c, speed]);
+                    }
+                    let d = g.read::<u32>(w(0xbe));
+                    let id = id_of(g, 0xcf, i);
+                    slot_call(g, img, f, (0xdb, 239), &[d, id, 0]);
+                }
+            }
+            i += 1;
+            continue;
+        }
+        if n > 0 {
+            g.write::<i32>(r + 0x38, n - 1);
+            if n == 1 {
+                let d = g.read::<u32>(w(0x100));
+                let id = id_of(g, 0x10e, i);
+                slot_call(g, img, f, (0x11a, 239), &[d, id, 0]);
+            }
+        } else {
+            for (o, ops) in [(0u32, 0x13cu32), (4, 0x13c), (8, 0x13c)] {
+                let x = add(rf(g, o + 0x10), rf(g, o));
+                let x = if x > g.read::<f32>(hi) {
+                    sub(x, g.read::<f32>(t))
+                } else if g.read::<f32>(w(ops)) > x {
+                    add(x, g.read::<f32>(t))
+                } else {
+                    x
+                };
+                g.write::<f32>(r + o, x);
+            }
+            let a = g.read::<i32>(r + 0x3c);
+            if a > 0 {
+                g.write::<i32>(r + 0x3c, a - 1);
+            } else {
+                let b = g.read::<i32>(r + 0x40);
+                if b > 0 {
+                    g.write::<i32>(r + 0x40, b - 1);
+                    if b == 1 {
+                        g.write::<u32>(o.wrapping_add(0x1a64), 0);
+                        return Ret::eax(give_back(g, img, img.rel32_target(f + 0x3a3), task));
+                    }
+                }
+                let b = g.read::<i32>(r + 0x40);
+                g.write::<i32>(r + 0x34, b.wrapping_shl(7) / 30);
+            }
+            let x = sub(g.read::<f32>(r.wrapping_sub(0x4c)), rf(g, 0x1c));
+            g.write::<f32>(r.wrapping_sub(0x4c), x);
+            let x = sub(rf(g, 0x1c), rf(g, 0xc));
+            g.write::<f32>(r + 0x1c, x);
+            let size = g.read::<u32>(r + 0x30);
+            let edx = g.read::<u32>(r + 0x34);
+            burst_records(
+                g,
+                img,
+                &Frame {
+                    at: img.rel32_target(f + 0x201),
+                    esp: inner,
+                    ecx: i,
+                    edx,
+                    xmm: [0, 0, u128::from(size), 0],
+                    ..Frame::default()
+                },
+            );
+        }
+        let id = id_of(g, 0x213, i);
+        let c = g.read::<u32>(w(0x21e).wrapping_add(4 * id));
+        let m = g.read::<u32>(c.wrapping_add(0x830));
+        slot_call(g, img, f, (0x22f, 922), &[m, 0]);
+        let t931 = slot_target(g, w(0x23c), 931);
+        if g.read::<i32>(r + 0x38) > 0 {
+            // call width: 2
+            g.call(t931, 0, &[m, 0]);
+        } else {
+            let mut s = Pushes::default();
+            s.push_all(&[1, m]);
+            // call width: 12 (the most `Pushes::words` holds)
+            s.call(g, t931, 0);
+            s.push_all(&[1, m]);
+            // call width: 12 (the most `Pushes::words` holds)
+            s.call(g, slot_target(g, w(0x263), 931), 0);
+        }
+        slot_call(g, img, f, (0x278, 847), &[m, w(0x27d)]);
+        if g.read::<i32>(r + 0x40) <= 1 {
+            let mut s = Pushes::default();
+            s.push_all(&[1, c]);
+            // call width: 12 (the most `Pushes::words` holds)
+            s.call(g, slot_target(g, w(0x296), 849), 0);
+            s.push_all(&[1, c]);
+            // call width: 12 (the most `Pushes::words` holds)
+            s.call(g, slot_target(g, w(0x2a6), 671), 0);
+        }
+        if matches!(g.read::<u16>(c), 0x10fb..=0x10fd | 0x1100) {
+            slot_call(g, img, f, (0x2e4, 929), &[]);
+        }
+        i += 1;
+    }
+    let mut s = Pushes::default();
+    s.push_all(&[0, 0]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x304), 382), 0);
+    let cam = g.read::<u32>(w(0x316));
+    for o in [0x321u32, 0x329, 0x33b] {
+        g.write::<u64>(w(o), 0);
+    }
+    g.write::<u32>(w(0x32f), 0x7000_0002);
+    g.write::<u32>(w(0x341), 0xe);
+    g.write::<u32>(w(0x34b), 0);
+    let x = g.read::<u32>(cam.wrapping_add(0x28));
+    g.write::<u32>(w(0x357), x);
+    let x = g.read::<u32>(cam.wrapping_add(0x2c));
+    g.write::<u32>(w(0x35f), x);
+    g.write::<u32>(w(0x36a), 0x4e);
+    g.write::<u32>(w(0x374), 0);
+    s.push_all(&[0, 0]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let eax = s.call(g, slot_target(g, w(0x364), 382), 0).eax;
+    Ret::eax(eax)
+}
+
+/// [`bursts_task`] (the `rel32`s: [`command_block_reset`],
+/// [`burst_records`] and [`give_back`]; the two `jmp rel32`s inside stay
+/// in the hash).
+pub const BURSTS_TASK: Sig = Sig {
+    len: 942,
+    hash: 0x9e06_33fa_fbb5_a8f0,
+    calls: &[
+        (0xa, Callee::Sig(&COMMAND_BLOCK_RESET)),
+        (0x201, Callee::Sig(&BURST_RECORDS)),
+        (0x3a3, Callee::Sig(&GIVE_BACK)),
     ],
     imports: &[],
 };

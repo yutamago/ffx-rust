@@ -1302,6 +1302,7 @@ ports! {
     "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
+    "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
