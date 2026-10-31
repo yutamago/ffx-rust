@@ -245,6 +245,9 @@ pub enum Op<'a> {
     ClearDepth(u32, u32, f32, u8),
     /// `CopyResource(dst, src)`.
     Copy(u32, u32),
+    /// `ResolveSubresource(dst, dst sub, src, src sub, format)`: a
+    /// multisampled target into a plain one (MSAA, settings-msaa).
+    Resolve([u32; 5]),
     /// `CopySubresourceRegion(dst, sub, x, y, z, src, sub, box)`.
     CopyRegion([u32; 7], Option<[u32; 6]>),
     /// `UpdateSubresource(dst, sub, box, data, row pitch, depth pitch)`.
@@ -1888,6 +1891,11 @@ impl Gfx {
                 return Some(hr);
             }
             "GenerateMips" => self.backend.op(&Op::GenerateMips(a[1])),
+            "ResolveSubresource" => {
+                self.texture_copied(a[1], a[3]);
+                self.backend
+                    .op(&Op::Resolve([a[1], a[2], a[3], a[4], a[5]]));
+            }
             "ClearState" => {
                 self.bound = Bound::default();
                 self.backend.op(&Op::ClearState);

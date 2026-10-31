@@ -29,6 +29,8 @@ ffx-fpu.workspace = true
 ffx-gfx.workspace = true
 ffx-host-ports.workspace = true
 ffx-kernel.workspace = true
+# the spell overlays' Rust ports, bound by code identity (src/library.rs)
+ffx-magic.workspace = true
 ffx-sound.workspace = true
 # The Flash screens on Ruffle (src/iggy/swf.rs): heavy (wgpu), so a feature.
 ffx-swf = { workspace = true, optional = true }

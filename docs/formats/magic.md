@@ -240,8 +240,10 @@ leaves there included (the OPU host's per-frame calls see the camera and
 screen matrices after their own arguments).
 
 Hosts: the 32-bit hook (`overlay_emu.rs`, below), the parity tests
-(`crates/ffx-oracle/tests/magic/mod.rs`) and later `ffx-host`, whose
-function table registers the bound ports under their overlay addresses.
+(`crates/ffx-oracle/tests/magic/mod.rs`) and `ffx-host`, which traps the
+bound ports at their overlay addresses when it loads a DLL and runs the
+rest in Unicorn (`docs/host.md`, "Overlays"; on by default there,
+`FFX_MAGIC_RUST=0` turns it off).
 
 **Floats.** The overlays are SSE code: f32 operations rounded at each
 step, in the original's order, no FMA. x87 appears only to return a float

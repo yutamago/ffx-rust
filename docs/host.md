@@ -83,6 +83,13 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   `ffx.sym` names, or `@file`), as the hook's `FFX_HOOK_DISABLE` and
   `FFX_HOOK_ONLY`; with `--ports` the way to bisect a port that breaks
   the boot.
+- `FFX_HOST_WATCH=<names>`: notes each entry into and return from the
+  named ports (`ffx.sym` names, comma list) with the thread, the clock's
+  frame and the host time (`watch 12.345 ms thread 0x1008 frame 210 enter
+  Ch_Cloth_PerCharacter`), the first 20,000; to see which threads run
+  what in which order (the cloth race, below).
+- `FFX_MAGIC_RUST`: which spell overlays run their Rust ports (below,
+  "Overlays"; default every one).
 - `--replay FILE`: plays a replay script at the frame boundary
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
@@ -695,6 +702,49 @@ as absent. Before this, every battle effect that loads an overlay
 The overlays' x87 sites are not marked (their maths goes through
 `_CIatan2` and the `_libm_sse2_*` imports).
 
+**Rust ports** (host-gate, 2026-10-31). The functions `crates/ffx-magic`
+ports run as Rust (`src/library.rs`), as the hook's `FFX_MAGIC_RUST`
+does (`docs/formats/magic.md`, "Porting the overlays"), and Unicorn runs
+only the rest:
+
+- At `LoadLibraryA`, before `DllMain`, every address the game can enter
+  the overlay's code by (its exports, its entry point, and every
+  relocated word of the image that points into its code: the overlay
+  table, stored callbacks, `push offset` operands) is offered to
+  `ffx_magic::bind`. Where a port's code identity matches, the address
+  gets an `int3` and a trap (`Shared::add_trap`) that runs the port with
+  `ffx_magic::Frame` (`esp` at the return address, the registers) on a
+  `ffx_magic::Game` over the arena and `Exec::call`. The range is fresh,
+  so no thread has translated it yet.
+- The port runs 64 KiB below the caller's `esp` (ports keep locals below
+  their entry `esp`, docs/formats/magic.md "Locals"); its calls into the
+  game push below that. `Ret::pops` picks the return stub, a tail jump
+  (`Ret::jump`) resumes at the target with the caller's stack
+  (`Exec::trap_exit`), `xmm0` and ST0 results reach the caller. `rand`,
+  the `_libm_sse2_*_precise` functions (`Exec::call_sse`, `xmm0` in and
+  out) and `_CIatan2` (`call_x87`) go where the DLL's own imports go, so
+  the results are the game's. A call from Rust into a bound address
+  (`DllMain` at the load, `GetProcAddress` results) puts its words on the
+  game stack first, where the port reads them.
+- `FFX_MAGIC_RUST` picks the DLLs as in the hook, but on by default:
+  unset or `1` every DLL, `0` none (all Unicorn), or a comma list of
+  numbers. `ffx_host::library::select_rust` does the same for tests.
+- **Counted per entry**: the traps count Rust calls; a block hook on the
+  overlay's code (each thread's emulator gets it before it next runs)
+  counts the entries without a port that ran in Unicorn. Each overlay's
+  counts are noted at `FreeLibrary` (`overlay calls: magic_0481.dll rust
+  N (k entries bound), unicorn M (j entries)` and a line per entry that
+  ran), the rest and the totals at the harness's `quit` and in the report
+  (`overlay calls in all`); `run-all.sh` keeps each replay's
+  `ffx-rust.log` and prints the totals.
+- `tests/overlay.rs` loads `magic_0604` (fully ported) twice through
+  `FFX.exe`'s own `LoadLibraryA`, once all in Unicorn and once with the
+  ports: `InitMagicPRX` and `GetEffectOverlayTable` called from Rust and
+  from emulated code give the same results and leave the same data but
+  the CRT's own words (the cookie, the attach count, the `onexit` table,
+  which the ported `DllMain` keeps none of), 5 calls in Rust and none in
+  Unicorn on one side, the other way round on the other.
+
 ## Threads
 
 Every game thread is a host thread with its own `Exec` (`src/exec.rs`):
@@ -1216,6 +1266,237 @@ What it took:
   not come back: none of this round's runs (sixteen with ffx-rust.exe)
   stopped advancing.
 
+#### The stage 3 gate on PC2 (2026-10-31, host-gate)
+
+The whole replay suite on the x86_64 `ffx-rust.exe`, through
+`tools/replays/run-all.sh` with `FFX_HARNESS_EXE=rust`
+(`FFX_HOST_TARGET=x86_64-pc-windows-msvc`, `FFX_REPLAY_SERIAL=1`: one game
+at a time, background, muted), against PC2's own original recordings.
+Overlays with their Rust ports on (above, "Overlays"). The main list in
+2 h 41 min (16:34-19:15), every replay to its end but event-arrival
+(rerun after the movie fixes, below):
+
+| Replay | Trace events | Screenshots | Overlay calls (Rust / Unicorn) |
+|---|---|---|---|
+| field-walk | same (4 ranges) | 2 of 2 (coarse 0.0) | - |
+| battle-attack | same (8 ranges) | 2 of 2, 0 pixels | - |
+| menu-browse | same (2 ranges) | 5 of 5, 0 pixels | - |
+| boot | (none recorded) | 3 of 4; boot-4 the title's Load cursor glow, 27 pixels | - |
+| battle-magic | same (10 ranges) | 3 of 3 (one cursor-glow pixel, allowed) | magic_0481: 729,850 / 2,389 |
+| battle-overdrive | same (14 ranges) | 9 of 9 against `orig/eye`, 0 pixels | 0390 44,069 / 424; 0595 1,133 / 0; 0604 212,813 / 0; 0309 36,891 / 0 |
+| event-besaid | same (9 ranges) | 5 of 5, 0 pixels (shot 4: the cloth race, below) | - |
+| event-cliff (`realtime`) | same (8 ranges, sampled 6, 7) | 5 (by eye: 1,716-14,699 pixels from the original, whose two runs differ by 383,758-648,872) | magic_0372: 30,092 / 221 |
+| menu-shop | same (7 ranges) | 8 of 8, 0 pixels | - |
+| menu-grid | same (6 ranges) | 9 of 9 (4 cursor-glow pixels, allowed) | - |
+| menu-save | same (14 ranges) | 4 of 6; shots 4 and 6 520 and 574 pixels (the cursor glow, the header band) | - |
+| event-agency | same (11 ranges, sampled 2) | 7 of 7 (4-6 coarse 0.0) | - |
+| event-arrival (`realtime`; after the movie fixes below) | same (10 ranges) | 7 (by eye: 2-5 within 6 pixels of the original; 6, the ball over the beach, shows another phase of the ball's spin and the camera, where the two originals agree; 1 and 7 differ less than the originals between themselves) | magic_0477: 379,887 / 6,680 |
+
+The extra list (each replay after the fixes it needed):
+
+| Replay | Trace events | Screenshots | Overlay calls (Rust / Unicorn) |
+|---|---|---|---|
+| battle-ifrit | same (10 ranges) | 4 of 4, 0 pixels | magic_0596: 28,402 / 1,393 |
+| movie-fmv (after the movie fixes) | same (3 ranges) | 4 of 4, 0 pixels | - |
+| iggy-menus | same (4 ranges) | (by eye: `eye` list) | - |
+| settings-hdao | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-msaa (after `ResolveSubresource`, below) | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-fxaa | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-smaa | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-shadow | same (5 ranges) | 4 of 4, 0 pixels | - |
+| settings-texhigh | same (4 ranges) | 2 of 2, 0 pixels | - |
+
+Rust / Unicorn counts the calls of the overlay's entries (exports and
+addresses its relocations point to) that ran in each; a jump-table
+target counts as an entry too, so the Unicorn side is an upper bound.
+Every overlay whose code the ports cover ran no Unicorn entry (0595,
+0604, 0309); 0481's Unicorn calls are its unported effect functions
+(+0x1560, +0x1920 756 calls each, +0x33b8 877), 0390's its own code.
+
+What it found and what was fixed:
+
+- **event-arrival's texture movie.** The ball in the sky (after shot 5)
+  is a movie on a texture; `PVideoPlaybackWin32_open` faulted in
+  `mkvparser::Segment::GetTracks` (`0x004251b0`, read at `0x74`): the
+  segment never parsed. Two host pointers in the movie ports
+  (`crates/ffx-hook/src/ported/movie.rs`, `ffx_movie::mkv`): the
+  `IMkvReader` reads went to a Rust buffer's address (x86_64: a host
+  pointer cut to 32 bits; the log's `bad access: write ... outside the
+  arena`), and `mkv` lays the `Segment`/`Tracks`/`Track` objects the
+  player reads directly (the four-byte accessors) and the codec private
+  data out in Rust memory, whose addresses mean nothing in the arena.
+  Now, in `ffx-host` only (`cfg(ffx_host)`), the reads go through a
+  16 KiB frame on the game stack, and a segment's objects and private
+  data live in a 64 KiB block from `mkvparser`'s allocator (the game's
+  `PhyreMalloc`, `SetAllocator`), copied in after `Load`
+  (`mkv::create_instance_at`, `mkv::sync`) and freed with the segment.
+  The hooked game keeps the Rust memory (its addresses are the game's).
+  `tools/host-ports.py` did not see either: the reader's address is
+  taken inside a trait method the movie crate calls back, and the
+  objects' addresses inside `ffx-movie` itself.
+  With both fixed event-arrival no longer faulted, but stalled with the
+  ball movie on (the control never came back), and movie-fmv timed out
+  at update 264 in its `holdfor *0x00cded3c+0xb0 = 30` (the player's
+  queue of decoded frames never filled): the decoders handed out Rust
+  addresses too (`ffx_movie::api`: `vpx_codec_get_frame`'s `vpx_image_t`
+  and its planes, `vorbis_synthesis_pcmout`'s channel pointers and
+  samples). In `ffx-host` they are now copied into game blocks from the
+  game's `malloc` (`api::vpx_get_frame_in_game`,
+  `api::vorbis_pcmout_in_game`, one block per decoder, a new one when a
+  frame needs more). With that **movie-fmv passes**: its 3 ranges with
+  the original's events, 4 of 4 shots with 0 pixels.
+- **MSAA**: settings-msaa drew black frames (every pixel off): the
+  layer had no `ID3D11DeviceContext::ResolveSubresource`, so the
+  multisampled scene never reached the plain target. It is an `Op` now
+  (`Op::Resolve`, forwarded by the real device, a texture copy in the
+  recorded stream); both shots then match with 0 pixels.
+- **The cloth race**: below; with `FFX_HARNESS_CLOTH_ORDER=1`
+  event-besaid-4 matches the originals.
+- **Still different: the updates before the first trace event.** In
+  every replay `ffx-rust.exe` reaches the trace's first frame 9-11
+  updates earlier than both originals (field-walk 256 against 266/266,
+  menu-browse 274 against 283/284, battle-attack 241 against 251/250,
+  event-besaid 255 against 265/264, menu-save 256 against 267/267), with
+  the `loadsave` at frame 152 in each; after that every change comes the
+  same number of updates later in both programs (menu-save: -11 up to
+  update 1213, then -12: one more update less in a later load). So
+  `load direct`'s map load takes about 10 updates fewer, and the save
+  load in menu-save one fewer. Events and state agree (the traces
+  compare values); what follows the absolute update count shows it: the
+  title's cursor glow and header band (menu-save-4 and -6, boot-4; the
+  menu timer `0x01840884` counts the title's updates). Suspects, not
+  measured: `FileSys_SubmitRead` running every read and its
+  decompression at once on the calling thread ("The clock", "Reads"),
+  where the hook's harness paces the loader by its turn at each boundary
+  ("Load pacing" in `docs/harness.md`), and the loader turn's 3 s rule.
+  Next: count `AsyncLoadManager` requests per update in both programs
+  over `load direct` (`FFX_HOST_WATCH` on the loader's functions; the
+  hook's loader-turn log).
+
+#### The cloth race (2026-10-31, host-gate)
+
+What differs between runs on the cloth (event-besaid-4/-5 on Tidus's hood
+and the mesh on his leg, boot-3 on Rikku's strap, kami0100's cloth ring,
+battle-magic-3 once; originals now and then, ffx-rust.exe more often) is
+the order of two copies of the cloth vertices on two threads, measured
+on PC2 with `FFX_HOST_WATCH` (event-besaid, 424 updates; threads: main
+`0x1004`, render `0x100c`, JobWorkers `0x1010`-`0x101c`):
+
+1. **The step** (JobWorkers): `Ch_DrawMain` (`0x0082ed50`) queues one
+   `Ch_Cloth_PerCharacter` job per cloth character late in each update
+   (`JobSchedule_Ch_Cloth_PerCharacter` `0x00a44b40`); `Sg_ClothStep`
+   (`0x00822de0`) writes the character's cloth vertex buffer (the cloth
+   record's `+0x4c`). `Sg_MainLoop` waits for the jobs at its end
+   (`JobScheduleWait_Ch_Cloth_PerCharacter`, 422 waits, all on the main
+   thread). So the step itself never races the main thread's reads.
+2. **The submit** (main thread, after the update): `FFXApplication_render`
+   (`0x0042f930`) runs `graphicCharacterInstanceSetClothVertexBuffers`
+   (`0x0063b740`, 424 calls) and `batchSetClothVertexBuffers`, which hand
+   each cloth-instancing mesh the live buffer's address
+   (`ClothInstancingDynamicMesh_setSlotBuffer_006e2ac0`, `+0xc10 + 4i`);
+   then, still on the main thread while it builds the frame's render
+   commands, the instance's vtable slot 2,
+   `ClothInstancingDynamicMesh_submit_006e28f0` (4,530 calls), copies the
+   live buffer into the slot's staging buffer `+0x210`, **but only when
+   the slot's flag `+0x810 + 4i` is set** (`InterlockedCompareExchange(flag,
+   0, 1)`), and clears the flag.
+3. **The stage** (render thread, when it draws that update):
+   `ClothInstancingDynamicMesh_stageStreams_006e2000` (mesh slots 5 and 6,
+   from the renderer's dynamic streams; 1,807 calls, all on the render
+   thread) copies the staging buffer into the draw's vertex stream and
+   sets the slot's flag again.
+
+The render thread draws update `n` while the main thread runs update
+`n + 1` (`docs/harness.md`, "Frames and threads"). If the render thread
+has staged slot `i` of update `n` before the main thread's submit of
+update `n + 1` reaches it, the flag is set and update `n + 1`'s vertices
+are copied; if not, the submit skips the slot and update `n + 1` draws
+the vertices of `n` again: that slot is a step behind. The slots of one
+character (the hood, the leg mesh) go either way independently, which is
+the "dark notch" and the half-old hood. Natively the render thread is
+almost always done first; under emulation it is slower (the watch shows
+frame 301's stages 2.7 s after the main thread's submits), so
+ffx-rust.exe skips more often.
+
+**Measured**: event-besaid on ffx-rust.exe, the same build, back to back
+on PC2: without an order shot 4 differed from both originals by 2,087
+pixels (x 310..446, y 434..709, the hood and the leg); with
+`FFX_HARNESS_CLOTH_ORDER=1` all five shots matched with 0 pixels and the
+trace had the original's events. (In the main-list run before them shot
+4 happened to match without it.)
+
+**The order for both programs (the plan; nothing re-recorded).** In
+lockstep, before the main thread's cloth submits of update `n + 1`, every
+flip queued before them must have been presented (the render thread has
+staged update `n`), so each submit finds its flag set and copies:
+
+- ffx-host does it now as an experiment, `FFX_HARNESS_CLOTH_ORDER=1`
+  (`harness.rs` `cloth_order`, `stats`' `cloth_waits`): the cloth job of
+  update `n + 1` waits until the presented flips (`after_present_flip`)
+  reach the queued ones (the flip wrapper's count), at most 2 s, then
+  goes on with a note. The main thread waits for the jobs before it
+  submits, so the stage of `n` comes before the submit of `n + 1`. A
+  cleaner place for the same wait is the wrapper of
+  `graphicCharacterInstanceSetClothVertexBuffers` (main thread, right
+  before the submits): no wait on a JobWorker, and it covers a frame
+  with cloth meshes but no cloth job.
+- The hook needs the same wait in its harness (its flip wrapper already
+  labels the flips and its `Present` wrapper sees each one done), then
+  `FFX_HARNESS_CLOTH_ORDER` (or always on in lockstep) for both.
+- No deadlock: the present of update `n` waits only until the main
+  thread has left boundary `n`, which it has while it runs update
+  `n + 1`; the 2 s limit and its note are there in case a lock proves
+  otherwise.
+
+**Which replays need re-recording**: the order chosen is the one the
+originals show almost always (event-besaid-4 matched the existing
+references pixel for pixel with it), so none is expected to. The
+coordinator's check once the hook has the wait: run the original code of
+the replays with cloth on screen twice each and re-record only those
+whose shots then differ from the current references: event-besaid
+(shots 4, 5), boot (3: Rikku's strap), battle-magic (3), battle-attack,
+battle-overdrive, battle-ifrit, field-walk and event-arrival (Tidus), and
+the draw gates with cloth, draw-gate-kami (kami0100's ring, `vb5`) and
+draw-gate-besaid with their `dg-*` references; the cloth-ring and hood
+entries of the accepted residue (`docs/harness.md`, "Accepted residue")
+and of the scene-gate allow lists should then go. The menu replays draw
+no cloth character.
+
+#### The i686 build: a case for dropping it (2026-10-31, host-gate)
+
+The i686 `ffx-rust.exe` still ends a few seconds past its third frame in
+Unicorn's 32-bit x86 TCG backend (`tcg_reg_alloc`, no free host
+register: an `abort` inside QEMU's code generator, "Status on Windows").
+Not chased further, for these reasons:
+
+- **Stage 4 is 64-bit, and the 64-bit build is the one that runs.** Every
+  replay of the stage 3 gate ran on the x86_64 build (above), and the M5
+  decisions put the program at 64 bits for good (`docs/rewrite-plan.md`,
+  "M5: inversion"). The i686 build was the stage 3 stepping stone: "any
+  difference is the host's" holds just as well for the 64-bit arena,
+  whose ports are the same code over `Mem`.
+- **The abort is in Unicorn, which goes before the release.** It is QEMU's
+  32-bit host backend running out of registers on one of the game's
+  blocks; fixing it means patching Unicorn's C code (GPL, development
+  only) for a host we don't ship, or finding and avoiding the block. When
+  the last unported function is gone, so is Unicorn and with it the
+  abort.
+- **What the i686 build tests that x86_64 doesn't** is that the arena's
+  addresses equal host pointers (base 0). The ported shims are written for
+  both (the hook is 32-bit and runs them natively), and the 64-bit build
+  already caught every case where a shim handed the game a host address
+  (blocker 7, the held shims): the stricter target finds more.
+- **Cost of keeping it**: `tools/build-host.sh` builds it in every gate
+  (a second Unicorn and ffx-host-ports compile), `src/relaunch.rs` (the
+  child process with the image range reserved) exists only for it, and
+  `docs/harness.md` describes both.
+
+Proposal (the coordinator decides): keep i686 compiling (it is the hook's
+target, and the 32-bit clippy covers `ffx-host` too) but drop it from the
+host gate's runs and from `tools/run-game.sh --rust`'s default
+(`FFX_HOST_TARGET` defaulting to x86_64), and remove `relaunch.rs` when
+the i686 build is dropped entirely.
+
 #### The first comparison
 
 The original's boot was captured from its first `Present`
@@ -1282,7 +1563,8 @@ runs past the third frame (the Unicorn abort).
    commits Unicorn's translation buffers ("The 64-bit build on PC2"); the
    i686 abort in Unicorn's 32-bit TCG backend (`tcg_reg_alloc`) a few
    seconds past the third frame is still there and only matters if
-   stage 3 needs i686 runs. (b) Done (host-pc2): the harness's frame
+   stage 3 needs i686 runs (the stage 3 gate ran on x86_64; the case for
+   dropping the i686 runs: "The i686 build", host-gate). (b) Done (host-pc2): the harness's frame
    commands run on the clock's boundary (`docs/harness.md`, "Two
    processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
@@ -1295,3 +1577,15 @@ runs past the third frame (the Unicorn abort).
    bit 1 is set; nothing clears it (what should, presumably the motion's
    end, was not traced yet; "The main replay list on PC2"). battle-attack, battle-magic and battle-overdrive need it. The
    menu replays, field-walk and menu-save pass.
+8. Done (host-gate, 2026-10-31): **movies**. The movie ports handed the
+   game Rust addresses (the reader's buffer, the parser's objects, the
+   decoded frames and samples); in ffx-host they are game memory now and
+   movie-fmv passes ("The stage 3 gate on PC2").
+9. **Load pacing** (host-gate): `load direct`'s map load takes about 10
+   updates fewer than in the hooked original, so free-running timers
+   (the title's cursor glow: menu-save-4/-6, boot-4) show another phase;
+   events and state agree ("The stage 3 gate on PC2").
+10. **The cloth race** (host-gate): ordered by `FFX_HARNESS_CLOTH_ORDER=1`
+    in ffx-rust; the same wait in the hook's harness is the plan ("The
+    cloth race"); the coordinator decides on the references.
+

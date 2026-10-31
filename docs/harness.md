@@ -2035,7 +2035,16 @@ the two runs as they compare two `FFX.exe` runs.
 ```bash
 FFX_HARNESS_EXE=rust target/release/examples/replay <script> <trace>   # Options::rust
 tools/run-game.sh --instance N --harness P --background --rust          # what Game::launch runs
+FFX_HARNESS_EXE=rust FFX_HOST_TARGET=x86_64-pc-windows-msvc FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh [--extra]
 ```
+
+`run-all.sh` with `FFX_HARNESS_EXE=rust` builds `ffx-rust.exe` once
+(`tools/build-host.sh`, for `FFX_HOST_TARGET`) instead of the hook, gives
+each replay 3,600 s and each reply as long (`FFX_REPLAY_TIMEOUT`,
+`FFX_HARNESS_REPLY_TIMEOUT` override them), keeps each run's
+`ffx-rust.log` beside its output (`<replay>.ffx-rust.log`) and prints its
+overlay call counts; `--record` is refused (only the original code
+records).
 
 - **Launch.** `Options::rust` (default from `FFX_HARNESS_EXE=rust`) adds
   `--rust` to `tools/run-game.sh`, which builds `ffx-rust.exe`
@@ -2083,6 +2092,9 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   and middle-calc jobs (`Ch_Cloth_PerCharacter`, `Ch_CalcMiddle_Batch`,
   wrapped) run with the thread's `rand()` seeded from the character and
   the event frame, as the hook's seeded jobs (`stats`' `seeded_jobs`).
+  `FFX_HARNESS_CLOTH_ORDER=1` (an experiment, `docs/host.md` "The cloth
+  race") makes a cloth job in lockstep wait until every flip queued
+  before it has been presented (`stats`' `cloth_waits`).
 - **Input.** `keys`/`key` set the `DirectInput` keyboard's state that the
   layer's `GetDeviceState` returns. `pad`/`press` hold PS2 buttons through
   the clock's `Input_KeyHeld` wrapper, which answers for each held
@@ -2126,8 +2138,11 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   PC2"); since host-battle (2026-10-31) also the battle replays
   (battle-attack, -magic, -overdrive, -ifrit) and event-besaid with the
   original's trace events (`docs/host.md`, "The battle replays on PC2").
-  The i686 build still ends a few seconds past its third frame in
-  an abort inside Unicorn's 32-bit translator.
+  The whole suite (2026-10-31, host-gate): every replay of the main and
+  extra lists with the original's trace events, after the movie ports'
+  host-pointer fixes (`docs/host.md`, "The stage 3 gate on PC2"). The i686
+  build still ends a few seconds past its third frame in an abort inside
+  Unicorn's 32-bit translator.
 - **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
   `ffx-rust.exe` runs the game in a child process of itself
   (`docs/host.md`, "The arena"), in a job that ends with the parent, so

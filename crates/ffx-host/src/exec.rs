@@ -709,6 +709,21 @@ pub struct Exec {
     frames: Vec<(u32, u32)>,
     /// Nesting of [`ffx_bridge::route::Router::call_x87`] (its stubs).
     x87_depth: u32,
+    /// How the trap that runs now returns, when its [`Trap`]'s convention
+    /// can't say (an overlay port's pops or tail jump: [`TrapExit`]).
+    pub(crate) trap_exit: Option<TrapExit>,
+    /// How many of [`crate::library`]'s overlay counting hooks this
+    /// thread's emulator has.
+    pub(crate) overlay_hooks: usize,
+}
+
+/// A trap's own return ([`Exec::trap_exit`], set by its Rust side): the
+/// argument words it popped, or a tail jump (the caller's stack as it was
+/// at the entry, `eax` the target).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TrapExit {
+    pub pops: u32,
+    pub jump: Option<u32>,
 }
 
 impl Drop for Exec {
@@ -796,6 +811,8 @@ impl Exec {
             scratch: [0; 3],
             frames: Vec::new(),
             x87_depth: 0,
+            trap_exit: None,
+            overlay_hooks: 0,
         };
         if let Ok(mut l) = exec.shared.emulators.lock() {
             l.push((id, exec.uc.get_handle() as usize));
@@ -1418,6 +1435,7 @@ impl Exec {
     /// Maps into this thread's emulator every arena region it hasn't seen
     /// (another thread's `VirtualAlloc`, stack or DLL).
     pub(crate) fn sync_regions(&mut self) -> Result<()> {
+        crate::library::sync_hooks(self)?;
         let g = self.shared.arena.generation();
         if g == self.generation {
             return Ok(());
@@ -1490,6 +1508,35 @@ impl Exec {
     /// ([`Halted`]), which ends here; the caller then sees the stop as for
     /// any other call.
     fn run_port(&mut self, entry: Entry, args: &Args) -> Ret {
+        let watched = watched(entry.name);
+        if watched {
+            self.watch_note(entry.name, "enter");
+        }
+        let ret = self.run_port_inner(entry, args);
+        if watched {
+            self.watch_note(entry.name, "leave");
+        }
+        ret
+    }
+
+    /// A `FFX_HOST_WATCH` note: the port, the thread, the clock's frame
+    /// and the host time since the first note.
+    fn watch_note(&self, name: &str, what: &str) {
+        static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        static NOTES: AtomicU32 = AtomicU32::new(0);
+        if NOTES.fetch_add(1, Ordering::Relaxed) >= WATCH_NOTES {
+            return;
+        }
+        let t = START.get_or_init(Instant::now).elapsed();
+        crate::log::note(&format!(
+            "watch {:.3} ms thread {:#x} frame {} {what} {name}",
+            t.as_secs_f64() * 1000.0,
+            self.id,
+            self.shared.clock.frame()
+        ));
+    }
+
+    fn run_port_inner(&mut self, entry: Entry, args: &Args) -> Ret {
         let frames = self.frames.len();
         let esp = self.uc.reg_read(RegisterX86::ESP).ok();
         let ret = match entry.port {
@@ -1543,7 +1590,7 @@ impl Exec {
     /// them, as a call from the game would leave them; `esp` is restored
     /// after. For callees that read their words through `slots` when Rust
     /// calls them (a port's varargs, `wsprintfW`'s).
-    fn on_game_stack<R>(
+    pub(crate) fn on_game_stack<R>(
         &mut self,
         args: &Args,
         run: impl FnOnce(&mut Self, &Args) -> R,
@@ -1573,7 +1620,7 @@ impl Exec {
 
     /// Pops `ST0` off Unicorn's x87 stack (what the caller's `fstp` does
     /// with a float result).
-    fn pop_st0(&mut self) -> Result<()> {
+    pub(crate) fn pop_st0(&mut self) -> Result<()> {
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         let top = (sw >> 11) & 7;
         let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
@@ -1588,13 +1635,105 @@ impl Exec {
     fn enter_trap(&mut self, t: Trap) -> Result<u32> {
         let args = self.entry_args(t.words)?;
         let saved = self.save_regs()?;
+        self.trap_exit = None;
         let ret = (t.run)(self, t.tag, &args);
+        let exit = self.trap_exit.take();
         self.restore_regs(&saved)?;
         if self.halted() {
             return Err(Error::Stopped);
         }
-        let pops = if t.conv.callee_pops() { t.words } else { 0 };
+        let pops = match exit {
+            Some(TrapExit {
+                jump: Some(target), ..
+            }) => {
+                // `jmp target` with the caller's stack as at the entry
+                self.finish(ret, 0)?;
+                return Ok(target);
+            }
+            Some(x) => (x.pops / 4) as usize,
+            None if t.conv.callee_pops() => t.words,
+            None => 0,
+        };
         self.finish(ret, pops)
+    }
+
+    /// Counts the basic blocks this thread's emulator starts at the
+    /// addresses `counts` holds, inside `begin..end` (an overlay's code:
+    /// its entries that run in Unicorn, [`crate::library`]).
+    pub(crate) fn add_entry_counter(
+        &mut self,
+        begin: u32,
+        end: u32,
+        counts: Arc<HashMap<u32, AtomicU64>>,
+    ) -> Result<()> {
+        self.uc
+            .add_block_hook(u64::from(begin), u64::from(end) - 1, move |_, addr, _| {
+                #[allow(clippy::cast_possible_truncation)] // a 32-bit address
+                if let Some(c) = counts.get(&(addr as u32)) {
+                    c.fetch_add(1, Ordering::Relaxed);
+                }
+            })?;
+        Ok(())
+    }
+
+    /// Whether `addr` is an import's stub (its Rust side or DLL runs).
+    pub(crate) fn is_import_stub(&self, addr: u32) -> bool {
+        self.shared.stubs.contains_key(&addr)
+    }
+
+    /// `esp` of the emulator now.
+    pub(crate) fn esp(&self) -> Result<u32> {
+        self.reg(RegisterX86::ESP)
+    }
+
+    /// Sets the emulator's `esp`.
+    pub(crate) fn set_esp(&mut self, esp: u32) -> Result<()> {
+        self.uc.reg_write(RegisterX86::ESP, u64::from(esp))?;
+        Ok(())
+    }
+
+    /// The bottom of this thread's stack (a frame must stay above it, with
+    /// a page to spare).
+    pub(crate) fn stack_floor(&self) -> u32 {
+        self.stack.0 + 0x1000
+    }
+
+    /// Sets the low 64 bits of `xmm0` (an overlay port's SSE result).
+    pub(crate) fn set_xmm0(&mut self, low: u64) -> Result<()> {
+        let mut b = [0u8; 16];
+        b[..8].copy_from_slice(&low.to_le_bytes());
+        self.uc.reg_write_long(RegisterX86::XMM0, &b)?;
+        Ok(())
+    }
+
+    /// Calls `addr` (an SSE maths function: `MSVCR110`'s
+    /// `_libm_sse2_*_precise`, `xmm0` in and out) with `x` in `xmm0`;
+    /// its `xmm0` result. NaN when the call fails or nests too deep.
+    pub(crate) fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+        use ffx_bridge::Mem as _;
+        if self.x87_depth >= X87_LEVELS {
+            return f64::NAN;
+        }
+        // movsd xmm0, [cell]; mov eax, addr; call eax; movsd [cell], xmm0; ret
+        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
+        let cell = at + 0x40;
+        let mut mem = self.mem();
+        mem.write(cell, x);
+        let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.push(0xb8);
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(&[0xff, 0xd0, 0xf2, 0x0f, 0x11, 0x05]);
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.push(0xc3);
+        self.write_code(at, &code);
+        self.x87_depth += 1;
+        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
+        self.x87_depth -= 1;
+        if r.is_err() {
+            return f64::NAN;
+        }
+        mem.read::<f64>(cell)
     }
 
     /// Runs import `i` (its stub at `stub`) for Unicorn code that called
@@ -1687,7 +1826,7 @@ impl Exec {
         })
     }
 
-    fn reg(&self, r: RegisterX86) -> Result<u32> {
+    pub(crate) fn reg(&self, r: RegisterX86) -> Result<u32> {
         #[allow(clippy::cast_possible_truncation)] // 32-bit registers
         Ok(self.uc.reg_read(r)? as u32)
     }
@@ -2111,13 +2250,30 @@ const X87_STUB: u32 = 0x80;
 /// Nesting levels of x87 stubs.
 const X87_LEVELS: u32 = 8;
 
+/// How many `FFX_HOST_WATCH` notes a run keeps.
+const WATCH_NOTES: u32 = 20_000;
+
+/// Whether `FFX_HOST_WATCH` (a comma list of `ffx.sym` names) names this
+/// port: its entries and returns are noted with the thread, the frame and
+/// the time ([`Exec::watch_note`]), to see which threads run what in
+/// which order (the cloth jobs against the cloth copies, docs/host.md).
+fn watched(name: &str) -> bool {
+    static WATCH: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let w = WATCH.get_or_init(|| {
+        std::env::var("FFX_HOST_WATCH")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default()
+    });
+    !w.is_empty() && w.iter().any(|n| n == name)
+}
+
 /// The payload [`Exec::run_port`] catches: the thread was halted while a
 /// routed port ran.
-struct Halted;
+pub(crate) struct Halted;
 
 /// Unwinds the routed port that called into a halted thread
 /// ([`Exec::run_port`]).
-fn halted() -> ! {
+pub(crate) fn halted() -> ! {
     std::panic::resume_unwind(Box::new(Halted))
 }
 

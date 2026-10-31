@@ -491,6 +491,20 @@ impl D3d11 {
                         c.CopyResource(&d, &s);
                     }
                 }
+                Op::Resolve(w) => {
+                    if let (Some(d), Some(s)) = (
+                        self.get::<ID3D11Resource>(w[0]),
+                        self.get::<ID3D11Resource>(w[2]),
+                    ) {
+                        c.ResolveSubresource(
+                            &d,
+                            w[1],
+                            &s,
+                            w[3],
+                            DXGI_FORMAT(i32::from_ne_bytes(w[4].to_ne_bytes())),
+                        );
+                    }
+                }
                 Op::CopyRegion(w, bx) => {
                     if let (Some(d), Some(s)) = (
                         self.get::<ID3D11Resource>(w[0]),

@@ -41,6 +41,35 @@ impl Source for GameReader {
         self.len
     }
 
+    /// In `ffx-host` the reader writes game memory, which a Rust buffer is
+    /// not (on `x86_64` its address is a host pointer cut to 32 bits: the
+    /// reads went nowhere, the segment never parsed and `PVideoPlaybackWin32_open`
+    /// faulted in `Segment::GetTracks` on event-arrival's texture movie,
+    /// host-gate 2026-10-31): the reads go through a frame on the game
+    /// stack, [`READ_CHUNK`] bytes at a time, and are copied out.
+    #[cfg(ffx_host)]
+    fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), WebmError> {
+        let m = mem();
+        let read = m.read::<u32>(m.read::<u32>(self.reader));
+        let mut frame = super::StackFrame::<{ READ_CHUNK / 4 }>::new();
+        let at = frame.at();
+        if at == 0 {
+            return Err(WebmError::Io("IMkvReader::Read: no frame".into()));
+        }
+        let mut p = pos;
+        for chunk in buf.chunks_mut(READ_CHUNK) {
+            #[allow(clippy::cast_possible_truncation)] // halves of the i64; a chunk fits
+            let (lo, hi, len) = (p as u32, (p >> 32) as u32, chunk.len() as u32);
+            match call_thiscall(read, self.reader, &[lo, hi, len, at]) {
+                0 => m.read_bytes(at, chunk),
+                r => return Err(WebmError::Io(format!("IMkvReader::Read {r}"))),
+            }
+            p += u64::from(len);
+        }
+        Ok(())
+    }
+
+    #[cfg(not(ffx_host))]
     fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), WebmError> {
         if buf.is_empty() {
             return Ok(());
@@ -61,6 +90,10 @@ impl Source for GameReader {
     }
 }
 
+/// Bytes per `IMkvReader::Read` in `ffx-host` (`GameReader::read_at`).
+#[cfg(ffx_host)]
+const READ_CHUNK: usize = 0x4000;
+
 /// The player's `CDataFrameQueue`s and its done event, through the
 /// original functions.
 struct PlayerQueues;
@@ -80,6 +113,82 @@ impl mkv::Queues for PlayerQueues {
 
     fn signal(&mut self, event: u32) {
         call_thiscall(rebased(0x0043_0200), event, &[]);
+    }
+}
+
+/// `Segment::CreateInstance`: in the hooked game the segment's objects
+/// live in Rust memory, which is the game's; in `ffx-host` (whose arena is
+/// not the host's memory) in a block from `mkvparser`'s allocator (the
+/// game's `malloc` that `SetAllocator` stored), freed with the segment.
+#[cfg(not(ffx_host))]
+fn create_segment(src: mkv::BoxedSource, pos: i64, out: u32) -> i64 {
+    mkv::create_instance(&mut mem(), src, pos, out)
+}
+
+#[cfg(ffx_host)]
+fn create_segment(src: mkv::BoxedSource, pos: i64, out: u32) -> i64 {
+    let mut m = mem();
+    let malloc = m.read::<u32>(m.rebase(mkv::MKV_MALLOC));
+    let block = if malloc == 0 {
+        0
+    } else {
+        super::call_cdecl(malloc, &[mkv::GAME_BLOCK])
+    };
+    if block == 0 {
+        if out != 0 {
+            m.write::<u32>(out, 0);
+        }
+        return -1;
+    }
+    mkv::create_instance_at(&mut m, src, pos, out, block)
+}
+
+#[cfg(not(ffx_host))]
+fn free_segment_block(_: Option<u32>) {}
+
+/// `vpx_codec_get_frame` and `vorbis_synthesis_pcmout`: the decoders'
+/// buffers are the game's memory in the hooked game; in `ffx-host` they
+/// are copied into blocks from the game's `malloc` (the CRT import
+/// `FFX.exe` calls), which the game reads.
+#[cfg(not(ffx_host))]
+fn get_frame(ctx: u32, iter: u32) -> u32 {
+    api::vpx_get_frame(&mut mem(), ctx, iter)
+}
+
+#[cfg(not(ffx_host))]
+fn pcmout(v: u32, pcm: u32) -> u32 {
+    api::vorbis_pcmout(&mut mem(), v, pcm)
+}
+
+#[cfg(ffx_host)]
+fn game_malloc(bytes: u32) -> u32 {
+    // FFX.exe's MSVCR110!malloc import slot (ffx_movie::mkv's IMP_MALLOC)
+    let f = mem().read::<u32>(0x00b0_c468);
+    if f == 0 {
+        0
+    } else {
+        super::call_cdecl(f, &[bytes])
+    }
+}
+
+#[cfg(ffx_host)]
+fn get_frame(ctx: u32, iter: u32) -> u32 {
+    api::vpx_get_frame_in_game(&mut mem(), ctx, iter, &mut game_malloc)
+}
+
+#[cfg(ffx_host)]
+fn pcmout(v: u32, pcm: u32) -> u32 {
+    api::vorbis_pcmout_in_game(&mut mem(), v, pcm, &mut game_malloc)
+}
+
+#[cfg(ffx_host)]
+fn free_segment_block(block: Option<u32>) {
+    let m = mem();
+    let free = m.read::<u32>(m.rebase(mkv::MKV_FREE));
+    if let Some(b) = block
+        && free != 0
+    {
+        super::call_cdecl(free, &[b]);
     }
 }
 
@@ -161,7 +270,7 @@ ported! {
     }
     /// `vpx_codec_get_frame(ctx, iter)`.
     vpx_codec_get_frame @ 0x0040_96e0 => extern "C" fn vpx_codec_get_frame(ctx: u32, iter: u32) -> u32 {
-        api::vpx_get_frame(&mut mem(), ctx, iter)
+        get_frame(ctx, iter)
     }
     /// `vpx_codec_destroy(ctx)`.
     vpx_codec_destroy @ 0x0040_9370 => extern "C" fn vpx_codec_destroy(ctx: u32) -> u32 {
@@ -191,15 +300,17 @@ ported! {
         reader: u32, pos_lo: u32, pos_hi: u32, out: u32
     ) -> u64 {
         let pos = (u64::from(pos_hi) << 32 | u64::from(pos_lo)).cast_signed();
-        mkv::create_instance(&mut mem(), Box::new(GameReader::new(reader)), pos, out).cast_unsigned()
+        create_segment(Box::new(GameReader::new(reader)), pos, out).cast_unsigned()
     }
     /// `Segment::Load()`.
     mkvparser_Segment_Load @ 0x0042_1450 => extern "thiscall" fn mkvparser_segment_load(seg: u32) -> u64 {
-        mkv::load(seg).cast_unsigned()
+        let r = mkv::load(seg);
+        mkv::sync(&mut mem(), seg);
+        r.cast_unsigned()
     }
     /// `delete segment`.
     mkvparser_Segment_delete @ 0x0041_fd10 => extern "C" fn mkvparser_segment_delete(seg: u32) {
-        mkv::delete(seg);
+        free_segment_block(mkv::delete(seg));
     }
     /// `Segment::GetDuration()`.
     mkvparser_Segment_GetDuration @ 0x0042_5200 => extern "thiscall" fn mkvparser_segment_get_duration(seg: u32) -> u64 {
@@ -277,7 +388,7 @@ ported! {
     }
     /// `vorbis_synthesis_pcmout(v, pcm)`.
     vorbis_synthesis_pcmout @ 0x00a9_0a10 => extern "C" fn vorbis_synthesis_pcmout(v: u32, pcm: u32) -> u32 {
-        api::vorbis_pcmout(&mut mem(), v, pcm)
+        pcmout(v, pcm)
     }
     /// `vorbis_synthesis_read(v, n)`.
     vorbis_synthesis_read @ 0x00a9_09e0 => extern "C" fn vorbis_synthesis_read(v: u32, n: u32) -> u32 {
