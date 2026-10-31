@@ -1174,3 +1174,98 @@ fn counters_stepped() {
         });
     }
 }
+
+/// Row 164: `magic_0565`'s selection groups: lists with and without a
+/// handle, entries found in the selection and not, an empty selection.
+#[test]
+fn selection_groups_matched() {
+    let Some(mut t) = twin(565) else { return };
+    let f = t.at(0x6ba0);
+    let lists = SCRATCH + 0x600;
+    let plan = SCRATCH + 0x7c0;
+    // per k: the handle (0: none) and the count, from the plan
+    rec(&mut t, 645, 4, move |m, a| {
+        let k = a[2];
+        let h = m.r32(plan + 8 * k);
+        m.w32(a[3], h);
+        m.w32(a[1], m.r32(plan + 8 * k + 4));
+        lists + 0x20 * k
+    });
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x7), s);
+    t.set_u32(op(&t, f, 0x40), 0x0aaa_0001);
+    let sel = SCRATCH + 0x700;
+    t.set_u32(op(&t, f, 0x8b), sel);
+    t.write(sel, &[5, 3, 9, 3, 7]);
+    for (k, (n, plans)) in [
+        (5u32, [(0x11u32, 3u32), (0, 2), (0x13, 5), (0x14, 0)]),
+        (0, [(0x21, 2), (0x22, 1), (0, 0), (0, 0)]),
+        (3, [(0, 0), (0, 0), (0, 0), (0x31, 4)]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(op(&t, f, 0x18), n);
+        for (i, (h, c)) in (0u32..).zip(plans) {
+            t.set_u32(plan + 8 * i, h);
+            t.set_u32(plan + 8 * i + 4, c);
+        }
+        for i in 0..0x80u32 {
+            t.set_u8(lists + i, [3u8, 7, 5, 1, 9, 0, 3, 2][(i + k) as usize % 8]);
+        }
+        t.write(s + 0xebf0, &varied(0xb0, k));
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// Row 168: `magic_0515`'s path follower: the last frame (the last key),
+/// a time inside the path and one past its end (held below `n - D`).
+/// After the samples the original's `eax` is their scratch (junk).
+#[test]
+fn paths_stepped() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x1c00);
+    let s = SCRATCH + 0x300;
+    let out = SCRATCH + 0x380;
+    let keys = SCRATCH + 0x1000;
+    let weights = SCRATCH + 0x400;
+    // the mix's constants: ones that are not 1
+    t.set_u32(op(&t, f, 0x29), 3.5f32.to_bits());
+    for (k, (left, time, step, n)) in [
+        (1u32, 0.0f32, 0.0f32, 4u32),
+        (5, 0.25, 0.125, 4),
+        (5, 0.5, 0.45, 3),
+        (3, 0.75, 0.5, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &varied(0x40, k));
+        t.set_u32(s + 0x20, keys);
+        t.set_u32(s + 0x28, weights);
+        t.set_u32(s + 0x2c, time.to_bits());
+        t.set_u32(s + 0x30, step.to_bits());
+        t.set_u32(s + 0x34, left);
+        t.set_u32(s + 0x38, n);
+        for i in 0..24u32 {
+            t.set_u32(keys + 4 * i, (i as f32 * 0.75 - 3.0 + k as f32).to_bits());
+        }
+        for (i, v) in (0u32..).zip([0.5f32, 1.25, 2.0, 3.5, 4.0]) {
+            t.set_u32(weights + 4 * i, (v * (k as f32 + 1.0)).to_bits());
+        }
+        t.write(out, &varied(0x10, k));
+        let eax = if left == 1 { Eax::Checked } else { Eax::Junk };
+        let c = Call {
+            ecx: s,
+            edx: out,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], eax, |g, img, fr| {
+            Ret::eax(s6_misc::path_step(g, img, fr))
+        });
+    }
+}

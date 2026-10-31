@@ -20,6 +20,7 @@ use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
+use crate::sb_misc::{EASE_SAMPLE, ease_sample};
 use crate::sb_nodes::{EFFECT_NODE, PARTICLE_NODE, effect_node, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
@@ -1658,5 +1659,145 @@ pub const COUNTERS_STEP: Sig = Sig {
     len: 416,
     hash: 0xf601_a2fb_0bb3_4377,
     calls: &[],
+    imports: &[],
+};
+
+/// The groups of four lists matched against the battle selection (cdecl,
+/// no arguments): for each `k` of 0..4, slot 645 `(*G_A, &c, k, &h)`
+/// gives a byte list of `c` entries and a handle `h`; a list with a
+/// handle becomes the next record `R` (0x28 bytes from `*G_S + 0xebf4`):
+/// `R[0] = h`, `R[1] = c`, and for each entry the index of the first
+/// selected actor (`*G_SEL[i]` bytes, `i < *G_N`; `*G_OWN` stands for
+/// -1) with that byte into `R+8+j` (left as it is when none). The count
+/// goes to `*G_S + 0xec98`. Returns it.
+///
+/// `magic_0565` 0x10006ba0 (230 bytes; 5 DLLs).
+pub fn selection_groups<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = g.read::<u32>(w(0x7));
+    let mut out = s.wrapping_add(0xebf4);
+    let n = g.read::<i32>(w(0x18));
+    let ebp = fr.esp.wrapping_sub(4);
+    let (c_at, h_at) = (ebp.wrapping_sub(0xc), ebp.wrapping_sub(0x14));
+    let mut count = 0u32;
+    for k in 0..4u32 {
+        let a = g.read::<u32>(w(0x40));
+        let list = slot(g, img, f, 0x3a, 645, &[a, c_at, k, h_at]).eax;
+        let h = g.read::<u32>(h_at);
+        if h == 0 {
+            continue;
+        }
+        let c = g.read::<i32>(c_at);
+        g.write::<u32>(out, h);
+        g.write::<i32>(out + 4, c);
+        let mut j = 0i32;
+        while j < c {
+            let own = g.read::<u32>(w(0x69));
+            let b = u32::from(g.read::<u8>(list.wrapping_add(j.cast_unsigned())));
+            let mut i = 0i32;
+            while i < n {
+                let id = if i == -1 {
+                    own
+                } else {
+                    let sel = g.read::<u32>(w(0x8b));
+                    u32::from(g.read::<u8>(sel.wrapping_add(i.cast_unsigned())))
+                };
+                if b == id {
+                    g.write::<u8>(out.wrapping_add(8).wrapping_add(j.cast_unsigned()), i as u8);
+                    break;
+                }
+                i += 1;
+            }
+            j += 1;
+        }
+        count += 1;
+        out = out.wrapping_add(0x28);
+    }
+    g.write::<u32>(s.wrapping_add(0xec98), count);
+    Ret::eax(count)
+}
+
+/// [`selection_groups`].
+pub const SELECTION_GROUPS: Sig = Sig {
+    len: 230,
+    hash: 0x57ac_355d_9dae_6f86,
+    calls: &[],
+    imports: &[],
+};
+
+/// A path follower's step (internal: `ecx` = the follower `F`, `edx` =
+/// the point out; `F+0x20` the key table (three floats a key), `+0x28`
+/// five weights `w`, `+0x2c` the time, `+0x30` its step, `+0x34` the
+/// frames left, `+0x38` the key count `n`). On the last frame the last
+/// key is the point and `F+0x3c = 0`. Otherwise the time steps on (`t`)
+/// and the key position is the quartic Bernstein mix `x = w0 u⁴ + K w1 u³
+/// t + K w2 u² t² + K w3 u t³ + w4 t⁴` (`u = K1 - t`), held below `n - D`
+/// (`D` a double); each coordinate is [`ease_sample`]'s at `x`. Returns
+/// the last key's `z` word, or the sample's scratch `eax` (junk: 0 here).
+///
+/// `magic_0515` 0x10001c00 (288 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (s, out) = (fr.ecx, fr.edx);
+    let left = g.read::<u32>(s + 0x34).wrapping_sub(1);
+    g.write::<u32>(s + 0x34, left);
+    let tab = g.read::<u32>(s + 0x20);
+    if left == 0 {
+        let n = g.read::<u32>(s + 0x38);
+        let last = tab.wrapping_add(n.wrapping_mul(12)).wrapping_sub(0xc);
+        let mut eax = 0;
+        for o in [0u32, 4, 8] {
+            eax = g.read::<u32>(last.wrapping_add(o));
+            g.write::<u32>(out + o, eax);
+        }
+        g.write::<u32>(s + 0x3c, 0);
+        return eax;
+    }
+    let t = add(g.read::<f32>(s + 0x30), g.read::<f32>(s + 0x2c));
+    let (one, k) = (g.read::<f32>(w(0x21)), g.read::<f32>(w(0x29)));
+    let wt = g.read::<u32>(s + 0x28);
+    let n = g.read::<i32>(s + 0x38);
+    let wk = |g: &G, i: u32| g.read::<f32>(wt.wrapping_add(4 * i));
+    let u = sub(one, t);
+    g.write::<f32>(s + 0x2c, t);
+    let (uu, ut, tt) = (mul(u, u), mul(u, t), mul(t, t));
+    let b0 = mul(mul(uu, uu), wk(g, 0));
+    let b1 = mul(mul(mul(ut, uu), k), wk(g, 1));
+    let b2 = mul(mul(mul(tt, uu), k), wk(g, 2));
+    let b3 = mul(mul(mul(tt, ut), k), wk(g, 3));
+    let b4 = mul(mul(tt, tt), wk(g, 4));
+    let x = add(add(add(add(b1, b0), b2), b3), b4);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let top = n as f32;
+    // comiss x, n; jb: kept below `n` or unordered
+    let x = if x < top || x.is_nan() {
+        x
+    } else {
+        (f64::from(top) - g.read::<f64>(w(0xb2))) as f32
+    };
+    // push 3 (the stride) for each sample, popped after the third
+    for (i, call) in [0xc2u32, 0xd6, 0xeb].into_iter().enumerate() {
+        let esp = fr.esp.wrapping_sub(0x14 + 4 * i as u32);
+        g.write::<u32>(esp + 4, 3);
+        let n = g.read::<u32>(s + 0x38);
+        let tab = tab.wrapping_add(4 * i as u32);
+        let v = ease_sample(g, img, img.rel32_target(f + call), esp, tab, n, x);
+        g.write::<f32>(out + 4 * i as u32, v);
+    }
+    // eax: the sample's scratch (junk; 0 here)
+    0
+}
+
+/// [`path_step`] (the `rel32`s: three [`ease_sample`]s).
+pub const PATH_STEP: Sig = Sig {
+    len: 288,
+    hash: 0xee26_1caf_5fab_1f47,
+    calls: &[
+        (0xc2, Callee::Sig(&EASE_SAMPLE)),
+        (0xd6, Callee::Sig(&EASE_SAMPLE)),
+        (0xeb, Callee::Sig(&EASE_SAMPLE)),
+    ],
     imports: &[],
 };
