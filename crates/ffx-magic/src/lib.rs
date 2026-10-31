@@ -46,6 +46,7 @@ pub mod ob_summon;
 pub mod objcb;
 pub mod opu;
 pub mod opu_parts;
+pub mod part_draw;
 pub mod pe;
 pub mod pushes;
 pub mod rcef;
@@ -145,7 +146,22 @@ pub mod m0393;
 pub mod m0394;
 pub mod m0395;
 pub mod m0396;
+pub mod m0450;
+pub mod m0473;
+pub mod m0474;
+pub mod m0475;
+pub mod m0476;
+pub mod m0477;
+pub mod m0478;
+pub mod m0479;
+pub mod m0480;
 pub mod m0481;
+pub mod m0482;
+pub mod m0483;
+pub mod m0484;
+pub mod m0486;
+pub mod m0487;
+pub mod m0488;
 pub mod m0596;
 pub mod m0604;
 
@@ -809,6 +825,51 @@ ports! {
     "m0396 task step" => ob_summon::STEP_0396, ob_summon::step;
     "m0397 task step" => ob_summon::STEP_0397, ob_summon::step;
     "m0596 task step (no pause)" => ob_summon::STEP_PLAIN_0596, ob_summon::step_plain;
+    // magic r5 own (0450 and up): entries
+    "m0450 frame" => m0450::FRAME, m0450::frame;
+    "m0450 load models" => m0450::LOAD_MODELS, m0450::load_models;
+    "m0450 place camera" => m0450::PLACE_CAMERA, m0450::place_camera;
+    "m0450 blend camera" => m0450::BLEND_CAMERA, m0450::blend_camera;
+    "m0450 swing start" => m0450::SWING_START, m0450::swing_start;
+    "m0450 model reset" => m0450::MODEL_RESET, m0450::model_reset;
+    "m0450 flight start" => m0450::FLIGHT_START, m0450::flight_start;
+    "m0450 flight frame" => m0450::FLIGHT_FRAME, m0450::flight_frame;
+    "m0450 shrink" => m0450::SHRINK, m0450::shrink;
+    "m0450 turn step" => m0450::TURN_STEP, m0450::turn_step;
+    "m0475 task" => m0475::TASK, m0475::task;
+    "m0476 fade step" => m0476::FADE_STEP, m0476::fade_step;
+    "m0477 e1070" => m0477::E1070, m0477::e1070;
+    "m0477 e1250" => m0477::E1250, m0477::e1250;
+    "m0477 e1430" => m0477::E1430, m0477::e1430;
+    "m0477 e1580" => m0477::E1580, m0477::e1580;
+    "m0477 e1670" => m0477::E1670, m0477::e1670;
+    "m0477 e17b0" => m0477::E17B0, m0477::e17b0;
+    "m0477 e1850" => m0477::E1850, m0477::e1850;
+    "m0477 e1980" => m0477::E1980, m0477::e1980;
+    "m0477 e1d50" => m0477::E1D50, m0477::e1d50;
+    "m0477 e1de0" => m0477::E1DE0, m0477::e1de0;
+    "m0477 start-up" => m0477::START_UP, m0477::start_up;
+    "m0478 task" => m0478::TASK, m0478::task;
+    "m0482 task" => m0482::TASK, m0482::task;
+    "m0483 start" => m0483::START, m0483::start;
+    "m0483 end" => m0483::END, m0483::end;
+    "m0484 e1000" => m0484::E1000, m0484::e1000;
+    "m0484 e1100" => m0484::E1100, m0484::e1100;
+    "m0484 e1360" => m0484::E1360, m0484::e1360;
+    "m0484 e13f0" => m0484::E13F0, m0484::e13f0;
+    "m0484 start-up" => m0484::START_UP, m0484::start_up;
+    "m0484 frame" => m0484::FRAME, m0484::frame;
+    "m0486 e1070" => m0486::E1070, m0486::e1070;
+    "m0486 e1250" => m0486::E1250, m0486::e1250;
+    "m0486 e13f0" => m0486::E13F0, m0486::e13f0;
+    "m0486 start-up" => m0486::START_UP, m0486::start_up;
+    "m0486 frame" => m0486::FRAME, m0486::frame;
+    "m0487 start" => m0487::START, m0487::start;
+    "m0487 step" => m0487::STEP, m0487::step;
+    "m0487 start-up" => m0487::START_UP, m0487::start_up;
+    "m0487 frame" => m0487::FRAME, m0487::frame;
+    "m0488 start-up" => m0488::START_UP, m0488::start_up;
+    // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
     "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
@@ -1777,6 +1838,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0596 part init", &m0596::PART_INIT),
     ("m0596 object init", &m0596::OBJECT_INIT),
     ("m0596 place pair", &m0596::PLACE_PAIR),
+    // magic r5 own (0450 and up): internal functions
+    ("m0450 orient", &m0450::ORIENT),
+    ("m0450 show models", &m0450::SHOW_MODELS),
+    ("m0473 scale start", &m0473::SCALE_START),
+    ("m0474 timed start", &m0474::TIMED_START),
+    ("m0478 init", &m0478::INIT),
+    ("m0479 start", &m0479::START),
+    ("m0480 clear", &m0480::CLEAR),
+    ("m0482 insert", &m0482::INSERT),
+    ("m0483 draw", &m0483::DRAW),
+    ("m0488 draw", &m0488::DRAW),
+    // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
     ("m0394 scaled", &m0394::SCALED),
