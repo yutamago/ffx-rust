@@ -3718,4 +3718,370 @@ pub mod bridge {
         }
         this
     }
+
+    pub const DELETE_CRITICAL_SECTION_IAT: u32 = 0x00b0_c15c;
+    pub const LIST_WALK_TO_END: u32 = 0x0094_8a80;
+    /// `FUN_00942ce0(this = arena)`, `FUN_00948960(this = bucket)` (its
+    /// destructor), `FUN_00943e30(this = arena; p)` (a free) and
+    /// `PageBucket_lockedCall_00948820(this = bitmap)` (frees its words).
+    pub const ARENA_RESET: u32 = 0x0094_2ce0;
+    pub const PAGE_BUCKET_DTOR: u32 = 0x0094_8960;
+    pub const ARENA_FREE: u32 = 0x0094_3e30;
+    pub const BITMAP_FREE: u32 = 0x0094_8820;
+
+    /// Bucket `i` of a bucket table (slots `+4`, bitmap words
+    /// `[+0x40c]`) when marked (`mask` = bit `i % 32`).
+    fn marked_bucket(h: &impl Mem, this: u32, i: u32, mask: u32) -> Option<u32> {
+        let bits = word(h, this + 0x40c);
+        (word(h, bits.wrapping_add((i >> 5) * 4)) & mask != 0).then(|| word(h, this + 4 + 4 * i))
+    }
+
+    /// `FUN_00946840(this)` (`thiscall`) -> 0x100: each marked bucket's
+    /// list walked to its end (`List_walkToEnd`) under its lock `+0x18`.
+    pub fn bucket_table_walk(h: &mut impl Host, this: u32) -> u32 {
+        let mut mask = 1_u32;
+        for i in 0..0x100 {
+            if let Some(obj) = marked_bucket(h, this, i, mask) {
+                import(h, ENTER_CRITICAL_SECTION_IAT, &[obj.wrapping_add(0x18)]);
+                method(h, LIST_WALK_TO_END, obj, &[]);
+                import(h, LEAVE_CRITICAL_SECTION_IAT, &[obj.wrapping_add(0x18)]);
+            }
+            mask = mask.rotate_left(1);
+        }
+        0x100
+    }
+
+    /// `FUN_00945b80(this)` (`thiscall`) -> the last
+    /// `LeaveCriticalSection`'s `eax`: both bucket tables (`+0xd0`,
+    /// `+0x4ec`) walked, then the arenas of the locks `+0x908` and
+    /// `+0x938` reset (`FUN_00942ce0`) under them.
+    pub fn page_manager_walk(h: &mut impl Host, this: u32) -> u32 {
+        method(h, PAGE_TABLE_WALK, this + 0xd0, &[]);
+        method(h, PAGE_TABLE_WALK, this + 0x4ec, &[]);
+        let mut r = 0;
+        for cs in [this + 0x908, this + 0x938] {
+            import(h, ENTER_CRITICAL_SECTION_IAT, &[cs]);
+            method(h, ARENA_RESET, cs + 0x18, &[]);
+            r = import(h, LEAVE_CRITICAL_SECTION_IAT, &[cs]);
+        }
+        r
+    }
+    pub const PAGE_TABLE_WALK: u32 = 0x0094_6840;
+
+    /// `FUN_00946660(this)` (`thiscall`) -> `PageBucket_lockedCall`'s
+    /// `eax`: the bucket table's destructor: each marked bucket's lock
+    /// deleted, the bucket destroyed (`0x00948960`) and freed into the
+    /// arena of the lock `+0x404`; then the bitmap `+0x408` freed.
+    pub fn bucket_table_dtor(h: &mut impl Host, this: u32) -> u32 {
+        let mut mask = 1_u32;
+        for i in 0..0x100 {
+            if let Some(obj) = marked_bucket(h, this, i, mask) {
+                let cs = word(h, this + 0x404);
+                import(h, DELETE_CRITICAL_SECTION_IAT, &[obj.wrapping_add(0x18)]);
+                method(h, PAGE_BUCKET_DTOR, obj, &[]);
+                import(h, ENTER_CRITICAL_SECTION_IAT, &[cs]);
+                method(h, ARENA_FREE, cs.wrapping_add(0x18), &[obj]);
+                import(h, LEAVE_CRITICAL_SECTION_IAT, &[cs]);
+            }
+            mask = mask.rotate_left(1);
+        }
+        method(h, BITMAP_FREE, this + 0x408, &[])
+    }
+
+    /// `FUN_009453d0(this; key)` (`thiscall`, `ret 4`) -> the removed
+    /// node's value (`+8`): removal from an open-addressed hash table
+    /// (`+0` size, a power of two; `+4` slots; `+8` count; `+0x14` free
+    /// nodes) of the node whose id (`+0`) is the key's (`+0`), probing
+    /// from the key's hash (`+4`); the cluster's later nodes whose home
+    /// lies outside the hole's range moved back into it, the node put
+    /// on the free list. The node must be there (the original reads
+    /// through a null slot otherwise).
+    pub fn hash_remove<H14: Host>(h: &mut H14, this: u32, key: u32) -> u32 {
+        let n = word(h, this);
+        let mask = n.wrapping_sub(1);
+        let slots = word(h, this + 4);
+        let slot = |h: &H14, i: u32| word(h, slots.wrapping_add(i.wrapping_mul(4)));
+        let id = word(h, key);
+        let mut i = word(h, key + 4) & mask;
+        while slot(h, i) != 0 && word(h, slot(h, i)) != id {
+            i = i.wrapping_add(1) & mask;
+        }
+        let node = slot(h, i);
+        let value = word(h, node + 8);
+        // the cluster's first slot
+        let mut start = i;
+        let prev = |j: u32| if j == 0 { n } else { j }.wrapping_sub(1);
+        let mut j = prev(i);
+        while slot(h, j) != 0 {
+            start = j;
+            j = prev(j);
+        }
+        let mut hole = i;
+        loop {
+            let n2 = word(h, this);
+            let m2 = n2.wrapping_sub(1);
+            let s2 = word(h, this + 4);
+            let mut c = hole.wrapping_add(1) & m2;
+            let mut found = None;
+            while word(h, s2.wrapping_add(c.wrapping_mul(4))) != 0 {
+                let origin =
+                    (word(h, word(h, s2.wrapping_add(c.wrapping_mul(4))) + 4) & m2).cast_signed();
+                let (s, e) = (start.cast_signed(), hole.cast_signed());
+                let take = if s <= e {
+                    origin >= s && origin <= e
+                } else {
+                    origin >= s || origin <= e
+                };
+                if take {
+                    found = Some(c);
+                }
+                c = c.wrapping_add(1) & m2;
+            }
+            let Some(f) = found else { break };
+            let v = word(h, s2.wrapping_add(f.wrapping_mul(4)));
+            h.write(s2.wrapping_add(hole.wrapping_mul(4)), v);
+            hole = f;
+        }
+        let s = word(h, this + 4);
+        h.write(s.wrapping_add(hole.wrapping_mul(4)), 0_u32);
+        let free = word(h, this + 0x14);
+        h.write(node, free);
+        let count = word(h, this + 8).wrapping_sub(1);
+        h.write(this + 8, count);
+        h.write(this + 0x14, node);
+        value
+    }
+
+    pub const PHYRE_FREE: u32 = 0x0042_fb20;
+    /// The `GDraw` state (`0x01a858b4`; its first word the D3D11 device)
+    /// and `IggyGDrawSendWarning` (import slot).
+    pub const GDRAW: u32 = 0x01a8_58b4;
+    pub const SEND_WARNING_IAT: u32 = 0x00b0_c874;
+    /// The warnings (out of memory; an error with its code), the
+    /// `"CreateBuffer"`, `" creating dynamic vertex buffer"` and
+    /// `"CreatePixelShader"` texts; `E_OUTOFMEMORY`.
+    pub const MSG_D3D_OOM: u32 = 0x00b7_a4ec;
+    pub const MSG_D3D_ERROR: u32 = 0x00b7_a50c;
+    pub const TEXT_CREATE_BUFFER: u32 = 0x00b7_a6e4;
+    pub const TEXT_DYNAMIC_VB: u32 = 0x00b7_a848;
+    pub const TEXT_CREATE_PS: u32 = 0x00b7_a938;
+    pub const E_OUTOFMEMORY: u32 = 0x8007_000e;
+    pub const PFILE_SEEK: u32 = 0x0060_80e0;
+    pub const PSTREAM_FILE_READ: u32 = 0x0060_8090;
+
+    /// `FUN_00a26480(this; buffer, value)` (`thiscall`, `ret 8`) -> 0, or
+    /// 13 without a buffer: an array (`+0` count, top bit "not owned";
+    /// `+4` words) grown by one into `buffer`: the words copied, `*value`
+    /// appended, the old words freed (`Phyre_PhyreFree`) unless the same
+    /// or not owned; the count's top bit cleared.
+    pub fn array_push_into(h: &mut impl Host, this: u32, buffer: u32, value: u32) -> u32 {
+        if buffer == 0 {
+            return 13;
+        }
+        let n = word(h, this) & 0x7fff_ffff;
+        let mut src = word(h, this + 4);
+        for k in 0..n {
+            let dst = buffer.wrapping_add(4 * k);
+            if dst != 0 {
+                let v = word(h, src);
+                h.write(dst, v);
+                src = src.wrapping_add(4);
+            }
+        }
+        let end = buffer.wrapping_add(n.wrapping_mul(4));
+        if end != 0 {
+            let v = word(h, value);
+            h.write(end, v);
+        }
+        let old = word(h, this + 4);
+        if old != buffer && word(h, this) >> 31 == 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+        }
+        h.write(this + 4, buffer);
+        h.write(this, n.wrapping_add(1));
+        0
+    }
+
+    /// `IggyGDrawSendWarning(0, fmt, what, detail[, hr])` for a failed
+    /// D3D call: out of memory, or the error code.
+    fn d3d_warning(h: &mut impl Host, hr: u32, what: u32, detail: u32) -> u32 {
+        let f = word(h, h.rebase(SEND_WARNING_IAT));
+        let (what, detail) = (h.rebase(what), h.rebase(detail));
+        if hr == E_OUTOFMEMORY {
+            let m = h.rebase(MSG_D3D_OOM);
+            h.call(f, Conv::Cdecl, &[0, m, what, detail])
+        } else {
+            let m = h.rebase(MSG_D3D_ERROR);
+            h.call(f, Conv::Cdecl, &[0, m, what, detail, hr])
+        }
+    }
+
+    /// `FUN_00a35a70(size, bind)` (`cdecl`; the buffer cell and
+    /// description at `frame`, the original's `ebp - 0x20`) -> the
+    /// buffer or 0: a dynamic D3D11 buffer (usage 2, CPU write 0x10000)
+    /// from the `GDraw` device's `CreateBuffer` (slot 3), a warning on
+    /// failure.
+    pub fn gdraw_create_dynamic_buffer(h: &mut impl Host, frame: u32, size: u32, bind: u32) -> u32 {
+        let dev = word(h, word(h, h.rebase(GDRAW)));
+        h.write(frame, [0_u32, size, 2, bind, 0x10000, 0, 0]);
+        let f = word(h, word(h, dev) + 0xc);
+        let hr = h.call(f, Conv::Stdcall, &[dev, frame + 4, 0, frame]);
+        if hr.cast_signed() < 0 {
+            d3d_warning(h, hr, TEXT_CREATE_BUFFER, TEXT_DYNAMIC_VB);
+            return 0;
+        }
+        word(h, frame)
+    }
+
+    /// `FUN_00a35b40(shader, code)` (`cdecl`) -> the call's `eax`:
+    /// `shader` = `code` (bytecode, size), then with bytecode the `GDraw`
+    /// device's `CreatePixelShader(bytecode, size, 0, &shader[1])` (slot
+    /// 15) into the second word, 0 there and a warning on failure.
+    pub fn gdraw_create_pixel_shader(h: &mut impl Host, shader: u32, code: u32) -> u32 {
+        let a = word(h, code);
+        h.write(shader, a);
+        let set = word(h, shader) != 0;
+        let b = word(h, code + 4);
+        h.write(shader + 4, b);
+        if !set {
+            return b;
+        }
+        let dev = word(h, word(h, h.rebase(GDRAW)));
+        let f = word(h, word(h, dev) + 0x3c);
+        let (bytecode, size) = (word(h, shader), word(h, shader + 4));
+        let hr = h.call(f, Conv::Stdcall, &[dev, bytecode, size, 0, shader + 4]);
+        if hr.cast_signed() >= 0 {
+            return hr;
+        }
+        let r = d3d_warning(h, hr, TEXT_CREATE_PS, TEXT_EMPTY);
+        h.write(shader + 4, 0_u32);
+        r
+    }
+
+    /// `VbfMkvReader_Read(this; offset (i64), size, buffer)` (`thiscall`,
+    /// `ret 0x10`) -> 0, or -1 (no file `+0x10`, a negative offset or
+    /// size, an offset at or past the length `+8` (i64), a failed seek
+    /// or a short read): `size` bytes at `offset` read into `buffer`.
+    pub fn mkv_reader_read(
+        h: &mut impl Host,
+        this: u32,
+        lo: u32,
+        hi: u32,
+        size: u32,
+        buffer: u32,
+    ) -> u32 {
+        let file = word(h, this + 0x10);
+        let off = (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        if file == 0 || off < 0 || size.cast_signed() < 0 {
+            return u32::MAX;
+        }
+        if size == 0 {
+            return 0;
+        }
+        let len =
+            (u64::from(word(h, this + 0xc)) << 32 | u64::from(word(h, this + 8))).cast_signed();
+        if off >= len {
+            return u32::MAX;
+        }
+        let r = method(h, PFILE_SEEK, file, &[lo, 0]);
+        if r != lo || (r.cast_signed() >> 31).cast_unsigned() != hi {
+            return u32::MAX;
+        }
+        let file = word(h, this + 0x10);
+        let n = method(h, PSTREAM_FILE_READ, file, &[buffer, size]);
+        if n < size { u32::MAX } else { 0 }
+    }
+
+    /// `g_GDrawContext` (`0x01a858c4`) and
+    /// `Phyre_PRendering_PRenderer_syncRender` (`thiscall`).
+    pub const GDRAW_CONTEXT: u32 = 0x01a8_58c4;
+    pub const RENDERER_SYNC_RENDER: u32 = 0x005b_c3f0;
+
+    /// `FUN_00a3ce00(x, y, w, h)` (`cdecl`; the viewport and rectangle
+    /// at `frame`, the original's `ebp - 0x2c`) -> the `GDraw` state
+    /// pointer: the device context's viewport (`RSSetViewports`, slot
+    /// 44: x, y, w, h as floats, depth 0..1) and scissor rectangle
+    /// (`RSSetScissorRects`, slot 45), the rectangle also kept at
+    /// `GDraw` `+0x6fc` (x, y, w, h); `GDraw` `+0x9c4` cleared.
+    pub fn gdraw_set_viewport(
+        h: &mut impl Host,
+        frame: u32,
+        x: u32,
+        y: u32,
+        w: u32,
+        ht: u32,
+    ) -> u32 {
+        let g = word(h, h.rebase(GDRAW));
+        let ctx = word(h, g + 4);
+        let one = 1.0_f32.to_bits();
+        h.write(
+            frame,
+            [int_f32(x), int_f32(y), int_f32(w), int_f32(ht), 0, one],
+        );
+        let f = word(h, word(h, ctx) + 0xb0);
+        h.call(f, Conv::Stdcall, &[ctx, 1, frame]);
+        let g = word(h, h.rebase(GDRAW));
+        h.write(g + 0x704, w);
+        h.write(g + 0x700, y);
+        h.write(g + 0x6fc, x);
+        h.write(g + 0x708, ht);
+        h.write(frame + 0x18, [x, y, w.wrapping_add(x), y.wrapping_add(ht)]);
+        let ctx = word(h, g + 4);
+        let f = word(h, word(h, ctx) + 0xb4);
+        h.call(f, Conv::Stdcall, &[ctx, 1, frame + 0x18]);
+        let g = word(h, h.rebase(GDRAW));
+        h.write(g + 0x9c4, 0_u32);
+        g
+    }
+
+    /// An owned word array's words (`+8`, count `+4` with top bit "not
+    /// owned") freed with `Phyre_PhyreFree` and both cleared.
+    fn array_release(h: &mut impl Host, this: u32) {
+        let n = word(h, this + 4);
+        if n != 0 {
+            let p = word(h, this + 8);
+            if p != 0 && n >> 31 == 0 {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[p]);
+            }
+            h.write(this + 4, [0_u32, 0]);
+        }
+    }
+
+    /// `FUN_00a3d310(this)` (`thiscall`) -> `this`: a `GDraw` texture
+    /// record's constructor: words `+0..+0x18` 0, floats `+0x1c..+0x24`
+    /// 0, byte `+0x28` 0 (then the just-cleared array `+4` released,
+    /// which does nothing).
+    pub fn gdraw_record_ctor(h: &mut impl Host, this: u32) -> u32 {
+        h.write(this, [0_u32; 7]);
+        h.write(this + 0x28, 0_u8);
+        h.write(this + 0x1c, [0_u32; 3]);
+        array_release(h, this);
+        this
+    }
+
+    /// `FUN_00a3d410(this)` (`thiscall`): its teardown: the `GDraw`
+    /// context's renderer (`+4`) flushed (virtual slot 2) and synced,
+    /// then the array `+4` released (twice, as the inlined destructor
+    /// does: the second time the count is 0).
+    pub fn gdraw_record_release(h: &mut impl Host, this: u32) {
+        let ctx = word(h, h.rebase(GDRAW_CONTEXT));
+        if ctx != 0 {
+            let r = word(h, ctx + 4);
+            if r != 0 {
+                let f = word(h, word(h, r) + 8);
+                h.call(f, Conv::Thiscall(r), &[]);
+                let r = word(h, ctx + 4);
+                method(h, RENDERER_SYNC_RENDER, r, &[]);
+            }
+        }
+        array_release(h, this);
+        let n = word(h, this + 4);
+        if n >> 31 == 0 {
+            let p = word(h, this + 8);
+            if p != 0 {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[p]);
+            }
+        }
+        h.write(this + 4, [0_u32, 0]);
+    }
 }

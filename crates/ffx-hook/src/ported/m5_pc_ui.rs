@@ -1089,4 +1089,53 @@ ported! {
     Bitmap_init_00948750 @ 0x0094_8750 => extern "thiscall" fn bitmap_init(this: u32, bits: u32, cs: u32) -> u32 {
         ll::bitmap_init(&mut mem(), this, bits, cs)
     }
+
+    /// `FUN_00946840(this)`.
+    BucketTable_walk_00946840 @ 0x0094_6840 => extern "thiscall" fn bucket_table_walk(this: u32) -> u32 {
+        ll::bucket_table_walk(&mut mem(), this)
+    }
+    /// `FUN_00945b80(this)`.
+    PageManager_walk_00945b80 @ 0x0094_5b80 => extern "thiscall" fn page_manager_walk(this: u32) -> u32 {
+        ll::page_manager_walk(&mut mem(), this)
+    }
+    /// `FUN_00946660(this)`: the bucket table's destructor.
+    BucketTable_dtor_00946660 @ 0x0094_6660 => extern "thiscall" fn bucket_table_dtor(this: u32) -> u32 {
+        ll::bucket_table_dtor(&mut mem(), this)
+    }
+    /// `FUN_009453d0(this; key)`.
+    HashTable_remove_009453d0 @ 0x0094_53d0 => extern "thiscall" fn hash_remove(this: u32, key: u32) -> u32 {
+        ll::hash_remove(&mut mem(), this, key)
+    }
+
+    /// `FUN_00a26480(this; buffer, value)`.
+    Array_pushInto_00a26480 @ 0x00a2_6480 => extern "thiscall" fn array_push_into(this: u32, buffer: u32, value: u32) -> u32 {
+        ll::array_push_into(&mut mem(), this, buffer, value)
+    }
+    /// `FUN_00a35a70(size, bind)` (the buffer cell and description).
+    GDraw_createDynamicBuffer_00a35a70 @ 0x00a3_5a70 => extern "C" fn gdraw_create_dynamic_buffer(size: u32, bind: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        ll::gdraw_create_dynamic_buffer(&mut mem(), f.at(), size, bind)
+    }
+    /// `FUN_00a35b40(shader, code)`.
+    GDraw_createPixelShader_00a35b40 @ 0x00a3_5b40 => extern "C" fn gdraw_create_pixel_shader(shader: u32, code: u32) -> u32 {
+        ll::gdraw_create_pixel_shader(&mut mem(), shader, code)
+    }
+    /// `VbfMkvReader_Read(this; offset, size, buffer)`.
+    VbfMkvReader_Read @ 0x00a3_e2b0 => extern "thiscall" fn mkv_reader_read(this: u32, lo: u32, hi: u32, size: u32, buffer: u32) -> u32 {
+        ll::mkv_reader_read(&mut mem(), this, lo, hi, size, buffer)
+    }
+
+    /// `FUN_00a3ce00(x, y, w, h)` (the viewport and rectangle).
+    GDraw_setViewport_00a3ce00 @ 0x00a3_ce00 => extern "C" fn gdraw_set_viewport(x: u32, y: u32, w: u32, ht: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        ll::gdraw_set_viewport(&mut mem(), f.at(), x, y, w, ht)
+    }
+    /// `FUN_00a3d310(this)`.
+    GDrawRecord_ctor_00a3d310 @ 0x00a3_d310 => extern "thiscall" fn gdraw_record_ctor(this: u32) -> u32 {
+        ll::gdraw_record_ctor(&mut mem(), this)
+    }
+    /// `FUN_00a3d410(this)`.
+    GDrawRecord_release_00a3d410 @ 0x00a3_d410 => extern "thiscall" fn gdraw_record_release(this: u32) {
+        ll::gdraw_record_release(&mut mem(), this);
+    }
 }

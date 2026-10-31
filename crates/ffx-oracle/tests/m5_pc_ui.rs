@@ -6093,3 +6093,314 @@ fn rp4_page_manager_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn rp4_bucket_tables_match_the_original() {
+    // Bucket tables with random marks (the imports and callees stubbed),
+    // the page manager's walk over two of them, and hash removals from
+    // tables of 4..64 slots filled with clusters that wrap and nodes
+    // away from home.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6840);
+        for case in 0..60 {
+            let block = t.zeros(0xa00);
+            // table 0 last: it overlaps the other two, which only the
+            // page manager's walk (its table walk stubbed) passes on
+            for table in [0xd0, 0x4ec, 0] {
+                let bits = t.zeros(0x20);
+                for k in 0..8 {
+                    let v = if rng.chance(3) { 0 } else { rng.next() };
+                    t.w32(bits + 4 * k, v);
+                }
+                t.w32(block + table + 0x40c, bits);
+                t.w32(block + table + 0x404, rng.next());
+                for i in 0..0x100 {
+                    let v = rng.next();
+                    t.w32(block + table + 4 + 4 * i, v);
+                }
+            }
+            for iat in [
+                ll::ENTER_CRITICAL_SECTION_IAT,
+                ll::LEAVE_CRITICAL_SECTION_IAT,
+                ll::DELETE_CRITICAL_SECTION_IAT,
+            ] {
+                t.stub_import(iat, false, 1, 1, rng.next());
+            }
+            t.stubs(&[
+                (ll::LIST_WALK_TO_END, true, 0, 0, rng.next()),
+                (ll::ARENA_RESET, true, 0, 0, rng.next()),
+                (ll::PAGE_BUCKET_DTOR, true, 0, 0, rng.next()),
+                (ll::ARENA_FREE, true, 1, 1, rng.next()),
+                (ll::BITMAP_FREE, true, 0, 0, rng.next()),
+            ]);
+            match case % 3 {
+                0 => t.check(
+                    "FUN_00946840",
+                    0x0094_6840,
+                    Conv::Thiscall(block),
+                    &[],
+                    |m| Out::U32(ll::bucket_table_walk(m, block)),
+                ),
+                1 => t.check(
+                    "FUN_00946660",
+                    0x0094_6660,
+                    Conv::Thiscall(block),
+                    &[],
+                    |m| Out::U32(ll::bucket_table_dtor(m, block)),
+                ),
+                _ => {
+                    t.stub(ll::PAGE_TABLE_WALK, true, 0, 0, rng.next());
+                    t.check(
+                        "FUN_00945b80",
+                        0x0094_5b80,
+                        Conv::Thiscall(block),
+                        &[],
+                        |m| Out::U32(ll::page_manager_walk(m, block)),
+                    );
+                }
+            }
+            t.reset();
+        }
+        for _ in 0..200 {
+            let n = 4_u32 << rng.below(5);
+            let slots = t.zeros(4 * n as usize);
+            let nodes = t.zeros(0x10 * n as usize);
+            let fill = 1 + rng.below(n - 1);
+            let mut used = Vec::new();
+            for k in 0..fill {
+                // a home, then the first free slot from it
+                let home = if rng.chance(2) {
+                    n - 1 - rng.below(2)
+                } else {
+                    rng.below(n)
+                };
+                let mut s = home;
+                while used.contains(&s) {
+                    s = (s + 1) % n;
+                }
+                used.push(s);
+                let node = nodes + 0x10 * k;
+                t.w32(node, 0x100 + k);
+                t.w32(node + 4, home | (rng.below(16) * n));
+                t.w32(node + 8, rng.next());
+                t.w32(slots + 4 * s, node);
+            }
+            let this = t.words(&[n, slots, fill, 0, 0, rng.next()]);
+            let pick = rng.below(fill);
+            let pnode = nodes + 0x10 * pick;
+            let key = t.words(&[0x100 + pick, rng.next()]);
+            // the key's hash: the node's own
+            let mut b = [0_u8; 4];
+            Mem::read_bytes(&t.a, pnode + 4, &mut b);
+            t.w32(key + 4, u32::from_le_bytes(b));
+            t.check(
+                "FUN_009453d0",
+                0x0094_53d0,
+                Conv::Thiscall(this),
+                &[key],
+                |m| Out::U32(ll::hash_remove(m, this, key)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // four functions
+fn rp4_gdraw_and_reader_helpers_match_the_original() {
+    // The array push (no buffer, empty, owned or not, the same buffer);
+    // the GDraw buffer and pixel shader creation through a fake device
+    // whose methods succeed, run out of memory or fail; the MKV reader's
+    // bounds, seek and read results.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6480);
+        for case in 0..240 {
+            match case % 4 {
+                0 => {
+                    let n = rng.below(6) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+                    let old = t.zeros(0x20);
+                    for k in 0..8 {
+                        let v = rng.next();
+                        t.w32(old + 4 * k, v);
+                    }
+                    let this = t.words(&[n, old]);
+                    let buffer = match rng.below(4) {
+                        0 => 0,
+                        1 => old,
+                        _ => t.zeros(0x20),
+                    };
+                    let value = t.words(&[rng.next()]);
+                    t.stub(ll::PHYRE_FREE, false, 1, 0, rng.next());
+                    t.check(
+                        "FUN_00a26480",
+                        0x00a2_6480,
+                        Conv::Thiscall(this),
+                        &[buffer, value],
+                        |m| Out::U32(ll::array_push_into(m, this, buffer, value)),
+                    );
+                }
+                1 | 2 => {
+                    let hr = [0, 1, 0x8007_000e, 0x8000_4005][rng.below(4) as usize];
+                    let mut vt = vec![0; 16];
+                    vt[3] = t.stub_code(0x5103, false, 4, 4, hr);
+                    vt[15] = t.stub_code(0x510f, false, 5, 5, hr);
+                    let vt = t.words(&vt);
+                    let dev = t.words(&[vt, 0, 0, 0]);
+                    let cell = t.words(&[dev]);
+                    t.g32(ll::GDRAW, cell);
+                    // the out-of-memory warning has no code word
+                    let words = if hr == 0x8007_000e { 4 } else { 5 };
+                    t.stub_import(ll::SEND_WARNING_IAT, false, words, 0, rng.next());
+                    if case % 4 == 1 {
+                        let (size, bind) = (rng.below(0x10000), rng.below(0x100));
+                        t.skip = 4;
+                        t.check_framed(
+                            "FUN_00a35a70",
+                            0x00a3_5a70,
+                            Conv::Cdecl,
+                            &[size, bind],
+                            0x20,
+                            |m, ebp| {
+                                Out::U32(ll::gdraw_create_dynamic_buffer(m, ebp - 0x20, size, bind))
+                            },
+                        );
+                        t.skip = 0;
+                    } else {
+                        let code =
+                            t.words(&[if rng.chance(4) { 0 } else { rng.next() }, rng.next()]);
+                        let shader = t.zeros(8);
+                        t.check(
+                            "FUN_00a35b40",
+                            0x00a3_5b40,
+                            Conv::Cdecl,
+                            &[shader, code],
+                            |m| Out::U32(ll::gdraw_create_pixel_shader(m, shader, code)),
+                        );
+                    }
+                }
+                _ => {
+                    let file = if rng.chance(8) { 0 } else { rng.next() };
+                    let len = u64::from(rng.below(0x3000)) | (u64::from(rng.below(2)) << 32);
+                    let this = t.words(&[0, 0, len as u32, (len >> 32) as u32, file]);
+                    let off = match rng.below(4) {
+                        0 => u64::MAX - u64::from(rng.below(4)),
+                        1 => len.wrapping_sub(u64::from(rng.below(2))),
+                        _ => u64::from(rng.below(0x3000)) | (u64::from(rng.below(2)) << 32),
+                    };
+                    let size = match rng.below(4) {
+                        0 => 0,
+                        1 => 0x8000_0000 | rng.below(4),
+                        _ => rng.below(0x100),
+                    };
+                    let seek = if rng.chance(4) {
+                        rng.next()
+                    } else {
+                        off as u32
+                    };
+                    let read = if rng.chance(4) {
+                        size.wrapping_sub(1)
+                    } else {
+                        size
+                    };
+                    t.stubs(&[
+                        (ll::PFILE_SEEK, true, 2, 2, seek),
+                        (ll::PSTREAM_FILE_READ, true, 2, 2, read),
+                    ]);
+                    let buffer = rng.next();
+                    let (lo, hi) = (off as u32, (off >> 32) as u32);
+                    t.check(
+                        "VbfMkvReader_Read",
+                        0x00a3_e2b0,
+                        Conv::Thiscall(this),
+                        &[lo, hi, size, buffer],
+                        |m| Out::U32(ll::mkv_reader_read(m, this, lo, hi, size, buffer)),
+                    );
+                }
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_gdraw_records_match_the_original() {
+    // The viewport (a fake device context), the record's constructor
+    // over garbage, and its release with or without a context and
+    // renderer, arrays owned or not, empty or not.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_ce00);
+        for case in 0..120 {
+            let mut vt = vec![0; 46];
+            vt[2] = t.stub_code(0x5102, true, 0, 0, rng.next());
+            vt[44] = t.stub_code(0x512c, false, 3, 3, rng.next());
+            vt[45] = t.stub_code(0x512d, false, 3, 3, rng.next());
+            let vt = t.words(&vt);
+            let ctx = t.words(&[vt, 0, 0, 0]);
+            let g = t.zeros(0xa00);
+            t.w32(g + 4, ctx);
+            // the flag the viewport clears, and its neighbour
+            t.w32(g + 0x9c0, rng.next());
+            t.w32(g + 0x9c4, rng.next());
+            t.g32(ll::GDRAW, g);
+            let gctx = if rng.chance(4) {
+                0
+            } else {
+                t.words(&[0, if rng.chance(4) { 0 } else { ctx }])
+            };
+            t.g32(ll::GDRAW_CONTEXT, gctx);
+            t.stubs(&[
+                (ll::PHYRE_FREE, false, 1, 0, rng.next()),
+                (ll::RENDERER_SYNC_RENDER, true, 0, 0, rng.next()),
+            ]);
+            let words: Vec<u32> = (0..12).map(|_| rng.next()).collect();
+            let rec = t.words(&words);
+            let n = match rng.below(3) {
+                0 => 0,
+                1 => rng.below(8) | 0x8000_0000,
+                _ => rng.below(8),
+            };
+            t.w32(rec + 4, n);
+            if rng.chance(4) {
+                t.w32(rec + 8, 0);
+            }
+            match case % 3 {
+                0 => {
+                    let a = [
+                        rng.next() % 2000,
+                        rng.next() % 2000,
+                        rng.below(4000),
+                        rng.below(4000),
+                    ];
+                    let a = a.map(|v| v.wrapping_sub(500));
+                    t.skip = 4;
+                    t.check_framed(
+                        "FUN_00a3ce00",
+                        0x00a3_ce00,
+                        Conv::Cdecl,
+                        &a,
+                        0x2c,
+                        |m, ebp| {
+                            Out::U32(ll::gdraw_set_viewport(
+                                m,
+                                ebp - 0x2c,
+                                a[0],
+                                a[1],
+                                a[2],
+                                a[3],
+                            ))
+                        },
+                    );
+                    t.skip = 0;
+                }
+                1 => t.check("FUN_00a3d310", 0x00a3_d310, Conv::Thiscall(rec), &[], |m| {
+                    Out::U32(ll::gdraw_record_ctor(m, rec))
+                }),
+                _ => t.check("FUN_00a3d410", 0x00a3_d410, Conv::Thiscall(rec), &[], |m| {
+                    ll::gdraw_record_release(m, rec);
+                    Out::None
+                }),
+            }
+            t.reset();
+        }
+    });
+}
