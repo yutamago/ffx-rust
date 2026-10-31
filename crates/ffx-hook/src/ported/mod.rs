@@ -140,6 +140,7 @@ mod vfx_shape;
 
 #[cfg(not(ffx_host))]
 pub(crate) use battle::ms_screen_process;
+pub(crate) use m5_battle::{clock_seed as clock_seed_port, clock_seed_on};
 pub(crate) use m5_main::{
     animate as ffx_application_animate, animate_on as ffx_application_animate_on,
 };

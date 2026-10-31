@@ -236,6 +236,9 @@ pub unsafe extern "C" fn clock_seed() -> u32 {
         log(&format!("  harness: random seed {seed}"));
         return seed;
     }
+    if crate::ported::clock_seed_on() {
+        return crate::ported::clock_seed_port();
+    }
     // SAFETY: the trampoline runs the original.
     unsafe {
         let original: unsafe extern "C" fn() -> u32 =
