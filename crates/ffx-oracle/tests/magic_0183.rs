@@ -23,6 +23,10 @@ fn camera_point() {
         0x233
     });
     t.set_u32(t.img.word(at + 0x04), f(0.75));
+    // the offsets it adds (globals, 0 until set)
+    for (k, op) in [(0u16, 0x2c), (1, 0x3b), (2, 0x43), (3, 0x5a)] {
+        t.set_u32(t.img.word(at + op), f(0.25 + f32::from(k)));
+    }
     let v = SCRATCH + 0x100;
     for k in [0u32, 1] {
         for i in 0..4 {

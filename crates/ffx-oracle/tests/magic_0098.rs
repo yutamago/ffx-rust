@@ -597,6 +597,11 @@ fn fade_frame() {
         t.set_u32(w(&t, 0x1b), clock);
         t.set_u32(w(&t, 0x27), clock);
         t.set_u32(w(&t, 0x30), level.to_bits());
+        // the second level (a global): above, at and below K1 by case
+        t.set_u32(
+            w(&t, 0x105),
+            (k1 + (clock & 3) as f32 * 0.25 - 0.25).to_bits(),
+        );
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
