@@ -5,6 +5,7 @@
 
 use crate::l5_objhost::{LIST_REMOVE, OBJ_BLOCK_INIT, TASKS_INIT, list_remove};
 use crate::m0052::{PLACE, SCALED_CAMERA, place, scaled_camera};
+use crate::m0074::{PICK, pick};
 use crate::m0596::{host_start, host_start_head};
 use crate::nodes::{INSERT, node_insert};
 use crate::ob_model::wrap_once;
@@ -13,8 +14,8 @@ use crate::pushes::Pushes;
 use crate::runtime::{slot_of_thunk, slot_target};
 use crate::s4_fam446::{START_CHILD_B, start_child_b};
 use crate::s4_misc::{
-    MOTION_SCRIPT, SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, motion_script, scale_task,
-    start_object_at, trail_draw, unlist_free,
+    MOTION_SCRIPT, SCALE_TASK, START_OBJECT_ANIM, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE,
+    motion_script, scale_task, start_object_anim, start_object_at, trail_draw, unlist_free,
 };
 use crate::s4_small::{
     ACTOR_INDEX, CAMERA_FACE_ACTOR, ID_LIST, NAMED_PARTS, SOUND_RECORD, actor_index,
@@ -28,6 +29,7 @@ use crate::sb_misc::{NODE_APPEND, POOL_TAKE, node_append, pool_take};
 use crate::sb_misc::{TIMELINE_STOP_GLOBAL, timeline_stop_global};
 use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
+use crate::sb_vm::{SHOW_OTHERS, show_others};
 use crate::{Callee, Frame, Game, Image, Libm, Out, Ret, Sig, Xmm};
 
 /// The word at `f + off` of the code (an operand).
@@ -6022,5 +6024,124 @@ pub const CLOCK_LIGHT: Sig = Sig {
     len: 715,
     hash: 0xd431_c96c_8ece_52ff,
     calls: &[(0x60, Callee::Sig(&SCALED_CAMERA)), (0x2c3, Callee::Any)],
+    imports: &[],
+};
+
+/// Three objects started at each target (cdecl, no arguments; a /GS
+/// frame). For each of the `*G_N` targets `ch = T[G_MAP[i]]`: its point
+/// 0x11 (slots 262 and 268 into a local, `w` 1), the facing `K - turn`
+/// (slot 333, ST0) wrapped once, and a value `v = rnd % 5` (slot 324,
+/// signed); then three records (0x130 bytes each from `*G_S + 0xbe0`):
+/// started ([`start_object_anim`]: part 9, scale `(frnd(0.2) + K2) K3`,
+/// the value `v`), placed at the point, spun by `frnd(20)`, `frnd(20)`,
+/// `frnd(10)` (`+0xe0..+0xe8`), facing `+0xc4`; the third one gets the
+/// callback `CB` at `+0x100` and the target's pick ([`pick`]) at `+0x120`;
+/// `v += 5 + rnd % 10` after each. Then with `*G_X` 0 and a party member
+/// `*G_ID < 0x20` its position is put back (slots 217, 255), slot 211
+/// `(*G_SELF, 0)`, slot 213 `(*G_M, 0)` unless the halfword `*G_W` is
+/// set, `*G_DONE = 1`, and the others are shown ([`show_others`] with 1),
+/// whose `eax` it returns. `frnd` is slot 314 (ST0); each call sees the
+/// words the earlier ones left on the stack.
+///
+/// `magic_0563` 0x10005120 (723 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's loops, step by step
+pub fn objects_at_targets<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.esp;
+    let ebp = e.wrapping_sub(4);
+    let p = ebp.wrapping_sub(0x14);
+    let q = ebp.wrapping_sub(0x24);
+    let ch_of = |g: &G, i: u32, map: u32, table: u32| {
+        let m = u32::from(g.read::<u8>(g.read::<u32>(w(map)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * m))
+    };
+    let mut rec = g.read::<u32>(w(0x14)).wrapping_add(0xbe0);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0x23)) {
+        let ch = ch_of(g, i, 0x3e, 0x49);
+        let mut s = Pushes::default();
+        s.push_all(&[p + 8, p + 4, p, ch]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x5a), 262), 0);
+        s.push_all(&[p, 0x11, ch]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x6c), 268), 0);
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+        let ch2 = ch_of(g, i, 0x92, 0x9d);
+        let turn = st0_f32(slot_call(g, img, f, (0xa3, 333), &[ch2]));
+        let a = wrap_once(g, img, f, sub(k(g, 0xb6), turn), [0xc5, 0xd4, 0xde, 0xeb]);
+        let r = slot_call(g, img, f, (0xf5, 324), &[]).eax.cast_signed();
+        let mut v = r % 5;
+        for j in 0..3u32 {
+            let mut s = Pushes::default();
+            s.push(0x3e4c_cccd);
+            // call width: 12 (the most `Pushes::words` holds)
+            let x = st0_f32(s.call(g, slot_target(g, w(0x111), 314), 0));
+            let scale = mul(add(x, k(g, 0x131)), k(g, 0x141));
+            let start = img.rel32_target(f + 0x146);
+            start_object_anim(g, img, start, rec, scale, 9, v.cast_unsigned());
+            for o in [0u32, 4, 8, 0xc] {
+                let x = g.read::<u32>(p + o);
+                g.write::<u32>(rec + 0xd0 + o, x);
+            }
+            for (table, o, x) in [
+                (0x150u32, 0xe0u32, 0x41a0_0000u32),
+                (0x19c, 0xe4, 0x41a0_0000),
+                (0x1b6, 0xe8, 0x4120_0000),
+            ] {
+                s.set_top(x);
+                // call width: 12 (the most `Pushes::words` holds)
+                let y = st0_f32(s.call(g, slot_target(g, w(table), 314), 0));
+                g.write::<f32>(rec + o, y);
+            }
+            g.write::<f32>(rec + 0xc4, a);
+            if j == 2 {
+                g.write::<u32>(rec + 0x100, w(0x1ec));
+                let pk = pick(g, img, img.rel32_target(f + 0x1f1), i);
+                g.write::<u32>(rec + 0x120, pk);
+            }
+            rec = rec.wrapping_add(0x130);
+            let r = slot_call(g, img, f, (0x1fc, 324), &[]).eax.cast_signed();
+            v = v.wrapping_add(5).wrapping_add(r % 10);
+        }
+        i += 1;
+    }
+    let me = g.read::<u32>(w(0x241));
+    if g.read::<u32>(w(0x23a)) == 0 {
+        let id = g.read::<i32>(w(0x249));
+        if id < 0x20 {
+            slot_call(g, img, f, (0x257, 217), &[id.cast_unsigned(), q]);
+            slot_call(
+                g,
+                img,
+                f,
+                (0x269, 255),
+                &[id.cast_unsigned(), q, id.cast_unsigned(), q],
+            );
+        }
+    }
+    slot_call(g, img, f, (0x27a, 211), &[me, 0]);
+    if g.read::<u16>(w(0x28f)) == 0 {
+        let m = g.read::<u32>(w(0x2a2));
+        slot_call(g, img, f, (0x29a, 213), &[m, 0]);
+    }
+    g.write::<u32>(w(0x2b8), 1);
+    let eax = show_others(g, img, img.rel32_target(f + 0x2c1), e.wrapping_sub(0x38), 1);
+    Ret::eax(eax)
+}
+
+/// [`objects_at_targets`] (the `rel32`s: [`start_object_anim`],
+/// [`pick`], [`show_others`] and `__security_check_cookie`).
+pub const OBJECTS_AT_TARGETS: Sig = Sig {
+    len: 723,
+    hash: 0xc9b2_0fc5_1566_51c0,
+    calls: &[
+        (0x146, Callee::Sig(&START_OBJECT_ANIM)),
+        (0x1f1, Callee::Sig(&PICK)),
+        (0x2c1, Callee::Sig(&SHOW_OTHERS)),
+        (0x2cb, Callee::Any),
+    ],
     imports: &[],
 };

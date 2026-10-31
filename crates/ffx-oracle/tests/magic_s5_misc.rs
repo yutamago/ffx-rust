@@ -2825,3 +2825,78 @@ fn clock_lights() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn objects_at_targets_started() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x5120);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    rec_mem(&mut t, 333, 1, 0, None);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 7) - 3.0);
+    let calls = SCRATCH + 0x7e0;
+    t.stub(324, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        [7u32, 0xffff_fff3, 12, 0x8000_0001][(k % 4) as usize]
+    });
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    for (s, n) in [
+        (217u32, 2usize),
+        (255, 2),
+        (211, 2),
+        (213, 2),
+        (293, 1),
+        (296, 2),
+    ] {
+        rec_mem(&mut t, s, n, 0, None);
+    }
+    // the others shown: a group of three actors
+    let group = SCRATCH + 0x740;
+    t.write(group, &[5, 1, 9, 0]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        group
+    });
+    // the object starts: their part's programs and the pool
+    let start = t.img.rel32_target(f + 0x146);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x200);
+    t.set_u32(op(&t, start, 0x5e), SCRATCH + 0x280);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x3400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x3400);
+    rec_mem(&mut t, 714, 5, 0, None);
+    let pa = t.img.rel32_target(start + 0x99);
+    let free = op(&t, pa, 0x04);
+    let nodes = op(&t, pa, 0x27) - 8;
+    let map = SCRATCH + 0x700;
+    t.write(map, &[1, 0, 2, 3]);
+    t.set_u32(op(&t, f, 0x3e), map);
+    let table = op(&t, f, 0x49);
+    for k in 0..4u32 {
+        t.set_u32(table + 4 * k, 0x0cc0_0000 + k);
+    }
+    let base = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x14), base);
+    for (n, x, id, wmode) in [(1u32, 0u32, 3u32, 0u16), (2, 1, 0x40, 1), (0, 0, 0x1f, 0)] {
+        for i in 0..16 {
+            t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+            t.set_u32(nodes + 12 * i + 8, 0);
+        }
+        t.set_u16(free, 12);
+        t.write(base + 0xbe0, &varied(0x130 * 6, n));
+        t.set_u32(op(&t, f, 0x23), n);
+        t.set_u32(op(&t, f, 0x23a), x);
+        t.set_u32(op(&t, f, 0x249), id);
+        t.set_u16(op(&t, f, 0x28f), wmode);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
