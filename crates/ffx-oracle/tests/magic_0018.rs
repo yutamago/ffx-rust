@@ -108,3 +108,45 @@ fn bounce_step() {
         t.check_entry(at, c, &[SCRATCH + 0x500], Eax::Checked);
     }
 }
+
+/// The start-up (`magic_0018` 0x100022a0, `magic_0019` 0x10004620) with
+/// the motion flag clear and set, two or three free pool nodes, into an
+/// empty and a filled task list.
+fn start_cases(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
+    let w = |t: &magic::Twin, off: u32| t.img.word(at + off);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
+    rec(&mut t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    rec(&mut t, 413, 1, |_, a| 0x0413_0000 ^ a[0]);
+    // the record table: the pointer the start-up sets first (+0x3c)
+    let recs = w(&t, 0x3c);
+    t.write(recs, &[0x6d; 0x700]);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    let table = w(&t, 0x20d);
+    for (flag, free, last) in [(0u32, 2u16, 0u32), (1, 3, SCRATCH + 0x600), (1, 2, 0)] {
+        t.set_u32(w(&t, 0x92), flag);
+        for op in [0xb8, 0xbe, 0xc8, 0xd2, 0xdc] {
+            t.set_u32(w(&t, op), 0xa5a5_a5a5);
+        }
+        t.set_u32(w(&t, 0x6d), 1 + flag);
+        t.set_u32(table + 4 + 4 * flag, 0x0bad_0000 + flag);
+        for i in 1..=3 {
+            t.write(node(i), &[0x5a; 0x1c]);
+            t.set_u32(node(i), node(if i == 1 { 3 } else { i - 1 }));
+            t.set_u32(node(i) + 4, node(if i == 3 { 1 } else { i + 1 }));
+        }
+        t.set_u32(w(&t, 0x10e), node(1));
+        t.set_u16(w(&t, 0xf4), free);
+        t.write(SCRATCH + 0x600, &[0x44; 0x1c]);
+        t.set_u32(w(&t, 0x169), last);
+        t.set_u32(w(&t, 0x179), last);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn start() {
+    start_cases(N, 0x22a0);
+    start_cases(19, 0x4620);
+}

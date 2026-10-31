@@ -367,3 +367,229 @@ pub const BUILD: Sig = Sig {
     calls: &[(0x94, Callee::Sig(&NODE_INIT_BIG))],
     imports: &[],
 };
+
+/// `mov dword [w(dst)], w(val)` for each pair, in order.
+fn stores<G: Game>(g: &mut G, img: &Image, f: u32, pairs: &[(u32, u32)]) {
+    for &(dst, val) in pairs {
+        g.write::<u32>(img.word(f + dst), img.word(f + val));
+    }
+}
+
+/// The start-up (0x10009040, no arguments, a frame of 0x30 bytes): all
+/// constant stores of the DLL's static objects, read from the code: a
+/// node put at the ring's tail (`+0x04`..`+0x38`), the root list's flag
+/// cleared, four static nodes (`A` `+0x5b`.., `B` `+0xe0`.., `C`
+/// `+0x17e`.., `D` `+0x219`..) appended to the root list (the last's
+/// links set in turn, the u16 count `+0xb1` raised by three and by one
+/// more), slot 672 `(1, X)` and `(0, Y)` (`+0x1f4`, `+0x285`), the effect
+/// node built ([`build`], a 10-word record on the frame), node `E`
+/// (`+0x2fd`..) appended to its own list, the static node
+/// ([`static_node`](crate::sa_misc::static_node)), slot 560 with slot
+/// 557's answer less bit 2, and the colour node
+/// ([`colour_node`](crate::s3_misc::colour_node), a group on the frame);
+/// three words cleared. Returns the colour node's `eax`.
+#[allow(clippy::too_many_lines)]
+pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    // push ebp; mov ebp, esp: ebp = esp - 4
+    let ebp = fr.esp.wrapping_sub(4);
+    let tail = g.read::<u32>(w(0x04));
+    g.write::<u32>(w(0x09), tail);
+    stores(
+        g,
+        img,
+        f,
+        &[(0x0f, 0x13), (0x19, 0x1d), (0x23, 0x27), (0x2d, 0x31)],
+    );
+    g.write::<u32>(tail + 4, w(0x38));
+    let last = g.read::<u32>(w(0x3d));
+    let v = g.read::<u32>(w(0x43));
+    g.write::<u32>(w(0x43), v & !1);
+    stores(g, img, f, &[(0x4d, 0x51), (0x57, 0x5b)]);
+    g.write::<u16>(w(0x62), 0xff);
+    stores(
+        g,
+        img,
+        f,
+        &[(0x6a, 0x6e), (0x74, 0x78), (0x7e, 0x82), (0x88, 0x8c)],
+    );
+    g.write::<u32>(w(0x91), last);
+    if last == w(0x96) {
+        g.write::<u32>(w(0x9e), w(0xa2));
+    } else {
+        g.write::<u32>(last + 4, w(0xab));
+    }
+    let mut count = g.read::<u16>(w(0xb1));
+    // ecx: the node just appended
+    let mut prev = w(0xb6);
+    count = count.wrapping_add(1);
+    for at in [0xbe, 0xc8, 0xd2] {
+        g.write::<u32>(w(at), 0);
+    }
+    stores(g, img, f, &[(0xdc, 0xe0)]);
+    g.write::<u16>(w(0xe7), 0xff);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            (0xef, 0xf3),
+            (0xf9, 0xfd),
+            (0x103, 0x107),
+            (0x10d, 0x111),
+            (0x117, 0x11b),
+        ],
+    );
+    if prev == w(0x121) {
+        g.write::<u32>(w(0x129), w(0x12d));
+    } else {
+        g.write::<u32>(w(0x135), w(0x139));
+    }
+    prev = w(0x13e);
+    count = count.wrapping_add(1);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            (0x146, 0x14a),
+            (0x150, 0x154),
+            (0x15a, 0x15e),
+            (0x164, 0x168),
+        ],
+    );
+    g.write::<u8>(w(0x16e), 1);
+    g.write::<u16>(w(0x176), 0xff);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            (0x17e, 0x182),
+            (0x188, 0x18c),
+            (0x192, 0x196),
+            (0x19c, 0x1a0),
+            (0x1a6, 0x1aa),
+        ],
+    );
+    if prev == w(0x1b0) {
+        g.write::<u32>(w(0x1b8), w(0x1bc));
+    } else {
+        g.write::<u32>(w(0x1c4), w(0x1c8));
+    }
+    count = count.wrapping_add(1);
+    g.write::<u16>(w(0x1d0), count);
+    let table = g.read::<u32>(w(0x1d5));
+    stores(g, img, f, &[(0x1db, 0x1df), (0x1e5, 0x1e9)]);
+    let s = g.read::<u32>(table.wrapping_add(0xa80));
+    g.call(s, 0, &[1, w(0x1f4)]);
+    let last = g.read::<u32>(w(0x1fd));
+    g.write::<u32>(w(0x206), 0x3f80_0000);
+    g.write::<u16>(w(0x211), 0xff);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            (0x219, 0x21d),
+            (0x223, 0x227),
+            (0x22d, 0x231),
+            (0x237, 0x23b),
+        ],
+    );
+    g.write::<u32>(w(0x240), last);
+    if last == w(0x245) {
+        g.write::<u32>(w(0x24d), w(0x251));
+    } else {
+        g.write::<u32>(last + 4, w(0x25a));
+    }
+    let table = g.read::<u32>(w(0x25f));
+    let c = g.read::<u16>(w(0x266));
+    g.write::<u16>(w(0x266), c.wrapping_add(1));
+    stores(g, img, f, &[(0x26c, 0x270), (0x276, 0x27a)]);
+    let s = g.read::<u32>(table.wrapping_add(0xa80));
+    g.call(s, 0, &[0, w(0x285)]);
+    g.write::<u32>(w(0x295), 0x3f80_0000);
+    // the record at [ebp - 0x30]
+    let rec = ebp.wrapping_sub(0x30);
+    let words = [
+        w(0x2a0),
+        w(0x2a7),
+        w(0x2ae),
+        0,
+        0,
+        0,
+        w(0x2ca),
+        w(0x2d1),
+        w(0x2d8),
+        w(0x2df),
+    ];
+    for (k, v) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * k, v);
+    }
+    build(g, img, img.rel32_target(f + 0x2e4), rec);
+    let last = g.read::<u32>(w(0x2e9));
+    g.write::<u32>(w(0x2ef), 0x3f80_0000);
+    stores(g, img, f, &[(0x2f9, 0x2fd)]);
+    g.write::<u16>(w(0x304), 0xff);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            (0x30c, 0x310),
+            (0x316, 0x31a),
+            (0x320, 0x324),
+            (0x32a, 0x32e),
+        ],
+    );
+    g.write::<u32>(w(0x333), last);
+    if last == w(0x338) {
+        g.write::<u32>(w(0x340), w(0x344));
+    } else {
+        g.write::<u32>(last + 4, w(0x34d));
+    }
+    let c = g.read::<u16>(w(0x354));
+    g.write::<u16>(w(0x354), c.wrapping_add(1));
+    stores(g, img, f, &[(0x35d, 0x361)]);
+    g.write::<u32>(w(0x367), 0);
+    g.write::<u8>(w(0x371), 1);
+    crate::sa_misc::static_node(g, img, img.rel32_target(f + 0x377));
+    let s = slot_target(g, w(0x37c), 0x8b4 / 4);
+    let v = g.call(s, 0, &[]).eax & !4;
+    let s = slot_target(g, w(0x38d), 0x8c0 / 4);
+    g.call(s, 0, &[v]);
+    // the group at [ebp - 0x8]
+    let grp = ebp.wrapping_sub(8);
+    g.write::<u32>(grp, w(0x3a2));
+    g.write::<u32>(grp + 4, w(0x3a9));
+    stores(g, img, f, &[(0x3af, 0x3b3)]);
+    let at = img.rel32_target(f + 0x3b8);
+    let eax = crate::s3_misc::colour_node(
+        g,
+        img,
+        &Frame {
+            at,
+            esp: ebp.wrapping_sub(0x34),
+            ecx: grp,
+            ..Frame::default()
+        },
+    );
+    for at in [0x3be, 0x3c8, 0x3d2] {
+        g.write::<u32>(w(at), 0);
+    }
+    Ret::eax(eax)
+}
+
+/// [`start_up`] (990 bytes, 1 overlay).
+pub const START_UP: Sig = Sig {
+    len: 990,
+    hash: 0xb905_9dc7_3278_2b8d,
+    calls: &[
+        (0x2e4, Callee::Sig(&BUILD)),
+        (0x377, Callee::Sig(&crate::sa_misc::STATIC_NODE)),
+        (0x3b8, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+    ],
+    imports: &[],
+};

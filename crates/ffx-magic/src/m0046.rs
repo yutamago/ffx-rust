@@ -70,3 +70,77 @@ pub const START_OBJECT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The start-up (0x10001370, no arguments): two pointer globals set
+/// (`+0x17`, `+0x21`), slot 719 `(NAME, 8, 0)` (`+0x11`) into `+0x2f`,
+/// the part's set-up ([`part_init`](crate::l5_objhost::part_init)), the
+/// object `+0x44` started with the scale `K` (`+0x3c`,
+/// [`start_object`]); the model `M` = `table[**B]` (`+0x62`, `B` at
+/// `+0x4e`) gets slot 262 `(M, X, Y, Z)` (`+0x6c`, `+0x5b`, `+0x53`) and
+/// slot 268 `(M, 0x11, X')` (`+0x7f`); a record of words set (`+0x95`
+/// 1.0, `+0x9f`..`+0xbd` 0, `+0xc7`, `+0xd1` the immediates, `+0xdb`,
+/// `+0xe5` 0, u16 `+0xef` 0, `+0xf5` its immediate); a task node off the
+/// free list ([`pop_node`](crate::m0032::pop_node)) appended to the task
+/// list (first `+0x104`/`+0x130`, last `+0x115`/`+0x122`/`+0x138`).
+/// Returns 0. Each slot call passes the words the original leaves on the
+/// stack.
+pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let s719 = slot_target(g, w(0x01), 0xb3c / 4);
+    g.write::<u32>(w(0x17), w(0x1b));
+    g.write::<u32>(w(0x21), w(0x25));
+    let h = g.call(s719, fr.ecx, &[w(0x11), 8, 0]).eax;
+    g.write::<u32>(w(0x2f), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x34));
+    let k = g.read::<f32>(w(0x3c));
+    start_object(g, img, img.rel32_target(f + 0x49), w(0x44), k);
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x4e))));
+    let m = g.read::<u32>(w(0x62).wrapping_add(4 * b));
+    let s = slot_target(g, w(0x67), 0x418 / 4);
+    let earlier = [m, w(0x6c), w(0x5b), w(0x53)];
+    g.call(s, 0, &earlier);
+    let s = slot_target(g, w(0x7a), 0x430 / 4);
+    let mut args = vec![m, 0x11, w(0x7f)];
+    args.extend_from_slice(&earlier[..3]);
+    // call width: 6 (three words and the earlier call's first three)
+    g.call(s, 0, &args);
+    g.write::<u32>(w(0x95), 0x3f80_0000);
+    for at in [0x9f, 0xa9, 0xb3, 0xbd] {
+        g.write::<u32>(w(at), 0);
+    }
+    g.write::<u32>(w(0xc7), w(0xcb));
+    g.write::<u32>(w(0xd1), w(0xd5));
+    g.write::<u32>(w(0xdb), 0);
+    g.write::<u32>(w(0xe5), 0);
+    g.write::<u16>(w(0xef), 0);
+    g.write::<u32>(w(0xf5), w(0xf9));
+    let node = crate::m0032::pop_node(g, img, img.rel32_target(f + 0xfe));
+    let first = g.read::<u32>(w(0x104));
+    g.write::<u32>(node + 4, 0);
+    if first == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x130), node);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(w(0x138), node);
+    } else {
+        let last = g.read::<u32>(w(0x115));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(w(0x122), node);
+    }
+    crate::Ret::eax(0)
+}
+
+/// [`start_up`] (319 bytes, 1 overlay).
+pub const START_UP: Sig = Sig {
+    len: 319,
+    hash: 0x20ef_39c3_853f_8f8c,
+    calls: &[
+        (0x34, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x49, Callee::Sig(&START_OBJECT)),
+        (0xfe, Callee::Sig(&crate::m0032::POP_NODE)),
+    ],
+    imports: &[],
+};

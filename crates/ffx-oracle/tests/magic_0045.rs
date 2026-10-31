@@ -112,3 +112,40 @@ fn start_up() {
         t.check_entry(e, Call::default(), &[arg], Eax::Checked);
     }
 }
+
+/// 0x10001f30: off, and on with each of slot 261's five flags set or
+/// clear (the last one clear counts up instead), with live timelines and
+/// idle ones.
+#[test]
+fn close_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1f30);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    recs(&mut t, &[(723, 1), (724, 2), (214, 1), (253, 0)]);
+    let flags = SCRATCH + 0x500;
+    rec(&mut t, 261, 1, move |m, a| m.r32(flags + 4 * (a[0] & 7)));
+    t.set_u32(w(&t, 0x0d), SCRATCH + 0x300);
+    t.set_u32(w(&t, 0x3f), SCRATCH + 0x304);
+    for (i, (on, bits)) in (0u32..).zip([(0u32, 0u32), (1, 0x1f), (1, 0), (1, 0x15), (1, 0x0a)]) {
+        t.set_u32(w(&t, 0x02), on);
+        for (k, flag) in [0u32, 4, 1, 2, 3].into_iter().enumerate() {
+            t.set_u32(flags + 4 * flag, (bits >> k) & 1);
+        }
+        for (k, tl) in (0u32..).zip([0x61, 0x6b, 0x8b, 0xab, 0xcb, 0xeb, 0xf5]) {
+            let tl = w(&t, tl);
+            let live = u32::from(i % 2 == 1 || i == 4);
+            t.set_u32(tl, 5);
+            t.set_u32(tl + 4, 1);
+            t.set_u32(tl + 8, live);
+            t.set_u32(tl + 0xc, live);
+            let events = SCRATCH + 0x5000 + 0x20 * k;
+            t.set_u32(tl + 0x10c, events);
+            t.write(events, &[0; 0x18]);
+            t.set_u32(events + 4, 9);
+        }
+        for (k, op) in (0u32..).zip([0x13, 0x31, 0x44, 0x105]) {
+            t.set_u32(w(&t, op), 0x0a00_0000 + k + 0x10 * i);
+        }
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

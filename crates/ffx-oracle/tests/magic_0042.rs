@@ -415,3 +415,64 @@ fn build() {
 fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
 }
+
+/// The start-up (0x10009040): into an empty and a filled root list (and
+/// the second list empty and filled), the ring's tail anywhere.
+#[test]
+fn start_up() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x9040);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    for (slot, k) in [
+        (672u32, 0u32),
+        (560, 1),
+        (281, 2),
+        (869, 3),
+        (331, 4),
+        (353, 5),
+        (271, 6),
+    ] {
+        t.stub(slot, move |m, a| {
+            let n = m.r32(SCRATCH + 0x3000 + 0x40 * k + 0x3c).wrapping_add(1);
+            m.w32(SCRATCH + 0x3000 + 0x40 * k + 0x3c, n);
+            m.w32(SCRATCH + 0x3000 + 0x40 * k + 4 * (n % 8), a[0] ^ n);
+            0x0100_0000 * (k + 1)
+        });
+    }
+    t.stub(557, |_, _| 0x0000_00ff);
+    t.stub_st0(790, |_, _| 0.25);
+    t.stub(558, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 3 + i);
+        }
+        0x558
+    });
+    let tail = SCRATCH + 0x500;
+    let other = SCRATCH + 0x600;
+    // every word the start-up stores (the conditional ones too) holds junk
+    for op in [
+        0x09, 0x0f, 0x19, 0x23, 0x2d, 0x43, 0x4d, 0x57, 0x62, 0x6a, 0x74, 0x7e, 0x88, 0x91, 0x9e,
+        0xbe, 0xc8, 0xd2, 0xdc, 0xe7, 0xef, 0xf9, 0x103, 0x10d, 0x117, 0x129, 0x135, 0x146, 0x150,
+        0x15a, 0x164, 0x16e, 0x176, 0x17e, 0x188, 0x192, 0x19c, 0x1a6, 0x1b8, 0x1c4, 0x1db, 0x1e5,
+        0x206, 0x211, 0x219, 0x223, 0x22d, 0x237, 0x240, 0x24d, 0x26c, 0x276, 0x295, 0x2ef, 0x2f9,
+        0x304, 0x30c, 0x316, 0x320, 0x32a, 0x333, 0x340, 0x35d, 0x367, 0x371, 0x3af, 0x3be, 0x3c8,
+        0x3d2,
+    ] {
+        t.set_u32(w(&t, op), 0x5a5a_5a5b);
+    }
+    for (ring, root, second) in [
+        (tail, false, false),
+        (tail, true, true),
+        (tail, false, true),
+    ] {
+        t.write(tail, &[0x55; 0x10]);
+        t.write(other, &[0x66; 0x20]);
+        t.set_u32(w(&t, 0x04), ring);
+        let r = w(&t, 0x96);
+        t.set_u32(w(&t, 0x3d), if root { other } else { r });
+        let r2 = w(&t, 0x338);
+        t.set_u32(w(&t, 0x2e9), if second { other + 0x10 } else { r2 });
+        t.set_u16(w(&t, 0xb1), 7);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -136,3 +136,135 @@ pub const FILL: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Sets up a part object (0x100032b0, internal: `edx` = the object, the
+/// float `xmm3` its four scales, stack words `index` and `owner`):
+/// `+0x40..+0x48` and `+0x50..+0x5c` 0, `+0x4c` 1.0, `+0x60..+0x6c` the
+/// scale; the word the pointer global (operand `+0x04`) points at gets
+/// the immediate at `+0x59`; slot 941 `(*O + 0x10)` (`O` at `+0x5e`)
+/// gives the program table and the `pppStartPart` wrapper starts the
+/// object (`ecx`) with `(0x1000, table[index], 1)`; the transform reset
+/// with `owner` and the immediate at `+0x8f`; then a pool node
+/// ([`pool_alloc`](crate::l5_objhost::pool_alloc)), when one is free,
+/// holds the object (`+0x8`) at the tail of the list (head `+0xbd`, tail
+/// `+0xaa`, count `+0xcc`; `+0x4` 0, `+0x0` the old tail). Returns the
+/// object.
+pub fn part_object<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: u32,
+    index: u32,
+    owner: u32,
+) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let p = g.read::<u32>(w(0x04));
+    for off in [0x48, 0x44, 0x40] {
+        g.write::<u32>(obj + off, 0);
+    }
+    g.write::<u32>(obj + 0x4c, ONE);
+    for off in [0x5c, 0x58, 0x54, 0x50] {
+        g.write::<u32>(obj + off, 0);
+    }
+    for off in [0x6c, 0x68, 0x64, 0x60] {
+        g.write::<u32>(obj + off, scale);
+    }
+    g.write::<u32>(p, w(0x59));
+    let o = g.read::<u32>(w(0x5e));
+    let s941 = slot_target(g, w(0x66), 941);
+    let table = g.call(s941, 0, &[g.read::<u32>(o + 0x10)]).eax;
+    let program = g.read::<u32>(table.wrapping_add(index.wrapping_mul(4)));
+    let wrapper = img.rel32_target(f + 0x84);
+    crate::opu_parts::start_part(g, img, wrapper, obj, 0x1000, program, 1);
+    crate::sa_misc::reset_transform(g, obj, owner, w(0x8f));
+    let node = crate::l5_objhost::pool_alloc(g, img, img.rel32_target(f + 0x9f));
+    if node == 0 {
+        return obj;
+    }
+    let tail = g.read::<u32>(w(0xaa));
+    g.write::<u32>(node + 4, 0);
+    let count = if tail == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0xbd), node);
+        g.write::<u32>(w(0xc3), node);
+        w(0xcc)
+    } else {
+        g.write::<u32>(node, tail);
+        let tail = g.read::<u32>(w(0xd8));
+        g.write::<u32>(tail + 4, node);
+        g.write::<u32>(w(0xe1), node);
+        w(0xea)
+    };
+    g.write::<u32>(node + 8, obj);
+    let n = g.read::<u32>(count);
+    g.write::<u32>(count, n.wrapping_add(1));
+    obj
+}
+
+/// [`part_object`] (243 bytes, 1 overlay).
+pub const PART_OBJECT: Sig = Sig {
+    len: 243,
+    hash: 0x59cf_2bf2_6360_f1b6,
+    calls: &[
+        (0x84, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x97, Callee::Sig(&crate::sa_misc::RESET_TRANSFORM)),
+        (0x9f, Callee::Sig(&crate::l5_objhost::POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// The objects' frame (0x10001930, cdecl `(task)`, an aligned frame):
+/// [`run_objects`](crate::l5_objhost::run_objects); when it says 1 (no
+/// object ran), the task's state `+0x14` becomes 3 and its record
+/// (`task[8]`) gets the callback at `+0x2d` (`+0x10`); then each of the
+/// four 0x250-byte records from `*R + 0x70` (`R` at `+0x19`): slot 941
+/// `(*rec)` gives a model, slot 772 `(model, i)` a 64-bit value that goes
+/// to slot 779 `(lo, hi, model, i)` (the earlier words left on the stack)
+/// with the game flag `*L` (`+0x56`) 1 around it, and [`fill`] of the
+/// record's `+0x24`. Returns `run_objects`' answer, or the lock pointer
+/// [`fill`] leaves in `eax` after the fourth record.
+pub fn objects_frame<G: Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    // push ebp; and esp, -8; four pushes: the call's esp
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(16 + 4);
+    let run = img.rel32_target(f + 0xb);
+    let r = crate::l5_objhost::run_objects(g, img, run, esp);
+    if r != 1 {
+        return crate::Ret::eax(r);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let rec = g.read::<u32>(task + 8);
+    g.write::<u32>(rec + 0x10, w(0x2d));
+    let mut at = g.read::<u32>(w(0x19)).wrapping_add(0x70);
+    let fill_f = img.rel32_target(f + 0x7f);
+    for i in 0..4u32 {
+        let s941 = slot_target(g, w(0x34), 941);
+        let model = g.call(s941, 0, &[g.read::<u32>(at)]).eax;
+        let s772 = slot_target(g, w(0x48), 772);
+        let v = g.call(s772, 0, &[model, i]);
+        let lock = g.read::<u32>(w(0x56));
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        let s779 = slot_target(g, w(0x5f), 779);
+        g.call(s779, 0, &[v.eax, v.edx, model, i]);
+        let lock = g.read::<u32>(w(0x72));
+        g.write::<u32>(lock, saved);
+        fill(g, img, fill_f, at + 0x24);
+        at = at.wrapping_add(0x250);
+    }
+    crate::Ret::eax(g.read::<u32>(img.word(fill_f + 0x3d)))
+}
+
+/// [`objects_frame`] (150 bytes, 1 overlay).
+pub const OBJECTS_FRAME: Sig = Sig {
+    len: 150,
+    hash: 0xc64c_aa89_daa7_4bdf,
+    calls: &[
+        (0xb, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x7f, Callee::Sig(&FILL)),
+    ],
+    imports: &[],
+};

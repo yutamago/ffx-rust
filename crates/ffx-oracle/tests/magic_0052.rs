@@ -171,3 +171,60 @@ fn the_helpers_bind_in_every_carrier() {
         }
     }
 }
+
+/// A start-up of the `flag_head` kind: the flag clear and set, into an
+/// empty and a filled task list. `ops`: the model byte pointers, the
+/// `rel32` of the (first) pool take, the task list's first and last.
+fn start_up_cases(n: u16, rva: u32, b: [u32; 2], take_at: u32, first_at: u32, last_at: u32) {
+    let Some(mut t) = Twin::load(n) else { return };
+    t.init();
+    let at = t.at(rva);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    for (slot, k) in [(262u32, 0u32), (6, 1), (548, 2), (413, 3), (215, 4)] {
+        t.stub(slot, move |m, a| {
+            for (i, v) in (0u32..).zip(&a[..1]) {
+                m.w32(SCRATCH + 0x800 + 0x40 * k + 4 * i, *v);
+            }
+            0x0100_0000 * (k + 1)
+        });
+    }
+    // the model byte (both reads go through one global), the byte after
+    // it non-zero
+    let bytes = SCRATCH + 0x500;
+    t.set_u32(w(&t, b[0]), bytes);
+    t.set_u32(w(&t, b[1]), bytes);
+    t.write(bytes, &[2, 0x40]);
+    t.set_u32(w(&t, 0x56) + 8, 0x00ee_0001);
+    t.set_u32(w(&t, 0x7e) + 8, 0x00ee_0002);
+    // the words the start-up clears hold junk
+    for op in [0x29, 0xb7, 0xd1] {
+        t.set_u32(w(&t, op), 0x5a5a_5a5a);
+    }
+    let take = t.img.rel32_target(at + take_at);
+    let (count, head) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    let last = SCRATCH + 0x1900;
+    for (flag, first) in [(0u32, 0u32), (1, last), (1, 0), (0, last)] {
+        t.set_u32(w(&t, 0x01), flag << 11 | 0x8000_0400);
+        t.set_u32(w(&t, 0x11), 1);
+        for i in 1..=4 {
+            t.write(node(i), &[0x5a; 0x1c]);
+            t.set_u32(node(i), node(if i == 1 { 4 } else { i - 1 }));
+            t.set_u32(node(i) + 4, node(if i == 4 { 1 } else { i + 1 }));
+        }
+        t.set_u32(head, node(1));
+        t.set_u16(count, 4);
+        t.write(last, &[0x66; 0x10]);
+        t.set_u32(w(&t, first_at), first);
+        t.set_u32(w(&t, last_at), first);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// The start-ups of `magic_0052` (0x10001a80) and `magic_0064`
+/// (0x10002800).
+#[test]
+fn start_up() {
+    start_up_cases(N, 0x1a80, [0x3d, 0x68], 0xe7, 0xed, 0x104);
+    start_up_cases(64, 0x2800, [0x3c, 0x68], 0xdd, 0xe3, 0xf3);
+}

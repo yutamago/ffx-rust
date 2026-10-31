@@ -120,11 +120,13 @@ pub mod m0042;
 pub mod m0045;
 pub mod m0046;
 pub mod m0052;
+pub mod m0053;
 pub mod m0054;
 pub mod m0070;
 pub mod m0071;
 pub mod m0072;
 pub mod m0074;
+pub mod m0076;
 pub mod m0078;
 pub mod m0084;
 pub mod m0090;
@@ -1680,6 +1682,31 @@ ports! {
     "o4 more2 count_fade 0673@1c70" => o4_more2::COUNT_FADE_0673_1C70, o4_more2::count_fade;
     "o4 more2 clear_halves_slot 0519@2cf0" => o4_more2::CLEAR_HALVES_SLOT_0519_2CF0, o4_more2::clear_halves_slot;
     "o4 more2 slot_chain_jump 0446@4d30" => o4_more2::SLOT_CHAIN_JUMP_0446_4D30, o4_more2::slot_chain_jump;
+    // round 5, own rows
+    "m0003 spawn rings" => m0003::SPAWN_RINGS, m0003::spawn_rings;
+    "m0003 spawn node 0004" => m0003::SPAWN_NODE_0004, m0003::spawn_node;
+    "m0003 spawn node 0005" => m0003::SPAWN_NODE_0005, m0003::spawn_node;
+    "m0003 spawn facing 0006" => m0003::SPAWN_FACING, m0003::spawn_facing;
+    "m0003 spawn kind table 0007" => m0003::SPAWN_KIND_TABLE, m0003::spawn_kind_table;
+    "m0003 spawn kind branch 0008" => m0003::SPAWN_KIND_BRANCH, m0003::spawn_kind_branch;
+    "m0009 objects frame" => m0009::OBJECTS_FRAME, m0009::objects_frame;
+    "m0018 start 0018" => m0018::START_0018, m0018::start;
+    "m0018 start 0019" => m0018::START_0019, m0018::start;
+    "m0020 fade frame" => m0020::FADE_FRAME, m0020::fade_frame;
+    "m0020 fade end" => m0020::FADE_END, m0020::fade_end;
+    "m0020 close frame" => m0020::CLOSE_FRAME, m0020::close_frame;
+    "m0045 close frame" => m0045::CLOSE_FRAME, m0045::close_frame;
+    "m0046 start-up" => m0046::START_UP, m0046::start_up;
+    "m0052 start-up" => m0052::START_UP, m0052::start_up;
+    "m0053 sound step" => m0053::SOUND_GATE_STEP, m0053::sound_gate_step;
+    "m0053 sound step 0065" => m0053::SOUND_PLAIN_STEP, m0053::sound_plain_step;
+    "m0052 start-up 0064" => m0052::START_UP_0064, m0052::start_up_0064;
+    "m0042 start-up" => m0042::START_UP, m0042::start_up;
+    "m0076 model start" => m0076::MODEL_START_0076, m0076::model_start_0076;
+    "m0076 model start 0077" => m0076::MODEL_START_0077, m0076::model_start_0077;
+    "m0078 start" => m0078::START_0078, m0078::start_0078;
+    "m0078 start 0079" => m0078::START_0079, m0078::start_0079;
+    "m0078 start 0081" => m0078::START_0081, m0078::start_0081;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2242,6 +2269,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "o4 more2 object_node_edx 0307@b480",
         &o4_more2::OBJECT_NODE_EDX_0307_B480,
     ),
+    // round 5, own rows
+    ("m0009 part object", &m0009::PART_OBJECT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
