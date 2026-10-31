@@ -3016,3 +3016,60 @@ fn particles_steps_points() {
         t.check(f, c, &[], Eax::Checked, s4_small::actor_to_point);
     }
 }
+
+#[test]
+fn timeline_frames_drops_states() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x2c90);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 253, 0, move |m, _| m.r32(answer));
+    recs(&mut t, &[(723, 1), (724, 2), (214, 1)]);
+    for o in [0xd, 0x29, 0x34, 0x66] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x100 + o);
+    }
+    for (on, busy) in [(0u32, 0u32), (1, 0), (1, 1)] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(answer, busy);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(443) else { return };
+    recs(&mut t, &[(258, 1), (231, 3), (230, 2)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x1280);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x74), lock);
+    t.set_u32(op(&t, f, 0x67), SCRATCH + 0x88);
+    let part = SCRATCH + 0x100;
+    for a in [0u32, 1] {
+        t.write(part, &[0x44; 0x80]);
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check(
+            f,
+            Call::this(part),
+            &[],
+            Eax::Checked,
+            s4_small::part_drop_rates,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(392) else { return };
+    let f = t.at(0x2530);
+    let take = t.img.rel32_target(f + 0x65);
+    let block = SCRATCH + 0x2000;
+    t.set_u32(op(&t, f, 0x3), block);
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        t.write(block + 0xff0, &[0x11; 0xa0]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x6b), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x7f), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x6b), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

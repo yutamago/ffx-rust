@@ -1149,6 +1149,8 @@ ports! {
     "part drop (unlock)" => s4_small::PART_DROP_UNLOCK, s4_small::part_drop_unlock;
     "static node (arguments)" => s4_small::STATIC_NODE_ARGS, s4_small::static_node_args;
     "particles start (d)" => s4_small::PARTICLES_START_D, s4_small::particles_start_d;
+    "effect frame (timeline)" => s4_small::EFFECT_FRAME_TIMELINE, s4_small::effect_frame_timeline;
+    "colour state task" => s4_small::COLOUR_STATE_TASK, s4_small::colour_state_task;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
@@ -1551,6 +1553,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("level colour", &s4_small::LEVEL_COLOUR),
     ("walk, scale steps", &s4_small::WALK_SCALE_STEPS),
     ("actor to a point", &s4_small::ACTOR_TO_POINT),
+    ("part drop (rates)", &s4_small::PART_DROP_RATES),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

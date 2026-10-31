@@ -6483,3 +6483,135 @@ pub const ACTOR_TO_POINT: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// One frame of the effect while `G_ON` is set (else 0): `*G_A` 0, or 1
+/// when slot 253 answers 0; `*G_P` = `ITEM`; the screen and camera
+/// matrices (slots 723 `(*G_M)`, 724 `(*G_N, *G_M)`); `*G_Q` = `G_R`;
+/// the timeline runs ([`crate::sa_misc::timeline`]); when it is over,
+/// slot 214 `(*G_E)`, else `G_FRAMES` counts up (no arguments). Returns
+/// 1.
+///
+/// `magic_0188` 0x10002c90 (165 bytes; 2 DLLs).
+pub fn effect_frame_timeline<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    let a = rd(g, 0xd);
+    g.write::<u32>(a, 0);
+    if slot_call(g, img, f, (0x18, 253), &[]).eax == 0 {
+        let a = rd(g, 0x29);
+        g.write::<u32>(a, 1);
+    }
+    let p = rd(g, 0x34);
+    let m = rd(g, 0x3a);
+    g.write::<u32>(p, op(img, f, 0x40));
+    slot_call(g, img, f, (0x45, 723), &[m]);
+    let n = rd(g, 0x58);
+    slot_call(g, img, f, (0x52, 724), &[n, m]);
+    let q = rd(g, 0x66);
+    let r = rd(g, 0x6b);
+    g.write::<u32>(q, r);
+    if crate::sa_misc::timeline(g, img, img.rel32_target(f + 0x75)) == 0 {
+        let e = rd(g, 0x84);
+        slot_call(g, img, f, (0x7e, 214), &[e]);
+    } else {
+        let at = op(img, f, 0x9b);
+        let v = g.read::<u32>(at).wrapping_add(1);
+        g.write::<u32>(at, v);
+    }
+    Ret::eax(1)
+}
+
+/// [`effect_frame_timeline`].
+pub const EFFECT_FRAME_TIMELINE: Sig = Sig {
+    len: 165,
+    hash: 0x04ae_414c_6fcf_7312,
+    calls: &[(0x75, Callee::Sig(&crate::sa_misc::TIMELINE))],
+    imports: &[],
+};
+
+/// [`part_drop`] with the part's rates `+0x60..+0x68` 0.1875 and `+0x6c`
+/// 1.0 first and both matrices through slot 231/230 (internal, `ecx` =
+/// the part). Returns 1 when slot 712 answers 0, else 0.
+///
+/// `magic_0443` 0x10001280 (165 bytes; 2 DLLs).
+pub fn part_drop_rates<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    let p = fr.ecx;
+    for off in [0x60, 0x64, 0x68] {
+        g.write::<u32>(p.wrapping_add(off), 0x3e40_0000);
+    }
+    g.write::<u32>(p.wrapping_add(0x6c), 0x3f80_0000);
+    slot_call(g, img, f, (0x1, 258), &[p]);
+    let (c, b, a) = (rd(g, 0x30), rd(g, 0x3b), rd(g, 0x47));
+    slot_call(g, img, f, (0x35, 231), &[a, b, c, p]);
+    let (e, d) = (rd(g, 0x4f), rd(g, 0x5a));
+    slot_call(g, img, f, (0x54, 230), &[d, e, a, b, c, p]);
+    let ptr = rd(g, 0x67);
+    g.write::<u32>(ptr, op(img, f, 0x6f));
+    let lock = rd(g, 0x74);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    let r = slot_call(g, img, f, (0x82, 712), &[p, 0x30, d, e, a, b, c, p]).eax;
+    let lock = rd(g, 0x90);
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_drop_rates`].
+pub const PART_DROP_RATES: Sig = Sig {
+    len: 165,
+    hash: 0x2aae_1ba2_b511_addd,
+    calls: &[],
+    imports: &[],
+};
+
+/// The block's colour state (`*G + 0xff0`: colour bytes and halfwords,
+/// `+0x88` 0x18, `u16 +0x98` 0x48, `+0x90`/`+0x8c` 30, `+0x94` 0) and a
+/// task node for the callback (operand `+0xe`; [`take`], `+0x14` the
+/// state) appended to the task list (operands `+0x6b`, `+0x7f`, `+0x89`;
+/// `+0x98`, `+0x9d` when it was empty) (no arguments). Returns the node.
+///
+/// `magic_0392` 0x10002530 (165 bytes; 2 DLLs).
+pub fn colour_state_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = g.read::<u32>(op(img, f, 0x3)).wrapping_add(0xff0);
+    let at = |o: u32| s.wrapping_add(o);
+    g.write::<u32>(at(0x81), 0xff80_ffff);
+    g.write::<u8>(at(0x80), 0xff);
+    g.write::<u16>(at(0x85), 0xffff);
+    g.write::<u8>(at(0x87), 0);
+    g.write::<u32>(at(0x88), 0x18);
+    g.write::<u16>(at(0x98), 0x48);
+    g.write::<u32>(at(0x90), 0x1e);
+    g.write::<u32>(at(0x8c), 0x1e);
+    g.write::<u32>(at(0x94), 0);
+    let node = take(g, img, img.rel32_target(f + 0x65), op(img, f, 0xe));
+    let empty = g.read::<u32>(op(img, f, 0x6b)) == 0;
+    g.write::<u32>(node.wrapping_add(0x14), s);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if empty {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(op(img, f, 0x98), node);
+        g.write::<u32>(op(img, f, 0x9d), node);
+    } else {
+        let tail = g.read::<u32>(op(img, f, 0x7f));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(op(img, f, 0x89), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`colour_state_task`].
+pub const COLOUR_STATE_TASK: Sig = Sig {
+    len: 165,
+    hash: 0x32c0_d319_2a31_876f,
+    calls: &[(0x65, Callee::Sig(&TAKE))],
+    imports: &[],
+};
