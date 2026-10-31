@@ -271,3 +271,120 @@ harvest_test!(opu_vran_add, 0x0081_a4a0, args = 2, |m: &mut Oracle, s| {
         m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
     })
 });
+
+// Developer-save states (docs/harness.md, "Developer saves"): functions no
+// replay or session had reached, harvested from the sweep's snapshots
+// (~/ffx-work/devsaves/snapshots, ~/ffx-work/devsaves/harvest).
+fn cdecl(m: &mut Oracle, f: u32, a: &[u32]) -> u32 {
+    m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+}
+
+harvest_test!(
+    ppp_shape_rand_flip,
+    0x0074_19e0,
+    args = 2,
+    |m: &mut Oracle, s| {
+        ffx_vfx::mat::bridge::ppp_shape_rand_flip(m, s.arg(0), s.arg(1));
+    }
+);
+harvest_test!(
+    ppp_get_rot_matrix_zyx,
+    0x0072_cc70,
+    args = 2,
+    |m: &mut Oracle, s| {
+        ffx_vfx::mat::bridge::ppp_get_rot_matrix(m, s.arg(0), s.arg(1), ffx_vfx::mat::order::ZYX);
+    }
+);
+harvest_test!(
+    ppp_shape_rev_matrix,
+    0x0074_1470,
+    args = 3,
+    |m: &mut Oracle, s| { ffx_vfx::mat::bridge::ppp_shape_rev_matrix(m, s.arg(0), s.arg(2)) }
+);
+harvest_test!(
+    ppp_draw_shape_rev_draw,
+    0x0074_15a0,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        ffx_vfx::part::bridge::ppp_draw_shape_rev(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut cdecl,
+        );
+    }
+);
+harvest_test!(
+    ppp_ke_lns_arnd_t_draw,
+    0x0075_a190,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let kind = ffx_vfx::lns::bridge::Lns::Arnd;
+        ffx_vfx::lns::bridge::ppp_ke_lns_t_draw(m, kind, s.arg(0), s.arg(1), s.arg(2), &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_crn_t_draw,
+    0x0075_a900,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let kind = ffx_vfx::lns::bridge::Lns::Crn;
+        ffx_vfx::lns::bridge::ppp_ke_lns_t_draw(m, kind, s.arg(0), s.arg(1), s.arg(2), &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_arnd_t_ot_draw,
+    0x0075_a250,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        let kind = ffx_vfx::lns::bridge::Lns::Arnd;
+        ffx_vfx::lns::bridge::ppp_ke_lns_t_ot_draw(m, kind, s.arg(0), frame, &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_crn_t_ot_draw,
+    0x0075_a9e0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        let kind = ffx_vfx::lns::bridge::Lns::Crn;
+        ffx_vfx::lns::bridge::ppp_ke_lns_t_ot_draw(m, kind, s.arg(0), frame, &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_clm_t_draw,
+    0x0075_a540,
+    args = 3,
+    |m: &mut Oracle, s| {
+        ffx_vfx::lns::bridge::ppp_ke_lns_clm_t_draw(m, s.arg(0), s.arg(1), s.arg(2), &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_clm_t_ot_draw,
+    0x0075_a610,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        ffx_vfx::lns::bridge::ppp_ke_lns_clm_t_ot_draw(m, s.arg(0), frame, &mut cdecl)
+    }
+);
+harvest_test!(
+    ppp_ke_lns_lp_t_draw,
+    0x0075_b160,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        ffx_vfx::lns::bridge::ppp_ke_lns_lp_t_draw(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut cdecl,
+        )
+    }
+);

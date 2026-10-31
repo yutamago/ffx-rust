@@ -122,6 +122,21 @@ fn resolve(spec: &str) -> Result<String, String> {
     Ok(format!("{folder}{prefix}{slot:03}"))
 }
 
+/// The title script's part around its Load menu (`test20.ebp`): before
+/// the menu `0x00aa(1)` and `AtelSetEventMode(2)`, after it
+/// `Native_MusicFadeOut(60)`, `Native_FadeOut(1)`, `0x01c2` and the map
+/// fade's frames and type 0. The jump itself is the caller's (`loadsave`:
+/// `Native_MapJump(-1, 0)`; `devsave`: the developers' loader).
+pub(crate) fn leave_title() {
+    call(SET_CTRL0_FLAG_210, &[1]);
+    call(ATEL_SET_EVENT_MODE, &[2]);
+    native(NATIVE_MUSIC_FADE_OUT, &[60]);
+    native(NATIVE_FADE_OUT, &[1]);
+    native(NATIVE_01C2, &[]);
+    native(NATIVE_SET_MAP_FADE_FRAMES, &[0]);
+    native(NATIVE_SET_MAP_FADE_TYPE, &[0]);
+}
+
 /// Loads the save `spec` names and starts its map; the reply names the
 /// file, the map and the entrance.
 ///
@@ -173,14 +188,7 @@ pub fn load(spec: &str) -> Result<String, String> {
     call(ATEL_CLEAR_FORCE_PLACE_ID, &[]);
     call(TK_MENU_JUMP_TO_LOADED_SCENE, &[]);
     call(SAVE_DATA_SET_SCREEN_STATE, &[0]);
-    // The title script around its Load menu.
-    call(SET_CTRL0_FLAG_210, &[1]);
-    call(ATEL_SET_EVENT_MODE, &[2]);
-    native(NATIVE_MUSIC_FADE_OUT, &[60]);
-    native(NATIVE_FADE_OUT, &[1]);
-    native(NATIVE_01C2, &[]);
-    native(NATIVE_SET_MAP_FADE_FRAMES, &[0]);
-    native(NATIVE_SET_MAP_FADE_TYPE, &[0]);
+    leave_title();
     // The jump needs the running event to hold control (ctrl byte 0 bit 7,
     // `AtelSetEventJump2`); the title script does, from ctrl work 0.
     let context = rebase(SCRIPT_CONTEXT) as *mut u32;
