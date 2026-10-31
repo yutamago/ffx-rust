@@ -1296,6 +1296,7 @@ ports! {
     "objects at targets" => s5_misc::OBJECTS_AT_TARGETS, s5_misc::objects_at_targets;
     "scene_light" => s5_misc::SCENE_LIGHT, s5_misc::scene_light;
     "spray_on_cue" => s5_misc::SPRAY_ON_CUE, s5_misc::spray_on_cue;
+    "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

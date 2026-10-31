@@ -6392,3 +6392,104 @@ pub const SPRAY_ON_CUE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A thrown weapon bouncing on the floor (cdecl `(task)`, `task[5]` the
+/// object; an aligned frame): the count `+0x50c` down to 0, gravity `K`
+/// into the velocity `+0x2a4`, the position `+0x260..` moved by the
+/// velocity `+0x2a0..`. At or below the floor `y = *G_B + 0x2f84 - K1`
+/// it bounces: the velocity scaled by `K2` (y) and `K3` (x, z) into
+/// `+0x270..+0x278`, the y part cleared when it points down, x and z
+/// cleared unless they point against the bounds' signs `+0x2b0`, `+0x2b8`
+/// (cleared when below 0 with the bound below 0, else when at or above
+/// 0), copied back into the velocity (`+0x2ac = +0x27c`), `y` the floor,
+/// and the spins `+0x290`, `+0x294` scaled by `|v| / +0x27c` (the
+/// original's scale-back of `x` and `z` for an upward bounce cannot run:
+/// the y part was just cleared when it was above 0). Then the angles
+/// `+0x280 += +0x290` and `+0x284 += +0x298`, each wrapped once, and the
+/// matrix ([`weapon_matrix`]). At count 0 `*G_B + 0xd750` counts it and
+/// the task goes back to its pool ([`give_back`], whose `eax` it returns);
+/// else it returns [`weapon_matrix`]'s.
+///
+/// `magic_0555` 0x10003180 (747 bytes; 2 DLLs).
+pub fn weapon_bounce<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let task = fr.arg(g, 0);
+    let b = g.read::<u32>(w(0xf));
+    let obj = g.read::<u32>(task + 0x14);
+    let r = |g: &G, o: u32| g.read::<f32>(obj + o);
+    let n = g.read::<i32>(obj + 0x50c);
+    if n > 0 {
+        g.write::<i32>(obj + 0x50c, n - 1);
+    }
+    let vy = add(r(g, 0x2a4), k(g, 0x57));
+    g.write::<f32>(obj + 0x2a4, vy);
+    for o in [0u32, 4, 8] {
+        let x = add(r(g, 0x260 + o), r(g, 0x2a0 + o));
+        g.write::<f32>(obj + 0x260 + o, x);
+    }
+    let floor = sub(g.read::<f32>(b.wrapping_add(0x2f84)), k(g, 0xa9));
+    if r(g, 0x264) >= floor {
+        let vy = mul(r(g, 0x2a4), k(g, 0xd2));
+        let vx = mul(r(g, 0x2a0), k(g, 0xe2));
+        let vz = mul(r(g, 0x2a8), k(g, 0xea));
+        g.write::<f32>(obj + 0x270, vx);
+        g.write::<f32>(obj + 0x274, vy);
+        g.write::<f32>(obj + 0x278, vz);
+        if vy > 0.0 {
+            g.write::<u32>(obj + 0x274, 0);
+        }
+        for (o, v, bound) in [(0x270u32, vx, 0x2b0u32), (0x278, vz, 0x2b8)] {
+            let cleared = if 0.0 > r(g, bound) { 0.0 > v } else { v >= 0.0 };
+            if cleared {
+                g.write::<u32>(obj + o, 0);
+            }
+        }
+        for o in [0u32, 4, 8, 0xc] {
+            let x = g.read::<u32>(obj + 0x270 + o);
+            g.write::<u32>(obj + 0x2a0 + o, x);
+        }
+        g.write::<f32>(obj + 0x264, floor);
+        let (x, y, z) = (r(g, 0x2a0), r(g, 0x2a4), r(g, 0x2a8));
+        let s = add(add(mul(x, x), mul(y, y)), mul(z, z));
+        let q = div(f64::from(s).sqrt() as f32, r(g, 0x27c));
+        for o in [0x290u32, 0x294] {
+            let x = mul(r(g, o), q);
+            g.write::<f32>(obj + o, x);
+        }
+    }
+    let ops = [0x263, 0x26b, 0x273, 0x26b];
+    let a = wrap_once(g, img, f, add(r(g, 0x290), r(g, 0x280)), ops);
+    g.write::<f32>(obj + 0x280, a);
+    let a = wrap_once(g, img, f, add(r(g, 0x298), r(g, 0x284)), ops);
+    g.write::<f32>(obj + 0x284, a);
+    // push ebp; and esp, -8; sub esp, 0xc; three pushes and the argument
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let eax = weapon_matrix(
+        g,
+        img,
+        img.rel32_target(f + 0x2c5),
+        top.wrapping_sub(0x20),
+        obj.wrapping_add(0x280),
+        obj.wrapping_add(0x260),
+    );
+    if g.read::<i32>(obj + 0x50c) > 0 {
+        return Ret::eax(eax);
+    }
+    bump(g, b.wrapping_add(0xd750));
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0x2e0), task))
+}
+
+/// [`weapon_bounce`] (the `rel32`s: `_libm_sse2_sqrt_precise`,
+/// [`weapon_matrix`] and [`give_back`]).
+pub const WEAPON_BOUNCE: Sig = Sig {
+    len: 747,
+    hash: 0x8c24_62a0_00d3_c4ef,
+    calls: &[
+        (0x214, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2c5, Callee::Sig(&WEAPON_MATRIX)),
+        (0x2e0, Callee::Sig(&GIVE_BACK)),
+    ],
+    imports: &[],
+};

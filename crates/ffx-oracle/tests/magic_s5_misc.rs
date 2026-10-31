@@ -3008,3 +3008,70 @@ fn sprays_on_cue() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn weapon_bounces() {
+    let Some(mut t) = twin(555) else { return };
+    let f = t.at(0x3180);
+    rec_mem(&mut t, 562, 0, 0, None);
+    rec_mem(&mut t, 219, 2, 0, None);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [277u32, 15, 16, 17] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, _| f64::from(s) / 64.0);
+    }
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, None);
+    }
+    rec_mem(&mut t, 825, 1, 0, None);
+    rec_mem(&mut t, 913, 3, 16, None);
+    let task = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x1000;
+    let b = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0xf), b);
+    t.set_u32(b + 0x2f84, 2.0f32.to_bits());
+    let floor = 2.0 - f32::from_bits(t.u32(op(&t, f, 0xa9)));
+    let fl = |x: f32| x.to_bits();
+    // (count, y above the floor, velocity, bounds, angles)
+    for (k, (count, dy, v, bounds, ang)) in [
+        (
+            3u32,
+            -5.0f32,
+            [1.0f32, 0.5, -1.0],
+            [1.0f32, -1.0],
+            [0.5f32, -0.5],
+        ),
+        (3, 5.0, [1.0, 0.5, -1.0], [1.0, -1.0], [3.1, -3.1]),
+        (2, 5.0, [-1.0, -3.0, 1.0], [-1.0, 1.0], [-3.1, 3.1]),
+        (1, 5.0, [-1.0, 4.0, 1.0], [-1.0, -1.0], [0.0, 1.0]),
+        (1, 5.0, [1.0, 4.0, 0.0], [1.0, 1.0], [6.0, -6.0]),
+        (0, -5.0, [1.0, 0.0, 1.0], [0.0, 0.0], [1.0, 2.0]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(obj, &varied(0x600, k));
+        t.write(task, &varied(0x40, k + 7));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.set_u32(task + 0x14, obj);
+        t.set_u32(obj + 0x50c, count);
+        t.set_u32(obj + 0x264, fl(floor + dy));
+        for (i, x) in v.into_iter().enumerate() {
+            t.set_u32(obj + 0x2a0 + 4 * i as u32, fl(x));
+        }
+        t.set_u32(obj + 0x27c, fl(2.5));
+        t.set_u32(obj + 0x2b0, fl(bounds[0]));
+        t.set_u32(obj + 0x2b8, fl(bounds[1]));
+        for (i, x) in ang.into_iter().enumerate() {
+            t.set_u32(obj + 0x280 + 4 * i as u32, fl(x));
+        }
+        for o in [0x290u32, 0x294, 0x298] {
+            t.set_u32(obj + o, fl(0.25 + o as f32 / 4096.0));
+        }
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
