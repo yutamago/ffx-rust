@@ -78,6 +78,7 @@ pub mod o4_effect;
 pub mod o4_fam2;
 pub mod o4_fam3;
 pub mod o4_fam4;
+pub mod o4_fam5;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_small;
@@ -1293,6 +1294,16 @@ ports! {
     "o4 fam4 three_tasks_keep 0361@1330" => o4_fam4::THREE_TASKS_KEEP_0361_1330, o4_fam4::three_tasks_keep;
     "o4 fam4 slot_attach_mode_par 0194@1620" => o4_fam4::SLOT_ATTACH_MODE_PAR_0194_1620, o4_fam4::slot_attach_mode_par;
     "o4 fam4 slot_attach_mode_par 0359@1420" => o4_fam4::SLOT_ATTACH_MODE_PAR_0359_1420, o4_fam4::slot_attach_mode_par;
+    "o4 fam5 attach_mode_wait 0313@1340" => o4_fam5::ATTACH_MODE_WAIT_0313_1340, o4_fam5::attach_mode_wait;
+    "o4 fam5 attach_mode_wait 0313@1630" => o4_fam5::ATTACH_MODE_WAIT_0313_1630, o4_fam5::attach_mode_wait;
+    "o4 fam5 part_shape 0665@1810" => o4_fam5::PART_SHAPE_0665_1810, o4_fam5::part_shape;
+    "o4 fam5 part_shape 0666@17a0" => o4_fam5::PART_SHAPE_0666_17A0, o4_fam5::part_shape;
+    "o4 fam5 clear_three 0162@47e0" => o4_fam5::CLEAR_THREE_0162_47E0, o4_fam5::clear_three;
+    "o4 fam5 clear_three 0598@7e30" => o4_fam5::CLEAR_THREE_0598_7E30, o4_fam5::clear_three;
+    "o4 fam5 part_scale_by_index 0664@1420" => o4_fam5::PART_SCALE_BY_INDEX_0664_1420, o4_fam5::part_scale_by_index;
+    "o4 fam5 part_scale_by_index 0665@1610" => o4_fam5::PART_SCALE_BY_INDEX_0665_1610, o4_fam5::part_scale_by_index;
+    "o4 fam5 attach_mode32_par_wait 0421@14d0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0421_14D0, o4_fam5::attach_mode32_par_wait;
+    "o4 fam5 attach_mode32_par_wait 0535@14b0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0535_14B0, o4_fam5::attach_mode32_par_wait;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1662,6 +1673,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 fam4 mesh_flags 0392@4070",
         &o4_fam4::MESH_FLAGS_0392_4070,
+    ),
+    (
+        "o4 fam5 fade_record 0269@3210",
+        &o4_fam5::FADE_RECORD_0269_3210,
+    ),
+    (
+        "o4 fam5 fade_record 0325@2250",
+        &o4_fam5::FADE_RECORD_0325_2250,
     ),
 ];
 
