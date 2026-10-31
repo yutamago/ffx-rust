@@ -3687,3 +3687,177 @@ fn left2_ring_allocate_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_set_clip_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for (k, (set_target, range_err)) in [(0u32, 0u32), (0x11, 0), (0, 7), (0, 0)]
+            .into_iter()
+            .enumerate()
+        {
+            // the time controller: vt[4] answers its speed plus its offset
+            // (the controller's +0xc and +0x10: the object's +0x30, +0x34)
+            let c = vec![0xd9, 0x41, 0x0c, 0xd8, 0x41, 0x10, 0xc3]; // fld [ecx+0xc]; fadd [ecx+0x10]; ret
+            let off = t.rebase(l2::CLIP_DATA[0]);
+            t.w32(off, 0.375f32.to_bits());
+            let f = t.code(&c);
+            let vt = t.alloc(&[[0u8; 16].as_slice(), &f.to_le_bytes()].concat());
+            let this = t.junk(0x60, k as u8);
+            t.w32(this + 0x24, vt);
+            t.w32(this + 8, 1.25f32.to_bits());
+            t.stub(l2::CLIP_DATA[1], true, 1, 1, set_target);
+            // the time range: start 1.5, end 4.25 through the pointers
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00];
+            c.extend(1.5f32.to_bits().to_le_bytes());
+            c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]);
+            c.extend(4.25f32.to_bits().to_le_bytes());
+            c.push(0xb8);
+            c.extend(range_err.to_le_bytes());
+            c.extend([0xc2, 0x08, 0x00]);
+            let code = t.code(&c);
+            t.place(l2::CLIP_DATA[2], code);
+            t.stub(l2::CLIP_DATA[3], true, 1, 1, 0x33);
+            let clip = 0x0077_0000 + k as u32;
+            let what = format!("{label}: set clip case {k}");
+            t.this(&what, 0x0054_3150, this, &[clip], |g| {
+                let range = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::set_clip(g, this, clip, range))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_matrix_new_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut vals = Vec::new();
+        for i in 0..20u32 {
+            vals.extend(
+                (0.25f32 * f32::from(i as u16) - 1.0)
+                    .to_bits()
+                    .to_le_bytes(),
+            );
+        }
+        let table = t.alloc(&vals);
+        for (top, ud) in [(17u32, true), (2, true), (1, true), (5, true), (17, false)] {
+            t.stub(l2::LUA_MORE[2], false, 1, 0, top);
+            let block = if ud { t.junk(0x40, 3) } else { 0 };
+            t.stub(l2::LUA_MORE[6], false, 2, 0, block);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            t.stub_float_table(l2::MATRIX_NEW[0], 2, 1, table);
+            let what = format!("{label}: Matrix new top {top} ud {ud}");
+            t.cdecl(&what, 0x0057_0e30, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_new(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_matrix_look_at_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let vecs: Vec<u32> = [
+            [0.0f32, 1.0, 5.0, 9.0],
+            [0.5, 0.25, -2.0, 9.0],
+            [0.0, 1.0, 0.0, 9.0],
+        ]
+        .iter()
+        .map(|v| {
+            t.alloc(
+                &v.iter()
+                    .flat_map(|x| x.to_bits().to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+        // which arguments are vectors (touserdata), whether the metatables
+        // match (rawequal)
+        for (present, same) in [
+            ([true; 3], 1u32),
+            ([true, false, true], 1),
+            ([true; 3], 0),
+            ([false, true, true], 1),
+            ([true, true, false], 1),
+        ] {
+            let mut table = [0u32; 16];
+            for i in 0..3 {
+                if present[i] {
+                    table[i + 1] = vecs[i];
+                }
+            }
+            let bytes: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let tab = t.alloc(&bytes);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0xe0, 0x0f, 0x8b, 0x04, 0x85]; // mov eax, [esp+8]; and eax, 15; mov eax, [eax*4+tab]
+            c.extend(tab.to_le_bytes());
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(l2::LUA_INDEX[0], code);
+            t.stub(l2::LUA_INDEX[1], false, 2, 0, 1);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_INDEX[2], false, 3, 0, same);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            let ud = t.junk(0x40, 5);
+            t.stub(l2::LUA_MORE[6], false, 2, 0, ud);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            let what = format!("{label}: Matrix.LookAt {present:?} same {same}");
+            t.cdecl(&what, 0x0057_1200, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_look_at(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_matrix_index_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut keys: Vec<u32> = ["0", "3", "4", "/", "", "x", "00"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        keys.push(0);
+        for &(name, _) in l2::MATRIX_INDEX_METHODS
+            .iter()
+            .chain(l2::MATRIX_INDEX_STATICS.iter())
+        {
+            keys.push(t.rebase(name));
+        }
+        let m = t.alloc(
+            &(0..16u16)
+                .flat_map(|i| (f32::from(i) * 0.5).to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for (is_matrix, vector) in [(true, true), (true, false), (false, true)] {
+            for &key in &keys {
+                t.stub(l2::LUA_TOLSTRING, false, 3, 0, key);
+                t.stub(
+                    l2::MATRIX_INDEX[0],
+                    false,
+                    2,
+                    0,
+                    if is_matrix { m } else { 0 },
+                );
+                let v = if vector { t.junk(0x10, 2) } else { 0 };
+                t.stub(l2::MATRIX_INDEX[1], false, 1, 0, v);
+                t.stub(l2::LUA_MORE[4], false, 3, 0, 0);
+                let what = format!(
+                    "{label}: matrix index matrix {is_matrix} vector {vector} key {key:#x}"
+                );
+                t.cdecl(&what, 0x0057_1770, &[l], |g| Some(l2b::matrix_index(g, l)));
+                t.unstub();
+            }
+        }
+    }
+}

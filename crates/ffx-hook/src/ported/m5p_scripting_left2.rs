@@ -66,4 +66,23 @@ ported! {
     Phyre_PRingBuffer_Phyre_PScripting_PAsyncProcessBufferBlock__allocateBlock @ 0x005c_e6e0 => extern "thiscall" fn ring_allocate(ring: u32, size: u32) -> u32 {
         lb::ring_allocate(&mut mem(), ring, size)
     }
+    /// The animation utility's clip switch `(clip)`.
+    Phyre_PAnimation_PUtilityAnimation_setClip_00543150 @ 0x0054_3150 => extern "thiscall" fn set_clip(this: u32, clip: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        lb::set_clip(&mut mem(), this, clip, f.at())
+    }
+    /// The script's `Matrix(...)` constructor `(L)`.
+    Phyre_PScripting_Matrix_new_00570e30 @ 0x0057_0e30 => extern "C" fn matrix_new(l: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        lb::matrix_new(&mut mem(), l, f.at())
+    }
+    /// The script's `Matrix.LookAt(eye, target, up)` `(L)`.
+    Phyre_PScripting_Matrix_lookAt_00571200 @ 0x0057_1200 => extern "C" fn matrix_look_at(l: u32) -> u32 {
+        let mut f = StackFrame::<30>::new();
+        lb::matrix_look_at(&mut mem(), l, f.at())
+    }
+    /// The script's matrix `__index` `(L)`.
+    Phyre_PScripting_MatrixIndexHandler_00571770 @ 0x0057_1770 => extern "C" fn matrix_index(l: u32) -> u32 {
+        lb::matrix_index(&mut mem(), l)
+    }
 }

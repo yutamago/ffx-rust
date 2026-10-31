@@ -288,8 +288,35 @@ pub const RING_MESSAGES: [u32; 6] = [
 /// (on purpose, a write to address 0).
 pub const RING_MAX_WAITS: u32 = 10_000;
 
+/// `0x00543150`'s data and callees: the offset it negates, the
+/// controller's `setTarget`, the clip's time range, `setTimeController`
+/// (thiscall).
+pub const CLIP_DATA: [u32; 4] = [0x00ca_b918, 0x0052_6590, 0x0051_6a20, 0x0052_65f0];
+
+/// The `Matrix(...)` constructor's callees: `luaL_checknumber(L, i)` (the
+/// number in `ST0`, cdecl), `PMatrix4::identity(out)` (cdecl),
+/// `PMatrix4::copy(m)` (thiscall), `PMatrix4::lookAt(eye, target, up)`
+/// (thiscall).
+pub const MATRIX_NEW: [u32; 4] = [0x0094_c9e0, 0x0045_4cf0, 0x0045_3340, 0x0045_1c30];
+
+/// The matrix `__index`'s callees: the matrix userdata test `(L, i)` and
+/// the new vector `(L)` (cdecl).
+pub const MATRIX_INDEX: [u32; 2] = [0x0057_0d50, 0x0057_1070];
+/// The matrix methods `__index` gives (name, C function).
+pub const MATRIX_INDEX_METHODS: [(u32, u32); 2] =
+    [(0x00b3_0910, 0x0057_19a0), (0x00b3_091c, 0x0057_1e00)];
+/// The `Matrix` table's functions `__index` gives (name, C function).
+pub const MATRIX_INDEX_STATICS: [(u32, u32); 4] = [
+    (0x00b2_5008, 0x0057_13e0),
+    (0x00b2_5020, 0x0057_1480),
+    (0x00b2_5014, 0x0057_1540),
+    (0x00b3_0928, 0x0057_1200),
+];
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::CLIP_DATA;
+    use super::MATRIX_NEW;
     use super::{
         CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
         Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
@@ -301,6 +328,8 @@ pub mod bridge {
         REQUIRE_MORE, REQUIRE_STATE, RING_CALLS, RING_FRAME, RING_MAX_WAITS, RING_MESSAGES,
         STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA, VM_MATRIX, VM_VECTOR,
     };
+    use super::{MATRIX_INDEX, MATRIX_INDEX_METHODS, MATRIX_INDEX_STATICS};
+    use ffx_bridge::Mem;
 
     /// A `PString` word's pointer (bit 0 cleared).
     fn text(word: u32) -> u32 {
@@ -1298,5 +1327,213 @@ pub mod bridge {
         let msg = h.rebase(RING_MESSAGES[5]);
         h.call_sym(PRINTF, Conv::Cdecl, &[2, msg]);
         h.write(0, 0u32);
+    }
+
+    /// `0x00543150` (thiscall `(clip)`, `ret 4`, the animation utility's
+    /// clip switch): the time controller (`+0x24`) asked for its time
+    /// (`vt[4]`, a float) at speed 1 and offset `-[0x00cab918]`, then at
+    /// the old speed (`+8`), the offset (`+0x34`) moved by the difference;
+    /// the clip set (`+0`, `0x00526590` on `+0x38`); its time range
+    /// (`0x00516a20` into `range`: end, start; the original's frame) as
+    /// start `+0x1c` and length `+0x20`; the time controller handed over
+    /// (`0x005265f0`). The first callee error, else the last `eax`.
+    pub fn set_clip(h: &mut impl Host, this: u32, clip: u32, range: u32) -> u32 {
+        let c = f32::from_bits(h.read(h.rebase(CLIP_DATA[0])));
+        let neg = (-ffx_bridge::x87::Reg::load(c)).store();
+        let speed = ffx_bridge::x87::round_trip(f32::from_bits(h.read(this + 8)));
+        h.write(this + 0x30, 1.0f32.to_bits());
+        h.write(this + 0x34, neg.to_bits());
+        let tc = this + 0x24;
+        let vt: u32 = h.read(tc);
+        let f: u32 = h.read(vt + 0x10);
+        let a = h.call_st0(f, Conv::Thiscall(tc), &[]);
+        h.write(this + 0x30, speed.to_bits());
+        let vt: u32 = h.read(tc);
+        let f: u32 = h.read(vt + 0x10);
+        let b = h.call_st0(f, Conv::Thiscall(tc), &[]);
+        let off = f32::from_bits(h.read(this + 0x34));
+        let off = ffx_bridge::x87::Reg::load(a)
+            .sub_m32(b)
+            .add_m32(off)
+            .store();
+        h.write(this, clip);
+        h.write(this + 0x34, off.to_bits());
+        let r = h.call_sym(CLIP_DATA[1], Conv::Thiscall(this + 0x38), &[clip]);
+        if r != 0 {
+            return r;
+        }
+        let r = h.call_sym(CLIP_DATA[2], Conv::Thiscall(clip), &[range + 4, range]);
+        if r != 0 {
+            return r;
+        }
+        let start = f32::from_bits(h.read(range + 4));
+        let end = f32::from_bits(h.read(range));
+        h.write(this + 0x1c, ffx_bridge::x87::round_trip(start).to_bits());
+        h.write(
+            this + 0x20,
+            ffx_bridge::x87::Reg::load(start)
+                .subr_m32(end)
+                .store()
+                .to_bits(),
+        );
+        h.call_sym(CLIP_DATA[3], Conv::Thiscall(this + 0x38), &[this + 0xc])
+    }
+
+    /// The script's `Matrix(...)` constructor (`0x00570e30`, cdecl `(L)`, 1
+    /// result): a 0x40-byte userdata with the matrix metatable; with 16
+    /// numbers after the type its 16 floats, with one number that number
+    /// in all 16, else the identity (`0x00454cf0`), staged in `frame` (16
+    /// words, the original's `ebp - 0x44`) and copied (`0x00453340`).
+    /// Nothing more when the userdata cannot be made. 1.
+    pub fn matrix_new(h: &mut impl Host, l: u32, frame: u32) -> u32 {
+        let top = h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]);
+        let ud = h.call_sym(LUA_MORE[6], Conv::Cdecl, &[l, 0x40]);
+        if ud == 0 {
+            return 1;
+        }
+        let name = h.rebase(VM_DATA[1]);
+        h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+        h.call_sym(LUA_MORE[7], Conv::Cdecl, &[l, 0xffff_fffe]);
+        match top {
+            17 => {
+                for i in 0..16 {
+                    let v = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, i + 2]);
+                    h.write(frame + 4 * i, v.to_bits());
+                }
+                for i in 0..16 {
+                    let v = ffx_bridge::x87::round_trip(f32::from_bits(h.read(frame + 4 * i)));
+                    h.write(ud + 4 * i, v.to_bits());
+                }
+            }
+            2 => {
+                let v = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, 2]);
+                for i in 0..16 {
+                    h.write(frame + 4 * i, v.to_bits());
+                }
+                h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[frame]);
+            }
+            _ => {
+                let m = h.call_sym(MATRIX_NEW[1], Conv::Cdecl, &[frame]);
+                h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[m]);
+            }
+        }
+        1
+    }
+
+    /// The `Vector` userdata at stack index `i` (`lua_touserdata`, its
+    /// metatable the registry's vector one), else 0.
+    fn vector_arg(h: &mut impl Host, l: u32, i: u32) -> u32 {
+        let ud = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[l, i]);
+        if ud == 0 || h.call_sym(LUA_INDEX[1], Conv::Cdecl, &[l, i]) == 0 {
+            return 0;
+        }
+        let name = h.rebase(VM_DATA[0]);
+        h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+        let same = h.call_sym(LUA_INDEX[2], Conv::Cdecl, &[l, u32::MAX, 0xffff_fffe]) != 0;
+        h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffd]);
+        if same { ud } else { 0 }
+    }
+
+    /// The script's `Matrix.LookAt(eye, target, up)` (`0x00571200`, cdecl
+    /// `(L)`, 1 result): a new matrix userdata; with three vectors their
+    /// xyz copied into `frame` (+0x40, +0x50, +0x60; 30 words, the
+    /// original's `ebp - 0x78`) and `PMatrix4::lookAt` (`0x00451c30`);
+    /// else the identity staged at `frame` and copied (`0x00453340`). The
+    /// userdata may be 0 (the callee then gets 0 as `this`, as in the
+    /// original). 1.
+    pub fn matrix_look_at(h: &mut impl Host, l: u32, frame: u32) -> u32 {
+        let eye = vector_arg(h, l, 1);
+        let target = vector_arg(h, l, 2);
+        let up = vector_arg(h, l, 3);
+        let ud = h.call_sym(LUA_MORE[6], Conv::Cdecl, &[l, 0x40]);
+        if ud != 0 {
+            let name = h.rebase(VM_DATA[1]);
+            h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+            h.call_sym(LUA_MORE[7], Conv::Cdecl, &[l, 0xffff_fffe]);
+        }
+        if eye != 0 && target != 0 && up != 0 {
+            for (src, dst) in [
+                (up, frame + 0x60),
+                (target, frame + 0x50),
+                (eye, frame + 0x40),
+            ] {
+                for i in 0..3 {
+                    let v = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+                    h.write(dst + 4 * i, v.to_bits());
+                }
+            }
+            h.call_sym(
+                MATRIX_NEW[3],
+                Conv::Thiscall(ud),
+                &[frame + 0x40, frame + 0x50, frame + 0x60],
+            );
+        } else {
+            let one = 1.0f32.to_bits();
+            for i in 0..16 {
+                h.write(frame + 4 * i, if i % 5 == 0 { one } else { 0 });
+            }
+            h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[frame]);
+        }
+        1
+    }
+
+    /// `strcmp(a, b) == 0`, as the originals' inline loops compare.
+    fn same_c_string(h: &impl Mem, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let x: u8 = h.read(a.wrapping_add(i));
+            if x != h.read::<u8>(b.wrapping_add(i)) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// The script's matrix `__index` (`0x00571770`, cdecl `(L)`): with a
+    /// matrix at 1 (`0x00570d50`), the keys "0".."3" give a new vector
+    /// (`0x00571070`) holding that row, and two method names their C
+    /// functions; on the `Matrix` table itself four names give theirs
+    /// ([`MATRIX_INDEX`]). 1 when something was pushed (or the vector
+    /// could not be made), else 0 (no key, an unknown one).
+    pub fn matrix_index(h: &mut impl Host, l: u32) -> u32 {
+        let key = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 2, 0]);
+        if key == 0 {
+            return 0;
+        }
+        let m = h.call_sym(MATRIX_INDEX[0], Conv::Cdecl, &[l, 1]);
+        let first: u8 = h.read(key);
+        let methods: &[(u32, u32)] = if m != 0 {
+            if first != 0 && h.read::<u8>(key + 1) == 0 {
+                // movsx of the key's byte, compared unsigned
+                let row = (i32::from(first.cast_signed()) - 0x30).cast_unsigned();
+                if row > 3 {
+                    return 0;
+                }
+                let v = h.call_sym(MATRIX_INDEX[1], Conv::Cdecl, &[l]);
+                if v != 0 {
+                    let src = m + 0x10 * row;
+                    for i in 0..4 {
+                        let x = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+                        h.write(v + 4 * i, x.to_bits());
+                    }
+                }
+                return 1;
+            }
+            &MATRIX_INDEX_METHODS
+        } else {
+            &MATRIX_INDEX_STATICS
+        };
+        for &(name, f) in methods {
+            let name = h.rebase(name);
+            if same_c_string(h, key, name) {
+                let f = h.rebase(f);
+                h.call_sym(LUA_MORE[4], Conv::Cdecl, &[l, f, 0]);
+                return 1;
+            }
+        }
+        0
     }
 }

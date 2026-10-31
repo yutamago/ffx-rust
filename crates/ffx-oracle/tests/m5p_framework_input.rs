@@ -2939,3 +2939,977 @@ fn left2_apply_screen_mode_matches_the_original() {
         t.reset();
     }
 }
+
+/// Code answering `values` in turn (then the last one again), popping
+/// `pops` words; nothing logged.
+fn seq_code(t: &mut Twins, pops: u16, values: &[u32]) -> u32 {
+    let mut v = values.to_vec();
+    v.push(*values.last().unwrap());
+    let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    let tab = t.alloc(&bytes);
+    let cell = t.zeros(4);
+    let last = values.len() as u32;
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.push(0x3d);
+    c.extend(last.to_le_bytes()); // cmp eax, last
+    c.extend([0x74, 0x06]); // je +6
+    c.extend([0xff, 0x05]);
+    c.extend(cell.to_le_bytes()); // inc dword [cell]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend((pops * 4).to_le_bytes());
+    }
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A `jmp` at `sym` to `code`.
+fn place_code(t: &mut Twins, sym: u32, code: u32) {
+    let at = t.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut t.a, at, 5).unwrap();
+    t.saved.entry(at).or_insert(old);
+    t.write(at, &j);
+}
+
+#[test]
+fn left2_read_all_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // the known size: (size, pos, terminate, head, old data, block)
+        for (size, pos, nul, head, old, block) in [
+            (0x30u32, 0x10u32, 1u32, 0u32, 0u32, true),
+            (0x30, 0x10, 0x101, 0x21, 0x0055_0000, true),
+            (0x30, 0x10, 0, 0x40, 0x0055_0000, true),
+            (0x30, 0x10, 1, 0x8000_0002, 0x0055_0000, true),
+            (0x30, 0x10, 1, 3, 0x0055_0000, true),
+            (0x30, 0x10, 1, 3, 0x0055_0000, false),
+            (0x10, 0x10, 0, 3, 0x0055_0000, true),
+            (0x10, 0x10, 0, 0x8000_0003, 0x0055_0000, true),
+        ] {
+            let b = if block { t.junk(0x80, 4) } else { 0 };
+            t.stub(l2::READ_CALLS[0], false, 2, 0, b);
+            t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+            let stream = t.object(&[0, 0, 0, 0, 0, 2], &[0, 0, 0, 0, 0, 0x18]);
+            t.w32(stream + 0x10, size);
+            t.w32(stream + 0xc, pos);
+            let array = t.zeros(8);
+            t.w32(array, head);
+            let old_block = if old != 0 { t.junk(0x80, 5) } else { 0 };
+            t.w32(array + 4, old_block);
+            let what = format!(
+                "{label}: readAll size {size:#x} pos {pos:#x} nul {nul:#x} head {head:#x} block {block}"
+            );
+            // the known size uses the list word for its own count
+            t.frame_len = 0;
+            t.check_frame(
+                &what,
+                0x0057_dd60,
+                Conv::Thiscall(stream),
+                &[array, nul],
+                0x18,
+                |g| {
+                    let list = g.1;
+                    Out::U32(l2b::read_all(g, stream, array, nul, list))
+                },
+            );
+            t.reset();
+        }
+        // the unknown size: chunks, a failed chunk, the resize's error
+        for (size, chunks, reads, resize, head, nul) in [
+            (u32::MAX, 3usize, &[0x10u32, 0x20, 0][..], 0u32, 0u32, 1u32),
+            (0x10, 3, &[0x10, 0][..], 0, 0x40, 0),
+            (u32::MAX, 3, &[0][..], 0, 0, 1),
+            (u32::MAX, 1, &[0x10, 0x20, 0][..], 0, 0, 1),
+            (u32::MAX, 3, &[0x10, 0x20, 0][..], 7, 0, 1),
+            (u32::MAX, 3, &[0x10, 0][..], 0, 0x8000_0000, 0),
+        ] {
+            let mut blocks: Vec<u32> = (0..chunks).map(|_| t.junk(0x808, 6)).collect();
+            blocks.push(0);
+            let malloc = seq_code(&mut t, 0, &blocks);
+            place_code(&mut t, l2::READ_CALLS[2], malloc);
+            t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+            t.stub(l2::READ_CALLS[3], true, 1, 1, resize);
+            t.stub(l2::READ_CALLS[4], false, 1, 0, 0);
+            t.stub(l2::MEMCPY, false, 3, 0, 0);
+            let read = seq_code(&mut t, 2, reads);
+            let vt = t.alloc(&[[0u8; 20].as_slice(), &read.to_le_bytes()].concat());
+            let stream = t.zeros(0x20);
+            t.w32(stream, vt);
+            // the position (+0xc) one less than the size: -1 remaining
+            t.w32(stream + 0x10, size);
+            t.w32(
+                stream + 0xc,
+                if size == u32::MAX {
+                    0
+                } else {
+                    size.wrapping_add(1)
+                },
+            );
+            let data = t.junk(0x80, 7);
+            let array = t.zeros(8);
+            t.w32(array, head);
+            t.w32(array + 4, data);
+            let what = format!(
+                "{label}: readAll chunks {chunks} reads {reads:?} resize {resize} head {head:#x}"
+            );
+            t.frame_len = 4;
+            t.check_frame(
+                &what,
+                0x0057_dd60,
+                Conv::Thiscall(stream),
+                &[array, nul],
+                0x18,
+                |g| {
+                    let list = g.1;
+                    Out::U32(l2b::read_all(g, stream, array, nul, list))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn left2_read_value_file_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // texts 4 and 5 run with a logging sscanf (the lines it is handed)
+        let texts: [&[u8]; 6] = [
+            b"12\n34\n\0",
+            b"\n7\0",
+            b"5\0",
+            b"\0",
+            b"\n\n5\n\0",
+            b"5\n\n\n1\0",
+        ];
+        for open in [0u32, 1] {
+            for result in [0u32, 4] {
+                for (k, text) in texts.iter().enumerate() {
+                    if open == 0 && k > 0 {
+                        continue;
+                    }
+                    let data = t.alloc(text);
+                    let len = (text.len() - 1) as u32;
+                    let head = if k == 2 { 0x8000_0000 | len } else { len };
+                    t.stub(l2::VALUE_FILE[0], true, 1, 1, 0);
+                    t.stub(l2::VALUE_FILE[1], true, 0, 0, open);
+                    // readAll: the array filled, `result` returned
+                    let mut pre = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], head
+                    pre.extend(head.to_le_bytes());
+                    pre.extend([0xc7, 0x40, 0x04]); // mov dword [eax+4], data
+                    pre.extend(data.to_le_bytes());
+                    let mut c = pre;
+                    let log_part = t.stub_code(l2::VALUE_FILE[2], true, 2, 2, result);
+                    c.push(0xe9);
+                    let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+                    assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+                    c.extend(log_part.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log_part
+                    t.write(at, &c);
+                    place_code(&mut t, l2::VALUE_FILE[2], at);
+                    t.stub(l2::VALUE_FILE[3], true, 0, 0, 0);
+                    t.stub(l2::VALUE_FILE[4], true, 0, 0, 0);
+                    t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+                    t.stub(l2::PRINTF, false, 3, 0, 0);
+                    if k >= 4 {
+                        t.stub_import_cdecl(l2::VALUE_FILE[6], 2, 1);
+                    }
+                    let path = t.alloc(b"value.txt\0");
+                    let what = format!("{label}: value file open {open} result {result} text {k}");
+                    // the array and the value (the array only once open)
+                    t.frame_len = if open != 0 { 12 } else { 0 };
+                    t.check_frame(&what, 0x0062_85b0, Conv::Cdecl, &[path], 0x24, |g| {
+                        let frame = g.1 - 0x1c;
+                        Out::U32(l2b::read_value_file(g, path, frame))
+                    });
+                    t.reset();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn left2_buttons_match_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::PRINTF, false, 3, 0, 0);
+        // every name (as stored and in another case), an unknown one
+        let mut names: Vec<u32> = Vec::new();
+        for &(s, _) in &l2::BUTTONS {
+            let at = t.rebase(s);
+            let mut bytes = Oracle::read(&mut t.a, at, 32).unwrap();
+            let n = bytes.iter().position(|&b| b == 0).unwrap();
+            bytes.truncate(n + 1);
+            names.push(t.alloc(&bytes));
+            let upper: Vec<u8> = bytes.iter().map(u8::to_ascii_uppercase).collect();
+            names.push(t.alloc(&upper));
+        }
+        names.push(t.alloc(b"Nothing\0"));
+        for pad_set in [true, false] {
+            let pad = t.zeros(0x40);
+            let input = t.zeros(0x40);
+            t.w32(input + 0x38, if pad_set { pad } else { 0 });
+            let app = t.zeros(0x2c0);
+            t.w32(app + 0x2b8, input);
+            for &name in &names {
+                let what = format!("{label}: buttonPress pad {pad_set} name {name:#x}");
+                t.check(&what, 0x0062_2d40, Conv::Cdecl, &[app, name], |g| {
+                    Out::U32(l2b::button_press(g, app, name))
+                });
+                for value in [0u32, 0x1234_5602] {
+                    let what =
+                        format!("{label}: buttonSet pad {pad_set} name {name:#x} {value:#x}");
+                    t.check(&what, 0x0062_c730, Conv::Cdecl, &[app, name, value], |g| {
+                        Out::U32(l2b::button_set(g, app, name, value))
+                    });
+                }
+            }
+            t.check(
+                &format!("{label}: buttonPress no name"),
+                0x0062_2d40,
+                Conv::Cdecl,
+                &[app, 0],
+                |g| Out::U32(l2b::button_press(g, app, 0)),
+            );
+        }
+        for f in [0x0062_2d40u32, 0x0062_c730] {
+            t.check(
+                &format!("{label}: {f:#x} no app"),
+                f,
+                Conv::Cdecl,
+                &[0, names[0], 1],
+                |g| {
+                    Out::U32(if f == 0x0062_2d40 {
+                        l2b::button_press(g, 0, names[0])
+                    } else {
+                        l2b::button_set(g, 0, names[0], 1)
+                    })
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+/// A node at `node` owned by `owner` (or not) in a ring with two others.
+fn owned_node(t: &mut Twins, node: u32, owner: u32) {
+    let a = t.junk(0x30, 1);
+    let b = t.junk(0x30, 2);
+    t.w32(node, a);
+    t.w32(node + 4, b);
+    t.w32(a + 4, node);
+    t.w32(b, node);
+    t.w32(node + 8, owner);
+    t.w32(node + 0x28, 0x1111);
+    t.w32(node + 0x2c, 0x2222);
+}
+
+#[test]
+fn left2_release_input_map_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        for with_map in [true, false] {
+            let this = t.junk(0xa0, 3);
+            let map = t.zeros(0x120);
+            for k in 0..5 {
+                owned_node(
+                    &mut t,
+                    map + 0x18 + 0x30 * k,
+                    if k % 2 == 0 { map } else { 0x55 },
+                );
+            }
+            t.w32(this + 0x9c, if with_map { map } else { 0 });
+            for i in 0..18u32 {
+                let dev = if i % 3 == 1 { 0 } else { t.zeros(0x150) };
+                t.w32(this + 0x38 + 4 * i, dev);
+                if dev != 0 {
+                    for k in 0..4 {
+                        let owner = if (i + k) % 2 == 0 { dev } else { 0x66 };
+                        owned_node(&mut t, dev + 0x6c + 0x30 * k, owner);
+                    }
+                }
+            }
+            let what = format!("{label}: input map release map {with_map}");
+            t.check(&what, 0x0062_d170, Conv::Thiscall(this), &[], |g| {
+                l2b::release_input_map(g, this);
+                Out::None
+            });
+        }
+        t.reset();
+    }
+}
+
+/// A circular `{next, prev}` list at `head` with `n` nodes (0x20 bytes);
+/// node `i`'s `+0x18` is `down(i)`.
+fn touch_list(t: &mut Twins, head: u32, n: u32, down: impl Fn(u32) -> u32) -> Vec<u32> {
+    let mut all = vec![head];
+    for i in 0..n {
+        let node = t.zeros(0x20);
+        t.w32(node + 0x18, down(i));
+        all.push(node);
+    }
+    for i in 0..all.len() {
+        t.w32(all[i], all[(i + 1) % all.len()]);
+        t.w32(all[i] + 4, all[(i + all.len() - 1) % all.len()]);
+    }
+    all
+}
+
+#[test]
+fn left2_touch_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::TOUCH_LOCK[0], true, 0, 0, 0x11);
+        t.stub(l2::TOUCH_LOCK[1], true, 0, 0, 0x12);
+        for (active, pending, free) in [
+            (0u32, 0u32, 0u32),
+            (3, 0, 1),
+            (0, 2, 0),
+            (4, 3, 2),
+            (1, 1, 0),
+        ] {
+            let mut words = vec![0u32; 7];
+            words[6] = 0;
+            let dev = t.object(&words, &[]);
+            let this = t.junk(0x190, 9);
+            // the device object: its vtable from `dev`
+            let vt = t.r32(dev);
+            t.w32(this, vt);
+            touch_list(&mut t, this + 0x164, active, |i| i % 3);
+            touch_list(&mut t, this + 0x16c, pending, |i| i + 1);
+            touch_list(&mut t, this + 0x174, free, |_| 0);
+            let what =
+                format!("{label}: touch update active {active} pending {pending} free {free}");
+            t.check(&what, 0x0062_de50, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::touch_update(g, this))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_particle_system_ctor_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for flags in [0u32, 0x80, 0xffff_ff7f] {
+            // the sampler's constructor leaves its flags word as given
+            let mut pre = vec![0xc7, 0x41, 0x1c];
+            pre.extend(flags.to_le_bytes()); // mov dword [ecx+0x1c], flags
+            let s = t.stub_code(l2::PARTICLE_CALLS[1], true, 0, 0, 0);
+            let mut c = pre;
+            let at = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), at);
+            c.push(0xe9);
+            c.extend(s.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            t.write(at, &c);
+            place_code(&mut t, l2::PARTICLE_CALLS[1], at);
+            t.stub(l2::PARTICLE_CALLS[0], true, 0, 0, 0);
+            let this = t.junk(0x3200, 4);
+            let what = format!("{label}: particle system ctor flags {flags:#x}");
+            t.check(&what, 0x009f_c9e0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::particle_system_ctor(g, this))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn left2_dinput_pad_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::DINPUT_PAD[1], true, 0, 0, 3);
+        t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+        t.stub(l2::PRINTF, false, 3, 0, 0);
+        let povs = [
+            0u32,
+            4500,
+            9000,
+            13500,
+            18000,
+            22500,
+            27000,
+            31500,
+            1,
+            0xffff_ffff,
+        ];
+        // (connected answer, the flag, poll fails, acquire answers)
+        for (k, &pov) in povs.iter().enumerate() {
+            for (conn, flag, poll_fails) in [
+                (0u32, 0u8, false),
+                (0, 1, false),
+                (5, 1, true),
+                (5, 0, false),
+            ] {
+                // the DirectInput object: vt[5] (this, guid) answers conn
+                let di_vt: Vec<u32> = (0..6)
+                    .map(|i| t.stub_code(0x7200 + i, false, 2, 2, conn))
+                    .collect();
+                let di_vt = t.alloc(
+                    &di_vt
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let di = t.zeros(8);
+                t.w32(di, di_vt);
+                let cell = t.rebase(l2::DINPUT_PAD[0]);
+                t.w32(cell, di);
+                // the device: Acquire (slot 7) answers INPUTLOST twice;
+                // GetDeviceState (slot 9) fills the state; Poll (slot 25)
+                let mut words = vec![1u32; 26];
+                words[9] = 3;
+                let dev = t.com_object(&words);
+                let vt = t.r32(dev);
+                let acquire = seq_code(&mut t, 1, &[l2::DIERR_INPUTLOST, l2::DIERR_INPUTLOST, 0]);
+                let poll = t.stub_code(
+                    0x7300,
+                    false,
+                    1,
+                    1,
+                    if poll_fails {
+                        0x8000_0001
+                    } else {
+                        u32::from(conn != 0)
+                    },
+                );
+                // GetDeviceState: copy 0x110 bytes from `src` into [esp+0xc]
+                let src = t.junk(0x110, k as u8);
+                t.w32(src + 0x20, pov);
+                let mut c = vec![0x56, 0x57]; // push esi; push edi
+                c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+                c.push(0xbe);
+                c.extend(src.to_le_bytes()); // mov esi, src
+                c.push(0xb9);
+                c.extend(0x44u32.to_le_bytes()); // mov ecx, 0x44
+                c.extend([0xf3, 0xa5, 0x5f, 0x5e]); // rep movsd; pop edi; pop esi
+                c.extend([0x31, 0xc0, 0xc2, 0x0c, 0x00]); // xor eax, eax; ret 0xc
+                let get = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), get);
+                t.w32(vt + 7 * 4, acquire);
+                t.w32(vt + 9 * 4, get);
+                t.w32(vt + 25 * 4, poll);
+                let this = t.junk(0x3b0, 5);
+                t.w32(this + 0x14, dev);
+                t.w8(this + 0x69, flag);
+                let what = format!(
+                    "{label}: dinput pad pov {pov} conn {conn} flag {flag} poll fails {poll_fails}"
+                );
+                t.frame_len = 0x110;
+                t.check_frame(&what, 0x0062_d9d0, Conv::Thiscall(this), &[], 0x11c, |g| {
+                    let state = g.1;
+                    l2b::dinput_pad_update(g, this, state);
+                    Out::None
+                });
+            }
+        }
+        let this = t.junk(0x3b0, 6);
+        t.w32(this + 0x14, 0);
+        t.check(
+            &format!("{label}: dinput pad no device"),
+            0x0062_d9d0,
+            Conv::Thiscall(this),
+            &[],
+            |g| {
+                l2b::dinput_pad_update(g, this, 0);
+                Out::None
+            },
+        );
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_xinput_pad_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::DINPUT_PAD[1], true, 0, 0, 2);
+        t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+        t.stub(l2::PRINTF, false, 4, 0, 0);
+        // XInputSetState: logs the pad and the vibration word it is handed
+        let pre = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x00, 0x89, 0x44, 0x24, 0x08]; // [esp+8] = *[esp+8]
+        let set = t.stub_code(l2::XINPUT[1], false, 2, 2, 0);
+        let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+        let mut c = pre;
+        c.push(0xe9);
+        c.extend(set.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        t.write(at, &c);
+        place_code(&mut t, l2::XINPUT[1], at);
+        let mut rng = Rng(0x1234_5679);
+        // (answer, packet, stored packet, flag, motors)
+        for (k, (answer, packet, stored, flag)) in [
+            (0u32, 7u32, 6u32, 0u8),
+            (0, 7, 6, 1),
+            (0, 7, 7, 1),
+            (0x48f, 0, 7, 1),
+            (0x48f, 0, 7, 0),
+            (0x48f, 0, 0, 1),
+            (0, 9, 8, 1),
+            (0, 10, 8, 0),
+            (0, 11, 8, 2),
+            (0x48f, 0, 7, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // XInputGetState: writes a state into [esp+8], answers `answer`
+            let mut st = vec![0u8; 16];
+            st[..4].copy_from_slice(&packet.to_le_bytes());
+            for b in &mut st[4..] {
+                *b = rng.next() as u8;
+            }
+            if k == 6 {
+                // the sticks' extremes, triggers 0
+                st[6] = 0;
+                st[7] = 0;
+                st[8..10].copy_from_slice(&0x8000u16.to_le_bytes());
+                st[10..12].copy_from_slice(&0x7fffu16.to_le_bytes());
+                st[12..14].copy_from_slice(&0xff81u16.to_le_bytes());
+                st[14..16].copy_from_slice(&0x007fu16.to_le_bytes());
+            }
+            if k == 7 {
+                st[6] = 0;
+                st[7] = 5;
+            }
+            let src = t.alloc(&st);
+            // a failing call writes nothing
+            let words = if answer == 0 { 4u8 } else { 0 };
+            let mut c = vec![0x56, 0x57]; // push esi; push edi
+            c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10]
+            c.push(0xbe);
+            c.extend(src.to_le_bytes()); // mov esi, src
+            c.extend([0xb9, words, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]); // mov ecx, 4; rep movsd; pop edi; pop esi
+            c.push(0xb8);
+            c.extend(answer.to_le_bytes()); // mov eax, answer
+            c.extend([0xc2, 0x08, 0x00]); // ret 8
+            let get = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), get);
+            place_code(&mut t, l2::XINPUT[0], get);
+            let this = t.junk(0x3d0, k as u8);
+            t.w32(this + 0x3b0, 3);
+            t.w32(this + 0x3b4, stored);
+            t.w8(this + 0x69, flag);
+            t.w8(this + 0x58, (rng.next() & 0xff) as u8);
+            t.w8(this + 0x59, if k == 1 { 0xff } else { 0 });
+            let what = format!("{label}: xinput pad case {k}");
+            t.frame_len = 4;
+            t.check_frame(&what, 0x0062_dba0, Conv::Thiscall(this), &[], 0x2c, |g| {
+                let frame = g.1;
+                l2b::xinput_pad_update(g, this, frame);
+                Out::None
+            });
+            t.reset();
+            // put the SetState stub back after the reset
+            place_code(&mut t, l2::XINPUT[1], at);
+            t.stub(l2::DINPUT_PAD[1], true, 0, 0, 2);
+            t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+            t.stub(l2::PRINTF, false, 4, 0, 0);
+        }
+    }
+}
+
+#[test]
+fn left2_path_point_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    let floats: [u32; 8] = [
+        0x3f80_0000,
+        0xc0a0_0000,
+        0x4b80_0001,
+        0x0000_0001,
+        0x7f7f_ffff,
+        0xff80_0000,
+        0x7fc0_1234,
+        0x3eaa_aaab,
+    ];
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x2468_ace1);
+        for looping in [0u8, 1, 0x80] {
+            for count in [1u32, 2, 5, 0x8000_0003] {
+                let n = count & 0x7fff_ffff;
+                let pts = t.zeros(16 * n as usize + 32) + 16;
+                for i in 0..(4 * n + 4) {
+                    let v = floats[(rng.next() % 8) as usize];
+                    t.w32(pts - 16 + 4 * i, v);
+                }
+                let this = t.zeros(0x20);
+                t.w32(this + 4, count);
+                t.w32(this + 8, pts);
+                t.w8(this + 0x18, looping);
+                for index in [0u32, 1, n - 1, n, n + 3, u32::MAX, 0xffff_fffe, 0x8000_0000] {
+                    let out = t.junk(16, 3);
+                    let what = format!(
+                        "{label}: path point loop {looping} count {count:#x} index {index:#x}"
+                    );
+                    t.check(
+                        &what,
+                        0x0054_b080,
+                        Conv::Thiscall(this),
+                        &[out, index],
+                        |g| Out::U32(l2b::path_point(g, this, out, index)),
+                    );
+                }
+                // the output over the points (the original reads after
+                // each store)
+                if n >= 2 && looping == 0 {
+                    for (index, out) in [(u32::MAX, pts), (n, pts + 16 * (n - 1))] {
+                        let what = format!(
+                            "{label}: path point aliased count {count:#x} index {index:#x}"
+                        );
+                        t.check(
+                            &what,
+                            0x0054_b080,
+                            Conv::Thiscall(this),
+                            &[out, index],
+                            |g| Out::U32(l2b::path_point(g, this, out, index)),
+                        );
+                    }
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+/// A gameplay path with `n` keys (28 bytes, a unit-ish quaternion at
+/// `+0xc`), its length and a 3x4 matrix.
+#[allow(clippy::cast_precision_loss)] // small test values
+fn gameplay_path(t: &mut Twins, n: u32, length: f32, seed: u32) -> u32 {
+    let mut rng = Rng(seed);
+    let keys = t.zeros(28 * n as usize + 56);
+    for k in 0..n + 2 {
+        let a = (rng.next() % 1000) as f32 / 500.0 - 1.0;
+        let b = (rng.next() % 1000) as f32 / 500.0 - 1.0;
+        let q = [a * 0.5, b * 0.5, 0.25, 0.75];
+        for (i, v) in q.iter().enumerate() {
+            t.w32(keys + 28 * k + 0xc + 4 * i as u32, v.to_bits());
+        }
+    }
+    let m = t.zeros(0x30);
+    for i in 0..12u32 {
+        t.w32(m + 4 * i, ((i as f32) * 0.37 - 1.1).to_bits());
+    }
+    let this = t.zeros(0x30);
+    t.w32(this + 0x14, m);
+    t.w32(this + 0x20, length.to_bits());
+    t.w32(this + 0x24, n);
+    t.w32(this + 0x28, keys);
+    this
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn left2_path_rotation_and_transform_match_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        for (n, length) in [(0u32, 2.0f32), (1, 2.0), (4, 2.0), (4, 3.5), (6, 1.0)] {
+            let this = gameplay_path(&mut t, n, length, 0x55 + n);
+            for tv in [0.0f32, 0.4, 1.0, 1.99, 2.0, 0.123_456, 3.0, -1.0] {
+                // past the keys only where the extra keys are there
+                if n > 0 && tv / length * n as f32 > n as f32 + 0.9 {
+                    continue;
+                }
+                let out = t.junk(0x30, 7);
+                let what = format!("{label}: path rotation n {n} length {length} t {tv}");
+                t.frame_len = if n == 0 { 0 } else { 0x30 };
+                t.check_frame(
+                    &what,
+                    0x0054_b550,
+                    Conv::Thiscall(this),
+                    &[out, tv.to_bits()],
+                    0x48,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_rotation(g, this, out, tv.to_bits(), frame))
+                    },
+                );
+                let what = format!("{label}: path transform n {n} length {length} t {tv}");
+                t.frame_len = 0x40;
+                t.check_frame(
+                    &what,
+                    0x0054_b690,
+                    Conv::Thiscall(this),
+                    &[out, tv.to_bits()],
+                    0x80,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_transform(g, this, out, tv.to_bits(), frame))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}
+
+/// Code (thiscall, 2 stack words) writing `words` at its first argument,
+/// answering that argument.
+fn writer_code(t: &mut Twins, words: &[u32]) -> u32 {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for (i, w) in words.iter().enumerate() {
+        c.extend([0xc7, 0x40, (4 * i) as u8]);
+        c.extend(w.to_le_bytes()); // mov dword [eax+4i], w
+    }
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+#[test]
+fn left2_path_frame_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    let f = |v: f32| v.to_bits();
+    for (label, mut t) in Twins::all() {
+        let dirs: [[f32; 3]; 5] = [
+            [0.0, 0.0, 1.0],
+            [0.6, 0.0, 0.8],
+            [0.3, -0.5, 0.81],
+            [1.0, 0.0, 0.0],
+            [f32::NAN, 0.0, 1.0],
+        ];
+        let ups: [[f32; 3]; 3] = [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.1, 0.9, -0.2]];
+        for (i, dv) in dirs.iter().enumerate() {
+            for (j, uv) in ups.iter().enumerate() {
+                let d = writer_code(&mut t, &[f(dv[0]), f(dv[1]), f(dv[2]), f(7.0)]);
+                let mut m = vec![f(uv[0]), f(uv[1]), f(uv[2]), f(9.0)];
+                for k in 0..12u16 {
+                    m.push(f(f32::from(k) * 0.5));
+                }
+                let tr = writer_code(&mut t, &m);
+                let p = writer_code(&mut t, &[f(1.5), f(-2.5), f(3.25), f(4.0)]);
+                place_code(&mut t, l2::PATH_CALLS[5], d);
+                place_code(&mut t, l2::PATH_CALLS[7], tr);
+                place_code(&mut t, l2::PATH_CALLS[6], p);
+                let this = t.zeros(0x30);
+                let out = t.junk(0x40, 3);
+                let tv = f(0.75);
+                let what = format!("{label}: path frame dir {i} up {j}");
+                t.frame_len = 0x7c;
+                t.check_frame(
+                    &what,
+                    0x0054_b320,
+                    Conv::Thiscall(this),
+                    &[tv, out],
+                    0x8c,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_frame(g, this, tv, out, frame))
+                    },
+                );
+                t.reset();
+            }
+        }
+    }
+}
+
+/// The subtree of `nodes[range]` under `links.0` (leaves pointing at the
+/// head `links.1`); its root.
+fn rb_build(
+    t: &mut Twins,
+    nodes: &[u32],
+    range: (usize, usize),
+    links: (u32, u32),
+    level: u32,
+    red: &[u32],
+) -> u32 {
+    let (lo, hi) = range;
+    let (parent, head) = links;
+    if lo >= hi {
+        return head;
+    }
+    let mid = usize::midpoint(lo, hi);
+    let node = nodes[mid];
+    t.w32(node + 4, parent);
+    t.w8(node + 0xc, u8::from(!red.contains(&level)));
+    let l = rb_build(t, nodes, (lo, mid), (node, head), level + 1, red);
+    let r = rb_build(t, nodes, (mid + 1, hi), (node, head), level + 1, red);
+    t.w32(node, l);
+    t.w32(node + 8, r);
+    node
+}
+
+/// A perfect red-black tree of `2^depth - 1` nodes in MSVC's layout
+/// (`{left, parent, right, colour, nil}`, the head's parent the root, its
+/// left the minimum, its right the maximum); levels in `red` are red.
+/// Returns the tree object `{head, size}` and the nodes in order.
+fn rb_tree(t: &mut Twins, depth: u32, red: &[u32]) -> (u32, Vec<u32>) {
+    let head = t.zeros(0x20);
+    t.w8(head + 0xc, 1);
+    t.w8(head + 0xd, 1);
+    let n = (1u32 << depth) - 1;
+    let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+    let root = rb_build(t, &nodes, (0, n as usize), (head, head), 0, red);
+    t.w32(head + 4, root);
+    t.w32(head, nodes[0]);
+    t.w32(head + 8, nodes[n as usize - 1]);
+    let this = t.zeros(8);
+    t.w32(this, head);
+    t.w32(this + 4, n);
+    (this, nodes)
+}
+
+#[test]
+fn left2_map_erase_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x1357_2468);
+        for (depth, red) in [
+            (5u32, vec![]),
+            (5, vec![1, 3]),
+            (4, vec![2]),
+            (5, vec![4]),
+            (3, vec![1]),
+            (6, vec![]),
+            (6, vec![]),
+            (6, vec![2, 4]),
+            (7, vec![5]),
+        ] {
+            let (this, nodes) = rb_tree(&mut t, depth, &red);
+            t.stub(l2::MAP_TREE[5], false, 1, 0, 0);
+            let mut order = nodes.clone();
+            for i in (1..order.len()).rev() {
+                let j = (rng.next() as usize) % (i + 1);
+                order.swap(i, j);
+            }
+            for (k, &node) in order.iter().enumerate() {
+                let out = t.junk(4, 9);
+                let what = format!("{label}: map erase depth {depth} red {red:?} step {k}");
+                // the iterator: the original's own argument word, the
+                // port's scratch word (no callee logs its address)
+                t.check(
+                    &what,
+                    0x0062_71d0,
+                    Conv::Thiscall(this),
+                    &[out, node],
+                    |g| {
+                        let slot = g.1;
+                        ffx_bridge::Mem::write(g, slot, node);
+                        Out::U32(l2b::map_erase(g, this, out, slot))
+                    },
+                );
+            }
+            t.reset();
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::needless_range_loop)] // the key is also an address offset
+fn left2_log_keyboard_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // sprintf_s logs its first words; the writer logs (data, n)
+        // (7 words: a mapped line has 7, the stack past them is junk)
+        t.stub_import_cdecl(l2::KEY_LOG[1], 7, 0);
+        let buf = t.rebase(l2::KEY_LOG[0]);
+        t.write(buf, b"abcde\0");
+        t.stub(l2::KEY_LOG[2], true, 2, 2, 0);
+        let mapping_type = t.rebase(l2::KEY_LOG[4]);
+        let mut rng = Rng(0x0bad_cafe);
+        for (writer, devices, with_maps) in [
+            (false, 0u32, true),
+            (true, 0x7f, true),
+            (true, 0x15, false),
+            (true, 0x40, true),
+        ] {
+            let this = t.zeros(0x2c0);
+            let w = if writer { t.zeros(0x10) } else { 0 };
+            t.w32(this + 0x29c, w);
+            t.w32(this + 0x34, 0x0055_0000);
+            let input = t.zeros(0xa0);
+            t.w32(this + 0x2b8, input);
+            for i in 0..7u32 {
+                if devices & (1 << i) == 0 {
+                    continue;
+                }
+                // keys change where the table differs from the last state
+                let mut table = vec![0u8; 0x120];
+                let dev = t.zeros(0x220);
+                for key in 0x1c..0x11cusize {
+                    let r = rng.next();
+                    let last = (r & 1) as u8;
+                    table[key] = if r & 0xf0 == 0 { last ^ 1 } else { last };
+                    if r & 0xf00 == 0 {
+                        table[key] = 0x80;
+                    }
+                    if (0x20..0x23).contains(&key) {
+                        table[key] = if key == 0x21 { 0x80 } else { last ^ 1 };
+                    }
+                    t.w8(dev + 0xfc + key as u32, last);
+                }
+                let tab = t.alloc(&table);
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x80]; // mov eax, [esp+4]; movzx eax, byte [eax+tab]
+                c.extend(tab.to_le_bytes());
+                c.extend([0xc2, 0x04, 0x00]);
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let vt = t.alloc(&[[0u8; 12].as_slice(), &code.to_le_bytes()].concat());
+                t.w32(dev, vt);
+                t.w32(input + 0x80 + 4 * i, dev);
+            }
+            if with_maps {
+                // two maps, the second with mappings: of the type (keys
+                // 0x20/0x21 and 0x22/0x20), of another type
+                let mut lists = Vec::new();
+                for m in 0..2u32 {
+                    let mut items = Vec::new();
+                    if m == 1 {
+                        for (ty, a, b) in [
+                            (mapping_type, 0x20u32, 0x21u32),
+                            (mapping_type, 0x22, 0x20),
+                            (0x1234, 0x20, 0x20),
+                        ] {
+                            let it = t.zeros(0x20);
+                            t.w32(it + 8, ty);
+                            t.w32(it + 0x18, a);
+                            t.w32(it + 0x1c, b);
+                            items.push(it);
+                        }
+                    }
+                    let arr = t.alloc(
+                        &items
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>()
+                            .iter()
+                            .copied()
+                            .chain([0u8; 4])
+                            .collect::<Vec<_>>(),
+                    );
+                    let list = t.zeros(0x10);
+                    t.w32(list + 4, 0x0066_0001 + 2 * m);
+                    t.w32(list + 8, items.len() as u32);
+                    t.w32(list + 0xc, arr);
+                    lists.push(list);
+                }
+                let data = t.alloc(
+                    &lists
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let maps = t.zeros(8);
+                t.w32(maps, 2);
+                t.w32(maps + 4, data);
+                t.w32(input, maps);
+            }
+            let what = format!(
+                "{label}: log keyboard writer {writer} devices {devices:#x} maps {with_maps}"
+            );
+            t.check(&what, 0x0062_9e40, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::log_keyboard(g, this))
+            });
+        }
+        t.reset();
+    }
+}
