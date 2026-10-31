@@ -2542,6 +2542,7 @@ fn fam446_start_260_placed() {
     let block = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(f + 0xd), block);
     t.write(block, &vec![0x3c; 0xec00]);
+    t.set_u32(block + 0xeac0, 0x0c10_c000);
     t.set_u32(t.img.word(f + 0x2c), 0x0e5e_0001);
     for count in [3u16, 0] {
         t.set_u16(free, count);
