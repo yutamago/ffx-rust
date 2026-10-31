@@ -2112,3 +2112,43 @@ fn camera_points() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn loads_and_buffers() {
+    let Some(mut t) = twin(341) else { return };
+    let f = t.at(0x1370);
+    let answers = SCRATCH + 0x80;
+    rec(&mut t, 225, 1, move |m, _| m.r32(answers));
+    rec(&mut t, 227, 1, move |m, _| m.r32(answers + 4));
+    recs(&mut t, &[(226, 2)]);
+    t.set_u32(op(&t, f, 0x10), 0x0e5e_0001);
+    for (a, busy, asked, b, there) in [
+        (0u32, 1u32, 0u32, 0u32, 0u32),
+        (0, 0, 0, 0, 0),
+        (1, 0, 1, 0, 1),
+        (1, 0, 1, 0, 0xffff_ffff),
+        (1, 0, 1, 2, 1),
+    ] {
+        t.set_u32(op(&t, f, 0x2), a);
+        t.set_u32(op(&t, f, 0x2b), asked);
+        t.set_u32(op(&t, f, 0x56), b);
+        t.set_u32(answers, busy);
+        t.set_u32(answers + 4, there);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    for (n, rva) in [(149u16, 0x1cb0u32), (126, 0x2100)] {
+        let Some(mut t) = twin(n) else { return };
+        recs(&mut t, &[(711, 3), (710, 7)]);
+        let f = t.at(rva);
+        let lock = SCRATCH + 0x80;
+        t.set_u32(op(&t, f, 0x1), lock);
+        t.set_u32(lock, 4);
+        t.set_u32(op(&t, f, 0x7), 0x0711_0001);
+        t.set_u32(op(&t, f, 0x11), 0x0710_0003);
+        for o in [0x5a, 0x65, 0x6f, 0x79] {
+            t.set_u32(op(&t, f, o), 0x5555);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

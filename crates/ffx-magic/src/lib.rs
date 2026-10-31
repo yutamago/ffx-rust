@@ -1107,6 +1107,9 @@ ports! {
     "wait, then step" => s4_small::WAIT_THEN_STEP, s4_small::wait_then_step;
     "camera point (-50)" => s4_small::CAMERA_POINT_50, s4_small::camera_point;
     "camera point (-10)" => s4_small::CAMERA_POINT_10, s4_small::camera_point;
+    "load steps" => s4_small::LOAD_STEPS, s4_small::load_steps;
+    "parts buffer 0x80000" => s4_small::PARTS_BUFFER_80000, s4_small::parts_buffer;
+    "parts buffer 0x50000" => s4_small::PARTS_BUFFER_50000, s4_small::parts_buffer;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;

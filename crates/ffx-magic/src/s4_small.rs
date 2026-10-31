@@ -4697,3 +4697,91 @@ pub const CAMERA_POINT_10: Sig = Sig {
     calls: &[(0x77, Callee::Any)],
     imports: &[],
 };
+
+/// A resource's load, step by step (no arguments): until `G_A` counts
+/// (operand `+0x2`), slot 225 `(*R)` must answer 0 first (else nothing
+/// more); then the resource is asked for once (slot 226 `(*R, 0)`,
+/// `G_ASKED` 1) and, until `G_B` counts, slot 227 `(*R)` answering 1 or
+/// more makes it count. Returns 0.
+///
+/// `magic_0341` 0x10001370 (129 bytes; 3 DLLs).
+pub fn load_steps<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let bump = |g: &mut G, o: u32| {
+        let a = op(img, f, o);
+        let x = g.read::<u32>(a).wrapping_add(1);
+        g.write::<u32>(a, x);
+    };
+    if g.read::<u32>(op(img, f, 0x2)) == 0 {
+        let r = g.read::<u32>(op(img, f, 0x10));
+        if slot_call(g, img, f, (0xa, 225), &[r]).eax != 0 {
+            return Ret::eax(0);
+        }
+        bump(g, 0x25);
+    }
+    if g.read::<u32>(op(img, f, 0x2b)) == 0 {
+        let r = g.read::<u32>(op(img, f, 0x3b));
+        g.write::<u32>(op(img, f, 0x47), 1);
+        slot_call(g, img, f, (0x33, 226), &[r, 0]);
+    }
+    if g.read::<u32>(op(img, f, 0x56)) == 0 {
+        let r = g.read::<u32>(op(img, f, 0x64));
+        if slot_call(g, img, f, (0x5e, 227), &[r]).eax.cast_signed() >= 1 {
+            bump(g, 0x7a);
+        }
+    }
+    Ret::eax(0)
+}
+
+/// [`load_steps`].
+pub const LOAD_STEPS: Sig = Sig {
+    len: 129,
+    hash: 0xfbe7_c313_02cf_6702,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 711 `(*G_C, callback, 0)` (operand `+0x29`) with `**G_LOCK` 1
+/// around it, then slot 710 `(block, *G_C, *G_D, size)` (operands
+/// `+0x4f`, `+0x11`, the code's size `+0x36`; the first call's words stay
+/// under), then four words 0 (operands `+0x5a`, `+0x65`, `+0x6f`, `+0x79`)
+/// (no arguments). Returns slot 710's `eax`.
+///
+/// `magic_0149` 0x10001cb0 (size 0x80000) and `magic_0126` 0x10002100
+/// (0x50000) (131 bytes; 3 DLLs each).
+pub fn parts_buffer<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let lock = g.read::<u32>(op(img, f, 0x1));
+    let c = g.read::<u32>(op(img, f, 0x7));
+    let saved = g.read::<u32>(lock);
+    let d = g.read::<u32>(op(img, f, 0x11));
+    g.write::<u32>(lock, 1);
+    let cb = op(img, f, 0x29);
+    slot_call(g, img, f, (0x1c, 711), &[c, cb, 0]);
+    let lock = g.read::<u32>(op(img, f, 0x31));
+    g.write::<u32>(lock, saved);
+    let c = g.read::<u32>(op(img, f, 0x44));
+    let words = [op(img, f, 0x4f), c, d, op(img, f, 0x36), c, cb, 0];
+    // call width: 7 (slot 711's words are still under these)
+    let out = slot_call(g, img, f, (0x3d, 710), &words);
+    for o in [0x5a, 0x65, 0x6f, 0x79] {
+        g.write::<u32>(op(img, f, o), 0);
+    }
+    through(out)
+}
+
+/// [`parts_buffer`] with 0x80000.
+pub const PARTS_BUFFER_80000: Sig = Sig {
+    len: 131,
+    hash: 0x6151_c901_c9fc_bfe1,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`parts_buffer`] with 0x50000.
+pub const PARTS_BUFFER_50000: Sig = Sig {
+    len: 131,
+    hash: 0xb9de_23c5_e276_8ede,
+    calls: &[],
+    imports: &[],
+};
