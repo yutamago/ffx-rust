@@ -1432,6 +1432,23 @@ staged update `n`), so each submit finds its flag set and copies:
   `n + 1`; the 2 s limit and its note are there in case a lock proves
   otherwise.
 
+**Done in both programs (2026-10-31, host-phase; the user's decision).**
+The wait is on by default in lockstep, in ffx-rust (`harness.rs`
+`cloth_order`) and in the hook's harness (`crates/ffx-hook/src/harness.rs`
+`cloth_order`, with `FLIPS_DONE` counted after `Renderer_PresentFlip`'s
+original), for the original code and the ports alike;
+`FFX_HARNESS_CLOTH_ORDER=0` turns it off (`tools/run-game.sh` passes the
+variable to both programs). `stats` counts `cloth_waits` in both. It sits
+in the cloth job, not in a wrapper of
+`graphicCharacterInstanceSetClothVertexBuffers`: the job wrapper exists in
+both programs already (the seeded jobs) and runs whichever code is on,
+where that function is a `ported!` entry in the hook, so a wrapper there
+would need a second fallback hook for original-code runs (as
+`loader_turn::install_fallback` does for the render lock). A frame with
+cloth meshes but no cloth job has nothing to order (no step wrote new
+vertices). What it changes in the references: below, "The cloth order
+against the references".
+
 **Which replays need re-recording**: the order chosen is the one the
 originals show almost always (event-besaid-4 matched the existing
 references pixel for pixel with it), so none is expected to. The
@@ -1572,7 +1589,7 @@ runs past the third frame (the Unicorn abort).
    updates fewer than in the hooked original, so free-running timers
    (the title's cursor glow: menu-save-4/-6, boot-4) show another phase;
    events and state agree ("The stage 3 gate on PC2").
-10. **The cloth race** (host-gate): ordered by `FFX_HARNESS_CLOTH_ORDER=1`
-    in ffx-rust; the same wait in the hook's harness is the plan ("The
-    cloth race"); the coordinator decides on the references.
+10. **The cloth race** (host-gate): ordered in both programs, on by
+    default in lockstep (host-phase, "The cloth race"); which references
+    it changes is listed for the user's decision.
 

@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
         --no-hooks) hooks=0 ;;
         --lang) lang="$2"; shift ;;
         --log-opens) export FFX_HOOK_LOG_OPENS=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_LOG_OPENS" ;;
-        --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS"; shift ;;
+        --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS:FFX_HARNESS_CLOTH_ORDER"; shift ;;
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
@@ -76,7 +76,7 @@ while [[ $# -gt 0 ]]; do
         --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
-        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY:FFX_HARNESS_CLOTH_ORDER" ;;
+        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY" ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift
