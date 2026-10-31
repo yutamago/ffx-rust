@@ -1167,4 +1167,21 @@ ported! {
         let mut f = StackFrame::<8>::new();
         ll::camera_path_follow(&mut mem(), f.at(), true)
     }
+
+    /// `AbmapFindNextConnectingNode(from, to, link)` (`ax`).
+    AbmapFindNextConnectingNode @ 0x00a5_6e00 => extern "C" fn abmap_find_next(from: u32, to: u32, link: u32) -> u32 {
+        ll::abmap_find_next(&mut mem(), from, to, link)
+    }
+    /// `FUN_00a36490(a, texture, filter, d, rect, e)` (the clipped
+    /// rectangle and texel sizes).
+    GDraw_filterPasses_00a36490 @ 0x00a3_6490 => extern "C" fn gdraw_filter_passes(a: u32, tex: u32, filter: u32, d: u32, rect: u32, e: u32) {
+        let mut f = StackFrame::<6>::new();
+        ll::gdraw_filter_passes(&mut mem(), f.at(), [a, tex, filter, d, rect, e]);
+    }
+
+    /// `FUN_00a3d9f0(this; holder)` (the targets and clear colour).
+    IggyPlayer_tickDraw_00a3d9f0 @ 0x00a3_d9f0 => extern "thiscall" fn iggy_player_tick_draw(this: u32, holder: u32) {
+        let mut f = StackFrame::<6>::new();
+        ll::iggy_player_tick_draw(&mut mem(), f.at(), this, holder);
+    }
 }

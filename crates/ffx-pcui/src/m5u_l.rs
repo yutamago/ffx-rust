@@ -4278,4 +4278,180 @@ pub mod bridge {
         let cam = word(h, h.rebase(DEBUG_CAMERA));
         h.call_sym(MS_CAMERA_SET_RECT, Conv::Cdecl, &[cam, 1, frame])
     }
+
+    /// The sphere grid (`g_Abmap`, `0x02305834`): `+4` the link count
+    /// (`i16`), nodes of 0x28 bytes from `+0x808` (`+0x24` the distance
+    /// mark, `u16`), links of 0x14 bytes from `+0xa808` (two node
+    /// numbers).
+    pub const ABMAP: u32 = 0x0230_5834;
+
+    /// `AbmapFindNextConnectingNode(from, to, link)` (`cdecl`) -> the node
+    /// next to `from` on the way to `to`, `to` itself when `from` is
+    /// next to it, or 0xffff (no way): from `to`, repeatedly the
+    /// neighbour with the smallest distance mark (`+0x24`; the first of
+    /// equals), its link stored in `*link`, until a step lands on
+    /// `from`. (Its argument slot `to` holds the best mark meanwhile.)
+    pub fn abmap_find_next(h: &mut impl Host, from: u32, to: u32, link: u32) -> u32 {
+        let from = from & 0xffff;
+        let mut to = to;
+        if from == to & 0xffff {
+            return from;
+        }
+        let mut g = word(h, h.rebase(ABMAP));
+        let (mut best, mut best_mark) = (0xffff_u32, 0xffff_u32);
+        let mut cur = 0_u32;
+        loop {
+            let count = i32::from(h.read::<i16>(g + 4)).cast_unsigned();
+            let end = g.wrapping_add(count.wrapping_mul(5).wrapping_add(0x2a02).wrapping_mul(4));
+            let mut p = if cur == 0 { g + 0xa808 } else { cur + 0x14 };
+            let mut found = None;
+            while p < end {
+                let (a, b) = (u32::from(h.read::<u16>(p)), u32::from(h.read::<u16>(p + 2)));
+                if a == to & 0xffff {
+                    found = Some(b);
+                    break;
+                }
+                if b == to & 0xffff {
+                    found = Some(a);
+                    break;
+                }
+                p += 0x14;
+            }
+            if let Some(n) = found {
+                cur = p;
+                let mark = u32::from(h.read::<u16>(g.wrapping_add(n * 0x28).wrapping_add(0x82c)));
+                if best_mark & 0xffff > mark {
+                    best_mark = mark;
+                    h.write(link, p);
+                    g = word(h, h.rebase(ABMAP));
+                    best = n;
+                }
+                continue;
+            }
+            if best == 0xffff {
+                return 0xffff;
+            }
+            if best == from {
+                return to & 0xffff;
+            }
+            to = best;
+            best = 0xffff;
+            best_mark = 0xffff;
+            cur = 0;
+        }
+    }
+
+    pub const GDRAW_FILTER_PASS: u32 = 0x00a3_6590;
+
+    /// `FUN_00a36490(a, texture, filter, d, rect, e)` (`cdecl`; the
+    /// clipped rectangle and the texel sizes at `frame`, the original's
+    /// `ebp - 0x18`): the filter's passes (`+0x14`), each one
+    /// horizontal and one vertical `FUN_00a36590` (scale `+0x80` /
+    /// `+0x84`, texel 1/width / 1/height) over `rect` grown by a texel
+    /// and clipped to the texture; the passes' word `+0x1c` handed on.
+    pub fn gdraw_filter_passes(h: &mut impl Host, frame: u32, args: [u32; 6]) {
+        let [a, tex, filter, d, rect, e] = args;
+        let one = 1.0;
+        let iw = x87::store(x87::div(one, x87::load(int_f32(word(h, tex + 8)))));
+        let ih = x87::store(x87::div(one, x87::load(int_f32(word(h, tex + 0xc)))));
+        let extra = word(h, filter + 0x1c);
+        let r: [u32; 4] = h.read(rect);
+        let lo = |v: u32| {
+            let v = v.wrapping_sub(1).cast_signed();
+            if v <= 0 { 0 } else { v.cast_unsigned() }
+        };
+        let hi = |v: u32, max: u32| {
+            let v = v.wrapping_add(1);
+            if v.cast_signed() < max.cast_signed() {
+                v
+            } else {
+                max
+            }
+        };
+        let (tw, th) = (word(h, tex), word(h, tex + 4));
+        h.write(
+            frame,
+            [lo(r[0]), lo(r[1]), hi(r[2], tw), hi(r[3], th), ih, iw],
+        );
+        let mut i = 0_i32;
+        while i < word(h, filter + 0x14).cast_signed() {
+            for (dir, scale, texel) in [(0, 0x80, iw), (1, 0x84, ih)] {
+                let s = x87::store(x87::load(word(h, filter + scale)));
+                let t = x87::store(x87::load(texel));
+                h.call_sym(
+                    GDRAW_FILTER_PASS,
+                    Conv::Cdecl,
+                    &[dir, a, tex, filter, s, t, d, frame, extra, e],
+                ); // call width: 10
+            }
+            i += 1;
+        }
+    }
+
+    /// The `GDraw` context's lock (`0x01a858cc`).
+    pub const GDRAW_LOCK: u32 = 0x01a8_58cc;
+    pub const IGGY_READY_TO_TICK_IAT: u32 = 0x00b0_c7e8;
+    pub const IGGY_TICK_IAT: u32 = 0x00b0_c7ec;
+    pub const IGGY_SET_DISPLAY_SIZE_IAT: u32 = 0x00b0_c7fc;
+    pub const IGGY_GET_BACKGROUND_IAT: u32 = 0x00b0_c7f8;
+    pub const IGGY_DRAW_IAT: u32 = 0x00b0_c800;
+    pub const GDRAW_SET_RENDER_TARGET: u32 = 0x00a3_8300;
+
+    /// `FUN_00a3d9f0(this; holder)` (`thiscall`, `ret 4`; the targets and
+    /// the clear colour at `frame`, the original's `ebp - 0x1c`): with a
+    /// player (`[this]`) and the `GDraw` context, the player ticked while
+    /// ready and drawn (both under the context's lock) into the render
+    /// and depth targets of the device record `[holder]` (`+0x2b8`,
+    /// `+0x2d8`, else the context's own, `OMGetRenderTargets`): display
+    /// size `+0xc`/`+0x10`, the background colour cleared when `+0x28`,
+    /// `gdraw_setRenderTargetView(rtv, dsv, 0, +0x14, +0x18)`.
+    pub fn iggy_player_tick_draw(h: &mut impl Host, frame: u32, this: u32, holder: u32) {
+        if word(h, this) == 0 || word(h, h.rebase(GDRAW_CONTEXT)) == 0 {
+            return;
+        }
+        let lock = h.rebase(GDRAW_LOCK);
+        import(h, ENTER_CRITICAL_SECTION_IAT, &[lock]);
+        let p = word(h, this);
+        if import(h, IGGY_READY_TO_TICK_IAT, &[p]) != 0 {
+            loop {
+                let p = word(h, this);
+                import(h, IGGY_TICK_IAT, &[p]);
+                let p = word(h, this);
+                if import(h, IGGY_READY_TO_TICK_IAT, &[p]) == 0 {
+                    break;
+                }
+            }
+        }
+        import(h, LEAVE_CRITICAL_SECTION_IAT, &[lock]);
+        let rec = word(h, holder);
+        let (rtv, dsv) = (word(h, rec + 0x2b8), word(h, rec + 0x2d8));
+        h.write(frame, [dsv, rtv]);
+        let ctx = word(h, rec + 0x70);
+        if ctx == 0 {
+            return;
+        }
+        if rtv == 0 || dsv == 0 {
+            let f = word(h, word(h, ctx) + 0x164);
+            h.call(f, Conv::Stdcall, &[ctx, 1, frame + 4, frame]);
+        }
+        let [dsv, rtv]: [u32; 2] = h.read(frame);
+        if rtv == 0 || dsv == 0 {
+            return;
+        }
+        let (p, w, ht) = (word(h, this), word(h, this + 0xc), word(h, this + 0x10));
+        import(h, IGGY_SET_DISPLAY_SIZE_IAT, &[p, w, ht]);
+        if h.read::<u8>(this + 0x28) != 0 {
+            let p = word(h, this);
+            import(h, IGGY_GET_BACKGROUND_IAT, &[p, frame + 8]);
+            h.write(frame + 0x14, 1.0_f32.to_bits());
+            let f = word(h, word(h, ctx) + 0xc8);
+            h.call(f, Conv::Stdcall, &[ctx, rtv, frame + 8]);
+        }
+        let (a, b) = (word(h, this + 0x14), word(h, this + 0x18));
+        h.call_sym(GDRAW_SET_RENDER_TARGET, Conv::Cdecl, &[rtv, dsv, 0, a, b]);
+        import(h, ENTER_CRITICAL_SECTION_IAT, &[lock]);
+        let p = word(h, this);
+        import(h, IGGY_DRAW_IAT, &[p]);
+        import(h, LEAVE_CRITICAL_SECTION_IAT, &[lock]);
+    }
 }

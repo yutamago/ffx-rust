@@ -163,6 +163,8 @@ enum Out {
     U32(u32),
     /// `al` (the callers read no more).
     U8(u8),
+    /// `ax` (the callers read no more).
+    U16(u16),
 }
 
 struct Twins {
@@ -423,6 +425,7 @@ impl Twins {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::U16(v) => assert_eq!(ra.eax & 0xffff, u32::from(v), "{what}: ax"),
         }
         self.diff(what);
     }
@@ -2100,6 +2103,19 @@ impl Twins {
     /// A recording stub over `sym` (`this`, `n` words, `pops`) returning
     /// `seq[k]` on its `k`-th call.
     fn stub_seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+        let addr = self.seq_code(sym, this, n, pops, seq);
+        self.jump(sym, addr);
+    }
+
+    /// [`Twins::stub_seq`] bound to the import table slot `slot`.
+    fn stub_import_seq(&mut self, slot: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+        let addr = self.seq_code(slot, this, n, pops, seq);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// The code of a recording stub returning `seq`'s values in turn.
+    fn seq_code(&mut self, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) -> u32 {
         let ctr = self.words(&[0]);
         let tbl = self.words(seq);
         let log = self.log;
@@ -2131,8 +2147,7 @@ impl Twins {
             c.push(0xc2);
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
-        let addr = self.cave_code(&c);
-        self.jump(sym, addr);
+        self.cave_code(&c)
     }
 
     /// A recording stub over `sym` (cdecl `(value, text)`) that fills the
@@ -6573,6 +6588,181 @@ fn rp4_camera_paths_match_the_original() {
                     t.skip = 0;
                 }
             }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_abmap_and_filter_passes_match_the_original() {
+    // The sphere grid walk over random connected graphs whose distance
+    // marks count down to `from` (so every walk ends), with dead ends,
+    // equal marks and `from` == `to`; the filter passes with rectangles
+    // at and past the texture's edges (the pass itself stubbed).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6e00);
+        for _ in 0..120 {
+            let nodes = 4 + rng.below(40);
+            // a random tree plus extra links; marks by breadth-first
+            // distance from node 0
+            let mut links: Vec<(u32, u32)> = (1..nodes).map(|n| (rng.below(n), n)).collect();
+            for _ in 0..rng.below(nodes) {
+                let (a, b) = (rng.below(nodes), rng.below(nodes));
+                if a != b {
+                    links.push((a, b));
+                }
+            }
+            for i in (1..links.len()).rev() {
+                let j = rng.below(i as u32 + 1) as usize;
+                links.swap(i, j);
+            }
+            // the marks count down to `from`, so every walk ends there
+            let from = rng.below(nodes);
+            let mut mark = vec![u32::MAX; nodes as usize];
+            mark[from as usize] = 0;
+            let mut queue = vec![from];
+            while let Some(n) = queue.first().copied() {
+                queue.remove(0);
+                for &(a, b) in &links {
+                    for (x, y) in [(a, b), (b, a)] {
+                        if x == n && mark[y as usize] == u32::MAX {
+                            mark[y as usize] = mark[n as usize] + 1;
+                            queue.push(y);
+                        }
+                    }
+                }
+            }
+            let g = t.zeros(0xa808 + 0x14 * links.len() + 0x40);
+            t.write(g + 4, &(links.len() as u16).to_le_bytes());
+            for (n, &m) in mark.iter().enumerate() {
+                t.write(
+                    g + 0x808 + 0x28 * n as u32 + 0x24,
+                    &(m as u16).to_le_bytes(),
+                );
+            }
+            for (i, &(a, b)) in links.iter().enumerate() {
+                let at = g + 0xa808 + 0x14 * i as u32;
+                t.write(at, &(a as u16).to_le_bytes());
+                t.write(at + 2, &(b as u16).to_le_bytes());
+            }
+            t.g32(ll::ABMAP, g);
+            let link = t.zeros(4);
+            // a node far away, or one outside the graph (no way)
+            let to = if rng.chance(8) {
+                nodes + 3
+            } else {
+                rng.below(nodes)
+            } | (rng.next() & 0xffff_0000);
+            let from_arg = from | (rng.next() & 0xffff_0000);
+            t.check(
+                "AbmapFindNextConnectingNode",
+                0x00a5_6e00,
+                Conv::Cdecl,
+                &[from_arg, to, link],
+                |m| Out::U16(ll::abmap_find_next(m, from_arg, to, link) as u16),
+            );
+            t.reset();
+        }
+        for _ in 0..80 {
+            let tex = t.words(&[
+                rng.below(300),
+                rng.below(300),
+                1 + rng.below(1024),
+                1 + rng.below(1024),
+            ]);
+            let filter = t.zeros(0x100);
+            t.w32(filter + 0x14, rng.below(4));
+            t.w32(filter + 0x1c, rng.next());
+            t.w32(
+                filter + 0x80,
+                (f32::from(rng.below(100) as u16) / 7.0).to_bits(),
+            );
+            t.w32(filter + 0x84, rng.next());
+            let rect = t.words(&[
+                rng.below(320),
+                rng.below(320),
+                rng.below(320),
+                rng.below(320),
+            ]);
+            t.stub(ll::GDRAW_FILTER_PASS, false, 10, 0, rng.next());
+            let args = [rng.next(), tex, filter, rng.next(), rect, rng.next()];
+            t.check_framed(
+                "FUN_00a36490",
+                0x00a3_6490,
+                Conv::Cdecl,
+                &args,
+                0x18,
+                |m, ebp| {
+                    ll::gdraw_filter_passes(m, ebp - 0x18, args);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_iggy_tick_draw_matches_the_original() {
+    // No player or context; 0..3 ticks; the device record's targets set,
+    // missing (asked from the context, which may give none) or no
+    // context; the background clear on and off.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_d9f0);
+        for _ in 0..120 {
+            t.g32(
+                ll::GDRAW_CONTEXT,
+                if rng.chance(8) { 0 } else { rng.next() },
+            );
+            let mut vt = vec![0; 90];
+            vt[50] = t.stub_code(0x5132, false, 3, 3, rng.next());
+            vt[89] = t.stub_code(0x5159, false, 4, 4, rng.next());
+            let vt = t.words(&vt);
+            let ctx = t.words(&[vt, 0, 0, 0]);
+            let rec = t.zeros(0x300);
+            t.w32(rec + 0x70, if rng.chance(8) { 0 } else { ctx });
+            t.w32(rec + 0x2b8, if rng.chance(3) { 0 } else { rng.next() });
+            t.w32(rec + 0x2d8, if rng.chance(3) { 0 } else { rng.next() });
+            let holder = t.words(&[rec]);
+            let this = t.zeros(0x30);
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            if rng.chance(8) {
+                t.w32(this, 0);
+            }
+            t.w8(this + 0x28, u8::from(rng.chance(2)));
+            let ticks = rng.below(4) as usize;
+            let mut ready = vec![1; ticks];
+            ready.push(0);
+            t.stub_import_seq(ll::IGGY_READY_TO_TICK_IAT, false, 1, 1, &ready);
+            for (iat, n) in [
+                (ll::ENTER_CRITICAL_SECTION_IAT, 1),
+                (ll::LEAVE_CRITICAL_SECTION_IAT, 1),
+                (ll::IGGY_TICK_IAT, 1),
+                (ll::IGGY_SET_DISPLAY_SIZE_IAT, 3),
+                (ll::IGGY_GET_BACKGROUND_IAT, 2),
+                (ll::IGGY_DRAW_IAT, 1),
+            ] {
+                t.stub_import(iat, false, n, n, rng.next());
+            }
+            t.stub(ll::GDRAW_SET_RENDER_TARGET, false, 5, 0, rng.next());
+            let init: Vec<u8> = (0..5).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.skip = 4;
+            t.check_framed_init(
+                "FUN_00a3d9f0",
+                0x00a3_d9f0,
+                Conv::Thiscall(this),
+                &[holder],
+                0x1c,
+                &init,
+                |m, ebp| {
+                    ll::iggy_player_tick_draw(m, ebp - 0x1c, this, holder);
+                    Out::None
+                },
+            );
+            t.skip = 0;
             t.reset();
         }
     });
