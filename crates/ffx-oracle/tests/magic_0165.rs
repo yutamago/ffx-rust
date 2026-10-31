@@ -134,6 +134,8 @@ fn task_starts() {
         if rva == 0x2cc0 {
             t.set_u32(w(&t, 0x11), SCRATCH + 0x880);
             t.set_u32(SCRATCH + 0x888, 0x00a0_0000);
+            // the sprite's handle (a global)
+            t.set_u32(w(&t, 0x39), 0x0039_0039);
         }
         if let Some(op) = list {
             // the object list: the second object listed, the others not
@@ -146,12 +148,22 @@ fn task_starts() {
             t.set_u32(l + 8, n1);
             t.set_u32(n1 + 4, n2);
             t.set_u32(n2, n1);
+            // the object of index 2 (p + 2 * 0x130) and p + 0x390 listed,
+            // their flags (u16 +0x124) with bit 15 and a different +0x128
             t.set_u32(n1 + 8, p + 0x390);
-            t.set_u32(n2 + 8, p + 0x777);
+            t.set_u32(n2 + 8, p + 0x260);
             t.set_u32(p + 0x5f1c, 2);
+            for obj in [p + 0x260, p + 0x390] {
+                t.set_u16(obj + 0x124, 0x8123);
+                t.set_u16(obj + 0x128, 0x0456);
+            }
         }
         let take_f = t.img.rel32_target(at + take);
         for filled in [false, true] {
+            // the effect's blocks past the floats hold junk (each store
+            // must show), the selected object's index kept
+            t.write(p + 0x5800, &[0x6d; 0x700]);
+            t.set_u32(p + 0x5f1c, 2);
             ring(&mut t, take_f);
             t.write(tail, &[0x66; 0x20]);
             t.set_u32(w(&t, head), if filled { tail } else { 0 });
