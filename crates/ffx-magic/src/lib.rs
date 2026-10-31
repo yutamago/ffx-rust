@@ -82,6 +82,8 @@ pub mod o4_fam4;
 pub mod o4_fam5;
 pub mod o4_parts;
 pub mod o4_rcef;
+pub mod o4_rcef2;
+pub mod o4_setup;
 pub mod o4_single;
 pub mod o4_small;
 pub mod o4_state;
@@ -1330,6 +1332,23 @@ ports! {
     "o4 single seq_call_then_jump 0415@1000" => o4_single::SEQ_CALL_THEN_JUMP_0415_1000, o4_single::seq_call_then_jump;
     "o4 single slot_chain_306 0397@5870" => o4_single::SLOT_CHAIN_306_0397_5870, o4_single::slot_chain_306;
     "o4 single remove_and_free 0397@6390" => o4_single::REMOVE_AND_FREE_0397_6390, o4_single::remove_and_free;
+    "o4 rcef2 clear_slot_seq_call 0191@1000" => o4_rcef2::CLEAR_SLOT_SEQ_CALL_0191_1000, o4_rcef2::clear_slot_seq_call;
+    "o4 rcef2 indexed_slot_seq_wait 0191@10b0" => o4_rcef2::INDEXED_SLOT_SEQ_WAIT_0191_10B0, o4_rcef2::indexed_slot_seq_wait;
+    "o4 rcef2 two_tasks_seq_wait8 0300@1170" => o4_rcef2::TWO_TASKS_SEQ_WAIT8_0300_1170, o4_rcef2::two_tasks_seq_wait8;
+    "o4 rcef2 slots_seq_call 0300@11d0" => o4_rcef2::SLOTS_SEQ_CALL_0300_11D0, o4_rcef2::slots_seq_call;
+    "o4 rcef2 pair_slot_seq_wait 0301@1740" => o4_rcef2::PAIR_SLOT_SEQ_WAIT_0301_1740, o4_rcef2::pair_slot_seq_wait;
+    "o4 rcef2 field_task_seq_wait 0301@17a0" => o4_rcef2::FIELD_TASK_SEQ_WAIT_0301_17A0, o4_rcef2::field_task_seq_wait;
+    "o4 rcef2 task_seq_keep 0359@1160" => o4_rcef2::TASK_SEQ_KEEP_0359_1160, o4_rcef2::task_seq_keep;
+    "o4 rcef2 tasks_while_count 0359@14d0" => o4_rcef2::TASKS_WHILE_COUNT_0359_14D0, o4_rcef2::tasks_while_count;
+    "o4 rcef2 keep_task_seq_wait 0361@1260" => o4_rcef2::KEEP_TASK_SEQ_WAIT_0361_1260, o4_rcef2::keep_task_seq_wait;
+    "o4 rcef2 slot_seq_keep 0361@12d0" => o4_rcef2::SLOT_SEQ_KEEP_0361_12D0, o4_rcef2::slot_seq_keep;
+    "o4 rcef2 pair_field_seq_wait 0526@1090" => o4_rcef2::PAIR_FIELD_SEQ_WAIT_0526_1090, o4_rcef2::pair_field_seq_wait;
+    "o4 rcef2 indexed_field_seq_wait 0526@11c0" => o4_rcef2::INDEXED_FIELD_SEQ_WAIT_0526_11C0, o4_rcef2::indexed_field_seq_wait;
+    "o4 rcef2 task_count_cb 0526@1270" => o4_rcef2::TASK_COUNT_CB_0526_1270, o4_rcef2::task_count_cb;
+    "o4 rcef2 effect_slots_seq 0529@1650" => o4_rcef2::EFFECT_SLOTS_SEQ_0529_1650, o4_rcef2::effect_slots_seq;
+    "o4 setup two_setups 0042@b060" => o4_setup::TWO_SETUPS_0042_B060, o4_setup::two_setups;
+    "o4 setup setups_of_block 0262@6350" => o4_setup::SETUPS_OF_BLOCK_0262_6350, o4_setup::setups_of_block;
+    "o4 setup setups_of_table 0262@6e50" => o4_setup::SETUPS_OF_TABLE_0262_6E50, o4_setup::setups_of_table;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
