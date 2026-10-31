@@ -26,6 +26,8 @@ use ffx_prender::m5m_p::bridge as gp;
 use ffx_prender::m5m_q::bridge as gq;
 use ffx_prender::m5m_r::bridge as gr;
 use ffx_prender::m5m_s::bridge as gs;
+use ffx_prender::m5m_t::bridge as gt;
+use ffx_prender::m5m_u::bridge as gu;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -633,5 +635,23 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_s::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_s::FRAME;
         gs::chk_pack_list(&mut mem(), ebp, maps, pack)
+    }
+    // ---- round 5 batch 16 (ffx_prender::m5m_t) ----
+    /// `rcbgSceneLoadTexture(scene)` -> the last callee's `eax` (the
+    /// original's 0x118-byte frame, its file list and path, in this
+    /// shim's).
+    rcbgSceneLoadTexture @ 0x0093_b6b0 => extern "C" fn rcbg_scene_load_texture(scene: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_t::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_t::FRAME;
+        gt::load_texture(&mut mem(), ebp, scene)
+    }
+    // ---- round 5 batch 17 (ffx_prender::m5m_u) ----
+    /// `rcbgGuideMapSaveSub(n, maps, number)` -> `rcbgSceneLoadAll`'s `eax`
+    /// (the original's 0x534-byte frame, its scene, names, path and header,
+    /// in this shim's).
+    rcbgGuideMapSaveSub @ 0x0093_91d0 => extern "C" fn rcbg_guide_map_save_sub(n: u32, maps: u32, number: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_u::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_u::FRAME;
+        gu::guide_map_save_sub(&mut mem(), ebp, n, maps, number)
     }
 }

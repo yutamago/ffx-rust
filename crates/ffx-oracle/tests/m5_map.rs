@@ -51,6 +51,8 @@ use ffx_prender::m5m_p::{self as mp, bridge as gp};
 use ffx_prender::m5m_q::{self as mq, bridge as gq};
 use ffx_prender::m5m_r::{self as mr, bridge as gr};
 use ffx_prender::m5m_s::{self as ms, bridge as gs};
+use ffx_prender::m5m_t::{self as mt, bridge as gt};
+use ffx_prender::m5m_u::{self as mu, bridge as gu};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4246,6 +4248,165 @@ fn r5_chk_pack_list_matches_the_original() {
                 |o| Out::U32(gs::chk_pack_list(o, ebp, maps, pack)),
             );
             r5_same(t, "rcbgSaveChkPackList", ebp - 0x1a4, 0x1a0);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 16 (ffx_prender::m5m_t) ----
+
+#[test]
+fn r5_scene_load_texture_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0d1);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/map");
+            t.write(
+                work + 0x27c,
+                if case % 4 == 3 {
+                    &b"kino"[..]
+                } else {
+                    &b"bsil00"[..]
+                },
+            );
+            t.global(mt::RCUI_WORK.sym, work);
+            // the directory's files: plain and animated layers, others
+            let pool: [&[u8]; 12] = [
+                b"bsil00a.tm2\0",
+                b"bsil00b\0",
+                b"bsil00c.tm2\0",
+                b"bsil00_a.tm2\0",
+                b"bsil00_c\0",
+                b"bsil00\0",
+                b"bsil00A.tm2\0",
+                b"kino03d.tm2\0",
+                b"bsil00_\0",
+                // the last letter, a non-letter after '_', a near miss of
+                // the plain name
+                b"bsil00z.tm2\0",
+                b"bsil00_~.tm2\0",
+                b"bsil00b.tmp\0",
+            ];
+            let count = if case % 6 == 5 { 0 } else { 1 + rng.below(6) };
+            let ptrs: Vec<u32> = (0..count)
+                .map(|_| {
+                    let s = pool[rng.below(12) as usize];
+                    t.alloc(s)
+                })
+                .collect();
+            let names = t.words(&ptrs);
+            let s = t.stub_code(1, false, 2, 0, Ret::Val(1), false);
+            let mut c = vec![0x51, 0x8b, 0x4c, 0x24, 0x08]; // push ecx; mov ecx, [esp+8]
+            c.extend([0xc7, 0x01]);
+            c.extend(count.to_le_bytes()); // mov dword [ecx], count
+            c.extend([0xc7, 0x41, 0x08]);
+            c.extend(names.to_le_bytes()); // mov dword [ecx+8], names
+            c.push(0x59); // pop ecx
+            c.push(0xe9);
+            let at = t.a.alloc_code(&[0; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+            c.extend(s.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp s
+            t.write(at, &c);
+            t.jump(mt::MAKE_FILE_LIST, at);
+            let layers = t.zeros(0xc0 * 60);
+            t.stub_sym(mt::RC_ALLOC, 2, false, 3, 0, Ret::Val(layers));
+            t.stub_sym(mt::LAYER_INIT, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(mt::LOAD_NORMAL, 4, false, 2, 0, Ret::Val(4));
+            t.stub_sym(mt::LOAD_ANIME, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mt::LAYER_CALC_CENTER, 6, false, 1, 0, Ret::Val(rng.next()));
+            let scene = t.zeros(0x10);
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - mt::FRAME - 0x40);
+            t.check(
+                "rcbgSceneLoadTexture",
+                0x0093_b6b0,
+                Conv::Cdecl,
+                &[scene],
+                |o| Out::U32(gt::load_texture(o, ebp, scene)),
+            );
+            r5_same(t, "rcbgSceneLoadTexture", ebp - 0x118, 0x114);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 17 (ffx_prender::m5m_u) ----
+
+#[test]
+fn r5_guide_map_save_sub_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0e1);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/proj/map/bs01");
+            t.write(work + 0x27c, b"bsil01");
+            t.global(mu::RCUI_WORK.sym, work);
+            // the map system: none, an empty one, or its scene
+            let sys = match case % 3 {
+                0 => 0,
+                1 => t.words(&[0]),
+                _ => {
+                    let first = t.words(&[0, 0, rng.next()]);
+                    t.words(&[first])
+                }
+            };
+            t.global(mu::YN_MAP_SYSTEM.sym, sys);
+            let n = match case % 4 {
+                0 => 0,
+                1 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(4),
+            };
+            let bytes: Vec<u8> = (0..4).map(|_| rng.next() as u8).collect();
+            let maps = t.alloc(&bytes);
+            t.stub_sym(mu::SET_NUMBER, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(mu::SCE_OPEN, 2, false, 2, 0, Ret::Val(rng.below(100)));
+            t.stub_sym(mu::SCE_WRITE, 3, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mu::SCE_CLOSE, 4, false, 1, 0, Ret::Val(rng.next()));
+            let tags = [t.words(&[rng.next()]), t.words(&[rng.next()])];
+            let seq = t.seq(&tags);
+            t.stub_sym(mu::CHUNK_TAG, 5, false, 1, 0, seq);
+            t.stub_sym(mu::SAVE_CHUNK_HEADER, 6, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mu::SCENE_INIT, 7, false, 1, 0, Ret::Val(7));
+            t.stub_sym(mu::SCENE_LOAD_ALL, 8, false, 1, 0, Ret::Val(rng.next()));
+            // the guide save sees the map name's digits (+4..+8 captured
+            // per call)
+            let cap = t.zeros(0x40);
+            let s = t.stub_code(9, false, 2, 0, Ret::Val(9), false);
+            let mut c = vec![0x51, 0x50, 0x8b, 0x0d]; // push ecx; push eax; mov ecx, [cap]
+            c.extend(cap.to_le_bytes());
+            c.push(0xa1); // mov eax, [name + 4]
+            c.extend((work + 0x27c + 4).to_le_bytes());
+            c.extend([0x89, 0x04, 0x8d]); // mov [ecx*4 + cap + 4], eax
+            c.extend((cap + 4).to_le_bytes());
+            c.extend([0xff, 0x05]); // inc dword [cap]
+            c.extend(cap.to_le_bytes());
+            c.extend([0x58, 0x59, 0xe9]); // pop eax; pop ecx; jmp s
+            let at = t.a.alloc_code(&[0; 40]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 40]).unwrap(), at);
+            c.extend(s.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            t.write(at, &c);
+            t.jump(mu::GUIDE_SAVE, at);
+            t.stub_sym(mu::SCENE_FINI, 10, false, 1, 0, Ret::Val(10));
+            t.stub_sym(mu::SYSTEM_ON_HOST, 11, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mu::RC_PRINT, 12, false, 3, 0, Ret::Val(rng.next()));
+            let args = [n, maps, rng.next()];
+            r5_zero_stack(t, 0x800);
+            let ebp = frame_ebp(&t.a, 3);
+            // junk under the chunk header (the save clears it)
+            t.write(ebp - 0x41c, &[0x5a; 0x10]);
+            t.b_top = Some(ebp - mu::FRAME - 0x40);
+            t.check(
+                "rcbgGuideMapSaveSub",
+                0x0093_91d0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gu::guide_map_save_sub(o, ebp, n, maps, args[2])),
+            );
+            r5_same(t, "rcbgGuideMapSaveSub", ebp - 0x534, 0x530);
             t.b_top = None;
             t.reset();
         }

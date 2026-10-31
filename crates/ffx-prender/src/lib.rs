@@ -186,6 +186,8 @@ pub mod m5m_p;
 pub mod m5m_q;
 pub mod m5m_r;
 pub mod m5m_s;
+pub mod m5m_t;
+pub mod m5m_u;
 pub mod m5p_render_a;
 pub mod m5p_render_a10;
 pub mod m5p_render_a2;
