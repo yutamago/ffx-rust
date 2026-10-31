@@ -1123,6 +1123,9 @@ ports! {
     "reset and scale (511)" => s4_small::RESET_AND_SCALE_511, s4_small::reset_and_scale;
     "reset and scale (563)" => s4_small::RESET_AND_SCALE_563, s4_small::reset_and_scale;
     "reset and scale (430)" => s4_small::RESET_AND_SCALE_430, s4_small::reset_and_scale;
+    "colour one, give back" => s4_small::COLOUR_ONE_GIVE_BACK, s4_small::colour_one_give_back;
+    "part drop (argument)" => s4_small::PART_DROP_ARG, s4_small::part_drop_arg;
+    "part frame" => s4_small::PART_FRAME, s4_small::part_frame;
     "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;

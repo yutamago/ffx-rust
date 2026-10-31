@@ -3760,14 +3760,20 @@ pub const MODEL_RANGES: Sig = Sig {
 ///
 /// `magic_0390` 0x10001530 (114 bytes; 2 DLLs).
 pub fn colour_one<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    let f = fr.at;
+    through(colour_one_at(g, img, fr.at, 0))
+}
+
+/// [`colour_one`]'s calls, the operands `shift` bytes later. Returns the
+/// last slot's result.
+fn colour_one_at<G: Game>(g: &mut G, img: &Image, f: u32, shift: u32) -> Out {
+    let o = |off: u32| off + shift;
     let one = 0x3f80_0000;
     slot_call(g, img, f, (0x1, 933), &[one; 4]);
-    let k = g.read::<u32>(op(img, f, 0x38));
-    g.write::<u32>(op(img, f, 0x47), one);
-    slot_call(g, img, f, (0x30, 785), &[k]);
-    let k = g.read::<u32>(op(img, f, 0x5f));
-    through(slot_call(g, img, f, (0x57, 785), &[k]))
+    let k = g.read::<u32>(op(img, f, o(0x38)));
+    g.write::<u32>(op(img, f, o(0x47)), one);
+    slot_call(g, img, f, (o(0x30), 785), &[k]);
+    let k = g.read::<u32>(op(img, f, o(0x5f)));
+    slot_call(g, img, f, (o(0x57), 785), &[k])
 }
 
 /// [`colour_one`].
@@ -5529,5 +5535,114 @@ pub const WALK_CHILD_PLACE: Sig = Sig {
     len: 146,
     hash: 0x0e89_327e_fd23_71c7,
     calls: &[],
+    imports: &[],
+};
+
+/// [`colour_one`] (its operands a byte later), then the block's node
+/// `*G + 0x314c`, when there is one, given back to its pool
+/// ([`give_back`]) and the field cleared (no arguments). Returns the
+/// give-back's `eax`, or slot 785's.
+///
+/// `magic_0168` 0x10004330 (149 bytes; 2 DLLs).
+pub fn colour_one_give_back<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let out = colour_one_at(g, img, f, 1);
+    let block = g.read::<u32>(op(img, f, 0x73));
+    let node = g.read::<u32>(block.wrapping_add(0x314c));
+    if node == 0 {
+        return through(out);
+    }
+    let eax = give_back(g, img, img.rel32_target(f + 0x85), node);
+    g.write::<u32>(block.wrapping_add(0x314c), 0);
+    Ret::eax(eax)
+}
+
+/// [`colour_one_give_back`].
+pub const COLOUR_ONE_GIVE_BACK: Sig = Sig {
+    len: 149,
+    hash: 0xbc9a_e307_72b8_c468,
+    calls: &[(0x85, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};
+
+/// A part dropped (cdecl `(part)`): slot 258 `(part)`, slot 231 twice on
+/// the DLL's matrices (`(*G_A, *G_B, *G_C)`, `(*G_D, *G_E, *G_A)`),
+/// `*G_P` = `ITEM`, slot 712 `(part, 0x30)` with `**G_LOCK` 1 around it,
+/// each call seeing the words the earlier ones left. Returns 1 when slot
+/// 712 answers 0, else 0.
+///
+/// `magic_0429` 0x10001170 (147 bytes; 2 DLLs).
+pub fn part_drop_arg<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    let p = fr.arg(g, 0);
+    slot_call(g, img, f, (0x4, 258), &[p]);
+    let (c, b, a) = (rd(g, 0x16), rd(g, 0x21), rd(g, 0x2d));
+    slot_call(g, img, f, (0x1b, 231), &[a, b, c, p]);
+    let (e, d, x) = (rd(g, 0x35), rd(g, 0x40), rd(g, 0x4c));
+    slot_call(g, img, f, (0x3a, 231), &[x, d, e, a, b, c, p]);
+    let ptr = rd(g, 0x53);
+    g.write::<u32>(ptr, op(img, f, 0x5e));
+    let lock = rd(g, 0x63);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let r = slot_call(g, img, f, (0x70, 712), &[p, 0x30, x, d, e, a, b, c, p]).eax;
+    let lock = rd(g, 0x7e);
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_drop_arg`].
+pub const PART_DROP_ARG: Sig = Sig {
+    len: 147,
+    hash: 0x8ffd_dc5f_c351_80ff,
+    calls: &[],
+    imports: &[],
+};
+
+/// While `G_ON` is set: `*G_P`, `*G_Q` their items (operands `+0x1a`,
+/// `+0x25`), the screen and camera matrices (slots 723 `(*G_A)`, 724
+/// `(*G_B, *G_A)`), the DLL's part refreshed
+/// ([`crate::sa_misc::part_refresh_b`], the part operand `+0x4d`); when
+/// its `u16 +0x1e` is then 0, slot 346 `(*G_C)` and slot 214 `(*G_D)`;
+/// `G_N` counts up (no arguments). Returns 0.
+///
+/// `magic_0702` 0x100014d0 (146 bytes; 2 DLLs).
+pub fn part_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    let a = rd(g, 0x14);
+    let p = rd(g, 0xe);
+    g.write::<u32>(p, op(img, f, 0x1a));
+    let q = rd(g, 0x1f);
+    g.write::<u32>(q, op(img, f, 0x25));
+    slot_call(g, img, f, (0x2a, 723), &[a]);
+    let b = rd(g, 0x3d);
+    let eax = slot_call(g, img, f, (0x37, 724), &[b, a]).eax;
+    let part = op(img, f, 0x4d);
+    crate::sa_misc::part_refresh_b(g, img, img.rel32_target(f + 0x52), part, eax);
+    if g.read::<u16>(op(img, f, 0x59)) == 0 {
+        let c = rd(g, 0x67);
+        // `ecx` still holds the part (the refresh's `this`)
+        let t = slot_target(g, op(img, f, 0x61), 346);
+        g.call(t, part, &[c]);
+        let d = rd(g, 0x7a);
+        slot_call(g, img, f, (0x74, 214), &[d, c]);
+    }
+    let n = op(img, f, 0x8b);
+    let v = g.read::<u32>(n).wrapping_add(1);
+    g.write::<u32>(n, v);
+    Ret::eax(0)
+}
+
+/// [`part_frame`].
+pub const PART_FRAME: Sig = Sig {
+    len: 146,
+    hash: 0x20e1_0c92_df9f_ace3,
+    calls: &[(0x52, Callee::Sig(&crate::sa_misc::PART_REFRESH_B))],
     imports: &[],
 };

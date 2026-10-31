@@ -2545,3 +2545,49 @@ fn colours_and_child_places() {
         }
     }
 }
+
+#[test]
+fn drops_frames_colours() {
+    let Some(mut t) = twin(168) else { return };
+    recs(&mut t, &[(933, 4), (785, 1)]);
+    let f = t.at(0x4330);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x73), block);
+    for node in [0u32, SCRATCH + 0x600] {
+        if node != 0 {
+            t.write(node, &[0; 0x20]);
+            t.write(node + 0x100, &[0; 0x20]);
+            t.set_u32(node + 8, node + 0x100);
+        }
+        t.set_u32(block + 0x314c, node);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(429) else { return };
+    recs(&mut t, &[(258, 1), (231, 3)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x1170);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x63), lock);
+    t.set_u32(op(&t, f, 0x53), SCRATCH + 0x88);
+    for a in [0u32, 1] {
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check_entry(f, Call::default(), &[0x0258_0001], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(702) else { return };
+    recs(&mut t, &[(723, 1), (724, 2), (346, 1), (214, 2)]);
+    let f = t.at(0x14d0);
+    for o in [0xe, 0x1f] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x80 + o);
+    }
+    let part = op(&t, f, 0x4d);
+    for (on, alive) in [(0u32, 0u16), (1, 0), (1, 3)] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.write(part, &[0; 0x20]);
+        t.set_u16(part + 0x1e, alive);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
