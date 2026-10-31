@@ -9056,3 +9056,60 @@ pub const EFFECT_END_STATES: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The light block reset to its defaults (no arguments): three scales
+/// 1.0, slot 790's float kept (`fstp` at operand `+0x2d`), with `B` the
+/// word at operand `+0x33` the colour `B + 0xe70` copied to `+0xe80`,
+/// `+0xe90..` four floats from the DLL, `+0xea0` and `+0xea4` 20; the
+/// block `B + 0xcd8` scaled ([`scale_task_fixed`], `xmm1` 0 so the
+/// default, `xmm2` the DLL's K) and slot 560 `(slot 557 & !4)` clears
+/// bit 2 of the flags (`B` stays under it). Returns slot 560's `eax`.
+///
+/// `magic_0168` 0x10004230 (244 bytes; 2 DLLs).
+pub fn light_block_defaults<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    for o in [0x7, 0x17, 0x21] {
+        g.write::<u32>(w(o), 0x3f80_0000);
+    }
+    let v = st0_f32(slot_call(g, img, f, (0x1, 790), &[]));
+    g.write::<u32>(w(0x2d), v);
+    let b = g.read::<u32>(w(0x33));
+    let at = |o: u32| b.wrapping_add(o);
+    let x = |g: &G, o: u32| g.read::<u32>(w(o));
+    let (x1, x0, x3, x4, k) = (x(g, 0x3b), x(g, 0x43), x(g, 0x4b), x(g, 0x53), x(g, 0x61));
+    for i in 0..4 {
+        let c = g.read::<u32>(at(0xe70 + 4 * i));
+        g.write::<u32>(at(0xe80 + 4 * i), c);
+    }
+    for (o, v) in [
+        (0xe94, x1),
+        (0xe90, x0),
+        (0xe98, x3),
+        (0xe9c, x4),
+        (0xea4, 0x14),
+        (0xea0, 0x14),
+    ] {
+        g.write::<u32>(at(o), v);
+    }
+    // push ecx (B); call: the callee's frame is 8 below
+    g.write::<u32>(fr.esp.wrapping_sub(4), b);
+    let callee = Frame {
+        at: img.rel32_target(f + 0xce),
+        esp: fr.esp.wrapping_sub(8),
+        ecx: at(0xcd8),
+        xmm: [x0.into(), 0, k.into(), x3.into()],
+        ..*fr
+    };
+    scale_task_fixed(g, img, &callee);
+    let flags = slot_call(g, img, f, (0xd3, 557), &[b]).eax & !4;
+    through(slot_call(g, img, f, (0xe4, 560), &[flags, b]))
+}
+
+/// [`light_block_defaults`].
+pub const LIGHT_BLOCK_DEFAULTS: Sig = Sig {
+    len: 244,
+    hash: 0x8a11_7051_614b_f720,
+    calls: &[(0xce, Callee::Sig(&SCALE_TASK_20))],
+    imports: &[],
+};

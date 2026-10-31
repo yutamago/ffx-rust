@@ -4201,3 +4201,28 @@ fn effect_end_states() {
     }
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn light_block_defaults() {
+    let Some(mut t) = twin(168) else { return };
+    let f = t.at(0x4230);
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.1);
+    recs(&mut t, &[(557, 1), (560, 2)]);
+    let sc = t.img.rel32_target(f + 0xce);
+    let take = t.img.rel32_target(sc + 0x7b);
+    let b = SCRATCH + 0x1000;
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        t.write(b, &vec![0x44; 0xf00]);
+        t.set_u32(op(&t, f, 0x33), b);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, sc, 0x81), SCRATCH + 0x5000);
+            t.set_u32(op(&t, sc, 0x99), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, sc, 0x81), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
