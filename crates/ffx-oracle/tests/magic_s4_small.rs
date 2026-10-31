@@ -3217,3 +3217,21 @@ fn static_moves_light_nodes() {
         t.check(f, Call::this(r), &[], Eax::Checked, s4_small::light_node);
     }
 }
+
+#[test]
+fn turns() {
+    let Some(mut t) = twin(55) else { return };
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 3), (248, 3)]);
+    let f = t.at(0x30f0);
+    let (ang, out, point) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x300);
+    t.set_u32(ang, 0.5f32.to_bits());
+    t.set_u32(ang + 4, (-1.25f32).to_bits());
+    t.write(out, &[0x11; 0x10]);
+    t.write(point, &[0x22; 0x10]);
+    let c = Call {
+        ecx: ang,
+        edx: out,
+        ..Call::default()
+    };
+    t.check(f, c, &[point], Eax::Checked, s4_small::turn_point);
+}

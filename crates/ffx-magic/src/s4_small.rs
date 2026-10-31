@@ -6989,3 +6989,39 @@ pub const LIGHT_NODE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A point turned (internal, `ecx` = `(yaw, pitch)`, `edx` = the output,
+/// cdecl `(point)`; a /GS frame): slot 235 resets a frame matrix, slots
+/// 328 `(m, m, yaw)` and 329 `(m, m, pitch)` turn it, slot 229 `(v, m,
+/// point)` turns the point (its `w` 1.0 first) and slot 248 `(out, out,
+/// v)` adds it to the output, `w` 1.0; each call sees the words the
+/// earlier ones left. Returns slot 248's `eax`.
+///
+/// `magic_0055` 0x100030f0 (176 bytes; 3 DLLs).
+pub fn turn_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (ang, out) = (fr.ecx, fr.edx);
+    let point = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, v) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
+    slot_call(g, img, f, (0x1b, 235), &[m]);
+    let yaw = g.read::<u32>(ang);
+    slot_call(g, img, f, (0x3a, 328), &[m, m, yaw]);
+    let pitch = g.read::<u32>(ang.wrapping_add(4));
+    slot_call(g, img, f, (0x59, 329), &[m, m, pitch]);
+    g.write::<u32>(point.wrapping_add(0xc), 0x3f80_0000);
+    slot_call(g, img, f, (0x6f, 229), &[v, m, point, m, m, pitch]);
+    let words = [out, out, v, v, m, point, m, m, pitch];
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let ret = through(slot_call(g, img, f, (0x87, 248), &words));
+    g.write::<u32>(out.wrapping_add(0xc), 0x3f80_0000);
+    ret
+}
+
+/// [`turn_point`] (the `rel32` is `__security_check_cookie`).
+pub const TURN_POINT: Sig = Sig {
+    len: 176,
+    hash: 0x64ae_813d_f78c_0b8f,
+    calls: &[(0xa8, Callee::Any)],
+    imports: &[],
+};

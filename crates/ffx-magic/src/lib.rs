@@ -1563,6 +1563,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("part drop (rates)", &s4_small::PART_DROP_RATES),
     ("move set-up (static)", &s4_small::MOVE_SETUP_STATIC),
     ("light node", &s4_small::LIGHT_NODE),
+    ("turn a point", &s4_small::TURN_POINT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
