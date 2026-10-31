@@ -210,3 +210,48 @@ pub const E10F0: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An object's set-up (0x10001360, cdecl `(obj)`): the model `M` =
+/// `(*A)[0x1a0]` (`A` at `+0x04`); slots 444 `(1)`, 442 `(obj, M, 6)`,
+/// 443 `(obj, 0x10)`, the colour `+0x130..+0x13c` (0.2, 0.2, 0.2, 0),
+/// slot 440 `(*A, obj, 0, 0)`, slot 446 `(M, 0)`, slots 450 `(obj, F1)`
+/// and 449 `(obj, F2)` (the immediates `+0x99`, `+0xac`). Returns slot
+/// 449's `eax`. Each slot call passes the words the original leaves on
+/// the stack.
+pub fn object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let table = |g: &G, at: u32, slot: u32| slot_target(g, w(at), slot);
+    let obj = fr.arg(g, 0);
+    let m = g.read::<u32>(g.read::<u32>(w(0x04)) + 0x1a0);
+    let mut stack: Vec<u32> = Vec::new();
+    let mut call = |g: &mut G, at: u32, slot: u32, words: &[u32]| {
+        stack.splice(0..0, words.iter().copied());
+        let s = table(g, at, slot);
+        // call width: 16 (every earlier call's words stay on the stack)
+        g.call(s, 0, &stack).eax
+    };
+    call(g, 0x10, 444, &[1]);
+    call(g, 0x20, 442, &[obj, m, 6]);
+    call(g, 0x34, 443, &[obj, 0x10]);
+    let a = g.read::<u32>(w(0x4f));
+    for (off, v) in [
+        (0x130, 0x3e4c_cccd),
+        (0x134, 0x3e4c_cccd),
+        (0x138, 0x3e4c_cccd),
+        (0x13c, 0),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    call(g, 0x44, 440, &[a, obj, 0, 0]);
+    call(g, 0x84, 446, &[m, 0]);
+    call(g, 0x94, 450, &[obj, w(0x99)]);
+    Ret::eax(call(g, 0xa7, 449, &[obj, w(0xac)]))
+}
+
+/// [`object_setup`] (192 bytes, 1 overlay).
+pub const OBJECT_SETUP: Sig = Sig {
+    len: 192,
+    hash: 0x6e5b_9820_65fb_9d15,
+    calls: &[],
+    imports: &[],
+};

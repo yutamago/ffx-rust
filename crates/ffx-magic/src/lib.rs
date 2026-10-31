@@ -122,31 +122,55 @@ pub mod m0042;
 pub mod m0045;
 pub mod m0046;
 pub mod m0052;
+pub mod m0053;
 pub mod m0054;
 pub mod m0070;
 pub mod m0071;
 pub mod m0072;
 pub mod m0074;
+pub mod m0076;
 pub mod m0078;
+pub mod m0082;
 pub mod m0084;
 pub mod m0090;
 pub mod m0093;
 pub mod m0098;
+pub mod m0146;
+pub mod m0149;
+pub mod m0150;
+pub mod m0152;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
 pub mod m0163;
+pub mod m0165;
 pub mod m0166;
+pub mod m0168;
 pub mod m0170;
+pub mod m0171;
+pub mod m0176;
+pub mod m0183;
+pub mod m0184;
+pub mod m0186;
 pub mod m0187;
+pub mod m0191;
+pub mod m0193;
 pub mod m0194;
+pub mod m0195;
 pub mod m0196;
+pub mod m0198;
+pub mod m0201;
+pub mod m0203;
 pub mod m0219;
+pub mod m0263;
+pub mod m0351;
+pub mod m0385;
 pub mod m0390;
 pub mod m0393;
 pub mod m0394;
 pub mod m0395;
 pub mod m0396;
+pub mod m0397;
 pub mod m0481;
 pub mod m0596;
 pub mod m0604;
@@ -1760,6 +1784,82 @@ ports! {
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
+    // round 5, own rows
+    "m0003 spawn rings" => m0003::SPAWN_RINGS, m0003::spawn_rings;
+    "m0003 spawn node 0004" => m0003::SPAWN_NODE_0004, m0003::spawn_node;
+    "m0003 spawn node 0005" => m0003::SPAWN_NODE_0005, m0003::spawn_node;
+    "m0003 spawn facing 0006" => m0003::SPAWN_FACING, m0003::spawn_facing;
+    "m0003 spawn kind table 0007" => m0003::SPAWN_KIND_TABLE, m0003::spawn_kind_table;
+    "m0003 spawn kind branch 0008" => m0003::SPAWN_KIND_BRANCH, m0003::spawn_kind_branch;
+    "m0009 objects frame" => m0009::OBJECTS_FRAME, m0009::objects_frame;
+    "m0018 start 0018" => m0018::START_0018, m0018::start;
+    "m0018 start 0019" => m0018::START_0019, m0018::start;
+    "m0020 fade frame" => m0020::FADE_FRAME, m0020::fade_frame;
+    "m0020 fade end" => m0020::FADE_END, m0020::fade_end;
+    "m0020 close frame" => m0020::CLOSE_FRAME, m0020::close_frame;
+    "m0045 close frame" => m0045::CLOSE_FRAME, m0045::close_frame;
+    "m0046 start-up" => m0046::START_UP, m0046::start_up;
+    "m0052 start-up" => m0052::START_UP, m0052::start_up;
+    "m0053 sound step" => m0053::SOUND_GATE_STEP, m0053::sound_gate_step;
+    "m0053 sound step 0065" => m0053::SOUND_PLAIN_STEP, m0053::sound_plain_step;
+    "m0052 start-up 0064" => m0052::START_UP_0064, m0052::start_up_0064;
+    "m0042 start-up" => m0042::START_UP, m0042::start_up;
+    "m0076 model start" => m0076::MODEL_START_0076, m0076::model_start_0076;
+    "m0076 model start 0077" => m0076::MODEL_START_0077, m0076::model_start_0077;
+    "m0078 start" => m0078::START_0078, m0078::start_0078;
+    "m0078 start 0079" => m0078::START_0079, m0078::start_0079;
+    "m0078 start 0081" => m0078::START_0081, m0078::start_0081;
+    "m0078 start 0080" => m0078::START_0080, m0078::start_0080;
+    "m0078 start 0083" => m0078::START_0083, m0078::start_0083;
+    "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
+    "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
+    "m0082 camera step" => m0082::CAMERA_STEP, m0082::camera_step;
+    "m0082 camera parts step" => m0082::CAMERA_PARTS_STEP, m0082::camera_parts_step;
+    "m0070 summon frame (376)" => m0070::SUMMON_FRAME_376, m0070::summon_frame_376;
+    "m0098 frame step" => m0098::FRAME_STEP, m0098::frame_step;
+    "m0098 part callback" => m0098::PART_CALLBACK, m0098::part_callback;
+    "m0098 height follow" => m0098::HEIGHT_FOLLOW, m0098::height_follow;
+    "m0098 part draw" => m0098::PART_DRAW, m0098::part_draw;
+    "m0098 tilt" => m0098::TILT, m0098::tilt;
+    "m0098 pair follow" => m0098::PAIR_FOLLOW, m0098::pair_follow;
+    "m0098 fade frame" => m0098::FADE_FRAME, m0098::fade_frame;
+    "m0098 part begin" => m0098::PART_BEGIN, m0098::part_begin;
+    "m0146 sub-node visit" => m0146::SUB_NODE_VISIT, m0146::sub_node_visit;
+    "m0149 countdown step" => m0149::COUNTDOWN_STEP, m0149::countdown_step;
+    "m0150 start-up" => m0150::START_UP, m0150::start_up;
+    "m0150 load frame" => m0150::LOAD_FRAME, m0150::load_frame;
+    "m0150 model start" => m0150::MODEL_START, m0150::model_start;
+    "m0165 look_offset" => m0165::LOOK_OFFSET, m0165::look_offset;
+    "m0165 look_pair" => m0165::LOOK_PAIR, m0165::look_pair;
+    "m0165 copy_point" => m0165::COPY_POINT, m0165::copy_point;
+    "m0165 sound_fade" => m0165::SOUND_FADE, m0165::sound_fade;
+    "m0165 sprite_task" => m0165::SPRITE_TASK, m0165::sprite_task;
+    "m0165 sprite_point_task" => m0165::SPRITE_POINT_TASK, m0165::sprite_point_task;
+    "m0165 look_follow" => m0165::LOOK_FOLLOW, m0165::look_follow;
+    "m0165 objects_off_task" => m0165::OBJECTS_OFF_TASK, m0165::objects_off_task;
+    "m0165 three_tasks" => m0165::THREE_TASKS, m0165::three_tasks;
+    "m0168 camera_frame" => m0168::CAMERA_FRAME, m0168::camera_frame;
+    "m0176 part_colour" => m0176::PART_COLOUR, m0176::part_colour;
+    "m0184 release_four" => m0184::RELEASE_FOUR, m0184::release_four;
+    "m0186 int_motion" => m0186::INT_MOTION, m0186::int_motion;
+    "m0191 object_setup" => m0191::OBJECT_SETUP, m0191::object_setup;
+    "m0193 spawn_three" => m0193::SPAWN_THREE, m0193::spawn_three;
+    "m0187 object_setup" => m0187::OBJECT_SETUP, m0187::object_setup;
+    "m0195 count_step" => m0195::COUNT_STEP, m0195::count_step;
+    "m0194 object_start" => m0194::OBJECT_START, m0194::object_start;
+    "m0195 flag_step" => m0195::FLAG_STEP, m0195::flag_step;
+    "m0195 next_step" => m0195::NEXT_STEP, m0195::next_step;
+    "m0195 object_start" => m0195::OBJECT_START, m0195::object_start;
+    "m0198 load" => m0198::LOAD, m0198::load;
+    "m0201 matrix_visit" => m0201::MATRIX_VISIT, m0201::matrix_visit;
+    "m0191 chain_next" => m0191::CHAIN_NEXT, m0191::chain_next;
+    "m0191 chain_setup" => m0191::CHAIN_SETUP, m0191::chain_setup;
+    "m0203 node_setup" => m0203::NODE_SETUP, m0203::node_setup;
+    "m0203 task_release" => m0203::TASK_RELEASE, m0203::task_release;
+    "m0263 node_setup" => m0263::NODE_SETUP, m0263::node_setup;
+    "m0351 sounds_3" => m0351::SOUNDS_3, m0351::sounds_3;
+    "m0385 step_ready" => m0385::STEP_READY, m0385::step_ready;
+    "m0397 script_end" => m0397::SCRIPT_END, m0397::script_end;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2338,6 +2438,19 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("burst records", &s5_misc::BURST_RECORDS),
     ("parts vertices", &s5_misc::PARTS_VERTICES),
     ("thrown effect (far nodes)", &s5_misc::THROWN_EFFECT_FAR),
+    // round 5, own rows
+    ("m0009 part object", &m0009::PART_OBJECT),
+    ("m0093 part object", &m0093::PART_OBJECT),
+    ("m0098 motion sequence", &m0098::MOTION_SEQUENCE),
+    ("m0098 camera matrix", &m0098::CAMERA_MATRIX),
+    ("m0146 model nodes (pick)", &m0146::MODEL_NODES_PICK),
+    ("m0146 move start", &m0146::MOVE_START),
+    ("m0152 build (287)", &m0152::BUILD_287),
+    ("m0171 actor block", &m0171::ACTOR_BLOCK),
+    ("m0171 aim", &m0171::AIM),
+    ("m0183 camera point", &m0183::CAMERA_POINT),
+    ("m0186 node cleared", &m0186::NODE_CLEARED),
+    ("m0186 node abc", &m0186::NODE_ABC),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

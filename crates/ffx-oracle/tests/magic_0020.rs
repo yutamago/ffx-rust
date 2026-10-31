@@ -3,7 +3,11 @@
 //! callbacks, the start-up and per-frame steps and the bars' set-up
 //! (internal). Needs `FFX_GAME_DIR`.
 
-#![allow(clippy::cast_precision_loss, clippy::too_many_lines)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
+)]
 
 mod magic;
 mod magic_l3;
@@ -367,5 +371,184 @@ fn bars() {
             );
             Ret::default()
         });
+    }
+}
+
+/// A timeline with one live event and no callbacks (`timeline_run`'s
+/// layout), its events at `events`.
+fn live_timeline(t: &mut Twin, tl: u32, events: u32, live: bool) {
+    t.set_u32(tl, 5);
+    t.set_u32(tl + 4, 1);
+    t.set_u32(tl + 8, u32::from(live));
+    t.set_u32(tl + 0xc, u32::from(live));
+    t.set_u32(tl + 0x10c, events);
+    t.write(events, &[0; 0x18]);
+    t.set_u32(events + 4, 9);
+}
+
+/// 0x10001180: the level falling and rising (to and past its limits,
+/// held below the start time), state 7 and another, the release off and
+/// with no, two and three handles.
+#[test]
+fn fade_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1180);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    recs(
+        &mut t,
+        &[(821, 1), (822, 4), (823, 2), (824, 2), (845, 0), (276, 2)],
+    );
+    let k = f32::from_bits(t.u32(w(&t, 0x0b)));
+    let d = f32::from_bits(t.u32(w(&t, 0x26)));
+    for (i, (c, time, level, state, n)) in [
+        (0u32, 5u32, 0.5f32, 0u32, 0u32),
+        (0, 6, 0.5, 7, 0),
+        (0, 6, k - d * 0.5, 0, 0),
+        (0, 6, k, 7, 2),
+        (1, 6, d * 0.5, 7, 0),
+        (1, 0, 0.75, 7, 3),
+        (1, 9, k, 3, 2),
+        (0, 4, f32::NAN, 3, 0),
+        (1, 4, f32::NAN, 6, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.set_u32(w(&t, 0x02), c);
+        t.set_u32(w(&t, 0x1b), time);
+        t.set_u32(w(&t, 0x13), f(level));
+        t.set_u32(w(&t, 0x8e), state);
+        t.set_u32(w(&t, 0xf0), n);
+        for j in 0..3 {
+            t.set_u32(w(&t, 0x10a) + 4 * j, 0x00ab_0000 + j);
+        }
+        for (j, a) in (0u32..).zip([w(&t, 0x123), w(&t, 0x123) + 4, w(&t, 0x145)]) {
+            t.set_u32(
+                a,
+                if (i as u32 + j).is_multiple_of(2) {
+                    0
+                } else {
+                    0x00cd_0000 + j
+                },
+            );
+        }
+        for (j, off) in (0u32..).zip([0x83, 0x7b, 0xab, 0x73]) {
+            t.set_u32(w(&t, off), f(1.5 + j as f32 - i as f32 * 0.25));
+        }
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x100012e0: the fade's end with the level below, at and above its
+/// top (and NaN), with a live timeline event and none.
+#[test]
+fn fade_end() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x12e0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    recs(
+        &mut t,
+        &[
+            (382, 2),
+            (371, 2),
+            (315, 1),
+            (222, 4),
+            (378, 1),
+            (380, 1),
+            (379, 1),
+            (253, 0),
+        ],
+    );
+    t.set_u32(w(&t, 0x02), SCRATCH + 0x300);
+    t.set_u32(w(&t, 0x8e), 0x008e_0000);
+    let k = f32::from_bits(t.u32(w(&t, 0x58)));
+    for (i, (level, live)) in [(k, 0u32), (k * 0.5, 0), (k, 1), (f32::NAN, 0), (k * 2.0, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        t.set_u32(w(&t, 0x51), f(level));
+        t.set_u32(w(&t, 0x07), 0x0e0e_0000 + i as u32);
+        for (k, tl) in [0x44, 0xce, 0xd8, 0xe2].into_iter().enumerate() {
+            let tl = w(&t, tl);
+            live_timeline(&mut t, tl, SCRATCH + 0x5000 + 0x20 * k as u32, live != 0);
+        }
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x10002120: off, the flag clear, the counter's first and later frames,
+/// and the release with no, two and three bytes from slot 288 (and with
+/// the slot leaving the count as the caller's `ecx` had it).
+#[test]
+fn close_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2120);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    recs(
+        &mut t,
+        &[
+            (723, 1),
+            (724, 2),
+            (239, 3),
+            (214, 1),
+            (376, 1),
+            (381, 2),
+            (276, 2),
+            (296, 2),
+        ],
+    );
+    // slot 220 moves the counter on (the original reads it again after)
+    let counter = w(&t, 0x1b1);
+    rec(&mut t, 220, 3, move |m, _| {
+        m.w32(counter, 7);
+        0x220
+    });
+    let bytes = SCRATCH + 0x400;
+    t.write(bytes, &[9, 8, 7, 6]);
+    rec(&mut t, 288, 2, move |m, a| {
+        let n = m.r32(SCRATCH + 0x410);
+        if n != 0xffff {
+            m.w32(a[1], n);
+        }
+        bytes
+    });
+    t.set_u32(w(&t, 0x14), SCRATCH + 0x300);
+    t.set_u32(w(&t, 0x46), SCRATCH + 0x304);
+    // every global read holds its own value
+    for (k, op) in [0x1a, 0x38, 0x4b, 0x6e, 0x7b, 0x1cd, 0xd1, 0x196]
+        .into_iter()
+        .enumerate()
+    {
+        t.set_u32(w(&t, op), 0x0a00_0000 + k as u32);
+    }
+    for j in 0..3 {
+        t.set_u32(w(&t, 0x10a) + 4 * j, 0x00ab_0000 + j);
+    }
+    for op in [w(&t, 0x123), w(&t, 0x123) + 4, w(&t, 0x145)] {
+        t.set_u32(op, 0x00cd_0000 + op % 0x100);
+    }
+    for (k, op) in [0xa3, 0xad, 0xb7, 0xc1].into_iter().enumerate() {
+        let tl = w(&t, op);
+        live_timeline(&mut t, tl, SCRATCH + 0x5000 + 0x20 * k as u32, true);
+    }
+    let base = t.save();
+    for (on, flag, e, counter, n, ecx) in [
+        (0u32, 0u32, 0u32, 0u32, 0u32, 0u32),
+        (1, 0, 0, 0, 0, 0),
+        (1, 1, 0, 0, 0, 0),
+        (1, 1, 0, 3, 0, 0),
+        (1, 1, 1, 0, 0, 0),
+        (1, 1, 1, 0, 2, 0),
+        (1, 1, 1, 0, 0xffff, 3),
+    ] {
+        t.restore(&base);
+        t.set_u32(w(&t, 0x06), on);
+        t.set_u32(w(&t, 0x54), flag);
+        t.set_u32(w(&t, 0x95), e);
+        t.set_u32(w(&t, 0x1b1), counter);
+        t.set_u32(SCRATCH + 0x410, n);
+        t.set_u32(w(&t, 0xf3), n & 3);
+        let c = Call::this(ecx);
+        t.check_entry(at, c, &[], Eax::Checked);
     }
 }

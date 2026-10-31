@@ -132,6 +132,329 @@ fn load_steps_run_until_not_ready() {
     }
 }
 
+/// A slot that logs its first `n` words in row `k` of the log at
+/// `SCRATCH + 0x3000` (each call adds its count to the top bits) and
+/// answers `ret`.
+fn log_slot(t: &mut Twin, slot: u32, n: usize, k: u32, ret: u32) {
+    let row = SCRATCH + 0x3000 + 0x40 * k;
+    t.stub(slot, move |m, a| {
+        let c = m.r32(row + 0x3c).wrapping_add(1);
+        m.w32(row + 0x3c, c);
+        for (i, w) in (0u32..).zip(&a[..n]) {
+            m.w32(row + 4 * i, w.wrapping_add(c << 28));
+        }
+        ret
+    });
+}
+
+/// Operand offsets a spawner test needs: the tail's particle call
+/// (`rel32`), its pointer global `A`, the particles' list, the ring
+/// count, the model arrays' bases (`+ 0x98 * i`), the static node
+/// arrays to fill with junk first (operand, bytes), the float limits
+/// slot 251's value is tried at, and the limits after a factor (limit,
+/// factor) with the kind that picks the factor.
+struct SpawnerOps {
+    part: u32,
+    a: u32,
+    parts: u32,
+    count: u32,
+    models: &'static [u32],
+    /// Slot 390's answers to spawn with (the kind spawners).
+    kinds: &'static [u32],
+    fills: &'static [(u32, u32)],
+    limits: &'static [u32],
+    post: &'static [(u32, u32, u32)],
+    /// The effect nodes' flag word operand (the words one and two
+    /// nodes before it get junk too).
+    flags: u32,
+}
+
+/// The float just at or around `x` whose product with `k` is exactly
+/// `l` (the SSE `mulss`), if one is near.
+fn solve(l: f32, k: f32) -> Option<f32> {
+    let x = l / k;
+    (-8i32..=8)
+        .map(|d| f32::from_bits(x.to_bits().wrapping_add_signed(d)))
+        .find(|v| (v * k).to_bits() == l.to_bits())
+}
+
+/// A ring spawner of the `magic_0003` family (`ffx_magic::m0003`'s
+/// `spawn_head`/`spawn_tail`) in every state: state 11 before, at and
+/// after the clock's limit, spawning the first and the last ring into an
+/// empty and a filled root list, with slot 251's float below 0, at both
+/// zeros, inside, at and above the limits and NaN, the model's flag bit
+/// 0 clear and set; then each kind (the kind spawners).
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn spawner_every_state(n: u16, rva: u32, o: &SpawnerOps) {
+    let Some(mut t) = Twin::load(n) else { return };
+    t.init();
+    let f = t.at(rva);
+    let w = |t: &Twin, off: u32| t.img.word(f + off);
+    let fl = |t: &Twin, off: u32| f32::from_bits(t.u32(t.img.word(f + off)));
+    let (task, s, ring) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x280);
+    let list = SCRATCH + 0x2f0;
+    t.write(list, &[2, 5, 0, 0]);
+    // slot 218: the model list (no models), its count through a[1]
+    t.stub(218, move |m, a| {
+        m.w32(SCRATCH + 0x3300, a[0]);
+        m.w32(a[1], 0);
+        list
+    });
+    log_slot(&mut t, 0x430 / 4, 3, 0, 0x2680);
+    log_slot(&mut t, 0x3ec / 4, 1, 1, 0x2510);
+    t.stub_st0(0x3ec / 4, |m, _| {
+        f64::from(f32::from_bits(m.r32(SCRATCH + 0x2e0)))
+    });
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    log_slot(&mut t, 325, 2, 2, 0x3250);
+    log_slot(&mut t, 719, 3, 3, 0x7190);
+    log_slot(&mut t, 714, 5, 4, 0x7140);
+    // facing_int's slots: the angle in ST0, or through the local
+    log_slot(&mut t, 333, 1, 5, 0x3330);
+    t.stub_st0(333, |_, _| 0.75);
+    t.stub(601, |m, a| {
+        m.w32(SCRATCH + 0x3200, a[0]);
+        m.w32(a[1], (-1.25f32).to_bits());
+        0x6010
+    });
+    for k in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * k, 0x0f00_0000 + k);
+    }
+    // particle_node's pointer global and the owner behind *A
+    let pn = t.img.rel32_target(f + o.part);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x700);
+    t.set_u32(w(&t, o.a), SCRATCH + 0x600);
+    t.write(SCRATCH + 0x600, &[0x31; 0x80]);
+    let root = w(&t, 0x6f);
+    let other = SCRATCH + 0x800;
+    t.set_u32(w(&t, o.count), 2);
+    // the particles' list: empty
+    let parts = w(&t, o.parts);
+    t.set_u32(parts + 0x10, parts);
+    // slot 665 (the kind spawners' N1) logs; slot 390 answers the kind
+    log_slot(&mut t, 0xa64 / 4, 2, 6, 0x6650);
+    t.stub(0x618 / 4, |m, a| {
+        m.w32(SCRATCH + 0x3204, a[0]);
+        m.r32(SCRATCH + 0x2e4)
+    });
+    // the model nodes' actor
+    t.set_u32(w(&t, 0x5b), 0x00a5_0000);
+    // the static nodes hold junk (a float per word) before the spawn
+    for &(op, len) in o.fills {
+        let at = w(&t, op);
+        for i in 0..len / 4 {
+            #[allow(clippy::cast_precision_loss)]
+            t.set_u32(at + 4 * i, (1.0 + i as f32 * 0.375).to_bits());
+        }
+    }
+    let fw = w(&t, o.flags);
+    t.set_u32(fw - 56, 0x0f0f_0f00);
+    t.set_u32(fw - 112, 0x0e0e_0e00);
+    // junk under the entry: the records' words must be written
+    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+    let base = t.save();
+    let mut cases = vec![
+        (0u32, 7u32, 3u32, false, 1.0f32, 0x3002u32),
+        (1, 0, 0, false, 1.0, 0x3002),
+        (9, 3, 0, false, 1.0, 0x3002),
+        (10, 7, 5, false, 1.0, 0x3002),
+        (11, 13, 0, false, 1.0, 0x3002),
+        (11, 14, 0, false, 1.0, 0x3002),
+        (11, 29, 0, false, 1.0, 0x3002),
+        (11, 44, 0, false, 1.0, 0x3002),
+        (11, 45, 0, false, 1.0, 0x3002),
+        (11, 46, 0, false, 50.0, 0x3002),
+        (11, 46, 1, true, -2.0, 0x3002),
+        (11, 100, 0, true, 150.0, 0x3002),
+        (11, 0xffff_ffff, 1, false, 100.0, 0x3002),
+        (11, 46, 1, false, f32::NAN, 0x3002),
+        (11, 46, 0, true, 0.0, 0x3002),
+        (11, 46, 1, true, -0.0, 0x3002),
+        (11, 46, 1, true, 0.5, 0x3002),
+        (11, 46, 0, false, 12.0, 0x3002),
+        (11, 46, 1, false, 30.0, 0x3002),
+        (11, 46, 0, false, 1.0e6, 0x3002),
+        (11, 46, 2, true, 5.0, 0x3002),
+        (12, 0, 0, false, 1.0, 0x3002),
+        (9_999, 0, 0, false, 1.0, 0x3002),
+        (10_000, 5, 0, false, 1.0, 0x3002),
+        (10_001, 5, 0, false, 1.0, 0x3002),
+    ];
+    for (j, &l) in (0u32..).zip(o.limits) {
+        cases.push((11, 46, j & 1, j % 2 == 0, fl(&t, l), 0x3002));
+    }
+    for (j, &(l, k, kind)) in (0u32..).zip(o.post) {
+        if let Some(v) = solve(fl(&t, l), fl(&t, k)) {
+            cases.push((11, 46, j & 1, false, v, kind));
+        }
+    }
+    for (j, &kind) in (0u32..).zip(o.kinds) {
+        let v = [5.0f32, 0.25, 40.0, f32::NAN, 1.0, 17.5][j as usize % 6];
+        cases.push((11, 46 + j, j & 1, j % 3 == 0, v, kind));
+    }
+    for (state, clock, index, tail, v, kind) in cases {
+        t.restore(&base);
+        t.set_u32(SCRATCH + 0x2e4, kind);
+        for &m in o.models {
+            let models = w(&t, m);
+            for i in 0..2 {
+                t.write(models + 0x98 * i, &[0x44; 0x98]);
+                t.set_u32(models + 0x98 * i + 0x50, 0x0050_0000 + i);
+                t.set_u32(models + 0x98 * i + 0x54, 0x0054_0000 + i);
+                t.set_u8(models + 0x98 * i + 0x90, u8::from(tail) | 0x44);
+            }
+        }
+        t.write(s, &[0x5c; 0x40]);
+        t.set_u32(s + 0x18, state);
+        t.set_u32(s + 0x1c, 1.5f32.to_bits());
+        t.set_u32(s + 0x20, (-2.25f32).to_bits());
+        t.set_u32(s + 0x24, index);
+        t.set_u32(s + 0x28, clock);
+        // the task's ring node between two neighbours
+        t.write(ring, &[0x66; 0x60]);
+        t.set_u32(task, ring + 0x20);
+        t.set_u32(task + 4, s);
+        t.set_u32(ring + 0x24, ring);
+        t.set_u32(ring + 0x28, ring + 0x40);
+        t.set_u32(SCRATCH + 0x2e0, v.to_bits());
+        // the root list: empty, or ending in another node
+        t.write(other, &[0x77; 0x20]);
+        t.set_u32(root + 0x10, if tail { other } else { root });
+        t.set_u16(root + 0x18, 3);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+#[test]
+fn spawn_rings_every_state() {
+    let o = SpawnerOps {
+        part: 0x2c0,
+        a: 0x286,
+        parts: 0x2a3,
+        count: 0x339,
+        models: &[0x147],
+        kinds: &[],
+        fills: &[
+            (0xd9, 0x84),
+            (0xdf, 0x84),
+            (0xc1, 0x3e4),
+            (0x109, 0x300),
+            (0x2df, 0xa8),
+        ],
+        limits: &[0x22d],
+        post: &[],
+        flags: 0x321,
+    };
+    spawner_every_state(3, 0x6540, &o);
+}
+
+#[test]
+fn spawn_node_every_state() {
+    let o = SpawnerOps {
+        part: 0x268,
+        a: 0x22e,
+        parts: 0x24b,
+        count: 0x2e1,
+        models: &[0xe0],
+        kinds: &[],
+        fills: &[
+            (0xc4, 0xcc),
+            (0xf3, 0x3e4),
+            (0xfd, 0x84),
+            (0xe5, 0x300),
+            (0x287, 0xa8),
+        ],
+        limits: &[0x1b9, 0x1d9],
+        post: &[],
+        flags: 0x2c9,
+    };
+    spawner_every_state(4, 0x65b0, &o);
+    spawner_every_state(5, 0x65b0, &o);
+}
+
+#[test]
+fn spawn_facing_every_state() {
+    let o = SpawnerOps {
+        part: 0x2d8,
+        a: 0x29e,
+        parts: 0x2bb,
+        count: 0x351,
+        models: &[0x101],
+        kinds: &[],
+        fills: &[
+            (0xc1, 0x3e4),
+            (0xdb, 0xcc),
+            (0xea, 0x84),
+            (0xf0, 0x84),
+            (0x106, 0x300),
+            (0x2f7, 0xa8),
+        ],
+        limits: &[0x225, 0x245],
+        post: &[],
+        flags: 0x339,
+    };
+    spawner_every_state(6, 0x6640, &o);
+}
+
+#[test]
+fn spawn_kind_table_every_state() {
+    let o = SpawnerOps {
+        part: 0x3a8,
+        a: 0x36e,
+        parts: 0x38b,
+        count: 0x421,
+        models: &[0x140, 0x1ba],
+        kinds: &[0x3003, 0x3004, 0x3005, 0x3006, 0x3007, 0x3001, 0x3008, 0],
+        fills: &[
+            (0xc1, 0x3e4),
+            (0xd9, 0x84),
+            (0xdf, 0x84),
+            (0x109, 0x300),
+            (0x3c7, 0xa8),
+        ],
+        limits: &[0x1f8, 0x218],
+        post: &[],
+        flags: 0x409,
+    };
+    spawner_every_state(7, 0x6540, &o);
+}
+
+#[test]
+fn spawn_kind_branch_every_state() {
+    let o = SpawnerOps {
+        part: 0x3a1,
+        a: 0x367,
+        parts: 0x384,
+        count: 0x41a,
+        models: &[0x140, 0x1ba, 0x261],
+        kinds: &[
+            0x108c,
+            0x3003,
+            0x3006,
+            0x3007,
+            0x3004,
+            0x3005,
+            0x3008,
+            0x108b,
+            0,
+            0xffff_ffff,
+            0x8000_0000,
+            0x108d,
+        ],
+        fills: &[
+            (0xc1, 0x3e4),
+            (0xd9, 0x84),
+            (0xdf, 0x84),
+            (0x109, 0x300),
+            (0x3c0, 0xa8),
+        ],
+        limits: &[0x1f8, 0x218],
+        post: &[(0x30b, 0x29d, 0), (0x320, 0x29d, 0), (0x320, 0x2ca, 0x3004)],
+        flags: 0x402,
+    };
+    spawner_every_state(8, 0x6540, &o);
+}
+
 /// Where each port binds: (port, [(dll, rva)]) from the census.
 const CARRIERS: &[(&str, &[(u16, u32)])] = &[
     (

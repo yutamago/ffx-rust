@@ -4,6 +4,7 @@
 //! Needs `FFX_GAME_DIR`.
 
 mod magic;
+mod magic_owna;
 
 use magic::{Call, Eax, SCRATCH, StubMem, Twin};
 
@@ -50,4 +51,24 @@ fn copies_of_the_bound_ports() {
     let ctx_global = t.img.word(t.at(0x1d00) + 0x39);
     t.set_u32(ctx_global, SCRATCH + 0x3000);
     t.check_entry(t.at(0x1d00), entry, &[obj], Eax::Checked);
+}
+
+/// 0x100014d0: the counter below, at and above 20.
+#[test]
+fn spawn_three() {
+    let Some(mut t) = magic_owna::twin(N) else {
+        return;
+    };
+    let at = t.at(0x14d0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    magic_owna::rec(&mut t, 434, 2, |_, a| a[1] ^ 0x434);
+    magic_owna::rec(&mut t, 450, 2, |_, a| a[1] ^ 0x450);
+    magic_owna::rec(&mut t, 451, 2, |_, a| a[1] ^ 0x451);
+    t.set_u32(w(&t, 0x1e), 0x001e_0000);
+    t.set_u32(w(&t, 0x70), 0x100);
+    let obj = SCRATCH + 0x1000;
+    for n in [0u32, 19, 20, 0x8000_0000, 25] {
+        t.set_u32(w(&t, 0x05), n);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
 }

@@ -93,3 +93,50 @@ fn start_object() {
 fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
 }
+
+/// The start-up (0x10001370): into an empty and a filled task list.
+#[test]
+fn start_up() {
+    let Some(mut t) = Twin::load(N) else { return };
+    t.init();
+    let at = t.at(0x1370);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let so = t.img.rel32_target(at + 0x49);
+    t.set_u32(t.img.word(so + 0x01), SCRATCH + 0x200);
+    t.set_u32(t.img.word(so + 0x5b), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    for (slot, k) in [(719u32, 0u32), (262, 1), (268, 2), (714, 3)] {
+        t.stub(slot, move |m, a| {
+            for (i, v) in (0u32..).zip(&a[..3]) {
+                m.w32(SCRATCH + 0x800 + 0x40 * k + 4 * i, *v);
+            }
+            0x0100_0000 * (k + 1)
+        });
+    }
+    let b = SCRATCH + 0x500;
+    t.set_u32(w(&t, 0x4e), b);
+    t.write(b, &[2, 0x40]);
+    // the words the start-up clears hold junk
+    for op in [0x95, 0x9f, 0xa9, 0xb3, 0xbd, 0xdb, 0xe5, 0xef] {
+        t.set_u32(w(&t, op), 0x5a5a_5a5a);
+    }
+    t.set_u32(w(&t, 0x62) + 8, 0x00ee_0002);
+    // the free list's head for pop_node: a ring of two
+    let pop = t.img.rel32_target(at + 0xfe);
+    let (count, head) = (t.img.word(pop + 0x04), t.img.word(pop + 0x13));
+    let (n1, n2) = (SCRATCH + 0x1800, SCRATCH + 0x1840);
+    let last = SCRATCH + 0x1900;
+    for first in [0u32, last] {
+        t.write(n1, &[0x5a; 0x80]);
+        t.set_u32(n1, n2);
+        t.set_u32(n1 + 4, n2);
+        t.set_u32(n2, n1);
+        t.set_u32(n2 + 4, n1);
+        t.set_u32(head, n1);
+        t.set_u16(count, 2);
+        t.write(last, &[0x66; 0x10]);
+        t.set_u32(w(&t, 0x104), first);
+        t.set_u32(w(&t, 0x115), first);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

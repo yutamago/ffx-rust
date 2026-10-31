@@ -545,3 +545,84 @@ pub const E1C10: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The closing frame (0x10001f30, no arguments): nothing (0) unless `*A`
+/// (operand `+0x02`) is set; then `**P` = the immediate `+0x19`
+/// (`P` at `+0x0d`), slots 723 `(*M)` and 724 `(*N, *M)` (`+0x13`,
+/// `+0x31`), `**Q = *R` (`+0x3f`, `+0x44`); slot 261 asked for flags 0,
+/// 4, 1, 2 and 3 in turn: 0 runs the timelines `+0x61` and `+0x6b`
+/// ([`timeline_run`](crate::sb_misc::timeline_run)), 4 runs `+0x8b`, 1
+/// stops `+0xab` ([`timeline_stop`](crate::sb_misc::timeline_stop)), 2
+/// runs `+0xcb`; with 3 clear the counter `*K` (`+0x11c`) counts up, else
+/// the timelines `+0xeb` and `+0xf5` stop and slot 214 `(*H)` (`+0x105`)
+/// runs. Returns 1. Each slot call passes the words the original leaves
+/// on the stack.
+pub fn close_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_misc::{timeline_run, timeline_stop};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let table = |g: &G, at: u32, slot: u32| slot_target(g, w(at), slot);
+    if g.read::<u32>(w(0x02)) == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(w(0x0d));
+    let m = g.read::<u32>(w(0x13));
+    g.write::<u32>(p, w(0x19));
+    let s = table(g, 0x1e, 0xb4c / 4);
+    g.call(s, 0, &[m]);
+    let n = g.read::<u32>(w(0x31));
+    let s = table(g, 0x2b, 0xb50 / 4);
+    g.call(s, 0, &[n, m]);
+    let q = g.read::<u32>(w(0x3f));
+    g.write::<u32>(q, g.read::<u32>(w(0x44)));
+    let ask = |g: &mut G, at: u32, flag: u32, earlier: &[u32]| {
+        let s = table(g, at, 0x414 / 4);
+        let mut args = vec![flag];
+        args.extend_from_slice(earlier);
+        // call width: 3 (the flag and at most the two earlier words)
+        g.call(s, 0, &args).eax != 0
+    };
+    let run = |g: &mut G, call: u32, this: u32| {
+        timeline_run(g, img, img.rel32_target(f + call), w(this));
+    };
+    if ask(g, 0x4b, 0, &[n, m]) {
+        run(g, 0x66, 0x61);
+        run(g, 0x70, 0x6b);
+    }
+    if ask(g, 0x75, 4, &[]) {
+        run(g, 0x90, 0x8b);
+    }
+    if ask(g, 0x95, 1, &[]) {
+        timeline_stop(g, w(0xab));
+    }
+    if ask(g, 0xb5, 2, &[]) {
+        run(g, 0xd0, 0xcb);
+    }
+    if !ask(g, 0xd5, 3, &[]) {
+        let k = g.read::<u32>(w(0x11c));
+        g.write::<u32>(w(0x11c), k.wrapping_add(1));
+        return Ret::eax(1);
+    }
+    timeline_stop(g, w(0xeb));
+    timeline_stop(g, w(0xf5));
+    let h = g.read::<u32>(w(0x105));
+    let s = table(g, 0xff, 0x358 / 4);
+    g.call(s, 0, &[h]);
+    Ret::eax(1)
+}
+
+/// [`close_frame`] (294 bytes, 1 overlay).
+pub const CLOSE_FRAME: Sig = Sig {
+    len: 294,
+    hash: 0x482b_0d61_68b3_62a3,
+    calls: &[
+        (0x66, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0x70, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0x90, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0xb0, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+        (0xd0, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0xf0, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+        (0xfa, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+    ],
+    imports: &[],
+};
