@@ -175,6 +175,16 @@ pub const BG_LOAD_BIN: u32 = 0x0092_1d60;
 pub const GUIDE_SET_MODEL: u32 = 0x0091_d590;
 pub const CHUNK_DELETE: u32 = 0x0092_b7d0;
 
+/// `JobWorker`'s thread loop (`0x00703a20`): `JobSchedule::JobScheduler`
+/// (`0x00cdede4`, read once), `AsyncJobQueue_pop_006db8a0`,
+/// `ThreadCall_run_00703910`, `AsyncJobQueue_push_006db800` (thiscall).
+/// `FileReadMain`'s read task record `0x01128adc`.
+pub const JOB_SCHEDULER: u32 = 0x00cd_ede4;
+pub const QUEUE_POP: u32 = 0x006d_b8a0;
+pub const THREAD_CALL_RUN: u32 = 0x0070_3910;
+pub const QUEUE_PUSH: u32 = 0x006d_b800;
+pub const READ_TASK: u32 = 0x0112_8adc;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -950,5 +960,34 @@ pub mod bridge {
             cdecl(h, super::CHUNK_DELETE, &[chunk]);
         }
         cdecl(h, super::RC_PRINT, &[n2])
+    }
+    /// One pass of `JobWorker`'s loop: a job popped from the worker's
+    /// queue (`[this + 0x10]`) of the scheduler `sched`, run
+    /// (`ThreadCall_run(job)`), pushed back to that queue (done).
+    pub fn job_worker_pass(h: &mut impl Host, sched: u32, this: u32) {
+        let queue: u32 = h.read(this.wrapping_add(0x10));
+        let job = h.call_sym(super::QUEUE_POP, Conv::Thiscall(sched), &[queue]);
+        h.call_sym(super::THREAD_CALL_RUN, Conv::Thiscall(job), &[]);
+        let queue: u32 = h.read(this.wrapping_add(0x10));
+        h.call_sym(super::QUEUE_PUSH, Conv::Thiscall(sched), &[job, queue]);
+    }
+
+    /// `ThreadLoop_00703a20(this)` (thiscall; `JobWorker`'s thread routine,
+    /// its vtable's slot 1): the scheduler read once, then
+    /// [`job_worker_pass`] for ever.
+    pub fn job_worker_loop(h: &mut impl Host, this: u32) -> ! {
+        let sched: u32 = h.read(h.rebase(super::JOB_SCHEDULER));
+        loop {
+            job_worker_pass(h, sched, this);
+        }
+    }
+
+    /// `FileReadMain()`: a tail jump to the read task's current step (the
+    /// first word of the record at `0x01128adc`), no stack words; its
+    /// `eax`.
+    pub fn file_read_main(h: &mut impl Host) -> u32 {
+        let task: u32 = h.read(h.rebase(super::READ_TASK));
+        let step: u32 = h.read(task);
+        h.call(step, Conv::Cdecl, &[])
     }
 }

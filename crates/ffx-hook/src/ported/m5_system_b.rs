@@ -1243,6 +1243,16 @@ ported! {
     TOAdpFont1612Text_008ea680 @ 0x008e_a680 => extern "C" fn font_1612_text(cursor: u32, key: u32, text: u32, x: u32, y: u32, flag: u32, r: u32, g: u32, b: u32, a: u32; slots: u32) -> u32 {
         mn::font_1612_text(&mut mem(), [cursor, key, text, x, y, flag, r, g, b, a], slots)
     }
+
+    // ---- round 3, batch 11: JobWorker's thread loop, FileReadMain ----
+    /// `(this)`: never returns.
+    ThreadLoop_00703a20 @ 0x0070_3a20 => extern "thiscall" fn job_worker_loop(this: u32) {
+        pc::job_worker_loop(&mut mem(), this);
+    }
+    /// `()`: `jmp [[0x01128adc]]`.
+    FileReadMain @ 0x0076_cfd0 => extern "C" fn file_read_main() -> u32 {
+        pc::file_read_main(&mut mem())
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
@@ -1269,4 +1279,41 @@ pub(crate) fn loader_thread_main_on() -> bool {
 /// entry) in Rust (`ffx_system::m5b_async::bridge::thread_main`).
 pub(crate) fn loader_thread_main() -> u32 {
     ab::thread_main(&mut mem())
+}
+
+/// Whether the port named `name` is on (`FFX_HOOK_DISABLE` with it or
+/// `replacements` turns it off; `FFX_HOOK_ONLY` without it too).
+fn wrapped_port_on(name: &str) -> bool {
+    let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
+    let only = crate::hook_only().is_none_or(|names| names.iter().any(|n| n == name));
+    only && !off
+        .split(',')
+        .map(str::trim)
+        .any(|n| n == "replacements" || n == name)
+}
+
+/// The names that turn the PS2 file-size ports off or on alone: the mod
+/// wrappers (`mods.rs`) own `CDfileSize_CD`'s and `CDfileSize_PC`'s
+/// addresses and call these ports instead of their trampolines.
+pub(crate) const CD_FILE_SIZE_CD_NAME: &str = "CDfileSize_CD_port";
+pub(crate) const CD_FILE_SIZE_PC_NAME: &str = "CDfileSize_PC_port";
+
+/// `CDfileSize_CD(number)` in Rust (`ffx_system::m5b_hdd::bridge::
+/// file_size_cd`), or `None` when turned off.
+pub(crate) fn cd_file_size_cd_port(number: u32) -> Option<u32> {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| wrapped_port_on(CD_FILE_SIZE_CD_NAME)) {
+        return None;
+    }
+    Some(hd::file_size_cd(&mut mem(), number))
+}
+
+/// `CDfileSize_PC(number)` in Rust (`ffx_system::m5b_hdd::bridge::
+/// file_size_pc`), or `None` when turned off.
+pub(crate) fn cd_file_size_pc_port(number: u32) -> Option<u32> {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| wrapped_port_on(CD_FILE_SIZE_PC_NAME)) {
+        return None;
+    }
+    Some(hd::file_size_pc(&mut mem(), number))
 }

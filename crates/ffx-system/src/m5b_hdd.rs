@@ -323,6 +323,31 @@ pub const INS_CHECK_MSG: [u32; 7] = [
     0x00b5_37f8,
 ];
 
+/// The PS2 file sizes (`CDfileSize_CD` `0x0076c320`, `CDfileSize_PC`
+/// `0x00a428a0`): `g_CdLib_FileBase`, the module cell `0x02310c64`,
+/// `g_CdLib_SectorTable`, the 24-bit size table `0x01128ae0`,
+/// `check_ex_file_size`, the Eternal Calm checks and sizes, `GetCD`,
+/// `PcFileName_00a42c00`, `CDfileSize_CD_EX`, `sceFileSize`, the PC
+/// size's message and its modules that try `CDfileSize_CD_EX` first.
+pub const FILE_BASE: u32 = 0x0231_0c60;
+pub const MODULE: u32 = 0x0231_0c64;
+pub const SECTOR_TABLE: u32 = 0x0231_0c68;
+pub const SIZE_TABLE: u32 = 0x0112_8ae0;
+pub const EX_FILE_SIZE: u32 = 0x0076_d660;
+pub const IS_CALM_MGRP: u32 = 0x0067_ab30;
+pub const CALM_MGRP_SIZE: u32 = 0x0067_aa70;
+pub const IS_CALM_SCENE: u32 = 0x0067_ab50;
+pub const CALM_SCENE_SIZE: u32 = 0x0067_aae0;
+pub const GET_CD: u32 = 0x0076_d0d0;
+pub const PC_FILE_NAME: u32 = 0x00a4_2c00;
+pub const FILE_SIZE_CD_EX: u32 = 0x0076_c410;
+pub const SCE_FILE_SIZE: u32 = 0x0062_f760;
+pub const PC_SIZE_MSG: u32 = 0x00b7_adfc;
+pub const FILE_SIZE_CD: u32 = 0x0076_c320;
+pub const EX_MODULES: [u32; 12] = [
+    0xe, 0x10, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x28, 0x29,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1631,5 +1656,90 @@ pub mod bridge {
         for (k, &w) in (0u32..).zip(words) {
             h.write(p.wrapping_add(4 * k), w);
         }
+    }
+    /// `CDfileSize_CD(number)`: the size of PS2 file `number` of the
+    /// current module. An extra file's size (`check_ex_file_size(module,
+    /// number)`) when there is one; else an Eternal Calm override (number
+    /// % 18 is 3 for a motion group, 0 for a scene, of entry number / 18,
+    /// signed) or 0, unless the sector table's entry (`base + number`)
+    /// has flag `0x400000` (the 24-bit size `0x01128ae0[3 (base +
+    /// number)] << 3`) or not `0x800000` (the sector span less the last
+    /// sector's unused bytes, `<< 3`).
+    pub fn file_size_cd(h: &mut impl Host, number: u32) -> u32 {
+        let index = global(h, super::FILE_BASE).wrapping_add(number);
+        let ex = cdecl(h, super::EX_FILE_SIZE, &[global(h, super::MODULE), number]);
+        if ex != 0 {
+            return ex;
+        }
+        let entry = number.cast_signed().wrapping_div(18).cast_unsigned();
+        let kind = number.cast_signed().wrapping_rem(18);
+        let mut size = 0;
+        let check = match kind {
+            3 => Some((super::IS_CALM_MGRP, super::CALM_MGRP_SIZE)),
+            0 => Some((super::IS_CALM_SCENE, super::CALM_SCENE_SIZE)),
+            _ => None,
+        };
+        if let Some((is, get)) = check
+            && cdecl(h, is, &[entry]) != 0
+        {
+            size = cdecl(h, get, &[entry]);
+        }
+        let at = global(h, super::SECTOR_TABLE).wrapping_add(index.wrapping_mul(4));
+        let flags: u32 = h.read(at);
+        if flags & 0x80_0000 != 0 {
+            return size;
+        }
+        if flags & 0x40_0000 != 0 {
+            let p = global(h, super::SIZE_TABLE).wrapping_add(index.wrapping_mul(3));
+            let b = [0u32, 1, 2].map(|k| u32::from(h.read::<u8>(p.wrapping_add(k))));
+            return ((b[2] << 16) | (b[1] << 8) | b[0]) << 3;
+        }
+        let next: u32 = h.read(at.wrapping_add(4));
+        let span = (next & 0x3f_ffff).wrapping_sub(flags & 0x3f_ffff);
+        let unused = u32::from(h.read::<u8>(at.wrapping_add(3)));
+        ((span << 8).wrapping_sub(unused)) << 3
+    }
+
+    /// `CDfileSize_PC(number)`: an extra file's size when there is one;
+    /// with the HDD mode on `CDfileSize_CD(number)`; else, with the CD
+    /// record's `+0x30` set, the PC file of entry `[GetCD() + 0x20] +
+    /// number` (`PcFileName_00a42c00`, none 0): in some modules
+    /// `CDfileSize_CD_EX(number)` unless -1; else opened (`sceOpen(name,
+    /// 1)`, 0 logs and gives 0), its `sceFileSize` rounded up to 16
+    /// (signed), closed.
+    pub fn file_size_pc(h: &mut impl Host, number: u32) -> u32 {
+        let cd = cdecl(h, super::GET_CD, &[]);
+        let ex = cdecl(h, super::EX_FILE_SIZE, &[global(h, super::MODULE), number]);
+        if ex != 0 {
+            return ex;
+        }
+        if h.read::<u8>(h.rebase(HDD_MODE)) != 0 {
+            return cdecl(h, super::FILE_SIZE_CD, &[number]);
+        }
+        let index = h.read::<u32>(cd.wrapping_add(0x20)).wrapping_add(number);
+        let cd = cdecl(h, super::GET_CD, &[]);
+        if h.read::<u32>(cd.wrapping_add(0x30)) == 0 {
+            return 0;
+        }
+        let name = cdecl(h, super::PC_FILE_NAME, &[index]);
+        if name == 0 {
+            return 0;
+        }
+        if super::EX_MODULES.contains(&global(h, super::MODULE)) {
+            let size = cdecl(h, super::FILE_SIZE_CD_EX, &[number]);
+            if size != u32::MAX {
+                return size;
+            }
+        }
+        let fd = cdecl(h, super::SCE_OPEN, &[name, 1]);
+        if fd == 0 {
+            let fmt = h.rebase(super::PC_SIZE_MSG);
+            cdecl(h, DBG_PRINTF, &[fmt, name]);
+            return 0;
+        }
+        let size = cdecl(h, super::SCE_FILE_SIZE, &[fd]).wrapping_add(0xf);
+        let round = if size.cast_signed() < 0 { 0xf } else { 0 };
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        size.wrapping_add(round) & !0xf
     }
 }

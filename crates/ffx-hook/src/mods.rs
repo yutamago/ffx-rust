@@ -255,13 +255,18 @@ fn mod_size(number: i32) -> Option<u32> {
 }
 
 /// Wraps `CDfileSize_CD` (`0x0076c320`, `cdecl(number)`), the sector-table
-/// size: a mod file reports its own size.
+/// size: a mod file reports its own size; else the port
+/// (`CDfileSize_CD_port`, one hook per address) or the original.
 ///
 /// # Safety
 /// Called by the game.
 #[must_use]
 pub unsafe extern "C" fn cd_file_size(number: i32) -> u32 {
     mod_size(number).unwrap_or_else(|| {
+        // the port (`ffx_system::m5b_hdd`), unless turned off
+        if let Some(size) = crate::ported::cd_file_size_cd_port(number.cast_unsigned()) {
+            return size;
+        }
         // SAFETY: the trampoline runs the original.
         unsafe {
             let f: unsafe extern "C" fn(i32) -> u32 =
@@ -272,13 +277,18 @@ pub unsafe extern "C" fn cd_file_size(number: i32) -> u32 {
 }
 
 /// Wraps `CDfileSize_PC` (`0x00a428a0`, `cdecl(number)`), the size table
-/// lookup: a mod file reports its own size.
+/// lookup: a mod file reports its own size; else the port
+/// (`CDfileSize_PC_port`) or the original.
 ///
 /// # Safety
 /// Called by the game.
 #[must_use]
 pub unsafe extern "C" fn cd_file_size_pc(number: i32) -> u32 {
     mod_size(number).unwrap_or_else(|| {
+        // the port (`ffx_system::m5b_hdd`), unless turned off
+        if let Some(size) = crate::ported::cd_file_size_pc_port(number.cast_unsigned()) {
+            return size;
+        }
         // SAFETY: the trampoline runs the original.
         unsafe {
             let f: unsafe extern "C" fn(i32) -> u32 =

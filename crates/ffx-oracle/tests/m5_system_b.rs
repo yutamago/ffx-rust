@@ -6329,3 +6329,163 @@ fn r3b10_font_1612_text_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b11_job_worker_loop_and_file_read_main_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1101);
+        for passes in 1..5u32 {
+            t.reset();
+            let r = rng.next();
+            let sched = t.zeros(0x40);
+            t.g32(pcs::JOB_SCHEDULER, sched);
+            let jobs: Vec<u32> = (0..4).map(|k| r ^ (k << 4)).collect();
+            t.stub(pcs::THREAD_CALL_RUN, true, 0, 0, r ^ 1);
+            t.stub(pcs::QUEUE_PUSH, true, 2, 2, r ^ 2);
+            // the pop stub ends the original at pop number passes + 1,
+            // before logging it: dec [count]; jg pop; add esp, 8; pop edi;
+            // pop esi; pop ebx; ret (out of the loop to the test's caller)
+            let pop = t.stub_seq_code(pcs::QUEUE_POP, 1, 1, &jobs);
+            let count = t.words(&[passes + 1]);
+            let mut c = vec![0xff, 0x0d];
+            c.extend(count.to_le_bytes());
+            c.extend([0x0f, 0x8f]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(pop.wrapping_sub(here).to_le_bytes()); // jg pop
+            c.extend([0x83, 0xc4, 0x08, 0x5f, 0x5e, 0x5b, 0xc3]);
+            let at = t.cave_code(&c);
+            t.jump(pcs::QUEUE_POP, at);
+            let this = t.words(&[0, 0, 0, 0, rng.below(3)]);
+            // `before` pushes the original's queue log alike: the bridge
+            // runs the same passes
+            let poison = t.rebase(POISON_AT);
+            let ra =
+                t.a.call(t.rebase(0x0070_3a20), Conv::Thiscall(this), &[])
+                    .unwrap();
+            let _ = ra;
+            {
+                let mut g = G(&mut t.b, poison);
+                let sched: u32 = Mem::read(&g, g.rebase(pcs::JOB_SCHEDULER));
+                for _ in 0..passes {
+                    pcb::job_worker_pass(&mut g, sched, this);
+                }
+            }
+            // the count cell: the original's stub counted it down
+            t.b.write(count, &0u32.to_le_bytes()).unwrap();
+            // b's pops ran the sequence stub directly: its counter cell
+            // is the only other difference, written alike above
+            t.diff(&format!("job worker loop x{passes}"));
+            // FileReadMain: the step through the task record
+            let step = t.stub_code(0x0e0f_1101, false, 2, 0, r ^ 3);
+            let task = t.words(&[step, rng.next()]);
+            t.g32(pcs::READ_TASK, task);
+            t.check(
+                &format!("file read main #{passes}"),
+                0x0076_cfd0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(pcb::file_read_main(m)),
+            );
+        }
+    });
+}
+impl Twins {
+    /// [`Twins::stub_seq`]'s code without the jump over `sym`; its address.
+    fn stub_seq_code(&mut self, sym: u32, n: u32, pops: u32, seq: &[u32]) -> u32 {
+        self.stub_seq(sym, n, pops, seq);
+        let at = self.rebase(sym);
+        let rel: u32 = Mem::read(&self.a, at + 1);
+        at.wrapping_add(5).wrapping_add(rel)
+    }
+}
+
+#[test]
+fn r3b12_cd_file_sizes_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1201);
+        for case in 0..24u32 {
+            t.reset();
+            let r = rng.next();
+            let numbers = [0u32, 3, 21, 36, 5, 0xffff_fff1, 18 * 7 + 3, 0xffff_ffdc];
+            let number = numbers[(case % 8) as usize];
+            t.g32(hdc::FILE_BASE, [0u32, 0x10, 2][(case % 3) as usize]);
+            let module = [0x10u32, 4, 0x29, 0x1b, 0xe][(case / 3 % 5) as usize];
+            t.g32(hdc::MODULE, module);
+            t.stub(
+                hdc::EX_FILE_SIZE,
+                false,
+                2,
+                0,
+                if case % 8 == 6 { 0x4321 } else { 0 },
+            );
+            t.stub(hdc::IS_CALM_MGRP, false, 1, 0, case & 1);
+            t.stub(hdc::CALM_MGRP_SIZE, false, 1, 0, r);
+            t.stub(hdc::IS_CALM_SCENE, false, 1, 0, (case >> 1) & 1);
+            t.stub(hdc::CALM_SCENE_SIZE, false, 1, 0, r ^ 1);
+            // the sector table and the 24-bit sizes around every index used
+            let words: Vec<u32> = (0..0x100)
+                .map(|k| {
+                    let flag = [0u32, 0x40_0000, 0x80_0000, 0xc0_0000][((k + case) % 4) as usize];
+                    flag | (rng.next() & 0xff3f_ffff)
+                })
+                .collect();
+            let table = t.words(&words);
+            // a negative number reaches below the table: point it inside
+            t.g32(hdc::SECTOR_TABLE, table + 0x200);
+            let sizes: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+            let sizes_at = t.alloc(&sizes);
+            t.g32(hdc::SIZE_TABLE, sizes_at + 0x180);
+            t.check(
+                &format!("size cd #{case}"),
+                0x0076_c320,
+                Conv::Cdecl,
+                &[number],
+                |m| Out::U32(hdb::file_size_cd(m, number)),
+            );
+            // the PC size
+            let cd = t.words(&[0; 16]);
+            t.put(cd + 0x20, &[rng.below(4)]);
+            t.put(cd + 0x30, &[u32::from(case % 5 != 4)]);
+            t.stub(hdc::GET_CD, false, 0, 0, cd);
+            t.write(t.rebase(hdc::HDD_MODE), &[u8::from(case % 6 == 5)]);
+            t.stub(hdc::FILE_SIZE_CD, false, 1, 0, r ^ 2);
+            t.stub(
+                hdc::PC_FILE_NAME,
+                false,
+                1,
+                0,
+                if case % 9 == 8 { 0 } else { r ^ 3 },
+            );
+            t.stub(
+                hdc::FILE_SIZE_CD_EX,
+                false,
+                1,
+                0,
+                [0xffff_ffffu32, 0x777][(case & 1) as usize],
+            );
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [0u32, 5, 0xffff_ffff][(case % 3) as usize],
+            );
+            t.stub(
+                hdc::SCE_FILE_SIZE,
+                false,
+                1,
+                0,
+                [0u32, 1, 0x10, 0xffff_fff8, 0x7fff_fff5, 0x8000_0000][(case % 6) as usize],
+            );
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 4);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 5);
+            t.check(
+                &format!("size pc #{case}"),
+                0x00a4_28a0,
+                Conv::Cdecl,
+                &[number],
+                |m| Out::U32(hdb::file_size_pc(m, number)),
+            );
+        }
+    });
+}
