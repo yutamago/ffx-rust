@@ -110,4 +110,15 @@ ported! {
     Phyre_PFramework_PApplication_logKeyboardInput @ 0x0062_9e40 => extern "thiscall" fn log_keyboard(this: u32) -> u32 {
         lb::log_keyboard(&mut mem(), this)
     }
+    /// `PApplication::onExit()`; the render scope lock in a frame word.
+    Phyre_PFramework_PApplication_onExit @ 0x0062_a130 => extern "thiscall" fn on_exit(this: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::on_exit(&mut mem(), this, f.at())
+    }
+    /// `PApplication::parseCommandLine(argc, argv, config)`; the
+    /// resolution lookup's default in a frame word.
+    Phyre_PFramework_PApplication_parseCommandLine @ 0x0062_adc0 => extern "thiscall" fn parse_command_line(this: u32, argc: u32, argv: u32, config: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::parse_command_line(&mut mem(), this, argc, argv, config, f.at())
+    }
 }

@@ -3913,3 +3913,249 @@ fn left2_log_keyboard_matches_the_original() {
         t.reset();
     }
 }
+
+/// `PApplication::onExit` against the original: every step that can fail
+/// (with and without its message), the object array owned or not, the
+/// input log written or not (slot 2's `al` only: its upper bytes are
+/// set), the preprocess buffers and the old object present or not. The
+/// frame word the render scope lock gets is compared in the original's
+/// frame. `PhyrePrintf` logs three words (the log line's fourth, the
+/// name, is past what a three-word call leaves defined).
+#[test]
+fn left2_on_exit_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    // which step fails (index into the steps below; 99: none), the items
+    // owned, the log written, the buffers and the old object there
+    for (fail, owned, written, extras) in [
+        (99u32, true, true, true),
+        (99, false, false, false),
+        (99, true, false, true),
+        (0, true, true, true),
+        (1, true, true, true),
+        (2, true, true, true),
+        (3, true, true, true),
+        (4, true, true, true),
+        (5, true, true, true),
+        (6, true, true, true),
+        (7, true, true, true),
+        (8, true, true, true),
+        (8, true, true, false),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let code = |step: u32| if fail == step { 0x0b + step } else { 0 };
+            // steps: 0 render slot 2, 1 syncRender, 2 item slot 2,
+            // 3 exitScene, 4 exitApplication, 5 the array clear,
+            // 6 removeTimeline, 7 the command drain, 8 Input_Shutdown
+            let c = l2::ON_EXIT_CALLS;
+            t.stub(c[0], false, 2, 0, 0x77);
+            t.stub(l2::PRINTF, false, 3, 0, 0x78);
+            t.stub(c[1], true, 0, 0, code(1));
+            t.stub(c[2], false, 1, 0, 0);
+            t.stub(c[3], true, 0, 0, code(5));
+            t.stub(c[4], false, 0, 0, 0x00e4_0000);
+            t.stub(c[5], true, 0, 0, 0x79);
+            t.stub(c[6], true, 1, 1, code(6));
+            t.stub(c[7], false, 0, 0, 0x00e7_0000);
+            t.stub(c[8], true, 0, 0, code(7));
+            t.stub(c[9], true, 0, 0, 0x7a);
+            t.stub(c[10], true, 1, 1, 0);
+            t.stub(c[11], true, 0, 0, 0x7b);
+            t.stub(c[12], false, 0, 0, 0x00ec_0000);
+            t.stub(c[13], true, 0, 0, 0x7c);
+            t.stub(c[14], true, 0, 0, 0x7d);
+            t.stub(c[15], true, 0, 0, 0x7e);
+            t.stub(l2::INPUT_SHUTDOWN, false, 0, 0, code(8));
+            let this = t.zeros(0x400);
+            let app = t.object(&[1, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, code(3), code(4)]);
+            let vt = t.r32(app);
+            t.w32(this, vt);
+            let render = t.object(&[1, 0, 0], &[0, 0x7f, code(0)]);
+            let vt = t.r32(render);
+            t.w32(this + 0x124, vt);
+            let items: Vec<u32> = (0..3u32)
+                .map(|i| t.object(&[1, 0, 0], &[0, 0, if i == 1 { code(2) } else { 0 }]))
+                .collect();
+            let arr = t.alloc(
+                &[items[0], items[1], items[2]]
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.w32(this + 0x2c0, arr);
+            t.w32(this + 0x2bc, if owned { 3 } else { 0x8000_0003 });
+            if owned || written {
+                let log = t.object(&[1, 0, 0], &[0, 0, if written { 0x101 } else { 0x100 }]);
+                t.w32(log + 0xc, 0x4321);
+                t.w32(this + 0x29c, log);
+            }
+            if extras {
+                let (p, q) = (t.zeros(4), t.zeros(4));
+                t.w32(this + 0x2d8, p);
+                t.w32(this + 0x2d4, q);
+                let old = t.object(&[1], &[0]);
+                t.w32(this + 0x2c, old);
+            }
+            t.w32(this + 0x2b8, 0x00e8_0000);
+            t.w32(this + 0x398, 0x1234_5678);
+            // the lock's word (an early return leaves the original's saved
+            // ecx there, a word the port has no counterpart for)
+            if fail >= 8 {
+                t.frame_len = 4;
+            }
+            let what = format!(
+                "{label}: onExit fail {fail} owned {owned} written {written} extras {extras}"
+            );
+            t.check_frame(&what, 0x0062_a130, Conv::Thiscall(this), &[], 0x18, |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Out::U32(l2b::on_exit(g, this, frame))
+            });
+            t.reset();
+        }
+    }
+}
+
+/// `strncmp(a, b, n)` for the command line test (the C semantics,
+/// unsigned bytes; as field.rs's).
+const CMD_STRNCMP: [u8; 0x2a] = [
+    0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0x4c, 0x24, 0x14, 0x85, 0xc9,
+    0x74, 0x13, 0x0f, 0xb6, 0x06, 0x0f, 0xb6, 0x17, 0x29, 0xd0, 0x75, 0x0b, 0x85, 0xd2, 0x74, 0x05,
+    0x46, 0x47, 0x49, 0xeb, 0xe9, 0x31, 0xc0, 0x5f, 0x5e, 0xc3,
+];
+
+/// `PApplication::parseCommandLine` against the original. The numbers
+/// after `=` are raw words: `atoi` answers the word at its argument,
+/// `atof` the `float` there. The resolution lookup is a recording stub
+/// answering a cell (modes 0..4) or its default word in the frame (5).
+/// `PhyrePrintf` logs as many words as each message takes.
+#[test]
+fn left2_parse_command_line_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    // (the resolution's mode, 5 for the default; the vsync number; the
+    // msaa number equal to the old one)
+    for (mode, vsync, msaa_same) in [
+        (0u32, 0u32, false),
+        (1, 1, true),
+        (2, 2, false),
+        (3, 0, true),
+        (4, 1, false),
+        (5, 2, false),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::COMMAND_LINE_CALLS;
+            t.import_code(c[2], &CMD_STRNCMP);
+            // atoi: the word at the argument; atof: the float there
+            t.import_code(c[4], &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xc3]);
+            t.import_code(c[3], &[0x8b, 0x44, 0x24, 0x04, 0xd9, 0x00, 0xc3]);
+            // the lookup: logs its three words, answers the mode's cell or
+            // its third word
+            let cell = t.alloc(&mode.to_le_bytes());
+            let lookup_log = t.stub_code(c[1], false, 3, 0, 0);
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![
+                0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c,
+            ]; // push [esp+0xc] x3
+            k.push(0xe8);
+            k.extend(lookup_log.wrapping_sub(code + 17).to_le_bytes()); // call log3
+            k.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+            if mode == 5 {
+                k.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            } else {
+                k.push(0xb8);
+                k.extend(cell.to_le_bytes()); // mov eax, cell
+            }
+            k.push(0xc3);
+            t.write(code, &k);
+            let at = t.rebase(c[1]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            // PhyrePrintf: 2 words for the unsupported resolution, 3 for
+            // the V sync line, else 4
+            let d = l2::COMMAND_LINE_DATA;
+            let (unsupported, vsync_msg) = (t.rebase(d[1]), t.rebase(d[5]));
+            let logs: Vec<u32> = (2..5)
+                .map(|n| t.stub_code(l2::PRINTF, false, n, 0, 0))
+                .collect();
+            let code = t.a.alloc_code(&[0xcc; 0x30]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x30]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax, unsupported
+            k.extend(unsupported.to_le_bytes());
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[0].wrapping_sub(code + 15).to_le_bytes()); // je log2
+            k.push(0x3d);
+            k.extend(vsync_msg.to_le_bytes()); // cmp eax, vsync
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[1].wrapping_sub(code + 26).to_le_bytes()); // je log3
+            k.push(0xe9);
+            k.extend(logs[2].wrapping_sub(code + 31).to_le_bytes()); // jmp log4
+            t.write(code, &k);
+            let at = t.rebase(l2::PRINTF);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let word = |name: &str, v: u32| -> Vec<u8> {
+                let mut b = name.as_bytes().to_vec();
+                b.extend(v.to_le_bytes());
+                b.push(0);
+                b
+            };
+            let config = t.junk(0x40, 3);
+            t.w32(config, 1280);
+            t.w32(config + 0x18, 4);
+            t.w8(config + 0x1c, 1);
+            let switches: Vec<Vec<u8>> = vec![
+                b"plain\0".to_vec(),
+                b"-hh\0".to_vec(),
+                b"-script=a.lua\0".to_vec(),
+                b"/log=out.txt\0".to_vec(),
+                b"-input=keys\0".to_vec(),
+                word("-timestep=", 0.25f32.to_bits()),
+                b"-resolution=720p\0".to_vec(),
+                word("-msaa=", if msaa_same { 4 } else { 2 }),
+                word("-vsync=", vsync),
+                word("-host=", 0x1234),
+                word("-fullscreen=", vsync),
+                word("/borderless=", vsync),
+                b"-other=1\0".to_vec(),
+                b"-script\0".to_vec(),
+                b"-?\0".to_vec(),
+            ];
+            let ptrs: Vec<u32> = switches.iter().map(|a| t.alloc(a)).collect();
+            let argv = t.alloc(
+                &ptrs
+                    .iter()
+                    .flat_map(|p| p.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            // without the last switch (help), with it, none
+            for n in [14u32, 15, 0] {
+                let this = t.zeros(4);
+                if n > 6 {
+                    t.frame_len = 4;
+                }
+                let what = format!(
+                    "{label}: command line mode {mode} vsync {vsync} msaa same {msaa_same} n {n}"
+                );
+                // ret 0xc: three words; ebp-4 is the default's word
+                t.check_frame(
+                    &what,
+                    0x0062_adc0,
+                    Conv::Thiscall(this),
+                    &[n, argv, config],
+                    0x18,
+                    |g| {
+                        let frame = ffx_graphic::host::Host::scratch(g);
+                        Out::U32(l2b::parse_command_line(g, this, n, argv, config, frame))
+                    },
+                );
+            }
+            t.reset();
+        }
+    }
+}
