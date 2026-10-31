@@ -2362,6 +2362,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &s6_misc::TARGETS_MEAN_OFFSET_OF,
     ),
     ("spring walk", &s6_misc::SPRING_WALK),
+    ("counters step", &s6_misc::COUNTERS_STEP),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

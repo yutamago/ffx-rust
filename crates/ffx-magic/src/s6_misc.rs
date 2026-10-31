@@ -1381,9 +1381,9 @@ pub const ACTOR_TIMED_TASK: Sig = Sig {
 /// point in `edx` (internal: `ecx` = `out`, `edx` = the point; a /GS
 /// frame): `v` = a copy of the point (slot 325, a local), and for each
 /// of the `*G_N` targets `G_IDS[i]` (bytes) that slot 684 says is live,
-/// its battle position (slot 531, a local) minus `v` is summed; `out = v
-/// + sum * (K / n)` (`n` the live count), `w = 1`. Returns the last
-/// slot's `eax`.
+/// its battle position (slot 531, a local) minus `v` is summed; then
+/// `out = v + sum * (K / n)` (`n` the live count), `w = 1`. Returns the
+/// last slot's `eax`.
 ///
 /// `magic_0106` 0x100069b0 (352 bytes, `ecx` = `out`, `edx` = the point;
 /// 6 DLLs).
@@ -1543,5 +1543,120 @@ pub const JMP_SPRING_WALK: Sig = Sig {
     len: 12,
     hash: crate::s3_wrap::ECX_JMP_HASH,
     calls: &[(8, Callee::Sig(&SPRING_WALK))],
+    imports: &[],
+};
+
+/// Three counters' step (internal, `ecx` = the object `O`; each counter
+/// `C = O + 0x1c i`: `+0` a word pointer `P`, `+4` the value `V`, `+8`
+/// the step `D`, `+0xc` the timer `T`, `+0x10` a base `B`, `+0x18` the
+/// state; the original's jump table is in the code). State 0 counts as
+/// done; 1 counts `T` down, `D = (20 - T) O+0x54 / 20` (truncated) and
+/// `V -= D`, at 0 `D = O+0x54` and state 2; 2 waits (`V -= D`) until
+/// counter `O+0x64` is this one and the flags `*G_F` have bit 5 or slot
+/// 651 (ST0) is 0, then a sound starts (slot 719 `(S, 6, 0)`, slot 220
+/// `(it, 0x40, 0x100)`) and it goes on as 3: `V -= D` while `V`'s low
+/// half is above `D`, else `V` keeps its high half (also into `B`), `T =
+/// 8`, state 4 and the counter "moved"; 4 counts `T` down with `V = B +
+/// K[T]` (the DLL's table), at 0 `V = B`, `D = 0` and state 0. A
+/// negative `V` gets `*P << 16` added. When one moved, `O+0x64` goes up.
+/// Returns whether all three are done.
+///
+/// `magic_0644` 0x10005b80 (416 bytes with its jump table, `ecx` = the
+/// object; 5 DLLs).
+#[allow(clippy::too_many_lines)] // the original's states
+pub fn counters_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let o = fr.ecx;
+    let mut done = 0u32;
+    let mut moved = false;
+    for i in 0..3u32 {
+        let c = o + 0x1c * i;
+        let (v, d, t, b, state) = (c + 4, c + 8, c + 0xc, c + 0x10, c + 0x18);
+        let rd = |g: &G, a: u32| g.read::<i32>(a);
+        let mut s = g.read::<u32>(state);
+        if s == 1 {
+            let n = rd(g, t) - 1;
+            g.write::<i32>(t, n);
+            if n > 0 {
+                let q = 20i32.wrapping_sub(n).wrapping_mul(rd(g, o + 0x54)) / 20;
+                g.write::<i32>(v, rd(g, v).wrapping_sub(q));
+                g.write::<i32>(d, q);
+            } else {
+                let a = rd(g, o + 0x54);
+                g.write::<i32>(v, rd(g, v).wrapping_sub(a));
+                g.write::<u32>(state, 2);
+                g.write::<i32>(d, a);
+            }
+        } else if s == 0 {
+            done += 1;
+        } else if s <= 4 {
+            if s == 2 {
+                let start = g.read::<u32>(o + 0x64) == i && {
+                    let flags = g.read::<u16>(w(0x91));
+                    let x = crate::m0018::st0_f32(slot(g, img, f, 0x8a, 651, &[]).st0);
+                    // ucomiss; lahf; test ah, 0x44; jp: on only for 0
+                    #[allow(clippy::float_cmp)] // the original's exact test
+                    let zero = x == 0.0;
+                    flags & 0x20 != 0 || zero
+                };
+                if start {
+                    let h = slot(g, img, f, 0xb7, 719, &[w(0xc6), 6, 0]).eax;
+                    slot(g, img, f, 0xd5, 220, &[h, 0x40, 0x100]);
+                    g.write::<u32>(state, 3);
+                    s = 3;
+                } else {
+                    g.write::<i32>(v, rd(g, v).wrapping_sub(rd(g, d)));
+                }
+            }
+            if s == 3 {
+                let (x, dd) = (rd(g, v), rd(g, d));
+                let low = x & 0xffff;
+                if low > dd {
+                    g.write::<i32>(v, x.wrapping_sub(dd));
+                } else {
+                    let high = x.wrapping_sub(low);
+                    g.write::<i32>(v, high);
+                    g.write::<i32>(b, high);
+                    g.write::<u32>(t, 8);
+                    g.write::<u32>(state, 4);
+                    moved = true;
+                    s = 4;
+                }
+            }
+            if s == 4 {
+                let n = rd(g, t) - 1;
+                g.write::<i32>(t, n);
+                let x = if n > 0 {
+                    let k = g.read::<i32>(w(0x145).wrapping_add(4 * n.cast_unsigned()));
+                    k.wrapping_add(rd(g, b))
+                } else {
+                    let x = rd(g, b);
+                    g.write::<u32>(d, 0);
+                    g.write::<u32>(state, 0);
+                    x
+                };
+                g.write::<i32>(v, x);
+            }
+        }
+        let x = rd(g, v);
+        if x < 0 {
+            let p = g.read::<u32>(c);
+            let hi = g.read::<u32>(p) << 16;
+            g.write::<u32>(v, hi.wrapping_add(x.cast_unsigned()));
+        }
+    }
+    if moved {
+        let n = g.read::<u32>(o + 0x64).wrapping_add(1);
+        g.write::<u32>(o + 0x64, n);
+    }
+    u32::from(done.cast_signed() >= 3)
+}
+
+/// [`counters_step`] (the `jmp rel32`s inside stay in the hash).
+pub const COUNTERS_STEP: Sig = Sig {
+    len: 416,
+    hash: 0xf601_a2fb_0bb3_4377,
+    calls: &[],
     imports: &[],
 };

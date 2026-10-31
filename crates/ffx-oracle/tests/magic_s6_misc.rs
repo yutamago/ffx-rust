@@ -381,8 +381,8 @@ fn spin_stages_two() {
         for (i, item) in (0u32..).zip(&items) {
             let n = nodes + 0x10 * i;
             t.set_u32(n, if i == 0 { 0 } else { n - 0x10 });
-            let last = i as usize + 1 == items.len();
-            t.set_u32(n + 4, if last { 0 } else { n + 0x10 });
+            let at_end = i as usize + 1 == items.len();
+            t.set_u32(n + 4, if at_end { 0 } else { n + 0x10 });
             t.set_u32(n + 8, *item);
         }
         t.set_u32(list, nodes);
@@ -390,14 +390,14 @@ fn spin_stages_two() {
         t.set_u32(list + 8, nodes);
         free_ring(&mut t, take, SCRATCH + 0x1000, 4);
         t.write(SCRATCH + 0x1400, &varied(0x1c, 9));
-        let last = if listed { SCRATCH + 0x1400 } else { 0 };
-        t.set_u32(head, last);
-        t.set_u32(tail, last);
+        let old = if listed { SCRATCH + 0x1400 } else { 0 };
+        t.set_u32(head, old);
+        t.set_u32(tail, old);
         let fader = t.img.rel32_target(f + 0x3f9);
         let (fh, ft) = (op(&t, fader, 0x37), op(&t, fader, 0x4f));
         if fh != head {
-            t.set_u32(fh, last);
-            t.set_u32(ft, last);
+            t.set_u32(fh, old);
+            t.set_u32(ft, old);
         }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
@@ -1095,6 +1095,82 @@ fn spring_walks() {
         // and through row 115, the register thunk over it
         t.check_thunked(f, thunk, false, call, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s6_misc::spring_walk(g, img, fr))
+        });
+    }
+}
+
+/// A counter's set-up: (state, timer, value, step).
+type Counter = (u32, i32, i32, i32);
+
+/// Row 142: `magic_0644`'s three counters through every state: done,
+/// counting (and at the end of the count), waiting (another's turn, the
+/// flag, slot 651 at 0 and not), the run down (low half above the step
+/// and not), the bounce (the table and its end), a negative value and an
+/// unknown state.
+#[test]
+fn counters_stepped() {
+    let Some(mut t) = twin(644) else { return };
+    let f = t.at(0x5b80);
+    let answer = SCRATCH + 0x7e0;
+    rec(&mut t, 651, 0, |_, _| 0x651);
+    t.stub_st0(651, move |m, _| f64::from(m.r32(answer)) * 0.5);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 220, 3, |_, a| 0x0220_0000 ^ a[0]);
+    let table = op(&t, f, 0x145);
+    for i in 0..10u32 {
+        t.set_u32(table + 4 * i, 0x0100 * i + 3);
+    }
+    let flags = op(&t, f, 0x91);
+    let o = SCRATCH + 0x1000;
+    let words = SCRATCH + 0x700;
+    // (state, timer, value, step) per counter; whose turn; flags; slot 651
+    let cases: [([Counter; 3], u32, u16, u32); 8] = [
+        ([(0, 0, 5, 0), (0, 0, 7, 0), (0, 0, 9, 0)], 0, 0, 0),
+        ([(1, 5, 0x50, 0), (1, 1, 0x40, 0), (9, 0, -3, 0)], 0, 0, 0),
+        ([(2, 0, 0x30, 2), (2, 0, 0x30, 2), (2, 0, 0x30, 2)], 1, 0, 1),
+        ([(2, 0, 0x30, 2), (2, 0, 0x30, 2), (0, 0, 0, 0)], 0, 0x20, 1),
+        (
+            [(2, 0, 0x0003_0001, 2), (0, 0, 0, 0), (0, 0, 0, 0)],
+            0,
+            0,
+            0,
+        ),
+        (
+            [(3, 0, 0x0002_0010, 4), (3, 0, 0x0002_0003, 4), (4, 3, 0, 0)],
+            2,
+            0,
+            0,
+        ),
+        ([(4, 1, 5, 0), (4, 9, -1, 0), (3, 0, -0x10, 4)], 0, 0, 0),
+        (
+            [(2, 0, -0x7fff_0000, 0x10), (1, 0, 0, 0), (5, 0, 1, 1)],
+            0,
+            0,
+            1,
+        ),
+    ];
+    for (k, (counters, turn, fl, zero)) in (0u32..).zip(cases) {
+        t.write(o, &varied(0x70, k));
+        t.set_u32(o + 0x54, 0x40 + k);
+        t.set_u32(o + 0x64, turn);
+        t.set_u16(flags, fl | 0x0100);
+        t.set_u32(answer, 1 - zero);
+        for (i, (state, timer, value, step)) in (0u32..).zip(counters) {
+            let c = o + 0x1c * i;
+            t.set_u32(c, words + 4 * i);
+            t.set_u32(words + 4 * i, 0x11 * (i + 1) + k);
+            t.set_u32(c + 4, value.cast_unsigned());
+            t.set_u32(c + 8, step.cast_unsigned());
+            t.set_u32(c + 0xc, timer.cast_unsigned());
+            t.set_u32(c + 0x18, state);
+        }
+        let call = Call {
+            ecx: o,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::counters_step(g, img, fr))
         });
     }
 }
