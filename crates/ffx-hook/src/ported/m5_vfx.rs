@@ -21,6 +21,10 @@ use ffx_glue_other::m5v_k::bridge as gk;
 use ffx_glue_other::m5v_l::bridge as gl;
 use ffx_glue_other::m5v_m::bridge as gm2;
 use ffx_glue_other::m5v_n::bridge as gn;
+use ffx_glue_other::m5v_o::bridge as go;
+use ffx_glue_other::m5v_p::bridge as gp;
+use ffx_glue_other::m5v_q::bridge as gq;
+use ffx_glue_other::m5v_r::bridge as gr;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -723,5 +727,62 @@ ported! {
     VFXDynamicGeometry_setupMaterial_006a4240 @ 0x006a_4240 => extern "thiscall" fn vfx_setup_material(this: u32, n: u32, names: u32, clusters: u32) -> u32 {
         let mut frame = StackFrame::<{ (ffx_glue_other::m5v_n::FRAME / 4) as usize }>::new();
         gn::setup_material(&mut mem(), frame.at(), this, n, names, clusters)
+    }
+    // ---- round 5 batch 10 (ffx_glue_other::m5v_o) ----
+    /// `VfxShaderManager_setupSpecialShaderParameters(m; name, material,
+    /// params, which)` (`ret 0x10`): the map copy, iterators, records and
+    /// names in this shim's frame.
+    VfxShaderManager_setupSpecialShaderParameters @ 0x006c_1520 => extern "thiscall" fn setup_special(this: u32, name: u32, material: u32, params: u32, which: u32) {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_o::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::m5v_o::FRAME;
+        go::setup_special(&mut mem(), ebp, this, name, material, params, which);
+    }
+    // ---- round 5 batch 11 (ffx_glue_other::m5v_p) ----
+    /// `op_script_compile_007e1010(source, path)`: the output record in this
+    /// shim's frame.
+    op_script_compile_007e1010 @ 0x007e_1010 => extern "C" fn op_script_compile(source: u32, path: u32) {
+        let mut frame = StackFrame::<5>::new();
+        gp::compile(&mut mem(), frame.at(), source, path);
+    }
+    /// `pppFpDispDebug()` -> the last `dbgPrintf`'s `eax`.
+    pppFpDispDebug @ 0x0072_9060 => extern "C" fn fp_disp_debug() -> u32 {
+        gp::fp_disp_debug(&mut mem())
+    }
+    /// `pppFpInfPrint()` -> `op_num`'s `eax`: the matrix, vectors and text
+    /// in this shim's frame.
+    pppFpInfPrint @ 0x0072_9850 => extern "C" fn fp_inf_print() -> u32 {
+        let mut frame = StackFrame::<0x5d>::new();
+        gp::fp_inf_print(&mut mem(), frame.at())
+    }
+    // ---- round 5 batch 12 (ffx_glue_other::m5v_q) ----
+    /// `gdraw_tile_begin_00a3a820(x0, y0, x1, y1, pad, stats)` ->
+    /// `gdraw_bindOutput`'s `eax`.
+    gdraw_tile_begin_00a3a820 @ 0x00a3_a820 => extern "stdcall" fn gdraw_tile_begin(x0: u32, y0: u32, x1: u32, y1: u32, pad: u32, stats: u32) -> u32 {
+        gq::tile_begin(&mut mem(), x0, y0, x1, y1, pad, stats)
+    }
+    // ---- round 5 batch 13 (ffx_glue_other::m5v_r) ----
+    /// `opd_num_put_dec_00a5e880(value, n, ctx, font)` -> `ctx`; writes its
+    /// argument slots.
+    opd_num_put_dec_00a5e880 @ 0x00a5_e880 => extern "C" fn opd_num_put_dec(value: u32, n: u32, ctx: u32, font: u32; slots: u32) -> u32 {
+        gr::put_dec(&mut mem(), slots, value, n, ctx, font)
+    }
+    /// `opd_num_put_text_00a5f040(ctx, font)` -> the glyphs drawn (the font
+    /// is read from its record, not the argument).
+    opd_num_put_text_00a5f040 @ 0x00a5_f040 => extern "C" fn opd_num_put_text(ctx: u32, _font: u32) -> u32 {
+        gr::put_text(&mut mem(), ctx)
+    }
+    /// `opd_num(format, ...)` (varargs; its callers pass at most 16 words
+    /// after the format): the arguments read from its argument slots.
+    opd_num @ 0x00a5_d3c0 => extern "C" fn opd_num(_format: u32, _a1: u32, _a2: u32, _a3: u32, _a4: u32, _a5: u32, _a6: u32, _a7: u32, _a8: u32, _a9: u32, _a10: u32, _a11: u32, _a12: u32, _a13: u32, _a14: u32, _a15: u32, _a16: u32; slots: u32) -> u32 {
+        gr::opd_num(&mut mem(), slots)
+    }
+    /// `opd_debug_flags_str_00a65570(buf, cmd)` -> the last `sprintf`'s
+    /// `eax`; writes its second argument slot.
+    opd_debug_flags_str_00a65570 @ 0x00a6_5570 => extern "C" fn opd_debug_flags_str(buf: u32, cmd: u32; slots: u32) -> u32 {
+        gr::flags_str(&mut mem(), slots, buf, cmd)
+    }
+    /// `opd_num_load_font_00a5e4a0()` -> `sceDmaSendN`'s `eax`.
+    opd_num_load_font_00a5e4a0 @ 0x00a5_e4a0 => extern "C" fn opd_num_load_font() -> u32 {
+        gr::load_font(&mut mem())
     }
 }

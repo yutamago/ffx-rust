@@ -14,6 +14,8 @@ use ffx_prender::m5m_d::bridge as d;
 use ffx_prender::m5m_e::bridge as e;
 use ffx_prender::m5m_f::bridge as f;
 use ffx_prender::m5m_g::bridge as g;
+use ffx_prender::m5m_h::bridge as h;
+use ffx_prender::m5m_i::bridge as gi;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -511,5 +513,20 @@ ported! {
     rcbgSceneLoadTextSubConfig @ 0x0093_b590 => extern "C" fn load_text_sub_config(scene: u32, name: u32) -> u32 {
         let mut frame = StackFrame::<0x26>::new();
         g::load_text_sub_config(&mut mem(), frame.at(), scene, name)
+    }
+    // ---- round 5 batch 4 (ffx_prender::m5m_h) ----
+    /// `rcuiVramWrite()` -> `sceDmaSync`'s `eax`: the PSM table in this
+    /// shim's frame.
+    rcuiVramWrite @ 0x0093_7190 => extern "C" fn vram_write() -> u32 {
+        let mut frame = StackFrame::<14>::new();
+        h::vram_write(&mut mem(), frame.at())
+    }
+    // ---- round 5 batch 5 (ffx_prender::m5m_i) ----
+    /// `rcbgGuideMapConvSub(id, sub)` -> the model or 0: the stage name and
+    /// path in this shim's frame.
+    rcbgGuideMapConvSub @ 0x0093_8080 => extern "C" fn guide_map_conv_sub(id: u32, sub: u32) -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        let at = frame.at();
+        gi::guide_map_conv_sub(&mut mem(), at + 0x100, at, id, sub)
     }
 }

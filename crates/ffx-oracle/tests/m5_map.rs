@@ -39,6 +39,8 @@ use ffx_prender::m5m_d::{self as md, bridge as d};
 use ffx_prender::m5m_e::{self as me, bridge as e};
 use ffx_prender::m5m_f::{self as mf, bridge as f};
 use ffx_prender::m5m_g::{self as mg, bridge as g};
+use ffx_prender::m5m_h::{self as mh, bridge as h};
+use ffx_prender::m5m_i::{self as mi, bridge as gi};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3365,6 +3367,115 @@ fn r5_scene_config_match_the_original() {
                 &[scene, name],
                 |o| Out::U32(g::load_text_sub_config(o, ebp - 0x98, scene, name)),
             );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 4 (ffx_prender::m5m_h) ----
+
+#[test]
+fn r5_vram_write_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f701);
+        for case in 0..36_u32 {
+            let w = t.zeros(0xc00);
+            // the format index: one of the 13 the frame table has (a larger
+            // one reads past it, the original's stack)
+            let format = rng.below(13);
+            // a negative row and height (a positive size; a negative size
+            // is a fault in the original's memset, and the one class that
+            // halves, format 20, is past the frame table)
+            let (row, height) = if case % 3 == 0 {
+                (
+                    0_u32.wrapping_sub(1 + rng.below(6)),
+                    0_u32.wrapping_sub(1 + rng.below(6)),
+                )
+            } else {
+                (rng.below(24), rng.below(24))
+            };
+            t.w32(w + 0xafc, row);
+            t.w32(w + 0xb00, height);
+            t.w32(w + 0xaec, format);
+            t.w32(w + 0xae8, rng.word());
+            t.w32(w + 0xae4, rng.word());
+            t.global(mh::RCUI_WORK.sym, w);
+            let packet = t.zeros(0x400 + 0x900);
+            t.global(mh::PRIM_2D_PACKET.sym, packet);
+            t.import_sym(mh::RAND_SLOT, 1, 0, 0, Ret::Val(rng.next() & 0x7fff));
+            t.stub_sym(mh::DMA_GET_CHAN, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mh::FLUSH_CACHE, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(mh::DMA_SEND, 4, false, 2, 0, Ret::Val(4));
+            t.stub_sym(mh::DMA_SYNC, 5, false, 3, 0, Ret::Val(rng.next()));
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check("rcuiVramWrite", 0x0093_7190, Conv::Cdecl, &[], |o| {
+                Out::U32(h::vram_write(o, ebp - 0x38))
+            });
+            r5_same(t, "rcuiVramWrite", ebp - 0x38, 0x34);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 5 (ffx_prender::m5m_i) ----
+
+#[test]
+fn r5_guide_map_conv_sub_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f801);
+        for case in 0..24_u32 {
+            let id = if case % 7 == 0 { 0 } else { rng.next() };
+            let known = u32::from(case % 7 != 1);
+            let stage = u32::from_le_bytes([b'b', b's', 0xe9, b'l']);
+            r5_out_stub(t, mi::GET_STAGE_NAME, 1, 2, Ret::Val(known), 1, stage);
+            let fd = if case % 5 == 2 { 0 } else { rng.next() | 1 };
+            t.stub_sym(mi::SCE_OPEN, 2, false, 2, 0, Ret::Val(fd));
+            t.stub_sym(mi::SCE_CLOSE, 3, false, 1, 0, Ret::Val(3));
+            let model = if case % 6 == 3 { 0 } else { t.zeros(0xb0) };
+            if model != 0 {
+                let mesh = t.zeros(0x80);
+                t.w32(mesh + 8, 0x20);
+                t.write(mesh + 0x12, &(rng.below(8) as i16 - 1).to_le_bytes());
+                for k in (0x20..0x80).step_by(4) {
+                    t.w32(mesh + k, rng.next());
+                }
+                for k in (0x80..0xb0).step_by(4) {
+                    t.w32(model + k, rng.next());
+                }
+                t.w32(model + 0x14, mesh);
+                t.w32(model + 0x10, rng.next());
+            }
+            t.stub_sym(mi::MODEL_NEW, 4, false, 0, 0, Ret::Val(model));
+            let loaded = if case % 3 == 0 || model == 0 {
+                0
+            } else {
+                rng.next()
+            };
+            t.stub_sym(mi::MODEL_LOAD_BY_EXT, 5, false, 2, 0, Ret::Val(loaded));
+            t.stub_sym(mi::MODEL_DELETE, 6, false, 1, 0, Ret::Val(6));
+            let map = t.words(&[0, 0, 0]);
+            let sys = match case % 4 {
+                0 => 0,
+                1 => t.words(&[0]),
+                _ => t.words(&[map]),
+            };
+            t.global(mi::YN_MAP_SYSTEM.sym, sys);
+            let sub = if case % 2 == 0 { 0 } else { t.alloc(b"sub\0") };
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x180);
+            t.check(
+                "rcbgGuideMapConvSub",
+                0x0093_8080,
+                Conv::Cdecl,
+                &[id, sub],
+                |o| Out::U32(gi::guide_map_conv_sub(o, ebp - 0xc, ebp - 0x10c, id, sub)),
+            );
+            r5_same(t, "rcbgGuideMapConvSub", ebp - 0x10c, 0x108);
             t.b_top = None;
             t.reset();
         }
