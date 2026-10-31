@@ -6769,3 +6769,132 @@ pub const TRAIL_STEP_LONG: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Slot 444 `(1)`; for each of the block's `*G + 0x19c` actors `i`, slot
+/// 446 `(*G + 0x1a0 + 4 i, 0)` and slot 434 `(*G, callback)` gives a
+/// record whose entry `+0x2c + 16 k` (`k` = `+0xac`) takes `i`; then slot
+/// 450 `(obj, callback 2)` and slot 449 `(obj, callback 3)` (the first's
+/// words stay under the second's; cdecl `(obj)`). Returns slot 449's
+/// `eax`.
+///
+/// `magic_0193` 0x10001560 (170 bytes; 2 DLLs).
+pub fn actors_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    slot_call(g, img, f, (0x4, 444), &[1]);
+    let mut block = g.read::<u32>(op(img, f, 0x14));
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(block.wrapping_add(0x19c)) {
+        let x = g.read::<u32>(block.wrapping_add(0x1a0 + 4 * i));
+        slot_call(g, img, f, (0x36, 446), &[x, 0]);
+        let b = g.read::<u32>(op(img, f, 0x4e));
+        let rec = slot_call(g, img, f, (0x43, 434), &[b, op(img, f, 0x48), x, 0]).eax;
+        let k2 = g.read::<u32>(rec.wrapping_add(0xac)).wrapping_mul(2);
+        g.write::<u32>(rec.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c), i);
+        block = g.read::<u32>(op(img, f, 0x6a));
+        i += 1;
+    }
+    let obj = fr.arg(g, 0);
+    let (cb, cb2) = (op(img, f, 0x8a), op(img, f, 0x97));
+    slot_call(g, img, f, (0x7c, 450), &[obj, cb]);
+    through(slot_call(g, img, f, (0x92, 449), &[obj, cb2, obj, cb]))
+}
+
+/// [`actors_records`].
+pub const ACTORS_RECORDS: Sig = Sig {
+    len: 170,
+    hash: 0x58bb_d495_6fc9_6629,
+    calls: &[],
+    imports: &[],
+};
+
+/// An object's motion set (cdecl `(obj)`): slot 442 `(obj, A, 6)` with
+/// the actor `A` of its entry (`*G + 0x1a0 + 4 idx`, `idx` the entry
+/// `+0x2c + 16 k`), slot 443 `(obj, 0x10)`, its colour `+0x130..+0x138`
+/// 0.15 and `+0x13c` 0, slot 440 `(*G, obj, 0, 0)`, slots 450 and 449
+/// with two callbacks (operands `+0x85`, `+0x98`), each call seeing the
+/// words the earlier ones left. Returns slot 449's `eax`.
+///
+/// `magic_0193` 0x10001bc0 (171 bytes; 2 DLLs).
+pub fn motion_set<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let k2 = g.read::<u32>(obj.wrapping_add(0xac)).wrapping_mul(2);
+    let idx = g.read::<u32>(obj.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c));
+    let block = g.read::<u32>(op(img, f, 0x16));
+    let a = g.read::<u32>(block.wrapping_add(idx.wrapping_mul(4)).wrapping_add(0x1a0));
+    let mut words = vec![obj, a, 6];
+    slot_call(g, img, f, (0x22, 442), &words);
+    words.splice(0..0, [obj, 0x10]);
+    slot_call(g, img, f, (0x30, 443), &words);
+    let b = g.read::<u32>(op(img, f, 0x4b));
+    for off in [0x130, 0x134, 0x138] {
+        g.write::<u32>(obj.wrapping_add(off), 0x3e19_999a);
+    }
+    g.write::<u32>(obj.wrapping_add(0x13c), 0);
+    words.splice(0..0, [b, obj, 0, 0]);
+    // call width: 9 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x40, 440), &words);
+    words.splice(0..0, [obj, op(img, f, 0x85)]);
+    // call width: 11 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x80, 450), &words);
+    words.splice(0..0, [obj, op(img, f, 0x98)]);
+    // call width: 13 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0x93, 449), &words))
+}
+
+/// [`motion_set`].
+pub const MOTION_SET: Sig = Sig {
+    len: 171,
+    hash: 0xc4bc_c70c_9817_3f43,
+    calls: &[],
+    imports: &[],
+};
+
+/// Two angles of the DLL's turned by their steps (`G_A += K_A`, `G_B +=
+/// K_B`, each folded back by `K1` above `HI` and below `LO`), `G_D` and
+/// `G_E` = `G_C`; then the objects run ([`run_objects`]); once they are
+/// all done and `G_WAIT` is not above 0, the task (cdecl `(task)`) gets
+/// state 3 and its record the next function (operand `+0xa5`). Returns
+/// the record, or the run's result.
+///
+/// `magic_0084` 0x10001710 (171 bytes; 2 DLLs).
+pub fn spin_and_run<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(op(img, f, o)));
+    let (hi, turn, lo) = (k(g, 0x17), k(g, 0x1f), k(g, 0x27));
+    let fold = |a: f32| {
+        if a > hi {
+            sub(a, turn)
+        } else if lo > a {
+            add(a, turn)
+        } else {
+            a
+        }
+    };
+    let a = fold(add(k(g, 0x7), k(g, 0xf)));
+    g.write::<u32>(op(img, f, 0x43), a.to_bits());
+    let b = fold(add(k(g, 0x4b), k(g, 0x53)));
+    let c = g.read::<u32>(op(img, f, 0x6c));
+    g.write::<u32>(op(img, f, 0x74), b.to_bits());
+    g.write::<u32>(op(img, f, 0x79), c);
+    g.write::<u32>(op(img, f, 0x7e), c);
+    // push ebp; call: the run's return address
+    let done = run_objects(g, img, img.rel32_target(f + 0x83), fr.esp.wrapping_sub(8));
+    if done != 1 || g.read::<i32>(op(img, f, 0x8e)) > 0 {
+        return Ret::eax(done);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), op(img, f, 0xa5));
+    Ret::eax(rec)
+}
+
+/// [`spin_and_run`].
+pub const SPIN_AND_RUN: Sig = Sig {
+    len: 171,
+    hash: 0xc210_5365_7083_8e0a,
+    calls: &[(0x83, Callee::Sig(&RUN_OBJECTS))],
+    imports: &[],
+};

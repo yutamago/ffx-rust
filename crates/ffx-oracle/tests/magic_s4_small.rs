@@ -3126,3 +3126,54 @@ fn trail_steps() {
         }
     }
 }
+
+#[test]
+fn actors_motions_spins() {
+    let Some(mut t) = twin(193) else { return };
+    let f = t.at(0x1560);
+    let rec_at = SCRATCH + 0x600;
+    rec(&mut t, 434, 2, move |_, _| rec_at);
+    recs(&mut t, &[(444, 1), (446, 2), (450, 2), (449, 4)]);
+    let block = SCRATCH + 0x1000;
+    for o in [0x14, 0x6a] {
+        t.set_u32(op(&t, f, o), block);
+    }
+    t.set_u32(op(&t, f, 0x4e), 0x0434_0001);
+    for i in 0..3 {
+        t.set_u32(block + 0x1a0 + 4 * i, 0x0a00_0000 + i);
+    }
+    let obj = SCRATCH + 0x100;
+    for n in [0u32, 1, 3] {
+        t.write(rec_at, &[0x22; 0x100]);
+        t.set_u32(rec_at + 0xac, 1);
+        t.set_u32(block + 0x19c, n);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    let f = t.at(0x1bc0);
+    recs(&mut t, &[(442, 3), (443, 2), (440, 4)]);
+    t.set_u32(op(&t, f, 0x16), block);
+    t.write(obj, &[0; 0x140]);
+    t.set_u32(obj + 0xac, 1);
+    t.set_u32(obj + 0x3c, 2);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(84) else { return };
+    let f = t.at(0x1710);
+    let ro = t.img.rel32_target(f + 0x83);
+    recs(&mut t, &[(723, 1), (724, 2), (235, 3)]);
+    let task = SCRATCH + 0x100;
+    for (a, b, one, wait) in [
+        (0.5f32, 1.0f32, false, 0u32),
+        (6.2, -6.2, false, 1),
+        (100.0, -100.0, true, 0),
+        (f32::NAN, 0.0, false, 0),
+    ] {
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, SCRATCH + 0x200);
+        t.set_u32(op(&t, f, 0x7), a.to_bits());
+        t.set_u32(op(&t, f, 0x4b), b.to_bits());
+        t.set_u32(op(&t, f, 0x8e), wait);
+        objects(&mut t, ro, one);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
