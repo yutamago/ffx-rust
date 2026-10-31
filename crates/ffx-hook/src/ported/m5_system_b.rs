@@ -1264,6 +1264,19 @@ ported! {
     hdd_MovieDiscWait_00777440 @ 0x0077_7440 => extern "C" fn movie_disc_wait(play: u32, ctx: u32; slots: u32) -> u32 {
         hd::movie_disc_wait(&mut mem(), play, ctx, slots)
     }
+
+    /// `(lo, hi, uv, colour)`: frame `ebp - 0x10`; `uv` advanced in its
+    /// argument slot.
+    updateVFXRenderData_AkazaScrFlt @ 0x0071_ce20 => extern "C" fn akaza_scr_flt(lo: u32, hi: u32, uv: u32, colour: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        pc::akaza_scr_flt(&mut mem(), f.at() + 0x10, [lo, hi, uv, colour], slots)
+    }
+
+    /// `(out, chr)`: frame `ebp - 0x25c`.
+    rcbgGuideMarker_0092c740 @ 0x0092_c740 => extern "C" fn guide_marker(out: u32, chr: u32) -> u32 {
+        let mut f = StackFrame::<0x97>::new();
+        pc::guide_marker(&mut mem(), f.at() + 0x25c, out, chr)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

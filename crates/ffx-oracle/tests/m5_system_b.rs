@@ -6620,3 +6620,97 @@ fn r3b13_movie_disc_wait_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b14_akaza_scr_flt_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1401);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            let pos = t.zeros(33 * 33 * 12);
+            let col = t.zeros(33 * 33 * 16);
+            let tex = t.zeros(33 * 33 * 8);
+            let idx = t.zeros(32 * 32 * 12);
+            let rec = t.words(&[0, rng.next(), rng.next(), pos, 0, col, tex, idx]);
+            let data = t.zeros(0x100);
+            t.put(data + 0x94, &[rec]);
+            t.stub(
+                pcs::RENDER_DATA_BY_INSTANCE,
+                false,
+                2,
+                0,
+                if case == 0 { 0 } else { data },
+            );
+            t.stub(pcs::BUFFER_FOR_SEGMENT, false, 4, 0, u32::from(case != 1));
+            t.stub(pcs::VFX_SET_VISIBLE, false, 3, 0, r);
+            let uvs: Vec<u32> = (0..33 * 33 * 2).map(|_| rng.next()).collect();
+            let uv = t.words(&uvs);
+            let colour = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let args = [rng.next(), rng.next(), uv, colour];
+            t.check_fs(
+                &format!("akaza #{case}"),
+                0x0071_ce20,
+                &args,
+                0x10,
+                0,
+                |m, ebp, s| Out::U32(pcb::akaza_scr_flt(m, ebp, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b15_guide_marker_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1501);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            let chr = rng.next();
+            let work = t.zeros(0x900);
+            let list = case % 3;
+            t.put(work + 0x8b0, &[list]);
+            t.put(
+                work + 0x870 + 4 * list,
+                &[if case & 1 == 0 { chr } else { chr ^ 1 }],
+            );
+            t.g32(pcs::RCUI_WORK, work);
+            t.stub(pcs::ROOT_MATRIX, false, 2, 0, r);
+            t.stub(pcs::SCALE_MATRIX100, false, 1, 0, r ^ 1);
+            t.stub_float(
+                pcs::THICKNESS_BTL,
+                [0.75f32, 3.5, 0.0, -1.25, 12.0, 1e-3][case as usize],
+            );
+            t.stub_copy_fill(pcs::CRT_MEMSET);
+            t.stub(pcs::COPY_VIA_C8F980, false, 2, 0, r ^ 2);
+            // the draws keep a copy of the points they get (0x50 bytes each)
+            let seen = t.zeros(0xa0);
+            let log = t.stub_code(pcs::DRAW_LINES, false, 5, 0, r ^ 3);
+            let slot = t.words(&[seen]);
+            let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+            c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp+0x14] (points)
+            c.push(0x8b);
+            c.push(0x3d);
+            c.extend(slot.to_le_bytes()); // mov edi, [slot]
+            c.extend([0xb9, 0x50, 0, 0, 0, 0xf3, 0xa4]); // mov ecx, 0x50; rep movsb
+            c.push(0x89);
+            c.push(0x3d);
+            c.extend(slot.to_le_bytes()); // mov [slot], edi
+            c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let at = t.cave_code(&c);
+            t.jump(pcs::DRAW_LINES, at);
+            t.check_fs(
+                &format!("guide marker #{case}"),
+                0x0092_c740,
+                &[r ^ 5, chr],
+                0x25c,
+                4,
+                |m, ebp, _| Out::U32(pcb::guide_marker(m, ebp, r ^ 5, chr)),
+            );
+        }
+    });
+}

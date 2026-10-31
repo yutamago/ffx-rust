@@ -185,6 +185,32 @@ pub const THREAD_CALL_RUN: u32 = 0x0070_3910;
 pub const QUEUE_PUSH: u32 = 0x006d_b800;
 pub const READ_TASK: u32 = 0x0112_8adc;
 
+/// `updateVFXRenderData_AkazaScrFlt`'s: `graphicVFXGetRenderDataByInstance`,
+/// `graphicDynGeoMemManagerGetBufferForSegment`, `graphicVFXSetVisible`,
+/// the grid step (f64 `0x00b501a0`, 1/32) and 2.0 (`0x00b92270`).
+pub const RENDER_DATA_BY_INSTANCE: u32 = 0x0064_53d0;
+pub const BUFFER_FOR_SEGMENT: u32 = 0x0063_fdb0;
+pub const VFX_SET_VISIBLE: u32 = 0x0064_5710;
+pub const GRID_STEP: u32 = 0x00b5_01a0;
+pub const TWO: u32 = 0x00b9_2270;
+
+/// `FUN_0092c740`'s (the guide map's character marker): `g_RcuiWork`,
+/// `Ch_GetRootGlobalMatrix`, `rcbgScaleMatrix100`, `Ch_GetThicknessBtl`
+/// (`ST0`), 10.0 (`0x00b922b0`), `crt_memset_thunk`,
+/// `VFX_CopyViaC8f980_0092cbf0`, the line drawer `0x009278d0`, the
+/// marker colours `0x00c5e7a8` (the selected character) and
+/// `0x00c5e7f8`, `g_pppSinTable`.
+pub const RCUI_WORK: u32 = 0x0193_c0f0;
+pub const ROOT_MATRIX: u32 = 0x0083_3f80;
+pub const SCALE_MATRIX100: u32 = 0x0091_ffd0;
+pub const THICKNESS_BTL: u32 = 0x0082_ad90;
+pub const TEN: u32 = 0x00b9_22b0;
+pub const CRT_MEMSET: u32 = 0x0094_964c;
+pub const COPY_VIA_C8F980: u32 = 0x0092_cbf0;
+pub const DRAW_LINES: u32 = 0x0092_78d0;
+pub const MARKER_COLOURS: u32 = 0x00c5_e798;
+pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -989,5 +1015,134 @@ pub mod bridge {
         let task: u32 = h.read(h.rebase(super::READ_TASK));
         let step: u32 = h.read(task);
         h.call(step, Conv::Cdecl, &[])
+    }
+    /// `updateVFXRenderData_AkazaScrFlt(lo, hi, uv, colour; slots)` with its
+    /// frame at `ebp`: the instance's render data (`lo`, `hi`; none 0) and
+    /// its buffer (`graphicDynGeoMemManagerGetBufferForSegment(data, 0,
+    /// [+4], [+8])` of the data's record `+0x94`; none 0) filled with a
+    /// 33 x 33 grid: vertex (i, j) at `(2 j s - 1, 2 i s - 1, 0)` (`s` =
+    /// 1/32, x87 in that order, `i`'s row value rounded to `f32` first),
+    /// colour the four floats at `colour`, UVs the next pair from `uv`
+    /// (the pointer advanced in its argument slot), and for i, j < 32 two
+    /// triangles of `u16` indices. Then `graphicVFXSetVisible(lo, hi, 1)`,
+    /// 1. The frame's four words end as the original leaves them.
+    pub fn akaza_scr_flt(h: &mut impl Host, ebp: u32, args: [u32; 4], slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let [lo, hi, uv, colour] = args;
+        let data = cdecl(h, super::RENDER_DATA_BY_INSTANCE, &[lo, hi]);
+        if data == 0 {
+            return 0;
+        }
+        let rec: u32 = h.read(data.wrapping_add(0x94));
+        let (a, b): (u32, u32) = (h.read(rec.wrapping_add(4)), h.read(rec.wrapping_add(8)));
+        if cdecl(h, super::BUFFER_FOR_SEGMENT, &[data, 0, a, b]) == 0 {
+            return 0;
+        }
+        let rec: u32 = h.read(data.wrapping_add(0x94));
+        let two = f64::from_bits(h.read::<u64>(h.rebase(super::TWO)));
+        let step = f64::from_bits(h.read::<u64>(h.rebase(super::GRID_STEP)));
+        let mut pos: u32 = h.read(rec.wrapping_add(0xc));
+        let mut col: u32 = h.read(rec.wrapping_add(0x14));
+        let mut tex: u32 = h.read(rec.wrapping_add(0x18));
+        let mut idx: u32 = h.read(rec.wrapping_add(0x1c));
+        let mut uv = uv;
+        let grid = |k: u32| -> f64 {
+            let kf = f64::from(k); // fild + fstp dword: exact for 0..=32
+            x87::sub(x87::mul(x87::mul(kf, two), step), 1.0)
+        };
+        for i in 0..=32u32 {
+            let row = x87::load(x87::store(grid(i)));
+            for j in 0..=32u32 {
+                put_words(h, pos, &[x87::store(grid(j)), x87::store(row), 0]);
+                let colour_words: [u32; 4] =
+                    [0u32, 4, 8, 0xc].map(|off| h.read(colour.wrapping_add(off)));
+                put_words(h, col, &colour_words);
+                let t: [u32; 2] = [h.read(uv), h.read(uv.wrapping_add(4))];
+                put_words(h, tex, &t);
+                uv = uv.wrapping_add(8);
+                h.write(slots.wrapping_add(8), uv);
+                pos = pos.wrapping_add(0xc);
+                col = col.wrapping_add(0x10);
+                tex = tex.wrapping_add(8);
+                if i < 32 && j < 32 {
+                    let base = i * 33 + j;
+                    for (k, v) in [0u32, 1, 0x21, 1, 0x22, 0x21].into_iter().enumerate() {
+                        #[allow(clippy::cast_possible_truncation)] // the u16 stores
+                        h.write(idx.wrapping_add(2 * k as u32), (base + v) as u16);
+                    }
+                    idx = idx.wrapping_add(0xc);
+                }
+            }
+        }
+        put_words(h, ebp.wrapping_sub(0x10), &[tex, col, 33, 33]);
+        cdecl(h, super::VFX_SET_VISIBLE, &[lo, hi, 1]);
+        1
+    }
+    /// The sine table's entry `i` (`g_pppSinTable`, f32).
+    fn sin_entry(h: &impl Host, i: u32) -> f64 {
+        ffx_bridge::x87::load(h.read(h.rebase(super::SIN_TABLE).wrapping_add(4 * i)))
+    }
+
+    /// `FUN_0092c740(out, chr)` with its frame at `ebp`: the character's
+    /// guide-map marker. Its root matrix at `ebp - 0x44`
+    /// (`Ch_GetRootGlobalMatrix`, `rcbgScaleMatrix100`), the radius
+    /// `Ch_GetThicknessBtl(chr) * 10.0` (`f32`); 33 16-byte points from
+    /// `ebp - 0x254` cleared. A diamond of 5 points (x = `sin[0] r`, `sin
+    /// [0x638] r`, 0, `sin[0x9c7] r`, the first again; z the negated
+    /// cosines) drawn by `0x009278d0(out, points, 5, colour, matrix)`,
+    /// then the circle of 33 points (x = `sin[a] r`, z = `-sin[a + 0x400]
+    /// r` for `a` = `0x800 k`, k = 0..32) the same way. The colour:
+    /// `0x00c5e7a8` when `chr` is the selected character (`g_RcuiWork`'s
+    /// list `+0x870` at `+0x8b0`), else `0x00c5e7f8`. The last draw's
+    /// `eax`.
+    pub fn guide_marker(h: &mut impl Host, ebp: u32, out: u32, chr: u32) -> u32 {
+        use ffx_bridge::x87;
+        let work: u32 = h.read(h.rebase(super::RCUI_WORK));
+        let matrix = ebp.wrapping_sub(0x44);
+        cdecl(h, super::ROOT_MATRIX, &[chr, matrix]);
+        cdecl(h, super::SCALE_MATRIX100, &[matrix]);
+        let thick = h.call_sym_st0_f64(super::THICKNESS_BTL, Conv::Cdecl, &[chr]);
+        let ten = f64::from_bits(h.read::<u64>(h.rebase(super::TEN)));
+        let r_bits = x87::store(x87::mul(thick, ten));
+        h.write(ebp.wrapping_sub(0x258), r_bits);
+        let r = x87::load(r_bits);
+        let pts = ebp.wrapping_sub(0x254);
+        cdecl(h, super::CRT_MEMSET, &[pts, 0, 0x210]);
+        // the diamond: (x, z) of points 0, 1, 2, 3 at +0, +8 of each
+        for (k, (sx, sz)) in (0u32..).zip([
+            (0u32, 0x400u32),
+            (0x638, 0xa38),
+            (0x800, 0xc00),
+            (0x9c7, 0xdc7),
+        ]) {
+            let at = pts.wrapping_add(16 * k);
+            let x = x87::mul(sin_entry(h, sx), r);
+            h.write(at, x87::store(x));
+            let z = x87::mul(-sin_entry(h, sz), r);
+            h.write(at.wrapping_add(8), x87::store(z));
+        }
+        cdecl(h, super::COPY_VIA_C8F980, &[pts.wrapping_add(0x40), pts]);
+        put_words(h, pts.wrapping_add(0x20), &[0, 0, 0, 0]);
+        let list: u32 = h.read(work.wrapping_add(0x8b0));
+        let selected: u32 = h.read(work.wrapping_add(0x870 + 4 * list));
+        let colour_k = if selected == chr { 1 } else { 6 };
+        let colour = h.rebase(super::MARKER_COLOURS).wrapping_add(colour_k << 4);
+        h.write(ebp.wrapping_sub(0x25c), colour);
+        cdecl(h, super::DRAW_LINES, &[out, pts, 5, colour, matrix]);
+        let mut at = pts;
+        let mut a = 0u32;
+        while a <= 0x20_0000 {
+            let turn = a.cast_signed().wrapping_div(32).cast_unsigned();
+            let sx = (turn >> 4) & 0xfff;
+            let sz = (turn.wrapping_add(0x4000) >> 4) & 0xfff;
+            h.write(at, x87::store(x87::mul(sin_entry(h, sx), r)));
+            h.write(
+                at.wrapping_add(8),
+                x87::store(x87::mul(-sin_entry(h, sz), r)),
+            );
+            at = at.wrapping_add(0x10);
+            a += 0x1_0000;
+        }
+        cdecl(h, super::DRAW_LINES, &[out, pts, 0x21, colour, matrix])
     }
 }
