@@ -3,7 +3,7 @@
 //! code (`w(off)` = the word at `+off`), so a later copy elsewhere binds
 //! by its own signature.
 
-use crate::l5_objhost::run_objects;
+use crate::l5_objhost::{list_remove, run_objects};
 use crate::runtime::slot_target;
 use crate::sb_misc::timeline_run;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -227,6 +227,99 @@ pub fn set_then_timeline<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(timeline_run(g, img, img.rel32_target(f + 0x13), w(0x0e)))
 }
 
+/// `(obj)` (`magic_0195` 0x100012c0, 57 bytes): `rcefTaskSetSeq(obj,
+/// cb)` (`+0x12`, `cb` at `+0x09`) and `rcefTaskWait(obj, T)` (`+0x2e`,
+/// `T` = `TABLE[*I]`, `I` at `+0x19`, `TABLE` at `+0x20`; the first
+/// call's words after them). Returns the last slot's `eax`.
+pub fn seq_wait_table<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let s = slot_target(g, w(0x04), slot_at(img, f + 0x12));
+    g.call(s, fr.ecx, &[obj, w(0x09)]);
+    let i = g.read::<u32>(w(0x19));
+    let t = g.read::<u32>(w(0x20).wrapping_add(i.wrapping_mul(4)));
+    let s = slot_target(g, w(0x25), slot_at(img, f + 0x2e));
+    Ret::eax(g.call(s, fr.ecx, &[obj, t, obj, w(0x09)]).eax)
+}
+
+/// `(obj)` (`magic_0382` 0x10001120, 67 bytes): `B = *A` (`+0x09`,
+/// `+0x04`), `C` = the immediate at `+0x26` (`+0x22`),
+/// `rcefTaskSetSeq(obj, cb)` (`+0x1c`, `+0x13`) and `rcefTaskWait(obj,
+/// T)` (`+0x38`, `T` at `+0x32`; the first call's words after them).
+/// Returns the last slot's `eax`.
+pub fn copy_seq_wait<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let v = g.read::<u32>(w(0x04));
+    g.write::<u32>(w(0x09), v);
+    let obj = fr.arg(g, 0);
+    let s = slot_target(g, w(0x0e), slot_at(img, f + 0x1c));
+    g.write::<u32>(w(0x22), w(0x26));
+    g.call(s, fr.ecx, &[obj, w(0x13)]);
+    let t = crate::o4_parts::disp8(img, f + 0x32);
+    let s = slot_target(g, w(0x2d), slot_at(img, f + 0x38));
+    Ret::eax(g.call(s, fr.ecx, &[obj, t, obj, w(0x13)]).eax)
+}
+
+/// `(obj)` (`magic_0415` 0x10001000, 72 bytes): `rcefTaskSetSeq(obj,
+/// cb)` (`+0x12`, `cb` at `+0x09`) with `C` = the immediate at `+0x1c`
+/// (`+0x18`) set first, `rcefTaskCallSeq(obj, cb2)` (`+0x31`, `+0x28`),
+/// then a tail jump to slot 521 (`+0x41`) with the caller's stack.
+pub fn seq_call_then_jump<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let s = slot_target(g, w(0x04), slot_at(img, f + 0x12));
+    g.write::<u32>(w(0x18), w(0x1c));
+    g.call(s, fr.ecx, &[obj, w(0x09)]);
+    let s = slot_target(g, w(0x23), slot_at(img, f + 0x31));
+    g.call(s, fr.ecx, &[obj, w(0x28), obj, w(0x09)]);
+    Ret::jump(slot_target(g, w(0x38), slot_at(img, f + 0x41)))
+}
+
+/// `(obj)` (`magic_0397` 0x10005870, 78 bytes): slot 239 (`+0x1b`) with
+/// `(*G, obj[0x120], 0)` (`G` at `+0x15`); `r` = slot 719 (`+0x2a`) with
+/// `(P, 9, 0)` (`P` at `+0x31`, the immediates at `+0x2f`, `+0x27`);
+/// slot 306 (`+0x41`) with `(7, 3, r)` (`+0x46`, `+0x3e`), each with the
+/// earlier words after its own. Returns its `eax`.
+pub fn slot_chain_306<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let d = |off: u32| crate::o4_parts::disp8(img, f + off);
+    let obj = fr.arg(g, 0);
+    let a = g.read::<u32>(obj.wrapping_add(0x120));
+    let h = g.read::<u32>(w(0x15));
+    let s = slot_target(g, w(0x0f), slot_at(img, f + 0x1b));
+    g.call(s, fr.ecx, &[h, a, 0]);
+    let s = slot_target(g, w(0x22), slot_at(img, f + 0x2a));
+    let r = g.call(s, fr.ecx, &[w(0x31), d(0x2f), d(0x27), h, a, 0]).eax;
+    let s = slot_target(g, w(0x39), slot_at(img, f + 0x41));
+    let args = [d(0x46), d(0x3e), r, w(0x31), d(0x2f), d(0x27), h, a, 0];
+    Ret::eax(g.call(s, fr.ecx, &args).eax)
+}
+
+/// No arguments (`magic_0397` 0x10006390, 71 bytes): the object `*G +
+/// E` (`G` at `+0x03`, `E` at `+0x09`) taken off the list `L`
+/// ([`list_remove`], `+0x15`, `L` at `+0x10`); if it was there, `*G_P =
+/// ITEM` (`+0x1e`, `+0x25`), slot 713 (`+0x30`) frees its part and its
+/// flags (`u16 +0x124`) lose 0x8000, and 0x7fff is returned; else 0.
+pub fn remove_and_free<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = g.read::<u32>(w(0x03)).wrapping_add(w(0x09));
+    if list_remove(g, img, img.rel32_target(f + 0x15), w(0x10), obj) == 0 {
+        return Ret::eax(0);
+    }
+    let gp = g.read::<u32>(w(0x1e));
+    g.write::<u32>(gp, w(0x25));
+    let s = slot_target(g, w(0x2a), slot_at(img, f + 0x30));
+    g.call(s, fr.ecx, &[obj]);
+    let flags = g.read::<u16>(obj.wrapping_add(0x124));
+    g.write::<u16>(obj.wrapping_add(0x124), flags & 0x7fff);
+    Ret::eax(0x7fff)
+}
+
 /// [`actor_slot`] in `magic_0171` (0x100029c0, 51 bytes).
 pub const ACTOR_SLOT_0171_29C0: Sig = Sig {
     len: 51,
@@ -312,5 +405,45 @@ pub const SET_THEN_TIMELINE_0540_1080: Sig = Sig {
     len: 23,
     hash: 0x372e_3fcb_93a3_df90,
     calls: &[(0x13, Callee::Sig(&crate::sb_misc::TIMELINE_RUN))],
+    imports: &[],
+};
+
+/// [`seq_wait_table`] in `magic_0195` (0x100012c0, 57 bytes).
+pub const SEQ_WAIT_TABLE_0195_12C0: Sig = Sig {
+    len: 57,
+    hash: 0x6289_e482_b734_9665,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`copy_seq_wait`] in `magic_0382` (0x10001120, 67 bytes).
+pub const COPY_SEQ_WAIT_0382_1120: Sig = Sig {
+    len: 67,
+    hash: 0x4306_ce7a_ab3f_3cae,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`seq_call_then_jump`] in `magic_0415` (0x10001000, 72 bytes).
+pub const SEQ_CALL_THEN_JUMP_0415_1000: Sig = Sig {
+    len: 72,
+    hash: 0x9868_6b66_4c1e_df3c,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`slot_chain_306`] in `magic_0397` (0x10005870, 78 bytes).
+pub const SLOT_CHAIN_306_0397_5870: Sig = Sig {
+    len: 78,
+    hash: 0x3b78_58e5_98b8_e55a,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`remove_and_free`] in `magic_0397` (0x10006390, 71 bytes).
+pub const REMOVE_AND_FREE_0397_6390: Sig = Sig {
+    len: 71,
+    hash: 0x865e_9ae9_f933_1ec8,
+    calls: &[(0x15, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))],
     imports: &[],
 };

@@ -50,6 +50,38 @@ fn globals(t: &mut Twin, f: u32, ops: &[u32], seed: u32) {
 }
 
 const CASES: &[Case] = &[
+    ("seq_wait_table", &[(195, 0x12c0)], 1, |t, f, c| {
+        t.set_u32(t.img.word(f + 0x19), 2);
+        fill(t, t.img.word(f + 0x20), 4, c);
+    }),
+    ("copy_seq_wait", &[(382, 0x1120)], 1, |t, f, c| {
+        globals(t, f, &[0x04, 0x09, 0x22], c);
+    }),
+    ("seq_call_then_jump", &[(415, 0x1000)], 1, |t, f, c| {
+        globals(t, f, &[0x18], c);
+    }),
+    ("slot_chain_306", &[(397, 0x5870)], 1, |t, f, c| {
+        globals(t, f, &[0x15], c);
+        fill(t, OBJ + 0x120, 1, c);
+    }),
+    ("remove_and_free", &[(397, 0x6390)], 2, |t, f, c| {
+        t.set_u32(t.img.word(f + 0x03), P);
+        let obj = P + t.img.word(f + 0x09);
+        fill(t, obj + 0x120, 3, c);
+        t.set_u16(obj + 0x124, 0x8123);
+        t.set_u32(t.img.word(f + 0x1e), SCRATCH + 0x200);
+        // the list holds the object alone (case 1), or is empty
+        let list = t.img.word(f + 0x10);
+        let node = SCRATCH + 0x3000;
+        t.write(node, &[0; 0x10]);
+        t.write(list, &[0; 0xc]);
+        if c == 1 {
+            t.set_u32(node + 8, obj);
+            t.set_u32(list, node);
+            t.set_u32(list + 4, node);
+            t.set_u32(list + 8, node);
+        }
+    }),
     ("record_actor_slot", &[(270, 0x1c70)], 2, |t, f, c| {
         globals(t, f, &[0x08], c);
         t.set_u32(t.img.word(f + 0x21), P);
@@ -203,4 +235,4 @@ fn dll_main_writes_only_crt_state() {
 }
 
 // Mutation testing (M5 magic round 4, tools/mutants.py, a few mutants per
-// code line): 99 mutants, all killed.
+// code line): 161 mutants, all killed.

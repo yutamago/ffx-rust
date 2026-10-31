@@ -74,6 +74,7 @@ pub mod s3_vm;
 pub mod s3_wrap;
 
 // round 4, the own work list's families (o4_*)
+pub mod o4_ctor;
 pub mod o4_effect;
 pub mod o4_fam2;
 pub mod o4_fam3;
@@ -1317,6 +1318,18 @@ ports! {
     "o4 single display_list 0598@77a0" => o4_single::DISPLAY_LIST_0598_77A0, o4_single::display_list;
     "o4 single colour_then_run 0671@1340" => o4_single::COLOUR_THEN_RUN_0671_1340, o4_single::colour_then_run;
     "o4 single set_then_timeline 0540@1080" => o4_single::SET_THEN_TIMELINE_0540_1080, o4_single::set_then_timeline;
+    "o4 ctor effect_ctor_arg 0159@6700" => o4_ctor::EFFECT_CTOR_ARG_0159_6700, o4_ctor::effect_ctor_arg;
+    "o4 ctor effect_ctor_arg2 0202@6f10" => o4_ctor::EFFECT_CTOR_ARG2_0202_6F10, o4_ctor::effect_ctor_arg2;
+    "o4 ctor effect_ctor_this 0388@6d70" => o4_ctor::EFFECT_CTOR_THIS_0388_6D70, o4_ctor::effect_ctor_this;
+    "o4 ctor big_ctor_this 0597@8f40" => o4_ctor::BIG_CTOR_THIS_0597_8F40, o4_ctor::big_ctor_this;
+    "o4 ctor big_table_ctor 0262@6c10" => o4_ctor::BIG_TABLE_CTOR_0262_6C10, o4_ctor::big_table_ctor;
+    "o4 ctor colour_ctor 0070@97b0" => o4_ctor::COLOUR_CTOR_0070_97B0, o4_ctor::colour_ctor;
+    "o4 ctor vec_ctor 0071@7530" => o4_ctor::VEC_CTOR_0071_7530, o4_ctor::vec_ctor;
+    "o4 single seq_wait_table 0195@12c0" => o4_single::SEQ_WAIT_TABLE_0195_12C0, o4_single::seq_wait_table;
+    "o4 single copy_seq_wait 0382@1120" => o4_single::COPY_SEQ_WAIT_0382_1120, o4_single::copy_seq_wait;
+    "o4 single seq_call_then_jump 0415@1000" => o4_single::SEQ_CALL_THEN_JUMP_0415_1000, o4_single::seq_call_then_jump;
+    "o4 single slot_chain_306 0397@5870" => o4_single::SLOT_CHAIN_306_0397_5870, o4_single::slot_chain_306;
+    "o4 single remove_and_free 0397@6390" => o4_single::REMOVE_AND_FREE_0397_6390, o4_single::remove_and_free;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
