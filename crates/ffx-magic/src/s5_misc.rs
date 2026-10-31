@@ -6145,3 +6145,131 @@ pub const OBJECTS_AT_TARGETS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A light turned with the scene (cdecl, no arguments; a /GS frame). With
+/// `B = *G_S` and `t = B+0x2b04`: a point `P = B+0x2b10..` moved by the
+/// offset `(K0, 0, K1, 1)` turned by `t - KA` wrapped once (slots 235, 328
+/// with 0 and 329, then 229 and 248 into `P`, `w = 1`); a second matrix
+/// `N` (slot 235, slot 554 `(N, N, &0)`, `t - KB` wrapped once in the
+/// frame's angle word), `P * K2` (w copied) and slot 327 `(M, N)`, whose
+/// `+0x30` and `+0x38` are negated. Slot 858 `(1, M, lo, hi, 0x3a00)`
+/// with `lo = (-4.9, 0, -4.9, 1)` and `hi = (4.8, 0, 4.8, 1)`, which it
+/// may change, then `B+0x2b80.. = lo` and `B+0x2b90.. = hi`. Returns
+/// slot 858's `eax`. Each call sees the words the earlier ones left on
+/// the stack.
+///
+/// `magic_0563` 0x10001800 (735 bytes; 2 DLLs).
+pub fn scene_light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let b = g.read::<u32>(w(0x1e));
+    let t = |g: &G| g.read::<f32>(b + 0x2b04);
+    let (v, ang, p, m, r, n, q, mm, lo, hi) = (
+        at(0x54),
+        at(0x40),
+        at(0x14),
+        at(0xe4),
+        at(0xa4),
+        at(0x94),
+        at(0x64),
+        at(0x124),
+        at(0x24),
+        at(0x34),
+    );
+    let a = wrap_once(
+        g,
+        img,
+        f,
+        sub(t(g), g.read::<f32>(w(0x35))),
+        [0x58, 0x17, 0x68, 0x17],
+    );
+    for (i, x) in [0x41fb_779b_u32, 0, 0x3ed6_6dbd, 0x3f80_0000]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(v + 4 * i as u32, x);
+    }
+    g.write::<u32>(at(0x44), 0);
+    g.write::<f32>(ang, a);
+    for i in 0..4 {
+        let x = g.read::<u32>(b + 0x2b10 + 4 * i);
+        g.write::<u32>(p + 4 * i, x);
+    }
+    g.write::<u32>(at(0x3c), 0);
+    g.write::<u32>(at(0x38), 0);
+    let mut s = Pushes::default();
+    s.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xa4), 235), 0);
+    s.set_top(g.read::<u32>(at(0x44)));
+    s.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xe3), 328), 0);
+    s.pop(2);
+    s.set_top(g.read::<u32>(ang));
+    s.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x105), 329), 0);
+    s.push_all(&[v, m, r]);
+    g.write::<u32>(at(0x48), 0x3f80_0000);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x124), 229), 0);
+    s.push_all(&[r, p, p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x144), 248), 0);
+    let a = wrap_once(
+        g,
+        img,
+        f,
+        sub(t(g), g.read::<f32>(w(0x15c))),
+        [0x16d, 0x177, 0x181, 0x18e],
+    );
+    g.write::<u32>(at(0x8), 0x3f80_0000);
+    g.write::<f32>(ang, a);
+    let mut s = Pushes::default();
+    s.push(n);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x19a), 235), 0);
+    s.push_all(&[at(0x44), n, n]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1b8), 554), 0);
+    let k = g.read::<f32>(w(0x1c8));
+    for i in 0..3 {
+        let x = mul(g.read::<f32>(p + 4 * i), k);
+        g.write::<f32>(q + 4 * i, x);
+    }
+    let x = g.read::<u32>(p + 0xc);
+    g.write::<u32>(q + 0xc, x);
+    s.push_all(&[n, mm]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1f2), 327), 0);
+    for (o, mask) in [(0xf4u32, 0x226u32), (0xec, 0x24a)] {
+        let x = g.read::<u32>(at(o)) ^ g.read::<u32>(w(mask));
+        g.write::<u32>(at(o), x);
+    }
+    for (base, x) in [(lo, 0xc09c_cccd_u32), (hi, 0x4099_999a)] {
+        for (i, y) in [x, 0, x, 0x3f80_0000].into_iter().enumerate() {
+            g.write::<u32>(base + 4 * i as u32, y);
+        }
+    }
+    s.push_all(&[0x3a00, hi, lo, mm, 1]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let eax = s.call(g, slot_target(g, w(0x256), 858), 0).eax;
+    for (base, to) in [(lo, 0x2b80u32), (hi, 0x2b90)] {
+        for i in 0..4 {
+            let x = g.read::<u32>(base + 4 * i);
+            g.write::<u32>(b + to + 4 * i, x);
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`scene_light`] (the `rel32`: `__security_check_cookie`).
+pub const SCENE_LIGHT: Sig = Sig {
+    len: 735,
+    hash: 0x57a8_d1a5_6bb5_7b4d,
+    calls: &[(0x316, Callee::Any)],
+    imports: &[],
+};

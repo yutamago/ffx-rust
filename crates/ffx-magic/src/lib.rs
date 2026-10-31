@@ -1294,6 +1294,7 @@ ports! {
     "actor clip draw" => s5_misc::ACTOR_CLIP_DRAW, s5_misc::actor_clip_draw;
     "clock light" => s5_misc::CLOCK_LIGHT, s5_misc::clock_light;
     "objects at targets" => s5_misc::OBJECTS_AT_TARGETS, s5_misc::objects_at_targets;
+    "scene_light" => s5_misc::SCENE_LIGHT, s5_misc::scene_light;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

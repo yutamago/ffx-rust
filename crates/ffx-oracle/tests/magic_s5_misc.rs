@@ -2900,3 +2900,52 @@ fn objects_at_targets_started() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn scene_lights() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x1800);
+    for (s, n, words, fill) in [
+        (235u32, 1usize, 16u32, Some(0usize)),
+        (328, 3, 16, Some(0)),
+        (329, 3, 16, Some(0)),
+        (229, 3, 16, Some(0)),
+        (248, 3, 4, Some(0)),
+        (554, 3, 16, Some(0)),
+        (327, 2, 16, Some(0)),
+    ] {
+        rec_mem(&mut t, s, n, words, fill);
+    }
+    // the light: its matrix (with the two negated words) and both
+    // records, which it changes
+    t.stub(858, |m, a| {
+        let k = m.r32(SCRATCH + 0x3000);
+        m.w32(SCRATCH + 0x3000, k + 1);
+        for i in 0..5 {
+            m.w32(SCRATCH + 0x3004 + 4 * i, a[i as usize]);
+        }
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(SCRATCH + 0x3020 + 4 * i, v);
+        }
+        for (j, &r) in a[2..4].iter().enumerate() {
+            for i in 0..4 {
+                let v = m.r32(r + 4 * i);
+                m.w32(SCRATCH + 0x3060 + 0x10 * j as u32 + 4 * i, v);
+                m.w32(r + 4 * i, v ^ (0x0101_0000 * (k + 1) + i));
+            }
+        }
+        0x858 + k
+    });
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x1e), b);
+    t.write(b + 0x2b00, &varied(0x100, 3));
+    let ka = f32::from_bits(t.u32(op(&t, f, 0x35)));
+    let kb = f32::from_bits(t.u32(op(&t, f, 0x15c)));
+    for x in [5.0f32, 0.0, -5.0, 3.5, -3.5] {
+        for k in [ka, kb] {
+            t.set_u32(b + 0x2b04, (k + x).to_bits());
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
