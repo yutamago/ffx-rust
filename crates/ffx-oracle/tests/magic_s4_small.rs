@@ -2214,3 +2214,92 @@ fn drops_and_walk_resets() {
         }
     }
 }
+
+#[test]
+fn thunks_lights_rings_records() {
+    let Some(mut t) = twin(188) else { return };
+    recs(&mut t, &[(363, 3), (362, 4)]);
+    let f = t.at(0x1d90);
+    let li = t.img.rel32_target(f + 0x1);
+    t.set_u32(op(&t, li, 0x24), SCRATCH + 0x80);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0xa9f0);
+    let ring = SCRATCH + 0x5000;
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x30);
+        let owner = sa::node(0);
+        t.write(ring, &[0x41; 0x40]);
+        t.set_u32(ring, sa::VTABLE);
+        t.set_u32(owner + 0x2c, ring);
+        t.set_u32(owner + 0x1c, SCRATCH + 0x6000);
+        t.set_u16(owner + 0x20, 4);
+        t.set_u16(owner + 0x22, 0x10);
+        t.set_u16(owner + 0x24, 1);
+        t.set_u16(owner + 0x26, 1);
+        t.set_u16(owner + 0x2a, 0);
+        t.check(
+            f,
+            Call::this(sa::CURSOR),
+            &[],
+            Eax::Checked,
+            s4_small::walk_ring,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(206) else { return };
+    let f = t.at(0x2eb0);
+    let hdr = SCRATCH + 0x400;
+    t.write(hdr, &[0x99; 0x20]);
+    rec(&mut t, 942, 1, |_, a| 0x9420_0000 ^ a[0]);
+    rec(&mut t, 941, 1, move |_, _| hdr);
+    let recs_at = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xb), recs_at);
+    for (n, used) in [(0u32, 0u32), (3, 3), (3, 1)] {
+        t.write(recs_at, &[0x22; 0x94 * 3]);
+        for i in 0..3 {
+            t.set_u32(recs_at + 0x94 * i, u32::from(i < used));
+        }
+        t.set_u32(op(&t, f, 0x2), n);
+        let c = Call {
+            edx: 0x00a1_0000,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_small::record_take);
+    }
+    drop(t);
+    let Some(mut t) = twin(638) else { return };
+    let f = t.at(0x3260);
+    let so = t.img.rel32_target(t.at(0x31e0) + 0x2f);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |_, _| 0x714);
+    let to = t.at(0x31e0);
+    let base = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, to, 0x18), base);
+    let arg = SCRATCH + 0x100;
+    t.set_u32(arg + 0x2c, 1);
+    t.write(base + 0x130, &[0x5a; 0x130]);
+    t.check_entry(f, Call::default(), &[arg, 0x0bad_f00e], Eax::Checked);
+}
+
+#[test]
+fn walk_reset_thunk() {
+    let Some(mut t) = twin(201) else { return };
+    sa::handler_stubs(&mut t);
+    recs(&mut t, &[(275, 1)]);
+    let f = t.at(0x3070);
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x30);
+        t.set_u8(sa::node(0) + 0x24, 0);
+        let call = Call {
+            eax: 0xaabb_ccdd,
+            ecx: 0x0bad_0ecc,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
+    }
+}

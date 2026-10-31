@@ -4884,3 +4884,121 @@ pub const WALK_RESET: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`light_once`], then `G_ON` 1.0 (operand `+0x7`) (no arguments).
+/// Returns 1.
+///
+/// `magic_0188` 0x10001d90 (21 bytes; 2 DLLs).
+pub fn light_once_on<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let callee = Frame {
+        at: img.rel32_target(f + 0x1),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    light_once(g, img, &callee);
+    g.write::<u32>(op(img, f, 0x7), 0x3f80_0000);
+    Ret::eax(1)
+}
+
+/// [`light_once_on`].
+pub const LIGHT_ONCE_ON: Sig = Sig {
+    len: 21,
+    hash: 0x2da0_fcee_9248_a170,
+    calls: &[(0x1, Callee::Sig(&LIGHT_ONCE))],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], `ecx` = the cursor); then the
+/// owner's ring `+0x2c` gets its handler (`+0x1c` of its table) with a
+/// cursor on the frame (the ring, the walk's pass byte at `+5`), and the
+/// owner and the ring's `+0x1c` are written into it ([`ring_write`])
+/// (internal, `ecx` = the cursor). Returns the ring write's result.
+///
+/// `magic_0150` 0x1000a9f0 (121 bytes; 2 DLLs).
+pub fn walk_ring<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let cursor = fr.ecx;
+    let owner = g.read::<u32>(cursor);
+    crate::nodes::walk(g, cursor, cursor, fr.eax);
+    // push ebp; sub esp, 8: the frame's cursor is [ebp - 8]
+    let local = fr.esp.wrapping_sub(0xc);
+    let ring = g.read::<u32>(owner.wrapping_add(0x2c));
+    let pass = g.read::<u8>(cursor + 5);
+    g.write::<u32>(local, ring);
+    g.write::<u8>(local + 5, pass);
+    let handler = g.read::<u32>(g.read::<u32>(ring).wrapping_add(0x1c));
+    g.call(handler, local, &[local]);
+    let entry = g.read::<u32>(owner.wrapping_add(0x2c)).wrapping_add(0x1c);
+    g.write::<u32>(local, owner);
+    g.write::<u32>(local + 4, entry);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x6f),
+        esp: fr.esp.wrapping_sub(0x18),
+        ecx: local,
+        ..*fr
+    };
+    ring_write(g, img, &callee)
+}
+
+/// [`walk_ring`].
+pub const WALK_RING: Sig = Sig {
+    len: 121,
+    hash: 0x37c2_73ee_e7f7_c6cd,
+    calls: &[(0x6f, Callee::Sig(&RING_WRITE))],
+    imports: &[],
+};
+
+/// The first free record (first word 0) of the DLL's table (`*G_RECS`,
+/// `G_N` records of 0x94 bytes) taken: its first word 1, `+0x28` 60, its
+/// sprite `+0x30` set up ([`crate::sa_misc::sprite_init`] with `edx` as
+/// it came), `+0x4..+0x20` cleared but `+0x10` 1.0 (internal). Returns the
+/// record, or 0 when none is free.
+///
+/// `magic_0206` 0x10002eb0 (120 bytes; 4 DLLs).
+pub fn record_take<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let n = g.read::<i32>(op(img, f, 0x2));
+    let mut r = g.read::<u32>(op(img, f, 0xb));
+    let mut i = 0i32;
+    loop {
+        if i >= n {
+            return Ret::eax(0);
+        }
+        if g.read::<u32>(r) == 0 {
+            break;
+        }
+        i += 1;
+        r = r.wrapping_add(0x94);
+    }
+    g.write::<u32>(r, 1);
+    g.write::<u32>(r.wrapping_add(0x28), 0x3c);
+    crate::sa_misc::sprite_init(
+        g,
+        img,
+        img.rel32_target(f + 0x38),
+        r.wrapping_add(0x30),
+        fr.edx,
+    );
+    for (off, v) in [
+        (0x4, 0),
+        (0x8, 0),
+        (0xc, 0),
+        (0x10, 0x3f80_0000),
+        (0x14, 0),
+        (0x18, 0),
+        (0x1c, 0),
+        (0x20, 0),
+    ] {
+        g.write::<u32>(r.wrapping_add(off), v);
+    }
+    Ret::eax(r)
+}
+
+/// [`record_take`].
+pub const RECORD_TAKE: Sig = Sig {
+    len: 120,
+    hash: 0xeab0_807c_092f_0304,
+    calls: &[(0x38, Callee::Sig(&crate::sa_misc::SPRITE_INIT))],
+    imports: &[],
+};

@@ -12,7 +12,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the register the thunk
 /// loaded, `esp` at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 10] {
     [
         (&s3_nodes::LEAVE_AND_RESET, |g, img, fr| {
             Ret::eax(s3_nodes::leave_and_reset(g, img, fr))
@@ -27,6 +27,8 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
         (&s4_summon::PARTICLE_NODE, s4_summon::particle_node::<G>),
         (&s4_misc::NODES_RESET, s4_misc::nodes_reset::<G>),
         (&s4_small::WALK_275, s4_small::walk_275::<G>),
+        (&s4_small::WALK_RESET, s4_small::walk_reset::<G>),
+        (&s4_small::TABLE_OBJECT, s4_small::table_object::<G>),
     ]
 }
 
@@ -49,6 +51,18 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let target = img.rel32_target(fr.at + 8);
     run(g, img, target, Frame { ecx, ..*fr })
 }
+
+/// The 15-byte field thunk (`push ebp; mov ebp, esp; mov ecx, [ebp + 8];
+/// mov ecx, [ecx + 0x2c]; pop ebp; jmp X`): `ecx` = the first stack
+/// word's `+0x2c`, then a jump to the handler with the caller's stack.
+pub fn ecx_field_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = g.read::<u32>(fr.arg(g, 0).wrapping_add(0x2c));
+    let target = img.rel32_target(fr.at + 0xb);
+    run(g, img, target, Frame { ecx, ..*fr })
+}
+
+/// The bytes of [`ecx_field_jmp`]'s thunk, its `rel32` masked.
+const ECX_FIELD_JMP_HASH: u64 = 0xbd26_2909_0742_fc39;
 
 macro_rules! thunks {
     ($($(#[$doc:meta])* $name:ident: $len:literal, $hash:ident, $off:literal => $callee:path;)*) => {
@@ -85,4 +99,9 @@ thunks! {
     JMP_NODES_RESET: 12, ECX_JMP_HASH, 8 => s4_misc::NODES_RESET;
     /// `magic_0070` 0x10005070 (3 DLLs) over [`s4_small::walk_275`].
     JMP_WALK_275: 12, ECX_JMP_HASH, 8 => s4_small::WALK_275;
+    /// `magic_0201` 0x10003070 (3 DLLs) over [`s4_small::walk_reset`].
+    JMP_WALK_RESET: 12, ECX_JMP_HASH, 8 => s4_small::WALK_RESET;
+    /// `magic_0638` 0x10003260 (2 DLLs) over [`s4_small::table_object`]
+    /// ([`ecx_field_jmp`]).
+    JMP_TABLE_OBJECT: 15, ECX_FIELD_JMP_HASH, 0xb => s4_small::TABLE_OBJECT;
 }
