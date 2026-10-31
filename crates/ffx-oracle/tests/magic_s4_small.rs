@@ -2853,3 +2853,26 @@ fn falls_and_headings() {
         t.check(f, Call::this(r), &[], Eax::Checked, s4_small::heading_to);
     }
 }
+
+#[test]
+fn opu_news() {
+    let Some(mut t) = twin(437) else { return };
+    let f = t.at(0x1690);
+    let obj = SCRATCH + 0x1_0000;
+    rec(&mut t, 803, 2, |_, _| SCRATCH + 0x8000);
+    rec(&mut t, 715, 7, move |_, _| obj);
+    recs(&mut t, &[(718, 1), (719, 3), (720, 2), (717, 1)]);
+    let (c, tt) = (SCRATCH + 0x100, SCRATCH + 0x200);
+    t.set_u32(op(&t, f, 0x1b), c);
+    t.set_u32(op(&t, f, 0x21), tt);
+    t.set_u32(op(&t, f, 0x43), 0x0a17_0001);
+    let setup = t.img.rel32_target(f + 0x98);
+    t.set_u32(t.img.word(setup + 0x24), c);
+    t.set_u32(t.img.word(setup + 0x33), SCRATCH + 0x300);
+    for (battle, flag) in [(0u8, 0x10u8), (1, 0x10), (1, 0)] {
+        t.write(obj, &vec![0x5a; 0x2_2000]);
+        t.set_u8(c + 0x10, battle);
+        t.set_u8(op(&t, f, 0x3b), flag);
+        t.check_entry(f, Call::default(), &[0x0715_0007], Eax::Checked);
+    }
+}

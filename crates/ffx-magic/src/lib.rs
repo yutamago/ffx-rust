@@ -1140,6 +1140,7 @@ ports! {
     "particles start (c)" => s4_small::PARTICLES_START_C, s4_small::particles_start_c;
     "static leave, model, flag" => s4_small::STATIC_LEAVE_MODEL_FLAG, s4_small::static_leave_model_flag;
     "particle fall" => s4_small::PARTICLE_FALL, s4_small::particle_fall;
+    "opu new" => s4_small::OPU_NEW, s4_small::opu_new;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;

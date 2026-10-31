@@ -6180,3 +6180,50 @@ pub const HEADING_TO: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A new OPU object (cdecl `(x)`): slot 803 `(0x1f4000, 0x10)` gives its
+/// buffer (`G_BUF`); the program word `*G_T + 4` is `G_ALT` in battle
+/// (byte `+0x10` of `*G_C`) with flag 0x10 of the byte `G_F`, else the
+/// code's (operand `+0x4d`); slot 718 `(p)`, slot 719 `(p, 1, 0)` gives
+/// a handle, slot 715 `(1, h, p, buf, 0x200, 0, x)` the object, each call
+/// seeing the words the earlier ones left; then a tail jump into the
+/// object's set-up ([`crate::opu::setup`], `ecx` = the object). Returns
+/// the set-up's result.
+///
+/// `magic_0437` 0x10001690 (156 bytes; 2 DLLs).
+pub fn opu_new<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let buf = slot_call(g, img, f, (0x4, 803), &[0x1f_4000, 0x10]).eax;
+    let c = g.read::<u32>(op(img, f, 0x1b));
+    let at = g.read::<u32>(op(img, f, 0x21)).wrapping_add(4);
+    g.write::<u32>(op(img, f, 0x2c), buf);
+    let alt = g.read::<u8>(c.wrapping_add(0x10)) != 0 && g.read::<u8>(op(img, f, 0x3b)) & 0x10 != 0;
+    let word = if alt {
+        g.read::<u32>(op(img, f, 0x43))
+    } else {
+        op(img, f, 0x4d)
+    };
+    g.write::<u32>(at, word);
+    let p = g.read::<u32>(at);
+    slot_call(g, img, f, (0x52, 718), &[p]);
+    let h = slot_call(g, img, f, (0x62, 719), &[p, 1, 0, p]).eax;
+    let x = fr.arg(g, 0);
+    // call width: 11 (the earlier calls' words stay on the stack)
+    let obj = slot_call(
+        g,
+        img,
+        f,
+        (0x81, 715),
+        &[1, h, p, buf, 0x200, 0, x, p, 1, 0, p],
+    )
+    .eax;
+    Ret::eax(crate::opu::setup(g, img, img.rel32_target(f + 0x98), obj))
+}
+
+/// [`opu_new`].
+pub const OPU_NEW: Sig = Sig {
+    len: 156,
+    hash: 0x6435_4d5d_4816_5e63,
+    calls: &[(0x98, Callee::Sig(&crate::opu::SETUP))],
+    imports: &[],
+};
