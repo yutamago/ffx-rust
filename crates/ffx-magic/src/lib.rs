@@ -2372,6 +2372,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("parts axes", &s6_misc::PARTS_AXES),
     ("thrown effect (plain)", &s6_misc::THROWN_EFFECT_PLAIN),
     ("start object (reset state)", &s6_misc::START_OBJECT_RESET),
+    ("sparks on a model", &s6_misc::SPARKS_ON_MODEL),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

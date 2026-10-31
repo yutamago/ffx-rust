@@ -1568,3 +1568,44 @@ fn objects_started_reset() {
         });
     }
 }
+
+/// Row 308: `magic_0515`'s four sparks on a model: enough free records,
+/// only two, none.
+#[test]
+fn sparks_spawned_on_models() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x3d90);
+    rec(&mut t, 263, 1, |_, a| 0x40 + (a[0] & 0xf));
+    let calls = SCRATCH + 0x7e0;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(k % 7) * 0.125 + 0.0625
+    });
+    rec(&mut t, 324, 0, |_, _| 0x0012_3456);
+    rec(&mut t, 237, 4, |_, a| 0x0237_0000 ^ a[1]);
+    let take = t.img.rel32_target(f + 0x32);
+    let recs_at = t.img.word(take + 0x6);
+    let s = SCRATCH + 0x300;
+    for (k, free) in [8u32, 2, 0].into_iter().enumerate() {
+        let k = k as u32;
+        for i in 0..0x100u32 {
+            let r = recs_at + 0x4c * i;
+            t.write(r, &varied(0x4c, i + k));
+            t.set_u32(r + 0x28, if i >= 3 && i < 3 + free { 0 } else { 1 + i });
+        }
+        t.write(s, &varied(0x10, k));
+        t.set_u32(s + 4, 0x0a00_0001 + k);
+        let c = Call {
+            ecx: s,
+            edx: 0x0dd0_0000 + k,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(9.0), Xmm::f32(8.0), Xmm::f32(1.5 + k as f32)]);
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::sparks_on_model(g, img, fr))
+        });
+    }
+}

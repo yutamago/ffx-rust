@@ -9,7 +9,7 @@ use crate::nodes::{INSERT, node_insert};
 use crate::opu_parts::{START_PART, start_part};
 use crate::s3_misc::{COLOUR_NODE, colour_node};
 use crate::s3_summon::{MODEL_NODES, model_nodes};
-use crate::s4_misc::append_object;
+use crate::s4_misc::{FREE_RECORD, append_object, free_record};
 use crate::s4_misc::{
     SCREEN_PLACE, START_OBJECT_ANIM, screen_place, start_object, start_object_anim,
 };
@@ -2189,5 +2189,61 @@ pub const START_OBJECT_RESET: Sig = Sig {
         (0x8d, Callee::Sig(&RESET_STATE)),
         (0x95, Callee::Sig(&POOL_ALLOC)),
     ],
+    imports: &[],
+};
+
+/// Four sparks spawned on a model (internal: `ecx` = the spawner `S`,
+/// `edx` = a word, `xmm2` = a speed): `n` = slot 263 `(S+4)` (the
+/// model's vertex count); four times a free record `p`
+/// ([`free_record`]; none ends it, returning 0): `p+0x2c = 0`, `+0x30 =
+/// CB`, `+0x28` the word, `+0x44 = 0x40808080`, `+0x34 = (frnd - K)
+/// speed` and `+0x48 = 0` (slot 307, ST0), u16 `+0x40` slot 324's word,
+/// and the record placed at the vertex `trunc((frnd - K) n)` (slot 237
+/// `(S+4, vertex, 0, p)`), `+0xc = 1.0`. Returns slot 237's `eax`.
+///
+/// `magic_0515` 0x10003d90 (243 bytes, `ecx`/`edx`/`xmm2`; 4 DLLs).
+pub fn sparks_on_model<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let (s, word) = (fr.ecx, fr.edx);
+    let speed = fr.xmm_f32(2);
+    let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
+    let m = g.read::<u32>(s + 4);
+    let n = slot(g, img, f, 0x7, 263, &[m]).eax;
+    let take = Frame {
+        at: img.rel32_target(f + 0x32),
+        ..*fr
+    };
+    let mut eax = 0;
+    for _ in 0..4 {
+        let p = free_record(g, img, &take).eax;
+        if p == 0 {
+            return 0;
+        }
+        g.write::<u32>(p + 0x2c, 0);
+        g.write::<u32>(p + 0x30, w(0x53));
+        g.write::<u32>(p + 0x28, word);
+        g.write::<u32>(p + 0x44, 0x4080_8080);
+        let r = st0(slot(g, img, f, 0x45, 307, &[]));
+        g.write::<u32>(p + 0x48, 0);
+        g.write::<f32>(p + 0x34, mul(sub(r, k(g, 0x75)), speed));
+        let h = slot(g, img, f, 0x7f, 324, &[]).eax;
+        g.write::<u16>(p + 0x40, h as u16);
+        let r = st0(slot(g, img, f, 0x9a, 307, &[]));
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+        let v = trunc(mul(sub(r, k(g, 0xb7)), n.cast_signed() as f32));
+        let m = g.read::<u32>(s + 4);
+        eax = slot(g, img, f, 0xcb, 237, &[m, v, 0, p]).eax;
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+    }
+    eax
+}
+
+/// [`sparks_on_model`] (the `rel32`: [`free_record`]).
+pub const SPARKS_ON_MODEL: Sig = Sig {
+    len: 243,
+    hash: 0xcfb0_4f02_d920_b290,
+    calls: &[(0x32, Callee::Sig(&FREE_RECORD))],
     imports: &[],
 };
