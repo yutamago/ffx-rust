@@ -717,4 +717,342 @@ pub mod bridge {
         h.write(at(v, 0x5_06dc), 1u32);
         v
     }
+
+    /// `MovieCdRead(sector, size, buf, v)`, `movie_hdd_file_open(n,
+    /// sector)`, `sceClose(fd)`, `readSizeFile(name, buf)`,
+    /// `movieOpenCd(v)`, `movieOpen(name)`, `movie_wait()`,
+    /// `MovieTakeSizes(slot)`, `MovieRead(fd, buf, size, &read, v)`,
+    /// `syncStrPcSelect(fd, b, v)` (cdecl), the messages.
+    pub const MOVIE_CD_READ: u32 = 0x0077_7320;
+    pub const HDD_FILE_OPEN: u32 = 0x0077_9be0;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    pub const READ_SIZE_FILE: u32 = 0x0093_da60;
+    pub const MOVIE_OPEN_CD: u32 = 0x0077_7240;
+    pub const MOVIE_OPEN: u32 = 0x0093_da30;
+    pub const MOVIE_WAIT: u32 = 0x0077_daa0;
+    pub const TAKE_SIZES: u32 = 0x0077_e160;
+    pub const MOVIE_READ: u32 = 0x0077_e110;
+    pub const STR_SELECT: u32 = 0x0077_e880;
+    pub const MSG_SECTOR: u32 = 0x00b5_43a8;
+    pub const MSG_FD_ASSERT: u32 = 0x00b5_43b4;
+    pub const MSG_DAT: u32 = 0x00b5_43c0;
+    pub const MSG_CANNOT_OPEN: u32 = 0x00b5_43d0;
+    pub const MOVIE_START_SYM: u32 = 0x0077_cfa0;
+
+    /// The next read of the stream ring: `MovieRead(fd, sizes, slot's
+    /// buffer, &slot's read count, v)` for the ring slot `+0x5053c`.
+    fn read_slot(h: &mut impl Host, fd: u32, sizes: u32) {
+        let v: u32 = h.read(h.rebase(VIEWER));
+        let k: u32 = h.read(at(v, 0x5_053c));
+        let buf: u32 = h.read(at(v, 0x5_0560u32.wrapping_add(k.wrapping_mul(4))));
+        let read = at(v, 0x5_0574u32.wrapping_add(k.wrapping_mul(4)));
+        cdecl(h, MOVIE_READ, &[fd, sizes, buf, read, v]);
+    }
+
+    /// `FUN_0077cfa0(name, clut)` (cdecl): the PS2 movie's start. The
+    /// CLUT data is read into `v + 0x10080` (CD mode `+0x5075c`: from the
+    /// stream's sectors, through the HDD file in HDD mode; else the file
+    /// `clut`) and its two 64-byte halves copied to the CLUT tables; the
+    /// stream opened (`movieOpenCd` or `movieOpen(name)`; a failure is
+    /// printed and waits forever, as in the original), its first two ring
+    /// slots read (the first marked 2 and taken as the cursor, the ring
+    /// index advanced modulo `+0x50754` and marked 1; the second read
+    /// unless its size is the one already read). Returns the ring index
+    /// (also stored at `+0x50540`). (The original divides by the ring
+    /// size: 0 faults there; the port's index is then 0.)
+    pub fn movie_start(h: &mut impl Host, name: u32, clut: u32) -> u32 {
+        let v: u32 = h.read(h.rebase(VIEWER));
+        if h.read::<u8>(at(v, 0x5_075c)) == 0 {
+            let f = h.rebase(MSG_DAT);
+            cdecl(h, DBG_PRINTF, &[f, name, clut]);
+            let v: u32 = h.read(h.rebase(VIEWER));
+            cdecl(h, READ_SIZE_FILE, &[clut, at(v, 0x1_0080), v]);
+        } else {
+            let sector: u32 = h.read(at(v, 0x5_06ec));
+            let f = h.rebase(MSG_SECTOR);
+            cdecl(h, DBG_PRINTF, &[f, sector]);
+            let v: u32 = h.read(h.rebase(VIEWER));
+            if h.read::<u8>(at(v, 0x5_075d)) == 0 {
+                let (s, n): (u32, u32) = (h.read(at(v, 0x5_06ec)), h.read(at(v, 0x5_06f0)));
+                cdecl(h, MOVIE_CD_READ, &[s, n, at(v, 0x1_0080), v]);
+            } else {
+                let file = sign_extend(h.read(at(v, 0x5_0764)));
+                let s: u32 = h.read(at(v, 0x5_06ec));
+                let fd = cdecl(h, HDD_FILE_OPEN, &[file, s]);
+                let v: u32 = h.read(h.rebase(VIEWER));
+                h.write(at(v, 0x5_0544), fd);
+                if fd & 0x8000_0000 != 0 {
+                    let (m, file) = (h.rebase(MSG_FD_ASSERT), h.rebase(MOVIE_STR_FILE));
+                    cdecl(h, MOVIE_ERR, &[m, file, 0x894]);
+                }
+                let v: u32 = h.read(h.rebase(VIEWER));
+                let (s, n): (u32, u32) = (h.read(at(v, 0x5_06ec)), h.read(at(v, 0x5_06f0)));
+                cdecl(h, MOVIE_CD_READ, &[s, n, at(v, 0x1_0080), v]);
+                let v: u32 = h.read(h.rebase(VIEWER));
+                let fd: u32 = h.read(at(v, 0x5_0544));
+                cdecl(h, SCE_CLOSE, &[fd]);
+                let v: u32 = h.read(h.rebase(VIEWER));
+                h.write(at(v, 0x5_0544), u32::MAX);
+            }
+        }
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let v: u32 = h.read(h.rebase(VIEWER));
+        let (a, b) = (h.rebase(CLUT_A), h.rebase(CLUT_B));
+        for i in 0..0x40 {
+            let x: u8 = h.read(at(v, 0x1_0080 + i));
+            h.write(at(a, i), x);
+            let y: u8 = h.read(at(v, 0x1_00c0 + i));
+            h.write(at(b, i), y);
+        }
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let v: u32 = h.read(h.rebase(VIEWER));
+        let fd = if h.read::<u8>(at(v, 0x5_075c)) == 0 {
+            cdecl(h, MOVIE_OPEN, &[name, v])
+        } else {
+            cdecl(h, MOVIE_OPEN_CD, &[v])
+        };
+        h.write(at(v, 0x5_0544), fd);
+        if fd & 0x8000_0000 != 0 {
+            let f = h.rebase(MSG_CANNOT_OPEN);
+            cdecl(h, DBG_PRINTF, &[f, name]);
+            loop {
+                cdecl(h, MOVIE_WAIT, &[]);
+            }
+        }
+        let g: u32 = h.read(h.rebase(VIEWER));
+        let k: u32 = h.read(at(g, 0x5_053c));
+        let sizes = cdecl(h, TAKE_SIZES, &[k]);
+        let fd: u32 = h.read(at(v, 0x5_0544));
+        read_slot(h, fd, sizes);
+        let g: u32 = h.read(h.rebase(VIEWER));
+        let fd: u32 = h.read(at(g, 0x5_0544));
+        cdecl(h, STR_SELECT, &[fd, 0, g]);
+        let g: u32 = h.read(h.rebase(VIEWER));
+        let k: u32 = h.read(at(g, 0x5_053c));
+        h.write(at(g, 0x5_0588u32.wrapping_add(k.wrapping_mul(4))), 2u32);
+        let k: u32 = h.read(at(g, 0x5_053c));
+        let cursor: u32 = h.read(at(g, 0x5_0560u32.wrapping_add(k.wrapping_mul(4))));
+        h.write(at(g, 0x5_059c), cursor);
+        let ring: i32 = h.read(at(g, 0x5_0754));
+        let next = k
+            .cast_signed()
+            .wrapping_add(1)
+            .checked_rem(ring)
+            .unwrap_or(0)
+            .cast_unsigned();
+        h.write(at(g, 0x5_053c), next);
+        h.write(at(g, 0x5_0588u32.wrapping_add(next.wrapping_mul(4))), 1u32);
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let g: u32 = h.read(h.rebase(VIEWER));
+        let k: u32 = h.read(at(g, 0x5_053c));
+        let sizes = cdecl(h, TAKE_SIZES, &[k]);
+        let k: u32 = h.read(at(g, 0x5_053c));
+        let taken: u32 = h.read(at(g, 0x5_054cu32.wrapping_add(k.wrapping_mul(4))));
+        if taken == h.read::<u32>(at(g, 0x5_0548)) {
+            h.write(at(g, 0x5_0540), k);
+            return k;
+        }
+        let fd: u32 = h.read(at(g, 0x5_0544));
+        read_slot(h, fd, sizes);
+        let g: u32 = h.read(h.rebase(VIEWER));
+        let k: u32 = h.read(at(g, 0x5_053c));
+        h.write(at(g, 0x5_0540), k);
+        k
+    }
+
+    /// `FFXGetVideoMode()` (cdecl).
+    pub const GET_VIDEO_MODE: u32 = 0x0088_7c40;
+    pub const VIEWER_INIT_SYM: u32 = 0x0077_d280;
+
+    /// The viewer's field resets (offset, bytes, value), in the original's
+    /// order.
+    const RESETS: [(u32, u8, u32); 56] = [
+        (0x5_0524, 4, 0x0),
+        (0x5_0534, 4, 0x0),
+        (0x5_0528, 4, 0x0),
+        (0x5_052c, 4, 0x0),
+        (0x5_0530, 4, 0x0),
+        (0x5_0708, 4, 0xffff),
+        (0x5_0538, 4, 0x0),
+        (0x5_053c, 4, 0x0),
+        (0x5_0540, 4, 0x0),
+        (0x5_06cc, 4, 0x0),
+        (0x5_06d0, 4, 0x0),
+        (0x5_06d4, 4, 0xffff_ffff),
+        (0x5_06d8, 4, 0x7f),
+        (0x5_05a0, 4, 0x0),
+        (0x5_05a4, 1, 0x0),
+        (0x5_05a8, 4, 0x0),
+        (0x5_05ac, 1, 0x0),
+        (0x5_05c0, 4, 0x2),
+        (0x5_06c4, 4, 0x0),
+        (0x5_06c8, 4, 0x0),
+        (0x5_06dc, 4, 0x0),
+        (0x5_0544, 4, 0xffff_ffff),
+        (0x5_075f, 4, 0xff00),
+        (0x5_06e0, 4, 0x0),
+        (0x5_0763, 1, 0x0),
+        (0x5_0765, 4, 0x0),
+        (0x5_0714, 4, 0x0),
+        (0x5_071c, 4, 0x0),
+        (0x5_070c, 4, 0x0),
+        (0x5_0710, 4, 0x0),
+        (0x5_076a, 2, 0x0),
+        (0x5_0769, 1, 0x0),
+        (0x5_0720, 4, 0x0),
+        (0x5_0724, 4, 0xffff_ffff),
+        (0x5_0728, 4, 0xffff_ffff),
+        (0x5_076f, 4, 0x0),
+        (0x5_0750, 4, 0x1),
+        (0x5_0773, 1, 0x0),
+        (0x5_0548, 4, 0x0),
+        (0x5_076d, 2, 0x0),
+        (0x5_0754, 4, 0x3),
+        (0x5_0588, 4, 0x0),
+        (0x5_0574, 4, 0x0),
+        (0x5_054c, 4, 0x0),
+        (0x5_058c, 4, 0x0),
+        (0x5_0578, 4, 0x0),
+        (0x5_0550, 4, 0x0),
+        (0x5_0590, 4, 0x0),
+        (0x5_057c, 4, 0x0),
+        (0x5_0554, 4, 0x0),
+        (0x5_0594, 4, 0x0),
+        (0x5_0580, 4, 0x0),
+        (0x5_0558, 4, 0x0),
+        (0x5_0598, 4, 0x0),
+        (0x5_0584, 4, 0x0),
+        (0x5_055c, 4, 0x0),
+    ];
+
+    /// `FUN_0077d280(v, w, h, big)` (cdecl): `v` becomes the viewer
+    /// (`0x00c421b0`); a given size sets the macroblock counts (`/ 16`,
+    /// signed) and the display size; the playback state reset; the stream
+    /// ring laid out after `+0x50774` (slot sizes 0xe4000, or 0x100000
+    /// with `big`; the third slot 8 MB), the work area after it; the audio
+    /// rate 0x6400 (0x7800 in video mode). Returns the rate.
+    pub fn viewer_init(h: &mut impl Host, v: u32, w: u32, hgt: u32, big: u32) -> u32 {
+        h.write(h.rebase(VIEWER), v);
+        if w != 0 || hgt != 0 {
+            h.write(at(v, 0x5_0514), (w.cast_signed() / 16).cast_unsigned());
+            h.write(at(v, 0x5_0518), (hgt.cast_signed() / 16).cast_unsigned());
+            h.write(at(v, 0x5_051c), w);
+            h.write(at(v, 0x5_0520), hgt);
+        }
+        for (o, size, x) in RESETS {
+            match size {
+                1 => h.write(at(v, o), x.to_le_bytes()[0]),
+                2 => h.write(
+                    at(v, o),
+                    u16::from_le_bytes([x.to_le_bytes()[0], x.to_le_bytes()[1]]),
+                ),
+                _ => h.write(at(v, o), x),
+            }
+        }
+        let (slot, last) = if big == 0 {
+            (0xe_4000u32, 0xe_3000u32)
+        } else {
+            (0x10_0000, 0xf_f000)
+        };
+        h.write(at(v, 0x5_06f8), last);
+        h.write(at(v, 0x5_06fc), slot);
+        let first = at(v, 0x5_0774);
+        h.write(at(v, 0x5_0560), first);
+        let second = first.wrapping_add(slot);
+        h.write(at(v, 0x5_0564), second);
+        h.write(at(v, 0x5_056c), 0x80_0000u32);
+        let third = second.wrapping_add(slot);
+        h.write(at(v, 0x5_0568), third);
+        h.write(at(v, 0x5_0570), slot.wrapping_add(0x80_0000));
+        h.write(at(v, 0x5_06f4), third.wrapping_add(slot));
+        for i in 0..8 {
+            h.write(at(v, 0x5_0730 + 4 * i), 0u32);
+        }
+        let mode = cdecl(h, GET_VIDEO_MODE, &[]);
+        let rate = if mode == 0 { 0x6400u32 } else { 0x7800 };
+        let g: u32 = h.read(h.rebase(VIEWER));
+        h.write(at(g, 0x5_0758), rate);
+        rate
+    }
+
+    /// The ADPCM filter coefficients (`(f0, f1)` `i32` pairs, indexed by
+    /// the signed filter number).
+    pub const ADPCM_FILTERS: u32 = 0x00c4_2088;
+    pub const ADPCM_DECODE_SYM: u32 = 0x0077_a930;
+
+    /// The low 16 bits, sign-extended (`test 0x8000; or 0xffff0000`).
+    fn sext16(x: i32) -> i32 {
+        let v = x & 0xffff;
+        if v & 0x8000 != 0 { v - 0x1_0000 } else { v }
+    }
+
+    /// The low 16 bits (`mov word`).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the store
+    fn low16(x: i32) -> u16 {
+        x as u16
+    }
+
+    /// `FUN_0077a930(src, out, state)` (cdecl): 16 ADPCM blocks of 9 bytes
+    /// (a header: shift in the low nibble, the filter in the high one,
+    /// signed; then 8 bytes of nibbles, low first) decoded into 256
+    /// 16-bit samples: each nibble `<< 12` (sign-extended from 16 bits)
+    /// `>> shift`, plus `(f0 * s1 + f1 * s2) / 64` (toward zero) of the
+    /// two previous samples, kept at full width. `state` holds `(s1, s2)`
+    /// before and after. Returns `s2`.
+    pub fn adpcm_decode(h: &mut impl Host, src: u32, out: u32, state: u32) -> u32 {
+        let mut s1: i32 = h.read(state);
+        let mut s2: i32 = h.read(at(state, 4));
+        let filters = h.rebase(ADPCM_FILTERS);
+        let (mut src, mut out) = (src, out);
+        for _ in 0..16 {
+            let header = i32::from(h.read::<i8>(src));
+            let shift = (header & 0xf).cast_unsigned();
+            let filter = (header >> 4).cast_unsigned();
+            let f0: i32 = h.read(at(filters, filter.wrapping_mul(8)));
+            let f1: i32 = h.read(at(filters, filter.wrapping_mul(8).wrapping_add(4)));
+            for j in 0..8 {
+                let b = i32::from(h.read::<i8>(at(src, 1 + j)));
+                for nibble in [(b & 0xf) << 12, (b & 0xf0) << 8] {
+                    let n = sext16(nibble);
+                    let predicted = f0.wrapping_mul(s1).wrapping_add(f1.wrapping_mul(s2)) / 64;
+                    let sample = predicted.wrapping_add(n >> shift);
+                    h.write(out, low16(sample));
+                    out = at(out, 2);
+                    s2 = s1;
+                    s1 = sample;
+                }
+            }
+            src = at(src, 9);
+        }
+        h.write(state, s1);
+        h.write(at(state, 4), s2);
+        s2.cast_unsigned()
+    }
+
+    pub const CLUT_UPLOAD_SYM: u32 = 0x0077_b9b0;
+
+    /// `code_0077b9b0()` (cdecl; not a function in the dump, which runs
+    /// it together with the movie thread at `0x0077ba70`): the GS synced,
+    /// the IPU reset, the two CLUT halves swizzled into the viewer
+    /// (`+0`, `+0x40`) and each uploaded (64 bytes, `LoadImage101`) with
+    /// its GS command (0x50000000, 0x58000000), waiting on the GS
+    /// register after each. Returns the GS register's last value.
+    pub fn clut_upload(h: &mut impl Host) -> u32 {
+        cdecl(h, GS_SYNC_PATH, &[0, 0]);
+        cdecl(h, IPU_INIT, &[]);
+        cdecl(h, HARDWARE_INIT, &[]);
+        let v: u32 = h.read(h.rebase(VIEWER));
+        let (a, b) = (h.rebase(CLUT_A), h.rebase(CLUT_B));
+        cdecl(h, CLUT_SWIZZLE, &[v, a, 0]);
+        cdecl(h, CLUT_SWIZZLE, &[at(v, 0x40), b, 0]);
+        cdecl(h, FLUSH_CACHE, &[0]);
+        for (o, command) in [(0u32, 0x5000_0000u32), (0x40, 0x5800_0000)] {
+            let v: u32 = h.read(h.rebase(VIEWER));
+            cdecl(h, LOAD_IMAGE_101, &[at(v, o), 0x40]);
+            sink(h, command);
+            wait_idle(h);
+            wait_ready(h);
+        }
+        sink_value(h)
+    }
 }

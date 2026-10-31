@@ -2140,3 +2140,618 @@ fn camera_point_orbit_matches_the_original() {
         }
     });
 }
+
+// ---- the CD emulation's channel reads ----
+
+use ffx_sg::m5main4_cd::bridge as cdr;
+
+/// The stubs every channel read calls; `find` the ex-file lookups in
+/// turn.
+fn cd_stubs(t: &mut Twins, rng: &mut Rng, cd: u32, find: Vec<u32>) {
+    t.stub(cdr::GET_CD, false, 0, 0, cd);
+    t.stub(cdr::GET_READ_BUFFER, false, 0, 0, 0x6000);
+    t.stub(cdr::CHANNEL_CLEAR, false, 1, 0, 0x11);
+    t.stub_ex(cdr::HDD_INSTALL_FIND, false, 2, 0, &Ret::Seq(find), &[]);
+    t.stub_import(cdr::SPRINTF, 3, 0, 0x12);
+    t.stub(cdr::SCE_OPEN, false, 2, 0, rng.pick(&[0, 5]));
+    t.stub(cdr::DBG_PRINTF, false, 2, 0, 0x13);
+    let busy: Vec<u32> = (0..rng.below(3)).map(|i| i + 1).chain([0]).collect();
+    let io = seq_store(
+        t,
+        2,
+        &[busy.clone(), busy.clone(), busy.clone(), busy].concat(),
+    );
+    t.stub_ex(cdr::SCE_IOCTL, false, 3, 0, &Ret::Fixed(0x14), &io);
+    // task_wait clears the background decode's busy byte
+    let clear = m5_main3_common::set_byte(t.rebase(cdr::BG_BUSY), 0);
+    t.stub_ex(cdr::TASK_WAIT, false, 1, 0, &Ret::Fixed(0x15), &clear);
+    for (s, n) in [
+        (cdr::SCE_LSEEK, 3),
+        (cdr::FLUSH_CACHE, 1),
+        (cdr::SCE_READ, 3),
+        (cdr::SCE_CLOSE, 1),
+        (cdr::READ_CALLBACK, 1),
+        (cdr::LOADING_PUSH, 1),
+        (cdr::CD_READ_TASK, 5),
+        (cdr::MEMCPY, 3),
+        (cdr::SIGNAL_BG, 0),
+        (cdr::DECODE_DATA, 1),
+        (cdr::OPEN_CHECK, 2),
+    ] {
+        t.stub(s, false, n, 0, 0x20 + n);
+    }
+    let cfg = t.zeros(0x20);
+    t.w8(cfg + 0x10, rng.pick(&[0, 1]));
+    t.stub(cdr::GET_CONFIG, false, 0, 0, cfg);
+    t.g8(cdr::HDD_MODE, rng.pick(&[0, 1, 1]));
+    t.g8(cdr::BG_BUSY, rng.pick(&[0, 1]));
+}
+
+/// Channel `i` set up at random (active, busy, cancelled, packed, sizes).
+fn cd_channel(t: &mut Twins, rng: &mut Rng, i: u32) {
+    let ch = cdr::CHANNELS + 0x38 * i;
+    t.write(t.rebase(ch), &[0u8; 0x38]);
+    t.g32(
+        ch,
+        rng.pick(&[
+            0x10,
+            0x7fb,
+            0x7fc,
+            0x800,
+            0x1000,
+            0x2345,
+            0xffff_fff0,
+            0xffff_e000,
+        ]),
+    );
+    t.g32(ch + 4, 0x7000);
+    t.g32(ch + 8, 3);
+    t.g32(ch + 0x1c, rng.pick(&[0, 0x40]));
+    t.g32(ch + 0x20, rng.pick(&[0, 0x30]));
+    t.g32(ch + 0x28, 0x99);
+    t.g32(
+        ch + 0x2c,
+        rng.pick(&[
+            0,
+            0x10,
+            0x800,
+            0x1000,
+            0x2345,
+            0xffff_f000,
+            0x1400,
+            0xffff_f800,
+        ]),
+    );
+    t.g8(ch + 0x31, u8::from(!rng.chance(4)));
+    t.g8(ch + 0x32, u8::from(rng.chance(6)));
+    t.g8(ch + 0x33, u8::from(rng.chance(8)));
+    t.g8(ch + 0x34, rng.pick(&[0, 1]));
+}
+
+/// The I/O status word (`ebp - 4`) of both oracles after a framed check.
+fn same_io_word(t: &Twins, what: &str, ebp: u32) {
+    let a: u32 = ffx_bridge::Mem::read(&t.a, ebp - 4);
+    let b: u32 = ffx_bridge::Mem::read(&t.b, ebp - 4);
+    assert_eq!(a, b, "{what}: the I/O status word");
+}
+
+#[test]
+fn cd_channel_reads_match_the_original() {
+    let mut rng = Rng(0x00a4_32a0);
+    Twins::each(|t| {
+        for k in 0..20 {
+            t.reset();
+            let cd = t.zeros(0x80);
+            let e = t.zeros(0x40);
+            let find: Vec<u32> = (0..64).map(|_| if rng.chance(4) { e } else { 0 }).collect();
+            cd_stubs(t, &mut rng, cd, find);
+            for i in 0..64 {
+                cd_channel(t, &mut rng, i);
+            }
+            let what = format!("sa_HddExFileRead {k}");
+            t.skip = 0xc;
+            t.check_framed(&what, 0x00a4_32a0, Conv::Cdecl, &[], 0x10, |m, ebp| {
+                Out::U32(cdr::hdd_ex_file_read(
+                    m,
+                    cdr::Frame {
+                        io: ebp - 4,
+                        cd: ebp - 0x10,
+                    },
+                ))
+            });
+            t.skip = 4;
+            same_io_word(t, &what, t.frame_ebp(0));
+        }
+        for k in 0..120 {
+            t.reset();
+            let cd = t.zeros(0x80);
+            let e = t.zeros(0x40);
+            let find = vec![if rng.chance(4) { e } else { 0 }];
+            cd_stubs(t, &mut rng, cd, find);
+            let i = rng.below(64);
+            cd_channel(t, &mut rng, i);
+            let what = format!("channel task {k}");
+            t.skip = 8;
+            t.check_framed(&what, 0x00a4_3740, Conv::Cdecl, &[i], 0xc, |m, ebp| {
+                Out::U32(cdr::channel_task(
+                    m,
+                    i,
+                    cdr::Frame {
+                        io: ebp - 4,
+                        cd: ebp - 0xc,
+                    },
+                ))
+            });
+            t.skip = 4;
+            same_io_word(t, &what, t.frame_ebp(1));
+        }
+    });
+}
+
+#[test]
+fn viewer_movie_start_matches_the_original() {
+    let mut rng = Rng(0x0077_cfa0);
+    Twins::each(|t| {
+        for k in 0..40 {
+            t.reset();
+            printf_stub(
+                t,
+                viewer::DBG_PRINTF,
+                &[(viewer::MSG_DAT, 3), (viewer::MSG_SECTOR, 2)],
+                2,
+                0x41,
+            );
+            t.stub(viewer::MOVIE_CD_READ, false, 4, 0, 1);
+            t.stub(
+                viewer::HDD_FILE_OPEN,
+                false,
+                2,
+                0,
+                rng.pick(&[3, 0xffff_ffff]),
+            );
+            t.stub(viewer::MOVIE_ERR, false, 3, 0, 0x42);
+            t.stub(viewer::SCE_CLOSE, false, 1, 0, 0x43);
+            t.stub(viewer::READ_SIZE_FILE, false, 3, 0, 1);
+            t.stub(viewer::FLUSH_CACHE, false, 1, 0, 0x44);
+            // an open failure waits forever: not run
+            t.stub(viewer::MOVIE_OPEN_CD, false, 1, 0, 7);
+            t.stub(viewer::MOVIE_OPEN, false, 2, 0, 8);
+            t.stub(viewer::TAKE_SIZES, false, 1, 0, rng.pick(&[0x100, 0x800]));
+            t.stub(viewer::MOVIE_READ, false, 5, 0, 0x45);
+            t.stub(viewer::STR_SELECT, false, 3, 0, 0x46);
+            let v = new_viewer(t);
+            for i in 0..0x80 {
+                t.w8(v + 0x1_0080 + i, rng.next() as u8);
+            }
+            t.w8(v + 0x5_075c, rng.pick(&[0, 1]));
+            t.w8(v + 0x5_075d, rng.pick(&[0, 1]));
+            t.w8(v + 0x5_0764, rng.pick(&[0, 2, 0x80]));
+            t.w32(v + 0x5_06ec, rng.below(0x1000));
+            t.w32(v + 0x5_06f0, rng.below(0x10000));
+            let ring = rng.pick(&[1u32, 2, 4, 0xffff_ffff]);
+            t.w32(v + 0x5_0754, ring);
+            t.w32(v + 0x5_053c, rng.below(2));
+            t.w32(v + 0x5_0548, rng.pick(&[0, 5]));
+            for s in 0..4 {
+                t.w32(v + 0x5_0560 + 4 * s, 0x9000 + 0x100 * s);
+                t.w32(v + 0x5_054c + 4 * s, rng.pick(&[0, 5]));
+            }
+            let what = format!("movie start {k}");
+            t.check(
+                &what,
+                viewer::MOVIE_START_SYM,
+                Conv::Cdecl,
+                &[0x5100, 0x5200],
+                |m| Out::U32(viewer::movie_start(m, 0x5100, 0x5200)),
+            );
+        }
+    });
+}
+
+#[test]
+fn viewer_init_matches_the_original() {
+    let mut rng = Rng(0x0077_d280);
+    Twins::each(|t| {
+        for k in 0..20 {
+            t.reset();
+            t.stub(viewer::GET_VIDEO_MODE, false, 0, 0, rng.pick(&[0, 1, 2]));
+            let v: Vec<u8> = (0..0x5_1000).map(|_| rng.next() as u8).collect();
+            let v = t.alloc(&v);
+            let w = rng.pick(&[0u32, 0x200, 0x1f, 0xffff_fff1]);
+            let hh = rng.pick(&[0u32, 0x1a0, 0x11]);
+            let big = rng.pick(&[0, 1]);
+            let what = format!("viewer init {k}");
+            t.check(
+                &what,
+                viewer::VIEWER_INIT_SYM,
+                Conv::Cdecl,
+                &[v, w, hh, big],
+                |m| Out::U32(viewer::viewer_init(m, v, w, hh, big)),
+            );
+        }
+    });
+}
+
+#[test]
+fn viewer_adpcm_decode_matches_the_original() {
+    let mut rng = Rng(0x0077_a930);
+    Twins::each(|t| {
+        for k in 0..40 {
+            t.reset();
+            let mut src = Vec::new();
+            for _ in 0..16 {
+                let filter: u8 = rng.pick(&[0, 1, 2, 3, 4, 0xf]);
+                let shift = rng.below(16) as u8;
+                src.push(filter << 4 | shift);
+                src.extend((0..8).map(|_| rng.next() as u8));
+            }
+            let src = t.alloc(&src);
+            let out = t.zeros(0x200);
+            let state = t.words(&[rng.word(), rng.word()]);
+            let what = format!("adpcm decode {k}");
+            t.check(
+                &what,
+                viewer::ADPCM_DECODE_SYM,
+                Conv::Cdecl,
+                &[src, out, state],
+                |m| Out::U32(viewer::adpcm_decode(m, src, out, state)),
+            );
+        }
+    });
+}
+
+#[test]
+fn id_draw_lines_matches_the_original() {
+    let mut rng = Rng(0x0084_4490);
+    Twins::each(|t| {
+        for k in 0..40 {
+            t.reset();
+            t.stub(misc::ID_EXIST_SHADE, false, 0, 0, rng.pick(&[0, 1, 0x100]));
+            t.stub(misc::ID_DRAW_TRIANGLES, false, 5, 0, 0x91);
+            let n = rng.pick(&[0u16, 1, 3, 6]);
+            let mut tris = Vec::new();
+            for _ in 0..n {
+                for _ in 0..3 {
+                    tris.extend((rng.below(8) as u16).to_le_bytes());
+                }
+                tris.extend([0u8; 6]);
+                tris.extend(rng.next().to_le_bytes());
+            }
+            tris.extend([0u8; 16]);
+            let tris = t.alloc(&tris);
+            t.stub(misc::GET_PTR32, false, 1, 0, tris);
+            let proj: Vec<u32> = (0..32).map(|_| u32::from(rng.chance(6))).collect();
+            t.stub_ex(misc::ID_PROJECT, false, 3, 0, &Ret::Seq(proj), &[]);
+            let verts: Vec<u8> = (0..64).map(|_| rng.next() as u8).collect();
+            let verts = t.alloc(&verts);
+            let model = t.zeros(0x10);
+            t.write(model + 8, &n.to_le_bytes());
+            t.w32(model + 0xc, 0x4321);
+            let packet = t.zeros(0x400);
+            t.w32(packet + 0x30, rng.next());
+            t.g32(misc::ID_MODE, rng.pick(&[0, 2, 3, 3, 5]));
+            let what = format!("id draw lines {k}");
+            t.check_framed(
+                &what,
+                misc::ID_DRAW_LINES_SYM,
+                Conv::Cdecl,
+                &[verts, model, 0x5300, packet, 0x77],
+                0x34,
+                |m, ebp| {
+                    Out::U32(misc::id_draw_lines(
+                        m,
+                        verts,
+                        model,
+                        0x5300,
+                        packet,
+                        0x77,
+                        ebp - 0x34,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+// ---- the sphere grid's node shapes ----
+
+use ffx_sg::m5main4_abmap::bridge as abmap;
+
+/// [`Twins::check`] for an original that aligns its frame to 16 bytes
+/// (`and esp, -16` after `push ebx`): the port's frame at the original's
+/// aligned `ebp`, the `low` bytes below it compared after the call (but
+/// the cookie word).
+fn check_aligned(
+    t: &mut Twins,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    low: u32,
+    bridge: impl FnOnce(&mut m5_main3_common::G, u32) -> Out,
+) {
+    let ebp = (t.frame_ebp(args.len()) - 8) & !15;
+    // the frame below the compared part (the original's own locals, never
+    // handed to a callee) is zeroed too: never-written words read as 0
+    t.write(ebp - 0x190, &[0; 0x190]);
+    let lo = ebp - low;
+    t.b.set_call_top(Some(lo - 0x100));
+    t.check(what, sym, Conv::Cdecl, args, |m| bridge(m, ebp));
+    t.b.set_call_top(None);
+    let n = (low - 4) as usize;
+    let mut x = vec![0; n];
+    let mut y = vec![0; n];
+    ffx_bridge::Mem::read_bytes(&t.a, lo, &mut x);
+    ffx_bridge::Mem::read_bytes(&t.b, lo, &mut y);
+    if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+        panic!(
+            "{what}: frame byte ebp - {:#x}: {} != {}",
+            low - i as u32,
+            x[i],
+            y[i]
+        );
+    }
+}
+
+#[test]
+fn abmap_node_shapes_match_the_original() {
+    let mut rng = Rng(0x00a5_1560);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            t.stub(abmap::MAKE_NODE_MATRIX, false, 3, 0, 0x51);
+            t.stub(abmap::MUL_MATRIX, false, 3, 0, 0x52);
+            t.stub(abmap::SHAPE_DRAW, false, 4, 0, 0x53);
+            let base = t.zeros(0x1_1700);
+            let n = rng.pick(&[0u16, 1, 3, 5]);
+            t.write(base + 2, &n.to_le_bytes());
+            for i in 0..6u32 {
+                let node = base + 0x808 + 0x28 * i;
+                t.write(node + 6, &rng.pick(&[0u16, 1, 2, 0xffff]).to_le_bytes());
+                t.w8(node + 0x21, rng.pick(&[0, 1]));
+            }
+            for k in 0..3u32 {
+                t.w32(base + 0xf828 + 0x30 * k, 0x7100 + k);
+                t.w32(base + 0xf82c + 0x30 * k, 0x7200 + k);
+                t.w32(base + 0xf830 + 0x30 * k, 0x7300 + k);
+            }
+            t.w32(base + 0x1_16a4, 0x99);
+            t.g32(abmap::ABMAP, base);
+            let i = rng.pick(&[0u32, 1, 4, 6, 0xffff_ffff]);
+            let what = format!("node highlight {k}");
+            check_aligned(
+                t,
+                &what,
+                abmap::NODE_HIGHLIGHT_SYM,
+                &[i],
+                0x100,
+                |m, ebp| Out::U32(abmap::node_highlight(m, i, ebp)),
+            );
+            let what = format!("node shapes {k}");
+            check_aligned(t, &what, abmap::NODE_SHAPES_SYM, &[], 0x100, |m, ebp| {
+                abmap::node_shapes(m, ebp);
+                Out::None
+            });
+        }
+    });
+}
+
+// ---- WMainProc ----
+
+use ffx_sg::m5main4_wmain::bridge as wmain;
+
+/// Every callee of `WMainProc` but itself as a recording stub (getters
+/// return a value from `rng`), the count globals filled by the list
+/// builders.
+fn wmain_stubs(t: &mut Twins, rng: &mut Rng, st: u32) {
+    let get = |rng: &mut Rng| rng.pick(&[0u32, 1, 2]);
+    let stubs: Vec<(u32, u32, u32)> = vec![
+        (wmain::GET_ARG, 1, st),
+        (wmain::USER_MALLOC, 1, st),
+        (wmain::SELECTOR_ALLOCATE, 0, 0x5e1),
+        (wmain::SET_ARG, 2, 0),
+        (wmain::ADD_BUTTON, 7, 0),
+        (wmain::ADD_STATIC, 7, 0),
+        (wmain::CHR_MENU_INIT, 2, 0),
+        (wmain::SG_ADD_STATIC, 3, 0),
+        (wmain::SG_ADD_BUTTON_S, 3, 0),
+        (wmain::SG_ADD_BUTTON, 3, 0),
+        (wmain::MAPNAME, 1, 0),
+        (wmain::SET_TOGGLE, 3, 0),
+        (wmain::TOGGLE_VALUE, 3, 0),
+        (wmain::GET_TOGGLE_VALUE, 2, get(rng)),
+        (wmain::GETTH_DISP_ENABLE, 0, get(rng)),
+        (wmain::GET_RESOURCE_STR, 1, 0x6e1),
+        (wmain::GET_RESOURCE, 2, get(rng)),
+        (wmain::SET_RESOURCE, 2, 0),
+        (wmain::SELECT_MAIN_MENU, 2, 0),
+        (wmain::EVE_INIT, 0, 0),
+        (wmain::LR_BUTTON_MODE, 0, get(rng)),
+        (wmain::DBG_PRINTF, 1, 0),
+        (wmain::SELECTOR_DISPOSE, 1, 0),
+        (wmain::CHR_SELECTOR, 3, 0),
+        (wmain::EVE_SELECTOR, 2, 0),
+        (wmain::SELECTOR_ITEM_NAME, 1, 0x6e2),
+        (wmain::MAP_SET_NAME, 2, 0),
+        (wmain::MAP_INIT, 0, 0),
+        (wmain::SET_MOUSE_FUKKI, 2, 0),
+        (wmain::RESERVE_CALC_NORM, 0, 0),
+        (wmain::CAPTURE_ENABLE, 0, 0),
+        (wmain::COMMAND_CHR, 3, 0),
+        (wmain::COMMAND_MENU, 3, 0),
+        (wmain::MAP_GET_DIR, 0, rng.pick(&[0, 1, 2, 5, 0xffff_fffe])),
+        (wmain::MAP_SET_DIR, 1, 0),
+        (wmain::CONTROL_DISABLE, 3, 0),
+        (wmain::SET_TEXT, 3, 0),
+        (wmain::SET_TITLE, 2, 0),
+        (wmain::MASAKI_INIT, 1, 0),
+        (wmain::MAP_GET_NAME, 1, 0x6e3),
+        (wmain::SET_SELECT_STR, 2, 0),
+        (wmain::SELECTOR_OPEN, 3, 0),
+        (wmain::MESSAGE_BOX, 1, 0),
+        (wmain::WINDOW_CREATE, 6, 0),
+        (wmain::HIDE, 1, get(rng)),
+        (wmain::TEX_GET, 0, get(rng)),
+        (wmain::TEX_SET, 1, 0),
+        (wmain::TOGGLE_RESOURCE9, 0, get(rng)),
+        (wmain::SWITCH_DRAW_ID, 0, get(rng)),
+        (0x0085_1e10, 0, 0),
+        (0x0085_3780, 0, 0),
+        (0x0084_e8c0, 0, 0),
+        (0x0094_1830, 0, 0),
+        (0x0084_efd0, 1, 0),
+        (0x0085_3ea0, 0, 0),
+        (0x0082_0480, 0, 0),
+        (0x0093_0d80, 1, 0),
+        (0x0083_bb50, 1, 0),
+        (0x0084_e870, 0, 0),
+        (0x0085_5430, 0, 0),
+        (0x0094_2110, 1, 0),
+        (0x0084_4cb0, 0, 0),
+        (0x0085_37b0, 0, 0),
+        (0x0082_1e30, 0, 0),
+        (0x0082_0570, 0, get(rng)),
+        (0x0082_d810, 0, get(rng)),
+        (0x0082_da60, 1, 0),
+        (0x0082_daa0, 1, 0),
+        (0x0084_e7c0, 0, 0),
+        (0x0090_8f90, 0, 0),
+        (0x0084_4ce0, 0, get(rng)),
+        (0x0084_4fa0, 1, 0),
+        (0x0084_0e40, 0, 0),
+        (0x0083_17d0, 0, get(rng)),
+        (0x0083_1d00, 1, 0),
+        (0x0082_0490, 0, get(rng)),
+        (0x0082_03a0, 1, 0),
+        (0x0085_4fd0, 0, 0),
+        (0x007f_b940, 0, 0),
+        (0x007f_bc20, 0, 0),
+        (0x0091_9b80, 0, 0),
+        (0x0082_05d0, 0, get(rng)),
+        (0x0082_1b00, 1, 0),
+        (0x0083_3f50, 0, get(rng)),
+        (0x0083_57c0, 1, 0),
+        (0x0082_05e0, 0, get(rng)),
+        (0x0082_1cb0, 1, 0),
+        (0x0082_d7e0, 0, get(rng)),
+        (0x0082_05a0, 0, get(rng)),
+    ];
+    for (sym, n, ret) in stubs {
+        t.stub(sym, false, n, 0, ret);
+    }
+    let count = rng.pick(&[0u32, 3, 0xffff_ffff]);
+    for sym in [wmain::DIR_LIST, wmain::FILE_LIST] {
+        let fill = store_arg(0, 0, count);
+        t.stub_ex(sym, false, 2, 0, &Ret::Fixed(0), &fill);
+    }
+    fprintf_import_stub(t, wmain::SPRINTF, &[(0x00b5_b490, 5)], 3);
+}
+
+#[test]
+fn wmain_proc_matches_the_original() {
+    let mut rng = Rng(0x0084_f550);
+    let mut cases: Vec<(u32, u32)> = vec![
+        (0x8001, 0),
+        (0x8003, 0),
+        (0x8011, 0),
+        (0x8002, 0),
+        (0x8000, 0),
+        (0x8020, 0),
+    ];
+    cases.extend((0..0x6a).map(|id| (0x8006, id)));
+    cases.extend([0xf, 0x19, 0x45, 3].map(|id| (0x800a, id)));
+    cases.extend([0x16, 0x17, 0x1b, 5].map(|id| (0x8012, id)));
+    cases.extend([0xffff_fffd, 0, 1, 7].map(|id| (0x8017, id)));
+    Twins::each(|t| {
+        for _ in 0..2 {
+            for &(msg, id) in &cases {
+                t.reset();
+                let st = t.words(&[0x5e0, 0x5e2]);
+                wmain_stubs(t, &mut rng, st);
+                for (g, v) in [
+                    (wmain::CUR_PAGE, rng.below(7)),
+                    (wmain::CLOCK_FLAGS, rng.below(4)),
+                ] {
+                    t.g32(g, v);
+                }
+                t.g32(wmain::CLOCK_FLAGS + 4, 12);
+                t.g32(wmain::CLOCK_FLAGS + 8, 34);
+                let what = format!("WMainProc {msg:#x} {id:#x}");
+                t.check(
+                    &what,
+                    wmain::WMAIN_PROC,
+                    Conv::Cdecl,
+                    &[0x9900, msg, id],
+                    |m| Out::U32(wmain::wmain_proc(m, 0x9900, msg, id)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn viewer_clut_upload_matches_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        for (s, n) in [
+            (viewer::GS_SYNC_PATH, 2),
+            (viewer::IPU_INIT, 0),
+            (viewer::HARDWARE_INIT, 0),
+            (viewer::CLUT_SWIZZLE, 3),
+            (viewer::FLUSH_CACHE, 1),
+            (viewer::LOAD_IMAGE_101, 2),
+        ] {
+            t.stub(s, false, n, 0, 0x10 + n);
+        }
+        let v = new_viewer(t);
+        let _ = v;
+        t.check(
+            "clut upload",
+            viewer::CLUT_UPLOAD_SYM,
+            Conv::Cdecl,
+            &[],
+            |m| Out::U32(viewer::clut_upload(m)),
+        );
+    });
+}
+
+#[test]
+fn abmap_node_spheres_match_the_original() {
+    let mut rng = Rng(0x00a5_0ed0);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            t.stub(abmap::MAKE_NODE_MATRIX, false, 3, 0, 0x61);
+            t.stub(abmap::MAKE_LINK_MATRIX, false, 4, 0, 0x62);
+            t.stub(abmap::MUL_MATRIX, false, 3, 0, 0x63);
+            t.stub(abmap::DRAW_SPHERE, false, 4, 0, 0x64);
+            let base = t.zeros(0x1_1700);
+            let i = rng.below(4);
+            let node = base + 0x808 + 0x28 * i;
+            let kind = rng.below(3);
+            t.write(node + 6, &(kind as u16).to_le_bytes());
+            t.w8(node + 0x21, rng.next() as u8);
+            t.write(node + 0x26, &(rng.next() as u16).to_le_bytes());
+            t.w8(base + 0x1_15c9, rng.pick(&[0, 0x7f, 0xff, 0x15]));
+            t.w32(base + 0x1_1698, rng.next());
+            let row = base + 0xf828 + 0x30 * kind;
+            t.w32(row + 0x10, (0.5f32 + rng.below(4) as f32).to_bits());
+            let link = if rng.chance(3) {
+                0x1000u16
+            } else {
+                rng.next() as u16
+            };
+            t.write(row + 0x14, &link.to_le_bytes());
+            t.g32(abmap::ABMAP, base);
+            t.g32(abmap::SPHERE_MODEL, 0x7700);
+            for j in 0..7 {
+                t.g32(abmap::LIT_COLOURS + 4 * j, rng.next());
+                t.g32(abmap::DARK_COLOURS + 4 * j, rng.next());
+            }
+            let what = format!("node spheres {k}");
+            check_aligned(t, &what, abmap::NODE_SPHERES_SYM, &[i], 0x140, |m, ebp| {
+                abmap::node_spheres(m, i, ebp);
+                Out::None
+            });
+        }
+    });
+}

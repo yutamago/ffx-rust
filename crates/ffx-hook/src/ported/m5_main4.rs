@@ -10,6 +10,8 @@
 //! their callees are `StackFrame`s or the caller's own argument slots.
 
 use super::{StackFrame, mem, ported};
+use ffx_sg::m5main4_abmap::bridge as abmap;
+use ffx_sg::m5main4_cd::bridge as cdr;
 use ffx_sg::m5main4_chara::bridge as chara;
 use ffx_sg::m5main4_lib::bridge as lib;
 use ffx_sg::m5main4_misc::bridge as misc;
@@ -18,6 +20,7 @@ use ffx_sg::m5main4_ogg::bridge as ogg;
 use ffx_sg::m5main4_pages::bridge as pages;
 use ffx_sg::m5main4_sound::bridge as sound;
 use ffx_sg::m5main4_viewer::bridge as viewer;
+use ffx_sg::m5main4_wmain::bridge as wmain;
 
 ported! {
     // ---- batch 1 ----
@@ -273,5 +276,66 @@ ported! {
     CamDebug_PointOrbit_00942520 @ 0x0094_2520 => extern "C" fn cam_point_orbit() -> u32 {
         let mut f = StackFrame::<3>::new();
         misc::point_orbit(&mut mem(), f.at())
+    }
+
+    // ---- batch 3 ----
+    /// `WMainProc(window, msg, id)` -> 0.
+    WMainProc @ 0x0084_f550 => extern "C" fn wmain_proc(window: u32, msg: u32, id: u32) -> u32 {
+        wmain::wmain_proc(&mut mem(), window, msg, id)
+    }
+    /// `(name, clut)` -> the stream ring index.
+    MovieViewer_Start_0077cfa0 @ 0x0077_cfa0 => extern "C" fn viewer_movie_start(name: u32, clut: u32) -> u32 {
+        viewer::movie_start(&mut mem(), name, clut)
+    }
+    /// `(v, w, h, big)` -> the audio rate.
+    MovieViewer_Init_0077d280 @ 0x0077_d280 => extern "C" fn viewer_init(v: u32, w: u32, hgt: u32, big: u32) -> u32 {
+        viewer::viewer_init(&mut mem(), v, w, hgt, big)
+    }
+    /// `(src, out, state)` -> the second-last sample.
+    MovieViewer_AdpcmDecode_0077a930 @ 0x0077_a930 => extern "C" fn viewer_adpcm_decode(src: u32, out: u32, state: u32) -> u32 {
+        viewer::adpcm_decode(&mut mem(), src, out, state)
+    }
+    /// `(verts, model, m, packet, a5)` -> the end tag; the corners in a
+    /// frame.
+    Sg_IdDrawLines_00844490 @ 0x0084_4490 => extern "C" fn id_draw_lines(verts: u32, model: u32, m: u32, packet: u32, a5: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        misc::id_draw_lines(&mut mem(), verts, model, m, packet, a5, f.at())
+    }
+    /// `(i)` -> the draw's `eax` or `i`; the key and matrices in a
+    /// 16-byte aligned frame, as the original's.
+    Abmap_DrawNodeHighlight_00a51560 @ 0x00a5_1560 => extern "C" fn abmap_node_highlight(i: u32) -> u32 {
+        let mut f = StackFrame::<0x46>::new();
+        let ebp = (f.at() + 0x108 + 15) & !15;
+        abmap::node_highlight(&mut mem(), i, ebp)
+    }
+    /// `()`: every node's shape; the frame as above.
+    Abmap_DrawNodeShapes_00a4fe40 @ 0x00a4_fe40 => extern "C" fn abmap_node_shapes() {
+        let mut f = StackFrame::<0x46>::new();
+        let ebp = (f.at() + 0x108 + 15) & !15;
+        abmap::node_shapes(&mut mem(), ebp);
+    }
+    /// `(i)`: node `i`'s spheres; the key and matrices in a 16-byte
+    /// aligned frame, as the original's.
+    Abmap_DrawNodeSpheres_00a50ed0 @ 0x00a5_0ed0 => extern "C" fn abmap_node_spheres(i: u32) {
+        let mut f = StackFrame::<0x66>::new();
+        let ebp = (f.at() + 0x188 + 15) & !15;
+        abmap::node_spheres(&mut mem(), i, ebp);
+    }
+    /// `()` -> the GS register: the viewer's CLUT halves uploaded.
+    MovieViewer_ClutUpload_0077b9b0 @ 0x0077_b9b0 => extern "C" fn viewer_clut_upload() -> u32 {
+        viewer::clut_upload(&mut mem())
+    }
+    /// `()` -> 64: every CD channel read; the status words in a frame.
+    sa_HddExFileRead_00a432a0 @ 0x00a4_32a0 => extern "C" fn hdd_ex_file_read() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        let io = f.at();
+        cdr::hdd_ex_file_read(&mut mem(), cdr::Frame { io, cd: io + 4 })
+    }
+    /// `(i)`: CD channel `i` read (an async task); the status words in a
+    /// frame.
+    CdChannel_readTask_00a43740 @ 0x00a4_3740 => extern "C" fn cd_channel_read_task(i: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        let io = f.at();
+        cdr::channel_task(&mut mem(), i, cdr::Frame { io, cd: io + 4 })
     }
 }
