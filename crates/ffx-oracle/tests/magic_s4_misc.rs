@@ -2701,3 +2701,49 @@ fn fam446_start_pairs() {
         }
     }
 }
+
+/// The mode objects of `magic_0565` and `magic_0644` (no mode test): the
+/// previous object listed or not, each mode.
+#[test]
+fn fam446_mode_objects_565_644() {
+    for (n, rva, (mode_at, old_at)) in [
+        (565u16, 0x3c60u32, (0x5c04u32, 0x5bfcu32)),
+        (644, 0x7c80, (0x5ad4, 0x5acc)),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        let mo = t.at(rva);
+        let soa = t.img.rel32_target(mo + 0x6f);
+        t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+        t.stub(941, |_, _| SCRATCH + 0x400);
+        t.stub(714, |_, _| 0x714);
+        rec(&mut t, 713, 1, |_, a| 0x7130_0000 ^ a[0]);
+        rec(&mut t, 219, 2, |_, a| 0x2190_0000 ^ a[0]);
+        rec(&mut t, 237, 4, |_, _| 0x237);
+        t.set_u32(t.img.word(mo + 0x20), SCRATCH + 0x8e0);
+        t.set_u32(t.img.word(mo + 0x7c), 0x0a0a_007c);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(mo + 0x3), block);
+        let list = t.img.word(mo + 0x12);
+        let pa = t.img.rel32_target(soa + 0x9d);
+        let free = t.img.word(pa + 0x04);
+        let old = block + 0x130 * 3;
+        for (mode, listed) in [(0u32, false), (0, true), (1, true), (2, false)] {
+            t.write(block, &vec![0x3c; 0xec00]);
+            t.set_u16(free, 2);
+            t.set_u32(block + mode_at, mode);
+            t.set_u32(block + old_at, old);
+            t.set_u16(old + 0x124, 0xffff);
+            let node = SCRATCH + 0x1800;
+            t.write(node, &[0; 0x10]);
+            t.set_u32(node + 8, old);
+            t.write(list, &[0; 0x10]);
+            if listed {
+                t.set_u32(list, node);
+                t.set_u32(list + 4, node);
+                t.set_u32(list + 0xc, 1);
+            }
+            t.check_entry(mo, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

@@ -731,43 +731,95 @@ pub const LOAD_STEP: Sig = Sig {
 ///
 /// `magic_0446` 0x100020c0 (216 bytes; 10 DLLs).
 pub fn mode_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    mode_object_at(g, img, fr, true, (0x5c04, 0x5bfc, 0xebf0))
+}
+
+/// [`mode_object`]; without `check` (no mode test before the previous
+/// object leaves) the operands sit 9 bytes earlier. `(mode, old, clock)`
+/// are the block's words.
+fn mode_object_at<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    check: bool,
+    (mode_at, old_at, clock_at): (u32, u32, u32),
+) -> Ret {
     let f = fr.at;
+    let sh = if check { 9 } else { 0 };
     let w = |o: u32| img.word(f + o);
+    let o = |off: u32| off + sh;
     let block = g.read::<u32>(w(0x3));
-    if g.read::<u32>(block + 0x5c04) != 0 {
-        let old = g.read::<u32>(block + 0x5bfc);
-        if list_remove(g, img, img.rel32_target(f + 0x20), w(0x1b), old) != 0 {
-            let p = g.read::<u32>(w(0x29));
-            g.write::<u32>(p, w(0x30));
-            let t = slot_target(g, w(0x35), 713);
+    if !check || g.read::<u32>(block + mode_at) != 0 {
+        let old = g.read::<u32>(block + old_at);
+        if list_remove(g, img, img.rel32_target(f + o(0x17)), w(o(0x12)), old) != 0 {
+            let p = g.read::<u32>(w(o(0x20)));
+            g.write::<u32>(p, w(o(0x27)));
+            let t = slot_target(g, w(o(0x2c)), 713);
             g.call(t, 0, &[old]);
             let flags = g.read::<u16>(old + 0x124) & 0x7fff;
             g.write::<u16>(old + 0x124, flags);
         }
     }
-    let mode = g.read::<u32>(block + 0x5c04);
-    let part = g.read::<u32>(w(0x61).wrapping_add(mode.wrapping_mul(4)));
+    let mode = g.read::<u32>(block + mode_at);
+    let part = g.read::<u32>(w(o(0x58)).wrapping_add(mode.wrapping_mul(4)));
     let obj = block.wrapping_add(part.wrapping_mul(0x130));
-    start(g, img, f, 0x78, obj, 0x5a, part, (0, 0));
+    start(g, img, f, o(0x6f), obj, o(0x51), part, (0, 0));
     // start_object_at's words stay below (the ones above `ecx`, which is
     // what list_remove left there)
     let mut s = Pushes::default();
     s.push_all(&[0, part]);
-    let x = g.read::<u32>(w(0x85));
+    let x = g.read::<u32>(w(o(0x7c)));
     s.push_all(&[0, x]);
     // call width: 12 (Pushes caps the words at 12)
-    let elem = s.call(g, slot_target(g, w(0x7d), 219), 0).eax;
+    let elem = s.call(g, slot_target(g, w(o(0x74)), 219), 0).eax;
     let pos = obj + 0xd0;
     s.push_all(&[pos, 0, 0, elem]);
     // call width: 12 (Pushes caps the words at 12)
-    s.call(g, slot_target(g, w(0x9e), 237), 0);
+    s.call(g, slot_target(g, w(o(0x95)), 237), 0);
     g.write::<u32>(pos + 0xc, 0x3f80_0000);
-    let clock = g.read::<u32>(block + 0xebf0);
+    let clock = g.read::<u32>(block + clock_at);
     g.write::<u32>(obj + 0xc4, clock);
     g.write::<u32>(obj + 0xe4, 0x4040_0000);
     g.write::<u32>(obj + 0xe8, 0xc040_0000);
     Ret::eax(clock)
 }
+
+/// [`mode_object`] without the mode test: `magic_0565`.
+///
+/// `magic_0565` 0x10003c60 (207 bytes; 5 DLLs).
+pub fn mode_object_565<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    mode_object_at(g, img, fr, false, (0x5c04, 0x5bfc, 0xebf0))
+}
+
+/// [`mode_object_565`].
+pub const MODE_OBJECT_565: Sig = Sig {
+    len: 207,
+    hash: 0xbb2c_4e5b_cfce_e327,
+    calls: &[
+        (0x17, Callee::Sig(&LIST_REMOVE)),
+        (0x6f, Callee::Sig(&START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
+
+/// [`mode_object_565`] with the `magic_0644` block (mode `+0x5ad4`, the
+/// previous object `+0x5acc`, clock `+0xeac0`).
+///
+/// `magic_0644` 0x10007c80 (207 bytes; 5 DLLs).
+pub fn mode_object_644<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    mode_object_at(g, img, fr, false, (0x5ad4, 0x5acc, 0xeac0))
+}
+
+/// [`mode_object_644`].
+pub const MODE_OBJECT_644: Sig = Sig {
+    len: 207,
+    hash: 0xe1cb_ff75_171a_c485,
+    calls: &[
+        (0x17, Callee::Sig(&LIST_REMOVE)),
+        (0x6f, Callee::Sig(&START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
 
 /// [`mode_object`].
 pub const MODE_OBJECT: Sig = Sig {
