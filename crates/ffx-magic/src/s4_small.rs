@@ -2192,7 +2192,13 @@ pub fn level_down<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let x = crate::sb_sse::cvt(g.read::<u32>(op(img, f, 0x4)));
     let k = f32::from_bits(g.read::<u32>(op(img, f, 0xf)));
     let l = trunc(crate::sb_sse::sub(x, k)).cast_signed();
-    let l = if l < 0 { 0 } else { l.min(0x80) }.cast_unsigned();
+    let l = if l < 0 {
+        0
+    } else if l > 0x80 {
+        0x80
+    } else {
+        l.cast_unsigned()
+    };
     g.write::<u32>(op(img, f, 0x2b), l);
     slot_call(g, img, f, (0x30, 391), &[0x60, 0x60, 0x60, l]);
     Ret::eax(u32::from(g.read::<u32>(op(img, f, 0x49)) != 0))
@@ -9305,6 +9311,7 @@ pub fn command_block_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let mut words = vec![local(0x1c), local(0x18), local(0x20)];
     slot_call(g, img, f, (0x1d, 559), &words);
     words.insert(0, local(0x14));
+    // call width: 4 (slot 559's words stay on the stack)
     slot_call(g, img, f, (0x2e, 558), &words);
     words.splice(0..0, [0, 0]);
     // call width: 6 (the earlier calls' words stay on the stack)
