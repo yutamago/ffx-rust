@@ -18,7 +18,13 @@ fn matrix_visit() {
     let w = |t: &Twin, off: u32| t.img.word(at + off);
     let slot = 1000u32;
     t.set_u32(magic::TABLE + 4 * slot, TRAPS + 16 * slot);
-    rec(&mut t, slot, 1, |m, a| m.r32(a[0]) ^ 0x1000);
+    // the children's method logs the node its cursor holds
+    rec(&mut t, slot, 1, |m, a| {
+        let k = m.r32(SCRATCH + 0x37fc).wrapping_add(1);
+        m.w32(SCRATCH + 0x37fc, k);
+        m.w32(SCRATCH + 0x3780 + 4 * (k % 16), m.r32(a[0]));
+        m.r32(a[0]) ^ 0x1000
+    });
     rec(&mut t, 231, 3, |m, a| {
         for i in 0..16 {
             m.w32(a[0] + 4 * i, a[2] ^ i);
