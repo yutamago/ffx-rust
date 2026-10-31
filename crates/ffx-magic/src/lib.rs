@@ -1167,6 +1167,7 @@ ports! {
     "walk, two children" => s4_small::WALK_TWO_CHILDREN, s4_small::walk_two_children;
     "actor place and turn" => s4_small::ACTOR_PLACE_TURN, s4_small::actor_place_turn;
     "particles start (f)" => s4_small::PARTICLES_START_F, s4_small::particles_start_f;
+    "particles start, sound" => s4_small::PARTICLES_START_SOUND, s4_small::particles_start_sound;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1581,6 +1582,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("light level", &s4_small::LIGHT_LEVEL),
     ("summon nodes", &s4_small::SUMMON_NODES),
     ("light link", &s4_small::LIGHT_LINK),
+    ("actor index to a point", &s4_small::ACTOR_INDEX_TO_POINT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -3583,3 +3583,58 @@ fn particles_f() {
     t.write(obj, &[0x33; 0x100]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
 }
+
+#[test]
+fn particle_sounds_and_index_points() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x2580);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table + 8, 0x0700_0008);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5), (306, 3)]);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x3f00_0000 + i);
+        }
+        0x325
+    });
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(298) else { return };
+    let f = t.at(0x2110);
+    recs(&mut t, &[(255, 2), (32, 3), (33, 4)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 11, 1, move |m, _| m.r32(answer));
+    let map = SCRATCH + 0x80;
+    t.write(map, &[3, 0x20, 1]);
+    t.set_u32(op(&t, f, 0xc), map);
+    t.set_u32(op(&t, f, 0x13), 4);
+    t.set_u32(op(&t, f, 0x41), 0x0e0e_0041);
+    for k in 0..0x21 {
+        t.set_u32(op(&t, f, 0x4e) + 4 * k, 0x0a00_0000 + k);
+    }
+    let v = SCRATCH + 0x300;
+    for i in 0..3 {
+        t.set_u32(v + 4 * i, (1.5f32 + i as f32).to_bits());
+    }
+    for (done, i, ground) in [
+        (0u32, u32::MAX, 0u32),
+        (0, 0, 0),
+        (0, 1, 1),
+        (1, u32::MAX, 0),
+        (1, 2, 1),
+    ] {
+        t.set_u32(op(&t, f, 0x2), done);
+        t.set_u32(answer, ground);
+        let c = Call {
+            ecx: i,
+            edx: v,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_small::actor_index_to_point);
+    }
+}

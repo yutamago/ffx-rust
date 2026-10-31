@@ -6411,6 +6411,19 @@ fn particles_raised<G: Game>(
     (v, table, k): (u32, u32, u32),
     rate: u32,
 ) -> Ret {
+    particles_raised_words(g, img, fr, rels, (v, table, k), rate);
+    Ret::eax(1)
+}
+
+/// [`particles_raised`]. Returns the words its calls left on the stack.
+fn particles_raised_words<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    rels: (u32, u32),
+    (v, table, k): (u32, u32, u32),
+    rate: u32,
+) -> [u32; 6] {
     let f = fr.at;
     let (obj, x, program) = particles_begin(g, img, fr, rels);
     let words = [obj.wrapping_add(0x40), op(img, f, v), program, 1, 0, x];
@@ -6422,7 +6435,7 @@ fn particles_raised<G: Game>(
     }
     g.write::<u32>(obj.wrapping_add(0x44), y.to_bits());
     particles_rates(g, obj, rate);
-    Ret::eax(1)
+    words
 }
 
 /// [`particles_start_d`].
@@ -7860,5 +7873,77 @@ pub const PARTICLES_START_F: Sig = Sig {
     len: 187,
     hash: 0x2641_5ea6_e154_3ca6,
     calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`particles_start_d`] with the table's `+0x8` program, then slot 306
+/// `(7, 0, *G_S)` (operand `+0x5f`; the earlier calls' words still
+/// under).
+///
+/// `magic_0188` 0x10002580 (188 bytes; 2 DLLs).
+pub fn particles_start_sound<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let words = particles_raised_words(g, img, fr, (8, 0x36), (0x3e, 0x44, 0x59), 0x3d2f_1aa0);
+    let s = g.read::<u32>(op(img, f, 0x5f));
+    let mut all = vec![7, 0, s];
+    all.extend_from_slice(&words);
+    // call width: 9 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x64, 306), &all);
+    Ret::eax(1)
+}
+
+/// [`particles_start_sound`].
+pub const PARTICLES_START_SOUND: Sig = Sig {
+    len: 188,
+    hash: 0x8c97_236f_2199_2262,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`actor_to_point`] by an actor index (internal, `ecx` = the index `i`,
+/// `edx` = the point): `k` is `G_MAP[i]` (`G_NONE` for -1) and the actor
+/// `T[G_MAP[i]]` (`G_SELF` for -1). Returns the slot's `eax`.
+///
+/// `magic_0298` 0x10002110 (187 bytes; 2 DLLs).
+pub fn actor_index_to_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (i, v) = (fr.ecx, fr.edx);
+    let map = g.read::<u32>(op(img, f, 0xc));
+    let byte = |g: &G| u32::from(g.read::<u8>(map.wrapping_add(i)));
+    if g.read::<u32>(op(img, f, 0x2)) == 0 {
+        let k = if i == u32::MAX {
+            g.read::<u32>(op(img, f, 0x13))
+        } else {
+            byte(g)
+        };
+        if k.cast_signed() < 0x20 {
+            return through(slot_call(g, img, f, (0x28, 255), &[k, v]));
+        }
+    }
+    let a = if i == u32::MAX {
+        g.read::<u32>(op(img, f, 0x41))
+    } else {
+        g.read::<u32>(op(img, f, 0x4e).wrapping_add(4 * byte(g)))
+    };
+    let ground = slot_call(g, img, f, (0x53, 11), &[a]).eax;
+    let c = |g: &G, n: u32| g.read::<u32>(v.wrapping_add(4 * n));
+    if ground == 0 {
+        through(slot_call(
+            g,
+            img,
+            f,
+            (0x68, 33),
+            &[a, c(g, 0), c(g, 1), c(g, 2)],
+        ))
+    } else {
+        through(slot_call(g, img, f, (0x68, 32), &[a, c(g, 0), c(g, 2)]))
+    }
+}
+
+/// [`actor_index_to_point`].
+pub const ACTOR_INDEX_TO_POINT: Sig = Sig {
+    len: 187,
+    hash: 0xb8b5_a9bd_55a7_002d,
+    calls: &[],
     imports: &[],
 };
