@@ -3335,3 +3335,49 @@ fn colour_scale_tasks_light_copies() {
     }
     t.check_entry(f, Call::default(), &[light], Eax::Checked);
 }
+
+#[test]
+fn actor_entries_and_scale_tasks() {
+    let Some(mut t) = twin(384) else { return };
+    let f = t.at(0x12f0);
+    let rec_at = SCRATCH + 0x600;
+    rec(&mut t, 434, 2, move |_, _| rec_at);
+    recs(&mut t, &[(444, 1), (450, 2), (449, 4)]);
+    let base = SCRATCH + 0x1000;
+    for o in [0x4, 0x4c, 0x6d] {
+        t.set_u32(op(&t, f, o), base);
+    }
+    t.set_u32(base + 0x198, 0x0198_0001);
+    let obj = SCRATCH + 0x100;
+    for n in [0u32, 1, 3] {
+        t.write(rec_at, &[0x22; 0x100]);
+        t.set_u32(rec_at + 0xac, 1);
+        t.write(obj, &[0x33; 0x100]);
+        t.set_u32(obj + 0xac, 2);
+        t.set_u32(op(&t, f, 0x14), n);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(348) else { return };
+    let f = t.at(0x2c00);
+    let take = t.img.rel32_target(f + 0x73);
+    let s = SCRATCH + 0x100;
+    for (listed, a, b) in [(false, 0.5f32, -1.0f32), (true, 0.0, f32::NAN)] {
+        pool_ring(&mut t, take);
+        t.write(s, &[0x44; 0x40]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x79), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x91), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x79), 0);
+        }
+        let c = Call {
+            ecx: s,
+            edx: 0x1e,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::F32(0), Xmm::F32(a.to_bits()), Xmm::F32(b.to_bits())]);
+        t.check(f, c, &[], Eax::Checked, s4_small::scale_task_edx);
+    }
+}

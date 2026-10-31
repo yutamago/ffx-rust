@@ -1162,6 +1162,7 @@ ports! {
     "effect frame (slot 261)" => s4_small::EFFECT_FRAME_261, s4_small::effect_frame_261;
     "colour and scale task" => s4_small::COLOUR_AND_SCALE_TASK, s4_small::colour_and_scale_task;
     "light copy" => s4_small::LIGHT_COPY, s4_small::light_copy;
+    "actors and entries" => s4_small::ACTORS_ENTRIES, s4_small::actors_entries;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
@@ -1570,6 +1571,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("light node", &s4_small::LIGHT_NODE),
     ("turn a point", &s4_small::TURN_POINT),
     ("node copy", &s4_small::NODE_COPY),
+    ("scale task (edx)", &s4_small::SCALE_TASK_EDX),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

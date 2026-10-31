@@ -7285,3 +7285,109 @@ pub const LIGHT_COPY: Sig = Sig {
     calls: &[(0xab, Callee::Any)],
     imports: &[],
 };
+
+/// For each of the `G_N` actors `i`, slot 434 `(*G, callback)` gives a
+/// record whose entry `+0x2c + 16 k` takes `i`; then slot 444 `(0)`, slot
+/// 434 `(*G, callback 2)`, slots 450 and 449 `(obj, callback 3/4)`, each
+/// call seeing the words the earlier ones left, and the object's entry
+/// gets the word `*G + 0x198` read first (cdecl `(obj)`). Returns `2k`.
+///
+/// `magic_0384` 0x100012f0 (181 bytes; 3 DLLs).
+pub fn actors_entries<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut x = g.read::<u32>(op(img, f, 0x4));
+    let keep = g.read::<u32>(x.wrapping_add(0x198));
+    if g.read::<i32>(op(img, f, 0x14)) > 0 {
+        // the count is read again after each actor
+        let mut i = 0u32;
+        loop {
+            let rec = slot_call(g, img, f, (0x27, 434), &[x, op(img, f, 0x21)]).eax;
+            let k2 = g.read::<u32>(rec.wrapping_add(0xac)).wrapping_mul(2);
+            g.write::<u32>(rec.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c), i);
+            i += 1;
+            if i.cast_signed() >= g.read::<i32>(op(img, f, 0x45)) {
+                break;
+            }
+            x = g.read::<u32>(op(img, f, 0x4c));
+        }
+    }
+    slot_call(g, img, f, (0x53, 444), &[0]);
+    let b = g.read::<u32>(op(img, f, 0x6d));
+    let cb2 = op(img, f, 0x67);
+    slot_call(g, img, f, (0x62, 434), &[b, cb2, 0]);
+    let obj = fr.arg(g, 0);
+    let cb3 = op(img, f, 0x88);
+    slot_call(g, img, f, (0x7a, 450), &[obj, cb3, b, cb2, 0]);
+    let cb4 = op(img, f, 0x95);
+    // call width: 7 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x90, 449), &[obj, cb4, obj, cb3, b, cb2, 0]);
+    let k2 = g.read::<u32>(obj.wrapping_add(0xac)).wrapping_mul(2);
+    g.write::<u32>(
+        obj.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c),
+        keep,
+    );
+    Ret::eax(k2)
+}
+
+/// [`actors_entries`].
+pub const ACTORS_ENTRIES: Sig = Sig {
+    len: 181,
+    hash: 0x7d99_2c54_1556_7ea1,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`crate::s4_misc::scale_task`] with the count in `edx` (internal,
+/// `ecx` = the state, `xmm1`, `xmm2`): the scales (not above 0: `K`,
+/// operand `+0x1`) into `G_A`, `G_B` and the state's two vectors, `+0x28`
+/// and `+0x34` 0, `+0x30`/`+0x2c` the count; a task node (kind 1) runs
+/// it. Returns the node.
+///
+/// `magic_0348` 0x10002c00 (183 bytes; 2 DLLs).
+pub fn scale_task_edx<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = fr.ecx;
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0x4)));
+    // comiss 0, x; jb: kept when above 0 (or unordered)
+    let keep = |x: f32| if 0.0 < x || x.is_nan() { x } else { k };
+    let (a, b) = (keep(fr.xmm_f32(1)), keep(fr.xmm_f32(2)));
+    g.write::<u32>(op(img, f, 0x27), a.to_bits());
+    g.write::<u32>(op(img, f, 0x2f), b.to_bits());
+    for o in [8, 4, 0] {
+        g.write::<u32>(s + o, a.to_bits());
+    }
+    g.write::<u32>(s + 0xc, 0x3f80_0000);
+    for o in [0x18, 0x14, 0x10] {
+        g.write::<u32>(s + o, b.to_bits());
+    }
+    g.write::<u32>(s + 0x1c, 0x3f80_0000);
+    g.write::<u32>(s + 0x28, 0);
+    g.write::<u32>(s + 0x34, 0);
+    g.write::<u32>(s + 0x30, fr.edx);
+    g.write::<u32>(s + 0x2c, fr.edx);
+    let node = take(g, img, img.rel32_target(f + 0x73), op(img, f, 0x1f));
+    let empty = g.read::<u32>(op(img, f, 0x79)) == 0;
+    g.write::<u32>(node.wrapping_add(0x14), s);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if empty {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(op(img, f, 0xaa), node);
+        g.write::<u32>(op(img, f, 0xaf), node);
+    } else {
+        let tail = g.read::<u32>(op(img, f, 0x91));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(op(img, f, 0x9b), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`scale_task_edx`].
+pub const SCALE_TASK_EDX: Sig = Sig {
+    len: 183,
+    hash: 0xde2e_de78_00d7_f5a9,
+    calls: &[(0x73, Callee::Sig(&TAKE))],
+    imports: &[],
+};
