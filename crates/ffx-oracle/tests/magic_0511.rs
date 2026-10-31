@@ -1,6 +1,14 @@
 //! `magic_0511.dll` against its Rust port (`ffx_magic::m0511`). Needs
 //! `FFX_GAME_DIR`.
 
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::needless_range_loop,
+    clippy::type_complexity,
+    clippy::many_single_char_names
+)]
+
 mod magic;
 mod magic_hi;
 mod magic_l3;

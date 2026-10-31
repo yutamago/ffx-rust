@@ -173,6 +173,22 @@ pub mod m0505;
 pub mod m0508;
 pub mod m0510;
 pub mod m0511;
+pub mod m0512;
+pub mod m0513;
+pub mod m0514;
+pub mod m0519;
+pub mod m0522;
+pub mod m0523;
+pub mod m0525;
+pub mod m0526;
+pub mod m0527;
+pub mod m0528;
+pub mod m0529;
+pub mod m0530;
+pub mod m0531;
+pub mod m0534;
+pub mod m0536;
+pub mod m0537;
 pub mod m0596;
 pub mod m0604;
 
@@ -913,6 +929,44 @@ ports! {
     "m0511 e2c50" => m0511::E2C50, m0511::e2c50;
     "m0511 e2da0" => m0511::E2DA0, m0511::e2da0;
     "m0511 sprite start" => m0511::SPRITE_START, m0511::sprite_start;
+    "m0510 e1b10" => m0510::E1B10, m0510::e1b10;
+    "m0510 e1db0" => m0510::E1DB0, m0510::e1db0;
+    "m0512 task" => m0512::TASK, m0512::task;
+    "m0513 end" => m0513::END, m0513::end;
+    "m0514 e7260" => m0514::E7260, m0514::e7260;
+    "m0514 e7660" => m0514::E7660, m0514::e7660;
+    "m0522 e1140" => m0522::E1140, m0522::e1140;
+    "m0522 e1360" => m0522::E1360, m0522::e1360;
+    "m0522 e1400" => m0522::E1400, m0522::e1400;
+    "m0523 e1000" => m0523::E1000, m0523::e1000;
+    "m0523 e1150" => m0523::E1150, m0523::e1150;
+    "m0523 e1240" => m0523::E1240, m0523::e1240;
+    "m0523 e1380" => m0523::E1380, m0523::e1380;
+    "m0525 e10b0" => m0525::E10B0, m0525::e10b0;
+    "m0525 e11c0" => m0525::E11C0, m0525::e11c0;
+    "m0525 e12f0" => m0525::E12F0, m0525::e12f0;
+    "m0525 e1650" => m0525::E1650, m0525::e1650;
+    "m0525 e16d0" => m0525::E16D0, m0525::e16d0;
+    "m0526 e1140" => m0526::E1140, m0526::e1140;
+    "m0526 e1650" => m0526::E1650, m0526::e1650;
+    "m0526 e16e0" => m0526::E16E0, m0526::e16e0;
+    "m0527 draw" => m0527::DRAW, m0527::draw;
+    "m0527 frame" => m0527::FRAME, m0527::frame;
+    "m0528 e1000" => m0528::E1000, m0528::e1000;
+    "m0528 e14f0" => m0528::E14F0, m0528::e14f0;
+    "m0529 e1000" => m0529::E1000, m0529::e1000;
+    "m0529 e1100" => m0529::E1100, m0529::e1100;
+    "m0529 e1790" => m0529::E1790, m0529::e1790;
+    "m0529 e16c0" => m0529::E16C0, m0529::e16c0;
+    "m0529 e1800" => m0529::E1800, m0529::e1800;
+    "m0530 start" => m0530::START, m0530::start;
+    "m0531 start" => m0531::START, m0531::start;
+    "m0534 e11a0" => m0534::E11A0, m0534::e11a0;
+    "m0534 e12b0" => m0534::E12B0, m0534::e12b0;
+    "m0534 e1390" => m0534::E1390, m0534::e1390;
+    "m0536 start" => m0536::START, m0536::start;
+    "m0536 frame" => m0536::FRAME, m0536::frame;
+    "m0537 frame" => m0537::FRAME, m0537::frame;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -1895,6 +1949,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0488 draw", &m0488::DRAW),
     ("m0493 init", &m0493::INIT),
     ("m0505 clear", &m0505::CLEAR),
+    ("m0512 insert", &m0512::INSERT),
+    ("m0514 timed init", &m0514::TIMED_INIT),
+    ("m0514 scaled init", &m0514::SCALED_INIT),
+    ("m0519 place", &m0519::PLACE),
+    ("m0519 filter", &m0519::FILTER),
+    ("m0519 fade", &m0519::FADE),
+    ("m0537 start", &m0537::START),
+    ("m0537 draw", &m0537::DRAW),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
