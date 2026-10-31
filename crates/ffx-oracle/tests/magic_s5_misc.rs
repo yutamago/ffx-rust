@@ -3075,3 +3075,35 @@ fn weapon_bounces() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn scene_two_records_set() {
+    let Some(mut t) = twin(430) else { return };
+    let f = t.at(0x39c0);
+    for (s, n, words) in [
+        (235u32, 1usize, 16u32),
+        (328, 3, 16),
+        (329, 3, 16),
+        (229, 3, 4),
+        (248, 3, 4),
+    ] {
+        rec_mem(&mut t, s, n, words, Some(0));
+    }
+    let take = t.img.rel32_target(f + 0x14f);
+    let b = SCRATCH + 0x4000;
+    t.set_u32(op(&t, f, 0x13), b);
+    let (head, tail) = (op(&t, f, 0x155), op(&t, f, 0x16a));
+    for k in 0..3u32 {
+        free_ring(&mut t, take, SCRATCH + 0x1000, 3 + k);
+        t.write(b + 0xb00, &varied(0x400, k));
+        if k == 0 {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        } else {
+            t.write(SCRATCH + 0x1400, &varied(0x1c, k));
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

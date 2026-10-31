@@ -6493,3 +6493,135 @@ pub const WEAPON_BOUNCE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Links `node` after `prev` (`node[0] = prev`, `prev[1] = node`), or
+/// makes it the list's head (`node[0] = 0`, `*set_head = node`) when the
+/// word at `head` is 0; then `node[2] = node`.
+fn link_after<G: Game>(g: &mut G, (head, set_head): (u32, u32), node: u32, prev: u32) {
+    if g.read::<u32>(head) == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(set_head, node);
+    } else {
+        g.write::<u32>(node, prev);
+        g.write::<u32>(prev + 4, node);
+    }
+    g.write::<u32>(node + 8, node);
+}
+
+/// A scene's two records set up (cdecl, no arguments; a /GS frame). With
+/// `B = *G_B`: the point `P = B+0xc74.. = B+0xcc4..` moved by the offset
+/// `(-20, 0, -20, 1)` turned by `B+0xeb4` (slots 235, 328 with 0 and 329,
+/// then 229 and 248 into `P`, `w` 1); the record `Q = B+0xd80` (`+0x80 =
+/// 0`, `+0x84 = 0x80000000`, `+0x88 = 0x96`, `+0x8c = +0x90 = 0xb`,
+/// `+0x94 = 0`, halfword `+0x98 = 0x44`) gets a node from the pool
+/// ([`take`], owner `CB1`, its `+0x14 = Q`) linked after `*G_TAIL` (or as
+/// the head); the twelve floats `B+0xb84..` scaled by `K`, `B+0xcb8 =
+/// B+0xc78 - K2`; the record `R = B+0xe20` (`0, 0x32, 0x64, 0`, `+0x10 =
+/// +0x14 = 0x9e`, halfword `+0x18 = 0`) gets a node (owner `CB2`, byte
+/// `+0x18 = 1`, `*G_TAIL` itself) linked after the first. Returns that
+/// node. Each call sees the words the earlier ones left on the stack.
+///
+/// `magic_0430` 0x100039c0 (807 bytes; 2 DLLs).
+pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let b = g.read::<u32>(w(0x13));
+    let p = b.wrapping_add(0xc74);
+    for i in 0..4 {
+        let x = g.read::<u32>(b.wrapping_add(0xcc4 + 4 * i));
+        g.write::<u32>(p + 4 * i, x);
+    }
+    let (m, d, v, a) = (at(0x64), at(0x14), at(0x24), at(0x68));
+    let turn = g.read::<u32>(b.wrapping_add(0xeb4));
+    g.write::<u32>(a, turn);
+    for (i, x) in [0xc1a0_0000_u32, 0, 0xc1a0_0000, 0x3f80_0000]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(d + 4 * i as u32, x);
+    }
+    let mut s = Pushes::default();
+    s.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x5c), 235), 0);
+    s.set_top(0);
+    s.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x96), 328), 0);
+    s.pop(2);
+    s.set_top(g.read::<u32>(a));
+    s.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xb5), 329), 0);
+    s.push_all(&[d, m, v]);
+    g.write::<u32>(at(8), 0x3f80_0000);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xce), 229), 0);
+    s.push_all(&[v, p, p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xe6), 248), 0);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let q = b.wrapping_add(0xd80);
+    for (o, x) in [
+        (0x80u32, 0u32),
+        (0x84, 0x8000_0000),
+        (0x88, 0x96),
+        (0x90, 0xb),
+        (0x8c, 0xb),
+        (0x94, 0),
+    ] {
+        g.write::<u32>(q + o, x);
+    }
+    g.write::<u16>(q + 0x98, 0x44);
+    let first = take(g, img, img.rel32_target(f + 0x14f), w(0x105));
+    g.write::<u32>(first + 0x14, q);
+    g.write::<u32>(first + 4, 0);
+    let tail = g.read::<u32>(w(0x16a));
+    link_after(g, (w(0x155), w(0x17d)), first, tail);
+    let k = g.read::<f32>(w(0x18d));
+    for i in 0..12 {
+        let at = b.wrapping_add(0xb84 + 4 * i);
+        let x = mul(g.read::<f32>(at), k);
+        g.write::<f32>(at, x);
+    }
+    let x = sub(
+        g.read::<f32>(b.wrapping_add(0xc78)),
+        g.read::<f32>(w(0x295)),
+    );
+    g.write::<f32>(b.wrapping_add(0xcb8), x);
+    let r = b.wrapping_add(0xe20);
+    for (o, x) in [
+        (0u32, 0u32),
+        (4, 0x32),
+        (8, 0x64),
+        (0xc, 0),
+        (0x14, 0x9e),
+        (0x10, 0x9e),
+    ] {
+        g.write::<u32>(r + o, x);
+    }
+    g.write::<u16>(r + 0x18, 0);
+    let second = take(g, img, img.rel32_target(f + 0x2cf), w(0x1b5));
+    g.write::<u8>(second + 0x18, 1);
+    g.write::<u32>(second + 0x14, r);
+    g.write::<u32>(second + 4, 0);
+    g.write::<u32>(w(0x2e9), second);
+    link_after(g, (w(0x2d5), w(0x316)), second, first);
+    Ret::eax(second)
+}
+
+/// [`scene_two_records`] (the `rel32`s: [`take`] twice and
+/// `__security_check_cookie` on both ways out).
+pub const SCENE_TWO_RECORDS: Sig = Sig {
+    len: 807,
+    hash: 0x0ad1_e773_9670_49bd,
+    calls: &[
+        (0x14f, Callee::Sig(&TAKE)),
+        (0x2cf, Callee::Sig(&TAKE)),
+        (0x300, Callee::Any),
+        (0x31f, Callee::Any),
+    ],
+    imports: &[],
+};
