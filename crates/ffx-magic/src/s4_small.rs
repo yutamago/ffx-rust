@@ -5071,3 +5071,137 @@ pub const PART_HANDLES: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// For the states 0x3011 and 0x3013: slot 0 `(s)` gives a handle `h`,
+/// slot 26 `(s, 1)`, a byte of the DLL's (0x20, then 0x21) and `G_H` the
+/// handle, slot 10 `(h, 0)`, each call seeing the words the earlier ones
+/// left; then `G_S` 3 (no arguments). Returns the last slot's `eax`.
+///
+/// `magic_0162` 0x10002db0 (136 bytes; 2 DLLs).
+pub fn handles_3011_3013<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut words: Vec<u32> = Vec::new();
+    let mut ret = Ret::eax(fr.eax);
+    for (s, (t0, t26, t10), (byte, v), h_at) in [
+        (0x3011, (0x1, 0x11, 0x24), (0x2a, 0x20), 0x31),
+        (0x3013, (0x3e, 0x4d, 0x60), (0x66, 0x21), 0x6d),
+    ] {
+        words.insert(0, s);
+        // call width: 1..6 (the earlier calls' words stay on the stack)
+        let h = slot_call(g, img, f, (t0, 0), &words).eax;
+        words.splice(0..0, [s, 1]);
+        // call width: 3..8 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (t26, 26), &words);
+        g.write::<u8>(op(img, f, byte), v);
+        g.write::<u32>(op(img, f, h_at), h);
+        words.splice(0..0, [h, 0]);
+        // call width: 5..10 (the earlier calls' words stay on the stack)
+        ret = through(slot_call(g, img, f, (t10, 10), &words));
+    }
+    g.write::<u32>(op(img, f, 0x7e), 3);
+    ret
+}
+
+/// [`handles_3011_3013`].
+pub const HANDLES_3011_3013: Sig = Sig {
+    len: 136,
+    hash: 0x262c_06fc_5117_8223,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], `ecx` = the cursor); when it
+/// ran and the owner has a track (`+0x2c`), the track's key at the
+/// owner's time `+0x30` goes to `+0x1c` ([`track_key`], a cursor on the
+/// frame) and bit 0 of `+0x34` says whether the track ended (internal,
+/// `ecx` = the cursor). Returns the key's result, or the walk's.
+///
+/// `magic_0155` 0x10008350 (137 bytes; 2 DLLs).
+pub fn walk_track<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let cursor = fr.ecx;
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let owner = g.read::<u32>(cursor);
+    let track = g.read::<u32>(owner.wrapping_add(0x2c));
+    if track == 0 {
+        return Ret::eax(track);
+    }
+    // push ebp; sub esp, 0x10: the cursor is [ebp - 0x10]
+    let local = fr.esp.wrapping_sub(0x14);
+    let time = g.read::<u32>(owner.wrapping_add(0x30));
+    g.write::<u32>(local, track);
+    g.write::<u32>(local + 4, owner.wrapping_add(0x1c));
+    g.write::<u32>(local + 8, time);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x6b),
+        esp: fr.esp.wrapping_sub(0x20),
+        ecx: local,
+        ..*fr
+    };
+    let ret = track_key(g, img, &callee);
+    let flags = g.read::<u32>(owner.wrapping_add(0x34));
+    let ended = g.read::<u32>(local + 0xc) != 0;
+    g.write::<u32>(
+        owner.wrapping_add(0x34),
+        if ended { flags | 1 } else { flags & !1 },
+    );
+    ret
+}
+
+/// [`walk_track`].
+pub const WALK_TRACK: Sig = Sig {
+    len: 137,
+    hash: 0x8587_893d_81f7_3619,
+    calls: &[(0x6b, Callee::Sig(&TRACK_KEY))],
+    imports: &[],
+};
+
+/// A task's object (`task + 4`): its clock `+0x2c4` steps by `K`
+/// (operand `+0x1e`); while `+0x2d0` is 0 and flag bit 2 (byte `+0x108`)
+/// is set, its four nodes `+0x120`, `+0x14c`, `+0x178`, `+0x2d8` leave
+/// their parents ([`crate::sa_misc::leave`]), the task's node leaves its
+/// ring and `+0x2d0` becomes 0xff (cdecl `(task)`). Returns the ring's
+/// last link read, or `eax` as it came.
+///
+/// `magic_0412` 0x100069d0 (137 bytes; 2 DLLs).
+pub fn clock_done<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let task = fr.arg(g, 0);
+    let obj = g.read::<u32>(task.wrapping_add(4));
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let c = crate::sb_sse::add(fl(g, obj.wrapping_add(0x2c4)), fl(g, op(img, f, 0x1e)));
+    g.write::<u32>(obj.wrapping_add(0x2c4), c.to_bits());
+    if g.read::<u32>(obj.wrapping_add(0x2d0)) != 0 || g.read::<u8>(obj.wrapping_add(0x108)) & 4 == 0
+    {
+        return Ret::eax(fr.eax);
+    }
+    let mut eax = fr.eax;
+    for off in [0x120, 0x14c, 0x178, 0x2d8] {
+        eax = crate::sa_misc::leave(g, obj.wrapping_add(off), eax);
+    }
+    let node = g.read::<u32>(task);
+    let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+    g.write::<u32>(prev + 8, next);
+    let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+    g.write::<u32>(next + 4, prev);
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 4, node);
+    g.write::<u32>(obj.wrapping_add(0x2d0), 0xff);
+    Ret::eax(prev)
+}
+
+/// [`clock_done`].
+pub const CLOCK_DONE: Sig = Sig {
+    len: 137,
+    hash: 0x3639_0c12_4ff8_2528,
+    calls: &[
+        (0x3c, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x47, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x52, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5d, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};

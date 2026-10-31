@@ -2320,3 +2320,63 @@ fn links_845_and_handles() {
     recs(&mut t, &[(718, 1), (222, 4), (221, 4), (719, 3)]);
     t.check_entry(t.at(0x1000), Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn handles_tracks_clocks() {
+    let Some(mut t) = twin(162) else { return };
+    recs(&mut t, &[(0, 1), (26, 3), (10, 5)]);
+    t.check_entry(t.at(0x2db0), Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(155) else { return };
+    sa::handler_stubs(&mut t);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 941, 1, move |m, _| m.r32(answer));
+    let f = t.at(0x8350);
+    let (track, rec_at) = (SCRATCH + 0x6000, SCRATCH + 0x5000);
+    for i in 0..0x40 {
+        t.set_u32(track + 0x40 + 4 * i, 0x0100_0000 + i);
+    }
+    t.set_u32(track + 0x18, 4.0f32.to_bits());
+    t.set_u32(answer, track);
+    for &(c, p, cp) in sa::RINGS {
+        for (tr, time) in [
+            (0u32, 0.0f32),
+            (SCRATCH + 0x5800, 0.6),
+            (SCRATCH + 0x5800, 9.0),
+        ] {
+            sa::ring(&mut t, c, p, cp, 0x30);
+            let owner = sa::node(0);
+            t.write(SCRATCH + 0x5800, &[0; 0x60]);
+            t.set_u32(SCRATCH + 0x5800 + 0x40, rec_at);
+            t.set_u32(rec_at + 0x20, 0.5f32.to_bits());
+            t.set_u32(owner + 0x2c, tr);
+            t.set_u32(owner + 0x30, time.to_bits());
+            t.check(
+                f,
+                Call::this(sa::CURSOR),
+                &[],
+                Eax::Checked,
+                s4_small::walk_track,
+            );
+        }
+    }
+    drop(t);
+    let Some(mut t) = twin(412) else { return };
+    let f = t.at(0x69d0);
+    let (task, obj, node) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x200);
+    for (busy, flag) in [(0u32, 4u8), (1, 4), (0, 0)] {
+        t.write(obj, &[0; 0x300]);
+        t.set_u32(obj + 0x2c4, 1.5f32.to_bits());
+        t.set_u32(obj + 0x2d0, busy);
+        t.set_u8(obj + 0x108, flag);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, obj);
+        t.set_u32(node + 4, SCRATCH + 0x280);
+        t.set_u32(node + 8, SCRATCH + 0x2c0);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[task], Eax::Checked);
+    }
+}
