@@ -164,34 +164,53 @@ pub fn free_library(e: &mut Exec, args: &Args) -> Ret {
 /// before its calls into the game push theirs (the hook's `GAP`).
 const GAP: u32 = 0x1_0000;
 
-/// The DLL numbers [`select_rust`] chose (`None`: every DLL), once set.
-static SELECTION: RwLock<Option<Option<Vec<u16>>>> = RwLock::new(None);
+/// Which DLLs run their Rust ports.
+#[derive(Debug, Clone)]
+enum Selection {
+    /// As `FFX_MAGIC_RUST` says.
+    Env,
+    /// Every DLL.
+    All,
+    /// These numbers (none when empty).
+    Only(Vec<u16>),
+}
+
+impl Selection {
+    fn has(&self, number: u16) -> bool {
+        match self {
+            Selection::Env | Selection::All => true,
+            Selection::Only(l) => l.contains(&number),
+        }
+    }
+}
+
+/// What [`select_rust`] chose.
+static SELECTION: RwLock<Selection> = RwLock::new(Selection::Env);
 
 /// Which overlays loaded from now on run their Rust ports: `None` every
 /// DLL, `Some(list)` those numbers (an empty list: none, all Unicorn).
 /// Replaces `FFX_MAGIC_RUST` (tests).
 pub fn select_rust(list: Option<&[u16]>) {
     if let Ok(mut s) = SELECTION.write() {
-        *s = Some(list.map(<[u16]>::to_vec));
+        *s = list.map_or(Selection::All, |l| Selection::Only(l.to_vec()));
     }
 }
 
 /// Which DLLs run their Rust ports (`FFX_MAGIC_RUST` unless
 /// [`select_rust`] chose; module docs).
 fn selected(number: u16) -> bool {
-    static ENV: OnceLock<Option<Vec<u16>>> = OnceLock::new();
-    if let Ok(s) = SELECTION.read()
-        && let Some(sel) = s.as_ref()
-    {
-        return sel.as_ref().is_none_or(|l| l.contains(&number));
+    static ENV: OnceLock<Selection> = OnceLock::new();
+    match SELECTION.read().map(|s| s.clone()) {
+        Ok(Selection::Env) | Err(_) => {}
+        Ok(s) => return s.has(number),
     }
-    let sel = ENV.get_or_init(|| match std::env::var("FFX_MAGIC_RUST") {
-        Err(_) => None,
-        Ok(v) if v.trim() == "1" || v.trim().is_empty() => None,
-        Ok(v) if v.trim() == "0" => Some(Vec::new()),
-        Ok(v) => Some(v.split(',').filter_map(|n| n.trim().parse().ok()).collect()),
-    });
-    sel.as_ref().is_none_or(|l| l.contains(&number))
+    ENV.get_or_init(|| match std::env::var("FFX_MAGIC_RUST") {
+        Err(_) => Selection::All,
+        Ok(v) if v.trim() == "1" || v.trim().is_empty() => Selection::All,
+        Ok(v) if v.trim() == "0" => Selection::Only(Vec::new()),
+        Ok(v) => Selection::Only(v.split(',').filter_map(|n| n.trim().parse().ok()).collect()),
+    })
+    .has(number)
 }
 
 /// The Rust and Unicorn calls into the overlay loaded at `base` so far

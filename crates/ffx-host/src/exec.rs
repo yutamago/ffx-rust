@@ -1508,6 +1508,35 @@ impl Exec {
     /// ([`Halted`]), which ends here; the caller then sees the stop as for
     /// any other call.
     fn run_port(&mut self, entry: Entry, args: &Args) -> Ret {
+        let watched = watched(entry.name);
+        if watched {
+            self.watch_note(entry.name, "enter");
+        }
+        let ret = self.run_port_inner(entry, args);
+        if watched {
+            self.watch_note(entry.name, "leave");
+        }
+        ret
+    }
+
+    /// A `FFX_HOST_WATCH` note: the port, the thread, the clock's frame
+    /// and the host time since the first note.
+    fn watch_note(&self, name: &str, what: &str) {
+        static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        static NOTES: AtomicU32 = AtomicU32::new(0);
+        if NOTES.fetch_add(1, Ordering::Relaxed) >= WATCH_NOTES {
+            return;
+        }
+        let t = START.get_or_init(Instant::now).elapsed();
+        crate::log::note(&format!(
+            "watch {:.3} ms thread {:#x} frame {} {what} {name}",
+            t.as_secs_f64() * 1000.0,
+            self.id,
+            self.shared.clock.frame()
+        ));
+    }
+
+    fn run_port_inner(&mut self, entry: Entry, args: &Args) -> Ret {
         let frames = self.frames.len();
         let esp = self.uc.reg_read(RegisterX86::ESP).ok();
         let ret = match entry.port {
@@ -2220,6 +2249,23 @@ const X87_STUBS: u32 = 0x480;
 const X87_STUB: u32 = 0x80;
 /// Nesting levels of x87 stubs.
 const X87_LEVELS: u32 = 8;
+
+/// How many `FFX_HOST_WATCH` notes a run keeps.
+const WATCH_NOTES: u32 = 20_000;
+
+/// Whether `FFX_HOST_WATCH` (a comma list of `ffx.sym` names) names this
+/// port: its entries and returns are noted with the thread, the frame and
+/// the time ([`Exec::watch_note`]), to see which threads run what in
+/// which order (the cloth jobs against the cloth copies, docs/host.md).
+fn watched(name: &str) -> bool {
+    static WATCH: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let w = WATCH.get_or_init(|| {
+        std::env::var("FFX_HOST_WATCH")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default()
+    });
+    !w.is_empty() && w.iter().any(|n| n == name)
+}
 
 /// The payload [`Exec::run_port`] catches: the thread was halted while a
 /// routed port ran.
