@@ -25,8 +25,10 @@
 //! and no magic file is loaded or waiting to unload (`0x00c64cac`,
 //! `0x00c64cb0` -1). Its area is the battle field (the field table
 //! `*0x0112a9c8`, count `0x0112a9d0`, 14 bytes an entry: the map number
-//! at `+0`) of the save's map, group 0, formation 0
-//! (`screens::start_battle`); a map with no field gets no battle.
+//! at `+0`) whose map number is the one a random encounter looks up
+//! (`TkGetNowEventJumpMapNo`, `g_SaveData +4`, which the event's own map
+//! id at `+0` is not), group 0, formation 0 (`screens::start_battle`); a
+//! map with no field (towns, temples, the agency) gets no battle.
 
 use std::fmt::Write as _;
 
@@ -90,7 +92,12 @@ fn session(game: &mut Game, report: &mut String, snapshot: Option<&str>) -> Resu
     game.wait(SCENE_UPDATES)?;
     let save = game.read(0x0112_ca90, 0xd)?;
     let map = u16_at(&save, 0);
-    let _ = writeln!(report, "map_after\t{map} entrance {}", save[0xc]);
+    let map_no = u16_at(&save, 4);
+    let _ = writeln!(
+        report,
+        "map_after\t{map} entrance {} map number {map_no}",
+        save[0xc]
+    );
     if let Some(path) = snapshot {
         let _ = writeln!(
             report,
@@ -117,9 +124,9 @@ fn session(game: &mut Game, report: &mut String, snapshot: Option<&str>) -> Resu
         u32_at(&mask, 0),
         u32_at(&game.read(0x0184_08ec, 4)?, 0)
     );
-    let battle = match (battle_blocked(game)?, field_of(game, map)?) {
+    let battle = match (battle_blocked(game)?, field_of(game, map_no)?) {
         (Some(why), _) => format!("skipped: {why}"),
-        (None, None) => format!("skipped: map {map} has no battle field"),
+        (None, None) => format!("skipped: map number {map_no} has no battle field"),
         (None, Some(field)) => match screens::start_battle(game, field, 0, 0) {
             Ok(file) => {
                 let began = game.command("waitfor 0x0112a8e0:1 01 ff 4000");
