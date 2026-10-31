@@ -5306,3 +5306,113 @@ pub const MODEL_RESET_RELEASE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An actor's scale (internal, `ecx` = its index `i`): while `G_DONE` is
+/// 0 and the actor `k` (`G_MAP[i]`, or `G_NONE` for -1) is below 32, slot
+/// 251 `(k)`'s float; else the product slot 17 `(A)` * slot 19 `(A)` for
+/// the actor `A` (`T[G_MAP[i]]`, or `G_SELF` for -1; the first call's
+/// word stays under the second's). Returns the float in `xmm0`, `eax` the
+/// last slot's.
+///
+/// `magic_0391` 0x10004000 (140 bytes; 3 DLLs).
+pub fn actor_scale_by<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let i = fr.ecx;
+    let map = g.read::<u32>(op(img, f, 0x5));
+    if g.read::<u32>(op(img, f, 0xe)) == 0 {
+        let k = if i == u32::MAX {
+            g.read::<u32>(op(img, f, 0x16))
+        } else {
+            u32::from(g.read::<u8>(map.wrapping_add(i)))
+        };
+        if k.cast_signed() < 0x20 {
+            let out = slot_call(g, img, f, (0x2a, 251), &[k]);
+            return Ret::xmm0(crate::Xmm::F32(st0_f32(out)), out.eax);
+        }
+    }
+    let actor = if i == u32::MAX {
+        g.read::<u32>(op(img, f, 0x4d))
+    } else {
+        let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+        g.read::<u32>(op(img, f, 0x5a).wrapping_add(4 * k))
+    };
+    let a = f32::from_bits(st0_f32(slot_call(g, img, f, (0x5f, 19), &[actor])));
+    let out = slot_call(g, img, f, (0x6d, 17), &[actor, actor]);
+    let b = f32::from_bits(st0_f32(out));
+    Ret::xmm0(crate::Xmm::F32(crate::sb_sse::mul(b, a).to_bits()), out.eax)
+}
+
+/// [`actor_scale_by`].
+pub const ACTOR_SCALE_BY: Sig = Sig {
+    len: 140,
+    hash: 0xf3c9_b35c_ccc4_1676,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's part `P` (operand `+0xd`) dropped: slot 258 `(P)`, slot 231
+/// `(*G_A, *G_B, *G_C)` and slot 230 `(*G_D, *G_C')` on its matrices,
+/// `*G_P` = `ITEM`, slot 712 `(P, 0x30)` with `**G_LOCK` 1 around it,
+/// each call seeing the words the earlier ones left (no arguments).
+/// Returns 1 when slot 712 answers 0, else 0.
+///
+/// `magic_0490` 0x10001070 (141 bytes; 2 DLLs).
+pub fn part_drop_fixed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    let p = op(img, f, 0xd);
+    slot_call(g, img, f, (0x1, 258), &[p]);
+    let (c, b, a) = (rd(g, 0x15), rd(g, 0x20), rd(g, 0x2c));
+    slot_call(g, img, f, (0x1a, 231), &[a, b, c, p]);
+    let (e, d) = (rd(g, 0x34), rd(g, 0x3f));
+    slot_call(g, img, f, (0x39, 230), &[d, e, a, b, c, p]);
+    let ptr = rd(g, 0x4c);
+    g.write::<u32>(ptr, op(img, f, 0x54));
+    let lock = rd(g, 0x59);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    let r = slot_call(g, img, f, (0x6b, 712), &[p, 0x30, d, e, a, b, c, p]).eax;
+    let lock = rd(g, 0x79);
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_drop_fixed`].
+pub const PART_DROP_FIXED: Sig = Sig {
+    len: 141,
+    hash: 0x1a8e_f379_0966_94c0,
+    calls: &[],
+    imports: &[],
+};
+
+/// The effect reset ([`crate::sb_misc::effect_reset`]), byte `G_B` 1,
+/// slot 235 `(V)` on the DLL's vector `V` (operand `+0x1f`), slot 329
+/// `(V, V, s)` with the block's scale `*G + 0x3150`, then the block's
+/// `+0xa90..+0xa9c` into the DLL's four floats (operands `+0x55`, `+0x65`,
+/// `+0x78`, `+0x88`) (no arguments). Returns slot 329's `eax`.
+///
+/// `magic_0168` 0x10001c30 (142 bytes; 3 DLLs).
+pub fn reset_and_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x3));
+    crate::sb_misc::effect_reset(g, img, img.rel32_target(f + 0x8));
+    g.write::<u8>(op(img, f, 0x13), 1);
+    let v = op(img, f, 0x1f);
+    slot_call(g, img, f, (0xd, 235), &[v]);
+    let s = g.read::<u32>(block.wrapping_add(0x3150));
+    let eax = slot_call(g, img, f, (0x2e, 329), &[v, v, s]).eax;
+    for (i, o) in (0u32..).zip([0x55, 0x65, 0x78, 0x88]) {
+        let x = g.read::<u32>(block.wrapping_add(0xa90 + 4 * i));
+        g.write::<u32>(op(img, f, o), x);
+    }
+    Ret::eax(eax)
+}
+
+/// [`reset_and_scale`].
+pub const RESET_AND_SCALE: Sig = Sig {
+    len: 142,
+    hash: 0x3679_2406_345d_17b3,
+    calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};

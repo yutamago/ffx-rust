@@ -2430,3 +2430,56 @@ fn lists_floats_releases() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn scales_drops_resets() {
+    let Some(mut t) = twin(391) else { return };
+    let f = t.at(0x4000);
+    let map = SCRATCH + 0x300;
+    t.write(map, &[2, 0x20, 1]);
+    t.set_u32(op(&t, f, 0x5), map);
+    t.set_u32(op(&t, f, 0x16), 5);
+    t.set_u32(op(&t, f, 0x4d), 0x0e0e_0001);
+    for k in 0..0x21 {
+        t.set_u32(op(&t, f, 0x5a) + 4 * k, 0x0a00_0000 + k);
+    }
+    for s in [251u32, 19, 17] {
+        rec(&mut t, s, 1, move |_, _| s);
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xff) * 0.5 + f64::from(s));
+    }
+    for (done, i) in [(0u32, u32::MAX), (0, 0), (0, 1), (1, 2), (1, u32::MAX)] {
+        t.set_u32(op(&t, f, 0xe), done);
+        t.check(
+            f,
+            Call::this(i),
+            &[],
+            Eax::Checked,
+            s4_small::actor_scale_by,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(490) else { return };
+    recs(&mut t, &[(258, 1), (231, 3), (230, 2)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x1070);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x59), lock);
+    t.set_u32(op(&t, f, 0x4c), SCRATCH + 0x88);
+    for a in [0u32, 1] {
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(168) else { return };
+    recs(&mut t, &[(287, 3), (283, 2), (281, 1), (235, 1), (329, 3)]);
+    let f = t.at(0x1c30);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x3), block);
+    for i in 0..4 {
+        t.set_u32(block + 0xa90 + 4 * i, 0x3f00_0000 + i);
+    }
+    t.set_u32(block + 0x3150, 0x4000_0000);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
