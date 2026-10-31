@@ -299,6 +299,28 @@ pub const STRUCTURED_FRAME_WORDS: u32 = 12;
 /// The words of `0x0058ec50`'s frame.
 pub const READ_BACK_FRAME_WORDS: u32 = 18;
 
+/// `0x00a22be0`'s callees: `PTexture2DD3D11::isBound` (`al`), `unbind`,
+/// `PTexture2DBase::setDimensions(w, h, format, 0)` (thiscall, ret 0x10),
+/// `renderTargetResize(target, w, h, force)` (cdecl).
+pub const RESIZE_TARGETS: [u32; 4] = [0x0059_5f90, 0x0059_cc40, 0x004c_40c0, 0x00a0_e4b0];
+
+/// `0x00a179a0`'s callees and data: the `PTexture2D` class, `PCluster::
+/// create(n, class, flags)` (thiscall, ret 0xc), the format record,
+/// `setDimensions(w, h, format, 0)` (ret 0x10), `updateMaxLevel`, the
+/// render target class, `allocateInstanceList(n, class, flags)` (ret
+/// 0xc), the render target's constructor `(texture)` (ret 4), the name.
+pub const DOWNSAMPLE: [u32; 9] = [
+    0x00ca_37d0,
+    0x0044_1010,
+    0x00ca_310c,
+    0x004c_40c0,
+    0x004c_4250,
+    0x00ca_4200,
+    0x0044_0b70,
+    0x0058_3a60,
+    0x00b7_6848,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
@@ -307,7 +329,10 @@ pub mod bridge {
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
-    use super::{DEFERRED_BUFFERS, PROFILE_CONSTS, QUEUE_PASS, STRUCTURED, TAKE_TARGETS};
+    use super::{
+        DEFERRED_BUFFERS, DOWNSAMPLE, PROFILE_CONSTS, QUEUE_PASS, RESIZE_TARGETS, STRUCTURED,
+        TAKE_TARGETS,
+    };
     use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
@@ -1562,5 +1587,135 @@ pub mod bridge {
         let mut words = vec![obj];
         words.extend_from_slice(args);
         h.call(f, Conv::Stdcall, &words)
+    }
+
+    /// One render target handle of [`resize_targets`]: `Err(1)` when it
+    /// is missing (no handle, the byte `+4` set, no texture `+0`); a
+    /// texture of another size (`+0x1c`, `+0x20`) unbound when bound
+    /// (`isBound`, `unbind`) and given the new size
+    /// (`PTexture2DBase::setDimensions(w, h, [tex], 0)`); their error.
+    fn resize_handle(h: &mut impl Host, handle: u32, w: u32, ht: u32) -> Result<(), u32> {
+        if handle == 0 || h.read::<u8>(handle + 4) != 0 {
+            return Err(1);
+        }
+        let tex: u32 = h.read(handle);
+        if tex == 0 {
+            return Err(1);
+        }
+        if h.read::<u32>(tex + 0x1c) == w && h.read::<u32>(tex + 0x20) == ht {
+            return Ok(());
+        }
+        if h.call_sym(RESIZE_TARGETS[0], Conv::Thiscall(tex), &[]) as u8 != 0 {
+            let r = h.call_sym(RESIZE_TARGETS[1], Conv::Thiscall(tex), &[]);
+            if r != 0 {
+                return Err(r);
+            }
+        }
+        let first: u32 = h.read(tex);
+        let r = h.call_sym(RESIZE_TARGETS[2], Conv::Thiscall(tex), &[w, ht, first, 0]);
+        if r != 0 {
+            return Err(r);
+        }
+        Ok(())
+    }
+
+    /// `0x00a22be0` (thiscall `(this; w, h)`, ret 8): the deferred
+    /// lighting's targets resized for its state (`+0x3ed4`): 1 the three
+    /// handles `+0x3f94..`, 2 the four `+0x3fa0..`, 3 the four `+0x3fb0..`
+    /// and then the render targets `+0x3fc0`, `+0x3fc4`
+    /// (`renderTargetResize(t, w, h, 0)`); each through [`resize_handle`]
+    /// (a missing handle: 1; an error returned). Then the buffers
+    /// (`resizeBuffers(w, h)`, its `eax`; also for any other state).
+    pub fn resize_targets(h: &mut impl Host, this: u32, w: u32, ht: u32) -> u32 {
+        let state: u32 = h.read(this + 0x3ed4);
+        let handles: &[u32] = match state {
+            1 => &[0x3f94, 0x3f98, 0x3f9c],
+            2 => &[0x3fa0, 0x3fa4, 0x3fa8, 0x3fac],
+            3 => &[0x3fb0, 0x3fb4, 0x3fb8, 0x3fbc],
+            _ => &[],
+        };
+        for &field in handles {
+            let handle: u32 = h.read(this + field);
+            if let Err(r) = resize_handle(h, handle, w, ht) {
+                return r;
+            }
+        }
+        if state == 3 {
+            for field in [0x3fc0, 0x3fc4] {
+                let t: u32 = h.read(this + field);
+                let r = h.call_sym(RESIZE_TARGETS[3], Conv::Cdecl, &[t, w, ht, 0]);
+                if r != 0 {
+                    return r;
+                }
+            }
+        }
+        h.call_sym(TAKE_TARGETS[1], Conv::Thiscall(this), &[w, ht])
+    }
+
+    /// A render target of `w` x `h` from `cluster`: a texture
+    /// (`PCluster::create(1, PTexture2D, 0)`) given its size
+    /// (`setDimensions(w, h, 0x00ca310c, 0)`; on success flag 2 of `+0x14`
+    /// and the byte `+5` cleared, `updateMaxLevel`), an instance list of
+    /// one render target (`allocateInstanceList(1, 0x00ca4200, 0)`, its
+    /// instance `+0x34`) constructed over it (`0x00583a60`), its byte
+    /// `+5` cleared and its name `"PPostProcessUtils"`; 0 when a step
+    /// fails.
+    fn make_utility_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
+        let c = DOWNSAMPLE;
+        let class = h.rebase(c[0]);
+        let tex = h.call_sym(c[1], Conv::Thiscall(cluster), &[1, class, 0]);
+        if tex == 0 {
+            return 0;
+        }
+        let format = h.rebase(c[2]);
+        if h.call_sym(c[3], Conv::Thiscall(tex), &[w, ht, format, 0]) != 0 {
+            return 0;
+        }
+        let f: u32 = h.read(tex + 0x14);
+        h.write(tex + 0x14, f & !2);
+        h.write(tex + 5, 0u8);
+        h.call_sym(c[4], Conv::Thiscall(tex), &[]);
+        let class = h.rebase(c[5]);
+        let list = h.call_sym(c[6], Conv::Thiscall(cluster), &[1, class, 0]);
+        if list == 0 {
+            return 0;
+        }
+        let inst: u32 = h.read(list + 0x34);
+        if inst == 0 {
+            return 0;
+        }
+        h.call_sym(c[7], Conv::Thiscall(inst), &[tex]);
+        h.write(inst + 5, 0u8);
+        let name = h.rebase(c[8]);
+        h.write(inst + 0xc, name);
+        inst
+    }
+
+    /// `0x00a179a0` (thiscall `(this; cluster, w, h)`, ret 0xc; also
+    /// reached by a tail jump from `0x00a17990`): the post-process
+    /// utility's downsample chain: three pairs of render targets of a
+    /// quarter, an eighth and a sixteenth of the size (`+0x90..`, `+0x9c..`)
+    /// and one of half the size (`+0xa8`), each [`make_utility_target`]
+    /// (0 for a failed one). 0. (The original's exception frame, for the
+    /// constructors, is left out.)
+    pub fn create_downsample_targets(
+        h: &mut impl Host,
+        this: u32,
+        cluster: u32,
+        w: u32,
+        ht: u32,
+    ) -> u32 {
+        let (mut tw, mut th) = (w >> 2, ht >> 2);
+        for k in 0..3 {
+            let first = make_utility_target(h, cluster, tw, th);
+            h.write(this + 0x90 + 4 * k, first);
+            let second = make_utility_target(h, cluster, tw, th);
+            h.write(this + 0x9c + 4 * k, second);
+            th >>= 1;
+            tw >>= 1;
+        }
+        let half = make_utility_target(h, cluster, w >> 1, ht >> 1);
+        h.write(this + 0xa8, half);
+        0
     }
 }

@@ -6020,3 +6020,120 @@ fn big_read_back_matches_the_original() {
         }
     }
 }
+
+/// `0x00a22be0` (the deferred lighting's targets resized) against the
+/// original: states 1, 2, 3 and another; textures of the size and of
+/// another; a handle missing in each way at a later position; bound or
+/// not; the unbind, the resize, a render target resize and the buffers
+/// failing.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_resize_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (state, broken handle index (9 none), how: 0 null, 1 flag, 2 no
+    // texture; bound, errors [unbind, setDimensions, rt resize, buffers])
+    let cases: [(u32, u32, u32, bool, [u32; 4]); 12] = [
+        (1, 9, 0, true, [0, 0, 0, 0]),
+        (2, 9, 0, false, [0, 0, 0, 7]),
+        (3, 9, 0, true, [0, 0, 0, 0]),
+        (0, 9, 0, true, [0, 0, 0, 5]),
+        (1, 1, 0, true, [0, 0, 0, 0]),
+        (2, 3, 1, false, [0, 0, 0, 0]),
+        (3, 2, 2, true, [0, 0, 0, 0]),
+        (3, 9, 0, true, [4, 0, 0, 0]),
+        (2, 9, 0, false, [0, 6, 0, 0]),
+        (3, 9, 0, false, [0, 0, 8, 0]),
+        (1, 9, 0, true, [0, 3, 0, 0]),
+        (3, 0, 0, false, [0, 0, 0, 0]),
+    ];
+    for (state, broken, how, bound, errs) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::RESIZE_TARGETS;
+            t.stub(c[0], true, 0, 0, u32::from(bound) | 0x300);
+            t.stub(c[1], true, 0, 0, errs[0]);
+            t.stub(c[2], true, 4, 4, errs[1]);
+            t.stub(c[3], false, 4, 0, errs[2]);
+            t.stub(l2::TAKE_TARGETS[1], true, 2, 2, errs[3]);
+            let this = t.zeros(0x4000);
+            t.w32(this + 0x3ed4, state);
+            let fields: &[u32] = match state {
+                1 => &[0x3f94, 0x3f98, 0x3f9c],
+                2 => &[0x3fa0, 0x3fa4, 0x3fa8, 0x3fac],
+                _ => &[0x3fb0, 0x3fb4, 0x3fb8, 0x3fbc],
+            };
+            for (i, &f) in fields.iter().enumerate() {
+                let i = i as u32;
+                if i == broken && how == 0 {
+                    continue;
+                }
+                let tex = t.zeros(0x24);
+                t.w32(tex, 0x0099_0000 + i);
+                // every other texture already of the size
+                t.w32(tex + 0x1c, if i.is_multiple_of(2) { 0x200 } else { 0x100 });
+                // the fourth of the width but not the height
+                t.w32(tex + 0x20, if i == 3 { 0x81 } else { 0x80 });
+                let handle = t.zeros(8);
+                t.w32(handle, if i == broken && how == 2 { 0 } else { tex });
+                t.w8(handle + 4, u8::from(i == broken && how == 1));
+                t.w32(this + f, handle);
+            }
+            t.w32(this + 0x3fc0, 0x0077_0000);
+            t.w32(this + 0x3fc4, 0x0078_0000);
+            let what = format!(
+                "{label}: resize targets state {state} broken {broken} how {how} bound {bound} errs {errs:?}"
+            );
+            t.check(
+                &what,
+                0x00a2_2be0,
+                Conv::Thiscall(this),
+                &[0x100, 0x80],
+                |g| Out::U32(l2b::resize_targets(g, this, 0x100, 0x80)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a179a0` (the post-process utility's downsample targets) against
+/// the original: every step answering, then each step failing (no
+/// texture, a size error, no list, no instance). The callees are
+/// recording stubs; the texture and the instance are blocks the test
+/// owns.
+#[test]
+fn big_downsample_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // which step fails: 9 none, 0 create, 1 setDimensions, 2 the list,
+    // 3 the instance
+    for fail in [9u32, 0, 1, 2, 3] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DOWNSAMPLE;
+            let tex = t.junk(0x20, 3);
+            let inst = t.junk(0x20, 4);
+            let list = t.zeros(0x40);
+            t.w32(list + 0x34, if fail == 3 { 0 } else { inst });
+            t.stub(c[1], true, 3, 3, if fail == 0 { 0 } else { tex });
+            t.stub(c[3], true, 4, 4, if fail == 1 { 3 } else { 0 });
+            t.stub(c[4], true, 0, 0, 0);
+            t.stub(c[6], true, 3, 3, if fail == 2 { 0 } else { list });
+            t.stub(c[7], true, 1, 1, inst);
+            let this = t.junk(0xb0, 5);
+            let what = format!("{label}: downsample targets fail {fail}");
+            t.check(
+                &what,
+                0x00a1_79a0,
+                Conv::Thiscall(this),
+                &[0x0055_0000, 0x500, 0x2d3],
+                |g| {
+                    Out::U32(l2b::create_downsample_targets(
+                        g,
+                        this,
+                        0x0055_0000,
+                        0x500,
+                        0x2d3,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}

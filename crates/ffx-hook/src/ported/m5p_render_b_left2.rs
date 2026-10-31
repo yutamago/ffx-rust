@@ -87,4 +87,12 @@ ported! {
         let mut f = StackFrame::<{ lf::READ_BACK_FRAME_WORDS as usize }>::new();
         lb::read_back(&mut mem(), this, dst, f.at())
     }
+    /// The deferred lighting's targets resized `(w, h)`.
+    Phyre_PPostProcessing_PDeferredLighting_resizeTargets_00a22be0 @ 0x00a2_2be0 => extern "thiscall" fn resize_targets(this: u32, w: u32, h: u32) -> u32 {
+        lb::resize_targets(&mut mem(), this, w, h)
+    }
+    /// The post-process utility's downsample targets `(cluster, w, h)`.
+    PPostProcessUtils_createDownsampleTargets_00a179a0 @ 0x00a1_79a0 => extern "thiscall" fn create_downsample_targets(this: u32, cluster: u32, w: u32, h: u32) -> u32 {
+        lb::create_downsample_targets(&mut mem(), this, cluster, w, h)
+    }
 }
