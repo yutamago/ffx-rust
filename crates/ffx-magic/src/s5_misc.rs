@@ -23,7 +23,9 @@ use crate::s4_small::{
     named_parts, sound_record,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
-use crate::sa_misc::{ACTOR_SCALE, LEAVE, TIMELINE, actor_scale, leave, timeline};
+use crate::sa_misc::{
+    ACTOR_SCALE, LEAVE, PART_MATRIX, TIMELINE, actor_scale, leave, part_matrix, timeline,
+};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_BLOCK, ACTOR_MODE, actor_block, actor_mode};
 use crate::sb_misc::{NODE_APPEND, POOL_TAKE, node_append, pool_take};
@@ -2087,6 +2089,25 @@ pub const WEAPON_MATRIX: Sig = Sig {
     imports: &[],
 };
 
+/// [`weapon_matrix`] at `f`, or [`part_matrix`] where the DLL's callee
+/// is that one (`magic_0544`'s copies of the swing functions call it:
+/// the same registers, `esp` and result).
+fn swing_matrix<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, ang: u32, pos: u32) -> u32 {
+    if img.matches(f, &PART_MATRIX) {
+        let fr = Frame {
+            at: f,
+            esp,
+            eax: 0,
+            ecx: ang,
+            edx: pos,
+            xmm: [0; 4],
+        };
+        part_matrix(g, img, &fr)
+    } else {
+        weapon_matrix(g, img, f, esp, ang, pos)
+    }
+}
+
 /// A weapon's swing step (cdecl `(task)`, `task[5]` the object, a /GS
 /// frame): the count `+0x50c` down to 0, `t = count / +0x510`, the
 /// position `p = +0x270..+0x278 * (K - t) + +0x260..+0x268 * t` (`w` 1, a
@@ -2133,7 +2154,7 @@ pub fn weapon_swing<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(p + o, v);
     }
     // push ecx; call: the callee's frame is 0x40 below the entry
-    let eax = weapon_matrix(
+    let eax = swing_matrix(
         g,
         img,
         img.rel32_target(f + 0xda),
@@ -2183,6 +2204,19 @@ pub const WEAPON_SWING: Sig = Sig {
         (0x17f, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`weapon_swing`] in `magic_0544` and the DLLs sharing its code: the matrix
+/// callee is [`part_matrix`].
+pub const WEAPON_SWING_P: Sig = Sig {
+    calls: &[
+        (0xda, Callee::Sig(&PART_MATRIX)),
+        (0x12a, Callee::Sig(&START_CHILD_B)),
+        (0x139, Callee::Sig(&LIST_REMOVE)),
+        (0x172, Callee::Sig(&GIVE_BACK)),
+        (0x17f, Callee::Any),
+    ],
+    ..WEAPON_SWING
 };
 
 /// The targets' shade reset and a colour task started (cdecl, no
@@ -3657,7 +3691,7 @@ pub fn weapon_swing_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(p + o, v);
     }
     // push ecx; call: the callee's frame is 0x40 below the entry
-    let eax = weapon_matrix(
+    let eax = swing_matrix(
         g,
         img,
         img.rel32_target(f + 0xd7),
@@ -3722,6 +3756,19 @@ pub const WEAPON_SWING_DROP: Sig = Sig {
         (0x1f8, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`weapon_swing_drop`] in `magic_0544` and the DLLs sharing its code: the matrix
+/// callee is [`part_matrix`].
+pub const WEAPON_SWING_DROP_P: Sig = Sig {
+    calls: &[
+        (0xd7, Callee::Sig(&PART_MATRIX)),
+        (0x14e, Callee::Sig(&START_OBJECT_AT)),
+        (0x1b1, Callee::Sig(&LIST_REMOVE)),
+        (0x1eb, Callee::Sig(&GIVE_BACK)),
+        (0x1f8, Callee::Any),
+    ],
+    ..WEAPON_SWING_DROP
 };
 
 /// A task aimed from `G_B` at `G_A` (internal: `xmm1` = the distance `r`;
@@ -6477,7 +6524,7 @@ pub fn weapon_bounce<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(obj + 0x284, a);
     // push ebp; and esp, -8; sub esp, 0xc; three pushes and the argument
     let top = fr.esp.wrapping_sub(4) & !7;
-    let eax = weapon_matrix(
+    let eax = swing_matrix(
         g,
         img,
         img.rel32_target(f + 0x2c5),
@@ -6503,6 +6550,17 @@ pub const WEAPON_BOUNCE: Sig = Sig {
         (0x2e0, Callee::Sig(&GIVE_BACK)),
     ],
     imports: &[],
+};
+
+/// [`weapon_bounce`] in `magic_0544` and the DLLs sharing its code: the matrix
+/// callee is [`part_matrix`].
+pub const WEAPON_BOUNCE_P: Sig = Sig {
+    calls: &[
+        (0x214, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2c5, Callee::Sig(&PART_MATRIX)),
+        (0x2e0, Callee::Sig(&GIVE_BACK)),
+    ],
+    ..WEAPON_BOUNCE
 };
 
 /// Links `node` after `prev` (`node[0] = prev`, `prev[1] = node`), or

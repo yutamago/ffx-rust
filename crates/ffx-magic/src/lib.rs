@@ -1771,6 +1771,9 @@ ports! {
     "objects freed" => s6_misc::OBJECTS_FREED, s6_misc::objects_freed;
     "countdown tint" => s6_misc::COUNTDOWN_TINT, s6_misc::countdown_tint;
     "actor timed task" => s6_misc::ACTOR_TIMED_TASK, s6_misc::actor_timed_task;
+    "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
+    "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
+    "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

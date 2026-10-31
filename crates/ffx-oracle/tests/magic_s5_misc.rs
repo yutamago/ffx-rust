@@ -1217,8 +1217,17 @@ fn target_measures() {
 
 #[test]
 fn weapon_swings() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x2a90);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x2a90u32), (544, 0x2a90)] {
+        weapon_swings_in(dll, rva);
+    }
+}
+
+fn weapon_swings_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
@@ -2018,8 +2027,17 @@ fn throws_aimed() {
 
 #[test]
 fn weapon_swings_drop() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x4240);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x4240u32), (544, 0x4210)] {
+        weapon_swings_drop_in(dll, rva);
+    }
+}
+
+fn weapon_swings_drop_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
@@ -3278,8 +3296,17 @@ fn sprays_on_cue() {
 
 #[test]
 fn weapon_bounces() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x3180);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x3180u32), (544, 0x3180)] {
+        weapon_bounces_in(dll, rva);
+    }
+}
+
+fn weapon_bounces_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
