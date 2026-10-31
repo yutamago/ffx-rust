@@ -19,6 +19,9 @@ use ffx_prender::m5m_i::bridge as gi;
 use ffx_prender::m5m_j::bridge as gj;
 use ffx_prender::m5m_k::bridge as gk;
 use ffx_prender::m5m_l::bridge as gl;
+use ffx_prender::m5m_m::bridge as gm;
+use ffx_prender::m5m_n::bridge as gn;
+use ffx_prender::m5m_o::bridge as go;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -563,5 +566,32 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_l::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_l::FRAME;
         gl::map_id_from_csv(&mut mem(), ebp, name)
+    }
+    // ---- round 5 batch 9 (ffx_prender::m5m_m) ----
+    /// `rcbgSaveBinNormal()` -> the last `rcPrint`'s `eax` (the original's
+    /// 0x318-byte frame, its path, command, reply and header, in this
+    /// shim's).
+    rcbgSaveBinNormal @ 0x0093_9040 => extern "C" fn rcbg_save_bin_normal() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_m::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_m::FRAME;
+        gm::save_bin_normal(&mut mem(), ebp)
+    }
+    // ---- round 5 batch 10 (ffx_prender::m5m_n) ----
+    /// `rcbgSceneLoadTextureNormal(scene, i)` -> `rcdtTm2Delete`'s `eax`
+    /// (the original's 0x118-byte frame, its path and outputs, in this
+    /// shim's).
+    rcbgSceneLoadTextureNormal @ 0x0093_bd10 => extern "C" fn rcbg_scene_load_texture_normal(scene: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_n::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_n::FRAME;
+        gn::load_texture_normal(&mut mem(), ebp, scene, i)
+    }
+    // ---- round 5 batch 11 (ffx_prender::m5m_o) ----
+    /// `rcbgSceneLoadTextSub(scene)` -> `rcdtParseFini`'s `eax` (the
+    /// original's 0x198-byte frame, its chunk, parser and path, in this
+    /// shim's).
+    rcbgSceneLoadTextSub @ 0x0093_b3e0 => extern "C" fn rcbg_scene_load_text_sub(scene: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_o::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_o::FRAME;
+        go::load_text_sub(&mut mem(), ebp, scene)
     }
 }

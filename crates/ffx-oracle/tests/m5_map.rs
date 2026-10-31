@@ -44,6 +44,9 @@ use ffx_prender::m5m_i::{self as mi, bridge as gi};
 use ffx_prender::m5m_j::{self as mj, bridge as gj};
 use ffx_prender::m5m_k::{self as mk, bridge as gk};
 use ffx_prender::m5m_l::{self as ml, bridge as gl};
+use ffx_prender::m5m_m::{self as mm, bridge as gm};
+use ffx_prender::m5m_n::{self as mn, bridge as gn};
+use ffx_prender::m5m_o::{self as mo, bridge as go};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -2690,8 +2693,9 @@ fn r5_out_stub(t: &mut Twins, sym: u32, tag: u32, n: u32, ret: Ret, arg: u8, v: 
     code.extend(v.to_le_bytes()); // mov dword [ecx], v
     code.push(0x59); // pop ecx
     code.push(0xe9);
-    let at = t.a.alloc_code(&[0; 16]).unwrap();
-    assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+    // 17 bytes with the jump's offset
+    let at = t.a.alloc_code(&[0; 20]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 20]).unwrap(), at);
     code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes()); // jmp s
     t.write(at, &code);
     t.jump(sym, at);
@@ -3752,6 +3756,184 @@ fn r5_map_id_from_csv_matches_the_original() {
                 |o| Out::U32(gl::map_id_from_csv(o, ebp, name)),
             );
             r5_same(t, "rcuiMapIdFromCsv_009377e0", ebp - 0x90, 8);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 9 (ffx_prender::m5m_m) ----
+
+#[test]
+fn r5_save_bin_normal_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_fc01);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x200);
+            let dirs: [&[u8]; 3] = [b"/ffx/proj/map/bsil", b"", b"/a/b"];
+            t.write(work + 0x174, dirs[(case % 3) as usize]);
+            t.global(mm::RCUI_WORK.sym, work);
+            // the map system: its first word points at the guides (a count
+            // and their base), whose first word the chunk header gets
+            let guides = t.zeros(0x10);
+            let count = match case % 4 {
+                0 => 0,
+                1 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(3),
+            };
+            t.w32(guides, count);
+            t.w32(guides + 4, rng.next());
+            let sys = t.words(&[guides]);
+            t.global(mm::YN_MAP_SYSTEM.sym, sys);
+            let fd = if case % 5 == 2 {
+                u32::MAX
+            } else {
+                rng.below(100)
+            };
+            t.stub_sym(mm::SCE_OPEN, 1, false, 2, 0, Ret::Val(fd));
+            t.stub_sym(mm::SCE_WRITE, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mm::SCE_CLOSE, 3, false, 1, 0, Ret::Val(rng.next()));
+            let tags = [t.words(&[rng.next()]), t.words(&[rng.next()])];
+            let seq = t.seq(&tags);
+            t.stub_sym(mm::CHUNK_TAG, 4, false, 1, 0, seq);
+            t.stub_sym(mm::SAVE_CHUNK_HEADER, 5, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mm::GUIDE_SAVE, 6, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mm::SYSTEM_ON_HOST, 7, false, 2, 0, Ret::Val(rng.next()));
+            // rcPrint: one word for the failure text, three otherwise
+            let s1 = t.stub_code(8, false, 1, 0, Ret::Val(rng.next()), false);
+            let s3 = t.stub_code(9, false, 3, 0, Ret::Val(rng.next()), false);
+            let at = t.a.alloc_code(&[0; 24]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 24]).unwrap(), at);
+            let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+            c.extend(t.rebase(mm::FAILED_TEXT).to_le_bytes()); // cmp [esp+4], failed
+            c.extend([0x0f, 0x84]);
+            c.extend(s1.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // je s1
+            c.push(0xe9);
+            c.extend(s3.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp s3
+            t.write(at, &c);
+            t.jump(mm::RC_PRINT, at);
+            r5_zero_stack(t, 0x600);
+            let ebp = frame_ebp(&t.a, 0);
+            // junk under the chunk header (the save clears it)
+            t.write(ebp - 0x314, &[0x5a; 0x10]);
+            t.b_top = Some(ebp - mm::FRAME - 0x40);
+            t.check("rcbgSaveBinNormal", 0x0093_9040, Conv::Cdecl, &[], |o| {
+                Out::U32(gm::save_bin_normal(o, ebp))
+            });
+            r5_same(t, "rcbgSaveBinNormal", ebp - 0x318, 0x314);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 10 (ffx_prender::m5m_n) ----
+
+#[test]
+fn r5_load_texture_normal_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_fd01);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/map");
+            let maps: [&[u8]; 3] = [b"bsil00", b"", b"kino03"];
+            t.write(work + 0x27c, maps[(case % 3) as usize]);
+            t.global(mn::RCUI_WORK.sym, work);
+            let i = match case % 4 {
+                0 => 0x19,
+                1 => 0x1a,
+                _ => rng.below(40),
+            };
+            let entries = t.zeros(0xc0 * (i as usize + 1));
+            let e = entries + 0xc0 * i;
+            for off in [4_u32, 8, 0xc, 0x10] {
+                t.w32(e + off, rng.below(300));
+            }
+            let scene = t.zeros(0x10);
+            t.w32(scene + 8, entries);
+            let tm2 = t.zeros(0x50);
+            t.w32(tm2 + 0x44, rng.next());
+            let w: Vec<u32> = (0..0x100).map(|_| rng.next()).collect();
+            let clut = t.words(&w);
+            let pal = t.zeros(0x400);
+            t.stub_sym(mn::TM2_NEW, 1, false, 0, 0, Ret::Val(tm2));
+            t.stub_sym(mn::TM2_LOAD, 2, false, 2, 0, Ret::Val(rng.next()));
+            // the bounds: the width the original reads back
+            r5_out_stub(
+                t,
+                mn::TM2_OPAQUE_BOUNDS,
+                3,
+                5,
+                Ret::Val(3),
+                3,
+                rng.below(300),
+            );
+            r5_out_stub(t, mn::TEX_LOG2_SIZE, 4, 5, Ret::Val(4), 4, rng.below(16));
+            t.stub_sym(mn::ANIME_SET_DATA_CNT, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mn::TRX_NEW, 6, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mn::TRX_SET_REGS_ALLOC, 7, false, 9, 0, Ret::Val(7));
+            t.stub_sym(mn::TRX_GET_ENTRY_DATA, 8, false, 6, 0, Ret::Val(rng.next()));
+            t.stub_sym(mn::TM2_COPY_RECT, 9, false, 6, 0, Ret::Val(9));
+            t.stub_sym(mn::PAL_ALLOC, 10, false, 2, 0, Ret::Val(10));
+            t.stub_sym(mn::GET_PTR32, 11, false, 1, 0, Ret::Val(clut));
+            t.stub_sym(mn::PAL_GET_ENTRY_DATA, 12, false, 2, 0, Ret::Val(pal));
+            t.stub_sym(mn::TM2_DELETE, 13, false, 1, 0, Ret::Val(rng.next()));
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - mn::FRAME - 0x40);
+            t.check(
+                "rcbgSceneLoadTextureNormal",
+                0x0093_bd10,
+                Conv::Cdecl,
+                &[scene, i],
+                |o| Out::U32(gn::load_texture_normal(o, ebp, scene, i)),
+            );
+            r5_same(t, "rcbgSceneLoadTextureNormal", ebp - 0x118, 0x114);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 11 (ffx_prender::m5m_o) ----
+
+#[test]
+fn r5_scene_load_text_sub_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_fe01);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/proj/map");
+            let maps: [&[u8]; 3] = [b"bsil00", b"", b"kino03"];
+            t.write(work + 0x27c, maps[(case % 3) as usize]);
+            t.global(mo::RCUI_WORK.sym, work);
+            // the config: the .2d or the .txt
+            let configs = t.seq(&[u32::from(case % 2 == 0), rng.next()]);
+            t.stub_sym(mo::LOAD_CONFIG, 1, false, 2, 0, configs);
+            // the camera text: the first, second, third or none loads
+            let k = case % 4;
+            let loads: Vec<u32> = (0..3).map(|j| u32::from(j == k)).collect();
+            let loads = t.seq(&loads);
+            t.stub_sym(mo::CHUNK_LOAD, 2, false, 2, 0, loads);
+            t.stub_sym(mo::LOAD_CAMERA, 3, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mo::CHUNK_INIT, 4, false, 1, 0, Ret::Val(4));
+            t.stub_sym(mo::CHUNK_FINI, 5, false, 1, 0, Ret::Val(5));
+            t.stub_sym(mo::PARSE_INIT, 6, false, 1, 0, Ret::Val(6));
+            t.stub_sym(mo::PARSE_SET_MODE, 7, false, 2, 0, Ret::Val(7));
+            t.stub_sym(mo::PARSE_SET, 8, false, 2, 0, Ret::Val(8));
+            t.stub_sym(mo::PARSE_FINI, 9, false, 1, 0, Ret::Val(rng.next()));
+            let scene = rng.next();
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - mo::FRAME - 0x40);
+            t.check(
+                "rcbgSceneLoadTextSub",
+                0x0093_b3e0,
+                Conv::Cdecl,
+                &[scene],
+                |o| Out::U32(go::load_text_sub(o, ebp, scene)),
+            );
+            r5_same(t, "rcbgSceneLoadTextSub", ebp - 0x198, 0x194);
             t.b_top = None;
             t.reset();
         }
