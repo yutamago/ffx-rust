@@ -78,6 +78,8 @@ pub mod s4_misc;
 pub mod s4_small;
 pub mod s4_summon;
 pub mod s4_wrap;
+// the shared work list's fifth round (shared-5: rows 737 on)
+pub mod s5_misc;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -1226,6 +1228,45 @@ ports! {
     "0446 mode object" => s4_fam446::MODE_OBJECT, s4_fam446::mode_object;
     "0446 start child, sound" => s4_fam446::START_CHILD_SOUND_A, s4_fam446::start_child_sound_a;
     "0446 start child (scaled), sound" => s4_fam446::START_CHILD_SOUND_B, s4_fam446::start_child_sound_b;
+    // shared-5
+    "wot frame" => s5_misc::WOT_FRAME, s5_misc::wot_frame;
+    "facing scale" => s5_misc::FACING_SCALE, s5_misc::facing_scale;
+    "motion towards" => s5_misc::MOTION_TOWARDS, s5_misc::motion_towards;
+    "chara setup (0x3015)" => s5_misc::CHARA_SETUP, s5_misc::chara_setup;
+    "targets start (0xa0)" => s5_misc::TARGETS_START, s5_misc::targets_start;
+    "particles rethrow" => s5_misc::PARTICLES_RETHROW, s5_misc::particles_rethrow;
+    "camera rect task" => s5_misc::CAMERA_RECT_TASK, s5_misc::camera_rect_task;
+    "host start (chara 0x10af)" => s5_misc::HOST_START_CHARA, s5_misc::host_start_chara;
+    "node set-up (0x1ac)" => s5_misc::NODE_SETUP, s5_misc::node_setup;
+    "rising part" => s5_misc::RISING_PART, s5_misc::rising_part;
+    "host start (sound bank)" => s5_misc::HOST_START_BANK, s5_misc::host_start_bank;
+    "host start (523, bit 10)" => s5_misc::HOST_START_523_A, s5_misc::host_start_523_a;
+    "host start (523, bit 11)" => s5_misc::HOST_START_523_B, s5_misc::host_start_523_b;
+    "host start (two streams)" => s5_misc::HOST_START_STREAMS, s5_misc::host_start_streams;
+    "host start (one stream)" => s5_misc::HOST_START_STREAM, s5_misc::host_start_stream;
+    "host start (two data)" => s5_misc::HOST_START_TWO, s5_misc::host_start_two;
+    "face map centre" => s5_misc::FACE_MAP_CENTRE, s5_misc::face_map_centre;
+    "host start (facing the centre)" => s5_misc::HOST_START_FACING, s5_misc::host_start_facing;
+    "four-part task" => s5_misc::FOUR_PART_TASK, s5_misc::four_part_task;
+    "moving part" => s5_misc::MOVING_PART, s5_misc::moving_part;
+    "ppp effect set-up" => s5_misc::PPP_EFFECT_SETUP, s5_misc::ppp_effect_setup;
+    "ppp effect set-up (six buffers)" => s5_misc::PPP_EFFECT_SETUP_6, s5_misc::ppp_effect_setup_6;
+    "packed texture" => s5_misc::PACKED_TEXTURE, s5_misc::packed_texture;
+    "two lights start" => s5_misc::TWO_LIGHTS_START, s5_misc::two_lights_start;
+    "targets mean offset" => s5_misc::TARGETS_MEAN_OFFSET, s5_misc::targets_mean_offset;
+    "three charas 0x10af" => s5_misc::THREE_CHARAS, s5_misc::three_charas;
+    "fading model task" => s5_misc::FADING_MODEL_TASK, s5_misc::fading_model_task;
+    "target measure" => s5_misc::TARGET_MEASURE, s5_misc::target_measure;
+    "weapon swing" => s5_misc::WEAPON_SWING, s5_misc::weapon_swing;
+    "shade reset, colour task" => s5_misc::SHADE_RESET_COLOUR_TASK, s5_misc::shade_reset_colour_task;
+    "effect end, character shown" => s5_misc::EFFECT_END_SHOW, s5_misc::effect_end_show;
+    "screen fade step" => s5_misc::FADE_STEP, s5_misc::fade_step;
+    "summon ppp start" => s5_misc::SUMMON_PPP_START, s5_misc::summon_ppp_start;
+    "images store and load" => s5_misc::IMAGES_STORE_LOAD, s5_misc::images_store_load;
+    "target measure (modes)" => s5_misc::TARGET_MEASURE_MODES, s5_misc::target_measure_modes;
+    "root point part" => s5_misc::ROOT_POINT_PART, s5_misc::root_point_part;
+    "summon ppp start (stream)" => s5_misc::SUMMON_PPP_START_STREAM, s5_misc::summon_ppp_start_stream;
+    "spark pairs" => s5_misc::SPARK_PAIRS, s5_misc::spark_pairs;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1630,6 +1671,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("named parts", &s4_small::NAMED_PARTS),
     ("reset owners (30)", &s4_small::RESET_OWNERS_30),
     ("reset owners (3)", &s4_small::RESET_OWNERS_3),
+    // shared-5 internal
+    ("model draw (772)", &s5_misc::MODEL_DRAW),
+    ("thickness margin", &s5_misc::THICKNESS_MARGIN),
+    ("weapon matrix", &s5_misc::WEAPON_MATRIX),
+    ("angle keys", &s5_misc::ANGLE_KEYS),
+    ("model parts draw", &s5_misc::MODEL_PARTS_DRAW),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
