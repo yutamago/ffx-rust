@@ -7358,49 +7358,86 @@ pub const ACTORS_ENTRIES: Sig = Sig {
 ///
 /// `magic_0348` 0x10002c00 (183 bytes; 2 DLLs).
 pub fn scale_task_edx<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    scale_task_with(g, img, fr, None)
+    scale_task_with(g, img, fr, &SCALE_EDX)
 }
 
-/// [`scale_task_edx`] with the count `edx`, or the code's (operand
-/// `+0x6f`; 8 bytes more of code from there on).
-fn scale_task_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, imm: Option<u32>) -> Ret {
+/// Where a scale task's operands are.
+struct ScaleOps {
+    /// `K`, the task's owner (callback), `G_A`, `G_B`.
+    k: u32,
+    owner: u32,
+    globals: (u32, u32),
+    /// The count's immediate (`None`: `edx`).
+    count: Option<u32>,
+    /// Whether `+0x28` takes the stack argument (else 0).
+    arg: bool,
+    /// The take's `rel32`, the list's head and tail operands, the tail
+    /// store and the two stores of an empty list.
+    call: u32,
+    list: (u32, u32, u32),
+    empty: (u32, u32),
+}
+
+/// `magic_0348`'s layout (the count in `edx`).
+const SCALE_EDX: ScaleOps = ScaleOps {
+    k: 0x4,
+    owner: 0x1f,
+    globals: (0x27, 0x2f),
+    count: None,
+    arg: false,
+    call: 0x73,
+    list: (0x79, 0x91, 0x9b),
+    empty: (0xaa, 0xaf),
+};
+
+/// The layout with the code's count.
+const SCALE_FIXED: ScaleOps = ScaleOps {
+    count: Some(0x6f),
+    call: 0x7b,
+    list: (0x81, 0x99, 0xa3),
+    empty: (0xb2, 0xb7),
+    ..SCALE_EDX
+};
+
+/// [`scale_task_edx`] on the layout `o`.
+fn scale_task_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &ScaleOps) -> Ret {
     let f = fr.at;
     let s = fr.ecx;
-    let sh = if imm.is_some() { 8 } else { 0 };
-    let k = f32::from_bits(g.read::<u32>(op(img, f, 0x4)));
+    let k = f32::from_bits(g.read::<u32>(op(img, f, o.k)));
     // comiss 0, x; jb: kept when above 0 (or unordered)
     let keep = |x: f32| if 0.0 < x || x.is_nan() { x } else { k };
     let (a, b) = (keep(fr.xmm_f32(1)), keep(fr.xmm_f32(2)));
-    g.write::<u32>(op(img, f, 0x27), a.to_bits());
-    g.write::<u32>(op(img, f, 0x2f), b.to_bits());
-    for o in [8, 4, 0] {
-        g.write::<u32>(s + o, a.to_bits());
+    g.write::<u32>(op(img, f, o.globals.0), a.to_bits());
+    g.write::<u32>(op(img, f, o.globals.1), b.to_bits());
+    for off in [8, 4, 0] {
+        g.write::<u32>(s + off, a.to_bits());
     }
     g.write::<u32>(s + 0xc, 0x3f80_0000);
-    for o in [0x18, 0x14, 0x10] {
-        g.write::<u32>(s + o, b.to_bits());
+    for off in [0x18, 0x14, 0x10] {
+        g.write::<u32>(s + off, b.to_bits());
     }
     g.write::<u32>(s + 0x1c, 0x3f80_0000);
-    g.write::<u32>(s + 0x28, 0);
+    let first = if o.arg { fr.arg(g, 0) } else { 0 };
+    g.write::<u32>(s + 0x28, first);
     g.write::<u32>(s + 0x34, 0);
-    let count = imm.map_or(fr.edx, |o| op(img, f, o));
+    let count = o.count.map_or(fr.edx, |c| op(img, f, c));
     g.write::<u32>(s + 0x30, count);
     g.write::<u32>(s + 0x2c, count);
-    let o = |off: u32| off + sh;
-    let node = take(g, img, img.rel32_target(f + o(0x73)), op(img, f, 0x1f));
-    let empty = g.read::<u32>(op(img, f, o(0x79))) == 0;
+    let node = take(g, img, img.rel32_target(f + o.call), op(img, f, o.owner));
+    let (head, tail_at, store) = o.list;
+    let empty = g.read::<u32>(op(img, f, head)) == 0;
     g.write::<u32>(node.wrapping_add(0x14), s);
     g.write::<u8>(node.wrapping_add(0x18), 1);
     g.write::<u32>(node.wrapping_add(4), 0);
     if empty {
         g.write::<u32>(node, 0);
-        g.write::<u32>(op(img, f, o(0xaa)), node);
-        g.write::<u32>(op(img, f, o(0xaf)), node);
+        g.write::<u32>(op(img, f, o.empty.0), node);
+        g.write::<u32>(op(img, f, o.empty.1), node);
     } else {
-        let tail = g.read::<u32>(op(img, f, o(0x91)));
+        let tail = g.read::<u32>(op(img, f, tail_at));
         g.write::<u32>(node, tail);
         g.write::<u32>(tail.wrapping_add(4), node);
-        g.write::<u32>(op(img, f, o(0x9b)), node);
+        g.write::<u32>(op(img, f, store), node);
     }
     g.write::<u32>(node.wrapping_add(8), node);
     Ret::eax(node)
@@ -8054,10 +8091,10 @@ pub const CAMERA_BOXES: Sig = Sig {
 /// `magic_0168`; internal, `ecx` = the state, `xmm1`, `xmm2`). Returns the
 /// node.
 ///
-/// `magic_0307` 0x1000b740 and `magic_0168` 0x100078e0 (191 bytes; 2-3
-/// DLLs each).
+/// `magic_0307` 0x1000b740, `magic_0168` 0x100078e0 and `magic_0588`
+/// 0x10005690 (count 1) (191 bytes; 2-3 DLLs each).
 pub fn scale_task_fixed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    scale_task_with(g, img, fr, Some(0x6f))
+    scale_task_with(g, img, fr, &SCALE_FIXED)
 }
 
 /// [`scale_task_fixed`] with 30.
@@ -8073,5 +8110,39 @@ pub const SCALE_TASK_20: Sig = Sig {
     len: 191,
     hash: 0xf6ec_8a7b_91ca_6255,
     calls: &[(0x7b, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`scale_task_fixed`] with 1.
+pub const SCALE_TASK_1: Sig = Sig {
+    len: 191,
+    hash: 0x40ce_ce36_f71c_ba07,
+    calls: &[(0x7b, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`scale_task_fixed`] with 90 and `+0x28` the stack word (internal,
+/// `ecx`, `xmm1`, `xmm2`, cdecl `(x)`; a frame). Returns the node.
+///
+/// `magic_0249` 0x100031b0 (195 bytes; 2 DLLs).
+pub fn scale_task_arg<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = ScaleOps {
+        k: 0x7,
+        owner: 0x25,
+        globals: (0x2d, 0x35),
+        count: Some(0x71),
+        arg: true,
+        call: 0x7d,
+        list: (0x83, 0x9b, 0xa5),
+        empty: (0xb5, 0xba),
+    };
+    scale_task_with(g, img, fr, &o)
+}
+
+/// [`scale_task_arg`].
+pub const SCALE_TASK_ARG: Sig = Sig {
+    len: 195,
+    hash: 0x10a8_3abc_6f0a_bb4a,
+    calls: &[(0x7d, Callee::Sig(&TAKE))],
     imports: &[],
 };

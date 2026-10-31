@@ -3673,7 +3673,7 @@ fn motion_sets_b_and_camera_boxes() {
 
 #[test]
 fn fixed_scale_tasks() {
-    for (n, rva) in [(307u16, 0xb740u32), (168, 0x78e0)] {
+    for (n, rva) in [(307u16, 0xb740u32), (168, 0x78e0), (588, 0x5690)] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(rva);
         let take = t.img.rel32_target(f + 0x7b);
@@ -3696,5 +3696,30 @@ fn fixed_scale_tasks() {
             .with_xmm(&[Xmm::F32(0), Xmm::F32(a.to_bits()), Xmm::F32(b.to_bits())]);
             t.check(f, c, &[], Eax::Checked, s4_small::scale_task_fixed);
         }
+    }
+}
+
+#[test]
+fn argument_scale_tasks() {
+    let Some(mut t) = twin(249) else { return };
+    let f = t.at(0x31b0);
+    let take = t.img.rel32_target(f + 0x7d);
+    let s = SCRATCH + 0x100;
+    for (listed, a, b) in [(false, 0.5f32, -1.0f32), (true, 0.0, f32::NAN)] {
+        pool_ring(&mut t, take);
+        t.write(s, &[0x44; 0x40]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x83), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x9b), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x83), 0);
+        }
+        let c = Call {
+            ecx: s,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::F32(0), Xmm::F32(a.to_bits()), Xmm::F32(b.to_bits())]);
+        t.check(f, c, &[0x0028_0028], Eax::Checked, s4_small::scale_task_arg);
     }
 }
