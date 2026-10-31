@@ -1328,6 +1328,11 @@ ported! {
         let mut f = StackFrame::<{ (vf::UNCOMPRESS_FRAME / 4) as usize }>::new();
         vf::task_uncompress(&mut mem(), f.at() + vf::UNCOMPRESS_FRAME, slot, slots);
     }
+    /// `SaveDataUpdateIcon(map)`: frame `ebp - 0x9c`.
+    SaveDataUpdateIcon @ 0x0064_8920 => extern "C" fn update_icon(map: u32) -> u32 {
+        let mut f = StackFrame::<{ (s3::ICON_FRAME / 4) as usize }>::new();
+        s3::update_icon(&mut mem(), f.at() + s3::ICON_FRAME, map)
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's

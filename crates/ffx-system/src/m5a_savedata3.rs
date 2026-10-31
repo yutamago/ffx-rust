@@ -1,7 +1,8 @@
 //! M5 `system-a` (round 3): the save machine's file scan
 //! (`SaveDataMachine_ScanFiles`: which of the 200 save files exist and
 //! their local modification times) and the list rows from the files'
-//! headers (`SaveDataMachine_ReadHeaders`).
+//! headers (`SaveDataMachine_ReadHeaders`), and the save icon's name
+//! (`SaveDataUpdateIcon`).
 
 /// The originals over game memory and the original callees.
 pub mod bridge {
@@ -9,6 +10,7 @@ pub mod bridge {
         COUNT, EXISTS, FILES, FULL, LIST_LEN, NAME_FORMAT, SAVE_DIR, STATE, USER_ID,
     };
     use crate::m5a_savedata2::FOLDER_SET;
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     /// KERNEL32 imports (stdcall): `GetTimeZoneInformation`,
@@ -321,5 +323,225 @@ pub mod bridge {
             row = row.wrapping_add(1);
             i = i.wrapping_add(1);
         }
+    }
+
+    /// `SaveDataUpdateIcon`'s callees: `crt_memset_thunk`, `strncpy`,
+    /// `LocalizationManager_GetInstance`, `SaveDataTtyWrite2`,
+    /// `SaveDataManager_instance` (cdecl), `SaveDataManager_getRefBuffer`,
+    /// `SaveDataManager_setSaveDataIconString` (thiscall).
+    pub const MEMSET: u32 = 0x0094_964c;
+    pub const STRNCPY_IAT: u32 = 0x00b0_c368;
+    pub const LOC_MANAGER: u32 = 0x006d_b070;
+    pub const TTY_WRITE: u32 = 0x0064_8850;
+    pub const MANAGER: u32 = 0x006f_2070;
+    pub const REF_BUFFER: u32 = 0x006f_1ed0;
+    pub const SET_ICON_STRING: u32 = 0x006f_2530;
+    /// The icon name's prefix (`0x00ce81b0`, the stream prefix path), the
+    /// language-less format, the suffix, the two side suffixes, the log
+    /// format, the player position (`g_SaveData_PlayerPos`).
+    pub const ICON_PREFIX: u32 = 0x00ce_81b0;
+    pub const F_NO_LANGUAGE: u32 = 0x00b4_bb38;
+    pub const ICON_SUFFIX: u32 = 0x00b4_bb58;
+    pub const SIDE_FIRST: u32 = 0x00b4_1f40;
+    pub const SIDE_SECOND: u32 = 0x00b4_1f44;
+    pub const F_LOG: u32 = 0x00b4_1f48;
+    pub const PLAYER_POS: u32 = 0x00cc_b9a8;
+    /// The maps whose icon has no language variant.
+    pub const NO_LANGUAGE_MAPS: [u32; 7] = [0x147, 0x148, 0x149, 0x14a, 0x14e, 0x14f, 0x15b];
+    /// The maps with two icons by side, and the two points
+    /// `(x1, x2, y1, y2, z1, z2)` (f32 constants) the player is nearer.
+    pub const SIDES: [(&[u32], [u32; 6]); 7] = [
+        (
+            &[0x101],
+            [
+                0x00b4_1fcc,
+                0x00b4_201c,
+                0x00b4_200c,
+                0x00b4_2010,
+                0x00b4_1ffc,
+                0x00b4_1fe8,
+            ],
+        ),
+        (
+            &[0x11c],
+            [
+                0x00b4_1fe4,
+                0x00b4_202c,
+                0x00b4_2030,
+                0x00b4_204c,
+                0x00b4_2054,
+                0x00b4_1fe0,
+            ],
+        ),
+        (
+            &[0xf6, 0xf7],
+            [
+                0x00b4_1fd4,
+                0x00b4_1fd0,
+                0x00b4_1fc4,
+                0x00b4_1fdc,
+                0x00b4_1ff4,
+                0x00b4_2000,
+            ],
+        ),
+        (
+            &[0xf4, 0xf5],
+            [
+                0x00b4_2008,
+                0x00b4_2004,
+                0x00b4_2034,
+                0x00b4_2034,
+                0x00b4_205c,
+                0x00b4_2058,
+            ],
+        ),
+        (
+            &[0x81, 0x15c],
+            [
+                0x00b4_1fc0,
+                0x00b4_2028,
+                0x00b4_2020,
+                0x00b4_2014,
+                0x00b4_2050,
+                0x00b4_2040,
+            ],
+        ),
+        (
+            &[0x1f],
+            [
+                0x00b4_1fbc,
+                0x00b4_1fd8,
+                0x00b4_2044,
+                0x00b4_2038,
+                0x00b4_2024,
+                0x00b4_203c,
+            ],
+        ),
+        (
+            &[0xd8],
+            [
+                0x00b4_2018,
+                0x00b4_2048,
+                0x00b4_1fc8,
+                0x00b4_1fec,
+                0x00b4_1ff0,
+                0x00b4_1ff8,
+            ],
+        ),
+    ];
+    /// The frame `SaveDataUpdateIcon` needs: the six point floats at
+    /// `ebp - 0x9c..-0x88`, the name at `ebp - 0x84`, the map number at
+    /// `ebp - 0x44`.
+    pub const ICON_FRAME: u32 = 0x9c;
+
+    fn load_f32(h: &impl Host, at: u32) -> f64 {
+        x87::load(h.read(at))
+    }
+
+    fn strlen(h: &impl Host, s: u32) -> u32 {
+        let mut n = 0u32;
+        while h.read::<u8>(s.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// `src`'s string (its terminator included) appended to `dst`'s as the
+    /// original's inlined `strcat` does: `rep movsd` then `rep movsb`.
+    fn strcat(h: &mut impl Host, dst: u32, src: u32) {
+        let n = strlen(h, src).wrapping_add(1);
+        let to = dst.wrapping_add(strlen(h, dst));
+        for k in 0..n / 4 {
+            let w: u32 = h.read(src.wrapping_add(4 * k));
+            h.write(to.wrapping_add(4 * k), w);
+        }
+        for k in n & !3..n {
+            let b: u8 = h.read(src.wrapping_add(k));
+            h.write(to.wrapping_add(k), b);
+        }
+    }
+
+    /// `SaveDataUpdateIcon(map)` (cdecl): the save icon's name: the
+    /// stream prefix, the map number (7 counts as 0x120), for the maps of
+    /// two sides the side the player is nearer (the squared distances to
+    /// the map's two points, each rounded to `f32`; the first point's
+    /// suffix only when the second is strictly farther) or for the language-less maps
+    /// without a language (the localization manager's first word 0) the
+    /// other format, and the suffix; logged (`SaveDataTtyWrite2`), the
+    /// player position copied to the save buffer (`+0xdc..=+0xe4`) and
+    /// the name set as the icon string; that call's `eax`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the seven map cases; the point coordinates
+    pub fn update_icon(h: &mut impl Host, ebp: u32, map: u32) -> u32 {
+        let at = |off: u32| ebp.wrapping_sub(off);
+        let (name, number) = (at(0x84), at(0x44));
+        // a, b, c, d, e, f: the x87 frame slots of the two points
+        let slots = [0x90u32, 0x98, 0x9c, 0x8c, 0x94, 0x88];
+        for off in slots {
+            h.write(at(off), 0f32);
+        }
+        h.call_sym(MEMSET, Conv::Cdecl, &[name, 0, 0x40]);
+        h.call_sym(MEMSET, Conv::Cdecl, &[number, 0, 0x40]);
+        let prefix = h.rebase(ICON_PREFIX);
+        import(h, STRNCPY_IAT, Conv::Cdecl, &[name, prefix, 0x40]);
+        let map = if map == 7 { 0x120 } else { map };
+        let fmt = h.rebase(F_NUMBER);
+        import(h, SPRINTF_IAT, Conv::Cdecl, &[number, fmt, map]);
+        if NO_LANGUAGE_MAPS.contains(&map) {
+            let loc = h.call_sym(LOC_MANAGER, Conv::Cdecl, &[]);
+            if h.read::<u32>(loc) == 0 {
+                let fmt = h.rebase(F_NO_LANGUAGE);
+                import(h, SPRINTF_IAT, Conv::Cdecl, &[number, fmt]);
+            }
+        } else if let Some((_, points)) = SIDES.iter().find(|(maps, _)| maps.contains(&map)) {
+            // x1 -> a, x2 -> b, y1 -> c, y2 -> d, z1 -> e, z2 -> f
+            for (slot, c) in slots.into_iter().zip(points) {
+                let v: u32 = h.read(h.rebase(*c));
+                h.write(at(slot), x87::store(x87::load(v)));
+            }
+            let pos = h.rebase(PLAYER_POS);
+            let (x, y, z) = (
+                load_f32(h, pos),
+                load_f32(h, pos.wrapping_add(4)),
+                load_f32(h, pos.wrapping_add(8)),
+            );
+            let p: [f64; 6] = slots.map(|off| load_f32(h, at(off)));
+            let [a, b, c, d, e, f] = p;
+            let sq = |v: f64| x87::mul(v, v);
+            let near = x87::add(
+                x87::add(sq(x87::sub(a, x)), sq(x87::sub(c, y))),
+                sq(x87::sub(e, z)),
+            );
+            h.write(at(0x88), x87::store(near));
+            let near = x87::load(h.read(at(0x88)));
+            let far = x87::add(
+                x87::add(sq(x87::sub(d, y)), sq(x87::sub(b, x))),
+                sq(x87::sub(f, z)),
+            );
+            h.write(at(0x88), x87::store(far));
+            let far = x87::load(h.read(at(0x88)));
+            // `fcompp`: the first point's suffix only when the second is
+            // strictly farther (unordered counts as not)
+            let side = if far > near { SIDE_FIRST } else { SIDE_SECOND };
+            let to = number.wrapping_add(strlen(h, number));
+            let side = h.rebase(side);
+            let w: u16 = h.read(side);
+            h.write(to, w);
+            let b: u8 = h.read(side.wrapping_add(2));
+            h.write(to.wrapping_add(2), b);
+        }
+        strcat(h, name, number);
+        let suffix = h.rebase(ICON_SUFFIX);
+        strcat(h, name, suffix);
+        let fmt = h.rebase(F_LOG);
+        h.call_sym(TTY_WRITE, Conv::Cdecl, &[0xa, fmt, name]);
+        let m = h.call_sym(MANAGER, Conv::Cdecl, &[]);
+        let buf = h.call_sym(REF_BUFFER, Conv::Thiscall(m), &[]);
+        let pos = h.rebase(PLAYER_POS);
+        for k in 0..3u32 {
+            let v: u32 = h.read(pos.wrapping_add(4 * k));
+            h.write(buf.wrapping_add(0xdc + 4 * k), x87::store(x87::load(v)));
+        }
+        let m = h.call_sym(MANAGER, Conv::Cdecl, &[]);
+        h.call_sym(SET_ICON_STRING, Conv::Thiscall(m), &[name])
     }
 }

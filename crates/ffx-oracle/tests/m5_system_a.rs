@@ -6842,3 +6842,96 @@ fn vfs_task_uncompress_matches_the_original() {
         }
     });
 }
+
+/// `SaveDataUpdateIcon` (framed: the six point floats, the name and the
+/// number buffers): every map case (the two-sided maps with the player
+/// near either point, the language-less maps with and without a
+/// language, map 7, others), prefixes short and filling all 0x40 bytes;
+/// the CRT and the save manager stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the map cases
+fn save3_update_icon_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0a01);
+        let maps = [
+            0x101u32, 0x11c, 0xf4, 0xf5, 0xf6, 0xf7, 0x81, 0x15c, 0x1f, 0xd8, 0x147, 0x148, 0x149,
+            0x14a, 0x14e, 0x14f, 0x15b, 7, 0x120, 0x30,
+        ];
+        for case in 0..120 {
+            t.reset();
+            let map = maps[rng.below(maps.len() as u32) as usize];
+            let plen = if rng.chance(5) { 0x40 } else { rng.below(0x30) };
+            let prefix: Vec<u8> = (0..plen)
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let prefix = t.alloc(&prefix);
+            let r = rng.next();
+            let s = t.stub_code_writes(s3::STRNCPY_IAT, false, 3, 0, r, 0, prefix, plen.min(0x40));
+            let at = t.rebase(s3::STRNCPY_IAT);
+            t.patch(at, &s.to_le_bytes());
+            let fmt = t.rebase(s3::F_NO_LANGUAGE);
+            let r = rng.next();
+            stub_import_varargs(t, s3::SPRINTF_IAT, 1, fmt, 2, 3, r);
+            let digits: Vec<u8> = (0..=rng.below(4))
+                .map(|_| b'0' + rng.below(10) as u8)
+                .chain([0])
+                .collect();
+            let n = digits.len() as u32;
+            let digits = t.alloc(&digits);
+            let log: u32 = Mem::read(&t.a, t.rebase(s3::SPRINTF_IAT));
+            let w = write_then(t, 0, digits, n, log);
+            let slot = t.rebase(s3::SPRINTF_IAT);
+            t.patch(slot, &w.to_le_bytes());
+            t.stub(s3::MEMSET, false, 3, 0, rng.next());
+            let loc = t.words(&[u32::from(rng.chance(2))]);
+            let buf = t.zeros(0x100);
+            let m = rng.next();
+            t.stubs(&[
+                (s3::LOC_MANAGER, false, 0, 0, loc),
+                (s3::TTY_WRITE, false, 3, 0, rng.next()),
+                (s3::MANAGER, false, 0, 0, m),
+                (s3::REF_BUFFER, true, 0, 0, buf),
+                (s3::SET_ICON_STRING, true, 1, 1, rng.next()),
+            ]);
+            // the player near one of the map's points, or anywhere
+            let pos: Vec<f32> = (0..3).map(|_| f32::from(rng.next() as i16) / 8.0).collect();
+            let pos = if let Some((_, points)) = s3::SIDES.iter().find(|(m, _)| m.contains(&map)) {
+                let rd = |a: u32| f32::from_bits(Mem::read(&t.a, t.rebase(a)));
+                if rng.chance(4) {
+                    pos
+                } else if rng.chance(3) {
+                    // halfway: both distances equal
+                    (0..3)
+                        .map(|i| f32::midpoint(rd(points[2 * i]), rd(points[2 * i + 1])))
+                        .collect()
+                } else {
+                    let k = rng.below(2) as usize;
+                    let rd = |a: u32| f32::from_bits(Mem::read(&t.a, t.rebase(a)));
+                    vec![
+                        rd(points[k]) + 0.5,
+                        rd(points[2 + k]) - 0.25,
+                        rd(points[4 + k]),
+                    ]
+                }
+            } else {
+                pos
+            };
+            let at = t.rebase(s3::PLAYER_POS);
+            let bytes: Vec<u8> = pos.iter().flat_map(|v| v.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            t.skip = 4;
+            let what = format!("SaveDataUpdateIcon #{case} map {map:#x} prefix {plen}");
+            t.check_framed_init(
+                &what,
+                0x0064_8920,
+                Conv::Cdecl,
+                &[map],
+                s3::ICON_FRAME,
+                &[0x77; 0x18],
+                |m, ebp| Out::U32(s3::update_icon(m, ebp, map)),
+            );
+            t.skip = 0;
+        }
+    });
+}
