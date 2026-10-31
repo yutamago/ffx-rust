@@ -4556,6 +4556,17 @@ fn owners_30_and_data_pointers() {
         s4_small::reset_owners_30,
     );
     drop(t);
+    let Some(mut t) = twin(391) else { return };
+    let f = t.at(0x6500);
+    t.write(obj, &[0x5a; 0x130]);
+    t.check(
+        f,
+        c,
+        &[0xdead, 0x0b0b],
+        Eax::Checked,
+        s4_small::reset_owners_3,
+    );
+    drop(t);
     let Some(mut t) = twin(124) else { return };
     let f = t.at(0x1690);
     let api_table = t.u32(t.img.word(f + 0x4));

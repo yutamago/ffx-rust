@@ -9825,12 +9825,34 @@ pub const RELEASE_RESOURCE_TRIPLES: Sig = Sig {
 ///
 /// `magic_0444` 0x10001d80 (269 bytes; 2 DLLs).
 pub fn reset_owners_30<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
-    let obj = fr.ecx;
-    let at = |o: u32| obj.wrapping_add(o);
     let owner_b = fr.arg(g, 1);
+    reset_owners_with(g, fr.ecx, owner_b, fr.edx, 0x1e)
+}
+
+/// [`reset_owners_30`] with the owner 3 and no count (internal, `ecx` =
+/// the object, cdecl `(-, owner_b)`). Returns 0x8000.
+///
+/// `magic_0391` 0x10006500 (273 bytes; 2 DLLs).
+pub fn reset_owners_3<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let owner_b = fr.arg(g, 1);
+    reset_owners_with(g, fr.ecx, owner_b, 3, 0)
+}
+
+/// [`reset_owners_3`].
+pub const RESET_OWNERS_3: Sig = Sig {
+    len: 273,
+    hash: 0x147b_97cd_5374_f882,
+    calls: &[],
+    imports: &[],
+};
+
+/// The reset of [`reset_owners_30`]: `+0x100` = `owner_b`, `+0x114` =
+/// `owner`, `+0x11c` = `count`.
+fn reset_owners_with<G: Game>(g: &mut G, obj: u32, owner_b: u32, owner: u32, count: u32) -> Ret {
+    let at = |o: u32| obj.wrapping_add(o);
     g.write::<u32>(at(0x100), owner_b);
-    g.write::<u32>(at(0x114), fr.edx);
-    g.write::<u32>(at(0x11c), 0x1e);
+    g.write::<u32>(at(0x114), owner);
+    g.write::<u32>(at(0x11c), count);
     for o in [0x104, 0x108, 0x10c, 0x110, 0x118, 0x120] {
         g.write::<u32>(at(o), 0);
     }

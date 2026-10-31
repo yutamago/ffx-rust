@@ -1629,6 +1629,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite node", &s4_small::SPRITE_NODE),
     ("named parts", &s4_small::NAMED_PARTS),
     ("reset owners (30)", &s4_small::RESET_OWNERS_30),
+    ("reset owners (3)", &s4_small::RESET_OWNERS_3),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
