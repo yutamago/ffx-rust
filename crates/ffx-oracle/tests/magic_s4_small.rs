@@ -4387,6 +4387,9 @@ fn command_blocks_and_spin_records() {
     let Some(mut t) = twin(434) else { return };
     let f = t.at(0x3b90);
     recs(&mut t, &[(559, 3), (558, 1), (382, 2)]);
+    // the commands not zero before, so the cleared words show
+    let cmds = op(&t, f, 0x57);
+    t.write(cmds - 0x10, &[0x5a; 0x70]);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
     drop(t);
     let Some(mut t) = twin(563) else { return };
@@ -4421,6 +4424,8 @@ fn camera_faces_and_sprite_nodes() {
     t.stub_st0(12, |_, _| 1.0e40);
     let b = SCRATCH + 0x1000;
     t.set_u32(op(&t, f, 0xe), b);
+    t.set_u32(op(&t, f, 0x26), 0x0a0a_0026);
+    t.set_u32(op(&t, f, 0x88), 0x0a0a_0088);
     for x in [0.5f32, 9.0, -9.0, f32::NAN] {
         t.write(b, &vec![0x11; 0x1c10]);
         t.set_u32(turn, x.to_bits());
@@ -4450,7 +4455,21 @@ fn camera_faces_and_sprite_nodes() {
 fn entry_hooks_in() {
     let Some(mut t) = twin(124) else { return };
     let f = t.at(0x1960);
-    recs(&mut t, &[(726, 2), (160, 3)]);
+    recs(&mut t, &[(160, 3)]);
+    // the printf slot keeps the format and the first argument it finds
+    // on the stack
+    // (the second line's argument word is the caller's saved edi, not
+    // known to the port: only the first line's is read)
+    let first_fmt = t.img.word(f + 0xa);
+    rec(&mut t, 726, 2, move |m, a| {
+        let k = m.r32(SCRATCH + 0x700);
+        m.w32(SCRATCH + 0x700, k + 1);
+        if a[0] == first_fmt {
+            m.w32(SCRATCH + 0x704 + 8 * (k % 4), m.r32(a[1]));
+        }
+        m.w32(SCRATCH + 0x708 + 8 * (k % 4), m.r32(a[1] - 4));
+        0x726
+    });
     let api = t.img.word(f + 0xc3);
     let api_table = t.u32(api);
     let slot = SCRATCH + 0x80;
