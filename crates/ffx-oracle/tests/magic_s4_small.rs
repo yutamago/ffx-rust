@@ -3381,3 +3381,47 @@ fn actor_entries_and_scale_tasks() {
         t.check(f, c, &[], Eax::Checked, s4_small::scale_task_edx);
     }
 }
+
+#[test]
+fn guarded_drops_and_resets() {
+    let Some(mut t) = twin(188) else { return };
+    recs(&mut t, &[(258, 1), (231, 3), (230, 2)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x1f10);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x85), lock);
+    t.set_u32(op(&t, f, 0x78), SCRATCH + 0x88);
+    let part = SCRATCH + 0x100;
+    for (on, a) in [(0u32, 0u32), (1, 0), (1, 1)] {
+        t.write(part, &[0x44; 0x80]);
+        t.set_u32(op(&t, f, 0x5), on);
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check_entry(f, Call::default(), &[part], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(285) else { return };
+    let f = t.at(0x4c00);
+    let ms = t.img.rel32_target(f + 0x9);
+    let ro = t.img.rel32_target(f + 0x10);
+    recs(
+        &mut t,
+        &[(723, 1), (724, 2), (235, 3), (325, 2), (941, 1), (779, 4)],
+    );
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    let rg = t.img.rel32_target(f + 0x3a);
+    t.set_u32(t.img.word(rg + 0x05), 0);
+    let r8 = t.img.rel32_target(f + 0x9f);
+    t.set_u32(t.img.word(r8 + 0x21), SCRATCH + 0x80);
+    let task = SCRATCH + 0x100;
+    for (done, one) in [(0u32, false), (1, true), (1, false)] {
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, SCRATCH + 0x200);
+        t.set_u32(t.img.word(ms + 0x02), done);
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        objects(&mut t, ro, one);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

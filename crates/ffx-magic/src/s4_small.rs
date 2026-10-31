@@ -7391,3 +7391,106 @@ pub const SCALE_TASK_EDX: Sig = Sig {
     calls: &[(0x73, Callee::Sig(&TAKE))],
     imports: &[],
 };
+
+/// [`part_drop_arg`] behind `G_ON` (operand `+0x5`; 0 when clear), the
+/// part's rates `+0x60..+0x68` 0.05 and `+0x6c` 1.0 set first (cdecl
+/// `(part)`). Returns 1 when slot 712 answers 0, else 0.
+///
+/// `magic_0188` 0x10001f10 (183 bytes; 2 DLLs).
+pub fn part_drop_guarded<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x5) == 0 {
+        return Ret::eax(0);
+    }
+    let p = fr.arg(g, 0);
+    for off in [0x60, 0x64, 0x68] {
+        g.write::<u32>(p.wrapping_add(off), 0x3d4c_cccd);
+    }
+    g.write::<u32>(p.wrapping_add(0x6c), 0x3f80_0000);
+    slot_call(g, img, f, (0x11, 258), &[p]);
+    let (c, b, a) = (rd(g, 0x41), rd(g, 0x4c), rd(g, 0x58));
+    slot_call(g, img, f, (0x46, 231), &[a, b, c, p]);
+    let (e, d) = (rd(g, 0x60), rd(g, 0x6b));
+    slot_call(g, img, f, (0x65, 230), &[d, e, a, b, c, p]);
+    let ptr = rd(g, 0x78);
+    g.write::<u32>(ptr, op(img, f, 0x80));
+    let lock = rd(g, 0x85);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    let r = slot_call(g, img, f, (0x93, 712), &[p, 0x30, d, e, a, b, c, p]).eax;
+    let lock = rd(g, 0xa1);
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_drop_guarded`].
+pub const PART_DROP_GUARDED: Sig = Sig {
+    len: 183,
+    hash: 0xcc1a_f7b9_8e3e_fa12,
+    calls: &[],
+    imports: &[],
+};
+
+/// The motion step and the objects run; when both are done the task
+/// (cdecl `(task)`) gets state 3 and its record the next function
+/// (operand `+0x35`), the handles are registered
+/// ([`crate::sa_misc::register_grid`]) and each of the DLL's records
+/// (0x288 bytes, operands `+0x3f` to `+0xab`) is reset: its place copied
+/// (slot 325), a few words cleared, bit 0 of `u16 +0x24` cleared and its
+/// eight handles registered ([`crate::sa_misc::register_8`]). Returns
+/// the last registration's result, or the objects'.
+///
+/// `magic_0285` 0x10004c00 (183 bytes; 2 DLLs).
+pub fn step_done_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x9));
+    // push ebp; and esp, -8; push esi; push edi; call
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(12);
+    let b = run_objects(g, img, img.rel32_target(f + 0x10), esp);
+    if b != 1 || a != 1 {
+        return Ret::eax(b);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), op(img, f, 0x35));
+    crate::sa_misc::register_grid(g, img, img.rel32_target(f + 0x3a));
+    let (mut p, end) = (op(img, f, 0x3f), op(img, f, 0xab));
+    let mut eax;
+    loop {
+        for off in [0xffff_fffc_u32, 0, 4, 8] {
+            g.write::<u32>(p.wrapping_add(off), 0);
+        }
+        slot_call(
+            g,
+            img,
+            f,
+            (0x5c, 325),
+            &[p.wrapping_sub(0x254), p.wrapping_sub(0x14)],
+        );
+        let flags = g.read::<u16>(p.wrapping_add(0x24));
+        g.write::<u16>(p.wrapping_add(0x24), flags & 0xfffe);
+        g.write::<u32>(p.wrapping_add(0xc), 0);
+        g.write::<u32>(p.wrapping_add(0x10), 0);
+        eax = crate::sa_misc::register_8(g, img, img.rel32_target(f + 0x9f), p.wrapping_sub(0x23c));
+        p = p.wrapping_add(0x288);
+        if p.cast_signed() >= end.cast_signed() {
+            return Ret::eax(eax);
+        }
+    }
+}
+
+/// [`step_done_reset`].
+pub const STEP_DONE_RESET: Sig = Sig {
+    len: 183,
+    hash: 0x9c0f_3f0c_670f_7337,
+    calls: &[
+        (0x9, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x10, Callee::Sig(&RUN_OBJECTS)),
+        (0x3a, Callee::Sig(&crate::sa_misc::REGISTER_GRID)),
+        (0x9f, Callee::Sig(&crate::sa_misc::REGISTER_8)),
+    ],
+    imports: &[],
+};

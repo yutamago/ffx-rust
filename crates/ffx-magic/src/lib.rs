@@ -1163,6 +1163,8 @@ ports! {
     "colour and scale task" => s4_small::COLOUR_AND_SCALE_TASK, s4_small::colour_and_scale_task;
     "light copy" => s4_small::LIGHT_COPY, s4_small::light_copy;
     "actors and entries" => s4_small::ACTORS_ENTRIES, s4_small::actors_entries;
+    "part drop (guarded)" => s4_small::PART_DROP_GUARDED, s4_small::part_drop_guarded;
+    "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
