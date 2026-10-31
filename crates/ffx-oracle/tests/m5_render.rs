@@ -51,6 +51,7 @@ use ffx_prender::m5r_n::{self as mn, bridge as nb};
 use ffx_prender::m5r_o::{self as mo, bridge as ob};
 use ffx_prender::m5r_p::bridge as pb;
 use ffx_prender::m5r_q::{self as mq, bridge as qb};
+use ffx_prender::m5r_r::{self as rm, bridge as rb};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -9234,6 +9235,837 @@ fn rp4_specular_correspond_matches_the_original() {
                     qb::render_correspond(g, this, only, renderer);
                     Out::None
                 },
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 6 batch 2 (ffx_prender::m5r_r) ----
+
+#[test]
+fn rp4_update_params_matches_the_original() {
+    // As the corresponding parameters: no instance, no name (the sampler
+    // reset), no cluster or texture, and the full set on 0..2 meshes of
+    // 0..3 materials with each parameter found or not, fitting or not; a
+    // null mat1. Sizes stay within the smallest local (past it the
+    // original copies its frame, where the port writes 0).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4021);
+        for case in 0..60 {
+            let (nm, nk) = (rng.below(3), rng.below(4));
+            let (list, _) = mesh_list(t, &mut rng, nm, nk);
+            let inst = if case % 11 == 0 { 0 } else { list };
+            let name = if case % 5 == 1 { 0 } else { cstr(t, "cluster") };
+            let mat1 = if case % 4 == 2 {
+                0
+            } else {
+                let m = t.zeros(0x40);
+                for k in 0..16 {
+                    let v = float_word(&mut rng);
+                    t.w32(m + 4 * k, v);
+                }
+                m
+            };
+            let descs: Vec<u32> = (0..80)
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        let kind =
+                            [0x42, 0xd9, 0xda, 0xdb, 0xdc, 0x12, 0x47, 0x10][rng.below(8) as usize];
+                        let offset = [0, 2, 4, 8, 0x20, 0x200][rng.below(6) as usize];
+                        let size = [1, 2, 4][rng.below(3) as usize];
+                        param_desc(t, kind, offset, size)
+                    }
+                })
+                .collect();
+            let finds = t.seq(&descs);
+            t.stub_sym(mq::FIND_PARAM, 1, true, 1, 1, finds);
+            let cm = t.zeros(0x10);
+            t.stub_sym(
+                ffx_prender::m5r_o::CLUSTER_MANAGER,
+                2,
+                false,
+                0,
+                0,
+                Ret::Val(cm),
+            );
+            let cluster = if case % 7 == 2 { 0 } else { t.zeros(0x10) };
+            t.stub_sym(
+                ffx_prender::m5r_o::CLUSTER_BY_NAME,
+                3,
+                true,
+                1,
+                1,
+                Ret::Val(cluster),
+            );
+            let found = u32::from(case % 6 != 3);
+            let it = writer_stub_n(t, 4, &[0, 0xc, 0x10], &[rng.next(), found, rng.next()], 1);
+            t.jump(ffx_prender::m5r_o::TEXTURE_ITERATOR_CTOR, it);
+            let cp = writer_stub_n(t, 5, &[0, 4], &[t.r32(list), t.r32(list + 4)], 1);
+            t.jump(ffx_prender::m5r_o::ARRAY_COPY_FROM, cp);
+            let samplers = t.seq(&(0..20).map(|_| rng.next()).collect::<Vec<_>>());
+            t.stub_sym(ffx_prender::m5r_o::LINEAR_SAMPLER, 6, true, 1, 1, samplers);
+            capture_ret(
+                t,
+                ffx_prender::m5r_o::SET_TEXTURE_CHECKED,
+                7,
+                2,
+                1,
+                4,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(ffx_prender::m5r_o::PHYRE_FREE, 8, false, 1, 0, Ret::Val(0));
+            let scene = t.zeros(0x10);
+            t.global(0x00cc_b9d8, scene);
+            let args: Vec<u32> = (0..8).map(|_| float_word(&mut rng)).collect();
+            let (u0, u1, float1, v0, v1, v3, v2) = (
+                args[0], args[1], args[2], args[3], args[4], args[5], args[6],
+            );
+            let frame = frame_ebp(&t.a, 10) - 0x7c;
+            t.write(frame, &[0; 0x70]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "SpecularMapParamsManager_UpdateParams_006c6c30",
+                0x006c_6c30,
+                Conv::Stdcall,
+                &[inst, name, u0, u1, float1, mat1, v0, v1, v3, v2],
+                |g| {
+                    rb::update_params(
+                        g,
+                        frame,
+                        inst,
+                        name,
+                        [u0, u1],
+                        float1,
+                        mat1,
+                        [v0, v1, v2, v3],
+                    );
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            if inst != 0 && name != 0 {
+                same_bytes(t, frame, 0x10, "update params vector");
+            }
+            t.reset();
+        }
+    });
+}
+
+/// A float for the sorts: small integers (many ties), fractions,
+/// infinities, quiet NaNs.
+fn sort_float(rng: &mut Rng) -> u32 {
+    match rng.below(10) {
+        0 => f32::INFINITY.to_bits(),
+        1 => f32::NEG_INFINITY.to_bits(),
+        2 => 0x7fc0_0000 | rng.below(4),
+        3 => (rng.below(1000) as f32 / 7.0 - 70.0).to_bits(),
+        _ => (rng.below(9) as f32 - 4.0).to_bits(),
+    }
+}
+
+#[test]
+fn rp4_float_partition_matches_the_original() {
+    // Arrays of 2..120 floats (many ties, NaNs, infinities), the median of
+    // nine (past 40) or three and FloatLess as they are; a recording
+    // predicate that only logs and compares too.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4022);
+        for case in 0..120 {
+            let n = 2 + rng.below(if case % 3 == 0 { 119 } else { 30 });
+            let nan_free = case % 4 != 0;
+            let v: Vec<u32> = (0..n)
+                .map(|_| {
+                    loop {
+                        let x = sort_float(&mut rng);
+                        if !nan_free || !f32::from_bits(x).is_nan() {
+                            break x;
+                        }
+                    }
+                })
+                .collect();
+            let first = t.words(&v);
+            let last = first + 4 * n;
+            let out = t.zeros(8);
+            let pred = t.rebase(0x006c_94e0);
+            t.check(
+                "FloatSort_partition_006c7900",
+                0x006c_7900,
+                Conv::Cdecl,
+                &[out, first, last, pred],
+                |g| Out::U32(rb::float_partition(g, out, first, last, pred)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_median_center_matches_the_original() {
+    // 0..64 characters (slots set or not, the two flags 1 or not), random
+    // bounds and world matrices (positions spread so that some lie past
+    // 210 of the median), odd and even counts; the matrix calls and the
+    // float sort run as they are.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4023);
+        for case in 0..40 {
+            let this = t.zeros(0x1300);
+            let dense = case % 5;
+            for slot in 0..64_u32 {
+                if rng.below(5) > dense {
+                    continue;
+                }
+                let bounds = t.zeros(0x20);
+                for k in 0..8 {
+                    let v =
+                        (rng.below(2000) as f32 - 1000.0) / if rng.chance(3) { 1.0 } else { 10.0 };
+                    t.w32(bounds + 4 * k, v.to_bits());
+                }
+                let m = t.zeros(0x30);
+                for k in 0..12 {
+                    let v = if k % 5 == 0 {
+                        1.0
+                    } else {
+                        (rng.below(200) as f32 - 100.0) / 100.0
+                    };
+                    t.w32(m + 4 * k, v.to_bits());
+                }
+                for k in [3, 7, 11] {
+                    let v = (rng.below(1200) as f32) - 600.0;
+                    t.w32(m + 4 * k, v.to_bits());
+                }
+                let p2 = t.zeros(0x20);
+                t.w32(p2 + 4, m);
+                t.w32(p2 + 0x1c, bounds);
+                let p1 = t.words(&[p2]);
+                let ptr = t.words(&[0, p1]);
+                t.w32(this + 0xde8 + 4 * slot, if rng.chance(8) { 0 } else { ptr });
+                let flag = this + 4 * (0x43a + slot);
+                t.w32(flag - 0x100, u32::from(!rng.chance(8)));
+                t.w32(flag, if rng.chance(8) { 2 } else { 1 });
+            }
+            let outs = t.zeros(8);
+            let (ox, oz) = (outs, outs + 4);
+            let frame = frame_ebp(&t.a, 2) - 0x328;
+            t.write(frame, &[0; 0x324]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "ShadowManager_medianCharacterCenter_006c8480",
+                0x006c_8480,
+                Conv::Thiscall(this),
+                &[ox, oz],
+                |g| {
+                    rb::median_center(g, frame, this, ox, oz);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            for (off, len) in [(0, 0xc0), (0xd0, 0x40), (0x124, 0x200)] {
+                same_bytes(t, frame + off, len, "median centre frame");
+            }
+            t.reset();
+        }
+    });
+}
+
+/// `Phyre_PhyreMalloc_0042fb80(size, align)` as a bump allocator over a
+/// fresh arena (logged with `tag`), `Phyre_PhyreFree` as a logging stub
+/// (`tag + 1`).
+fn bump_malloc(t: &mut Twins, tag: u32) {
+    let arena = t.zeros(0x8000);
+    let cell = t.words(&[arena]);
+    let log = t.stub_code(tag, false, 2, 0, Ret::Keep, false);
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x83, 0xc2, 0x0f, 0x83, 0xe2, 0xf0]); // add edx, 15; and edx, -16
+    c.extend([0x01, 0x15]);
+    c.extend(cell.to_le_bytes()); // add [cell], edx
+    let at = t.a.alloc_code(&[0; 0x40]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 0x40]).unwrap(), at);
+    let end = at + c.len() as u32 + 5;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(end).to_le_bytes());
+    t.write(at, &c);
+    t.jump(rm::PHYRE_MALLOC, at);
+    t.stub_sym(rm::PHYRE_FREE, tag + 1, false, 1, 0, Ret::Val(0));
+}
+
+#[test]
+fn rp4_memory_debug_matches_the_original() {
+    // The map insert: a free node or a new block (with or without a
+    // node), the key there already or not, its key tagged or not. The
+    // record: the key found (the entry or -0x10 so that +0x10 wraps) or
+    // not, the heap copy failing; sprintf_s, memset and memcpy as they
+    // are. The vram dump: the flags off, the file created or not
+    // (sprintf as it is). The dump name: paths with "bin" first, later,
+    // missing, empty (tokenize as it is over a bump heap). The frame time
+    // average: any count.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4031);
+        for case in 0..40 {
+            let map = t.zeros(0x40);
+            let node = t.zeros(0x160);
+            t.w32(node, rng.next());
+            t.w32(node + 0xc, rng.next());
+            let blocks = t.zeros(0x160);
+            t.w32(blocks, rng.next());
+            t.w32(blocks + 0xc, rng.next());
+            match case % 3 {
+                0 => t.w32(map + 0x18, node),
+                1 => {
+                    let w = writer_stub_n(t, 1, &[0], &[blocks], 1);
+                    t.jump(rm::FREELIST_ALLOCATE_BLOCK, w);
+                }
+                _ => {
+                    let w = writer_stub_n(t, 1, &[0], &[0], 1);
+                    t.jump(rm::FREELIST_ALLOCATE_BLOCK, w);
+                }
+            }
+            t.w32(map + 0x20, rng.next());
+            let value = t.zeros(0x150);
+            for k in 0..0x52 {
+                let v = rng.next();
+                t.w32(value + 4 * k, v);
+            }
+            let key = rng.next();
+            t.stub_sym(rm::STRING_NODE_CTOR, 2, true, 1, 1, Ret::Val(rng.next()));
+            let dup = u32::from(rng.chance(2));
+            t.stub_sym(rm::MEMDEBUG_TREE_INSERT, 3, true, 1, 1, Ret::Val(dup));
+            t.stub_sym(rm::PHYRE_FREE, 4, false, 1, 0, Ret::Val(0));
+            t.stub_sym(rm::FREELIST_DEALLOCATE, 5, true, 1, 1, Ret::Val(rng.next()));
+            t.stub_sym(rm::TREE_POST_INSERT, 6, true, 1, 1, Ret::Val(rng.next()));
+            t.check(
+                "MemoryDebug_mapInsert_006ddd60",
+                0x006d_dd60,
+                Conv::Thiscall(map),
+                &[key, value],
+                |g| Out::U32(rb::map_insert(g, map, key, value)),
+            );
+            t.reset();
+        }
+        for case in 0..30 {
+            let rec = t.zeros(0x120);
+            t.write(rec + 8, ["ffx/menu", "", "battle.bin"][case % 3].as_bytes());
+            t.w32(rec + 0x108, rng.below(2000));
+            t.w32(rec + 4, rng.next());
+            let map = t.zeros(0x40);
+            let heap = if case % 7 == 3 {
+                0
+            } else {
+                t.zeros(0x100) | rng.below(2)
+            };
+            t.stub_sym(rm::PHYRE_MALLOC, 1, false, 2, 0, Ret::Val(heap & !1));
+            let entry = t.zeros(0x20);
+            t.w32(entry + 0x10, rng.next());
+            t.w32(entry + 0x14, rng.next());
+            let found = [0, entry, 0xffff_fff0][rng.below(3) as usize];
+            t.stub_sym(rm::MAP_FIND_CSTR, 2, true, 1, 1, Ret::Val(found));
+            t.stub_sym(rm::MEMDEBUG_MAP_INSERT, 3, true, 2, 2, Ret::Val(rng.next()));
+            t.stub_sym(rm::PHYRE_FREE, 4, false, 1, 0, Ret::Val(0));
+            let frame = frame_ebp(&t.a, 2) - 0x3a0;
+            t.write(frame, &[0; 0x390]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "MemoryDebug_addRecord_006dd230",
+                0x006d_d230,
+                Conv::Cdecl,
+                &[rec, map],
+                |g| {
+                    rb::add_record(g, frame, rec, map);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            same_bytes(t, frame + 4, 0x38c, "addRecord frame");
+            t.reset();
+        }
+        for case in 0..12 {
+            let this = t.zeros(0x10);
+            t.w8(this, u8::from(case % 4 != 0));
+            t.w8(this + 1, u8::from(case % 4 != 1));
+            let name = cstr(t, "MapLoad");
+            let (lo, hi) = (rng.next(), rng.below(3));
+            let file = if case % 3 == 0 { 0 } else { t.zeros(0x40) };
+            t.import_sym(rm::FOPEN, 1, 2, 0, Ret::Val(file));
+            t.import_sym(rm::PRINTF, 2, 2, 0, Ret::Val(rng.next()));
+            t.import_sym(rm::FPRINTF, 3, 2, 0, Ret::Val(rng.next()));
+            t.import_sym(rm::FCLOSE, 4, 1, 0, Ret::Val(rng.next()));
+            let frame = frame_ebp(&t.a, 3) - 0x104;
+            t.write(frame, &[0; 0x100]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "MemoryDebug_dumpVram_006dd3b0",
+                0x006d_d3b0,
+                Conv::Thiscall(this),
+                &[lo, hi, name],
+                |g| Out::U32(rb::dump_vram(g, frame, this, lo, hi, name)),
+            );
+            t.b_top = None;
+            same_bytes(t, frame, 0x100, "dumpVram name");
+            t.reset();
+        }
+        let paths = [
+            "ffx/data/bin/map",
+            "bin/x",
+            "a/b/c",
+            "bin",
+            "",
+            "x//bin",
+            "a/bin/bin",
+            "solo",
+        ];
+        for (k, p) in paths.iter().enumerate() {
+            bump_malloc(t, 10);
+            let this = t.alloc(&[0xcc; 0x120]);
+            let path = cstr(t, p);
+            let suffix = cstr(t, "MapLoad");
+            let out = t.alloc(&[0xdd; 0x40]);
+            let size = [0x40, 0x20][k % 2];
+            let frame = frame_ebp(&t.a, 4) - 0x20;
+            t.write(frame, &[0; 8]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "MemoryDebug_dumpName_006dd5a0",
+                0x006d_d5a0,
+                Conv::Thiscall(this),
+                &[path, suffix, out, size],
+                |g| {
+                    rb::dump_name(g, frame, this, path, suffix, out, size);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            same_bytes(t, frame, 8, "dumpName tokens");
+            t.reset();
+        }
+        for count in [0_u32, 1, 2, 8, 9, 17, 0x8000_0000, 100] {
+            t.global(0x00ce_59a0, count);
+            t.check(
+                "FrameTime_average_006e53c0",
+                0x006e_53c0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    rb::frame_time_average(g);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_radial_line_meshes_match_the_original() {
+    // The mesh initialisers on counts 0..9 each (and negative ones: no
+    // run), the widths with rand stubbed by a sequence (0, 32767, any),
+    // and the render: a target or none, beginScene failing or not, sizes
+    // with zero, NaN and ordinary values.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4041);
+        for case in 0..40 {
+            let this = t.zeros(0x80);
+            let c = |rng: &mut Rng| match rng.below(10) {
+                0 => rng.next() | 0x8000_0000,
+                _ => rng.below(9),
+            };
+            let (a, b) = (c(&mut rng), c(&mut rng));
+            t.w32(this + 0x30, a);
+            t.w32(this + 0x34, b);
+            let n = (a.wrapping_add(b) as usize).min(20) * 2 + 2;
+            for off in [0x50, 0x54, 0x58, 0x5c, 0x64] {
+                let p = t.alloc(&vec![0xab; 0x20 * n]);
+                t.w32(this + off, p);
+            }
+            for (name, sym, run) in [
+                ("RadialLine_initColors_006f7e60", 0x006f_7e60, 0),
+                ("RadialLine_initUvsA_006f81c0", 0x006f_81c0, 1),
+                ("RadialLine_initUvsB_006f83b0", 0x006f_83b0, 2),
+                ("RadialLine_initPositions_006f85a0", 0x006f_85a0, 3),
+            ] {
+                // one count negative: the other runs index past the arrays
+                let (sa, sb) = (a.cast_signed(), b.cast_signed());
+                if sa > 20 || sb > 20 || ((sa < 0) != (sb < 0)) {
+                    continue;
+                }
+                t.check(name, sym, Conv::Thiscall(this), &[], |g| {
+                    match run {
+                        0 => rb::radial_init_colors(g, this),
+                        1 => rb::radial_init_uvs(g, this, 0x5c),
+                        2 => rb::radial_init_uvs(g, this, 0x58),
+                        _ => rb::radial_init_positions(g, this),
+                    }
+                    Out::None
+                });
+            }
+            if (a.wrapping_add(b) & 0x3fff_ffff) <= 20 {
+                let rands: Vec<u32> = (0..48)
+                    .map(|_| [0, 32767, rng.below(32768)][rng.below(3) as usize])
+                    .collect();
+                let rands = t.seq(&rands);
+                t.import_sym(rm::RAND, 1, 0, 0, rands);
+                t.check(
+                    "RadialLine_initWidths_006f8110",
+                    0x006f_8110,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| {
+                        rb::radial_init_widths(g, this);
+                        Out::None
+                    },
+                );
+            }
+            // the render
+            let renderer = t.zeros(0x200);
+            t.w32(renderer + 0x13c, rng.next());
+            t.w32(this, renderer);
+            t.w32(this + 4, rng.next());
+            t.w32(this + 0x14, rng.next());
+            let inst = t.zeros(0x20);
+            t.w32(inst + 0x10, rng.next());
+            t.w32(this + 0x24, inst);
+            for off in [0x38, 0x3c, 0x40, 0x44] {
+                let v = rng.next();
+                t.w32(this + off, v);
+            }
+            for off in [0x48, 0x4c] {
+                let v = match rng.below(5) {
+                    0 => 0,
+                    1 => f32::NAN.to_bits(),
+                    _ => (1.0 + rng.below(2000) as f32).to_bits(),
+                };
+                t.w32(this + off, v);
+            }
+            let pm = t.zeros(0x10);
+            t.stub_sym(rm::POST_MANAGER, 2, false, 0, 0, Ret::Val(pm));
+            t.stub_sym(rm::POST_COPY_BUFFER, 3, true, 6, 6, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_SET_PARAM_6C, 4, true, 4, 4, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_SET_PARAM_70, 5, true, 4, 4, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_SET_COLOR_TARGET, 6, true, 2, 2, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_SURFACE_CTOR, 7, true, 2, 2, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_SURFACE_DTOR, 8, true, 0, 0, Ret::Val(rng.next()));
+            let e = if rng.chance(4) { 1 + rng.below(3) } else { 0 };
+            t.stub_sym(rm::RL_BEGIN_SCENE, 9, true, 1, 1, Ret::Val(e));
+            t.stub_sym(rm::RL_RENDER_MESH, 10, true, 4, 4, Ret::Val(rng.next()));
+            t.stub_sym(rm::RL_END_SCENE, 11, true, 1, 1, Ret::Val(rng.next()));
+            let target = if case % 2 == 0 { 0 } else { t.zeros(0x10) };
+            let frame = frame_ebp(&t.a, 1) - 0x2c;
+            t.write(frame, &[0; 0x20]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "RadialLine_render_006f8850",
+                0x006f_8850,
+                Conv::Thiscall(this),
+                &[target],
+                |g| Out::U32(rb::radial_render(g, frame, this, target)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_vfx_rects_and_ipu_blocks_match_the_original() {
+    // The rects: no render data, no buffer, 0..6 rectangles; memset as
+    // it is (a negative count makes both clear 4 GB). The macroblock load: macroblocks
+    // and offsets inside, on and past every edge (negative ones too), the
+    // row width 1..8; the frame register writes and the clears stubbed.
+    // The block pointers: once.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4051);
+        for case in 0..30 {
+            let n = rng.below(7);
+            let m = n.min(8) as usize;
+            let src = t.zeros(0x70 * m + 4);
+            for k in 0..0x1c * m as u32 {
+                let v = float_word(&mut rng);
+                t.w32(src + 4 * k, v);
+            }
+            let rects = t.zeros(0x50);
+            t.w32(rects, src);
+            t.w32(rects + 4, n);
+            for k in 0..16 {
+                let v = rng.next();
+                t.w32(rects + 0xc + 4 * k, v);
+            }
+            let geo = t.zeros(0x20);
+            let vb = t.alloc(&vec![0xab; 0x30 * m + 4]);
+            let ib = t.alloc(&vec![0xab; 0xc * m + 4]);
+            let cb = t.alloc(&vec![0xab; 0x40 * m + 4]);
+            t.w32(geo + 0xc, vb);
+            t.w32(geo + 0x1c, ib);
+            t.w32(geo + 0x14, cb);
+            let rd = t.alloc(&[0xcd; 0xb0]);
+            t.w32(rd + 0x94, geo);
+            let rd = if case % 7 == 3 { 0 } else { rd };
+            t.stub_sym(rm::VFX_RENDER_DATA, 1, false, 2, 0, Ret::Val(rd));
+            let buf = u32::from(case % 5 != 4);
+            t.stub_sym(rm::DYN_GEO_BUFFER, 2, false, 4, 0, Ret::Val(buf));
+            t.stub_sym(rm::VFX_SET_VISIBLE, 3, false, 3, 0, Ret::Val(rng.next()));
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                "updateVFXRenderDataRects",
+                0x0071_a330,
+                Conv::Cdecl,
+                &[a, b, rects],
+                |g| Out::U32(rb::update_vfx_rects(g, a, b, rects)),
+            );
+            t.reset();
+        }
+        // one state for all cases: both sides write the same into it
+        let state = t.zeros(0x5_0600);
+        let block = t.zeros(0x1000);
+        for _ in 0..500 {
+            let w = 1 + rng.below(8);
+            t.w32(state + 0x5_0514, w);
+            t.w32(state + 0x5_03c8, rng.next());
+            t.w32(state + 0x5_051c, 16 * (1 + rng.below(10)));
+            t.w32(state + 0x5_0520, 16 * (1 + rng.below(10)));
+            t.global(rm::IPU_STATE, state);
+            t.global(rm::IPU_BLOCK, block);
+            t.stub_sym(rm::GS_SET_FRAME_REGS, 1, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(rm::ASM_CLEAR_BLOCK, 2, false, 1, 0, Ret::Val(rng.next()));
+            let mb = rng.below(80).wrapping_sub(rng.below(3));
+            let off = |rng: &mut Rng| match rng.below(4) {
+                0 => rng.below(40).wrapping_sub(40),
+                1 => rng.below(200),
+                _ => rng.below(16),
+            };
+            let (mut x, mut y) = (off(&mut rng), off(&mut rng));
+            let mut mb = mb;
+            if rng.chance(3) {
+                // exactly on an edge: macroblock 0, offsets at -16, 0 or
+                // the frame's far edges
+                mb = 0;
+                let fw = t.r32(state + 0x5_051c);
+                let fh = t.r32(state + 0x5_0520);
+                let edge = |rng: &mut Rng, f: u32| {
+                    [
+                        0u32.wrapping_sub(16),
+                        0u32.wrapping_sub(15),
+                        0,
+                        f - 16,
+                        f,
+                        f - 15,
+                    ][rng.below(6) as usize]
+                };
+                x = edge(&mut rng, fw);
+                y = edge(&mut rng, fh);
+            }
+            t.check(
+                "IpuLoadMacroblock_0077e210",
+                0x0077_e210,
+                Conv::Cdecl,
+                &[mb, x, y],
+                |g| {
+                    rb::ipu_load_macroblock(g, mb, x, y);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        let block = t.zeros(0x1000);
+        t.global(rm::IPU_BLOCK, block);
+        t.check(
+            "IpuInitBlockPointers_0077ea40",
+            0x0077_ea40,
+            Conv::Cdecl,
+            &[],
+            |g| Out::U32(rb::ipu_init_block_pointers(g)),
+        );
+        t.reset();
+    });
+}
+
+#[test]
+fn rp4_upload_chain_and_ui_after_set_match_the_original() {
+    // The upload chain: sizes 0..64 (and not multiples of 16, negative),
+    // every flag combination; the tag writers stubbed. The UI element:
+    // no texture (scissor in or out), a texture with the scissor out, no
+    // magic file, the magic path in other languages and in Chinese for
+    // magic 697/698 and others; sprintf, strstr and memset as they are.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4061);
+        for _ in 0..60 {
+            for (k, sym) in [
+                rm::FLUSH_CACHE,
+                rm::RGB32_TO_24,
+                rm::TEXANIM_DMA_TAG,
+                rm::TEXANIM_GIF_TAG,
+                rm::TEXANIM_SET_TAG,
+                rm::TEXANIM_TRX_REG,
+                rm::TEXANIM_TRX_POS,
+                rm::TEXANIM_TRX_DIR,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let n = [1, 2, 7, 9, 5, 3, 4, 2][k];
+                let vals: Vec<u32> = (0..40).map(|_| rng.next()).collect();
+                // FlushCache is a bare ret: it keeps eax
+                let vals = if k == 0 { Ret::Keep } else { t.seq(&vals) };
+                t.stub_sym(sym, 1 + k as u32, false, n, 0, vals);
+            }
+            let size = |rng: &mut Rng| match rng.below(6) {
+                0 => rng.below(70),
+                1 => 0u32.wrapping_sub(16),
+                _ => 16 * rng.below(5),
+            };
+            let (w, hh) = (size(&mut rng), size(&mut rng));
+            let args = [
+                rng.next(),
+                rng.next(),
+                rng.below(512),
+                rng.below(512),
+                w,
+                hh,
+                rng.below(1024).wrapping_sub(rng.below(100)),
+                rng.next(),
+                rng.below(2),
+                rng.below(2),
+                rng.below(2),
+            ];
+            t.check(
+                "IpuBuildUploadChain_0077ec20",
+                0x0077_ec20,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    let a = args;
+                    Out::U32(rb::ipu_build_upload_chain(
+                        g, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10],
+                    ))
+                },
+            );
+            t.reset();
+        }
+        for case in 0..30 {
+            let (lo, hi) = if case % 6 == 0 {
+                (0, 0)
+            } else if case % 6 == 1 {
+                (0, 1)
+            } else {
+                (rng.next(), rng.below(16))
+            };
+            let sc = u32::from(!rng.chance(5));
+            t.stub_sym(rm::SCISSOR_XY, 1, false, 4, 0, Ret::Val(sc));
+            t.stub_sym(rm::SCISSOR_XYUV, 2, false, 8, 0, Ret::Val(sc));
+            t.stub_sym(rm::DRAW_UI_ELEMENT, 3, false, 5, 0, Ret::Val(rng.next()));
+            let handle = if rng.chance(4) {
+                u32::MAX
+            } else {
+                rng.below(4)
+            };
+            t.stub_sym(rm::MAGIC_HANDLE, 4, false, 0, 0, Ret::Val(handle));
+            let ids = t.seq(&[[697, 698, 12, 1000][rng.below(4) as usize], 697]);
+            t.stub_sym(rm::MAGIC_ID, 5, false, 4, 0, ids);
+            let lang = if rng.chance(2) { 0xb } else { rng.below(11) };
+            t.stub_sym(rm::FFX_LANG, 6, false, 0, 0, Ret::Val(lang));
+            t.stub_sym(rm::UNIFY_FILENAME, 7, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(rm::INTERN_NAME, 8, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(rm::MENU_ADD_NAME, 9, false, 1, 0, Ret::Val(rng.next()));
+            let (a, b) = (rng.next(), rng.next());
+            let frame = frame_ebp(&t.a, 4) - 0x204;
+            t.write(frame, &[0; 0x200]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "graphicDrawUIElementAfterSet",
+                0x0090_6420,
+                Conv::Cdecl,
+                &[lo, hi, a, b],
+                |g| {
+                    rb::draw_ui_element_after_set(g, frame, lo, hi, a, b);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            same_bytes(t, frame, 0x200, "UI element after set buffers");
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_movie_run_command_matches_the_original() {
+    // Every command (and unknown ones, 0), mono and stereo, the idle
+    // stream half (each flag, the next half ready or not, either half by
+    // the two positions), the sound buffer error; every callee stubbed.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4071);
+        let cmds = [
+            0x40, 0x50, 0x51, 0x1c30, 0x3830, 0x3860, 0x3f30, 0x6400, 0x7800, 0xc800, 0x8000,
+            0x8700, 0, 0, 0, 7, 0x9000,
+        ];
+        // one state for all cases: both sides write the same into it
+        let state = t.zeros(0x5_0800);
+        for case in 0..400 {
+            let block = t.zeros(0x40);
+            let cmd = cmds[case % cmds.len()];
+            t.w32(block, cmd);
+            for off in [4, 8, 0xc] {
+                let v = rng.below(0x200);
+                t.w32(block + off, v);
+            }
+            t.w32(state + 0x5_059c, block);
+            t.w32(state + 0x5_06c8, rng.below(3));
+            t.w32(state + 0x5_0758, rng.below(0x100));
+            t.w32(state + 0x5_0720, rng.next());
+            for off in [
+                0x5_0765, 0x5_0766, 0x5_076a, 0x5_076b, 0x5_0768, 0x5_0769, 0x5_0771,
+            ] {
+                t.w8(state + off, u8::from(rng.chance(2)));
+            }
+            t.w32(state + 0x5_0714, rng.below(2));
+            let pos = |rng: &mut Rng| [u32::MAX, 0, 5, 9, 0x8000_0000][rng.below(5) as usize];
+            let (p0, p1) = (pos(&mut rng), pos(&mut rng));
+            t.w32(state + 0x5_0724, p0);
+            t.w32(state + 0x5_0728, p1);
+            t.global(rm::IPU_STATE, state);
+            let rec = t.zeros(0x20);
+            for k in 0..7 {
+                let v = if k == 6 && rng.chance(2) {
+                    0
+                } else {
+                    rng.next()
+                };
+                t.w32(rec + 4 * k, v);
+            }
+            for (k, (sym, n)) in [
+                (rm::AUDIO_SA_DECODE, 5),
+                (rm::AUDIO_DELTA_DECODE, 5),
+                (rm::AUDIO_DECODE_BLOCKS, 4),
+                (rm::MOVIE_VIEWER_AUDIO, 0),
+                (rm::AUDIO_MIX_HALVES, 3),
+                (rm::MOVIE_STEP, 0),
+                (rm::DBG_PRINTF, 1),
+                (rm::ALREADY_STARTED_INC, 1),
+                (rm::SND_SEND_STREAM, 5),
+                (rm::SND_SEND_SYNC, 1),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_sym(sym, 1 + k as u32, false, n, 0, Ret::Val(rng.next()));
+            }
+            t.stub_sym(rm::SQS_RECORD, 20, false, 0, 0, Ret::Val(rec));
+            let mut ready = rng.below(2);
+            if cmd == 0 && rng.chance(2) {
+                // the idle stream half, sent
+                t.w8(state + 0x5_0766, 0);
+                t.w8(state + 0x5_076a, 1);
+                ready = 1;
+            }
+            t.stub_sym(rm::SQS_NEXT_HALF, 21, false, 0, 0, Ret::Val(ready));
+            t.check(
+                "MovieDecoder_runCommand_0077e460",
+                0x0077_e460,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(rb::movie_run_command(g)),
             );
             t.reset();
         }

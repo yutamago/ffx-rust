@@ -184,7 +184,7 @@ pub mod bridge {
 
     /// The named cluster's first texture through the iterator at `iter`
     /// (`+0` plus `+0x10`), or `None` without a cluster or a texture.
-    fn cluster_texture(h: &mut impl Host, iter: u32, name: u32) -> Option<u32> {
+    pub(crate) fn cluster_texture(h: &mut impl Host, iter: u32, name: u32) -> Option<u32> {
         let cm = h.call_sym(CLUSTER_MANAGER, Conv::Cdecl, &[]);
         let cluster = h.call_sym(CLUSTER_BY_NAME, Conv::Thiscall(cm), &[name]);
         if cluster == 0 {
@@ -199,7 +199,7 @@ pub mod bridge {
 
     /// The `{0x47, 0, linear sampler, 0}` sampler state into `p` (the
     /// buffer read before the sampler is asked for).
-    fn write_sampler_state(h: &mut impl Host, mat: u32, p: u32) {
+    pub(crate) fn write_sampler_state(h: &mut impl Host, mat: u32, p: u32) {
         let buffer = word(h, mat.wrapping_add(4));
         let scene = SCENE.get(h);
         let s = h.call_sym(LINEAR_SAMPLER, Conv::Thiscall(scene), &[1]);
