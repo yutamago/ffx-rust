@@ -24,6 +24,7 @@ use ffx_prender::m5m_n::bridge as gn;
 use ffx_prender::m5m_o::bridge as go;
 use ffx_prender::m5m_p::bridge as gp;
 use ffx_prender::m5m_q::bridge as gq;
+use ffx_prender::m5m_r::bridge as gr;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -613,5 +614,14 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_q::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_q::FRAME;
         gq::load_anime_rect(&mut mem(), ebp, i, x, y, w, hh)
+    }
+    // ---- round 5 batch 14 (ffx_prender::m5m_r) ----
+    /// `rcbgSceneLoadTextureAnime(scene, i)` -> the last callee's `eax` (the
+    /// original's 0x138-byte frame, its name, path and spills, in this
+    /// shim's).
+    rcbgSceneLoadTextureAnime @ 0x0093_b930 => extern "C" fn rcbg_scene_load_texture_anime(scene: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_r::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_r::FRAME;
+        gr::load_texture_anime(&mut mem(), ebp, scene, i)
     }
 }

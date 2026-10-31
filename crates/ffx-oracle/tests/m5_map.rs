@@ -49,6 +49,7 @@ use ffx_prender::m5m_n::{self as mn, bridge as gn};
 use ffx_prender::m5m_o::{self as mo, bridge as go};
 use ffx_prender::m5m_p::{self as mp, bridge as gp};
 use ffx_prender::m5m_q::{self as mq, bridge as gq};
+use ffx_prender::m5m_r::{self as mr, bridge as gr};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4072,6 +4073,102 @@ fn r5_load_anime_rect_matches_the_original() {
                 |o| Out::U32(gq::load_anime_rect(o, ebp, i, x, y, w, hh)),
             );
             r5_same(t, "rcbgSceneLoadTextureAnimeRect", ebp - 0x11c, 0x118);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 14 (ffx_prender::m5m_r) ----
+
+#[test]
+fn r5_load_texture_anime_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0b1);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/map");
+            let maps: [&[u8]; 3] = [b"bsil00", b"", b"kino03"];
+            t.write(work + 0x27c, maps[(case % 3) as usize]);
+            t.global(mr::RCUI_WORK.sym, work);
+            let i = match case % 4 {
+                0 => 0x19,
+                1 => 0x1a,
+                _ => rng.below(40),
+            };
+            let entries = t.zeros(0xc0 * (i as usize + 1));
+            let e = entries + 0xc0 * i;
+            let (w, hh) = (rng.below(300), rng.below(300));
+            t.w32(e + 4, w);
+            t.w32(e + 8, hh);
+            t.w32(e + 0xc, rng.below(300));
+            t.w32(e + 0x10, rng.below(300));
+            let records = t.zeros(0x20);
+            t.w32(e + 0x90 + 0xc, records);
+            let scene = t.zeros(0x10);
+            t.w32(scene + 8, entries);
+            // the image: the rectangle's size at times
+            let tm2 = if case % 7 == 3 { 0 } else { t.zeros(0x50) };
+            if tm2 != 0 {
+                let same = case % 2 == 0;
+                let iw = if same { w } else { rng.below(300) };
+                let ih = if same || rng.chance(2) {
+                    hh
+                } else {
+                    rng.below(300)
+                };
+                t.write(tm2 + 0x24, &(iw as u16).to_le_bytes());
+                t.write(tm2 + 0x26, &(ih as u16).to_le_bytes());
+                t.w32(tm2 + 0x44, rng.next());
+            }
+            let n = match case % 5 {
+                0 => 0,
+                1 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(4),
+            };
+            t.stub_sym(mr::ANIME_RECT, 1, false, 5, 0, Ret::Val(1));
+            t.stub_sym(mr::COUNT_FILES, 2, false, 3, 0, Ret::Val(n));
+            r5_out_stub(t, mr::TEX_LOG2_SIZE, 3, 5, Ret::Val(3), 4, rng.below(16));
+            t.stub_sym(mr::ANIME_SET_DATA_CNT, 4, false, 2, 0, Ret::Val(4));
+            t.stub_sym(mr::TRX_NEW, 5, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mr::TRX_SET_REGS_ALLOC, 6, false, 9, 0, Ret::Val(6));
+            t.stub_sym(mr::PAL_ALLOC, 7, false, 2, 0, Ret::Val(7));
+            t.stub_sym(mr::TM2_NEW, 8, false, 0, 0, Ret::Val(tm2));
+            // (no image: every load fails, as a null one would)
+            let loads: Vec<u32> = (0..4)
+                .map(|_| u32::from(tm2 != 0 && !rng.chance(4)))
+                .collect();
+            let loads = t.seq(&loads);
+            t.stub_sym(mr::TM2_LOAD, 9, false, 2, 0, loads);
+            let wds: Vec<u32> = (0..0x100).map(|_| rng.next()).collect();
+            let clut = t.words(&wds);
+            t.stub_sym(mr::GET_PTR32, 10, false, 1, 0, Ret::Val(clut));
+            let dst = t.zeros(0x400);
+            t.stub_sym(mr::PAL_GET_ENTRY_DATA, 11, false, 2, 0, Ret::Val(dst));
+            t.stub_sym(
+                mr::TRX_GET_ENTRY_DATA,
+                12,
+                false,
+                6,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(mr::TM2_COPY_RECT, 13, false, 6, 0, Ret::Val(rng.next()));
+            t.stub_sym(mr::TM2_DELETE, 14, false, 1, 0, Ret::Val(rng.next()));
+            let p1 = t.stub_code(15, false, 1, 0, Ret::Val(rng.next()), false);
+            let p3 = t.stub_code(16, false, 3, 0, Ret::Val(rng.next()), false);
+            r5_dispatch(t, mr::RC_PRINT, t.rebase(mr::NOT_FOUND_TEXT), p1, p3);
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - mr::FRAME - 0x40);
+            t.check(
+                "rcbgSceneLoadTextureAnime",
+                0x0093_b930,
+                Conv::Cdecl,
+                &[scene, i],
+                |o| Out::U32(gr::load_texture_anime(o, ebp, scene, i)),
+            );
+            r5_same(t, "rcbgSceneLoadTextureAnime", ebp - 0x138, 0x134);
             t.b_top = None;
             t.reset();
         }
