@@ -1098,6 +1098,7 @@ ports! {
     "static leave, model" => s4_small::STATIC_LEAVE_MODEL, s4_small::static_leave_model;
     "static link last" => s4_small::STATIC_LINK_LAST, s4_small::static_link_last;
     "light once" => s4_small::LIGHT_ONCE, s4_small::light_once;
+    "block defaults" => s4_small::BLOCK_DEFAULTS, s4_small::block_defaults;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
@@ -1471,6 +1472,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("fader task 50", &s4_small::FADER_TASK_50),
     ("int fade", &s4_small::INT_FADE),
     ("link node, slot 942", &s4_small::LINK_NODE_942),
+    ("ring write", &s4_small::RING_WRITE),
+    ("static link (xmm2)", &s4_small::STATIC_LINK_XMM),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

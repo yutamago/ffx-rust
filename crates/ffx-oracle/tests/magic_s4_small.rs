@@ -1865,3 +1865,47 @@ fn statics_and_lights() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn defaults_rings_links() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x3ab0);
+    t.write(op(&t, f, 0x8), &[0x5a; 0x110]);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0xaa80);
+    let (w, r, e) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x300);
+    for i in 0..4 {
+        t.set_u32(e + 4 * i, 0x0e00_0000 + i);
+    }
+    for (size, wi, fill, ri) in [
+        (4u16, 1u16, 2u16, 0u16),
+        (4, 3, 4, 1),
+        (4, 1, 4, 3),
+        (1, 0, 0, 0),
+        (0x8000, 0x7ffe, 0x8000, 2),
+    ] {
+        t.write(r, &[0; 0x30]);
+        t.set_u32(w, r);
+        t.set_u32(w + 4, e);
+        t.set_u32(r + 0x1c, SCRATCH + 0x1000);
+        t.set_u16(r + 0x20, size);
+        t.set_u16(r + 0x22, 0x10);
+        t.set_u16(r + 0x24, wi);
+        t.set_u16(r + 0x26, fill);
+        t.set_u16(r + 0x2a, ri);
+        t.set_u8(r + 0x28, 0xf6);
+        t.check(f, Call::this(w), &[], Eax::Checked, s4_small::ring_write);
+    }
+    drop(t);
+    let Some(mut t) = twin(262) else { return };
+    let f = t.at(0x6f50);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x3c) } else { last });
+        let c = Call::default().with_xmm(&[Xmm::F32(0), Xmm::F32(0), Xmm::F32(0.5f32.to_bits())]);
+        t.check(f, c, &[], Eax::Checked, s4_small::static_link_xmm);
+    }
+}

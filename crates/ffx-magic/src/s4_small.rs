@@ -4199,3 +4199,133 @@ pub const LIGHT_ONCE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The DLL's block (operand `+0x8`, 0x110 bytes) cleared, its pointer
+/// `G_P` set (operands `+0x16`, `+0x1a`), the two words at `+0x20`,
+/// `+0x2a` 7 and seven more (operands `+0x34` to `+0x70`) 1 (no
+/// arguments; `memset`). Returns the block (`memset`'s result).
+///
+/// `magic_0188` 0x10003ab0 (121 bytes; 3 DLLs).
+pub fn block_defaults<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = op(img, f, 0x8);
+    g.write_bytes(block, &[0; 0x110]);
+    g.write::<u32>(op(img, f, 0x16), op(img, f, 0x1a));
+    for o in [0x20, 0x2a] {
+        g.write::<u32>(op(img, f, o), 7);
+    }
+    for o in (0x34..=0x70).step_by(0xa) {
+        g.write::<u32>(op(img, f, o), 1);
+    }
+    Ret::eax(block)
+}
+
+/// [`block_defaults`].
+pub const BLOCK_DEFAULTS: Sig = Sig {
+    len: 121,
+    hash: 0x4093_732f_36c1_ac2b,
+    calls: &[(0xd, Callee::Import("memset"))],
+    imports: &[],
+};
+
+/// One 16-byte entry written into a ring buffer (internal, `ecx` = the
+/// writer: `+0x0` the ring, `+0x4` the entry): the ring (`u16 +0x20` its
+/// size, `+0x22` the stride, `+0x24` the write index, `+0x26` the fill,
+/// `+0x2a` the read index, `+0x1c` the data, byte `+0x28` flags) is full
+/// (bit 0) when the fill reached the size; the write index steps (back
+/// to 0 at the size) and the entry goes to its slot; a full ring moves
+/// the read index on (back to 0 at the size), else the fill grows; bit 1
+/// cleared. Returns the read index (in the low half of the entry
+/// pointer), 0, or the entry pointer.
+///
+/// `magic_0150` 0x1000aa80 (121 bytes; 2 DLLs).
+pub fn ring_write<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let w = fr.ecx;
+    let r = g.read::<u32>(w);
+    let at = |o: u32| r.wrapping_add(o);
+    let size = g.read::<u16>(at(0x20));
+    let flags = g.read::<u8>(at(0x28));
+    let flags = if g.read::<u16>(at(0x26)) == size {
+        flags | 1
+    } else {
+        flags & 0xfe
+    };
+    g.write::<u8>(at(0x28), flags);
+    let mut i = g.read::<u16>(at(0x24)).wrapping_add(1);
+    if i == size {
+        i = 0;
+    }
+    g.write::<u16>(at(0x24), i);
+    let stride = u32::from(g.read::<u16>(at(0x22)));
+    let slot = i32::from(i.cast_signed())
+        .cast_unsigned()
+        .wrapping_mul(stride);
+    let dst = slot.wrapping_add(g.read::<u32>(at(0x1c)));
+    let entry = g.read::<u32>(w.wrapping_add(4));
+    for k in 0..4 {
+        let x = g.read::<u32>(entry.wrapping_add(4 * k));
+        g.write::<u32>(dst.wrapping_add(4 * k), x);
+    }
+    let eax = if g.read::<u8>(at(0x28)) & 1 == 0 {
+        let n = g.read::<u16>(at(0x26)).wrapping_add(1);
+        g.write::<u16>(at(0x26), n);
+        entry
+    } else {
+        let j = g.read::<u16>(at(0x2a)).wrapping_add(1);
+        g.write::<u16>(at(0x2a), j);
+        if j == g.read::<u16>(at(0x20)) {
+            g.write::<u16>(at(0x2a), 0);
+            0
+        } else {
+            (entry & 0xffff_0000) | u32::from(j)
+        }
+    };
+    let flags = g.read::<u8>(at(0x28));
+    g.write::<u8>(at(0x28), flags & 0xfd);
+    Ret::eax(eax)
+}
+
+/// [`ring_write`].
+pub const RING_WRITE: Sig = Sig {
+    len: 121,
+    hash: 0x5cf7_eb1d_209c_93cb,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's static node (operands from `+0x8`) set up fresh and put
+/// last under the DLL's list (its parent `+0x24`, the list's last
+/// `*G_LAST` `+0x1`, first `+0x44`, count `+0x58`, last `+0x5e`), then
+/// `+0x44` of the node `xmm2` (operand `+0x6a`) and its handler table
+/// (`+0x70`) (internal, `xmm2`). Returns the old last.
+///
+/// `magic_0262` 0x10006f50 (121 bytes; 2 DLLs).
+pub fn static_link_xmm<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = g.read::<u32>(op(img, f, 0x1));
+    g.write::<u16>(op(img, f, 0x8), 0xff);
+    for (dst, src) in [(0x10, 0x14), (0x1a, 0x1e), (0x24, 0x28), (0x2e, 0x32)] {
+        g.write::<u32>(op(img, f, dst), op(img, f, src));
+    }
+    g.write::<u32>(op(img, f, 0x37), last);
+    if last == op(img, f, 0x3c) {
+        g.write::<u32>(op(img, f, 0x44), op(img, f, 0x48));
+    } else {
+        g.write::<u32>(last.wrapping_add(4), op(img, f, 0x51));
+    }
+    let count = op(img, f, 0x58);
+    let c = g.read::<u16>(count).wrapping_add(1);
+    g.write::<u16>(count, c);
+    g.write::<u32>(op(img, f, 0x5e), op(img, f, 0x62));
+    g.write::<u32>(op(img, f, 0x6a), fr.xmm_f32(2).to_bits());
+    g.write::<u32>(op(img, f, 0x70), op(img, f, 0x74));
+    Ret::eax(last)
+}
+
+/// [`static_link_xmm`].
+pub const STATIC_LINK_XMM: Sig = Sig {
+    len: 121,
+    hash: 0x2f8b_3236_a61a_9dc8,
+    calls: &[],
+    imports: &[],
+};
