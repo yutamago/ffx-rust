@@ -3585,6 +3585,7 @@ fn burst_records_set() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // one run per kind of member
 fn bursts_tasks() {
     let Some(mut t) = twin(434) else { return };
     let f = t.at(0x8530);
@@ -3695,6 +3696,7 @@ fn bursts_tasks() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // the parts, their vertices and strips
 fn parts_vertices_moved() {
     let Some(mut t) = twin(434) else { return };
     let f = t.at(0x37d0);
@@ -3764,25 +3766,25 @@ fn parts_vertices_moved() {
             let d = SCRATCH + 0x6000 + ((j + k) & 0xf) * 0x400;
             t.write(d, &varied(0x400, j + 2 * k));
             let (nv, ns) = (
-                [3i16, 0, 2, 1][(j + k) as usize % 4],
-                [2i16, 1, 0, 3][(j + k) as usize % 4],
+                [3u16, 0, 2, 1][(j + k) as usize % 4],
+                [2u16, 1, 0, 3][(j + k) as usize % 4],
             );
             t.set_u32(d + 4, 0x40);
             t.set_u32(d + 8, 0x300);
-            t.set_u16(d + 0x10, ns as u16);
-            t.set_u16(d + 0x12, nv as u16);
+            t.set_u16(d + 0x10, ns);
+            t.set_u16(d + 0x12, nv);
             // the strips: kind 0x10 with 2 triples, another kind with 1
             let mut e = d + 0x40;
-            for (i, (kind, n)) in [(0x10u8, 2i16), (0x7, 1), (0x10, 0)]
+            for (i, (kind, n)) in [(0x10u8, 2u16), (0x7, 1), (0x10, 0)]
                 .into_iter()
                 .enumerate()
             {
-                if i as i16 >= ns {
+                if i >= usize::from(ns) {
                     break;
                 }
                 t.set_u8(e + 1, kind);
-                t.set_u16(e + 2, n as u16);
-                e += 0x20 + if kind == 0x10 { 0x1c * n as u32 } else { 0 };
+                t.set_u16(e + 2, n);
+                e += 0x20 + if kind == 0x10 { 0x1c * u32::from(n) } else { 0 };
             }
         }
         t.write(col, &varied(0x100, k));
@@ -3931,7 +3933,7 @@ fn swing_pairs_started() {
         t.set_u32(task + 4, 0);
         t.set_u32(task + 8, SCRATCH + 0x340);
         t.set_u32(SCRATCH + 0x34c, 0);
-        t.write(task + 0x14, &[delay as u8, a as u8, tg as u8, s as u8]);
+        t.write(task + 0x14, &[delay, a, tg, s].map(i8::cast_unsigned));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }

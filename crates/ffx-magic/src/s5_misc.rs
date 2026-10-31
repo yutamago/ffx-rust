@@ -6909,9 +6909,10 @@ fn list_push<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) 
 /// the third on the target `*G_D` is hit (slot 239 `(d, -5, 0)`); the
 /// records `A = (i + 0x18) * 0x2c` and `B = (i + 0x1d) * 0x2c` into the
 /// object go on the DLL's list; the point `+0x43c + 0x2c i` is the
-/// start `+0x4ec` (slot 325) moved by `(frnd - K1) K2 - K3`, `K4 - (frnd
-/// - K1) K5`, `(frnd - K1) K2 - K3` (slot 307, ST0), `w` 1.0; `+0x518 +
-/// 0x2c i..` three 1.0, `+0x524 + 0x2c i = (frnd - K1) K6 + K7`; the node
+/// start `+0x4ec` (slot 325) moved by `(frnd - K1) K2 - K3`,
+/// `K4 - (frnd - K1) K5`, `(frnd - K1) K2 - K3` (slot 307, ST0), `w` 1.0;
+/// `+0x518 + 0x2c i..` three 1.0, `+0x524 + 0x2c i = (frnd - K1) K6 + K7`;
+/// the node
 /// `+0x5ac + 0x14c i` inserted ([`node_insert`]: the group `(node, L,
 /// L2, A, L3, B)`) and the particle `+0x20 + 0x100 i` set up
 /// ([`particle_node`]: `(p, P, node, *G_O, Q, 0)`, `p[0] = VT`). Then `i`
