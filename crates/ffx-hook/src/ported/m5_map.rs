@@ -11,6 +11,24 @@ use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::bridge as d;
+use ffx_prender::m5m_e::bridge as e;
+use ffx_prender::m5m_f::bridge as f;
+use ffx_prender::m5m_g::bridge as g;
+use ffx_prender::m5m_h::bridge as h;
+use ffx_prender::m5m_i::bridge as gi;
+use ffx_prender::m5m_j::bridge as gj;
+use ffx_prender::m5m_k::bridge as gk;
+use ffx_prender::m5m_l::bridge as gl;
+use ffx_prender::m5m_m::bridge as gm;
+use ffx_prender::m5m_n::bridge as gn;
+use ffx_prender::m5m_o::bridge as go;
+use ffx_prender::m5m_p::bridge as gp;
+use ffx_prender::m5m_q::bridge as gq;
+use ffx_prender::m5m_r::bridge as gr;
+use ffx_prender::m5m_s::bridge as gs;
+use ffx_prender::m5m_t::bridge as gt;
+use ffx_prender::m5m_u::bridge as gu;
+use ffx_prender::m5m_v::bridge as gv;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -397,5 +415,252 @@ ported! {
     /// `rcbgFpLoadTextCurrent_0093a7e0()`.
     rcbgFpLoadTextCurrent_0093a7e0 @ 0x0093_a7e0 => extern "C" fn fp_load_text_current() -> u32 {
         c::fp_load_text_current(&mut mem())
+    }
+    // ---- round 5 batch 1 (ffx_prender::m5m_e) ----
+    /// `rcuiPreMemWinOpen()` -> `rcuiWindowCreate`'s `eax`.
+    rcuiPreMemWinOpen @ 0x0093_64a0 => extern "C" fn pre_mem_win_open() -> u32 {
+        e::pre_mem_win_open(&mut mem())
+    }
+    /// `rcuiPreMemProc(window, msg, param)` -> `eax` as the original
+    /// leaves it.
+    rcuiPreMemProc @ 0x0093_63f0 => extern "C" fn pre_mem_proc(_window: u32, msg: u32, _param: u32) -> u32 {
+        e::pre_mem_proc(&mut mem(), msg)
+    }
+    /// `rcuiParProcKick(force)`.
+    rcuiParProcKick @ 0x0093_6340 => extern "C" fn par_proc_kick(force: u32) {
+        e::par_proc_kick(&mut mem(), force);
+    }
+    /// `rcuiMakeFullPath()` -> the map number.
+    rcuiMakeFullPath @ 0x0093_7b20 => extern "C" fn make_full_path() -> u32 {
+        e::make_full_path(&mut mem())
+    }
+    /// `rcuiTreeWindowOpen_0093c1d0(x, y)`.
+    rcuiTreeWindowOpen_0093c1d0 @ 0x0093_c1d0 => extern "C" fn tree_window_open(x: u32, y: u32) -> u32 {
+        e::tree_window_open(&mut mem(), x, y)
+    }
+    /// `jmp abmap_cheng_panel` (`0x00a48740`): its `eax`.
+    abmap_cheng_panel_thunk_00a45860 @ 0x00a4_5860 => extern "C" fn abmap_cheng_panel_thunk(kind: u32, node: u32) -> u32 {
+        e::abmap_cheng_panel_thunk(&mut mem(), kind, node)
+    }
+    /// `rcbgSceneLoadAll_0093aec0(scene)`.
+    rcbgSceneLoadAll_0093aec0 @ 0x0093_aec0 => extern "C" fn scene_load_all(scene: u32) -> u32 {
+        e::scene_load_all(&mut mem(), scene)
+    }
+    /// `rcbgPreLoadText()`.
+    rcbgPreLoadText @ 0x0093_ae60 => extern "C" fn pre_load_text() -> u32 {
+        e::pre_load_text(&mut mem())
+    }
+    /// `rcbgFpTrxTexLoadAll_0093a890(path)`: the number buffer in this
+    /// shim's frame.
+    rcbgFpTrxTexLoadAll_0093a890 @ 0x0093_a890 => extern "C" fn fp_trx_load_all(path: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        e::fp_trx_load_all(&mut mem(), frame.at(), path)
+    }
+    /// `rcbgFpLoadTextSub(id, flag)`: the stage name and path in this
+    /// shim's frame.
+    rcbgFpLoadTextSub @ 0x0093_a800 => extern "C" fn fp_load_text_sub(id: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        let at = frame.at();
+        e::fp_load_text_sub(&mut mem(), at + 0x100, at, id, flag)
+    }
+    /// `rcbgSaveBin_00938fd0()`: the pack list in this shim's frame.
+    rcbgSaveBin_00938fd0 @ 0x0093_8fd0 => extern "C" fn save_bin() -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        e::save_bin(&mut mem(), frame.at())
+    }
+    /// `rcbgTrxSave(t, fd)`.
+    rcbgTrxSave @ 0x0093_9950 => extern "C" fn trx_save(t: u32, fd: u32) -> u32 {
+        e::trx_save(&mut mem(), t, fd)
+    }
+    /// `rcbgSaveChunkHeader_00938f40(size, fd)`: the header in this shim's
+    /// frame; writes from its argument slot.
+    rcbgSaveChunkHeader_00938f40 @ 0x0093_8f40 => extern "C" fn save_chunk_header(_size: u32, fd: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        e::save_chunk_header(&mut mem(), slots, frame.at(), fd)
+    }
+    /// `rcbgSaveMesh_00938e70(obj, fd)`: writes its first argument slot.
+    rcbgSaveMesh_00938e70 @ 0x0093_8e70 => extern "C" fn save_mesh(obj: u32, fd: u32; slots: u32) -> u32 {
+        e::save_mesh(&mut mem(), slots, obj, fd)
+    }
+    /// `rcbgModelLoadByExt_0093ad60(a, name)` -> the model or 0.
+    rcbgModelLoadByExt_0093ad60 @ 0x0093_ad60 => extern "C" fn model_load_by_ext(a: u32, name: u32) -> u32 {
+        e::model_load_by_ext(&mut mem(), a, name)
+    }
+    /// `rcbgCountNumberedFiles_0093acb0(pattern, prefix, digits)` -> the
+    /// count: the file list in this shim's frame.
+    rcbgCountNumberedFiles_0093acb0 @ 0x0093_acb0 => extern "C" fn count_numbered_files(pattern: u32, prefix: u32, digits: u32) -> u32 {
+        let mut frame = StackFrame::<3>::new();
+        e::count_numbered_files(&mut mem(), frame.at(), pattern, prefix, digits)
+    }
+    /// `rcuiGaugeDraw_0093c730(window, x, y, value)`.
+    rcuiGaugeDraw_0093c730 @ 0x0093_c730 => extern "C" fn gauge_draw(window: u32, x: u32, y: u32, value: u32) -> u32 {
+        e::gauge_draw(&mut mem(), window, x, y, value)
+    }
+    // ---- round 5 batch 2 (ffx_prender::m5m_f) ----
+    /// `rcbgFpTrxTexLoadTextGetTrxCnt(path, base)` -> the count: the list,
+    /// command and name in this shim's frame.
+    rcbgFpTrxTexLoadTextGetTrxCnt @ 0x0093_a910 => extern "C" fn trx_count(path: u32, base: u32) -> u32 {
+        let mut frame = StackFrame::<0x4a>::new();
+        f::trx_count(&mut mem(), frame.at(), path, base)
+    }
+    /// `rcbgGuideMapLoadTextSub(id)` -> the load's result: the stage name
+    /// and path in this shim's frame.
+    rcbgGuideMapLoadTextSub @ 0x0093_aa60 => extern "C" fn guide_map_load_text_sub(id: u32) -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        let at = frame.at();
+        f::guide_map_load_text_sub(&mut mem(), at + 0x100, at, id)
+    }
+    /// `rcbgTrxSave2_009399f0(t, fd)`: the pad in this shim's frame.
+    rcbgTrxSave2_009399f0 @ 0x0093_99f0 => extern "C" fn trx_save2(t: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        f::trx_save2(&mut mem(), frame.at(), t, fd)
+    }
+    // ---- round 5 batch 3 (ffx_prender::m5m_g) ----
+    /// `rcbgSceneLoadTextObjConfig_0093ab80(obj, p)` -> `rcdtParseIsEnd`'s
+    /// `eax` or 9.
+    rcbgSceneLoadTextObjConfig_0093ab80 @ 0x0093_ab80 => extern "C" fn obj_config(obj: u32, p: u32) -> u32 {
+        g::obj_config(&mut mem(), obj, p)
+    }
+    /// `rcbgSceneLoadTextSubConfig(scene, name)` -> 1/0: the chunk and
+    /// parser in this shim's frame.
+    rcbgSceneLoadTextSubConfig @ 0x0093_b590 => extern "C" fn load_text_sub_config(scene: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<0x26>::new();
+        g::load_text_sub_config(&mut mem(), frame.at(), scene, name)
+    }
+    // ---- round 5 batch 4 (ffx_prender::m5m_h) ----
+    /// `rcuiVramWrite()` -> `sceDmaSync`'s `eax`: the PSM table in this
+    /// shim's frame.
+    rcuiVramWrite @ 0x0093_7190 => extern "C" fn vram_write() -> u32 {
+        let mut frame = StackFrame::<14>::new();
+        h::vram_write(&mut mem(), frame.at())
+    }
+    // ---- round 5 batch 5 (ffx_prender::m5m_i) ----
+    /// `rcbgGuideMapConvSub(id, sub)` -> the model or 0: the stage name and
+    /// path in this shim's frame.
+    rcbgGuideMapConvSub @ 0x0093_8080 => extern "C" fn guide_map_conv_sub(id: u32, sub: u32) -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        let at = frame.at();
+        gi::guide_map_conv_sub(&mut mem(), at + 0x100, at, id, sub)
+    }
+    // ---- round 5 batch 6 (ffx_prender::m5m_j) ----
+    /// `rcuiNumWindowCreate_0093c670(win, value, title, parent)` -> the
+    /// whole part: the original's 8-byte frame (`modf`'s whole part) in
+    /// this shim's.
+    rcuiNumWindowCreate_0093c670 @ 0x0093_c670 => extern "C" fn rcui_num_window_create(win: u32, value: u32, title: u32, parent: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_j::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_j::FRAME;
+        gj::num_window_create(&mut mem(), ebp, win, value, title, parent)
+    }
+    // ---- round 5 batch 7 (ffx_prender::m5m_k) ----
+    /// `rcuiGuideSaveMap_00938d20(m, fd)` -> the last `sceWrite`'s `eax`
+    /// (the original's 0x14-byte frame in this shim's).
+    rcuiGuideSaveMap_00938d20 @ 0x0093_8d20 => extern "C" fn rcui_guide_save_map(m: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_k::MAP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_k::MAP_FRAME;
+        gk::save_map(&mut mem(), ebp, m, fd)
+    }
+    /// `rcuiGuideSave_009397f0(g, fd)` -> the last `sceWrite`'s `eax` (the
+    /// original's 0x30-byte frame in this shim's).
+    rcuiGuideSave_009397f0 @ 0x0093_97f0 => extern "C" fn rcui_guide_save(g: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_k::SAVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_k::SAVE_FRAME;
+        gk::save(&mut mem(), ebp, g, fd)
+    }
+    // ---- round 5 batch 8 (ffx_prender::m5m_l) ----
+    /// `rcuiMapIdFromCsv_009377e0(name)` -> the id or -1 (the original's
+    /// 0x98-byte frame, its chunk and parser, in this shim's).
+    rcuiMapIdFromCsv_009377e0 @ 0x0093_77e0 => extern "C" fn rcui_map_id_from_csv(name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_l::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_l::FRAME;
+        gl::map_id_from_csv(&mut mem(), ebp, name)
+    }
+    // ---- round 5 batch 9 (ffx_prender::m5m_m) ----
+    /// `rcbgSaveBinNormal()` -> the last `rcPrint`'s `eax` (the original's
+    /// 0x318-byte frame, its path, command, reply and header, in this
+    /// shim's).
+    rcbgSaveBinNormal @ 0x0093_9040 => extern "C" fn rcbg_save_bin_normal() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_m::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_m::FRAME;
+        gm::save_bin_normal(&mut mem(), ebp)
+    }
+    // ---- round 5 batch 10 (ffx_prender::m5m_n) ----
+    /// `rcbgSceneLoadTextureNormal(scene, i)` -> `rcdtTm2Delete`'s `eax`
+    /// (the original's 0x118-byte frame, its path and outputs, in this
+    /// shim's).
+    rcbgSceneLoadTextureNormal @ 0x0093_bd10 => extern "C" fn rcbg_scene_load_texture_normal(scene: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_n::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_n::FRAME;
+        gn::load_texture_normal(&mut mem(), ebp, scene, i)
+    }
+    // ---- round 5 batch 11 (ffx_prender::m5m_o) ----
+    /// `rcbgSceneLoadTextSub(scene)` -> `rcdtParseFini`'s `eax` (the
+    /// original's 0x198-byte frame, its chunk, parser and path, in this
+    /// shim's).
+    rcbgSceneLoadTextSub @ 0x0093_b3e0 => extern "C" fn rcbg_scene_load_text_sub(scene: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_o::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_o::FRAME;
+        go::load_text_sub(&mut mem(), ebp, scene)
+    }
+    // ---- round 5 batch 12 (ffx_prender::m5m_p) ----
+    /// `rcbgTrxTexLoadFromFile(t, dir, name, digits)` -> `rcdtTm2Fini`'s
+    /// `eax` (the original's 0x25c-byte frame, its TIM2 record, format and
+    /// path, in this shim's).
+    rcbgTrxTexLoadFromFile @ 0x0093_beb0 => extern "C" fn rcbg_trx_tex_load_from_file(t: u32, dir: u32, name: u32, digits: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_p::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_p::FRAME;
+        gp::tex_load_from_file(&mut mem(), ebp, t, dir, name, digits)
+    }
+    // ---- round 5 batch 13 (ffx_prender::m5m_q) ----
+    /// `rcbgSceneLoadTextureAnimeRect(i, x, y, w, h)` -> the last callee's
+    /// `eax` (the original's 0x11c-byte frame, its name and path, in this
+    /// shim's).
+    rcbgSceneLoadTextureAnimeRect @ 0x0093_bbc0 => extern "C" fn rcbg_scene_load_texture_anime_rect(i: u32, x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_q::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_q::FRAME;
+        gq::load_anime_rect(&mut mem(), ebp, i, x, y, w, hh)
+    }
+    // ---- round 5 batch 14 (ffx_prender::m5m_r) ----
+    /// `rcbgSceneLoadTextureAnime(scene, i)` -> the last callee's `eax` (the
+    /// original's 0x138-byte frame, its name, path and spills, in this
+    /// shim's).
+    rcbgSceneLoadTextureAnime @ 0x0093_b930 => extern "C" fn rcbg_scene_load_texture_anime(scene: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_r::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_r::FRAME;
+        gr::load_texture_anime(&mut mem(), ebp, scene, i)
+    }
+    // ---- round 5 batch 15 (ffx_prender::m5m_s) ----
+    /// `rcbgSaveChkPackList(maps, pack)` -> the map count or 0 (the
+    /// original's 0x1a4-byte frame, its chunk, parser and path, in this
+    /// shim's).
+    rcbgSaveChkPackList @ 0x0093_9480 => extern "C" fn rcbg_save_chk_pack_list(maps: u32, pack: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_s::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_s::FRAME;
+        gs::chk_pack_list(&mut mem(), ebp, maps, pack)
+    }
+    // ---- round 5 batch 16 (ffx_prender::m5m_t) ----
+    /// `rcbgSceneLoadTexture(scene)` -> the last callee's `eax` (the
+    /// original's 0x118-byte frame, its file list and path, in this
+    /// shim's).
+    rcbgSceneLoadTexture @ 0x0093_b6b0 => extern "C" fn rcbg_scene_load_texture(scene: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_t::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_t::FRAME;
+        gt::load_texture(&mut mem(), ebp, scene)
+    }
+    // ---- round 5 batch 17 (ffx_prender::m5m_u) ----
+    /// `rcbgGuideMapSaveSub(n, maps, number)` -> `rcbgSceneLoadAll`'s `eax`
+    /// (the original's 0x534-byte frame, its scene, names, path and header,
+    /// in this shim's).
+    rcbgGuideMapSaveSub @ 0x0093_91d0 => extern "C" fn rcbg_guide_map_save_sub(n: u32, maps: u32, number: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_u::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_u::FRAME;
+        gu::guide_map_save_sub(&mut mem(), ebp, n, maps, number)
+    }
+    // ---- round 5 batch 18 (ffx_prender::m5m_v) ----
+    /// `rcuiGuideProcConvertAll()` -> `rcdtChunkFini`'s `eax` (the
+    /// original's 0x98-byte frame, its chunk and parser, in this shim's).
+    rcuiGuideProcConvertAll @ 0x0093_4250 => extern "C" fn rcui_guide_proc_convert_all() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_v::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_v::FRAME;
+        gv::convert_all(&mut mem(), ebp)
     }
 }
