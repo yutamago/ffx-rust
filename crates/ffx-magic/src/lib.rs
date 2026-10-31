@@ -81,6 +81,7 @@ pub mod o4_fam3;
 pub mod o4_fam4;
 pub mod o4_fam5;
 pub mod o4_flags;
+pub mod o4_list;
 pub mod o4_misc;
 pub mod o4_more;
 pub mod o4_parts;
@@ -1385,6 +1386,9 @@ ports! {
     "o4 more reset_record_handle 0297@8020" => o4_more::RESET_RECORD_HANDLE_0297_8020, o4_more::reset_record_handle;
     "o4 more arg_list_node 0270@1b80" => o4_more::ARG_LIST_NODE_0270_1B80, o4_more::arg_list_node;
     "o4 more slot_each_flag 0301@22d0" => o4_more::SLOT_EACH_FLAG_0301_22D0, o4_more::slot_each_flag;
+    "o4 list timer_unlink 0513@6d50" => o4_list::TIMER_UNLINK_0513_6D50, o4_list::timer_unlink;
+    "o4 list table_reset 0523@21b0" => o4_list::TABLE_RESET_0523_21B0, o4_list::table_reset;
+    "o4 list this_flag_step 0273@7390" => o4_list::THIS_FLAG_STEP_0273_7390, o4_list::this_flag_step;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
