@@ -85,6 +85,7 @@ pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_rcef2;
 pub mod o4_rcef3;
+pub mod o4_rcef4;
 pub mod o4_setup;
 pub mod o4_single;
 pub mod o4_small;
@@ -1357,6 +1358,13 @@ ports! {
     "o4 rcef3 task_keep_seq_call 0313@19e0" => o4_rcef3::TASK_KEEP_SEQ_CALL_0313_19E0, o4_rcef3::task_keep_seq_call;
     "o4 misc static_flag_slots 0343@6900" => o4_misc::STATIC_FLAG_SLOTS_0343_6900, o4_misc::static_flag_slots;
     "o4 misc reset_then_float 0351@2450" => o4_misc::RESET_THEN_FLOAT_0351_2450, o4_misc::reset_then_float;
+    "o4 rcef4 effect_task_seq_wait 0360@10a0" => o4_rcef4::EFFECT_TASK_SEQ_WAIT_0360_10A0, o4_rcef4::effect_task_seq_wait;
+    "o4 rcef4 effect_keep_seq_call 0525@1000" => o4_rcef4::EFFECT_KEEP_SEQ_CALL_0525_1000, o4_rcef4::effect_keep_seq_call;
+    "o4 rcef4 seq_by_count 0534@1040" => o4_rcef4::SEQ_BY_COUNT_0534_1040, o4_rcef4::seq_by_count;
+    "o4 rcef4 step_capped 0536@11a0" => o4_rcef4::STEP_CAPPED_0536_11A0, o4_rcef4::step_capped;
+    "o4 rcef4 free_three 0185@1500" => o4_rcef4::FREE_THREE_0185_1500, o4_rcef4::free_three;
+    "o4 rcef4 countdown_then_done 0163@1cb0" => o4_rcef4::COUNTDOWN_THEN_DONE_0163_1CB0, o4_rcef4::countdown_then_done;
+    "o4 rcef4 remove_and_release 0353@2e00" => o4_rcef4::REMOVE_AND_RELEASE_0353_2E00, o4_rcef4::remove_and_release;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
