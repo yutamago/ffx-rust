@@ -630,10 +630,14 @@ fn camera_matrix() {
         }
         0x266
     });
+    // slot 231 combines its sources into its output (each call's inputs
+    // stay visible in the global matrix)
     rec(&mut t, 231, 3, |m, a| {
-        for i in 0..16 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i).rotate_left(7);
-            m.w32(SCRATCH + 0x3800 + 4 * i, v);
+        let v: Vec<u32> = (0..16)
+            .map(|i| m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i).rotate_left(7))
+            .collect();
+        for (i, x) in (0u32..).zip(v) {
+            m.w32(a[0] + 4 * i, x);
         }
         0x231
     });
@@ -674,6 +678,10 @@ fn part_begin() {
             let v = m.r32(a[1] + 4 * i);
             m.w32(SCRATCH + 0x3900 + 4 * i, v);
         }
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x3980 + 4 * i, v);
+        }
         0x395
     });
     filler(&mut t, 235, 1, 16);
@@ -689,11 +697,15 @@ fn part_begin() {
         }
         0x236
     });
+    // the matrix and vector slots combine their sources into the output
     for (s, n) in [(231u32, 3usize), (229, 3), (248, 3), (325, 2)] {
         rec(&mut t, s, n, move |m, a| {
-            for i in 0..4 {
-                let v = m.r32(a[n - 1] + 4 * i) ^ (s << 8);
-                m.w32(a[0] + 4 * i, v);
+            let v: Vec<u32> = (0..16)
+                .map(|i| m.r32(a[n - 1] + 4 * i) ^ m.r32(a[1] + 4 * i).rotate_left(3) ^ (s << 8))
+                .collect();
+            let len = if s == 231 { 16 } else { 4 };
+            for (i, x) in (0u32..).zip(v).take(len) {
+                m.w32(a[0] + 4 * i, x);
             }
             s
         });
