@@ -118,3 +118,28 @@ fn task() {
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// 0x10001cd0: a record's pair (slot 314's ST0 two values).
+#[test]
+fn record_pair() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1cd0);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x16), fx);
+    let so = t.img.rel32_target(at + 0x5a);
+    anim_start(&mut t, so);
+    let calls = SCRATCH + 0x50;
+    magic_owna::rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        0.375 + f64::from(k) * 1.25
+    });
+    let rec = SCRATCH + 0x200;
+    for i in [0u32, 2] {
+        t.set_u32(rec + 0x34, i);
+        t.write(fx, &vec![0x3c; 0x260 * 0x1c]);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[rec], Eax::Checked);
+    }
+}

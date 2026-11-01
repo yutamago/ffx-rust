@@ -248,3 +248,64 @@ pub const ROWS_MANY: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts a record's object pair (0x10001cd0, cdecl `(rec)`): with `i =
+/// rec + 0x34`'s word, the objects `O = *G_FX + 0x260 (i + 0x17)` and
+/// `O + 0x130`, each [`start_object_anim`](crate::s4_misc::start_object_anim)
+/// with the scale `(slot 314 (0.1) + K1) * K2` (`+0x47`, `+0x55`; the
+/// slot's ST0 stored as `f32` into the argument word, as the original's
+/// `fstp [ebp + 8]`) and `(5, 0)`, `(7, 0x1e)`, at the point `P[i]` (the
+/// 16-byte rows at `+0x2d`); the second gets the callback `+0x104` (the
+/// immediate `+0xef`) and `+0x120` 0x24. Returns the point's `w`.
+pub fn record_pair<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let arg = fr.esp.wrapping_add(4);
+    let i = g.read::<u32>(g.read::<u32>(arg).wrapping_add(0x34));
+    let obj = i
+        .wrapping_add(0x17)
+        .wrapping_mul(0x260)
+        .wrapping_add(g.read::<u32>(w(0x16)));
+    let row = (i << 4).wrapping_add(w(0x2d));
+    let mut last = 0;
+    for (o, t_op, (call, index, value), (k1, k2)) in [
+        (obj, 0x1d, (0x5a, 5, 0), (0x47, 0x55)),
+        (obj.wrapping_add(0x130), 0x82, (0xbe, 7, 0x1e), (0xaa, 0xb9)),
+    ] {
+        let t = crate::runtime::slot_target(g, w(t_op), 314);
+        let x = crate::ob_model::st0_f32(g.call(t, 0, &[0x3dcc_cccd]).st0);
+        g.write::<f32>(arg, x);
+        let scale = crate::sb_sse::mul(
+            crate::sb_sse::add(x, g.read::<f32>(w(k1))),
+            g.read::<f32>(w(k2)),
+        );
+        crate::s4_misc::start_object_anim(
+            g,
+            img,
+            img.rel32_target(f + call),
+            o,
+            scale,
+            index,
+            value,
+        );
+        for k in 0..4 {
+            last = g.read::<u32>(row + 4 * k);
+            g.write::<u32>(o + 0xd0 + 4 * k, last);
+        }
+    }
+    let o2 = obj.wrapping_add(0x130);
+    g.write::<u32>(o2 + 0x104, w(0xef));
+    g.write::<u32>(o2 + 0x120, 0x24);
+    Ret::eax(last)
+}
+
+/// [`record_pair`] (256 bytes, 1 overlay).
+pub const RECORD_PAIR: Sig = Sig {
+    len: 256,
+    hash: 0xb896_3975_ece2_45f3,
+    calls: &[
+        (0x5a, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0xbe, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    ],
+    imports: &[],
+};

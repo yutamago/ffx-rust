@@ -1171,6 +1171,10 @@ ports! {
     "m0673 start row of" => m0673::START_ROW_OF, m0673::start_row_of;
     "m0673 rows b c" => m0673::ROWS_B_C, m0673::rows_b_c;
     "m0673 rows many" => m0673::ROWS_MANY, m0673::rows_many;
+    "m0673 record pair" => m0673::RECORD_PAIR, m0673::record_pair;
+    "m0610 spark" => m0610::SPARK, m0610::spark;
+    "m0610 side object" => m0610::SIDE_OBJECT, m0610::side_object;
+    "m0598 task" => m0598::TASK, m0598::task;
     "m0588 spawn pair 0600" => m0588::SPAWN_PAIR_0600, m0588::spawn_pair;
     "m0514 burst step" => m0514::BURST_STEP, m0514::burst_step;
     "m0563 frame" => m0563::FRAME, m0563::frame;

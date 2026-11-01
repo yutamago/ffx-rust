@@ -49,3 +49,33 @@ fn fade_out() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10006b90: the first script running (the points, the motion scripts
+/// done, the camera rigs' step) and done (the node given back).
+#[test]
+fn task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x6b90);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x7), fx);
+    let (s1, s2) = (t.img.word(at + 0x2e), t.img.word(at + 0x3d));
+    let give = t.img.rel32_target(at + 0x117);
+    let node = SCRATCH + 0x5000;
+    t.set_u32(t.img.word(at + 0x26), 0x0026_1234);
+    for (first, second) in [(4u8, 0u8), (0, 4)] {
+        let block: Vec<u8> = (0..0x30u8).map(|i| 0x51 ^ i.wrapping_mul(7)).collect();
+        t.write(t.img.word(at + 0x10), &block);
+        t.set_u8(s1 + 0x56, first);
+        t.set_u8(s2 + 0x56, second);
+        t.write(fx + 0x800, &[0x2d; 0x600]);
+        for i in 0..0x18 {
+            t.set_u32(fx + 0x920 + 4 * i, 0x0920_0000 + i);
+        }
+        for op in [0xdb, 0xeb, 0xf5] {
+            let ms = t.img.word(at + op);
+            t.set_u32(ms + 0x14, 1);
+        }
+        magic_hi::lone_node(&mut t, give, node);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}
