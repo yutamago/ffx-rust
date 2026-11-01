@@ -964,3 +964,213 @@ pub const CENTRED_PARTS_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Appends node `n` to the list `l` (as the summon code does inline):
+/// `n+0x1a` 0xff (u16), an empty child list (`+0x10`/`+0xc` = `n`), the
+/// list `+0x14`/`+0x4`, the list's last `+0x8`, which links to `n`
+/// (`+0x4`, or the list's `+0xc` when it is the list itself), the count
+/// `l+0x18` (u16) up and `l+0x10 = n`.
+fn ring_append<G: Game>(g: &mut G, n: u32, l: u32) {
+    let last = g.read::<u32>(l + 0x10);
+    g.write::<u16>(n + 0x1a, 0xff);
+    g.write::<u32>(n + 0x10, n);
+    g.write::<u32>(n + 0xc, n);
+    g.write::<u32>(n + 0x14, l);
+    g.write::<u32>(n + 4, l);
+    g.write::<u32>(n + 8, last);
+    if last == l {
+        g.write::<u32>(l + 0xc, n);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), n);
+    }
+    let count = g.read::<u16>(l + 0x18).wrapping_add(1);
+    g.write::<u16>(l + 0x18, count);
+    g.write::<u32>(l + 0x10, n);
+}
+
+/// A summon task with a shade fade (cdecl `(task)`; the state `S =
+/// task[1]`, a frame aligned to 8 with set-up records on it; the steps
+/// through a jump table and an index table over 0..0x3d, 0x2710 apart).
+/// By the step `S+0x18`:
+/// - 0: the effect's model node `M`
+///   ([`model_node_init`](crate::sa_summon::model_node_init) on `{M,
+///   LIST, *G_OBJ, 0}`) and the part `A` appended to the list (`A+0x28`
+///   1.0, `+0x3c` the character `*G_CHR`, `+0x40` 1, `+0x2c..+0x38` 0, its
+///   vtable), step 10, then as 10;
+/// - 10: the nodes `C = S+0x74` and `D = S+0xa0` appended (`C`'s colour
+///   `(1, 1, 1, 0.2)` at `S+0x90`; `D` takes `C`, `A`, `G_B`, `G_N` and
+///   byte 0 at `+0x140`, `+0x13c`, `+0x144`, `+0x128`, `+0x148`), the
+///   particle node `P = S+0x1f0`
+///   ([`particle_node`](crate::sb_nodes::particle_node)), the node `E`
+///   appended with slot 719's answer `(PROG, 6, 0)` and its words; step
+///   0x1e, dispatched again at once;
+/// - 0x1e: `Ch_SetShadeCol(*G_CHR, 1, 0.4, 0.4, 0xf)` (slot 256), the
+///   step up, the frame count restarted;
+/// - 0x1f..0x23: the same from frame 0xf on with the colours `(1, 1,
+///   0.4)`, `(0.4, 1, 0.4)`, `(0.4, 1, 1)`, `(0.4, 0.4, 1)`, `(1, 0.4,
+///   1)`;
+/// - 0x24: from frame 0xf on `(1, 1, 1)`, step 0x2710 (the frame count
+///   not restarted);
+/// - 0x3c: from frame 0 on, the step up and the count restarted;
+/// - 0x3d: from frame 0xc8 on, step 0x2710;
+/// - 0x2710: the list's current node unlinked
+///   ([`list_unlink_current`](crate::l3_common::list_unlink_current)),
+///   `M`'s model set up ([`model_setup`](crate::sa_summon::model_setup))
+///   and the task's node leaves its ring;
+/// - any other: nothing.
+///
+/// The frame count `S+0x2c` goes up on every path. Returns slot 256's
+/// `eax`, the node's `+0x4` after the unlink, the table index on a path
+/// that does nothing (a gate not met, 9 and 10 for 0x3c and 0x3d), or the
+/// step outside the table.
+///
+/// `magic_0342` 0x10006c40 (1382 bytes with its two tables, 1 DLL;
+/// stored at 0x10007320).
+#[allow(clippy::too_many_lines)] // the original's set-up, store by store
+pub fn shade_fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task.wrapping_add(4));
+    let step_at = s.wrapping_add(0x18);
+    let frames = s.wrapping_add(0x2c);
+    // push ebp; and esp, -8; sub esp, 0x30; push esi; push edi
+    let e = fr.esp.wrapping_sub(4) & !7;
+    let body = e.wrapping_sub(0x38);
+    let list = w(0x57);
+    let shade = |g: &mut G, (table, chr): (u32, u32), [r, gr, b]: [u32; 3]| {
+        let c = g.read::<u32>(w(chr));
+        let t = slot_target(g, w(table), 256);
+        g.call(t, fr.ecx, &[c, r, gr, b, 0xf]).eax
+    };
+    const ONE: u32 = 0x3f80_0000;
+    const K: u32 = 0x3ecc_cccd;
+    let mut step = g.read::<u32>(step_at);
+    let eax = loop {
+        if step == 0x2710 {
+            crate::l3_common::list_unlink_current(g, img, img.rel32_target(f + 0x4be), step);
+            let cursor = body + 0xc;
+            g.write::<u32>(cursor, w(0x4ca));
+            let setup = Frame {
+                at: img.rel32_target(f + 0x4cf),
+                esp: body.wrapping_sub(4),
+                ecx: cursor,
+                ..*fr
+            };
+            crate::sa_summon::model_setup(g, img, &setup);
+            break unring_task(g, task);
+        }
+        if step > 0x3d {
+            break step;
+        }
+        // movzx eax, byte [INDEX + step]: the index table is in the code
+        let index = img.word(w(0x37).wrapping_add(step)) & 0xff;
+        let gate = |g: &G, at_least: i32| g.read::<i32>(frames) >= at_least;
+        let colours = match index {
+            0 | 1 => {
+                if index == 0 {
+                    let rec = body + 0x10;
+                    let obj = g.read::<u32>(w(0x43));
+                    record(g, rec, &[w(0x4f), list, obj]);
+                    g.write::<u8>(rec + 0xc, 0);
+                    g.write::<u32>(w(0x66), w(0x6a));
+                    crate::sa_summon::model_node_init(g, img, img.rel32_target(f + 0x6f), rec);
+                    let chr = g.read::<u32>(w(0x7a));
+                    let a = w(0x8d);
+                    ring_append(g, a, list);
+                    g.write::<u32>(a + 0x28, ONE);
+                    g.write::<u32>(a + 0x3c, chr);
+                    g.write::<u32>(a + 0x40, 1);
+                    for o in [0x2cu32, 0x30, 0x34, 0x38] {
+                        g.write::<u32>(a + o, 0);
+                    }
+                    g.write::<u32>(a, w(0x127));
+                    g.write::<u32>(step_at, 0xa);
+                }
+                let c = s.wrapping_add(0x74);
+                ring_append(g, c, list);
+                g.write::<u32>(c, w(0x17d));
+                for (o, v) in [
+                    (0x90u32, ONE),
+                    (0x94, ONE),
+                    (0x98, ONE),
+                    (0x9c, 0x3e4c_cccd),
+                ] {
+                    g.write::<u32>(s.wrapping_add(o), v);
+                }
+                let d = s.wrapping_add(0xa0);
+                g.write::<u32>(d, w(0x1b1));
+                ring_append(g, d, list);
+                let owner = g.read::<u32>(w(0x1f6));
+                g.write::<u32>(d + 0x140, c);
+                g.write::<u32>(d + 0x13c, w(0x212));
+                g.write::<u32>(d + 0x144, w(0x21c));
+                g.write::<u32>(d + 0x128, w(0x226));
+                g.write::<u8>(d + 0x148, 0);
+                let p = s.wrapping_add(0x1f0);
+                let rec = body + 0x20;
+                g.write::<u32>(p, w(0x237));
+                record(g, rec, &[p, w(0x243), d, owner, w(0x253), 0]);
+                crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x260), rec);
+                let n = w(0x278);
+                ring_append(g, n, list);
+                let t = slot_target(g, w(0x2ba), 719);
+                let r = g.call(t, fr.ecx, &[w(0x2da), 6, 0]).eax;
+                g.write::<u32>(n + 0x24, r);
+                g.write::<u32>(n + 0x1c, w(0x2eb));
+                g.write::<u32>(n + 0x20, w(0x2f5));
+                g.write::<u32>(n + 0x34, 0x40);
+                g.write::<u32>(n + 0x28, 0x100);
+                g.write::<u32>(n, w(0x313));
+                g.write::<u32>(n + 0x30, 0);
+                g.write::<u32>(n + 0x2c, 1);
+                g.write::<u32>(step_at, 0x1e);
+                step = 0x1e;
+                continue;
+            }
+            2 => [ONE, K, K],
+            3 if gate(g, 0xf) => [ONE, ONE, K],
+            4 if gate(g, 0xf) => [K, ONE, K],
+            5 if gate(g, 0xf) => [K, ONE, ONE],
+            6 if gate(g, 0xf) => [K, K, ONE],
+            7 if gate(g, 0xf) => [ONE, K, ONE],
+            8 if gate(g, 0xf) => {
+                let eax = shade(g, (0x44a, 0x472), [ONE, ONE, ONE]);
+                g.write::<u32>(step_at, 0x2710);
+                break eax;
+            }
+            9 if gate(g, 0) => {
+                let next = g.read::<u32>(step_at).wrapping_add(1);
+                g.write::<u32>(step_at, next);
+                g.write::<u32>(frames, 0);
+                break index;
+            }
+            10 if gate(g, 0xc8) => {
+                g.write::<u32>(step_at, 0x2710);
+                break index;
+            }
+            _ => break index,
+        };
+        let eax = shade(g, (0x35c, 0x362), colours);
+        let next = g.read::<u32>(step_at).wrapping_add(1);
+        g.write::<u32>(step_at, next);
+        g.write::<u32>(frames, 0);
+        break eax;
+    };
+    bump_frames(g, s);
+    Ret::eax(eax)
+}
+
+/// [`shade_fade_task`] (the `rel32`s: the model node, the particle node,
+/// the unlink and the model set-up).
+pub const SHADE_FADE_TASK: Sig = Sig {
+    len: 1382,
+    hash: 0xb08e_aa2f_ce1c_4acf,
+    calls: &[
+        (0x6f, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x260, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x4be, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x4cf, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+    ],
+    imports: &[],
+};

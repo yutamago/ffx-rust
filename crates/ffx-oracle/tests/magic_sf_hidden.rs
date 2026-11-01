@@ -538,3 +538,99 @@ fn centred_parts_task() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0342` 0x10006c40: every step (the set-up from 0 and from 10,
+/// each colour step with its gate short and met, 0x3c, 0x3d, the end,
+/// outside the table).
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per callee
+fn shade_fade_task() {
+    let Some(mut t) = twin(342) else { return };
+    let f = t.at(0x6c40);
+    bound(&t, f, "sf shade fade task");
+    let w = |t: &Twin, o: u32| op(t, f, o);
+    recs(
+        &mut t,
+        &[
+            (413, 1),
+            (215, 1),
+            (14, 2),
+            (256, 5),
+            (325, 2),
+            (714, 5),
+            (719, 3),
+            (538, 2),
+            (213, 2),
+            (211, 2),
+            (35, 5),
+            (34, 2),
+            (547, 2),
+            (276, 2),
+            (219, 2),
+        ],
+    );
+    rec(&mut t, 333, 1, |_, a| 0x3330_0000 ^ a[0]);
+    t.stub_st0(333, |_, _| 0.5);
+    let table = SCRATCH + 0x3000;
+    for i in 0..0x40 {
+        t.set_u32(table + 4 * i, 0x0a0a_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    let owner = SCRATCH + 0x3800;
+    t.write(owner, &varied(0x100, 9));
+    t.set_u32(w(&t, 0x1f6), owner);
+    t.set_u32(w(&t, 0x7a), 0x0c0c_0342);
+    t.set_u32(w(&t, 0x43), 0x0b0b_0342);
+    let (task, s) = (SCRATCH + 0x800, SCRATCH + 0x1000);
+    let (node, prev, next) = (SCRATCH + 0xb00, SCRATCH + 0xb40, SCRATCH + 0xb80);
+    let list = w(&t, 0x57);
+    let plist = w(&t, 0x243);
+    let mut k = 0u32;
+    for (step, frames, last_is_list) in [
+        (0u32, 0i32, true),
+        (0xa, 3, false),
+        (0x1e, 0, true),
+        (0x1f, 0xe, true),
+        (0x1f, 0xf, true),
+        (0x20, 0xf, true),
+        (0x21, 0x10, true),
+        (0x22, 0xf, true),
+        (0x23, 0xf, true),
+        (0x24, 0xe, true),
+        (0x24, 0xf, true),
+        (0x25, 0xf, true),
+        (0x3c, -1, true),
+        (0x3c, 0, true),
+        (0x3d, 0xc7, true),
+        (0x3d, 0xc8, true),
+        (0x3e, 0, true),
+        (0x2710, 0, true),
+        (0x2711, 0, true),
+    ] {
+        k += 1;
+        t.write(task, &varied(0x20, k));
+        t.write(s, &varied(0x300, k));
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.set_u32(s + 0x18, step);
+        t.set_u32(s + 0x2c, frames.cast_unsigned());
+        for (a, p, n) in [(node, prev, next), (prev, next, node), (next, node, prev)] {
+            t.set_u32(a + 4, p);
+            t.set_u32(a + 8, n);
+        }
+        // the lists: the parts' list empty or holding a node; the
+        // particle list empty
+        let other = SCRATCH + 0xc00;
+        t.write(other, &varied(0x20, k + 1));
+        for l in [list, plist] {
+            t.write(l, &[0; 0x20]);
+            t.set_u32(l + 0xc, l);
+            t.set_u32(l + 0x10, l);
+        }
+        if !last_is_list {
+            t.set_u32(list + 0x10, other);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

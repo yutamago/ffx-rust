@@ -2142,6 +2142,7 @@ ports! {
     "sf motion sequence task" => sf_hidden::MOTION_SEQUENCE_TASK, sf_hidden::motion_sequence_task;
     "sf two model task" => sf_hidden::TWO_MODEL_TASK, sf_hidden::two_model_task;
     "sf centred parts task" => sf_hidden::CENTRED_PARTS_TASK, sf_hidden::centred_parts_task;
+    "sf shade fade task" => sf_hidden::SHADE_FADE_TASK, sf_hidden::shade_fade_task;
     // sf_hidden: end of ports
     "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
