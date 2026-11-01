@@ -750,4 +750,11 @@ ported! {
         let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::INFO_FRAME);
         ffx_menu::l8_mbs::bridge::battle_info_proc(&mut mem(), ebp, window, msg, param)
     }
+    /// `Ms_Gui_BattleChr2Proc(window, msg, param)` -> 0: the battle's "CHR
+    /// data 2" debug window (its text buffer in a frame).
+    Ms_Gui_BattleChr2Proc @ 0x007d_e790 => extern "C" fn ms_gui_battle_chr2_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::CHR2_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::CHR2_FRAME);
+        ffx_menu::l8_mbs::bridge::battle_chr2_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

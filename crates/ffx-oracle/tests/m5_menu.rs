@@ -8201,3 +8201,97 @@ fn l8_ms_gui_battle_info_proc() {
         t.skip = 0;
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_battle_chr2_proc() {
+    // every message and button at steps of 1, 10 and 100; the actor at
+    // both ends of the party and monster ranges; values at and past their
+    // limits, NaNs and infinities among the floats; a battle running or
+    // not, the actor with a model or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_e790);
+        let window = 0x00ac_2000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let mut bytes: Vec<u8> = (0..0x500).map(|_| rng.next() as u8).collect();
+            for o in (0x4bc..0x4e0).step_by(4) {
+                let v = debug_float(&mut rng);
+                bytes[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            for o in [0x4b9usize, 0x4ba, 0x4bb, 0x40c, 0x40d, 0x40e] {
+                bytes[o] = [0, 1, 5, 0x7e, 0x7f, 0x80, 0xfe, 0xff][rng.below(8) as usize];
+            }
+            bytes[0x4b8] = [0, 1, 0x7e, 0x7f, 0x80, 0xff][rng.below(6) as usize];
+            for o in [0x4b0usize, 0x4b2] {
+                let v: u16 = [0, 1, 50, 0xffff][rng.below(4) as usize];
+                bytes[o..o + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            if rng.chance(3) {
+                bytes[..4].copy_from_slice(&[0, 0, 0, 0]);
+            }
+            let chr = t.alloc(&bytes);
+            let words = t.zeros(0x1000);
+            let cursor = t.words(&[words]);
+            t.patch(t.rebase(l8b::BTL_STATUS), &[u8::from(!rng.chance(5))]);
+            let actor = [0u32, 1, 0x13, 0x14, 0x15, 0x1d, 0x1e, 7][rng.below(8) as usize];
+            t.patch(t.rebase(l8b::CHR2_ACTOR), &actor.to_le_bytes());
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::GET_CHR, false, 1, 0, chr),
+                (l8b::DBG_PRINTF, false, 2, 0, 0x18),
+                (l8b::CH_SET_WEIGHT, false, 2, 0, 0x19),
+                (l8b::SET_MOT_BIN, false, 2, 0, 0x1a),
+                (l8b::PLY_SAVE_NAME, false, 2, 0, 0x1b),
+                (l8b::PLY_SAVE, false, 1, 0, 0x1c),
+                (l8b::SET_FILE_NAME, false, 2, 0, 0x1d),
+                (l8b::MON_SAVE, false, 3, 0, 0x1e),
+                (l8b::STR_COPY, false, 3, 0, 0x1f),
+            ]);
+            let log = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let mut c = sprintf_words_code(cursor);
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8b::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 9 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a, 0x800e][rng.below(4) as usize], 0),
+                2 => (0x8011, 0),
+                3..=7 => (
+                    [0x8005, 0x8009, 0x800d][rng.below(3) as usize],
+                    [0x61 + rng.below(0x26), 0xd5, 0xd6, 0xd7, 0x62, 0x7d, 0x7e]
+                        [rng.below(7) as usize],
+                ),
+                _ => (
+                    [0x8005, 0x8002, 0x8012][rng.below(3) as usize],
+                    [0x60, 0x87, 0xd4, 0xd8][rng.below(4) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleChr2Proc",
+                0x007d_e790,
+                Conv::Cdecl,
+                &args,
+                l8b::CHR2_FRAME,
+                |g, ebp| Out::U32(l8b::battle_chr2_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}

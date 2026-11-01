@@ -866,4 +866,335 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// What `Ms_Gui_BattleChr2Proc` calls besides the windows' common
+    /// callees: `Ch_SetWeight(chr, w)`, `MsSetMotBinAddress(chr, k)`,
+    /// `MsGetPlySaveName(buf, name)`, `MsPlySave(buf)`,
+    /// `MsSetFileName(buf, id)`, `MsMonSave(buf, k, id)`,
+    /// `MsStrCopy(src, dst, n)`.
+    pub const CH_SET_WEIGHT: u32 = 0x0082_b940;
+    pub const SET_MOT_BIN: u32 = 0x0079_cd80;
+    pub const PLY_SAVE_NAME: u32 = 0x007d_cec0;
+    pub const PLY_SAVE: u32 = 0x007d_d5e0;
+    pub const SET_FILE_NAME: u32 = 0x007d_ce80;
+    pub const MON_SAVE: u32 = 0x007d_d480;
+    pub const STR_COPY: u32 = 0x007c_f6c0;
+    /// The window's three auto-repeats (steps of 1, 100 and 10), the
+    /// selected actor (`0x0113f8a0`: 0..0x13 party, 0x14..0x1e
+    /// monsters), the open flag, the actor names (`0x00c44950`).
+    pub const CHR2_REPEAT_1: u32 = 0x0113_f8e0;
+    pub const CHR2_REPEAT_100: u32 = 0x0113_f8f4;
+    pub const CHR2_REPEAT_10: u32 = 0x0113_f908;
+    pub const CHR2_ACTOR: u32 = 0x0113_f8a0;
+    pub const CHR2_OPEN: u32 = 0x0113_9f04;
+    pub const CHR2_NAMES: u32 = 0x00c4_4950;
+    /// The float rows: (the - button, field, step), + is the next id.
+    pub const CHR2_FLOATS: [(u32, u32, u32); 8] = [
+        (0x63, 0x4bc, STEP_TENTH),
+        (0x65, 0x4c0, STEP_TENTH),
+        (0x67, 0x4c4, STEP_SPEED),
+        (0x69, 0x4c8, STEP_TENTH),
+        (0x6b, 0x4d4, STEP_SPEED),
+        (0x6d, 0x4d8, STEP_SPEED),
+        (0x6f, 0x4cc, STEP_SPEED),
+        (0x71, 0x4d0, STEP_SPEED),
+    ];
+    /// 0.1 (a double).
+    pub const STEP_TENTH: u32 = 0x00b5_51e0;
+    /// The drawn rows: (y, field, kind 0 f32 / 1 u16 / 2 u8 / 3 i8,
+    /// label).
+    pub const CHR2_ROWS: [(u32, u32, u8, u32); 18] = [
+        (0x15, 0x4bc, 0, 0x00b5_7b60),
+        (0x1f, 0x4c0, 0, 0x00b5_7b74),
+        (0x29, 0x4c4, 0, 0x00b5_7b84),
+        (0x33, 0x4c8, 0, 0x00b5_7b94),
+        (0x3d, 0x4d4, 0, 0x00b5_7bac),
+        (0x47, 0x4d8, 0, 0x00b5_7bbc),
+        (0x51, 0x4cc, 0, 0x00b5_7bd4),
+        (0x5b, 0x4d0, 0, 0x00b5_7bec),
+        (0x65, 0x4dc, 0, 0x00b5_7c00),
+        (0x6f, 0x4b0, 1, 0x00b5_7c10),
+        (0x79, 0x4b2, 1, 0x00b5_7c20),
+        (0x83, 0x4b9, 2, 0x00b5_7c38),
+        (0x8d, 0x4ba, 2, 0x00b5_7c4c),
+        (0x97, 0x4b8, 3, 0x00b5_7c60),
+        (0xa1, 0x4bb, 2, 0x00b5_7c70),
+        (0xab, 0x40c, 2, 0x00b5_7c80),
+        (0xb5, 0x40d, 2, 0x00b5_7c98),
+        (0xbf, 0x40e, 2, 0x00b5_7cac),
+    ];
+    /// `Ms_Gui_BattleChr2Proc`'s frame: its text buffer at `ebp - 0x104`.
+    pub const CHR2_FRAME: u32 = 0x104;
+
+    /// `Ms_Gui_BattleChr2Proc(window, msg, param)` (`0x007de790`) -> 0:
+    /// the battle's "CHR data 2" debug window over the selected actor
+    /// (`MsGetChr(0x0113f8a0)`): its attack, move and run floats, weight,
+    /// frames and bytes. 0x8001 builds it (three auto-repeats, 41
+    /// buttons), 0x8003 closes it, 0x8006/0x800a/0x800e reset an
+    /// auto-repeat; while a battle runs 0x8005/0x8009/0x800d (steps of
+    /// 1/10/100 through the auto-repeat) pick the actor (0x61/0x62:
+    /// wrapping 0..0x1e by one, or a bigger step jumping between party
+    /// and monsters), step a float (by 0.1 or 0.01), the weight (whole
+    /// steps, `Ch_SetWeight` when the actor has a model), the integers
+    /// (not below 0, capped), the motion type (`MsSetMotBinAddress`),
+    /// round the floats (0xd5), save the party (0xd6) or a monster
+    /// (0xd7); 0x8011 prints the actor's name, id and values.
+    #[allow(clippy::too_many_lines)]
+    pub fn battle_chr2_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let buf = ebp.wrapping_sub(CHR2_FRAME);
+        match msg {
+            0x8001 => {
+                let title = h.rebase(0x00b5_7b54);
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                for r in [CHR2_REPEAT_1, CHR2_REPEAT_100, CHR2_REPEAT_10] {
+                    let r = h.rebase(r);
+                    c(h, AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+                }
+                chr2_buttons(h, window);
+            }
+            0x8003 => {
+                let at = h.rebase(CHR2_OPEN);
+                h.write(at, 0_u32);
+            }
+            0x8006 | 0x800a | 0x800e => {
+                let r = match msg {
+                    0x8006 => CHR2_REPEAT_1,
+                    0x800a => CHR2_REPEAT_10,
+                    _ => CHR2_REPEAT_100,
+                };
+                let r = h.rebase(r);
+                c(h, AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+            }
+            0x8005 | 0x8009 | 0x800d => {
+                if ub(&*h, BTL_STATUS) == 0 {
+                    return 0;
+                }
+                let actor = gw(&*h, CHR2_ACTOR);
+                let chr = c(h, GET_CHR, &[actor]);
+                let model: u32 = h.read(chr);
+                let (r, step) = match msg {
+                    0x8005 => (CHR2_REPEAT_1, 1_i32),
+                    0x8009 => (CHR2_REPEAT_10, 10),
+                    _ => (CHR2_REPEAT_100, 100),
+                };
+                let r = h.rebase(r);
+                if c(h, AUTO_REPEAT_CHECK, &[r, param]) != 0 {
+                    chr2_step(h, buf, chr, model, param, step);
+                }
+            }
+            0x8011 if ub(&*h, BTL_STATUS) != 0 => chr2_draw(h, buf),
+            _ => {}
+        }
+        0
+    }
+
+    /// The 41 buttons: the actor and save row, then a -/+ pair per value.
+    fn chr2_buttons(h: &mut impl Host, window: u32) {
+        let (minus, plus) = (h.rebase(0x00b5_5220), h.rebase(0x00b4_8250));
+        let top = [
+            (0x61, minus, 8, 0x12),
+            (0x62, plus, 0x1e, 0x12),
+            (0xd5, h.rebase(0x00b5_72ac), 0xd6, 0x28),
+            (0xd6, h.rebase(0x00b5_72b0), 0x102, 0x40),
+            (0xd7, h.rebase(0x00b5_72b8), 0x146, 0x40),
+        ];
+        for (id, text, x, cx) in top {
+            c(h, WINDOW_ADD_BUTTON, &[window, id, text, x, 0, cx, 8]);
+        }
+        for k in 0..18 {
+            let y = 0x14 + 0xa * k;
+            c(
+                h,
+                WINDOW_ADD_BUTTON,
+                &[window, 0x63 + 2 * k, minus, 8, y, 0x12, 8],
+            );
+            c(
+                h,
+                WINDOW_ADD_BUTTON,
+                &[window, 0x64 + 2 * k, plus, 0x1e, y, 0x12, 8],
+            );
+        }
+    }
+
+    /// An integer field stepped down (not below 0) or up (capped at
+    /// `cap`, or `set` past `cap`), read with `read` and stored low.
+    fn chr2_int(
+        h: &mut impl Host,
+        p: u32,
+        signed: bool,
+        up: bool,
+        step: i32,
+        cap: i32,
+        set: i32,
+    ) -> u32 {
+        let v = if signed {
+            i32::from(h.read::<i8>(p))
+        } else {
+            i32::from(h.read::<u8>(p))
+        };
+        let v = if up {
+            let v = v.wrapping_add(step);
+            if v > cap { set } else { v }
+        } else {
+            let v = v.wrapping_sub(step);
+            if v < 0 { 0 } else { v }
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // mov byte
+        h.write(p, v as u8);
+        v.cast_unsigned()
+    }
+
+    /// The button `param` with the step `step` on the actor `chr`.
+    #[allow(clippy::too_many_lines)]
+    fn chr2_step(h: &mut impl Host, buf: u32, chr: u32, model: u32, param: u32, step: i32) {
+        let at = |o: u32| chr.wrapping_add(o);
+        let actor = h.rebase(CHR2_ACTOR);
+        match param {
+            0x61 | 0x62 => {
+                let v = h.read::<u32>(actor).cast_signed();
+                if step != 1 {
+                    h.write(actor, if v >= 0x14 { 0_u32 } else { 0x14 });
+                } else if param == 0x61 {
+                    let v = v.wrapping_sub(1);
+                    h.write(actor, v);
+                    if v < 0 {
+                        h.write(actor, 0x1e_u32);
+                    }
+                } else {
+                    let v = v.wrapping_add(1);
+                    h.write(actor, v);
+                    if v >= 0x1f {
+                        h.write(actor, 0_u32);
+                    }
+                }
+            }
+            0x63..=0x72 => {
+                let k = ((param - 0x63) / 2) as usize;
+                let (_, off, ksym) = CHR2_FLOATS[k];
+                let up = (param - 0x63) & 1 == 1;
+                let d = x87::mul(f64::from(step), k64(&*h, ksym));
+                let p = at(off);
+                let v = if up {
+                    x87::add(d, f(&*h, p))
+                } else {
+                    x87::sub(f(&*h, p), d)
+                };
+                h.write(p, x87::store(v));
+            }
+            0x73 | 0x74 => {
+                let p = at(0x4dc);
+                let w = f(&*h, p);
+                let s = f64::from(step);
+                let w = x87::store(if param == 0x74 {
+                    x87::add(w, s)
+                } else {
+                    x87::sub(w, s)
+                });
+                h.write(p, w);
+                if model != 0 {
+                    c(h, CH_SET_WEIGHT, &[model, w]);
+                }
+            }
+            0x75..=0x78 => {
+                let p = at(if param <= 0x76 { 0x4b0 } else { 0x4b2 });
+                let v = i32::from(h.read::<u16>(p));
+                let v = if param & 1 == 0 {
+                    v.wrapping_add(step)
+                } else {
+                    let v = v.wrapping_sub(step);
+                    if v < 0 { 0 } else { v }
+                };
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // mov word
+                h.write(p, v as u16);
+            }
+            0x79 | 0x7a => {
+                chr2_int(h, at(0x4b9), false, param == 0x7a, step, 0x80, 0x80);
+            }
+            0x7b | 0x7c => {
+                chr2_int(h, at(0x4ba), false, param == 0x7c, step, 0x80, 0x80);
+            }
+            0x7d | 0x7e => {
+                chr2_int(h, at(0x4b8), true, param == 0x7e, step, 0x7e, 0x7f);
+            }
+            0x7f | 0x80 => {
+                let v = chr2_int(h, at(0x4bb), false, param == 0x80, step, 0x7f, 0x7f);
+                c(h, SET_MOT_BIN, &[chr, v & 0xff]);
+            }
+            0x81..=0x86 => {
+                let off = [0x40c, 0x40d, 0x40e][((param - 0x81) / 2) as usize];
+                chr2_int(h, at(off), false, param & 1 == 0, step, 0xff, 0xff);
+            }
+            0xd5 => {
+                for off in [0x4bc, 0x4c0, 0x4c8, 0x4d4, 0x4d8, 0x4cc, 0x4d0, 0x4dc] {
+                    let i = x87::ftol(&*h, f(&*h, at(off)));
+                    #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+                    h.write(at(off), (i.cast_signed() as f32).to_bits());
+                }
+            }
+            0xd6 => {
+                let name = h.rebase(0x00b5_48f0);
+                c(h, PLY_SAVE_NAME, &[buf, name]);
+                let m = h.rebase(0x00b5_72c0);
+                c(h, DBG_PRINTF, &[m, buf]);
+                c(h, PLY_SAVE, &[buf]);
+            }
+            0xd7 => {
+                let k: u32 = h.read(actor);
+                if k.cast_signed() >= 0x14 {
+                    let id: u32 = h.read(at(4));
+                    c(h, SET_FILE_NAME, &[buf, id]);
+                    let m = h.rebase(0x00b5_72c0);
+                    c(h, DBG_PRINTF, &[m, buf]);
+                    let k: u32 = h.read(actor);
+                    let id: u32 = h.read(at(4));
+                    c(h, MON_SAVE, &[buf, k, id]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `Ms_Gui_BattleChr2Proc`'s 0x8011: the actor's name and id, then
+    /// its rows (value at x 0x36, label at x 0x98).
+    fn chr2_draw(h: &mut impl Host, buf: u32) {
+        let actor = gw(&*h, CHR2_ACTOR);
+        let chr = c(h, GET_CHR, &[actor]);
+        c(h, PRINT_SET_X, &[0x36]);
+        c(h, PRINT_SET_Y, &[1]);
+        let actor = gw(&*h, CHR2_ACTOR);
+        let name = gw(&*h, CHR2_NAMES.wrapping_add(4 * actor));
+        c(h, STR_COPY, &[name, buf, 0x100]);
+        c(h, PRINTF, &[buf]);
+        c(h, PRINT_SET_X, &[0x98]);
+        c(h, PRINT_SET_Y, &[1]);
+        if gw(&*h, CHR2_ACTOR).cast_signed() < 0x14 {
+            let id = u32::from(h.read::<u8>(chr.wrapping_add(0xc)));
+            sprintf_r(h, buf, 0x00b5_72cc, &[id]);
+        } else {
+            let id = h.read::<u32>(chr.wrapping_add(4)) & 0x3ff;
+            sprintf_r(h, buf, 0x00b5_72d8, &[id]);
+        }
+        c(h, PRINTF, &[buf]);
+        for (y, off, kind, label) in CHR2_ROWS {
+            c(h, PRINT_SET_X, &[0x36]);
+            c(h, PRINT_SET_Y, &[y]);
+            let p = chr.wrapping_add(off);
+            if kind == 0 {
+                let [lo, hi] = words64(&*h, p);
+                sprintf_r(h, buf, FLOAT_FMT, &[lo, hi]);
+            } else {
+                let v = match kind {
+                    1 => u32::from(h.read::<u16>(p)),
+                    2 => u32::from(h.read::<u8>(p)),
+                    _ => i32::from(h.read::<i8>(p)).cast_unsigned(),
+                };
+                sprintf_r(h, buf, INT_FMT, &[v]);
+            }
+            c(h, PRINTF, &[buf]);
+            c(h, PRINT_SET_X, &[0x98]);
+            c(h, PRINT_SET_Y, &[y]);
+            let label = h.rebase(label);
+            c(h, PRINTF, &[label]);
+        }
+    }
 }
