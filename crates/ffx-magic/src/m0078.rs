@@ -49,47 +49,47 @@ pub const CLOCK: Sig = Sig {
 };
 
 /// `mov dword [w(dst)], w(val)` for each pair, in order.
-fn stores<G: Game>(g: &mut G, img: &Image, f: u32, pairs: &[(u32, u32)]) {
+pub(crate) fn stores<G: Game>(g: &mut G, img: &Image, f: u32, pairs: &[(u32, u32)]) {
     for &(dst, val) in pairs {
         g.write::<u32>(img.word(f + dst), img.word(f + val));
     }
 }
 
 /// Operand offsets of the two static nodes [`two_nodes`] appends.
-struct TwoNodes {
+pub(crate) struct TwoNodes {
     /// The root list's last node (read), `N1`'s halfword, its four
     /// stores, the last node's copy, the sentinel, the first-word store
     /// (empty list) and the old last's `+0x4` (else).
-    last_r: u32,
-    half1: u32,
-    st1: [(u32, u32); 4],
-    last_w1: u32,
-    sentinel1: u32,
-    first1: (u32, u32),
-    next1: u32,
+    pub(crate) last_r: u32,
+    pub(crate) half1: u32,
+    pub(crate) st1: [(u32, u32); 4],
+    pub(crate) last_w1: u32,
+    pub(crate) sentinel1: u32,
+    pub(crate) first1: (u32, u32),
+    pub(crate) next1: u32,
     /// The u16 count (read), `N1`'s address, its vtable store.
-    count_r: u32,
-    n1: u32,
-    vt1: (u32, u32),
+    pub(crate) count_r: u32,
+    pub(crate) n1: u32,
+    pub(crate) vt1: (u32, u32),
     /// `N2`'s halfword and five stores, the sentinel test against `N1`,
     /// the first-word store or `N1`'s `+0x4` store, the list's last,
     /// the count, `N2`'s vtable, its three 1.0 words and the word set to
     /// the immediate (`dst`, the immediate's offset).
-    half2: u32,
-    st2: [(u32, u32); 5],
-    sentinel2: u32,
-    first2: (u32, u32),
-    next2: (u32, u32),
-    last_w: (u32, u32),
-    count_w: u32,
-    vt2: (u32, u32),
-    ones: [u32; 3],
-    imm: (u32, u32),
+    pub(crate) half2: u32,
+    pub(crate) st2: [(u32, u32); 5],
+    pub(crate) sentinel2: u32,
+    pub(crate) first2: (u32, u32),
+    pub(crate) next2: (u32, u32),
+    pub(crate) last_w: (u32, u32),
+    pub(crate) count_w: u32,
+    pub(crate) vt2: (u32, u32),
+    pub(crate) ones: [u32; 3],
+    pub(crate) imm: Option<(u32, u32)>,
 }
 
 /// Two static nodes `N1`, `N2` appended to the root list as the
 /// start-ups do inline (all constant stores; the count goes up by two).
-fn two_nodes<G: Game>(g: &mut G, img: &Image, f: u32, o: &TwoNodes) {
+pub(crate) fn two_nodes<G: Game>(g: &mut G, img: &Image, f: u32, o: &TwoNodes) {
     let w = |off: u32| img.word(f + off);
     let last = g.read::<u32>(w(o.last_r));
     g.write::<u16>(w(o.half1), 0xff);
@@ -115,7 +115,9 @@ fn two_nodes<G: Game>(g: &mut G, img: &Image, f: u32, o: &TwoNodes) {
     for at in o.ones {
         g.write::<u32>(w(at), 0x3f80_0000);
     }
-    g.write::<u32>(w(o.imm.0), img.word(f + o.imm.1));
+    if let Some((dst, val)) = o.imm {
+        g.write::<u32>(w(dst), img.word(f + val));
+    }
 }
 
 /// Where the start-ups differ: the static nodes, the `node insert`
@@ -148,21 +150,21 @@ enum Nodes {
 /// (read), the halfword, four stores, the last's copy, the sentinel,
 /// the first-word store, the old last's `+0x4`, the u16 count, the
 /// list's last store and the vtable store.
-struct EachNode {
-    last_r: u32,
-    half: u32,
-    st: [(u32, u32); 4],
-    last_w1: u32,
-    sentinel: u32,
-    first: (u32, u32),
-    next: u32,
-    count: u32,
-    last_w: (u32, u32),
-    vt: (u32, u32),
+pub(crate) struct EachNode {
+    pub(crate) last_r: u32,
+    pub(crate) half: u32,
+    pub(crate) st: [(u32, u32); 4],
+    pub(crate) last_w1: u32,
+    pub(crate) sentinel: u32,
+    pub(crate) first: (u32, u32),
+    pub(crate) next: u32,
+    pub(crate) count: u32,
+    pub(crate) last_w: (u32, u32),
+    pub(crate) vt: (u32, u32),
 }
 
 /// One static node appended to the root list with its own count step.
-fn each_node<G: Game>(g: &mut G, img: &Image, f: u32, o: &EachNode) {
+pub(crate) fn each_node<G: Game>(g: &mut G, img: &Image, f: u32, o: &EachNode) {
     let w = |off: u32| img.word(f + off);
     let last = g.read::<u32>(w(o.last_r));
     g.write::<u16>(w(o.half), 0xff);
@@ -255,7 +257,7 @@ const TAIL_0078: PartTail = PartTail {
 /// vtable `+0x87`) set up ([`model_node_init`], a record on the frame
 /// `[node, parent, *B, 0]`, the byte `*B` at `+0x51`). The operands from
 /// `+0x5a` on sit `shift` bytes later (a `push esi` before them).
-fn start_head<G: Game>(g: &mut G, img: &Image, f: u32, ebp: u32, shift: u32) {
+pub(crate) fn start_head<G: Game>(g: &mut G, img: &Image, f: u32, ebp: u32, shift: u32) {
     let w = |off: u32| img.word(f + off);
     let s = |off: u32| off + shift;
     let tail = g.read::<u32>(w(0x07));
@@ -292,22 +294,44 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let ebp = fr.esp.wrapping_sub(4);
+    start_nodes(g, img, fr, o);
+    let rec = ebp.wrapping_sub(0x18);
+    let late = !o.early && matches!(o.nodes, Nodes::Two(_));
+    if late {
+        call_268(g, img, f, o);
+    }
+    let a = g.read::<u32>(w(o.a));
+    if late {
+        g.write::<u32>(w(o.one), 0x3f80_0000);
+    }
+    Ret::eax(part_tail(g, img, f, rec, a, w(o.index), &o.tail))
+}
+
+/// Slot 268 `(*M, 0x11, X)` of [`Start::s268`].
+fn call_268<G: Game>(g: &mut G, img: &Image, f: u32, o: &Start) {
+    let w = |off: u32| img.word(f + off);
+    let (table, m, x) = o.s268;
+    let s = slot_target(g, w(table), 0x430 / 4);
+    let mv = g.read::<u32>(w(m));
+    g.call(s, 0, &[mv, 0x11, w(x)]);
+}
+
+/// [`start`] up to and with `node insert` (the record on the frame at
+/// `ebp - 0x18`): [`start_head`], slot 268 when early, the static nodes.
+fn start_nodes<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ebp = fr.esp.wrapping_sub(4);
     start_head(g, img, f, ebp, 0);
-    let call_268 = |g: &mut G| {
-        let (table, m, x) = o.s268;
-        let s = slot_target(g, w(table), 0x430 / 4);
-        let mv = g.read::<u32>(w(m));
-        g.call(s, 0, &[mv, 0x11, w(x)]);
-    };
     if o.early {
-        call_268(g);
+        call_268(g, img, f, o);
         g.write::<u32>(w(o.one), 0x3f80_0000);
     }
     match &o.nodes {
         Nodes::Two(n) => two_nodes(g, img, f, n),
         Nodes::Each([n1, n2], ones, imm) => {
             each_node(g, img, f, n1);
-            call_268(g);
+            call_268(g, img, f, o);
             g.write::<u32>(w(o.one), 0x3f80_0000);
             each_node(g, img, f, n2);
             for &at in ones {
@@ -331,15 +355,6 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
             ..Frame::default()
         },
     );
-    let late = !o.early && matches!(o.nodes, Nodes::Two(_));
-    if late {
-        call_268(g);
-    }
-    let a = g.read::<u32>(w(o.a));
-    if late {
-        g.write::<u32>(w(o.one), 0x3f80_0000);
-    }
-    Ret::eax(part_tail(g, img, f, rec, a, w(o.index), &o.tail))
 }
 
 /// `magic_0078` 0x100064e0: [`start`], slot 268 after the insert.
@@ -371,7 +386,7 @@ pub fn start_0078<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             count_w: 0x166,
             vt2: (0x16c, 0x170),
             ones: [0x176, 0x180, 0x18a],
-            imm: (0x194, 0x198),
+            imm: Some((0x194, 0x198)),
         }),
         insert: ([0x19f, 0x1a6, 0x1ad, 0x1b4, 0x1bb, 0x1c2], 0x1c7),
         s268: (0x1cc, 0x1df, 0x1d1),
@@ -414,7 +429,7 @@ pub fn start_0079<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             count_w: 0x18d,
             vt2: (0x193, 0x197),
             ones: [0x19d, 0x1a7, 0x1b1],
-            imm: (0x1bb, 0x1bf),
+            imm: Some((0x1bb, 0x1bf)),
         }),
         insert: ([0x1c6, 0x1cd, 0x1d4, 0x1db, 0x1e2, 0x1e9], 0x1ee),
         s268: (0x91, 0xa4, 0x96),
@@ -465,7 +480,18 @@ pub fn start_0081<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// first 714 bytes; in the latter a `lea` before the second effect
 /// node's vtable store moves its last operands by `shift`).
 fn each_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, shift: u32) -> Ret {
-    let o = Start {
+    start(g, img, fr, &each_config(shift))
+}
+
+/// The head of [`each_start`] alone, up to and with `node insert` (the
+/// camera start-ups of [`crate::m0089`] go on from there).
+pub(crate) fn each_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
+    start_nodes(g, img, fr, &each_config(0));
+}
+
+/// [`each_start`]'s operands.
+fn each_config(shift: u32) -> Start {
+    Start {
         nodes: Nodes::Each(
             [
                 EachNode {
@@ -524,8 +550,7 @@ fn each_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, shift: u32) -> Ret {
                 ),
             ],
         },
-    };
-    start(g, img, fr, &o)
+    }
 }
 
 /// [`start_0081`] (714 bytes, 1 overlay).
@@ -554,46 +579,74 @@ pub const START_0081: Sig = Sig {
 /// (`+0x28a`) into `+0x27a` and the particle index 0. Then the particle
 /// node (record `[.., .., .., *A, .., index]`, `A` at `+0x2a1`) and the
 /// two effect nodes. Returns the second effect node.
-#[allow(clippy::too_many_lines)]
 pub fn start_0080<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let index = kind_head(g, img, fr);
+    let rec = ebp.wrapping_sub(0x18);
+    let a = g.read::<u32>(w(0x2a1));
+    let tail = PartTail {
+        part: ([0x2ab, 0x2b2, 0x2b9], 0x2c3, (0x2c9, 0x2cd), 0x2d2),
+        fx: [
+            (
+                [0x2dc, 0x2e3, 0x2ea, 0x2f1, 0x2f8],
+                0x304,
+                0x310,
+                (0x316, 0x31d),
+            ),
+            (
+                [0x328, 0x32f, 0x336, 0x33d, 0x344],
+                0x350,
+                0x35a,
+                (0x360, 0x367),
+            ),
+        ],
+    };
+    Ret::eax(part_tail(g, img, f, rec, a, index, &tail))
+}
+
+/// The static nodes of [`start_0080`] (also `magic_0094`'s).
+pub(crate) const TWO_0080: TwoNodes = TwoNodes {
+    last_r: 0x92,
+    half1: 0x99,
+    st1: [(0xa1, 0xa5), (0xab, 0xaf), (0xb5, 0xb9), (0xbf, 0xc3)],
+    last_w1: 0xc8,
+    sentinel1: 0xcd,
+    first1: (0xd5, 0xd9),
+    next1: 0xe2,
+    count_r: 0xe8,
+    n1: 0xed,
+    vt1: (0xf5, 0xf9),
+    half2: 0x100,
+    st2: [
+        (0x108, 0x10c),
+        (0x112, 0x116),
+        (0x11c, 0x120),
+        (0x126, 0x12a),
+        (0x130, 0x134),
+    ],
+    sentinel2: 0x13a,
+    first2: (0x142, 0x146),
+    next2: (0x14e, 0x152),
+    last_w: (0x15d, 0x161),
+    count_w: 0x167,
+    vt2: (0x16d, 0x171),
+    ones: [0x177, 0x181, 0x18b],
+    imm: Some((0x195, 0x199)),
+};
+
+/// [`start_0080`] up to the particle node (also `magic_0096`'s camera
+/// start-up, [`crate::m0089`]): the head, the static nodes, `node insert`
+/// and the kind's path. Returns the particle index (1 on the yes path).
+#[allow(clippy::too_many_lines)]
+pub(crate) fn kind_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     use crate::sb_sse::sub;
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let ebp = fr.esp.wrapping_sub(4);
     start_head(g, img, f, ebp, 1);
-    two_nodes(
-        g,
-        img,
-        f,
-        &TwoNodes {
-            last_r: 0x92,
-            half1: 0x99,
-            st1: [(0xa1, 0xa5), (0xab, 0xaf), (0xb5, 0xb9), (0xbf, 0xc3)],
-            last_w1: 0xc8,
-            sentinel1: 0xcd,
-            first1: (0xd5, 0xd9),
-            next1: 0xe2,
-            count_r: 0xe8,
-            n1: 0xed,
-            vt1: (0xf5, 0xf9),
-            half2: 0x100,
-            st2: [
-                (0x108, 0x10c),
-                (0x112, 0x116),
-                (0x11c, 0x120),
-                (0x126, 0x12a),
-                (0x130, 0x134),
-            ],
-            sentinel2: 0x13a,
-            first2: (0x142, 0x146),
-            next2: (0x14e, 0x152),
-            last_w: (0x15d, 0x161),
-            count_w: 0x167,
-            vt2: (0x16d, 0x171),
-            ones: [0x177, 0x181, 0x18b],
-            imm: (0x195, 0x199),
-        },
-    );
+    two_nodes(g, img, f, &TWO_0080);
     let rec = ebp.wrapping_sub(0x18);
     let words = [0x1a0, 0x1a7, 0x1ae, 0x1b5, 0x1bc, 0x1c3];
     for (k, &op) in (0u32..).zip(&words) {
@@ -625,7 +678,7 @@ pub fn start_0080<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let s = slot_target(g, w(0x1fd), 0x858 / 4);
         g.call(s, 0, &[key]).eax != 0
     };
-    let index = if yes {
+    if yes {
         let s = slot_target(g, w(0x212), 0x430 / 4);
         let m = g.read::<u32>(w(0x225));
         g.call(s, 0, &[m, 0x11, w(0x217)]);
@@ -644,26 +697,7 @@ pub fn start_0080<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let y = sub(g.read::<f32>(w(0x282)), g.read::<f32>(w(0x28a)));
         g.write::<u32>(w(0x29c), y.to_bits());
         0
-    };
-    let a = g.read::<u32>(w(0x2a1));
-    let tail = PartTail {
-        part: ([0x2ab, 0x2b2, 0x2b9], 0x2c3, (0x2c9, 0x2cd), 0x2d2),
-        fx: [
-            (
-                [0x2dc, 0x2e3, 0x2ea, 0x2f1, 0x2f8],
-                0x304,
-                0x310,
-                (0x316, 0x31d),
-            ),
-            (
-                [0x328, 0x32f, 0x336, 0x33d, 0x344],
-                0x350,
-                0x35a,
-                (0x360, 0x367),
-            ),
-        ],
-    };
-    Ret::eax(part_tail(g, img, f, rec, a, index, &tail))
+    }
 }
 
 /// [`start_0080`] (883 bytes and its two jump tables, 1 overlay).

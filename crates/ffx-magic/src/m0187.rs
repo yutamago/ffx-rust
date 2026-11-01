@@ -255,3 +255,65 @@ pub const OBJECT_SETUP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An object's start (0x10001260, cdecl `(obj)`): slots 444 `(0)` and
+/// 445 `(2)`, slot 441 `(obj, (*A)[0x198], 0x12)` (`A` at `+0x23`), the
+/// object's words `+0xd0..+0x13c` set, slot 440 `(*A, obj, 0, 1)`, slots
+/// 450 `(obj, F1)` and 449 `(obj, F2)` (`+0xd6`, `+0xe9`). Returns slot
+/// 449's `eax`. Each slot call passes the words the original leaves on
+/// the stack.
+pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let obj = fr.arg(g, 0);
+    let mut p = Pushes::default();
+    p.push(0);
+    let s = slot_target(g, w(0x04), 0x6f0 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    p.push(2);
+    let s = slot_target(g, w(0x14), 0x6f4 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    let m = g.read::<u32>(g.read::<u32>(w(0x23)) + 0x198);
+    p.push_all(&[0x12, m, obj]);
+    let s = slot_target(g, w(0x33), 0x6e4 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    let a = g.read::<u32>(w(0x4c));
+    p.push_all(&[1, 0, obj, a]);
+    for (off, v) in [
+        (0xd0, 0),
+        (0xd4, 0x4020_0000),
+        (0xd8, 0xc0c0_0000),
+        (0xdc, 0),
+        (0x100, 0),
+        (0x104, 0x4334_0000),
+        (0x108, 0),
+        (0x10c, 0),
+        (0x130, 0x3e19_999a),
+        (0x134, 0x3e19_999a),
+        (0x138, 0x3e19_999a),
+        (0x13c, 0),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    let s = slot_target(g, w(0x41), 0x6e0 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    p.push_all(&[w(0xd6), obj]);
+    let s = slot_target(g, w(0xd1), 0x708 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    p.push_all(&[w(0xe9), obj]);
+    let s = slot_target(g, w(0xe4), 0x704 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(p.call(g, s, 0).eax)
+}
+
+/// [`object_start`] (252 bytes, 1 overlay).
+pub const OBJECT_START: Sig = Sig {
+    len: 252,
+    hash: 0xf9de_7c7a_b55e_de2b,
+    calls: &[],
+    imports: &[],
+};

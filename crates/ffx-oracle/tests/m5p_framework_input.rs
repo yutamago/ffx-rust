@@ -391,12 +391,18 @@ impl Twins {
         let tramp = self.tramp;
         let out = port(&mut G(&mut self.b, top - below, tramp));
         self.b.set_call_top(None);
-        assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
+        if !matches!(out, Out::F32(_)) {
+            assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
+        }
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::Al(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::F32(v) => {
+                let st0 = ra.st0_f32().unwrap_or_else(|| panic!("{what}: no ST0"));
+                assert_eq!(st0.to_bits(), v.to_bits(), "{what}: ST0");
+            }
             Out::None => {}
-            _ => unreachable!(),
+            Out::U64(_) => unreachable!(),
         }
         if self.frame_len != 0 {
             let at = top - below;
@@ -4332,6 +4338,698 @@ fn big_frame_input_matches_the_original() {
             t.check(&what, 0x0062_6070, Conv::Cdecl, &[app, rec, 0x99], |g| {
                 Out::Al(l2b::apply_frame_input(g, app, rec, 0x99))
             });
+            t.reset();
+        }
+    }
+}
+
+// ---- big-phyre2: the motion blur's render pass (m5p_framework_input_bp2) ----
+
+/// One parameter of `0x00a1eb10`'s effect: type byte, offset, size.
+fn blur_param(t: &mut Twins, kind: u8, off: u16, size: u16) -> u32 {
+    let p = t.zeros(0x10);
+    t.w8(p + 2, kind);
+    t.write(p + 8, &off.to_le_bytes());
+    t.write(p + 0xa, &size.to_le_bytes());
+    p
+}
+
+/// `0x00a1eb10` on every path: no mesh instance (0x15); each of the four
+/// parameters absent, of a wrong type (5), failing `TrophyManager_Install`
+/// (its error; skipped without a texture), not fitting (3: past the size
+/// word, offset below 4); a target or none; each scene call failing in
+/// turn; the whole pass (the last colour target call's `eax`). The two
+/// `+ 0` byte sources (`effect + 0xcd4`, `+ 0x94` null) need an effect at
+/// a wrapping address and are not run. Only synthetic data reaches it.
+#[test]
+fn bp2_blur_render_pass() {
+    use ffx_pother_b::m5p_framework_input_bp2::{self as bl, bridge as blb};
+    for (label, mut t) in Twins::all() {
+        // per parameter: None absent, Some((type, offset, size)); the
+        // install error; the target; the failing call (0 surface colour,
+        // 1 depth, 2 begin, 3 mesh, 4 end, 5 last colour; 9 none)
+        type P = Option<(u8, u16, u16)>;
+        let ok: P = Some((0x42, 8, 0x10));
+        let cases: &[([P; 4], u32, u32, bool, u32)] = &[
+            ([None; 4], 0, 0, true, 9),
+            (
+                [ok, ok, Some((0x12, 0x18, 8)), Some((0xd9, 0x24, 4))],
+                0,
+                0x7e01,
+                true,
+                9,
+            ),
+            ([ok, ok, ok, ok], 0, 0x7e02, false, 9),
+            ([Some((0x41, 8, 0x10)), ok, ok, ok], 0, 0x7e03, true, 9),
+            ([ok, Some((0xdd, 8, 0x10)), ok, ok], 0, 0x7e04, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0x7e05, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0, true, 9),
+            ([Some((0xda, 0x1c, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([Some((0xdb, 3, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([ok, Some((0xdc, 0x20, 1)), ok, ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 0x1c, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 2, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0x10, 0xe011))], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0, 4))], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 8, 0xe008)), ok], 0, 0x7e06, true, 9),
+            ([Some((0x42, 8, 0xe008)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([None; 4], 0, 0x7e07, true, 0),
+            ([None; 4], 0, 0x7e07, false, 0),
+            ([None; 4], 0, 0x7e07, true, 1),
+            ([None; 4], 0, 0x7e07, true, 2),
+            ([None; 4], 0, 0x7e07, true, 3),
+            ([None; 4], 0, 0x7e07, true, 4),
+            ([None; 4], 0, 0x7e07, true, 5),
+        ];
+        for (k, &(params, install, texture, with_target, fail)) in cases.iter().enumerate() {
+            let fx = t.junk(0xd50, k as u8);
+            let instance = if k == 0 { 0 } else { t.junk(0x20, 0x11) };
+            t.w32(fx + 0xcdc, instance);
+            let buffer = t.zeros(0x40);
+            t.w32(buffer, 0x20);
+            let holder = t.zeros(8);
+            t.w32(holder + 4, buffer);
+            t.w32(fx + 0xd28, holder);
+            for (slot, p) in [0xd2cu32, 0xd30, 0xd38, 0xd44].into_iter().zip(params) {
+                let at = match p {
+                    None => 0,
+                    Some((kind, off, size)) => blur_param(&mut t, kind, off, size),
+                };
+                t.w32(fx + slot, at);
+            }
+            let renderer = t.junk(0x140, 0x40 ^ k as u8);
+            let target = if with_target { 0x5a5a } else { 0 };
+            let err = |i: u32| if i == fail { 0x20 + i } else { 0 };
+            t.stub(bl::PASS_SETUP, true, 1, 1, 0xa254);
+            t.stub(bl::TROPHY_INSTALL, true, 1, 1, install);
+            t.stub(bl::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(bl::SURFACE_CTOR, true, 2, 2, 0x5c);
+            t.stub(bl::SURFACE_DTOR, true, 0, 0, 0x5d);
+            // the colour target: the first call's answer, then the last's
+            let color = t.stub_code(bl::SET_COLOR_TARGET, true, 2, 2, err(0));
+            let last = t.stub_code(bl::SET_COLOR_TARGET ^ 1, true, 2, 2, err(5));
+            let flip = t.zeros(4);
+            // `cmp dword [flip], 0; jne last; inc dword [flip]; jmp color`
+            let mut c = vec![0x83, 0x3d];
+            c.extend(flip.to_le_bytes());
+            c.push(0x00);
+            let head = c.len();
+            c.extend([0x0f, 0x85, 0, 0, 0, 0]); // jne rel32 (patched)
+            c.extend([0xff, 0x05]);
+            c.extend(flip.to_le_bytes());
+            c.extend([0xe9, 0, 0, 0, 0]); // jmp rel32 (patched)
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let jne_end = code + head as u32 + 6;
+            c[head + 2..head + 6].copy_from_slice(&last.wrapping_sub(jne_end).to_le_bytes());
+            let jmp_end = code + c.len() as u32;
+            let n = c.len();
+            c[n - 4..].copy_from_slice(&color.wrapping_sub(jmp_end).to_le_bytes());
+            t.write(code, &c);
+            let at = t.rebase(bl::SET_COLOR_TARGET);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            t.stub(bl::SET_DEPTH_TARGET, true, 1, 1, err(1));
+            t.stub(bl::BEGIN_SCENE, true, 1, 1, err(2));
+            t.stub(bl::RENDER_MESH_INSTANCE, true, 4, 4, err(3));
+            t.stub(bl::END_SCENE, true, 1, 1, err(4));
+            let end = t.b.stack_range().end;
+            let ebp = end - 0x100 - 4 * 5 - 8;
+            let args = [renderer, target, 0xaa, texture, texture ^ 0x10];
+            let what = format!("{label}: blur pass {k}");
+            let junk: Vec<u8> = (0..0x3cu32).map(|i| (i * 5 + k as u32) as u8).collect();
+            t.write(ebp - 0x3c, &junk);
+            t.check_frame(&what, 0x00a1_eb10, Conv::Thiscall(fx), &args, 0, |g| {
+                Out::U32(blb::blur_render_pass(
+                    g,
+                    ebp,
+                    fx,
+                    renderer,
+                    target,
+                    0xaa,
+                    texture,
+                    texture ^ 0x10,
+                ))
+            });
+            let x = Oracle::read(&mut t.a, ebp - 0x2c, 0x20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x2c, 0x20).unwrap();
+            assert_eq!(x, y, "{what}: the bindings");
+            t.reset();
+        }
+    }
+}
+
+// ---- big-phyre3 ----
+
+/// `0x0062b5f0` (`PApplicationScriptProxy::readInputLog`): the reader
+/// stubbed (`readAll` hands out the text), `nextToken` and the CRT string
+/// functions run as the originals (the oracle's), `sscanf_s` a stub that
+/// stores a value per call (the next of a table, `"%d:%d:%d"` three).
+/// Cases: the file not opening; `readAll` failing; texts with comments,
+/// lines without a `:` or a token, `KB` entries with and without a
+/// keyboard (the warning once), `IK` entries with a name (`+` or not)
+/// and without, script commands found (case-insensitive) and unknown, a
+/// last line without `\n`; the text owned or not; no script commands.
+/// Only synthetic data reaches it.
+#[test]
+fn bp3_read_input_log_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as il};
+    let [
+        ctor,
+        is_open,
+        read_all,
+        close,
+        dtor,
+        printf,
+        _,
+        resize,
+        free,
+    ] = il::INPUT_LOG_CALLS;
+    let texts: [&[u8]; 5] = [
+        b"# input log\n#1:KB:1:1:1\n10:KB:1:2:3\n20:IK:abc:+:5\n30:IK::x\n40:JUMP:p1 p2\n50:Nothing:zz\n60\n70:KB:0:0:0\n80:IK:q:-:1\n90:Jump:\n100:KB:9\0",
+        b"5:KB:1\n6:IK:ab\n\0",
+        b"\0",
+        b"1:Jump:x\n2:Jump:y\n3:KB:4\n#\n:\n\0",
+        b"1:KB:2\n\0",
+    ];
+    for (label, mut t) in Twins::all() {
+        for k in 0..12u32 {
+            let text = texts[k as usize % 5];
+            let data = t.alloc(text);
+            // text 1 ends its length on its last `\n` (not a line end)
+            let len = (text.len() - 1) as u32 - u32::from(k % 5 == 1);
+            let head = if k % 3 == 1 { 0x8000_0000 | len } else { len };
+            let open = u32::from(k != 4);
+            let result = if k == 8 { 7 } else { 0 };
+            t.stub(ctor, true, 1, 1, 0);
+            t.stub(is_open, true, 0, 0, open | 0x100);
+            // readAll: the array filled, `result` returned
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], head
+            c.extend(head.to_le_bytes());
+            c.extend([0xc7, 0x40, 0x04]); // mov dword [eax+4], data
+            c.extend(data.to_le_bytes());
+            let log_part = t.stub_code(read_all, true, 2, 2, result);
+            c.push(0xe9);
+            let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+            c.extend(log_part.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log_part
+            t.write(at, &c);
+            place_code(&mut t, read_all, at);
+            t.stub(close, true, 0, 0, 0);
+            t.stub(dtor, true, 0, 0, 0);
+            t.stub(printf, false, 2, 0, 0);
+            t.stub(resize, true, 1, 1, 0);
+            t.stub(free, false, 1, 0, 0);
+            // sscanf_s: the next table value through the first pointer;
+            // "%d:%d:%d" also 0x41 and 0x42 through the next two
+            let kb_fmt = t.rebase(il::INPUT_LOG_TEXTS[3]);
+            let vals: Vec<u32> = (0..64)
+                .map(|i| [10u32, 1, 3, 0, 2, 5][(i + k as usize) % 6])
+                .collect();
+            let tab = t.alloc(
+                &vals
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let cell = t.alloc(&tab.to_le_bytes());
+            // each call's string pointer into a trace (compared as memory)
+            let trace = t.zeros(0x100);
+            let tcell = t.alloc(&trace.to_le_bytes());
+            let mut c = vec![0xa1];
+            c.extend(tcell.to_le_bytes()); // mov eax, [tcell]
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x10]); // mov [eax], edx
+            c.extend([0x83, 0x05]);
+            c.extend(tcell.to_le_bytes());
+            c.push(0x04); // add dword [tcell], 4
+            c.push(0xa1);
+            c.extend(cell.to_le_bytes()); // mov eax, [cell]
+            c.extend([0x8b, 0x10]); // mov edx, [eax]
+            c.extend([0x83, 0x05]);
+            c.extend(cell.to_le_bytes());
+            c.push(0x04); // add dword [cell], 4
+            c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            c.extend([0x89, 0x10]); // mov [eax], edx
+            c.extend([0x81, 0x7c, 0x24, 0x08]);
+            c.extend(kb_fmt.to_le_bytes()); // cmp dword [esp+8], kb_fmt
+            // jne past both stores (odd runs: always past, the deadbeefs stay)
+            c.extend([if k % 2 == 0 { 0x75 } else { 0xeb }, 0x14]);
+            c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+            c.extend([0xc7, 0x00, 0x41, 0, 0, 0]); // mov dword [eax], 0x41
+            c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14]
+            c.extend([0xc7, 0x00, 0x42, 0, 0, 0]); // mov dword [eax], 0x42
+            c.extend([0xb8, 1, 0, 0, 0, 0xc3]); // mov eax, 1; ret
+            let sscanf = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), sscanf);
+            let slot = t.rebase(il::INPUT_LOG_IMPORTS[1]);
+            let old = Oracle::read(&mut t.a, slot, 4).unwrap();
+            t.saved.entry(slot).or_insert(old);
+            t.w32(slot, sscanf);
+            // the log array: room for 16 entries
+            let [array, once] = il::INPUT_LOG_GLOBALS.map(|a| t.rebase(a));
+            let entries = t.zeros(0x90 * 16);
+            t.write(entries, &vec![0xa5; 0x90 * 16]);
+            t.w32(array, 16);
+            t.w32(array + 4, entries);
+            t.write(once, &[u8::from(k % 5 == 2)]);
+            // the application: keyboards for keys 1 and 3; script commands
+            let input = t.zeros(0x100);
+            for key in [1u32, 3] {
+                t.w32(input + 0x80 + 4 * key, 0x6b00 + key);
+            }
+            let scripts = t.zeros(0x20);
+            let recs = t.zeros(0x48 * 3);
+            for (i, name) in [&b"walk\0"[..], b"jump\0", b"run\0"].iter().enumerate() {
+                t.write(recs + 0x48 * i as u32 + 4, name);
+            }
+            t.w32(scripts + 0x14, recs);
+            t.w32(scripts + 0x18, if k % 6 == 5 { 0 } else { 3 });
+            let app = t.zeros(0x2c0);
+            t.w32(app + 0x2b8, input);
+            t.w32(app + 0x2c, scripts);
+            let path = t.alloc(b"input.log\0");
+            let what = format!("{label}: input log {k}");
+            t.frame_len = 0x24;
+            t.check_frame(&what, 0x0062_b5f0, Conv::Cdecl, &[app, path], 0x70, |g| {
+                let ebp = g.1 + 0x60;
+                Out::U32(il::input_log::read_input_log(g, ebp, app, path))
+            });
+            t.reset();
+        }
+    }
+}
+
+/// `0x00628f00` (`PInputMapping::valueOf`): every semantic, negated or
+/// not, with its devices there or not: key devices with each key down,
+/// the stick's axes (1 through `getStickAxis`, 2, 4 and 5 deadzoned:
+/// above and below the threshold, no second axis, no pad), pad buttons
+/// (both keys, the triggers with and without the first pad), mouse
+/// buttons and steps, touch values (pressed, held, other states),
+/// pinches inside and outside the angle (normalised through the
+/// originals, `_CIcos` patched to `fcos`), motion values; an unknown
+/// semantic. Only synthetic data reaches it.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)] // the case data
+fn bp3_value_of_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as fi};
+    let [stick_axis, get_device, _, cos] = fi::AXIS_CALLS;
+    for (label, mut t) in Twins::all() {
+        for k in 0..(23 * 10 * 4) {
+            let kind_i = k / 40;
+            let kp = (k / 4) % 10;
+            let var = k % 4;
+            let kind = if kind_i < 22 {
+                t.rebase(fi::AXIS_SEMANTICS[kind_i as usize])
+            } else {
+                0x7e00
+            };
+            // _CIcos as the CPU's fcos
+            let at = t.rebase(cos);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &[0xd9, 0xff, 0xc3]);
+            t.stub_float_pops(
+                stick_axis,
+                true,
+                2,
+                2,
+                (0.625f32 - 0.5 * var as f32).to_bits(),
+            );
+            let this = t.zeros(0x100);
+            // key devices: keys 0x20 and 0x21 down
+            for d in 0..7u32 {
+                if (d + var) % 4 != 3 {
+                    let dev = t.zeros(0x120);
+                    t.w8(dev + 0x18 + 4, 1);
+                    t.w8(dev + 0x18 + 5, u8::from((kp + var) % 2 == 0));
+                    t.w32(this + 0x80 + 4 * d, dev);
+                }
+            }
+            // pads: buttons, axes; the first pad's trigger values
+            let pad_vt = {
+                let cell = t.alloc(&(0.75f32 - 0.25 * var as f32).to_bits().to_le_bytes());
+                let mut c = vec![0xd9, 0x05];
+                c.extend(cell.to_le_bytes()); // fld dword [cell]
+                c.extend([0xc2, 0x04, 0x00]); // ret 4
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let vt = t.zeros(0x20);
+                t.w32(vt + 0x10, code);
+                vt
+            };
+            for p in 0..18u32 {
+                if var == 3 && p != 0 {
+                    continue;
+                }
+                let pad = t.zeros(0x60);
+                t.w32(pad, pad_vt);
+                for key in [0x11u32, 0x12, 0xb, 0xe, 0x1b] {
+                    t.w8(pad + 0xd + key, u8::from((key + p + var + kp) % 4 != 0));
+                }
+                for (j, off) in [0x38u32, 0x3c, 0x40, 0x44].into_iter().enumerate() {
+                    let axis = t.zeros(0x20);
+                    let j = j as u32;
+                    t.w32(axis + 0x18, (0.25f32 + 0.1 * j as f32).to_bits());
+                    // values below, above and at the threshold, negative ones
+                    let at18 = 0.25f32 + 0.1 * j as f32;
+                    let x = [0.1f32, -0.3, 0.9, -1.0, f32::NAN, at18, -at18, -0.2]
+                        [((j * 3 + var + kp) % 8) as usize];
+                    t.w32(axis + 0x1c, x.to_bits());
+                    let missing = var == 2 && kp == 1 && j % 2 == 1;
+                    t.w32(pad + off, if missing { 0 } else { axis });
+                }
+                if !(var == 1 && kp == 5 && p == 0) {
+                    t.w32(this + 0x38 + 4 * p, pad);
+                }
+            }
+            for (i, at) in [0xa0u32, 0xa1, 0xa2].into_iter().enumerate() {
+                t.w8(this + at, u8::from((i as u32 + var).is_multiple_of(2)));
+            }
+            t.w32(this + 0xb0, (7 * var).wrapping_sub(20));
+            t.w32(this + 0xb4, 0x100_0003 + var);
+            // devices 3 (touch) and 4 (motion)
+            let touch = if var == 3 && kp == 0 {
+                0
+            } else {
+                t.zeros(0x180)
+            };
+            if touch != 0 {
+                for (j, at) in [0x15cu32, 0x15e, 0x15f, 0x161].into_iter().enumerate() {
+                    let m = var * 10 + kp;
+                    t.w8(touch + at, u8::from((m >> j) & 1 == u32::from(j == 0) ^ 1));
+                }
+                for (j, at) in [0x74u32, 0x78, 0xcc, 0x158, 0x108, 0xe8, 0x10c, 0xec]
+                    .into_iter()
+                    .enumerate()
+                {
+                    t.w32(touch + at, (1.37f32 * j as f32 - 2.11).to_bits());
+                }
+                // the two touches' directions: close or apart by variant
+                let (a, b): ((f32, f32), (f32, f32)) = if kp % 2 == 0 {
+                    ((3.3, 4.7), (3.1, 3.9))
+                } else {
+                    ((1.0, 0.0), (0.0, 1.0))
+                };
+                t.w32(touch + 0x100, a.0.to_bits());
+                t.w32(touch + 0x104, a.1.to_bits());
+                t.w32(touch + 0xe0, b.0.to_bits());
+                t.w32(touch + 0xe4, b.1.to_bits());
+            }
+            let motion = if var == 3 && kp == 1 {
+                0
+            } else {
+                t.zeros(0x100)
+            };
+            if motion != 0 {
+                for w in 0..0x40u32 {
+                    t.w32(motion + 4 * w, (0.125f32 * w as f32 - 1.0).to_bits());
+                }
+            }
+            // PInput_GetDevice: touch for kind 3, motion for 4; the
+            // words traced
+            let trace = t.zeros(0x20);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            c.push(0xa3);
+            c.extend((trace + 8).to_le_bytes()); // mov [trace+8], eax (last kind)
+            c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+            c.push(0xa3);
+            c.extend((trace + 0xc).to_le_bytes()); // mov [trace+0xc], eax (last index)
+            c.extend([0x83, 0x7c, 0x24, 0x04, 0x03]); // cmp dword [esp+4], 3
+            c.push(0xb8);
+            c.extend(touch.to_le_bytes()); // mov eax, touch
+            c.extend([0x74, 0x05]); // je ret
+            c.push(0xb8);
+            c.extend(motion.to_le_bytes()); // mov eax, motion
+            c.push(0xc3);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            place_code(&mut t, get_device, code);
+            let input = t.zeros(0x20);
+            t.w32(input + 8, kind);
+            t.w32(
+                input + 0xc,
+                [0u32, 1, 3, 6, 17, 7, 4, 2][((var + kp) % 8) as usize],
+            );
+            t.w8(input + 0x10, u8::from((var + kp) % 2 == 1));
+            t.w32(input + 0x14, (1.25f32 + var as f32).to_bits());
+            let (key1, key2) = [
+                (0x20u32, 0x21u32),
+                (1, 0x11),
+                (2, 0x12),
+                (4, 0xb),
+                (5, 0xe),
+                (0xb, 0x11),
+                (0xc, 0),
+                (0xd, 0x12),
+                (0, 0x1b),
+                (0x1b, 0xc),
+            ][kp as usize];
+            t.w32(input + 0x18, key1);
+            t.w32(input + 0x1c, key2);
+            let what = format!("{label}: valueOf {kind_i} keys {kp} variant {var}");
+            t.frame_len = 0x18;
+            // the frame from ebp - 0x30 (ebp = top - 0xc)
+            t.check_frame(
+                &what,
+                0x0062_8f00,
+                Conv::Thiscall(this),
+                &[input],
+                0x3c,
+                |g| {
+                    let ebp = g.1 + 0x30;
+                    Out::F32(fi::axis::value_of(g, ebp, this, input))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00628f00`'s stick deadzone at its edges (key 2 of the stick
+/// semantic): the compared axis exactly at its threshold, a negative
+/// compared value, the read value exactly at the threshold; no second
+/// axis.
+#[test]
+fn bp3_value_of_deadzone_edges() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as fi};
+    let [stick_axis, get_device, _, _] = fi::AXIS_CALLS;
+    for (label, mut t) in Twins::all() {
+        let cases: [(f32, f32, f32, f32); 6] = [
+            (0.5, -0.5, 0.4, 0.3),
+            (0.25, -0.3, 0.4, 0.3),
+            (0.9, 0.1, 0.3, -0.3),
+            (0.9, 0.1, 0.3, 0.29),
+            (0.9, 0.1, 0.3, 0.31),
+            (0.5, 0.4, -0.3, 0.2),
+        ];
+        for (k, &(a18, a1c, b18, b1c)) in cases.iter().enumerate() {
+            for negate in [0u8, 1] {
+                t.stub_float_pops(stick_axis, true, 2, 2, 0);
+                let devs = seq_code(&mut t, 0, &[0, 0]);
+                place_code(&mut t, get_device, devs);
+                let this = t.zeros(0x100);
+                let pad = t.zeros(0x60);
+                let a = t.zeros(0x20);
+                let b = t.zeros(0x20);
+                t.w32(a + 0x18, a18.to_bits());
+                t.w32(a + 0x1c, a1c.to_bits());
+                t.w32(b + 0x18, b18.to_bits());
+                t.w32(b + 0x1c, b1c.to_bits());
+                t.w32(pad + 0x38, a);
+                t.w32(pad + 0x3c, b);
+                t.w32(this + 0x38, pad);
+                let input = t.zeros(0x20);
+                t.w32(input + 8, t.rebase(fi::AXIS_SEMANTICS[1]));
+                t.w8(input + 0x10, negate);
+                t.w32(input + 0x14, 1.5f32.to_bits());
+                t.w32(input + 0x18, 2);
+                let what = format!("{label}: deadzone {k} negate {negate}");
+                t.check_frame(
+                    &what,
+                    0x0062_8f00,
+                    Conv::Thiscall(this),
+                    &[input],
+                    0x3c,
+                    |g| {
+                        let ebp = g.1 + 0x30;
+                        Out::F32(fi::axis::value_of(g, ebp, this, input))
+                    },
+                );
+                t.reset();
+            }
+        }
+    }
+}
+
+/// `GetClientRect(hwnd, rect)` (stdcall) writing `rect` (nothing, a
+/// failure, when `None`) and logging the window handle into `cell`.
+fn client_rect_code(cell: u32, rect: Option<[i32; 4]>) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x4c, 0x24, 0x04]; // mov ecx, [esp+4]
+    c.extend([0x89, 0x0d]);
+    c.extend(cell.to_le_bytes()); // mov [cell], ecx
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+    for (i, v) in rect.iter().flatten().enumerate() {
+        let off = u8::try_from(4 * i).unwrap();
+        if off == 0 {
+            c.extend([0xc7, 0x00]); // mov dword [eax], imm
+        } else {
+            c.extend([0xc7, 0x40, off]); // mov dword [eax+off], imm
+        }
+        c.extend(v.to_le_bytes());
+    }
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    c
+}
+
+/// `0x0062e3a0` against the original: window sizes and client
+/// rectangles, the cursor at and around each edge (both margins), mouse
+/// deltas, every button combination, the arrow keys, and the touch
+/// device's drag, orbit and pinches (inside and outside pi/6); the
+/// camera's calls logged with their float words.
+#[test]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)]
+fn bp3_update_mouse_camera_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as fi};
+    let [rect_slot, get_device, _, cos, settings] = fi::MOUSE_CAMERA_CALLS;
+    for (label, mut t) in Twins::all() {
+        for k in 0..770u32 {
+            // _CIcos as the CPU's fcos
+            let at = t.rebase(cos);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &[0xd9, 0xff, 0xc3]);
+            let (w, h) = [(640u32, 480u32), (1920, 1080), (0x8000_0003, 7)][(k % 3) as usize];
+            let rect: [i32; 4] = if k % 2 == 0 {
+                [0, 0, w as i32, h as i32]
+            } else {
+                [300, 200, 650, 500]
+            };
+            let windowed = u32::from((k / 2) % 2 == 1);
+            let set = t.zeros(0x10);
+            t.w32(set + 8, windowed);
+            let sat = t.rebase(settings);
+            let old = Oracle::read(&mut t.a, sat, 4).unwrap();
+            t.saved.entry(sat).or_insert(old);
+            t.w32(sat, set);
+            let cell = t.zeros(4);
+            // a failing GetClientRect leaves the zeroed rectangle
+            let fails = k % 13 == 12;
+            t.import_code(rect_slot, &client_rect_code(cell, (!fails).then_some(rect)));
+            let rect = if fails { [0; 4] } else { rect };
+            let offs = [0i32, 1, 3, 4, 5, -6, -5, -4, -2, -1, 100];
+            let pos = |lo: i32, hi: i32, j: u32| {
+                let o = offs[(j % 11) as usize];
+                if o == 100 {
+                    i32::midpoint(lo, hi)
+                } else if o >= 0 {
+                    lo + o
+                } else {
+                    hi + o
+                }
+            };
+            let mx = pos(rect[0], rect[2], k / 4);
+            let my = pos(rect[1], rect[3], k / 5 + 2);
+            let (dx, dy) = [(0i32, 0i32), (5, -3), (0, 7), (-2, 0)][((k / 3) % 4) as usize];
+            let buttons = (k / 7) % 8;
+            let keys = (k * 5 / 3) % 17;
+            let input = t.zeros(0xc0);
+            if keys != 16 {
+                let kb = t.zeros(0x60);
+                for b in 0..4u32 {
+                    t.w8(kb + 0x57 + b, u8::from(keys & (1 << b) != 0));
+                }
+                t.w32(input + 0x80, kb);
+            }
+            for b in 0..3u32 {
+                let v = if buttons & (1 << b) != 0 {
+                    [1u8, 0xff][(k % 2) as usize]
+                } else {
+                    0
+                };
+                t.w8(input + 0xa0 + b, v);
+            }
+            t.w32(input + 0xa8, mx.cast_unsigned());
+            t.w32(input + 0xac, my.cast_unsigned());
+            t.w32(input + 0xb0, dx.cast_unsigned());
+            t.w32(input + 0xb4, dy.cast_unsigned());
+            let lens = t.junk(0x60, 3);
+            t.w32(
+                lens + 0x44,
+                [1.25f32, 0.75, 2.0][(k % 3) as usize].to_bits(),
+            );
+            let window = t.zeros(4);
+            t.w32(window, 0x00ab_cd00 + k);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x180, lens);
+            t.w32(app + 0x264, window);
+            t.w32(app + 0x26c, w);
+            t.w32(app + 0x270, h);
+            t.w32(app + 0x2b8, input);
+            // the touch device: none, idle, drag, orbit, pinch (near and
+            // far directions), orbit and pinch
+            let state = (k / 11) % 7;
+            let dev = if state == 0 {
+                0
+            } else {
+                let d = t.zeros(0x170);
+                let fl = |t: &mut Twins, at: u32, v: f32| t.w32(d + at, v.to_bits());
+                fl(&mut t, 0x74, 0.375);
+                fl(&mut t, 0x78, -1.5);
+                fl(&mut t, 0xcc, 0.8125);
+                // the second direction at an angle from the first: near,
+                // far, just inside pi/6, between pi/6 and 0.5 rad, just
+                // outside pi/6
+                let a1 = 0.913f32;
+                let turn = [0.05f32, 2.0, 0.51, 0.52, 0.53][((k / 77) % 5) as usize];
+                let turn = if state == 5 { 2.0 } else { turn };
+                fl(&mut t, 0x100, 3.1 * a1.cos());
+                fl(&mut t, 0x104, 3.1 * a1.sin());
+                fl(&mut t, 0xe0, 2.3 * (a1 + turn).cos());
+                fl(&mut t, 0xe4, 2.3 * (a1 + turn).sin());
+                fl(&mut t, 0x108, 0.3);
+                fl(&mut t, 0xe8, 0.7);
+                fl(&mut t, 0xec, -0.2);
+                fl(&mut t, 0x10c, 0.9);
+                match state {
+                    2 => t.w8(d + 0x15c, 1),
+                    3 => t.w8(d + 0x15e, 1),
+                    4 | 5 => t.w8(d + 0x15f, 1),
+                    6 => {
+                        t.w8(d + 0x15e, 1);
+                        t.w8(d + 0x15f, 1);
+                        t.w8(d + 0x15c, 1);
+                    }
+                    _ => {}
+                }
+                d
+            };
+            t.stub(get_device, false, 2, 0, dev);
+            let cam = t.object(&[0, 0, 0, 0, 0, 0, 0, 1, 2, 2], &[]);
+            let p3 = [1.0f32, 0.5, -2.25][(k % 3) as usize].to_bits();
+            let p4 = [0.1f32, 1.75, 3.0][((k / 3) % 3) as usize].to_bits();
+            let p5 = [2.0f32, -0.3, 0.6][((k / 9) % 3) as usize].to_bits();
+            t.frame_len = 0x10;
+            let what = format!("{label}: mouse camera {k}");
+            t.check_frame(
+                &what,
+                0x0062_e3a0,
+                Conv::Thiscall(app),
+                &[cam, p3, p4, p5],
+                0x2c,
+                |g| {
+                    let ebp = g.1 + 0x14;
+                    fi::mouse_camera::update_mouse_camera(g, ebp, app, (cam, p3, p4, p5));
+                    Out::None
+                },
+            );
             t.reset();
         }
     }

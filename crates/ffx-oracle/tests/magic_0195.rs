@@ -139,3 +139,66 @@ fn object_start_own() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// Slots answering `0x0100_0000 * (k + 1) + slot` and recording their
+/// first `n` words (with a call count) in rows of their own.
+fn counted(t: &mut Twin, slots: &[(u32, usize)]) {
+    for (k, &(s, n)) in (0u32..).zip(slots) {
+        let row = SCRATCH + 0x3000 + 0x40 * k;
+        t.stub(s, move |m: &mut dyn StubMem, a: &[u32]| {
+            let c = m.r32(row);
+            m.w32(row, c + 1);
+            for (i, w) in (0u32..).zip(&a[..n]) {
+                m.w32(row + 4 + 4 * i, *w ^ c);
+            }
+            0x0100_0000 * (k + 1) + s
+        });
+    }
+}
+
+/// 0x100017d0: the copy for two list indices of each object.
+#[test]
+fn copy_start() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x17d0);
+    let copy = SCRATCH + 0x2000;
+    t.stub(434, move |m: &mut dyn StubMem, a: &[u32]| {
+        m.w32(SCRATCH + 0x3000, a[0]);
+        m.w32(SCRATCH + 0x3004, a[1]);
+        copy
+    });
+    let obj = SCRATCH + 0x1000;
+    for (i, j) in [(0u32, 1u32), (2, 0), (1, 1)] {
+        t.write(copy, &[0x33; 0x100]);
+        for k in 0..0x40 {
+            t.set_u32(obj + 4 * k, 0x0b00_0000 + k);
+        }
+        t.set_u32(obj, 0x10);
+        t.set_u32(obj + 0xac, i);
+        t.set_u32(copy + 0xac, j);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// 0x10001830: the copy's start in mode 1 and another mode.
+#[test]
+fn table_start() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x1830);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    counted(&mut t, &[(440, 4), (450, 2), (451, 2), (449, 2)]);
+    let modes = w(&t, 0x17);
+    for c in 0..4u32 {
+        t.set_u32(modes + 4 * c, [1, 0, 2, 1][c as usize]);
+        for (k, op) in (0u32..).zip([0x21, 0x2d, 0x39]) {
+            t.set_u32(w(&t, op) + 16 * c, 0x0d00_0000 + 0x10 * c + k);
+        }
+    }
+    let obj = SCRATCH + 0x1000;
+    for (i, c) in [(0u32, 0u32), (1, 1), (2, 2), (0, 3)] {
+        t.write(obj, &[0x22; 0x140]);
+        t.set_u32(obj + 0xac, i);
+        t.set_u32(obj + 0x2c + 16 * i, c);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

@@ -6826,3 +6826,526 @@ fn rp4_lock_enter_matches_the_original() {
         }
     });
 }
+
+// ---- round 6 (left6) batch 2 (ffx_pcui::l6_pcui) ----
+
+use ffx_pcui::l6_pcui::bridge as l6u;
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l6_chr_buttons_match_the_original() {
+    // every button, the lists empty and not, the light mode both ways, the
+    // icon mode wrapping, the wind on and off; ids outside the table
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d01);
+        let ids = [
+            1_u32, 2, 3, 0x36, 0x43, 0x45, 0x47, 0x4e, 0x54, 0x5a, 0x5d, 0x64, 0x65, 0x68, 0x69,
+        ];
+        for case in 0..120_u32 {
+            let id = match case % 20 {
+                18 => rng.below(0x70),
+                19 => rng.word(),
+                k => ids[k as usize % ids.len()],
+            };
+            for (sym, v) in [
+                (l6u::WIND_TOGGLE, rng.next()),
+                (l6u::CHR_STR_A, rng.next()),
+                (l6u::CHR_STR_B, rng.next()),
+                (
+                    l6u::CHR_COUNT,
+                    [0, 0xffff_ffff, 1, 7][rng.below(4) as usize],
+                ),
+                (
+                    l6u::MOTION_COUNT,
+                    [0, 0xffff_ffff, 1, 7][rng.below(4) as usize],
+                ),
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            let modes = [rng.below(3) as u8, rng.next() as u8];
+            let at = t.rebase(l6u::LIGHT_MODE);
+            t.patch(at, &modes);
+            let line = t.rebase(l6u::DEBUG_LINE);
+            t.patch(line, &[0; 16]);
+            let fill = if rng.chance(2) { 0 } else { rng.next() };
+            let calc = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(2)
+            };
+            t.stubs(&[
+                (l6u::SG_SET_RESOURCE, false, 2, 0, rng.next()),
+                (l6u::UPDATE_LIGHT_TEXTS, false, 1, 0, rng.next()),
+                (l6u::SELECTOR_ALLOCATE, false, 0, 0, rng.next()),
+                (l6u::LIST_CHARACTERS, false, 1, 0, rng.next()),
+                (l6u::SELECTOR_SET_SELECT_STR, false, 2, 0, rng.next()),
+                (l6u::SELECTOR_OPEN, false, 3, 0, rng.next()),
+                (l6u::LIST_MOTIONS, false, 1, 0, rng.next()),
+                (l6u::SG_GET_RESOURCE_STR, false, 1, 0, rng.next()),
+                (l6u::MESSAGE_BOX, false, 1, 0, rng.next()),
+                (l6u::FILL_SELECTOR, false, 1, 0, fill),
+                (l6u::WINDOW_CREATE, false, 6, 0, rng.next()),
+                (l6u::CALC_NORMAL_GET, false, 0, 0, calc),
+                (l6u::CALC_NORMAL_SET_ALL, false, 1, 0, rng.next()),
+                (l6u::BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (l6u::DBG_WINDOW_A, false, 0, 0, rng.next()),
+                (l6u::DBG_WINDOW_B, false, 0, 0, rng.next()),
+                (l6u::DBG_WINDOW_C, false, 0, 0, rng.next()),
+                (l6u::SET_DRAW_ICON, false, 1, 0, rng.next()),
+                (l6u::SET_DRAW_ICON2, false, 1, 0, rng.next()),
+                (l6u::WINDOW_SET_TEXT, false, 3, 0, rng.next()),
+                (l6u::TOGGLE_GLOBAL, false, 0, 0, rng.next()),
+                (l6u::MOTION_HALF_GET, false, 0, 0, calc ^ 1),
+                (l6u::MOTION_HALF_SET, false, 1, 0, rng.next()),
+                (l6u::SET_WIND, false, 3, 0, rng.next()),
+            ]);
+            let state = t.words(&[rng.next(), rng.next()]);
+            let window = rng.next();
+            let args = [window, id, state];
+            let slot = t.frame_ebp(3) + 8;
+            for (k, v) in (0_u32..).zip(args) {
+                t.b.write(slot + 4 * k, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(slot - 0x200));
+            t.check(
+                "ChrMenu_buttons_0084cf60",
+                0x0084_cf60,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u::chr_buttons(g, slot, window, id, state)),
+            );
+            t.b.set_call_top(None);
+            for k in 0..3 {
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, slot + 4 * k),
+                    Mem::read::<u32>(&t.b, slot + 4 * k),
+                    "ChrMenu_buttons_0084cf60: slot {k}"
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+use ffx_pcui::l6_pcui2::bridge as l6u2;
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l6_perf_meter_proc_matches_the_original() {
+    // the four messages and others; the mouse inside or not, over a
+    // segment or outside the bar (left of it, below half the height);
+    // times under and over 0x200 (the scale steps to 0x800); the hover
+    // text with timer 0 and others (the image's segment table)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d11);
+        for case in 0..240_u32 {
+            let msg = match case % 6 {
+                0 => 0x8001,
+                1 => 0x8006,
+                2 => 0x8003,
+                3 => rng.word(),
+                _ => 0x8011,
+            };
+            let param = if rng.chance(2) { 1 } else { rng.word() };
+            for (sym, v) in [
+                (l6u2::METER_WINDOW, rng.next()),
+                (l6u2::LAST_TIME, rng.below(0x900)),
+                (l6u2::OPEN, rng.next()),
+                (l6u2::TICK_BASE, rng.next()),
+                (l6u2::HOVER_SEGMENT, rng.next()),
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            for sym in [l6u2::SCALE, l6u2::WIDTH, l6u2::CURSOR, l6u2::REFERENCE] {
+                let at = t.rebase(sym);
+                t.patch(at, &rng.next().to_le_bytes());
+            }
+            let text = t.rebase(l6u2::HOVER_TEXT);
+            t.patch(text, &[0x41; 0x40]);
+            let time = match if case % 3 == 1 { 3 } else { rng.below(4) } {
+                0 => rng.below(0x200),
+                1 => 0x200 + rng.below(0x700),
+                2 => rng.word(),
+                // the boundaries: the red text, the scale steps
+                _ => [0x200, 0x200, 0x201, 0x300, 0x500, 0x800][rng.below(6) as usize],
+            };
+            let mouse_y = (rng.below(0x1c0) as i32 - 0x10).cast_unsigned();
+            let mouse_x = match rng.below(5) {
+                0 => 0xffff_fff0,
+                1 => 0x7000,
+                2 => 0,
+                _ => rng.below(0x20),
+            };
+            let height = match rng.below(4) {
+                0 => 0xffff_ffe1,
+                1 => 2 * mouse_x,
+                _ => rng.below(0x40),
+            };
+            t.stubs(&[
+                (l6u2::ADD_BUTTON, false, 7, 0, rng.next()),
+                (l6u2::START_DRAG, false, 1, 0, rng.next()),
+                (l6u2::SG_SET_RESOURCE, false, 2, 0, rng.next()),
+                (l6u2::MOUSE_IN, false, 1, 0, rng.below(2)),
+                (l6u2::CLIENT_MOUSE, false, 1, 0, rng.next()),
+                (l6u2::SET_FLAG1, false, 2, 0, rng.next()),
+                (l6u2::MOUSE_GET_Y, false, 0, 0, rng.next()),
+                (l6u2::MOUSE_GET_X, false, 0, 0, rng.next()),
+                (l6u2::SET_POS, false, 3, 0, rng.next()),
+                (l6u2::PRINT_SET_SIZE_ONLY, false, 1, 0, rng.next()),
+                (l6u2::PRINT_SET_ITALIC, false, 1, 0, rng.next()),
+                (l6u2::PRINT_SET_BOLD, false, 1, 0, rng.next()),
+                (l6u2::PRINT_SET_XY, false, 2, 0, rng.next()),
+                (l6u2::GU_PRINTF, false, 1, 0, rng.next()),
+                (l6u2::TIMER, false, 1, 0, time),
+                (l6u2::PRINT_SET_COLOR, false, 4, 0, rng.next()),
+                (l6u2::GET_SIZE_W, false, 1, 0, rng.below(0x200)),
+                (l6u2::CONTROL_SET_RECT, false, 6, 0, rng.next()),
+                (l6u2::GET_CLIENT_W, false, 1, 0, rng.below(0x200)),
+                (l6u2::PACKET_BEGIN_TAG, false, 1, 0, rng.next()),
+                (l6u2::SET_TEST, false, 8, 0, rng.next()),
+                (l6u2::MOUSE_WINDOW_Y, false, 1, 0, mouse_y),
+                (l6u2::MOUSE_WINDOW_X, false, 1, 0, mouse_x),
+                (l6u2::GET_SIZE_H, false, 1, 0, height),
+                (l6u2::SET_PRIM, false, 1, 0, rng.next()),
+                (l6u2::SET_FLAG2, false, 2, 0, rng.next()),
+                (l6u2::TO_FRONT, false, 1, 0, rng.next()),
+                (l6u2::SET_RGBAQ, false, 4, 0, rng.next()),
+                (l6u2::SET_XYZF2, false, 2, 0, rng.next()),
+                (l6u2::PACKET_END_TAG, false, 0, 0, rng.next()),
+                (l6u2::FRAME_TIME, false, 0, 0, rng.next()),
+            ]);
+            // the segments advance the cursor by widths from a table
+            let widths: Vec<u32> = (0..8).map(|_| rng.below(0x30)).collect();
+            let table = t.words(&widths);
+            let cell = t.words(&[table]);
+            let cursor = t.rebase(l6u2::CURSOR);
+            let mut seg = vec![0xa1];
+            seg.extend(cell.to_le_bytes()); // mov eax, [cell]
+            seg.extend([0x8b, 0x00, 0x83, 0x05]); // mov eax, [eax]; add dword [cell], 4
+            seg.extend(cell.to_le_bytes());
+            seg.extend([0x04, 0x01, 0x05]); // ...4; add [cursor], eax
+            seg.extend(cursor.to_le_bytes());
+            let reference = t.rebase(l6u2::REFERENCE);
+            seg.extend([0x01, 0x05]);
+            seg.extend(reference.to_le_bytes()); // add [reference], eax
+            seg.push(0xc3);
+            let at = t.cave_code(&seg);
+            t.jump(l6u2::DRAW_BAR_SEGMENT, at);
+            // the strip logs the rectangle it is handed
+            let log = t.log;
+            let mut strip = vec![0xa1];
+            strip.extend(log.to_le_bytes()); // mov eax, [log]
+            strip.extend([0xc1, 0xe0, 0x06, 0x05]); // shl eax, 6; add eax, log + 4
+            strip.extend((log + 4).to_le_bytes());
+            strip.extend([0xc7, 0x00, 0x77, 0, 0, 0]); // mov dword [eax], 0x77
+            strip.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            strip.extend([0x8b, 0x0a, 0x89, 0x48, 0x08]); // mov ecx, [edx]; mov [eax+8], ecx
+            strip.extend([0x8b, 0x4a, 0x04, 0x89, 0x48, 0x0c]); // mov ecx, [edx+4]; mov [eax+0xc], ecx
+            strip.extend([0xff, 0x05]);
+            strip.extend(log.to_le_bytes()); // inc dword [log]
+            strip.push(0xc3);
+            let at = t.cave_code(&strip);
+            t.jump(l6u2::DRAW_RECT_STRIP, at);
+            let window = rng.next();
+            let args = [window, msg, param];
+            let ebp = t.frame_ebp(3);
+            let slot = ebp + 8;
+            for (k, v) in (0_u32..).zip(args) {
+                t.b.write(slot + 4 * k, &v.to_le_bytes()).unwrap();
+            }
+            t.b.write(ebp - 8, &[0; 8]).unwrap();
+            t.a.write(ebp - 8, &[0; 8]).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            t.check(
+                "Sg_PerfMeterProc_00855570",
+                0x0085_5570,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u2::meter_proc(g, ebp, slot, window, msg, param)),
+            );
+            t.b.set_call_top(None);
+            for (at, n) in [(ebp - 8, 8_u32), (slot, 12)] {
+                for k in (0..n).step_by(4) {
+                    assert_eq!(
+                        Mem::read::<u32>(&t.a, at + k),
+                        Mem::read::<u32>(&t.b, at + k),
+                        "Sg_PerfMeterProc_00855570: stack at {:#x}",
+                        at + k
+                    );
+                }
+            }
+            t.reset();
+        }
+    });
+}
+
+use ffx_pcui::l6_pcui3::bridge as l6u3;
+
+/// A rectangle of four `i32` words: small, negative, large.
+fn l6_rect(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let w: Vec<u32> = (0..4)
+        .map(|_| match rng.below(5) {
+            0 => rng.word(),
+            1 => (rng.below(64) as i32 - 32).cast_unsigned(),
+            _ => rng.below(0x800),
+        })
+        .collect();
+    t.words(&w)
+}
+
+/// A size word: 0 (an infinite reciprocal), 1, a power of two, any.
+fn l6_size(rng: &mut Rng) -> u32 {
+    match rng.below(6) {
+        0 => 0,
+        1 => 1,
+        2 => 1 << rng.below(12),
+        3 => rng.word(),
+        _ => 1 + rng.below(0x800),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l6_gdraw_filter_passes_match_the_original() {
+    // both set-ups: begin failing or not; sizes of 0, 1, odd; both axes
+    // and divisors of 1..8 (0 and -1 fault in the original and stay out)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d21);
+        for case in 0..160_u32 {
+            let ok = if rng.chance(4) { 0 } else { rng.next() | 2 };
+            let begin = t.stub_code(0x61, false, 5, 5, ok);
+            let end = t.stub_code(0x62, false, 1, 1, rng.next());
+            let mut slots = vec![0; 0x20];
+            slots[0x5c / 4] = begin;
+            slots[0x60 / 4] = end;
+            let api = t.words(&slots);
+            let draw = t.stub_code(0x63, false, 8, 0, rng.next());
+            let target = t.words(&[
+                0,
+                l6_size(&mut rng),
+                l6_size(&mut rng),
+                l6_size(&mut rng),
+                draw,
+            ]);
+            let obj = t.words(&[0; 8]);
+            t.w32(obj + 0x1c, rng.next());
+            let (src, dst) = (l6_rect(t, &mut rng), l6_rect(t, &mut rng));
+            let (a, b, c) = (rng.next(), rng.next(), rng.next());
+            if case % 2 == 0 {
+                let args = [api, target, obj, a, b, src, dst, c];
+                let ebp = t.frame_ebp(8);
+                t.a.write(ebp - 0x3c, &[0; 0x38]).unwrap();
+                t.b.write(ebp - 0x3c, &[0; 0x38]).unwrap();
+                t.b.set_call_top(Some(ebp - 0x200));
+                t.check(
+                    "GDraw_filterBoxPass_00a37010",
+                    0x00a3_7010,
+                    Conv::Cdecl,
+                    &args,
+                    |g| Out::U32(l6u3::box_pass(g, ebp, args)),
+                );
+                t.b.set_call_top(None);
+                for k in (0..0x38).step_by(4) {
+                    let at = ebp - 0x3c + k;
+                    assert_eq!(
+                        Mem::read::<u32>(&t.a, at),
+                        Mem::read::<u32>(&t.b, at),
+                        "GDraw_filterBoxPass_00a37010: frame at ebp - {:#x}",
+                        0x3c - k
+                    );
+                }
+            } else {
+                let vertical = if rng.chance(2) { 0 } else { rng.next() | 1 };
+                let n = 1 + rng.below(8);
+                let (w, hh) = (l6_size(&mut rng), l6_size(&mut rng));
+                let args = [api, target, obj, a, b, src, vertical, n, w, hh, dst, c];
+                let ebp = t.frame_ebp(12);
+                t.a.write(ebp - 0x4c, &[0; 0x48]).unwrap();
+                t.b.write(ebp - 0x4c, &[0; 0x48]).unwrap();
+                t.b.set_call_top(Some(ebp - 0x200));
+                t.check(
+                    "GDraw_filterAxisPass_00a37170",
+                    0x00a3_7170,
+                    Conv::Cdecl,
+                    &args,
+                    |g| Out::U32(l6u3::axis_pass(g, ebp, args)),
+                );
+                t.b.set_call_top(None);
+                for k in (0..0x48).step_by(4) {
+                    let at = ebp - 0x4c + k;
+                    assert_eq!(
+                        Mem::read::<u32>(&t.a, at),
+                        Mem::read::<u32>(&t.b, at),
+                        "GDraw_filterAxisPass_00a37170: frame at ebp - {:#x}",
+                        0x4c - k
+                    );
+                }
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn l6_camdebug_screen_pick_matches_the_original() {
+    // the matrix-vector product for real; mouse positions around the
+    // centre and far off; a zero ray (an infinite or NaN parameter)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d31);
+        for case in 0..80_u32 {
+            let cam: Vec<u32> = (0..16)
+                .map(|_| (rng.below(4000) as f32 / 1000.0 - 2.0).to_bits())
+                .collect();
+            let cam = t.words(&cam);
+            let v = |rng: &mut Rng| (rng.below(2000) as f32 / 10.0 - 100.0).to_bits();
+            let point = t.words(&[v(&mut rng), v(&mut rng), v(&mut rng), 0]);
+            let offset = if case % 9 == 4 {
+                t.words(&[0, 0, 0, 0])
+            } else {
+                t.words(&[v(&mut rng), v(&mut rng), v(&mut rng), 0])
+            };
+            let px = if rng.chance(5) {
+                rng.word()
+            } else {
+                rng.below(0x200)
+            };
+            let py = if rng.chance(5) {
+                rng.word()
+            } else {
+                rng.below(0x1a0)
+            };
+            let args = [px, py, cam, point, offset];
+            let ebp = t.frame_ebp(5);
+            t.a.write(ebp - 0x50, &[0; 0x4c]).unwrap();
+            t.b.write(ebp - 0x50, &[0; 0x4c]).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            t.check(
+                "CamDebug_ScreenPick_00940f30",
+                0x0094_0f30,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u3::screen_pick(g, ebp, args)),
+            );
+            t.b.set_call_top(None);
+            for k in (0..0x4c).step_by(4) {
+                let at = ebp - 0x50 + k;
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, at),
+                    Mem::read::<u32>(&t.b, at),
+                    "CamDebug_ScreenPick_00940f30: frame at ebp - {:#x}",
+                    0x50 - k
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_gdraw_draw_quad_matches_the_original() {
+    // no vertex buffer; Map failing (out of memory, another error),
+    // succeeding without data or with; the context's methods are
+    // recording stdcall stubs (Map writes its mapped pointer)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d41);
+        for case in 0..60_u32 {
+            let p = if case % 5 == 2 { 0 } else { t.zeros(0x100) };
+            let hr = match case % 7 {
+                1 => 0x8007_000e,
+                3 => 0x8000_4005,
+                _ => rng.below(2),
+            };
+            // Map(ctx, res, sub, type, flags, out): logs, *out = p, eax hr
+            let log = t.log;
+            let mut map = vec![0xa1];
+            map.extend(log.to_le_bytes()); // mov eax, [log]
+            map.extend([0xc1, 0xe0, 0x06, 0x05]); // shl eax, 6; add eax, log + 4
+            map.extend((log + 4).to_le_bytes());
+            map.extend([0xc7, 0x00, 0x38, 0, 0, 0]); // mov dword [eax], 0x38
+            for i in 0..5_u8 {
+                map.extend([0x8b, 0x54, 0x24, 4 + 4 * i, 0x89, 0x50, 8 + 4 * i]);
+            }
+            map.extend([0xff, 0x05]);
+            map.extend(log.to_le_bytes()); // inc dword [log]
+            map.extend([0x8b, 0x44, 0x24, 0x18, 0xc7, 0x00]); // mov eax, [esp+0x18]; mov dword [eax], p
+            map.extend(p.to_le_bytes());
+            map.push(0xb8);
+            map.extend(hr.to_le_bytes()); // mov eax, hr
+            map.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let map = t.cave_code(&map);
+            let mut slots = vec![0; 0x20];
+            for (off, n) in [
+                (0x1c, 4),
+                (0x2c, 4),
+                (0x34, 3),
+                (0x3c, 3),
+                (0x44, 2),
+                (0x48, 6),
+                (0x60, 2),
+            ] {
+                slots[off / 4] = t.stub_code(0x100 + off as u32, false, n, n, rng.next());
+            }
+            slots[0x38 / 4] = map;
+            let vt = t.words(&slots);
+            let ctx = t.words(&[vt, 0, 0, 0]);
+            let s = t.zeros(0xb00);
+            for off in (0x200..0xa00).step_by(4) {
+                t.w32(s + off, rng.next());
+            }
+            t.w32(s + 4, ctx);
+            let at = t.rebase(l6u3::GDRAW);
+            t.patch(at, &s.to_le_bytes());
+            let vbuf = if case % 9 == 4 { 0 } else { t.zeros(0x40) };
+            t.stub(l6u3::LOCK_DYNAMIC, false, 2, 0, vbuf);
+            // four words: the out-of-memory warning passes no fifth
+            t.stub_import(l6u3::SEND_WARNING_SLOT, false, 4, 0, rng.next());
+            let src = t.words(&[
+                rng.next() & 0xbfff_ffff,
+                rng.next(),
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+            ]);
+            let stats = t.words(&[
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            let args = [
+                src,
+                stats,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+            ];
+            let ebp = t.frame_ebp(6);
+            t.a.write(ebp - 0x14, &[0; 0x14]).unwrap();
+            t.b.write(ebp - 0x14, &[0; 0x14]).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            t.check(
+                "GDraw_drawQuad_00a36090",
+                0x00a3_6090,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u3::quad(g, ebp, args)),
+            );
+            t.b.set_call_top(None);
+            for k in (0..0x14).step_by(4) {
+                let at = ebp - 0x14 + k;
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, at),
+                    Mem::read::<u32>(&t.b, at),
+                    "GDraw_drawQuad_00a36090: frame at ebp - {:#x}",
+                    0x14 - k
+                );
+            }
+            t.reset();
+        }
+    });
+}

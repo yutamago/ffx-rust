@@ -37,7 +37,7 @@ fn set_f32<G: Game>(g: &mut G, a: u32, x: f32) {
 /// count when it was not (`tail2`, `tail3`, `count2`). Nothing happens
 /// when the pool is empty.
 #[allow(clippy::too_many_arguments)] // the operands of the original's two branches
-fn append_object<G: Game>(
+pub(crate) fn append_object<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -77,7 +77,7 @@ fn append_object<G: Game>(
 /// ([`pool_alloc`]'s `rel32` at `pool`, the list's operands `list`).
 /// Returns the object.
 #[allow(clippy::too_many_arguments)] // the original's registers, stack words and operands
-fn start_object<G: Game>(
+pub(crate) fn start_object<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,

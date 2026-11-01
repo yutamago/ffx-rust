@@ -57,6 +57,11 @@ fn steps() {
     let seq = SCRATCH + 0x1000;
     let count = 0x100b_1f98;
     t.write(seq, &[0x51; 0x40]);
+    // the two words the step clears non-zero first
+    for op in [0x7bu32, 0x85] {
+        let g = t.img.word(t.at(0x1000) + op);
+        t.set_u32(g, 0x5a5a_5a5a);
+    }
     for rva in [0x1000u32, 0x1100] {
         t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
     }
@@ -65,7 +70,10 @@ fn steps() {
         3,
         4,
         7,
+        8,
         11,
+        0x10,
+        0x30,
         23,
         0x47,
         0x4a,

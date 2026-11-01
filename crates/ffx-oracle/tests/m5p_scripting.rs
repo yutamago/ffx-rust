@@ -4086,3 +4086,394 @@ fn big_occluder_quad_matches_the_original() {
         t.unstub();
     }
 }
+
+// ---- big-phyre2: the occluder's silhouette planes (m5p_scripting_bp2) ----
+
+/// A float in `[-1, 1)` from the generator.
+fn unit(rng: &mut Rng) -> f32 {
+    f32::from(u16::try_from(rng.next() % 20_000).unwrap()) / 10_000.0 - 1.0
+}
+
+fn float_bytes(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// An occluder geometry: `planes` planes (groups of four, rows x, y, z,
+/// d; random, or all `x = y = z = 0, d = -1` with `facing`: nothing in
+/// front of the camera, no silhouette), `verts` vertices, `edges` random
+/// edges (plane pairs, then vertex pairs, right after the vertices),
+/// bounds -1..1.
+fn occluder(t: &mut Twins, rng: &mut Rng, planes: u32, verts: u32, edges: u32, flat: bool) -> u32 {
+    let groups = (planes + 3) >> 2;
+    let mut g = vec![0u8; 0x30];
+    g[0..4].copy_from_slice(&planes.to_le_bytes());
+    g[4..8].copy_from_slice(&verts.to_le_bytes());
+    g[8..12].copy_from_slice(&edges.to_le_bytes());
+    g[0x10..0x1c].copy_from_slice(&float_bytes(&[-1.0, -0.5, -2.0]));
+    g[0x20..0x2c].copy_from_slice(&float_bytes(&[1.0, 0.75, 2.0]));
+    for _ in 0..groups {
+        let rows: Vec<f32> = (0..16)
+            .map(|i| {
+                if flat {
+                    if i >= 12 { -1.0 } else { 0.0 }
+                } else {
+                    unit(rng) * 3.0
+                }
+            })
+            .collect();
+        g.extend(float_bytes(&rows));
+    }
+    for _ in 0..verts {
+        g.extend(float_bytes(&[
+            unit(rng) * 2.0,
+            unit(rng) * 2.0,
+            unit(rng) * 2.0,
+            1.0,
+        ]));
+    }
+    for _ in 0..edges {
+        g.extend([
+            (rng.next() % (4 * groups)) as u8,
+            (rng.next() % (4 * groups)) as u8,
+        ]);
+    }
+    for _ in 0..edges {
+        g.extend([(rng.next() % verts) as u8, (rng.next() % verts) as u8]);
+    }
+    t.alloc(&g)
+}
+
+/// `0x00a312c0` with the original matrix, plane and edge-quad callees on
+/// both sides (the quad's compare-exchange a real `lock cmpxchg`, its list
+/// a buffer with room): with and without the item's 3x4 and the
+/// camera; no edges; edges but no silhouette; a few silhouette edges
+/// (one group of planes out, two); twelve and more (the cap: the twelfth
+/// pushes no quad). The port's plane flags go where the original's
+/// alloca puts them and are compared. Only synthetic data reaches it.
+#[test]
+fn bp2_silhouette_planes() {
+    use ffx_pother_a::m5p_scripting_bp2::{self as sb, bridge as sbb};
+    use ffx_pother_a::m5p_scripting_left2 as l2;
+    for (label, mut t) in Twins::all() {
+        let cx = t.code(&[
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ]);
+        let slot = t.rebase(l2::OCCLUDER_QUAD[0]);
+        let old = ffx_oracle::Oracle::read(&mut t.a, slot, 4).unwrap();
+        t.saved.entry(slot).or_insert(old);
+        t.w32(slot, cx);
+        let mut rng = Rng(0x00a3_12c0);
+        let end = t.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 3 - 8;
+        // (planes, vertices, edges, flat planes, item 3x4, camera)
+        let cases: &[(u32, u32, u32, bool, bool, bool)] = &[
+            (6, 8, 0, false, false, true),
+            (6, 8, 10, true, true, true),
+            (6, 8, 3, false, false, true),
+            (4, 8, 1, false, true, true),
+            (4, 8, 2, false, false, true),
+            (6, 8, 4, false, true, true),
+            (5, 8, 6, false, true, true),
+            (8, 12, 9, false, true, false),
+            (9, 16, 40, false, true, true),
+            (12, 16, 60, false, false, true),
+            (3, 6, 20, false, true, true),
+            (7, 10, 14, false, true, true),
+            // patched below: planes exactly on the camera (0) and NaN
+            (4, 8, 3, false, true, true),
+        ];
+        let special = cases.len() - 1;
+        let mut kept = std::collections::BTreeSet::new();
+        for (k, &(planes, verts, edges, flat, local, camera)) in cases.iter().enumerate() {
+            for round in 0..3u32 {
+                let geometry = occluder(&mut t, &mut rng, planes, verts, edges, flat);
+                if k == special {
+                    // planes 0..2 with a zero normal: d = 0 (exactly on
+                    // the camera: not behind), NaN (not behind), 1
+                    // (behind); edges 0-2, 1-2, 0-1
+                    for i in 0..3u32 {
+                        for row in 0..3u32 {
+                            t.w32(geometry + 0x30 + 0x10 * row + 4 * i, 0);
+                        }
+                    }
+                    t.w32(geometry + 0x30 + 0x30, 0);
+                    t.w32(geometry + 0x30 + 0x34, f32::NAN.to_bits());
+                    t.w32(geometry + 0x30 + 0x38, 1.0f32.to_bits());
+                    let e = geometry + 0x30 + 0x40 + 16 * verts;
+                    t.write(e, &[0, 2, 1, 2, 0, 1]);
+                }
+                let item = t.zeros(8);
+                t.w32(item, geometry);
+                if local {
+                    let m: Vec<f32> = (0..12)
+                        .map(|i| {
+                            if i % 5 == 0 {
+                                1.0 + unit(&mut rng) * 0.25
+                            } else {
+                                unit(&mut rng) * 0.5
+                            }
+                        })
+                        .collect();
+                    let m = t.alloc(&float_bytes(&m));
+                    t.w32(item + 4, m);
+                }
+                let owner = t.zeros(0xc0);
+                if camera {
+                    let cam = t.zeros(0x30);
+                    let p = [
+                        unit(&mut rng) * 6.0,
+                        unit(&mut rng) * 6.0,
+                        unit(&mut rng) * 6.0,
+                    ];
+                    t.write(cam + 0x20, &float_bytes(&p));
+                    t.w32(owner + 0xb0, cam);
+                }
+                let quads = t.rebase(sb::EDGE_QUADS);
+                let buf = t.junk(0x40 * 60, 9);
+                t.write(quads, &[buf, 0, 0x40 * 60].map(u32::to_le_bytes).concat());
+                let out = t.junk(0x40 * 3, 4);
+                let block = t.junk(0x40, 6);
+                // where the original's alloca puts the flags: below its
+                // saved registers, 16-byte aligned
+                let size = planes.div_ceil(4) * 4;
+                let flags = (ebp - 0x2b0 - size) & !0xf;
+                t.b.set_call_top(Some(flags - 0x100));
+                let what = format!("{label}: silhouette {k}.{round}");
+                let r = t.this(&what, 0x00a3_12c0, item, &[owner, out, block], |g| {
+                    let bytes = sbb::silhouette_prepare(g, ebp, item, owner);
+                    assert_eq!(bytes, planes.div_ceil(4) * 4, "alloca size");
+                    Some(sbb::silhouette_finish(g, ebp, out, block, flags))
+                });
+                t.b.set_call_top(None);
+                let mut x = vec![0; size as usize];
+                let mut y = vec![0; size as usize];
+                ffx_bridge::Mem::read_bytes(&t.a, flags, &mut x);
+                ffx_bridge::Mem::read_bytes(&t.b, flags, &mut y);
+                assert_eq!(x, y, "{what}: plane flags");
+                kept.insert((r - out) / 0x40);
+            }
+        }
+        // no planes, one group, two, three (the cap)
+        assert_eq!(
+            kept.into_iter().collect::<Vec<_>>(),
+            [0, 1, 2, 3],
+            "{label}"
+        );
+        t.unstub();
+    }
+}
+
+// ---- big-phyre3 ----
+
+/// A recording stub at `sym` (`tag` the address, `ecx` when `this`, `n`
+/// stack words, popping `pops`) answering `answers` in turn (0 past the
+/// end).
+fn bp3_seq_stub(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, answers: &[u32]) {
+    let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+    table.extend([0u8; 256]);
+    let table = t.alloc(&table);
+    let cell = t.alloc(&table.to_le_bytes());
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    if this {
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    }
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x8b, 0x10]); // mov edx, [eax]
+    c.extend([0x83, 0x05]);
+    c.extend(cell.to_le_bytes());
+    c.push(0x04); // add dword [cell], 4
+    c.extend([0x89, 0xd0]); // mov eax, edx
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+    }
+    let code = t.code(&c);
+    t.place(sym, code);
+}
+
+/// `0x0061a2a0` (`PCallerScript::vcall`) with every callee recorded: no
+/// argument types, no function name; both scheduler pools null, full or
+/// with a free context, the first state failing; the script not loading,
+/// its run failing (with the message), no function; no arguments, bool
+/// arguments (from the `va` cell) and others each pusher taking or none
+/// (the warning); the call failing; each popper taking, the `PBase`
+/// result, no return context; the context given back only when it is
+/// still the pool's last. The object's argument slot goes to `pushBase`.
+/// Only synthetic data reaches it.
+#[test]
+fn bp3_vcall_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_bp3::{self as v};
+    let [
+        copy_block,
+        load_script,
+        pcall,
+        getglobal,
+        lua_type,
+        push_base,
+        bool_type,
+        check,
+        push_bool,
+        tostring,
+        settop,
+        printf,
+        base_desc,
+        get_base,
+    ] = v::VCALL_CALLS;
+    for (label, mut t) in Twins::all() {
+        let end = t.a.stack_range().end;
+        let slots = end - 0x100 - 0x10;
+        for k in 0..40u32 {
+            let l = 0x00c9_1100;
+            // the pools: null, full, free
+            let pool = |t: &mut Twins, kind: u32| -> u32 {
+                if kind == 0 {
+                    return 0;
+                }
+                let p = t.zeros(0x40);
+                let ctxs = t.zeros(0x80);
+                t.w32(p + 0x2c, ctxs);
+                t.w32(p + 0x28, 4 | 0x8000_0000);
+                t.w32(p + 0x30, if kind == 1 { 4 } else { 2 });
+                p
+            };
+            let p0 = pool(&mut t, [2, 0, 1, 2, 2][k as usize % 5]);
+            let p1 = pool(&mut t, [2, 2, 2, 0, 1][(k / 5) as usize % 5]);
+            t.w32(t.rebase(v::VCALL_GLOBALS[0]), p0);
+            t.w32(t.rebase(v::VCALL_GLOBALS[1]), p1);
+            let states = if k % 9 == 4 { vec![0, l] } else { vec![l, l] };
+            bp3_seq_stub(&mut t, copy_block, true, 0, 0, &states);
+            t.stub(load_script, false, 2, 0, u32::from(k % 13 != 6));
+            // the first pcall answers 0 or 2, the second 0 or 3
+            let pcalls = [
+                if k % 11 == 7 { 2 } else { 0 },
+                if k % 7 == 3 { 3 } else { 0 },
+            ];
+            bp3_seq_stub(&mut t, pcall, false, 6, 0, &pcalls);
+            t.stub(getglobal, false, 2, 0, 0x51);
+            t.stub(lua_type, false, 2, 0, u32::from(k % 17 != 9) * 6);
+            t.stub(push_base, false, 2, 0, 0x52);
+            let bool_t = 0x7700;
+            t.stub(bool_type, false, 0, 0, bool_t);
+            t.stub(check, false, 2, 0, 0x53);
+            t.stub(push_bool, false, 2, 0, 0x54);
+            t.stub(tostring, false, 3, 0, 0x5500);
+            t.stub(settop, false, 2, 0, 0x56);
+            // printf: the words each message has (three for the copy
+            // warning, four for the pcall failure, two otherwise)
+            let [_, _, cannot_copy, failed, _] = v::VCALL_GLOBALS.map(|a| t.rebase(a));
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(printf.to_le_bytes()); // mov [eax], tag
+            for i in 0..2u8 {
+                c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+                c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+            }
+            for (fmt, words) in [(cannot_copy, 3u8), (failed, 4)] {
+                c.extend([0x81, 0x7c, 0x24, 0x08]);
+                c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+                let body: Vec<u8> = (2..words)
+                    .flat_map(|i| [0x8b, 0x54, 0x24, 4 + 4 * i, 0x89, 0x50, 8 + 4 * i])
+                    .collect();
+                c.extend([0x75, body.len() as u8]); // jne past
+                c.extend(body);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(printf, code);
+            t.stub(base_desc, false, 0, 0, 0x6600);
+            t.stub(get_base, false, 1, 0, 0x6601);
+            // pushers: argument i is taken by pusher (i + k) % 13 (12: none)
+            let types = t.zeros(0x20);
+            let nargs = [0u32, 1, 3, 5][k as usize % 4];
+            for i in 0..nargs {
+                let ty = if (i + k) % 4 == 1 { bool_t } else { 0x7100 + i };
+                t.w32(types + 4 * i, ty);
+            }
+            for (j, &p) in v::VCALL_PUSHERS.iter().enumerate() {
+                let answers: Vec<u32> = (0..8)
+                    .map(|i| u32::from((i + k) % 13 == j as u32) | 0x100)
+                    .collect();
+                bp3_seq_stub(&mut t, p, false, 3, 0, &answers);
+            }
+            let take = k % 14; // popper index, 11: PBase, 12+: none
+            for (j, &p) in v::VCALL_POPPERS.iter().enumerate() {
+                bp3_seq_stub(
+                    &mut t,
+                    p,
+                    false,
+                    3,
+                    0,
+                    &[u32::from(take == j as u32) | 0x200],
+                );
+            }
+            let ret = if take == 11 { 0x6601 } else { 0x6000 };
+            let holder = t.zeros(8);
+            t.w32(holder, if k == 39 { 0 } else { types });
+            let vals = t.zeros(0x20);
+            for i in 0..8 {
+                t.w32(vals + 4 * i, ((i + k / 4) % 2) * 0x10);
+            }
+            let va = t.zeros(4);
+            t.w32(va, vals);
+            let script = t.zeros(0x40);
+            t.w32(script + 0x28, 0x5c01);
+            let name = if k == 38 { 1 } else { 0x4e00 | (k & 1) };
+            t.w32(script + 0x30, name);
+            let this = t.zeros(8);
+            t.w32(this + 4, script);
+            let object = 0x0b1e;
+            t.w32(slots, object);
+            if k % 6 == 5 {
+                // another borrow meanwhile: the context is no longer the
+                // pool's last, so it is not given back
+                for p in [p0, p1] {
+                    if p != 0 {
+                        let used = t.r32(p + 0x30);
+                        t.w32(p + 0x30, used);
+                    }
+                }
+                let mut c = Vec::new();
+                for p in [p0, p1] {
+                    if p != 0 {
+                        c.extend([0xff, 0x05]);
+                        c.extend((p + 0x30).to_le_bytes()); // inc dword [p+0x30]
+                    }
+                }
+                c.push(0xb8);
+                c.extend(l.to_le_bytes()); // mov eax, L
+                c.push(0xc3);
+                let code = t.code(&c);
+                t.place(copy_block, code);
+            }
+            let what = format!("{label}: vcall {k}");
+            t.this(&what, 0x0061_a2a0, this, &[object, ret, holder, va], |g| {
+                Some(v::vcall::vcall(g, slots, this, ret, holder, va))
+            });
+        }
+        t.unstub();
+    }
+}

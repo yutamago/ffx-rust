@@ -7,6 +7,13 @@
 //! shims keep no state.
 
 use super::{StackFrame, mem, ported};
+use ffx_prender::l6_map::bridge as l6m;
+use ffx_prender::l6_map2::bridge as l6m2;
+use ffx_prender::l6_map3::bridge as l6m3;
+use ffx_prender::l6_map4::bridge as l6m4;
+use ffx_prender::l6_map5::bridge as l6m5;
+use ffx_prender::l6_map6::bridge as l6m6;
+use ffx_prender::l6_map7::bridge as l6m7;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -662,5 +669,205 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_v::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_v::FRAME;
         gv::convert_all(&mut mem(), ebp)
+    }
+    // ---- round 6 (left6) batch 1 (ffx_prender::l6_map) ----
+    // The window procedures' `None` (the caller's or the cookie's `eax`)
+    // becomes 0: Gu's window dispatch drops `eax` (ffx_prender::l6_map).
+    /// `FUN_00932320()` -> `rcuiChrMotionSetup`'s `eax`.
+    rcuiChrSelectReset_00932320 @ 0x0093_2320 => extern "C" fn rcui_chr_select_reset() -> u32 {
+        l6m::chr_select_reset(&mut mem())
+    }
+    /// `(window, msg, param)`: the save window's procedure.
+    rcuiSaveProc_009364d0 @ 0x0093_64d0 => extern "C" fn rcui_save_proc(window: u32, msg: u32, param: u32) -> u32 {
+        l6m::save_proc(&mut mem(), window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg)`: the point-simulation window's procedure (the
+    /// position vector in a frame).
+    rcuiPSimProc_00935710 @ 0x0093_5710 => extern "C" fn rcui_psim_proc(window: u32, msg: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map::PSIM_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map::PSIM_FRAME;
+        l6m::psim_proc(&mut mem(), ebp, window, msg).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the guide-target window's procedure (the
+    /// text in a frame).
+    rcuiGuideTargetProc_00934110 @ 0x0093_4110 => extern "C" fn rcui_guide_target_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map::GUIDE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map::GUIDE_FRAME;
+        l6m::guide_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the palette window's procedure.
+    rcuiPaletteProc @ 0x0093_5820 => extern "C" fn rcui_palette_proc(window: u32, msg: u32, param: u32) -> u32 {
+        l6m::palette_proc(&mut mem(), window, msg, param).unwrap_or(0)
+    }
+    /// `(pkt, points, n, colour, matrix)` -> `pkt` (the matrix, point and
+    /// fixed-point pair in a frame).
+    rcbgGuidePackPoints_009278d0 @ 0x0092_78d0 => extern "C" fn rcbg_guide_pack_points(pkt: u32, points: u32, n: u32, colour: u32, matrix: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map::PACK_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map::PACK_FRAME;
+        l6m::pack_points(&mut mem(), ebp, pkt, points, n, colour, matrix)
+    }
+    /// `(pkt, matrix, size)` -> `rcPacketCircle`'s `eax` (the colour and
+    /// origin in a frame).
+    rcbgGuideAxisMarker_0092c600 @ 0x0092_c600 => extern "C" fn rcbg_guide_axis_marker(pkt: u32, matrix: u32, size: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map::AXIS_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map::AXIS_FRAME;
+        // junk read: the scale vector's y, z, w (the caller's saved edi, esi,
+        // ebx in the original); 0 (brief 2026-10-24)
+        l6m::axis_marker(&mut mem(), ebp, pkt, matrix, size, [0; 3])
+    }
+    // ---- round 6 (left6) batch 1, part 2 (ffx_prender::l6_map2) ----
+    /// `(window, msg, param)`: the layer selector's procedure (the number
+    /// text in a frame).
+    rcuiLayerSelectProc_00936840 @ 0x0093_6840 => extern "C" fn rcui_layer_select_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::LAYER_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::LAYER_FRAME;
+        l6m2::layer_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg; slots)`: the FP memory window's procedure (its counts
+    /// in a frame; it keeps floats in its `msg` slot).
+    rcuiFpMemProc_00933aa0 @ 0x0093_3aa0 => extern "C" fn rcui_fp_mem_proc(_window: u32, msg: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::FP_MEM_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::FP_MEM_FRAME;
+        l6m2::fp_mem_proc(&mut mem(), ebp, slots, msg)
+    }
+    /// `(window, msg, param; slots)`: the number entry's procedure (the
+    /// float it enters goes through its `msg` slot).
+    rcuiNumEntryProc_0093c3f0 @ 0x0093_c3f0 => extern "C" fn rcui_num_entry_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
+        l6m2::entry_proc(&mut mem(), slots, window, msg, param)
+    }
+    /// `(window, msg, param)`: the map scroll window's procedure (its
+    /// limits and the mouse deltas in a frame).
+    rcuiScrollProc_009365c0 @ 0x0093_65c0 => extern "C" fn rcui_scroll_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::SCROLL_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::SCROLL_FRAME;
+        l6m2::scroll_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `rcbgFpSaveSub(name)` -> the last `rcPrint`'s `eax` (the original's
+    /// 0x340-byte frame, its path, command, headers and padding, in this
+    /// shim's).
+    rcbgFpSaveSub @ 0x0093_8350 => extern "C" fn rcbg_fp_save_sub(name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::FP_SAVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::FP_SAVE_FRAME;
+        l6m2::fp_save_sub(&mut mem(), ebp, name)
+    }
+    // ---- round 6 (left6) batch 2 (ffx_prender::l6_map3) ----
+    /// `(pkt, chr)` -> the last callee's `eax` (the original's 0x94-byte
+    /// frame, its range, cursors and matrices, in this shim's).
+    rcbgGuideSkeleton_0092c250 @ 0x0092_c250 => extern "C" fn rcbg_guide_skeleton(pkt: u32, chr: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map3::SKELETON_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map3::SKELETON_FRAME;
+        l6m3::skeleton(&mut mem(), ebp, pkt, chr)
+    }
+    // ---- round 6 (left6) batch 3 (ffx_prender::l6_map4) ----
+    /// The scroll model's per-frame entry (`g_MagicImports + 0xd8c`); the
+    /// creation gets a frame address it never reads.
+    updateVFXRenderData_ScrollModelEntry_00a5bf50 @ 0x00a5_bf50 => extern "C" fn scroll_model_entry(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32, a12: u32, a13: u32, a14: u32, a15: u32, a16: u32) -> u32 {
+        let mut frame = StackFrame::<0x1e>::new();
+        let buf = frame.at();
+        l6m4::scroll_entry(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16], buf)
+    }
+    /// `(lo, hi, model, _, d1 lo, d1 hi, d2 lo, d2 hi, mode)` -> 1 or 0
+    /// (the original's 0x1f78-byte frame, its counts and texture slots,
+    /// in this shim's).
+    createVFXRenderDataBuffer_DrawScrollModel @ 0x00a5_c130 => extern "C" fn create_scroll_model(lo: u32, hi: u32, model: u32, _unused: u32, d1lo: u32, d1hi: u32, d2lo: u32, d2hi: u32, mode: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map4::CREATE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map4::CREATE_FRAME;
+        l6m4::create_buffer(&mut mem(), ebp, [lo, hi, model, 0, d1lo, d1hi, d2lo, d2hi, mode])
+    }
+    /// 17 words -> 1 or 0 (keeps four values in its argument slots).
+    updateVFXRenderData_DrawModelScroll @ 0x00a5_c370 => extern "C" fn update_scroll_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32, a12: u32, a13: u32, a14: u32, a15: u32, a16: u32; slots: u32) -> u32 {
+        l6m4::update(&mut mem(), slots, [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16])
+    }
+    /// `(scene, parse)`: the scene text's camera line.
+    rcbgSceneLoadTextCamera_0093af60 @ 0x0093_af60 => extern "C" fn rcbg_scene_load_text_camera(scene: u32, parse: u32) -> u32 {
+        l6m5::camera_line(&mut mem(), scene, parse)
+    }
+    /// `(window, msg, param; slots)`: the slider window's procedure (the
+    /// mouse deltas in a frame; floats in its `msg` slot).
+    rcuiSliderProc_0093c860 @ 0x0093_c860 => extern "C" fn rcui_slider_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::SLIDER_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::SLIDER_FRAME;
+        l6m5::slider_proc(&mut mem(), ebp, slots, window, msg, param)
+    }
+    /// `(window, msg, param)`: the motion test window's procedure (the
+    /// speed text in a frame).
+    rcuiMotionProc @ 0x0093_5340 => extern "C" fn rcui_motion_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::MOTION_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::MOTION_FRAME;
+        l6m5::motion_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the layer alpha window's procedure (the
+    /// FIX text in a frame).
+    rcuiAlphaProc @ 0x0093_1050 => extern "C" fn rcui_alpha_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::ALPHA_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::ALPHA_FRAME;
+        l6m5::alpha_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    // ---- round 6 (left6) batch 4 (ffx_prender::l6_map6) ----
+    /// `(window, msg, param)`: the map tool's main menu window.
+    rcuiMenuProc_00935000 @ 0x0093_5000 => extern "C" fn rcui_menu_proc(window: u32, msg: u32, param: u32) -> u32 {
+        l6m6::menu_proc(&mut mem(), window, msg, param).unwrap_or(0)
+    }
+    /// `rcuiResetChrPos()` -> `Ch_SetPos3`'s `eax` (the original's
+    /// 0x5c-byte frame, its vectors and scratch, in this shim's).
+    rcuiResetChrPos @ 0x0093_7b70 => extern "C" fn rcui_reset_chr_pos() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map6::bridge::RESET_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map6::bridge::RESET_FRAME;
+        // junk read: the scale vectors' saved esi/ebx/edi words; 0 (brief
+        // 2026-10-24)
+        l6m6::reset_chr_pos(&mut mem(), ebp, [0; 3])
+    }
+    /// `(window, msg, param)`: the field effect test window's procedure
+    /// (its texts in a frame).
+    rcuiFpProc_00933cc0 @ 0x0093_3cc0 => extern "C" fn rcui_fp_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map6::bridge::FP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map6::bridge::FP_FRAME;
+        l6m6::fp_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    // ---- round 6 (left6) batch 6 (ffx_prender::l6_map7) ----
+    /// `(window, msg, param)`: the load window's procedure (the original's
+    /// 0x11c-byte frame, its path and list layout, in this shim's); the
+    /// third word is not read.
+    rcuiLoadProc @ 0x0093_4bc0 => extern "C" fn rcui_load_proc(window: u32, msg: u32, _param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::LOAD_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::LOAD_FRAME;
+        l6m7::load_proc(&mut mem(), ebp, window, msg)
+    }
+    /// `(window, msg, param)`: the layer rectangle window's procedure
+    /// (its text and a copied preset in a frame).
+    rcuiLayerRectProc_00932a60 @ 0x0093_2a60 => extern "C" fn rcui_layer_rect_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::RECT_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::RECT_FRAME;
+        l6m7::rect_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the map tool's debug window procedure (its
+    /// texts in a frame).
+    rcuiDebugProc_009325c0 @ 0x0093_25c0 => extern "C" fn rcui_debug_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::DEBUG_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::DEBUG_FRAME;
+        l6m7::debug_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the character window's procedure (its text
+    /// in a frame).
+    rcuiChrProc_00931e90 @ 0x0093_1e90 => extern "C" fn rcui_chr_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::CHR_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::CHR_FRAME;
+        l6m7::chr_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    // ---- round 6 (left6) batch 8 (ffx_prender::l6_map2) ----
+    /// `(id)`: the guide map models' save (the original's 0x358-byte frame,
+    /// its path, command, headers and padding, in this shim's).
+    rcbgGuideModelSave_00938a10 @ 0x0093_8a10 => extern "C" fn rcbg_guide_model_save(id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::bridge::GUIDE_SAVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::bridge::GUIDE_SAVE_FRAME;
+        l6m2::guide_save(&mut mem(), ebp, id).unwrap_or(0)
+    }
+    /// `(id)`: the guide map models' conversion and save (the original's
+    /// 0x3ac-byte frame, its models, box, path and headers, in this
+    /// shim's).
+    rcbgGuideMapConv_00938590 @ 0x0093_8590 => extern "C" fn rcbg_guide_map_conv(id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME;
+        l6m2::guide_conv(&mut mem(), ebp, id)
     }
 }

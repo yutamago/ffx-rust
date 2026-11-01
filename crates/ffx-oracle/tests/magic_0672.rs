@@ -15,7 +15,7 @@ mod magic_l3;
 mod magic_owna;
 
 use ffx_magic::{Ret, m0672};
-use magic::{Call, Eax};
+use magic::{Call, Eax, SCRATCH};
 use magic_owna::{recs, twin};
 
 const N: u16 = 672;
@@ -63,5 +63,43 @@ fn copy_keys() {
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0672::copy_keys(g, img, fr))
         });
+    }
+}
+
+/// 0x10001b80 and 0x10001c30: the fade task with the countdown above 1,
+/// at 1 and out (the give-back), and the fade start with the list empty
+/// and not.
+#[test]
+fn fade() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1b80);
+    let st = t.at(0x1c30);
+    let s = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(at + 0x6), s);
+    magic_owna::recs(&mut t, &[(348, 6), (587, 2)]);
+    for (op, v) in [(0x73u32, 0x00a5_0073u32), (0x7e, 0x00a5_007e)] {
+        let g = t.img.word(at + op);
+        t.set_u32(g, v);
+    }
+    let take = t.img.rel32_target(st + 0x65);
+    magic_hi::pool(&mut t, take, SCRATCH + 0x8000, 4);
+    // the task node: no children (`+8` itself, its `+0xc` 0), unlinked
+    let task = SCRATCH + 0x700;
+    for n in [40u32, 1, 0, 0xffff_fff0] {
+        t.write(s, &[0x2b; 0x600]);
+        t.set_u32(s + 0x5b8, n);
+        t.write(task, &[0; 0x40]);
+        t.set_u32(task + 8, task);
+        t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+    for head in [0u32, SCRATCH + 0x900] {
+        t.write(s + 0x280, &[0x3c; 0x100]);
+        // the pool afresh (the give-backs above took its ring apart)
+        magic_hi::pool(&mut t, take, SCRATCH + 0x8000, 4);
+        let empty = t.img.word(st + 0x6b);
+        t.set_u32(empty, head);
+        let h = t.img.word(st + 0x7f);
+        t.set_u32(h, head);
+        t.check_entry(st, Call::default(), &[], Eax::Checked);
     }
 }

@@ -8,6 +8,9 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_graphic::host::Conv;
+use ffx_pcui::l6_pcui::bridge as l6u;
+use ffx_pcui::l6_pcui2::bridge as l6u2;
+use ffx_pcui::l6_pcui3::bridge as l6u3;
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
@@ -1193,5 +1196,48 @@ ported! {
     /// `FUN_00945350(this)`: `EnterCriticalSection(this)`.
     Lock_enter_00945350 @ 0x0094_5350 => extern "thiscall" fn lock_enter(this: u32) -> u32 {
         ll::lock_enter(&mut mem(), this)
+    }
+    // ---- round 6 (left6) batch 2 (ffx_pcui::l6_pcui) ----
+    /// `(window, id, state; slots)`: the character page's buttons (writes
+    /// its `id` and `state` slots before the toggle buttons' tail jump).
+    ChrMenu_buttons_0084cf60 @ 0x0084_cf60 => extern "C" fn chrmenu_buttons(window: u32, id: u32, state: u32; slots: u32) -> u32 {
+        l6u::chr_buttons(&mut mem(), slots, window, id, state)
+    }
+    /// `(window, msg, param; slots)` -> 0: the performance meter window's
+    /// procedure (its rectangle in a frame; the bar's width in its `msg`
+    /// slot).
+    Sg_PerfMeterProc_00855570 @ 0x0085_5570 => extern "C" fn sg_perf_meter_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let ebp = frame.at() + 8;
+        l6u2::meter_proc(&mut mem(), ebp, slots, window, msg, param)
+    }
+    // ---- round 6 (left6) batch 3 (ffx_pcui::l6_pcui3) ----
+    /// `(api, target, obj, a, b, src, dst, c)`: a filter pass over a
+    /// rectangle (its coordinates in a frame the callbacks read).
+    GDraw_filterBoxPass_00a37010 @ 0x00a3_7010 => extern "C" fn gdraw_filter_box_pass(api: u32, target: u32, obj: u32, a: u32, b: u32, src: u32, dst: u32, c: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::BOX_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::BOX_FRAME;
+        l6u3::box_pass(&mut mem(), ebp, [api, target, obj, a, b, src, dst, c])
+    }
+    /// `(api, sub, obj, a, b, src, vertical, n, w, h, dst, c)`: a one-axis
+    /// downsample pass (its rectangle and coordinates in a frame).
+    GDraw_filterAxisPass_00a37170 @ 0x00a3_7170 => extern "C" fn gdraw_filter_axis_pass(api: u32, sub: u32, obj: u32, a: u32, b: u32, src: u32, vertical: u32, n: u32, w: u32, h: u32, dst: u32, c: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::AXIS_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::AXIS_FRAME;
+        l6u3::axis_pass(&mut mem(), ebp, [api, sub, obj, a, b, src, vertical, n, w, h, dst, c])
+    }
+    /// `(px, py, cam, point, offset)`: the debug camera's mouse pick (its
+    /// two points and the ray in a frame).
+    CamDebug_ScreenPick_00940f30 @ 0x0094_0f30 => extern "C" fn camdebug_screen_pick(px: u32, py: u32, cam: u32, point: u32, offset: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::PICK_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::PICK_FRAME;
+        l6u3::screen_pick(&mut mem(), ebp, [px, py, cam, point, offset])
+    }
+    /// `(src, stats, x0, y0, x1, y1)`: a textured quad (the mapped data,
+    /// stride and offset in a frame).
+    GDraw_drawQuad_00a36090 @ 0x00a3_6090 => extern "C" fn gdraw_draw_quad(src: u32, stats: u32, x0: u32, y0: u32, x1: u32, y1: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::QUAD_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::QUAD_FRAME;
+        l6u3::quad(&mut mem(), ebp, [src, stats, x0, y0, x1, y1])
     }
 }
