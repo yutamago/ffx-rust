@@ -2380,6 +2380,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("parts ring", &s6_misc::PARTS_RING),
     ("live parts axes", &s6_misc::LIVE_PARTS_AXES),
     ("turning path step", &s6_misc::TURNING_PATH_STEP),
+    ("eased turning path step", &s6_misc::EASED_TURNING_PATH_STEP),
     ("keyed part step", &s6_misc::KEYED_PART_STEP),
     ("m0032 state reset (0x1e)", &s6_misc::RESET_STATE_1E),
     ("lights and give back", &s6_misc::LIGHTS_AND_GIVE_BACK),

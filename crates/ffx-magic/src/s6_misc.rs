@@ -2461,17 +2461,18 @@ pub const HOST_START_OBJECT: Sig = Sig {
     imports: &[],
 };
 
-/// [`path_step`] for a turning follower (internal: `ecx` = the follower
-/// `F`, `edx` = the point out; a /GS frame): on the last frame the last
-/// key's angles (and `F+0x3c = 0`), else the time steps on and the three
-/// angles are [`ease_angle`], [`ease_angle`] and [`ease_sample`] at it.
-/// The point `(0, 0, z, 1)` is turned by a matrix (a local: slot 235,
-/// then slots 330 `0`, 328 `x`, 329 `y`) through slot 229, and the base
-/// point `*F+0x24` plus it is the point out. Each call sees the words the
-/// earlier ones left on the stack. Returns the base point's address.
-///
-/// `magic_0515` 0x10001d20 (385 bytes, `ecx`/`edx`; 5 DLLs).
-pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+/// The operand offsets of a turning follower's step: the three eases'
+/// `rel32`s, the slot table operands of slots 235, 330, 328, 329 and
+/// 229, and (for the eased time) the operands of `K1` and `K` of
+/// [`path_step`]'s mix.
+struct TurnOps {
+    eases: [u32; 3],
+    slots: [u32; 5],
+    mix: Option<(u32, u32)>,
+}
+
+/// [`turning_path_step`] and [`eased_turning_path_step`]: see there.
+fn turning_step<G: Game>(g: &mut G, img: &Image, fr: &Frame, ops: &TurnOps) -> u32 {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let (s, out) = (fr.ecx, fr.edx);
@@ -2489,6 +2490,24 @@ pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     } else {
         let t = add(g.read::<f32>(s + 0x30), g.read::<f32>(s + 0x2c));
         g.write::<f32>(s + 0x2c, t);
+        // the key position: the time itself, or [`path_step`]'s quartic
+        // Bernstein mix of the five weights `F+0x28`
+        let t = match ops.mix {
+            None => t,
+            Some((one, k)) => {
+                let (one, k) = (g.read::<f32>(w(one)), g.read::<f32>(w(k)));
+                let wt = g.read::<u32>(s + 0x28);
+                let wk = |g: &G, i: u32| g.read::<f32>(wt.wrapping_add(4 * i));
+                let u = sub(one, t);
+                let (uu, ut, tt) = (mul(u, u), mul(u, t), mul(t, t));
+                let b0 = mul(mul(uu, uu), wk(g, 0));
+                let b1 = mul(mul(mul(ut, uu), k), wk(g, 1));
+                let b2 = mul(mul(mul(tt, uu), k), wk(g, 2));
+                let b3 = mul(mul(mul(tt, ut), k), wk(g, 3));
+                let b4 = mul(mul(tt, tt), wk(g, 4));
+                add(add(add(add(b1, b0), b2), b3), b4)
+            }
+        };
         let n = g.read::<u32>(s + 0x38);
         // push 3 (the stride) for each sample, popped after the third
         let esp = |g: &mut G, i: u32| {
@@ -2496,12 +2515,13 @@ pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
             g.write::<u32>(at + 4, 3);
             at
         };
+        let [e0, e1, e2] = ops.eases;
         let at = esp(g, 0);
-        let x = ease_angle(g, img, img.rel32_target(f + 0x40), at, tab, n, t);
+        let x = ease_angle(g, img, img.rel32_target(f + e0), at, tab, n, t);
         let at = esp(g, 1);
-        let y = ease_angle(g, img, img.rel32_target(f + 0x56), at, tab + 4, n, t);
+        let y = ease_angle(g, img, img.rel32_target(f + e1), at, tab + 4, n, t);
         let at = esp(g, 2);
-        let z = ease_sample(g, img, img.rel32_target(f + 0x6c), at, tab + 8, n, t);
+        let z = ease_sample(g, img, img.rel32_target(f + e2), at, tab + 8, n, t);
         (x, y, z)
     };
     let (m, v) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
@@ -2509,14 +2529,15 @@ pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         g.write::<u32>(v + o, val);
     }
     let target = |g: &G, t: u32, n: u32| crate::runtime::slot_target(g, w(t), n);
+    let [s235, s330, s328, s329, s229] = ops.slots;
     let mut st = Pushes::default();
     st.push(m);
     // call width: 12 (the most `Pushes::words` holds)
-    st.call(g, target(g, 0xa9, 235), 0);
+    st.call(g, target(g, s235, 235), 0);
     for (i, (t, n, a)) in [
-        (0xdcu32, 330u32, 0u32),
-        (0xfb, 328, x.to_bits()),
-        (0x11a, 329, y.to_bits()),
+        (s330, 330u32, 0u32),
+        (s328, 328, x.to_bits()),
+        (s329, 329, y.to_bits()),
     ]
     .into_iter()
     .enumerate()
@@ -2532,7 +2553,7 @@ pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     }
     st.push_all(&[v, m, v]);
     // call width: 12 (the most `Pushes::words` holds)
-    st.call(g, target(g, 0x133, 229), 0);
+    st.call(g, target(g, s229, 229), 0);
     let base = g.read::<u32>(s + 0x24);
     for o in [0u32, 4, 8] {
         let p = add(g.read::<f32>(base.wrapping_add(o)), g.read::<f32>(v + o));
@@ -2540,6 +2561,52 @@ pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     }
     base
 }
+
+/// [`path_step`] for a turning follower (internal: `ecx` = the follower
+/// `F`, `edx` = the point out; a /GS frame): on the last frame the last
+/// key's angles (and `F+0x3c = 0`), else the time steps on and the three
+/// angles are [`ease_angle`], [`ease_angle`] and [`ease_sample`] at it.
+/// The point `(0, 0, z, 1)` is turned by a matrix (a local: slot 235,
+/// then slots 330 `0`, 328 `x`, 329 `y`) through slot 229, and the base
+/// point `*F+0x24` plus it is the point out. Each call sees the words the
+/// earlier ones left on the stack. Returns the base point's address.
+///
+/// `magic_0515` 0x10001d20 (385 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let ops = TurnOps {
+        eases: [0x40, 0x56, 0x6c],
+        slots: [0xa9, 0xdc, 0xfb, 0x11a, 0x133],
+        mix: None,
+    };
+    turning_step(g, img, fr, &ops)
+}
+
+/// [`turning_path_step`] with the key position eased by [`path_step`]'s
+/// quartic mix (no bound).
+///
+/// `magic_0515` 0x10001eb0 (514 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn eased_turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let ops = TurnOps {
+        eases: [0xc1, 0xd7, 0xed],
+        slots: [0x12a, 0x15d, 0x17c, 0x19b, 0x1b4],
+        mix: Some((0x14, 0x3c)),
+    };
+    turning_step(g, img, fr, &ops)
+}
+
+/// [`eased_turning_path_step`] (the `rel32`s: two [`ease_angle`]s,
+/// [`ease_sample`] and `__security_check_cookie`).
+pub const EASED_TURNING_PATH_STEP: Sig = Sig {
+    len: 514,
+    hash: 0x17b5_223d_4bc9_0670,
+    calls: &[
+        (0xc1, Callee::Sig(&EASE_ANGLE)),
+        (0xd7, Callee::Sig(&EASE_ANGLE)),
+        (0xed, Callee::Sig(&EASE_SAMPLE)),
+        (0x1fa, Callee::Any),
+    ],
+    imports: &[],
+};
 
 /// [`turning_path_step`] (the `rel32`s: two [`ease_angle`]s,
 /// [`ease_sample`] and `__security_check_cookie`).

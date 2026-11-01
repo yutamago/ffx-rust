@@ -2365,3 +2365,59 @@ fn bone_walks_with_tail() {
         }
     }
 }
+
+/// Row 194: `magic_0515`'s eased turning path follower: the last frame
+/// and two times inside the path, the five weights not 1.
+#[test]
+fn eased_turning_paths_stepped() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x1eb0);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, Some(0));
+    }
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    t.set_u32(op(&t, f, 0x3c), 3.5f32.to_bits());
+    let s = SCRATCH + 0x300;
+    let out = SCRATCH + 0x380;
+    let keys = SCRATCH + 0x1000;
+    let base = SCRATCH + 0x3c0;
+    let weights = SCRATCH + 0x400;
+    for (k, (left, time, step, n)) in [
+        (1u32, 0.0f32, 0.0f32, 4u32),
+        (5, 0.25, 0.125, 4),
+        (3, 0.5, 0.25, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &varied(0x40, k));
+        t.set_u32(s + 0x20, keys);
+        t.set_u32(s + 0x24, base);
+        t.set_u32(s + 0x28, weights);
+        t.set_u32(s + 0x2c, time.to_bits());
+        t.set_u32(s + 0x30, step.to_bits());
+        t.set_u32(s + 0x34, left);
+        t.set_u32(s + 0x38, n);
+        for i in 0..24u32 {
+            t.set_u32(keys + 4 * i, (i as f32 * 0.75 - 3.0 + k as f32).to_bits());
+        }
+        for (i, v) in (0u32..).zip([0.5f32, 1.25, 2.0, 3.5, 4.0]) {
+            t.set_u32(weights + 4 * i, (v * (k as f32 + 1.0) * 0.4).to_bits());
+        }
+        for (i, v) in (0u32..).zip([0.5f32, -1.25, 2.0]) {
+            t.set_u32(base + 4 * i, (v + k as f32).to_bits());
+        }
+        t.write(out, &varied(0x10, k));
+        let c = Call {
+            ecx: s,
+            edx: out,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::eased_turning_path_step(g, img, fr))
+        });
+    }
+}
