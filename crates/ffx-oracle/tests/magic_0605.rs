@@ -159,3 +159,36 @@ fn actor_part() {
         }
     }
 }
+
+/// 0x10008290 and 0x10008c30: the scale task's start, the object's.
+#[test]
+fn scale_and_object_720() {
+    let Some(mut t) = twin(605) else { return };
+    let fx = SCRATCH + 0x1_0000;
+    let at = t.at(0x8290);
+    t.set_u32(t.img.word(at + 0x2a), fx);
+    magic_owna::recs(&mut t, &[(371, 4)]);
+    let st = t.img.rel32_target(at + 0x4d);
+    let take = t.img.rel32_target(st + 0x73);
+    magic_hi::pool(&mut t, take, SCRATCH + 0x6000, 3);
+    t.write(fx, &[0x3d; 0x3100]);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+    let at = t.at(0x8c30);
+    let so = t.img.rel32_target(at + 0x20);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    magic_owna::rec(&mut t, 941, 1, move |_, _| table);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    for i in 0..4 {
+        t.set_u32(fx + 0x14b0 + 4 * i, 0x14b0_0000 + i);
+    }
+    t.set_u32(fx + 0x30b8, 0x30b8_0001);
+    magic_h6::scrub(&mut t);
+    t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
+}

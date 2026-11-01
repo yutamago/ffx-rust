@@ -313,3 +313,135 @@ pub const RELOAD_GROUPS: Sig = Sig {
     calls: &[(0x10, Callee::Sig(&LOAD_GROUPS))],
     imports: &[],
 };
+
+/// Ends the effect's models (0x10001920, an overlay table entry, no
+/// arguments): slots 6 `(m, 0)` and 547 `(m)` on the model `*G_M`
+/// (operand `+0x8`), slot 295 `(*G_A, -1)` (`+0x2b`); then unless the
+/// flag `+0x3c` is set and while the actor `*G_A` is below 0x20 slot 541
+/// `(a, 1.0, 1)`, else slot 38 `(m, 1.0, 1)`. The node `*G_N` (`+0x85`),
+/// when there is one, goes back to the pool
+/// ([`give_back`](crate::sa_pool::give_back)) and `G_N` = 0; slots 568
+/// `(1)`, 566 `(1)`, 546 `(m)`, 271 `(1)`; then the groups load
+/// ([`load_groups`], a tail jump), whose answer it returns. Each slot
+/// call sees the words the earlier ones left on the stack.
+pub fn models_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let m = g.read::<u32>(w(0x8));
+    let mut p = crate::pushes::Pushes::default();
+    p.push_all(&[0, m]);
+    let t = slot_target(g, w(0x1), 6);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t, fr.ecx);
+    p.push(m);
+    let t = slot_target(g, w(0x15), 547);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t, fr.ecx);
+    let a = g.read::<u32>(w(0x2b));
+    p.push_all(&[u32::MAX, a]);
+    let t = slot_target(g, w(0x23), 295);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t, fr.ecx);
+    p.pop(5);
+    let a = g.read::<u32>(w(0x45));
+    let mut q = crate::pushes::Pushes::default();
+    let t = if g.read::<u32>(w(0x3c)) == 0 && a.cast_signed() < 0x20 {
+        q.push_all(&[1, 0x3f80_0000, a]);
+        slot_target(g, w(0x5a), 541)
+    } else {
+        let m = g.read::<u32>(w(0x7d));
+        q.push_all(&[1, 0x3f80_0000, m]);
+        slot_target(g, w(0x67), 38)
+    };
+    // call width: 12 (Pushes caps the words at 12)
+    q.call(g, t, fr.ecx);
+    let node = g.read::<u32>(w(0x85));
+    if node != 0 {
+        crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x91), node);
+        g.write::<u32>(w(0x97), 0);
+    }
+    let mut r = crate::pushes::Pushes::default();
+    for (op, slot) in [(0xa0, 568), (0xaf, 566)] {
+        r.push(1);
+        let t = slot_target(g, w(op), slot);
+        // call width: 12 (Pushes caps the words at 12)
+        r.call(g, t, 0);
+    }
+    r.push(g.read::<u32>(w(0xc4)));
+    let t = slot_target(g, w(0xbe), 546);
+    // call width: 12 (Pushes caps the words at 12)
+    r.call(g, t, 0);
+    r.push(1);
+    let t = slot_target(g, w(0xd1), 271);
+    // call width: 12 (Pushes caps the words at 12)
+    r.call(g, t, 0);
+    let load = Frame {
+        at: img.rel32_target(f + 0xe3),
+        ..*fr
+    };
+    load_groups(g, img, &load)
+}
+
+/// [`models_end`] (231 bytes, 1 overlay).
+pub const MODELS_END: Sig = Sig {
+    len: 231,
+    hash: 0x4f5f_ecf1_4ff8_8fb0,
+    calls: &[
+        (0x91, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xe3, Callee::Sig(&LOAD_GROUPS)),
+    ],
+    imports: &[],
+};
+
+/// Starts the glow scale (0x10003a20, an overlay table entry, no
+/// arguments): `*G_FX`'s point `+0xe10` copied to `+0xe20`, the colour
+/// `+0xe30..` the four globals at operands `+0x1a`, `+0xa`, `+0x12`,
+/// `+0x22`, the counts `+0xe44`/`+0xe40` 20; the scale task of `+0xc78`
+/// ([`scale_task_fixed`](crate::s4_small::scale_task_fixed): `xmm1` 0,
+/// `xmm2` = `*K` `+0x6a`, `*G_FX` pushed under it); then slot 560 `(slot
+/// 557 () & !4)`, whose `eax` it returns.
+pub fn glow_scale_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x2));
+    let c = [w(0x1a), w(0xa), w(0x12), w(0x22)].map(|a| g.read::<u32>(a));
+    let mut last = 0;
+    for i in 0..4 {
+        last = g.read::<u32>(fx + 0xe10 + 4 * i);
+        g.write::<u32>(fx + 0xe20 + 4 * i, last);
+    }
+    for (o, v) in [(0xe34, c[1]), (0xe38, c[2]), (0xe30, c[0]), (0xe3c, c[3])] {
+        g.write::<u32>(fx + o, v);
+    }
+    g.write::<u32>(fx + 0xe44, 0x14);
+    g.write::<u32>(fx + 0xe40, 0x14);
+    // push ecx (*G_FX), the return address
+    let esp = fr.esp.wrapping_sub(8);
+    g.write::<u32>(esp + 4, fx);
+    let mut xmm = fr.xmm;
+    xmm[0] = u128::from(c[0]);
+    xmm[1] = 0;
+    xmm[2] = u128::from(g.read::<u32>(w(0x6a)));
+    xmm[3] = u128::from(c[3]);
+    let task = Frame {
+        at: img.rel32_target(f + 0x9d),
+        esp,
+        eax: last,
+        ecx: fx.wrapping_add(0xc78),
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::scale_task_fixed(g, img, &task);
+    let t = slot_target(g, w(0xa2), 557);
+    let v = g.call(t, 0, &[fx]).eax & !4;
+    let t = slot_target(g, w(0xb3), 560);
+    Ret::eax(g.call(t, 0, &[v, fx]).eax)
+}
+
+/// [`glow_scale_start`] (195 bytes, 1 overlay).
+pub const GLOW_SCALE_START: Sig = Sig {
+    len: 195,
+    hash: 0x82b6_0f10_de2d_7c82,
+    calls: &[(0x9d, Callee::Sig(&crate::s4_small::SCALE_TASK_20))],
+    imports: &[],
+};

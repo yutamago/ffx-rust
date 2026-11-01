@@ -269,7 +269,8 @@ pub fn models_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let reg = Frame {
         at: img.rel32_target(f + 0xf5),
         esp: fr.esp.wrapping_sub(4),
-        ecx: fx.wrapping_add(0x2030),
+        // lea ecx, [ecx + D]: 0x2030 here, 0x1fd0 in magic_0589
+        ecx: fx.wrapping_add(w(0xf0)),
         ..*fr
     };
     let eax = crate::s4_small::register_320(g, img, &reg).eax;
@@ -281,10 +282,23 @@ pub fn models_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     ))
 }
 
-/// [`models_end`] (254 bytes, 1 overlay).
+/// [`models_end`] (254 bytes; with [`MODELS_END_0589`] family
+/// P072).
 pub const MODELS_END: Sig = Sig {
     len: 254,
     hash: 0x77de_39eb_c872_9950,
+    calls: &[
+        (0xda, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xf5, Callee::Sig(&crate::s4_small::REGISTER_320)),
+        (0xfa, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+    ],
+    imports: &[],
+};
+
+/// [`models_end`] in `magic_0589` (0x10001e90: the handles at `+0x1fd0`).
+pub const MODELS_END_0589: Sig = Sig {
+    len: 254,
+    hash: 0xfcc2_cf1c_9005_307d,
     calls: &[
         (0xda, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
         (0xf5, Callee::Sig(&crate::s4_small::REGISTER_320)),
@@ -344,20 +358,35 @@ pub fn object_d10<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let w = |off: u32| img.word(f + off);
     let scale = g.read::<f32>(w(0x4));
     let fx = g.read::<u32>(w(0xc));
-    let obj = fx.wrapping_add(0xd10);
+    // the displacements: the object `+0x15`, the point `+0x26`, the
+    // angle `+0x71` (0x1a60 and 0x2258 here, 0x1a00 and 0x21f8 in
+    // magic_0589)
+    let obj = fx.wrapping_add(w(0x15));
     crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x20), obj, scale, 0xb, 0);
-    copy_point(g, fx, obj);
+    let point = fx.wrapping_add(w(0x26));
+    for i in 0..4 {
+        let v = g.read::<u32>(point + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, v);
+    }
     let y = sub(g.read::<f32>(obj + 0xd4), g.read::<f32>(w(0x4e)));
     g.write::<f32>(obj + 0xd4, y);
-    let a = g.read::<u32>(fx + 0x2258);
+    let a = g.read::<u32>(fx.wrapping_add(w(0x71)));
     g.write::<u32>(obj + 0xc4, a);
     Ret::eax(a)
 }
 
-/// [`object_d10`] (126 bytes, 1 overlay).
+/// [`object_d10`] (126 bytes; with [`OBJECT_D10_0589`] family P086).
 pub const OBJECT_D10: Sig = Sig {
     len: 126,
     hash: 0x4687_1e94_feff_18af,
+    calls: &[(0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM))],
+    imports: &[],
+};
+
+/// [`object_d10`] in `magic_0589` (0x10002ad0).
+pub const OBJECT_D10_0589: Sig = Sig {
+    len: 126,
+    hash: 0x6ace_e007_aed8_6b48,
     calls: &[(0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM))],
     imports: &[],
 };

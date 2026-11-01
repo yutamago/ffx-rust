@@ -211,3 +211,60 @@ fn sway_frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001920: the actor below 0x20 or the flag set (slot 541 or 38),
+/// the node there or not; into the groups' load (no entries).
+#[test]
+fn models_end() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1920);
+    for (s, n) in [
+        (6u32, 2usize),
+        (547, 3),
+        (295, 5),
+        (541, 3),
+        (38, 3),
+        (568, 1),
+        (566, 2),
+        (546, 3),
+        (271, 4),
+    ] {
+        magic_owna::rec(&mut t, s, n, move |_, a| (0x5a5a_0000 + s) ^ a[0]);
+    }
+    t.set_u32(t.img.word(at + 0x8), 0x0008_0001);
+    let lg = t.img.rel32_target(at + 0xe3);
+    let r = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(lg + 0x8), r);
+    t.write(r, &[0; 0x3000]);
+    let give = t.img.rel32_target(at + 0x91);
+    let node = SCRATCH + 0x5000;
+    for (flag, a, has) in [(0u32, 5u32, true), (0, 0x20, false), (1, 3, false)] {
+        t.set_u32(t.img.word(at + 0x3c), flag);
+        t.set_u32(t.img.word(at + 0x45), a);
+        magic_hi::lone_node(&mut t, give, node);
+        t.set_u32(t.img.word(at + 0x85), if has { node } else { 0 });
+        t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
+    }
+}
+
+/// 0x10003a20: the glow's colour and scale task, slots 557 and 560.
+#[test]
+fn glow_scale_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x3a20);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x2), fx);
+    for (i, op) in [0x1au32, 0xa, 0x12, 0x22].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), f(0.25 + i as f32));
+    }
+    rec(&mut t, 557, 1, |_, _| 0x0557_00ff);
+    recs(&mut t, &[(560, 2)]);
+    let st = t.img.rel32_target(at + 0x9d);
+    let take = t.img.rel32_target(st + 0x7b);
+    pool(&mut t, take, SCRATCH + 0x6000, 3);
+    t.write(fx + 0xc00, &[0x3d; 0x300]);
+    for i in 0..4 {
+        t.set_u32(fx + 0xe10 + 4 * i, 0x0e10_0000 + i);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

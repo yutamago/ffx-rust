@@ -305,3 +305,65 @@ pub const ACTOR_MATRIX_0600: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Spawns two objects every 100 frames (0x10002420, an overlay table
+/// entry, no arguments; family P076 with `magic_0600` 0x10007250, the
+/// effect block's offsets read from the code): the count `*G_FX + C`
+/// (`C` the displacement at `+0x9`) steps down; while above 0 nothing
+/// more (the caller's `eax` returned). Else it is 100 again and two
+/// records from the pool ([`pool_take_140`](crate::sb_misc::pool_take_140);
+/// none: 0 returned) start as objects
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain): scale
+/// `*K` `+0x38` index 1, `*K` `+0x96` index 0) at the point `*G_FX + P`
+/// (`+0x4a`), their `+0xc4` the angle `*G_FX + A` (`+0x7a`), which it
+/// returns.
+pub fn spawn_pair<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x3));
+    let count = fx.wrapping_add(w(0x9));
+    let c = g.read::<u32>(count).wrapping_sub(1);
+    g.write::<u32>(count, c);
+    if c.cast_signed() > 0 {
+        return Ret::eax(fr.eax);
+    }
+    g.write::<u32>(count, 100);
+    let (point, angle) = (fx.wrapping_add(w(0x4a)), fx.wrapping_add(w(0x7a)));
+    let mut a = 0;
+    for (take, start, k, index) in [(0x26, 0x44, 0x38, 1), (0x88, 0xa2, 0x96, 0)] {
+        let obj = crate::sb_misc::pool_take_140(g, img, img.rel32_target(f + take));
+        if obj == 0 {
+            return Ret::eax(0);
+        }
+        let scale = g.read::<f32>(w(k));
+        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + start), obj, scale, index);
+        for i in 0..4 {
+            let v = g.read::<u32>(point + 4 * i);
+            g.write::<u32>(obj + 0xd0 + 4 * i, v);
+        }
+        a = g.read::<u32>(angle);
+        g.write::<u32>(obj + 0xc4, a);
+    }
+    Ret::eax(a)
+}
+
+/// [`spawn_pair`] (232 bytes; family P076).
+pub const SPAWN_PAIR: Sig = Sig {
+    len: 232,
+    hash: 0x7f56_a91a_bcad_2937,
+    calls: &[
+        (0x26, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0x44, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x88, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0xa2, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+    ],
+    imports: &[],
+};
+
+/// [`spawn_pair`] in `magic_0600` (0x10007250).
+pub const SPAWN_PAIR_0600: Sig = Sig {
+    len: 232,
+    hash: 0x96e1_f6be_cb3e_e69b,
+    calls: SPAWN_PAIR.calls,
+    imports: &[],
+};
