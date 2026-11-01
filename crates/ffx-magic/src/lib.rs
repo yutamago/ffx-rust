@@ -2929,7 +2929,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("count fade", &s7_misc::COUNT_FADE),
     ("ring key frame", &s7_misc::RING_KEY_FRAME),
     ("global differences", &s7_misc::GLOBAL_DIFFERENCES),
-    ("start object (reset state 0x1e)", &s7_misc::START_OBJECT_RESET_1E),
+    (
+        "start object (reset state 0x1e)",
+        &s7_misc::START_OBJECT_RESET_1E,
+    ),
     ("node to live", &s7_misc::NODE_TO_LIVE),
     ("model points node", &s7_misc::MODEL_POINTS_NODE),
     ("light node", &s7_misc::LIGHT_NODE),

@@ -327,11 +327,7 @@ fn global_differences() {
                 eax: 0x4050_0000 + k,
                 ..Call::default()
             }
-            .with_xmm(&[
-                Xmm::f32(1.0),
-                Xmm::f32(2.0),
-                Xmm::f32(-3.25 + k as f32),
-            ]);
+            .with_xmm(&[Xmm::f32(1.0), Xmm::f32(2.0), Xmm::f32(-3.25 + k as f32)]);
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::global_differences(g, img, fr))
             });
@@ -475,8 +471,18 @@ fn countdown_children() {
 /// nodes are already at the pass.
 #[test]
 fn summon_frames_bound() {
-    let bound = [(155u16, 0xc450u32), (570, 0xccb0), (609, 0xc170), (613, 0xbcc0)];
-    let ring = [(150u16, 0xdfa0u32), (152, 0xc8f0), (533, 0xc320), (601, 0xa5b0)];
+    let bound = [
+        (155u16, 0xc450u32),
+        (570, 0xccb0),
+        (609, 0xc170),
+        (613, 0xbcc0),
+    ];
+    let ring = [
+        (150u16, 0xdfa0u32),
+        (152, 0xc8f0),
+        (533, 0xc320),
+        (601, 0xa5b0),
+    ];
     for (dll, rva, first) in bound
         .into_iter()
         .map(|(d, r)| (d, r, true))
@@ -492,9 +498,29 @@ fn summon_frame_in(dll: u16, rva: u32, bone_first: bool) {
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     // (pass, bone A, the two nodes, skip, first, root, flags, mask, W, Z)
     let (pass, nodes, skip, first, root, flags, mask, word, z) = if bone_first {
-        (0x28, [0x34u32, 0xa1, 0xc1], 0x43, 0x4a, 0x52, 0x88, 0xcb, 0xdf, 0xed)
+        (
+            0x28,
+            [0x34u32, 0xa1, 0xc1],
+            0x43,
+            0x4a,
+            0x52,
+            0x88,
+            0xcb,
+            0xdf,
+            0xed,
+        )
     } else {
-        (0x78, [0x84u32, 0xa5, 0xc5], 0x29, 0x30, 0x38, 0x70, 0xcf, 0xe3, 0xf1)
+        (
+            0x78,
+            [0x84u32, 0xa5, 0xc5],
+            0x29,
+            0x30,
+            0x38,
+            0x70,
+            0xcf,
+            0xe3,
+            0xf1,
+        )
     };
     let bm = t.img.rel32_target(f + 0x23);
     t.set_u32(t.img.word(bm + 0x7e), sa::node(20));
@@ -558,11 +584,23 @@ fn summon_frame_in(dll: u16, rva: u32, bone_first: bool) {
 /// words; the divisor 0, 1 and another value).
 #[test]
 fn camera_settings() {
-    for (dll, rva) in [(98u16, 0x1090u32), (188, 0x1090), (686, 0x1090), (690, 0x1090)] {
+    for (dll, rva) in [
+        (98u16, 0x1090u32),
+        (188, 0x1090),
+        (686, 0x1090),
+        (690, 0x1090),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
-        for (s, n) in [(783u32, 1usize), (782, 1), (784, 1), (781, 3), (785, 1), (801, 6)] {
+        for (s, n) in [
+            (783u32, 1usize),
+            (782, 1),
+            (784, 1),
+            (781, 3),
+            (785, 1),
+            (801, 6),
+        ] {
             log_calls(&mut t, s, log, n, None, |_, a, k| a[0] ^ (k << 24));
         }
         for (k, d) in [0.0f32, 1.0, -2.5].into_iter().enumerate() {
@@ -574,6 +612,282 @@ fn camera_settings() {
             t.set_u32(op(&t, f, 0xb0), d.to_bits());
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// A ring for the node handlers' pass: the cursor `s` on the ring `r`
+/// (pass byte `pass`, the ring's byte `byte`) with `n` nodes (vtable
+/// `vt`) from `SCRATCH + 0x600`.
+fn set_ring(t: &mut Twin, s: u32, r: u32, (pass, byte): (u8, u8), n: u32, vt: u32, k: u32) {
+    t.write(s, &varied(0x10, k));
+    t.set_u32(s, r);
+    t.set_u8(s + 5, pass);
+    t.set_u8(r + 0x1a, byte);
+    let mut prev = r;
+    for i in 0..n {
+        let nd = SCRATCH + 0x600 + 0x40 * i;
+        t.write(nd, &varied(0x40, k + 2 + i));
+        t.set_u32(nd, vt);
+        if i == 0 {
+            t.set_u32(r + 0x10, nd);
+        } else {
+            t.set_u32(prev + 8, nd);
+        }
+        prev = nd;
+    }
+    if n == 0 {
+        t.set_u32(r + 0x10, r);
+    } else {
+        t.set_u32(prev + 8, r);
+    }
+}
+
+/// The ring nodes' handler: slot 1000, logging the cursor's node.
+fn ring_handler(t: &mut Twin, log: u32) -> u32 {
+    t.set_u32(magic::TABLE + 4 * 1000, trap(1000));
+    log_calls(t, 1000, log, 1, None, |m, a, k| {
+        let n = m.r32(a[0]);
+        m.w32(n + 0x14, k);
+        0x1000_0000 + (m.r32(n + 0xc) << 8) + k
+    });
+    let vt = SCRATCH + 0x700;
+    t.set_u32(vt + 0x1c, trap(1000));
+    vt
+}
+
+/// Row 459: the model points node of both DLLs: not passed, and passed
+/// with each flag combination (the child's handler with its own cursor,
+/// no child).
+#[test]
+fn model_points_nodes() {
+    for (dll, rva) in [(150u16, 0x2d30u32), (603, 0x2d30)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 229, log, 3, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 284, log, 3, None, |m, a, k| m.r32(a[2]) ^ k);
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let child = SCRATCH + 0x900;
+        for (k, (byte, n, bits, has_child)) in [
+            (3u8, 1u32, 0u8, true),
+            (4, 0, 0, true),
+            (4, 2, 0xfe, true),
+            (4, 1, 1, true),
+            (4, 1, 1, false),
+            (4, 0, 3, true),
+            (4, 0, 0xff, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x260, k));
+            set_ring(&mut t, s, r, (3, byte), n, vt, k);
+            t.set_u8(r + 0x240, bits);
+            t.write(child, &varied(0x40, k + 7));
+            t.set_u32(child, vt);
+            t.set_u32(r + 0x228, if has_child { child } else { 0 });
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x2d30_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::model_points_node(g, img, fr))
+            });
+        }
+    }
+}
+
+/// Row 439: the light node of both DLLs: the ring passed or not, no
+/// count, a value not above 0 (0, negative, NaN) and above it.
+#[test]
+fn light_nodes() {
+    for (dll, rva) in [(150u16, 0x1000u32), (603, 0x1000)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+            m.w32(a[0], 0x2450_0000 + k);
+            m.w32(a[0] + 4, 0x2451_0000 + k);
+            0x245
+        });
+        log_calls(&mut t, 821, log, 1, None, |_, _, k| 0x821 + k);
+        log_calls(&mut t, 822, log, 4, None, |_, _, k| 0x822 + k);
+        log_calls(&mut t, 823, log, 2, None, |_, _, k| 0x823 + k);
+        log_calls(&mut t, 824, log, 4, None, |_, _, k| 0x824 + k);
+        t.set_u32(op(&t, f, 0x80), 3.0f32.to_bits());
+        t.set_u32(op(&t, f, 0xb5), 0.125f32.to_bits());
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        for (k, (byte, n, x)) in [
+            (3u8, 5u8, 2.0f32),
+            (4, 0, 2.0),
+            (4, 7, 0.0),
+            (4, 7, -1.0),
+            (4, 7, f32::NAN),
+            (4, 0xff, 0.75),
+            (3, 1, 1e-3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x40, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u8(r + 0x1c, n);
+            t.set_u32(r + 0x20, x.to_bits());
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x1000_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::light_node(g, img, fr))
+            });
+        }
+    }
+}
+
+/// Row 174: the loading summon frame of the five DLLs: each load state
+/// busy and done (0 and 1 run on), state 2 with its call, the frame with
+/// an empty ring, two nodes and the ring skipped. The two nodes are
+/// already at the pass.
+#[test]
+fn summon_load_frames() {
+    for (dll, rva) in [
+        (152u16, 0xc7b0u32),
+        (155, 0xc310),
+        (164, 0xc050),
+        (533, 0xc1e0),
+        (601, 0xa470),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let log = SCRATCH + 0x6000;
+        let busy = SCRATCH + 0x2f0;
+        for s in [225u32, 313, 549] {
+            log_calls(&mut t, s, log, 1, None, move |m, _, _| {
+                m.r32(busy) & (1 << (s % 8))
+            });
+        }
+        log_calls(&mut t, 226, log, 2, None, |_, _, k| 0x226 + k);
+        log_calls(&mut t, 673, log, 0, None, |_, _, k| 0x673 + k);
+        t.set_u32(w(&t, 0x99), sa::node(21));
+        let vt = sa::node(22);
+        t.set_u32(vt + 0x20, magic::TRAPS);
+        rec(&mut t, 0, 1, |m, a| {
+            let x = m.r32(a[0]);
+            let k = m.r32(sa::node(23));
+            m.w32(sa::node(23), k + 1);
+            m.w32(sa::node(23) + 4 + 4 * (k % 8), x);
+            m.w32(sa::node(23) + 0x24 + 4 * (k % 8), m.r32(a[0] + 4));
+            0x77
+        });
+        let root = w(&t, 0xca);
+        assert_eq!(w(&t, 0xaa), root + 8);
+        // (state, busy bits, skip, nodes)
+        for (k, (state, b, skip, n)) in [
+            (0u32, 0xffu32, 0u32, 0u32),
+            (0, 0, 0, 2),
+            (1, 1 << (313 % 8), 0, 0),
+            (0, 1 << (313 % 8), 0, 0),
+            (1, 0, 0, 1),
+            (2, 1 << (549 % 8), 0, 0),
+            (2, 0, 1, 2),
+            (3, 0xff, 0, 0),
+            (4, 0, 1, 0),
+            (0xffff_ffff, 0, 0, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(busy, b);
+            t.set_u32(w(&t, 0x4), state);
+            t.set_u32(w(&t, 0xbc), skip);
+            t.set_u32(w(&t, 0x71), 0x7171_0000 + k);
+            t.set_u32(w(&t, 0xa4), 0xa4a4_0000 + k);
+            let p = (0x40 + k) as u8;
+            t.set_u8(w(&t, 0xb4), p);
+            let mut prev = root;
+            for i in 0..n {
+                let nd = sa::node(10 + i);
+                t.write(nd, &varied(0x40, k + i));
+                t.set_u32(nd, vt);
+                t.set_u32(prev + 8, nd);
+                prev = nd;
+            }
+            t.set_u32(prev + 8, root);
+            // the two nodes at the new pass: nothing moves
+            for o in [0x113u32, 0x12b] {
+                t.set_u8(w(&t, o) + 0x1a, p.wrapping_add(1));
+            }
+            t.set_u32(w(&t, 0x104), 0x10);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// Row 346: the model draw node of the three DLLs: not passed, passed
+/// (the slots see the matrix and the draw record).
+#[test]
+fn model_draw_nodes() {
+    for (dll, rva) in [(478u16, 0x3f00u32), (513, 0x3f80), (514, 0x4320)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        t.stub(231, move |m, a| {
+            for i in 0..16u32 {
+                let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x231
+        });
+        t.stub(308, move |m, a| {
+            let row = log + 0x200;
+            for i in 0..0x12u32 {
+                m.w32(row + 4 * i, m.r32(a[1] + 4 * i));
+            }
+            m.w32(row + 0x48, a[0]);
+            m.r32(a[1] + 0x20) ^ a[0]
+        });
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let model = SCRATCH + 0x1800;
+        t.set_u32(op(&t, f, 0xa1), SCRATCH + 0x2f0);
+        for (k, byte) in [3u8, 4, 4].into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x40, k));
+            set_ring(&mut t, s, r, (3, byte), k, vt, k);
+            t.set_u32(r + 0x20, model);
+            t.set_u32(r + 0x1c, SCRATCH + 0x1c00);
+            t.write(SCRATCH + 0x1c00, &varied(0x100, k + 1));
+            t.write(model, &varied(0x40, k + 2));
+            t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + k);
+            t.set_u32(op(&t, f, 0x105), 0x0105_0000 + k);
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x3f00_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::model_draw_node(g, img, fr))
+            });
         }
     }
 }

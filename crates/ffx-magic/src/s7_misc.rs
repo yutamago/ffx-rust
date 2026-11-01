@@ -3,9 +3,9 @@
 //! the DLL and address it was ported from, its size and how many DLLs
 //! carry it; "`G`" is a global of the DLL (an operand of the code).
 
-use crate::sb_sse::{cvt, div, mul, sub};
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
+use crate::sb_sse::{cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
 /// The word at `f + off` of the code (an operand).
@@ -450,7 +450,11 @@ pub fn countdown_children<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     {
         let x = g.read::<u32>(w(gx));
         st.push_all(&[w(cb), x]);
-        let start = if k == 0 { start } else { slot_target(g, w(t434), 434) };
+        let start = if k == 0 {
+            start
+        } else {
+            slot_target(g, w(t434), 434)
+        };
         let node = st.call(g, start, ecx).eax;
         st.push(o);
         // `call ecx`: the slot's address is in `ecx`
@@ -660,7 +664,11 @@ pub fn camera_settings<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let k = |g: &G, o: u32| g.read::<u32>(w(o));
-    for (table, s, c) in [(0x1u32, 783u32, 0x9u32), (0x1c, 782, 0x24), (0x36, 784, 0x3e)] {
+    for (table, s, c) in [
+        (0x1u32, 783u32, 0x9u32),
+        (0x1c, 782, 0x24),
+        (0x36, 784, 0x3e),
+    ] {
         let t = slot_target(g, w(table), s);
         let x = k(g, c);
         g.call(t, fr.ecx, &[x]);
@@ -692,12 +700,12 @@ pub const CAMERA_SETTINGS: Sig = Sig {
 /// A ring node's handler that sets its model's points (internal: `ecx` =
 /// the cursor `S`; a ring pass first, [`ring_pass`]). Passed, with `R =
 /// S[0]` and its flags byte `R+0x240`: without bit 0, slot 229 `(R+0x1c,
-/// R+0xc8, R+0x218)` and slot 284 `(R[0x23c], 0, R+0xf8)` then `(R[0x23c],
-/// 1, R+0x1c)`; bits 0 and 1, slot 284 `(R[0x23c], 0, R+0x22c)`; bit 0
-/// only, the child `C = R+0x228` (none: nothing) gets its handler with a
-/// cursor of its own on the frame (`C`, pass byte `+5`) and slot 284
-/// `(R[0x23c], 0, C+0x1c)` follows. Returns the last slot's `eax`, else
-/// what the pass or the flags test left.
+/// R+0xc8, R+0x218)` and slot 284 `(R[0x23c], 0, R+0xf8)`; bits 0 and 1,
+/// slot 284 `(R[0x23c], 0, R+0x22c)`; bit 0 only, the child `C =
+/// R+0x228` (if any) gets its handler with a cursor of its own on the
+/// frame (`C`, pass byte `+5`) and slot 284 `(R[0x23c], 0, C+0x1c)`
+/// follows. Then slot 284 `(R[0x23c], 1, R+0x1c)`, whose `eax` it
+/// returns; not passed, what the pass left.
 ///
 /// `magic_0150` 0x10002d30 (293 bytes; 2 DLLs).
 pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
@@ -710,7 +718,6 @@ pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     }
     let r = g.read::<u32>(s);
     let bits = g.read::<u8>(r + 0x240);
-    let eax = (eax & !0xff) | u32::from(bits);
     let model = |g: &G| g.read::<u32>(r + 0x23c);
     let mut st = Pushes::default();
     if bits & 1 == 0 {
@@ -719,32 +726,33 @@ pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         let m = model(g);
         st.push_all(&[r + 0xf8, 0, m]);
         st.call(g, slot_target(g, w(0xeb), 284), fr.ecx);
-        st.pop(6);
-        let m = model(g);
-        st.push_all(&[r + 0x1c, 1, m]);
-        return st.call(g, slot_target(g, w(0x107), 284), fr.ecx).eax;
-    }
-    if bits & 2 != 0 {
+    } else if bits & 2 != 0 {
         let m = model(g);
         st.push_all(&[r + 0x22c, 0, m]);
-        return st.call(g, slot_target(g, w(0x66), 284), fr.ecx).eax;
+        st.call(g, slot_target(g, w(0x66), 284), fr.ecx);
+    } else {
+        let c = g.read::<u32>(r + 0x228);
+        if c != 0 {
+            // the child's cursor at `ebp - 8`
+            let cursor = fr.esp.wrapping_sub(0xc);
+            let pass = g.read::<u8>(s + 5);
+            g.write::<u32>(cursor, c);
+            g.write::<u8>(cursor + 5, pass);
+            let handler = g.read::<u32>(g.read::<u32>(c).wrapping_add(0x1c));
+            st.push(cursor);
+            st.call(g, handler, cursor);
+            let at = g.read::<u32>(r + 0x228).wrapping_add(0x1c);
+            let m = model(g);
+            st.push_all(&[at, 0, m]);
+            st.call(g, slot_target(g, w(0xab), 284), fr.ecx);
+        }
     }
-    let c = g.read::<u32>(r + 0x228);
-    if c == 0 {
-        return eax;
-    }
-    // the child's cursor at `ebp - 8`
-    let cursor = fr.esp.wrapping_sub(0xc);
-    let pass = g.read::<u8>(s + 5);
-    g.write::<u32>(cursor, c);
-    g.write::<u8>(cursor + 5, pass);
-    let handler = g.read::<u32>(g.read::<u32>(c).wrapping_add(0x1c));
-    st.push(cursor);
-    st.call(g, handler, cursor);
-    let at = g.read::<u32>(r + 0x228).wrapping_add(0x1c);
+    // every way ends with the model's own point (the words before are
+    // popped)
     let m = model(g);
-    st.push_all(&[at, 0, m]);
-    st.call(g, slot_target(g, w(0xab), 284), fr.ecx).eax
+    let mut last = Pushes::default();
+    last.push_all(&[r + 0x1c, 1, m]);
+    last.call(g, slot_target(g, w(0x107), 284), fr.ecx).eax
 }
 
 /// [`model_points_node`].
@@ -867,7 +875,10 @@ pub fn summon_load_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let v = g.read::<u32>(w(0x104)) | 1;
         g.write::<u32>(w(0x104), v);
     }
-    for (k, (node, call)) in [(0x113u32, 0x118u32), (0x12b, 0x130)].into_iter().enumerate() {
+    for (k, (node, call)) in [(0x113u32, 0x118u32), (0x12b, 0x130)]
+        .into_iter()
+        .enumerate()
+    {
         if k == 1 {
             pass = g.read::<u8>(w(0x11d));
         }
@@ -912,13 +923,16 @@ pub fn model_draw_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let s = fr.ecx;
-    let (passed, eax) = ring_pass(g, s, fr.eax);
+    let base = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0xc8);
+    // the frame's cookie word (`cookie ^ esp`) is the `eax` the pass
+    // test loads its byte over
+    let cookie = g.read::<u32>(w(0xd)) ^ base;
+    let (passed, eax) = ring_pass(g, s, cookie);
     if !passed {
         return eax;
     }
     let r = g.read::<u32>(s);
     let m = g.read::<u32>(r + 0x20);
-    let base = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0xc8);
     let (l, x) = (base + 8, base + 0x80);
     g.write::<u32>(l, 0x1c);
     let kind = g.read::<u16>(m.wrapping_add(0x16));
