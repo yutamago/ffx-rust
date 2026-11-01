@@ -456,6 +456,20 @@ copies merged behind a slot thunk, CRT). `worklist5.tsv` (from `census2`):
 4,316 identities, 52 CRT, 2,428 covered, 1,836 left (230 shared, 1,606
 own); the first census gave 4,578, 76, 2,649 and 1,853 with the same ports.
 
+Ports cut to the old rows were fixed against `census2` (magic-sigfix,
+2026-11-01): the `INTERNAL` "/GS epilogue" (9 bytes, bound only at
+labels inside 51 functions) is gone; Sigs that ran into the next
+function were cut to the function (rotate offset 242 -> 176 bytes, which
+made it `s4_small::turn_point`, and the follow task's two copies one
+port; sprite fan start 1204 -> 112, sprite fan task 1140 -> 1092,
+particle drift (5) 643 -> 528, m0070 step d410 434 -> 416, m0396 aim 338
+-> 272, which is `m0171::aim`); scene_light (735 -> 798) and
+camera_behind_start (831 -> 841) now reach their functions' ends. Of the
+44 functions behind a covered row start, 19 are
+`__security_check_cookie` copies (CRT); the other 25 (12 identities)
+are in `sf_hidden.rs`, tested in every DLL carrying them
+(`magic_sf_hidden.rs`).
+
 **Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
 and 66 internal functions (plus the slot thunks by shape): the runtime,
 the OPU host and its start-up variants, the node lists, the object host
