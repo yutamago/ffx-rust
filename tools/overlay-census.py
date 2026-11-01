@@ -44,6 +44,7 @@ Outputs (default $FFX_WORK/m5/scope):
 """
 import argparse
 import bisect
+import functools
 import hashlib
 import os
 import pathlib
@@ -191,8 +192,9 @@ def table_global(texts_all):
     return loads.most_common(1)[0][0] if loads else None
 
 
-def slots_of(texts, table):
-    """g_MagicImports slots this function reaches through the table."""
+def slots_of(texts, table, nslots):
+    """g_MagicImports slots (below nslots) this function reaches through the
+    table."""
     held = set()
     out = set()
     for t in texts:
@@ -202,7 +204,7 @@ def slots_of(texts, table):
             continue
         for mm in MEM.finditer(t):
             off = int(mm.group(2) or "0", 16)
-            if mm.group(1) in held and off < 4 * reach.MAGIC_SLOTS:
+            if mm.group(1) in held and off < 4 * nslots:
                 out.add(off // 4)
         parts = t.split(None, 1)
         if parts and parts[0] in ("call", "ret", "jmp"):
@@ -214,7 +216,7 @@ def slots_of(texts, table):
     return out
 
 
-def census_dll(path):
+def census_dll(path, nslots):
     img = reach.Image(path)
     insns = objdump(path)
     starts = {img.text_lo, *img.exports()}
@@ -239,7 +241,7 @@ def census_dll(path):
     table = table_global([t for _, t in insns])
     rows = {}
     for s, (e, b, toks, mn, texts) in fns.items():
-        rows[s] = (e - s, b, toks, ops_of(mn), sorted(slots_of(texts, table)) if table else [], mn)
+        rows[s] = (e - s, b, toks, ops_of(mn), sorted(slots_of(texts, table, nslots)) if table else [], mn)
     return path.name, len(text), img.exports(), rows
 
 
@@ -256,8 +258,10 @@ def main():
     exe = refs.default_exe()
     dlls = sorted((pathlib.Path(exe).parent / "magicFiles/FFX").glob("magic_*.dll"))
 
+    # g_MagicImports' length, from FFX.exe (tools/reach.py)
+    nslots = reach.Image(exe).magic_imports()[0]
     with ProcessPoolExecutor(args.jobs) as pool:
-        results = list(pool.map(census_dll, dlls, chunksize=4))
+        results = list(pool.map(functools.partial(census_dll, nslots=nslots), dlls, chunksize=4))
 
     # ---- shapes then hashes, per DLL (callees are in the same DLL)
     per_dll = {}
