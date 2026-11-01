@@ -109,6 +109,7 @@ mod m5p_scene_m;
 mod m5p_scene_n;
 mod m5p_scripting;
 mod m5p_scripting_bp2;
+mod m5p_scripting_bp3;
 mod m5p_scripting_df;
 mod m5p_scripting_left2;
 mod m5p_stubs;
@@ -262,6 +263,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_scene_n::hooks());
     all.extend(m5p_scripting::hooks());
     all.extend(m5p_scripting_bp2::hooks());
+    all.extend(m5p_scripting_bp3::hooks());
     all.extend(m5p_scripting_df::hooks());
     all.extend(m5p_scripting_left2::hooks());
     all.extend(main::hooks());
