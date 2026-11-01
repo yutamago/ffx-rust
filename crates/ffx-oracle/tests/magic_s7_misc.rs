@@ -3009,11 +3009,24 @@ fn children_items_nodes() {
         log_calls(&mut t, 324, log, 0, None, |_, _, k| 0x0012_3456 ^ k);
         log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
         t.stub_st0(307, move |m, _| f64::from(m.r32(log) % 7) * 0.125 + 0.0625);
-        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+        // slots 245 and 229 keep the frame's draw record (`B+4..B+0x9c`)
+        log_calls(&mut t, 245, log, 1, None, move |m, a, k| {
+            for i in 0..0x26 {
+                m.w32(
+                    log + 0xc00 + 0x100 * (k % 8) + 4 * i,
+                    m.r32(a[0] - 4 + 4 * i),
+                );
+            }
             m.w32(a[0] + 0x14, 0x2450_0000 + k);
             0x245
         });
-        log_calls(&mut t, 229, log, 3, None, |m, a, k| {
+        log_calls(&mut t, 229, log, 3, None, move |m, a, k| {
+            for i in 0..0x26 {
+                m.w32(
+                    log + 0xc00 + 0x100 * (k % 8) + 4 * i,
+                    m.r32(a[0] - 0xd4 + 4 * i),
+                );
+            }
             for i in 0..4 {
                 m.w32(a[0] + 4 * i, m.r32(a[2] + 4 * i) ^ k);
             }
@@ -3078,6 +3091,25 @@ fn children_items_nodes() {
             t.set_u16(r + 0x2c, a);
             t.set_u16(r + 0x2e, b);
             t.write(items, &varied(0x200, k + 2));
+            // plain floats for the items' moves and the second child's height
+            for n in 0..10u32 {
+                let p = if n < 5 {
+                    items + 0x30 * n
+                } else {
+                    items + 0x100 + 0x30 * (n - 5)
+                };
+                for (at, x) in [
+                    (0u32, 1.5f32),
+                    (4, 2.25),
+                    (8, -3.0),
+                    (0x14, 0.5),
+                    (0x18, 0.75),
+                    (0x1c, -0.25),
+                ] {
+                    t.set_u32(p + at, (x + n as f32).to_bits());
+                }
+            }
+            t.set_u32(kids[1] + 0x20, 10.0f32.to_bits());
             scrub(&mut t);
             let c = Call {
                 eax: 0x1c10_0000 + k,
@@ -3119,7 +3151,8 @@ fn actors_objects_started() {
         });
         log_calls(&mut t, 333, log, 1, None, |_, a, _| a[0]);
         t.stub_st0(333, move |m, _| {
-            [0.25, 7.5, -6.0, 1.0][(m.r32(log) % 4) as usize]
+            // (-2.0 and 4.0: the yaw at each bound)
+            [0.25, 7.5, -6.0, 1.0, -2.0, 4.0][(m.r32(log) % 6) as usize]
         });
         // the object start's (`s4_misc::start_object_first`)
         let table = SCRATCH + 0x3400;
@@ -3163,7 +3196,11 @@ fn actors_objects_started() {
             let k = k as u32;
             t.set_u32(log, 0);
             t.set_u32(plan, n);
-            t.write(list, &[1, 5, 2, 9]);
+            // (each entry found in the DLL's list; the byte before is not)
+            t.write(list - 1, &[9, 2, 1, 7, 9]);
+            // the objects and their records seeded (the zeroed words)
+            t.write(w(&t, 0x75) - 0xd4, &varied(0x130 * 3, k + 5));
+            t.write(w(&t, 0x7a) - 4, &varied(0x34 * 3, k + 6));
             t.set_u32(w(&t, 0x82), m.cast_unsigned());
             t.set_u32(w(&t, 0xaf), bl);
             t.write(bl, &[2, 1, 7, 0]);
