@@ -166,3 +166,47 @@ fn place() {
         });
     }
 }
+
+/// 0x10001780: the actor 0xff (no place) and not.
+#[test]
+fn pick_actor() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1780);
+    let actor = magic::SCRATCH + 0x20;
+    magic_owna::rec(&mut t, 168, 1, move |m, _| m.r32(actor));
+    let cell = magic::SCRATCH + 0x10;
+    magic_owna::rec(&mut t, 215, 1, |_, _| 0x0215_0000);
+    for (s, n) in [(169u32, 4usize), (216, 11), (251, 12)] {
+        magic_owna::rec(&mut t, s, n, move |_, a| s << 16 ^ a[0]);
+        t.stub_st0(s, move |m, _| {
+            f64::from(m.r32(cell) & 0xff) * 1.375 - f64::from(s & 7)
+        });
+    }
+    recs(
+        &mut t,
+        &[
+            (210, 3),
+            (217, 6),
+            (325, 8),
+            (718, 1),
+            (222, 4),
+            (221, 4),
+            (719, 3),
+            (711, 3),
+            (710, 7),
+        ],
+    );
+    let pl = t.img.rel32_target(at + 0x2e);
+    t.set_u32(t.img.word(pl + 0xb), 0x00ac_0000);
+    t.set_u32(cell, 3);
+    let lock = magic::SCRATCH + 0x30;
+    t.set_u32(t.img.word(at + 0x4d), lock);
+    // slot 711 runs with the game flag set: it answers the flag
+    magic_owna::rec(&mut t, 711, 3, move |m, _| m.r32(lock));
+    t.set_u32(lock, 0x0123);
+    for a in [0xffu32, 4] {
+        t.set_u32(actor, a);
+        t.set_u32(t.img.word(pl + 0xd7), (12.5f32).to_bits());
+        t.check_entry(at, Call::default(), &[7], Eax::Checked);
+    }
+}

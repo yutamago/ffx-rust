@@ -70,3 +70,27 @@ fn actor_matrix() {
         });
     }
 }
+
+/// 0x10007160: the fade started, the list empty and not.
+#[test]
+fn fade_start() {
+    let Some(mut t) = twin(600) else { return };
+    let at = t.at(0x7160);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0xe), fx);
+    magic_owna::recs(&mut t, &[(371, 4)]);
+    let st = t.img.rel32_target(at + 0x49);
+    let take1 = t.img.rel32_target(st + 0x7b);
+    let take2 = t.img.rel32_target(at + 0xae);
+    let last = SCRATCH + 0x4000;
+    for full in [false, true] {
+        for tk in [take1, take2] {
+            magic_hi::pool(&mut t, tk, SCRATCH + 0x6000, 4);
+        }
+        t.write(fx + 0xce0, &[0x3d; 0x200]);
+        t.write(last, &[0x4c; 0x1c]);
+        t.set_u32(t.img.word(at + 0xb4), if full { last } else { 0 });
+        t.set_u32(t.img.word(at + 0xc8), if full { last } else { 0 });
+        t.check_entry(at, magic::Call::default(), &[], magic::Eax::Checked);
+    }
+}

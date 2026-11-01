@@ -213,3 +213,68 @@ pub const PLACE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Picks the effect's actor (0x10001780, cdecl `(n)`): `G_N` (operand
+/// `+0x7`) = `n`, slot 168 `(n)` into `G_A` and `G_B` (`+0x1d`,
+/// `+0x22`); unless that is 0xff the actor is placed ([`place`]); `+0x35`
+/// and `+0x3f` 0, the part's handles
+/// ([`part_handles`](crate::s4_small::part_handles)); then with the game
+/// flag `**G_LOCK` (`+0x4d`) 1 slot 711 `(T, NAME, 0)` (`+0x6c`, `+0x61`)
+/// and, the flag restored, slot 710 `(D, T, H, 0x200000)` (`+0x94`,
+/// `+0x8f`, `+0x84`). Every call sees the earlier calls' words. Returns
+/// 0.
+pub fn pick_actor<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let n = fr.arg(g, 0);
+    g.write::<u32>(w(0x7), n);
+    let t = slot_target(g, w(0xd), 168);
+    let a = g.call(t, 0, &[n]).eax;
+    g.write::<u32>(w(0x1d), a);
+    g.write::<u32>(w(0x22), a);
+    // push ebp, the return address (the slot's word popped)
+    let esp = fr.esp.wrapping_sub(8);
+    if a != 0xff {
+        let pl = Frame {
+            at: img.rel32_target(f + 0x2e),
+            esp,
+            eax: a,
+            ..*fr
+        };
+        place(g, img, &pl);
+    }
+    g.write::<u32>(w(0x35), 0);
+    g.write::<u32>(w(0x3f), 0);
+    // push esi too
+    let ph = Frame {
+        at: img.rel32_target(f + 0x48),
+        esp: esp.wrapping_sub(4),
+        ..*fr
+    };
+    crate::s4_small::part_handles(g, img, &ph);
+    let lock = g.read::<u32>(w(0x4d));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0x5c), 711);
+    g.call(t, 0, &[w(0x6c), w(0x61), 0]);
+    let lock = g.read::<u32>(w(0x73));
+    g.write::<u32>(lock, saved);
+    let t = slot_target(g, w(0x7f), 710);
+    g.call(
+        t,
+        0,
+        &[w(0x94), w(0x8f), w(0x84), 0x20_0000, w(0x6c), w(0x61), 0],
+    );
+    crate::Ret::eax(0)
+}
+
+/// [`pick_actor`] (162 bytes, 1 overlay).
+pub const PICK_ACTOR: Sig = Sig {
+    len: 162,
+    hash: 0x4b02_c1c6_101d_9a2b,
+    calls: &[
+        (0x2e, crate::Callee::Sig(&PLACE)),
+        (0x48, crate::Callee::Sig(&crate::s4_small::PART_HANDLES)),
+    ],
+    imports: &[],
+};

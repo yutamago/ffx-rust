@@ -335,12 +335,15 @@ pub mod m0537;
 pub mod m0539;
 pub mod m0540;
 pub mod m0561;
+pub mod m0562;
+pub mod m0563;
 pub mod m0564;
 pub mod m0568;
 pub mod m0573;
 pub mod m0577;
 pub mod m0582;
 pub mod m0585;
+pub mod m0586;
 pub mod m0587;
 pub mod m0588;
 pub mod m0589;
@@ -349,6 +352,7 @@ pub mod m0596;
 pub mod m0597;
 pub mod m0598;
 pub mod m0599;
+pub mod m0600;
 pub mod m0601;
 pub mod m0602;
 pub mod m0604;
@@ -357,6 +361,7 @@ pub mod m0606;
 pub mod m0608;
 pub mod m0609;
 pub mod m0610;
+pub mod m0612;
 pub mod m0613;
 pub mod m0616;
 pub mod m0617;
@@ -374,6 +379,7 @@ pub mod m0672;
 pub mod m0673;
 pub mod m0680;
 pub mod m0684;
+pub mod m0686;
 pub mod m0688;
 pub mod m0689;
 pub mod m0700;
@@ -1257,6 +1263,62 @@ ports! {
     "m0450 flight frame" => m0450::FLIGHT_FRAME, m0450::flight_frame;
     "m0450 shrink" => m0450::SHRINK, m0450::shrink;
     "m0450 turn step" => m0450::TURN_STEP, m0450::turn_step;
+    "m0450 task" => m0450::TASK, m0450::task;
+    "m0450 second start" => m0450::SECOND_START, m0450::second_start;
+    "m0450 first start" => m0450::FIRST_START, m0450::first_start;
+    "m0450 scale start" => m0450::SCALE_START, m0450::scale_start;
+    "m0473 task" => m0473::TASK, m0473::task;
+    "m0480 task" => m0480::TASK, m0480::task;
+    "m0480 records reset" => m0480::RECORDS_RESET, m0480::records_reset;
+    "m0488 state start" => m0488::STATE_START, m0488::state_start;
+    "m0488 draw at actor" => m0488::DRAW_AT_ACTOR, m0488::draw_at_actor;
+    "m0489 state start" => m0489::STATE_START, m0489::state_start;
+    "m0505 state start" => m0505::STATE_START, m0505::state_start;
+    "m0508 task" => m0508::TASK, m0508::task;
+    "m0511 models end" => m0511::MODELS_END, m0511::models_end;
+    "m0511 object e40" => m0511::OBJECT_E40, m0511::object_e40;
+    "m0511 object d10" => m0511::OBJECT_D10, m0511::object_d10;
+    "m0511 object ab0" => m0511::OBJECT_AB0, m0511::object_ab0;
+    "m0511 object 5f0" => m0511::OBJECT_5F0, m0511::object_5f0;
+    "m0511 models end 0589" => m0511::MODELS_END_0589, m0511::models_end;
+    "m0511 object d10 0589" => m0511::OBJECT_D10_0589, m0511::object_d10;
+    "m0588 spawn pair" => m0588::SPAWN_PAIR, m0588::spawn_pair;
+    "m0586 fade start" => m0586::FADE_START, m0586::fade_start;
+    "m0587 models end" => m0587::MODELS_END, m0587::models_end;
+    "m0587 glow scale start" => m0587::GLOW_SCALE_START, m0587::glow_scale_start;
+    "m0605 scale start" => m0605::SCALE_START, m0605::scale_start;
+    "m0605 object 720" => m0605::OBJECT_720, m0605::object_720;
+    "m0609 link object" => m0609::LINK_OBJECT, m0609::link_object;
+    "m0588 objects start" => m0588::OBJECTS_START, m0588::objects_start;
+    "m0606 object 720" => m0606::OBJECT_720, m0606::object_720;
+    "m0686 frame" => m0686::FRAME, m0686::frame;
+    "m0641 flash step" => m0641::FLASH_STEP, m0641::flash_step;
+    "m0612 object 5f0" => m0612::OBJECT_5F0, m0612::object_5f0;
+    "m0511 object ab0 0589" => m0511::OBJECT_AB0_0589, m0511::object_ab0_0589;
+    "m0708 pick actor" => m0708::PICK_ACTOR, m0708::pick_actor;
+    "m0588 light restart" => m0588::LIGHT_RESTART, m0588::light_restart;
+    "m0641 state start" => m0641::STATE_START, m0641::state_start;
+    "m0673 task" => m0673::TASK, m0673::task;
+    "m0673 start row of" => m0673::START_ROW_OF, m0673::start_row_of;
+    "m0673 rows b c" => m0673::ROWS_B_C, m0673::rows_b_c;
+    "m0673 rows many" => m0673::ROWS_MANY, m0673::rows_many;
+    "m0673 record pair" => m0673::RECORD_PAIR, m0673::record_pair;
+    "m0610 spark" => m0610::SPARK, m0610::spark;
+    "m0610 side object" => m0610::SIDE_OBJECT, m0610::side_object;
+    "m0598 task" => m0598::TASK, m0598::task;
+    "m0600 fade start" => m0600::FADE_START, m0600::fade_start;
+    "m0562 task" => m0562::TASK, m0562::task;
+    "m0588 spawn pair 0600" => m0588::SPAWN_PAIR_0600, m0588::spawn_pair;
+    "m0514 burst step" => m0514::BURST_STEP, m0514::burst_step;
+    "m0563 frame" => m0563::FRAME, m0563::frame;
+    "m0563 scale start" => m0563::SCALE_START, m0563::scale_start;
+    "m0563 object start" => m0563::OBJECT_START, m0563::object_start;
+    "m0563 pair start" => m0563::PAIR_START, m0563::pair_start;
+    "m0564 task" => m0564::TASK, m0564::task;
+    "m0568 task" => m0568::TASK, m0568::task;
+    "m0568 pair start" => m0568::PAIR_START, m0568::pair_start;
+    "m0568 object start" => m0568::OBJECT_START, m0568::object_start;
+    "m0577 start steps" => m0577::START_STEPS, m0577::start_steps;
     "m0475 task" => m0475::TASK, m0475::task;
     "m0476 fade step" => m0476::FADE_STEP, m0476::fade_step;
     "m0477 e1070" => m0477::E1070, m0477::e1070;
@@ -3194,6 +3256,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0514 burst setup", &m0514::BURST_SETUP),
     ("m0514 spark setup", &m0514::SPARK_SETUP),
     ("m0533 model setup", &m0533::MODEL_SETUP),
+    ("m0533 model setup args", &m0533::MODEL_SETUP_ARGS),
+    ("m0577 unlink end", &m0577::UNLINK_END),
+    ("m0673 start row", &m0673::START_ROW),
+    ("m0585 light object", &m0585::LIGHT_OBJECT),
     ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
     ("m0573 motion setup", &m0573::MOTION_SETUP),

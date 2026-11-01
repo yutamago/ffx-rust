@@ -53,3 +53,19 @@ fn task_start() {
         });
     }
 }
+
+/// 0x10009a00: the object linked after the old tail.
+#[test]
+fn link_object() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x9a00);
+    let tail = SCRATCH + 0x100;
+    t.write(tail, &[0x3c; 0x20]);
+    t.set_u32(t.img.word(at + 0x1), tail);
+    for v in [0x5a5a_5a5b_u32, 0x8080_8080] {
+        for op in [0x3b, 0x42, 0x5d, 0x67] {
+            t.set_u32(t.img.word(at + op), v);
+        }
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

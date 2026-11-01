@@ -210,3 +210,86 @@ pub const SPARK_TAKE: Sig = Sig {
     calls: &[(0x0c, Callee::Sig(&crate::s4_misc::SPRITE_TAKE))],
     imports: &[],
 };
+
+/// Starts the effect's state (0x10001170, an overlay table entry, no
+/// arguments): slot 719 `(*G_NAME, 4, 0)` gives the data (`+0x21`); the
+/// 0x30-byte block `B` (`+0x1c`) zeroed (`memset`), its half-word `+2`
+/// 0x80 and `+4` 0x80808080; the records cleared
+/// ([`records_clear`](crate::s4_small::records_clear), slot 719's first
+/// word under it), three globals (`+0x4c`, `+0x56`, `+0x60`) 0. Returns
+/// 1.
+pub fn state_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 719);
+    let name = g.read::<u32>(w(0x11));
+    let d = g.call(t, 0, &[name, 4, 0]).eax;
+    g.write::<u32>(w(0x21), d);
+    g.write_bytes(w(0x1c), &[0u8; 0x30]);
+    g.write::<u16>(w(0x34), 0x80);
+    g.write::<u32>(w(0x3a), 0x8080_8080);
+    // the 0 slot 719 got stays on the stack under the call
+    let clear = Frame {
+        at: img.rel32_target(f + 0x43),
+        esp: fr.esp.wrapping_sub(8),
+        ..*fr
+    };
+    crate::s4_small::records_clear(g, img, &clear);
+    for op in [0x4c, 0x56, 0x60] {
+        g.write::<u32>(w(op), 0);
+    }
+    Ret::eax(1)
+}
+
+/// [`state_start`] (110 bytes, 1 overlay).
+pub const STATE_START: Sig = Sig {
+    len: 110,
+    hash: 0x7aa8_2354_4a2f_1205,
+    calls: &[
+        (0x26, crate::Callee::Import("memset")),
+        (
+            0x43,
+            crate::Callee::Sig(&crate::s4_small::RECORDS_CLEAR_1000),
+        ),
+    ],
+    imports: &[],
+};
+
+/// Draws a part at its actor (0x10001410, cdecl `(part)`; a cookie
+/// frame): the part's index `(part - BASE) >> 7` (`BASE` operand
+/// `+0x21`) picks the actor in the table at `+0x2b`; slot 210 `(actor,
+/// M)` fills the local matrix `M` (`ebp - 0x84`), slot 235 the local `S`
+/// (`ebp - 0x44`), whose diagonal becomes 100.0; slot 231 `(M, M, S)`
+/// scales `M`, and the part is drawn with it ([`draw`]), whose answer it
+/// returns.
+pub fn draw_at_actor<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let part = fr.arg(g, 0);
+    let m = fr.esp.wrapping_sub(0x88);
+    let s = fr.esp.wrapping_sub(0x48);
+    let i = part.wrapping_sub(w(0x21)).cast_signed() >> 7;
+    let actor = g.read::<u32>(w(0x2b).wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+    let t = slot_target(g, w(0x30), 210);
+    g.call(t, 0, &[actor, m]);
+    let t = slot_target(g, w(0x41), 235);
+    g.call(t, 0, &[s, actor, m]);
+    for o in [0x28, 0x14, 0] {
+        g.write::<u32>(s + o, 0x42c8_0000);
+    }
+    let t = slot_target(g, w(0x5a), 231);
+    g.call(t, 0, &[m, m, s, s, actor, m]);
+    Ret::eax(draw(g, img, img.rel32_target(f + 0x87), part, m))
+}
+
+/// [`draw_at_actor`] (154 bytes, 1 overlay).
+pub const DRAW_AT_ACTOR: Sig = Sig {
+    len: 154,
+    hash: 0xdf9f_a4c3_5ed9_04d4,
+    calls: &[
+        (0x87, crate::Callee::Sig(&DRAW)),
+        // __security_check_cookie
+        (0x92, crate::Callee::Any),
+    ],
+    imports: &[],
+};

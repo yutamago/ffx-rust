@@ -207,3 +207,65 @@ pub const SCALE_30: Sig = Sig {
     calls: &[(0x22, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX))],
     imports: &[],
 };
+
+/// Starts the colour scale (0x10008290, an overlay table entry, no
+/// arguments): slot 371 `(0, 0x10000)` and `(1, 0x20000)`, then the
+/// scale task ([`scale_task_edx`](crate::s4_small::scale_task_edx), a
+/// tail jump: `ecx` = `*G_FX + 0x2d74`, `edx` = 20, `xmm1`/`xmm2` the
+/// constants at `+0x3a`/`+0x32`), whose node it returns.
+pub fn scale_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 371);
+    g.call(t, 0, &[0, 0x1_0000]);
+    let t = slot_target(g, w(0x15), 371);
+    g.call(t, 0, &[1, 0x2_0000, 0, 0x1_0000]);
+    let fx = g.read::<u32>(w(0x2a));
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(g.read::<u32>(w(0x32)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x3a)));
+    let task = Frame {
+        at: img.rel32_target(f + 0x4d),
+        ecx: fx.wrapping_add(0x2d74),
+        edx: 0x14,
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::scale_task_edx(g, img, &task)
+}
+
+/// [`scale_start`] (81 bytes, 1 overlay).
+pub const SCALE_START: Sig = Sig {
+    len: 81,
+    hash: 0x4a44_6b78_8a5f_7726,
+    calls: &[(0x4d, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX))],
+    imports: &[],
+};
+
+/// Starts the object `*G_FX + 0x720` (0x10008c30, an overlay table
+/// entry, no arguments): [`start_object_at`](crate::s4_misc::start_object_at)
+/// (scale `*K` `+0x4`, index 6, owners 0) at the point `+0x14b0`, its
+/// `+0xc4` the angle `+0x30b8`, which it returns.
+pub fn object_720<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let scale = g.read::<f32>(w(0x4));
+    let fx = g.read::<u32>(w(0xc));
+    let o = fx.wrapping_add(0x720);
+    crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x20), o, scale, 6, 0, 0);
+    for i in 0..4 {
+        let v = g.read::<u32>(fx + 0x14b0 + 4 * i);
+        g.write::<u32>(o + 0xd0 + 4 * i, v);
+    }
+    let a = g.read::<u32>(fx + 0x30b8);
+    g.write::<u32>(o + 0xc4, a);
+    Ret::eax(a)
+}
+
+/// [`object_720`] (102 bytes, 1 overlay).
+pub const OBJECT_720: Sig = Sig {
+    len: 102,
+    hash: 0x01d2_fbce_f097_3f48,
+    calls: &[(0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_AT))],
+    imports: &[],
+};

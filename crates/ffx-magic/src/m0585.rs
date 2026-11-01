@@ -502,3 +502,91 @@ pub const DRIFT_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Sets up a light object (0x10007d40, internal: `ecx` = the object,
+/// `edx` = its parent node, cdecl `(level)`): a ring of its own with the
+/// vtable `+0x12` and the method `+0x19` (`+0x10`, `+0x14` itself),
+/// appended at the tail of the ring `R` (the immediate `+0x2b`; tail
+/// `G_T` `+0x21`, bit 0 of `+0x3d` cleared). Slot 719 `(NAME, 2, 10)`
+/// gives the data; the light node `obj + 0x48` (vtable `+0x7e`) set up
+/// under the parent ([`light_node`](crate::s4_small::light_node), the
+/// local `[node, +0x6a, parent, -, level, data]` at `ebp - 0x18`) and
+/// its level ([`light_level`](crate::s4_small::light_level), the local
+/// `[node, +0x97, 0x60000, 0xf0000, 0xbb800, 2, **G, 1]` at `ebp -
+/// 0x24`). Then `+0x44` the parent, `+0xc0` 0x8c2040, `+0x30` and
+/// `+0x18` 0. Returns the level's answer.
+pub fn light_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let (obj, parent) = (fr.ecx, fr.edx);
+    g.write::<u32>(obj + 8, obj);
+    g.write::<u32>(obj + 4, obj);
+    g.write::<u32>(obj, w(0x12));
+    g.write::<u32>(obj + 0x10, w(0x19));
+    g.write::<u32>(obj + 0x14, obj);
+    let tail = g.read::<u32>(w(0x21));
+    g.write::<u32>(obj + 8, tail);
+    g.write::<u32>(obj + 4, w(0x2b));
+    let tail = g.read::<u32>(w(0x30));
+    g.write::<u32>(tail + 4, obj);
+    let level = fr.arg(g, 0);
+    let flags = g.read::<u32>(w(0x3d));
+    g.write::<u32>(w(0x3d), flags & !1);
+    // ebp = esp - 4; the locals below it
+    let ebp = fr.esp.wrapping_sub(4);
+    g.write::<u32>(ebp - 0xc, level);
+    g.write::<u32>(w(0x50), obj);
+    let node = obj + 0x48;
+    g.write::<u32>(ebp - 0x18, node);
+    g.write::<u32>(ebp - 0x14, w(0x6a));
+    g.write::<u32>(ebp - 0x10, parent);
+    let t = slot_target(g, w(0x46), 719);
+    let data = g.call(t, 0, &[w(0x60), 2, 0xa]).eax;
+    g.write::<u32>(ebp - 0x8, data);
+    g.write::<u32>(node, w(0x7e));
+    // push ebx, esi, edi; the return address
+    let esp = ebp.wrapping_sub(0x28 + 0x10);
+    let ln = Frame {
+        at: img.rel32_target(f + 0x83),
+        esp,
+        ecx: ebp - 0x18,
+        ..*fr
+    };
+    crate::s4_small::light_node(g, img, &ln);
+    let v = g.read::<u32>(g.read::<u32>(w(0x88)));
+    for (o, x) in [
+        (0x24u32, node),
+        (0x20, w(0x97)),
+        (0x1c, 0x6_0000),
+        (0x18, 0xf_0000),
+        (0x14, 0xb_b800),
+        (0x10, 2),
+        (0xc, v),
+        (0x8, 1),
+    ] {
+        g.write::<u32>(ebp - o, x);
+    }
+    let ll = Frame {
+        at: img.rel32_target(f + 0xc2),
+        esp,
+        ecx: ebp - 0x24,
+        ..*fr
+    };
+    let eax = crate::s4_small::light_level(g, img, &ll).eax;
+    g.write::<u32>(obj + 0x44, parent);
+    g.write::<u32>(obj + 0xc0, 0x8c_2040);
+    g.write::<u32>(obj + 0x30, 0);
+    g.write::<u32>(obj + 0x18, 0);
+    Ret::eax(eax)
+}
+
+/// [`light_object`] (232 bytes, 1 overlay).
+pub const LIGHT_OBJECT: Sig = Sig {
+    len: 232,
+    hash: 0x313d_4056_b154_298b,
+    calls: &[
+        (0x83, Callee::Sig(&crate::s4_small::LIGHT_NODE)),
+        (0xc2, Callee::Sig(&crate::s4_small::LIGHT_LEVEL)),
+    ],
+    imports: &[],
+};

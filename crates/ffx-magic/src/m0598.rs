@@ -66,3 +66,70 @@ pub const FADE_OUT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The effect's per-frame task callback (0x10006b90, cdecl `(node)`):
+/// the 0x30-byte block `B` (operand `+0x10`) zeroed (`memset`), its
+/// half-word `+2` (`+0x21`) gets bit 0x80, `+0x33` = `*G` (`+0x26`); the
+/// two scripts (`+0x2e`, `+0x3d`) run
+/// ([`script_run`](crate::sb_misc::script_run)). While the first runs
+/// (0): the points `*G_FX + 0x920`, `+0x940`, `+0x960` copied to
+/// `+0x880`, `+0x8c0`, `+0x900`, the three motion scripts (`+0xdb`,
+/// `+0xeb`, `+0xf5`) step
+/// ([`motion_script`](crate::s4_misc::motion_script)) and the camera
+/// rigs step ([`camera_rigs_step`](crate::s8_misc::camera_rigs_step), a
+/// tail jump). Once it is done: `+0xd3c` = 1 and the node given back
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
+/// the node). Returns the tail jump's answer.
+pub fn task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x7));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let h = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), h | 0x80);
+    let v = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x33), v);
+    let first = crate::sb_misc::script_run(g, img, img.rel32_target(f + 0x38), w(0x2e));
+    crate::sb_misc::script_run(g, img, img.rel32_target(f + 0x44), w(0x3d));
+    if first != 0 {
+        g.write::<u32>(fx + 0xd3c, 1);
+        let node = fr.arg(g, 0);
+        return Ret::eax(crate::sa_pool::give_back(
+            g,
+            img,
+            img.rel32_target(f + 0x117),
+            node,
+        ));
+    }
+    for (from, to) in [(0x920, 0x880), (0x940, 0x8c0), (0x960, 0x900)] {
+        for i in 0..4 {
+            let v = g.read::<u32>(fx + from + 4 * i);
+            g.write::<u32>(fx + to + 4 * i, v);
+        }
+    }
+    for (op, call) in [(0xdb, 0xe6), (0xeb, 0xf0), (0xf5, 0xfa)] {
+        crate::s4_misc::motion_script(g, img, img.rel32_target(f + call), w(op));
+    }
+    let rigs = Frame {
+        at: img.rel32_target(f + 0x102),
+        ..*fr
+    };
+    crate::s8_misc::camera_rigs_step(g, img, &rigs)
+}
+
+/// [`task`] (283 bytes, 1 overlay).
+pub const TASK: Sig = Sig {
+    len: 283,
+    hash: 0xf3b4_d654_2d0c_fc5c,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x38, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x44, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0xe6, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0xf0, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0xfa, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x102, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x117, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

@@ -68,3 +68,99 @@ fn check_targets() {
         });
     }
 }
+
+/// 0x1000bb00: an odd count (nothing), the pool empty, a spark.
+#[test]
+fn spark() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xbb00);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x16), fx);
+    t.set_u32(fx + 0x1a68, 0x1a68_0001);
+    let so = t.img.rel32_target(at + 0x61);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
+    t.stub_st0(404, |_, _| 0.625);
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| -3.25);
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, 0x4000_0000 + i);
+        }
+        0x268
+    });
+    let b = SCRATCH + 0x60;
+    t.set_u32(t.img.word(at + 0x66), b);
+    t.set_u32(b, 0x0000_0302);
+    let actors = t.img.word(at + 0x79);
+    for i in 0..8 {
+        t.set_u32(actors + 4 * i, 0x00ac_0000 + i);
+    }
+    t.set_u32(t.img.word(at + 0xa4), 0x00a4_0001);
+    let take = t.img.rel32_target(at + 0x1c);
+    let recs_at = SCRATCH + 0x2_0000;
+    t.set_u32(t.img.word(take + 0x16), recs_at);
+    let r = SCRATCH + 0x100;
+    for (count, records) in [(4u32, 1u32), (5, 0), (7, 1)] {
+        t.write(r, &[0x3c; 0x40]);
+        t.set_u32(r + 0x2c, count);
+        t.set_u32(t.img.word(take + 0x09), records);
+        t.set_u32(t.img.word(take + 0x01), 0);
+        t.write(recs_at, &[0x5a; 0x140]);
+        t.set_u32(recs_at + 0x130, 0);
+        t.set_u16(recs_at + 0x124, 0x8000);
+        t.check_entry(at, Call::default(), &[r], Eax::Checked);
+    }
+}
+
+/// 0x1000ba00: `k` above 1 (nothing), the pool empty, sides 0 and 1.
+#[test]
+fn side_object() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xba00);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x12), fx);
+    t.set_u32(fx + 0x1a68, 0x1a68_0001);
+    let so = t.img.rel32_target(at + 0x60);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
+    t.stub_st0(404, |_, _| 0.625);
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| -3.25);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (0x4000_0000 + i) ^ a[1]);
+        }
+        0x237
+    });
+    t.set_u32(t.img.word(at + 0x81), 0x0081_0001);
+    let take = t.img.rel32_target(at + 0x1b);
+    let recs_at = SCRATCH + 0x2_0000;
+    t.set_u32(t.img.word(take + 0x16), recs_at);
+    for (k, records) in [(2u32, 1u32), (0, 0), (0, 1), (1, 1)] {
+        t.set_u32(t.img.word(take + 0x09), records);
+        t.set_u32(t.img.word(take + 0x01), 0);
+        t.write(recs_at, &[0x5a; 0x140]);
+        t.set_u32(recs_at + 0x130, 0);
+        t.set_u16(recs_at + 0x124, 0x8000);
+        t.check_entry(at, Call::default(), &[0x77, k], Eax::Checked);
+    }
+}

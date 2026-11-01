@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -106,5 +107,38 @@ fn start_tasks() {
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0606::start_tasks(g, img, fr))
         });
+    }
+}
+
+/// 0x10007b10: the object started (its reserved stack words the same
+/// junk on both sides), the angle wrapped down, up and not.
+#[test]
+fn object_720() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7b10);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0xd), fx);
+    let so = t.img.rel32_target(at + 0x1d);
+    t.set_u32(t.img.word(so + 0x01), SCRATCH + 0x200);
+    t.set_u32(t.img.word(so + 0x5b), SCRATCH + 0x300);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    magic_owna::rec(&mut t, 941, 1, |_, _| SCRATCH + 0x400);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    magic_owna::rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (1.5f32 + i as f32).to_bits());
+        }
+        0x237
+    });
+    t.set_u32(t.img.word(at + 0x3c), 0x003c_0001);
+    let k = |t: &magic::Twin, op: u32| f32::from_bits(t.u32(t.img.word(at + op)));
+    let (step, hi, lo) = (k(&t, 0x5f), k(&t, 0x69), k(&t, 0x7d));
+    for a in [hi - step + 0.5, lo - step - 0.5, 0.0] {
+        t.write(fx + 0x700, &[0x3c; 0x200]);
+        t.set_u32(fx + 0x5ee8, a.to_bits());
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

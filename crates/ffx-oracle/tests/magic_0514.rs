@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -422,5 +423,64 @@ fn spark_setup() {
         t.check(at, c, &[a, 0x00b0_0000], Eax::Checked, |g, img, fr| {
             Ret::eax(m0514::spark_setup(g, img, fr))
         });
+    }
+}
+
+/// 0x10007cd0: states 0, 1 (with and without a burst), 10000 (flagged:
+/// unlinked; not) and another.
+#[test]
+fn burst_step() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7cd0);
+    let bs = t.img.rel32_target(at + 0x81);
+    let list = t.img.word(bs + 0x5f);
+    let ring_last = t.img.word(bs + 0x27);
+    let ring_flags = t.img.word(bs + 0x45);
+    let table = SCRATCH + 0x300;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x400;
+    t.set_u32(t.img.word(bs + 0x16b), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(325, 2), (714, 5)]);
+    let list2 = t.img.word(bs + 0x187);
+    t.set_u32(list2 + 0x10, list2);
+    let s = SCRATCH + 0x4000;
+    let p = SCRATCH + 0x100;
+    let (d, nx, pv) = (SCRATCH + 0x180, SCRATCH + 0x1a0, SCRATCH + 0x1c0);
+    let old = SCRATCH + 0x800;
+    for (state, count, flags) in [
+        (0u32, 5u32, 0x4e20u32),
+        (1, 0, 0x4e20),
+        (1, 0, 0x4e21),
+        (1, 0xffff_fff0, 0x4e20),
+        (1, 3, 0x4e20),
+        (0x2710, 4, 0x0020),
+        (0x2710, 4, 0x8000),
+        (7, 4, 0x4e20),
+    ] {
+        t.write(s, &[0x5b; 0x1800]);
+        t.set_u32(s + 0x18, state);
+        t.set_u32(s + 0x1c, count);
+        t.set_u32(s + 0x58, flags);
+        t.set_u32(s + 0x24, 0x00ed_0000);
+        t.set_u32(p, d);
+        t.set_u32(p + 4, s);
+        for a in [d, nx, pv] {
+            t.write(a, &[0x6a; 0x10]);
+        }
+        t.set_u32(d + 4, nx);
+        t.set_u32(d + 8, pv);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, list);
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[p], Eax::Checked);
     }
 }

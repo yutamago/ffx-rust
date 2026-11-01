@@ -110,3 +110,44 @@ pub const MODEL_SETUP: Sig = Sig {
     calls: &[(0x98, Callee::Sig(&crate::m0042::NODE_INIT_BIG))],
     imports: &[],
 };
+
+/// Sets up a model object from its arguments (0x10008180, `ecx` = the
+/// object, cdecl with 7 words of which it reads the 5th and 7th): the
+/// local group `[ecx, A, B, 0, 0, 0, arg4, C, arg6, B]` (`ebp - 0x28`;
+/// `A`, `B`, `C` the immediates `+0x18`, `+0x1f`, `+0x3b`) given to
+/// [`model_setup`], whose answer it returns.
+pub fn model_setup_args<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let group = fr.esp.wrapping_sub(0x2c);
+    let words = [
+        fr.ecx,
+        w(0x18),
+        w(0x1f),
+        0,
+        0,
+        0,
+        fr.arg(g, 4),
+        w(0x3b),
+        fr.arg(g, 6),
+        w(0x45),
+    ];
+    for (i, v) in (0u32..).zip(words) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    let setup = Frame {
+        at: img.rel32_target(f + 0x4a),
+        esp: group.wrapping_sub(4),
+        ecx: group,
+        ..*fr
+    };
+    crate::Ret::eax(model_setup(g, img, &setup))
+}
+
+/// [`model_setup_args`] (82 bytes, 1 overlay).
+pub const MODEL_SETUP_ARGS: Sig = Sig {
+    len: 82,
+    hash: 0x6c70_0d28_44d4_8098,
+    calls: &[(0x4a, Callee::Sig(&MODEL_SETUP))],
+    imports: &[],
+};

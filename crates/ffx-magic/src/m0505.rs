@@ -373,3 +373,37 @@ pub const SPARK_RECORD: Sig = Sig {
     calls: &[(0x0c, Callee::Sig(&crate::s4_small::RECORD_TAKE))],
     imports: &[],
 };
+
+/// Starts the effect's state (0x10001580, an overlay table entry, no
+/// arguments): slot 719 `(*G_NAME, 4, 0)` gives the data (`+0x21`); the
+/// 0x30-byte block `B` (`+0x1c`) zeroed (`memset`), its half-word `+2`
+/// 0x80 and `+4` 0x80808080; the objects cleared ([`clear`]); `+0x4c`
+/// 1, `+0x56` 0.1, `+0x60` and `+0x6a` 0. Returns the clear's `eax`.
+pub fn state_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 719);
+    let name = g.read::<u32>(w(0x11));
+    let d = g.call(t, 0, &[name, 4, 0]).eax;
+    g.write::<u32>(w(0x21), d);
+    g.write_bytes(w(0x1c), &[0u8; 0x30]);
+    g.write::<u16>(w(0x34), 0x80);
+    g.write::<u32>(w(0x3a), 0x8080_8080);
+    let eax = clear(g, img, img.rel32_target(f + 0x43));
+    g.write::<u32>(w(0x4c), 1);
+    g.write::<u32>(w(0x56), 0x3dcc_cccd);
+    g.write::<u32>(w(0x60), 0);
+    g.write::<u32>(w(0x6a), 0);
+    Ret::eax(eax)
+}
+
+/// [`state_start`] (115 bytes, 1 overlay).
+pub const STATE_START: Sig = Sig {
+    len: 115,
+    hash: 0x1417_2782_0fbb_cea1,
+    calls: &[
+        (0x26, Callee::Import("memset")),
+        (0x43, Callee::Sig(&CLEAR)),
+    ],
+    imports: &[],
+};

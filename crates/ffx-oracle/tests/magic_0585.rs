@@ -257,3 +257,41 @@ fn drift_setup() {
         Ret::eax(m0585::drift_setup(g, img, fr))
     });
 }
+
+/// 0x10007d40: the light object set up under a parent, the level placed
+/// and not (slot 363 above and below the maximum).
+#[test]
+fn light_object() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7d40);
+    let lvl = SCRATCH + 0x40;
+    magic_owna::rec(&mut t, 363, 3, move |m, _| m.r32(lvl));
+    magic_owna::rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    recs(&mut t, &[(235, 1), (357, 3), (356, 3), (704, 3), (362, 4)]);
+    let (obj, parent, tail) = (SCRATCH + 0x1000, SCRATCH + 0x2000, SCRATCH + 0x2100);
+    let g = t.img.word(at + 0x88);
+    let gv = SCRATCH + 0x2200;
+    t.set_u32(g, gv);
+    t.set_u32(gv, 0x0bad_0001);
+    for v in [5u32, 0xffff_ff00] {
+        t.set_u32(lvl, v);
+        t.write(obj, &[0x5b; 0x100]);
+        t.write(parent, &[0x2c; 0x60]);
+        t.set_u32(parent + 0x54, SCRATCH + 0x2300);
+        // the light node's list head (the immediate +0x6a): empty
+        let head = t.img.word(at + 0x6a);
+        t.write(head, &[0x1d; 0x20]);
+        t.set_u32(head + 0x10, head);
+        t.write(tail, &[0x3d; 0x10]);
+        t.set_u32(t.img.word(at + 0x21), tail);
+        magic_h6::scrub(&mut t);
+        let c = Call {
+            ecx: obj,
+            edx: parent,
+            ..Call::default()
+        };
+        t.check(at, c, &[0x0077_0001], Eax::Checked, |g, img, fr| {
+            m0585::light_object(g, img, fr)
+        });
+    }
+}

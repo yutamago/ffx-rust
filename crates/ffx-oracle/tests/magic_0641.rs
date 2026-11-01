@@ -170,3 +170,46 @@ fn frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001280: slots 260 and 719, the block and the pool cleared.
+#[test]
+fn state_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1280);
+    rec(&mut t, 260, 1, |_, a| 0x0260_0000 ^ a[0]);
+    rec(&mut t, 719, 4, |_, a| 0x0719_0000 ^ a[0]);
+    t.set_u32(t.img.word(at + 0x25), 0x0025_0001);
+    t.write(t.img.word(at + 0x30), &[0x5c; 0x30]);
+    let cp = t.img.rel32_target(at + 0x57);
+    let pool_at = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(cp + 0x7), pool_at);
+    t.write(pool_at, &vec![0x99; 0x94 * 100]);
+    for op in [0x60, 0x6a, 0x74] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}
+
+/// 0x100013a0: slot 261 off (nothing), the requests taken (slot 261 on
+/// for 10) and read from slot 261 (off for 10); the timeline empty.
+#[test]
+fn flash_step() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x13a0);
+    let on = SCRATCH + 0x40;
+    rec(&mut t, 261, 1, move |m, a| {
+        let mask = m.r32(on);
+        (mask >> (a[0] & 0x1f)) & 1
+    });
+    recs(&mut t, &[(315, 1), (253, 1)]);
+    for (i, op) in (0u32..).zip([0x56u32, 0x60, 0x6a, 0x74, 0x7e, 0x88, 0x92, 0x9c, 0xa6]) {
+        t.set_u32(t.img.word(at + op), 0x0056_0000 + i);
+    }
+    for op in [0x4cu32, 0xe2] {
+        t.set_u32(t.img.word(at + op) + 8, 0);
+    }
+    for mask in [0u32, 0x600, 0x0200 | 0x15] {
+        t.set_u32(on, mask);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

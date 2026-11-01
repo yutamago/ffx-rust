@@ -67,3 +67,30 @@ fn scale_start() {
         });
     }
 }
+
+/// 0x10001740: the script or the motion not done; both done, with and
+/// without the model's slot 213 (no lights node; the node given back).
+#[test]
+fn task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1740);
+    let fx = SCRATCH + 0x1000;
+    t.set_u32(t.img.word(at + 0x7), fx);
+    magic_owna::recs(&mut t, &[(213, 2), (590, 2), (589, 2)]);
+    t.set_u32(t.img.word(at + 0x3f), 0x003f_0001);
+    let run = t.img.rel32_target(at + 0xc);
+    let ms = t.img.rel32_target(at + 0x13);
+    let give = t.img.rel32_target(at + 0x6a);
+    let node = SCRATCH + 0x5000;
+    for (mode, done, half) in [(2u8, true, 0u16), (0, false, 0), (0, true, 0), (0, true, 3)] {
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(t.img.word(run + 0x59), 0xffff);
+        magic_hi::motion(&mut t, ms, done);
+        t.set_u16(t.img.word(at + 0x29), half);
+        t.write(fx + 0x380, &[0x2c; 0x240]);
+        t.set_u32(fx + 0x380 + 0x228, 0);
+        t.set_u32(fx + 0x610, 0x0610_0000);
+        magic_hi::lone_node(&mut t, give, node);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}

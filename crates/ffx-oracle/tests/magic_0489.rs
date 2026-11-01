@@ -184,3 +184,20 @@ fn start_up_and_frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001680: the data and the 100 records.
+#[test]
+fn state_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1680);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    t.set_u32(t.img.word(at + 0x11), 0x0011_0001);
+    let recs_at = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(at + 0x19), recs_at);
+    t.write(recs_at, &vec![0x99; 0x94 * 100]);
+    t.write(t.img.word(at + 0x21), &[0x77; 0x5c]);
+    for op in [0x34, 0x3e, 0x48] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

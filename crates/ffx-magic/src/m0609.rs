@@ -39,3 +39,39 @@ pub const TASK_START: Sig = Sig {
     calls: &[(0x55, Callee::Sig(&crate::m0042::SET_VALUE))],
     imports: &[],
 };
+
+/// Links the effect's object into the ring (0x10009a00, an overlay
+/// table entry, no arguments): the object `O` (the immediate `+0xb`'s
+/// home, operand `+0x7`) gets its vtable, the method `+0x15`, itself at
+/// `+0x14` (`+0x1b`/`+0x1f`), the old tail `*G_T` (`+0x1`) as its prev
+/// and the ring `+0x2e` as its next; the old tail's next and `G_T`
+/// become `O`; bit 0 of `+0x3b` cleared, bit 1 of the byte `+0x42` set;
+/// `+0x53` the immediate `+0x57`, `+0x5d` and `+0x67` 0. Returns the old
+/// tail.
+pub fn link_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let tail = g.read::<u32>(w(0x1));
+    g.write::<u32>(w(0x7), w(0xb));
+    g.write::<u32>(w(0x11), w(0x15));
+    g.write::<u32>(w(0x1b), w(0x1f));
+    g.write::<u32>(w(0x24), tail);
+    g.write::<u32>(w(0x2a), w(0x2e));
+    g.write::<u32>(tail.wrapping_add(4), w(0x35));
+    let v = g.read::<u32>(w(0x3b));
+    g.write::<u32>(w(0x3b), v & !1);
+    let b = g.read::<u8>(w(0x42));
+    g.write::<u8>(w(0x42), b | 2);
+    g.write::<u32>(w(0x49), w(0x4d));
+    g.write::<u32>(w(0x53), w(0x57));
+    g.write::<u32>(w(0x5d), 0);
+    g.write::<u32>(w(0x67), 0);
+    crate::Ret::eax(tail)
+}
+
+/// [`link_object`] (112 bytes, 1 overlay).
+pub const LINK_OBJECT: Sig = Sig {
+    len: 112,
+    hash: 0x31bb_a0b9_45e5_0f24,
+    calls: &[],
+    imports: &[],
+};

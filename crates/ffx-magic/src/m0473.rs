@@ -76,3 +76,60 @@ pub const END_OBJECTS: Sig = Sig {
     calls: &[(0x1b, Callee::Sig(&crate::s6_misc::OBJECTS_FREED))],
     imports: &[],
 };
+
+/// The effect's per-frame task callback (0x10001740, cdecl `(node)`):
+/// the script runs ([`run`](crate::sa_script::run)) and the motion steps
+/// ([`motion_step`](crate::s3_motion::motion_step)); unless both say 1
+/// the step's answer is returned. Else `*G_FX + 0x610` = 1; unless the
+/// half-word at operand `+0x29` is set, slot 213 `(*G_M, 0)` (`+0x3f`);
+/// the flag `+0x56` 1, the lights cleared and their node given back
+/// ([`lights_and_give_back`](crate::s6_misc::lights_and_give_back),
+/// `ecx` = `*G_FX + 0x380`), then the node given back
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
+/// the node), whose `eax` it returns.
+pub fn task<G: crate::Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x7));
+    let s = crate::sa_script::run(g, img, img.rel32_target(f + 0xc));
+    let m = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x13));
+    if s != 1 || m != 1 {
+        return crate::Ret::eax(m);
+    }
+    g.write::<u32>(fx + 0x610, 1);
+    let fx = g.read::<u32>(w(0x30));
+    if g.read::<u16>(w(0x29)) == 0 {
+        let t = crate::runtime::slot_target(g, w(0x37), 213);
+        let model = g.read::<u32>(w(0x3f));
+        g.call(t, 0, &[model, 0]);
+    }
+    g.write::<u32>(w(0x56), 1);
+    // push ebp, esi, edi, the return address
+    let lights = crate::Frame {
+        at: img.rel32_target(f + 0x5f),
+        esp: fr.esp.wrapping_sub(16),
+        ecx: fx.wrapping_add(0x380),
+        ..*fr
+    };
+    crate::s6_misc::lights_and_give_back(g, img, &lights);
+    let node = fr.arg(g, 0);
+    crate::Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x6a),
+        node,
+    ))
+}
+
+/// [`task`] (114 bytes, 1 overlay).
+pub const TASK: Sig = Sig {
+    len: 114,
+    hash: 0x060b_78b1_88c2_d493,
+    calls: &[
+        (0xc, Callee::Sig(&crate::sa_script::RUN)),
+        (0x13, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x5f, Callee::Sig(&crate::s6_misc::LIGHTS_AND_GIVE_BACK)),
+        (0x6a, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

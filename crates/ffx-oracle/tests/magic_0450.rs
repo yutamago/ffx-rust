@@ -17,6 +17,7 @@ mod magic_owna;
 
 use ffx_magic::{Ret, m0450};
 use magic::{Call, Eax, SCRATCH, Twin};
+use magic_hi::lone_node;
 use magic_owna::{f, rec, recs, twin};
 
 const N: u16 = 450;
@@ -479,4 +480,127 @@ fn turn_step() {
         magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
+}
+
+/// The object start's (`s4_misc::start_object_at` at `so`) part table,
+/// lock and pool.
+fn object_start(t: &mut Twin, so: u32) {
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(t, 941, 1, move |_, _| table);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+}
+
+/// 0x100056b0: slot 561 busy; the script done and not, the first motion
+/// script done and not (done: the models shown and the node given back).
+#[test]
+fn task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x56b0);
+    let fx = fx(&mut t, at, 0x7);
+    let busy = SCRATCH + 0x40;
+    rec(&mut t, 561, 0, move |m, _| m.r32(busy));
+    // the block memset clears, dirty; the half-word or'ed
+    let block = t.img.word(at + 0x10);
+    t.set_u32(t.img.word(at + 0x26), 0x0026_1234);
+    let run = t.img.rel32_target(at + 0x33);
+    let (m1, m2) = (t.img.word(at + 0x51), t.img.word(at + 0x5b));
+    // show_models: the model table and the parts' registration
+    let sm = t.img.rel32_target(at + 0x79);
+    t.set_u32(t.img.word(sm + 0xe), fx);
+    let b = SCRATCH + 0x20;
+    t.set_u32(t.img.word(sm + 0x17), b);
+    t.set_u32(b, 0x2a05_0300);
+    let table = t.img.word(sm + 0x22);
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0384_0000 + i);
+    }
+    let rp = t.img.rel32_target(sm + 0x61);
+    let parts = SCRATCH + 0x200;
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(parts + 0x30, 0x0941_0001);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x76), 0);
+    t.set_u32(t.img.word(rp + 0x43), SCRATCH + 0x300);
+    recs(&mut t, &[(628, 1), (384, 1), (941, 1), (772, 2), (779, 4)]);
+    let give = t.img.rel32_target(at + 0x85);
+    let node = SCRATCH + 0x5000;
+    for (bz, mode, done1, done2) in [
+        (7u32, 0u8, 1u32, 1u32),
+        (0, 0, 1, 0),
+        (0, 0, 0, 1),
+        (0, 2, 1, 1),
+    ] {
+        t.set_u32(busy, bz);
+        t.write(block, &[0x5c; 0x30]);
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(t.img.word(run + 0x59), 0xffff);
+        for (ms, done) in [(m1, done1), (m2, done2)] {
+            t.set_u32(ms + 0x14, done);
+            t.set_u16(ms + 0x18, 3);
+        }
+        t.set_u32(fx + 0x1eec, u32::MAX);
+        t.write(fx + 0x1b80, &[0x61; 0xa0]);
+        for i in 0..4 {
+            t.set_u32(fx + 0x1ba0 + 4 * i, 0x1ba0_0000 + i);
+            t.set_u32(fx + 0x1c00 + 4 * i, 0x1c00_0000 + i);
+        }
+        lone_node(&mut t, give, node);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// 0x10006ed0: one model and two.
+#[test]
+fn second_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x6ed0);
+    let fx = fx(&mut t, at, 0x3);
+    let b = SCRATCH + 0x20;
+    t.set_u32(t.img.word(at + 0x40), b);
+    t.set_u32(b, 0x2a05_0300);
+    let table = t.img.word(at + 0x4b);
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0632_0000 + i);
+    }
+    t.set_u32(t.img.word(at + 0x6f), 0x006f_0001);
+    recs(&mut t, &[(632, 3)]);
+    let so = t.img.rel32_target(at + 0x95);
+    object_start(&mut t, so);
+    for model in [u32::MAX, 0x77] {
+        t.write(fx + 0x800, &[0x3c; 0x200]);
+        t.write(fx + 0x1ba0, &[0x2b; 0x80]);
+        t.set_u32(fx + 0x1eec, model);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
+    }
+}
+
+/// 0x10006ff0 and 0x10007c40: the first object's start, the scale task.
+#[test]
+fn first_and_scale_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x6ff0);
+    let fx = fx(&mut t, at, 0xb);
+    let so = t.img.rel32_target(at + 0x1e);
+    object_start(&mut t, so);
+    t.write(fx + 0x5f0, &[0x3c; 0x200]);
+    t.set_u32(fx + 0x1ee0, f(1.25));
+    magic_h6::scrub(&mut t);
+    t.check_entry(at, Call::this(0x00ec_0002), &[], Eax::Checked);
+    let at = t.at(0x7c40);
+    let st = t.img.rel32_target(at + 0x4f);
+    let take = t.img.rel32_target(st + 0x7d);
+    magic_hi::pool(&mut t, take, SCRATCH + 0x6000, 3);
+    t.write(fx + 0x1ba0, &[0x2b; 0x80]);
+    t.write(fx + 0x1e08, &[0x3d; 0x40]);
+    t.set_u32(fx + 0x1c10, f(2.5));
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
 }

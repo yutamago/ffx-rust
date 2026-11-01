@@ -56,3 +56,46 @@ fn hide() {
         });
     }
 }
+
+/// 0x10001990: the counts (above 1, at 1, at 0, negative), the motion
+/// scripts and the objects each stopping the end, and the end.
+#[test]
+fn task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1990);
+    let hd = t.img.rel32_target(at + 0x2c);
+    let b = SCRATCH + 0x20;
+    t.set_u32(t.img.word(hd + 0x9), b);
+    t.set_u32(b, 0x0302_0100);
+    t.set_u32(t.img.word(hd + 0x2), 0);
+    recs(&mut t, &[(296, 2), (257, 2)]);
+    let counts = t.img.word(at + 0x12);
+    let actors = t.img.word(at + 0x27);
+    for i in 0..3 {
+        t.set_u32(actors + 4 * i, i);
+    }
+    let ms = [0x39u32, 0x43, 0x4f].map(|op| t.img.word(at + op));
+    let ro = t.img.rel32_target(at + 0x5d);
+    let (node, task) = (SCRATCH + 0x5000, SCRATCH + 0x5100);
+    // (counts, scripts done, objects running)
+    for (c, done, running) in [
+        ([2u32, 1, 0], [true; 3], false),
+        ([0, 0, 0], [true; 3], false),
+        ([0xffff_fff0, 0, 1], [true; 3], false),
+        ([0, 0, 0], [false, true, true], false),
+        ([0, 0, 0], [true, false, true], false),
+        ([0, 0, 0], [true, true, false], false),
+        ([0, 0, 0], [true; 3], true),
+    ] {
+        for i in 0..3 {
+            t.set_u32(counts + 4 * i as u32, c[i]);
+            t.set_u32(ms[i] + 0x14, u32::from(done[i]));
+            t.set_u16(ms[i] + 0x18, 3);
+        }
+        magic_hi::objects(&mut t, ro, running);
+        t.write(node, &[0x4e; 0x20]);
+        t.set_u32(node + 8, task);
+        t.write(task, &[0x7a; 0x20]);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}

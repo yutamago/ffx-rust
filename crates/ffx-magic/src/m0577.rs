@@ -950,3 +950,132 @@ pub const DRAW_DETACHED_ARG: Sig = Sig {
     calls: &[(0x8, Callee::Sig(&DRAW_DETACHED))],
     imports: &[],
 };
+
+/// Takes a node out of its parent's child list and ends it (0x100046d0,
+/// internal, `ecx` = the node): when it has a parent (`+0x14`), the
+/// parent's count (`u16 +0x18`) goes down and the node leaves the
+/// prev/next chain (`+0x4`/`+0x8`; the parent's last `+0x10` or first
+/// `+0xc` where the node was an end), a ring of its own, no parent. Then
+/// the tail jump through slot 846.
+pub fn unlink_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let n = fr.ecx;
+    let parent = g.read::<u32>(n + 0x14);
+    if parent != 0 {
+        let c = g.read::<u16>(parent + 0x18).wrapping_add(0xffff);
+        g.write::<u16>(parent + 0x18, c);
+        let next = g.read::<u32>(n + 8);
+        let prev = g.read::<u32>(n + 4);
+        if prev == parent {
+            g.write::<u32>(parent + 0x10, next);
+        } else {
+            g.write::<u32>(prev + 8, next);
+        }
+        let next = g.read::<u32>(n + 8);
+        let prev = g.read::<u32>(n + 4);
+        if next == parent {
+            g.write::<u32>(parent + 0xc, prev);
+        } else {
+            g.write::<u32>(next + 4, prev);
+        }
+        g.write::<u32>(n + 8, n);
+        g.write::<u32>(n + 4, n);
+        g.write::<u32>(n + 0x14, 0);
+    }
+    Ret::jump(slot_target(g, img.word(fr.at + 0x44), 846))
+}
+
+/// [`unlink_end`] (80 bytes, 1 overlay).
+pub const UNLINK_END: Sig = Sig {
+    len: 80,
+    hash: 0x402c_7dd5_9a82_93cd,
+    calls: &[],
+    imports: &[],
+};
+
+/// The effect's start-up steps (0x1000dc90, an overlay table entry, no
+/// arguments): by the state `G_S` (operand `+0x4`): 0 waits on slot 225
+/// `(2)` and 1 on slot 313 `(2)` (busy: returns 0), each going on to the
+/// next state; 2 waits on slot 549 `(2)`, then slot 226 `(*G_M, 0)` and
+/// the state 4; 3 returns 0. From 4 on: slot 673 `()`, the byte counter
+/// `+0x9e` up, the object's ring run ([`ring_run`](crate::s4_misc::ring_run),
+/// `ecx` the immediate `+0xa3`) and the gated visit
+/// ([`visit_gated`](crate::nodes::visit_gated)) of the local group
+/// `[G_ROOT, -, counter]` (`ebp - 0x8`: the word `+0xbb`, the counter's
+/// byte at `ebp - 0x3`; the rest never written). Returns 0.
+pub fn start_steps<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let mut state = g.read::<u32>(w(0x4));
+    loop {
+        match state {
+            0 | 1 => {
+                let t = if state == 0 {
+                    slot_target(g, w(0x28), 225)
+                } else {
+                    slot_target(g, w(0x1b), 313)
+                };
+                if g.call(t, 0, &[2]).eax != 0 {
+                    return Ret::eax(0);
+                }
+                state = g.read::<u32>(w(0x42)).wrapping_add(1);
+                g.write::<u32>(w(0x48), state);
+            }
+            2 => {
+                let t = slot_target(g, w(0x52), 549);
+                if g.call(t, 0, &[2]).eax != 0 {
+                    return Ret::eax(0);
+                }
+                let t = slot_target(g, w(0x69), 226);
+                let m = g.read::<u32>(w(0x6f));
+                g.call(t, 0, &[m, 0]);
+                g.write::<u32>(w(0x80), 4);
+                break;
+            }
+            s if s.cast_signed() < 4 => return Ret::eax(0),
+            _ => break,
+        }
+    }
+    let t = slot_target(g, w(0x90), 673);
+    let eax = g.call(t, 0, &[]).eax;
+    let c = g.read::<u8>(w(0x9e)).wrapping_add(1);
+    g.write::<u8>(w(0x9e), c);
+    // push ebp; sub esp, 8; the return address
+    let ring = Frame {
+        at: img.rel32_target(f + 0xa8),
+        esp: fr.esp.wrapping_sub(0x10),
+        eax,
+        ecx: w(0xa3),
+        ..*fr
+    };
+    crate::s4_misc::ring_run(g, img, &ring);
+    let local = fr.esp.wrapping_sub(0xc);
+    let c = g.read::<u8>(w(0xad));
+    g.write::<u8>(local + 5, c);
+    g.write::<u32>(local, w(0xbb));
+    // push the local, the return address
+    let esp = fr.esp.wrapping_sub(0x14);
+    g.write::<u32>(esp + 4, local);
+    // eax = the local (`lea eax`); ecx as the ring run leaves it, which
+    // the walk reads only past the gate (the effect's own root is
+    // gated while the game's flag is set)
+    let visit = Frame {
+        at: img.rel32_target(f + 0xc0),
+        esp,
+        eax: local,
+        ecx: w(0xa3),
+        ..*fr
+    };
+    crate::nodes::visit_gated(g, img, &visit);
+    Ret::eax(0)
+}
+
+/// [`start_steps`] (205 bytes, 1 overlay).
+pub const START_STEPS: Sig = Sig {
+    len: 205,
+    hash: 0xfe45_29c2_1b56_ad9b,
+    calls: &[
+        (0xa8, Callee::Sig(&crate::s4_misc::RING_RUN)),
+        (0xc0, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
