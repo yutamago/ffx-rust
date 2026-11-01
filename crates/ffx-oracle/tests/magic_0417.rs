@@ -18,16 +18,20 @@ fn take_record() {
     let w = |t: &Twin, off: u32| t.img.word(at + off);
     let base = SCRATCH + 0x1000;
     t.set_u32(w(&t, 0x17), base);
-    for (n, rover, free) in [
-        (4u32, 1u32, 1u32),
-        (4, 2, 0),
-        (4, 0, 9),
-        (0, 0, 0),
-        (3, 2, 2),
+    // two free records (`free`, `free2`; 9 none), so where the search
+    // starts shows
+    for (n, rover, free, free2) in [
+        (4u32, 1u32, 1u32, 9u32),
+        (4, 2, 0, 9),
+        (4, 0, 9, 9),
+        (0, 0, 0, 9),
+        (3, 2, 2, 9),
+        (4, 2, 0, 2),
+        (4, 3, 1, 3),
     ] {
         for i in 0..4 {
             t.write(base + 0x7c * i, &[0x5a; 0x7c]);
-            t.set_u32(base + 0x7c * i + 0x78, u32::from(i != free));
+            t.set_u32(base + 0x7c * i + 0x78, u32::from(i != free && i != free2));
         }
         t.set_u32(w(&t, 0x0a), n);
         t.set_u32(w(&t, 0x02), rover);
