@@ -45,6 +45,10 @@ Settings (environment, as in the agents' mut22.py; flags override):
   MUT_THREADS test threads per run (default cores / MUT_JOBS)
   MUT_TIMEOUT seconds per run (default max(120, 20 x the unmutated run))
   MUT_SCHEMA  0 = no schemata, every mutant rebuilds (the old way)
+  MUT_SAMPLE  fraction of the list to run, 0-1 (default 0.3; 1 = all). The pick is fixed per
+              mutant (a hash of its name and text), so a rerun after a test fix
+              runs the same ones; the rest are left out of the verdicts. User,
+              2026-11-01: speed over completeness, sample by default.
 
 `mutants.py --self-test` checks the schema rewrite on a small built-in file
 (match arms, overlapping deletions, a tail insertion, a const, an array
@@ -62,6 +66,7 @@ summary go to stderr.
 import argparse
 import ast
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
@@ -113,6 +118,15 @@ def load_mutants(path):
     if len(set(names)) != len(names):
         sys.exit("mutant names must be unique")
     return out
+
+
+def sample(muts, fraction):
+    """The mutants kept at `fraction`: the same ones on every run of the list."""
+    if fraction >= 1:
+        return muts
+    keep = int(fraction * 10000)
+    return [m for m in muts
+            if int(hashlib.sha1(f"{m[0]}\0{m[1]}\0{m[2]}".encode()).hexdigest()[:8], 16) % 10000 < keep]
 
 
 def flex(a):
@@ -590,6 +604,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=float(env.get("MUT_TIMEOUT", "0")))
     ap.add_argument("--no-schema", action="store_true", default=env.get("MUT_SCHEMA") == "0")
     ap.add_argument("--work", default=env.get("MUT_WORK"))
+    ap.add_argument("--sample", type=float, default=float(env.get("MUT_SAMPLE", "0.3")))
     ap.add_argument("--dry-run", action="store_true", help="print the schema diff, build nothing")
     args = ap.parse_args()
     if not args.test:
@@ -598,6 +613,10 @@ def main():
         args.work = str(HOME / "ffx-work" / "mutants" / pathlib.Path(args.worktree).expanduser().resolve().name)
     t_start = time.time()
     muts = load_mutants(args.mutants)
+    if args.sample < 1:
+        total = len(muts)
+        muts = sample(muts, args.sample)
+        print(f"sample {args.sample:g}: {len(muts)} of {total} mutants", file=sys.stderr)
     r = Runner(args)
     r.work.mkdir(parents=True, exist_ok=True)
     lock = open(r.work / "lock", "w")

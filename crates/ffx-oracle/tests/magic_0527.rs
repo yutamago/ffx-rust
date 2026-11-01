@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -26,7 +27,8 @@ fn dll_main_writes_only_crt_state() {
 }
 
 /// 0x10001070 (slot 712 saying 0 and 1) and 0x10001410 (off, on with
-/// slot 261's answers; the timeline idle).
+/// slot 261's answers; the timeline live, so running or stopping it, or
+/// not, shows).
 #[test]
 fn draw_and_frame() {
     let Some(mut t) = twin(N) else { return };
@@ -46,9 +48,6 @@ fn draw_and_frame() {
     );
     let at = t.at(0x1410);
     let ftl = t.img.rel32_target(at + 0x41);
-    let fst = t.img.rel32_target(at + 0x5c);
-    t.set_u32(t.img.word(ftl + 0x06), 0);
-    t.set_u32(t.img.word(fst + 0x02), 0);
     // the words the frame copies and passes, distinct from their
     // neighbours (and the draw's slot 237 word)
     for (rva, op) in [(0x1070u32, 0x57u32), (0x1410, 0x24), (0x1410, 0x67)] {
@@ -65,6 +64,7 @@ fn draw_and_frame() {
         t.set_u32(cell, bits);
         t.check_entry(t.at(0x1070), Call::default(), &[], Eax::Checked);
         t.set_u32(t.img.word(at + 0x16), on);
+        magic_h6::live_timeline_global(&mut t, ftl, SCRATCH + 0x600, 0x40);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

@@ -10,6 +10,8 @@
 )]
 
 mod magic;
+mod magic_h6;
+mod magic_hi;
 mod magic_l3;
 mod magic_owna;
 
@@ -52,6 +54,7 @@ fn orient() {
     for angle in [c - (hi + 0.5), c - (lo - 0.25), c - 0.125, c - hi, c - lo] {
         t.set_u32(cell, f(angle));
         t.write(fx + 0x1c00, &[0x3c; 0x300]);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0450::orient(g, img, fr.at))
         });
@@ -67,7 +70,8 @@ fn show_models() {
     let fx = fx(&mut t, at, 0xe);
     let b = SCRATCH + 0x20;
     t.set_u32(t.img.word(at + 0x17), b);
-    t.set_u32(b, 0x0005_0300);
+    // the byte after each index non-zero (an index read as u16 shows)
+    t.set_u32(b, 0x2a05_0300);
     let table = t.img.word(at + 0x22);
     for i in 0..8 {
         t.set_u32(table + 4 * i, 0x0384_0000 + i);
@@ -83,6 +87,7 @@ fn show_models() {
     recs(&mut t, &[(628, 1), (384, 1), (941, 1), (772, 2), (779, 4)]);
     for model in [u32::MAX, 0x77] {
         t.set_u32(fx + 0x1eec, model);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0450::show_models(g, img, fr.at))
         });
@@ -128,6 +133,7 @@ fn frame() {
         t.set_u32(fx + 0x1efc, state);
         t.set_u32(t.img.word(at + 0x3c), flag);
         t.set_u32(t.img.word(at + 0x4c), n);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -146,9 +152,13 @@ fn load_models() {
         }
     });
     recs(&mut t, &[(26, 3), (10, 5), (632, 3)]);
+    // the byte after the mode byte the load sets, non-zero
+    let mode_byte = t.img.word(at + 0x37);
     for (model, mode) in [(u32::MAX, 6u32), (0x10, 6), (0x11, 2)] {
+        t.set_u32(mode_byte, 0x6d6d_6d00);
         t.set_u32(fx + 0x1eec, model);
         t.set_u32(fx + 0x1ee8, mode);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -196,24 +206,32 @@ fn place_camera() {
         0x329
     });
     rec(&mut t, 229, 6, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
     });
     rec(&mut t, 248, 3, |m, a| {
+        let w = m.r32(a[1] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[1] + 4 * i).wrapping_add(m.r32(a[2] + 4 * i));
+            let v = m
+                .r32(a[1] + 4 * i)
+                .wrapping_add(m.r32(a[2] + 4 * i))
+                .wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x248
     });
     for (flag, actor) in [(0u32, 3u8), (0, 0x1f), (1, 2), (0, 0x20), (0, 0x3f)] {
         t.set_u32(t.img.word(at + 0x12), flag);
-        t.set_u8(b, actor);
+        // the byte after the actor index non-zero
+        t.set_u32(b, 0x0017_3c00 | u32::from(actor));
         t.write(fx + 0x1b80, &[0x5a; 0x380]);
         t.set_u32(fx + 0x1ee0, f(0.5 + f32::from(actor)));
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -231,6 +249,7 @@ fn blend_camera() {
     for n in [2u32, 1, 0, 0xffff_fffd, 40] {
         t.set_u32(fx + 0x1ef0, n);
         t.write(fx + 0x1ba0, &[0x77; 0x10]);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -257,15 +276,21 @@ fn matrix_stubs(t: &mut Twin) {
         });
     }
     rec(t, 229, 6, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
     });
     rec(t, 248, 3, |m, a| {
+        let w = m.r32(a[1] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[1] + 4 * i).wrapping_add(m.r32(a[2] + 4 * i));
+            let v = m
+                .r32(a[1] + 4 * i)
+                .wrapping_add(m.r32(a[2] + 4 * i))
+                .wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x248
@@ -292,6 +317,7 @@ fn swing_and_reset() {
                 t.set_u32(fx + 0x1c10 + 4 * i, f(-0.75 * i as f32));
                 t.set_u32(fx + 0x1b90 + 4 * i, f(0.375 * i as f32 + 0.1));
             }
+            magic_h6::scrub(&mut t);
             t.check_entry(at, Call::default(), &[], Eax::Checked);
         }
     }
@@ -334,12 +360,13 @@ fn flight_start() {
     let (hi, lo) = (konst(&t, at, 0x51), konst(&t, at, 0x7f));
     let step = konst(&t, at, 0x30);
     for (k, a) in angles(hi, lo, step).into_iter().enumerate() {
-        t.set_u32(b, 0x0000_0300 + ((k as u32 * 7) << 8));
+        t.set_u32(b, 0x0019_0300 + ((k as u32 * 7) << 8));
         t.write(fx + 0x1b40, &[0x2e; 0x400]);
         t.set_u32(fx + 0x1ee0, f(a));
         for i in 0..4 {
             t.set_u32(fx + 0x1c10 + 4 * i, f(1.25 * i as f32 - k as f32));
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -356,7 +383,7 @@ fn flight_frame() {
     for op in [0x109, 0x144] {
         t.set_u32(t.img.word(at + op), b);
     }
-    t.set_u32(b, 0x0000_0500);
+    t.set_u32(b, 0x0019_0500);
     let table = t.img.word(at + 0x114);
     for i in 0..0x40 {
         t.set_u32(table + 4 * i, 0x00ac_0000 + i);
@@ -372,6 +399,7 @@ fn flight_frame() {
             t.set_u32(fx + 0x1c30 + 4 * i, f(1.25 * i as f32 - k as f32));
             t.set_u32(fx + 0x1c40 + 4 * i, f(-3.5 * i as f32 + 0.5));
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -403,8 +431,10 @@ fn shrink() {
         0x327
     });
     rec(&mut t, 229, 3, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
@@ -426,6 +456,7 @@ fn shrink() {
         t.set_u32(obj + 0x118, frame);
         t.set_u32(obj + 0x120, n);
         t.set_u32(cell, f(s));
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -445,6 +476,7 @@ fn turn_step() {
         }
         t.set_u32(fx + 0x1c14, f(4.5 - k as f32));
         t.set_u32(fx + 0x1b90, f(a));
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

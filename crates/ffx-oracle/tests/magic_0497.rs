@@ -9,6 +9,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -40,7 +41,6 @@ fn start_up_and_lights() {
         &[
             (718, 3),
             (222, 4),
-            (711, 3),
             (710, 4),
             (400, 1),
             (401, 9),
@@ -49,6 +49,12 @@ fn start_up_and_lights() {
         ],
     );
     let su = t.at(0x12f0);
+    // slot 711 keeps the game flag it runs under
+    let lock = magic_h6::cell(&t, su, 0x83);
+    t.set_u32(lock, 0x00a1_0000);
+    magic_h6::rec_cells(&mut t, 711, 3, &[lock], |_, a| {
+        0x5a5a_0711 ^ a.first().copied().unwrap_or(0)
+    });
     let blk = t.img.word(su + 0x127);
     t.write(blk, &[0x5e; 0x110]);
     t.check_entry(su, Call::default(), &[0x00a6_0000], Eax::Checked);

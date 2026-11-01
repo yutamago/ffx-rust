@@ -199,10 +199,14 @@ def main():
             cmd = ["bash", "-c", 'eval "$(tools/xwin-env.sh i686-pc-windows-msvc)" && '
                    f"cargo clippy --release --target i686-pc-windows-msvc {pkgs} -- -D warnings"]
             run(cmd, None, dry)
-        run(["tools/build-hook.sh"], None, dry)
+            # only when the hook or a crate it links changed (a change to
+            # tests alone left this 2.6 min build with nothing to check)
+            run(["tools/build-hook.sh"], None, dry)
     # the replays also check their own scripts and comparison tools
     replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
-    if (every or any(f.startswith(replay_inputs) for f in changed)) and "--no-replays" not in sys.argv:
+    # (the oracle tests and docs can't change what the games do)
+    game_inputs = [f for f in changed if f.startswith(replay_inputs) and not f.startswith("crates/ffx-oracle/")]
+    if (every or game_inputs) and "--no-replays" not in sys.argv:
         run(["tools/replays/run-all.sh"], env, dry)
     print("batch verified")
     if not dry:  # the status page, in the background (tools/status.sh)

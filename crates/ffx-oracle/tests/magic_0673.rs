@@ -41,6 +41,9 @@ fn start() {
         t.write(r + 0x59f8, &[0x3b; 0x100]);
         t.write(ctx, &[0; 0x40]);
         t.set_u32(ctx + 0x38, k);
+        // the template's last word non-zero (the record's `+0x24` takes it)
+        let e = t.img.word(at + 0x1d) + 32 * k;
+        t.set_u32(e + 0x1c, 0x00e1_c000 + k);
         t.check_entry(at, Call::default(), &[ctx], Eax::Checked);
     }
 }

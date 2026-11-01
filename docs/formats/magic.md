@@ -386,9 +386,11 @@ battle-ifrit `magic_0309`, `0596`).
 **One port per identity.** Two ports with the same code identity
 (length, masked hash, callees and imports: `ffx_magic::sigs_overlap`)
 would both match one address and `bind` would silently take the first, so
-`PORTS` and `INTERNAL` refuse a second registration when the crate builds
-(`first_overlap`; `cargo test -p ffx-magic one_port_per_identity` names
-the pair). Before porting a function, look it up (`magic-sig --covered`)
+`cargo test -p ffx-magic one_port_per_identity` fails on a second
+registration in `PORTS` or `INTERNAL` and names the pair (run it before
+committing a port; the merge check runs it too). It was a compile-time
+assert until 2026-11-01, when the pairwise comparison had grown to 70 % of
+every `ffx-magic` build. Before porting a function, look it up (`magic-sig --covered`)
 and reuse the existing port; a test of another DLL's copy binds to it
 through `check_entry`.
 

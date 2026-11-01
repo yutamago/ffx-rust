@@ -9,6 +9,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -61,7 +62,8 @@ fn object_starts() {
 }
 
 /// 0x100014b0 then 0x10001800: the start-up, then the frame off and on
-/// with slot 261's answers (the timelines idle).
+/// with slot 261's answers (the timelines live, so running or stopping
+/// one, or the wrong one, shows).
 #[test]
 fn start_up_and_frame() {
     let Some(mut t) = twin(N) else { return };
@@ -75,33 +77,32 @@ fn start_up_and_frame() {
     rec(&mut t, 260, 1, |_, a| 0x0260_0000 ^ a[0]);
     recs(
         &mut t,
-        &[
-            (718, 3),
-            (222, 4),
-            (711, 3),
-            (710, 4),
-            (214, 1),
-            (723, 1),
-            (724, 2),
-        ],
+        &[(718, 3), (222, 4), (710, 4), (214, 1), (723, 1), (724, 2)],
     );
     let su = t.at(0x14b0);
+    // slot 711 keeps the game flag it runs under
+    let lock = magic_h6::cell(&t, su, 0x83);
+    t.set_u32(lock, 0x00a1_0000);
+    magic_h6::rec_cells(&mut t, 711, 3, &[lock], |_, a| {
+        0x5a5a_0711 ^ a.first().copied().unwrap_or(0)
+    });
     for op in [0x127, 0x178, 0x189] {
         let blk = t.img.word(su + op);
         t.write(blk, &[0x5e; 0x110]);
     }
     t.check_entry(su, Call::default(), &[0x00a6_0000], Eax::Checked);
     let at = t.at(0x1800);
-    for op in [0x61, 0x6b, 0x75] {
-        let tl = t.img.word(at + op);
-        t.set_u32(tl + 8, 0);
-    }
+    rec(&mut t, 253, 0, |_, _| 1);
     let cell = SCRATCH + 0x10;
     // slot 261 (k) answers bit k of the cell
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     for (on, bits) in [(0u32, 0u32), (1, 0), (1, 0b01), (1, 0b10), (1, 0b11)] {
         t.set_u32(t.img.word(at + 0x2), on);
         t.set_u32(cell, bits);
+        for (k, op) in (0u32..).zip([0x61, 0x6b, 0x75, 0x95, 0x9f, 0xa9]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

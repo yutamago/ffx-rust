@@ -48,7 +48,8 @@ fn e1b40() {
     });
     let obj = SCRATCH + 0x1000;
     for actor in [2u32, 5] {
-        t.set_u32(b, actor);
+        // the byte after the actor index non-zero (an index read as u16 shows)
+        t.set_u32(b, 0x0017_3c00 | actor);
         t.write(obj, &[0x77; 0x110]);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
