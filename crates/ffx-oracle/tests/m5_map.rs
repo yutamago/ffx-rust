@@ -181,6 +181,20 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the trampoline 0x18 bytes past the poison
+        let at = self.1 + 0x18;
+        let x = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[x as u32, (x >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r
+            .st0_f32()
+            .unwrap_or_else(|| panic!("intrinsic {addr:#x}: no ST0"));
+        self.0.call(self.1 + 8 + 13, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
         // the trampoline 8 bytes past the poison
         let at = self.1 + 8;
@@ -269,6 +283,12 @@ impl Twins {
                 0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3, 0xdd,
                 0xd8, 0xc3,
             ],
+        );
+        // then `fld qword [esp+4]; call [esp+0xc]; ret` for
+        // Host::call_intrinsic (the operand in ST0)
+        t.write(
+            at + 0x18,
+            &[0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3],
         );
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
@@ -7641,6 +7661,134 @@ fn l7_fog_param_proc_matches_the_original() {
                 |o| Out::U32(l7m::fog_param_proc(o, slots, window, msg, param)),
             );
             r5_same(t, "yiGui_setfogparam_proc slots", slots, 12);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn l7_moving_to_target_matches_the_original() {
+    // the progress below 1 and up to three steps; arriving at the target,
+    // no next node, a straight link and one around a centre node; the
+    // link already marked or not; distances positive and zero
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a11);
+        let area = t.zeros(0x11700);
+        let (nodes, rings) = (16_u32, 4_u32);
+        for case in 0..800_u32 {
+            // the parts of g_Abmap the walk reads
+            for n in 0..nodes {
+                let at = area + 0x808 + 0x28 * n;
+                let (x, y) = if case % 13 == 7 {
+                    (5_i16, -3_i16)
+                } else {
+                    (rng.below(400) as i16 - 200, rng.below(400) as i16 - 200)
+                };
+                t.write(at, &x.to_le_bytes());
+                t.write(at + 2, &y.to_le_bytes());
+                t.write(at + 6, &(rng.below(rings) as u16).to_le_bytes());
+            }
+            for r in 0..rings {
+                let v = rng.below(0x400) as i16 - 0x200;
+                t.write(area + 0xf834 + 0x30 * r, &v.to_le_bytes());
+            }
+            let k = rng.below(4);
+            t.w8(area + 0x11638, k as u8);
+            let token = area + 0x11088 + 0x50 * k;
+            for o in 0..0x14 {
+                t.w32(token + 4 * o, float_word(&mut rng));
+            }
+            let progress = [0.2_f32, 0.99, 1.0, 1.5, 2.25, 3.0][rng.below(6) as usize];
+            let speed = [0.0_f32, 0.05, 0.5, 1.0][rng.below(4) as usize];
+            t.w32(area + 0x11620, progress.to_bits());
+            t.w32(area + 0x11624, speed.to_bits());
+            t.w32(area + 0x116ac, rng.below(2));
+            let cur = rng.below(nodes) as u16;
+            let tgt = if rng.chance(4) {
+                cur
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(area + 0x11632, &cur.to_le_bytes());
+            t.write(area + 0x11634, &tgt.to_le_bytes());
+            let via = if rng.chance(2) {
+                0xffff
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(area + 0x11636, &via.to_le_bytes());
+            for o in [0x1163c, 0x11640, 0x11644, 0x11648, 0x11628, 0x1162c] {
+                t.w32(area + o, float_word(&mut rng));
+            }
+            for o in [0x115a8, 0x115b0, 0x115f8] {
+                t.w32(area + o, rng.next());
+            }
+            t.w8(area + 0x115c7, 0);
+            if case % 13 == 7 {
+                // the token on the nodes' point: a zero distance
+                for (o, v) in [(0, 5.0_f32), (4, -3.0), (8, 0.0)] {
+                    t.w32(token + o, v.to_bits());
+                }
+            } else if case % 17 == 3 {
+                t.w32(token + 4, 0xffc0_0001);
+            }
+            if rng.chance(2) {
+                let v: Vec<u8> = (0..4)
+                    .flat_map(|_| ((rng.below(9) as f32) - 4.0).to_bits().to_le_bytes())
+                    .collect();
+                let at = t.rebase(l7m::VU0_VF00);
+                t.patch(at, &v);
+            }
+            t.global(l7m::ABMAP, area);
+            // the link the search hands back: its centre node or none, its
+            // character marks
+            let link = l6_random(t, &mut rng, 0x10);
+            let lvia = if rng.chance(2) {
+                0xffff
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(link + 4, &lvia.to_le_bytes());
+            t.w8(link + 0xc, [0_u8, 0xff, 1, 2, 4, 8][rng.below(6) as usize]);
+            let steps: Vec<u32> = (0..4)
+                .map(|_| {
+                    if rng.chance(6) {
+                        0xffff
+                    } else {
+                        rng.below(nodes) | (rng.next() & 0xffff_0000)
+                    }
+                })
+                .collect();
+            let steps = t.seq(&steps);
+            r5_out_stub(t, l7m::FIND_NEXT_NODE, 1, 3, steps, 2, link);
+            for (sym, tag, n) in [
+                (l7m::RESTORE_VF00, 2, 0),
+                (l7m::INTER_VECTOR_XYZ, 3, 4),
+                (l7m::UPDATE_MOVING_CHR_POS, 4, 5),
+                (l7m::RESET_CURSOR_CAMERA, 5, 0),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 0);
+            // the straight point the stub leaves unwritten: no signalling
+            // NaNs (the emulator keeps them through fld/fstp)
+            for o in [0x24, 0x20] {
+                let v = float_word(&mut rng);
+                t.a.write(ebp - o, &v.to_le_bytes()).unwrap();
+                t.b.write(ebp - o, &v.to_le_bytes()).unwrap();
+            }
+            t.b_top = Some(ebp - l7m::MOVING_FRAME - 0x40);
+            t.check(
+                "AbmapState_MovingToTarget",
+                0x00a5_9990,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(l7m::moving_to_target(o, ebp)),
+            );
+            l6_same_words(t, "AbmapState_MovingToTarget", ebp, ebp - 0x54, 0x50);
             t.b_top = None;
             t.reset();
         }

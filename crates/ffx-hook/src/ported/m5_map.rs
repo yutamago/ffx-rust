@@ -934,4 +934,12 @@ ported! {
     yiGui_setfogparam_proc @ 0x0091_62f0 => extern "C" fn yi_gui_setfogparam_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
         l7m::fog_param_proc(&mut mem(), slots, window, msg, param)
     }
+    /// `()` -> the arrival's work area or `AbmapResetCursorCamera`'s
+    /// `eax`: the sphere grid token's walk (the original's frame, its node
+    /// position, link and centre passed by pointer, in this shim's).
+    AbmapState_MovingToTarget @ 0x00a5_9990 => extern "C" fn abmap_state_moving_to_target() -> u32 {
+        let mut frame = StackFrame::<{ (l7m::MOVING_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::MOVING_FRAME;
+        l7m::moving_to_target(&mut mem(), ebp)
+    }
 }

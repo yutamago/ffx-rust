@@ -2012,4 +2012,242 @@ pub mod bridge {
         }
         0
     }
+
+    /// `g_Abmap`; `AbmapFindNextConnectingNode(from, to, &link)`,
+    /// `restoreVf00Register()`, `FFXVu0InterVectorXYZ(out, a, b, t)`,
+    /// `AbmapUpdateMovingChrPos(out, from, to, centre, t)`,
+    /// `AbmapResetCursorCamera()`; the emulated VU0 cells (`vf` at
+    /// 0x00c8f820, 0x00c8f830; `Q`) and vf00; f64 8 and 3, f32 0.5333.
+    pub const ABMAP: u32 = 0x0230_5834;
+    pub const FIND_NEXT_NODE: u32 = 0x00a5_6e00;
+    pub const RESTORE_VF00: u32 = 0x0042_ef00;
+    pub const INTER_VECTOR_XYZ: u32 = 0x0062_fd70;
+    pub const UPDATE_MOVING_CHR_POS: u32 = 0x00a5_63b0;
+    pub const RESET_CURSOR_CAMERA: u32 = 0x00a5_b030;
+    pub const VU0_B: u32 = 0x00c8_f820;
+    pub const VU0_C: u32 = 0x00c8_f830;
+    pub const VU0_Q: u32 = 0x00c8_f788;
+    pub const VU0_VF00: u32 = 0x00c0_a004;
+    pub const EIGHT: u32 = 0x00b9_22a8;
+    pub const SLOW_SPEED: u32 = 0x00b7_b604;
+    pub const THREE: u32 = 0x00b2_c5c8;
+    /// `AbmapState_MovingToTarget`'s frame.
+    pub const MOVING_FRAME: u32 = 0x54;
+    /// The CRT's `_CIsqrt`.
+    pub const CI_SQRT: u32 = 0x0094_97b8;
+
+    fn abmap(h: &impl Host) -> u32 {
+        h.read(h.rebase(ABMAP))
+    }
+
+    fn fl(h: &impl Host, p: u32) -> f64 {
+        x87::load(h.read(p))
+    }
+
+    /// `fstp dword` of `x` at `p`.
+    fn st32(h: &mut impl Host, p: u32, x: f64) -> u32 {
+        let b = x87::store(x);
+        h.write(p, b);
+        b
+    }
+
+    /// A grid node's position (`g_Abmap + 0x808 + 0x28 node`: two i16) as
+    /// the original converts it: each through the int scratch word at
+    /// `scratch` (`fild`), stored as f32 at `x_at` and `x_at + 4`.
+    fn node_pos(h: &mut impl Host, a: u32, node: u16, scratch: u32, x_at: u32) {
+        let base = a.wrapping_add(0x808).wrapping_add(0x28 * u32::from(node));
+        for k in 0..2 {
+            let v = i32::from(h.read::<i16>(base.wrapping_add(2 * k)));
+            h.write(scratch, v);
+            st32(h, x_at.wrapping_add(4 * k), f64::from(v));
+        }
+    }
+
+    /// `AbmapState_MovingToTarget()` -> `eax` as the original (the work
+    /// area on the arrival path, else `AbmapResetCursorCamera`'s): the
+    /// sphere grid token walking towards its target node. The progress
+    /// (`g_Abmap + 0x11620`) grows by the speed (`+0x11624`); while it is
+    /// 1 or more the token steps to the next node on the way
+    /// (`AbmapFindNextConnectingNode`; the link it crosses marked with the
+    /// character's bit and flag 8, `+0x115f8`), its position copied to
+    /// `+0x1163c`, the new speed `8 / distance` (0.5333 when the distance
+    /// is not positive) from the emulated VU0's length, the progress less
+    /// 1, the height pair `+0x11628`/`+0x1162c` from the token and the
+    /// node's ring (half its i16, plus 3). At the target or without a next
+    /// node the token stands on it (the arrival). Then the point between
+    /// (`FFXVu0InterVectorXYZ` on a straight link, else
+    /// `AbmapUpdateMovingChrPos` around the link's centre node) and the
+    /// height lerped, the camera reset. The token is `+0x11088 + 0x50
+    /// k` (`k` the byte at `+0x11638`). `ebp` is the original's frame (the
+    /// node position at `ebp - 0x14`, the link at `- 0x40`, the centre at
+    /// `- 0x54`, the straight point at `- 0x24`; the int and VU0 spills
+    /// at `- 0x44`..`- 0x28` as the original leaves them).
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // ax, al
+    pub fn moving_to_target(h: &mut impl Host, ebp: u32) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let a = abmap(h);
+        let k = u32::from(h.read::<u8>(at(a, 0x11638)));
+        let p = x87::add(fl(h, at(a, 0x11624)), fl(h, at(a, 0x11620)));
+        st32(h, at(a, 0x11620), p);
+        let token = a.wrapping_add(0x11088).wrapping_add(0x50 * k);
+        let mut a = abmap(h);
+        if h.read::<u32>(at(a, 0x116ac)) == 0 {
+            h.write(at(a, 0x116ac), 1_u32);
+            a = abmap(h);
+        }
+        let node: u16 = h.read(at(a, 0x11632));
+        node_pos(h, a, node, fr(0x40), fr(0x14));
+        let (zero, one) = (0_u32, 1.0_f32.to_bits());
+        h.write(fr(0xc), zero);
+        h.write(fr(8), one);
+        // esi: the work area the loop's top and the end read through
+        let mut esi = a;
+        let mut cond = abmap(h);
+        while fl(h, at(cond, 0x11620)) >= 1.0 {
+            h.write(at(esi, 0x115f8), 0_u32);
+            let a0 = abmap(h);
+            let (cur, tgt): (u16, u16) = (h.read(at(a0, 0x11632)), h.read(at(a0, 0x11634)));
+            let arrived = cur == tgt || {
+                let next = cdecl(h, FIND_NEXT_NODE, &[cur.into(), tgt.into(), fr(0x40)]) as u16;
+                h.write(at(a0, 0x11632), next);
+                h.read::<u16>(at(abmap(h), 0x11632)) == 0xffff
+            };
+            if arrived {
+                for (o, s) in [(0, 0x14), (4, 0x10), (8, 0xc), (0xc, 8)] {
+                    let v: u32 = h.read(fr(s));
+                    h.write(at(token, o), v);
+                }
+                h.write(at(abmap(h), 0x115c7), 1_u8);
+                let a = abmap(h);
+                let v: u32 = h.read(at(a, 0x115b0));
+                h.write(at(a, 0x115a8), v);
+                let a = abmap(h);
+                h.write(at(a, 0x115b0), 0_u32);
+                return a;
+            }
+            let link: u32 = h.read(fr(0x40));
+            let via: u16 = h.read(at(link, 4));
+            h.write(at(abmap(h), 0x11636), via);
+            let mut a = abmap(h);
+            let marks: u8 = h.read(at(link, 0xc));
+            let bit = (1_u32 << (u32::from(h.read::<u8>(at(a, 0x11638))) & 31)) as u8;
+            if marks & bit == 0 {
+                h.write(at(link, 0xc), bit | marks);
+                let f: u8 = h.read(at(link, 0xe));
+                h.write(at(link, 0xe), f | 8);
+                h.write(at(abmap(h), 0x115f8), link);
+                a = abmap(h);
+            }
+            let node: u16 = h.read(at(a, 0x11632));
+            h.write(at(token, 0x44), node);
+            let a = abmap(h);
+            for o in [0, 4, 8, 0xc] {
+                let v: u32 = h.read(at(token, o));
+                h.write(at(a, 0x1163c + o), v);
+            }
+            let a = abmap(h);
+            let node: u16 = h.read(at(a, 0x11632));
+            node_pos(h, a, node, fr(0x38), fr(0x14));
+            // the step to the node through the emulated VU0
+            let (b, c) = (h.rebase(VU0_B), h.rebase(VU0_C));
+            for o in [0, 4, 8, 0xc] {
+                let v: u32 = h.read(at(a, 0x1163c + o));
+                h.write(at(b, o), v);
+            }
+            let x: u32 = h.read(fr(0x14));
+            h.write(c, x);
+            st32(h, c, x87::sub(x87::load(x), fl(h, b)));
+            let y: u32 = h.read(fr(0x10));
+            h.write(at(c, 4), y);
+            let dy = x87::sub(fl(h, at(c, 4)), fl(h, at(b, 4)));
+            let (z, w): (u32, u32) = (h.read(fr(0xc)), h.read(fr(8)));
+            h.write(at(c, 8), z);
+            st32(h, at(c, 4), dy);
+            h.write(at(c, 0xc), w);
+            let dz = x87::sub(fl(h, at(c, 8)), fl(h, at(b, 8)));
+            st32(h, at(c, 8), dz);
+            cdecl(h, RESTORE_VF00, &[]);
+            for (o, s) in [(0, 0x34), (4, 0x30), (8, 0x2c), (0xc, 0x28)] {
+                let v: u32 = h.read(at(c, o));
+                h.write(fr(s), v);
+            }
+            let xx = x87::mul(fl(h, c), fl(h, c));
+            st32(h, c, xx);
+            let yy = x87::mul(fl(h, at(c, 4)), fl(h, fr(0x30)));
+            st32(h, at(c, 4), yy);
+            let zz = x87::mul(fl(h, at(c, 8)), fl(h, fr(0x2c)));
+            st32(h, at(c, 8), zz);
+            let s = x87::add(fl(h, at(c, 4)), fl(h, c));
+            st32(h, c, s);
+            let s = x87::add(fl(h, at(c, 8)), fl(h, c));
+            st32(h, c, s);
+            let m = st32(h, fr(0x38), fl(h, c).abs());
+            let sqrt = h.rebase(CI_SQRT);
+            let r = h.call_intrinsic(sqrt, x87::load(m)).to_bits();
+            h.write(fr(0x38), r);
+            let q = h.rebase(VU0_Q);
+            st32(h, q, x87::load(r));
+            let v0 = h.rebase(VU0_VF00);
+            let len = st32(h, c, x87::add(fl(h, v0), fl(h, q)));
+            h.write(fr(0x44), len);
+            let len = x87::load(len);
+            let speed = if 0.0 < len {
+                x87::store(x87::div(f64::from_bits(h.read(h.rebase(EIGHT))), len))
+            } else {
+                x87::store(fl(h, h.rebase(SLOW_SPEED)))
+            };
+            h.write(at(abmap(h), 0x11624), speed);
+            let a = abmap(h);
+            cond = a;
+            let p = x87::sub(fl(h, at(a, 0x11620)), 1.0);
+            st32(h, at(a, 0x11620), p);
+            let a = abmap(h);
+            let lo = fl(h, at(token, 0x3c));
+            st32(h, at(a, 0x11628), lo);
+            let a = abmap(h);
+            let n = u32::from(h.read::<u16>(at(token, 0x44)));
+            let ring = u32::from(h.read::<u16>(at(a, 0x80e + 0x28 * n)));
+            let half = i32::from(h.read::<i16>(at(a, 0xf834 + 0x30 * ring)) >> 1);
+            h.write(fr(0x38), half);
+            h.write(fr(0x3c), f64::from(half).to_bits());
+            let top = x87::add(f64::from(half), f64::from_bits(h.read(h.rebase(THREE))));
+            st32(h, at(abmap(h), 0x1162c), top);
+            let a2 = abmap(h);
+            esi = a2;
+            let node: u16 = h.read(at(a2, 0x11632));
+            node_pos(h, a2, node, fr(0x38), fr(0x14));
+            h.write(fr(0xc), zero);
+            h.write(fr(8), one);
+        }
+        let a = esi;
+        let via: u16 = h.read(at(a, 0x11636));
+        let t: u32 = h.read(at(a, 0x11620));
+        let t = x87::store(x87::load(t));
+        if via == 0xffff {
+            cdecl(
+                h,
+                INTER_VECTOR_XYZ,
+                &[fr(0x24), fr(0x14), at(a, 0x1163c), t],
+            );
+            for (o, s) in [(0, 0x24), (4, 0x20)] {
+                let v = fl(h, fr(s));
+                st32(h, at(token, o), v);
+            }
+        } else {
+            node_pos(h, a, via, fr(0x44), fr(0x54));
+            h.write(fr(0x4c), zero);
+            h.write(fr(0x48), one);
+            cdecl(
+                h,
+                UPDATE_MOVING_CHR_POS,
+                &[token, at(a, 0x1163c), fr(0x14), fr(0x54), t],
+            );
+        }
+        let a = abmap(h);
+        let (lo, hi) = (fl(h, at(a, 0x11628)), fl(h, at(a, 0x1162c)));
+        let v = x87::add(x87::mul(x87::sub(hi, lo), fl(h, at(a, 0x11620))), lo);
+        st32(h, at(token, 0x3c), v);
+        h.write(at(abmap(h), 0x115c7), 1_u8);
+        cdecl(h, RESET_CURSOR_CAMERA, &[])
+    }
 }
