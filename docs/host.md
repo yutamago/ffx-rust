@@ -1611,6 +1611,13 @@ the original's trace events:
 | event-agency | same (11 ranges) | 7 of 7 (4-6 coarse 0.0) |
 | event-arrival (`realtime`, `eye`) | same (10 ranges) | 2-4 within 4 pixels; 1, 5, 7 less than the originals differ between themselves; 6 534,868 (below) |
 
+The extra list the same way: battle-ifrit (10 ranges), movie-fmv (3),
+settings-hdao, -msaa, -fxaa, -smaa, -texhigh (4 each) and
+settings-shadow (5) have the original's events and every shot at 0
+pixels; iggy-menus (`eye`) has its 4 ranges' events, and shots 1-9
+differ by 436,391-470,140 pixels (the Flash screens: `ffx-rust.exe`
+composites no Iggy image yet, blocker 3), 10-12 match.
+
 (`run-all.sh`'s exit status is 1 for field-walk and event-agency on PC2
 only because its `python3` has no numpy for the coarse comparison; the
 coarse numbers above are `uv run --with numpy` of the same command.)
