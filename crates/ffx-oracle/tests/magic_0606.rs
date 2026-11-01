@@ -49,23 +49,38 @@ fn show_targets() {
     }
 }
 
-/// 0x10008990: slot 520 saying 0x1590000 and something else.
+/// 0x10008990: slot 520 saying 0x1590000 and something else; the point
+/// with `x` and `z` -0.0 too (the eye's `v - 0` keeps the sign, `v + 0`
+/// would not).
 #[test]
 fn camera_points() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x8990);
     recs(&mut t, &[(327, 2)]);
-    magic_owna::rec(&mut t, 229, 5, |m, a| {
+    let zeros = SCRATCH + 0x14;
+    magic_owna::rec(&mut t, 229, 5, move |m, a| {
+        let neg = m.r32(zeros) != 0;
         for i in 0..4 {
-            m.w32(a[0] + 4 * i, (0.5 + i as f32 * -1.75).to_bits());
+            let v = if neg && i % 2 == 0 {
+                -0.0f32
+            } else {
+                0.5 + i as f32 * -1.75
+            };
+            m.w32(a[0] + 4 * i, v.to_bits());
         }
         0x0229_0000
     });
     let cell = SCRATCH + 0x10;
     magic_owna::rec(&mut t, 520, 0, move |m, _| m.r32(cell));
     t.set_u32(t.img.word(at + 0x13), SCRATCH + 0x4000);
-    for answer in [0x0159_0000u32, 0x0158_0000] {
+    for (answer, neg) in [
+        (0x0159_0000u32, 0u32),
+        (0x0158_0000, 0),
+        (0x0159_0000, 1),
+        (0x0158_0000, 1),
+    ] {
         t.set_u32(cell, answer);
+        t.set_u32(zeros, neg);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

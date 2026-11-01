@@ -52,6 +52,13 @@ const POISON: u32 = 0xdead_beef;
 /// in `ST0`; the cave function is 1864 bytes long).
 const TRAMPOLINE: [u8; 9] = [0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3];
 
+/// After the poison (`+0x14`): `fld qword [esp+4]; fld qword [esp+0xc];
+/// call [esp+0x14]; ret`, for [`Host::call_intrinsic2`] (operands in
+/// `ST1` and `ST0`).
+const TRAMPOLINE2: [u8; 13] = [
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
+];
+
 /// Deterministic xorshift stream.
 struct Rng(u32);
 
@@ -144,6 +151,21 @@ impl Host for G<'_> {
             .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
         r.st0_f64().expect("the intrinsic's ST0")
     }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let (bx, by) = (x.to_bits(), y.to_bits());
+        let words = [
+            bx as u32,
+            (bx >> 32) as u32,
+            by as u32,
+            (by >> 32) as u32,
+            addr,
+        ];
+        let r = self
+            .0
+            .call(self.1 + 0x14, Conv::Cdecl, &words)
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f32().expect("the intrinsic's ST0")
+    }
     fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -211,6 +233,7 @@ impl Twins {
         code.push(0xc3);
         t.write(at, &code);
         t.write(at + 8, &TRAMPOLINE);
+        t.write(at + 0x14, &TRAMPOLINE2);
         t
     }
 
@@ -7345,6 +7368,175 @@ fn l6_gdraw_draw_quad_matches_the_original() {
                     0x14 - k
                 );
             }
+            t.reset();
+        }
+    });
+}
+
+// ---- round 7 (left7) (ffx_pcui::l7_pcui) ----
+
+use ffx_pcui::l7_pcui::bridge as l7u;
+
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn l7_update_moving_chr_pos_matches_the_original() {
+    // points on all sides of the centre (the angle difference past +-pi
+    // both ways), t inside and outside 0..1, the CRT's SSE2 flag both ways
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a10);
+        for case in 0..3000_u32 {
+            let p = |rng: &mut Rng| -> u32 {
+                match rng.below(9) {
+                    0 => 0,
+                    8 => [0xffc0_0000, 0x7fc0_0000, 0xffc0_1234][rng.below(3) as usize],
+                    1 => (rng.below(4000) as f32 - 2000.0).to_bits(),
+                    2 => ((rng.below(200) as f32 - 100.0) * 0.37).to_bits(),
+                    _ => (rng.below(600) as f32 - 300.0).to_bits(),
+                }
+            };
+            // vf00 is (0, 0, 0, 1) in the game; other values show which
+            // of its words each step adds
+            if rng.chance(2) {
+                let v: Vec<u8> = [p(&mut rng), p(&mut rng), p(&mut rng), p(&mut rng)]
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect();
+                let at = t.rebase(l7u::VU0_VF00);
+                t.patch(at, &v);
+            }
+            let centre = [p(&mut rng), p(&mut rng), p(&mut rng), rng.next()];
+            let from = [p(&mut rng), p(&mut rng), rng.next(), rng.next()];
+            let to = [p(&mut rng), p(&mut rng), rng.next(), rng.next()];
+            let (c, f, to) = (t.words(&centre), t.words(&from), t.words(&to));
+            let out = t.words(&[rng.next(); 4]);
+            let tt = [0.0_f32, 0.25, 0.5, 1.0, 0.125, -0.5, 1.5, 0.9][rng.below(8) as usize];
+            let tt = if case % 9 == 4 {
+                (rng.below(1000) as f32 / 999.0).to_bits()
+            } else {
+                tt.to_bits()
+            };
+            if rng.chance(2) {
+                let at = t.rebase(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+                t.patch(at, &1_u32.to_le_bytes());
+            }
+            let args = [out, f, to, c, tt];
+            t.check(
+                "AbmapUpdateMovingChrPos",
+                0x00a5_63b0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l7u::update_moving_chr_pos(o, out, f, to, c, tt)),
+            );
+            t.reset();
+        }
+    });
+}
+
+/// A float word: values, quiet NaNs, anything but a signalling NaN.
+fn l7_float(rng: &mut Rng) -> u32 {
+    loop {
+        let x = match rng.below(4) {
+            0 => 0x7fc0_0000 | rng.below(16),
+            1 => (f32::from(u16::try_from(rng.below(2000)).unwrap()) / 8.0 - 100.0).to_bits(),
+            _ => rng.next(),
+        };
+        let x = if x == 0 { 0x3f80_0000 } else { x };
+        let snan = x & 0x7f80_0000 == 0x7f80_0000 && x & 0x007f_ffff != 0 && x & 0x0040_0000 == 0;
+        if !snan {
+            return x;
+        }
+    }
+}
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that returns `value` in
+    /// `ST0` (`fld dword`, then the recorder).
+    fn l7_float_rec(&mut self, sym: u32, n: u32, value: u32) {
+        let rec = self.stub_code(sym, false, n, 0, 0);
+        let cell = self.words(&[value]);
+        let mut code = vec![0xd9, 0x05];
+        code.extend(cell.to_le_bytes()); // fld dword [cell]
+        code.push(0xe9);
+        let here = self.cave_next + code.len() as u32 + 4;
+        code.extend(rec.wrapping_sub(here).to_le_bytes()); // jmp rec
+        let addr = self.cave_code(&code);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_camera_test_proc_matches_the_original() {
+    // every message and button; the spline missing (no points, no
+    // count), no controlled actor; both spline kinds
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a12);
+        for case in 0..600_u32 {
+            let block: Vec<u32> = (0..0x10).map(|_| rng.next() | 1).collect();
+            let nodes = t.words(&block) + 0x20;
+            let points = if case % 7 == 3 { 0 } else { rng.next() | 1 };
+            let count = if case % 11 == 5 { 0 } else { rng.below(9) + 1 };
+            for (sym, v) in [
+                (l7u::SPLINE_POINTS, points),
+                (l7u::SPLINE_COUNT, count),
+                (l7u::SPLINE_NODES, nodes),
+                (l7u::SPLINE_CONTROL, rng.next()),
+                (l7u::CAMERA, rng.next()),
+                (l7u::CT_ON, u32::from(!rng.chance(4))),
+                (l7u::CT_MODE, rng.below(5)),
+                (l7u::CT_TIME, rng.next() | 1),
+                (l7u::CT_HOLDER, rng.next() | 1),
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            let cubic = [0_u8, 1, 0x80][rng.below(3) as usize];
+            let at = t.rebase(l7u::SPLINE_CUBIC);
+            t.patch(at, &[cubic]);
+            let id = if rng.chance(5) {
+                0xffff
+            } else {
+                rng.below(0x20)
+            };
+            t.stubs(&[
+                (l7u::SET_TITLE, false, 2, 0, rng.next()),
+                (l7u::ADD_BUTTON, false, 7, 0, rng.next()),
+                (l7u::NOW_CTRL_TOP_ID, false, 0, 0, id),
+                (l7u::EVENT_ACTOR_POS, false, 4, 0, rng.next()),
+                (l7u::NEAR_POINT_INIT, false, 5, 0, rng.next()),
+                (l7u::CALC_SPLINE, false, 4, 0, rng.next()),
+                (l7u::CALC_SPLINE3, false, 4, 0, rng.next()),
+                (l7u::CAMERA_SET_ROLL, false, 2, 0, rng.next()),
+                (l7u::CAMERA_SET_RECT, false, 3, 0, rng.next()),
+                (l7u::DBG_PRINTF, false, 1, 0, rng.next()),
+                (l7u::PATH_PLAYERS[0], false, 0, 0, rng.next()),
+                (l7u::PATH_PLAYERS[1], false, 0, 0, rng.next()),
+                (l7u::PATH_PLAYERS[2], false, 0, 0, rng.next()),
+            ]);
+            let near = l7_float(&mut rng);
+            t.l7_float_rec(l7u::NEAR_POINT, 8, near);
+            let (msg, param) = match rng.below(8) {
+                0..=2 => (0x8006, rng.below(6)),
+                3..=5 => (0x8011, rng.next()),
+                6 => ([0x8001, 0x8003][rng.below(2) as usize], rng.next()),
+                _ => (0x8000 + rng.below(0x20), rng.next()),
+            };
+            // the frame: the actor position, the near point's outs and the
+            // spline's result as the callees would leave them
+            let init: Vec<u8> = (0..0x3c / 4)
+                .flat_map(|_| l7_float(&mut rng).to_le_bytes())
+                .collect();
+            let window = rng.next();
+            t.skip = 4; // the cookie
+            t.check_framed_init(
+                "Gui_CameraTestProc_0093f900",
+                0x0093_f900,
+                Conv::Cdecl,
+                &[window, msg, param],
+                0x40,
+                &init,
+                |o, ebp| Out::U32(l7u::camera_test_proc(o, ebp, window, msg, param)),
+            );
             t.reset();
         }
     });

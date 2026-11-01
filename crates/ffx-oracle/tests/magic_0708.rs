@@ -45,6 +45,8 @@ fn fade() {
         (-0x0400_0000, 0x7fff_ff00),
         (150, 100),
         (100, 30),
+        // 90 with the end below it: the rise's bound
+        (90, 30),
     ] {
         let c = Call {
             ecx: x.cast_unsigned(),
@@ -105,6 +107,8 @@ fn bind_parts() {
     }
     for n in [0u16, 3] {
         t.set_u16(rec + 4, n);
+        // the half-word after the count non-zero (a count read as u32 shows)
+        t.set_u16(rec + 6, 0x5a5a);
         t.write(obj, &[0x4e; 0x40]);
         let c = Call {
             ecx: rec,
@@ -151,7 +155,10 @@ fn place() {
     }
     recs(&mut t, &[(210, 3), (217, 6), (325, 8)]);
     t.set_u32(t.img.word(at + 0xb), 0x00ac_0000);
+    // the bytes after the one place sets, non-zero
+    let byte = t.img.word(at + 0x105);
     for k in [3u32, 200] {
+        t.set_u32(byte, 0x6d6d_6d00);
         t.set_u32(cell, k);
         t.set_u32(t.img.word(at + 0xd7), (12.5f32).to_bits());
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {

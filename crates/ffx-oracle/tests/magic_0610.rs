@@ -43,7 +43,8 @@ fn check_targets() {
     for (k, id) in (0u32..).zip(1..5u32) {
         let o = SCRATCH + 0x400 + 0x10 * k;
         t.set_u32(objs + 4 * id, o);
-        t.set_u32(o, 0xfff0 + id);
+        // the half-word after the kind non-zero (a kind read as u32 shows)
+        t.set_u32(o, 0x5a5a_fff0 + id);
     }
     for (n, kind, reject) in [
         (0i32, None, 0u32),

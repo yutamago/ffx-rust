@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -41,6 +42,8 @@ fn frame() {
     t.set_u32(t.img.word(at + 0xd), gp);
     let v = SCRATCH + 0x24;
     t.set_u32(t.img.word(at + 0x3f), v);
+    // the word the frame copies and the one slot 214 gets, distinct
+    magic_h6::distinct(&mut t, at, &[0x44, 0x75]);
     for (on, answer, live) in [(0u32, 1u32, 0u32), (1, 0, 0), (1, 1, 1), (1, 1, 0)] {
         t.set_u32(t.img.word(at + 0x2), on);
         t.set_u32(cell, answer);

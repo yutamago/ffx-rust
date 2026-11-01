@@ -21,6 +21,7 @@
   --rest: #4a4945;
   --unnamed: #34342f;
   --library: #262624;
+  --library-named: #11694b;
   --live: #0ca30c;
   /* the categorical slots, in order (dataviz reference palette, dark steps) */
   --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
@@ -237,7 +238,7 @@ const C = (() => {
   const v = n => s.getPropertyValue(n).trim();
   return {
     replaced: v("--replaced"), toPort: v("--to-port"), named: v("--named"), rest: v("--rest"),
-    unnamed: v("--unnamed"), library: v("--library"), hair: v("--hairline"), muted: v("--text-muted"),
+    unnamed: v("--unnamed"), library: v("--library"), libraryNamed: v("--library-named"), hair: v("--hairline"), muted: v("--text-muted"),
     secondary: v("--text-secondary"), primary: v("--text-primary"), surface: v("--surface-1"), surface2: v("--surface-2"),
     seq: [0, 1, 2, 3, 4, 5].map(i => v("--seq-" + i)),
     cat: [1, 2, 3, 4, 5, 6, 7, 8].map(i => v("--cat-" + i)),
@@ -966,7 +967,7 @@ function renderCoverage() {
   const age = (now() - M.t) / 86400;
   $("cov").innerHTML = `
     ${age > 2 ? `<div class="warn"><b>Stale: recorded ${ago(M.t)}</b> (${when(M.t)}, <code>${esc(M.sha)}</code>, <code>symbols/hook-hits.txt</code>). ${fmt(nowN - then)} of today's ${fmt(nowN)} ports came after it and are not measured; the shares below are of the ${fmt(then)} that existed then. Refresh: <code>tools/replays/run-all.sh --hits</code>, then <code>tools/hook-hits.py</code>.</div>` : ""}
-    <p class="hint">Ported functions whose hook the game entered in a replay or the coverage session. A port that runs only through Rust callers is not counted.</p>
+    <p class="hint">Ported functions whose hook the game entered in a replay, the coverage session or the developer-save sweep (<code>~/ffx-work/devsaves</code>). A port that runs only through Rust callers is not counted.</p>
     <div class="grid-two" style="gap:24px">
       <div>
         <table class="mods"><thead><tr><th>Module</th><th>Ported code then</th><th class="num">Ran</th><th class="num">By bytes</th></tr></thead><tbody>${rows.map(m => { const v = H[m]; return `<tr>
@@ -1077,7 +1078,7 @@ function layoutMap() {
 function stateColor(i, mode) {
   const F = D.map;
   const game = F.kinds[F.module[i]] === "game";
-  if (mode === "names") return !game ? C.library : F.named[i] ? C.named : C.unnamed;
+  if (mode === "names") return !game ? (F.named[i] ? C.libraryNamed : C.library) : F.named[i] ? C.named : C.unnamed;
   if (mode === "m5") return F.m5 && F.m5[i] === 2 ? C.replaced : F.m5 && F.m5[i] === 1 ? C.toPort : game ? C.unnamed : C.library;
   const st = F.states[F.state[i]];
   if (st === "replaced") return C.replaced;
@@ -1155,7 +1156,7 @@ function drawMap() {
     ? `<span><i style="background:${C.replaced}"></i>In an M5 list, done</span><span><i style="background:${C.toPort}"></i>In an M5 list, left</span><span><i style="background:${C.unnamed}"></i>In no list</span>`
     : ui.mapMode === "port"
     ? `<span><i style="background:${C.replaced}"></i>Replaced by Rust</span><span><i style="background:${C.toPort}"></i>Logic left to port</span><span><i style="background:${C.rest}"></i>Glue, platform, debug, dead</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`
-    : `<span><i style="background:${C.named}"></i>Named</span><span><i style="background:${C.unnamed}"></i>Unnamed</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`;
+    : `<span><i style="background:${C.named}"></i>Named</span><span><i style="background:${C.unnamed}"></i>Unnamed</span>${ui.scope === "all" ? `<span><i style="background:${C.libraryNamed}"></i>Library (named)</span><span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library (unnamed)</span>` : ""}`;
 
   over.onmousemove = e => {
     const r = over.getBoundingClientRect();

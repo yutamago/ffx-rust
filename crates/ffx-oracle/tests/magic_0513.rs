@@ -69,9 +69,10 @@ fn task() {
     recs(&mut t, &[(714, 5), (325, 2), (719, 3), (306, 3)]);
     let list = t.img.word(at + 0xe4);
     t.set_u32(list + 0x10, list);
-    // the flag byte and the light block's words non-zero first
+    // the flag byte and the light block's words non-zero first (bits 0
+    // and 1 of the flag byte clear, so a wrong bit set shows)
     let flag = t.img.word(at + 0x61);
-    t.set_u32(flag, 0x5a5a_5a5a);
+    t.set_u32(flag, 0x5a5a_5a58);
     let block = t.img.word(at + 0x83);
     t.write(block, &[0x4d; 0x28]);
     let (task, r, node, prev, next) = (
@@ -140,6 +141,8 @@ fn over_node() {
         (false, 1, false),
     ] {
         t.write(obj, &[0x5b; 0x200]);
+        // the height the set-up lowers by K, small enough that K shows
+        t.set_u32(obj + 0x18c, 3.5f32.to_bits());
         t.write(node, &[0x2c; 0x40]);
         t.set_u8(mode, 0x37);
         t.set_u8(node + 0x1a, if same { 0x37 } else { 0x15 });
@@ -220,6 +223,8 @@ fn between() {
         (false, 1, true, 0, false),
     ] {
         t.write(obj, &[0x5b; 0x300]);
+        // the height the set-up lowers by K, small enough that K shows
+        t.set_u32(obj + 0x18c, 3.5f32.to_bits());
         t.set_u8(mode, 0x37);
         for (node, same, n, ks) in [(p, same_p, np, &kids[..2]), (q, same_q, nq, &kids[2..])] {
             t.write(node, &[0x2c; 0x40]);

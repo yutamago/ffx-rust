@@ -851,4 +851,39 @@ ported! {
     ppp_mdl_rev_matrix_007401d0 @ 0x0074_01d0 => extern "C" fn ppp_mdl_rev_matrix(work: u32, _unused: u32, rec: u32) -> u32 {
         l6v::rev_matrix(&mut mem(), work, rec)
     }
+    // ---- round 7 (left7) (ffx_glue_other::l7_vfx) ----
+    /// `(name, value, desc, kind)` -> the symbol: the op script
+    /// compiler's symbol definition (its token buffer and position in a
+    /// frame).
+    op_symbol_define_007e2770 @ 0x007e_2770 => extern "C" fn op_symbol_define(name: u32, value: u32, desc: u32, kind: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::DEFINE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DEFINE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::symbol_define(&mut mem(), ebp, name, value, desc, kind)
+    }
+    /// `(tree, src, name, &pos, end, eol)` -> 0 or -1: the op script
+    /// compiler's macro expansion (its token buffer and positions in a
+    /// frame; `op_token_get_007e1d50` may move the line end in the `eol`
+    /// argument slot).
+    op_macro_expand_007e2a60 @ 0x007e_2a60 => extern "C" fn op_macro_expand(tree: u32, src: u32, name: u32, pos: u32, end: u32, eol: u32; slots: u32) -> u32 {
+        let _ = eol; // read through its slot
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::EXPAND_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::EXPAND_FRAME;
+        ffx_glue_other::l7_vfx::bridge::macro_expand(&mut mem(), ebp, slots, tree, src, name, pos, end)
+    }
+    /// `(path, out)`: the op script preprocessor over one file (its file
+    /// record, line, token and positions in the original's 0x424-byte
+    /// frame, in this shim's).
+    op_preprocess_007e2270 @ 0x007e_2270 => extern "C" fn op_preprocess(path: u32, out: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::PRE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::PRE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::preprocess(&mut mem(), ebp, path, out)
+    }
+    /// `(file, out, src, kind, pos, max, eol)`: the op script
+    /// preprocessor's directive handler (its three token buffers in the
+    /// original's 0x614-byte frame, in this shim's).
+    op_directive_007e15f0 @ 0x007e_15f0 => extern "C" fn op_directive(file: u32, out: u32, src: u32, kind: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::DIRECTIVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DIRECTIVE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::directive(&mut mem(), ebp, file, out, src, kind, pos, max, eol)
+    }
 }

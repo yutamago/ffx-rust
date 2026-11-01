@@ -4,6 +4,7 @@
 #![allow(clippy::cast_precision_loss)]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -34,6 +35,7 @@ fn sway() {
         t.write(s, &[0x2b; 0x1800]);
         t.set_u32(s + 0x16c4, time.to_bits());
         t.set_u32(s + 0x143c, 2.5f32.to_bits());
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Junk, |g, img, fr| {
             ffx_magic::m0568::sway(g, img, fr)
         });

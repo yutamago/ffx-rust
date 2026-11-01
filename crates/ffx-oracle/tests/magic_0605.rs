@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -61,9 +62,13 @@ fn end() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0xa390);
     rec(&mut t, 772, 2, |_, a| a[0] ^ 0x0772_0000);
-    recs(&mut t, &[(779, 4), (713, 1)]);
     let flag = SCRATCH + 0x10;
     t.set_u32(t.img.word(at + 0x49), flag);
+    // slot 779 keeps the game flag it runs under
+    magic_h6::rec_cells(&mut t, 779, 4, &[flag], |_, a| {
+        0x5a5a_0779 ^ a.first().copied().unwrap_or(0)
+    });
+    recs(&mut t, &[(713, 1)]);
     t.set_u32(t.img.word(at + 0x31), 0x00e0_0000);
     let p = SCRATCH + 0x14;
     t.set_u32(t.img.word(at + 0x90), p);
@@ -81,6 +86,10 @@ fn end() {
         (true, None),
     ] {
         t.write(obj, &[0x4f; 0x200]);
+        // the flags word with bit 15 set, the words after it distinct
+        t.set_u32(obj + 0x124, 0x4e4d_8001);
+        t.set_u32(obj + 0x128, 0x4c4b_4a49);
+        t.set_u32(flag, 0x00a1_0000);
         if full {
             lone_node(&mut t, give, SCRATCH + 0x1000);
         }

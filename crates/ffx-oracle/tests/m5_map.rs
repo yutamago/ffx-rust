@@ -181,6 +181,20 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the trampoline 0x18 bytes past the poison
+        let at = self.1 + 0x18;
+        let x = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[x as u32, (x >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r
+            .st0_f32()
+            .unwrap_or_else(|| panic!("intrinsic {addr:#x}: no ST0"));
+        self.0.call(self.1 + 8 + 13, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
         // the trampoline 8 bytes past the poison
         let at = self.1 + 8;
@@ -269,6 +283,12 @@ impl Twins {
                 0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3, 0xdd,
                 0xd8, 0xc3,
             ],
+        );
+        // then `fld qword [esp+4]; call [esp+0xc]; ret` for
+        // Host::call_intrinsic (the operand in ST0)
+        t.write(
+            at + 0x18,
+            &[0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3],
         );
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
@@ -6758,6 +6778,1017 @@ fn l6_guide_map_conv_matches_the_original() {
                 |o| Out::U32(l6m2::guide_conv(o, ebp, id)),
             );
             l6_same_words(t, "rcbgGuideMapConv_00938590", ebp, ebp - 0x3ac, 0x3a8);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 7 (left7) batch 1 (ffx_prender::l7_map) ----
+
+use ffx_prender::l7_map::{self as l7, bridge as l7m};
+
+/// A recording stub over `sym` (`n` words) that then stores `v[i]`
+/// through its `i`-th argument (a callee filling out words).
+fn l7_out_stub(t: &mut Twins, sym: u32, tag: u32, n: u32, ret: Ret, v: &[u32]) {
+    let s = t.stub_code(tag, false, n, 0, ret, false);
+    let mut code = vec![0x51]; // push ecx
+    for (i, &x) in v.iter().enumerate() {
+        code.extend([0x8b, 0x4c, 0x24, 8 + 4 * i as u8]); // mov ecx, [esp+8+4i]
+        code.extend([0xc7, 0x01]);
+        code.extend(x.to_le_bytes()); // mov dword [ecx], x
+    }
+    code.push(0x59); // pop ecx
+    code.push(0xe9);
+    let len = code.len() as u32 + 4;
+    let at = t.a.alloc_code(&vec![0; len as usize]).unwrap();
+    assert_eq!(t.b.alloc_code(&vec![0; len as usize]).unwrap(), at);
+    code.extend(s.wrapping_sub(at + len).to_le_bytes()); // jmp s
+    t.write(at, &code);
+    t.jump(sym, at);
+}
+
+/// A recording stub over `sym` (no words) that returns the f64 at `cell`
+/// in ST0.
+fn l7_f64_stub(t: &mut Twins, sym: u32, tag: u32, cell: u32) {
+    let s = t.stub_code(tag, false, 0, 0, Ret::Val(0), false);
+    let mut code = vec![0xdd, 0x05];
+    code.extend(cell.to_le_bytes()); // fld qword [cell]
+    code.push(0xe9);
+    let at = t.a.alloc_code(&[0; 16]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+    code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes()); // jmp s
+    t.write(at, &code);
+    t.jump(sym, at);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_anime_proc_matches_the_original() {
+    // no work area, system or map; no frames, one, several; the frame
+    // clamped from below and above; every button with the pattern at the
+    // table's count, the wait at 0 and 99; the drag on and off its id
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a01);
+        for case in 0..2500_u32 {
+            let w = if case % 31 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x400)
+            };
+            let k = rng.below(4);
+            let n = [0_u32, 1, 3, 6, 0xffff_ffff, 2, 0x101][rng.below(7) as usize];
+            if w != 0 {
+                t.w32(w + 0x288, k);
+                let cur = [0, 1, 2, n.wrapping_sub(1), n, 0xffff_ffff, 0x8000_0000, 7];
+                t.w32(w + 0x308, cur[rng.below(8) as usize]);
+            }
+            t.global(l7::RCUI_WORK, w);
+            let layers = l6_random(t, &mut rng, 0x90 + 0xc0 * 4);
+            let anim = layers + 0x90 + 0xc0 * k;
+            let frames: Vec<u8> = (0..0x420)
+                .map(|_| [0, 1, 0x62, 0x63, 0xff, 5, 0x80][rng.below(7) as usize])
+                .collect();
+            let frames = t.alloc(&frames);
+            let table = l6_random(t, &mut rng, 0x40);
+            let cnt = [0_u32, 1, 4, 0x100, 0xffff_ffff, 0x63, 5, 2, 0x62][rng.below(9) as usize];
+            t.w32(table + 0x30, cnt);
+            t.w32(anim + 8, n);
+            t.w32(anim + 0xc, frames);
+            t.w32(anim + 0x10, table);
+            let list = t.words(&[0, 4, layers]);
+            let map = t.words(&[0, 0, list]);
+            l6_map_system(t, &mut rng, map);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::MOVE_RESET, 2, 0),
+                (l7::MOVE_BEGIN, 3, 2),
+                (l7::MOVE_END, 4, 0),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7::ANIME_SET_DATA_CNT, 6, 2),
+                (l7::PRINT_SET_X, 7, 1),
+                (l7::PRINT_SET_Y, 8, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            let ok = if rng.chance(2) { 0 } else { rng.next() };
+            t.stub_sym(l7::NUMBER_IS_OK, 9, false, 1, 0, Ret::Val(ok));
+            let is = u32::from(!rng.chance(3));
+            t.stub_sym(l7::MOVE_IS_ID, 10, false, 1, 0, Ret::Val(is));
+            let id = [0x31, 0x32, 0x32, 0][rng.below(4) as usize];
+            t.stub_sym(l7::MOVE_GET_ID, 11, false, 0, 0, Ret::Val(id));
+            let d = [rng.next(), rng.next()];
+            l7_out_stub(t, l7::MOVE_GET, 12, 2, Ret::Val(rng.next()), &d);
+            l6_copy(t, l7::SET_TEXT, 13, 3, 2, 2, rng.next());
+            l6_printf(
+                t,
+                l7::GU_PRINTF,
+                14,
+                &[(l7::FORMAT_02D, 1), (l7::FORMAT_X, 1), (l7::FORMAT_Y, 1)],
+                Ret::Val(rng.next()),
+            );
+            let (msg, param) = match rng.below(9) {
+                0..=3 => (
+                    0x8006,
+                    if rng.chance(2) {
+                        0x29 + rng.below(2)
+                    } else {
+                        0x24 + rng.below(0xf)
+                    },
+                ),
+                4 => (0x8007, if rng.chance(2) { 0x32 } else { rng.next() }),
+                5 | 6 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7::ANIME_FRAME - 0x40);
+            t.check(
+                "rcuiAnimeProc",
+                0x0093_13f0,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::anime_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiAnimeProc", ebp, ebp - 0x20, 0x1c);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_camera_proc_matches_the_original() {
+    // no work area, system or map; every button of 0x8006 (0x4e none,
+    // 0x52 the reference point) and 0x800b; the drag on each id with
+    // values, NaNs and infinities; the yaw through both ftol paths
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a02);
+        for case in 0..500_u32 {
+            let w = if case % 31 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x600)
+            };
+            t.global(l7::RCUI_WORK, w);
+            let v: Vec<u32> = (0..0x30).map(|_| float_word(&mut rng)).collect();
+            let scene = t.words(&v);
+            let map = t.words(&[0, 0, scene]);
+            l6_map_system(t, &mut rng, map);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::MOVE_RESET, 2, 0),
+                (l7::MOVE_BEGIN, 3, 2),
+                (l7::MOVE_END, 4, 0),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7m::CAMERA_CALC_REF, 6, 1),
+                (l7::PRINT_SET_X, 7, 1),
+                (l7::PRINT_SET_Y, 8, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            let is = u32::from(!rng.chance(3));
+            t.stub_sym(l7::MOVE_IS_ID, 10, false, 1, 0, Ret::Val(is));
+            let id = 0x46 + rng.below(9);
+            t.stub_sym(l7::MOVE_GET_ID, 11, false, 0, 0, Ret::Val(id));
+            let dx = [0, 1, 0xffff_ffff, 0x7fff_ffff, 0x0123_4567, rng.next()];
+            let d = [dx[rng.below(6) as usize], rng.next()];
+            l7_out_stub(t, l7::MOVE_GET, 12, 2, Ret::Val(rng.next()), &d);
+            l6_copy(t, l7::SET_TEXT, 13, 3, 2, 3, rng.next());
+            l6_printf(
+                t,
+                l7::GU_PRINTF,
+                14,
+                &[(l7::FORMAT_D, 1)],
+                Ret::Val(rng.next()),
+            );
+            let yaw = [
+                float_word(&mut rng),
+                0x4049_0fdb,
+                0xc049_0fdb,
+                0x7f80_0000,
+                0x5f00_0000,
+                0x3f80_0000,
+            ][rng.below(6) as usize];
+            if rng.chance(2) {
+                let y = if rng.chance(2) {
+                    // the smallest yaw reaching a whole degree k (180/pi as
+                    // the f64 the original multiplies by): its f32 can fall
+                    // short
+                    let c = 57.295_780_181_884_766_f64;
+                    let k = f64::from(rng.below(300)) - 150.0;
+                    let mut y = k / c;
+                    while y * c < k {
+                        y = y.next_up();
+                    }
+                    while (y.next_down() * c) >= k {
+                        y = y.next_down();
+                    }
+                    y
+                } else {
+                    f64::from(rng.below(20_000)) * 0.000_314_159_265_358_979 - 3.0
+                };
+                let b = y.to_bits();
+                let cell = t.words(&[b as u32, (b >> 32) as u32]);
+                l7_f64_stub(t, l7m::CAMERA_GET_YAW, 15, cell);
+            } else {
+                let cell = t.words(&[yaw]);
+                r5_float_stub(t, l7m::CAMERA_GET_YAW, 15, 0, cell);
+            }
+            // the image's CRT has no float formatting set up: sprintf
+            // logged (the f64 in two words)
+            let s = t.stub_code(16, false, 4, 0, Ret::Val(rng.next()), false);
+            t.global(l7::SPRINTF_SLOT, s);
+            if rng.chance(2) {
+                t.global(ffx_bridge::x87::SSE2_AVAILABLE.sym, 1);
+            }
+            let (msg, param) = match rng.below(9) {
+                0..=2 => (0x8006, 0x46 + rng.below(0xe)),
+                3 => (0x800b, 0x45 + rng.below(0xa)),
+                4..=6 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, 0x800a, l6_msg(&mut rng)][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7m::CAMERA_FRAME - 0x40);
+            t.check(
+                "rcuiCameraProc",
+                0x0093_1910,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::camera_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiCameraProc", ebp, ebp - 0x20, 0x1c);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_layer_proc_matches_the_original() {
+    // no work area, system, map or layers; every button of 0x8006 with
+    // the selection and the mode at their ends; the drag; the texts with
+    // each flag, layers past 0x1a, the depth window open or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a03);
+        for case in 0..3000_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x400)
+            };
+            let n = [0_u32, 1, 3, 4, 0x1c, 0xffff_ffff][rng.below(6) as usize];
+            let k = [0, 1, 2, 3, n.wrapping_sub(1), 0x1b, 0x1a, 0x19][rng.below(8) as usize];
+            // the selected layer inside a block of 0x1c
+            let k = if k < 0x1c { k } else { 0x1b };
+            if w != 0 {
+                t.w32(w + 0x288, k);
+                t.w32(w + 0x28c, [0, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize]);
+            }
+            t.global(l7::RCUI_WORK, w);
+            let block = l6_random(t, &mut rng, 0xc0 * 0x1c);
+            let lay = block + 0xc0 * k;
+            t.w32(lay + 0x14, float_word(&mut rng));
+            if rng.chance(3) {
+                t.w32(lay + 0x14, (rng.below(2000) as f32 - 1000.5).to_bits());
+            }
+            let mut sc: Vec<u32> = (0..0x48).map(|_| rng.next()).collect();
+            sc[1] = n;
+            sc[2] = block;
+            sc[0x41] = [0, 1, rng.next()][rng.below(3) as usize];
+            let scene = t.words(&sc);
+            let map = t.words(&[0, 0, scene]);
+            l6_map_system(t, &mut rng, map);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::MOVE_RESET, 2, 0),
+                (l7::MOVE_BEGIN, 3, 2),
+                (l7::MOVE_END, 4, 0),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7m::CLEAR_SELECT, 6, 0),
+                (l7m::SET_SELECT, 7, 0),
+                (l7m::NUM_WINDOW_CREATE, 8, 4),
+                (l7m::CHK_SORT_LAYER, 9, 1),
+                (l7m::WINDOW_CREATE, 10, 9),
+                (l7::PRINT_SET_X, 11, 1),
+                (l7::PRINT_SET_Y, 12, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            let is = u32::from(!rng.chance(3));
+            t.stub_sym(l7::MOVE_IS_ID, 13, false, 1, 0, Ret::Val(is));
+            let d = [rng.word(), rng.word()];
+            l7_out_stub(t, l7::MOVE_GET, 14, 2, Ret::Val(rng.next()), &d);
+            l6_copy(t, l7::SET_TEXT, 15, 3, 2, 2, rng.next());
+            l6_printf(
+                t,
+                l7::GU_PRINTF,
+                16,
+                &[
+                    (l7m::FORMAT_C, 1),
+                    (l7m::FORMAT_UC, 1),
+                    (l7::FORMAT_X, 1),
+                    (l7::FORMAT_Y, 1),
+                ],
+                Ret::Val(rng.next()),
+            );
+            if rng.chance(2) {
+                t.global(ffx_bridge::x87::SSE2_AVAILABLE.sym, 1);
+            }
+            let (msg, param) = match rng.below(9) {
+                0..=3 => (
+                    0x8006,
+                    if rng.chance(12) {
+                        0
+                    } else {
+                        [0x10 + rng.below(0x16), 0x11, 0x12][rng.below(3) as usize]
+                    },
+                ),
+                4 => (0x8007, if rng.chance(2) { 0x18 } else { rng.next() }),
+                5 | 6 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7m::LAYER_FRAME - 0x40);
+            t.check(
+                "rcuiLayerProc",
+                0x0093_4470,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::layer_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiLayerProc", ebp, ebp - 0x1c, 0x18);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_vram_proc_matches_the_original() {
+    // no work area or system; every button left and right with the
+    // counters at their ends; the texts with each format and scale (and a
+    // scale out of range)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a04);
+        for case in 0..600_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xc00)
+            };
+            if w != 0 {
+                t.w32(w + 0xae4, rng.word());
+                t.w32(w + 0xaec, [0, 1, 0xb, 0xc, 5, 0xd][rng.below(6) as usize]);
+                t.w32(w + 0xb04, [0, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize]);
+                t.w32(w + 0xaf8, rng.word());
+            }
+            t.global(l7::RCUI_WORK, w);
+            let sys = if rng.chance(9) { 0 } else { rng.next() | 1 };
+            t.global(l7::YN_MAP_SYSTEM, sys);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7m::VRAM_WRITE, 6, 0),
+                (l7::PRINT_SET_X, 7, 1),
+                (l7::PRINT_SET_Y, 8, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l7::SET_TEXT, 15, 3, 2, 2, rng.next());
+            l6_printf(
+                t,
+                l7::GU_PRINTF,
+                16,
+                &[(l7m::FORMAT_04X, 1)],
+                Ret::Val(rng.next()),
+            );
+            let (msg, param) = match rng.below(9) {
+                0..=2 => (0x8006, 0xb7 + rng.below(0x12)),
+                3..=5 => (0x800a, 0xb7 + rng.below(0x12)),
+                6 | 7 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            // the format names' table holds 13: the texts read inside it
+            if w != 0 && msg == 0x8011 && t.r32(w + 0xaec) > 0xc {
+                t.w32(w + 0xaec, 0xc);
+            }
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7m::VRAM_FRAME - 0x40);
+            t.check(
+                "rcuiVramProc_00936a00",
+                0x0093_6a00,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::vram_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiVramProc_00936a00", ebp, ebp - 0x48, 0x44);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// A recording `sprintf(buf, fmt, ...)` stub: logs `buf`, `fmt` and the
+/// words the format reads: one for "%d", two (an f64) for "%.2f" and
+/// "%.1f", none for the others; returns `ret`.
+fn l7_sprintf_stub(t: &mut Twins, tag: u32, ret: u32) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    for i in 0..2_u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    // "%d": one word (the jump skips the f64 test and its second word)
+    c.extend([0x81, 0xfa]);
+    c.extend(t.rebase(l7::FORMAT_D).to_le_bytes()); // cmp edx, "%d"
+    c.extend([0x74, 0x19]); // je one
+    for (f, skip) in [(l7m::FORMAT_2F, 0x0a), (l7m::FORMAT_1F, 0x02)] {
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(f).to_le_bytes()); // cmp edx, f
+        c.extend([0x74, skip]); // je two
+    }
+    c.extend([0xeb, 0x0e]); // jmp done
+    // two: the high word, then one: the low word
+    c.extend([0x8b, 0x54, 0x24, 0x10, 0x89, 0x50, 0x14]); // two: mov edx, [esp+0x10]; mov [eax+0x14], edx
+    c.extend([0x8b, 0x54, 0x24, 0x0c, 0x89, 0x50, 0x10]); // one: mov edx, [esp+0xc]; mov [eax+0x10], edx
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // done: inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.push(0xc3);
+    let at = t.a.alloc_code(&vec![0; c.len()]).unwrap();
+    assert_eq!(t.b.alloc_code(&vec![0; c.len()]).unwrap(), at);
+    t.write(at, &c);
+    at
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_fp_adj_proc_matches_the_original() {
+    // no work area; every button left and right (the mode at its ends);
+    // the texts with each mode, the manager present or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a05);
+        for case in 0..2000_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x900)
+            };
+            if w != 0 {
+                t.w32(
+                    w + 0x630,
+                    [0, 1, 2, 3, 4, 0xffff_ffff][rng.below(6) as usize],
+                );
+                for k in 0..11 {
+                    t.w32(w + 0x63c + 4 * k, float_word(&mut rng));
+                }
+            }
+            t.global(l7::RCUI_WORK, w);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7m::FP_RESET_STICK, 6, 1),
+                (l7m::GET_CHR_HANDLE, 7, 1),
+                (l7m::FP_SET_STICK_CHR, 8, 3),
+                (l7m::FP_SET_STICK_MAP, 9, 2),
+                (l7m::SCALE_VECTOR, 10, 6),
+                (l7m::UNIT_MATRIX, 11, 1),
+                (l7m::SET_SCALE_VEC3, 12, 2),
+                (l7m::RT_M_YXZ, 13, 4),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            let mng = if rng.chance(4) {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x40)
+            };
+            r5_out_stub(t, l7m::FP_GET_MNG_PTR, 14, 3, Ret::Val(rng.next()), 2, mng);
+            l6_copy(t, l7::SET_TEXT, 15, 3, 2, 2, rng.next());
+            // the image's CRT has no float formatting set up: sprintf
+            // logged (the f64 in two words, "%d"'s word)
+            let s = l7_sprintf_stub(t, 16, rng.next());
+            t.global(l7::SPRINTF_SLOT, s);
+            let (msg, param) = match rng.below(9) {
+                0..=2 => (0x8006, 0x77 + rng.below(0x19)),
+                3..=5 => (0x800a, 0x77 + rng.below(0x19)),
+                6 | 7 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7m::FP_ADJ_FRAME - 0x40);
+            t.check(
+                "rcuiFpAdjProc_00932f20",
+                0x0093_2f20,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::fp_adj_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiFpAdjProc_00932f20", ebp, ebp - 0x68, 0x64);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_particle_proc_matches_the_original() {
+    // no work area; every button left and right (the mode at its ends);
+    // the texts with each mode (and one out of range), the flag on or off
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a06);
+        for case in 0..2000_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xb00)
+            };
+            if w != 0 {
+                t.w32(
+                    w + 0x920,
+                    [0, 1, 2, 3, 4, 0xffff_ffff][rng.below(6) as usize],
+                );
+                t.w32(w + 0x91c, [0, 1, rng.next()][rng.below(3) as usize]);
+                for k in 0..11 {
+                    t.w32(w + 0x924 + 4 * k, float_word(&mut rng));
+                }
+            }
+            t.global(l7::RCUI_WORK, w);
+            for (sym, tag, k) in [
+                (l7::ADD_ITEMS, 1, 2),
+                (l7::NUMBER_CREATE, 5, 5),
+                (l7m::PAR_PROC_KICK, 6, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l7::SET_TEXT, 15, 3, 2, 2, rng.next());
+            let s = l7_sprintf_stub(t, 16, rng.next());
+            t.global(l7::SPRINTF_SLOT, s);
+            let (msg, param) = match rng.below(9) {
+                0..=2 => (0x8006, 0x9f + rng.below(0x19)),
+                3..=5 => (0x800a, 0x9f + rng.below(0x19)),
+                6 | 7 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l7m::PARTICLE_FRAME - 0x40);
+            t.check(
+                "rcuiParticleProc_00935970",
+                0x0093_5970,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l7m::particle_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiParticleProc_00935970", ebp, ebp - 0x18, 0x14);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_model_create_from_file_matches_the_original() {
+    // the file missing (with and without its object); 0..3 groups (0 is
+    // one, a negative count none); 0..7 primitives of every kind in the
+    // groups, the first one's group deciding which group counts them all;
+    // some model blocks missing
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a07);
+        for case in 0..1000_u32 {
+            let model = l6_random(t, &mut rng, 0xa0);
+            let tbl = l6_random(t, &mut rng, 0x40);
+            t.w32(tbl + 8, 4 * rng.below(8));
+            t.w32(model + 0x14, tbl);
+            let groups = [0_u32, 1, 2, 3, 0xffff_ffff, 1][rng.below(6) as usize];
+            let n = rng.below(8);
+            let prims = l6_random(t, &mut rng, 0x58 * 8);
+            for k in 0..n {
+                let g = rng.below(groups.clamp(1, 3) + 1);
+                t.w32(prims + 0x58 * k + 0x24, g);
+            }
+            let mut w: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            w[4] = n;
+            w[5] = prims;
+            w[6] = groups;
+            let rsd = if case % 23 == 5 { 0 } else { t.words(&w) };
+            t.stub_sym(l7m::RSD2_NEW, 1, false, 0, 0, Ret::Val(rsd));
+            // no object: the load fails (the original reads the object)
+            let ok = u32::from(case % 11 != 2 && rsd != 0);
+            t.stub_sym(l7m::RSD_LOAD, 2, false, 2, 0, Ret::Val(ok));
+            let counts = l6_random(t, &mut rng, 0x40);
+            let table = l6_random(t, &mut rng, 0x100);
+            let allocs = t.seq(&[counts, table]);
+            t.stub_sym(l7m::RC_ALLOC, 3, false, 3, 0, allocs);
+            if groups.cast_signed() < 0 {
+                t.stub_sym(l7m::MEMSET, 4, false, 3, 0, Ret::Val(counts));
+            }
+            // the blocks: one buffer (each block holds at most 7 * 0x28
+            // bytes), every fifth missing
+            let buf = l6_random(t, &mut rng, 0x140 * 12);
+            let blocks: Vec<u32> = (0..12)
+                .map(|k| if rng.chance(5) { 0 } else { buf + 0x140 * k })
+                .collect();
+            let blocks = t.seq(&blocks);
+            t.stub_sym(l7m::MODEL_GET_PRIM, 5, false, 2, 0, blocks);
+            for (sym, tag, k) in [
+                (l7m::LISTS_DELETE, 6, 1),
+                (l7m::MODEL_CREATE, 7, 2),
+                (l7m::BBOX_SET, 8, 3),
+                (l7m::MODEL_F_TO_S0, 9, 4),
+                (l7m::MODEL_SET_SCALE, 10, 2),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            let cell = t.words(&[float_word(&mut rng)]);
+            r5_float_stub(t, l7m::BBOX_SHORT_SCALE, 11, 1, cell);
+            let path = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - l7m::MODEL_FILE_FRAME - 0x40);
+            t.check(
+                "rcbgModelCreateFromFile",
+                0x0093_a280,
+                Conv::Cdecl,
+                &[model, path],
+                |o| Out::U32(l7m::model_create_from_file(o, ebp, model, path)),
+            );
+            let name = "rcbgModelCreateFromFile";
+            l6_same_words(t, name, ebp, ebp - 0x40, 0x10);
+            l6_same_words(t, name, ebp, ebp - 0x1c, 4);
+            l6_same_words(t, name, ebp, ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// A recording `sprintf(buf, fmt, ...)` stub that logs `buf`, `fmt` and,
+/// for the formats in `fmts`, their argument words; it writes the
+/// format's first four bytes and a NUL into `buf` (the line its caller
+/// measures) and returns `ret`.
+fn l7_sprintf_tab(t: &mut Twins, tag: u32, ret: u32, fmts: &[(u32, u8)]) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // mov edx, [esp+4]; mov [eax+8], edx
+    c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x50, 0x0c]); // mov edx, [esp+8]; mov [eax+0xc], edx
+    // the text: the format's first dword, then a NUL
+    c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+    c.extend([0x50, 0x8b, 0x02, 0x89, 0x01, 0xc6, 0x41, 0x04, 0x00, 0x58]); // push eax; mov eax, [edx]; mov [ecx], eax; mov byte [ecx+4], 0; pop eax
+    let mut to_done = Vec::new();
+    for &(f, n) in fmts {
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(f).to_le_bytes()); // cmp edx, f
+        c.extend([0x75, 7 * n + 5]); // jne the next format
+        for i in 0..n {
+            c.extend([0x8b, 0x4c, 0x24, 0x0c + 4 * i]); // mov ecx, [esp+0xc+4i]
+            c.extend([0x89, 0x48, 0x10 + 4 * i]); // mov [eax+0x10+4i], ecx
+        }
+        c.push(0xe9);
+        to_done.push(c.len());
+        c.extend([0; 4]); // jmp done
+    }
+    let done = c.len();
+    for p in to_done {
+        let rel = (done - (p + 4)) as u32;
+        c[p..p + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // done: inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.push(0xc3);
+    let at = t.a.alloc_code(&vec![0; c.len()]).unwrap();
+    assert_eq!(t.b.alloc_code(&vec![0; c.len()]).unwrap(), at);
+    t.write(at, &c);
+    at
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_save_text_matches_the_original() {
+    // the open failing; 0..3 layers with and without animation frames and
+    // palette cycles (the frame count 0, 1, several)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a08);
+        for case in 0..600_u32 {
+            let w = l6_random(t, &mut rng, 0x300);
+            t.global(l7::RCUI_WORK, w);
+            let n = [0_u32, 1, 2, 3][rng.below(4) as usize];
+            let layers = l6_random(t, &mut rng, 0xc0 * 3);
+            for k in 0..3 {
+                let l = layers + 0xc0 * k;
+                for o in [0x14, 0x18, 0x1c, 0x20] {
+                    t.w32(l + o, float_word(&mut rng));
+                }
+                let cnt = [0_u32, 1, 3, 0xffff_ffff, 2][rng.below(5) as usize];
+                t.w32(l + 0x98, cnt);
+                let frames = l6_random(t, &mut rng, 0x10);
+                t.w32(l + 0x9c, frames);
+                let pal = [0_u8, 1, 0x80][rng.below(3) as usize];
+                t.w8(l + 0xba, pal);
+            }
+            let mut sc: Vec<u32> = (0..0x20).map(|_| rng.next()).collect();
+            sc[1] = n;
+            sc[2] = layers;
+            let scene = t.words(&sc);
+            let map = t.words(&[0, 0, scene]);
+            let sys = t.words(&[map]);
+            t.global(l7::YN_MAP_SYSTEM, sys);
+            let fd = if case % 13 == 4 {
+                0xffff_ffff
+            } else {
+                rng.next()
+            };
+            t.stub_sym(l7m::SCE_OPEN, 1, false, 2, 0, Ret::Val(fd));
+            t.stub_sym(l7m::SCE_WRITE, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(l7m::SCE_CLOSE, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l7m::SYSTEM_ON_HOST, 4, false, 2, 0, Ret::Val(rng.next()));
+            l6_printf(
+                t,
+                l7m::RC_PRINT,
+                5,
+                &[(l7m::ST_ERROR, 2), (l7m::ST_SYSTEM, 2)],
+                Ret::Val(rng.next()),
+            );
+            let mut fmts = vec![(l7m::ST_PATH, 2), (l7m::ST_Z, 8), (l7m::ST_FRAME, 4)];
+            for f in [
+                l7m::ST_OFF_X,
+                l7m::ST_OFF_Y,
+                l7m::ST_ADJ_Y,
+                l7m::ST_FLAG,
+                l7m::ST_X,
+                l7m::ST_Y,
+                l7m::ST_SPEED_X,
+                l7m::ST_SPEED_Y,
+                l7m::ST_ALPHA,
+                l7m::ST_DATA_CNT,
+                l7m::ST_TYPE,
+                l7m::ST_TIME,
+                l7m::ST_CHMOD,
+            ] {
+                fmts.push((f, 1));
+            }
+            let s = l7_sprintf_tab(t, 6, rng.next(), &fmts);
+            t.global(l7::SPRINTF_SLOT, s);
+            l6_fill_stack(t, &mut rng, 0x400);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - l7m::SAVE_TEXT_FRAME - 0x40);
+            t.check("rcbgSaveText", 0x0093_9b10, Conv::Cdecl, &[], |o| {
+                Out::U32(l7m::save_text(o, ebp))
+            });
+            l6_same_words(t, "rcbgSaveText", ebp, ebp - 0x214, 0x210);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_fog_param_proc_matches_the_original() {
+    // every row down and up by 1 and 10 with the values at and near their
+    // ends; the switch on and off; the texts
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a09);
+        for _ in 0..1500_u32 {
+            let rgb: Vec<u8> = (0..3)
+                .map(|_| [0_u8, 1, 9, 10, 11, 0xf4, 0xf5, 0xfe, 0xff, 0x80][rng.below(10) as usize])
+                .collect();
+            t.write(t.rebase(l7m::FOG_RGB), &rgb);
+            for k in 0..3 {
+                let v: f32 = [
+                    0.0, 0.5, 1.0, 9.7, 10.0, 11.0, 244.0, 245.0, 254.9, 255.0, 300.0, 9988.0,
+                    9989.0, 9998.5, 9999.0, -3.0,
+                ][rng.below(16) as usize];
+                let bits = if rng.chance(9) {
+                    float_word(&mut rng)
+                } else {
+                    v.to_bits()
+                };
+                t.w32(t.rebase(l7m::FOG_FLOATS) + 4 * k, bits);
+            }
+            let status = t.r32(t.rebase(l7m::YI_RENDER_STATUS));
+            t.global(l7m::YI_RENDER_STATUS, status ^ (rng.below(2) << 3));
+            if rng.chance(2) {
+                t.global(ffx_bridge::x87::SSE2_AVAILABLE.sym, 1);
+            }
+            let mem = l6_random(t, &mut rng, 0x60);
+            for (sym, tag, k, ret) in [
+                (l7m::GET_ARG, 1, 1, rng.next()),
+                (l7m::USER_MALLOC, 2, 1, mem),
+                (l7m::SET_ARG, 3, 2, rng.next()),
+                (l7m::SET_TITLE, 4, 2, rng.next()),
+                (l7m::ADD_STATIC, 5, 7, rng.next()),
+                (l7m::ADD_BUTTON, 6, 7, rng.next()),
+                (l7m::SETUP_FOG_PARAM, 7, 1, rng.next()),
+                (l7m::SETUP_PARAM_GS, 8, 1, rng.next()),
+                (l7::SET_TEXT, 9, 3, rng.next()),
+                (l7::PRINT_SET_X, 10, 1, rng.next()),
+                (l7::PRINT_SET_Y, 11, 1, rng.next()),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(ret));
+            }
+            l6_printf(
+                t,
+                l7::GU_PRINTF,
+                12,
+                &[(l7m::FORMAT_03D, 1), (l7::FORMAT_D, 1)],
+                Ret::Val(rng.next()),
+            );
+            let (msg, param) = match rng.below(8) {
+                0..=2 => (0x8005, rng.below(0x1a)),
+                3..=5 => (0x8009, rng.below(0x1a)),
+                6 => (0x8006, if rng.chance(2) { 0x19 } else { rng.next() }),
+                _ => ([0x8001, 0x8011, l6_msg(&mut rng)][rng.below(3) as usize], 0),
+            };
+            let window = rng.next();
+            r5_zero_stack(t, 0x300);
+            let args = [window, msg, param];
+            let slots = l6_arg_slots(t, &args);
+            t.check(
+                "yiGui_setfogparam_proc",
+                0x0091_62f0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l7m::fog_param_proc(o, slots, window, msg, param)),
+            );
+            r5_same(t, "yiGui_setfogparam_proc slots", slots, 12);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn l7_moving_to_target_matches_the_original() {
+    // the progress below 1 and up to three steps; arriving at the target,
+    // no next node, a straight link and one around a centre node; the
+    // link already marked or not; distances positive and zero
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a11);
+        let area = t.zeros(0x11700);
+        let (nodes, rings) = (16_u32, 4_u32);
+        for case in 0..800_u32 {
+            // the parts of g_Abmap the walk reads
+            for n in 0..nodes {
+                let at = area + 0x808 + 0x28 * n;
+                let (x, y) = if case % 13 == 7 {
+                    (5_i16, -3_i16)
+                } else {
+                    (rng.below(400) as i16 - 200, rng.below(400) as i16 - 200)
+                };
+                t.write(at, &x.to_le_bytes());
+                t.write(at + 2, &y.to_le_bytes());
+                t.write(at + 6, &(rng.below(rings) as u16).to_le_bytes());
+            }
+            for r in 0..rings {
+                let v = rng.below(0x400) as i16 - 0x200;
+                t.write(area + 0xf834 + 0x30 * r, &v.to_le_bytes());
+            }
+            let k = rng.below(4);
+            t.w8(area + 0x11638, k as u8);
+            let token = area + 0x11088 + 0x50 * k;
+            for o in 0..0x14 {
+                t.w32(token + 4 * o, float_word(&mut rng));
+            }
+            let progress = [0.2_f32, 0.99, 1.0, 1.5, 2.25, 3.0][rng.below(6) as usize];
+            let speed = [0.0_f32, 0.05, 0.5, 1.0][rng.below(4) as usize];
+            t.w32(area + 0x11620, progress.to_bits());
+            t.w32(area + 0x11624, speed.to_bits());
+            t.w32(area + 0x116ac, rng.below(2));
+            let cur = rng.below(nodes) as u16;
+            let tgt = if rng.chance(4) {
+                cur
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(area + 0x11632, &cur.to_le_bytes());
+            t.write(area + 0x11634, &tgt.to_le_bytes());
+            let via = if rng.chance(2) {
+                0xffff
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(area + 0x11636, &via.to_le_bytes());
+            for o in [0x1163c, 0x11640, 0x11644, 0x11648, 0x11628, 0x1162c] {
+                t.w32(area + o, float_word(&mut rng));
+            }
+            for o in [0x115a8, 0x115b0, 0x115f8] {
+                t.w32(area + o, rng.next());
+            }
+            t.w8(area + 0x115c7, 0);
+            if case % 13 == 7 {
+                // the token on the nodes' point: a zero distance
+                for (o, v) in [(0, 5.0_f32), (4, -3.0), (8, 0.0)] {
+                    t.w32(token + o, v.to_bits());
+                }
+            } else if case % 17 == 3 {
+                t.w32(token + 4, 0xffc0_0001);
+            }
+            if rng.chance(2) {
+                let v: Vec<u8> = (0..4)
+                    .flat_map(|_| ((rng.below(9) as f32) - 4.0).to_bits().to_le_bytes())
+                    .collect();
+                let at = t.rebase(l7m::VU0_VF00);
+                t.patch(at, &v);
+            }
+            t.global(l7m::ABMAP, area);
+            // the link the search hands back: its centre node or none, its
+            // character marks
+            let link = l6_random(t, &mut rng, 0x10);
+            let lvia = if rng.chance(2) {
+                0xffff
+            } else {
+                rng.below(nodes) as u16
+            };
+            t.write(link + 4, &lvia.to_le_bytes());
+            t.w8(link + 0xc, [0_u8, 0xff, 1, 2, 4, 8][rng.below(6) as usize]);
+            let steps: Vec<u32> = (0..4)
+                .map(|_| {
+                    if rng.chance(6) {
+                        0xffff
+                    } else {
+                        rng.below(nodes) | (rng.next() & 0xffff_0000)
+                    }
+                })
+                .collect();
+            let steps = t.seq(&steps);
+            r5_out_stub(t, l7m::FIND_NEXT_NODE, 1, 3, steps, 2, link);
+            for (sym, tag, n) in [
+                (l7m::RESTORE_VF00, 2, 0),
+                (l7m::INTER_VECTOR_XYZ, 3, 4),
+                (l7m::UPDATE_MOVING_CHR_POS, 4, 5),
+                (l7m::RESET_CURSOR_CAMERA, 5, 0),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 0);
+            // the straight point the stub leaves unwritten: no signalling
+            // NaNs (the emulator keeps them through fld/fstp)
+            for o in [0x24, 0x20] {
+                let v = float_word(&mut rng);
+                t.a.write(ebp - o, &v.to_le_bytes()).unwrap();
+                t.b.write(ebp - o, &v.to_le_bytes()).unwrap();
+            }
+            t.b_top = Some(ebp - l7m::MOVING_FRAME - 0x40);
+            t.check(
+                "AbmapState_MovingToTarget",
+                0x00a5_9990,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(l7m::moving_to_target(o, ebp)),
+            );
+            l6_same_words(t, "AbmapState_MovingToTarget", ebp, ebp - 0x54, 0x50);
             t.b_top = None;
             t.reset();
         }

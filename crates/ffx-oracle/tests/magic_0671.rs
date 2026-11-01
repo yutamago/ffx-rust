@@ -38,7 +38,14 @@ fn start() {
         pop_pool(&mut t, pop, SCRATCH + 0x2000, n);
         let w = |op: u32| t.img.word(at + op);
         let (head, tail) = (w(0x8d), w(0x79));
+        let (g46, g5a, g65, g6d) = (w(0x46), w(0x5a), w(0x65), w(0x6d));
         list(&mut t, head, tail, SCRATCH + 0x3000, full);
+        // the words the start clears, and the bytes after the half-word
+        // and the byte it sets, non-zero
+        t.set_u32(g46, 0x00a5_0046);
+        t.set_u32(g5a, 0x00a5_005a);
+        t.set_u32(g65, 0x5a5a_5a5a);
+        t.set_u32(g6d, 0x6d6d_6d00);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0671::start(g, img, fr))
         });

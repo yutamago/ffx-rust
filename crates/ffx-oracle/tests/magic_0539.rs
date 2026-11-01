@@ -26,7 +26,8 @@ fn dll_main_writes_only_crt_state() {
 }
 
 /// 0x100010a0 (slot 712 saying 0 and 1, the clock at 31 and not) and
-/// 0x10001640 (off, on with slot 261's answers; the timelines idle).
+/// 0x10001640 (off, on with slot 261's answers; the timelines live, so
+/// running or stopping one, or the wrong one, shows).
 #[test]
 fn frames() {
     let Some(mut t) = twin(N) else { return };
@@ -36,6 +37,7 @@ fn frames() {
     let (gp, lock) = (magic_h6::cell(&t, fo, 0x4d), magic_h6::cell(&t, fo, 0x5d));
     magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| m.r32(cell) & 1);
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
+    rec(&mut t, 253, 0, |_, _| 1);
     recs(
         &mut t,
         &[(258, 1), (231, 3), (230, 2), (723, 1), (724, 2), (214, 1)],
@@ -43,10 +45,6 @@ fn frames() {
     let at = t.at(0x1640);
     // the word the frame copies and the one slot 214 gets, distinct
     magic_h6::distinct(&mut t, at, &[0x44, 0xbb]);
-    for op in [0x61, 0x81] {
-        let tl = t.img.word(at + op);
-        t.set_u32(tl + 8, 0);
-    }
     let clock = t.img.word(fo + 0x8e);
     let obj = SCRATCH + 0x1000;
     for (on, bits, c) in [
@@ -61,6 +59,10 @@ fn frames() {
         t.set_u32(gp, 0x7777_7777);
         t.check_entry(fo, Call::default(), &[obj], Eax::Checked);
         t.set_u32(t.img.word(at + 0x2), on);
+        for (k, op) in (0u32..).zip([0x61, 0x81, 0xa1, 0xab]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

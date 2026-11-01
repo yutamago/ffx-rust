@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -35,6 +36,7 @@ fn camera_reset() {
     rec(&mut t, 562, 1, |_, _| 0x0056_2000);
     t.set_u32(t.img.word(at + 0x8), 0x00ca_0000);
     t.set_u32(t.img.word(at + 0x4f), 0x00a0_0000);
+    magic_h6::scrub(&mut t);
     t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
         m0587::camera_reset(g, img, fr)
     });
@@ -53,16 +55,20 @@ fn load_groups() {
         a[0] ^ a[1]
     });
     t.stub_edx(772, |_, a| a[1] + 0x77);
-    recs(&mut t, &[(779, 4)]);
     let flag = SCRATCH + 0x10;
     t.set_u32(t.img.word(at + 0x5b), flag);
     t.set_u32(flag, 0x00f1_0000);
+    // slot 779 keeps the game flag it runs under
+    magic_h6::rec_cells(&mut t, 779, 4, &[flag], |_, a| {
+        0x5a5a_0779 ^ a.first().copied().unwrap_or(0)
+    });
     let r = SCRATCH + 0x4000;
     t.set_u32(t.img.word(at + 0x8), r);
     for (k, n) in (0u32..).zip([0i32, 1, 3, -1]) {
         t.set_u32(r + 0x166c + 0x8a8 * k, n.cast_unsigned());
         t.set_u32(r + 0xe48 + 0x8a8 * k, 0x00e0_0000 + k);
     }
+    magic_h6::scrub(&mut t);
     t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
         m0587::load_groups(g, img, fr)
     });
@@ -84,6 +90,7 @@ fn glow_start() {
         t.write(head, &[0x4d; 0x20]);
         t.set_u32(t.img.word(at + 0x89), u32::from(!empty));
         t.set_u32(t.img.word(at + 0x9d), head);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -103,6 +110,7 @@ fn glow_colour() {
         t.set_u32(src + 4 * i, f(i as f32 * 0.75 - 2.0));
     }
     t.set_u32(src + 0x30, 0x7fc0_1234);
+    magic_h6::scrub(&mut t);
     t.check_entry(at, Call::default(), &[src], Eax::Checked);
 }
 
@@ -134,9 +142,16 @@ fn glow_turn() {
         (f32::NAN, 0),
     ] {
         t.write(r + 0x980, &[0x3c; 0x100]);
+        // the step x = 0.5 - 0.25 non-zero (an add for the sub shows), the
+        // angle after the step as listed
         t.set_u32(r + 0xa84, f(0.5));
-        t.set_u32(r + 0xa94, f(0.5));
-        t.set_u32(r + 0xa44, f(angle));
+        t.set_u32(r + 0xa94, f(0.25));
+        let a = if angle.is_nan() {
+            angle
+        } else {
+            magic_h6::hits(angle, 0.25)
+        };
+        t.set_u32(r + 0xa44, f(a));
         t.set_u32(r + 0xa54, f(1.25));
         for k in 0..4 {
             t.set_u8(
@@ -144,6 +159,7 @@ fn glow_turn() {
                 counter.wrapping_add(u8::try_from(k).unwrap()),
             );
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -172,7 +188,16 @@ fn sway_frame() {
     let sr = t.img.rel32_target(at + 0xb1);
     let h = t.img.word(sr + 0x1d);
     t.set_u32(h, 0x00a5_001d);
-    for angle in [10.0f32, 0.5, -10.0] {
+    // the step, the bounds: also exactly at each bound after the step
+    let step = magic_hi::konst(&t, at, 0xc1);
+    let (hi, lo) = (magic_hi::konst(&t, at, 0xcb), magic_hi::konst(&t, at, 0xdf));
+    for angle in [
+        10.0f32,
+        0.5,
+        -10.0,
+        magic_h6::hits(hi, step),
+        magic_h6::hits(lo, step),
+    ] {
         t.write(s, &[0x2b; 0xb00]);
         for (i, o) in [0xa80u32, 0xa88, 0xa90, 0xa98, 0xa94, 0xa9c, 0x6c0, 0x6c8]
             .into_iter()
@@ -182,6 +207,7 @@ fn sway_frame() {
         }
         t.set_u32(s + 0xa84, angle.to_bits());
         t.set_u16(s + 0x664, 0x0008);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

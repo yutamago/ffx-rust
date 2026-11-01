@@ -10,13 +10,14 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
 
 use ffx_magic::{Ret, m0577};
 use magic::{Call, Eax, SCRATCH, Twin};
-use magic_hi::{f, konst, models};
+use magic_hi::{f, konst};
 use magic_owna::{rec, recs, twin};
 
 const N: u16 = 577;
@@ -50,15 +51,17 @@ fn colour() {
             edx: 0x00e5_0005,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::colour(g, img, fr))
         });
     }
 }
 
-const SETS: [&[Option<&[(u32, u8, i16)]>]; 4] = [
+const SETS: [&[Option<&[(u32, u8, i16)]>]; 5] = [
     &[],
     &[None, Some(&[])],
+    &[Some(&[]), Some(&[(0x3580, 0x48, 2), (0x3700, 0x48, 2)])],
     &[
         Some(&[(0x3580, 0x48, 3), (0x7580, 0x48, 3), (0x3580, 0x47, 2)]),
         None,
@@ -74,7 +77,9 @@ fn flash_off() {
     let at = t.at(0xde80);
     let g_at = t.img.word(at + 0x5);
     for set in SETS {
-        models(&mut t, g_at, set);
+        // a part of the kind it changes past each model's last one
+        magic_h6::models_beyond(&mut t, g_at, set, 0x3580);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::flash_off(g, img, fr.at))
         });
@@ -88,7 +93,9 @@ fn glow_off() {
     let at = t.at(0xe050);
     let g_at = t.img.word(at + 0x8);
     for set in SETS {
-        models(&mut t, g_at, set);
+        // a part of the kind it changes past each model's last one
+        magic_h6::models_beyond(&mut t, g_at, set, 0x3700);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::glow_off(g, img, fr.at))
         });
@@ -110,6 +117,7 @@ fn move_start() {
         for (i, v) in (0u32..).zip([node, mode, 0x00ab_0000, 0x00cd_0000]) {
             t.set_u32(rec + 4 * i, v);
         }
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(rec), &[], Eax::Checked, |g, _, fr| {
             Ret::eax(m0577::move_start(g, fr.ecx))
         });
@@ -145,6 +153,7 @@ fn draw_detached() {
         t.set_u32(node + 4, next);
         t.set_u32(node + 8, prev);
         t.set_u32(node + 0x14, if inlist { list } else { 0 });
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(holder), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::draw_detached(g, img, fr))
         });
@@ -168,6 +177,7 @@ fn place() {
         for (i, v) in (0u32..).zip([node, 0x00ce_0000, 0x00cf_0000, mode]) {
             t.set_u32(h + 4 * i, v);
         }
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(h), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::place(g, img, fr))
         });
@@ -180,9 +190,10 @@ fn halve() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0xdf10);
     let g_at = t.img.word(at + 0x7);
-    let sets: [&[Option<&[(u32, u8, i16)]>]; 4] = [
+    let sets: [&[Option<&[(u32, u8, i16)]>]; 5] = [
         &[],
         &[None, Some(&[])],
+        &[Some(&[]), Some(&[(0x34c0, 0x48, 2), (0x3cc0, 0x48, 2)])],
         &[
             Some(&[(0x34c0, 0x48, 3), (0x7cc0, 0x48, 3), (0x3cc0, 0x47, 2)]),
             None,
@@ -191,7 +202,9 @@ fn halve() {
         &[Some(&[(0xc000_3cc0, 0x48, 2), (0x34c0, 0x48, -1)])],
     ];
     for set in sets {
-        models(&mut t, g_at, set);
+        // a part of a kind it changes past each model's last one
+        magic_h6::models_beyond(&mut t, g_at, set, 0x34c0);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::halve(g, img, fr.at))
         });
@@ -236,6 +249,7 @@ fn end() {
             t.set_u32(w(&t, f, 0x15), next);
             t.set_u32(w(&t, f, 0x1a), prev);
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -279,6 +293,7 @@ fn centre() {
             edx: SCRATCH + 0x500,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::centre(g, img, fr))
         });
@@ -348,6 +363,7 @@ fn task() {
         t.set_u32(r + 0x3f8, 0xffff_fff3 | bits);
         t.set_u32(r + 0x1a0, 0x00a1_0000);
         t.set_u32(r + 0x1b4, 0x00a2_0000);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -386,6 +402,7 @@ fn exit_task() {
             t.set_u32(node + 4, next);
             t.set_u32(node + 8, prev);
             t.set_u32(cell, bits);
+            magic_h6::scrub(&mut t);
             t.check_entry(at, Call::default(), &[task], Eax::Checked);
         }
     }
@@ -445,6 +462,7 @@ fn spark_setup() {
             edx: src,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(
             at,
             c,
@@ -491,7 +509,11 @@ fn spark_task() {
         SCRATCH + 0x280,
     );
     let o = SCRATCH + 0x1400;
+    // the fade step and the speed bound: cases exactly at each bound
+    let (fade, fast) = (konst(&t, at, 0x70), konst(&t, at, 0x18d));
     for (state, wait, alpha, speed) in [
+        (2, 0, fade, 2.0),
+        (2, 0, 0.75, fast),
         (0u32, 0u32, 1.0f32, 2.0f32),
         (1, 3, 1.0, 0.5),
         (1, 0, 0.5, 2.0),
@@ -522,6 +544,7 @@ fn spark_task() {
         t.set_u32(node + 4, next);
         t.set_u32(node + 8, prev);
         t.set_u32(cell, 0x1234 + state);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -548,6 +571,7 @@ fn light_node() {
         t.set_u32(parent + 0x10, if empty { parent } else { last });
         t.set_u32(group, node);
         t.set_u32(group + 4, p);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(group), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::light_node(g, img, fr))
         });
