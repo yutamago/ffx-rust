@@ -374,7 +374,7 @@ pub fn curve_flyers<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// while the wait `A + 0x5200` is above 0 it counts down (returns it).
 /// Else the next actor `i = A + 0x5204`, its record `R = A + 0x520 i`:
 /// - the start `V` (`E + 0x34`): with the mode `A + 0x5208` 0 the point
-///   `O + P..` and, turned by `(0, O + F)` ([`crate::sb_misc::rotate_offset`]
+///   `O + P..` and, turned by `(0, O + F)` ([`crate::s4_small::turn_point`]
 ///   on `(slot 314 (5.0), slot 314 (2.0) - K1, 0, 1)`), moved; else slot
 ///   237 `(slot 219 (*G_H, 0), 0, 0, &V)`, `w` 1.0; `V` into `R + 0x260..`;
 /// - the target `Q = R + 0x270` from slots 262 `(C, Q, Q + 4, Q + 8)` and
@@ -459,7 +459,14 @@ pub fn actor_spawner<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // push &Z; the callee's return address at `E - 0xc`
         let esp = e.wrapping_sub(0xc);
         g.write::<u32>(esp.wrapping_add(4), z);
-        crate::sb_misc::rotate_offset(g, img, img.rel32_target(f + 0x177), esp, wv, v);
+        let turn = Frame {
+            at: img.rel32_target(f + 0x177),
+            esp,
+            ecx: wv,
+            edx: v,
+            ..Frame::default()
+        };
+        crate::s4_small::turn_point(g, img, &turn);
     }
     for i in 0..4u32 {
         let x = g.read::<u32>(v.wrapping_add(4 * i));

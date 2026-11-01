@@ -71,7 +71,7 @@ pub const ACTOR_SPAWNER_0565_5BD0: Sig = Sig {
     hash: 0x9835_a82c_9d87_f2bb,
     calls: &[
         (0x45, Callee::Any),
-        (0x177, Callee::Sig(&crate::sb_misc::ROTATE_OFFSET)),
+        (0x177, Callee::Sig(&crate::s4_small::TURN_POINT)),
         (0x338, Callee::Import("_libm_sse2_sqrt_precise")),
         (0x34b, Callee::Import("_CIatan2")),
         (0x38c, Callee::Import("_CIatan2")),
@@ -88,7 +88,7 @@ pub const ACTOR_SPAWNER_0644_9A00: Sig = Sig {
     hash: 0x7e26_6edb_1143_a631,
     calls: &[
         (0x45, Callee::Any),
-        (0x177, Callee::Sig(&crate::sb_misc::ROTATE_OFFSET)),
+        (0x177, Callee::Sig(&crate::s4_small::TURN_POINT)),
         (0x338, Callee::Import("_libm_sse2_sqrt_precise")),
         (0x34b, Callee::Import("_CIatan2")),
         (0x38c, Callee::Import("_CIatan2")),
