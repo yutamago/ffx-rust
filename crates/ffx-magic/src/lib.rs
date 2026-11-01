@@ -1365,7 +1365,6 @@ ports! {
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
-    "follow task (turned)" => s4_misc::FOLLOW_TASK_TURNED, s4_misc::follow_task_turned;
     "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
     "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
     "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
@@ -2727,7 +2726,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("pool take (0x74)", &sb_misc::POOL_TAKE),
     ("node append", &sb_misc::NODE_APPEND),
     ("part setup", &sb_misc::PART_SETUP),
-    ("rotate offset, list pop", &sb_misc::ROTATE_OFFSET),
     ("move start", &sb_misc::MOVE_START),
     ("move start 2", &sb_misc::MOVE_START_2),
     ("ease sample", &sb_misc::EASE_SAMPLE),
