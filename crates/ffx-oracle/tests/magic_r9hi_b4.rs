@@ -1,5 +1,5 @@
-//! Round 9 (own rows from `magic_0450` up), batch 4: small wrappers of
-//! `magic_0473`, `0537`, `0577`, `0587` and `0605` against their Rust
+//! Round 9 (own rows from `magic_0450` up), batch 4: small functions of
+//! `magic_0473`, `0511`, `0537`, `0577`, `0587`, `0605` and `0671` against their Rust
 //! ports. Needs `FFX_GAME_DIR`.
 
 #![allow(
@@ -158,5 +158,52 @@ fn scale_30_0605() {
             t.set_u32(t.img.word(s + 0x79), 0);
         }
         t.check_entry(f, Call::this(0x0bad_0ecc), &[], Eax::Checked);
+    }
+}
+
+/// `m0511::place_at_point` (0x10003df0): two model bytes, the object's
+/// point at `+0xd0`.
+#[test]
+fn place_at_point_0511() {
+    let Some(mut t) = magic_l3::twin(511) else {
+        return;
+    };
+    let f = t.at(0x3df0);
+    rec(&mut t, 219, 2, |_, a| 0x0219_0000 ^ a[0]);
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, a[0] ^ (i << 8));
+        }
+        0x268
+    });
+    let mb = SCRATCH + 0x40;
+    t.set_u32(t.img.word(f + 0x4), mb);
+    let obj = SCRATCH + 0x1000;
+    for b in [0x5a5a_5a37u32, 0x0000_01c4] {
+        t.set_u32(mb, b);
+        t.write(obj, &[0x33; 0x100]);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `m0671::end` (0x100014e0): the flag 1 (the empty object list freed)
+/// and not (the caller's `eax` kept).
+#[test]
+fn end_0671() {
+    let Some(mut t) = magic_l3::twin(671) else {
+        return;
+    };
+    let f = t.at(0x14e0);
+    recs(&mut t, &[(311, 1), (713, 1)]);
+    let obj = SCRATCH + 0x1000;
+    for flag in [0u32, 1, 2] {
+        t.set_u32(t.img.word(f + 0x5), flag);
+        t.set_u32(t.img.word(f + 0x18), 0x0018_0000 + flag);
+        t.write(obj, &[0x33; 0x80]);
+        let c = Call {
+            eax: 0x0eaa_0000 + flag,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[obj], Eax::Checked);
     }
 }
