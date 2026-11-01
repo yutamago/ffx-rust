@@ -10021,6 +10021,13 @@ fn lns_lp_t_ot_draw_matches_the_original() {
                 rng.below(0x1000_0000)
             };
             p.set(at - 0xc, z);
+            if rng.chance(4) {
+                // the hook's zeroed frame (junk reads as 0, brief
+                // 2026-10-24)
+                for k in [0x14, 0x10, 0xc] {
+                    p.set(at - k, 0u32);
+                }
+            }
             check_deep_n(
                 &mut p,
                 "pppKeLnsLpTOtDraw",

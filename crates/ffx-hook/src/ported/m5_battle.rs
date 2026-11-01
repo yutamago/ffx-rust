@@ -735,4 +735,33 @@ ported! {
         let ebp = fr.at().wrapping_add(0x124);
         mn::camera_proc(&mut mem(), ebp, win, msg, id)
     }
+    // ---- round 8 (left8) (ffx_menu::l8_mbs) ----
+    /// `Ms_Gui_ShakeProc(window, msg, param)` -> 0: the battle's screen
+    /// shake debug window (its text buffer in a frame).
+    Ms_Gui_ShakeProc @ 0x007d_fde0 => extern "C" fn ms_gui_shake_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::SHAKE_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::SHAKE_FRAME);
+        ffx_menu::l8_mbs::bridge::shake_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `Ms_Gui_BattleInfoProc(window, msg, param)` -> 0: the battle info
+    /// debug window (its two text buffers and a count in a frame).
+    Ms_Gui_BattleInfoProc @ 0x007d_aed0 => extern "C" fn ms_gui_battle_info_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::INFO_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::INFO_FRAME);
+        ffx_menu::l8_mbs::bridge::battle_info_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `Ms_Gui_BattleChr2Proc(window, msg, param)` -> 0: the battle's "CHR
+    /// data 2" debug window (its text buffer in a frame).
+    Ms_Gui_BattleChr2Proc @ 0x007d_e790 => extern "C" fn ms_gui_battle_chr2_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::CHR2_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::CHR2_FRAME);
+        ffx_menu::l8_mbs::bridge::battle_chr2_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `Ms_Gui_BattleConfigProc(window, msg, param)` -> 0: the battle
+    /// debug settings window (its label buffer in a frame).
+    Ms_Gui_BattleConfigProc @ 0x007c_6e20 => extern "C" fn ms_gui_battle_config_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::CONFIG_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::CONFIG_FRAME);
+        ffx_menu::l8_mbs::bridge::battle_config_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

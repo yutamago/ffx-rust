@@ -1119,8 +1119,13 @@ pub mod bridge {
             .wrapping_add(oy)
             .cast_signed();
         let v = frame.wrapping_sub(0x14);
+        // FFXVu0FTOI4Vector is a bare `ret` in FFX.exe, so the point and
+        // its z below are the frame's own words: the hook's frame is
+        // zeroed.
         call(mem, g(mem, FTOI4_VECTOR), &[v, at(0xc0)]);
+        // junk read: [ebp-0x14] never written; 0 (brief 2026-10-24)
         let px = mem.read::<u32>(v).cast_signed();
+        // junk read: [ebp-0x10] never written; 0 (brief 2026-10-24)
         let py = mem.read::<u32>(v.wrapping_add(4)).cast_signed();
         let hx = i32::from(mem.read::<u8>(at(0xd0)));
         let hy = i32::from(mem.read::<u8>(at(0xd1)));
@@ -1172,6 +1177,7 @@ pub mod bridge {
         let mut p = buf.wrapping_add(0x60);
         call(mem, g(mem, EXEC_STORE_IMAGE), &[lp, p]);
         call(mem, g(mem, SYNC_PATH), &[0, 0]);
+        // junk read: [ebp-0xc] never written; 0 (brief 2026-10-24)
         let z = (mem.read::<u32>(v.wrapping_add(8)).cast_signed() >> 4).cast_unsigned();
         let pad = (wa - w).wrapping_mul(3).cast_unsigned();
         let mut count = 0.0f32;

@@ -60,6 +60,9 @@ const CAVE_LEN: u32 = 1800;
 /// callee so a callee leaving `eax` alone shows the poison.
 const POISON_AT: u32 = CAVE + CAVE_LEN;
 const POISON: u32 = 0xdead_beef;
+/// After the poison (`+8`): `fld qword [esp+4]; call [esp+0xc]; ret`, for
+/// [`Host::call_intrinsic`] (the operand in `ST0`).
+const TRAMPOLINE: [u8; 9] = [0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3];
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -173,6 +176,14 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0.unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(self.1 + 8, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f32().expect("the intrinsic's ST0")
+    }
     fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -244,6 +255,7 @@ impl Twins {
         code.extend(POISON.to_le_bytes());
         code.push(0xc3);
         t.write(at, &code);
+        t.write(at + 8, &TRAMPOLINE);
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
             o.call(at, Conv::Cdecl, &[]).unwrap();
@@ -6059,6 +6071,409 @@ fn l7_directive_matches_the_original() {
                 ))
             });
             t.same_stack("op_directive_007e15f0", ebp - 0x614, 0x610);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 8 (left8) (ffx_glue_other::l8_vfx) ----
+
+use ffx_glue_other::l8_vfx::bridge as l8v;
+
+#[test]
+fn l8_opus_map_del_draw() {
+    // paused or not; progress below, at and above 1 and NaN; offsets and
+    // positions in and out of ftol's range; the argument slots
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a7_5170);
+        let n = l8v::SPRITES;
+        let rec_bytes = 0x20 + 0x58 * n;
+        let pkt_bytes = 0x80 + 0x60 * n;
+        let (work, obj, recs, offset, packet) = (
+            t.zeros(0x220),
+            t.zeros(0x100),
+            t.zeros(rec_bytes as usize),
+            t.zeros(8),
+            t.zeros(pkt_bytes as usize),
+        );
+        for round in 0..6 {
+            let paused = u16::from(round % 3 == 2);
+            t.write(work + 0x212, &paused.to_le_bytes());
+            for o in [0x48, 0x4c] {
+                let v = float_word(&mut rng);
+                t.w32(obj + o, v);
+            }
+            for o in [0xc2, 0xc3, 0xcb] {
+                t.w8(obj + o, rng.next() as u8);
+            }
+            for o in [0, 4] {
+                let v = if rng.chance(3) {
+                    float_word(&mut rng)
+                } else {
+                    (rng.below(1000) as f32 * 0.37).to_bits()
+                };
+                t.w32(offset + o, v);
+            }
+            let mut bytes = Vec::with_capacity(rec_bytes as usize);
+            for k in 0..rec_bytes / 4 {
+                let o = k * 4;
+                let v = if o >= 0x20 && matches!((o - 0x20) % 0x58, 0x48 | 0x50) {
+                    // progress: near 1, NaN, anything
+                    match rng.below(4) {
+                        0 => (0.9 + rng.below(20) as f32 * 0.01).to_bits(),
+                        1 => 1.0_f32.to_bits(),
+                        _ => float_word(&mut rng),
+                    }
+                } else if o >= 0x20 && matches!((o - 0x20) % 0x58, 0x4c | 0x54) {
+                    match rng.below(3) {
+                        0 => (rng.below(10) as f32 * 0.02).to_bits(),
+                        _ => float_word(&mut rng),
+                    }
+                } else {
+                    float_word(&mut rng)
+                };
+                bytes.extend(v.to_le_bytes());
+            }
+            t.write(recs, &bytes);
+            let junk: Vec<u8> = (0..pkt_bytes).map(|_| rng.next() as u8).collect();
+            t.write(packet, &junk);
+            let gif = rng.next();
+            t.global(l8v::DMA_GIF, gif);
+            let sync = t.seq(&[0x1111, 0x2222]);
+            t.stub_sym(l8v::SYNC_PATH, 1, false, 2, 0, sync);
+            t.stub_sym(l8v::FLUSH_CACHE, 2, false, 1, 0, Ret::Val(0x33));
+            t.stub_sym(l8v::DMA_SEND, 3, false, 2, 0, Ret::Val(0x44));
+            let args = [work, obj, recs, offset, packet];
+            let slots = t.arg_slots(&args);
+            t.check("opus_map_del_draw", 0x00a7_5170, Conv::Cdecl, &args, |g| {
+                Out::U32(l8v::opus_map_del_draw(
+                    g, slots, work, obj, recs, offset, packet,
+                ))
+            });
+            t.same_stack("opus_map_del_draw", slots, 20);
+            assert_eq!(t.calls(), 4);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l8_opus_encount5_draw() {
+    // paused or not; progress below, at and above 1; fades below, at and
+    // past 0.3, NaN, and steps giving i below and from 16 on both arms;
+    // the colour in the frame and the radial line's arguments
+    Twins::each(|t| {
+        let mut rng = Rng(0x007f_8e80);
+        let n = l8v::SPRITES;
+        let rec_bytes = 0x80 + 0x60 * n;
+        let pkt_bytes = 0x80 + 0x60 * n;
+        let (work, obj, recs, offset, packet) = (
+            t.zeros(0x220),
+            t.zeros(0x100),
+            t.zeros(rec_bytes as usize),
+            t.zeros(8),
+            t.zeros(pkt_bytes as usize),
+        );
+        let third = 0x3e99_999a_u32;
+        for round in 0..6 {
+            let paused = if round % 3 == 2 {
+                0x8000 | rng.below(0x100) as u16
+            } else {
+                0
+            };
+            t.write(work + 0x212, &paused.to_le_bytes());
+            for o in [0x48, 0x4c] {
+                let v = if rng.chance(3) {
+                    float_word(&mut rng)
+                } else {
+                    (rng.below(40000) as f32 - 20000.0).to_bits()
+                };
+                t.w32(obj + o, v);
+            }
+            for o in 0xc2..=0xcb {
+                t.w8(obj + o, rng.next() as u8);
+            }
+            for o in [0, 4] {
+                let v = if rng.chance(3) {
+                    float_word(&mut rng)
+                } else {
+                    (rng.below(1000) as f32 * 0.37).to_bits()
+                };
+                t.w32(offset + o, v);
+            }
+            let mut bytes = Vec::with_capacity(rec_bytes as usize);
+            for k in 0..rec_bytes / 4 {
+                let o = k * 4;
+                let rel = (o + 0x60 - 0x68 % 0x60) % 0x60;
+                let v = match rel {
+                    // P+0, the lerp: near 1, anything
+                    0 => match rng.below(3) {
+                        0 => (0.9 + rng.below(20) as f32 * 0.01).to_bits(),
+                        1 => 1.0_f32.to_bits(),
+                        _ => float_word(&mut rng),
+                    },
+                    // P+8, the fade: round 0.3, exactly it, anything
+                    8 => match rng.below(4) {
+                        0 => third,
+                        1 => (0.2 + rng.below(40) as f32 * 0.01).to_bits(),
+                        2 => (rng.below(30) as f32 * 0.1).to_bits(),
+                        _ => float_word(&mut rng),
+                    },
+                    // P+0xc, the fade's step: small, anything
+                    0xc => match rng.below(3) {
+                        0 => (0.01 + rng.below(10) as f32 * 0.02).to_bits(),
+                        1 => (-0.05_f32).to_bits(),
+                        _ => float_word(&mut rng),
+                    },
+                    4 => (rng.below(10) as f32 * 0.02).to_bits(),
+                    _ => float_word(&mut rng),
+                };
+                bytes.extend(v.to_le_bytes());
+            }
+            t.write(recs, &bytes);
+            let junk: Vec<u8> = (0..pkt_bytes).map(|_| rng.next() as u8).collect();
+            t.write(packet, &junk);
+            let gif = rng.next();
+            t.global(l8v::DMA_GIF, gif);
+            let sync = t.seq(&[0x1111, 0x2222]);
+            t.stub_sym(l8v::SYNC_PATH, 1, false, 2, 0, sync);
+            t.stub_sym(l8v::FLUSH_CACHE, 2, false, 1, 0, Ret::Val(0x33));
+            t.stub_sym(l8v::DMA_SEND, 3, false, 2, 0, Ret::Val(0x44));
+            t.stub_sym(l8v::RADIAL_LINE, 4, false, 4, 0, Ret::Val(0x55));
+            let args = [work, obj, recs, offset, packet];
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - 0x100);
+            t.check("opus_encount5_draw", 0x007f_8e80, Conv::Cdecl, &args, |g| {
+                Out::U32(l8v::opus_encount5_draw(
+                    g, ebp, work, obj, recs, offset, packet,
+                ))
+            });
+            t.same_stack("opus_encount5_draw", ebp - l8v::ENCOUNT5_COLOUR, 0x10);
+            assert_eq!(t.calls(), 5);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// After the log: copies the `n` bytes at `src` to the first argument
+/// (`rep movsb`), as a `sprintf` that prints them.
+fn copy_to_first_code(src: u32, n: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe]; // push esi; push edi; mov edi, [esp+0xc]; mov esi,
+    c.extend(src.to_le_bytes());
+    c.push(0xb9); // mov ecx, n
+    c.extend(n.to_le_bytes());
+    c.extend([0xf3, 0xa4, 0x5f, 0x5e]); // rep movsb; pop edi; pop esi
+    c
+}
+
+#[test]
+fn l8_opd_num_put_float() {
+    // signs, widths below, at and past the integer digits (and 0 and
+    // negative), decimals 0..8 read past the string, characters past
+    // 0x7f, no padding (the never-written link word, zeroed frames), the
+    // print position and the decimals' argument slot
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a5_ea30);
+        let texts: [&[u8]; 8] = [
+            b"-123.456789",
+            b"0.000000",
+            b"12345678.500000",
+            b"1.#INF00",
+            b"-0.250000",
+            b"7.\x80\xff\x41\x7f12",
+            b"99999999999.0",
+            b"-.5",
+        ];
+        for case in 0..96 {
+            let text = texts[case % texts.len()];
+            let mut s = text.to_vec();
+            s.push(0);
+            let src = t.alloc(&s);
+            let buffer = t.zeros(0x1000);
+            let junk: Vec<u8> = (0..0x1000).map(|_| rng.next() as u8).collect();
+            t.write(buffer, &junk);
+            let pr = t.zeros(0x20);
+            t.w32(pr + 8, buffer);
+            for o in [0x10, 0x12] {
+                t.write(pr + o, &(rng.next() as u16).to_le_bytes());
+            }
+            let font = t.zeros(0x20);
+            let fb: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+            t.write(font, &fb);
+            let width = match rng.below(5) {
+                0 => 0,
+                1 => (rng.below(4) as i32 - 4).cast_unsigned(),
+                _ => rng.below(13),
+            };
+            let decimals = match rng.below(4) {
+                0 => (-1_i32).cast_unsigned(),
+                _ => rng.below(9),
+            };
+            t.extra = copy_to_first_code(src, s.len() as u32);
+            t.import_sym(l8v::SPRINTF_SLOT, 1, 4, 0, Ret::Val(7));
+            t.stub_sym(l8v::NUM_TEX_TAG, 2, false, 3, 0, Ret::Val(0x40));
+            // the glyph size bytes (0 until opd_num_init runs)
+            let size = [rng.next() as u8, rng.next() as u8];
+            t.patch(t.rebase(l8v::GLYPH_W), &size);
+            let value = [rng.next(), rng.next()];
+            let args = [value[0], value[1], width, decimals, pr, font];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            let ebp = frame_ebp(&t.a, 6);
+            t.b_top = Some(ebp - 0x260);
+            t.check(
+                "opd_num_put_float_00a5ea30",
+                0x00a5_ea30,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    Out::U32(l8v::put_float(
+                        g, ebp, slots, value, width, decimals, pr, font,
+                    ))
+                },
+            );
+            t.same_stack("opd_num_put_float_00a5ea30", slots, 24);
+            assert_eq!(t.calls(), 2);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// After the log: copies the call's argument words to the buffer whose
+/// cursor is at `cursor` (advanced): 18 words when the first is `head`,
+/// else 17 (`opd_num`'s two line formats).
+fn copy_args_code(cursor: u32, head: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x51, 0x8b, 0x3d]; // push esi; push edi; push ecx; mov edi, [cursor]
+    c.extend(cursor.to_le_bytes());
+    c.extend([0x8d, 0x74, 0x24, 0x10]); // lea esi, [esp+0x10]
+    c.push(0xb9);
+    c.extend(0x44_u32.to_le_bytes()); // mov ecx, 17 words
+    c.extend([0x81, 0x3e]);
+    c.extend(head.to_le_bytes()); // cmp dword [esi], head
+    c.extend([0x75, 0x05, 0xb9]);
+    c.extend(0x48_u32.to_le_bytes()); // jne +5; mov ecx, 18 words
+    c.extend([0xf3, 0xa4, 0x89, 0x3d]); // rep movsb; mov [cursor], edi
+    c.extend(cursor.to_le_bytes());
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+    c
+}
+
+#[test]
+fn l8_opd_num_char_256() {
+    // bytes past 0x7f widen negative; every line's words recorded
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a5_d5f0);
+        for _ in 0..8 {
+            let p = t.zeros(0x100);
+            let bytes: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+            t.write(p, &bytes);
+            let out = t.zeros(16 * 0x48);
+            let cursor = t.words(&[out]);
+            let head = t.rebase(l8v::DUMP_HEAD);
+            t.extra = copy_args_code(cursor, head);
+            let seq = t.seq(&(0..16).map(|k| 0x100 + k).collect::<Vec<_>>());
+            t.stub_sym(l8v::OPD_NUM, 1, false, 2, 0, seq);
+            t.check("opd_num_char_256", 0x00a5_d5f0, Conv::Cdecl, &[p], |g| {
+                Out::U32(l8v::char_256(g, p))
+            });
+            assert_eq!(t.calls(), 16);
+            assert_eq!(t.r32(cursor), out + 4 * 16 * 17 + 4 * 4);
+            t.reset();
+        }
+    });
+}
+
+/// A float word for the light tests: mostly small numbers of either
+/// sign, sometimes anything but a signalling NaN.
+fn light_word(rng: &mut Rng) -> u32 {
+    if rng.chance(12) {
+        float_word(rng)
+    } else {
+        ((rng.below(2001) as f32 - 1000.0) * 0.013).to_bits()
+    }
+}
+
+#[test]
+fn l8_ppp_mdl_point_light_colours() {
+    // the flag clear, n 0 or negative, 1..5 vertices; lights near and far,
+    // matrices with zero rows (1 / sqrt(0)), negative terms clamped
+    // (twice), NaNs passing the clamps; the frame (normalised matrix,
+    // light directions, their transpose, the light matrix, the vertex,
+    // normal and scale ApplyMatrix sees) and the count's argument slot
+    Twins::each(|t| {
+        let mut rng = Rng(0x0071_e820);
+        for case in 0..40_u32 {
+            let seg = rng.below(3);
+            let n = match case % 8 {
+                0 => 0,
+                1 => (-2_i32).cast_unsigned(),
+                _ => 1 + rng.below(5),
+            };
+            let cnt = n.cast_signed().max(0) as usize;
+            let arr = |t: &mut Twins, rng: &mut Rng, words: usize, w: Option<u32>| {
+                let v: Vec<u32> = (0..words)
+                    .map(|k| match w {
+                        Some(x) if k % 4 == 3 => x,
+                        _ => light_word(rng),
+                    })
+                    .collect();
+                t.words(&v)
+            };
+            let verts = arr(t, &mut rng, 3 * cnt + 1, None);
+            let normals = arr(t, &mut rng, 3 * cnt + 1, None);
+            let colours = arr(t, &mut rng, 4 * cnt + 1, None);
+            let table = t.zeros(0x200);
+            let base = table + 0x60;
+            let entry = base + 0x6c * seg;
+            t.w32(entry - 0x60, verts);
+            t.w32(entry - 0x5c, normals);
+            t.w32(entry - 0x58, colours);
+            let rd = t.zeros(0x100);
+            t.w32(rd + 0x94, base);
+            let matrix = arr(t, &mut rng, 16, None);
+            if rng.chance(4) {
+                let r = rng.below(3);
+                for c in 0..3 {
+                    t.w32(matrix + 0x10 * r + 4 * c, 0);
+                }
+            }
+            let lights = arr(t, &mut rng, 16, None);
+            let lmatrix = arr(t, &mut rng, 16, None);
+            let job = t.zeros(0x60);
+            let flags = if case % 8 == 7 {
+                0x8f
+            } else {
+                0x40 | rng.below(0x100)
+            };
+            t.w8(job, flags as u8);
+            t.w32(job + 0x24, lmatrix);
+            t.w32(job + 0x28, lights);
+            t.w32(job + 0x2c, matrix);
+            t.w8(job + 0x4d, rng.next() as u8);
+            // _CIsqrt (an import the oracle lacks) as the CPU's: fsqrt; ret
+            t.patch(t.rebase(l8v::CI_SQRT), &[0xd9, 0xfa, 0xc3]);
+            let args = [rd, seg, job, rng.next(), n];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - 0x200);
+            t.check(
+                "pppMdl_pointLightColours_0071e820",
+                0x0071_e820,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l8v::point_light_colours(g, ebp, slots, rd, seg, job, n)),
+            );
+            t.same_stack(
+                "pppMdl_pointLightColours_0071e820 frame",
+                ebp - 0x144,
+                0x140,
+            );
+            t.same_stack("pppMdl_pointLightColours_0071e820 slots", slots, 20);
             t.b_top = None;
             t.reset();
         }

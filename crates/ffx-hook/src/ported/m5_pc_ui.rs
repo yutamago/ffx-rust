@@ -1253,4 +1253,60 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l7_pcui::bridge::CAMERA_TEST_FRAME;
         ffx_pcui::l7_pcui::bridge::camera_test_proc(&mut mem(), ebp, window, msg, param)
     }
+    // ---- round 8 (left8) (ffx_pcui::l8_pcui) ----
+    /// `()`: `GDraw`'s D3D11 objects released at context teardown (its
+    /// one caller reads no result).
+    GDraw_releaseObjects_00a35c90 @ 0x00a3_5c90 => extern "C" fn gdraw_release_objects() {
+        ffx_pcui::l8_pcui::bridge::release_objects(&mut mem());
+    }
+    /// `(device, context, w, h)` -> the `GDraw` function table or 0:
+    /// `GDraw`'s D3D11 context set-up.
+    gdraw_createContext_00a35780 @ 0x00a3_5780 => extern "C" fn gdraw_create_context(device: u32, context: u32, w: u32, h: u32) -> u32 {
+        ffx_pcui::l8_pcui::bridge::create_context(&mut mem(), device, context, w, h)
+    }
+    /// `(base, _, info)` (`ret 0xc`) -> the texture handle or 0: an Iggy
+    /// raw texture made on the device (its description, data array and
+    /// outs in a frame; the second word is not read).
+    GDraw_createRawTexture_00a37c20 @ 0x00a3_7c20 => extern "stdcall" fn gdraw_create_raw_texture(base: u32, _unused: u32, info: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::RAW_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::RAW_FRAME;
+        ffx_pcui::l8_pcui::bridge::create_raw_texture(&mut mem(), ebp, base, info)
+    }
+    /// `(player)` (fastcall) -> `al` 1 when the stream plays: the video
+    /// player's Vorbis decoder and FMOD stream set-up (the
+    /// `FMOD_CREATESOUNDEXINFO` and the codec data's size in a frame;
+    /// the rest of `eax` the last call's, as the original leaves it).
+    PVideoPlaybackWin32_AudioInit_00a273b0 @ 0x00a2_73b0 => extern "fastcall" fn video_audio_init(player: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::AUDIO_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::AUDIO_FRAME;
+        ffx_pcui::l8_pcui::bridge::audio_init(&mut mem(), ebp, player)
+    }
+    /// `(window, msg, param)` -> 0: the debug camera's name entry window
+    /// (its `sprintf` buffer in a frame).
+    Gui_NameinputProc @ 0x0093_e570 => extern "C" fn gui_nameinput_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::NAME_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::NAME_FRAME;
+        ffx_pcui::l8_pcui::bridge::nameinput_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `(window, msg, param)` -> 0: the "MOVIE VIEW" debug window (its
+    /// `sprintf` buffer and the `.sz`/`.dat` names in a frame).
+    Gui_MovieDebugProc @ 0x0093_dc00 => extern "C" fn gui_movie_debug_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::MOVIE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::MOVIE_FRAME;
+        ffx_pcui::l8_pcui::bridge::movie_debug_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `(window, msg, param)` -> 0: the character viewer debug window
+    /// (its command line in a frame).
+    ChrViewProc @ 0x0084_c1e0 => extern "C" fn chr_view_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::CHR_VIEW_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::CHR_VIEW_FRAME;
+        ffx_pcui::l8_pcui::bridge::chr_view_proc(&mut mem(), ebp, window, msg, param)
+    }
+    /// `(window, msg, param)` -> 0: the "SPLINE EDIT" camera debug window
+    /// (its text buffer in a frame).
+    Gui_SplineEditProc_0093ee10 @ 0x0093_ee10 => extern "C" fn gui_spline_edit_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::SPL_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::SPL_FRAME;
+        ffx_pcui::l8_pcui::bridge::spline_edit_proc(&mut mem(), ebp, window, msg, param)
+    }
 }
