@@ -3269,3 +3269,114 @@ pub const FALLING_SPARKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A camera path task started (cdecl `(P, a, b, n)`, `xmm3` a scale; a
+/// /GS frame, `ebp` = `esp - 4` at the entry, the vectors `L1` at
+/// `ebp-0x24` and `L2` at `ebp-0x14`). With `A = *G_A`: `L1` = slot 217
+/// `(A, L1)` into `G1`; `P` into `G2`; `L2` = slot 234 `(L2, P, L1)` into
+/// `G3`; `G4` zeroed; slot 233 `(H1, L2, scale)`, `(H2, L2, a)`, `(H3,
+/// L2, b)`; five words 1.0 (the last over `G3`'s `w`), `*G_E = A`, `*G_N
+/// = n`, the step `K / n`, the state zeroed. A node is taken from the
+/// DLL's free list (as [`node_to_live`]; none: the original writes to
+/// address 0x18, not run), set up (`+0x10 = CB`, byte `+0x18 = 1`,
+/// `+0x14 = TASK`) and appended to the task list. Returns what the
+/// original leaves in `eax`: the old last node, or 0xffff on an empty
+/// list.
+///
+/// `magic_0055` 0x100028c0 (699 bytes; 4 DLLs).
+pub fn camera_path_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (l1, l2) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
+    let p = fr.arg(g, 0);
+    let scale = fr.xmm[3] as u32;
+    let a = g.read::<u32>(w(0x17));
+    slot(g, img, f, 0x20, 217, 0, &[a, l1]);
+    for (i, at) in (0u32..).zip([0x3bu32, 0x48, 0x55, 0x62]) {
+        let v = g.read::<u32>(l1 + 4 * i);
+        g.write::<u32>(w(at), v);
+    }
+    for (i, at) in (0u32..).zip([0x6eu32, 0x7f, 0x8f, 0xa3]) {
+        let v = g.read::<u32>(p.wrapping_add(4 * i));
+        g.write::<u32>(w(at), v);
+    }
+    slot(g, img, f, 0x9b, 234, 0, &[l2, p, l1]);
+    for (i, at) in (0u32..).zip([0xb8u32, 0xc5, 0xd2, 0xdf]) {
+        let v = g.read::<u32>(l2 + 4 * i);
+        g.write::<u32>(w(at), v);
+    }
+    for at in [0xfbu32, 0x105, 0x10f] {
+        g.write::<u32>(w(at), 0);
+    }
+    let (x, y) = (fr.arg(g, 1), fr.arg(g, 2));
+    for (t, h, v) in [
+        (0xf5u32, 0x11e, scale),
+        (0x136, 0x13b, x),
+        (0x159, 0x15e, y),
+    ] {
+        slot(g, img, f, t, 233, 0, &[w(h), l2, v]);
+    }
+    for at in [0x177u32, 0x181, 0x18b, 0x195, 0x19f] {
+        g.write::<u32>(w(at), 0x3f80_0000);
+    }
+    g.write::<u32>(w(0x1a9), a);
+    let n = fr.arg(g, 3);
+    let mut free = g.read::<u16>(w(0x1ba));
+    let step = div(g.read::<f32>(w(0x16e)), cvt(n));
+    g.write::<u32>(w(0x1c3), n);
+    g.write::<u32>(w(0x1cb), 0);
+    g.write::<f32>(w(0x1d7), step);
+    for at in [0x1ddu32, 0x1e7, 0x1f1] {
+        g.write::<u32>(w(at), 0);
+    }
+    g.write::<u16>(w(0x1fb), 0);
+    let mut node = 0;
+    let mut eax = 0;
+    if free != 0 {
+        node = g.read::<u32>(w(0x20a));
+        let (next, prev) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+        g.write::<u32>(next.wrapping_add(4), prev);
+        let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node));
+        g.write::<u32>(prev, next);
+        if free > 1 {
+            let prev = g.read::<u32>(node + 4);
+            g.write::<u32>(w(0x227), prev);
+        } else {
+            g.write::<u32>(w(0x22f), 0);
+        }
+        eax = 0xffff;
+        free = free.wrapping_sub(1);
+        for off in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(node + off, 0);
+        }
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 0x10, w(0x260));
+        g.write::<u8>(node + 0x18, 0);
+        g.write::<u16>(w(0x26b), free);
+    }
+    let head = g.read::<u32>(w(0x271));
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(0x14), w(0x27e));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x2a0), node);
+    } else {
+        let tail = g.read::<u32>(w(0x28d));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        eax = tail;
+    }
+    g.write::<u32>(w(0x2ab), node);
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(eax)
+}
+
+/// [`camera_path_task`] (the `rel32`: `__security_check_cookie`).
+pub const CAMERA_PATH_TASK: Sig = Sig {
+    len: 699,
+    hash: 0x2597_5249_c58e_1500,
+    calls: &[(0x2b3, Callee::Any)],
+    imports: &[],
+};

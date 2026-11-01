@@ -2735,3 +2735,69 @@ fn falling_sparks() {
         }
     }
 }
+
+/// Row 330: the camera path task started in the four DLLs: one, two and
+/// five nodes free, the task list empty and not; the slots compute on
+/// the frame's vectors.
+#[test]
+fn camera_path_tasks() {
+    for (dll, rva) in [
+        (55u16, 0x28c0u32),
+        (67, 0x18c0),
+        (354, 0x1840),
+        (419, 0x2390),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 217, log, 2, None, |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[1] + 4 * i, a[0] ^ (k << 8 | i));
+            }
+            0x217
+        });
+        log_calls(&mut t, 234, log, 3, None, |m, a, _| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i).wrapping_sub(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x234
+        });
+        log_calls(&mut t, 233, log, 3, None, |m, a, _| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i) ^ a[2];
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x233
+        });
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+        let p = SCRATCH + 0x300;
+        for (k, (free, listed)) in [(1u16, false), (2, true), (5, false), (2, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(w(&t, 0x17), 0x0a0a_0000 + k);
+            t.write(p, &varied(0x10, k));
+            t.set_u32(w(&t, 0x16e), 2.0f32.to_bits());
+            t.write(node(0) - 0x40, &varied(0x140, k + 1));
+            t.set_u32(node(0), node(2));
+            t.set_u32(node(0) + 4, node(1));
+            t.set_u16(w(&t, 0x1ba), free);
+            t.set_u32(w(&t, 0x20a), node(0));
+            t.set_u32(w(&t, 0x271), if listed { node(3) } else { 0 });
+            t.set_u32(w(&t, 0x28d), node(3));
+            scrub(&mut t);
+            let c = Call::default().with_xmm(&[
+                Xmm::f32(0.0),
+                Xmm::f32(0.0),
+                Xmm::f32(0.0),
+                Xmm::f32(1.25 + k as f32),
+            ]);
+            let args = [p, 0.5f32.to_bits(), (-1.5f32).to_bits(), 3 + k];
+            t.check_entry(f, c, &args, Eax::Checked);
+        }
+    }
+}
