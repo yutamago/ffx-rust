@@ -16,7 +16,7 @@ mod magic_l3;
 mod magic_owna;
 
 use magic::{Call, Eax, SCRATCH};
-use magic_owna::{rec, recs, twin};
+use magic_owna::{rec, twin};
 
 const N: u16 = 640;
 
