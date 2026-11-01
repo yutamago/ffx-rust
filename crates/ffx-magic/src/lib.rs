@@ -2980,6 +2980,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "aimed emitter (angles kept)",
         &s7_misc::AIMED_EMITTER_ANGLES,
     ),
+    ("two sparks", &s7_misc::TWO_SPARKS),
+    ("two sparks (block word 4)", &s7_misc::TWO_SPARKS_B),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

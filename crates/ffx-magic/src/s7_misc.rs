@@ -3380,3 +3380,151 @@ pub const CAMERA_PATH_TASK: Sig = Sig {
     calls: &[(0x2b3, Callee::Any)],
     imports: &[],
 };
+
+/// Two sparks started at a point (internal: `ecx` = the point `P`; `ebp`
+/// = `esp - 4` at the entry, a scratch float at `ebp-4`). Each spark is a
+/// record `R` from the pool ([`pool_take`](crate::sb_misc::pool_take);
+/// none: 0) with u16 `+0x38 = -1`, `+0x3a = 0x200`, `+0x34 = 1`, `+0x30`
+/// a word of the DLL's `*G_C` block, the position `(P.x + r, P.y, P.z +
+/// r, 1)`, `+0x10` and `+0x18` random, `+0x14 = -(r404 + K)` (the sign by
+/// the DLL's mask), `+0x1c` a random angle, the step `(0, D, 0, 1)` and
+/// `+0x3c = (r + K2) K3`, `+0x4c = -1`, `+0x50 = 0` (`r` slot 314's ST0,
+/// `r404` slot 404's, each with the code's immediate); the first also
+/// `+0x68 = C`. Between the two, a set bit 0..2 of `**G_F` ends it
+/// (returning `*G_F`). Returns slot 314's last `eax`.
+///
+/// `magic_0565` 0x10003450 (729 bytes; 5 DLLs) and `magic_0644`
+/// 0x100075e0 (730 bytes; 5 DLLs: its first block word at `+4`, which
+/// moves its code on by a byte, and the `z` sum the other way round).
+pub fn two_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    // `mov eax, [eax]` (0565) or `mov eax, [eax + 4]` (0644)
+    let d = u32::from(img.word(f + 0xa) & 0xff00 == 0x4000);
+    let w = |o: u32| op(img, f, o + d);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let p = fr.ecx;
+    let scratch = fr.esp.wrapping_sub(8);
+    let block = |g: &G| g.read::<u32>(op(img, f, 0x5));
+    let field = if d == 0 { 0 } else { img.word(f + 0xc) & 0xff };
+    let first = g.read::<u32>(block(g).wrapping_add(field));
+    // slot `s` through the table operand `t` with the immediate at `x`:
+    // its ST0 as `f32` (kept in the scratch word) and its `eax`
+    let rnd = |g: &mut G, t: u32, s: u32, x: u32| {
+        let o = slot(g, img, f, t + d, s, p, &[w(x)]);
+        let v = crate::m0018::st0_f32(o.st0);
+        g.write::<f32>(scratch, v);
+        (v, o.eax)
+    };
+    let z_first = d == 0;
+    // (take, the block word, tables, immediates, K, mask, K2, K3, the
+    // step's `y`)
+    let mut eax = 0;
+    for spark in 0..2 {
+        let (take, t, x, kk, mask, k2, k3, dy) = if spark == 0 {
+            (
+                0x13u32,
+                [0x38u32, 0x71, 0x8b, 0xae, 0xd2, 0xf5, 0x10c],
+                [0x4du32, 0x62, 0x99, 0xb5, 0xd9, 0xfc, 0x135],
+                0xcdu32,
+                0xe0u32,
+                0x147u32,
+                0x165u32,
+                0x11au32,
+            )
+        } else {
+            (
+                0x17f,
+                [0x1a7, 0x1e3, 0x1fd, 0x220, 0x243, 0x25f, 0x276],
+                [0x1bf, 0x1d4, 0x20b, 0x227, 0x255, 0x266, 0x29f],
+                0,
+                0x23e,
+                0x2b1,
+                0x2ca,
+                0x284,
+            )
+        };
+        let r = crate::sb_misc::pool_take(g, img, img.rel32_target(f + take + d));
+        if r == 0 {
+            return 0;
+        }
+        let word = if spark == 0 {
+            first
+        } else {
+            let at = img.word(f + 0x198 + d) & 0xff;
+            let b2 = g.read::<u32>(w(0x18f));
+            g.read::<u32>(b2.wrapping_add(at))
+        };
+        g.write::<u16>(r + 0x38, 0xffff);
+        g.write::<u16>(r + 0x3a, 0x200);
+        g.write::<u32>(r + 0x30, word);
+        g.write::<u32>(r + 0x34, 1);
+        let (a, _) = rnd(g, t[0], 314, x[0]);
+        g.write::<f32>(r, add(g.read::<f32>(p), a));
+        let y = g.read::<u32>(p + 4);
+        g.write::<u32>(r + 4, y);
+        let (b, _) = rnd(g, t[1], 314, x[1]);
+        let pz = g.read::<f32>(p + 8);
+        let z = if z_first { add(pz, b) } else { add(b, pz) };
+        g.write::<u32>(r + 0xc, 0x3f80_0000);
+        g.write::<f32>(r + 8, z);
+        let (v, _) = rnd(g, t[2], 314, x[2]);
+        g.write::<f32>(r + 0x10, v);
+        let (v, _) = rnd(g, t[3], 404, x[3]);
+        let v = if spark == 0 { add(v, k(g, kk)) } else { v };
+        let v = f32::from_bits(v.to_bits() ^ g.read::<u32>(w(mask)));
+        g.write::<f32>(r + 0x14, v);
+        let (v, _) = rnd(g, t[4], 314, x[4]);
+        g.write::<f32>(r + 0x18, v);
+        let (v, _) = rnd(g, t[5], 314, x[5]);
+        g.write::<f32>(r + 0x1c, v);
+        for (at, v) in [
+            (0x20u32, 0u32),
+            (0x24, w(dy)),
+            (0x28, 0),
+            (0x2c, 0x3f80_0000),
+        ] {
+            g.write::<u32>(r + at, v);
+        }
+        let (v, e) = rnd(g, t[6], 314, x[6]);
+        eax = e;
+        let v = add(v, k(g, k2));
+        let flags = if spark == 0 {
+            g.read::<u32>(w(0x14c))
+        } else {
+            0
+        };
+        g.write::<u32>(r + 0x4c, 0xffff_ffff);
+        g.write::<u32>(r + 0x50, 0);
+        let v = mul(v, k(g, k3));
+        if spark == 0 {
+            g.write::<u32>(r + 0x68, w(0x16c));
+        }
+        g.write::<f32>(r + 0x3c, v);
+        if spark == 0 && g.read::<u8>(flags) & 7 != 0 {
+            return flags;
+        }
+    }
+    eax
+}
+
+/// [`two_sparks`] in `magic_0565` (the `rel32`s: two of the pool's take).
+pub const TWO_SPARKS: Sig = Sig {
+    len: 729,
+    hash: 0xc74e_44ed_5ba5_1685,
+    calls: &[
+        (0x13, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x17f, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+    ],
+    imports: &[],
+};
+
+/// [`two_sparks`] in `magic_0644`.
+pub const TWO_SPARKS_B: Sig = Sig {
+    len: 730,
+    hash: 0x949d_27e8_6f81_8d51,
+    calls: &[
+        (0x14, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x180, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+    ],
+    imports: &[],
+};

@@ -2801,3 +2801,78 @@ fn camera_path_tasks() {
         }
     }
 }
+
+/// Rows 185 and 182: the two sparks of `magic_0565` and `magic_0644`
+/// (each with its four copies): no free record, one, two with the flags
+/// clear and one with them set.
+#[test]
+fn two_sparks() {
+    for (dll, rva, d) in [
+        (565u16, 0x3450u32, 0u32),
+        (691, 0x3450, 0),
+        (693, 0x3450, 0),
+        (695, 0x3450, 0),
+        (697, 0x3450, 0),
+        (644, 0x75e0, 1),
+        (692, 0x75e0, 1),
+        (694, 0x75e0, 1),
+        (696, 0x75e0, 1),
+        (698, 0x75e0, 1),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        for s in [314u32, 404] {
+            log_calls(&mut t, s, log, 1, None, move |_, a, k| a[0] ^ (s << 20) ^ k);
+            t.stub_st0(s, move |m, a| {
+                let k = m.r32(log);
+                f64::from(f32::from_bits(a[0])) * (0.25 + f64::from(k % 7))
+            });
+        }
+        let pt = t.img.rel32_target(f + 0x13 + d);
+        let recs = SCRATCH + 0x2000;
+        t.set_u32(op(&t, pt, 0x37), recs);
+        let block = SCRATCH + 0x700;
+        t.set_u32(op(&t, f, 0x5), block);
+        let flags = SCRATCH + 0x2f0;
+        t.set_u32(op(&t, f, 0x14c + d), flags);
+        for (o, x) in [
+            (0xcdu32, 0.5f32),
+            (0x147, -0.25),
+            (0x165, 3.0),
+            (0x2b1, 0.75),
+            (0x2ca, 1.5),
+        ] {
+            t.set_u32(op(&t, f, o + d), x.to_bits());
+        }
+        let p = SCRATCH + 0x300;
+        // (records free, the flags)
+        for (k, (n, fl)) in [(0u32, 0u8), (1, 0), (2, 0), (2, 4), (3, 0xf8)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u8(flags, fl);
+            t.set_u32(op(&t, pt, 0x0f), 8);
+            t.set_u32(op(&t, pt, 0x08), 0);
+            t.write(recs, &varied(0x74 * 8, k));
+            for i in 0..8u32 {
+                t.set_u32(recs + 0x74 * i + 0x6c, u32::from(i >= n));
+            }
+            t.write(block, &varied(0x40, k + 1));
+            t.write(p, &varied(0x10, k + 2));
+            t.set_u32(p, (1.5 * k as f32).to_bits());
+            t.set_u32(p + 8, (-2.0 + k as f32).to_bits());
+            scrub(&mut t);
+            let call = Call {
+                ecx: p,
+                eax: 0x3450_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::two_sparks(g, img, fr))
+            });
+        }
+    }
+}
