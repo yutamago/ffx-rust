@@ -2197,3 +2197,77 @@ pub const SPLINE_MOMENTS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A spline set up through points (internal: `ecx` the work row `W`,
+/// `edx` the points `Q` (16 bytes each); the stack `(T, MX, MY, MZ, n)`;
+/// an aligned frame). The knots `T` are the chord lengths summed (`T[0]
+/// = 0`, `T[i] = sqrt(dy^2 + dx^2 + dz^2) + T[i-1]`, the squares added
+/// in that order, the root in `f64`) and then divided by the total
+/// `T[n-1]`; the second derivatives of the three components are
+/// [`spline_moments`] `(Q, T; MX/MY/MZ, W, W + 4n, 0/1/2, n)`, the last
+/// one's `eax` returned.
+///
+/// `magic_0432` 0x10004b00 (437 bytes, `ecx`/`edx`; 3 DLLs).
+pub fn spline_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let (w, q) = (fr.ecx, fr.edx);
+    let t = fr.arg(g, 0);
+    let n = fr.arg(g, 4);
+    let at = |i: u32| t.wrapping_add(i.wrapping_mul(4));
+    g.write::<u32>(t, 0);
+    let pt = |i: u32, c: u32| q.wrapping_add(i.wrapping_mul(0x10)).wrapping_add(4 * c);
+    let mut i = 1u32;
+    while i.cast_signed() < n.cast_signed() {
+        let d = |g: &G, c: u32| sub(g.read::<f32>(pt(i, c)), g.read::<f32>(pt(i - 1, c)));
+        let (dy, dx, dz) = (d(g, 1), d(g, 0), d(g, 2));
+        let s = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+        // `cvtps2pd`, `_libm_sse2_sqrt_precise`, `cvtsd2ss`
+        let len = f64::from(s).sqrt() as f32;
+        let v = add(len, g.read::<f32>(at(i - 1)));
+        g.write::<f32>(at(i), v);
+        i += 1;
+    }
+    let total = g.read::<f32>(at(n.wrapping_sub(1)));
+    let mut i = 1u32;
+    while i.cast_signed() < n.cast_signed() {
+        let v = div(g.read::<f32>(at(i)), total);
+        g.write::<f32>(at(i), v);
+        i += 1;
+    }
+    // the three calls' frames: after `push ebp; and esp, -8; sub esp, 0xc`
+    // and three saved registers, five argument words each
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x18);
+    let u = w.wrapping_add(n.wrapping_mul(4));
+    let mut eax = 0;
+    for (k, call) in [0x17bu32, 0x191, 0x1a7].into_iter().enumerate() {
+        let k = k as u32;
+        let m = fr.arg(g, 1 + k);
+        let esp = base.wrapping_sub(0x18 + 0x14 * k);
+        for (j, v) in (1u32..).zip([m, w, u, k, n]) {
+            g.write::<u32>(esp + 4 * j, v);
+        }
+        let moments = Frame {
+            at: img.rel32_target(f + call),
+            esp,
+            ecx: q,
+            edx: t,
+            ..*fr
+        };
+        eax = spline_moments(g, img, &moments);
+    }
+    eax
+}
+
+/// [`spline_setup`] (the `rel32`s: `_libm_sse2_sqrt_precise`'s thunk and
+/// three [`spline_moments`]).
+pub const SPLINE_SETUP: Sig = Sig {
+    len: 437,
+    hash: 0xf2d0_056a_849b_2488,
+    calls: &[
+        (0x75, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x17b, Callee::Sig(&SPLINE_MOMENTS)),
+        (0x191, Callee::Sig(&SPLINE_MOMENTS)),
+        (0x1a7, Callee::Sig(&SPLINE_MOMENTS)),
+    ],
+    imports: &[],
+};

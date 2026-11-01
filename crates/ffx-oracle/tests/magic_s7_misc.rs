@@ -1822,3 +1822,43 @@ fn spline_moments() {
         }
     }
 }
+
+/// Row 421: a spline set up through points in the three DLLs, for point
+/// counts 0..6.
+#[test]
+fn spline_setups() {
+    for (dll, rva) in [(432u16, 0x4b00u32), (434, 0xdcc0), (610, 0x5030)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let q = SCRATCH + 0x1000;
+        let (tk, w) = (SCRATCH + 0x400, SCRATCH + 0x500);
+        let ms = [SCRATCH + 0x600, SCRATCH + 0x680, SCRATCH + 0x700];
+        for (k, n) in [0u32, 1, 2, 3, 4, 6].into_iter().enumerate() {
+            let k = k as u32;
+            t.write(tk - 0x10, &varied(0x50, k));
+            t.write(w - 0x10, &varied(0x70, k + 1));
+            for (i, m) in (0u32..).zip(ms) {
+                t.write(m - 0x10, &varied(0x50, k + 2 + i));
+            }
+            for i in 0..8u32 {
+                for c in 0..4u32 {
+                    let y = ((i * 5 + c * 3 + k) % 9) as f32 * 0.75 - 2.0 + i as f32;
+                    t.set_u32(q + 0x10 * i + 4 * c, y.to_bits());
+                }
+            }
+            scrub(&mut t);
+            let c = Call {
+                ecx: w,
+                edx: q,
+                ..Call::default()
+            };
+            t.check(
+                f,
+                c,
+                &[tk, ms[0], ms[1], ms[2], n],
+                Eax::Checked,
+                |g, img, fr| Ret::eax(s7_misc::spline_setup(g, img, fr)),
+            );
+        }
+    }
+}

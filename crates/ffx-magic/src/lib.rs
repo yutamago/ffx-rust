@@ -2960,6 +2960,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("stream block", &s7_misc::STREAM_BLOCK),
     ("sprite fade node", &s7_misc::SPRITE_FADE_NODE),
     ("spline moments", &s7_misc::SPLINE_MOMENTS),
+    ("spline set-up", &s7_misc::SPLINE_SETUP),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",
