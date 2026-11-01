@@ -14,7 +14,7 @@ mod o4;
 
 use ffx_magic::{
     Ret, Xmm, o6_fam_bone, o6_fam_launch, o6_fam_node, o6_fam_object, o6_fam_pairs2, o6_fam_pairs3,
-    o6_fam_pairs4, o6_fam_pairs5, o6_fam_pool,
+    o6_fam_pairs4, o6_fam_pairs5, o6_fam_pairs6, o6_fam_pool,
 };
 use magic::{Call, Eax, SCRATCH, Twin};
 use o4::{copies, dlls, fill};
@@ -1622,6 +1622,7 @@ fn dll_main_writes_only_crt_state() {
         CURVE_FLYERS,
         ACTOR_SPAWNER,
         STAGED_NODES,
+        TRAIL_DRAW,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -2152,6 +2153,11 @@ fn fam2_scrolled_texture() {
             for i in 0..4 {
                 x = x.rotate_left(3) ^ m.r32(a[4] + 4 * i);
             }
+            // the matrix M1 and the lock word while it draws
+            for i in 0..12 {
+                x = x.rotate_left(3) ^ m.r32(a[6] + 4 * i);
+            }
+            x ^= m.r32(SCRATCH + 0x3040).rotate_left(11);
             m.w32(SCRATCH + 0x3080, x);
             0x879
         });
@@ -2186,10 +2192,15 @@ fn fam2_scrolled_texture() {
                 for &v in &a[..7] {
                     x = x.rotate_left(7) ^ v;
                 }
-                m.w32(SCRATCH + 0x3084, x ^ m.r32(a[6]));
+                m.w32(
+                    SCRATCH + 0x3084,
+                    x ^ m.r32(a[6]) ^ m.r32(SCRATCH + 0x3040).rotate_left(9),
+                );
                 made
             });
             t.set_u32(SCRATCH + 0x3040, 0x55 + c);
+            // the scale K (a constant of the DLL) per case: the tint differs
+            t.set_u32(w(&t, 0x33), (1.0f32 + 0.5 * c as f32).to_bits());
             t.set_u32(SCRATCH + 0x3100 + w(&t, 0xca), 0x0830_0000 + c);
             t.set_u32(w(&t, 0x82), count);
             t.set_u32(w(&t, 0x9b), c1);
@@ -2354,6 +2365,7 @@ fn fam2_timed_items_visit() {
             (false, 2, 2, 0, 0, 0),
             (false, 2, 0, 0, 0, 0),
             (false, 0, 6, 0, 0x1079, 1),
+            (false, 2, 6, 0, 0, 0),
         ];
         // (+0x26e, +0x26c, +0x268, +0x230)
         let items = [
@@ -2381,7 +2393,7 @@ fn fam2_timed_items_visit() {
                 }
                 t.set_u32(node + 0x10, prev);
                 t.set_u8(node + flags_at, flags);
-                t.set_u32(node + count_at, items.len() as u32);
+                t.set_u32(node + count_at, if k == 7 { 0 } else { items.len() as u32 });
                 t.set_u32(node + time_at, 0.25f32.to_bits());
                 for (i, &(bits, steps, time, x230)) in (0u32..).zip(&items) {
                     let r = node + item0 + stride * i;
@@ -2975,7 +2987,7 @@ fn fam2_target_objects() {
         });
         t.stub(262, |m, a| {
             for (i, &p) in a[1..4].iter().enumerate() {
-                let x = ((a[0] ^ p) % 23) as f32 * 0.75 - 8.0 + i as f32;
+                let x = ((a[0] ^ p) % 23) as f32 * 9.75 - 108.0 + i as f32;
                 m.w32(p, x.to_bits());
             }
             0x262
@@ -2988,6 +3000,9 @@ fn fam2_target_objects() {
         t.set_u32(w(&t, 0x19), obj);
         t.set_u32(w(&t, 0xbe), SCRATCH + 0x3100);
         t.write(SCRATCH + 0x3100, &[1, 2, 3, 0, 2, 1, 3, 0]);
+        // the key table: distinct keys
+        let keys = w(&t, 0xc9);
+        fill(&mut t, keys, 4, 61);
         t.set_u32(w(&t, 0x3b0), SCRATCH + 0x3200);
         // the object start's owner block and program table (slot 941)
         let start = t.img.rel32_target(f + 0x281);
@@ -3113,8 +3128,10 @@ fn fam2_sprite_frame() {
             t.set_u32(r + 0x24, 1.5f32.to_bits());
             t.set_u32(r + 0x28, (-0.5f32).to_bits());
             t.set_u32(r + 0x38, (40.25f32 + c as f32).to_bits());
-            t.write(tbl, &[0x10; 0x100]);
+            fill(&mut t, tbl, 0x40, 23 + c);
             t.set_u16(tbl + 4, 3);
+            t.write(r - 0x40, &[0x5b; 0x40]);
+            t.set_u32(w(&t, 0x179), (2.5f32 + c as f32).to_bits());
             for i in 0..3u32 {
                 t.set_u16(tbl + 8 * i + 0x10, (0x80 + 8 * i) as u16);
                 t.set_u16(tbl + 8 * i + 0x12, (0x100 * (i + 1)) as u16);
@@ -3404,7 +3421,7 @@ fn fam2_aimed_objects() {
         });
         t.stub(262, |m, a| {
             for (i, &p) in a[1..4].iter().enumerate() {
-                let x = ((a[0] ^ p) % 23) as f32 * 0.75 - 8.0 + i as f32;
+                let x = ((a[0] ^ p) % 23) as f32 * 9.75 - 108.0 + i as f32;
                 m.w32(p, x.to_bits());
             }
             0x262
@@ -3416,6 +3433,9 @@ fn fam2_aimed_objects() {
         t.set_u32(w(&t, 0x18), obj);
         t.set_u32(w(&t, 0xd6), SCRATCH + 0x3100);
         t.write(SCRATCH + 0x3100, &[1, 2, 3, 0, 2, 1, 3, 0]);
+        // the key table: distinct keys
+        let keys = w(&t, 0xe1);
+        fill(&mut t, keys, 4, 61);
         t.set_u32(w(&t, 0x280), SCRATCH + 0x3300);
         fill(&mut t, SCRATCH + 0x3300, 0x10, 7);
         let start = t.img.rel32_target(f + 0x2d6);
@@ -3557,7 +3577,7 @@ fn fam2_actor_spawner() {
         });
         t.stub(262, |m, a| {
             for (i, &p) in a[1..4].iter().enumerate() {
-                let x = ((a[0] ^ p) % 23) as f32 * 0.75 - 8.0 + i as f32;
+                let x = ((a[0] ^ p) % 23) as f32 * 9.75 - 108.0 + i as f32;
                 m.w32(p, x.to_bits());
             }
             0x262
@@ -3710,6 +3730,144 @@ fn fam2_staged_nodes() {
                 t.set_u32(l + 0x10, l);
             }
             t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
+        }
+    }
+}
+
+const TRAIL_DRAW: &[(u16, u32)] = &[(446, 0x4e20), (544, 0x4ce0)];
+
+/// `o6_fam_pairs6::trail_draw`: no sprites; a short trail; an unmarked
+/// point on the way back (it stops); a zero-length segment (a sprite
+/// skipped); the colours' alpha 0 (nothing drawn); a long step that runs
+/// past 32 segments around the ring's end. Slot 234 writes the difference
+/// of its points, 248 the sum; slot 941 answers a frame table, 772 a
+/// 64-bit handle; the animation steps and the sprites draw or link as
+/// ported.
+#[test]
+#[allow(clippy::too_many_lines)] // the stubs and six cases
+fn fam2_trail_draw() {
+    for &(n, rva) in TRAIL_DRAW {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        registered(&t, rva, "o6 fam pairs6 trail_draw");
+        stubs4(&mut t);
+        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+        let table = P;
+        t.stub(941, move |m, a| {
+            let k = m.r32(SCRATCH + 0x3f80);
+            m.w32(SCRATCH + 0x3f84 + 4 * (k % 8), a[0]);
+            m.w32(SCRATCH + 0x3f80, k + 1);
+            table
+        });
+        t.stub(234, |m, a| {
+            for i in 0..3 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x234
+        });
+        t.stub(248, |m, a| {
+            for i in 0..3 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x248
+        });
+        let f = t.at(rva);
+        // the sprite's slots 774 and 778 hash the matrices `*G_M3` and
+        // `*G_M4` and the colour (what the game draws with)
+        let (gm3, gm4, gc) = (
+            t.img.word(f + 0x57),
+            t.img.word(f + 0x63),
+            t.img.word(f + 0x236),
+        );
+        for s in [774u32, 778] {
+            t.stub(s, move |m, a| {
+                let mut x = s ^ a[2];
+                for g in [gm3, gm4] {
+                    let at = m.r32(g);
+                    for i in 0..16 {
+                        x = x.rotate_left(5) ^ m.r32(at + 4 * i);
+                    }
+                }
+                x ^= m.r32(gc).rotate_left(3);
+                let k = m.r32(SCRATCH + 0x3fc0);
+                m.w32(SCRATCH + 0x3fc4 + 4 * (k % 15), x);
+                m.w32(SCRATCH + 0x3fc0, k + 1);
+                x
+            });
+        }
+        // the sprite call: `draw_frame` (0446) or `link_part` (0544), whose
+        // lock global points at a scratch word
+        let (call, lock_offs): (u32, &[u32]) = if n == 446 {
+            (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+        } else {
+            (0x55d, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
+        };
+        let callee = t.img.rel32_target(f + call);
+        for &off in lock_offs {
+            let g = t.img.word(callee + off);
+            t.set_u32(g, SCRATCH + 0x3f00);
+        }
+        let (o, basis, point) = (SCRATCH + 0x4000, SCRATCH + 0x4400, SCRATCH + 0x4480);
+        let saved = t.save();
+        // (count, head, unmarked, zero segment at, alpha, step, playing)
+        let cases = [
+            (0u32, 5u32, 99u32, 99u32, 0x80u8, 0.6f32, 1u32),
+            (6, 5, 99, 99, 0x80, 0.6, 1),
+            (12, 7, 3, 99, 0x40, 0.6, 0),
+            (9, 10, 99, 8, 0x80, 0.6, 1),
+            (5, 3, 99, 99, 0, 0.6, 1),
+            (40, 2, 99, 99, 0x7f, 2.0, 1),
+        ];
+        for (c, (count, head, gap, zero, alpha, step, playing)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            fill(&mut t, table, 0x20, 17 + c);
+            t.set_u16(table + 6, 5);
+            t.write(SCRATCH + 0x3f00, &[0x31; 0x40]);
+            t.write(o, &[0x13; 0x300]);
+            t.set_u32(o, 0x0041_0000 + c);
+            t.set_u32(o + 4, playing);
+            t.set_u16(o + 8, 2);
+            t.set_u16(o + 0xa, 0x100 + 0x80 * c as u16);
+            for i in 0..32u32 {
+                // the point before `zero` repeats it: a zero-length segment
+                let k = if i + 1 == zero { zero } else { i } as f32;
+                let xyz = [
+                    k * 1.5 + c as f32,
+                    (k * 0.7).sin() * 2.0,
+                    k * 0.25 - 3.0,
+                    1.0,
+                ];
+                for (j, v) in (0u32..).zip(xyz) {
+                    t.set_u32(o + 0xc + 16 * i + 4 * j, v.to_bits());
+                }
+                t.set_u8(o + 0x22c + i, u8::from(i != gap));
+            }
+            t.write(o + 0x20c, &[0x20 + c as u8, 0x90, 0x10, alpha]);
+            t.write(o + 0x210, &[0xe0, 0x30 + c as u8, 0x70, alpha]);
+            t.set_u32(o + 0x214, 1.5f32.to_bits());
+            t.set_u32(o + 0x218, 0.5f32.to_bits());
+            t.set_u32(o + 0x21c, step.to_bits());
+            t.set_u32(o + 0x220, 0x1234 + 0x111 * c);
+            t.set_u32(o + 0x224, head);
+            t.set_u32(o + 0x228, count);
+            for i in 0..12u32 {
+                let v = 0.5 + i as f32 * 0.25 - c as f32 * 0.125;
+                t.set_u32(basis + 4 * i, v.to_bits());
+            }
+            for (j, v) in (0u32..).zip([4.5f32, -2.0, 7.25, 1.0]) {
+                t.set_u32(point + 4 * j, v.to_bits());
+            }
+            let call = Call {
+                ecx: o,
+                edx: basis,
+                ..Call::default()
+            };
+            t.check(f, call, &[point], Eax::Checked, |g, img, fr| {
+                o6_fam_pairs6::trail_draw(g, img, fr)
+            });
         }
     }
 }

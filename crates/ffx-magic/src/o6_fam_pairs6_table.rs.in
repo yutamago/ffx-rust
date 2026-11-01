@@ -132,3 +132,33 @@ pub const STAGED_NODES_0402_6960: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0446_10004e20 (0446@4e20)
+
+/// [`trail_draw`] in `magic_0446` (0x10004e20, 1413 bytes; row shared:108).
+pub const TRAIL_DRAW_0446_4E20: Sig = Sig {
+    len: 1413,
+    hash: 0xfe40_966b_0bf1_30a1,
+    calls: &[
+        (0xdf, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x1b1, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x546, Callee::Sig(&crate::sb_misc::DRAW_FRAME)),
+        (0x57d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0446_10004e20 (0544@4ce0)
+
+/// [`trail_draw`] in `magic_0544` (0x10004ce0, 1436 bytes; row shared:414).
+pub const TRAIL_DRAW_0544_4CE0: Sig = Sig {
+    len: 1436,
+    hash: 0xf50a_73f8_125f_0979,
+    calls: &[
+        (0xdf, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x1b1, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x55d, Callee::Sig(&crate::sa_misc::LINK_PART)),
+        (0x594, Callee::Any),
+    ],
+    imports: &[],
+};

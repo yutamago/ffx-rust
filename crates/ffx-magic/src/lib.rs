@@ -3456,6 +3456,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "o6 fam pairs5 sprite_frame 0206@2730",
         &o6_fam_pairs5::SPRITE_FRAME_0206_2730,
     ),
+    (
+        "o6 fam pairs6 trail_draw 0446@4e20",
+        &o6_fam_pairs6::TRAIL_DRAW_0446_4E20,
+    ),
+    (
+        "o6 fam pairs6 trail_draw 0544@4ce0",
+        &o6_fam_pairs6::TRAIL_DRAW_0544_4CE0,
+    ),
     // families2 (o6_fam_pairs5..): end of INTERNAL
 ];
 
