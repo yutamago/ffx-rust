@@ -164,3 +164,28 @@ pub fn load(e: &mut Exec, n: i32) -> Result<String, String> {
         if forced { " (control taken)" } else { "" }
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_reader_wraps_debug_load_for_viewer() {
+        let mut t = Table::new();
+        register(&mut t);
+        let entry = t.get(DEBUG_LOAD_FOR_VIEWER).expect("an entry");
+        assert_eq!(entry.name, "debugLoadForViewer");
+        assert_eq!((entry.conv, entry.words), (Conv::Cdecl, 3));
+        // the original stays callable (call_original) without the harness
+        assert!(t.wrapped().any(|(a, _)| a == DEBUG_LOAD_FOR_VIEWER));
+    }
+
+    #[test]
+    fn ffx_rust_has_it_in_its_table() {
+        let t = crate::ports::table();
+        assert_eq!(
+            t.get(DEBUG_LOAD_FOR_VIEWER).map(|e| e.name),
+            Some("debugLoadForViewer")
+        );
+    }
+}
