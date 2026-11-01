@@ -123,9 +123,11 @@ if [[ "${FFX_HARNESS_EXE:-}" == rust ]]; then
     done
 fi
 
-# Build once, not three times side by side.
+# Build once, not three times side by side. With FFX_NO_BUILD=1 already set,
+# ffx-rust.exe is the one in target/ (built elsewhere and copied in: PC2 has
+# no Java, which Ruffle's build needs).
 if [[ -n "$host" ]]; then
-    tools/build-host.sh >/dev/null || exit 1
+    [[ "${FFX_NO_BUILD:-}" == 1 ]] || tools/build-host.sh >/dev/null || exit 1
     export FFX_NO_BUILD=1  # run-game.sh installs the build above
 else
     tools/build-hook.sh >/dev/null || exit 1
