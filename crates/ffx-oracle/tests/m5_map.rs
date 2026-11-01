@@ -181,6 +181,21 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        // the trampoline 8 bytes past the poison
+        let at = self.1 + 8;
+        let (x, y) = (x.to_bits(), y.to_bits());
+        let words = [x as u32, (x >> 32) as u32, y as u32, (y >> 32) as u32, addr];
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &words)
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r
+            .st0_f32()
+            .unwrap_or_else(|| panic!("intrinsic {addr:#x}: no ST0"));
+        self.0.call(at + 13, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -244,6 +259,17 @@ impl Twins {
         code.extend(POISON.to_le_bytes());
         code.push(0xc3);
         t.write(at, &code);
+        // after the poison: `fld qword [esp+4]; fld qword [esp+0xc];
+        // call [esp+0x14]; ret` for Host::call_intrinsic2 (operands in ST1
+        // and ST0; the cave function is 2438 bytes long), then `fstp st0;
+        // ret`
+        t.write(
+            at + 8,
+            &[
+                0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3, 0xdd,
+                0xd8, 0xc3,
+            ],
+        );
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
             o.call(at, Conv::Cdecl, &[]).unwrap();
@@ -5657,4 +5683,54 @@ fn l6_same_words(t: &Twins, what: &str, ebp: u32, at: u32, n: u32) {
         bad.is_empty(),
         "{what}: frame words (ebp - off, original, port): {bad:x?}"
     );
+}
+
+// ---- round 6 (left6) batch 3 (ffx_prender::l6_map5) ----
+
+use ffx_prender::l6_map5::{self as l65, bridge as l6m5};
+
+#[test]
+fn l6_scene_camera_line_matches_the_original() {
+    // the end of the text; the target form and the angle form, angles
+    // across the wrap (the CRT's _CIfmod for real), negative, huge, NaN
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b41);
+        for case in 0..80_u32 {
+            let floats: Vec<u32> = (0..12)
+                .map(|_| match rng.below(6) {
+                    0 => float_word(&mut rng),
+                    1 => (rng.below(4000) as f32 - 2000.0).to_bits(),
+                    2 => [180.0_f32, -180.0, 540.0, -540.0, 360.0, 0.0][rng.below(6) as usize]
+                        .to_bits(),
+                    _ => (rng.below(7200) as f32 / 10.0 - 360.0).to_bits(),
+                })
+                .collect();
+            let table = t.words(&floats);
+            let cell = t.words(&[table]);
+            // rcdtParseGetFloat(p): the next float in ST0
+            let mut gf = vec![0xa1];
+            gf.extend(cell.to_le_bytes()); // mov eax, [cell]
+            gf.extend([0xd9, 0x00, 0x83, 0x05]); // fld dword [eax]; add dword [cell], 4
+            gf.extend(cell.to_le_bytes());
+            gf.extend([0x04, 0xc3]);
+            r5_code(t, l65::PARSE_GET_FLOAT, &gf);
+            let end = u32::from(case % 9 == 4) * rng.next().max(1);
+            t.stub_sym(l65::PARSE_IS_END, 1, false, 1, 0, Ret::Val(end));
+            let kw = if rng.chance(2) { 0 } else { rng.next() };
+            t.stub_sym(l65::PARSE_GET_KEYWORD, 2, false, 2, 0, Ret::Val(kw));
+            t.stub_sym(l65::PARSE_NEXT_TOKEN, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l65::SCENE_SET_MATRIX, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l65::CAMERA_CALC_REF, 5, false, 1, 0, Ret::Val(rng.next()));
+            let scene = l6_random(t, &mut rng, 0x100);
+            let parse = rng.next();
+            t.check(
+                "rcbgSceneLoadTextCamera_0093af60",
+                0x0093_af60,
+                Conv::Cdecl,
+                &[scene, parse],
+                |o| Out::U32(l6m5::camera_line(o, scene, parse)),
+            );
+            t.reset();
+        }
+    });
 }

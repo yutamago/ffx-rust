@@ -1226,4 +1226,18 @@ ported! {
         let ebp = frame.at() + l6u3::AXIS_FRAME;
         l6u3::axis_pass(&mut mem(), ebp, [api, sub, obj, a, b, src, vertical, n, w, h, dst, c])
     }
+    /// `(px, py, cam, point, offset)`: the debug camera's mouse pick (its
+    /// two points and the ray in a frame).
+    CamDebug_ScreenPick_00940f30 @ 0x0094_0f30 => extern "C" fn camdebug_screen_pick(px: u32, py: u32, cam: u32, point: u32, offset: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::PICK_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::PICK_FRAME;
+        l6u3::screen_pick(&mut mem(), ebp, [px, py, cam, point, offset])
+    }
+    /// `(src, stats, x0, y0, x1, y1)`: a textured quad (the mapped data,
+    /// stride and offset in a frame).
+    GDraw_drawQuad_00a36090 @ 0x00a3_6090 => extern "C" fn gdraw_draw_quad(src: u32, stats: u32, x0: u32, y0: u32, x1: u32, y1: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l6u3::QUAD_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l6u3::QUAD_FRAME;
+        l6u3::quad(&mut mem(), ebp, [src, stats, x0, y0, x1, y1])
+    }
 }

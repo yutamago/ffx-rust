@@ -11,6 +11,7 @@ use ffx_prender::l6_map::bridge as l6m;
 use ffx_prender::l6_map2::bridge as l6m2;
 use ffx_prender::l6_map3::bridge as l6m3;
 use ffx_prender::l6_map4::bridge as l6m4;
+use ffx_prender::l6_map5::bridge as l6m5;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -774,5 +775,9 @@ ported! {
     /// 17 words -> 1 or 0 (keeps four values in its argument slots).
     updateVFXRenderData_DrawModelScroll @ 0x00a5_c370 => extern "C" fn update_scroll_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32, a12: u32, a13: u32, a14: u32, a15: u32, a16: u32; slots: u32) -> u32 {
         l6m4::update(&mut mem(), slots, [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16])
+    }
+    /// `(scene, parse)`: the scene text's camera line.
+    rcbgSceneLoadTextCamera_0093af60 @ 0x0093_af60 => extern "C" fn rcbg_scene_load_text_camera(scene: u32, parse: u32) -> u32 {
+        l6m5::camera_line(&mut mem(), scene, parse)
     }
 }

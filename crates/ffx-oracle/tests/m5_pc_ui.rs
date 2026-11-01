@@ -7187,3 +7187,165 @@ fn l6_gdraw_filter_passes_match_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn l6_camdebug_screen_pick_matches_the_original() {
+    // the matrix-vector product for real; mouse positions around the
+    // centre and far off; a zero ray (an infinite or NaN parameter)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d31);
+        for case in 0..80_u32 {
+            let cam: Vec<u32> = (0..16)
+                .map(|_| (rng.below(4000) as f32 / 1000.0 - 2.0).to_bits())
+                .collect();
+            let cam = t.words(&cam);
+            let v = |rng: &mut Rng| (rng.below(2000) as f32 / 10.0 - 100.0).to_bits();
+            let point = t.words(&[v(&mut rng), v(&mut rng), v(&mut rng), 0]);
+            let offset = if case % 9 == 4 {
+                t.words(&[0, 0, 0, 0])
+            } else {
+                t.words(&[v(&mut rng), v(&mut rng), v(&mut rng), 0])
+            };
+            let px = if rng.chance(5) {
+                rng.word()
+            } else {
+                rng.below(0x200)
+            };
+            let py = if rng.chance(5) {
+                rng.word()
+            } else {
+                rng.below(0x1a0)
+            };
+            let args = [px, py, cam, point, offset];
+            let ebp = t.frame_ebp(5);
+            t.a.write(ebp - 0x50, &[0; 0x4c]).unwrap();
+            t.b.write(ebp - 0x50, &[0; 0x4c]).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            t.check(
+                "CamDebug_ScreenPick_00940f30",
+                0x0094_0f30,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u3::screen_pick(g, ebp, args)),
+            );
+            t.b.set_call_top(None);
+            for k in (0..0x4c).step_by(4) {
+                let at = ebp - 0x50 + k;
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, at),
+                    Mem::read::<u32>(&t.b, at),
+                    "CamDebug_ScreenPick_00940f30: frame at ebp - {:#x}",
+                    0x50 - k
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_gdraw_draw_quad_matches_the_original() {
+    // no vertex buffer; Map failing (out of memory, another error),
+    // succeeding without data or with; the context's methods are
+    // recording stdcall stubs (Map writes its mapped pointer)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d41);
+        for case in 0..60_u32 {
+            let p = if case % 5 == 2 { 0 } else { t.zeros(0x100) };
+            let hr = match case % 7 {
+                1 => 0x8007_000e,
+                3 => 0x8000_4005,
+                _ => rng.below(2),
+            };
+            // Map(ctx, res, sub, type, flags, out): logs, *out = p, eax hr
+            let log = t.log;
+            let mut map = vec![0xa1];
+            map.extend(log.to_le_bytes()); // mov eax, [log]
+            map.extend([0xc1, 0xe0, 0x06, 0x05]); // shl eax, 6; add eax, log + 4
+            map.extend((log + 4).to_le_bytes());
+            map.extend([0xc7, 0x00, 0x38, 0, 0, 0]); // mov dword [eax], 0x38
+            for i in 0..5_u8 {
+                map.extend([0x8b, 0x54, 0x24, 4 + 4 * i, 0x89, 0x50, 8 + 4 * i]);
+            }
+            map.extend([0xff, 0x05]);
+            map.extend(log.to_le_bytes()); // inc dword [log]
+            map.extend([0x8b, 0x44, 0x24, 0x18, 0xc7, 0x00]); // mov eax, [esp+0x18]; mov dword [eax], p
+            map.extend(p.to_le_bytes());
+            map.push(0xb8);
+            map.extend(hr.to_le_bytes()); // mov eax, hr
+            map.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let map = t.cave_code(&map);
+            let mut slots = vec![0; 0x20];
+            for (off, n) in [
+                (0x1c, 4),
+                (0x2c, 4),
+                (0x34, 3),
+                (0x3c, 3),
+                (0x44, 2),
+                (0x48, 6),
+                (0x60, 2),
+            ] {
+                slots[off / 4] = t.stub_code(0x100 + off as u32, false, n, n, rng.next());
+            }
+            slots[0x38 / 4] = map;
+            let vt = t.words(&slots);
+            let ctx = t.words(&[vt, 0, 0, 0]);
+            let s = t.zeros(0xb00);
+            for off in (0x200..0xa00).step_by(4) {
+                t.w32(s + off, rng.next());
+            }
+            t.w32(s + 4, ctx);
+            let at = t.rebase(l6u3::GDRAW);
+            t.patch(at, &s.to_le_bytes());
+            let vbuf = if case % 9 == 4 { 0 } else { t.zeros(0x40) };
+            t.stub(l6u3::LOCK_DYNAMIC, false, 2, 0, vbuf);
+            // four words: the out-of-memory warning passes no fifth
+            t.stub_import(l6u3::SEND_WARNING_SLOT, false, 4, 0, rng.next());
+            let src = t.words(&[
+                rng.next() & 0xbfff_ffff,
+                rng.next(),
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+            ]);
+            let stats = t.words(&[
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            let args = [
+                src,
+                stats,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+                rng.next() & 0xbfff_ffff,
+            ];
+            let ebp = t.frame_ebp(6);
+            t.a.write(ebp - 0x14, &[0; 0x14]).unwrap();
+            t.b.write(ebp - 0x14, &[0; 0x14]).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            t.check(
+                "GDraw_drawQuad_00a36090",
+                0x00a3_6090,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u3::quad(g, ebp, args)),
+            );
+            t.b.set_call_top(None);
+            for k in (0..0x14).step_by(4) {
+                let at = ebp - 0x14 + k;
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, at),
+                    Mem::read::<u32>(&t.b, at),
+                    "GDraw_drawQuad_00a36090: frame at ebp - {:#x}",
+                    0x14 - k
+                );
+            }
+            t.reset();
+        }
+    });
+}
