@@ -50,6 +50,9 @@ pub mod opu_parts;
 pub mod part_draw;
 pub mod pe;
 pub mod pushes;
+// round 9, own rows below 0450 (magic-r9-own): the load-step family
+pub mod r9_load;
+pub mod r9_misc;
 pub mod rcef;
 pub mod runtime;
 // the shared work list's chunk A (functions used by 2 or more overlays):
@@ -1001,6 +1004,25 @@ ports! {
     "m0390 object callback 15f0" => m0390::E15F0, m0390::e15f0;
     "m0390 entry 1be0 (curve)" => m0390::E1BE0, m0390::e1be0;
     "m0390 entry 2100" => m0390::E2100, m0390::e2100;
+    "m0390 task step 13b0" => m0390::TASK_STEP, m0390::task_step;
+    "m0390 task step 0447" => m0390::TASK_STEP_0447, m0390::task_step;
+    "m0390 entry 1750" => m0390::E1750, m0390::e1750;
+    "m0390 entry 1ef0" => m0390::E1EF0, m0390::e1ef0;
+    // round 9 (magic-r9-own): the load-step family (r9_load)
+    "r9 load step 0018" => r9_load::LOAD_0018, r9_load::load_0018;
+    "r9 load step 0019" => r9_load::LOAD_0019, r9_load::load_0019;
+    "r9 load step 0046" => r9_load::LOAD_0046, r9_load::load_0046;
+    "r9 load step 0064" => r9_load::LOAD_0064, r9_load::load_0064;
+    "r9 load step 0171" => r9_load::LOAD_0171, r9_load::load_0171;
+    "r9 load step 0367" => r9_load::LOAD_0367, r9_load::load_0367;
+    "r9 load step 0369" => r9_load::LOAD_0369, r9_load::load_0369;
+    "r9 load step 0383" => r9_load::LOAD_0383, r9_load::load_0383;
+    "r9 load step 0390" => r9_load::LOAD_0390, r9_load::load_0390;
+    "r9 load step 0395" => r9_load::LOAD_0395, r9_load::load_0395;
+    "r9 load step 0447" => r9_load::LOAD_0447, r9_load::load_0447;
+    "m0447 object fade 5290" => m0447::OBJECT_FADE, m0447::object_fade;
+    "m0447 camera turn 4cb0" => m0447::CAMERA_TURN, m0447::camera_turn;
+    "m0447 camera curve 4f60" => m0447::CAMERA_CURVE, m0447::camera_curve;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0596 start" => m0596::START, m0596::start;
@@ -2541,6 +2563,19 @@ ports! {
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 9 (magic-r9-own)
+    ("m0390 facing", &m0390::FACING),
+    ("m0390 facing 0447", &m0390::FACING_0447),
+    ("m0390 start-up", &m0390::START_UP),
+    ("m0390 start-up 0447", &m0390::START_UP_0447),
+    (
+        "r9 start object (state) 0447",
+        &r9_misc::START_OBJECT_STATE_0447,
+    ),
+    (
+        "r9 start object (state) 0100",
+        &r9_misc::START_OBJECT_STATE_0100,
+    ),
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),
