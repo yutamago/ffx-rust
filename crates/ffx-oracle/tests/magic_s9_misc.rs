@@ -1112,17 +1112,99 @@ fn one_ret() {
     }
 }
 
-/// Rows 22/118: the trail's head in four DLLs (both trail draws): the
-/// wait running with each kind (0, 2 and 3 move the point by their
-/// sparks; 1 and 5 do not), run out with the kind 0 and a count (the
+/// The trail draw's stubs (`magic_o6_fam.rs`' trail tests) for the draw
+/// at `trail_at` (`flat`: `magic_0565`'s copy): its frame table (slot
+/// 941), handle (772), the points' difference (234) and sum (248), the
+/// sprite call's lock globals and the sprite slots hashing what they draw.
+fn trail_stubs(t: &mut Twin, trail_at: u32, flat: bool) {
+    // the trail draw (`magic_o6_fam.rs`' trail tests): its frame table
+    // (slot 941), handle (772), the points' difference (234) and sum
+    // (248), and the sprite call's lock globals
+    for (s, n) in [(723u32, 1usize), (724, 1), (772, 2)] {
+        log_calls(t, s, n, &[], move |_, a, _| s ^ a[0]);
+    }
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    let table = SCRATCH + 0x3800;
+    t.write(table, &varied(0x80, 17));
+    t.set_u16(table + 6, 5);
+    t.stub(941, move |_, _| table);
+    t.stub(234, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x234
+    });
+    t.stub(248, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x248
+    });
+    let (call, lock_offs): (u32, &[u32]) = if flat {
+        (0x531, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+    } else if op(t, trail_at, 0x344) as u8 == 0x40 {
+        (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+    } else {
+        (0x55d, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
+    };
+    let link = t.img.rel32_target(trail_at + call);
+    for &o in lock_offs {
+        let lk = op(t, link, o);
+        t.set_u32(lk, SCRATCH + 0x3f00);
+    }
+    // the sprite slots 774/778 hash the matrices `*G_M3`, `*G_M4` and
+    // the colour (what the sprite is drawn with)
+    let (m3_at, m4_at) = if flat { (0x61, 0x54) } else { (0x57, 0x63) };
+    let (gm3, gm4, gc) = (
+        op(t, trail_at, m3_at),
+        op(t, trail_at, m4_at),
+        op(t, trail_at, 0x236),
+    );
+    t.set_u32(gm3, SCRATCH + 0x3a00);
+    t.set_u32(gm4, SCRATCH + 0x3a40);
+    for s in [774u32, 778] {
+        t.stub(s, move |m, a| {
+            let mut x = s ^ a[2];
+            for g in [gm3, gm4] {
+                let at = m.r32(g);
+                if at == 0 {
+                    continue;
+                }
+                for i in 0..16 {
+                    x = x.rotate_left(5) ^ m.r32(at + 4 * i);
+                }
+            }
+            x ^= m.r32(gc).rotate_left(3);
+            let k = m.r32(SCRATCH + 0x3fc0);
+            m.w32(SCRATCH + 0x3fc4 + 4 * (k % 15), x);
+            m.w32(SCRATCH + 0x3fc0, k + 1);
+            x
+        });
+    }
+}
+
+/// Rows 22/118/43: the trail's head in six DLLs (the three trail draws):
+/// the wait running with each kind (0, 2 and 3 move the point by their
+/// sparks; 1 and 5 do not; `magic_0565`'s copies only with the kind 0's
+/// sparks, whose set-up is shared), run out with the kind 0 and a count (the
 /// kept point, the trail drawn with no sprites), and run out with a kind
 /// or no count left (the object goes back to its pool). The count
 /// is also the trail's number of sprites.
 #[test]
 fn trail_heads() {
-    for dll in [446u16, 555, 544, 546] {
+    for (dll, rva) in [
+        (446u16, 0x1e80u32),
+        (555, 0x1e80),
+        (544, 0x1e80),
+        (546, 0x1e80),
+        (565, 0x3a20),
+        (697, 0x3a20),
+    ] {
         let Some(mut t) = twin(dll) else { return };
-        let f = t.at(0x1e80);
+        let f = t.at(rva);
+        let flat = rva == 0x3a20;
         let w = |t: &Twin, o: u32| op(t, f, o);
         log_calls(&mut t, 219, 2, &[], |_, a, k| a[0] ^ 0x0219_0000 ^ k);
         log_calls(&mut t, 237, 4, &[], |m, a, k| {
@@ -1153,7 +1235,10 @@ fn trail_heads() {
             (0xfeu32, 0x9u32, 0x150u32, &[0x190u32][..]),
             (0xf4, 0x13, 0x14c, &[0x5, 0x18f][..]),
             (0xea, 0x17, 0x5, &[0x27, 0x18c][..]),
-        ] {
+        ]
+        .into_iter()
+        .take(if flat { 1 } else { 3 })
+        {
             let sp = t.img.rel32_target(f + call);
             let take = t.img.rel32_target(sp + take_at);
             t.set_u32(op(&t, take, 0x37), recs);
@@ -1167,67 +1252,8 @@ fn trail_heads() {
         for i in 0..8 {
             t.set_u32(r2 + 4 * i, 0x0e00_0000 + i);
         }
-        // the trail draw (`magic_o6_fam.rs`' trail tests): its frame table
-        // (slot 941), handle (772), the points' difference (234) and sum
-        // (248), and the sprite call's lock globals
-        for (s, n) in [(723u32, 1usize), (724, 1), (772, 2)] {
-            log_calls(&mut t, s, n, &[], move |_, a, _| s ^ a[0]);
-        }
-        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
-        let table = SCRATCH + 0x3800;
-        t.write(table, &varied(0x80, 17));
-        t.set_u16(table + 6, 5);
-        t.stub(941, move |_, _| table);
-        t.stub(234, |m, a| {
-            for i in 0..3 {
-                let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
-                m.w32(a[0] + 4 * i, x.to_bits());
-            }
-            0x234
-        });
-        t.stub(248, |m, a| {
-            for i in 0..3 {
-                let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
-                m.w32(a[0] + 4 * i, x.to_bits());
-            }
-            0x248
-        });
         let trail_at = t.img.rel32_target(f + 0x173);
-        let (call, lock_offs): (u32, &[u32]) = if op(&t, trail_at, 0x344) as u8 == 0x40 {
-            (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
-        } else {
-            (0x55d, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
-        };
-        let link = t.img.rel32_target(trail_at + call);
-        for &o in lock_offs {
-            let lk = op(&t, link, o);
-            t.set_u32(lk, SCRATCH + 0x3f00);
-        }
-        // the sprite slots 774/778 hash the matrices `*G_M3`, `*G_M4` and
-        // the colour (what the sprite is drawn with)
-        let (gm3, gm4, gc) = (
-            op(&t, trail_at, 0x57),
-            op(&t, trail_at, 0x63),
-            op(&t, trail_at, 0x236),
-        );
-        t.set_u32(gm3, SCRATCH + 0x3a00);
-        t.set_u32(gm4, SCRATCH + 0x3a40);
-        for s in [774u32, 778] {
-            t.stub(s, move |m, a| {
-                let mut x = s ^ a[2];
-                for g in [gm3, gm4] {
-                    let at = m.r32(g);
-                    for i in 0..16 {
-                        x = x.rotate_left(5) ^ m.r32(at + 4 * i);
-                    }
-                }
-                x ^= m.r32(gc).rotate_left(3);
-                let k = m.r32(SCRATCH + 0x3fc0);
-                m.w32(SCRATCH + 0x3fc4 + 4 * (k % 15), x);
-                m.w32(SCRATCH + 0x3fc0, k + 1);
-                x
-            });
-        }
+        trail_stubs(&mut t, trail_at, flat);
         let b = SCRATCH + 0x10000;
         t.set_u32(w(&t, 0x14), b);
         let obj = SCRATCH + 0x5000;
@@ -1247,6 +1273,9 @@ fn trail_heads() {
         .enumerate()
         {
             let k = k as u32;
+            if flat && (kind == 2 || kind == 3) && wait > 0 {
+                continue;
+            }
             t.set_u32(LOG, 0);
             t.write(b, &varied(0x5c10, k + 1));
             t.set_u32(b + 0x5c00, wait.cast_unsigned());
@@ -2107,6 +2136,269 @@ fn launches_after_carry() {
                 ..Call::default()
             };
             t.check_entry(f, call, &[obj], Eax::Checked);
+        }
+    }
+}
+
+/// Rows 163/164: the camera aimed in both DLLs, directly and through the
+/// camera's frame: both ids in the first list (the direction to `G_V`),
+/// both in the second (the look matrix), one in each and neither (the
+/// two points of slot 217).
+#[test]
+fn cameras_aimed() {
+    for dll in [188u16, 690] {
+        let Some(mut t) = twin(dll) else { return };
+        let frame = t.at(0x2800);
+        let f = t.at(0x1940);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        // the vector slots write what they are handed, scaled
+        for s in [234u32, 266] {
+            log_calls(&mut t, s, 3, &[1, 2], move |m, a, k| {
+                for i in 0..4 {
+                    let x =
+                        f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+                    m.w32(
+                        a[0] + 4 * i,
+                        (x + (s & 7) as f32 + k as f32 * 0.5).to_bits(),
+                    );
+                }
+                s
+            });
+        }
+        log_calls(&mut t, 232, 2, &[1], |m, a, k| {
+            for i in 0..4 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5 + k as f32;
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x232
+        });
+        log_calls(&mut t, 235, 1, &[], |m, a, k| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (0.25 * i as f32 - k as f32).to_bits());
+            }
+            0x235
+        });
+        for s in [325u32, 217] {
+            log_calls(&mut t, s, 2, &[], move |m, a, k| {
+                let out = if s == 325 { a[0] } else { a[1] };
+                for i in 0..4 {
+                    m.w32(
+                        out + 4 * i,
+                        (1.5 * i as f32 + k as f32 - (s & 3) as f32).to_bits(),
+                    );
+                }
+                s
+            });
+        }
+        // slot 231 hashes its whole second matrix
+        log_calls(&mut t, 231, 3, &[2], |m, a, k| {
+            let mut x = a[0] ^ k;
+            for i in 0..16 {
+                x = x.rotate_left(5) ^ m.r32(a[1] + 4 * i);
+            }
+            // kept in memory too (the first call's `eax` is dropped)
+            m.w32(SCRATCH + 0x7f0 + 4 * u32::from(a[1] == a[0]), x);
+            x
+        });
+        log_calls(&mut t, 395, 3, &[2], |_, _, _| 0x395);
+        log_calls(&mut t, 211, 2, &[], |_, a, _| a[0] ^ 0x0211_0000);
+        // the id lists (`s4_small::id_list`: slot 288 `(kind, &n)`)
+        let lists = SCRATCH + 0x7a0;
+        log_calls(&mut t, 288, 2, &[], move |m, a, _| {
+            let at = lists + if a[0] == 9 { 0 } else { 0x10 };
+            m.w32(a[1], m.r32(at + 0xc));
+            at
+        });
+        // the motion script at its end (`s6_misc::motion_script_step`)
+        let step = t.img.rel32_target(frame + 0x49);
+        let script = SCRATCH + 0x780;
+        t.set_u32(op(&t, step, 0xb), script);
+        t.write(script, &[0; 0x10]);
+        t.set_u32(op(&t, step, 0x2), 0);
+        let (id1, id2) = (w(&t, 0x50), w(&t, 0x5e));
+        // (first list, second list, id 1, id 2)
+        for (k, (l9, l11, a, b)) in [
+            ([3u8, 5, 7], [9u8, 11, 0], 5u32, 7u32),
+            ([3, 5, 7], [9, 11, 0], 9, 11),
+            ([3, 5, 7], [9, 11, 0], 3, 11),
+            ([3, 5, 7], [9, 11, 0], 2, 4),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                t.write(lists, &l9);
+                t.set_u32(lists + 0xc, 3);
+                t.write(lists + 0x10, &l11);
+                t.set_u32(lists + 0x1c, 3);
+                t.set_u32(id1, a);
+                t.set_u32(id2, b);
+                let y = w(&t, 0x97);
+                t.set_u32(y, (0.5 + k as f32).to_bits());
+                for (o, x) in [
+                    (0x3aeu32, 2.0f32),
+                    (0x3b6, 0.75),
+                    (0x3d6, 0.5),
+                    (0x3f4, 1.25),
+                ] {
+                    let at = w(&t, o);
+                    set_f(&mut t, at, x);
+                }
+                t.write(w(&t, 0x20), &floats(16, k));
+                // the done flag the frame answers from
+                let done = op(&t, frame, 0x51);
+                t.set_u32(done, k % 2);
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x1940 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                if direct {
+                    t.check(f, call, &[], Eax::Checked, s9_misc::camera_aimed);
+                } else {
+                    t.check_entry(frame, call, &[], Eax::Checked);
+                }
+            }
+        }
+    }
+}
+
+/// Row 50: `magic_0565`'s trail task in two DLLs: the timer running with
+/// the kind 0's sparks and without, reaching 0 (the child with its sound,
+/// the object off its list or not there; the kind 0 goes on, another
+/// gives the task back), below 0 with the trail drawn, its count run out.
+#[test]
+fn trail_tasks_0565() {
+    for dll in [565u16, 693] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x3e40);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let light = t.img.rel32_target(f + 0x120);
+        light_slots(&mut t, light);
+        let trail_at = t.img.rel32_target(f + 0x24b);
+        trail_stubs(&mut t, trail_at, true);
+        // the kind 0's sparks (`s4_fam446::sparks_b`)
+        log_calls(&mut t, 719, 3, &[], |_, a, _| 0x7190_0000 ^ a[1] ^ a[2]);
+        for s in [314u32, 404] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| s ^ a[0]);
+            t.stub_st0(s, move |_, a| {
+                f64::from(f32::from_bits(a[0])) * if s == 404 { 0.75 } else { 0.5 }
+            });
+        }
+        let sp = t.img.rel32_target(f + 0x10d);
+        let take = t.img.rel32_target(sp + 0x9);
+        let recs = SCRATCH + 0x4000;
+        t.set_u32(op(&t, take, 0x37), recs);
+        t.set_u32(op(&t, take, 0x61), recs);
+        let gf = SCRATCH + 0x800;
+        t.set_u32(op(&t, sp, 0x150), gf);
+        let r2 = SCRATCH + 0x880;
+        t.set_u32(op(&t, sp, 0x190), r2);
+        for i in 0..8 {
+            t.set_u32(r2 + 4 * i, 0x0e00_0000 + i);
+        }
+        // the child with its sound (`s4_fam446::start_child_sound_a`)
+        let child = t.img.rel32_target(f + 0x174);
+        let soa = t.img.rel32_target(child + 0x2d);
+        log_calls(&mut t, 393, 3, &[1], |_, _, _| 0x393);
+        log_calls(&mut t, 306, 3, &[], |_, a, _| 0x0306_0000 ^ a[2]);
+        log_calls(&mut t, 713, 1, &[0], |_, _, _| 0x713);
+        let ww = SCRATCH + 0x10000;
+        t.set_u32(w(&t, 0x21), ww);
+        let k = w(&t, 0x5d);
+        set_f(&mut t, k, 1.0);
+        let list = w(&t, 0x17e);
+        let gp = SCRATCH + 0x7e8;
+        t.set_u32(w(&t, 0x18c), gp);
+        let (task, o) = (SCRATCH + 0x5000, SCRATCH + 0x8000);
+        // (timer, kind, the trail's count, on the list)
+        for (c, (timer, kind, count, listed)) in [
+            (5i32, 0u32, 6u32, false),
+            (5, 1, 6, false),
+            (1, 0, 6, true),
+            (1, 4, 6, true),
+            (1, 4, 6, false),
+            (-1, 0, 5, false),
+            (-1, 1, 3, false),
+            (-1, 0, 0, false),
+            (0, 0, 6, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let c = c as u32;
+            t.set_u32(LOG, 0);
+            object_start_setup(&mut t, soa, 8);
+            // slot 941 answers the object start's table, which the trail
+            // draw also reads its frame count from (`+6`)
+            t.set_u16(SCRATCH + 0x406, 5);
+            t.set_u8(gf, 0);
+            t.set_u32(op(&t, take, 0x08), 0);
+            t.set_u32(op(&t, take, 0x0f), 8);
+            t.set_u32(op(&t, take, 0x97), 8);
+            t.set_u32(op(&t, take, 0x2b), 0);
+            for i in 0..8 {
+                t.write(recs + 0x74 * i, &[0x22; 0x74]);
+                t.set_u32(recs + 0x74 * i + 0x6c, 0);
+            }
+            t.write(ww, &varied(0x5c20, c + 1));
+            t.set_u32(ww + 0x5c04, kind);
+            // the task at rest for the pool's give-back
+            t.write(task, &varied(0x20, c));
+            t.set_u32(task, 0);
+            t.set_u32(task + 4, 0);
+            t.set_u32(task + 8, SCRATCH + 0x5100);
+            t.set_u32(SCRATCH + 0x510c, 0);
+            t.set_u32(task + 0x14, o);
+            // the object, its place, the timer
+            t.write(o, &floats(0x180, c));
+            t.set_u32(o + 0x50c, timer.cast_unsigned());
+            t.set_u32(o + 0x510, 10 + c);
+            t.set_u32(o + 0x518, c % 2);
+            t.set_u16(o + 0x124, 0xabcd);
+            // the trail
+            let trail = o + 0x2c0;
+            t.set_u32(trail, 0x0041_0000 + c);
+            t.set_u32(trail + 4, 1);
+            t.set_u16(trail + 8, 2);
+            t.set_u16(trail + 0xa, 0x100);
+            for i in 0..32u32 {
+                let x = i as f32;
+                let xyz = [x * 1.5 + c as f32, x * 0.5 - 2.0, x * 0.25 - 3.0, 1.0];
+                for (j, v) in (0u32..).zip(xyz) {
+                    t.set_u32(trail + 0xc + 16 * i + 4 * j, v.to_bits());
+                }
+                t.set_u8(trail + 0x22c + i, 1);
+            }
+            t.write(trail + 0x20c, &[0x20 + c as u8, 0x90, 0x10, 0x80]);
+            t.write(trail + 0x210, &[0xe0, 0x30, 0x70, 0x60]);
+            t.set_u32(trail + 0x214, 1.5f32.to_bits());
+            t.set_u32(trail + 0x218, 0.5f32.to_bits());
+            t.set_u32(trail + 0x21c, 0.6f32.to_bits());
+            t.set_u32(trail + 0x220, 0x1234 + 0x111 * c);
+            t.set_u32(trail + 0x224, 5);
+            t.set_u32(trail + 0x228, count);
+            t.write(SCRATCH + 0x3f00, &[0x31; 0x40]);
+            // the host list: empty or holding the object
+            let node = SCRATCH + 0x5400;
+            t.write(node, &[0x3c; 0x10]);
+            t.set_u32(node, 0);
+            t.set_u32(node + 4, 0);
+            t.set_u32(node + 8, o);
+            t.set_u32(list, if listed { node } else { 0 });
+            t.set_u32(list + 4, if listed { node } else { 0 });
+            t.set_u32(list + 8, 0);
+            t.set_u32(list + 0xc, 1);
+            scrub(&mut t);
+            let call = Call {
+                eax: 0x3e40 + c,
+                ecx: 0x0ecc_0000 + c,
+                ..Call::default()
+            };
+            t.check_entry(f, call, &[task], Eax::Checked);
         }
     }
 }

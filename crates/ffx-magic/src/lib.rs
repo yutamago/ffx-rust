@@ -2640,6 +2640,9 @@ ports! {
     "summon start task (0241)" => s9_misc::SUMMON_START_TASK_0241, s9_misc::summon_start_task_0241;
     "launch after carry (0544)" => s9_misc::LAUNCH_AFTER_CARRY_0544, s9_misc::launch_after_carry;
     "launch after carry (0555)" => s9_misc::LAUNCH_AFTER_CARRY_0555, s9_misc::launch_after_carry;
+    "camera frame" => s9_misc::CAMERA_FRAME, s9_misc::camera_frame;
+    "trail head (0565)" => s9_misc::TRAIL_HEAD_0565, s9_misc::trail_head;
+    "trail task (0565)" => s9_misc::TRAIL_TASK_0565, o6_fam_pairs6::trail_task;
     // round 9, shared-9 (s9_misc): end of ports
 }
 
@@ -3670,6 +3673,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("reel window", &s9_misc::REEL_WINDOW),
     ("reel draw", &s9_misc::REEL_DRAW),
     ("sprite packets", &s9_misc::SPRITE_PACKETS),
+    ("camera aimed", &s9_misc::CAMERA_AIMED),
+    ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

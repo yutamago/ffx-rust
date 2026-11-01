@@ -1783,6 +1783,38 @@ pub const BEAMS_SPREAD_FLAT: Sig = Sig {
     imports: &[],
 };
 
+/// The sparks that move a trail's head `p` (internal, `ecx` = `p`; the
+/// function at `target`, called with `esp` above its return address): the
+/// `0446` family's three or `0565`'s three. Returns its `eax`.
+pub(crate) fn sparks_move<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32, p: u32) -> u32 {
+    use crate::s4_fam446::{
+        SPARKS_A, SPARKS_B, SPARKS_C, SPARKS_D, sparks_a, sparks_b, sparks_c, sparks_d,
+    };
+    use crate::s7_misc::{FLAGGED_TWO_SPARKS, TWO_SPARKS, flagged_two_sparks, two_sparks};
+    let fr = Frame {
+        at: target,
+        esp: esp.wrapping_sub(4),
+        eax: 0,
+        ecx: p,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    let ports: [(&Sig, Port<G>); 6] = [
+        (&SPARKS_A, sparks_a),
+        (&SPARKS_B, sparks_b),
+        (&SPARKS_C, sparks_c),
+        (&SPARKS_D, sparks_d),
+        (&TWO_SPARKS, |g, img, fr| Ret::eax(two_sparks(g, img, fr))),
+        (&FLAGGED_TWO_SPARKS, |g, img, fr| {
+            Ret::eax(flagged_two_sparks(g, img, fr))
+        }),
+    ];
+    ports
+        .iter()
+        .find(|(sig, _)| img.matches(target, sig))
+        .map_or(0, |(_, port)| port(g, img, &fr).eax)
+}
+
 /// The trail's head moved and drawn (cdecl `(O)`; a /GS frame, `ebp` =
 /// `esp - 4`, the point `P` at `ebp-0x14`, the matrix `M` at `ebp-0x54`;
 /// `B = *G_B`): the wait `B[0x5c00]` counts down to 0; `P` = slot 237
@@ -1801,8 +1833,9 @@ pub const BEAMS_SPREAD_FLAT: Sig = Sig {
 /// [`sparks_c`]: crate::s4_fam446::sparks_c
 /// [`sparks_d`]: crate::s4_fam446::sparks_d
 ///
-/// `magic_0446` 0x10001e80 (395 bytes; 6 DLLs) and `magic_0544`
-/// 0x10001e80 (3 DLLs, its own trail draw).
+/// `magic_0446` 0x10001e80 (395 bytes; 6 DLLs), `magic_0544` 0x10001e80
+/// (3 DLLs, its own trail draw) and `magic_0565` 0x10003a20 (5 DLLs, its
+/// own sparks and trail draw).
 pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -1823,17 +1856,14 @@ pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let kept = b.wrapping_add(0x30a0);
     let eax = if g.read::<i32>(b.wrapping_add(0x5c00)) > 0 {
         let k = kind(g);
-        let mv: Option<(u32, Port<G>)> = match k {
-            0 => Some((0xfe, crate::s4_fam446::sparks_a)),
-            2 => Some((0xf4, crate::s4_fam446::sparks_c)),
-            3 => Some((0xea, crate::s4_fam446::sparks_d)),
+        let call = match k {
+            0 => Some(0xfe),
+            2 => Some(0xf4),
+            3 => Some(0xea),
             _ => None,
         };
-        let eax = match mv {
-            Some((call, port)) => {
-                let at = (img.rel32_target(f + call), esp, p, 0);
-                sub_call(g, port, img, at, &[]).eax
-            }
+        let eax = match call {
+            Some(call) => sparks_move(g, img, img.rel32_target(f + call), esp, p),
             None => k.wrapping_sub(3),
         };
         for j in 0..4 {
@@ -3219,6 +3249,220 @@ pub const LAUNCH_AFTER_CARRY_0555: Sig = Sig {
         (0x4d2, Callee::Import("_libm_sse2_sqrt_precise")),
         (0x5ca, Callee::Sig(&crate::sa_pool::TAKE)),
         (0x61b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The camera matrix aimed (cdecl, no arguments; an `ebp` frame: the
+/// matrix `M` at `ebp-0x84`, the scale `M3` at `ebp-0x104`; `C = G_M`
+/// the DLL's camera matrix): `C`, `M`, `M3` = slot 235; the two id lists'
+/// answers ([`id_list`](crate::s4_small::id_list) of `*G_1`, `*G_2`).
+/// Both 1: the direction from slot 325 `(T, G_T)` (with `T.y` = `*G_Y`)
+/// to `G_V`; both 0: `M` is the look matrix
+/// ([`look_matrix`](crate::s7_misc::look_matrix)) from `T` to `G_V`;
+/// else from the second list's point (slot 217) to the first's. For a
+/// direction `d`: `Z` = slot 232 `(d)`, `X` = slot 266 `(U, Z)` with `U
+/// = (0, 1, 0, 1)`, the third row slot 266 `(Z, X)`, both normalised
+/// (slot 232); `M`'s rows `(X, that, Z)` with `w` 0 and the last row `(0,
+/// 0, 0, 1)`. Then `C` = slot 231 `(C, M, C)`, slot 395 `(C, C, G_V)`,
+/// `M3`'s diagonal `G_S[0..3] * K`, `C` = slot 231 `(C, C, M3)`, whose
+/// `eax` it returns.
+///
+/// `magic_0188` 0x10001940 (1,054 bytes; 2 DLLs).
+pub fn camera_aimed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::mul;
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x14), s);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |d: u32| ebp.wrapping_sub(d);
+    let (m, m3, tp, dir, c1, c2) = (at(0x84), at(0x104), at(0x94), at(0xa4), at(0xb4), at(0xc4));
+    let (x, r2, r3, up) = (at(0x14), at(0x24), at(0x34), at(0x44));
+    let cam = w(0x20);
+    g.call(t(g, 235), 0, &[cam]);
+    g.call(t(g, 235), 0, &[m]);
+    g.call(t(g, 235), 0, &[m3]);
+    let esp = ebp.wrapping_sub(0x108);
+    let ids = |g: &mut G, img: &Image, op_list: u32, call: u32| {
+        let list = g.read::<u32>(w(op_list));
+        sub_call(
+            g,
+            crate::s4_small::id_list,
+            img,
+            (img.rel32_target(f + call), esp, list, 0),
+            &[],
+        )
+        .eax
+    };
+    let first = ids(g, img, 0x50, 0x58);
+    let second = ids(g, img, 0x5e, 0x65);
+    let set_up = |g: &mut G| {
+        for (i, c) in (0u32..).zip([0, 0x3f80_0000, 0, 0x3f80_0000]) {
+            g.write::<u32>(up + 4 * i, c);
+        }
+    };
+    // the direction's rows: (`Z` slot, cross slot, the order of `M`'s rows)
+    let rows = if first == 1 && second == 1 {
+        g.call(t(g, 325), 0, &[tp, w(0x81)]);
+        let y = g.read::<u32>(w(0x97));
+        g.write::<u32>(tp + 4, y);
+        set_up(g);
+        g.call(t(g, 234), 0, &[dir, w(0xa9), tp]);
+        Some((r2, r3))
+    } else if first == 0 && second == 0 {
+        g.call(t(g, 325), 0, &[tp, w(0x1bc)]);
+        let y = g.read::<u32>(w(0x1d2));
+        g.write::<u32>(tp + 4, y);
+        let look = Frame {
+            at: img.rel32_target(f + 0x1f0),
+            esp: ebp.wrapping_sub(0x118),
+            eax: 0,
+            ecx: m,
+            edx: tp,
+            xmm: [0; 4],
+        };
+        g.write::<u32>(ebp.wrapping_sub(0x114), w(0x1d7));
+        crate::s7_misc::look_matrix(g, img, &look);
+        None
+    } else {
+        let l2 = g.read::<u32>(w(0x20a));
+        g.call(t(g, 217), 0, &[l2, c2]);
+        let l1 = g.read::<u32>(w(0x224));
+        g.call(t(g, 217), 0, &[l1, c1]);
+        set_up(g);
+        g.call(t(g, 234), 0, &[dir, c1, c2]);
+        Some((r3, r2))
+    };
+    if let Some((z, y)) = rows {
+        g.call(t(g, 232), 0, &[z, dir]);
+        g.call(t(g, 266), 0, &[x, up, z]);
+        g.call(t(g, 266), 0, &[y, z, x]);
+        g.call(t(g, 232), 0, &[x, x]);
+        g.call(t(g, 232), 0, &[y, y]);
+        for (row, src) in [(0u32, x), (1, y), (2, z)] {
+            for i in 0..3 {
+                let v = g.read::<u32>(src + 4 * i);
+                g.write::<u32>(m + 0x10 * row + 4 * i, v);
+            }
+        }
+        for (o, c) in [
+            (0x3cu32, 0x3f80_0000u32),
+            (0x38, 0),
+            (0x34, 0),
+            (0x30, 0),
+            (0x2c, 0),
+            (0x1c, 0),
+            (0xc, 0),
+        ] {
+            g.write::<u32>(m + o, c);
+        }
+    }
+    g.call(t(g, 231), 0, &[cam, m, cam]);
+    g.call(t(g, 395), 0, &[cam, cam, w(0x394)]);
+    let k = g.read::<f32>(w(0x3ae));
+    for (i, o) in [(0u32, 0x3b6u32), (5, 0x3d6), (10, 0x3f4)] {
+        let s = g.read::<f32>(w(o));
+        g.write::<f32>(m3 + 4 * i, mul(s, k));
+    }
+    Ret::eax(g.call(t(g, 231), 0, &[cam, cam, m3]).eax)
+}
+
+/// [`camera_aimed`] (the `rel32`s: the id lists, the look matrix,
+/// `__security_check_cookie`).
+pub const CAMERA_AIMED: Sig = Sig {
+    len: 1054,
+    hash: 0xd649_cd1e_a425_7567,
+    calls: &[
+        (0x58, Callee::Sig(&crate::s4_small::ID_LIST)),
+        (0x65, Callee::Sig(&crate::s4_small::ID_LIST)),
+        (0x1f0, Callee::Sig(&crate::s7_misc::LOOK_MATRIX)),
+        (0x416, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The camera's frame (cdecl, no arguments): the scale `G_S` = `(0.75,
+/// 0.75, 0.75, 1)` (the immediates), the camera aimed ([`camera_aimed`]),
+/// slot 211 `(*G_W, G_M)`, the motion script stepped
+/// ([`motion_script_step`](crate::s6_misc::motion_script_step)). Returns
+/// whether `*G_D` is 0.
+///
+/// `magic_0188` 0x10002800 (89 bytes; 2 DLLs).
+pub fn camera_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    global_stores(g, img, f, 0, 0x28, 0);
+    let aim = (img.rel32_target(f + 0x29), fr.esp, fr.ecx, fr.edx);
+    sub_call(g, camera_aimed, img, aim, &[]);
+    let wv = g.read::<u32>(w(0x39));
+    g.call(slot_target(g, w(0x2e), 211), 0, &[wv, w(0x33)]);
+    let step = (img.rel32_target(f + 0x49), fr.esp, 0, 0);
+    sub_call(g, crate::s6_misc::motion_script_step, img, step, &[]);
+    Ret::eax(u32::from(g.read::<u32>(w(0x51)) == 0))
+}
+
+/// [`camera_frame`] (the `rel32`s: [`camera_aimed`] and the motion
+/// script step).
+pub const CAMERA_FRAME: Sig = Sig {
+    len: 89,
+    hash: 0xb10c_5c13_4aa8_a5d3,
+    calls: &[
+        (0x29, Callee::Sig(&CAMERA_AIMED)),
+        (0x49, Callee::Sig(&crate::s6_misc::MOTION_SCRIPT_STEP)),
+    ],
+    imports: &[],
+};
+
+/// [`trail_draw`](crate::o6_fam_pairs6::trail_draw)'s copy without `M4`
+/// (`magic_0565` 0x10006ea0, 1,392 bytes; 5 DLLs).
+pub const TRAIL_DRAW_0565: Sig = Sig {
+    len: 1392,
+    hash: 0xce7c_8d3c_b669_efb7,
+    calls: &[
+        (0xdd, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x1b1, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x531, Callee::Sig(&crate::sb_misc::DRAW_FRAME)),
+        (0x568, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_head`] in `magic_0565` (its sparks and trail draw).
+pub const TRAIL_HEAD_0565: Sig = Sig {
+    len: 395,
+    hash: 0x7ccd_415a_28c9_5e5d,
+    calls: &[
+        (0xbe, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xcb, Callee::Any),
+        (0xea, Callee::Sig(&crate::s7_misc::FLAGGED_TWO_SPARKS)),
+        (0xf4, Callee::Sig(&crate::s7_misc::TWO_SPARKS)),
+        (0xfe, Callee::Sig(&crate::s4_fam446::SPARKS_B)),
+        (0x173, Callee::Sig(&TRAIL_DRAW_0565)),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_task`](crate::o6_fam_pairs6::trail_task) in `magic_0565`
+/// (its sparks, a light placed instead of the part, the child with its
+/// sound, the object off its list before the mode is asked).
+pub const TRAIL_TASK_0565: Sig = Sig {
+    len: 641,
+    hash: 0xd618_c58b_219b_340c,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s7_misc::FLAGGED_TWO_SPARKS)),
+        (0x103, Callee::Sig(&crate::s7_misc::TWO_SPARKS)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_B)),
+        (
+            0x120,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x174, Callee::Sig(&crate::s4_fam446::START_CHILD_SOUND_A)),
+        (0x183, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x24b, Callee::Sig(&TRAIL_DRAW_0565)),
+        (0x25b, Callee::Any),
+        (0x26c, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x279, Callee::Any),
     ],
     imports: &[],
 };
