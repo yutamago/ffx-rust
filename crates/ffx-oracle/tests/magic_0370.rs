@@ -52,6 +52,11 @@ fn draw() {
         rec(&mut t, s, n, move |m, a| {
             let v = m.r32(pp);
             m.w32(lock + 0x48 + 4 * k, v);
+            if s == 230 {
+                // the last one leaves junk there (the draw stores **P
+                // again before 712)
+                m.w32(pp, 0x2302_3023);
+            }
             (0x0100_0000 + s) ^ a[0]
         });
     }
