@@ -9,6 +9,16 @@ use magic_owna::twin;
 
 const N: u16 = 387;
 
+/// `n` bytes, each byte other than its neighbours (`seed` makes runs
+/// differ), so that a read of a neighbouring word gives another value.
+fn pattern(seed: u8, n: usize) -> Vec<u8> {
+    (0u8..=255)
+        .cycle()
+        .take(n)
+        .map(|b| b.wrapping_mul(0x1d) ^ seed)
+        .collect()
+}
+
 /// The node under no parent, a parent with no child and one with a child.
 fn cases(
     rva: u32,
@@ -64,7 +74,8 @@ fn sprite_size() {
     let sp = SCRATCH + 0x1000;
     let v = SCRATCH + 0x200;
     for (k, base) in [(0u16, 0u16), (1, 0x7fff)] {
-        t.write(sp, &[0x5c; 0x100]);
+        // the flags word +0xe8 other than its neighbours
+        t.write(sp, &pattern(0x5c ^ u8::try_from(k).unwrap(), 0x100));
         for i in 0..4u32 {
             t.set_u16(
                 sp + 0xd0 + 2 * i,
