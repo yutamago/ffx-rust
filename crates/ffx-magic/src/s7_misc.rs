@@ -4692,8 +4692,8 @@ pub const REEL_STEP: Sig = Sig {
 ///   ([`move_start`](crate::sb_misc::move_start), time `K`), then as 10;
 /// - 10: the weights: for each of the `*G_M` targets slot 291 `(*G_X,
 ///   rec_i[0], &A, &A, &A)` (`rec_i = G_R + 0x98 i`) into `S+0x48 + 4i`,
-///   summed in `S+0x44`, and `S+0x1c + 4i` the share; six slots `S+0x340
-///   + 0x310 k = 0xff`, step 11 and the wait `S+0x3c = 0`, then as 11;
+///   summed in `S+0x44`, and `S+0x1c + 4i` the share; six slots
+///   `S+0x340 + 0x310 k = 0xff`, step 11 and the wait `S+0x3c = 0`, then as 11;
 /// - 11: the wait counts down; then the slot `j = S+0x44 % 5`, if free
 ///   (`0xff`): a random target by its share (slot 307's ST0 less `K1`,
 ///   less each share in turn; the index into `A`), a random time `(r -

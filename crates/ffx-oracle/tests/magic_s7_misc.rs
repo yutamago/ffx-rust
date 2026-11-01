@@ -3759,7 +3759,7 @@ fn staged_volley_in(dll: u16, rva: u32) {
     let s = SCRATCH + 0x8000;
     let node = SCRATCH + 0x380;
     let count = w(&t, 0x167);
-    let count_wait = (t.img.word(f + 0x314) & 0xff) as i32;
+    let count_wait = (t.img.word(f + 0x314) & 0xff).cast_signed();
     // (step, the wait, the throws left, the count, the slot j's word)
     for (k, (step, wait, left, n, slot_w)) in [
         (0u32, 0i32, 0u32, 0i32, 0xffu32),
