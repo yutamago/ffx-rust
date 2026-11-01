@@ -1978,3 +1978,69 @@ fn lights_set_and_given_back() {
         });
     }
 }
+
+/// Row 316: `magic_0165`'s scene point: a scene not in the list (the mean
+/// position), the first entry with an actor of model 0x1084 and without
+/// one, a later entry, no actors.
+#[test]
+fn scene_points() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x6750);
+    let scene = SCRATCH + 0x7e0;
+    rec(&mut t, 520, 0, move |m, _| m.r32(scene));
+    let models = SCRATCH + 0x7a0;
+    rec(&mut t, 390, 1, move |m, a| m.r32(models + 4 * (a[0] & 7)));
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            m.w32(a[i], (0.5f32 * i as f32 + (a[0] & 7) as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    let list = op(&t, f, 0x1a);
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[3, 1, 4, 2]);
+    for o in [0x5du32, 0x87, 0xdb] {
+        t.set_u32(op(&t, f, o), sel);
+    }
+    for o in [0x91u32, 0xe6] {
+        for i in 0..8 {
+            t.set_u32(op(&t, f, o) + 4 * i, 0x0cc0_0000 + i);
+        }
+    }
+    // the mean position's own operands (`sb_misc::mean_position`)
+    let mp = t.img.rel32_target(f + 0x36);
+    t.set_u32(op(&t, mp, 0x4d), sel);
+    for i in 0..8 {
+        t.set_u32(op(&t, mp, 0x58) + 4 * i, 0x0dd0_0000 + i);
+    }
+    let p = SCRATCH + 0x300;
+    // (scene, the 0x1084 actor's slot, actors)
+    for (k, (sc, hit, n)) in [
+        (9u32, 9u32, 3u32),
+        (0x10, 2, 3),
+        (0x10, 9, 3),
+        (0x30, 1, 3),
+        (0x10, 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(list, &[0xff; 16]);
+        for (i, v) in (0u32..).zip([0x10u32, 0x20, 0x30, u32::MAX]) {
+            t.set_u32(list + 4 * i, v);
+        }
+        t.set_u32(scene, sc);
+        for i in 0..8 {
+            t.set_u32(models + 4 * i, if i == hit { 0x1084 } else { 0x1000 + i });
+        }
+        t.set_u32(op(&t, f, 0x4a), n);
+        t.set_u32(op(&t, mp, 0x11), n);
+        t.write(p, &varied(0x10, k));
+        scrub(&mut t);
+        t.check(f, Call::this(p), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::scene_point(g, img, fr))
+        });
+    }
+}

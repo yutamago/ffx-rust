@@ -24,7 +24,9 @@ use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
-use crate::sb_misc::{EASE_ANGLE, EASE_SAMPLE, ease_angle, ease_sample};
+use crate::sb_misc::{
+    EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ease_angle, ease_sample, mean_position,
+};
 use crate::sb_nodes::{EFFECT_NODE, PARTICLE_NODE, effect_node, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
@@ -2756,5 +2758,82 @@ pub const LIGHTS_AND_GIVE_BACK: Sig = Sig {
     len: 286,
     hash: 0x088e_7763_cadd_42f4,
     calls: &[(0x83, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};
+
+/// A point by the battle scene (internal, `ecx` = the point out `P`):
+/// the scene (slot 520) looked up in the DLL's list `G_L` (words ended by
+/// -1). Not listed: `P` is the actors' mean position ([`mean_position`]);
+/// returns 0. Listed at index `j`: from the first entry on, the first of
+/// the `*G_N` selected actors whose model (slot 390) is 0x1084 gives the
+/// point (its battle position into `P` by slot 262, its option point
+/// 0x10 by slot 268, `w` 1.0) and its index is returned; with none, or
+/// for `j > 0`, the first selected actor's, returning 0. (An index of -1,
+/// the effect's own character `*G_OWN`, cannot occur: the searches start
+/// at 0.) Each call sees the words the earlier ones left on the stack.
+///
+/// `magic_0165` 0x10006750 (291 bytes, `ecx` = the point; 4 DLLs).
+pub fn scene_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let p = fr.ecx;
+    let scene = slot(g, img, f, 0x1, 520, &[]).eax;
+    let list = w(0x1a);
+    let mut j = 0u32;
+    loop {
+        let x = g.read::<u32>(list.wrapping_add(4 * j));
+        if x == u32::MAX {
+            mean_position(
+                g,
+                img,
+                img.rel32_target(f + 0x36),
+                fr.esp.wrapping_sub(0xc),
+                p,
+            );
+            return 0;
+        }
+        if x == scene {
+            break;
+        }
+        j += 1;
+    }
+    let sel = |g: &G, o: u32, i: u32| {
+        let s = g.read::<u32>(w(o));
+        u32::from(g.read::<u8>(s.wrapping_add(i)))
+    };
+    let point = |g: &mut G, ch: u32, at: (u32, u32)| {
+        let mut s = Pushes::default();
+        s.push_all(&[p + 8, p + 4, p, ch]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, crate::runtime::slot_target(g, w(at.0), 262), 0);
+        s.push_all(&[p, 0x10, ch]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, crate::runtime::slot_target(g, w(at.1), 268), 0);
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+    };
+    if j == 0 {
+        let mut i = 0u32;
+        while i.cast_signed() < g.read::<i32>(w(0x4a)) {
+            let id = sel(g, 0x5d, i);
+            if slot(g, img, f, 0x67, 390, &[id]).eax == 0x1084 {
+                let id = sel(g, 0xdb, i);
+                let ch = g.read::<u32>(w(0xe6).wrapping_add(4 * id));
+                point(g, ch, (0xf3, 0x103));
+                return i;
+            }
+            i += 1;
+        }
+    }
+    let id = sel(g, 0x87, 0);
+    let ch = g.read::<u32>(w(0x91).wrapping_add(4 * id));
+    point(g, ch, (0x9e, 0xad));
+    0
+}
+
+/// [`scene_point`] (the `rel32`: [`mean_position`]).
+pub const SCENE_POINT: Sig = Sig {
+    len: 291,
+    hash: 0xf401_2dae_95b9_e5fc,
+    calls: &[(0x36, Callee::Sig(&MEAN_POSITION))],
     imports: &[],
 };
