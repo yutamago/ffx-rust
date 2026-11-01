@@ -149,8 +149,8 @@ fn count_fades() {
         let n_global = op(&t, f, 0x79);
         let o = SCRATCH + 0x400;
         for k in 0..80u32 {
-            let n = 20 + (k % 3) as i32;
-            let c = n - 8 + (k % 10) as i32;
+            let n = 20 + (k % 3).cast_signed();
+            let c = n - 8 + (k % 10).cast_signed();
             t.set_u32(log, 0);
             t.set_u32(n_global, n.cast_unsigned());
             t.write(o, &varied(0x200, k));
@@ -1138,7 +1138,14 @@ fn landing_puffs() {
             t.set_u32(e + 0x250, (k as f32 - 4.0).to_bits());
             t.set_u16(free, 3);
             t.write(SCRATCH + 0x1400, &varied(0x10, k));
-            t.set_u32(tail, if k % 2 == 0 { SCRATCH + 0x1400 } else { 0 });
+            t.set_u32(
+                tail,
+                if k.is_multiple_of(2) {
+                    SCRATCH + 0x1400
+                } else {
+                    0
+                },
+            );
             t.write(ring, &varied(0x68 * 4, k));
             for j in 0..4u32 {
                 t.set_u32(ring + 0x68 * j + 0x60, u32::from(j != 2));
@@ -1470,7 +1477,11 @@ fn near_points_fades() {
         });
         t.stub_st0(453, |m, a| {
             let x = f32::from_bits(m.r32(a[0]));
-            if x == 3.0 { f64::NAN } else { f64::from(x) }
+            if x.to_bits() == 3.0f32.to_bits() {
+                f64::NAN
+            } else {
+                f64::from(x)
+            }
         });
         // the count and fade's slots (`count_fade`)
         let node = SCRATCH + 0x800;
@@ -1779,7 +1790,7 @@ fn summon_fade_ins() {
             t.set_u32(w(&t, o), v);
         }
         // (A, B, C, D, the answers of 225, 227 and 347)
-        for (k, (a, b, c, d, ans)) in [
+        for (a, b, c, d, ans) in [
             (0u32, 0u32, 0u32, -1i32, [1u32, 1, 1]),
             (0, 0, 0, -1, [0, 0, 1]),
             (1, 0, 0, -1, [0, 1, 0]),
@@ -1793,11 +1804,7 @@ fn summon_fade_ins() {
             (1, 1, 1, 46, [0, 0, 0]),
             (1, 1, 1, 22, [0, 0, 0]),
             (0, 1, 1, 7, [0, 0, 0]),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let k = k as u32;
+        ] {
             t.set_u32(log, 0);
             t.set_u32(w(&t, 0x2), a);
             t.set_u32(w(&t, 0x2f), b);
@@ -2492,7 +2499,14 @@ fn summon_setup_tasks() {
             t.write(SCRATCH + 0x700, &varied(0x80, k));
             // the list: empty, or holding a node
             t.write(list, &varied(0x1c, k + 5));
-            t.set_u32(list + 0x10, if k % 2 == 0 { list } else { SCRATCH + 0x5c0 });
+            t.set_u32(
+                list + 0x10,
+                if k.is_multiple_of(2) {
+                    list
+                } else {
+                    SCRATCH + 0x5c0
+                },
+            );
             t.write(SCRATCH + 0x5c0, &varied(0x20, k + 1));
             t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
             // the particle's parent node (a DLL node): its list empty
@@ -3079,8 +3093,8 @@ fn actors_objects_started() {
         log_calls(&mut t, 711, log, 3, None, |_, a, k| a[1] ^ k);
         log_calls(&mut t, 710, log, 4, None, |_, a, k| a[0] ^ k);
         log_calls(&mut t, 262, log, 4, None, |m, a, k| {
-            for i in 1..4 {
-                m.w32(a[i as usize], (0.5 * i as f32 + k as f32).to_bits());
+            for (i, x) in (1u32..).zip(&a[1..4]) {
+                m.w32(*x, (0.5 * i as f32 + k as f32).to_bits());
             }
             0x262
         });

@@ -3,10 +3,19 @@
 //! the DLL and address it was ported from, its size and how many DLLs
 //! carry it; "`G`" is a global of the DLL (an operand of the code).
 
+// The originals' float tests are `comiss`/`ucomiss` with their own
+// unordered outcomes: `!(a >= b)` and exact `==` say what they do.
+#![allow(clippy::neg_cmp_op_on_partial_ord, clippy::float_cmp)]
+// Long ports follow the original's order of stores and calls.
+#![allow(clippy::too_many_lines)]
+
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
+
+/// A handler's port on the frame its thunk hands it.
+type Handler<G> = fn(&mut G, &Image, &Frame) -> u32;
 
 /// The word at `f + off` of the code (an operand).
 fn op(img: &Image, f: u32, off: u32) -> u32 {
@@ -1373,7 +1382,7 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ecx,
         ..*fr
     };
-    let handlers: [(&Sig, fn(&mut G, &Image, &Frame) -> u32); 10] = [
+    let handlers: [(&Sig, Handler<G>); 10] = [
         (&MOVING_LIGHT_NODE, moving_light_node),
         (&COUNT_FADE, count_fade),
         (&MODEL_DRAW_NODE, model_draw_node),
@@ -2152,7 +2161,7 @@ pub const SPRITE_FADE_NODE: Sig = Sig {
 ///   (P[i+1] - P[i]) / H[i]`;
 /// - `M[1] = U[2] - U[1]`, `U[1] = (X[2] - X[0]) K`;
 /// - for `j` in `1..m-1`: `r = H[j] / U[j]`, `M[j+1] = (U[j+2] - U[j+1])
-///   - M[j] r`, `U[j+1] = (X[j+2] - X[j]) K - H[j] r`;
+///   M[j] r`, `U[j+1] = (X[j+2] - X[j]) K - H[j] r`;
 /// - `M[m-1] -= H[m-1] M[m]`, and for `k` from `m - 1` down to 1: `M[k] =
 ///   (M[k] - H[k] M[k+1]) / U[k]`.
 ///
@@ -2309,9 +2318,9 @@ pub const SPLINE_SETUP: Sig = Sig {
 /// its parent ([`leave`](crate::sa_misc::leave)) and slot 250 `(0, 0)`
 /// follows. Otherwise, with `v = r - K2` (`r` slot 307's ST0) and two
 /// random signs `s1`, `s2` (slot 324's bit 1: -1, else 1): the fade `f
-/// = R+0x38 - t / R+0x30 R+0x3c` (into `R+0x34`), and slot 250 `(f (R+0x1c
-/// + R+0x20 v) s1, (R+0x24 + R+0x28 v) s2 f)`. Returns slot 250's `eax`,
-/// else what the pass or the flags left.
+/// = R+0x38 - t / R+0x30 R+0x3c` (into `R+0x34`), and slot 250 with
+/// `f (R+0x1c + R+0x20 v) s1` and `(R+0x24 + R+0x28 v) s2 f`. Returns
+/// slot 250's `eax`, else what the pass or the flags left.
 ///
 /// `magic_0513` 0x10004510 (370 bytes; 2 DLLs).
 pub fn shake_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
@@ -2620,9 +2629,10 @@ pub const SPLINE_OBJECT: Sig = Sig {
 /// An emitter aimed at its target and a task node for it (internal:
 /// `ecx` = the emitter `E`, `xmm1` = the speed `v`; a /GS frame aligned
 /// to 8, the matrix `M` a local). `E+0x25c..` = `(0, 0, -v, 0)` (the
-/// sign flipped by the DLL's mask) and `E+0x274 = v`; with `d = E+0x24c..
-/// - E+0xc..`: the pitch `atan2(dy, sqrt(dz dz + dx dx))` and the yaw `y
-/// = K - atan2(dz, dx)` (brought back by `T` once when above `H` or below
+/// sign flipped by the DLL's mask) and `E+0x274 = v`; with `d` the
+/// target `E+0x24c..` less the position `E+0xc..`: the pitch
+/// `atan2(dy, sqrt(dz dz + dx dx))` and the yaw `K - atan2(dz, dx)`
+/// (brought back by `T` once when above `H` or below
 /// `L`), the arcs `_CIatan2`'s and the root `f64`; `M` a unit matrix
 /// (slot 235) turned by the pitch (slot 328) and the yaw (slot 329), and
 /// `E+0x25c` = slot 229 `(E+0x25c, M, E+0x25c)`. A node from the pool
@@ -4213,7 +4223,7 @@ pub fn flight_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         g.write::<u32>(e + 0x1c, 0);
         for at in [0x20u32, 0x22, 0x24] {
             let r = g.rand().cast_signed() % 0x801 - 0x400;
-            g.write::<u16>(e + at, r as u16);
+            g.write::<u16>(e + at, r.cast_unsigned() as u16);
         }
         g.write::<u32>(e + 0x28, 1);
     }
