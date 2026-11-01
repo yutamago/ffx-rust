@@ -81,6 +81,7 @@ pub mod s4_summon;
 pub mod s4_wrap;
 // the shared work list's fifth round (shared-5: rows 737 on)
 pub mod s5_misc;
+pub mod s6_misc;
 
 // round 4, the own work list's families (o4_*)
 pub mod o4_ctor;
@@ -2113,6 +2114,37 @@ ports! {
     "m0351 sounds_3" => m0351::SOUNDS_3, m0351::sounds_3;
     "m0385 step_ready" => m0385::STEP_READY, m0385::step_ready;
     "m0397 script_end" => m0397::SCRIPT_END, m0397::script_end;
+    "staged nodes task" => s6_misc::STAGED_NODES_TASK, s6_misc::staged_nodes_task;
+    "staged nodes task (b)" => s6_misc::STAGED_NODES_TASK_B, s6_misc::staged_nodes_task;
+    "staged nodes task (c)" => s6_misc::STAGED_NODES_TASK_C, s6_misc::staged_nodes_task;
+    "staged nodes task (d)" => s6_misc::STAGED_NODES_TASK_D, s6_misc::staged_nodes_task;
+    "part centres" => s6_misc::PART_CENTRES, s6_misc::part_centres;
+    "spin stage two" => s6_misc::SPIN_STAGE_TWO, s6_misc::spin_stage_two;
+    "three points around" => s6_misc::THREE_POINTS_AROUND, s6_misc::three_points_around;
+    "sprite fan start" => s6_misc::SPRITE_FAN_START, s6_misc::sprite_fan_start;
+    "sprite fan task" => s6_misc::SPRITE_FAN_TASK, s6_misc::sprite_fan_task;
+    "objects freed" => s6_misc::OBJECTS_FREED, s6_misc::objects_freed;
+    "countdown tint" => s6_misc::COUNTDOWN_TINT, s6_misc::countdown_tint;
+    "actor timed task" => s6_misc::ACTOR_TIMED_TASK, s6_misc::actor_timed_task;
+    "thunk: spring walk" => s6_misc::JMP_SPRING_WALK, s6_misc::ecx_jmp;
+    "thunk: aimed node walk" => s6_misc::JMP_AIMED_NODE_WALK, s6_misc::ecx_jmp;
+    "selection groups" => s6_misc::SELECTION_GROUPS, s6_misc::selection_groups;
+    "motion script step" => s6_misc::MOTION_SCRIPT_STEP, s6_misc::motion_script_step;
+    "host start (one object)" => s6_misc::HOST_START_OBJECT, s6_misc::host_start_object;
+    "summon script task" => s6_misc::SUMMON_SCRIPT_TASK, s6_misc::summon_script_task;
+    "static part start" => s6_misc::STATIC_PART_START, s6_misc::static_part_start;
+    "bone walk tail" => s6_misc::BONE_WALK_TAIL, s6_misc::bone_walk_tail;
+    "particle drift" => s6_misc::PARTICLE_DRIFT, s6_misc::particle_drift;
+    "homing part task" => s6_misc::HOMING_PART_TASK, s6_misc::homing_part_task;
+    "camera tracks" => s6_misc::CAMERA_TRACKS, s6_misc::camera_tracks;
+    "particle drift (5)" => s6_misc::PARTICLE_DRIFT_5, s6_misc::particle_drift_5;
+    "particle hand-over" => s6_misc::PARTICLE_HAND_OVER, s6_misc::particle_hand_over;
+    "camera blocks reset" => s6_misc::CAMERA_BLOCKS_RESET, s6_misc::camera_blocks_reset;
+    "camera tracks (from a record)" => s6_misc::CAMERA_TRACKS_FROM, s6_misc::camera_tracks_from;
+    "host start (when ready)" => s6_misc::HOST_START_WHEN_READY, s6_misc::host_start_when_ready;
+    "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
+    "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
+    "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2776,6 +2808,37 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0183 camera point", &m0183::CAMERA_POINT),
     ("m0186 node cleared", &m0186::NODE_CLEARED),
     ("m0186 node abc", &m0186::NODE_ABC),
+    ("part motion", &s6_misc::PART_MOTION),
+    ("motion sequence step", &s6_misc::MOTION_SEQUENCE_STEP),
+    ("start object (anim 2)", &s6_misc::START_OBJECT_ANIM_2),
+    ("sprites step", &s6_misc::SPRITES_STEP),
+    // "targets mean offset (edx)" (s6_misc::TARGETS_MEAN_OFFSET_OF) is the same code
+    // identity as "m0577 centre" above: registered once
+    ("spring walk", &s6_misc::SPRING_WALK),
+    ("counters step", &s6_misc::COUNTERS_STEP),
+    ("path step", &s6_misc::PATH_STEP),
+    ("node release", &s6_misc::NODE_RELEASE),
+    ("parts axes", &s6_misc::PARTS_AXES),
+    ("thrown effect (plain)", &s6_misc::THROWN_EFFECT_PLAIN),
+    ("start object (reset state)", &s6_misc::START_OBJECT_RESET),
+    ("sparks on a model", &s6_misc::SPARKS_ON_MODEL),
+    ("parts ring", &s6_misc::PARTS_RING),
+    ("live parts axes", &s6_misc::LIVE_PARTS_AXES),
+    ("turning path step", &s6_misc::TURNING_PATH_STEP),
+    ("eased turning path step", &s6_misc::EASED_TURNING_PATH_STEP),
+    ("keyed part step", &s6_misc::KEYED_PART_STEP),
+    ("m0032 state reset (0x1e)", &s6_misc::RESET_STATE_1E),
+    ("lights and give back", &s6_misc::LIGHTS_AND_GIVE_BACK),
+    ("scene point", &s6_misc::SCENE_POINT),
+    ("ring sparks", &s6_misc::RING_SPARKS),
+    ("smoke puff", &s6_misc::SMOKE_PUFF),
+    ("move ends (the DLL's object)", &s6_misc::MOVE_ENDS_OF),
+    ("model direct", &s6_misc::MODEL_DIRECT),
+    ("spline point", &s6_misc::SPLINE_POINT),
+    ("level look matrix", &s6_misc::LEVEL_LOOK_MATRIX),
+    ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
+    ("aimed node walk", &s6_misc::AIMED_NODE_WALK),
+    ("ring take", &s6_misc::RING_TAKE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

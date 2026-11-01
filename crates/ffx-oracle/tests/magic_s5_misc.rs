@@ -45,13 +45,25 @@ fn varied(n: u32, seed: u32) -> Vec<u8> {
     (0..n).map(|i| (i * 7 + seed * 13 + 1) as u8).collect()
 }
 
-/// The frame area below the entry's stack pointer cleared before a run:
-/// the original's stores of the run before would otherwise still be there
-/// for the port, and a port that drops a store into its frame would see
-/// them.
+/// The frame area below the entry's stack pointer filled with a pattern
+/// before a run: the original's stores of the run before would otherwise
+/// still be there for the port, and a port that drops a store into its
+/// frame would see them. A pattern rather than zeros, so that a dropped
+/// store of 0 (or of a value the zeros happen to equal) shows in what the
+/// stubs record.
 fn scrub(t: &mut Twin) {
     let top = STACK_TOP - 0x100;
-    t.write(top - 0x3000, &[0; 0x3000]);
+    t.write(top - 0x3000, &varied(0x3000, 0x5b));
+}
+
+/// The DLL globals at the operands `ops` of `f` given new values (each
+/// run's differ from the last), so that a store the port drops shows.
+fn seed_globals(t: &mut Twin, f: u32, ops: &[u32]) {
+    for &o in ops {
+        let a = op(t, f, o);
+        let v = t.u32(a).rotate_left(7) ^ 0x1357_9bdf ^ o;
+        t.set_u32(a, v);
+    }
 }
 
 /// Whether `a` is in the stack or the scratch area (a pointer a stub may
@@ -279,19 +291,23 @@ fn targets_starts() {
     t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f0);
     let ids = SCRATCH + 0x7c0;
     let recs_at = SCRATCH + 0x1000;
-    for n in [0u32, 1, 3, 0xffff_fff0] {
+    for n in [0u32, 1, 3, 4, 0xffff_fff0] {
         t.write(recs_at, &varied(0x300, n));
         t.write(SCRATCH + 0x700, &varied(0x100, n + 1));
         for o in [0x4au32, 0x93, 0x9e] {
             t.set_u32(op(&t, f, o), SCRATCH + 0x780 + o / 4 * 4 % 0x40);
         }
         t.set_u32(op(&t, f, 0x31), ids);
+        // (an even first target: slot 367 leaves the local, which then
+        // still holds the entry's ecx)
         for i in 0..4u32 {
-            t.set_u8(ids + i, (i * 3 + 1) as u8);
+            t.set_u8(ids + i, (i * 3 + 1 + (n & 1)) as u8);
         }
         t.set_u32(op(&t, f, 0x5), n);
+        // bit 0 of the entry's ecx is what the local keeps when slot 367
+        // leaves it: both values
         let c = Call {
-            ecx: 0x0ecc_0ecc,
+            ecx: 0x0ecc_0ecc + (n >> 1 & 1),
             ..Call::default()
         };
         scrub(&mut t);
@@ -334,9 +350,11 @@ fn particles_rethrown() {
 fn camera_rect_tasks() {
     let Some(mut t) = twin(152) else { return };
     let f = t.at(0x8440);
-    recs(&mut t, &[(284, 3), (693, 2), (692, 3), (686, 1)]);
+    recs(&mut t, &[(284, 3), (692, 3), (686, 1)]);
     let task = SCRATCH + 0x300;
     let rec_at = SCRATCH + 0x400;
+    // the state word (`+0x1c`) as slot 693 sees it
+    rec_lock(&mut t, 693, 2, rec_at + 0x1c, |_, a| (693 << 20) ^ a[0]);
     let node = SCRATCH + 0x600;
     for (state, count) in [
         (0u32, 5u32),
@@ -709,6 +727,20 @@ fn faces_map_centre() {
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+    // the two angles' constants far out: each wrap's high and low side
+    let (ka, kb) = (op(&t, f, 0x9a), op(&t, f, 0xd6));
+    for (a, b) in [
+        (-10.0f32, -10.0f32),
+        (10.0, 10.0),
+        (-10.0, 10.0),
+        (10.0, -10.0),
+    ] {
+        set_facing(&mut t, FACINGS[2]);
+        t.set_u32(ka, a.to_bits());
+        t.set_u32(kb, b.to_bits());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
 }
 
 #[test]
@@ -744,10 +776,13 @@ fn model_draws() {
             if s == 819 {
                 m.w32(SCRATCH + 0x7f0, 0x0819_0819);
             }
-            // the record's model word (`+0x1c`) as the callee sees it
+            // the record's model word (`+0x1c`) as the callee sees it,
+            // kept where the memory compare sees it
             let r = a[2];
             if (STACK_TOP - STACK_LEN..STACK_TOP).contains(&r) {
-                m.r32(r + 0x1c) ^ (s << 16)
+                let seen = m.r32(r + 0x1c);
+                m.w32(SCRATCH + 0x7c0 + 4 * (s & 7), seen);
+                seen ^ (s << 16)
             } else {
                 s << 16
             }
@@ -1148,6 +1183,12 @@ fn fading_model_tasks() {
         t.set_u32(rec_at + 0x18, state);
         t.set_u32(rec_at + 0x34, timer);
         t.set_u8(rec_at + 0xc3, fade);
+        // the model block: words that differ around the model's `+0x54`,
+        // and the record's next word another pointer; the flags halfword
+        // without the bits state 10 sets
+        t.write(model - 0x80, &varied(0x100, state + 3));
+        t.set_u32(rec_at + 0x48, model + 0x40);
+        t.set_u16(rec_at + 0xec, 0x0123 & !0x14);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -1186,8 +1227,17 @@ fn target_measures() {
 
 #[test]
 fn weapon_swings() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x2a90);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x2a90u32), (544, 0x2a90)] {
+        weapon_swings_in(dll, rva);
+    }
+}
+
+fn weapon_swings_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
@@ -1243,6 +1293,14 @@ fn weapon_swings() {
         t.set_u32(obj + 0x50c, count);
         t.set_u32(obj + 0x510, total);
         t.set_u32(obj + 0x514, u32::MAX);
+        // the two points the swing mixes: plain floats (the varied bytes'
+        // tiny ones would hide the weights)
+        for i in 0..8u32 {
+            t.set_u32(
+                obj + 0x260 + 4 * i,
+                (1.5 * i as f32 - 2.25 + count as f32).to_bits(),
+            );
+        }
         t.set_u16(free, 3);
         // the DLL's object list: empty, or one node holding the object
         let node = SCRATCH + 0x380;
@@ -1250,6 +1308,8 @@ fn weapon_swings() {
         t.set_u32(node, 0);
         t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
+        // the item word the removal sets: another value before
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + count);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -1284,6 +1344,8 @@ fn shade_reset_colour_tasks() {
             t.set_u32(table + 4 * i, 0x0cc0_0000 + 0x11 * i);
         }
         t.set_u16(op(&t, f, 0x6d), count);
+        // a word the task sets to 1.0: another value before
+        t.set_u32(op(&t, f, 0x7d), 0x007d_0000 + n);
         // a ring of three free nodes
         let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
         for i in 0..3u32 {
@@ -1403,6 +1465,18 @@ fn screen_fade_steps() {
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+    // a level scale that is not 0 (the DLL's is), and a level below and
+    // above its floor on the way to the end
+    t.set_u32(op(&t, f, 0x16c), 1.75f32.to_bits());
+    for (y, m) in [(0.25f32, 0.75f32), (0.75, 0.25), (0.5, 0.5)] {
+        t.set_u32(op(&t, f, 0x104), y.to_bits());
+        t.set_u32(op(&t, f, 0x10c), m.to_bits());
+        t.set_u32(op(&t, f, 0x12), 0xb0);
+        t.set_u32(op(&t, f, 0x1e), lo.midpoint(hi).to_bits());
+        t.set_u32(op(&t, f, 0x12c), 2.0f32.to_bits());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
 }
 
 #[test]
@@ -1492,6 +1566,10 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x15a), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x197), 0xffff_ff0f + count);
+        if dll == 342 {
+            // the word the start clears: set before
+            t.set_u32(op(&t, f, 0x1a8), 0x01a8_0000 + count);
+        }
         if dll == 71 {
             t.set_u32(op(&t, f, 0x1b2), 0x1b2);
         }
@@ -1704,6 +1782,8 @@ fn summon_ppp_stream_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x185), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x1c2), 0xffff_ff0f + count);
+        // the word the start clears: set before
+        t.set_u32(op(&t, f, 0x1d3), 0x01d3_0000 + count);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0186_0040 + count], Eax::Checked);
     }
@@ -1793,6 +1873,25 @@ fn arc_carries() {
     for (timer, turn) in [(15u32, 0.5f64), (40, -3.0), (65, 2.0), (66, 1.0), (16, 6.0)] {
         t.stub_st0(333, move |_, _| turn);
         t.set_u32(op(&t, f, 0x13), timer);
+        t.set_u32(op(&t, place, 0x02), timer & 1);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    // the angle's constants set so that it meets each wrap's bound
+    // exactly and falls below the low one (`4 - turn` against 3 and -3),
+    // the odd flag set with a scale that is not 1
+    for (k, o) in [(4.0f32, 0x8a), (3.0, 0x99), (-3.0, 0xb2), (2.5, 0x13c)] {
+        t.set_u32(op(&t, f, o), k.to_bits());
+    }
+    for (timer, turn, odd) in [
+        (20u32, 1.0f64, 1u8),
+        (30, 7.0, 0),
+        (25, 8.0, 3),
+        (35, -0.5, 1),
+    ] {
+        t.stub_st0(333, move |_, _| turn);
+        t.set_u32(op(&t, f, 0x13), timer);
+        t.set_u8(op(&t, f, 0xca), odd);
         t.set_u32(op(&t, place, 0x02), timer & 1);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
@@ -1938,8 +2037,17 @@ fn throws_aimed() {
 
 #[test]
 fn weapon_swings_drop() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x4240);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x4240u32), (544, 0x4210)] {
+        weapon_swings_drop_in(dll, rva);
+    }
+}
+
+fn weapon_swings_drop_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
@@ -1986,12 +2094,15 @@ fn weapon_swings_drop() {
         t.set_u32(obj + 0x50c, count);
         t.set_u32(obj + 0x510, total);
         t.set_u32(obj + 0x514, kind);
+        // the halfword whose bit 15 a dropped object loses: set
+        t.set_u16(obj + 0x124, 0xc123 + count as u16);
         t.set_u16(free, 3);
         let node = SCRATCH + 0x380;
         t.set_u32(list, if listed { node } else { 0 });
         t.set_u32(node, 0);
         t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + count);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -2099,6 +2210,9 @@ fn camera_parts() {
     });
     rec_lock(&mut t, 713, 1, ptr, move |m, _| {
         m.w32(ptr, 0x0713_0713);
+        // the lock as the free sees it (restored after slot 712)
+        let held = m.r32(lock);
+        m.w32(SCRATCH + 0x7c4, held);
         0x713
     });
     let table = SCRATCH + 0x700;
@@ -2159,7 +2273,9 @@ fn homing_trails() {
     t.set_u16(table + 6, 1);
     t.set_u16(table + 0x10, 0x80);
     t.set_u16(table + 0x12, 0x300);
-    recs(&mut t, &[(235, 1), (723, 1), (724, 1), (229, 3), (713, 1)]);
+    recs(&mut t, &[(235, 1), (723, 1), (724, 1), (713, 1)]);
+    // (the matrices the trail draw hands on, all 16 words)
+    rec_mem(&mut t, 229, 3, 16, None);
     rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(&mut t, 773, 4, |_, _| 0);
@@ -2182,6 +2298,8 @@ fn homing_trails() {
         (0xffff_fffe, 0.5, 0.25, 0, 2, false),
         (0xffff_fffe, 0.5, 0.25, 1, 0, false),
         (0, 0.0, 0.0, 3, 3, false),
+        // the distance (to the target, 1.5 times the position) met exactly
+        (0, 0.5, 3.5f64.sqrt() as f32, 1, 1, false),
     ] {
         t.write(obj, &varied(0x3a0, wait ^ u32::from(flags)));
         t.write(obj + 0x130, &[0; 0x230]);
@@ -2240,6 +2358,40 @@ fn sine_rises() {
         (-3, 10, 40, 60),
     ] {
         t.write(p, &varied(0x200, count.cast_unsigned()));
+        let rec_k = (count & 3).cast_unsigned();
+        t.set_u32(p + 0xac, rec_k);
+        t.set_u32(p + 0x2c + 0x10 * rec_k, count.cast_unsigned());
+        t.set_u32(p + 0x30 + 0x10 * rec_k, 7);
+        t.set_u32(p + 0x34 + 0x10 * rec_k, 0.5f32.to_bits());
+        t.set_u32(p + 0xd4, 1.25f32.to_bits());
+        t.set_u32(op(&t, f, 0x82), n1.cast_unsigned());
+        t.set_u32(op(&t, f, 0xd3), n2.cast_unsigned());
+        t.set_u32(op(&t, f, 0x18a), end.cast_unsigned());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+    }
+    // the constants set: the bounds 20 and 50 met exactly, phase scales
+    // large enough to move the table index, an offset that is not 0, and
+    // the flags word without the done bit
+    for (o, v) in [
+        (0x117u32, 20.0f32),
+        (0x151, 50.0),
+        (0x129, 512.0),
+        (0x162, 512.0),
+        (0x199, 512.0),
+        (0x4e, 0.75),
+    ] {
+        t.set_u32(op(&t, f, o), v.to_bits());
+    }
+    for (count, n1, n2, end) in [
+        (20i32, 1000i32, 2000i32, 3000i32),
+        (35, 1000, 2000, 3000),
+        (50, 1000, 2000, 3000),
+        (70, 1000, 71, 300),
+        (8, 1000, 9, 300),
+    ] {
+        t.write(p, &varied(0x200, count.cast_unsigned()));
+        t.set_u32(p, 0x0100_0003);
         let rec_k = (count & 3).cast_unsigned();
         t.set_u32(p + 0xac, rec_k);
         t.set_u32(p + 0x2c + 0x10 * rec_k, count.cast_unsigned());
@@ -2315,6 +2467,8 @@ fn signed_axes_set() {
     let Some(mut t) = twin(70) else { return };
     let f = t.at(0x3bc0);
     rec_mem(&mut t, 234, 3, 4, Some(0));
+    // the negative steps' size scale: one that is not 1
+    t.set_u32(op(&t, f, 0x2d), 2.5f32.to_bits());
     let args = SCRATCH + 0x300;
     let obj = SCRATCH + 0x1000;
     let (steps, sizes) = (SCRATCH + 0x400, SCRATCH + 0x440);
@@ -2501,6 +2655,10 @@ fn targets_more_and_tasks() {
         t.write(op(&t, f, 0x33), &varied(0x10, n));
         t.set_u32(op(&t, f, 0x1), n);
         t.set_u32(lock, 0x5a5a_0000 + n);
+        // the words it clears: set before
+        for o in [0xb7u32, 0xc1, 0xcb, 0xd5, 0xfe] {
+            t.set_u32(op(&t, f, o), 0x0100_0000 + o + n);
+        }
         for i in 0..4u32 {
             t.write(node(i), &varied(0x1c, i + n));
             t.set_u32(node(i), node((i + 3) % 4));
@@ -2512,6 +2670,7 @@ fn targets_more_and_tasks() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        seed_globals(&mut t, f, &[0xf3]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -2580,14 +2739,14 @@ fn sprite_packets() {
     let o = SCRATCH + 0x300;
     let packet = SCRATCH + 0x1000;
     let c = SCRATCH + 0x400;
-    // the frame words the junk path reads: 0 on both sides
-    let entry = STACK_TOP - 0x100;
+    // the frame words the junk path reads ([ebp-0x10], [ebp-0xc]): 0 on
+    // both sides
+    let ebp = STACK_TOP - 0x100 - 4;
     for (k, (flag, e, t30)) in [(0u8, 0u32, 3u8), (0, 1, 0xff), (1, 0, 9), (0, 3, 0)]
         .into_iter()
         .enumerate()
     {
         let k = k as u32;
-        t.write(entry - 0x40, &[0; 0x40]);
         t.write(o, &varied(0x40, k));
         t.write(packet, &varied(0x200, k));
         for (i, v) in (0u32..).zip([0.25f32, 3.5, -7.9, 1.0e10]) {
@@ -2603,6 +2762,7 @@ fn sprite_packets() {
         t.set_u8(o + 0x30, t30);
         t.set_u8(o + 0x31, flag);
         scrub(&mut t);
+        t.write(ebp - 0x10, &[0; 8]);
         t.check(f, Call::this(o), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::sprite_packet(g, img, fr.at, fr.ecx))
         });
@@ -2686,6 +2846,8 @@ fn models_around_starts() {
 fn cameras_behind() {
     let Some(mut t) = twin(188) else { return };
     let f = t.at(0x16a0);
+    // the offset's scale: one that is not 1
+    t.set_u32(op(&t, f, 0xa7), 2.5f32.to_bits());
     rec_mem(&mut t, 210, 2, 16, Some(1));
     rec_mem(&mut t, 325, 2, 4, None);
     t.stub(325, |m, a| {
@@ -3146,8 +3308,17 @@ fn sprays_on_cue() {
 
 #[test]
 fn weapon_bounces() {
-    let Some(mut t) = twin(555) else { return };
-    let f = t.at(0x3180);
+    // `magic_0544`'s copy calls the part matrix instead of the weapon's
+    for (dll, rva) in [(555u16, 0x3180u32), (544, 0x3180)] {
+        weapon_bounces_in(dll, rva);
+    }
+}
+
+fn weapon_bounces_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the part matrix's last slot (`sa_misc::part_matrix`)
+    rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
     rec_mem(&mut t, 219, 2, 0, None);
     rec_mem(&mut t, 235, 1, 16, Some(0));
@@ -3345,6 +3516,7 @@ fn camera_records_started() {
             t.set_u32(head, 0);
             t.set_u32(tail, 0);
         }
+        seed_globals(&mut t, f, &[0x335]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -3592,7 +3764,17 @@ fn bursts_tasks() {
     // the command block's slots
     rec_mem(&mut t, 559, 3, 4, Some(0));
     rec_mem(&mut t, 558, 1, 4, Some(0));
-    rec_mem(&mut t, 382, 2, 0, None);
+    // the GS wait (its words logged) may change the command block's
+    // words (the task sets them after it): the block's last word
+    let last = op(&t, f, 0x374);
+    t.stub(382, move |m, a| {
+        let k = m.r32(SCRATCH + 0x7c0);
+        m.w32(SCRATCH + 0x7c0, k + 1);
+        m.w32(SCRATCH + 0x7c4 + 8 * (k % 4), a[0]);
+        m.w32(SCRATCH + 0x7c8 + 8 * (k % 4), a[1]);
+        m.w32(last, 0x0382_0000 ^ a[0] ^ k);
+        0x382
+    });
     for (s, n) in [
         (530u32, 2usize),
         (249, 2),
@@ -3678,6 +3860,8 @@ fn bursts_tasks() {
         }
         t.set_u32(op(&t, f, 0x1e), n);
         t.set_u32(op(&t, f, 0x68), slow);
+        // a word the task clears: set before
+        t.set_u32(op(&t, f, 0x374), 0x0374_0000 + k);
         t.set_u32(op(&t, take, 0x2b), 0);
         t.set_u32(op(&t, take, 0x08), 0);
         t.set_u32(op(&t, take, 0x0f), 4);
@@ -3690,6 +3874,7 @@ fn bursts_tasks() {
         t.set_u32(task + 4, 0);
         t.set_u32(task + 8, SCRATCH + 0x340);
         t.set_u32(SCRATCH + 0x34c, 0);
+        seed_globals(&mut t, f, &[0x321, 0x329, 0x33b, 0x341, 0x34b, 0x36a]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -3752,8 +3937,6 @@ fn parts_vertices_moved() {
         .enumerate()
     {
         let k = k as u32;
-        // the frame words the colours read: 0 on both sides
-        t.write(entry - 0x160, &[0; 0x30]);
         t.write(SCRATCH + 0x5000, &varied(0x400, k));
         t.write(a, &varied(0x60, k));
         t.set_u32(a, model);
@@ -3794,6 +3977,9 @@ fn parts_vertices_moved() {
             ..Call::default()
         };
         scrub(&mut t);
+        // the frame words the colours read ([ebp-0x148..-0x13c], never
+        // written): 0 on both sides
+        t.write(entry - 0x160, &[0; 0x30]);
         t.check(
             f,
             c,
