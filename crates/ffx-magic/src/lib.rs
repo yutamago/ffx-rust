@@ -50,6 +50,10 @@ pub mod opu_parts;
 pub mod part_draw;
 pub mod pe;
 pub mod pushes;
+// round 9, own rows below 0450 (magic-r9-own): the load-step family
+pub mod r9_load;
+pub mod r9_misc;
+pub mod r9_summon;
 pub mod rcef;
 pub mod runtime;
 // the shared work list's chunk A (functions used by 2 or more overlays):
@@ -998,6 +1002,49 @@ ports! {
     "m0390 object callback 15f0" => m0390::E15F0, m0390::e15f0;
     "m0390 entry 1be0 (curve)" => m0390::E1BE0, m0390::e1be0;
     "m0390 entry 2100" => m0390::E2100, m0390::e2100;
+    "m0390 task step 13b0" => m0390::TASK_STEP, m0390::task_step;
+    "m0390 task step 0447" => m0390::TASK_STEP_0447, m0390::task_step;
+    "m0390 entry 1750" => m0390::E1750, m0390::e1750;
+    "m0390 entry 1ef0" => m0390::E1EF0, m0390::e1ef0;
+    // round 9 (magic-r9-own): the load-step family (r9_load)
+    "r9 load step 0018" => r9_load::LOAD_0018, r9_load::load_0018;
+    "r9 load step 0019" => r9_load::LOAD_0019, r9_load::load_0019;
+    "r9 load step 0046" => r9_load::LOAD_0046, r9_load::load_0046;
+    "r9 load step 0064" => r9_load::LOAD_0064, r9_load::load_0064;
+    "r9 load step 0171" => r9_load::LOAD_0171, r9_load::load_0171;
+    "r9 load step 0367" => r9_load::LOAD_0367, r9_load::load_0367;
+    "r9 load step 0369" => r9_load::LOAD_0369, r9_load::load_0369;
+    "r9 load step 0383" => r9_load::LOAD_0383, r9_load::load_0383;
+    "r9 load step 0390" => r9_load::LOAD_0390, r9_load::load_0390;
+    "r9 load step 0395" => r9_load::LOAD_0395, r9_load::load_0395;
+    "r9 load step 0447" => r9_load::LOAD_0447, r9_load::load_0447;
+    "r9 load step 0108" => r9_load::LOAD_0108, r9_load::load_0108;
+    "r9 load step 0221" => r9_load::LOAD_0221, r9_load::load_0221;
+    "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;
+    "r9 load step 0166" => r9_load::LOAD_0166, r9_load::load_0166;
+    "r9 load step 0308" => r9_load::LOAD_0308, r9_load::load_0308;
+    "r9 task step (542) 0391" => r9_misc::TASK_STEP_542_0391, r9_misc::task_step_542;
+    "r9 task step (542) 0448" => r9_misc::TASK_STEP_542_0448, r9_misc::task_step_542;
+    "r9 smoke start 0285" => r9_misc::SMOKE_START_0285, r9_misc::smoke_start;
+    "r9 smoke start 0286" => r9_misc::SMOKE_START_0286, r9_misc::smoke_start;
+    "r9 two objects 0350" => r9_misc::TWO_OBJECTS_0350, r9_misc::two_objects;
+    "r9 two objects 0352" => r9_misc::TWO_OBJECTS_0352, r9_misc::two_objects;
+    "r9 object at point 0165@2e40" => r9_misc::OBJECT_AT_POINT_0165_2E40, r9_misc::object_at_point;
+    "r9 object at point 0165@3310" => r9_misc::OBJECT_AT_POINT_0165_3310, r9_misc::object_at_point;
+    "m0447 object fade 5290" => m0447::OBJECT_FADE, m0447::object_fade;
+    "m0447 camera turn 4cb0" => m0447::CAMERA_TURN, m0447::camera_turn;
+    "m0447 camera curve 4f60" => m0447::CAMERA_CURVE, m0447::camera_curve;
+    "r9 summon start 0077" => r9_summon::START_0077, r9_summon::start_0077;
+    "r9 summon start 0078" => r9_summon::START_0078, r9_summon::start_0078;
+    "r9 summon start 0079" => r9_summon::START_0079, r9_summon::start_0079;
+    "r9 summon start 0080" => r9_summon::START_0080, r9_summon::start_0080;
+    "r9 summon start 0081" => r9_summon::START_0081, r9_summon::start_0081;
+    "r9 summon start (nodes) 0083" => r9_summon::NODES_0083, r9_summon::nodes_0083;
+    "r9 summon start (nodes) 0091" => r9_summon::NODES_0091, r9_summon::nodes_0091;
+    "r9 summon start (nodes) 0094" => r9_summon::NODES_0094, r9_summon::nodes_0094;
+    "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
+    "r9 summon start (nodes) 0096" => r9_summon::NODES_0096, r9_summon::nodes_0096;
+    "r9 summon start (nodes) 0097" => r9_summon::NODES_0097, r9_summon::nodes_0097;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0596 start" => m0596::START, m0596::start;
@@ -2377,6 +2424,7 @@ ports! {
     "m0443 sound step" => m0443::SOUND_STEP, m0443::sound_step;
     "m0447 camera copy" => m0447::CAMERA_COPY, m0447::camera_copy;
     "m0449 frame" => m0449::FRAME, m0449::frame;
+    "m0449 task step (pass)" => m0449::TASK_STEP_PASS, m0449::task_step_pass;
     "m0394 script end" => m0394::SCRIPT_END, m0394::script_end;
     "m0429 frame" => m0429::FRAME, m0429::frame;
     "m0440 frame" => m0440::FRAME, m0440::frame;
@@ -2608,6 +2656,78 @@ ports! {
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 9 (magic-r9-own)
+    ("m0390 facing", &m0390::FACING),
+    ("m0390 facing 0447", &m0390::FACING_0447),
+    ("m0390 start-up", &m0390::START_UP),
+    ("m0390 start-up 0447", &m0390::START_UP_0447),
+    (
+        "r9 start object (state) 0447",
+        &r9_misc::START_OBJECT_STATE_0447,
+    ),
+    (
+        "r9 start object (state) 0100",
+        &r9_misc::START_OBJECT_STATE_0100,
+    ),
+    (
+        "r9 start object (reset) 0182",
+        &r9_misc::START_OBJECT_RESET_0182,
+    ),
+    (
+        "r9 start object (reset) 0197",
+        &r9_misc::START_OBJECT_RESET_0197,
+    ),
+    (
+        "r9 start object (reset) 0252",
+        &r9_misc::START_OBJECT_RESET_0252,
+    ),
+    (
+        "r9 start object (reset) 0266",
+        &r9_misc::START_OBJECT_RESET_0266,
+    ),
+    (
+        "r9 start object (reset) 0311",
+        &r9_misc::START_OBJECT_RESET_0311,
+    ),
+    (
+        "r9 start object (reset) 0365",
+        &r9_misc::START_OBJECT_RESET_0365,
+    ),
+    (
+        "r9 start object (bare reset) 0245",
+        &r9_misc::START_OBJECT_BARE_0245,
+    ),
+    (
+        "r9 start object (bare reset) 0298",
+        &r9_misc::START_OBJECT_BARE_0298,
+    ),
+    (
+        "r9 start object (bare reset) 0308",
+        &r9_misc::START_OBJECT_BARE_0308,
+    ),
+    (
+        "r9 start object (bare reset) 0435",
+        &r9_misc::START_OBJECT_BARE_0435,
+    ),
+    (
+        "r9 start object (edx reset) 0108",
+        &r9_misc::START_OBJECT_EDX_0108,
+    ),
+    (
+        "r9 start object (edx reset) 0221",
+        &r9_misc::START_OBJECT_EDX_0221,
+    ),
+    (
+        "r9 start object (edx reset) 0419",
+        &r9_misc::START_OBJECT_EDX_0419,
+    ),
+    ("r9 objects start 0108", &r9_misc::OBJECTS_START_0108),
+    ("r9 objects start 0221", &r9_misc::OBJECTS_START_0221),
+    ("r9 objects start 0229", &r9_misc::OBJECTS_START_0229),
+    ("r9 effect start 0166", &r9_misc::EFFECT_START_0166),
+    ("r9 effect start 0308", &r9_misc::EFFECT_START_0308),
+    ("r9 main object fade 0392", &r9_misc::MAIN_OBJECT_FADE_0392),
+    ("r9 main object fade 0449", &r9_misc::MAIN_OBJECT_FADE_0449),
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),
