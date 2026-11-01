@@ -1779,6 +1779,7 @@ ports! {
     "host start (one object)" => s6_misc::HOST_START_OBJECT, s6_misc::host_start_object;
     "summon script task" => s6_misc::SUMMON_SCRIPT_TASK, s6_misc::summon_script_task;
     "static part start" => s6_misc::STATIC_PART_START, s6_misc::static_part_start;
+    "bone walk tail" => s6_misc::BONE_WALK_TAIL, s6_misc::bone_walk_tail;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;

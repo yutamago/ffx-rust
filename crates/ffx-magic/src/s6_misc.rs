@@ -26,6 +26,7 @@ use crate::sa_misc::{
 };
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_SLOT256, RUN, actor_slot256, run};
+use crate::sa_summon::{BONE, bone_plain};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
@@ -3153,5 +3154,90 @@ pub const STATIC_PART_START: Sig = Sig {
     len: 101,
     hash: 0x1655_1fdc_5051_f331,
     calls: &[(0x31, Callee::Sig(&START_PART))],
+    imports: &[],
+};
+
+/// A summon's bone walk and its tail (cdecl `(c)`, `c` a walk cursor:
+/// `+0` the node `N`, `+4` the "moved" byte, `+5` the pass; an aligned
+/// /GS frame): the bone step ([`bone_plain`]); when moved, the four
+/// nodes `N+0x164`, `+0x168`, `+0x15c`, `+0x160` walk with a local cursor
+/// (their method `+0x1c`), the point `P` = `N[0x168]+0x1c` through
+/// `N[0x160]+0x9c` (slot 229, a local) goes to slot 284 `(N[0x170], 1,
+/// P)`; with bit 0 of `N+0x178` the offset `(0, 0, N+0x174, 1)` turned
+/// by `N+0x9c` (slot 229) plus `P` (slot 248), else `N[0x164]+0x1c`
+/// through `N[0x15c]+0x9c` (slot 229), is the target `v`; `v - N+0x14c`
+/// (slot 234) scaled by `N+0x16c` (slot 233) moves `N+0x14c` (slot 248),
+/// and slot 284 `(N[0x170], 0, N+0x14c)`. Each call sees the words the
+/// earlier ones left on the stack. Returns slot 284's `eax`, or the bone
+/// step's when not moved.
+///
+/// `magic_0042` 0x10003b30 (512 bytes; 4 DLLs).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn bone_walk_tail<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let c = fr.arg(g, 0);
+    // push ebp; and esp, -8; sub esp, 0x30; push esi, edi
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x38);
+    let bone = Frame {
+        at: img.rel32_target(f + 0x1c),
+        esp: s.wrapping_sub(4),
+        ecx: c,
+        ..*fr
+    };
+    let eax = bone_plain(g, img, &bone).eax;
+    if g.read::<u8>(c + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(c);
+    let (cur, v, p) = (s + 0xc, s + 0x14, s + 0x24);
+    let walk = |g: &mut G, node_at: u32| {
+        let node = g.read::<u32>(n + node_at);
+        g.write::<u32>(cur, node);
+        let m = g.read::<u32>(g.read::<u32>(node).wrapping_add(0x1c));
+        g.call(m, cur, &[cur]);
+    };
+    let pass = g.read::<u8>(c + 5);
+    g.write::<u8>(cur + 5, pass);
+    walk(g, 0x164);
+    walk(g, 0x168);
+    let pass = g.read::<u8>(c + 5);
+    g.write::<u8>(cur + 5, pass);
+    walk(g, 0x15c);
+    walk(g, 0x160);
+    let field = |g: &G, at: u32, o: u32| g.read::<u32>(n + at).wrapping_add(o);
+    let (a, b) = (field(g, 0x160, 0x9c), field(g, 0x168, 0x1c));
+    slot(g, img, f, 0xbc, 229, &[p, a, b]);
+    let h = g.read::<u32>(n + 0x170);
+    slot(g, img, f, 0xd1, 284, &[h, 1, p]);
+    if g.read::<u8>(n + 0x178) & 1 != 0 {
+        for (o, x) in [
+            (0u32, 0u32),
+            (4, 0),
+            (8, g.read::<u32>(n + 0x174)),
+            (0xc, 0x3f80_0000),
+        ] {
+            g.write::<u32>(v + o, x);
+        }
+        slot(g, img, f, 0x11b, 229, &[v, n + 0x9c, v]);
+        slot(g, img, f, 0x148, 248, &[v, p, v]);
+    } else {
+        let (a, b) = (field(g, 0x15c, 0x9c), field(g, 0x164, 0x1c));
+        slot(g, img, f, 0x170, 229, &[v, a, b]);
+    }
+    let e = n + 0x14c;
+    slot(g, img, f, 0x18d, 234, &[v, v, e]);
+    let k = g.read::<u32>(n + 0x16c);
+    slot(g, img, f, 0x1b0, 233, &[v, v, k]);
+    slot(g, img, f, 0x1c5, 248, &[e, e, v]);
+    let h = g.read::<u32>(n + 0x170);
+    Ret::eax(slot(g, img, f, 0x1d4, 284, &[h, 0, e]).eax)
+}
+
+/// [`bone_walk_tail`] (the `rel32`s: [`bone_plain`] and
+/// `__security_check_cookie`).
+pub const BONE_WALK_TAIL: Sig = Sig {
+    len: 512,
+    hash: 0x0844_8b5f_1bf6_4a9b,
+    calls: &[(0x1c, Callee::Sig(&BONE)), (0x1f8, Callee::Any)],
     imports: &[],
 };

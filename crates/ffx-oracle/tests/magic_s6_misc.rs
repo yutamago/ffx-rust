@@ -2280,3 +2280,88 @@ fn static_parts_started() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Row 324: `magic_0042`'s bone walk with its tail, for the shared
+/// rings (the cursor moved or not; `sa_summon::bone_plain` inside) and
+/// both ways of the target (`N+0x178` bit 0). A cursor that does not
+/// move leaves the bone step's cookie junk in `eax`.
+#[test]
+#[allow(clippy::too_many_lines)] // the bone's set-up and the tail's
+fn bone_walks_with_tail() {
+    let Some(mut t) = twin(42) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0x3b30);
+    let bone = t.img.rel32_target(f + 0x1c);
+    let table_slot = 32u32;
+    rec(&mut t, table_slot, 2, |_, a| 0x0032_0000 ^ a[0]);
+    rec(&mut t, 233, 3, |m, a| {
+        m.w32(a[0], a[2] ^ 0x8000_0000);
+        0x233
+    });
+    rec(&mut t, 325, 2, |_, _| 0x325);
+    rec(&mut t, 230, 2, |_, a| 0x2300_0000 ^ a[1]);
+    rec(&mut t, 668, 3, |_, _| 0x668);
+    rec(&mut t, 231, 3, |_, a| 0x2310_0000 ^ a[2]);
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 284, 3, |_, a| 0x0284_0000 ^ a[1]);
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x248
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x234
+    });
+    let table = t.img.word(bone + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * table_slot);
+    }
+    let n = sa::node(0);
+    for (k, &(c, p, cp)) in sa::RINGS.iter().enumerate() {
+        for flag in [0u8, 1] {
+            sa::ring(&mut t, c, p, cp, 0x30 + k as u8 + flag);
+            for j in 0..0x38 {
+                let v = 1.0f32 / (j as f32 + 3.0);
+                t.set_u32(n + 0x5c + 4 * j, v.to_bits());
+            }
+            for (o, i) in [(0x13c, 5), (0x144, 6), (0x140, 7), (0x128, 8)] {
+                t.write(sa::node(i), &[0x50 + i as u8; 0x200]);
+                t.set_u32(sa::node(i), sa::VTABLE_2);
+                for j in 0..0x40 {
+                    let v = (j as f32 + 1.0) * 0.25 * (i as f32);
+                    t.set_u32(sa::node(i) + 0x1c + 4 * j, v.to_bits());
+                }
+                t.set_u32(n + o, sa::node(i));
+            }
+            t.set_u8(n + 0x148, 1);
+            // the tail's four nodes and its fields
+            for (o, i) in [(0x164u32, 9u32), (0x168, 10), (0x15c, 11), (0x160, 12)] {
+                t.write(sa::node(i), &varied(0x200, i + k as u32));
+                t.set_u32(sa::node(i), sa::VTABLE_2);
+                t.set_u32(n + o, sa::node(i));
+            }
+            for i in 0..4u32 {
+                t.set_u32(n + 0x14c + 4 * i, (0.5 * i as f32 - 1.0).to_bits());
+            }
+            t.set_u32(n + 0x16c, 0.25f32.to_bits());
+            t.set_u32(n + 0x170, 0x0170_0000 + k as u32);
+            t.set_u32(n + 0x174, 3.5f32.to_bits());
+            t.set_u8(n + 0x178, flag | 0x10);
+            let eax = if k == 0 { Eax::Junk } else { Eax::Checked };
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[sa::CURSOR], eax);
+        }
+    }
+}
