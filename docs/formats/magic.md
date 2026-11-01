@@ -472,6 +472,86 @@ camera_behind_start (831 -> 841) now reach their functions' ends. Of the
 are in `sf_hidden.rs`, tested in every DLL carrying them
 (`magic_sf_hidden.rs`).
 
+**Parameter families (2026-11-01).** A work-list row is one code
+identity, and the identity keeps every operand the link does not move.
+So two functions that differ only in a displacement, an immediate, a
+global or which callee they call are two rows. `tools/overlay-pfamilies.py`
+finds the open rows that are the same code up to such parameters, so
+that one port can serve them all. It takes every row of
+`worklist5.tsv` that `magic-sig --covered` does not cover at its first
+DLL's address, cuts the function as the census does
+(`overlay-census.py`'s `cut_dll`, cached per DLL), and normalises each
+instruction to its length and its text with these changes:
+- a relocated word becomes its import's name, an offset into the
+  function, a code pointer (the target's shape) or a data address
+  (parameter `abs`);
+- a branch inside the function becomes its offset from the start;
+- a call or tail jump out of the function becomes the callee's shape,
+  which is the callee's own normalised hash, taken recursively
+  (parameter `call`). A slot thunk becomes `slot N`;
+- `[reg+disp]` through a register holding the `g_MagicImports` pointer
+  becomes `slot N`. Slots are kept, because another slot is another game
+  function;
+- every other number becomes a `disp` (signed) or `imm` parameter.
+
+The rows are grouped by the hash of that stream at two levels:
+- `exact-params`: the bytes between the instructions (jump and byte
+  tables) are kept, with table words as offsets into the function;
+- `loose`: only the length of those bytes is kept, and which function a
+  call, tail jump or code pointer reaches is masked too. This is how
+  `r9_load`'s copies differ: each calls its own DLL's start-up.
+
+`~/ffx-work/m5/magic/r4/pfamilies.tsv` has one line per family of 2 or
+more rows, ranked by members x bytes. Each line gives the members
+(`dll@addr:order`), how many of them have every callee covered, how many
+are already taken (`families.tsv` taken or done, `done.tsv`), and the
+parameters that differ: instruction index, operand offset in the
+function, kind, and the value in each member. `--sigs P003` prints each
+member's `Sig` (`magic-sig` length and hash) and its `rel32` callees by
+port name, ready for a table. The family ids are ranks and change
+between runs. The hash after the dash does not. A full run takes about
+20 s; the cut is cached in `$FFX_WORK/cache/overlay-pfamilies`.
+
+Numbers on `worklist5.tsv` (1,502 open rows):
+- `exact-params`: 59 families with 125 rows (88 KB). Most have 2
+  members and none has 5 or more.
+- `loose`: 94 families with 406 rows. 214 rows are in families of 5
+  or more and 191 in families of 10 or more. The big ones:
+  - the 118- and 119-byte load steps (112 + 38 rows), which `r9_load`
+    binds one copy at a time once each DLL's start-up is ported;
+  - the 968- and 898-byte summon throw tasks (6 + 7 rows);
+  - the 12-byte tail-call wrappers (41 rows; their callees are mostly
+    open).
+
+How to port a family: write the function once, reading every operand
+that differs from the copy's code (`img.word(f + off)`, `disp8`). The
+offsets are the same in every member: the tool notes `(offsets differ)`
+otherwise. Pass a callee that differs as a function argument. Then bind
+each member by a `Sig` of its own in a `copies!` list (name, hash, the
+differing callee's port and `Sig`), as `r9_load` does. Bind does not mask
+immediates, so members with different constants need different hashes,
+while the port stays one. Test every member in one parity test.
+
+The pilot, `pf_throws` (`magic_pf_throws.rs`), is the summons'
+target-throw task. It is 968 bytes in `magic_0411`, `0412`, `0414`,
+`0425`, `0439` and `0441`, and these are its states:
+- target nodes, a colour node, light words and the camera move;
+- per-target counts and shares;
+- weighted random throws into five object slots;
+- the camera's way back;
+- unlinking.
+
+The copies differ in 58 operands: globals, the light value (0.5 or 0.3),
+the object stride (0x310 or 0x5c0) and its flag offsets, the sound id,
+the throw interval and the closing wait. They also differ in the object
+set-up they call: a summon object, a model object or one of three thrown
+effects. One port reads all of that from the code and binds five copies:
+`pf throws 0412` .. `0441`. `magic_0411`'s copy waits on its own set-up
+(0x10006d30). The test runs 16 cases (every state and branch) on each
+copy. To give the set-ups' list globals something to point at, it gives
+every zero global that the set-up and its callees name a self-linked
+block (`prime`).
+
 **Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
 and 66 internal functions (plus the slot thunks by shape): the runtime,
 the OPU host and its start-up variants, the node lists, the object host
