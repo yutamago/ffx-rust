@@ -132,6 +132,7 @@ pub mod m0076;
 pub mod m0078;
 pub mod m0082;
 pub mod m0084;
+pub mod m0089;
 pub mod m0090;
 pub mod m0093;
 pub mod m0098;
@@ -143,6 +144,7 @@ pub mod m0153;
 pub mod m0154;
 pub mod m0159;
 pub mod m0163;
+pub mod m0164;
 pub mod m0165;
 pub mod m0166;
 pub mod m0168;
@@ -161,8 +163,13 @@ pub mod m0196;
 pub mod m0198;
 pub mod m0201;
 pub mod m0203;
+pub mod m0205;
 pub mod m0219;
+pub mod m0243;
+pub mod m0244;
+pub mod m0245;
 pub mod m0263;
+pub mod m0272;
 pub mod m0351;
 pub mod m0385;
 pub mod m0390;
@@ -796,6 +803,7 @@ ports! {
     "m0070 step d3c0" => m0070::E_D3C0, m0070::e_d3c0;
     "m0070 step d410" => m0070::STEP_D410, m0070::step_d410;
     "m0071 spin visit" => m0071::E3F00, m0071::e3f00;
+    "m0272 vector op (calling thunk)" => m0272::CALL_VECTOR_OP, s3_wrap::ecx_call;
     "m0072 place" => m0072::PLACE, m0072::place;
     "m0090 step" => m0090::STEP, m0090::step;
     "m0098 show" => m0098::SHOW, m0098::show;
@@ -1813,6 +1821,12 @@ ports! {
     "m0078 start 0083" => m0078::START_0083, m0078::start_0083;
     "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
     "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
+    "m0089 camera start 0089" => m0089::START_0089, m0089::start_0089;
+    "m0089 camera start 0090" => m0089::START_0090, m0089::start_0090;
+    "m0089 camera start 0091" => m0089::START_0091, m0089::start_0091;
+    "m0089 camera start 0094" => m0089::START_0094, m0089::start_0094;
+    "m0089 camera start 0095" => m0089::START_0095, m0089::start_0095;
+    "m0089 camera start 0096" => m0089::START_0096, m0089::start_0096;
     "m0082 camera step" => m0082::CAMERA_STEP, m0082::camera_step;
     "m0082 camera parts step" => m0082::CAMERA_PARTS_STEP, m0082::camera_parts_step;
     "m0070 summon frame (376)" => m0070::SUMMON_FRAME_376, m0070::summon_frame_376;
@@ -1860,6 +1874,16 @@ ports! {
     "m0351 sounds_3" => m0351::SOUNDS_3, m0351::sounds_3;
     "m0385 step_ready" => m0385::STEP_READY, m0385::step_ready;
     "m0397 script_end" => m0397::SCRIPT_END, m0397::script_end;
+    // own3 ports (magic-r6-own)
+    "m0164 summon frame (214)" => m0164::SUMMON_FRAME_214, m0164::summon_frame_214;
+    "m0171 start-up" => m0171::START_UP, m0171::start_up;
+    "m0184 part setup" => m0184::PART_SETUP, m0184::part_setup;
+    "m0187 object start" => m0187::OBJECT_START, m0187::object_start;
+    "m0195 copy start" => m0195::COPY_START, m0195::copy_start;
+    "m0195 table start" => m0195::TABLE_START, m0195::table_start;
+    "m0243 facing" => m0243::FACING, m0243::facing;
+    "m0243 object facing" => m0243::OBJECT_FACING, m0243::object_facing;
+    "m0245 frame" => m0245::FRAME, m0245::frame;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2451,6 +2475,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0183 camera point", &m0183::CAMERA_POINT),
     ("m0186 node cleared", &m0186::NODE_CLEARED),
     ("m0186 node abc", &m0186::NODE_ABC),
+    // own3 internal (magic-r6-own)
+    ("m0164 mean point", &m0164::MEAN_POINT),
+    ("m0186 model record", &m0186::MODEL_RECORD),
+    ("m0203 part record", &m0203::PART_RECORD),
+    ("m0205 scale matrix", &m0205::SCALE_MATRIX),
+    ("m0244 object start", &m0244::OBJECT_START),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -150,3 +150,89 @@ pub const OBJECT_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A copy of an object (0x100017d0, cdecl `(obj)`): slot 434 `(*G,
+/// START)` (`G` at `+0x17`, `START` the callback [`table_start`] at
+/// `+0x11`) gives the new object; its current list words (`+0x2c +
+/// 16 i` and `+0x30 + 16 (i + 2)`, `i` its index `+0xac`) get the
+/// source's, and the source's flags (`+0`) get bit 2. Returns the second
+/// word copied.
+///
+/// The census counts [`table_start`] (0x10001830) as part of this
+/// function.
+pub fn copy_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let s = slot_target(g, w(0x04), 0x6c8 / 4);
+    let src = fr.arg(g, 0);
+    let list = g.read::<u32>(w(0x17));
+    let obj = g.call(s, 0, &[list, w(0x11)]).eax;
+    let word = |g: &G, o: u32, k: u32| {
+        let i = g.read::<u32>(o + 0xac);
+        o.wrapping_add(i.wrapping_add(k).wrapping_mul(16))
+    };
+    let v = g.read::<u32>(word(g, src, 0) + 0x2c);
+    g.write::<u32>(word(g, obj, 0) + 0x2c, v);
+    let v = g.read::<u32>(word(g, src, 3));
+    g.write::<u32>(word(g, obj, 3), v);
+    let fl = g.read::<u32>(src);
+    g.write::<u32>(src, fl | 4);
+    Ret::eax(v)
+}
+
+/// [`copy_start`] (96 bytes, 1 overlay).
+pub const COPY_START: Sig = Sig {
+    len: 96,
+    hash: 0x93ae_2b23_b2a8_5a8f,
+    calls: &[],
+    imports: &[],
+};
+
+/// The copy's start (0x10001830, cdecl `(obj)`; [`object_start`]'s
+/// kin): with `c` the object's current list word (`+0x2c + 16 i`) the
+/// mode `T1[c]` (`+0x77`) and the position `T2[c]` (three words, `+0x81`,
+/// `+0x8d`, `+0x99`, rows of 16 bytes) into `+0xd0..+0xd8`; `+0xdc` 0 and
+/// the scale `+0x130..+0x138` 0.2 (`+0x13c` 0); slot 440 `(*G, obj, 0,
+/// mode)`. Mode 1: slots 450 `(obj, F1)` and 451 `(obj, 2)`; else 450
+/// `(obj, F2)` and 449 `(obj, F3)`. Returns the last slot's `eax`. Each
+/// slot call passes the words the original leaves on the stack.
+pub fn table_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let obj = fr.arg(g, 0);
+    let i = g.read::<u32>(obj + 0xac);
+    let c = g.read::<u32>(obj.wrapping_add(i.wrapping_mul(16)).wrapping_add(0x2c));
+    let mode = g.read::<u32>(w(0x17).wrapping_add(c.wrapping_mul(4)));
+    for (k, op) in (0u32..).zip([0x21, 0x2d, 0x39]) {
+        let v = g.read::<u32>(w(op).wrapping_add(c.wrapping_mul(16)));
+        g.write::<u32>(obj + 0xd0 + 4 * k, v);
+    }
+    let s = slot_target(g, w(0x44), 0x6e0 / 4);
+    let list = g.read::<u32>(w(0x4d));
+    for (off, v) in [
+        (0xdc, 0),
+        (0x130, 0x3e4c_cccd),
+        (0x134, 0x3e4c_cccd),
+        (0x138, 0x3e4c_cccd),
+        (0x13c, 0),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    g.call(s, 0, &[list, obj, 0, mode]);
+    let s450 = slot_target(g, w(0x8c), 0x708 / 4);
+    if mode == 1 {
+        g.call(s450, 0, &[obj, w(0x9f)]);
+        let s = slot_target(g, w(0xa7), 0x70c / 4);
+        Ret::eax(g.call(s, 0, &[obj, 2, obj, w(0x9f)]).eax)
+    } else {
+        g.call(s450, 0, &[obj, w(0xbe)]);
+        let s = slot_target(g, w(0xc6), 0x704 / 4);
+        Ret::eax(g.call(s, 0, &[obj, w(0xcb), obj, w(0xbe)]).eax)
+    }
+}
+
+/// [`table_start`] (223 bytes, 1 overlay).
+pub const TABLE_START: Sig = Sig {
+    len: 223,
+    hash: 0x390a_6af1_e338_9f78,
+    calls: &[],
+    imports: &[],
+};
