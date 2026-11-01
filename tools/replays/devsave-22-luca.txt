@@ -1,0 +1,54 @@
+# Developer save 22 (docs/harness.md, "Developer saves"; extra list,
+# "Coverage replays"): Luca, the arrival (lchb0201, map 267, scenario 402;
+# party Yuna, Tidus, Lulu). The save starts the voiced cut scene of the
+# boat coming in: Tidus on the bow, the stadium, the docks, the cafe's
+# screen with the Kilika Beasts, the Aurochs on the ramp. The control does
+# not come back for minutes (still in the scene after 66 presses of Circle,
+# at Tidus's "Stop right there, Goers!"), so the replay takes no walk and
+# no menu: it lets the scene run (no presses; the voiced lines go on by
+# themselves, and in lockstep the voice keeps the update count, "Sound in
+# lockstep"), then starts the docks' battle field (12, lchb02; formation
+# lchb02_00) from inside the scene, as the coverage sweep did, with two
+# attacks. 52 functions no other save reached. Lockstep from the load,
+# pinned. Traced: the map words, scenario, ctrl work 0's first word,
+# message windows 0 and 1, the generators, the party records, the battle
+# phase, the window bits, the HP of actors 0-6 and the monsters 20-23.
+# Shots (devsave-22-luca-<n>.bmp): 1 Tidus's first command window, 2
+# Lulu's. None of the scene: two original runs read the same event count
+# (and the same subtitle) at each of four fixed updates into it, but the
+# camera stood elsewhere on its pan (39,000-635,000 pixels apart); the
+# scene's camera seems to follow real time, not the update count. The
+# reads of the count stay, so a run's output shows where the scene was.
+# On run-all.sh's `eye` list: Tidus's idle pose in shot 2 differed in one
+# of three original runs (1,090 pixels around his sword).
+load devsave 22 lchb0201 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+trace 0x0112ca90:16 0x0112d67c:2 0x01325ba0:4 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x0112a8e0:1 0x023cc08c:4 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 *0x011334d4+0x15c30:4 *0x011334d4+0x16bc0:4
+wait 150
+read 0x01325d94 4
+wait 450
+read 0x01325d94 4
+wait 600
+read 0x01325d94 4
+wait 450
+read 0x01325d94 4
+battle 12 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# Tidus (bit 0x01, about 250 updates after the battle's phase 1): Attack,
+# the first target
+waitfor 0x023cc08c:4 01000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-22-luca-1.bmp
+press circle 4 30
+press circle 4 30
+# Yuna (0x02)
+waitfor 0x023cc08c:4 02000000 ffffffff 1500
+wait 30
+press circle 4 30
+press circle 4 30
+# Lulu (0x20)
+waitfor 0x023cc08c:4 20000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-22-luca-2.bmp
