@@ -51,6 +51,10 @@ fn steps() {
     for (k, targets) in [(0u32, 1u32), (1, 2)] {
         t.set_u32(s + 0x19c, targets);
         t.write(seq, &[0; 0x140]);
+        // the words past the colour non-zero, so the cleared `+0x13c`
+        // shows (and a store one word on)
+        t.set_u32(seq + 0x13c, 0x5a5a_5a5a);
+        t.set_u32(seq + 0x140, 0x5a5a_5a5a);
         t.set_u32(seq + 0xac, k);
         t.set_u32(seq + 0x2c + 16 * k, 2 - k);
         for rva in [0x1650u32, 0x16e0, 0x1140] {

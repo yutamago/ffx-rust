@@ -16,11 +16,23 @@ There each mutation site becomes a schema,
 expression, in braces for a match arm's body), around the smallest expression
 or statement run holding the change (found by tools/mutants-rs, a syn helper
 built on first use). The ffx-oracle test binary is built once with
-`--features ffx-core/mutants`. A schema the compiler rejects (an error span
-inside it) moves to the next larger node, and after a few rounds to the old
-rebuild-per-mutant path, so no mutant is lost; errors whose spans point into
-no schema are traced to their schemata by building halves, and only those
-are dropped to the rebuild path. A mutant that does not build on its own is an
+`--features ffx-core/mutants`. The helper already skips nodes that can't be a
+schema's arms: an array or tuple whose length the mutant changes, a reference
+to a temporary (edition 2024 drops it at the end of its arm) and, for a change
+inside a type (`read::<u8>` -> `read::<u16>`, `as u16`), the expressions of
+that type; such a mutant starts at a comparison or at the statements up to the
+block's end. A schema the compiler still rejects (an error span inside it)
+moves to the next larger node during the first MAX_ROUNDS builds and to the
+old rebuild-per-mutant path after that. A name-resolution error (E0425 and
+the like) inside a mutant's own text recurs when it is built alone, so that
+mutant is an ERROR at once, with no larger node and no rebuild. Errors whose
+spans point into no schema are traced to their schemata by building halves,
+and only those are dropped to the rebuild path. Each failed build drops or
+moves at least one schema, so the builds go on until one succeeds: a failed
+build never sends the whole batch to the rebuild path (before 2026-11-01 it
+did once 8 rounds ran out, and m0513's 368 mutants took 3.6-4.9 h instead of
+minutes). Every error of every schema build is listed in
+MUT_WORK/schema-errors.log. A mutant that does not build on its own is an
 ERROR. Mutants then run in parallel (MUT_JOBS, default cores / 2),
 each with FFX_MUTANT=k on the image and every snapshot in MUT_SNAPS.
 
@@ -35,7 +47,8 @@ Settings (environment, as in the agents' mut22.py; flags override):
   MUT_SCHEMA  0 = no schemata, every mutant rebuilds (the old way)
 
 `mutants.py --self-test` checks the schema rewrite on a small built-in file
-(match arms, overlapping deletions, a tail insertion, a const) with rustc
+(match arms, overlapping deletions, a tail insertion, a const, an array
+length, a cast's type) with rustc
 alone: one build, and every schema behaves as its mutant rebuilt.
 
 Verdicts, one line per mutant in list order: KILLED, SURVIVED, ERROR or
@@ -69,7 +82,11 @@ timing_log.install()
 TOOLS = pathlib.Path(__file__).resolve().parent
 HOME = pathlib.Path.home()
 SNAPSHOTS = HOME / "ffx-work" / "snapshots"
-MAX_ROUNDS = 8  # schema builds before the remaining rejects fall back
+MAX_ROUNDS = 8  # schema builds in which a rejected schema may still move to a larger node
+MAX_BUILDS = 40  # schema builds at all (each one drops or moves at least one schema)
+# rustc's name-resolution errors: one inside a mutant's own text recurs when it
+# is built alone (same scope), so the mutant is an ERROR without a rebuild
+NAME_ERRORS = {"E0412", "E0422", "E0423", "E0425", "E0432", "E0433", "E0531", "E0574"}
 LIVE = set()  # running child processes, killed on interrupt
 LIVE_LOCK = threading.Lock()
 
@@ -222,7 +239,7 @@ class Runner:
 
     # -- build ------------------------------------------------------------
     def build(self):
-        """cargo build of the test binary: (executable or None, [(file, byte, msg)])."""
+        """cargo build of the test binary: (executable or None, [(file, byte, msg, code)])."""
         cmd = ["cargo", "test", "--release", "-p", "ffx-oracle", "--features", "ffx-core/mutants",
                "--test", self.args.test, "--no-run", "--message-format=json"]
         code, out = run(cmd, cwd=self.tree, env=self.env)
@@ -239,8 +256,9 @@ class Runner:
                 exe = msg["executable"]
             elif msg.get("reason") == "compiler-message" and msg["message"]["level"] == "error":
                 spans = [s for s in msg["message"]["spans"] if s["is_primary"]] or msg["message"]["spans"]
+                code_ = (msg["message"].get("code") or {}).get("code")
                 if not spans:
-                    errors.append((None, None, msg["message"]["message"]))
+                    errors.append((None, None, msg["message"]["message"], code_))
                 for s in spans:
                     f = pathlib.Path(s["file_name"])
                     if f.is_absolute():
@@ -248,9 +266,9 @@ class Runner:
                             f = f.relative_to(self.tree)
                         except ValueError:
                             pass
-                    errors.append((str(f), s["byte_start"], msg["message"]["message"]))
+                    errors.append((str(f), s["byte_start"], msg["message"]["message"], code_))
         if code != 0 and not errors:
-            errors.append((None, None, out[-2000:]))
+            errors.append((None, None, out[-2000:], None))
         return (exe if code == 0 else None), errors
 
     # -- running ------------------------------------------------------------
@@ -384,17 +402,18 @@ class Schemata:
         return "".join(pieces), ranges
 
     def blame(self, byte):
-        """The mutants an error at output byte `byte` points at, or None."""
+        """(the mutants an error at output byte `byte` points at, or None; whether it is inside
+        that one mutant's own text)."""
         best = None
         for s, e, group, b_ranges in self.ranges:
             if s <= byte < e and (best is None or e - s < best[1] - best[0]):
                 best = (s, e, group, b_ranges)
         if best is None:
-            return None
+            return None, False
         for k, (s, e) in best[3].items():
             if s <= byte <= e:
-                return [k]
-        return list(best[2])
+                return [k], True
+        return list(best[2]), False
 
 
 def helper():
@@ -453,6 +472,10 @@ fn call(x: u32) -> u32 {
     x * 0x101
 }
 
+fn sum(v: &[u32]) -> u32 {
+    v.iter().sum()
+}
+
 pub fn step(state: u32, done: &mut u32) -> u32 {
     match state {
         0 => {
@@ -464,6 +487,8 @@ pub fn step(state: u32, done: &mut u32) -> u32 {
         _ if state > LIMIT => {}
         _ => return 9,
     }
+    let low = state as u8;
+    G.fetch_add(sum(&[state, 1]) + u32::from(low), Relaxed);
     call(3)
 }
 
@@ -488,6 +513,11 @@ SELF_TEST_MUTANTS = [
     ("tail-append", "call(3)\n}", "call(3) & 0xff\n}"),  # an insertion right after a tail expression
     ("guard", "_ if state > LIMIT => {}", "_ if state >= LIMIT => {}"),
     ("const", "const LIMIT: u32 = 4;", "const LIMIT: u32 = 5;"),
+    # an array of another length and a reference to a temporary can't be the
+    # schema's arms (different types; the temporary dies in its arm): the call
+    ("array-len", "sum(&[state, 1])", "sum(&[state, 1, 2])"),
+    # a changed type: not the cast or the call, but the statements to the block's end
+    ("cast-type", "state as u8", "state as u16"),
 ]
 
 
@@ -624,19 +654,28 @@ def main():
             (r.tree / f).write_text(sc.render(act.get(f, [])))
         return r.build()
 
-    def attribute(errors):
-        """(ids whose schema an error points into, errors no schema explains)."""
-        blamed, loose = set(), []
-        for f, byte, msg in errors:
+    def attribute(errors, rnd=None):
+        """(ids whose schema an error points into, {id: name error inside its own text},
+        errors no schema explains). With `rnd`, every error goes to MUT_WORK/schema-errors.log."""
+        blamed, own, loose = set(), {}, []
+        el = open(r.work / "schema-errors.log", "a") if rnd is not None else None
+        for f, byte, msg, code in errors:
             sc = schema.get(f)
-            ks = None
+            ks, inside = None, False
             if sc and byte is not None:
-                ks = sc.blame(len((r.tree / f).read_bytes()[:byte].decode(errors="replace")))
-            if ks:
+                ks, inside = sc.blame(len((r.tree / f).read_bytes()[:byte].decode(errors="replace")))
+            if el:
+                el.write(f"build {rnd}\t{f}:{byte}\t{code}\t{' '.join(muts[k - 1][0] for k in ks or [])}"
+                         f"\t{msg[:200]}\n")
+            if ks and inside and code in NAME_ERRORS:
+                own[ks[0]] = f"{code} {msg}"
+            elif ks:
                 blamed.update(ks)
             else:
                 loose.append((f, msg))
-        return blamed, loose
+        if el:
+            el.close()
+        return blamed - set(own), own, loose
 
     def culprits(cands, base, dirty=False):
         """The (file, id) in `cands` whose schemata, built with `base`, give errors outside every schema.
@@ -652,7 +691,7 @@ def main():
             act.setdefault(f, []).append(k)
         t0 = time.time()
         exe_s, errs = attempt(act)
-        loose = [] if exe_s else attribute(errs)[1]
+        loose = [] if exe_s else attribute(errs)[2]
         log(f"  bisect {len(cands)} of {len(base) + len(cands)}: "
             f"{'clean' if not loose else f'{len(loose)} unattributed'}, {time.time() - t0:.0f}s")
         if not loose:
@@ -667,9 +706,15 @@ def main():
         # the whole set is dirty: with nothing to blame in the first half, the second half is too
         return bad + culprits(cands[half:], base + [c for c in cands[:half] if c not in bad], dirty=not bad)
 
+    # Each failed build drops or moves at least one schema, so the loop ends.
+    # A rejected schema moves to a larger node during the first MAX_ROUNDS
+    # builds and falls back to a rebuild after that; a failed build never
+    # sends the whole batch to the rebuild path (it did once the rounds ran
+    # out, which cost m0513 all 368 schemata, 2026-11-01). Only MAX_BUILDS does.
+    broken = {}  # id -> the name error in its own text: ERROR, not rebuilt
+    (r.work / "schema-errors.log").unlink(missing_ok=True)
     rnd = 0
-    while any(active.values()) and rnd <= MAX_ROUNDS:
-        last = rnd >= MAX_ROUNDS - 1
+    while any(active.values()) and rnd < MAX_BUILDS:
         for f, sc in schema.items():
             acc, gone = sc.resolve(active[f])
             active[f] = acc
@@ -687,10 +732,20 @@ def main():
             f"{len(errors)} errors, {time.time() - t0:.0f}s")
         if exe:
             break
-        blamed, loose = attribute(errors)
-        if loose:
+        blamed, own, loose = attribute(errors, rnd)
+        moved = len(own)
+        if own:
+            log("name errors in the mutant's own text (ERROR, not rebuilt): "
+                + " ".join(muts[k - 1][0] for k in sorted(own)))
+            broken.update(own)
+            for f in active:
+                active[f] = [k for k in active[f] if k not in own]
+        if loose and not blamed and not own:
             # no span points into a schema (a cascade, or a cause elsewhere):
-            # find the schemata behind it by building halves, drop only those
+            # find the schemata behind it by building halves, drop only those.
+            # Loose errors next to blamed ones are usually their cascade, so
+            # those schemata move first and the bisection waits for a build
+            # with nothing else to blame.
             for f, msg in loose[:5]:
                 log(f"unattributed error ({f}): {msg[:300]}")
             bad = culprits([(f, k) for f in active for k in active[f]], [], dirty=True)
@@ -698,16 +753,22 @@ def main():
             for f, k in bad:
                 active[f].remove(k)
                 fallback.append(k)
+            moved += len(bad)
         for f, sc in schema.items():
             keep = []
             for k in active[f]:
                 if k not in blamed:
                     keep.append(k)
-                elif not last and sc.advance(k):
+                    continue
+                moved += 1
+                if rnd < MAX_ROUNDS and sc.advance(k):
                     keep.append(k)  # try the next larger node
                 else:
                     fallback.append(k)
             active[f] = keep
+        if not moved:
+            log("a failed schema build blamed nothing: every mutant rebuilds")
+            break
     if not exe:
         # nothing left as a schema (or the rounds ran out): build the plain tree for the baseline
         for f in schema:
@@ -723,14 +784,15 @@ def main():
     shutil.copy2(exe, schema_exe)
     r.baseline(schema_exe)
     in_schema = sorted(k for f in active for k in active[f])
-    fallback = sorted(set(fallback))
+    fallback = sorted(set(fallback) - set(broken))
     log(f"{len(in_schema)} mutants as schemata, {len(fallback)} rebuild per mutant, "
-        f"{len(muts) - len(where)} unmatched; {r.jobs} jobs")
+        f"{len(broken)} do not compile, {len(muts) - len(where)} unmatched; {r.jobs} jobs")
     if fallback:
         log("rebuilt per mutant: " + " ".join(muts[k - 1][0] for k in fallback))
 
     # results, printed in list order as they arrive
     results = {k: "NOMATCH" for k in range(1, len(muts) + 1) if k not in where}
+    results.update({k: "ERROR" for k in broken})
     plock = threading.Lock()
     nxt = [1]
 

@@ -35,6 +35,7 @@
 #![allow(clippy::many_single_char_names)]
 
 // the runtime and code shared by many overlays
+pub mod h6_setup;
 pub mod l1_opu;
 pub mod l3_common;
 pub mod l3_opu;
@@ -303,13 +304,16 @@ pub mod m0528;
 pub mod m0529;
 pub mod m0530;
 pub mod m0531;
+pub mod m0533;
 pub mod m0534;
+pub mod m0535;
 pub mod m0536;
 pub mod m0537;
 pub mod m0539;
 pub mod m0540;
 pub mod m0561;
 pub mod m0564;
+pub mod m0568;
 pub mod m0573;
 pub mod m0577;
 pub mod m0582;
@@ -1190,6 +1194,38 @@ ports! {
     "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
     "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
     // end of magic r5 own (0450 and up) entries
+    // magic r6 own (0450 and up): entries
+    "m0499 frame" => m0499::FRAME, m0499::frame;
+    "m0513 task" => m0513::TASK, m0513::task;
+    "m0513 motion task" => m0513::MOTION_TASK, m0513::motion_task;
+    "m0513 light task" => m0513::LIGHT_TASK, m0513::light_task;
+    "m0514 motion task" => m0514::MOTION_TASK, m0514::motion_task;
+    "m0514 fade task" => m0514::FADE_TASK, m0514::fade_task;
+    "m0514 colour task" => m0514::COLOUR_TASK, m0514::colour_task;
+    "m0530 frame" => m0530::FRAME, m0530::frame;
+    "m0530 start effect" => m0530::START_EFFECT, m0530::start_effect;
+    "m0531 frame" => m0531::FRAME, m0531::frame;
+    "m0531 start effect" => m0531::START_EFFECT, m0531::start_effect;
+    "m0534 aim" => m0534::AIM, m0534::aim;
+    "m0537 setup" => m0537::SETUP, m0537::setup;
+    "m0539 start effect" => m0539::START_EFFECT, m0539::start_effect;
+    "m0539 setup" => m0539::SETUP, m0539::setup;
+    "m0540 setup" => m0540::SETUP, m0540::setup;
+    "m0535 frame step" => m0535::FRAME_STEP, m0535::frame_step;
+    "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
+    "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
+    "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
+    "m0587 sway frame" => m0587::SWAY_FRAME, m0587::sway_frame;
+    "m0577 spark task" => m0577::SPARK_TASK, m0577::spark_task;
+    "m0589 blend" => m0589::BLEND, m0589::blend;
+    "m0672 fade task" => m0672::FADE_TASK, m0672::fade_task;
+    "m0672 fade start" => m0672::FADE_START, m0672::fade_start;
+    "m0666 start b" => m0666::START_B, m0666::start_b;
+    "m0641 frame" => m0641::FRAME, m0641::frame;
+    "m0669 frame at" => m0669::FRAME_AT, m0669::frame_at;
+    "m0661 start at" => m0661::START_AT, m0661::start_at;
+    "m0664 frame bone" => m0664::FRAME_BONE, m0664::frame_bone;
+    // end of magic r6 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
     "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
@@ -2622,6 +2658,30 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0671 start", &m0671::START),
     ("m0672 copy keys", &m0672::COPY_KEYS),
     // end of magic r5 own (0450 and up) internal functions
+    // magic r6 own (0450 and up): internal functions
+    ("m0499 parts refresh", &m0499::PARTS_REFRESH),
+    ("m0512 setup", &m0512::SETUP),
+    ("m0512 setup from", &m0512::SETUP_FROM),
+    ("m0512 ground", &m0512::GROUND),
+    ("m0513 over node", &m0513::OVER_NODE),
+    ("m0513 between", &m0513::BETWEEN),
+    ("m0513 for target", &m0513::FOR_TARGET),
+    ("m0513 lit node", &m0513::LIT_NODE),
+    ("m0514 colour setup", &m0514::COLOUR_SETUP),
+    ("m0514 glow setup", &m0514::GLOW_SETUP),
+    ("m0514 burst setup", &m0514::BURST_SETUP),
+    ("m0514 spark setup", &m0514::SPARK_SETUP),
+    ("m0533 model setup", &m0533::MODEL_SETUP),
+    ("m0568 sway", &m0568::SWAY),
+    ("m0573 refresh", &m0573::REFRESH),
+    ("m0573 motion setup", &m0573::MOTION_SETUP),
+    ("m0577 spark setup", &m0577::SPARK_SETUP),
+    ("m0577 light node", &m0577::LIGHT_NODE),
+    ("m0588 actor matrix", &m0588::ACTOR_MATRIX_0588),
+    ("m0600 actor matrix", &m0588::ACTOR_MATRIX_0600),
+    ("m0585 drift setup", &m0585::DRIFT_SETUP),
+    ("m0606 start tasks", &m0606::START_TASKS),
+    // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
     ("m0394 scaled", &m0394::SCALED),

@@ -98,3 +98,109 @@ fn task() {
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// 0x10007830: the object set-up, the node list empty and not (its words
+/// and the ring's distinct), for a few `n`.
+#[test]
+fn setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7830);
+    let list = t.img.word(at + 0x5d);
+    let ring_last = t.img.word(at + 0x25);
+    let ring_flags = t.img.word(at + 0x43);
+    let obj = SCRATCH + 0x1000;
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (n, empty) in [(0u32, true), (1, false), (3, true), (0xffff_fffe, false)] {
+        t.write(obj, &[0x5b; 0x200]);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        let c = Call {
+            ecx: obj,
+            edx: 0x00ed_0000 + n,
+            ..Call::default()
+        };
+        t.check(at, c, &[n], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0512::setup(g, img, fr))
+        });
+    }
+}
+
+/// 0x10008670: the set-up from a source object, the node list empty and
+/// not, for a few `n`; the source's block and the ring distinct.
+#[test]
+fn setup_from() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8670);
+    let list = t.img.word(at + 0x5a);
+    let ring_last = t.img.word(at + 0x22);
+    let ring_flags = t.img.word(at + 0x40);
+    recs(&mut t, &[(325, 2), (719, 3)]);
+    let obj = SCRATCH + 0x1000;
+    let src = SCRATCH + 0x1400;
+    let (old, prev, blk) = (SCRATCH + 0x800, SCRATCH + 0x900, SCRATCH + 0xa00);
+    for (n, empty) in [(0u32, true), (1, false), (3, true), (0xffff_fffe, false)] {
+        t.write(obj, &[0x5b; 0x200]);
+        t.set_u32(obj + 0x188, 0x3fc0_0000 + n);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        let mut b = [0u8; 0x40];
+        for (i, x) in b.chunks_mut(4).enumerate() {
+            x.copy_from_slice(&(0x0b00_0000 + i as u32 * 0x11).to_le_bytes());
+        }
+        t.write(blk, &b);
+        t.write(src, &[0x3c; 0x200]);
+        t.set_u32(src + 0x140, SCRATCH + 0xb00);
+        t.set_u32(src + 0x144, blk);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        let c = Call {
+            ecx: obj,
+            edx: src,
+            ..Call::default()
+        };
+        t.check(at, c, &[n], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0512::setup_from(g, img, fr))
+        });
+    }
+}
+
+/// 0x10008980: the ground object's set-up, the node list empty and not.
+#[test]
+fn ground() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8980);
+    let list = t.img.word(at + 0x5a);
+    let ring_last = t.img.word(at + 0x22);
+    let ring_flags = t.img.word(at + 0x40);
+    let obj = SCRATCH + 0x1000;
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (k, empty) in [(0u32, true), (1, false)] {
+        t.write(obj, &[0x5b; 0x200]);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        let c = Call {
+            ecx: obj,
+            edx: 0x00ed_0000 + k,
+            ..Call::default()
+        };
+        t.check(at, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0512::ground(g, img, fr))
+        });
+    }
+}

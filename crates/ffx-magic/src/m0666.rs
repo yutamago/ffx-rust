@@ -1,7 +1,7 @@
 //! `magic_0666.dll`'s own functions (besides the runtime and the shared
 //! code).
 
-use crate::part_draw::start_pair;
+use crate::part_draw::{start_pair, start_part};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -114,5 +114,51 @@ pub const FLARE: Sig = Sig {
     len: 198,
     hash: 0xccac_7fab_d9de_24cf,
     calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// An object's start (0x10002290, an overlay table entry, `(obj)`): the
+/// array's first object (within 0x80 bytes of operand `+0x0a`) starts
+/// program 8 with the scales 0.0046, any other program 9 with 0.0093
+/// ([`start_part`]); then `+0x6c` 1.0, the point `+0x40..` = `(-7.08,
+/// -0.01, 1.97, 1)`, `+0x50..+0x58` 0 and `+0x5c` 1. Returns 1.
+pub fn start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let first = obj.wrapping_sub(w(0xa)) & 0xffff_ff80 == 0;
+    let (call, index, scale) = if first {
+        (0x44, 0x20, 0x3b97_fe8f)
+    } else {
+        (0x70, 0x24, 0x3c17_fe8f)
+    };
+    start_part(g, img, f, obj, [0x14, 0x1a, 0x1f, 0x27, call], index, &[]);
+    for o in [0x60u32, 0x64, 0x68] {
+        g.write::<u32>(obj + o, scale);
+    }
+    for (o, v) in [
+        (0x6cu32, 0x3f80_0000u32),
+        (0x40, 0xc0e2_8f52),
+        (0x44, 0xbc23_d2d8),
+        (0x48, 0x3ffc_28dd),
+        (0x4c, 0x3f80_0000),
+        (0x50, 0),
+        (0x54, 0),
+        (0x58, 0),
+        (0x5c, 1),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    Ret::eax(1)
+}
+
+/// [`start_b`] (211 bytes, 1 overlay).
+pub const START_B: Sig = Sig {
+    len: 211,
+    hash: 0x3af2_79cc_934b_902a,
+    calls: &[
+        (0x44, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x70, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
     imports: &[],
 };
