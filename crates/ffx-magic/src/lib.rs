@@ -2422,6 +2422,7 @@ ports! {
     "m0443 sound step" => m0443::SOUND_STEP, m0443::sound_step;
     "m0447 camera copy" => m0447::CAMERA_COPY, m0447::camera_copy;
     "m0449 frame" => m0449::FRAME, m0449::frame;
+    "m0449 task step (pass)" => m0449::TASK_STEP_PASS, m0449::task_step_pass;
     "m0394 script end" => m0394::SCRIPT_END, m0394::script_end;
     "m0429 frame" => m0429::FRAME, m0429::frame;
     "m0440 frame" => m0440::FRAME, m0440::frame;
