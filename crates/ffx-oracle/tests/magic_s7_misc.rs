@@ -1712,3 +1712,77 @@ fn summon_fade_ins() {
         }
     }
 }
+
+/// Row 454: the sprite fade node of both DLLs: not passed, the flag
+/// clear, each counter running (in, held, out), none left (with and
+/// without bit 1: the node leaves its parent), the alpha at or below
+/// the bound and above it (the packet written, slot 581).
+#[test]
+fn sprite_fade_nodes() {
+    for dll in [202u16, 273] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x12c0);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+            m.w32(a[0], 0x0245_0000 + k);
+            0x245
+        });
+        log_calls(&mut t, 581, log, 4, None, |m, a, k| m.r32(a[0] + 8) ^ k);
+        t.set_u32(op(&t, f, 0x92), 0.75f32.to_bits());
+        t.set_u32(op(&t, f, 0xbf), 1.0f32.to_bits());
+        t.set_u32(op(&t, f, 0xe9), 8.0f32.to_bits());
+        let buf = SCRATCH + 0x3000;
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let parent = SCRATCH + 0x1800;
+        // (ring byte, flags, in, held, out, the level byte)
+        for (k, (byte, bits, a, b, c, level)) in [
+            (3u8, 1u8, 2u16, 0u16, 0u16, 0x80u8),
+            (4, 0xfe, 2, 0, 0, 0x80),
+            (4, 1, 3, 5, 5, 0x80),
+            (4, 1, 1, 5, 5, 0x80),
+            (4, 1, 0, 2, 5, 0x80),
+            (4, 1, 0, 2, 5, 4),
+            (4, 1, 0, 0, 4, 0xff),
+            (4, 1, 0, 0, 1, 0xff),
+            (4, 3, 0, 0, 0, 0xff),
+            (4, 1, 0, 0, 0, 0xff),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x40, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u32(r + 0x1c, 4.0f32.to_bits());
+            t.set_u32(r + 0x20, 5.0f32.to_bits());
+            t.set_u16(r + 0x24, b);
+            t.set_u16(r + 0x26, a);
+            t.set_u16(r + 0x28, c);
+            t.set_u8(r + 0x2a, level);
+            t.set_u8(r + 0x2b, bits);
+            t.set_u32(r + 0x2c, (0.5 + k as f32).to_bits());
+            t.write(parent, &varied(0x40, k + 3));
+            t.set_u32(r + 0x14, parent);
+            t.set_u32(r + 4, parent + 0x20);
+            t.set_u32(r + 8, parent + 0x20);
+            t.write(buf, &varied(0x120, k));
+            t.set_u32(op(&t, f, 0x10b), buf);
+            scrub(&mut t);
+            // the two words of the sprite the original never writes
+            let ebp = ENTRY_ESP - 4;
+            t.set_u32(ebp - 0x34, 0);
+            t.set_u32(ebp - 0x2c, 0);
+            let call = Call {
+                ecx: s,
+                eax: 0x12c0_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::sprite_fade_node(g, img, fr))
+            });
+        }
+    }
+}

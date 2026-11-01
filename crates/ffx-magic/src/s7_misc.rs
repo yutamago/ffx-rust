@@ -1991,3 +1991,124 @@ pub const SUMMON_FADE_IN: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A ring node's handler that fades a sprite in and out (internal: `ecx` =
+/// the cursor `S`; a ring pass first, [`ring_pass`]; `ebp` = `esp - 4` at
+/// the entry, the sprite record `O` a local at `ebp-0x54`). Passed, with
+/// `R = S[0]` and bit 0 of its byte `R+0x2b` set: three u16 counters
+/// give the level `v`: `R+0x26` (fading in: `(R+0x1c - n) / R+0x1c`),
+/// else `R+0x24` (held: `K`), else `R+0x28` (fading out: `K - (R+0x20 -
+/// n) / R+0x20`), each counting down; none left: bit 0 of `R+0x2b` is
+/// cleared, and with bit 1 the node leaves its parent
+/// ([`leave`](crate::sa_misc::leave)). The alpha `a = R+0x2a v` (in the
+/// frame at `ebp-4`); above `K2`: slot 245 `(ebp-8)`, the sprite `O` =
+/// `(0x80, 0x80, 0x80, trunc(a))`, corners 255.5 and 111.5, `+0x24 =
+/// 0x44`, the zoom `R+0x2c`, byte `+0x48 = 0` and the buffer `*G_B + 8`,
+/// its packet ([`sprite_gs_packet`](crate::s6_misc::sprite_gs_packet)),
+/// slot 581 `(*G_B, n, 0x1000, 0)` with `n` the 16-byte words written,
+/// and `*G_B` the new buffer end, slot 581's `eax` returned. Else what
+/// the original leaves (the counter minus 1, the level byte, the flags
+/// byte).
+///
+/// The packet reads `O+0x20` and `O+0x28`, which the original never
+/// writes (junk read: [ebp-0x34] and [ebp-0x2c] never written; 0 (brief
+/// 2026-10-24)).
+///
+/// `magic_0202` 0x100012c0 (423 bytes; 2 DLLs).
+pub fn sprite_fade_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = fr.ecx;
+    let (passed, eax) = ring_pass(g, s, fr.eax);
+    if !passed {
+        return eax;
+    }
+    let r = g.read::<u32>(s);
+    let bits = g.read::<u8>(r + 0x2b);
+    let eax = (eax & !0xff) | u32::from(bits);
+    if bits & 1 == 0 {
+        return eax;
+    }
+    let counter = |g: &mut G, at: u32| {
+        let n = g.read::<u16>(r + at);
+        if n != 0 {
+            g.write::<u16>(r + at, n.wrapping_sub(1));
+        }
+        n
+    };
+    let v = {
+        let a = counter(g, 0x26);
+        if a != 0 {
+            let len = g.read::<f32>(r + 0x1c);
+            div(sub(len, f32::from(a.cast_signed())), len)
+        } else if counter(g, 0x24) != 0 {
+            k(g, 0x92)
+        } else {
+            let c = counter(g, 0x28);
+            if c == 0 {
+                let bits = bits & !1;
+                g.write::<u8>(r + 0x2b, bits);
+                let eax = (eax & !0xff) | u32::from(bits);
+                if bits & 2 == 0 {
+                    return eax;
+                }
+                return crate::sa_misc::leave(g, r, eax);
+            }
+            let len = g.read::<f32>(r + 0x20);
+            sub(k(g, 0xbf), div(sub(len, f32::from(c.cast_signed())), len))
+        }
+    };
+    let level = g.read::<u8>(r + 0x2a);
+    let alpha = mul(cvt(u32::from(level)), v);
+    let ebp = fr.esp.wrapping_sub(4);
+    g.write::<f32>(ebp.wrapping_sub(4), alpha);
+    // `comiss`/`jbe`: at or below `K2` (or unordered) ends it
+    if !(alpha > k(g, 0xe9)) {
+        return u32::from(level);
+    }
+    slot(g, img, f, 0xfd, 245, fr.ecx, &[ebp.wrapping_sub(8)]);
+    let buf = g.read::<u32>(w(0x10b));
+    let o = ebp.wrapping_sub(0x54);
+    g.write::<u32>(o + 0x34, buf.wrapping_add(8));
+    let alpha = crate::s4_summon::trunc(g.read::<f32>(ebp.wrapping_sub(4))) & 0xff;
+    let zoom = g.read::<u32>(r + 0x2c);
+    g.write::<u32>(o + 0x24, 0x44);
+    g.write::<u8>(o + 0x48, 0);
+    g.write::<u32>(o + 0x10, 0x437f_8000);
+    g.write::<u32>(o + 0x14, 0x42df_0000);
+    for at in [0u32, 4, 8] {
+        g.write::<u32>(o + at, 0x80);
+    }
+    g.write::<u32>(o + 0xc, alpha);
+    g.write::<u32>(o + 0x2c, zoom);
+    // junk read: [ebp-0x34] never written; 0 (brief 2026-10-24)
+    g.write::<u32>(o + 0x20, 0);
+    // junk read: [ebp-0x2c] never written; 0 (brief 2026-10-24)
+    g.write::<u32>(o + 0x28, 0);
+    let packet = Frame {
+        at: img.rel32_target(f + 0x15c),
+        esp: ebp.wrapping_sub(0x64),
+        ecx: o,
+        ..*fr
+    };
+    crate::s6_misc::sprite_gs_packet(g, img, &packet);
+    let end = g.read::<u32>(o + 0x34);
+    let n = end.wrapping_sub(buf) >> 4;
+    let r = slot(g, img, f, 0x173, 581, o, &[buf, n, 0x1000, 0]).eax;
+    g.write::<u32>(w(0x185), end);
+    r
+}
+
+/// [`sprite_fade_node`] (the `rel32`s:
+/// [`sprite_gs_packet`](crate::s6_misc::sprite_gs_packet) and
+/// [`leave`](crate::sa_misc::leave)).
+pub const SPRITE_FADE_NODE: Sig = Sig {
+    len: 423,
+    hash: 0x8675_917e_9ea9_9368,
+    calls: &[
+        (0x15c, Callee::Sig(&crate::s6_misc::SPRITE_GS_PACKET)),
+        (0x19c, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};
