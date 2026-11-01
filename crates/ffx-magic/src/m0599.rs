@@ -17,39 +17,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
-    let arg = fr.arg(g, 0);
-    g.write::<u32>(w(0x08), arg);
-    crate::l5_objhost::obj_block_init(g, img, img.rel32_target(f + 0x0d), arg);
-    let mut stack = vec![w(0x17)];
-    let t = slot_target(g, w(0x12), 556);
-    // call width: 1
-    g.call(t, 0, &stack);
-    stack.insert(0, w(0x29));
-    let t = slot_target(g, w(0x24), 555);
-    // call width: 2
-    g.call(t, 0, &stack);
-    stack.insert(0, w(0x3b));
-    let t = slot_target(g, w(0x36), 331);
-    // call width: 3
-    g.call(t, 0, &stack);
-    let t = slot_target(g, w(0x48), 790);
-    for op in [0x57u32, 0x61, 0x6b] {
-        g.write::<u32>(w(op), w(op + 4));
-    }
-    // call width: 0
-    let scale = crate::ob_model::st0_f32(g.call(t, 0, &[]).st0);
-    g.write::<f32>(w(0x77), scale);
-    crate::l5_objhost::tasks_init(g, img, img.rel32_target(f + 0x7c));
-    let payloads = w(0x81);
-    for i in 0..0x3ff {
-        g.write::<u32>(payloads + 12 * i, 0);
-    }
-    g.write::<u16>(w(0xa3), 0x3ff);
-    g.write::<u16>(w(0xab), 0);
-    let mut stack = vec![0x3400, 0x800];
-    let t = slot_target(g, w(0xb0), 720);
-    // call width: 2
-    g.call(t, 0, &stack);
+    let mut stack = start_head(g, img, fr);
     stack.insert(0, w(0xcc));
     let t = slot_target(g, w(0xc7), 718);
     // call width: 3
@@ -189,3 +157,45 @@ pub const SPRITES_SETUP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The start's head, which `magic_0602`'s start shares (`arg` into
+/// `G_ARG` up to slot 720 `(0x3400, 0x800)`; the operands at the same
+/// offsets). Returns the words slot 720 leaves on the stack.
+pub(crate) fn start_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Vec<u32> {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x08), arg);
+    crate::l5_objhost::obj_block_init(g, img, img.rel32_target(f + 0x0d), arg);
+    let mut stack = vec![w(0x17)];
+    let t = slot_target(g, w(0x12), 556);
+    // call width: 1
+    g.call(t, 0, &stack);
+    stack.insert(0, w(0x29));
+    let t = slot_target(g, w(0x24), 555);
+    // call width: 2
+    g.call(t, 0, &stack);
+    stack.insert(0, w(0x3b));
+    let t = slot_target(g, w(0x36), 331);
+    // call width: 3
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x48), 790);
+    for op in [0x57u32, 0x61, 0x6b] {
+        g.write::<u32>(w(op), w(op + 4));
+    }
+    // call width: 0
+    let scale = crate::ob_model::st0_f32(g.call(t, 0, &[]).st0);
+    g.write::<f32>(w(0x77), scale);
+    crate::l5_objhost::tasks_init(g, img, img.rel32_target(f + 0x7c));
+    let payloads = w(0x81);
+    for i in 0..0x3ff {
+        g.write::<u32>(payloads + 12 * i, 0);
+    }
+    g.write::<u16>(w(0xa3), 0x3ff);
+    g.write::<u16>(w(0xab), 0);
+    let stack = vec![0x3400, 0x800];
+    let t = slot_target(g, w(0xb0), 720);
+    // call width: 2
+    g.call(t, 0, &stack);
+    stack
+}

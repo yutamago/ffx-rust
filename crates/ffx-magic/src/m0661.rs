@@ -198,3 +198,82 @@ pub const START_AT: Sig = Sig {
     calls: &[(0x43, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// The effect's cues (0x100013d0, no arguments): the 28 cue words `C`
+/// (slot 261 `(i)`, at operand `+0x21`); for each of the 14 timelines
+/// `T_k` (0x110 bytes apart from `+0x2f`) with its started word `S_k`
+/// (`+0x34`): cue `2k` runs it ([`crate::sb_misc::timeline_run`]) until
+/// it is started; cue `2k + 1` stops it once (the timeline's live events
+/// get their end callback `(event+0x14)` from `event+0x10` and are no
+/// longer live) and counts `S_k` up. Then the first timeline whose cue
+/// `2k` is 1 and `2k + 1` 0 becomes `G_CUR` (-1 when none). Returns the
+/// `eax` the original leaves (the cue pointer the search stopped at).
+pub fn cues<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let c = w(0x21);
+    for i in 0..0x1cu32 {
+        let t = slot_target(g, w(0x11), 261);
+        // call width: 1
+        let r = g.call(t, 0, &[i]).eax;
+        g.write::<u32>(c + 4 * i, r);
+    }
+    let (tl0, started0, end) = (w(0x2f), w(0x34), w(0x5f));
+    let mut k = 0u32;
+    while started0 + 4 * k < end {
+        let started = started0 + 4 * k;
+        if g.read::<u32>(c + 8 * k) != 0 && g.read::<u32>(started) == 0 {
+            let run = img.rel32_target(f + 0x4d);
+            crate::sb_misc::timeline_run(g, img, run, tl0 + 0x110 * k);
+        }
+        k += 1;
+    }
+    let (s0, c1, t0, end) = (w(0x66), w(0x6b), w(0x76), w(0xee));
+    let mut k = 0u32;
+    while t0 + 0x110 * k < end {
+        let (s, cue, tl) = (s0 + 4 * k, c1 + 8 * k, t0 + 0x110 * k);
+        if g.read::<u32>(cue) != 0 && g.read::<u32>(s) == 0 {
+            if g.read::<u32>(tl) != 0 {
+                let mut ev = g.read::<u32>(tl + 0x104);
+                let mut e = 0i32;
+                while e < g.read::<i32>(tl.wrapping_sub(4)) {
+                    let live = tl + 4 + 8 * e.cast_unsigned();
+                    ev = ev.wrapping_add(if e == 0 { 0x10 } else { 0x18 });
+                    if g.read::<u32>(live) != 0 {
+                        let cb = g.read::<u32>(ev);
+                        if cb != 0 {
+                            let arg = g.read::<u32>(ev + 4);
+                            // call width: 1
+                            g.call(cb, cb, &[arg]);
+                        }
+                        g.write::<u32>(live, 0);
+                        let n = g.read::<u32>(tl).wrapping_sub(1);
+                        g.write::<u32>(tl, n);
+                    }
+                    e += 1;
+                }
+            }
+            let n = g.read::<u32>(s).wrapping_add(1);
+            g.write::<u32>(s, n);
+        }
+        k += 1;
+    }
+    let cur = w(0xf9);
+    for i in 0..0xeu32 {
+        let at = cur + 8 * i;
+        if g.read::<u32>(at.wrapping_sub(4)) == 1 && g.read::<u32>(at) == 0 {
+            g.write::<u32>(w(0x124), i);
+            return Ret::eax(at);
+        }
+    }
+    g.write::<u32>(w(0x116), u32::MAX);
+    Ret::eax(cur + 8 * 0xe)
+}
+
+/// [`cues`] (300 bytes, 1 overlay).
+pub const CUES: Sig = Sig {
+    len: 300,
+    hash: 0x4a68_e90c_eb60_db15,
+    calls: &[(0x4d, Callee::Sig(&crate::sb_misc::TIMELINE_RUN))],
+    imports: &[],
+};

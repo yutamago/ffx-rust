@@ -359,3 +359,84 @@ pub const CASTER_FADE_RAMP: Sig = Sig {
     calls: &[(0xe5, Callee::Sig(&crate::l3_common::CHR_FADE))],
     imports: &[],
 };
+
+/// A colour node's visit (0x100033d0, thiscall: `ecx` = the visit group
+/// `V`; a /GS frame): the walk over the node's children
+/// ([`crate::nodes::walk`]); when it ran (`V+4` bit 0) and the node `N`
+/// (`V[0]`) has steps left (`+0x54`), its colour `+0x1c..+0x28` moves by
+/// `+0x3c.. * +0x50` and its integer parts make the colour word `((c3 <<
+/// 8 | c2) << 8 | c1) << 8 | c0`; `+0x4c += +0x50`; slot 252 `(*G_S,
+/// colour, the byte +0x5a, 0x80)` into `G_S` (the byte's word on the frame
+/// has three never-written bytes: 0, brief 2026-10-24); once `+0x4c`
+/// reaches `K`, slot 234 `(N + 0x1c, N + 0x2c, N + 0x3c)`, a step fewer
+/// and `+0x4c` 0. With no steps left and `+0x58` bit 0, the node leaves
+/// ([`crate::sa_misc::leave`]). Returns the `eax` the original leaves.
+pub fn colour_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let v = fr.ecx;
+    // eax: the frame's cookie word (`*G_COOKIE ^ ebp`) when the walk starts
+    let cookie = g.read::<u32>(w(0x07)) ^ fr.esp.wrapping_sub(4);
+    let (eax, _) = crate::nodes::walk(g, v, v, cookie);
+    if g.read::<u8>(v + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(v);
+    if g.read::<u32>(n + 0x54) == 0 {
+        if g.read::<u8>(n + 0x58) & 1 == 0 {
+            return Ret::eax(eax);
+        }
+        return Ret::eax(crate::sa_misc::leave(g, n, eax));
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let rate = g.read::<f32>(n + 0x50);
+    let mut parts = [0u32; 4];
+    for (i, part) in (0u32..).zip(parts.iter_mut()) {
+        let x = add(
+            mul(g.read::<f32>(n + 0x3c + 4 * i), rate),
+            g.read::<f32>(n + 0x1c + 4 * i),
+        );
+        *part = crate::s4_summon::trunc(x);
+        g.write::<f32>(n + 0x1c + 4 * i, x);
+        g.write::<u32>(ebp.wrapping_sub(0x14 - 4 * i), *part);
+    }
+    // junk read: [ebp-0x17..-0x15] never written; 0 (brief 2026-10-24)
+    let byte = u32::from(g.read::<u8>(n + 0x5a));
+    g.write::<u32>(ebp.wrapping_sub(0x18), byte);
+    let t = add(g.read::<f32>(n + 0x50), g.read::<f32>(n + 0x4c));
+    let colour = (((parts[3] << 8 | parts[2]) << 8 | parts[1]) << 8) | parts[0];
+    g.write::<f32>(n + 0x4c, t);
+    let s = g.read::<u32>(w(0xcf));
+    let tbl = slot_target(g, w(0xc9), 252);
+    // call width: 4
+    let r = g.call(tbl, 0, &[s, colour, byte, 0x80]).eax;
+    g.write::<u32>(w(0xeb), r);
+    let k = g.read::<f32>(w(0xe6));
+    // comiss + jb: below or unordered keeps going
+    let x = g.read::<f32>(n + 0x4c);
+    if x < k || x.is_nan() || k.is_nan() {
+        return Ret::eax(r);
+    }
+    let tbl = slot_target(g, w(0xfa), 234);
+    // call width: 3
+    let r = g.call(tbl, 0, &[n + 0x1c, n + 0x2c, n + 0x3c]).eax;
+    let left = g.read::<u32>(n + 0x54).wrapping_sub(1);
+    g.write::<u32>(n + 0x54, left);
+    g.write::<u32>(n + 0x4c, 0);
+    Ret::eax(r)
+}
+
+/// [`colour_visit`] (323 bytes, 1 overlay).
+pub const COLOUR_VISIT: Sig = Sig {
+    len: 323,
+    hash: 0x948f_3f6a_06a7_bd08,
+    calls: &[
+        // __security_check_cookie
+        (0x11d, Callee::Any),
+        (0x12e, Callee::Sig(&crate::sa_misc::LEAVE)),
+        // __security_check_cookie
+        (0x13b, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -1117,6 +1117,9 @@ ports! {
     "m0673 timers start" => m0673::TIMERS_START, m0673::timers_start;
     "m0666 cue frame" => m0666::CUE_FRAME, m0666::cue_frame;
     "m0666 look draw" => m0666::LOOK_DRAW, m0666::look_draw;
+    "m0645 colour visit" => m0645::COLOUR_VISIT, m0645::colour_visit;
+    "m0602 start" => m0602::START, m0602::start;
+    "m0661 cues" => m0661::CUES, m0661::cues;
     "m0664 look draw" => m0664::LOOK_DRAW, m0664::look_draw;
     "m0664 look draw fade" => m0664::LOOK_DRAW_FADE, m0664::look_draw_fade;
     "m0672 cue start" => m0638::CUE_START_0672, m0638::cue_start;
