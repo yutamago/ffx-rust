@@ -306,3 +306,39 @@ fn fly_in_task() {
         }
     }
 }
+
+/// `magic_0387` 0x100088d0: every step (the table's cases, the default,
+/// above the table), the motion running on and ended, the frame count
+/// short of 0x59 and at it.
+#[test]
+fn motion_sequence_task() {
+    let Some(mut t) = twin(387) else { return };
+    let f = t.at(0x88d0);
+    bound(&t, f, "sf motion sequence task");
+    let ended = SCRATCH + 0x700;
+    rec(&mut t, 228, 2, |_, a| 0x2280_0000 ^ a[1]);
+    rec(&mut t, 411, 1, move |m, _| m.r32(ended));
+    let (task, s, o) = (SCRATCH + 0x800, SCRATCH + 0x900, SCRATCH + 0xa00);
+    let (node, prev, next) = (SCRATCH + 0xb00, SCRATCH + 0xb40, SCRATCH + 0xb80);
+    let mut k = 0u32;
+    for step in [0u32, 1, 2, 3, 9, 10, 11, 12, 20, 21, 0x15 + 1, 0x4e20] {
+        for (end, frames) in [(0u32, 0x10u32), (1, 0x59), (2, 0x58)] {
+            k += 1;
+            t.write(task, &varied(0x20, k));
+            t.write(s, &varied(0x40, k));
+            t.write(o, &varied(0x60, k));
+            t.set_u32(task, node);
+            t.set_u32(task + 4, s);
+            t.set_u32(s + 0x3c, o);
+            t.set_u32(s + 0x18, step);
+            t.set_u32(s + 0x34, frames);
+            t.set_u32(ended, end);
+            for (a, p, n) in [(node, prev, next), (prev, next, node), (next, node, prev)] {
+                t.set_u32(a + 4, p);
+                t.set_u32(a + 8, n);
+            }
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}

@@ -336,3 +336,116 @@ pub const FLY_IN_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A motion sequence task (cdecl `(task)`; the state `S = task[1]`, its
+/// object `O = S[0x3c]`, the character `c = O[0x50]`): by the step
+/// `S+0x18` (a jump table over 0..0x15):
+/// - 0: `MsEffectSetMotion(c, 0xba)` (slot 228), the step goes up;
+/// - 1: once `MsEffectCheckMotion(c)` (slot 411) answers non-zero,
+///   `MsEffectSetMotion(c, 0xbb)`, the step goes up and the frame count
+///   `S+0x34` starts again;
+/// - 2: from frame 0x59 on, step 10 (`MsEffectSetMotion(c, 0xbc)`, the
+///   step goes up);
+/// - 11: once the motion ends, step 20 (`MsEffectSetMotion(c, 0xbe)`);
+/// - 21: once the motion ends, the task's node leaves its ring and the
+///   step becomes 0x4e20;
+/// - any other: nothing.
+///
+/// The frame count goes up on every path. Returns slot 228's `eax`, the
+/// node's re-read `+0x4` after the unlink, 0 when the motion runs on, or
+/// what the dispatch left (the step above 0x15, else its table index).
+///
+/// `magic_0387` 0x100088d0 (350 bytes with its jump table and index
+/// bytes, 1 DLL; stored in a task's `+0x10`).
+pub fn motion_sequence_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task.wrapping_add(4));
+    let o = g.read::<u32>(s.wrapping_add(0x3c));
+    let step_at = s.wrapping_add(0x18);
+    let frames = s.wrapping_add(0x34);
+    let chr = |g: &G| g.read::<u32>(o.wrapping_add(0x50));
+    let bump = |g: &mut G, a: u32| {
+        let v = g.read::<u32>(a).wrapping_add(1);
+        g.write::<u32>(a, v);
+    };
+    // MsEffectSetMotion(c, motion), the step up, the frame count up
+    let set_motion = |g: &mut G, table: u32, motion: u32| {
+        let c = chr(g);
+        let t = slot_target(g, w(table), 228);
+        let eax = g.call(t, fr.ecx, &[c, motion]).eax;
+        bump(g, step_at);
+        eax
+    };
+    let check_motion = |g: &mut G, table: u32| {
+        let c = chr(g);
+        let t = slot_target(g, w(table), 411);
+        g.call(t, fr.ecx, &[c]).eax
+    };
+    let mut step = g.read::<u32>(step_at);
+    let eax = loop {
+        if step > 0x15 {
+            break step;
+        }
+        // movzx eax, byte [INDEX + step]; jmp [CASES + 4 eax] (both in
+        // the code section: read from the image)
+        let index = img.word(w(0x23).wrapping_add(step)) & 0xff;
+        match index {
+            0 => break set_motion(g, 0x79, 0xba),
+            1 => {
+                let r = check_motion(g, 0x97);
+                if r == 0 {
+                    break r;
+                }
+                let eax = set_motion(g, 0xae, 0xbb);
+                g.write::<u32>(frames, 0);
+                break eax;
+            }
+            2 => {
+                if g.read::<i32>(frames) < 0x59 {
+                    break index;
+                }
+                g.write::<u32>(step_at, 0xa);
+            }
+            3 => break set_motion(g, 0x79, 0xbc),
+            4 => {
+                let r = check_motion(g, 0x42);
+                if r == 0 {
+                    break r;
+                }
+                g.write::<u32>(step_at, 0x14);
+            }
+            5 => break set_motion(g, 0x79, 0xbe),
+            6 => {
+                let r = check_motion(g, 0xe6);
+                if r == 0 {
+                    break r;
+                }
+                let node = g.read::<u32>(task);
+                let prev = g.read::<u32>(node.wrapping_add(4));
+                let next = g.read::<u32>(node.wrapping_add(8));
+                g.write::<u32>(prev.wrapping_add(8), next);
+                let next = g.read::<u32>(node.wrapping_add(8));
+                let prev = g.read::<u32>(node.wrapping_add(4));
+                g.write::<u32>(next.wrapping_add(4), prev);
+                g.write::<u32>(node.wrapping_add(8), node);
+                g.write::<u32>(node.wrapping_add(4), node);
+                g.write::<u32>(step_at, 0x4e20);
+                break prev;
+            }
+            _ => break index,
+        }
+        step = g.read::<u32>(step_at);
+    };
+    bump(g, frames);
+    Ret::eax(eax)
+}
+
+/// [`motion_sequence_task`].
+pub const MOTION_SEQUENCE_TASK: Sig = Sig {
+    len: 350,
+    hash: 0xa335_8dac_e5ef_60e4,
+    calls: &[],
+    imports: &[],
+};
