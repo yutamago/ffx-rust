@@ -1112,3 +1112,141 @@ pub mod cover {
         h.call_sym(clip, Conv::Cdecl, &[poly, n, out, count_at, plane])
     }
 }
+
+/// `0x005d7450`'s CRT intrinsics (the import thunks): `_CIsqrt`,
+/// `_CIasin`, `_CIatan2`, `_CIcos`, `_CIsin`; and the `f64` 2pi (rounded
+/// to `f32`) its angles wrap at.
+pub const TURN_INTRINSICS: [u32; 5] = [
+    0x0094_97b8,
+    0x0094_98f2,
+    0x0094_98bc,
+    0x0094_98c2,
+    0x0094_98c8,
+];
+/// `g_TwoPiF64`.
+pub const TWO_PI: u32 = 0x00b3_9378;
+/// The words of `0x005d7450`'s frame below `ebp`.
+pub const TURN_FRAME_WORDS: u32 = 0x9c / 4;
+
+pub mod turn {
+    //! `0x005d7450` over game memory.
+
+    use super::{LOOK_AT_CALLS, TURN_INTRINSICS, TWO_PI};
+    use ffx_bridge::x87::{self, Reg};
+    use ffx_graphic::host::{Conv, Host};
+
+    fn ld(h: &impl Host, at: u32) -> f64 {
+        x87::load(h.read(at))
+    }
+
+    fn st(x: f64) -> f64 {
+        x87::load(x87::store(x))
+    }
+
+    fn put(h: &mut impl Host, at: u32, v: [f64; 3]) {
+        h.write(at, v.map(x87::store));
+    }
+
+    fn mul_m(x: f64, m: f64) -> f64 {
+        // `fmul dword [m]` of a stored value (no signalling NaN)
+        Reg::constant(x)
+            .mul_m32(f32::from_bits(x87::store(m)))
+            .value()
+    }
+
+    /// `1 / sqrt(x² + y² + z²)`, each partial sum, the root and the
+    /// reciprocal stored as `f32` (`_CIsqrt` rounds as the x87's `fsqrt`).
+    fn inverse_length(v: [f64; 3]) -> f64 {
+        let mut s = st(x87::mul(v[0], v[0]));
+        s = st(x87::add(s, x87::mul(v[1], v[1])));
+        s = st(x87::add(s, x87::mul(v[2], v[2])));
+        let root = st(x87::sqrt(s));
+        st(x87::div(1.0, root))
+    }
+
+    /// An angle wrapped into `0..=2pi` as the original steps it: `+ 2pi`
+    /// while below 0, then `- 2pi` while above `2pi`, each step stored.
+    fn wrap(a: f64, two_pi: f64) -> f64 {
+        let mut a = a;
+        while a < 0.0 {
+            a = st(x87::add(a, two_pi));
+        }
+        while a > two_pi {
+            a = st(x87::sub(a, two_pi));
+        }
+        a
+    }
+
+    /// `Phyre_PGameplay_cameraTurn_005d7450(this; yaw, pitch)` (thiscall,
+    /// ret 8): the 4x4 of the controller's 3x4 (`+4`) into its matrix
+    /// (`+0x34`, through the x87); its forward axis (row 2, `+0x54`)
+    /// normalised gives the current pitch (`asin` of `y`) and yaw
+    /// (`atan2(x, z)`); the new pitch is that less `pitch`, the new yaw
+    /// that plus `yaw`, both wrapped into `0..=2pi`. The new forward
+    /// `F = (sin yaw cos pitch, sin pitch, cos yaw cos pitch)` (at `ebp -
+    /// 0x5c`), the side `A = (cos yaw, 0, -sin yaw)` (`ebp - 0x4c`), the
+    /// up `R = A x F` normalised (`ebp - 0x28`) and the position (row 3,
+    /// at `ebp - 0x18`) through `FromAxes(A, R, F, position)` into the
+    /// matrix and back to the 3x4; `toWorldMatrix3x4`'s `eax`.
+    pub fn turn(h: &mut impl Host, ebp: u32, this: u32, yaw: u32, pitch: u32) -> u32 {
+        let [from_3x4, from_axes, copy, to_world] = LOOK_AT_CALLS;
+        let [_, asin, atan2, cos, sin] = TURN_INTRINSICS.map(|a| h.rebase(a));
+        let m = ebp - 0x9c;
+        let src = this + 4;
+        let dst = this + 0x34;
+        h.call_sym(from_3x4, Conv::Thiscall(m), &[src]);
+        for k in 0..16 {
+            let w = x87::store(ld(h, m + 4 * k));
+            h.write(dst + 4 * k, w);
+        }
+        let f = [0x54, 0x58, 0x5c].map(|o| ld(h, this + o));
+        let inv = inverse_length(f);
+        let n = [
+            st(x87::mul(f[0], inv)),
+            st(x87::mul(f[1], inv)),
+            st(Reg::constant(inv)
+                .mul_m32(f32::from_bits(h.read(this + 0x5c)))
+                .value()),
+        ];
+        let a = f64::from(h.call_intrinsic(asin, n[1]));
+        let p = st(Reg::constant(a).sub_m32(f32::from_bits(pitch)).value());
+        let y0 = f64::from(h.call_intrinsic2(atan2, n[0], n[2]));
+        let y = st(Reg::constant(y0).add_m32(f32::from_bits(yaw)).value());
+        let two_pi = f64::from_bits(h.read(h.rebase(TWO_PI)));
+        let p = wrap(p, two_pi);
+        let y = wrap(y, two_pi);
+        let cp = f64::from(h.call_intrinsic(cos, p));
+        let sy = f64::from(h.call_intrinsic(sin, y));
+        let cy = f64::from(h.call_intrinsic(cos, y));
+        let fx = st(mul_m(sy, cp));
+        let sp = f64::from(h.call_intrinsic(sin, p));
+        let fz = st(mul_m(cy, cp));
+        put(h, ebp - 0x5c, [fx, sp, fz]);
+        // junk read: [ebp-0x1c] never written; 0 (brief 2026-10-24)
+        h.write(ebp - 0x50, 0u32);
+        let az = st(-sy);
+        put(h, ebp - 0x4c, [cy, 0.0, az]);
+        let c = [
+            st(x87::sub(x87::mul(az, sp), x87::mul(fz, 0.0))),
+            st(x87::sub(x87::mul(fz, cy), x87::mul(az, fx))),
+            st(x87::sub(x87::mul(0.0, fx), x87::mul(cy, sp))),
+        ];
+        let inv = inverse_length(c);
+        let r = [
+            st(x87::mul(c[0], inv)),
+            st(x87::mul(c[1], inv)),
+            st(mul_m(inv, c[2])),
+        ];
+        put(h, ebp - 0x28, r);
+        let pos = [0x64, 0x68, 0x6c].map(|o| st(ld(h, this + o)));
+        put(h, ebp - 0x3c, pos);
+        put(h, ebp - 0x18, pos);
+        let axes = h.call_sym(
+            from_axes,
+            Conv::Thiscall(m),
+            &[ebp - 0x4c, ebp - 0x28, ebp - 0x5c, ebp - 0x18],
+        );
+        h.call_sym(copy, Conv::Thiscall(dst), &[axes]);
+        h.call_sym(to_world, Conv::Thiscall(src), &[dst])
+    }
+}

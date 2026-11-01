@@ -59,4 +59,11 @@ ported! {
         let ebp = f.at() + 4 * t::COVER_FRAME_WORDS;
         t::cover::screen_cover(&mut mem(), ebp, lo, hi, owner, m, inverse)
     }
+    /// `Phyre_PGameplay_cameraTurn_005d7450(this; yaw, pitch)`: the axes in a frame;
+    /// `toWorldMatrix3x4`'s `eax`.
+    Phyre_PGameplay_cameraTurn_005d7450 @ 0x005d_7450 => extern "thiscall" fn sbp2_005d7450(this: u32, yaw: u32, pitch: u32) -> u32 {
+        let mut f = StackFrame::<{ t::TURN_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * t::TURN_FRAME_WORDS;
+        t::turn::turn(&mut mem(), ebp, this, yaw, pitch)
+    }
 }

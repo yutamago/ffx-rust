@@ -72,6 +72,33 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = TRAMP.with(std::cell::Cell::get);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r
+            .st0_f32()
+            .unwrap_or_else(|| panic!("intrinsic {addr:#x}: no float in ST0"));
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let at = TRAMP.with(std::cell::Cell::get);
+        let (p, q) = (x.to_bits(), y.to_bits());
+        let words = [p as u32, (p >> 32) as u32, q as u32, (q >> 32) as u32, addr];
+        let r = self
+            .0
+            .call(at + 19, Conv::Cdecl, &words)
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r
+            .st0_f32()
+            .unwrap_or_else(|| panic!("intrinsic {addr:#x}: no float in ST0"));
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -96,6 +123,23 @@ struct Twins {
     log: u32,
     /// The bytes each stub's `jmp` replaced, by address.
     saved: HashMap<u32, Vec<u8>>,
+    /// [`INTRINSIC_TRAMPOLINE`] in both oracles' code.
+    tramp: u32,
+}
+
+/// The CRT intrinsics' trampolines (big-phyre2): at `+0` `fld qword
+/// [esp+4]; call [esp+0xc]; ret` (one operand in `ST0`), at `+16` `fstp
+/// st(0); ret` (the caller's store popping the result), at `+19` `fld
+/// qword [esp+4]; fld qword [esp+0xc]; call [esp+0x14]; ret` (`_CIatan2`:
+/// operands in `ST1` and `ST0`).
+const INTRINSIC_TRAMPOLINE: [u8; 32] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3, 0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
+];
+
+thread_local! {
+    /// The trampoline of the oracle a [`G`] is running on.
+    static TRAMP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 impl Twins {
@@ -108,8 +152,12 @@ impl Twins {
             snapshot,
             log: 0,
             saved: HashMap::new(),
+            tramp: 0,
         };
         t.log = t.zeros(4 + 32 * LOG_ENTRIES as usize);
+        let tramp = t.a.alloc_code(&INTRINSIC_TRAMPOLINE).unwrap();
+        assert_eq!(t.b.alloc_code(&INTRINSIC_TRAMPOLINE).unwrap(), tramp);
+        t.tramp = tramp;
         t
     }
 
@@ -259,6 +307,7 @@ impl Twins {
     ) -> u32 {
         let log = self.log;
         self.w32(log, 0);
+        TRAMP.with(|c| c.set(self.tramp));
         let addr = self.rebase(sym);
         let ra = self
             .a
@@ -285,6 +334,7 @@ impl Twins {
     ) -> (ffx_oracle::Ret, T) {
         let log = self.log;
         self.w32(log, 0);
+        TRAMP.with(|c| c.set(self.tramp));
         let addr = self.rebase(sym);
         let ra = self
             .a
@@ -4612,5 +4662,59 @@ fn m5p_scene_bp2_screen_cover() {
             seen.iter().any(|&r| r > 0.0 && r < 1.0),
             "{label}: no partial cover {seen:?}"
         );
+    }
+}
+
+/// `0x005d7450` with the original matrix callees and CRT intrinsics on
+/// both sides: random controllers and turns, turns that wrap the angles
+/// below 0 and past 2pi (several steps), a zero turn, a NaN turn. The
+/// frame's axes are compared after the call (`ebp - 0x50` holds a copy of
+/// a word the original never writes: not compared). Only synthetic data
+/// reaches it.
+#[test]
+fn m5p_scene_bp2_turn() {
+    use ffx_prender::m5p_scene_bp2::turn::turn;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x005d_7450);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 2 - 8;
+        for k in 0..60u32 {
+            let this = tw.zeros(0x80);
+            let m: Vec<f32> = (0..12).map(|_| centi(&mut rng) / 4.0).collect();
+            let bytes: Vec<u8> = m.iter().flat_map(|f| f.to_le_bytes()).collect();
+            tw.write(this + 4, &bytes);
+            let (yaw, pitch) = match k {
+                0 => (0.0f32, 0.0f32),
+                1 => (20.0, -20.0),
+                2 => (-20.0, 20.0),
+                3 => (f32::NAN, 0.5),
+                4 => (0.25, f32::NAN),
+                5 => (6.0, -6.0),
+                _ => (centi(&mut rng), centi(&mut rng) / 4.0),
+            };
+            let junk: Vec<u8> = (0..0x9cu32).map(|i| (i * 11 + k) as u8).collect();
+            tw.write(ebp - 0x9c, &junk);
+            tw.b.set_call_top(Some(ebp - 0x9c - 0x100));
+            let what = format!("{label}: turn {k}");
+            let args = [yaw.to_bits(), pitch.to_bits()];
+            tw.run(&what, 0x005d_7450, Conv::Thiscall(this), &args, |g| {
+                turn(g, ebp, this, yaw.to_bits(), pitch.to_bits())
+            });
+            tw.b.set_call_top(None);
+            for (from, len) in [
+                (0x9cu32, 0x40usize),
+                (0x5c, 0xc),
+                (0x4c, 0xc),
+                (0x3c, 0xc),
+                (0x28, 0xc),
+                (0x18, 0xc),
+            ] {
+                let mut x = vec![0; len];
+                let mut y = vec![0; len];
+                tw.a.read_bytes(ebp - from, &mut x);
+                tw.b.read_bytes(ebp - from, &mut y);
+                assert_eq!(x, y, "{what}: frame at -{from:#x}");
+            }
+        }
     }
 }
