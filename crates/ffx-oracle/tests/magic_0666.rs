@@ -48,3 +48,27 @@ fn pairs() {
         }
     }
 }
+
+/// 0x10002290: the start for the array's first object and another.
+#[test]
+fn start_b() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2290);
+    let table = SCRATCH + 0x200;
+    for i in 0..12 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x100;
+    t.set_u32(t.img.word(at + 0x1f), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    let gp = SCRATCH + 0x30;
+    t.set_u32(t.img.word(at + 0x14), gp);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    let base = t.img.word(at + 0xa);
+    for obj in [base, base + 0x7c, base + 0x80] {
+        t.write(obj, &[0x5b; 0x80]);
+        t.set_u32(gp, 0x7777);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

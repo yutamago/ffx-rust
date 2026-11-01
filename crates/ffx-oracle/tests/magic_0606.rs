@@ -14,6 +14,7 @@ mod magic_hi;
 mod magic_l3;
 mod magic_owna;
 
+use ffx_magic::{Ret, m0606};
 use magic::{Call, Eax, SCRATCH};
 use magic_owna::{recs, twin};
 
@@ -66,5 +67,29 @@ fn camera_points() {
     for answer in [0x0159_0000u32, 0x0158_0000] {
         t.set_u32(cell, answer);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x10008720: the three tasks started with the task list empty and
+/// not.
+#[test]
+fn start_tasks() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8720);
+    let s = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x5), s);
+    let take = t.img.rel32_target(at + 0x67);
+    let first = t.img.word(at + 0x6d);
+    let head = t.img.word(at + 0x82);
+    let old = SCRATCH + 0x900;
+    for full in [false, true] {
+        magic_hi::pool(&mut t, take, SCRATCH + 0x1000, 5);
+        t.write(s + 0x5800, &[0x2b; 0x800]);
+        t.write(old, &[0x6c; 0x20]);
+        t.set_u32(first, if full { old } else { 0 });
+        t.set_u32(head, if full { old } else { 0 });
+        t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0606::start_tasks(g, img, fr))
+        });
     }
 }

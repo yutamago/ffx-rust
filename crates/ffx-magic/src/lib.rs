@@ -1116,6 +1116,13 @@ ports! {
     "m0587 sway frame" => m0587::SWAY_FRAME, m0587::sway_frame;
     "m0577 spark task" => m0577::SPARK_TASK, m0577::spark_task;
     "m0589 blend" => m0589::BLEND, m0589::blend;
+    "m0672 fade task" => m0672::FADE_TASK, m0672::fade_task;
+    "m0672 fade start" => m0672::FADE_START, m0672::fade_start;
+    "m0666 start b" => m0666::START_B, m0666::start_b;
+    "m0641 frame" => m0641::FRAME, m0641::frame;
+    "m0669 frame at" => m0669::FRAME_AT, m0669::frame_at;
+    "m0661 start at" => m0661::START_AT, m0661::start_at;
+    "m0664 frame bone" => m0664::FRAME_BONE, m0664::frame_bone;
     // end of magic r6 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2333,6 +2340,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0588 actor matrix", &m0588::ACTOR_MATRIX_0588),
     ("m0600 actor matrix", &m0588::ACTOR_MATRIX_0600),
     ("m0585 drift setup", &m0585::DRIFT_SETUP),
+    ("m0606 start tasks", &m0606::START_TASKS),
     // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
