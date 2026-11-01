@@ -83,6 +83,9 @@ pub mod s4_wrap;
 pub mod s5_misc;
 pub mod s6_misc;
 
+// census2: functions the old census hid inside merged rows
+pub mod sf_hidden;
+
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
 pub mod o6_fam_boot;
@@ -2128,6 +2131,13 @@ ports! {
     "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
     "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
     "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
+    // census2: functions the old census hid inside merged rows (sf_hidden)
+    "sf elem point table" => sf_hidden::ELEM_POINT_TABLE, sf_hidden::elem_point_table;
+    "sf optpos point" => sf_hidden::OPTPOS_POINT, sf_hidden::optpos_point;
+    "sf elem point offset" => sf_hidden::ELEM_POINT_OFFSET, sf_hidden::elem_point_offset;
+    "sf spin angles" => sf_hidden::SPIN_ANGLES, sf_hidden::spin_angles;
+    "sf caster script task" => sf_hidden::CASTER_SCRIPT_TASK, sf_hidden::caster_script_task;
+    // sf_hidden: end of ports
     "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
