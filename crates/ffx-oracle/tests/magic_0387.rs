@@ -47,3 +47,42 @@ fn sprite_record() {
 fn strip_record() {
     cases(0x48b0, ffx_magic::m0387::strip_record);
 }
+
+/// 0x10008a70 (internal: `ecx` = the sprite, `edx` = a vector, one stack
+/// word): two sets of halfwords.
+#[test]
+fn sprite_size() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8a70);
+    magic_owna::rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x325);
+        }
+        0x8325_0000
+    });
+    let sp = SCRATCH + 0x1000;
+    let v = SCRATCH + 0x200;
+    for (k, base) in [(0u16, 0u16), (1, 0x7fff)] {
+        t.write(sp, &[0x5c; 0x100]);
+        for i in 0..4u32 {
+            t.set_u16(
+                sp + 0xd0 + 2 * i,
+                base.wrapping_add(k * 300 + u16::try_from(i).unwrap() * 77),
+            );
+        }
+        t.write(v, &[0x11; 0x10]);
+        let c = Call {
+            ecx: sp,
+            edx: v,
+            ..Call::default()
+        };
+        t.check(
+            at,
+            c,
+            &[0xabcd_0000 + u32::from(k)],
+            Eax::Checked,
+            ffx_magic::m0387::sprite_size,
+        );
+    }
+}

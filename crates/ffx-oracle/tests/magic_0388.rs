@@ -47,3 +47,30 @@ fn motion_wait() {
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// 0x100076b0 (internal: `ecx` = the node, `edx` = the object): either
+/// model kind.
+#[test]
+fn motion_task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x76b0);
+    let w = |t: &magic::Twin, off: u32| t.img.word(at + off);
+    for (s, n) in [(30u32, 1usize), (36, 2), (228, 2)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let (node, obj, last) = (SCRATCH + 0x100, SCRATCH + 0x300, SCRATCH + 0x500);
+    for kind in [1u8, 0, 0x81] {
+        t.write(node, &[0x22; 0x30]);
+        t.write(obj, &[0x33; 0xa0]);
+        t.set_u8(obj + 0x90, kind);
+        t.write(last, &[0x44; 0x10]);
+        t.set_u32(w(&t, 0x1c), last);
+        t.set_u32(w(&t, 0x36), 0xff);
+        let c = Call {
+            ecx: node,
+            edx: obj,
+            ..Call::default()
+        };
+        t.check(at, c, &[], Eax::Checked, ffx_magic::m0388::motion_task);
+    }
+}

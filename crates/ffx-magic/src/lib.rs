@@ -225,6 +225,22 @@ pub mod m0394;
 pub mod m0395;
 pub mod m0396;
 pub mod m0397;
+pub mod m0413;
+pub mod m0415;
+pub mod m0416;
+pub mod m0417;
+pub mod m0419;
+pub mod m0421;
+pub mod m0424;
+pub mod m0429;
+pub mod m0430;
+pub mod m0431;
+pub mod m0432;
+pub mod m0434;
+pub mod m0440;
+pub mod m0443;
+pub mod m0447;
+pub mod m0449;
 pub mod m0481;
 pub mod m0596;
 pub mod m0604;
@@ -2016,6 +2032,22 @@ ports! {
     "m0389 mode switch" => m0389::MODE_SWITCH, m0389::mode_switch;
     "m0397 actor position" => m0397::ACTOR_POSITION, m0397::actor_position;
     "m0397 party check" => m0397::PARTY_CHECK, m0397::party_check;
+    "m0416 copies step" => m0416::COPIES_STEP, m0416::copies_step;
+    "m0413 frame" => m0413::FRAME, m0413::frame;
+    "m0415 turns step" => m0415::TURNS_STEP, m0415::turns_step;
+    "m0419 frame" => m0419::FRAME, m0419::frame;
+    "m0421 copies start" => m0421::COPIES_START, m0421::copies_start;
+    "m0397 sprite tasks" => m0397::SPRITE_TASKS, m0397::sprite_tasks;
+    "m0395 script end" => m0395::SCRIPT_END, m0395::script_end;
+    "m0430 start" => m0430::START, m0430::start;
+    "m0430 fade step" => m0430::FADE_STEP, m0430::fade_step;
+    "m0430 fade start" => m0430::FADE_START, m0430::fade_start;
+    "m0443 sound step" => m0443::SOUND_STEP, m0443::sound_step;
+    "m0447 camera copy" => m0447::CAMERA_COPY, m0447::camera_copy;
+    "m0449 frame" => m0449::FRAME, m0449::frame;
+    "m0394 script end" => m0394::SCRIPT_END, m0394::script_end;
+    "m0429 frame" => m0429::FRAME, m0429::frame;
+    "m0440 frame" => m0440::FRAME, m0440::frame;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2626,6 +2658,17 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0389 strip record", &m0389::STRIP_RECORD),
     ("m0387 sprite record", &m0387::SPRITE_RECORD),
     ("m0387 strip record", &m0387::STRIP_RECORD),
+    ("m0388 motion task", &m0388::MOTION_TASK),
+    ("m0417 take record", &m0417::TAKE_RECORD),
+    ("m0387 sprite size", &m0387::SPRITE_SIZE),
+    ("m0424 release", &m0424::RELEASE),
+    ("m0424 part record", &m0424::PART_RECORD),
+    ("m0431 sounds ready", &m0431::SOUNDS_READY),
+    ("m0431 colour reset", &m0431::COLOUR_RESET),
+    ("m0449 camera start", &m0449::CAMERA_START),
+    ("m0449 actors pass", &m0449::ACTORS_PASS),
+    ("m0432 sound start", &m0432::SOUND_START),
+    ("m0434 colour show", &m0434::COLOUR_SHOW),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

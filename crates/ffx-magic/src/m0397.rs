@@ -128,3 +128,75 @@ pub const PARTY_CHECK: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The two sprite tasks (0x10006240, no arguments, no frame): with `E` =
+/// `*G` (`+0x04`, read again for the second), the sprite blocks `E +
+/// 0x19c0` and `E + 0x1a60` get their colour bytes and words and each a
+/// pool node ([`take`](crate::sa_pool::take), owner the callback `+0x10`
+/// / `+0xb6`) holding it (`+0x14`); the nodes go last on the task list
+/// (first `+0x6d`, last `+0x83`/`+0x11c`), the first block's `+0x94`
+/// becomes 1 between them. Returns the second node.
+pub fn sprite_tasks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let a = g.read::<u32>(w(0x04)).wrapping_add(0x19c0);
+    g.write::<u32>(a + 0x80, 0);
+    g.write::<u16>(a + 0x85, 0xffff);
+    g.write::<u8>(a + 0x84, 0xff);
+    g.write::<u8>(a + 0x87, 0x80);
+    g.write::<u32>(a + 0x88, 0);
+    g.write::<u16>(a + 0x98, 0x48);
+    g.write::<u32>(a + 0x90, 0x1e);
+    g.write::<u32>(a + 0x8c, 0x1e);
+    g.write::<u32>(a + 0x94, 0);
+    let first = crate::sa_pool::take(g, img, img.rel32_target(f + 0x67), w(0x10));
+    let mut head = g.read::<u32>(w(0x6d));
+    g.write::<u32>(first + 0x14, a);
+    g.write::<u32>(first + 4, 0);
+    if head == 0 {
+        head = first;
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x98), first);
+    } else {
+        let last = g.read::<u32>(w(0x83));
+        g.write::<u32>(first, last);
+        g.write::<u32>(last + 4, first);
+    }
+    g.write::<u32>(first + 8, first);
+    g.write::<u32>(a + 0x94, 1);
+    let b = g.read::<u32>(w(0xab)).wrapping_add(0x1a60);
+    g.write::<u32>(b + 0x81, 0x0080_ffff);
+    g.write::<u8>(b + 0x80, 0xff);
+    g.write::<u16>(b + 0x86, 0);
+    g.write::<u8>(b + 0x85, 0);
+    g.write::<u32>(b + 0x88, 0x1f);
+    g.write::<u16>(b + 0x98, 0x48);
+    g.write::<u32>(b + 0x90, 0x3c);
+    g.write::<u32>(b + 0x8c, 0x3c);
+    g.write::<u32>(b + 0x94, 0);
+    let second = crate::sa_pool::take(g, img, img.rel32_target(f + 0x10d), w(0xb6));
+    g.write::<u32>(second + 0x14, b);
+    g.write::<u32>(second + 4, 0);
+    g.write::<u32>(w(0x11c), second);
+    if head == 0 {
+        // only for a null first node
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x139), second);
+    } else {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first + 4, second);
+    }
+    g.write::<u32>(second + 8, second);
+    Ret::eax(second)
+}
+
+/// [`sprite_tasks`] (322 bytes, 1 overlay).
+pub const SPRITE_TASKS: Sig = Sig {
+    len: 322,
+    hash: 0xb2d9_7460_5cac_88c2,
+    calls: &[
+        (0x67, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x10d, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};

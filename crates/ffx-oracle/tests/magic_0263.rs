@@ -68,9 +68,6 @@ fn model_start() {
     });
     magic_owna::rec(&mut t, 703, 1, |m, _| m.r32(SCRATCH + 0x6f0));
     let nodes = w(&t, 0xaa);
-    for i in 0..4 {
-        t.set_u32(nodes + 0x98 * i, 0x10 + i);
-    }
     // the model nodes' slot 333 answers a float (ST0)
     t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.5);
     let tail = SCRATCH + 0x500;
@@ -94,6 +91,10 @@ fn model_start() {
         t.set_u32(w(&t, 0x8b), 0x00ab_008b);
         t.set_u32(w(&t, 0x99), n.cast_unsigned());
         t.set_u32(SCRATCH + 0x6f0, number);
+        // the model numbers, each case (the model nodes write over them)
+        for i in 0..4 {
+            t.set_u32(nodes + 0x98 * i, 0x10 + i);
+        }
         t.check_entry(at, magic::Call::default(), &[], magic::Eax::Checked);
     }
 }

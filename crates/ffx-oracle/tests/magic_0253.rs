@@ -40,7 +40,10 @@ fn frame() {
         t.set_u32(t.img.word(sr + 0x91), 0);
         t.set_u32(list + 8, if busy { n } else { 0 });
         t.set_u32(t.img.word(ro + 0x14), if busy { n } else { 0 });
-        t.set_u16(w(&t, 0x1c), half);
+        // the halfword's neighbour junk (the test reads 16 bits)
+        t.set_u32(w(&t, 0x1c), 0x5a5a_0000 | u32::from(half));
+        t.set_u32(w(&t, 0x2b), 0x00ab_002b);
+        t.set_u32(w(&t, 0x43), 0x00ab_0043);
         t.write(node, &[0x4c; 0x20]);
         t.set_u32(w(&t, 0x5b), if with_node { node } else { 0 });
         t.write(task, &[0x11; 0x20]);

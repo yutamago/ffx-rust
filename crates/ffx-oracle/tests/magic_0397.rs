@@ -110,3 +110,31 @@ fn party_check() {
         t.check_entry(at, Call::default(), &[state], Eax::Checked);
     }
 }
+
+/// 0x10006240: the two sprite tasks into an empty and a filled list.
+#[test]
+fn sprite_tasks() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x6240);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x04), fx);
+    let take = t.img.rel32_target(at + 0x67);
+    let (count, head) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+    let node = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
+    let last = SCRATCH + 0x1a00;
+    for first in [0u32, last] {
+        for k in 0..4 {
+            t.write(node(k), &[0x5a; 0x40]);
+            t.set_u32(node(k), node((k + 3) % 4));
+            t.set_u32(node(k) + 4, node((k + 1) % 4));
+        }
+        t.set_u32(head, node(0));
+        t.set_u16(count, 4);
+        t.write(last, &[0x66; 0x10]);
+        t.set_u32(w(&t, 0x6d), first);
+        t.set_u32(w(&t, 0x83), first);
+        t.write(fx + 0x1a40, &[0x44; 0xc0]);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

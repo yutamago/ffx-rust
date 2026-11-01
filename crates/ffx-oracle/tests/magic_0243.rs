@@ -14,10 +14,23 @@ const N: u16 = 243;
 const ANGLES: [f32; 7] = [-9.0, 0.5, 3.5, 12.0, -0.25, f32::NAN, 6.5];
 
 /// The floats that put `K - f` exactly on the wrap's bounds (`K`, `HI`,
-/// `LO` at the operands given), for slot 333 to answer.
-fn on_bounds(t: &Twin, at: u32, (k, hi, lo): (u32, u32, u32)) -> [f32; 2] {
+/// `LO` at the operands given), for slot 333 to answer. `LO` (-pi with
+/// `K` 3pi/2) is out of reach: the difference of two floats in `[4, 8)`
+/// is a multiple of 2^-21 and pi's last bit is 2^-22, so `>` and `>=`
+/// there are the same.
+fn on_bounds(t: &Twin, at: u32, (k, hi, lo): (u32, u32, u32)) -> Vec<f32> {
     let fl = |op: u32| f32::from_bits(t.u32(t.img.word(at + op)));
-    [fl(k) - fl(hi), fl(k) - fl(lo)]
+    let exact = |b: f32| {
+        let guess = (fl(k) - b).to_bits();
+        (0..256u32)
+            .flat_map(|d| [guess.wrapping_add(d), guess.wrapping_sub(d)])
+            .map(f32::from_bits)
+            .find(|&r| (fl(k) - r).to_bits() == b.to_bits())
+    };
+    [exact(fl(hi)), exact(fl(lo))]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// 0x10001d50: the parts' facing for no, one and several parts.

@@ -67,3 +67,34 @@ pub const STRIP_RECORD: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A sprite's colour and size (0x10008a70, internal: `ecx` = the sprite,
+/// `edx` = a vector, one stack word `n`): the four halfwords
+/// `+0xd0..+0xd6` times `K` (`+0x07`) into the floats `+0x2c..+0x38`;
+/// slot 325 `(sprite + 0x3c, vector)`; `+0xe8` gains bit 0 and the
+/// halfwords `+0xe6`/`+0xe4` = n. Returns slot 325's `eax` with its low
+/// half `n`.
+pub fn sprite_size<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let k = g.read::<f32>(img.word(fr.at + 0x07));
+    let sp = fr.ecx;
+    for i in 0..4 {
+        let h = f32::from(g.read::<u16>(sp + 0xd0 + 2 * i));
+        g.write::<f32>(sp + 0x2c + 4 * i, crate::sb_sse::mul(h, k));
+    }
+    let s = crate::runtime::slot_target(g, img.word(fr.at + 0x6b), 0x514 / 4);
+    let eax = g.call(s, 0, &[sp + 0x3c, fr.edx]).eax;
+    let n = g.read::<u16>(fr.esp + 4);
+    let fl = g.read::<u32>(sp + 0xe8);
+    g.write::<u32>(sp + 0xe8, fl | 1);
+    g.write::<u16>(sp + 0xe6, n);
+    g.write::<u16>(sp + 0xe4, n);
+    Ret::eax((eax & 0xffff_0000) | u32::from(n))
+}
+
+/// [`sprite_size`] (155 bytes, 1 overlay).
+pub const SPRITE_SIZE: Sig = Sig {
+    len: 155,
+    hash: 0x658e_acf1_5acb_74d8,
+    calls: &[],
+    imports: &[],
+};

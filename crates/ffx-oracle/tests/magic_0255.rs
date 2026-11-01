@@ -14,7 +14,12 @@ fn stubs(t: &mut Twin) {
     for (s, n) in [(258u32, 1usize), (231, 3), (230, 2), (237, 4)] {
         rec(t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
     }
-    rec(t, 712, 2, |m, _| m.r32(SCRATCH + 0x6f0));
+    // slot 712 also copies the lock (`SCRATCH + 0x600`) it sees out
+    rec(t, 712, 2, |m, _| {
+        let seen = m.r32(SCRATCH + 0x600);
+        m.w32(SCRATCH + 0x640 + 0x40, seen);
+        m.r32(SCRATCH + 0x6f0)
+    });
     rec(t, 261, 1, |m, _| m.r32(SCRATCH + 0x6f4));
 }
 
@@ -30,6 +35,9 @@ fn part_draws() {
         let lock = SCRATCH + 0x600;
         t.set_u32(t.img.word(at + end + 0x53), lock);
         t.set_u32(t.img.word(at + end + 0x46), SCRATCH + 0x640);
+        if rva == 0x1230 {
+            t.set_u32(t.img.word(at + 0x1d), 0x00ab_001d);
+        }
         for (k, (on, drawn, old)) in [(0u32, 0u32, 0u32), (1, 5, 0x77), (7, 0, 1)]
             .into_iter()
             .enumerate()

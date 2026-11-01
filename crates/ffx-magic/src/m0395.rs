@@ -56,3 +56,49 @@ pub const RESETS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A task's end (0x10004160, cdecl `(node)`): with `E` = `*G` (`+0x06`,
+/// read first) the script runs ([`run`](crate::sa_script::run),
+/// `+0x0c`); while the game is paused (slot 561, called through `ecx`)
+/// its result is returned; else the motion steps
+/// ([`motion_step`](crate::s3_motion::motion_step), `+0x25`) and when
+/// neither is 0 `E + 0x1530` becomes 1, the end's [`resets`] run and the
+/// node goes back to the pool ([`give_back`](crate::sa_pool::give_back),
+/// a tail jump, `+0x47`). Returns the motion step's result otherwise.
+pub fn script_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let e = g.read::<u32>(w(0x06));
+    let a = crate::sa_script::run(g, img, img.rel32_target(f + 0x0c));
+    let s = slot_target(g, w(0x12), 0x8c4 / 4);
+    let paused = g.call(s, s, &[]).eax;
+    if paused != 0 {
+        return Ret::eax(paused);
+    }
+    let m = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x25));
+    if a == 0 || m == 0 {
+        return Ret::eax(m);
+    }
+    g.write::<u32>(e + 0x1530, 1);
+    resets(g, img, img.rel32_target(f + 0x3c));
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x47),
+        node,
+    ))
+}
+
+/// [`script_end`] (79 bytes, 1 overlay).
+pub const SCRIPT_END: Sig = Sig {
+    len: 79,
+    hash: 0x8685_3f5f_4276_5fd2,
+    calls: &[
+        (0x0c, crate::Callee::Sig(&crate::sa_script::RUN)),
+        (0x25, crate::Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x3c, crate::Callee::Sig(&RESETS)),
+        (0x47, crate::Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

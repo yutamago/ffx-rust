@@ -70,3 +70,58 @@ pub const MOTION_WAIT: Sig = Sig {
     calls: &[(0x7c, Callee::Sig(&crate::m0042::SET_VALUE))],
     imports: &[],
 };
+
+/// A motion task (0x100076b0, internal: `ecx` = the task node, `edx` =
+/// the object; no frame): the node gets its vtable (`+0x0d`), its
+/// callback (`+0x10` = `+0x14`, [`motion_wait`]) and itself (`+0x14`),
+/// goes at the ring's tail (`+0x1c` the last, `+0x26` the root, the last
+/// `+0x42`), the root's flag `+0x36` loses bit 0; the object gets the
+/// value 0x108e101a as [`set_value`](crate::m0042::set_value) gives it
+/// (its own slots: 30 and 36 of the model `+0x54` with bit 9, else slot
+/// 228 of `+0x50`; `+0x60` = the value, bit 8); the node's `+0x20` = the
+/// object and `+0x18` 0. Returns 0x100.
+pub fn motion_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let (n, obj) = (fr.ecx, fr.edx);
+    g.write::<u32>(n + 8, n);
+    g.write::<u32>(n + 4, n);
+    g.write::<u32>(n, w(0x0d));
+    g.write::<u32>(n + 0x10, w(0x14));
+    g.write::<u32>(n + 0x14, n);
+    g.write::<u32>(n + 8, g.read::<u32>(w(0x1c)));
+    g.write::<u32>(n + 4, w(0x26));
+    let last = g.read::<u32>(w(0x2b));
+    g.write::<u32>(last + 4, n);
+    let fl = g.read::<u32>(w(0x36));
+    g.write::<u32>(w(0x36), fl & !1);
+    g.write::<u32>(w(0x42), n);
+    let v = 0x108e_101a;
+    if g.read::<u8>(obj + 0x90) & 1 != 0 {
+        let s = slot_target(g, w(0x3c), 0x78 / 4);
+        let m = g.read::<u32>(obj + 0x54);
+        g.call(s, 0, &[m]);
+        let s = slot_target(g, w(0x58), 0x90 / 4);
+        let m = g.read::<u32>(obj + 0x54);
+        g.call(s, 0, &[m, v]);
+        let f = g.read::<u16>(obj + 0x90);
+        g.write::<u16>(obj + 0x90, f | 0x200);
+    } else {
+        let s = slot_target(g, w(0x3c), 0x390 / 4);
+        let o = g.read::<u32>(obj + 0x50);
+        g.call(s, 0, &[o, v]);
+    }
+    g.write::<u32>(obj + 0x60, v);
+    let f = g.read::<u16>(obj + 0x90);
+    g.write::<u16>(obj + 0x90, f | 0x100);
+    g.write::<u32>(n + 0x20, obj);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(0x100)
+}
+
+/// [`motion_task`] (180 bytes, 1 overlay).
+pub const MOTION_TASK: Sig = Sig {
+    len: 180,
+    hash: 0xf427_ed9c_dbfc_a26d,
+    calls: &[],
+    imports: &[],
+};

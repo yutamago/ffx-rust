@@ -22,8 +22,13 @@ fn part_programs() {
         0x0772_0000 ^ a[1] ^ (k << 8)
     });
     t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[0]);
-    rec(&mut t, 779, 4, |_, a| 0x0779_0000 ^ a[3]);
     let lock = SCRATCH + 0x600;
+    // slot 779 copies the lock it sees out
+    rec(&mut t, 779, 4, move |m, a| {
+        let seen = m.r32(lock);
+        m.w32(lock + 0x40, seen);
+        0x0779_0000 ^ a[3]
+    });
     t.set_u32(w(&t, 0x53), lock);
     let recs = SCRATCH + 0x1000;
     for k in 0..4 {
