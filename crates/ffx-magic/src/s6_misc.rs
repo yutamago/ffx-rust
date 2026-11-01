@@ -3115,3 +3115,43 @@ pub const SUMMON_SCRIPT_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A static part started (cdecl, no arguments): `*G_P = ITEM`, the first
+/// program of slot 941 `(*G_D + 0x10)` started on the part `G_A` (an
+/// immediate; [`start_part`], 0x1000, 1), and three 16-byte blocks of
+/// the DLL's constants copied to `G_A + 0x40`, `+0x50`, `+0x60` (in the
+/// original's order: `+0x40`, `+0x50`, `+0x60` from `K1`, `K2`, `K3`).
+/// Returns the start's `eax`.
+///
+/// `magic_0293` 0x10001000 (101 bytes; 2 DLLs).
+pub fn static_part_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    g.write::<u32>(g.read::<u32>(w(0x1)), w(0x7));
+    let d = g.read::<u32>(g.read::<u32>(w(0xc)).wrapping_add(0x10));
+    let table = slot(g, img, f, 0x14, 941, &[d]).eax;
+    let program = g.read::<u32>(table);
+    let eax = start_part(
+        g,
+        img,
+        img.rel32_target(f + 0x31),
+        w(0x2c),
+        0x1000,
+        program,
+        1,
+    );
+    for (src, dst) in [(0x38u32, 0x3fu32), (0x47, 0x4f), (0x56, 0x60)] {
+        let mut b = [0u8; 16];
+        g.read_bytes(w(src), &mut b);
+        g.write_bytes(w(dst), &b);
+    }
+    Ret::eax(eax)
+}
+
+/// [`static_part_start`] (the `rel32`: [`start_part`]).
+pub const STATIC_PART_START: Sig = Sig {
+    len: 101,
+    hash: 0x1655_1fdc_5051_f331,
+    calls: &[(0x31, Callee::Sig(&START_PART))],
+    imports: &[],
+};

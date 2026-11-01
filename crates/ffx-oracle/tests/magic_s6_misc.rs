@@ -2256,3 +2256,27 @@ fn summon_script_tasks() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// Row 589: `magic_0293`'s static part start (the constants copied over
+/// other values each time).
+#[test]
+fn static_parts_started() {
+    let Some(mut t) = twin(293) else { return };
+    let f = t.at(0x1000);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let start = t.img.rel32_target(f + 0x31);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+    t.set_u32(op(&t, f, 0x1), SCRATCH + 0x2f0);
+    t.set_u32(op(&t, f, 0xc), SCRATCH + 0x280);
+    for k in 0..2u32 {
+        t.write(op(&t, f, 0x2c), &varied(0x80, k));
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
