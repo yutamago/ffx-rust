@@ -51,7 +51,14 @@ fn drift() {
     for mode in [0x018b_0046u32, 0x018b_0047, 0] {
         t.set_u32(SCRATCH + 0x6f0, mode);
         t.set_u32(fx + 0x334, f(1.25));
-        t.set_u32(fx + 0x204, (-0.0f32).to_bits());
+        // -0.0 + 0.0 for the other modes, a value for the battle's
+        let x = if mode == 0 { -0.0f32 } else { -0.75 };
+        t.set_u32(fx + 0x204, f(x));
+        // the neighbours other values
+        t.set_u32(fx + 0x200, f(3.5));
+        t.set_u32(fx + 0x208, f(5.25));
+        t.set_u32(fx + 0x330, f(-6.5));
+        t.set_u32(fx + 0x338, f(7.75));
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -67,8 +74,9 @@ fn eased_height() {
     for (i, v) in (0u32..).zip([0.0f32, 2.0, -1.0, 4.5, 3.0, 7.0]) {
         t.set_u32(keys + 4 * i, f(v));
     }
-    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
     for time in [0.0f32, 0.3, 1.75, 2.5, 3.9] {
+        // the frame and the caller's words scrubbed each case
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
         t.set_u32(fx + 0x1724, f(time));
         t.set_u32(fx + 0x149c, f(10.0));
         t.check_entry(at, Call::default(), &[], Eax::Junk);

@@ -2183,7 +2183,18 @@ records).
   `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events`,
   `read`, `readp`, `readabs`, `write`, `writep`, `keys`, `key`, `pad`,
   `press`, `shot`, `gfxcapture`, `notes` (the run's notes so far, a
-  failed game thread among them, listed as `events` lists), `audiomark`
+  failed game thread among them, listed as `events` lists), `stacks`
+  (every game thread's emulated call stack on one line, threads apart by
+  ` | `: first the clock's state, the render lock's owner, recursion and
+  waiters and the loader's two request lists; then per thread its role
+  (main, render, loader) or routine, the host entries it is inside,
+  innermost first (the import, port or wrapper it waits in), and the
+  return addresses on its game stack from there up, named from
+  `symbols/ffx.sym` (`FFX_HOST_SYM`, else `symbols/ffx.sym` in the
+  working directory, else `ffx.sym` beside the executable; pass
+  `FFX_HOST_SYM` through `WSLENV` with `/p`); `running` marks a thread in
+  emulated code, read from its last host entry; `crate::stacks`,
+  2026-11-01, host-b9), `audiomark`
   (`ok off`: no capture), `quit` (and `calllog off`, the replay player's
   closing line). Every other command (`snapshot`, `fpucw`,
   the overlay and editor commands, `cursor`, `threads`)

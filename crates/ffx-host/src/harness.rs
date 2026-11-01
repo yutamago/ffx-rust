@@ -1319,6 +1319,8 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             }
             Ok(out)
         }
+        // every game thread's emulated call stack (crate::stacks)
+        "stacks" => Ok(format!("ok {}", crate::stacks::stacks(shared))),
         "notes" => {
             // the run's notes so far (the clock's turns, failed threads, …)
             let notes = crate::log::notes();

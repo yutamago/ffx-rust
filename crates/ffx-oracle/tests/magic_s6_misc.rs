@@ -465,22 +465,60 @@ fn three_points_set_around() {
     }
 }
 
-/// Rows 848 and 213: the sprite fan of `magic_0598` and `magic_0162`
-/// (another identity in the census: other constants), its start (the
-/// task list empty and not) and its task through the countdown, the fade
-/// steps and the end (the pad bit both ways).
+/// Every copy of the sprite fan's start (112 bytes) and of its task
+/// (1092 bytes; census2, 2026-11-01: the old Sigs ran past each function).
+const SPRITE_FAN_STARTS: &[(u16, u32)] = &[
+    (162, 0x89b0),
+    (352, 0x2ba0),
+    (511, 0x9110),
+    (586, 0x7d10),
+    (589, 0x7f70),
+    (598, 0x4530),
+    (602, 0x42b0),
+];
+const SPRITE_FAN_TASKS: &[(u16, u32)] = &[
+    (162, 0x8a20),
+    (165, 0x8df0),
+    (168, 0x7bc0),
+    (304, 0x70e0),
+    (307, 0xc170),
+    (352, 0x2c10),
+    (434, 0xd370),
+    (511, 0x9180),
+    (563, 0x94f0),
+    (568, 0x6b10),
+    (586, 0x7d80),
+    (589, 0x7fe0),
+    (596, 0x4570),
+    (598, 0x45a0),
+    (602, 0x4320),
+    (605, 0x4960),
+    (610, 0x46e0),
+    (612, 0x4b70),
+    (673, 0x4410),
+];
+
+/// The sprite fan's start (the task list empty and not) and its task
+/// through the countdown, the fade steps and the end (the pad bit both
+/// ways), in every DLL carrying each.
 #[test]
 fn sprite_fans() {
-    for (dll, rva) in [(598u16, 0x4530u32), (162, 0x89b0)] {
-        sprite_fans_in(dll, rva);
+    for &(dll, rva) in SPRITE_FAN_STARTS {
+        sprite_fan_start_in(dll, rva);
+    }
+    for &(dll, rva) in SPRITE_FAN_TASKS {
+        sprite_fan_task_in(dll, rva);
     }
 }
 
-#[allow(clippy::too_many_lines)] // the start and the task
-fn sprite_fans_in(dll: u16, rva: u32) {
+fn bound(t: &Twin, f: u32) -> Option<&'static str> {
+    ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0)
+}
+
+fn sprite_fan_start_in(dll: u16, rva: u32) {
     let Some(mut t) = twin(dll) else { return };
     let f = t.at(rva);
-    let task_f = f + 0x70;
+    assert_eq!(bound(&t, f), Some("sprite fan start"), "magic_{dll:04}");
     let take = t.img.rel32_target(f + 0x30);
     let (head, tail) = (op(&t, f, 0x36), op(&t, f, 0x4a));
     let s = SCRATCH + 0x4000;
@@ -494,7 +532,13 @@ fn sprite_fans_in(dll: u16, rva: u32) {
         scrub(&mut t);
         t.check_entry(f, Call::this(s), &[], Eax::Checked);
     }
-    // the task
+}
+
+fn sprite_fan_task_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let task_f = t.at(rva);
+    assert_eq!(bound(&t, task_f), Some("sprite fan task"), "magic_{dll:04}");
+    let s = SCRATCH + 0x4000;
     let pad = SCRATCH + 0x7f0;
     rec(&mut t, 245, 1, move |m, a| {
         let v = m.r32(pad);
@@ -3007,13 +3051,26 @@ fn sprite_gs_packets() {
     }
 }
 
-/// Row 430: `magic_0384`'s five-number particle drift and the hand-over
-/// in the same identity (the table set and not, the flag set and not).
+/// Row 430: the five-number particle drift in every DLL carrying it, and
+/// `magic_0384`'s hand-over after it (the table set and not, the flag set
+/// and not).
 #[test]
 fn particles_drifting_5() {
-    let Some(mut t) = twin(384) else { return };
-    let f = t.at(0x2060);
-    let h = t.at(0x2270);
+    for (dll, rva, hand) in [
+        (384u16, 0x2060u32, true),
+        (421, 0x2040, false),
+        (535, 0x2020, false),
+    ] {
+        particles_drifting_5_in(dll, rva, hand);
+    }
+}
+
+fn particles_drifting_5_in(dll: u16, rva: u32, hand: bool) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    assert_eq!(bound(&t, f), Some("particle drift (5)"), "magic_{dll:04}");
+    let h = f + 0x210;
+    assert!(!hand || bound(&t, h) == Some("particle hand-over"));
     rec(&mut t, 458, 3, |_, a| 0x0458_0000 ^ a[1]);
     rec(&mut t, 450, 2, |_, a| 0x0450_0000 ^ a[1]);
     rec(&mut t, 451, 2, |_, a| 0x0451_0000 ^ a[1]);
@@ -3025,7 +3082,9 @@ fn particles_drifting_5() {
     }
     let p = SCRATCH + 0x1000;
     let a = SCRATCH + 0x5000;
-    t.set_u32(op(&t, h, 0x1f), a);
+    if hand {
+        t.set_u32(op(&t, h, 0x1f), a);
+    }
     for k in 0..4u32 {
         t.write(p, &varied(0x1a0, k));
         t.set_u32(p + 0xac, k % 3);
@@ -3034,6 +3093,9 @@ fn particles_drifting_5() {
         t.write(r, &varied(0x100, k + 5));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[p], Eax::Checked);
+        if !hand {
+            continue;
+        }
         // the hand-over: the record index `e`, the table word and the flag
         let e = 3 + k;
         t.set_u32(p + 0x2c + 0x10 * (k % 3), e);

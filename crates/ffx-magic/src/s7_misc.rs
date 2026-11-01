@@ -1348,12 +1348,11 @@ pub fn summon_script_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 
 /// [`summon_script_frame`] in `magic_0644` (the `rel32`s: `memset`, the
 /// pads, the script (twice), the kind records, the closing slots, the
-/// pool's give-back and the motion step's tail jumps). Its 367 bytes
-/// run on into `__security_check_cookie` (no padding between them), whose
-/// tail jump is the last `rel32`.
+/// pool's give-back and the motion step's tail jumps). Until census2
+/// (2026-11-01) 367 bytes, running on into `__security_check_cookie`.
 pub const SUMMON_SCRIPT_FRAME: Sig = Sig {
-    len: 367,
-    hash: 0x2ecb_93ce_9a75_d25d,
+    len: 352,
+    hash: 0x1d80_ccb2_42ed_fdd7,
     calls: &[
         (0x28, Callee::Import("memset")),
         (0x88, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
@@ -1365,7 +1364,6 @@ pub const SUMMON_SCRIPT_FRAME: Sig = Sig {
         (0x13a, Callee::Sig(&crate::sb_misc::CALL_628_213)),
         (0x142, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
         (0x149, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
-        (0x16b, Callee::Any),
     ],
     imports: &[],
 };
@@ -4294,10 +4292,11 @@ pub fn flight_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
 
 /// [`flight_step`] (the `rel32`s: the square root's and `_CIatan2`'s
 /// thunks and `__security_check_cookie`; the import: `rand`, through a
-/// register).
+/// register). Until census2 (2026-11-01) 767 bytes, short of the /GS
+/// epilogue.
 pub const FLIGHT_STEP: Sig = Sig {
-    len: 767,
-    hash: 0x0d07_77e6_f11c_2748,
+    len: 777,
+    hash: 0xf1d6_9c9d_3022_1bac,
     calls: &[
         (0x95, Callee::Import("_libm_sse2_sqrt_precise")),
         (0xa8, Callee::Import("_CIatan2")),

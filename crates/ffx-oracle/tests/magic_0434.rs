@@ -26,6 +26,8 @@ fn colour_show() {
     }
     for i in [0u8, 3] {
         t.set_u8(b, i);
+        // a non-zero byte above the index byte
+        t.set_u8(b + 1, 0x7f);
         t.check(
             at,
             Call::default(),

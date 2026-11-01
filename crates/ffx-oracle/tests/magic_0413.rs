@@ -27,13 +27,31 @@ fn frame() {
     t.set_u16(obj + 0x124, 0x8001);
     let (task, record) = (SCRATCH + 0x100, SCRATCH + 0x180);
     t.set_u32(w(&t, 0x74), 0x00ab_0074);
-    for (a, b, done, busy, count) in [
+    // the steps added to the angles (non-zero, so add and sub differ)
+    let (da, db) = (0.25f32, -0.375f32);
+    t.set_u32(w(&t, 0x15), da.to_bits());
+    t.set_u32(w(&t, 0x5b), db.to_bits());
+    let hi = f32::from_bits(t.u32(w(&t, 0x1d)));
+    let lo = f32::from_bits(t.u32(w(&t, 0x2d)));
+    // an angle whose sum with the step is the bound itself, when one is
+    let exact = |bound: f32, d: f32| {
+        let guess = (bound - d).to_bits();
+        (0..256u32)
+            .flat_map(|k| [guess.wrapping_add(k), guess.wrapping_sub(k)])
+            .map(f32::from_bits)
+            .find(|&a| (a + d).to_bits() == bound.to_bits())
+            .unwrap_or(bound - d)
+    };
+    let mut cases = vec![
         (0.5f32, -0.5f32, true, false, 0i32),
         (10.0, -10.0, true, false, 0),
         (f32::NAN, 3.0, false, false, 0),
         (0.0, 0.0, true, true, 0),
         (0.0, 0.0, true, false, 2),
-    ] {
+    ];
+    cases.push((exact(hi, da), exact(lo, db), true, false, 0));
+    cases.push((exact(lo, da), exact(hi, db), true, false, 0));
+    for (a, b, done, busy, count) in cases {
         t.set_u32(w(&t, 0x0d), a.to_bits());
         t.set_u32(w(&t, 0x53), b.to_bits());
         t.set_u32(t.img.word(ms + 0x02), u32::from(done));

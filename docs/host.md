@@ -540,9 +540,12 @@ advances the same way whatever the host's (or the emulator's) speed:
   `+0x2c`) are not empty and waits out; the render thread (noted by the
   wrapped `Renderer_PresentFlip` `0x00593760`) waits at its next take
   meanwhile. Inside an update the loader waits, unless the main thread
-  sleeps (the hook's stall case: `CdReadSync` waiting for a read) or the
-  update has run 3 s of host time (the hook's 100 ms, scaled for the
-  emulator).
+  waits for it: inside `CdReadSync_0076c490`'s read loop (any mode but 1,
+  wrapped: the map loads and the game over's title load wait there) or in
+  a `Sleep`. That is where the hook's 100 ms stall rule frees it in the
+  original, where an update only stalls while it waits; emulated work
+  frees nothing however long it takes (2026-11-01, host-b9, "The update
+  phase"). A guard frees it after 600 s of one update, with a note.
 - **FMOD's turn.** `FmodManager_tick` (`0x006fa700`, wrapped) runs once per
   boundary from the first one on, when the main thread gives the turn and
   waits for it; in between it serves the synchronous command the main
@@ -1390,7 +1393,8 @@ loader with its update and wait (not committed). Two separate things:
    far longer than that without waiting for the loader, while natively
    it takes well under 100 ms. That is the "-12 after update 1213" of
    the gate, and the title's cursor-glow phase in menu-save-4 and -6.
-   **Not fixed**: with the host-time rule replaced by one counted in the
+   **Fixed (2026-11-01, host-b9)**, below "The game over's wait". What
+   this round tried first: with the host-time rule replaced by one counted in the
    main thread's own sleeps (100 ms of `Sleep`/`SleepThreadInMillisecond`
    in one update, which frees the map loads' updates as the hook's stall
    does), the game-over update never ends: the main thread calls
@@ -1400,7 +1404,7 @@ loader with its update and wait (not committed). Two separate things:
    free, itself the only waiter, in no Windows wait) until the loader is
    let go; with a 600 s guard the update still ran into it. In the hook
    that update never stalls (its log frees the loader only in the two map
-   loads). So under emulation the render thread depends on the loader
+   loads; host-b9: one of the two is this update). So under emulation the render thread depends on the loader
    inside that update where natively it doesn't; what links them was not
    found (the guest-stack scans gave only stale words). The rule stays
    as it was. What `FFX_HOST_WATCH` showed (the 3 s rule in place): the
@@ -1417,6 +1421,33 @@ loader with its update and wait (not committed). Two separate things:
    update traced in the hook with its loader-take log, to see whether the
    original's render thread also waits for a cluster load there (and why
    that costs it no stall).
+   **The game over's wait (2026-11-01, host-b9).** The harness's new
+   `stacks` command (docs/harness.md, "Two processes") showed what the
+   game-over update waits on: with the in-update rule pushed to 300 s
+   (`FFX_HOST_LOADER_STALL_MS`, a diagnostic), the main thread sat in
+   `CdReadSync_0076c490` <- `TkCdReadWithMallocWithMessage` <-
+   `AtelEventSetUp` <- `TkInitScene` <- `TkUpdateEventJump` <-
+   `Sg_MainLoop` (the title's load), inside `MovieCdReadTaskLoop`'s
+   `WaitSema`/`PollSema_ps2` (1 ms `WaitForSingleObject`s, no `Sleep`),
+   and the loader in its take of the render lock
+   (`Phyre_PBinary_loadClusterTextures` <- `PRenderScopeLock_enter`); the
+   render thread idled in its event wait. So the main thread waits for the
+   loader there, as in a map load; the sleep rule above hung because that
+   wait is no `Sleep`, not because of the render thread. And the original
+   frees the loader in that update too: the hook's log of the same probe
+   (`call 0x0086da10` at boundary 275) says `loader freed in update 276`
+   (its count of the update the call's boundary starts), the 100 ms stall
+   rule, which in a native update only a wait can reach. The 3 s rule
+   freed it about 3 s into the 50 s of emulated work before that wait, so
+   the requests queued meanwhile ran at once, where the original runs them
+   only once the main thread waits. Now the loader is let go inside an
+   update while the main thread is in `CdReadSync`'s read loop (or a
+   `Sleep`), whatever the time; a 600 s guard (with a note) stays for a
+   wait the rule does not know. The probe's trace (7 ranges: the map
+   words, ctrl work 0's events, the request lists, the menu timer,
+   `g_PhyreScene`, the manager) then changes at the same updates relative
+   to the call as the original's in every range (map words +0, +1, +5,
+   the 3 s rule's +4); the map load at 152 is freed the same way.
 3. The opening's map load (`memochek` to the title) is freed in the
    main thread's wait in both programs, but one update earlier in
    ffx-rust (+194 against the original's +196, with the shift above
@@ -1546,7 +1577,7 @@ Nothing was re-recorded.
 | battle-ifrit (extra) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no |
 | battle-overdrive (`eye`) | shot 1: 49 pixels (x 530..684, y 384..613: the edges of a party member's skirt and belt cloth); 2-9: 0 | the same 49 pixels | **shot 1** |
 | boot (`realtime`) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no (no lockstep: the order is off) |
-| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own |
+| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own (host-b9: they are not; a third fresh run matched them, "The main list with the read-wait rule") |
 
 So with the order the original code gives the current references in every
 lockstep replay but **battle-overdrive-1** (49 pixels on cloth edges, the
@@ -1555,6 +1586,60 @@ with cloth (draw-gate-kami, draw-gate-besaid) were not checked: their
 `dg-*` references are on the main machine only, and games don't run
 there. The hood and cloth-ring entries of the accepted residue stay until
 the user decides.
+
+#### The main list with the read-wait rule (2026-11-01, host-b9)
+
+The x86_64 `ffx-rust.exe` with the new in-update loader rule ("The
+update phase", "The game over's wait"), each replay alone through
+`run-all.sh <replay>` (`FFX_HARNESS_EXE=rust`) on PC2, against PC2's
+own recordings; nothing re-recorded. Every replay of the main list has
+the original's trace events:
+
+| Replay | Trace events | Screenshots |
+|---|---|---|
+| menu-save | same (14 ranges) | **6 of 6, 0 pixels** (4 and 6, the title's cursor glow and header band, were 520 and 574) |
+| field-walk | same (4 ranges) | 2 of 2 (coarse 0.0) |
+| battle-attack | same (8 ranges) | 2 of 2, 0 pixels |
+| menu-browse | same (2 ranges) | 5 of 5, 0 pixels |
+| boot (`realtime`) | (none recorded) | 4 of 4, 0 pixels (boot-4 was 27) |
+| battle-magic | same (10 ranges) | 3 of 3 (one cursor-glow pixel, as before) |
+| battle-overdrive (`eye`) | same (14 ranges) | 8 of 9; shot 1 55 pixels on the skirt and belt cloth edges (x 530..684, y 384..611): the reference the cloth order changes (the original code gives 49 there, "The cloth order against the references") |
+| event-besaid | same (9 ranges) | 5 of 5, 0 pixels |
+| event-cliff (`realtime`, `eye`) | same (8 ranges) | by eye, as in the gate: 1,716-14,699 pixels, the originals 383,758-648,872 apart |
+| menu-shop | same (7 ranges) | 8 of 8, 0 pixels |
+| menu-grid | same (6 ranges) | 9 of 9 (4 cursor-glow pixels, as before) |
+| event-agency | same (11 ranges) | 7 of 7 (4-6 coarse 0.0) |
+| event-arrival (`realtime`, `eye`) | same (10 ranges) | 2-4 within 4 pixels; 1, 5, 7 less than the originals differ between themselves; 6 534,868 (below) |
+
+The extra list the same way: battle-ifrit (10 ranges), movie-fmv (3),
+settings-hdao, -msaa, -fxaa, -smaa, -texhigh (4 each) and
+settings-shadow (5) have the original's events and every shot at 0
+pixels; iggy-menus (`eye`) has its 4 ranges' events, and shots 1-9
+differ by 436,391-470,140 pixels (the Flash screens: `ffx-rust.exe`
+composites no Iggy image yet, blocker 3), 10-12 match.
+
+(`run-all.sh`'s exit status is 1 for field-walk and event-agency on PC2
+only because its `python3` has no numpy for the coarse comparison; the
+coarse numbers above are `uv run --with numpy` of the same command.)
+
+**event-arrival-6 is a phase, not a stale reference.** Two fresh runs of
+the original code (the hook, every replacement off) on PC2: the first's
+shot 6 matches both references with 0 pixels, the second's differs by
+526,946, about what ffx-rust's and the last round's two fresh originals
+(920,223 and 920,065) did. The shot comes 80 frames after shot 5, with
+the kicked ball filling the screen and the camera moving fast, and the
+replay is `realtime` (the scene keeps time with its voice stream): ctrl
+work 0's event count read with the shot was `0x655` in the matching run
+and `0x654` in the other (shot 5 `0x603` in both), so one event count
+moves most of the screen. The two references happen to agree exactly
+there (0 pixels apart, where every other shot of theirs differs by
+99,356-837,737), so `shot-compare.py` allows nothing for shot 6 and any
+run off by a count fails it. ffx-rust's run read `0x650` (its other
+shots 3-4 counts behind the first fresh run): the same real-time
+pacing as the other `realtime` shots, no difference of its own. Shot 6
+can't be compared pixel for pixel in a `realtime` replay unless it is
+pinned to an event count (a `waitfor` on `0x01325d94`) instead of 80
+frames; nothing was changed or re-recorded.
 
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
@@ -1684,8 +1769,10 @@ runs past the third frame (the Unicorn abort).
    and not in any comparison); in lockstep one update is lost at
    menu-save's game over, where ffx-rust's 3 s in-update rule lets the
    loader run inside a long emulated update (menu-save-4/-6's glow
-   phase). Open: the render thread waits for the loader inside that
-   update, so the rule can't simply go.
+   phase). Fixed (host-b9, 2026-11-01): the main thread waits for the
+   loader in `CdReadSync`'s read loop there (not the render thread), and
+   the loader now runs inside an update only while the main thread waits
+   there or sleeps ("The update phase", "The game over's wait").
 10. **The cloth race** (host-gate): ordered in both programs, on by
     default in lockstep (host-phase, "The cloth race"); which references
     it changes is listed for the user's decision.

@@ -711,11 +711,12 @@ pub fn step_d410<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(0)
 }
 
-/// 0x1000d410 (434 bytes with the switch table and the following
-/// `GetEffectOverlayTable`, which the census cut into it; 1 overlay).
+/// 0x1000d410 (416 bytes with its switch table; 1 overlay; until census2,
+/// 2026-11-01, 434 with the start of the following
+/// `GetEffectOverlayTable`).
 pub const STEP_D410: Sig = Sig {
-    len: 434,
-    hash: 0xa8c3_75b0_c7a5_240e,
+    len: 416,
+    hash: 0x9a35_fec7_744d_8b47,
     calls: &[
         (0x169, Callee::Sig(&crate::nodes::GATED)),
         (0x181, Callee::Sig(&crate::nodes::GATED)),
