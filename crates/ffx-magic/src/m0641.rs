@@ -387,3 +387,84 @@ pub const STATE_START: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The flashes' per-frame step (0x100013a0, an overlay table entry, no
+/// arguments): nothing (0) unless slot 261 `(9)` says so. Slot 315
+/// `(0)`; when slot 261 `(10)` answers, the requests are taken
+/// ([`take_requests`]) and the flashes step with `ecx` 0
+/// ([`step_flashes`]); otherwise the nine words at `+0x56`.. are copied
+/// to `+0x5b`.., each request `R[i]` (`+0xcc`) becomes whether slot 261
+/// `(i)` answers, and the flashes step with `ecx` 1. Either way the
+/// timeline `+0x4c`/`+0xe2` runs last
+/// ([`timeline_run`](crate::sb_misc::timeline_run), a tail jump), whose
+/// answer it returns.
+pub fn flash_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 261);
+    if g.call(t, 0, &[9]).eax == 0 {
+        return Ret::eax(0);
+    }
+    let t = slot_target(g, w(0x1b), 315);
+    g.call(t, 0, &[0]);
+    let t = slot_target(g, w(0x2a), 261);
+    let (step_call, tl_call, tl) = if g.call(t, 0, &[0xa, 0]).eax != 0 {
+        let take = Frame {
+            at: img.rel32_target(f + 0x40),
+            esp: fr.esp.wrapping_sub(4),
+            ..*fr
+        };
+        take_requests(g, img, &take);
+        (0x47, 0x51, w(0x4c))
+    } else {
+        for (from, to) in [
+            (0x56, 0x5b),
+            (0x60, 0x65),
+            (0x6a, 0x6f),
+            (0x74, 0x79),
+            (0x7e, 0x83),
+            (0x88, 0x8d),
+            (0x92, 0x97),
+            (0x9c, 0xa1),
+            (0xa6, 0xac),
+        ] {
+            let v = g.read::<u32>(w(from));
+            g.write::<u32>(w(to), v);
+        }
+        for i in 0..9u32 {
+            let t = slot_target(g, w(0xb3), 261);
+            let v = g.call(t, 0, &[i]).eax;
+            g.write::<u32>(w(0xcc).wrapping_add(4 * i), u32::from(v != 0));
+        }
+        (0xdc, 0xe7, w(0xe2))
+    };
+    let ecx = u32::from(step_call == 0xdc);
+    // push esi on the second way; the return address
+    let flashes = Frame {
+        at: img.rel32_target(f + step_call),
+        esp: fr.esp.wrapping_sub(4 + 4 * ecx),
+        ecx,
+        ..*fr
+    };
+    step_flashes(g, img, &flashes);
+    Ret::eax(crate::sb_misc::timeline_run(
+        g,
+        img,
+        img.rel32_target(f + tl_call),
+        tl,
+    ))
+}
+
+/// [`flash_step`] (236 bytes, 1 overlay).
+pub const FLASH_STEP: Sig = Sig {
+    len: 236,
+    hash: 0xc487_dbc8_973c_5efc,
+    calls: &[
+        (0x40, Callee::Sig(&TAKE_REQUESTS)),
+        (0x47, Callee::Sig(&STEP_FLASHES)),
+        (0x51, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0xdc, Callee::Sig(&STEP_FLASHES)),
+        (0xe7, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+    ],
+    imports: &[],
+};

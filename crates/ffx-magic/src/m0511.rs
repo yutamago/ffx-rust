@@ -402,6 +402,13 @@ pub const OBJECT_D10_0589: Sig = Sig {
 /// ([`wrap_once`](crate::ob_model::wrap_once)), `+0xe8` = -5.0, its `y`
 /// `y - K + *G_Y` (`+0xd9`, `+0xf4`). Returns the copied `w`.
 pub fn object_ab0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    object_ab0_with(g, img, fr, true)
+}
+
+/// [`object_ab0`] and `magic_0589`'s copy (0x10002d30, the point
+/// `+0x1a00`, the angle `+0x21f8`, without `*G_Y`): the point and angle
+/// displacements read from the code (`+0x64`, `+0x96`).
+fn object_ab0_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, add_y: bool) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let fx = g.read::<u32>(w(0x4));
@@ -416,16 +423,44 @@ pub fn object_ab0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let scale = g.read::<f32>(w(0x4a));
     let obj = fx.wrapping_add(0xab0);
     crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x5e), obj, scale, 9, 0);
-    let last = copy_point(g, fx, obj);
-    let a = add(g.read::<f32>(fx + 0x2258), g.read::<f32>(w(0x9e)));
+    let point = fx.wrapping_add(w(0x64));
+    let mut last = 0;
+    for i in 0..4 {
+        last = g.read::<u32>(point + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, last);
+    }
+    let a = add(
+        g.read::<f32>(fx.wrapping_add(w(0x96))),
+        g.read::<f32>(w(0x9e)),
+    );
     let a = crate::ob_model::wrap_once(g, img, f, a, [0xa8, 0xb2, 0xbc, 0xc9]);
     let y = sub(g.read::<f32>(obj + 0xd4), g.read::<f32>(w(0xd9)));
     g.write::<f32>(obj + 0xc4, a);
     g.write::<u32>(obj + 0xe8, 0xc0a0_0000);
-    let y = add(y, g.read::<f32>(w(0xf4)));
+    let y = if add_y {
+        add(y, g.read::<f32>(w(0xf4)))
+    } else {
+        y
+    };
     g.write::<f32>(obj + 0xd4, y);
     Ret::eax(last)
 }
+
+/// `magic_0589`'s [`object_ab0`] (0x10002d30, 250 bytes): no `*G_Y`.
+pub fn object_ab0_0589<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    object_ab0_with(g, img, fr, false)
+}
+
+/// [`object_ab0_0589`] (250 bytes, 1 overlay).
+pub const OBJECT_AB0_0589: Sig = Sig {
+    len: 250,
+    hash: 0x8801_6a4f_b421_3604,
+    calls: &[
+        (0x16, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x5e, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    ],
+    imports: &[],
+};
 
 /// [`object_ab0`] (258 bytes, 1 overlay).
 pub const OBJECT_AB0: Sig = Sig {

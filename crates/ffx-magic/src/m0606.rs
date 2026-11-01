@@ -196,3 +196,52 @@ pub const START_TASKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the object `*G_FX + 0x720` (0x10007b10, an overlay table
+/// entry, no arguments): [`start_object_first`](crate::o6_fam_object::start_object_first)
+/// (scale `*K` `+0x4`; its two stack words are the 16 bytes the code
+/// reserves and never writes: a junk read, the port reads the same stack
+/// words), slot 237 `(*G_A, 0x8a, 0, P)` fills its point `P = +0xd0`
+/// (`w` 1.0), `+0xc0` = pi/4, `+0xc4` the angle `+0x5ee8 + K` wrapped
+/// once ([`wrap_once`](crate::ob_model::wrap_once)), `y - K` (`+0x9a`).
+/// Returns slot 237's `eax`.
+pub fn object_720<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0xd));
+    let obj = fx.wrapping_add(0x720);
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x4)));
+    // push ebx, esi, edi; sub esp, 0x10; the return address
+    let start = Frame {
+        at: img.rel32_target(f + 0x1d),
+        esp: fr.esp.wrapping_sub(0x20),
+        edx: obj,
+        xmm,
+        ..*fr
+    };
+    crate::o6_fam_object::start_object_first(g, img, start.at, &start);
+    let p = obj.wrapping_add(0xd0);
+    let t = slot_target(g, w(0x22), 237);
+    let a = g.read::<u32>(w(0x3c));
+    let eax = g.call(t, 0, &[a, 0x8a, 0, p]).eax;
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(obj + 0xc0, 0x3f49_0fdb);
+    let x = add(g.read::<f32>(fx + 0x5ee8), g.read::<f32>(w(0x5f)));
+    let x = crate::ob_model::wrap_once(g, img, f, x, [0x69, 0x73, 0x7d, 0x8a]);
+    let y = sub(g.read::<f32>(obj + 0xd4), g.read::<f32>(w(0x9a)));
+    g.write::<f32>(obj + 0xc4, x);
+    g.write::<f32>(obj + 0xd4, y);
+    Ret::eax(eax)
+}
+
+/// [`object_720`] (178 bytes, 1 overlay).
+pub const OBJECT_720: Sig = Sig {
+    len: 178,
+    hash: 0xe17e_f280_a97b_fccb,
+    calls: &[(
+        0x1d,
+        Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0606_4D70),
+    )],
+    imports: &[],
+};

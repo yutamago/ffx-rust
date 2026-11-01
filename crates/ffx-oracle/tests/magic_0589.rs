@@ -162,3 +162,42 @@ fn object_d10() {
     magic_h6::scrub(&mut t);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// 0x10002d30 (`m0511::object_ab0_0589`): the old object listed and not,
+/// the angle wrapped down, up and not.
+#[test]
+fn object_ab0() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2d30);
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x4), fx);
+    let so = t.img.rel32_target(at + 0x5e);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    magic_owna::rec(&mut t, 941, 1, move |_, _| table);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    magic_owna::recs(&mut t, &[(713, 1)]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    let list = t.img.word(at + 0x9);
+    t.set_u32(t.img.word(at + 0x1f), SCRATCH + 0x6100);
+    for (a, listed) in [(0.5f32, false), (100.0, true), (-100.0, false), (0.0, true)] {
+        t.write(fx, &[0x3c; 0x2300]);
+        for i in 0..4 {
+            t.set_u32(fx + 0x1a00 + 4 * i, magic_hi::f(1.5 + i as f32));
+        }
+        t.set_u32(fx + 0x21f8, magic_hi::f(a));
+        t.set_u16(fx + 0xbe0 + 0x124, 0x8123);
+        let n = SCRATCH + 0x6000;
+        t.write(n, &[0; 0x10]);
+        t.set_u32(n + 8, fx + 0xbe0);
+        t.set_u32(list, if listed { n } else { 0 });
+        t.set_u32(list + 4, if listed { n } else { 0 });
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

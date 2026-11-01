@@ -189,3 +189,27 @@ fn state_start() {
     }
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// 0x100013a0: slot 261 off (nothing), the requests taken (slot 261 on
+/// for 10) and read from slot 261 (off for 10); the timeline empty.
+#[test]
+fn flash_step() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x13a0);
+    let on = SCRATCH + 0x40;
+    rec(&mut t, 261, 1, move |m, a| {
+        let mask = m.r32(on);
+        (mask >> (a[0] & 0x1f)) & 1
+    });
+    recs(&mut t, &[(315, 1), (253, 1)]);
+    for (i, op) in (0u32..).zip([0x56u32, 0x60, 0x6a, 0x74, 0x7e, 0x88, 0x92, 0x9c, 0xa6]) {
+        t.set_u32(t.img.word(at + op), 0x0056_0000 + i);
+    }
+    for op in [0x4cu32, 0xe2] {
+        t.set_u32(t.img.word(at + op) + 8, 0);
+    }
+    for mask in [0u32, 0x600, 0x0200 | 0x15] {
+        t.set_u32(on, mask);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
