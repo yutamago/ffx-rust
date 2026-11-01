@@ -4032,3 +4032,181 @@ pub const ROTATION_3650: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A node's eased move (thiscall, `ecx` = the group `C`; a /GS frame,
+/// `ebp` = `esp - 4` at the entry): the walk
+/// ([`walk`](crate::nodes::walk), `eax` the cookie word; nothing more when
+/// it stops). Then, with `N` the owner:
+/// - the objects `N+0x124` and `N+0x128`, each visited through its
+///   vtable's `+0x1c` with a cursor in the frame (`[ebp-0x5c]`,
+///   `[ebp-0xc]`: the object, `+5` the group's mode; `+4` is left as the
+///   frame holds it, and the callee may read it), their `+0x1c..+0x28`
+///   then copied to `N+0x2c` and `N+0x4c`;
+/// - by the byte `N+0x136`: 0 eases `N+0x1c..+0x24` towards `N+0x2c` by
+///   the rate `N+0x5c` (`(x - t) * r + t`; `+0x28` = `+0x38`); 1 counts
+///   the timer `N+0x11c` down by `K` (to 0 below 0), slot 233 `(&V,
+///   N+0x10c, timer / N+0x120)` and slot 234 `(N+0x1c, N+0xfc, &V)`,
+///   `N+0x28 = 1.0`;
+/// - unless the byte `N+0x135`: `N+0x3c..+0x44` eased towards `+0x4c` by
+///   `+0x60` (`+0x48` = `+0x58`);
+/// - unless the byte `N+0x137`: the scales `+0xdc..+0xe4` multiplied by
+///   `+0xec..+0xf4`, `+0xac..+0xb4` = `+0xcc.. * scale + +0xbc..` (`+0xb8`
+///   = `+0xc8`); unless the `u16 N+0x98`: the same for `+0xe8`, `+0x64`;
+/// - by the byte `N+0x134`: 1 moves the angles `+0x6c..+0x74` by
+///   `-+0x7c..` and stops each at 0 when it crosses it, 0 scales them by
+///   `+0x7c..`;
+/// - the angle words `a_i = s_i - trunc(s_i * x_i)` (`s_i` the `i16`
+///   `+0x8c..` negated when `x_i = +0x6c..` is below 0), `+0x78 = a_2 *
+///   K1 * K2 + +0x88`, `a_2 = 0`; the rotation `M` of `a`
+///   ([`rotation_4250`](crate::s3_matrix::rotation_4250)); with the flag
+///   word `+0x12c`'s bits 8 and 1 set, `+0x4c..+0x54` = `+0x1c..` less
+///   the rows of `M` dotted with `+0x9c..+0xa4` (`+0x58` = `+0xa8`);
+/// - slots 284 `(*N+0x130, 1, N+0x3c)`, 284 `(.., 0, N+0x1c)`, 285
+///   `(.., +0x78)`, 674 `(.., +0xac, +0xb0)` and 286 `(.., +0x64)`.
+///
+/// Returns slot 286's `eax`, or the walk's.
+///
+/// `magic_0155` 0x100031d0 (1,514 bytes; 4 DLLs).
+pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    let (eax, owner) = crate::nodes::walk(g, fr.ecx, fr.ecx, cookie);
+    let Some(n) = owner else {
+        return Ret::eax(eax);
+    };
+    let rf = |g: &G, o: u32| g.read::<f32>(n.wrapping_add(o));
+    let t = |g: &G, s: u32| slot_target(g, w(0x135), s);
+    for (obj_at, local, to) in [(0x124u32, 0x5cu32, 0x2cu32), (0x128, 0xc, 0x4c)] {
+        let obj = g.read::<u32>(n + obj_at);
+        if obj == 0 {
+            continue;
+        }
+        let cur = ebp.wrapping_sub(local);
+        let mode = g.read::<u8>(fr.ecx + 5);
+        g.write::<u32>(cur, obj);
+        g.write::<u8>(cur + 5, mode);
+        let method = g.read::<u32>(g.read::<u32>(obj) + 0x1c);
+        g.call(method, cur, &[cur]);
+        let obj = g.read::<u32>(cur);
+        for i in 0..4 {
+            let x = g.read::<u32>(obj.wrapping_add(0x1c + 4 * i));
+            g.write::<u32>(n + to + 4 * i, x);
+        }
+    }
+    let v = ebp.wrapping_sub(0x54);
+    let ease = |g: &mut G, (x, to, rate): (u32, u32, u32)| {
+        for i in 0..3 {
+            let d = sub(rf(g, x + 4 * i), rf(g, to + 4 * i));
+            let e = add(mul(d, rf(g, rate)), rf(g, to + 4 * i));
+            g.write::<f32>(n + x + 4 * i, e);
+        }
+        let last = g.read::<u32>(n + to + 0xc);
+        g.write::<u32>(n + x + 0xc, last);
+    };
+    match g.read::<u8>(n + 0x136) {
+        0 => ease(g, (0x1c, 0x2c, 0x5c)),
+        1 => {
+            let left = sub(rf(g, 0x11c), g.read::<f32>(w(0xf9)));
+            g.write::<f32>(n + 0x11c, left);
+            if 0.0 > left {
+                g.write::<u32>(n + 0x11c, 0);
+            }
+            let k = crate::sb_sse::div(rf(g, 0x11c), rf(g, 0x120));
+            g.call(t(g, 233), 0, &[v, n + 0x10c, k.to_bits()]);
+            g.call(t(g, 234), 0, &[n + 0x1c, n + 0xfc, v]);
+            g.write::<u32>(n + 0x28, 0x3f80_0000);
+        }
+        _ => {}
+    }
+    if g.read::<u8>(n + 0x135) == 0 {
+        ease(g, (0x3c, 0x4c, 0x60));
+    }
+    // the scales: `(scale, step, base, out)` per component
+    let scale = |g: &mut G, (s, k, a, b, out): (u32, u32, u32, u32, u32)| {
+        let x = mul(rf(g, k), rf(g, s));
+        let y = add(mul(rf(g, a), x), rf(g, b));
+        g.write::<f32>(n + s, x);
+        g.write::<f32>(n + out, y);
+    };
+    if g.read::<u8>(n + 0x137) == 0 {
+        for i in 0..3 {
+            let o = 4 * i;
+            scale(g, (0xdc + o, 0xec + o, 0xcc + o, 0xbc + o, 0xac + o));
+        }
+        let last = g.read::<u32>(n + 0xc8);
+        g.write::<u32>(n + 0xb8, last);
+    }
+    if g.read::<u16>(n + 0x98) == 0 {
+        scale(g, (0xe8, 0xf8, 0xd8, 0xc8, 0x64));
+    }
+    match g.read::<u8>(n + 0x134) {
+        1 => {
+            for i in 0..3 {
+                let step = rf(g, 0x7c + 4 * i);
+                let x = sub(rf(g, 0x6c + 4 * i), step);
+                g.write::<f32>(n + 0x6c + 4 * i, x);
+                // stopped at 0 once it crosses it (a NaN step as a
+                // negative one)
+                let crossed = if step > 0.0 { x <= 0.0 } else { x > 0.0 };
+                if crossed {
+                    g.write::<u32>(n + 0x6c + 4 * i, 0);
+                }
+            }
+        }
+        0 => {
+            for i in 0..3 {
+                let x = mul(rf(g, 0x7c + 4 * i), rf(g, 0x6c + 4 * i));
+                g.write::<f32>(n + 0x6c + 4 * i, x);
+            }
+        }
+        _ => {}
+    }
+    let angles = ebp.wrapping_sub(0x14);
+    for i in 0..3 {
+        let x = rf(g, 0x6c + 4 * i);
+        let s = i32::from(g.read::<i16>(n + 0x8c + 2 * i)).cast_unsigned();
+        let a = if 0.0 > x { s.wrapping_neg() } else { s };
+        let p = crate::s4_summon::trunc(mul(cvt(s), x));
+        g.write::<u32>(angles + 4 * i, a.wrapping_sub(p));
+    }
+    let a2 = cvt(g.read::<u32>(angles + 8));
+    let k = mul(mul(a2, g.read::<f32>(w(0x438))), g.read::<f32>(w(0x44a)));
+    g.write::<u32>(angles + 8, 0);
+    g.write::<f32>(n + 0x78, add(k, rf(g, 0x88)));
+    crate::s3_matrix::rotation_4250(g, img, img.rel32_target(f + 0x45c), v, angles);
+    let flags = g.read::<u32>(n + 0x12c);
+    if flags & 8 != 0 && flags & 1 != 0 {
+        let m = |g: &G, i: u32| g.read::<f32>(v + 4 * i);
+        let (kx, ky, kz) = (rf(g, 0x9c), rf(g, 0xa0), rf(g, 0xa4));
+        let r0 = add(add(mul(m(g, 0), kx), mul(ky, m(g, 1))), mul(m(g, 2), kz));
+        g.write::<f32>(n + 0x4c, sub(rf(g, 0x1c), r0));
+        let r1 = add(add(mul(m(g, 4), kx), mul(ky, m(g, 5))), mul(m(g, 6), kz));
+        g.write::<f32>(n + 0x50, sub(rf(g, 0x20), r1));
+        let r2 = add(add(mul(m(g, 8), kx), mul(ky, m(g, 9))), mul(m(g, 10), kz));
+        g.write::<f32>(n + 0x54, sub(rf(g, 0x24), r2));
+        let last = g.read::<u32>(n + 0xa8);
+        g.write::<u32>(n + 0x58, last);
+    }
+    let h = g.read::<u32>(n + 0x130);
+    g.call(t(g, 284), 0, &[h, 1, n + 0x3c]);
+    let h = g.read::<u32>(n + 0x130);
+    g.call(t(g, 284), 0, &[h, 0, n + 0x1c]);
+    let h = g.read::<u32>(n + 0x130);
+    g.call(t(g, 285), 0, &[h, g.read::<u32>(n + 0x78)]);
+    let h = g.read::<u32>(n + 0x130);
+    let (x, y) = (g.read::<u32>(n + 0xac), g.read::<u32>(n + 0xb0));
+    g.call(t(g, 674), 0, &[h, x, y]);
+    let h = g.read::<u32>(n + 0x130);
+    Ret::eax(g.call(t(g, 286), 0, &[h, g.read::<u32>(n + 0x64)]).eax)
+}
+
+/// [`node_ease`] (the `rel32`s: the rotation, `__security_check_cookie`).
+pub const NODE_EASE: Sig = Sig {
+    len: 1514,
+    hash: 0x8213_4ecf_4407_072f,
+    calls: &[(0x45c, Callee::Sig(&ROTATION_3650)), (0x5e2, Callee::Any)],
+    imports: &[],
+};

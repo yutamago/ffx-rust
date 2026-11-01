@@ -10,6 +10,8 @@
 )]
 
 mod magic;
+#[path = "magic/sa.rs"]
+mod sa;
 
 use ffx_magic::{Ret, s9_misc};
 use magic::{Call, Eax, SCRATCH, STACK_TOP, StubMem, Twin};
@@ -2759,6 +2761,96 @@ fn rotations_3650() {
                         g, img, fr.at, fr.ecx, fr.edx,
                     ))
                 });
+            }
+        }
+    }
+}
+
+/// Rows 72/73: the node's eased move in two DLLs, directly and through
+/// its thunk, on every ring shape (the first does not move): the
+/// objects at `+0x124`/`+0x128` there or not, each mode byte's cases
+/// (the timer running out, the angles crossing 0 or not, a NaN step),
+/// the flag word's bits.
+#[test]
+fn nodes_eased() {
+    use sa::{RINGS, VTABLE_2, check_this_thunk, handler_stubs, node, rec, ring};
+    for (dll, f, thunk) in [(155u16, 0x31d0u32, 0x37c0u32), (613, 0x3240, 0x3830)] {
+        let Some(mut t) = sa::twin(dll) else { return };
+        handler_stubs(&mut t);
+        let f = t.at(f);
+        let rot = t.img.rel32_target(f + 0x45c);
+        sine_table(&mut t, rot, 0x0c, |i| match i {
+            7 => Some(-0.0),
+            9 => Some(1.0e30),
+            _ => None,
+        });
+        for (o, x) in [(0xf9u32, 0.75f32), (0x438, 0.5), (0x44a, 1.0 / 64.0)] {
+            let a = op(&t, f, o);
+            set_f(&mut t, a, x);
+        }
+        rec(&mut t, 233, 3, |m, a| {
+            for i in 0..3 {
+                m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i) ^ a[2].rotate_left(i));
+            }
+            0x233
+        });
+        rec(&mut t, 234, 3, |m, a| {
+            for i in 0..3 {
+                let x = f32::from_bits(m.r32(a[2] + 4 * i)) * 0.5;
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x234
+        });
+        rec(&mut t, 284, 3, |m, a| m.r32(a[2]) ^ a[1]);
+        rec(&mut t, 285, 2, |_, a| a[1]);
+        rec(&mut t, 674, 3, |_, a| a[1] ^ a[2]);
+        rec(&mut t, 286, 2, |_, a| a[1].rotate_left(7));
+        // (ease mode, second ease off, scales off, u16 +0x98, angle mode,
+        // flag word, the objects there)
+        let cases: [(u8, u8, u8, u16, u8, u32, bool); 5] = [
+            (0, 0, 0, 0, 1, 9, true),
+            (1, 1, 1, 1, 0, 8, false),
+            (2, 0, 0, 0, 2, 1, true),
+            (1, 0, 0, 0, 1, 0xff, true),
+            (0, 1, 1, 0, 1, 9, false),
+        ];
+        for (k, &(c, p, cp)) in RINGS.iter().enumerate() {
+            for (case, &(ease, ease2, scales, w98, amode, flags, objs)) in cases.iter().enumerate()
+            {
+                let case = case as u32;
+                ring(&mut t, c, p, cp, 0x30 + k as u8);
+                let n = node(0);
+                for j in 0..0x45 {
+                    let v = ((j * 7 + case * 3) % 23) as f32 * 0.375 - 4.0;
+                    t.set_u32(n + 0x1c + 4 * j, v.to_bits());
+                }
+                // the timer (below the step on case 3), its length
+                set_f(&mut t, n + 0x11c, if case == 3 { 0.5 } else { 3.0 });
+                set_f(&mut t, n + 0x120, 2.5);
+                // the angles' steps: positive, negative, a NaN one
+                for (i, x) in [0.25f32, -1.5, f32::NAN].into_iter().enumerate() {
+                    let x = if case == 4 { -x } else { x };
+                    set_f(&mut t, n + 0x7c + 4 * i as u32, x);
+                }
+                for i in 0..3u32 {
+                    let s = [0x1234i16, -0x2000, 0x0777][i as usize];
+                    t.set_u16(n + 0x8c + 2 * i, s.cast_unsigned());
+                }
+                t.set_u16(n + 0x98, w98);
+                t.set_u32(n + 0x12c, flags);
+                t.set_u32(n + 0x130, 0x0130_0000 + case);
+                t.write(n + 0x134, &[amode, ease2, ease, scales]);
+                for (off, i) in [(0x124u32, 5u32), (0x128, 6)] {
+                    if objs {
+                        let o = node(i);
+                        t.write(o, &floats(0x80, i + case));
+                        t.set_u32(o, VTABLE_2);
+                        t.set_u32(n + off, o);
+                    } else {
+                        t.set_u32(n + off, 0);
+                    }
+                }
+                check_this_thunk(&mut t, f, thunk, s9_misc::node_ease, Eax::Checked);
             }
         }
     }
