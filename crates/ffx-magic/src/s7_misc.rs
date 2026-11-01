@@ -2486,3 +2486,107 @@ pub const JMP_SHAKE_NODE: Sig = Sig {
     calls: &[(8, Callee::Sig(&SHAKE_NODE))],
     imports: &[],
 };
+
+/// A spline object set up and its sound handle registered (internal:
+/// `ecx` = the object `O`, `edx` = the points `P` (16 bytes each); the
+/// stack `(n, kind, b, reverse, M, sx, sy, sz, w1, w2, b2)`; an aligned
+/// frame). `O+0x80` = the motion's data `D = M + (i16) M+0x10`, bytes
+/// `+0x84 = n`, `+0x85 = b2`, `+0x86 = b`, u16 `+0x88 = 0`, `+0x8a =
+/// kind`, `+0x8c = w1`, `+0x90 = w2`, `+0x94..+0x9c` the scales, `+0xa0
+/// = 0.005`; the `n` points copied to `O` (reversed with `reverse`).
+/// Then the handle `h` = slot 772 `(O, 0)`; slot 773 `(h)` says whether
+/// it is open (`**G_LOCK` 1 around it), its flags `F` = slot 776 (the
+/// rate byte `D + D[1] + 4`); an open one is closed (slot 779 `(h)`);
+/// `r` = slot 942 `(M)` (a local) and slot 907 `(h, &r, 0x40, F)`; then
+/// slot 269 `(O+0x40, O, n)`, whose `eax` it returns. The original keeps
+/// `n - 1` in its argument word `n`.
+///
+/// `magic_0515` 0x10002dc0 (480 bytes, `ecx`/`edx`; 4 DLLs).
+pub fn spline_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (o, p) = (fr.ecx, fr.edx);
+    let a = |g: &G, i: u32| fr.arg(g, i);
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let m = a(g, 4);
+    let d = i32::from(g.read::<i16>(m.wrapping_add(0x10)))
+        .cast_unsigned()
+        .wrapping_add(m);
+    g.write::<u32>(o + 0x80, d);
+    g.write::<u8>(o + 0x86, a(g, 2) as u8);
+    g.write::<u8>(o + 0x85, a(g, 10) as u8);
+    g.write::<u16>(o + 0x8a, a(g, 1) as u16);
+    let n = a(g, 0);
+    g.write::<u8>(o + 0x84, n as u8);
+    g.write::<u16>(o + 0x88, 0);
+    let x = a(g, 5);
+    g.write::<u32>(o + 0x94, x);
+    g.write::<u32>(fr.esp + 4, n.wrapping_sub(1));
+    for (at, i) in [(0x98u32, 6u32), (0x8c, 8), (0x9c, 7)] {
+        let v = a(g, i);
+        g.write::<u32>(o + at, v);
+    }
+    g.write::<u32>(o + 0xa0, 0x3ba3_d70a);
+    let v = a(g, 9);
+    g.write::<u32>(o + 0x90, v);
+    let reverse = a(g, 3) != 0;
+    let mut i = n.wrapping_sub(1);
+    let mut src = p;
+    loop {
+        let dst = o.wrapping_add(i << 4);
+        let from = if reverse { src } else { p.wrapping_add(i << 4) };
+        let lo = g.read::<u64>(from);
+        g.write::<u64>(dst, lo);
+        let hi = g.read::<u64>(from.wrapping_add(8));
+        g.write::<u64>(dst + 8, hi);
+        src = src.wrapping_add(0x10);
+        if i == 0 {
+            break;
+        }
+        i = i.wrapping_sub(1);
+    }
+    let d = g.read::<u32>(o + 0x80);
+    let d2 = g.read::<u32>(d.wrapping_add(4)).wrapping_add(d);
+    let h = slot(g, img, f, 0xea, 772, o, &[o, 0]);
+    let lock = |g: &G, at: u32| g.read::<u32>(w(at));
+    let l = lock(g, 0xf8);
+    let saved = g.read::<u32>(l);
+    g.write::<u32>(l, 1);
+    let open = slot(g, img, f, 0x107, 773, o, &[h.eax, h.edx, o, 0]).eax;
+    g.write::<u32>(lock(g, 0x11e), saved);
+    let rate = u32::from(g.read::<u8>(d2.wrapping_add(4)));
+    let flags = slot(g, img, f, 0x12d, 776, o, &[rate, h.eax, h.edx, o, 0]).eax;
+    if open != 0 {
+        let l = lock(g, 0x14e);
+        let saved = g.read::<u32>(l);
+        g.write::<u32>(l, 1);
+        slot(g, img, f, 0x153, 779, o, &[h.eax, h.edx]);
+        g.write::<u32>(lock(g, 0x16a), saved);
+    }
+    let r = slot(g, img, f, 0x174, 942, o, &[m]).eax;
+    let local = top.wrapping_sub(0xc);
+    g.write::<u32>(local, r);
+    let l = lock(g, 0x188);
+    let saved = g.read::<u32>(l);
+    g.write::<u32>(l, 1);
+    slot(
+        g,
+        img,
+        f,
+        0x1a3,
+        907,
+        o,
+        &[h.eax, h.edx, local, 0x40, flags],
+    );
+    g.write::<u32>(lock(g, 0x1b2), saved);
+    let n = g.read::<u32>(fr.esp + 4).wrapping_add(1);
+    slot(g, img, f, 0x1ca, 269, o, &[o + 0x40, o, n]).eax
+}
+
+/// [`spline_object`].
+pub const SPLINE_OBJECT: Sig = Sig {
+    len: 480,
+    hash: 0xadc0_93d4_b7d4_28ba,
+    calls: &[],
+    imports: &[],
+};

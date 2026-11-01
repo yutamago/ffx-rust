@@ -2108,3 +2108,81 @@ fn thunder_nodes() {
         }
     }
 }
+
+/// Row 323: the spline object set up in the four DLLs: one and four
+/// points, straight and reversed, the handle open and not; the lock
+/// word and the local slot 907 reads are logged.
+#[test]
+fn spline_objects() {
+    for (dll, rva) in [
+        (515u16, 0x2dc0u32),
+        (611, 0x2de0),
+        (667, 0x2c70),
+        (668, 0x2c90),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let lock = SCRATCH + 0x2f0;
+        let lg = op(&t, f, 0xf8);
+        t.set_u32(lg, lock);
+        let open = SCRATCH + 0x2f4;
+        log_calls(&mut t, 772, log, 2, Some(lg), |_, a, k| a[0] ^ (k << 8));
+        t.stub_edx(772, |_, a| a[0].rotate_left(4));
+        log_calls(&mut t, 773, log, 2, Some(lg), move |m, _, _| m.r32(open));
+        log_calls(&mut t, 776, log, 1, Some(lg), |_, a, _| a[0] << 4);
+        log_calls(&mut t, 779, log, 2, Some(lg), |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 942, log, 1, None, |_, a, _| a[0] ^ 0x0942_0000);
+        t.stub(907, move |m, a| {
+            let row = log + 0x500;
+            for i in 0..5 {
+                m.w32(row + 4 * i, a[i as usize]);
+            }
+            m.w32(row + 0x14, m.r32(a[2]));
+            m.w32(row + 0x18, m.r32(m.r32(lg)));
+            0x907
+        });
+        log_calls(&mut t, 269, log, 3, None, |_, a, k| a[2] ^ k);
+        let o = SCRATCH + 0x1000;
+        let p = SCRATCH + 0x1800;
+        let mdl = SCRATCH + 0x2000;
+        for (k, (n, rev, op_)) in [(1u32, 0u32, 0u32), (4, 0, 1), (4, 1, 0), (3, 7, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(lock, 0x0bad_0000 + k);
+            t.set_u32(open, op_);
+            t.write(o, &varied(0xc0, k));
+            t.write(p, &varied(0x80, k + 1));
+            t.write(mdl, &varied(0x100, k + 2));
+            t.set_u16(mdl + 0x10, 0x40);
+            // the data: `+4` the rate's offset from it
+            t.set_u32(mdl + 0x44, 0x20);
+            t.set_u8(mdl + 0x40 + 0x24, (0x30 + k) as u8);
+            let args = [
+                n,
+                0xabcd_1234,
+                0x55aa_0077,
+                rev,
+                mdl,
+                1.5f32.to_bits(),
+                (-2.0f32).to_bits(),
+                0.25f32.to_bits(),
+                0x8c8c_0000 + k,
+                0x9090_0000 + k,
+                0x1234_5600 + k,
+            ];
+            scrub(&mut t);
+            let c = Call {
+                ecx: o,
+                edx: p,
+                ..Call::default()
+            };
+            t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::spline_object(g, img, fr))
+            });
+        }
+    }
+}
