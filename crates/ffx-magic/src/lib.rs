@@ -2179,6 +2179,9 @@ ports! {
     "thunk: handles registered" => s7_misc::JMP_HANDLES_REGISTERED, s7_misc::ecx_jmp;
     "thunk: model points node" => s7_misc::JMP_MODEL_POINTS_NODE, s7_misc::ecx_jmp;
     "thunk: ring key frame" => s7_misc::JMP_RING_KEY_FRAME, s7_misc::ecx_jmp;
+    "camera settings (after 267)" => s7_misc::CAMERA_SETTINGS_4, s7_misc::camera_settings_4;
+    "fading level" => s7_misc::FADING_LEVEL, s7_misc::fading_level;
+    "near points fade" => s7_misc::NEAR_POINTS_FADE, s7_misc::near_points_fade;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;

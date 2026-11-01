@@ -1419,3 +1419,134 @@ pub const JMP_RING_KEY_FRAME: Sig = Sig {
     calls: &[(8, Callee::Sig(&RING_KEY_FRAME))],
     imports: &[],
 };
+
+/// The camera settings put after slot 267 `(4)` (cdecl, no arguments):
+/// [`camera_settings`]. Returns 1.
+///
+/// `magic_0098` 0x100020d0 (29 bytes; 4 DLLs).
+pub fn camera_settings_4<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    slot(g, img, f, 0x1, 267, fr.ecx, &[4]);
+    let cam = Frame {
+        at: img.rel32_target(f + 0x13),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    camera_settings(g, img, &cam);
+    Ret::eax(1)
+}
+
+/// [`camera_settings_4`] (the `rel32`: [`camera_settings`]).
+pub const CAMERA_SETTINGS_4: Sig = Sig {
+    len: 29,
+    hash: 0xec46_de87_64d6_4017,
+    calls: &[(0x13, Callee::Sig(&CAMERA_SETTINGS))],
+    imports: &[],
+};
+
+/// A fading level and the scaled matrices (cdecl, no arguments): nothing
+/// (1) unless `*G_ON`. The level `V = *G_V` goes down by `K` while slot
+/// 253 says so, kept in `0..=K2` (stored when it moved or was clamped;
+/// unordered stays), slot 38 `(*G_S, V, 0)`, the matrices
+/// ([`scaled_matrices`]); a level now at `K3` (ordered) sets `*G_F` and
+/// returns 0, else 1.
+///
+/// `magic_0443` 0x100019d0 (161 bytes; 2 DLLs).
+pub fn fading_level<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    if g.read::<u32>(w(0x2)) == 0 {
+        return Ret::eax(1);
+    }
+    let down = slot(g, img, f, 0xe, 253, fr.ecx, &[]).eax;
+    let mut v = k(g, 0x1e);
+    if down != 0 {
+        v = sub(v, k(g, 0x2a));
+        g.write::<f32>(w(0x32), v);
+    }
+    // `comiss 0, v; ja`, then `comiss v, K2; jbe`
+    if 0.0 > v {
+        v = 0.0;
+        g.write::<f32>(w(0x52), v);
+    } else if v > k(g, 0x42) {
+        v = k(g, 0x42);
+        g.write::<f32>(w(0x52), v);
+    }
+    let s = g.read::<u32>(w(0x6b));
+    slot(g, img, f, 0x57, 38, fr.ecx, &[s, v.to_bits(), 0]);
+    let m = Frame {
+        at: img.rel32_target(f + 0x75),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    scaled_matrices(g, img, &m);
+    // `ucomiss`/`lahf`/`jp`: only an ordered equality sets the flag
+    if k(g, 0x7d) == k(g, 0x84) {
+        g.write::<u32>(w(0x90), 1);
+        return Ret::eax(0);
+    }
+    Ret::eax(1)
+}
+
+/// [`fading_level`] (the `rel32`: [`scaled_matrices`]).
+pub const FADING_LEVEL: Sig = Sig {
+    len: 161,
+    hash: 0xc695_01e0_bbaa_a2bd,
+    calls: &[(0x75, Callee::Sig(&SCALED_MATRICES))],
+    imports: &[],
+};
+
+/// The near points marked, then the part's count and fade (cdecl `(O)`;
+/// a /GS frame, `ebp` = `esp - 4` at the entry). For each of the `*G_N`
+/// points `P_i` (16 bytes from `T - 8`, `T` an immediate): the frame's
+/// vector `V = P_i - (O+0xd0, 0, O+0xd8, O+0xdc)` (`ebp-0x14`), its
+/// length slot 453 `(V)` (ST0, as `f32`), and below `K` the flag
+/// `F[i] = 1`. Then [`count_fade`] with `ecx` = `O`, whose `eax` it
+/// returns.
+///
+/// `magic_0384` 0x10001e10 (244 bytes; 3 DLLs).
+pub fn near_points_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let o = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    let (x, z, q) = (
+        g.read::<f32>(o + 0xd0),
+        g.read::<f32>(o + 0xd8),
+        g.read::<f32>(o + 0xdc),
+    );
+    let mut i = 0i32;
+    let mut p = w(0x4c);
+    while i < g.read::<i32>(w(if i == 0 { 0x40 } else { 0xd2 })) {
+        let t = slot_target(g, w(0x61), 453);
+        g.write::<f32>(v, sub(g.read::<f32>(p.wrapping_sub(8)), x));
+        g.write::<f32>(v + 4, sub(g.read::<f32>(p.wrapping_sub(4)), 0.0));
+        g.write::<f32>(v + 8, sub(g.read::<f32>(p), z));
+        g.write::<f32>(v + 0xc, sub(g.read::<f32>(p.wrapping_add(4)), q));
+        let len = crate::m0018::st0_f32(g.call(t, fr.ecx, &[v]).st0);
+        // `comiss K, len; jbe`: below `K` (ordered) marks it
+        if g.read::<f32>(w(0xa2)) > len {
+            let at = i.cast_unsigned().wrapping_mul(4).wrapping_add(w(0xb2));
+            g.write::<u32>(at, 1);
+        }
+        i += 1;
+        p = p.wrapping_add(0x10);
+    }
+    let fade = Frame {
+        at: img.rel32_target(f + 0xe0),
+        ecx: o,
+        ..*fr
+    };
+    Ret::eax(count_fade(g, img, &fade))
+}
+
+/// [`near_points_fade`] (the `rel32`s: [`count_fade`] and
+/// `__security_check_cookie`).
+pub const NEAR_POINTS_FADE: Sig = Sig {
+    len: 244,
+    hash: 0x85f4_90f5_4dae_1029,
+    calls: &[(0xe0, Callee::Sig(&COUNT_FADE)), (0xec, Callee::Any)],
+    imports: &[],
+};

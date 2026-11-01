@@ -1255,3 +1255,155 @@ fn summon_script_frame_in(dll: u16, rva: u32) {
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// The camera settings' slots, each logging its words.
+fn camera_stubs(t: &mut Twin, log: u32) {
+    for (s, n) in [
+        (783u32, 1usize),
+        (782, 1),
+        (784, 1),
+        (781, 3),
+        (785, 1),
+        (801, 6),
+        (267, 1),
+    ] {
+        log_calls(t, s, log, n, None, |_, a, k| a[0] ^ (k << 24));
+    }
+}
+
+/// Row 257: the camera settings after slot 267 in the four DLLs.
+#[test]
+fn camera_settings_after_267() {
+    for (dll, rva, cam) in [
+        (98u16, 0x20d0u32, 0x1090u32),
+        (188, 0x2560, 0x1090),
+        (686, 0x1dc0, 0x1090),
+        (690, 0x2560, 0x1090),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let c = t.at(cam);
+        let log = SCRATCH + 0x6000;
+        camera_stubs(&mut t, log);
+        for (k, d) in [0.0f32, 2.0].into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            for (i, o) in (0u32..).zip([0x9u32, 0x24, 0x3e, 0x53, 0x65, 0x7c, 0x90, 0xa8, 0xef]) {
+                t.set_u32(op(&t, c, o), (1.5 + i as f32 + k as f32).to_bits());
+            }
+            t.set_u32(op(&t, c, 0xb0), d.to_bits());
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// Row 664: the fading level of both DLLs: off, the level held and going
+/// down, clamped at 0 and at the top, NaN, reaching the end value or not.
+#[test]
+fn fading_levels() {
+    for (dll, rva) in [(443u16, 0x19d0u32), (686, 0x1b00)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        // the matrices' slots (`scaled_matrices`)
+        rec(&mut t, 719, 3, |_, a| a[0] ^ 0x0719_0000);
+        t.stub(235, move |m, a| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { i });
+            }
+            0x0235_0000
+        });
+        rec(&mut t, 231, 3, |_, a| 0x0231_0000 ^ a[1]);
+        let down = SCRATCH + 0x2f0;
+        log_calls(&mut t, 253, log, 0, None, move |m, _, _| m.r32(down));
+        log_calls(&mut t, 38, log, 3, None, |_, a, k| a[1] ^ k);
+        let m = t.img.rel32_target(f + 0x75);
+        for (o, x) in [(0x2au32, 0.25f32), (0x42, 2.0), (0x84, 0.5)] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        // (on, down, the level)
+        for (k, (on, dn, v)) in [
+            (0u32, 1u32, 1.0f32),
+            (1, 0, 1.0),
+            (1, 1, 1.0),
+            (1, 1, 0.75),
+            (1, 1, 0.1),
+            (1, 0, -3.0),
+            (1, 0, 5.0),
+            (1, 1, f32::NAN),
+            (1, 0, 0.5),
+            (1, 0, 2.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(op(&t, f, 0x2), on);
+            t.set_u32(down, dn);
+            t.set_u32(op(&t, f, 0x1e), v.to_bits());
+            t.set_u32(op(&t, f, 0x6b), 0x5350_0000 + k);
+            t.set_u32(op(&t, f, 0x90), 0x9090);
+            t.set_u32(op(&t, m, 0x2b), 0x5150_0000 + k);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// Row 409: the near points marked in the three DLLs: no points, three
+/// (near, far, NaN length), then the count and fade.
+#[test]
+fn near_points_fades() {
+    for (dll, rva) in [(384u16, 0x1e10u32), (421, 0x1e00), (535, 0x1de0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        // the length: the vector's first term, or NaN for a marked one
+        t.stub(453, move |m, a| {
+            let k = m.r32(log);
+            m.w32(log, k + 1);
+            for i in 0..4 {
+                m.w32(log + 4 + 0x10 * (k % 8) + 4 * i, m.r32(a[0] + 4 * i));
+            }
+            0x453
+        });
+        t.stub_st0(453, |m, a| {
+            let x = f32::from_bits(m.r32(a[0]));
+            if x == 3.0 { f64::NAN } else { f64::from(x) }
+        });
+        // the count and fade's slots (`count_fade`)
+        let node = SCRATCH + 0x800;
+        log_calls(&mut t, 434, log + 0x200, 2, None, move |_, _, _| node);
+        log_calls(&mut t, 942, log + 0x200, 1, None, |m, a, k| m.r32(a[0]) ^ k);
+        let cf = t.img.rel32_target(f + 0xe0);
+        t.set_u32(op(&t, cf, 0x79), 30);
+        t.set_u32(op(&t, f, 0xa2), 1.0f32.to_bits());
+        let points = op(&t, f, 0x4c);
+        let flags = op(&t, f, 0xb2);
+        let o = SCRATCH + 0x400;
+        for (k, n) in [0i32, 3, 4, -1].into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(op(&t, f, 0x40), n.cast_unsigned());
+            t.write(o, &varied(0x200, k));
+            t.set_u32(o + 0xac, k % 3);
+            t.set_u32(o + 0xd0, 0.5f32.to_bits());
+            t.set_u32(o + 0xd8, (-1.0f32).to_bits());
+            t.set_u32(o + 0xdc, 2.0f32.to_bits());
+            for i in 0..4u32 {
+                // x - 0.5: 0.25 (near), 3.0 (NaN), 2.5 (far), -0.75
+                let x = [0.75f32, 3.5, 3.0, -0.25][i as usize];
+                t.set_u32(points - 8 + 0x10 * i, x.to_bits());
+                t.set_u32(points - 4 + 0x10 * i, (i as f32).to_bits());
+                t.set_u32(points + 0x10 * i, (1.0 - i as f32).to_bits());
+                t.set_u32(points + 4 + 0x10 * i, 0.5f32.to_bits());
+                t.set_u32(flags + 4 * i, 0x0f0f_0000 + i);
+            }
+            t.write(node, &varied(0x200, k + 1));
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[o], Eax::Checked);
+        }
+    }
+}
