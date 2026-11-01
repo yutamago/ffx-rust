@@ -108,3 +108,57 @@ pub const NEXT_STEP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The effect's start (0x10001000, cdecl `(task)`): with `E` = `*G`
+/// (`+0x04`), `a` = `E + 0x198` and `b` = `E + 0x1a0`: `*R` (`+0x25`) =
+/// slot 493 `(b)`, `*Z` (`+0x37`) = 0, `*K` (`+0x6d`) = whether slot 390
+/// `(a)` answers 0x1041, `*H` (`+0x74`) = slot 367 `(E' + 4, b, 0, 0, 0,
+/// 0, 0, 0)` (`E'` = `*G` again, `+0x51`); slot 448 `(2, 0)`, slot 450
+/// `(task, F)` and slot 449 `(task, F2)` (`F`/`F2` the callbacks `+0x98`/
+/// `+0xa5`). Returns slot 449's `eax`. Each slot call passes the words the
+/// original leaves on the stack.
+pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let e = g.read::<u32>(w(0x04));
+    let a = g.read::<u32>(e + 0x198);
+    let b = g.read::<u32>(e + 0x1a0);
+    let mut st = Pushes::default();
+    st.push(b);
+    let s = slot_target(g, w(0x17), 0x7b4 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, s, 0).eax;
+    g.write::<u32>(w(0x25), r);
+    st.push(a);
+    let s = slot_target(g, w(0x2a), 0x618 / 4);
+    g.write::<u32>(w(0x37), 0);
+    // call width: 12 (Pushes caps the words at 12)
+    let kind = st.call(g, s, 0).eax;
+    let e2 = g.read::<u32>(w(0x51));
+    st.push_all(&[0, 0, 0, 0, 0, 0, b, g.read::<u32>(e2 + 4)]);
+    let s = slot_target(g, w(0x61), 0x5bc / 4);
+    g.write::<u32>(w(0x6d), u32::from(kind == 0x1041));
+    // call width: 12 (Pushes caps the words at 12)
+    let h = st.call(g, s, 0).eax;
+    g.write::<u32>(w(0x74), h);
+    st.push_all(&[0, 2]);
+    let s = slot_target(g, w(0x79), 0x700 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let task = fr.arg(g, 0);
+    let s = slot_target(g, w(0x8a), 0x708 / 4);
+    st.push_all(&[w(0x98), task]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push_all(&[w(0xa5), task]);
+    let s = slot_target(g, w(0xa0), 0x704 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(st.call(g, s, 0).eax)
+}
+
+/// [`start`] (185 bytes, 1 overlay).
+pub const START: Sig = Sig {
+    len: 185,
+    hash: 0x3532_55cf_e0b8_3dee,
+    calls: &[],
+    imports: &[],
+};

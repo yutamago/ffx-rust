@@ -99,3 +99,38 @@ pub const SPRITE_TASK: Sig = Sig {
     calls: &[(0x2b, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
+
+/// The task's step (0x100013e0, no arguments): with `E` = `*G` (`+0x03`,
+/// read first) the 0x30-byte block `B` (`+0x0c`, `memset`) is cleared,
+/// its halfword `*H` (`+0x1d`) gets 0x80 and `*W` (`+0x2a`) the word `*V`
+/// (`+0x22`); the script's answer ([`run`](crate::sa_script::run),
+/// `+0x2f`) goes to `E + 0x114` and the motion's
+/// ([`motion_step`](crate::s3_motion::motion_step), `+0x3a`) to `E +
+/// 0x110`. Returns the motion's answer.
+pub fn step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let e = g.read::<u32>(w(0x03));
+    g.write_bytes(w(0x0c), &[0u8; 0x30]);
+    let h = g.read::<u16>(w(0x1d));
+    g.write::<u16>(w(0x1d), h | 0x80);
+    let v = g.read::<u32>(w(0x22));
+    g.write::<u32>(w(0x2a), v);
+    let a = crate::sa_script::run(g, img, img.rel32_target(f + 0x2f));
+    g.write::<u32>(e + 0x114, a);
+    let m = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x3a));
+    g.write::<u32>(e + 0x110, m);
+    Ret::eax(m)
+}
+
+/// [`step`] (70 bytes, 1 overlay).
+pub const STEP: Sig = Sig {
+    len: 70,
+    hash: 0x48b2_3753_4ce1_d3b1,
+    calls: &[
+        (0x11, Callee::Import("memset")),
+        (0x2f, Callee::Sig(&crate::sa_script::RUN)),
+        (0x3a, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+    ],
+    imports: &[],
+};

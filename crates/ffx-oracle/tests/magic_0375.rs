@@ -31,3 +31,34 @@ fn part_start() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x100010a0: slot 712 answering 0 and not, slot 261 answering 0 and
+/// not; the lock seen during slot 712 copied out.
+#[test]
+fn part_draw() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x10a0);
+    for (s, n) in [(258u32, 1usize), (231, 4), (230, 6)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let lock = SCRATCH + 0x600;
+    let answers = SCRATCH + 0x6f0;
+    rec(&mut t, 712, 2, move |m, _| {
+        let seen = m.r32(lock);
+        m.w32(lock + 0x40, seen);
+        m.r32(answers)
+    });
+    rec(&mut t, 261, 1, move |m, _| m.r32(answers + 4));
+    t.set_u32(t.img.word(at + 0x5d), lock);
+    t.set_u32(t.img.word(at + 0x4d), SCRATCH + 0x640);
+    for (k, op) in [0x16u32, 0x21, 0x2d, 0x40].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + u32::try_from(k).unwrap());
+    }
+    let obj = SCRATCH + 0x1000;
+    for (drawn, on, old) in [(0u32, 0u32, 0u32), (5, 0, 0x77), (0, 3, 1)] {
+        t.set_u32(lock, old);
+        t.set_u32(answers, drawn);
+        t.set_u32(answers + 4, on);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

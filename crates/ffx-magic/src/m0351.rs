@@ -229,3 +229,60 @@ pub const CAMERA_FADE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The frame callback (0x10002c40, no arguments): nothing (0) until
+/// started (`*S`, `+0x02`); else `**F` (`F` `+0x0d`) = 0 and, unless the
+/// game is paused (slot 253), 1 (`F` again `+0x29`); `**P` (`P` `+0x34`) =
+/// the immediate `+0x40`, slot 723 `(*A)` (`A` `+0x3a`) and slot 724
+/// `(*B)` (`B` `+0x58`), `**Q` (`Q` `+0x66`) = `*V` (`+0x6b`) and `*W`
+/// (`+0x7a`) = `*U` (`+0x72`); while the timeline runs
+/// ([`timeline`](crate::sa_misc::timeline), `+0x7f`) the frame count `*N`
+/// (`+0xa5`) goes up, else slot 214 `(*X)` (`X` `+0x8e`) runs. Returns 1.
+/// The slot calls pass the words the original leaves on the stack.
+pub fn frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    if g.read::<u32>(w(0x02)) == 0 {
+        return Ret::eax(0);
+    }
+    let fl = g.read::<u32>(w(0x0d));
+    g.write::<u32>(fl, 0);
+    let s = slot_target(g, w(0x18), 0x3f4 / 4);
+    if g.call(s, 0, &[]).eax == 0 {
+        let fl = g.read::<u32>(w(0x29));
+        g.write::<u32>(fl, 1);
+    }
+    let p = g.read::<u32>(w(0x34));
+    let mut st = crate::pushes::Pushes::default();
+    st.push(g.read::<u32>(w(0x3a)));
+    g.write::<u32>(p, w(0x40));
+    let s = slot_target(g, w(0x45), 0xb4c / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push(g.read::<u32>(w(0x58)));
+    let s = slot_target(g, w(0x52), 0xb50 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let q = g.read::<u32>(w(0x66));
+    let v = g.read::<u32>(w(0x6b));
+    g.write::<u32>(q, v);
+    let u = g.read::<u32>(w(0x72));
+    g.write::<u32>(w(0x7a), u);
+    if crate::sa_misc::timeline(g, img, img.rel32_target(f + 0x7f)) != 0 {
+        let n = g.read::<u32>(w(0xa5));
+        g.write::<u32>(w(0xa5), n.wrapping_add(1));
+        return Ret::eax(1);
+    }
+    let s = slot_target(g, w(0x88), 0x358 / 4);
+    let x = g.read::<u32>(w(0x8e));
+    g.call(s, 0, &[x]);
+    Ret::eax(1)
+}
+
+/// [`frame`] (175 bytes, 1 overlay).
+pub const FRAME: Sig = Sig {
+    len: 175,
+    hash: 0x053f_2cb1_6968_4f6a,
+    calls: &[(0x7f, crate::Callee::Sig(&crate::sa_misc::TIMELINE))],
+    imports: &[],
+};

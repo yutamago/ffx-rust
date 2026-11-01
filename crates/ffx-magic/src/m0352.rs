@@ -51,3 +51,79 @@ pub const FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// An object's camera point (0x10004e60, cdecl `(obj)`, a /GS frame of
+/// 0x84 bytes): slot 723 `(&A)` and slot 724 `(&B)` (`A` `ebp - 0x84`,
+/// `B` `ebp - 0x44` on the frame), slot 327 `(obj + 0x80, &B)`, then the
+/// point `p` = `obj + 0xd0` set to `(0, 0, 5.0, 1.0)` goes through slot
+/// 229 `(p, obj + 0x80, p)` and `p + 0xc` = 1.0. Returns slot 229's `eax`.
+/// The slot calls pass the words the original leaves on the stack.
+pub fn camera_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    Ret::eax(point(g, img, fr).1)
+}
+
+/// [`camera_point`]'s body (also [`camera_point_show`]'s, the same
+/// operands): returns the words left on the stack and slot 229's `eax`.
+fn point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> (crate::pushes::Pushes, u32) {
+    let w = |off: u32| img.word(fr.at + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let obj = fr.arg(g, 0);
+    let (m, p) = (obj + 0x80, obj + 0xd0);
+    let (a, b) = (ebp.wrapping_sub(0x84), ebp.wrapping_sub(0x44));
+    let mut st = crate::pushes::Pushes::default();
+    st.push(a);
+    let s = slot_target(g, w(0x2c), 0xb4c / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push(b);
+    let s = slot_target(g, w(0x3d), 0xb50 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push_all(&[b, m]);
+    let s = slot_target(g, w(0x4e), 0x51c / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let s = slot_target(g, w(0x5c), 0x394 / 4);
+    st.push_all(&[p, m, p]);
+    for (k, v) in (0u32..).zip([0, 0, 0x40a0_0000, 0x3f80_0000]) {
+        g.write::<u32>(p + 4 * k, v);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    let eax = st.call(g, s, 0).eax;
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    (st, eax)
+}
+
+/// [`camera_point`] (160 bytes, 1 overlay).
+pub const CAMERA_POINT: Sig = Sig {
+    len: 160,
+    hash: 0x017f_21c6_c0c1_693d,
+    calls: &[
+        // __security_check_cookie
+        (0x98, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The camera point and its show (0x10004f60, cdecl `(obj)`, a /GS frame
+/// of 0x84 bytes): [`camera_point`]'s steps, then slot 904 `(2, 1)`.
+/// Returns slot 904's `eax`. The slot calls pass the words the original
+/// leaves on the stack.
+pub fn camera_point_show<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (mut st, _) = point(g, img, fr);
+    st.push_all(&[1, 2]);
+    let s = slot_target(g, img.word(fr.at + 0x87), 0xe20 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(st.call(g, s, 0).eax)
+}
+
+/// [`camera_point_show`] (177 bytes, 1 overlay).
+pub const CAMERA_POINT_SHOW: Sig = Sig {
+    len: 177,
+    hash: 0xe4e7_52fc_536b_3325,
+    calls: &[
+        // __security_check_cookie
+        (0xa9, Callee::Any),
+    ],
+    imports: &[],
+};

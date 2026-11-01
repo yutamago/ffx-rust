@@ -81,3 +81,52 @@ pub const TAIL_NODE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A sprite's set-up from its record (0x10002a30, internal, `ecx` = the
+/// record `[sprite, a, b, c, kind byte, d]`; a /GS frame of 0x14 bytes):
+/// unless bit 0 of the sprite's halfword `+0x90` is set, `+0x92` = the
+/// kind, `+0x80` and `+0x78` = a, `+0x7c` = b, `+0x84` = d, `+0x88` = c,
+/// `+0x64` = slot 538 `(h, 0)` (`h` = `+0x50`) with bit 6 of `+0x90` set,
+/// and slot 217 `(h, &M)` (`M` on the frame, `ebp - 0x14`); bit 10 of
+/// `+0x90` is cleared either way. Returns 0xfbff (the mask's register).
+/// Slot 217 passes the words the original leaves on the stack.
+pub fn sprite_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let r = fr.ecx;
+    let sp = g.read::<u32>(r);
+    if g.read::<u8>(sp + 0x90) & 1 == 0 {
+        let kind = u16::from(g.read::<u8>(r + 0x10));
+        g.write::<u16>(sp + 0x92, kind);
+        for (dst, src) in [(0x80, 4), (0x78, 4), (0x7c, 8), (0x84, 0x14), (0x88, 0xc)] {
+            let v = g.read::<u32>(r + src);
+            g.write::<u32>(sp + dst, v);
+        }
+        let mut st = crate::pushes::Pushes::default();
+        st.push_all(&[0, g.read::<u32>(sp + 0x50)]);
+        let s = crate::runtime::slot_target(g, w(0x4f), 0x868 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        let h = st.call(g, s, 0).eax;
+        let fl = g.read::<u16>(sp + 0x90);
+        g.write::<u16>(sp + 0x90, fl | 0x40);
+        g.write::<u32>(sp + 0x64, h);
+        st.push_all(&[ebp.wrapping_sub(0x14), g.read::<u32>(sp + 0x50)]);
+        let s = crate::runtime::slot_target(g, w(0x70), 0x364 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, s, 0);
+    }
+    let fl = g.read::<u16>(sp + 0x90);
+    g.write::<u16>(sp + 0x90, fl & 0xfbff);
+    Ret::eax(0xfbff)
+}
+
+/// [`sprite_setup`] (157 bytes, 1 overlay).
+pub const SPRITE_SETUP: Sig = Sig {
+    len: 157,
+    hash: 0xe101_5bb6_01ba_0c5e,
+    calls: &[
+        // __security_check_cookie
+        (0x95, crate::Callee::Any),
+    ],
+    imports: &[],
+};

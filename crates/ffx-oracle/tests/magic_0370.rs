@@ -38,3 +38,29 @@ fn start() {
     }
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// 0x100017d0: the part's draw with the lock set and clear before (the
+/// lock seen during slot 712 copied out).
+#[test]
+fn draw() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x17d0);
+    for (s, n) in [(723u32, 1usize), (724, 2), (258, 3), (231, 6), (230, 8)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let lock = SCRATCH + 0x600;
+    rec(&mut t, 712, 10, move |m, a| {
+        let seen = m.r32(lock);
+        m.w32(lock + 0x40, seen);
+        0x0712_0000 ^ a[1]
+    });
+    t.set_u32(t.img.word(at + 0x8a), lock);
+    t.set_u32(t.img.word(at + 0x01), SCRATCH + 0x640);
+    for (k, op) in [0x08u32, 0x26, 0x46, 0x5d, 0x70].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + u32::try_from(k).unwrap());
+    }
+    for old in [0u32, 0x77] {
+        t.set_u32(lock, old);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -38,3 +38,40 @@ fn frame() {
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// 0x10004e60 and 0x10004f60: the camera point and its show (junk under
+/// the entry for the frame).
+#[test]
+fn camera_point() {
+    use magic::StubMem;
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x4e60);
+    for (s, k) in [(723u32, 0x0723u32), (724, 0x0724)] {
+        rec(&mut t, s, 1, move |m: &mut dyn StubMem, a: &[u32]| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, k + i);
+            }
+            k
+        });
+    }
+    rec(&mut t, 327, 2, |m: &mut dyn StubMem, a: &[u32]| {
+        let v = m.r32(a[1]);
+        m.w32(a[0], v ^ 0x327);
+        0x327
+    });
+    rec(&mut t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 904, 2, |_, a| 0x0904_0000 ^ a[0] ^ (a[1] << 4));
+    let obj = SCRATCH + 0x1000;
+    // 0x10004f60: the same, then slot 904
+    for at in [at, t.at(0x4f60)] {
+        t.write(obj, &[0x5c; 0x120]);
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

@@ -103,3 +103,30 @@ fn sprite_task() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x100013e0: the script ended or waiting, the motion done or not.
+#[test]
+fn step() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x13e0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x03), fx);
+    let run = t.img.rel32_target(at + 0x2f);
+    let ms = t.img.rel32_target(at + 0x3a);
+    let s = t.img.word(run + 0x1c);
+    for (mode, done) in [(0u8, true), (2, true), (0, false), (2, false)] {
+        t.set_u32(w(&t, 0x22), 0x0022_0022);
+        t.set_u16(w(&t, 0x1d), 0x1234);
+        t.write(w(&t, 0x0c).wrapping_sub(4), &[0x6b; 0x38]);
+        // the script ended (mode 0, returns 1) or waiting for ever (2)
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(s + 0x54, 0xffff);
+        t.set_u32(s + 0x24, 0);
+        t.set_u32(s + 0x28, 0);
+        t.set_u32(t.img.word(ms + 0x02), u32::from(done));
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        t.write(fx + 0x100, &[0x55; 0x20]);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

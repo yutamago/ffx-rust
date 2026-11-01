@@ -49,3 +49,28 @@ fn tail_node() {
         t.check(at, c, &[x], Eax::Checked, m0273::tail_node);
     }
 }
+
+/// 0x10002a30 (internal): the sprite set up and already set up (bit 0).
+#[test]
+fn sprite_setup() {
+    use magic::StubMem;
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2a30);
+    t.stub(538, |_, a| 0x0538_0000 ^ a[0] ^ (a[1] << 8));
+    t.stub(217, |m: &mut dyn StubMem, a: &[u32]| {
+        let v = m.r32(a[1]);
+        m.w32(SCRATCH + 0x700, v ^ a[0] ^ a[2]);
+        0x217
+    });
+    let r = SCRATCH + 0x100;
+    let sprite = SCRATCH + 0x1000;
+    for (k, v) in (0u32..).zip([sprite, 0xa, 0xb, 0xc, 0x0000_0099, 0xd]) {
+        t.set_u32(r + 4 * k, v);
+    }
+    for flags in [0u16, 0xffff, 0x0400, 0xfffe] {
+        t.write(sprite, &[0x5c; 0xa0]);
+        t.set_u16(sprite + 0x90, flags);
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        t.check(at, Call::this(r), &[], Eax::Checked, m0273::sprite_setup);
+    }
+}

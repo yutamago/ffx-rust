@@ -2054,6 +2054,14 @@ ports! {
     "m0396 script end" => m0396::SCRIPT_END, m0396::script_end;
     "m0397 camera turn" => m0397::CAMERA_TURN, m0397::camera_turn;
     "m0397 point step" => m0397::POINT_STEP, m0397::point_step;
+    "m0316 step" => m0316::STEP, m0316::step;
+    "m0352 camera point" => m0352::CAMERA_POINT, m0352::camera_point;
+    "m0375 part draw" => m0375::PART_DRAW, m0375::part_draw;
+    "m0352 camera point show" => m0352::CAMERA_POINT_SHOW, m0352::camera_point_show;
+    "m0351 frame" => m0351::FRAME, m0351::frame;
+    "m0370 draw" => m0370::DRAW, m0370::draw;
+    "m0267 frame" => m0267::FRAME, m0267::frame;
+    "m0361 start" => m0361::START, m0361::start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2680,6 +2688,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0371 block reset", &m0371::BLOCK_RESET),
     ("m0397 party mean", &m0397::PARTY_MEAN),
     ("m0395 start-up", &m0395::START_UP),
+    ("m0273 sprite setup", &m0273::SPRITE_SETUP),
+    ("m0267 scale matrix", &m0267::SCALE_MATRIX),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

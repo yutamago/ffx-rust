@@ -117,3 +117,45 @@ fn camera_fade() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10002c40: not started, paused or not, the timeline running and its
+/// last frame (slot 214).
+#[test]
+fn frame_timeline() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2c40);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let paused = SCRATCH + 0x5f0;
+    rec(&mut t, 253, 0, move |m, _| m.r32(paused));
+    for (s, n) in [(723u32, 1usize), (724, 2), (214, 1)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let flag = SCRATCH + 0x600;
+    let p = SCRATCH + 0x610;
+    let q = SCRATCH + 0x620;
+    t.set_u32(w(&t, 0x0d), flag);
+    t.set_u32(w(&t, 0x34), p);
+    t.set_u32(w(&t, 0x66), q);
+    for op in [0x3a, 0x58, 0x6b, 0x72, 0x8e] {
+        t.set_u32(w(&t, op), 0x00ab_0000 + op);
+    }
+    let tl = t.img.rel32_target(at + 0x7f);
+    let live = t.img.word(tl + 0x06);
+    // no events: a live timeline only asks slot 253
+    t.set_u32(t.img.word(tl + 0x25), 0);
+    for (started, pause, n_live) in [
+        (0u32, 0u32, 1u32),
+        (1, 0, 1),
+        (1, 1, 1),
+        (1, 0, 0),
+        (2, 5, 0),
+    ] {
+        t.set_u32(w(&t, 0x02), started);
+        t.set_u32(paused, pause);
+        t.set_u32(live, n_live);
+        t.set_u32(flag, 0x77);
+        t.set_u32(p, 0x88);
+        t.set_u32(q, 0x99);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

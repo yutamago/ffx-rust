@@ -68,3 +68,25 @@ fn object_steps() {
     context(&mut t, at, 0x04);
     run_obj(&mut t, at);
 }
+
+/// 0x10001000: the start with slot 390 answering 0x1041 and not.
+#[test]
+fn start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1000);
+    let kind = SCRATCH + 0x6f0;
+    rec(&mut t, 390, 2, move |m, _| m.r32(kind));
+    for (s, n) in [(493u32, 1usize), (367, 10), (448, 2), (450, 2), (449, 2)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x04), fx);
+    t.set_u32(fx + 4, 0x00e0_0004);
+    t.set_u32(fx + 0x198, 0x00e0_0198);
+    t.set_u32(fx + 0x1a0, 0x00e0_01a0);
+    let task = SCRATCH + 0x100;
+    for k in [0x1041u32, 0x1040, 0] {
+        t.set_u32(kind, k);
+        t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
