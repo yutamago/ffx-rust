@@ -83,6 +83,8 @@ pub mod s4_wrap;
 // the shared work list's fifth round (shared-5: rows 737 on)
 pub mod s5_misc;
 pub mod s6_misc;
+// the shared work list's seventh round (shared-7)
+pub mod s7_misc;
 
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
@@ -2405,6 +2407,49 @@ ports! {
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
+    // round 7, shared-7 (s7_misc)
+    "scaled matrices" => s7_misc::SCALED_MATRICES, s7_misc::scaled_matrices;
+    "countdown children" => s7_misc::COUNTDOWN_CHILDREN, s7_misc::countdown_children;
+    "summon frame (bound, bone first)" => s7_misc::SUMMON_FRAME_BOUND, s7_misc::summon_frame_bound;
+    "summon frame (bound, ring first)" => s7_misc::SUMMON_FRAME_RING, s7_misc::summon_frame_ring;
+    "summon frame (pass first)" => s7_misc::SUMMON_FRAME_PASS, s7_misc::summon_frame_pass;
+    "summon frame (slot 673 first)" => s7_misc::SUMMON_FRAME_673, s7_misc::summon_frame_673;
+    "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
+    "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
+    "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;
+    "summon script frame" => s7_misc::SUMMON_SCRIPT_FRAME, s7_misc::summon_script_frame;
+    "summon script frame (selection groups)" => s7_misc::SUMMON_SCRIPT_FRAME_B, s7_misc::summon_script_frame;
+    "thunk: moving light node" => s7_misc::JMP_MOVING_LIGHT_NODE, s7_misc::ecx_jmp;
+    "thunk: count fade" => s7_misc::JMP_COUNT_FADE, s7_misc::ecx_jmp;
+    "thunk: model draw node" => s7_misc::JMP_MODEL_DRAW_NODE, s7_misc::ecx_jmp;
+    "thunk: light node" => s7_misc::JMP_LIGHT_NODE, s7_misc::ecx_jmp;
+    "thunk: handles registered" => s7_misc::JMP_HANDLES_REGISTERED, s7_misc::ecx_jmp;
+    "thunk: model points node" => s7_misc::JMP_MODEL_POINTS_NODE, s7_misc::ecx_jmp;
+    "thunk: ring key frame" => s7_misc::JMP_RING_KEY_FRAME, s7_misc::ecx_jmp;
+    "thunk: thunder node" => s7_misc::JMP_THUNDER_NODE, s7_misc::ecx_jmp;
+    "thunk: sprite fade node" => s7_misc::JMP_SPRITE_FADE_NODE, s7_misc::ecx_jmp;
+    "thunk: shake node" => s7_misc::JMP_SHAKE_NODE, s7_misc::ecx_jmp;
+    "thunk: flagged object step" => s7_misc::JMP_FLAGGED_OBJECT_STEP, s7_misc::ecx_jmp;
+    "camera settings (after 267)" => s7_misc::CAMERA_SETTINGS_4, s7_misc::camera_settings_4;
+    "fading level" => s7_misc::FADING_LEVEL, s7_misc::fading_level;
+    "near points fade" => s7_misc::NEAR_POINTS_FADE, s7_misc::near_points_fade;
+    "two-stage fade" => s7_misc::TWO_STAGE_FADE, s7_misc::two_stage_fade;
+    "two-stage fade (two constants)" => s7_misc::TWO_STAGE_FADE_B, s7_misc::two_stage_fade;
+    "random part" => s7_misc::RANDOM_PART, s7_misc::random_part;
+    "summon fade-in" => s7_misc::SUMMON_FADE_IN, s7_misc::summon_fade_in;
+    "summon set-up task" => s7_misc::SUMMON_SETUP_TASK, s7_misc::summon_setup_task;
+    "model items node" => s7_misc::MODEL_ITEMS_NODE, s7_misc::model_items_node;
+    "model sound record" => s7_misc::SOUND_RECORD, s7_misc::sound_record;
+    "falling sparks" => s7_misc::FALLING_SPARKS, s7_misc::falling_sparks;
+    "camera path task" => s7_misc::CAMERA_PATH_TASK, s7_misc::camera_path_task;
+    "children items node" => s7_misc::CHILDREN_ITEMS_NODE, s7_misc::children_items_node;
+    "actors objects start" => s7_misc::ACTORS_OBJECTS_START, s7_misc::actors_objects_start;
+    "camera blends" => s7_misc::CAMERA_BLENDS, s7_misc::camera_blends;
+    "summon load objects" => s7_misc::SUMMON_LOAD_OBJECTS, s7_misc::summon_load_objects;
+    "staged volley task" => s7_misc::STAGED_VOLLEY_TASK, s7_misc::staged_volley_task;
+    "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
+    "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
+    "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
@@ -3262,6 +3307,46 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
     ("aimed node walk", &s6_misc::AIMED_NODE_WALK),
     ("ring take", &s6_misc::RING_TAKE),
+    // round 7, shared-7 (s7_misc)
+    ("handles registered", &s7_misc::HANDLES_REGISTERED),
+    ("count fade", &s7_misc::COUNT_FADE),
+    ("ring key frame", &s7_misc::RING_KEY_FRAME),
+    ("global differences", &s7_misc::GLOBAL_DIFFERENCES),
+    (
+        "start object (reset state 0x1e)",
+        &s7_misc::START_OBJECT_RESET_1E,
+    ),
+    ("node to live", &s7_misc::NODE_TO_LIVE),
+    ("model points node", &s7_misc::MODEL_POINTS_NODE),
+    ("light node", &s7_misc::LIGHT_NODE),
+    ("model draw node", &s7_misc::MODEL_DRAW_NODE),
+    ("look matrix", &s7_misc::LOOK_MATRIX),
+    ("moving light node", &s7_misc::MOVING_LIGHT_NODE),
+    ("spark at a point", &s7_misc::SPARK_AT_POINT),
+    ("stream block", &s7_misc::STREAM_BLOCK),
+    ("sprite fade node", &s7_misc::SPRITE_FADE_NODE),
+    ("spline moments", &s7_misc::SPLINE_MOMENTS),
+    ("spline set-up", &s7_misc::SPLINE_SETUP),
+    ("shake node", &s7_misc::SHAKE_NODE),
+    ("thunder node", &s7_misc::THUNDER_NODE),
+    ("spline object", &s7_misc::SPLINE_OBJECT),
+    ("aimed emitter", &s7_misc::AIMED_EMITTER),
+    (
+        "aimed emitter (angles kept)",
+        &s7_misc::AIMED_EMITTER_ANGLES,
+    ),
+    ("two sparks", &s7_misc::TWO_SPARKS),
+    ("two sparks (block word 4)", &s7_misc::TWO_SPARKS_B),
+    ("summon object set-up", &s7_misc::SUMMON_OBJECT_SETUP),
+    ("flight step", &s7_misc::FLIGHT_STEP),
+    ("lit colour node", &s7_misc::LIT_COLOUR_NODE),
+    ("emitter set-up", &s7_misc::EMITTER_SETUP),
+    ("reel step", &s7_misc::REEL_STEP),
+    ("reel phases", &s7_misc::REEL_PHASES),
+    ("flagged object step", &s7_misc::FLAGGED_OBJECT_STEP),
+    ("aim records", &s7_misc::AIM_RECORDS),
+    ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
+    ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

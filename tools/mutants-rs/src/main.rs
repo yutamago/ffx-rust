@@ -13,7 +13,11 @@
 //! still parse with the schema in place (`schema()` below is the shape
 //! mutants.py writes). Nodes in const contexts (const and static items, const
 //! fns, array lengths, enum discriminants) never qualify: `mutant()` is not a
-//! const fn. Whether a candidate type-checks is for the compiler.
+//! const fn. Nor do nodes whose arms surely differ in type or outlive a
+//! temporary (`cannot_wrap`): an array or tuple of another length, a reference
+//! to a temporary, and for a change inside a type the expressions carrying it
+//! (each of those cost a schema build per mutant to find out). Whether the
+//! remaining candidates type-check is for the compiler.
 
 use std::io::Read;
 
@@ -56,6 +60,9 @@ struct Nodes {
     consts: Vec<(usize, usize)>,
     /// Functions: range and how to parse one on its own.
     fns: Vec<(usize, usize, FnKind)>,
+    /// Types (turbofish arguments, casts, annotations): a change in one
+    /// changes the type of the expressions around it.
+    types: Vec<(usize, usize)>,
 }
 
 #[derive(Clone, Copy)]
@@ -103,6 +110,11 @@ impl<'ast> Visit<'ast> for Nodes {
             stmts,
         });
         syn::visit::visit_block(self, b);
+    }
+
+    fn visit_type(&mut self, ty: &'ast syn::Type) {
+        self.types.push(range(ty));
+        syn::visit::visit_type(self, ty);
     }
 
     fn visit_arm(&mut self, a: &'ast syn::Arm) {
@@ -241,13 +253,85 @@ fn block_has_let(text: &str) -> Option<bool> {
     Some(b.stmts.iter().any(|s| matches!(s, syn::Stmt::Local(_))))
 }
 
+/// Whether `if m { b } else { a }` can't type-check or borrow-check for the
+/// expression `a` (known without the compiler): an array or tuple whose length
+/// the mutant changes (the arms' types differ), a reference to a temporary (in
+/// edition 2024 the temporary dies at the end of its arm), or, for a mutant
+/// inside a type (`read::<u8>` -> `read::<u16>`, `as u16`), an expression whose
+/// value has that type. Those go straight to a larger node instead of costing a
+/// schema build each.
+fn cannot_wrap(a: &syn::Expr, b: &syn::Expr, in_type: bool) -> bool {
+    use syn::{BinOp, Expr};
+    match (a, b) {
+        (Expr::Array(x), Expr::Array(y)) if x.elems.len() != y.elems.len() => return true,
+        (Expr::Tuple(x), Expr::Tuple(y)) if x.elems.len() != y.elems.len() => return true,
+        _ => {}
+    }
+    if let Expr::Reference(r) = a {
+        let mut inner = &*r.expr;
+        while let Expr::Paren(p) = inner {
+            inner = &p.expr;
+        }
+        let place = matches!(inner, Expr::Path(_) | Expr::Field(_) | Expr::Index(_))
+            || matches!(inner, Expr::Unary(u) if matches!(u.op, syn::UnOp::Deref(_)));
+        if !place {
+            return true;
+        }
+    }
+    if !in_type {
+        return false;
+    }
+    // expressions whose type is not the changed one: comparisons and logic
+    // give bool, assignments and loops give ()
+    match a {
+        Expr::Binary(x) => !matches!(
+            x.op,
+            BinOp::Eq(_)
+                | BinOp::Ne(_)
+                | BinOp::Lt(_)
+                | BinOp::Le(_)
+                | BinOp::Gt(_)
+                | BinOp::Ge(_)
+                | BinOp::And(_)
+                | BinOp::Or(_)
+                | BinOp::AddAssign(_)
+                | BinOp::SubAssign(_)
+                | BinOp::MulAssign(_)
+                | BinOp::DivAssign(_)
+                | BinOp::RemAssign(_)
+                | BinOp::BitXorAssign(_)
+                | BinOp::BitAndAssign(_)
+                | BinOp::BitOrAssign(_)
+                | BinOp::ShlAssign(_)
+                | BinOp::ShrAssign(_)
+        ),
+        Expr::Assign(_)
+        | Expr::If(_)
+        | Expr::Match(_)
+        | Expr::While(_)
+        | Expr::ForLoop(_)
+        | Expr::Loop(_)
+        | Expr::Block(_)
+        | Expr::Unsafe(_)
+        | Expr::Return(_)
+        | Expr::Break(_)
+        | Expr::Continue(_) => false,
+        _ => true,
+    }
+}
+
 fn candidates(src: &str, nodes: &Nodes, site: &Site) -> Vec<Candidate> {
     let (rs, re) = (site.start, site.end);
+    let in_type = nodes.types.iter().any(|&(a, b)| a <= rs && re <= b);
     let mut out = Vec::new();
     for &(s, t, bare) in &nodes.exprs {
         if s <= rs && re <= t {
             let b = mutated(src, site, s, t);
-            if syn::parse_str::<syn::Expr>(&b).is_ok() {
+            if let Ok(b_expr) = syn::parse_str::<syn::Expr>(&b) {
+                let a_expr = syn::parse_str::<syn::Expr>(&src[s..t]);
+                if a_expr.is_ok_and(|a| cannot_wrap(&a, &b_expr, in_type)) {
+                    continue;
+                }
                 let kind = if bare {
                     "bare"
                 } else if nodes.arms.contains(&(s, t)) {
