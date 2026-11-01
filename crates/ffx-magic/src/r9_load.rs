@@ -129,6 +129,16 @@ copies! {
     load_0390 => LOAD_0390, Zero, crate::m0390::start_up, crate::m0390::START_UP;
     /// `magic_0395` 0x10003df0.
     load_0395 => LOAD_0395, Zero, crate::m0395::start_up, crate::m0395::START_UP;
+    /// `magic_0108` 0x10001210.
+    load_0108 => LOAD_0108, One, crate::r9_misc::objects_start_edx, crate::r9_misc::OBJECTS_START_0108;
+    /// `magic_0221` 0x10001210.
+    load_0221 => LOAD_0221, One, crate::r9_misc::objects_start_edx, crate::r9_misc::OBJECTS_START_0221;
+    /// `magic_0229` 0x10001210.
+    load_0229 => LOAD_0229, One, crate::r9_misc::objects_start_first, crate::r9_misc::OBJECTS_START_0229;
+    /// `magic_0166` 0x10001210.
+    load_0166 => LOAD_0166, Zero, crate::r9_misc::effect_start_first, crate::r9_misc::EFFECT_START_0166;
+    /// `magic_0308` 0x10001210.
+    load_0308 => LOAD_0308, Zero, crate::r9_misc::effect_start_bare, crate::r9_misc::EFFECT_START_0308;
     /// `magic_0447` 0x100049b0.
     load_0447 => LOAD_0447, Zero, crate::m0390::start_up_0447, crate::m0390::START_UP_0447;
 }

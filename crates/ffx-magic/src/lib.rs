@@ -1021,6 +1021,11 @@ ports! {
     "r9 load step 0390" => r9_load::LOAD_0390, r9_load::load_0390;
     "r9 load step 0395" => r9_load::LOAD_0395, r9_load::load_0395;
     "r9 load step 0447" => r9_load::LOAD_0447, r9_load::load_0447;
+    "r9 load step 0108" => r9_load::LOAD_0108, r9_load::load_0108;
+    "r9 load step 0221" => r9_load::LOAD_0221, r9_load::load_0221;
+    "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;
+    "r9 load step 0166" => r9_load::LOAD_0166, r9_load::load_0166;
+    "r9 load step 0308" => r9_load::LOAD_0308, r9_load::load_0308;
     "m0447 object fade 5290" => m0447::OBJECT_FADE, m0447::object_fade;
     "m0447 camera turn 4cb0" => m0447::CAMERA_TURN, m0447::camera_turn;
     "m0447 camera curve 4f60" => m0447::CAMERA_CURVE, m0447::camera_curve;
@@ -2640,6 +2645,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "r9 start object (edx reset) 0419",
         &r9_misc::START_OBJECT_EDX_0419,
     ),
+    ("r9 objects start 0108", &r9_misc::OBJECTS_START_0108),
+    ("r9 objects start 0221", &r9_misc::OBJECTS_START_0221),
+    ("r9 objects start 0229", &r9_misc::OBJECTS_START_0229),
+    ("r9 effect start 0166", &r9_misc::EFFECT_START_0166),
+    ("r9 effect start 0308", &r9_misc::EFFECT_START_0308),
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),

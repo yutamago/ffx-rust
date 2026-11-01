@@ -5,6 +5,7 @@
 
 mod magic;
 mod magic_owna;
+mod magic_r9;
 
 use ffx_magic::{Image, l5_objhost, m0032, sa_pool};
 use magic::{Call, Eax, SCRATCH, Twin};
@@ -119,6 +120,12 @@ fn copy(n: u16, rva: u32, one: bool, extra: fn(&mut Twin, u32)) {
     }
 }
 
+/// The objects' start-up (`r9_misc::objects_start`): one actor, a
+/// three free nodes.
+fn objects(t: &mut Twin, start: u32) {
+    magic_r9::objects_setup(t, start, 1, 3, false);
+}
+
 /// Nothing more to set up.
 fn none(_: &mut Twin, _: u32) {}
 
@@ -199,4 +206,34 @@ fn load_0395() {
 #[test]
 fn load_0447() {
     copy(447, 0x49b0, false, sel_0390);
+}
+
+#[test]
+fn load_0108() {
+    copy(108, 0x1210, true, objects);
+}
+
+#[test]
+fn load_0221() {
+    copy(221, 0x1210, true, objects);
+}
+
+#[test]
+fn load_0229() {
+    copy(229, 0x1210, true, objects);
+}
+
+/// The one-object start-up (`r9_misc::effect_start`): three free nodes.
+fn effect(t: &mut Twin, start: u32) {
+    magic_r9::effect_setup(t, start, 2.0, 3, false);
+}
+
+#[test]
+fn load_0166() {
+    copy(166, 0x1210, false, effect);
+}
+
+#[test]
+fn load_0308() {
+    copy(308, 0x1210, false, effect);
 }

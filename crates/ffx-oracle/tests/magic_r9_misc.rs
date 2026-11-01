@@ -3,6 +3,7 @@
 
 mod magic;
 mod magic_owna;
+mod magic_r9;
 
 use ffx_magic::{Ret, Xmm, r9_misc};
 use magic::{Call, Eax, SCRATCH};
@@ -192,6 +193,55 @@ fn reset_cases(dll: u16, rva: u32, shape: Shape) {
                     })
                 },
             );
+        }
+    }
+}
+
+/// The start-up with one object per actor (`magic_0108`, `0221`,
+/// `0229` 0x10001370): no, one and three actors, one and three free
+/// nodes, the task list empty and not.
+#[test]
+fn objects_start() {
+    for (dll, first) in [(108u16, false), (221, false), (229, true)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x1370);
+        for (n, free, listed) in [(0u32, 3u16, false), (1, 1, true), (3, 3, true)] {
+            magic_r9::objects_setup(&mut t, f, n, free, listed);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                if first {
+                    r9_misc::objects_start_first(g, img, fr)
+                } else {
+                    r9_misc::objects_start_edx(g, img, fr)
+                }
+            });
+        }
+    }
+}
+
+/// The start-up with one object (`magic_0166`, `0308` 0x10001340): the
+/// yaw on each side of the wrap, and NaN; the task list empty and not.
+#[test]
+fn effect_start() {
+    for (dll, first) in [(166u16, true), (308, false)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x1340);
+        let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+        let hi_v = f64::from(kf(&t, 0xae) - kf(&t, 0xbd));
+        for (yaw, listed) in [
+            (0.0f64, false),
+            (8.0, true),
+            (2.0, true),
+            (f64::NAN, false),
+            (hi_v, true),
+        ] {
+            magic_r9::effect_setup(&mut t, f, yaw, 3, listed);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                if first {
+                    r9_misc::effect_start_first(g, img, fr)
+                } else {
+                    r9_misc::effect_start_bare(g, img, fr)
+                }
+            });
         }
     }
 }
