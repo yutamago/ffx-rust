@@ -2643,6 +2643,8 @@ ports! {
     "camera frame" => s9_misc::CAMERA_FRAME, s9_misc::camera_frame;
     "trail head (0565)" => s9_misc::TRAIL_HEAD_0565, s9_misc::trail_head;
     "trail task (0565)" => s9_misc::TRAIL_TASK_0565, o6_fam_pairs6::trail_task;
+    "summon ring start" => s9_misc::SUMMON_RING_START, s9_misc::summon_ring_start;
+    "summon start task (0247)" => s9_misc::SUMMON_START_TASK_0247, s9_misc::summon_start_task_0247;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

@@ -2402,3 +2402,136 @@ fn trail_tasks_0565() {
         }
     }
 }
+
+/// `o6_fam_object::start_object_first` at `at` (its `call pool_alloc` at
+/// `+call`): the program list (slot 941), the part start (714), a pool
+/// of `free` nodes, the object list's tail empty or not (`k` odd) and its
+/// counts.
+fn start_first_setup(t: &mut Twin, at: u32, call: u32, free: u16, k: u32) {
+    let framed = t.img.word(at) as u8 == 0x55;
+    let (p_op, d_op) = if framed { (0x04, 0x5e) } else { (0x01, 0x5b) };
+    t.set_u32(op(t, at, p_op), SCRATCH + 0x200);
+    t.set_u32(op(t, at, d_op), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    log_calls(t, 941, 1, &[], |_, _, _| SCRATCH + 0x400);
+    log_calls(t, 714, 5, &[], |_, a, _| 0x0714_0000 ^ a[2]);
+    let pa = t.img.rel32_target(at + call + 1);
+    let nodes = op(t, pa, 0x27) - 8;
+    for i in 0..8 {
+        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+        t.set_u32(nodes + 12 * i + 8, 0);
+    }
+    t.set_u16(op(t, pa, 0x04), free);
+    let tail = op(t, at, call + 0xc);
+    t.set_u32(tail, if k % 2 == 1 { SCRATCH + 0x600 } else { 0 });
+    let framed_off = if framed { 0x32 } else { 0x31 };
+    for o in [call + 5 + 0x29, call + 5 + framed_off + 0x15] {
+        let count_at = op(t, at, o);
+        t.set_u32(count_at, 0x40 + o);
+    }
+}
+
+/// Rows 165/166: the summon's ring of six objects per actor in both
+/// DLLs, directly and through its start task: no actors, one, two and
+/// three (the pool running out), near and far, in and out of a battle,
+/// the task lists empty and not.
+#[test]
+fn summon_rings_started() {
+    for dll in [247u16, 659] {
+        let Some(mut t) = twin(dll) else { return };
+        let task = t.at(0x1210);
+        let f = t.at(0x1340);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let pi = t.img.rel32_target(f + 0x4a);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let start = t.img.rel32_target(f + 0x166);
+        let pick = t.img.rel32_target(f + 0x265);
+        let ts = t.img.rel32_target(f + 0x30b);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 225, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 226, 2, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 227, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, 3, &[], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, 4, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for (i, x) in (1u32..).zip(&a[1..4]) {
+                let v = 0.5 * i as f32 + (k % 7) as f32 - a[0] as f32 * 0.75;
+                m.w32(*x, v.to_bits());
+            }
+            0x262
+        });
+        log_calls(&mut t, 268, 3, &[], |m, a, k| {
+            m.w32(a[2] + 4, (k as f32 * 0.375).to_bits());
+            m.w32(a[2], 0x2680_0000 ^ k);
+            0x268
+        });
+        log_calls(&mut t, 314, 1, &[], |_, a, k| a[0] ^ k);
+        t.stub_st0(314, |m, _| f64::from(m.r32(LOG) % 5) * 0.25 - 0.5);
+        for s in [215u32, 413] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| (s << 16) ^ a[0]);
+        }
+        for (o, x) in [(0x115u32, 2.0f32), (0x156, 1.5), (0x1dd, 0.75)] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        let bl = SCRATCH + 0x900;
+        let picks = SCRATCH + 0x980;
+        t.set_u32(w(&t, 0x9d), bl);
+        t.write(bl, &[2, 1, 3, 0]);
+        let ptab = op(&t, pick, 0x0c);
+        t.set_u32(ptab, picks);
+        t.write(picks, &[0x21, 0x32, 0x43, 0x54]);
+        let actors = w(&t, 0xa8);
+        for i in 0..8u32 {
+            t.set_u32(actors + 4 * i, i);
+        }
+        t.set_u32(w(&t, 0x64), 5);
+        let (head, tail) = (op(&t, ts, 0x75), op(&t, ts, 0x8c));
+        // (actors, pool nodes, in a battle, load: busy / ready)
+        for (k, (n, free, battle, busy, ready)) in [
+            (0u32, 8u16, 0u32, 0u32, 1u32),
+            (1, 8, 1, 0, 1),
+            (2, 8, 0, 1, 1),
+            (3, 5, 1, 0, 2),
+            (1, 3, 0, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                t.set_u32(ans, if direct { 0 } else { busy });
+                t.set_u32(ans + 4, ready);
+                t.set_u32(w(&t, 0x7f), n);
+                t.set_u32(w(&t, 0x319), battle);
+                t.set_u32(w(&t, 0x310), 0x0c0c_0000 + k);
+                // the global the task start's set-up clears
+                t.set_u32(w(&t, 0x302), 0x5a5a_0000 + k);
+                start_first_setup(&mut t, start, 0x9a, free, k);
+                // the objects and records seeded (the words the start keeps)
+                let objs = w(&t, 0x13a) - 0xd4;
+                t.write(objs, &floats(0x720 * n.max(1) / 4, k + 3));
+                let recs = w(&t, 0x12d) - 0x14;
+                t.write(recs, &varied(0x138 * n.max(1), k + 4));
+                t.set_u32(head, if k % 2 == 1 { SCRATCH + 0x2800 } else { 0 });
+                t.set_u32(tail, SCRATCH + 0x2800);
+                t.write(SCRATCH + 0x2800, &varied(0x40, k));
+                // one pool for the task start's node and the listed one
+                task_ring(&mut t, f, (0x39d, 0x3ac, 0x413, 0x422), k, 2 + k % 2);
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x1340 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}
