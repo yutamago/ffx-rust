@@ -34,7 +34,9 @@ use crate::{Callee, Frame, Game, Image, Sig};
 ///   `owner` and `+0x100` = `I` (an immediate), [`reset_transform`] or
 ///   [`reset_transform_14`] with `owner` and `I` (or `value`),
 ///   [`anim_reset_2`] with its two stack words,
-///   [`crate::sa_misc::reset_transform_0`] or `magic_0166`'s record reset;
+///   [`crate::sa_misc::reset_transform_0`], the round-4 state resets
+///   ([`crate::o4_state`]: with the second word, or bare), `magic_0444`'s
+///   30-frame owners reset or `magic_0166`'s record reset;
 /// - a pool node ([`pool_alloc`]) holding the object appended to the
 ///   object list (first and last node `G_FIRST`, `G_LAST`, count `G_N`);
 ///   nothing when the pool is empty.
@@ -151,6 +153,12 @@ pub fn start_object_first<G: Game>(g: &mut G, img: &Image, f: u32, fr: &Frame) -
             g.write::<u32>(esp.wrapping_add(4 * i), v);
         }
         anim_reset_2(g, esp, obj);
+    } else if crate::o4_state::ARG.iter().any(|s| img.matches(reset, s)) {
+        crate::o4_state::reset_state_arg(g, img, reset, obj, second);
+    } else if crate::o4_state::BARE.iter().any(|s| img.matches(reset, s)) {
+        crate::o4_state::reset_state_bare(g, img, reset, obj);
+    } else if img.matches(reset, &crate::s4_small::RESET_OWNERS_30) {
+        crate::sa_misc::reset_transform_3(g, obj, owner, 0x1e, second);
     } else {
         reset_record(g, img, reset, obj);
     }

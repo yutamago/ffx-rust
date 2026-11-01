@@ -218,6 +218,9 @@ const START_OBJECT_FIRST: &[(u16, u32, u32)] = &[
     (606, 0x4d70, 0x8f),
     (132, 0x3cc0, 0x9a),
     (126, 0x22a0, 0x9e),
+    (671, 0x2c60, 0x8e),
+    (475, 0x27e0, 0x94),
+    (492, 0x1e90, 0x9e),
 ];
 
 /// `o6_fam_object::start_object_first`: the program list from slot 941,

@@ -172,3 +172,25 @@ pub const RESET_STATE_EDX_0419_37C0: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Every [`reset_state_arg`] copy.
+pub const ARG: &[&Sig] = &[
+    &RESET_STATE_ARG_0182_1A50,
+    &RESET_STATE_ARG_0197_19B0,
+    &RESET_STATE_ARG_0199_2B20,
+    &RESET_STATE_ARG_0252_1EE0,
+    &RESET_STATE_ARG_0266_3900,
+    &RESET_STATE_ARG_0311_2B40,
+    &RESET_STATE_ARG_0365_1560,
+    &RESET_STATE_ARG_0447_3200,
+    &RESET_STATE_ARG_0475_26C0,
+];
+
+/// Every [`reset_state_bare`] copy.
+pub const BARE: &[&Sig] = &[
+    &RESET_STATE_BARE_0245_23F0,
+    &RESET_STATE_BARE_0298_2CE0,
+    &RESET_STATE_BARE_0308_1EC0,
+    &RESET_STATE_BARE_0435_2790,
+    &RESET_STATE_BARE_0671_2B50,
+];

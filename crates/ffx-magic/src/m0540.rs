@@ -408,3 +408,97 @@ pub const SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The part's program list: `*G_P = ITEM` (operands `op`, `imm`), slot
+/// 941 `((*G_D)[0x10])` (`G_D` at `d`, the table global at `t`).
+fn programs<G: Game>(g: &mut G, img: &Image, f: u32, (op, imm, d, t): (u32, u32, u32, u32)) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let gp = g.read::<u32>(w(op));
+    g.write::<u32>(gp, w(imm));
+    let arg = g.read::<u32>(g.read::<u32>(w(d)).wrapping_add(0x10));
+    let s941 = slot_target(g, w(t), 941);
+    // call width: 1
+    g.call(s941, 0, &[arg]).eax
+}
+
+/// The 32-bit stores `mov dword [esi + d8], imm32` (7 bytes each) at the
+/// offsets `at`, on `obj`.
+fn obj_stores<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, at: &[u32]) {
+    for &o in at {
+        let d = crate::o4_parts::disp8(img, f + o + 2);
+        g.write::<u32>(obj.wrapping_add(d), img.word(f + o + 3));
+    }
+}
+
+/// One of four parts started (0x10001460, cdecl `(part)`): the part's
+/// index `(part - P) >> 7` (`P` at `+0x2a`; arithmetic) picks the
+/// program (1 for part 3, else 0) and, through the jump table (`+0x66`),
+/// its position `+0x40..+0x48` and scale `+0x60..+0x68`; then `+0x6c`
+/// and `+0x4c` 1.0, `+0x5c` 1, `+0x50..+0x58` 0. An index above 3 sets
+/// none of them. The program is started on the part
+/// ([`crate::opu_parts::start_part`], `0x1000`, `(program, 1)`).
+/// Returns 1.
+pub fn part_start_of4<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let part = fr.arg(g, 0);
+    let table = programs(g, img, f, (0x04, 0x0e, 0x13, 0x1c));
+    let index = part.wrapping_sub(img.word(f + 0x2a)).cast_signed() >> 7;
+    let (prog, call) = if index == 3 {
+        (g.read::<u32>(table.wrapping_add(4)), 0x5c)
+    } else {
+        (g.read::<u32>(table), 0x46)
+    };
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + call), part, 0x1000, prog, 1);
+    if index.cast_unsigned() > 3 {
+        return Ret::eax(1);
+    }
+    // the jump table's entry for the index: one of the four cases
+    let case = img
+        .word(img.word(f + 0x66).wrapping_add(4 * index.cast_unsigned()))
+        .wrapping_sub(f);
+    let first = match case {
+        0x6a => 0x6a,
+        0x99 => 0x99,
+        0xc5 => 0xc5,
+        _ => 0xf1,
+    };
+    let at: Vec<u32> = (0..6).map(|i| first + 7 * i).collect();
+    obj_stores(g, img, f, part, &at);
+    obj_stores(g, img, f, part, &[0x11b, 0x122, 0x129, 0x130, 0x137, 0x13e]);
+    Ret::eax(1)
+}
+
+/// [`part_start_of4`] (352 bytes with its jump table, 1 overlay).
+pub const PART_START_OF4: Sig = Sig {
+    len: 352,
+    hash: 0x0fa5_3cfe_401e_fbb5,
+    calls: &[
+        (0x46, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x5c, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// The fifth part started (0x100015c0, cdecl `(part)`): program 5 of
+/// the list (`*G_P = ITEM`, slot 941) started on it
+/// ([`crate::opu_parts::start_part`]); its position, `+0x4c` 1.0,
+/// `+0x50..+0x58` 0, `+0x5c` 1, its scale and `+0x6c` 1.0 from
+/// immediates. Returns 1.
+pub fn part_start_5<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let table = programs(g, img, f, (0x04, 0x0b, 0x10, 0x18));
+    let part = fr.arg(g, 0);
+    let prog = g.read::<u32>(table.wrapping_add(0x14));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x36), part, 0x1000, prog, 1);
+    let at: Vec<u32> = (0..12).map(|i| 0x3d + 7 * i).collect();
+    obj_stores(g, img, f, part, &at);
+    Ret::eax(1)
+}
+
+/// [`part_start_5`] (153 bytes, 1 overlay).
+pub const PART_START_5: Sig = Sig {
+    len: 153,
+    hash: 0x69da_6324_dd25_46b6,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

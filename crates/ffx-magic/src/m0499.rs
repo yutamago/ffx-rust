@@ -388,3 +388,61 @@ pub const FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The effect's tick (0x100018d0, no arguments): nothing unless the run
+/// flag (`+0x02`) is set; else `*P` (`+0x18`) = 1 when slot 253 answers
+/// 0, else 0; slot 723 `(*G_A)` (`+0x1e`) and slot 724 `(*G_B)`
+/// (`+0x3d`, the first call's word under it); `*Q` (`+0x50`) = `*G_C`
+/// (`+0x4b`) + 0x80400; the parts of the two blocks (`+0x60`, `+0x6a`)
+/// refreshed ([`parts_refresh`]); when `*P` is 0, the counter at `+0x7f`
+/// counts up. Returns 0.
+pub fn tick<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    if g.read::<u32>(w(0x02)) == 0 {
+        return Ret::eax(0);
+    }
+    let t = slot_target(g, w(0x0a), 253);
+    // call width: 0
+    let busy = g.call(t, 0, &[]).eax;
+    let p = g.read::<u32>(w(0x18));
+    let a = g.read::<u32>(w(0x1e));
+    g.write::<u32>(p, u32::from(busy == 0));
+    let t = slot_target(g, w(0x2a), 723);
+    // call width: 1
+    g.call(t, 0, &[a]);
+    let b = g.read::<u32>(w(0x3d));
+    let t = slot_target(g, w(0x37), 724);
+    // call width: 2 (the first call's word stays on the stack)
+    g.call(t, 0, &[b, a]);
+    let c = g.read::<u32>(w(0x4b));
+    let q = g.read::<u32>(w(0x50));
+    g.write::<u32>(q, c.wrapping_add(0x8_0400));
+    for (block, call) in [(w(0x60), 0x65u32), (w(0x6a), 0x6f)] {
+        // the return address only: the stack is back at the entry's
+        let callee = Frame {
+            at: img.rel32_target(f + call),
+            esp: fr.esp.wrapping_sub(4),
+            ecx: block,
+            ..Frame::default()
+        };
+        parts_refresh(g, img, &callee);
+    }
+    let p = g.read::<u32>(w(0x74));
+    if g.read::<u32>(p) == 0 {
+        let n = g.read::<u32>(w(0x7f));
+        g.write::<u32>(w(0x7f), n.wrapping_add(1));
+    }
+    Ret::eax(0)
+}
+
+/// [`tick`] (134 bytes, 1 overlay).
+pub const TICK: Sig = Sig {
+    len: 134,
+    hash: 0xbf25_5cb5_7e9d_e191,
+    calls: &[
+        (0x65, Callee::Sig(&PARTS_REFRESH)),
+        (0x6f, Callee::Sig(&PARTS_REFRESH)),
+    ],
+    imports: &[],
+};
