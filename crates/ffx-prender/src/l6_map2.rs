@@ -700,4 +700,117 @@ pub mod bridge {
         let log = h.rebase(FP_SAVE_LOG);
         cdecl(h, RC_PRINT, &[log, cmd, r])
     }
+
+    /// `rcuiGetStageName(id, out)`, `rcMeshPastIndices(obj)`,
+    /// `rcbgSaveMesh_00938e70(obj, fd)`; the guide map save's path format
+    /// and error text.
+    pub const GET_STAGE_NAME: u32 = 0x0093_7940;
+    pub const MESH_PAST_INDICES: u32 = 0x0092_8270;
+    pub const SAVE_MESH: u32 = 0x0093_8e70;
+    pub const GUIDE_SAVE_PATH: u32 = 0x00b6_7d38;
+    pub const GUIDE_SAVE_ERROR: u32 = 0x00b6_8a24;
+    /// `0x00938a10`'s frame.
+    pub const GUIDE_SAVE_FRAME: u32 = 0x358;
+
+    /// `FUN_00938a10(id)` -> `eax` as the original (`None`: no system or
+    /// map, the cookie's `eax`; 0 for an unknown map): the current map's
+    /// guide map models saved for map `id`: its stage name (4 characters
+    /// at `ebp - 0xc`) into the host path; a chunk header (tag 0), per
+    /// guide (`[map]` of them, 0x110 bytes from `[map + 4]`) its models
+    /// (`i16 +0x18` of them at `+0x1c`), each a tag 0xb header with the
+    /// guide's number and its padded size / 16, the mesh
+    /// (`rcbgSaveMesh_00938e70`) and its padding; the end header (tag
+    /// 0xc), then the host conversion and its log line, as
+    /// [`fp_save_sub`]. `ebp` is the original's frame.
+    #[allow(clippy::too_many_lines)]
+    pub fn guide_save(h: &mut impl Host, ebp: u32, id: u32) -> Option<u32> {
+        let fr = |off: u32| ebp.wrapping_sub(off);
+        let sys: u32 = h.read(h.rebase(super::YN_MAP_SYSTEM.sym));
+        if sys == 0 {
+            return None;
+        }
+        let map: u32 = h.read(sys);
+        h.write(fr(0x34c), map);
+        if map == 0 {
+            return None;
+        }
+        let name = fr(0xc);
+        if cdecl(h, GET_STAGE_NAME, &[id, name]) == 0 {
+            return Some(0);
+        }
+        let path = fr(0x21c);
+        let mut c = [0_u32; 4];
+        for (k, v) in (0_u32..).zip(&mut c) {
+            *v = i32::from(h.read::<i8>(name.wrapping_add(k))).cast_unsigned();
+        }
+        // junk read: the path's %s reads the 4-character name on past
+        // [ebp-0xc] into the never-written [ebp-0x8] (0 in the shim's
+        // zeroed frame: the name ends there; brief 2026-10-24)
+        let fmt = h.rebase(GUIDE_SAVE_PATH);
+        import(h, SPRINTF_SLOT, &[path, fmt, c[0], c[1], c[2], c[3], name]);
+        let fd = cdecl(h, SCE_OPEN, &[path, 0x602]);
+        h.write(fr(0x350), fd);
+        if fd == u32::MAX {
+            let [a, b] = [FP_SAVE_ERROR[0], FP_SAVE_ERROR[1]].map(|t| h.rebase(t));
+            cdecl(h, RC_PRINT, &[a, b, 0x358]);
+            let e = h.rebase(GUIDE_SAVE_ERROR);
+            return Some(cdecl(h, RC_PRINT, &[e]));
+        }
+        let hdr = fr(0x33c);
+        for k in 0..4_u32 {
+            h.write(hdr.wrapping_add(4 * k), 0_u32);
+        }
+        let t = tag_word(h, 0);
+        h.write(hdr, t);
+        cdecl(h, SCE_WRITE, &[fd, hdr, 0x10]);
+        let mut g = 0_u32;
+        h.write(fr(0x340), g);
+        let h2 = fr(0x32c);
+        let pad_buf = fr(0x1c);
+        let mut off = 0_u32;
+        while g.cast_signed() < at(h, map, 0).cast_signed() {
+            h.write(fr(0x344), off);
+            let ent = at(h, map, 4).wrapping_add(off);
+            h.write(fr(0x354), ent);
+            let mut k = 0_u32;
+            h.write(fr(0x348), k);
+            while k.cast_signed() < i32::from(h.read::<i16>(ent.wrapping_add(0x18))) {
+                let obj = at(h, ent, 0x1c + 4 * k);
+                h.write(fr(0x358), obj);
+                if obj != 0 {
+                    let size = cdecl(h, MESH_PAST_INDICES, &[obj]).wrapping_add(0x128);
+                    let pad = cdecl(h, PAD16, &[size]);
+                    for j in [0x324_u32, 0x32c, 0x328, 0x320] {
+                        h.write(fr(j), 0_u32);
+                    }
+                    #[allow(clippy::cast_possible_truncation)] // the original's `ax`
+                    h.write(fr(0x322), g as u16);
+                    let t = tag_word(h, 0xb);
+                    h.write(h2, t);
+                    let total = pad.wrapping_add(size).cast_signed() / 16;
+                    h.write(fr(0x328), total.cast_unsigned());
+                    cdecl(h, SCE_WRITE, &[fd, h2, 0x10]);
+                    cdecl(h, SAVE_MESH, &[obj, fd]);
+                    cdecl(h, MEMSET, &[pad_buf, 0, pad]);
+                    cdecl(h, SCE_WRITE, &[fd, pad_buf, pad]);
+                }
+                k = k.wrapping_add(1);
+                h.write(fr(0x348), k);
+            }
+            g = g.wrapping_add(1);
+            off = off.wrapping_add(0x110);
+            h.write(fr(0x340), g);
+            h.write(fr(0x344), off);
+        }
+        let t = tag_word(h, 0xc);
+        h.write(hdr, t);
+        cdecl(h, SCE_WRITE, &[fd, hdr, 0x10]);
+        cdecl(h, SCE_CLOSE, &[fd]);
+        let cmd = fr(0x11c);
+        let fmt = h.rebase(FP_SAVE_COMMAND);
+        import(h, SPRINTF_SLOT, &[cmd, fmt, fr(0x217)]);
+        let r = cdecl(h, SYSTEM_ON_HOST, &[cmd, fr(0x31c)]);
+        let log = h.rebase(FP_SAVE_LOG);
+        Some(cdecl(h, RC_PRINT, &[log, cmd, r]))
+    }
 }

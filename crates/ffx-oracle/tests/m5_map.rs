@@ -6577,3 +6577,85 @@ fn l6_chr_proc_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn l6_guide_model_save_matches_the_original() {
+    // no system or map, an unknown stage, the open failing; guides with
+    // 0..3 models, some null; pads 0..15 (the real sprintf builds the
+    // path and the command)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6bf1);
+        for case in 0..40_u32 {
+            let guides = t.zeros(0x110 * 3);
+            for g in 0..3 {
+                let n = rng.below(4);
+                t.write(guides + 0x110 * g + 0x18, &(n as u16).to_le_bytes());
+                for k in 0..n {
+                    let obj = if rng.chance(4) { 0 } else { rng.next() | 1 };
+                    t.w32(guides + 0x110 * g + 0x1c + 4 * k, obj);
+                }
+            }
+            let count = [0, 1, 3, 0xffff_ffff][rng.below(4) as usize];
+            let map = t.words(&[count, guides]);
+            let sys_v = match case % 9 {
+                0 => 0,
+                1 => t.words(&[0, 0]),
+                _ => t.words(&[map, 0]),
+            };
+            t.global(l62::YN_MAP_SYSTEM.sym, sys_v);
+            // rcuiGetStageName(id, out): four characters, or 0
+            let found = u32::from(case % 7 != 3);
+            let mut gs = vec![0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]; // mov eax, [esp+8]; mov dword [eax], 'bs00'
+            // a byte past 0x7f: the original sign-extends them
+            gs.extend(u32::from_le_bytes(*b"b\xe101").to_le_bytes());
+            gs.push(0xb8);
+            gs.extend(found.to_le_bytes()); // mov eax, found
+            gs.push(0xc3);
+            r5_code(t, l62::bridge::GET_STAGE_NAME, &gs);
+            let fd = if case % 5 == 2 {
+                u32::MAX
+            } else {
+                rng.below(100)
+            };
+            l6_copy(t, l62::SCE_OPEN, 2, 2, 0, 10, fd);
+            let sizes: Vec<u32> = (0..12).map(|_| rng.below(400)).collect();
+            let sizes = t.seq(&sizes);
+            t.stub_sym(l62::bridge::MESH_PAST_INDICES, 3, false, 1, 0, sizes);
+            let pads: Vec<u32> = (0..12).map(|_| rng.below(16)).collect();
+            let pads = t.seq(&pads);
+            t.stub_sym(l62::PAD16, 4, false, 1, 0, pads);
+            let tags = t.zeros(0x40);
+            for k in 0..0x10 {
+                t.w32(tags + 4 * k, rng.next());
+            }
+            let tag_seq: Vec<u32> = (0..16).map(|k| tags + 4 * (k % 16)).collect();
+            let tag_seq = t.seq(&tag_seq);
+            t.stub_sym(l62::CHUNK_TAG, 5, false, 1, 0, tag_seq);
+            l6_copy(t, l62::SCE_WRITE, 6, 3, 1, 4, rng.next());
+            t.stub_sym(l62::bridge::SAVE_MESH, 7, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(l62::SCE_CLOSE, 8, false, 1, 0, Ret::Val(rng.next()));
+            l6_copy(t, l62::SYSTEM_ON_HOST, 9, 2, 0, 12, rng.next());
+            let pr = l6_seq(t, &mut rng, 2);
+            let more = [(l62::FP_SAVE_ERROR[0], 2), (l62::FP_SAVE_LOG, 2)];
+            l6_printf(t, l62::RC_PRINT, 10, &more, pr);
+            let id = rng.next();
+            l6_fill_stack(t, &mut rng, 0x600);
+            let ebp = frame_ebp(&t.a, 1);
+            // the stage name's terminator: never written (the port's frame
+            // is zeroed; the original's %s reads on into its frame)
+            t.a.write(ebp - 8, &[0; 4]).unwrap();
+            t.b.write(ebp - 8, &[0; 4]).unwrap();
+            t.b_top = Some(ebp - l62::bridge::GUIDE_SAVE_FRAME - 0x60);
+            t.check(
+                "rcbgGuideModelSave_00938a10",
+                0x0093_8a10,
+                Conv::Cdecl,
+                &[id],
+                |o| l6_out(l6m2::guide_save(o, ebp, id)),
+            );
+            l6_same_words(t, "rcbgGuideModelSave_00938a10", ebp, ebp - 0x358, 0x354);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
