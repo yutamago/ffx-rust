@@ -1031,6 +1031,11 @@ ports! {
     "m0493 ppp start" => m0493::PPP_START, m0493::ppp_start;
     "m0459 step" => m0459::STEP, m0459::step;
     "m0704 frame" => m0704::FRAME, m0704::frame;
+    "m0577 draw detached (arg)" => m0577::DRAW_DETACHED_ARG, m0577::draw_detached_arg;
+    "m0587 reload groups" => m0587::RELOAD_GROUPS, m0587::reload_groups;
+    "m0473 end objects" => m0473::END_OBJECTS, m0473::end_objects;
+    "m0537 draw entry" => m0537::DRAW_ENTRY, m0537::draw_entry;
+    "m0605 scale 30" => m0605::SCALE_30, m0605::scale_30;
     "m0596 start" => m0596::START, m0596::start;
     "m0596 copy height" => m0596::COPY_HEIGHT, m0596::copy_height;
     "m0393 task step" => m0393::STEP, m0393::step;
