@@ -76,3 +76,79 @@ pub const COLOUR_RESET: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The camera's start (0x10001760, internal, no arguments): the camera's
+/// angle as `m0449`'s ([`camera_angle`](crate::m0449::camera_angle), `C`
+/// = `E + 0x820`, into `E + 0xd00`); `E + 0xc64`, `E + 0xc68` and `E +
+/// 0xd10` become 0, the words `+0xac` and `+0xb6` 1. Returns slot 333's
+/// `eax`.
+pub fn camera_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let (e, eax) = crate::m0449::camera_angle(g, img, fr.at, 0x820, 0xd00);
+    g.write::<u32>(e + 0xc64, 0);
+    g.write::<u32>(e + 0xc68, 0);
+    g.write::<u32>(e + 0xd10, 0);
+    g.write::<u32>(w(0xac), 1);
+    g.write::<u32>(w(0xb6), 1);
+    Ret::eax(eax)
+}
+
+/// [`camera_start`] (195 bytes, 1 overlay).
+pub const CAMERA_START: Sig = Sig {
+    len: 195,
+    hash: 0xa914_3b26_1b95_c219,
+    calls: &[],
+    imports: &[],
+};
+
+/// The actors' show and the sounds (0x10001830, internal, no arguments):
+/// slot 384 `(T[B[k]])` for the actors `k` = 1..4 (`B` = `*P`, read
+/// again for each, `+0x01`/`+0x1e`/`+0x3b`/`+0x58`; `T` `+0x0c`/`+0x29`/
+/// `+0x46`/`+0x63`), then for the ids 0x3019 and 0x301f slot 25 `(id, 1)`
+/// and slot 24 `(id, 0)`; a tail jump into the parts' registration
+/// ([`register_parts`](crate::sa_misc::register_parts), `+0xbc`) with
+/// slot 24's `eax`. Returns what that returns. Each slot call passes the
+/// words the original leaves on the stack.
+pub fn show_and_sounds<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let mut st = crate::pushes::Pushes::default();
+    let actors = [
+        (0x01, 0x0c, 0x11),
+        (0x1e, 0x29, 0x2e),
+        (0x3b, 0x46, 0x4b),
+        (0x58, 0x63, 0x68),
+    ];
+    for (nth, (ptr_op, table_op, slot_op)) in (1u32..).zip(actors) {
+        let actor = u32::from(g.read::<u8>(g.read::<u32>(w(ptr_op)) + nth));
+        st.push(g.read::<u32>(w(table_op).wrapping_add(actor * 4)));
+        let target = slot_target(g, w(slot_op), 0x600 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, target, 0);
+    }
+    let mut eax = 0;
+    for (t25, t24, id) in [(0x75, 0x86, 0x3019), (0x97, 0xa8, 0x301f)] {
+        st.push_all(&[1, id]);
+        let target = slot_target(g, w(t25), 0x64 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, target, 0);
+        st.push_all(&[0, id]);
+        let target = slot_target(g, w(t24), 0x60 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        eax = st.call(g, target, 0).eax;
+    }
+    Ret::eax(crate::sa_misc::register_parts(
+        g,
+        img,
+        img.rel32_target(f + 0xbc),
+        eax,
+    ))
+}
+
+/// [`show_and_sounds`] (192 bytes, 1 overlay).
+pub const SHOW_AND_SOUNDS: Sig = Sig {
+    len: 192,
+    hash: 0xf0da_38ac_ff79_d2d1,
+    calls: &[(0xbc, crate::Callee::Sig(&crate::sa_misc::REGISTER_PARTS))],
+    imports: &[],
+};

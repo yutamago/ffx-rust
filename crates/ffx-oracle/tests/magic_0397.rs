@@ -138,3 +138,128 @@ fn sprite_tasks() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10004560: start and target on each side of 0 (near and more than pi
+/// apart), NaN, the count at 0, 1 and 20, and blends past the range.
+#[test]
+fn camera_turn() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x4560);
+    rec(&mut t, 34, 2, |_, a| 0x0034_0000 ^ a[1]);
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x02), fx);
+    t.set_u32(t.img.word(at + 0xf3), 0x00ab_00f3);
+    let pairs = [
+        (-1.0f32, 2.0f32),
+        (-2.5, 2.5),
+        (2.5, -2.5),
+        (1.0, -1.0),
+        (0.5, 1.5),
+        (-0.5, -1.5),
+        (0.0, -3.0),
+        (f32::NAN, 1.0),
+        (1.0, f32::NAN),
+        (3.1, 3.1),
+        (-3.1, -3.1),
+    ];
+    let counts = [0u32, 1, 20, 0x8000_0000].into_iter().cycle();
+    for ((a, b), count) in pairs.into_iter().zip(counts) {
+        t.write(fx + 0x23f0, &[0x77; 0x10]);
+        t.set_u32(fx + 0x23f4, a.to_bits());
+        t.set_u32(fx + 0x23f8, b.to_bits());
+        t.set_u32(fx + 0x23fc, count);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x10001120 (internal): the party's mean position for no, one and three
+/// actors (junk under the entry for the frame).
+#[test]
+fn party_mean() {
+    use magic::StubMem;
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1120);
+    let list = SCRATCH + 0x700;
+    let count = SCRATCH + 0x6f0;
+    t.write(list, &[4, 0, 9, 2]);
+    rec(&mut t, 288, 2, move |m: &mut dyn StubMem, a: &[u32]| {
+        let n = m.r32(count);
+        m.w32(a[1], n);
+        list
+    });
+    rec(&mut t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    rec(&mut t, 262, 5, |m: &mut dyn StubMem, a: &[u32]| {
+        for (k, at) in (0u32..).zip(&a[1..4]) {
+            let v = f32::from(u16::try_from(a[0] & 0xff).unwrap()) * 0.75
+                + 0.5 * f32::from(u16::try_from(k).unwrap());
+            m.w32(*at, v.to_bits());
+        }
+        0x262
+    });
+    let out = SCRATCH + 0x1000;
+    for n in [0u32, 1, 3, 0x8000_0000] {
+        t.set_u32(count, n);
+        t.write(out, &[0x5c; 0x10]);
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        t.check(
+            at,
+            Call::this(out),
+            &[],
+            Eax::Checked,
+            ffx_magic::m0397::party_mean,
+        );
+    }
+}
+
+/// 0x10004660: the point below frame 0xc0 and the turned point after it
+/// (junk under the entry for the frame).
+#[test]
+fn point_step() {
+    use magic::StubMem;
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x4660);
+    rec(&mut t, 237, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        for k in 0..3 {
+            m.w32(a[3] + 4 * k, 0x4100_0000 + k);
+        }
+        0x237
+    });
+    rec(&mut t, 235, 1, |m: &mut dyn StubMem, a: &[u32]| {
+        for k in 0..16 {
+            m.w32(a[0] + 4 * k, 0x3f00_0000 + k);
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m: &mut dyn StubMem, a: &[u32]| {
+            let v = m.r32(a[0]);
+            m.w32(a[0], v ^ a[2] ^ s);
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for k in 0..4 {
+            let v = m.r32(a[1] + 4 * k) ^ m.r32(a[2] + 4 * k);
+            m.w32(a[0] + 4 * k, v);
+        }
+        0x229
+    });
+    rec(&mut t, 248, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for k in 0..3 {
+            let v = m.r32(a[2] + 4 * k);
+            m.w32(a[0] + 4 * k, v ^ 0x248);
+        }
+        0x248
+    });
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x68), fx);
+    t.set_u32(fx + 0x23f8, 0x3fc9_0fdb);
+    t.set_u32(t.img.word(at + 0x35), 0x00ab_0035);
+    let obj = SCRATCH + 0x1000;
+    for frame in [0u32, 0xbf, 0xc0, 0x200] {
+        t.write(obj, &[0x5c; 0x120]);
+        t.set_u32(obj + 0x118, frame);
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

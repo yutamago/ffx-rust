@@ -234,3 +234,54 @@ fn weapon_frame() {
 //   `out + 4` and `out + 8`; the memory after is the same);
 //   weapon_frame's `stack.insert(1, wpn)` (`stack[0]` is `wpn` already).
 // - ffx_magic::m0395 (magic_0395): 20 mutants, all killed.
+
+/// 0x10004af0: paused, the script or the motion still running, and the
+/// end (the parts refreshed with one handle, then the node alone given
+/// back to the pool).
+#[test]
+fn script_end() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x4af0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let paused = SCRATCH + 0x5f0;
+    rec(&mut t, 561, 0, move |m, _| m.r32(paused));
+    rec_all(&mut t, &[(628, 1)]);
+    rec(&mut t, 772, 2, |_, a| a[0] ^ (a[1] << 8));
+    rec(&mut t, 779, 4, |_, a| a[0] ^ 0x779);
+    t.set_u32(w(&t, 0x06), STATE);
+    let rf = t.img.rel32_target(at + 0x63);
+    let parts = t.img.word(rf + 0x1c);
+    let lock = t.u32(t.img.word(rf + 0x51));
+    let run = t.img.rel32_target(at + 0x33);
+    let ms = t.img.rel32_target(at + 0x4c);
+    let give = t.img.rel32_target(at + 0x6e);
+    let s = t.img.word(run + 0x1c);
+    let node = SCRATCH + 0x2000;
+    for (p, mode, done) in [(1u32, 0u8, true), (0, 2, true), (0, 0, false), (0, 0, true)] {
+        t.set_u32(paused, p);
+        for (i, h) in (0u32..).zip([0u32, 0x22, 0, 0]) {
+            t.set_u32(parts + 4 * i, h);
+        }
+        t.set_u32(lock, 0x77);
+        t.set_u32(w(&t, 0x26), 0x0026_0026);
+        t.set_u16(w(&t, 0x21), 0x1234);
+        // the script ended (mode 0, returns 1) or waiting for ever (2)
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(s + 0x54, 0xffff);
+        t.set_u32(s + 0x24, 0);
+        t.set_u32(s + 0x28, 0);
+        t.set_u32(t.img.word(ms + 0x02), u32::from(done));
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        t.set_u32(STATE + 0x2458, 0x2458);
+        // the node alone (no siblings, nothing chained) for the pool
+        t.write(node, &[0; 0x1c]);
+        t.set_u32(node + 8, node);
+        for op in [0x48, 0x55, 0x64, 0x74] {
+            t.set_u32(t.img.word(give + op), SCRATCH + 0x3000 + op);
+        }
+        t.set_u32(SCRATCH + 0x3074, SCRATCH + 0x3074);
+        t.set_u32(SCRATCH + 0x3078, SCRATCH + 0x3074);
+        t.set_u16(t.img.word(give + 0x8e), 7);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}

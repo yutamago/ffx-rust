@@ -168,3 +168,46 @@ fn script_end() {
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// 0x10004bc0 (internal): the start-up into an empty and a filled task list.
+#[test]
+fn start_up() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x4bc0);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 271, 3, |_, a| 0x0271_0000 ^ a[1]);
+    rec(&mut t, 711, 3, |_, a| 0x0711_0000 ^ a[0]);
+    rec(&mut t, 710, 4, |_, a| 0x0710_0000 ^ a[1]);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i as usize], 0x4000_0000 + i * 0x0010_0000);
+        }
+        0
+    });
+    rec(&mut t, 333, 5, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, |_, _| 0.75);
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 2.5);
+    let pi = t.img.rel32_target(at + 0x49);
+    let lock = SCRATCH + 0x5e0;
+    t.set_u32(t.img.word(pi + 0x01), lock);
+    t.set_u32(t.img.word(pi + 0x31), lock);
+    let take = t.img.rel32_target(at + 0x8e);
+    let (count, ring) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+    let node = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
+    let last = SCRATCH + 0x1a00;
+    for head in [0u32, last] {
+        for k in 0..4 {
+            t.write(node(k), &[0x5a; 0x40]);
+            t.set_u32(node(k), node((k + 3) % 4));
+            t.set_u32(node(k) + 4, node((k + 1) % 4));
+        }
+        t.set_u32(ring, node(0));
+        t.set_u16(count, 4);
+        t.write(last, &[0x66; 0x10]);
+        t.set_u32(t.img.word(at + 0x94), head);
+        t.set_u32(t.img.word(at + 0xab), head);
+        t.set_u32(lock, 0x77);
+        t.check(at, Call::default(), &[], Eax::Checked, m0395::start_up);
+    }
+}

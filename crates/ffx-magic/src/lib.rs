@@ -208,6 +208,7 @@ pub mod m0361;
 pub mod m0367;
 pub mod m0368;
 pub mod m0370;
+pub mod m0371;
 pub mod m0372;
 pub mod m0375;
 pub mod m0378;
@@ -239,6 +240,7 @@ pub mod m0432;
 pub mod m0434;
 pub mod m0440;
 pub mod m0443;
+pub mod m0445;
 pub mod m0447;
 pub mod m0449;
 pub mod m0481;
@@ -2048,6 +2050,10 @@ ports! {
     "m0394 script end" => m0394::SCRIPT_END, m0394::script_end;
     "m0429 frame" => m0429::FRAME, m0429::frame;
     "m0440 frame" => m0440::FRAME, m0440::frame;
+    "m0445 step" => m0445::STEP, m0445::step;
+    "m0396 script end" => m0396::SCRIPT_END, m0396::script_end;
+    "m0397 camera turn" => m0397::CAMERA_TURN, m0397::camera_turn;
+    "m0397 point step" => m0397::POINT_STEP, m0397::point_step;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2669,6 +2675,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0449 actors pass", &m0449::ACTORS_PASS),
     ("m0432 sound start", &m0432::SOUND_START),
     ("m0434 colour show", &m0434::COLOUR_SHOW),
+    ("m0431 camera start", &m0431::CAMERA_START),
+    ("m0431 show and sounds", &m0431::SHOW_AND_SOUNDS),
+    ("m0371 block reset", &m0371::BLOCK_RESET),
+    ("m0397 party mean", &m0397::PARTY_MEAN),
+    ("m0395 start-up", &m0395::START_UP),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

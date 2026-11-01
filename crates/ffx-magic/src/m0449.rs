@@ -77,30 +77,9 @@ pub const FRAME: Sig = Sig {
 /// Returns slot 622's `eax`. The first two slot calls pass the words the
 /// original leaves on the stack.
 pub fn camera_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    use crate::sb_sse::{add, sub};
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
-    let e = g.read::<u32>(w(0x08));
-    let c = e + 0xf70;
-    let mut p = crate::pushes::Pushes::default();
-    p.push_all(&[c + 8, c + 4, c, g.read::<u32>(w(0x22))]);
-    let s = slot_target(g, w(0x1b), 0x418 / 4);
-    // call width: 12 (Pushes caps the words at 12)
-    p.call(g, s, 0);
-    g.write::<u32>(c + 0xc, 0x3f80_0000);
-    p.push(g.read::<u32>(w(0x3c)));
-    let s = slot_target(g, w(0x2f), 0x534 / 4);
-    // call width: 12 (Pushes caps the words at 12)
-    let a = crate::m0018::st0_f32(p.call(g, s, 0).st0);
-    let h = sub(g.read::<f32>(w(0x4f)), a);
-    let h = if h > g.read::<f32>(w(0x5e)) {
-        sub(h, g.read::<f32>(w(0x68)))
-    } else if g.read::<f32>(w(0x72)) > h {
-        add(h, g.read::<f32>(w(0x7f)))
-    } else {
-        h
-    };
-    g.write::<f32>(e + 0x56dc, h);
+    let (e, _) = camera_angle(g, img, f, 0xf70, 0x56dc);
     let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x8c))));
     let s = slot_target(g, w(0x95), 0x9b8 / 4);
     let v = g.read::<u32>(w(0x9b));
@@ -110,6 +89,48 @@ pub fn camera_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(e + 0x56fc, 0);
     g.write::<u32>(w(0xc7), 1);
     Ret::eax(r)
+}
+
+/// The camera's angle (shared by [`camera_start`] and `m0431`'s camera
+/// start, the same operands up to `+0x83`): with `E` = `*G` (`+0x08`)
+/// and `C` = `E + c_off`: slot 262 `(*A, C, C + 4, C + 8)` (`A` `+0x22`),
+/// `C + 0xc` = 1.0, slot 333 `(*A)`'s angle `a` (`A` read again,
+/// `+0x3c`) turned into `h = K - a` (`K` `+0x4f`) wrapped once by `T`
+/// (`+0x68`/`+0x7f`) above `HI` (`+0x5e`) or below `LO` (`+0x72`) into
+/// `E + h_off`. Returns `E` and slot 333's `eax`. The two slot calls pass
+/// the words the original leaves on the stack.
+pub(crate) fn camera_angle<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    c_off: u32,
+    h_off: u32,
+) -> (u32, u32) {
+    use crate::sb_sse::{add, sub};
+    let w = |off: u32| img.word(f + off);
+    let e = g.read::<u32>(w(0x08));
+    let c = e + c_off;
+    let mut p = crate::pushes::Pushes::default();
+    p.push_all(&[c + 8, c + 4, c, g.read::<u32>(w(0x22))]);
+    let s = slot_target(g, w(0x1b), 0x418 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    g.write::<u32>(c + 0xc, 0x3f80_0000);
+    p.push(g.read::<u32>(w(0x3c)));
+    let s = slot_target(g, w(0x2f), 0x534 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let out = p.call(g, s, 0);
+    let a = crate::m0018::st0_f32(out.st0);
+    let h = sub(g.read::<f32>(w(0x4f)), a);
+    let h = if h > g.read::<f32>(w(0x5e)) {
+        sub(h, g.read::<f32>(w(0x68)))
+    } else if g.read::<f32>(w(0x72)) > h {
+        add(h, g.read::<f32>(w(0x7f)))
+    } else {
+        h
+    };
+    g.write::<f32>(e + h_off, h);
+    (e, out.eax)
 }
 
 /// [`camera_start`] (212 bytes, 1 overlay).
