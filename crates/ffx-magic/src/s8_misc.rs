@@ -573,7 +573,7 @@ pub const TABLE_FLIGHT_STEP_B: Sig = Sig {
 /// `MsEffectMotionLevel(*G_A)` is at least 1, the summon's objects start
 /// (`start`, the `rel32` at `+0x5b`) and the DLL's draw and update
 /// callbacks `*G_D`, `*G_U` become the immediates. Returns 0.
-fn summon_start_task<G: Game>(
+pub(crate) fn summon_start_task<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,

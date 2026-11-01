@@ -1710,3 +1710,403 @@ fn lights_bouncing() {
         }
     }
 }
+
+/// Row 181: the texture fade in both DLLs: held back by the clock, the
+/// fade dropping or not (slot 253), below 0, above the top, inside, and
+/// ending exactly at `K3`.
+#[test]
+fn texture_fades() {
+    for dll in [188u16, 690] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x1db0);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let down = SCRATCH + 0x7d0;
+        log_calls(&mut t, 253, 0, &[], move |m, _, _| m.r32(down));
+        log_calls(&mut t, 38, 3, &[], |_, a, _| a[1] ^ 0x0038_0000);
+        // the scrolled texture's handle (`magic_o6_fam.rs`' test)
+        let tex = SCRATCH + 0x3000;
+        t.set_u32(tex, 0x4c0c_1234);
+        t.set_u32(tex + 4, 1);
+        log_calls(&mut t, 719, 3, &[], move |_, _, _| tex);
+        let scroll = t.img.rel32_target(f + 0x81);
+        t.set_u32(op(&t, scroll, 0x3b), 0x0071_9000);
+        t.set_u32(op(&t, scroll, 0x10f), SCRATCH + 0x3040);
+        t.set_u32(op(&t, scroll, 0xb9), SCRATCH + 0x3100);
+        for (o, x) in [(0x36u32, 0.25f32), (0x4e, 1.0), (0x90, 0.5)] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        // (`*G_A`, clock, slot 253, fade)
+        for (k, (a, clock, d, v)) in [
+            (1u32, 0x98u32, 0u32, 0.5f32),
+            (1, 0x99, 1, 0.75),
+            (0, 0, 1, 0.125),
+            (0, 0, 0, 1.5),
+            (1, 0x200, 0, 0.75),
+            (0, 0, 0, -0.5),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.set_u32(w(&t, 0x2), a);
+            t.set_u32(w(&t, 0xb), clock);
+            t.set_u32(down, d);
+            let fade = w(&t, 0x2a);
+            set_f(&mut t, fade, v);
+            let gw = w(&t, 0x77);
+            t.set_u32(gw, 0x0abc_0000 + k);
+            t.set_u32(w(&t, 0x9c), 0x5a5a);
+            t.write(SCRATCH + 0x3040, &varied(0x100, k));
+            scrub(&mut t);
+            let call = Call {
+                eax: 0x1db0 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, call, &[], Eax::Checked);
+        }
+    }
+}
+
+/// The DLL's free node ring for `sa_pool::take` at `take`: `n` nodes at
+/// `at` (`+0` the previous, `+4` the next).
+fn take_ring(t: &mut Twin, take: u32, at: u32, n: u32, k: u32) {
+    let node = |i: u32| at + 0x40 * i;
+    t.write(at, &varied(0x40 * n, k + 3));
+    for i in 0..n {
+        t.set_u32(node(i), node((i + n - 1) % n));
+        t.set_u32(node(i) + 4, node((i + 1) % n));
+    }
+    t.set_u32(op(t, take, 0x17), node(0));
+    t.set_u16(op(t, take, 0x04), n as u16);
+}
+
+/// Rows 27/28: the summon's pair start in three DLLs, directly and
+/// through its start task (busy, the first call, ready): the busy list
+/// empty and not, the yaws past both bounds and inside.
+#[test]
+fn summon_pairs_started() {
+    for dll in [242u16, 651, 657] {
+        let Some(mut t) = twin(dll) else { return };
+        let task = t.at(0x3550);
+        let f = t.at(0x3680);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let soa = t.img.rel32_target(f + 0x7a);
+        let take = t.img.rel32_target(f + 0x2ed);
+        let mean = t.img.rel32_target(f + 0x166);
+        let pi = t.img.rel32_target(f + 0x4f);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 225, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 226, 2, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 227, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, 3, &[], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, 4, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for (i, x) in (1u32..).zip(&a[1..4]) {
+                m.w32(*x, (0.5 * i as f32 + k as f32).to_bits());
+            }
+            0x262
+        });
+        for s in [215u32, 413] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| (s << 16) ^ a[0]);
+        }
+        let yaw = SCRATCH + 0x7d8;
+        log_calls(&mut t, 333, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw))));
+        for (o, x) in [(0xc4u32, 1.0f32), (0xdb, 3.0), (0xd1, 6.0), (0xeb, -3.0)] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        t.set_u32(w(&t, 0x55), 1);
+        // the camera actor `*G_A` (slots 262 and 333)
+        let ga = w(&t, 0x9a);
+        t.set_u32(ga, 0x0ca0_0001);
+        let owners = w(&t, 0x64);
+        t.set_u32(owners + 4, 0x30);
+        let bl = SCRATCH + 0x900;
+        let actors = op(&t, mean, 0x58);
+        t.set_u32(op(&t, mean, 0x11), 2);
+        t.set_u32(op(&t, mean, 0x4d), bl);
+        t.set_u32(w(&t, 0x189), bl);
+        t.write(bl, &[2, 1, 7, 0]);
+        for i in 0..8u32 {
+            t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+        }
+        // (the yaw slot 333 answers, the busy list empty, load: busy / ready)
+        for (k, (y, empty, busy, ready)) in [
+            (0.5f32, true, 0u32, 1u32),
+            (-4.0, false, 0, 2),
+            (5.0, true, 1, 1),
+            (0.25, false, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                set_f(&mut t, yaw, y);
+                t.set_u32(ans, if direct { 0 } else { busy });
+                t.set_u32(ans + 4, ready);
+                object_start_setup(&mut t, soa, 8);
+                take_ring(&mut t, take, SCRATCH + 0x1000, 5, k);
+                let first = w(&t, 0x2f3);
+                t.set_u32(first, if empty { 0 } else { SCRATCH + 0x1800 });
+                t.set_u32(w(&t, 0x30a), SCRATCH + 0x1840);
+                t.write(SCRATCH + 0x1800, &varied(0x80, k));
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x3680 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}
+
+/// Rows 25/26: the summon's actor pair start in three DLLs, directly and
+/// through its start task: the actors' points from slot 262 (one and
+/// two actors answering 0x1066 to slot 390) or their mean (none), in and
+/// out of a battle, the busy list empty and not, the yaws past both
+/// bounds and inside.
+#[test]
+fn summon_actor_pairs_started() {
+    for dll in [241u16, 650, 656] {
+        let Some(mut t) = twin(dll) else { return };
+        let task = t.at(0x1210);
+        let f = t.at(0x1340);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let soa = t.img.rel32_target(f + 0x73);
+        let mean = t.img.rel32_target(f + 0x1ea);
+        let pi = t.img.rel32_target(f + 0x46);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 225, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 226, 2, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 227, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, 3, &[], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, 4, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for (i, x) in (1u32..).zip(&a[1..4]) {
+                m.w32(*x, (0.5 * i as f32 + k as f32).to_bits());
+            }
+            0x262
+        });
+        for s in [215u32, 413] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| (s << 16) ^ a[0]);
+        }
+        let status = SCRATCH + 0x7c0;
+        log_calls(&mut t, 390, 1, &[], move |m, a, _| {
+            m.r32(status + 4 * (a[0] & 3))
+        });
+        let yaw = SCRATCH + 0x7d8;
+        log_calls(&mut t, 333, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw))));
+        log_calls(&mut t, 12, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5 - 0.75);
+        for (o, x) in [
+            (0xbdu32, 1.0f32),
+            (0xd4, 3.0),
+            (0xca, 6.0),
+            (0xe4, -3.0),
+            (0x2ad, 0.75),
+        ] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        t.set_u32(w(&t, 0x4b), 1);
+        let owners = w(&t, 0x5a);
+        t.set_u32(owners + 4, 0x30);
+        let ga = w(&t, 0x93);
+        t.set_u32(ga, 0x0ca0_0001);
+        let bl = SCRATCH + 0x900;
+        let actors = op(&t, mean, 0x58);
+        t.set_u32(op(&t, mean, 0x11), 2);
+        t.set_u32(op(&t, mean, 0x4d), bl);
+        t.set_u32(w(&t, 0x174), bl);
+        t.write(bl, &[2, 1, 7, 0]);
+        for i in 0..8u32 {
+            t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+        }
+        let ring = |t: &mut Twin, k: u32| {
+            let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+            t.write(node(0), &varied(0x140, k + 3));
+            // two nodes every other case: the second take empties the ring
+            let n = if k.is_multiple_of(2) { 4 } else { 2 };
+            for i in 0..n {
+                t.set_u32(node(i), node((i + n - 1) % n));
+                t.set_u32(node(i) + 4, node((i + 1) % n));
+            }
+            t.set_u16(op(t, f, 0x3f9), n as u16);
+            t.set_u32(op(t, f, 0x413), node(0));
+        };
+        // (yaw, actors' answers, battle, busy list empty, load busy / ready)
+        for (k, (y, answers, battle, empty, busy, ready)) in [
+            (0.5f32, [0x1066u32, 0, 0x1066], 0u32, true, 0u32, 1u32),
+            (-4.0, [0, 0, 0], 1, false, 0, 2),
+            (5.0, [0, 0x1066, 0], 0, true, 1, 1),
+            (0.25, [0x1066, 0x1066, 0], 1, false, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                set_f(&mut t, yaw, y);
+                for (i, a) in (0u32..).zip(answers) {
+                    t.set_u32(status + 4 * i, a);
+                }
+                t.set_u32(op(&t, f, 0x161), 3);
+                t.set_u32(w(&t, 0x2ba), battle);
+                // the record words the start clears, seeded
+                for o in [0x2c1u32, 0x2c6, 0x3d5, 0x3cb] {
+                    let g = w(&t, o);
+                    t.set_u32(g, 0x5a5a_0000 + o);
+                }
+                t.set_u32(ans, if direct { 0 } else { busy });
+                t.set_u32(ans + 4, ready);
+                object_start_setup(&mut t, soa, 8);
+                ring(&mut t, k);
+                let first = w(&t, 0x46e);
+                t.set_u32(first, if empty { 0 } else { SCRATCH + 0x1800 });
+                t.set_u32(w(&t, 0x47e), SCRATCH + 0x1840);
+                t.write(SCRATCH + 0x1800, &varied(0x80, k));
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x1340 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}
+
+/// Rows 24/221: the object carried and launched in three DLLs (the
+/// part's matrix and the weapon's): the count running, reaching 0 (the
+/// launch with `z` inside and outside its window, the trail record on
+/// and off, the busy list empty and not).
+#[test]
+fn launches_after_carry() {
+    for dll in [544u16, 557, 555] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x3470);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        // the matrix's slots (`sa_misc::part_matrix`, `s5_misc::weapon_matrix`)
+        let h = SCRATCH + 0x3000;
+        log_calls(&mut t, 219, 2, &[], move |_, a, _| h ^ (a[1] & 0x10));
+        for s in [277u32, 15, 16, 17] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| s ^ a[0]);
+            t.stub_st0(s, move |_, a| {
+                f64::from(a[0] & 0xff) * 0.125 + f64::from(s) * 0.5
+            });
+        }
+        log_calls(&mut t, 235, 1, &[], |m, a, k| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (0.25 * i as f32 - k as f32).to_bits());
+            }
+            0x235
+        });
+        for s in [328u32, 329, 330] {
+            log_calls(&mut t, s, 3, &[0], move |_, _, _| s);
+        }
+        log_calls(&mut t, 229, 3, &[1, 2], |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[0] + 4 * i, (0.5 * i as f32 + k as f32 - 1.0).to_bits());
+            }
+            0x229
+        });
+        log_calls(&mut t, 248, 3, &[1, 2], |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[0] + 4 * i, (1.5 - 0.25 * i as f32 + k as f32).to_bits());
+            }
+            0x248
+        });
+        let r = SCRATCH + 0x7c0;
+        for s in [314u32, 404] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| s ^ a[0]);
+            t.stub_st0(s, move |m, a| {
+                f64::from(f32::from_bits(a[0])) + f64::from(f32::from_bits(m.r32(r)))
+            });
+        }
+        // the child start's (`s4_fam446::start_child_c`)
+        let child = t.img.rel32_target(f + 0xf8);
+        let soa = t.img.rel32_target(child + 0x3e);
+        log_calls(&mut t, 641, 1, &[], |_, a, _| a[0] ^ 0x0641_0000);
+        log_calls(&mut t, 719, 3, &[], |_, a, _| 0x7190_0000 ^ a[2]);
+        log_calls(&mut t, 393, 3, &[1], |_, _, _| 0x393);
+        log_calls(&mut t, 306, 3, &[], |_, a, _| 0x0306_0000 ^ a[2]);
+        let take = t.img.rel32_target(f + 0x5ca);
+        let b = SCRATCH + 0x10000;
+        t.set_u32(w(&t, 0x1f), b);
+        for (o, x) in [
+            (0x5bu32, 1.0f32),
+            (0x197, 0.5),
+            (0x1ca, 2.0),
+            (0x1d2, 4.0),
+            (0x1e5, 1.0),
+            (0x1f2, 0.75),
+            (0x34c, 1.0),
+            (0x357, 3.0),
+            (0x367, 6.0),
+            (0x371, -3.0),
+            (0x37e, 6.0),
+            (0x50e, 0.5),
+            (0x516, 2.0),
+            (0x53d, 0.25),
+            (0x556, 1.5),
+        ] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        let (obj, x, next) = (SCRATCH + 0x5000, SCRATCH + 0x8000, SCRATCH + 0x5800);
+        // (count, slot 314's offset, the trail record, busy list empty)
+        for (k, (count, ro, trail, empty)) in [
+            (5i32, 0.0f32, 1u32, true),
+            (1, 0.5, 1, true),
+            (0, 3.5, 0, false),
+            (0, 2.75, 1, false),
+            (-1, -6.0, 1, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            set_f(&mut t, r, ro);
+            object_start_setup(&mut t, soa, 8);
+            t.write(b, &varied(0xd800, k + 1));
+            let d = w(&t, 0x56e);
+            t.set_u32(b + d, trail);
+            t.write(x, &floats(0x150, k));
+            t.set_u32(x + 0x50c, count.cast_unsigned());
+            t.set_u32(x + 0x510, 6);
+            t.set_u32(x + 0x518, k % 2);
+            t.write(obj, &varied(0x20, k));
+            t.set_u32(obj + 8, next);
+            t.write(next, &varied(0x20, k + 2));
+            t.set_u32(obj + 0x14, x);
+            take_ring(&mut t, take, SCRATCH + 0x1000, 3, k);
+            let first = w(&t, 0x5d0);
+            t.set_u32(first, if empty { 0 } else { SCRATCH + 0x1800 });
+            t.set_u32(w(&t, 0x5e3), SCRATCH + 0x1840);
+            t.write(SCRATCH + 0x1800, &varied(0x80, k));
+            scrub(&mut t);
+            let call = Call {
+                eax: 0x3470 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, call, &[obj], Eax::Checked);
+        }
+    }
+}

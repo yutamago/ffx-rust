@@ -2633,6 +2633,13 @@ ports! {
     "light landing (0565)" => s9_misc::LIGHT_LAND_0565, s9_misc::light_land_0565;
     "light bounce" => s9_misc::LIGHT_BOUNCE, s9_misc::light_bounce;
     "thunk: lit colour node" => s9_misc::LIT_COLOUR_NODE_THUNK, s9_misc::lit_colour_node_thunk;
+    "texture fade" => s9_misc::TEXTURE_FADE, s9_misc::texture_fade;
+    "summon pair start" => s9_misc::SUMMON_PAIR_START, s9_misc::summon_pair_start;
+    "summon start task (0242)" => s9_misc::SUMMON_START_TASK_0242, s9_misc::summon_start_task_0242;
+    "summon actor pair start" => s9_misc::SUMMON_ACTOR_PAIR_START, s9_misc::summon_actor_pair_start;
+    "summon start task (0241)" => s9_misc::SUMMON_START_TASK_0241, s9_misc::summon_start_task_0241;
+    "launch after carry (0544)" => s9_misc::LAUNCH_AFTER_CARRY_0544, s9_misc::launch_after_carry;
+    "launch after carry (0555)" => s9_misc::LAUNCH_AFTER_CARRY_0555, s9_misc::launch_after_carry;
     // round 9, shared-9 (s9_misc): end of ports
 }
 
