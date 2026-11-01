@@ -56,6 +56,16 @@ fn scrub(t: &mut Twin) {
     t.write(top - 0x3000, &varied(0x3000, 0x5b));
 }
 
+/// The DLL globals at the operands `ops` of `f` given new values (each
+/// run's differ from the last), so that a store the port drops shows.
+fn seed_globals(t: &mut Twin, f: u32, ops: &[u32]) {
+    for &o in ops {
+        let a = op(t, f, o);
+        let v = t.u32(a).rotate_left(7) ^ 0x1357_9bdf ^ o;
+        t.set_u32(a, v);
+    }
+}
+
 /// Whether `a` is in the stack or the scratch area (a pointer a stub may
 /// follow).
 fn followable(a: u32) -> bool {
@@ -2092,6 +2102,7 @@ fn weapon_swings_drop_in(dll: u16, rva: u32) {
         t.set_u32(node, 0);
         t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + count);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -2659,6 +2670,7 @@ fn targets_more_and_tasks() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        seed_globals(&mut t, f, &[0xf3]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -3504,6 +3516,7 @@ fn camera_records_started() {
             t.set_u32(head, 0);
             t.set_u32(tail, 0);
         }
+        seed_globals(&mut t, f, &[0x335]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -3861,6 +3874,7 @@ fn bursts_tasks() {
         t.set_u32(task + 4, 0);
         t.set_u32(task + 8, SCRATCH + 0x340);
         t.set_u32(SCRATCH + 0x34c, 0);
+        seed_globals(&mut t, f, &[0x321, 0x329, 0x33b, 0x341, 0x34b, 0x36a]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
