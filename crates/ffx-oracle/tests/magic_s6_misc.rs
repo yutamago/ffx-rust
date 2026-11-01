@@ -2865,3 +2865,36 @@ fn aimed_node_walks() {
         });
     }
 }
+
+/// Row 87: `magic_0180`'s task pool reset: one task free or more, the
+/// live list empty or not.
+#[test]
+fn task_pools_reset() {
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x2140);
+    let pool = SCRATCH + 0x4000;
+    let task = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for (k, (count, listed)) in [(1u16, false), (3, true), (2, false), (1, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(pool, &varied(0x2900, k));
+        t.write(task(0), &varied(0x100, k + 7));
+        for i in 0..4 {
+            t.set_u32(task(i), task((i + 3) % 4));
+            t.set_u32(task(i) + 4, task((i + 1) % 4));
+        }
+        t.set_u32(task(5), 0x1234_0000 + k);
+        t.write(op(&t, f, 0x20), &count.to_le_bytes());
+        t.set_u32(op(&t, f, 0x3e), task(1));
+        t.set_u32(op(&t, f, 0x2), 0x0bad_0001);
+        for o in [0x25, 0x2b, 0x34] {
+            t.set_u32(op(&t, f, o), 0x0bad_0002 + o);
+        }
+        t.set_u32(op(&t, f, 0xa6), if listed { task(5) } else { 0 });
+        t.set_u32(op(&t, f, 0xb7), task(6));
+        scrub(&mut t);
+        t.check_entry(f, Call::this(pool), &[], Eax::Checked);
+    }
+}
