@@ -7541,3 +7541,254 @@ fn l7_camera_test_proc_matches_the_original() {
         }
     });
 }
+
+// ---- round 8 (left8) (ffx_pcui::l8_pcui) ----
+
+use ffx_pcui::l8_pcui::bridge as l8u;
+
+#[test]
+fn l8_gdraw_release_objects() {
+    // every slot empty or holding an object (the words between kept);
+    // one release moves g_GDrawState to a second block, whose slots the
+    // rest come from while the first block's slot is the one cleared
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_5c90);
+        for case in 0..12 {
+            t.reset();
+            let at = t.rebase(l8u::GDRAW);
+            // eight logging releases (each logs the object it gets)
+            let mut vts = Vec::new();
+            for k in 0..8 {
+                let release = t.stub_code(0x5000 + k, false, 1, 1, k);
+                vts.push(t.words(&[0, 0, release]));
+            }
+            let blocks = [t.zeros(0xa00), t.zeros(0xa00)];
+            let slots: Vec<u32> = l8u::slots().collect();
+            for &gd in &blocks {
+                for k in 0..0x280 {
+                    let w = if !slots.contains(&(4 * k)) {
+                        rng.next()
+                    } else if rng.chance(3) {
+                        0
+                    } else {
+                        let vt = vts[rng.below(8) as usize];
+                        t.words(&[vt, k])
+                    };
+                    t.w32(gd + 4 * k, w);
+                }
+            }
+            // a release that switches the state block
+            if case % 3 != 0 {
+                let release = t.stub_code(0x7777, false, 1, 1, 0);
+                let mut c = vec![0xc7, 0x05];
+                c.extend(at.to_le_bytes());
+                c.extend(blocks[1].to_le_bytes()); // mov dword [g_GDrawState], second
+                let here = t.cave_next;
+                c.push(0xe9);
+                c.extend(
+                    release
+                        .wrapping_sub(here + c.len() as u32 + 4)
+                        .to_le_bytes(),
+                );
+                let code = t.cave_code(&c);
+                let vt = t.words(&[0, 0, code]);
+                let obj = t.words(&[vt, 0]);
+                let off = [0x14, 0x104, 0x25c, 0x7b0, 0x984][case % 5];
+                t.w32(blocks[0] + off, obj);
+            }
+            t.patch(at, &blocks[0].to_le_bytes());
+            t.check(
+                "GDraw_releaseObjects_00a35c90",
+                0x00a3_5c90,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    l8u::release_objects(g);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stdcall bump allocator `(size, file, line)` (`ret 0xc`) behind the
+    /// import slot `slot`: 16-byte aligned blocks from a pool filled with
+    /// 0xcd, 0 once `fail_after` blocks were handed out; the last file and
+    /// line kept in cells (so the diff sees them).
+    fn stub_import_alloc3(&mut self, slot: u32, fail_after: u32) {
+        let pool = self.alloc(&vec![0xcd; 0x1_0000]);
+        let cur = self.words(&[pool, fail_after, 0, 0]);
+        let mut c = vec![0x83, 0x3d];
+        c.extend((cur + 4).to_le_bytes());
+        c.push(0x00); // cmp dword [left], 0
+        c.extend([0x75, 0x05, 0x31, 0xc0, 0xc2, 0x0c, 0x00]); // jne +5; xor eax, eax; ret 0xc
+        c.extend([0xff, 0x0d]);
+        c.extend((cur + 4).to_le_bytes()); // dec dword [left]
+        c.push(0xa1);
+        c.extend(cur.to_le_bytes()); // mov eax, [cur]
+        c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+        c.extend([0x83, 0xc1, 0x0f, 0x83, 0xe1, 0xf0, 0x01, 0xc1]); // round up; add ecx, eax
+        c.extend([0x89, 0x0d]);
+        c.extend(cur.to_le_bytes()); // mov [cur], ecx
+        for (k, at) in [(8u8, cur + 8), (0xc, cur + 0xc)] {
+            c.extend([0x8b, 0x4c, 0x24, k]); // mov ecx, [esp+k]
+            c.extend([0x89, 0x0d]);
+            c.extend(at.to_le_bytes()); // mov [at], ecx
+        }
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+}
+
+#[test]
+fn l8_gdraw_create_context() {
+    // the block, pool A or pool B failing; State_InitBuffers failing (al
+    // 0 with eax set) or not; a pool init that moves g_GDrawState (the
+    // checks and the frees read it again)
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_5780);
+        for case in 0..16_u32 {
+            t.reset();
+            t.stub_import_alloc3(l8u::MALLOC_IAT, case % 4);
+            t.stub_import(l8u::FREE_IAT, false, 1, 1, 0x0f0f);
+            t.stub(l8u::MEMSET, false, 3, 0, 0x5e5e);
+            let moved = case / 4 == 3;
+            if moved {
+                // every pool init moves the state to a second block
+                let second = t.zeros(0xb00);
+                for off in [0xab0, 0xab4] {
+                    let w = if rng.chance(3) { 0 } else { rng.next() };
+                    t.w32(second + off, w);
+                }
+                let log = t.stub_code(l8u::NODE_POOL_INIT, false, 3, 0, 0x9b9b);
+                let gd = t.rebase(l8u::GDRAW);
+                let mut c = vec![0xc7, 0x05];
+                c.extend(gd.to_le_bytes());
+                c.extend(second.to_le_bytes()); // mov dword [g_GDrawState], second
+                let here = t.cave_next;
+                c.push(0xe9);
+                c.extend(log.wrapping_sub(here + c.len() as u32 + 4).to_le_bytes());
+                let code = t.cave_code(&c);
+                t.jump(l8u::NODE_POOL_INIT, code);
+            } else {
+                t.stub(l8u::NODE_POOL_INIT, false, 3, 0, 0x9b9b);
+            }
+            let ok = if case % 8 < 4 { 1 } else { 0x100 };
+            t.stub(l8u::INIT_BUFFERS, false, 1, 0, ok);
+            t.stub(l8u::CREATE_DEVICE_OBJECTS, false, 0, 0, 0xde0b);
+            for sym in [l8u::POOL_A, l8u::POOL_B, l8u::POOL_STATE] {
+                let at = t.rebase(sym);
+                let n = rng.below(16);
+                t.patch(at, &n.to_le_bytes());
+                let v = rng.next();
+                t.patch(at + 4, &v.to_le_bytes());
+            }
+            let size = rng.next();
+            t.patch(t.rebase(l8u::BUFFER_SIZE), &size.to_le_bytes());
+            t.patch(t.rebase(l8u::GDRAW), &rng.next().to_le_bytes());
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            t.check(
+                "gdraw_createContext_00a35780",
+                0x00a3_5780,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l8u::create_context(g, args[0], args[1], args[2], args[3])),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stdcall method stub (4 words logged and popped, `hr` returned,
+    /// `this` on the stack) that first writes `val` through its fourth
+    /// word (the out pointer of `CreateTexture2D` and
+    /// `CreateShaderResourceView`).
+    fn com_out_method(&mut self, tag: u32, hr: u32, val: u32) -> u32 {
+        let log = self.stub_code(tag, false, 4, 4, hr);
+        let at = self.cave_next;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x10]; // mov eax, [esp+0x10]
+        c.extend([0xc7, 0x00]);
+        c.extend(val.to_le_bytes()); // mov dword [eax], val
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        self.cave_code(&c)
+    }
+}
+
+#[test]
+fn l8_gdraw_create_raw_texture() {
+    // every format (the four made, 5/6 and others warned); mip chains
+    // shrinking past 1 (13 levels at most: 24 would overrun the
+    // original's array into its saved registers); CreateTexture2D or the view
+    // failing (out of memory or another error), the wrap returning 0 or a
+    // handle; the frame's description and data array compared
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_7c20);
+        for case in 0..40_u32 {
+            t.reset();
+            t.skip = 4;
+            let format = match case % 8 {
+                0 => 0,
+                1 => 9,
+                2 => 10,
+                3 => 11,
+                4 => [5, 6, 1, 12, 0xff][rng.below(5) as usize],
+                _ => [0, 9, 10, 11][rng.below(4) as usize],
+            };
+            let info = t.zeros(0x10);
+            let off = rng.below(0x1000);
+            t.w32(info, off);
+            t.write(info + 4, &[format, rng.below(14) as u8]);
+            let (w, h) = (rng.below(0x800) as u16, rng.below(0x800) as u16);
+            t.write(info + 6, &w.to_le_bytes());
+            t.write(info + 8, &h.to_le_bytes());
+            let base = rng.next();
+            let tex = t.com_object(0x7e0, 0x11);
+            let srv = t.com_object(0x7e1, 0x12);
+            let oom = 0x8007_000e;
+            let hr1 = match rng.below(6) {
+                0 => oom,
+                1 => 0x8000_4005,
+                _ => rng.below(2),
+            };
+            let hr2 = match rng.below(6) {
+                0 => oom,
+                1 => 0x8007_0057,
+                _ => 0,
+            };
+            let create = t.com_out_method(0x7e2, hr1, tex);
+            let view = t.com_out_method(0x7e3, hr2, srv);
+            let mut slots = vec![0; 8];
+            slots[5] = create;
+            slots[7] = view;
+            let vt = t.words(&slots);
+            let device = t.words(&[vt]);
+            let state = t.words(&[device]);
+            t.patch(t.rebase(l8u::GDRAW), &state.to_le_bytes());
+            let handle = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            t.stub(l8u::WRAP_TEXTURE, false, 1, 0, handle);
+            t.stub(l8u::MEMSET, false, 3, 0, 0x5e5e);
+            let warned = if format > 11 || (1..9).contains(&format) {
+                3
+            } else if hr1 == oom || (hr1 < 0x8000_0000 && hr2 == oom) {
+                4
+            } else {
+                5
+            };
+            t.stub_import(l8u::WARNING_IAT, false, warned, 0, 0x3a3a);
+            let args = [base, rng.next(), info];
+            t.check_framed(
+                "GDraw_createRawTexture_00a37c20",
+                0x00a3_7c20,
+                Conv::Stdcall,
+                &args,
+                0x16c,
+                |g, ebp| Out::U32(l8u::create_raw_texture(g, ebp, base, info)),
+            );
+        }
+        t.skip = 0;
+    });
+}

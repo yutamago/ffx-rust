@@ -1253,4 +1253,23 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l7_pcui::bridge::CAMERA_TEST_FRAME;
         ffx_pcui::l7_pcui::bridge::camera_test_proc(&mut mem(), ebp, window, msg, param)
     }
+    // ---- round 8 (left8) (ffx_pcui::l8_pcui) ----
+    /// `()`: `GDraw`'s D3D11 objects released at context teardown (its
+    /// one caller reads no result).
+    GDraw_releaseObjects_00a35c90 @ 0x00a3_5c90 => extern "C" fn gdraw_release_objects() {
+        ffx_pcui::l8_pcui::bridge::release_objects(&mut mem());
+    }
+    /// `(device, context, w, h)` -> the `GDraw` function table or 0:
+    /// `GDraw`'s D3D11 context set-up.
+    gdraw_createContext_00a35780 @ 0x00a3_5780 => extern "C" fn gdraw_create_context(device: u32, context: u32, w: u32, h: u32) -> u32 {
+        ffx_pcui::l8_pcui::bridge::create_context(&mut mem(), device, context, w, h)
+    }
+    /// `(base, _, info)` (`ret 0xc`) -> the texture handle or 0: an Iggy
+    /// raw texture made on the device (its description, data array and
+    /// outs in a frame; the second word is not read).
+    GDraw_createRawTexture_00a37c20 @ 0x00a3_7c20 => extern "stdcall" fn gdraw_create_raw_texture(base: u32, _unused: u32, info: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::RAW_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::RAW_FRAME;
+        ffx_pcui::l8_pcui::bridge::create_raw_texture(&mut mem(), ebp, base, info)
+    }
 }
