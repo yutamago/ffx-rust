@@ -1403,7 +1403,7 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ecx,
         ..*fr
     };
-    let handlers: [(&Sig, Handler<G>); 10] = [
+    let handlers: [(&Sig, Handler<G>); 11] = [
         (&MOVING_LIGHT_NODE, moving_light_node),
         (&COUNT_FADE, count_fade),
         (&MODEL_DRAW_NODE, model_draw_node),
@@ -1414,6 +1414,7 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         (&THUNDER_NODE, thunder_node),
         (&SPRITE_FADE_NODE, sprite_fade_node),
         (&SHAKE_NODE, shake_node),
+        (&FLAGGED_OBJECT_STEP, flagged_object_step),
     ];
     for (sig, port) in handlers {
         if img.matches(target, sig) {
@@ -1436,6 +1437,14 @@ pub const JMP_COUNT_FADE: Sig = Sig {
     len: 12,
     hash: crate::s3_wrap::ECX_JMP_HASH,
     calls: &[(8, Callee::Sig(&COUNT_FADE))],
+    imports: &[],
+};
+
+/// `magic_0164` 0x10003f00 (4 DLLs) over [`flagged_object_step`].
+pub const JMP_FLAGGED_OBJECT_STEP: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&FLAGGED_OBJECT_STEP))],
     imports: &[],
 };
 
@@ -5630,3 +5639,199 @@ fn yaw_round<G: Game>(g: &G, img: &Image, f: u32, r: f32, ops: [u32; 5]) -> f32 
     }
     y
 }
+
+/// A flagged object's step on the pass (internal, `ecx` = the pass state
+/// `S`; `ebp` = `esp - 4` at the entry). After [`ring_pass`] (not passed:
+/// nothing more) on `O = S[0]` with its u16 flags `F = O+0x90` (bit 0:
+/// the `+0x54` handle and the B slots, else `+0x50` and the A slots):
+/// - bit 4: the handler `[[O+0x4c] + 0x1c]` of the frame record `(O+0x4c,
+///   byte 5 = S+5)`;
+/// - bit 8: once the handle's slot (B 20, A 411) says so, slot (B 36, A
+///   228) `(handle, O+0x60)` with bit 5, else (A only) slot 228 `(+0x50,
+///   0x10)` and bit 8 cleared;
+/// - bit 1 with `O+0x58` at 0: slot (B 257 `(+0x54, 1)`, A 296 `(+0x50,
+///   0)`); `O+0x58` counts down either way;
+/// - bit 2 (A only): the u16 `O+0x94` counts down while above 0 (and is
+///   returned); else with `O+0x5c` above 0 it counts down and the point
+///   `L` goes `O+0x1c..` to `O+0x2c..` (slot 234), scaled by `O+0x70`
+///   (667) and the count left (233), added to `O+0x2c` (248) and set on
+///   `+0x50` (255); at 0 bit 2 is cleared (returning the flags);
+/// - else bit 3 (A only): slot 217 `(+0x50, L)`, the way `D` from `L` to
+///   `O+0x2c` (234) scaled by `O+0x74` (233, `D.w = 0`), `L += D` (248)
+///   and set (255);
+/// - else bit 6 (A only): the speed `O+0x78` goes down by `O+0x7c` and
+///   eases with `O+0x88` (by `K`); `L` (217) sinks by it; once at the
+///   floor (slot 289's float, plus slot 664's when slot 534 says so) bit
+///   10 is set and the bounces `O+0x92` count down: none left, slot 538
+///   `(+0x50, O+0x64)`, bit 6 cleared and `L.y` the floor; else the speed
+///   `O+0x84 O+0x80` and `L.y` the floor less it; `L` set (255).
+///
+/// Returns what the original leaves in `eax`.
+///
+/// `magic_0164` 0x10003a60 (1096 bytes; 4 DLLs).
+pub fn flagged_object_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    let (passed, eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return eax;
+    }
+    let o = g.read::<u32>(s);
+    let call = |g: &mut G, t: u32, n: u32, args: &[u32]| slot(g, img, f, t, n, fr.ecx, args).eax;
+    let flags = |g: &G| u32::from(g.read::<u16>(o + 0x90));
+    if flags(g) & 0x10 != 0 {
+        let c = g.read::<u32>(o + 0x4c);
+        let rec = ebp.wrapping_sub(0x2c);
+        g.write::<u32>(rec, c);
+        let b = g.read::<u8>(s + 5);
+        g.write::<u8>(rec + 5, b);
+        let handler = g.read::<u32>(g.read::<u32>(c).wrapping_add(0x1c));
+        g.call(handler, rec, &[rec]);
+    }
+    let a = g.read::<u32>(o + 0x50);
+    let b = g.read::<u32>(o + 0x54);
+    let fl = flags(g);
+    if fl & 0x100 != 0 {
+        let r = if fl & 1 != 0 {
+            call(g, 0x92, 20, &[b])
+        } else {
+            call(g, 0x92, 411, &[a])
+        };
+        if r != 0 {
+            let fl = flags(g);
+            if fl & 0x20 != 0 {
+                let x = g.read::<u32>(o + 0x60);
+                if fl & 1 != 0 {
+                    call(g, 0xc3, 36, &[g.read::<u32>(o + 0x54), x]);
+                } else {
+                    call(g, 0xc3, 228, &[g.read::<u32>(o + 0x50), x]);
+                }
+            } else {
+                if fl & 1 == 0 {
+                    call(g, 0xee, 228, &[g.read::<u32>(o + 0x50), 0x10]);
+                }
+                g.write::<u16>(o + 0x90, g.read::<u16>(o + 0x90) & 0xfeff);
+            }
+        }
+    }
+    let fl = flags(g);
+    if fl & 2 != 0 && g.read::<u32>(o + 0x58) == 0 {
+        if fl & 1 != 0 {
+            call(g, 0x122, 257, &[g.read::<u32>(o + 0x54), 1]);
+        } else {
+            call(g, 0x122, 296, &[g.read::<u32>(o + 0x50), 0]);
+        }
+    }
+    let fl = flags(g);
+    g.write::<u32>(o + 0x58, g.read::<u32>(o + 0x58).wrapping_sub(1));
+    let l = ebp.wrapping_sub(0x14);
+    let l2 = ebp.wrapping_sub(0x24);
+    let k = |g: &G, at: u32| g.read::<f32>(o + at);
+    if fl & 4 != 0 {
+        if fl & 1 != 0 {
+            return fl;
+        }
+        let n = g.read::<u16>(o + 0x94);
+        if n != 0 {
+            g.write::<u16>(o + 0x94, n - 1);
+            return u32::from(n) - 1;
+        }
+        let c = g.read::<u32>(o + 0x5c);
+        if c == 0 {
+            g.write::<u16>(o + 0x90, (fl & 0xfffb) as u16);
+            return fl & 0xfffb;
+        }
+        g.write::<u32>(o + 0x5c, c - 1);
+        call(g, 0x1a4, 234, &[l, o + 0x1c, o + 0x2c]);
+        call(g, 0x1c3, 667, &[l, l, k(g, 0x70).to_bits()]);
+        let left = f64::from(g.read::<u32>(o + 0x5c)) as f32;
+        call(g, 0x1f8, 233, &[l, l, left.to_bits()]);
+        call(g, 0x20b, 248, &[l, o + 0x2c, l]);
+        return call(g, 0x21c, 255, &[g.read::<u32>(o + 0x50), l]);
+    }
+    if fl & 8 != 0 {
+        if fl & 1 != 0 {
+            return fl;
+        }
+        call(g, 0x271, 217, &[g.read::<u32>(o + 0x50), l]);
+        call(g, 0x28d, 234, &[l2, o + 0x2c, l]);
+        call(g, 0x2ac, 233, &[l2, l2, k(g, 0x74).to_bits()]);
+        g.write::<u32>(ebp.wrapping_sub(0x18), 0);
+        call(g, 0x2c2, 248, &[l, l, l2]);
+        return call(g, 0x2da, 255, &[g.read::<u32>(o + 0x50), l]);
+    }
+    if fl & 0x40 == 0 || fl & 1 != 0 {
+        return fl;
+    }
+    let speed = sub(k(g, 0x78), k(g, 0x7c));
+    let ease = k(g, 0x88);
+    g.write::<f32>(o + 0x78, speed);
+    let d = mul(sub(speed, ease), ease);
+    if speed >= g.read::<f32>(w(0x322)) {
+        g.write::<f32>(o + 0x78, sub(speed, d));
+    } else {
+        g.write::<f32>(o + 0x78, add(d, speed));
+    }
+    call(g, 0x351, 217, &[g.read::<u32>(o + 0x50), l]);
+    let y = sub(g.read::<f32>(l + 4), k(g, 0x78));
+    g.write::<f32>(l + 4, y);
+    let e = g.read::<u32>(o + 0x50);
+    let (r0, _) = crate::sb_nodes::float_289(g, img, img.rel32_target(f + 0x373), e);
+    let v_at = ebp.wrapping_sub(0x28);
+    g.write::<f32>(v_at, r0);
+    let more = call(g, 0x378, 534, &[g.read::<u32>(o + 0x50)]);
+    if more != 0 {
+        let fl664 = Frame {
+            at: img.rel32_target(f + 0x397),
+            ecx: g.read::<u32>(o + 0x50),
+            ..*fr
+        };
+        let r1 = match crate::s4_misc::float_664(g, img, &fl664).xmm0 {
+            Some(crate::Xmm::F32(x)) => f32::from_bits(x),
+            _ => f32::from_bits(0xffc0_0000),
+        };
+        g.write::<f32>(v_at, add(r0, r1));
+    }
+    let v = g.read::<f32>(v_at);
+    let y = g.read::<f32>(l + 4);
+    if y >= v {
+        g.write::<u16>(o + 0x90, g.read::<u16>(o + 0x90) | 0x400);
+        let left = g.read::<u16>(o + 0x92).wrapping_sub(1);
+        g.write::<u16>(o + 0x92, left);
+        if left == 0 {
+            call(
+                g,
+                0x3f8,
+                538,
+                &[g.read::<u32>(o + 0x50), g.read::<u32>(o + 0x64)],
+            );
+            g.write::<u16>(o + 0x90, g.read::<u16>(o + 0x90) & 0xffbf);
+            g.write::<f32>(l + 4, g.read::<f32>(v_at));
+        } else {
+            let t = mul(k(g, 0x84), k(g, 0x80));
+            g.write::<f32>(o + 0x78, t);
+            g.write::<f32>(l + 4, sub(v, t));
+        }
+    }
+    call(g, 0x425, 255, &[g.read::<u32>(o + 0x50), l])
+}
+
+/// [`flagged_object_step`] (the `rel32`s: four cookie checks, [`float_289`](crate::sb_nodes::float_289)
+/// and [`float_664`](crate::s4_misc::float_664)).
+pub const FLAGGED_OBJECT_STEP: Sig = Sig {
+    len: 1096,
+    hash: 0x6895_6527_672f_977a,
+    calls: &[
+        (0x17e, Callee::Any),
+        (0x237, Callee::Any),
+        (0x254, Callee::Any),
+        (0x2f5, Callee::Any),
+        (0x373, Callee::Sig(&crate::sb_nodes::FLOAT_289)),
+        (0x397, Callee::Sig(&crate::s4_misc::FLOAT_664)),
+        (0x440, Callee::Any),
+    ],
+    imports: &[],
+};

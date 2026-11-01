@@ -4189,3 +4189,125 @@ fn reel_phases() {
         }
     }
 }
+
+/// Row 246: the flagged object step of the four DLLs: not passed, and
+/// passed with each flag's ways (both handle kinds, the slots' answers,
+/// the counts at 0 and above, the fall above and below the floor, with
+/// bounces left and not), also through its thunk.
+#[test]
+#[allow(clippy::too_many_lines)] // one case table for every flag
+fn flagged_object_steps() {
+    for (dll, rva, thunk) in [
+        (164u16, 0x3a60u32, 0x3f00u32),
+        (201, 0x2a30, 0x2ed0),
+        (478, 0x28f0, 0x2d50),
+        (613, 0x3ad0, 0x3f70),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let ctl = SCRATCH + 0x2f0;
+        let vt = ring_handler(&mut t, log);
+        for (s, n) in [(20u32, 1usize), (411, 1), (534, 1)] {
+            log_calls(&mut t, s, log, n, None, move |m, _, _| m.r32(ctl));
+        }
+        for (s, n) in [
+            (36u32, 2usize),
+            (228, 2),
+            (257, 2),
+            (296, 2),
+            (234, 3),
+            (667, 3),
+            (233, 3),
+            (248, 3),
+            (255, 2),
+            (538, 2),
+        ] {
+            log_calls(&mut t, s, log, n, None, move |_, a, k| {
+                (s << 16) ^ a[n - 1] ^ k
+            });
+        }
+        log_calls(&mut t, 217, log, 2, None, move |m, a, k| {
+            let y = f32::from_bits(m.r32(ctl + 4));
+            m.w32(a[1], (0.5 * k as f32).to_bits());
+            m.w32(a[1] + 4, y.to_bits());
+            m.w32(a[1] + 8, 0x2170_0000 + k);
+            0x217
+        });
+        for (s, x) in [(289u32, 1.25f64), (664, -0.5)] {
+            log_calls(&mut t, s, log, 1, None, move |_, a, _| a[0] ^ s);
+            t.stub_st0(s, move |m, _| x + f64::from(m.r32(log) % 3));
+        }
+        t.set_u32(op(&t, f, 0x322), 0.5f32.to_bits());
+        let s = SCRATCH + 0x300;
+        let o = SCRATCH + 0x1000;
+        let c = SCRATCH + 0x900;
+        // (the ring's byte, the flags, the slots' answer, the fall's `L.y`,
+        // `+0x58`, `+0x94`, `+0x5c`, `+0x92`, the speed)
+        for (k, (byte, flags, ans, ly, o58, o94, o5c, o92, speed)) in [
+            (3u8, 0x40u16, 0u32, 0.0f32, 0u32, 0u16, 0u32, 0u16, 1.0f32),
+            (4, 0x10, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x100, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x120, 1, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x121, 1, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x100, 1, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x101, 1, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x2, 0, 0.0, 0, 0, 0, 0, 1.0),
+            (4, 0x3, 0, 0.0, 0, 0, 0, 0, 1.0),
+            (4, 0x2, 0, 0.0, 5, 0, 0, 0, 1.0),
+            (4, 0x14, 0, 0.0, 1, 3, 0, 0, 1.0),
+            (4, 0x5, 0, 0.0, 1, 3, 0, 0, 1.0),
+            (4, 0x4, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x4, 0, 0.0, 1, 0, 4, 0, 1.0),
+            (4, 0x4, 0, 0.0, 1, 0, 0x8000_0002, 0, 1.0),
+            (4, 0x8, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x9, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x41, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x80, 0, 0.0, 1, 0, 0, 0, 1.0),
+            (4, 0x40, 0, -3.0, 1, 0, 0, 2, 1.0),
+            (4, 0x40, 0, 9.0, 1, 0, 0, 2, 1.0),
+            (4, 0x40, 1, 9.0, 1, 0, 0, 1, 0.25),
+            (4, 0x40, 1, 9.0, 1, 0, 0, 3, f32::NAN),
+            (4, 0x40, 0, f32::NAN, 1, 0, 0, 1, 2.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(ctl, ans);
+            t.set_u32(ctl + 4, ly.to_bits());
+            t.write(o, &varied(0xa0, k));
+            set_ring(&mut t, s, o, (3, byte), k % 2, vt, k);
+            t.write(c, &varied(0x40, k + 9));
+            t.set_u32(c, vt);
+            t.set_u32(o + 0x4c, c);
+            t.set_u16(o + 0x90, flags);
+            t.set_u16(o + 0x92, o92);
+            t.set_u16(o + 0x94, o94);
+            t.set_u32(o + 0x58, o58);
+            t.set_u32(o + 0x5c, o5c);
+            for (at, x) in [
+                (0x70u32, 1.5f32),
+                (0x74, -2.0),
+                (0x78, speed),
+                (0x7c, 0.125),
+                (0x80, 0.75),
+                (0x84, 3.0),
+                (0x88, 0.25),
+            ] {
+                t.set_u32(o + at, x.to_bits());
+            }
+            scrub(&mut t);
+            let call = Call {
+                ecx: s,
+                eax: 0x3a60_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::flagged_object_step(g, img, fr))
+            });
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
+        }
+    }
+}

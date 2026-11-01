@@ -2427,6 +2427,7 @@ ports! {
     "thunk: thunder node" => s7_misc::JMP_THUNDER_NODE, s7_misc::ecx_jmp;
     "thunk: sprite fade node" => s7_misc::JMP_SPRITE_FADE_NODE, s7_misc::ecx_jmp;
     "thunk: shake node" => s7_misc::JMP_SHAKE_NODE, s7_misc::ecx_jmp;
+    "thunk: flagged object step" => s7_misc::JMP_FLAGGED_OBJECT_STEP, s7_misc::ecx_jmp;
     "camera settings (after 267)" => s7_misc::CAMERA_SETTINGS_4, s7_misc::camera_settings_4;
     "fading level" => s7_misc::FADING_LEVEL, s7_misc::fading_level;
     "near points fade" => s7_misc::NEAR_POINTS_FADE, s7_misc::near_points_fade;
@@ -3300,6 +3301,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("emitter set-up", &s7_misc::EMITTER_SETUP),
     ("reel step", &s7_misc::REEL_STEP),
     ("reel phases", &s7_misc::REEL_PHASES),
+    ("flagged object step", &s7_misc::FLAGGED_OBJECT_STEP),
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
     ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
