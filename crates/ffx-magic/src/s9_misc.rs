@@ -4060,13 +4060,15 @@ pub const ROTATION_3650: Sig = Sig {
 ///   K1 * K2 + +0x88`, `a_2 = 0`; the rotation `M` of `a`
 ///   ([`rotation_4250`](crate::s3_matrix::rotation_4250)); with the flag
 ///   word `+0x12c`'s bits 8 and 1 set, `+0x4c..+0x54` = `+0x1c..` less
-///   the rows of `M` dotted with `+0x9c..+0xa4` (`+0x58` = `+0xa8`);
+///   the rows of `M` dotted with `+0x9c..+0xa4` (`magic_0570`'s copy: its
+///   columns, each product taken off in turn; `+0x58` = `+0xa8`);
 /// - slots 284 `(*N+0x130, 1, N+0x3c)`, 284 `(.., 0, N+0x1c)`, 285
 ///   `(.., +0x78)`, 674 `(.., +0xac, +0xb0)` and 286 `(.., +0x64)`.
 ///
 /// Returns slot 286's `eax`, or the walk's.
 ///
-/// `magic_0155` 0x100031d0 (1,514 bytes; 4 DLLs).
+/// `magic_0155` 0x100031d0 (1,514 bytes; 4 DLLs), `magic_0570` 0x100040e0
+/// (1,514 bytes; 2 DLLs).
 pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, cvt, mul, sub};
     let f = fr.at;
@@ -4181,12 +4183,24 @@ pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     if flags & 8 != 0 && flags & 1 != 0 {
         let m = |g: &G, i: u32| g.read::<f32>(v + 4 * i);
         let (kx, ky, kz) = (rf(g, 0x9c), rf(g, 0xa0), rf(g, 0xa4));
-        let r0 = add(add(mul(m(g, 0), kx), mul(ky, m(g, 1))), mul(m(g, 2), kz));
-        g.write::<f32>(n + 0x4c, sub(rf(g, 0x1c), r0));
-        let r1 = add(add(mul(m(g, 4), kx), mul(ky, m(g, 5))), mul(m(g, 6), kz));
-        g.write::<f32>(n + 0x50, sub(rf(g, 0x20), r1));
-        let r2 = add(add(mul(m(g, 8), kx), mul(ky, m(g, 9))), mul(m(g, 10), kz));
-        g.write::<f32>(n + 0x54, sub(rf(g, 0x24), r2));
+        // `magic_0570`'s copy (`movss xmm0, [esi+0x9c]` at `+0x476`) takes
+        // the columns of `M`, one product off at a time
+        if img.word(f + 0x476) >> 24 == 0x86 {
+            for (j, (to, from)) in (0u32..).zip([(0x4c, 0x1c), (0x50, 0x20), (0x54, 0x24)]) {
+                let mut x = rf(g, from);
+                for (i, k) in (0u32..).zip([kx, ky, kz]) {
+                    x = sub(x, mul(k, m(g, j + 4 * i)));
+                }
+                g.write::<f32>(n + to, x);
+            }
+        } else {
+            let r0 = add(add(mul(m(g, 0), kx), mul(ky, m(g, 1))), mul(m(g, 2), kz));
+            g.write::<f32>(n + 0x4c, sub(rf(g, 0x1c), r0));
+            let r1 = add(add(mul(m(g, 4), kx), mul(ky, m(g, 5))), mul(m(g, 6), kz));
+            g.write::<f32>(n + 0x50, sub(rf(g, 0x20), r1));
+            let r2 = add(add(mul(m(g, 8), kx), mul(ky, m(g, 9))), mul(m(g, 10), kz));
+            g.write::<f32>(n + 0x54, sub(rf(g, 0x24), r2));
+        }
         let last = g.read::<u32>(n + 0xa8);
         g.write::<u32>(n + 0x58, last);
     }
@@ -4209,4 +4223,11 @@ pub const NODE_EASE: Sig = Sig {
     hash: 0x8213_4ecf_4407_072f,
     calls: &[(0x45c, Callee::Sig(&ROTATION_3650)), (0x5e2, Callee::Any)],
     imports: &[],
+};
+
+/// [`node_ease`] in `magic_0570` (the target set back by the matrix's
+/// columns).
+pub const NODE_EASE_B: Sig = Sig {
+    hash: 0x3ccf_28f8_43ec_2d2e,
+    ..NODE_EASE
 };

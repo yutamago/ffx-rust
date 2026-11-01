@@ -1358,6 +1358,7 @@ ports! {
     // shared-3 list
     "thunk: place" => s3_wrap::JMP_PLACE, s3_wrap::ecx_jmp;
     "thunk: node ease" => s3_wrap::JMP_NODE_EASE, s3_wrap::ecx_jmp;
+    "thunk: node ease (0570)" => s3_wrap::JMP_NODE_EASE_B, s3_wrap::ecx_jmp;
     "thunk: model setup" => s3_wrap::JMP_MODEL_SETUP, s3_wrap::ecx_jmp;
     "thunk: sub walk" => s3_wrap::JMP_SUB_WALK, s3_wrap::ecx_jmp;
     "thunk: scaled place" => s3_wrap::JMP_SCALED_PLACE, s3_wrap::ecx_jmp;
@@ -3684,6 +3685,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
     ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     ("node ease", &s9_misc::NODE_EASE),
+    ("node ease (0570)", &s9_misc::NODE_EASE_B),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

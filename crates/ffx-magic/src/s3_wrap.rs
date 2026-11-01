@@ -38,9 +38,10 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx`/`edx` the registers the
 /// thunk loaded, `esp` at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 26] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 27] {
     [
         (&crate::s9_misc::NODE_EASE, crate::s9_misc::node_ease::<G>),
+        (&crate::s9_misc::NODE_EASE_B, crate::s9_misc::node_ease::<G>),
         (&sa_summon::PLACE, sa_summon::place::<G>),
         (&sa_summon::MODEL_SETUP, sa_summon::model_setup::<G>),
         (&sa_summon::SUB_WALK, sa_summon::sub_walk::<G>),
@@ -203,6 +204,8 @@ thunks! {
     JMP_AIM_PARENT: 12, ECX_JMP_HASH, 8 => sb_misc::AIM_PARENT;
     /// `magic_0155` 0x100037c0 (4 DLLs) over [`crate::s9_misc::node_ease`].
     JMP_NODE_EASE: 12, ECX_JMP_HASH, 8 => crate::s9_misc::NODE_EASE;
+    /// `magic_0570` 0x100046d0 (2 DLLs) over [`crate::s9_misc::node_ease`].
+    JMP_NODE_EASE_B: 12, ECX_JMP_HASH, 8 => crate::s9_misc::NODE_EASE_B;
     /// `magic_0003` 0x10005b90 (116 DLLs) over [`sb_matrix::rotation_52a0`].
     JMP_ROTATION_52A0: 15, ECX_EDX_JMP_HASH, 11 => sb_matrix::ROTATION_52A0;
     /// `magic_0003` 0x10005b50 (116 DLLs) over [`sb_matrix::rotation_19d0`].

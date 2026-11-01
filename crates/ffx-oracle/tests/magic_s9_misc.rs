@@ -2766,15 +2766,20 @@ fn rotations_3650() {
     }
 }
 
-/// Rows 72/73: the node's eased move in two DLLs, directly and through
-/// its thunk, on every ring shape (the first does not move): the
-/// objects at `+0x124`/`+0x128` there or not, each mode byte's cases
-/// (the timer running out, the angles crossing 0 or not, a NaN step),
-/// the flag word's bits.
+/// Rows 72/73 and 138/139: the node's eased move in four DLLs (both
+/// copies), directly and through its thunk, on every ring shape (the
+/// first does not move): the objects at `+0x124`/`+0x128` there or not,
+/// each mode byte's cases (the timer running out, the angles crossing 0
+/// or not, a NaN step), the flag word's bits.
 #[test]
 fn nodes_eased() {
     use sa::{RINGS, VTABLE_2, check_this_thunk, handler_stubs, node, rec, ring};
-    for (dll, f, thunk) in [(155u16, 0x31d0u32, 0x37c0u32), (613, 0x3240, 0x3830)] {
+    for (dll, f, thunk) in [
+        (155u16, 0x31d0u32, 0x37c0u32),
+        (613, 0x3240, 0x3830),
+        (570, 0x40e0, 0x46d0),
+        (597, 0x3e00, 0x43f0),
+    ] {
         let Some(mut t) = sa::twin(dll) else { return };
         handler_stubs(&mut t);
         let f = t.at(f);
