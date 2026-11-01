@@ -4864,3 +4864,173 @@ fn bp3_value_of_deadzone_edges() {
         }
     }
 }
+
+/// `GetClientRect(hwnd, rect)` (stdcall) writing `rect` (nothing, a
+/// failure, when `None`) and logging the window handle into `cell`.
+fn client_rect_code(cell: u32, rect: Option<[i32; 4]>) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x4c, 0x24, 0x04]; // mov ecx, [esp+4]
+    c.extend([0x89, 0x0d]);
+    c.extend(cell.to_le_bytes()); // mov [cell], ecx
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+    for (i, v) in rect.iter().flatten().enumerate() {
+        let off = u8::try_from(4 * i).unwrap();
+        if off == 0 {
+            c.extend([0xc7, 0x00]); // mov dword [eax], imm
+        } else {
+            c.extend([0xc7, 0x40, off]); // mov dword [eax+off], imm
+        }
+        c.extend(v.to_le_bytes());
+    }
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    c
+}
+
+/// `0x0062e3a0` against the original: window sizes and client
+/// rectangles, the cursor at and around each edge (both margins), mouse
+/// deltas, every button combination, the arrow keys, and the touch
+/// device's drag, orbit and pinches (inside and outside pi/6); the
+/// camera's calls logged with their float words.
+#[test]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)]
+fn bp3_update_mouse_camera_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as fi};
+    let [rect_slot, get_device, _, cos, settings] = fi::MOUSE_CAMERA_CALLS;
+    for (label, mut t) in Twins::all() {
+        for k in 0..770u32 {
+            // _CIcos as the CPU's fcos
+            let at = t.rebase(cos);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &[0xd9, 0xff, 0xc3]);
+            let (w, h) = [(640u32, 480u32), (1920, 1080), (0x8000_0003, 7)][(k % 3) as usize];
+            let rect: [i32; 4] = if k % 2 == 0 {
+                [0, 0, w as i32, h as i32]
+            } else {
+                [300, 200, 650, 500]
+            };
+            let windowed = u32::from((k / 2) % 2 == 1);
+            let set = t.zeros(0x10);
+            t.w32(set + 8, windowed);
+            let sat = t.rebase(settings);
+            let old = Oracle::read(&mut t.a, sat, 4).unwrap();
+            t.saved.entry(sat).or_insert(old);
+            t.w32(sat, set);
+            let cell = t.zeros(4);
+            // a failing GetClientRect leaves the zeroed rectangle
+            let fails = k % 13 == 12;
+            t.import_code(rect_slot, &client_rect_code(cell, (!fails).then_some(rect)));
+            let rect = if fails { [0; 4] } else { rect };
+            let offs = [0i32, 1, 3, 4, 5, -6, -5, -4, -2, -1, 100];
+            let pos = |lo: i32, hi: i32, j: u32| {
+                let o = offs[(j % 11) as usize];
+                if o == 100 {
+                    i32::midpoint(lo, hi)
+                } else if o >= 0 {
+                    lo + o
+                } else {
+                    hi + o
+                }
+            };
+            let mx = pos(rect[0], rect[2], k / 4);
+            let my = pos(rect[1], rect[3], k / 5 + 2);
+            let (dx, dy) = [(0i32, 0i32), (5, -3), (0, 7), (-2, 0)][((k / 3) % 4) as usize];
+            let buttons = (k / 7) % 8;
+            let keys = (k * 5 / 3) % 17;
+            let input = t.zeros(0xc0);
+            if keys != 16 {
+                let kb = t.zeros(0x60);
+                for b in 0..4u32 {
+                    t.w8(kb + 0x57 + b, u8::from(keys & (1 << b) != 0));
+                }
+                t.w32(input + 0x80, kb);
+            }
+            for b in 0..3u32 {
+                let v = if buttons & (1 << b) != 0 {
+                    [1u8, 0xff][(k % 2) as usize]
+                } else {
+                    0
+                };
+                t.w8(input + 0xa0 + b, v);
+            }
+            t.w32(input + 0xa8, mx.cast_unsigned());
+            t.w32(input + 0xac, my.cast_unsigned());
+            t.w32(input + 0xb0, dx.cast_unsigned());
+            t.w32(input + 0xb4, dy.cast_unsigned());
+            let lens = t.junk(0x60, 3);
+            t.w32(
+                lens + 0x44,
+                [1.25f32, 0.75, 2.0][(k % 3) as usize].to_bits(),
+            );
+            let window = t.zeros(4);
+            t.w32(window, 0x00ab_cd00 + k);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x180, lens);
+            t.w32(app + 0x264, window);
+            t.w32(app + 0x26c, w);
+            t.w32(app + 0x270, h);
+            t.w32(app + 0x2b8, input);
+            // the touch device: none, idle, drag, orbit, pinch (near and
+            // far directions), orbit and pinch
+            let state = (k / 11) % 7;
+            let dev = if state == 0 {
+                0
+            } else {
+                let d = t.zeros(0x170);
+                let fl = |t: &mut Twins, at: u32, v: f32| t.w32(d + at, v.to_bits());
+                fl(&mut t, 0x74, 0.375);
+                fl(&mut t, 0x78, -1.5);
+                fl(&mut t, 0xcc, 0.8125);
+                // the second direction at an angle from the first: near,
+                // far, just inside pi/6, between pi/6 and 0.5 rad, just
+                // outside pi/6
+                let a1 = 0.913f32;
+                let turn = [0.05f32, 2.0, 0.51, 0.52, 0.53][((k / 77) % 5) as usize];
+                let turn = if state == 5 { 2.0 } else { turn };
+                fl(&mut t, 0x100, 3.1 * a1.cos());
+                fl(&mut t, 0x104, 3.1 * a1.sin());
+                fl(&mut t, 0xe0, 2.3 * (a1 + turn).cos());
+                fl(&mut t, 0xe4, 2.3 * (a1 + turn).sin());
+                fl(&mut t, 0x108, 0.3);
+                fl(&mut t, 0xe8, 0.7);
+                fl(&mut t, 0xec, -0.2);
+                fl(&mut t, 0x10c, 0.9);
+                match state {
+                    2 => t.w8(d + 0x15c, 1),
+                    3 => t.w8(d + 0x15e, 1),
+                    4 | 5 => t.w8(d + 0x15f, 1),
+                    6 => {
+                        t.w8(d + 0x15e, 1);
+                        t.w8(d + 0x15f, 1);
+                        t.w8(d + 0x15c, 1);
+                    }
+                    _ => {}
+                }
+                d
+            };
+            t.stub(get_device, false, 2, 0, dev);
+            let cam = t.object(&[0, 0, 0, 0, 0, 0, 0, 1, 2, 2], &[]);
+            let p3 = [1.0f32, 0.5, -2.25][(k % 3) as usize].to_bits();
+            let p4 = [0.1f32, 1.75, 3.0][((k / 3) % 3) as usize].to_bits();
+            let p5 = [2.0f32, -0.3, 0.6][((k / 9) % 3) as usize].to_bits();
+            t.frame_len = 0x10;
+            let what = format!("{label}: mouse camera {k}");
+            t.check_frame(
+                &what,
+                0x0062_e3a0,
+                Conv::Thiscall(app),
+                &[cam, p3, p4, p5],
+                0x2c,
+                |g| {
+                    let ebp = g.1 + 0x14;
+                    fi::mouse_camera::update_mouse_camera(g, ebp, app, (cam, p3, p4, p5));
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}

@@ -651,3 +651,242 @@ pub mod axis {
         f32::from_bits(x87::store(x87::mul(scale, x87::load(v))))
     }
 }
+
+/// `0x0062e3a0`'s callees and data: `GetClientRect`'s import slot
+/// (stdcall), `PInput_GetDevice(kind, index)`, `_CIsqrt`, `_CIcos`, the
+/// settings pointer (`g_Settings`, its word `+8` the windowed flag).
+pub const MOUSE_CAMERA_CALLS: [u32; 5] = [
+    0x00b0_c680,
+    0x0062_3c90,
+    0x0094_97b8,
+    0x0094_98c2,
+    0x022f_b504,
+];
+/// The `f64` constants, in the order used: the edge push's two factors,
+/// the orbit's 2.0 and -2.0, the pan's 64.0 and -64.0, pi/6 and 0.5.
+pub const MOUSE_CAMERA_CONSTANTS: [u32; 8] = [
+    0x00b4_12f8,
+    0x00b9_21b0,
+    0x00b9_2270,
+    0x00b2_c5d0,
+    0x00b4_1308,
+    0x00b4_1320,
+    0x00b4_12f0,
+    0x00b9_2220,
+];
+/// `g_ChrClothFlip` (-1.0, a key's negative direction).
+pub const MOUSE_CAMERA_MINUS_ONE: u32 = 0x00b9_2340;
+/// `0x0062e3a0`'s frame below `ebp` (the client rectangle at
+/// `ebp - 0x14`), in words.
+pub const MOUSE_CAMERA_FRAME_WORDS: u32 = 0x14 / 4;
+
+pub mod mouse_camera {
+    //! `0x0062e3a0` over game memory.
+
+    use super::{MOUSE_CAMERA_CALLS, MOUSE_CAMERA_CONSTANTS, MOUSE_CAMERA_MINUS_ONE};
+    use ffx_bridge::x87;
+    use ffx_graphic::host::{Conv, Host};
+
+    fn ld(h: &impl Host, at: u32) -> f64 {
+        x87::load(h.read(at))
+    }
+
+    /// A value through an `fstp m32` and back.
+    fn st(x: f64) -> f64 {
+        x87::load(x87::store(x))
+    }
+
+    fn constant(h: &impl Host, k: usize) -> f64 {
+        f64::from_bits(h.read(h.rebase(MOUSE_CAMERA_CONSTANTS[k])))
+    }
+
+    /// The camera's method at vtable `slot` with float words.
+    fn camera(h: &mut impl Host, cam: u32, slot: u32, args: &[f64]) {
+        let vt: u32 = h.read(cam);
+        let f: u32 = h.read(vt + slot);
+        let words: Vec<u32> = args.iter().map(|&a| x87::store(a)).collect();
+        // call width: 2 (the camera's moves take one or two floats)
+        h.call(f, Conv::Thiscall(cam), &words);
+    }
+
+    /// The mouse delta pushed when the cursor sits at a window edge
+    /// (within the margin): `d - extent * k1 * k2` at the low edge, `d +
+    /// extent * k1 * k2` at the high one (through `ftol`), else `d`.
+    fn edge(
+        h: &impl Host,
+        d: i32,
+        pos: i32,
+        (low, high): (i32, i32),
+        margin: i32,
+        extent: i32,
+    ) -> i32 {
+        let push = || {
+            let k1 = constant(h, 0);
+            let k2 = constant(h, 1);
+            x87::mul(x87::mul(f64::from(extent), k1), k2)
+        };
+        if pos <= margin.wrapping_add(low) {
+            x87::ftol(h, x87::sub(f64::from(d), push())).cast_signed()
+        } else if pos >= high.wrapping_sub(margin).wrapping_sub(1) {
+            x87::ftol(h, x87::add(push(), f64::from(d))).cast_signed()
+        } else {
+            d
+        }
+    }
+
+    /// A key's direction byte of the keyboard (`[input + 0x80]`): `on`
+    /// when it is down, else 0.
+    fn key(h: &impl Host, keyboard: u32, at: u32, on: u32) -> u32 {
+        if keyboard != 0 && h.read::<u8>(keyboard + at) != 0 {
+            on
+        } else {
+            0
+        }
+    }
+
+    /// The pinch of the touch device: both directions (`+0x100`, `+0xe0`)
+    /// normalised (f32 sums of squares, `_CIsqrt`, f32 quotients), their
+    /// dot product under pi/6 (`cos(pi/6) < dot`): the camera's `+0x20`
+    /// with half each touch's distance sum (`+0x108 + +0xe8`, `+0xec +
+    /// +0x10c`) times `p4`.
+    fn pinch<H: Host>(h: &mut H, cam: u32, dev: u32, p4: f64) {
+        let [_, _, sqrt, cos, _] = MOUSE_CAMERA_CALLS;
+        let sqrt = h.rebase(sqrt);
+        let unit = |h: &mut H, at: u32| -> (f64, f64) {
+            let x = ld(h, dev + at);
+            let y = ld(h, dev + at + 4);
+            let s = st(x87::add(st(x87::mul(x, x)), x87::mul(y, y)));
+            let r = f64::from(h.call_intrinsic(sqrt, s));
+            (st(x87::div(x, r)), st(x87::div(y, r)))
+        };
+        let (n1x, n1y) = unit(h, 0x100);
+        let (n2x, n2y) = unit(h, 0xe0);
+        let dot = st(x87::add(st(x87::mul(n2x, n1x)), x87::mul(n2y, n1y)));
+        let angle = constant(h, 6);
+        let cos = h.rebase(cos);
+        let c = f64::from(h.call_intrinsic(cos, angle));
+        if c.partial_cmp(&dot) != Some(std::cmp::Ordering::Less) {
+            return;
+        }
+        let half = constant(h, 7);
+        let a = st(x87::add(ld(h, dev + 0x108), ld(h, dev + 0xe8)));
+        let b = st(x87::add(ld(h, dev + 0xec), ld(h, dev + 0x10c)));
+        let b2 = st(x87::mul(b, half));
+        let a2 = st(x87::mul(half, a));
+        camera(h, cam, 0x20, &[x87::mul(p4, a2), x87::mul(b2, p4)]);
+    }
+
+    /// `PApplication_updateMouseCamera_0062e3a0(app; camera, p3, p4, p5)`
+    /// (thiscall, ret 0x10; `p3..p5` floats): the mouse delta (input
+    /// `[app + 0x2b8]` `+0xb0`/`+0xb4`) pushed at the client rectangle's
+    /// edges ([`edge`], margin 4 or 0 windowed); with the left, right or
+    /// middle button (`+0xa0`/`+0xa1`/`+0xa2`) and a delta the camera's
+    /// pan (`+0x24`), orbit (`+0x1c`) and zoom (`+0x20`) by the delta
+    /// over the window size; the arrow keys' yaw and pitch; the reset
+    /// (`+0xc`) without the right button or pitch; the pan, pitch and
+    /// yaw by keys and delta; then the touch device's drag, orbit and
+    /// pinch.
+    #[allow(clippy::too_many_lines)] // the original's sequence of camera moves
+    pub fn update_mouse_camera(
+        h: &mut impl Host,
+        ebp: u32,
+        app: u32,
+        (cam, p3, p4, p5): (u32, u32, u32, u32),
+    ) {
+        let [rect_slot, get_device, _, _, settings] = MOUSE_CAMERA_CALLS;
+        let (p3, p4, p5) = (x87::load(p3), x87::load(p4), x87::load(p5));
+        let w = st(f64::from(h.read::<u32>(app + 0x26c)));
+        let hgt = st(f64::from(h.read::<u32>(app + 0x270)));
+        let input: u32 = h.read(app + 0x2b8);
+        let mut dx: i32 = h.read(input + 0xb0);
+        let mut dy: i32 = h.read(input + 0xb4);
+        let rect = ebp - 0x14;
+        h.write(rect, [0u32; 4]);
+        let window: u32 = h.read(app + 0x264);
+        let hwnd: u32 = h.read(window);
+        let get_client_rect: u32 = h.read(h.rebase(rect_slot));
+        h.call(get_client_rect, Conv::Stdcall, &[hwnd, rect]);
+        let [left, top, right, bottom]: [i32; 4] = h.read(rect);
+        let settings: u32 = h.read(h.rebase(settings));
+        let margin = if h.read::<u32>(settings + 8) == 0 {
+            4
+        } else {
+            0
+        };
+        let input: u32 = h.read(app + 0x2b8);
+        let mx: i32 = h.read(input + 0xa8);
+        dx = edge(h, dx, mx, (left, right), margin, right.wrapping_sub(left));
+        let my: i32 = h.read(input + 0xac);
+        dy = edge(h, dy, my, (top, bottom), margin, bottom.wrapping_sub(top));
+        let right_button = st(f64::from(h.read::<i8>(input + 0xa1)));
+        let middle = st(f64::from(h.read::<i8>(input + 0xa2)));
+        let fdx = st(f64::from(dx));
+        let ax = st(x87::mul(x87::div(constant(h, 2), w), fdx));
+        let fdy = st(f64::from(dy));
+        let left_button = st(f64::from(h.read::<i8>(input + 0xa0)));
+        let ay = st(x87::mul(x87::div(constant(h, 3), hgt), fdy));
+        let moved = dx != 0 || dy != 0;
+        if left_button != 0.0 && moved {
+            camera(h, cam, 0x24, &[x87::mul(p5, -ax), x87::mul(ay, p5)]);
+        }
+        if right_button != 0.0 && moved {
+            camera(h, cam, 0x1c, &[x87::mul(x87::sub(ax, ay), p4)]);
+        }
+        if middle != 0.0 && moved {
+            let lens: u32 = h.read(app + 0x180);
+            let inv = st(x87::div(1.0, ld(h, lens + 0x44)));
+            let zy = x87::mul(x87::mul(inv, ay), p4);
+            let aspect = st(x87::div(w, hgt));
+            let zx = x87::mul(x87::mul(x87::mul(inv, aspect), ax), p4);
+            camera(h, cam, 0x20, &[zx, zy]);
+        }
+        // the arrow keys
+        let input: u32 = h.read(app + 0x2b8);
+        let keyboard: u32 = h.read(input + 0x80);
+        let minus = x87::store(x87::load(h.read(h.rebase(MOUSE_CAMERA_MINUS_ONE))));
+        let one = 1.0f32.to_bits();
+        let l = key(h, keyboard, 0x57, minus);
+        let r = key(h, keyboard, 0x58, one);
+        let yaw = st(x87::add(x87::load(r), x87::load(l)));
+        let d = key(h, keyboard, 0x59, minus);
+        let u = key(h, keyboard, 0x5a, one);
+        let pitch = st(x87::add(x87::load(u), x87::load(d)));
+        let px = st(x87::mul(x87::div(constant(h, 4), w), fdx));
+        let py = st(x87::mul(x87::div(constant(h, 5), hgt), fdy));
+        if right_button == 0.0 && pitch == 0.0 {
+            let vt: u32 = h.read(cam);
+            let f: u32 = h.read(vt + 0xc);
+            h.call(f, Conv::Thiscall(cam), &[]);
+        }
+        if px != 0.0 || py != 0.0 {
+            let first = x87::mul(x87::mul(-px, p3), p5);
+            let second = x87::mul(x87::mul(py, p3), p5);
+            camera(h, cam, 0x24, &[first, second]);
+        }
+        if pitch != 0.0 {
+            camera(h, cam, 0x1c, &[x87::mul(x87::mul(-pitch, p3), p4)]);
+        }
+        if yaw != 0.0 {
+            camera(h, cam, 0x20, &[x87::mul(x87::mul(yaw, p3), p4), 0.0]);
+        }
+        let dev = h.call_sym(get_device, Conv::Cdecl, &[3, 0]);
+        if dev == 0 {
+            return;
+        }
+        if h.read::<u8>(dev + 0x15e) == 0 {
+            if h.read::<u8>(dev + 0x15f) == 0 {
+                if h.read::<u8>(dev + 0x15c) != 0 {
+                    let first = x87::mul(p5, -ld(h, dev + 0x74));
+                    let second = x87::mul(ld(h, dev + 0x78), p5);
+                    camera(h, cam, 0x24, &[first, second]);
+                }
+                return;
+            }
+        } else {
+            camera(h, cam, 0x1c, &[x87::mul(ld(h, dev + 0xcc), p4)]);
+        }
+        if h.read::<u8>(dev + 0x15f) != 0 {
+            pinch(h, cam, dev, p4);
+        }
+    }
+}

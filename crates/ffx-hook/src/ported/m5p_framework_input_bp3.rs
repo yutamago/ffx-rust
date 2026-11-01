@@ -22,4 +22,11 @@ ported! {
         let ebp = f.at() + 4 * fi::AXIS_FRAME_WORDS;
         fi::axis::value_of(&mut mem(), ebp, this, input)
     }
+    /// `PApplication_updateMouseCamera_0062e3a0(app; camera, p3, p4, p5)`:
+    /// `GetClientRect`'s rectangle in a frame.
+    PApplication_updateMouseCamera_0062e3a0 @ 0x0062_e3a0 => extern "thiscall" fn fibp3_0062e3a0(app: u32, cam: u32, p3: u32, p4: u32, p5: u32) {
+        let mut f = StackFrame::<{ fi::MOUSE_CAMERA_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * fi::MOUSE_CAMERA_FRAME_WORDS;
+        fi::mouse_camera::update_mouse_camera(&mut mem(), ebp, app, (cam, p3, p4, p5));
+    }
 }
