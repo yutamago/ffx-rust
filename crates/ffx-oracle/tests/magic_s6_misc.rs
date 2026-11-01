@@ -207,6 +207,12 @@ fn staged_nodes_in(dll: u16, rva: u32) {
         let e = op(&t, f, 0x32a) + 0x38 * index;
         t.set_u32(e, 0xffff_0002 ^ k);
         t.set_u32(e + 4, 0x0350_0000 + k);
+        // (the effect node clears its flags word before they are read: the
+        // words at the index's offset taken the other way round from the
+        // table hold bits, so a read that lands there shows)
+        for j in 0..4u32 {
+            t.set_u32((0x38 * j).wrapping_sub(op(&t, f, 0x32a)), 0x0bad_0000 + j);
+        }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }

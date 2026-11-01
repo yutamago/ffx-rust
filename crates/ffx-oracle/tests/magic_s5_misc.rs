@@ -1296,6 +1296,9 @@ fn weapon_swings_in(dll: u16, rva: u32) {
         t.write(obj, &varied(0x600, count));
         t.write(task, &varied(0x40, total));
         t.write(s + 0x8520, &varied(0x10, count));
+        // the child's kind (an index into its tables) and the next word
+        t.set_u32(s + 0x8524, 1 + (count & 1));
+        t.set_u32(s + 0x8528, 3);
         t.set_u32(task, 0);
         t.set_u32(task + 4, 0);
         // the node's payload: no children to give back first
@@ -2138,6 +2141,14 @@ fn weapon_swings_drop_in(dll: u16, rva: u32) {
         t.set_u32(obj + 0x50c, count);
         t.set_u32(obj + 0x510, total);
         t.set_u32(obj + 0x514, kind);
+        // the two points the swing mixes: plain floats (the varied bytes'
+        // tiny ones would hide the weights)
+        for i in 0..8u32 {
+            t.set_u32(
+                obj + 0x260 + 4 * i,
+                (1.5 * i as f32 - 2.25 + count as f32).to_bits(),
+            );
+        }
         // the halfword whose bit 15 a dropped object loses: set
         t.set_u16(obj + 0x124, 0xc123 + count as u16);
         t.set_u16(free, 3);
@@ -3025,7 +3036,11 @@ fn wave_tables() {
     let Some(mut t) = twin(430) else { return };
     let f = t.at(0x1480);
     let out = SCRATCH + 0x2000;
-    for a in [0.7f32, -2.5] {
+    let step = op(&t, f, 0x289);
+    let k = t.u32(step);
+    // (the last: a row step that takes the second wave past its top)
+    for (a, row) in [(0.7f32, k), (-2.5, k), (0.7, 0.05f32.to_bits())] {
+        t.set_u32(step, row);
         t.write(out, &varied(33 * 33 * 8, a.to_bits()));
         let c = Call::this(out).with_xmm(&[Xmm::f32(9.0), Xmm::f32(a)]);
         scrub(&mut t);
@@ -3499,6 +3514,13 @@ fn weapon_bounces_in(dll: u16, rva: u32) {
         (1, 5.0, [-1.0, 4.0, 1.0], [-1.0, -1.0], [0.0, 1.0]),
         (1, 5.0, [1.0, 4.0, 0.0], [1.0, 1.0], [6.0, -6.0]),
         (0, -5.0, [1.0, 0.0, 1.0], [0.0, 0.0], [1.0, 2.0]),
+        // the height reaching the floor exactly; speeds against their
+        // bounds' signs (kept); a fall that stops at -0 (kept as it is);
+        // bounds of 0
+        (3, -0.5, [1.0, 0.5, -1.0], [1.0, -1.0], [0.5, -0.5]),
+        (1, 5.0, [-1.0, 4.0, 1.0], [1.0, -1.0], [0.5, 1.0]),
+        (1, 5.0, [1.0, -0.4, 1.0], [1.0, 1.0], [0.5, 1.0]),
+        (1, 5.0, [1.0, 4.0, -1.0], [0.0, 0.0], [0.5, 1.0]),
     ]
     .into_iter()
     .enumerate()
@@ -3720,6 +3742,11 @@ fn timed_sparks_fired() {
         (3, 2.0, true),
     ] {
         t.write(obj, &varied(0xb00, i));
+        // the point the sparks start from (copied, then moved): plain
+        // floats (the pattern's tiny ones would hide the moves' sums)
+        for (j, v) in (0u32..).zip([1.5f32, -2.5, 3.25, 1.0]) {
+            t.set_u32(obj + 0x4ec + 4 * j, v.to_bits());
+        }
         t.write(SCRATCH + 0x900, &varied(0x80, i + 4));
         t.set_u32(op(&t, f, 0x320), SCRATCH + 0x900);
         t.set_u32(op(&t, f, 0x53), 0x0dd0_0000 + i);
