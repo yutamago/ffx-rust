@@ -1,6 +1,7 @@
 //! `magic_0587.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::m0018::st0_f32;
 use crate::o4_more::push_head;
 use crate::runtime::slot_target;
 use crate::sa_misc::scale_rotate;
@@ -215,5 +216,79 @@ pub const GLOW_TURN: Sig = Sig {
     len: 210,
     hash: 0xcecd_208a_6876_e285,
     calls: &[(0x69, Callee::Sig(&crate::sa_misc::SCALE_ROTATE))],
+    imports: &[],
+};
+
+/// The summon's sway frame (0x100029b0, an overlay table entry, no
+/// arguments; a /GS frame) on the summon block `S = *G_S`: the two
+/// offsets `+0xa90`/`+0xa98` lose their steps `+0xa80`/`+0xa88`, each
+/// plus a random float (slot 314 `(0.1)`, ST0) into `+0xa50`/`+0xa58`;
+/// the matrix `S + 0x980` scaled and rotated by `S + 0xa40`
+/// ([`scale_rotate`](crate::sa_misc::scale_rotate)); the angle `+0xa84`
+/// steps by `K1`, wrapped by `K3` above `K2` or below `K4`, and turns the
+/// matrix (slot 235 `(&L)`, slot 329 `(&L, &L, angle)`, slot 231 `(M, M,
+/// &L)`; `L` at `ebp - 0x44`); the three u16 levels `+0x660..+0x664`
+/// become `+0x664 - 17`, and `+0x6c0`/`+0x6c8` lose `+0xa94`/`+0xa9c`.
+/// Returns the level (`eax`, 32 bits).
+pub fn sway_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let fl = |g: &G, a: u32| g.read::<f32>(a);
+    let t = slot_target(g, w(0x11), 314);
+    let s = g.read::<u32>(w(0x18));
+    let x = sub(fl(g, s + 0xa90), fl(g, s + 0xa80));
+    g.write::<f32>(s + 0xa90, x);
+    let y = sub(fl(g, s + 0xa98), fl(g, s + 0xa88));
+    g.write::<f32>(s + 0xa98, y);
+    let r = st0_f32(g.call(t, 0, &[0x3dcc_cccd]).st0);
+    let v = add(fl(g, s + 0xa90), r);
+    let t = slot_target(g, w(0x6e), 314);
+    g.write::<f32>(s + 0xa50, v);
+    let r = st0_f32(g.call(t, 0, &[0x3dcc_cccd]).st0);
+    let v = add(fl(g, s + 0xa98), r);
+    let m = s + 0x980;
+    g.write::<f32>(s + 0xa58, v);
+    scale_rotate(g, img, img.rel32_target(f + 0xb1), m, s + 0xa40);
+    let mut a = add(fl(g, s + 0xa84), k(g, 0xc1));
+    if a > k(g, 0xcb) {
+        a = sub(a, k(g, 0xd5));
+    } else if k(g, 0xdf) > a {
+        a = add(a, k(g, 0xec));
+    }
+    let l = fr.esp.wrapping_sub(4).wrapping_sub(0x44);
+    let t = slot_target(g, w(0xf5), 235);
+    g.write::<f32>(s + 0xa84, a);
+    g.call(t, 0, &[l]);
+    let a = g.read::<u32>(s + 0xa84);
+    let t = slot_target(g, w(0x11c), 329);
+    let mut stack = vec![l, l, a];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x12d), 231);
+    stack.splice(0..0, [m, m, l]);
+    // call width: 6
+    g.call(t, 0, &stack);
+    let level = u32::from(g.read::<u16>(s + 0x664)).wrapping_sub(0x11);
+    let z = fl(g, s + 0x6c0);
+    #[allow(clippy::cast_possible_truncation)] // the low 16 bits
+    for o in [0x664u32, 0x662, 0x660] {
+        g.write::<u16>(s + o, level as u16);
+    }
+    let z = sub(z, fl(g, s + 0xa94));
+    g.write::<f32>(s + 0x6c0, z);
+    let z = sub(fl(g, s + 0x6c8), fl(g, s + 0xa9c));
+    g.write::<f32>(s + 0x6c8, z);
+    Ret::eax(level)
+}
+
+/// [`sway_frame`] (413 bytes, 1 overlay).
+pub const SWAY_FRAME: Sig = Sig {
+    len: 413,
+    hash: 0xb5f1_e038_cbec_0b60,
+    calls: &[
+        (0xb1, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        // __security_check_cookie
+        (0x195, Callee::Any),
+    ],
     imports: &[],
 };

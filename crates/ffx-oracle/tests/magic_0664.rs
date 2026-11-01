@@ -100,3 +100,49 @@ fn effect_frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001c60: the frame at a bone for the array's first object and
+/// another, slot 712 saying 0 and 1; the globals distinct, slot 712
+/// keeping the game flag and the part cell.
+#[test]
+fn frame_bone() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1c60);
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x100;
+    t.set_u32(t.img.word(at + 0xe8), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    rec(&mut t, 941, 1, move |_, _| table);
+    let (gp, lock) = (SCRATCH + 0x30, SCRATCH + 0x20);
+    t.set_u32(t.img.word(at + 0x8c), gp);
+    t.set_u32(t.img.word(at + 0x99), lock);
+    t.set_u32(t.img.word(at + 0xb5), lock);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 712, 2, move |m, _| {
+        let l = m.r32(lock);
+        let p = m.r32(gp);
+        m.w32(SCRATCH + 0x2_0400, l);
+        m.w32(SCRATCH + 0x2_0404, p);
+        m.r32(cell) & 1
+    });
+    recs(
+        &mut t,
+        &[(237, 4), (258, 1), (231, 3), (230, 2), (713, 1), (714, 5)],
+    );
+    for op in [0x34u32, 0x55, 0x60, 0x6c, 0x74, 0x7f] {
+        let g = t.img.word(at + op);
+        t.set_u32(g, 0x00a5_0000 + op);
+    }
+    let base = t.img.word(at + 0xa);
+    for (k, bits) in [(0u32, 0u32), (1, 1), (0, 1)] {
+        let obj = base + 0x80 * k;
+        t.set_u32(cell, bits);
+        t.set_u32(gp, 0x7777);
+        t.set_u32(lock, 0x6666);
+        t.write(obj, &[0x5b; 0x80]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

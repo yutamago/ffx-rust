@@ -23,3 +23,21 @@ fn release_four() {
     t.set_u32(q, 0);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// 0x10001390: the particle set-up (each slot call answers its own
+/// value, so the four globals differ).
+#[test]
+fn part_setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1390);
+    for (s, n) in [(718u32, 1usize), (222, 4), (221, 4), (719, 3)] {
+        rec(&mut t, s, n, move |m, a| {
+            let k = m.r32(magic_owna::row(s));
+            (0x0700_0000 + (s << 8) + k) ^ a[0]
+        });
+    }
+    for op in [0x65, 0x80, 0x9e, 0xbc] {
+        t.set_u32(t.img.word(at + op), 0x5a5a_5a5b);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

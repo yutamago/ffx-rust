@@ -100,3 +100,37 @@ fn object_setup_own() {
     t.write(obj, &[0x22; 0x140]);
     t.check_entry(at, Call::default(), &[obj], Eax::Checked);
 }
+
+/// 0x10001260: an object's start (every slot records its words with a
+/// call count and answers its own value).
+#[test]
+fn object_start() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x1260);
+    for (k, (s, n)) in (0u32..).zip([
+        (444u32, 1usize),
+        (445, 1),
+        (441, 3),
+        (440, 4),
+        (450, 2),
+        (449, 2),
+    ]) {
+        let row = SCRATCH + 0x3000 + 0x40 * k;
+        t.stub(s, move |m: &mut dyn StubMem, a: &[u32]| {
+            let c = m.r32(row);
+            m.w32(row, c + 1);
+            for (i, w) in (0u32..).zip(&a[..n]) {
+                m.w32(row + 4 + 4 * i, *w ^ c);
+            }
+            0x0100_0000 * (k + 1) + s
+        });
+    }
+    let ctx = SCRATCH + 0x800;
+    t.set_u32(t.img.word(at + 0x23), ctx);
+    t.set_u32(ctx + 0x198, 0x0198_0198);
+    let obj = SCRATCH + 0x1000;
+    for fill in [0x22u8, 0x00] {
+        t.write(obj, &[fill; 0x140]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}

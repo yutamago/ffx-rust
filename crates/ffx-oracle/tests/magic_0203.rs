@@ -70,3 +70,67 @@ fn task_release() {
         t.check_entry(at, c, &[task], magic::Eax::Checked);
     }
 }
+
+/// 0x100041b0 (internal, `ecx` = the record): the particle node's set-up
+/// without a parent and under one with a child, two program indices.
+#[test]
+fn part_record() {
+    use ffx_magic::m0203;
+    use magic::{SCRATCH, StubMem};
+    let Some(mut t) = magic_owna::twin(N) else {
+        return;
+    };
+    let at = t.at(0x41b0);
+    let list = SCRATCH + 0x700;
+    for i in 0..4 {
+        t.set_u32(list + 4 * i, 0x0900_0000 + i);
+    }
+    magic_owna::rec(&mut t, 941, 1, move |_, _| list);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    magic_owna::rec(&mut t, 325, 2, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x0325);
+        }
+        0x325
+    });
+    // pppStartPart's lock and the global the record's word goes to
+    let sp = t.img.rel32_target(at + 0x88);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x600);
+    t.set_u32(t.img.word(at + 0x45), SCRATCH + 0x640);
+    let r = SCRATCH + 0x100;
+    let node = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x2000;
+    let kid = SCRATCH + 0x2800;
+    let table = SCRATCH + 0x3000;
+    for k in 0..0x20 {
+        t.set_u32(table + 4 * k, 0x0e00_0000 + k);
+    }
+    for (with_parent, index) in [(false, 0u32), (true, 2)] {
+        t.write(node, &[0x5c; 0x120]);
+        t.write(parent, &[0x3c; 0x40]);
+        // the child count, unlike its neighbours
+        t.set_u16(parent + 0x18, 5);
+        t.set_u32(parent + 0x10, kid);
+        t.write(kid, &[0x2c; 0x40]);
+        let words = [
+            node,
+            if with_parent { parent } else { 0 },
+            0x00a0_0008,
+            table,
+            0x00b0_0010,
+            index,
+            0x00c0_0018,
+        ];
+        for (i, v) in (0u32..).zip(words) {
+            t.set_u32(r + 4 * i, v);
+        }
+        t.check(
+            at,
+            magic::Call::this(r),
+            &[],
+            magic::Eax::Checked,
+            m0203::part_record,
+        );
+    }
+}

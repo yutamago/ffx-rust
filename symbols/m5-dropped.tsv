@@ -33,8 +33,6 @@
 0x0042ee80	AsmEmuPrintVec	ps2-emu	50	tools/refs.py: 0 refs; address never taken, in no table
 0x0042f0f0	FFXApplication_dtor_FFXApplication	main	44	tools/refs.py: 0 refs; address never taken, in no table
 0x0042f1a0	FUN_0042f1a0	main	35	tools/refs.py: 0 refs; address never taken, in no table
-0x0042f1d0	FUN_0042f1d0	main	70	tools/refs.py: 0 refs; address never taken, in no table
-0x0042f340	FUN_0042f340	main	343	tools/refs.py: 0 refs; address never taken, in no table
 0x0042f4b0	FUN_0042f4b0	main	31	tools/refs.py: 0 refs; address never taken, in no table
 0x0042f6d0	LauncherPath_Init_0042f6d0	main	122	tools/refs.py: 0 refs; address never taken, in no table
 0x004358e0	FUN_004358e0	phyre	85	phyre-physics (plan trap 6): reachable only through an address taken in Phyre_PScripting_RegisterTypes (code-imm@0x00436fd3: FUN_00436c80 > FUN_004358e0); physics objects exist only through the script binding (no cluster namespace in the game data names a physics class: tools/phyre-classes.py census) or a default buffer whose pointers are 0; no coverage hit
@@ -42,10 +40,8 @@
 0x004408d0	FUN_004408d0	render	19	tools/refs.py: 0 refs; address never taken, in no table
 0x004408f0	FUN_004408f0	render	43	tools/refs.py: 0 refs; address never taken, in no table
 0x00440920	FUN_00440920	render	52	tools/refs.py: 0 refs; address never taken, in no table
-0x00440960	FUN_00440960	render	42	tools/refs.py: 0 refs; address never taken, in no table
-0x00440990	FUN_00440990	render	24	tools/refs.py: 0 refs; address never taken, in no table
-0x004409c0	FUN_004409c0	render	31	tools/refs.py: 0 refs; address never taken, in no table
 0x00441980	FUN_00441980	phyre	59	phyre script layer (plan scope): reachable only through PMethodCallerConcrete<PCluster> vtable 0x00b0f2d4 slot 4 (vtable@0x00b0f2e4: FUN_00441980), a script method caller; the script-layer trap run hit none of the layer's 3,032 entry points in any session (~/ffx-work/m5/scope/report.md, "Script layer trap run"); no coverage hit
+0x004438b0	FUN_004438b0	render	28	tools/refs.py: 0 refs; address never taken, in no table
 0x0044cd00	FMOD_mspace_independent_comalloc	sound	9	tools/refs.py: 0 refs; address never taken, in no table
 0x0044e0d0	FUN_0044e0d0	phyre	46	phyre script layer (plan scope): reachable only through PMethodCallerConcrete<PComponent> vtable 0x00b10460 slot 4 (vtable@0x00b10470: FUN_0044e0d0), a script method caller; the script-layer trap run hit none of the layer's 3,032 entry points in any session (~/ffx-work/m5/scope/report.md, "Script layer trap run"); no coverage hit
 0x0045de00	FUN_0045de00	phyre	46	phyre script layer (plan scope): reachable only through PMethodCallerConcrete<PAssetReference> vtable 0x00b11d6c slot 4 (vtable@0x00b11d7c: FUN_0045de00), a script method caller; the script-layer trap run hit none of the layer's 3,032 entry points in any session (~/ffx-work/m5/scope/report.md, "Script layer trap run"); no coverage hit
@@ -67,6 +63,8 @@
 0x0057a1e0	FUN_0057a1e0	system	28	tools/refs.py: 0 refs; address never taken, in no table
 0x0059e5d0	FUN_0059e5d0	system	21	tools/refs.py: 0 refs; address never taken, in no table
 0x0059e5f0	FUN_0059e5f0	system	21	tools/refs.py: 0 refs; address never taken, in no table
+0x005a4120	FUN_005a4120	main	86	callers only unreachable: FUN_005a4dc0 (call); address never taken, in no table
+0x005a4300	FUN_005a4300	main	313	tools/refs.py: 0 refs; address never taken, in no table
 0x005e6550	FUN_005e6550	phyre	34	phyre-physics (plan trap 6): reachable only through btCollisionWorld::ClosestConvexResultCallback vtable 0x00b3c5fc slot 0 (vtable@0x00b3c5fc: FUN_005e6550); physics objects exist only through the script binding (no cluster namespace in the game data names a physics class: tools/phyre-classes.py census) or a default buffer whose pointers are 0; no coverage hit
 0x005e6580	FUN_005e6580	phyre	34	phyre-physics (plan trap 6): reachable only through btCollisionWorld::ClosestRayResultCallback vtable 0x00b3c5dc slot 0 (vtable@0x00b3c5dc: FUN_005e6580); physics objects exist only through the script binding (no cluster namespace in the game data names a physics class: tools/phyre-classes.py census) or a default buffer whose pointers are 0; no coverage hit
 0x005e65b0	FUN_005e65b0	phyre	34	phyre-physics (plan trap 6): reachable only through btCollisionWorld::ConvexResultCallback vtable 0x00b3c5ec slot 0 (vtable@0x00b3c5ec: FUN_005e65b0); physics objects exist only through the script binding (no cluster namespace in the game data names a physics class: tools/phyre-classes.py census) or a default buffer whose pointers are 0; no coverage hit
@@ -319,8 +317,6 @@
 0x0060e930	FUN_0060e930	system	62	tools/refs.py: 0 refs; address never taken, in no table
 0x0060e970	FUN_0060e970	system	62	tools/refs.py: 0 refs; address never taken, in no table
 0x0060e9d0	FUN_0060e9d0	system	75	callers only unreachable: FUN_0060ea20 (jmp); address never taken, in no table
-0x0060ea20	FUN_0060ea20	system	9	tools/refs.py: 0 refs; address never taken, in no table
-0x0060ea30	FUN_0060ea30	system	19	tools/refs.py: 0 refs; address never taken, in no table
 0x0061a9b0	VFileReadedBuffer_dtor_VFileReadedBuffer	system	26	tools/refs.py: 0 refs; address never taken, in no table
 0x0061a9d0	FUN_0061a9d0	system	49	tools/refs.py: 0 refs; address never taken, in no table
 0x0061ad70	FUN_0061ad70	system	92	tools/refs.py: 0 refs; address never taken, in no table
@@ -343,7 +339,6 @@
 0x0061c0a0	FUN_0061c0a0	system	162	tools/refs.py: 0 refs; address never taken, in no table
 0x0061c220	FileSys_SubmitRead	system	63	tools/refs.py: 0 refs; address never taken, in no table
 0x0061c3f0	FUN_0061c3f0	system	9	tools/refs.py: 0 refs; address never taken, in no table
-0x0061c610	FUN_0061c610	system	594	tools/refs.py: 0 refs; address never taken, in no table
 0x0061d110	Add_0061d110	system	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0061d120	AddU8_0061d120	system	12	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0061d130	FUN_0061d130	system	9	tools/refs.py: 0 refs; address never taken, in no table
@@ -397,15 +392,14 @@
 0x0061e740	Add_0061e740	system	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0061e750	FUN_0061e750	system	21	tools/refs.py: 0 refs; address never taken, in no table
 0x0061e770	FUN_0061e770	system	21	tools/refs.py: 0 refs; address never taken, in no table
-0x006203b0	FUN_006203b0	phyre	368	tools/refs.py: 0 refs; address never taken, in no table (reach.py's code-imm@0x00620131 in PInputDeviceMouse_ctor is 0x00620540, a separate function after int3 padding that its node swallows); no coverage hit
 0x006231f0	FUN_006231f0	system	43	tools/refs.py: 0 refs; address never taken, in no table
 0x00623220	Settings_Create	system	117	tools/refs.py: 0 refs; address never taken, in no table
 0x00623e20	FUN_00623e20	system	54	tools/refs.py: 0 refs; address never taken, in no table
 0x00624320	FUN_00624320	system	21	tools/refs.py: 0 refs; address never taken, in no table
-0x006243a0	Input_InitDirectInput_copy_006243a0	system	112	tools/refs.py: 0 refs; address never taken, in no table
+0x006243a0	Input_InitDirectInput_copy_006243a0	system	77	tools/refs.py: 0 refs; address never taken, in no table
 0x00624490	FUN_00624490	system	15	tools/refs.py: 0 refs; address never taken, in no table
 0x006244a0	FUN_006244a0	system	69	tools/refs.py: 0 refs; address never taken, in no table
-0x006249b0	Input_RequestRescan	system	16	tools/refs.py: 0 refs; address never taken, in no table
+0x006249b0	Input_RequestRescan	system	8	tools/refs.py: 0 refs; address never taken, in no table
 0x006249c0	FUN_006249c0	system	55	tools/refs.py: 0 refs; address never taken, in no table
 0x00624a00	FUN_00624a00	system	45	tools/refs.py: 0 refs; address never taken, in no table
 0x00624a30	FUN_00624a30	system	55	tools/refs.py: 0 refs; address never taken, in no table
@@ -431,7 +425,6 @@
 0x00629ce0	FUN_00629ce0	system	49	tools/refs.py: 0 refs; address never taken, in no table
 0x00629d20	FUN_00629d20	system	34	tools/refs.py: 0 refs; address never taken, in no table
 0x00629d90	FUN_00629d90	system	54	tools/refs.py: 0 refs; address never taken, in no table
-0x0062c900	FUN_0062c900	system	13	tools/refs.py: 0 refs; address never taken, in no table
 0x0062c910	FUN_0062c910	system	13	tools/refs.py: 0 refs; address never taken, in no table
 0x0062c920	FUN_0062c920	system	16	tools/refs.py: 0 refs; address never taken, in no table
 0x0062c930	FUN_0062c930	system	47	tools/refs.py: 0 refs; address never taken, in no table
@@ -472,6 +465,7 @@
 0x00630050	FUN_00630050	map	33	tools/refs.py: 0 refs; address never taken, in no table
 0x00630080	FUN_00630080	map	25	tools/refs.py: 0 refs; address never taken, in no table
 0x006300a0	FUN_006300a0	map	56	tools/refs.py: 0 refs; address never taken, in no table
+0x00630830	FUN_00630830	system	28	tools/refs.py: 0 refs; address never taken, in no table
 0x00630920	FUN_00630920	system	121	callers only unreachable: FUN_00630630 (call); address never taken, in no table
 0x006309b0	FUN_006309b0	system	94	tools/refs.py: 0 refs; address never taken, in no table
 0x00630a10	FUN_00630a10	system	30	tools/refs.py: 0 refs; address never taken, in no table
@@ -539,13 +533,6 @@
 0x00633b00	FUN_00633b00	render	97	tools/refs.py: 0 refs; address never taken, in no table
 0x00633c40	PArray_Reset_00633c40	render	40	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00633c70	PArray_Reset_00633c70	render	40	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x00634080	FUN_00634080	system	119	tools/refs.py: 0 refs; address never taken, in no table
-0x00634100	FUN_00634100	system	109	tools/refs.py: 0 refs; address never taken, in no table
-0x00634190	FUN_00634190	system	111	tools/refs.py: 0 refs; address never taken, in no table
-0x006342a0	FUN_006342a0	system	36	tools/refs.py: 0 refs; address never taken, in no table
-0x006342d0	FUN_006342d0	system	36	tools/refs.py: 0 refs; address never taken, in no table
-0x00634410	StdString_Tidy_00634410	system	38	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x00634440	StdString_Tidy_00634440	system	38	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00634700	FUN_00634700	system	143	callers only unreachable: FUN_00635540 (call); address never taken, in no table
 0x00637440	FUN_00637440	render	21	tools/refs.py: 0 refs; address never taken, in no table
 0x00637490	FUN_00637490	render	29	tools/refs.py: 0 refs; address never taken, in no table
@@ -681,9 +668,6 @@
 0x00649460	FUN_00649460	system	24	tools/refs.py: 0 refs; address never taken, in no table
 0x00649480	FUN_00649480	system	22	tools/refs.py: 0 refs; address never taken, in no table
 0x006494a0	FUN_006494a0	system	24	tools/refs.py: 0 refs; address never taken, in no table
-0x0064c2e0	FUN_0064c2e0	render	21	tools/refs.py: 0 refs; address never taken, in no table
-0x0064c300	FUN_0064c300	render	21	tools/refs.py: 0 refs; address never taken, in no table
-0x0064c330	FUN_0064c330	render	21	tools/refs.py: 0 refs; address never taken, in no table
 0x0064c350	construct<>	render	27	tools/refs.py: 0 refs; address never taken, in no table
 0x0064c380	FUN_0064c380	render	45	tools/refs.py: 0 refs; address never taken, in no table
 0x0064c3c0	FUN_0064c3c0	render	39	tools/refs.py: 0 refs; address never taken, in no table
@@ -707,61 +691,32 @@
 0x0064ccb0	FUN_0064ccb0	render	80	tools/refs.py: 0 refs; address never taken, in no table
 0x0064cd00	FUN_0064cd00	render	80	tools/refs.py: 0 refs; address never taken, in no table
 0x0064cd50	FUN_0064cd50	render	80	tools/refs.py: 0 refs; address never taken, in no table
+0x0064cf90	FUN_0064cf90	render	33	tools/refs.py: 0 refs; address never taken, in no table
 0x0064da90	FUN_0064da90	system	14	tools/refs.py: 0 refs; address never taken, in no table
 0x0064db40	FUN_0064db40	render	81	tools/refs.py: 0 refs; address never taken, in no table
 0x0064dba0	FUN_0064dba0	render	33	tools/refs.py: 0 refs; address never taken, in no table
 0x0064dbf0	FUN_0064dbf0	render	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ea60	FUN_0064ea60	map	42	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ea90	FUN_0064ea90	map	54	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eb70	FUN_0064eb70	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eb90	FUN_0064eb90	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ebb0	FUN_0064ebb0	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ebd0	FUN_0064ebd0	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ebf0	FUN_0064ebf0	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ec10	FUN_0064ec10	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ec30	FUN_0064ec30	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ec50	FUN_0064ec50	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ec70	FUN_0064ec70	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ec90	FUN_0064ec90	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ecb0	FUN_0064ecb0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ecc0	FUN_0064ecc0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ecd0	FUN_0064ecd0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ece0	FUN_0064ece0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ecf0	FUN_0064ecf0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed00	FUN_0064ed00	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed10	FUN_0064ed10	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed20	FUN_0064ed20	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed30	FUN_0064ed30	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed50	FUN_0064ed50	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed60	FUN_0064ed60	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed70	FUN_0064ed70	map	13	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed80	FUN_0064ed80	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ed90	FUN_0064ed90	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eda0	FUN_0064eda0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064edb0	FUN_0064edb0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064edc0	FUN_0064edc0	map	22	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ede0	FUN_0064ede0	map	20	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee00	FUN_0064ee00	map	15	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee10	FUN_0064ee10	map	15	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee20	FUN_0064ee20	map	18	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee40	FUN_0064ee40	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee50	FUN_0064ee50	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee60	FUN_0064ee60	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee70	FUN_0064ee70	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee80	FUN_0064ee80	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ee90	FUN_0064ee90	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eea0	FUN_0064eea0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eeb0	FUN_0064eeb0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eec0	FUN_0064eec0	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eee0	FUN_0064eee0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064eef0	FUN_0064eef0	map	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0064ef00	FUN_0064ef00	map	13	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f0b0	FUN_0064f0b0	map	76	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f100	FUN_0064f100	map	76	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f150	FUN_0064f150	map	76	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f1f0	FUN_0064f1f0	map	76	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f240	FUN_0064f240	map	18	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f280	FUN_0064f280	map	12	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee00	FUN_0064ee00	render	15	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee10	FUN_0064ee10	render	15	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee20	FUN_0064ee20	render	18	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee40	FUN_0064ee40	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee50	FUN_0064ee50	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee60	FUN_0064ee60	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee70	FUN_0064ee70	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee80	FUN_0064ee80	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ee90	FUN_0064ee90	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064eea0	FUN_0064eea0	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064eeb0	FUN_0064eeb0	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064eec0	FUN_0064eec0	render	19	tools/refs.py: 0 refs; address never taken, in no table
+0x0064eee0	FUN_0064eee0	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064eef0	FUN_0064eef0	render	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0064ef00	FUN_0064ef00	render	13	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f0b0	FUN_0064f0b0	render	76	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f100	FUN_0064f100	render	76	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f150	FUN_0064f150	render	76	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f1f0	FUN_0064f1f0	render	76	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f240	FUN_0064f240	render	18	tools/refs.py: 0 refs; address never taken, in no table
+0x0064f280	FUN_0064f280	render	12	tools/refs.py: 0 refs; address never taken, in no table
 0x0064f2d0	FUN_0064f2d0	map	30	tools/refs.py: 0 refs; address never taken, in no table
 0x0064f2f0	FUN_0064f2f0	map	28	tools/refs.py: 0 refs; address never taken, in no table
 0x0064f310	FUN_0064f310	map	28	tools/refs.py: 0 refs; address never taken, in no table
@@ -770,20 +725,6 @@
 0x0064f3c0	FUN_0064f3c0	map	20	tools/refs.py: 0 refs; address never taken, in no table
 0x0064f3e0	FUN_0064f3e0	map	89	callers only unreachable: FUN_0064f440 (call); address never taken, in no table
 0x0064f440	FUN_0064f440	map	129	callers only unreachable: FUN_0064fb20 (call), FUN_006bfe50 (call); address never taken, in no table
-0x0064f4d0	FUN_0064f4d0	map	61	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f510	FUN_0064f510	map	22	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f530	FUN_0064f530	map	22	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f580	FUN_0064f580	map	17	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f5a0	FUN_0064f5a0	map	17	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f5c0	FUN_0064f5c0	map	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f620	FUN_0064f620	map	44	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f650	FUN_0064f650	map	44	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f680	FUN_0064f680	map	33	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f6b0	FUN_0064f6b0	map	65	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f700	FUN_0064f700	map	33	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f730	FUN_0064f730	render	59	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f770	FUN_0064f770	render	59	tools/refs.py: 0 refs; address never taken, in no table
-0x0064f7b0	FUN_0064f7b0	render	59	tools/refs.py: 0 refs; address never taken, in no table
 0x0064f9e0	FUN_0064f9e0	render	51	tools/refs.py: 0 refs; address never taken, in no table
 0x0064fa20	FUN_0064fa20	render	33	tools/refs.py: 0 refs; address never taken, in no table
 0x0064fa90	FUN_0064fa90	render	15	tools/refs.py: 0 refs; address never taken, in no table
@@ -1022,11 +963,6 @@
 0x00672350	FUN_00672350	render	19	tools/refs.py: 0 refs; address never taken, in no table
 0x00672370	FUN_00672370	render	9	tools/refs.py: 0 refs; address never taken, in no table
 0x006723c0	FUN_006723c0	render	79	tools/refs.py: 0 refs; address never taken, in no table
-0x00672430	FUN_00672430	render	11	tools/refs.py: 0 refs; address never taken, in no table
-0x00672440	FUN_00672440	render	45	tools/refs.py: 0 refs; address never taken, in no table
-0x00672470	FUN_00672470	render	44	tools/refs.py: 0 refs; address never taken, in no table
-0x006724a0	FUN_006724a0	render	57	tools/refs.py: 0 refs; address never taken, in no table
-0x00673c90	FUN_00673c90	render	79	tools/refs.py: 0 refs; address never taken, in no table
 0x00673d00	FUN_00673d00	render	11	tools/refs.py: 0 refs; address never taken, in no table
 0x00673d10	FUN_00673d10	render	45	tools/refs.py: 0 refs; address never taken, in no table
 0x00673d40	FUN_00673d40	render	44	tools/refs.py: 0 refs; address never taken, in no table
@@ -1058,9 +994,6 @@
 0x00675420	FUN_00675420	render	144	callers only unreachable: FUN_006754e0 (call); address never taken, in no table
 0x006754b0	FUN_006754b0	render	47	tools/refs.py: 0 refs; address never taken, in no table
 0x006754e0	FUN_006754e0	render	36	tools/refs.py: 0 refs; address never taken, in no table
-0x00675bd0	FUN_00675bd0	render	9	tools/refs.py: 0 refs; address never taken, in no table
-0x00675c00	FUN_00675c00	render	79	tools/refs.py: 0 refs; address never taken, in no table
-0x00675c70	Difference_00675c70	render	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00675c80	FUN_00675c80	render	45	tools/refs.py: 0 refs; address never taken, in no table
 0x00675cb0	FUN_00675cb0	render	44	tools/refs.py: 0 refs; address never taken, in no table
 0x00675ce0	FUN_00675ce0	render	57	tools/refs.py: 0 refs; address never taken, in no table
@@ -1071,6 +1004,14 @@
 0x00675ec0	FUN_00675ec0	render	47	tools/refs.py: 0 refs; address never taken, in no table
 0x00675ef0	FUN_00675ef0	render	18	tools/refs.py: 0 refs; address never taken, in no table
 0x00675f50	FUN_00675f50	render	71	tools/refs.py: 0 refs; address never taken, in no table
+0x006768d0	FUN_006768d0	render	9	tools/refs.py: 0 refs; address never taken, in no table
+0x00676960	Difference_00676960	render	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
+0x00676970	FUN_00676970	render	45	tools/refs.py: 0 refs; address never taken, in no table
+0x006769a0	FUN_006769a0	render	44	tools/refs.py: 0 refs; address never taken, in no table
+0x006769d0	FUN_006769d0	render	57	tools/refs.py: 0 refs; address never taken, in no table
+0x00676a10	FUN_00676a10	render	53	tools/refs.py: 0 refs; address never taken, in no table
+0x00677f30	FUN_00677f30	render	9	tools/refs.py: 0 refs; address never taken, in no table
+0x00677fa0	FUN_00677fa0	render	79	tools/refs.py: 0 refs; address never taken, in no table
 0x00678010	Difference_00678010	render	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00678020	FUN_00678020	render	45	tools/refs.py: 0 refs; address never taken, in no table
 0x00678050	FUN_00678050	render	44	tools/refs.py: 0 refs; address never taken, in no table
@@ -1163,8 +1104,8 @@
 0x00686f80	Identity_00686f80	system	8	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00686f90	FUN_00686f90	system	67	tools/refs.py: 0 refs; address never taken, in no table
 0x00687000	user_calloc	system	9	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x00687030	user_heap_destroy	system	16	tools/refs.py: 0 refs; address never taken, in no table
-0x00687040	malloc_pool_init_thunk	system	16	tools/refs.py: 0 refs; address never taken, in no table
+0x00687030	user_heap_destroy	system	5	tools/refs.py: 0 refs; address never taken, in no table
+0x00687040	malloc_pool_init_thunk	system	5	tools/refs.py: 0 refs; address never taken, in no table
 0x00687090	FUN_00687090	system	25	tools/refs.py: 0 refs; address never taken, in no table
 0x00687130	FUN_00687130	system	91	tools/refs.py: 0 refs; address never taken, in no table
 0x00687290	FUN_00687290	system	68	tools/refs.py: 0 refs; address never taken, in no table
@@ -1299,7 +1240,7 @@
 0x0068dd20	FUN_0068dd20	pc-ui	22	tools/refs.py: 0 refs; address never taken, in no table
 0x0068dfb0	FUN_0068dfb0	pc-ui	26	tools/refs.py: 0 refs; address never taken, in no table
 0x0068e2b0	FUN_0068e2b0	system	124	tools/refs.py: 0 refs; address never taken, in no table
-0x0068e350	Settings_SaveGlobal	system	16	tools/refs.py: 0 refs; address never taken, in no table
+0x0068e350	Settings_SaveGlobal	system	11	tools/refs.py: 0 refs; address never taken, in no table
 0x0068e360	FUN_0068e360	system	23	tools/refs.py: 0 refs; address never taken, in no table
 0x0068e380	FUN_0068e380	system	55	tools/refs.py: 0 refs; address never taken, in no table
 0x0068e4a0	FUN_0068e4a0	pc-ui	132	tools/refs.py: 0 refs; address never taken, in no table
@@ -1389,10 +1330,10 @@
 0x006990f0	FUN_006990f0	render	22	tools/refs.py: 0 refs; address never taken, in no table
 0x00699110	FUN_00699110	render	22	tools/refs.py: 0 refs; address never taken, in no table
 0x00699130	FUN_00699130	render	22	tools/refs.py: 0 refs; address never taken, in no table
-0x00699150	FUN_00699150	system	22	tools/refs.py: 0 refs; address never taken, in no table
-0x00699170	FUN_00699170	system	24	tools/refs.py: 0 refs; address never taken, in no table
-0x00699190	FUN_00699190	system	41	tools/refs.py: 0 refs; address never taken, in no table
-0x006991c0	FUN_006991c0	system	41	tools/refs.py: 0 refs; address never taken, in no table
+0x00699150	FUN_00699150	render	22	tools/refs.py: 0 refs; address never taken, in no table
+0x00699170	FUN_00699170	render	24	tools/refs.py: 0 refs; address never taken, in no table
+0x00699190	FUN_00699190	render	41	tools/refs.py: 0 refs; address never taken, in no table
+0x006991c0	FUN_006991c0	render	41	tools/refs.py: 0 refs; address never taken, in no table
 0x006992c0	FUN_006992c0	system	50	tools/refs.py: 0 refs; address never taken, in no table
 0x00699330	FUN_00699330	system	10	tools/refs.py: 0 refs; address never taken, in no table
 0x00699340	FUN_00699340	system	101	callers only unreachable: FUN_006993b0 (call), FUN_0069b270 (call); address never taken, in no table
@@ -1418,7 +1359,7 @@
 0x0069b3c0	FUN_0069b3c0	system	9	tools/refs.py: 0 refs; address never taken, in no table
 0x0069b400	FUN_0069b400	system	166	tools/refs.py: 0 refs; address never taken, in no table
 0x0069b530	PArray_PushInto_0069b530	system	134	callers only unreachable: FUN_0069a570 (call), FUN_0069ac10 (call); address never taken, in no table; ported anyway (no coverage run saw it)
-0x0069b830	FUN_0069b830	system	93	tools/refs.py: 0 refs; address never taken, in no table
+0x0069b830	FUN_0069b830	map	93	tools/refs.py: 0 refs; address never taken, in no table
 0x0069bb10	FUN_0069bb10	system	48	tools/refs.py: 0 refs; address never taken, in no table
 0x0069bd30	FUN_0069bd30	system	97	tools/refs.py: 0 refs; address never taken, in no table
 0x0069bda0	Identity_0069bda0	system	8	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
@@ -1481,33 +1422,12 @@
 0x0069e120	FUN_0069e120	vfx	27	tools/refs.py: 0 refs; address never taken, in no table
 0x0069e380	FUN_0069e380	pc-ui	81	tools/refs.py: 0 refs; address never taken, in no table
 0x0069e560	FUN_0069e560	vfx	119	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e5e0	FUN_0069e5e0	vfx	119	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e680	FUN_0069e680	vfx	36	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e6b0	FUN_0069e6b0	vfx	36	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e740	FUN_0069e740	vfx	36	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e7a0	FUN_0069e7a0	vfx	38	tools/refs.py: 0 refs; address never taken, in no table
-0x0069e800	FUN_0069e800	vfx	40	tools/refs.py: 0 refs; address never taken, in no table
 0x0069e8a0	FUN_0069e8a0	vfx	30	tools/refs.py: 0 refs; address never taken, in no table
 0x0069e8d0	FUN_0069e8d0	vfx	36	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ea20	FUN_0069ea20	vfx	19	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ea40	FUN_0069ea40	vfx	19	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ea60	FUN_0069ea60	vfx	16	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ea70	FUN_0069ea70	vfx	16	tools/refs.py: 0 refs; address never taken, in no table
-0x0069eb10	FUN_0069eb10	vfx	55	tools/refs.py: 0 refs; address never taken, in no table
-0x0069eb50	FUN_0069eb50	vfx	23	tools/refs.py: 0 refs; address never taken, in no table
-0x0069eb70	FUN_0069eb70	vfx	23	tools/refs.py: 0 refs; address never taken, in no table
-0x0069eb90	FUN_0069eb90	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069eba0	FUN_0069eba0	vfx	23	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ebc0	FUN_0069ebc0	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ec40	FUN_0069ec40	vfx	28	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ec60	FUN_0069ec60	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ec70	FUN_0069ec70	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ec80	FUN_0069ec80	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ec90	FUN_0069ec90	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ed60	FUN_0069ed60	vfx	18	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ed80	FUN_0069ed80	vfx	32	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ee30	FUN_0069ee30	vfx	28	tools/refs.py: 0 refs; address never taken, in no table
-0x0069ee50	FUN_0069ee50	vfx	61	tools/refs.py: 0 refs; address never taken, in no table
 0x0069eec0	FUN_0069eec0	vfx	53	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ef30	FUN_0069ef30	vfx	55	tools/refs.py: 0 refs; address never taken, in no table
 0x0069ef70	FUN_0069ef70	vfx	33	tools/refs.py: 0 refs; address never taken, in no table
@@ -1530,7 +1450,18 @@
 0x006a0f20	FUN_006a0f20	render	14	tools/refs.py: 0 refs; address never taken, in no table
 0x006a0f90	FUN_006a0f90	render	17	tools/refs.py: 0 refs; address never taken, in no table
 0x006a0fb0	FUN_006a0fb0	render	36	tools/refs.py: 0 refs; address never taken, in no table
-0x006a1300	FUN_006a1300	render	21	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1300	FUN_006a1300	menu	21	tools/refs.py: 0 refs; address never taken, in no table
+0x006a13f0	FUN_006a13f0	menu	22	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1410	FUN_006a1410	menu	25	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1430	FUN_006a1430	menu	22	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1450	FUN_006a1450	menu	22	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1470	FUN_006a1470	menu	25	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1490	FUN_006a1490	menu	18	tools/refs.py: 0 refs; address never taken, in no table
+0x006a14b0	FUN_006a14b0	menu	18	tools/refs.py: 0 refs; address never taken, in no table
+0x006a14d0	FUN_006a14d0	menu	18	tools/refs.py: 0 refs; address never taken, in no table
+0x006a14f0	FUN_006a14f0	menu	18	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1510	FUN_006a1510	menu	18	tools/refs.py: 0 refs; address never taken, in no table
+0x006a1530	FUN_006a1530	menu	18	tools/refs.py: 0 refs; address never taken, in no table
 0x006a1cd0	FUN_006a1cd0	vfx	51	tools/refs.py: 0 refs; address never taken, in no table
 0x006a1d90	FUN_006a1d90	vfx	233	tools/refs.py: 0 refs; address never taken, in no table
 0x006a1ef0	FUN_006a1ef0	vfx	97	tools/refs.py: 0 refs; address never taken, in no table
@@ -1546,15 +1477,6 @@
 0x006a2f40	FUN_006a2f40	vfx	51	tools/refs.py: 0 refs; address never taken, in no table
 0x006a2f80	FUN_006a2f80	vfx	55	tools/refs.py: 0 refs; address never taken, in no table
 0x006a2fc0	FUN_006a2fc0	vfx	13	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad070	FUN_006ad070	render	41	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad160	FUN_006ad160	render	28	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad1b0	FUN_006ad1b0	render	16	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad1c0	FUN_006ad1c0	render	51	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad200	FUN_006ad200	render	59	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad240	FUN_006ad240	render	16	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad260	FUN_006ad260	render	21	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad280	FUN_006ad280	render	28	tools/refs.py: 0 refs; address never taken, in no table
-0x006ad2a0	FUN_006ad2a0	render	44	tools/refs.py: 0 refs; address never taken, in no table
 0x006adc40	FUN_006adc40	render	66	tools/refs.py: 0 refs; address never taken, in no table
 0x006ae040	FUN_006ae040	render	122	tools/refs.py: 0 refs; address never taken, in no table
 0x006ae200	FUN_006ae200	render	51	tools/refs.py: 0 refs; address never taken, in no table
@@ -1659,7 +1581,6 @@
 0x006b5190	FUN_006b5190	render	8	tools/refs.py: 0 refs; address never taken, in no table
 0x006b51a0	FUN_006b51a0	render	8	tools/refs.py: 0 refs; address never taken, in no table
 0x006b51b0	FUN_006b51b0	render	8	tools/refs.py: 0 refs; address never taken, in no table
-0x006b85c0	FUN_006b85c0	map	597	tools/refs.py: 0 refs; address never taken, in no table
 0x006b8820	FUN_006b8820	map	509	tools/refs.py: 0 refs; address never taken, in no table
 0x006b8a20	FUN_006b8a20	map	642	tools/refs.py: 0 refs; address never taken, in no table
 0x006b8ce0	FUN_006b8ce0	map	1051	tools/refs.py: 0 refs; address never taken, in no table
@@ -1692,7 +1613,7 @@
 0x006bbdd0	FUN_006bbdd0	map	30	callers only unreachable: FUN_006b8a20 (call); address never taken, in no table
 0x006bbdf0	FUN_006bbdf0	map	251	callers only unreachable: FUN_006b8a20 (call); address never taken, in no table
 0x006bbef0	FUN_006bbef0	map	369	callers only unreachable: FUN_006b8a20 (call); address never taken, in no table
-0x006bc0f0	FUN_006bc0f0	render	34	callers only unreachable: FUN_006b8a20 (call); address never taken, in no table
+0x006bc0f0	FUN_006bc0f0	map	34	callers only unreachable: FUN_006b8a20 (call); address never taken, in no table
 0x006bc340	FUN_006bc340	render	207	callers only unreachable: FUN_006b9160 (call), FUN_006baef0 (call); address never taken, in no table
 0x006bc410	FUN_006bc410	render	102	callers only unreachable: BasicDebugTweakUtil_handleInput (call); address never taken, in no table
 0x006bc480	FUN_006bc480	render	102	callers only unreachable: FUN_006b7af0 (call); address never taken, in no table
@@ -1883,7 +1804,7 @@
 0x006d2fd0	FUN_006d2fd0	render	34	tools/refs.py: 0 refs; address never taken, in no table
 0x006d3520	FUN_006d3520	render	12	tools/refs.py: 0 refs; address never taken, in no table
 0x006d3530	FUN_006d3530	render	35	tools/refs.py: 0 refs; address never taken, in no table
-0x006d3610	FUN_006d3610	render	59	tools/refs.py: 0 refs; address never taken, in no table
+0x006d3610	FUN_006d3610	vfx	59	tools/refs.py: 0 refs; address never taken, in no table
 0x006d3e90	FUN_006d3e90	vfx	159	callers only unreachable: FUN_00639410 (call); address never taken, in no table
 0x006d4b80	FUN_006d4b80	vfx	11	tools/refs.py: 0 refs; address never taken, in no table
 0x006d4b90	FUN_006d4b90	vfx	12	tools/refs.py: 0 refs; address never taken, in no table
@@ -1966,7 +1887,7 @@
 0x006db4f0	FUN_006db4f0	script	77	tools/refs.py: 0 refs; address never taken, in no table
 0x006db7a0	Worker_ResetCounters	script	50	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x006db900	FUN_006db900	script	275	tools/refs.py: 0 refs; address never taken, in no table
-0x006dbb50	FUN_006dbb50	script	216	tools/refs.py: 0 refs; address never taken, in no table
+0x006dbb50	FUN_006dbb50	system	216	tools/refs.py: 0 refs; address never taken, in no table
 0x006dbc30	FUN_006dbc30	system	210	tools/refs.py: 0 refs; address never taken, in no table
 0x006dbe00	FUN_006dbe00	system	125	tools/refs.py: 0 refs; address never taken, in no table
 0x006dce50	FUN_006dce50	render	343	callers only unreachable: FUN_006dcab0 (call), FUN_006dcb90 (call), FUN_006dcfb0 (call), FUN_006dd970 (call); address never taken, in no table
@@ -2034,6 +1955,8 @@
 0x006e7780	FUN_006e7780	pc-ui	48	tools/refs.py: 0 refs; address never taken, in no table
 0x006e77b0	FUN_006e77b0	pc-ui	11	tools/refs.py: 0 refs; address never taken, in no table
 0x006e77c0	FUN_006e77c0	pc-ui	12	tools/refs.py: 0 refs; address never taken, in no table
+0x006e80a0	FUN_006e80a0	pc-ui	70	tools/refs.py: 0 refs; address never taken, in no table
+0x006e80f0	FUN_006e80f0	pc-ui	70	tools/refs.py: 0 refs; address never taken, in no table
 0x006e90e0	FUN_006e90e0	pc-ui	8	tools/refs.py: 0 refs; address never taken, in no table
 0x006e90f0	FUN_006e90f0	pc-ui	8	tools/refs.py: 0 refs; address never taken, in no table
 0x006e9100	FUN_006e9100	pc-ui	8	tools/refs.py: 0 refs; address never taken, in no table
@@ -2044,6 +1967,7 @@
 0x006e9180	FUN_006e9180	pc-ui	21	tools/refs.py: 0 refs; address never taken, in no table
 0x006e91d0	FUN_006e91d0	pc-ui	12	tools/refs.py: 0 refs; address never taken, in no table
 0x006e91e0	FUN_006e91e0	pc-ui	12	tools/refs.py: 0 refs; address never taken, in no table
+0x006e97b0	SetIggyPosition720p	pc-ui	120	tools/refs.py: 0 refs; address never taken, in no table
 0x006ebb40	FUN_006ebb40	ps2-emu	87	tools/refs.py: 0 refs; address never taken, in no table
 0x006ebba0	FUN_006ebba0	ps2-emu	24	tools/refs.py: 0 refs; address never taken, in no table
 0x006ebbc0	VirtualAlloc_ReserveCommit_TopDown_RW	ps2-emu	30	tools/refs.py: 0 refs; address never taken, in no table
@@ -2095,11 +2019,11 @@
 0x006f1370	StatsAndAchievements_dtor	system	73	tools/refs.py: 0 refs; address never taken, in no table
 0x006f13c0	StatsAndAchievements_scalar_deleting_dtor	system	96	tools/refs.py: 0 refs; address never taken, in no table
 0x006f1420	StatsAndAchievements_ResetAll	system	16	callers only unreachable: BasicDebugTweakUtil_handleInput (call); address never taken, in no table
-0x006f14a0	StatsAndAchievements_Destroy	system	112	tools/refs.py: 0 refs; address never taken, in no table
+0x006f14a0	StatsAndAchievements_Destroy	system	100	tools/refs.py: 0 refs; address never taken, in no table
 0x006f16e0	CCallback_UserAchievementStored_Register	system	66	tools/refs.py: 0 refs; address never taken, in no table
 0x006f1730	CCallback_UserStatsReceived_Register	system	66	tools/refs.py: 0 refs; address never taken, in no table
 0x006f1780	CCallback_UserStatsStored_Register	system	66	tools/refs.py: 0 refs; address never taken, in no table
-0x006f17d0	StatsAndAchievements_RequestStats	system	80	tools/refs.py: 0 refs; address never taken, in no table
+0x006f17d0	StatsAndAchievements_RequestStats	system	65	tools/refs.py: 0 refs; address never taken, in no table
 0x006f18b0	StatsAndAchievements_SetAchievementByName	system	50	tools/refs.py: 0 refs; address never taken, in no table
 0x006f1a80	FUN_006f1a80	system	28	tools/refs.py: 0 refs; address never taken, in no table
 0x006f1b00	FUN_006f1b00	system	180	callers only unreachable: FUN_00647bf0 (call); address never taken, in no table
@@ -2117,8 +2041,8 @@
 0x006f25f0	FUN_006f25f0	system	39	tools/refs.py: 0 refs; address never taken, in no table
 0x006f2750	FUN_006f2750	system	115	callers only unreachable: FUN_00649020 (call); address never taken, in no table
 0x006f27d0	FUN_006f27d0	system	64	tools/refs.py: 0 refs; address never taken, in no table
-0x006f28c0	FUN_006f28c0	script	50	tools/refs.py: 0 refs; address never taken, in no table
-0x006f2900	FUN_006f2900	script	53	tools/refs.py: 0 refs; address never taken, in no table
+0x006f28c0	FUN_006f28c0	system	50	tools/refs.py: 0 refs; address never taken, in no table
+0x006f2900	FUN_006f2900	system	53	tools/refs.py: 0 refs; address never taken, in no table
 0x006f2940	FUN_006f2940	script	36	tools/refs.py: 0 refs; address never taken, in no table
 0x006f2970	FUN_006f2970	script	40	tools/refs.py: 0 refs; address never taken, in no table
 0x006f2a40	Thread_Sleep	script	14	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
@@ -2136,6 +2060,7 @@
 0x006f2f60	FUN_006f2f60	script	10	tools/refs.py: 0 refs; address never taken, in no table
 0x006f3070	FUN_006f3070	script	115	tools/refs.py: 0 refs; address never taken, in no table
 0x006f3100	FUN_006f3100	script	39	tools/refs.py: 0 refs; address never taken, in no table
+0x006f3bc0	FUN_006f3bc0	system	15	tools/refs.py: 0 refs; address never taken, in no table
 0x006f3bf0	FUN_006f3bf0	system	23	tools/refs.py: 0 refs; address never taken, in no table
 0x006f3c10	FUN_006f3c10	system	12	tools/refs.py: 0 refs; address never taken, in no table
 0x006f3c20	FUN_006f3c20	system	19	tools/refs.py: 0 refs; address never taken, in no table
@@ -2175,6 +2100,11 @@
 0x006f6900	FFEscMenu_SaveConfigToFile	pc-ui	15	tools/refs.py: 0 refs; address never taken, in no table
 0x006f6a70	FUN_006f6a70	pc-ui	11	tools/refs.py: 0 refs; address never taken, in no table
 0x006f6a80	FUN_006f6a80	pc-ui	12	tools/refs.py: 0 refs; address never taken, in no table
+0x006f71c0	FUN_006f71c0	main	78	tools/refs.py: 0 refs; address never taken, in no table
+0x006f7770	FUN_006f7770	main	46	tools/refs.py: 0 refs; address never taken, in no table
+0x006f77a0	FUN_006f77a0	main	66	tools/refs.py: 0 refs; address never taken, in no table
+0x006f7880	FUN_006f7880	main	46	tools/refs.py: 0 refs; address never taken, in no table
+0x006f78c0	FUN_006f78c0	main	13	tools/refs.py: 0 refs; address never taken, in no table
 0x006f80e0	FUN_006f80e0	render	40	tools/refs.py: 0 refs; address never taken, in no table
 0x006f89d0	FUN_006f89d0	render	219	tools/refs.py: 0 refs; address never taken, in no table
 0x006f8ab0	FUN_006f8ab0	render	96	tools/refs.py: 0 refs; address never taken, in no table
@@ -2190,11 +2120,12 @@
 0x006f93a0	FUN_006f93a0	render	144	callers only unreachable: FUN_006f9460 (call); address never taken, in no table
 0x006f9430	FUN_006f9430	render	47	tools/refs.py: 0 refs; address never taken, in no table
 0x006f9460	FUN_006f9460	render	36	tools/refs.py: 0 refs; address never taken, in no table
+0x006f95d0	FUN_006f95d0	render	122	tools/refs.py: 0 refs; address never taken, in no table
 0x006f9790	FUN_006f9790	render	55	tools/refs.py: 0 refs; address never taken, in no table
 0x006f97d0	FUN_006f97d0	render	45	tools/refs.py: 0 refs; address never taken, in no table
 0x006f9800	FUN_006f9800	render	53	tools/refs.py: 0 refs; address never taken, in no table
 0x006f9840	FUN_006f9840	render	33	tools/refs.py: 0 refs; address never taken, in no table
-0x006f9db0	FUN_006f9db0	render	36	tools/refs.py: 0 refs; address never taken, in no table
+0x006f9db0	FUN_006f9db0	sound	36	tools/refs.py: 0 refs; address never taken, in no table
 0x006fa010	FUN_006fa010	sound	33	tools/refs.py: 0 refs; address never taken, in no table
 0x006fa070	FUN_006fa070	sound	49	tools/refs.py: 0 refs; address never taken, in no table
 0x006fa130	FmodManager_createThread	sound	83	tools/refs.py: 0 refs; address never taken, in no table
@@ -2562,7 +2493,7 @@
 0x00760e30	FUN_00760e30	vfx	245	callers only unreachable: pppPartDraw (call); address never taken, in no table
 0x007610a0	dumpFvector	vfx	53	tools/refs.py: 0 refs; address never taken, in no table
 0x007610e0	dumpMatrix	vfx	143	tools/refs.py: 0 refs; address never taken, in no table
-0x00761320	pppDebugModeOn_00761320	vfx	48	tools/refs.py: 0 refs; address never taken, in no table
+0x00761320	pppDebugModeOn_00761320	vfx	38	tools/refs.py: 0 refs; address never taken, in no table
 0x00761480	FUN_00761480	vfx	26	tools/refs.py: 0 refs; address never taken, in no table
 0x00761c00	pppDbgAlloc	vfx	59	tools/refs.py: 0 refs; address never taken, in no table
 0x00761c80	pppInitGraphicSystem	vfx	211	callers only unreachable: FUN_00a5bda0 (call); address never taken, in no table
@@ -2613,7 +2544,7 @@
 0x0076b7e0	eiWaitLoop	main	32	tools/refs.py: 0 refs; address never taken, in no table
 0x0076b800	FUN_0076b800	main	94	tools/refs.py: 0 refs; address never taken, in no table
 0x0076c290	FUN_0076c290	system	138	tools/refs.py: 0 refs; address never taken, in no table
-0x0076dc60	SetByte_01128ac0	system	13	callers only unreachable: FUN_00a7aee0 (call); address never taken, in no table; ported anyway (no coverage run saw it)
+0x0076dc60	SetByte_01128ac0	main	13	callers only unreachable: FUN_00a7aee0 (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x0076dec0	printf_init_over	main	125	tools/refs.py: 0 refs; address never taken, in no table
 0x0076df40	printf_mask_set	main	64	tools/refs.py: 0 refs; address never taken, in no table
 0x0076df80	printf_write	main	405	tools/refs.py: 0 refs; address never taken, in no table
@@ -2624,7 +2555,7 @@
 0x007783f0	hd_file_read	system	350	tools/refs.py: 0 refs; address never taken, in no table
 0x007793b0	hdd_irx_load	system	1	callers only unreachable: FUN_00a7aee0 (call); address never taken, in no table
 0x0077a330	task_create_global	main	85	tools/refs.py: 0 refs; address never taken, in no table
-0x0077b0d0	audioInit	sound	150	callers only unreachable: FUN_0077dc80 (call), FUN_0077dd70 (call); address never taken, in no table
+0x0077b0d0	audioInit	movie	150	callers only unreachable: FUN_0077dc80 (call), FUN_0077dd70 (call); address never taken, in no table
 0x0077c6d0	chr_movie_main	chara	113	tools/refs.py: only refs from its own body; address never taken, in no table
 0x0077c900	chr_texanim_memory_move	chara	71	callers only unreachable: Ch_MoveChrBlk (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x0077ccc0	FUN_0077ccc0	chara	214	callers only unreachable: FUN_0077e1c0 (call); address never taken, in no table
@@ -2632,7 +2563,7 @@
 0x0077d670	movie_iPicture_Main	movie	132	tools/refs.py: 0 refs; address never taken, in no table
 0x0077d700	movie_iPicture_Main2	movie	67	tools/refs.py: 0 refs; address never taken, in no table
 0x0077d770	FUN_0077d770	movie	761	callers only unreachable: movie_iPicture_Main (call), movie_iPicture_Main2 (call); address never taken, in no table
-0x0077da80	FUN_0077da80	movie	13	tools/refs.py: 0 refs; address never taken, in no table
+0x0077da80	FUN_0077da80	system	13	tools/refs.py: 0 refs; address never taken, in no table
 0x0077dc80	FUN_0077dc80	movie	239	tools/refs.py: 0 refs; address never taken, in no table
 0x0077dd70	FUN_0077dd70	movie	174	tools/refs.py: 0 refs; address never taken, in no table
 0x0077df00	print_sound_debug_info	movie	144	tools/refs.py: 0 refs; address never taken, in no table
@@ -2794,7 +2725,7 @@
 0x007e13e0	op_char_table_set	vfx	37	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x007e1410	FUN_007e1410	vfx	57	tools/refs.py: 0 refs; address never taken, in no table
 0x007e1b50	op_str_unquote	vfx	32	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x007e1bc0	FUN_007e1bc0	vfx	44	tools/refs.py: 0 refs; address never taken, in no table
+0x007e1bc0	FUN_007e1bc0	battle	44	tools/refs.py: 0 refs; address never taken, in no table
 0x007e1bf0	FUN_007e1bf0	vfx	52	tools/refs.py: 0 refs; address never taken, in no table
 0x007e26f0	FUN_007e26f0	vfx	47	tools/refs.py: 0 refs; address never taken, in no table
 0x007e2e80	FUN_007e2e80	vfx	69	tools/refs.py: 0 refs; address never taken, in no table
@@ -2846,7 +2777,7 @@
 0x007e5ec0	FUN_007e5ec0	vfx	29	tools/refs.py: 0 refs; address never taken, in no table
 0x007e5ee0	FUN_007e5ee0	vfx	41	tools/refs.py: 0 refs; address never taken, in no table
 0x007e5f10	FUN_007e5f10	vfx	29	tools/refs.py: 0 refs; address never taken, in no table
-0x007e62e0	op_mmenu_display_007e62e0	vfx	32	tools/refs.py: 0 refs; address never taken, in no table
+0x007e62e0	op_mmenu_display_007e62e0	vfx	23	tools/refs.py: 0 refs; address never taken, in no table
 0x007e6300	FUN_007e6300	vfx	31	tools/refs.py: 0 refs; address never taken, in no table
 0x007e6360	FUN_007e6360	vfx	29	tools/refs.py: 0 refs; address never taken, in no table
 0x007e6380	FUN_007e6380	vfx	29	tools/refs.py: 0 refs; address never taken, in no table
@@ -3042,11 +2973,11 @@
 0x0081f980	FUN_0081f980	map	121	tools/refs.py: 0 refs; address never taken, in no table
 0x0081fa10	FUN_0081fa10	map	115	tools/refs.py: 0 refs; address never taken, in no table
 0x0081fa90	FUN_0081fa90	map	146	tools/refs.py: 0 refs; address never taken, in no table
-0x0081fbb0	FUN_0081fbb0	main	122	tools/refs.py: 0 refs; address never taken, in no table
+0x0081fbb0	FUN_0081fbb0	map	122	tools/refs.py: 0 refs; address never taken, in no table
 0x00820360	FlashPlayCancelSFX	pc-ui	12	callers only unreachable: FUN_006b8ce0 (call); address never taken, in no table
 0x00820680	FUN_00820680	main	60	tools/refs.py: 0 refs; address never taken, in no table
 0x00821a30	SetByte_012fb8fc	system	13	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x008227f0	FUN_008227f0	main	20	tools/refs.py: 0 refs; address never taken, in no table
+0x008227f0	FUN_008227f0	menu	20	tools/refs.py: 0 refs; address never taken, in no table
 0x00822810	trophyUnlockTrophy	main	20	tools/refs.py: 0 refs; address never taken, in no table
 0x00824c30	Ch_WindGet	chara	53	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00824c70	Ch_WindGetEnable	chara	19	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
@@ -3133,7 +3064,7 @@
 0x0083eae0	FUN_0083eae0	main	64	tools/refs.py: 0 refs; address never taken, in no table
 0x0083eb20	FUN_0083eb20	main	14	tools/refs.py: 0 refs; address never taken, in no table
 0x0083f0c0	virtuos_realloc	main	19	tools/refs.py: 0 refs; address never taken, in no table
-0x0083f0f0	FUN_0083f0f0	main	9	tools/refs.py: 0 refs; address never taken, in no table
+0x0083f0f0	FUN_0083f0f0	system	9	tools/refs.py: 0 refs; address never taken, in no table
 0x0083f120	FUN_0083f120	main	9	callers only unreachable: FUN_0090bc30 (jmp); address never taken, in no table
 0x0083f1c0	Sg_CalcViewClipMatrix	main	148	callers only unreachable: FUN_0082e610 (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x0083f2a0	Sg_CameraGetRef	main	43	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
@@ -3201,7 +3132,7 @@
 0x008483e0	Gu_SetAlpha	menu	122	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00848730	Gu_PrintSetCR	menu	13	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00848c30	Gu_SetScissor2	menu	212	tools/refs.py: 0 refs; address never taken, in no table
-0x00848f50	FUN_00848f50	pc-ui	13	tools/refs.py: 0 refs; address never taken, in no table
+0x00848f50	FUN_00848f50	menu	13	tools/refs.py: 0 refs; address never taken, in no table
 0x00849270	Gu_Approach	menu	57	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x008492b0	Gu_RectSetH	menu	23	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x008492d0	Gu_RectSetW	menu	23	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
@@ -3225,7 +3156,7 @@
 0x0084b6e0	Gu_WindowSetX	menu	23	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0084b700	Gu_WindowSetY	menu	23	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0084b7b0	Gu_WindowToggleFlag1	menu	36	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
-0x0084d5b0	FUN_0084d5b0	pc-ui	42	tools/refs.py: 0 refs; address never taken, in no table
+0x0084d5b0	FUN_0084d5b0	menu	42	tools/refs.py: 0 refs; address never taken, in no table
 0x0084d730	FUN_0084d730	pc-ui	86	tools/refs.py: 0 refs; address never taken, in no table
 0x0084f320	Sg_SelectMainMenu2	main	22	tools/refs.py: 0 refs; address never taken, in no table
 0x0084f340	WCameParaProc	main	321	tools/refs.py: 0 refs; address never taken, in no table
@@ -3238,13 +3169,13 @@
 0x00851010	FUN_00851010	main	71	tools/refs.py: 0 refs; address never taken, in no table
 0x00851060	FUN_00851060	main	73	tools/refs.py: 0 refs; address never taken, in no table
 0x008510e0	SgPrint	main	22	tools/refs.py: 0 refs; address never taken, in no table
-0x00851d10	FUN_00851d10	main	11	tools/refs.py: 0 refs; address never taken, in no table
+0x00851d10	FUN_00851d10	menu	11	tools/refs.py: 0 refs; address never taken, in no table
 0x00851d20	FUN_00851d20	main	50	tools/refs.py: 0 refs; address never taken, in no table
 0x00851d60	FUN_00851d60	main	32	tools/refs.py: 0 refs; address never taken, in no table
 0x00851d80	FUN_00851d80	main	20	tools/refs.py: 0 refs; address never taken, in no table
 0x00851da0	FUN_00851da0	main	14	tools/refs.py: 0 refs; address never taken, in no table
-0x00853da0	FUN_00853da0	pc-ui	26	tools/refs.py: 0 refs; address never taken, in no table
-0x00855340	FUN_00855340	pc-ui	29	tools/refs.py: 0 refs; address never taken, in no table
+0x00853da0	FUN_00853da0	menu	26	tools/refs.py: 0 refs; address never taken, in no table
+0x00855340	FUN_00855340	menu	29	tools/refs.py: 0 refs; address never taken, in no table
 0x008553d0	FUN_008553d0	pc-ui	43	tools/refs.py: 0 refs; address never taken, in no table
 0x00855ad0	FUN_00855ad0	script	38	tools/refs.py: 0 refs; address never taken, in no table
 0x00855b00	FUN_00855b00	script	46	tools/refs.py: 0 refs; address never taken, in no table
@@ -3311,8 +3242,8 @@
 0x0086ba30	FUN_0086ba30	script	14	tools/refs.py: 0 refs; address never taken, in no table
 0x0086ba60	Msg_TableTextAlt	menu	37	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0086bba0	FUN_0086bba0	script	22	callers only unreachable: AtelGetDebugSubCodeString (call); address never taken, in no table
-0x0086bbd0	FUN_0086bbd0	script	18	tools/refs.py: 0 refs; address never taken, in no table
-0x0086bc90	code_0086bc90	script	16	callers only unreachable: AtelDebugPage_Map_008807b0 (call); address never taken, in no table
+0x0086bbd0	FUN_0086bbd0	battle	18	tools/refs.py: 0 refs; address never taken, in no table
+0x0086bc90	code_0086bc90	menu	16	callers only unreachable: AtelDebugPage_Map_008807b0 (call); address never taken, in no table
 0x0086bd40	Get_g_AtelLoveParamDisable_0086bd40	script	6	callers only unreachable: AtelDebugPage_Map_008807b0 (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x0086bd50	FUN_0086bd50	script	15	tools/refs.py: 0 refs; address never taken, in no table
 0x0086be60	Atel_GetWindowStatus	script	46	callers only unreachable: FUN_00860d60 (call), FUN_00860e40 (call), FUN_00860f30 (call); address never taken, in no table; ported anyway (no coverage run saw it)
@@ -3398,7 +3329,7 @@
 0x00872850	FUN_00872850	script	14	tools/refs.py: 0 refs; address never taken, in no table
 0x008729b0	CloudUI_EndScissor	system	12	tools/refs.py: 0 refs; address never taken, in no table
 0x00872a40	FUN_00872a40	script	93	tools/refs.py: 0 refs; address never taken, in no table
-0x00872c80	AtelDebugDraw_thunk_00872c80	script	16	tools/refs.py: 0 refs; address never taken, in no table
+0x00872c80	AtelDebugDraw_thunk_00872c80	script	5	tools/refs.py: 0 refs; address never taken, in no table
 0x008739f0	AtelFreeActorBuffer	script	57	tools/refs.py: 0 refs; address never taken, in no table
 0x00873a30	AtelFreeBinHdrBuffer	script	65	tools/refs.py: 0 refs; address never taken, in no table
 0x00873b10	AtelGetOnMemoryMovieFileNo	script	12	callers only unreachable: AtelDebugPage_Map_008807b0 (call); address never taken, in no table; ported anyway (no coverage run saw it)
@@ -3454,7 +3385,7 @@
 0x0087bd90	FUN_0087bd90	script	61	tools/refs.py: 0 refs; address never taken, in no table
 0x0087bdcd	AtelDebugCtrl	script	6252	callers only unreachable: FUN_0087bd90 (jmp); address never taken, in no table
 0x0087d690	FUN_0087d690	script	35	tools/refs.py: 0 refs; address never taken, in no table
-0x0087d6c0	AtelDebugDraw_0087d6c0	script	352	callers only unreachable: AtelDebugDraw_thunk_00872c80 (jmp); address never taken, in no table
+0x0087d6c0	AtelDebugDraw_0087d6c0	script	344	callers only unreachable: AtelDebugDraw_thunk_00872c80 (jmp); address never taken, in no table
 0x0087d820	FUN_0087d820	script	549	tools/refs.py: 0 refs; address never taken, in no table
 0x0087da60	FUN_0087da60	script	441	callers only unreachable: FUN_0087d820 (call); address never taken, in no table
 0x0087dc20	FUN_0087dc20	script	52	tools/refs.py: 0 refs; address never taken, in no table
@@ -3529,7 +3460,7 @@
 0x00882d50	FUN_00882d50	script	479	callers only unreachable: AtelDebugPage_00882bb0 (call); address never taken, in no table
 0x00882f40	FUN_00882f40	script	190	callers only unreachable: AtelDebugPage_System_0087fca0 (call); address never taken, in no table
 0x00883040	AtelDebugDisplay_00883040	script	47	tools/refs.py: 0 refs; address never taken, in no table
-0x00883070	AtelDebugPages_00883070	script	720	callers only unreachable: AtelDebugDraw_0087d6c0 (call); address never taken, in no table
+0x00883070	AtelDebugPages_00883070	script	576	callers only unreachable: AtelDebugDraw_0087d6c0 (call); address never taken, in no table
 0x00883340	TkDebugHexDump_00883340	menu	714	callers only unreachable: AtelDebugPage_BlockHex_00884fe0 (call), AtelDebugPage_CodeHex_00885040 (call), AtelDebugPage_CtrlHex_008850c0 (call); address never taken, in no table
 0x00883620	FUN_00883620	menu	656	tools/refs.py: 0 refs; address never taken, in no table
 0x008838d0	FUN_008838d0	script	142	callers only unreachable: AtelDebugPage_Signals_00883e80 (call), FUN_008840d0 (call); address never taken, in no table
@@ -3558,6 +3489,7 @@
 0x00885430	FUN_00885430	menu	54	tools/refs.py: 0 refs; address never taken, in no table
 0x00885470	TkDeci2Send	menu	69	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x00885500	FUN_00885500	menu	87	tools/refs.py: 0 refs; address never taken, in no table
+0x00885580	FUN_00885580	menu	27	tools/refs.py: 0 refs; address never taken, in no table
 0x00885690	FUN_00885690	script	24	tools/refs.py: 0 refs; address never taken, in no table
 0x008856b0	AtelGetDebugSubCodeString	script	398	callers only unreachable: FUN_00882d50 (call); address never taken, in no table
 0x00885860	FUN_00885860	script	52	callers only unreachable: FUN_008838d0 (call), AtelGetDebugSubCodeString (call); address never taken, in no table
@@ -4450,9 +4382,9 @@
 0x0093d7d0	rcuiScaleVec4	map	46	callers only unreachable: FUN_0093d340 (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x0093d800	FUN_0093d800	map	47	tools/refs.py: 0 refs; address never taken, in no table
 0x0093d8a0	FUN_0093d8a0	map	95	callers only unreachable: FUN_0093cc90 (call), FUN_0093d160 (call); address never taken, in no table
-0x0093feb0	FUN_0093feb0	pc-ui	769	callers only unreachable: sa_camera_disp_sub (call); address never taken, in no table
-0x00941200	FUN_00941200	pc-ui	378	callers only unreachable: FUN_009415e0 (call); address never taken, in no table
-0x00941380	FUN_00941380	pc-ui	212	callers only unreachable: FUN_009415e0 (call); address never taken, in no table
+0x0093feb0	FUN_0093feb0	menu	769	callers only unreachable: sa_camera_disp_sub (call); address never taken, in no table
+0x00941200	FUN_00941200	menu	378	callers only unreachable: FUN_009415e0 (call); address never taken, in no table
+0x00941380	FUN_00941380	menu	212	callers only unreachable: FUN_009415e0 (call); address never taken, in no table
 0x009415e0	FUN_009415e0	pc-ui	563	callers only unreachable: FUN_00941b60 (call); address never taken, in no table
 0x00941860	FUN_00941860	movie	275	callers only unreachable: FUN_00941df0 (jmp); address never taken, in no table
 0x00941b60	FUN_00941b60	main	154	tools/refs.py: 0 refs; address never taken, in no table
@@ -4531,9 +4463,9 @@
 0x00945240	FUN_00945240	main	36	tools/refs.py: 0 refs; address never taken, in no table
 0x00945270	FUN_00945270	main	51	tools/refs.py: 0 refs; address never taken, in no table
 0x009452b0	FUN_009452b0	main	53	tools/refs.py: 0 refs; address never taken, in no table
-0x009452f0	FUN_009452f0	pc-ui	52	tools/refs.py: 0 refs; address never taken, in no table
-0x00945330	FUN_00945330	pc-ui	21	tools/refs.py: 0 refs; address never taken, in no table
-0x009454d0	FUN_009454d0	pc-ui	252	callers only unreachable: FUN_00944c80 (call), FUN_00945190 (call); address never taken, in no table
+0x009452f0	FUN_009452f0	main	52	tools/refs.py: 0 refs; address never taken, in no table
+0x00945330	FUN_00945330	main	21	tools/refs.py: 0 refs; address never taken, in no table
+0x009454d0	FUN_009454d0	main	252	callers only unreachable: FUN_00944c80 (call), FUN_00945190 (call); address never taken, in no table
 0x009456f0	FUN_009456f0	pc-ui	91	tools/refs.py: 0 refs; address never taken, in no table
 0x00945920	FUN_00945920	pc-ui	115	tools/refs.py: 0 refs; address never taken, in no table
 0x009459a0	FUN_009459a0	pc-ui	94	tools/refs.py: 0 refs; address never taken, in no table
@@ -4657,36 +4589,16 @@
 0x009dc370	FUN_009dc370	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
 0x009dcb40	FUN_009dcb40	ps2-emu	62	tools/refs.py: 0 refs; address never taken, in no table
 0x009dcb80	FUN_009dcb80	ps2-emu	62	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcbc0	FUN_009dcbc0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcc10	FUN_009dcc10	ps2-emu	67	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcc60	FUN_009dcc60	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dccb0	FUN_009dccb0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcd00	FUN_009dcd00	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcd50	FUN_009dcd50	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcda0	FUN_009dcda0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcdf0	FUN_009dcdf0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dce40	FUN_009dce40	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dce90	FUN_009dce90	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcee0	FUN_009dcee0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcf30	FUN_009dcf30	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcf80	FUN_009dcf80	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dcfd0	FUN_009dcfd0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd020	FUN_009dd020	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd070	FUN_009dd070	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd0c0	FUN_009dd0c0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd110	FUN_009dd110	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd160	FUN_009dd160	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd1b0	FUN_009dd1b0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd200	FUN_009dd200	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd250	FUN_009dd250	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd2a0	FUN_009dd2a0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd2f0	FUN_009dd2f0	ps2-emu	79	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd540	FUN_009dd540	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd5c0	FUN_009dd5c0	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd700	FUN_009dd700	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd780	FUN_009dd780	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd820	FUN_009dd820	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
-0x009dd8a0	FUN_009dd8a0	ps2-emu	118	tools/refs.py: 0 refs; address never taken, in no table
+0x009f23a0	FUN_009f23a0	render	21	tools/refs.py: 0 refs; address never taken, in no table
+0x009f23c0	FUN_009f23c0	render	20	tools/refs.py: 0 refs; address never taken, in no table
+0x009f39b0	FUN_009f39b0	render	93	callers only unreachable: FUN_009f3f70 (call); address never taken, in no table
+0x009f3a40	FUN_009f3a40	render	382	tools/refs.py: 0 refs; address never taken, in no table
+0x00a1b430	FUN_00a1b430	main	135	callers only unreachable: FUN_00a04750 (call); address never taken, in no table
+0x00a1b4c0	FUN_00a1b4c0	main	154	callers only unreachable: FUN_00a04750 (call); address never taken, in no table
+0x00a24ce0	FUN_00a24ce0	render	62	tools/refs.py: 0 refs; address never taken, in no table
+0x00a24d20	FUN_00a24d20	render	62	tools/refs.py: 0 refs; address never taken, in no table
+0x00a24d90	FUN_00a24d90	render	62	tools/refs.py: 0 refs; address never taken, in no table
+0x00a24de0	FUN_00a24de0	render	80	tools/refs.py: 0 refs; address never taken, in no table
 0x00a25960	FUN_00a25960	pc-ui	42	tools/refs.py: 0 refs; address never taken, in no table
 0x00a25a50	FUN_00a25a50	pc-ui	68	tools/refs.py: 0 refs; address never taken, in no table
 0x00a25d20	FUN_00a25d20	pc-ui	41	tools/refs.py: 0 refs; address never taken, in no table
@@ -4720,7 +4632,7 @@
 0x00a27140	FUN_00a27140	pc-ui	13	tools/refs.py: 0 refs; address never taken, in no table
 0x00a27150	FUN_00a27150	pc-ui	13	tools/refs.py: 0 refs; address never taken, in no table
 0x00a27160	FUN_00a27160	pc-ui	13	tools/refs.py: 0 refs; address never taken, in no table
-0x00a282f0	PVideoPlaybackWin32_play	pc-ui	32	tools/refs.py: 0 refs; address never taken, in no table
+0x00a282f0	PVideoPlaybackWin32_play	pc-ui	31	tools/refs.py: 0 refs; address never taken, in no table
 0x00a28870	FUN_00a28870	pc-ui	20	tools/refs.py: 0 refs; address never taken, in no table
 0x00a28890	FUN_00a28890	pc-ui	28	tools/refs.py: 0 refs; address never taken, in no table
 0x00a28aa0	FUN_00a28aa0	pc-ui	33	tools/refs.py: 0 refs; address never taken, in no table
@@ -4729,6 +4641,7 @@
 0x00a28d50	FUN_00a28d50	pc-ui	24	tools/refs.py: 0 refs; address never taken, in no table
 0x00a28f00	FUN_00a28f00	pc-ui	46	callers only unreachable: SetIggyPosition720p (call); address never taken, in no table
 0x00a29080	FUN_00a29080	pc-ui	73	tools/refs.py: 0 refs; address never taken, in no table
+0x00a2fc70	FUN_00a2fc70	main	28	tools/refs.py: 0 refs; address never taken, in no table
 0x00a35bd0	FUN_00a35bd0	pc-ui	130	tools/refs.py: 0 refs; address never taken, in no table
 0x00a35c60	FUN_00a35c60	pc-ui	34	tools/refs.py: 0 refs; address never taken, in no table
 0x00a35fa0	FUN_00a35fa0	pc-ui	30	tools/refs.py: 0 refs; address never taken, in no table
@@ -4762,7 +4675,7 @@
 0x00a3c330	FUN_00a3c330	vfx	21	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3c630	FUN_00a3c630	vfx	52	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3c670	FUN_00a3c670	vfx	72	tools/refs.py: 0 refs; address never taken, in no table
-0x00a3cd10	FUN_00a3cd10	vfx	21	tools/refs.py: 0 refs; address never taken, in no table
+0x00a3cd10	FUN_00a3cd10	pc-ui	21	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3cdb0	FUN_00a3cdb0	pc-ui	74	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3d1f0	FUN_00a3d1f0	pc-ui	74	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3d2d0	FUN_00a3d2d0	pc-ui	19	tools/refs.py: 0 refs; address never taken, in no table
@@ -4775,8 +4688,8 @@
 0x00a3d7d0	FUN_00a3d7d0	pc-ui	20	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3d850	FUN_00a3d850	pc-ui	162	callers only unreachable: FUN_00a3e440 (call); address never taken, in no table
 0x00a3db40	FUN_00a3db40	pc-ui	103	tools/refs.py: 0 refs; address never taken, in no table
-0x00a3dbb0	FUN_00a3dbb0	system	57	tools/refs.py: 0 refs; address never taken, in no table
-0x00a3dbf0	FUN_00a3dbf0	system	194	callers only unreachable: FUN_00a3d7d0 (call); address never taken, in no table
+0x00a3dbb0	FUN_00a3dbb0	pc-ui	57	tools/refs.py: 0 refs; address never taken, in no table
+0x00a3dbf0	FUN_00a3dbf0	pc-ui	194	callers only unreachable: FUN_00a3d7d0 (call); address never taken, in no table
 0x00a3dcc0	FUN_00a3dcc0	system	55	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3df60	FUN_00a3df60	system	18	tools/refs.py: 0 refs; address never taken, in no table
 0x00a3df80	FUN_00a3df80	system	25	tools/refs.py: 0 refs; address never taken, in no table
@@ -4796,7 +4709,7 @@
 0x00a431f0	setFullArenaLocalizationEnable	main	17	callers only unreachable: FUN_006b8ce0 (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x00a43210	SetGlobal_01a85ba4	main	13	callers only unreachable: BasicDebugTweakUtil_handleInput (call); address never taken, in no table; ported anyway (no coverage run saw it)
 0x00a43e10	sa_get_decode_size	main	77	tools/refs.py: 0 refs; address never taken, in no table
-0x00a43ff0	set_movie_matrix_sub	main	301	tools/refs.py: 0 refs; address never taken, in no table
+0x00a43ff0	set_movie_matrix_sub	movie	301	tools/refs.py: 0 refs; address never taken, in no table
 0x00a44670	FUN_00a44670	menu	36	tools/refs.py: 0 refs; address never taken, in no table
 0x00a446c0	FUN_00a446c0	menu	21	tools/refs.py: 0 refs; address never taken, in no table
 0x00a446e0	FUN_00a446e0	system	21	tools/refs.py: 0 refs; address never taken, in no table
@@ -4882,7 +4795,7 @@
 0x00a63340	FUN_00a63340	vfx	175	callers only unreachable: opd_get_tag_status (call); address never taken, in no table
 0x00a633f0	FUN_00a633f0	vfx	557	tools/refs.py: 0 refs; address never taken, in no table
 0x00a63620	opd_get_tag_status	vfx	1030	callers only unreachable: opd_read_regist (call); address never taken, in no table
-0x00a63a40	opd_debug_on_00a63a40	vfx	80	tools/refs.py: 0 refs; address never taken, in no table
+0x00a63a40	opd_debug_on_00a63a40	vfx	67	tools/refs.py: 0 refs; address never taken, in no table
 0x00a63a90	FUN_00a63a90	vfx	57	tools/refs.py: 0 refs; address never taken, in no table
 0x00a63ad0	FUN_00a63ad0	vfx	39	callers only unreachable: opd_read_regist (call); address never taken, in no table
 0x00a63b00	opd_read_regist	vfx	1086	callers only unreachable: opu_debug_check (call); address never taken, in no table

@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -44,7 +45,12 @@ fn start_and_frame() {
         m.w32(cell, k.wrapping_mul(0x0101_0101).wrapping_add(0x1357));
         k
     });
-    rec(&mut t, 712, 2, move |m, _| m.r32(cell) & 1);
+    // slot 712 keeps the part pointer's cell and the game flag
+    let fa = t.at(0x12a0);
+    let (gp, lock) = (magic_h6::cell(&t, fa, 0x5c), magic_h6::cell(&t, fa, 0x6c));
+    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| m.r32(cell) & 1);
+    // the word the start passes to slot 237, distinct
+    magic_h6::distinct(&mut t, at, &[0x5c]);
     recs(
         &mut t,
         &[(714, 5), (237, 4), (315, 1), (258, 1), (231, 3), (230, 2)],
@@ -53,7 +59,9 @@ fn start_and_frame() {
     for k in 0..4u32 {
         t.set_u32(cell, 0x4321 + 77 * k);
         t.write(obj, &[0x5b; 0x80]);
+        t.set_u32(gp, 0x7777_7777);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+        t.set_u32(gp, 0x7777_7777);
         t.check_entry(t.at(0x12a0), Call::default(), &[obj], Eax::Checked);
     }
 }

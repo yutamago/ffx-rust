@@ -1,8 +1,10 @@
 //! `magic_0588.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::m0018::st0_f32;
 use crate::runtime::slot_target;
 use crate::sa_pool::take;
+use crate::sb_sse::{mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -174,5 +176,132 @@ pub const LIGHT: Sig = Sig {
     hash: 0xa678_fa68_60fe_3d30,
     // __security_check_cookie
     calls: &[(0xd2, Callee::Any)],
+    imports: &[],
+};
+
+/// A displacement byte or word of the original's own instructions (the
+/// two DLLs of [`actor_matrix`] differ only in these).
+fn disp8(img: &Image, at: u32) -> u32 {
+    img.word(at) & 0xff
+}
+
+/// The actor matrix frame of `magic_0588` 0x100025b0 and `magic_0600`
+/// 0x100073e0 (internal, no arguments; a /GS frame; the same code but
+/// for the actor index's offset and the summon block's field offsets,
+/// read from the instructions): the actor `b = (*G_A)[d]`, its handle
+/// `h = H[b]` (`H` operand `+0x25`), the matrix `M = S + D` (`S = *G_S`);
+/// with `M` 0 (never, unless `S` is `-D`), slots 217 and 255 `(b, &L)`
+/// while the DLL's flag is 0 and `b` below 32 (`L` at `ebp - 0x14`);
+/// slot 210 `(h, M)` otherwise; slot 211 `(h, M)`; the 8 words of the
+/// block's keys copied; slot 235 `(M)`; the scale (slot 277's ST0 times
+/// `K`) on the diagonal, times slots 15, 16, 17 (ST0) of the handle;
+/// slots 330, 328, 329 `(M, M, angle)` turn it by three of the copied
+/// floats; one of them down by `K2`; slot 257 `(h, 0)`. Each call sees the
+/// words the earlier ones left on the stack. Returns slot 257's `eax`.
+pub fn actor_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let fl = |g: &G, a: u32| g.read::<f32>(a);
+    let st = |out: crate::Out| st0_f32(out.st0);
+    let actor = |g: &G, ptr: u32, d: u32, tab: u32| {
+        let a = g.read::<u32>(w(ptr));
+        let b = u32::from(g.read::<u8>(a + disp8(img, f + d)));
+        (b, g.read::<u32>(w(tab) + 4 * b))
+    };
+    let s = g.read::<u32>(w(0x18));
+    let (b, h) = actor(g, 0x11, 0x20, 0x25);
+    let m = s.wrapping_add(w(0x2b));
+    if m == 0 {
+        if g.read::<u32>(w(0x4c)) == 0 && b.cast_signed() < 0x20 {
+            let l = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+            let t = slot_target(g, w(0x5d), 217);
+            let mut stack = vec![b, l];
+            g.call(t, 0, &stack);
+            let t = slot_target(g, w(0x6f), 255);
+            stack.splice(0..0, [b, l]);
+            g.call(t, 0, &stack);
+        }
+    } else {
+        let t = slot_target(g, w(0x39), 210);
+        g.call(t, 0, &[h, m]);
+    }
+    let t = slot_target(g, w(0x85), 211);
+    let mut stack = vec![h, m];
+    g.call(t, 0, &stack);
+    let (src, dst) = (w(0x93), w(0x99));
+    for i in 0..8u32 {
+        let v = g.read::<u32>(s.wrapping_add(src) + 4 * i);
+        g.write::<u32>(s.wrapping_add(dst) + 4 * i, v);
+    }
+    let t = slot_target(g, w(0xf2), 235);
+    stack.insert(0, m);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    let (_, h2) = actor(g, 0x100, 0x107, 0x10b);
+    let t = slot_target(g, w(0x110), 277);
+    stack.insert(0, h2);
+    // call width: 18 at most (the earlier calls' words)
+    let x = mul(st(g.call(t, 0, &stack)), k(g, 0x128));
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + o, x);
+    }
+    let (_, h3) = actor(g, 0x13b, 0x142, 0x146);
+    let t = slot_target(g, w(0x14b), 15);
+    stack.insert(0, h3);
+    // call width: 5
+    let r = st(g.call(t, 0, &stack));
+    let v = mul(r, fl(g, m));
+    let t = slot_target(g, w(0x162), 16);
+    g.write::<f32>(m, v);
+    stack.insert(0, h3);
+    // call width: 6
+    let r = st(g.call(t, 0, &stack));
+    let v = mul(fl(g, m + 0x14), r);
+    let t = slot_target(g, w(0x17e), 17);
+    g.write::<f32>(m + 0x14, v);
+    stack.insert(0, h3);
+    // call width: 7
+    let r = st(g.call(t, 0, &stack));
+    let v = mul(r, fl(g, m + 0x28));
+    g.write::<f32>(m + 0x28, v);
+    let mut stack = Vec::new();
+    for (tab, slot, a) in [
+        (0x18eu32, 330u32, 0x1abu32),
+        (0x1c7, 328, 0x1c2),
+        (0x1e9, 329, 0x1e4),
+    ] {
+        let t = slot_target(g, w(tab), slot);
+        let ang = g.read::<u32>(s.wrapping_add(w(a)));
+        stack = vec![m, m, ang];
+        g.call(t, 0, &stack);
+    }
+    let y = sub(fl(g, s.wrapping_add(w(0x200))), k(g, 0x208));
+    g.write::<f32>(s.wrapping_add(w(0x212)), y);
+    let (_, h4) = actor(g, 0x217, 0x21e, 0x222);
+    let t = slot_target(g, w(0x227), 257);
+    stack.splice(0..0, [h4, 0]);
+    Ret::eax(g.call(t, 0, &stack).eax)
+}
+
+/// [`actor_matrix`] in `magic_0588` (583 bytes, 1 overlay).
+pub const ACTOR_MATRIX_0588: Sig = Sig {
+    len: 583,
+    hash: 0xe5bf_6eb6_805f_73aa,
+    calls: &[
+        // __security_check_cookie
+        (0x23f, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`actor_matrix`] in `magic_0600` (583 bytes, 1 overlay).
+pub const ACTOR_MATRIX_0600: Sig = Sig {
+    len: 583,
+    hash: 0x384c_7fd7_d25c_d220,
+    calls: &[
+        // __security_check_cookie
+        (0x23f, Callee::Any),
+    ],
     imports: &[],
 };

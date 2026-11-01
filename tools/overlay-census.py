@@ -5,12 +5,20 @@ after masking what only the link moved, how widely each is shared, which
 g_MagicImports slots each calls, and which are copies of FFX.exe functions
 (ported or not).
 
-  FFX_GAME_DIR=... tools/overlay-census.py [--out DIR] [--jobs N]
+  FFX_GAME_DIR=... tools/overlay-census.py [--out DIR] [--old DIR] [--jobs N]
 
-Functions: a DLL's .text is cut at the exports, the direct call
-targets, the pointers into .text from data sections (function tables) and
-every 16-byte aligned address after int3 padding; a function runs to the
-next start, trailing int3 dropped.
+Functions (docs/formats/magic.md, "The census's functions"): recursive
+descent over a DLL's .text (objdump; an address the linear sweep did not
+decode as an instruction start is disassembled again from there). A
+function starts only at the entry point, an export, a pointer into .text
+from a data section, a direct call target, a code pointer taken in
+reachable code (a relocated immediate: push offset f, mov [x], offset f)
+or a tail-call target (a jump out of a function's range), found to a
+fixed point. It covers every instruction reachable from its start by
+fall-through, jumps, conditional jumps and jump tables (not calls) up to
+the next start, and its jump tables and byte index tables after its
+code; it ends at the last of them. The __SEH_prolog4 scope tables'
+filters and handlers are labels of their function, not starts.
 
 Masking: a relocated dword becomes a token for what it points at: a
 function (by its hash), an import (by name: the overlays import only
@@ -41,9 +49,16 @@ Outputs (default $FFX_WORK/m5/scope):
                          hash, ops group, DLLs sharing the hash, slots
                          (input of tools/magic-worklist.py)
   overlays-census.md     the counts
+  overlay-unreached.tsv  code (not int3 or zero padding) no function start
+                         reaches: not in the census
+  overlay-row-changes.tsv  with --old DIR (an earlier census; it is never
+                         overwritten): per DLL, the rows that changed
+                         (merged, split, resized, recut, dropped, new),
+                         also printed per DLL
 """
 import argparse
 import bisect
+import functools
 import hashlib
 import os
 import pathlib
@@ -82,8 +97,13 @@ def objdump(path, lo=None, hi=None):
 class Module:
     """A PE image cut into functions, with tokens for hashing."""
 
-    def __init__(self, img, insns, starts, name=""):
+    def __init__(self, img, insns, starts, name="", ends=None, fn_insns=None):
+        """`ends` and `fn_insns` ({start: end}, {start: [(pc, length,
+        text)]}) give each function's extent and instructions (the
+        overlays' recursive cut); without them a function runs to the next
+        start, trailing int3 dropped, over the linear `insns`."""
         self.img, self.name = img, name
+        self.ends, self.fn_insns = ends, fn_insns
         self.iat = img.imports()
         self.text = next(blob for _, va, blob, code in img.secs if code)
         self.lo, self.hi = img.text_lo, img.text_hi
@@ -97,11 +117,25 @@ class Module:
         return self.starts[i] if i >= 0 else None
 
     def end_of(self, s):
+        if self.ends is not None:
+            return self.ends[s]
         i = bisect.bisect_right(self.starts, s)
         e = self.starts[i] if i < len(self.starts) else self.hi
         while e > s + 1 and self.text[e - 1 - self.lo] == 0xCC:
             e -= 1
         return e
+
+    def insns_of(self, s, e):
+        """[(pc, next pc, text)] of the function at s (ending at e)."""
+        if self.fn_insns is not None:
+            return [(pc, pc + n, t) for pc, n, t in self.fn_insns[s]]
+        j = bisect.bisect_left(self.pcs, s)
+        out = []
+        while j < len(self.pcs) and self.pcs[j] < e:
+            pc, t = self.insns[j]
+            j += 1
+            out.append((pc, self.pcs[j] if j < len(self.pcs) else e, t))
+        return out
 
     def functions(self):
         """{start: (end, masked bytes, [(kind, value)], mnemonics, insn texts)}."""
@@ -132,19 +166,15 @@ class Module:
                         toks.append((r - s, "R", d0, d1))
                     else:
                         toks.append((r - s, "D"))
-            j = bisect.bisect_left(self.pcs, s)
             mn = []
             texts = []
-            while j < len(self.pcs) and self.pcs[j] < e:
-                pc, t = self.insns[j]
-                j += 1
+            for pc, nxt, t in self.insns_of(s, e):
                 mn.append(t.split(None, 1)[0] if t else "")
                 texts.append(t)
                 m = reach.DIRECT.match(t)
                 if not m or m.group(1).startswith("loop"):
                     continue
                 tgt = int(m.group(2), 16)
-                nxt = self.pcs[j] if j < len(self.pcs) else e
                 if s <= tgt < e or nxt - pc < 5:
                     continue  # internal, or a short (rel8) jump
                 rel = nxt - 4
@@ -191,8 +221,9 @@ def table_global(texts_all):
     return loads.most_common(1)[0][0] if loads else None
 
 
-def slots_of(texts, table):
-    """g_MagicImports slots this function reaches through the table."""
+def slots_of(texts, table, nslots):
+    """g_MagicImports slots (below nslots) this function reaches through the
+    table."""
     held = set()
     out = set()
     for t in texts:
@@ -202,7 +233,7 @@ def slots_of(texts, table):
             continue
         for mm in MEM.finditer(t):
             off = int(mm.group(2) or "0", 16)
-            if mm.group(1) in held and off < 4 * reach.MAGIC_SLOTS:
+            if mm.group(1) in held and off < 4 * nslots:
                 out.add(off // 4)
         parts = t.split(None, 1)
         if parts and parts[0] in ("call", "ret", "jmp"):
@@ -214,33 +245,292 @@ def slots_of(texts, table):
     return out
 
 
-def census_dll(path):
-    img = reach.Image(path)
-    insns = objdump(path)
-    starts = {img.text_lo, *img.exports()}
-    for a, t in insns:
-        m = reach.DIRECT.match(t)
-        if m and m.group(1) == "call":  # jmp targets are mostly loop entries
-            starts.add(int(m.group(2), 16))
+WIDE = re.compile(r"^\s*([0-9a-f]+):\t((?:[0-9a-f]{2} )+)\s*\t?(.*)$")
+JUMP_TABLE = re.compile(r"^jmp\s+DWORD PTR \[e[a-ds][xip]\*4\+0x([0-9a-f]+)\]$")
+BYTE_TABLE = re.compile(r"^movzx\s+e[a-ds][xip],BYTE PTR \[e[a-ds][xip]\+0x([0-9a-f]+)\]$")
+ENDS = ("ret", "int3", "hlt", "ud2", "iret")
+
+
+class Code:
+    """Recursive-descent instructions of one DLL's .text: {pc: (length,
+    text)}. A linear objdump first; an address no decoding reached yet is
+    disassembled again from there (a linear sweep desyncs on the jump
+    tables MSVC puts after a function)."""
+
+    def __init__(self, img, path):
+        self.img, self.path = img, path
+        self.at = {}
+        self.tried = set()
+        self._read(objdump_wide(path))
+
+    def _read(self, lines):
+        for pc, n, t in lines:
+            self.at.setdefault(pc, (n, t))
+
+    def get(self, pc):
+        if pc not in self.at and self.img.in_text(pc) and pc not in self.tried:
+            self.tried.add(pc)
+            hi = min(pc + 0x100, self.img.text_hi)
+            self._read(objdump_wide(self.path, pc, hi, keep_last=hi == self.img.text_hi))
+        return self.at.get(pc)
+
+
+def objdump_wide(path, lo=None, hi=None, keep_last=False):
+    """[(address, length, instruction text)] of objdump -d -w (intel)."""
+    cmd = ["objdump", "-d", "-w", "-M", "intel"]
+    if lo is not None:
+        cmd += [f"--start-address={lo:#x}", f"--stop-address={hi:#x}"]
+    out = subprocess.run(cmd + [str(path)], capture_output=True, text=True, check=True).stdout
+    res = []
+    for line in out.splitlines():
+        m = WIDE.match(line)
+        if m:
+            res.append((int(m.group(1), 16), len(m.group(2).split()), m.group(3).split("#")[0].strip()))
+    if lo is not None and res and not keep_last:
+        res.pop()  # the last one may be cut by the stop address
+    return res
+
+
+def walk(code, start, stops, bound, labels=()):
+    """Every instruction reachable from `start` by fall-through, jumps,
+    conditional jumps and jump tables (not calls) inside [start, bound)
+    (the next start: MSVC lays a function out in one piece). A jump to
+    another function's start (`stops`) or out of the range is a tail call
+    and is not followed. `labels` are more entries of the same function
+    (its SEH filters and handlers). Returns (pcs, call targets, code
+    pointers taken, tail-call targets, tables [(address, kind)])."""
+    img = code.img
+    seen, calls, imms, tails, tables = set(), set(), set(), set(), []
+    todo = [start, *labels]
+
+    def inside(t):
+        if start <= t < bound and t not in stops:
+            return True
+        if t != start:
+            tails.add(t)
+        return False
+
+    while todo:
+        pc = todo.pop()
+        while pc not in seen and (pc == start or (start < pc < bound and pc not in stops)):
+            ins = code.get(pc)
+            if ins is None:
+                break
+            n, t = ins
+            seen.add(pc)
+            parts = t.split(None, 1)
+            mn = parts[0] if parts else ""
+            if mn in ("repz", "rep", "bnd") and len(parts) > 1:
+                mn = parts[1].split(None, 1)[0]
+            i = bisect.bisect_left(img.relocs, pc)
+            while i < len(img.relocs) and img.relocs[i] < pc + n:
+                v = img.dword(img.relocs[i])
+                i += 1
+                # a relocated immediate into .text is an address taken in
+                # code (push offset f, mov [x], offset f); a displacement
+                # (`[...+0x...]`, `ds:0x...`) is a table read
+                if img.in_text(v) and f"+0x{v:x}]" not in t and f"ds:0x{v:x}" not in t:
+                    imms.add(v)
+            m = JUMP_TABLE.match(t)
+            if m:
+                base = int(m.group(1), 16)
+                tables.append((base, "dword"))
+                k = base
+                while k in img.reloc_set and img.in_text(img.dword(k)) and k not in seen and k not in stops:
+                    if start <= img.dword(k) < bound:
+                        todo.append(img.dword(k))
+                    k += 4
+                break
+            m = BYTE_TABLE.match(t)
+            if m and img.in_text(int(m.group(1), 16)):
+                tables.append((int(m.group(1), 16), "byte"))
+            if mn in ENDS:
+                break
+            m = reach.DIRECT.match(t)
+            if m:
+                tgt = int(m.group(2), 16)
+                if m.group(1) == "call":
+                    calls.add(tgt)
+                elif m.group(1) == "jmp":
+                    if not inside(tgt):
+                        break
+                    pc = tgt
+                    continue
+                elif inside(tgt):
+                    todo.append(tgt)
+            elif mn == "jmp":  # through a register or memory
+                break
+            pc += n
+    return seen, calls, imms, tails, tables
+
+
+def seh_labels(img):
+    """The words of the __SEH_prolog4 scope tables (in the CRT's
+    __try/__except functions) that point at filters and handlers: labels
+    inside the function, not functions. A scope table is a .rdata address
+    a relocated word in .text names, with negative GS and EH cookie
+    offsets at +0 and +8, followed at +16 by records (enclosing
+    level -2 or below 256, filter 0 or a relocated .text pointer, handler a
+    relocated .text pointer)."""
+    out = set()
+    for r in img.relocs:
+        if not img.in_text(r):
+            continue
+        rec = img.dword(r)
+        if img.section(rec) not in (".rdata", ".rodata"):
+            continue
+        # the header: GS and EH cookie offsets (negative frame offsets, -2
+        # for none) and their XOR offsets
+        gs, eh = img.dword(rec), img.dword(rec + 8)
+        if (gs is None or eh is None or gs < 0xFFFF0000 or eh < 0xFFFF0000
+                or rec in img.reloc_set or rec + 8 in img.reloc_set):
+            continue
+        rec += 16
+        found = []
+        for _ in range(256):
+            enc, flt, hnd = (img.dword(rec + 4 * k) for k in range(3))
+            if enc is None or not (enc == 0xFFFFFFFE or enc < 256):
+                break
+            if not (hnd and rec + 8 in img.reloc_set and img.in_text(hnd)):
+                break
+            if flt and not (rec + 4 in img.reloc_set and img.in_text(flt)):
+                break
+            found += [rec + 4, rec + 8]
+            rec += 12
+        out |= set(found)
+    return out
+
+
+def cut_dll(img, code):
+    """The functions of one DLL: {start: (end, [(pc, length, text)])} and
+    notes. Starts: the entry point, the exports, pointers into .text from
+    the data sections, and, to a fixed point, the call targets and the
+    code pointers taken in code reachable from them, and the targets of
+    tail calls (jumps out of a function's range). A function covers every
+    instruction reachable from its start by jumps inside its range (up to
+    the next start; `walk`), its jump tables and byte index tables after
+    its code; it ends at the last of them."""
+    starts = {img.entry, *img.exports()}
+    seh = seh_labels(img)
     for r in img.relocs:
         v = img.dword(r)
-        # pointers in .text are mostly switch tables and their case labels
-        if img.in_text(v) and not img.in_text(r):
+        if img.in_text(v) and not img.in_text(r) and r not in seh:
             starts.add(v)
-    text = next(blob for _, va, blob, code in img.secs if code)
-    for k in range(1, len(text)):
-        a = img.text_lo + k
-        if a % 16 == 0 and text[k - 1] == 0xCC and text[k] != 0xCC:
-            starts.add(a)
-    pcs = {a for a, _ in insns}
-    starts = {s for s in starts if s in pcs}
-    mod = Module(img, insns, starts, path.name)
-    fns = mod.functions()
-    table = table_global([t for _, t in insns])
+    labels = sorted({img.dword(r) for r in seh} - starts)
+
+    def labels_in(s, e):
+        return labels[bisect.bisect_right(labels, s):bisect.bisect_left(labels, e)]
+
+    starts = {s for s in starts if img.in_text(s) and code.get(s)}
+    # to a fixed point: a new start shortens its neighbour's range, which
+    # can turn more of the neighbour's jumps into tail calls
+    while True:
+        order = sorted(starts)
+        new = set()
+        for i, s in enumerate(order):
+            e = order[i + 1] if i + 1 < len(order) else img.text_hi
+            _, calls, imms, tails, _ = walk(code, s, starts, e, labels_in(s, e))
+            new |= {c for c in calls | imms | tails if c not in starts and img.in_text(c) and code.get(c)}
+        if not new:
+            break
+        starts |= new
+    order = sorted(starts)
+    text = next(blob for _, va, blob, c in img.secs if c)
+    fns = {}
+    covered = bytearray(len(text))
+    for s in order:
+        nxt = order[bisect.bisect_right(order, s)] if bisect.bisect_right(order, s) < len(order) else img.text_hi
+        pcs, _, _, _, tables = walk(code, s, starts, nxt, labels_in(s, nxt))
+        ins = sorted((pc, *code.at[pc]) for pc in pcs)
+        end = max(pc + n for pc, n, _ in ins)
+        cap = max(nxt, end)
+        for base, kind in sorted(tables):
+            if not end <= base < cap:
+                continue
+            if kind == "dword":
+                k = base
+                while k + 4 <= cap and k in img.reloc_set and img.in_text(img.dword(k)):
+                    k += 4
+                end = max(end, k)
+            else:
+                k = base
+                while k < cap and text[k - img.text_lo] != 0xCC:
+                    k += 1
+                end = max(end, k)
+        for pc, n, _ in ins:
+            covered[pc - img.text_lo:pc - img.text_lo + n] = b"\1" * n
+        fns[s] = (end, ins)
+    for s, (e, _) in fns.items():
+        covered[s - img.text_lo:e - img.text_lo] = b"\1" * (e - s)
+    # code no start reaches (dead, or reached through something unseen),
+    # without int3 and zero padding
+    gaps = []
+    k = 0
+    while k < len(text):
+        if covered[k] or text[k] in (0xCC, 0):
+            k += 1
+            continue
+        j = k
+        while j < len(text) and not covered[j]:
+            j += 1
+        e = j
+        while e > k and text[e - 1] in (0xCC, 0):
+            e -= 1
+        gaps.append((img.text_lo + k, e - k))
+        k = j
+    overlaps = sum(1 for a, b in zip(order, order[1:]) if fns[a][0] > b)
+    return fns, {"gaps": gaps, "overlaps": overlaps}
+
+
+def census_dll(path, nslots):
+    img = reach.Image(path)
+    code = Code(img, path)
+    fns, notes = cut_dll(img, code)
+    insns = sorted((pc, t) for pc, (_, t) in code.at.items())
+    mod = Module(img, insns, fns, path.name, ends={s: e for s, (e, _) in fns.items()},
+                 fn_insns={s: ins for s, (_, ins) in fns.items()})
+    table = table_global([t for _, ins in fns.values() for _, _, t in ins])
     rows = {}
-    for s, (e, b, toks, mn, texts) in fns.items():
-        rows[s] = (e - s, b, toks, ops_of(mn), sorted(slots_of(texts, table)) if table else [], mn)
-    return path.name, len(text), img.exports(), rows
+    for s, (e, b, toks, mn, texts) in mod.functions().items():
+        rows[s] = (e - s, b, toks, ops_of(mn), sorted(slots_of(texts, table, nslots)) if table else [], mn)
+    text = next(blob for _, va, blob, c in img.secs if c)
+    return path.name, len(text), img.exports(), rows, notes
+
+
+def row_changes(old_tsv, new):
+    """[(dll, kind, old rows, new rows)] between an earlier census's
+    overlay-dll-functions.tsv and `new` ({dll: {address: size}}). Rows are
+    grouped into clusters of overlapping old and new ranges; a cluster
+    whose rows are not the same is one change: `resized` (one row each,
+    same address), `merged` (several old rows, one new), `split` (one old,
+    several new), `recut` (several each), `dropped` (old rows only: code no
+    start reaches now), `new` (new rows only)."""
+    old = defaultdict(dict)
+    with open(old_tsv, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            c = line.split("\t")
+            old[c[0]][int(c[1], 16)] = int(c[2])
+    out = []
+    for name in sorted(set(old) | set(new)):
+        o, n = old.get(name, {}), new.get(name, {})
+        same = {a for a in o if n.get(a) == o[a]}
+        ev = sorted([(a, a + max(sz, 1), 0) for a, sz in o.items() if a not in same]
+                    + [(a, a + max(sz, 1), 1) for a, sz in n.items() if a not in same])
+        cluster, hi = [], 0
+        for item in ev + [(1 << 40, 0, 0)]:
+            if cluster and item[0] >= hi:
+                os_ = [f"{a:#x}+{o[a]}" for a, _, k in cluster if k == 0]
+                ns = [f"{a:#x}+{n[a]}" for a, _, k in cluster if k == 1]
+                kind = ("dropped" if not ns else "new" if not os_ else
+                        "resized" if len(os_) == len(ns) == 1 else "merged" if len(ns) == 1 else
+                        "split" if len(os_) == 1 else "recut")
+                out.append((name, kind, os_, ns))
+                cluster, hi = [], 0
+            cluster.append(item)
+            hi = max(hi, item[1])
+    return out
 
 
 def exe_chunk(args):
@@ -252,16 +542,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("--out", type=pathlib.Path, default=WORK / "m5/scope")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    ap.add_argument("--old", type=pathlib.Path, default=None,
+                    help="an earlier census directory: print, per DLL, the rows that changed")
     args = ap.parse_args()
+    if args.old and args.old.resolve() == args.out.resolve():
+        sys.exit("--old and --out are the same directory: write the new census elsewhere")
     exe = refs.default_exe()
     dlls = sorted((pathlib.Path(exe).parent / "magicFiles/FFX").glob("magic_*.dll"))
 
+    # g_MagicImports' length, from FFX.exe (tools/reach.py)
+    nslots = reach.Image(exe).magic_imports()[0]
     with ProcessPoolExecutor(args.jobs) as pool:
-        results = list(pool.map(census_dll, dlls, chunksize=4))
+        results = list(pool.map(functools.partial(census_dll, nslots=nslots), dlls, chunksize=4))
 
     # ---- shapes then hashes, per DLL (callees are in the same DLL)
     per_dll = {}
-    for name, text_size, exports, rows in results:
+    notes = {}
+    for name, text_size, exports, rows, note in results:
+        notes[name] = note
         shapes = {s: shape_of(r[1], r[2]) for s, r in rows.items()}
         hashes = {s: hash_of(r[1], r[2], shapes) for s, r in rows.items()}
         per_dll[name] = (text_size, exports, rows, shapes, hashes)
@@ -386,6 +684,31 @@ def main():
                 h = hashes[s]
                 f.write(f"{name}\t{s:#010x}\t{size}\t{h}\t{ops}\t{len(distinct[h]['dlls'])}\t"
                         f"{','.join(map(str, slots))}\n")
+
+    # ---- dead code, overlaps, and the rows that changed since --old
+    gaps = [(name, a, n) for name in sorted(notes) for a, n in notes[name]["gaps"]]
+    with open(args.out / "overlay-unreached.tsv", "w", encoding="utf-8") as f:
+        f.write("# dll\taddress\tbytes (code no function start reaches; not a census row)\n")
+        for name, a, n in gaps:
+            f.write(f"{name}\t{a:#010x}\t{n}\n")
+    if args.old:
+        changes = row_changes(args.old / "overlay-dll-functions.tsv",
+                              {name: {s: r[0] for s, r in v[2].items()} for name, v in per_dll.items()})
+        with open(args.out / "overlay-row-changes.tsv", "w", encoding="utf-8") as f:
+            f.write("# dll\tchange\told rows (address+size)\tnew rows (address+size)\n")
+            for name, kind, old, new in changes:
+                f.write(f"{name}\t{kind}\t{' '.join(old)}\t{' '.join(new)}\n")
+        by_dll = defaultdict(list)
+        for c in changes:
+            by_dll[c[0]].append(c)
+        for name in sorted(by_dll):
+            cs = by_dll[name]
+            kinds = Counter(c[1] for c in cs)
+            print(f"{name}: " + ", ".join(f"{k} {kinds[k]}" for k in sorted(kinds)) + ": " + "; ".join(
+                f"{k} {' '.join(o) or '-'} -> {' '.join(n) or '-'}" for _, k, o, n in cs))
+        kinds = Counter(c[1] for c in changes)
+        print(f"rows changed against {args.old}: {len(by_dll)} DLLs; " +
+              ", ".join(f"{k} {kinds[k]}" for k in sorted(kinds)))
 
     # ---- counts
     total_fns =sum(len(v[2]) for v in per_dll.values())

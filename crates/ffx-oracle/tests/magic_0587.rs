@@ -147,3 +147,41 @@ fn glow_turn() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x100029b0: the sway frame with the angle above, between and below
+/// its bounds; the float slots answering in ST0, the matrix slots
+/// keeping what they get.
+#[test]
+fn sway_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x29b0);
+    let s = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(at + 0x18), s);
+    for (slot, n) in [(314u32, 1usize), (277, 2), (15, 1), (16, 1), (17, 1)] {
+        rec(&mut t, slot, n, move |_, _| slot);
+        t.stub_st0(slot, move |_, _| 0.375 + f64::from(slot) / 64.0);
+    }
+    for (slot, n) in [(235u32, 1usize), (328, 3), (329, 3), (330, 3), (231, 3)] {
+        rec(&mut t, slot, n, move |m, a| {
+            if a[0] >= 0x2000_0000 {
+                magic_owna::dump(m, 0x100 + slot % 0x40, a[0], 16);
+            }
+            slot
+        });
+    }
+    let sr = t.img.rel32_target(at + 0xb1);
+    let h = t.img.word(sr + 0x1d);
+    t.set_u32(h, 0x00a5_001d);
+    for angle in [10.0f32, 0.5, -10.0] {
+        t.write(s, &[0x2b; 0xb00]);
+        for (i, o) in [0xa80u32, 0xa88, 0xa90, 0xa98, 0xa94, 0xa9c, 0x6c0, 0x6c8]
+            .into_iter()
+            .enumerate()
+        {
+            t.set_u32(s + o, (1.25 * i as f32 - 3.0).to_bits());
+        }
+        t.set_u32(s + 0xa84, angle.to_bits());
+        t.set_u16(s + 0x664, 0x0008);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

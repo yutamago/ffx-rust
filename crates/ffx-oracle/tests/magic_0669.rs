@@ -14,9 +14,9 @@ mod magic_hi;
 mod magic_l3;
 mod magic_owna;
 
-use magic::{Call, Eax};
+use magic::{Call, Eax, SCRATCH};
 use magic_hi::{f, konst};
-use magic_owna::{recs, twin};
+use magic_owna::{rec, recs, twin};
 
 const N: u16 = 669;
 
@@ -105,6 +105,50 @@ fn draw_restart() {
     let obj = magic::SCRATCH + 0x1000;
     for answer in [0u32, 1] {
         t.set_u32(cell, answer);
+        t.write(obj, &[0x5b; 0x80]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// 0x100018b0: the frame at a point with slot 712 saying 0 and 1; the
+/// globals distinct, slot 712 keeping the game flag and the part cell.
+#[test]
+fn frame_at() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x18b0);
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x100;
+    t.set_u32(t.img.word(at + 0xdc), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    rec(&mut t, 941, 1, move |_, _| table);
+    let (gp, lock) = (SCRATCH + 0x30, SCRATCH + 0x20);
+    t.set_u32(t.img.word(at + 0x81), gp);
+    t.set_u32(t.img.word(at + 0x8e), lock);
+    t.set_u32(t.img.word(at + 0xaa), lock);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 712, 2, move |m, _| {
+        let l = m.r32(lock);
+        let p = m.r32(gp);
+        m.w32(SCRATCH + 0x2_0400, l);
+        m.w32(SCRATCH + 0x2_0404, p);
+        m.r32(cell) & 1
+    });
+    recs(
+        &mut t,
+        &[(325, 2), (258, 1), (231, 3), (230, 2), (713, 1), (714, 5)],
+    );
+    for op in [0x4au32, 0x55, 0x61, 0x69, 0x74] {
+        let g = t.img.word(at + op);
+        t.set_u32(g, 0x00a5_0000 + op);
+    }
+    let obj = SCRATCH + 0x1000;
+    for bits in [0u32, 1] {
+        t.set_u32(cell, bits);
+        t.set_u32(gp, 0x7777);
+        t.set_u32(lock, 0x6666);
         t.write(obj, &[0x5b; 0x80]);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }

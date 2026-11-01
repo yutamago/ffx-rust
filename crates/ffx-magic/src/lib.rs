@@ -35,6 +35,7 @@
 #![allow(clippy::many_single_char_names)]
 
 // the runtime and code shared by many overlays
+pub mod h6_setup;
 pub mod l1_opu;
 pub mod l3_common;
 pub mod l3_opu;
@@ -150,6 +151,7 @@ pub mod m0076;
 pub mod m0078;
 pub mod m0082;
 pub mod m0084;
+pub mod m0089;
 pub mod m0090;
 pub mod m0093;
 pub mod m0098;
@@ -161,6 +163,7 @@ pub mod m0153;
 pub mod m0154;
 pub mod m0159;
 pub mod m0163;
+pub mod m0164;
 pub mod m0165;
 pub mod m0166;
 pub mod m0168;
@@ -179,16 +182,86 @@ pub mod m0196;
 pub mod m0198;
 pub mod m0201;
 pub mod m0203;
+pub mod m0205;
 pub mod m0219;
+pub mod m0243;
+pub mod m0244;
+pub mod m0245;
+pub mod m0251;
+pub mod m0253;
+pub mod m0255;
+pub mod m0260;
+pub mod m0262;
 pub mod m0263;
+pub mod m0267;
+pub mod m0269;
+pub mod m0270;
+pub mod m0272;
+pub mod m0273;
+pub mod m0292;
+pub mod m0295;
+pub mod m0297;
+pub mod m0298;
+pub mod m0301;
+pub mod m0303;
+pub mod m0304;
+pub mod m0305;
+pub mod m0307;
+pub mod m0311;
+pub mod m0312;
+pub mod m0313;
+pub mod m0316;
+pub mod m0325;
+pub mod m0330;
+pub mod m0341;
+pub mod m0342;
+pub mod m0348;
 pub mod m0351;
+pub mod m0352;
+pub mod m0353;
+pub mod m0356;
+pub mod m0357;
+pub mod m0359;
+pub mod m0360;
+pub mod m0361;
+pub mod m0367;
+pub mod m0368;
+pub mod m0370;
+pub mod m0371;
+pub mod m0372;
+pub mod m0375;
+pub mod m0378;
+pub mod m0379;
+pub mod m0380;
+pub mod m0381;
+pub mod m0382;
 pub mod m0385;
+pub mod m0387;
+pub mod m0388;
+pub mod m0389;
 pub mod m0390;
 pub mod m0393;
 pub mod m0394;
 pub mod m0395;
 pub mod m0396;
 pub mod m0397;
+pub mod m0413;
+pub mod m0415;
+pub mod m0416;
+pub mod m0417;
+pub mod m0419;
+pub mod m0421;
+pub mod m0424;
+pub mod m0429;
+pub mod m0430;
+pub mod m0431;
+pub mod m0432;
+pub mod m0434;
+pub mod m0440;
+pub mod m0443;
+pub mod m0445;
+pub mod m0447;
+pub mod m0449;
 pub mod m0450;
 pub mod m0473;
 pub mod m0474;
@@ -229,13 +302,16 @@ pub mod m0528;
 pub mod m0529;
 pub mod m0530;
 pub mod m0531;
+pub mod m0533;
 pub mod m0534;
+pub mod m0535;
 pub mod m0536;
 pub mod m0537;
 pub mod m0539;
 pub mod m0540;
 pub mod m0561;
 pub mod m0564;
+pub mod m0568;
 pub mod m0573;
 pub mod m0577;
 pub mod m0582;
@@ -897,6 +973,7 @@ ports! {
     "m0070 step d3c0" => m0070::E_D3C0, m0070::e_d3c0;
     "m0070 step d410" => m0070::STEP_D410, m0070::step_d410;
     "m0071 spin visit" => m0071::E3F00, m0071::e3f00;
+    "m0272 vector op (calling thunk)" => m0272::CALL_VECTOR_OP, s3_wrap::ecx_call;
     "m0072 place" => m0072::PLACE, m0072::place;
     "m0090 step" => m0090::STEP, m0090::step;
     "m0098 show" => m0098::SHOW, m0098::show;
@@ -1105,6 +1182,38 @@ ports! {
     "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
     "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
     // end of magic r5 own (0450 and up) entries
+    // magic r6 own (0450 and up): entries
+    "m0499 frame" => m0499::FRAME, m0499::frame;
+    "m0513 task" => m0513::TASK, m0513::task;
+    "m0513 motion task" => m0513::MOTION_TASK, m0513::motion_task;
+    "m0513 light task" => m0513::LIGHT_TASK, m0513::light_task;
+    "m0514 motion task" => m0514::MOTION_TASK, m0514::motion_task;
+    "m0514 fade task" => m0514::FADE_TASK, m0514::fade_task;
+    "m0514 colour task" => m0514::COLOUR_TASK, m0514::colour_task;
+    "m0530 frame" => m0530::FRAME, m0530::frame;
+    "m0530 start effect" => m0530::START_EFFECT, m0530::start_effect;
+    "m0531 frame" => m0531::FRAME, m0531::frame;
+    "m0531 start effect" => m0531::START_EFFECT, m0531::start_effect;
+    "m0534 aim" => m0534::AIM, m0534::aim;
+    "m0537 setup" => m0537::SETUP, m0537::setup;
+    "m0539 start effect" => m0539::START_EFFECT, m0539::start_effect;
+    "m0539 setup" => m0539::SETUP, m0539::setup;
+    "m0540 setup" => m0540::SETUP, m0540::setup;
+    "m0535 frame step" => m0535::FRAME_STEP, m0535::frame_step;
+    "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
+    "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
+    "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
+    "m0587 sway frame" => m0587::SWAY_FRAME, m0587::sway_frame;
+    "m0577 spark task" => m0577::SPARK_TASK, m0577::spark_task;
+    "m0589 blend" => m0589::BLEND, m0589::blend;
+    "m0672 fade task" => m0672::FADE_TASK, m0672::fade_task;
+    "m0672 fade start" => m0672::FADE_START, m0672::fade_start;
+    "m0666 start b" => m0666::START_B, m0666::start_b;
+    "m0641 frame" => m0641::FRAME, m0641::frame;
+    "m0669 frame at" => m0669::FRAME_AT, m0669::frame_at;
+    "m0661 start at" => m0661::START_AT, m0661::start_at;
+    "m0664 frame bone" => m0664::FRAME_BONE, m0664::frame_bone;
+    // end of magic r6 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
     "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
@@ -2083,6 +2192,12 @@ ports! {
     "m0078 start 0083" => m0078::START_0083, m0078::start_0083;
     "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
     "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
+    "m0089 camera start 0089" => m0089::START_0089, m0089::start_0089;
+    "m0089 camera start 0090" => m0089::START_0090, m0089::start_0090;
+    "m0089 camera start 0091" => m0089::START_0091, m0089::start_0091;
+    "m0089 camera start 0094" => m0089::START_0094, m0089::start_0094;
+    "m0089 camera start 0095" => m0089::START_0095, m0089::start_0095;
+    "m0089 camera start 0096" => m0089::START_0096, m0089::start_0096;
     "m0082 camera step" => m0082::CAMERA_STEP, m0082::camera_step;
     "m0082 camera parts step" => m0082::CAMERA_PARTS_STEP, m0082::camera_parts_step;
     "m0070 summon frame (376)" => m0070::SUMMON_FRAME_376, m0070::summon_frame_376;
@@ -2130,6 +2245,134 @@ ports! {
     "m0351 sounds_3" => m0351::SOUNDS_3, m0351::sounds_3;
     "m0385 step_ready" => m0385::STEP_READY, m0385::step_ready;
     "m0397 script_end" => m0397::SCRIPT_END, m0397::script_end;
+    // own3 ports (magic-r6-own)
+    "m0164 summon frame (214)" => m0164::SUMMON_FRAME_214, m0164::summon_frame_214;
+    "m0171 start-up" => m0171::START_UP, m0171::start_up;
+    "m0184 part setup" => m0184::PART_SETUP, m0184::part_setup;
+    "m0187 object start" => m0187::OBJECT_START, m0187::object_start;
+    "m0195 copy start" => m0195::COPY_START, m0195::copy_start;
+    "m0195 table start" => m0195::TABLE_START, m0195::table_start;
+    "m0243 facing" => m0243::FACING, m0243::facing;
+    "m0243 object facing" => m0243::OBJECT_FACING, m0243::object_facing;
+    "m0245 frame" => m0245::FRAME, m0245::frame;
+    "m0251 part programs" => m0251::PART_PROGRAMS, m0251::part_programs;
+    "m0253 frame" => m0253::FRAME, m0253::frame;
+    "m0253 part slots" => m0253::PART_SLOTS, m0253::part_slots;
+    "m0255 draw placed" => m0255::DRAW_PLACED, m0255::draw_placed;
+    "m0255 draw moved" => m0255::DRAW_MOVED, m0255::draw_moved;
+    "m0262 static node 6d20" => m0262::STATIC_NODE_6D20, m0262::static_node_6d20;
+    "m0262 static node 6dc0" => m0262::STATIC_NODE_6DC0, m0262::static_node_6dc0;
+    "m0262 static node 6e90" => m0262::STATIC_NODE_6E90, m0262::static_node_6e90;
+    "m0262 model start" => m0262::MODEL_START, m0262::model_start;
+    "m0263 static node" => m0263::STATIC_NODE, m0263::static_node;
+    "m0263 model start" => m0263::MODEL_START, m0263::model_start;
+    "m0269 sprite block" => m0269::SPRITE_BLOCK, m0269::sprite_block;
+    "m0270 object facing" => m0270::OBJECT_FACING, m0270::object_facing;
+    "m0270 sound task" => m0270::SOUND_TASK, m0270::sound_task;
+    "m0273 static node" => m0273::STATIC_NODE, m0273::static_node;
+    "m0292 start-up" => m0292::START_UP, m0292::start_up;
+    "m0292 draw restart" => m0292::DRAW_RESTART, m0292::draw_restart;
+    "m0292 draw 0293" => m0292::DRAW_0293, m0292::draw_0293;
+    "m0301 motion step" => m0301::MOTION_STEP, m0301::motion_step;
+    "m0301 object start" => m0301::OBJECT_START, m0301::object_start;
+    "m0301 mark step" => m0301::MARK_STEP, m0301::mark_step;
+    "m0303 frame" => m0303::FRAME, m0303::frame;
+    "m0303 place" => m0303::PLACE, m0303::place;
+    "m0304 rise" => m0304::RISE, m0304::rise;
+    "m0304 drift" => m0304::DRIFT, m0304::drift;
+    "m0304 eased height" => m0304::EASED_HEIGHT, m0304::eased_height;
+    "m0305 frame" => m0305::FRAME, m0305::frame;
+    "m0307 end" => m0307::END, m0307::end;
+    "m0307 part model" => m0307::PART_MODEL, m0307::part_model;
+    "m0311 frame" => m0311::FRAME, m0311::frame;
+    "m0312 start" => m0312::START, m0312::start;
+    "m0312 start flagged" => m0312::START_FLAGGED, m0312::start_flagged;
+    "m0312 callbacks" => m0312::CALLBACKS, m0312::callbacks;
+    "m0312 start plain" => m0312::START_PLAIN, m0312::start_plain;
+    "m0312 place" => m0312::PLACE, m0312::place;
+    "m0312 object start" => m0312::OBJECT_START, m0312::object_start;
+    "m0316 frame" => m0316::FRAME, m0316::frame;
+    "m0316 sprite task" => m0316::SPRITE_TASK, m0316::sprite_task;
+    "m0325 frame" => m0325::FRAME, m0325::frame;
+    "m0313 object start" => m0313::OBJECT_START, m0313::object_start;
+    "m0313 turn there" => m0313::TURN_THERE, m0313::turn_there;
+    "m0313 turn back" => m0313::TURN_BACK, m0313::turn_back;
+    "m0313 mark" => m0313::MARK, m0313::mark;
+    "m0341 start-up" => m0341::START_UP, m0341::start_up;
+    "m0341 free parts" => m0341::FREE_PARTS, m0341::free_parts;
+    "m0342 summon frame" => m0342::SUMMON_FRAME, m0342::summon_frame;
+    "m0348 tasks" => m0348::TASKS, m0348::tasks;
+    "m0351 model reset" => m0351::MODEL_RESET, m0351::model_reset;
+    "m0351 part start a" => m0351::PART_START_A, m0351::part_start_a;
+    "m0351 part start b" => m0351::PART_START_B, m0351::part_start_b;
+    "m0351 part start c" => m0351::PART_START_C, m0351::part_start_c;
+    "m0351 camera fade" => m0351::CAMERA_FADE, m0351::camera_fade;
+    "m0352 frame" => m0352::FRAME, m0352::frame;
+    "m0353 motion reset" => m0353::MOTION_RESET, m0353::motion_reset;
+    "m0353 fade step" => m0353::FADE_STEP, m0353::fade_step;
+    "m0357 object start" => m0357::OBJECT_START, m0357::object_start;
+    "m0372 part start" => m0372::PART_START, m0372::part_start;
+    "m0356 copies step" => m0356::COPIES_STEP, m0356::copies_step;
+    "m0357 copies step" => m0357::COPIES_STEP, m0357::copies_step;
+    "m0357 mark repeat" => m0357::MARK_REPEAT, m0357::mark_repeat;
+    "m0359 step a" => m0359::STEP_A, m0359::step_a;
+    "m0359 step b" => m0359::STEP_B, m0359::step_b;
+    "m0359 step c" => m0359::STEP_C, m0359::step_c;
+    "m0359 step d" => m0359::STEP_D, m0359::step_d;
+    "m0360 step a" => m0360::STEP_A, m0360::step_a;
+    "m0360 step b" => m0360::STEP_B, m0360::step_b;
+    "m0360 place" => m0360::PLACE, m0360::place;
+    "m0361 count step" => m0361::COUNT_STEP, m0361::count_step;
+    "m0361 next step" => m0361::NEXT_STEP, m0361::next_step;
+    "m0367 start-up" => m0367::START_UP, m0367::start_up;
+    "m0367 start-up 0369" => m0367::START_UP_0369, m0367::start_up_0369;
+    "m0368 draw" => m0368::DRAW, m0368::draw;
+    "m0370 start" => m0370::START, m0370::start;
+    "m0372 frame" => m0372::FRAME, m0372::frame;
+    "m0378 object start" => m0378::OBJECT_START, m0378::object_start;
+    "m0380 task" => m0380::TASK, m0380::task;
+    "m0381 poses" => m0381::POSES, m0381::poses;
+    "m0381 start-up 0383" => m0381::START_UP_0383, m0381::start_up_0383;
+    "m0382 mark start" => m0382::MARK_START, m0382::mark_start;
+    "m0382 big start" => m0382::BIG_START, m0382::big_start;
+    "m0388 motion wait" => m0388::MOTION_WAIT, m0388::motion_wait;
+    "m0375 part start" => m0375::PART_START, m0375::part_start;
+    "m0389 mode switch" => m0389::MODE_SWITCH, m0389::mode_switch;
+    "m0397 actor position" => m0397::ACTOR_POSITION, m0397::actor_position;
+    "m0397 party check" => m0397::PARTY_CHECK, m0397::party_check;
+    "m0416 copies step" => m0416::COPIES_STEP, m0416::copies_step;
+    "m0413 frame" => m0413::FRAME, m0413::frame;
+    "m0415 turns step" => m0415::TURNS_STEP, m0415::turns_step;
+    "m0419 frame" => m0419::FRAME, m0419::frame;
+    "m0421 copies start" => m0421::COPIES_START, m0421::copies_start;
+    "m0397 sprite tasks" => m0397::SPRITE_TASKS, m0397::sprite_tasks;
+    "m0395 script end" => m0395::SCRIPT_END, m0395::script_end;
+    "m0430 start" => m0430::START, m0430::start;
+    "m0430 fade step" => m0430::FADE_STEP, m0430::fade_step;
+    "m0430 fade start" => m0430::FADE_START, m0430::fade_start;
+    "m0443 sound step" => m0443::SOUND_STEP, m0443::sound_step;
+    "m0447 camera copy" => m0447::CAMERA_COPY, m0447::camera_copy;
+    "m0449 frame" => m0449::FRAME, m0449::frame;
+    "m0394 script end" => m0394::SCRIPT_END, m0394::script_end;
+    "m0429 frame" => m0429::FRAME, m0429::frame;
+    "m0440 frame" => m0440::FRAME, m0440::frame;
+    "m0445 step" => m0445::STEP, m0445::step;
+    "m0396 script end" => m0396::SCRIPT_END, m0396::script_end;
+    "m0397 camera turn" => m0397::CAMERA_TURN, m0397::camera_turn;
+    "m0397 point step" => m0397::POINT_STEP, m0397::point_step;
+    "m0316 step" => m0316::STEP, m0316::step;
+    "m0352 camera point" => m0352::CAMERA_POINT, m0352::camera_point;
+    "m0375 part draw" => m0375::PART_DRAW, m0375::part_draw;
+    "m0352 camera point show" => m0352::CAMERA_POINT_SHOW, m0352::camera_point_show;
+    "m0351 frame" => m0351::FRAME, m0351::frame;
+    "m0370 draw" => m0370::DRAW, m0370::draw;
+    "m0267 frame" => m0267::FRAME, m0267::frame;
+    "m0361 start" => m0361::START, m0361::start;
+    "m0370 frame" => m0370::FRAME, m0370::frame;
+    "m0361 object start" => m0361::OBJECT_START, m0361::object_start;
+    "m0370 part start" => m0370::PART_START, m0370::part_start;
+    "m0375 part restart" => m0375::PART_RESTART, m0375::part_restart;
+    "m0361 sound start" => m0361::SOUND_START, m0361::sound_start;
     "staged nodes task" => s6_misc::STAGED_NODES_TASK, s6_misc::staged_nodes_task;
     "staged nodes task (b)" => s6_misc::STAGED_NODES_TASK_B, s6_misc::staged_nodes_task;
     "staged nodes task (c)" => s6_misc::STAGED_NODES_TASK_C, s6_misc::staged_nodes_task;
@@ -2423,6 +2666,30 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0671 start", &m0671::START),
     ("m0672 copy keys", &m0672::COPY_KEYS),
     // end of magic r5 own (0450 and up) internal functions
+    // magic r6 own (0450 and up): internal functions
+    ("m0499 parts refresh", &m0499::PARTS_REFRESH),
+    ("m0512 setup", &m0512::SETUP),
+    ("m0512 setup from", &m0512::SETUP_FROM),
+    ("m0512 ground", &m0512::GROUND),
+    ("m0513 over node", &m0513::OVER_NODE),
+    ("m0513 between", &m0513::BETWEEN),
+    ("m0513 for target", &m0513::FOR_TARGET),
+    ("m0513 lit node", &m0513::LIT_NODE),
+    ("m0514 colour setup", &m0514::COLOUR_SETUP),
+    ("m0514 glow setup", &m0514::GLOW_SETUP),
+    ("m0514 burst setup", &m0514::BURST_SETUP),
+    ("m0514 spark setup", &m0514::SPARK_SETUP),
+    ("m0533 model setup", &m0533::MODEL_SETUP),
+    ("m0568 sway", &m0568::SWAY),
+    ("m0573 refresh", &m0573::REFRESH),
+    ("m0573 motion setup", &m0573::MOTION_SETUP),
+    ("m0577 spark setup", &m0577::SPARK_SETUP),
+    ("m0577 light node", &m0577::LIGHT_NODE),
+    ("m0588 actor matrix", &m0588::ACTOR_MATRIX_0588),
+    ("m0600 actor matrix", &m0588::ACTOR_MATRIX_0600),
+    ("m0585 drift setup", &m0585::DRIFT_SETUP),
+    ("m0606 start tasks", &m0606::START_TASKS),
+    // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
     ("m0394 scaled", &m0394::SCALED),
@@ -2917,6 +3184,44 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0183 camera point", &m0183::CAMERA_POINT),
     ("m0186 node cleared", &m0186::NODE_CLEARED),
     ("m0186 node abc", &m0186::NODE_ABC),
+    // own3 internal (magic-r6-own)
+    ("m0164 mean point", &m0164::MEAN_POINT),
+    ("m0186 model record", &m0186::MODEL_RECORD),
+    ("m0203 part record", &m0203::PART_RECORD),
+    ("m0205 scale matrix", &m0205::SCALE_MATRIX),
+    ("m0244 object start", &m0244::OBJECT_START),
+    ("m0260 part programs", &m0260::PART_PROGRAMS),
+    ("m0262 models leave", &m0262::MODELS_LEAVE),
+    ("m0267 transform points", &m0267::TRANSFORM_POINTS),
+    ("m0273 tail node", &m0273::TAIL_NODE),
+    ("m0295 node under", &m0295::NODE_UNDER),
+    ("m0297 motion setup", &m0297::MOTION_SETUP),
+    ("m0297 mode switch", &m0297::MODE_SWITCH),
+    ("m0298 models to list", &m0298::MODELS_TO_LIST),
+    ("m0330 model nodes", &m0330::MODEL_NODES),
+    ("m0379 node under", &m0379::NODE_UNDER),
+    ("m0389 strip record", &m0389::STRIP_RECORD),
+    ("m0387 sprite record", &m0387::SPRITE_RECORD),
+    ("m0387 strip record", &m0387::STRIP_RECORD),
+    ("m0388 motion task", &m0388::MOTION_TASK),
+    ("m0417 take record", &m0417::TAKE_RECORD),
+    ("m0387 sprite size", &m0387::SPRITE_SIZE),
+    ("m0424 release", &m0424::RELEASE),
+    ("m0424 part record", &m0424::PART_RECORD),
+    ("m0431 sounds ready", &m0431::SOUNDS_READY),
+    ("m0431 colour reset", &m0431::COLOUR_RESET),
+    ("m0449 camera start", &m0449::CAMERA_START),
+    ("m0449 actors pass", &m0449::ACTORS_PASS),
+    ("m0432 sound start", &m0432::SOUND_START),
+    ("m0434 colour show", &m0434::COLOUR_SHOW),
+    ("m0431 camera start", &m0431::CAMERA_START),
+    ("m0431 show and sounds", &m0431::SHOW_AND_SOUNDS),
+    ("m0371 block reset", &m0371::BLOCK_RESET),
+    ("m0397 party mean", &m0397::PARTY_MEAN),
+    ("m0395 start-up", &m0395::START_UP),
+    ("m0273 sprite setup", &m0273::SPRITE_SETUP),
+    ("m0267 scale matrix", &m0267::SCALE_MATRIX),
+    ("m0352 camera start", &m0352::CAMERA_START),
     ("part motion", &s6_misc::PART_MOTION),
     ("motion sequence step", &s6_misc::MOTION_SEQUENCE_STEP),
     ("start object (anim 2)", &s6_misc::START_OBJECT_ANIM_2),

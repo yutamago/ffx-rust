@@ -187,3 +187,71 @@ pub const EFFECT_FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// An object's frame at a bone (0x10001c60, an overlay table entry,
+/// `(obj)`): slot 237 `(*G_H, BONE, 0, obj + 0x40)` with bone 0xba for
+/// the array's first object (within 0x80 bytes of operand `+0x0a`), 0xbe
+/// for the others; `+0x44` -0.01; the object drawn (slot 258, slot 231
+/// `(*G_A, *G_B, *G_C)`, slot 230 `(*G_D, *G_A)`, slot 712 `(obj, 0x30)`
+/// under the game flag with `**G_P = ITEM`; the earlier words left on the
+/// stack); when 712 says nonzero, slot 713 `(obj)` removes it and the
+/// part starts again with program 3
+/// ([`start_part`](crate::part_draw::start_part)). Returns 1.
+pub fn frame_bone<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, op: u32| g.read::<u32>(w(op));
+    let obj = fr.arg(g, 0);
+    let bone = if obj.wrapping_sub(w(0xa)) & 0xffff_ff80 == 0 {
+        0xba
+    } else {
+        0xbe
+    };
+    let t = slot_target(g, w(0x18), 237);
+    let h = r(g, 0x34);
+    g.call(t, 0, &[h, bone, 0, obj + 0x40]);
+    let t = slot_target(g, w(0x3b), 258);
+    g.write::<u32>(obj + 0x44, 0xbc23_d70a);
+    let mut stack = vec![obj];
+    g.call(t, 0, &stack);
+    let a = r(g, 0x55);
+    let t = slot_target(g, w(0x5a), 231);
+    let b = r(g, 0x60);
+    let c = r(g, 0x6c);
+    stack.splice(0..0, [c, b, a]);
+    // call width: 4
+    g.call(t, 0, &stack);
+    let a = r(g, 0x74);
+    let t = slot_target(g, w(0x79), 230);
+    let d = r(g, 0x7f);
+    stack.splice(0..0, [d, a]);
+    // call width: 6
+    g.call(t, 0, &stack);
+    let gp = r(g, 0x8c);
+    g.write::<u32>(gp, w(0x94));
+    let lock = r(g, 0x99);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0xa7), 712);
+    stack.splice(0..0, [obj, 0x30]);
+    // call width: 8
+    let res = g.call(t, 0, &stack).eax;
+    let lock = r(g, 0xb5);
+    g.write::<u32>(lock, saved);
+    if res != 0 {
+        let gp = r(g, 0xc4);
+        g.write::<u32>(gp, w(0xcb));
+        let t = slot_target(g, w(0xd0), 713);
+        g.call(t, 0, &[obj]);
+        crate::part_draw::start_part(g, img, f, obj, [0xdd, 0xe3, 0xe8, 0xf0, 0x10b], 0xc, &[obj]);
+    }
+    Ret::eax(1)
+}
+
+/// [`frame_bone`] (282 bytes, 1 overlay).
+pub const FRAME_BONE: Sig = Sig {
+    len: 282,
+    hash: 0xfacd_7641_12d5_9aef,
+    calls: &[(0x10b, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
