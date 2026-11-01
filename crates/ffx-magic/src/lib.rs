@@ -203,8 +203,22 @@ pub mod m0353;
 pub mod m0356;
 pub mod m0357;
 pub mod m0359;
+pub mod m0360;
+pub mod m0361;
+pub mod m0367;
+pub mod m0368;
+pub mod m0370;
 pub mod m0372;
+pub mod m0375;
+pub mod m0378;
+pub mod m0379;
+pub mod m0380;
+pub mod m0381;
+pub mod m0382;
 pub mod m0385;
+pub mod m0387;
+pub mod m0388;
+pub mod m0389;
 pub mod m0390;
 pub mod m0393;
 pub mod m0394;
@@ -1981,6 +1995,27 @@ ports! {
     "m0359 step b" => m0359::STEP_B, m0359::step_b;
     "m0359 step c" => m0359::STEP_C, m0359::step_c;
     "m0359 step d" => m0359::STEP_D, m0359::step_d;
+    "m0360 step a" => m0360::STEP_A, m0360::step_a;
+    "m0360 step b" => m0360::STEP_B, m0360::step_b;
+    "m0360 place" => m0360::PLACE, m0360::place;
+    "m0361 count step" => m0361::COUNT_STEP, m0361::count_step;
+    "m0361 next step" => m0361::NEXT_STEP, m0361::next_step;
+    "m0367 start-up" => m0367::START_UP, m0367::start_up;
+    "m0367 start-up 0369" => m0367::START_UP_0369, m0367::start_up_0369;
+    "m0368 draw" => m0368::DRAW, m0368::draw;
+    "m0370 start" => m0370::START, m0370::start;
+    "m0372 frame" => m0372::FRAME, m0372::frame;
+    "m0378 object start" => m0378::OBJECT_START, m0378::object_start;
+    "m0380 task" => m0380::TASK, m0380::task;
+    "m0381 poses" => m0381::POSES, m0381::poses;
+    "m0381 start-up 0383" => m0381::START_UP_0383, m0381::start_up_0383;
+    "m0382 mark start" => m0382::MARK_START, m0382::mark_start;
+    "m0382 big start" => m0382::BIG_START, m0382::big_start;
+    "m0388 motion wait" => m0388::MOTION_WAIT, m0388::motion_wait;
+    "m0375 part start" => m0375::PART_START, m0375::part_start;
+    "m0389 mode switch" => m0389::MODE_SWITCH, m0389::mode_switch;
+    "m0397 actor position" => m0397::ACTOR_POSITION, m0397::actor_position;
+    "m0397 party check" => m0397::PARTY_CHECK, m0397::party_check;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2587,6 +2622,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0297 mode switch", &m0297::MODE_SWITCH),
     ("m0298 models to list", &m0298::MODELS_TO_LIST),
     ("m0330 model nodes", &m0330::MODEL_NODES),
+    ("m0379 node under", &m0379::NODE_UNDER),
+    ("m0389 strip record", &m0389::STRIP_RECORD),
+    ("m0387 sprite record", &m0387::SPRITE_RECORD),
+    ("m0387 strip record", &m0387::STRIP_RECORD),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -13,6 +13,13 @@ const N: u16 = 243;
 /// above, inside and below the wrap's range, and on NaN).
 const ANGLES: [f32; 7] = [-9.0, 0.5, 3.5, 12.0, -0.25, f32::NAN, 6.5];
 
+/// The floats that put `K - f` exactly on the wrap's bounds (`K`, `HI`,
+/// `LO` at the operands given), for slot 333 to answer.
+fn on_bounds(t: &Twin, at: u32, (k, hi, lo): (u32, u32, u32)) -> [f32; 2] {
+    let fl = |op: u32| f32::from_bits(t.u32(t.img.word(at + op)));
+    [fl(k) - fl(hi), fl(k) - fl(lo)]
+}
+
 /// 0x10001d50: the parts' facing for no, one and several parts.
 #[test]
 fn facing() {
@@ -21,13 +28,15 @@ fn facing() {
     let w = |t: &Twin, off: u32| t.img.word(at + off);
     rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
     let calls = magic_owna::row(333);
+    let mut angles = ANGLES.to_vec();
+    angles.extend(on_bounds(&t, at, (0x3a, 0x47, 0x4f)));
     t.stub_st0(333, move |m, _| {
         let k = m.r32(calls);
-        f64::from(ANGLES[(k as usize) % ANGLES.len()])
+        f64::from(angles[(k as usize) % angles.len()])
     });
     t.set_u32(w(&t, 0x27), 0x00ab_0027);
     let parts = w(&t, 0x15);
-    for n in [0i32, 1, 5, -1] {
+    for n in [0i32, 1, 5, -1, 3] {
         for i in 0..6 {
             t.set_u32(parts + 0x130 * i, f(9.0));
         }
@@ -49,13 +58,15 @@ fn object_facing() {
     rec(&mut t, 237, 4, |_, a| 0x0237_0000 ^ a[0]);
     rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
     let calls = magic_owna::row(333);
+    let mut angles = ANGLES.to_vec();
+    angles.extend(on_bounds(&t, at, (0x54, 0x64, 0x78)));
     t.stub_st0(333, move |m, _| {
         let k = m.r32(calls);
-        f64::from(ANGLES[(k as usize) % ANGLES.len()])
+        f64::from(angles[(k as usize) % angles.len()])
     });
     t.set_u32(t.img.word(at + 0x2d), 0x00ab_002d);
     let obj = SCRATCH + 0x1000;
-    for frames in [3u32, 0, 0, 0, 0, 0, 0, 0] {
+    for frames in [3u32, 0, 0, 0, 0, 0, 0, 0, 0, 0] {
         t.write(obj, &[0x5c; 0x120]);
         t.set_u32(obj + 0x118, frames);
         let c = Call {

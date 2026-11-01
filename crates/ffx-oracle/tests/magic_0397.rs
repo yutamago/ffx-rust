@@ -48,3 +48,65 @@ fn script_end() {
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// 0x10005800: the caster (-1) and a party actor.
+#[test]
+fn actor_position() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x5800);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    rec(&mut t, 262, 4, |m, a| {
+        for (i, at) in (0u32..).zip(&a[1..4]) {
+            m.w32(*at, 0x0262_0000 + i);
+        }
+        0x262
+    });
+    rec(&mut t, 268, 3, |_, a| 0x0268_0000 ^ a[0]);
+    t.set_u32(w(&t, 0x1b), 0x00ca_001b);
+    let bytes = SCRATCH + 0x700;
+    t.write(bytes, &[3, 1, 2, 0]);
+    t.set_u32(w(&t, 0x22), bytes);
+    let table = w(&t, 0x2d);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, 0x0b00_0000 + i);
+    }
+    let obj = SCRATCH + 0x1000;
+    for i in [0xffff_ffffu32, 1] {
+        t.write(obj, &[0x5c; 0x130]);
+        t.set_u32(obj + 0x120, i);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// 0x100064b0: no party, members all answering 0, one answering, the
+/// caster's own byte among them.
+#[test]
+fn party_check() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x64b0);
+    let list = SCRATCH + 0x700;
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], m.r32(SCRATCH + 0x6f0));
+        list
+    });
+    rec(&mut t, 637, 1, |m, a| {
+        u32::from(a[0] == m.r32(SCRATCH + 0x6f4))
+    });
+    let own = t.img.word(at + 0x21);
+    t.set_u8(own, 7);
+    let state = SCRATCH + 0x1000;
+    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+    for (n, bytes, yes) in [
+        (0u32, [1u8, 2, 3, 7], 0xffu32),
+        (3, [1, 2, 3, 7], 0xff),
+        (3, [1, 2, 3, 7], 2),
+        (4, [1, 2, 3, 7], 0xff),
+        (4, [7, 9, 3, 7], 3),
+    ] {
+        t.write(list, &bytes);
+        t.set_u32(SCRATCH + 0x6f0, n);
+        t.set_u32(SCRATCH + 0x6f4, yes);
+        t.write(state, &[0x22; 0x60]);
+        t.check_entry(at, Call::default(), &[state], Eax::Checked);
+    }
+}

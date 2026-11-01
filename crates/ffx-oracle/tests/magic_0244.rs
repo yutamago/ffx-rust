@@ -41,6 +41,14 @@ fn object_start() {
         t.write(old, &[0x2c; 0x10]);
         t.write(obj, &[0x5c; 0x140]);
         t.set_u16(free, nodes);
+        // the pool's nodes: links junk, payload 0 (free)
+        let rover = t.u32(t.img.word(pa + 0x16)) & 0xffff;
+        let base = t.img.word(pa + 0x2f);
+        for i in [rover, (rover + 2) % 0x3ff] {
+            t.set_u32(base + 12 * i, 0x5a5a_0000 + i);
+            t.set_u32(base + 12 * i + 4, 0x5b5b_0000 + i);
+            t.set_u32(base + 12 * i + 8, 0);
+        }
         let c = Call {
             ecx: ctx,
             edx: obj,

@@ -49,3 +49,82 @@ pub const SCRIPT_END: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// An actor's position (0x10005800, cdecl `(obj)`): the actor `i`
+/// (`+0x120`; -1 is the caster `*X`, `+0x1b`, else the table `+0x2d` at
+/// the byte `B[i]`, `B` = `*P`, `+0x22`); slot 262 `(a, v, v + 4, v + 8)`
+/// and slot 268 `(a, 0x10, v)` with `v` = `obj + 0xd0`, then `v + 0xc`
+/// = 1.0. Returns slot 268's `eax`.
+pub fn actor_position<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let obj = fr.arg(g, 0);
+    let i = g.read::<u32>(obj + 0x120);
+    let v = obj + 0xd0;
+    let a = if i == u32::MAX {
+        g.read::<u32>(w(0x1b))
+    } else {
+        let b = g.read::<u8>(g.read::<u32>(w(0x22)).wrapping_add(i));
+        g.read::<u32>(w(0x2d).wrapping_add(4 * u32::from(b)))
+    };
+    let s = slot_target(g, w(0x3a), 0x418 / 4);
+    g.call(s, 0, &[a, v, v + 4, v + 8]);
+    let s = slot_target(g, w(0x49), 0x430 / 4);
+    // call width: 7 (the earlier call's words under it)
+    let eax = g.call(s, 0, &[a, 0x10, v, a, v, v + 4, v + 8]).eax;
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    Ret::eax(eax)
+}
+
+/// [`actor_position`] (103 bytes, 1 overlay).
+pub const ACTOR_POSITION: Sig = Sig {
+    len: 103,
+    hash: 0x874f_7ae0_52ca_7564,
+    calls: &[],
+    imports: &[],
+};
+
+/// The party check (0x100064b0, cdecl `(state)`, locals `n` at `ebp - 8`
+/// and a byte at `ebp - 1`): slot 288 `(9, &n)` gives the party's bytes;
+/// each one but the caster's own byte `*S` (`+0x21`) is asked slot 637
+/// `(b)`, and any non-zero answer clears the result; with none the
+/// state's byte `+0x56` becomes 1. Returns the state then, else the last
+/// value the code left in `eax` (slot 637's answer, the list with its low
+/// byte the last skipped byte, or the list).
+pub fn party_check<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let n_at = ebp.wrapping_sub(8);
+    let s = slot_target(g, w(0x0e), 0x480 / 4);
+    let list = g.call(s, 0, &[9, n_at]).eax;
+    let own = g.read::<u8>(w(0x21));
+    g.write::<u8>(ebp.wrapping_sub(1), own);
+    let mut eax = list;
+    let mut ok = true;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(n_at) {
+        let b = g.read::<u8>(list.wrapping_add(i));
+        eax = (eax & !0xff) | u32::from(b);
+        if b != own {
+            let s = slot_target(g, w(0x44), 0x9f4 / 4);
+            eax = g.call(s, 0, &[u32::from(b)]).eax;
+            if eax != 0 {
+                ok = false;
+            }
+        }
+        i += 1;
+    }
+    if !ok {
+        return Ret::eax(eax);
+    }
+    let state = fr.arg(g, 0);
+    g.write::<u8>(state + 0x56, 1);
+    Ret::eax(state)
+}
+
+/// [`party_check`] (120 bytes, 1 overlay).
+pub const PARTY_CHECK: Sig = Sig {
+    len: 120,
+    hash: 0x10d6_f17f_1e4b_7a72,
+    calls: &[],
+    imports: &[],
+};
