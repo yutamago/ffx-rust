@@ -67,10 +67,10 @@ fn summon_frame_214() {
         t.set_u32(w(&t, 0x0b), phase);
         t.set_u32(w(&t, 0x4a), flag);
         t.set_u32(SCRATCH + 0x37f0, u32::from(flag == 0));
-        // the done bit starts clear except in the phase-6 case
+        // the done bit starts clear except in the phase-6 case (the done
+        // word is also the second word the closing test ANDs, +0xd9)
         t.set_u32(w(&t, 0x90), 0x10 | u32::from(phase == 6));
         t.set_u32(w(&t, 0xd3), 0x20 | a);
-        t.set_u32(w(&t, 0xd9), 0x0f);
         t.set_u16(w(&t, 0xe7), half);
         t.set_u32(w(&t, 0xf5), 0x00f5_0000);
         t.set_u8(w(&t, 0x28), pass);
@@ -80,14 +80,15 @@ fn summon_frame_214() {
             t.set_u32(kid(i) + 8, if i + 1 == kids { root } else { kid(i + 1) });
         }
         t.set_u32(first, if kids == 0 { root } else { kid(0) });
-        // the bone node holds still (its pass is the new one); the gated
-        // ones move (no children)
+        // the bone node holds still (its pass is the new one); the first
+        // gated one holds still too (the same pass byte), the second moves
+        // (no children)
         let bone = w(&t, 0x3b);
         t.set_u32(bone + 0x10, bone);
         t.set_u8(bone + 0x1a, pass.wrapping_add(1));
-        for node in [w(&t, 0xa9), w(&t, 0xc9)] {
+        for (node, p) in [(w(&t, 0xa9), pass.wrapping_add(1)), (w(&t, 0xc9), 0)] {
             t.set_u32(node + 0x10, node);
-            t.set_u8(node + 0x1a, 0);
+            t.set_u8(node + 0x1a, p);
             t.set_u8(node + 0x1b, 0);
         }
         let c = Call {

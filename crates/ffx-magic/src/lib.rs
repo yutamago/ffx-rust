@@ -168,9 +168,42 @@ pub mod m0219;
 pub mod m0243;
 pub mod m0244;
 pub mod m0245;
+pub mod m0251;
+pub mod m0253;
+pub mod m0255;
+pub mod m0260;
+pub mod m0262;
 pub mod m0263;
+pub mod m0267;
+pub mod m0269;
+pub mod m0270;
 pub mod m0272;
+pub mod m0273;
+pub mod m0292;
+pub mod m0295;
+pub mod m0297;
+pub mod m0298;
+pub mod m0301;
+pub mod m0303;
+pub mod m0304;
+pub mod m0305;
+pub mod m0307;
+pub mod m0311;
+pub mod m0312;
+pub mod m0313;
+pub mod m0316;
+pub mod m0325;
+pub mod m0330;
+pub mod m0341;
+pub mod m0342;
+pub mod m0348;
 pub mod m0351;
+pub mod m0352;
+pub mod m0353;
+pub mod m0356;
+pub mod m0357;
+pub mod m0359;
+pub mod m0372;
 pub mod m0385;
 pub mod m0390;
 pub mod m0393;
@@ -1884,6 +1917,70 @@ ports! {
     "m0243 facing" => m0243::FACING, m0243::facing;
     "m0243 object facing" => m0243::OBJECT_FACING, m0243::object_facing;
     "m0245 frame" => m0245::FRAME, m0245::frame;
+    "m0251 part programs" => m0251::PART_PROGRAMS, m0251::part_programs;
+    "m0253 frame" => m0253::FRAME, m0253::frame;
+    "m0253 part slots" => m0253::PART_SLOTS, m0253::part_slots;
+    "m0255 draw placed" => m0255::DRAW_PLACED, m0255::draw_placed;
+    "m0255 draw moved" => m0255::DRAW_MOVED, m0255::draw_moved;
+    "m0262 static node 6d20" => m0262::STATIC_NODE_6D20, m0262::static_node_6d20;
+    "m0262 static node 6dc0" => m0262::STATIC_NODE_6DC0, m0262::static_node_6dc0;
+    "m0262 static node 6e90" => m0262::STATIC_NODE_6E90, m0262::static_node_6e90;
+    "m0262 model start" => m0262::MODEL_START, m0262::model_start;
+    "m0263 static node" => m0263::STATIC_NODE, m0263::static_node;
+    "m0263 model start" => m0263::MODEL_START, m0263::model_start;
+    "m0269 sprite block" => m0269::SPRITE_BLOCK, m0269::sprite_block;
+    "m0270 object facing" => m0270::OBJECT_FACING, m0270::object_facing;
+    "m0270 sound task" => m0270::SOUND_TASK, m0270::sound_task;
+    "m0273 static node" => m0273::STATIC_NODE, m0273::static_node;
+    "m0292 start-up" => m0292::START_UP, m0292::start_up;
+    "m0292 draw restart" => m0292::DRAW_RESTART, m0292::draw_restart;
+    "m0292 draw 0293" => m0292::DRAW_0293, m0292::draw_0293;
+    "m0301 motion step" => m0301::MOTION_STEP, m0301::motion_step;
+    "m0301 object start" => m0301::OBJECT_START, m0301::object_start;
+    "m0301 mark step" => m0301::MARK_STEP, m0301::mark_step;
+    "m0303 frame" => m0303::FRAME, m0303::frame;
+    "m0303 place" => m0303::PLACE, m0303::place;
+    "m0304 rise" => m0304::RISE, m0304::rise;
+    "m0304 drift" => m0304::DRIFT, m0304::drift;
+    "m0304 eased height" => m0304::EASED_HEIGHT, m0304::eased_height;
+    "m0305 frame" => m0305::FRAME, m0305::frame;
+    "m0307 end" => m0307::END, m0307::end;
+    "m0307 part model" => m0307::PART_MODEL, m0307::part_model;
+    "m0311 frame" => m0311::FRAME, m0311::frame;
+    "m0312 start" => m0312::START, m0312::start;
+    "m0312 start flagged" => m0312::START_FLAGGED, m0312::start_flagged;
+    "m0312 callbacks" => m0312::CALLBACKS, m0312::callbacks;
+    "m0312 start plain" => m0312::START_PLAIN, m0312::start_plain;
+    "m0312 place" => m0312::PLACE, m0312::place;
+    "m0312 object start" => m0312::OBJECT_START, m0312::object_start;
+    "m0316 frame" => m0316::FRAME, m0316::frame;
+    "m0316 sprite task" => m0316::SPRITE_TASK, m0316::sprite_task;
+    "m0325 frame" => m0325::FRAME, m0325::frame;
+    "m0313 object start" => m0313::OBJECT_START, m0313::object_start;
+    "m0313 turn there" => m0313::TURN_THERE, m0313::turn_there;
+    "m0313 turn back" => m0313::TURN_BACK, m0313::turn_back;
+    "m0313 mark" => m0313::MARK, m0313::mark;
+    "m0341 start-up" => m0341::START_UP, m0341::start_up;
+    "m0341 free parts" => m0341::FREE_PARTS, m0341::free_parts;
+    "m0342 summon frame" => m0342::SUMMON_FRAME, m0342::summon_frame;
+    "m0348 tasks" => m0348::TASKS, m0348::tasks;
+    "m0351 model reset" => m0351::MODEL_RESET, m0351::model_reset;
+    "m0351 part start a" => m0351::PART_START_A, m0351::part_start_a;
+    "m0351 part start b" => m0351::PART_START_B, m0351::part_start_b;
+    "m0351 part start c" => m0351::PART_START_C, m0351::part_start_c;
+    "m0351 camera fade" => m0351::CAMERA_FADE, m0351::camera_fade;
+    "m0352 frame" => m0352::FRAME, m0352::frame;
+    "m0353 motion reset" => m0353::MOTION_RESET, m0353::motion_reset;
+    "m0353 fade step" => m0353::FADE_STEP, m0353::fade_step;
+    "m0357 object start" => m0357::OBJECT_START, m0357::object_start;
+    "m0372 part start" => m0372::PART_START, m0372::part_start;
+    "m0356 copies step" => m0356::COPIES_STEP, m0356::copies_step;
+    "m0357 copies step" => m0357::COPIES_STEP, m0357::copies_step;
+    "m0357 mark repeat" => m0357::MARK_REPEAT, m0357::mark_repeat;
+    "m0359 step a" => m0359::STEP_A, m0359::step_a;
+    "m0359 step b" => m0359::STEP_B, m0359::step_b;
+    "m0359 step c" => m0359::STEP_C, m0359::step_c;
+    "m0359 step d" => m0359::STEP_D, m0359::step_d;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2481,6 +2578,15 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0203 part record", &m0203::PART_RECORD),
     ("m0205 scale matrix", &m0205::SCALE_MATRIX),
     ("m0244 object start", &m0244::OBJECT_START),
+    ("m0260 part programs", &m0260::PART_PROGRAMS),
+    ("m0262 models leave", &m0262::MODELS_LEAVE),
+    ("m0267 transform points", &m0267::TRANSFORM_POINTS),
+    ("m0273 tail node", &m0273::TAIL_NODE),
+    ("m0295 node under", &m0295::NODE_UNDER),
+    ("m0297 motion setup", &m0297::MOTION_SETUP),
+    ("m0297 mode switch", &m0297::MODE_SWITCH),
+    ("m0298 models to list", &m0298::MODELS_TO_LIST),
+    ("m0330 model nodes", &m0330::MODEL_NODES),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -109,6 +109,8 @@ fn part_record() {
     for (with_parent, index) in [(false, 0u32), (true, 2)] {
         t.write(node, &[0x5c; 0x120]);
         t.write(parent, &[0x3c; 0x40]);
+        // the child count, unlike its neighbours
+        t.set_u16(parent + 0x18, 5);
         t.set_u32(parent + 0x10, kid);
         t.write(kid, &[0x2c; 0x40]);
         let words = [

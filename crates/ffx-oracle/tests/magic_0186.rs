@@ -127,6 +127,8 @@ fn model_record() {
     for case in 0..3 {
         t.write(node, &[0x5c; 0x200]);
         t.write(parent, &[0x3c; 0x40]);
+        // the child count, unlike its neighbours
+        t.set_u16(parent + 0x18, 5);
         t.write(kid, &[0x2c; 0x40]);
         match case {
             1 => t.set_u32(parent + 0x10, parent),
