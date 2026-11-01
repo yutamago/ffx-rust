@@ -6076,3 +6076,160 @@ fn l6_menu_proc_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn l6_reset_chr_pos_matches_the_original() {
+    // the vector helpers and the length for real; no system or map (a
+    // zero list: the image's low page), no model, no vertices, a vertex
+    // in a triangle of the first, a later or no group
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b91);
+        for case in 0..60_u32 {
+            let small = |rng: &mut Rng| (rng.below(2000) as f32 / 20.0 - 50.0).to_bits();
+            let list = t.zeros(0x100);
+            for off in (0x68..0x80).step_by(4) {
+                t.w32(list + off, small(&mut rng));
+            }
+            t.w32(
+                list + 0xf4,
+                [1.0_f32, 1.5, 3.0, 0.7, 5.0][rng.below(5) as usize].to_bits(),
+            );
+            let map = t.words(&[0, 0, list]);
+            let sys = t.words(&[map, 0]);
+            t.global(l66::YN_MAP_SYSTEM, sys);
+            let n = [0, 1, 6, 12][rng.below(4) as usize];
+            let verts: Vec<u32> = (0..2 * 16)
+                .map(|_| {
+                    let a = (rng.below(400) as i32 - 200) as u16;
+                    let b = (rng.below(400) as i32 - 200) as u16;
+                    u32::from(a) | u32::from(b) << 16
+                })
+                .collect();
+            let mut verts = verts;
+            // two equally near vertices: the first wins
+            verts[2] = verts[0];
+            verts[3] = verts[1];
+            let verts = t.words(&verts);
+            let groups_n = rng.below(4);
+            let groups = t.zeros(0x10 * 4);
+            for g in 0..groups_n {
+                let c = rng.below(4);
+                let tris = t.zeros(0x10 * 4);
+                for k in 0..4 {
+                    for q in 0..3 {
+                        t.write(
+                            tris + 0x10 * k + 2 * q,
+                            &(rng.below(n.max(1)) as u16).to_le_bytes(),
+                        );
+                    }
+                }
+                t.write(groups + 0x10 * g + 8, &(c as u16).to_le_bytes());
+                t.w32(groups + 0x10 * g + 0xc, tris);
+            }
+            let m = t.zeros(0x40);
+            t.write(m + 6, &(groups_n as u16).to_le_bytes());
+            t.write(m + 0xa, &(n as u16).to_le_bytes());
+            t.w32(
+                m + 0xc,
+                [1.0_f32, 3.0, 7.0, 0.3, 16.0][rng.below(5) as usize].to_bits(),
+            );
+            t.w32(m + 0x18, verts);
+            t.w32(m + 0x1c, groups);
+            let model = if case % 7 == 2 { 0 } else { m };
+            t.stub_sym(l66::bridge::ID_GET_PTR, 1, false, 0, 0, Ret::Val(model));
+            t.stub_sym(
+                l66::bridge::GET_PLAYER,
+                2,
+                false,
+                0,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l66::bridge::SET_POS3, 3, false, 4, 0, Ret::Val(rng.next()));
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - l66::bridge::RESET_FRAME - 0x60);
+            t.check("rcuiResetChrPos", 0x0093_7b70, Conv::Cdecl, &[], |o| {
+                // the oracle's esi, ebx, edi at the call
+                Out::U32(l6m6::reset_chr_pos(
+                    o,
+                    ebp,
+                    [0x2222_2222, 0x1111_1111, 0x3333_3333],
+                ))
+            });
+            l6_same_words(t, "rcuiResetChrPos", ebp, ebp - 0x5c, 0x58);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_fp_proc_matches_the_original() {
+    // no work area; every button up and down with the number at and past
+    // its ends; the stick to a character or an element of it
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6ba1);
+        for case in 0..400_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xa00)
+            };
+            if w != 0 {
+                let v = [0, 1, 9, 10, 0x62, 0x63, 0x5a, 0x64, 0xffff_fff0, rng.below(100)]
+                    [rng.below(10) as usize];
+                t.w32(w + 0x5fc, v);
+                t.w32(w + 0x8b0, rng.below(4));
+                t.w32(w + 0x8b4, u32::from(rng.chance(2)));
+            }
+            t.global(l66::RCUI_WORK, w);
+            let disp = t.rebase(l66::bridge::FP_DISP);
+            t.patch(disp, &u32::from(rng.chance(2)).to_le_bytes());
+            for (sym, tag, n) in [
+                (l66::ADD_ITEMS, 1, 2),
+                (l66::bridge::FP_RESTART, 2, 1),
+                (l66::bridge::FP_END, 3, 1),
+                (l66::bridge::FP_DISP_ON, 4, 1),
+                (l66::bridge::FP_DISP_OFF, 5, 1),
+                (l66::bridge::FP_RESTART_MODE2, 6, 1),
+                (l66::bridge::FP_LOAD_TEXT, 7, 0),
+                (l66::bridge::FP_SAVE, 8, 0),
+                (l66::WINDOW_CREATE, 9, 9),
+                (l66::bridge::FP_DISP_DEBUG, 10, 0),
+                (l66::bridge::OPTPOS_GET_ELEMENT, 11, 3),
+                (l66::bridge::FP_SET_STICK_CHR, 12, 3),
+                (l66::bridge::FP_RESTART_GROUP, 13, 1),
+                (l66::bridge::FP_FREE, 14, 1),
+                (l66::bridge::FP_END_GROUP, 15, 1),
+                (l66::bridge::FP_ID_STATE, 16, 1),
+                (l66::bridge::SET_TEXT, 17, 3),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            let (msg, param) = match rng.below(9) {
+                7 => (0x8006, 0x6a),
+                8 => (0x800a, 0x6a),
+                0..=2 => (0x8006, 0x69 + rng.below(16)),
+                3 => (0x800a, 0x69 + rng.below(16)),
+                4 => (0x8011, rng.next()),
+                5 => (l6_msg(&mut rng), rng.word()),
+                _ => ([0x8001, 0x8003][rng.below(2) as usize], rng.next()),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l66::bridge::FP_FRAME - 0x40);
+            t.check(
+                "rcuiFpProc_00933cc0",
+                0x0093_3cc0,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m6::fp_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiFpProc_00933cc0", ebp, ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}

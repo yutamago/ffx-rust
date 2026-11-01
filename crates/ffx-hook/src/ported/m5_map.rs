@@ -807,4 +807,20 @@ ported! {
     rcuiMenuProc_00935000 @ 0x0093_5000 => extern "C" fn rcui_menu_proc(window: u32, msg: u32, param: u32) -> u32 {
         l6m6::menu_proc(&mut mem(), window, msg, param).unwrap_or(0)
     }
+    /// `rcuiResetChrPos()` -> `Ch_SetPos3`'s `eax` (the original's
+    /// 0x5c-byte frame, its vectors and scratch, in this shim's).
+    rcuiResetChrPos @ 0x0093_7b70 => extern "C" fn rcui_reset_chr_pos() -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map6::bridge::RESET_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map6::bridge::RESET_FRAME;
+        // junk read: the scale vectors' saved esi/ebx/edi words; 0 (brief
+        // 2026-10-24)
+        l6m6::reset_chr_pos(&mut mem(), ebp, [0; 3])
+    }
+    /// `(window, msg, param)`: the field effect test window's procedure
+    /// (its texts in a frame).
+    rcuiFpProc_00933cc0 @ 0x0093_3cc0 => extern "C" fn rcui_fp_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map6::bridge::FP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map6::bridge::FP_FRAME;
+        l6m6::fp_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
 }
