@@ -2622,6 +2622,13 @@ ports! {
     "beams spread (slot 38)" => s9_misc::BEAMS_SPREAD_38, s9_misc::beams_spread_38;
     "mov eax, 1; ret" => runtime::ONE_RET, runtime::one_ret;
     "beams spread (flat)" => s9_misc::BEAMS_SPREAD_FLAT, s9_misc::beams_spread_flat;
+    "trail head (0446)" => s9_misc::TRAIL_HEAD_0446, s9_misc::trail_head;
+    "trail head (0544)" => s9_misc::TRAIL_HEAD_0544, s9_misc::trail_head;
+    "light fly-in (0565)" => s9_misc::LIGHT_FLY_IN_0565, s9_misc::light_fly_in;
+    "light fly-in (0644)" => s9_misc::LIGHT_FLY_IN_0644, s9_misc::light_fly_in;
+    "light arc (0565)" => s9_misc::LIGHT_ARC_0565, s9_misc::light_arc;
+    "light arc (0644)" => s9_misc::LIGHT_ARC_0644, s9_misc::light_arc;
+    "light drift" => s9_misc::LIGHT_DRIFT, s9_misc::light_drift;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

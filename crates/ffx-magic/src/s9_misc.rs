@@ -352,12 +352,15 @@ pub const SUMMON_LOAD_PAIRED: Sig = Sig {
     imports: &[],
 };
 
+/// A port on its frame.
+type Port<G> = fn(&mut G, &Image, &Frame) -> Ret;
+
 /// Calls the internal port `port` of the function at `target` as the
 /// original does: `args` pushed below `esp` (the first one on top), the
 /// return address below them, `ecx` and `edx` as given.
 fn sub_call<G: Game>(
     g: &mut G,
-    port: fn(&mut G, &Image, &Frame) -> Ret,
+    port: Port<G>,
     img: &Image,
     (target, esp, ecx, edx): (u32, u32, u32, u32),
     args: &[u32],
@@ -1772,6 +1775,441 @@ pub const BEAMS_SPREAD_FLAT: Sig = Sig {
         (0x354, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
         (0x46c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
         (0x501, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The trail's head moved and drawn (cdecl `(O)`; a /GS frame, `ebp` =
+/// `esp - 4`, the point `P` at `ebp-0x14`, the matrix `M` at `ebp-0x54`;
+/// `B = *G_B`): the wait `B[0x5c00]` counts down to 0; `P` = slot 237
+/// `(slot 219 (*G_C, 0), 0, 0, P)`, `w` 1.0. While the wait runs, the
+/// kind `B[0x5c04]` moves `P` (0: [`sparks_a`], 2: [`sparks_c`], 3:
+/// [`sparks_d`], `ecx` = `P`; others nothing) and `P` is kept in
+/// `B+0x30a0`; once it has run out, with the kind 0 and the count
+/// `B[0x5bd8]` above 0 the count goes down and `P` is the kept one, else
+/// `O` goes back to its pool ([`give_back`](crate::sa_pool::give_back))
+/// and that is all. With the kind 0, `M` = slot 235 scaled to 0.2 on the
+/// diagonal and the trail `B+0x59b0` drawn at `P` along `M`
+/// ([`trail_draw`](crate::o6_fam_pairs6::trail_draw)). Returns the last
+/// callee's `eax` (`kind - 3` for a kind without a move).
+///
+/// [`sparks_a`]: crate::s4_fam446::sparks_a
+/// [`sparks_c`]: crate::s4_fam446::sparks_c
+/// [`sparks_d`]: crate::s4_fam446::sparks_d
+///
+/// `magic_0446` 0x10001e80 (395 bytes; 6 DLLs) and `magic_0544`
+/// 0x10001e80 (3 DLLs, its own trail draw).
+pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (p, m) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x54));
+    let esp = ebp.wrapping_sub(0x60);
+    let b = g.read::<u32>(w(0x14));
+    let wait = g.read::<i32>(b.wrapping_add(0x5c00));
+    if wait > 0 {
+        g.write::<i32>(b.wrapping_add(0x5c00), wait - 1);
+    }
+    let c = g.read::<u32>(w(0x36));
+    let x = g.call(slot_target(g, w(0x2e), 219), 0, &[c, 0]).eax;
+    g.call(slot_target(g, w(0x4c), 237), 0, &[x, 0, 0, p]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let kind = |g: &G| g.read::<u32>(b.wrapping_add(0x5c04));
+    let kept = b.wrapping_add(0x30a0);
+    let eax = if g.read::<i32>(b.wrapping_add(0x5c00)) > 0 {
+        let k = kind(g);
+        let mv: Option<(u32, Port<G>)> = match k {
+            0 => Some((0xfe, crate::s4_fam446::sparks_a)),
+            2 => Some((0xf4, crate::s4_fam446::sparks_c)),
+            3 => Some((0xea, crate::s4_fam446::sparks_d)),
+            _ => None,
+        };
+        let eax = match mv {
+            Some((call, port)) => {
+                let at = (img.rel32_target(f + call), esp, p, 0);
+                sub_call(g, port, img, at, &[]).eax
+            }
+            None => k.wrapping_sub(3),
+        };
+        for j in 0..4 {
+            let v = g.read::<u32>(p + 4 * j);
+            g.write::<u32>(kept + 4 * j, v);
+        }
+        eax
+    } else {
+        let left = g.read::<i32>(b.wrapping_add(0x5bd8));
+        if kind(g) != 0 || left <= 0 {
+            let back = img.rel32_target(f + 0xbe);
+            return Ret::eax(crate::sa_pool::give_back(g, img, back, obj));
+        }
+        g.write::<i32>(b.wrapping_add(0x5bd8), left - 1);
+        for j in 0..4 {
+            let v = g.read::<u32>(kept + 4 * j);
+            g.write::<u32>(p + 4 * j, v);
+        }
+        (left - 1).cast_unsigned()
+    };
+    if kind(g) != 0 {
+        return Ret::eax(eax);
+    }
+    g.call(slot_target(g, w(0x144), 235), 0, &[m]);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(m + o, 0x3e4c_cccd);
+    }
+    let draw = (
+        img.rel32_target(f + 0x173),
+        esp.wrapping_sub(4),
+        b.wrapping_add(0x59b0),
+        m,
+    );
+    sub_call(g, crate::o6_fam_pairs6::trail_draw, img, draw, &[p])
+}
+
+/// [`trail_head`] in `magic_0446` (the `rel32`s: the pool give-back,
+/// the moves, the trail draw and `__security_check_cookie` twice).
+pub const TRAIL_HEAD_0446: Sig = Sig {
+    len: 395,
+    hash: 0x7ccd_415a_28c9_5e5d,
+    calls: &[
+        (0xbe, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xcb, Callee::Any),
+        (0xea, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0xf4, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0xfe, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (
+            0x173,
+            Callee::Sig(&crate::o6_fam_pairs6::TRAIL_DRAW_0446_4E20),
+        ),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_head`] in `magic_0544` (its trail draw).
+pub const TRAIL_HEAD_0544: Sig = Sig {
+    len: 395,
+    hash: 0x7ccd_415a_28c9_5e5d,
+    calls: &[
+        (0xbe, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xcb, Callee::Any),
+        (0xea, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0xf4, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0xfe, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (
+            0x173,
+            Callee::Sig(&crate::o6_fam_pairs6::TRAIL_DRAW_0544_4CE0),
+        ),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A light flown in and, at the end, its object handed on (cdecl `(O)`;
+/// a /GS frame, `ebp` = `esp - 4`, the point `P` at `ebp-0x18`; `S =
+/// O[0x14]`, `B = *G_B`): the count `S[0x50c]` goes down to 0; with `u =
+/// count / S[0x510]` and `v = K - u`, `P = S[0x270..] v + S[0x260..] u`
+/// (`w` 1.0); the light set up at `P` with the angles `S+0x280`
+/// ([`light_setup`](crate::o6_fam_pairs5::light_setup), `n` 0x80) and `P`
+/// kept in `S+0xd0`. Once the count is 0: the child started
+/// ([`start_child_sound_b`](crate::s4_fam446::start_child_sound_b), `(S,
+/// S+0x280, B[K])`), `S` taken off its list ([`unlist_object`]), `B[N]`
+/// up by one (`K`, `N` the code's displacements: 0x8524/0x852c in
+/// `magic_0565`, 0x83f4/0x83fc in `magic_0644`) and `O` given back to its pool
+/// ([`give_back`](crate::sa_pool::give_back)). Returns the last callee's
+/// `eax`.
+///
+/// `magic_0565` 0x10004750 and `magic_0644` 0x10008770 (395 bytes; 5 DLLs
+/// each).
+pub fn light_fly_in<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.arg(g, 0);
+    let s = g.read::<u32>(obj.wrapping_add(0x14));
+    let b = g.read::<u32>(w(0x21));
+    let ebp = fr.esp.wrapping_sub(4);
+    let esp = ebp.wrapping_sub(0x34);
+    let left = g.read::<i32>(s + 0x50c);
+    if left > 0 {
+        g.write::<i32>(s + 0x50c, left - 1);
+    }
+    let u = div(cvt(g.read::<u32>(s + 0x50c)), cvt(g.read::<u32>(s + 0x510)));
+    let v = sub(g.read::<f32>(w(0x4a)), u);
+    let p = ebp.wrapping_sub(0x18);
+    let mut at = [0f32; 3];
+    for (i, x) in (0u32..).zip(&mut at) {
+        let to = g.read::<f32>(s + 0x270 + 4 * i);
+        let from = g.read::<f32>(s + 0x260 + 4 * i);
+        *x = add(mul(to, v), mul(from, u));
+        g.write::<f32>(p + 4 * i, *x);
+    }
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let light = (img.rel32_target(f + 0xde), esp, s + 0x280, p);
+    let mut eax = sub_call(g, crate::o6_fam_pairs5::light_setup, img, light, &[0x80]).eax;
+    for (i, x) in (0u32..).zip(at) {
+        g.write::<f32>(s + 0xd0 + 4 * i, x);
+    }
+    g.write::<u32>(s + 0xdc, 0x3f80_0000);
+    if g.read::<i32>(s + 0x50c) <= 0 {
+        // `push [edi + K]`, `inc [edi + N]`: the displacements differ per DLL
+        let kind = g.read::<u32>(b.wrapping_add(w(0x121)));
+        let child = (img.rel32_target(f + 0x12e), esp, s, s + 0x280);
+        sub_call(
+            g,
+            crate::s4_fam446::start_child_sound_b,
+            img,
+            child,
+            &[kind],
+        );
+        unlist_object(g, img, f, s, (0x138, 0x13d, 0x146, 0x14d, 0x152));
+        let n = g.read::<u32>(b.wrapping_add(w(0x16f))).wrapping_add(1);
+        g.write::<u32>(b.wrapping_add(w(0x16f)), n);
+        let back = img.rel32_target(f + 0x176);
+        eax = crate::sa_pool::give_back(g, img, back, obj);
+    }
+    Ret::eax(eax)
+}
+
+/// [`light_fly_in`] in `magic_0565` (the `rel32`s: the light set-up, the
+/// child start, the list removal, the pool give-back and
+/// `__security_check_cookie`).
+pub const LIGHT_FLY_IN_0565: Sig = Sig {
+    len: 395,
+    hash: 0x3a22_0f26_8ba7_acfe,
+    calls: &[
+        (
+            0xde,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x12e, Callee::Sig(&crate::s4_fam446::START_CHILD_SOUND_B)),
+        (0x13d, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x176, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`light_fly_in`] in `magic_0644`.
+pub const LIGHT_FLY_IN_0644: Sig = Sig {
+    len: 395,
+    hash: 0xc8b0_f2aa_5d91_84ba,
+    calls: &[
+        (
+            0xde,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x12e, Callee::Sig(&crate::s4_fam446::START_CHILD_SOUND_B)),
+        (0x13d, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x176, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A light flown along an arc (cdecl `(O)`; a /GS frame, `ebp` = `esp -
+/// 4`, the point `P` at `ebp-0x14`; `S = O[0x14]`, `B = *G_B`): the count
+/// `S[0x50c]` goes down to 0; when it reaches 8 the actor block at `G_1`
+/// is filled (`{*G_X, ..}`: `G_2` the immediate, `G_3` = -1, `G_4` = slot
+/// 413 or 215 `(*G_X)` by `*G_F`, `G_5` = -1, `G_6` = 0, `G_7` = 1, the
+/// u16 `G_8` = `*G_F != 0`) and `B[W]` = the immediate (the wait); when
+/// it reaches 0, slot 257 `(slot 219 (*G_X, 0), 0)`. With `u = count /
+/// S[0x510]` and `v = K1 - u`, `P` = the arc from `S+0x260` to `S+0x270`:
+/// `x`, `z` blended (`v` and `u`), `y = v u K2 (S.y0 - K3) + v^2 S.y0 + u^2
+/// S.y1`, `w` 1.0. While the count runs the light is set up at `P`
+/// ([`light_setup`](crate::o6_fam_pairs5::light_setup), angles
+/// `S+0x280`, `n` 0x80); after, `B[W]` goes down, slot 268 `(*G_Y, 5, P)`,
+/// and once `B[W]` is 0 too `B[N]` goes up and `O` goes back to its pool
+/// ([`give_back`](crate::sa_pool::give_back)). Returns the last callee's
+/// `eax`. (`W`, `N` are the code's displacements.)
+///
+/// `magic_0565` 0x10005220 and `magic_0644` 0x10009060 (588 bytes; 5 DLLs
+/// each).
+pub fn light_arc<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x50), s);
+    let obj = fr.arg(g, 0);
+    let s = g.read::<u32>(obj.wrapping_add(0x14));
+    let b = g.read::<u32>(w(0x21));
+    let ebp = fr.esp.wrapping_sub(4);
+    let wait = b.wrapping_add(w(0xbd));
+    let left = g.read::<i32>(s + 0x50c);
+    if left > 0 {
+        let left = left - 1;
+        g.write::<i32>(s + 0x50c, left);
+        if left == 8 {
+            let x = g.read::<u32>(w(0x45));
+            g.write::<u32>(w(0x4a), x);
+            g.write::<u32>(w(0x56), w(0x5a));
+            g.write::<u32>(w(0x60), u32::MAX);
+            let slot = if g.read::<u32>(w(0x3f)) == 0 {
+                215
+            } else {
+                413
+            };
+            let m = g.call(t(g, slot), 0, &[x]).eax;
+            let flag = g.read::<u32>(w(0x7f)) != 0;
+            g.write::<u32>(w(0x8a), m);
+            g.write::<u32>(w(0x90), u32::MAX);
+            g.write::<u32>(w(0x9a), 0);
+            g.write::<u32>(w(0xa4), 1);
+            g.write::<u16>(w(if flag { 0xb7 } else { 0xae }), u16::from(flag));
+            g.write::<u32>(wait, w(0xc1));
+        }
+        if g.read::<u32>(s + 0x50c) == 0 {
+            let x = g.read::<u32>(w(0xd7));
+            let x = g.call(t(g, 219), 0, &[x, 0]).eax;
+            g.call(t(g, 257), 0, &[x, 0]);
+        }
+    }
+    let u = div(cvt(g.read::<u32>(s + 0x50c)), cvt(g.read::<u32>(s + 0x510)));
+    let v = sub(g.read::<f32>(w(0x110)), u);
+    let r = |g: &G, o: u32| g.read::<f32>(s + o);
+    let p = ebp.wrapping_sub(0x14);
+    let x = add(mul(r(g, 0x260), v), mul(r(g, 0x270), u));
+    let rise = mul(mul(v, u), g.read::<f32>(w(0x146)));
+    let z = add(mul(r(g, 0x268), v), mul(r(g, 0x278), u));
+    let low = r(g, 0x264);
+    let y = add(
+        add(
+            mul(rise, sub(low, g.read::<f32>(w(0x1ab)))),
+            mul(mul(v, v), low),
+        ),
+        mul(mul(u, u), r(g, 0x274)),
+    );
+    for (i, c) in (0u32..).zip([x, y, z]) {
+        g.write::<f32>(p + 4 * i, c);
+    }
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    if g.read::<i32>(s + 0x50c) > 0 {
+        let light = (
+            img.rel32_target(f + 0x215),
+            ebp.wrapping_sub(0x20),
+            s + 0x280,
+            p,
+        );
+        let eax = sub_call(g, crate::o6_fam_pairs5::light_setup, img, light, &[0x80]).eax;
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(wait).wrapping_sub(1);
+    g.write::<u32>(b.wrapping_add(w(0x1d6)), n);
+    let y = g.read::<u32>(w(0x1e7));
+    let eax = g.call(t(g, 268), 0, &[y, 5, p]).eax;
+    if g.read::<i32>(b.wrapping_add(w(0x227))) > 0 {
+        return Ret::eax(eax);
+    }
+    let done = b.wrapping_add(w(0x230));
+    let n = g.read::<u32>(done).wrapping_add(1);
+    g.write::<u32>(done, n);
+    let back = img.rel32_target(f + 0x237);
+    Ret::eax(crate::sa_pool::give_back(g, img, back, obj))
+}
+
+/// [`light_arc`] in `magic_0565` (the `rel32`s: the light set-up, the
+/// pool give-back and `__security_check_cookie`).
+pub const LIGHT_ARC_0565: Sig = Sig {
+    len: 588,
+    hash: 0x5dd4_b294_f2ec_7f19,
+    calls: &[
+        (
+            0x215,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x237, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x244, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`light_arc`] in `magic_0644`.
+pub const LIGHT_ARC_0644: Sig = Sig {
+    len: 588,
+    hash: 0x0337_1a48_769a_ce15,
+    calls: LIGHT_ARC_0565.calls,
+    imports: &[],
+};
+
+/// A light drifting and turning (cdecl `(O)`; `S = O[0x14]`, `B = *G_B`):
+/// the count `S[0x50c]` goes down to 0; the drift `S+0x2a0..` (its `y`
+/// growing by `K` first) moves the point `S+0x260..`; the two angles
+/// `S+0x280`, `+0x284` turn by `S+0x290`, `+0x298`, brought back once by
+/// `KT` when above `KH` or below `KL`; the light set up at the point
+/// ([`light_setup`](crate::o6_fam_pairs5::light_setup), `n` = `count *
+/// 128 / 20`, 0x80 from 20 on). Once the count is 0, `B[N]` goes up and
+/// the original jumps to the pool give-back of `O`
+/// ([`give_back`](crate::sa_pool::give_back)). Returns the last callee's
+/// `eax`.
+///
+/// `magic_0644` 0x10008f20 (317 bytes; 5 DLLs).
+pub fn light_drift<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let obj = fr.arg(g, 0);
+    let s = g.read::<u32>(obj.wrapping_add(0x14));
+    let b = g.read::<u32>(w(0x14));
+    let left = g.read::<i32>(s + 0x50c);
+    if left > 0 {
+        g.write::<i32>(s + 0x50c, left - 1);
+    }
+    let r = |g: &G, o: u32| g.read::<f32>(s + o);
+    let rise = add(r(g, 0x2a4), k(g, 0x2f));
+    g.write::<f32>(s + 0x2a4, rise);
+    g.write::<f32>(s + 0x260, add(r(g, 0x2a0), r(g, 0x260)));
+    g.write::<f32>(s + 0x264, add(r(g, 0x264), r(g, 0x2a4)));
+    g.write::<f32>(s + 0x268, add(r(g, 0x2a8), r(g, 0x268)));
+    let (high, turn, low) = (k(g, 0x3d), k(g, 0x45), k(g, 0x4d));
+    for (angle, speed) in [(0x280u32, 0x290u32), (0x284, 0x298)] {
+        let a = add(r(g, speed), r(g, angle));
+        let a = if a > high {
+            sub(a, turn)
+        } else if low > a {
+            add(a, turn)
+        } else {
+            a
+        };
+        g.write::<f32>(s + angle, a);
+    }
+    let count = g.read::<i32>(s + 0x50c);
+    let n = if count >= 0x14 {
+        0x80
+    } else {
+        count.wrapping_shl(7) / 20
+    };
+    let esp = fr.esp.wrapping_sub(0x10);
+    let light = (img.rel32_target(f + 0x117), esp, s + 0x280, s + 0x260);
+    let eax = sub_call(
+        g,
+        crate::o6_fam_pairs5::light_setup,
+        img,
+        light,
+        &[n.cast_unsigned()],
+    )
+    .eax;
+    if g.read::<i32>(s + 0x50c) > 0 {
+        return Ret::eax(eax);
+    }
+    let done = b.wrapping_add(w(0x129));
+    let n = g.read::<u32>(done).wrapping_add(1);
+    g.write::<u32>(done, n);
+    let back = img.rel32_target(f + 0x134);
+    Ret::eax(crate::sa_pool::give_back(g, img, back, obj))
+}
+
+/// [`light_drift`] (the `rel32`s: the light set-up and the pool
+/// give-back it jumps to).
+pub const LIGHT_DRIFT: Sig = Sig {
+    len: 317,
+    hash: 0x8896_079b_751c_bdf6,
+    calls: &[
+        (
+            0x117,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x134, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
     ],
     imports: &[],
 };
