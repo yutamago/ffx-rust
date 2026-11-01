@@ -4020,3 +4020,109 @@ fn flagged_two_sparks() {
         }
     }
 }
+
+/// Row 618: the summon's four objects started in both DLLs: yaws past
+/// both bounds and kept, in a battle and not, the task list empty and
+/// not.
+#[test]
+fn summon_objects_started() {
+    for (dll, rva) in [(248u16, 0x1340u32), (660, 0x31a0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 719, log, 3, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, log, 3, None, |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, log, 4, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, log, 6, None, |m, a, k| {
+            for (i, &x) in (1u32..).zip(&a[1..4]) {
+                if (SCRATCH..SCRATCH + 0x4_0000).contains(&x) {
+                    m.w32(x, (0.5 * i as f32 + k as f32).to_bits());
+                }
+            }
+            0x262
+        });
+        log_calls(&mut t, 333, log, 7, None, |_, a, _| a[0]);
+        t.stub_st0(333, move |m, _| {
+            [0.25, 7.5, -6.0, 1.0][(m.r32(log) % 4) as usize]
+        });
+        for s in [413u32, 215] {
+            log_calls(&mut t, s, log, 1, None, move |_, a, _| a[0] ^ (s << 16));
+        }
+        // the object starts' (`s4_misc::start_object_anim`)
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        for call in [0x72u32, 0x123] {
+            let soa = t.img.rel32_target(f + call);
+            t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
+            t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
+            let start = t.img.rel32_target(soa + 0x84);
+            t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+            let pa = t.img.rel32_target(soa + 0x99);
+            t.set_u16(op(&t, pa, 0x04), 9);
+        }
+        let pi = t.img.rel32_target(f + 0x3c);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        // the state task's take
+        let st = t.img.rel32_target(f + 0x1b5);
+        let take = t.img.rel32_target(st + 0x54);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        for (o, x) in [
+            (0xb9u32, 0.0f32),
+            (0xc8, 1.0),
+            (0xd2, 2.5),
+            (0xdc, -1.0),
+            (0xe9, 2.5),
+        ] {
+            t.set_u32(w(&t, o), x.to_bits());
+        }
+        for (o, x) in [
+            (0x16du32, 0.0f32),
+            (0x17c, 1.0),
+            (0x186, 2.5),
+            (0x190, -1.0),
+            (0x19d, 2.5),
+        ] {
+            t.set_u32(w(&t, o), x.to_bits());
+        }
+        let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+        for (k, (battle, listed)) in [(false, false), (true, true), (true, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(w(&t, 0x1c3), u32::from(battle));
+            t.set_u32(w(&t, 0x208), u32::from(battle));
+            t.set_u32(w(&t, 0x1ba), 0x01ba_0000 + k);
+            t.set_u32(w(&t, 0x8c), 0x0ac7_0000 + k);
+            t.set_u32(w(&t, 0x143), 0x0ac8_0000 + k);
+            // the state task's free ring and list
+            t.write(SCRATCH + 0x1800, &varied(0x100, k));
+            for i in 1..=3u32 {
+                let n = SCRATCH + 0x1800 + 0x40 * i;
+                t.set_u32(n, SCRATCH + 0x1800 + 0x40 * if i == 1 { 3 } else { i - 1 });
+                t.set_u32(
+                    n + 4,
+                    SCRATCH + 0x1800 + 0x40 * if i == 3 { 1 } else { i + 1 },
+                );
+            }
+            t.set_u32(op(&t, take, 0x17), SCRATCH + 0x1840);
+            t.set_u16(op(&t, take, 0x04), 3);
+            t.set_u32(op(&t, st, 0x5a), 0);
+            // the task node's free ring and live list
+            t.write(node(0) - 0x40, &varied(0x140, k + 1));
+            t.set_u32(node(0), node(2));
+            t.set_u32(node(0) + 4, node(1));
+            t.set_u16(w(&t, 0x247), 2);
+            t.set_u32(w(&t, 0x256), node(0));
+            t.set_u32(w(&t, 0x2bd), if listed { node(3) } else { 0 });
+            t.set_u32(w(&t, 0x2cf), node(3));
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

@@ -5399,3 +5399,162 @@ pub const FLAGGED_TWO_SPARKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A summon's four objects and their task started (cdecl, no arguments;
+/// `ebp` = `esp - 4` at the entry). Slot 719 `(G_D, 8, 0)` into `*G_H`
+/// (`*G_1`, `*G_2` set to immediates first), the part set up
+/// ([`part_init`](crate::l5_objhost::part_init)). Three objects `O_i =
+/// G_B + 0x130 i` started at scale `K`
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), part 0,
+/// the value 10, then 40, 55) placed at the actor `*G_A` (slot 262 into
+/// `O_i+0xd0..`, `w` 1.0) facing its yaw (`K1 - slot 333`, brought back
+/// by `T` once above `H` or below `L`, into `O_i+0xc4`); the fourth
+/// `G_O` (scale `K2`, part 1, value 0x5f) with slot 262 into three of
+/// the DLL's words, `w` 1.0, and the yaw into `*G_Y`. The state task
+/// ([`state_task`](crate::s4_misc::state_task), `ecx` = `G_S`, `CB`);
+/// the record `*G_R = *G_M`, three immediates, the model (slot 413 in a
+/// battle, else 215) and the words `-1`, `0`, `1`, u16 1 in a battle
+/// else 0; a task node off the free ring onto the live list
+/// ([`free_to_live`]). Returns 0.
+///
+/// `magic_0248` 0x10001340 (770 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's objects, one by one
+pub fn summon_objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    g.write::<u32>(w(0x1f), w(0x23));
+    g.write::<u32>(w(0x29), w(0x2d));
+    let h = slot(g, img, f, 0x4, 719, fr.ecx, &[w(0x19), 8, 0]).eax;
+    g.write::<u32>(w(0x37), h);
+    crate::l5_objhost::part_init(g, img, call(0x3c));
+    let mut value = 10u32;
+    for i in 0..3u32 {
+        let obj = (0x130 * i).wrapping_add(w(0x65));
+        g.write::<u32>(ebp.wrapping_sub(8), obj);
+        crate::s4_misc::start_object_anim(g, img, call(0x72), obj, k(g, 0x54), 0, value);
+        let p = obj + 0xd0;
+        let ops = [0xb9, 0xc8, 0xd2, 0xdc, 0xe9];
+        // (the `w` 1.0 comes between the two calls)
+        let x = g.read::<u32>(w(0x8c));
+        slot(
+            g,
+            img,
+            f,
+            0x85,
+            262,
+            fr.ecx,
+            &[x, p, p + 4, p + 8, 0, value],
+        );
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+        let x2 = g.read::<u32>(w(0x9f));
+        let r = slot(
+            g,
+            img,
+            f,
+            0x99,
+            333,
+            fr.ecx,
+            &[x2, x, p, p + 4, p + 8, 0, value],
+        );
+        let r = crate::m0018::st0_f32(r.st0);
+        g.write::<f32>(ebp.wrapping_sub(4), r);
+        let y = yaw_round(g, img, f, r, ops);
+        g.write::<f32>(obj + 0xc4, y);
+        value += if i == 0 { 0x1e } else { 0xf };
+    }
+    let obj = w(0x11a);
+    crate::s4_misc::start_object_anim(g, img, call(0x123), obj, k(g, 0x112), 1, 0x5f);
+    let x = g.read::<u32>(w(0x143));
+    let pts = [w(0x13d), w(0x138), w(0x12d)];
+    slot(
+        g,
+        img,
+        f,
+        0x128,
+        262,
+        fr.ecx,
+        &[x, pts[0], pts[1], pts[2], 1, 0x5f],
+    );
+    g.write::<u32>(w(0x156), 0x3f80_0000);
+    let x2 = g.read::<u32>(w(0x150));
+    let r = slot(
+        g,
+        img,
+        f,
+        0x14a,
+        333,
+        fr.ecx,
+        &[x2, x, pts[0], pts[1], pts[2], 1, 0x5f],
+    );
+    let r = crate::m0018::st0_f32(r.st0);
+    g.write::<f32>(ebp.wrapping_sub(8), r);
+    let y = yaw_round(g, img, f, r, [0x16d, 0x17c, 0x186, 0x190, 0x19d]);
+    g.write::<f32>(w(0x1b0), y);
+    // `push ecx; push CB; call`: the task's entry `esp`
+    let task = Frame {
+        at: call(0x1b5),
+        esp: ebp.wrapping_sub(0x20),
+        ecx: w(0x1a8),
+        ..*fr
+    };
+    g.write::<u32>(task.esp + 4, w(0x1a3));
+    crate::s4_misc::state_task(g, img, &task);
+    let m = g.read::<u32>(w(0x1ba));
+    let battle = g.read::<u32>(w(0x1c3)) != 0;
+    g.write::<u32>(w(0x1c9), m);
+    for (a, v) in [(0x1d5u32, 0x1d9u32), (0x1df, 0x1e3), (0x1e9, 0x1ed)] {
+        g.write::<u32>(w(a), w(v));
+    }
+    let s = if battle { 413 } else { 215 };
+    let model = slot(g, img, f, 0x1cf, s, fr.ecx, &[m]).eax;
+    g.write::<u32>(w(0x213), model);
+    g.write::<u32>(w(0x219), w(0x21d));
+    g.write::<u32>(w(0x223), w(0x227));
+    g.write::<u32>(w(0x22d), 1);
+    if g.read::<u32>(w(0x208)) == 0 {
+        g.write::<u16>(w(0x237), 0);
+    } else {
+        g.write::<u16>(w(0x240), 1);
+    }
+    free_to_live(
+        g,
+        img,
+        f,
+        [
+            0x247, 0x256, 0x273, 0x27b, 0x2ac, 0x2b7, 0x2bd, 0x2cf, 0x2dd, 0x2ef, 0x2f8,
+        ],
+    );
+    Ret::eax(0)
+}
+
+/// [`summon_objects_start`] (the `rel32`s:
+/// [`part_init`](crate::l5_objhost::part_init), two
+/// [`start_object_anim`](crate::s4_misc::start_object_anim) and
+/// [`state_task`](crate::s4_misc::state_task)).
+pub const SUMMON_OBJECTS_START: Sig = Sig {
+    len: 770,
+    hash: 0xfbbf_738e_1082_7225,
+    calls: &[
+        (0x3c, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x72, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x123, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x1b5, Callee::Sig(&crate::s4_misc::STATE_TASK)),
+    ],
+    imports: &[],
+};
+
+/// The yaw `K - r` brought back by `T` once when above `H` or below `L`
+/// (the operands of `K`, `H`, `T`, `L` and the second `T`).
+fn yaw_round<G: Game>(g: &G, img: &Image, f: u32, r: f32, ops: [u32; 5]) -> f32 {
+    let k = |o: u32| g.read::<f32>(op(img, f, o));
+    let mut y = sub(k(ops[0]), r);
+    if y > k(ops[1]) {
+        y = sub(y, k(ops[2]));
+    } else if k(ops[3]) > y {
+        y = add(y, k(ops[4]));
+    }
+    y
+}
