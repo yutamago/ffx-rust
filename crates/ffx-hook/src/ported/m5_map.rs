@@ -10,6 +10,7 @@ use super::{StackFrame, mem, ported};
 use ffx_prender::l6_map::bridge as l6m;
 use ffx_prender::l6_map2::bridge as l6m2;
 use ffx_prender::l6_map3::bridge as l6m3;
+use ffx_prender::l6_map4::bridge as l6m4;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -753,5 +754,25 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::l6_map3::SKELETON_FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::l6_map3::SKELETON_FRAME;
         l6m3::skeleton(&mut mem(), ebp, pkt, chr)
+    }
+    // ---- round 6 (left6) batch 3 (ffx_prender::l6_map4) ----
+    /// The scroll model's per-frame entry (`g_MagicImports + 0xd8c`); the
+    /// creation gets a frame address it never reads.
+    updateVFXRenderData_ScrollModelEntry_00a5bf50 @ 0x00a5_bf50 => extern "C" fn scroll_model_entry(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32, a12: u32, a13: u32, a14: u32, a15: u32, a16: u32) -> u32 {
+        let mut frame = StackFrame::<0x1e>::new();
+        let buf = frame.at();
+        l6m4::scroll_entry(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16], buf)
+    }
+    /// `(lo, hi, model, _, d1 lo, d1 hi, d2 lo, d2 hi, mode)` -> 1 or 0
+    /// (the original's 0x1f78-byte frame, its counts and texture slots,
+    /// in this shim's).
+    createVFXRenderDataBuffer_DrawScrollModel @ 0x00a5_c130 => extern "C" fn create_scroll_model(lo: u32, hi: u32, model: u32, _unused: u32, d1lo: u32, d1hi: u32, d2lo: u32, d2hi: u32, mode: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map4::CREATE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map4::CREATE_FRAME;
+        l6m4::create_buffer(&mut mem(), ebp, [lo, hi, model, 0, d1lo, d1hi, d2lo, d2hi, mode])
+    }
+    /// 17 words -> 1 or 0 (keeps four values in its argument slots).
+    updateVFXRenderData_DrawModelScroll @ 0x00a5_c370 => extern "C" fn update_scroll_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32, a12: u32, a13: u32, a14: u32, a15: u32, a16: u32; slots: u32) -> u32 {
+        l6m4::update(&mut mem(), slots, [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16])
     }
 }

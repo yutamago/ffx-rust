@@ -5440,3 +5440,221 @@ fn l6_fill_stack(t: &mut Twins, rng: &mut Rng, n: u32) {
     t.a.write(top - n, &w).unwrap();
     t.b.write(top - n, &w).unwrap();
 }
+
+// ---- round 6 (left6) batch 3 (ffx_prender::l6_map4) ----
+
+use ffx_prender::l6_map4::{self as l64, bridge as l6m4};
+
+/// A scroll model: header (`+0` flags, `+4` the sub-meshes' offset, `i16
+/// +0x10` the total count) and `n` sub-meshes of `5c + 2` quadwords (`+1`
+/// kind, `i16 +2` count c, `+8` a texture descriptor). The first is of
+/// kind 3 (another kind steps to a never-written frame word there).
+fn l6_scroll_model(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let model = t.zeros(0x2000);
+    // the update walks on from the header itself after the first
+    // sub-mesh: its i16 at +2 must count down (0 or less loops for ever
+    // in the original)
+    t.w32(model, (rng.next() & 0xffff) | (1 + rng.below(4)) << 16);
+    t.w32(model + 4, 0x40);
+    let mut at = model + 0x40;
+    let mut total = 0_u32;
+    for k in 0..n {
+        let c = 1 + rng.below(3);
+        let kind = if k == 0 || rng.chance(3) {
+            3
+        } else {
+            rng.below(5) as u8
+        };
+        t.w8(at + 1, kind);
+        t.write(at + 2, &(c as u16).to_le_bytes());
+        t.w32(at + 8, rng.next());
+        t.w32(at + 0xc, rng.next());
+        total += c;
+        at += (5 * c + 2) * 8;
+    }
+    let total = if rng.chance(6) { 0 } else { total };
+    t.write(model + 0x10, &(total as u16).to_le_bytes());
+    model
+}
+
+#[test]
+fn l6_scroll_model_create_matches_the_original() {
+    // the three modes; textures failing; no sub-meshes; the frame (counts,
+    // slots, flags) compared after
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b31);
+        for case in 0..40_u32 {
+            let subs = 1 + rng.below(5);
+            let model = l6_scroll_model(t, &mut rng, subs);
+            let loads: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(6) { 0 } else { rng.next() | 1 })
+                .collect();
+            let loads = t.seq(&loads);
+            t.stub_sym(l64::VFX_IS_TEXTURE_LOADED, 1, false, 7, 0, loads);
+            t.stub_sym(l64::VFX_CREATE, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                l64::VFX_CREATE_DATA_BUFFER,
+                3,
+                false,
+                7,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l64::DBG_PRINTF, 4, false, 3, 0, Ret::Val(rng.next()));
+            let mode = [0, 1, 2, rng.next()][(case % 4) as usize];
+            let args = [
+                rng.next(),
+                rng.next(),
+                model,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                mode,
+            ];
+            r5_zero_stack(t, 0x2200);
+            let ebp = frame_ebp(&t.a, 9);
+            t.b_top = Some(ebp - l64::CREATE_FRAME - 0x60);
+            t.check(
+                "createVFXRenderDataBuffer_DrawScrollModel",
+                0x00a5_c130,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l6m4::create_buffer(o, ebp, args)),
+            );
+            // to ebp - 8: there the original's _alloca_probe saved the caller's ecx
+            l6_same_words(
+                t,
+                "createVFXRenderDataBuffer_DrawScrollModel",
+                ebp,
+                ebp - 0x1f78,
+                0x1f70,
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_scroll_model_update_matches_the_original() {
+    // no render data, a segment buffer failing, both blend flags; the
+    // copies and the matrix product for real; the argument slots after
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b32);
+        for case in 0..40_u32 {
+            let subs = 1 + rng.below(5);
+            let model = l6_scroll_model(t, &mut rng, subs);
+            let (m1, m2) = (t.zeros(64), t.zeros(64));
+            l6_matrix(t, &mut rng, m1);
+            l6_matrix(t, &mut rng, m2);
+            let rd = if case % 7 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x100)
+            };
+            if rd != 0 {
+                let parts = l6_random(t, &mut rng, 0x6c * 16);
+                t.w32(rd + 0x94, parts);
+            }
+            let req = l6_random(t, &mut rng, 0x100);
+            let fill = t.rebase(l64::FILL_MATRIX);
+            let mut old = vec![0; 64];
+            Mem::read_bytes(&t.b, fill, &mut old);
+            t.patched.push((fill, old));
+            l6_matrix(t, &mut rng, fill);
+            t.stub_sym(l64::LOAD_MATRIX2, 1, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::LOAD_MATRIX1, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::PACKET_GET_PTR, 3, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::GET_RENDER_DATA, 4, false, 2, 0, Ret::Val(rd));
+            t.stub_sym(l64::FILL_REQUEST, 5, false, 1, 0, Ret::Val(req));
+            let bufs: Vec<u32> = (0..16)
+                .map(|_| if rng.chance(10) { 0 } else { rng.next() | 1 })
+                .collect();
+            let bufs = t.seq(&bufs);
+            t.stub_sym(l64::BUFFER_FOR_SEGMENT, 6, false, 4, 0, bufs);
+            t.stub_sym(l64::VFX_SET_VISIBLE, 7, false, 3, 0, Ret::Val(rng.next()));
+            let mut args = [0_u32; 17];
+            for a in &mut args {
+                *a = rng.next();
+            }
+            args[2] = model;
+            args[4] = m1;
+            args[5] = m2;
+            args[10] = float_word(&mut rng);
+            args[11] = float_word(&mut rng);
+            args[12] = rng.word();
+            r5_zero_stack(t, 0x300);
+            let slots = l6_arg_slots(t, &args);
+            t.check(
+                "updateVFXRenderData_DrawModelScroll",
+                0x00a5_c370,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l6m4::update(o, slots, args)),
+            );
+            r5_same(t, "updateVFXRenderData_DrawModelScroll slots", slots, 0x44);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_scroll_model_entry_matches_the_original() {
+    // render data or not, a skipped frame, the creation or the set-up
+    // failing (the callees are stubs; the update logs its first 14 words)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b33);
+        for case in 0..40_u32 {
+            let skip = t.rebase(l64::SKIP_FRAME);
+            t.patch(skip, &u32::from(case % 5 == 1).to_le_bytes());
+            let rd = if case % 2 == 0 { 0 } else { rng.next() };
+            t.stub_sym(l64::PACKET_GET_PTR, 1, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::SET_PTR32, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::GET_RENDER_DATA, 3, false, 2, 0, Ret::Val(rd));
+            t.stub_sym(l64::VFX_UPDATE, 4, false, 2, 0, Ret::Val(rng.next()));
+            let made = if rng.chance(4) { 0 } else { rng.next() };
+            t.stub_sym(l64::CREATE_BUFFER, 5, false, 9, 0, Ret::Val(made));
+            let set = if rng.chance(4) { 0 } else { rng.next() };
+            t.stub_sym(l64::VFX_SETUP, 6, false, 2, 0, Ret::Val(set));
+            t.stub_sym(l64::UPDATE, 7, false, 14, 0, Ret::Val(rng.next()));
+            t.stub_sym(l64::VFX_DESTROY, 8, false, 2, 0, Ret::Val(rng.next()));
+            let mut args = [0_u32; 17];
+            for a in &mut args {
+                *a = rng.next();
+            }
+            args[10] = float_word(&mut rng);
+            args[11] = float_word(&mut rng);
+            // the original's buffer: its frame is aligned to 16 below the
+            // return address and the saved ebx
+            let entry = call_top(&t.a) - 4 * 17 - 4;
+            let buf = ((entry - 12) & !0xf) - 0x70;
+            t.check(
+                "updateVFXRenderData_ScrollModelEntry_00a5bf50",
+                0x00a5_bf50,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l6m4::scroll_entry(o, args, buf)),
+            );
+            t.reset();
+        }
+    });
+}
+
+/// Both oracles' words at `at..at + n`; a difference names its `ebp`
+/// offsets and values.
+fn l6_same_words(t: &Twins, what: &str, ebp: u32, at: u32, n: u32) {
+    let bad: Vec<(u32, u32, u32)> = (0..n / 4)
+        .map(|k| at + 4 * k)
+        .filter_map(|a| {
+            let (x, y): (u32, u32) = (Mem::read(&t.a, a), Mem::read(&t.b, a));
+            (x != y).then_some((ebp.wrapping_sub(a), x, y))
+        })
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "{what}: frame words (ebp - off, original, port): {bad:x?}"
+    );
+}

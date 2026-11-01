@@ -34,6 +34,8 @@ pub mod iggy;
 pub mod input;
 pub mod item;
 pub mod l6_pcui;
+pub mod l6_pcui2;
+pub mod l6_pcui3;
 pub mod link;
 pub mod m5u_a;
 pub mod m5u_b;
