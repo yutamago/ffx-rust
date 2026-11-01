@@ -5015,3 +5015,191 @@ pub const EFFECT_GROUP_INIT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `KA - a` brought back once into the range: less `KB` above `KC`, plus
+/// `KB` below `KD` (the operands `(KA, KB, KC, KD)` of `f`).
+fn fold_angle(g: &impl crate::Mem, img: &Image, f: u32, a: f32, ops: [u32; 4]) -> f32 {
+    use crate::sb_sse::{add, sub};
+    let k = |o: u32| g.read::<f32>(op(img, f, o));
+    let [ka, kb, kc, kd] = ops;
+    let x = sub(k(ka), a);
+    if x > k(kc) {
+        sub(x, k(kb))
+    } else if k(kd) > x {
+        add(x, k(kb))
+    } else {
+        x
+    }
+}
+
+/// A summon object `X` started between two actors (thiscall, `ecx` =
+/// `X`; a /GS frame aligned to 8, `P` = `((esp - 4) & !7) - 0x98` after
+/// the saved registers): `V0` (`P+0x20`, `w` 1.0) = slot 262 then 268
+/// `(.., 0x11, V0)` of `X`'s actor (`X+0x504`'s battle number, or the
+/// none actor for -1), `V1` (`P+0x30`, `w` 1.0) the same of the none
+/// actor; the object started at `V0` with scale `K`
+/// ([`start_object_first`](crate::o6_fam_object::start_object_first),
+/// stack `(0, w, 0x10, P+0x28)`: `w` is the `ecx` slot 268 leaves, which
+/// the port takes as 0) and `X+0xd0..` = `V0`. Then the yaw of the first
+/// entry's actor (slot 333, ST0) folded ([`fold_angle`]) into `X+0xc4`;
+/// `X+0x120` = the battle number (or the none word); the record `R =
+/// X+0x488` reset (callback and data immediates) into `X+0x110`; the step
+/// `d = (V1 - V0) / K5` (`P+0x1c`, `+0x18`, `+0x14`); `X+0x4bc..+0x4c8` =
+/// `V0`; `W` = `(slot 314 (40.0), slot 404 (20.0), 0, 1.0)` (ST0s) turned
+/// by the matrix `M` (slot 235, slot 329 `(M, M, a)`, `a` the folded
+/// `atan2(dz, dx)` of `V1 - V0`) with slot 229 `(W, M, W)`; `X+0x4cc..` =
+/// `V0 + d + W`, its `y` lowered to the actor's height (slot 12, ST0) less
+/// `K6` when above it; `X+0x4dc..` = `d K7 + V0 - W`; `X+0x4ec..` = `V1`;
+/// a few words; the sprite set up with the colour `V0`
+/// ([`sprite_init_colour`](crate::sb_misc::sprite_init_colour), `X+0x260`,
+/// `(*G_S)+0x10`). Returns its `eax`.
+///
+/// `magic_0134` 0x10001980 (1,331 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's set-up, in order
+pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x51), s);
+    let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
+    let x = fr.ecx;
+    let p = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x98);
+    let lf = |g: &G, o: u32| g.read::<f32>(p + o);
+    let i = g.read::<u32>(x + 0x504);
+    let actor = entry_actor(g, img, f, (0x2b, 0x32, 0x3d), i);
+    let (v0, v1) = (p + 0x20, p + 0x30);
+    g.call(t(g, 262), 0, &[actor, v0, v0 + 4, v0 + 8]);
+    g.call(t(g, 268), 0, &[actor, 0x11, v0]);
+    let none = g.read::<u32>(w(0x75));
+    g.write::<u32>(p + 0x2c, 0x3f80_0000);
+    g.call(t(g, 262), 0, &[none, v1, v1 + 4, v1 + 8]);
+    g.call(t(g, 268), 0, &[none, 0x11, v1]);
+    g.write::<u32>(p + 0x3c, 0x3f80_0000);
+    // the object start: `(0, w, 0x10, P+0x28)`, `w` taken as 0
+    let call = p.wrapping_sub(0x14);
+    for (k, word) in (1u32..).zip([0, 0, 0x10, p + 0x28]) {
+        g.write::<u32>(call + 4 * k, word);
+    }
+    let start = img.rel32_target(f + 0xce);
+    let scale = g.read::<u32>(w(0xb7));
+    let sub_fr = Frame {
+        at: start,
+        esp: call,
+        eax: 0,
+        ecx: 0,
+        edx: x,
+        xmm: [0, 0, 0, u128::from(scale)],
+    };
+    crate::o6_fam_object::start_object_first(g, img, start, &sub_fr);
+    for k in 0..4 {
+        let v = g.read::<u32>(v0 + 4 * k);
+        g.write::<u32>(x + 0xd0 + 4 * k, v);
+    }
+    let first = entry_actor(g, img, f, (0x2b, 0x10b, 0x115), 0);
+    let yaw = st0(g.call(t(g, 333), 0, &[first]));
+    let fold = [0x12e, 0x13c, 0x146, 0x156];
+    let yaw = fold_angle(g, img, f, yaw, fold);
+    g.write::<f32>(x + 0xc4, yaw);
+    let n = if i == u32::MAX {
+        g.read::<u32>(w(0x177))
+    } else {
+        u32::from(g.read::<u8>(g.read::<u32>(w(0x17e)).wrapping_add(i)))
+    };
+    g.write::<u32>(x + 0x120, n);
+    let k5 = g.read::<f32>(w(0x196));
+    let r = x + 0x488;
+    let d = [
+        div(sub(lf(g, 0x30), lf(g, 0x20)), k5),
+        div(sub(lf(g, 0x34), lf(g, 0x24)), k5),
+        div(sub(lf(g, 0x38), lf(g, 0x28)), k5),
+    ];
+    for (o, v) in [
+        (0x18u32, 0),
+        (0x14, 0),
+        (0x10, 0),
+        (0x1c, 0),
+        (0x28, 0),
+        (0x2c, 0),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    g.write::<u32>(r + 0x20, w(0x1e9));
+    g.write::<u32>(r + 0x24, w(0x1f4));
+    g.write::<u16>(r + 0x30, 0);
+    g.write::<u32>(x + 0x110, r);
+    for (k, o) in [(0u32, 0x1cu32), (1, 0x18), (2, 0x14)] {
+        g.write::<f32>(p + o, d[k as usize]);
+    }
+    for k in 0..4 {
+        let v = g.read::<u32>(v0 + 4 * k);
+        g.write::<u32>(x + 0x4bc + 4 * k, v);
+    }
+    let r1 = st0(g.call(t(g, 314), 0, &[0x4220_0000]));
+    let r2 = st0(g.call(t(g, 404), 0, &[0x41a0_0000]));
+    let wv = p + 0x40;
+    g.write::<f32>(wv, r1);
+    g.write::<f32>(wv + 4, r2);
+    g.write::<u32>(wv + 8, 0);
+    g.write::<u32>(wv + 0xc, 0x3f80_0000);
+    let dz = sub(lf(g, 0x38), lf(g, 0x28));
+    let dx = sub(lf(g, 0x30), lf(g, 0x20));
+    #[allow(clippy::cast_possible_truncation)] // `cvtpd2ps`
+    let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let a = fold_angle(g, img, f, a, [0x2db, 0x2fa, 0x2ea, 0x304]);
+    let m = p + 0x50;
+    g.call(t(g, 235), 0, &[m]);
+    g.call(t(g, 329), 0, &[m, m, a.to_bits()]);
+    g.call(t(g, 229), 0, &[wv, m, wv]);
+    g.write::<u32>(x + 0x4d8, 0x3f80_0000);
+    for (k, dd) in [(0u32, 0x1cu32), (1, 0x18), (2, 0x14)] {
+        let v = add(add(lf(g, 0x20 + 4 * k), lf(g, dd)), lf(g, 0x40 + 4 * k));
+        g.write::<f32>(x + 0x4cc + 4 * k, v);
+    }
+    let i = g.read::<u32>(x + 0x504);
+    let actor = entry_actor(g, img, f, (0x3ce, 0x3d5, 0x3e0), i);
+    let h = st0(g.call(t(g, 12), 0, &[actor]));
+    if g.read::<f32>(x + 0x4d0) > h {
+        g.write::<f32>(x + 0x4d0, sub(h, g.read::<f32>(w(0x40d))));
+    }
+    let k7 = g.read::<f32>(w(0x41d));
+    g.write::<u32>(x + 0x4e8, 0x3f80_0000);
+    for (k, dd) in [(0u32, 0x1cu32), (1, 0x18), (2, 0x14)] {
+        let v = sub(
+            add(mul(lf(g, dd), k7), lf(g, 0x20 + 4 * k)),
+            lf(g, 0x40 + 4 * k),
+        );
+        g.write::<f32>(x + 0x4dc + 4 * k, v);
+    }
+    for k in 0..4 {
+        let v = g.read::<u32>(v1 + 4 * k);
+        g.write::<u32>(x + 0x4ec + 4 * k, v);
+    }
+    g.write::<u32>(x + 0x4fc, 0);
+    g.write::<u32>(x + 0x500, w(0x4d8));
+    g.write::<u32>(x + 0x508, 0xc);
+    g.write::<u32>(x + 0x510, 0x10);
+    let owner = g.read::<u32>(g.read::<u32>(w(0x4f2)) + 0x10);
+    g.write::<u32>(p.wrapping_sub(4), v0);
+    let eax = crate::sb_misc::sprite_init_colour(g, p.wrapping_sub(8), x + 0x260, owner);
+    g.write::<u32>(x + 0x484, 0x80);
+    g.write::<u32>(x + 0x47c, 0x3f00_0000);
+    g.write::<u32>(x + 0x46c, 0x4040_4040);
+    Ret::eax(eax)
+}
+
+/// [`summon_object_between`] (the `rel32`s: the object start, `_CIatan2`
+/// through its thunk, the sprite set-up, `__security_check_cookie`).
+pub const SUMMON_OBJECT_BETWEEN: Sig = Sig {
+    len: 1331,
+    hash: 0xabcb_be7b_d127_fc6d,
+    calls: &[
+        (
+            0xce,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0132_3CC0),
+        ),
+        (0x2c9, Callee::Any),
+        (0x4fa, Callee::Sig(&crate::sb_misc::SPRITE_INIT_COLOUR)),
+        (0x52b, Callee::Any),
+    ],
+    imports: &[],
+};

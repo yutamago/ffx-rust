@@ -3391,3 +3391,93 @@ fn effect_groups_init() {
         }
     }
 }
+
+/// Row 219: the summon object started between two actors in both DLLs:
+/// `X`'s actor from the list and the none actor, the yaw and the turn
+/// past each end of the range and inside, the object's `y` above the
+/// actor's height and below, the pool with nodes and without.
+#[test]
+fn summon_objects_between() {
+    for (dll, rva) in [(134u16, 0x1980u32), (135, 0x4330)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let start = t.img.rel32_target(f + 0xce);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for (i, x) in (1u32..).zip(&a[1..4]) {
+                let v = 0.5 * i as f32 + (k % 5) as f32 - (a[0] & 7) as f32;
+                m.w32(*x, v.to_bits());
+            }
+            0x262
+        });
+        log_calls(&mut t, 268, 3, &[2], |m, a, k| {
+            m.w32(a[2] + 4, (k as f32 * 0.75 - 1.0).to_bits());
+            0x268
+        });
+        for s in [333u32, 314, 404, 12] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| s ^ a[0]);
+        }
+        t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(ans))));
+        t.stub_st0(314, |_, _| 3.25);
+        t.stub_st0(404, |_, _| -1.5);
+        t.stub_st0(12, move |m, _| f64::from(f32::from_bits(m.r32(ans + 4))));
+        log_calls(&mut t, 235, 1, &[], |m, a, _| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (i as f32 * 0.25 - 1.0).to_bits());
+            }
+            0x235
+        });
+        log_calls(&mut t, 329, 3, &[], |_, a, _| a[2]);
+        log_calls(&mut t, 229, 3, &[2], |m, a, k| {
+            for i in 0..3 {
+                let v = f32::from_bits(m.r32(a[2] + 4 * i)) + f32::from_bits(m.r32(a[1] + 4 * i));
+                m.w32(a[0] + 4 * i, (v + k as f32).to_bits());
+            }
+            0x229
+        });
+        let bl = SCRATCH + 0x900;
+        t.set_u32(w(&t, 0x32), bl);
+        t.write(bl, &[2, 1, 3, 0]);
+        let actors = w(&t, 0x3d);
+        for i in 0..8u32 {
+            t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+        }
+        t.set_u32(w(&t, 0x2b), 0x0ac7_00ff);
+        t.set_u32(w(&t, 0x177), 0x0177_0000);
+        let gs = SCRATCH + 0x980;
+        t.set_u32(w(&t, 0x4f2), gs);
+        t.set_u32(gs + 0x10, 0x00a5_0010);
+        let x = SCRATCH + 0x1000;
+        // a yaw that folds to the range's top exactly (`KA - yaw = KC`)
+        let kf = |t: &Twin, o: u32| f32::from_bits(t.u32(w(t, o)));
+        let edge = kf(&t, 0x12e) - kf(&t, 0x146);
+        // (X's entry, the yaw, the height, the pool's nodes)
+        for (c, (entry, yaw, height, free)) in [
+            (0u32, 0.5f32, 100.0f32, 8u16),
+            (1, 7.0, -100.0, 8),
+            (u32::MAX, -7.0, 0.0, 2),
+            (2, 3.0, 1.0, 0),
+            (1, edge, 1.0, 8),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let c = c as u32;
+            t.set_u32(LOG, 0);
+            set_f(&mut t, ans, yaw);
+            set_f(&mut t, ans + 4, height);
+            start_first_setup(&mut t, start, 0x9a, free, c);
+            t.write(x, &floats(0x600 / 4, c));
+            t.set_u32(x + 0x504, entry);
+            scrub(&mut t);
+            let call = Call {
+                ecx: x,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                s9_misc::summon_object_between(g, img, fr)
+            });
+        }
+    }
+}

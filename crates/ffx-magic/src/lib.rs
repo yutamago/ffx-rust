@@ -3696,6 +3696,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("node sparks", &s9_misc::NODE_SPARKS),
     ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
     ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
+    ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 
