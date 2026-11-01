@@ -5865,3 +5865,114 @@ fn l7_macro_expand_matches_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_preprocess_matches_the_original() {
+    // the file missing; read with a dirty buffer or not, a handle or
+    // none; lines with every token class, directives (skipping or not,
+    // the ones that run while skipping), expansions, directives that take
+    // lines; an outer file or none
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a15);
+        for case in 0..500_u32 {
+            let fd = [0xffff_ffff_u32, 0, 3, 7][rng.below(4) as usize];
+            let fd = if case % 9 == 4 { 0xffff_ffff } else { fd };
+            let (buf, dirty, size) = (
+                [0, rng.next() | 1][rng.below(2) as usize],
+                rng.below(2),
+                [0, 5, 0xffff_ffff][rng.below(3) as usize],
+            );
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x04]; // mov ecx, [esp+4]
+            for (o, v) in [(0_u8, buf), (4, dirty), (8, fd), (0xc, size)] {
+                x.extend([0xc7, 0x41, o]);
+                x.extend(v.to_le_bytes()); // mov dword [ecx+o], v
+            }
+            t.stub_sym_x(l7v::FILE_READ, 1, false, 2, 0, Ret::Val(rng.next()), &x);
+            let ns: Vec<u32> = (0..8).map(|_| rng.below(4)).collect();
+            let ns = t.seq(&ns);
+            t.stub_sym(l7v::READ_LINE, 2, false, 3, 0, ns);
+            let classes: Vec<u32> = (0..64).map(|_| rng.below(4)).collect();
+            let classes = t.seq(&classes);
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x0c, 0xff, 0x01]; // mov ecx, [esp+0xc]; inc dword [ecx]
+            x.extend([0xc7, 0x05]);
+            x.extend(t.rebase(l7v::IN_COMMENT).to_le_bytes());
+            x.extend(1_u32.to_le_bytes()); // mov dword [comment], 1 (as the tokenizer's comments do)
+            t.stub_sym_x(l7v::TOKEN, 3, false, 5, 0, classes, &x);
+            let mut d: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            d[4] = rng.below(8) | (rng.next() << 16);
+            d[5] = [0, 1][rng.below(2) as usize];
+            let d = t.words(&d);
+            let finds: Vec<u32> = (0..16).map(|_| [0, d][rng.below(2) as usize]).collect();
+            let finds = t.seq(&finds);
+            t.stub_sym(l7v::SYMBOL_FIND, 4, false, 2, 0, finds);
+            // a directive that took two more lines
+            let mut x = vec![0xc7, 0x05];
+            x.extend(t.rebase(l7v::LINE_COUNT).to_le_bytes());
+            x.extend(rng.below(3).to_le_bytes()); // mov dword [count], k
+            t.stub_sym_x(l7v::DIRECTIVE, 5, false, 7, 0, Ret::Val(rng.next()), &x);
+            // the callees see the script's file, line and depth: copied to a
+            // probe the diff compares
+            let probe = t.zeros(16);
+            let mut x = vec![];
+            for (k, g) in [l7v::SCRIPT_ERRORS, l7v::SCRIPT_WARNINGS, l7v::EXPAND_DEPTH]
+                .into_iter()
+                .enumerate()
+            {
+                x.push(0x8b);
+                x.push(0x15);
+                x.extend(t.rebase(g).to_le_bytes()); // mov edx, [g]
+                x.extend([0x89, 0x15]);
+                x.extend((probe + 4 * k as u32).to_le_bytes()); // mov [probe+4k], edx
+            }
+            t.stub_sym_x(l7v::MACRO_EXPAND, 6, false, 6, 0, Ret::Val(rng.next()), &x);
+            t.global(l7v::EXPAND_DEPTH, rng.next() | 1);
+            let ends: Vec<u32> = (0..6)
+                .map(|k| {
+                    if k == 5 || rng.chance(3) {
+                        0xffff_ffff
+                    } else {
+                        0
+                    }
+                })
+                .collect();
+            let ends = t.seq(&ends);
+            t.stub_sym(l7v::LINE_LENGTH, 7, false, 2, 0, ends);
+            for (sym, tag, n) in [
+                (l7v::FILE_PUTS, 8, 2),
+                (l7v::SCE_WRITE, 9, 3),
+                (l7v::SCE_CLOSE, 10, 1),
+                (l7v::DBG_PRINTF, 11, 2),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            let s = t.stub_code(12, false, 5, 0, Ret::Val(rng.next()), false);
+            t.global(l7v::SPRINTF_SLOT, s);
+            let f = t.stub_code(13, false, 1, 0, Ret::Val(rng.next()), false);
+            t.global(l7v::FREE_SLOT, f);
+            t.global(l7v::SCRIPT_ERRORS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::SCRIPT_WARNINGS, rng.next());
+            t.global(l7v::SKIP_LEVEL, rng.below(2));
+            let flags = [u32::from(rng.chance(3)) | (u32::from(rng.chance(2)) << 8)];
+            let at = t.rebase(l7v::SKIP_FLAGS);
+            t.patch(at, &flags[0].to_le_bytes());
+            let (path, out) = (rng.next(), rng.next());
+            let top = call_top(&t.a);
+            let fill: Vec<u8> = (0..0x200).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.a.write(top - 0x800, &fill).unwrap();
+            t.b.write(top - 0x800, &fill).unwrap();
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - l7v::PRE_FRAME - 0x40);
+            t.check(
+                "op_preprocess_007e2270",
+                0x007e_2270,
+                Conv::Cdecl,
+                &[path, out],
+                |o| Out::U32(l7v::preprocess(o, ebp, path, out)),
+            );
+            t.same_stack("op_preprocess_007e2270", ebp - 0x424, 0x420);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}

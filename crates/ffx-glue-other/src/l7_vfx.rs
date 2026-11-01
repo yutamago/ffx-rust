@@ -354,4 +354,170 @@ pub mod bridge {
         }
         0
     }
+
+    /// `op_file_read(&file, path)`, `op_read_line_007e1cc0(&file, out,
+    /// max)`, `op_file_puts_007e2fb0(out, s)`, `op_line_length_007e2660(&file,
+    /// &line)`, the directive handler (`0x007e15f0`), `sceWrite(fd, buf, n)`,
+    /// `sceClose(fd)`; the MSVCR110 `free` slot.
+    pub const FILE_READ: u32 = 0x007e_2ed0;
+    pub const READ_LINE: u32 = 0x007e_1cc0;
+    pub const FILE_PUTS: u32 = 0x007e_2fb0;
+    pub const LINE_LENGTH: u32 = 0x007e_2660;
+    pub const DIRECTIVE: u32 = 0x007e_15f0;
+    pub const SCE_WRITE: u32 = 0x0062_fdc0;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    pub const FREE_SLOT: u32 = 0x00b0_c370;
+    pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+    /// The script's line (0x0113fc5c, `g_OpScriptWarnings` above), the
+    /// comment and string states (0x0113fc60, 0x0113fc64), the line
+    /// marker's buffer (0x0113f958), the conditional stack's flags
+    /// (0x0113fc68 + the level at 0x0113fc78: nonzero while skipping),
+    /// the lines a directive took (0x0113fc80); the directive keywords
+    /// ("#include" and on), "# %d \"%s\"%s", "\r\n", the not-found message.
+    pub const IN_COMMENT: u32 = 0x0113_fc60;
+    pub const IN_STRING: u32 = 0x0113_fc64;
+    pub const LINE_MARK: u32 = 0x0113_f958;
+    pub const SKIP_FLAGS: u32 = 0x0113_fc68;
+    pub const SKIP_LEVEL: u32 = 0x0113_fc78;
+    pub const LINE_COUNT: u32 = 0x0113_fc80;
+    pub const DIRECTIVES: u32 = 0x00c4_4a50;
+    pub const FORMAT_MARK: u32 = 0x00b5_7fac;
+    pub const S_CRLF: u32 = 0x00c4_4a48;
+    pub const S_NOT_FOUND: u32 = 0x00b5_7e44;
+    /// `op_preprocess_007e2270`'s frame.
+    pub const PRE_FRAME: u32 = 0x424;
+
+    /// Skipping (the conditional stack's current flag).
+    fn skipping(h: &impl Host) -> bool {
+        let level = g(h, SKIP_LEVEL);
+        h.read::<u8>(h.rebase(SKIP_FLAGS).wrapping_add(level)) != 0
+    }
+
+    /// The line marker `# line "file"\r\n` into 0x0113f958, then out.
+    fn line_mark(h: &mut impl Host, out: u32, line: u32, file: u32) -> u32 {
+        let (m, f, crlf) = (h.rebase(LINE_MARK), h.rebase(FORMAT_MARK), h.rebase(S_CRLF));
+        let sprintf = g(h, SPRINTF_SLOT);
+        h.call(sprintf, Conv::Cdecl, &[m, f, line, file, crlf]);
+        cdecl(h, FILE_PUTS, &[out, m])
+    }
+
+    /// `op_preprocess_007e2270(path, out)` -> `eax` as the original: the op
+    /// script preprocessor over one file: read whole (`op_file_read` into
+    /// the frame's file at `ebp - 0x420`: buffer, a dirty flag, handle,
+    /// length); missing it is reported (`g_OpLastError` 3). Else, with the
+    /// script's file and line set to it (line markers written before and,
+    /// for the including file, after), line by line: a leading class-1
+    /// token copied (unless skipping), a directive word (`#include` and
+    /// the rest, from 0x00c44a50) handed to `0x007e15f0` (skipping: only
+    /// the ones that run then), then unless skipping every token written
+    /// out, identifiers through `op_macro_expand_007e2a60`; the lines a
+    /// directive took replaced by line ends. A dirty buffer is written
+    /// back, freed and the file closed. `ebp` is the original's frame (the
+    /// line at `ebp - 0x404`, the token at `- 0x204`, the position at `-
+    /// 0x408`, the line's length at `- 0x40c`, the outer line at `-
+    /// 0x424`).
+    #[allow(clippy::too_many_lines)]
+    pub fn preprocess(h: &mut impl Host, ebp: u32, path: u32, out: u32) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let (file, line, tok, pos, len) = (fr(0x420), fr(0x404), fr(0x204), fr(0x408), fr(0x40c));
+        cdecl(h, FILE_READ, &[file, path]);
+        if h.read::<u32>(fr(0x418)).cast_signed() < 0 {
+            let f = g(h, SCRIPT_ERRORS);
+            if f != 0 {
+                let m = h.rebase(FORMAT_FILE);
+                cdecl(h, DBG_PRINTF, &[m, f]);
+            }
+            let l = g(h, SCRIPT_WARNINGS);
+            if l != 0 {
+                let m = h.rebase(FORMAT_LINE);
+                cdecl(h, DBG_PRINTF, &[m, l]);
+            }
+            let m = h.rebase(S_NOT_FOUND);
+            let r = cdecl(h, DBG_PRINTF, &[m, path]);
+            h.write(h.rebase(LAST_ERROR), 3_u32);
+            return r;
+        }
+        let (old_line, old_file) = (g(h, SCRIPT_WARNINGS), g(h, SCRIPT_ERRORS));
+        h.write(fr(0x424), old_line);
+        h.write(h.rebase(SCRIPT_ERRORS), path);
+        h.write(h.rebase(SCRIPT_WARNINGS), 1_u32);
+        h.write(h.rebase(IN_COMMENT), 0_u32);
+        h.write(h.rebase(IN_STRING), 0_u32);
+        line_mark(h, out, 1, path);
+        loop {
+            h.write(h.rebase(LINE_COUNT), 0_u32);
+            let n = cdecl(h, READ_LINE, &[file, line, 0x200]);
+            h.write(len, n);
+            h.write(pos, 0_u32);
+            let mut class = cdecl(h, TOKEN, &[line, tok, pos, 0x200, n]);
+            if class == 1 {
+                if !skipping(h) {
+                    cdecl(h, FILE_PUTS, &[out, tok]);
+                }
+                let n: u32 = h.read(len);
+                class = cdecl(h, TOKEN, &[line, tok, pos, 0x200, n]);
+            }
+            if class == 2 {
+                let dirs = h.rebase(DIRECTIVES);
+                let d = cdecl(h, SYMBOL_FIND, &[tok, dirs]);
+                if d != 0 {
+                    if !skipping(h) || h.read::<u16>(at(d, 0x14)) == 0 {
+                        let kind = i32::from(h.read::<i16>(at(d, 0x10))).cast_unsigned();
+                        cdecl(h, DIRECTIVE, &[file, out, line, kind, pos, 0x200, len]);
+                    }
+                    h.write(tok, 0_u8);
+                }
+            }
+            if !skipping(h) {
+                loop {
+                    if class == 2 {
+                        h.write(h.rebase(EXPAND_DEPTH), 0_u32);
+                        let (top, n): (u32, u32) = (g(h, SCRIPT_TREE), h.read(len));
+                        cdecl(h, MACRO_EXPAND, &[top, line, tok, pos, 0x200, n]);
+                    }
+                    cdecl(h, FILE_PUTS, &[out, tok]);
+                    let n: u32 = h.read(len);
+                    if h.read::<u32>(pos).cast_signed() >= n.cast_signed() {
+                        break;
+                    }
+                    class = cdecl(h, TOKEN, &[line, tok, pos, 0x200, n]);
+                }
+            }
+            let lines = h.rebase(SCRIPT_WARNINGS);
+            if cdecl(h, LINE_LENGTH, &[file, lines]).cast_signed() < 0 {
+                break;
+            }
+            let mut k = 0_i32;
+            while k < g(h, LINE_COUNT).cast_signed() {
+                let crlf = h.rebase(S_CRLF);
+                cdecl(h, FILE_PUTS, &[out, crlf]);
+                k += 1;
+            }
+        }
+        let size: u32 = h.read(fr(0x414));
+        if size.cast_signed() > 0 && h.read::<u32>(fr(0x41c)) != 0 {
+            let (buf, fd): (u32, u32) = (h.read(file), h.read(fr(0x418)));
+            cdecl(h, SCE_WRITE, &[fd, buf, size]);
+        }
+        let buf: u32 = h.read(file);
+        if buf != 0 {
+            let free = g(h, FREE_SLOT);
+            h.call(free, Conv::Cdecl, &[buf]);
+        }
+        let fd: u32 = h.read(fr(0x418));
+        if fd.cast_signed() > 0 {
+            cdecl(h, SCE_CLOSE, &[fd]);
+        }
+        let old_line: u32 = h.read(fr(0x424));
+        h.write(h.rebase(SCRIPT_ERRORS), old_file);
+        h.write(h.rebase(SCRIPT_WARNINGS), old_line);
+        let r = if old_file == 0 {
+            old_line
+        } else {
+            line_mark(h, out, old_line, old_file)
+        };
+        h.write(h.rebase(IN_COMMENT), 0_u32);
+        h.write(h.rebase(IN_STRING), 0_u32);
+        r
+    }
 }

@@ -870,4 +870,12 @@ ported! {
         let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::EXPAND_FRAME;
         ffx_glue_other::l7_vfx::bridge::macro_expand(&mut mem(), ebp, slots, tree, src, name, pos, end)
     }
+    /// `(path, out)`: the op script preprocessor over one file (its file
+    /// record, line, token and positions in the original's 0x424-byte
+    /// frame, in this shim's).
+    op_preprocess_007e2270 @ 0x007e_2270 => extern "C" fn op_preprocess(path: u32, out: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::PRE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::PRE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::preprocess(&mut mem(), ebp, path, out)
+    }
 }
