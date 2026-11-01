@@ -2213,3 +2213,336 @@ pub const LIGHT_DRIFT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Where [`light_land`]'s two copies differ: `magic_0565`'s picks the
+/// child's program (0x19 after the sounds, 4 without them) and so sits
+/// `shift` = 0xb bytes later from the object start on, its `K2` at
+/// `k2`; `magic_0644`'s always starts program 4 (`push imm8` at
+/// `program`).
+pub struct LightLand {
+    shift: u32,
+    k2: u32,
+    program: (u32, u32),
+}
+
+/// `magic_0644` 0x1000a180.
+const LAND_0644: LightLand = LightLand {
+    shift: 0,
+    k2: 0x1dc,
+    program: (0x1ec, 0x1ec),
+};
+
+/// `magic_0565` 0x10006330 (the `mov eax, imm32` after the sounds and
+/// the one they skip to).
+const LAND_0565: LightLand = LightLand {
+    shift: 0xb,
+    k2: 0x1e8,
+    program: (0x1d9, 0x1e0),
+};
+
+/// A light landing (cdecl `(O)`; a /GS frame, `ebp` = `esp - 4`, the
+/// point `P` at `ebp-0x18`; `S = O[0x14]`, `B = *G_B`): the count
+/// `S[0x50c]` goes down to 0; with `u = count / S[0x510]` and `v = K1 -
+/// u`, `P = S[0x260..] u + S[0x270..] v` (`w` 1.0), the light set up there
+/// ([`light_setup`](crate::o6_fam_pairs5::light_setup), angles `S+0x280`,
+/// `n` 0x80) and `P` kept in `S+0xd0`. Once the count is 0: unless
+/// `S[0x514]` is set, slot 239 `(*G_C, (*G_L)[e], 0)` for each battle
+/// number `e` of the list `L = B[D1]` (`L[4]` of them from `L+8`), slot
+/// 306 `(7, 2, slot 719 (X1, 9, 1))` and slot 393 `(slot 719 (X2, 6,
+/// 0x12), S+0x270, 0x100)`; the child `S+0x130` started at the scale `K2`
+/// ([`start_object_at`](crate::s4_misc::start_object_at), the program by
+/// [`LightLand`]) at `S+0x270` lowered by `K3`, its `+0xc4` = `B[D2]`; `S`
+/// off its list ([`unlist_object`]), `B[D3]` up by one, `O` given back to
+/// its pool ([`give_back`](crate::sa_pool::give_back)). Returns the last
+/// callee's `eax`. (`D1`..`D3` are the code's displacements.)
+fn light_land<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &LightLand) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ws = |o: u32| op(img, f, o + l.shift);
+    let t = |g: &G, s: u32| slot_target(g, w(0x161), s);
+    let obj = fr.arg(g, 0);
+    let b = g.read::<u32>(w(0x16));
+    let s = g.read::<u32>(obj.wrapping_add(0x14));
+    let ebp = fr.esp.wrapping_sub(4);
+    let left = g.read::<i32>(s + 0x50c);
+    if left > 0 {
+        g.write::<i32>(s + 0x50c, left - 1);
+    }
+    let u = div(cvt(g.read::<u32>(s + 0x50c)), cvt(g.read::<u32>(s + 0x510)));
+    let v = sub(g.read::<f32>(w(0x4d)), u);
+    let p = ebp.wrapping_sub(0x18);
+    let mut at = [0f32; 3];
+    for (i, x) in (0u32..).zip(&mut at) {
+        let from = g.read::<f32>(s + 0x260 + 4 * i);
+        let to = g.read::<f32>(s + 0x270 + 4 * i);
+        *x = add(mul(from, u), mul(v, to));
+        g.write::<f32>(p + 4 * i, *x);
+    }
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let light = (
+        img.rel32_target(f + 0xdb),
+        ebp.wrapping_sub(0x34),
+        s + 0x280,
+        p,
+    );
+    let eax = sub_call(g, crate::o6_fam_pairs5::light_setup, img, light, &[0x80]).eax;
+    for (i, x) in (0u32..).zip(at) {
+        g.write::<f32>(s + 0xd0 + 4 * i, x);
+    }
+    g.write::<u32>(s + 0xdc, 0x3f80_0000);
+    if g.read::<i32>(s + 0x50c) > 0 {
+        return Ret::eax(eax);
+    }
+    let program = if g.read::<u32>(s + 0x514) == 0 {
+        let list = |g: &G| g.read::<u32>(b.wrapping_add(w(0x12f)));
+        let mut i = 0u32;
+        while i.cast_signed() < g.read::<i32>(list(g).wrapping_add(4)) {
+            let e = u32::from(g.read::<u8>(list(g).wrapping_add(8 + i)));
+            let c = g.read::<u32>(w(0x147));
+            let n = u32::from(g.read::<u8>(g.read::<u32>(w(0x155)).wrapping_add(e)));
+            g.call(t(g, 239), 0, &[c, n, 0]);
+            i += 1;
+        }
+        let h = g.call(t(g, 719), 0, &[w(0x18d), 9, 1]).eax;
+        g.call(t(g, 306), 0, &[7, 2, h]);
+        let h = g.call(t(g, 719), 0, &[w(0x1b5), 6, 0x12]).eax;
+        g.call(t(g, 393), 0, &[h, s + 0x270, 0x100]);
+        w(l.program.0) & 0xff
+    } else {
+        w(l.program.1) & 0xff
+    };
+    let child = s + 0x130;
+    let start = img.rel32_target(f + 0x1f0 + l.shift);
+    let scale = g.read::<f32>(w(l.k2));
+    crate::s4_misc::start_object_at(g, img, start, child, scale, program, 0, 0);
+    for i in 0..4 {
+        let x = g.read::<u32>(s + 0x270 + 4 * i);
+        g.write::<u32>(child + 0xd0 + 4 * i, x);
+    }
+    let y = sub(g.read::<f32>(child + 0xd4), g.read::<f32>(ws(0x230)));
+    let c4 = g.read::<u32>(b.wrapping_add(ws(0x236)));
+    g.write::<u32>(child + 0xc4, c4);
+    g.write::<f32>(child + 0xd4, y);
+    let unlist = [0x240, 0x253, 0x25c, 0x263, 0x268].map(|o| o + l.shift);
+    unlist_object(
+        g,
+        img,
+        f,
+        s,
+        (unlist[0], unlist[1], unlist[2], unlist[3], unlist[4]),
+    );
+    let done = b.wrapping_add(ws(0x288));
+    let n = g.read::<u32>(done).wrapping_add(1);
+    g.write::<u32>(done, n);
+    let back = img.rel32_target(f + 0x28d + l.shift);
+    Ret::eax(crate::sa_pool::give_back(g, img, back, obj))
+}
+
+/// [`light_land`] in `magic_0644` (program 4).
+///
+/// `magic_0644` 0x1000a180 (674 bytes; 5 DLLs).
+pub fn light_land_0644<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    light_land(g, img, fr, &LAND_0644)
+}
+
+/// [`light_land`] in `magic_0565` (program 0x19 after the sounds).
+///
+/// `magic_0565` 0x10006330 (685 bytes; 5 DLLs).
+pub fn light_land_0565<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    light_land(g, img, fr, &LAND_0565)
+}
+
+/// [`light_land_0644`] (the `rel32`s: the light set-up, the object
+/// start, the list removal, the pool give-back and
+/// `__security_check_cookie`).
+pub const LIGHT_LAND_0644: Sig = Sig {
+    len: 674,
+    hash: 0x8d96_735b_3fd7_0dbc,
+    calls: &[
+        (
+            0xdb,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x1f0, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x253, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x28d, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x29a, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`light_land_0565`] (the same `rel32`s, 0xb bytes later from the
+/// object start on).
+pub const LIGHT_LAND_0565: Sig = Sig {
+    len: 685,
+    hash: 0x42a3_3af1_0cc4_34a7,
+    calls: &[
+        (
+            0xdb,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x1fb, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x25e, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x298, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x2a5, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// Whether a bounce stops the axis: its new speed `v` is zeroed when it
+/// keeps the sign the wall `wall` allows (`0 > wall` and `0 > v`, or
+/// neither `0 > wall` nor `v < 0`, the `comiss` order of the original).
+fn bounce_stops(wall: f32, v: f32) -> bool {
+    if 0.0 > wall {
+        0.0 > v
+    } else {
+        !(v < 0.0) && !v.is_nan()
+    }
+}
+
+/// A light bouncing on the floor (cdecl `(O)`; `S = O[0x14]`, `B =
+/// *G_B`): the count `S[0x50c]` goes down to 0; the speed `S+0x2a0..`
+/// (its `y` growing by `K1` first) moves the point `S+0x260..`. At or
+/// past the floor `F = B[D] - K2` the speed bounces (`x`, `z` times `K4`,
+/// `y` times `K3`, kept in `S+0x270..` and back in `S+0x2a0..`; `y` stops
+/// when above 0, `x`/`z` when they keep the side their wall `S+0x2b0` /
+/// `+0x2b8` allows, [`bounce_stops`]; a `y` above 0 would also pull the
+/// point back along its last step), the point sits on the floor, and the
+/// turn speeds `S+0x290`, `+0x294` scale by `|speed| / S[0x27c]`
+/// (`_libm_sse2_sqrt_precise`). The two angles `S+0x280`, `+0x284` turn by
+/// `S+0x290`, `+0x298`, brought back once by `KT` when above `KH` or below
+/// `KL`; the light set up at the point
+/// ([`light_setup`](crate::o6_fam_pairs5::light_setup), `n` = `count *
+/// 128 / 20`, 0x80 from 20 on). Once the count is 0, `B[N]` goes up and
+/// `O` goes back to its pool ([`give_back`](crate::sa_pool::give_back)).
+/// Returns the last callee's `eax`. (`D`, `N` are the code's
+/// displacements.)
+///
+/// `magic_0565` 0x10004f00 (795 bytes; 5 DLLs).
+pub fn light_bounce<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let obj = fr.arg(g, 0);
+    let b = g.read::<u32>(w(0xe));
+    let s = g.read::<u32>(obj.wrapping_add(0x14));
+    let left = g.read::<i32>(s + 0x50c);
+    if left > 0 {
+        g.write::<i32>(s + 0x50c, left - 1);
+    }
+    let r = |g: &G, o: u32| g.read::<f32>(s + o);
+    let (x0, y0, z0) = (r(g, 0x260), r(g, 0x264), r(g, 0x268));
+    g.write::<f32>(s + 0x2a4, add(r(g, 0x2a4), k(g, 0x5b)));
+    g.write::<f32>(s + 0x260, add(r(g, 0x260), r(g, 0x2a0)));
+    g.write::<f32>(s + 0x264, add(r(g, 0x264), r(g, 0x2a4)));
+    g.write::<f32>(s + 0x268, add(r(g, 0x2a8), r(g, 0x268)));
+    let floor = sub(g.read::<f32>(b.wrapping_add(w(0xa5))), k(g, 0xad));
+    if !(r(g, 0x264) < floor) && !r(g, 0x264).is_nan() && !floor.is_nan() {
+        let vy = mul(r(g, 0x2a4), k(g, 0xd6));
+        let vx = mul(r(g, 0x2a0), k(g, 0xe6));
+        let vz = mul(r(g, 0x2a8), k(g, 0xee));
+        g.write::<f32>(s + 0x270, vx);
+        g.write::<f32>(s + 0x274, vy);
+        g.write::<f32>(s + 0x278, vz);
+        if vy > 0.0 {
+            g.write::<u32>(s + 0x274, 0);
+        }
+        if bounce_stops(r(g, 0x2b0), vx) {
+            g.write::<u32>(s + 0x270, 0);
+        }
+        if bounce_stops(r(g, 0x2b8), vz) {
+            g.write::<u32>(s + 0x278, 0);
+        }
+        for i in 0..4 {
+            let v = g.read::<u32>(s + 0x270 + 4 * i);
+            g.write::<u32>(s + 0x2a0 + 4 * i, v);
+        }
+        if r(g, 0x274) > 0.0 {
+            // (not reached: `y` was zeroed when above 0)
+            let y = r(g, 0x264);
+            let back = div(sub(y, floor), sub(y, y0));
+            g.write::<f32>(s + 0x260, add(mul(sub(r(g, 0x260), x0), back), x0));
+            g.write::<f32>(s + 0x268, add(mul(sub(r(g, 0x268), z0), back), z0));
+        }
+        g.write::<f32>(s + 0x264, floor);
+        let (vx, vy, vz) = (r(g, 0x2a0), r(g, 0x2a4), r(g, 0x2a8));
+        let sq = add(add(mul(vx, vx), mul(vy, vy)), mul(vz, vz));
+        #[allow(clippy::cast_possible_truncation)] // `cvtsd2ss`
+        let speed = f64::from(sq).sqrt() as f32;
+        let ratio = div(speed, r(g, 0x27c));
+        g.write::<f32>(s + 0x290, mul(r(g, 0x290), ratio));
+        g.write::<f32>(s + 0x294, mul(r(g, 0x294), ratio));
+    }
+    let (high, turn, low) = (k(g, 0x267), k(g, 0x26f), k(g, 0x277));
+    for (angle, speed) in [(0x280u32, 0x290u32), (0x284, 0x298)] {
+        let a = add(r(g, speed), r(g, angle));
+        let a = if a > high {
+            sub(a, turn)
+        } else if low > a {
+            add(a, turn)
+        } else {
+            a
+        };
+        g.write::<f32>(s + angle, a);
+    }
+    let count = g.read::<i32>(s + 0x50c);
+    let n = if count >= 0x14 {
+        0x80
+    } else {
+        count.wrapping_shl(7) / 20
+    };
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x18);
+    let light = (img.rel32_target(f + 0x2f1), esp, s + 0x280, s + 0x260);
+    let eax = sub_call(
+        g,
+        crate::o6_fam_pairs5::light_setup,
+        img,
+        light,
+        &[n.cast_unsigned()],
+    )
+    .eax;
+    if g.read::<i32>(s + 0x50c) > 0 {
+        return Ret::eax(eax);
+    }
+    let done = b.wrapping_add(w(0x30b));
+    let n = g.read::<u32>(done).wrapping_add(1);
+    g.write::<u32>(done, n);
+    let back = img.rel32_target(f + 0x310);
+    Ret::eax(crate::sa_pool::give_back(g, img, back, obj))
+}
+
+/// [`light_bounce`] (the `rel32`s: the square root, the light set-up and
+/// the pool give-back).
+pub const LIGHT_BOUNCE: Sig = Sig {
+    len: 795,
+    hash: 0x10ed_6256_6b19_3781,
+    calls: &[
+        (0x218, Callee::Import("_libm_sse2_sqrt_precise")),
+        (
+            0x2f1,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x310, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// The 12-byte thunk over [`lit_colour_node`](crate::s7_misc::lit_colour_node)
+/// (`ecx` = the first stack word, a jump with the caller's stack).
+///
+/// `magic_0152` 0x10001470 (12 bytes; 2 DLLs).
+pub fn lit_colour_node_thunk<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::o6_fam_pairs3::thunk_to(g, img, fr, |g, img, fr| {
+        Ret::eax(crate::s7_misc::lit_colour_node(g, img, fr))
+    })
+}
+
+/// [`lit_colour_node_thunk`].
+pub const LIT_COLOUR_NODE_THUNK: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&crate::s7_misc::LIT_COLOUR_NODE))],
+    imports: &[],
+};

@@ -2629,6 +2629,10 @@ ports! {
     "light arc (0565)" => s9_misc::LIGHT_ARC_0565, s9_misc::light_arc;
     "light arc (0644)" => s9_misc::LIGHT_ARC_0644, s9_misc::light_arc;
     "light drift" => s9_misc::LIGHT_DRIFT, s9_misc::light_drift;
+    "light landing (0644)" => s9_misc::LIGHT_LAND_0644, s9_misc::light_land_0644;
+    "light landing (0565)" => s9_misc::LIGHT_LAND_0565, s9_misc::light_land_0565;
+    "light bounce" => s9_misc::LIGHT_BOUNCE, s9_misc::light_bounce;
+    "thunk: lit colour node" => s9_misc::LIT_COLOUR_NODE_THUNK, s9_misc::lit_colour_node_thunk;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

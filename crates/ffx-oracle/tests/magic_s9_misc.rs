@@ -1547,3 +1547,166 @@ fn lights_drifting() {
         }
     }
 }
+
+/// Rows 51/52: the light landing in four DLLs (both copies): the count
+/// still running, and run out with and without the sounds (`S[0x514]`)
+/// and with no, one and three battle numbers, the object on its list and
+/// not.
+#[test]
+fn lights_landing() {
+    for (dll, rva) in [
+        (644u16, 0xa180u32),
+        (692, 0xa180),
+        (565, 0x6330),
+        (695, 0x6330),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let sh = if rva == 0x6330 { 0xb } else { 0 };
+        let light = t.img.rel32_target(f + 0xdb);
+        light_slots(&mut t, light);
+        let soa = t.img.rel32_target(f + 0x1f0 + sh);
+        log_calls(&mut t, 239, 3, &[], |_, a, _| a[1] ^ 0x0239_0000);
+        log_calls(&mut t, 719, 3, &[], |_, a, _| 0x7190_0000 ^ a[2]);
+        log_calls(&mut t, 306, 3, &[], |_, a, _| 0x0306_0000 ^ a[2]);
+        log_calls(&mut t, 393, 3, &[1], |_, _, _| 0x393);
+        log_calls(&mut t, 713, 1, &[0], |_, _, _| 0x713);
+        let b = SCRATCH + 0x10000;
+        t.set_u32(w(&t, 0x16), b);
+        let k1 = w(&t, 0x4d);
+        set_f(&mut t, k1, 1.0);
+        let list = w(&t, 0x240 + sh);
+        let gp = SCRATCH + 0x7e8;
+        t.set_u32(w(&t, 0x25c + sh), gp);
+        let nums = SCRATCH + 0x7a0;
+        t.set_u32(w(&t, 0x155), nums);
+        t.write(nums, &[3, 1, 4, 1, 5, 9, 2, 6]);
+        let (obj, s) = (SCRATCH + 0x5000, SCRATCH + 0x8000);
+        let l = SCRATCH + 0x7c0;
+        // (count, no sounds, battle numbers, on the list)
+        for (k, (count, quiet, n, listed)) in [
+            (4i32, 0u32, 1u32, false),
+            (1, 0, 3, true),
+            (0, 1, 2, false),
+            (0, 0, 0, true),
+            (-1, 0, 1, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            object_start_setup(&mut t, soa, 8);
+            t.write(b, &varied(0xed00, k + 1));
+            let d1 = w(&t, 0x12f);
+            t.set_u32(b + d1, l);
+            t.write(l, &[0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 5, 1]);
+            t.set_u32(l + 4, n);
+            let c = w(&t, 0x147);
+            t.set_u32(c, 0x0c0c_0000 + k);
+            t.write(s, &floats(0x150, k));
+            t.set_u32(s + 0x50c, count.cast_unsigned());
+            t.set_u32(s + 0x510, 6);
+            t.set_u32(s + 0x514, quiet);
+            t.write(obj, &varied(0x20, k));
+            t.set_u32(obj, 0);
+            t.set_u32(obj + 4, 0);
+            t.set_u32(obj + 8, SCRATCH + 0x5100);
+            t.set_u32(SCRATCH + 0x510c, 0);
+            t.set_u32(obj + 0x14, s);
+            let node = SCRATCH + 0x5400;
+            t.write(node, &varied(0x10, k));
+            if listed {
+                t.set_u32(node, 0);
+                t.set_u32(node + 4, 0);
+                t.set_u32(node + 8, s);
+                t.set_u32(list, node);
+                t.set_u32(list + 4, node);
+                t.set_u32(list + 8, node);
+            } else {
+                t.set_u32(list, 0);
+            }
+            t.set_u32(list + 0xc, 1);
+            scrub(&mut t);
+            let call = Call {
+                eax: 0xa180 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, call, &[obj], Eax::Checked);
+        }
+    }
+}
+
+/// Row 55: the light bouncing in two DLLs: in the air, on the floor with
+/// each wall side and speed sign (the axes stopping or not), the count
+/// above 20, below it and run out.
+#[test]
+fn lights_bouncing() {
+    for dll in [565u16, 697] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x4f00);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let light = t.img.rel32_target(f + 0x2f1);
+        light_slots(&mut t, light);
+        let b = SCRATCH + 0x10000;
+        t.set_u32(w(&t, 0xe), b);
+        for (o, x) in [
+            (0x5bu32, 0.5f32),
+            (0xad, 0.25),
+            (0xd6, -0.5),
+            (0xe6, 0.75),
+            (0xee, 0.75),
+            (0x267, 3.0),
+            (0x26f, 6.0),
+            (0x277, -3.0),
+        ] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        let (obj, s) = (SCRATCH + 0x5000, SCRATCH + 0x8000);
+        // (count, height, speed, walls)
+        for (k, (count, y, v, walls)) in [
+            (30i32, -5.0f32, [1.0f32, 0.5, -1.0], [1.0f32, -1.0]),
+            (12, 2.0, [1.0, 0.5, -1.0], [1.0, -1.0]),
+            (12, 2.0, [-1.0, -0.5, 1.0], [-1.0, 1.0]),
+            (5, 3.0, [-2.0, 1.5, 2.0], [1.0, -1.0]),
+            (1, 2.5, [2.0, -3.0, -2.0], [-1.0, 1.0]),
+            (0, 4.0, [0.0, 1.0, 0.0], [0.0, 0.0]),
+            // rising into the floor: `y` stops
+            (3, 3.0, [1.0, -0.75, 1.0], [1.0, 1.0]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.write(b, &varied(0xd800, k + 1));
+            let d = w(&t, 0xa5);
+            set_f(&mut t, b + d, 1.0);
+            t.write(s, &floats(0x150, k));
+            t.set_u32(s + 0x50c, count.cast_unsigned());
+            set_f(&mut t, s + 0x264, y);
+            for (i, x) in (0u32..).zip(v) {
+                set_f(&mut t, s + 0x2a0 + 4 * i, x);
+            }
+            set_f(&mut t, s + 0x2b0, walls[0]);
+            set_f(&mut t, s + 0x2b8, walls[1]);
+            set_f(&mut t, s + 0x27c, 2.0);
+            t.write(obj, &varied(0x20, k));
+            t.set_u32(obj, 0);
+            t.set_u32(obj + 4, 0);
+            t.set_u32(obj + 8, SCRATCH + 0x5100);
+            t.set_u32(SCRATCH + 0x510c, 0);
+            t.set_u32(obj + 0x14, s);
+            scrub(&mut t);
+            let call = Call {
+                eax: 0x4f00 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, call, &[obj], Eax::Checked);
+        }
+    }
+}

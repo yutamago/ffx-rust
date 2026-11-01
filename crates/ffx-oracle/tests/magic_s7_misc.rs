@@ -3522,7 +3522,8 @@ fn flight_steps() {
 
 /// Row 447: the lit colour node of both DLLs: not passed; the light on
 /// and off (alpha and `+0x5c` above 0 and not); the easing with bit 1;
-/// the stepping before, across and past both clocks' end.
+/// the stepping before, across and past both clocks' end; each case
+/// again through the node's 12-byte thunk.
 #[test]
 fn lit_colour_nodes() {
     for dll in [152u16, 533] {
@@ -3607,6 +3608,16 @@ fn lit_colour_nodes() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::lit_colour_node(g, img, fr))
             });
+            // the same through its 12-byte thunk (shared-9 row 150,
+            // `s9_misc::lit_colour_node_thunk`) on the state the run left,
+            // the node as the stack word
+            t.set_u32(log, 0);
+            scrub(&mut t);
+            let thunk = Call {
+                ecx: 0x0ecc_0000 + k,
+                ..call
+            };
+            t.check_entry(t.at(0x1470), thunk, &[s], Eax::Checked);
         }
     }
 }
