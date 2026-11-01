@@ -7,15 +7,32 @@ here). Each exports `GetEffectOverlayTable` and `InitMagicPRX`.
 
 `onMagicDLLLoaded` (`0x009db110`) looks up `InitMagicPRX`, and
 `MagicFile_Start` (`0x009da7f0`) calls it with `g_MagicImports`
-(`0x00c64ce8`): 744 slots of 4 bytes (`0xba0`), the overlays' only way into
-the game. (The table goes on past them: `InitMagicPRX` copies words up to
-`+0xea0` into its globals, pointers to game variables, and the overlays
-call through words up to at least `+0xeb4`, slot 941; the slot list
-below stops at 743.) The last three slots are data, not functions: `0x0230ffe0` (next
-to `g_pppCurrentPart`), `0x02332e8c` and `g_OpusBattle` (`0x012a40c0`);
-`InitMagicPRX` reads them at `+0xb94`, `+0xb98` and `+0xb9c` and keeps the
-table's address in a global of its own. Every later call loads that global
-and calls through `[table + 4 * slot]`.
+(`0x00c64ce8`): 947 slots of 4 bytes (`0xecc`), the overlays' only way into
+the game. The table is complete when `FFX.exe` is loaded: every slot is a
+relocated `.data` word (or 0), and nothing in `FFX.exe` writes it. Its
+only reference is `MagicFile_Start`'s `push 0x00c64ce8` (`0x009da81f`), and
+no init code or registration function fills it. It ends where the next
+object starts: a zero padding word at `+0xecc`, then an RTTI type
+descriptor at `0x00c65bb8`. `tools/reach.py` (`Image.magic_imports`) reads
+the length from the image this way. The overlays call slots up to 946
+(`+0xec8`).
+
+- Slots 0–740: 741 code pointers. Slots 728–740 are the runtime's.
+- Slots 741–765: 25 data pointers. `0x0230ffe0` (next to
+  `g_pppCurrentPart`), `0x02332e8c`, `g_OpusBattle` (`0x012a40c0`) and
+  further game variables. `InitMagicPRX` copies them into its own globals
+  (it reads `+0xb94` onwards, up to `+0xea0`).
+- Slots 766–946: 172 code pointers and 8 more data pointers (769, 827,
+  850, 880, 919, 921, 935, 936). Slot 854 is null, and no overlay uses it.
+
+`InitMagicPRX` keeps the table's address in a global of its own. Every
+later call loads that global and calls through `[table + 4 * slot]`.
+
+The slot list below covered only slots 0–743 until 2026-11-01. In that
+earlier list, "744 slots (`0xba0`)" was just where the list stopped, not
+the end of the table. `tools/reach.py` already reached slots 744–946 as
+plain `.data` pointers, so its verdicts did not change. No function was
+dropped wrongly.
 
 Replacing a slot's function in `FFX.exe` (`docs/hooking.md`) therefore
 covers every overlay at once: the slots point at the patched originals.
@@ -31,7 +48,11 @@ use of slot `off / 4`. *overlays* is the number of DLLs with at least one
 use, *refs* the total. It is a static count of call sites, not of calls
 made at run time; a pointer copied elsewhere before use would be missed.
 Slots 728–740 are used by all 581 overlays: each carries the same small
-wrappers around them.
+wrappers around them. Rows 744–946 were added on 2026-11-01 and counted
+the same way (`tools/overlay-census.py`'s register tracking over each whole
+`.text`). The same recount gives the earlier numbers for 741 of slots
+0–743. The other three are off by at most one reference, except slot 0
+(28 overlays here, 0 in the earlier count).
 
 *module* is `tools/progress.py`'s placement (a `?` marks a function the
 Ghidra dump does not list, placed by the function before it). *name* is
@@ -41,6 +62,11 @@ Ghidra dump does not list, placed by the function before it). *name* is
 Slot functions by module: effects 327, battle 115, map 115, characters 84,
 system 36, main 25, PS2 emulation 22, script 6, menu 6, CRT 4, movie 1;
 3 data slots. 730 of the 744 slots are used by at least one overlay.
+Slots 744–946: render 89, effects 39, PS2 emulation 15, system 10, menu 6,
+battle 5, characters 5, movie, map and main 1 each; 30 data slots and the
+null slot 854. At least one overlay uses 128 of these 203 slots. Data
+slots count 0 here: `InitMagicPRX` reads them through its argument, not
+through the global, except slot 749 (2 overlays).
 
 ## Functions the Ghidra dump hides
 
@@ -97,8 +123,11 @@ offset (`+0x4`, `+0xc`, `+0x10`, ...).
   Guest address `a` lives at host address `base + a`: 0 in the 32-bit
   game, the arena's start in `ffx-host`. `service` is a 64 KiB guest range
   nothing else uses (the import traps; its last 16 bytes are the return
-  sentinel). `import_table` is `g_MagicImports` (address, 744), so a
-  call-out to one of its entries reports the slot.
+  sentinel). `import_table` is `g_MagicImports` (address, slot count),
+  so a call-out to one of its entries reports the slot. The table has
+  947 slots. The 32-bit gate (`overlay_emu.rs`) still passes 744, so a
+  call-out to slots 744–946 reports no slot. Its `call_out` ignores the
+  slot, so the gate's behaviour is the same.
 - `Pe::parse(file)` reads a DLL as data. The embedder reserves
   `pe.span()` bytes at a 64 KiB-aligned base, makes everything writable
   except `pe.text_range()`, and calls `Overlay::load(name, file, &pe, base)`:
@@ -1151,3 +1180,206 @@ one), `magic_0390` and `magic_0596` for their own code.
 | 741 | `0xb94` | `0x0230ffe0` |  | data | 0 | 0 |
 | 742 | `0xb98` | `0x02332e8c` |  | data | 0 | 0 |
 | 743 | `0xb9c` | `0x012a40c0` |  | data | 0 | 0 |
+| 744 | `0xba0` | `0x0113fcd0` |  | data | 0 | 0 |
+| 745 | `0xba4` | `0x0113fd10` |  | data | 0 | 0 |
+| 746 | `0xba8` | `0x02321540` |  | data | 0 | 0 |
+| 747 | `0xbac` | `0x0119fe90` |  | data | 0 | 0 |
+| 748 | `0xbb0` | `0x02322780` |  | data | 0 | 0 |
+| 749 | `0xbb4` | `0x022fb450` |  | data | 2 | 6 |
+| 750 | `0xbb8` | `0x011a0060` |  | data | 0 | 0 |
+| 751 | `0xbbc` | `0x00c44bf0` |  | data | 0 | 0 |
+| 752 | `0xbc0` | `0x0230ff60` |  | data | 0 | 0 |
+| 753 | `0xbc4` | `0x0230fd2c` |  | data | 0 | 0 |
+| 754 | `0xbc8` | `0x0230ffa0` |  | data | 0 | 0 |
+| 755 | `0xbcc` | `0x0230fe20` |  | data | 0 | 0 |
+| 756 | `0xbd0` | `0x0230fe60` |  | data | 0 | 0 |
+| 757 | `0xbd4` | `0x0230ff20` |  | data | 0 | 0 |
+| 758 | `0xbd8` | `0x0230fd34` |  | data | 0 | 0 |
+| 759 | `0xbdc` | `0x00c498dc` |  | data | 0 | 0 |
+| 760 | `0xbe0` | `0x025d5a20` |  | data | 0 | 0 |
+| 761 | `0xbe4` | `0x0230fd30` |  | data | 0 | 0 |
+| 762 | `0xbe8` | `0x0230fd50` |  | data | 0 | 0 |
+| 763 | `0xbec` | `0x011a0710` |  | data | 0 | 0 |
+| 764 | `0xbf0` | `0x023cbbf0` |  | data | 0 | 0 |
+| 765 | `0xbf4` | `0x00c3e6c0` |  | data | 0 | 0 |
+| 766 | `0xbf8` | `0x009db1f0` |  | ps2-emu? | 0 | 0 |
+| 767 | `0xbfc` | `0x009db1a0` |  | ps2-emu? | 0 | 0 |
+| 768 | `0xc00` | `0x009db1b0` |  | ps2-emu? | 0 | 0 |
+| 769 | `0xc04` | `0x00c64ce0` |  | data | 0 | 0 |
+| 770 | `0xc08` | `0x00643900` | graphicSetScreenFadeColor | render | 0 | 0 |
+| 771 | `0xc0c` | `0x009db230` | PppCurrentProgramKey_009db230 | ps2-emu | 8 | 28 |
+| 772 | `0xc10` | `0x009db250` | WideKey_009db250 | ps2-emu | 123 | 435 |
+| 773 | `0xc14` | `0x006453d0` | graphicVFXGetRenderDataByInstance | vfx | 232 | 324 |
+| 774 | `0xc18` | `0x0071b8a0` | updateVFXRenderDataShp | system | 123 | 161 |
+| 775 | `0xc1c` | `0x006458a0` | graphicVFXUpdate | vfx | 231 | 286 |
+| 776 | `0xc20` | `0x00712c30` | calculateVFXSP_AlphaFunction | vfx | 249 | 410 |
+| 777 | `0xc24` | `0x00712d00` | calculateVFXSP_ZMat | vfx | 229 | 290 |
+| 778 | `0xc28` | `0x00711460` | InitVFXRenderDataShp | vfx | 123 | 161 |
+| 779 | `0xc2c` | `0x00645280` | graphicVFXDestroy | vfx | 220 | 399 |
+| 780 | `0xc30` | `0x00643980` | graphicSetSpecularMapParams | render | 0 | 0 |
+| 781 | `0xc34` | `0x00643150` | graphicSetFogColour | render | 4 | 4 |
+| 782 | `0xc38` | `0x006431e0` | graphicSetFogNear | render | 4 | 4 |
+| 783 | `0xc3c` | `0x006431a0` | graphicSetFogFar | render | 4 | 4 |
+| 784 | `0xc40` | `0x00643180` | graphicSetFogParam_00643180 | render | 4 | 4 |
+| 785 | `0xc44` | `0x006431c0` | graphicSetFogLimit | render | 345 | 680 |
+| 786 | `0xc48` | `0x00641160` | graphicGetFogColor | render | 4 | 4 |
+| 787 | `0xc4c` | `0x006411d0` | graphicGetFogNear | render | 4 | 4 |
+| 788 | `0xc50` | `0x006411b0` | graphicGetFogFar | render | 4 | 4 |
+| 789 | `0xc54` | `0x006411a0` | graphicGetAppFloat78_006411a0 | render | 4 | 4 |
+| 790 | `0xc58` | `0x006411c0` | graphicGetFogLimit | render | 302 | 309 |
+| 791 | `0xc5c` | `0x00643270` | graphicSetGlobalAmbientColor | render | 116 | 233 |
+| 792 | `0xc60` | `0x00641230` | graphicGetGlobalAmbientColor | render | 1 | 1 |
+| 793 | `0xc64` | `0x00643320` | graphicSetAppFloatD0_00643320 | render | 0 | 0 |
+| 794 | `0xc68` | `0x006432e0` | graphicSetAppFloatD4_006432e0 | render | 0 | 0 |
+| 795 | `0xc6c` | `0x006432c0` | graphicSetAppFloatD8_006432c0 | render | 0 | 0 |
+| 796 | `0xc70` | `0x00643300` | graphicSetAppFloatDC_00643300 | render | 0 | 0 |
+| 797 | `0xc74` | `0x006412a0` | graphicGetAppFloatD0_006412a0 | render | 0 | 0 |
+| 798 | `0xc78` | `0x00641280` | graphicGetAppFloatD4_00641280 | render | 0 | 0 |
+| 799 | `0xc7c` | `0x00641270` | graphicGetAppFloatD8_00641270 | render | 0 | 0 |
+| 800 | `0xc80` | `0x00641290` | graphicGetAppFloatDC_00641290 | render | 0 | 0 |
+| 801 | `0xc84` | `0x00643630` | graphicSetSceneSix0_00643630 | render | 121 | 126 |
+| 802 | `0xc88` | `0x008ab570` | SetGlobal_00c59f38 | system | 6 | 12 |
+| 803 | `0xc8c` | `0x009dbe90` | AlignedMalloc_thunk_009dbe90 | ps2-emu | 182 | 186 |
+| 804 | `0xc90` | `0x009dbe80` | AlignedFree_thunk_009dbe80 | ps2-emu | 180 | 184 |
+| 805 | `0xc94` | `0x009db1c0` |  | ps2-emu? | 0 | 0 |
+| 806 | `0xc98` | `0x009db200` |  | ps2-emu? | 0 | 0 |
+| 807 | `0xc9c` | `0x009db210` |  | ps2-emu? | 0 | 0 |
+| 808 | `0xca0` | `0x007b1b50` | MsSetReelResult | battle | 10 | 10 |
+| 809 | `0xca4` | `0x009066d0` | TOSetUIVertexXY_009066d0 | system | 10 | 280 |
+| 810 | `0xca8` | `0x009066b0` | TOSetUIVertexUV_009066b0 | system | 10 | 20 |
+| 811 | `0xcac` | `0x00906680` | SeveralStoresSetTableConstantsArgumentsAddresses_00906680 | system | 10 | 280 |
+| 812 | `0xcb0` | `0x00906420` | graphicDrawUIElementAfterSet | render | 10 | 140 |
+| 813 | `0xcb4` | `0x008e8980` | OpenScissor | system | 10 | 10 |
+| 814 | `0xcb8` | `0x008e5cd0` | CloseScissor | menu | 10 | 10 |
+| 815 | `0xcbc` | `0x00711830` | pppKaGra001Draw_00711830 | vfx | 10 | 16 |
+| 816 | `0xcc0` | `0x0080a4a0` |  | vfx? | 19 | 19 |
+| 817 | `0xcc4` | `0x0080a460` |  | vfx? | 16 | 16 |
+| 818 | `0xcc8` | `0x00642110` | graphicMagic_DrawColorModel_KaMdldrw | render | 2 | 2 |
+| 819 | `0xccc` | `0x00718610` | updateVFXRenderData | render | 121 | 129 |
+| 820 | `0xcd0` | `0x00711180` | InitVFXRenderData | vfx | 113 | 121 |
+| 821 | `0xcd4` | `0x00639110` | graphicActivateBlurEffectEx | render | 54 | 60 |
+| 822 | `0xcd8` | `0x00643830` | graphicBlurEffectSetPositiveParams_00643830 | render | 38 | 44 |
+| 823 | `0xcdc` | `0x00643890` | graphicBlurEffectSetFloats6c_00643890 | render | 38 | 44 |
+| 824 | `0xce0` | `0x00643860` | graphicBlurEffectSetFloats74_00643860 | render | 38 | 44 |
+| 825 | `0xce4` | `0x00826b70` | Ch_GetChrRenderInstance | chara | 14 | 14 |
+| 826 | `0xce8` | `0x009db1d0` |  | ps2-emu? | 0 | 0 |
+| 827 | `0xcec` | `0x0113335c` |  | data | 0 | 0 |
+| 828 | `0xcf0` | `0x007117c0` | opu_fake_env_model_draw_007117c0 | vfx | 2 | 6 |
+| 829 | `0xcf4` | `0x00712ec0` | checkEnvMdl0434 | vfx | 1 | 2 |
+| 830 | `0xcf8` | `0x00712690` | setPolyTris0434 | vfx | 1 | 2 |
+| 831 | `0xcfc` | `0x00713160` | checkPolyImg0434 | vfx | 3 | 6 |
+| 832 | `0xd00` | `0x007128d0` | setPolyQuad0434 | vfx | 3 | 6 |
+| 833 | `0xd04` | `0x0063b810` | graphicCharacterInstanceSetMeshAlpha | render | 14 | 26 |
+| 834 | `0xd08` | `0x0063b9e0` | graphicCharacterInstanceSetMeshAlphaThreshold | render | 2 | 2 |
+| 835 | `0xd0c` | `0x0063c9e0` | graphicCharacterLightingSet4_0063c9e0 | render | 0 | 0 |
+| 836 | `0xd10` | `0x0063ca50` | graphicCharacterLightingSet8_0063ca50 | render | 0 | 0 |
+| 837 | `0xd14` | `0x0063cb00` | graphicCharacterLightingSetLightColor | render | 0 | 0 |
+| 838 | `0xd18` | `0x0063cdd0` | graphicCharacterLightingSetShadeCoeff | render | 0 | 0 |
+| 839 | `0xd1c` | `0x0063d050` | graphicCharacterLightingSetShadeColor | render | 0 | 0 |
+| 840 | `0xd20` | `0x00645400` | graphicVFXIsTextureLoaded | vfx | 0 | 0 |
+| 841 | `0xd24` | `0x006436a0` | graphicSetSceneSix1_006436a0 | render | 0 | 0 |
+| 842 | `0xd28` | `0x0063c430` | graphicCharacterInstanceSetWorldMatrixByMdlID | render | 2 | 6 |
+| 843 | `0xd2c` | `0x0063c3e0` | graphicCharacterInstanceSetWorldMatrix | render | 19 | 19 |
+| 844 | `0xd30` | `0x00830cd0` | Ch_SysDrawSetSituation | chara | 0 | 0 |
+| 845 | `0xd34` | `0x0063df50` | graphicDetachChrClusterFrom3DWorld | render | 6 | 7 |
+| 846 | `0xd38` | `0x00639350` | graphicAttachChrClusterTo3DWorld_00639350 | render | 5 | 5 |
+| 847 | `0xd3c` | `0x0063b7f0` | graphicCharacterInstanceSetDrawSituationCallback | render | 14 | 28 |
+| 848 | `0xd40` | `0x00643b80` | graphicSceneMatrixTranspose_00643b80 | render | 0 | 0 |
+| 849 | `0xd44` | `0x0082b260` | Ch_SetHideBattle | chara | 2 | 2 |
+| 850 | `0xd48` | `0x00ccca58` |  | data | 0 | 0 |
+| 851 | `0xd4c` | `0x009db220` |  | ps2-emu? | 0 | 0 |
+| 852 | `0xd50` | `0x00826db0` | Ch_HandleRewind | chara | 1 | 1 |
+| 853 | `0xd54` | `0x00826d70` | Ch_HandleGetNext | chara | 1 | 2 |
+| 854 | `0xd58` | `0x00000000` | (null) | - | 0 | 0 |
+| 855 | `0xd5c` | `0x0063d810` | graphicCharacterSetShaderType | render | 4 | 4 |
+| 856 | `0xd60` | `0x0063d870` | graphicCharacterShaderRestore | render | 4 | 4 |
+| 857 | `0xd64` | `0x0063d940` | graphicCharacterShaderSetParameterVector_0063d940 | render | 4 | 9 |
+| 858 | `0xd68` | `0x00642fe0` | movie_disp2 | movie | 9 | 9 |
+| 859 | `0xd6c` | `0x006438c0` | graphicSetNumberText_006438c0 | render | 4 | 4 |
+| 860 | `0xd70` | `0x007116d0` | pppNoiseBlurDraw_007116d0 | vfx | 1 | 1 |
+| 861 | `0xd74` | `0x009db180` | memcpy_thunk_009db180 | ps2-emu | 4 | 4 |
+| 862 | `0xd78` | `0x00711750` | pppAkazaScrFltDraw_00711750 | vfx | 2 | 2 |
+| 863 | `0xd7c` | `0x006429f0` | graphicRegisterDelegation_006429f0 | render | 0 | 0 |
+| 864 | `0xd80` | `0x00645e60` | graphicsRegisterResetScreenFadeDelegation | render | 0 | 0 |
+| 865 | `0xd84` | `0x00645ba0` | graphicVFXUpdateWithType | vfx | 2 | 6 |
+| 866 | `0xd88` | `0x009db1e0` |  | ps2-emu? | 0 | 0 |
+| 867 | `0xd8c` | `0x00a5bf50` | updateVFXRenderData_ScrollModelEntry_00a5bf50 | map | 2 | 6 |
+| 868 | `0xd90` | `0x006438e0` | graphicSetScreenFadeAlphaMode | render | 0 | 0 |
+| 869 | `0xd94` | `0x007bd300` | MsCameraGetID | battle | 2 | 5 |
+| 870 | `0xd98` | `0x00645600` | graphicVFXPath3Update | vfx | 9 | 17 |
+| 871 | `0xd9c` | `0x00710fd0` | InitVFXPath3RenderData | vfx | 8 | 8 |
+| 872 | `0xda0` | `0x00711030` | InitVFXPath3RenderDataShp | vfx | 0 | 0 |
+| 873 | `0xda4` | `0x00711500` | InitVFXRenderData_KaGra001 | vfx | 7 | 7 |
+| 874 | `0xda8` | `0x007110d0` | InitVFXRenderDataShp_OShapeVu1 | vfx | 4 | 4 |
+| 875 | `0xdac` | `0x0071c0b0` | updateVFXRenderDataShp_OShapeVu1 | system | 7 | 11 |
+| 876 | `0xdb0` | `0x00699080` | graphicPostProcessSetFlag_00699080 | render | 0 | 0 |
+| 877 | `0xdb4` | `0x008e5f60` | MenuDrawUiElement_008e5f60 | menu | 0 | 0 |
+| 878 | `0xdb8` | `0x00641e40` | graphicMagic0146SetKey | render | 3 | 4 |
+| 879 | `0xdbc` | `0x00643770` | graphicSetNoLightSpecularPassParam | render | 9 | 9 |
+| 880 | `0xdc0` | `0x0230fca0` |  | data | 0 | 0 |
+| 881 | `0xdc4` | `0x00644de0` | graphicVFXCreate | vfx | 3 | 3 |
+| 882 | `0xdc8` | `0x00645040` | graphicVFXCreateDataBuffer | vfx | 3 | 3 |
+| 883 | `0xdcc` | `0x00645780` | graphicVFXSetup | vfx | 3 | 3 |
+| 884 | `0xdd0` | `0x00645710` | graphicVFXSetVisible | vfx | 3 | 3 |
+| 885 | `0xdd4` | `0x00645450` | graphicVFXIsTextureWithBpLoaded | vfx | 19 | 21 |
+| 886 | `0xdd8` | `0x0063fdb0` | graphicDynGeoMemManagerGetBufferForSegment | render | 8 | 8 |
+| 887 | `0xddc` | `0x0063fc50` | GetFieldPtr94_0063fc50 | render | 3 | 3 |
+| 888 | `0xde0` | `0x0063fc70` | GetField90_0063fc70 | render | 0 | 0 |
+| 889 | `0xde4` | `0x0063fd30` | SetField90_0063fd30 | render | 0 | 0 |
+| 890 | `0xde8` | `0x0063fc40` | FieldAddr98_0063fc40 | render | 3 | 3 |
+| 891 | `0xdec` | `0x0063fc30` | FieldAddra4_0063fc30 | render | 3 | 3 |
+| 892 | `0xdf0` | `0x0063fd50` | SetField80_0063fd50 | render | 3 | 3 |
+| 893 | `0xdf4` | `0x0063fc80` | Identity_0063fc80 | render | 3 | 3 |
+| 894 | `0xdf8` | `0x0063fcf0` | GetField4_0063fcf0 | render | 0 | 0 |
+| 895 | `0xdfc` | `0x0063fd10` | SetField4_0063fd10 | render | 0 | 0 |
+| 896 | `0xe00` | `0x0063fcb0` | GetField8_0063fcb0 | render | 0 | 0 |
+| 897 | `0xe04` | `0x0063fd00` | SetField8_0063fd00 | render | 0 | 0 |
+| 898 | `0xe08` | `0x0063fce0` | GetFieldc_0063fce0 | render | 3 | 3 |
+| 899 | `0xe0c` | `0x0063fcc0` | GetField10_0063fcc0 | render | 0 | 0 |
+| 900 | `0xe10` | `0x0063fc90` | GetField14_0063fc90 | render | 3 | 3 |
+| 901 | `0xe14` | `0x0063fcd0` | GetField18_0063fcd0 | render | 2 | 2 |
+| 902 | `0xe18` | `0x0063fca0` | GetField1c_0063fca0 | render | 3 | 3 |
+| 903 | `0xe1c` | `0x0063fd20` | SetField24_0063fd20 | render | 2 | 2 |
+| 904 | `0xe20` | `0x00644be0` | graphicVFXAddCopyBufferEvent | vfx | 1 | 2 |
+| 905 | `0xe24` | `0x00642e00` | graphicSetAkazaNoLightSpecularPassParam | render | 7 | 8 |
+| 906 | `0xe28` | `0x0063d8e0` | graphicCharacterShaderSetParameterTexture | render | 1 | 1 |
+| 907 | `0xe2c` | `0x007113d0` | InitVFXRenderDataShapeField | vfx | 5 | 5 |
+| 908 | `0xe30` | `0x0071a4e0` | updateVFXRenderDataShapeField | render | 5 | 9 |
+| 909 | `0xe34` | `0x00713290` | clearVFXRenderDataShp | vfx | 1 | 2 |
+| 910 | `0xe38` | `0x00712bd0` | caculateVFXRenderDataShapeFieldBufferSize | vfx | 1 | 1 |
+| 911 | `0xe3c` | `0x007fa6d0` | opp_0706_cmd_007fa6d0 | vfx | 581 | 581 |
+| 912 | `0xe40` | `0x00642e40` | graphicSetAkazaSpecularPassParam | render | 2 | 2 |
+| 913 | `0xe44` | `0x00639170` | graphicAddMeshMatrix | render | 4 | 4 |
+| 914 | `0xe48` | `0x00641e60` | graphicMagic0708ConvBallChr | render | 1 | 1 |
+| 915 | `0xe4c` | `0x00639240` | graphicAddScreenFadeTask | render | 91 | 101 |
+| 916 | `0xe50` | `0x007bd860` | MsCameraMoveAcc | battle | 1 | 2 |
+| 917 | `0xe54` | `0x009db170` |  | ps2-emu | 1 | 2 |
+| 918 | `0xe58` | `0x006437e0` | SetGlobal00cec1a0_006437e0 | render | 1 | 2 |
+| 919 | `0xe5c` | `0x01133398` |  | data | 0 | 0 |
+| 920 | `0xe60` | `0x0063a2b0` | graphicCharacterInstanceGetBoundingBox | render | 0 | 0 |
+| 921 | `0xe64` | `0x00c3bbb0` |  | data | 0 | 0 |
+| 922 | `0xe68` | `0x0063c390` | graphicCharacterInstanceSetVisible | render | 10 | 10 |
+| 923 | `0xe6c` | `0x009dafd0` | SetGlobal_0193fdac | system | 1 | 2 |
+| 924 | `0xe70` | `0x0063a410` | graphicCharacterGetBounds_0063a410 | render | 2 | 2 |
+| 925 | `0xe74` | `0x00794020` | MsGetChr | battle | 4 | 4 |
+| 926 | `0xe78` | `0x00793650` | MsBtlChrNumCheck | battle | 4 | 4 |
+| 927 | `0xe7c` | `0x006392c0` | graphicAddScreenFadeTaskBeforeVFX | render | 1 | 1 |
+| 928 | `0xe80` | `0x00644dd0` | graphicClearSpecialRenderList | render | 1 | 1 |
+| 929 | `0xe84` | `0x0063dac0` | graphicSceneClearList_0063dac0 | render | 2 | 4 |
+| 930 | `0xe88` | `0x0063d710` | graphicCharacterSetClipPlane | render | 2 | 4 |
+| 931 | `0xe8c` | `0x00644ca0` | graphicVFXAddDrawCharacterEvent | vfx | 16 | 18 |
+| 932 | `0xe90` | `0x00645840` | graphicVFXSyncPath | vfx | 3 | 3 |
+| 933 | `0xe94` | `0x00643670` | graphicSetMaterialColourScale2 | render | 225 | 322 |
+| 934 | `0xe98` | `0x0063a610` | graphicCharacterGetJointBounds_0063a610 | render | 2 | 2 |
+| 935 | `0xe9c` | `0x01940ac4` |  | data | 0 | 0 |
+| 936 | `0xea0` | `0x012fb7d0` |  | data | 0 | 0 |
+| 937 | `0xea4` | `0x00713320` | clearVFXRenderDataShpWithMemset | vfx | 4 | 4 |
+| 938 | `0xea8` | `0x00644cf0` | graphicVFXAddDrawZPrePassEvent | vfx | 2 | 2 |
+| 939 | `0xeac` | `0x00641100` | LocalizationManager_GetWord0 | system | 1 | 1 |
+| 940 | `0xeb0` | `0x00a44660` | SetGlobal01a85f38_00a44660 | menu | 0 | 0 |
+| 941 | `0xeb4` | `0x00a44650` | get_ptr32_func | menu | 539 | 2848 |
+| 942 | `0xeb8` | `0x00a44700` | set_ptr32 | system | 35 | 55 |
+| 943 | `0xebc` | `0x00a446b0` | Compute_00a446b0 | menu | 0 | 0 |
+| 944 | `0xec0` | `0x00a446a0` | is_ptr32_null | menu | 0 | 0 |
+| 945 | `0xec4` | `0x00644c70` | graphicVFXAddCopyBufferEventWithRGB | vfx | 2 | 2 |
+| 946 | `0xec8` | `0x00829c60` | set0434isDarkYojimbo | main | 1 | 1 |
