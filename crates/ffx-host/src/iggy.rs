@@ -356,6 +356,9 @@ fn tick(e: &mut Exec, args: &Args) -> Ret {
             let period = 1.0 / f64::from(pl.fps.max(1.0));
             pl.owed = (pl.owed - period).max(0.0);
             pl.ticks += 1;
+            if pl.ticks.is_power_of_two() {
+                crate::log::note(&format!("iggy: {p:#x} tick {}", pl.ticks));
+            }
             true
         })
     });
@@ -395,6 +398,9 @@ fn draw(e: &mut Exec, args: &Args) -> Ret {
         && let Some(pl) = ps.get_mut(&p)
     {
         pl.draws += 1;
+        if pl.draws.is_power_of_two() {
+            crate::log::note(&format!("iggy: {p:#x} draw {}", pl.draws));
+        }
     }
     #[cfg(feature = "swf")]
     {

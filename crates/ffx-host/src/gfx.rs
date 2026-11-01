@@ -1906,6 +1906,29 @@ impl Gfx {
                 self.backend.op(&Op::ClearState);
             }
             "Flush" => self.backend.op(&Op::Flush),
+            "OMGetRenderTargets" => {
+                // (num, views, depth): the bound views, each with a
+                // reference, as the API hands them out
+                // (`IggyPlayer_tickDraw_00a3d9f0` asks when its device
+                // record has none)
+                let (num, views, depth) = (a[1].min(8), a[2], a[3]);
+                let bound = (self.bound.rtv, self.bound.dsv);
+                if views != 0 {
+                    for i in 0..num {
+                        let v = bound.0[i as usize];
+                        if v != 0 {
+                            self.com.add_ref(v);
+                        }
+                        e.mem().write(views + 4 * i, v);
+                    }
+                }
+                if depth != 0 {
+                    if bound.1 != 0 {
+                        self.com.add_ref(bound.1);
+                    }
+                    e.mem().write(depth, bound.1);
+                }
+            }
             "GetType" | "GetContextFlags" => return Some(0),
             "SetPredication"
             | "SetResourceMinLOD"
