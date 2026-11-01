@@ -1122,3 +1122,483 @@ pub const SUMMON_FRAME_FADE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The byte at `f + off` of the code (an `imm8` operand).
+fn byte_op(img: &Image, f: u32, off: u32) -> u32 {
+    img.word(f + off) & 0xff
+}
+
+/// An effect object started with its sprite, task node, fan and fades:
+/// the body shared by [`object_fan_two_fades`] and
+/// [`objects_freed_fan_fade`], at `b` plus the offsets of `magic_0511`
+/// 0x10004810's (`e` the effect block, `scale` the object's scale
+/// operand, `esp` the stack before its `sub esp, 8`, `fades` 1 or 2):
+/// - the object `O = e + D` ([`start_object_anim`](crate::s4_misc::start_object_anim),
+///   index and value the two pushed bytes); its `+0xd0..+0xdc` the four
+///   words at `e + S`, `+0xd4` less `K`, `+0xc4` the word `e + 0x2258`;
+/// - the sprite `P = e + 0x1ad0`: colour `0x808080` with alpha 0x80
+///   (the original's overlapping byte, word and dword stores), u16 `+0x86`
+///   and byte `+0x85` 0, sizes `+0x88`, `+0x8c`, `+0x90` 10, `+0x94` 0,
+///   kind u16 `+0x98` 0x48; a pool node ([`take`](crate::sa_pool::take),
+///   the callback immediate) holding it (`+0x14`), appended to the DLL's
+///   task list (`*G_H` the first, `*G_T` the last);
+/// - the fan `C = e + F` (`+0xf0` = `0x4080_8080`, u16 `+0x124` 4, the
+///   steps 0.02 and 0.01, the rest 0) started
+///   ([`sprite_fan_start`](crate::s6_misc::sprite_fan_start));
+/// - each fade ([`fade_task`](crate::s3_misc::fade_task): `xmm2`/`xmm1`
+///   the two constants, the pushed byte, `ecx` = `e` + its offset, `edx`
+///   the immediate).
+///
+/// Returns the last fade's node.
+fn object_fan_body<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    b: u32,
+    (scale, e, esp, fades): (u32, u32, u32, u32),
+) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, b + o);
+    let obj = e.wrapping_add(w(0x15));
+    let start = img.rel32_target(f + b + 0x20);
+    let scale = f32_at(g, op(img, f, scale));
+    let (index, value) = (byte_op(img, f, b + 0x1c), byte_op(img, f, b + 0x1a));
+    crate::s4_misc::start_object_anim(g, img, start, obj, scale, index, value);
+    for i in 0..4 {
+        let v = g.read::<u32>(e.wrapping_add(w(0x26 + 0xc * i)));
+        g.write::<u32>(obj.wrapping_add(0xd0 + 4 * i), v);
+    }
+    let x = sub(f32_at(g, obj.wrapping_add(0xd4)), f32_at(g, w(0x66)));
+    let v = g.read::<u32>(e.wrapping_add(w(0x5e)));
+    g.write::<u32>(obj.wrapping_add(0xc4), v);
+    g.write::<f32>(obj.wrapping_add(0xd4), x);
+    let p = e.wrapping_add(w(0x82));
+    g.write::<u32>(p.wrapping_add(0x81), 0x0080_8080);
+    g.write::<u8>(p.wrapping_add(0x80), 0x80);
+    g.write::<u16>(p.wrapping_add(0x86), 0);
+    g.write::<u8>(p.wrapping_add(0x85), 0);
+    g.write::<u32>(p.wrapping_add(0x88), 10);
+    g.write::<u16>(p.wrapping_add(0x98), 0x48);
+    g.write::<u32>(p.wrapping_add(0x90), 10);
+    g.write::<u32>(p.wrapping_add(0x8c), 10);
+    g.write::<u32>(p.wrapping_add(0x94), 0);
+    let n = crate::sa_pool::take(g, img, img.rel32_target(f + b + 0xd9), w(0x74));
+    let first = g.read::<u32>(w(0xdf));
+    g.write::<u32>(n.wrapping_add(0x14), p);
+    g.write::<u32>(n.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(n, 0);
+        g.write::<u32>(w(0x104), n);
+    } else {
+        let last = g.read::<u32>(w(0xf2));
+        g.write::<u32>(n, last);
+        g.write::<u32>(last.wrapping_add(4), n);
+    }
+    g.write::<u32>(n.wrapping_add(8), n);
+    let c = e.wrapping_add(w(0x10d));
+    g.write::<u32>(w(0x112), n);
+    g.write::<u32>(c.wrapping_add(0xf0), 0x4080_8080);
+    g.write::<u16>(c.wrapping_add(0x124), 4);
+    g.write::<u32>(c.wrapping_add(0x120), 0);
+    g.write::<u32>(c.wrapping_add(0x110), 0);
+    g.write::<u32>(c.wrapping_add(0xf8), 0x3ca3_d70a);
+    g.write::<u32>(c.wrapping_add(0xfc), 0x3c23_d70a);
+    g.write::<u32>(c.wrapping_add(0x100), 0);
+    let fan = Frame {
+        at: img.rel32_target(f + b + 0x15f),
+        esp: esp.wrapping_sub(4),
+        eax: 4,
+        ecx: c,
+        edx: fr.edx,
+        xmm: [0; 4],
+    };
+    let mut eax = crate::s6_misc::sprite_fan_start(g, img, &fan).eax;
+    let mut at = esp;
+    for i in 0..fades {
+        let o = 0x163 + 0x22 * i;
+        let (x2, x1) = (g.read::<u32>(w(o + 4)), g.read::<u32>(w(o + 0xc)));
+        // push imm8 (the fade's stack word)
+        at = at.wrapping_sub(4);
+        g.write::<u32>(at, byte_op(img, f, b + o + 0x11));
+        let fade = Frame {
+            at: img.rel32_target(f + b + o + 0x1e),
+            esp: at.wrapping_sub(4),
+            eax,
+            ecx: e.wrapping_add(w(o + 0x14)),
+            edx: w(o + 0x19),
+            xmm: [0, u128::from(x1), u128::from(x2), 0],
+        };
+        eax = crate::s3_misc::fade_task(g, img, &fade);
+    }
+    eax
+}
+
+/// An effect object with its sprite, fan and two fades (cdecl, no
+/// arguments; the block `e = *G_E`): [`object_fan_body`] with both fades.
+/// Returns the second fade's node.
+///
+/// `magic_0511` 0x10004810 and 0x10004660 (429 bytes each, their object
+/// and copy offsets differ; 2 DLLs).
+pub fn object_fan_two_fades<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let e = g.read::<u32>(op(img, fr.at, 0xc));
+    // push esi, edi
+    let esp = fr.esp.wrapping_sub(8);
+    Ret::eax(object_fan_body(g, img, fr, 0, (0x4, e, esp, 2)))
+}
+
+/// The `rel32`s of [`object_fan_body`] at `b`.
+macro_rules! object_fan_calls {
+    ($b:expr, $($more:expr),*) => {
+        &[
+            $($more,)*
+            ($b + 0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+            ($b + 0xd9, Callee::Sig(&crate::sa_pool::TAKE)),
+            ($b + 0x15f, Callee::Sig(&crate::s6_misc::SPRITE_FAN_START)),
+            ($b + 0x181, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        ]
+    };
+}
+
+/// [`object_fan_two_fades`] at 0x10004810.
+pub const OBJECT_FAN_TWO_FADES: Sig = Sig {
+    len: 429,
+    hash: 0x174f_e5a7_a180_aeba,
+    calls: object_fan_calls!(0, (0x1a3, Callee::Sig(&crate::s3_misc::FADE_TASK))),
+    imports: &[],
+};
+
+/// [`object_fan_two_fades`] at 0x10004660.
+pub const OBJECT_FAN_TWO_FADES_B: Sig = Sig {
+    hash: 0xc476_b1c9_e027_f098,
+    ..OBJECT_FAN_TWO_FADES
+};
+
+/// Four objects taken off the DLL's list, then an effect object with its
+/// sprite, fan and one fade (cdecl, no arguments; `e = *G_E`): for each
+/// of `e + 0x5f0`, `+0x980`, `+0x850`, `+0x720` (their own operands) that
+/// [`list_remove`](crate::l5_objhost::list_remove) finds in the list (the
+/// immediate), `**G_X` = the immediate, slot 713 `(O)` and bit 15 of its
+/// u16 `+0x124` cleared; then [`object_fan_body`] with one fade. Returns
+/// the fade's node.
+///
+/// `magic_0511` 0x100043e0 (630 bytes; 2 DLLs).
+pub fn objects_freed_fan_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let e = g.read::<u32>(w(0x5));
+    // (the object, the list, the rel32, *G_X, its value, the slot table)
+    for (d, list, call, x, v, t) in [
+        (0x10u32, 0xau32, 0x17u32, 0x25u32, 0x2cu32, 0x31u32),
+        (0x49, 0x50, 0x55, 0x5e, 0x65, 0x6a),
+        (0x82, 0x89, 0x8e, 0x97, 0x9e, 0xa3),
+        (0xbb, 0xc2, 0xc7, 0xd0, 0xd7, 0xdc),
+    ] {
+        let o = e.wrapping_add(w(d));
+        let found = crate::l5_objhost::list_remove(g, img, img.rel32_target(f + call), w(list), o);
+        if found != 0 {
+            let at = g.read::<u32>(w(x));
+            g.write::<u32>(at, w(v));
+            slot(g, img, f, t, 713, 0, &[o]);
+            let h = g.read::<u16>(o.wrapping_add(0x124)) & 0x7fff;
+            g.write::<u16>(o.wrapping_add(0x124), h);
+        }
+    }
+    // push ebx, esi, edi
+    let esp = fr.esp.wrapping_sub(0xc);
+    Ret::eax(object_fan_body(g, img, fr, 0xea, (0xf6, e, esp, 1)))
+}
+
+/// [`objects_freed_fan_fade`].
+pub const OBJECTS_FREED_FAN_FADE: Sig = Sig {
+    len: 630,
+    hash: 0xbe00_52dc_4f0a_2bb4,
+    calls: object_fan_calls!(
+        0xea,
+        (0x17, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x55, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x8e, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0xc7, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))
+    ),
+    imports: &[],
+};
+
+/// The sounds of the DLL's 256 emitters (cdecl, no arguments; a frame
+/// aligned to 16 with /GS). A matrix `M` on the frame (`ebp - 0x48`) is
+/// made a unit matrix (slot 235) once; then for each record `E` (0x4c
+/// bytes from the immediate `R`; its point `P = E - 0x34`) with a sound
+/// bank `E - 0xc`:
+/// - with `E - 8` set: `M`'s diagonal is the scale `E + 0`, else `M` is
+///   turned by the angle `i16 E + 0xc` (slot 244) and its three rows
+///   scaled (slot 233); either way `M`'s last row is `P`, and without
+///   `E - 8` it is also turned by `*G_C` (slot 299 `(M, *G_C, M)`);
+/// - slot 230 `(L, M)` (`L` = `ebp - 0x88`); the sound record `S`
+///   (`ebp - 0xc0`: u16 `+2` 0x80, `+4` = `E + 0x10`, `+8` 0, `+0x10` =
+///   `L`, `+0x14` = `**G_D`, byte `+0x18` 0, `+0x1c` 0); the entry `Q`
+///   of the bank: `B + i16 [B + 8 (i16 E + 0x16 + 2)]`;
+/// - the 64-bit handle `h` = slot 772 `(P, 0)`; with the lock `*G_L` held
+///   at 1 (and put back after each call), slot 773 `(h)`; when it answers
+///   non-zero slots 875 `(h, Q, S)` and 775 `(h)`, else slot 873 `(h, Q,
+///   S, slot 776 (byte [Q + 4 + Q[4]]))`;
+/// - unless `**G_F` is set, the record's callback `E - 4` gets `(P, B +
+///   8 (i16 E + 0x16 + 2))`.
+///
+/// Each call sees the words the earlier ones left. Returns 0 (the
+/// counter).
+///
+/// `magic_0515` 0x10003a20 (802 bytes; 4 DLLs).
+pub fn emitter_sounds<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
+    let ebp = fr.esp.wrapping_sub(8) & !0xf;
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (m, l, s) = (at(0x48), at(0x88), at(0xc0));
+    g.write::<u32>(s + 0x10, l);
+    g.write::<u16>(s + 2, 0x80);
+    g.write::<u32>(s + 8, 0);
+    g.write::<u8>(s + 0x18, 0);
+    g.write::<u32>(s + 0x1c, 0);
+    let mut st = Pushes::default();
+    st.push(m);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x45, 235), 0);
+    st.pop(1);
+    let lock = |g: &G, o: u32| g.read::<u32>(w(o));
+    let mut e = w(0x7a);
+    for _ in 0..0x100 {
+        let bank = g.read::<u32>(e.wrapping_sub(0xc));
+        if bank == 0 {
+            e = e.wrapping_add(0x4c);
+            continue;
+        }
+        let p = e.wrapping_sub(0x34);
+        if g.read::<u32>(e.wrapping_sub(8)) == 0 {
+            let angle = i32::from(g.read::<i16>(e + 0xc)).cast_unsigned();
+            st.push_all(&[angle, m]);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, tab(g, 0xcb, 244), 0);
+            st.pop(1);
+            let scale = g.read::<u32>(e);
+            for (row, t) in [(m, 0xe9u32), (at(0x38), 0x113), (at(0x28), 0x135)] {
+                st.set_top(scale);
+                st.push_all(&[row, row]);
+                // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+                st.call(g, tab(g, t, 233), 0);
+                st.pop(2);
+            }
+            st.pop(1);
+            for i in 0..4 {
+                let v = g.read::<u32>(p + 4 * i);
+                g.write::<u32>(at(0x18) + 4 * i, v);
+            }
+            let c = g.read::<u32>(w(0x14f));
+            st.push_all(&[m, c, m]);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, tab(g, 0x162, 299), 0);
+            st.pop(3);
+        } else {
+            let scale = g.read::<u32>(e);
+            for o in [0x20u32, 0x34, 0x48] {
+                g.write::<u32>(at(o), scale);
+            }
+            for i in 0..4 {
+                let v = g.read::<u32>(p + 4 * i);
+                g.write::<u32>(at(0x18) + 4 * i, v);
+            }
+        }
+        st.push_all(&[m, l]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x182, 230), 0);
+        let v = g.read::<u32>(e + 0x10);
+        g.write::<u32>(s + 4, v);
+        let i = i32::from(g.read::<i16>(e + 0x16))
+            .wrapping_add(2)
+            .cast_unsigned();
+        let key = bank.wrapping_add(i.wrapping_mul(8));
+        let q = i32::from(g.read::<i16>(key))
+            .cast_unsigned()
+            .wrapping_add(bank);
+        st.push(0);
+        let d = g.read::<u32>(g.read::<u32>(w(0x1b8)));
+        g.write::<u32>(s + 0x14, d);
+        st.push(p);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        let h = st.call(g, tab(g, 0x1c6, 772), 0);
+        let saved = g.read::<u32>(lock(g, 0x1d4));
+        g.write::<u32>(lock(g, 0x1d4), 1);
+        st.push_all(&[h.edx, h.eax]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        let found = st.call(g, tab(g, 0x1f4, 773), 0).eax;
+        let lk = lock(g, 0x20a);
+        g.write::<u32>(lk, saved);
+        st.pop(6);
+        if found != 0 {
+            st.push_all(&[s, q, h.edx]);
+            g.write::<u32>(lk, 1);
+            st.push(h.eax);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, tab(g, 0x22b, 875), 0);
+            st.push(h.edx);
+            g.write::<u32>(lock(g, 0x24a), 1);
+            st.push(h.eax);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, tab(g, 0x25b, 775), 0);
+            g.write::<u32>(lock(g, 0x26e), saved);
+            st.pop(6);
+        } else {
+            let k = g.read::<u32>(q.wrapping_add(4));
+            let b = u32::from(g.read::<u8>(k.wrapping_add(q).wrapping_add(4)));
+            st.push(b);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            let r = st.call(g, tab(g, 0x28f, 776), 0).eax;
+            let lk = lock(g, 0x29d);
+            st.pop(1);
+            let held = g.read::<u32>(lk);
+            st.push_all(&[r, s, q, h.edx]);
+            g.write::<u32>(lk, 1);
+            st.push(h.eax);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, tab(g, 0x2b5, 873), 0);
+            g.write::<u32>(lock(g, 0x2d4), held);
+            st.pop(5);
+        }
+        if g.read::<u32>(g.read::<u32>(w(0x2e1))) == 0 {
+            st.push_all(&[key, p]);
+            let cb = g.read::<u32>(e.wrapping_sub(4));
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            st.call(g, cb, 0);
+            st.pop(2);
+        }
+        e = e.wrapping_add(0x4c);
+    }
+    Ret::eax(0)
+}
+
+/// [`emitter_sounds`] (the `rel32`: `__security_check_cookie`).
+pub const EMITTER_SOUNDS: Sig = Sig {
+    len: 802,
+    hash: 0x4dc7_2770_fbd5_24d5,
+    calls: &[(0x317, Callee::Any)],
+    imports: &[],
+};
+
+/// `(x << 7) / 128` (signed, toward zero: the original's `cdq; and edx,
+/// 0x7f; add; sar 7`) as `cvtdq2ps` gives it, times the `f32` at `k`.
+fn scaled_low<G: Game>(g: &G, x: u32, k: u32) -> f32 {
+    let v = (x << 7).cast_signed() / 128;
+    mul(cvt(v.cast_unsigned()), f32_at(g, k))
+}
+
+/// A model effect placed on the object `O` (`ecx`; cdecl `(-, a1, a2, a3,
+/// a4, a5)`, a /GS frame; `M = O[0x830]`). The effect's entry (slot 719
+/// `(E, 2, 14)`, `E` the immediate) gives a 64-bit key `v`; with the lock
+/// `*G_L` held at 1, slot 885 looks it up `(v & 0x3fff, (v >> 20) & 0x3f,
+/// 0, 0, 1 << ((v >> 26) & 0xf), 1 << ((v >> 30) & 0xf), T)` into the
+/// frame's `T`. When found: the colour `C = (1, 1, 1, a5 K)` (`a5` and
+/// `a4` cut to their low 25 bits, signed); the camera matrix (slot 545)
+/// copied (slot 230) with its second column's first three terms negated
+/// (`xor` with `S`) and multiplied by `a1` into `W` (slot 231 `(W, V,
+/// a1)`), `W`'s last row cleared; slots 922 `(M, 0)`, 931 `(M, 0)` when
+/// `*G_Q` is set, 912 `(M, T, a3, 0, 0, 0, 0, C, slot 776 (0x48), W, a2,
+/// 1)`, 834 `(M)` and 833 `(M, u16 O[0], a4 K)` (`a4 K` held to `LO..HI`).
+/// Each call sees the words the earlier ones left. Returns slot 833's
+/// `eax`, or 0 when the lookup fails.
+///
+/// `magic_0162` 0x10001d20 (784 bytes; 2 DLLs).
+pub fn model_effect_placed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let o = fr.ecx;
+    let arg = |g: &G, i: u32| fr.arg(g, i);
+    let (a1, a2, a3) = (arg(g, 1), arg(g, 2), arg(g, 3));
+    let m = g.read::<u32>(o.wrapping_add(0x830));
+    let mut st = Pushes::default();
+    st.push_all(&[0xe, 2, w(0x4e)]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let r = st.call(g, tab(g, 0x36, 719), 0).eax;
+    let lo = g.read::<u32>(r);
+    let hi = g.read::<u32>(r.wrapping_add(4));
+    let v = u64::from(lo) | (u64::from(hi) << 32);
+    let lock = g.read::<u32>(w(0x60));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = at(0x10c);
+    let bit = |s: u32| u32::from(1u16 << ((v >> s) & 0xf));
+    let key = ((v >> 20) as u32) & 0x3f;
+    st.push_all(&[t, bit(30), bit(26), 0, 0, key, lo & 0x3fff]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let found = st.call(g, tab(g, 0xbd, 885), 0).eax;
+    st.pop(10);
+    let lock = g.read::<u32>(w(0xd5));
+    g.write::<u32>(lock, saved);
+    if found == 0 {
+        return Ret::eax(0);
+    }
+    let c = at(0x11c);
+    let x5 = scaled_low(g, arg(g, 5), w(0x10c));
+    g.write::<f32>(c + 0xc, x5);
+    let x4 = scaled_low(g, arg(g, 4), w(0x13b));
+    for i in 0..3 {
+        g.write::<u32>(c + 4 * i, 0x3f80_0000);
+    }
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let cam = st.call(g, tab(g, 0x126, 545), 0).eax;
+    let (vm, wm) = (at(0x15c), at(0x19c));
+    st.push_all(&[cam, vm]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x16c, 230), 0);
+    let sign = g.read::<u32>(w(0x184));
+    for o in [4u32, 0x14, 0x24] {
+        let x = g.read::<u32>(vm + o) ^ sign;
+        g.write::<u32>(vm + o, x);
+    }
+    st.push_all(&[a1, vm, wm]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x1c3, 231), 0);
+    for i in 0..4 {
+        g.write::<u32>(wm + 0x30 + 4 * i, 0);
+    }
+    st.push_all(&[0, m]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x1db, 922), 0);
+    st.pop(7);
+    if g.read::<u32>(w(0x21d)) != 0 {
+        st.push_all(&[0, m]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x225, 931), 0);
+        st.pop(2);
+    }
+    st.push(0x48);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let r776 = st.call(g, tab(g, 0x238, 776), 0).eax;
+    st.pop(1);
+    st.push_all(&[1, a2, wm, r776, c, 0, 0, 0, 0, a3, t, m]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x290, 912), 0);
+    st.pop(12);
+    let low = f32_at(g, w(0x2a1));
+    let x = if low > x4 {
+        low
+    } else {
+        let high = f32_at(g, w(0x2b9));
+        if x4 > high { high } else { x4 }
+    };
+    st.push(m);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x2cb, 834), 0);
+    st.set_top(x.to_bits());
+    st.push_all(&[u32::from(g.read::<u16>(o)), m]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    Ret::eax(st.call(g, tab(g, 0x2f0, 833), 0).eax)
+}
+
+/// [`model_effect_placed`] (the `rel32`: `__security_check_cookie`).
+pub const MODEL_EFFECT_PLACED: Sig = Sig {
+    len: 784,
+    hash: 0x264e_b9bc_855c_680f,
+    calls: &[(0x308, Callee::Any)],
+    imports: &[],
+};

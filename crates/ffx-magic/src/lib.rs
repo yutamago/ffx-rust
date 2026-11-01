@@ -2488,6 +2488,11 @@ ports! {
     "staged script" => s8_misc::STAGED_SCRIPT, s8_misc::staged_script;
     "summon frame (camera rigs)" => s8_misc::SUMMON_FRAME_RIGS, s8_misc::summon_frame_rigs;
     "summon frame (camera rigs, fade)" => s8_misc::SUMMON_FRAME_FADE, s8_misc::summon_frame_fade;
+    "object, fan, two fades" => s8_misc::OBJECT_FAN_TWO_FADES, s8_misc::object_fan_two_fades;
+    "object, fan, two fades (b)" => s8_misc::OBJECT_FAN_TWO_FADES_B, s8_misc::object_fan_two_fades;
+    "objects freed, fan, fade" => s8_misc::OBJECTS_FREED_FAN_FADE, s8_misc::objects_freed_fan_fade;
+    "emitter sounds" => s8_misc::EMITTER_SOUNDS, s8_misc::emitter_sounds;
+    "model effect placed" => s8_misc::MODEL_EFFECT_PLACED, s8_misc::model_effect_placed;
     // round 8, shared-8 (s8_misc): end of ports
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
