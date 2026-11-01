@@ -18,7 +18,7 @@ use crate::s4_misc::{
 use crate::s4_small::{FADER_TASK, fader_task};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
-use crate::sa_misc::{LINK_PART, SPRITE_FADE, link_part, sprite_fade};
+use crate::sa_misc::{LINK_PART, RING_RESERVE, SPRITE_FADE, link_part, ring_reserve, sprite_fade};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
@@ -2835,5 +2835,62 @@ pub const SCENE_POINT: Sig = Sig {
     len: 291,
     hash: 0xf401_2dae_95b9_e5fc,
     calls: &[(0x36, Callee::Sig(&MEAN_POSITION))],
+    imports: &[],
+};
+
+/// A ring request's sparks scattered (internal, `ecx` = the request
+/// `Q`): the ring span reserved ([`ring_reserve`]); then for the two
+/// pieces `j` (their record at `Q+0xc + 4j`, the count u16 `Q+6 + 2j`),
+/// each of the count steps sets the piece's record `r` (the same one
+/// each time, as the original does): `+0x10 = 0`, u16 `+0x12` a random
+/// word (slot 324), `+0x18 = 0`, `+0x14 = K - (frnd - K1) K2`, `+0x1c =
+/// K - (frnd - K1) K2`, `+0x20 = K3 - (frnd - K1) K4` (slot 307, ST0),
+/// and its point a copy of the ring owner's `[Q[0]+0x38]+0x1c` (slot
+/// 325). Returns 0, or [`ring_reserve`]'s value when the first piece is
+/// empty.
+///
+/// `magic_0042` 0x10001ac0 (328 bytes, `ecx` = the request; 4 DLLs).
+pub fn ring_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let q = fr.ecx;
+    let r0 = ring_reserve(g, q);
+    if g.read::<u16>(q + 6) == 0 {
+        return r0;
+    }
+    let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
+    for j in 0..2u32 {
+        let r = g.read::<u32>(q + 0xc + 4 * j);
+        let mut i = 0u32;
+        while i < u32::from(g.read::<u16>(q + 6 + 2 * j)) {
+            g.write::<u32>(r + 0x10, 0);
+            let h = slot(g, img, f, 0x46, 324, &[]).eax;
+            g.write::<u16>(r + 0x12, h as u16);
+            let a = st0(slot(g, img, f, 0x57, 307, &[]));
+            g.write::<u32>(r + 0x18, 0);
+            let x = sub(k(g, 0x77), mul(sub(a, k(g, 0x6f)), k(g, 0x8b)));
+            g.write::<f32>(r + 0x14, x);
+            let a = st0(slot(g, img, f, 0x7c, 307, &[]));
+            let y = sub(k(g, 0xb4), mul(sub(a, k(g, 0xac)), k(g, 0xc1)));
+            g.write::<f32>(r + 0x1c, y);
+            let a = st0(slot(g, img, f, 0xb9, 307, &[]));
+            let z = sub(k(g, 0xea), mul(sub(a, k(g, 0xe2)), k(g, 0xf7)));
+            g.write::<f32>(r + 0x20, z);
+            let o = g
+                .read::<u32>(g.read::<u32>(q).wrapping_add(0x38))
+                .wrapping_add(0x1c);
+            slot(g, img, f, 0x10c, 325, &[r, o]);
+            i += 1;
+        }
+    }
+    0
+}
+
+/// [`ring_sparks`] (the `rel32`: [`ring_reserve`]).
+pub const RING_SPARKS: Sig = Sig {
+    len: 328,
+    hash: 0x53e7_76f1_0014_6be3,
+    calls: &[(0xe, Callee::Sig(&RING_RESERVE))],
     imports: &[],
 };

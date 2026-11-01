@@ -2044,3 +2044,49 @@ fn scene_points() {
         });
     }
 }
+
+/// Row 318: `magic_0042`'s ring sparks: a request larger than the ring
+/// (nothing), one that fits and one that wraps (two pieces).
+#[test]
+fn ring_sparks_scattered() {
+    let Some(mut t) = twin(42) else { return };
+    let f = t.at(0x1ac0);
+    rec(&mut t, 324, 0, |_, _| 0x0012_3456);
+    let calls = SCRATCH + 0x7e0;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(k % 7) * 0.125 + 0.0625
+    });
+    rec_mem(&mut t, 325, 2, 4, None);
+    let q = SCRATCH + 0x300;
+    let ring = SCRATCH + 0x400;
+    let owner = SCRATCH + 0x500;
+    let pt = SCRATCH + 0x600;
+    let base = SCRATCH + 0x1000;
+    for (k, (n, cap, head)) in [(9u16, 8u16, 0u16), (3, 8, 2), (4, 8, 6)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(q, &varied(0x20, k));
+        t.set_u32(q, ring);
+        t.set_u16(q + 4, n);
+        t.write(ring, &varied(0x40, k));
+        t.set_u16(ring + 0x1c, cap);
+        t.set_u16(ring + 0x1e, 0x30);
+        t.set_u32(ring + 0x20, base);
+        t.set_u16(ring + 0x30, head);
+        t.set_u16(ring + 0x32, 2);
+        t.set_u16(ring + 0x34, 0);
+        t.set_u32(ring + 0x38, owner);
+        t.set_u32(owner, pt - 0x1c);
+        t.write(pt, &varied(0x10, k + 3));
+        t.write(base, &varied(0x200, k));
+        scrub(&mut t);
+        t.check(f, Call::this(q), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::ring_sparks(g, img, fr))
+        });
+    }
+}
