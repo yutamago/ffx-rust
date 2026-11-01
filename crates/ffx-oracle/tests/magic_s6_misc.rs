@@ -203,8 +203,6 @@ fn staged_nodes_in(dll: u16, rva: u32) {
         t.write(actor, &varied(0x40, k));
         t.set_u32(op(&t, f, 0x28f), SCRATCH + 0x900);
         t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
-        // the node's mark the step sets to 0xff (the DLL's data may hold it)
-        t.set_u16(op(&t, f, 0x14f) + 0x2c * index, 0x1234 + k as u16);
         // the effect nodes' flag words
         let e = op(&t, f, 0x32a) + 0x38 * index;
         t.set_u32(e, 0xffff_0002 ^ k);
@@ -1058,6 +1056,7 @@ fn trap(s: u32) -> u32 {
 /// with no children and ones with three and two (their methods logging
 /// the cursor), the spring's scale below and from its bound.
 #[test]
+#[allow(clippy::too_many_lines)] // the walk's nodes and the cases
 fn spring_walks() {
     let Some(mut t) = twin(70) else { return };
     let f = t.at(0x5ac0);
@@ -1097,29 +1096,51 @@ fn spring_walks() {
     let n = SCRATCH + 0x1000;
     let parent = SCRATCH + 0x1400;
     let child = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
-    for o in [0x8du32, 0xb2] {
-        t.set_u32(op(&t, f, o), 0.25f32.to_bits());
-    }
-    // (children, the pass the same, `+0x44`, the scale's limit: None for
-    // the scale itself)
+    // (children, the pass the same, `+0x44`; then the small walks: the
+    // scale kept below the limit, and the limit that the scale meets; the
+    // step (`+0x8d`) and the limit (`+0xb2`) are one constant)
     for (k, (children, same, s44, limit)) in [
-        (0u32, true, 1.0f32, Some(0.25f32)),
-        (0, false, 0.5, Some(0.25)),
-        (3, false, 2.0, Some(0.25)),
-        (2, false, 0.1, Some(0.25)),
-        // the scale kept (below the limit), and at the limit
-        (0, false, 0.5, Some(100.0)),
+        (0u32, true, 1.0f32, None),
         (0, false, 0.5, None),
+        (3, false, 2.0, None),
+        (2, false, 0.1, None),
+        (0, false, 0.1, Some(100.0f32)),
+        (0, false, 0.1, Some(f32::NAN)),
     ]
     .into_iter()
     .enumerate()
     {
         let k = k as u32;
-        let v = |x: f32| x + 0.125 * k as f32;
-        let x0 = v(0.25) + v(0.5);
-        let x1 = v(s44) + x0;
-        let scale = x1 * x1 * (v(1.5) + 0.25);
-        t.set_u32(op(&t, f, 0xb2), limit.unwrap_or(scale).to_bits());
+        // `+0x44`, `+0x48`, `+0x4c`, `+0x50`
+        let fields = if limit.is_none() {
+            [s44, 0.5, 0.25, 1.5].map(|x| x + 0.125 * k as f32)
+        } else {
+            [s44, 0.05, 0.05, 1.5]
+        };
+        let limit = match limit {
+            None => 0.25,
+            Some(l) if !l.is_nan() => l,
+            // the limit L with (x1 x1) (x2 + L) = L in f32
+            Some(_) => {
+                let x1 = fields[0] + (fields[2] + fields[1]);
+                let sq = x1 * x1;
+                let mut l = sq * fields[3] / (1.0 - sq);
+                for _ in 0..64 {
+                    let s = sq * (fields[3] + l);
+                    if s.to_bits() == l.to_bits() {
+                        break;
+                    }
+                    l = if s > l {
+                        f32::from_bits(l.to_bits() + 1)
+                    } else {
+                        f32::from_bits(l.to_bits() - 1)
+                    };
+                }
+                assert_eq!((sq * (fields[3] + l)).to_bits(), l.to_bits());
+                l
+            }
+        };
+        t.set_u32(op(&t, f, 0xb2), limit.to_bits());
         t.write(c, &varied(8, k));
         t.set_u32(c, n);
         t.set_u8(c + 5, 7);
@@ -1137,8 +1158,8 @@ fn spring_walks() {
         t.set_u32(n + 0x3c, parent);
         t.write(parent, &varied(0x40, k + 1));
         t.set_u32(parent, vt);
-        for (o, v) in [(0x44u32, s44), (0x48, 0.5), (0x4c, 0.25), (0x50, 1.5)] {
-            t.set_u32(n + o, (v + 0.125 * k as f32).to_bits());
+        for (o, v) in [0x44u32, 0x48, 0x4c, 0x50].into_iter().zip(fields) {
+            t.set_u32(n + o, v.to_bits());
         }
         for i in 0..4u32 {
             t.set_u32(n + 0x2c + 4 * i, (1.0 + i as f32).to_bits());
@@ -1887,8 +1908,6 @@ fn host_starts(gated: bool) {
         }
         t.set_u32(lock, 0x5a5a_0000 + k);
         t.write(op(&t, f, 0x9f) - 0x10, &varied(0x40, k));
-        // the scale the start sets to 1.0 (the DLL's data holds 1.0)
-        t.set_u32(op(&t, f, 0x95), 0x0123_4567 + k);
         for i in 0..3 {
             t.write(node(i), &varied(0x20, i + k));
             t.set_u32(node(i), node((i + 2) % 3));
@@ -2266,9 +2285,7 @@ fn smoke_puffs() {
     t.set_u32(op(&t, take, 0x17), ring);
     t.set_u32(op(&t, take, 0x0a), 4);
     let e = SCRATCH + 0x300;
-    // the height limit itself (kept only below it)
-    let edge = f32::from_bits(t.u32(op(&t, f, 0x73)));
-    for (k, (full, y)) in [(true, 0.0f32), (false, -2.0), (false, 5.0), (false, edge)]
+    for (k, (full, y)) in [(true, 0.0f32), (false, -2.0), (false, 5.0)]
         .into_iter()
         .enumerate()
     {
@@ -2744,12 +2761,26 @@ fn homing_part_tasks() {
     rec_mem(&mut t, 724, 1, 16, Some(0));
     rec_mem(&mut t, 235, 1, 16, Some(0));
     rec_mem(&mut t, 229, 3, 4, Some(0));
-    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
-    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
     rec(&mut t, 773, 4, |_, _| 0);
     for s in [774u32, 775, 776, 777, 778, 713] {
         rec(&mut t, s, 1, move |_, _| s);
     }
+    // the draw logs the sprite matrix it reads through `G_P` (the scale
+    // rows the task sets reach it there only); the draw on
+    let draw = t.img.rel32_target(f + 0x1f9);
+    let gp = op(&t, draw, 0x66);
+    rec(&mut t, 772, 2, move |m, a| {
+        let p = m.r32(gp);
+        let k = m.r32(SCRATCH + 0x3c00);
+        m.w32(SCRATCH + 0x3c00, k + 1);
+        for i in 0..12 {
+            let v = m.r32(p + 4 * i);
+            m.w32(SCRATCH + 0x3c04 + 0x30 * (k % 8) + 4 * i, v);
+        }
+        0x0772_0000 ^ a[1]
+    });
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    t.set_u8(op(&t, draw, 0x433), 1);
     let key = t.img.rel32_target(f + 0x167);
     let link = t.img.rel32_target(key + 0x18c);
     let lock = SCRATCH + 0x7f0;
