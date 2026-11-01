@@ -4297,3 +4297,45 @@ pub const CAMERA_TRACKS_FROM: Sig = Sig {
     calls: &[(0x19, Callee::Sig(&CAMERA_TRACKS))],
     imports: &[],
 };
+
+/// An object host's start once its effect is ready (cdecl, no
+/// arguments). Nothing while slot 225 `(1)` answers non-zero; else the
+/// effect `*G_E` is readied once (slot 226 `(*G_E, 1)`, the flag `*G_F`
+/// set), and when its motion level (slot 227 `(*G_E)`) is 1 or more the
+/// host starts ([`host_start_object`]) and the two handler words `*G_1`,
+/// `*G_2` get the DLL's handlers (immediates). Returns 0.
+///
+/// `magic_0032` 0x10001210 (119 bytes; 4 DLLs).
+pub fn host_start_when_ready<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    if slot(g, img, f, 0x1, 225, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    if g.read::<u32>(w(0x18)) == 0 {
+        let e = g.read::<u32>(w(0x27));
+        slot(g, img, f, 0x1f, 226, &[e, 1]);
+        g.write::<u32>(w(0x38), 1);
+    }
+    let e = g.read::<u32>(w(0x47));
+    if slot(g, img, f, 0x41, 227, &[e]).eax.cast_signed() < 1 {
+        return Ret::eax(0);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x5c),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    host_start_object(g, img, &callee);
+    g.write::<u32>(w(0x62), w(0x66));
+    g.write::<u32>(w(0x6c), w(0x70));
+    Ret::eax(0)
+}
+
+/// [`host_start_when_ready`].
+pub const HOST_START_WHEN_READY: Sig = Sig {
+    len: 119,
+    hash: 0x2da6_1889_6875_2369,
+    calls: &[(0x5c, Callee::Sig(&HOST_START_OBJECT))],
+    imports: &[],
+};

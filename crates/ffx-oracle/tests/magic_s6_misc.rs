@@ -1700,10 +1700,28 @@ fn live_parts_axes_turned() {
 /// Row 285: `magic_0032`'s one-object host start: the object and task
 /// lists empty and not.
 #[test]
-#[allow(clippy::too_many_lines)] // the callees' slots and lists
 fn host_starts_one_object() {
+    host_starts(false);
+}
+
+/// Row 286: `magic_0032`'s host start once the effect is ready: busy,
+/// readied before or not, motion level 0, 1 and 2 (the host start's lists
+/// as for row 285).
+#[test]
+fn host_starts_when_ready() {
+    host_starts(true);
+}
+
+#[allow(clippy::too_many_lines)] // the callees' slots and lists
+fn host_starts(gated: bool) {
     let Some(mut t) = twin(32) else { return };
     let f = t.at(0x1370);
+    let gate = t.at(0x1210);
+    // the gate's answers: slot 225 (busy), slot 227 (the motion level)
+    let answers = SCRATCH + 0x7e0;
+    rec(&mut t, 225, 1, move |m, _| m.r32(answers));
+    rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+    rec(&mut t, 227, 1, move |m, _| m.r32(answers + 4));
     rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
     let lock = SCRATCH + 0x7f0;
     let init = t.img.rel32_target(f + 0x34);
@@ -1745,11 +1763,31 @@ fn host_starts_one_object() {
     let (head_w, count_w) = (op(&t, pop, 0x13), op(&t, pop, 0x04));
     let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
     let (thead, ttail) = (op(&t, f, 0x104), op(&t, f, 0x115));
-    for (k, (objs, tasks)) in [(false, false), (true, true), (false, true)]
-        .into_iter()
-        .enumerate()
-    {
+    let cases: &[(bool, bool, u32, u32, u32)] = if gated {
+        &[
+            (false, false, 0, 0, 1),
+            (true, true, 0, 1, 2),
+            (false, true, 0, 0, 0),
+            (true, false, 1, 0, 1),
+            (false, true, 0, 1, u32::MAX),
+        ]
+    } else {
+        &[
+            (false, false, 0, 0, 1),
+            (true, true, 0, 0, 1),
+            (false, true, 0, 0, 1),
+        ]
+    };
+    for (k, &(objs, tasks, busy, readied, level)) in cases.iter().enumerate() {
         let k = k as u32;
+        t.set_u32(answers, busy);
+        t.set_u32(answers + 4, level);
+        t.set_u32(op(&t, gate, 0x18), readied * (k + 1));
+        t.set_u32(op(&t, gate, 0x27), 0x0e00_0000 + k);
+        t.set_u32(op(&t, gate, 0x47), 0x0e10_0000 + k);
+        for o in [0x62, 0x6c] {
+            t.set_u32(op(&t, gate, o), 0x0bad_0000 + o + k);
+        }
         t.set_u32(lock, 0x5a5a_0000 + k);
         t.write(op(&t, f, 0x9f) - 0x10, &varied(0x40, k));
         for i in 0..3 {
@@ -1766,7 +1804,12 @@ fn host_starts_one_object() {
         t.set_u32(thead, last);
         t.set_u32(ttail, last);
         scrub(&mut t);
-        t.check_entry(f, Call::default(), &[], Eax::Checked);
+        t.check_entry(
+            if gated { gate } else { f },
+            Call::default(),
+            &[],
+            Eax::Checked,
+        );
     }
 }
 
