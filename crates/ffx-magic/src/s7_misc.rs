@@ -5,7 +5,7 @@
 
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
-use crate::sb_sse::{cvt, div, mul, sub};
+use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
 /// The word at `f + off` of the code (an operand).
@@ -971,5 +971,366 @@ pub const MODEL_DRAW_NODE: Sig = Sig {
     len: 324,
     hash: 0xadc7_a54f_f4a0_d8f0,
     calls: &[(0x13c, Callee::Any)],
+    imports: &[],
+};
+
+/// A look matrix from two points (internal: `ecx` = the matrix `O`,
+/// `edx` and the stack word the two points; a /GS frame, `ebp` = `esp -
+/// 4` at the entry). With the frame's vectors `A` (`ebp-0x54`), the up
+/// vector `U = (0, 1, 0, 1)` (`ebp-0x44`), `C` (`ebp-0x34`), `D`
+/// (`ebp-0x24`) and `X` (`ebp-0x14`): `A` = slot 234 `(A, arg, edx)`,
+/// `D` = slot 232 `(D, A)`, `X` = slot 266 `(X, U, D)`, `C` = slot 266
+/// `(C, D, X)`, then slot 232 `(X, X)` and `(C, C)`; `O`'s rows are `X`,
+/// `C`, `D` (three terms each, the fourth 0) and `(0, 0, 0, 1)`. Each
+/// call sees the words the earlier ones left. Returns the last slot's
+/// `eax`.
+///
+/// `magic_0188` 0x10003c20 (332 bytes, `ecx`/`edx`; 2 DLLs).
+pub fn look_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let o = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |d: u32| ebp.wrapping_sub(d);
+    let (a, u, c, d, x) = (at(0x54), at(0x44), at(0x34), at(0x24), at(0x14));
+    let mut st = Pushes::default();
+    let arg = fr.arg(g, 0);
+    st.push_all(&[fr.edx, arg, a]);
+    for (i, v) in (0u32..).zip([0, 0x3f80_0000, 0, 0x3f80_0000]) {
+        g.write::<u32>(u + 4 * i, v);
+    }
+    st.call(g, slot_target(g, w(0x1b), 234), o);
+    st.push_all(&[a, d]);
+    st.call(g, slot_target(g, w(0x4e), 232), o);
+    st.push_all(&[d, u, x]);
+    st.call(g, slot_target(g, w(0x67), 266), o);
+    st.push_all(&[x, d, c]);
+    st.call(g, slot_target(g, w(0x80), 266), o);
+    st.push_all(&[x, x]);
+    st.call(g, slot_target(g, w(0x92), 232), o);
+    st.push_all(&[c, c]);
+    let eax = st.call(g, slot_target(g, w(0xa4), 232), o).eax;
+    for (row, v) in [(0u32, x), (0x10, c)] {
+        for i in 0..3 {
+            let t = g.read::<u32>(v + 4 * i);
+            g.write::<u32>(o + row + 4 * i, t);
+        }
+    }
+    let (d0, d1, d2) = (g.read::<u32>(d), g.read::<u32>(d + 4), g.read::<u32>(d + 8));
+    g.write::<u32>(o + 0x20, d0);
+    g.write::<u32>(o + 0x24, d1);
+    g.write::<u32>(o + 0xc, 0);
+    g.write::<u32>(o + 0x1c, 0);
+    g.write::<u32>(o + 0x28, d2);
+    for off in [0x2cu32, 0x30, 0x34, 0x38] {
+        g.write::<u32>(o + off, 0);
+    }
+    g.write::<u32>(o + 0x3c, 0x3f80_0000);
+    eax
+}
+
+/// [`look_matrix`] (the `rel32`: `__security_check_cookie`).
+pub const LOOK_MATRIX: Sig = Sig {
+    len: 332,
+    hash: 0x3083_01fe_9784_181a,
+    calls: &[(0x144, Callee::Any)],
+    imports: &[],
+};
+
+/// An emitter's landing check and puff (cdecl `(E)`): unless its point
+/// `E+0xc` is inside the box (`K1 < x < K2`, `z = E+0x14 > K3`, `y =
+/// E+0x10 >= 0`; unordered fails), nothing (the entry's `eax`). Else
+/// `E+0x284 |= 2`; with a rate `v = E+0x260` other than 0 the point
+/// moves back along `E+0x25c`/`E+0x264` by `1 - (-(y - v) / v)` (`K4`
+/// for the 1); `y = 0`; the point goes to `E+0x24c..`, an object
+/// `G_OBJ + 0x130 E[0x280]` starts there
+/// ([`start_object_at`](crate::s4_misc::start_object_at): scale `K5`,
+/// part 2) with `+0xd0..` = the point, `E+0x26c = 0`, and it jumps to
+/// the smoke puff ([`smoke_puff`](crate::s6_misc::smoke_puff), `ecx` =
+/// `E`), whose `eax` it returns.
+///
+/// `magic_0285` 0x10004cc0 (339 bytes; 2 DLLs).
+pub fn landing_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.arg(g, 0);
+    let x = g.read::<f32>(e + 0xc);
+    if !(x > k(g, 0xf) && k(g, 0x1d) > x) {
+        return Ret::eax(fr.eax);
+    }
+    if !(g.read::<f32>(e + 0x14) > k(g, 0x32)) {
+        return Ret::eax(fr.eax);
+    }
+    let y = g.read::<f32>(e + 0x10);
+    if !(y >= 0.0) {
+        return Ret::eax(fr.eax);
+    }
+    let fl = g.read::<u16>(e + 0x284) | 2;
+    g.write::<u16>(e + 0x284, fl);
+    let v = g.read::<f32>(e + 0x260);
+    // `ucomiss`/`lahf`/`jnp`: only an ordered 0 skips the move
+    if v != 0.0 {
+        let neg = f32::from_bits(div(sub(y, v), v).to_bits() ^ g.read::<u32>(w(0x81)));
+        let back = sub(k(g, 0x6e), neg);
+        let dx = mul(g.read::<f32>(e + 0x25c), back);
+        let nx = sub(g.read::<f32>(e + 0xc), dx);
+        g.write::<f32>(e + 0xc, nx);
+        let dz = mul(g.read::<f32>(e + 0x264), back);
+        let nz = sub(g.read::<f32>(e + 0x14), dz);
+        g.write::<f32>(e + 0x14, nz);
+    }
+    g.write::<u32>(e + 0x10, 0);
+    for off in [0u32, 4, 8, 0xc] {
+        let p = g.read::<u32>(e + 0xc + off);
+        g.write::<u32>(e + 0x24c + off, p);
+    }
+    let obj = g
+        .read::<u32>(e + 0x280)
+        .wrapping_mul(0x130)
+        .wrapping_add(w(0xfa));
+    let start = img.rel32_target(f + 0x105);
+    crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xc3), 2, 0, 0);
+    for off in [0u32, 4, 8, 0xc] {
+        let p = g.read::<u32>(e + 0x24c + off);
+        g.write::<u32>(obj + 0xd0 + off, p);
+    }
+    g.write::<u32>(e + 0x26c, 0);
+    let puff = Frame {
+        at: img.rel32_target(f + 0x14c),
+        ecx: e,
+        ..*fr
+    };
+    Ret::eax(crate::s6_misc::smoke_puff(g, img, &puff))
+}
+
+/// [`landing_puff`] (the `rel32`s:
+/// [`start_object_at`](crate::s4_misc::start_object_at) and the tail
+/// jump to [`smoke_puff`](crate::s6_misc::smoke_puff)).
+pub const LANDING_PUFF: Sig = Sig {
+    len: 339,
+    hash: 0xdfdd_c19b_b6a7_598d,
+    calls: &[
+        (0x105, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x14c, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
+    ],
+    imports: &[],
+};
+
+/// A ring node's handler that moves a light (internal: `ecx` = the
+/// cursor `S`; a ring pass first, [`ring_pass`], over the frame's cookie
+/// word; a /GS frame, `ebp` = `esp - 4` at the entry). Passed, with `R =
+/// S[0]`: with no steps left (`R+0x54`), a node whose bit 0 of `R+0x58`
+/// is set leaves its parent ([`leave`](crate::sa_misc::leave)). Else the
+/// point `P = R+0x1c` moves by `R+0x3c.. * R+0x50` (four terms), the
+/// clock `R+0x4c += R+0x50`; at `K` or past it slot 325 `(P, R+0x2c)`,
+/// one step less and the clock 0. Then slot 915 `(P.x / K2, P.y / K2,
+/// P.z / K2, R+0x28 K3, slot 776 (u16 R+0x5a))`, whose `eax` it
+/// returns.
+///
+/// `magic_0155` 0x10004720 (354 bytes; 4 DLLs).
+pub fn moving_light_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = fr.ecx;
+    let cookie = g.read::<u32>(w(0x7)) ^ fr.esp.wrapping_sub(4);
+    let (passed, eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return eax;
+    }
+    let r = g.read::<u32>(s);
+    if g.read::<u32>(r + 0x54) == 0 {
+        if g.read::<u8>(r + 0x58) & 1 != 0 {
+            return crate::sa_misc::leave(g, r, eax);
+        }
+        return eax;
+    }
+    let p = r + 0x1c;
+    for i in 0..4u32 {
+        let d = mul(g.read::<f32>(p + 0x20 + 4 * i), g.read::<f32>(r + 0x50));
+        let v = add(d, g.read::<f32>(p + 4 * i));
+        g.write::<f32>(p + 4 * i, v);
+    }
+    let clock = add(g.read::<f32>(r + 0x50), g.read::<f32>(r + 0x4c));
+    g.write::<f32>(r + 0x4c, clock);
+    // `comiss`/`jb`: below `K` or unordered goes on
+    if clock >= k(g, 0x9a) {
+        slot(g, img, f, 0xaa, 325, p + 0x10, &[p, r + 0x2c]);
+        let n = g.read::<u32>(r + 0x54).wrapping_sub(1);
+        g.write::<u32>(r + 0x54, n);
+        g.write::<u32>(r + 0x4c, 0);
+    }
+    let id = u32::from(g.read::<u16>(r + 0x5a));
+    let id = slot(g, img, f, 0xca, 776, fr.ecx, &[id]).eax;
+    let by = k(g, 0xe7);
+    let z = mul(g.read::<f32>(r + 0x28), k(g, 0xdf)).to_bits();
+    let c = div(g.read::<f32>(r + 0x24), by).to_bits();
+    let b = div(g.read::<f32>(r + 0x20), by).to_bits();
+    let a = div(g.read::<f32>(p), by).to_bits();
+    slot(g, img, f, 0xf3, 915, fr.ecx, &[a, b, c, z, id]).eax
+}
+
+/// [`moving_light_node`] (the `rel32`s: [`leave`](crate::sa_misc::leave)
+/// and two `__security_check_cookie`s).
+pub const MOVING_LIGHT_NODE: Sig = Sig {
+    len: 354,
+    hash: 0x22b9_764e_30e8_31c1,
+    calls: &[
+        (0x13c, Callee::Any),
+        (0x14d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x15a, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A summon's scripted frame (cdecl `(node)`; `B = *G_B`, its state
+/// `B+0xeb70`; the offsets are `magic_0644`'s, `magic_0565`'s block sits
+/// 0x130 further, an operand). First the record `REC` (0x30 bytes) is cleared, its u16
+/// `+2` gets bit 7, `*G_1 = *G_2 = 0` and `*G_3 = *G_4`. Then by the
+/// state (past 3: nothing): 0 starts the script `SCRIPT` (`*G_PC`, the
+/// wait `*G_W` 0, u16 `*G_X` 0, the mode byte `*G_M` 1) and goes to 1;
+/// 1 reads the pads and runs the script ([`read_pads`], [`run`]); when it
+/// ends, slot 647 `(*G_Q)` and the records of the four kinds (`magic_0644`:
+/// [`kind_records`]; `magic_0565`: [`selection_groups`]) and state 2; 2
+/// starts the script of the next record `B + 0xeac4 + 0x28 B[0xeb6c]`
+/// (kept in `B+0xeb64`; `*G_PC` = the DLL's table at its first word),
+/// counts it and goes to 3, then runs it as 3 does; 3 runs the script,
+/// and when it ends goes back to 2 while records are left (`B+0xeb6c <
+/// B+0xeb68`), else `B+0xeb74 = 1`, the closing slots
+/// ([`call_628_213`]) and the node goes back to its pool
+/// ([`give_back`]). Every way ends in a jump to the motion step
+/// ([`motion_step`]), whose `eax` it returns.
+///
+/// [`read_pads`]: crate::sb_misc::read_pads
+/// [`run`]: crate::sa_script::run
+/// [`kind_records`]: crate::sa_misc::kind_records
+/// [`selection_groups`]: crate::s6_misc::selection_groups
+/// [`call_628_213`]: crate::sb_misc::call_628_213
+/// [`give_back`]: crate::sa_pool::give_back
+/// [`motion_step`]: crate::s3_motion::motion_step
+///
+/// `magic_0644` 0x1000b8f0 (367 bytes; 5 DLLs) and `magic_0565`
+/// 0x10007a50 (352 bytes; 5 DLLs).
+pub fn summon_script_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let b = g.read::<u32>(w(0x6));
+    g.write::<u32>(w(0x15), 0);
+    g.write::<u32>(w(0x1f), 0);
+    // memset(REC, 0, 0x30)
+    for i in 0..0x30 {
+        g.write::<u8>(w(0xf) + i, 0);
+    }
+    let v = g.read::<u16>(w(0x34)) | 0x80;
+    g.write::<u16>(w(0x34), v);
+    let x = g.read::<u32>(w(0x39));
+    g.write::<u32>(w(0x3e), x);
+    // the state word `B + S` (0xeb70 in `magic_0644`, 0xeca0 in `magic_0565`; an
+    // operand), the other words of the block at fixed distances from it
+    let st = w(0x44);
+    let at = |d: u32| b.wrapping_add(st).wrapping_sub(d);
+    let state = at(0);
+    // a script started: its pc, the wait, the u16 and the mode byte
+    let start = |g: &mut G, pc: u32, (o_pc, o_w, o_x, o_m): (u32, u32, u32, u32)| {
+        g.write::<u32>(w(o_pc), pc);
+        g.write::<u32>(w(o_w), 0);
+        g.write::<u16>(w(o_x), 0);
+        g.write::<u8>(w(o_m), 1);
+    };
+    let script = |g: &mut G, o: u32| crate::sa_script::run(g, img, call(o));
+    let now = g.read::<u32>(state);
+    if now == 0 {
+        start(g, w(0x5d), (0x59, 0x63, 0x6e, 0x76));
+        g.write::<u32>(state, 1);
+    } else if now == 1 {
+        crate::sb_misc::read_pads(g, img, call(0x8d));
+        if script(g, 0x92) == 1 {
+            let q = g.read::<u32>(w(0xa2));
+            slot(g, img, f, 0x9c, 647, fr.ecx, &[q]);
+            let records = call(0xb2);
+            // the callee's entry `esp`: two pushes and the call's
+            let esp = fr.esp.wrapping_sub(0xc);
+            if img.matches(records, &crate::sa_misc::KIND_RECORDS) {
+                crate::sa_misc::kind_records(g, img, records, esp);
+            } else {
+                let groups = Frame {
+                    at: records,
+                    esp,
+                    ..*fr
+                };
+                crate::s6_misc::selection_groups(g, img, &groups);
+            }
+            g.write::<u32>(state, 2);
+        }
+    } else if now == 2 || now == 3 {
+        if now == 2 {
+            let n = g.read::<u32>(at(4));
+            let rec = at(0xac).wrapping_add(n.wrapping_mul(0x28));
+            g.write::<u32>(at(0xc), rec);
+            let first = g.read::<u32>(rec);
+            let pc = g.read::<u32>(first.wrapping_mul(4).wrapping_add(w(0xee)));
+            start(g, pc, (0xf3, 0xe3, 0xfa, 0x102));
+            let n = g.read::<u32>(at(4)).wrapping_add(1);
+            g.write::<u32>(at(4), n);
+            g.write::<u32>(state, 3);
+        }
+        if script(g, 0x118) == 1 {
+            if g.read::<i32>(at(4)) < g.read::<i32>(at(8)) {
+                g.write::<u32>(state, 2);
+            } else {
+                g.write::<u32>(at(0).wrapping_add(4), 1);
+                crate::sb_misc::call_628_213(g, img, call(0x13a));
+                let node = fr.arg(g, 0);
+                crate::sa_pool::give_back(g, img, call(0x142), node);
+            }
+        }
+    }
+    Ret::eax(crate::s3_motion::motion_step(g, img, call(0x88)))
+}
+
+/// [`summon_script_frame`] in `magic_0644` (the `rel32`s: `memset`, the
+/// pads, the script (twice), the kind records, the closing slots, the
+/// pool's give-back and the motion step's tail jumps). Its 367 bytes
+/// run on into `__security_check_cookie` (no padding between them), whose
+/// tail jump is the last `rel32`.
+pub const SUMMON_SCRIPT_FRAME: Sig = Sig {
+    len: 367,
+    hash: 0x2ecb_93ce_9a75_d25d,
+    calls: &[
+        (0x28, Callee::Import("memset")),
+        (0x88, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x8d, Callee::Sig(&crate::sb_misc::READ_PADS)),
+        (0x92, Callee::Sig(&crate::sa_script::RUN)),
+        (0xb2, Callee::Sig(&crate::sa_misc::KIND_RECORDS)),
+        (0xc3, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x118, Callee::Sig(&crate::sa_script::RUN)),
+        (0x13a, Callee::Sig(&crate::sb_misc::CALL_628_213)),
+        (0x142, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x149, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x16b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`summon_script_frame`] in `magic_0565`, with the selection groups
+/// ([`selection_groups`](crate::s6_misc::selection_groups)) for the kind
+/// records.
+pub const SUMMON_SCRIPT_FRAME_B: Sig = Sig {
+    len: 352,
+    hash: 0x8cbb_d52c_255b_702a,
+    calls: &[
+        (0x28, Callee::Import("memset")),
+        (0x88, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x8d, Callee::Sig(&crate::sb_misc::READ_PADS)),
+        (0x92, Callee::Sig(&crate::sa_script::RUN)),
+        (0xb2, Callee::Sig(&crate::s6_misc::SELECTION_GROUPS)),
+        (0xc3, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x118, Callee::Sig(&crate::sa_script::RUN)),
+        (0x13a, Callee::Sig(&crate::sb_misc::CALL_628_213)),
+        (0x142, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x149, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+    ],
     imports: &[],
 };

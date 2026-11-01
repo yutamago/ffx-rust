@@ -2169,6 +2169,9 @@ ports! {
     "summon frame (bound, ring first)" => s7_misc::SUMMON_FRAME_RING, s7_misc::summon_frame_ring;
     "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
     "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
+    "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;
+    "summon script frame" => s7_misc::SUMMON_SCRIPT_FRAME, s7_misc::summon_script_frame;
+    "summon script frame (selection groups)" => s7_misc::SUMMON_SCRIPT_FRAME_B, s7_misc::summon_script_frame;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
@@ -2937,6 +2940,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model points node", &s7_misc::MODEL_POINTS_NODE),
     ("light node", &s7_misc::LIGHT_NODE),
     ("model draw node", &s7_misc::MODEL_DRAW_NODE),
+    ("look matrix", &s7_misc::LOOK_MATRIX),
+    ("moving light node", &s7_misc::MOVING_LIGHT_NODE),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

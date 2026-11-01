@@ -891,3 +891,345 @@ fn model_draw_nodes() {
         }
     }
 }
+
+/// Row 572: the look matrix of both DLLs (the slots compute on the frame's
+/// vectors; their answers fill the rows).
+#[test]
+fn look_matrices() {
+    for (dll, rva) in [(188u16, 0x3c20u32), (690, 0x3c20)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        // a = b - c, a = norm(b) (here: b with a mark), a = b x c
+        log_calls(&mut t, 234, log, 3, None, |m, a, k| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i).wrapping_sub(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x234 + k
+        });
+        log_calls(&mut t, 232, log, 2, None, |m, a, k| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i) ^ (k << 4 | i);
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x232 + k
+        });
+        log_calls(&mut t, 266, log, 3, None, |m, a, k| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i).rotate_left(3) ^ m.r32(a[2] + 4 * ((i + 1) % 4));
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x266 + k
+        });
+        let o = SCRATCH + 0x300;
+        let (p, q) = (SCRATCH + 0x400, SCRATCH + 0x440);
+        for k in 0..3u32 {
+            t.set_u32(log, 0);
+            t.write(o, &varied(0x40, k));
+            t.write(p, &varied(0x10, k + 1));
+            t.write(q, &varied(0x10, k + 2));
+            scrub(&mut t);
+            let c = Call {
+                ecx: o,
+                edx: p,
+                ..Call::default()
+            };
+            t.check(f, c, &[q], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::look_matrix(g, img, fr))
+            });
+        }
+    }
+}
+
+/// Row 758: the landing check and puff of both DLLs: points outside the
+/// box on each side (and NaN), inside with a rate (0, -0 and others),
+/// the object started and the puff (its ring with a free record).
+#[test]
+fn landing_puffs() {
+    for (dll, rva) in [(285u16, 0x4cc0u32), (286, 0x1b70)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        // the object start's slots (`s4_misc::start_object_at`)
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        let soa = t.img.rel32_target(f + 0x105);
+        let start = t.img.rel32_target(soa + 0x84);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+        t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x2f0);
+        t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
+        let pa = t.img.rel32_target(soa + 0x9d);
+        let free = op(&t, pa, 0x04);
+        let tail = op(&t, soa, 0xa8);
+        // the puff's (`s6_misc::smoke_puff`)
+        rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+        let calls = SCRATCH + 0x7e0;
+        rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ (a[0] & 0xff));
+        t.stub_st0(314, move |m, a| {
+            let k = m.r32(calls);
+            m.w32(calls, k + 1);
+            f64::from(f32::from_bits(a[0])) * f64::from(k % 5 + 1)
+        });
+        let puff = t.img.rel32_target(f + 0x14c);
+        let take = t.img.rel32_target(puff + 0x9);
+        let ring = SCRATCH + 0x1000;
+        t.set_u32(op(&t, take, 0x17), ring);
+        t.set_u32(op(&t, take, 0x0a), 4);
+        for (o, x) in [
+            (0xfu32, -10.0f32),
+            (0x1d, 10.0),
+            (0x32, -4.0),
+            (0x6e, 1.0),
+            (0xc3, 0.5),
+        ] {
+            t.set_u32(w(&t, o), x.to_bits());
+        }
+        let e = SCRATCH + 0x300;
+        // (x, y, z, the rate, the object's index)
+        for (k, (x, y, z, v, i)) in [
+            (-11.0f32, 1.0f32, 0.0f32, 1.0f32, 0u32),
+            (11.0, 1.0, 0.0, 1.0, 0),
+            (f32::NAN, 1.0, 0.0, 1.0, 0),
+            (0.0, 1.0, -5.0, 1.0, 0),
+            (0.0, -0.5, 0.0, 1.0, 0),
+            (0.0, f32::NAN, 0.0, 1.0, 0),
+            (1.5, 2.0, 3.0, 0.0, 1),
+            (1.5, 2.0, 3.0, -0.0, 2),
+            (1.5, 2.0, 3.0, 0.75, 0),
+            (-2.5, 0.0, 7.0, -3.0, 3),
+            (2.0, 4.0, 1.0, f32::NAN, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.write(e, &varied(0x290, k));
+            t.set_u32(e + 0xc, x.to_bits());
+            t.set_u32(e + 0x10, y.to_bits());
+            t.set_u32(e + 0x14, z.to_bits());
+            t.set_u32(e + 0x25c, 1.5f32.to_bits());
+            t.set_u32(e + 0x264, (-0.75f32).to_bits());
+            t.set_u32(e + 0x260, v.to_bits());
+            t.set_u32(e + 0x280, i);
+            t.set_u32(e + 0x250, (k as f32 - 4.0).to_bits());
+            t.set_u16(free, 3);
+            t.write(SCRATCH + 0x1400, &varied(0x10, k));
+            t.set_u32(tail, if k % 2 == 0 { SCRATCH + 0x1400 } else { 0 });
+            t.write(ring, &varied(0x68 * 4, k));
+            for j in 0..4u32 {
+                t.set_u32(ring + 0x68 * j + 0x60, u32::from(j != 2));
+            }
+            t.set_u32(op(&t, take, 0x02), 1);
+            scrub(&mut t);
+            let c = Call {
+                eax: 0x0eaa_0000 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[e], Eax::Checked);
+        }
+    }
+}
+
+/// Row 248: the moving light node of the four DLLs: not passed, no steps
+/// (bit 0 of `+0x58` with a parent, without one, clear), the clock below,
+/// at and past its bound (and NaN).
+#[test]
+fn moving_light_nodes() {
+    for (dll, rva) in [
+        (155u16, 0x4720u32),
+        (164, 0x4710),
+        (609, 0x47c0),
+        (613, 0x4790),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 325, log, 2, None, |m, a, k| {
+            m.w32(a[0], m.r32(a[1]) ^ k);
+            0x325 + k
+        });
+        log_calls(&mut t, 776, log, 1, None, |_, a, k| a[0] ^ (k << 16));
+        log_calls(&mut t, 915, log, 5, None, |_, a, k| a[4] ^ k);
+        t.set_u32(op(&t, f, 0x9a), 2.0f32.to_bits());
+        t.set_u32(op(&t, f, 0xdf), 0.5f32.to_bits());
+        t.set_u32(op(&t, f, 0xe7), 4.0f32.to_bits());
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let parent = SCRATCH + 0x1800;
+        // (ring byte, steps, flags, parent, clock, rate)
+        for (k, (byte, steps, fl, par, clock, rate)) in [
+            (3u8, 2u32, 0u8, true, 0.0f32, 0.5f32),
+            (4, 0, 1, true, 0.0, 0.5),
+            (4, 0, 1, false, 0.0, 0.5),
+            (4, 0, 0xfe, true, 0.0, 0.5),
+            (4, 3, 0, false, 0.25, 0.5),
+            (4, 3, 0, false, 1.5, 0.5),
+            (4, 1, 0, false, 1.75, 0.5),
+            (4, 2, 0, false, f32::NAN, 0.5),
+            (4, 0xffff_ffff, 0, false, 3.0, -0.25),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x60, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u32(r + 0x54, steps);
+            t.set_u8(r + 0x58, fl);
+            t.write(parent, &varied(0x40, k + 3));
+            t.set_u32(r + 0x14, if par { parent } else { 0 });
+            // the parent's ring around the node (`sa_misc::leave`)
+            t.set_u32(r + 4, parent + 0x20);
+            t.set_u32(r + 8, parent + 0x20);
+            t.set_u32(r + 0x4c, clock.to_bits());
+            t.set_u32(r + 0x50, rate.to_bits());
+            for i in 0..8u32 {
+                t.set_u32(r + 0x1c + 4 * i, (0.5 * i as f32 - k as f32).to_bits());
+            }
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x4720_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::moving_light_node(g, img, fr))
+            });
+        }
+    }
+}
+
+/// Rows 176 and 178: the scripted summon frames (`magic_0565` and its
+/// four copies with the selection groups, `magic_0644` and its four with
+/// the kind records) in every state: 0, 1 with the script running and
+/// ended, 2 (a record's script whose command ends it) and 3 with records
+/// left and not (the closing slots, the node given back), and past 3.
+/// The motion step is done (it returns at once).
+#[test]
+fn summon_script_frames() {
+    for (dll, rva) in [
+        (565u16, 0x7a50u32),
+        (691, 0x7a50),
+        (693, 0x7a50),
+        (695, 0x7a50),
+        (697, 0x7a50),
+        (644, 0xb8f0),
+        (692, 0xb8f0),
+        (694, 0xb8f0),
+        (696, 0xb8f0),
+        (698, 0xb8f0),
+    ] {
+        summon_script_frame_in(dll, rva);
+    }
+}
+
+fn summon_script_frame_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let log = SCRATCH + 0x6000;
+    // the pads (`sb_misc::read_pads`: slot 305 one port), the record's
+    // slot and the closing ones (`sb_misc::call_628_213`)
+    log_calls(&mut t, 305, log, 0, None, |_, _, k| k % 2);
+    for (s, n) in [
+        (302u32, 3usize),
+        (303, 3),
+        (304, 3),
+        (647, 1),
+        (628, 1),
+        (213, 2),
+    ] {
+        log_calls(&mut t, s, log, n, None, move |_, a, k| s ^ a[0] ^ (k << 12));
+    }
+    // the kinds: one list with a word, the rest empty
+    log_calls(&mut t, 645, log, 4, None, |m, a, _| {
+        if a[2] == 1 {
+            m.w32(a[1], 2);
+            m.w32(a[3], 0x0645_0000);
+        } else {
+            m.w32(a[1], 0);
+            m.w32(a[3], 0);
+        }
+        SCRATCH + 0x5f0
+    });
+    // the motion step is done: it returns 1 at once
+    let motion = t.img.rel32_target(f + 0x88);
+    t.set_u32(op(&t, motion, 0x02), 1);
+    // the script's command table: every command ends the script
+    let run = t.img.rel32_target(f + 0x92);
+    let cmds = op(&t, run, 0x17);
+    t.set_u32(magic::TABLE + 4 * 1001, trap(1001));
+    log_calls(&mut t, 1001, log, 2, None, |m, a, _| {
+        // the mode byte (`+0x56`) 0: ended
+        let at = a[0] + 0x54;
+        let v = m.r32(at) & 0xff00_ffff;
+        m.w32(at, v);
+        a[1] + 2
+    });
+    for i in 0..8 {
+        t.set_u32(cmds + 4 * i, trap(1001));
+    }
+    let b = SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x6), b);
+    // the block's words around the state (an operand)
+    let st = b + w(&t, 0x44);
+    let s = w(&t, 0x59);
+    let node = SCRATCH + 0x400;
+    // the records' scripts (the DLL's table of them)
+    let scripts = w(&t, 0xee);
+    for i in 0..2 {
+        t.set_u32(scripts + 4 * i, SCRATCH + 0x5100 + 0x10 * i);
+        t.set_u32(SCRATCH + 0x5100 + 0x10 * i, 3 + i);
+    }
+    // (state, the script's mode byte, the record number, the records)
+    for (k, (state, mode, n, count)) in [
+        (0u32, 0u8, 0u32, 2u32),
+        (1, 2, 0, 2),
+        (1, 0, 0, 2),
+        (2, 1, 0, 2),
+        (2, 1, 1, 2),
+        (3, 0, 1, 2),
+        (3, 0, 2, 2),
+        (3, 2, 2, 2),
+        (4, 0, 0, 0),
+        (0xffff_ffff, 0, 0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(log, 0);
+        t.write(st - 0xac, &varied(0xb8, k));
+        for r in 0..3u32 {
+            t.set_u32(st - 0xac + 0x28 * r, r % 2);
+        }
+        t.set_u32(st - 8, count);
+        t.set_u32(st - 4, n);
+        t.set_u32(st, state);
+        t.write(s, &varied(0x58, k));
+        let script = SCRATCH + 0x5000;
+        t.set_u32(s, script);
+        t.set_u32(script, k % 4);
+        t.set_u8(s + 0x56, mode);
+        // a wait for ever
+        t.set_u16(s + 0x54, 0xffff);
+        t.set_u32(s + 0x24, 0);
+        t.set_u32(s + 0x28, 0);
+        // the node and its child (`sa_pool::give_back`)
+        t.write(node, &varied(0x40, k));
+        t.set_u32(node + 8, node + 0x20);
+        t.set_u32(node + 0x2c, 0);
+        t.set_u32(node + 4, node);
+        t.set_u32(node, node);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
