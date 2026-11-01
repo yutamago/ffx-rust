@@ -2636,7 +2636,8 @@ fn model_sound_records() {
         t.stub_edx(772, |_, a| a[0].rotate_left(4));
         log_calls(&mut t, 773, log, 2, Some(lg), move |m, _, _| m.r32(open));
         log_calls(&mut t, 776, log, 1, Some(lg), |_, a, _| a[0] << 4);
-        log_calls(&mut t, 777, log, 1, Some(lg), |_, a, _| a[0] ^ 0x0100);
+        // bits that overlap slot 776's, so `|` and `^` differ
+        log_calls(&mut t, 777, log, 1, Some(lg), |_, a, _| a[0] ^ 0xfff0);
         for s in [819u32, 870, 871] {
             t.stub(s, move |m, a| {
                 let row = log + 0x400 + 0x100 * (s % 4);
@@ -2737,6 +2738,7 @@ fn falling_sparks() {
             t.set_u32(log, 0);
             t.set_u32(w(&t, 0x5), delay.cast_unsigned());
             t.set_u32(w(&t, 0x1c), k % 2);
+            t.set_u32(w(&t, 0x35), 0x0035_0000 + k);
             t.set_u32(w(&t, 0x52), v.to_bits());
             t.set_u32(w(&t, 0xd7), (4.0 + k as f32).to_bits());
             t.set_u32(op(&t, take, 0x09), n);
@@ -2807,6 +2809,9 @@ fn camera_path_tasks() {
             t.set_u32(w(&t, 0x17), 0x0a0a_0000 + k);
             t.write(p, &varied(0x10, k));
             t.set_u32(w(&t, 0x16e), 2.0f32.to_bits());
+            // the state words the start clears, seeded
+            t.write(w(&t, 0x1cb), &varied(4, k));
+            t.write(w(&t, 0x1fb), &varied(2, k + 1));
             t.write(node(0) - 0x40, &varied(0x140, k + 1));
             t.set_u32(node(0), node(2));
             t.set_u32(node(0) + 4, node(1));
