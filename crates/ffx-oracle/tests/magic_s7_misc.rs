@@ -2295,6 +2295,46 @@ fn aimed_emitters() {
         (286, 0x36b0),
         (287, 0x26d0),
     ] {
+        aimed_in(
+            dll,
+            rva,
+            (0x24c, 0xc),
+            [0x1be, 0x1c4, 0x1d7],
+            s7_misc::aimed_emitter,
+        );
+    }
+}
+
+/// Row 196: the aimed emitter that keeps its angles, in the five DLLs.
+#[test]
+fn aimed_emitters_angles() {
+    for (dll, rva) in [
+        (18u16, 0x31e0u32),
+        (19, 0x1ce0),
+        (307, 0xae00),
+        (380, 0x30b0),
+        (432, 0x4590),
+    ] {
+        aimed_in(
+            dll,
+            rva,
+            (0x358, 0xd0),
+            [0x1e7, 0x1ed, 0x200],
+            s7_misc::aimed_emitter_angles,
+        );
+    }
+}
+
+/// The aimed emitter's cases: `(target, position)` the fields, `[take,
+/// head, tail]` the operands.
+fn aimed_in(
+    dll: u16,
+    rva: u32,
+    (target, pos): (u32, u32),
+    [take_at, head, tail]: [u32; 3],
+    port: fn(&mut magic::PortGame, &ffx_magic::Image, &ffx_magic::Frame) -> u32,
+) {
+    {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -2318,7 +2358,7 @@ fn aimed_emitters() {
             }
             0x229
         });
-        let take = t.img.rel32_target(f + 0x1be);
+        let take = t.img.rel32_target(f + take_at);
         let e = SCRATCH + 0x1000;
         let node = SCRATCH + 0x400;
         let ring = [SCRATCH + 0x480, SCRATCH + 0x4c0];
@@ -2335,18 +2375,18 @@ fn aimed_emitters() {
         .enumerate()
         {
             let k = k as u32;
-            t.write(e, &varied(0x280, k));
+            t.write(e, &varied(0x390, k));
             for (i, x) in (0u32..).zip([dx, dy, dz]) {
-                t.set_u32(e + 0xc + 4 * i, (0.5 * k as f32).to_bits());
-                t.set_u32(e + 0x24c + 4 * i, (0.5 * k as f32 + x).to_bits());
+                t.set_u32(e + pos + 4 * i, (0.5 * k as f32).to_bits());
+                t.set_u32(e + target + 4 * i, (0.5 * k as f32 + x).to_bits());
             }
             t.write(node, &varied(0x20, k));
             t.set_u32(node, ring[0]);
             t.set_u32(node + 4, ring[1]);
             t.set_u16(op(&t, take, 0x04), 3);
             t.set_u32(op(&t, take, 0x17), node);
-            t.set_u32(w(&t, 0x1c4), if listed { SCRATCH + 0x500 } else { 0 });
-            t.set_u32(w(&t, 0x1d7), SCRATCH + 0x540);
+            t.set_u32(w(&t, head), if listed { SCRATCH + 0x500 } else { 0 });
+            t.set_u32(w(&t, tail), SCRATCH + 0x540);
             t.write(SCRATCH + 0x500, &varied(0x80, k + 1));
             scrub(&mut t);
             let c = Call {
@@ -2355,7 +2395,7 @@ fn aimed_emitters() {
             }
             .with_xmm(&[Xmm::f32(9.0), Xmm::f32(1.5 + k as f32)]);
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
-                Ret::eax(s7_misc::aimed_emitter(g, img, fr))
+                Ret::eax(port(g, img, fr))
             });
         }
     }

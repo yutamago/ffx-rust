@@ -2632,52 +2632,126 @@ pub const SPLINE_OBJECT: Sig = Sig {
 ///
 /// `magic_0284` 0x10003a40 (518 bytes, `ecx`/`xmm1`; 4 DLLs).
 pub fn aimed_emitter<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let lay = AimLayout {
+        vel: 0x25c,
+        target: 0x24c,
+        pos: 0xc,
+        speed: 0x274,
+        angles: None,
+        k: [0xfe, 0x10d, 0x11d, 0x127, 0x134],
+        slots: [0x144, 0x166, 0x187, 0x19a],
+        list: [0x1b1, 0x1be, 0x1c4, 0x1d7, 0x1e9, 0x1f6],
+    };
+    aim_core(g, img, fr, &lay)
+}
+
+/// Where an aimed emitter's variant keeps its words: the fields of `E`
+/// (the velocity, the target, the position, the speed, the two angles
+/// when it keeps them) and the code's operands (the yaw's constants
+/// `K, H, T, L, T`; the slot tables of 235, 328, 329 and 229; the
+/// owner, the take's `rel32` and the list's four globals).
+struct AimLayout {
+    vel: u32,
+    target: u32,
+    pos: u32,
+    speed: u32,
+    angles: Option<(u32, u32)>,
+    k: [u32; 5],
+    slots: [u32; 4],
+    list: [u32; 6],
+}
+
+/// [`aimed_emitter`] on the layout `lay`.
+fn aim_core<G: Game>(g: &mut G, img: &Image, fr: &Frame, lay: &AimLayout) -> u32 {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
-    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let k = |g: &G, i: usize| g.read::<f32>(w(lay.k[i]));
     let e = fr.ecx;
     let speed = fr.xmm[1] as u32;
     let neg = speed ^ g.read::<u32>(w(0x1a));
-    g.write::<u32>(e + 0x264, neg);
-    for at in [0x25cu32, 0x260, 0x268] {
-        g.write::<u32>(e + at, 0);
+    let v = e + lay.vel;
+    g.write::<u32>(v + 8, neg);
+    for at in [0u32, 4, 0xc] {
+        g.write::<u32>(v + at, 0);
     }
-    let d = |g: &G, at: u32| sub(g.read::<f32>(e + 0x240 + at), g.read::<f32>(e + at));
-    let (dy, dx, dz) = (d(g, 0x10), d(g, 0xc), d(g, 0x14));
+    let d = |g: &G, c: u32| {
+        sub(
+            g.read::<f32>(e + lay.target + c),
+            g.read::<f32>(e + lay.pos + c),
+        )
+    };
+    let (dy, dx, dz) = (d(g, 4), d(g, 0), d(g, 8));
     let s = add(mul(dz, dz), mul(dx, dx));
     // `_libm_sse2_sqrt_precise`, then `_CIatan2` on x87
     let h = f64::from(s).sqrt();
     let pitch = g.atan2(f64::from(dy), h) as f32;
     let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
-    let mut y = sub(k(g, 0xfe), yaw);
-    if y > k(g, 0x10d) {
-        y = sub(y, k(g, 0x11d));
-    } else if k(g, 0x127) > y {
-        y = add(y, k(g, 0x134));
+    let mut y = sub(k(g, 0), yaw);
+    if y > k(g, 1) {
+        y = sub(y, k(g, 2));
+    } else if k(g, 3) > y {
+        y = add(y, k(g, 4));
     }
     let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x70);
     let m = base + 0x28;
-    slot(g, img, f, 0x144, 235, e, &[m]);
-    slot(g, img, f, 0x166, 328, e, &[m, m, pitch.to_bits()]);
-    slot(g, img, f, 0x187, 329, e, &[m, m, y.to_bits()]);
-    let p = e + 0x25c;
-    slot(g, img, f, 0x19a, 229, e, &[p, m, p]);
-    g.write::<u32>(e + 0x274, speed);
-    let n = crate::sa_pool::take(g, img, img.rel32_target(f + 0x1be), w(0x1b1));
+    let [s235, s328, s329, s229] = lay.slots;
+    slot(g, img, f, s235, 235, e, &[m]);
+    slot(g, img, f, s328, 328, e, &[m, m, pitch.to_bits()]);
+    slot(g, img, f, s329, 329, e, &[m, m, y.to_bits()]);
+    slot(g, img, f, s229, 229, e, &[v, m, v]);
+    if let Some((a, b)) = lay.angles {
+        g.write::<f32>(e + a, pitch);
+        g.write::<f32>(e + b, y);
+    }
+    g.write::<u32>(e + lay.speed, speed);
+    let [owner, take, head, tail_r, head_w, tail_w] = lay.list;
+    let n = crate::sa_pool::take(g, img, img.rel32_target(f + take), w(owner));
     g.write::<u32>(n.wrapping_add(0x14), e);
     g.write::<u32>(n.wrapping_add(4), 0);
-    if g.read::<u32>(w(0x1c4)) != 0 {
-        let tail = g.read::<u32>(w(0x1d7));
+    if g.read::<u32>(w(head)) != 0 {
+        let tail = g.read::<u32>(w(tail_r));
         g.write::<u32>(n, tail);
         g.write::<u32>(tail.wrapping_add(4), n);
     } else {
         g.write::<u32>(n, 0);
-        g.write::<u32>(w(0x1e9), n);
+        g.write::<u32>(w(head_w), n);
     }
-    g.write::<u32>(w(0x1f6), n);
+    g.write::<u32>(w(tail_w), n);
     g.write::<u32>(n.wrapping_add(8), n);
     n
 }
+
+/// [`aimed_emitter`]'s variant that keeps the two angles (`E+0xc0` the
+/// pitch, `+0xc4` the yaw) and its fields further on: velocity
+/// `+0x368`, target `+0x358`, position `+0xd0`, speed `+0x384`
+/// (`magic_0018` 0x100031e0, 559 bytes; 5 DLLs).
+pub fn aimed_emitter_angles<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let lay = AimLayout {
+        vel: 0x368,
+        target: 0x358,
+        pos: 0xd0,
+        speed: 0x384,
+        angles: Some((0xc0, 0xc4)),
+        k: [0x107, 0x116, 0x126, 0x130, 0x13d],
+        slots: [0x14d, 0x16f, 0x190, 0x1a3],
+        list: [0x1da, 0x1e7, 0x1ed, 0x200, 0x212, 0x21f],
+    };
+    aim_core(g, img, fr, &lay)
+}
+
+/// [`aimed_emitter_angles`] (the `rel32`s as [`AIMED_EMITTER`]'s).
+pub const AIMED_EMITTER_ANGLES: Sig = Sig {
+    len: 559,
+    hash: 0xd6fc_a2cf_b5c5_1ed0,
+    calls: &[
+        (0xb3, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xc6, Callee::Import("_CIatan2")),
+        (0xf5, Callee::Import("_CIatan2")),
+        (0x1e7, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x227, Callee::Any),
+    ],
+    imports: &[],
+};
 
 /// [`aimed_emitter`] (the `rel32`s: the square root's and `_CIatan2`'s
 /// thunks, the pool's take and `__security_check_cookie`).

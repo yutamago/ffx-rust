@@ -2971,6 +2971,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("thunder node", &s7_misc::THUNDER_NODE),
     ("spline object", &s7_misc::SPLINE_OBJECT),
     ("aimed emitter", &s7_misc::AIMED_EMITTER),
+    (
+        "aimed emitter (angles kept)",
+        &s7_misc::AIMED_EMITTER_ANGLES,
+    ),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",
