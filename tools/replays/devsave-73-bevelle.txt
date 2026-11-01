@@ -1,0 +1,55 @@
+# Developer save 73: Bevelle, Via Purifico (bvyt0900, map 198, scenario
+# 2220; Yuna alone), then the Via Purifico's battle field (54, bvyt09;
+# formation bvyt09_00: three monsters against Yuna). 49 functions no
+# other save reached. Yuna attacks twice; the replay ends before the
+# monsters' third round, which in a longer run ends in a game over.
+# Extra list ("Coverage replays" in docs/harness.md; "Developer saves"
+# there for `load devsave`). Lockstep from the load, pinned. A short walk,
+# the main menu opened and closed, the battle with 2 attacks, each
+# pressed once that member's command window is open (g_BtlWindowOpen
+# 0x023cc08c, the character's bit). Traced: the map words, scenario,
+# player position, the main menu's active mask, the generators, the party
+# records, the battle phase, the window bits, the HP of actors 0-6 and the
+# monsters 20-23. Shots (devsave-73-bevelle-<n>.bmp): 1 the field at event count 101,
+# 2 after the walk, 3 the main menu (its play-time clock masked), 4 the
+# first command window, 5 the second one, 6 the last.
+load devsave 73 bvyt0900 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:16 0x0112d67c:2 0x00ccb9a8:12 0x018408ec:4 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x0112a8e0:1 0x023cc08c:4 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 *0x011334d4+0x15c30:4 *0x011334d4+0x16bc0:4
+read 0x01325d94 4
+shot $OUT\devsave-73-bevelle-1.bmp
+press up 40 10
+press left 20 10
+press down 40 10
+press right 30 10
+read 0x00ccb9a8 12
+shot $OUT\devsave-73-bevelle-2.bmp
+press triangle 8 90
+read 0x018408ec 4
+shot $OUT\devsave-73-bevelle-3.bmp
+press cross 4 40
+press cross 4 40
+wait 60
+battle 54 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# Yuna (0x02): Attack, the first target
+waitfor 0x023cc08c:4 02000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-73-bevelle-4.bmp
+press circle 4 30
+press circle 4 30
+waitfor 0x023cc08c:4 00000000 ffffffff 600
+# Yuna (0x02)
+waitfor 0x023cc08c:4 02000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-73-bevelle-5.bmp
+press circle 4 30
+press circle 4 30
+waitfor 0x023cc08c:4 00000000 ffffffff 600
+# Yuna (0x02)
+waitfor 0x023cc08c:4 02000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-73-bevelle-6.bmp

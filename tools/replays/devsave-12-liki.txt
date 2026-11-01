@@ -1,0 +1,56 @@
+# Developer save 12 (docs/harness.md, "Developer saves"; extra list,
+# "Coverage replays"): the S.S. Liki's corridor (slik0400, map 148,
+# scenario 228; party Yuna, Lulu, Tidus, Kimahri, Wakka), then the deck's
+# battle field (9, slik02; formation slik02_00: the Sinspawn Echuilles
+# boss). The coverage sweep reached 103 functions here that no other save
+# did. Lockstep from the load, pinned. A short walk, the main menu opened
+# and closed, the battle with three attacks (Tidus, Yuna, Lulu), each
+# pressed once that member's command window is open (g_BtlWindowOpen
+# 0x023cc08c, the character's bit). Traced: the map words, scenario,
+# player position, the main menu's active mask, the generators, the party
+# records, the battle phase, the window bits, the HP of actors 0-6 and the
+# monsters 20-23. Shots (devsave-12-liki-<n>.bmp): 1 the corridor at event
+# count 101, 2 after the walk, 3 the main menu (its play-time clock is
+# masked), 4 Tidus's first menu, 5 Lulu's menu, 6 Tidus's second menu.
+load devsave 12 slik0400 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:16 0x0112d67c:2 0x00ccb9a8:12 0x018408ec:4 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x0112a8e0:1 0x023cc08c:4 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 *0x011334d4+0x15c30:4 *0x011334d4+0x16bc0:4
+read 0x01325d94 4
+shot $OUT\devsave-12-liki-1.bmp
+press up 40 10
+press left 20 10
+press down 40 10
+press right 30 10
+read 0x00ccb9a8 12
+shot $OUT\devsave-12-liki-2.bmp
+press triangle 8 90
+read 0x018408ec 4
+shot $OUT\devsave-12-liki-3.bmp
+press cross 4 40
+press cross 4 40
+wait 60
+battle 9 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# Tidus (bit 0x01): Attack, the first target
+waitfor 0x023cc08c:4 01000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-12-liki-4.bmp
+press circle 4 30
+press circle 4 30
+# Yuna (0x02)
+waitfor 0x023cc08c:4 02000000 ffffffff 1500
+wait 30
+press circle 4 30
+press circle 4 30
+# Lulu (0x20)
+waitfor 0x023cc08c:4 20000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-12-liki-5.bmp
+press circle 4 30
+press circle 4 30
+waitfor 0x023cc08c:4 01000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-12-liki-6.bmp

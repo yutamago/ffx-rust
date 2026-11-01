@@ -1,0 +1,56 @@
+# Developer save 109: inside Sin, the Sea of Sorrow (sins0200, map 203,
+# scenario 3205; party Tidus, Wakka, Rikku), then the area's battle field
+# (77, sins02; formation sins02_00: three flying monsters).
+# Extra list ("Coverage replays" in docs/harness.md; "Developer saves"
+# there for `load devsave`). Lockstep from the load, pinned. A short walk,
+# the main menu opened and closed, the battle with 3 attacks, each
+# pressed once that member's command window is open (g_BtlWindowOpen
+# 0x023cc08c, the character's bit). Traced: the map words, scenario,
+# player position, the main menu's active mask, the generators, the party
+# records, the battle phase, the window bits, the HP of actors 0-6 and the
+# monsters 20-23. Shots (devsave-109-sin-<n>.bmp): 1 the field at event count 101,
+# 2 after the walk, 3 the main menu (its play-time clock masked), 4 the
+# first command window, 5 the third one, 6 the last.
+load devsave 109 sins0200 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:16 0x0112d67c:2 0x00ccb9a8:12 0x018408ec:4 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x0112a8e0:1 0x023cc08c:4 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 *0x011334d4+0x15c30:4 *0x011334d4+0x16bc0:4
+read 0x01325d94 4
+shot $OUT\devsave-109-sin-1.bmp
+press up 40 10
+press left 20 10
+press down 40 10
+press right 30 10
+read 0x00ccb9a8 12
+shot $OUT\devsave-109-sin-2.bmp
+press triangle 8 90
+read 0x018408ec 4
+shot $OUT\devsave-109-sin-3.bmp
+press cross 4 40
+press cross 4 40
+wait 60
+battle 77 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# Rikku (0x40): Attack, the first target
+waitfor 0x023cc08c:4 40000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-109-sin-4.bmp
+press circle 4 30
+press circle 4 30
+# Tidus (0x01)
+waitfor 0x023cc08c:4 01000000 ffffffff 1500
+wait 30
+press circle 4 30
+press circle 4 30
+# Wakka (0x10)
+waitfor 0x023cc08c:4 10000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-109-sin-5.bmp
+press circle 4 30
+press circle 4 30
+# Rikku (0x40)
+waitfor 0x023cc08c:4 40000000 ffffffff 1500
+wait 30
+shot $OUT\devsave-109-sin-6.bmp

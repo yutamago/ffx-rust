@@ -1179,6 +1179,88 @@ real-time movie.
   shots count from 5. Its shots were the same in every run but for a few
   cursor-glow pixels.
 
+Six later story points from the developer saves (2026-11-01,
+devsave-replays; "Developer saves" below, `load devsave N SCRIPT
+lockstep`), chosen from the coverage sweep for the functions only they
+reach. Each loads in lockstep and pins, and five of them share one shape:
+the first shot at ctrl work 0's count 101 (as field-walk), a fixed walk
+(up 40, left 20, down 40, right 30 frames), the main menu (Triangle) and
+its close (Cross twice), then the area's battle field (`battle F 0 0`,
+group and formation 0, as the sweep chose it) with a few attacks: each
+Attack (Circle, Circle on the first target) waits for that party member's
+command window (`g_BtlWindowOpen` `0x023cc08c`, the character's bit:
+Tidus 1, Yuna 2, Auron 4, Kimahri 8, Wakka 0x10, Lulu 0x20, Rikku 0x40),
+so the presses follow the battle's own turns, not frame counts. Their
+trace ranges are the same: the map words (`0x0112ca90`, 16 bytes),
+scenario, player position (`0x00ccb9a8`), the main menu's active mask
+(`0x018408ec`), the global generator and the 68 at `0x01135ee0`, the party
+records, the battle phase, the window bits, and the HP of actors 0-6 (the
+party) and 20-23 (the monsters; `*0x011334d4 + n * 0xf90 + 0x5d0`), one
+trace from the first shot on. Shots: 1 the field at count 101, 2 after the
+walk, 3 the main menu (its play-time clock masked in `shot-compare.py`, as
+menu-browse's), 4 the first command window, 5 and 6 later ones, each 30
+updates after its window opened. About 15-25 s each on the original code.
+
+- `devsave-12-liki` (save 12): the S.S. Liki's corridor (`slik0400`, map
+  148, scenario 228; party Yuna, Lulu, Tidus, Kimahri, Wakka), then the
+  deck (field 9, `slik02_00`: the Sinspawn Echuilles boss); Tidus, Yuna
+  and Lulu attack. The sweep's 103 functions no other save reached.
+- `devsave-22-luca` (save 22): Luca's arrival (`lchb0201`, map 267,
+  scenario 402; party Yuna, Tidus, Lulu). The save starts the voiced cut
+  scene of the boat coming in, and the control does not come back for
+  minutes: the sweep was still in the scene after 45 presses, and a run
+  pressing Circle every 64 updates was still in it at the 66th press
+  (Tidus's "Stop right there, Goers!"), where the game stopped answering
+  the harness. So this replay has no walk and no menu: it lets the scene
+  run without presses for 1,650 updates after event count 64 (the voiced
+  lines go on by themselves; "Sound in lockstep"), then starts the docks'
+  battle field (12, `lchb02_00`) from inside the scene as the sweep did;
+  Tidus and Yuna attack. Its trace has ctrl work 0's first word instead
+  of the position and the menu mask, and no message windows: the
+  subtitles keep time with the voice, and in a run with the Rust
+  replacements (`FFX.exe`, slower updates) they came 59 updates later
+  against the event count than in three original runs, so the battle
+  request, a fixed number of updates in, cut the scene before its third
+  subtitle instead of after it (window 0: 40 events against 44). No
+  shot of the scene: two
+  original runs read the same event count and showed the same subtitle at
+  each of four fixed updates, but the camera stood elsewhere on its pan
+  (39,000 to 635,000 pixels apart), so the scene's camera seems to follow
+  real time rather than the update count (not looked into). Its two shots
+  (Tidus's and Lulu's command windows) are on the extra list's `eye` list:
+  in one of three original runs Tidus's idle pose in shot 2 differed from
+  the two recordings (1,090 pixels around his sword, x 564..759, y
+  331..526; the recordings agree within 12, shot 1 to the pixel). 52
+  functions of its own.
+- `devsave-51-thunder` (save 51): the Thunder Plains, south (`kami0000`,
+  map 140, scenario 1300; party Lulu, Kimahri, Auron) by the save sphere,
+  rain and lightning; field 34 (`kami00_00`, battle-ifrit's formation with
+  another party): Kimahri, Auron and Lulu attack. 30 of its own.
+- `devsave-73-bevelle` (save 73): Bevelle, Via Purifico (`bvyt0900`, map
+  198, scenario 2220; Yuna alone); field 54 (`bvyt09_00`, three monsters):
+  Yuna attacks twice. A longer run ends in a game over at the monsters'
+  third round, so the replay stops before it. 49 of its own.
+- `devsave-92-gagazet` (save 92): Mt. Gagazet, the Prominence
+  (`mtgz0200`, map 285, scenario 2560; party Wakka, Yuna, Tidus); field 65
+  (`mtgz02_00`, the Seymour Flux boss): Yuna, Tidus, Yuna attack.
+- `devsave-109-sin` (save 109): inside Sin, the Sea of Sorrow
+  (`sins0200`, map 203, scenario 3205; party Tidus, Wakka, Rikku); field
+  77 (`sins02_00`, three flying monsters): Rikku, Tidus, Wakka attack.
+
+Measured on PC2 (2026-11-01): three original runs of each, one at a
+time, gave the same trace events in all six; the shots of the five field
+replays were the same to the pixel in all three (the main menu's clock
+included), devsave-22-luca's as above. The recordings are the first two
+runs. `FFX.exe` with the Rust replacements (two runs of devsave-22-luca,
+one of the others) gave the recordings' trace events and, in the five
+field replays, their shots to the pixel. ffx-rust.exe (64-bit, main 1b399d26) fails all six at their first
+line: `load devsave` sends the harness's `devsave` command, which
+`ffx-host`'s server answers `err devsave: not served by ffx-rust yet`
+(`crates/ffx-host/src/harness.rs`); the host has neither the command nor
+the archive reader that stands in for `debugLoadForViewer` (the hook's
+`devsave.rs`). That is a host gap, not a replay fault: the replays stay
+on the extra list and pass once the host serves both.
+
 Measured on 2026-10-26: two recordings and a third original run gave the
 same traces; the settings shots were the same to a few pixels (the
 chocobo icon on Besaid beach and in the agency, which animates by the

@@ -83,6 +83,13 @@ MASKS = {
     # the recordings) of settings-shadow (2026-10-26)
     "settings-shadow-3.bmp": [(1200, 640, 1280, 720)],
     "settings-shadow-4.bmp": [(1200, 640, 1280, 720)],
+    # the developer-save replays' main menu (shot 3): the play-time clock, as
+    # in menu-browse (x 136-180 here; "62:45" is wider)
+    "devsave-12-liki-3.bmp": [(125, 575, 200, 605)],
+    "devsave-51-thunder-3.bmp": [(125, 575, 200, 605)],
+    "devsave-73-bevelle-3.bmp": [(125, 575, 200, 605)],
+    "devsave-92-gagazet-3.bmp": [(125, 575, 200, 605)],
+    "devsave-109-sin-3.bmp": [(125, 575, 200, 605)],
 }
 BLOCK = 20
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
