@@ -269,10 +269,13 @@ pub fn scaled_matrices<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let s = g.read::<u32>(w(0x2b));
     let mut st = Pushes::default();
     st.push_all(&[5, 2, s]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x1b), 719), fr.ecx);
     st.push(a);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x37), 235), fr.ecx);
     st.push(b);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x4c), 235), fr.ecx);
     let add = g.read::<u32>(w(0x59)).wrapping_add(g.read::<u32>(w(0x5f)));
     g.write::<u32>(a, 0x3a83_126f);
@@ -281,11 +284,13 @@ pub fn scaled_matrices<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(a + 0x14, 0x3a83_126f);
     g.write::<u32>(a + 0x28, 0x3a83_126f);
     st.push(c);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x77), 235), fr.ecx);
     for o in [0x28u32, 0x14, 0] {
         g.write::<u32>(c + o, 0x3a44_9ba6);
     }
     st.push_all(&[c, w(0xa3), d]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     Ret::eax(st.call(g, slot_target(g, w(0xa9), 231), fr.ecx).eax)
 }
 
@@ -464,10 +469,12 @@ pub fn countdown_children<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         } else {
             slot_target(g, w(t434), 434)
         };
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         let node = st.call(g, start, ecx).eax;
         st.push(o);
         // `call ecx`: the slot's address is in `ecx`
         let t = slot_target(g, w(t942), 942);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         eax = st.call(g, t, t).eax;
         ecx = g.read::<u32>(node + 0xac).wrapping_mul(2);
         let at = counter(g, node);
@@ -757,13 +764,16 @@ pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let mut st = Pushes::default();
     if bits & 1 == 0 {
         st.push_all(&[r + 0x218, r + 0xc8, r + 0x1c]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0xd7), 229), fr.ecx);
         let m = model(g);
         st.push_all(&[r + 0xf8, 0, m]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0xeb), 284), fr.ecx);
     } else if bits & 2 != 0 {
         let m = model(g);
         st.push_all(&[r + 0x22c, 0, m]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x66), 284), fr.ecx);
     } else {
         let c = g.read::<u32>(r + 0x228);
@@ -775,10 +785,12 @@ pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
             g.write::<u8>(cursor + 5, pass);
             let handler = g.read::<u32>(g.read::<u32>(c).wrapping_add(0x1c));
             st.push(cursor);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
             st.call(g, handler, cursor);
             let at = g.read::<u32>(r + 0x228).wrapping_add(0x1c);
             let m = model(g);
             st.push_all(&[at, 0, m]);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
             st.call(g, slot_target(g, w(0xab), 284), fr.ecx);
         }
     }
@@ -787,6 +799,7 @@ pub fn model_points_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let m = model(g);
     let mut last = Pushes::default();
     last.push_all(&[r + 0x1c, 1, m]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     last.call(g, slot_target(g, w(0x107), 284), fr.ecx).eax
 }
 
@@ -987,6 +1000,7 @@ pub fn model_draw_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let mut st = Pushes::default();
     let src = g.read::<u32>(r + 0x1c).wrapping_add(0x9c);
     st.push_all(&[src, w(0xdb), x]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0xe1), 231), r);
     for at in [0x20u32, 0x24, 0x28, 0x2c] {
         g.write::<u32>(l + at, x);
@@ -996,6 +1010,7 @@ pub fn model_draw_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let t = slot_target(g, w(0x113), 308);
     g.write::<u32>(l + 0x44, 0);
     st.push_all(&[l, m]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let eax = st.call(g, t, r).eax;
     g.write::<u32>(w(0x12c), eax);
     eax
@@ -1034,16 +1049,22 @@ pub fn look_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     for (i, v) in (0u32..).zip([0, 0x3f80_0000, 0, 0x3f80_0000]) {
         g.write::<u32>(u + 4 * i, v);
     }
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x1b), 234), o);
     st.push_all(&[a, d]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x4e), 232), o);
     st.push_all(&[d, u, x]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x67), 266), o);
     st.push_all(&[x, d, c]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x80), 266), o);
     st.push_all(&[x, x]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x92), 232), o);
     st.push_all(&[c, c]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let eax = st.call(g, slot_target(g, w(0xa4), 232), o).eax;
     for (row, v) in [(0u32, x), (0x10, c)] {
         for i in 0..3 {
@@ -1841,10 +1862,13 @@ pub fn random_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let mut st = Pushes::default();
     let x = g.read::<u32>(w(0xb8));
     st.push_all(&[1, o, x]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x96), 458), fr.ecx);
     st.push_all(&[w(0x17e), o]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x179), 450), fr.ecx);
     st.push_all(&[10, o]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     Ret::eax(st.call(g, slot_target(g, w(0x18c), 451), fr.ecx).eax)
 }
 
@@ -3935,12 +3959,14 @@ pub fn actors_objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     st.push_all(&[0, 8, w(0x17)]);
     g.write::<u32>(w(0x1d), w(0x21));
     g.write::<u32>(w(0x27), w(0x2b));
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let h = st.call(g, slot_target(g, w(0x7), 719), fr.ecx).eax;
     st.pop(1);
     g.write::<u32>(w(0x35), h);
     crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x3a));
     let x = g.read::<u32>(w(0x4b));
     st.push_all(&[0, count, x]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let l = st.call(g, slot_target(g, w(0x45), 412), fr.ecx).eax;
     st.pop(5);
     g.write::<u32>(list, l);
@@ -3985,8 +4011,10 @@ pub fn actors_objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
         let a = actor(g, found, 0xec, 0xf3, 0xfe);
         let p = obj.wrapping_sub(4);
         st.push_all(&[obj + 4, obj, p, a]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x107), 262), fr.ecx);
         st.push_all(&[p, 0x11, a]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x11d), 268), fr.ecx);
         st.pop(7);
         g.write::<u32>(obj + 8, 0x3f80_0000);
@@ -4124,15 +4152,19 @@ pub fn camera_blends<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let mut st = Pushes::default();
         let yaw = g.read::<u32>(blk - 0x30);
         st.push_all(&[yaw, m, m2]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x13c), 328), 0);
         st.pop(2);
         let pitch = g.read::<u32>(blk - 0x2c);
         st.set_top(pitch);
         st.push_all(&[m2, m2]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x15b), 329), 0);
         st.push_all(&[u, m2, v]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x174), 229), 0);
         st.push_all(&[v, i]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x185), 590), 0);
         blk += 0x38;
         point(g, p, i, 0x1d2);
@@ -4194,20 +4226,25 @@ pub fn flight_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         let pitch = mul(pitch as f32, k(g, 0x13b));
         let mut st = Pushes::default();
         st.push(m);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x141), 235), a);
         st.set_top(pitch.to_bits());
         st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x165), 328), a);
         st.pop(2);
         st.set_top(y.to_bits());
         st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x186), 329), a);
         st.pop(2);
         st.set_top(0x4120_0000);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         let r = st.call(g, slot_target(g, w(0x193), 314), a);
         let r = sub(crate::m0018::st0_f32(r.st0), k(g, 0x1b7));
         g.write::<f32>(u + 8, r);
         st.push_all(&[u, m, u]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x1cb), 229), a);
         let x = rf(g, u);
         g.write::<f32>(e, x);
