@@ -813,4 +813,171 @@ pub mod bridge {
         let log = h.rebase(FP_SAVE_LOG);
         Some(cdecl(h, RC_PRINT, &[log, cmd, r]))
     }
+
+    /// `rcbgGuideMapConvSub(id, k)`, `rcbgModelDelete(model)`; the VU0
+    /// register cell `0x00c8f980` the box merge leaves set.
+    pub const GUIDE_MAP_CONV_SUB: u32 = 0x0093_8080;
+    pub const MODEL_DELETE: u32 = 0x0092_8000;
+    pub const VU0_CELL: u32 = 0x00c8_f980;
+    /// `0x00938590`'s frame.
+    pub const GUIDE_CONV_FRAME: u32 = 0x3ac;
+
+    /// The models' boxes merged: `+0x90..` (x0, y0, z0, w0) and `+0xa0..`
+    /// (x1, y1, z1, w1) of the first, x0/z0 lowered and x1/z1 raised over
+    /// the others (ordered compares, as the original's `fcompp`), then
+    /// written into every model (y and w kept from the first). The VU0
+    /// cell and the frame's locals are left as the original leaves them.
+    #[allow(clippy::too_many_lines)]
+    fn merge_boxes(h: &mut impl Host, ebp: u32, models: &[u32]) {
+        use ffx_bridge::x87::{load, store};
+        let fr = |off: u32| ebp.wrapping_sub(off);
+        let cell = h.rebase(VU0_CELL);
+        let first = models[0];
+        let a: [u32; 4] = std::array::from_fn(|k| at(h, first, 0x90 + 4 * k as u32));
+        for (k, v) in (0_u32..).zip(a) {
+            h.write(cell.wrapping_add(4 * k), v);
+        }
+        h.write(fr(0x350), a[0]);
+        h.write(fr(0x2c), a[0]);
+        h.write(fr(0x36c), a[1]);
+        h.write(fr(0x360), a[2]);
+        h.write(fr(0x24), a[2]);
+        h.write(fr(0x354), a[3]);
+        let b: [u32; 4] = std::array::from_fn(|k| at(h, first, 0xa0 + 4 * k as u32));
+        for (k, v) in (0_u32..).zip(b) {
+            h.write(cell.wrapping_add(4 * k), v);
+        }
+        h.write(fr(0x364), b[1]);
+        h.write(fr(0x368), b[2]);
+        h.write(fr(0x14), b[2]);
+        h.write(fr(0x1c), b[0]);
+        h.write(fr(0x35c), b[3]);
+        for &m in &models[1..] {
+            let c = m.wrapping_add(0x90);
+            for (cur, off, lower) in [
+                (0x2c_u32, 0_u32, true),
+                (0x24, 8, true),
+                (0x1c, 0x10, false),
+                (0x14, 0x18, false),
+            ] {
+                let old = load(h.read(fr(cur)));
+                let new = load(h.read(c.wrapping_add(off)));
+                let take = if lower { new < old } else { new > old };
+                if take {
+                    h.write(fr(cur), store(new));
+                }
+            }
+        }
+        let minz: u32 = h.read(fr(0x24));
+        let maxz: u32 = h.read(fr(0x14));
+        let maxx: u32 = h.read(fr(0x1c));
+        h.write(fr(0x360), minz);
+        let minx: u32 = h.read(fr(0x2c));
+        h.write(fr(0x350), minx);
+        for &m in models {
+            let e = m.wrapping_add(0x90);
+            for (k, v) in (0_u32..).zip([minx, a[1], minz, a[3], maxx, b[1], maxz, b[3]]) {
+                h.write(e.wrapping_add(4 * k), v);
+            }
+            for (k, v) in (0_u32..).zip([maxx, b[1], maxz, b[3]]) {
+                h.write(cell.wrapping_add(4 * k), v);
+            }
+        }
+    }
+
+    /// `FUN_00938590(id)` -> `eax` as the original: the guide map models
+    /// of map `id` converted and saved. 0 without a system or an unknown
+    /// map, the system without a map. The models (`rcbgGuideMapConvSub(id,
+    /// k)`, up to 16, in the frame at `ebp - 0x3ac`) get one shared box
+    /// when there are several ([`merge_boxes`]); the file as
+    /// [`guide_save`] (the headers' guide number 0), each model deleted
+    /// after it is written (`rcbgModelDelete`). `ebp` is the original's
+    /// frame. Junk read: as [`guide_save`], the name's `%s` ends at the
+    /// never-written `[ebp - 8]` (0 here).
+    #[allow(clippy::too_many_lines)]
+    pub fn guide_conv(h: &mut impl Host, ebp: u32, id: u32) -> u32 {
+        let fr = |off: u32| ebp.wrapping_sub(off);
+        let sys: u32 = h.read(h.rebase(super::YN_MAP_SYSTEM.sym));
+        if sys == 0 {
+            return 0;
+        }
+        if h.read::<u32>(sys) == 0 {
+            return sys;
+        }
+        let name = fr(0xc);
+        if cdecl(h, GET_STAGE_NAME, &[id, name]) == 0 {
+            return 0;
+        }
+        let path = fr(0x22c);
+        let mut c = [0_u32; 4];
+        for (k, v) in (0_u32..).zip(&mut c) {
+            *v = i32::from(h.read::<i8>(name.wrapping_add(k))).cast_unsigned();
+        }
+        // junk read: the name's %s ends at the never-written [ebp-0x8]
+        // (0 in the shim's zeroed frame; brief 2026-10-24)
+        let fmt = h.rebase(GUIDE_SAVE_PATH);
+        import(h, SPRINTF_SLOT, &[path, fmt, c[0], c[1], c[2], c[3], name]);
+        let fd = cdecl(h, SCE_OPEN, &[path, 0x602]);
+        h.write(fr(0x358), fd);
+        if fd == u32::MAX {
+            let [a, b] = [FP_SAVE_ERROR[0], FP_SAVE_ERROR[1]].map(|t| h.rebase(t));
+            cdecl(h, RC_PRINT, &[a, b, 0x2fc]);
+            let e = h.rebase(GUIDE_SAVE_ERROR);
+            return cdecl(h, RC_PRINT, &[e]);
+        }
+        let hdr = fr(0x34c);
+        for k in 0..4_u32 {
+            h.write(hdr.wrapping_add(4 * k), 0_u32);
+        }
+        let t = tag_word(h, 0);
+        h.write(hdr, t);
+        cdecl(h, SCE_WRITE, &[fd, hdr, 0x10]);
+        let arr = fr(0x3ac);
+        cdecl(h, MEMSET, &[arr, 0, 0x40]);
+        let mut models = Vec::new();
+        for k in 0..16_u32 {
+            let m = cdecl(h, GUIDE_MAP_CONV_SUB, &[id, k]);
+            h.write(arr.wrapping_add(4 * k), m);
+            if m == 0 {
+                break;
+            }
+            models.push(m);
+        }
+        if models.len() > 1 {
+            merge_boxes(h, ebp, &models);
+        }
+        h.write(fr(0x350), 0_u32);
+        let h2 = fr(0x33c);
+        let pad_buf = fr(0x1c);
+        for (k, &m) in (0_u32..).zip(&models) {
+            h.write(fr(0x354), m);
+            let size = cdecl(h, MESH_PAST_INDICES, &[m]).wrapping_add(0x128);
+            let pad = cdecl(h, PAD16, &[size]);
+            for j in [0x334_u32, 0x33c, 0x338, 0x330] {
+                h.write(fr(j), 0_u32);
+            }
+            h.write(fr(0x332), 0_u16);
+            let t = tag_word(h, 0xb);
+            h.write(h2, t);
+            let total = pad.wrapping_add(size).cast_signed() / 16;
+            h.write(fr(0x338), total.cast_unsigned());
+            cdecl(h, SCE_WRITE, &[fd, h2, 0x10]);
+            cdecl(h, SAVE_MESH, &[m, fd]);
+            cdecl(h, MEMSET, &[pad_buf, 0, pad]);
+            cdecl(h, SCE_WRITE, &[fd, pad_buf, pad]);
+            cdecl(h, MODEL_DELETE, &[m]);
+            h.write(arr.wrapping_add(4 * k), 0_u32);
+            h.write(fr(0x350), k + 1);
+        }
+        let t = tag_word(h, 0xc);
+        h.write(hdr, t);
+        cdecl(h, SCE_WRITE, &[fd, hdr, 0x10]);
+        cdecl(h, SCE_CLOSE, &[fd]);
+        let cmd = fr(0x12c);
+        let fmt = h.rebase(FP_SAVE_COMMAND);
+        import(h, SPRINTF_SLOT, &[cmd, fmt, fr(0x227)]);
+        let r = cdecl(h, SYSTEM_ON_HOST, &[cmd, fr(0x32c)]);
+        let log = h.rebase(FP_SAVE_LOG);
+        cdecl(h, RC_PRINT, &[log, cmd, r])
+    }
 }

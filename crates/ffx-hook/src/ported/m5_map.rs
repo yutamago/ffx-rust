@@ -862,4 +862,12 @@ ported! {
         let ebp = frame.at() + ffx_prender::l6_map2::bridge::GUIDE_SAVE_FRAME;
         l6m2::guide_save(&mut mem(), ebp, id).unwrap_or(0)
     }
+    /// `(id)`: the guide map models' conversion and save (the original's
+    /// 0x3ac-byte frame, its models, box, path and headers, in this
+    /// shim's).
+    rcbgGuideMapConv_00938590 @ 0x0093_8590 => extern "C" fn rcbg_guide_map_conv(id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME;
+        l6m2::guide_conv(&mut mem(), ebp, id)
+    }
 }

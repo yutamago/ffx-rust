@@ -6659,3 +6659,107 @@ fn l6_guide_model_save_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn l6_guide_map_conv_matches_the_original() {
+    // no system or map, an unknown stage, the open failing; 0, 1, several
+    // and 16 models; boxes with NaNs, equal and crossing edges
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6c21);
+        for case in 0..60_u32 {
+            let n = match case % 6 {
+                0 => 0,
+                1 => 1,
+                2 => 16,
+                _ => 2 + rng.below(5),
+            };
+            let models: Vec<u32> = (0..16)
+                .map(|k| {
+                    if k >= n {
+                        return 0;
+                    }
+                    let m = t.zeros(0xc0);
+                    for off in (0x90..0xb0).step_by(4) {
+                        let v = match rng.below(7) {
+                            0 => float_word(&mut rng),
+                            1 => 0,
+                            // signed zeros: equal, but not the same bits
+                            6 => 0x8000_0000,
+                            _ => (rng.below(400) as f32 - 200.0).to_bits(),
+                        };
+                        t.w32(m + off, v);
+                    }
+                    m
+                })
+                .collect();
+            let seq = t.seq(&models);
+            t.stub_sym(l62::bridge::GUIDE_MAP_CONV_SUB, 1, false, 2, 0, seq);
+            let map = t.words(&[rng.next() | 1, 0]);
+            let sys_v = match case % 13 {
+                5 => 0,
+                6 => t.words(&[0, 0]),
+                _ => t.words(&[map, 0]),
+            };
+            t.global(l62::YN_MAP_SYSTEM.sym, sys_v);
+            let found = u32::from(case % 11 != 4);
+            let mut gs = vec![0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00];
+            gs.extend(u32::from_le_bytes(*b"b\xe101").to_le_bytes());
+            gs.push(0xb8);
+            gs.extend(found.to_le_bytes());
+            gs.push(0xc3);
+            r5_code(t, l62::bridge::GET_STAGE_NAME, &gs);
+            let fd = if case % 7 == 2 {
+                u32::MAX
+            } else {
+                rng.below(100)
+            };
+            l6_copy(t, l62::SCE_OPEN, 2, 2, 0, 10, fd);
+            let sizes: Vec<u32> = (0..16).map(|_| rng.below(400)).collect();
+            let sizes = t.seq(&sizes);
+            t.stub_sym(l62::bridge::MESH_PAST_INDICES, 3, false, 1, 0, sizes);
+            let pads: Vec<u32> = (0..16).map(|_| rng.below(16)).collect();
+            let pads = t.seq(&pads);
+            t.stub_sym(l62::PAD16, 4, false, 1, 0, pads);
+            let tags = t.zeros(0x80);
+            for k in 0..0x20 {
+                t.w32(tags + 4 * k, rng.next());
+            }
+            let tag_seq: Vec<u32> = (0..20).map(|k| tags + 4 * k).collect();
+            let tag_seq = t.seq(&tag_seq);
+            t.stub_sym(l62::CHUNK_TAG, 5, false, 1, 0, tag_seq);
+            l6_copy(t, l62::SCE_WRITE, 6, 3, 1, 4, rng.next());
+            t.stub_sym(l62::bridge::SAVE_MESH, 7, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                l62::bridge::MODEL_DELETE,
+                8,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l62::SCE_CLOSE, 9, false, 1, 0, Ret::Val(rng.next()));
+            l6_copy(t, l62::SYSTEM_ON_HOST, 10, 2, 0, 12, rng.next());
+            let pr = l6_seq(t, &mut rng, 2);
+            let more = [(l62::FP_SAVE_ERROR[0], 2), (l62::FP_SAVE_LOG, 2)];
+            l6_printf(t, l62::RC_PRINT, 11, &more, pr);
+            let cell = t.rebase(l62::bridge::VU0_CELL);
+            t.patch(cell, &[0; 16]);
+            let id = rng.next();
+            l6_fill_stack(t, &mut rng, 0x600);
+            let ebp = frame_ebp(&t.a, 1);
+            t.a.write(ebp - 8, &[0; 4]).unwrap();
+            t.b.write(ebp - 8, &[0; 4]).unwrap();
+            t.b_top = Some(ebp - l62::bridge::GUIDE_CONV_FRAME - 0x60);
+            t.check(
+                "rcbgGuideMapConv_00938590",
+                0x0093_8590,
+                Conv::Cdecl,
+                &[id],
+                |o| Out::U32(l6m2::guide_conv(o, ebp, id)),
+            );
+            l6_same_words(t, "rcbgGuideMapConv_00938590", ebp, ebp - 0x3ac, 0x3a8);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
