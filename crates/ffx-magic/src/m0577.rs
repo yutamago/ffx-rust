@@ -1,6 +1,7 @@
 //! `magic_0577.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::h6_setup::{ring_join, unlink_task};
 use crate::l3_common::{detach, list_unlink_current};
 use crate::runtime::slot_target;
 use crate::s4_summon::trunc;
@@ -577,6 +578,356 @@ pub const TASK: Sig = Sig {
         (0x121, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
         (0x15c, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
         (0x196, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+    ],
+    imports: &[],
+};
+
+/// The summon's exit task (0x1000aac0, `(task)`, a task step) on the
+/// record `r = task[1]` and its object `o = r[0x20]`, by the state
+/// `+0x1c` (the wait `+0x18`); each motion is slot 228 `(o[0x50], id)`
+/// and the next state:
+/// - 0 and 51: once the motion is done (slot 411 `(o[0x50])`), motion
+///   0x18; 1 and 52: once done, motion 0x19; 50: motion 0x40;
+/// - 10000: slot 239 `(*G_A, o[0x50], 2)`, slot 388 `(o[0x50], 15, 1)`,
+///   then at once 10001: once done, slot 213 `(o[0x50], 0)` and `(o[0x50],
+///   5)`, the task's node leaves its ring, state 20000.
+///
+/// The wait goes down at every exit. Returns the last call's `eax`, the
+/// node's next after the unlink, or what the original's dispatch left in
+/// `eax`.
+pub fn exit_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let model = |g: &G| {
+        let o = g.read::<u32>(r + 0x20);
+        g.read::<u32>(o + 0x50)
+    };
+    let done = |g: &mut G, op: u32| {
+        let t = slot_target(g, w(op), 411);
+        let m = model(g);
+        g.call(t, 0, &[m]).eax
+    };
+    let play = |g: &mut G, id: u32| {
+        let m = model(g);
+        let t = slot_target(g, w(0x13e), 228);
+        let e = g.call(t, 0, &[m, id]).eax;
+        let s = g.read::<u32>(r + 0x1c);
+        g.write::<u32>(r + 0x1c, s.wrapping_add(1));
+        e
+    };
+    let state = g.read::<u32>(r + 0x1c);
+    let eax = match state {
+        0 | 0x33 => {
+            let d = done(g, 0x38);
+            if d == 0 { d } else { play(g, 0x18) }
+        }
+        1 | 0x34 => {
+            let d = done(g, 0x122);
+            if d == 0 { d } else { play(g, 0x19) }
+        }
+        0x32 => play(g, 0x40),
+        0x2710 | 0x2711 => {
+            if state == 0x2710 {
+                let m = model(g);
+                let t = slot_target(g, w(0x79), 239);
+                let a = g.read::<u32>(w(0x7f));
+                let mut stack = vec![a, m, 2];
+                g.call(t, 0, &stack);
+                let m = model(g);
+                let t = slot_target(g, w(0x96), 388);
+                stack.splice(0..0, [m, 0xf, 1]);
+                // call width: 6
+                g.call(t, 0, &stack);
+                let s = g.read::<u32>(r + 0x1c);
+                g.write::<u32>(r + 0x1c, s.wrapping_add(1));
+            }
+            let d = done(g, 0xaf);
+            if d == 0 {
+                d
+            } else {
+                let m = model(g);
+                let t = slot_target(g, w(0xcf), 213);
+                let mut stack = vec![m, 0];
+                g.call(t, 0, &stack);
+                let m = model(g);
+                let t = slot_target(g, w(0xe4), 213);
+                stack.splice(0..0, [m, 5]);
+                g.call(t, 0, &stack);
+                let next = unlink_task(g, task);
+                let n = g.read::<u32>(r + 0x18);
+                g.write::<u32>(r + 0x18, n.wrapping_sub(1));
+                g.write::<u32>(r + 0x1c, 0x4e20);
+                return Ret::eax(next);
+            }
+        }
+        // the dispatch's remainders
+        2..=0x31 => state - 0x32,
+        s => s.wrapping_sub(0x2711),
+    };
+    let n = g.read::<u32>(r + 0x18);
+    g.write::<u32>(r + 0x18, n.wrapping_sub(1));
+    Ret::eax(eax)
+}
+
+/// [`exit_task`] (343 bytes, 1 overlay).
+pub const EXIT_TASK: Sig = Sig {
+    len: 343,
+    hash: 0x363c_adc8_8d44_9f88,
+    calls: &[],
+    imports: &[],
+};
+
+/// Sets up a spark object (0x1000b3a0, internal: `ecx` = the object,
+/// `edx` = the source, three stack words `i, v, c`; a /GS frame): the
+/// object joins the DLL's ring ([`ring_join`], its step at `+0x26`);
+/// slot 236 `(src[0x54], T[i], obj + 0x34)` (`T` operand `+0x56`), slot
+/// 234 `(&L, obj + 0x64, v)` and slot 232 `(&L, &L)` the direction `L`
+/// (`ebp - 0x14`), slot 233 `(obj + 0xb4, &L, 5.0)`; `+0xb8` down by `K`,
+/// `+0xc0..+0xcc` 0; three random offsets (slot 324, `& 0x7ff` less
+/// 0x400) into `+0xd4..+0xdc`; `+0x30` = `c`, `+0x24` 1.0, `+0x1c` =
+/// `i`, `+0x2c` the source, `+0x20` 0. Returns the source.
+pub fn spark_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.ecx;
+    let src = fr.edx;
+    let v = fr.arg(g, 1);
+    let i = fr.arg(g, 0);
+    ring_join(g, img, f, obj, [0x1f, 0x26, 0x2e, 0x38, 0x3d, 0x4a, 0x61]);
+    let tab = g.read::<u32>(w(0x56).wrapping_add(i.wrapping_mul(4)));
+    let t = slot_target(g, w(0x5b), 236);
+    let h = g.read::<u32>(src + 0x54);
+    let mut stack = vec![h, tab, obj + 0x34];
+    g.call(t, 0, &stack);
+    let l = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let t = slot_target(g, w(0x7d), 234);
+    stack.splice(0..0, [l, obj + 0x64, v]);
+    // call width: 6
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x8f), 232);
+    stack.splice(0..0, [l, l]);
+    // call width: 8
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0xb1), 233);
+    g.call(t, 0, &[obj + 0xb4, l, 0x40a0_0000]);
+    let x = sub(g.read::<f32>(obj + 0xb8), g.read::<f32>(w(0xc9)));
+    for o in [0xc0u32, 0xc4, 0xc8] {
+        g.write::<u32>(obj + o, 0);
+    }
+    g.write::<f32>(obj + 0xb8, x);
+    g.write::<u32>(obj + 0xcc, 0);
+    for (op, dst) in [(0xceu32, 0xd4u32), (0x11e, 0xd8), (0x13b, 0xdc)] {
+        let t = slot_target(g, w(op), 324);
+        let r = g.call(t, 0, &[]).eax;
+        g.write::<u32>(obj + dst, (r & 0x7ff).wrapping_sub(0x400));
+    }
+    let c = fr.arg(g, 2);
+    g.write::<u32>(obj + 0x30, c);
+    g.write::<u32>(obj + 0x24, 0x3f80_0000);
+    g.write::<u32>(obj + 0x1c, i);
+    g.write::<u32>(obj + 0x2c, src);
+    g.write::<u32>(obj + 0x20, 0);
+    src
+}
+
+/// [`spark_setup`] (389 bytes, 1 overlay).
+pub const SPARK_SETUP: Sig = Sig {
+    len: 389,
+    hash: 0x1fab_9d18_978f_d63f,
+    calls: &[
+        // __security_check_cookie
+        (0x17d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The spark's task (0x1000b190, `(task)`, a task step; a /GS frame) on
+/// the spark `r = task[1]` and its source `o = r[0x2c]`, by the state
+/// `+0x20` (a wait `+0x18`, the alpha `+0x28`, the speed `+0x24`):
+/// - 0: a wait of `40 + rand % 20` (slot 324), state 1; 1: when the wait
+///   is out, state 2 and the alpha 1.0;
+/// - 2: the alpha down by `K`; at 0 or below it is 0 and state 10000;
+///   either way slot 21 `(o[0x54], C[r[0x1c]], alpha)` (`C` operand
+///   `+0xa0`);
+/// - 10000: the task's node leaves its ring, state 20000.
+///
+/// Every step then moves the spark: `+0xb8` up by `K2`, slot 233
+/// `(&L, r + 0xb4, speed)` and slot 248 `(r + 0x64, r + 0x64, &L)` (`L`
+/// at `ebp - 0x14`); the three angles `+0xc4..+0xcc` up by the steps
+/// `+0xd4..+0xdc` times the speed (truncated); the speed times `K4` while
+/// at least `K3`; the DLL's matrix function (the pointer at operand
+/// `+0x1a7`, `(&M, r + 0xc4)`, `ecx` the angles) builds `M` (`ebp -
+/// 0x54`), slot 231 `(&M, r + 0x34, &M)` and `(r + 0x74, r[0x30], &M)`
+/// place it and slot 9 `(o[0x54], D[r[0x1c]], r + 0x74)` (`D` operand
+/// `+0x1e3`) sets the model's matrix. The wait goes down. Returns slot
+/// 9's `eax`.
+pub fn spark_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let state = g.read::<u32>(r + 0x20);
+    let next = |g: &mut G| {
+        let s = g.read::<u32>(r + 0x20);
+        g.write::<u32>(r + 0x20, s.wrapping_add(1));
+    };
+    match state {
+        0 => {
+            let t = slot_target(g, w(0x34), 324);
+            let x = g.call(t, 0, &[]).eax.cast_signed();
+            next(g);
+            g.write::<u32>(r + 0x18, (x % 20 + 0x28).cast_unsigned());
+        }
+        1 if g.read::<i32>(r + 0x18) <= 0 => {
+            next(g);
+            g.write::<u32>(r + 0x28, 0x3f80_0000);
+        }
+        2 => {
+            let a = sub(g.read::<f32>(r + 0x28), k(g, 0x70));
+            g.write::<f32>(r + 0x28, a);
+            // comiss + jb: only an ordered "not above 0" ends it
+            if 0.0 >= a {
+                g.write::<u32>(r + 0x28, 0);
+                g.write::<u32>(r + 0x20, 0x2710);
+            }
+            let idx = g.read::<u32>(r + 0x1c);
+            let alpha = g.read::<u32>(r + 0x28);
+            let c = g.read::<u32>(w(0xa0).wrapping_add(idx.wrapping_mul(4)));
+            let o = g.read::<u32>(r + 0x2c);
+            let h = g.read::<u32>(o + 0x54);
+            let t = slot_target(g, w(0xab), 21);
+            g.call(t, 0, &[h, c, alpha]);
+        }
+        0x2710 => {
+            unlink_task(g, task);
+            g.write::<u32>(r + 0x20, 0x4e20);
+        }
+        _ => {}
+    }
+    let y = add(g.read::<f32>(r + 0xb8), k(g, 0xed));
+    let l = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let m = fr.esp.wrapping_sub(4).wrapping_sub(0x54);
+    g.write::<f32>(r + 0xb8, y);
+    let sp = g.read::<u32>(r + 0x24);
+    let t = slot_target(g, w(0x110), 233);
+    let mut stack = vec![l, r + 0xb4, sp];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x126), 248);
+    stack.splice(0..0, [r + 0x64, r + 0x64, l]);
+    // call width: 6
+    g.call(t, 0, &stack);
+    for (step, at) in [(0xd4u32, 0xc4u32), (0xd8, 0xc8), (0xdc, 0xcc)] {
+        let x = trunc(mul(cvt(g.read::<u32>(r + step)), g.read::<f32>(r + 0x24)));
+        let v = g.read::<u32>(r + at).wrapping_add(x);
+        g.write::<u32>(r + at, v);
+    }
+    let sp = g.read::<f32>(r + 0x24);
+    if sp >= k(g, 0x18d) {
+        g.write::<f32>(r + 0x24, mul(sp, k(g, 0x197)));
+    }
+    let angles = r + 0xc4;
+    let build = g.read::<u32>(w(0x1a7));
+    let mut stack = vec![m, angles];
+    g.call(build, angles, &stack);
+    let t = slot_target(g, w(0x1b8), 231);
+    stack.splice(0..0, [m, r + 0x34, m]);
+    // call width: 5
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x1cc), 231);
+    let p = g.read::<u32>(r + 0x30);
+    stack.splice(0..0, [r + 0x74, p, m]);
+    // call width: 8
+    g.call(t, 0, &stack);
+    let idx = g.read::<u32>(r + 0x1c);
+    let d = g.read::<u32>(w(0x1e3).wrapping_add(idx.wrapping_mul(4)));
+    let o = g.read::<u32>(r + 0x2c);
+    let h = g.read::<u32>(o + 0x54);
+    let t = slot_target(g, w(0x1ee), 9);
+    stack.splice(0..0, [h, d, r + 0x74]);
+    // call width: 11
+    let e = g.call(t, 0, &stack).eax;
+    let n = g.read::<u32>(r + 0x18);
+    g.write::<u32>(r + 0x18, n.wrapping_sub(1));
+    Ret::eax(e)
+}
+
+/// [`spark_task`] (525 bytes, 1 overlay).
+pub const SPARK_TASK: Sig = Sig {
+    len: 525,
+    hash: 0x9603_0d2c_5d66_db3d,
+    calls: &[
+        // __security_check_cookie
+        (0x205, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A light node set up from a group (0x10001d20, internal: `ecx` =
+/// `[node, parent]`; a /GS frame): the node's own list fields and, with a
+/// parent, the node appended to the parent's child list; slot 331
+/// `(node + 0xbc)`; slot 558 fills four integers `I` on the frame (`ebp -
+/// 0x14`), which become the floats `+0x7c..+0x88`; the 4x4 block `+0x1c`
+/// gets 1.0 in rows 0, 1, 3 and 4 and 0.0 in row 2 (`+0x3c..`) and the
+/// last (`+0x6c..`); slot 353 `(node + 0x1c)` and slot 271 `(4)`, each
+/// seeing the earlier calls' words; `+0xe4` 1, `+0xd4` 1.0, `+0xd8`
+/// 0.005, `+0xd0` 1.0. Returns slot 271's `eax`.
+pub fn light_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let node = g.read::<u32>(fr.ecx);
+    let parent = g.read::<u32>(fr.ecx + 4);
+    crate::l3_common::node_init(g, node, parent);
+    if parent != 0 {
+        crate::l3_common::attach(g, node, parent, crate::l3_common::ListAt::of(parent));
+    }
+    let t = slot_target(g, w(0x50), 331);
+    let mut stack = vec![node + 0xbc];
+    g.call(t, 0, &stack);
+    let ints = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let t = slot_target(g, w(0x61), 558);
+    stack.insert(0, ints);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    for k in 0..4u32 {
+        let x = cvt(g.read::<u32>(ints + 4 * k));
+        g.write::<f32>(node + 0x7c + 4 * k, x);
+        // column k of the block: rows 0, 1, 3, 4 1.0, rows 2 and 5 0.0
+        for (row, v) in [
+            (0u32, 0x3f80_0000u32),
+            (5, 0),
+            (2, 0),
+            (3, 0x3f80_0000),
+            (4, 0x3f80_0000),
+            (1, 0x3f80_0000),
+        ] {
+            g.write::<u32>(node + 0x1c + 0x10 * row + 4 * k, v);
+        }
+    }
+    let t = slot_target(g, w(0x124), 353);
+    stack.insert(0, node + 0x1c);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x163), 271);
+    stack.insert(0, 4);
+    // call width: 18 at most (the earlier calls' words)
+    let e = g.call(t, 0, &stack).eax;
+    g.write::<u32>(node + 0xe4, 1);
+    g.write::<u32>(node + 0xd4, 0x3f80_0000);
+    g.write::<u32>(node + 0xd8, 0x3ba3_d70a);
+    g.write::<u32>(node + 0xd0, 0x3f80_0000);
+    e
+}
+
+/// [`light_node`] (427 bytes, 1 overlay).
+pub const LIGHT_NODE: Sig = Sig {
+    len: 427,
+    hash: 0xc349_b5da_290d_184f,
+    calls: &[
+        // __security_check_cookie
+        (0x1a3, Callee::Any),
     ],
     imports: &[],
 };

@@ -267,3 +267,144 @@ pub const FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The effect's set-up (0x10001660, an overlay table entry, `(arg)`):
+/// slot 803 `(0x1000000, 16)` the buffer (its address and `+0x80000` to
+/// two globals, the argument to a third), the name global set and slot
+/// 718 `(NAME)`, slot 222 `(*G_N, 0, 1000, 0x2000)`, a handle `h` from
+/// slot 719 `(*G_N, 8, 0)` (kept), slot 711 `(h, PROG, 0)` under
+/// `**G_LOCK` 1 and slot 710 `(BLOCK, *G_H, *G_BUF, 0x80000)`; the
+/// handle's three program tables (slot 941 `(h[0x14 + 4i])`, kept); the
+/// three 0x110-byte timeline blocks zeroed (`memset`) with their
+/// callbacks, counts and flags (each block's fields set before the next
+/// block is cleared); nine sound handles from slot 260 `(id)`. Each call
+/// sees the words the earlier ones left on the stack, up to the
+/// clean-ups. Returns 1.
+#[allow(clippy::too_many_lines)] // the original's one long sequence
+pub fn setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, op: u32| g.read::<u32>(w(op));
+    let t = slot_target(g, w(0x4), 803);
+    let mut stack = vec![0x100_0000, 0x10];
+    let buf = g.call(t, 0, &stack).eax;
+    g.write::<u32>(w(0x19), buf);
+    g.write::<u32>(w(0x23), buf.wrapping_add(0x8_0000));
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x2b), arg);
+    let t = slot_target(g, w(0x30), 718);
+    g.write::<u32>(w(0x41), w(0x45));
+    stack.insert(0, w(0x35));
+    // call width: 3
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x4c), 222);
+    let n = r(g, 0x64);
+    stack.splice(0..0, [n, 0, 0x3e8, 0x2000]);
+    // call width: 7
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x6b), 719);
+    let n = r(g, 0x7b);
+    stack.splice(0..0, [n, 8, 0]);
+    // call width: 10
+    let h = g.call(t, 0, &stack).eax;
+    let lock = r(g, 0x83);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x8c), h);
+    let t = slot_target(g, w(0x97), 711);
+    g.write::<u32>(lock, 1);
+    stack.splice(0..0, [h, w(0x91), 0]);
+    // call width: 13
+    g.call(t, 0, &stack);
+    let lock = r(g, 0xaa);
+    let b = r(g, 0xb5);
+    g.write::<u32>(lock, saved);
+    let h2 = r(g, 0xbd);
+    let t = slot_target(g, w(0xc2), 710);
+    stack.splice(0..0, [w(0xc7), h2, b, 0x8_0000]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    let mut stack = Vec::new();
+    for (k, (hop, tab, dst)) in [
+        (0xd4u32, 0xdfu32, 0xecu32),
+        (0xf1, 0xf9, 0x106),
+        (0x10b, 0x113, 0x12c),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let h = r(g, hop);
+        let x = g.read::<u32>(h + 0x14 + 4 * k as u32);
+        let t = slot_target(g, w(tab), 941);
+        stack.insert(0, x);
+        // call width: 3 at most
+        let v = g.call(t, 0, &stack).eax;
+        g.write::<u32>(w(dst), v);
+    }
+    // the three blocks: each zeroed (its `memset` words left on the
+    // stack), then its fields
+    stack.splice(0..0, [w(0x127), 0, 0x110]);
+    g.write_bytes(w(0x127), &[0u8; 0x110]);
+    stack.splice(0..0, [w(0x13d), 0, 0x110]);
+    g.write::<u32>(w(0x143), w(0x147));
+    for (op, v) in [(0x14du32, 2u32), (0x157, 2), (0x161, 1), (0x16b, 1)] {
+        g.write::<u32>(w(op), v);
+    }
+    g.write_bytes(w(0x13d), &[0u8; 0x110]);
+    g.write::<u32>(w(0x17a), w(0x17e));
+    stack.splice(0..0, [w(0x18a), 0, 0x110]);
+    for op in [0x190u32, 0x19a, 0x1a4] {
+        g.write::<u32>(w(op), 1);
+    }
+    g.write_bytes(w(0x18a), &[0u8; 0x110]);
+    let t = slot_target(g, w(0x1b2), 260);
+    g.write::<u32>(w(0x1b8), w(0x1bc));
+    g.write::<u32>(w(0x1c2), 10);
+    g.write::<u32>(w(0x1cc), 10);
+    for op in [
+        0x1d6u32, 0x1e0, 0x1ea, 0x1f4, 0x1fe, 0x208, 0x212, 0x21c, 0x226, 0x230,
+    ] {
+        g.write::<u32>(w(op), 1);
+    }
+    stack.insert(0, 3);
+    // call width: 13
+    let v = g.call(t, 0, &stack).eax;
+    g.write::<u32>(w(0x243), v);
+    for (tab, id, dst) in [
+        (0x248u32, 0x16u32, 0x257u32),
+        (0x25c, 0x17, 0x26b),
+        (0x270, 0x18, 0x27f),
+    ] {
+        let t = slot_target(g, w(tab), 260);
+        stack.insert(0, id);
+        // call width: 16 at most
+        let v = g.call(t, 0, &stack).eax;
+        g.write::<u32>(w(dst), v);
+    }
+    let mut stack = Vec::new();
+    for (tab, id, dst) in [
+        (0x284u32, 0x19u32, 0x296u32),
+        (0x29b, 0x1a, 0x2aa),
+        (0x2af, 0x1b, 0x2be),
+        (0x2c3, 7, 0x2d2),
+        (0x2d7, 0x15, 0x2e9),
+    ] {
+        let t = slot_target(g, w(tab), 260);
+        stack.insert(0, id);
+        // call width: 5 at most
+        let v = g.call(t, 0, &stack).eax;
+        g.write::<u32>(w(dst), v);
+    }
+    Ret::eax(1)
+}
+
+/// [`setup`] (757 bytes, 1 overlay).
+pub const SETUP: Sig = Sig {
+    len: 757,
+    hash: 0x8b9f_d001_fa8e_9410,
+    calls: &[
+        (0x131, Callee::Import("memset")),
+        (0x174, Callee::Import("memset")),
+        (0x1ad, Callee::Import("memset")),
+    ],
+    imports: &[],
+};

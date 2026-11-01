@@ -104,3 +104,95 @@ pub const CAMERA_POINTS: Sig = Sig {
     calls: &[(0xf3, Callee::Any)],
     imports: &[],
 };
+
+/// Starts the effect's three tasks (0x10008720, internal, no arguments):
+/// the colour block `S + 0x58c0` (`S = *G_S`) and the timer block `S +
+/// 0x597c` set; three pool nodes ([`take`](crate::sa_pool::take), each
+/// with its own owner) for them and for the step task (`S[0x5ee0]`, a
+/// count `S[0x5ef4]` of 12) go at the head of the DLL's task list one
+/// after another (the list's head word written once, at the end; the
+/// first word only while the list is empty). Returns the last node.
+pub fn start_tasks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let take = |g: &mut G, call: u32, owner: u32| {
+        crate::sa_pool::take(g, img, img.rel32_target(f + call), w(owner))
+    };
+    let s = g.read::<u32>(w(0x5));
+    let e = s + 0x58c0;
+    g.write::<u32>(e + 0x81, 0xff80_ffff);
+    g.write::<u8>(e + 0x80, 0xff);
+    g.write::<u16>(e + 0x85, 0xffff);
+    g.write::<u8>(e + 0x87, 0);
+    g.write::<u32>(e + 0x88, 0);
+    g.write::<u16>(e + 0x98, 0x48);
+    g.write::<u32>(e + 0x90, 0x18);
+    g.write::<u32>(e + 0x8c, 0x18);
+    g.write::<u32>(e + 0x94, 0);
+    let n1 = take(g, 0x67, 0xa);
+    let empty = g.read::<u32>(w(0x6d)) == 0;
+    g.write::<u32>(n1 + 0x14, e);
+    g.write::<u32>(n1 + 4, 0);
+    if empty {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x95), n1);
+    } else {
+        let h = g.read::<u32>(w(0x82));
+        g.write::<u32>(n1, h);
+        g.write::<u32>(h + 4, n1);
+    }
+    let e2 = s + 0x597c;
+    g.write::<u32>(n1 + 8, n1);
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x50),
+        (8, 0x14),
+        (0xc, 0),
+        (0x14, 0x5a),
+        (0x10, 0x5a),
+    ] {
+        g.write::<u32>(e2 + o, v);
+    }
+    g.write::<u16>(e2 + 0x18, 0);
+    let n2 = take(g, 0xd7, 0xa5);
+    let empty = g.read::<u32>(w(0xdd)) == 0;
+    g.write::<u8>(n2 + 0x18, 1);
+    g.write::<u32>(n2 + 0x14, e2);
+    g.write::<u32>(n2 + 4, 0);
+    if empty {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x103), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    let s2 = g.read::<u32>(w(0x109));
+    g.write::<u32>(n2 + 8, n2);
+    g.write::<u32>(s2 + 0x5ef4, 0xc);
+    let n3 = take(g, 0x120, 0x111);
+    let empty = g.read::<u32>(w(0x126)) == 0;
+    g.write::<u32>(s2 + 0x5ee0, n3);
+    g.write::<u32>(n3 + 4, 0);
+    g.write::<u32>(w(0x139), n3);
+    if empty {
+        g.write::<u32>(n3, 0);
+        g.write::<u32>(w(0x154), n3);
+    } else {
+        g.write::<u32>(n3, n2);
+        g.write::<u32>(n2 + 4, n3);
+    }
+    g.write::<u32>(n3 + 8, n3);
+    n3
+}
+
+/// [`start_tasks`] (349 bytes, 1 overlay).
+pub const START_TASKS: Sig = Sig {
+    len: 349,
+    hash: 0x6aab_ec22_fb36_f6b6,
+    calls: &[
+        (0x67, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xd7, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x120, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};

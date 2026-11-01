@@ -57,6 +57,8 @@ fn start() {
     t.set_u32(data, 0x00da_7a00);
     for (flag, bits) in [(0u8, 0x10u8), (1, 0x10), (1, 0xef), (0, 0)] {
         t.set_u8(fl + 0x10, flag);
+        // the byte after the flag non-zero (a wider read shows)
+        t.set_u8(fl + 0x11, 0x5a);
         t.set_u8(ctrl, bits);
         t.set_u32(s + 4, 0);
         let c = Call {

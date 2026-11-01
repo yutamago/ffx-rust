@@ -49,6 +49,12 @@ fn draw_and_frame() {
     let fst = t.img.rel32_target(at + 0x5c);
     t.set_u32(t.img.word(ftl + 0x06), 0);
     t.set_u32(t.img.word(fst + 0x02), 0);
+    // the words the frame copies and passes, distinct from their
+    // neighbours (and the draw's slot 237 word)
+    for (rva, op) in [(0x1070u32, 0x57u32), (0x1410, 0x24), (0x1410, 0x67)] {
+        let g = t.img.word(t.at(rva) + op);
+        t.set_u32(g, 0x00a5_0000 + op);
+    }
     for (on, bits) in [
         (1u32, 0b0_0000u32),
         (0, 0b1_0000),
