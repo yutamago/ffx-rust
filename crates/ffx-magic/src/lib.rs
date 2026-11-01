@@ -3681,6 +3681,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite packets", &s9_misc::SPRITE_PACKETS),
     ("camera aimed", &s9_misc::CAMERA_AIMED),
     ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
+    ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

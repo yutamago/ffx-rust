@@ -4018,3 +4018,17 @@ pub const SUMMON_START_TASK_0347: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&SUMMON_TARGETS_START))],
     imports: &[],
 };
+
+/// `Z * X * Y` as [`rotation_4250`](crate::s3_matrix::rotation_4250)
+/// computes it, the same products and sums in the same order (its parity
+/// test runs that port on this code), compiled two bytes shorter: the
+/// rotation `magic_0070`'s family calls (`ecx` = the matrix, `edx` = the
+/// angles, the sine table's global at `+0x0c`).
+///
+/// `magic_0070` 0x10003650 (1,380 bytes; 8 DLLs).
+pub const ROTATION_3650: Sig = Sig {
+    len: 1380,
+    hash: 0x2714_ac72_7d96_743a,
+    calls: &[],
+    imports: &[],
+};

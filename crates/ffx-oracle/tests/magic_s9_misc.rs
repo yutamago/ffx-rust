@@ -11,7 +11,7 @@
 
 mod magic;
 
-use ffx_magic::s9_misc;
+use ffx_magic::{Ret, s9_misc};
 use magic::{Call, Eax, SCRATCH, STACK_TOP, StubMem, Twin};
 
 fn twin(n: u16) -> Option<Twin> {
@@ -2668,6 +2668,97 @@ fn summon_targets_started() {
                     ..Call::default()
                 };
                 t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}
+
+/// The sine table behind the global at `table_op` of `f`: a real sine
+/// with the entries `special` names replaced.
+fn sine_table(t: &mut Twin, f: u32, table_op: u32, special: fn(u32) -> Option<f32>) {
+    let sines = SCRATCH + 0x1_0000;
+    let g = op(t, f, table_op);
+    t.set_u32(g, sines);
+    let mut b = Vec::with_capacity(4 * 4096);
+    for i in 0..4096u32 {
+        let x = special(i)
+            .unwrap_or_else(|| (f64::from(i) * std::f64::consts::TAU / 4096.0).sin() as f32);
+        b.extend_from_slice(&x.to_bits().to_le_bytes());
+    }
+    t.write(sines, &b);
+}
+
+/// Row 18: `magic_0070`'s rotation `Z * X * Y` (0x3650) in two of its
+/// DLLs is `s3_matrix::rotation_4250`, on `magic_sb_matrix.rs`' two
+/// tables (odd finite entries; infinities) and angles: the quarter turns
+/// and the odd entries in every place, a pseudo-random spread.
+#[test]
+fn rotations_3650() {
+    let finite: fn(u32) -> Option<f32> = |i| match i {
+        7 => Some(-0.0),
+        9 => Some(1.0e30),
+        11 => Some(-3.0),
+        13 => Some(f32::MIN_POSITIVE),
+        _ => None,
+    };
+    let infinite: fn(u32) -> Option<f32> = |i| match i {
+        7 | 0x40d => Some(f32::INFINITY),
+        9 | 0x407 => Some(f32::NEG_INFINITY),
+        11 | 0x40b => Some(1.0e30),
+        13 => Some(-0.0),
+        _ => None,
+    };
+    let special = [
+        0u32,
+        0x4000,
+        0x8000,
+        0xc000,
+        7 << 4,
+        (7u32 << 4).wrapping_sub(0x4000),
+        9 << 4,
+        (11u32 << 4).wrapping_sub(0x4000),
+        13 << 4,
+        0x1230,
+    ];
+    let mut sets = vec![[0xffff_fff0u32, 0x10, 0x8000_0000]];
+    for &x in &special {
+        for &y in &special {
+            for &z in &special {
+                sets.push([x, y, z]);
+            }
+        }
+    }
+    let mut s = 0x1234_5678u32;
+    for _ in 0..40 {
+        let mut a = [0u32; 3];
+        for x in &mut a {
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *x = s >> 8;
+        }
+        sets.push(a);
+    }
+    let (angles, out) = (SCRATCH + 0x100, SCRATCH + 0x200);
+    for (dll, rva) in [(70u16, 0x3650u32), (613, 0x2ac0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        for table in [finite, infinite] {
+            sine_table(&mut t, f, 0x0c, table);
+            for a in &sets {
+                for (i, x) in (0u32..).zip(a) {
+                    t.set_u32(angles + 4 * i, *x);
+                }
+                t.write(out, &[0xcd; 0x40]);
+                let call = Call {
+                    eax: 1,
+                    ecx: out,
+                    edx: angles,
+                    ..Call::default()
+                };
+                t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                    Ret::eax(ffx_magic::s3_matrix::rotation_4250(
+                        g, img, fr.at, fr.ecx, fr.edx,
+                    ))
+                });
             }
         }
     }
