@@ -2956,3 +2956,93 @@ pub const SUMMON_SETUP_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A ring node's handler that places its model's two groups of items
+/// (cdecl `(S)`, the cursor; a ring pass first, [`ring_pass`], over the
+/// frame's cookie word; a /GS frame aligned to 8, `F` the frame after
+/// the saved registers). Passed, with `R = S[0]` and its model `M =
+/// R[0x1c]`: the frame's draw record is set (zeros, the screen sizes
+/// 160, 126, 126, 128 and 512, 256, 1791.5, 1839.5, the u16 `R+0x20` as
+/// a float twice, `G_M2` twice, `(0, -0.0, 0)`, a byte 0, `F+0x18 = R`)
+/// and slot 245 `(F+0x1c)` called; then for the groups `j` = 0, 1 (the
+/// items at `M[9 + j]`, 16 bytes each, their count the u16 `M + 0x2c +
+/// 2j`), each item `p`: `X` = slot 229 `(F+0xc0, G_M, p)`, slot 325
+/// `(F+0x20, X)`, three words 1.0 and slot 231 `(F+0xd0, G_M2, F+0x90)`,
+/// `F+0x84 = *G_P + 0x68`. Returns what the original leaves in `eax`:
+/// the last group's count (0 for none), else what the pass left.
+///
+/// `magic_0042` 0x10004c90 (606 bytes; 4 DLLs).
+pub fn model_items_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = fr.arg(g, 0);
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let cookie = g.read::<u32>(w(0xd)) ^ top.wrapping_sub(0x10c);
+    let (passed, eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return Ret::eax(eax);
+    }
+    let r = g.read::<u32>(s);
+    let fb = top.wrapping_sub(0x118);
+    for at in [0x94u32, 0x98, 0x9c, 0xa0, 0xa8, 0xac, 0xb0, 0xb4, 0xbc] {
+        g.write::<u32>(fb + at, 0);
+    }
+    for (at, v) in [
+        (0x30u32, 0x4320_0000u32),
+        (0x34, 0x42fc_0000),
+        (0x38, 0x42fc_0000),
+        (0x3c, 0x4300_0000),
+        (0x48, w(0xec)),
+        (0x80, w(0xf7)),
+    ] {
+        g.write::<u32>(fb + at, v);
+    }
+    let n = cvt(u32::from(g.read::<u16>(r + 0x20)));
+    g.write::<f32>(fb + 0x7c, n);
+    g.write::<f32>(fb + 0x78, n);
+    for (at, v) in [
+        (0x70u32, 0x44df_f000u32),
+        (0x74, 0x44e5_f000),
+        (0x68, 0x4400_0000),
+        (0x6c, 0x4380_0000),
+        (0x18, r),
+    ] {
+        g.write::<u32>(fb + at, v);
+    }
+    slot(g, img, f, 0x10c, 245, s, &[fb + 0x1c]);
+    for (at, v) in [(0x50u32, 0u32), (0x54, 0x8000_0000), (0x58, 0)] {
+        g.write::<u32>(fb + at, v);
+    }
+    g.write::<u8>(fb + 0x88, 0);
+    let mut eax = 0;
+    for (items, count) in [(0x24u32, 0x2cu32), (0x28, 0x2e)] {
+        let m = g.read::<u32>(r + 0x1c);
+        let mut p = g.read::<u32>(m.wrapping_add(items));
+        eax = 0;
+        let mut i = 0u32;
+        while i < u32::from(g.read::<u16>(g.read::<u32>(r + 0x1c).wrapping_add(count))) {
+            let x = fb + 0xc0;
+            slot(g, img, f, 0x1a0, 229, s, &[x, w(0x19a), p]);
+            slot(g, img, f, 0x1ba, 325, s, &[fb + 0x20, x]);
+            for at in [0xb8u32, 0xa4, 0x90] {
+                g.write::<u32>(fb + at, 0x3f80_0000);
+            }
+            slot(g, img, f, 0x1dc, 231, s, &[fb + 0xd0, w(0x1d6), fb + 0x90]);
+            let v = g.read::<u32>(w(0x20a)).wrapping_add(0x68);
+            g.write::<u32>(fb + 0x84, v);
+            i += 1;
+            p = p.wrapping_add(0x10);
+            let m = g.read::<u32>(g.read::<u32>(fb + 0x18).wrapping_add(0x1c));
+            eax = u32::from(g.read::<u16>(m.wrapping_add(count)));
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`model_items_node`] (the `rel32`: `__security_check_cookie`).
+pub const MODEL_ITEMS_NODE: Sig = Sig {
+    len: 606,
+    hash: 0xebac_c9e4_a523_d94f,
+    calls: &[(0x256, Callee::Any)],
+    imports: &[],
+};

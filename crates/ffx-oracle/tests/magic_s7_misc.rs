@@ -2491,3 +2491,86 @@ fn summon_setup_tasks() {
         }
     }
 }
+
+/// Row 327: the model items node of the four DLLs: not passed, passed
+/// with both groups empty, one empty, and both holding items; the
+/// slots see the frame's record.
+#[test]
+fn model_items_nodes() {
+    for (dll, rva) in [
+        (42u16, 0x4c90u32),
+        (152, 0x4940),
+        (533, 0x4950),
+        (601, 0x4880),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+            m.w32(a[0], 0x2450_0000 + k);
+            0x245
+        });
+        log_calls(&mut t, 229, log, 3, None, |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[0] + 4 * i, m.r32(a[2] + 4 * i) ^ k);
+            }
+            0x229
+        });
+        t.stub(325, move |m, a| {
+            let k = m.r32(log);
+            m.w32(log, k + 1);
+            let row = log + 0x400 + 0x80 * (k % 8);
+            for i in 0..0x20 {
+                m.w32(row + 4 * i, m.r32(a[0] + 4 * i));
+            }
+            m.w32(a[0], m.r32(a[1]));
+            0x325
+        });
+        t.stub(231, move |m, a| {
+            let k = m.r32(log);
+            m.w32(log, k + 1);
+            let row = log + 0x800 + 0x40 * (k % 8);
+            for i in 0..0x10 {
+                m.w32(row + 4 * i, m.r32(a[2] + 4 * i));
+            }
+            m.w32(a[0], a[1] ^ k);
+            0x231
+        });
+        t.set_u32(op(&t, f, 0x20a), SCRATCH + 0x2f0);
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let m = SCRATCH + 0x1400;
+        let items = SCRATCH + 0x1800;
+        for (k, (byte, a, b)) in [
+            (3u8, 1u16, 1u16),
+            (4, 0, 0),
+            (4, 2, 0),
+            (4, 0, 1),
+            (4, 3, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.write(log, &varied(0xc00, k));
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x40, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u16(r + 0x20, (0x30 + k) as u16);
+            t.set_u32(r + 0x1c, m);
+            t.write(m, &varied(0x40, k + 1));
+            t.set_u32(m + 0x24, items);
+            t.set_u32(m + 0x28, items + 0x100);
+            t.set_u16(m + 0x2c, a);
+            t.set_u16(m + 0x2e, b);
+            t.write(items, &varied(0x200, k + 2));
+            scrub(&mut t);
+            let c = Call {
+                eax: 0x4c90_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[s], Eax::Checked);
+        }
+    }
+}
