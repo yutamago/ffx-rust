@@ -2740,3 +2740,43 @@ fn sprite_gs_packets() {
         });
     }
 }
+
+/// Row 430: `magic_0384`'s five-number particle drift and the hand-over
+/// in the same identity (the table set and not, the flag set and not).
+#[test]
+fn particles_drifting_5() {
+    let Some(mut t) = twin(384) else { return };
+    let f = t.at(0x2060);
+    let h = t.at(0x2270);
+    rec(&mut t, 458, 3, |_, a| 0x0458_0000 ^ a[1]);
+    rec(&mut t, 450, 2, |_, a| 0x0450_0000 ^ a[1]);
+    rec(&mut t, 451, 2, |_, a| 0x0451_0000 ^ a[1]);
+    rec(&mut t, 446, 2, |_, a| 0x0446_0000 ^ a[0]);
+    let q = SCRATCH + 0x4000;
+    rec(&mut t, 434, 2, move |_, _| q);
+    for (o, v) in [(0xb3u32, 0.75f32), (0xe5, 1.5), (0x59, 0.25)] {
+        t.set_u32(op(&t, f, o), v.to_bits());
+    }
+    let p = SCRATCH + 0x1000;
+    let a = SCRATCH + 0x5000;
+    t.set_u32(op(&t, h, 0x1f), a);
+    for k in 0..4u32 {
+        t.write(p, &varied(0x1a0, k));
+        t.set_u32(p + 0xac, k % 3);
+        let r = SCRATCH + 0x2000 + 0x200 * k;
+        t.set_u32(p + 0x2c + 0x10 * (k % 3), r);
+        t.write(r, &varied(0x100, k + 5));
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+        // the hand-over: the record index `e`, the table word and the flag
+        let e = 3 + k;
+        t.set_u32(p + 0x2c + 0x10 * (k % 3), e);
+        t.set_u32(op(&t, h, 0x17) + 4 * e, k & 1);
+        t.set_u32(op(&t, h, 0x65), k >> 1);
+        t.write(a, &varied(0x200, k));
+        t.write(q, &varied(0x100, k + 2));
+        t.set_u32(q + 0xac, 1);
+        scrub(&mut t);
+        t.check_entry(h, Call::default(), &[p], Eax::Checked);
+    }
+}
