@@ -2342,3 +2342,177 @@ pub const LIGHT_SWING: Sig = Sig {
     calls: &[(0x325, Callee::Any)],
     imports: &[],
 };
+
+/// A summon's spark burst (internal, `ecx` = the summon `S`; a /GS frame;
+/// the actor `A = *G_P`). `A`'s point (slot 262 `(A, &x, &y, &z)`, slot
+/// 268 `(A, 0x11, &x)`) as `(x, y, z, 1)`; the burst's size by `n =
+/// -(*G_X / *G_D)` when `*G_X` is at most 0 and `*G_D` above 0: 24 sparks
+/// (kind 1) below 100, 32 (kind 2) below 500, else 64 (kind 2). The
+/// object `O = S + 0x130` started
+/// ([`start_object_first`](crate::o6_fam_object::start_object_first),
+/// stack `(kind, n or *G_D, 0, n or *G_D)`, scale `K`) at the point, its
+/// yaw `+0xc4` = `K5 - slot 333 (A)` wrapped by `K7` past `K6` or below
+/// `K8`, `+0x120 = *G_Q`. Then each spark: a node `N` of the DLL's pool
+/// ([`pool_take`](crate::sb_misc::pool_take); none ends the burst), its
+/// entry (slot 719 `(E, 9, 0)`) at `+0x30`, `+0x34` 1, u16 `+0x38`
+/// 0xffff, `+0x3a` 0x200; at `A`'s point (slots 262, 268), moved by a
+/// random direction (three slot 307 ST0s less `K9`, slot 232 `(V, V)`)
+/// times `K10`, its velocity the direction times `K11`, its constants,
+/// and `+0x60` the group (one more every fourth spark). Returns the
+/// sparks made, 0 when the pool ran out, or `*G_Q` for none.
+///
+/// `magic_0134` 0x10001ec0 (837 bytes; 2 DLLs).
+pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
+    let r = |g: &G, o: u32| f32_at(g, w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let s = fr.ecx;
+    let a = g.read::<u32>(w(0x14));
+    let v = at(0x14);
+    let mut st = Pushes::default();
+    st.push_all(&[at(0xc), at(0x10), v, a]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x26, 262), s);
+    st.push_all(&[v, 0x11, a]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x3a, 268), 0);
+    st.pop(7);
+    let x = g.read::<i32>(w(0x4a));
+    let d = g.read::<i32>(w(0x50));
+    g.write::<u32>(at(8), 0x3f80_0000);
+    let (count, kind, word) = if x <= 0 && d > 0 {
+        let n = (x / d).wrapping_neg();
+        let (count, kind) = if n < 100 {
+            (0x18, 1)
+        } else if n < 500 {
+            (0x20, 2)
+        } else {
+            (0x40, 2)
+        };
+        (count, kind, n.cast_unsigned())
+    } else {
+        (0x18, 1, d.cast_unsigned())
+    };
+    let esp = fr.esp.wrapping_sub(0x34);
+    for (i, word) in (1u32..).zip([kind, word, 0, word]) {
+        g.write::<u32>(esp.wrapping_sub(0x14 - 4 * i), word);
+    }
+    let obj = s.wrapping_add(0x130);
+    let start = Frame {
+        at: img.rel32_target(f + 0xc0),
+        esp: esp.wrapping_sub(0x14),
+        eax: kind,
+        ecx: word,
+        edx: obj,
+        xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0xab)))],
+    };
+    crate::o6_fam_object::start_object_first(g, img, start.at, &start);
+    for i in 0..4 {
+        let x = g.read::<u32>(v + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, x);
+    }
+    st.push_all(&[word, 0, word, kind]);
+    st.push(g.read::<u32>(w(0x105)));
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let out = st.call(g, tab(g, 0xca, 333), 0);
+    st.pop(5);
+    let y = crate::ob_model::st0_f32(out.st0);
+    let mut yaw = sub(r(g, 0x112), y);
+    if yaw > r(g, 0x121) {
+        yaw = sub(yaw, r(g, 0x12b));
+    } else if r(g, 0x135) > yaw {
+        yaw = add(yaw, r(g, 0x142));
+    }
+    g.write::<f32>(obj + 0xc4, yaw);
+    let q = g.read::<u32>(w(0x151));
+    g.write::<u32>(obj + 0x120, q);
+    let mut group = 0u32;
+    let mut eax = q;
+    let mut i = 0u32;
+    while i < count {
+        let n = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0x171));
+        if n == 0 {
+            return 0;
+        }
+        st.push_all(&[0, 9, w(0x193)]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        let e = st.call(g, tab(g, 0x184, 719), 0).eax;
+        g.write::<u32>(n + 0x30, e);
+        st.pop(3);
+        g.write::<u32>(n + 0x34, 1);
+        g.write::<u16>(n + 0x38, 0xffff);
+        g.write::<u16>(n + 0x3a, 0x200);
+        if i.is_multiple_of(4) {
+            group += 1;
+        }
+        let a = g.read::<u32>(w(0x1c4));
+        st.push_all(&[n + 8, n + 4, n, a]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x1be, 262), 0);
+        st.push_all(&[n, 0x11, a]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x1e0, 268), 0);
+        g.write::<u32>(n + 0xc, 0x3f80_0000);
+        for (k, (t, kop)) in [(0x1f3u32, 0x212u32), (0x217, 0x234), (0x239, 0x256)]
+            .into_iter()
+            .enumerate()
+        {
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+            let out = st.call(g, tab(g, t, 307), 0);
+            let x = sub(crate::ob_model::st0_f32(out.st0), r(g, kop));
+            g.write::<f32>(v + 4 * k as u32, x);
+        }
+        st.push_all(&[v, v]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x260, 232), 0);
+        st.pop(9);
+        let k10 = r(g, 0x27a);
+        for k in 0..3 {
+            let x = add(mul(f32_at(g, v + 4 * k), k10), f32_at(g, n + 4 * k));
+            g.write::<f32>(n + 4 * k, x);
+        }
+        let k11 = r(g, 0x2af);
+        let vel = |g: &G, k: u32| mul(f32_at(g, v + 4 * k), k11);
+        let x = vel(g, 0);
+        g.write::<f32>(n + 0x10, x);
+        let x = vel(g, 1);
+        g.write::<f32>(n + 0x14, x);
+        let x = vel(g, 2);
+        g.write::<u32>(n + 0x1c, 0);
+        g.write::<u32>(n + 0x20, 0);
+        g.write::<f32>(n + 0x18, x);
+        for (o, x) in [
+            (0x24u32, 0xbc23_d70au32),
+            (0x28, 0),
+            (0x2c, 0x3f80_0000),
+            (0x3c, 0x3d75_c28f),
+            (0x4c, 0xffff_ffff),
+            (0x50, 0),
+        ] {
+            g.write::<u32>(n + o, x);
+        }
+        g.write::<u32>(n + 0x60, group);
+        i += 1;
+        eax = i;
+    }
+    eax
+}
+
+/// [`spark_burst`] (the `rel32`s: the object start, the pool take and
+/// `__security_check_cookie`).
+pub const SPARK_BURST: Sig = Sig {
+    len: 837,
+    hash: 0x0039_af9c_3161_44cb,
+    calls: &[
+        (
+            0xc0,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0132_3CC0),
+        ),
+        (0x171, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x33d, Callee::Any),
+    ],
+    imports: &[],
+};

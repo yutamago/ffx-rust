@@ -1498,7 +1498,7 @@ fn bone_nodes() {
     for dll in [150u16, 603] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(0x35a0);
-        for s in [1000u32, 1001] {
+        for s in [1000u32, 1001, 1002, 1003, 1004] {
             t.set_u32(magic::TABLE + 4 * s, magic::TRAPS + 16 * s);
         }
         // the handlers log their cursor and its node and pass byte
@@ -1508,8 +1508,9 @@ fn bone_nodes() {
         });
         log_calls(&mut t, 1001, 2, &[0, 1], |_, a, k| a[1] ^ k);
         let table = op(&t, f, 0xed);
+        // each entry its own trap (the index picks the target)
         for i in 0..4 {
-            t.set_u32(table + 4 * i, magic::TRAPS + 16 * 1001);
+            t.set_u32(table + 4 * i, magic::TRAPS + 16 * (1001 + i));
         }
         log_calls(&mut t, 233, 3, &[0, 1], |m, a, k| {
             for i in 0..4u32 {
@@ -1647,6 +1648,109 @@ fn light_swings() {
             t.set_u32(op(&t, f, 0x33), n);
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[0x0a00_0000 + k], Eax::Checked);
+        }
+    }
+}
+
+/// The spark burst in both DLLs: the three sizes and the plain one, the
+/// yaw wrapped both ways and kept, the pool running out mid-burst.
+#[test]
+fn spark_bursts() {
+    for (dll, rva) in [(134u16, 0x1ec0u32), (135, 0x4870)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        // the object start (`start_object_first_in_every_copy`'s set-up)
+        let at = t.img.rel32_target(f + 0xc0);
+        t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(at + 0x5e), SCRATCH + 0x300);
+        t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+        for i in 0..8 {
+            t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+        }
+        log_calls(&mut t, 941, 1, &[], |_, _, _| SCRATCH + 0x400);
+        log_calls(&mut t, 714, 5, &[], |_, a, _| 0x0714_0000 ^ a[0]);
+        // the pool
+        let take = t.img.rel32_target(f + 0x171);
+        let pw = |t: &Twin, o: u32| t.img.word(take + o);
+        let (idx, n, table, page) = (pw(&t, 0x08), pw(&t, 0x0f), pw(&t, 0x37), pw(&t, 0x2b));
+        let recs = SCRATCH + 0x8000;
+        t.set_u32(table, recs);
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for i in 0..3u32 {
+                m.w32(a[1 + i as usize], (0.5 * i as f32 + k as f32).to_bits());
+            }
+            0x262
+        });
+        log_calls(&mut t, 268, 3, &[], |_, a, k| a[2] ^ k);
+        log_calls(&mut t, 333, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(333, |m, _| [0.5, 7.0, -7.0][(m.r32(ANSWER) % 3) as usize]);
+        log_calls(&mut t, 307, 0, &[], |_, _, _| 0x307);
+        t.stub_st0(307, |m, _| f64::from(m.r32(LOG) % 7) * 0.25);
+        log_calls(&mut t, 232, 2, &[0], |m, a, _| {
+            for i in 0..3u32 {
+                let x = f32::from_bits(m.r32(a[0] + 4 * i)) * 0.5;
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x232
+        });
+        let ops = [
+            (0x112u32, 0.5f32),
+            (0x121, 3.0),
+            (0x12b, 6.25),
+            (0x135, -3.0),
+            (0x142, 6.25),
+        ];
+        for (o, x) in ops {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        for (o, x) in [
+            (0x212u32, 0.5f32),
+            (0x234, 0.5),
+            (0x256, 0.5),
+            (0x27a, 2.0),
+            (0x2af, 0.25),
+        ] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let s = SCRATCH + 0x2000;
+        // (X, D, records, yaw case)
+        for (k, (x, d, records)) in [
+            (5i32, 3i32, 70u32),
+            (-500, 2, 70),
+            (-3000, 2, 70),
+            (-10, 0, 70),
+            (-150, 1, 5),
+            (-1, 1, 70),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.set_u32(ANSWER, k);
+            t.set_u32(op(&t, f, 0x4a), x.cast_unsigned());
+            t.set_u32(op(&t, f, 0x50), d.cast_unsigned());
+            t.set_u32(op(&t, f, 0x14), 0x0a0a_0000 + k);
+            t.set_u32(op(&t, f, 0x151), 0x0151_0000 + k);
+            for i in 0..80 {
+                t.write(recs + 0x74 * i, &[0x5a; 0x74]);
+                t.set_u32(recs + 0x74 * i + 0x30, 0x300 + i);
+                t.set_u32(recs + 0x74 * i + 0x6c, 0);
+            }
+            t.set_u32(n, records);
+            t.set_u32(idx, 0);
+            t.set_u32(page, 0);
+            t.write(s, &varied(0x260, k));
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x0eee_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s8_misc::spark_burst(g, img, fr))
+            });
         }
     }
 }
