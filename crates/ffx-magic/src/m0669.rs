@@ -3,7 +3,7 @@
 
 use crate::runtime::slot_target;
 use crate::sb_sse::add;
-use crate::{Frame, Game, Image, Ret, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The effect's frame (0x10001030, an overlay table entry, no
 /// arguments): the level `*G_L` (operand `+0x04`) clamped to 0..`H`
@@ -136,5 +136,71 @@ pub const DRAW_RESTART: Sig = Sig {
     len: 249,
     hash: 0x92ac_7669_2c26_2934,
     calls: &[(0xe9, crate::Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// An object's frame placed at a point (0x100018b0, an overlay table
+/// entry, `(obj)`): slot 325 `(obj + 0x40, POINT)` with the scales
+/// 0.1276 (`+0x6c` 1.0), the object drawn (slot 258, slot 231 `(*G_A,
+/// *G_B, *G_C)`, slot 230 `(*G_D, *G_A)`, slot 712 `(obj, 0x30)` under
+/// the game flag with `**G_P = ITEM`; the earlier words left on the
+/// stack); when 712 says nonzero, slot 713 `(obj)` removes it and the
+/// part starts again with program 1
+/// ([`start_part`](crate::part_draw::start_part)). Returns 1.
+pub fn frame_at<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, op: u32| g.read::<u32>(w(op));
+    let obj = fr.arg(g, 0);
+    let t = slot_target(g, w(0x12), 325);
+    for o in [0x60u32, 0x64, 0x68] {
+        g.write::<u32>(obj + o, 0x3e02_a8ca);
+    }
+    g.write::<u32>(obj + 0x6c, 0x3f80_0000);
+    let mut stack = vec![obj + 0x40, w(0x9)];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x3b), 258);
+    stack.insert(0, obj);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    let a = r(g, 0x4a);
+    let t = slot_target(g, w(0x4f), 231);
+    let b = r(g, 0x55);
+    let c = r(g, 0x61);
+    stack.splice(0..0, [c, b, a]);
+    // call width: 6
+    g.call(t, 0, &stack);
+    let a = r(g, 0x69);
+    let t = slot_target(g, w(0x6e), 230);
+    let d = r(g, 0x74);
+    stack.splice(0..0, [d, a]);
+    // call width: 8
+    g.call(t, 0, &stack);
+    let gp = r(g, 0x81);
+    g.write::<u32>(gp, w(0x89));
+    let lock = r(g, 0x8e);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0x9c), 712);
+    stack.splice(0..0, [obj, 0x30]);
+    // call width: 10
+    let res = g.call(t, 0, &stack).eax;
+    let lock = r(g, 0xaa);
+    g.write::<u32>(lock, saved);
+    if res != 0 {
+        let gp = r(g, 0xb8);
+        g.write::<u32>(gp, w(0xbf));
+        let t = slot_target(g, w(0xc4), 713);
+        g.call(t, 0, &[obj]);
+        crate::part_draw::start_part(g, img, f, obj, [0xd1, 0xd7, 0xdc, 0xe4, 0xff], 4, &[obj]);
+    }
+    Ret::eax(1)
+}
+
+/// [`frame_at`] (271 bytes, 1 overlay).
+pub const FRAME_AT: Sig = Sig {
+    len: 271,
+    hash: 0x1d3e_960a_0b5a_7be2,
+    calls: &[(0xff, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };

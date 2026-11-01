@@ -85,3 +85,99 @@ pub const AIM: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The start-up (0x10001340, no arguments): three words get their
+/// blocks (`+0x1d`.. `+0x31`); slot 407 `(*G, NAME, 0)` (`G` `+0x08`,
+/// `NAME` `+0x16`) gives a byte list for
+/// [`obj_block_fill`](crate::l5_objhost::obj_block_fill) (`ecx` = `*G`,
+/// `edx` = the block `+0x3d`); slot 719 `(F, 8, 0)` (`+0x58`) into `+0x62`;
+/// the part's set-up ([`part_init`](crate::l5_objhost::part_init)); a
+/// u16 and three words cleared and `+0x8c` = 1. Then three nodes from the
+/// pool ([`take`](crate::sa_pool::take), owners the callbacks `+0x71`,
+/// `+0xcc`, `+0x108`) go on the task list (first `+0x9b`, last `+0xb2`):
+/// the first (byte `+0x18` = 1) after the old last without moving the
+/// list's last word, the second right after it (the list's last), the
+/// records block `+0xf6` set up
+/// ([`records_init_100`](crate::sa_misc::records_init_100)), the third
+/// (byte 2) at the end. Returns 0.
+pub fn start_up<G: crate::Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let s407 = slot_target(g, w(0x01), 0x65c / 4);
+    let obj = g.read::<u32>(w(0x08));
+    for (dst, val) in [(0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35)] {
+        g.write::<u32>(w(dst), w(val));
+    }
+    let bytes = g.call(s407, 0, &[obj, w(0x16), 0]).eax;
+    crate::l5_objhost::obj_block_fill(g, img, img.rel32_target(f + 0x44), obj, w(0x3d), bytes);
+    let s719 = slot_target(g, w(0x49), 0xb3c / 4);
+    let h = g.call(s719, 0, &[w(0x58), 8, 0]).eax;
+    g.write::<u32>(w(0x62), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x67));
+    g.write::<u16>(w(0x77), 0);
+    for at in [0x7c, 0x81, 0x86] {
+        g.write::<u32>(w(at), 0);
+    }
+    g.write::<u32>(w(0x8c), 1);
+    let first = crate::sa_pool::take(g, img, img.rel32_target(f + 0x95), w(0x71));
+    let head = g.read::<u32>(w(0x9b));
+    g.write::<u8>(first + 0x18, 1);
+    g.write::<u32>(first + 4, 0);
+    // `edi`: the old head, or the first node when the list was empty
+    let edi = if head == 0 {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0xc7), first);
+        first
+    } else {
+        let last = g.read::<u32>(w(0xb2));
+        g.write::<u32>(first, last);
+        g.write::<u32>(last + 4, first);
+        head
+    };
+    g.write::<u32>(first + 8, first);
+    let second = crate::sa_pool::take(g, img, img.rel32_target(f + 0xd4), w(0xcc));
+    g.write::<u32>(second + 4, 0);
+    if edi == 0 {
+        // only for a null first node
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0xf1), second);
+    } else {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first + 4, second);
+    }
+    g.write::<u32>(second + 8, second);
+    g.write::<u32>(w(0xfe), second);
+    crate::sa_misc::records_init_100(g, img, img.rel32_target(f + 0x103), w(0xf6));
+    let third = crate::sa_pool::take(g, img, img.rel32_target(f + 0x10d), w(0x108));
+    let head = g.read::<u32>(w(0x113));
+    g.write::<u8>(third + 0x18, 2);
+    g.write::<u32>(third + 4, 0);
+    if head == 0 {
+        g.write::<u32>(third, 0);
+        g.write::<u32>(w(0x144), third);
+        g.write::<u32>(third + 8, third);
+        g.write::<u32>(w(0x14c), third);
+    } else {
+        let last = g.read::<u32>(w(0x129));
+        g.write::<u32>(third, last);
+        g.write::<u32>(last + 4, third);
+        g.write::<u32>(third + 8, third);
+        g.write::<u32>(w(0x136), third);
+    }
+    crate::Ret::eax(0)
+}
+
+/// [`start_up`] (339 bytes, 1 overlay).
+pub const START_UP: Sig = Sig {
+    len: 339,
+    hash: 0x0613_38ca_d8b6_2033,
+    calls: &[
+        (0x44, crate::Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_FILL)),
+        (0x67, crate::Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x95, crate::Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xd4, crate::Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x103, crate::Callee::Sig(&crate::sa_misc::RECORDS_INIT_100)),
+        (0x10d, crate::Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};

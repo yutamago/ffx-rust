@@ -42,7 +42,13 @@ fn entries() {
         m.w32(cell, k.wrapping_mul(0x0101_0101).wrapping_add(0x1357));
         k
     });
-    rec(&mut t, 712, 2, move |m, _| m.r32(cell) & 1);
+    // slot 712 also keeps the game flag it runs under
+    let lock = t.u32(t.img.word(t.at(0x1150) + 0x8c));
+    rec(&mut t, 712, 2, move |m, _| {
+        let l = m.r32(lock);
+        m.w32(SCRATCH + 0x2_0100, l);
+        m.r32(cell) & 1
+    });
     recs(
         &mut t,
         &[
@@ -58,11 +64,26 @@ fn entries() {
     );
     let base = t.img.word(t.at(0x1000) + 0x40);
     let n = t.img.word(t.at(0x1380) + 0x4);
+    // the globals the calls pass, distinct from their neighbours
+    for (rva, op) in [(0x1000u32, 0x57u32), (0x1150, 0x127), (0x1380, 0x6f)] {
+        let g = t.img.word(t.at(rva) + op);
+        t.set_u32(g, 0x00a5_0000 + op);
+    }
+    // the light's level table: distinct levels
+    let levels = t.img.word(t.at(0x1380) + 0xe);
+    for i in 0..8u32 {
+        t.set_u32(levels + 4 * i, (10.0 + 7.0 * i as f32).to_bits());
+    }
+    // the part pointer's cell, set again before each call
+    let gp = t.u32(t.img.word(t.at(0x1150) + 0x7f));
     for (k, r) in [0u32, 1].into_iter().enumerate() {
         let obj = base + 0x80 * r;
         t.set_u32(cell, 0x4321 + k as u32);
-        t.set_u32(n, r);
+        // the frame index past 0, so the table's stride shows
+        t.set_u32(n, r + 2);
         for rva in [0x1000u32, 0x1150, 0x1240, 0x1380] {
+            t.write(obj, &[0x5b; 0x80]);
+            t.set_u32(gp, 0x7777_7777);
             t.check_entry(t.at(rva), Call::default(), &[obj], Eax::Checked);
         }
     }

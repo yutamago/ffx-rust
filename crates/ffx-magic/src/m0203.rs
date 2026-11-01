@@ -92,3 +92,73 @@ pub const TASK_RELEASE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A particle node's record set-up (0x100041b0, internal: `ecx` =
+/// `[node, parent, a, table, b, index, c]`):
+/// [`node_under`](crate::m0186::node_under); `+0x5c` = a, `+0x60` = b and
+/// `**G` = b (`G` at `+0x45`), `+0xf8`/`+0xfc` 0; slot 941 `(table +
+/// 0x10)`'s list gives the program `P = list[index]`, started at `+0x70`
+/// ([`start_part`](crate::opu_parts::start_part) `(node + 0x70, 0x1000,
+/// P, 1)`); slot 325 `(node + 0x1c, table + 16 (index + 2))`; `+0x104`
+/// and `+0xf0` 0, `+0x108` = c and `+0x4c..+0x58` 4096.0. Returns c. Each
+/// slot call passes the words the original leaves on the stack.
+pub fn part_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = fr.ecx;
+    let node = g.read::<u32>(r);
+    let parent = g.read::<u32>(r + 4);
+    crate::m0186::node_under(g, node, parent);
+    let a = g.read::<u32>(r + 8);
+    let b = g.read::<u32>(r + 0x10);
+    g.write::<u32>(node + 0x5c, a);
+    let gp = g.read::<u32>(w(0x45));
+    g.write::<u32>(node + 0x60, b);
+    g.write::<u32>(node + 0xf8, 0);
+    g.write::<u32>(node + 0xfc, 0);
+    g.write::<u32>(gp, b);
+    let table = g.read::<u32>(r + 0xc);
+    let mut p = crate::pushes::Pushes::default();
+    p.push(g.read::<u32>(table + 0x10));
+    let s = slot_target(g, w(0x69), 0xeb4 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let list = p.call(g, s, 0).eax;
+    let index = g.read::<u32>(r + 0x14);
+    let prog = g.read::<u32>(list.wrapping_add(index.wrapping_mul(4)));
+    p.push_all(&[0, 1, prog]);
+    crate::opu_parts::start_part(
+        g,
+        img,
+        img.rel32_target(f + 0x88),
+        node + 0x70,
+        0x1000,
+        prog,
+        1,
+    );
+    let index = g.read::<u32>(r + 0x14);
+    let table = g.read::<u32>(r + 0xc);
+    let row = index.wrapping_add(2).wrapping_shl(4).wrapping_add(table);
+    // the node is read again for this word; the stores below use the
+    // first read (a register)
+    let first = g.read::<u32>(r);
+    p.push_all(&[row, first + 0x1c]);
+    let s = slot_target(g, w(0xa0), 0x514 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    let c = g.read::<u32>(r + 0x18);
+    g.write::<u32>(node + 0x104, 0);
+    g.write::<u32>(node + 0xf0, 0);
+    g.write::<u32>(node + 0x108, c);
+    for off in [0x4c, 0x50, 0x54, 0x58] {
+        g.write::<u32>(node + off, 0x4580_0000);
+    }
+    Ret::eax(c)
+}
+
+/// [`part_record`] (235 bytes, 1 overlay).
+pub const PART_RECORD: Sig = Sig {
+    len: 235,
+    hash: 0x2900_8859_7ebf_9422,
+    calls: &[(0x88, crate::Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

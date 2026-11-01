@@ -139,3 +139,62 @@ pub const BEAM_PART: Sig = Sig {
     calls: &[(0x66, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// An object's start at an actor (0x10001a50, an overlay table entry,
+/// `(obj)`): program 2 started ([`start_part`](crate::part_draw::start_part));
+/// the first of the DLL's 14 actor slots (8 bytes each from operand
+/// `+0x4d`) with kind 1 and no model (`-1` without one) picks the point
+/// `P[i]` (16 bytes each, the table at `+0x72` for the array's first
+/// object, `+0x79` for the others) that slot 325 `(obj + 0x40, P[i])`
+/// copies; slots 2-5 turn the object by `(0, 0, -0x4000)`, 12 and 13 by
+/// `(0, 0x4718, 0x4718)`, others not; `+0x5c` 1, the scales 0.1276
+/// (`+0x6c` 1.0). Returns 1.
+pub fn start_at<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let k = obj.wrapping_sub(w(0x2b)).cast_signed() >> 7;
+    crate::part_draw::start_part(g, img, f, obj, [0x4, 0xb, 0x10, 0x1d, 0x43], 8, &[]);
+    let slots = w(0x4d);
+    let found = (0..14u32).find(|&i| {
+        let p = slots + 8 * i;
+        g.read::<u32>(p - 4) == 1 && g.read::<u32>(p) == 0
+    });
+    let i = found.unwrap_or(u32::MAX);
+    let tab = if k == 0 { w(0x72) } else { w(0x79) };
+    let t = slot_target(g, w(0x83), 325);
+    g.call(t, 0, &[obj + 0x40, i.wrapping_shl(4).wrapping_add(tab)]);
+    match i {
+        2..=5 => {
+            g.write::<u32>(obj + 0x58, 0xffff_c000);
+            g.write::<u32>(obj + 0x54, 0);
+        }
+        12 | 13 => {
+            g.write::<u32>(obj + 0x54, 0x4718);
+            g.write::<u32>(obj + 0x58, 0x4718);
+        }
+        _ => {
+            g.write::<u32>(obj + 0x58, 0);
+            g.write::<u32>(obj + 0x54, 0);
+        }
+    }
+    for (o, v) in [
+        (0x50u32, 0u32),
+        (0x5c, 1),
+        (0x60, 0x3e02_a8ca),
+        (0x64, 0x3e02_a8ca),
+        (0x68, 0x3e02_a8ca),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    Ret::eax(1)
+}
+
+/// [`start_at`] (267 bytes, 1 overlay).
+pub const START_AT: Sig = Sig {
+    len: 267,
+    hash: 0x355a_23e5_9c2e_7c71,
+    calls: &[(0x43, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

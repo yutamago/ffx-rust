@@ -26,10 +26,10 @@ worklist2.tsv next to the lists; an existing file is kept unless
 --replace) and the lists file is only read.
 
 The CRT is never ported: the functions of the CRT's mnemonic groups
-(magic_0481's CRT tail) and every function using the CRT's failure
-imports (`__report_gsfailure`, `__raise_securityfailure`: IsDebuggerPresent,
-UnhandledExceptionFilter, ...; the census cuts them as one 312-byte
-function) count as covered.
+(magic_0481's CRT tail, and magic_0267's stack probe at 0x10005c80) and
+every function using the CRT's failure imports (`__report_gsfailure`,
+`__raise_securityfailure`: IsDebuggerPresent, UnhandledExceptionFilter,
+...) count as covered.
 
 Order ("shared first"): every unit used by 2 or more DLLs and not covered,
 callees before callers (a unit's uncovered callees come earlier; a call
@@ -69,6 +69,9 @@ REPLAYS = {
     309: "battle-ifrit", 596: "battle-ifrit",
 }
 CRT_FROM = (481, 0x100033b8)  # magic_0481's CRT starts at __security_check_cookie
+# CRT functions outside that tail: magic_0267's stack probe (_chkstk /
+# _alloca_probe: the page-touching loop below esp)
+CRT_ALSO = [(267, 0x10005c80)]
 # __report_gsfailure / __raise_securityfailure and their kin
 CRT_IMPORTS = {"IsDebuggerPresent", "UnhandledExceptionFilter", "SetUnhandledExceptionFilter",
                "IsProcessorFeaturePresent", "TerminateProcess", "GetCurrentProcess",
@@ -192,6 +195,7 @@ def main():
             rows[int(d[6:10])].append((int(a, 16), int(size), h, ops))
     lists = read_lists(args.lists)
     crt_ops = {r[3] for r in rows[CRT_FROM[0]] if r[0] >= CRT_FROM[1]}
+    crt_ops |= {r[3] for d, a in CRT_ALSO for r in rows[d] if r[0] == a}
     jobs = [(d, fs, game / f"magicFiles/FFX/magic_{d:04}.dll", args.sig) for d, fs in sorted(rows.items())]
     info, cov = {}, {}
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:

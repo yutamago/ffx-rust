@@ -21,6 +21,9 @@ use magic_owna::{rec, recs, twin};
 
 const N: u16 = 573;
 
+/// The trap slot the node's children's vtable method answers through.
+const METHOD: u32 = 900;
+
 #[test]
 fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
@@ -128,6 +131,197 @@ fn inits() {
         };
         t.check(i7170, c, &[0x00a0_0001], Eax::Checked, |g, img, fr| {
             Ret::eax(m0573::init(g, img, fr))
+        });
+    }
+}
+
+/// 0x10002d60: the node refresh: the mode the node's already, a node
+/// with no children and with two (their method a trap), the model flag
+/// clear and set, the model and node with a parent and without.
+#[test]
+fn refresh() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2d60);
+    rec(&mut t, METHOD, 1, |m, a| {
+        let w1 = m.r32(a[0] + 4);
+        m.w32(SCRATCH + 0x2_0004, w1 & 0xff00);
+        0x900
+    });
+    let vt = SCRATCH + 0x600;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * METHOD);
+    recs(
+        &mut t,
+        &[
+            (275, 1),
+            (538, 2),
+            (213, 2),
+            (211, 2),
+            (35, 5),
+            (34, 2),
+            (547, 1),
+            (276, 2),
+            (219, 2),
+        ],
+    );
+    let cur = SCRATCH + 0x100;
+    let (node, model, parent) = (SCRATCH + 0x1000, SCRATCH + 0x1400, SCRATCH + 0x1800);
+    let kids = [SCRATCH + 0x1600, SCRATCH + 0x1680];
+    for (same, n, bit, with_parent) in [
+        (true, 0usize, 1u8, true),
+        (false, 0, 0, false),
+        (false, 2, 1, true),
+        (false, 2, 1, false),
+        (false, 0, 1, true),
+    ] {
+        t.write(node, &[0x2c; 0x100]);
+        t.write(model, &[0x3d; 0x100]);
+        t.write(parent, &[0x4e; 0x40]);
+        t.set_u8(node + 0x1a, if same { 0x37 } else { 0x15 });
+        let mut c = node;
+        for k in kids.iter().take(n).rev() {
+            t.set_u32(*k, vt);
+            t.set_u32(k + 8, c);
+            c = *k;
+        }
+        t.set_u32(node + 0x10, c);
+        t.set_u8(node + 0x24, bit | 0x10);
+        t.set_u32(node + 0x1c, model);
+        t.set_u32(model + 0x90, 1);
+        let p = if with_parent { parent } else { 0 };
+        for x in [node, model] {
+            t.set_u32(x + 0x14, p);
+            t.set_u32(x + 4, parent);
+            t.set_u32(x + 8, parent);
+        }
+        t.set_u32(cur, node);
+        // the cursor's mode byte (`+5`) the DLL's 0x37
+        t.set_u32(cur + 4, 0x5a5a_375a);
+        t.check(at, Call::this(cur), &[], Eax::Checked, |g, img, fr| {
+            m0573::refresh(g, img, fr)
+        });
+    }
+}
+
+/// 0x100072a0: the summon's motion task through its states (the motion
+/// done or not, the wait out or not), the count below and past 40 with
+/// the size above, at and below its floor.
+#[test]
+fn motion_task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x72a0);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 411, 1, move |m, _| m.r32(cell) & 1);
+    rec(&mut t, 228, 2, |_, a| 0x0228_0000 ^ a[1]);
+    recs(&mut t, &[(213, 2), (211, 2), (255, 2)]);
+    let tab = t.img.word(at + 0x6c);
+    for i in 0..20u32 {
+        t.set_u32(tab + 4 * i, 0x00b0 + i);
+    }
+    let (task, r, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x240,
+        SCRATCH + 0x280,
+    );
+    let o = SCRATCH + 0x1400;
+    let mut cases = Vec::new();
+    for s in [0u32, 1, 2, 5, 10, 11, 12, 13, 0x2710, 0x2711, 0x2712] {
+        for (bits, wait, n) in [(0u32, 5u32, 3u32), (1, 0, 0x28), (1, 0xffff_fff0, 0x50)] {
+            cases.push((s, bits, wait, n));
+        }
+    }
+    for (k, (state, bits, wait, n)) in cases.into_iter().enumerate() {
+        t.write(r, &[0x3c; 0x200]);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x1c, wait);
+        t.set_u32(r + 0x20, n);
+        t.set_u32(r + 0x24, k as u32 % 3);
+        t.set_u32(r + 0x2c, o);
+        // the floor apart from the object pointer next to it read as a float
+        t.set_u32(r + 0x28, 5.0f32.to_bits());
+        t.set_u32(r + 0x19c, [9.0f32, 5.25, 1.0, 5.0][k % 4].to_bits());
+        t.write(o, &[0x4d; 0x100]);
+        t.set_u32(o + 0x50, 0x00c0_0050);
+        t.set_u8(o + 0x90, 0x10 | (k as u8 & 1));
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.set_u32(cell, bits);
+        t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// 0x100074c0: the motion set-up: the size through slot 333 and slot
+/// 601, the kind 0xc9 and another, the node list empty and not.
+#[test]
+fn motion_setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x74c0);
+    let list = t.img.word(at + 0x5c);
+    let ring_last = t.img.word(at + 0x24);
+    let ring_flags = t.img.word(at + 0x42);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            m.w32(a[1 + i as usize], (3.5 + i as f32).to_bits());
+        }
+        0x262
+    });
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(cell))));
+    rec(&mut t, 601, 2, move |m, a| {
+        let v = m.r32(cell);
+        m.w32(a[1], v ^ 0x0040_0000);
+        0x601
+    });
+    rec(&mut t, 415, 1, move |m, _| m.r32(cell + 4));
+    recs(&mut t, &[(211, 2), (213, 2), (538, 2)]);
+    // the model state's slots: three coordinates and a scale in ST0, or
+    // slot 290 filling the vector
+    for s in [15u32, 16, 17, 277] {
+        rec(&mut t, s, 1, move |_, _| s);
+        t.stub_st0(s, move |_, _| 0.75 + f64::from(s));
+    }
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[1] + 4 * i, (5.5 + i as f32).to_bits());
+        }
+        0x290
+    });
+    let obj = SCRATCH + 0x1000;
+    let src = SCRATCH + 0x1400;
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (bit, size, kind, empty) in [
+        (1u8, 0.5f32, 0xc9u32, true),
+        (0, 3.25, 0x10, false),
+        (1, -2.0, 0xc8, false),
+    ] {
+        t.write(obj, &[0x5b; 0x300]);
+        t.write(src, &[0x2a; 0x100]);
+        // the handles next to each other distinct
+        for o in [0x50u32, 0x54, 0x58] {
+            t.set_u32(src + o, 0x00a1_0000 + o);
+        }
+        t.set_u8(src + 0x90, bit | 0x40);
+        t.set_u32(cell, size.to_bits());
+        t.set_u32(cell + 4, kind);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        let c = Call {
+            ecx: obj,
+            edx: src,
+            ..Call::default()
+        };
+        t.check(at, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0573::motion_setup(g, img, fr))
         });
     }
 }
