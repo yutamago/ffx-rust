@@ -2952,6 +2952,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model draw node", &s7_misc::MODEL_DRAW_NODE),
     ("look matrix", &s7_misc::LOOK_MATRIX),
     ("moving light node", &s7_misc::MOVING_LIGHT_NODE),
+    ("spark at a point", &s7_misc::SPARK_AT_POINT),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

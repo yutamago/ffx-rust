@@ -1550,3 +1550,82 @@ pub const NEAR_POINTS_FADE: Sig = Sig {
     calls: &[(0xe0, Callee::Sig(&COUNT_FADE)), (0xec, Callee::Any)],
     imports: &[],
 };
+
+/// A spark record started at a point (internal: `ecx` = the point `P`):
+/// nothing while bit 0 or 1 of `**G_F` is set (`*G_F` returned); else a
+/// record `R` from the pool ([`pool_take`](crate::sb_misc::pool_take);
+/// none: 0) gets u16 `+0x38 = -1`, `+0x3a = 0x200`, `+0x30 = *G_C +
+/// 0x28`'s word, `+0x34 = 1`, the position `(P.x + r(2), P.y, P.z +
+/// r(2), 1)` (`r` slot 314's random float, ST0), `+0x10 = r(0.1)`,
+/// `+0x14 = slot 404 (0.05) + K1`, `+0x18 = r(0.1)`, `+0x1c = r(pi)`, the
+/// step `(0, -0.01, 0, 1)`, `+0x4c = +0x50 = 0x20`, bytes `+0x67 = 0xa0`
+/// and `+0x6b = 0`, and `+0x3c = (r(0.2) + K2) K3`. Returns the last
+/// slot's `eax`.
+///
+/// `magic_0644` 0x100078c0 (378 bytes; 5 DLLs).
+pub fn spark_at_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let p = fr.ecx;
+    let flags = g.read::<u32>(w(0x5));
+    if g.read::<u8>(flags) & 3 != 0 {
+        return flags;
+    }
+    let r = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0x17));
+    if r == 0 {
+        return 0;
+    }
+    let c = g.read::<u32>(g.read::<u32>(w(0x27)).wrapping_add(0x28));
+    g.write::<u16>(r + 0x38, 0xffff);
+    g.write::<u16>(r + 0x3a, 0x200);
+    g.write::<u32>(r + 0x30, c);
+    g.write::<u32>(r + 0x34, 1);
+    // slot 314 or 404 with one float word: its ST0 as `f32`, and its `eax`
+    let rnd = |g: &mut G, t: u32, s: u32, x: f32| {
+        let o = slot(g, img, f, t, s, c, &[x.to_bits()]);
+        (crate::m0018::st0_f32(o.st0), o.eax)
+    };
+    let (a, _) = rnd(g, 0x3f, 314, 2.0);
+    let x = add(g.read::<f32>(p), a);
+    g.write::<f32>(r, x);
+    let y = g.read::<u32>(p + 4);
+    g.write::<u32>(r + 4, y);
+    let (b, _) = rnd(g, 0x7b, 314, 2.0);
+    let z = add(g.read::<f32>(p + 8), b);
+    g.write::<u32>(r + 0xc, 0x3f80_0000);
+    g.write::<f32>(r + 8, z);
+    let (v, _) = rnd(g, 0x95, 314, 0.1);
+    g.write::<f32>(r + 0x10, v);
+    let (v, _) = rnd(g, 0xb8, 404, 0.05);
+    g.write::<f32>(r + 0x14, add(v, k(g, 0xd7)));
+    let (v, _) = rnd(g, 0xdc, 314, 0.1);
+    g.write::<f32>(r + 0x18, v);
+    let (v, _) = rnd(g, 0xf8, 314, core::f32::consts::PI);
+    g.write::<f32>(r + 0x1c, v);
+    for (o, v) in [
+        (0x20u32, 0u32),
+        (0x24, 0xbc23_d70a),
+        (0x28, 0),
+        (0x2c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    let (v, eax) = rnd(g, 0x10f, 314, 0.2);
+    let v = add(v, k(g, 0x14a));
+    g.write::<u32>(r + 0x4c, 0x20);
+    g.write::<u32>(r + 0x50, 0x20);
+    g.write::<u8>(r + 0x67, 0xa0);
+    let v = mul(v, k(g, 0x167));
+    g.write::<u8>(r + 0x6b, 0);
+    g.write::<f32>(r + 0x3c, v);
+    eax
+}
+
+/// [`spark_at_point`] (the `rel32`: the pool's take).
+pub const SPARK_AT_POINT: Sig = Sig {
+    len: 378,
+    hash: 0x29b6_4b54_3365_c05a,
+    calls: &[(0x17, Callee::Sig(&crate::sb_misc::POOL_TAKE))],
+    imports: &[],
+};
