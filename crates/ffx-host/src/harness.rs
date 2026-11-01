@@ -31,6 +31,7 @@
 //! |---|---|
 //! | `ping`, `stats`, `frame` | the clock's frame; `stats` also counts presents, flips queued and run |
 //! | `wait`, `press`, `key`, `waitfor`, `shotwhen`, `holdfor`, `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events` | as the hook's, at the clock's boundary |
+//! | `devsave <n> [lockstep]` | as the hook's: developer save `n` through the original loader and the archive reader under `debugLoadForViewer` ([`crate::devsave`]) |
 //! | `read`, `readp`, `readabs`, `write`, `writep` | arena memory (a game address is an offset into the arena) |
 //! | `keys`, `key` | the `DirectInput` keyboard's state (`GetDeviceState`) |
 //! | `pad`, `press` | the buttons the clock's `Input_KeyHeld` wrapper answers for |
@@ -107,6 +108,8 @@ enum Job {
     Pin,
     /// `loadsave <save> [lockstep]`.
     LoadSave(String, bool),
+    /// `devsave <n> [lockstep]` ([`crate::devsave`]).
+    DevSave(i32, bool),
     /// Until the range matches or the limit frame.
     WaitFor(Range, Vec<u8>, Vec<u8>, u32),
     /// As `WaitFor`, then the image of that update; the first boundary it
@@ -263,6 +266,7 @@ pub fn register(t: &mut Table) {
         entry("Ch_CalcMiddle_Batch", Conv::Cdecl, 3, middle_job),
         &[0x55, 0x8b, 0xec, 0x8b, 0x4d, 0x10],
     );
+    crate::devsave::register(t);
 }
 
 /// Runs one character job with this thread's `rand()` seeded for it and
@@ -477,7 +481,7 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
             while let Some(mut job) = jobs.pop_front() {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
-                    Job::Call(..) | Job::Pin | Job::LoadSave(..) => true,
+                    Job::Call(..) | Job::Pin | Job::LoadSave(..) | Job::DevSave(..) => true,
                     Job::WaitFor(r, ref value, ref mask, limit) => {
                         frame >= limit || range_matches(e, r, value, mask)
                     }
@@ -522,6 +526,17 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
             Job::LoadSave(spec, lockstep) => {
                 let r = load_save(e, &spec);
                 crate::log::note(&format!("harness: loadsave {spec} at frame {frame}: {r:?}"));
+                if lockstep && r.is_ok() {
+                    LOCKSTEP_REQUEST.store(false, Ordering::Release);
+                    ALLOWED.store(frame, Ordering::Release);
+                    LOCKSTEP.store(true, Ordering::Release);
+                }
+                let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
+            }
+            Job::DevSave(n, lockstep) => {
+                let r = crate::devsave::load(e, n);
+                crate::log::note(&format!("harness: devsave {n} at frame {frame}: {r:?}"));
+                // as for loadsave: the map's load in lockstep from here
                 if lockstep && r.is_ok() {
                     LOCKSTEP_REQUEST.store(false, Ordering::Release);
                     ALLOWED.store(frame, Ordering::Release);
@@ -903,6 +918,20 @@ fn call(e: &mut Exec, address: u32, args: &[u32]) -> Result<u32, String> {
     e.call_cdecl(address, args).map_err(|e| e.to_string())
 }
 
+/// The title script's part around its Load menu once a save is picked
+/// (the hook's `loadsave::leave_title`): the title leaves as for a load
+/// (`loadsave`, `devsave`).
+pub(crate) fn leave_title(e: &mut Exec) -> Result<(), String> {
+    call(e, SET_CTRL0_FLAG_210, &[1])?;
+    call(e, ATEL_SET_EVENT_MODE, &[2])?;
+    native(e, NATIVE_MUSIC_FADE_OUT, &[60])?;
+    native(e, NATIVE_FADE_OUT, &[1])?;
+    native(e, NATIVE_01C2, &[])?;
+    native(e, NATIVE_SET_MAP_FADE_FRAMES, &[0])?;
+    native(e, NATIVE_SET_MAP_FADE_TYPE, &[0])?;
+    Ok(())
+}
+
 /// `loadsave <slot | path>` (the hook's `crate::loadsave`, docs/harness.md
 /// "Snapshots and replays"): what the title's Load menu runs once a save
 /// is picked, at the boundary.
@@ -965,13 +994,7 @@ fn load_save(e: &mut Exec, spec: &str) -> Result<String, String> {
     call(e, ATEL_CLEAR_FORCE_PLACE_ID, &[])?;
     call(e, TK_MENU_JUMP_TO_LOADED_SCENE, &[])?;
     call(e, SAVE_DATA_SET_SCREEN_STATE, &[0])?;
-    call(e, SET_CTRL0_FLAG_210, &[1])?;
-    call(e, ATEL_SET_EVENT_MODE, &[2])?;
-    native(e, NATIVE_MUSIC_FADE_OUT, &[60])?;
-    native(e, NATIVE_FADE_OUT, &[1])?;
-    native(e, NATIVE_01C2, &[])?;
-    native(e, NATIVE_SET_MAP_FADE_FRAMES, &[0])?;
-    native(e, NATIVE_SET_MAP_FADE_TYPE, &[0])?;
+    leave_title(e)?;
     // the jump needs the running event to hold control (ctrl byte 0 bit
     // 7): the title script does, from ctrl work 0
     let (old, forced) = {
@@ -1268,6 +1291,15 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             let lockstep = words.len() > 2 && words.last() == Some(&"lockstep");
             let spec = words[1..words.len() - usize::from(lockstep)].join(" ");
             Ok(on_game_thread(shared, Job::LoadSave(spec, lockstep)))
+        }
+        "devsave" => {
+            let n = arg(1)?
+                .parse::<i32>()
+                .map_err(|e| format!("developer save number: {e}"))?;
+            Ok(on_game_thread(
+                shared,
+                Job::DevSave(n, words.get(2) == Some(&"lockstep")),
+            ))
         }
         "shot" => {
             let path = words[1..].join(" ");

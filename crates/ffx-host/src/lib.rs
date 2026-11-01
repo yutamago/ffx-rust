@@ -30,6 +30,7 @@ pub mod com_methods;
 pub mod crypt;
 #[cfg(windows)]
 pub mod d3d11;
+pub mod devsave;
 pub mod dll;
 pub mod exec;
 pub mod files;
