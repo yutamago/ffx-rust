@@ -4841,3 +4841,177 @@ pub const HOST_OBJECTS_RUN: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// One of [`effect_group_init`]'s two node lists: `node` put last on the
+/// DLL's list (its `+0x1a` 0xff, its own child ring empty, parent `R`,
+/// the list's tail `*G_T` and first `*G_F` when the list was empty, the
+/// count `u16 *G_C` up by one) and given the vtable `vt`. `ops` are the
+/// operands of the original's inlined copy: `(R, R again, tail read,
+/// tail read again, R compared, first, count, tail written, vtable)`.
+fn list_node<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+    let w = |o: u32| op(img, f, o);
+    let [r, r2, tail, tail2, root, first, count, tail_w, vt] = ops;
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, w(r));
+    g.write::<u32>(node + 4, w(r2));
+    let t = g.read::<u32>(w(tail));
+    g.write::<u32>(node + 8, t);
+    let t = g.read::<u32>(w(tail2));
+    if t == w(root) {
+        g.write::<u32>(w(first), node);
+    } else {
+        g.write::<u32>(t.wrapping_add(4), node);
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    g.write::<u16>(w(count), n);
+    g.write::<u32>(w(tail_w), node);
+    g.write::<u32>(node, w(vt));
+}
+
+/// An effect object `X` set up with its nodes (internal: `ecx` = `X`,
+/// `edx` = the definition `D`, `xmm2` = a scale `s`; a frame aligned to
+/// 8, `P` = `((esp - 4) & !7) - 0x30` after the saved registers, the
+/// set-up record at `P+0x18`). By slot 390 `(D+0x50)` less 0x1071 (the
+/// DLL's byte table, or slot 534 `(D+0x50)` when the table does not
+/// pick the first kind) the object takes one of two copies of the same
+/// code, which differ in the callback `CB` and the record's count `k`
+/// (3 or 2): `X` joins the DLL's object ring (vtable, `CB`, the ring's
+/// last `*G_L`, the flag bit 0 of `*G_FL` cleared); its node `X+0x220`
+/// goes on the node list ([`list_node`]); slot 268 `(D+0x54, 0x11,
+/// X+0x23c)`, `X+0x248 = 1.0`; the node `X+0x278` the same; `X+0x294..`
+/// = `(1.0, 1.0, 1.0, s)`; the node `X+0x2d0` inserted under `X+0x220`
+/// ([`node_insert`](crate::nodes::node_insert)). Then the particle node
+/// `X+0x20` ([`particle_node`](crate::sb_nodes::particle_node), program
+/// index `k`), the effect node `X+0x57c`
+/// ([`effect_node`](crate::sb_nodes::effect_node)) with its vtable,
+/// `+0x2c |= 1`, `+0x30 = 0`; `X+0x23c..+0x244` each move by a random
+/// step (slot 307, ST0); `X+0x578 = D`, `X+0x568`/`+0x570`/`+0x574` 0,
+/// `X+0x56c = s`. Returns `D`.
+///
+/// `magic_0411` 0x10006d30 (1,244 bytes with its jump tables; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's set-up, store by store
+pub fn effect_group_init<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x15), s);
+    let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
+    let (x, d) = (fr.ecx, fr.edx);
+    let s = fr.xmm_f32(2);
+    let p = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    g.write::<u32>(p + 0x10, d);
+    g.write::<f32>(p + 0xc, s);
+    let id = g.read::<u32>(d + 0x50);
+    let k = g.call(t(g, 390), 0, &[id]).eax.wrapping_sub(0x1071);
+    // the switch: the byte table (in the code, read from the image) has
+    // 0 for the first copy at once; any other entry (or `k` past it) asks
+    // slot 534 first
+    let first_kind = (k <= 0x1b && img.word(w(0x3b).wrapping_add(k)) as u8 == 0)
+        || g.call(t(g, 534), 0, &[id]).eax != 0;
+    // the copy's operands: `+0x5f` on, or the same 0x171 bytes later
+    let b = if first_kind { 0 } else { 0x171 };
+    let v = |o: u32| w(o + b);
+    g.write::<u32>(x + 8, x);
+    g.write::<u32>(x + 4, x);
+    g.write::<u32>(x, v(0x67));
+    g.write::<u32>(x + 0x10, v(0x6e));
+    g.write::<u32>(x + 0x14, x);
+    let last = g.read::<u32>(v(0x76));
+    g.write::<u32>(x + 8, last);
+    g.write::<u32>(x + 4, v(0x80));
+    let last = g.read::<u32>(v(0x85));
+    let node = x + 0x220;
+    g.write::<u32>(last.wrapping_add(4), x);
+    let fl = g.read::<u32>(v(0x94)) & !1;
+    g.write::<u32>(v(0x94), fl);
+    g.write::<u32>(v(0x9b), x);
+    let ops = |o: [u32; 9]| o.map(|o| o + b);
+    list_node(
+        g,
+        img,
+        f,
+        node,
+        ops([0xae, 0xb5, 0xba, 0xc2, 0xc7, 0xcf, 0xdb, 0xeb, 0xf2]),
+    );
+    let h = g.read::<u32>(d + 0x54);
+    g.call(t(g, 268), 0, &[h, 0x11, x + 0x23c]);
+    g.write::<u32>(x + 0x248, 0x3f80_0000);
+    let second = x + 0x278;
+    let ops2 = ops([
+        0x127, 0x12e, 0x133, 0x13b, 0x140, 0x148, 0x154, 0x160, 0x166,
+    ]);
+    list_node(g, img, f, second, ops2);
+    let rec = p + 0x18;
+    g.write::<u32>(rec + 0x14, second);
+    for o in [0x294u32, 0x298, 0x29c] {
+        g.write::<u32>(x + o, 0x3f80_0000);
+    }
+    g.write::<f32>(x + 0x2a0, s);
+    let words = [x + 0x2d0, v(0x1a6), v(0x1ae), node, v(0x1ba)];
+    for (i, word) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    let insert = Frame {
+        at: img.rel32_target(f + b + 0x1bf),
+        esp: p.wrapping_sub(4),
+        ecx: rec,
+        ..Frame::default()
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    g.write::<u32>(rec + 0x14, v(0x1c7));
+    // the particle node and the effect node
+    let part = g.read::<u32>(w(0x33d));
+    g.write::<u32>(rec, x + 0x20);
+    g.write::<u32>(x + 0x20, w(0x34a));
+    let words = [w(0x356), x + 0x2d0, part, w(0x366)];
+    for (i, word) in (1u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x36b), rec);
+    let fx = x + 0x57c;
+    let words = [fx, w(0x381), w(0x389), node, w(0x395), w(0x39d)];
+    for (i, word) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    crate::sb_nodes::effect_node(g, img, img.rel32_target(f + 0x3a2), rec);
+    let n = g.read::<u32>(rec);
+    g.write::<u32>(n, w(0x3ac));
+    let fl = g.read::<u32>(fx + 0x2c) | 1;
+    g.write::<u32>(fx + 0x2c, fl);
+    g.write::<u32>(fx + 0x30, 0);
+    // the random steps
+    for (o, (k1, k2, k3)) in [
+        (0x23cu32, (0x3d6u32, 0x3e3u32, 0x3ebu32)),
+        (0x240, (0x415, 0x422, 0x42a)),
+        (0x244, (0x454, 0x47a, 0x48c)),
+    ] {
+        let r = sub(st0(g.call(t(g, 307), 0, &[])), g.read::<f32>(w(k1)));
+        let r = sub(mul(r, g.read::<f32>(w(k2))), g.read::<f32>(w(k3)));
+        if o == 0x244 {
+            g.write::<u32>(x + 0x578, d);
+            for z in [0x568u32, 0x570, 0x574] {
+                g.write::<u32>(x + z, 0);
+            }
+        }
+        let v = add(r, g.read::<f32>(x + o));
+        g.write::<f32>(x + o, v);
+    }
+    g.write::<f32>(x + 0x56c, s);
+    Ret::eax(d)
+}
+
+/// [`effect_group_init`] (the `rel32`s: the node insert in both copies,
+/// the particle node, the effect node).
+pub const EFFECT_GROUP_INIT: Sig = Sig {
+    len: 1244,
+    hash: 0x06fd_c15a_df90_fa75,
+    calls: &[
+        (0x1bf, Callee::Sig(&crate::nodes::INSERT)),
+        (0x330, Callee::Sig(&crate::nodes::INSERT)),
+        (0x36b, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x3a2, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};

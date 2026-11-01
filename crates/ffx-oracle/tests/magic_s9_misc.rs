@@ -3297,3 +3297,97 @@ fn host_objects_run() {
         }
     }
 }
+
+/// Row 218: the effect object set up in both DLLs, through each way the
+/// switch takes (the byte table's first kind, its other entry and past
+/// the table, each with slot 534 answering 0 and not), on node lists
+/// empty and not.
+#[test]
+fn effect_groups_init() {
+    use ffx_magic::Xmm;
+    for dll in [411u16, 674] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x6d30);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 390, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 534, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 268, 3, &[], |m, a, k| {
+            m.w32(a[2], (k as f32 * 0.5).to_bits());
+            0x268
+        });
+        log_calls(&mut t, 307, 0, &[], |_, _, k| k);
+        t.stub_st0(307, |m, _| f64::from(m.r32(LOG) % 5) * 0.25 + 0.125);
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 325, 2, &[1], |_, a, _| a[0]);
+        // the particle node's program table, part global and lock
+        let pn = t.img.rel32_target(f + 0x36b);
+        let table = SCRATCH + 0x400;
+        for i in 0..8 {
+            t.set_u32(table + 4 * i, 0x9000 + i);
+        }
+        log_calls(&mut t, 941, 1, &[], move |_, _, _| table);
+        log_calls(&mut t, 714, 5, &[], |_, a, _| 0x0714_0000 ^ a[2]);
+        let pg = op(&t, pn, 0x45);
+        t.set_u32(pg, SCRATCH + 0x7f10);
+        let wrapper = t.img.rel32_target(pn + 0x88);
+        let lock_g = op(&t, wrapper, 0x04);
+        t.set_u32(lock_g, SCRATCH + 0x7f00);
+        let part = w(&t, 0x33d);
+        t.set_u32(part, SCRATCH + 0x7a00);
+        t.set_u32(SCRATCH + 0x7a10, 0x7a10);
+        // the DLL's roots: the node list, the object ring, the particles'
+        let (root, ring, roots2) = (w(&t, 0xae), w(&t, 0x80), w(&t, 0x356));
+        let (x, d) = (SCRATCH + 0x1000, SCRATCH + 0x3000);
+        // (390's answer less 0x1071, 534's answer, the node list empty)
+        for (c, (k, yes, empty)) in [
+            (0u32, 0u32, true),
+            (1, 1, false),
+            (1, 0, true),
+            (0x30, 1, false),
+            (0x30, 0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let c = c as u32;
+            t.set_u32(LOG, 0);
+            t.set_u32(ans, 0x1071 + k);
+            t.set_u32(ans + 4, yes);
+            for r in [root, roots2] {
+                t.write(r, &[0; 0x20]);
+                t.set_u32(r + 0x10, r);
+                t.set_u32(r + 0xc, r);
+                t.set_u16(r + 0x18, 2);
+            }
+            if !empty {
+                let kid = SCRATCH + 0x2800;
+                t.write(kid, &[0x6b; 0x20]);
+                t.set_u32(root + 0x10, kid);
+                t.set_u32(root + 0xc, kid);
+            }
+            t.write(ring, &[0; 0x10]);
+            t.set_u32(ring + 8, ring);
+            t.set_u32(ring + 0xc, 0x0f + c);
+            t.write(x, &floats(0x600 / 4, c));
+            t.write(d, &varied(0x60, c));
+            t.set_u32(d + 0x50, 0x0050_0000 + c);
+            t.set_u32(d + 0x54, 0x0054_0000 + c);
+            scrub(&mut t);
+            let call = Call {
+                ecx: x,
+                edx: d,
+                ..Call::default()
+            }
+            .with_xmm(&[
+                Xmm::f32(9.0),
+                Xmm::f32(8.0),
+                Xmm::f32(1.5 + c as f32),
+                Xmm::f32(7.0),
+            ]);
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                s9_misc::effect_group_init(g, img, fr)
+            });
+        }
+    }
+}
