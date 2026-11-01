@@ -4920,3 +4920,158 @@ pub const STAGED_VOLLEY_TASK_B: Sig = Sig {
     ],
     ..STAGED_VOLLEY_TASK
 };
+
+/// A summon's aim records set up (internal: `ecx` = the object `O`; a
+/// /GS frame aligned to 8). Slots 588 `(i, O+0x1b8 + 0x10 i)` and 544
+/// `(i, O+0x1e8 + 0x10 i)` for `i` in 0..3, then 544 `(3, O+0x218)`. For
+/// each of three points `p = O+0x1b8 + 0x10 k` (from 0 to `-p`): the
+/// pitch `atan2(-p.y, sqrt(dz dz + dx dx))` and the yaw `K - atan2(dz,
+/// dx)` (brought back by `T` once above `H` or below `L`; the root `f64`,
+/// the arcs `_CIatan2`'s); the record `E = O+0x14 + 0x38 k` gets the
+/// angles `(pitch, yaw, 0, 0)` at `E-0x14`, `E-4 = E+0xc = pitch`, `E =
+/// E+0x10 = yaw` (their neighbours 0), `E+0x1c = 0`, `E+0x20 = 1`; the
+/// record `O+0x188 + 0x10 k` = `(pitch, yaw, 0, 0)`; `E+0x94..` and
+/// `E+0xb4..` the point `O+0x1e8 + 0x10 k`, `E+0xc4 = 0`, `E+0xc8 = 1`.
+/// The record `O+0x150..` the point `O+0x218` twice with `0, 1`. A node is
+/// taken from the DLL's free ring and appended to the task list with
+/// `+0x14 = O` and byte `+0x18 = 1` (none free: the original writes to
+/// address 0x14, not run); `O+0x228` = the node. Returns the old last
+/// node, or 0xffff on an empty list.
+///
+/// `magic_0348` 0x10002e70 (923 bytes, `ecx`; 4 DLLs).
+#[allow(clippy::too_many_lines)] // the original's records, one by one
+pub fn aim_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let o = fr.ecx;
+    let mut st = Pushes::default();
+    for i in 0..3u32 {
+        st.push_all(&[o + 0x1b8 + 0x10 * i, i]);
+        st.call(g, slot_target(g, w(0x2a), 588), o);
+        st.push_all(&[o + 0x1e8 + 0x10 * i, i]);
+        st.call(g, slot_target(g, w(0x38), 544), o);
+        st.pop(4);
+    }
+    st.push_all(&[o + 0x218, 3]);
+    st.call(g, slot_target(g, w(0x60), 544), o);
+    for j in 0..3u32 {
+        let p = o + 0x1bc + 0x10 * j;
+        let dy = sub(0.0, g.read::<f32>(p));
+        let dx = sub(0.0, g.read::<f32>(p - 4));
+        let dz = sub(0.0, g.read::<f32>(p + 4));
+        let s = add(mul(dz, dz), mul(dx, dx));
+        // `_libm_sse2_sqrt_precise`, then `_CIatan2` on x87
+        let h = f64::from(s).sqrt();
+        let pitch = g.atan2(f64::from(dy), h) as f32;
+        let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let mut y = sub(k(g, 0x15a), yaw);
+        if y > k(g, 0x169) {
+            y = sub(y, k(g, 0x173));
+        } else if k(g, 0x17d) > y {
+            y = add(y, k(g, 0x18a));
+        }
+        let e = o + 0x14 + 0x38 * j;
+        let b = o + 0x18c + 0x10 * j;
+        for (at, v) in [
+            (e - 0x14, pitch.to_bits()),
+            (e - 0x10, y.to_bits()),
+            (e - 0xc, 0),
+            (e - 8, 0),
+            (e, y.to_bits()),
+            (e + 4, 0),
+            (e + 8, 0),
+            (e - 4, pitch.to_bits()),
+            (e + 0xc, pitch.to_bits()),
+            (e + 0x10, y.to_bits()),
+            (e + 0x14, 0),
+            (e + 0x18, 0),
+            (b - 4, pitch.to_bits()),
+            (b, y.to_bits()),
+            (b + 4, 0),
+            (b + 8, 0),
+            (e + 0x1c, 0),
+            (e + 0x20, 1),
+        ] {
+            g.write::<u32>(at, v);
+        }
+        for c in [0u32, 4, 8, 0xc] {
+            let v = g.read::<u32>(b + 0x5c + c);
+            g.write::<u32>(e + 0x94 + c, v);
+        }
+        for c in [0u32, 4, 8, 0xc] {
+            let v = g.read::<u32>(e + 0x94 + c);
+            g.write::<u32>(e + 0xb4 + c, v);
+        }
+        g.write::<u32>(e + 0xc4, 0);
+        g.write::<u32>(e + 0xc8, 1);
+    }
+    let last = o + 0x150;
+    for c in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(o + 0x218 + c);
+        g.write::<u32>(last + c, v);
+    }
+    for c in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(last + c);
+        g.write::<u32>(last + 0x20 + c, v);
+    }
+    g.write::<u32>(last + 0x30, 0);
+    g.write::<u32>(last + 0x34, 1);
+    // the node off the free ring
+    let mut free = g.read::<u16>(w(0x28f));
+    let mut n = 0;
+    let mut eax = 0;
+    if free != 0 {
+        n = g.read::<u32>(w(0x2e6));
+        let (next, prev) = (g.read::<u32>(n), g.read::<u32>(n + 4));
+        g.write::<u32>(next.wrapping_add(4), prev);
+        let (prev, next) = (g.read::<u32>(n + 4), g.read::<u32>(n));
+        g.write::<u32>(prev, next);
+        if free > 1 {
+            let prev = g.read::<u32>(n + 4);
+            g.write::<u32>(w(0x303), prev);
+        } else {
+            g.write::<u32>(w(0x30b), 0);
+        }
+        eax = 0xffff;
+        free = free.wrapping_sub(1);
+        for off in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(n + off, 0);
+        }
+        g.write::<u32>(n + 8, n);
+        g.write::<u32>(n + 0x10, w(0x33c));
+        g.write::<u8>(n + 0x18, 0);
+        g.write::<u16>(w(0x347), free);
+    }
+    let any = g.read::<u32>(w(0x34d));
+    g.write::<u32>(n.wrapping_add(0x14), o);
+    g.write::<u8>(n.wrapping_add(0x18), 1);
+    g.write::<u32>(n.wrapping_add(4), 0);
+    if any == 0 {
+        g.write::<u32>(n, 0);
+        g.write::<u32>(w(0x376), n);
+    } else {
+        let tail = g.read::<u32>(w(0x363));
+        g.write::<u32>(n, tail);
+        g.write::<u32>(tail.wrapping_add(4), n);
+        eax = tail;
+    }
+    g.write::<u32>(n.wrapping_add(8), n);
+    g.write::<u32>(o + 0x228, n);
+    g.write::<u32>(w(0x38e), n);
+    eax
+}
+
+/// [`aim_records`] (the `rel32`s: the square root's and `_CIatan2`'s
+/// thunks and `__security_check_cookie`).
+pub const AIM_RECORDS: Sig = Sig {
+    len: 923,
+    hash: 0x680c_111e_7949_5cde,
+    calls: &[
+        (0xf6, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x109, Callee::Import("_CIatan2")),
+        (0x148, Callee::Import("_CIatan2")),
+        (0x393, Callee::Any),
+    ],
+    imports: &[],
+};

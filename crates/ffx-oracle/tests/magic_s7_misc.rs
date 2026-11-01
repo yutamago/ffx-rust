@@ -1121,6 +1121,9 @@ fn landing_puffs() {
             (1.5, 2.0, 3.0, -0.0, 2),
             (1.5, 2.0, 3.0, 0.75, 0),
             (-2.5, 0.0, 7.0, -3.0, 3),
+            // on the box's edges: `x` at its low bound, `z` at its bound
+            (-10.0, 1.0, 3.0, 0.5, 0),
+            (1.0, 1.0, -4.0, 0.5, 0),
             (2.0, 4.0, 1.0, f32::NAN, 1),
         ]
         .into_iter()
@@ -1310,6 +1313,11 @@ fn summon_script_frame_in(dll: u16, rva: u32) {
     // the block's words around the state (an operand)
     let st = b + w(&t, 0x44);
     let s = w(&t, 0x59);
+    // the globals the frame clears or copies, seeded
+    for o in [0x15u32, 0x1f, 0x34, 0x39, 0x3e, 0xa2] {
+        t.write(w(&t, o), &varied(4, o));
+    }
+    t.write(w(&t, 0xf), &varied(0x30, 7));
     let node = SCRATCH + 0x400;
     // the records' scripts (the DLL's table of them)
     let scripts = w(&t, 0xee);
@@ -1506,7 +1514,9 @@ fn near_points_fades() {
                 // x - 0.5: 0.25 (near), 3.0 (NaN), 2.5 (far), -0.75
                 let x = [0.75f32, 3.5, 3.0, -0.25][i as usize];
                 t.set_u32(points - 8 + 0x10 * i, x.to_bits());
-                t.set_u32(points - 4 + 0x10 * i, (i as f32).to_bits());
+                // `y` -0.0 for the first point (`y - 0` keeps its sign)
+                let y = if i == 0 { -0.0f32 } else { i as f32 };
+                t.set_u32(points - 4 + 0x10 * i, y.to_bits());
                 t.set_u32(points + 0x10 * i, (1.0 - i as f32).to_bits());
                 t.set_u32(points + 4 + 0x10 * i, 0.5f32.to_bits());
                 t.set_u32(flags + 4 * i, 0x0f0f_0000 + i);
@@ -3799,5 +3809,65 @@ fn staged_volley_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x700, &varied(0x80, k));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// Row 334: the aim records of the four DLLs: points in each quarter
+/// (the yaw past both bounds), the task list empty and not, one and
+/// several nodes free.
+#[test]
+fn aim_records() {
+    for (dll, rva) in [
+        (348u16, 0x2e70u32),
+        (350, 0x34b0),
+        (353, 0x4f40),
+        (473, 0x3e90),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        for s in [588u32, 544] {
+            log_calls(&mut t, s, log, 2, None, move |m, a, k| {
+                for i in 0..4 {
+                    m.w32(a[1] + 4 * i, ((s + k + i) as f32 * 0.25 - 4.0).to_bits());
+                }
+                s
+            });
+        }
+        for (o, x) in [
+            (0x15au32, 0.0f32),
+            (0x169, 1.0),
+            (0x173, 2.5),
+            (0x17d, -1.0),
+            (0x18a, 2.5),
+        ] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let o = SCRATCH + 0x1000;
+        let node = |i: u32| SCRATCH + 0x400 + 0x40 * i;
+        for (k, (free, listed)) in [(1u16, false), (3, true), (2, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(o, &varied(0x240, k));
+            t.write(node(0) - 0x40, &varied(0x140, k + 1));
+            t.set_u32(node(0), node(2));
+            t.set_u32(node(0) + 4, node(1));
+            t.set_u16(w(&t, 0x28f), free);
+            t.set_u32(w(&t, 0x2e6), node(0));
+            t.set_u32(w(&t, 0x34d), u32::from(listed));
+            t.set_u32(w(&t, 0x363), node(3));
+            scrub(&mut t);
+            let c = Call {
+                ecx: o,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::aim_records(g, img, fr))
+            });
+        }
     }
 }

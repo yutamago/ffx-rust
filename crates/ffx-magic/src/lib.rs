@@ -3298,6 +3298,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("lit colour node", &s7_misc::LIT_COLOUR_NODE),
     ("emitter set-up", &s7_misc::EMITTER_SETUP),
     ("reel step", &s7_misc::REEL_STEP),
+    ("aim records", &s7_misc::AIM_RECORDS),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",
