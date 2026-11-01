@@ -2785,6 +2785,11 @@ ports! {
     "m0300 bone setup" => m0300::BONE_SETUP, m0300::bone_setup;
     "m0300 offset setup" => m0300::OFFSET_SETUP, m0300::offset_setup;
     "m0415 model setup" => m0415::MODEL_SETUP, m0415::model_setup;
+    "m0351 part restart" => m0351::PART_RESTART, m0351::part_restart;
+    "m0351 part register" => m0351::PART_REGISTER, m0351::part_register;
+    "m0370 part place" => m0370::PART_PLACE, m0370::part_place;
+    "m0430 three start" => m0430::THREE_START, m0430::three_start;
+    "m0434 main restart" => m0434::MAIN_RESTART, m0434::main_restart;
     // magic small-lo: end of ports
 }
 

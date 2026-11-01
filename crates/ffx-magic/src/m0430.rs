@@ -206,3 +206,66 @@ pub const SCALE_E3C: Sig = Sig {
     calls: &[(0x4e, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX))],
     imports: &[],
 };
+
+/// Starts three objects (0x100024a0, a table entry, no arguments; the
+/// block `S = *G_S`, operand `+0x0c`;
+/// [`start_object_anim`](crate::s4_misc::start_object_anim) each): `O =
+/// S + 0x4c0` (scale the float at `+0x04`, index 4, value 0) with `O +
+/// 0xd0..0xdc` = `S + 0xcc4..`, `O + 0xc4` = `S + 0xeb4` and `O + 0xd4`
+/// less `K` (`+0x68`); `S + 0x390` (scale `+0x2e`, index 3, value 0x3a)
+/// with `+0x104` the immediate `+0xa3` and `+0xc4` = `S + 0xeb4`; `S +
+/// 0x260` (scale `+0x96`, index 2, value 0x3a) likewise (`+0xc8`).
+/// Returns `S + 0xeb4`'s word.
+pub fn three_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0xc));
+    let o = s + 0x4c0;
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x20), o, k(g, 0x4), 4, 0);
+    for i in 0..4u32 {
+        let v = g.read::<u32>(s + 0xcc4 + 4 * i);
+        g.write::<u32>(o + 0xd0 + 4 * i, v);
+    }
+    let y = crate::sb_sse::sub(g.read::<f32>(o + 0xd4), k(g, 0x68));
+    let v = g.read::<u32>(s + 0xeb4);
+    g.write::<u32>(o + 0xc4, v);
+    g.write::<f32>(o + 0xd4, y);
+    crate::s4_misc::start_object_anim(
+        g,
+        img,
+        img.rel32_target(f + 0x8e),
+        s + 0x390,
+        k(g, 0x2e),
+        3,
+        0x3a,
+    );
+    g.write::<u32>(s + 0x494, w(0xa3));
+    let v = g.read::<u32>(s + 0xeb4);
+    g.write::<u32>(s + 0x454, v);
+    crate::s4_misc::start_object_anim(
+        g,
+        img,
+        img.rel32_target(f + 0xbe),
+        s + 0x260,
+        k(g, 0x96),
+        2,
+        0x3a,
+    );
+    g.write::<u32>(s + 0x364, w(0xc8));
+    let v = g.read::<u32>(s + 0xeb4);
+    g.write::<u32>(s + 0x324, v);
+    Ret::eax(v)
+}
+
+/// [`three_start`] (222 bytes, 1 overlay).
+pub const THREE_START: Sig = Sig {
+    len: 222,
+    hash: 0xc1de_57b1_60ac_8e67,
+    calls: &[
+        (0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x8e, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0xbe, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    ],
+    imports: &[],
+};

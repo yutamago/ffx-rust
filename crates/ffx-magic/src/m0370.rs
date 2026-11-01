@@ -236,3 +236,61 @@ pub const PART_START: Sig = Sig {
     calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// The effect's part placed at a bone and registered (0x10001930, a
+/// table entry, no arguments): `*G_P` (`+0x01`) the immediate `+0x0e`;
+/// slot 723 `(*G_A)` (`+0x08`), slot 724 `(*G_B)` (`+0x26`), slot 237
+/// `(*G_M, 11, 0, V)` (`+0x48`; `V` the immediate `+0x38`); the point
+/// `V.xyz` copied to the part's (operands `+0x5f`, `+0x6f`, `+0x7f`);
+/// slot 258 `(X)` (`+0x8a`), slot 231 `(*G_C, *G_B, *G_D)` (`+0xa9`,
+/// `+0x9d`, `+0x92`), slot 230 `(*G_E, *G_C)` (`+0xbc`, `+0xb1`); `*G_P`
+/// the immediate again; slot 712 `(X, 0x30)` with `**G_LOCK` (`+0xd6`) 1
+/// around it (each call over the earlier words). Returns 1 when slot 712
+/// answers 0, else 0.
+pub fn part_place<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let mut s = crate::pushes::Pushes::default();
+    s.push(rd(g, 0x8));
+    g.write::<u32>(rd(g, 0x1), w(0xe));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x13), 723), fr.ecx);
+    s.push(rd(g, 0x26));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x20), 724), fr.ecx);
+    s.push_all(&[w(0x38), 0, 0xb, rd(g, 0x48)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x33), 237), fr.ecx);
+    for (k, at) in (0u32..).zip([0x5f, 0x6f, 0x7f]) {
+        let v = g.read::<u32>(w(0x52) + 4 * k);
+        g.write::<u32>(w(at), v);
+    }
+    s.push(w(0x8a));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x57), 258), fr.ecx);
+    s.push_all(&[rd(g, 0x92), rd(g, 0x9d), rd(g, 0xa9)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x97), 231), fr.ecx);
+    s.push_all(&[rd(g, 0xb1), rd(g, 0xbc)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xb6), 230), fr.ecx);
+    s.push(0x30);
+    g.write::<u32>(rd(g, 0xc9), w(0xd1));
+    s.push(w(0xdb));
+    let lock = rd(g, 0xd6);
+    let old = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = s.call(g, slot_target(g, w(0xe8), 712), fr.ecx).eax;
+    g.write::<u32>(rd(g, 0xf6), old);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_place`] (266 bytes, 1 overlay).
+pub const PART_PLACE: Sig = Sig {
+    len: 266,
+    hash: 0x7070_457a_d2b2_e25a,
+    calls: &[],
+    imports: &[],
+};
