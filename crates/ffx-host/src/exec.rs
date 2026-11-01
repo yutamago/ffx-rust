@@ -1155,13 +1155,17 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
+        let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
         let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
+            self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
-                self.run_port_from_rust(entry, args)?
+                self.run_port_from_rust(entry, args)
             } else {
-                self.run_port(entry, args)
+                Ok(self.run_port(entry, args))
             };
+            self.spot.leave();
+            let ret = ret?;
             if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1173,7 +1177,12 @@ impl Exec {
                 .imports
                 .bound(i)
                 .is_some_and(|b| b.name.ends_with("!RaiseException"));
-            if raise {
+            self.spot.enter(
+                spot::Kind::Import,
+                u32::try_from(i).unwrap_or(u32::MAX),
+                esp,
+            );
+            let r = if raise {
                 // the dispatch runs in the executor's loop
                 self.call_unicorn(addr, conv, args)
             } else if args.slots == 0 && !args.stack.is_empty() {
@@ -1185,9 +1194,13 @@ impl Exec {
                     .and_then(|r| r)
             } else {
                 self.run_import(i, args)
-            }
+            };
+            self.spot.leave();
+            r
         } else if let Some(t) = self.shared.trap(addr) {
+            self.spot.enter(spot::Kind::Trap, addr, esp);
             let ret = (t.run)(self, t.tag, args);
+            self.spot.leave();
             if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1219,11 +1232,15 @@ impl Exec {
     pub fn call_original(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         if let Some(entry) = self.shared.table.wrapped_port(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
+            let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
+            self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
-                self.run_port_from_rust(entry, args)?
+                self.run_port_from_rust(entry, args)
             } else {
-                self.run_port(entry, args)
+                Ok(self.run_port(entry, args))
             };
+            self.spot.leave();
+            let ret = ret?;
             return if self.halted() {
                 Err(Error::Stopped)
             } else {
