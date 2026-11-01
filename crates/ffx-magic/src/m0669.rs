@@ -204,3 +204,107 @@ pub const FRAME_AT: Sig = Sig {
     calls: &[(0xff, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// A spark record taken and scattered around a point (0x100011b0 and
+/// 0x10001400, cdecl `(point)`): a record ([`crate::s4_small::record_take`],
+/// the resource `*G_RES`; none: returns 0) gets `+0x28`, `+0x24` 32 and
+/// `+0x2c` 2; `+0x4..+0xc` the point's `x, y, z` each moved by `((r / R -
+/// H) * A) * B` (`r` slot 324's low 15 bits), `+0x14..+0x1c` `((r / R -
+/// H) * A) * H`, `+0x58` slot 403 `(r / R * S)` (ST0 as `f32`; the word
+/// on the stack) and `+0x54` `r / R * T + U`; the first copy also sets
+/// `+0x5c` 0xff and `+0x60`, `+0x64` 32. Returns the last draw's low 15
+/// bits.
+pub fn spark_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spark_record_with(g, img, fr, true)
+}
+
+/// [`spark_record`] without the three last stores (0x10001400).
+pub fn spark_record_short<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spark_record_with(g, img, fr, false)
+}
+
+/// The two copies' body (`full`: 0x100011b0's tail).
+fn spark_record_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, full: bool) -> Ret {
+    use crate::sb_sse::{cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let res = g.read::<u32>(w(0x06));
+    // push ebp; push ecx; push edi; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x0c),
+        esp: fr.esp.wrapping_sub(0x10),
+        edx: res,
+        ..Frame::default()
+    };
+    let rec = crate::s4_small::record_take(g, img, &callee).eax;
+    if rec == 0 {
+        return Ret::eax(0);
+    }
+    g.write::<u32>(rec + 0x28, w(0x23));
+    g.write::<u32>(rec + 0x24, w(0x2a));
+    g.write::<u32>(rec + 0x2c, w(0x31));
+    let draw = |g: &mut G, table: u32| {
+        let t = slot_target(g, w(table), 324);
+        // call width: 0
+        g.call(t, 0, &[]).eax & 0x7fff
+    };
+    let point = fr.arg(g, 0);
+    for (i, (table, ops)) in (0u32..).zip([
+        (0x1cu32, [0x51u32, 0x5e, 0x66, 0x6e]),
+        (0x56, [0x98, 0xa0, 0xa8, 0xb0]),
+        (0x90, [0xdb, 0xe3, 0xeb, 0xf3]),
+    ]) {
+        let r = draw(g, table);
+        let d = div(cvt(r), k(g, ops[0]));
+        let d = mul(mul(sub(d, k(g, ops[1])), k(g, ops[2])), k(g, ops[3]));
+        let v = add(d, g.read::<f32>(point + 4 * i));
+        g.write::<f32>(rec + 4 + 4 * i, v);
+    }
+    for (i, (table, ops)) in (0u32..).zip([
+        (0xd3u32, [0x11eu32, 0x126, 0x12e, 0x136]),
+        (0x116, [0x15c, 0x164, 0x16c, 0x174]),
+        (0x154, [0x19a, 0x1a2, 0x1aa, 0x1b2]),
+    ]) {
+        let r = draw(g, table);
+        let d = div(cvt(r), k(g, ops[0]));
+        let d = mul(mul(sub(d, k(g, ops[1])), k(g, ops[2])), k(g, ops[3]));
+        g.write::<f32>(rec + 0x14 + 4 * i, d);
+    }
+    let r = draw(g, 0x192);
+    let x = mul(div(cvt(r), k(g, 0x1d3)), k(g, 0x1db));
+    let t = slot_target(g, w(0x1e0), 403);
+    // call width: 1
+    let out = g.call(t, 0, &[x.to_bits()]);
+    g.write::<f32>(rec + 0x58, crate::ob_model::st0_f32(out.st0));
+    let r = draw(g, 0x1f3);
+    let (d, m, a) = if full {
+        (0x21c, 0x22b, 0x23b)
+    } else {
+        (0x216, 0x21e, 0x226)
+    };
+    if full {
+        g.write::<u32>(rec + 0x5c, 0xff);
+        g.write::<u32>(rec + 0x60, 0x20);
+        g.write::<u32>(rec + 0x64, 0x20);
+    }
+    let v = add(mul(div(cvt(r), k(g, d)), k(g, m)), k(g, a));
+    g.write::<f32>(rec + 0x54, v);
+    Ret::eax(r)
+}
+
+/// [`spark_record`] (585 bytes, 1 overlay).
+pub const SPARK_RECORD: Sig = Sig {
+    len: 585,
+    hash: 0x0a5e_cd8f_3a12_1c22,
+    calls: &[(0x0c, Callee::Sig(&crate::s4_small::RECORD_TAKE))],
+    imports: &[],
+};
+
+/// [`spark_record_short`] (564 bytes, 1 overlay).
+pub const SPARK_RECORD_SHORT: Sig = Sig {
+    len: 564,
+    hash: 0xd963_dec3_f61a_0634,
+    calls: &[(0x0c, Callee::Sig(&crate::s4_small::RECORD_TAKE))],
+    imports: &[],
+};

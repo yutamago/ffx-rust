@@ -208,3 +208,154 @@ pub const MOVER: Sig = Sig {
     calls: &[(0xd0, Callee::Any)],
     imports: &[],
 };
+
+/// The caster's fade task (0x10006f50, a task callback, cdecl `(task)`,
+/// `S = task[1]`; the argument's word reused as scratch): two random
+/// offsets `(K2 - (slot 307 - K1)) * K3` added to `S+0x28`/`+0x2c` into
+/// `S+0x4c`/`+0x54`; then by the step `S+0x18`: 0 starts the wait 30; 1
+/// waits, then step 20; 20 sets the fade (`+0x24` 0.005, `+0x20` 0.05,
+/// the wait 180) and becomes 21; 21 waits, then fades the character
+/// ([`crate::l3_common::chr_fade`] on `[S[0x1084], 0, 0x40]` at `ebp -
+/// 0xc`), `+0x107c` 1, the wait 64 and step 22; 22 waits, then step
+/// 0x2710: the task's node leaves its ring and the step is 0x4e20. The
+/// wait `S+0x1c` drops by one on every way out. Returns the `eax` the
+/// original leaves.
+pub fn caster_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    caster_fade_with(g, img, fr, false)
+}
+
+/// [`caster_fade`] with the alpha ramp (0x100072c0): the record at
+/// `+0x1058` and the flag at `+0x1050`; 21 waiting and 22 also step the
+/// ramp (`+0x20 += +0x24`, `+0x50 +=` it, the halfword-sized counter
+/// `+0x80 += 0x20`) before their wait, and 21's fade goes on to it.
+pub fn caster_fade_ramp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    caster_fade_with(g, img, fr, true)
+}
+
+/// The two fades' body (`ramp`: the 0x100072c0 copy).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+fn caster_fade_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, ramp: bool) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 4);
+    let a = fr.esp + 4;
+    let mut eax = 0;
+    for (table, ops, src, dst) in [
+        (0x07u32, [0x27u32, 0x2f, 0x40], 0x28u32, 0x4cu32),
+        (0x34, [0x62, 0x6a, 0x76], 0x2c, 0x54),
+    ] {
+        let t = slot_target(g, w(table), 307);
+        // call width: 0
+        let out = g.call(t, 0, &[]);
+        eax = out.eax;
+        let r = crate::ob_model::st0_f32(out.st0);
+        g.write::<f32>(a, r);
+        let x = sub(r, k(g, ops[0]));
+        let v = mul(sub(k(g, ops[1]), x), k(g, ops[2]));
+        let v = add(v, g.read::<f32>(s + src));
+        g.write::<f32>(s + dst, v);
+    }
+    // the ramp's step (0x100072c0), then the wait: true when it runs out
+    let ramp_step = |g: &mut G| -> bool {
+        let r = add(g.read::<f32>(s + 0x24), g.read::<f32>(s + 0x20));
+        g.write::<f32>(s + 0x20, r);
+        let c = g.read::<u32>(s + 0x80).wrapping_add(0x20);
+        g.write::<u32>(s + 0x80, c);
+        let v = add(g.read::<f32>(s + 0x50), r);
+        g.write::<f32>(s + 0x50, v);
+        g.read::<i32>(s + 0x1c) <= 0
+    };
+    let (rec_op, flag_op, call) = if ramp {
+        (0xccu32, 0xeeu32, 0xe5u32)
+    } else {
+        (0xd0, 0xf2, 0xe9)
+    };
+    loop {
+        let step = g.read::<u32>(s + 0x18);
+        let wait = g.read::<i32>(s + 0x1c);
+        if step > 0x15 {
+            if step == 0x16 {
+                if ramp {
+                    if !ramp_step(g) {
+                        break;
+                    }
+                } else if wait > 0 {
+                    break;
+                }
+                g.write::<u32>(s + 0x18, 0x2710);
+                continue;
+            }
+            if step == 0x2710 {
+                eax = crate::r12h_volley::unring(g, g.read::<u32>(task));
+                g.write::<u32>(s + 0x18, 0x4e20);
+            }
+            break;
+        }
+        if step != 0x15 {
+            match step {
+                0 => {
+                    g.write::<u32>(s + 0x18, 1);
+                    g.write::<u32>(s + 0x1c, 0x1d);
+                    return Ret::eax(0);
+                }
+                1 => {
+                    eax = 0;
+                    if wait > 0 {
+                        break;
+                    }
+                    g.write::<u32>(s + 0x18, 0x14);
+                    continue;
+                }
+                0x14 => {
+                    eax = 0x15;
+                    g.write::<u32>(s + 0x24, 0x3ba3_d70a);
+                    g.write::<u32>(s + 0x20, 0x3d4c_cccd);
+                    g.write::<u32>(s + 0x1c, 0xb4);
+                    g.write::<u32>(s + 0x18, 0x15);
+                }
+                _ => {
+                    eax = step.wrapping_sub(0x14);
+                    break;
+                }
+            }
+        }
+        if g.read::<i32>(s + 0x1c) <= 0 {
+            let rec = fr.esp.wrapping_sub(0x10);
+            let chr = g.read::<u32>(s.wrapping_add(w(rec_op)));
+            for (i, v) in (0u32..).zip([chr, 0, 0x40]) {
+                g.write::<u32>(rec + 4 * i, v);
+            }
+            eax = crate::l3_common::chr_fade(g, img, img.rel32_target(f + call), rec);
+            g.write::<u32>(s + 0x18, 0x16);
+            g.write::<u32>(s.wrapping_add(w(flag_op)), 1);
+            g.write::<u32>(s + 0x1c, 0x40);
+        }
+        if ramp && ramp_step(g) {
+            g.write::<u32>(s + 0x18, 0x2710);
+            continue;
+        }
+        break;
+    }
+    let wait = g.read::<u32>(s + 0x1c).wrapping_sub(1);
+    g.write::<u32>(s + 0x1c, wait);
+    Ret::eax(eax)
+}
+
+/// [`caster_fade`] (369 bytes, 1 overlay).
+pub const CASTER_FADE: Sig = Sig {
+    len: 369,
+    hash: 0x25be_f89c_276a_46e2,
+    calls: &[(0xe9, Callee::Sig(&crate::l3_common::CHR_FADE))],
+    imports: &[],
+};
+
+/// [`caster_fade_ramp`] (405 bytes, 1 overlay).
+pub const CASTER_FADE_RAMP: Sig = Sig {
+    len: 405,
+    hash: 0xbebc_5fd0_45f2_5dc8,
+    calls: &[(0xe5, Callee::Sig(&crate::l3_common::CHR_FADE))],
+    imports: &[],
+};

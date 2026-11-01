@@ -812,7 +812,6 @@ fn task_0476() {
 /// The look-matrix draws' slots (the matrix callee's and the tail's).
 fn look_stubs(t: &mut Twin) {
     for (s, n) in [
-        (230u32, 2usize),
         (231, 3),
         (714, 5),
         (229, 3),
@@ -825,9 +824,18 @@ fn look_stubs(t: &mut Twin) {
         rec(t, s, n, move |_, a| (0x0abc_0000 | s) ^ a[0]);
     }
     rec(t, 941, 2, |_, _| SCRATCH + 0x400);
+    rec(t, 230, 2, |m, a| {
+        let mut h = 0u32;
+        for i in 0..16 {
+            h = h.rotate_left(5) ^ m.r32(a[1] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x83c, h);
+        0x0230_0000 ^ a[0]
+    });
     rec(t, 712, 2, |m, _| {
         m.w32(SCRATCH + 0x830, m.r32(SCRATCH + 0x800));
-        // (the item word moved on, as the game's part code may)
+        // the item word it sees, then moved on (as the game's part code may)
+        m.w32(SCRATCH + 0x838, m.r32(SCRATCH + 0x810));
         m.w32(SCRATCH + 0x810, 0x0712_0712);
         m.r32(SCRATCH + 0x10)
     });

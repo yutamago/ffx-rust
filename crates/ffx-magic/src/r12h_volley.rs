@@ -10,7 +10,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// The task's node leaves its ring (`node.prev.next = node.next`,
 /// `node.next.prev = node.prev`, then it links to itself). Returns the
 /// old `prev` word (`+4`), which the original leaves in `eax`.
-fn unring<G: Game>(g: &mut G, node: u32) -> u32 {
+pub(crate) fn unring<G: Game>(g: &mut G, node: u32) -> u32 {
     let prev = g.read::<u32>(node + 4);
     let next = g.read::<u32>(node + 8);
     g.write::<u32>(prev + 8, next);
