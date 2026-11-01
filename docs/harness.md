@@ -24,6 +24,7 @@ tools/harness.py quit
 | Events | `Phyre_PSerialization_PStreamFileWin32_openFile` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `MsRandMize` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
 | Job seeds | the `push <job>` of `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b51`) and `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44ba4`) | The cloth's wind (`Sg_ClothStep` `0x00822de0`), the mouths (`Ch_Mouth`) and the texture animations, eyes included (`chr_texanim_main` `0x0077c8d0`, from `Ch_CalcMiddle_Batch` `0x00833530`), draw from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), in jobs that run on whichever JobWorker is free, so they differed between runs (the cloth in every draw capture). The harness queues its own jobs, which seed `rand` for the job from its kind, its first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, run the game's job and give the worker its seed back (original code and Rust alike; `harness.rs` `seeded_job`) |
+| Cloth order | `Renderer_PresentFlip` (counted when its original returns) and the seeded cloth job | In lockstep a cloth job waits (at most 2 s, logged) until every flip queued before it has been presented, so the render thread has staged the previous update's cloth vertices (`ClothInstancingDynamicMesh_stageStreams_006e2000`) before this update's submit (`ClothInstancingDynamicMesh_submit_006e28f0`) checks the slot's flag; without it a late stage left a slot one update behind (Tidus's hood, `docs/host.md` "The cloth race"). `FFX_HARNESS_CLOTH_ORDER=0` turns it off; `stats` counts `cloth_waits` |
 | Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default. On the virtual clock (`--virtual-clock`) the clock starts at 2^20 s (`VIRTUAL_START`, not the wall clock's FILETIME reading of about 1.34e10 s, whose f64 rounding differed in every run) and the `Sleep` moves it to the next frame's time exactly (`g_AppStartTime` + `g_FrameLimiterLast` + one interval, plus 1e-9 s) instead of the whole ms the limiter chops it to, so every frame is one interval long and time differences repeat (`docs/drawdiff.md`, "Noise in cdsp0000") |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them, with the sandbox's own `GameSetting.ini` in place of the user's ("Sandbox settings" below) |
 | Loader turn | `AsyncLoadManager_threadMain_00691360` (`0x00691360`), wrapped; `Phyre_PMutex_lockInner_00431850` (`0x00431850`): its port asks the turn first, or a wrapper does around the original when the port is off | In lockstep the asset loader takes the render lock only in a turn at each frame boundary, until its requests are done, instead of in the real-time gaps between the render thread's holds, so a load takes the same number of frames whatever the update's real time ("Load pacing", `loader_turn.rs`) |
@@ -1367,8 +1368,12 @@ event. The sections below give the evidence.
 - **Rin's eyes:** 4-5 px at x 661..676 on event-agency-1, menu-shop-8 and
   menu-grid-9; seen between original recordings too.
 - **Cloth:** Tidus's hood on event-besaid-4/-5, Rikku's strap on boot-3,
-  kami0100's cloth ring. The cloth jobs run beside the main and render
-  threads; ordering them would need every reference recorded again.
+  kami0100's cloth ring. The cloth jobs ran beside the render thread's
+  staging of the previous update's vertices; since 2026-10-31 a cloth job
+  in lockstep waits for the flips queued before it (both programs,
+  `FFX_HARNESS_CLOTH_ORDER=0` turns it off; `docs/host.md`, "The cloth
+  race"). Which references that changes is for the user to decide; until
+  they are recorded again this entry stays.
 - **The loader's 16x8 texture and draw 45's texture-animation bind** on
   kami0100, now and then with several games at once.
 - **event-besaid-1:** 3-4 px at varying spots in about one run in three,
@@ -2148,11 +2153,11 @@ the two runs as they compare two `FFX.exe` runs.
 ```bash
 FFX_HARNESS_EXE=rust target/release/examples/replay <script> <trace>   # Options::rust
 tools/run-game.sh --instance N --harness P --background --rust          # what Game::launch runs
-FFX_HARNESS_EXE=rust FFX_HOST_TARGET=x86_64-pc-windows-msvc FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh [--extra]
+FFX_HARNESS_EXE=rust FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh [--extra]
 ```
 
 `run-all.sh` with `FFX_HARNESS_EXE=rust` builds `ffx-rust.exe` once
-(`tools/build-host.sh`, for `FFX_HOST_TARGET`) instead of the hook, gives
+(`tools/build-host.sh`, x86_64: the only build since 2026-10-31) instead of the hook, gives
 each replay 3,600 s and each reply as long (`FFX_REPLAY_TIMEOUT`,
 `FFX_HARNESS_REPLY_TIMEOUT` override them), keeps each run's
 `ffx-rust.log` beside its output (`<replay>.ffx-rust.log`) and prints its
@@ -2205,9 +2210,9 @@ records).
   and middle-calc jobs (`Ch_Cloth_PerCharacter`, `Ch_CalcMiddle_Batch`,
   wrapped) run with the thread's `rand()` seeded from the character and
   the event frame, as the hook's seeded jobs (`stats`' `seeded_jobs`).
-  `FFX_HARNESS_CLOTH_ORDER=1` (an experiment, `docs/host.md` "The cloth
-  race") makes a cloth job in lockstep wait until every flip queued
-  before it has been presented (`stats`' `cloth_waits`).
+  In lockstep a cloth job waits until every flip queued before it has
+  been presented (`stats`' `cloth_waits`; `docs/host.md` "The cloth
+  race"), as in the hook; `FFX_HARNESS_CLOTH_ORDER=0` turns it off.
 - **Input.** `keys`/`key` set the `DirectInput` keyboard's state that the
   layer's `GetDeviceState` returns. `pad`/`press` hold PS2 buttons through
   the clock's `Input_KeyHeld` wrapper, which answers for each held
@@ -2244,8 +2249,7 @@ records).
   holds the frames from the first `Present` on; a script waits for it with
   `gfxcapture result`.
 - **How far it gets (2026-10-29, host-pc2).** The 64-bit build
-  (`FFX_HOST_TARGET=x86_64-pc-windows-msvc`, which `tools/run-game.sh
-  --rust` installs then) plays field-walk on PC2 with the same trace
+  (x86_64, which `tools/run-game.sh --rust` installs) plays field-walk on PC2 with the same trace
   events as PC2's original recordings and screenshots within the limits
   (0.0 and 0.1), 226 s from launch (`docs/host.md`, "The 64-bit build on
   PC2"); since host-battle (2026-10-31) also the battle replays
@@ -2254,12 +2258,9 @@ records).
   The whole suite (2026-10-31, host-gate): every replay of the main and
   extra lists with the original's trace events, after the movie ports'
   host-pointer fixes (`docs/host.md`, "The stage 3 gate on PC2"). The i686
-  build still ends a few seconds past its third frame in an abort inside
-  Unicorn's 32-bit translator.
-- **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
-  `ffx-rust.exe` runs the game in a child process of itself
-  (`docs/host.md`, "The arena"), in a job that ends with the parent, so
-  ending either ends the game.
+  build, which ended a few seconds past its third frame in an abort inside
+  Unicorn's 32-bit translator, was dropped on 2026-10-31.
+- **Ending it.** `quit` ends the process (`TerminateProcess`).
 
 ## Tests
 

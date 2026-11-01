@@ -574,7 +574,9 @@ slightly differently.
      the mixer's).
    - `ffx-rust.exe` is built for i686 first. Floats, struct layouts and
      the replays behave as in the hooked game, so any difference is the
-     host's.
+     host's. (As it went: the i686 build never got past Unicorn's 32-bit
+     translator, the stage 3 gate ran on the x86_64 build, and the i686
+     one was dropped on 2026-10-31; `docs/host.md`, "The i686 build".)
    - Gate: replays and scene gates against the original, now run in a
      second process. The harness drives both with the same inputs and
      compares trace events, draw streams, the mix and screenshots

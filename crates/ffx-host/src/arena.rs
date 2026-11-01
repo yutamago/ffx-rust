@@ -1,10 +1,9 @@
 //! The arena: the game's 32-bit address space (docs/host.md, "The arena").
 //!
-//! Every game address is a `u32` offset from [`Arena::base`]. On `x86_64` the
-//! arena is one 4 GB reservation and the base is wherever the OS put it; on
-//! i686 the arena is the process's own address space (base 0) and each
-//! region is allocated at its game address, so a game address is also a
-//! host pointer there. Regions are mapped explicitly ([`Arena::map`]);
+//! Every game address is a `u32` offset from [`Arena::base`]: the arena is
+//! one 4 GB reservation and the base is wherever the OS put it (the host is
+//! 64-bit only; the i686 build, whose arena was the process's own address
+//! space, was dropped on 2026-10-31). Regions are mapped explicitly ([`Arena::map`]);
 //! anything else stays unmapped, so a stray access is caught (by
 //! [`Arena::read_bytes`]'s check, or by Unicorn's unmapped-memory hook).
 //!
@@ -136,8 +135,7 @@ impl Arena {
     }
 
     /// Maps `size` bytes in the first free gap at or above `from`, 64 KB
-    /// aligned (Windows' allocation granularity). On i686 an address the
-    /// process already uses (a DLL, the host heap) is skipped.
+    /// aligned (Windows' allocation granularity).
     ///
     /// # Errors
     /// When no gap is large enough.
@@ -157,10 +155,7 @@ impl Arena {
             let Ok(start) = u32::try_from(at) else { break };
             match self.map(start, size, name) {
                 Ok(()) => return Ok(start),
-                // past what holds the address (on i686 Windows the
-                // process's own memory: the GPU driver reserves hundreds
-                // of MB there, and probing it 64 KB at a time made each
-                // VirtualAlloc of the boot take tens of ms)
+                // past what holds the address
                 Err(_) => {
                     at = sys::next_probe(at)
                         .max(at + GRANULE)
@@ -342,198 +337,4 @@ mod sys {
             VirtualFree(base.cast(), 0, MEM_RELEASE);
         }
     }
-}
-
-/// The OS side on 32-bit Windows: no reservation; the arena is the
-/// process's address space (base 0) and each region is allocated at its
-/// game address. `ffx-rust.exe` links at a high base so the image range
-/// (0x00400000..0x0277d000) stays free (docs/host.md).
-#[cfg(all(windows, target_pointer_width = "32"))]
-mod sys {
-    use windows_sys::Win32::System::Memory::{
-        MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE, VirtualAlloc, VirtualFree,
-    };
-
-    use crate::{Error, Result};
-
-    /// Where to look next after a refused mapping at `at`: the end of the
-    /// allocation that holds `at` (`VirtualQuery`).
-    pub(super) fn next_probe(at: u64) -> u64 {
-        use windows_sys::Win32::System::Memory::{MEMORY_BASIC_INFORMATION, VirtualQuery};
-        let Ok(addr) = usize::try_from(at) else {
-            return at;
-        };
-        // SAFETY: a plain query into a local.
-        let mut m: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
-        // SAFETY: as above.
-        let n = unsafe {
-            VirtualQuery(
-                addr as *const _,
-                &raw mut m,
-                std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
-            )
-        };
-        if n == 0 || m.State == windows_sys::Win32::System::Memory::MEM_FREE {
-            return at;
-        }
-        (m.BaseAddress as u64) + m.RegionSize as u64
-    }
-
-    #[allow(clippy::unnecessary_wraps)] // the same signature on every target
-    pub(super) fn reserve() -> Result<*mut u8> {
-        Ok(std::ptr::null_mut())
-    }
-
-    pub(super) fn commit(_: *mut u8, start: u32, size: u32) -> Result<()> {
-        // SAFETY: a fresh allocation at a fixed address; refused if taken.
-        let p = unsafe {
-            VirtualAlloc(
-                start as usize as *const _,
-                size as usize,
-                MEM_RESERVE | MEM_COMMIT,
-                PAGE_READWRITE,
-            )
-        };
-        if p as usize == start as usize {
-            return Ok(());
-        }
-        if super::in_image_reserve(start, size) {
-            // inside the range `reserve_image_range` kept at start-up
-            // SAFETY: committing pages of our own reservation.
-            let p = unsafe {
-                VirtualAlloc(
-                    start as usize as *const _,
-                    size as usize,
-                    MEM_COMMIT,
-                    PAGE_READWRITE,
-                )
-            };
-            if p as usize == start as usize {
-                return Ok(());
-            }
-        }
-        Err(Error::Map(start, size, holder(start, size)))
-    }
-
-    /// What holds the first taken page of `start..start + size`, for the
-    /// error.
-    pub(super) fn holder(start: u32, size: u32) -> String {
-        use windows_sys::Win32::System::Memory::{MEMORY_BASIC_INFORMATION, VirtualQuery};
-        let mut at = start as usize;
-        let end = start as usize + size as usize;
-        while at < end {
-            // SAFETY: VirtualQuery only reads the address space's layout.
-            let mut m: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
-            // SAFETY: `m` is a local of the size passed.
-            let n = unsafe {
-                VirtualQuery(
-                    at as *const _,
-                    &raw mut m,
-                    std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
-                )
-            };
-            if n == 0 {
-                break;
-            }
-            if m.State != windows_sys::Win32::System::Memory::MEM_FREE {
-                return format!(
-                    "address taken in this process: {:#x}+{:#x} (allocation {:#x}, state {:#x}, type {:#x})",
-                    m.BaseAddress as usize,
-                    m.RegionSize,
-                    m.AllocationBase as usize,
-                    m.State,
-                    m.Type
-                );
-            }
-            at = m.BaseAddress as usize + m.RegionSize.max(0x1000);
-        }
-        "address taken in this process".into()
-    }
-
-    /// Whether `start..start + size` is one reservation of this process
-    /// starting at `start` (the parent's, [`crate::relaunch`]).
-    pub(super) fn reserved_whole(start: u32, size: u32) -> bool {
-        use windows_sys::Win32::System::Memory::{MEMORY_BASIC_INFORMATION, VirtualQuery};
-        // SAFETY: a plain query into a local.
-        let mut m: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
-        // SAFETY: as above.
-        let n = unsafe {
-            VirtualQuery(
-                start as usize as *const _,
-                &raw mut m,
-                std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
-            )
-        };
-        n != 0
-            && m.AllocationBase as usize == start as usize
-            && m.State == MEM_RESERVE
-            && m.RegionSize >= size as usize
-    }
-
-    /// Reserves `start..start + size` (no commit); `false` when taken.
-    pub(super) fn reserve_range(start: u32, size: u32) -> bool {
-        // SAFETY: a reservation at a fixed address; refused if taken.
-        let p = unsafe {
-            VirtualAlloc(
-                start as usize as *const _,
-                size as usize,
-                MEM_RESERVE,
-                PAGE_READWRITE,
-            )
-        };
-        p as usize == start as usize
-    }
-
-    pub(super) fn release(_: *mut u8, regions: &[super::Region]) {
-        for r in regions {
-            if super::in_image_reserve(r.start, r.size) {
-                continue;
-            }
-            // SAFETY: each region was allocated by `commit`.
-            unsafe {
-                VirtualFree(r.start as usize as *mut _, 0, MEM_RELEASE);
-            }
-        }
-    }
-}
-
-/// `FFX.exe`'s range in the arena: `0x00400000..0x0277d000`.
-pub const IMAGE_RANGE: (u32, u32) = (0x0040_0000, 0x0277_d000);
-
-/// Whether [`reserve_image_range`] holds `start..start + size`.
-#[cfg(all(windows, target_pointer_width = "32"))]
-fn in_image_reserve(start: u32, size: u32) -> bool {
-    IMAGE_RESERVED.load(Ordering::Relaxed)
-        && start >= IMAGE_RANGE.0
-        && u64::from(start) + u64::from(size) <= u64::from(IMAGE_RANGE.1)
-}
-
-#[cfg(all(windows, target_pointer_width = "32"))]
-static IMAGE_RESERVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// On i686 Windows the arena is the process's own address space, so
-/// `FFX.exe`'s range must still be free when the image is mapped: the
-/// program calls this first thing in `main`, before its heap or threads
-/// grow into it (docs/host.md, "The arena"). A process started by
-/// [`crate::relaunch`] finds the range reserved by its parent
-/// (`FFX_HOST_IMAGE_RESERVED=1`) and adopts it. Elsewhere it does nothing.
-///
-/// # Errors
-/// When the range is already taken (the error names what holds it).
-pub fn reserve_image_range() -> Result<()> {
-    #[cfg(all(windows, target_pointer_width = "32"))]
-    {
-        let (start, end) = IMAGE_RANGE;
-        let adopted = std::env::var("FFX_HOST_IMAGE_RESERVED").is_ok_and(|v| v == "1")
-            && sys::reserved_whole(start, end - start);
-        if !adopted && !sys::reserve_range(start, end - start) {
-            return Err(Error::Map(
-                start,
-                end - start,
-                sys::holder(start, end - start),
-            ));
-        }
-        IMAGE_RESERVED.store(true, Ordering::Relaxed);
-    }
-    Ok(())
 }

@@ -112,7 +112,7 @@ if [ -n "$extra" ]; then
 fi
 
 # ffx-rust.exe instead of FFX.exe with the hook (FFX_HARNESS_EXE=rust,
-# docs/harness.md "Two processes"; FFX_HOST_TARGET picks i686 or x86_64):
+# docs/harness.md "Two processes"; the 64-bit build, x86_64-pc-windows-msvc):
 # the Rust runs only, against the same recordings, which only the original
 # code makes.
 host=""
