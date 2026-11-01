@@ -2197,3 +2197,62 @@ fn models_direct() {
         );
     }
 }
+
+/// Row 652: `magic_0349`'s summon script task: the script running (no
+/// end), the script ended with the main motion going on, both ended (the
+/// actors shown and the node given back).
+#[test]
+#[allow(clippy::too_many_lines)] // the callees' set-up
+fn summon_script_tasks() {
+    let Some(mut t) = twin(349) else { return };
+    let f = t.at(0x46c0);
+    let run_f = t.img.rel32_target(f + 0xe);
+    let shown = t.img.rel32_target(f + 0x81);
+    for s in [257u32, 384, 25, 24] {
+        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[0]);
+    }
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[2, 0, 1]);
+    for (m, tb) in [
+        (0x1u32, 0xdu32),
+        (0x1f, 0x2c),
+        (0x3e, 0x4b),
+        (0x5d, 0x67),
+        (0x79, 0x84),
+        (0x96, 0xa1),
+    ] {
+        t.set_u32(op(&t, shown, m), sel);
+        for i in 0..4 {
+            t.set_u32(op(&t, shown, tb) + 4 * i, 0x0cc0_0000 + i);
+        }
+    }
+    let b = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x9), b);
+    let main = op(&t, f, 0x13);
+    let (s0, s1) = (op(&t, f, 0x22), op(&t, f, 0x32));
+    let task = SCRATCH + 0x300;
+    // (the script's mode, the main motion done)
+    for (k, (mode, done)) in [(2u8, 1u32), (0, 0), (0, 1)].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(b + 0x1900, &varied(0x320, k));
+        t.set_u8(op(&t, run_f, 0x01), mode);
+        t.set_u16(op(&t, run_f, 0x59), 0xffff);
+        t.set_u32(op(&t, run_f, 0x07), SCRATCH + 0x600);
+        t.write(main, &varied(0x20, k));
+        t.set_u32(main + 0x14, done);
+        t.set_u16(main + 0x18, 5);
+        let mut s = s0;
+        while s < s1 {
+            t.write(s, &varied(0x20, s + k));
+            t.set_u32(s + 0x14, 1);
+            s += 0x20;
+        }
+        t.write(task, &varied(0x20, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

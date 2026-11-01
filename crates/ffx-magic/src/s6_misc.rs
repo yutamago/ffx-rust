@@ -12,10 +12,12 @@ use crate::pushes::Pushes;
 use crate::s3_misc::{COLOUR_NODE, colour_node};
 use crate::s3_summon::{MODEL_NODES, model_nodes};
 use crate::s4_misc::{FREE_RECORD, append_object, free_record};
+use crate::s4_misc::{MOTION_SCRIPT, motion_script};
 use crate::s4_misc::{
     SCREEN_PLACE, START_OBJECT_ANIM, screen_place, start_object, start_object_anim,
 };
 use crate::s4_small::{FADER_TASK, MOVE_ENDS, fader_task, move_ends};
+use crate::s4_small::{THREE_ACTORS_SHOWN, three_actors_shown};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
 use crate::sa_misc::{
@@ -23,7 +25,7 @@ use crate::sa_misc::{
     sprite_fade,
 };
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
-use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
+use crate::sa_script::{ACTOR_SLOT256, RUN, actor_slot256, run};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
@@ -3051,5 +3053,65 @@ pub const MODEL_DIRECT: Sig = Sig {
     len: 112,
     hash: 0x1969_315b_858e_f59a,
     calls: &[],
+    imports: &[],
+};
+
+/// A summon's script task (cdecl `(task)`): the DLL's script runs
+/// ([`run`]), the main motion script `G_M` and the scripts `G_S..G_E`
+/// (0x20 apart) step ([`motion_script`]), and the three vectors
+/// `B+0x19e0 + 0x10 i` are copied to `B+0x1920 + 0x40 i` (`B = *G_B`).
+/// When the script and the main motion both ended (1): `B+0x1c08 = 1`,
+/// the three actors shown ([`three_actors_shown`]) and the task node
+/// given back ([`give_back`]), whose `eax` it returns; else the last
+/// word copied.
+///
+/// `magic_0349` 0x100046c0 (148 bytes; 2 DLLs).
+pub fn summon_script_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let b = g.read::<u32>(w(0x9));
+    let ended = run(g, img, img.rel32_target(f + 0xe));
+    let main = motion_script(g, img, img.rel32_target(f + 0x1b), w(0x13));
+    let mut s = w(0x22);
+    loop {
+        motion_script(g, img, img.rel32_target(f + 0x29), s);
+        s = s.wrapping_add(0x20);
+        if s.cast_signed() >= w(0x32).cast_signed() {
+            break;
+        }
+    }
+    let mut eax = 0;
+    for i in 0..3u32 {
+        for o in [0u32, 4, 8, 0xc] {
+            eax = g.read::<u32>(b + 0x19e0 + 0x10 * i + o);
+            g.write::<u32>(b + 0x1920 + 0x40 * i + o, eax);
+        }
+    }
+    if ended != 1 || main != 1 {
+        return Ret::eax(eax);
+    }
+    g.write::<u32>(b + 0x1c08, 1);
+    let shown = Frame {
+        at: img.rel32_target(f + 0x81),
+        esp: fr.esp.wrapping_sub(0x18),
+        ..*fr
+    };
+    three_actors_shown(g, img, &shown);
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0x89), task))
+}
+
+/// [`summon_script_task`] (the `rel32`s: [`run`], two
+/// [`motion_script`]s, [`three_actors_shown`] and [`give_back`]).
+pub const SUMMON_SCRIPT_TASK: Sig = Sig {
+    len: 148,
+    hash: 0x9d26_d9a1_7db4_74e3,
+    calls: &[
+        (0xe, Callee::Sig(&RUN)),
+        (0x1b, Callee::Sig(&MOTION_SCRIPT)),
+        (0x29, Callee::Sig(&MOTION_SCRIPT)),
+        (0x81, Callee::Sig(&THREE_ACTORS_SHOWN)),
+        (0x89, Callee::Sig(&GIVE_BACK)),
+    ],
     imports: &[],
 };
