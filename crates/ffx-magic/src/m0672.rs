@@ -38,3 +38,54 @@ pub const CAMERA_RESET: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Copies the camera's key words (0x100015f0, internal, no arguments;
+/// `G_CAM` operand `+0x15`; a frame with the count at `ebp - 8`): for
+/// each of the camera's slot 586 `(cam)` tracks `i` (signed), slot 584
+/// `(cam, i)` gives the source keys and slot 585 `(cam, i, &n)` the
+/// destination and their byte size `n`; the first word of every 16-byte
+/// key is copied. Then slot 346 `(cam)` and slot 399 `(cam, 0)` (the
+/// camera read again, `+0x93`; 346's word left under it). Returns slot
+/// 399's `eax`.
+pub fn copy_keys<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    let n_at = ebp.wrapping_sub(8);
+    let cam = g.read::<u32>(w(0x15));
+    g.write::<u32>(ebp.wrapping_sub(4), cam);
+    let t = slot_target(g, w(0x7), 586);
+    let tracks = g.call(t, 0, &[cam]).eax.cast_signed();
+    // ecx: the caller's, then 585's target, then the last copied word
+    let mut ecx = fr.ecx;
+    let mut i = 0i32;
+    while i < tracks {
+        let iu = i.cast_unsigned();
+        let t = slot_target(g, w(0x32), 584);
+        let src = g.call(t, 0, &[cam, iu]).eax;
+        let t = slot_target(g, w(0x42), 585);
+        let dst = g.call(t, t, &[cam, iu, n_at, cam, iu]).eax;
+        ecx = t;
+        let mut k = 0i32;
+        while k < g.read::<i32>(n_at) {
+            let ku = k.cast_unsigned();
+            let v = g.read::<u32>(src.wrapping_add(ku));
+            g.write::<u32>(dst.wrapping_add(ku), v);
+            ecx = v;
+            k += 0x10;
+        }
+        i += 1;
+    }
+    let t = slot_target(g, w(0x7d), 346);
+    g.call(t, ecx, &[cam]);
+    let c = g.read::<u32>(w(0x93));
+    let t = slot_target(g, w(0x8b), 399);
+    g.call(t, ecx, &[c, 0, cam]).eax
+}
+
+/// [`copy_keys`] (169 bytes, 1 overlay).
+pub const COPY_KEYS: Sig = Sig {
+    len: 169,
+    hash: 0x43a6_d394_897e_9a23,
+    calls: &[],
+    imports: &[],
+};

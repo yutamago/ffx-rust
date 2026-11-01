@@ -24,7 +24,7 @@ fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
 }
 
-/// 0x10001bd0 and 0x10002370: each array's first part, its last byte and
+/// 0x10001bd0, 0x10002370 and 0x10002430: each array's first part, its last byte and
 /// the next part.
 #[test]
 fn pairs() {
@@ -35,7 +35,7 @@ fn pairs() {
     }
     rec(&mut t, 941, 1, move |_, _| table);
     recs(&mut t, &[(714, 5)]);
-    for rva in [0x1bd0u32, 0x2370] {
+    for rva in [0x1bd0u32, 0x2370, 0x2430] {
         let at = t.at(rva);
         let o = SCRATCH + 0x100;
         t.set_u32(t.img.word(at + 0x10), o);

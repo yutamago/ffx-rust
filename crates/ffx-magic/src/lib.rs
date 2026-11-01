@@ -222,7 +222,9 @@ pub mod m0664;
 pub mod m0665;
 pub mod m0666;
 pub mod m0669;
+pub mod m0671;
 pub mod m0672;
+pub mod m0673;
 pub mod m0680;
 pub mod m0704;
 pub mod m0705;
@@ -1054,6 +1056,11 @@ ports! {
     "m0669 draw" => m0669::DRAW, m0669::draw;
     "m0706 start" => m0706::START, m0706::start;
     "m0709 start" => m0709::START, m0709::start;
+    "m0673 start" => m0673::START, m0673::start;
+    "m0665 frame" => m0665::FRAME, m0665::frame;
+    "m0666 flare" => m0666::FLARE, m0666::flare;
+    "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
+    "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2092,6 +2099,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0708 bind parts", &m0708::BIND_PARTS),
     ("m0708 shake", &m0708::SHAKE),
     ("m0708 place", &m0708::PLACE),
+    ("m0671 start", &m0671::START),
+    ("m0672 copy keys", &m0672::COPY_KEYS),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),

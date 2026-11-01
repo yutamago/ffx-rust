@@ -86,3 +86,56 @@ pub const GLOW_PART: Sig = Sig {
     calls: &[(0x35, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// Starts a beam part (0x10001700, an overlay table entry, `(obj)`; ten
+/// table entries): `k` = the part's index in its array (operand `+0x0d`,
+/// 0x80 bytes each, signed), `i` the first of the 14 slots that is on and
+/// free (pairs from the immediate `+0x17` - 4; -1 when none is); the part
+/// started with program 5 ([`start_part_eax`](crate::part_draw::start_part_eax):
+/// `*G_P = ITEM` `+0x38`/`+0x3e`, `G_O` `+0x43`, slot 941 `+0x4b`); its
+/// colour `+0x40` from slot 325 `(obj + 0x40, TABLE + 16 i)` (the table at
+/// `+0x77` for the first part, else `+0x7e`); `+0x58` -0x4000 for the
+/// slots 2..5, else 0; `+0x5c` 1, `+0x50`/`+0x54` 0, `+0x60..+0x68`
+/// 0x3e02a8ca, `+0x6c` 1.0. Returns 1.
+pub fn beam_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    let k = obj.wrapping_sub(w(0xd)).cast_signed() >> 7;
+    let slots = w(0x17);
+    let mut i = u32::MAX;
+    for j in 0..0xe {
+        let at = slots + 8 * j;
+        if g.read::<u32>(at - 4) == 1 && g.read::<u32>(at) == 0 {
+            i = j;
+            break;
+        }
+    }
+    crate::part_draw::start_part_eax(g, img, f, obj, [0x38, 0x3e, 0x43, 0x4b, 0x66], 0x14, &[]);
+    let table = if k == 0 { w(0x77) } else { w(0x7e) };
+    let colour = (i << 4).wrapping_add(table);
+    let t = slot_target(g, w(0x88), 325);
+    g.call(t, 0, &[obj + 0x40, colour]);
+    let lift = if (2..=5).contains(&i) { 0xffff_c000 } else { 0 };
+    for (off, v) in [
+        (0x58, lift),
+        (0x5c, 1),
+        (0x54, 0),
+        (0x50, 0),
+        (0x60, 0x3e02_a8ca),
+        (0x64, 0x3e02_a8ca),
+        (0x68, 0x3e02_a8ca),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    Ret::eax(1)
+}
+
+/// [`beam_part`] (246 bytes, 1 overlay).
+pub const BEAM_PART: Sig = Sig {
+    len: 246,
+    hash: 0x836e_f6f7_76d7_4ae2,
+    calls: &[(0x66, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

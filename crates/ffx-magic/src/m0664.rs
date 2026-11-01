@@ -54,12 +54,23 @@ pub const RING_PART: Sig = Sig {
 /// part starts again with program 6
 /// ([`start_part`](crate::part_draw::start_part)). Returns 1.
 pub fn frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    frame_with(g, img, fr, (3, 0x18))
+}
+
+/// [`frame`]'s shape with slot 237's mode `k` and the restart's program
+/// `index / 4` (also `magic_0665` 0x10001970).
+pub(crate) fn frame_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (k, index): (u32, u32),
+) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let obj = fr.arg(g, 0);
     let t = slot_target(g, w(0xd), 237);
     let a = g.read::<u32>(w(0x1d));
-    let mut stack = vec![a, 3, 0, obj + 0x40];
+    let mut stack = vec![a, k, 0, obj + 0x40];
     g.call(t, 0, &stack);
     g.write::<u32>(obj + 0x44, 0xbc23_d70a);
     let t = slot_target(g, w(0x24), 258);
@@ -96,7 +107,15 @@ pub fn frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(gp, w(0xaf));
     let t = slot_target(g, w(0xb4), 713);
     g.call(t, 0, &[obj]);
-    crate::part_draw::start_part(g, img, f, obj, [0xc1, 0xc7, 0xcc, 0xd4, 0xef], 0x18, &[obj]);
+    crate::part_draw::start_part(
+        g,
+        img,
+        f,
+        obj,
+        [0xc1, 0xc7, 0xcc, 0xd4, 0xef],
+        index,
+        &[obj],
+    );
     Ret::eax(1)
 }
 

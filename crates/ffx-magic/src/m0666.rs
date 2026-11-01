@@ -70,3 +70,49 @@ pub const RING: Sig = Sig {
     calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// Starts a flare part (0x10002430, an overlay table entry, `(obj)`;
+/// two table entries): [`start_pair`] with program 11; `+0x44` -0.01,
+/// `+0x4c`/`+0x6c` 1.0, the colour 0x3c01cf78, `+0x58` 0, `+0x5c` 1; the
+/// first part `+0x40`/`+0x48` -17.4 and -21.14, `+0x50` 0, `+0x54`
+/// 0x7054, any other -12.4, -28.04, -910 and -10920. Returns 1.
+pub fn flare<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let c = 0x3c01_cf78;
+    start_pair(
+        g,
+        img,
+        fr,
+        (0x36, 0x2c),
+        &[
+            (0x44, 0xbc23_d70a),
+            (0x4c, ONE),
+            (0x60, c),
+            (0x64, c),
+            (0x68, c),
+            (0x6c, ONE),
+            (0x58, 0),
+            (0x5c, 1),
+        ],
+        &[
+            (0x40, 0xc18b_331e),
+            (0x48, 0xc1a9_1eaf),
+            (0x50, 0),
+            (0x54, 0x7054),
+        ],
+        &[
+            (0x40, 0xc146_6638),
+            (0x48, 0xc1e0_51c5),
+            (0x50, 0xffff_fc72),
+            (0x54, 0xffff_d558),
+        ],
+        &[],
+    )
+}
+
+/// [`flare`] (198 bytes, 1 overlay).
+pub const FLARE: Sig = Sig {
+    len: 198,
+    hash: 0xccac_7fab_d9de_24cf,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

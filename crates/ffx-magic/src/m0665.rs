@@ -28,3 +28,18 @@ pub const TIMELINE_RESET: Sig = Sig {
     calls: &[(0xd, Callee::Import("memset"))],
     imports: &[],
 };
+
+/// An object's frame (0x10001970, an overlay table entry, `(obj)`):
+/// [`frame_with`](crate::m0664::frame_with) with slot 237's mode 7 and
+/// the restart's program 13. Returns 1.
+pub fn frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
+    crate::m0664::frame_with(g, img, fr, (7, 0x34))
+}
+
+/// [`frame`] (255 bytes, 1 overlay).
+pub const FRAME: Sig = Sig {
+    len: 255,
+    hash: 0x8e7f_c1c4_a957_916a,
+    calls: &[(0xef, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

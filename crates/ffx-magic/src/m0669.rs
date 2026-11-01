@@ -63,11 +63,24 @@ pub const FRAME: Sig = Sig {
 /// `*G_LOCK` (`+0x78`) 1 and restored after (`+0x94`). Returns whether
 /// 712 said 0.
 pub fn draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    let w = |off: u32| img.word(fr.at + off);
     let obj = fr.arg(g, 0);
+    Ret::eax(u32::from(draw_body(g, img, fr, obj, 0x3f40_0000) == 0))
+}
+
+/// [`draw`] (170 bytes, 1 overlay).
+pub const DRAW: Sig = Sig {
+    len: 170,
+    hash: 0xde41_f577_47ba_8385,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`draw`]'s body with the colour word `c`: returns slot 712's answer.
+fn draw_body<G: Game>(g: &mut G, img: &Image, fr: &Frame, obj: u32, c: u32) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
     let t = slot_target(g, w(0x4), 258);
     for off in [0x60, 0x64, 0x68] {
-        g.write::<u32>(obj + off, 0x3f40_0000);
+        g.write::<u32>(obj + off, c);
     }
     g.write::<u32>(obj + 0x6c, 0x3f80_0000);
     let mut stack = vec![obj];
@@ -95,13 +108,33 @@ pub fn draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let r = g.call(t, 0, &stack).eax;
     let lock = g.read::<u32>(w(0x94));
     g.write::<u32>(lock, saved);
-    Ret::eax(u32::from(r == 0))
+    r
 }
 
-/// [`draw`] (170 bytes, 1 overlay).
-pub const DRAW: Sig = Sig {
-    len: 170,
-    hash: 0xde41_f577_47ba_8385,
-    calls: &[],
+/// An object's frame with restart (0x10001a90, an overlay table entry,
+/// `(obj)`): [`draw`]'s body with the colour 0x3e02a8ca; when 712 says
+/// nonzero, `*G_P = ITEM` (`+0xa2`, `+0xa9`), slot 713 `(obj)` removes it
+/// and the part starts again with program 2
+/// ([`start_part`](crate::part_draw::start_part)). Returns 1.
+pub fn draw_restart<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.arg(g, 0);
+    if draw_body(g, img, fr, obj, 0x3e02_a8ca) == 0 {
+        return Ret::eax(1);
+    }
+    let gp = g.read::<u32>(w(0xa2));
+    g.write::<u32>(gp, w(0xa9));
+    let t = slot_target(g, w(0xae), 713);
+    g.call(t, 0, &[obj]);
+    crate::part_draw::start_part(g, img, f, obj, [0xbb, 0xc1, 0xc6, 0xce, 0xe9], 8, &[obj]);
+    Ret::eax(1)
+}
+
+/// [`draw_restart`] (249 bytes, 1 overlay).
+pub const DRAW_RESTART: Sig = Sig {
+    len: 249,
+    hash: 0x92ac_7669_2c26_2934,
+    calls: &[(0xe9, crate::Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };

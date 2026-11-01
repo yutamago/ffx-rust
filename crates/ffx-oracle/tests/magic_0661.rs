@@ -66,3 +66,31 @@ fn glow_part() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x10001700: the first part and another; free slots 0, 3 and none.
+#[test]
+fn beam_part() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1700);
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x100;
+    t.set_u32(t.img.word(at + 0x43), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    t.set_u32(t.img.word(at + 0x38), SCRATCH + 0x24);
+    magic_owna::rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5), (325, 2)]);
+    let slots = t.img.word(at + 0x17);
+    let base = t.img.word(at + 0xd);
+    for (obj, free) in [(base, Some(0u32)), (base + 0x80, Some(3)), (base, None)] {
+        for i in 0..0xe {
+            let on = u32::from(i % 2 == 1 || Some(i) == free);
+            t.set_u32(slots + 8 * i - 4, on);
+            t.set_u32(slots + 8 * i, u32::from(Some(i) != free));
+        }
+        t.write(obj, &[0x5b; 0x80]);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
+}
