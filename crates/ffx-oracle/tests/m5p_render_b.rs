@@ -7414,6 +7414,58 @@ impl Twins {
         self.write(at, &j);
     }
 
+    /// A recording stub logging all `n` stack words (six per entry, `ecx`
+    /// in each), popping `pops`, storing `put` through stack word `arg`
+    /// when given, answering from `answers` in turn (0 past the end).
+    fn seq_wide(&mut self, sym: u32, n: u32, pops: u32, put: Option<(u32, u32)>, answers: &[u32]) {
+        let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+        table.extend([0u8; 64]);
+        let table = self.alloc(&table);
+        let cell = self.alloc(&table.to_le_bytes());
+        let log = self.log;
+        let mut c = Vec::new();
+        let mut i = 0;
+        while i < n {
+            c.push(0xa1);
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend((sym ^ i).to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            for k in 0..(n - i).min(6) {
+                c.extend([0x8b, 0x54, 0x24, (4 + 4 * (i + k)) as u8]); // mov edx, [esp+4+4w]
+                c.extend([0x89, 0x50, (8 + 4 * k) as u8]); // mov [eax+8+4k], edx
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            i += 6;
+        }
+        if let Some((arg, v)) = put {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * arg) as u8]); // mov edx, [esp+4+4arg]
+            c.extend([0xc7, 0x02]);
+            c.extend(v.to_le_bytes()); // mov dword [edx], v
+        }
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x8b, 0x10]); // mov edx, [eax]
+        c.extend([0x83, 0x05]);
+        c.extend(cell.to_le_bytes());
+        c.push(0x04); // add dword [cell], 4
+        c.extend([0x89, 0xd0]); // mov eax, edx
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+
     fn wf(&mut self, at: u32, v: f32) {
         self.w32(at, v.to_bits());
     }
@@ -8113,5 +8165,326 @@ fn mesh_builder(
             t.reset();
         }
         TRAMP.with(|c| c.set(0));
+    }
+}
+
+/// `0x006dfad0` (the character shader manager's variant materials): every
+/// callee recorded; kinds 0..3 and another (the variant kept), no
+/// variant; the key found in the tree (and a node at -0x10, which counts
+/// as missing); arrays of 0, 1 and 3 materials (inline and out-of-line
+/// data), a new array shorter than the old, no new array; parameters
+/// found or not, fitting or not on either side, a source at address 0;
+/// names absent, copied, the allocation failing, the old name owned or
+/// not. The key's argument slot goes to the trees and the second slot
+/// holds the last source buffer, compared after each call. Only
+/// synthetic data reaches it.
+#[test]
+#[allow(clippy::too_many_lines)] // the case data
+fn bp3_make_variants() {
+    use ffx_prender::m5p_render_b_bp3::{self as bp};
+    let [
+        find,
+        create,
+        resize,
+        create_material,
+        find_param,
+        malloc,
+        free,
+        set_variant,
+        unlink,
+        insert,
+    ] = bp::VARIANT_CALLS;
+    for (label, mut t) in Twins::all() {
+        for k in 0..20u32 {
+            let [g_variant, _, _, _] = bp::VARIANT_GLOBALS.map(|a| t.rebase(a));
+            for i in 0..4 {
+                let v = if k == 3 && i > 0 { 0 } else { 0x7a00 + i };
+                t.w32(g_variant + 4 * i, v);
+            }
+            let kind = [0u32, 1, 2, 1, 5, 0][k as usize % 6];
+            let n = [3u32, 1, 0, 3, 3][k as usize % 5];
+            // the old array: inline for one material
+            let old = t.zeros(0x20);
+            let mut sources = vec![];
+            for i in 0..n {
+                let src = t.zeros(0x20);
+                let inner = t.junk(0x10, 0x40 + i as u8);
+                let p = t.zeros(4);
+                t.w32(p, inner);
+                let head = t.zeros(0x20);
+                t.w32(head + 0x10, p);
+                t.w32(src, head);
+                // the source buffer: size word, records at +0xc
+                let sp = t.zeros(0x80);
+                t.w32(sp, 0x40);
+                let recs = t.zeros(0x40);
+                for j in 0..3u32 {
+                    let r = recs + 0x10 * j;
+                    t.w32(r + 4, 0x6e00 + j + u32::from(j == 1));
+                    let (off, size): (u16, u16) = match (k + j) % 5 {
+                        0 => (8, 8),
+                        1 => (2, 8),
+                        2 => (0x3c, 8),
+                        _ => (0x10, 0xe004),
+                    };
+                    t.write(r + 8, &off.to_le_bytes());
+                    t.write(r + 0xa, &size.to_le_bytes());
+                }
+                t.w32(sp + 8, 3 | (k & 1) << 31);
+                t.w32(sp + 0xc, recs);
+                t.w32(src + 4, sp);
+                let name = match (k + i) % 4 {
+                    0 => 0,
+                    1 => {
+                        let s = t.alloc(b"Variant\0");
+                        s | 1
+                    }
+                    _ => t.alloc(b"shade_a\0"),
+                };
+                t.w32(src + 0x10, name);
+                sources.push(src);
+            }
+            t.w32(old, n | (k & 2) << 30);
+            if n == 1 {
+                t.w32(old + 4, sources[0]);
+            } else {
+                let d = t.zeros(0x10);
+                for (i, &s) in sources.iter().enumerate() {
+                    t.w32(d + 4 * i as u32, s);
+                }
+                t.w32(old + 4, d);
+            }
+            let key = t.zeros(0x20);
+            t.w32(key, 0x5100);
+            t.w32(key + 0x10, old);
+            // the new array
+            let new = if k == 7 && n == 0 { 0 } else { t.zeros(0x20) };
+            if new != 0 {
+                let count = if k % 7 == 5 { n.saturating_sub(1) } else { n };
+                t.w32(new, count);
+                let d = t.zeros(0x10);
+                t.w32(new + 4, d);
+            }
+            let mut mats = vec![];
+            for i in 0..n {
+                let mat = t.zeros(0x20);
+                let pb = t.zeros(0x80);
+                t.w32(pb, 0x30);
+                t.w32(pb + 4, 0x5ade);
+                t.w32(mat + 4, pb);
+                t.w32(mat + 0x10, 0x4000 | ((k + i) & 1));
+                mats.push(mat);
+            }
+            let mut params = vec![];
+            for j in 0..3 * n {
+                let p = if (k + j) % 4 == 3 {
+                    0
+                } else {
+                    let p = t.zeros(0x10);
+                    let off: u16 = [0x10, 0x28, 0x2c][((k + j) % 3) as usize];
+                    t.write(p + 8, &off.to_le_bytes());
+                    t.write(p + 0xa, &8u16.to_le_bytes());
+                    p
+                };
+                params.push(p);
+            }
+            let blocks: Vec<u32> = (0..n)
+                .map(|i| if (k + i) % 5 == 3 { 0 } else { t.zeros(0x10) })
+                .collect();
+            let node = match k % 4 {
+                1 => 0xffff_fff0,
+                2 if k > 8 => 0x7700,
+                _ => 0,
+            };
+            t.seq_answers(find, true, 1, 1, &[node]);
+            t.seq_answers(create, true, 3, 3, &[new]);
+            t.stub(resize, true, 1, 1, 0);
+            t.seq_answers(create_material, true, 3, 3, &mats);
+            t.seq_answers(find_param, true, 1, 1, &params);
+            t.seq_answers(malloc, false, 2, 0, &blocks);
+            t.stub(free, false, 1, 0, 0);
+            t.copy_stub(bp::MEMCPY);
+            t.stub(set_variant, true, 2, 2, 0x51);
+            t.stub(unlink, true, 0, 0, 0x52);
+            t.seq_answers(insert, true, 2, 2, &[0x61, 0x62]);
+            let ebp = t.ebp_for(2);
+            let slots = ebp + 8;
+            t.w32(slots, key);
+            t.w32(slots + 4, kind);
+            t.check_frame(
+                &format!("{label}: variants {k}"),
+                0x006d_fad0,
+                Conv::Cdecl,
+                &[key, kind],
+                ebp,
+                0x50,
+                (0x38, 0x28),
+                |g| Out::U32(bp::variants::make_variants(g, ebp, slots, key, kind)),
+            );
+            let (a, b): (u32, u32) = (Mem::read(&t.a, slots + 4), Mem::read(&t.b, slots + 4));
+            assert_eq!(a, b, "{label}: variants {k}: argument slot");
+            t.reset();
+        }
+    }
+}
+
+/// `0x005b9ee0` (the renderer's skinned batch): the matrix callees run as
+/// the originals over joint matrices both oracles hold alike, the rest
+/// recorded. The joint block is the original's `_alloca_probe_16` block
+/// (`(ebp - 0x174 - bytes) & !0xf`, handed to the port) or, past 0x80
+/// matrices, a preprocess ring block. Cases: the renderer not ready;
+/// items without a material, hidden segments, segments of each pass;
+/// the "Opaque" pass skipping "Transparent" items (and not when the
+/// descriptor is transparent at `+0xc` too); with and without dynamic
+/// data (a table word set or not); the skin upload needed or not; fill
+/// errors (the last kept). Only synthetic data reaches it.
+#[test]
+#[allow(clippy::too_many_lines)] // the case data
+fn bp3_render_batch() {
+    use ffx_prender::m5p_render_b_bp3::{self as bp};
+    let [
+        singleton,
+        allocate,
+        compute,
+        upload,
+        _,
+        _,
+        block_count,
+        count_kinds,
+        fill,
+        ring_alloc,
+        queue,
+    ] = bp::BATCH_CALLS;
+    let [opaque, transparent] = bp::BATCH_PASS_NAMES;
+    for (label, mut t) in Twins::all() {
+        for k in 0..16u32 {
+            let joints_n = match k % 5 {
+                4 => 0x90,
+                3 => 0x7f,
+                _ => 3 + k % 3,
+            };
+            let r = t.junk(0x100, 0x21);
+            t.w32(r + 4, if k == 1 { 0x10 } else { 0x11 });
+            t.w32(r + 0x48, t.rebase(if k % 2 == 0 { opaque } else { 0x7e00 }));
+            let view = t.junk(0x100, 0x22);
+            t.w32(r + 0x18, view);
+            let mesh = t.zeros(0x20);
+            t.w32(mesh + 0x18, joints_n | (k & 1) << 31);
+            let nseg = 4u32;
+            let segs = t.zeros((0x6c * nseg) as usize);
+            for s in 0..nseg {
+                let seg = segs + 0x6c * s;
+                t.w32(seg + 4, (s + k) % (joints_n.min(4)));
+                t.w8(seg + 0x14, if (s + k) % 7 == 6 { 2 } else { 0 });
+                t.w32(seg + 0x1c, (s * 3 + k) % 5);
+            }
+            t.w32(mesh + 4, segs);
+            let inst = t.zeros(0x90);
+            t.w32(inst, mesh);
+            t.w32(inst + 0x14, 0x5c1e);
+            let dynamic = if k % 3 == 0 {
+                0
+            } else {
+                let d = t.zeros(0x10);
+                let m = t.zeros(0x20);
+                let table = t.zeros(0x100);
+                for s in 0..nseg {
+                    t.w32(table + 0x10 * s + 0xc, (s + k) & 1);
+                }
+                t.w32(m + 0x14, table);
+                t.w32(d + 4, m);
+                d
+            };
+            t.w32(inst + 0x18, dynamic);
+            t.w32(inst + 0x80, if k % 4 == 2 { 0x0f0f } else { 0x1234 });
+            let batch = t.zeros(0x10);
+            t.w32(batch, inst);
+            t.write(batch + 4, &[u8::from(k % 6 == 5), 0, nseg as u8, 0]);
+            t.w8(batch + 8, u8::from(k % 2 == 0));
+            let items = t.zeros((0x20 * nseg) as usize);
+            for s in 0..nseg {
+                let item = items + 0x20 * s;
+                t.w32(item, 0x1700 + s);
+                let mat = if (s + k) % 5 == 3 {
+                    0
+                } else {
+                    let m = t.zeros(0x20);
+                    t.w32(m, 0x4ead + s);
+                    t.w32(m + 0x14, ((s + k) % 3) | ((k & 2) << 30) | ((k & 4) << 18));
+                    m
+                };
+                t.w32(item + 4, mat);
+                let desc = t.zeros(0x10);
+                t.w32(desc + 4, 0x9a55 + s);
+                let names = [(transparent, 0), (transparent, transparent), (0x7e01, 0)]
+                    [((s + k) % 3) as usize];
+                t.w32(
+                    desc + 8,
+                    if names.0 > 0x7f00 {
+                        t.rebase(names.0)
+                    } else {
+                        names.0
+                    },
+                );
+                t.w32(desc + 0xc, if names.1 == 0 { 0 } else { t.rebase(names.1) });
+                t.w32(item + 0x1c, desc);
+            }
+            let cursor = t.zeros(4);
+            t.w32(cursor, items);
+            let ebp = t.ebp_for(3);
+            let bytes = (joints_n + 1) << 6;
+            let ring_block = t.junk(0x10 + bytes as usize, 0x23);
+            let alloca = if joints_n > 0x80 {
+                0
+            } else {
+                (ebp - 0x174 - bytes) & !0xf
+            };
+            let base = if alloca == 0 {
+                ring_block + 0x10
+            } else {
+                alloca
+            };
+            for w in 0..(bytes / 4) {
+                let v = 0.25f32 * f32::from(u8::try_from(w % 7).unwrap()) + if w % 5 == 0 { 1.0 } else { 0.0 };
+                t.w32(base + 4 * w, v.to_bits());
+            }
+            t.seq_answers(singleton, false, 0, 0, &[0x6100]);
+            t.seq_answers(allocate, true, 1, 1, &[ring_block]);
+            t.stub(compute, true, 1, 1, 0x71);
+            t.stub(upload, true, 1, 1, 0x72);
+            t.stub(block_count, true, 1, 1, 2 + k % 2);
+            t.stub(
+                count_kinds,
+                false,
+                1,
+                0,
+                if k % 4 == 3 { 0xffff_ffff } else { 3 },
+            );
+            let errs: Vec<u32> = (0..16)
+                .map(|j| if (j + k) % 6 == 1 { 0x30 + j } else { 0 })
+                .collect();
+            t.seq_wide(fill, 8, 8, Some((4, 0x5d + k)), &errs);
+            t.stub(ring_alloc, true, 1, 1, 0xb10c);
+            t.stub_wide(queue, true, 8, 8, None, 0x73);
+            t.check_frame(
+                &format!("{label}: batch {k}"),
+                0x005b_9ee0,
+                Conv::Thiscall(r),
+                &[batch, cursor, 0x1234],
+                ebp,
+                0x180 + bytes,
+                (0x164, 0x54),
+                |g| {
+                    Out::U32(bp::batch::render_batch(
+                        g,
+                        ebp,
+                        r,
+                        (batch, cursor, 0x1234),
+                        alloca,
+                    ))
+                },
+            );
+            t.reset();
+        }
     }
 }

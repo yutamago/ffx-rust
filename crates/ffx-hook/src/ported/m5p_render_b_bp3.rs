@@ -5,7 +5,7 @@
 
 use ffx_prender::m5p_render_b_bp3 as rb;
 
-use super::{StackFrame, mem, ported};
+use super::{StackFrame, mem, ported, with_frame};
 
 ported! {
     /// `Phyre_PPostProcessing_PGlow_renderPasses_00a1d2b0(effect; renderer, out, texture, bloom, flag)`:
@@ -49,5 +49,26 @@ ported! {
         let mut f = StackFrame::<{ rb::SPHERE_FRAME_WORDS as usize }>::new();
         let ebp = f.at() + 4 * rb::SPHERE_FRAME_WORDS;
         rb::cone::create_sphere(&mut mem(), ebp, cluster, n)
+    }
+    /// `Phyre_CharacterShaderManager_makeVariants_006dfad0(key, kind)`:
+    /// the static object in a frame; the key's argument slot is handed to
+    /// the trees and the second slot written, so the shim takes `slots`.
+    Phyre_CharacterShaderManager_makeVariants_006dfad0 @ 0x006d_fad0 => extern "C" fn rbp3_006dfad0(key: u32, kind: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<{ rb::VARIANT_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * rb::VARIANT_FRAME_WORDS;
+        rb::variants::make_variants(&mut mem(), ebp, slots, key, kind)
+    }
+    /// `Phyre_PRendering_PRendererBase_renderBatch_005b9ee0(renderer; batch, cursor, frame)`:
+    /// the draw context and matrices in a frame; the joint matrices in a
+    /// `with_frame` block where the original carves them with
+    /// `_alloca_probe_16`.
+    Phyre_PRendering_PRendererBase_renderBatch_005b9ee0 @ 0x005b_9ee0 => extern "thiscall" fn rbp3_005b9ee0(this: u32, batch: u32, cursor: u32, frame: u32) -> u32 {
+        let mut f = StackFrame::<{ rb::BATCH_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * rb::BATCH_FRAME_WORDS;
+        let args = (batch, cursor, frame);
+        match rb::batch::joint_bytes(&mem(), this, batch) {
+            Some(bytes) => with_frame(bytes, |at| rb::batch::render_batch(&mut mem(), ebp, this, args, at)),
+            None => rb::batch::render_batch(&mut mem(), ebp, this, args, 0),
+        }
     }
 }

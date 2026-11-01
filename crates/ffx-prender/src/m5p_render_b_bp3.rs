@@ -1745,3 +1745,472 @@ pub mod cone {
         finish(h, cluster, &m, slots)
     }
 }
+
+/// `0x006dfad0`'s callees: `DynGeoTree_Find` (thiscall `(tree; &key)`),
+/// `PCluster::create`, `Phyre_PArray_resizeInline_0048c3b0` (thiscall
+/// `(array; n)`), `PEffectVariant::createMaterial` (thiscall, three
+/// words), `ShaderParams_FindByName` (thiscall `(shader; name)`),
+/// `PhyreMalloc(size, align)`, `PhyreFree(p)`,
+/// `PMaterial::setEffectVariant` (thiscall, two words), the static
+/// object unlink `0x004dbab0` (`ecx`), `CharacterShaderManager::insert`
+/// (thiscall `(manager; &key, &value)`).
+pub const VARIANT_CALLS: [u32; 10] = [
+    0x006d_edd0,
+    0x0044_1010,
+    0x0048_c3b0,
+    0x004e_6a40,
+    0x0056_cbf0,
+    0x0042_fb80,
+    0x0042_fb20,
+    0x004d_8940,
+    0x004d_bab0,
+    0x006d_f340,
+];
+/// The globals: the shader type's variant `g_DynGeoFillBuffer + 0x14`
+/// and the three it is chosen from (`+0x18`..`+0x20`), the new and the
+/// old material arrays (`+0x24`, `+0x28`), the cluster (`+0x30`), the
+/// two trees (`0x00c34b1c` materials made, `0x00c34b4c` originals) and
+/// the material array type `0x00c998e8`.
+pub const VARIANT_GLOBALS: [u32; 4] = [0x00cd_ee04, 0x00cd_ee14, 0x00cd_ee18, 0x00cd_ee20];
+/// `0x00c34b1c`, `0x00c34b4c`, `0x00c998e8`.
+pub const VARIANT_TREES: [u32; 3] = [0x00c3_4b1c, 0x00c3_4b4c, 0x00c9_98e8];
+/// `0x006dfad0`'s frame below `ebp` (the static object at `ebp - 0x38`),
+/// in words.
+pub const VARIANT_FRAME_WORDS: u32 = 0x38 / 4;
+
+pub mod variants {
+    //! `0x006dfad0` over game memory.
+
+    use super::{MEMCPY, VARIANT_CALLS, VARIANT_GLOBALS, VARIANT_TREES};
+    use ffx_graphic::host::{Conv, Host};
+
+    fn this_call(h: &mut impl Host, f: u32, this: u32, args: &[u32]) -> u32 {
+        h.call_sym(f, Conv::Thiscall(this), args)
+    }
+
+    /// A word array's data (`{count | flag << 31, inline word or data}`):
+    /// `[a + 4]` past one element, `a + 4` for one, 0 for none.
+    fn data(h: &impl Host, array: u32) -> u32 {
+        match h.read::<u32>(array) & 0x7fff_ffff {
+            0 => 0,
+            1 => array + 4,
+            _ => h.read(array + 4),
+        }
+    }
+
+    /// A tagged string pointer (bit 0 a flag).
+    fn untag(h: &impl Host, at: u32) -> u32 {
+        let p: u32 = h.read(at);
+        p.wrapping_sub(u32::from(h.read::<u8>(at) & 1))
+    }
+
+    /// The bytes of the parameter `p` of the source buffer `sp` copied
+    /// into the material's buffer `pb` at the place of its parameter of
+    /// the same name, for each of the source's parameters (16-byte
+    /// records at `[sp + 0xc]`, `[sp + 8] & 0x7fffffff` of them), when
+    /// both fit.
+    fn copy_parameters(h: &mut impl Host, sp: u32, pb: u32) {
+        let find = VARIANT_CALLS[4];
+        let n = h.read::<u32>(sp + 8) & 0x7fff_ffff;
+        for j in 0..n {
+            let table: u32 = h.read(sp + 0xc);
+            let e = table.wrapping_add(0x10 * j);
+            let name = untag(h, e + 4);
+            let shader: u32 = h.read(pb + 4);
+            let p = this_call(h, find, shader, &[name]);
+            if p == 0 {
+                continue;
+            }
+            let off = u32::from(h.read::<u16>(e + 8));
+            let size = u32::from(h.read::<u16>(e + 0xa) & 0x1fff);
+            if off.wrapping_add(size) > h.read::<u32>(sp) || off < 4 {
+                continue;
+            }
+            let src = off.wrapping_add(sp);
+            if src == 0 {
+                continue;
+            }
+            let off2 = u32::from(h.read::<u16>(p + 8));
+            let size2 = u32::from(h.read::<u16>(p + 0xa) & 0x1fff);
+            if off2.wrapping_add(size2) > h.read::<u32>(pb) || off2 < 4 {
+                continue;
+            }
+            h.call_sym(MEMCPY, Conv::Cdecl, &[off2.wrapping_add(pb), src, size2]);
+        }
+    }
+
+    /// The source's name (`[src + 0x10]`, tagged) copied into a new
+    /// block (`PhyreMalloc(len + 1, 2)`) for the material (`+0x10`, the
+    /// old one freed when owned); nothing when the allocation fails; 0
+    /// for no name.
+    fn copy_name(h: &mut impl Host, src: u32, mat: u32) {
+        let [.., malloc, free, _, _, _] = VARIANT_CALLS;
+        let name = untag(h, src + 0x10);
+        let copy = if name == 0 {
+            0
+        } else {
+            let mut len = 0u32;
+            while h.read::<u8>(name.wrapping_add(len)) != 0 {
+                len = len.wrapping_add(1);
+            }
+            let bytes = len.wrapping_add(1);
+            let block = h.call_sym(malloc, Conv::Cdecl, &[bytes, 2]);
+            if block == 0 {
+                return;
+            }
+            h.call_sym(MEMCPY, Conv::Cdecl, &[block, name, bytes]);
+            block
+        };
+        if h.read::<u8>(mat + 0x10) & 1 == 0 {
+            let old: u32 = h.read(mat + 0x10);
+            h.call_sym(free, Conv::Cdecl, &[old]);
+        }
+        h.write(mat + 0x10, copy);
+    }
+
+    /// `Phyre_CharacterShaderManager_makeVariants_006dfad0(key, kind)`
+    /// (cdecl; `slots` the caller's argument words): the shader type's
+    /// variant `+0x14` set from `+0x18`/`+0x1c`/`+0x20` for kind 0/1/2
+    /// (else kept); nothing more (its value in `eax`) without one, or
+    /// when the materials tree (`0x00c34b1c`) has the key
+    /// (`DynGeoTree_Find(&key)`, `eax` its node + 0x10). Else a new
+    /// material array (`PCluster::create(cluster; 1, 0x00c998e8, 0)`,
+    /// global `+0x24`) as long as the key's (`[key + 0x10]`, global
+    /// `+0x28`); for each of its materials: a 4-word static object at
+    /// `ebp - 0x38` copied from `[[[material] + 0x10]]`, a material of
+    /// the variant (`createMaterial(variant; cluster, 0, 0)`), the
+    /// source's parameters ([`copy_parameters`]; the source buffer kept
+    /// in the argument slot `+4`), its name ([`copy_name`]),
+    /// `setEffectVariant(variant, buffer)`, the material stored in the
+    /// new array (inside its count), the static object unlinked
+    /// (`0x004dbab0`); then the key's array is the new one (or
+    /// `[key] + 0x30` without it) and both arrays go into the trees
+    /// (`insert(&key, &global)`), the last insert's `eax`.
+    pub fn make_variants(h: &mut impl Host, ebp: u32, slots: u32, key: u32, kind: u32) -> u32 {
+        let [
+            find,
+            create,
+            resize,
+            create_material,
+            _,
+            _,
+            _,
+            set_variant,
+            unlink,
+            insert,
+        ] = VARIANT_CALLS;
+        let [g_variant, g_new, g_old, g_cluster] = VARIANT_GLOBALS.map(|a| h.rebase(a));
+        let [made_tree, old_tree, array_type] = VARIANT_TREES.map(|a| h.rebase(a));
+        if kind < 3 {
+            let v: u32 = h.read(g_variant + 4 + 4 * kind);
+            h.write(g_variant, v);
+        }
+        let variant: u32 = h.read(g_variant);
+        if variant == 0 {
+            return 0;
+        }
+        let node = this_call(h, find, made_tree, &[slots]);
+        if node != 0 && node.wrapping_add(0x10) != 0 {
+            return node.wrapping_add(0x10);
+        }
+        let new = this_call(h, create, g_cluster, &[1, array_type, 0]);
+        h.write(g_new, new);
+        let old: u32 = h.read(key + 0x10);
+        h.write(g_old, old);
+        let n = h.read::<u32>(old) & 0x7fff_ffff;
+        this_call(h, resize, new, &[n]);
+        let local = ebp - 0x38;
+        for i in 0..n {
+            let old: u32 = h.read(g_old);
+            let src: u32 = h.read(data(h, old).wrapping_add(4 * i));
+            let head: u32 = h.read(src);
+            let p: u32 = h.read(head + 0x10);
+            let from: u32 = h.read(p);
+            let words: [u32; 4] = h.read(from);
+            h.write(local, words);
+            let variant: u32 = h.read(g_variant);
+            let mat = this_call(h, create_material, variant, &[g_cluster, 0, 0]);
+            let pb: u32 = h.read(mat + 4);
+            let sp: u32 = h.read(src + 4);
+            h.write(slots + 4, sp);
+            copy_parameters(h, sp, pb);
+            copy_name(h, src, mat);
+            let variant: u32 = h.read(g_variant);
+            this_call(h, set_variant, mat, &[variant, pb]);
+            let new: u32 = h.read(g_new);
+            if i < h.read::<u32>(new) & 0x7fff_ffff {
+                let d = data(h, new);
+                h.write(d.wrapping_add(4 * i), mat);
+            }
+            this_call(h, unlink, local, &[]);
+        }
+        let new: u32 = h.read(g_new);
+        let array = if new == 0 {
+            h.read::<u32>(key).wrapping_add(0x30)
+        } else {
+            new
+        };
+        h.write(key + 0x10, array);
+        this_call(h, insert, old_tree, &[slots, g_old]);
+        this_call(h, insert, made_tree, &[slots, g_new])
+    }
+}
+
+/// `0x005b9ee0`'s callees: `PPreprocessRingBuffer::GetSingleton` (cdecl),
+/// `PPreprocessRingBuffer::allocate` (thiscall, one word),
+/// `PMeshInstance::computeJointMatrices` (thiscall, one word),
+/// `uploadSkinMatrices` (thiscall, one word), `PMatrix4_Inverse` (cdecl
+/// `(out, m)` -> out), `PMatrix4_Copy_004c9430` (thiscall `(this; m)`),
+/// `PDynamicMesh::getDataBlockCount` (thiscall, one word),
+/// `countKinds` (cdecl, one word), `allocateAndFillParameterBuffers`
+/// (thiscall, eight words), `PRenderRingBufferSegmented::allocate`
+/// (thiscall, one word), `queueMeshCommands` (thiscall, eight words).
+pub const BATCH_CALLS: [u32; 11] = [
+    0x005c_d010,
+    0x005c_d0f0,
+    0x004f_6ef0,
+    0x004f_98b0,
+    0x004c_c0c0,
+    0x004c_9430,
+    0x0049_8770,
+    0x005b_52b0,
+    0x005b_5a50,
+    0x0061_3e10,
+    0x005b_a380,
+];
+/// The pass names `"Opaque"` and `"Transparent"` (string table entries
+/// the renderer and the pass descriptors point at).
+pub const BATCH_PASS_NAMES: [u32; 2] = [0x00c1_69b4, 0x00c1_69d4];
+/// `0x005b9ee0`'s frame below `ebp` (down to the inverse at
+/// `ebp - 0x164`), in words.
+pub const BATCH_FRAME_WORDS: u32 = 0x164 / 4;
+
+pub mod batch {
+    //! `0x005b9ee0` over game memory, split at its `_alloca_probe_16`
+    //! (docs/porting.md, "Run-time frames and varargs").
+
+    use super::{BATCH_CALLS, BATCH_PASS_NAMES};
+    use ffx_bridge::x87;
+    use ffx_graphic::host::{Conv, Host};
+
+    fn this_call(h: &mut impl Host, f: u32, this: u32, args: &[u32]) -> u32 {
+        h.call_sym(f, Conv::Thiscall(this), args)
+    }
+
+    /// The joint matrices' block size (`([mesh + 0x18] & 0x7fffffff) + 1`
+    /// matrices) when the original carves it with `_alloca_probe_16`:
+    /// `None` when the renderer is not ready (`+4` bit 0 clear) or past
+    /// 0x80 matrices (the preprocess ring buffer gives the block then).
+    pub fn joint_bytes(h: &impl Host, renderer: u32, batch: u32) -> Option<u32> {
+        if h.read::<u32>(renderer + 4) & 1 == 0 {
+            return None;
+        }
+        let instance: u32 = h.read(batch);
+        let mesh: u32 = h.read(instance);
+        let n = (h.read::<u32>(mesh + 0x18) & 0x7fff_ffff).wrapping_add(1);
+        if n > 0x80 { None } else { Some(n << 6) }
+    }
+
+    /// The draw of segment `i` of the item at `[*cursor]` in the pass
+    /// (`ebp - 0xe0` the draw context, its segment, index, joint
+    /// matrix, the joint's inverse and the item's two words): when the
+    /// renderer's pass is "Opaque" and the item's pass descriptor
+    /// (`+0x1c`) is "Transparent" without being so at `+0xc`, nothing;
+    /// else the parameter buffers sized and filled
+    /// (`allocateAndFillParameterBuffers` into `ebp - 0x70`, its count
+    /// word at `ebp - 0x18`) and on success the mesh commands queued into
+    /// a ring block. `Some(error)` when filling fails.
+    #[allow(clippy::too_many_arguments)] // the original's locals
+    fn draw(
+        h: &mut impl Host,
+        ebp: u32,
+        r: u32,
+        joints: u32,
+        dynamic: u32,
+        seg: u32,
+        i: u32,
+        item: u32,
+    ) -> Option<u32> {
+        let [
+            _,
+            _,
+            _,
+            _,
+            inverse,
+            copy,
+            block_count,
+            count_kinds,
+            fill,
+            ring_alloc,
+            queue,
+        ] = BATCH_CALLS;
+        let [opaque, transparent] = BATCH_PASS_NAMES.map(|a| h.rebase(a));
+        let first: u32 = h.read(item);
+        let material: u32 = h.read(item + 4);
+        h.write(ebp - 0xc4, [seg, i]);
+        h.write(ebp - 0x78, [first, material]);
+        let joint = joints.wrapping_add(h.read::<u32>(seg + 4) << 6);
+        h.write(ebp - 0xbc, joint);
+        let inv = h.call_sym(inverse, Conv::Cdecl, &[ebp - 0x164, joint]);
+        this_call(h, copy, ebp - 0x120, &[inv]);
+        for k in 0..16 {
+            let v = x87::store(x87::load(h.read(ebp - 0x120 + 4 * k)));
+            h.write(ebp - 0xb8 + 4 * k, v);
+        }
+        let desc: u32 = h.read(item + 0x1c);
+        if h.read::<u32>(r + 0x48) == opaque
+            && h.read::<u32>(desc + 8) == transparent
+            && h.read::<u32>(desc + 0xc) != transparent
+        {
+            return None;
+        }
+        let head: u32 = h.read(material);
+        let pass: u32 = h.read(desc + 4);
+        let mut extra = 0u32;
+        if dynamic != 0 {
+            let m: u32 = h.read(dynamic + 4);
+            let blocks = this_call(h, block_count, m, &[i]);
+            let table: u32 = h.read(m + 0x14);
+            let more = if h.read::<u32>(table.wrapping_add(0x10 * i + 0xc)) != 0 {
+                0x40
+            } else {
+                0
+            };
+            extra = ((blocks << 6).wrapping_add(0xf) & !0xf).wrapping_add(more);
+        }
+        let k1 = h.call_sym(count_kinds, Conv::Cdecl, &[pass.wrapping_add(8)]);
+        let k2 = h.call_sym(count_kinds, Conv::Cdecl, &[material.wrapping_add(0xc)]);
+        let mut n = (h.read::<u32>(material + 0x14) & 0x7fff_ffff)
+            .wrapping_add(2)
+            .wrapping_add(k1)
+            .wrapping_add(k2);
+        if dynamic != 0 {
+            n = n.wrapping_add(2);
+        }
+        let size = if n > 1 {
+            n.wrapping_mul(4).wrapping_add(4)
+        } else {
+            8
+        };
+        h.write(ebp - 0x70, [0u32; 7]);
+        h.write(ebp - 0x18, 0u32);
+        let err = this_call(
+            h,
+            fill,
+            r,
+            &[
+                ebp - 0x70,
+                head,
+                pass,
+                ebp - 0xe0,
+                ebp - 0x18,
+                item.wrapping_add(8),
+                extra,
+                dynamic,
+            ],
+        );
+        if err != 0 {
+            return Some(err);
+        }
+        let block = this_call(h, ring_alloc, r + 0x1c, &[size.wrapping_add(0xf) & !0xf]);
+        let words: u32 = h.read(ebp - 0x18);
+        this_call(
+            h,
+            queue,
+            r,
+            &[first, material, dynamic, seg, i, ebp - 0x70, block, words],
+        );
+        None
+    }
+
+    /// `Phyre_PRendering_PRendererBase_renderBatch_005b9ee0(renderer;
+    /// batch, cursor, frame)` (thiscall, ret 0xc): 0x16 unless the
+    /// renderer is ready (`+4` bit 0); the joint matrices of the batch's
+    /// instance (`[batch]`, its mesh's `[+0x18] + 1` matrices, the first
+    /// skipped) computed into `alloca` (from [`joint_bytes`]) or, past
+    /// 0x80, a preprocess ring block (`+0x10`; its word `+4` cleared at
+    /// the end); skin matrices uploaded when the batch says so (byte
+    /// `+8`) and the instance's frame (`+0x80`) changes; the draw
+    /// context at `ebp - 0xe0`; then for each pass 0..=3 the items from
+    /// `*cursor` again, one per segment `[batch + 4]..[batch + 6]`
+    /// (16-bit), each drawn ([`draw`]) when it has a material, the
+    /// segment (0x6c bytes of the mesh's `[+4]`) is visible (`+0x14`
+    /// clear) and in the pass (`+0x1c`), `*cursor` advancing by 0x20.
+    /// The last fill error, or 0.
+    pub fn render_batch(
+        h: &mut impl Host,
+        ebp: u32,
+        r: u32,
+        (batch, cursor, frame): (u32, u32, u32),
+        alloca: u32,
+    ) -> u32 {
+        let [singleton, allocate, compute, upload, ..] = BATCH_CALLS;
+        if h.read::<u32>(r + 4) & 1 == 0 {
+            return 0x16;
+        }
+        let instance: u32 = h.read(batch);
+        let dynamic: u32 = h.read(instance + 0x18);
+        let skin: u32 = h.read(instance + 0x14);
+        let mesh: u32 = h.read(instance);
+        let n = (h.read::<u32>(mesh + 0x18) & 0x7fff_ffff).wrapping_add(1);
+        let mut block = 0;
+        let base = if n > 0x80 {
+            let ring = h.call_sym(singleton, Conv::Cdecl, &[]);
+            block = this_call(h, allocate, ring, &[n << 6]);
+            block.wrapping_add(0x10)
+        } else {
+            alloca
+        };
+        h.write(ebp - 0x124, block);
+        let joints = base.wrapping_add(0x40);
+        this_call(h, compute, instance, &[joints]);
+        if h.read::<u8>(batch + 8) != 0 {
+            let inst: u32 = h.read(batch);
+            if h.read::<u32>(inst + 0x80) != frame {
+                h.write(inst + 0x80, frame);
+                this_call(h, upload, inst, &[joints]);
+            }
+        }
+        let view: u32 = h.read(r + 0x18);
+        let context = [
+            h.read::<u32>(r + 0x5c),
+            r.wrapping_add(0x60),
+            r.wrapping_add(0xa0),
+            h.read::<u32>(view + 0xc4),
+            instance,
+            joints,
+            skin,
+            0,
+            0,
+            0,
+        ];
+        h.write(ebp - 0xe0, context);
+        h.write(ebp - 0x78, [0u32; 2]);
+        let start: u32 = h.read(cursor);
+        let mut result = 0;
+        for pass in 0..4u32 {
+            h.write(cursor, start);
+            let mut i = u32::from(h.read::<u16>(batch + 4));
+            while i < u32::from(h.read::<u16>(batch + 6)) {
+                let item: u32 = h.read(cursor);
+                let material: u32 = h.read(item + 4);
+                let segs: u32 = h.read(mesh + 4);
+                let seg = segs.wrapping_add(0x6c * i);
+                if material != 0
+                    && h.read::<u8>(seg + 0x14) == 0
+                    && h.read::<u32>(seg + 0x1c) == pass
+                    && let Some(err) = draw(h, ebp, r, joints, dynamic, seg, i, item)
+                {
+                    result = err;
+                }
+                let at: u32 = h.read(cursor);
+                h.write(cursor, at.wrapping_add(0x20));
+                i += 1;
+            }
+        }
+        if block != 0 {
+            h.write(block + 4, 0u32);
+        }
+        result
+    }
+}
