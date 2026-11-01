@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -31,6 +32,8 @@ fn actor(t: &mut Twin, at: u32, (e, table): (u32, u32), i: u8) {
     let rec = SCRATCH + 0x80;
     t.set_u32(t.img.word(at + e), rec);
     t.set_u8(rec + 1, i);
+    // the byte after the index non-zero (an index read as u16 shows)
+    t.set_u8(rec + 2, 0x3c);
     let table = t.img.word(at + table);
     for k in 0..8 {
         t.set_u32(table + 4 * k, 0x00ac_0000 + k);
@@ -44,8 +47,12 @@ fn sound() {
     let at = t.at(0x1e10);
     rec(&mut t, 0, 1, |_, a| a[0] ^ 0x00f0_0000);
     recs(&mut t, &[(26, 3), (10, 5), (257, 7)]);
+    // the byte after the one the start sets, non-zero
+    let byte = t.img.word(at + 0x2a);
     for i in [0u8, 3] {
+        t.set_u32(byte, 0x6d6d_6d00);
         actor(&mut t, at, (0x3e, 0x55), i);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -65,6 +72,7 @@ fn part_start() {
         t.write(head, &[0x4d; 0x20]);
         t.set_u32(t.img.word(at + 0x1d), u32::from(!empty));
         t.set_u32(t.img.word(at + 0x31), head);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -77,6 +85,7 @@ fn colours() {
     recs(&mut t, &[(357, 3), (356, 6), (355, 8), (354, 10)]);
     for i in [1u8, 5] {
         actor(&mut t, at, (0x1, 0x12), i);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -86,11 +95,17 @@ fn colours() {
 fn light() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x2860);
-    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 6), (248, 9)]);
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (248, 9)]);
+    // slot 229 keeps the vector it gets
+    rec(&mut t, 229, 6, |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
+        0x5a5a_0229
+    });
     let r = SCRATCH + 0x4000;
     t.set_u32(t.img.word(at + 0x11), r);
     t.write(r + 0xb00, &[0x3e; 0x400]);
     t.set_u32(r + 0xdf4, 0x3fc9_0fdb);
+    magic_h6::scrub(&mut t);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
 
@@ -141,6 +156,7 @@ fn actor_matrix() {
             t.set_u32(s + 0xb00 + 4 * i, (0.5 + 0.25 * i as f32).to_bits());
         }
         t.write(actors, &[b; 4]);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             ffx_magic::m0588::actor_matrix(g, img, fr)
         });

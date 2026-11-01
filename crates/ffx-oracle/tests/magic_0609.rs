@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -36,6 +37,11 @@ fn task_start() {
     for bits in [0u16, 0x8001] {
         t.write(tail, &[0x1b; 0x20]);
         t.set_u32(t.img.word(at + 0x1), tail);
+        // the flag word (bit 0 set, so its clear shows) and the words
+        // the start clears, distinct and non-zero
+        magic_h6::distinct(&mut t, at, &[0x61, 0x6b, 0x5b]);
+        let flag = t.img.word(at + 0x3e);
+        t.set_u32(flag, 0x00f1_a6c3);
         t.write(obj, &[0x4e; 0x100]);
         t.set_u16(obj + 0x90, bits);
         let c = Call {

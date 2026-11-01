@@ -100,6 +100,8 @@ pub mod o6_fam_pairs;
 pub mod o6_fam_pairs2;
 pub mod o6_fam_pairs3;
 pub mod o6_fam_pairs4;
+pub mod o6_fam_pairs5;
+pub mod o6_fam_pairs6;
 pub mod o6_fam_pool;
 pub mod o6_fam_setup;
 pub mod o6_fam_start;
@@ -860,22 +862,15 @@ pub const fn first_overlap(a: &[(&str, &Sig)], b: &[(&str, &Sig)]) -> Option<(us
     None
 }
 
-/// Every port: its name, signature and a dispatcher index. A signature
-/// registered twice (here or in [`INTERNAL`]) does not build: one port
-/// per code identity.
+/// Every port: its name, signature and a dispatcher index. One port per
+/// code identity: a signature registered twice (here or in [`INTERNAL`])
+/// fails `cargo test -p ffx-magic one_port_per_identity`. (That check ran
+/// at compile time until 2026-11-01; pairwise over ~1,000 ports it made
+/// 21 s of every 25 s `cargo check` and 52 s of every 73 s release build.)
 macro_rules! ports {
     ($($name:literal => $sig:path, $m:ident :: $f:ident;)*) => {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
-
-        // the pairwise check grows with the square of the ports and now
-        // runs longer than the lint's limit (it does finish)
-        #[allow(long_running_const_eval)]
-        const _: () = assert!(
-            first_overlap(PORTS, INTERNAL).is_none(),
-            "two ports (PORTS or INTERNAL) with the same code identity: \
-             keep one (cargo test -p ffx-magic one_port_per_identity names them)"
-        );
 
         /// The port at `PORTS[i]` for a game type.
         #[must_use]
@@ -2535,6 +2530,54 @@ ports! {
     "o6 fam pairs4 camera_reset_nodes 0605@a100" => o6_fam_pairs4::CAMERA_RESET_NODES_0605_A100, o6_fam_pairs4::camera_reset_nodes;
     "o6 fam pairs4 spark_task 0249@1b20" => o6_fam_pairs4::SPARK_TASK_0249_1B20, o6_fam_pairs4::spark_task;
     // round 6, the shape families (o6_fam_*): end of ports
+    "o6 fam pairs5 look_matrix_callback 0664@16e0" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0664_16E0, o6_fam_pairs5::look_matrix_callback;
+    "o6 fam pairs5 look_matrix_callback 0045@1310" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0045_1310, o6_fam_pairs5::look_matrix_callback;
+    "o6 fam pairs5 record_unlist 0479@3c00" => o6_fam_pairs5::RECORD_UNLIST_0479_3C00, o6_fam_pairs5::record_unlist;
+    "o6 fam pairs5 record_unlist 0673@15b0" => o6_fam_pairs5::RECORD_UNLIST_0673_15B0, o6_fam_pairs5::record_unlist;
+    "o6 fam pairs5 two_particle_burst 0162@48a0" => o6_fam_pairs5::TWO_PARTICLE_BURST_0162_48A0, o6_fam_pairs5::two_particle_burst;
+    "o6 fam pairs5 two_particle_burst 0598@7ef0" => o6_fam_pairs5::TWO_PARTICLE_BURST_0598_7EF0, o6_fam_pairs5::two_particle_burst;
+    "o6 fam pairs5 level_particles 0307@5310" => o6_fam_pairs5::LEVEL_PARTICLES_0307_5310, o6_fam_pairs5::level_particles;
+    "o6 fam pairs5 level_particles 0563@35b0" => o6_fam_pairs5::LEVEL_PARTICLES_0563_35B0, o6_fam_pairs5::level_particles;
+    "o6 fam pairs5 two_part_visit_thunk 0070@14a0" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0070_14A0, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 scrolled_texture 0188@1220" => o6_fam_pairs5::SCROLLED_TEXTURE_0188_1220, o6_fam_pairs5::scrolled_texture;
+    "o6 fam pairs5 scrolled_texture 0351@1080" => o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080, o6_fam_pairs5::scrolled_texture;
+    "o6 fam pairs5 ribbon_visit_thunk 0070@8840" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0070_8840, o6_fam_pairs5::ribbon_visit_thunk;
+    "o6 fam pairs5 ribbon_visit_thunk 0155@8340" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0155_8340, o6_fam_pairs5::ribbon_visit_thunk;
+    "o6 fam pairs5 timed_items_visit_thunk 0155@8050" => o6_fam_pairs5::TIMED_ITEMS_VISIT_THUNK_0155_8050, o6_fam_pairs5::timed_items_visit_thunk;
+    "o6 fam pairs5 timed_items_visit_thunk 0164@80d0" => o6_fam_pairs5::TIMED_ITEMS_VISIT_THUNK_0164_80D0, o6_fam_pairs5::timed_items_visit_thunk;
+    "o6 fam pairs5 sprite_visit_thunk 0578@33c0" => o6_fam_pairs5::SPRITE_VISIT_THUNK_0578_33C0, o6_fam_pairs5::sprite_visit_thunk;
+    "o6 fam pairs5 turn_box 0307@1d20" => o6_fam_pairs5::TURN_BOX_0307_1D20, o6_fam_pairs5::turn_box;
+    "o6 fam pairs5 turn_box 0605@76a0" => o6_fam_pairs5::TURN_BOX_0605_76A0, o6_fam_pairs5::turn_box;
+    "o6 fam pairs5 particle_rows 0304@2ae0" => o6_fam_pairs5::PARTICLE_ROWS_0304_2AE0, o6_fam_pairs5::particle_rows;
+    "o6 fam pairs5 particle_rows 0568@2510" => o6_fam_pairs5::PARTICLE_ROWS_0568_2510, o6_fam_pairs5::particle_rows;
+    "o6 fam pairs5 node_rings 0150@b210" => o6_fam_pairs5::NODE_RINGS_0150_B210, o6_fam_pairs5::node_rings;
+    "o6 fam pairs5 node_rings 0603@b140" => o6_fam_pairs5::NODE_RINGS_0603_B140, o6_fam_pairs5::node_rings;
+    "o6 fam pairs5 two_pass_particles 0304@2740" => o6_fam_pairs5::TWO_PASS_PARTICLES_0304_2740, o6_fam_pairs5::two_pass_particles;
+    "o6 fam pairs5 two_pass_particles 0568@2170" => o6_fam_pairs5::TWO_PASS_PARTICLES_0568_2170, o6_fam_pairs5::two_pass_particles;
+    "o6 fam pairs5 mesh_centres 0307@2010" => o6_fam_pairs5::MESH_CENTRES_0307_2010, o6_fam_pairs5::mesh_centres;
+    "o6 fam pairs5 mesh_centres 0605@7990" => o6_fam_pairs5::MESH_CENTRES_0605_7990, o6_fam_pairs5::mesh_centres;
+    "o6 fam pairs5 target_objects 0644@8900" => o6_fam_pairs5::TARGET_OBJECTS_0644_8900, o6_fam_pairs5::target_objects;
+    "o6 fam pairs5 target_objects 0565@48e0" => o6_fam_pairs5::TARGET_OBJECTS_0565_48E0, o6_fam_pairs5::target_objects;
+    "o6 fam pairs5 moving_sprites 0250@1ee0" => o6_fam_pairs5::MOVING_SPRITES_0250_1EE0, o6_fam_pairs5::moving_sprites;
+    "o6 fam pairs5 actor_light 0565@5470" => o6_fam_pairs5::ACTOR_LIGHT_0565_5470, o6_fam_pairs5::actor_light;
+    "o6 fam pairs5 actor_light 0644@92b0" => o6_fam_pairs5::ACTOR_LIGHT_0644_92B0, o6_fam_pairs5::actor_light;
+    "o6 fam pairs6 aimed_objects 0565@40d0" => o6_fam_pairs6::AIMED_OBJECTS_0565_40D0, o6_fam_pairs6::aimed_objects;
+    "o6 fam pairs6 aimed_objects 0644@80f0" => o6_fam_pairs6::AIMED_OBJECTS_0644_80F0, o6_fam_pairs6::aimed_objects;
+    "o6 fam pairs6 curve_flyers 0307@2be0" => o6_fam_pairs6::CURVE_FLYERS_0307_2BE0, o6_fam_pairs6::curve_flyers;
+    "o6 fam pairs6 curve_flyers 0563@26d0" => o6_fam_pairs6::CURVE_FLYERS_0563_26D0, o6_fam_pairs6::curve_flyers;
+    "o6 fam pairs6 actor_spawner 0565@5bd0" => o6_fam_pairs6::ACTOR_SPAWNER_0565_5BD0, o6_fam_pairs6::actor_spawner;
+    "o6 fam pairs6 actor_spawner 0644@9a00" => o6_fam_pairs6::ACTOR_SPAWNER_0644_9A00, o6_fam_pairs6::actor_spawner;
+    "o6 fam pairs6 staged_nodes 0398@6960" => o6_fam_pairs6::STAGED_NODES_0398_6960, o6_fam_pairs6::staged_nodes;
+    "o6 fam pairs6 staged_nodes 0402@6960" => o6_fam_pairs6::STAGED_NODES_0402_6960, o6_fam_pairs6::staged_nodes;
+    "o6 fam pairs6 trail_task 0544@2250" => o6_fam_pairs6::TRAIL_TASK_0544_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 trail_task 0555@2250" => o6_fam_pairs6::TRAIL_TASK_0555_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 trail_task 0556@2250" => o6_fam_pairs6::TRAIL_TASK_0556_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 basis_start 0666@1900" => o6_fam_pairs6::BASIS_START_0666_1900, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 basis_start 0664@18d0" => o6_fam_pairs6::BASIS_START_0664_18D0, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 basis_start 0665@1b10" => o6_fam_pairs6::BASIS_START_0665_1B10, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 overlay_setup 0673@1000" => o6_fam_pairs6::OVERLAY_SETUP_0673_1000, o6_fam_pairs6::overlay_setup;
+    "o6 fam pairs6 overlay_setup 0253@1000" => o6_fam_pairs6::OVERLAY_SETUP_0253_1000, o6_fam_pairs6::overlay_setup;
+    // families2 (o6_fam_pairs5..): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -3470,6 +3513,87 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &o6_fam_pairs4::THREE_PASS_MODEL_0586_1A20,
     ),
     // round 6, the shape families (o6_fam_*): end of INTERNAL
+    (
+        "o6 fam pairs5 record_node_start 0199@2160",
+        &o6_fam_pairs5::RECORD_NODE_START_0199_2160,
+    ),
+    (
+        "o6 fam pairs5 record_node_start 0251@2550",
+        &o6_fam_pairs5::RECORD_NODE_START_0251_2550,
+    ),
+    (
+        "o6 fam pairs5 global_node_start 0253@4370",
+        &o6_fam_pairs5::GLOBAL_NODE_START_0253_4370,
+    ),
+    (
+        "o6 fam pairs5 global_node_start 0311@1f60",
+        &o6_fam_pairs5::GLOBAL_NODE_START_0311_1F60,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0070@1160",
+        &o6_fam_pairs5::TWO_PART_VISIT_0070_1160,
+    ),
+    (
+        "o6 fam pairs5 ribbon_visit 0070@86d0",
+        &o6_fam_pairs5::RIBBON_VISIT_0070_86D0,
+    ),
+    (
+        "o6 fam pairs5 ribbon_visit 0155@8170",
+        &o6_fam_pairs5::RIBBON_VISIT_0155_8170,
+    ),
+    (
+        "o6 fam pairs5 timed_items_visit 0155@7d70",
+        &o6_fam_pairs5::TIMED_ITEMS_VISIT_0155_7D70,
+    ),
+    (
+        "o6 fam pairs5 timed_items_visit 0164@7df0",
+        &o6_fam_pairs5::TIMED_ITEMS_VISIT_0164_7DF0,
+    ),
+    (
+        "o6 fam pairs5 sprite_visit 0578@30d0",
+        &o6_fam_pairs5::SPRITE_VISIT_0578_30D0,
+    ),
+    (
+        "o6 fam pairs5 sprite_visit 0585@3110",
+        &o6_fam_pairs5::SPRITE_VISIT_0585_3110,
+    ),
+    (
+        "o6 fam pairs5 light_setup 0644@b390",
+        &o6_fam_pairs5::LIGHT_SETUP_0644_B390,
+    ),
+    (
+        "o6 fam pairs5 sprite_frame 0206@2730",
+        &o6_fam_pairs5::SPRITE_FRAME_0206_2730,
+    ),
+    (
+        "o6 fam pairs6 trail_draw 0446@4e20",
+        &o6_fam_pairs6::TRAIL_DRAW_0446_4E20,
+    ),
+    (
+        "o6 fam pairs6 trail_draw 0544@4ce0",
+        &o6_fam_pairs6::TRAIL_DRAW_0544_4CE0,
+    ),
+    (
+        "o6 fam pairs6 packed_sprite 0353@13b0",
+        &o6_fam_pairs6::PACKED_SPRITE_0353_13B0,
+    ),
+    (
+        "o6 fam pairs6 packed_sprite 0672@1310",
+        &o6_fam_pairs6::PACKED_SPRITE_0672_1310,
+    ),
+    (
+        "o6 fam pairs6 packed_sprite 0266@1310",
+        &o6_fam_pairs6::PACKED_SPRITE_0266_1310,
+    ),
+    (
+        "o6 fam pairs6 scene_end 0610@ab20",
+        &o6_fam_pairs6::SCENE_END_0610_AB20,
+    ),
+    (
+        "o6 fam pairs6 scene_end 0434@5b90",
+        &o6_fam_pairs6::SCENE_END_0434_5B90,
+    ),
+    // families2 (o6_fam_pairs5..): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

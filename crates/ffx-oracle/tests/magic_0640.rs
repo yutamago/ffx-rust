@@ -10,12 +10,13 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
 
 use magic::{Call, Eax, SCRATCH};
-use magic_owna::{rec, recs, twin};
+use magic_owna::{rec, twin};
 
 const N: u16 = 640;
 
@@ -39,9 +40,12 @@ fn register() {
             0x0719_0000 + a[2]
         }
     });
-    recs(&mut t, &[(711, 3)]);
     let lock = SCRATCH + 0x20;
     t.set_u32(t.img.word(at + 0xce), lock);
+    // slot 711 keeps the game flag it runs under
+    magic_h6::rec_cells(&mut t, 711, 3, &[lock], |_, a| {
+        0x5a5a_0711 ^ a.first().copied().unwrap_or(0)
+    });
     t.set_u32(lock, 0x00a1_0000);
     let gp = SCRATCH + 0x24;
     t.set_u32(t.img.word(at + 0x4f), gp);
@@ -67,10 +71,12 @@ fn register() {
         (false, 0u32, false),
         (true, 9, false),
         (true, 2, false),
+        (true, 0, false),
         (true, 2, true),
     ] {
         t.set_u32(l + 4, if has_list { list } else { 0 });
-        t.set_u16(list + 0x50, 4);
+        // the count half-word, the half-word after it non-zero
+        t.set_u32(list + 0x50, 0x5a5a_0004);
         t.set_u32(cell, found);
         for k in 0..4 {
             t.set_u32(used + 4 * k, if busy { 0x00b5_0000 } else { 0 });

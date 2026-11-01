@@ -27,7 +27,8 @@ fn dll_main_writes_only_crt_state() {
 }
 
 /// 0x10001000, 0x10001150 (slot 712 saying 0 and 1) and 0x10001580 (off,
-/// on with slot 261's answers; the timeline idle).
+/// on with slot 261's answers; the timeline live, so running or stopping
+/// it, or not, shows).
 #[test]
 fn part_and_frame() {
     let Some(mut t) = twin(N) else { return };
@@ -44,7 +45,15 @@ fn part_and_frame() {
     // slot 712 keeps the part pointer's cell and the game flag
     let fd = t.at(0x1150);
     let (gp, lock) = (magic_h6::cell(&t, fd, 0x4b), magic_h6::cell(&t, fd, 0x58));
-    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| m.r32(cell) & 1);
+    // ... and moves the part cell on (as the game's part code may); slot
+    // 713 keeps both too, so the part pointer stored again before it shows
+    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| {
+        m.w32(gp, 0x6666_0712);
+        m.r32(cell) & 1
+    });
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
+    });
     rec(&mut t, 253, 0, move |m, _| (m.r32(cell) >> 4) & 1);
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     recs(
@@ -54,7 +63,6 @@ fn part_and_frame() {
             (258, 1),
             (231, 3),
             (230, 2),
-            (713, 1),
             (723, 1),
             (724, 2),
             (214, 1),
@@ -62,9 +70,6 @@ fn part_and_frame() {
     );
     let at = t.at(0x1580);
     let ftl = t.img.rel32_target(at + 0x72);
-    let fst = t.img.rel32_target(at + 0x8d);
-    t.set_u32(t.img.word(ftl + 0x06), 0);
-    t.set_u32(t.img.word(fst + 0x02), 0);
     // the word the frame copies and the one it passes to slot 214
     magic_h6::distinct(&mut t, at, &[0x55, 0x98]);
     let part = SCRATCH + 0x1000;
@@ -94,6 +99,7 @@ fn part_and_frame() {
             |g, img, fr| Ret::eax(m0537::draw(g, img, fr.at, fr.ecx)),
         );
         t.set_u32(t.img.word(at + 0x16), on);
+        magic_h6::live_timeline_global(&mut t, ftl, SCRATCH + 0x600, 0x40);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

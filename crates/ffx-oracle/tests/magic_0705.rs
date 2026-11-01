@@ -49,7 +49,11 @@ fn fade() {
 fn tint() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x10d0);
-    recs(&mut t, &[(353, 1)]);
+    // slot 353 keeps the vector it gets
+    rec(&mut t, 353, 1, |m, a| {
+        magic_owna::dump(m, 353, a[0], 4);
+        0x5a5a_0353
+    });
     let time = t.img.word(at + 0x11);
     let colour = [0.25f32, -1.5, 2.0, f32::NAN].map(f32::to_bits);
     for tm in [-5i32, 0, 1, 30, 60, 61, 270, 271, 329, 330, 400] {
@@ -71,7 +75,20 @@ fn glow() {
     let d = magic_hi::konst(&t, at, 0x42);
     #[allow(clippy::cast_possible_truncation)]
     let zero_at = 100 + d as i32;
-    for tm in [-1i32, 0, 1, 2, 50, 100, 101, zero_at, zero_at + 1, 119, 120] {
+    for tm in [
+        -1i32,
+        0,
+        1,
+        2,
+        50,
+        100,
+        101,
+        zero_at - 1,
+        zero_at,
+        zero_at + 1,
+        119,
+        120,
+    ] {
         t.set_u32(time, tm.cast_unsigned());
         let c = Call {
             eax: 0x00ea_0000,
