@@ -209,6 +209,7 @@ pub mod m5p_render_a9;
 pub mod m5p_render_b;
 pub mod m5p_render_b_arrays;
 pub mod m5p_render_b_bp2;
+pub mod m5p_render_b_bp3;
 pub mod m5p_render_b_d3d;
 pub mod m5p_render_b_df;
 pub mod m5p_render_b_dtors;

@@ -86,6 +86,7 @@ mod m5p_registry_load_a_left;
 mod m5p_render_a;
 mod m5p_render_b;
 mod m5p_render_b_bp2;
+mod m5p_render_b_bp3;
 mod m5p_render_b_df;
 mod m5p_render_b_left2;
 mod m5p_scene;
@@ -224,6 +225,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_core_g::hooks());
     all.extend(m5p_render_b::hooks());
     all.extend(m5p_render_b_bp2::hooks());
+    all.extend(m5p_render_b_bp3::hooks());
     all.extend(m5p_render_b_df::hooks());
     all.extend(m5p_render_b_left2::hooks());
     all.extend(m5_sound::hooks());
