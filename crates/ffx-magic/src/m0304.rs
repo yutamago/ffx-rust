@@ -112,3 +112,94 @@ pub const EASED_HEIGHT: Sig = Sig {
     calls: &[(0x1f, Callee::Sig(&crate::sb_misc::EASE_SAMPLE))],
     imports: &[],
 };
+
+/// Places the block's point (0x10002e20, a table entry, no arguments; a
+/// /GS frame; the block `S = *G_S`, operand `+0x13`): slot 235 `(&M)`,
+/// slot 329 `(&M, &M, S[0x145c])` and slot 229 `(&P, &M, &P)` with `P =
+/// (-10, 0, 0, 1)` (`M`, `P` locals at `ebp - 0x54`, `- 0x14`; each call
+/// over the earlier words); `S + 0x1408` = `S[0x1468] + P.x`, `S +
+/// 0x146c` and `+0x140c` = `S[0x149c] - K` (`+0xa5`). Returns slot 229's
+/// `eax`.
+pub fn place_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let s = g.read::<u32>(w(0x13));
+    let (m, p) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
+    let mut st = crate::pushes::Pushes::default();
+    st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, slot_target(g, w(0x1c), 235), fr.ecx);
+    st.set_top(g.read::<u32>(s + 0x145c));
+    st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, slot_target(g, w(0x3b), 329), fr.ecx);
+    st.push_all(&[p, m, p]);
+    for (i, v) in (0u32..).zip([0xc120_0000u32, 0, 0, 0x3f80_0000]) {
+        g.write::<u32>(p + 4 * i, v);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    let eax = st.call(g, slot_target(g, w(0x54), 229), fr.ecx).eax;
+    let x = add(g.read::<f32>(s + 0x1468), g.read::<f32>(p));
+    g.write::<f32>(s + 0x1408, x);
+    let y = crate::sb_sse::sub(g.read::<f32>(s + 0x149c), g.read::<f32>(w(0xa5)));
+    g.write::<f32>(s + 0x146c, y);
+    g.write::<f32>(s + 0x140c, y);
+    Ret::eax(eax)
+}
+
+/// [`place_point`] (195 bytes, 1 overlay; the `rel32` at `+0xbb` is
+/// `__security_check_cookie`).
+pub const PLACE_POINT: Sig = Sig {
+    len: 195,
+    hash: 0x3339_cb4d_c6b4_f88e,
+    calls: &[(0xbb, Callee::Any)],
+    imports: &[],
+};
+
+/// Starts the block's host object (0x10002f30, a table entry, no
+/// arguments; the block `S = *G_S`, operand `+0x0b`): the object `O = S +
+/// 0x720` ([`start_host_object`](crate::s4_small::start_host_object), `ecx`
+/// the immediate `+0x20`, scale the float at `+0x04`, index 1, motion 0);
+/// `O + 0xd0..0xdc` = `S + 0x1488..`, `O + 0xc4` = `S + 0x171c`, and `O +
+/// 0xd4` plus the float at `+0x65`. Returns the word copied to `+0xc4`.
+pub fn host_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0xb));
+    let o = s + 0x720;
+    // push esi; push edi; sub esp, 8; push 0; push 1; the call
+    let esp = fr.esp.wrapping_sub(0x1c);
+    g.write::<u32>(esp + 4, 1);
+    g.write::<u32>(esp + 8, 0);
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x4)));
+    let start = Frame {
+        at: img.rel32_target(f + 0x25),
+        esp,
+        ecx: w(0x20),
+        edx: o,
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::start_host_object(g, img, &start);
+    for k in 0..4u32 {
+        let v = g.read::<u32>(s + 0x1488 + 4 * k);
+        g.write::<u32>(o + 0xd0 + 4 * k, v);
+    }
+    let y = add(g.read::<f32>(o + 0xd4), g.read::<f32>(w(0x65)));
+    let v = g.read::<u32>(s + 0x171c);
+    g.write::<u32>(o + 0xc4, v);
+    g.write::<f32>(o + 0xd4, y);
+    Ret::eax(v)
+}
+
+/// [`host_start`] (131 bytes, 1 overlay).
+pub const HOST_START: Sig = Sig {
+    len: 131,
+    hash: 0x7211_817f_1689_202f,
+    calls: &[(0x25, Callee::Sig(&crate::s4_small::START_HOST_OBJECT))],
+    imports: &[],
+};

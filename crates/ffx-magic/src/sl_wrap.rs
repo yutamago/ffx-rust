@@ -1,10 +1,12 @@
 //! Register thunks over per-DLL handlers (agent magic-small-lo): the
 //! 12-byte `ecx` thunk of [`crate::s3_wrap`] (the same bytes in every
 //! copy; each callee its own code identity), with its own table of
-//! targets.
+//! targets. These are the parameter family `P073-956bfb0a` (41 thunks
+//! of 12 bytes, `tools/overlay-pfamilies.py`): a member binds once its
+//! target's port is here.
 
 use crate::s3_wrap::ECX_JMP_HASH;
-use crate::{Callee, Frame, Game, Image, Ret, Sig, m0146, m0164, m0186, m0201};
+use crate::{Callee, Frame, Game, Image, Ret, Sig, m0146, m0164, m0186, m0201, m0203};
 
 /// A handler's port on the frame its thunk hands it.
 type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
@@ -12,12 +14,21 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 4] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
         (&m0164::MEAN_VISIT, m0164::mean_visit::<G>),
         (&m0186::INT_MOTION, m0186::int_motion::<G>),
         (&m0201::MATRIX_VISIT, m0201::matrix_visit::<G>),
+        (&m0203::MODEL_VISIT, m0203::model_visit::<G>),
+        (&crate::s7_misc::LIT_COLOUR_NODE, |g, img, fr| {
+            Ret::eax(crate::s7_misc::lit_colour_node(g, img, fr))
+        }),
+        (&crate::m0573::REFRESH, crate::m0573::refresh::<G>),
+        (
+            &crate::o6_fam_pairs5::SPRITE_VISIT_0585_3110,
+            crate::o6_fam_pairs5::sprite_visit::<G>,
+        ),
     ]
 }
 
@@ -63,4 +74,12 @@ thunks! {
     JMP_INT_MOTION => m0186::INT_MOTION;
     /// `magic_0201` 0x100043a0 over [`m0201::matrix_visit`].
     JMP_MATRIX_VISIT => m0201::MATRIX_VISIT;
+    /// `magic_0203` 0x10002f20 over [`m0203::model_visit`].
+    JMP_MODEL_VISIT => m0203::MODEL_VISIT;
+    /// `magic_0152` 0x10001470 over [`crate::s7_misc::lit_colour_node`].
+    JMP_LIT_COLOUR_NODE => crate::s7_misc::LIT_COLOUR_NODE;
+    /// `magic_0573` 0x10002df0 over [`crate::m0573::refresh`].
+    JMP_REFRESH_0573 => crate::m0573::REFRESH;
+    /// `magic_0585` 0x10003410 over [`crate::o6_fam_pairs5::sprite_visit`].
+    JMP_SPRITE_VISIT_0585 => crate::o6_fam_pairs5::SPRITE_VISIT_0585_3110;
 }

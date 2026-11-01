@@ -162,3 +162,101 @@ pub const PART_RECORD: Sig = Sig {
     calls: &[(0x88, crate::Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// A node handler (0x10002e80, `ecx` = the cursor; reached through its
+/// `ecx` thunk): the walk (each child of the cursor's node gets its
+/// method `+0x1c` with the cursor; then the node takes the pass); when
+/// the cursor moved, slot 275 `(node[0x24])`; with bit 0 of the node's
+/// byte `+0x28`, the model node `+0x1c` leaves its parent
+/// ([`leave`](crate::sa_misc::leave)) and is set up
+/// ([`model_setup`](crate::sa_summon::model_setup) of a local `[it]` at
+/// `ebp - 4`), the node `+0x20` leaves and is reset
+/// ([`nodes_reset`](crate::s4_misc::nodes_reset), the same local), and
+/// the node itself leaves. Returns the last call's `eax`, else what the
+/// walk left (the low byte a pass byte).
+pub fn model_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let cur = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let node = g.read::<u32>(cur);
+    let pass = g.read::<u8>(node + 0x1a);
+    let mut eax = (fr.eax & !0xff) | u32::from(pass);
+    if pass == g.read::<u8>(cur + 5) {
+        g.write::<u8>(cur + 4, 0);
+    } else {
+        let mut child = g.read::<u32>(node + 0x10);
+        while child != node {
+            g.write::<u32>(cur, child);
+            let c = g.read::<u32>(cur);
+            child = g.read::<u32>(child + 8);
+            let m = g.read::<u32>(g.read::<u32>(c) + 0x1c);
+            eax = g.call(m, cur, &[cur]).eax;
+        }
+        let pass = g.read::<u8>(cur + 5);
+        g.write::<u32>(cur, node);
+        g.write::<u8>(node + 0x1a, pass);
+        g.write::<u8>(cur + 4, 1);
+        eax = (eax & !0xff) | u32::from(pass);
+    }
+    if g.read::<u8>(cur + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(cur);
+    let t = slot_target(g, w(0x4c), 275);
+    let a = g.read::<u32>(n + 0x24);
+    let eax = g.call(t, 0, &[a]).eax;
+    if g.read::<u8>(n + 0x28) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let local = ebp.wrapping_sub(4);
+    // push ecx; push ebx; push esi; the call
+    let callee = |at: u32| Frame {
+        at,
+        esp: ebp.wrapping_sub(0x10),
+        ecx: local,
+        ..*fr
+    };
+    let m = g.read::<u32>(n + 0x1c);
+    crate::sa_misc::leave(g, m, eax);
+    // mov eax, [esi + 0x1c]: the local and `eax` at the call
+    let m = g.read::<u32>(n + 0x1c);
+    g.write::<u32>(local, m);
+    let eax = crate::sa_summon::model_setup(
+        g,
+        img,
+        &Frame {
+            eax: m,
+            ..callee(img.rel32_target(f + 0x76))
+        },
+    )
+    .eax;
+    let m = g.read::<u32>(n + 0x20);
+    crate::sa_misc::leave(g, m, eax);
+    let m = g.read::<u32>(n + 0x20);
+    g.write::<u32>(local, m);
+    let eax = crate::s4_misc::nodes_reset(
+        g,
+        img,
+        &Frame {
+            eax: m,
+            ..callee(img.rel32_target(f + 0x8c))
+        },
+    )
+    .eax;
+    Ret::eax(crate::sa_misc::leave(g, n, eax))
+}
+
+/// [`model_visit`] (157 bytes, 1 overlay).
+pub const MODEL_VISIT: Sig = Sig {
+    len: 157,
+    hash: 0x538e_2bde_4772_78e3,
+    calls: &[
+        (0x68, crate::Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x76, crate::Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x7e, crate::Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x8c, crate::Callee::Sig(&crate::s4_misc::NODES_RESET)),
+        (0x93, crate::Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};

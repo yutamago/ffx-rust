@@ -119,3 +119,68 @@ pub const MARK_STEP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An effect object's set-up (0x100020c0, cdecl `(a)`): slot 443 `(a,
+/// 0x40)`; `a + 0x130..0x138` 0.05 and `+0x13c` 0; slot 440 `(*G_E, a, 0,
+/// 2)` (operand `+0x23`), slot 450 `(a, F)` (`F` the immediate `+0x5d`)
+/// and slot 451 `(a, 9)`, each over the earlier calls' words. Returns
+/// slot 451's `eax`.
+pub fn object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    let mut s = Pushes::default();
+    s.push_all(&[0x40, a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x4), 443), fr.ecx);
+    let e = g.read::<u32>(w(0x23));
+    s.push_all(&[2, 0, a, e]);
+    for o in [0x130, 0x134, 0x138] {
+        g.write::<u32>(a + o, 0x3d4c_cccd);
+    }
+    g.write::<u32>(a + 0x13c, 0);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x18), 440), fr.ecx);
+    s.push_all(&[w(0x5d), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x58), 450), fr.ecx);
+    s.push_all(&[9, a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0x6b), 451), fr.ecx).eax)
+}
+
+/// [`object_setup`] (128 bytes, 1 overlay).
+pub const OBJECT_SETUP: Sig = Sig {
+    len: 128,
+    hash: 0xf4fd_d251_ddb9_4bb7,
+    calls: &[],
+    imports: &[],
+};
+
+/// The callbacks' set-up (0x10002140, cdecl `(a)`): slot 444 `(1)`, slot
+/// 450 `(a, F1)` and slot 449 `(a, F2)` (`F1`, `F2` the immediates
+/// `+0x18`, `+0x2d`), each over the earlier words. Returns slot 449's
+/// `eax`.
+pub fn callbacks_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    let mut s = Pushes::default();
+    s.push(1);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x4), 444), fr.ecx);
+    s.push_all(&[w(0x18), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x13), 450), fr.ecx);
+    s.push_all(&[w(0x2d), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0x28), 449), fr.ecx).eax)
+}
+
+/// [`callbacks_setup`] (65 bytes, 1 overlay).
+pub const CALLBACKS_SETUP: Sig = Sig {
+    len: 65,
+    hash: 0x9e3b_c76d_1bd5_4356,
+    calls: &[],
+    imports: &[],
+};

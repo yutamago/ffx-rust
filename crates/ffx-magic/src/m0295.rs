@@ -44,3 +44,62 @@ pub const NODE_UNDER: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A node leaves its parent and registers its handles (0x10001e80,
+/// internal: `ecx` = a cursor `[node]`): with a parent (`+0x14`), its
+/// count `u16 +0x18` goes down, the sibling links are joined (the
+/// parent's first `+0x10` / last `+0xc` where the node was one), the
+/// node's links point to itself and `+0x14` is 0. Then for the two lists
+/// (`u16 +0x2c`/`+0x2e` entries of 0x30 bytes from `node[0x24]`/`[0x28]`
+/// plus 0x10, the count read again each time) each entry `e` goes to slot
+/// 779 `(e, e >> 31)` with `*G_LOCK` (operand `+0x6b`/`+0x90`) 1 around
+/// the call. Returns `node + 0x30`.
+pub fn leave_and_register<G: Game>(g: &mut G, img: &Image, f: u32, cur: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let node = g.read::<u32>(cur);
+    let parent = g.read::<u32>(node + 0x14);
+    if parent != 0 {
+        let n = g.read::<u16>(parent + 0x18);
+        g.write::<u16>(parent + 0x18, n.wrapping_add(0xffff));
+        let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+        if prev == parent {
+            g.write::<u32>(parent + 0x10, next);
+        } else {
+            g.write::<u32>(prev + 8, next);
+        }
+        let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+        if next == parent {
+            g.write::<u32>(parent + 0xc, prev);
+        } else {
+            g.write::<u32>(next + 4, prev);
+        }
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 4, node);
+        g.write::<u32>(node + 0x14, 0);
+    }
+    for k in 0..2u32 {
+        let count = node + 0x2c + 2 * k;
+        let mut e = g.read::<u32>(node + 0x24 + 4 * k).wrapping_add(0x10);
+        let mut lock = g.read::<u32>(w(0x6b));
+        let mut j = 0u32;
+        while j < u32::from(g.read::<u16>(count)) {
+            let old = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            let t = crate::runtime::slot_target(g, w(0x7c), 779);
+            g.call(t, 0, &[e, (e.cast_signed() >> 31).cast_unsigned()]);
+            lock = g.read::<u32>(w(0x90));
+            g.write::<u32>(lock, old);
+            j += 1;
+            e = e.wrapping_add(0x30);
+        }
+    }
+    node + 0x30
+}
+
+/// [`leave_and_register`] (201 bytes, 1 overlay).
+pub const LEAVE_AND_REGISTER: Sig = Sig {
+    len: 201,
+    hash: 0x8e05_d43b_deb5_4449,
+    calls: &[],
+    imports: &[],
+};

@@ -17,6 +17,11 @@ fn dirty(t: &mut Twin) {
 /// visited (`node + 0x1a` = the cursor's pass byte) and, where `full`, one
 /// not visited without children.
 fn thunk(n: u16, rva: u32, full: bool) {
+    thunk_eax(n, rva, full, Eax::Checked);
+}
+
+/// [`thunk`] with the original's `eax` compared or not.
+fn thunk_eax(n: u16, rva: u32, full: bool, eax: Eax) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
     let slot = 1000u32;
@@ -43,7 +48,7 @@ fn thunk(n: u16, rva: u32, full: bool) {
             ecx: 0x0bad_0ecc,
             ..Call::default()
         };
-        t.check_entry(at, c, &[cur, 0x0a0a_0a0a], Eax::Checked);
+        t.check_entry(at, c, &[cur, 0x0a0a_0a0a], eax);
     }
 }
 
@@ -176,4 +181,22 @@ fn build_node_0152() {
     t.check(f, Call::this(node), &args, Eax::Checked, |g, img, fr| {
         Ret::eax(m0152::build_node(g, img, fr.at, fr.ecx, fr.esp))
     });
+}
+
+#[test]
+fn thunk_lit_colour_node_0152() {
+    thunk(152, 0x1470, false);
+}
+
+#[test]
+fn thunk_refresh_0573() {
+    thunk(573, 0x2df0, false);
+}
+
+#[test]
+fn thunk_sprite_visit_0585() {
+    // `sprite_visit`'s port gives only the pass byte where the original
+    // leaves its /GS frame's bits above it (the vtable callers don't read
+    // it); the thunk itself adds nothing to `eax`
+    thunk_eax(585, 0x3410, false, Eax::Junk);
 }

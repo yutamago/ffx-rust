@@ -195,13 +195,18 @@ pub mod m0194;
 pub mod m0195;
 pub mod m0196;
 pub mod m0198;
+pub mod m0199;
 pub mod m0201;
 pub mod m0203;
 pub mod m0205;
+pub mod m0206;
+pub mod m0207;
 pub mod m0219;
 pub mod m0243;
 pub mod m0244;
 pub mod m0245;
+pub mod m0249;
+pub mod m0250;
 pub mod m0251;
 pub mod m0253;
 pub mod m0255;
@@ -211,8 +216,11 @@ pub mod m0263;
 pub mod m0267;
 pub mod m0269;
 pub mod m0270;
+pub mod m0271;
 pub mod m0272;
 pub mod m0273;
+pub mod m0284;
+pub mod m0287;
 pub mod m0292;
 pub mod m0295;
 pub mod m0297;
@@ -2710,6 +2718,29 @@ ports! {
     "m0171 grid step" => m0171::GRID_STEP, m0171::grid_step;
     "m0180 square step" => m0180::SQUARE_STEP, m0180::square_step;
     "m0180 main start" => m0180::MAIN_START, m0180::main_start;
+    "m0199 script step" => m0199::SCRIPT_STEP, m0199::script_step;
+    "m0203 model visit" => m0203::MODEL_VISIT, m0203::model_visit;
+    "thunk: m0203 model visit" => sl_wrap::JMP_MODEL_VISIT, sl_wrap::ecx_jmp;
+    "m0206 records start" => m0206::RECORDS_START, m0206::records_start;
+    "m0249 camera step" => m0249::CAMERA_STEP, m0249::camera_step;
+    "m0250 grid step" => m0250::GRID_STEP, m0250::grid_step;
+    "m0250 spark" => m0250::SPARK, m0250::spark;
+    "m0253 record start" => m0253::RECORD_START, m0253::record_start;
+    "m0260 programs step" => m0260::PROGRAMS_STEP, m0260::programs_step;
+    "m0260 actor start" => m0260::ACTOR_START, m0260::actor_start;
+    "m0271 point below" => m0271::POINT_BELOW, m0271::point_below;
+    "m0284 smoke start" => m0284::SMOKE_START, m0284::smoke_start;
+    "m0287 smoke main" => m0287::SMOKE_MAIN, m0287::smoke_main;
+    "m0298 models step" => m0298::MODELS_STEP, m0298::models_step;
+    "m0301 object setup" => m0301::OBJECT_SETUP, m0301::object_setup;
+    "m0301 callbacks setup" => m0301::CALLBACKS_SETUP, m0301::callbacks_setup;
+    "m0303 record nodes" => m0303::RECORD_NODES, m0303::record_nodes;
+    "m0303 light start" => m0303::LIGHT_START, m0303::light_start;
+    "m0304 place point" => m0304::PLACE_POINT, m0304::place_point;
+    "m0304 host start" => m0304::HOST_START, m0304::host_start;
+    "thunk: s7 lit colour node" => sl_wrap::JMP_LIT_COLOUR_NODE, sl_wrap::ecx_jmp;
+    "thunk: m0573 refresh" => sl_wrap::JMP_REFRESH_0573, sl_wrap::ecx_jmp;
+    "thunk: 0585 sprite visit" => sl_wrap::JMP_SPRITE_VISIT_0585, sl_wrap::ecx_jmp;
     // magic small-lo: end of ports
 }
 
@@ -3811,6 +3842,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0184 scatter", &m0184::SCATTER),
     ("m0186 model node", &m0186::MODEL_NODE),
     ("m0186 cleared node", &m0186::CLEARED_NODE),
+    ("m0207 copy node", &m0207::COPY_NODE),
+    ("m0295 leave and register", &m0295::LEAVE_AND_REGISTER),
     // magic small-lo: end of INTERNAL
 ];
 
