@@ -2,8 +2,9 @@
 //! code): steps of a battle sequence (as `magic_0510`'s: each a callback
 //! with the sequence object `seq`, `S = *G_S` the battle's state block).
 
+use crate::pushes::Pushes;
 use crate::runtime::slot_target;
-use crate::{Frame, Game, Image, Ret, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// A step (0x10001000, `(seq)`, pushed by 0x10001965): the actor
 /// (`S[0x198]`) to the global at operand `+0x0f`, slot 481 `(actor)` its
@@ -234,4 +235,102 @@ pub const E1800: Sig = Sig {
     hash: 0x1c04_a2ac_a96c_b866,
     calls: &[],
     imports: &[],
+};
+
+/// A spark's start (0x10001330, a callback, cdecl `(obj)`; a /GS frame):
+/// a direction `v` of three `rand()` values (`x = r / R * S - T`, `y` the
+/// same with `U` and a double offset, `z` like `x`) in the local at `ebp -
+/// 0x14`, normalised by slot 232 `(&v, &v)`; `e = v * K`; a speed
+/// `rand() / R * A + B` scales `v` (`y` then by `C`, `z` by `D`); a size
+/// `rand() / R * E + F`. The object's flags `+0xbc |= 0x2000`, slot 442 `(obj,
+/// actor, 0)` (the actor `(*G_A)[0x198]`); `+0xd0..` = `v`, `+0xe0..` =
+/// `e`, `+0xdc`/`+0xec` 0, `+0x100` 90.0, `+0x104..+0x10c` 0, `+0x130..`
+/// the size (`+0x13c` 0); slot 440 `(*G_A, obj, 0, 1)`, slot 450 `(obj,
+/// CB1)`, slot 449 `(obj, CB2)` (each call seeing the earlier words).
+/// Returns slot 449's `eax`.
+pub fn spark<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, off: u32| f32::from_bits(g.read::<u32>(w(off)));
+    let call = |g: &mut G, p: &Pushes, slot: u32| {
+        let t = slot_target(g, w(0x99), slot);
+        // call width: 12 (Pushes caps the words at 12)
+        p.call(g, t, 0).eax
+    };
+    let obj = fr.arg(g, 0);
+    let actor = g.read::<u32>(g.read::<u32>(w(0x11)).wrapping_add(0x198));
+    let v = fr.esp.wrapping_sub(0x18);
+    let r = g.rand();
+    let x = sub(mul(div(cvt(r), k(g, 0x34)), k(g, 0x3c)), k(g, 0x44));
+    g.write::<u32>(v, x.to_bits());
+    let r = g.rand();
+    let y = mul(div(cvt(r), k(g, 0x5a)), k(g, 0x62));
+    let off = f64::from_bits(g.read::<u64>(w(0x6d)));
+    // cvtps2pd, subsd, cvtpd2ps
+    let y = (f64::from(y) - off) as f32;
+    g.write::<u32>(v + 4, y.to_bits());
+    let r = g.rand();
+    let z = sub(mul(div(cvt(r), k(g, 0x8a)), k(g, 0x93)), k(g, 0xa1));
+    g.write::<u32>(v + 8, z.to_bits());
+    let mut p = Pushes::default();
+    p.push_all(&[v, v]);
+    call(g, &p, 232);
+    let fl = |g: &G, at: u32| f32::from_bits(g.read::<u32>(at));
+    let ek = k(g, 0xb6);
+    let e = [
+        mul(fl(g, v), ek),
+        mul(fl(g, v + 4), ek),
+        mul(fl(g, v + 8), ek),
+    ];
+    let r = g.rand();
+    let speed = add(mul(div(cvt(r), k(g, 0xf6)), k(g, 0x103)), k(g, 0x10b));
+    let vx = mul(fl(g, v), speed);
+    let vz = mul(mul(fl(g, v + 8), speed), k(g, 0x125));
+    let vy = mul(mul(fl(g, v + 4), speed), k(g, 0x136));
+    let r = g.rand();
+    let size = add(mul(div(cvt(r), k(g, 0x151)), k(g, 0x163)), k(g, 0x173));
+    let flags = g.read::<u32>(obj.wrapping_add(0xbc)) | 0x2000;
+    g.write::<u32>(obj.wrapping_add(0xbc), flags);
+    p.push_all(&[0, actor, obj]);
+    call(g, &p, 442);
+    for (off, x) in [
+        (0xd0u32, vx),
+        (0xd4, vy),
+        (0xd8, vz),
+        (0xe0, e[0]),
+        (0xe4, e[1]),
+        (0xe8, e[2]),
+    ] {
+        g.write::<u32>(obj.wrapping_add(off), x.to_bits());
+    }
+    p.push_all(&[1, 0, obj, g.read::<u32>(w(0x1df))]);
+    for (off, x) in [
+        (0xdcu32, 0u32),
+        (0xec, 0),
+        (0x100, 0x42b4_0000),
+        (0x104, 0),
+        (0x108, 0),
+        (0x10c, 0),
+        (0x130, size.to_bits()),
+        (0x134, size.to_bits()),
+        (0x138, size.to_bits()),
+        (0x13c, 0),
+    ] {
+        g.write::<u32>(obj.wrapping_add(off), x);
+    }
+    call(g, &p, 440);
+    p.push_all(&[w(0x24f), obj]);
+    call(g, &p, 450);
+    p.push_all(&[w(0x262), obj]);
+    Ret::eax(call(g, &p, 449))
+}
+
+/// [`spark`] (643 bytes, 1 overlay).
+pub const SPARK: Sig = Sig {
+    len: 643,
+    hash: 0x6b8e_420d_3f76_982c,
+    // __security_check_cookie
+    calls: &[(0x27b, Callee::Any)],
+    imports: &[(0x1c, "rand")],
 };
