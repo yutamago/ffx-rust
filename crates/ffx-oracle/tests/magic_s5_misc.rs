@@ -267,6 +267,11 @@ fn chara_setups() {
         }
         t.set_u32(op(&t, f, 0x7), 5);
         t.set_u32(op(&t, f, 0x1), have);
+        // the words next to the cleared pair (and at the next
+        // instruction's bytes read as an address) hold something, so a
+        // store of zeros that lands there shows
+        t.write(op(&t, f, 0x9e) ^ 0x10, &[0xa5; 8]);
+        t.write(op(&t, f, 0xa2), &[0x5a; 8]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -1213,6 +1218,8 @@ fn target_measures() {
         (4, -2.5, 0.5, 3.0),
         (5, 100.0, 0.0001, 0.00001),
         (6, 1.0e10, 1.0, 1.0),
+        // a size past the limit (25): the inverse
+        (7, 1.0, 40.0, 30.0),
     ] {
         t.stub_st0(169, move |_, _| dir);
         t.stub_st0(251, move |_, _| wid);
@@ -1284,6 +1291,9 @@ fn weapon_swings_in(dll: u16, rva: u32) {
         t.write(obj, &varied(0x600, count));
         t.write(task, &varied(0x40, total));
         t.write(s + 0x8520, &varied(0x10, count));
+        // the child's kind (an index into its tables) and the next word
+        t.set_u32(s + 0x8524, 1 + (count & 1));
+        t.set_u32(s + 0x8528, 3);
         t.set_u32(task, 0);
         t.set_u32(task + 4, 0);
         // the node's payload: no children to give back first
@@ -1477,6 +1487,13 @@ fn screen_fade_steps() {
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+    // the floor (`+0x10c` is the low bound `+0x26` itself) below 0 and
+    // a level between it and 0: the level is kept, not the floor or 0
+    t.set_u32(op(&t, f, 0x10c), (-2.0f32).to_bits());
+    t.set_u32(op(&t, f, 0x12), 0xb0);
+    t.set_u32(op(&t, f, 0x1e), (-1.0 - up).to_bits());
+    scrub(&mut t);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
 
 #[test]
@@ -1566,6 +1583,9 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x15a), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x197), 0xffff_ff0f + count);
+        // (the next instruction's bytes read as an address hold bits, so a
+        // read that lands there shows)
+        t.set_u32(op(&t, f, 0x19b), 0xffff_fff0 ^ count);
         if dll == 342 {
             // the word the start clears: set before
             t.set_u32(op(&t, f, 0x1a8), 0x01a8_0000 + count);
@@ -1663,15 +1683,18 @@ fn model_parts_drawn() {
     t.stub(941, move |_, _| table);
     let obj = SCRATCH + 0x1000;
     let d = SCRATCH + 0x2000;
-    let ptrs = SCRATCH + 0x2100;
+    let ptrs = SCRATCH + 0xa000;
     let mtx = SCRATCH + 0x2800;
-    // (parts, the entries' part numbers)
+    // (parts, the entries' part numbers; a part past the fourth found,
+    // and 126 parts: the marks' last words)
     for (parts, entries) in [
         (0u16, &[][..]),
         (2, &[1u16, 0][..]),
         (3, &[2, 0][..]),
         (3, &[][..]),
         (1, &[5, 6][..]),
+        (6, &[5, 0][..]),
+        (126, &[125, 3][..]),
     ] {
         t.write(obj, &varied(0x900, u32::from(parts)));
         t.write(mtx, &varied(0x40, 3));
@@ -1683,9 +1706,9 @@ fn model_parts_drawn() {
             t.set_u16(table + 12 * k + 2, *e);
         }
         t.set_u32(obj + 0x1bc, ptrs);
-        for i in 0..4u32 {
-            t.set_u32(ptrs + 0x38 * i, SCRATCH + 0x2400 + 4 * i);
-            t.set_u16(SCRATCH + 0x2400 + 4 * i, (i * 3) as u16);
+        for i in 0..128u32 {
+            t.set_u32(ptrs + 0x38 * i, SCRATCH + 0xc000 + 4 * i);
+            t.set_u16(SCRATCH + 0xc000 + 4 * i, ((i * 3) % 7) as u16);
         }
         t.set_u32(obj + 0x328, SCRATCH + 0x8000);
         let c = Call {
@@ -1782,6 +1805,9 @@ fn summon_ppp_stream_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x185), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x1c2), 0xffff_ff0f + count);
+        // (the next instruction's bytes read as an address hold bits, so a
+        // read that lands there shows)
+        t.set_u32(op(&t, f, 0x1c6), 0xffff_fff0 ^ count);
         // the word the start clears: set before
         t.set_u32(op(&t, f, 0x1d3), 0x01d3_0000 + count);
         scrub(&mut t);
@@ -1794,7 +1820,14 @@ fn spark_pairs_started() {
     let Some(mut t) = twin(349) else { return };
     let f = t.at(0x54c0);
     let (head, tail) = (op(&t, f, 0xc7), op(&t, f, 0xd2));
-    for (n, listed) in [(3u32, false), (4, false), (6, true), (0xffff_fff0, false)] {
+    // (n = 7: four pairs, the last take empties the free ring)
+    for (n, listed) in [
+        (3u32, false),
+        (4, false),
+        (6, true),
+        (0xffff_fff0, false),
+        (7, false),
+    ] {
         // a ring of eight free nodes
         let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
         for i in 0..8u32 {
@@ -1915,7 +1948,8 @@ fn objects_started_around() {
     t.stub_st0(314, move |m, a| {
         let k = m.r32(calls);
         m.w32(calls, k + 1);
-        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.0) / 3.0
+        // (never 0: the angles' third would land on the 0 already there)
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.5) / 3.0
     });
     let soa = t.img.rel32_target(f + 0xb3);
     t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
@@ -1996,6 +2030,14 @@ fn throws_aimed() {
         ([2.0, 1.0, 2.0], -0.5, 1, 1.0),
         ([2.0, 1.0, 2.0], 1.0, 0, 100.0),
         ([3.0, 0.0, -1.0], 0.25, 1, -1.0),
+        // a target 2 below: the first speed with roots (-1.5) gives two
+        // positive ones, 4 and 2 (the flag picks; the limit at the smaller)
+        ([1.0, -1.75, 2.0], 0.5, 1, 0.0),
+        ([1.0, -1.75, 2.0], 0.5, 0, 0.5),
+        ([1.0, -1.75, 2.0], 0.5, 0, 2.0),
+        // a level target: the roots 0 and -20 (0 is not past a limit below 0)
+        ([1.0, 0.25, 2.0], 0.5, 1, -1.0),
+        ([1.0, 0.25, 2.0], 0.5, 0, -1.0),
     ]
     .into_iter()
     .enumerate()
@@ -2094,6 +2136,14 @@ fn weapon_swings_drop_in(dll: u16, rva: u32) {
         t.set_u32(obj + 0x50c, count);
         t.set_u32(obj + 0x510, total);
         t.set_u32(obj + 0x514, kind);
+        // the two points the swing mixes: plain floats (the varied bytes'
+        // tiny ones would hide the weights)
+        for i in 0..8u32 {
+            t.set_u32(
+                obj + 0x260 + 4 * i,
+                (1.5 * i as f32 - 2.25 + count as f32).to_bits(),
+            );
+        }
         // the halfword whose bit 15 a dropped object loses: set
         t.set_u16(obj + 0x124, 0xc123 + count as u16);
         t.set_u16(free, 3);
@@ -2131,6 +2181,8 @@ fn aim_tasks() {
         ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
         ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
         ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+        // a yaw past a quarter turn: 3/2 pi - yaw stays at or below pi
+        ([-1.0, 0.5, 2.0], [0.0, 0.0, 0.0], 1.5),
     ]
     .into_iter()
     .enumerate()
@@ -2205,6 +2257,8 @@ fn camera_parts() {
     let ptr = SCRATCH + 0x7c0;
     let answer = SCRATCH + 0x7e0;
     rec_lock(&mut t, 712, 2, lock, move |m, _| {
+        // the item the caller set (then changed)
+        m.w32(SCRATCH + 0x7cc, m.r32(ptr));
         m.w32(ptr, 0x0712_0712);
         m.r32(answer)
     });
@@ -2242,6 +2296,7 @@ fn camera_parts() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // the trail draw's slots and the cases
 fn homing_trails() {
     let Some(mut t) = twin(171) else { return };
     let f = t.at(0x3240);
@@ -2276,7 +2331,19 @@ fn homing_trails() {
     recs(&mut t, &[(235, 1), (723, 1), (724, 1), (713, 1)]);
     // (the matrices the trail draw hands on, all 16 words)
     rec_mem(&mut t, 229, 3, 16, None);
-    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    // the draw logs the sprite matrix it reads through `G_P` (the scale
+    // rows the task sets reach it there only)
+    let gp = op(&t, td, 0x66);
+    rec(&mut t, 772, 2, move |m, a| {
+        let p = m.r32(gp);
+        let k = m.r32(SCRATCH + 0x3c00);
+        m.w32(SCRATCH + 0x3c00, k + 1);
+        for i in 0..12 {
+            let v = m.r32(p + 4 * i);
+            m.w32(SCRATCH + 0x3c04 + 0x30 * (k % 8) + 4 * i, v);
+        }
+        0x7720_0000 ^ a[1]
+    });
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(&mut t, 773, 4, |_, _| 0);
     for s in [774u32, 775, 778, 776, 777] {
@@ -2288,8 +2355,8 @@ fn homing_trails() {
     let obj = SCRATCH + 0x1000;
     let owner = SCRATCH + 0x600;
     let node = SCRATCH + 0x680;
-    // (wait, speed x, radius, flags, callbacks, listed)
-    for (wait, speed, radius, flags, cbs, listed) in [
+    // (wait, speed x, radius, flags, callbacks, listed; a sprite)
+    for (k, (wait, speed, radius, flags, cbs, listed)) in [
         (3u32, 0.0f32, 1.0f32, 0u16, 0u32, false),
         (0, 0.5, 0.25, 1, 3, false),
         (0, 0.5, 100.0, 1, 3, true),
@@ -2300,13 +2367,28 @@ fn homing_trails() {
         (0, 0.0, 0.0, 3, 3, false),
         // the distance (to the target, 1.5 times the position) met exactly
         (0, 0.5, 3.5f64.sqrt() as f32, 1, 1, false),
-    ] {
+        // just past a radius the distance's middle word alone would not
+        // reach; a moving trail past the radius (the second step)
+        (0, 0.5, 1.7, 1, 1, false),
+        (0xffff_fffe, 2.0, 0.25, 1, 3, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         t.write(obj, &varied(0x3a0, wait ^ u32::from(flags)));
         t.write(obj + 0x130, &[0; 0x230]);
         t.set_u32(obj + 0x130, 0x0a00);
         t.set_u32(obj + 0x134, 1);
         t.set_u16(obj + 0x13a, 0x100);
-        for (i, v) in [1.0f32, 2.0, 3.0, 1.0].into_iter().enumerate() {
+        // one sprite from the eighth case on (the scale rows drawn), its
+        // colours' alpha not 0 (the draw's own test)
+        t.set_u32(obj + 0x354, u32::from(k >= 7));
+        t.write(
+            obj + 0x33c,
+            &[0x10, 0x20, 0x30, 0x80, 0x40, 0x50, 0x60, 0xff],
+        );
+        // (the position's `w` not 1: the arrival sets it)
+        for (i, v) in [1.0f32, 2.0, 3.0, 0.5].into_iter().enumerate() {
             let i = i as u32;
             t.set_u32(obj + 0xd0 + 4 * i, v.to_bits());
             t.set_u32(obj + 0x358 + 4 * i, (v * 1.5).to_bits());
@@ -2380,10 +2462,18 @@ fn sine_rises() {
         (0x162, 512.0),
         (0x199, 512.0),
         (0x4e, 0.75),
+        // the radius' scale and the three axes' (globals, 0 in the DLL)
+        (0x3e, 2.0),
+        (0x15, 1.5),
+        (0x26, -0.5),
+        (0x36, 2.5),
     ] {
         t.set_u32(op(&t, f, o), v.to_bits());
     }
     for (count, n1, n2, end) in [
+        // the first step and the turn (the radius' word read)
+        (0, 1000, 2000, 3000),
+        (12, 12, 40, 60),
         (20i32, 1000i32, 2000i32, 3000i32),
         (35, 1000, 2000, 3000),
         (50, 1000, 2000, 3000),
@@ -2429,6 +2519,8 @@ fn aim_objects() {
         ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
         ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
         ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+        // a yaw past a quarter turn: 3/2 pi - yaw stays at or below pi
+        ([-1.0, 0.5, 2.0], [0.0, 0.0, 0.0], 1.5),
     ]
     .into_iter()
     .enumerate()
@@ -2517,10 +2609,26 @@ fn shower_steps() {
     let obj = SCRATCH + 0x1000;
     let list = op(&t, f, 0xea);
     let holder = SCRATCH + 0x700;
+    // slot 239's first word (a global): not 0
+    t.set_u32(op(&t, f, 0x21e), 0x0e0e_021e);
+    // a clock that the step brings to the start time exactly
+    let (step, start) = (
+        f32::from_bits(t.u32(op(&t, f, 0x22))),
+        f32::from_bits(t.u32(op(&t, f, 0xd9))),
+    );
+    let mut edge = start - step;
+    while edge + step < start {
+        edge = f32::from_bits(edge.to_bits() + 1);
+    }
+    while edge + step > start {
+        edge = f32::from_bits(edge.to_bits() - 1);
+    }
+    assert_eq!((edge + step).to_bits(), start.to_bits());
     for (mode, clock, b108, b208, parents) in [
         (0u32, 0.0f32, 0u8, 0u8, false),
         (0, 50.0, 0, 0, false),
         (0, f32::NAN, 0, 0, false),
+        (0, edge, 0, 0, false),
         (1, 0.0, 4, 0, true),
         (1, 0.0, 4, 4, true),
         (1, 0.0, 0xff, 0xfb, false),
@@ -2930,7 +3038,11 @@ fn wave_tables() {
     let Some(mut t) = twin(430) else { return };
     let f = t.at(0x1480);
     let out = SCRATCH + 0x2000;
-    for a in [0.7f32, -2.5] {
+    let step = op(&t, f, 0x289);
+    let k = t.u32(step);
+    // (the last: a row step that takes the second wave past its top)
+    for (a, row) in [(0.7f32, k), (-2.5, k), (0.7, 0.05f32.to_bits())] {
+        t.set_u32(step, row);
         t.write(out, &varied(33 * 33 * 8, a.to_bits()));
         let c = Call::this(out).with_xmm(&[Xmm::f32(9.0), Xmm::f32(a)]);
         scrub(&mut t);
@@ -2960,18 +3072,24 @@ fn curve_carries() {
     let task = SCRATCH + 0x100;
     let st = SCRATCH + 0x1000;
     let entry = STACK_TOP - 0x100;
-    for (wait, steps, flags, cbs, state) in [
-        (2u32, 0u32, 1u16, 0u32, 0u32),
-        (2, 0, 0, 0, 0),
-        (0, 5, 0, 3, 1),
-        (0, 4, 0, 1, 1),
-        (0, 1, 0, 3, 1),
-        (0, 0, 0, 2, 1),
-        (0, 0xffff_fffe, 0, 3, 0),
-        (0, 0, 0, 0, 0),
+    // (wait, steps, flags, callbacks, the script's state; its wait 0:
+    // the script steps through its own operands)
+    for (wait, steps, flags, cbs, state, go) in [
+        (2u32, 0u32, 1u16, 0u32, 0u32, false),
+        (2, 0, 0, 0, 0, false),
+        (0, 5, 0, 3, 1, false),
+        (0, 4, 0, 1, 1, false),
+        (0, 1, 0, 3, 1, false),
+        (0, 0, 0, 2, 1, false),
+        (0, 0xffff_fffe, 0, 3, 0, false),
+        (0, 0, 0, 0, 0, false),
+        (2, 0, 1, 0, 0, true),
+        (0, 0, 0, 0, 0, true),
+        // a wait below 0 when the steps run out
+        (0xffff_fffd, 1, 0, 3, 1, false),
     ] {
         t.write(entry - 0x40, &[0; 0x40]);
-        t.write(st, &varied(0xc0, wait + steps));
+        t.write(st, &varied(0xc0, wait.wrapping_add(steps)));
         for i in 0..20u32 {
             t.set_u32(st + 0x40 + 4 * i, (i as f32 * 0.25 - 1.0).to_bits());
         }
@@ -2984,6 +3102,9 @@ fn curve_carries() {
         t.set_u32(st + 0x94, if cbs & 2 != 0 { trap(1002) } else { 0 });
         // the motion script's state: done (1) or running
         t.set_u32(st + 0x14, state);
+        if go {
+            t.set_u16(st + 0x18, 0);
+        }
         t.write(task, &varied(0x20, 1));
         t.set_u32(task, 0);
         t.set_u32(task + 4, 0);
@@ -3015,7 +3136,34 @@ fn actor_clip_draws() {
     let Some(mut t) = twin(434) else { return };
     let f = t.at(0x44a0);
     rec_mem(&mut t, 230, 2, 16, Some(0));
-    rec_mem(&mut t, 231, 3, 16, Some(0));
+    // the product (and the named parts' name joins): the inputs' words
+    // logged, the output filled (its old words are the frames' junk)
+    t.stub(231, |m, a| {
+        let k = m.r32(SCRATCH + 0x3800);
+        m.w32(SCRATCH + 0x3800, k + 1);
+        let mut at = SCRATCH + 0x3804 + 0x100 * (k % 8);
+        for &x in &a[..3] {
+            m.w32(at, x);
+            at += 4;
+        }
+        for &x in &a[1..3] {
+            if followable(x) {
+                for i in 0..16 {
+                    let v = m.r32(x + 4 * i);
+                    m.w32(at, v);
+                    at += 4;
+                }
+            }
+        }
+        if followable(a[0]) {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, 0x3f80_0000 + (k << 8) + i * 0x11);
+            }
+        }
+        0x0231_0000 + k
+    });
+    // the part's name
+    t.stub(941, |_, a| SCRATCH + 0x3c00 + (a[0] & 0xf0));
     t.stub(325, |m, a| {
         for i in 0..4 {
             let v = m.r32(a[1] + 4 * i);
@@ -3029,9 +3177,14 @@ fn actor_clip_draws() {
     rec_mem(&mut t, 833, 3, 0, None);
     rec_mem(&mut t, 847, 2, 0, None);
     rec_mem(&mut t, 843, 2, 16, None);
-    // named_parts: off (returns its prefix at once)
+    // named_parts: off (returns its prefix at once), on for the last
+    // object with one record (its slots see the prefix, the matrix)
     let named = t.img.rel32_target(f + 0x12a);
     t.set_u32(op(&t, named, 0x15), 0);
+    t.set_u16(op(&t, named, 0x47), 1);
+    let nrec = op(&t, named, 0x53);
+    t.set_u32(nrec - 6, 0x0a0a_0006);
+    t.set_u16(nrec, 2);
     let map = SCRATCH + 0x700;
     t.write(map, &[0, 2, 1, 3]);
     t.set_u32(op(&t, f, 0x4e), map);
@@ -3059,6 +3212,7 @@ fn actor_clip_draws() {
             t.set_u32(SCRATCH + 0x1000 + 0x1000 * j + 0x830, 0x0c0c_0000 + j);
         }
         t.set_u32(actor + 0x830, obj);
+        t.set_u32(op(&t, named, 0x15), u32::from(k == 3));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
@@ -3171,7 +3325,8 @@ fn objects_at_targets_started() {
     let free = op(&t, pa, 0x04);
     let nodes = op(&t, pa, 0x27) - 8;
     let map = SCRATCH + 0x700;
-    t.write(map, &[1, 0, 2, 3]);
+    // (the byte before the map differs from its second)
+    t.write(map - 1, &[3, 1, 2, 0, 3]);
     t.set_u32(op(&t, f, 0x3e), map);
     let table = op(&t, f, 0x49);
     for k in 0..4u32 {
@@ -3179,7 +3334,16 @@ fn objects_at_targets_started() {
     }
     let base = SCRATCH + 0x1_0000;
     t.set_u32(op(&t, f, 0x14), base);
-    for (n, x, id, wmode) in [(1u32, 0u32, 3u32, 0u16), (2, 1, 0x40, 1), (0, 0, 0x1f, 0)] {
+    // the words slots 211 and 213 get: not 0
+    t.set_u32(op(&t, f, 0x241), 0x0d0d_0241);
+    t.set_u32(op(&t, f, 0x2a2), 0x0d0d_02a2);
+    for (n, x, id, wmode) in [
+        (1u32, 0u32, 3u32, 0u16),
+        (2, 1, 0x40, 1),
+        (0, 0, 0x1f, 0),
+        // the first id past the actors
+        (1, 0, 0x20, 0),
+    ] {
         for i in 0..16 {
             t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
             t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
@@ -3352,6 +3516,14 @@ fn weapon_bounces_in(dll: u16, rva: u32) {
         (1, 5.0, [-1.0, 4.0, 1.0], [-1.0, -1.0], [0.0, 1.0]),
         (1, 5.0, [1.0, 4.0, 0.0], [1.0, 1.0], [6.0, -6.0]),
         (0, -5.0, [1.0, 0.0, 1.0], [0.0, 0.0], [1.0, 2.0]),
+        // the height reaching the floor exactly; speeds against their
+        // bounds' signs (kept); a fall that stops at -0 (kept as it is);
+        // bounds of 0
+        // (NaN: the height set so that the step lands on the floor exactly)
+        (3, f32::NAN, [1.0, 0.5, -1.0], [1.0, -1.0], [0.5, -0.5]),
+        (1, 5.0, [-1.0, 4.0, 1.0], [1.0, -1.0], [0.5, 1.0]),
+        (1, 5.0, [1.0, -0.4, 1.0], [1.0, 1.0], [0.5, 1.0]),
+        (1, 5.0, [1.0, 4.0, -1.0], [0.0, 0.0], [0.5, 1.0]),
     ]
     .into_iter()
     .enumerate()
@@ -3365,7 +3537,15 @@ fn weapon_bounces_in(dll: u16, rva: u32) {
         t.set_u32(SCRATCH + 0x34c, 0);
         t.set_u32(task + 0x14, obj);
         t.set_u32(obj + 0x50c, count);
-        t.set_u32(obj + 0x264, fl(floor + dy));
+        let y0 = if dy.is_nan() {
+            let vy = v[1] + f32::from_bits(t.u32(op(&t, f, 0x57)));
+            let y0 = floor - vy;
+            assert_eq!((y0 + vy).to_bits(), floor.to_bits());
+            y0
+        } else {
+            floor + dy
+        };
+        t.set_u32(obj + 0x264, fl(y0));
         for (i, x) in v.into_iter().enumerate() {
             t.set_u32(obj + 0x2a0 + 4 * i as u32, fl(x));
         }
@@ -3556,6 +3736,11 @@ fn timed_sparks_fired() {
     let obj = SCRATCH + 0x1000;
     let step = f32::from_bits(t.u32(op(&t, f, 0x1d)));
     let limits = op(&t, f, 0x33);
+    // the words before the limits far above every clock (a limit read
+    // the wrong way round would hold the sparks back)
+    for i in 1..4 {
+        t.set_u32(limits - 4 * i, 1.0e6f32.to_bits());
+    }
     let (last, sentinel) = (op(&t, f, 0x85), op(&t, f, 0x92));
     let parent = op(&t, f, 0x29e);
     for (i, d, listed) in [
@@ -3568,6 +3753,11 @@ fn timed_sparks_fired() {
         (3, 2.0, true),
     ] {
         t.write(obj, &varied(0xb00, i));
+        // the point the sparks start from (copied, then moved): plain
+        // floats (the pattern's tiny ones would hide the moves' sums)
+        for (j, v) in (0u32..).zip([1.5f32, -2.5, 3.25, 1.0]) {
+            t.set_u32(obj + 0x4ec + 4 * j, v.to_bits());
+        }
         t.write(SCRATCH + 0x900, &varied(0x80, i + 4));
         t.set_u32(op(&t, f, 0x320), SCRATCH + 0x900);
         t.set_u32(op(&t, f, 0x53), 0x0dd0_0000 + i);
@@ -3633,6 +3823,8 @@ fn thrown_effects() {
         (0x1083, 5, false),
         (0x2000, 6, true),
         (0x1070, 7, false),
+        // the last model of the switch (0x108c), a direct one
+        (0x108c, 8, true),
     ]
     .into_iter()
     .enumerate()
@@ -3766,12 +3958,20 @@ fn bursts_tasks() {
     rec_mem(&mut t, 558, 1, 4, Some(0));
     // the GS wait (its words logged) may change the command block's
     // words (the task sets them after it): the block's last word
+    // The block's twelve words (`+0x321` .. `+0x374`) are logged and
+    // changed by every wait, so each store the task makes after one shows.
     let last = op(&t, f, 0x374);
+    let block = op(&t, f, 0x321);
     t.stub(382, move |m, a| {
         let k = m.r32(SCRATCH + 0x7c0);
         m.w32(SCRATCH + 0x7c0, k + 1);
         m.w32(SCRATCH + 0x7c4 + 8 * (k % 4), a[0]);
         m.w32(SCRATCH + 0x7c8 + 8 * (k % 4), a[1]);
+        for i in 0..12 {
+            let row = SCRATCH + 0x3800 + 0x40 * (k % 8);
+            m.w32(row + 4 * i, m.r32(block + 4 * i));
+            m.w32(block + 4 * i, 0x0382_0100 + (k << 4) + i);
+        }
         m.w32(last, 0x0382_0000 ^ a[0] ^ k);
         0x382
     });
@@ -3840,12 +4040,17 @@ fn bursts_tasks() {
         (4, 0, [(false, 5, 0, 0), (true, 3, 0, 1), (true, 0, 0, 1)]),
         (3, 1, [(false, 0, 0, 0), (true, -1, 0, 2), (false, 0, 0, 0)]),
         (1, 0, [(false, 0, 0, 0), (false, 0, 0, 0), (false, 0, 0, 0)]),
+        // the first members stepped: their angles below the low bound,
+        // between it and 0, and at both bounds (set below)
+        (4, 0, [(true, 0, 0, 3), (true, 0, 0, 3), (false, 0, 0, 0)]),
     ]
     .into_iter()
     .enumerate()
     {
         let k = k as u32;
         t.write(o + 0xd00, &varied(0x300, k));
+        // a word the last member's end clears
+        t.set_u32(o + 0x1a64, 0x1a64_0000 + k);
         for (i, (run, a, b, c)) in (0u32..).zip(members) {
             let r = o + 0xd50 + 0xc8 * i;
             t.set_u32(r + 0x44, u32::from(run));
@@ -3857,6 +4062,15 @@ fn bursts_tasks() {
                 t.set_u32(r + 4 * j as u32, x.to_bits());
                 t.set_u32(r + 0x10 + 4 * j as u32, (0.5 * (i as f32 - 1.0)).to_bits());
             }
+        }
+        if k == 5 {
+            let pi = std::f32::consts::PI;
+            let r = |i: u32| o + 0xd50 + 0xc8 * i;
+            // member 0: x -1.5 (between -pi and 0), -3.6 (below -pi)
+            t.set_u32(r(0), (-1.0f32).to_bits());
+            // member 1 (no step): exactly pi and -pi
+            t.set_u32(r(1), pi.to_bits());
+            t.set_u32(r(1) + 4, (-pi).to_bits());
         }
         t.set_u32(op(&t, f, 0x1e), n);
         t.set_u32(op(&t, f, 0x68), slow);
@@ -3919,7 +4133,13 @@ fn parts_vertices_moved() {
         for i in 0..4 {
             let v = m.r32(a[2] + 4 * i);
             let x = f32::from_bits(v & 0x3fff_ffff) * if k % 3 == 0 { -1.0 } else { 1.0 };
-            m.w32(a[0] + 4 * i, (x + k as f32).to_bits());
+            // (a zero of either sign passed on as it is)
+            let x = if v.trailing_zeros() >= 31 {
+                v
+            } else {
+                (x + k as f32).to_bits()
+            };
+            m.w32(a[0] + 4 * i, x);
         }
         0x229
     });
@@ -3932,9 +4152,17 @@ fn parts_vertices_moved() {
         SCRATCH + 0xa000,
     );
     let entry = STACK_TOP - 0x100;
-    for (k, (parts, id)) in [(2u16, 0x10fbu16), (1, 0x1234), (3, 0x1100), (0, 0x10fc)]
-        .into_iter()
-        .enumerate()
+    // (the last: one part whose two vertices are +0 and -0 and whose
+    // strips use up the count exactly, a kind-0x10 strip after them)
+    for (k, (parts, id)) in [
+        (2u16, 0x10fbu16),
+        (1, 0x1234),
+        (3, 0x1100),
+        (0, 0x10fc),
+        (1, 0x1234),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let k = k as u32;
         t.write(SCRATCH + 0x5000, &varied(0x400, k));
@@ -3968,6 +4196,22 @@ fn parts_vertices_moved() {
                 t.set_u8(e + 1, kind);
                 t.set_u16(e + 2, n);
                 e += 0x20 + if kind == 0x10 { 0x1c * u32::from(n) } else { 0 };
+            }
+            if k == 4 {
+                t.set_u16(d + 0x12, 2);
+                for (v, x) in [(0u32, 0u32), (1, 0x8000_0000)] {
+                    t.set_u32(d + 0x300 + 16 * v, x);
+                }
+                // three strips of one triple each for a count of 2 (the
+                // byte after the first's count makes a large word with it)
+                t.set_u16(d + 0x10, 2);
+                let mut e = d + 0x40;
+                for _ in 0..3 {
+                    t.set_u8(e + 1, 0x10);
+                    t.set_u16(e + 2, 1);
+                    t.set_u8(e + 4, 0x7f);
+                    e += 0x20 + 0x1c;
+                }
             }
         }
         t.write(col, &varied(0x100, k));
@@ -4026,6 +4270,11 @@ fn object_three_points_started() {
         }
         t.set_u16(free, 12);
         t.write(b, &varied(0x2300, k));
+        // the summoner's point: floats the height's 0.5 changes (the
+        // pattern's are too large for it to show)
+        for (i, v) in (0u32..).zip([1.5f32, 2.0 + k as f32, -3.0, 1.0]) {
+            t.set_u32(b + 0x1a60 + 4 * i, v.to_bits());
+        }
         free_ring(&mut t, take, SCRATCH + 0x1000, 3 + k);
         if k == 1 {
             t.set_u32(head, 0);
@@ -4076,7 +4325,9 @@ fn swing_pairs_started() {
     rec_mem(&mut t, 12, 1, 0, None);
     t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
     rec_mem(&mut t, 314, 1, 0, None);
-    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.75);
+    // (the turn's random part pi/2: r + pi wraps to a float other than
+    // r - pi, so the start yaw's sign and the sum show)
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 2.0);
     rec_mem(&mut t, 257, 2, 0, None);
     let b = SCRATCH + 0x8000;
     t.set_u32(op(&t, f, 0xf), b);
@@ -4216,6 +4467,8 @@ fn thrown_effects_far() {
         (0x1083, 5, false),
         (0x2000, 6, true),
         (0x1070, 7, false),
+        // the last model of the switch (0x108c), a direct one
+        (0x108c, 8, true),
     ]
     .into_iter()
     .enumerate()
