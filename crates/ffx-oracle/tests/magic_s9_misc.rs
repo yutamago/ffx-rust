@@ -958,3 +958,148 @@ fn beams_one_by_one() {
         }
     }
 }
+
+/// Rows 16, 63: three beams spread from the actors' mean in five of the
+/// DLLs (two with slot 38 after the tail): one to three actors, the object on its list and not, a count
+/// that truncates to 0.
+#[test]
+fn beams_spread() {
+    for (dll, rva) in [
+        (446u16, 0x4480u32),
+        (543, 0x4450),
+        (555, 0x4440),
+        (565, 0x65e0),
+        (697, 0x65e0),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        log_calls(&mut t, 219, 2, &[], |_, a, k| a[0] ^ 0x0219_0000 ^ k);
+        log_calls(&mut t, 237, 4, &[], |m, a, k| {
+            for i in 0..3 {
+                m.w32(a[3] + 4 * i, (1.5 * i as f32 - 2.0 + k as f32).to_bits());
+            }
+            0x237
+        });
+        log_calls(&mut t, 262, 4, &[], |m, a, k| {
+            for (i, x) in (0u32..).zip(&a[1..4]) {
+                let v = [3.0f32, -1.25, 4.5][i as usize] * (k as f32 + 1.0) - 2.0;
+                m.w32(*x, v.to_bits());
+            }
+            0x262
+        });
+        log_calls(&mut t, 12, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5 - 1.0);
+        log_calls(&mut t, 314, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(314, |m, a| {
+            f64::from(f32::from_bits(a[0])) * 0.375 - f64::from(m.r32(LOG) % 5)
+        });
+        log_calls(&mut t, 235, 1, &[], |m, a, k| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (0.125 * i as f32 - k as f32).to_bits());
+            }
+            0x235
+        });
+        log_calls(&mut t, 328, 3, &[0], |_, _, _| 0x328);
+        log_calls(&mut t, 329, 3, &[0], |_, _, _| 0x329);
+        log_calls(&mut t, 229, 3, &[1, 2], |m, a, k| {
+            for i in 0..3 {
+                m.w32(a[0] + 4 * i, (0.5 * i as f32 + k as f32).to_bits());
+            }
+            0x229
+        });
+        log_calls(&mut t, 248, 3, &[1, 2], |m, a, _| {
+            m.w32(a[0], 0x4000_0000);
+            m.w32(a[0] + 8, 0xc000_0000);
+            0x248
+        });
+        log_calls(&mut t, 713, 1, &[0], |_, _, _| 0x713);
+        log_calls(&mut t, 257, 2, &[], |_, a, _| a[0] ^ 0x0257_0000);
+        log_calls(&mut t, 38, 3, &[], |_, a, _| a[0] ^ 0x0038_0000);
+        let soa = t.img.rel32_target(f + 0x374);
+        let mean = t.img.rel32_target(f + 0x79);
+        let b = SCRATCH + 0x10000;
+        t.set_u32(w(&t, 0x29), b);
+        let list = w(&t, 0x487);
+        let gp = SCRATCH + 0x7e8;
+        t.set_u32(w(&t, 0x495), gp);
+        for (o, x) in [
+            (0x2adu32, 1.0f32),
+            (0x2bc, 0.5),
+            (0x2c6, 2.0),
+            (0x2d0, -0.5),
+            (0x2dd, 2.5),
+            (0x35c, 0.75),
+        ] {
+            let a = w(&t, o);
+            set_f(&mut t, a, x);
+        }
+        let bl = SCRATCH + 0x900;
+        let actors = w(&t, 0x88);
+        // (actors, on the list, the count's divisor)
+        for (k, (n, listed, kd)) in [(1u32, true, 0.25f32), (3, false, 0.5), (2, true, 1000.0)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            object_start_setup(&mut t, soa, 8);
+            let kda = w(&t, 0x32d);
+            set_f(&mut t, kda, kd);
+            // the mean position's actors (`sb_misc::mean_position`)
+            t.set_u32(op(&t, mean, 0x11), n);
+            t.set_u32(op(&t, mean, 0x4d), bl);
+            t.set_u32(w(&t, 0x7e), bl);
+            t.write(bl, &[2 + k as u8, 1, 7, 0]);
+            for i in 0..8u32 {
+                t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+            }
+            t.write(b, &varied(0xec00, k + 1));
+            set_f(&mut t, b + 0xebf0, 0.5 - 0.25 * k as f32);
+            let obj = b + w(&t, 0x46c);
+            let node = SCRATCH + 0x5400;
+            t.write(node, &varied(0x10, k));
+            if listed {
+                t.set_u32(node, 0);
+                t.set_u32(node + 4, 0);
+                t.set_u32(node + 8, obj);
+                t.set_u32(list, node);
+                t.set_u32(list + 4, node);
+                t.set_u32(list + 8, node);
+            } else {
+                t.set_u32(list, 0);
+            }
+            t.set_u32(list + 0xc, 1);
+            task_ring(&mut t, f, (0x37e, 0x3b7, 0x41e, 0x436), k, 3 + k % 2);
+            scrub(&mut t);
+            let c = Call {
+                eax: 0x4480 + k,
+                ecx: 0x0ecc_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[], Eax::Checked);
+        }
+    }
+}
+
+/// `mov eax, 1; ret` (`runtime::one_ret`) in five of the 50 DLLs that
+/// carry it.
+#[test]
+fn one_ret() {
+    for (dll, rva) in [
+        (523u16, 0x16a0u32),
+        (536, 0x14d0),
+        (20, 0x1df0),
+        (45, 0x1e80),
+        (98, 0x23c0),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let c = Call {
+            eax: 0x0eee_0000 + rva,
+            ecx: 0x0ecc_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[0x0a00_0001, 0x0a00_0002], Eax::Checked);
+    }
+}

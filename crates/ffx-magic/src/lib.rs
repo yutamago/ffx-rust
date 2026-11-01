@@ -2618,6 +2618,9 @@ ports! {
     "beams aimed" => s9_misc::BEAMS_AIMED, s9_misc::beams_aimed;
     "beams with sprites" => s9_misc::BEAMS_SPRITES, s9_misc::beams_sprites;
     "beams one by one" => s9_misc::BEAMS_ONE_BY_ONE, s9_misc::beams_one_by_one;
+    "beams spread" => s9_misc::BEAMS_SPREAD, s9_misc::beams_spread;
+    "beams spread (slot 38)" => s9_misc::BEAMS_SPREAD_38, s9_misc::beams_spread_38;
+    "mov eax, 1; ret" => runtime::ONE_RET, runtime::one_ret;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

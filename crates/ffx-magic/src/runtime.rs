@@ -209,3 +209,17 @@ pub const ZERO_RET: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `mov eax, 1; ret` (50 overlays, e.g. `magic_0523` 0x100016a0): returns
+/// 1.
+pub fn one_ret<G: Game>(_g: &mut G, _img: &Image, _fr: &Frame) -> Ret {
+    Ret::eax(1)
+}
+
+/// `mov eax, 1; ret`.
+pub const ONE_RET: Sig = Sig {
+    len: 6,
+    hash: 0x31b5_d0af_35a4_361f,
+    calls: &[],
+    imports: &[],
+};

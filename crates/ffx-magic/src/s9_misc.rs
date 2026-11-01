@@ -1506,3 +1506,198 @@ pub const BEAMS_ONE_BY_ONE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The object `obj` taken off the list at the operand `list`
+/// ([`list_remove`](crate::l5_objhost::list_remove) at the `rel32`
+/// `call`); if it was there, `**G_P = Q` (the operands `gp`, `q`), slot
+/// 713 `(obj)` and its u16 `+0x124` loses bit 15.
+fn unlist_object<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    (list, call, gp, q, table): (u32, u32, u32, u32, u32),
+) {
+    let w = |o: u32| op(img, f, o);
+    let remove = img.rel32_target(f + call);
+    if crate::l5_objhost::list_remove(g, img, remove, w(list), obj) != 0 {
+        g.write::<u32>(g.read::<u32>(w(gp)), w(q));
+        g.call(slot_target(g, w(table), 713), 0, &[obj]);
+        let fl = g.read::<u16>(obj.wrapping_add(0x124));
+        g.write::<u16>(obj.wrapping_add(0x124), fl & 0x7fff);
+    }
+}
+
+/// [`beams_spread`]'s operands (for [`beams_tail`]).
+const BEAMS_SPREAD_OPS: BeamOps = BeamOps {
+    table: 0x1b,
+    n: 0,
+    b: 0x29,
+    c: 0x32,
+    c_end: 0x4c5,
+    k1: 0,
+    actor: (0, 0, 0),
+    aim: [0x2ad, 0x2bc, 0x2c6, 0x2d0, 0x2dd],
+};
+
+/// Three beams spread from the actors' mean position (cdecl, no
+/// arguments; a /GS frame aligned to 8, `S` = `(ebp & !7) - 0xd0`: the
+/// angle `t` at `S+0x24`, the offset `V` at `S+0x48`, the mean `M` at
+/// `S+0x58`, the point `P` at `S+0x68`, the turned offset `W` at `S+0x78`,
+/// the matrix `X` at `S+0x88`): `P` = slot 237 `(slot 219 (*G_C, 0), 0,
+/// 0, P)` with `w` 1.0, `t = B[0xebf0]` (`B = *G_B`), `V.w` = 1.0, `M` the
+/// actors' mean position ([`mean_position`](crate::sb_misc::mean_position))
+/// with `M.y` = slot 12 of the first entry's actor (ST0). For each beam
+/// `i` of 3 (`E = B + 0xd9d8 + 0x520 i`): `E-0x18 = P`, `E-8 = M`; `V` =
+/// `(0, -25, 0)` for the first, `(40, 0, slot 314 (15.0))` and `(-40, 0,
+/// slot 314 (15.0))` for the others; `X` = slot 235, turned by slot 328
+/// `(X, X, 0.0)` and 329 `(X, X, t)`; `W` = slot 229 `(W, X, V)`, slot 248
+/// `(E-8, E-8, W)`; `E+4 = 1.0`; the aim ([`aim_at`]); the count
+/// `distance / KD` (1 when negative, 2 more for the first) into `E+0x294`
+/// and `+0x298`; the object `E - 0x278` started at the scale `K` with the
+/// program 3 ([`start_object_at`](crate::s4_misc::start_object_at)),
+/// `E-0x1b8.. = E+8..`, `E+0x29c = i`, a task node taken and listed
+/// ([`free_to_live`](crate::s7_misc::free_to_live)) with `+0x14 = E -
+/// 0x278`. Then `B[0xebe0] = 3`, `B[0xebe4] = 0`, the object `B+0x2860`
+/// off its list ([`unlist_object`]). Returns [`beams_tail`]'s `eax`.
+///
+/// `magic_0446` 0x10004480 (1,273 bytes; 10 DLLs).
+pub fn beams_spread<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = beams_spread_body(g, img, fr);
+    beams_tail(g, img, f, &BEAMS_SPREAD_OPS)
+}
+
+/// [`beams_spread`] with the program `0x27`, the object at `B+0x2730`
+/// (its words `+0xc4b0`, `+0xc4b4`) and, after the tail, slot 38 `(slot
+/// 219 (*G_C, 0), 0.0, 1)`, whose `eax` it returns (the program, the
+/// object's offset and its words' are the code's immediates).
+///
+/// `magic_0565` 0x100065e0 (1,321 bytes; 5 DLLs).
+pub fn beams_spread_38<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = beams_spread_body(g, img, fr);
+    let w = |o: u32| op(img, f, o);
+    beams_tail(g, img, f, &BEAMS_SPREAD_OPS);
+    let c = g.read::<u32>(w(0x4ea));
+    let x = g.call(slot_target(g, w(0x1b), 219), 0, &[c, 0]).eax;
+    Ret::eax(g.call(slot_target(g, w(0x505), 38), 0, &[x, 0, 1]).eax)
+}
+
+/// [`beams_spread`] up to its tail; returns the function's address.
+fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    use crate::sb_sse::div;
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x1b), s);
+    let ops = &BEAMS_SPREAD_OPS;
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xd0);
+    let (tilt, v, m, p, wv, x) = (s + 0x24, s + 0x48, s + 0x58, s + 0x68, s + 0x78, s + 0x88);
+    let b = g.read::<u32>(w(0x29));
+    let c = g.read::<u32>(w(0x32));
+    let scene = g.call(t(g, 219), 0, &[c, 0]).eax;
+    g.call(t(g, 237), 0, &[scene, 0, 0, p]);
+    let k = g.read::<u32>(b.wrapping_add(0xebf0));
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(tilt, k);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    let mean = img.rel32_target(f + 0x79);
+    crate::sb_misc::mean_position(g, img, mean, s.wrapping_sub(0x1c), m);
+    let first = u32::from(g.read::<u8>(g.read::<u32>(w(0x7e))));
+    let actor = g.read::<u32>(first.wrapping_mul(4).wrapping_add(w(0x88)));
+    let y = crate::m0018::st0_f32(g.call(t(g, 12), 0, &[actor]).st0);
+    g.write::<f32>(m + 4, y);
+    let mut e = b.wrapping_add(0xd9d8);
+    let start = img.rel32_target(f + 0x374);
+    for i in 0..3u32 {
+        for j in 0..4 {
+            let a = g.read::<u32>(p + 4 * j);
+            g.write::<u32>(e.wrapping_sub(0x18 - 4 * j), a);
+        }
+        let to = e.wrapping_sub(8);
+        for j in 0..4 {
+            let a = g.read::<u32>(m + 4 * j);
+            g.write::<u32>(to + 4 * j, a);
+        }
+        if i == 0 {
+            g.write::<u32>(v, 0);
+            g.write::<u32>(v + 4, 0xc1c8_0000);
+            g.write::<u32>(v + 8, 0);
+        } else {
+            g.write::<u32>(v, if i == 1 { 0x4220_0000 } else { 0xc220_0000 });
+            g.write::<u32>(v + 4, 0);
+            let z = crate::m0018::st0_f32(g.call(t(g, 314), 0, &[0x4170_0000]).st0);
+            g.write::<f32>(v + 8, z);
+        }
+        g.call(t(g, 235), 0, &[x]);
+        g.call(t(g, 328), 0, &[x, x, 0]);
+        g.call(t(g, 329), 0, &[x, x, k]);
+        g.write::<u32>(v + 0xc, 0x3f80_0000);
+        g.call(t(g, 229), 0, &[wv, x, v]);
+        g.call(t(g, 248), 0, &[to, to, wv]);
+        g.write::<u32>(e + 4, 0x3f80_0000);
+        let from = e.wrapping_sub(0x18);
+        aim_at(g, img, f, (from, to, e + 8), ops.aim);
+        let d = div(distance(g, from, to), g.read::<f32>(w(0x32d)));
+        beam_count(g, e, d);
+        if i == 0 {
+            let n = g.read::<u32>(e + 0x294).wrapping_add(2);
+            g.write::<u32>(e + 0x294, n);
+            g.write::<u32>(e + 0x298, n);
+        }
+        let obj = e.wrapping_sub(0x278);
+        let scale = g.read::<f32>(w(0x35c));
+        let program = w(0x36c) & 0xff;
+        crate::s4_misc::start_object_at(g, img, start, obj, scale, program, 0, 0);
+        for j in 0..4 {
+            let a = g.read::<u32>(e + 8 + 4 * j);
+            g.write::<u32>(e.wrapping_sub(0x1b8 - 4 * j), a);
+        }
+        g.write::<u32>(e + 0x29c, i);
+        let ring = [
+            0x37e, 0x3b7, 0x3d4, 0x3dc, 0x40d, 0x418, 0x41e, 0x436, 0x459, 0x449, 0x459,
+        ];
+        let node = crate::s7_misc::free_to_live(g, img, f, ring);
+        g.write::<u32>(node.wrapping_add(0x14), obj);
+        e = e.wrapping_add(0x520);
+    }
+    let obj = b.wrapping_add(w(0x46c));
+    g.write::<u32>(obj.wrapping_add(w(0x472)), 3);
+    g.write::<u32>(obj.wrapping_add(w(0x47c)), 0);
+    unlist_object(g, img, f, obj, (0x487, 0x48c, 0x495, 0x49c, 0x1b));
+    f
+}
+
+/// [`beams_spread`] (the `rel32`s: the mean position, the square roots,
+/// the arcs, the object start, the list removal and
+/// `__security_check_cookie`).
+pub const BEAMS_SPREAD: Sig = Sig {
+    len: 1273,
+    hash: 0x58ac_d4b5_c09b_9bd3,
+    calls: &[
+        (0x79, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x24a, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x25d, Callee::Import("_CIatan2")),
+        (0x29b, Callee::Import("_CIatan2")),
+        (0x321, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x374, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x48c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x4f1, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`beams_spread_38`] (the `rel32`s as [`BEAMS_SPREAD`]'s).
+pub const BEAMS_SPREAD_38: Sig = Sig {
+    len: 1321,
+    hash: 0xf355_3e49_1b00_3aaf,
+    calls: &[
+        (0x79, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x24a, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x25d, Callee::Import("_CIatan2")),
+        (0x29b, Callee::Import("_CIatan2")),
+        (0x321, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x374, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x48c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x521, Callee::Any),
+    ],
+    imports: &[],
+};
