@@ -2167,6 +2167,8 @@ ports! {
     "countdown children" => s7_misc::COUNTDOWN_CHILDREN, s7_misc::countdown_children;
     "summon frame (bound, bone first)" => s7_misc::SUMMON_FRAME_BOUND, s7_misc::summon_frame_bound;
     "summon frame (bound, ring first)" => s7_misc::SUMMON_FRAME_RING, s7_misc::summon_frame_ring;
+    "summon frame (pass first)" => s7_misc::SUMMON_FRAME_PASS, s7_misc::summon_frame_pass;
+    "summon frame (slot 673 first)" => s7_misc::SUMMON_FRAME_673, s7_misc::summon_frame_673;
     "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
     "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
     "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;

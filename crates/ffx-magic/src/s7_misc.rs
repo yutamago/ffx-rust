@@ -478,6 +478,8 @@ pub const COUNTDOWN_CHILDREN: Sig = Sig {
 /// Where a summon frame's variant has its operands (offsets in the
 /// function).
 struct SummonOps {
+    /// What runs before `*P = ITEM`.
+    pre: SummonPre,
     /// The stage, `*P = ITEM` and the models' binding `rel32`.
     stage: u32,
     p: u32,
@@ -497,6 +499,17 @@ struct SummonOps {
     end: (u32, u32, u32, u32, u32),
 }
 
+/// What a summon frame's variant does before its models are bound.
+#[derive(Clone, Copy)]
+enum SummonPre {
+    None,
+    /// The pass byte `G_PASS` goes up (before `*P = ITEM`) and `G_X =
+    /// *G_Y` (after it): the operands of the pass, `G_X` and `G_Y`.
+    PassAndCopy(u32, u32, u32),
+    /// Slot 673 first: its table operand.
+    Slot673(u32),
+}
+
 /// The summon frame both variants share (an aligned frame; `E` = `esp`
 /// after it and one push, the cursor at `E + 8`); [`summon_frame_bound`]
 /// gives the order.
@@ -506,8 +519,19 @@ fn summon_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &SummonOps) -> R
     if g.read::<i32>(w(o.stage)) < 4 {
         return Ret::eax(0);
     }
+    if let SummonPre::Slot673(t) = o.pre {
+        slot(g, img, f, t, 673, fr.ecx, &[]);
+    }
     let p = g.read::<u32>(w(o.p));
+    if let SummonPre::PassAndCopy(pass, _, _) = o.pre {
+        let v = g.read::<u8>(w(pass)).wrapping_add(1);
+        g.write::<u8>(w(pass), v);
+    }
     g.write::<u32>(p, w(o.item));
+    if let SummonPre::PassAndCopy(_, x, y) = o.pre {
+        let v = g.read::<u32>(w(y));
+        g.write::<u32>(w(x), v);
+    }
     crate::sa_summon::bind_models(g, img, img.rel32_target(f + o.bind));
     // push ebp; and esp, -8; sub esp, 0xc; push esi
     let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc + 4);
@@ -595,6 +619,7 @@ fn summon_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &SummonOps) -> R
 /// is the variant with the ring first.
 pub fn summon_frame_bound<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let o = SummonOps {
+        pre: SummonPre::None,
         stage: 0xb,
         p: 0x18,
         item: 0x1e,
@@ -627,6 +652,7 @@ pub const SUMMON_FRAME_BOUND: Sig = Sig {
 /// (`magic_0150` 0x1000dfa0, 263 bytes; 4 DLLs).
 pub fn summon_frame_ring<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let o = SummonOps {
+        pre: SummonPre::None,
         stage: 0xb,
         p: 0x18,
         item: 0x1e,
@@ -2664,6 +2690,68 @@ pub const AIMED_EMITTER: Sig = Sig {
         (0xec, Callee::Import("_CIatan2")),
         (0x1be, Callee::Sig(&crate::sa_pool::TAKE)),
         (0x1fe, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`summon_frame_ring`]'s variant whose pass byte goes up first and
+/// that copies `G_X = *G_Y` (`magic_0577` 0x1000dd60, 279 bytes).
+pub fn summon_frame_pass<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = SummonOps {
+        pre: SummonPre::PassAndCopy(0x1e, 0x2e, 0x29),
+        stage: 0xb,
+        p: 0x18,
+        item: 0x24,
+        bind: 0x33,
+        bone_first: false,
+        bone: (0x88, 0x94, 0x9d),
+        ring: (0x39, 0x40, [0x48, 0x6a, 0x78], 0x72, 0x80),
+        visits: [(0xa4, 0xb5, 0xba), (0xc1, 0xd5, 0xda)],
+        end: (0xdf, 0xe5, 0xf3, 0xfb, 0x101),
+    };
+    summon_frame(g, img, fr, &o)
+}
+
+/// [`summon_frame_pass`] (the `rel32`s as [`SUMMON_FRAME_BOUND`]'s).
+pub const SUMMON_FRAME_PASS: Sig = Sig {
+    len: 279,
+    hash: 0x693c_6f3b_3f0c_b805,
+    calls: &[
+        (0x33, Callee::Sig(&crate::sa_summon::BIND_MODELS)),
+        (0x9d, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xba, Callee::Sig(&crate::nodes::GATED)),
+        (0xda, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_frame_ring`]'s variant that calls slot 673 first
+/// (`magic_0603` 0x1000da40, 279 bytes).
+pub fn summon_frame_673<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = SummonOps {
+        pre: SummonPre::Slot673(0x18),
+        stage: 0xb,
+        p: 0x25,
+        item: 0x2b,
+        bind: 0x30,
+        bone_first: false,
+        bone: (0x88, 0x94, 0x9d),
+        ring: (0x36, 0x3d, [0x45, 0x6a, 0x78], 0x72, 0x80),
+        visits: [(0xa4, 0xb5, 0xba), (0xc1, 0xd5, 0xda)],
+        end: (0xdf, 0xe5, 0xf3, 0xfb, 0x101),
+    };
+    summon_frame(g, img, fr, &o)
+}
+
+/// [`summon_frame_673`] (the `rel32`s as [`SUMMON_FRAME_BOUND`]'s).
+pub const SUMMON_FRAME_673: Sig = Sig {
+    len: 279,
+    hash: 0x49cd_5a89_d5a6_bd3b,
+    calls: &[
+        (0x30, Callee::Sig(&crate::sa_summon::BIND_MODELS)),
+        (0x9d, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xba, Callee::Sig(&crate::nodes::GATED)),
+        (0xda, Callee::Sig(&crate::nodes::GATED)),
     ],
     imports: &[],
 };

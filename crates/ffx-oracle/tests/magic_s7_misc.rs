@@ -502,43 +502,135 @@ fn summon_frames_bound() {
     }
 }
 
+/// Where a summon frame's operands are, for its test.
+struct FrameOps {
+    /// The pass, bone A and the two nodes, skip, first, root, flags,
+    /// mask, W, Z.
+    pass: u32,
+    nodes: [u32; 3],
+    skip: u32,
+    first: u32,
+    root: u32,
+    flags: u32,
+    mask: u32,
+    word: u32,
+    z: u32,
+    /// The models' binding `rel32`, `*P = ITEM`'s `P`.
+    bind: u32,
+    p: u32,
+    /// The pass goes up first (and `G_X = *G_Y`: their operands).
+    copy: Option<(u32, u32)>,
+}
+
 fn summon_frame_in(dll: u16, rva: u32, bone_first: bool) {
+    let ops = if bone_first {
+        FrameOps {
+            pass: 0x28,
+            nodes: [0x34, 0xa1, 0xc1],
+            skip: 0x43,
+            first: 0x4a,
+            root: 0x52,
+            flags: 0x88,
+            mask: 0xcb,
+            word: 0xdf,
+            z: 0xed,
+            bind: 0x23,
+            p: 0x18,
+            copy: None,
+        }
+    } else {
+        FrameOps {
+            pass: 0x78,
+            nodes: [0x84, 0xa5, 0xc5],
+            skip: 0x29,
+            first: 0x30,
+            root: 0x38,
+            flags: 0x70,
+            mask: 0xcf,
+            word: 0xe3,
+            z: 0xf1,
+            bind: 0x23,
+            p: 0x18,
+            copy: None,
+        }
+    };
+    summon_frame_with(dll, rva, &ops);
+}
+
+/// Rows of `magic_0577` 0x1000dd60 (the pass first, a global copied) and
+/// `magic_0603` 0x1000da40 (slot 673 first): the variants of the summon
+/// frame, through the same cases.
+#[test]
+fn summon_frames_variants() {
+    let common = FrameOps {
+        pass: 0x88,
+        nodes: [0x94, 0xb5, 0xd5],
+        skip: 0,
+        first: 0,
+        root: 0,
+        flags: 0x80,
+        mask: 0xdf,
+        word: 0xf3,
+        z: 0x101,
+        bind: 0,
+        p: 0,
+        copy: None,
+    };
+    summon_frame_with(
+        577,
+        0xdd60,
+        &FrameOps {
+            skip: 0x39,
+            first: 0x40,
+            root: 0x48,
+            bind: 0x33,
+            p: 0x18,
+            copy: Some((0x2e, 0x29)),
+            ..common
+        },
+    );
+    summon_frame_with(
+        603,
+        0xda40,
+        &FrameOps {
+            skip: 0x36,
+            first: 0x3d,
+            root: 0x45,
+            bind: 0x30,
+            p: 0x25,
+            ..common
+        },
+    );
+}
+
+fn summon_frame_with(dll: u16, rva: u32, ops: &FrameOps) {
     let Some(mut t) = twin(dll) else { return };
     let f = t.at(rva);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    // (pass, bone A, the two nodes, skip, first, root, flags, mask, W, Z)
-    let (pass, nodes, skip, first, root, flags, mask, word, z) = if bone_first {
-        (
-            0x28,
-            [0x34u32, 0xa1, 0xc1],
-            0x43,
-            0x4a,
-            0x52,
-            0x88,
-            0xcb,
-            0xdf,
-            0xed,
-        )
-    } else {
-        (
-            0x78,
-            [0x84u32, 0xa5, 0xc5],
-            0x29,
-            0x30,
-            0x38,
-            0x70,
-            0xcf,
-            0xe3,
-            0xf1,
-        )
-    };
-    let bm = t.img.rel32_target(f + 0x23);
+    let FrameOps {
+        pass,
+        nodes,
+        skip,
+        first,
+        root,
+        flags,
+        mask,
+        word,
+        z,
+        ..
+    } = *ops;
+    rec(&mut t, 673, 0, |_, _| 0x673);
+    if let Some((x, y)) = ops.copy {
+        t.set_u32(w(&t, x), 0x0c0c_0000);
+        t.set_u32(w(&t, y), 0x0d0d_1234);
+    }
+    let bm = t.img.rel32_target(f + ops.bind);
     t.set_u32(t.img.word(bm + 0x7e), sa::node(20));
     for s in [723u32, 724, 230, 253] {
         rec(&mut t, s, 0, move |_, _| s);
     }
     rec(&mut t, 214, 1, |_, a| a[0] ^ 0x0214_0000);
-    t.set_u32(w(&t, 0x18), sa::node(21));
+    t.set_u32(w(&t, ops.p), sa::node(21));
     let vt = sa::node(22);
     t.set_u32(vt + 0x20, magic::TRAPS);
     rec(&mut t, 0, 1, |m, a| {
@@ -578,8 +670,13 @@ fn summon_frame_in(dll: u16, rva: u32, bone_first: bool) {
         }
         t.set_u32(prev + 8, root_at);
         // the bone and the two nodes at the pass: nothing moves
+        let now = if ops.copy.is_some() {
+            p.wrapping_add(1)
+        } else {
+            p
+        };
         for o in nodes {
-            t.set_u8(w(&t, o) + 0x1a, p);
+            t.set_u8(w(&t, o) + 0x1a, now);
         }
         t.set_u32(w(&t, flags), 0x10);
         t.set_u32(w(&t, mask), fl);
