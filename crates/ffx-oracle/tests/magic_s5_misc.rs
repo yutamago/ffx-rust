@@ -267,6 +267,11 @@ fn chara_setups() {
         }
         t.set_u32(op(&t, f, 0x7), 5);
         t.set_u32(op(&t, f, 0x1), have);
+        // the words next to the cleared pair (and at the next
+        // instruction's bytes read as an address) hold something, so a
+        // store of zeros that lands there shows
+        t.write(op(&t, f, 0x9e) ^ 0x10, &[0xa5; 8]);
+        t.write(op(&t, f, 0xa2), &[0x5a; 8]);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
@@ -1477,6 +1482,13 @@ fn screen_fade_steps() {
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+    // the floor (`+0x10c` is the low bound `+0x26` itself) below 0 and
+    // a level between it and 0: the level is kept, not the floor or 0
+    t.set_u32(op(&t, f, 0x10c), (-2.0f32).to_bits());
+    t.set_u32(op(&t, f, 0x12), 0xb0);
+    t.set_u32(op(&t, f, 0x1e), (-1.0 - up).to_bits());
+    scrub(&mut t);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
 
 #[test]
@@ -2131,6 +2143,8 @@ fn aim_tasks() {
         ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
         ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
         ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+        // a yaw past a quarter turn: 3/2 pi - yaw stays at or below pi
+        ([-1.0, 0.5, 2.0], [0.0, 0.0, 0.0], 1.5),
     ]
     .into_iter()
     .enumerate()
@@ -2205,6 +2219,8 @@ fn camera_parts() {
     let ptr = SCRATCH + 0x7c0;
     let answer = SCRATCH + 0x7e0;
     rec_lock(&mut t, 712, 2, lock, move |m, _| {
+        // the item the caller set (then changed)
+        m.w32(SCRATCH + 0x7cc, m.r32(ptr));
         m.w32(ptr, 0x0712_0712);
         m.r32(answer)
     });
@@ -2429,6 +2445,8 @@ fn aim_objects() {
         ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
         ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
         ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+        // a yaw past a quarter turn: 3/2 pi - yaw stays at or below pi
+        ([-1.0, 0.5, 2.0], [0.0, 0.0, 0.0], 1.5),
     ]
     .into_iter()
     .enumerate()
@@ -2960,18 +2978,24 @@ fn curve_carries() {
     let task = SCRATCH + 0x100;
     let st = SCRATCH + 0x1000;
     let entry = STACK_TOP - 0x100;
-    for (wait, steps, flags, cbs, state) in [
-        (2u32, 0u32, 1u16, 0u32, 0u32),
-        (2, 0, 0, 0, 0),
-        (0, 5, 0, 3, 1),
-        (0, 4, 0, 1, 1),
-        (0, 1, 0, 3, 1),
-        (0, 0, 0, 2, 1),
-        (0, 0xffff_fffe, 0, 3, 0),
-        (0, 0, 0, 0, 0),
+    // (wait, steps, flags, callbacks, the script's state; its wait 0:
+    // the script steps through its own operands)
+    for (wait, steps, flags, cbs, state, go) in [
+        (2u32, 0u32, 1u16, 0u32, 0u32, false),
+        (2, 0, 0, 0, 0, false),
+        (0, 5, 0, 3, 1, false),
+        (0, 4, 0, 1, 1, false),
+        (0, 1, 0, 3, 1, false),
+        (0, 0, 0, 2, 1, false),
+        (0, 0xffff_fffe, 0, 3, 0, false),
+        (0, 0, 0, 0, 0, false),
+        (2, 0, 1, 0, 0, true),
+        (0, 0, 0, 0, 0, true),
+        // a wait below 0 when the steps run out
+        (0xffff_fffd, 1, 0, 3, 1, false),
     ] {
         t.write(entry - 0x40, &[0; 0x40]);
-        t.write(st, &varied(0xc0, wait + steps));
+        t.write(st, &varied(0xc0, wait.wrapping_add(steps)));
         for i in 0..20u32 {
             t.set_u32(st + 0x40 + 4 * i, (i as f32 * 0.25 - 1.0).to_bits());
         }
@@ -2984,6 +3008,9 @@ fn curve_carries() {
         t.set_u32(st + 0x94, if cbs & 2 != 0 { trap(1002) } else { 0 });
         // the motion script's state: done (1) or running
         t.set_u32(st + 0x14, state);
+        if go {
+            t.set_u16(st + 0x18, 0);
+        }
         t.write(task, &varied(0x20, 1));
         t.set_u32(task, 0);
         t.set_u32(task + 4, 0);
@@ -3015,7 +3042,34 @@ fn actor_clip_draws() {
     let Some(mut t) = twin(434) else { return };
     let f = t.at(0x44a0);
     rec_mem(&mut t, 230, 2, 16, Some(0));
-    rec_mem(&mut t, 231, 3, 16, Some(0));
+    // the product (and the named parts' name joins): the inputs' words
+    // logged, the output filled (its old words are the frames' junk)
+    t.stub(231, |m, a| {
+        let k = m.r32(SCRATCH + 0x3800);
+        m.w32(SCRATCH + 0x3800, k + 1);
+        let mut at = SCRATCH + 0x3804 + 0x100 * (k % 8);
+        for &x in &a[..3] {
+            m.w32(at, x);
+            at += 4;
+        }
+        for &x in &a[1..3] {
+            if followable(x) {
+                for i in 0..16 {
+                    let v = m.r32(x + 4 * i);
+                    m.w32(at, v);
+                    at += 4;
+                }
+            }
+        }
+        if followable(a[0]) {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, 0x3f80_0000 + (k << 8) + i * 0x11);
+            }
+        }
+        0x0231_0000 + k
+    });
+    // the part's name
+    t.stub(941, |_, a| SCRATCH + 0x3c00 + (a[0] & 0xf0));
     t.stub(325, |m, a| {
         for i in 0..4 {
             let v = m.r32(a[1] + 4 * i);
@@ -3029,9 +3083,14 @@ fn actor_clip_draws() {
     rec_mem(&mut t, 833, 3, 0, None);
     rec_mem(&mut t, 847, 2, 0, None);
     rec_mem(&mut t, 843, 2, 16, None);
-    // named_parts: off (returns its prefix at once)
+    // named_parts: off (returns its prefix at once), on for the last
+    // object with one record (its slots see the prefix, the matrix)
     let named = t.img.rel32_target(f + 0x12a);
     t.set_u32(op(&t, named, 0x15), 0);
+    t.set_u16(op(&t, named, 0x47), 1);
+    let nrec = op(&t, named, 0x53);
+    t.set_u32(nrec - 6, 0x0a0a_0006);
+    t.set_u16(nrec, 2);
     let map = SCRATCH + 0x700;
     t.write(map, &[0, 2, 1, 3]);
     t.set_u32(op(&t, f, 0x4e), map);
@@ -3059,6 +3118,7 @@ fn actor_clip_draws() {
             t.set_u32(SCRATCH + 0x1000 + 0x1000 * j + 0x830, 0x0c0c_0000 + j);
         }
         t.set_u32(actor + 0x830, obj);
+        t.set_u32(op(&t, named, 0x15), u32::from(k == 3));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
@@ -3766,12 +3826,20 @@ fn bursts_tasks() {
     rec_mem(&mut t, 558, 1, 4, Some(0));
     // the GS wait (its words logged) may change the command block's
     // words (the task sets them after it): the block's last word
+    // The block's twelve words (`+0x321` .. `+0x374`) are logged and
+    // changed by every wait, so each store the task makes after one shows.
     let last = op(&t, f, 0x374);
+    let block = op(&t, f, 0x321);
     t.stub(382, move |m, a| {
         let k = m.r32(SCRATCH + 0x7c0);
         m.w32(SCRATCH + 0x7c0, k + 1);
         m.w32(SCRATCH + 0x7c4 + 8 * (k % 4), a[0]);
         m.w32(SCRATCH + 0x7c8 + 8 * (k % 4), a[1]);
+        for i in 0..12 {
+            let row = SCRATCH + 0x3800 + 0x40 * (k % 8);
+            m.w32(row + 4 * i, m.r32(block + 4 * i));
+            m.w32(block + 4 * i, 0x0382_0100 + (k << 4) + i);
+        }
         m.w32(last, 0x0382_0000 ^ a[0] ^ k);
         0x382
     });
@@ -3840,12 +3908,17 @@ fn bursts_tasks() {
         (4, 0, [(false, 5, 0, 0), (true, 3, 0, 1), (true, 0, 0, 1)]),
         (3, 1, [(false, 0, 0, 0), (true, -1, 0, 2), (false, 0, 0, 0)]),
         (1, 0, [(false, 0, 0, 0), (false, 0, 0, 0), (false, 0, 0, 0)]),
+        // the first members stepped: their angles below the low bound,
+        // between it and 0, and at both bounds (set below)
+        (4, 0, [(true, 0, 0, 3), (true, 0, 0, 3), (false, 0, 0, 0)]),
     ]
     .into_iter()
     .enumerate()
     {
         let k = k as u32;
         t.write(o + 0xd00, &varied(0x300, k));
+        // a word the last member's end clears
+        t.set_u32(o + 0x1a64, 0x1a64_0000 + k);
         for (i, (run, a, b, c)) in (0u32..).zip(members) {
             let r = o + 0xd50 + 0xc8 * i;
             t.set_u32(r + 0x44, u32::from(run));
@@ -3857,6 +3930,15 @@ fn bursts_tasks() {
                 t.set_u32(r + 4 * j as u32, x.to_bits());
                 t.set_u32(r + 0x10 + 4 * j as u32, (0.5 * (i as f32 - 1.0)).to_bits());
             }
+        }
+        if k == 5 {
+            let pi = std::f32::consts::PI;
+            let r = |i: u32| o + 0xd50 + 0xc8 * i;
+            // member 0: x -1.5 (between -pi and 0), -3.6 (below -pi)
+            t.set_u32(r(0), (-1.0f32).to_bits());
+            // member 1 (no step): exactly pi and -pi
+            t.set_u32(r(1), pi.to_bits());
+            t.set_u32(r(1) + 4, (-pi).to_bits());
         }
         t.set_u32(op(&t, f, 0x1e), n);
         t.set_u32(op(&t, f, 0x68), slow);
