@@ -652,6 +652,16 @@ impl Image {
         r >= self.text.0 && r < self.text.1
     }
 
+    /// Whether `addr` lies inside a relocated word (an operand, or a jump
+    /// table's entry): never an instruction's first byte, so never a
+    /// function start.
+    #[must_use]
+    pub fn in_reloc(&self, addr: u32) -> bool {
+        let a = addr.wrapping_sub(self.base);
+        let i = self.relocs.partition_point(|&r| r <= a);
+        i > 0 && a - self.relocs[i - 1] < 4
+    }
+
     /// The export's address.
     #[must_use]
     pub fn export(&self, name: &str) -> Option<u32> {
@@ -2630,7 +2640,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("register parts", &sa_misc::REGISTER_PARTS),
     ("records init", &sa_misc::RECORDS_INIT),
     ("me block", &sa_misc::ME_BLOCK),
-    ("/GS epilogue", &sa_misc::GS_EPILOGUE),
     ("script run", &sa_script::RUN),
     ("link part", &sa_misc::LINK_PART),
     ("timeline", &sa_misc::TIMELINE),
@@ -3311,7 +3320,7 @@ pub fn covered(img: &Image, addr: u32) -> Option<&'static str> {
     bind(img, addr).map(|i| PORTS[i].0).or_else(|| {
         INTERNAL
             .iter()
-            .find(|(_, sig)| img.in_text(addr) && img.matches(addr, sig))
+            .find(|(_, sig)| img.in_text(addr) && !img.in_reloc(addr) && img.matches(addr, sig))
             .map(|(n, _)| *n)
     })
 }
@@ -3319,9 +3328,15 @@ pub fn covered(img: &Image, addr: u32) -> Option<&'static str> {
 /// The port of the function at `addr` of `img`: its index in [`PORTS`].
 /// `None` when no port matches the code there. Slot thunks differ only
 /// in the slot, so they bind by shape ([`runtime::slot_of_thunk`]).
+///
+/// An address inside a relocated word binds nothing: `ffx-host` offers
+/// every relocated word pointing into `.text`, and a jump table's address
+/// (`jmp [eax*4 + table]`) is one. `magic_0168` 0x10005c94 and seven
+/// others start with `0xc3`, which the lone `ret` matched, and the
+/// host's `int3` there broke the table's first entry.
 #[must_use]
 pub fn bind(img: &Image, addr: u32) -> Option<usize> {
-    if !img.in_text(addr) {
+    if !img.in_text(addr) || img.in_reloc(addr) {
         return None;
     }
     if runtime::table_global(img)

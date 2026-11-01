@@ -390,19 +390,6 @@ pub const ME_BLOCK: Sig = Sig {
     imports: &[],
 };
 
-/// The epilogue the census cuts off /GS functions (`call
-/// __security_check_cookie; mov esp, ebp; pop ebp; ret`; `magic_0168`
-/// 0x10002360, 9 bytes, 28 overlays): no function of its own, only the
-/// end of the one before it, whose port does what it does (nothing the
-/// game sees: the cookie is the CRT's). Listed so the work list counts
-/// it covered.
-pub const GS_EPILOGUE: Sig = Sig {
-    len: 9,
-    hash: 0x6693_97f6_8daf_2beb,
-    calls: &[(0x01, Callee::Any)],
-    imports: &[],
-};
-
 /// `magic_0009` 0x10002af0 (internal, `ecx` = a part record, `edx` = an
 /// `i16` offset, stack `(owner, index)`): slot 941 maps the record's
 /// `+0x0` (twice: once added to the offset, kept as `v`), slot 772 turns

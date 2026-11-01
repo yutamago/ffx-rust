@@ -249,7 +249,16 @@ OPU host in 130. The addresses that differ between DLLs (their globals,
 tables and strings) are read from the original instructions' operands:
 `img.word(f + off)`, where `off` is the operand's offset in the function
 (the comments name the instruction). Slot thunks differ only in their
-slot and bind by shape (`runtime::slot_of_thunk`).
+slot and bind by shape (`runtime::slot_of_thunk`). An address inside a
+relocated word binds nothing (`Image::in_reloc`): `ffx-host` offers every
+relocated word pointing into `.text`, jump-table addresses included, and
+until 2026-11-01 the lone `ret` matched the `0xc3` first byte of 8 jump
+tables (`magic_0168` 0x10005c94, `0568` 0x10004394, `0596`, `0598`,
+`0602`, `0605`, `0610` 0x10002094, `0673` 0x10002394), so the host's
+`int3` there broke each table's first entry. The hook binds only where
+native code enters `.text` (a call or jump through a pointer the game
+holds), and jumps inside the overlay stay in Unicorn, so it never hit
+this.
 
 **The interface.** Ports are generic over `ffx_magic::Game`
 (`ffx_bridge::Mem` plus `call(target, ecx, args) -> Out` with `eax`,
