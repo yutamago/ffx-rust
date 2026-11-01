@@ -2382,7 +2382,18 @@ fn aimed_in(
                 t.set_u32(e + pos + 4 * i, (0.5 * k as f32).to_bits());
                 t.set_u32(e + target + 4 * i, (0.5 * k as f32 + x).to_bits());
             }
+            t.write(node - 0x40, &varied(0x60, k + 9));
             t.write(node, &varied(0x20, k));
+            // the yaw's constants (`K`, `H`, `T`, `L`, `T`): 0, 1, 2.5, -1,
+            // 2.5, so the yaws cross both bounds
+            let ks = if take_at == 0x1be {
+                [0xfeu32, 0x10d, 0x11d, 0x127, 0x134]
+            } else {
+                [0x107, 0x116, 0x126, 0x130, 0x13d]
+            };
+            for (o, x) in ks.into_iter().zip([0.0f32, 1.0, 2.5, -1.0, 2.5]) {
+                t.set_u32(w(&t, o), x.to_bits());
+            }
             t.set_u32(node, ring[0]);
             t.set_u32(node + 4, ring[1]);
             t.set_u16(op(&t, take, 0x04), 3);
