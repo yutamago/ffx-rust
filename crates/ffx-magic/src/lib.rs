@@ -1788,7 +1788,6 @@ ports! {
     "camera blocks reset" => s6_misc::CAMERA_BLOCKS_RESET, s6_misc::camera_blocks_reset;
     "task pool reset" => s6_misc::TASK_POOL_RESET, s6_misc::task_pool_reset;
     "task pool reset (b)" => s6_misc::TASK_POOL_RESET_B, s6_misc::task_pool_reset;
-    "curve colour" => s6_misc::CURVE_COLOUR, s6_misc::curve_colour;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
