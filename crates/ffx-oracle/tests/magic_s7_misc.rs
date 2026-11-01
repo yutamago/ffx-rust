@@ -2009,3 +2009,91 @@ fn sprite_systems_global() {
         }
     }
 }
+
+/// Row 350: the thunder node of the three DLLs: not passed, passed with
+/// bit 0 of `+0x54` set and clear, the record's slot on and off; every
+/// slot logs what its pointers see.
+#[test]
+fn thunder_nodes() {
+    for (dll, rva) in [(387u16, 0x7ca0u32), (578, 0x64a0), (649, 0x6540)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        // the vector: scaled, then normalised (both write it)
+        log_calls(&mut t, 233, log, 3, None, |m, a, k| {
+            for i in 0..4 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x233 + k
+        });
+        log_calls(&mut t, 232, log, 2, None, |m, a, k| {
+            for i in 0..4 {
+                let x = m.r32(a[1] + 4 * i) ^ 0x10;
+                m.w32(a[0] + 4 * i, x);
+            }
+            0x232 + k
+        });
+        // the slots with pointers: their words and what they point at
+        t.stub(677, move |m, a| {
+            let row = log + 0x400;
+            for i in 0..4 {
+                m.w32(row + 4 * i, a[i as usize]);
+                m.w32(row + 0x10 + 4 * i, m.r32(a[3] + 4 * i));
+            }
+            0x677
+        });
+        t.stub(679, move |m, a| {
+            let row = log + 0x440;
+            for i in 0..6 {
+                m.w32(row + 4 * i, m.r32(a[0] + 4 * i));
+            }
+            m.w32(row + 0x18, m.r32(m.r32(a[0] + 0x14)));
+            0x679
+        });
+        t.stub(680, move |m, a| {
+            let row = log + 0x480;
+            for (i, x) in (0u32..).zip(&a[..11]) {
+                m.w32(row + 4 * i, *x);
+            }
+            m.w32(row + 0x2c, m.r32(a[2]));
+            m.w32(row + 0x30, m.r32(a[2] + 4));
+            0x680 ^ a[3]
+        });
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let off = op(&t, f, 0x12d);
+        for (k, (byte, bits, on)) in [
+            (3u8, 1u8, 0u32),
+            (4, 1, 0),
+            (4, 0xfe, 0),
+            (4, 0xff, 1),
+            (4, 0, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.write(log, &varied(0x500, k));
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x60, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u8(r + 0x54, bits);
+            for (i, at) in (0u32..).zip([0x40u32, 0x44, 0x48, 0x4c, 0x50]) {
+                t.set_u32(r + at, SCRATCH + 0x2000 + 0x100 * i);
+            }
+            t.write(SCRATCH + 0x2000, &varied(0x500, k + 1));
+            t.set_u32(off, on);
+            scrub(&mut t);
+            let call = Call {
+                ecx: s,
+                eax: 0x7ca0_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::thunder_node(g, img, fr))
+            });
+        }
+    }
+}

@@ -2375,3 +2375,87 @@ pub const SPRITES_STEP_GLOBAL: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A ring node's handler that draws a thunder strip (internal: `ecx` =
+/// the cursor `S`; a ring pass first, [`ring_pass`], over the frame's
+/// cookie word; a /GS frame aligned to 16). Passed, with `R = S[0]` and
+/// the frame's vector `V`: `V` = slot 233 `(V, R[0x48] + 0xbc, -1.0)`,
+/// normalised (slot 232 `(V, V)`), `w` 1.0; with bit 0 of the byte
+/// `R+0x54`, slot 677 `(R+0x30, R[0x50], R[0x44] + 0x1c, V)` and the bit
+/// cleared; the record `L = (R+0x30, R[0x4c] + 0x1c, R[0x40], R[0x50],
+/// R[0x44] + 0x1c, V)` (a local) goes to slot 679 while `*G_OFF` is 0;
+/// then slot 680 `(R+0x30, G_T, &(1.0, 1.0867), R[0x40], G_K, 0x48, 0,
+/// 0, 0, R+0x1c, R)`, whose `eax` it returns.
+///
+/// `magic_0387` 0x10007ca0 (406 bytes; 3 DLLs).
+pub fn thunder_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = fr.ecx;
+    let top = fr.esp.wrapping_sub(4) & !0xf;
+    // `sub esp, 0x58`, then `push esi; push edi`: the locals from `e`
+    let e = top.wrapping_sub(0x60);
+    let cookie = g.read::<u32>(w(0xa)) ^ top.wrapping_sub(0x58);
+    let (v, pair, rec) = (e + 0x4c, e + 0x18, e + 0x20);
+    for (i, x) in (0u32..).zip([0, 0, 0xbf80_0000, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    g.write::<u32>(pair, 0x3f80_0000);
+    g.write::<u32>(pair + 4, 0x3f8a_aaab);
+    let r = g.read::<u32>(s);
+    g.write::<u32>(e + 0x14, r);
+    let (passed, eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return eax;
+    }
+    let r = g.read::<u32>(s);
+    let src = g.read::<u32>(r + 0x48).wrapping_add(0xbc);
+    slot(g, img, f, 0xac, 233, r, &[v, src, 0xbf80_0000]);
+    slot(g, img, f, 0xc2, 232, r, &[v, v]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    if g.read::<u8>(r + 0x54) & 1 != 0 {
+        let at = g.read::<u32>(r + 0x44).wrapping_add(0x1c);
+        let x = g.read::<u32>(r + 0x50);
+        slot(g, img, f, 0xf3, 677, r, &[r + 0x30, x, at, v]);
+        let b = g.read::<u8>(r + 0x54) & !1;
+        g.write::<u8>(r + 0x54, b);
+    }
+    let words = [
+        r + 0x30,
+        g.read::<u32>(r + 0x4c).wrapping_add(0x1c),
+        g.read::<u32>(r + 0x40),
+        g.read::<u32>(r + 0x50),
+        g.read::<u32>(r + 0x44).wrapping_add(0x1c),
+        v,
+    ];
+    for (i, x) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, x);
+    }
+    if g.read::<u32>(w(0x12d)) == 0 {
+        slot(g, img, f, 0x146, 679, r, &[rec]);
+    }
+    let x40 = g.read::<u32>(r + 0x40);
+    let args = [
+        r + 0x30,
+        w(0x175),
+        pair,
+        x40,
+        w(0x163),
+        0x48,
+        0,
+        0,
+        0,
+        r + 0x1c,
+        r,
+    ];
+    // call width: 11 words
+    slot(g, img, f, 0x170, 680, r, &args).eax
+}
+
+/// [`thunder_node`] (the `rel32`: `__security_check_cookie`).
+pub const THUNDER_NODE: Sig = Sig {
+    len: 406,
+    hash: 0xc0d4_84f1_bd49_7891,
+    calls: &[(0x18e, Callee::Any)],
+    imports: &[],
+};
