@@ -2986,6 +2986,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("two sparks", &s7_misc::TWO_SPARKS),
     ("two sparks (block word 4)", &s7_misc::TWO_SPARKS_B),
     ("summon object set-up", &s7_misc::SUMMON_OBJECT_SETUP),
+    ("flight step", &s7_misc::FLIGHT_STEP),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

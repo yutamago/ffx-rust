@@ -3240,3 +3240,84 @@ fn camera_blends() {
         }
     }
 }
+
+/// Row 522: the flight step of both DLLs: the first step (aims in each
+/// quarter, the yaw past both bounds and kept, the random spins) and the
+/// later ones; the slots see the frame's matrix and vector.
+#[test]
+fn flight_steps() {
+    for (dll, rva) in [(304u16, 0x23b0u32), (568, 0x1de0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 235, log, 1, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { k + i });
+            }
+            0x235
+        });
+        for s in [328u32, 329] {
+            log_calls(&mut t, s, log, 3, None, move |m, a, k| {
+                let v = m.r32(a[1] + 4 * (k % 16)) ^ a[2];
+                m.w32(a[0] + 4 * (k % 16), v);
+                s
+            });
+        }
+        log_calls(&mut t, 314, log, 1, None, |_, a, _| a[0]);
+        t.stub_st0(314, move |m, _| 0.375 + f64::from(m.r32(log) % 5));
+        log_calls(&mut t, 229, log, 3, None, |m, a, _| {
+            for i in 0..4u32 {
+                let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+                m.w32(a[0] + 4 * i, v & 0x7fff_ffff);
+            }
+            0x229
+        });
+        for (o, x) in [
+            (0xe9u32, 0.0f32),
+            (0xf8, 1.0),
+            (0x108, 2.5),
+            (0x112, -1.0),
+            (0x11f, 2.5),
+            (0x13b, 0.5),
+            (0x1b7, 0.25),
+            (0x1f7, 0.125),
+        ] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let e = SCRATCH + 0x300;
+        let p = SCRATCH + 0x400;
+        let a = SCRATCH + 0x500;
+        for (k, (dx, dy, dz, first)) in [
+            (1.0f32, 0.5f32, 1.0f32, true),
+            (-1.0, 2.0, 0.25, true),
+            (-0.5, -1.0, -3.0, true),
+            (0.5, 0.0, 0.0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(e, &varied(0x30, k));
+            t.set_u32(e + 0x28, u32::from(!first));
+            t.write(p, &varied(0x20, k + 1));
+            for (i, x) in (0u32..).zip([dx, dy, dz]) {
+                t.set_u32(p + 0x10 + 4 * i, x.to_bits());
+                t.set_u32(p + 4 * i, (0.5 * i as f32).to_bits());
+            }
+            for i in 0..8u32 {
+                t.set_u32(e + 4 * i, (0.25 * i as f32 - 1.0).to_bits());
+            }
+            t.write(a, &varied(0xc, k + 2));
+            scrub(&mut t);
+            let c = Call {
+                ecx: e,
+                edx: p,
+                ..Call::default()
+            };
+            t.check(f, c, &[a], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::flight_step(g, img, fr))
+            });
+        }
+    }
+}

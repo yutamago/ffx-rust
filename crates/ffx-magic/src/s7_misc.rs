@@ -4138,3 +4138,115 @@ pub const CAMERA_BLENDS: Sig = Sig {
     calls: &[(0x2e6, Callee::Any)],
     imports: &[],
 };
+
+/// A thrown object's flight step (internal: `ecx` = the flight `E`,
+/// `edx` = the object's point `P`, the stack word `A` (three angles); a
+/// /GS frame aligned to 8, `B` the frame after its pushes, the vector
+/// `U` (`B+0x24`) and the matrix `M` (`B+0x34`) locals). The first time
+/// (`E+0x28` 0): with `d = P+0x10..`, the pitch `atan2(dy, sqrt(dz dz +
+/// dx dx))` and the yaw `K - atan2(dz, dx)` (brought back by `T` once
+/// above `H` or below `L`); `M` a unit matrix (slot 235) turned by the
+/// pitch times `K2` (slot 328) and the yaw (slot 329); `U = (0, 0, r -
+/// K3, 1)` (`r` slot 314 `(10.0)`'s ST0) turned by `M` (slot 229 `(U, M,
+/// U)`); `E` = `U`'s three terms, 0, the step `(U.x K4, 4.0, U.x K4, 0)`
+/// and three random spins `rand() % 0x801 - 0x400` (u16 `+0x20..`),
+/// `E+0x28 = 1`. Every time: `E` moves by its step, `P` by `E`, and `A`'s
+/// three words by the spins (16 bits each). Returns `A[2]`.
+///
+/// `magic_0304` 0x100023b0 (767 bytes, `ecx`/`edx`; 2 DLLs).
+pub fn flight_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let (e, p) = (fr.ecx, fr.edx);
+    let a = fr.arg(g, 0);
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x7c);
+    let (u, m) = (b + 0x24, b + 0x34);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    if g.read::<u32>(e + 0x28) == 0 {
+        let dy = sub(rf(g, p + 0x14), 0.0);
+        let dz = sub(rf(g, p + 0x18), 0.0);
+        let dx = sub(rf(g, p + 0x10), 0.0);
+        for (i, v) in (0u32..).zip([0, 0, 0, 0x3f80_0000]) {
+            g.write::<u32>(u + 4 * i, v);
+        }
+        let s = add(mul(dz, dz), mul(dx, dx));
+        // `_libm_sse2_sqrt_precise`, then `_CIatan2` on x87
+        let h = f64::from(s).sqrt();
+        let pitch = g.atan2(f64::from(dy), h);
+        let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let mut y = sub(k(g, 0xe9), yaw);
+        if y > k(g, 0xf8) {
+            y = sub(y, k(g, 0x108));
+        } else if k(g, 0x112) > y {
+            y = add(y, k(g, 0x11f));
+        }
+        let pitch = mul(pitch as f32, k(g, 0x13b));
+        let mut st = Pushes::default();
+        st.push(m);
+        st.call(g, slot_target(g, w(0x141), 235), a);
+        st.set_top(pitch.to_bits());
+        st.push_all(&[m, m]);
+        st.call(g, slot_target(g, w(0x165), 328), a);
+        st.pop(2);
+        st.set_top(y.to_bits());
+        st.push_all(&[m, m]);
+        st.call(g, slot_target(g, w(0x186), 329), a);
+        st.pop(2);
+        st.set_top(0x4120_0000);
+        let r = st.call(g, slot_target(g, w(0x193), 314), a);
+        let r = sub(crate::m0018::st0_f32(r.st0), k(g, 0x1b7));
+        g.write::<f32>(u + 8, r);
+        st.push_all(&[u, m, u]);
+        st.call(g, slot_target(g, w(0x1cb), 229), a);
+        let x = rf(g, u);
+        g.write::<f32>(e, x);
+        let sx = mul(x, k(g, 0x1f7));
+        let v = g.read::<u32>(u + 4);
+        g.write::<u32>(e + 4, v);
+        let v = g.read::<u32>(u + 8);
+        g.write::<u32>(e + 8, v);
+        g.write::<u32>(e + 0xc, 0);
+        g.write::<f32>(e + 0x10, sx);
+        g.write::<u32>(e + 0x14, 0x4080_0000);
+        g.write::<f32>(e + 0x18, sx);
+        g.write::<u32>(e + 0x1c, 0);
+        for at in [0x20u32, 0x22, 0x24] {
+            let r = g.rand().cast_signed() % 0x801 - 0x400;
+            g.write::<u16>(e + at, r as u16);
+        }
+        g.write::<u32>(e + 0x28, 1);
+    }
+    for c in [0u32, 4, 8] {
+        let v = add(rf(g, e + 0x10 + c), rf(g, e + c));
+        g.write::<f32>(e + c, v);
+    }
+    let v = add(rf(g, e), rf(g, p));
+    g.write::<f32>(p, v);
+    for c in [4u32, 8] {
+        let v = add(rf(g, p + c), rf(g, e + c));
+        g.write::<f32>(p + c, v);
+    }
+    let mut eax = 0;
+    for (i, at) in (0u32..).zip([0x20u32, 0x22, 0x24]) {
+        let v = u32::from(g.read::<u16>(e + at)).wrapping_add(g.read::<u32>(a + 4 * i)) & 0xffff;
+        g.write::<u32>(a + 4 * i, v);
+        eax = v;
+    }
+    eax
+}
+
+/// [`flight_step`] (the `rel32`s: the square root's and `_CIatan2`'s
+/// thunks and `__security_check_cookie`; the import: `rand`, through a
+/// register).
+pub const FLIGHT_STEP: Sig = Sig {
+    len: 767,
+    hash: 0x0d07_77e6_f11c_2748,
+    calls: &[
+        (0x95, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xa8, Callee::Import("_CIatan2")),
+        (0xd7, Callee::Import("_CIatan2")),
+        (0x301, Callee::Any),
+    ],
+    imports: &[(0x1eb, "rand")],
+};
