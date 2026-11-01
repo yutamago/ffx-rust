@@ -1096,6 +1096,16 @@ ports! {
     "r11 part at effect 0429" => r11_misc::PART_AT_EFFECT_0429, r11_misc::part_at_effect_0429;
     "r11 fader start 0162" => r11_misc::FADER_START_0162, r11_misc::fader_start_p070;
     "r11 fader start 0586" => r11_misc::FADER_START_0586, r11_misc::fader_start_p070;
+    "r11 anim start 0168" => r11_misc::ANIM_START_0168, r11_misc::anim_start_p061;
+    "r11 anim start 0587" => r11_misc::ANIM_START_0587, r11_misc::anim_start_p061;
+    "r11 launches 0421" => r11_misc::LAUNCHES_0421, r11_misc::launches_p055;
+    "r11 launches 0535" => r11_misc::LAUNCHES_0535, r11_misc::launches_p055;
+    "r11 sparks 0393" => r11_misc::SPARKS_0393, r11_misc::sparks_p034;
+    "r11 sparks 0450" => r11_misc::SPARKS_0450, r11_misc::sparks_p034;
+    "r11 launches (b) 0421" => r11_misc::LAUNCHES_P048_0421, r11_misc::launches_p048;
+    "r11 launches (b) 0535" => r11_misc::LAUNCHES_P048_0535, r11_misc::launches_p048;
+    "r11 records start 0393" => r11_misc::RECORDS_START_0393, r11_misc::records_start_p063;
+    "r11 records start 0450" => r11_misc::RECORDS_START_0450, r11_misc::records_start_p063;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0481 burst frame" => m0481::BURST_FRAME, m0481::burst_frame;
