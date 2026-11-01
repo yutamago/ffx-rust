@@ -840,4 +840,18 @@ ported! {
         let ebp = frame.at() + ffx_prender::l6_map7::bridge::RECT_FRAME;
         l6m7::rect_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
     }
+    /// `(window, msg, param)`: the map tool's debug window procedure (its
+    /// texts in a frame).
+    rcuiDebugProc_009325c0 @ 0x0093_25c0 => extern "C" fn rcui_debug_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::DEBUG_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::DEBUG_FRAME;
+        l6m7::debug_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the character window's procedure (its text
+    /// in a frame).
+    rcuiChrProc_00931e90 @ 0x0093_1e90 => extern "C" fn rcui_chr_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::CHR_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::CHR_FRAME;
+        l6m7::chr_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
 }

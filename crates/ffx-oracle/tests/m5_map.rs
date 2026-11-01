@@ -6427,3 +6427,153 @@ fn l6_layer_rect_proc_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn l6_debug_proc_matches_the_original() {
+    // no work area or system; every button up and down; no map, layers
+    // or layer list; the bit flip both ways; the scene number clamped at
+    // both ends
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6bd1);
+        for case in 0..400_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xd00)
+            };
+            if w != 0 {
+                t.w32(w + 0xc04, rng.below(200));
+                t.w32(
+                    w + 0xc08,
+                    [0, 1, 4, 5, 6, 0xffff_fffe][rng.below(6) as usize],
+                );
+            }
+            t.global(l67::RCUI_WORK, w);
+            let layers = l6_random(t, &mut rng, 0xc0 * 4);
+            let n = [0, 0xffff_ffff, 1, 4][rng.below(4) as usize];
+            let list = l6_random(t, &mut rng, 0x100);
+            t.w32(list + 4, n);
+            t.w32(list + 8, if rng.chance(8) { 0 } else { layers });
+            let (msg, param) = match rng.below(9) {
+                7 | 8 => (0x8006, 0xc9),
+                0..=2 => (0x8006, 0xc7 + rng.below(15)),
+                3 => (0x800a, 0xc9 + rng.below(10)),
+                4 => (0x8011, rng.next()),
+                5 => (l6_msg(&mut rng), rng.word()),
+                _ => ([0x8001, 0x8003][rng.below(2) as usize], rng.next()),
+            };
+            // no layer list only where the original survives it (the field
+            // of view writes through it)
+            let fov = param == 0xca && (msg == 0x8006 || msg == 0x800a);
+            let map = t.words(&[5, 0, if !fov && rng.chance(8) { 0 } else { list }]);
+            let sys_v = match rng.below(10) {
+                0 => 0,
+                1 => t.words(&[0, 0]),
+                _ => t.words(&[map, 0]),
+            };
+            t.global(l67::YN_MAP_SYSTEM, sys_v);
+            for (sym, tag, k) in [
+                (l67::bridge::ADD_ITEMS, 1, 2),
+                (l67::bridge::MOUSE_MOVE_RESET, 2, 0),
+                (l67::bridge::WINDOW_CREATE, 3, 9),
+                (l67::LOAD_SET_TITLE, 4, 0),
+                (l67::bridge::SCENE_SET_MATRIX, 5, 1),
+                (l67::bridge::PRE_SET_SCENE_NO, 6, 1),
+                (l67::bridge::GUIDE_CONVERT_ALL, 7, 0),
+                (l67::bridge::PRE_MEM_WIN_OPEN, 8, 0),
+                (l67::bridge::FP_STOP_STATUS, 9, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l67::bridge::SET_TEXT, 10, 3, 2, 2, rng.next());
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l67::bridge::DEBUG_FRAME - 0x40);
+            t.check(
+                "rcuiDebugProc_009325c0",
+                0x0093_25c0,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m7::debug_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiDebugProc_009325c0", ebp, ebp - 0x18, 0x14);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_chr_proc_matches_the_original() {
+    // no work area; every button up and down with the counters at and
+    // past their ends; the texts with a range cut at the last element
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6be1);
+        for case in 0..400_u32 {
+            let w = if case % 37 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x900)
+            };
+            if w != 0 {
+                for (cnt, cur) in [
+                    (0x824, 0x8b0),
+                    (0x8b8, 0x8c0),
+                    (0x8b8, 0x8c4),
+                    (0x8cc, 0x8d0),
+                ] {
+                    let n = [0, 1, 5, 10, 11, 12][rng.below(6) as usize];
+                    t.w32(w + cnt, n);
+                    let v = [0, 1, n.wrapping_sub(1), n, 9, 10][rng.below(6) as usize];
+                    t.w32(w + cur, if cur == 0x8b0 { v.min(3) } else { v });
+                }
+                t.w32(w + 0x8b4, u32::from(rng.chance(2)));
+            }
+            t.global(l67::RCUI_WORK, w);
+            for (sym, tag, k) in [
+                (l67::bridge::ADD_ITEMS, 1, 2),
+                (l67::bridge::CHR_SELECT_RESET, 2, 0),
+                (l67::bridge::CHR_MOTION_SETUP, 3, 0),
+                (l67::bridge::WINDOW_CREATE, 4, 9),
+                (l67::PRINT_SET_X, 5, 1),
+                (l67::PRINT_SET_Y, 6, 1),
+                (l67::GU_PRINTF, 7, 2),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l67::bridge::SET_TEXT, 8, 3, 2, 2, rng.next());
+            let (msg, param) = match rng.below(7) {
+                0..=2 => (0x8006, 0x91 + rng.below(9)),
+                3 | 4 => (0x800a, 0x91 + rng.below(7)),
+                5 => (0x8011, rng.next()),
+                _ => (
+                    [0x8001, 0x8003, l6_msg(&mut rng)][rng.below(3) as usize],
+                    rng.next(),
+                ),
+            };
+            // the range step landing on the count
+            let (msg, param) = if w != 0 && case % 11 == 0 {
+                t.w32(w + 0x8c0, 0);
+                t.w32(w + 0x8b8, 10);
+                (0x8006, 0x94)
+            } else {
+                (msg, param)
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l67::bridge::CHR_FRAME - 0x40);
+            t.check(
+                "rcuiChrProc_00931e90",
+                0x0093_1e90,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m7::chr_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiChrProc_00931e90", ebp, ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}

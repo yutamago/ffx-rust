@@ -443,4 +443,440 @@ pub mod bridge {
             _ => i,
         })
     }
+
+    /// The debug window's callees: `rcuiMouseMoveReset()`,
+    /// `rcuiWindowCreate`, `rcuiLoadProc` and its title,
+    /// `rcbgSceneSetMatrix(list)`, `rcbgPreSetSceneNo(n)`,
+    /// `rcuiGuideProcConvertAll()`, `rcuiPreMemWinOpen()`,
+    /// `pppFpStopStatus(on)`; f64 pi/180; the window's items, the text
+    /// window's procedure and title, the three formats.
+    pub const MOUSE_MOVE_RESET: u32 = 0x0093_c110;
+    pub const WINDOW_CREATE: u32 = 0x0093_7ef0;
+    pub const LOAD_PROC: u32 = 0x0093_4bc0;
+    pub const LOAD_TITLE: u32 = 0x00b6_7e58;
+    pub const SCENE_SET_MATRIX: u32 = 0x0092_0c00;
+    pub const PRE_SET_SCENE_NO: u32 = 0x0092_17e0;
+    pub const GUIDE_CONVERT_ALL: u32 = 0x0093_4250;
+    pub const PRE_MEM_WIN_OPEN: u32 = 0x0093_64a0;
+    pub const FP_STOP_STATUS: u32 = 0x0072_a750;
+    pub const DEG_TO_RAD: u32 = 0x00b1_1330;
+    pub const DEBUG_ITEMS: u32 = 0x00c6_08f0;
+    pub const TEXT_PROC: u32 = 0x0093_6a00;
+    pub const TEXT_TITLE: u32 = 0x00b6_8084;
+    pub const DEBUG_FORMATS: [u32; 3] = [0x00b6_8818, 0x00b6_8820, 0x00b6_8828];
+    /// `0x009325c0`'s frame.
+    pub const DEBUG_FRAME: u32 = 0x18;
+
+    /// The camera's field of view step: `+0xc04` moved by `d` degrees,
+    /// `f32(f32(deg) * pi / 180)` into the camera (`[map + 8] + 0xac`;
+    /// the degrees as f32 at `ebp - 0x18`), then its matrix.
+    fn fov_step(h: &mut impl Host, ebp: u32, w: u32, map: u32, d: u32) -> u32 {
+        let list: u32 = h.read(map.wrapping_add(8));
+        let v: u32 = h.read(w.wrapping_add(0xc04));
+        h.write(w.wrapping_add(0xc04), v.wrapping_add(d));
+        let deg = ffx_bridge::x87::store(f64::from(
+            h.read::<u32>(work(h).wrapping_add(0xc04)).cast_signed(),
+        ));
+        h.write(ebp.wrapping_sub(0x18), deg);
+        let k = f64::from_bits(h.read(h.rebase(DEG_TO_RAD)));
+        let f = ffx_bridge::x87::store(ffx_bridge::x87::mul(ffx_bridge::x87::load(deg), k));
+        h.write(list.wrapping_add(0xac), f);
+        cdecl(h, SCENE_SET_MATRIX, &[list])
+    }
+
+    /// The scene number step: `+0xc08` moved by `d`, clamped to 0..(the
+    /// map's `+0` count - 1), then `rcbgPreSetSceneNo`.
+    fn scene_step(h: &mut impl Host, w: u32, d: u32) -> u32 {
+        let v: u32 = h.read(w.wrapping_add(0xc08));
+        h.write(w.wrapping_add(0xc08), v.wrapping_add(d));
+        let w = work(h);
+        let mut c: u32 = h.read(w.wrapping_add(0xc08));
+        if c.cast_signed() < 0 {
+            c = 0;
+        } else {
+            let map: u32 = h.read(sys(h));
+            let n: u32 = h.read(map);
+            if c.cast_signed() > n.wrapping_sub(1).cast_signed() {
+                c = n.wrapping_sub(1);
+            }
+        }
+        h.write(w.wrapping_add(0xc08), c);
+        let c: u32 = h.read(work(h).wrapping_add(0xc08));
+        cdecl(h, PRE_SET_SCENE_NO, &[c])
+    }
+
+    /// `FUN_009325c0(window, msg, param)` -> `eax` as the original
+    /// (`None`: no work area or system, the cookie's `eax`): the map
+    /// tool's debug window. 0x8001 adds its items and resets the mouse
+    /// move; 0x8003 (closed) clears `+0x54`; 0x8006 buttons 0xc8 the text
+    /// load window, 0xc9 flips every layer's bit 1 (by the first's),
+    /// 0xca/0xcb the field of view and scene number up, 0xcd a counter,
+    /// 0xce the guide map conversion, 0xcf the text window, 0xd0 the
+    /// memory window, 0xd1 the effects stopped (0xd1..0xd4 also call empty
+    /// functions, left out); 0x800a 0xca/0xcb/0xcd down, 0xd1 the effects
+    /// run; 0x8011 the three values. `ebp` is the original's frame.
+    #[allow(clippy::too_many_lines)]
+    pub fn debug_proc(
+        h: &mut impl Host,
+        ebp: u32,
+        window: u32,
+        msg: u32,
+        param: u32,
+    ) -> Option<u32> {
+        let w = work(h);
+        if w == 0 {
+            return None;
+        }
+        let sys = sys(h);
+        if sys == 0 {
+            return None;
+        }
+        let i = msg.wrapping_sub(0x8001);
+        Some(match msg {
+            0x8001 => {
+                let items = h.rebase(DEBUG_ITEMS);
+                cdecl(h, ADD_ITEMS, &[window, items]);
+                cdecl(h, MOUSE_MOVE_RESET, &[])
+            }
+            0x8003 => {
+                h.write(w.wrapping_add(0x54), 0_u32);
+                1
+            }
+            0x8006 => {
+                let j = param.wrapping_sub(0xc8);
+                match param {
+                    0xc8 => {
+                        h.write(w.wrapping_add(0x60), 1_u32);
+                        let w = work(h);
+                        let (proc_, title) = (h.rebase(LOAD_PROC), h.rebase(LOAD_TITLE));
+                        cdecl(
+                            h,
+                            WINDOW_CREATE,
+                            &[
+                                w.wrapping_add(4),
+                                8,
+                                8,
+                                0x154,
+                                0xbe,
+                                0xe,
+                                proc_,
+                                title,
+                                window,
+                            ],
+                        );
+                        cdecl(h, super::LOAD_SET_TITLE, &[])
+                    }
+                    0xc9 => {
+                        let map: u32 = h.read(sys);
+                        if map == 0 {
+                            return Some(1);
+                        }
+                        let list: u32 = h.read(map.wrapping_add(8));
+                        if list == 0 {
+                            return Some(1);
+                        }
+                        let mut ent: u32 = h.read(list.wrapping_add(8));
+                        if ent == 0 {
+                            return Some(0);
+                        }
+                        let clear = h.read::<u8>(ent) & 2 != 0;
+                        let mut k = 0_u32;
+                        while k.cast_signed() < h.read::<u32>(list.wrapping_add(4)).cast_signed() {
+                            let v: u32 = h.read(ent);
+                            h.write(ent, if clear { v & !2 } else { v | 2 });
+                            k = k.wrapping_add(1);
+                            ent = ent.wrapping_add(0xc0);
+                        }
+                        ent
+                    }
+                    0xca => {
+                        let map: u32 = h.read(sys);
+                        if map == 0 {
+                            return Some(2);
+                        }
+                        fov_step(h, ebp, w, map, 1)
+                    }
+                    0xcb => {
+                        if h.read::<u32>(sys) == 0 {
+                            return Some(3);
+                        }
+                        scene_step(h, w, 1)
+                    }
+                    0xcd => {
+                        let v: u32 = h.read(w.wrapping_add(0xbfc));
+                        h.write(w.wrapping_add(0xbfc), v.wrapping_add(1));
+                        5
+                    }
+                    0xce => cdecl(h, GUIDE_CONVERT_ALL, &[]),
+                    0xcf => {
+                        let (proc_, title) = (h.rebase(TEXT_PROC), h.rebase(TEXT_TITLE));
+                        cdecl(
+                            h,
+                            WINDOW_CREATE,
+                            &[
+                                w.wrapping_add(0x4c),
+                                8,
+                                8,
+                                0x78,
+                                0xab,
+                                6,
+                                proc_,
+                                title,
+                                window,
+                            ],
+                        )
+                    }
+                    0xd0 => cdecl(h, PRE_MEM_WIN_OPEN, &[]),
+                    // 0xd1..0xd4 also call bare `ret`s (0x0092cca0..d0)
+                    0xd1 => cdecl(h, FP_STOP_STATUS, &[1]),
+                    _ => j,
+                }
+            }
+            0x800a => {
+                let j = param.wrapping_sub(0xca);
+                match param {
+                    0xca => {
+                        let map: u32 = h.read(sys);
+                        if map == 0 {
+                            return Some(0);
+                        }
+                        fov_step(h, ebp, w, map, u32::MAX)
+                    }
+                    0xcb => {
+                        if h.read::<u32>(sys) == 0 {
+                            return Some(1);
+                        }
+                        scene_step(h, w, u32::MAX)
+                    }
+                    0xcd => {
+                        let v: u32 = h.read(w.wrapping_add(0xbfc));
+                        h.write(w.wrapping_add(0xbfc), v.wrapping_sub(1));
+                        3
+                    }
+                    0xd1 => cdecl(h, FP_STOP_STATUS, &[0]),
+                    _ => j,
+                }
+            }
+            0x8011 => {
+                let buf = ebp.wrapping_sub(0x14);
+                let mut r = 0;
+                for (fmt, off, id) in [
+                    (DEBUG_FORMATS[0], 0xc04_u32, 0xca_u32),
+                    (DEBUG_FORMATS[1], 0xc08, 0xcb),
+                    (DEBUG_FORMATS[2], 0xbfc, 0xcd),
+                ] {
+                    let v: u32 = h.read(work(h).wrapping_add(off));
+                    let fmt = h.rebase(fmt);
+                    sprintf(h, &[buf, fmt, v]);
+                    r = cdecl(h, SET_TEXT, &[window, id, buf]);
+                }
+                r
+            }
+            _ if i <= 0x10 => 5,
+            _ => i,
+        })
+    }
+
+    /// The character window's callees: `FUN_00932320()` (the selection
+    /// reset), `rcuiChrMotionSetup()`; its items, the motion and model
+    /// windows' procedures and titles, its two mode texts and range format.
+    pub const CHR_SELECT_RESET: u32 = 0x0093_2320;
+    pub const CHR_MOTION_SETUP: u32 = 0x0093_2470;
+    pub const CHR_ITEMS: u32 = 0x00c5_ff68;
+    pub const MOTION_PROC: u32 = 0x0093_5340;
+    pub const MOTION_TITLE: u32 = 0x00b5_ac04;
+    pub const MODEL_PROC: u32 = 0x0093_5970;
+    pub const MODEL_TITLE: u32 = 0x00b6_8028;
+    pub const MODE_TEXTS: [u32; 2] = [0x00b6_7fe0, 0x00b6_8020];
+    pub const RANGE_FORMAT: u32 = 0x00b6_8708;
+    /// `0x00931e90`'s frame.
+    pub const CHR_FRAME: u32 = 0x14;
+
+    /// `FUN_00931e90(window, msg, param)` -> `eax` as the original (`None`:
+    /// no work area, the cookie's `eax`): the character window. The
+    /// character `+0x8b0` (of `+0x824`, ids at `+0x830`), the element mode
+    /// `+0x8b4`, the element range `+0x8c0` (ten of `+0x8b8`) and element
+    /// `+0x8c4` (`+0x8bc` one picked), the part `+0x8d0` (of `+0x8cc`).
+    /// 0x8001 adds its items and resets the selection; 0x8003 (closed)
+    /// clears `+0x3c`; 0x8006 buttons step them up (wrapping), 0x93 the
+    /// mode, 0x97/0x98 the motion and model windows; 0x800a down; 0x8011
+    /// the texts. `ebp` is the original's frame (the text at `ebp - 0x14`).
+    #[allow(clippy::too_many_lines)]
+    pub fn chr_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> Option<u32> {
+        let w = work(h);
+        if w == 0 {
+            return None;
+        }
+        let i = msg.wrapping_sub(0x8001);
+        let si = |v: u32| v.cast_signed();
+        Some(match msg {
+            0x8001 => {
+                let items = h.rebase(CHR_ITEMS);
+                cdecl(h, ADD_ITEMS, &[window, items]);
+                cdecl(h, CHR_SELECT_RESET, &[])
+            }
+            0x8003 => {
+                h.write(w.wrapping_add(0x3c), 0_u32);
+                1
+            }
+            0x8006 => match param {
+                0x92 => {
+                    let v = h.read::<u32>(w.wrapping_add(0x8b0)).wrapping_add(1);
+                    h.write(w.wrapping_add(0x8b0), v);
+                    if si(v) >= si(wget(h, 0x824)) {
+                        wset(h, 0x8b0, 0);
+                    }
+                    cdecl(h, CHR_MOTION_SETUP, &[])
+                }
+                0x93 => {
+                    let v: u32 = h.read(w.wrapping_add(0x8b4));
+                    h.write(w.wrapping_add(0x8b4), v ^ 1);
+                    1
+                }
+                0x94 => {
+                    h.write(w.wrapping_add(0x8bc), 0_u32);
+                    let v = wget(h, 0x8c0).wrapping_add(10);
+                    wset(h, 0x8c0, v);
+                    if si(wget(h, 0x8c0)) >= si(wget(h, 0x8b8)) {
+                        wset(h, 0x8c0, 0);
+                    }
+                    let v = wget(h, 0x8c0);
+                    wset(h, 0x8c4, v);
+                    v
+                }
+                0x95 | 0x96 => {
+                    let (at, n) = if param == 0x95 {
+                        h.write(w.wrapping_add(0x8bc), 1_u32);
+                        (0x8c4, 0x8b8)
+                    } else {
+                        (0x8d0, 0x8cc)
+                    };
+                    let v = wget(h, at).wrapping_add(1);
+                    wset(h, at, v);
+                    let v = wget(h, at);
+                    if si(v) >= si(wget(h, n)) {
+                        wset(h, at, 0);
+                    }
+                    v
+                }
+                0x97 | 0x98 => {
+                    let (holder, height, proc_, title) = if param == 0x97 {
+                        (0x40, 0x4d, MOTION_PROC, MOTION_TITLE)
+                    } else {
+                        (0x44, 0xc2, MODEL_PROC, MODEL_TITLE)
+                    };
+                    let (proc_, title) = (h.rebase(proc_), h.rebase(title));
+                    cdecl(
+                        h,
+                        WINDOW_CREATE,
+                        &[
+                            w.wrapping_add(holder),
+                            8,
+                            8,
+                            0x78,
+                            height,
+                            6,
+                            proc_,
+                            title,
+                            window,
+                        ],
+                    )
+                }
+                _ => param.wrapping_sub(0x92),
+            },
+            0x800a => match param {
+                0x92 => {
+                    let v = h.read::<u32>(w.wrapping_add(0x8b0)).wrapping_sub(1);
+                    h.write(w.wrapping_add(0x8b0), v);
+                    if si(v) < 0 {
+                        let n = wget(h, 0x824).wrapping_sub(1);
+                        wset(h, 0x8b0, n);
+                    }
+                    cdecl(h, CHR_MOTION_SETUP, &[])
+                }
+                0x94 => {
+                    h.write(w.wrapping_add(0x8bc), 0_u32);
+                    let v = wget(h, 0x8c0).wrapping_sub(10);
+                    wset(h, 0x8c0, v);
+                    if si(wget(h, 0x8c0)) < 0 {
+                        let n = wget(h, 0x8b8).wrapping_sub(1);
+                        wset(h, 0x8c0, n);
+                    }
+                    let v = wget(h, 0x8c0);
+                    wset(h, 0x8c4, v);
+                    v
+                }
+                0x95 => {
+                    h.write(w.wrapping_add(0x8bc), 1_u32);
+                    let w2 = work(h);
+                    let v = wget(h, 0x8c4).wrapping_sub(1);
+                    h.write(w2.wrapping_add(0x8c4), v);
+                    if si(v) >= 0 {
+                        return Some(w2);
+                    }
+                    let n = wget(h, 0x8b8).wrapping_sub(1);
+                    wset(h, 0x8c4, n);
+                    n
+                }
+                0x96 => {
+                    let v = h.read::<u32>(w.wrapping_add(0x8d0)).wrapping_sub(1);
+                    h.write(w.wrapping_add(0x8d0), v);
+                    if si(v) >= 0 {
+                        return Some(4);
+                    }
+                    let n = wget(h, 0x8cc).wrapping_sub(1);
+                    wset(h, 0x8d0, n);
+                    n
+                }
+                _ => param.wrapping_sub(0x92),
+            },
+            0x8011 => {
+                let buf = ebp.wrapping_sub(0x14);
+                let d = h.rebase(FORMAT_D);
+                let k: u32 = h.read(w.wrapping_add(0x8b0));
+                let id: u32 = h.read(w.wrapping_add(0x830).wrapping_add(k.wrapping_mul(4)));
+                sprintf(h, &[buf, d, id]);
+                cdecl(h, SET_TEXT, &[window, 0x92, buf]);
+                let mode = h.rebase(MODE_TEXTS[usize::from(wget(h, 0x8b4) != 0)]);
+                cdecl(h, SET_TEXT, &[window, 0x93, mode]);
+                cdecl(h, PRINT_SET_X, &[0x36]);
+                cdecl(h, PRINT_SET_Y, &[0x1c]);
+                let n = wget(h, 0x8b8);
+                cdecl(h, GU_PRINTF, &[d, n]);
+                let first = wget(h, 0x8c0);
+                let n = wget(h, 0x8b8);
+                let last = if si(first.wrapping_add(9)) < si(n) {
+                    first.wrapping_add(9)
+                } else {
+                    n.wrapping_sub(1)
+                };
+                let range = h.rebase(RANGE_FORMAT);
+                sprintf(h, &[buf, range, first, last]);
+                cdecl(h, SET_TEXT, &[window, 0x94, buf]);
+                let v = wget(h, 0x8c4);
+                sprintf(h, &[buf, d, v]);
+                cdecl(h, SET_TEXT, &[window, 0x95, buf]);
+                cdecl(h, PRINT_SET_X, &[0x36]);
+                cdecl(h, PRINT_SET_Y, &[0x43]);
+                let n = wget(h, 0x8cc);
+                cdecl(h, GU_PRINTF, &[d, n]);
+                let v = wget(h, 0x8d0);
+                sprintf(h, &[buf, d, v]);
+                cdecl(h, SET_TEXT, &[window, 0x96, buf])
+            }
+            _ if i <= 0x10 => 5,
+            _ => i,
+        })
+    }
+
+    /// `g_RcuiWork + off`'s word.
+    fn wget(h: &impl Host, off: u32) -> u32 {
+        h.read(work(h).wrapping_add(off))
+    }
+
+    /// `g_RcuiWork + off` = `v`.
+    fn wset(h: &mut impl Host, off: u32, v: u32) {
+        let at = work(h).wrapping_add(off);
+        h.write(at, v);
+    }
 }
