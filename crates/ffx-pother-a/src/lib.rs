@@ -34,6 +34,7 @@ use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
 pub mod m5p_scripting_bp2;
+pub mod m5p_scripting_bp3;
 pub mod m5p_scripting_df;
 pub mod m5p_scripting_left2;
 pub mod m5p_scripting_lua;

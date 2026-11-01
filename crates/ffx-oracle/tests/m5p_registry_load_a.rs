@@ -2394,3 +2394,196 @@ fn big_utility_teardown_matches_the_original() {
         }
     }
 }
+
+// ---- big-phyre3 ----
+
+impl Twins {
+    /// `code` at fresh code memory, jumped to from the original `sym`.
+    fn place(&mut self, sym: u32, code: &[u8]) {
+        let addr = self.a.alloc_code(code).unwrap();
+        assert_eq!(self.b.alloc_code(code).unwrap(), addr);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+
+    /// The logging part of a stub: `tag`, `ecx` when `this`, `n` stack
+    /// words.
+    fn log_part(&self, tag: u32, this: bool, n: u32) -> Vec<u8> {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c
+    }
+
+    /// A recording stub answering `answers` in turn (0 past the end).
+    fn seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, answers: &[u32]) {
+        let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+        table.extend([0u8; 256]);
+        let table = self.alloc(&table);
+        let cell = self.alloc(&table.to_le_bytes());
+        let mut c = self.log_part(sym, this, n);
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x8b, 0x10]); // mov edx, [eax]
+        c.extend([0x83, 0x05]);
+        c.extend(cell.to_le_bytes());
+        c.push(0x04); // add dword [cell], 4
+        c.extend([0x89, 0xd0]); // mov eax, edx
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
+        self.place(sym, &c);
+    }
+}
+
+/// `0x00466da0` (`PBinary::reloadClusterTextures`) with every callee
+/// recorded; the cluster iterators' seek stubs hand out a block of
+/// textures (one cursor hitting the block's end node, skipped), the next
+/// stubs a second block once. Cases: no textures; the render interface
+/// made or already; qualities 0, 1, 2 and past the levels; record
+/// dimensions given or 0 (the texture's own); block and plain formats;
+/// textures bound or not; read, creation and bind errors; the bad
+/// format (7). Only synthetic data reaches it.
+#[test]
+#[allow(clippy::too_many_lines)] // the case data
+fn bp3_reload_cluster_textures() {
+    use ffx_pload::m5p_registry_load_a_bp3::{self as rl};
+    let [malloc, ctor, atexit, quality_of, read_exact, free] = rl::RELOAD_CALLS;
+    for (label, mut t) in Twins::all() {
+        for k in 0..24u32 {
+            let quality = [0u32, 1, 2, 7][k as usize % 4];
+            let guard = t.rebase(rl::RENDER_INTERFACE[1]);
+            let g: u32 = Mem::read(&t.a, guard);
+            t.w32(guard, if k % 3 == 0 { g & !1 } else { g | 1 });
+            let header = t.zeros(0x40);
+            let list = header + 0x1c;
+            t.w32(list, if k % 2 == 0 { list } else { 0x7e00 });
+            let info = t.zeros(0x40);
+            t.w32(info + 4, header);
+            t.w32(info + 0x24, if k == 5 { 0 } else { 0x100 });
+            let plain = t.zeros(0x20);
+            t.w32(plain + 0xc, 32);
+            let block = t.zeros(0x20);
+            t.w32(block + 0xc, 4);
+            t.w8(block + 0x10, 1);
+            for (kind, (records, stride)) in [(0x10u32, 0x74u32), (0x18, 0x68), (0x20, 0x68)]
+                .into_iter()
+                .enumerate()
+            {
+                let kd = rl::KINDS[kind];
+                // textures 0x40 apart: the first block of 3 (the second
+                // cursor is the block's end node), a second block of 2
+                let n = 5u32;
+                let objs = t.zeros(0x40 * 8);
+                let recs = t.zeros((stride * n) as usize);
+                for i in 0..6u32 {
+                    let tex = objs + 0x40 * i + 8;
+                    let fmt = if (i + k) % 3 == 0 { block } else { plain };
+                    let bad = k % 11 == 7 && i == 2 && kind == 1;
+                    t.w32(tex, if bad { t.rebase(rl::BAD_FORMAT) } else { fmt });
+                    for (j, v) in [13u32, 9, 3].into_iter().enumerate() {
+                        t.w32(tex + 0x1c + 4 * j as u32, v + i);
+                    }
+                }
+                for i in 0..n {
+                    let rec = recs + stride * i;
+                    t.w32(rec + 0xc, (i + k) % 4);
+                    for j in 0..3u32 {
+                        let v = if (i + j + k) % 4 == 0 { 0 } else { 16 >> j };
+                        t.w32(rec + 0x1c + 4 * j, v);
+                    }
+                }
+                t.w32(info + records, recs);
+                let present = !(k % 5 == 3 && kind == 2);
+                // seek: {cursor, node, stride, left, offset}
+                let mut c = t.log_part(kd.seek, true, 0);
+                for (off, v) in [
+                    (0u8, objs),
+                    (4, objs + 0x40),
+                    (8, 0x40),
+                    (0xc, if present { 3 } else { 0 }),
+                    (0x10, 8),
+                ] {
+                    c.extend([0xc7, 0x41, off]);
+                    c.extend(v.to_le_bytes()); // mov dword [ecx+off], v
+                }
+                c.push(0xc3);
+                t.place(kd.seek, &c);
+                // next: the second block once, then none
+                let once = t.alloc(&2u32.to_le_bytes());
+                let mut c = t.log_part(kd.next, true, 0);
+                c.extend([0xc7, 0x01]);
+                c.extend((objs + 0x40 * 3).to_le_bytes()); // mov dword [ecx], second block
+                c.push(0xa1);
+                c.extend(once.to_le_bytes()); // mov eax, [once]
+                c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+                c.extend([0xc7, 0x05]);
+                c.extend(once.to_le_bytes());
+                c.extend(0u32.to_le_bytes()); // mov dword [once], 0
+                c.push(0xc3);
+                t.place(kd.next, &c);
+                let bound: Vec<u32> = (0..12).map(|j| 0x100 | ((j + k) & 1)).collect();
+                t.seq(kd.is_bound, true, 0, 0, &bound);
+                t.stub(kd.unbind, true, 0, 0, 0x61);
+                let words = [4u32, 5, 3][kind];
+                t.stub(kd.dimensions, true, words, words, 0x62);
+                let creates: Vec<u32> = (0..8)
+                    .map(|j| if k % 13 == 6 && j == 1 { 0x2a } else { 0 })
+                    .collect();
+                t.seq(kd.create, true, 4, 4, &creates);
+                let binds: Vec<u32> = (0..8)
+                    .map(|j| if k % 17 == 9 && j == 0 { 0x2b } else { 0 })
+                    .collect();
+                t.seq(kd.bind, true, 0, 0, &binds);
+            }
+            let reads: Vec<u32> = (0..200)
+                .map(|j| if k % 19 == 4 && j == 9 { 0x2c } else { 0 })
+                .collect();
+            t.stub(malloc, false, 2, 0, 0xb0f0);
+            t.stub(ctor, true, 0, 0, 0x63);
+            t.stub(atexit, false, 1, 0, 0);
+            t.stub(quality_of, true, 0, 0, quality);
+            t.seq(read_exact, true, 2, 2, &reads);
+            t.stub(free, false, 1, 0, 0);
+            // the frame from ebp - 0x54 (the iterator), ebp = top - 0x10
+            t.check_frame(
+                &format!("{label}: reload {k}"),
+                0x0046_6da0,
+                Conv::Stdcall,
+                &[0x5eed, info],
+                0x64,
+                0x20,
+                |g, frame| {
+                    Out::U32(rl::reload::reload_cluster_textures(
+                        g,
+                        frame + 0x54,
+                        0x5eed,
+                        info,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
