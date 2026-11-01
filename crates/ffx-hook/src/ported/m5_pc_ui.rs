@@ -1302,4 +1302,11 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::CHR_VIEW_FRAME;
         ffx_pcui::l8_pcui::bridge::chr_view_proc(&mut mem(), ebp, window, msg, param)
     }
+    /// `(window, msg, param)` -> 0: the "SPLINE EDIT" camera debug window
+    /// (its text buffer in a frame).
+    Gui_SplineEditProc_0093ee10 @ 0x0093_ee10 => extern "C" fn gui_spline_edit_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::SPL_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::SPL_FRAME;
+        ffx_pcui::l8_pcui::bridge::spline_edit_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

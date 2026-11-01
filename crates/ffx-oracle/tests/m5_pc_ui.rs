@@ -8314,3 +8314,151 @@ fn l8_chr_view_proc() {
         t.skip = 0;
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_gui_spline_edit_proc() {
+    // every message and button: the editor opened and freed, angles
+    // turned on a selected point (none selected, null arrays, empty
+    // lines), the mode and line toggles at each value, the name and
+    // test windows, the draw with and without a pending name window,
+    // a dragged window, a button that just ran, a selected point or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x0093_ee10);
+        let window = 0x00ab_f000;
+        for case in 0..600_u32 {
+            t.reset();
+            t.skip = 4;
+            let data = t.zeros(0x10);
+            let block = t.zeros(0x400);
+            // two lines of points (12 bytes) and values (16 bytes)
+            let mut arrays = [0u32; 4];
+            for (k, a) in arrays.iter_mut().enumerate() {
+                if rng.chance(6) {
+                    continue;
+                }
+                let stride = if k < 2 { 12 } else { 16 };
+                let bytes: Vec<u8> = (0..8 * stride).map(|_| rng.next() as u8).collect();
+                *a = t.alloc(&bytes);
+            }
+            // lines 2 and 3 only for the buttons (elsewhere they index past
+            // the arrays); a selection only on a line with points
+            let line = if case % 8 == 3 {
+                rng.below(4)
+            } else {
+                rng.below(2)
+            };
+            let selected = if rng.chance(3) || line > 1 || arrays[line as usize] == 0 {
+                u32::MAX
+            } else {
+                rng.below(8)
+            };
+            let globals = [
+                (l8u::SPL_POINTS, arrays[0]),
+                (l8u::SPL_POINTS + 4, arrays[1]),
+                (l8u::SPL_VALUES, arrays[2]),
+                (l8u::SPL_VALUES + 4, arrays[3]),
+                (l8u::SPL_VALUES + 8, rng.next()),
+                (l8u::SPL_VALUES + 0xc, rng.next()),
+                (l8u::SPL_COUNTS, rng.below(9)),
+                (
+                    l8u::SPL_COUNTS + 4,
+                    [0, 3, 8, (-1_i32).cast_unsigned()][rng.below(4) as usize],
+                ),
+                (l8u::SPL_LINE, line),
+                (
+                    l8u::SPL_POINT_MODE,
+                    [0, 1, 2, 0x7fff_ffff, 0xffff_ffff][rng.below(5) as usize],
+                ),
+                (l8u::SPL_SELECTED, selected),
+                (l8u::SPL_NAME_WINDOW, rng.next()),
+                (l8u::SPL_NAME_WINDOW + 4, u32::from(rng.chance(2))),
+            ];
+            for (sym, v) in globals {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            for sym in [
+                l8u::SPL_FLAG2C,
+                l8u::SPL_FLAG2D,
+                l8u::SPL_DIRTY,
+                l8u::SPL_NAME_KIND,
+                l8u::SPL_TEST_OPEN,
+                l8u::SPL_FLAG31,
+                l8u::SPL_FLAG32,
+                l8u::SPL_OPEN,
+                l8u::SPL_FLAG29,
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &[rng.below(2) as u8]);
+            }
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, data),
+                (l8u::USER_MALLOC, false, 1, 0, block),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x15),
+                (l8u::USER_FREE, false, 1, 0, 0x16),
+                (l8u::DBG_PRINTF, false, 1, 0, 0x17),
+                (l8u::PRINT_SET_X, false, 1, 0, 0x18),
+                (l8u::PRINT_SET_Y, false, 1, 0, 0x19),
+                (l8u::PRINTF, false, 1, 0, 0x1a),
+                (l8u::WINDOW_START_DRAG, false, 1, 0, 0x1b),
+                (l8u::WINDOW_CREATE, false, 6, 0, 0x5151),
+                (l8u::TK_SET_DEBUG_MENU, false, 1, 0, 0x1c),
+                (l8u::SET_GLOBAL_1BC4, false, 1, 0, 0x1d),
+                (l8u::CAMERA_GET_POS, false, 2, 0, 0x1e),
+                (l8u::ATEL_GET_CAMERA_ID, false, 3, 0, 0x2222),
+                (l8u::ATEL_FREE_CAMERA_ID, false, 2, 0, 0x1f),
+                (l8u::SA_CAMERA_SET, false, 1, 0, 0x20),
+                (l8u::WINDOW_IS_DRAG, false, 1, 0, u32::from(rng.chance(3))),
+                (l8u::TK_CONTROLER_HIST, false, 3, 0, rng.next()),
+                (l8u::SPLINE_DRAG, false, 1, 0, 0x21),
+                (l8u::SPL_FN_2, false, 0, 0, 0x22),
+                (l8u::SPL_FN_3, false, 0, 0, 0x23),
+                (l8u::SPL_FN_4, false, 0, 0, 0x24),
+                (l8u::SPL_FN_7, false, 0, 0, 0x25),
+                (l8u::SPL_FN_6, false, 0, 0, 0x26),
+                (l8u::SPL_FN_8, false, 0, 0, 0x27),
+                (l8u::SPL_FN_B, false, 0, 0, 0x28),
+                (l8u::SPL_FN_D, false, 0, 0, 0x29),
+                (l8u::SPL_FN_13, false, 0, 0, 0x2a),
+                (l8u::SPL_FN_NAME0, false, 0, 0, 0x2b),
+                (l8u::SPL_FN_NAME1, false, 0, 0, 0x2c),
+            ]);
+            // sprintf: logs its first two words (the "---" call passes
+            // two), prints a short line
+            let line = t.alloc(b"12\0");
+            let printer = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(line, 3);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => (0x8003, 0),
+                2 => (0x8005, [0xe, 0xf, 0xd][rng.below(3) as usize]),
+                3 | 4 => (0x8007, rng.below(0x16)),
+                5 | 6 => (0x8011, 0),
+                _ => (
+                    [0x8002, 0x8012, 0x7fff, 0x8013][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Gui_SplineEditProc_0093ee10",
+                0x0093_ee10,
+                Conv::Cdecl,
+                &args,
+                l8u::SPL_FRAME,
+                |g, ebp| Out::U32(l8u::spline_edit_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}

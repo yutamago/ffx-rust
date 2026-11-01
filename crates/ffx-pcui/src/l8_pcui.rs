@@ -1584,6 +1584,394 @@ pub mod bridge {
         }
     }
 
+    /// What the spline edit window calls besides the GUI functions above:
+    /// `TkSetDebugMenuStatus(on)`, `SetGlobal01301bc4_0083f700(v)`,
+    /// `MsCameraGetPosNow(k, out)`, `MsAtelGetCameraID(a, b, c)`,
+    /// `MsAtelFreeCameraID(a, b)`, `sa_camera_set(on)`,
+    /// `Gu_WindowIsDrag(w)`, `TkGetControlerHist(a, b, c)` (`ax`), and
+    /// the editor's helpers (`FUN_009401c0` .. `FUN_00942520`,
+    /// `FUN_00940660(pad)`).
+    pub const TK_SET_DEBUG_MENU: u32 = 0x0088_ea30;
+    pub const SET_GLOBAL_1BC4: u32 = 0x0083_f700;
+    pub const CAMERA_GET_POS: u32 = 0x007b_d470;
+    pub const ATEL_GET_CAMERA_ID: u32 = 0x007b_a780;
+    pub const ATEL_FREE_CAMERA_ID: u32 = 0x007b_a6d0;
+    pub const SA_CAMERA_SET: u32 = 0x0076_f0f0;
+    pub const WINDOW_IS_DRAG: u32 = 0x0084_b200;
+    pub const TK_CONTROLER_HIST: u32 = 0x0088_8d70;
+    pub const SPLINE_DRAG: u32 = 0x0094_0660;
+    /// The spline editor's state (`0x025d5f24` .. `0x025d5f9c`, the
+    /// camera positions `0x025d5ee4`/`0x025d5ef4`, its id `0x025d5ee0`,
+    /// the open flag `0x0193c150`), its point and value arrays by mode
+    /// (`0x025d5f44`/`0x025d5f54`, counts `0x025d5f4c`).
+    pub const SPL_OPEN: u32 = 0x0193_c150;
+    pub const SPL_CAP: u32 = 0x025d_5f24;
+    pub const SPL_FLAG29: u32 = 0x025d_5f29;
+    pub const SPL_FLAG2C: u32 = 0x025d_5f2c;
+    pub const SPL_FLAG2D: u32 = 0x025d_5f2d;
+    pub const SPL_DIRTY: u32 = 0x025d_5f2e;
+    pub const SPL_NAME_KIND: u32 = 0x025d_5f2f;
+    pub const SPL_TEST_OPEN: u32 = 0x025d_5f30;
+    pub const SPL_FLAG31: u32 = 0x025d_5f31;
+    pub const SPL_FLAG32: u32 = 0x025d_5f32;
+    pub const SPL_POINTS: u32 = 0x025d_5f44;
+    pub const SPL_COUNTS: u32 = 0x025d_5f4c;
+    pub const SPL_VALUES: u32 = 0x025d_5f54;
+    pub const SPL_CLEARED: u32 = 0x025d_5f64;
+    pub const SPL_SELECTED: u32 = 0x025d_5f7c;
+    pub const SPL_POINT_MODE: u32 = 0x025d_5f8c;
+    pub const SPL_LINE: u32 = 0x025d_5f90;
+    pub const SPL_NAME_WINDOW: u32 = 0x025d_5f98;
+    pub const SPL_CAM_POS0: u32 = 0x025d_5ef4;
+    pub const SPL_CAM_POS1: u32 = 0x025d_5ee4;
+    pub const SPL_CAM_ID: u32 = 0x025d_5ee0;
+    pub const SPL_NAME_TEXT: u32 = 0x025d_60b6;
+    /// The helpers by button (`FUN_009401c0`, `FUN_00942320`,
+    /// `FUN_00942060`, `FUN_00941a30`, `FUN_00942520`, `FUN_009410e0`,
+    /// `FUN_00941980`, `FUN_00941ae0`, `FUN_00940580`, `FUN_00941460`,
+    /// `FUN_00942140`) and the camera test window's procedure.
+    pub const SPL_FN_2: u32 = 0x0094_01c0;
+    pub const SPL_FN_3: u32 = 0x0094_2320;
+    pub const SPL_FN_4: u32 = 0x0094_2060;
+    pub const SPL_FN_7: u32 = 0x0094_1a30;
+    pub const SPL_FN_6: u32 = 0x0094_2520;
+    pub const SPL_FN_8: u32 = 0x0094_10e0;
+    pub const SPL_FN_B: u32 = 0x0094_1980;
+    pub const SPL_FN_D: u32 = 0x0094_1ae0;
+    pub const SPL_FN_13: u32 = 0x0094_0580;
+    pub const SPL_FN_NAME0: u32 = 0x0094_1460;
+    pub const SPL_FN_NAME1: u32 = 0x0094_2140;
+    pub const CAMERA_TEST_PROC: u32 = 0x0093_f900;
+    pub const NAMEINPUT_PROC: u32 = 0x0093_e570;
+    /// Its texts: the title, the point/line mode, the line 0/1 and
+    /// on/off texts, the free message, the labels it prints, "---" and
+    /// "%d"; pi and 180 (doubles) for the angles.
+    pub const SPL_TITLE: u32 = 0x00b6_90b4;
+    pub const SPL_POINT_TEXT: u32 = 0x00b6_90d8;
+    pub const SPL_LINE_TEXT: u32 = 0x00b6_9158;
+    pub const SPL_LINE0: u32 = 0x00b5_b350;
+    pub const SPL_LINE1: u32 = 0x00b5_b354;
+    pub const SPL_OFF: u32 = 0x00b6_9114;
+    pub const SPL_ON: u32 = 0x00b6_9164;
+    pub const SPL_FREE_MSG: u32 = 0x00b6_913c;
+    pub const SPL_LABEL: u32 = 0x00b5_632c;
+    pub const SPL_DASHES: u32 = 0x00b4_865c;
+    pub const SPL_INT_FMT: u32 = 0x00b0_f604;
+    pub const SPL_PI: u32 = 0x00b5_82f0;
+    pub const SPL_180: u32 = 0x00b4_8378;
+    /// The window's buttons: (id, text, x, y, width), height 10.
+    pub const SPL_BUTTONS: [(u32, u32, u32, u32, u32); 20] = [
+        (1, 0x00b6_90c0, 2, 0, 0x38),
+        (3, 0x00b6_90c8, 2, 0xc, 0x6e),
+        (2, 0x00b3_427c, 2, 0x18, 0x28),
+        (8, 0x00b6_8fa0, 0x30, 0x18, 0x28),
+        (9, 0x00b6_90d8, 0x5e, 0x18, 0x5e),
+        (0xa, 0x00b5_b350, 0xc6, 0x18, 0x20),
+        (5, 0x00b6_90e4, 0x40, 0, 0x42),
+        (4, 0x00b6_90ec, 0x9a, 0, 0x40),
+        (6, 0x00b6_90f4, 0x82, 0xc, 0x5e),
+        (7, 0x00b6_9100, 0x6e, 0x24, 0x5e),
+        (0x10, 0x00b5_6800, 2, 0x24, 0x2a),
+        (0x11, 0x00b5_5228, 0x30, 0x24, 0x2a),
+        (0x12, 0x00b5_7cd4, 0xb8, 0x30, 0x2a),
+        (0x13, 0x00b6_910c, 0x7c, 0x30, 0x36),
+        (0x14, 0x00b6_9114, 2, 0x30, 0x24),
+        (0xb, 0x00b6_9118, 0x2c, 0x30, 0x4c),
+        (0xc, 0x00b6_9124, 2, 0x3c, 0x4c),
+        (0xd, 0x00b6_9130, 0x64, 0x3c, 0x4c),
+        (0xe, 0x00b5_5220, 0x34, 0x48, 0x10),
+        (0xf, 0x00b4_8250, 0x48, 0x48, 0x10),
+    ];
+    /// The spline edit window's frame: its text buffer at `ebp - 0x204`.
+    pub const SPL_FRAME: u32 = 0x204;
+
+    fn gw(h: &impl Host, sym: u32) -> u32 {
+        h.read(h.rebase(sym))
+    }
+
+    fn sw(h: &mut impl Host, sym: u32, v: u32) {
+        let at = h.rebase(sym);
+        h.write(at, v);
+    }
+
+    fn sb(h: &mut impl Host, sym: u32, v: u8) {
+        let at = h.rebase(sym);
+        h.write(at, v);
+    }
+
+    fn gb(h: &impl Host, sym: u32) -> u8 {
+        h.read(h.rebase(sym))
+    }
+
+    /// `Gui_SplineEditProc_0093ee10(window, msg, param)` (`0x0093ee10`)
+    /// -> 0: the "SPLINE EDIT" camera debug window. 0x8001 opens the
+    /// editor (debug menu off, its arrays: two of 0x100 points, four
+    /// value arrays 0x10 bytes past their blocks, five default points
+    /// at x 10, 0, -10, -20, -30; the camera's positions and an id; 20
+    /// buttons; `sa_camera_set(1)`; the window data a 12-byte block whose
+    /// word at `+0x204`, past its end, is cleared as the original does);
+    /// 0x8003 frees it all; 0x8005 0xe/0xf turns the first selected point
+    /// (flag 2) of the current line by a degree (`+8`, its value's `w` in
+    /// radians); 0x8007 the buttons; 0x8011 refreshes the on/off text,
+    /// starts a pending name window drag, drags the points with the pad
+    /// (`FUN_00940660`) unless the window is being dragged or a button
+    /// just ran, and prints the name, label and the selected angle.
+    #[allow(clippy::too_many_lines)]
+    pub fn spline_edit_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let data = c(h, WINDOW_GET_ARG, &[window]);
+        match msg {
+            0x8001 => {
+                c(h, TK_SET_DEBUG_MENU, &[0]);
+                sb(h, SPL_OPEN, 1);
+                c(h, SET_GLOBAL_1BC4, &[0]);
+                sw(h, SPL_COUNTS, 5);
+                sw(h, SPL_COUNTS + 4, 0);
+                sb(h, SPL_FLAG29, 0);
+                sw(h, SPL_CAP, 0x100);
+                let a = c(h, USER_MALLOC, &[0xc]);
+                for o in [0, 4, 8] {
+                    h.write(a.wrapping_add(o), 0_u32);
+                }
+                c(h, WINDOW_SET_ARG, &[window, a]);
+                let size = gw(&*h, SPL_CAP).wrapping_mul(12);
+                let p1 = c(h, USER_MALLOC, &[size]);
+                c(h, MEMSET, &[p1, 0, size]);
+                sw(h, SPL_POINTS + 4, p1);
+                let p0 = c(h, USER_MALLOC, &[size]);
+                c(h, MEMSET, &[p0, 0, size]);
+                let size = (gw(&*h, SPL_CAP) << 4).wrapping_add(0x10);
+                sw(h, SPL_POINTS, p0);
+                for k in 0..6 {
+                    sw(h, SPL_CLEARED + 4 * k, 0);
+                }
+                let m1 = c(h, USER_MALLOC, &[size]);
+                let m2 = c(h, USER_MALLOC, &[size]);
+                sw(h, SPL_VALUES + 4, m1.wrapping_add(0x10));
+                sw(h, SPL_VALUES + 0xc, m2.wrapping_add(0x10));
+                let m3 = c(h, USER_MALLOC, &[size]);
+                let m4 = c(h, USER_MALLOC, &[size]);
+                let v = m3.wrapping_add(0x10);
+                sw(h, SPL_VALUES, v);
+                sw(h, SPL_NAME_WINDOW, 0);
+                sw(h, SPL_NAME_WINDOW + 4, 0);
+                sw(h, SPL_VALUES + 8, m4.wrapping_add(0x10));
+                // five points on a line, every 10 units
+                for (k, x) in (0_u32..).zip([10.0_f32, 0.0, -10.0, -20.0, -30.0]) {
+                    h.write(p0.wrapping_add(12 * k), 1_u32);
+                    h.write(v.wrapping_add(0x10 * k), x.to_bits());
+                    for o in [4, 8, 0xc] {
+                        h.write(v.wrapping_add(0x10 * k + o), 0_u32);
+                    }
+                }
+                let title = h.rebase(SPL_TITLE);
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                let pos0 = h.rebase(SPL_CAM_POS0);
+                c(h, CAMERA_GET_POS, &[0, pos0]);
+                let pos1 = h.rebase(SPL_CAM_POS1);
+                c(h, CAMERA_GET_POS, &[1, pos1]);
+                let id = c(h, ATEL_GET_CAMERA_ID, &[10, 3, 0]);
+                sw(h, SPL_CAM_ID, id);
+                for (bid, text, x, y, w) in SPL_BUTTONS {
+                    let text = h.rebase(text);
+                    c(h, WINDOW_ADD_BUTTON, &[window, bid, text, x, y, w, 10]);
+                }
+                c(h, SA_CAMERA_SET, &[1]);
+                // past the 12-byte block, as the original
+                h.write(a.wrapping_add(0x204), 0_u32);
+            }
+            0x8003 => {
+                c(h, SA_CAMERA_SET, &[0]);
+                c(h, ATEL_FREE_CAMERA_ID, &[0, 0]);
+                let m = h.rebase(SPL_FREE_MSG);
+                c(h, DBG_PRINTF, &[m]);
+                let p0 = gw(&*h, SPL_POINTS);
+                c(h, USER_FREE, &[p0]);
+                let p1 = gw(&*h, SPL_POINTS + 4);
+                c(h, USER_FREE, &[p1]);
+                for k in 0..4 {
+                    let b = gw(&*h, SPL_VALUES + 4 * k).wrapping_sub(0x10);
+                    c(h, USER_FREE, &[b]);
+                }
+                c(h, USER_FREE, &[data]);
+                sb(h, SPL_OPEN, 0);
+                c(h, SET_GLOBAL_1BC4, &[1]);
+                c(h, TK_SET_DEBUG_MENU, &[1]);
+            }
+            0x8005 if param == 0xe || param == 0xf => {
+                sw(h, SPL_SELECTED, u32::MAX);
+                let line = gw(&*h, SPL_LINE);
+                let pts = gw(&*h, SPL_POINTS.wrapping_add(4 * line));
+                let vals = gw(&*h, SPL_VALUES.wrapping_add(4 * line));
+                if pts == 0 || vals == 0 {
+                    return 0;
+                }
+                let n = gw(&*h, SPL_COUNTS.wrapping_add(4 * line)).cast_signed();
+                for i in 0..n.max(0).cast_unsigned() {
+                    let pt = pts.wrapping_add(12 * i);
+                    if h.read::<u8>(pt) & 2 != 0 {
+                        let d: u32 = h.read(pt.wrapping_add(8));
+                        let d = if param == 0xe {
+                            d.wrapping_add(1)
+                        } else {
+                            d.wrapping_sub(1)
+                        };
+                        h.write(pt.wrapping_add(8), d);
+                        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+                        let deg = x87::load((d.cast_signed() as f32).to_bits());
+                        let pi = f64::from_bits(h.read(h.rebase(SPL_PI)));
+                        let k180 = f64::from_bits(h.read(h.rebase(SPL_180)));
+                        let r = x87::store(x87::div(x87::mul(deg, pi), k180));
+                        h.write(vals.wrapping_add(16 * i + 0xc), r);
+                        sw(h, SPL_SELECTED, i);
+                        return 0;
+                    }
+                }
+            }
+            0x8007 => spline_button(h, window, param),
+            0x8011 => spline_draw(h, ebp, window),
+            _ => {}
+        }
+        0
+    }
+
+    /// `Gu_WindowControlSetText(window, id, text)`.
+    fn spl_text(h: &mut impl Host, window: u32, id: u32, text: u32) {
+        let t = h.rebase(text);
+        c(h, WINDOW_SET_TEXT, &[window, id, t]);
+    }
+
+    /// The spline edit window's buttons (0x8007).
+    fn spline_button(h: &mut impl Host, window: u32, param: u32) {
+        match param {
+            1 | 5 => {
+                let f = if param == 1 { SPL_FLAG2C } else { SPL_FLAG2D };
+                let v = gb(&*h, f);
+                sb(h, f, v ^ 1);
+                sb(h, SPL_DIRTY, 1);
+            }
+            2 | 3 | 4 | 6 | 8 => {
+                let f = match param {
+                    2 => SPL_FN_2,
+                    3 => SPL_FN_3,
+                    4 => SPL_FN_4,
+                    6 => SPL_FN_6,
+                    _ => SPL_FN_8,
+                };
+                c(h, f, &[]);
+                sb(h, SPL_DIRTY, 1);
+            }
+            7 => {
+                c(h, SPL_FN_7, &[]);
+                c(h, SPL_FN_6, &[]);
+                sb(h, SPL_DIRTY, 1);
+            }
+            9 => {
+                let v = gw(&*h, SPL_POINT_MODE).wrapping_add(1).cast_signed() % 2;
+                sw(h, SPL_POINT_MODE, v.cast_unsigned());
+                match v {
+                    0 => spl_text(h, window, 9, SPL_POINT_TEXT),
+                    1 => spl_text(h, window, 9, SPL_LINE_TEXT),
+                    _ => {}
+                }
+            }
+            0xa => {
+                let v = gw(&*h, SPL_LINE) ^ 1;
+                sw(h, SPL_LINE, v);
+                match v {
+                    0 => spl_text(h, window, 0xa, SPL_LINE0),
+                    1 => spl_text(h, window, 0xa, SPL_LINE1),
+                    _ => {}
+                }
+            }
+            0xb => {
+                c(h, SPL_FN_B, &[]);
+            }
+            0xc => {
+                let line = gw(&*h, SPL_LINE);
+                sw(h, SPL_COUNTS.wrapping_add(4 * line), 0);
+            }
+            0xd => {
+                c(h, SPL_FN_D, &[]);
+            }
+            0x10 | 0x11 => {
+                sb(h, SPL_NAME_KIND, u8::from(param == 0x11));
+                let f = h.rebase(NAMEINPUT_PROC);
+                let w = c(h, WINDOW_CREATE, &[100, 0x40, 0x118, 0x80, 0xe, f]);
+                sw(h, SPL_NAME_WINDOW, w);
+            }
+            0x12 => {
+                if gb(&*h, SPL_TEST_OPEN) == 0 {
+                    sb(h, SPL_TEST_OPEN, 1);
+                    let f = h.rebase(CAMERA_TEST_PROC);
+                    c(h, WINDOW_CREATE, &[100, 0x40, 0x78, 0x50, 0xe, f]);
+                }
+            }
+            0x13 => {
+                c(h, SPL_FN_13, &[]);
+            }
+            0x14 => {
+                let v = gb(&*h, SPL_FLAG31) ^ 1;
+                sb(h, SPL_FLAG31, v);
+                spl_text(h, window, 0x14, if v == 0 { SPL_OFF } else { SPL_ON });
+            }
+            _ => {}
+        }
+    }
+
+    /// The spline edit window's 0x8011 (its draw).
+    fn spline_draw(h: &mut impl Host, ebp: u32, window: u32) {
+        let on = gb(&*h, SPL_FLAG31);
+        if on != gb(&*h, SPL_FLAG32) {
+            sb(h, SPL_FLAG32, on);
+            let t = h.rebase(if on == 0 { SPL_OFF } else { SPL_ON });
+            c(h, WINDOW_SET_TEXT, &[window, 0x14, t]);
+        }
+        if gw(&*h, SPL_NAME_WINDOW + 4) != 0 {
+            let w = gw(&*h, SPL_NAME_WINDOW);
+            sw(h, SPL_NAME_WINDOW + 4, 0);
+            c(h, WINDOW_START_DRAG, &[w]);
+            let f = if gb(&*h, SPL_NAME_KIND) == 0 {
+                SPL_FN_NAME0
+            } else {
+                SPL_FN_NAME1
+            };
+            c(h, f, &[]);
+        }
+        if c(h, WINDOW_IS_DRAG, &[window]) == 0 {
+            if gb(&*h, SPL_DIRTY) == 0 {
+                let pad = c(h, TK_CONTROLER_HIST, &[1, 0, 0]) & 0xffff;
+                c(h, SPLINE_DRAG, &[pad]);
+            }
+            sb(h, SPL_DIRTY, 0);
+        }
+        for (f, v) in [(PRINT_SET_X, 2), (PRINT_SET_Y, 0x54)] {
+            c(h, f, &[v]);
+        }
+        let name = h.rebase(SPL_NAME_TEXT);
+        c(h, PRINTF, &[name]);
+        c(h, PRINT_SET_X, &[8]);
+        c(h, PRINT_SET_Y, &[0x4a]);
+        let label = h.rebase(SPL_LABEL);
+        c(h, PRINTF, &[label]);
+        c(h, PRINT_SET_X, &[0x6c]);
+        c(h, PRINT_SET_Y, &[0x4a]);
+        let buf = ebp.wrapping_sub(SPL_FRAME);
+        let dashes = h.rebase(SPL_DASHES);
+        sprintf(h, &[buf, dashes]);
+        let sel = gw(&*h, SPL_SELECTED);
+        if sel != u32::MAX {
+            let line = gw(&*h, SPL_LINE);
+            let pts = gw(&*h, SPL_POINTS.wrapping_add(4 * line));
+            let pt = pts.wrapping_add(sel.wrapping_mul(12));
+            if pt != 0 && h.read::<u8>(pt) & 2 != 0 {
+                let f = h.rebase(SPL_INT_FMT);
+                let deg: u32 = h.read(pt.wrapping_add(8));
+                sprintf(h, &[buf, f, deg]);
+            }
+        }
+        c(h, PRINTF, &[buf]);
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]
