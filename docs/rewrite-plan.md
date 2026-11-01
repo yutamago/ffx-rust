@@ -488,8 +488,6 @@ byte-compatible, and the original stays untouched next to it.
 - **Delivery.** `ffx-rust.exe` sits next to `FFX.exe` in the game folder
   and is started by `ffx-launch` or a Steam launch option. `FFX.exe`,
   the saves and the data stay untouched.
-- **Luau after M5.** L1 starts once the 64-bit program runs, against
-  the function table. Atel (`docs/atel-plan.md`) does not wait for it.
 
 **Stages.** Each one is merged and verified before the next depends on
 it. Stages 1 and 2 run in the current 32-bit process, so every existing
@@ -686,42 +684,22 @@ them.
 
 FFX's events, cutscenes, field logic and monster AI are ATEL bytecode run
 by the script VM (`Script_Run`, in Rust since M1), and everything a script
-does goes through the VM's natives. Two ways in for modders:
+does goes through the VM's natives.
 
-- **Atel, a C# subset compiled to ATEL (user, 2026-10-31 and 2026-11-01;
-  plan: `docs/atel-plan.md`).** Every shipped event, monster and battle
-  script decompiles into standard C# that reads like what the developers
-  meant, and compiles back to the same bytes. Roslyn parses and checks it;
-  our backend writes ATEL bytecode, and analyzers enforce what ATEL can
-  run. Mods are C# projects that change existing workers (`partial class`,
-  prefix and postfix patches) and add new ones; they ship compiled, and the
-  launcher links them onto the player's own files in load order. The
-  scripts keep running on the ATEL VM, original or ours, so .NET is never
-  embedded in the game and the VM stays the sandbox. This replaces the old
-  stages L2 (Atel to Luau) and L3 (Luau to Atel). It does not wait for M5.
-- **L1, Luau beside Atel (after M5, user 2026-10-27).** Mods ship Luau
-  scripts that hook game events (map entered, worker started, signal sent,
-  battle started, command chosen) and call the natives through a typed API
-  (`chr.move_to`, `msg.show`, `wait.frames`). The original scripts stay as
-  they are; a mod adds behaviour or replaces one worker's. Runs in the
-  64-bit program, on its function table. Luau is Roblox's open-source
-  (MIT) dialect of Lua 5.1, with gradual types and a sandbox made for
-  untrusted scripts; it embeds from Rust (`mlua`, `luau` feature). (FFX.exe
-  links a Lua 5.2.1 of its own through PhyreEngine, but never runs it and
-  exposes nothing of the game to it: `docs/formats/lua.md`. This is a new
-  runtime, not that one.) Whether L1 is still wanted beside Atel is open.
+Modders write **Atel**, a C# subset compiled to ATEL bytecode (user,
+2026-10-31 and 2026-11-01). Every shipped script decompiles into C# that
+compiles back to the same bytes; mods ship compiled and are linked onto the
+player's own scripts in load order. It is its own project,
+`yutamago/ffx-atel-sharp` (plan: its `docs/plan.md`), built for the
+existing game through a Fahrenheit mod, not for this port. The port runs
+the same bytecode, so it can load the same packages later.
 
-Both need:
+Luau is dropped (user, 2026-11-01), and with it the old stages L1-L3.
 
-- **A documented native API, from M1 on.** Every native that moves to
-  Rust gets its name, its arguments and their meaning, and what it waits
-  for, in `docs/formats/script.md`. One machine-readable API description is
-  generated from that table, and from it Atel's reference assembly (and the
-  Luau type definitions, if L1 goes ahead). This is part of each script
-  round, not extra work.
-- **Getting started as part of the work.** A first-mod tutorial, small
-  example mods to copy, the API reference with editor autocomplete, and
-  errors that point at the mod's own line.
+What this repo still owes it: **a documented native API.** Every native
+that moves to Rust gets its name, its arguments and their meaning, and what
+it waits for, in `docs/formats/script.md`, and `ffx script natives` gets a
+machine-readable export that Atel's reference assembly is generated from.
 
 ## Risks
 
