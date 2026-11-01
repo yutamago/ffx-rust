@@ -45,4 +45,18 @@ ported! {
         let ebp = f.at() + 4 * t::RAY_BOX_FRAME_WORDS;
         t::ray_box::ray_box(&mut mem(), ebp, m, lo, hi, p, d, near, far)
     }
+    /// `Phyre_POccluderGeometry_selectOccluders_00a30260(array, items, count, stride, owner, ray)`:
+    /// the matrices and the ray in a frame; 0.
+    Phyre_POccluderGeometry_selectOccluders_00a30260 @ 0x00a3_0260 => extern "C" fn sbp2_00a30260(array: u32, items: u32, count: u32, stride: u32, owner: u32, ray: u32) -> u32 {
+        let mut f = StackFrame::<{ t::SELECT_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * t::SELECT_FRAME_WORDS;
+        t::select::select_occluders(&mut mem(), ebp, array, items, count, stride, owner, ray)
+    }
+    /// `Phyre_POccluderGeometry_screenCover_00a2ef70(lo, hi, owner, m, inverse)`:
+    /// the corners and polygons in a frame; the cover in `ST0`.
+    Phyre_POccluderGeometry_screenCover_00a2ef70 @ 0x00a2_ef70 => extern "C" fn sbp2_00a2ef70(lo: u32, hi: u32, owner: u32, m: u32, inverse: u32) -> f32 {
+        let mut f = StackFrame::<{ t::COVER_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * t::COVER_FRAME_WORDS;
+        t::cover::screen_cover(&mut mem(), ebp, lo, hi, owner, m, inverse)
+    }
 }

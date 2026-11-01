@@ -4162,3 +4162,455 @@ fn m5p_scene_bp2_ray_box() {
         );
     }
 }
+
+impl Twins {
+    /// A stub at `sym` that logs its tag and `n` stack words, then loads
+    /// the `f32` `value` into `ST0` (cdecl).
+    fn float_const_stub(&mut self, sym: u32, n: u32, value: f32) {
+        let at = self.rebase(sym);
+        let log_code = self.stub_code(sym, false, n, 0, 0);
+        let cell = self.alloc(&value.to_bits().to_le_bytes());
+        let here = self.a.alloc_code(&[0; 48]).unwrap();
+        assert_eq!(self.b.alloc_code(&[0; 48]).unwrap(), here);
+        // the log stub reads its words from esp+4: jump to it with the
+        // caller's frame intact by calling it from a copy of the words
+        let mut c = vec![0xff, 0x74, 0x24, 0x14]; // push [esp+0x14] (word 4)
+        c.extend([0xff, 0x74, 0x24, 0x14]); // push [esp+0x14] (word 3)
+        c.extend([0xff, 0x74, 0x24, 0x14]); // word 2
+        c.extend([0xff, 0x74, 0x24, 0x14]); // word 1
+        c.extend([0xff, 0x74, 0x24, 0x14]); // word 0
+        c.push(0xe8);
+        c.extend(
+            log_code
+                .wrapping_sub(here + c.len() as u32 + 4)
+                .to_le_bytes(),
+        ); // call log
+        c.extend([0x83, 0xc4, 0x14]); // add esp, 0x14
+        c.extend([0xd9, 0x05]);
+        c.extend(cell.to_le_bytes()); // fld dword [cell]
+        c.push(0xc3);
+        assert!(c.len() <= 48);
+        self.write(here, &c);
+        let mut j = vec![0xe9];
+        j.extend(here.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+}
+
+/// `0x00a30260` with the matrix, box, visibility, length and ray callees
+/// original on both sides (the array's reset, shrink and free, and the
+/// occluder weight `0x00a2ef70` stubbed): no stride; no items with the
+/// array owned or not; a null list; the array growing (and failing to);
+/// items with and without their 3x4, a camera inside one box, with and
+/// without the owner's camera, with and without a ray (one blocked
+/// ahead, one not). Only synthetic data reaches it.
+#[test]
+#[allow(clippy::type_complexity)] // the case tables
+fn m5p_scene_bp2_select_occluders() {
+    use ffx_prender::m5p_scene_bp2::{SELECT_CALLS, select::select_occluders};
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x00a3_0260);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 6 - 8;
+        let mut kept = 0u32;
+        // (count, stride, items null, capacity, owned, reset error,
+        // camera, ray)
+        let cases: &[(u32, u32, bool, u32, bool, u32, bool, bool)] = &[
+            (4, 0, false, 8, false, 0, true, false),
+            (0, 8, false, 8, false, 0, true, false),
+            (0, 8, false, 8, true, 0, true, false),
+            (4, 8, true, 8, false, 0, true, false),
+            (6, 8, false, 4, false, 0xd, true, false),
+            (6, 12, false, 4, false, 0, true, false),
+            (6, 8, false, 8, false, 0, false, false),
+            (8, 8, false, 8, false, 0, true, true),
+            (8, 16, false, 8, false, 0, true, true),
+            (8, 8, false, 8, false, 0, false, true),
+        ];
+        for (k, &(count, stride, null, cap, owned, reset_err, camera, with_ray)) in
+            cases.iter().enumerate()
+        {
+            for round in 0..3u32 {
+                let data = tw.alloc(&(0..8 * 16).map(|i: u8| i ^ k as u8).collect::<Vec<u8>>());
+                let array = tw.zeros(8);
+                tw.w32(array, cap | if owned { 0x8000_0000 } else { 0 });
+                tw.w32(array + 4, data);
+                let n = count.max(1) as usize;
+                let list = tw.zeros(stride.max(8) as usize * n);
+                for i in 0..n as u32 {
+                    let g = tw.zeros(0x30);
+                    // boxes around the origin's neighbourhood; item 1 of
+                    // round 1 holds the camera
+                    let c = [
+                        (tw_rand(&mut rng) - 0.5) * 6.0,
+                        (tw_rand(&mut rng) - 0.5) * 6.0,
+                        5.0 + tw_rand(&mut rng) * 4.0,
+                    ];
+                    let s = 0.5 + tw_rand(&mut rng);
+                    let (lo, hi) = if round == 1 && i == 1 {
+                        ([-50.0f32, -50.0, -50.0], [50.0f32, 50.0, 50.0])
+                    } else {
+                        (
+                            [c[0] - s, c[1] - s, c[2] - s],
+                            [c[0] + s, c[1] + s, c[2] + s],
+                        )
+                    };
+                    let b: Vec<u8> = lo
+                        .iter()
+                        .chain(&[0.0])
+                        .chain(&hi)
+                        .flat_map(|f| f.to_le_bytes())
+                        .collect();
+                    tw.write(g + 0x10, &b);
+                    let at = list + i * stride.max(8);
+                    tw.w32(at, g);
+                    if i % 2 == 1 {
+                        let m: Vec<u8> = (0..12)
+                            .flat_map(|j| {
+                                if j % 5 == 0 {
+                                    1.0f32
+                                } else if j % 4 == 3 {
+                                    0.25
+                                } else {
+                                    0.0
+                                }
+                                .to_le_bytes()
+                            })
+                            .collect();
+                        let m = tw.alloc(&m);
+                        tw.w32(at + 4, m);
+                    }
+                }
+                let owner = tw.zeros(0xc0);
+                // a perspective-like view: the identity with z towards w
+                let view: [f32; 16] = [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, -0.1, 0.0,
+                ];
+                let vb: Vec<u8> = view.iter().flat_map(|f| f.to_le_bytes()).collect();
+                tw.write(owner + 0x70, &vb);
+                if camera {
+                    let cam = tw.zeros(0x30);
+                    tw.write(
+                        cam + 0x20,
+                        &[0.0f32, 0.0, 0.0].map(f32::to_le_bytes).concat(),
+                    );
+                    tw.w32(owner + 0xb0, cam);
+                }
+                let ray = if with_ray {
+                    let to = if round == 2 {
+                        [0.0f32, 0.0, 40.0]
+                    } else {
+                        [0.5f32, 0.25, 6.0]
+                    };
+                    let r: Vec<u8> = [0.0f32, 0.0, 0.0, 0.0]
+                        .iter()
+                        .chain(&to)
+                        .flat_map(|f| f.to_le_bytes())
+                        .collect();
+                    tw.alloc(&r)
+                } else {
+                    0
+                };
+                tw.stub(SELECT_CALLS[0], false, 1, 0, 0);
+                tw.stub(SELECT_CALLS[1], true, 1, 1, reset_err);
+                tw.stub(SELECT_CALLS[13], true, 1, 1, 0x3078);
+                tw.float_const_stub(
+                    SELECT_CALLS[12],
+                    5,
+                    2.5 + f32::from(u8::try_from(round).unwrap()),
+                );
+                let items = if null { 0 } else { list };
+                let junk: Vec<u8> = (0..0x34cu32).map(|i| (i * 7 + k as u32) as u8).collect();
+                tw.write(ebp - 0x34c, &junk);
+                tw.b.set_call_top(Some(ebp - 0x34c - 0x100));
+                let what = format!("{label}: select occluders {k}.{round}");
+                let args = [array, items, count, stride, owner, ray];
+                tw.run(&what, 0x00a3_0260, Conv::Cdecl, &args, |g| {
+                    select_occluders(g, ebp, array, items, count, stride, owner, ray)
+                });
+                tw.b.set_call_top(None);
+                kept += tw.logged();
+                tw.unstub();
+            }
+        }
+        assert!(kept > 0, "{label}: no calls");
+    }
+}
+
+/// `0x00a30260` on a fixed scene, so that each test changes the answer:
+/// a box ahead (no 3x4), a box whose 3x4 moves it around the camera
+/// (dropped only through the right inverse), a rotated and moved box (the
+/// view times its 3x4), the camera off the origin; no ray, rays that end
+/// past the box ahead (blocked), inside it, miss it, and start in it.
+#[test]
+#[allow(clippy::type_complexity)] // the case tables
+fn m5p_scene_bp2_select_occluders_fixed() {
+    use ffx_prender::m5p_scene_bp2::{SELECT_CALLS, select::select_occluders};
+    let f = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    for (label, mut tw) in Twins::all() {
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 6 - 8;
+        let rays: [Option<([f32; 3], [f32; 3])>; 8] = [
+            None,
+            Some(([0.1, 0.05, 0.0], [0.0, 0.0, 10.0])),
+            Some(([0.1, 0.05, 0.0], [0.1, 0.1, 5.0])),
+            Some(([0.1, 0.05, 0.0], [10.0, 0.0, 0.0])),
+            Some(([0.0, 0.0, 5.0], [0.0, 0.0, 10.0])),
+            // starting on the face (near exactly 0), ending on the far
+            // face (far exactly the length), slanted through the box
+            Some(([0.0, 0.0, 4.0], [0.0, 0.0, 10.0])),
+            Some(([0.0, 0.0, 0.0], [0.0, 0.0, 6.0])),
+            Some(([2.0, 0.0, 0.0], [-2.0, 0.0, 10.0])),
+        ];
+        for (k, ray) in rays.iter().enumerate() {
+            // (lo, hi, 3x4 as FromMatrix3x4 reads it: the 4x4's rows
+            // (m3, m7, m11), (m0, m1, m2), (m4, m5, m6) and the
+            // translation (m8, m9, m10))
+            let boxes: [([f32; 3], [f32; 3], Option<[f32; 12]>); 3] = [
+                ([-1.0, -1.0, 4.0], [1.0, 1.0, 6.0], None),
+                (
+                    [-1.0, -1.0, -9.0],
+                    [1.0, 1.0, -7.0],
+                    Some([0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 8.0, 0.0]),
+                ),
+                (
+                    [-1.0, -1.0, -1.0],
+                    [1.0, 1.0, 1.0],
+                    Some([0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 3.0, 0.0, 6.0, -1.0]),
+                ),
+            ];
+            let list = tw.zeros(8 * boxes.len());
+            for (i, (lo, hi, m)) in boxes.iter().enumerate() {
+                let g = tw.zeros(0x30);
+                let mut b = f(lo);
+                b.extend([0; 4]);
+                b.extend(f(hi));
+                tw.write(g + 0x10, &b);
+                tw.w32(list + 8 * i as u32, g);
+                if let Some(m) = m {
+                    let m = tw.alloc(&f(m));
+                    tw.w32(list + 8 * i as u32 + 4, m);
+                }
+            }
+            let data = tw.zeros(8 * 8);
+            let array = tw.zeros(8);
+            tw.w32(array, 8);
+            tw.w32(array + 4, data);
+            let owner = tw.zeros(0xc0);
+            let view: [f32; 16] = [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, -0.1, 0.0,
+            ];
+            tw.write(owner + 0x70, &f(&view));
+            let cam = tw.zeros(0x30);
+            tw.write(cam + 0x20, &f(&[0.2, -0.1, 0.3, 7.0]));
+            tw.w32(owner + 0xb0, cam);
+            let ray_at = match ray {
+                None => 0,
+                Some((from, to)) => {
+                    let mut r = f(from);
+                    r.extend([0; 4]);
+                    r.extend(f(to));
+                    tw.alloc(&r)
+                }
+            };
+            tw.stub(SELECT_CALLS[0], false, 1, 0, 0);
+            tw.stub(SELECT_CALLS[1], true, 1, 1, 0);
+            tw.stub(SELECT_CALLS[13], true, 1, 1, 0x3078);
+            tw.float_const_stub(SELECT_CALLS[12], 5, 1.5);
+            tw.b.set_call_top(Some(ebp - 0x34c - 0x100));
+            let what = format!("{label}: fixed select {k}");
+            let args = [array, list, 3, 8, owner, ray_at];
+            tw.run(&what, 0x00a3_0260, Conv::Cdecl, &args, |g| {
+                select_occluders(g, ebp, array, list, 3, 8, owner, ray_at)
+            });
+            tw.b.set_call_top(None);
+            tw.unstub();
+        }
+    }
+}
+
+/// `0x00a2ef70` with every callee original on both sides (the clip
+/// planes, the area): the camera inside the box (1), without a camera
+/// (the origin), boxes ahead in the middle of the screen, crossing each
+/// screen edge (clipped), covering it all (1), behind the camera (a
+/// corner's `1/w` below 1e-5: 1), the box moved by its matrix. The
+/// frame's corners, bounds and polygons are compared after the call. Only
+/// synthetic data reaches it.
+#[test]
+#[allow(clippy::type_complexity)] // the case table
+fn m5p_scene_bp2_screen_cover() {
+    use ffx_prender::m5p_scene_bp2::cover::screen_cover;
+    let f = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    for (label, mut tw) in Twins::all() {
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 5 - 8;
+        let mut seen = Vec::new();
+        // (lo, hi, camera, moved by (0, 0, 5))
+        let cases: &[([f32; 3], [f32; 3], Option<[f32; 3]>, bool)] = &[
+            (
+                [-1.0, -1.0, -1.0],
+                [1.0, 1.0, 1.0],
+                Some([0.2, 0.1, 0.0]),
+                false,
+            ),
+            ([-1.0, -1.0, 5.0], [1.0, 1.0, 7.0], None, false),
+            (
+                [-1.0, -1.0, 5.0],
+                [1.0, 1.0, 7.0],
+                Some([0.3, -0.2, 0.0]),
+                false,
+            ),
+            (
+                [-0.5, -0.5, 8.0],
+                [0.5, 0.5, 9.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [4.0, -1.0, 5.0],
+                [7.0, 1.0, 7.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-7.0, -1.0, 5.0],
+                [-4.0, 1.0, 7.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-1.0, 4.0, 5.0],
+                [1.0, 7.0, 7.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-1.0, -7.0, 5.0],
+                [1.0, -4.0, 7.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-30.0, -30.0, 2.0],
+                [30.0, 30.0, 3.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-6.0, -6.0, 5.0],
+                [6.0, 6.0, 6.0],
+                Some([1.0, 0.5, 0.0]),
+                false,
+            ),
+            (
+                [-1.0, -1.0, -7.0],
+                [1.0, 1.0, -5.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-1.0, -1.0, -1.0],
+                [1.0, 1.0, 1.0],
+                Some([0.5, 0.2, 0.0]),
+                true,
+            ),
+            (
+                [-2.0, -3.0, 4.0],
+                [3.0, 2.0, 9.0],
+                Some([0.1, 0.1, -1.0]),
+                false,
+            ),
+            // wider than the screen in x (clipped on both sides), past
+            // two edges, a camera off every axis
+            (
+                [-10.0, -0.5, 5.0],
+                [10.0, 0.5, 6.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [0.5, 0.5, 5.0],
+                [10.0, 10.0, 6.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-10.0, -10.0, 5.0],
+                [-0.5, -0.5, 6.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-0.5, -10.0, 5.0],
+                [0.5, 10.0, 6.0],
+                Some([0.0, 0.0, 0.0]),
+                false,
+            ),
+            (
+                [-1.0, -1.0, 5.0],
+                [1.0, 1.0, 7.0],
+                Some([0.5, 2.0, -1.0]),
+                false,
+            ),
+            (
+                [-1.0, -1.0, 5.0],
+                [1.0, 1.0, 7.0],
+                Some([-0.7, -1.5, 1.0]),
+                true,
+            ),
+        ];
+        for (k, &(lo, hi, camera, moved)) in cases.iter().enumerate() {
+            let g = tw.alloc(&f(&[lo[0], lo[1], lo[2], 0.0, hi[0], hi[1], hi[2], 0.0]));
+            let owner = tw.zeros(0xc0);
+            let view: [f32; 16] = [
+                1.0, 0.05, 0.02, 0.01, 0.03, -1.0, 0.04, 0.02, 0.01, 0.02, 1.0, 1.0, 0.1, 0.2, 0.3,
+                0.05,
+            ];
+            tw.write(owner + 0x70, &f(&view));
+            if let Some(c) = camera {
+                let cam = tw.zeros(0x30);
+                tw.write(cam + 0x20, &f(&c));
+                tw.w32(owner + 0xb0, cam);
+            }
+            let t = if moved { 5.0 } else { 0.0 };
+            let m = tw.alloc(&f(&[
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, t, 1.0,
+            ]));
+            let inv = tw.alloc(&f(&[
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -t, 1.0,
+            ]));
+            let junk: Vec<u8> = (0..0x2b8u32).map(|i| (i * 5 + k as u32) as u8).collect();
+            tw.write(ebp - 0x2b8, &junk);
+            tw.b.set_call_top(Some(ebp - 0x2b8 - 0x100));
+            let what = format!("{label}: screen cover {k}");
+            let args = [g, g + 0x10, owner, m, inv];
+            let (ra, r) = tw.run_any(&what, 0x00a2_ef70, Conv::Cdecl, &args, |gm| {
+                screen_cover(gm, ebp, g, g + 0x10, owner, m, inv)
+            });
+            tw.b.set_call_top(None);
+            let st0 = ra.st0_f32().unwrap_or_else(|| panic!("{what}: no ST0"));
+            assert_eq!(st0.to_bits(), r.to_bits(), "{what}: ST0");
+            seen.push(r);
+            // the corners, bounds, clipped polygons and the result word
+            for (from, len) in [
+                (0x64u32, 0x60usize),
+                (0x124, 0xc0),
+                (0x1e4, 0xc0),
+                (0x1e8, 4),
+                (0x24c, 0x20),
+            ] {
+                let mut x = vec![0; len];
+                let mut y = vec![0; len];
+                tw.a.read_bytes(ebp - from, &mut x);
+                tw.b.read_bytes(ebp - from, &mut y);
+                assert_eq!(x, y, "{what}: frame at -{from:#x}");
+            }
+        }
+        assert!(
+            seen.iter().any(|&r| r > 0.0 && r < 1.0),
+            "{label}: no partial cover {seen:?}"
+        );
+    }
+}
