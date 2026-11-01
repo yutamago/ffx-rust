@@ -300,7 +300,13 @@ for r in "${replays[@]}"; do
     # 2026-10-24 missed 4 of 197): compared by order (--sampled).
     # event-agency's player position (2) skipped a value in one of six
     # original runs (lockstep too): compared by order.
+    # The developer-save replays' monster HP (*0x011334d4+0x13d10.., the
+    # last four ranges) is read through a pointer still 0 on the field:
+    # FFX.exe's process maps that low memory, ffx-rust.exe's arena does not
+    # (replay-compare.py --null-first).
     case $r in
+        devsave-22-luca) ign=(--null-first 15,16,17,18) ;;
+        devsave-*) ign=(--null-first 16,17,18,19) ;;
         event-besaid) ign=(--ignore 2) ;;
         event-cliff) ign=(--sampled 6,7) ;;
         event-agency) ign=(--sampled 2) ;;
