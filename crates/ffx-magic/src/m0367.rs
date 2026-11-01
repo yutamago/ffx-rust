@@ -1,0 +1,155 @@
+//! `magic_0367.dll`'s own functions, and `magic_0369`'s kin of its
+//! start-up (besides the runtime, the object host and the shared code).
+
+use crate::runtime::slot_target;
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
+
+/// The start-ups' common head: `stores` words get their immediates
+/// (`mov dword [addr], imm32`), the actors are looked up
+/// ([`lookup_actors`](crate::sb_misc::lookup_actors), `rel32` at
+/// `lookup`), slot 719 `(F, 8, 0)` (`F` at `name`) into `handle`, the
+/// part set up ([`part_init`](crate::l5_objhost::part_init), `rel32` at
+/// `part`).
+fn head<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    stores: &[u32],
+    (lookup, table, name, handle, part): (u32, u32, u32, u32, u32),
+) {
+    let w = |off: u32| img.word(f + off);
+    for &at in stores {
+        g.write::<u32>(w(at), w(at + 4));
+    }
+    crate::sb_misc::lookup_actors(g, img, img.rel32_target(f + lookup));
+    let s = slot_target(g, w(table), 0xb3c / 4);
+    let h = g.call(s, 0, &[w(name), 8, 0]).eax;
+    g.write::<u32>(w(handle), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + part));
+}
+
+/// Puts `node` last on a list (operands: the first word tested, the last
+/// read, the first and the last written).
+fn append<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    (first, last_r, first_w, last_w): (u32, u32, u32, u32),
+) {
+    let w = |off: u32| img.word(f + off);
+    g.write::<u32>(node + 4, 0);
+    if g.read::<u32>(w(first)) == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(first_w), node);
+    } else {
+        let last = g.read::<u32>(w(last_r));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+    }
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(w(last_w), node);
+}
+
+/// The start-up (`magic_0367` 0x100019b0, no arguments, no frame): the
+/// [`head`] (five words), `+0x64` its immediate, `+0x6e` 0, a u16 0 and
+/// a byte 1; two pool nodes ([`take`](crate::sa_pool::take), owners
+/// `+0x5e`, `+0xca`; bytes `+0x18` 1 and 2) go last on the task list
+/// (first `+0x8d`, last `+0xa1`), the records block `+0xb8` set up
+/// between them ([`records_init_100`](crate::sa_misc::records_init_100)).
+/// Returns 0.
+pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    head(
+        g,
+        img,
+        f,
+        &[0x02, 0x0c, 0x16, 0x20, 0x2a],
+        (0x33, 0x38, 0x47, 0x51, 0x56),
+    );
+    g.write::<u32>(w(0x64), w(0x68));
+    g.write::<u32>(w(0x6e), 0);
+    g.write::<u16>(w(0x79), 0);
+    g.write::<u8>(w(0x81), 1);
+    let take = img.rel32_target(f + 0x87);
+    let first = crate::sa_pool::take(g, img, take, w(0x5e));
+    let head0 = g.read::<u32>(w(0x8d));
+    g.write::<u8>(first + 0x18, 1);
+    g.write::<u32>(first + 4, 0);
+    if head0 == 0 {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0xb3), first);
+    } else {
+        let last = g.read::<u32>(w(0xa1));
+        g.write::<u32>(first, last);
+        g.write::<u32>(last + 4, first);
+    }
+    g.write::<u32>(first + 8, first);
+    g.write::<u32>(w(0xc0), first);
+    crate::sa_misc::records_init_100(g, img, img.rel32_target(f + 0xc5), w(0xb8));
+    let second = crate::sa_pool::take(g, img, img.rel32_target(f + 0xcf), w(0xca));
+    g.write::<u8>(second + 0x18, 2);
+    let last_w = if g.read::<u32>(w(0xd5)) == 0 {
+        0x10c
+    } else {
+        0xf6
+    };
+    append(g, img, f, second, (0xd5, 0xe9, 0x104, last_w));
+    Ret::eax(0)
+}
+
+/// [`start_up`] (275 bytes, 1 overlay).
+pub const START_UP: Sig = Sig {
+    len: 275,
+    hash: 0x2345_2d98_a1cb_1fdb,
+    calls: &[
+        (0x33, Callee::Sig(&crate::sb_misc::LOOKUP_ACTORS)),
+        (0x56, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x87, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xc5, Callee::Sig(&crate::sa_misc::RECORDS_INIT_100)),
+        (0xcf, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// The start-up (`magic_0369` 0x10001450, no arguments, no frame): the
+/// [`head`] (four words), `+0x55` its immediate, `+0x5f` 0, a u16 0 and
+/// a byte 1; a node off the free list
+/// ([`pop_node`](crate::m0032::pop_node)) goes last on the task list
+/// (first `+0x7e`, last `+0x8e`). Returns 0.
+pub fn start_up_0369<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    head(
+        g,
+        img,
+        f,
+        &[0x02, 0x0c, 0x16, 0x20],
+        (0x29, 0x2e, 0x3d, 0x47, 0x4c),
+    );
+    g.write::<u32>(w(0x55), w(0x59));
+    g.write::<u32>(w(0x5f), 0);
+    g.write::<u16>(w(0x6a), 0);
+    g.write::<u8>(w(0x72), 1);
+    let node = crate::m0032::pop_node(g, img, img.rel32_target(f + 0x78));
+    let last_w = if g.read::<u32>(w(0x7e)) == 0 {
+        0xb1
+    } else {
+        0x9b
+    };
+    append(g, img, f, node, (0x7e, 0x8e, 0xa9, last_w));
+    Ret::eax(0)
+}
+
+/// [`start_up_0369`] (184 bytes, 1 overlay).
+pub const START_UP_0369: Sig = Sig {
+    len: 184,
+    hash: 0xc9fc_07ea_603d_b6da,
+    calls: &[
+        (0x29, Callee::Sig(&crate::sb_misc::LOOKUP_ACTORS)),
+        (0x4c, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x78, Callee::Sig(&crate::m0032::POP_NODE)),
+    ],
+    imports: &[],
+};

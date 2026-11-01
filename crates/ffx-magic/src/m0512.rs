@@ -1,7 +1,10 @@
 //! `magic_0512.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::h6_setup::{ring_join, static_child};
+use crate::nodes::node_insert;
 use crate::runtime::slot_target;
+use crate::sb_sse::{cvt, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -140,5 +143,278 @@ pub const TASK: Sig = Sig {
     len: 194,
     hash: 0x5b27_20e2_f49f_5de0,
     calls: &[(0x83, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE))],
+    imports: &[],
+};
+
+/// Sets up an effect object (0x10007830, internal: `ecx` = the object,
+/// `edx` a word, one stack word `n`): the object joins the DLL's ring
+/// (vtable `+0x16`, step `+0x1d`, the ring's last `*G_R` and sentinel,
+/// the ring's flag bit 0 cleared); three children of the DLL's node list:
+/// `b = obj + 0x170` (handlers `+0x9e` after), `c = obj + 0x1c8`
+/// (handlers `+0xd2` first) and `d = obj + 0x19c` (handlers `+0x19d`);
+/// `+0x18c..` = `(0, 0, 0, 1)`, `+0x1e4/+0x1e8` 0, `+0x1ec` 0x4000,
+/// `+0x1b8..` = `(1, 1, K1 - n * K2, 0.2)`; the node insert
+/// ([`node_insert`]) of the group `[obj + 0x24, LIST, edx, b, c, d]` on
+/// the frame (`ebp - 0x20`); `+0x20` = `10 - 10 n`, `+0x18` 0. Returns
+/// `10 - 10 n`.
+pub fn setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.ecx;
+    let n = fr.arg(g, 0);
+    ring_join(g, img, f, obj, [0x16, 0x1d, 0x25, 0x2f, 0x34, 0x43, 0x4a]);
+    let b = obj + 0x170;
+    static_child(
+        g,
+        img,
+        f,
+        b,
+        [0x5d, 0x64, 0x69, 0x71, 0x76, 0x7e, 0x8a, 0x98],
+    );
+    g.write::<u32>(b, w(0x9e));
+    for (o, v) in [(0x18cu32, 0u32), (0x190, 0), (0x194, 0), (0x198, ONE)] {
+        g.write::<u32>(obj + o, v);
+    }
+    let c = obj + 0x1c8;
+    g.write::<u32>(c, w(0xd2));
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0xe5, 0xec, 0xf1, 0xf9, 0xfe, 0x106, 0x112, 0x118],
+    );
+    for (o, v) in [(0x1e4u32, 0u32), (0x1e8, 0), (0x1ec, 0x4000)] {
+        g.write::<u32>(obj + o, v);
+    }
+    let d = obj + 0x19c;
+    static_child(
+        g,
+        img,
+        f,
+        d,
+        [0x14f, 0x156, 0x15b, 0x163, 0x168, 0x170, 0x17f, 0x18c],
+    );
+    g.write::<u32>(d, w(0x19d));
+    let k1 = g.read::<f32>(w(0x92));
+    let k2 = g.read::<f32>(w(0x194));
+    let x = sub(k1, mul(cvt(n), k2));
+    let ebp = fr.esp.wrapping_sub(4);
+    let group = ebp.wrapping_sub(0x20);
+    for (i, v) in (0u32..).zip([obj + 0x24, w(0x1da), fr.edx, b, c, d]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    for (o, v) in [
+        (0x1b8u32, ONE),
+        (0x1bc, ONE),
+        (0x1c0, x.to_bits()),
+        (0x1c4, 0x3e4c_cccd),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x1e8),
+            // push ebp; sub esp, 0x20; three pushes: the call's esp
+            esp: fr.esp.wrapping_sub(0x34),
+            ecx: group,
+            ..Frame::default()
+        },
+    );
+    let r = 10u32.wrapping_sub(n.wrapping_mul(10));
+    g.write::<u32>(obj + 0x20, r);
+    g.write::<u32>(obj + 0x18, 0);
+    r
+}
+
+/// [`setup`] (521 bytes, 1 overlay).
+pub const SETUP: Sig = Sig {
+    len: 521,
+    hash: 0xd0c7_794f_98a4_14cb,
+    calls: &[(0x1e8, Callee::Sig(&crate::nodes::INSERT))],
+    imports: &[],
+};
+
+/// Sets up an effect object from a source object (0x10008670, internal:
+/// `ecx` = the object, `edx` = the source, one stack word `n`): the
+/// object joins the DLL's ring ([`ring_join`]); children of the DLL's
+/// node list `b = obj + 0x134` (handlers `+0xa9`), `c = obj + 0x160`
+/// (`+0x109`) and `d = obj + 0x18c` (`+0x14e`, set first); slot 325
+/// copies the source's `+0xcc` to `+0x150` and `[src + 0x140] + 0x1c` to
+/// `+0x17c`; `+0x188` scaled by `K`; `+0x1a8..+0x1b0` from the source's
+/// `[+0x144]` block (`+0x1c` plus 0x8000, `+0x20`, `+0x24`); the node
+/// insert ([`node_insert`]) of `[obj + 0x1b8, LIST, NAME, b, d, c]` on the
+/// frame (`ebp - 0x20`); `+0x30` the source, `+0x2c` slot 719 `(NAME2,
+/// 9, 0)`, `+0x18` 0 and `+0x20` = `15 - 15 n`. Returns `15 - 15 n`.
+pub fn setup_from<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.ecx;
+    let src = fr.edx;
+    let n = fr.arg(g, 0);
+    ring_join(g, img, f, obj, [0x13, 0x1a, 0x22, 0x2c, 0x31, 0x40, 0x47]);
+    let b = obj + 0x134;
+    static_child(
+        g,
+        img,
+        f,
+        b,
+        [0x5a, 0x61, 0x66, 0x6e, 0x76, 0x7e, 0x8a, 0xa3],
+    );
+    let t = slot_target(g, w(0x9d), 325);
+    g.write::<u32>(b, w(0xa9));
+    g.call(t, 0, &[obj + 0x150, src + 0xcc]);
+    let c = obj + 0x160;
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0xcd, 0xd4, 0xd9, 0xe1, 0xe6, 0xee, 0xfa, 0x103],
+    );
+    g.write::<u32>(c, w(0x109));
+    let v = g.read::<u32>(src + 0x140) + 0x1c;
+    let t = slot_target(g, w(0x11f), 325);
+    g.call(t, 0, &[obj + 0x17c, v]);
+    let x = mul(g.read::<f32>(obj + 0x188), g.read::<f32>(w(0x137)));
+    g.write::<f32>(obj + 0x188, x);
+    let d = obj + 0x18c;
+    g.write::<u32>(d, w(0x14e));
+    static_child(
+        g,
+        img,
+        f,
+        d,
+        [0x161, 0x168, 0x16d, 0x175, 0x17a, 0x182, 0x18e, 0x197],
+    );
+    for (o, k, plus) in [
+        (0x1a8u32, 0x1cu32, 0x8000u32),
+        (0x1ac, 0x20, 0),
+        (0x1b0, 0x24, 0),
+    ] {
+        let blk = g.read::<u32>(src + 0x144);
+        let v = g.read::<u32>(blk + k).wrapping_add(plus);
+        g.write::<u32>(obj + o, v);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let group = ebp.wrapping_sub(0x20);
+    for (i, v) in (0u32..).zip([obj + 0x1b8, w(0x1cd), w(0x1e6), b, d, c]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x1f1),
+            // push ebp; sub esp, 0x20; three pushes: the call's esp
+            esp: fr.esp.wrapping_sub(0x34),
+            ecx: group,
+            ..Frame::default()
+        },
+    );
+    g.write::<u32>(obj + 0x30, src);
+    let t = slot_target(g, w(0x1fc), 719);
+    let h = g.call(t, 0, &[w(0x20b), 9, 0]).eax;
+    g.write::<u32>(obj + 0x2c, h);
+    let r = 15u32.wrapping_sub(n.wrapping_mul(15));
+    g.write::<u32>(obj + 0x18, 0);
+    g.write::<u32>(obj + 0x20, r);
+    r
+}
+
+/// [`setup_from`] (568 bytes, 1 overlay).
+pub const SETUP_FROM: Sig = Sig {
+    len: 568,
+    hash: 0x7fd2_4105_8f9b_1e3a,
+    calls: &[(0x1f1, Callee::Sig(&crate::nodes::INSERT))],
+    imports: &[],
+};
+
+/// Sets up the effect's ground object (0x10008980, internal: `ecx` = the
+/// object, `edx` a word): the object joins the DLL's ring
+/// ([`ring_join`]); children of the DLL's node list `b = obj + 0x16c`
+/// (handlers `+0x95` after), `c = obj + 0x1c4` (`+0xc9` first) and `d =
+/// obj + 0x198` (`+0x17f` after); `+0x188..` = `(0, -15, 0, 1)`,
+/// `+0x1e0..+0x1e8` 0, `+0x1b4..` = `(1, 1, 1, 300)`; the node insert
+/// ([`node_insert`]) of `[obj + 0x20, LIST, edx, b, c, d]` on the frame
+/// (`ebp - 0x18`); `+0x18` 0. Returns the insert's `eax` (`edx`).
+pub fn ground<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.ecx;
+    ring_join(g, img, f, obj, [0x13, 0x1a, 0x22, 0x2c, 0x31, 0x40, 0x47]);
+    let b = obj + 0x16c;
+    static_child(
+        g,
+        img,
+        f,
+        b,
+        [0x5a, 0x61, 0x66, 0x6e, 0x75, 0x7d, 0x89, 0x8f],
+    );
+    g.write::<u32>(b, w(0x95));
+    for (o, v) in [
+        (0x188u32, 0u32),
+        (0x18c, 0xc170_0000),
+        (0x190, 0),
+        (0x194, ONE),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    let c = obj + 0x1c4;
+    g.write::<u32>(c, w(0xc9));
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0xdc, 0xe3, 0xe8, 0xf0, 0xf5, 0xfd, 0x109, 0x10f],
+    );
+    for o in [0x1e0u32, 0x1e4, 0x1e8] {
+        g.write::<u32>(obj + o, 0);
+    }
+    let d = obj + 0x198;
+    static_child(
+        g,
+        img,
+        f,
+        d,
+        [0x146, 0x14d, 0x152, 0x15a, 0x15f, 0x167, 0x173, 0x179],
+    );
+    g.write::<u32>(d, w(0x17f));
+    for (o, v) in [
+        (0x1b4u32, ONE),
+        (0x1b8, ONE),
+        (0x1bc, ONE),
+        (0x1c0, 0x4396_0000),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let group = ebp.wrapping_sub(0x18);
+    for (i, v) in (0u32..).zip([obj + 0x20, w(0x1ba), fr.edx, b, c, d]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    let r = node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x1c8),
+            // push ebp; sub esp, 0x1c; three pushes: the call's esp
+            esp: fr.esp.wrapping_sub(0x30),
+            ecx: group,
+            ..Frame::default()
+        },
+    );
+    g.write::<u32>(obj + 0x18, 0);
+    r.eax
+}
+
+/// [`ground`] (474 bytes, 1 overlay).
+pub const GROUND: Sig = Sig {
+    len: 474,
+    hash: 0x35ec_8e3b_e899_5324,
+    calls: &[(0x1c8, Callee::Sig(&crate::nodes::INSERT))],
     imports: &[],
 };

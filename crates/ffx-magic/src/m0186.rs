@@ -1,6 +1,7 @@
 //! `magic_0186.dll`'s own functions (besides the runtime, the object
 //! host and the shared code).
 
+use crate::runtime::slot_target;
 use crate::{Frame, Game, Image, Ret, Sig};
 
 /// A node from a record (0x100056f0, internal: `ecx` = `[node,
@@ -111,6 +112,94 @@ pub fn node_abc(g: &mut impl crate::Mem, rec: u32) -> u32 {
 pub const NODE_ABC: Sig = Sig {
     len: 124,
     hash: 0xae9c_0927_9cd1_2774,
+    calls: &[],
+    imports: &[],
+};
+
+/// A node under its parent as the record set-ups place it: pass byte
+/// and halfword `+0x1a` 0xff, an empty child list (`+0xc`, `+0x10` the
+/// node), the parent `+0x14`; with a parent the node is its last child
+/// (`+4` the parent, `+8` the old last; the old last's `+4`, or the
+/// parent's first `+0xc` when it had none, the node) and the parent's
+/// count `+0x18` goes up.
+pub(crate) fn node_under<G: Game>(g: &mut G, node: u32, parent: u32) {
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, parent);
+    if parent == 0 {
+        return;
+    }
+    g.write::<u32>(node + 4, parent);
+    g.write::<u32>(node + 8, g.read::<u32>(parent + 0x10));
+    let last = g.read::<u32>(parent + 0x10);
+    if last == parent {
+        g.write::<u32>(parent + 0xc, node);
+    } else {
+        g.write::<u32>(last + 4, node);
+    }
+    let n = g.read::<u16>(parent + 0x18);
+    g.write::<u16>(parent + 0x18, n.wrapping_add(1));
+    g.write::<u32>(parent + 0x10, node);
+}
+
+/// A model node's record set-up (0x10004db0, internal: `ecx` = `[node,
+/// parent, a, b, c, model, part, d]`): [`node_under`]; `+0x13c` = a,
+/// `+0x144` = b, `+0x140` = c, `+0x1f4` = d, `+0x1e8`/`+0x1ec` the model
+/// and part, `+0x1f8`/`+0x1f0` 0, `+0x1e4` 1.0; slot 236 `(model, part,
+/// M)` fills the matrix `M` = `+0x14c`, slot 233 `(v, v, 1e6)` for its
+/// three rows `+0x14c`, `+0x15c`, `+0x16c`; slot 325 `(+0x1cc, +0x17c)`;
+/// `+0x10c..+0x114` 0 and `+0x118` 1.0. Returns slot 325's `eax`. Each
+/// slot call passes the words the original leaves on the stack.
+pub fn model_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let r = fr.ecx;
+    let node = g.read::<u32>(r);
+    let parent = g.read::<u32>(r + 4);
+    node_under(g, node, parent);
+    let a = g.read::<u32>(r + 8);
+    let model = g.read::<u32>(r + 0x14);
+    let part = g.read::<u32>(r + 0x18);
+    g.write::<u32>(node + 0x13c, a);
+    g.write::<u32>(node + 0x144, g.read::<u32>(r + 0xc));
+    g.write::<u32>(node + 0x140, g.read::<u32>(r + 0x10));
+    g.write::<u32>(node + 0x1f4, g.read::<u32>(r + 0x1c));
+    let m = node + 0x14c;
+    let mut p = crate::pushes::Pushes::default();
+    p.push_all(&[m, part, model]);
+    g.write::<u32>(node + 0x1e8, model);
+    g.write::<u32>(node + 0x1ec, part);
+    g.write::<u32>(node + 0x1f8, 0);
+    g.write::<u32>(node + 0x1f0, 0);
+    g.write::<u32>(node + 0x1e4, 0x3f80_0000);
+    let s = slot_target(g, w(0x66), 0x3b0 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, s, 0);
+    for (row, table) in [(0x14c, 0xa6), (0x15c, 0xd1), (0x16c, 0xf0)] {
+        // add esp, 8, and 1e6 written over the word left on top
+        p.pop(2);
+        p.set_top(0x4974_2400);
+        let v = node + row;
+        p.push_all(&[v, v]);
+        let s = slot_target(g, w(table), 0x3a4 / 4);
+        // call width: 12 (Pushes caps the words at 12)
+        p.call(g, s, 0);
+    }
+    p.push_all(&[node + 0x17c, node + 0x1cc]);
+    let s = slot_target(g, w(0x10b), 0x514 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let eax = p.call(g, s, 0).eax;
+    for off in [0x114, 0x110, 0x10c] {
+        g.write::<u32>(node + off, 0);
+    }
+    g.write::<u32>(node + 0x118, 0x3f80_0000);
+    Ret::eax(eax)
+}
+
+/// [`model_record`] (325 bytes, 1 overlay).
+pub const MODEL_RECORD: Sig = Sig {
+    len: 325,
+    hash: 0x8cec_a6ad_d946_fd87,
     calls: &[],
     imports: &[],
 };

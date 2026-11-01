@@ -96,3 +96,58 @@ fn node_abc() {
         });
     }
 }
+
+/// 0x10004db0 (internal, `ecx` = the record): a node without a parent,
+/// under a parent with no children and under one with a child.
+#[test]
+fn model_record() {
+    use magic::StubMem;
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x4db0);
+    // slot 236 fills the matrix from the model and part words; 233
+    // scales the row it gets in place (xor the factor); 325 records
+    rec(&mut t, 236, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..16 {
+            m.w32(a[2] + 4 * i, a[0].rotate_left(i) ^ a[1]);
+        }
+        0x236
+    });
+    rec(&mut t, 233, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ a[2];
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x233
+    });
+    rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0]);
+    let r = SCRATCH + 0x100;
+    let node = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x2000;
+    let kid = SCRATCH + 0x2800;
+    for case in 0..3 {
+        t.write(node, &[0x5c; 0x200]);
+        t.write(parent, &[0x3c; 0x40]);
+        // the child count, unlike its neighbours
+        t.set_u16(parent + 0x18, 5);
+        t.write(kid, &[0x2c; 0x40]);
+        match case {
+            1 => t.set_u32(parent + 0x10, parent),
+            2 => t.set_u32(parent + 0x10, kid),
+            _ => {}
+        }
+        let words = [
+            node,
+            if case == 0 { 0 } else { parent },
+            0x00a0_0008,
+            0x00b0_000c,
+            0x00c0_0010,
+            0x00d0_0014,
+            0x00e0_0018,
+            0x00f0_001c,
+        ];
+        for (i, v) in (0u32..).zip(words) {
+            t.set_u32(r + 4 * i, v);
+        }
+        t.check(at, Call::this(r), &[], Eax::Checked, m0186::model_record);
+    }
+}

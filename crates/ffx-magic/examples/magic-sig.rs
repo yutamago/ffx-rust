@@ -4,6 +4,7 @@
 //! magic-sig <dll> <addr> <len> [rel32 offset...]   the masked hash
 //! magic-sig --bind <dll> <addr>...                 the port each address binds to
 //! magic-sig --covered <dll> <addr>...              the port or internal function covering it
+//! magic-sig --covered-len <dll> <addr>...          the same and its `Sig` length (`-` for slot thunks)
 //! magic-sig --batch <dll>                          code identities, for tools/magic-worklist.py
 //! ```
 //! `--batch` reads `<addr> <len> [rel32 offset...]` lines (hex addresses
@@ -14,7 +15,7 @@
 //! `<dll>` is a path to `magic_NNNN.dll`; addresses are the DLL's own
 //! (preferred base), hex.
 
-use ffx_magic::{Image, PORTS, bind, covered};
+use ffx_magic::{INTERNAL, Image, PORTS, bind, covered};
 
 fn hex(s: &str) -> u32 {
     u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or_else(|_| panic!("not hex: {s}"))
@@ -26,6 +27,7 @@ fn main() {
         Some("--bind") => (1, &args[1..]),
         Some("--covered") => (2, &args[1..]),
         Some("--batch") => (3, &args[1..]),
+        Some("--covered-len") => (4, &args[1..]),
         _ => (0, &args[..]),
     };
     let path = &rest[0];
@@ -34,6 +36,25 @@ fn main() {
     let img = Image::new(path, &file, pe.preferred_base).expect("an overlay");
     if mode == 3 {
         batch(&img);
+        return;
+    }
+    if mode == 4 {
+        for a in &rest[1..] {
+            let addr = hex(a);
+            let found = match bind(&img, addr) {
+                Some(0) => Some((PORTS[0].0, None)),
+                Some(i) => Some((PORTS[i].0, Some(PORTS[i].1.len))),
+                None => INTERNAL
+                    .iter()
+                    .find(|(_, sig)| img.in_text(addr) && img.matches(addr, sig))
+                    .map(|(n, sig)| (*n, Some(sig.len))),
+            };
+            match found {
+                Some((name, Some(len))) => println!("{addr:#010x} {len} {name}"),
+                Some((name, None)) => println!("{addr:#010x} - {name}"),
+                None => println!("{addr:#010x} - -"),
+            }
+        }
         return;
     }
     if mode != 0 {
