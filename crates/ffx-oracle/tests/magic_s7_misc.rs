@@ -2949,3 +2949,101 @@ fn summon_object_setups() {
         }
     }
 }
+
+/// Row 333: the children-and-items node of the four DLLs: not passed;
+/// passed with both groups empty, one empty, both holding items; the
+/// children's handlers and every slot log what they see.
+#[test]
+fn children_items_nodes() {
+    for (dll, rva) in [
+        (42u16, 0x1c10u32),
+        (152, 0x19d0),
+        (533, 0x19d0),
+        (601, 0x19e0),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        // the sparks' slots (`s6_misc::ring_sparks`)
+        log_calls(&mut t, 324, log, 0, None, |_, _, k| 0x0012_3456 ^ k);
+        log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+        t.stub_st0(307, move |m, _| f64::from(m.r32(log) % 7) * 0.125 + 0.0625);
+        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+            m.w32(a[0] + 0x14, 0x2450_0000 + k);
+            0x245
+        });
+        log_calls(&mut t, 229, log, 3, None, |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[0] + 4 * i, m.r32(a[2] + 4 * i) ^ k);
+            }
+            0x229
+        });
+        t.stub(325, move |m, a| {
+            let k = m.r32(log);
+            m.w32(log, k + 1);
+            let row = log + 0x400 + 0x40 * (k % 16);
+            for i in 0..4 {
+                m.w32(row + 4 * i, m.r32(a[0] + 4 * i));
+                m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i));
+            }
+            0x325
+        });
+        t.stub(231, move |m, a| {
+            let k = m.r32(log);
+            m.w32(log, k + 1);
+            let row = log + 0x800 + 0x40 * (k % 16);
+            for i in 0..0x10 {
+                m.w32(row + 4 * i, m.r32(a[2] + 4 * i));
+            }
+            m.w32(a[0], a[1] ^ k);
+            0x231
+        });
+        t.set_u32(op(&t, f, 0xcd), SCRATCH + 0x2f0);
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let kids = [SCRATCH + 0x1100, SCRATCH + 0x1140];
+        let items = SCRATCH + 0x1800;
+        let base = SCRATCH + 0x2000;
+        for (k, (byte, a, b)) in [
+            (3u8, 1u16, 1u16),
+            (4, 0, 0),
+            (4, 2, 0),
+            (4, 0, 1),
+            (4, 3, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.write(log, &varied(0xc00, k));
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x40, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            // the ring the sparks take from (the node itself)
+            t.set_u16(r + 0x1c, 8);
+            t.set_u16(r + 0x1e, 0x30);
+            t.set_u32(r + 0x20, base);
+            t.set_u16(r + 0x30, 2);
+            t.set_u16(r + 0x32, 2);
+            t.set_u16(r + 0x34, 0);
+            for (i, c) in (0u32..).zip(kids) {
+                t.write(c, &varied(0x40, k + 3 + i));
+                t.set_u32(c, vt);
+                t.set_u32(r + 0x38 + 4 * i, c);
+            }
+            t.write(base, &varied(0x200, k));
+            t.set_u32(r + 0x24, items);
+            t.set_u32(r + 0x28, items + 0x100);
+            t.set_u16(r + 0x2c, a);
+            t.set_u16(r + 0x2e, b);
+            t.write(items, &varied(0x200, k + 2));
+            scrub(&mut t);
+            let c = Call {
+                eax: 0x1c10_0000 + k,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[s], Eax::Checked);
+        }
+    }
+}

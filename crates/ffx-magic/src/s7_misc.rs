@@ -3692,3 +3692,145 @@ pub const SUMMON_OBJECT_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A ring node's handler that walks its two children, scatters sparks and
+/// moves its model's two groups of items (cdecl `(S)`, the cursor; a
+/// ring pass first, [`ring_pass`], over the frame's cookie word; a /GS
+/// frame aligned to 8, `B` its base). Passed, with `R = S[0]`: the
+/// children `R[0x38]` and `R[0x3c]` get their handlers with a cursor at
+/// `B+8` (the pass byte at `+5`); the sparks of the request `(R, 1)` at
+/// `B+0x94` ([`ring_sparks`](crate::s6_misc::ring_sparks)); the draw
+/// record (zeros, the sizes 150, 126, 126, 128, 512, 256, 1791.5,
+/// 1839.5, 11, 11, `G_M` twice, `(0, -0.0, 0)`, a byte 0) and slot 245
+/// `(B+8)`. Then for the two groups `j` (the items at `R[9 + j]`, 0x30
+/// bytes each, their count u16 `R + 0x2c + 2j`), each item `p`: `X` =
+/// slot 229 `(B+0xd8, G_M2, p)`, slot 325 `(B+0x20, X)`, its scale
+/// `p+0x20` three times and slot 231 `(B+0xe8, G_M, B+0xa8)`; `p+0 +=
+/// p+0x14`, `p+4 += R[0x3c]+0x20 + p+0x18`, `p+0x18 -= K`, `p+8 +=
+/// p+0x1c`, `B+0x84 = *G_P + 0x70`. `*G_P` is written back as it was.
+/// Returns `&R[0xb]` (passed), else what the pass left.
+///
+/// `magic_0042` 0x10001c10 (836 bytes; 4 DLLs).
+pub fn children_items_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = fr.arg(g, 0);
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x130);
+    let cookie = g.read::<u32>(w(0xd)) ^ b;
+    let r = g.read::<u32>(s);
+    g.write::<u32>(b + 4, r);
+    let (passed, eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return Ret::eax(eax);
+    }
+    let r = g.read::<u32>(s);
+    let cursor = b + 8;
+    for at in [0x38u32, 0x3c] {
+        let pass = g.read::<u8>(s + 5);
+        let c = g.read::<u32>(r + at);
+        g.write::<u32>(cursor, c);
+        g.write::<u8>(cursor + 5, pass);
+        if at == 0x38 {
+            // `R` kept in a local the loop reads back
+            g.write::<u32>(b + 0x14, r);
+        }
+        let handler = g.read::<u32>(g.read::<u32>(c).wrapping_add(0x1c));
+        g.call(handler, cursor, &[cursor]);
+    }
+    let q = b + 0x94;
+    g.write::<u32>(q, r);
+    g.write::<u16>(q + 4, 1);
+    let sparks = Frame {
+        at: img.rel32_target(f + 0xc8),
+        esp: b.wrapping_sub(0x14),
+        ecx: q,
+        ..*fr
+    };
+    crate::s6_misc::ring_sparks(g, img, &sparks);
+    let saved = g.read::<u32>(w(0xcd));
+    g.write::<u32>(b + 0x18, saved);
+    for at in [0xacu32, 0xb0, 0xb4, 0xb8, 0xc0, 0xc4, 0xc8, 0xcc, 0xd4] {
+        g.write::<u32>(b + at, 0);
+    }
+    for (at, v) in [
+        (0x30u32, 0x4316_0000u32),
+        (0x34, 0x42fc_0000),
+        (0x38, 0x42fc_0000),
+        (0x3c, 0x4300_0000),
+        (0x48, w(0x166)),
+        (0x80, w(0x171)),
+        (0x7c, 0x4130_0000),
+        (0x78, 0x4130_0000),
+        (0x70, 0x44df_f000),
+        (0x74, 0x44e5_f000),
+        (0x68, 0x4400_0000),
+        (0x6c, 0x4380_0000),
+    ] {
+        g.write::<u32>(b + at, v);
+    }
+    slot(g, img, f, 0xdb, 245, cursor, &[cursor]);
+    for (at, v) in [(0x50u32, 0u32), (0x54, 0x8000_0000), (0x58, 0)] {
+        g.write::<u32>(b + at, v);
+    }
+    g.write::<u8>(b + 0x88, 0);
+    for j in 0..2u32 {
+        g.write::<u32>(b + 4, 2 - j);
+        let list = r + 0x24 + 4 * j;
+        g.write::<u32>(b + 0x1c, list);
+        let count = r + 0x2c + 2 * j;
+        let mut p = g.read::<u32>(list);
+        let mut i = 0u32;
+        g.write::<u32>(b + 0x10, 0);
+        while i < u32::from(g.read::<u16>(count)) {
+            let x = b + 0xd8;
+            slot(g, img, f, 0x22f, 229, cursor, &[x, w(0x229), p]);
+            slot(g, img, f, 0x249, 325, cursor, &[b + 0x20, x]);
+            let sc = g.read::<u32>(p.wrapping_add(0x20));
+            for at in [0xd0u32, 0xbc, 0xa8] {
+                g.write::<u32>(b + at, sc);
+            }
+            slot(
+                g,
+                img,
+                f,
+                0x270,
+                231,
+                cursor,
+                &[b + 0xe8, w(0x26a), b + 0xa8],
+            );
+            let rd = |g: &G, o: u32| g.read::<f32>(p.wrapping_add(o));
+            let x0 = add(rd(g, 0x14), rd(g, 0));
+            let y = rd(g, 0x18);
+            g.write::<f32>(p, x0);
+            let r3c = g.read::<u32>(g.read::<u32>(b + 0x14).wrapping_add(0x3c));
+            i += 1;
+            let up = add(g.read::<f32>(r3c.wrapping_add(0x20)), y);
+            let dy = sub(y, g.read::<f32>(w(0x2c6)));
+            let up = add(up, rd(g, 4));
+            g.write::<f32>(p.wrapping_add(0x18), dy);
+            g.write::<u32>(b + 0x10, i);
+            g.write::<f32>(p.wrapping_add(4), up);
+            let z = add(rd(g, 0x1c), rd(g, 8));
+            g.write::<f32>(p.wrapping_add(8), z);
+            let e = g.read::<u32>(b + 0x18).wrapping_add(0x70);
+            g.write::<u32>(b + 0x84, e);
+            p = p.wrapping_add(0x30);
+        }
+    }
+    let saved = g.read::<u32>(b + 0x18);
+    g.write::<u32>(w(0x32c), saved);
+    Ret::eax(r + 0x2c)
+}
+
+/// [`children_items_node`] (the `rel32`s:
+/// [`ring_sparks`](crate::s6_misc::ring_sparks) and
+/// `__security_check_cookie`).
+pub const CHILDREN_ITEMS_NODE: Sig = Sig {
+    len: 836,
+    hash: 0x4757_7089_3464_2368,
+    calls: &[
+        (0xc8, Callee::Sig(&crate::s6_misc::RING_SPARKS)),
+        (0x33c, Callee::Any),
+    ],
+    imports: &[],
+};
