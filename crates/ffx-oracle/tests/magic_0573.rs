@@ -300,6 +300,10 @@ fn motion_setup() {
     ] {
         t.write(obj, &[0x5b; 0x300]);
         t.write(src, &[0x2a; 0x100]);
+        // the handles next to each other distinct
+        for o in [0x50u32, 0x54, 0x58] {
+            t.set_u32(src + o, 0x00a1_0000 + o);
+        }
         t.set_u8(src + 0x90, bit | 0x40);
         t.set_u32(cell, size.to_bits());
         t.set_u32(cell + 4, kind);
