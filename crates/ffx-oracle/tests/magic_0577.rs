@@ -431,7 +431,11 @@ fn spark_setup() {
     let old = SCRATCH + 0x800;
     for (i, k) in [(0u32, 0x4321u32), (2, 0x9876)] {
         t.write(obj, &[0x5b; 0x100]);
+        t.set_u32(obj + 0xb8, 2.5f32.to_bits());
+        t.set_u32(obj + 0xbc, 7.0f32.to_bits());
         t.write(src, &[0x2a; 0x60]);
+        t.set_u32(src + 0x54, 0x00a1_0054);
+        t.set_u32(src + 0x58, 0x00a1_0058);
         t.write(old, &[0x6c; 0x40]);
         t.set_u32(ring_last, old);
         t.set_u32(ring_flags, 0x8000_0007);
@@ -490,7 +494,7 @@ fn spark_task() {
     for (state, wait, alpha, speed) in [
         (0u32, 0u32, 1.0f32, 2.0f32),
         (1, 3, 1.0, 0.5),
-        (1, 0, 1.0, 2.0),
+        (1, 0, 0.5, 2.0),
         (2, 0, 0.75, 2.0),
         (2, 0, 0.01, 0.5),
         (0x2710, 0, 0.0, 2.0),
@@ -507,6 +511,12 @@ fn spark_task() {
             t.set_u32(r + a, 100 + 37 * i as u32);
         }
         t.write(o, &[0x4d; 0x60]);
+        t.set_u32(o + 0x54, 0x00a1_0054);
+        t.set_u32(o + 0x58, 0x00a1_0058);
+        t.set_u32(r + 0xb8, 1.5f32.to_bits());
+        t.set_u32(r + 0xbc, 9.0f32.to_bits());
+        t.set_u32(r + 0x30, SCRATCH + 0x1800);
+        t.set_u32(r + 0x34, SCRATCH + 0x1900);
         t.set_u32(task, node);
         t.set_u32(task + 4, r);
         t.set_u32(node + 4, next);

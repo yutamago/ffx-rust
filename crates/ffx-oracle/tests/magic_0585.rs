@@ -190,6 +190,9 @@ fn drift_task() {
             t.set_u32(r + 0x18, state);
             t.set_u32(r + 0x34, wait);
             t.set_u8(r + 0xc3, level);
+            // the flag word and the one after it distinct
+            t.set_u32(r + 0xec, 0x0000_0100);
+            t.set_u32(r + 0xf0, 0x0055_0000);
             for (i, o) in [0x30u32, 0x38, 0x3c, 0x40, 0xe0, 0xe4]
                 .into_iter()
                 .enumerate()
