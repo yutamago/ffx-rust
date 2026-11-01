@@ -2772,7 +2772,8 @@ fn homing_part_tasks() {
         rec(&mut t, s, 1, move |_, _| s);
     }
     // the draw logs the sprite matrix it reads through `G_P` (the scale
-    // rows the task sets reach it there only); the draw on
+    // rows the task sets reach it there only; the sprites' colours, the
+    // pattern's, have an alpha that is not 0, so the draw runs)
     let draw = t.img.rel32_target(f + 0x1f9);
     let gp = op(&t, draw, 0x66);
     rec(&mut t, 772, 2, move |m, a| {
@@ -2786,7 +2787,6 @@ fn homing_part_tasks() {
         0x0772_0000 ^ a[1]
     });
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
-    t.set_u8(op(&t, draw, 0x433), 1);
     let key = t.img.rel32_target(f + 0x167);
     let link = t.img.rel32_target(key + 0x18c);
     let lock = SCRATCH + 0x7f0;

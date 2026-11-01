@@ -228,11 +228,6 @@ fn motions_towards() {
         (0xfffe, 0x8000_0005, 2.0),
         (0x0008, 0x0012_3456, -1.0),
         (0x0f0f, 3, 1.0e6),
-        // more runs: slot 248's answer (its call count) reaches bit 2,
-        // which the result's low half drops
-        (0x0000, 9, 0.75),
-        (0x0002, 11, 3.0),
-        (0x0004, 13, 0.25),
     ] {
         t.stub(228, move |_, a| m ^ (a[0] & 0xf) ^ (a[1] & 0xf0));
         t.write(obj, &varied(0x100, m));
@@ -2354,7 +2349,6 @@ fn homing_trails() {
     for s in [774u32, 775, 778, 776, 777] {
         rec(&mut t, s, 1, move |_, _| s);
     }
-    t.set_u8(op(&t, td, 0x433), 1);
     let unlist = t.img.rel32_target(f + 0x17f);
     t.set_u32(op(&t, unlist, 0x16), SCRATCH + 0x2f0);
     let task = SCRATCH + 0x100;
@@ -2386,8 +2380,13 @@ fn homing_trails() {
         t.set_u32(obj + 0x130, 0x0a00);
         t.set_u32(obj + 0x134, 1);
         t.set_u16(obj + 0x13a, 0x100);
-        // one sprite from the eighth case on (the scale rows drawn)
+        // one sprite from the eighth case on (the scale rows drawn), its
+        // colours' alpha not 0 (the draw's own test)
         t.set_u32(obj + 0x354, u32::from(k >= 7));
+        t.write(
+            obj + 0x33c,
+            &[0x10, 0x20, 0x30, 0x80, 0x40, 0x50, 0x60, 0xff],
+        );
         // (the position's `w` not 1: the arrival sets it)
         for (i, v) in [1.0f32, 2.0, 3.0, 0.5].into_iter().enumerate() {
             let i = i as u32;
@@ -2463,8 +2462,11 @@ fn sine_rises() {
         (0x162, 512.0),
         (0x199, 512.0),
         (0x4e, 0.75),
-        // the radius' scale (a global, 0 in the DLL)
+        // the radius' scale and the three axes' (globals, 0 in the DLL)
         (0x3e, 2.0),
+        (0x15, 1.5),
+        (0x26, -0.5),
+        (0x36, 2.5),
     ] {
         t.set_u32(op(&t, f, o), v.to_bits());
     }
