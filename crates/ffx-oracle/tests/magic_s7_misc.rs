@@ -3639,3 +3639,165 @@ fn reel_step_in(dll: u16, rva: u32) {
         t.check(f, Call::default(), &[], Eax::Checked, s7_misc::reel_step);
     }
 }
+
+/// Rows 831 and 833: the staged volley task (`magic_0678`/`0679` with the
+/// thrown effect, `magic_0620`/`0676` with the summon object) in every
+/// step: 0 (through 10 and 11 at once), 10, 11 waiting, with the slot
+/// taken, a throw with throws left and the last one, 12 below and at
+/// its count, 0x2710 and others.
+#[test]
+fn staged_volley_tasks() {
+    for (dll, rva) in [
+        (678u16, 0x6db0u32),
+        (679, 0x6db0),
+        (620, 0x6d80),
+        (676, 0x6d80),
+    ] {
+        staged_volley_in(dll, rva);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // the slots the callees reach
+fn staged_volley_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let log = SCRATCH + 0x6000;
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the target nodes' (`s4_summon::target_nodes`)
+    let tl = SCRATCH + 0x7c0;
+    t.write(tl, &[5, 7, 9, 11]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        tl
+    });
+    for s in [413u32, 215] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            m.w32(a[i], a[0].wrapping_mul(i as u32));
+        }
+        0x14
+    });
+    rec(&mut t, 333, 5, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125);
+    // the colour node's (`s3_misc::colour_node`)
+    rec(&mut t, 331, 1, |_, a| 0x0331_0000 ^ a[0]);
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x10 + i);
+        }
+        0x558
+    });
+    rec(&mut t, 353, 1, |_, a| 0x0353_0000 ^ a[0]);
+    rec(&mut t, 271, 1, |_, a| 0x0271_0000 ^ a[0]);
+    rec(&mut t, 790, 0, |_, _| 0x0790);
+    t.stub_st0(790, |_, _| 0.375);
+    // the weights and the randoms
+    log_calls(&mut t, 291, log, 5, None, |m, a, k| {
+        m.w32(a[2], 0x2910_0000 + k);
+        1 + (a[1] & 3)
+    });
+    log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+    t.stub_st0(307, move |m, _| {
+        [0.75, 0.125, 2.5, 0.0][(m.r32(log) % 4) as usize]
+    });
+    // the throw's (thrown effect or summon object)
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 325, 2, |m, a| {
+        m.w32(a[0], m.r32(a[1]));
+        0x325
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        m.w32(a[2], a[0]);
+        0x268
+    });
+    rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
+    let throw = t.img.rel32_target(f + 0x26d);
+    let pn = t.img.rel32_target(throw + 0x1b7);
+    let start = t.img.rel32_target(pn + 0x88);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+    t.set_u32(op(&t, throw, 0x181), SCRATCH + 0x900);
+    t.set_u32(op(&t, throw, 0x2b), SCRATCH + 0x580);
+    for o in [0x63u32, 0x80, 0x19a] {
+        let l = op(&t, throw, o);
+        t.write(l - 0x20, &varied(0x40, o));
+        t.set_u32(l + 0x10, l);
+    }
+    for o in [0x6fu32, 0x77] {
+        let l = op(&t, throw, o);
+        t.set_u32(l, op(&t, throw, if o == 0x6f { 0x63 } else { 0x80 }));
+    }
+    for (o, x) in [
+        (0x8du32, 0.5f32),
+        (0x206, 0.25),
+        (0x244, 0.25),
+        (0x255, 2.0),
+        (0x266, 1.0),
+        (0x31b, 3.0),
+        (0x323, 4.0),
+    ] {
+        t.set_u32(w(&t, o), x.to_bits());
+    }
+    t.set_u32(w(&t, 0x37), SCRATCH + 0x5000);
+    t.write(SCRATCH + 0x5000, &varied(0x40, 1));
+    // the colour node's parent list (a node of the DLL's)
+    let parent = w(&t, 0x76);
+    t.write(parent, &varied(0x1c, 5));
+    t.set_u32(parent + 0x10, parent);
+    // the target nodes' parent
+    let tp = w(&t, 0x48);
+    t.write(tp, &varied(0x1c, 6));
+    t.set_u32(tp + 0x10, tp);
+    let task = SCRATCH + 0x300;
+    let s = SCRATCH + 0x8000;
+    let node = SCRATCH + 0x380;
+    let count = w(&t, 0x167);
+    let count_wait = (t.img.word(f + 0x314) & 0xff) as i32;
+    // (step, the wait, the throws left, the count, the slot j's word)
+    for (k, (step, wait, left, n, slot_w)) in [
+        (0u32, 0i32, 0u32, 0i32, 0xffu32),
+        (10, 0, 0, 0, 0xff),
+        (11, 3, 4, 0, 0xff),
+        (11, 0, 4, 0, 0x12),
+        (11, 0, 4, 0, 0xff),
+        (11, 0, 1, 0, 0xff),
+        (12, 0, 0, count_wait - 1, 0),
+        (12, 0, 0, count_wait, 0),
+        (0x2710, 0, 0, 0, 0),
+        (5, 0, 0, 0, 0),
+        (13, 0, 0, 0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(log, 0);
+        t.write(s, &varied(0x1300, k));
+        t.set_u32(s + 0x18, step);
+        t.set_u32(s + 0x3c, wait.cast_unsigned());
+        t.set_u32(s + 0x40, n.cast_unsigned());
+        t.set_u32(s + 0x44, left);
+        for i in 0..3u32 {
+            t.set_u32(s + 0x1c + 4 * i, (0.5 * (i + 1) as f32).to_bits());
+            t.set_u32(s + 0x48 + 4 * i, 2 + i);
+        }
+        let j = left % 5;
+        t.set_u32(s + 0x340 + 0x310 * j, slot_w);
+        t.set_u32(count, 3);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.write(node, &varied(0x10, k + 3));
+        t.set_u32(node + 4, SCRATCH + 0x700);
+        t.set_u32(node + 8, SCRATCH + 0x740);
+        t.write(SCRATCH + 0x700, &varied(0x80, k));
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

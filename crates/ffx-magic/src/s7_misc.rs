@@ -4679,3 +4679,244 @@ pub const REEL_STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A summon's staged volley task (cdecl `(task)`, `S = task[1]`, its step
+/// `S+0x18`, the frame count `S+0x40` (up once on every way out); `ebp` =
+/// `esp - 4` at the entry, the task's argument word `A = ebp+8` reused
+/// as scratch). The steps:
+/// - 0: the target nodes of `[G_N, G_P, *G_C, 0, 1]` (`*G_N = VT`;
+///   [`target_nodes`](crate::s4_summon::target_nodes)), the colour node
+///   of `[G_A, G_B]` (`*G_A = VT2`;
+///   [`colour_node`](crate::s3_misc::colour_node)), seven move targets
+///   (immediates: 0.3 in `magic_0678`) and the camera move started
+///   ([`move_start`](crate::sb_misc::move_start), time `K`), then as 10;
+/// - 10: the weights: for each of the `*G_M` targets slot 291 `(*G_X,
+///   rec_i[0], &A, &A, &A)` (`rec_i = G_R + 0x98 i`) into `S+0x48 + 4i`,
+///   summed in `S+0x44`, and `S+0x1c + 4i` the share; six slots `S+0x340
+///   + 0x310 k = 0xff`, step 11 and the wait `S+0x3c = 0`, then as 11;
+/// - 11: the wait counts down; then the slot `j = S+0x44 % 5`, if free
+///   (`0xff`): a random target by its share (slot 307's ST0 less `K1`,
+///   less each share in turn; the index into `A`), a random time `(r -
+///   K1) K2 + K3`, the throw
+///   ([`thrown_effect_plain`](crate::s6_misc::thrown_effect_plain), in
+///   `magic_0620` [`summon_object_setup`]: `ecx` = `S+0x70 + 0x310 j`, `edx` = `G_R2 + 0x98 i`); with throws
+///   left one fewer for the target, the wait `W` and the shares again,
+///   else step 12 and the count 0;
+/// - 12, once the count is `C`: the seven targets (1.0), the second move
+///   ([`move_start_2`](crate::sb_misc::move_start_2), `K5`, `K4`), step
+///   0x2710; 0x2710: the task's node leaves its ring.
+///
+/// `W` and `C` are immediates (0x1c, 0x3c in `magic_0678`; 0x14, 0x28 in
+/// `magic_0620`). Returns what the original leaves in `eax`.
+///
+/// `magic_0678` 0x10006db0 and `magic_0620` 0x10006d80 (898 bytes; 2
+/// DLLs each).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 4);
+    let a = fr.esp + 4;
+    let ebp = fr.esp.wrapping_sub(4);
+    let callee_esp = fr.esp.wrapping_sub(0x2c);
+    let done = |g: &mut G, eax: u32| {
+        let n = g.read::<u32>(s + 0x40).wrapping_add(1);
+        g.write::<u32>(s + 0x40, n);
+        Ret::eax(eax)
+    };
+    // seven `mov [G], imm` stores: the value is each one's immediate
+    let targets = |g: &mut G, ops: [u32; 7]| {
+        for o in ops {
+            g.write::<u32>(w(o), w(o + 4));
+        }
+    };
+    let step = g.read::<u32>(s + 0x18);
+    match step {
+        0 | 10 | 11 => {}
+        0xc => {
+            if g.read::<i32>(s + 0x40) < i32::from(img.word(f + 0x314) as u8) {
+                return done(g, step);
+            }
+            let (y, x) = (k(g, 0x31b), k(g, 0x323));
+            targets(g, [0x329, 0x333, 0x33d, 0x347, 0x351, 0x35b, 0x365]);
+            let r = crate::sb_misc::move_start_2(g, img, call(0x36e), x, y);
+            g.write::<u32>(s + 0x18, 0x2710);
+            return done(g, r);
+        }
+        0x2710 => {
+            let node = g.read::<u32>(task);
+            let prev = unring(g, node);
+            return done(g, prev);
+        }
+        _ => return done(g, step),
+    }
+    if step == 0 {
+        let rec = ebp.wrapping_sub(0x1c);
+        let c = g.read::<u32>(w(0x37));
+        for (i, v) in (0u32..).zip([w(0x41), w(0x48), c, 0]) {
+            g.write::<u32>(rec + 4 * i, v);
+        }
+        g.write::<u8>(rec + 0x10, 1);
+        g.write::<u32>(w(0x5c), w(0x60));
+        let nodes = Frame {
+            at: call(0x65),
+            esp: callee_esp,
+            ecx: rec,
+            ..*fr
+        };
+        crate::s4_summon::target_nodes(g, img, &nodes);
+        let rec2 = ebp.wrapping_sub(8);
+        g.write::<u32>(rec2, w(0x6f));
+        g.write::<u32>(rec2 + 4, w(0x76));
+        g.write::<u32>(w(0x7c), w(0x80));
+        let colour = Frame {
+            at: call(0x85),
+            esp: callee_esp,
+            ecx: rec2,
+            ..*fr
+        };
+        let r = crate::s3_misc::colour_node(g, img, &colour);
+        let t = k(g, 0x8d);
+        targets(g, [0x93, 0x9d, 0xa7, 0xb1, 0xbb, 0xc5, 0xcf]);
+        crate::sb_misc::move_start(g, img, call(0xd8), t, r);
+        g.write::<u32>(s + 0x18, 10);
+    }
+    // the shares again (the count's operand `n`)
+    let shares = |g: &mut G, n: u32| -> u32 {
+        let total = cvt(g.read::<u32>(s + 0x44));
+        let mut i = 0u32;
+        while i.cast_signed() < g.read::<i32>(w(n)) {
+            let v = div(cvt(g.read::<u32>(s + 0x48 + 4 * i)), total);
+            g.write::<f32>(s + 0x1c + 4 * i, v);
+            i += 1;
+        }
+        s + 0x1c + 4 * i
+    };
+    if step != 11 {
+        g.write::<u32>(s + 0x44, 0);
+        let mut i = 0u32;
+        let mut rec = w(0xf6);
+        while i.cast_signed() < g.read::<i32>(if i == 0 { w(0xeb) } else { w(0x125) }) {
+            let x = g.read::<u32>(w(0x110));
+            let r0 = g.read::<u32>(rec);
+            let r = slot(g, img, f, 0x10a, 291, rec, &[x, r0, a, a, a]).eax;
+            g.write::<u32>(s + 0x48 + 4 * i, r);
+            let t = g.read::<u32>(s + 0x44).wrapping_add(r);
+            g.write::<u32>(s + 0x44, t);
+            i += 1;
+            rec = rec.wrapping_add(0x98);
+        }
+        if i > 0 {
+            shares(g, 0x167);
+        }
+        for j in 0..6u32 {
+            g.write::<u32>(s + 0x340 + 0x310 * j, 0xff);
+        }
+        let n = g.read::<u32>(s + 0x18).wrapping_add(1);
+        g.write::<u32>(s + 0x18, n);
+        g.write::<u32>(s + 0x3c, 0);
+    }
+    let c = g.read::<i32>(s + 0x3c);
+    g.write::<i32>(s + 0x3c, c.wrapping_sub(1));
+    if c > 0 {
+        return done(g, c.wrapping_sub(1).cast_unsigned());
+    }
+    let total = g.read::<i32>(s + 0x44);
+    let j = total.wrapping_rem(5);
+    let q = total.wrapping_div(5);
+    let jo = j.cast_unsigned().wrapping_mul(0x310);
+    if g.read::<u32>(s.wrapping_add(jo) + 0x340) != 0xff {
+        return done(g, q.cast_unsigned());
+    }
+    let r = slot(g, img, f, 0x1e9, 307, s, &[]);
+    let r = crate::m0018::st0_f32(r.st0);
+    g.write::<f32>(a, r);
+    let mut x = sub(r, k(g, 0x206));
+    let m = g.read::<i32>(w(0x1f9)).wrapping_sub(1);
+    let mut i = 0u32;
+    g.write::<u32>(a, 0);
+    while i.cast_signed() < m {
+        let share = g.read::<f32>(s + 0x1c + 4 * i);
+        if share > x {
+            break;
+        }
+        i += 1;
+        x = sub(x, share);
+        g.write::<u32>(a, i);
+    }
+    let r2 = slot(g, img, f, 0x22c, 307, s, &[]);
+    let r2 = crate::m0018::st0_f32(r2.st0);
+    g.write::<f32>(ebp.wrapping_sub(4), r2);
+    let t = add(mul(sub(r2, k(g, 0x244)), k(g, 0x255)), k(g, 0x266));
+    let i = g.read::<u32>(a);
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(t.to_bits());
+    let throw = Frame {
+        at: call(0x26d),
+        esp: callee_esp,
+        ecx: s.wrapping_add(0x70).wrapping_add(jo),
+        edx: i.wrapping_mul(0x98).wrapping_add(w(0x25e)),
+        xmm,
+        ..*fr
+    };
+    // `magic_0620`'s copy throws the summon object instead
+    let eax = if img.matches(throw.at, &SUMMON_OBJECT_SETUP) {
+        summon_object_setup(g, img, &throw)
+    } else {
+        crate::s6_misc::thrown_effect_plain(g, img, &throw)
+    };
+    let left = g.read::<u32>(s + 0x44).wrapping_sub(1);
+    g.write::<u32>(s + 0x44, left);
+    if left == 0 {
+        let n = g.read::<u32>(s + 0x18).wrapping_add(1);
+        g.write::<u32>(s + 0x18, n);
+        g.write::<u32>(s + 0x40, 0);
+        return done(g, eax);
+    }
+    let i = g.read::<u32>(a);
+    let at = s + 0x48 + 4 * i;
+    let v = g.read::<u32>(at).wrapping_sub(1);
+    g.write::<u32>(at, v);
+    g.write::<u32>(s + 0x3c, u32::from(img.word(f + 0x295) as u8));
+    if g.read::<i32>(w(0x29b)) <= 0 {
+        return done(g, i);
+    }
+    let eax = shares(g, 0x2cf);
+    done(g, eax)
+}
+
+/// [`staged_volley_task`] in `magic_0678` (the `rel32`s:
+/// [`target_nodes`](crate::s4_summon::target_nodes),
+/// [`colour_node`](crate::s3_misc::colour_node),
+/// [`move_start`](crate::sb_misc::move_start),
+/// [`thrown_effect_plain`](crate::s6_misc::thrown_effect_plain) and
+/// [`move_start_2`](crate::sb_misc::move_start_2)).
+pub const STAGED_VOLLEY_TASK: Sig = Sig {
+    len: 898,
+    hash: 0x7638_6fb9_884e_1c0b,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&crate::s6_misc::THROWN_EFFECT_PLAIN)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    imports: &[],
+};
+
+/// [`staged_volley_task`] in `magic_0620` (other wait and count
+/// immediates; the throw is [`summon_object_setup`]).
+pub const STAGED_VOLLEY_TASK_B: Sig = Sig {
+    hash: 0xda8f_c44e_a2e3_39fe,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&SUMMON_OBJECT_SETUP)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    ..STAGED_VOLLEY_TASK
+};
