@@ -2829,3 +2829,130 @@ pub const SUMMON_FRAME_673: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A two-stage summon set-up task (cdecl `(task)`, `task[0]` its ring
+/// node, `O = task[1]`; an aligned frame, the record `L` a local): the
+/// clock `O+0x568 += K` and the stage `O+0x574`. Stage 0, once the clock
+/// is at `K0` (ordered): the nodes `A = O+0x24c` and `B = O+0x2a4`
+/// appended to the DLL's list `G_L`
+/// ([`node_append`](crate::sb_misc::node_append)), slot 325 `(O+0x268,
+/// O+0x23c)`, `O+0x26c += K1` or `K2` by the model's way
+/// ([`model_direct`](crate::s6_misc::model_direct) of `(O+0x578)+0x50`),
+/// `B`'s colour `(1, 1, 1, O+0x56c K3 K4)`; the node `N = O+0x41c`
+/// inserted ([`node_insert`](crate::nodes::node_insert): `(N, G_L, G_V,
+/// A, G_W, B)`), the particle `O+0x120` (vtable `VT`) set up
+/// ([`particle_node`](crate::sb_nodes::particle_node): `(p, G_O, N, *G_D,
+/// G_E, 0)`), slot 239 `(*G_S, (O+0x578)+0x50, 0x20)` and the next stage.
+/// Stage 1, once bit 2 of both `O+0x108` and `O+0x208` is set: seven of
+/// its nodes leave their parents ([`leave`](crate::sa_misc::leave)),
+/// the task's node leaves its ring and the stage is 0xff. Returns what
+/// the original leaves in `eax` (slot 239's, the ring's `prev`, else
+/// the stage minus 1).
+///
+/// `magic_0439` 0x10006a90 (556 bytes; 2 DLLs).
+pub fn summon_setup_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task + 4);
+    let clock = add(g.read::<f32>(o + 0x568), k(g, 0x1e));
+    let stage = g.read::<u32>(o + 0x574);
+    g.write::<f32>(o + 0x568, clock);
+    match stage {
+        0 => {}
+        1 => {
+            if g.read::<u8>(o + 0x108) & 4 == 0 || g.read::<u8>(o + 0x208) & 4 == 0 {
+                return Ret::eax(0);
+            }
+            let mut eax = 0;
+            for at in [0x220u32, 0x278, 0x2d0, 0x24c, 0x2a4, 0x41c, 0x57c] {
+                eax = crate::sa_misc::leave(g, o + at, eax);
+            }
+            let node = g.read::<u32>(task);
+            let prev = unring(g, node);
+            g.write::<u32>(o + 0x574, 0xff);
+            return Ret::eax(prev);
+        }
+        s => return Ret::eax(s.wrapping_sub(1)),
+    }
+    // `comiss`/`jb`: below `K0` or unordered waits
+    if !(clock >= k(g, 0xd5)) {
+        return Ret::eax(0);
+    }
+    let (a, b) = (o + 0x24c, o + 0x2a4);
+    crate::sb_misc::node_append(g, img, call(0xed), a, w(0xe6), 0);
+    slot(g, img, f, 0x100, 325, a, &[o + 0x268, o + 0x23c]);
+    let user = g.read::<u32>(g.read::<u32>(o + 0x578).wrapping_add(0x50));
+    let direct = Frame {
+        at: call(0x119),
+        ecx: user,
+        ..*fr
+    };
+    let way = crate::s6_misc::model_direct(g, img, &direct).eax;
+    let step = if way != 0 { k(g, 0x12d) } else { k(g, 0x137) };
+    let v = add(g.read::<f32>(o + 0x26c), step);
+    g.write::<f32>(o + 0x26c, v);
+    crate::sb_misc::node_append(g, img, call(0x14f), b, w(0x142), 0);
+    for at in [0x2c0u32, 0x2c4, 0x2c8] {
+        g.write::<u32>(o + at, 0x3f80_0000);
+    }
+    let alpha = mul(mul(g.read::<f32>(o + 0x56c), k(g, 0x17d)), k(g, 0x18f));
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x28);
+    let rec = base + 0x10;
+    let n = o + 0x41c;
+    g.write::<u32>(rec + 0x14, b);
+    g.write::<u32>(rec, n);
+    g.write::<f32>(o + 0x2cc, alpha);
+    for (i, v) in (1u32..).zip([w(0x142), w(0x1ab), a, w(0x1b7)]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let insert = Frame {
+        at: call(0x1bc),
+        esp: base.wrapping_sub(4),
+        ecx: rec,
+        ..*fr
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    let d = g.read::<u32>(w(0x1c1));
+    let p = o + 0x120;
+    g.write::<u32>(rec, p);
+    g.write::<u32>(p, w(0x1d1));
+    for (i, v) in (1u32..).zip([w(0x1dd), n, d, w(0x1ed), 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::particle_node(g, img, call(0x1fa), rec);
+    let user = g.read::<u32>(g.read::<u32>(o + 0x578).wrapping_add(0x50));
+    let s = g.read::<u32>(w(0x210));
+    let eax = slot(g, img, f, 0x20a, 239, rec, &[s, user, 0x20]).eax;
+    let st = g.read::<u32>(o + 0x574).wrapping_add(1);
+    g.write::<u32>(o + 0x574, st);
+    Ret::eax(eax)
+}
+
+/// [`summon_setup_task`] (the `rel32`s: seven
+/// [`leave`](crate::sa_misc::leave)s, two
+/// [`node_append`](crate::sb_misc::node_append)s,
+/// [`model_direct`](crate::s6_misc::model_direct),
+/// [`node_insert`](crate::nodes::node_insert) and
+/// [`particle_node`](crate::sb_nodes::particle_node)).
+pub const SUMMON_SETUP_TASK: Sig = Sig {
+    len: 556,
+    hash: 0xda92_eea7_2f2a_849b,
+    calls: &[
+        (0x61, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x6c, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x77, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x82, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x8d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x98, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0xa3, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0xed, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x119, Callee::Sig(&crate::s6_misc::MODEL_DIRECT)),
+        (0x14f, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x1bc, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1fa, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+    ],
+    imports: &[],
+};

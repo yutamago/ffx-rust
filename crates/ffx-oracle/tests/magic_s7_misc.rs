@@ -2400,3 +2400,94 @@ fn aimed_in(
         }
     }
 }
+
+/// Row 798: the two-stage summon set-up task of both DLLs: stage 0 below
+/// and at its time (both model ways), stage 1 waiting on each flag and
+/// done (the nodes leave, with and without parents), other stages.
+#[test]
+fn summon_setup_tasks() {
+    for dll in [439u16, 682] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x6a90);
+        let log = SCRATCH + 0x6000;
+        let model = SCRATCH + 0x7e0;
+        log_calls(&mut t, 390, log, 1, None, move |m, _, _| m.r32(model));
+        log_calls(&mut t, 534, log, 1, None, |_, _, k| k % 2);
+        log_calls(&mut t, 325, log, 2, None, |m, a, k| {
+            m.w32(a[0], m.r32(a[1]) ^ k);
+            0x325
+        });
+        log_calls(&mut t, 239, log, 3, None, |_, a, k| a[1] ^ k);
+        // the particle's slots (`sb_nodes::particle_node`)
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        let pn = t.img.rel32_target(f + 0x1fa);
+        let start = t.img.rel32_target(pn + 0x88);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+        t.set_u32(op(&t, f, 0x1e), 0.5f32.to_bits());
+        t.set_u32(op(&t, f, 0xd5), 1.0f32.to_bits());
+        t.set_u32(op(&t, f, 0x1c1), SCRATCH + 0x900);
+        t.set_u32(op(&t, f, 0x210), 0x0210_0000);
+        let list = op(&t, f, 0xe6);
+        let task = SCRATCH + 0x300;
+        let node = SCRATCH + 0x380;
+        let o = SCRATCH + 0x1000;
+        let user = SCRATCH + 0x800;
+        // (stage, clock, the flags, the model, parents)
+        for (k, (stage, clock, fl, id, parents)) in [
+            (0u32, 0.0f32, 0u8, 0x1071u32, false),
+            (0, 0.75, 0, 0x1071, false),
+            (0, 2.0, 0, 0x2000, false),
+            (0, 2.0, 0, 0x2000, false),
+            (1, 0.0, 4, 0, false),
+            (1, 0.0, 0x40, 0, false),
+            (1, 0.0, 0xff, 0, true),
+            (1, 0.0, 0xff, 0, false),
+            (2, 0.0, 0, 0, false),
+            (0xff, 0.0, 0, 0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(model, id);
+            t.write(o, &varied(0x600, k));
+            t.set_u32(o + 0x568, clock.to_bits());
+            t.set_u32(o + 0x574, stage);
+            t.set_u32(o + 0x578, user);
+            t.write(user, &varied(0x60, k));
+            t.set_u32(user + 0x50, SCRATCH + 0x880);
+            t.set_u8(o + 0x108, fl);
+            t.set_u8(o + 0x208, if k == 5 { 0 } else { fl });
+            for at in [0x220u32, 0x278, 0x2d0, 0x24c, 0x2a4, 0x41c, 0x57c] {
+                let par = SCRATCH + 0x4000 + 2 * at;
+                t.set_u32(o + at + 0x14, if parents { par } else { 0 });
+                t.set_u32(o + at + 4, par + 0x40);
+                t.set_u32(o + at + 8, par + 0x40);
+            }
+            t.write(SCRATCH + 0x4000, &varied(0x1000, k + 1));
+            t.set_u32(task, node);
+            t.set_u32(task + 4, o);
+            t.write(node, &varied(0x10, k + 3));
+            t.set_u32(node + 4, SCRATCH + 0x700);
+            t.set_u32(node + 8, SCRATCH + 0x740);
+            t.write(SCRATCH + 0x700, &varied(0x80, k));
+            // the list: empty, or holding a node
+            t.write(list, &varied(0x1c, k + 5));
+            t.set_u32(list + 0x10, if k % 2 == 0 { list } else { SCRATCH + 0x5c0 });
+            t.write(SCRATCH + 0x5c0, &varied(0x20, k + 1));
+            t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
+            // the particle's parent node (a DLL node): its list empty
+            let pl = op(&t, f, 0x1dd);
+            t.write(pl, &varied(0x1c, k + 6));
+            t.set_u32(pl + 0x10, pl);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}
