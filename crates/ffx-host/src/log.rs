@@ -55,6 +55,12 @@ pub fn note(line: &str) {
     }
 }
 
+/// The hook's log line, as a note: what `crates/ffx-hook` code compiled
+/// into this crate (`audio::device`, the hook's `rust_audio_out.rs`) logs.
+pub fn log(line: &str) {
+    note(line.trim_start());
+}
+
 /// The notes so far.
 #[must_use]
 pub fn notes() -> Vec<String> {
