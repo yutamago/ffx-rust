@@ -886,4 +886,42 @@ ported! {
         let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DIRECTIVE_FRAME;
         ffx_glue_other::l7_vfx::bridge::directive(&mut mem(), ebp, file, out, src, kind, pos, max, eol)
     }
+    // ---- round 8 (left8) ----
+    /// `pppKeLnsLpTOtDraw(obj, _, frame_no)` (`ffx_vfx::draw`; its second
+    /// word is not read): the lens flare's occlusion test, its locals in
+    /// a zeroed frame 16-byte aligned as the original's `and esp, -16`
+    /// leaves `ebp`. `FFXVu0FTOI4Vector` is a bare `ret`, so the point it
+    /// reads is the frame's zeroes (junk reads, brief 2026-10-24).
+    pppKeLnsLpTOtDraw @ 0x0075_b230 => extern "C" fn ppp_ke_lns_lp_t_ot_draw(obj: u32, _unused: u32, frame_no: u32) {
+        let mut frame = StackFrame::<0x3c>::new();
+        let ebp = (frame.at() + 0xf0) & !0xf;
+        ffx_vfx::draw::bridge::ppp_ke_lns_lp_t_ot_draw(&mut mem(), obj, frame_no, ebp, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `opus_map_del_draw(work, obj, recs, offset, packet; slots)` -> the
+    /// last `sceGsSyncPath`'s `eax`: the opus map's sprite packet (keeps
+    /// values in its argument slots).
+    opus_map_del_draw @ 0x00a7_5170 => extern "C" fn opus_map_del_draw(work: u32, obj: u32, recs: u32, offset: u32, packet: u32; slots: u32) -> u32 {
+        ffx_glue_other::l8_vfx::bridge::opus_map_del_draw(&mut mem(), slots, work, obj, recs, offset, packet)
+    }
+    /// `opus_encount5_draw(work, obj, recs, offset, packet)` -> the last
+    /// `sceGsSyncPath`'s `eax`: the encounter's radial lines and sprite
+    /// packet (the colour it hands the radial line in a frame).
+    opus_encount5_draw @ 0x007f_8e80 => extern "C" fn opus_encount5_draw(work: u32, obj: u32, recs: u32, offset: u32, packet: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        let ebp = frame.at() + ffx_glue_other::l8_vfx::bridge::ENCOUNT5_COLOUR;
+        ffx_glue_other::l8_vfx::bridge::opus_encount5_draw(&mut mem(), ebp, work, obj, recs, offset, packet)
+    }
+    /// `opd_num_put_float_00a5ea30(value (two words), width, decimals, pr,
+    /// font; slots)` -> `pr`: the `%f` text in a frame, the decimals
+    /// count run down in its argument slot.
+    opd_num_put_float_00a5ea30 @ 0x00a5_ea30 => extern "C" fn opd_num_put_float(lo: u32, hi: u32, width: u32, decimals: u32, pr: u32, font: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l8_vfx::bridge::PUT_FLOAT_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l8_vfx::bridge::PUT_FLOAT_FRAME;
+        ffx_glue_other::l8_vfx::bridge::put_float(&mut mem(), ebp, slots, [lo, hi], width, decimals, pr, font)
+    }
+    /// `opd_num_char_256(p)` -> the last `opd_num`'s `eax`: 256 bytes as
+    /// 16 dump lines.
+    opd_num_char_256 @ 0x00a5_d5f0 => extern "C" fn opd_num_char_256(p: u32) -> u32 {
+        ffx_glue_other::l8_vfx::bridge::char_256(&mut mem(), p)
+    }
 }
