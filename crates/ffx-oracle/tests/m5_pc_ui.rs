@@ -171,6 +171,17 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        ffx_oracle::check_width(
+            "Host::call_u64",
+            addr,
+            args.len(),
+            host::max_words(c, false),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        (u64::from(r.edx) << 32) | u64::from(r.eax)
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -7787,6 +7798,135 @@ fn l8_gdraw_create_raw_texture() {
                 &args,
                 0x16c,
                 |g, ebp| Out::U32(l8u::create_raw_texture(g, ebp, base, info)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+impl Twins {
+    /// A recording stub at `sym` (`this` logged when `this`, `n` words
+    /// logged, `pops` popped, `ret` in `eax`) that first runs `pre`
+    /// (machine code that must keep `esp` and the arguments).
+    #[allow(clippy::too_many_arguments)]
+    fn stub_pre(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32, pre: &[u8]) {
+        let log = self.stub_code(sym, this, n, pops, ret);
+        let at = self.cave_next;
+        let mut c = pre.to_vec();
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.cave_code(&c);
+        self.jump(sym, code);
+    }
+}
+
+/// `mov eax, [esp+k]; mov dword [eax], v`: a callee writing `v` through
+/// its argument word at `esp + k`.
+fn write_through(k: u8, v: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, k, 0xc7, 0x00];
+    c.extend(v.to_le_bytes());
+    c
+}
+
+#[test]
+fn l8_video_audio_init() {
+    // every early return (the synthesis or block init failing, the sound
+    // not made: the queue destroyed, the sound not playing), the stream
+    // playing; rates and channel counts past the top bit (the unsigned
+    // corrections), durations out of the int range (fistp's indefinite)
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_73b0);
+        for case in 0..24_u32 {
+            t.reset();
+            t.skip = 0x14;
+            let player = t.zeros(0x300);
+            let words: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+            t.write(player, &words);
+            for (o, v) in [
+                (0x294, rng.next()),
+                (0x110, rng.next()),
+                (0x298, rng.next()),
+            ] {
+                t.w32(player + o, v);
+            }
+            let fail = case % 6;
+            let pick = |rng: &mut Rng, ok: bool| if ok { 0 } else { 1 + rng.below(0x1000) * 0x100 };
+            t.stubs(&[
+                (l8u::SET_GLOBALS, false, 4, 0, 0x60),
+                (l8u::VORBIS_INFO_INIT, false, 1, 0, 0x61),
+                (l8u::VORBIS_COMMENT_INIT, false, 1, 0, 0x62),
+                (l8u::VORBIS_HEADERIN, false, 3, 0, rng.below(0x40)),
+            ]);
+            let si = pick(&mut rng, fail != 0);
+            let bi = pick(&mut rng, fail != 1);
+            t.stubs(&[
+                (l8u::VORBIS_SYNTHESIS_INIT, false, 2, 0, si),
+                (l8u::VORBIS_BLOCK_INIT, false, 2, 0, bi),
+                (
+                    l8u::GET_CHANNELS,
+                    true,
+                    0,
+                    0,
+                    [1, 2, 6, 0x8000_0001][rng.below(4) as usize],
+                ),
+                (l8u::QUEUE_INIT, true, 4, 4, 0x63),
+                (l8u::QUEUE_DESTROY, true, 0, 0, 0x6400 | rng.below(0x100)),
+                (l8u::MEMSET, false, 3, 0, 0x65),
+                (l8u::SET_USER_DATA, false, 2, 2, 0x66),
+                (l8u::SET_PRIORITY, false, 2, 2, 0x6700 | rng.below(0x100)),
+            ]);
+            let size = rng.below(0x1000);
+            t.stub_pre(
+                l8u::GET_CODEC_PRIVATE,
+                true,
+                1,
+                1,
+                rng.next(),
+                &write_through(4, size),
+            );
+            let rate = match rng.below(4) {
+                0 => 48000.0,
+                1 => 44100.7,
+                2 => 3.5e9,
+                _ => f64::from(rng.below(100_000)) + 0.25,
+            };
+            let cell = t.alloc(&rate.to_le_bytes());
+            let mut fld = vec![0xdd, 0x05]; // fld qword [cell]
+            fld.extend(cell.to_le_bytes());
+            t.stub_pre(l8u::GET_SAMPLING_RATE, true, 0, 0, 0x68, &fld);
+            let ns: u64 = match rng.below(3) {
+                0 => u64::from(rng.next()) * 1000,
+                1 => (u64::from(rng.next()) << 32) | u64::from(rng.next()),
+                _ => 90_000_000_000,
+            };
+            let mut hi = vec![0xba]; // mov edx, hi
+            hi.extend(((ns >> 32) as u32).to_le_bytes());
+            t.stub_pre(l8u::GET_DURATION, true, 0, 0, ns as u32, &hi);
+            let cs = pick(&mut rng, fail != 2);
+            t.stub_pre(
+                l8u::CREATE_SOUND,
+                false,
+                5,
+                5,
+                cs,
+                &write_through(0x14, 0x5050_5050),
+            );
+            let ps = pick(&mut rng, fail != 3);
+            t.stub_pre(
+                l8u::PLAY_SOUND,
+                false,
+                5,
+                5,
+                ps,
+                &write_through(0x14, 0x6060_6060),
+            );
+            t.check_framed(
+                "PVideoPlaybackWin32_AudioInit_00a273b0",
+                0x00a2_73b0,
+                Conv::Fastcall,
+                &[player, 0],
+                l8u::AUDIO_FRAME,
+                |g, ebp| Out::U32(l8u::audio_init(g, ebp, player)),
             );
         }
         t.skip = 0;

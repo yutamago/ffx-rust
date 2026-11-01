@@ -60,6 +60,9 @@ const CAVE_LEN: u32 = 1800;
 /// callee so a callee leaving `eax` alone shows the poison.
 const POISON_AT: u32 = CAVE + CAVE_LEN;
 const POISON: u32 = 0xdead_beef;
+/// After the poison (`+8`): `fld qword [esp+4]; call [esp+0xc]; ret`, for
+/// [`Host::call_intrinsic`] (the operand in `ST0`).
+const TRAMPOLINE: [u8; 9] = [0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3];
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -173,6 +176,14 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0.unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(self.1 + 8, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f32().expect("the intrinsic's ST0")
+    }
     fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -244,6 +255,7 @@ impl Twins {
         code.extend(POISON.to_le_bytes());
         code.push(0xc3);
         t.write(at, &code);
+        t.write(at + 8, &TRAMPOLINE);
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
             o.call(at, Conv::Cdecl, &[]).unwrap();
@@ -6370,6 +6382,99 @@ fn l8_opd_num_char_256() {
             });
             assert_eq!(t.calls(), 16);
             assert_eq!(t.r32(cursor), out + 4 * 16 * 17 + 4 * 4);
+            t.reset();
+        }
+    });
+}
+
+/// A float word for the light tests: mostly small numbers of either
+/// sign, sometimes anything but a signalling NaN.
+fn light_word(rng: &mut Rng) -> u32 {
+    if rng.chance(12) {
+        float_word(rng)
+    } else {
+        ((rng.below(2001) as f32 - 1000.0) * 0.013).to_bits()
+    }
+}
+
+#[test]
+fn l8_ppp_mdl_point_light_colours() {
+    // the flag clear, n 0 or negative, 1..5 vertices; lights near and far,
+    // matrices with zero rows (1 / sqrt(0)), negative terms clamped
+    // (twice), NaNs passing the clamps; the frame (normalised matrix,
+    // light directions, their transpose, the light matrix, the vertex,
+    // normal and scale ApplyMatrix sees) and the count's argument slot
+    Twins::each(|t| {
+        let mut rng = Rng(0x0071_e820);
+        for case in 0..40_u32 {
+            let seg = rng.below(3);
+            let n = match case % 8 {
+                0 => 0,
+                1 => (-2_i32).cast_unsigned(),
+                _ => 1 + rng.below(5),
+            };
+            let cnt = n.cast_signed().max(0) as usize;
+            let arr = |t: &mut Twins, rng: &mut Rng, words: usize, w: Option<u32>| {
+                let v: Vec<u32> = (0..words)
+                    .map(|k| match w {
+                        Some(x) if k % 4 == 3 => x,
+                        _ => light_word(rng),
+                    })
+                    .collect();
+                t.words(&v)
+            };
+            let verts = arr(t, &mut rng, 3 * cnt + 1, None);
+            let normals = arr(t, &mut rng, 3 * cnt + 1, None);
+            let colours = arr(t, &mut rng, 4 * cnt + 1, None);
+            let table = t.zeros(0x200);
+            let base = table + 0x60;
+            let entry = base + 0x6c * seg;
+            t.w32(entry - 0x60, verts);
+            t.w32(entry - 0x5c, normals);
+            t.w32(entry - 0x58, colours);
+            let rd = t.zeros(0x100);
+            t.w32(rd + 0x94, base);
+            let matrix = arr(t, &mut rng, 16, None);
+            if rng.chance(4) {
+                let r = rng.below(3);
+                for c in 0..3 {
+                    t.w32(matrix + 0x10 * r + 4 * c, 0);
+                }
+            }
+            let lights = arr(t, &mut rng, 16, None);
+            let lmatrix = arr(t, &mut rng, 16, None);
+            let job = t.zeros(0x60);
+            let flags = if case % 8 == 7 {
+                0x8f
+            } else {
+                0x40 | rng.below(0x100)
+            };
+            t.w8(job, flags as u8);
+            t.w32(job + 0x24, lmatrix);
+            t.w32(job + 0x28, lights);
+            t.w32(job + 0x2c, matrix);
+            t.w8(job + 0x4d, rng.next() as u8);
+            // _CIsqrt (an import the oracle lacks) as the CPU's: fsqrt; ret
+            t.patch(t.rebase(l8v::CI_SQRT), &[0xd9, 0xfa, 0xc3]);
+            let args = [rd, seg, job, rng.next(), n];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - 0x200);
+            t.check(
+                "pppMdl_pointLightColours_0071e820",
+                0x0071_e820,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l8v::point_light_colours(g, ebp, slots, rd, seg, job, n)),
+            );
+            t.same_stack(
+                "pppMdl_pointLightColours_0071e820 frame",
+                ebp - 0x144,
+                0x140,
+            );
+            t.same_stack("pppMdl_pointLightColours_0071e820 slots", slots, 20);
+            t.b_top = None;
             t.reset();
         }
     });

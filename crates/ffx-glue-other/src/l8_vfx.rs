@@ -1,5 +1,6 @@
 //! M5 stage 1, round 8 (list `left8`, from `vfx.list`): two opus sprite
-//! packets (`opus_map_del_draw`, `opus_encount5_draw`).
+//! packets (`opus_map_del_draw`, `opus_encount5_draw`), two opd number
+//! printers and the model point lights (`pppMdl_pointLightColours`).
 //!
 //! Callees stay calls to the originals (cdecl). x87 code is written as
 //! the formulas at 53 bits (`ffx_bridge::x87`), each value rounded to
@@ -354,6 +355,212 @@ pub mod bridge {
             out = out.wrapping_add(SPRITE);
         }
         send(h, packet, out)
+    }
+
+    /// `FFXVu0ApplyMatrix(dst, m, src)` and the CRT's `_CIsqrt`.
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    pub const CI_SQRT: u32 = 0x0094_97b8;
+    /// `pppMdl_pointLightColours_0071e820`'s frame: the vertex
+    /// (`ebp - 0x24`), the normal (`ebp - 0x34`), the colour scale
+    /// (`ebp - 0x14`) and the light matrix (`ebp - 0xf4`) its
+    /// `FFXVu0ApplyMatrix` calls get.
+    pub const LIGHT_FRAME: u32 = 0x164;
+
+    /// `x` as `fld dword` / `fstp dword` copy it (a signalling NaN
+    /// quieted).
+    fn copy32(h: &impl Host, at: u32) -> u32 {
+        x87::store(f(h, at))
+    }
+
+    /// `pppMdl_pointLightColours_0071e820(rd, segment, job, group, n;
+    /// slots)` (`0x0071e820`) -> the `eax` the original leaves (`job`
+    /// when its flags lack 0x40, the matrix for `n <= 0`, else the last
+    /// colour's address).
+    ///
+    /// With the job flags' 0x40: the job's matrix `[job + 0x2c]` with its
+    /// first three rows normalised (`1 / _CIsqrt` of the row's x, y, z
+    /// squares, each `f32`; `w` kept) is `N`. For each of the segment's
+    /// `n` vertices (`[[rd + 0x94] + 0x6c segment - 0x60]`, 12 bytes
+    /// each): the vertex through the job's matrix (`FFXVu0ApplyMatrix` at
+    /// `ebp - 0x24`, w 1) is `v`; for each of the four lights at
+    /// `[job + 0x28]` (x, y, z, intensity) the direction `d = light - v`
+    /// over its squared length (`(dx² + 0) + dy² + dz²`, `f32` at each
+    /// step) times the intensity is a column of `T`; the light matrix
+    /// `R` (`ebp - 0xf4`, its rows `T x N`'s, row 3 the job matrix's
+    /// fourth) takes the vertex normal (`- 0x5c` array, w 0) to the
+    /// four lights' terms (`ebp - 0x14`), negatives to 0, through
+    /// `[job + 0x24]`, negatives to 0 again, each times `job + 0x4d /
+    /// 128`; the vertex colour's (`- 0x58` array, 16 bytes each) r, g, b
+    /// are scaled by the first three. `n` runs down in its argument slot.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::many_single_char_names
+    )]
+    pub fn point_light_colours(
+        h: &mut impl Host,
+        ebp: u32,
+        slots: u32,
+        rd: u32,
+        segment: u32,
+        job: u32,
+        n: u32,
+    ) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        if h.read::<u8>(job) & 0x40 == 0 {
+            return job;
+        }
+        let m: u32 = h.read(job.wrapping_add(0x2c));
+        let sqrt = h.rebase(CI_SQRT);
+        // N: rows 0..2 normalised at ebp - 0xb4, row 3 copied
+        for k in 0..3 {
+            let row = m.wrapping_add(0x10 * k);
+            let a = [0, 4, 8].map(|o| f(&*h, row.wrapping_add(o)));
+            let sq = x87::store(x87::add(
+                x87::add(x87::mul(a[0], a[0]), x87::mul(a[1], a[1])),
+                x87::mul(a[2], a[2]),
+            ));
+            let r = h.call_intrinsic(sqrt, x87::load(sq));
+            let inv = x87::load(x87::store(x87::div(1.0, f64::from(r))));
+            let out = fr(0xb4).wrapping_add(0x10 * k);
+            h.write(out, x87::store(x87::mul(inv, a[0])));
+            h.write(out.wrapping_add(4), x87::store(x87::mul(a[1], inv)));
+            h.write(out.wrapping_add(8), x87::store(x87::mul(inv, a[2])));
+            let w = copy32(&*h, row.wrapping_add(0xc));
+            h.write(out.wrapping_add(0xc), w);
+        }
+        for c in 0..4 {
+            let v = copy32(&*h, m.wrapping_add(0x30 + 4 * c));
+            h.write(fr(0x84).wrapping_add(4 * c), v);
+        }
+        if n.cast_signed() <= 0 {
+            return m;
+        }
+        let apply = h.rebase(APPLY_MATRIX);
+        let k = 0.007_812_5_f64;
+        let seg = segment.wrapping_mul(0x6c);
+        let (mut vert, mut col) = (0_u32, 0_u32);
+        let mut left = n;
+        let mut eax = 0;
+        while left != 0 {
+            let e = f64::from(h.read::<u8>(job.wrapping_add(0x4d)));
+            let ke = x87::load(x87::store(x87::mul(k, e)));
+            let table: u32 = h.read(rd.wrapping_add(0x94));
+            let verts: u32 = h.read(table.wrapping_add(seg).wrapping_sub(0x60));
+            let p = verts.wrapping_add(vert);
+            let v = fr(0x24);
+            for c in 0..3 {
+                let x = copy32(&*h, p.wrapping_add(4 * c));
+                h.write(v.wrapping_add(4 * c), x);
+            }
+            h.write(v.wrapping_add(0xc), x87::store(1.0));
+            let jm: u32 = h.read(job.wrapping_add(0x2c));
+            h.call(apply, Conv::Cdecl, &[v, jm, v]);
+            let lights: u32 = h.read(job.wrapping_add(0x28));
+            // A[j] at ebp - 0x134: each light's direction over its
+            // squared distance (ebp - 0x144 + 4 j) times its intensity
+            for j in 0..4 {
+                let l = lights.wrapping_add(0x10 * j);
+                let [vx, vy, vz] = [0, 4, 8].map(|o| f(&*h, v.wrapping_add(o)));
+                let dx = x87::load(x87::store(x87::sub(f(&*h, l), vx)));
+                let dy = x87::load(x87::store(x87::sub(f(&*h, l.wrapping_add(4)), vy)));
+                let dz = x87::load(x87::store(x87::sub(f(&*h, l.wrapping_add(8)), vz)));
+                let s1 = x87::load(x87::store(x87::add(x87::mul(dx, dx), 0.0)));
+                let s2 = x87::load(x87::store(x87::add(s1, x87::mul(dy, dy))));
+                let d = x87::store(x87::add(s2, x87::mul(dz, dz)));
+                h.write(fr(0x144).wrapping_add(4 * j), d);
+                let d = x87::load(d);
+                let li = f(&*h, l.wrapping_add(0xc));
+                let ax = x87::load(x87::store(x87::mul(dx, li)));
+                let out = fr(0x134).wrapping_add(0x10 * j);
+                h.write(out, x87::store(x87::div(ax, d)));
+                let li = f(&*h, l.wrapping_add(0xc));
+                let ay = x87::load(x87::store(x87::mul(dy, li)));
+                h.write(out.wrapping_add(4), x87::store(x87::div(ay, d)));
+                let li = f(&*h, l.wrapping_add(0xc));
+                let az = x87::load(x87::store(x87::mul(dz, li)));
+                h.write(out.wrapping_add(8), x87::store(x87::div(az, d)));
+                h.write(out.wrapping_add(0xc), 0_u32);
+            }
+            // T = A transposed at ebp - 0x74
+            for i in 0..4 {
+                for j in 0..4 {
+                    let x = copy32(&*h, fr(0x134).wrapping_add(0x10 * j + 4 * i));
+                    h.write(fr(0x74).wrapping_add(0x10 * i + 4 * j), x);
+                }
+            }
+            let mut t = [[0.0_f64; 4]; 3];
+            for (r, row) in (0_u32..).zip(t.iter_mut()) {
+                for (c, x) in (0_u32..).zip(row.iter_mut()) {
+                    *x = f(&*h, fr(0x74).wrapping_add(0x10 * r + 4 * c));
+                }
+            }
+            // R rows 0..2 at ebp - 0xf4: T's columns against N's rows
+            for r in 0..3 {
+                let nrow = fr(0xb4).wrapping_add(0x10 * r);
+                let nn = [0, 4, 8].map(|o| f(&*h, nrow.wrapping_add(o)));
+                for (c, ((t0, t1), t2)) in (0_u32..).zip(t[0].iter().zip(&t[1]).zip(&t[2])) {
+                    let s = x87::add(
+                        x87::add(x87::mul(*t0, nn[0]), x87::mul(*t1, nn[1])),
+                        x87::mul(*t2, nn[2]),
+                    );
+                    h.write(fr(0xf4).wrapping_add(0x10 * r + 4 * c), x87::store(s));
+                }
+            }
+            let jm: u32 = h.read(job.wrapping_add(0x2c));
+            for c in 0..4 {
+                let x = copy32(&*h, jm.wrapping_add(0x30 + 4 * c));
+                h.write(fr(0xc4).wrapping_add(4 * c), x);
+            }
+            let table: u32 = h.read(rd.wrapping_add(0x94));
+            let normals: u32 = h.read(table.wrapping_add(seg).wrapping_sub(0x5c));
+            let q = normals.wrapping_add(vert);
+            let nv = fr(0x34);
+            for c in 0..3 {
+                let x = copy32(&*h, q.wrapping_add(4 * c));
+                h.write(nv.wrapping_add(4 * c), x);
+            }
+            h.write(nv.wrapping_add(0xc), 0_u32);
+            let cs = fr(0x14);
+            h.call(apply, Conv::Cdecl, &[cs, fr(0xf4), nv]);
+            for c in 0..4 {
+                // fcom against 0: only a number below it is cleared
+                if f(&*h, cs.wrapping_add(4 * c)) < 0.0 {
+                    h.write(cs.wrapping_add(4 * c), 0_u32);
+                }
+            }
+            let lm: u32 = h.read(job.wrapping_add(0x24));
+            h.call(apply, Conv::Cdecl, &[cs, lm, cs]);
+            for c in 0..4 {
+                let at = cs.wrapping_add(4 * c);
+                if f(&*h, at) < 0.0 {
+                    h.write(at, 0_u32);
+                }
+                let x = x87::store(x87::mul(f(&*h, at), ke));
+                h.write(at, x);
+            }
+            let table: u32 = h.read(rd.wrapping_add(0x94));
+            let colours: u32 = h.read(table.wrapping_add(seg).wrapping_sub(0x58));
+            let cp = colours.wrapping_add(col);
+            vert = vert.wrapping_add(0xc);
+            col = col.wrapping_add(0x10);
+            left = left.wrapping_sub(1);
+            h.write(slots.wrapping_add(0x10), left);
+            let r = x87::store(x87::mul(f(&*h, cp), f(&*h, cs)));
+            h.write(cp, r);
+            let g = x87::store(x87::mul(
+                f(&*h, cs.wrapping_add(4)),
+                f(&*h, cp.wrapping_add(4)),
+            ));
+            h.write(cp.wrapping_add(4), g);
+            let b = x87::store(x87::mul(
+                f(&*h, cs.wrapping_add(8)),
+                f(&*h, cp.wrapping_add(8)),
+            ));
+            h.write(cp.wrapping_add(8), b);
+            eax = cp;
+        }
+        eax
     }
 
     /// The CRT's `sprintf` (import slot), `"%f"`, and

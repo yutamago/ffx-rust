@@ -919,6 +919,14 @@ ported! {
         let ebp = frame.at() + ffx_glue_other::l8_vfx::bridge::PUT_FLOAT_FRAME;
         ffx_glue_other::l8_vfx::bridge::put_float(&mut mem(), ebp, slots, [lo, hi], width, decimals, pr, font)
     }
+    /// `pppMdl_pointLightColours_0071e820(rd, segment, job, _, n; slots)`:
+    /// a segment's vertex colours lit by the job's four point lights (its
+    /// matrices and vectors in a frame; `n` runs down in its slot).
+    pppMdl_pointLightColours_0071e820 @ 0x0071_e820 => extern "C" fn ppp_mdl_point_light_colours(rd: u32, segment: u32, job: u32, _group: u32, n: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l8_vfx::bridge::LIGHT_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l8_vfx::bridge::LIGHT_FRAME;
+        ffx_glue_other::l8_vfx::bridge::point_light_colours(&mut mem(), ebp, slots, rd, segment, job, n)
+    }
     /// `opd_num_char_256(p)` -> the last `opd_num`'s `eax`: 256 bytes as
     /// 16 dump lines.
     opd_num_char_256 @ 0x00a5_d5f0 => extern "C" fn opd_num_char_256(p: u32) -> u32 {

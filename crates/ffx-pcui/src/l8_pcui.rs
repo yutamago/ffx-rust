@@ -1,8 +1,10 @@
 //! M5 stage 1, round 8 (list `left8`, from `pc-ui.list`): Iggy `GDraw`'s
-//! D3D11 object release at context teardown (`GDraw_releaseObjects`).
+//! D3D11 context (set-up, teardown, raw textures) and the video player's
+//! FMOD audio stream set-up (`PVideoPlaybackWin32_AudioInit`).
 
 /// The originals over game memory.
 pub mod bridge {
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     /// `g_GDrawState`, the `GDraw` D3D11 state block.
@@ -344,6 +346,186 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `SetGlobals_0042e1d0(a, b, c, d)` and the four allocator pointers
+    /// it gets (`0x00c6b28c..98`); libvorbis' `vorbis_info_init`,
+    /// `vorbis_comment_init`, `vorbis_synthesis_headerin`,
+    /// `vorbis_synthesis_init`, `vorbis_block_init`; mkvparser's
+    /// `Track::GetCodecPrivate(&size)` (thiscall, `ret 4`),
+    /// `AudioTrack::GetSamplingRate()` (`ST0`, a double),
+    /// `AudioTrack::GetChannels()`, `Segment::GetDuration()` (`edx:eax`);
+    /// `CDataFrameQueue::Init(capacity, extra, alloc, free)` (`ret 0x10`)
+    /// and `::Destroy()`; the queue's allocator pointers
+    /// (`0x00c6b29c`/`a0`); FMOD's `System::createSound`,
+    /// `Sound::setUserData`, `System::playSound`, `Channel::setPriority`
+    /// (import thunks, stdcall with the object first); the stream's
+    /// `pcmreadcallback` (`0x00a27ee0`).
+    pub const SET_GLOBALS: u32 = 0x0042_e1d0;
+    pub const ALLOCATORS: u32 = 0x00c6_b28c;
+    pub const VORBIS_INFO_INIT: u32 = 0x00a8_ffd0;
+    pub const VORBIS_COMMENT_INIT: u32 = 0x00a9_0420;
+    pub const VORBIS_HEADERIN: u32 = 0x00a8_f650;
+    pub const VORBIS_SYNTHESIS_INIT: u32 = 0x00a9_10e0;
+    pub const VORBIS_BLOCK_INIT: u32 = 0x00a9_21b0;
+    pub const GET_CODEC_PRIVATE: u32 = 0x0042_7b80;
+    pub const GET_SAMPLING_RATE: u32 = 0x0042_9170;
+    pub const GET_CHANNELS: u32 = 0x0042_9180;
+    pub const GET_DURATION: u32 = 0x0042_5200;
+    pub const QUEUE_INIT: u32 = 0x00a3_ddf0;
+    pub const QUEUE_DESTROY: u32 = 0x00a3_df20;
+    pub const QUEUE_ALLOCATORS: u32 = 0x00c6_b29c;
+    pub const CREATE_SOUND: u32 = 0x0094_8cee;
+    pub const SET_USER_DATA: u32 = 0x00a7_c8f8;
+    pub const PLAY_SOUND: u32 = 0x0094_8cf4;
+    pub const SET_PRIORITY: u32 = 0x00a7_c910;
+    pub const PCM_READ: u32 = 0x00a2_7ee0;
+    /// `1e-9` (nanoseconds to seconds) and `2^32` (the unsigned
+    /// conversions' correction), doubles.
+    pub const NANO: u32 = 0x00b9_2178;
+    pub const TWO_32: u32 = 0x00b0_dbb0;
+    /// `PVideoPlaybackWin32_AudioInit`'s frame: the
+    /// `FMOD_CREATESOUNDEXINFO` (0x88 bytes) at `ebp - 0x9c`, the codec
+    /// data's size at `ebp - 0x14`.
+    pub const AUDIO_FRAME: u32 = 0x9c;
+
+    fn k64(h: &impl Host, sym: u32) -> f64 {
+        f64::from_bits(h.read(h.rebase(sym)))
+    }
+
+    /// `fild dword` of an unsigned value: `2^32` added when its top bit
+    /// is set.
+    fn unsigned(h: &impl Host, v: u32) -> f64 {
+        let x = f64::from(v.cast_signed());
+        if v.cast_signed() < 0 {
+            x + k64(h, TWO_32)
+        } else {
+            x
+        }
+    }
+
+    /// `PVideoPlaybackWin32_AudioInit_00a273b0(player)` (`0x00a273b0`,
+    /// fastcall: `player` in `ecx`) -> `al` 1 when the FMOD stream plays,
+    /// else 0 (the rest of `eax` the last call's): the Vorbis decoder
+    /// set up from the track's codec data (`+0x294`; its three headers
+    /// through `vorbis_synthesis_headerin` on the packet at `+0x160`: the
+    /// data past its 3-byte lacing, the first header's bytes, then the
+    /// second's and 4 more, as the original steps them), the synthesis
+    /// and block states (`+0x1b0`, `+0x220`); the frame queue `+0x80`
+    /// (1 MB, `channels << 13` extra, `+0x2a4` 0x1000); an FMOD stream
+    /// (`System` `+0x298`, mode `0x4c8`) of PCM16 at the track's rate
+    /// (`fistp`, truncated) and channels, its length
+    /// `duration(ns) * 1e-9 * rate * 2 channels` (`fistp`, truncated,
+    /// the unsigned words through `2^32`), decoding through
+    /// `0x00a27ee0`; the sound `+0x29c` gets the player as user data
+    /// and plays on channel `+0x2a0`, priority 0. A failed
+    /// `createSound` destroys the queue.
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::many_single_char_names)]
+    pub fn audio_init(h: &mut impl Host, ebp: u32, this: u32) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let at = |o: u32| this.wrapping_add(o);
+        let alloc = h.rebase(ALLOCATORS);
+        let g = [0, 4, 8, 0xc].map(|o| h.read::<u32>(alloc.wrapping_add(o)));
+        h.call_sym(SET_GLOBALS, Conv::Cdecl, &g);
+        let (info, comment) = (at(0x180), at(0x1a0));
+        h.call_sym(VORBIS_INFO_INIT, Conv::Cdecl, &[info]);
+        h.call_sym(VORBIS_COMMENT_INIT, Conv::Cdecl, &[comment]);
+        let track: u32 = h.read(at(0x294));
+        h.write(fr(0x14), 0_u32);
+        let data = h.call_sym(GET_CODEC_PRIVATE, Conv::Thiscall(track), &[fr(0x14)]);
+        let size: u32 = h.read(fr(0x14));
+        for (o, v) in [
+            (0x168, 1_u32),
+            (0x16c, 0),
+            (0x178, 0),
+            (0x17c, 0),
+            (0x170, 0),
+            (0x174, 0),
+        ] {
+            h.write(at(o), v);
+        }
+        h.write(at(0x164), size);
+        let op = at(0x160);
+        h.write(op, data.wrapping_add(3));
+        let r = h.call_sym(VORBIS_HEADERIN, Conv::Cdecl, &[info, comment, op]);
+        let v: u32 = h.read(op);
+        h.write(op, v.wrapping_add(r));
+        let v: u32 = h.read(at(0x164));
+        h.write(at(0x164), v.wrapping_sub(r));
+        let r = h
+            .call_sym(VORBIS_HEADERIN, Conv::Cdecl, &[info, comment, op])
+            .wrapping_add(4);
+        let v: u32 = h.read(at(0x164));
+        h.write(at(0x164), v.wrapping_sub(r));
+        let v: u32 = h.read(op);
+        h.write(op, v.wrapping_add(r));
+        h.call_sym(VORBIS_HEADERIN, Conv::Cdecl, &[info, comment, op]);
+        // al = 0 from here on unless the stream plays
+        let fail = |eax: u32| eax & !0xff;
+        let dsp = at(0x1b0);
+        let r = h.call_sym(VORBIS_SYNTHESIS_INIT, Conv::Cdecl, &[dsp, info]);
+        if r != 0 {
+            return fail(r);
+        }
+        let r = h.call_sym(VORBIS_BLOCK_INIT, Conv::Cdecl, &[dsp, at(0x220)]);
+        if r != 0 {
+            return fail(r);
+        }
+        let track: u32 = h.read(at(0x294));
+        let rate = h.call_sym_st0_f64(GET_SAMPLING_RATE, Conv::Thiscall(track), &[]);
+        // fistp qword with the rounding set to truncate; the low word
+        let rate = x87::ftol2(rate);
+        let track: u32 = h.read(at(0x294));
+        let channels = h.call_sym(GET_CHANNELS, Conv::Thiscall(track), &[]);
+        let qa = h.rebase(QUEUE_ALLOCATORS);
+        let (qa0, qa1): (u32, u32) = (h.read(qa), h.read(qa.wrapping_add(4)));
+        h.write(at(0x2a4), 0x1000_u32);
+        h.call_sym(
+            QUEUE_INIT,
+            Conv::Thiscall(at(0x80)),
+            &[0x10_0000, channels << 13, qa0, qa1],
+        );
+        let ex = fr(0x9c);
+        h.call_sym(MEMSET, Conv::Cdecl, &[ex, 0, 0x88]);
+        h.write(ex, 0x88_u32);
+        h.write(fr(0x84), 0x1000_u32);
+        let segment: u32 = h.read(at(0x110));
+        let ns = h.call_sym_u64(GET_DURATION, Conv::Thiscall(segment), &[]);
+        // fild qword, then the double through the frame
+        #[allow(clippy::cast_precision_loss)]
+        let mut len = ns.cast_signed() as f64;
+        len = x87::mul(len, k64(h, NANO));
+        len = x87::mul(len, unsigned(h, rate));
+        len = x87::mul(len, unsigned(h, channels.wrapping_mul(2)));
+        h.write(fr(0x8c), rate);
+        h.write(fr(0x90), channels);
+        h.write(fr(0x88), 2_u32);
+        let pcm = h.rebase(PCM_READ);
+        h.write(fr(0x70), pcm);
+        h.write(fr(0x98), x87::ftol2(len));
+        let system: u32 = h.read(at(0x298));
+        let sound = at(0x29c);
+        let r = h.call_sym(CREATE_SOUND, Conv::Stdcall, &[system, 0, 0x4c8, ex, sound]);
+        if r != 0 {
+            let r = h.call_sym(QUEUE_DESTROY, Conv::Thiscall(at(0x80)), &[]);
+            return fail(r);
+        }
+        let s: u32 = h.read(sound);
+        h.call_sym(SET_USER_DATA, Conv::Stdcall, &[s, this]);
+        let s: u32 = h.read(sound);
+        let system: u32 = h.read(at(0x298));
+        let r = h.call_sym(
+            PLAY_SOUND,
+            Conv::Stdcall,
+            &[system, 0xffff_ffff, s, 0, at(0x2a0)],
+        );
+        if r != 0 {
+            return fail(r);
+        }
+        let channel: u32 = h.read(at(0x2a0));
+        let r = h.call_sym(SET_PRIORITY, Conv::Stdcall, &[channel, 0]);
+        (r & !0xff) | 1
     }
 
     #[cfg(test)]

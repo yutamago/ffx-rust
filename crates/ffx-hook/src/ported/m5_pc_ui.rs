@@ -1272,4 +1272,13 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::RAW_FRAME;
         ffx_pcui::l8_pcui::bridge::create_raw_texture(&mut mem(), ebp, base, info)
     }
+    /// `(player)` (fastcall) -> `al` 1 when the stream plays: the video
+    /// player's Vorbis decoder and FMOD stream set-up (the
+    /// `FMOD_CREATESOUNDEXINFO` and the codec data's size in a frame;
+    /// the rest of `eax` the last call's, as the original leaves it).
+    PVideoPlaybackWin32_AudioInit_00a273b0 @ 0x00a2_73b0 => extern "fastcall" fn video_audio_init(player: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::AUDIO_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::AUDIO_FRAME;
+        ffx_pcui::l8_pcui::bridge::audio_init(&mut mem(), ebp, player)
+    }
 }
