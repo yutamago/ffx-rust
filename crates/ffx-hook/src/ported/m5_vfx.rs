@@ -878,4 +878,12 @@ ported! {
         let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::PRE_FRAME;
         ffx_glue_other::l7_vfx::bridge::preprocess(&mut mem(), ebp, path, out)
     }
+    /// `(file, out, src, kind, pos, max, eol)`: the op script
+    /// preprocessor's directive handler (its three token buffers in the
+    /// original's 0x614-byte frame, in this shim's).
+    op_directive_007e15f0 @ 0x007e_15f0 => extern "C" fn op_directive(file: u32, out: u32, src: u32, kind: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::DIRECTIVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DIRECTIVE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::directive(&mut mem(), ebp, file, out, src, kind, pos, max, eol)
+    }
 }

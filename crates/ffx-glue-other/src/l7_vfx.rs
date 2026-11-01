@@ -520,4 +520,212 @@ pub mod bridge {
         h.write(h.rebase(IN_STRING), 0_u32);
         r
     }
+
+    /// `op_token_paren_007e1e90(file, src, out, pos, max, eol)`,
+    /// `op_token_line_007e1c30(file, src, out, pos, max, eol, flags)`, the
+    /// preprocessor (`op_preprocess_007e2270`), the symbol definition, the
+    /// CRT's `__report_rangecheckfailure`; the directives' messages (no
+    /// file name, a misplaced `#else`/`#endif`, the conditional stack
+    /// full), "==" and "1".
+    pub const TOKEN_PAREN: u32 = 0x007e_1e90;
+    pub const TOKEN_LINE: u32 = 0x007e_1c30;
+    pub const PREPROCESS: u32 = 0x007e_2270;
+    pub const SYMBOL_DEFINE: u32 = 0x007e_2770;
+    pub const RANGECHECK_FAILURE: u32 = 0x0094_9b02;
+    pub const S_NO_FILE: u32 = 0x00b5_7f3c;
+    pub const S_MISPLACED: u32 = 0x00b5_7e90;
+    pub const S_STACK_FULL: u32 = 0x00b5_7ed0;
+    pub const S_EQUALS: u32 = 0x00b5_7fc0;
+    pub const S_ONE: u32 = 0x00b7_c984;
+    /// `op_directive_007e15f0`'s frame.
+    pub const DIRECTIVE_FRAME: u32 = 0x614;
+
+    /// `strcmp(a, b) == 0` as the original's byte loops.
+    fn same_str(h: &impl Host, a: u32, b: u32) -> bool {
+        let mut k = 0_u32;
+        loop {
+            let c: u8 = h.read(a.wrapping_add(k));
+            if c != h.read::<u8>(b.wrapping_add(k)) {
+                return false;
+            }
+            if c == 0 {
+                return true;
+            }
+            k = k.wrapping_add(1);
+        }
+    }
+
+    /// The compiler's error report, returning the last print's `eax`.
+    fn report_eax(h: &mut impl Host, msg: u32, src: u32, code: u32) -> u32 {
+        let file = g(h, SCRIPT_ERRORS);
+        if file != 0 {
+            let f = h.rebase(FORMAT_FILE);
+            cdecl(h, DBG_PRINTF, &[f, file]);
+        }
+        let line = g(h, SCRIPT_WARNINGS);
+        if line != 0 {
+            let f = h.rebase(FORMAT_LINE);
+            cdecl(h, DBG_PRINTF, &[f, line]);
+        }
+        let m = h.rebase(msg);
+        let r = cdecl(h, DBG_PRINTF, &[m, src]);
+        h.write(h.rebase(LAST_ERROR), code);
+        r
+    }
+
+    /// `op_directive_007e15f0(file, out, src, kind, pos, max, eol)` ->
+    /// `eax` as the original: a preprocessor directive by its kind (the
+    /// directive table's `+0x10`): 1 `#include` (the name, quotes
+    /// dropped, preprocessed into `out`; one line less to pad), 2/3
+    /// `#define` (name, parameters, body; 3 a macro with its kind 0), 4/5
+    /// `#ifdef`/`#ifndef` and 9 `#if` (`name == value` or `name` true when
+    /// it is "1", as a symbol's body or itself) push the conditional
+    /// stack (`0x0113fc68 + level`: 0 taking, 1 skipping, 2 skipping
+    /// inside a skip; full at level 15), 6 `#else` flips it, 7 `#endif`
+    /// pops it, 8 `#undef` empties the symbol; others return `pos`.
+    /// Misplaced or empty directives are reported. `ebp` is the
+    /// original's frame (the name at `ebp - 0x204`, parameters/operator at
+    /// `- 0x604`, body/value at `- 0x404`, the spills at `- 0x614..`).
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn directive<H: Host>(
+        h: &mut H,
+        ebp: u32,
+        file: u32,
+        out: u32,
+        src: u32,
+        kind: u32,
+        pos: u32,
+        max: u32,
+        eol: u32,
+    ) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let (name, mid, last) = (fr(0x204), fr(0x604), fr(0x404));
+        h.write(fr(0x614), out);
+        h.write(fr(0x610), file);
+        h.write(fr(0x608), pos);
+        h.write(fr(0x60c), eol);
+        let flags = h.rebase(SKIP_FLAGS);
+        let level_at = h.rebase(SKIP_LEVEL);
+        // `#ifdef`/`#ifndef`/`#if`: the new level's flag
+        let push = |h: &mut H, skip: u8| -> u32 {
+            let level: u32 = h.read(level_at);
+            if level.cast_signed() >= 0xf {
+                return report_eax(h, S_STACK_FULL, src, 7);
+            }
+            let level = level.wrapping_add(1);
+            h.write(level_at, level);
+            h.write(flags.wrapping_add(level), skip);
+            let outer: u8 = h.read(flags.wrapping_add(level).wrapping_sub(1));
+            if outer == 1 || outer == 2 {
+                h.write(flags.wrapping_add(level), 2_u8);
+            }
+            level
+        };
+        match kind.wrapping_sub(1) {
+            0 => {
+                cdecl(h, TOKEN_GET, &[file, src, name, pos, max, eol, 0]);
+                // the quotes dropped in place
+                let (mut from, mut to) = (name, name);
+                loop {
+                    let c: u8 = h.read(from);
+                    if c != b'\'' && c != b'"' {
+                        if to != from {
+                            h.write(to, c);
+                        }
+                        to = to.wrapping_add(1);
+                    }
+                    from = from.wrapping_add(1);
+                    if c == 0 {
+                        break;
+                    }
+                }
+                if h.read::<u8>(name) == 0 {
+                    return report_eax(h, S_NO_FILE, src, 10);
+                }
+                let r = cdecl(h, PREPROCESS, &[name, out]);
+                let at = h.rebase(LINE_COUNT);
+                let n: u32 = h.read(at);
+                h.write(at, n.wrapping_sub(1));
+                r
+            }
+            1 | 2 => {
+                cdecl(h, TOKEN_GET, &[file, src, name, pos, max, eol, 1]);
+                cdecl(h, TOKEN_PAREN, &[file, src, mid, pos, max, eol]);
+                cdecl(h, TOKEN_LINE, &[file, src, last, pos, max, eol, 1]);
+                if h.read::<u8>(name) == 0 {
+                    return report_eax(h, S_NO_FILE, src, 10);
+                }
+                cdecl(h, SYMBOL_DEFINE, &[name, mid, last, u32::from(kind != 2)])
+            }
+            3 | 4 => {
+                cdecl(h, TOKEN_GET, &[file, src, name, pos, max, eol, 1]);
+                let tree = g(h, SCRIPT_TREE);
+                let found = cdecl(h, SYMBOL_FIND, &[name, tree]);
+                let skip = u8::from(found == 0);
+                let skip = if kind == 5 { u8::from(skip != 1) } else { skip };
+                push(h, skip)
+            }
+            5 => {
+                let mut level: u32 = h.read(level_at);
+                if level == 0 {
+                    report_eax(h, S_MISPLACED, src, 5);
+                    level = h.read(level_at);
+                }
+                let at = flags.wrapping_add(level);
+                match h.read::<u8>(at) {
+                    0 => h.write(at, 1_u8),
+                    1 => {
+                        if level >= 0x10 {
+                            cdecl(h, RANGECHECK_FAILURE, &[]);
+                        }
+                        h.write(at, 0_u8);
+                    }
+                    _ => {}
+                }
+                level
+            }
+            6 => {
+                let level: u32 = h.read(level_at);
+                if level.cast_signed() > 0 {
+                    h.write(level_at, level - 1);
+                    level - 1
+                } else {
+                    report_eax(h, S_MISPLACED, src, 5)
+                }
+            }
+            7 => {
+                cdecl(h, TOKEN_GET, &[file, src, name, pos, max, eol, 1]);
+                let tree = g(h, SCRIPT_TREE);
+                let sym = cdecl(h, SYMBOL_FIND, &[name, tree]);
+                if sym != 0 {
+                    let s: u32 = h.read(sym);
+                    h.write(s, 0_u8);
+                    h.write(at(sym, 0x18), 0_u32);
+                    h.write(at(sym, 0x1c), 0_u32);
+                }
+                sym
+            }
+            8 => {
+                for buf in [name, mid, last] {
+                    cdecl(h, TOKEN_GET, &[file, src, buf, pos, max, eol, 1]);
+                }
+                let tree = g(h, SCRIPT_TREE);
+                let found = cdecl(h, SYMBOL_FIND, &[name, tree]);
+                let body = if found == 0 {
+                    0
+                } else {
+                    h.read::<u32>(at(found, 4))
+                };
+                let truth = if same_str(h, mid, h.rebase(S_EQUALS)) {
+                    body != 0 && same_str(h, body, last)
+                } else if found == 0 {
+                    same_str(h, name, h.rebase(S_ONE))
+                } else {
+                    body != 0 && same_str(h, body, h.rebase(S_ONE))
+                };
+                push(h, u8::from(!truth))
+            }
+            _ => pos,
+        }
+    }
 }

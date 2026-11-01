@@ -5976,3 +5976,91 @@ fn l7_preprocess_matches_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_directive_matches_the_original() {
+    // every kind 0..10 (and past them); names empty, quoted, "1"; the
+    // operator "==" or not, the symbol found or not, with a body or none;
+    // the conditional stack at every level and flag, full, empty
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a16);
+        let words = [
+            0x0000_4241_u32, // "AB"
+            0x0000_3d3d,     // "=="
+            0x0000_0031,     // "1"
+            0,               // ""
+            0x0027_7827,     // "'x'"
+            0x0022_2222,     // "\"\"\""
+            0x0000_3132,     // "21"
+        ];
+        for _ in 0..1500_u32 {
+            // the tokens the three reads return
+            let toks: Vec<u32> = (0..4).map(|_| words[rng.below(7) as usize]).collect();
+            let toks = t.words(&toks);
+            let cell = t.words(&[toks]);
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x0c]; // mov ecx, [esp+0xc]
+            x.extend([0x8b, 0x15]);
+            x.extend(cell.to_le_bytes()); // mov edx, [cell]
+            x.extend([0x8b, 0x12, 0x89, 0x11]); // mov edx, [edx]; mov [ecx], edx
+            x.extend([0x83, 0x05]);
+            x.extend(cell.to_le_bytes());
+            x.push(0x04); // add dword [cell], 4
+            t.stub_sym_x(l7v::TOKEN_GET, 1, false, 7, 0, Ret::Val(rng.next()), &x);
+            let body = t.words(&[words[rng.below(7) as usize], 0]);
+            let mut sym: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+            sym[0] = t.words(&[rng.next()]);
+            sym[1] = [0, body][rng.below(2) as usize];
+            let sym = t.words(&sym);
+            let found = [0, sym][rng.below(2) as usize];
+            t.stub_sym(l7v::SYMBOL_FIND, 2, false, 2, 0, Ret::Val(found));
+            for (s, tag, n) in [
+                (l7v::TOKEN_PAREN, 3, 6),
+                (l7v::TOKEN_LINE, 4, 7),
+                (l7v::PREPROCESS, 5, 2),
+                (l7v::SYMBOL_DEFINE, 6, 4),
+                (l7v::RANGECHECK_FAILURE, 7, 0),
+                (l7v::DBG_PRINTF, 8, 2),
+            ] {
+                t.stub_sym(s, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            let flags: Vec<u8> = (0..16).map(|_| rng.below(4) as u8).collect();
+            let at = t.rebase(l7v::SKIP_FLAGS);
+            t.patch(at, &flags);
+            let level = [0_u32, 1, 2, 7, 0xe, 0xf, 0x10, 0xffff_ffff][rng.below(8) as usize];
+            let kind = rng.below(12);
+            // an #else at a level past the flags whose byte is 1 reaches
+            // the CRT's range check failure, which never returns (in the
+            // emulator its stub would): not run here
+            let level = if kind == 6 && level > 0xf { 2 } else { level };
+            t.global(l7v::SKIP_LEVEL, level);
+            t.global(l7v::LINE_COUNT, rng.next());
+            t.global(l7v::SCRIPT_ERRORS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::SCRIPT_WARNINGS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::SCRIPT_TREE, rng.next());
+            let a = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                kind,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            let top = call_top(&t.a);
+            let fill: Vec<u8> = (0..0x200).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.a.write(top - 0x800, &fill).unwrap();
+            t.b.write(top - 0x800, &fill).unwrap();
+            let ebp = frame_ebp(&t.a, 7);
+            t.b_top = Some(ebp - l7v::DIRECTIVE_FRAME - 0x40);
+            t.check("op_directive_007e15f0", 0x007e_15f0, Conv::Cdecl, &a, |o| {
+                Out::U32(l7v::directive(
+                    o, ebp, a[0], a[1], a[2], a[3], a[4], a[5], a[6],
+                ))
+            });
+            t.same_stack("op_directive_007e15f0", ebp - 0x614, 0x610);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
