@@ -1080,6 +1080,8 @@ fn bone_transform_in_every_copy() {
         });
         let f = t.at(rva);
         let obj = SCRATCH + 0x3000;
+        // the actor word `*G_A` (all three reads), non-zero
+        t.set_u32(t.img.word(f + 0x29), 0x0a0a_0029);
         for (c, r) in (0u32..).zip([4.0f64, 0.5, 0.0]) {
             t.write(obj, &[0x5a; 0x140]);
             for i in 0..12 {
@@ -1186,6 +1188,8 @@ fn button_timelines_in_every_copy() {
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         t.set_u32(w(&t, 0x3f), SCRATCH + 0x900);
         t.set_u32(w(&t, 0x44), 0x0a0a_0044);
+        t.set_u32(w(&t, 0x4b), 0x0a0a_004b);
+        t.set_u32(w(&t, 0x119), 0x0a0a_0119);
         for (c, (on, mask)) in (0u32..).zip([(0u32, 0u32), (1, 0), (1, 0b10101)]) {
             t.set_u32(w(&t, 0x02), on);
             t.stub(261, move |_, a| (mask >> (a[0] & 31)) & 1);
@@ -1213,6 +1217,7 @@ fn part_matrix_handover_in_every_copy() {
         t.set_u32(lock, 0x5555);
         let scene = SCRATCH + 0x3000;
         t.set_u32(t.img.word(f + 0x7b), scene - t.img.word(f + 0x81));
+        t.set_u32(t.img.word(f + 0x8f), 0x0a0a_008f);
         t.stub(772, |_, a| 0x0772_0000 ^ a[0]);
         t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
         for s in [819u32, 870, 871] {
@@ -1262,10 +1267,18 @@ fn near_bone_matrix_in_every_copy() {
         });
         t.stub(277, |_, a| 0x277 ^ a[0]);
         t.stub_st0(277, |_, _| 2.5);
+        // slot 231 reads the frame matrix's word `+0x38` it is handed
+        t.stub(231, |m, a| {
+            let v = m.r32(a[2] + 0x38);
+            m.w32(SCRATCH + 0x9f0, v ^ a[0]);
+            0x231
+        });
         let f = t.at(rva);
         let obj = SCRATCH + 0x3000;
+        t.set_u32(t.img.word(f + 0x71), 0x0a0a_0071);
         for (c, dist) in (0u32..).zip([0x51u32, 0x50, 0x10]) {
             t.write(obj, &[0x5a; 0x140]);
+            fill(&mut t, obj + 0xb0, 4, 0xb0);
             for i in 0..12 {
                 let v = (f32::from(i as u8) - 5.5) * 0.375;
                 t.set_u32(obj + 0x80 + 4 * i, v.to_bits());
@@ -1432,6 +1445,102 @@ fn battle_effect_end_in_every_copy() {
     }
 }
 
+const CAMERA_RESET_NODES: &[(u16, u32)] = &[(307, 0x6bc0), (605, 0xa100)];
+
+/// `o6_fam_pairs4::camera_reset_nodes`: the angle above, below and
+/// between its limits; a free ring of three and of two nodes; the list
+/// empty or holding a node.
+#[test]
+fn camera_reset_nodes_in_every_copy() {
+    for (n, rva) in copies("o6 fam pairs4 camera_reset_nodes", CAMERA_RESET_NODES) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs(&mut t);
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let kf = |t: &Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+        let block = 0x6a00_0000 + 0x0010_0000 * u32::from(n % 16);
+        t.set_u32(w(&t, 0x05), block);
+        let (k1, hi, lo) = (kf(&t, 0x1f), kf(&t, 0x26), kf(&t, 0x3a));
+        let busy = SCRATCH + 0x3400;
+        let saved = t.save();
+        for (c, (x, ring, list)) in (0u32..).zip([
+            (hi + 1.0, 3u32, false),
+            (lo - 1.0, 2, true),
+            (hi.midpoint(lo), 3, true),
+        ]) {
+            t.restore(&saved);
+            t.write(block + 0x16d0, &[0x5a; 0x800]);
+            t.write(block + 0x1e30, &[0x5a; 0x40]);
+            t.set_u32(block + 0xc24, (x + k1).to_bits());
+            let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+            for i in 1..=ring {
+                t.write(node(i), &[0x5a; 0x1c]);
+                t.set_u32(node(i), node(if i == 1 { ring } else { i - 1 }));
+                t.set_u32(node(i) + 4, node(if i == ring { 1 } else { i + 1 }));
+            }
+            t.set_u32(w(&t, 0x163), node(1));
+            t.set_u16(w(&t, 0x148), ring as u16);
+            t.write(busy, &[0x33; 0x20]);
+            t.set_u32(w(&t, 0x1c3), if list { busy } else { 0 });
+            t.set_u32(w(&t, 0x1d2), busy);
+            t.check_entry(f, regs(rva, c), &[], Eax::Checked);
+        }
+    }
+}
+
+/// Both copies bind to the one port (the same code, `magic_0249`'s name).
+const SPARK_TASK: &[(u16, u32)] = &[(249, 0x1b20), (562, 0x1b30)];
+
+/// `o6_fam_pairs4::spark_task`: delayed, at the end of its life (the
+/// task, at rest, goes back to the pool) and alive (four sparks from the
+/// DLL's ring as it is after the start-up; slot 314 answers floats, slot
+/// 237 reads its vector).
+#[test]
+fn spark_task_in_every_copy() {
+    for (n, rva) in copies("o6 fam pairs4 spark_task", SPARK_TASK) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs(&mut t);
+        t.stub(314, |_, a| 0x314 ^ a[0]);
+        t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+        t.stub(237, |m, a| {
+            let mut x = 0u32;
+            for i in 0..4 {
+                x = x.rotate_left(3) ^ m.r32(a[2] + 4 * i);
+            }
+            m.w32(a[3], x ^ a[0]);
+            0x237
+        });
+        let f = t.at(rva);
+        let task = SCRATCH + 0x3000;
+        // the spark ring: 8 free records of 0x50 bytes in scratch memory,
+        // the rover at 6 (it wraps)
+        let take = t.img.rel32_target(f + 0x4a);
+        let ring = SCRATCH + 0x5000;
+        t.set_u32(t.img.word(take + 0x09), 8);
+        t.set_u32(t.img.word(take + 0x16), ring);
+        let saved = t.save();
+        for (c, (delay, life)) in (0u32..).zip([(3u16, 5u16), (0, 1), (0, 4)]) {
+            t.restore(&saved);
+            t.write(ring, &[0x5a; 0x280]);
+            for i in 0..8 {
+                t.set_u32(ring + 0x50 * i + 0x48, u32::from(i == 7));
+            }
+            t.set_u32(t.img.word(take + 0x01), 6);
+            rest_node(&mut t, task);
+            t.write(task + 0x1c, &[0x44; 0x10]);
+            t.set_u16(task + 0x14, delay);
+            t.set_u16(task + 0x16, life);
+            let r = t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
+            // the alive case reaches the sparks (the ring has room)
+            assert!(c < 2 || r.eax != 0, "{n}: no spark taken");
+        }
+    }
+}
+
 #[test]
 fn dll_main_writes_only_crt_state() {
     let firsts: Vec<(u16, u32)> = START_OBJECT_FIRST.iter().map(|c| (c.0, c.1)).collect();
@@ -1467,6 +1576,8 @@ fn dll_main_writes_only_crt_state() {
         PULSE_LIGHTS,
         THREE_PASS_MODEL,
         BATTLE_EFFECT_END,
+        CAMERA_RESET_NODES,
+        SPARK_TASK,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);

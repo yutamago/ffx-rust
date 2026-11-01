@@ -1832,6 +1832,9 @@ ports! {
     "o6 fam pairs4 pulse_lights 0249@1f30" => o6_fam_pairs4::PULSE_LIGHTS_0249_1F30, o6_fam_pairs4::pulse_lights;
     "o6 fam pairs4 battle_effect_end 0434@95e0" => o6_fam_pairs4::BATTLE_EFFECT_END_0434_95E0, o6_fam_pairs4::battle_effect_end;
     "o6 fam pairs4 battle_effect_end 0610@d4b0" => o6_fam_pairs4::BATTLE_EFFECT_END_0610_D4B0, o6_fam_pairs4::battle_effect_end;
+    "o6 fam pairs4 camera_reset_nodes 0307@6bc0" => o6_fam_pairs4::CAMERA_RESET_NODES_0307_6BC0, o6_fam_pairs4::camera_reset_nodes;
+    "o6 fam pairs4 camera_reset_nodes 0605@a100" => o6_fam_pairs4::CAMERA_RESET_NODES_0605_A100, o6_fam_pairs4::camera_reset_nodes;
+    "o6 fam pairs4 spark_task 0249@1b20" => o6_fam_pairs4::SPARK_TASK_0249_1B20, o6_fam_pairs4::spark_task;
     // round 6, the shape families (o6_fam_*): end of ports
 }
 
