@@ -3861,3 +3861,405 @@ fn left2_matrix_index_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_matrix_mul_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let floats = |t: &mut Twins, base: f32, n: u16| {
+            t.alloc(
+                &(0..n)
+                    .flat_map(|i| (base + f32::from(i) * 0.75 - 3.0).to_bits().to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let ma = floats(&mut t, 0.5, 16);
+        let mb = floats(&mut t, -1.25, 16);
+        let v = floats(&mut t, 2.0, 4);
+        let nums = t.alloc(
+            &[0.0f32, 2.5, -0.375]
+                .iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        // (argument 1, argument 2: 0 none / 1 matrix / 2 vector, whether
+        // argument 1's metatable matches, the new userdata made, the copy
+        // stubbed)
+        for (one, two, eq1, made, stub_copy) in [
+            (true, 1u8, true, true, false),
+            (true, 1, true, false, true),
+            (true, 2, true, true, false),
+            (true, 0, true, true, false),
+            (true, 0, true, false, true),
+            (false, 1, true, true, false),
+            (false, 1, true, false, true),
+            (true, 1, false, true, false),
+            (false, 2, true, true, false),
+            (false, 0, true, true, false),
+            (true, 2, false, true, false),
+        ] {
+            let mut table = [0u32; 16];
+            table[1] = if one { ma } else { 0 };
+            table[2] = match two {
+                1 => mb,
+                2 => v,
+                _ => 0,
+            };
+            index_stub(&mut t, s::LUA_TOUSERDATA, 1, &table);
+            t.stub(mid::LUA_GETMETATABLE, false, 2, 0, 1);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            let mut eqs = Vec::new();
+            if one {
+                eqs.push(u32::from(eq1));
+            }
+            if two != 0 {
+                eqs.push(u32::from(two == 1));
+                eqs.push(u32::from(two == 2));
+            }
+            eqs.push(0);
+            seq_stub(&mut t, mid::LUA_RAWEQUAL, &eqs);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            let ud = if made { t.junk(0x40, 7) } else { 0 };
+            t.stub(l2::LUA_MORE[6], false, 2, 0, ud);
+            t.stub(l2::LUA_MORE[7], false, 2, 0, 0);
+            t.stub_float_table(l2::MATRIX_NEW[0], 2, 1, nums);
+            let nv = t.junk(0x10, 9);
+            t.stub(l2::MATRIX_INDEX[1], false, 1, 0, nv);
+            let nm = if made { t.junk(0x40, 11) } else { 0 };
+            t.stub(l2::MATRIX_MUL[0], false, 1, 0, nm);
+            if stub_copy {
+                t.stub_deref0(l2::MATRIX_NEW[2], 1, 1, 0);
+            }
+            let what = format!("{label}: matrix mul {one} {two} eq1 {eq1} made {made}");
+            t.cdecl(&what, 0x0057_1a60, &[l], |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::matrix_mul(g, l, frame))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_vector_index_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut keys: Vec<u32> = ["0", "3", "4", "x", "y", "z", "w", "q", "", "dot", "dot3x"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        keys.push(0);
+        for &(name, _) in &l2::VECTOR_INDEX_METHODS {
+            keys.push(t.rebase(name));
+        }
+        let v = t.alloc(
+            &[1.5f32, -0.0, 7.25e-3, f32::INFINITY]
+                .iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for vector in [true, false] {
+            for &key in &keys {
+                t.stub(l2::LUA_TOLSTRING, false, 3, 0, key);
+                t.stub(l2::VECTOR_INDEX[0], false, 2, 0, if vector { v } else { 0 });
+                t.stub(l2::VECTOR_INDEX[2], false, 2, 0, 0);
+                t.stub(l2::LUA_INDEX[7], false, 3, 0, 0);
+                t.stub(l2::LUA_MORE[4], false, 3, 0, 0);
+                let what = format!("{label}: vector index vector {vector} key {key:#x}");
+                t.cdecl(&what, 0x0057_2e70, &[l], |g| Some(l2b::vector_index(g, l)));
+                t.unstub();
+            }
+        }
+    }
+}
+
+/// The occluder's plane `0x00a30eb0` against the original (its
+/// `_CIsqrt` the real intrinsic): ordinary vectors, parallel ones (a zero
+/// normal: 1/0), and the special floats in every component.
+#[test]
+fn big_occluder_plane_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x00c0_ffee);
+        let mut cases: Vec<[u32; 12]> = vec![
+            [
+                0x3f80_0000,
+                0,
+                0,
+                0,
+                0x3f80_0000,
+                0,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0,
+                0,
+                0,
+            ],
+            [
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0,
+                0x4000_0000,
+                0x4080_0000,
+                0x40c0_0000,
+                0,
+                0xbf80_0000,
+                0x3f00_0000,
+                0x4120_0000,
+                0,
+            ],
+        ];
+        for _ in 0..40 {
+            let mut c = [0u32; 12];
+            for w in &mut c {
+                let r = rng.next();
+                *w = if r.is_multiple_of(8) {
+                    FLOATS[(r >> 3) as usize % FLOATS.len()]
+                } else {
+                    // moderate magnitudes with full mantissas
+                    (0x3c00_0000 + (r >> 8) % 0x0800_0000) | (r & 0x8000_0000)
+                };
+            }
+            cases.push(c);
+        }
+        for (n, c) in cases.iter().enumerate() {
+            let bytes = |w: &[u32]| w.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<_>>();
+            let a = t.alloc(&bytes(&c[0..3]));
+            let b = t.alloc(&bytes(&c[4..7]));
+            let p = t.alloc(&bytes(&c[8..11]));
+            let out = t.junk(0x10, 3);
+            let what = format!("{label}: occluder plane case {n}");
+            t.cdecl(&what, 0x00a3_0eb0, &[out, a, b, p], |g| {
+                Some(l2b::occluder_plane(g, out, a, b, p))
+            });
+        }
+    }
+}
+
+/// The occluder's edge quad `0x00a30600` against the original: no
+/// buffer, room for the four slots or not (the end exactly at the next
+/// index, one past it), the index somewhere in the buffer; the
+/// compare-exchange a real `lock cmpxchg`.
+#[test]
+fn big_occluder_quad_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // InterlockedCompareExchange(p, new, cmp), stdcall
+        let cx = t.code(&[
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ]);
+        let slot = t.rebase(l2::OCCLUDER_QUAD[0]);
+        let old = ffx_oracle::Oracle::read(&mut t.a, slot, 4).unwrap();
+        t.saved.entry(slot).or_insert(old);
+        t.w32(slot, cx);
+        let vecs = [
+            [0x3f80_0000u32, 0xc000_0000, 0x4049_0fdb],
+            [0x3eaa_aaab, 0x7f7f_ffff, 0x0000_0001],
+            [FLOATS[8], FLOATS[9], 0xbf00_0000],
+            [0x4120_0000, 0x7f7f_ffff, 0x7f80_0000],
+        ];
+        let bytes = |w: &[u32]| w.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<_>>();
+        let v: Vec<u32> = vecs.iter().map(|w| t.alloc(&bytes(w))).collect();
+        for (buffer, cur, end) in [
+            (true, 0u32, 16u32),
+            (true, 8, 16),
+            (true, 12, 16),
+            (true, 12, 17),
+            (true, 3, 8),
+            (false, 0, 16),
+        ] {
+            for (a, b, d) in [(0, 1, 2), (2, 3, 0), (3, 2, 1), (1, 3, 0)] {
+                let buf = if buffer { t.junk(0x110, 5) } else { 0 };
+                let list = t.alloc(&bytes(&[buf, cur, end]));
+                let what = format!("{label}: occluder quad {buffer} {cur} {end} {a}{b}{d}");
+                t.this(&what, 0x00a3_0600, list, &[v[a], v[b], v[d]], |g| {
+                    l2b::occluder_quad(g, list, v[a], v[b], v[d]);
+                    None
+                });
+            }
+        }
+        t.unstub();
+    }
+}
+
+// ---- big-phyre2: the occluder's silhouette planes (m5p_scripting_bp2) ----
+
+/// A float in `[-1, 1)` from the generator.
+fn unit(rng: &mut Rng) -> f32 {
+    f32::from(u16::try_from(rng.next() % 20_000).unwrap()) / 10_000.0 - 1.0
+}
+
+fn float_bytes(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// An occluder geometry: `planes` planes (groups of four, rows x, y, z,
+/// d; random, or all `x = y = z = 0, d = -1` with `facing`: nothing in
+/// front of the camera, no silhouette), `verts` vertices, `edges` random
+/// edges (plane pairs, then vertex pairs, right after the vertices),
+/// bounds -1..1.
+fn occluder(t: &mut Twins, rng: &mut Rng, planes: u32, verts: u32, edges: u32, flat: bool) -> u32 {
+    let groups = (planes + 3) >> 2;
+    let mut g = vec![0u8; 0x30];
+    g[0..4].copy_from_slice(&planes.to_le_bytes());
+    g[4..8].copy_from_slice(&verts.to_le_bytes());
+    g[8..12].copy_from_slice(&edges.to_le_bytes());
+    g[0x10..0x1c].copy_from_slice(&float_bytes(&[-1.0, -0.5, -2.0]));
+    g[0x20..0x2c].copy_from_slice(&float_bytes(&[1.0, 0.75, 2.0]));
+    for _ in 0..groups {
+        let rows: Vec<f32> = (0..16)
+            .map(|i| {
+                if flat {
+                    if i >= 12 { -1.0 } else { 0.0 }
+                } else {
+                    unit(rng) * 3.0
+                }
+            })
+            .collect();
+        g.extend(float_bytes(&rows));
+    }
+    for _ in 0..verts {
+        g.extend(float_bytes(&[
+            unit(rng) * 2.0,
+            unit(rng) * 2.0,
+            unit(rng) * 2.0,
+            1.0,
+        ]));
+    }
+    for _ in 0..edges {
+        g.extend([
+            (rng.next() % (4 * groups)) as u8,
+            (rng.next() % (4 * groups)) as u8,
+        ]);
+    }
+    for _ in 0..edges {
+        g.extend([(rng.next() % verts) as u8, (rng.next() % verts) as u8]);
+    }
+    t.alloc(&g)
+}
+
+/// `0x00a312c0` with the original matrix, plane and edge-quad callees on
+/// both sides (the quad's compare-exchange a real `lock cmpxchg`, its list
+/// a buffer with room): with and without the item's 3x4 and the
+/// camera; no edges; edges but no silhouette; a few silhouette edges
+/// (one group of planes out, two); twelve and more (the cap: the twelfth
+/// pushes no quad). The port's plane flags go where the original's
+/// alloca puts them and are compared. Only synthetic data reaches it.
+#[test]
+fn bp2_silhouette_planes() {
+    use ffx_pother_a::m5p_scripting_bp2::{self as sb, bridge as sbb};
+    use ffx_pother_a::m5p_scripting_left2 as l2;
+    for (label, mut t) in Twins::all() {
+        let cx = t.code(&[
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ]);
+        let slot = t.rebase(l2::OCCLUDER_QUAD[0]);
+        let old = ffx_oracle::Oracle::read(&mut t.a, slot, 4).unwrap();
+        t.saved.entry(slot).or_insert(old);
+        t.w32(slot, cx);
+        let mut rng = Rng(0x00a3_12c0);
+        let end = t.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 3 - 8;
+        // (planes, vertices, edges, flat planes, item 3x4, camera)
+        let cases: &[(u32, u32, u32, bool, bool, bool)] = &[
+            (6, 8, 0, false, false, true),
+            (6, 8, 10, true, true, true),
+            (6, 8, 3, false, false, true),
+            (4, 8, 1, false, true, true),
+            (4, 8, 2, false, false, true),
+            (6, 8, 4, false, true, true),
+            (5, 8, 6, false, true, true),
+            (8, 12, 9, false, true, false),
+            (9, 16, 40, false, true, true),
+            (12, 16, 60, false, false, true),
+            (3, 6, 20, false, true, true),
+            (7, 10, 14, false, true, true),
+            // patched below: planes exactly on the camera (0) and NaN
+            (4, 8, 3, false, true, true),
+        ];
+        let special = cases.len() - 1;
+        let mut kept = std::collections::BTreeSet::new();
+        for (k, &(planes, verts, edges, flat, local, camera)) in cases.iter().enumerate() {
+            for round in 0..3u32 {
+                let geometry = occluder(&mut t, &mut rng, planes, verts, edges, flat);
+                if k == special {
+                    // planes 0..2 with a zero normal: d = 0 (exactly on
+                    // the camera: not behind), NaN (not behind), 1
+                    // (behind); edges 0-2, 1-2, 0-1
+                    for i in 0..3u32 {
+                        for row in 0..3u32 {
+                            t.w32(geometry + 0x30 + 0x10 * row + 4 * i, 0);
+                        }
+                    }
+                    t.w32(geometry + 0x30 + 0x30, 0);
+                    t.w32(geometry + 0x30 + 0x34, f32::NAN.to_bits());
+                    t.w32(geometry + 0x30 + 0x38, 1.0f32.to_bits());
+                    let e = geometry + 0x30 + 0x40 + 16 * verts;
+                    t.write(e, &[0, 2, 1, 2, 0, 1]);
+                }
+                let item = t.zeros(8);
+                t.w32(item, geometry);
+                if local {
+                    let m: Vec<f32> = (0..12)
+                        .map(|i| {
+                            if i % 5 == 0 {
+                                1.0 + unit(&mut rng) * 0.25
+                            } else {
+                                unit(&mut rng) * 0.5
+                            }
+                        })
+                        .collect();
+                    let m = t.alloc(&float_bytes(&m));
+                    t.w32(item + 4, m);
+                }
+                let owner = t.zeros(0xc0);
+                if camera {
+                    let cam = t.zeros(0x30);
+                    let p = [
+                        unit(&mut rng) * 6.0,
+                        unit(&mut rng) * 6.0,
+                        unit(&mut rng) * 6.0,
+                    ];
+                    t.write(cam + 0x20, &float_bytes(&p));
+                    t.w32(owner + 0xb0, cam);
+                }
+                let quads = t.rebase(sb::EDGE_QUADS);
+                let buf = t.junk(0x40 * 60, 9);
+                t.write(quads, &[buf, 0, 0x40 * 60].map(u32::to_le_bytes).concat());
+                let out = t.junk(0x40 * 3, 4);
+                let block = t.junk(0x40, 6);
+                // where the original's alloca puts the flags: below its
+                // saved registers, 16-byte aligned
+                let size = planes.div_ceil(4) * 4;
+                let flags = (ebp - 0x2b0 - size) & !0xf;
+                t.b.set_call_top(Some(flags - 0x100));
+                let what = format!("{label}: silhouette {k}.{round}");
+                let r = t.this(&what, 0x00a3_12c0, item, &[owner, out, block], |g| {
+                    let bytes = sbb::silhouette_prepare(g, ebp, item, owner);
+                    assert_eq!(bytes, planes.div_ceil(4) * 4, "alloca size");
+                    Some(sbb::silhouette_finish(g, ebp, out, block, flags))
+                });
+                t.b.set_call_top(None);
+                let mut x = vec![0; size as usize];
+                let mut y = vec![0; size as usize];
+                ffx_bridge::Mem::read_bytes(&t.a, flags, &mut x);
+                ffx_bridge::Mem::read_bytes(&t.b, flags, &mut y);
+                assert_eq!(x, y, "{what}: plane flags");
+                kept.insert((r - out) / 0x40);
+            }
+        }
+        // no planes, one group, two, three (the cap)
+        assert_eq!(
+            kept.into_iter().collect::<Vec<_>>(),
+            [0, 1, 2, 3],
+            "{label}"
+        );
+        t.unstub();
+    }
+}

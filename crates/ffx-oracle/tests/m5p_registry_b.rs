@@ -3079,3 +3079,150 @@ fn batch12_utility_delete_matches_the_original() {
         }
     }
 }
+
+// ---- big-phyre2: the occluder gathering (m5p_registry_b_bp2) ----
+
+impl Twins {
+    /// A recording stub over `sym` (rewritten on every call, unlike
+    /// [`Twins::stub`]) that logs `tag`, `ecx` when `this` and `n` stack
+    /// words, then answers from `answers` in turn: the answer itself, or
+    /// with `scale_arg` set, the stack word `scale_arg` plus the answer
+    /// times 0x40. Pops `pops` words.
+    fn seq_stub(
+        &mut self,
+        sym: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        answers: &[u32],
+        scale_arg: Option<u8>,
+    ) {
+        let mut table = Vec::new();
+        for &v in answers {
+            table.extend(v.to_le_bytes());
+        }
+        let table = self.alloc(&table);
+        let cell = self.alloc(&table.to_le_bytes());
+        let l = self.log;
+        let mut c = vec![0xa1];
+        c.extend(l.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((l + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(l.to_le_bytes()); // inc dword [log]
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x8b, 0x10]); // mov edx, [eax]
+        c.extend([0x83, 0x05]);
+        c.extend(cell.to_le_bytes());
+        c.push(0x04); // add dword [cell], 4
+        match scale_arg {
+            None => c.extend([0x89, 0xd0]), // mov eax, edx
+            Some(w) => {
+                c.extend([0x8b, 0x44, 0x24, 4 + 4 * w]); // mov eax, [esp+4+4w]
+                c.extend([0xc1, 0xe2, 0x06]); // shl edx, 6
+                c.extend([0x01, 0xd0]); // add eax, edx
+            }
+        }
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+    }
+}
+
+/// `0x00a2f7d0` with the matrix callees original on both sides and
+/// `boxPlanes` / `0x00a312c0` answering from lists: no items (all
+/// counts zeroed); one item without and one with its 3x4; items hidden
+/// by the first or a later occluder (0), kept past them (1, -1); an
+/// occluder that writes no planes; the counts filling up before the
+/// items end (nothing more written) and the items ending first (the
+/// rest zeroed). The frame's matrices and extent are compared after the
+/// call. Only synthetic data reaches it.
+#[test]
+fn bp2_gather_occluders() {
+    use ffx_pload::m5p_registry_b_bp2::{self as g, bridge as gb};
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x00a2_f7d0);
+        let end = t.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 4 - 8;
+        // (items: has a 3x4; boxPlanes answers; planes each occluder writes)
+        let cases: &[(&[bool], &[u32], &[u32])] = &[
+            (&[], &[], &[]),
+            (&[false], &[], &[2]),
+            (&[true], &[], &[1]),
+            (&[false, true, false], &[0, 1, 1, 0], &[0, 3, 1]),
+            (&[true, true, true], &[1, u32::MAX, 0], &[1, 1, 1]),
+            (
+                &[true; 6],
+                &[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                &[1, 2, 1, 1, 1, 1],
+            ),
+            (&[false; 7], &[u32::MAX; 12], &[0, 1, 0, 1, 1, 1, 1]),
+            (&[true, false], &[0], &[2, 2]),
+        ];
+        for (k, &(items, boxes, planes)) in cases.iter().enumerate() {
+            let out = t.object(&mut rng, 0x310 + 0x40 * 5);
+            let list = t.zeros(8 * items.len().max(1));
+            for (i, &local) in items.iter().enumerate() {
+                let geometry = t.zeros(0x30);
+                let v: Vec<u8> = (0..6)
+                    .flat_map(|_| ((rng.next() % 2000) as f32 / 100.0 - 10.0).to_le_bytes())
+                    .collect();
+                t.write(geometry + 0x10, &v);
+                let item = t.zeros(8);
+                t.w32(item, geometry);
+                if local {
+                    let m: Vec<u8> = (0..12)
+                        .flat_map(|_| ((rng.next() % 200) as f32 / 100.0 - 1.0).to_le_bytes())
+                        .collect();
+                    let m = t.alloc(&m);
+                    t.w32(item + 4, m);
+                }
+                t.w32(list + 8 * i as u32, item);
+                t.w32(list + 8 * i as u32 + 4, rng.next());
+            }
+            t.seq_stub(g::BOX_PLANES, false, 6, 0, boxes, None);
+            t.seq_stub(g::OCCLUDER_PLANES, true, 3, 3, planes, Some(1));
+            let junk: Vec<u8> = (0..0x138u32).map(|i| (i * 11 + k as u32) as u8).collect();
+            t.write(ebp - 0x138, &junk);
+            t.b.set_call_top(Some(ebp - 0x138 - 0x100));
+            let what = format!("{label}: gather occluders {k}");
+            let n = items.len() as u32;
+            t.check(
+                &what,
+                0x00a2_f7d0,
+                Conv::Cdecl,
+                &[out, list, n, 0xa4a4],
+                |h| {
+                    gb::gather_occluders(h, ebp, out, list, n, 0xa4a4);
+                    Out::Void
+                },
+            );
+            t.b.set_call_top(None);
+            let mut x = vec![0; 0x110];
+            let mut y = vec![0; 0x110];
+            t.a.read_bytes(ebp - 0x138, &mut x);
+            t.b.read_bytes(ebp - 0x138, &mut y);
+            assert_eq!(x, y, "{what}: frame");
+        }
+    }
+}

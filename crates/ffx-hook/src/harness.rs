@@ -765,6 +765,7 @@ unsafe fn seeded_job(kind: u32, first: u32, job: impl FnOnce() -> u32) -> u32 {
 /// `count` character pointers at `chars`), seeded ([`seeded_job`]).
 unsafe extern "C" fn cloth_job(chars: u32, count: u32) -> u32 {
     type Job = unsafe extern "C" fn(u32, u32) -> u32;
+    cloth_order();
     // SAFETY: the job's own arguments, passed on to the job.
     unsafe {
         let job: Job = std::mem::transmute(crate::rebase(0x0082_e390));
@@ -774,6 +775,46 @@ unsafe extern "C" fn cloth_job(chars: u32, count: u32) -> u32 {
             0
         };
         seeded_job(1, first, || job(chars, count))
+    }
+}
+
+/// Times a cloth job waited for the render thread ([`cloth_order`]), for
+/// `stats`.
+static CLOTH_WAITS: AtomicU32 = AtomicU32::new(0);
+
+/// The cloth order (docs/host.md, "The cloth race"): in lockstep a cloth
+/// job waits until the render thread has presented every flip queued
+/// before it, so the previous update's draw has staged the cloth vertices
+/// (`ClothInstancingDynamicMesh_stageStreams_006e2000` sets the slot's
+/// flag) before this update's submit
+/// (`ClothInstancingDynamicMesh_submit_006e28f0`, after the jobs) looks at
+/// the flag; without it a slot whose stage came late drew the vertices of
+/// the update before. The main thread waits for the cloth jobs before it
+/// submits. On by default in lockstep, as in ffx-rust;
+/// `FFX_HARNESS_CLOTH_ORDER=0` turns it off. At most 2 s, then the job
+/// goes on and the log says so.
+fn cloth_order() {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var("FFX_HARNESS_CLOTH_ORDER").map_or(true, |v| v != "0"))
+        || !lockstep()
+    {
+        return;
+    }
+    let want = FLIPS.load(Ordering::Acquire);
+    if FLIPS_DONE.load(Ordering::Acquire) >= want {
+        return;
+    }
+    CLOTH_WAITS.fetch_add(1, Ordering::Relaxed);
+    let start = std::time::Instant::now();
+    while FLIPS_DONE.load(Ordering::Acquire) < want {
+        if start.elapsed() > std::time::Duration::from_secs(2) {
+            log(&format!(
+                "  harness: cloth job in update {}: flip {want} not presented after 2 s",
+                passed()
+            ));
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_micros(200));
     }
 }
 
@@ -1710,6 +1751,8 @@ pub static PRESENT_FLIP_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 static FLIPS: AtomicU32 = AtomicU32::new(0);
 /// Flip commands the render thread ran.
 static FLIPS_RUN: AtomicU32 = AtomicU32::new(0);
+/// Flips whose `Renderer_PresentFlip` returned (presented).
+static FLIPS_DONE: AtomicU32 = AtomicU32::new(0);
 /// The update each queued flip shows ([`FRAME`] when it was queued), by
 /// flip number modulo the ring's size. The render thread runs at most 16
 /// command buffers behind (`Phyre_PRendering_PRenderThread_threadEntry`'s
@@ -2051,6 +2094,7 @@ pub unsafe extern "thiscall" fn present_flip(renderer: *mut c_void) -> u32 {
         }
     };
     PRESENT_LABEL.store(NO_LABEL, Ordering::Release);
+    FLIPS_DONE.fetch_add(1, Ordering::AcqRel);
     r
 }
 
@@ -2615,14 +2659,15 @@ fn command(line: &str) -> Result<String, String> {
         "ping" => "ok pong".into(),
         "frame" => format!("ok {}", now()),
         "stats" => format!(
-            "ok frame {} pad_reads {} key_polls {} presents {} flips {} flips_run {} seeded_jobs {}",
+            "ok frame {} pad_reads {} key_polls {} presents {} flips {} flips_run {} seeded_jobs {} cloth_waits {}",
             now(),
             PAD_READS.load(Ordering::Relaxed),
             KEY_POLLS.load(Ordering::Relaxed),
             PRESENTS.load(Ordering::Relaxed),
             FLIPS.load(Ordering::Relaxed),
             FLIPS_RUN.load(Ordering::Relaxed),
-            SEEDED_JOBS.load(Ordering::Relaxed)
+            SEEDED_JOBS.load(Ordering::Relaxed),
+            CLOTH_WAITS.load(Ordering::Relaxed)
         ),
         "keys" => {
             let codes = words[1..]

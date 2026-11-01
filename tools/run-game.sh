@@ -39,7 +39,7 @@
 #               folder (an instance's own file), its report in ffx-rust.log
 #               there; the harness options mean the same (docs/harness.md,
 #               "Two processes"). Only with --background.
-#               FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit build (stage 4);
+#               (the 64-bit build, x86_64-pc-windows-msvc, the only one);
 #               FFX_HOST_GFX_RECORD=1 keeps the draw recording (gfxcapture),
 #               FFX_HOST_NOTES=1, FFX_HOST_TRACE=n, FFX_HOST_WATCH, FFX_HOST_DISABLE and FFX_HOST_ONLY reach it (docs/host.md)
 # FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
         --no-hooks) hooks=0 ;;
         --lang) lang="$2"; shift ;;
         --log-opens) export FFX_HOOK_LOG_OPENS=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_LOG_OPENS" ;;
-        --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS"; shift ;;
+        --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS:FFX_HARNESS_CLOTH_ORDER"; shift ;;
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
@@ -76,7 +76,7 @@ while [[ $# -gt 0 ]]; do
         --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
-        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY:FFX_HARNESS_CLOTH_ORDER" ;;
+        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY" ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift
@@ -178,7 +178,7 @@ if [[ -n "${rust:-}" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 ]] || "$repo/tools/build-host.sh" >/dev/null
     # rm first: never write through a hard link into the game folder.
     rm -f "$game/ffx-rust.exe"
-    install -m 755 "$repo/target/${FFX_HOST_TARGET:-i686-pc-windows-msvc}/release/ffx-rust.exe" "$game/ffx-rust.exe"
+    install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-rust.exe" "$game/ffx-rust.exe"
 elif [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
 else
@@ -271,8 +271,8 @@ fi
 
 cd "$game"
 if [[ -n "${rust:-}" ]]; then
-    # ffx-rust.exe restarts itself with bottom-up ASLR off (crates/ffx-host
-    # relaunch.rs), so --fixed-addresses needs no launcher here.
+    # ffx-rust.exe's game addresses are its arena's (docs/host.md, "The
+    # arena"), the same in every run, so --fixed-addresses needs no launcher.
     rm -f "$game/ffx-rust.log"
     ./ffx-rust.exe > "$game/ffx-rust.log" 2>&1 &
     echo "ffx-rust.exe started (language $lang, pid $!, report in $game/ffx-rust.log)"

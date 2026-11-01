@@ -7,6 +7,7 @@
 //! shims keep no state.
 
 use super::{StackFrame, mem, ported};
+use ffx_glue_other::l6_vfx::bridge as l6v;
 use ffx_glue_other::m5v_a::bridge as a;
 use ffx_glue_other::m5v_b::bridge as b;
 use ffx_glue_other::m5v_c::bridge as c;
@@ -828,5 +829,26 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_glue_other::m5v_w::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_glue_other::m5v_w::FRAME;
         gw::draw_indexed_triangles(&mut mem(), ebp, slots, r, p, buffers, stats)
+    }
+    // ---- round 6 (left6) batch 1 (ffx_glue_other::l6_vfx) ----
+    /// `FUN_00a3c350()` -> `gdraw_setProjection_00a3c450`'s `eax`; while
+    /// drawing whole the original leaves the caller's `eax`, the shim 0
+    /// (`gdraw_rt_bind_00a37410`'s port, which returns that `eax`, runs
+    /// the bridge itself and keeps the viewport call's).
+    gdraw_targetProjection_00a3c350 @ 0x00a3_c350 => extern "C" fn gdraw_target_projection() -> u32 {
+        l6v::target_projection(&mut mem()).unwrap_or(0)
+    }
+    /// `gdraw_rt_bind_00a37410(mask)` (stdcall; the target description in
+    /// a frame).
+    gdraw_rt_bind_00a37410 @ 0x00a3_7410 => extern "stdcall" fn gdraw_rt_bind(mask: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l6_vfx::RT_BIND_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l6_vfx::RT_BIND_FRAME;
+        l6v::rt_bind(&mut mem(), ebp, mask)
+    }
+    // ---- round 6 (left6) batch 2 (ffx_glue_other::l6_vfx) ----
+    /// `ppp_mdl_rev_matrix_007401d0(work, _, rec)` (its second word is not
+    /// read).
+    ppp_mdl_rev_matrix_007401d0 @ 0x0074_01d0 => extern "C" fn ppp_mdl_rev_matrix(work: u32, _unused: u32, rec: u32) -> u32 {
+        l6v::rev_matrix(&mut mem(), work, rec)
     }
 }

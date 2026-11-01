@@ -229,6 +229,130 @@ pub const KEY_LOG: [u32; 11] = [
     0x00b4_02f0,
 ];
 
+/// `PApplication::onExit`'s callees (cdecl unless noted):
+/// `SaveDataTtyWrite2(fd, text)`, `PRenderer::syncRender` (thiscall on
+/// `+0x124`), `PhyreFree`, the array clear `0x00443f80` (thiscall on
+/// `+0x2c4`), `PRenderThread::GetInstance`, its `stop` (thiscall),
+/// `removeTimeline(&+0xc)` (thiscall on the collection 0x00c2e2cc, ret
+/// 4), `PPreprocessRingBuffer::GetSingleton`, the command drain
+/// `0x0062d100` (thiscall), the array release `0x005bc470` (thiscall on
+/// `+0x40`), `PString::Assign(text)` (thiscall on `+0x398`, ret 4), the
+/// render scope lock's enter (thiscall on a frame word), the renderer
+/// context, its release (thiscall), the lock's leave, the input mapper's
+/// release (thiscall on `[+0x2b8]`).
+pub const ON_EXIT_CALLS: [u32; 16] = [
+    0x0064_8850,
+    0x005b_c3f0,
+    0x0042_fb20,
+    0x0044_3f80,
+    0x0061_4410,
+    0x0061_5f40,
+    0x0060_ede0,
+    0x005c_d010,
+    0x0062_d100,
+    0x005b_c470,
+    0x0044_5cf0,
+    0x0046_3d50,
+    0x0046_49d0,
+    0x0059_c400,
+    0x0046_3e90,
+    0x0062_d170,
+];
+/// `Input_Shutdown` (cdecl).
+pub const INPUT_SHUTDOWN: u32 = 0x0062_5680;
+/// `onExit`'s data: the profile timeline collection, the log file's
+/// name, the last error text, then its messages (begin, log written,
+/// exitScene failed, exitApplication failed, error happened,
+/// `PInput::Terminate` failed, end).
+pub const ON_EXIT_DATA: [u32; 10] = [
+    0x00c2_e2cc,
+    0x00cc_9d08,
+    0x00c9_6298,
+    0x00b4_08d0,
+    0x00b4_08f4,
+    0x00b4_091c,
+    0x00b4_094c,
+    0x00b4_0980,
+    0x00b4_09ac,
+    0x00b4_09e4,
+];
+
+/// `parseCommandLine`'s callees: `CmdLine_afterPrefix(s, prefix)`,
+/// `CmdLine_findOption(table, name, default)` (cdecl), then the import
+/// slots of `strncmp`, `atof` and `atoi`.
+pub const COMMAND_LINE_CALLS: [u32; 5] = [
+    0x0062_3da0,
+    0x0062_55d0,
+    0x00b0_c3e4,
+    0x00b0_c408,
+    0x00b0_c40c,
+];
+/// The switches that ask for help (`"h"`, `"help"`, `"?"`).
+pub const COMMAND_LINE_HELP: [u32; 3] = [0x00b4_049c, 0x00b4_04a0, 0x00b4_04a8];
+/// The `strncmp` options: (prefix, its length, the global that takes
+/// the text after it): `script=`, `log=`, `input=`.
+pub const COMMAND_LINE_TEXTS: [(u32, u32, u32); 3] = [
+    (0x00b4_04ac, 7, 0x00cc_9cfc),
+    (0x00b4_04b4, 4, 0x00cc_9d08),
+    (0x00b4_04bc, 6, 0x00cc_9d0c),
+];
+/// The prefixed options in their order: `timestep=` (a `float` into
+/// `0x00cc9d10`), `resolution=`, `msaa=`, `vsync=`, `host=`,
+/// `fullscreen=`, `borderless=`.
+pub const COMMAND_LINE_KEYS: [u32; 7] = [
+    0x00b4_04c4,
+    0x00b4_04d0,
+    0x00b4_05d0,
+    0x00b4_063c,
+    0x00b4_069c,
+    0x00b4_06a4,
+    0x00b4_06b0,
+];
+/// `parseCommandLine`'s data: the resolution table, the messages
+/// (unsupported resolution, width changed, height changed, MSAA changed,
+/// V sync toggled), `"OFF"`, `"ON"`, the time step, the host and the
+/// borderless flag (a byte).
+pub const COMMAND_LINE_DATA: [u32; 11] = [
+    0x00b3_fb50,
+    0x00b4_04dc,
+    0x00b4_0510,
+    0x00b4_0570,
+    0x00b4_05d8,
+    0x00b4_0650,
+    0x00b4_0644,
+    0x00b4_0648,
+    0x00cc_9d10,
+    0x00cc_9ce0,
+    0x00cc_9cd1,
+];
+/// The resolutions `resolution=` names (width, height, mode).
+pub const RESOLUTIONS: [(u32, u32); 4] = [(720, 480), (720, 576), (1280, 720), (1920, 1080)];
+
+/// `applyFrameInput`'s texts: `"KB"` and its line, `"IK"` and its line,
+/// the on and off words, the unmapped warning, the command line, the
+/// unknown-kind warning.
+pub const FRAME_INPUT_TEXT: [u32; 9] = [
+    0x00b4_02f0,
+    0x00b4_02f4,
+    0x00b4_031c,
+    0x00b4_0320,
+    0x00b4_0318,
+    0x00b8_f870,
+    0x00b4_0344,
+    0x00b4_0378,
+    0x00b4_0394,
+];
+/// `applyFrameInput`'s callees and data: `Phyre_PArray_at(i)`, the map's
+/// name (both thiscall), `_stricmp`'s import slot (cdecl), the
+/// unknown-kind warning's flag byte, the semantic mapping's vtable.
+pub const FRAME_INPUT_CALLS: [u32; 5] = [
+    0x009e_cc80,
+    0x009e_cc70,
+    0x00b0_c398,
+    0x00cc_9eec,
+    0x00c6_8228,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -236,6 +360,11 @@ pub mod bridge {
         CI_SQRT, Conv, DUMP_ENABLED, DUMP_PATH, DUMP_SLOTS, DUMP_TYPE, G_APPLICATION, G_HWND,
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
+    };
+    use super::{
+        COMMAND_LINE_CALLS, COMMAND_LINE_DATA, COMMAND_LINE_HELP, COMMAND_LINE_KEYS,
+        COMMAND_LINE_TEXTS, FRAME_INPUT_CALLS, FRAME_INPUT_TEXT, INPUT_SHUTDOWN, ON_EXIT_CALLS,
+        ON_EXIT_DATA, RESOLUTIONS,
     };
     use super::{DIERR_INPUTLOST, DINPUT_PAD, KEY_LOG, MAP_TREE, PATH_CALLS, PATH_DATA};
     use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
@@ -1516,5 +1645,488 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// A virtual call through `obj`'s vtable slot `slot` (thiscall).
+    fn vcall(h: &mut impl Host, obj: u32, slot: u32, args: &[u32]) -> u32 {
+        let vt: u32 = h.read(obj);
+        let f: u32 = h.read(vt.wrapping_add(4 * slot));
+        h.call(f, Conv::Thiscall(obj), args)
+    }
+
+    /// `SaveDataTtyWrite2(10, msg)`.
+    fn tty(h: &mut impl Host, msg: u32) {
+        let msg = h.rebase(msg);
+        h.call_sym(ON_EXIT_CALLS[0], Conv::Cdecl, &[10, msg]);
+    }
+
+    /// A failed step's message with the last error text; its code.
+    fn exit_failed(h: &mut impl Host, code: u32, msg: u32) -> u32 {
+        let msg = h.rebase(msg);
+        let error = h.rebase(ON_EXIT_DATA[2]);
+        h.call_sym(PRINTF, Conv::Cdecl, &[3, msg, error]);
+        code
+    }
+
+    /// `onExit`'s object array (`+0x2bc` count, bit 31: not owned;
+    /// `+0x2c0`): each one's slot 2 (its failure returned), then deleted;
+    /// the array freed when owned and cleared. 0 when all went through.
+    fn exit_objects(h: &mut impl Host, this: u32) -> u32 {
+        let mut i = 0u32;
+        while i < h.read::<u32>(this + 0x2bc) & 0x7fff_ffff {
+            let items: u32 = h.read(this + 0x2c0);
+            let item: u32 = h.read(items.wrapping_add(4 * i));
+            let r = vcall(h, item, 2, &[]);
+            if r != 0 {
+                return r;
+            }
+            let items: u32 = h.read(this + 0x2c0);
+            let item: u32 = h.read(items.wrapping_add(4 * i));
+            if item != 0 {
+                vcall(h, item, 0, &[1]);
+            }
+            i += 1;
+        }
+        let count: u32 = h.read(this + 0x2bc);
+        if count != 0 {
+            let items: u32 = h.read(this + 0x2c0);
+            if items != 0 && count >> 31 == 0 {
+                h.call_sym(ON_EXIT_CALLS[2], Conv::Cdecl, &[items]);
+            }
+            h.write(this + 0x2c0, 0u32);
+            h.write(this + 0x2bc, 0u32);
+        }
+        0
+    }
+
+    /// `PApplication::onExit()` (`0x0062a130`, thiscall): flags `+0x39`,
+    /// then each step that fails returns its code (the ones with a message
+    /// print it with the last error text `0x00c96298` first): the render
+    /// interface's (`+0x124`) slot 2 and `syncRender`; each of the objects
+    /// in the array `+0x2bc` (count, bit 31: not owned) / `+0x2c0`, slot 2
+    /// then deleted (slot 0 `(1)`), and the array freed and cleared; the
+    /// input log (`+0x29c`): when its slot 2 says it was written, the size
+    /// (`+0xc`) and name printed and slot 1 (close), then deleted; slots 5
+    /// (`exitScene`) and 6 (`exitApplication`); the array `+0x2c4`
+    /// cleared; the render thread stopped; the render interface's slot 1;
+    /// the timeline `+0xc` removed; the preprocess buffer `+0x2d8` (its
+    /// commands drained first) and `+0x2d4` freed; the array `+0x40`
+    /// released; the name `+0x398` cleared; the renderer context released
+    /// under the render scope lock (`frame`, one word: the original's
+    /// `ebp - 0x10`, which held an empty `PString` first); `+0x2c`
+    /// deleted; the input mapper released; `Input_Shutdown`. The tty lines
+    /// at the start and the end; 0.
+    ///
+    /// The original's C++ exception frame (for the `PString` and the
+    /// lock) is left out: nothing it calls throws.
+    pub fn on_exit(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+        tty(h, ON_EXIT_DATA[3]);
+        h.write(this + 0x39, 1u8);
+        let render = this + 0x124;
+        let r = vcall(h, render, 2, &[]);
+        if r != 0 {
+            return r;
+        }
+        let r = h.call_sym(ON_EXIT_CALLS[1], Conv::Thiscall(render), &[]);
+        if r != 0 {
+            return r;
+        }
+        let r = exit_objects(h, this);
+        if r != 0 {
+            return r;
+        }
+        let log: u32 = h.read(this + 0x29c);
+        if log != 0 {
+            if vcall(h, log, 2, &[]) as u8 != 0 {
+                let name: u32 = h.read(h.rebase(ON_EXIT_DATA[1]));
+                let log: u32 = h.read(this + 0x29c);
+                let size: u32 = h.read(log + 0xc);
+                let msg = h.rebase(ON_EXIT_DATA[4]);
+                h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, size, name]);
+                let log: u32 = h.read(this + 0x29c);
+                vcall(h, log, 1, &[]);
+            }
+            let log: u32 = h.read(this + 0x29c);
+            if log != 0 {
+                vcall(h, log, 0, &[1]);
+            }
+            h.write(this + 0x29c, 0u32);
+        }
+        let r = vcall(h, this, 5, &[]);
+        if r != 0 {
+            return exit_failed(h, r, ON_EXIT_DATA[5]);
+        }
+        let r = vcall(h, this, 6, &[]);
+        if r != 0 {
+            return exit_failed(h, r, ON_EXIT_DATA[6]);
+        }
+        let r = h.call_sym(ON_EXIT_CALLS[3], Conv::Thiscall(this + 0x2c4), &[]);
+        if r != 0 {
+            return r;
+        }
+        let thread = h.call_sym(ON_EXIT_CALLS[4], Conv::Cdecl, &[]);
+        h.call_sym(ON_EXIT_CALLS[5], Conv::Thiscall(thread), &[]);
+        vcall(h, render, 1, &[]);
+        let timelines = h.rebase(ON_EXIT_DATA[0]);
+        let r = h.call_sym(ON_EXIT_CALLS[6], Conv::Thiscall(timelines), &[this + 0xc]);
+        if r != 0 {
+            return r;
+        }
+        if h.read::<u32>(this + 0x2d8) != 0 {
+            let ring = h.call_sym(ON_EXIT_CALLS[7], Conv::Cdecl, &[]);
+            let r = h.call_sym(ON_EXIT_CALLS[8], Conv::Thiscall(ring), &[]);
+            if r != 0 {
+                return r;
+            }
+            let p: u32 = h.read(this + 0x2d8);
+            h.call_sym(ON_EXIT_CALLS[2], Conv::Cdecl, &[p]);
+            h.write(this + 0x2d8, 0u32);
+        }
+        let p: u32 = h.read(this + 0x2d4);
+        if p != 0 {
+            h.call_sym(ON_EXIT_CALLS[2], Conv::Cdecl, &[p]);
+            h.write(this + 0x2d4, 0u32);
+        }
+        h.call_sym(ON_EXIT_CALLS[9], Conv::Thiscall(this + 0x40), &[]);
+        // an empty PString assigned to the name, then destroyed
+        h.write(frame, 0u32);
+        h.call_sym(ON_EXIT_CALLS[10], Conv::Thiscall(this + 0x398), &[0]);
+        h.call_sym(ON_EXIT_CALLS[2], Conv::Cdecl, &[0]);
+        // the render scope lock in the same frame word
+        h.call_sym(ON_EXIT_CALLS[11], Conv::Thiscall(frame), &[]);
+        let context = h.call_sym(ON_EXIT_CALLS[12], Conv::Cdecl, &[]);
+        h.call_sym(ON_EXIT_CALLS[13], Conv::Thiscall(context), &[]);
+        h.call_sym(ON_EXIT_CALLS[14], Conv::Thiscall(frame), &[]);
+        let old: u32 = h.read(this + 0x2c);
+        if old != 0 {
+            vcall(h, old, 0, &[1]);
+            h.write(this + 0x2c, 0u32);
+        }
+        let mapper: u32 = h.read(this + 0x2b8);
+        h.call_sym(ON_EXIT_CALLS[15], Conv::Thiscall(mapper), &[]);
+        let r = h.call_sym(INPUT_SHUTDOWN, Conv::Cdecl, &[]);
+        if r != 0 {
+            tty(h, ON_EXIT_DATA[7]);
+            return exit_failed(h, r, ON_EXIT_DATA[8]);
+        }
+        tty(h, ON_EXIT_DATA[9]);
+        0
+    }
+
+    /// `PApplication::parseCommandLine(argc, argv, config)` (`0x0062adc0`,
+    /// thiscall, ret 0xc): for each argument starting with `-` or `/`
+    /// (the rest skipped), the name after it: `h`, `help` or `?` set the
+    /// byte at `this`; `script=`, `log=`, `input=` (`strncmp`) keep the
+    /// text after them in their globals; then the prefixed options
+    /// (`CmdLine_afterPrefix`), the first that matches: `timestep=`
+    /// (`atof`, a `float`), `resolution=` (looked up in the table
+    /// `0x00b3fb50` with the default 5 in `frame`; 0..3 set the config's
+    /// width `+0`, height `+4` and mode `+0x20`, else a message; each of
+    /// width and height reported when it changed), `msaa=` (`+0x18`,
+    /// reported when changed), `vsync=` (`+0x1c` = the number is not 1;
+    /// reported "ON"/"OFF" by the number when it toggled), `host=` (a
+    /// global), `fullscreen=` (`+0x2c` = the number is 1), `borderless=`
+    /// (a global byte: not 0). 0.
+    pub fn parse_command_line(
+        h: &mut impl Host,
+        this: u32,
+        argc: u32,
+        argv: u32,
+        config: u32,
+        frame: u32,
+    ) -> u32 {
+        for i in 0..argc {
+            let arg: u32 = h.read(argv.wrapping_add(4 * i));
+            let lead: u8 = h.read(arg);
+            if lead != b'-' && lead != b'/' {
+                continue;
+            }
+            command_line_option(h, this, arg + 1, config, frame);
+        }
+        0
+    }
+
+    /// `atoi(text)` through its import slot.
+    fn atoi(h: &mut impl Host, text: u32) -> u32 {
+        let f = import(h, COMMAND_LINE_CALLS[4]);
+        h.call(f, Conv::Cdecl, &[text])
+    }
+
+    /// `PhyrePrintf(2, msg, args...)`.
+    fn note(h: &mut impl Host, msg: u32, args: &[u32]) {
+        let msg = h.rebase(msg);
+        let mut words = vec![2, msg];
+        words.extend_from_slice(args);
+        h.call_sym(PRINTF, Conv::Cdecl, &words);
+    }
+
+    /// One switch of [`parse_command_line`] (`s` after its `-` or `/`).
+    fn command_line_option(h: &mut impl Host, this: u32, s: u32, config: u32, frame: u32) {
+        for help in COMMAND_LINE_HELP {
+            let help = h.rebase(help);
+            if same_text(h, s, help) {
+                h.write(this, 1u8);
+                return;
+            }
+        }
+        for (prefix, n, global) in COMMAND_LINE_TEXTS {
+            let prefix = h.rebase(prefix);
+            let f = import(h, COMMAND_LINE_CALLS[2]);
+            if h.call(f, Conv::Cdecl, &[s, prefix, n]) == 0 && s.wrapping_add(n) != 0 {
+                let at = h.rebase(global);
+                h.write(at, s.wrapping_add(n));
+                return;
+            }
+        }
+        let mut value = 0;
+        let mut key = 0;
+        for (k, &name) in COMMAND_LINE_KEYS.iter().enumerate() {
+            let name = h.rebase(name);
+            value = h.call_sym(COMMAND_LINE_CALLS[0], Conv::Cdecl, &[s, name]);
+            if value != 0 {
+                key = k;
+                break;
+            }
+        }
+        if value == 0 {
+            return;
+        }
+        match key {
+            0 => {
+                let f = import(h, COMMAND_LINE_CALLS[3]);
+                let x = h.call_st0(f, Conv::Cdecl, &[value]);
+                let at = h.rebase(COMMAND_LINE_DATA[8]);
+                h.write(at, x.to_bits());
+            }
+            1 => {
+                let (width, height): (u32, u32) = (h.read(config), h.read(config + 4));
+                h.write(frame, 5u32);
+                let table = h.rebase(COMMAND_LINE_DATA[0]);
+                let entry = h.call_sym(COMMAND_LINE_CALLS[1], Conv::Cdecl, &[table, value, frame]);
+                let mode: u32 = h.read(entry);
+                if let Some(&(w, ht)) = RESOLUTIONS.get(mode as usize) {
+                    h.write(config, w);
+                    h.write(config + 4, ht);
+                    h.write(config + 0x20, mode);
+                } else {
+                    note(h, COMMAND_LINE_DATA[1], &[]);
+                }
+                let now: u32 = h.read(config);
+                if width != now {
+                    note(h, COMMAND_LINE_DATA[2], &[width, now]);
+                }
+                let now: u32 = h.read(config + 4);
+                if height != now {
+                    note(h, COMMAND_LINE_DATA[3], &[height, now]);
+                }
+            }
+            2 => {
+                let old: u32 = h.read(config + 0x18);
+                let n = atoi(h, value);
+                h.write(config + 0x18, n);
+                if old != n {
+                    note(h, COMMAND_LINE_DATA[4], &[old, n]);
+                }
+            }
+            3 => {
+                let old: u8 = h.read(config + 0x1c);
+                let n = atoi(h, value);
+                let on = u8::from(n != 1);
+                h.write(config + 0x1c, on);
+                if old != on {
+                    let word = h.rebase(if n == 0 {
+                        COMMAND_LINE_DATA[7]
+                    } else {
+                        COMMAND_LINE_DATA[6]
+                    });
+                    note(h, COMMAND_LINE_DATA[5], &[word]);
+                }
+            }
+            4 => {
+                let n = atoi(h, value);
+                let at = h.rebase(COMMAND_LINE_DATA[9]);
+                h.write(at, n);
+            }
+            5 => {
+                let n = atoi(h, value);
+                h.write(config + 0x2c, u8::from(n == 1));
+            }
+            _ => {
+                let n = atoi(h, value);
+                let at = h.rebase(COMMAND_LINE_DATA[10]);
+                h.write(at, u8::from(n != 0));
+            }
+        }
+    }
+
+    /// `strcmp(a, b) == 0` (the original's inline compare).
+    fn same_text(h: &impl Mem, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let x: u8 = h.read(a.wrapping_add(i));
+            if x != h.read::<u8>(b.wrapping_add(i)) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `PApplicationScriptProxy::applyFrameInput(app, record, frame)`
+    /// (`0x00626070`, cdecl, `al`): one recorded input applied, each
+    /// printed first (`PhyrePrintf(0, ...)` with the frame number).
+    /// Kind 1 (`"KB"`): the key state byte `+0xa` into keyboard `+8`'s
+    /// (the input mapper `[app + 0x2b8]` `+0x80 + 4 i`) table `+0x18` at
+    /// the signed key `+9`; 1 when that keyboard exists. Kind 2 (`"IK"`):
+    /// for every input map of the mapper (`[mapper]`, `Phyre_PArray_at`)
+    /// whose name (`0x009ecc70`) is the record's (`+8`), every mapping of
+    /// the semantic type (vtable `0x00c68228` at `+8`) gets the byte
+    /// `+0x8c` in the first keyboard's table at its `+0x18` (`+0x88` 1) or
+    /// `+0x1c` (2) less 4; 1 when one was set, else a warning. Kind 3: the
+    /// command table (`[app + 0x2c]`, `+0x14` entries of 0x48 bytes, `+0x18`
+    /// of them) entry whose name (`+4`, `_stricmp`) is `+8`'s runs with
+    /// `(app, record + 0xc)`; 0. Another kind: a warning, once
+    /// (`0x00cc9eec`); 0.
+    pub fn apply_frame_input(h: &mut impl Host, app: u32, rec: u32, frame: u32) -> u8 {
+        let [kb, kb_fmt, ik, ik_fmt, on, off, unmapped, cmd_fmt, unknown] = FRAME_INPUT_TEXT;
+        let kind: u32 = h.read(rec);
+        match kind {
+            1 => {
+                let key: u8 = h.read(rec + 8);
+                let sub: u8 = h.read(rec + 9);
+                let state: u8 = h.read(rec + 0xa);
+                let (fmt, kb) = (h.rebase(kb_fmt), h.rebase(kb));
+                let id: u32 = h.read(rec + 4);
+                let sub_word = i32::from(sub.cast_signed()).cast_unsigned();
+                h.call_sym(
+                    PRINTF,
+                    Conv::Cdecl,
+                    &[
+                        0,
+                        fmt,
+                        id,
+                        kb,
+                        u32::from(key),
+                        sub_word,
+                        u32::from(state),
+                        frame,
+                    ],
+                );
+                let mapper: u32 = h.read(app + 0x2b8);
+                let key: u8 = h.read(rec + 8);
+                let dev: u32 = h.read(mapper + 0x80 + 4 * u32::from(key));
+                if dev == 0 {
+                    return 0;
+                }
+                let sub = i32::from(h.read::<u8>(rec + 9).cast_signed()).cast_unsigned();
+                let state: u8 = h.read(rec + 0xa);
+                h.write(sub.wrapping_add(dev).wrapping_add(0x18), state);
+                1
+            }
+            2 => apply_input_mapping(h, app, rec, frame, [ik, ik_fmt, on, off, unmapped]),
+            3 => {
+                let (fmt, name) = (h.rebase(cmd_fmt), h.read::<u32>(rec + 8));
+                let id: u32 = h.read(rec + 4);
+                h.call_sym(PRINTF, Conv::Cdecl, &[0, fmt, id, name, rec + 0xc, frame]);
+                let stricmp: u32 = h.read(h.rebase(FRAME_INPUT_CALLS[2]));
+                let mut i = 0u32;
+                loop {
+                    let table: u32 = h.read(app + 0x2c);
+                    if i >= h.read::<u32>(table + 0x18) {
+                        return 0;
+                    }
+                    let entries: u32 = h.read(table + 0x14);
+                    let name: u32 = h.read(rec + 8);
+                    let entry = entries.wrapping_add(0x48 * i);
+                    if h.call(stricmp, Conv::Cdecl, &[entry + 4, name]) == 0 {
+                        let table: u32 = h.read(app + 0x2c);
+                        let entries: u32 = h.read(table + 0x14);
+                        let f: u32 = h.read(entries.wrapping_add(0x48 * i));
+                        h.call(f, Conv::Cdecl, &[app, rec + 0xc]);
+                        return 0;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {
+                let once = h.rebase(FRAME_INPUT_CALLS[3]);
+                if h.read::<u8>(once) == 0 {
+                    h.write(once, 1u8);
+                    let msg = h.rebase(unknown);
+                    h.call_sym(PRINTF, Conv::Cdecl, &[1, msg]);
+                }
+                0
+            }
+        }
+    }
+
+    /// [`apply_frame_input`]'s kind 2 (`texts`: `"IK"`, the format, the
+    /// on and off words, the unmapped warning).
+    fn apply_input_mapping(
+        h: &mut impl Host,
+        app: u32,
+        rec: u32,
+        frame: u32,
+        texts: [u32; 5],
+    ) -> u8 {
+        let [ik, fmt, on, off, unmapped] = texts;
+        let name = rec + 8;
+        let pressed = h.read::<u32>(rec + 0x88) == 1;
+        let word = h.rebase(if pressed { on } else { off });
+        let value: u8 = h.read(rec + 0x8c);
+        let (fmt, ik) = (h.rebase(fmt), h.rebase(ik));
+        let id: u32 = h.read(rec + 4);
+        h.call_sym(
+            PRINTF,
+            Conv::Cdecl,
+            &[0, fmt, id, ik, name, word, u32::from(value), frame],
+        );
+        let mapper: u32 = h.read(app + 0x2b8);
+        let semantic = h.rebase(FRAME_INPUT_CALLS[4]);
+        let mut set = 0u8;
+        let list: u32 = h.read(mapper);
+        if list != 0 && h.read::<u32>(list) & 0x7fff_ffff != 0 {
+            let mut idx = 0u32;
+            loop {
+                let list: u32 = h.read(mapper);
+                let map = h.call_sym(FRAME_INPUT_CALLS[0], Conv::Thiscall(list), &[idx]);
+                let map_name = h.call_sym(FRAME_INPUT_CALLS[1], Conv::Thiscall(map), &[]);
+                if same_text(h, map_name, name) {
+                    let mut j = 0u32;
+                    while j < h.read::<u32>(map + 8) & 0x7fff_ffff {
+                        let entries: u32 = h.read(map + 0xc);
+                        let e: u32 = h.read(entries.wrapping_add(4 * j));
+                        if h.read::<u32>(e + 8) == semantic {
+                            let mapper: u32 = h.read(app + 0x2b8);
+                            let dev: u32 = h.read(mapper + 0x80);
+                            if dev != 0 {
+                                for (kind, field) in [(1u32, 0x18u32), (2, 0x1c)] {
+                                    if h.read::<u32>(rec + 0x88) == kind {
+                                        let at: u32 = h.read(e + field);
+                                        let v: u8 = h.read(rec + 0x8c);
+                                        h.write(at.wrapping_add(dev).wrapping_sub(4), v);
+                                        set = 1;
+                                    }
+                                }
+                            }
+                        }
+                        j += 1;
+                    }
+                }
+                idx += 1;
+                let list: u32 = h.read(mapper);
+                if idx >= h.read::<u32>(list) & 0x7fff_ffff {
+                    break;
+                }
+            }
+            if set != 0 {
+                return set;
+            }
+        }
+        let msg = h.rebase(unmapped);
+        h.call_sym(PRINTF, Conv::Cdecl, &[1, msg, name]);
+        set
     }
 }

@@ -3913,3 +3913,565 @@ fn left2_log_keyboard_matches_the_original() {
         t.reset();
     }
 }
+
+/// `PApplication::onExit` against the original: every step that can fail
+/// (with and without its message), the object array owned or not, the
+/// input log written or not (slot 2's `al` only: its upper bytes are
+/// set), the preprocess buffers and the old object present or not. The
+/// frame word the render scope lock gets is compared in the original's
+/// frame. `PhyrePrintf` logs three words (the log line's fourth, the
+/// name, is past what a three-word call leaves defined).
+#[test]
+fn left2_on_exit_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    // which step fails (index into the steps below; 99: none), the items
+    // owned, the log written, the buffers and the old object there
+    for (fail, owned, written, extras) in [
+        (99u32, true, true, true),
+        (99, false, false, false),
+        (99, true, false, true),
+        (0, true, true, true),
+        (1, true, true, true),
+        (2, true, true, true),
+        (3, true, true, true),
+        (4, true, true, true),
+        (5, true, true, true),
+        (6, true, true, true),
+        (7, true, true, true),
+        (8, true, true, true),
+        (8, true, true, false),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let code = |step: u32| if fail == step { 0x0b + step } else { 0 };
+            // steps: 0 render slot 2, 1 syncRender, 2 item slot 2,
+            // 3 exitScene, 4 exitApplication, 5 the array clear,
+            // 6 removeTimeline, 7 the command drain, 8 Input_Shutdown
+            let c = l2::ON_EXIT_CALLS;
+            t.stub(c[0], false, 2, 0, 0x77);
+            t.stub(l2::PRINTF, false, 3, 0, 0x78);
+            t.stub(c[1], true, 0, 0, code(1));
+            t.stub(c[2], false, 1, 0, 0);
+            t.stub(c[3], true, 0, 0, code(5));
+            t.stub(c[4], false, 0, 0, 0x00e4_0000);
+            t.stub(c[5], true, 0, 0, 0x79);
+            t.stub(c[6], true, 1, 1, code(6));
+            t.stub(c[7], false, 0, 0, 0x00e7_0000);
+            t.stub(c[8], true, 0, 0, code(7));
+            t.stub(c[9], true, 0, 0, 0x7a);
+            t.stub(c[10], true, 1, 1, 0);
+            t.stub(c[11], true, 0, 0, 0x7b);
+            t.stub(c[12], false, 0, 0, 0x00ec_0000);
+            t.stub(c[13], true, 0, 0, 0x7c);
+            t.stub(c[14], true, 0, 0, 0x7d);
+            t.stub(c[15], true, 0, 0, 0x7e);
+            t.stub(l2::INPUT_SHUTDOWN, false, 0, 0, code(8));
+            let this = t.zeros(0x400);
+            let app = t.object(&[1, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, code(3), code(4)]);
+            let vt = t.r32(app);
+            t.w32(this, vt);
+            let render = t.object(&[1, 0, 0], &[0, 0x7f, code(0)]);
+            let vt = t.r32(render);
+            t.w32(this + 0x124, vt);
+            let items: Vec<u32> = (0..3u32)
+                .map(|i| t.object(&[1, 0, 0], &[0, 0, if i == 1 { code(2) } else { 0 }]))
+                .collect();
+            let arr = t.alloc(
+                &[items[0], items[1], items[2]]
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.w32(this + 0x2c0, arr);
+            t.w32(this + 0x2bc, if owned { 3 } else { 0x8000_0003 });
+            if owned || written {
+                let log = t.object(&[1, 0, 0], &[0, 0, if written { 0x101 } else { 0x100 }]);
+                t.w32(log + 0xc, 0x4321);
+                t.w32(this + 0x29c, log);
+            }
+            if extras {
+                let (p, q) = (t.zeros(4), t.zeros(4));
+                t.w32(this + 0x2d8, p);
+                t.w32(this + 0x2d4, q);
+                let old = t.object(&[1], &[0]);
+                t.w32(this + 0x2c, old);
+            }
+            t.w32(this + 0x2b8, 0x00e8_0000);
+            t.w32(this + 0x398, 0x1234_5678);
+            // the lock's word (an early return leaves the original's saved
+            // ecx there, a word the port has no counterpart for)
+            if fail >= 8 {
+                t.frame_len = 4;
+            }
+            let what = format!(
+                "{label}: onExit fail {fail} owned {owned} written {written} extras {extras}"
+            );
+            t.check_frame(&what, 0x0062_a130, Conv::Thiscall(this), &[], 0x18, |g| {
+                let frame = ffx_graphic::host::Host::scratch(g);
+                Out::U32(l2b::on_exit(g, this, frame))
+            });
+            t.reset();
+        }
+    }
+}
+
+/// `strncmp(a, b, n)` for the command line test (the C semantics,
+/// unsigned bytes; as field.rs's).
+const CMD_STRNCMP: [u8; 0x2a] = [
+    0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0x4c, 0x24, 0x14, 0x85, 0xc9,
+    0x74, 0x13, 0x0f, 0xb6, 0x06, 0x0f, 0xb6, 0x17, 0x29, 0xd0, 0x75, 0x0b, 0x85, 0xd2, 0x74, 0x05,
+    0x46, 0x47, 0x49, 0xeb, 0xe9, 0x31, 0xc0, 0x5f, 0x5e, 0xc3,
+];
+
+/// `PApplication::parseCommandLine` against the original. The numbers
+/// after `=` are raw words: `atoi` answers the word at its argument,
+/// `atof` the `float` there. The resolution lookup is a recording stub
+/// answering a cell (modes 0..4) or its default word in the frame (5).
+/// `PhyrePrintf` logs as many words as each message takes.
+#[test]
+fn left2_parse_command_line_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    // (the resolution's mode, 5 for the default; the vsync number; the
+    // msaa number equal to the old one)
+    for (mode, vsync, msaa_same) in [
+        (0u32, 0u32, false),
+        (1, 1, true),
+        (2, 2, false),
+        (3, 0, true),
+        (4, 1, false),
+        (5, 2, false),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::COMMAND_LINE_CALLS;
+            t.import_code(c[2], &CMD_STRNCMP);
+            // atoi: the word at the argument; atof: the float there
+            t.import_code(c[4], &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xc3]);
+            t.import_code(c[3], &[0x8b, 0x44, 0x24, 0x04, 0xd9, 0x00, 0xc3]);
+            // the lookup: logs its three words, answers the mode's cell or
+            // its third word
+            let cell = t.alloc(&mode.to_le_bytes());
+            let lookup_log = t.stub_code(c[1], false, 3, 0, 0);
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![
+                0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c,
+            ]; // push [esp+0xc] x3
+            k.push(0xe8);
+            k.extend(lookup_log.wrapping_sub(code + 17).to_le_bytes()); // call log3
+            k.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+            if mode == 5 {
+                k.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            } else {
+                k.push(0xb8);
+                k.extend(cell.to_le_bytes()); // mov eax, cell
+            }
+            k.push(0xc3);
+            t.write(code, &k);
+            let at = t.rebase(c[1]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            // PhyrePrintf: 2 words for the unsupported resolution, 3 for
+            // the V sync line, else 4
+            let d = l2::COMMAND_LINE_DATA;
+            let (unsupported, vsync_msg) = (t.rebase(d[1]), t.rebase(d[5]));
+            let logs: Vec<u32> = (2..5)
+                .map(|n| t.stub_code(l2::PRINTF, false, n, 0, 0))
+                .collect();
+            let code = t.a.alloc_code(&[0xcc; 0x30]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x30]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax, unsupported
+            k.extend(unsupported.to_le_bytes());
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[0].wrapping_sub(code + 15).to_le_bytes()); // je log2
+            k.push(0x3d);
+            k.extend(vsync_msg.to_le_bytes()); // cmp eax, vsync
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[1].wrapping_sub(code + 26).to_le_bytes()); // je log3
+            k.push(0xe9);
+            k.extend(logs[2].wrapping_sub(code + 31).to_le_bytes()); // jmp log4
+            t.write(code, &k);
+            let at = t.rebase(l2::PRINTF);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let word = |name: &str, v: u32| -> Vec<u8> {
+                let mut b = name.as_bytes().to_vec();
+                b.extend(v.to_le_bytes());
+                b.push(0);
+                b
+            };
+            let config = t.junk(0x40, 3);
+            t.w32(config, 1280);
+            t.w32(config + 0x18, 4);
+            t.w8(config + 0x1c, 1);
+            let switches: Vec<Vec<u8>> = vec![
+                b"plain\0".to_vec(),
+                b"-hh\0".to_vec(),
+                b"-script=a.lua\0".to_vec(),
+                b"/log=out.txt\0".to_vec(),
+                b"-input=keys\0".to_vec(),
+                word("-timestep=", 0.25f32.to_bits()),
+                b"-resolution=720p\0".to_vec(),
+                word("-msaa=", if msaa_same { 4 } else { 2 }),
+                word("-vsync=", vsync),
+                word("-host=", 0x1234),
+                word("-fullscreen=", vsync),
+                word("/borderless=", vsync),
+                b"-other=1\0".to_vec(),
+                b"-script\0".to_vec(),
+                b"-?\0".to_vec(),
+            ];
+            let ptrs: Vec<u32> = switches.iter().map(|a| t.alloc(a)).collect();
+            let argv = t.alloc(
+                &ptrs
+                    .iter()
+                    .flat_map(|p| p.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            // without the last switch (help), with it, none
+            for n in [14u32, 15, 0] {
+                let this = t.zeros(4);
+                if n > 6 {
+                    t.frame_len = 4;
+                }
+                let what = format!(
+                    "{label}: command line mode {mode} vsync {vsync} msaa same {msaa_same} n {n}"
+                );
+                // ret 0xc: three words; ebp-4 is the default's word
+                t.check_frame(
+                    &what,
+                    0x0062_adc0,
+                    Conv::Thiscall(this),
+                    &[n, argv, config],
+                    0x18,
+                    |g| {
+                        let frame = ffx_graphic::host::Host::scratch(g);
+                        Out::U32(l2b::parse_command_line(g, this, n, argv, config, frame))
+                    },
+                );
+            }
+            t.reset();
+        }
+    }
+}
+
+/// `strcmp(a, b)` for `_stricmp`'s import in the frame input test (the
+/// test's names differ in more than case; as field.rs's `strncmp`
+/// without the count).
+const FI_STRCMP: [u8; 0x24] = [
+    0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24,
+    0x10, // push esi; push edi; mov esi,[esp+0xc]; mov edi,[esp+0x10]
+    0x0f, 0xb6, 0x06, 0x0f, 0xb6, 0x17, 0x29, 0xd0, 0x75,
+    0x09, // l: movzx eax,[esi]; movzx edx,[edi]; sub eax,edx; jne done
+    0x85, 0xd2, 0x74, 0x05, 0x46, 0x47, 0xeb, 0xee,
+    0x90, // test edx,edx; je done; inc esi; inc edi; jmp l
+    0x5f, 0x5e, 0xc3, 0x90, 0x90, 0x90, 0x90, // done: pop edi; pop esi; ret
+];
+
+/// `applyFrameInput` against the original: a keyboard record with and
+/// without its keyboard (a negative sub-key), mapping records (pressed,
+/// released, another value; matching maps with semantic and other
+/// mappings, no match, no first keyboard, no list, an empty list), a
+/// command record found and not, an unknown kind (the warning once).
+#[test]
+#[allow(clippy::too_many_lines)]
+fn big_frame_input_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    let cstr = |t: &mut Twins, s: &str| {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        t.alloc(&b)
+    };
+    // (kind, variant)
+    let mut cases = vec![(1u32, 0u32), (1, 1), (3, 0), (3, 1), (4, 0), (4, 1), (0, 0)];
+    for v in 0..7 {
+        cases.push((2, v));
+    }
+    for (kind, variant) in cases {
+        for (label, mut t) in Twins::all() {
+            t.import_code(l2::FRAME_INPUT_CALLS[2], &FI_STRCMP);
+            // PhyrePrintf: the warnings log their 2 and 3 words, the input
+            // lines their first 6 (of 6 to 8)
+            let texts = l2::FRAME_INPUT_TEXT;
+            let (unmapped, unknown) = (t.rebase(texts[6]), t.rebase(texts[8]));
+            let logs: Vec<u32> = [6u32, 3, 2]
+                .iter()
+                .map(|&n| t.stub_code(l2::PRINTF, false, n, 0, 0x5150))
+                .collect();
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax, unmapped
+            k.extend(unmapped.to_le_bytes());
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[1].wrapping_sub(code + 15).to_le_bytes()); // je log3
+            k.push(0x3d);
+            k.extend(unknown.to_le_bytes()); // cmp eax, unknown
+            k.extend([0x0f, 0x84]);
+            k.extend(logs[2].wrapping_sub(code + 26).to_le_bytes()); // je log2
+            k.push(0xe9);
+            k.extend(logs[0].wrapping_sub(code + 31).to_le_bytes()); // jmp log6
+            t.write(code, &k);
+            let at = t.rebase(l2::PRINTF);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            t.stub(l2::FRAME_INPUT_CALLS[1], true, 0, 0, 0);
+            let once = t.rebase(l2::FRAME_INPUT_CALLS[3]);
+            t.w8(once, u8::from(kind == 4 && variant == 1));
+            let semantic = t.rebase(l2::FRAME_INPUT_CALLS[4]);
+            let app = t.zeros(0x2c0);
+            let mapper = t.zeros(0xa0);
+            t.w32(app + 0x2b8, mapper);
+            let keyboard = t.junk(0x40, 2);
+            let no_keyboard = (kind == 1 && variant == 1) || (kind == 2 && variant == 4);
+            if !no_keyboard {
+                t.w32(mapper + 0x80, keyboard);
+                t.w32(mapper + 0x80 + 4 * 3, keyboard);
+            }
+            let rec = t.zeros(0x90);
+            t.w32(rec, kind);
+            t.w32(rec + 4, 0x77);
+            match kind {
+                1 => {
+                    t.w8(rec + 8, 3);
+                    t.w8(rec + 9, 0xfe);
+                    t.w8(rec + 0xa, 0x80);
+                }
+                2 => {
+                    t.write(rec + 8, b"Jump\0");
+                    t.w32(rec + 0x88, [1, 2, 3, 1, 1, 1, 2][variant as usize]);
+                    t.w8(rec + 0x8c, 0x5a);
+                    // two maps: "Jump" (unless variant 3) with a semantic
+                    // mapping, another one and a semantic mapping of
+                    // another map
+                    let names = [if variant == 3 { "Walk" } else { "Jump" }, "Run"];
+                    let mut maps = Vec::new();
+                    for (m, n) in names.iter().enumerate() {
+                        let name = cstr(&mut t, n);
+                        let mut entries = Vec::new();
+                        for k in 0..3u32 {
+                            let e = t.zeros(0x20);
+                            t.w32(e + 8, if k == 1 { 0x1234 } else { semantic });
+                            t.w32(e + 0x18, 0x10 + 4 * k + m as u32);
+                            t.w32(e + 0x1c, 0x20 + 4 * k + m as u32);
+                            entries.push(e);
+                        }
+                        let arr = t.alloc(
+                            &entries
+                                .iter()
+                                .flat_map(|v| v.to_le_bytes())
+                                .collect::<Vec<_>>(),
+                        );
+                        let map = t.zeros(0x10);
+                        t.w32(map + 8, 0x8000_0003);
+                        t.w32(map + 0xc, arr);
+                        // the name getter answers the map's name
+                        let at = t.a.alloc_code(&[0xcc; 8]).unwrap();
+                        assert_eq!(t.b.alloc_code(&[0xcc; 8]).unwrap(), at);
+                        let mut k = vec![0xb8];
+                        k.extend(name.to_le_bytes());
+                        k.push(0xc3);
+                        t.write(at, &k);
+                        t.w32(map + 4, at);
+                        maps.push(map);
+                    }
+                    // the name getter (0x009ecc70) runs the code at [map + 4]
+                    let getter = t.a.alloc_code(&[0xcc; 8]).unwrap();
+                    assert_eq!(t.b.alloc_code(&[0xcc; 8]).unwrap(), getter);
+                    t.write(getter, &[0xff, 0x61, 0x04]); // jmp [ecx+4]
+                    let at = t.rebase(l2::FRAME_INPUT_CALLS[1]);
+                    let mut j = vec![0xe9];
+                    j.extend(getter.wrapping_sub(at + 5).to_le_bytes());
+                    t.write(at, &j);
+                    let data = t.alloc(
+                        &maps
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+                    let list = t.zeros(8);
+                    t.w32(
+                        list,
+                        if variant == 6 {
+                            0x8000_0000
+                        } else {
+                            0x8000_0002
+                        },
+                    );
+                    t.w32(list + 4, data);
+                    if variant != 5 {
+                        t.w32(mapper, list);
+                    }
+                }
+                3 => {
+                    let name = cstr(&mut t, if variant == 0 { "reset" } else { "none" });
+                    t.w32(rec + 8, name);
+                    let f = t.stub_code(0xf00d, false, 2, 0, 0);
+                    // a third entry past the count, named as the missing command
+                    let mut entries = vec![0u8; 0x48 * 3];
+                    for (i, n) in ["load", "reset", "none"].iter().enumerate() {
+                        entries[0x48 * i..0x48 * i + 4].copy_from_slice(&f.to_le_bytes());
+                        entries[0x48 * i + 4..0x48 * i + 4 + n.len()].copy_from_slice(n.as_bytes());
+                    }
+                    let table_entries = t.alloc(&entries);
+                    let table = t.zeros(0x20);
+                    t.w32(table + 0x14, table_entries);
+                    t.w32(table + 0x18, 2);
+                    t.w32(app + 0x2c, table);
+                }
+                _ => {}
+            }
+            let what = format!("{label}: frame input kind {kind} variant {variant}");
+            t.check(&what, 0x0062_6070, Conv::Cdecl, &[app, rec, 0x99], |g| {
+                Out::Al(l2b::apply_frame_input(g, app, rec, 0x99))
+            });
+            t.reset();
+        }
+    }
+}
+
+// ---- big-phyre2: the motion blur's render pass (m5p_framework_input_bp2) ----
+
+/// One parameter of `0x00a1eb10`'s effect: type byte, offset, size.
+fn blur_param(t: &mut Twins, kind: u8, off: u16, size: u16) -> u32 {
+    let p = t.zeros(0x10);
+    t.w8(p + 2, kind);
+    t.write(p + 8, &off.to_le_bytes());
+    t.write(p + 0xa, &size.to_le_bytes());
+    p
+}
+
+/// `0x00a1eb10` on every path: no mesh instance (0x15); each of the four
+/// parameters absent, of a wrong type (5), failing `TrophyManager_Install`
+/// (its error; skipped without a texture), not fitting (3: past the size
+/// word, offset below 4); a target or none; each scene call failing in
+/// turn; the whole pass (the last colour target call's `eax`). The two
+/// `+ 0` byte sources (`effect + 0xcd4`, `+ 0x94` null) need an effect at
+/// a wrapping address and are not run. Only synthetic data reaches it.
+#[test]
+fn bp2_blur_render_pass() {
+    use ffx_pother_b::m5p_framework_input_bp2::{self as bl, bridge as blb};
+    for (label, mut t) in Twins::all() {
+        // per parameter: None absent, Some((type, offset, size)); the
+        // install error; the target; the failing call (0 surface colour,
+        // 1 depth, 2 begin, 3 mesh, 4 end, 5 last colour; 9 none)
+        type P = Option<(u8, u16, u16)>;
+        let ok: P = Some((0x42, 8, 0x10));
+        let cases: &[([P; 4], u32, u32, bool, u32)] = &[
+            ([None; 4], 0, 0, true, 9),
+            (
+                [ok, ok, Some((0x12, 0x18, 8)), Some((0xd9, 0x24, 4))],
+                0,
+                0x7e01,
+                true,
+                9,
+            ),
+            ([ok, ok, ok, ok], 0, 0x7e02, false, 9),
+            ([Some((0x41, 8, 0x10)), ok, ok, ok], 0, 0x7e03, true, 9),
+            ([ok, Some((0xdd, 8, 0x10)), ok, ok], 0, 0x7e04, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0x7e05, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0, true, 9),
+            ([Some((0xda, 0x1c, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([Some((0xdb, 3, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([ok, Some((0xdc, 0x20, 1)), ok, ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 0x1c, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 2, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0x10, 0xe011))], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0, 4))], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 8, 0xe008)), ok], 0, 0x7e06, true, 9),
+            ([Some((0x42, 8, 0xe008)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([None; 4], 0, 0x7e07, true, 0),
+            ([None; 4], 0, 0x7e07, false, 0),
+            ([None; 4], 0, 0x7e07, true, 1),
+            ([None; 4], 0, 0x7e07, true, 2),
+            ([None; 4], 0, 0x7e07, true, 3),
+            ([None; 4], 0, 0x7e07, true, 4),
+            ([None; 4], 0, 0x7e07, true, 5),
+        ];
+        for (k, &(params, install, texture, with_target, fail)) in cases.iter().enumerate() {
+            let fx = t.junk(0xd50, k as u8);
+            let instance = if k == 0 { 0 } else { t.junk(0x20, 0x11) };
+            t.w32(fx + 0xcdc, instance);
+            let buffer = t.zeros(0x40);
+            t.w32(buffer, 0x20);
+            let holder = t.zeros(8);
+            t.w32(holder + 4, buffer);
+            t.w32(fx + 0xd28, holder);
+            for (slot, p) in [0xd2cu32, 0xd30, 0xd38, 0xd44].into_iter().zip(params) {
+                let at = match p {
+                    None => 0,
+                    Some((kind, off, size)) => blur_param(&mut t, kind, off, size),
+                };
+                t.w32(fx + slot, at);
+            }
+            let renderer = t.junk(0x140, 0x40 ^ k as u8);
+            let target = if with_target { 0x5a5a } else { 0 };
+            let err = |i: u32| if i == fail { 0x20 + i } else { 0 };
+            t.stub(bl::PASS_SETUP, true, 1, 1, 0xa254);
+            t.stub(bl::TROPHY_INSTALL, true, 1, 1, install);
+            t.stub(bl::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(bl::SURFACE_CTOR, true, 2, 2, 0x5c);
+            t.stub(bl::SURFACE_DTOR, true, 0, 0, 0x5d);
+            // the colour target: the first call's answer, then the last's
+            let color = t.stub_code(bl::SET_COLOR_TARGET, true, 2, 2, err(0));
+            let last = t.stub_code(bl::SET_COLOR_TARGET ^ 1, true, 2, 2, err(5));
+            let flip = t.zeros(4);
+            // `cmp dword [flip], 0; jne last; inc dword [flip]; jmp color`
+            let mut c = vec![0x83, 0x3d];
+            c.extend(flip.to_le_bytes());
+            c.push(0x00);
+            let head = c.len();
+            c.extend([0x0f, 0x85, 0, 0, 0, 0]); // jne rel32 (patched)
+            c.extend([0xff, 0x05]);
+            c.extend(flip.to_le_bytes());
+            c.extend([0xe9, 0, 0, 0, 0]); // jmp rel32 (patched)
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let jne_end = code + head as u32 + 6;
+            c[head + 2..head + 6].copy_from_slice(&last.wrapping_sub(jne_end).to_le_bytes());
+            let jmp_end = code + c.len() as u32;
+            let n = c.len();
+            c[n - 4..].copy_from_slice(&color.wrapping_sub(jmp_end).to_le_bytes());
+            t.write(code, &c);
+            let at = t.rebase(bl::SET_COLOR_TARGET);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            t.stub(bl::SET_DEPTH_TARGET, true, 1, 1, err(1));
+            t.stub(bl::BEGIN_SCENE, true, 1, 1, err(2));
+            t.stub(bl::RENDER_MESH_INSTANCE, true, 4, 4, err(3));
+            t.stub(bl::END_SCENE, true, 1, 1, err(4));
+            let end = t.b.stack_range().end;
+            let ebp = end - 0x100 - 4 * 5 - 8;
+            let args = [renderer, target, 0xaa, texture, texture ^ 0x10];
+            let what = format!("{label}: blur pass {k}");
+            let junk: Vec<u8> = (0..0x3cu32).map(|i| (i * 5 + k as u32) as u8).collect();
+            t.write(ebp - 0x3c, &junk);
+            t.check_frame(&what, 0x00a1_eb10, Conv::Thiscall(fx), &args, 0, |g| {
+                Out::U32(blb::blur_render_pass(
+                    g,
+                    ebp,
+                    fx,
+                    renderer,
+                    target,
+                    0xaa,
+                    texture,
+                    texture ^ 0x10,
+                ))
+            });
+            let x = Oracle::read(&mut t.a, ebp - 0x2c, 0x20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x2c, 0x20).unwrap();
+            assert_eq!(x, y, "{what}: the bindings");
+            t.reset();
+        }
+    }
+}

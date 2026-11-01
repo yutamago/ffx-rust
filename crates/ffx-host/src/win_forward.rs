@@ -9,7 +9,7 @@
 //!   window with the game's strings, styles and size, and then gives the
 //!   game's procedure its `WM_CREATE` (a `CREATESTRUCTA` in the arena), as
 //!   Windows would have during the call. The game sees the real `HWND` (a
-//!   32-bit value on i686; stage 4 maps it through the handle table).
+//!   32-bit value: window handles fit in 32 bits on 64-bit Windows too).
 //! - **Messages.** `PeekMessageA/W` peek the real queue into a `MSG` in the
 //!   arena; `DispatchMessageA/W` of a message for the game's window calls
 //!   the game's procedure in the executor (emulated or ported), anything

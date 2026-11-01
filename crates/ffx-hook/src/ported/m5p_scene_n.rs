@@ -16,4 +16,10 @@ ported! {
         let mut frame = StackFrame::<51>::new();
         b::joint_world(&mut mem(), this, out, joint, frame.at())
     }
+    /// The box between two points tested against a matrix `(from, to, m)`;
+    /// the point copies and the corner in a frame.
+    POccluderGeometry_boxVisibleBetween_00a2f9b0 @ 0x00a2_f9b0 => extern "C" fn sn_00a2f9b0(from: u32, to: u32, m: u32) -> u32 {
+        let mut f = StackFrame::<{ ffx_prender::m5p_scene_n::BOX_BETWEEN_FRAME_WORDS as usize }>::new();
+        b::box_visible_between(&mut mem(), from, to, m, f.at())
+    }
 }
