@@ -41,7 +41,10 @@ fn flash() {
         let (fh, ft) = (t.img.word(fade + 0x7b), t.img.word(fade + 0x93));
         list(&mut t, fh, ft, SCRATCH + 0x3000, !empty);
         magic_h6::scrub(&mut t);
-        t.check_entry(at, Call::default(), &[], Eax::Checked);
+        // the caller's words above the return address non-zero (the callee's
+        // stack word is the 0 the frame pushes, not those)
+        let above = [0x00ca_0001, 0x00ca_0002, 0x00ca_0003, 0x00ca_0004];
+        t.check_entry(at, Call::default(), &above, Eax::Checked);
     }
 }
 
