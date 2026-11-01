@@ -1246,4 +1246,11 @@ ported! {
     AbmapUpdateMovingChrPos @ 0x00a5_63b0 => extern "C" fn abmap_update_moving_chr_pos(out: u32, from: u32, to: u32, centre: u32, t: u32) -> u32 {
         ffx_pcui::l7_pcui::bridge::update_moving_chr_pos(&mut mem(), out, from, to, centre, t)
     }
+    /// `(window, msg, param)` -> 0: the camera test window's procedure
+    /// (the actor position, near point and spline result in a frame).
+    Gui_CameraTestProc_0093f900 @ 0x0093_f900 => extern "C" fn gui_camera_test_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l7_pcui::bridge::CAMERA_TEST_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l7_pcui::bridge::CAMERA_TEST_FRAME;
+        ffx_pcui::l7_pcui::bridge::camera_test_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

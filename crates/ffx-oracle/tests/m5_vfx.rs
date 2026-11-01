@@ -5657,3 +5657,103 @@ fn l6_ppp_mdl_rev_matrix_matches_the_original() {
         }
     });
 }
+
+// ---- round 7 (left7) (ffx_glue_other::l7_vfx) ----
+
+use ffx_glue_other::l7_vfx::bridge as l7v;
+
+/// A C string in both oracles.
+fn l7_cstr(t: &mut Twins, s: &[u8]) -> u32 {
+    let mut b = s.to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_symbol_define_matches_the_original() {
+    // a new symbol and a redefined one (with and without the file and
+    // line, an old description or none); an empty value and 1..3 tokens;
+    // a description or none; names with upper case and high bytes
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a13);
+        let names: [&[u8]; 5] = [b"Abc_Z", b"x", b"MAP\xe9q", b"", b"loNG_namE9"];
+        for case in 0..600_u32 {
+            let name = l7_cstr(t, names[rng.below(5) as usize]);
+            let value = if rng.chance(4) {
+                l7_cstr(t, b"")
+            } else {
+                l7_cstr(t, b"a + B * 3")
+            };
+            let desc = if rng.chance(3) {
+                0
+            } else {
+                l7_cstr(t, [&b"desc"[..], b"", b"Some Text"][rng.below(3) as usize])
+            };
+            let kind = rng.next();
+            let old = if case % 2 == 0 {
+                0
+            } else {
+                let w: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+                let s = t.words(&w);
+                if rng.chance(3) {
+                    t.w32(s + 4, 0);
+                }
+                // its token list's tail: a word to append at
+                let tl = t.zeros(4);
+                t.w32(s + 0xc, tl);
+                s
+            };
+            let tail = t.zeros(8);
+            t.global(l7v::SYMBOL_TAIL, tail);
+            t.global(l7v::SCRIPT_ERRORS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::SCRIPT_WARNINGS, [0, rng.next()][rng.below(2) as usize]);
+            t.stub_sym(l7v::SYMBOL_FIND, 1, false, 2, 0, Ret::Val(old));
+            let bufs: Vec<u32> = (0..12)
+                .map(|_| {
+                    let w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+                    t.words(&w)
+                })
+                .collect();
+            let bufs = t.seq(&bufs);
+            t.stub_sym(l7v::MS_MALLOC, 2, false, 1, 0, bufs);
+            t.stub_sym(l7v::OP_STRDUP, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l7v::MS_FREE, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(l7v::OP_STRLEN, 5, false, 1, 0, Ret::Val(rng.below(20)));
+            t.stub_sym(l7v::DBG_PRINTF, 6, false, 2, 0, Ret::Val(rng.next()));
+            // the tokenizer: 0..3 tokens (each a short string written into
+            // the caller's buffer), then 0
+            let n = rng.below(4);
+            let mut rets: Vec<u32> = (0..n).map(|_| rng.next() | 1).collect();
+            rets.push(0);
+            let rets = t.seq(&rets);
+            let (lo, hi) = (
+                [0x4142_6178_u32, 0x0000_3231, 0x3132_5f5a][rng.below(3) as usize],
+                [0x0000_0063_u32, 0, 0x0041_e941][rng.below(3) as usize],
+            );
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp+8]
+            x.extend([0xc7, 0x01]);
+            x.extend(lo.to_le_bytes()); // mov dword [ecx], lo
+            x.extend([0xc7, 0x41, 0x04]);
+            x.extend(hi.to_le_bytes()); // mov dword [ecx+4], hi
+            t.stub_sym_x(l7v::TOKEN_EXPR, 7, false, 5, 0, rets, &x);
+            // a random frame (a store of 0 over 0 shows nothing)
+            let top = call_top(&t.a);
+            let fill: Vec<u8> = (0..0x100).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.a.write(top - 0x400, &fill).unwrap();
+            t.b.write(top - 0x400, &fill).unwrap();
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - l7v::DEFINE_FRAME - 0x40);
+            t.check(
+                "op_symbol_define_007e2770",
+                0x007e_2770,
+                Conv::Cdecl,
+                &[name, value, desc, kind],
+                |o| Out::U32(l7v::symbol_define(o, ebp, name, value, desc, kind)),
+            );
+            t.same_stack("op_symbol_define_007e2770", ebp - 0x210, 0x20c);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}

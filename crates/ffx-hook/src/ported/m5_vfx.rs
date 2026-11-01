@@ -851,4 +851,13 @@ ported! {
     ppp_mdl_rev_matrix_007401d0 @ 0x0074_01d0 => extern "C" fn ppp_mdl_rev_matrix(work: u32, _unused: u32, rec: u32) -> u32 {
         l6v::rev_matrix(&mut mem(), work, rec)
     }
+    // ---- round 7 (left7) (ffx_glue_other::l7_vfx) ----
+    /// `(name, value, desc, kind)` -> the symbol: the op script
+    /// compiler's symbol definition (its token buffer and position in a
+    /// frame).
+    op_symbol_define_007e2770 @ 0x007e_2770 => extern "C" fn op_symbol_define(name: u32, value: u32, desc: u32, kind: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::DEFINE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DEFINE_FRAME;
+        ffx_glue_other::l7_vfx::bridge::symbol_define(&mut mem(), ebp, name, value, desc, kind)
+    }
 }

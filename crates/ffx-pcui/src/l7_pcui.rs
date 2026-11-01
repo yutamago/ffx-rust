@@ -10,7 +10,7 @@
 #[allow(clippy::many_single_char_names)] // the original's quantities
 pub mod bridge {
     use ffx_bridge::x87;
-    use ffx_graphic::host::Host;
+    use ffx_graphic::host::{Conv, Host};
 
     /// The CRT intrinsics `_CIatan2` (`ST1`, `ST0`) and `_CIsqrt`.
     pub const CI_ATAN2: u32 = 0x0094_98bc;
@@ -155,5 +155,181 @@ pub mod bridge {
         put(h, out + 8, z);
         h.write(out + 12, one);
         u >> 4
+    }
+
+    /// The camera test window's callees: `Gu_WindowSetTitle(window,
+    /// text)`, `Gu_WindowAddButton(window, id, text, x, y, w, h)`,
+    /// `AtelGetNowCtrlTopId()`, `AtelGetEventActorPos(id, &x, &y, &z)`,
+    /// `spline_get_near_point_init(spline, x, y, z, cubic)`,
+    /// `spline_get_near_point(spline, x, y, z, &px, &py, &pz, cubic)`
+    /// (`ST0`), `TkMtCalcSpline(out, points, n, t)`,
+    /// `TkMtCalcSpline3(out, points, n, t)`, `MsCameraSetRoll(cam, r)`,
+    /// `MsCameraSetRect(cam, side, &xyz)`, `dbgPrintf(fmt)`, the three
+    /// path players (`CameraPath_*`).
+    pub const SET_TITLE: u32 = 0x0084_b6a0;
+    pub const ADD_BUTTON: u32 = 0x0084_a470;
+    pub const NOW_CTRL_TOP_ID: u32 = 0x0086_c1a0;
+    pub const EVENT_ACTOR_POS: u32 = 0x0086_b1e0;
+    pub const NEAR_POINT_INIT: u32 = 0x00a4_4420;
+    pub const NEAR_POINT: u32 = 0x00a4_4120;
+    pub const CALC_SPLINE: u32 = 0x0088_a4a0;
+    pub const CALC_SPLINE3: u32 = 0x0088_a4d0;
+    pub const CAMERA_SET_ROLL: u32 = 0x007b_fa80;
+    pub const CAMERA_SET_RECT: u32 = 0x007b_f940;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const PATH_PLAYERS: [u32; 3] = [0x0094_02c0, 0x0094_0380, 0x0094_0480];
+    /// The test's state (on, mode, time, step: 0x0193c378..84), the
+    /// near point's copy (0x0193c174, 0x0193c388, 0x0193c38c), the
+    /// window holder byte (0x025d5f30), the spline (cubic flag 0x025d5f31,
+    /// points 0x025d5f4c, count 0x025d5f50, its node block 0x025d5f54,
+    /// control points 0x025d5f58), the camera handle (0x025d5ee0); f32
+    /// 0.001.
+    pub const CT_ON: u32 = 0x0193_c378;
+    pub const CT_MODE: u32 = 0x0193_c37c;
+    pub const CT_TIME: u32 = 0x0193_c380;
+    pub const CT_STEP: u32 = 0x0193_c384;
+    pub const NEAR_X: u32 = 0x0193_c174;
+    pub const NEAR_Y: u32 = 0x0193_c388;
+    pub const NEAR_Z: u32 = 0x0193_c38c;
+    pub const CT_HOLDER: u32 = 0x025d_5f30;
+    pub const SPLINE_CUBIC: u32 = 0x025d_5f31;
+    pub const SPLINE_POINTS: u32 = 0x025d_5f4c;
+    pub const SPLINE_COUNT: u32 = 0x025d_5f50;
+    pub const SPLINE_NODES: u32 = 0x025d_5f54;
+    pub const SPLINE_CONTROL: u32 = 0x025d_5f58;
+    pub const CAMERA: u32 = 0x025d_5ee0;
+    pub const STEP: u32 = 0x00b3_68a4;
+    /// The window's title and buttons ("PLAY", "PLAY2", "PLAY3", "SPLINE
+    /// CAM"), "no chr !!!!".
+    pub const CT_TITLE: u32 = 0x00b6_8fec;
+    pub const CT_BUTTONS: [u32; 4] = [0x00b6_8ff8, 0x00b6_9000, 0x00b6_9008, 0x00b6_9010];
+    pub const NO_CHR: u32 = 0x00b6_901c;
+    /// `Gui_CameraTestProc_0093f900`'s frame.
+    pub const CAMERA_TEST_FRAME: u32 = 0x40;
+
+    fn g(h: &impl Host, sym: u32) -> u32 {
+        h.read(h.rebase(sym))
+    }
+
+    fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+        h.call_sym(sym, Conv::Cdecl, args)
+    }
+
+    /// The controlled actor's position into the frame (`ebp - 0x28`,
+    /// `- 0x30`, `- 0x2c`: x, y, z) and the spline's node block reset
+    /// (its header four words before it: the points, 0, 0, 0); `None`
+    /// without an actor (the "no chr" print).
+    fn spline_start(h: &mut impl Host, ebp: u32) -> Option<(u32, [u32; 3], u32)> {
+        let id = cdecl(h, NOW_CTRL_TOP_ID, &[]);
+        if id == 0xffff {
+            let s = h.rebase(NO_CHR);
+            cdecl(h, DBG_PRINTF, &[s]);
+            return None;
+        }
+        let (x, y, z) = (ebp - 0x28, ebp - 0x30, ebp - 0x2c);
+        cdecl(h, EVENT_ACTOR_POS, &[id, x, y, z]);
+        let points = g(h, SPLINE_POINTS);
+        h.write(g(h, SPLINE_NODES).wrapping_sub(0x10), points);
+        for o in [0xc, 8, 4] {
+            h.write(g(h, SPLINE_NODES).wrapping_sub(o), 0_u32);
+        }
+        // fld dword / fstp dword of each coordinate onto the stack
+        let pos = [x, y, z].map(|p| x87::store(x87::load(h.read(p))));
+        let cubic = i32::from(h.read::<i8>(h.rebase(SPLINE_CUBIC))).cast_unsigned();
+        Some((g(h, SPLINE_NODES).wrapping_sub(0x10), pos, cubic))
+    }
+
+    /// `Gui_CameraTestProc_0093f900(window, msg, param)` -> 0: the camera
+    /// test window. 0x8001 its title and four buttons, the test off;
+    /// 0x8003 (closed) clears its holder byte; 0x8006 buttons 1..3 start
+    /// a path player (mode 0..2, time 0, step 0.001), 4 the spline camera
+    /// (mode 3, with a spline: its nearest point to the controlled actor
+    /// initialised); 0x8011 while on runs the mode's player, or for the
+    /// spline camera the nearest point on the spline (copied to
+    /// 0x0193c174/88/8c and the frame), the spline evaluated there
+    /// (`TkMtCalcSpline` or `TkMtCalcSpline3` by the cubic flag) and the
+    /// camera's roll, target and position set. `ebp` is the original's
+    /// frame (the actor at `ebp - 0x30..`, the near point's outs at `-
+    /// 0x40..`, the spline result at `- 0x24`, the target at `- 0x14`).
+    #[allow(clippy::too_many_lines)]
+    pub fn camera_test_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let have_spline = |h: &mut _| g(h, SPLINE_POINTS) != 0 && g(h, SPLINE_COUNT) != 0;
+        match msg {
+            0x8001 => {
+                let t = h.rebase(CT_TITLE);
+                cdecl(h, SET_TITLE, &[window, t]);
+                for (id, s, y, w) in [
+                    (1, CT_BUTTONS[0], 2, 0x40),
+                    (2, CT_BUTTONS[1], 0xe, 0x46),
+                    (3, CT_BUTTONS[2], 0x1a, 0x46),
+                    (4, CT_BUTTONS[3], 0x26, 100),
+                ] {
+                    let s = h.rebase(s);
+                    cdecl(h, ADD_BUTTON, &[window, id, s, 8, y, w, 10]);
+                }
+                h.write(h.rebase(CT_ON), 0_u32);
+            }
+            0x8003 => h.write(h.rebase(CT_HOLDER), 0_u8),
+            0x8006 => match param {
+                1..=3 => {
+                    h.write(h.rebase(CT_ON), 1_u32);
+                    h.write(h.rebase(CT_TIME), 0_u32);
+                    h.write(h.rebase(CT_MODE), param - 1);
+                    let step: u32 = g(h, STEP);
+                    h.write(h.rebase(CT_STEP), x87::store(x87::load(step)));
+                }
+                4 if have_spline(h) => {
+                    h.write(h.rebase(CT_ON), 1_u32);
+                    h.write(h.rebase(CT_MODE), 3_u32);
+                    if let Some((spline, [x, y, z], cubic)) = spline_start(h, ebp) {
+                        cdecl(h, NEAR_POINT_INIT, &[spline, x, y, z, cubic]);
+                    }
+                }
+                _ => {}
+            },
+            0x8011 if g(h, CT_ON) != 0 => match g(h, CT_MODE) {
+                m @ 0..=2 => {
+                    cdecl(h, PATH_PLAYERS[m as usize], &[]);
+                }
+                3 if have_spline(h) => {
+                    let Some((spline, [x, y, z], cubic)) = spline_start(h, ebp) else {
+                        return 0;
+                    };
+                    let (px, py, pz) = (fr(0x38), fr(0x3c), fr(0x40));
+                    let t = x87::store(h.call_sym_st0_f64(
+                        NEAR_POINT,
+                        Conv::Cdecl,
+                        &[spline, x, y, z, px, py, pz, cubic],
+                    ));
+                    h.write(fr(0x34), t);
+                    for (src, global, dst) in
+                        [(px, NEAR_X, 0x14), (py, NEAR_Y, 0x10), (pz, NEAR_Z, 0xc)]
+                    {
+                        let v = x87::store(x87::load(h.read(src)));
+                        h.write(h.rebase(global), v);
+                        h.write(fr(dst), v);
+                    }
+                    let f = if h.read::<u8>(h.rebase(SPLINE_CUBIC)) == 0 {
+                        CALC_SPLINE
+                    } else {
+                        CALC_SPLINE3
+                    };
+                    let (ctl, n) = (g(h, SPLINE_CONTROL), g(h, SPLINE_COUNT));
+                    let t = x87::store(x87::load(t));
+                    cdecl(h, f, &[fr(0x24), ctl, n, t]);
+                    let roll = x87::store(x87::load(h.read(fr(0x18))));
+                    let cam = g(h, CAMERA);
+                    cdecl(h, CAMERA_SET_ROLL, &[cam, roll]);
+                    let cam = g(h, CAMERA);
+                    cdecl(h, CAMERA_SET_RECT, &[cam, 0, fr(0x14)]);
+                    let cam = g(h, CAMERA);
+                    cdecl(h, CAMERA_SET_RECT, &[cam, 1, fr(0x24)]);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        0
     }
 }

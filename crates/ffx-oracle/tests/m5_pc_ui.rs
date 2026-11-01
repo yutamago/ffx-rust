@@ -7431,3 +7431,113 @@ fn l7_update_moving_chr_pos_matches_the_original() {
         }
     });
 }
+
+/// A float word: values, quiet NaNs, anything but a signalling NaN.
+fn l7_float(rng: &mut Rng) -> u32 {
+    loop {
+        let x = match rng.below(4) {
+            0 => 0x7fc0_0000 | rng.below(16),
+            1 => (f32::from(u16::try_from(rng.below(2000)).unwrap()) / 8.0 - 100.0).to_bits(),
+            _ => rng.next(),
+        };
+        let x = if x == 0 { 0x3f80_0000 } else { x };
+        let snan = x & 0x7f80_0000 == 0x7f80_0000 && x & 0x007f_ffff != 0 && x & 0x0040_0000 == 0;
+        if !snan {
+            return x;
+        }
+    }
+}
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that returns `value` in
+    /// `ST0` (`fld dword`, then the recorder).
+    fn l7_float_rec(&mut self, sym: u32, n: u32, value: u32) {
+        let rec = self.stub_code(sym, false, n, 0, 0);
+        let cell = self.words(&[value]);
+        let mut code = vec![0xd9, 0x05];
+        code.extend(cell.to_le_bytes()); // fld dword [cell]
+        code.push(0xe9);
+        let here = self.cave_next + code.len() as u32 + 4;
+        code.extend(rec.wrapping_sub(here).to_le_bytes()); // jmp rec
+        let addr = self.cave_code(&code);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_camera_test_proc_matches_the_original() {
+    // every message and button; the spline missing (no points, no
+    // count), no controlled actor; both spline kinds
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a12);
+        for case in 0..600_u32 {
+            let block: Vec<u32> = (0..0x10).map(|_| rng.next() | 1).collect();
+            let nodes = t.words(&block) + 0x20;
+            let points = if case % 7 == 3 { 0 } else { rng.next() | 1 };
+            let count = if case % 11 == 5 { 0 } else { rng.below(9) + 1 };
+            for (sym, v) in [
+                (l7u::SPLINE_POINTS, points),
+                (l7u::SPLINE_COUNT, count),
+                (l7u::SPLINE_NODES, nodes),
+                (l7u::SPLINE_CONTROL, rng.next()),
+                (l7u::CAMERA, rng.next()),
+                (l7u::CT_ON, u32::from(!rng.chance(4))),
+                (l7u::CT_MODE, rng.below(5)),
+                (l7u::CT_TIME, rng.next() | 1),
+                (l7u::CT_HOLDER, rng.next() | 1),
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            let cubic = [0_u8, 1, 0x80][rng.below(3) as usize];
+            let at = t.rebase(l7u::SPLINE_CUBIC);
+            t.patch(at, &[cubic]);
+            let id = if rng.chance(5) {
+                0xffff
+            } else {
+                rng.below(0x20)
+            };
+            t.stubs(&[
+                (l7u::SET_TITLE, false, 2, 0, rng.next()),
+                (l7u::ADD_BUTTON, false, 7, 0, rng.next()),
+                (l7u::NOW_CTRL_TOP_ID, false, 0, 0, id),
+                (l7u::EVENT_ACTOR_POS, false, 4, 0, rng.next()),
+                (l7u::NEAR_POINT_INIT, false, 5, 0, rng.next()),
+                (l7u::CALC_SPLINE, false, 4, 0, rng.next()),
+                (l7u::CALC_SPLINE3, false, 4, 0, rng.next()),
+                (l7u::CAMERA_SET_ROLL, false, 2, 0, rng.next()),
+                (l7u::CAMERA_SET_RECT, false, 3, 0, rng.next()),
+                (l7u::DBG_PRINTF, false, 1, 0, rng.next()),
+                (l7u::PATH_PLAYERS[0], false, 0, 0, rng.next()),
+                (l7u::PATH_PLAYERS[1], false, 0, 0, rng.next()),
+                (l7u::PATH_PLAYERS[2], false, 0, 0, rng.next()),
+            ]);
+            let near = l7_float(&mut rng);
+            t.l7_float_rec(l7u::NEAR_POINT, 8, near);
+            let (msg, param) = match rng.below(8) {
+                0..=2 => (0x8006, rng.below(6)),
+                3..=5 => (0x8011, rng.next()),
+                6 => ([0x8001, 0x8003][rng.below(2) as usize], rng.next()),
+                _ => (0x8000 + rng.below(0x20), rng.next()),
+            };
+            // the frame: the actor position, the near point's outs and the
+            // spline's result as the callees would leave them
+            let init: Vec<u8> = (0..0x3c / 4)
+                .flat_map(|_| l7_float(&mut rng).to_le_bytes())
+                .collect();
+            let window = rng.next();
+            t.skip = 4; // the cookie
+            t.check_framed_init(
+                "Gui_CameraTestProc_0093f900",
+                0x0093_f900,
+                Conv::Cdecl,
+                &[window, msg, param],
+                0x40,
+                &init,
+                |o, ebp| Out::U32(l7u::camera_test_proc(o, ebp, window, msg, param)),
+            );
+            t.reset();
+        }
+    });
+}
