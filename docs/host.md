@@ -31,8 +31,9 @@ same memory. The release runs no `FFX.exe` code.
 | `src/crypt.rs`, `src/stand_ins.rs` | Win32 stand-ins past the device (MD5 through `CryptoAPI`, `wsprintf`, `GetSystemTime`, the cursor, the window's info, DirectInput's mouse and keyboard, XInput without a pad) |
 | `src/clock.rs` | the virtual clock, the frame boundary and the turns (loader, FMOD, vsync), input: below, "The clock" |
 | `src/replay.rs` | a replay script (`tools/replays/*.txt`) played at the frame boundary (`--replay`) |
-| `src/audio.rs` | FMOD's 40 imports on the Rust mixer (`ffx_sound::replay::Engine`): below, "FMOD" |
-| `src/iggy.rs`, `src/iggy/swf.rs` | Iggy's imports: players, fast names, AS3 calls both ways; Ruffle with feature `swf`: below, "Iggy" |
+| `src/audio.rs`, `src/audio/movie.rs` | FMOD's 40 imports on the Rust mixer (`ffx_sound::replay::Engine`), the movie's user stream, the device output (the hook's `rust_audio_out.rs`): below, "FMOD" |
+| `src/iggy.rs`, `src/iggy/swf.rs` | Iggy's imports: players, fast names, AS3 calls both ways, value refs and paths, `GDraw`'s memory; Ruffle with feature `swf`: below, "Iggy" |
+| `src/gfx/composite.rs`, `composite.hlsl` | the Flash image composited over `GDraw`'s target (below, "Iggy") |
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
@@ -92,7 +93,11 @@ tools/build-host.sh        # x86_64-pc-windows-msvc, through cargo xwin (Unicorn
 - `--replay FILE`: plays a replay script at the frame boundary
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
-- `cargo build --features swf`: Iggy's players on Ruffle (below, "Iggy").
+- `cargo build --features swf`: Iggy's players on Ruffle, composited
+  (below, "Iggy"); `tools/build-host.sh` builds with it. Ruffle's build
+  needs Java (`playerglobal`): PC2 has none, so its `ffx-rust.exe` is built
+  on the main machine and copied in (`run-all.sh` with `FFX_NO_BUILD=1`
+  uses the one in `target/`).
 - `FFX_HOST_NOTES=1`: the run's notes (turns, Iggy calls, FMOD loads, a
   game thread that failed) on stderr as they happen (the harness's
   `notes` lists them too); `FFX_HOST_IGGY_OUT=DIR` (feature `swf`): every
@@ -586,12 +591,25 @@ hook's `rust_audio.rs` is its other driver), with the same calls:
 - `EventSystem::update` mixes one 1,600-frame block (one FMOD tick: the
   clock is virtual) and calls the game's event callback where FMOD does
   (`SOUNDDEF_END`, `EVENTFINISHED`).
-- Output: none (the blocks are counted, the report says how many), or
-  `--audio-wav FILE`, the mix in FMOD's WAV writer format as the audio
-  gate records it. The device output (WASAPI) is the hook's
-  `rust_audio_out.rs`, not shared yet; under the virtual clock the hook
-  keeps it off too.
-- Not yet: the movie's user stream (a silent sound here).
+- Output: `--audio-wav FILE`, the mix in FMOD's WAV writer format as the
+  audio gate records it, or else the default output device (WASAPI,
+  shared mode): the hook's `rust_audio_out.rs`, the same file compiled
+  into `ffx-host` (`audio::device`, host-iggy 2026-11-01). The game's clock
+  drives the mix and the device only takes what is queued (underruns are
+  silence, counted), so nothing the game sees depends on it. Off in
+  harness games (their clock is virtual, as the hook keeps it off there)
+  unless `FFX_RUST_AUDIO_OUT=1`; `FFX_RUST_AUDIO_OUT=0` keeps it off
+  anywhere. Emulated, the game mixes slower than real time, so a run
+  outside the harness stutters (underruns) until Unicorn is gone.
+- The movie's user stream (`createSound` with `FMOD_OPENUSER`,
+  `src/audio/movie.rs`, host-iggy): mixed from the game's PCM read
+  callback, as the hooked game's engine does it (`rust_audio.rs`): two
+  chunks of 0x1000 frames read in `createSound`, then one each time the
+  play position passes a multiple of 0x1000, interpolated and ramped like
+  every voice. The callback is game code, run through `Exec::call_stdcall`
+  into an arena block outside the audio state's lock (it asks for the
+  sound's user data). Releasing the sound notes the frames read and
+  played. Not measured against FMOD (the hook's isn't either).
 
 ## Iggy
 
@@ -615,21 +633,68 @@ calls"):
 - an AS3 `ExternalInterface.call` runs the game's callback
   (`IggySetAS3ExternalFunctionCallbackUTF8`; stdcall(user, player, call),
   the call block built in the arena with the NUL-terminated name the
-  callback hashes), and what the game answers through
-  `IggyPlayerCallbackResultPath` + `IggyValueSetStringUTF8RS` is the
-  result.
+  callback hashes; an array argument as a temporary ref, type 10 with the
+  ref at `+4`, as Iggy passes `EscMenuHelpTextRefresh`'s page and index),
+  and what the game answers through `IggyPlayerCallbackResultPath` +
+  `IggyValueSetStringUTF8RS` is the result;
+- **value refs and paths** (host-iggy, 2026-11-01): the layer keeps arrays
+  by handle (`IggyValueRefCreateArray`, `IggyValueRefFromTempRef`,
+  `IggyValueRefFree`); a path is the 24 bytes the game's frame holds, in
+  Iggy's own six words (player, parent path, name, ref, index, kind: 4
+  from a ref, 1 an array element; the hook's Iggy log shows them so), set
+  by `IggyValuePathFromRef`, `IggyValuePathMakeArrayRef` and
+  `IggyValuePathSetArrayIndex`; `IggyValueSetStringUTF8RS` fills an
+  element (the string arrays of `IggyStringArray_ctor_006fcbc0`, which
+  `addVideoPageItem` gets as type 9 values: they reach the movie as AS3
+  arrays), `IggyValueGetS32RS` and `IggyValueGetStringUTF8RS` read one
+  (0, Iggy's success, with the value; 1 without);
+- `IggyGDrawMallocAnnotated(size, file, line)` / `IggyGDrawFree` allocate
+  from the arena heap. With the null stand-ins' 0, `GDraw`'s set-up
+  (`IggyGDraw_setup_00a3baf0`, game code on the render thread) failed,
+  `g_GDrawContext` (`0x01a858c4`) stayed 0, and
+  `IggyMenuManager_Render_00a267f0` skipped every menu: no player was
+  ever ticked or drawn in `ffx-rust` before this;
+- `OMGetRenderTargets` answers the bound views (with a reference), as
+  `IggyPlayer_tickDraw_00a3d9f0` asks when its device record has none.
 
-With the `swf` feature (`src/iggy/swf.rs`) each player is an
+With the `swf` feature (`src/iggy/swf.rs`; `tools/build-host.sh` builds
+with it by default, `FFX_HOST_FEATURES=` for none) each player is an
 `ffx_swf::stage::Stage` (Ruffle, the GDraw-like switches on: mipmaps,
 smoothing, the deterministic `getTimer`) on one thread of its own (Ruffle's
 players are not `Send`; the game calls Iggy from the main and the render
-thread). Calls, ticks, size and mouse moves go there; the AS3 external
-calls a request made run on the game thread after it (their result in the
-movie is `undefined`: `ffx_swf`'s provider answers from a recording).
-`IggyPlayerDraw` renders the stage; `FFX_HOST_IGGY_OUT=DIR` writes every
-30th image. Without the feature the players are null: no image, the calls
-do nothing, which the boot to the title needs no more of (the title menu
-is the PS2 menu code, not Flash).
+thread):
+
+- **Requests** (create, calls, ticks, size, mouse moves, draws) go to that
+  thread with the asking game thread's reply channel, one at a time.
+- **AS3 external calls answer the movie** (host-iggy): while Ruffle runs
+  the movie's `ExternalInterface.call` (`ffx_swf::stage::Answers::live`),
+  the stage thread hands it to the game thread whose request is running,
+  which runs the game's callback and sends the answer back; the movie gets
+  it as the call's result, as with Iggy. Iggy calls the game makes from
+  inside its callback (`setHelpText` from `EscMenuHelpTextRefresh`) are
+  answered at once and run right after the request that made the call,
+  Ruffle's player being busy; other threads' requests wait their turn.
+- **The image** (host-iggy): `IggyPlayerDraw` renders the stage and reads
+  its target back premultiplied (`Stage::capture_premultiplied`); the D3D11
+  layer composites it where `GDraw` would have drawn
+  (`src/gfx/composite.rs`): into the view `gdraw_setRenderTargetView_00a38300`
+  stored in `GDraw`'s state (`[0x01a858b4] + 0x780`, the back buffer: the
+  menus draw after the scene) at its origin (`+0x6c8`, `+0x6cc`), on the
+  render thread at the draw's place among the game's own calls. A
+  `R8G8B8A8` texture updated with each image, a quad of the image's size
+  (one texel per pixel, `Load`: no filtering), `GDraw`'s blend (`ONE`,
+  `INV_SRC_ALPHA`), no culling, no scissor, no depth target; then the
+  layer binds the game's state again from its record. The shaders are
+  `src/gfx/composite.hlsl`, compiled with the Windows SDK's `fxc`
+  (`tools/host-composite-shaders.sh` prints the arrays). The objects are
+  the layer's own (ids from `0xffffff00`), made on the back end directly and
+  left out of the recording: the stream keeps what the game drew, and
+  `GDraw`'s draws stay the allowed difference ("The first comparison").
+  The report counts the images composited.
+- `FFX_HOST_IGGY_OUT=DIR` (passed through by `tools/run-game.sh --rust`)
+  writes every 30th image of each player as a straight-alpha PNG.
+
+Without the feature the players are null: no image, the calls do nothing.
 
 ## The C runtime DLLs
 
