@@ -11,7 +11,7 @@ use crate::opu_parts::{START_PART, start_part};
 use crate::pushes::Pushes;
 use crate::s3_misc::{COLOUR_NODE, colour_node};
 use crate::s3_summon::{MODEL_NODES, model_nodes};
-use crate::s4_misc::{FREE_RECORD, append_object, free_record};
+use crate::s4_misc::{FREE_RECORD, TRAIL_DRAW, append_object, free_record, trail_draw};
 use crate::s4_misc::{MOTION_SCRIPT, motion_script};
 use crate::s4_misc::{
     SCREEN_PLACE, START_OBJECT_ANIM, screen_place, start_object, start_object_anim,
@@ -3454,5 +3454,127 @@ pub const SPLINE_POINT: Sig = Sig {
     len: 559,
     hash: 0xa20d_d045_e524_971c,
     calls: &[],
+    imports: &[],
+};
+
+/// A homing part's task (cdecl `(task)`, `task[5]` the object `O`; an
+/// aligned /GS frame). While `O+0x27c` is positive it counts down. Else
+/// the way `v` (a local) is the position `O+0xc` (count 0) or the
+/// position moved by the speed `O+0x25c` (slot 248), less the target
+/// `O+0x24c` (slot 234). Farther than `O+0x274`: the count -1 the first
+/// time, else the position moves on (slot 248); the callback `O+0x26c`
+/// `(O)`; unless bit 1 of `O+0x284`, the part keyed with a unit matrix
+/// ([`keyed_part_step`], `ecx` = `O`). Within it (or unordered): the
+/// position is the target, the callback `O+0x270` `(O)`, and without bit
+/// 0 of `O+0x284` the flags get bit 15 and the task node goes back
+/// ([`give_back`]); with it `task[2]+0x10 = CB`. Then with bit 0 the
+/// trail is drawn ([`trail_draw`]: `ecx` = `O+0x24`, a matrix scaled by
+/// `O+0x278`, the position). Returns what the original leaves in `eax`.
+///
+/// `magic_0180` 0x100027e0 (567 bytes; 5 DLLs).
+#[allow(clippy::too_many_lines)] // the original's branches
+pub fn homing_part_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task + 0x14);
+    let n = g.read::<i32>(o + 0x27c);
+    if n > 0 {
+        g.write::<i32>(o + 0x27c, n - 1);
+        return Ret::eax((n - 1).cast_unsigned());
+    }
+    // push ebp; and esp, -8; sub esp, 0x5c; three pushes
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x68);
+    let (v, m) = (s + 0x10, s + 0x20);
+    let pos = o + 0xc;
+    if n == 0 {
+        for k in [0u32, 4, 8, 0xc] {
+            let x = g.read::<u32>(pos + k);
+            g.write::<u32>(v + k, x);
+        }
+    } else {
+        slot(g, img, f, 0x80, 248, &[v, pos, o + 0x25c]);
+    }
+    slot(g, img, f, 0x9d, 234, &[v, v, o + 0x24c]);
+    let [x, y, z] = [0u32, 4, 8].map(|k| g.read::<f32>(v + k));
+    let q = add(add(mul(y, y), mul(x, x)), mul(z, z));
+    let d = f64::from(q).sqrt() as f32;
+    let mut eax;
+    if d > g.read::<f32>(o + 0x274) {
+        if g.read::<u32>(o + 0x27c) == 0 {
+            g.write::<u32>(o + 0x27c, u32::MAX);
+        } else {
+            slot(g, img, f, 0x108, 248, &[pos, pos, o + 0x25c]);
+        }
+        eax = g.read::<u32>(o + 0x26c);
+        if eax != 0 {
+            eax = g.call(eax, 0, &[o]).eax;
+        }
+        if g.read::<u8>(o + 0x284) & 2 == 0 {
+            slot(g, img, f, 0x13c, 235, &[m]);
+            for k in [0x28u32, 0x14, 0] {
+                g.write::<u32>(m + k, 0x3f80_0000);
+            }
+            let key = Frame {
+                at: img.rel32_target(f + 0x167),
+                esp: s.wrapping_sub(8),
+                ecx: o,
+                edx: m,
+                ..*fr
+            };
+            eax = keyed_part_step(g, img, &key);
+        }
+    } else {
+        for k in [0u32, 4, 8, 0xc] {
+            let x = g.read::<u32>(o + 0x24c + k);
+            g.write::<u32>(pos + k, x);
+        }
+        let cb = g.read::<u32>(o + 0x270);
+        if cb != 0 {
+            g.call(cb, 0, &[o]);
+        }
+        let fl = g.read::<u16>(o + 0x284);
+        if fl & 1 == 0 {
+            g.write::<u16>(o + 0x284, fl | 0x8000);
+            return Ret::eax(give_back(g, img, img.rel32_target(f + 0x221), task));
+        }
+        eax = g.read::<u32>(task + 8);
+        g.write::<u32>(eax.wrapping_add(0x10), w(0x1b4));
+    }
+    if g.read::<u8>(o + 0x284) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    slot(g, img, f, 0x1c7, 235, &[m]);
+    let sc = g.read::<u32>(o + 0x278);
+    for k in [0x28u32, 0x14, 0] {
+        g.write::<u32>(m + k, sc);
+    }
+    // push edi; call: the callee's frame
+    let esp = s.wrapping_sub(8);
+    g.write::<u32>(esp + 4, pos);
+    let draw = Frame {
+        at: img.rel32_target(f + 0x1f9),
+        esp,
+        ecx: o + 0x24,
+        edx: m,
+        ..*fr
+    };
+    Ret::eax(trail_draw(g, img, &draw))
+}
+
+/// [`homing_part_task`] (the `rel32`s: [`keyed_part_step`], the square
+/// root, [`trail_draw`], [`give_back`] and two `__security_check_cookie`s).
+pub const HOMING_PART_TASK: Sig = Sig {
+    len: 567,
+    hash: 0xb936_3962_a71f_e9b5,
+    calls: &[
+        (0x38, Callee::Any),
+        (0xd6, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x167, Callee::Sig(&KEYED_PART_STEP)),
+        (0x1f9, Callee::Sig(&TRAIL_DRAW)),
+        (0x20a, Callee::Any),
+        (0x221, Callee::Sig(&GIVE_BACK)),
+        (0x22f, Callee::Any),
+    ],
     imports: &[],
 };

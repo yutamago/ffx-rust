@@ -2503,3 +2503,104 @@ fn spline_points() {
         );
     }
 }
+
+/// Row 197: `magic_0180`'s homing part task: counting down, the first
+/// step (count 0) and a moving one, far (the count's first -1, the
+/// callback, keyed or not) and near (given back, or the trail drawn).
+#[test]
+#[allow(clippy::too_many_lines)] // the callees' slots
+fn homing_part_tasks() {
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x27e0);
+    let fv = |m: &dyn StubMem, a: u32| f32::from_bits(m.r32(a));
+    rec(&mut t, 234, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) - fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 248, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) + fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x248
+    });
+    for s in [1001u32, 1002] {
+        t.set_u32(magic::TABLE + 4 * s, trap(s));
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    // the keyed part step's slots (`keyed_part_step`, `link_part`) and
+    // the trail draw's (`s4_misc::trail_draw`)
+    let table = SCRATCH + 0x3000;
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec_mem(&mut t, 723, 1, 16, Some(0));
+    rec_mem(&mut t, 724, 1, 16, Some(0));
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    rec(&mut t, 773, 4, |_, _| 0);
+    for s in [774u32, 775, 776, 777, 778, 713] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    let key = t.img.rel32_target(f + 0x167);
+    let link = t.img.rel32_target(key + 0x18c);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(op(&t, link, 0x4f), lock);
+    let td = t.img.rel32_target(f + 0x1f9);
+    t.set_u32(op(&t, td, 0x46e), SCRATCH + 0x9000);
+    let task = SCRATCH + 0x100;
+    let o = SCRATCH + 0x1000;
+    // (count, speed, radius, flags, callbacks)
+    for (k, (count, speed, radius, flags, cbs)) in [
+        (3u32, 0.0f32, 1.0f32, 0u16, 0u32),
+        (0, 0.5, 0.25, 1, 3),
+        (0xffff_fffe, 0.5, 0.25, 0, 1),
+        (0xffff_fffe, 0.5, 0.25, 2, 2),
+        (0, 0.5, 100.0, 0, 3),
+        (0xffff_fffe, 0.5, 100.0, 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.write(table, &[0; 0x100]);
+        t.set_u16(table + 6, 1);
+        t.set_u16(table + 0x10, 0x80);
+        t.set_u16(table + 0x12, 0x300);
+        t.write(o, &varied(0x2a0, k));
+        t.write(o + 0x24, &[0; 0x200]);
+        t.set_u32(o + 0x24, 0x0a00);
+        t.set_u32(o + 0x28, 1);
+        t.set_u16(o + 0x2e, 0x100);
+        // the trail block (`O+0x24`): the newest index, the spacing and
+        // no sprites (its count `+0x224` is the word before the target)
+        t.set_u32(o + 0x244, 3);
+        t.set_u32(o + 0x240, 0.5f32.to_bits());
+        t.set_u32(o + 0x248, 0);
+        for (i, v) in [1.0f32, 2.0, 3.0, 1.0].into_iter().enumerate() {
+            let i = i as u32;
+            t.set_u32(o + 0xc + 4 * i, v.to_bits());
+            t.set_u32(o + 0x24c + 4 * i, (v * 1.5).to_bits());
+            t.set_u32(o + 0x25c + 4 * i, (speed * (i as f32 + 1.0)).to_bits());
+        }
+        t.set_u32(o + 0x26c, if cbs & 1 != 0 { trap(1001) } else { 0 });
+        t.set_u32(o + 0x270, if cbs & 2 != 0 { trap(1002) } else { 0 });
+        t.set_u32(o + 0x274, radius.to_bits());
+        t.set_u32(o + 0x278, 0.75f32.to_bits());
+        t.set_u32(o + 0x27c, count);
+        t.set_u16(o + 0x284, flags);
+        t.set_u32(o + 0x20, 1.25f32.to_bits());
+        t.write(task, &varied(0x20, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x140);
+        t.set_u32(SCRATCH + 0x14c, 0);
+        t.set_u32(task + 0x14, o);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
