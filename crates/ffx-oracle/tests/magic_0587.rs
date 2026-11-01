@@ -36,6 +36,7 @@ fn camera_reset() {
     rec(&mut t, 562, 1, |_, _| 0x0056_2000);
     t.set_u32(t.img.word(at + 0x8), 0x00ca_0000);
     t.set_u32(t.img.word(at + 0x4f), 0x00a0_0000);
+    magic_h6::scrub(&mut t);
     t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
         m0587::camera_reset(g, img, fr)
     });
@@ -64,6 +65,7 @@ fn load_groups() {
         t.set_u32(r + 0x166c + 0x8a8 * k, n.cast_unsigned());
         t.set_u32(r + 0xe48 + 0x8a8 * k, 0x00e0_0000 + k);
     }
+    magic_h6::scrub(&mut t);
     t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
         m0587::load_groups(g, img, fr)
     });
@@ -85,6 +87,7 @@ fn glow_start() {
         t.write(head, &[0x4d; 0x20]);
         t.set_u32(t.img.word(at + 0x89), u32::from(!empty));
         t.set_u32(t.img.word(at + 0x9d), head);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -104,6 +107,7 @@ fn glow_colour() {
         t.set_u32(src + 4 * i, f(i as f32 * 0.75 - 2.0));
     }
     t.set_u32(src + 0x30, 0x7fc0_1234);
+    magic_h6::scrub(&mut t);
     t.check_entry(at, Call::default(), &[src], Eax::Checked);
 }
 
@@ -145,6 +149,7 @@ fn glow_turn() {
                 counter.wrapping_add(u8::try_from(k).unwrap()),
             );
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -192,6 +197,7 @@ fn sway_frame() {
         }
         t.set_u32(s + 0xa84, angle.to_bits());
         t.set_u16(s + 0x664, 0x0008);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

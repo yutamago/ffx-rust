@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -42,6 +43,7 @@ fn show() {
         t.write(obj, &[0x22; 0x100]);
         t.set_u8(obj + 0x90, bits);
         t.set_u32(cell, parts);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(obj), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0573::show(g, img, fr.at, fr.ecx))
         });
@@ -78,6 +80,7 @@ fn task() {
         t.set_u32(r + 0x20, f(2.5));
         t.set_u32(r + 0x24, f(size));
         t.set_u8(r + 0x288, bits);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -109,6 +112,7 @@ fn inits() {
         let at = t.at(0x7e00);
         list(&mut t, at, (0x24, 0x31), full, last);
         t.write(node, &[0x4e; 0x40]);
+        magic_h6::scrub(&mut t);
         t.check(
             at,
             Call::this(node),
@@ -129,6 +133,7 @@ fn inits() {
             edx: 0x00e5_0000,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(i7170, c, &[0x00a0_0001], Eax::Checked, |g, img, fr| {
             Ret::eax(m0573::init(g, img, fr))
         });
@@ -196,6 +201,7 @@ fn refresh() {
         t.set_u32(cur, node);
         // the cursor's mode byte (`+5`) the DLL's 0x37
         t.set_u32(cur + 4, 0x5a5a_375a);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(cur), &[], Eax::Checked, |g, img, fr| {
             m0573::refresh(g, img, fr)
         });
@@ -249,6 +255,7 @@ fn motion_task() {
         t.set_u32(node + 4, next);
         t.set_u32(node + 8, prev);
         t.set_u32(cell, bits);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -320,6 +327,7 @@ fn motion_setup() {
             edx: src,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0573::motion_setup(g, img, fr))
         });

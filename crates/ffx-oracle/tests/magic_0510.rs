@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -72,6 +73,7 @@ fn steps() {
         t.write(seq, &[0x51; 0x200]);
         t.set_u32(seq + 0xac, k);
         for rva in [0x1000u32, 0x11b0, 0x12a0, 0x1380, 0x1680] {
+            magic_h6::scrub(&mut t);
             t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
         }
     }
@@ -116,6 +118,7 @@ fn camera_steps() {
     ] {
         t.set_u32(count, n);
         t.set_u32(seq, 0x10);
+        magic_h6::scrub(&mut t);
         t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
     }
 }

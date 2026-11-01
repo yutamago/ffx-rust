@@ -109,7 +109,11 @@ pub fn hits(target: f32, step: f32) -> f32 {
         if s == target {
             return x;
         }
-        x = if s < target { x.next_up() } else { x.next_down() };
+        x = if s < target {
+            x.next_up()
+        } else {
+            x.next_down()
+        };
     }
     panic!("no x with x + {step} == {target}");
 }

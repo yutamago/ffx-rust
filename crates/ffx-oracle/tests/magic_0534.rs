@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -60,6 +61,7 @@ fn steps() {
         t.set_u32(seq + 0xac, k as u32);
         t.set_u32(other + 0xac, 3 - k as u32);
         for rva in [0x11a0u32, 0x12b0, 0x1390] {
+            magic_h6::scrub(&mut t);
             t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
         }
     }
@@ -106,6 +108,7 @@ fn aim() {
         t.set_u32(seq + 0xac, k);
         t.set_u32(seq + 0x2c + 16 * k, 2 - k);
         t.set_u32(cell, len.to_bits());
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[seq], Eax::Checked);
     }
 }

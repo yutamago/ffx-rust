@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -39,6 +40,7 @@ fn flash() {
         t.write(r + 0x1a00, &[0x3b; 0x300]);
         let (fh, ft) = (t.img.word(fade + 0x7b), t.img.word(fade + 0x93));
         list(&mut t, fh, ft, SCRATCH + 0x3000, !empty);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -56,6 +58,7 @@ fn two_parts() {
         let (head, tail) = (t.img.word(at + 0x6d), t.img.word(at + 0x83));
         list(&mut t, head, tail, SCRATCH + 0x3000, full);
         t.write(fx + 0x1a00, &[0x5a; 0x200]);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -76,6 +79,7 @@ fn blend() {
         for (j, n) in (0u32..).zip(counts) {
             t.set_u32(s + 0x2208 + 4 * j, n);
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

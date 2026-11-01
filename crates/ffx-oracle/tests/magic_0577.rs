@@ -51,6 +51,7 @@ fn colour() {
             edx: 0x00e5_0005,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::colour(g, img, fr))
         });
@@ -78,6 +79,7 @@ fn flash_off() {
     for set in SETS {
         // a part of the kind it changes past each model's last one
         magic_h6::models_beyond(&mut t, g_at, set, 0x3580);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::flash_off(g, img, fr.at))
         });
@@ -93,6 +95,7 @@ fn glow_off() {
     for set in SETS {
         // a part of the kind it changes past each model's last one
         magic_h6::models_beyond(&mut t, g_at, set, 0x3700);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::glow_off(g, img, fr.at))
         });
@@ -114,6 +117,7 @@ fn move_start() {
         for (i, v) in (0u32..).zip([node, mode, 0x00ab_0000, 0x00cd_0000]) {
             t.set_u32(rec + 4 * i, v);
         }
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(rec), &[], Eax::Checked, |g, _, fr| {
             Ret::eax(m0577::move_start(g, fr.ecx))
         });
@@ -149,6 +153,7 @@ fn draw_detached() {
         t.set_u32(node + 4, next);
         t.set_u32(node + 8, prev);
         t.set_u32(node + 0x14, if inlist { list } else { 0 });
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(holder), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::draw_detached(g, img, fr))
         });
@@ -172,6 +177,7 @@ fn place() {
         for (i, v) in (0u32..).zip([node, 0x00ce_0000, 0x00cf_0000, mode]) {
             t.set_u32(h + 4 * i, v);
         }
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(h), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::place(g, img, fr))
         });
@@ -198,6 +204,7 @@ fn halve() {
     for set in sets {
         // a part of a kind it changes past each model's last one
         magic_h6::models_beyond(&mut t, g_at, set, 0x34c0);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::halve(g, img, fr.at))
         });
@@ -242,6 +249,7 @@ fn end() {
             t.set_u32(w(&t, f, 0x15), next);
             t.set_u32(w(&t, f, 0x1a), prev);
         }
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -285,6 +293,7 @@ fn centre() {
             edx: SCRATCH + 0x500,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::centre(g, img, fr))
         });
@@ -354,6 +363,7 @@ fn task() {
         t.set_u32(r + 0x3f8, 0xffff_fff3 | bits);
         t.set_u32(r + 0x1a0, 0x00a1_0000);
         t.set_u32(r + 0x1b4, 0x00a2_0000);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -392,6 +402,7 @@ fn exit_task() {
             t.set_u32(node + 4, next);
             t.set_u32(node + 8, prev);
             t.set_u32(cell, bits);
+            magic_h6::scrub(&mut t);
             t.check_entry(at, Call::default(), &[task], Eax::Checked);
         }
     }
@@ -451,6 +462,7 @@ fn spark_setup() {
             edx: src,
             ..Call::default()
         };
+        magic_h6::scrub(&mut t);
         t.check(
             at,
             c,
@@ -532,6 +544,7 @@ fn spark_task() {
         t.set_u32(node + 4, next);
         t.set_u32(node + 8, prev);
         t.set_u32(cell, 0x1234 + state);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -558,6 +571,7 @@ fn light_node() {
         t.set_u32(parent + 0x10, if empty { parent } else { last });
         t.set_u32(group, node);
         t.set_u32(group + 4, p);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(group), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0577::light_node(g, img, fr))
         });
