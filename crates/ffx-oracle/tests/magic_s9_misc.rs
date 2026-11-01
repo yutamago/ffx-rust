@@ -2535,3 +2535,63 @@ fn summon_rings_started() {
         }
     }
 }
+
+/// Rows 81/82: the summon's five task nodes in two DLLs, directly and
+/// through its start task (busy, the first call, ready): the free ring
+/// with 6 to 8 nodes, the task list empty or not.
+#[test]
+fn summon_nodes_started() {
+    for (dll, task, f) in [(132u16, 0x12b0u32, 0x13e0u32), (135, 0x3c60, 0x3d90)] {
+        let Some(mut t) = twin(dll) else { return };
+        let task = t.at(task);
+        let f = t.at(f);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let pi = t.img.rel32_target(f + 0x44);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let ans = SCRATCH + 0x7d0;
+        log_calls(&mut t, 225, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 226, 2, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 227, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, 3, &[], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, 4, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 291, 5, &[], |_, a, k| a[0] ^ a[1] ^ k);
+        log_calls(&mut t, 271, 1, &[], |_, a, _| a[0]);
+        t.set_u32(w(&t, 0x6a), 0x0a0a_0001);
+        t.set_u32(w(&t, 0x64), 0x0b0b_0002);
+        // (free nodes, load: busy / first / ready)
+        for (k, (free, busy, once, ready)) in [
+            (6u32, 0u32, 0u32, 1u32),
+            (7, 0, 1, 1),
+            (8, 0, 0, 2),
+            (6, 1, 0, 1),
+            (7, 0, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                t.set_u32(ans, if direct { 0 } else { busy });
+                t.set_u32(ans + 4, ready);
+                t.set_u32(op(&t, task, 0x18), once);
+                // the globals the start sets hold other values
+                for o in [0x7bu32, 0x3f, 0x137, 0x25f, 0x381] {
+                    t.set_u32(w(&t, o), 0x5a5a_0000 + o);
+                }
+                for i in 0..0x20 {
+                    t.set_u32(w(&t, 0x140) + 4 * i, 0x4400_0000 + i);
+                }
+                task_ring(&mut t, f, (0x73, 0xa9, 0x10e, 0x124), k, free);
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x13e0 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}

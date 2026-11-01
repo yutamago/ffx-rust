@@ -3646,3 +3646,180 @@ pub const SUMMON_START_TASK_0247: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&SUMMON_RING_START))],
     imports: &[],
 };
+
+/// A node taken off the DLL's free ring as the original inlines it: `n`
+/// unlinked (its `+0` the previous, `+4` the next), the head `*G_H` =
+/// `n+4` while more than one was free (else 0), the count less one; the
+/// node cleared (`+0`, `+4`, `+0xc`, `+0x14`), `n+8 = n`, its callback
+/// `cb` at `+0x10`, `byte n+0x18 = 0`.
+fn ring_node<G: Game>(g: &mut G, n: u32, free: u16, (head, count, cb): (u32, u32, u32)) {
+    let (prev, next) = (g.read::<u32>(n), g.read::<u32>(n + 4));
+    g.write::<u32>(prev.wrapping_add(4), next);
+    let (next, prev) = (g.read::<u32>(n + 4), g.read::<u32>(n));
+    g.write::<u32>(next, prev);
+    let h = if free > 1 { g.read::<u32>(n + 4) } else { 0 };
+    g.write::<u32>(head, h);
+    for o in [0u32, 4, 0xc, 0x14] {
+        g.write::<u32>(n + o, 0);
+    }
+    g.write::<u32>(n + 8, n);
+    g.write::<u32>(n + 0x10, cb);
+    g.write::<u8>(n + 0x18, 0);
+    g.write::<u16>(count, free.wrapping_sub(1));
+}
+
+/// A summon's five task nodes started (cdecl, no arguments): slot 719
+/// `(X, 8, 0)` into `*G_H` (three globals set first; two of its words
+/// stay on the stack), the part set up
+/// ([`part_init`](crate::l5_objhost::part_init)), `*G_R` = slot 291
+/// `(*G_A, *G_B, &a, &b, &c)`, three globals set. Then the nodes, each
+/// taken off the free ring (`*G_F`, `u16 *G_C`; with none free the
+/// original writes through address 0, as this does):
+/// - 1: callback `CB1`, `+0x14` = `D1`, appended to the task list (`*G_L`
+///   last; `*G_T` when it is empty, `*G_T` not moved on); then the first
+///   block's constants;
+/// - 2: callback `CB2`, byte `+0x18` 1, `+0x14` = `D2`, linked after node
+///   1 (or the list's first when it was empty); the second block's
+///   constants;
+/// - 3: the same with `D3`, linked after node 2 and made the last
+///   (`*G_L`); slot 271 `(4)`;
+/// - 4: taken and listed ([`free_to_live`](crate::s7_misc::free_to_live)),
+///   byte `+0x18` 1; the records set up
+///   ([`records_init`](crate::sa_misc::records_init) of the block `B`);
+/// - 5: the same, byte `+0x18` 2.
+///
+/// Returns 0.
+///
+/// `magic_0132` 0x100013e0 (1,304 bytes; 4 DLLs).
+pub fn summon_nodes_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x5), s);
+    global_stores(g, img, f, 0x1b, 0x39, 0);
+    let h = g.call(t(g, 719), fr.ecx, &[w(0x17), 8, 0]).eax;
+    g.write::<u32>(w(0x3f), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x44));
+    let (a, b) = (g.read::<u32>(w(0x6a)), g.read::<u32>(w(0x64)));
+    let r = g.call(t(g, 291), 0, &[a, b, w(0x5e), w(0x59), w(0x4e)]).eax;
+    g.write::<u32>(w(0x7b), r);
+    global_stores(g, img, f, 0x7f, 0x9d, 0);
+    let (head, count, first, last) = (w(0xa9), w(0x73), w(0x10e), w(0x124));
+    // node 1
+    let mut free = g.read::<u16>(count);
+    let n1 = if free == 0 {
+        0
+    } else {
+        let n = g.read::<u32>(head);
+        ring_node(g, n, free, (head, count, w(0xfd)));
+        free -= 1;
+        n
+    };
+    g.write::<u32>(n1.wrapping_add(0x14), w(0x116));
+    g.write::<u32>(n1.wrapping_add(4), 0);
+    if g.read::<u32>(first) == 0 {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x137), n1);
+    } else {
+        let l = g.read::<u32>(last);
+        g.write::<u32>(n1, l);
+        g.write::<u32>(l.wrapping_add(4), n1);
+    }
+    g.write::<u32>(n1.wrapping_add(8), n1);
+    global_stores(g, img, f, 0x13e, 0x1c0, 0);
+    // node 2 (the head as node 1 left it)
+    let n2 = if free == 0 {
+        0
+    } else {
+        let n = g.read::<u32>(head);
+        ring_node(g, n, free, (head, count, w(0x21e)));
+        free -= 1;
+        n
+    };
+    let listed = g.read::<u32>(first) != 0;
+    g.write::<u8>(n2.wrapping_add(0x18), img.word(f + 0x237) as u8);
+    g.write::<u32>(n2.wrapping_add(0x14), w(0x23b));
+    g.write::<u32>(n2.wrapping_add(4), 0);
+    let mut p = n1;
+    if listed {
+        g.write::<u32>(n2, p);
+        g.write::<u32>(p.wrapping_add(4), n2);
+        p = g.read::<u32>(first);
+    } else {
+        p = n2;
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x25f), p);
+    }
+    g.write::<u32>(n2.wrapping_add(8), n2);
+    global_stores(g, img, f, 0x266, 0x2f2, 0);
+    // node 3
+    let n3 = if free == 0 {
+        0
+    } else {
+        let n = g.read::<u32>(head);
+        ring_node(g, n, free, (head, count, w(0x34d)));
+        n
+    };
+    g.write::<u8>(n3.wrapping_add(0x18), img.word(f + 0x35f) as u8);
+    g.write::<u32>(n3.wrapping_add(0x14), w(0x363));
+    g.write::<u32>(n3.wrapping_add(4), 0);
+    if p == 0 {
+        g.write::<u32>(n3, 0);
+        g.write::<u32>(w(0x381), n3);
+    } else {
+        g.write::<u32>(n3, n2);
+        g.write::<u32>(n2.wrapping_add(4), n3);
+    }
+    g.write::<u32>(n3.wrapping_add(8), n3);
+    g.write::<u32>(w(0x397), n3);
+    g.call(slot_target(g, w(0x386), 271), 0, &[4]);
+    // nodes 4 and 5
+    let n4 = crate::s7_misc::free_to_live(
+        g,
+        img,
+        f,
+        [
+            0x3a0, 0x3b7, 0x3d4, 0x3dc, 0x40d, 0x418, 0x41e, 0x431, 0x452, 0x444, 0x452,
+        ],
+    );
+    g.write::<u8>(n4.wrapping_add(0x18), img.word(f + 0x426) as u8);
+    crate::sa_misc::records_init(g, img, img.rel32_target(f + 0x457), w(0x449));
+    let n5 = crate::s7_misc::free_to_live(
+        g,
+        img,
+        f,
+        [
+            0x45e, 0x46d, 0x48a, 0x492, 0x4be, 0x4c9, 0x4cf, 0x4e5, 0x4f3, 0x505, 0x50e,
+        ],
+    );
+    g.write::<u8>(n5.wrapping_add(0x18), img.word(f + 0x4d9) as u8);
+    Ret::eax(0)
+}
+
+/// [`summon_nodes_start`] (the `rel32`s: the part set-up, the records'
+/// set-up).
+pub const SUMMON_NODES_START: Sig = Sig {
+    len: 1304,
+    hash: 0x8e72_2275_c2fb_dfc6,
+    calls: &[
+        (0x44, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x457, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+    ],
+    imports: &[],
+};
+
+/// The summon's start task
+/// ([`summon_start_task`](crate::s8_misc::summon_start_task), the copy
+/// with `MsEffectReady(*G_A, 1)`) with [`summon_nodes_start`].
+///
+/// `magic_0132` 0x100012b0 (119 bytes; 4 DLLs).
+pub fn summon_start_task_0132<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::s8_misc::summon_start_task(g, img, fr, summon_nodes_start)
+}
+
+/// [`summon_start_task_0132`].
+pub const SUMMON_START_TASK_0132: Sig = Sig {
+    len: 119,
+    hash: 0x2da6_1889_6875_2369,
+    calls: &[(0x5c, Callee::Sig(&SUMMON_NODES_START))],
+    imports: &[],
+};
