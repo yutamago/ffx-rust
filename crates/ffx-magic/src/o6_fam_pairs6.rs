@@ -1427,4 +1427,244 @@ pub fn packed_sprite<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(g.call(t, 0, &args).eax)
 }
 
+/// How a copy of [`basis_start`] picks slot 236's kind: a byte of the
+/// code, or one of two bytes by whether the object lies in the 0x80
+/// bytes from a base (`magic_0664`).
+enum BasisKind {
+    Byte(u32),
+    Range {
+        base: u32,
+        inside: u32,
+        outside: u32,
+    },
+}
+
+/// A copy of [`basis_start`]: the frame's locals (offsets below `ebp`:
+/// the matrix rows `A`, slot 325's input row, `B`, `C`, `D`, `E`, `F`,
+/// `M` and `G`), `B`'s scale (`magic_0665`), and the code offsets of the
+/// slot-table global, the globals and words of the tail (`G1`, `G2`,
+/// `G3`, `G4`, `G5`, `G6`, the word written through `G6`, the lock taken
+/// and put back, slot 712's byte).
+struct BasisOps {
+    kind: BasisKind,
+    a: u32,
+    row: u32,
+    b: u32,
+    scale: Option<u32>,
+    c: u32,
+    d: u32,
+    e: u32,
+    f: u32,
+    m: u32,
+    g: u32,
+    slots: u32,
+    g1: u32,
+    tail: [u32; 7],
+    unlock: u32,
+    byte: u32,
+}
+
+/// The operands of the [`basis_start`] copy at `f`.
+fn basis_ops(img: &Image, f: u32) -> BasisOps {
+    if img.word(f + 0x18) as u8 == 0x8b {
+        // `mov eax, edi; sub eax, base; test eax, -0x80` (0664)
+        BasisOps {
+            kind: BasisKind::Range {
+                base: 0x1b,
+                inside: 0x39,
+                outside: 0x40,
+            },
+            a: 0xc4,
+            row: 0xc4,
+            b: 0xd4,
+            scale: None,
+            c: 0x84,
+            d: 0x34,
+            e: 0x14,
+            f: 0x24,
+            m: 0x74,
+            g: 0x94,
+            slots: 0x2c,
+            g1: 0x46,
+            tail: [0x255, 0x26e, 0x27a, 0x28d, 0x29a, 0x2a2, 0x2a7],
+            unlock: 0x2c3,
+            byte: 0x29f,
+        }
+    } else if img.word(f + 0x8b) as u8 == 0xf3 {
+        // `movss xmm0, [ebp - 0x24]` after slot 325: `B` scaled (0665)
+        BasisOps {
+            kind: BasisKind::Byte(0x25),
+            a: 0xd4,
+            row: 0xd4,
+            b: 0x24,
+            scale: Some(0x94),
+            c: 0x94,
+            d: 0x34,
+            e: 0x14,
+            f: 0x44,
+            m: 0x84,
+            g: 0xa4,
+            slots: 0x20,
+            g1: 0x28,
+            tail: [0x26c, 0x285, 0x291, 0x2ad, 0x2b4, 0x2ba, 0x2bf],
+            unlock: 0x2dd,
+            byte: 0x2d1,
+        }
+    } else {
+        BasisOps {
+            kind: BasisKind::Byte(0x25),
+            a: 0xd4,
+            row: 0xc4,
+            b: 0x94,
+            scale: None,
+            c: 0x84,
+            d: 0x34,
+            e: 0x14,
+            f: 0x24,
+            m: 0x74,
+            g: 0xa4,
+            slots: 0x20,
+            g1: 0x28,
+            tail: [0x23a, 0x253, 0x25f, 0x27b, 0x282, 0x28a, 0x28f],
+            unlock: 0x2ab,
+            byte: 0x287,
+        }
+    }
+}
+
+/// An object started in a frame made from a slot 236 matrix (stack
+/// `(P)`; a /GS frame, `ebp` = the entry `esp - 4`; `magic_0666`
+/// 0x10001900, 717 bytes, `magic_0664` 0x100018d0, 741 bytes, and
+/// `magic_0665` 0x10001b10, 767 bytes; family `F0666_10001900`):
+/// - slot 236 `(*G1, kind, A)` (`kind` a byte of the code; `0664`: 0xba
+///   for a `P` in the 0x80 bytes from a base, else 0xbe), its three rows
+///   normalized (slot 232 `(r, r)`); slot 325 `(B, row)` (the first or
+///   second row); `B.y` = 0 (`0665`: `B` times `K`, `B.y` = `0 * K`);
+///   `C` = `(0, 1, 0, 1)`; slot 232 `(D, B)`;
+/// - slot 266 `(E, C, D)` and `(F, D, E)`, both normalized;
+/// - `M` = the rows `E`, `F`, `D` (`w` 0) and `H = M + 0x30` = `(0, 0,
+///   0, 1)`; slot 325 `(H, G)`, then `H.y` = -0.01;
+/// - slot 235 `(I)` (`I` at `ebp - 0x114`), its diagonal `P + 0x60`;
+///   slot 231 `(M, M, I)`, 230 `(*G2, M)`, 231 `(*G4, *G3, *G2)`, 230
+///   `(*G5, *G4)`;
+/// - `**G6` = a word of the code; with the lock `**G_L` 1, slot 712 `(P,
+///   0x30)`, the lock put back.
+///
+/// Returns 1 when slot 712 answered 0, else 0.
+pub fn basis_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::mul;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ops = basis_ops(img, f);
+    let p = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |off: u32| ebp.wrapping_sub(off);
+    let slot = |g: &G, n: u32| slot_target(g, w(ops.slots), n);
+    let call = |g: &mut G, n: u32, args: &[u32]| {
+        let t = slot(g, n);
+        g.call(t, 0, args).eax
+    };
+    let kind = match ops.kind {
+        BasisKind::Byte(o) => disp8(img, f + o),
+        BasisKind::Range {
+            base,
+            inside,
+            outside,
+        } => {
+            let o = if p.wrapping_sub(w(base)) & !0x7f == 0 {
+                inside
+            } else {
+                outside
+            };
+            // `push imm32`
+            w(o)
+        }
+    };
+    let a = at(ops.a);
+    let g1 = g.read::<u32>(w(ops.g1));
+    // call width: 3
+    call(g, 236, &[g1, kind, a]);
+    for i in 0..3u32 {
+        let r = a.wrapping_add(0x10 * i);
+        // call width: 2
+        call(g, 232, &[r, r]);
+    }
+    let (b, c, d, e, fv, m) = (
+        at(ops.b),
+        at(ops.c),
+        at(ops.d),
+        at(ops.e),
+        at(ops.f),
+        at(ops.m),
+    );
+    // call width: 2
+    call(g, 325, &[b, at(ops.row)]);
+    if let Some(k) = ops.scale {
+        let k = g.read::<f32>(w(k));
+        let x = mul(g.read::<f32>(b), k);
+        g.write::<f32>(b, x);
+        g.write::<f32>(b.wrapping_add(4), mul(0.0, k));
+        let z = mul(g.read::<f32>(b.wrapping_add(8)), k);
+        g.write::<f32>(b.wrapping_add(8), z);
+    } else {
+        g.write::<u32>(b.wrapping_add(4), 0);
+    }
+    for (i, v) in (0u32..).zip([0u32, 0x3f80_0000, 0, 0x3f80_0000]) {
+        g.write::<u32>(c.wrapping_add(4 * i), v);
+    }
+    // call width: 2
+    call(g, 232, &[d, b]);
+    // call width: 3
+    call(g, 266, &[e, c, d]);
+    // call width: 3
+    call(g, 266, &[fv, d, e]);
+    for v in [e, fv] {
+        // call width: 2
+        call(g, 232, &[v, v]);
+    }
+    for (row, v) in (0u32..).zip([e, fv, d]) {
+        for i in 0..3u32 {
+            let x = g.read::<u32>(v.wrapping_add(4 * i));
+            g.write::<u32>(m.wrapping_add(0x10 * row + 4 * i), x);
+        }
+        g.write::<u32>(m.wrapping_add(0x10 * row + 0xc), 0);
+    }
+    let h = m.wrapping_add(0x30);
+    for (i, v) in (0u32..).zip([0u32, 0, 0, 0x3f80_0000]) {
+        g.write::<u32>(h.wrapping_add(4 * i), v);
+    }
+    // call width: 2
+    call(g, 325, &[h, at(ops.g)]);
+    let scale = g.read::<u32>(p.wrapping_add(0x60));
+    g.write::<u32>(h.wrapping_add(4), 0xbc23_d70a);
+    let i_m = at(0x114);
+    // call width: 1
+    call(g, 235, &[i_m]);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(i_m.wrapping_add(o), scale);
+    }
+    let gv = |g: &G, k: usize| g.read::<u32>(w(ops.tail[k]));
+    // call width: 3
+    call(g, 231, &[m, m, i_m]);
+    let g2 = gv(g, 0);
+    // call width: 2
+    call(g, 230, &[g2, m]);
+    let (g4, g3, g2) = (gv(g, 2), gv(g, 1), gv(g, 0));
+    // call width: 3
+    call(g, 231, &[g4, g3, g2]);
+    let (g5, g4) = (gv(g, 3), gv(g, 2));
+    // call width: 2
+    call(g, 230, &[g5, g4]);
+    let g6 = gv(g, 4);
+    g.write::<u32>(g6, w(ops.tail[5]));
+    let lock = gv(g, 6);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let r = call(g, 712, &[p, disp8(img, f + ops.byte)]);
+    let lock = g.read::<u32>(w(ops.unlock));
+    g.write::<u32>(lock, saved);
+    Ret::eax(u32::from(r == 0))
+}
+
 include!("o6_fam_pairs6_table.rs.in");

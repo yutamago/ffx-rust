@@ -257,3 +257,35 @@ pub const PACKED_SPRITE_0266_1310: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0666_10001900
+
+/// [`basis_start`] in `magic_0666` (0x10001900, 717 bytes; row own:3437).
+pub const BASIS_START_0666_1900: Sig = Sig {
+    len: 717,
+    hash: 0x9960_ce54_972c_2df9,
+    calls: &[
+        (0x2c5, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`basis_start`] in `magic_0664` (0x100018d0, 741 bytes; row own:3411).
+pub const BASIS_START_0664_18D0: Sig = Sig {
+    len: 741,
+    hash: 0x6291_02f3_e660_5dfe,
+    calls: &[
+        (0x2dd, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`basis_start`] in `magic_0665` (0x10001b10, 767 bytes; row own:3429).
+pub const BASIS_START_0665_1B10: Sig = Sig {
+    len: 767,
+    hash: 0xc51a_bb20_24ad_d026,
+    calls: &[
+        (0x2f7, Callee::Any),
+    ],
+    imports: &[],
+};

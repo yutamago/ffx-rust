@@ -2553,6 +2553,9 @@ ports! {
     "o6 fam pairs6 trail_task 0544@2250" => o6_fam_pairs6::TRAIL_TASK_0544_2250, o6_fam_pairs6::trail_task;
     "o6 fam pairs6 trail_task 0555@2250" => o6_fam_pairs6::TRAIL_TASK_0555_2250, o6_fam_pairs6::trail_task;
     "o6 fam pairs6 trail_task 0556@2250" => o6_fam_pairs6::TRAIL_TASK_0556_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 basis_start 0666@1900" => o6_fam_pairs6::BASIS_START_0666_1900, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 basis_start 0664@18d0" => o6_fam_pairs6::BASIS_START_0664_18D0, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 basis_start 0665@1b10" => o6_fam_pairs6::BASIS_START_0665_1B10, o6_fam_pairs6::basis_start;
     // families2 (o6_fam_pairs5..): end of ports
 }
 

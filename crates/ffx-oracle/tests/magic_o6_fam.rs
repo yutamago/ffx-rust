@@ -1625,6 +1625,7 @@ fn dll_main_writes_only_crt_state() {
         TRAIL_DRAW,
         TRAIL_TASK,
         PACKED_SPRITE,
+        BASIS_START,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -4220,6 +4221,143 @@ fn fam2_packed_sprite() {
             t.check(f, call, &args, Eax::Checked, |g, img, fr| {
                 o6_fam_pairs6::packed_sprite(g, img, fr)
             });
+        }
+    }
+}
+
+const BASIS_START: &[(u16, u32)] = &[(666, 0x1900), (664, 0x18d0), (665, 0x1b10)];
+
+/// `o6_fam_pairs6::basis_start`: an object inside, just past and far
+/// from the 0x80 bytes `magic_0664` tests (its kind), several scales
+/// (`magic_0665`'s `K` negative too), slot 712 answering 0 and not. The vector slots write what they are handed: 236 three rows
+/// from its words, 232 a half of its input, 325 a shuffled copy, 266 a
+/// cross product, 235 a unit matrix, 231 a sum, 230 a copy; the matrix
+/// globals point at scratch matrices.
+#[test]
+#[allow(clippy::too_many_lines)] // the vector stubs and their globals
+fn fam2_basis_start() {
+    for (n, rva) in copies("o6 fam pairs6 basis_start", BASIS_START) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        let rd = |m: &dyn magic::StubMem, at: u32| f32::from_bits(m.r32(at));
+        t.stub(236, move |m, a| {
+            for i in 0..12u32 {
+                let x = (a[0] ^ a[1]).wrapping_add(i * 0x10_0001) % 97;
+                m.w32(a[2] + 4 * i, (x as f32 * 0.125 - 5.0).to_bits());
+            }
+            0x236
+        });
+        t.stub(232, move |m, a| {
+            // the input's bits hashed too (a zero's sign shows)
+            let mut h = m.r32(SCRATCH + 0x3f30);
+            for i in 0..4u32 {
+                h = h.rotate_left(5) ^ m.r32(a[1] + 4 * i);
+                let x = rd(m, a[1] + 4 * i) * 0.5 + 0.25;
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            m.w32(SCRATCH + 0x3f30, h);
+            0x232
+        });
+        t.stub(325, move |m, a| {
+            let v: Vec<f32> = (0..4u32).map(|i| rd(m, a[1] + 4 * i)).collect();
+            for (i, x) in (0u32..).zip([v[1], v[2], v[0], v[3] + 1.0]) {
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x325
+        });
+        t.stub(266, move |m, a| {
+            let p: Vec<f32> = (0..3u32).map(|i| rd(m, a[1] + 4 * i)).collect();
+            let q: Vec<f32> = (0..3u32).map(|i| rd(m, a[2] + 4 * i)).collect();
+            let c = [
+                p[1] * q[2] - p[2] * q[1],
+                p[2] * q[0] - p[0] * q[2],
+                p[0] * q[1] - p[1] * q[0],
+            ];
+            for (i, x) in (0u32..).zip(c) {
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x266
+        });
+        t.stub(235, |m, a| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+            }
+            0x235
+        });
+        t.stub(231, move |m, a| {
+            for i in 0..16u32 {
+                let x = rd(m, a[1] + 4 * i) * 0.75 + rd(m, a[2] + 4 * i);
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x231
+        });
+        t.stub(230, |m, a| {
+            for i in 0..16u32 {
+                let x = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, x);
+            }
+            0x230
+        });
+        t.stub(712, |m, a| {
+            let mut x = 0x712 ^ a[0] ^ a[1];
+            for i in 0..16u32 {
+                x = x.rotate_left(5) ^ m.r32(SCRATCH + 0x3400 + 4 * i);
+            }
+            m.w32(SCRATCH + 0x3f10, x);
+            if m.r32(SCRATCH + 0x3f20) == 0 {
+                0
+            } else {
+                x | 1
+            }
+        });
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        // the globals: (G2, G3, G4, G5) matrices, G6's word, the lock
+        let (g1, tail, base) = match n {
+            664 => (
+                0x46u32,
+                [0x255u32, 0x26e, 0x27a, 0x28d, 0x29a, 0x2a7],
+                Some(w(&t, 0x1b)),
+            ),
+            665 => (0x28, [0x26c, 0x285, 0x291, 0x2ad, 0x2b4, 0x2bf], None),
+            _ => (0x28, [0x23a, 0x253, 0x25f, 0x27b, 0x282, 0x28f], None),
+        };
+        t.set_u32(w(&t, g1), 0x0071_0000 + u32::from(n));
+        for (k, &o) in tail[..4].iter().enumerate() {
+            t.set_u32(w(&t, o), SCRATCH + 0x3400 + 0x40 * k as u32);
+        }
+        t.set_u32(w(&t, tail[4]), SCRATCH + 0x3f00);
+        t.set_u32(w(&t, tail[5]), SCRATCH + 0x3f04);
+        let saved = t.save();
+        // (offset from 0664's base or scratch, scale, slot 712 answers,
+        // 0665's `K`)
+        let cases = [
+            (None, 1.5f32, 1u32, 0.5f32),
+            (Some(0x10u32), -0.75, 1, -1.25),
+            (None, 2.0, 0, 3.0),
+            (Some(0x10), 0.5, 0, 0.25),
+            (Some(0x90), 1.25, 1, -0.5),
+        ];
+        for (c, (off, scale, answers, k)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            let p = match (off, base) {
+                (Some(o), Some(b)) => b + o,
+                _ => SCRATCH + 0x3000,
+            };
+            if n == 665 {
+                t.set_u32(w(&t, 0x94), k.to_bits());
+            }
+            t.write(p, &[0x3c; 0x70]);
+            t.set_u32(p + 0x60, scale.to_bits());
+            for k in 0..4u32 {
+                fill(&mut t, SCRATCH + 0x3400 + 0x40 * k, 0x10, 31 + k + c);
+            }
+            t.set_u32(SCRATCH + 0x3f00, 0x66);
+            t.set_u32(SCRATCH + 0x3f04, 0x77 + c);
+            t.set_u32(SCRATCH + 0x3f20, answers);
+            t.check_entry(f, regs(rva, c), &[p], Eax::Checked);
         }
     }
 }
