@@ -72,6 +72,12 @@ fn steps() {
         }
         t.write(seq, &[0x51; 0x200]);
         t.set_u32(seq + 0xac, k);
+        // the state words the first step clears, non-zero first
+        let first = t.at(0x1000);
+        let ops = [
+            0x20u32, 0x2a, 0x34, 0x3e, 0x48, 0x52, 0x5c, 0x66, 0x70, 0x7a, 0x84, 0x8e, 0xa1,
+        ];
+        magic_h6::distinct(&mut t, first, &ops);
         for rva in [0x1000u32, 0x11b0, 0x12a0, 0x1380, 0x1680] {
             magic_h6::scrub(&mut t);
             t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
@@ -91,6 +97,8 @@ fn camera_steps() {
     rec(&mut t, 477, 1, |_, _| 0x477);
     t.stub_st0(477, |_, a| f64::from(a[0] & 0xff) * 0.5 + 1.25);
     rec(&mut t, 479, 4, |m, a| {
+        // the point it gets, as it gets it
+        magic_owna::dump(m, 479, a[3], 3);
         let v = m.r32(a[3] + 4);
         m.w32(a[3] + 4, v ^ 0x40);
         0x479
@@ -114,6 +122,7 @@ fn camera_steps() {
         (0x1b10, 0x1d),
         (0x1db0, 0),
         (0x1db0, 7),
+        (0x1db0, 0x13),
         (0x1db0, 0x14),
     ] {
         t.set_u32(count, n);
