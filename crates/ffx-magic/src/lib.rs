@@ -1787,6 +1787,7 @@ ports! {
     "particle drift (5)" => s6_misc::PARTICLE_DRIFT_5, s6_misc::particle_drift_5;
     "particle hand-over" => s6_misc::PARTICLE_HAND_OVER, s6_misc::particle_hand_over;
     "camera blocks reset" => s6_misc::CAMERA_BLOCKS_RESET, s6_misc::camera_blocks_reset;
+    "camera tracks (from a record)" => s6_misc::CAMERA_TRACKS_FROM, s6_misc::camera_tracks_from;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;

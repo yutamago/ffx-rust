@@ -4268,3 +4268,32 @@ pub const JMP_AIMED_NODE_WALK: Sig = Sig {
     calls: &[(8, Callee::Sig(&AIMED_NODE_WALK))],
     imports: &[],
 };
+
+/// A summon's camera tracks restarted (`ecx` = the script record `R`;
+/// `eax` = 0 into the jump): `*G_R = R`, the frame base `*G_T` (u16) and
+/// two more words 0, then a tail jump to [`camera_tracks`] with the
+/// caller's stack.
+///
+/// `magic_0515` 0x100041d0 (29 bytes, `ecx` = the record; 4 DLLs).
+pub fn camera_tracks_from<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    g.write::<u32>(w(0x4), fr.ecx);
+    g.write::<u16>(w(0xa), 0);
+    g.write::<u32>(w(0xf), 0);
+    g.write::<u32>(w(0x14), 0);
+    let fr = Frame {
+        at: img.rel32_target(f + 0x19),
+        eax: 0,
+        ..*fr
+    };
+    camera_tracks(g, img, &fr)
+}
+
+/// [`camera_tracks_from`].
+pub const CAMERA_TRACKS_FROM: Sig = Sig {
+    len: 29,
+    hash: 0x5b78_446f_049a_01c0,
+    calls: &[(0x19, Callee::Sig(&CAMERA_TRACKS))],
+    imports: &[],
+};

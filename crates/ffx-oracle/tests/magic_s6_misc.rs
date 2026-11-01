@@ -2877,3 +2877,28 @@ fn aimed_node_walks() {
         );
     }
 }
+
+/// Row 255: `magic_0515`'s camera tracks from a record: the globals
+/// holding other values first, the record with and without `R+0x10`.
+#[test]
+fn camera_tracks_from_record() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x41d0);
+    let r = SCRATCH + 0x300;
+    for k in 0..3u32 {
+        t.write(r, &varied(0x30, k));
+        t.set_u32(r + 4, 3 + k);
+        t.set_u32(r + 0xc, 7 + k);
+        t.set_u32(r + 0x10, (k % 2) * 0x11);
+        t.set_u32(r + 0x14, 0.75f32.to_bits());
+        t.set_u32(r + 0x1c, (-1.0 + k as f32).to_bits());
+        t.set_u32(r + 0x20, 2.0f32.to_bits());
+        t.set_u32(r + 0x24, 0x20 + 3 * k);
+        for o in [0x4, 0xf, 0x14] {
+            t.set_u32(op(&t, f, o), 0x0bad_0000 + o + k);
+        }
+        t.set_u16(op(&t, f, 0xa), 9);
+        scrub(&mut t);
+        t.check_entry(f, Call::this(r), &[], Eax::Checked);
+    }
+}
