@@ -5075,3 +5075,155 @@ pub const AIM_RECORDS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`summon_object_setup`]'s variant that picks its point by the model
+/// (internal: `ecx` = the object `O`, `edx` = a record `R`, `xmm2` a
+/// scale `s`; an aligned frame, `B` its base). `O` joins the task ring,
+/// `B1 = O+0x120` and `C = O+0x14c` the parent `P` ([`parent_append`]),
+/// `C`'s colour `(1, 1, 1, s K)`, the node `N = O+0x178` inserted. Then
+/// by the model `slot 390 (R[0x50])`: models 0x1071..0x108c take the
+/// DLL's byte table's way, others (and the table's second way) ask slot
+/// 534 `(R[0x50])`; the direct way: `B1`'s point slot 268 `(R[0x54],
+/// 0x11, O+0x13c)` (`w` 1.0) and the particle's last word 1; else the
+/// same point, `O+0x140` = slot 12 `(R[0x54])` (ST0) less `K1`, and the
+/// last word 0. The particle `O+0x20` ([`particle_node`](crate::sb_nodes::particle_node))
+/// and the effect node `O+0x2d8` ([`effect_node`](crate::sb_nodes::effect_node);
+/// then `VT4`, `+0x2c |= 1`, `+0x30 = 0`); `O+0x13c` and `O+0x144` moved
+/// by `(r - K2) K3 - K4` (`r` slot 307's ST0), `O+0x2d4 = R`, `O+0x2c8 =
+/// s`, `+0x2c4`, `+0x2cc`, `+0x2d0` 0. Returns `R`.
+///
+/// `magic_0414` 0x10006aa0 (916 bytes with its tables; 3 DLLs).
+#[allow(clippy::too_many_lines)] // the original's nodes, one by one
+pub fn model_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let (o, r) = (fr.ecx, fr.edx);
+    let s = fr.xmm_f32(2);
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    g.write::<u32>(o + 8, o);
+    g.write::<u32>(o + 4, o);
+    g.write::<u32>(o, w(0x19));
+    g.write::<u32>(o + 0x10, w(0x20));
+    g.write::<u32>(o + 0x14, o);
+    let last = g.read::<u32>(w(0x28));
+    g.write::<u32>(o + 8, last);
+    g.write::<u32>(o + 4, w(0x32));
+    let last = g.read::<u32>(w(0x37));
+    g.write::<u32>(last.wrapping_add(4), o);
+    let v = g.read::<u32>(w(0x46)) & !1;
+    g.write::<u32>(w(0x46), v);
+    g.write::<u32>(w(0x4d), o);
+    let (b1, c) = (o + 0x120, o + 0x14c);
+    parent_append(
+        g,
+        img,
+        f,
+        b1,
+        [0x60, 0x67, 0x6c, 0x74, 0x85, 0x8d, 0x99, 0x9f, 0xa5],
+    );
+    g.write::<f32>(base + 0x14, s);
+    g.write::<u32>(base + 0xc, r);
+    parent_append(
+        g,
+        img,
+        f,
+        c,
+        [0xbe, 0xc5, 0xca, 0xd2, 0xd7, 0xdf, 0xeb, 0xf1, 0xf7],
+    );
+    let alpha = mul(s, k(g, 0x102));
+    for at in [0x168u32, 0x16c, 0x170] {
+        g.write::<u32>(o + at, 0x3f80_0000);
+    }
+    g.write::<f32>(o + 0x174, alpha);
+    let rec = base + 0x18;
+    let n = o + 0x178;
+    for (i, v) in (0u32..).zip([n, w(0x142), w(0x14a), b1, w(0x156), c]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let insert = Frame {
+        at: call(0x15b),
+        esp: base.wrapping_sub(4),
+        ecx: rec,
+        ..*fr
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    let user = g.read::<u32>(r.wrapping_add(0x50));
+    let id = slot(g, img, f, 0x160, 390, rec, &[user])
+        .eax
+        .wrapping_sub(0x1071);
+    let direct = if id <= 0x1b {
+        let way = img.word(f + 0x378 + id) & 0xff;
+        img.word(f + 0x370 + 4 * way) == f + 0x1a0
+    } else {
+        false
+    } || slot(g, img, f, 0x18c, 534, rec, &[user]).eax != 0;
+    let pt = o + 0x13c;
+    let h = g.read::<u32>(r.wrapping_add(0x54));
+    let table = if direct { 0x1b1 } else { 0x1e2 };
+    slot(g, img, f, table, 268, rec, &[h, 0x11, pt]);
+    g.write::<u32>(pt + 0xc, 0x3f80_0000);
+    if direct {
+        g.write::<u32>(base + 0x2c, 1);
+    } else {
+        let h = g.read::<u32>(r.wrapping_add(0x54));
+        let y = slot(g, img, f, 0x200, 12, rec, &[h]);
+        let y = sub(crate::m0018::st0_f32(y.st0), k(g, 0x218));
+        g.write::<u32>(base + 0x2c, 0);
+        g.write::<f32>(o + 0x140, y);
+    }
+    let d = g.read::<u32>(w(0x23d));
+    let q = o + 0x20;
+    g.write::<u32>(base + 0x20, n);
+    g.write::<u32>(rec, q);
+    g.write::<u32>(q, w(0x247));
+    g.write::<u32>(base + 0x1c, w(0x253));
+    g.write::<u32>(base + 0x24, d);
+    g.write::<u32>(base + 0x28, w(0x25f));
+    crate::sb_nodes::particle_node(g, img, call(0x264), rec);
+    let e = o + 0x2d8;
+    for (i, v) in (0u32..).zip([e, w(0x27a), w(0x282), b1, w(0x28e), 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::effect_node(g, img, call(0x29b), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0x2a5));
+    let v = g.read::<u32>(e + 0x2c) | 1;
+    g.write::<u32>(e + 0x2c, v);
+    g.write::<u32>(e + 0x30, 0);
+    let local = base + 0x10;
+    // (the slot table, K2, K3, K4, the field)
+    for (t, k2, k3, k4, at) in [
+        (0x2aau32, 0x2cfu32, 0x2dcu32, 0x2e4u32, 0x13cu32),
+        (0x2d4, 0x30e, 0x334, 0x346, 0x144),
+    ] {
+        let rnd = slot(g, img, f, t, 307, rec, &[]);
+        let v = crate::m0018::st0_f32(rnd.st0);
+        g.write::<f32>(local, v);
+        let v = sub(mul(sub(v, k(g, k2)), k(g, k3)), k(g, k4));
+        let v = add(v, g.read::<f32>(o + at));
+        g.write::<f32>(o + at, v);
+    }
+    g.write::<u32>(o + 0x2d4, r);
+    for at in [0x2c4u32, 0x2cc, 0x2d0] {
+        g.write::<u32>(o + at, 0);
+    }
+    g.write::<f32>(o + 0x2c8, s);
+    r
+}
+
+/// [`model_object_setup`] (the `rel32`s:
+/// [`node_insert`](crate::nodes::node_insert),
+/// [`particle_node`](crate::sb_nodes::particle_node) and
+/// [`effect_node`](crate::sb_nodes::effect_node)).
+pub const MODEL_OBJECT_SETUP: Sig = Sig {
+    len: 916,
+    hash: 0x1b18_3061_640f_3c88,
+    calls: &[
+        (0x15b, Callee::Sig(&crate::nodes::INSERT)),
+        (0x264, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x29b, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};

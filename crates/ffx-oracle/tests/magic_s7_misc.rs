@@ -3871,3 +3871,89 @@ fn aim_records() {
         }
     }
 }
+
+/// Row 433: the model object set-up of the three DLLs: models in the
+/// table's direct way, its asking way, out of the range, with slot 534
+/// yes and no; the parent empty and not.
+#[test]
+fn model_object_setups() {
+    for (dll, rva) in [(414u16, 0x6aa0u32), (500, 0x6680), (677, 0x6aa0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let model = SCRATCH + 0x7e0;
+        let ask = SCRATCH + 0x7e4;
+        log_calls(&mut t, 390, log, 1, None, move |m, _, _| m.r32(model));
+        log_calls(&mut t, 534, log, 1, None, move |m, _, _| m.r32(ask));
+        log_calls(&mut t, 268, log, 3, None, |m, a, k| {
+            m.w32(a[2], a[0] ^ k);
+            0x268
+        });
+        log_calls(&mut t, 12, log, 1, None, |_, a, _| a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5);
+        log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+        t.stub_st0(307, move |m, _| 0.625 + f64::from(m.r32(log) % 5));
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+        rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0]);
+        let pn = t.img.rel32_target(f + 0x264);
+        let start = t.img.rel32_target(pn + 0x88);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        t.set_u32(w(&t, 0x23d), SCRATCH + 0x900);
+        let parent = w(&t, 0x85);
+        let pl = w(&t, 0x253);
+        let o = SCRATCH + 0x1000;
+        let r = SCRATCH + 0x400;
+        // (the model, slot 534's answer, the parent holds a node)
+        for (k, (id, a, held)) in [
+            (0x1071u32, 0u32, false),
+            (0x1072, 0, true),
+            (0x1080, 1, false),
+            (0x108c, 0, false),
+            (0x1070, 1, true),
+            (0x2000, 0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(model, id);
+            t.set_u32(ask, a);
+            t.write(o, &varied(0x340, k));
+            t.write(r, &varied(0x60, k + 1));
+            t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
+            t.set_u32(w(&t, 0x28), SCRATCH + 0x500);
+            t.write(SCRATCH + 0x500, &varied(0x20, k + 2));
+            t.set_u32(w(&t, 0x6c), if held { SCRATCH + 0x540 } else { parent });
+            t.write(SCRATCH + 0x540, &varied(0x20, k + 3));
+            t.write(pl, &varied(0x1c, k + 6));
+            t.set_u32(pl + 0x10, pl);
+            for (o_, x) in [
+                (0x102u32, 0.5f32),
+                (0x218, 0.25),
+                (0x2cf, 0.25),
+                (0x2dc, 2.0),
+                (0x2e4, 1.0),
+            ] {
+                t.set_u32(w(&t, o_), x.to_bits());
+            }
+            scrub(&mut t);
+            let c = Call {
+                ecx: o,
+                edx: r,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(1.5 + k as f32)]);
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::model_object_setup(g, img, fr))
+            });
+        }
+    }
+}
