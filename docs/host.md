@@ -1348,14 +1348,68 @@ What it found and what was fixed:
   load in menu-save one fewer. Events and state agree (the traces
   compare values); what follows the absolute update count shows it: the
   title's cursor glow and header band (menu-save-4 and -6, boot-4; the
-  menu timer `0x01840884` counts the title's updates). Suspects, not
-  measured: `FileSys_SubmitRead` running every read and its
-  decompression at once on the calling thread ("The clock", "Reads"),
-  where the hook's harness paces the loader by its turn at each boundary
-  ("Load pacing" in `docs/harness.md`), and the loader turn's 3 s rule.
-  Next: count `AsyncLoadManager` requests per update in both programs
-  over `load direct` (`FFX_HOST_WATCH` on the loader's functions; the
-  hook's loader-turn log).
+  menu timer `0x01840884` counts the title's updates). Measured in the
+  next round: "The update phase" below (not the reads: the hook's
+  virtual clock makes `FileSys_SubmitRead` synchronous too).
+
+#### The update phase (2026-11-01, host-phase)
+
+Measured on PC2 with probe replays that trace, every update, the
+loader's two request counts (`g_AsyncLoadManager` `+0x20`, `+0x2c`), the
+whole manager, ctrl work 0, the CD channels and `g_PhyreScene` in 4 KB
+chunks, in both programs (`~/ffx-work/host-phase/probe-*.txt`), and a
+diagnostic build of the hook that logs each render-lock take of the
+loader with its update and wait (not committed). Two separate things:
+
+1. **The ~10 updates before `loadsave` are real time in the original.**
+   field-walk's probe from the title on: the `loadsave` came at update
+   160, 163 and 163 in three original runs and at 152 in ffx-rust; from
+   it on, both take the same 103 updates to the shot. The title's asset
+   request, queued at update 108, keeps the loader busy until update 159
+   in the original and is done at 109 in ffx-rust. Before `loadsave ...
+   lockstep` the hook's harness holds nothing: the loader runs free and
+   took the render lock once or twice per (fast, about 1 ms) update,
+   between its reads and decompression, so the title's load spread over
+   about 50 updates, by host speed (the three runs above differ by 3).
+   ffx-rust's clock gives the loader its turn from the main loop's first
+   boundary on, so the load is done in one. No port is involved, and an
+   emulated program cannot reproduce a count that follows the host's
+   real time. It does not reach the comparisons: everything after the
+   `loadsave` runs in lockstep, `pin` resets what the title leaves, and
+   the traces are compared by events.
+2. **In lockstep, one update less at menu-save's game over.** A probe of
+   menu-save's way back to the title (`call 0x0086da10`, then the same
+   waits) in both programs, aligned at the call: the map words change at
+   +0, +1 and +5 in the original, +0, +1 and +4 in ffx-rust, and every
+   later change keeps that one update (the title shot at +379 against
+   +378). In the original the request the call's update queues is still
+   in the list at the next boundary and runs in that boundary's turn; in
+   ffx-rust it ran inside the call's update. The cause is the in-update
+   rule: ffx-rust frees the loader when an update runs 3 s of host time
+   (the hook's 100 ms, scaled), and the emulated game-over update takes
+   far longer than that without waiting for the loader, while natively
+   it takes well under 100 ms. That is the "-12 after update 1213" of
+   the gate, and the title's cursor-glow phase in menu-save-4 and -6.
+   **Not fixed**: with the host-time rule replaced by one counted in the
+   main thread's own sleeps (100 ms of `Sleep`/`SleepThreadInMillisecond`
+   in one update, which frees the map loads' updates as the hook's stall
+   does), the game-over update never ends: the main thread calls
+   `PRenderThread_sync` (it waits on the render thread's sync event,
+   set at `0x00593782`) over and over, and the render thread sits in a
+   take of the render lock (`Phyre_PMutex_lockInner_00431850`, the lock
+   free, itself the only waiter, in no Windows wait) until the loader is
+   let go; with a 600 s guard the update still ran into it. In the hook
+   that update never stalls (its log frees the loader only in the two map
+   loads). So under emulation the render thread depends on the loader
+   inside that update where natively it doesn't; what links them was not
+   found (the guest-stack scans gave only stale words). The rule stays
+   as it was. Next: the render thread's guest stack at the stall (a
+   `stacks` command in ffx-rust's harness, as the hook has), then the
+   take it repeats.
+3. The opening's map load (`memochek` to the title) is freed in the
+   main thread's wait in both programs, but one update earlier in
+   ffx-rust (+194 against the original's +196, with the shift above
+   +195): the same rule's other side; the sleep rule did not change it.
 
 #### The cloth race (2026-10-31, host-gate)
 
@@ -1462,6 +1516,34 @@ draw-gate-besaid with their `dg-*` references; the cloth-ring and hood
 entries of the accepted residue (`docs/harness.md`, "Accepted residue")
 and of the scene-gate allow lists should then go. The menu replays draw
 no cloth character.
+
+#### The cloth order against the references (2026-11-01, host-phase)
+
+The original code (the hooked game with every replacement off, as
+`run-all.sh --record` runs it) with the cloth order on, twice per replay,
+on PC2, each shot compared with PC2's current references
+(`shot-compare.py`: pixels where the run differs from the references
+although the two references agree; the `eye` replays against `orig/eye`).
+Nothing was re-recorded.
+
+| Replay | Run 1 | Run 2 | Would change |
+|---|---|---|---|
+| event-besaid | 5 of 5, 0 pixels | 5 of 5, 0 pixels | no |
+| battle-attack | 2 of 2, 0 pixels | 2 of 2, 0 pixels | no |
+| battle-magic | 3 of 3, 0 pixels | 3 of 3, 0 pixels | no |
+| field-walk | coarse 0.0, 0.0 | coarse 0.0, 0.0 | no |
+| battle-ifrit (extra) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no |
+| battle-overdrive (`eye`) | shot 1: 49 pixels (x 530..684, y 384..613: the edges of a party member's skirt and belt cloth); 2-9: 0 | the same 49 pixels | **shot 1** |
+| boot (`realtime`) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no (no lockstep: the order is off) |
+| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own |
+
+So with the order the original code gives the current references in every
+lockstep replay but **battle-overdrive-1** (49 pixels on cloth edges, the
+same in both runs): that one would need recording again. The draw gates
+with cloth (draw-gate-kami, draw-gate-besaid) were not checked: their
+`dg-*` references are on the main machine only, and games don't run
+there. The hood and cloth-ring entries of the accepted residue stay until
+the user decides.
 
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
@@ -1585,10 +1667,14 @@ runs past the third frame (the Unicorn abort).
    game Rust addresses (the reader's buffer, the parser's objects, the
    decoded frames and samples); in ffx-host they are game memory now and
    movie-fmv passes ("The stage 3 gate on PC2").
-9. **Load pacing** (host-gate): `load direct`'s map load takes about 10
-   updates fewer than in the hooked original, so free-running timers
-   (the title's cursor glow: menu-save-4/-6, boot-4) show another phase;
-   events and state agree ("The stage 3 gate on PC2").
+9. **Load pacing** (host-gate, measured by host-phase: "The update
+   phase"): the ~10 updates are the title before `loadsave`, which runs
+   free in the hook and follows the host's real time (not reproducible,
+   and not in any comparison); in lockstep one update is lost at
+   menu-save's game over, where ffx-rust's 3 s in-update rule lets the
+   loader run inside a long emulated update (menu-save-4/-6's glow
+   phase). Open: the render thread waits for the loader inside that
+   update, so the rule can't simply go.
 10. **The cloth race** (host-gate): ordered in both programs, on by
     default in lockstep (host-phase, "The cloth race"); which references
     it changes is listed for the user's decision.
