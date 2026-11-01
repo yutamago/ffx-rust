@@ -1730,7 +1730,10 @@ pub fn selection_groups<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                     u32::from(g.read::<u8>(sel.wrapping_add(i.cast_unsigned())))
                 };
                 if b == id {
-                    g.write::<u8>(out.wrapping_add(8).wrapping_add(j.cast_unsigned()), i as u8);
+                    g.write::<u8>(
+                        out.wrapping_add(8).wrapping_add(j.cast_unsigned()),
+                        i.cast_unsigned() as u8,
+                    );
                     break;
                 }
                 i += 1;
@@ -3390,7 +3393,8 @@ pub const PARTICLE_DRIFT: Sig = Sig {
 fn spline_key<G: Game>(g: &G, times: u32, n: i32, x: f32) -> u32 {
     let (mut lo, mut hi) = (0i32, n - 1);
     while lo < hi {
-        let mid = (lo + hi) / 2;
+        // (lo + hi) / 2 as the original computes it (cdq; sub; sar: toward 0)
+        let mid = lo.wrapping_add(hi) / 2;
         let t = g.read::<f32>(times.wrapping_add(4 * mid.cast_unsigned()));
         if x > t {
             lo = mid + 1;
@@ -3589,8 +3593,9 @@ pub const HOMING_PART_TASK: Sig = Sig {
 /// `R[8]`, `R[0xc]`, `R+0x10`, 0, `1 / d`, `d`, kind 4; track 3 from the
 /// record `R+0x14` (`R+0x10`, 0, `1 / d`, kinds 2 and 3, `2d`). Then the
 /// angle track from `a = R+0x1c` to `b = R+0x20`, the end taken the
-/// short way round (`b - K2 + K3` for `a < 0 < b` farther than `K2`, `b
-/// + 2 K2` for `b < 0 <= a` likewise), `d` twice and on. Returns `d`.
+/// short way round (`b - K2 + K3` for `a < 0 < b` farther than `K2`,
+/// `b + 2 K2` for `b < 0 <= a` likewise), `d` twice and on. Returns
+/// `d`.
 ///
 /// `magic_0515` 0x10003f70 (598 bytes; 4 DLLs).
 #[allow(clippy::too_many_lines)] // the original's tracks, word by word
@@ -4118,5 +4123,136 @@ pub const CAMERA_BLOCKS_RESET: Sig = Sig {
     len: 653,
     hash: 0x00fd_0e68_c041_258a,
     calls: &[],
+    imports: &[],
+};
+
+/// A node aimed between three others (internal, `ecx` = the walk cursor
+/// `C`: `+0` the node `N`, `+4` the "moved" byte, `+5` the pass; a /GS
+/// frame). A node not yet in this pass walks its children first (their
+/// method `+0x1c` with `C` on them), then takes the pass and is moved.
+/// When moved: the nodes `N+0x13c`, `+0x150`, `+0x140` walk with a local
+/// cursor; the way `v` from `N[0x150]+0x1c` to `N[0x13c]+0x1c` (slot 234)
+/// is normalised and turned round (slots 232, 233 `-1`), eased toward the
+/// old axis `N+0x3c` by `d = N+0x14c` (`v d + N+0x3c (K - d)`) and
+/// normalised into it (slot 232); the axes `N+0x1c = up x N+0x3c` and
+/// `N+0x2c = N+0x3c x N+0x1c` (slot 266, `up = (0, 1, 0, 1)`), the scale
+/// `N+0x12c` a copy of `N[0x140]+0x1c` (slot 325) times `N+0x138` (slot
+/// 233) scaling the three axes (slot 233), the matrix `N+0x9c` (slot 230)
+/// and `N+0xcc` a copy of `N[0x13c]+0x1c` (slot 325). Each call sees the
+/// words the earlier ones left on the stack. Returns slot 325's `eax`,
+/// or the frame's cookie word with the pass byte in `al` when the node
+/// was already in the pass.
+///
+/// `magic_0482` 0x10003670 (708 bytes, `ecx` = the cursor; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's calls, one by one
+pub fn aimed_node_walk<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let c = fr.ecx;
+    let n = g.read::<u32>(c);
+    let pass = g.read::<u8>(c + 5);
+    let mine = g.read::<u8>(n + 0x1a);
+    let ebp = fr.esp.wrapping_sub(4);
+    if mine == pass {
+        g.write::<u8>(c + 4, 0);
+        let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+        return (cookie & !0xff) | u32::from(mine);
+    }
+    let mut e = g.read::<u32>(n + 0x10);
+    while e != n {
+        g.write::<u32>(c, e);
+        let next = g.read::<u32>(e + 8);
+        let m = g.read::<u32>(g.read::<u32>(g.read::<u32>(c)).wrapping_add(0x1c));
+        g.call(m, c, &[c]);
+        e = next;
+    }
+    let pass = g.read::<u8>(c + 5);
+    g.write::<u32>(c, n);
+    g.write::<u8>(n + 0x1a, pass);
+    g.write::<u8>(c + 4, 1);
+    let (lc, v) = (ebp.wrapping_sub(0x20), ebp.wrapping_sub(0x14));
+    let target = |g: &G, t: u32, k: u32| crate::runtime::slot_target(g, w(t), k);
+    let field = |g: &G, o: u32| g.read::<u32>(n + o).wrapping_add(0x1c);
+    let mut st = Pushes::default();
+    for o in [0x13cu32, 0x150, 0x140] {
+        let node = g.read::<u32>(n + o);
+        let pass = g.read::<u8>(c + 5);
+        g.write::<u32>(lc, node);
+        g.write::<u8>(lc + 5, pass);
+        let m = g.read::<u32>(g.read::<u32>(node).wrapping_add(0x1c));
+        st.push(lc);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, m, lc);
+    }
+    let (a, b) = (field(g, 0x13c), field(g, 0x150));
+    st.push_all(&[a, b, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0xc6, 234), 0);
+    st.push_all(&[v, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0xd8, 232), 0);
+    st.pop(7);
+    st.set_top(0xbf80_0000);
+    st.push_all(&[v, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0xf4, 233), 0);
+    let d = g.read::<f32>(n + 0x14c);
+    let kd = sub(g.read::<f32>(w(0x10c)), d);
+    let axis = n + 0x3c;
+    for i in 0..4u32 {
+        let x = add(
+            mul(g.read::<f32>(axis + 4 * i), kd),
+            mul(g.read::<f32>(v + 4 * i), d),
+        );
+        g.write::<f32>(v + 4 * i, x);
+    }
+    st.push_all(&[v, axis]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x188, 232), 0);
+    st.push_all(&[axis, v]);
+    for (o, x) in [(0u32, 0u32), (4, 0x3f80_0000), (8, 0), (0xc, 0x3f80_0000)] {
+        g.write::<u32>(v + o, x);
+    }
+    let (n1c, n2c) = (n + 0x1c, n + 0x2c);
+    st.push(n1c);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x19b, 266), 0);
+    st.push_all(&[n1c, axis, n2c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x1cb, 266), 0);
+    let sc = n + 0x12c;
+    let src = field(g, 0x140);
+    st.push_all(&[src, sc]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x1f1, 325), 0);
+    st.pop(12);
+    st.set_top(g.read::<u32>(n + 0x138));
+    st.push_all(&[sc, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x217, 233), 0);
+    for (i, (t, row)) in [(0x229u32, n1c), (0x245, n2c), (0x271, axis)]
+        .into_iter()
+        .enumerate()
+    {
+        st.pop(2);
+        st.set_top(g.read::<u32>(v + 4 * i as u32));
+        st.push_all(&[row, row]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, target(g, t, 233), 0);
+    }
+    st.push_all(&[n1c, n + 0x9c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x286, 230), 0);
+    let src = field(g, 0x13c);
+    st.push_all(&[src, n + 0xcc]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x2a4, 325), 0).eax
+}
+
+/// [`aimed_node_walk`] (the `rel32`: `__security_check_cookie`).
+pub const AIMED_NODE_WALK: Sig = Sig {
+    len: 708,
+    hash: 0xe524_388a_fba6_d5d9,
+    calls: &[(0x2bc, Callee::Any)],
     imports: &[],
 };

@@ -2798,3 +2798,70 @@ fn camera_blocks_reset() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Row 451: `magic_0482`'s aimed node walk for the shared rings (the
+/// cursor moved or not), the slots filling their outputs from their
+/// inputs.
+#[test]
+#[allow(clippy::too_many_lines)] // the slots
+fn aimed_node_walks() {
+    let Some(mut t) = twin(482) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0x3670);
+    let fv = |m: &dyn StubMem, a: u32| f32::from_bits(m.r32(a));
+    rec(&mut t, 234, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) - fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 232, 2, move |m, a| {
+        for i in 0..4 {
+            let v = fv(m, a[1] + 4 * i) * 0.5;
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x232
+    });
+    rec(&mut t, 233, 3, move |m, a| {
+        for i in 0..4 {
+            let v = fv(m, a[1] + 4 * i) * f32::from_bits(a[2]);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x233
+    });
+    rec(&mut t, 266, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) + 2.0 * fv(m, a[2] + 4 * ((i + 1) % 3));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x266
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec_mem(&mut t, 230, 2, 12, None);
+    let n = sa::node(0);
+    for (k, &(c, p, cp)) in sa::RINGS.iter().enumerate() {
+        sa::ring(&mut t, c, p, cp, 0x30 + k as u8);
+        for (o, i) in [(0x13cu32, 9u32), (0x150, 10), (0x140, 11)] {
+            t.write(sa::node(i), &varied(0x40, i + k as u32));
+            t.set_u32(sa::node(i), sa::VTABLE_2);
+            t.set_u32(n + o, sa::node(i));
+        }
+        for i in 0..4u32 {
+            t.set_u32(n + 0x3c + 4 * i, (0.5 * i as f32 - 1.0).to_bits());
+        }
+        t.set_u32(n + 0x14c, 0.25f32.to_bits());
+        t.set_u32(n + 0x138, 1.5f32.to_bits());
+        let eax = if k == 0 { Eax::Junk } else { Eax::Checked };
+        scrub(&mut t);
+        t.check(f, Call::this(sa::CURSOR), &[], eax, |g, img, fr| {
+            Ret::eax(s6_misc::aimed_node_walk(g, img, fr))
+        });
+    }
+}
