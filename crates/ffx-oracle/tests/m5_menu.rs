@@ -8295,3 +8295,79 @@ fn l8_ms_gui_battle_chr2_proc() {
         t.skip = 0;
     });
 }
+
+#[test]
+fn l8_ms_gui_battle_config_proc() {
+    // every message; every button and some ids without one, the
+    // auto-repeat saying go or not; the flags at 0, 1 and past them (the
+    // on/off texts index sign-extended)
+    Twins::each(|t| {
+        let mut rng = Rng(0x007c_6e20);
+        let window = 0x00ac_4000;
+        let mut ids: Vec<u32> = l8b::CONFIG_TOGGLES.iter().map(|x| x.0).collect();
+        ids.extend(l8b::CONFIG_COMMANDS.iter().map(|x| x.0));
+        ids.extend([0x52, 0x54, 0x5e, 0x96, 0xd5, 0xf8, 0xfa, 0x100]);
+        for case in 0..700_u32 {
+            t.reset();
+            t.skip = 4;
+            for (_, flag) in l8b::CONFIG_TOGGLES {
+                let v = [0_u8, 1, 0, 1, 2, 0xff][rng.below(6) as usize];
+                t.patch(t.rebase(flag), &[v]);
+            }
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::ENV_SAVE, false, 1, 0, 0x18),
+                (l8b::FULL_ITEM, false, 0, 0, 0x19),
+                (l8b::FULL_COMMAND, false, 0, 0, 0x1a),
+                (l8b::FULL_MEMBER, false, 0, 0, 0x1b),
+                (l8b::ALL_SP, false, 0, 0, 0x1c),
+                (l8b::FULL_GILL, false, 0, 0, 0x1d),
+                (l8b::FULL_STATS, false, 0, 0, 0x1e),
+                (l8b::WEAK_ALL, false, 0, 0, 0x1f),
+                (l8b::ALL_ITEMS_ONE, false, 0, 0, 0x20),
+                (l8b::ABILITY_ONE, false, 0, 0, 0x21),
+                (l8b::CLEAR_ITEMS, false, 0, 0, 0x22),
+                (l8b::WEAK_PARTY, false, 1, 0, 0x23),
+                (l8b::WEAK_MONSTERS, false, 1, 0, 0x24),
+                (l8b::CAMERA_PRIORITY_MASK, false, 1, 0, 0x25),
+            ]);
+            t.stub_import(l8b::SPRINTF_SLOT, false, 2, 0, 0x26);
+            let (msg, param) = match case % 7 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a][rng.below(3) as usize], 0),
+                2 => (0x8011, 0),
+                3..=5 => (
+                    [0x8005, 0x8009][rng.below(2) as usize],
+                    ids[rng.below(ids.len() as u32) as usize],
+                ),
+                _ => (
+                    [0x8002, 0x800d, 0x8010, 0x8012, 0x7fff][rng.below(5) as usize],
+                    [0x53, 0x5f, 0x97][rng.below(3) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleConfigProc",
+                0x007c_6e20,
+                Conv::Cdecl,
+                &args,
+                l8b::CONFIG_FRAME,
+                |g, ebp| Out::U32(l8b::battle_config_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}

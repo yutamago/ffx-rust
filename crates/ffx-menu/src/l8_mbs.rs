@@ -1197,4 +1197,270 @@ pub mod bridge {
             c(h, PRINTF, &[label]);
         }
     }
+
+    /// What `Ms_Gui_BattleConfigProc` calls besides the window callees:
+    /// `MsDebugEnvSave(name)`, `MsDebugFullItem()`,
+    /// `MsDebugFullCommand()`, `MsDebugFullMember()`,
+    /// `MsDebugSetAllSP_00784ae0()`, `MsDebugFullGill()`,
+    /// `MsDebugFullStats_00784b00()`, `MsDebugWeakAll_00784b80()`,
+    /// `MsDebugAllItemsOne_00784c20()`, `MsDebugAbilityOne_00784c40()`,
+    /// `MsDebugClearItems_00784cd0()`, `MsDebugWeakParty_00784c80(on)`,
+    /// `MsDebugWeakMonsters_00784bc0(on)`, `MsCameraPriorityMask(on)`.
+    pub const ENV_SAVE: u32 = 0x007c_d800;
+    pub const FULL_ITEM: u32 = 0x0078_49d0;
+    pub const FULL_COMMAND: u32 = 0x0078_48b0;
+    pub const FULL_MEMBER: u32 = 0x0078_4ac0;
+    pub const ALL_SP: u32 = 0x0078_4ae0;
+    pub const FULL_GILL: u32 = 0x0078_49c0;
+    pub const FULL_STATS: u32 = 0x0078_4b00;
+    pub const WEAK_ALL: u32 = 0x0078_4b80;
+    pub const ALL_ITEMS_ONE: u32 = 0x0078_4c20;
+    pub const ABILITY_ONE: u32 = 0x0078_4c40;
+    pub const CLEAR_ITEMS: u32 = 0x0078_4cd0;
+    pub const WEAK_PARTY: u32 = 0x0078_4c80;
+    pub const WEAK_MONSTERS: u32 = 0x0078_4bc0;
+    pub const CAMERA_PRIORITY_MASK: u32 = 0x007b_e100;
+
+    /// The window's two auto-repeats, its open flag, the env file name.
+    pub const CONFIG_REPEAT_A: u32 = 0x0113_9eb0;
+    pub const CONFIG_REPEAT_B: u32 = 0x0113_9ec4;
+    pub const CONFIG_OPEN: u32 = 0x0113_9efc;
+    pub const ENV_NAME: u32 = 0x0231_1400;
+    pub const CONFIG_TITLE: u32 = 0x00b5_5294;
+
+    /// The command buttons along the top: (id, text, x, cx); y 0, cy 8.
+    pub const CONFIG_COMMANDS: [(u32, u32, u32, u32); 7] = [
+        (0x5f, 0x00b5_5228, 0x2, 0x2e),
+        (0x97, 0x00b5_52a4, 0x34, 0x2e),
+        (0x9d, 0x00b5_52ac, 0x66, 0x2e),
+        (0xe7, 0x00b5_52b0, 0x98, 0x2e),
+        (0xcb, 0x00b5_52b4, 0xca, 0x2e),
+        (0xe1, 0x00b5_52b8, 0xfc, 0x2e),
+        (0xf9, 0x00b5_52bc, 0x12e, 0x1c),
+    ];
+
+    /// The on/off buttons in creation order (19 a column, x 2 then
+    /// 0x13a, y from 0xa by 0xa): (id, the `u8` debug flag).
+    pub const CONFIG_TOGGLES: [(u32, u32); 38] = [
+        (0x9c, 0x0112_a905),
+        (0x53, 0x0112_a8e1),
+        (0x8e, 0x0112_a8fb),
+        (0x60, 0x0112_a8fc),
+        (0x5d, 0x0112_a8f5),
+        (0x8b, 0x0112_a8f9),
+        (0x5b, 0x0112_a8f8),
+        (0x98, 0x0112_a902),
+        (0x89, 0x0112_a900),
+        (0x8a, 0x0112_a901),
+        (0x9a, 0x0112_a904),
+        (0x92, 0x0112_a908),
+        (0x94, 0x0112_a90a),
+        (0xd2, 0x0112_a90d),
+        (0x93, 0x0112_a909),
+        (0x9b, 0x0112_a906),
+        (0xd1, 0x0112_a914),
+        (0xc2, 0x0112_a90c),
+        (0xc7, 0x0112_a916),
+        (0x95, 0x0112_a90b),
+        (0xca, 0x0112_a91a),
+        (0x8c, 0x0112_a8fa),
+        (0xc3, 0x0112_a922),
+        (0xc4, 0x0112_a915),
+        (0xc5, 0x0112_a907),
+        (0xc8, 0x0112_a918),
+        (0xc9, 0x0112_a91c),
+        (0xcc, 0x0112_a917),
+        (0xd4, 0x0112_a91b),
+        (0xd8, 0x0112_a91d),
+        (0xd9, 0x0112_a91e),
+        (0xda, 0x0112_a91f),
+        (0xdb, 0x0112_a920),
+        (0xdd, 0x0112_a921),
+        (0xe3, 0x0112_a924),
+        (0xe5, 0x0112_a925),
+        (0xe6, 0x0112_a926),
+        (0xe8, 0x0112_a927),
+    ];
+
+    /// The order 0x8011 sets the on/off texts in (ids).
+    pub const CONFIG_TEXT_ORDER: [u32; 38] = [
+        0x9c, 0x53, 0x8e, 0x60, 0x5d, 0x8b, 0x5b, 0x98, 0x89, 0x8a, 0x8c, 0x92, 0x94, 0xd2, 0x93,
+        0x9a, 0x95, 0x9b, 0xc2, 0xc7, 0xc3, 0xc4, 0xc5, 0xc8, 0xc9, 0xca, 0xcc, 0xd1, 0xd4, 0xd8,
+        0xd9, 0xda, 0xdb, 0xdd, 0xe3, 0xe5, 0xe6, 0xe8,
+    ];
+
+    /// The row labels (19 at x 0x18, then 19 at x 0xb2; y from 0xb by
+    /// 0xa), each copied through `sprintf` into the frame buffer.
+    pub const CONFIG_LABELS: [u32; 38] = [
+        0x00b5_52c0,
+        0x00b5_52cc,
+        0x00b5_52d8,
+        0x00b5_52e8,
+        0x00b5_52f8,
+        0x00b5_5308,
+        0x00b5_5318,
+        0x00b5_5328,
+        0x00b5_5334,
+        0x00b5_5340,
+        0x00b5_534c,
+        0x00b5_5358,
+        0x00b5_5368,
+        0x00b5_5378,
+        0x00b5_5384,
+        0x00b5_5394,
+        0x00b5_53a4,
+        0x00b5_53b4,
+        0x00b5_53c4,
+        0x00b5_53d4,
+        0x00b5_53e0,
+        0x00b5_53f0,
+        0x00b5_53fc,
+        0x00b5_540c,
+        0x00b5_5418,
+        0x00b5_5428,
+        0x00b5_5438,
+        0x00b5_5448,
+        0x00b5_5458,
+        0x00b5_5464,
+        0x00b5_546c,
+        0x00b5_5474,
+        0x00b5_5484,
+        0x00b5_548c,
+        0x00b5_5498,
+        0x00b5_54a4,
+        0x00b5_54b4,
+        0x00b5_54c0,
+    ];
+
+    pub const CONFIG_FRAME: u32 = 0x104;
+
+    /// The on/off text for the `u8` flag at `sym`, indexed sign-extended
+    /// (`movsx`) as the original does.
+    fn flag_text(h: &impl Host, sym: u32) -> u32 {
+        let k = sb(h, sym);
+        h.read(h.rebase(ON_OFF).wrapping_add(k.wrapping_mul(4)))
+    }
+
+    fn config_flag(id: u32) -> Option<u32> {
+        CONFIG_TOGGLES.iter().find(|t| t.0 == id).map(|t| t.1)
+    }
+
+    /// `Ms_Gui_BattleConfigProc(window, msg, param)` (`0x007c6e20`) -> 0:
+    /// the battle debug settings window. 0x8001 builds it (two
+    /// auto-repeats, 7 command buttons, 38 on/off buttons), 0x8003 closes
+    /// it, 0x8006/0x800a reset an auto-repeat; 0x8005/0x8009 (through
+    /// the auto-repeat) flip a flag (`(v - 1) & 1`; party / monster HP 1
+    /// and the camera priority mask also pass the new value on) or run a
+    /// command (env save, full items/commands/members/SP/gil, full
+    /// stats, weak all, every item once, abilities once, clear items);
+    /// 0x8011 sets the on/off texts and prints the labels.
+    pub fn battle_config_proc(
+        h: &mut impl Host,
+        ebp: u32,
+        window: u32,
+        msg: u32,
+        param: u32,
+    ) -> u32 {
+        match msg {
+            0x8001 => {
+                let title = h.rebase(CONFIG_TITLE);
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                for r in [CONFIG_REPEAT_A, CONFIG_REPEAT_B] {
+                    let r = h.rebase(r);
+                    c(h, AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+                }
+                for (id, text, x, cx) in CONFIG_COMMANDS {
+                    let text = h.rebase(text);
+                    c(h, WINDOW_ADD_BUTTON, &[window, id, text, x, 0, cx, 8]);
+                }
+                for (k, (id, flag)) in (0_u32..).zip(CONFIG_TOGGLES) {
+                    let (x, y) = if k < 19 {
+                        (2, 0xa + 0xa * k)
+                    } else {
+                        (0x13a, 0xa + 0xa * (k - 19))
+                    };
+                    let text = flag_text(&*h, flag);
+                    c(h, WINDOW_ADD_BUTTON, &[window, id, text, x, y, 0xe, 8]);
+                }
+            }
+            0x8003 => {
+                let at = h.rebase(CONFIG_OPEN);
+                h.write(at, 0_u32);
+            }
+            0x8006 | 0x800a => {
+                let r = h.rebase(if msg == 0x8006 {
+                    CONFIG_REPEAT_A
+                } else {
+                    CONFIG_REPEAT_B
+                });
+                c(h, AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+            }
+            0x8005 | 0x8009 => {
+                let r = h.rebase(if msg == 0x8005 {
+                    CONFIG_REPEAT_A
+                } else {
+                    CONFIG_REPEAT_B
+                });
+                if c(h, AUTO_REPEAT_CHECK, &[r, param]) != 0 {
+                    config_step(h, param);
+                }
+            }
+            0x8011 => config_draw(h, ebp, window),
+            _ => {}
+        }
+        0
+    }
+
+    fn config_step(h: &mut impl Host, param: u32) {
+        if let Some(flag) = config_flag(param) {
+            let at = h.rebase(flag);
+            let v = h.read::<u8>(at).wrapping_sub(1) & 1;
+            h.write(at, v);
+            let pass = match param {
+                0xd8 => WEAK_PARTY,
+                0xd9 => WEAK_MONSTERS,
+                0xe3 => CAMERA_PRIORITY_MASK,
+                _ => return,
+            };
+            c(h, pass, &[u32::from(v)]);
+            return;
+        }
+        let calls: &[u32] = match param {
+            0x5f => {
+                let name = h.rebase(ENV_NAME);
+                c(h, ENV_SAVE, &[name]);
+                &[]
+            }
+            0x97 => &[FULL_ITEM, FULL_COMMAND, FULL_MEMBER, ALL_SP, FULL_GILL],
+            0x9d => &[WEAK_ALL],
+            0xcb => &[ALL_ITEMS_ONE],
+            0xe1 => &[ABILITY_ONE],
+            0xe7 => &[CLEAR_ITEMS],
+            0xf9 => &[FULL_ITEM, FULL_STATS],
+            _ => &[],
+        };
+        for &f in calls {
+            c(h, f, &[]);
+        }
+    }
+
+    fn config_draw(h: &mut impl Host, ebp: u32, window: u32) {
+        let buf = ebp.wrapping_sub(CONFIG_FRAME);
+        for id in CONFIG_TEXT_ORDER {
+            let flag = config_flag(id).unwrap_or(0);
+            let text = flag_text(&*h, flag);
+            c(h, WINDOW_SET_TEXT, &[window, id, text]);
+        }
+        for (k, label) in (0_u32..).zip(CONFIG_LABELS) {
+            let (x, y) = if k < 19 {
+                (0x18, 0xb + 0xa * k)
+            } else {
+                (0xb2, 0xb + 0xa * (k - 19))
+            };
+            c(h, PRINT_SET_X, &[x]);
+            c(h, PRINT_SET_Y, &[y]);
+            sprintf_r(h, buf, label, &[]);
+            c(h, PRINTF, &[buf]);
+        }
+    }
 }
