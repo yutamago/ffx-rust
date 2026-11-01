@@ -683,6 +683,24 @@ fn value_get_string(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(0)
 }
 
+/// `IggyGDrawMallocAnnotated(size, file, line)`: `GDraw`'s memory (its
+/// state, the quad index buffer's contents, the render-target pool) from
+/// the arena heap. With the null stand-in's 0 `IggyGDraw_setup_00a3baf0`
+/// failed, `g_GDrawContext` stayed 0 and `IggyMenuManager_Render_00a267f0`
+/// drew no menu: no tick, no draw.
+fn gdraw_malloc(e: &mut Exec, args: &Args) -> Ret {
+    Ret::eax(e.alloc(a(args, 0)))
+}
+
+/// `IggyGDrawFree(p)`.
+fn gdraw_free(e: &mut Exec, args: &Args) -> Ret {
+    let p = a(args, 0);
+    if p != 0 {
+        e.release(p);
+    }
+    Ret::VOID
+}
+
 fn background_color(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
     mem.write(a(args, 1), [0f32; 3]);
@@ -867,6 +885,14 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         2,
         background_color,
     ),
+    (
+        IGGY,
+        "_IggyGDrawMallocAnnotated@12",
+        Conv::Stdcall,
+        3,
+        gdraw_malloc,
+    ),
+    (IGGY, "_IggyGDrawFree@4", Conv::Stdcall, 1, gdraw_free),
     (
         IGGY,
         "_IggyValueRefCreateArray@8",
