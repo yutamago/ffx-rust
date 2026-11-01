@@ -372,3 +372,51 @@ pub const START_UP_0064: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The load step (0x10001250, a table entry, no arguments): nothing more
+/// while slot 225 `(1)` or slot 593 `()` is non-zero; the first time
+/// (`*G_ASKED` 0, operand `+0x29`), slot 226 `(*G_RES, 0)` and `G_ASKED`
+/// = 1; once slot 227 `(*G_RES)` reports the data loaded (1 or more),
+/// the start-up ([`start_up`]) runs and two table words (operands
+/// `+0x72`/`+0x7c`) get their next functions (the immediates `+0x76`,
+/// `+0x80`). Returns 0.
+pub fn load_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = slot_target(g, w(0x1), 225);
+    if g.call(t, 0, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    let t = slot_target(g, w(0x17), 593);
+    if g.call(t, 0, &[]).eax != 0 {
+        return Ret::eax(0);
+    }
+    if g.read::<u32>(w(0x29)) == 0 {
+        let t = slot_target(g, w(0x31), 226);
+        let res = g.read::<u32>(w(0x37));
+        g.call(t, 0, &[res, 0]);
+        g.write::<u32>(w(0x48), 1);
+    }
+    let t = slot_target(g, w(0x51), 227);
+    let res = g.read::<u32>(w(0x57));
+    if g.call(t, 0, &[res]).eax.cast_signed() < 1 {
+        return Ret::eax(0);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x6c),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    start_up(g, img, &callee);
+    g.write::<u32>(w(0x72), w(0x76));
+    g.write::<u32>(w(0x7c), w(0x80));
+    Ret::eax(0)
+}
+
+/// [`load_step`] (135 bytes, 1 overlay).
+pub const LOAD_STEP: Sig = Sig {
+    len: 135,
+    hash: 0xc1cb_5c9f_8421_4ef8,
+    calls: &[(0x6c, Callee::Sig(&START_UP))],
+    imports: &[],
+};

@@ -394,3 +394,58 @@ pub const POINT_STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the block's object with a fade task (0x10004790, a table
+/// entry, no arguments; `S = *G_S`, operand `+0x0b`): `S`
+/// ([`start_object_owners`](crate::s4_misc::start_object_owners), scale
+/// the float at `+0x04`, index 0, owners 0, 0, 0); `S + 0xd0..0xdc` =
+/// `S + 0x18f0..`, `S + 0xc4` = `S + 0x23f8`, `S + 0xd4` less `K` (`+0x28`),
+/// `S + 0x104` the immediate `+0x91`; then the fade task `S + 0x1c80`
+/// ([`fade_task`](crate::s3_misc::fade_task), `edx` 0x28, `xmm2`/`xmm1`
+/// `K` and the float at `+0x30`, the stack word 0 over the start's).
+/// Returns the task's result.
+pub fn object_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0xb));
+    let scale = g.read::<f32>(w(0x4));
+    crate::s4_misc::start_object_owners(g, img, img.rel32_target(f + 0x1a), s, scale, 0, 0, (0, 0));
+    for k in 0..4u32 {
+        let v = g.read::<u32>(s + 0x18f0 + 4 * k);
+        g.write::<u32>(s + 0xd0 + 4 * k, v);
+    }
+    let k = g.read::<u32>(w(0x28));
+    let y = crate::sb_sse::sub(g.read::<f32>(s + 0xd4), f32::from_bits(k));
+    let v = g.read::<u32>(s + 0x23f8);
+    g.write::<u32>(s + 0xc4, v);
+    g.write::<f32>(s + 0xd4, y);
+    g.write::<u32>(s + 0x104, w(0x91));
+    // push esi; the start's four words; push 0; the call
+    let esp = fr.esp.wrapping_sub(0x1c);
+    for i in 1..=5u32 {
+        g.write::<u32>(esp + 4 * i, 0);
+    }
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(k);
+    xmm[1] = u128::from(g.read::<u32>(w(0x30)));
+    let fade = Frame {
+        at: img.rel32_target(f + 0x96),
+        esp,
+        ecx: s + 0x1c80,
+        edx: 0x28,
+        xmm,
+        ..*fr
+    };
+    Ret::eax(crate::s3_misc::fade_task(g, img, &fade))
+}
+
+/// [`object_fade`] (159 bytes, 1 overlay).
+pub const OBJECT_FADE: Sig = Sig {
+    len: 159,
+    hash: 0x961d_cad0_3f3d_4ca4,
+    calls: &[
+        (0x1a, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x96, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+    ],
+    imports: &[],
+};

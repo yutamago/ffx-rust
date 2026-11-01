@@ -92,3 +92,28 @@ pub const BUILD_287: Sig = Sig {
     calls: &[(0x98, Callee::Sig(&NODE_INIT_BIG))],
     imports: &[],
 };
+
+/// Builds a node with [`build_287`] (0x10008170, internal: `ecx` the
+/// node, the stack words 4 and 6 `a`, `b`): the record `[node, V1, V2,
+/// 0, 0, 0, a, V3, b, V2]` (the vtables at operands `+0x18`, `+0x1f`,
+/// `+0x3b`, `+0x45`) is a local where the original's frame has it
+/// (`esp - 0x2c`). Returns the node.
+pub fn build_node<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let a = g.read::<u32>(esp + 0x14);
+    let b = g.read::<u32>(esp + 0x1c);
+    let rec = esp.wrapping_sub(0x2c);
+    let words = [node, w(0x18), w(0x1f), 0, 0, 0, a, w(0x3b), b, w(0x45)];
+    for (i, v) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    build_287(g, img, img.rel32_target(f + 0x4a), rec)
+}
+
+/// [`build_node`] (82 bytes, 1 overlay).
+pub const BUILD_NODE: Sig = Sig {
+    len: 82,
+    hash: 0x6c70_0d28_44d4_8098,
+    calls: &[(0x4a, Callee::Sig(&BUILD_287))],
+    imports: &[],
+};

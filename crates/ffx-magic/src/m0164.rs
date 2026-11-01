@@ -181,3 +181,75 @@ pub const SUMMON_FRAME_214: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A node handler (0x10004900, `ecx` = the cursor; reached through its
+/// `ecx` thunk): the walk (each child of the cursor's node gets its
+/// method `+0x1c` with the cursor; then the node takes the pass); when
+/// the cursor moved and the node's `+0x2c` holds an object `C`, `C`'s
+/// method `+0x1c` gets a local `[C, _, pass, _]` (`ebp - 8`, only the
+/// word and the pass byte written), then [`mean_point`] of the record
+/// `[C, node + 0x1c, M]` (`ebp - 0x14`, `M` the immediate `+0x7c`) and
+/// the node's `+0x28` = 1.0. Returns the mean point's `eax`, else what the
+/// walk left (the low byte a pass byte).
+pub fn mean_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let cur = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let node = g.read::<u32>(cur);
+    let pass = g.read::<u8>(node + 0x1a);
+    let mut eax = (fr.eax & !0xff) | u32::from(pass);
+    if pass == g.read::<u8>(cur + 5) {
+        g.write::<u8>(cur + 4, 0);
+    } else {
+        let mut child = g.read::<u32>(node + 0x10);
+        while child != node {
+            g.write::<u32>(cur, child);
+            let c = g.read::<u32>(cur);
+            child = g.read::<u32>(child + 8);
+            let m = g.read::<u32>(g.read::<u32>(c) + 0x1c);
+            eax = g.call(m, cur, &[cur]).eax;
+        }
+        let pass = g.read::<u8>(cur + 5);
+        g.write::<u32>(cur, node);
+        g.write::<u8>(node + 0x1a, pass);
+        g.write::<u8>(cur + 4, 1);
+        eax = (eax & !0xff) | u32::from(pass);
+    }
+    if g.read::<u8>(cur + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let obj = g.read::<u32>(cur);
+    let c = g.read::<u32>(obj + 0x2c);
+    if c == 0 {
+        return Ret::eax(eax);
+    }
+    let local = ebp.wrapping_sub(8);
+    let pass = g.read::<u8>(cur + 5);
+    g.write::<u32>(local, c);
+    g.write::<u8>(ebp.wrapping_sub(3), pass);
+    let m = g.read::<u32>(g.read::<u32>(c) + 0x1c);
+    g.call(m, local, &[local]);
+    let rec = ebp.wrapping_sub(0x14);
+    let c = g.read::<u32>(obj + 0x2c);
+    g.write::<u32>(rec, c);
+    g.write::<u32>(rec + 4, obj + 0x1c);
+    g.write::<u32>(rec + 8, w(0x7c));
+    // push ebp, the 0x14 bytes, ebx/esi/edi, the call
+    let mean = Frame {
+        at: img.rel32_target(fr.at + 0x81),
+        esp: fr.esp.wrapping_sub(0x28),
+        ecx: rec,
+        ..*fr
+    };
+    let eax = mean_point(g, img, &mean);
+    g.write::<u32>(obj + 0x28, 0x3f80_0000);
+    Ret::eax(eax)
+}
+
+/// [`mean_visit`] (147 bytes, 1 overlay).
+pub const MEAN_VISIT: Sig = Sig {
+    len: 147,
+    hash: 0x7d51_3467_9f1f_b260,
+    calls: &[(0x81, Callee::Sig(&MEAN_POINT))],
+    imports: &[],
+};

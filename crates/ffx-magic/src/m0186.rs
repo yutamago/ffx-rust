@@ -203,3 +203,64 @@ pub const MODEL_RECORD: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A model node from its record (0x10007700, internal: `ecx` = the node,
+/// the stack words 0, 1 and 3 `a`, `b`, `d`): the node's vtable the
+/// immediate `+0x1a`; [`model_record`] of the local `[node, P, a, b, Q,
+/// d, 0x63, 0]` (`ebp - 0x20`; `P`, `Q` the immediates `+0x24`, `+0x2b`).
+/// Returns its `eax`.
+pub fn model_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let node = fr.ecx;
+    let (a, b, d) = (fr.arg(g, 0), fr.arg(g, 1), fr.arg(g, 3));
+    let rec = fr.esp.wrapping_sub(0x24);
+    g.write::<u32>(node, w(0x1a));
+    for (i, v) in (0u32..).zip([node, w(0x24), a, b, w(0x2b), d, 0x63, 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x41),
+        esp: rec.wrapping_sub(4),
+        ecx: rec,
+        ..*fr
+    };
+    model_record(g, img, &callee)
+}
+
+/// [`model_node`] (73 bytes, 1 overlay).
+pub const MODEL_NODE: Sig = Sig {
+    len: 73,
+    hash: 0xd996_7138_a223_68d5,
+    calls: &[(0x41, crate::Callee::Sig(&MODEL_RECORD))],
+    imports: &[],
+};
+
+/// A cleared node (0x10007750, internal: `ecx` = the node): [`node_cleared`]
+/// of the local `[node, P]` (`ebp - 8`, `P` the immediate `+0x12`), then
+/// the node's vtable the immediate `+0x1d`. Returns `node_cleared`'s
+/// `eax`.
+pub fn cleared_node(
+    g: &mut impl crate::Mem,
+    img: &Image,
+    f: u32,
+    node: u32,
+    esp: u32,
+    eax: u32,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let rec = esp.wrapping_sub(0xc);
+    g.write::<u32>(rec, node);
+    g.write::<u32>(rec + 4, w(0x12));
+    let eax = node_cleared(g, rec, eax);
+    g.write::<u32>(node, w(0x1d));
+    eax
+}
+
+/// [`cleared_node`] (38 bytes, 1 overlay).
+pub const CLEARED_NODE: Sig = Sig {
+    len: 38,
+    hash: 0xebcf_113b_81cc_a98f,
+    calls: &[(0x17, crate::Callee::Sig(&NODE_CLEARED))],
+    imports: &[],
+};

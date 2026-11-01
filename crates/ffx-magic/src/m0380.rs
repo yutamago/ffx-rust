@@ -46,3 +46,22 @@ pub const TASK: Sig = Sig {
     calls: &[(0x6a, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
+
+/// [`two_scripts_step`](crate::m0381::two_scripts_step) with bit 0 of
+/// the halfword `+0x37` and bit 2 of `+0x43` cleared (0x10001340, cdecl
+/// `(task)`).
+pub fn scripts_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::m0381::two_scripts_step(g, img, fr, &[(0x37, 0xfffe), (0x43, 0xfffb)], 0x57)
+}
+
+/// [`scripts_step`] (95 bytes, 1 overlay).
+pub const SCRIPTS_STEP: Sig = Sig {
+    len: 95,
+    hash: 0xf4a4_539c_b5a8_a6a3,
+    calls: &[
+        (0xb, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x17, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1e, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+    ],
+    imports: &[],
+};

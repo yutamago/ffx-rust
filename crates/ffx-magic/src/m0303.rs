@@ -102,3 +102,90 @@ pub const PLACE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The record's words, then its node (0x10001480, a table entry, no
+/// arguments): operands `+0x02`, `+0x0c`, `+0x16`, `+0x20` get `[0, 0,
+/// 0x50, 0]`, then a tail jump into
+/// [`record_two_node`](crate::o4_static::record_two_node). Returns its
+/// result.
+pub fn record_nodes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    for (o, v) in [(0x2u32, 0u32), (0xc, 0), (0x16, 0x50), (0x20, 0)] {
+        g.write::<u32>(w(o), v);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x29),
+        ..*fr
+    };
+    crate::o4_static::record_two_node(g, img, &callee)
+}
+
+/// [`record_nodes`] (45 bytes, 1 overlay).
+pub const RECORD_NODES: Sig = Sig {
+    len: 45,
+    hash: 0x7530_f3ce_c13f_3f64,
+    calls: &[(
+        0x29,
+        Callee::Sig(&crate::o4_static::RECORD_TWO_NODE_0303_48D0),
+    )],
+    imports: &[],
+};
+
+/// Starts the light object (0x100015c0, a table entry, no arguments; a
+/// /GS frame): the object at the immediate `+0x24`
+/// ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2), scale
+/// the float at `+0x14`, the stack `(0, ecx, 8, F)`, `F` the immediate
+/// `+0x1a`); slot 262 `(*G_M, X, Y, Z)` (operand `+0x34`, the immediates
+/// `+0x49`, `+0x44`, `+0x3f`) and slot 268 `(*G_M, 6, &P)` (`P` a local at
+/// `ebp - 0x14`), each over the earlier words; `*W` (`+0x7b`) 1.0 and
+/// `Y` (`+0x87`) = `P.y + K` (`+0x6d`). Returns slot 268's `eax`.
+pub fn light_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    // sub esp, 0x14; push esi; four words; the call
+    let esp = ebp.wrapping_sub(0x2c);
+    let words = [0, fr.ecx, 8, w(0x1a)];
+    for (i, v) in (1u32..).zip(words) {
+        g.write::<u32>(esp + 4 * i, v);
+    }
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x14)));
+    let start = Frame {
+        at: img.rel32_target(f + 0x29),
+        esp,
+        edx: w(0x24),
+        xmm,
+        ..*fr
+    };
+    crate::s6_misc::start_object_anim_2(g, img, &start);
+    let m = g.read::<u32>(w(0x34));
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[w(0x1a), 8, fr.ecx, 0]);
+    s.push_all(&[w(0x3f), w(0x44), w(0x49), m]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x2e), 262), fr.ecx);
+    let p = ebp.wrapping_sub(0x14);
+    s.push_all(&[p, 6, m]);
+    // call width: 12 (Pushes caps the words at 12)
+    let eax = s.call(g, slot_target(g, w(0x55), 268), fr.ecx).eax;
+    let y = add(g.read::<f32>(p + 4), g.read::<f32>(w(0x6d)));
+    g.write::<u32>(w(0x7b), 0x3f80_0000);
+    g.write::<f32>(w(0x87), y);
+    Ret::eax(eax)
+}
+
+/// [`light_start`] (149 bytes, 1 overlay; the `rel32` at `+0x8d` is
+/// `__security_check_cookie`).
+pub const LIGHT_START: Sig = Sig {
+    len: 149,
+    hash: 0x9f85_d31d_22fb_6887,
+    calls: &[
+        (0x29, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+        (0x8d, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -42,3 +42,58 @@ pub const SOUND_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Starts the block's object (0x10001da0, a table entry, no arguments;
+/// `S = *G_S`, operand `+0x0b`): `S`
+/// ([`start_object_at`](crate::s4_misc::start_object_at), scale the float
+/// at `+0x04`, index 0, owners 0, 0); `S + 0xc4` = `S + 0x32c0`, `S +
+/// 0x104` the immediate `+0x32`. Returns the word copied.
+pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    let s = g.read::<u32>(w(0xb));
+    crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x19), s, scale, 0, 0, 0);
+    let v = g.read::<u32>(s + 0x32c0);
+    g.write::<u32>(s + 0xc4, v);
+    g.write::<u32>(s + 0x104, w(0x32));
+    Ret::eax(v)
+}
+
+/// [`object_start`] (56 bytes, 1 overlay).
+pub const OBJECT_START: Sig = Sig {
+    len: 56,
+    hash: 0xcd23_72cf_49dd_17dc,
+    calls: &[(0x19, crate::Callee::Sig(&crate::s4_misc::START_OBJECT_AT))],
+    imports: &[],
+};
+/// A point far below (0x10001d30, cdecl `(a)`, a /GS frame): slot 237
+/// `(*G_M, 0xe2, &V, a + 0xd0)` with the local `V = (-30, 0, 0, 1)`
+/// (`ebp - 0x14`; `*G_M` operand `+0x2b`), then `a + 0xdc` 1.0. Returns
+/// slot 237's `eax`.
+pub fn point_below<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let out = fr.arg(g, 0).wrapping_add(0xd0);
+    let v = ebp.wrapping_sub(0x14);
+    for (i, x) in (0u32..).zip([0xc1f0_0000u32, 0, 0, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    let t = slot_target(g, w(0x20), 237);
+    let m = g.read::<u32>(w(0x2b));
+    let eax = g.call(t, 0, &[m, 0xe2, v, out]).eax;
+    g.write::<u32>(out + 0xc, 0x3f80_0000);
+    Ret::eax(eax)
+}
+
+/// [`point_below`] (108 bytes, 1 overlay; the `rel32` at `+0x64` is
+/// `__security_check_cookie`).
+pub const POINT_BELOW: Sig = Sig {
+    len: 108,
+    hash: 0xc1e3_4c09_81f2_78c7,
+    calls: &[(0x64, crate::Callee::Any)],
+    imports: &[],
+};

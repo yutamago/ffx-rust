@@ -134,3 +134,21 @@ pub const STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Slot 256 `(*G_M, 2.0, 2.0, 2.0, 0x10)` (0x10001670, a table entry,
+/// no arguments; `*G_M` operand `+0x29`). Returns its `eax`.
+pub fn scale_two<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let t = slot_target(g, w(0x1), 256);
+    let m = g.read::<u32>(w(0x29));
+    let two = 0x4000_0000;
+    Ret::eax(g.call(t, 0, &[m, two, two, two, 0x10]).eax)
+}
+
+/// [`scale_two`] (51 bytes, 1 overlay).
+pub const SCALE_TWO: Sig = Sig {
+    len: 51,
+    hash: 0x6880_cf78_8655_5f16,
+    calls: &[],
+    imports: &[],
+};

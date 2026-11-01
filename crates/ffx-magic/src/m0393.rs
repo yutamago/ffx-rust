@@ -585,3 +585,143 @@ pub const EYE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Starts the fifth object (0x10002fd0, a table entry, no arguments; the
+/// block `S = *G_S`, operand `+0x0b`): `S + 0x5f0`
+/// ([`start_object_at`](crate::s4_misc::start_object_at), scale the float
+/// at `+0x04`, index 5, owners 0xd and 0); `S + 0x6b0` pi/4, `S + 0x6b4`
+/// = `S + 0x1ee0`, `S + 0x6f4` the immediate `+0x42`. Returns the word
+/// copied.
+pub fn fifth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    let s = g.read::<u32>(w(0xb));
+    crate::s4_misc::start_object_at(
+        g,
+        img,
+        img.rel32_target(f + 0x1e),
+        s + 0x5f0,
+        scale,
+        5,
+        0xd,
+        0,
+    );
+    g.write::<u32>(s + 0x6b0, 0x3f49_0fdb);
+    let v = g.read::<u32>(s + 0x1ee0);
+    g.write::<u32>(s + 0x6b4, v);
+    g.write::<u32>(s + 0x6f4, w(0x42));
+    Ret::eax(v)
+}
+
+/// [`fifth_start`] (72 bytes, 1 overlay).
+pub const FIFTH_START: Sig = Sig {
+    len: 72,
+    hash: 0xa58d_9814_0b7b_4b59,
+    calls: &[(0x1e, Callee::Sig(&crate::s4_misc::START_OBJECT_AT))],
+    imports: &[],
+};
+/// Starts the ninth and eighth objects (0x100023b0, a table entry, no
+/// arguments; the block `S = *G_S`, operand `+0x0c`): `O = S + 0xab0`
+/// ([`start_object_at`](crate::s4_misc::start_object_at), scale the float
+/// at `+0x04`, index 9, owners 0, 0), `O + 0xd0..0xdc` = `S + 0x1c20..`,
+/// `O + 0xc4` = `S + 0x1ee0`, `O + 0xe8` -23.0; then `S + 0x980` (scale
+/// the float at `+0x2e`, index 8, owners 0x22 and 0), `S + 0xa44` = `S +
+/// 0x1ee0` and `S + 0xa84` the immediate `+0x9c`. Returns the word
+/// copied.
+pub fn ninth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0xc));
+    let o = s + 0xab0;
+    let scale = g.read::<f32>(w(0x4));
+    crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x20), o, scale, 9, 0, 0);
+    for k in 0..4u32 {
+        let v = g.read::<u32>(s + 0x1c20 + 4 * k);
+        g.write::<u32>(o + 0xd0 + 4 * k, v);
+    }
+    let v = g.read::<u32>(s + 0x1ee0);
+    g.write::<u32>(o + 0xc4, v);
+    g.write::<u32>(o + 0xe8, 0xc1b8_0000);
+    let scale = g.read::<f32>(w(0x2e));
+    crate::s4_misc::start_object_at(
+        g,
+        img,
+        img.rel32_target(f + 0x83),
+        s + 0x980,
+        scale,
+        8,
+        0x22,
+        0,
+    );
+    let v = g.read::<u32>(s + 0x1ee0);
+    g.write::<u32>(s + 0xa44, v);
+    g.write::<u32>(s + 0xa84, w(0x9c));
+    Ret::eax(v)
+}
+
+/// [`ninth_start`] (163 bytes, 1 overlay).
+pub const NINTH_START: Sig = Sig {
+    len: 163,
+    hash: 0xc839_0d62_fa75_e7e0,
+    calls: &[
+        (0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x83, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
+
+/// Starts the ninth object with a scale task (0x10003cd0, a table entry,
+/// no arguments; the block `S = *G_S`, operand `+0x0c`): `S + 0x1ba0..`
+/// = `S + 0x1c10..`; `O = S + 0xab0`
+/// ([`start_object_at`](crate::s4_misc::start_object_at), scale the float
+/// at `+0x04`, index 9, owners 0x60 and 0), `O + 0xd0..0xdc` = `S +
+/// 0x1c10..`, `O + 0xc4` = `S + 0x1ee0`; then the scale task `S + 0x1e08`
+/// ([`scale_task`](crate::s4_misc::scale_task), `xmm2`/`xmm1` the floats
+/// at `+0x5e`/`+0x66`, the count 0x3c over the start's words). Returns
+/// the task's result.
+pub fn ninth_scaled<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0xc));
+    let copy = |g: &mut G, dst: u32| {
+        for k in 0..4u32 {
+            let v = g.read::<u32>(s + 0x1c10 + 4 * k);
+            g.write::<u32>(dst + 4 * k, v);
+        }
+    };
+    copy(g, s + 0x1ba0);
+    let o = s + 0xab0;
+    let scale = g.read::<f32>(w(0x4));
+    crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x50), o, scale, 9, 0x60, 0);
+    copy(g, o + 0xd0);
+    let v = g.read::<u32>(s + 0x1ee0);
+    g.write::<u32>(o + 0xc4, v);
+    // push esi/edi; the start's four words; push 0x3c; the call
+    let esp = fr.esp.wrapping_sub(0x20);
+    for (i, v) in (1u32..).zip([0x3c, 9, 0x60, fr.ecx, 0]) {
+        g.write::<u32>(esp + 4 * i, v);
+    }
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(g.read::<u32>(w(0x5e)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x66)));
+    let task = Frame {
+        at: img.rel32_target(f + 0xa9),
+        esp,
+        ecx: s + 0x1e08,
+        xmm,
+        ..*fr
+    };
+    crate::s4_misc::scale_task(g, img, &task)
+}
+
+/// [`ninth_scaled`] (179 bytes, 1 overlay).
+pub const NINTH_SCALED: Sig = Sig {
+    len: 179,
+    hash: 0xc3df_e802_75b6_9f70,
+    calls: &[
+        (0x50, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0xa9, Callee::Sig(&crate::s4_misc::SCALE_TASK)),
+    ],
+    imports: &[],
+};

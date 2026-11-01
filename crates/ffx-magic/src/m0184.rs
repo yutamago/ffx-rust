@@ -83,3 +83,65 @@ pub const PART_SETUP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Scatters two records (0x10001280, internal: `ecx` = a base point `B`,
+/// `xmm1` a spread `a`, `xmm2` a scale `b`; locals at `ebp - 4`): twice, a
+/// free record `R` ([`first_free`](crate::s4_small::first_free); none
+/// ends it) gets, from four answers `r` of slot 241 `(&r)` (the earlier
+/// calls' words left under each): `R.x = (r1 - K) a + B.x` (`r1 - K`
+/// kept in the local), `R.y = B.y - r2 a`, `R.z = (r3 - K) a + B.z`, `R.w`
+/// 1.0, `R + 0x10 = (r4 + D) b` (in doubles; `K` at `+0x4b`/`+0xa4`, the
+/// double `D` at `+0xe8`) and `R + 0x14` 0. Returns 0.
+pub fn scatter<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let base = fr.ecx;
+    let (a, b) = (fr.xmm_f32(1), fr.xmm_f32(2));
+    let ebp = fr.esp.wrapping_sub(4);
+    let r = ebp.wrapping_sub(4);
+    // push ebp; sub esp, 0xc; push ebx/esi/edi; the call
+    let below = ebp.wrapping_sub(0x1c);
+    g.write::<f32>(ebp.wrapping_sub(0xc), b);
+    g.write::<f32>(ebp.wrapping_sub(8), a);
+    for _ in 0..2 {
+        let free = Frame {
+            at: img.rel32_target(f + 0x22),
+            esp: below,
+            ..*fr
+        };
+        let rec = crate::s4_small::first_free(g, img, &free).eax;
+        if rec == 0 {
+            break;
+        }
+        let ask = |g: &mut G, n: usize, o: u32| {
+            let t = slot_target(g, w(o), 241);
+            g.call(t, 0, &[r; 4][..n]);
+            g.read::<f32>(r)
+        };
+        let v = sub(ask(g, 1, 0x32), g.read::<f32>(w(0x4b)));
+        g.write::<f32>(r, v);
+        g.write::<f32>(rec, add(mul(v, a), g.read::<f32>(base)));
+        let v = ask(g, 2, 0x54);
+        g.write::<f32>(rec + 4, sub(g.read::<f32>(base + 4), mul(v, a)));
+        let v = sub(ask(g, 3, 0x8a), g.read::<f32>(w(0xa4)));
+        g.write::<f32>(r, v);
+        g.write::<u32>(rec + 0xc, 0x3f80_0000);
+        g.write::<f32>(rec + 8, add(mul(v, a), g.read::<f32>(base + 8)));
+        let v = ask(g, 4, 0xad);
+        g.write::<u32>(rec + 0x14, 0);
+        let d = g.read::<f64>(w(0xe8));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let y = ((f64::from(v) + d) * f64::from(b)) as f32;
+        g.write::<f32>(rec + 0x10, y);
+    }
+    Ret::eax(0)
+}
+
+/// [`scatter`] (272 bytes, 1 overlay).
+pub const SCATTER: Sig = Sig {
+    len: 272,
+    hash: 0x5336_705c_250a_04c4,
+    calls: &[(0x22, crate::Callee::Sig(&crate::s4_small::FIRST_FREE))],
+    imports: &[],
+};

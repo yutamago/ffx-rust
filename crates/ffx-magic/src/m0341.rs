@@ -91,3 +91,45 @@ pub const FREE_PARTS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The midpoint of two bones (0x10001400, cdecl `(a)`, a /GS frame):
+/// slot 237 `(*G_M, 0x13, 0, &A)` and `(*G_M, 0x23, 0, &B)` (operands
+/// `+0x29`/`+0x44`; `A`, `B` locals at `ebp - 0x14`, `- 0x24`), `A =
+/// ((A + B) K, 1)` (`K` at `+0x58`), then slot 229 `(a + 0xa0, M, &A)`
+/// (`M` the immediate `+0x6b`; each call over the earlier words). Returns
+/// slot 229's `eax`.
+pub fn bone_midpoint<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let a = fr.arg(g, 0);
+    let (pa, pb) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x24));
+    let mut s = Pushes::default();
+    s.push_all(&[pa, 0, 0x13, g.read::<u32>(w(0x29))]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x19), 237), fr.ecx);
+    s.push_all(&[pb, 0, 0x23, g.read::<u32>(w(0x44))]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x34), 237), fr.ecx);
+    let k = g.read::<f32>(w(0x58));
+    for i in 0..3u32 {
+        let v = mul(add(g.read::<f32>(pa + 4 * i), g.read::<f32>(pb + 4 * i)), k);
+        g.write::<f32>(pa + 4 * i, v);
+    }
+    g.write::<u32>(pa + 0xc, 0x3f80_0000);
+    s.push_all(&[pa, w(0x6b), a + 0xa0]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0x80), 229), fr.ecx).eax)
+}
+
+/// [`bone_midpoint`] (193 bytes, 1 overlay; the `rel32` at `+0xb9` is
+/// `__security_check_cookie`).
+pub const BONE_MIDPOINT: Sig = Sig {
+    len: 193,
+    hash: 0x2cee_3bf6_5033_f155,
+    calls: &[(0xb9, crate::Callee::Any)],
+    imports: &[],
+};

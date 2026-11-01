@@ -286,3 +286,151 @@ pub const FRAME: Sig = Sig {
     calls: &[(0x7f, crate::Callee::Sig(&crate::sa_misc::TIMELINE))],
     imports: &[],
 };
+
+/// The model reset ([`model_reset`]), then `*G_S` (operand `+0x07`) 1.0
+/// (0x100014e0, a table entry, no arguments). Returns 1.
+pub fn reset_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 0x1),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    model_reset(g, img, &callee);
+    g.write::<u32>(img.word(fr.at + 0x7), 0x3f80_0000);
+    Ret::eax(1)
+}
+
+/// [`reset_scale`] (21 bytes, 1 overlay).
+pub const RESET_SCALE: Sig = Sig {
+    len: 21,
+    hash: 0x2da0_fcee_9248_a170,
+    calls: &[(0x1, crate::Callee::Sig(&MODEL_RESET))],
+    imports: &[],
+};
+
+/// A record's index in the table at the immediate `+0x10` (0x80 bytes
+/// each), when below `*G_N` (`+0x04`).
+fn record_index<G: Game>(g: &G, img: &Image, f: u32, a: u32) -> Option<u32> {
+    let w = |o: u32| img.word(f + o);
+    let i = (a.wrapping_sub(w(0x10)).cast_signed() >> 7).cast_unsigned();
+    let n = g.read::<u32>(w(0x4)).wrapping_sub(1);
+    if i.cast_signed() > n.cast_signed() {
+        None
+    } else {
+        Some(i)
+    }
+}
+
+/// A record's part restarted (0x10001c40, cdecl `(a)`; the record `a`'s
+/// index `i` in the table at `+0x10`, none past `*G_N`: 1): with `b` =
+/// `(*G_B)[i]` (`+0x29`) and no entry in `T[i]` (`+0x23`), slot 239
+/// `(*G_ME, b, 0)` (`+0x3d`); else slot 215 `(b)` gives the model `m`,
+/// `*G_P` (`+0x65`) the immediate `+0x6d`, the program 2 of slot 941
+/// `((*G_H)[0x10])` (`+0x73`) started on `a`
+/// ([`start_part`](crate::opu_parts::start_part), 0x1000, 1), slot 268
+/// `(m, 0x10, a + 0x40)` (over the earlier words) and `a + 0x50..0x6c`
+/// `(0, 0, 0, 1, 0.15, 0.15, 0.15, 1.0)`. Returns 1.
+pub fn part_restart<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    let Some(i) = record_index(g, img, f, a) else {
+        return Ret::eax(1);
+    };
+    let entry = g.read::<u32>(w(0x23).wrapping_add(i.wrapping_mul(4)));
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x29)).wrapping_add(i)));
+    if entry == 0 {
+        let t = slot_target(g, w(0x37), 239);
+        let me = g.read::<u32>(w(0x3d));
+        g.call(t, 0, &[me, b, 0]);
+        return Ret::eax(1);
+    }
+    let t = slot_target(g, w(0x57), 215);
+    let m = g.call(t, 0, &[b]).eax;
+    g.write::<u32>(g.read::<u32>(w(0x65)), w(0x6d));
+    let d = g.read::<u32>(g.read::<u32>(w(0x73)) + 0x10);
+    let t = slot_target(g, w(0x7c), 941);
+    let table = g.call(t, 0, &[d, b]).eax;
+    let program = g.read::<u32>(table + 8);
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x97), a, 0x1000, program, 1);
+    let t = slot_target(g, w(0xa0), 268);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    g.call(t, 0, &[m, 0x10, a + 0x40, program, 1, 0, d, b]);
+    for (o, v) in [
+        (0x50u32, 0u32),
+        (0x54, 0),
+        (0x58, 0),
+        (0x5c, 1),
+        (0x60, 0x3e19_999a),
+        (0x64, 0x3e19_999a),
+        (0x68, 0x3e19_999a),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(a + o, v);
+    }
+    Ret::eax(1)
+}
+
+/// [`part_restart`] (243 bytes, 1 overlay).
+pub const PART_RESTART: Sig = Sig {
+    len: 243,
+    hash: 0xda01_32b6_40d5_d806,
+    calls: &[(0x97, crate::Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// A record's part placed and registered (0x10001d40, cdecl `(a)`; the
+/// record's index `i` as in [`part_restart`]; past `*G_N` or with no
+/// entry in `T[i]` (`+0x24`): 0): `a + 0x60..0x6c` `(0.15, 0.15, 0.15,
+/// 1.0)`; slot 258 `(a)`, slot 231 `(*G_A, *G_B, *G_C)` (`+0x6f`, `+0x63`,
+/// `+0x58`) and slot 230 `(*G_D, *G_A)` (`+0x82`, `+0x77`); `*G_P`
+/// (`+0x8f`) the immediate `+0x97`; slot 712 `(a, 0x30)` with `**G_LOCK`
+/// (`+0x9c`) 1 around it (each call over the earlier words). Returns 1
+/// when slot 712 answers 0, else 0.
+pub fn part_register<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    let Some(i) = record_index(g, img, f, a) else {
+        return Ret::eax(0);
+    };
+    if g.read::<u32>(w(0x24).wrapping_add(i.wrapping_mul(4))) == 0 {
+        return Ret::eax(0);
+    }
+    let mut s = crate::pushes::Pushes::default();
+    s.push(a);
+    for (o, v) in [
+        (0x60u32, 0x3e19_999au32),
+        (0x64, 0x3e19_999a),
+        (0x68, 0x3e19_999a),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(a + o, v);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x2c), 258), fr.ecx);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    s.push_all(&[rd(g, 0x58), rd(g, 0x63), rd(g, 0x6f)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x5d), 231), fr.ecx);
+    s.push_all(&[rd(g, 0x77), rd(g, 0x82)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x7c), 230), fr.ecx);
+    g.write::<u32>(rd(g, 0x8f), w(0x97));
+    s.push_all(&[0x30, a]);
+    let lock = rd(g, 0x9c);
+    let old = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = s.call(g, slot_target(g, w(0xaa), 712), fr.ecx).eax;
+    g.write::<u32>(rd(g, 0xb8), old);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_register`] (206 bytes, 1 overlay).
+pub const PART_REGISTER: Sig = Sig {
+    len: 206,
+    hash: 0x1207_51d8_7331_ca5f,
+    calls: &[],
+    imports: &[],
+};

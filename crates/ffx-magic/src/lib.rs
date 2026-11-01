@@ -105,6 +105,8 @@ pub mod s9_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
+pub mod sl_host;
+pub mod sl_wrap;
 
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
@@ -185,6 +187,7 @@ pub mod m0152;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
+pub mod m0162;
 pub mod m0163;
 pub mod m0164;
 pub mod m0165;
@@ -193,6 +196,7 @@ pub mod m0168;
 pub mod m0170;
 pub mod m0171;
 pub mod m0176;
+pub mod m0180;
 pub mod m0183;
 pub mod m0184;
 pub mod m0186;
@@ -203,13 +207,18 @@ pub mod m0194;
 pub mod m0195;
 pub mod m0196;
 pub mod m0198;
+pub mod m0199;
 pub mod m0201;
 pub mod m0203;
 pub mod m0205;
+pub mod m0206;
+pub mod m0207;
 pub mod m0219;
 pub mod m0243;
 pub mod m0244;
 pub mod m0245;
+pub mod m0249;
+pub mod m0250;
 pub mod m0251;
 pub mod m0253;
 pub mod m0255;
@@ -219,12 +228,16 @@ pub mod m0263;
 pub mod m0267;
 pub mod m0269;
 pub mod m0270;
+pub mod m0271;
 pub mod m0272;
 pub mod m0273;
+pub mod m0284;
+pub mod m0287;
 pub mod m0292;
 pub mod m0295;
 pub mod m0297;
 pub mod m0298;
+pub mod m0300;
 pub mod m0301;
 pub mod m0303;
 pub mod m0304;
@@ -234,14 +247,17 @@ pub mod m0311;
 pub mod m0312;
 pub mod m0313;
 pub mod m0316;
+pub mod m0318;
 pub mod m0325;
 pub mod m0330;
 pub mod m0341;
 pub mod m0342;
 pub mod m0348;
+pub mod m0350;
 pub mod m0351;
 pub mod m0352;
 pub mod m0353;
+pub mod m0354;
 pub mod m0356;
 pub mod m0357;
 pub mod m0359;
@@ -253,6 +269,7 @@ pub mod m0370;
 pub mod m0371;
 pub mod m0372;
 pub mod m0375;
+pub mod m0377;
 pub mod m0378;
 pub mod m0379;
 pub mod m0380;
@@ -905,6 +922,9 @@ macro_rules! ports {
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
 
         /// The port at `PORTS[i]` for a game type.
+        // the table passed 16 KB (2,000+ ports) on 2026-11-01; it is a constant
+        // array of function pointers, which optimised builds keep in .rodata
+        #[allow(clippy::large_stack_arrays)]
         #[must_use]
         pub fn entry<G: Game>(i: usize) -> Option<Entry<G>> {
             let table: &[Entry<G>] = &[$($m::$f::<G>),*];
@@ -2938,6 +2958,89 @@ ports! {
     "summon targets start" => s9_misc::SUMMON_TARGETS_START, s9_misc::summon_targets_start;
     "summon start task (0347)" => s9_misc::SUMMON_START_TASK_0347, s9_misc::summon_start_task_0347;
     // round 9, shared-9 (s9_misc): end of ports
+    "thunk: m0146 sub-node visit" => sl_wrap::JMP_SUB_NODE_VISIT, sl_wrap::ecx_jmp;
+    "thunk: m0186 int motion" => sl_wrap::JMP_INT_MOTION, sl_wrap::ecx_jmp;
+    "thunk: m0201 matrix visit" => sl_wrap::JMP_MATRIX_VISIT, sl_wrap::ecx_jmp;
+    "m0052 load step" => m0052::LOAD_STEP, m0052::load_step;
+    "m0098 motion step" => m0098::MOTION_STEP, m0098::motion_step;
+    "m0162 scale start" => m0162::SCALE_START, m0162::scale_start;
+    "m0162 object start" => m0162::OBJECT_START, m0162::object_start;
+    "m0164 mean visit" => m0164::MEAN_VISIT, m0164::mean_visit;
+    "thunk: m0164 mean visit" => sl_wrap::JMP_MEAN_VISIT, sl_wrap::ecx_jmp;
+    "m0165 scale start" => m0165::SCALE_START, m0165::scale_start;
+    "m0165 selected start" => m0165::SELECTED_START, m0165::selected_start;
+    "m0165 record start" => m0165::RECORD_START, m0165::record_start;
+    "m0165 turn start" => m0165::TURN_START, m0165::turn_start;
+    "m0168 object start" => m0168::OBJECT_START, m0168::object_start;
+    "m0171 grid step" => m0171::GRID_STEP, m0171::grid_step;
+    "m0180 square step" => m0180::SQUARE_STEP, m0180::square_step;
+    "m0180 main start" => m0180::MAIN_START, m0180::main_start;
+    "m0199 script step" => m0199::SCRIPT_STEP, m0199::script_step;
+    "m0203 model visit" => m0203::MODEL_VISIT, m0203::model_visit;
+    "thunk: m0203 model visit" => sl_wrap::JMP_MODEL_VISIT, sl_wrap::ecx_jmp;
+    "m0206 records start" => m0206::RECORDS_START, m0206::records_start;
+    "m0249 camera step" => m0249::CAMERA_STEP, m0249::camera_step;
+    "m0250 grid step" => m0250::GRID_STEP, m0250::grid_step;
+    "m0250 spark" => m0250::SPARK, m0250::spark;
+    "m0253 record start" => m0253::RECORD_START, m0253::record_start;
+    "m0260 programs step" => m0260::PROGRAMS_STEP, m0260::programs_step;
+    "m0260 actor start" => m0260::ACTOR_START, m0260::actor_start;
+    "m0271 point below" => m0271::POINT_BELOW, m0271::point_below;
+    "m0284 smoke start" => m0284::SMOKE_START, m0284::smoke_start;
+    "m0287 smoke main" => m0287::SMOKE_MAIN, m0287::smoke_main;
+    "m0298 models step" => m0298::MODELS_STEP, m0298::models_step;
+    "m0301 object setup" => m0301::OBJECT_SETUP, m0301::object_setup;
+    "m0301 callbacks setup" => m0301::CALLBACKS_SETUP, m0301::callbacks_setup;
+    "m0303 record nodes" => m0303::RECORD_NODES, m0303::record_nodes;
+    "m0303 light start" => m0303::LIGHT_START, m0303::light_start;
+    "m0304 place point" => m0304::PLACE_POINT, m0304::place_point;
+    "m0304 host start" => m0304::HOST_START, m0304::host_start;
+    "thunk: m0573 refresh" => sl_wrap::JMP_REFRESH_0573, sl_wrap::ecx_jmp;
+    "thunk: 0585 sprite visit" => sl_wrap::JMP_SPRITE_VISIT_0585, sl_wrap::ecx_jmp;
+    "m0307 scale 255c" => m0307::SCALE_255C, m0307::scale_255c;
+    "m0307 scale 2524" => m0307::SCALE_2524, m0307::scale_2524;
+    "m0307 seventh start" => m0307::SEVENTH_START, m0307::seventh_start;
+    "m0307 pair start" => m0307::PAIR_START, m0307::pair_start;
+    "m0307 third restart" => m0307::THIRD_RESTART, m0307::third_restart;
+    "m0313 object setup" => m0313::OBJECT_SETUP, m0313::object_setup;
+    "m0316 scale two" => m0316::SCALE_TWO, m0316::scale_two;
+    "m0318 count step" => m0318::COUNT_STEP, m0318::count_step;
+    "m0341 bone midpoint" => m0341::BONE_MIDPOINT, m0341::bone_midpoint;
+    "m0351 reset scale" => m0351::RESET_SCALE, m0351::reset_scale;
+    "m0352 fifth start" => m0352::FIFTH_START, m0352::fifth_start;
+    "m0361 flag after 213" => m0361::FLAG_AFTER_213, m0361::flag_after_213;
+    "m0371 records start" => m0371::RECORDS_START, m0371::records_start;
+    "m0375 records start" => m0375::RECORDS_START, m0375::records_start;
+    "m0353 record words" => m0353::RECORD_WORDS, m0353::record_words;
+    "m0367 fourth start" => m0367::FOURTH_START, m0367::fourth_start;
+    "m0377 parts step" => m0377::PARTS_STEP, m0377::parts_step;
+    "m0380 scripts step" => m0380::SCRIPTS_STEP, m0380::scripts_step;
+    "m0381 scripts step" => m0381::SCRIPTS_STEP, m0381::scripts_step;
+    "m0393 fifth start" => m0393::FIFTH_START, m0393::fifth_start;
+    "m0432 object start" => m0432::OBJECT_START, m0432::object_start;
+    "m0430 scale e3c" => m0430::SCALE_E3C, m0430::scale_e3c;
+    "m0432 point below" => m0432::POINT_BELOW, m0432::point_below;
+    "m0434 second start" => m0434::SECOND_START, m0434::second_start;
+    "m0396 object or fade" => m0396::OBJECT_OR_FADE, m0396::object_or_fade;
+    "m0393 ninth start" => m0393::NINTH_START, m0393::ninth_start;
+    "m0445 fade visit" => m0445::FADE_VISIT, m0445::fade_visit;
+    "thunk: m0445 fade visit" => sl_wrap::JMP_FADE_VISIT, sl_wrap::ecx_jmp;
+    "m0367 pair start" => m0367::PAIR_START, m0367::pair_start;
+    "m0354 countdown step" => m0354::COUNTDOWN_STEP, m0354::countdown_step;
+    "m0393 ninth scaled" => m0393::NINTH_SCALED, m0393::ninth_scaled;
+    "m0397 object fade" => m0397::OBJECT_FADE, m0397::object_fade;
+    "m0300 object setup" => m0300::OBJECT_SETUP, m0300::object_setup;
+    "m0301 aimed setup" => m0301::AIMED_SETUP, m0301::aimed_setup;
+    "m0301 thrown setup" => m0301::THROWN_SETUP, m0301::thrown_setup;
+    "m0300 bone setup" => m0300::BONE_SETUP, m0300::bone_setup;
+    "m0300 offset setup" => m0300::OFFSET_SETUP, m0300::offset_setup;
+    "m0415 model setup" => m0415::MODEL_SETUP, m0415::model_setup;
+    "m0351 part restart" => m0351::PART_RESTART, m0351::part_restart;
+    "m0351 part register" => m0351::PART_REGISTER, m0351::part_register;
+    "m0370 part place" => m0370::PART_PLACE, m0370::part_place;
+    "m0430 three start" => m0430::THREE_START, m0430::three_start;
+    "m0434 main restart" => m0434::MAIN_RESTART, m0434::main_restart;
+    // magic small-lo: end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -4134,6 +4237,21 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
     ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
     // round 9, shared-9 (s9_misc): end of INTERNAL
+    ("m0152 build node", &m0152::BUILD_NODE),
+    ("m0168 object task", &m0168::OBJECT_TASK),
+    ("m0184 scatter", &m0184::SCATTER),
+    ("m0186 model node", &m0186::MODEL_NODE),
+    ("m0186 cleared node", &m0186::CLEARED_NODE),
+    ("m0207 copy node", &m0207::COPY_NODE),
+    ("m0295 leave and register", &m0295::LEAVE_AND_REGISTER),
+    ("m0348 lights models", &m0348::LIGHTS_MODELS),
+    ("m0350 lights models parts", &m0350::LIGHTS_MODELS_PARTS),
+    ("m0389 static strip", &m0389::STATIC_STRIP),
+    ("sl_host 0391", &sl_host::HOSTED_0391),
+    ("sl_host 0448", &sl_host::HOSTED_0448),
+    ("sl_host 0444", &sl_host::HOSTED_0444),
+    ("sl_host 0199", &sl_host::HOSTED_0199),
+    // magic small-lo: end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

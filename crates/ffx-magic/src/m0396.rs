@@ -300,3 +300,73 @@ pub const SCRIPT_END: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the seventh or eighth object (0x10005170, a table entry, no
+/// arguments; the block `S = *G_S`, operand `+0x0c`): with `*G_F`
+/// (`+0x02`) set, first the fade task `S + 0xe20`
+/// ([`fade_task`](crate::s3_misc::fade_task), `edx` 0x28, `xmm2`/`xmm1`
+/// the floats at `+0x16`/`+0x1e`, the stack word 0) and the index 8,
+/// else 7; the object `O = S + 0x130 i`
+/// ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2), scale
+/// the float at `+0x45`, the stack `(i, ecx, 0x9b, F)`, `F` the immediate
+/// `+0x52`); `O + 0xc4` = `S + 0x2450`, `O + 0x104` the immediate `+0x7c`
+/// and byte `O + 0x126` 2. Returns the word copied.
+pub fn object_or_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0xc));
+    let mut ecx = fr.ecx;
+    let i = if g.read::<u32>(w(0x2)) == 0 {
+        7
+    } else {
+        // push ebx/esi/edi; push 0; the call
+        let esp = fr.esp.wrapping_sub(0x14);
+        g.write::<u32>(esp + 4, 0);
+        let mut xmm = fr.xmm;
+        xmm[2] = u128::from(g.read::<u32>(w(0x16)));
+        xmm[1] = u128::from(g.read::<u32>(w(0x1e)));
+        let fade = Frame {
+            at: img.rel32_target(f + 0x33),
+            esp,
+            ecx: s + 0xe20,
+            edx: 0x28,
+            xmm,
+            ..*fr
+        };
+        crate::s3_misc::fade_task(g, img, &fade);
+        // the `ecx` pushed below is what the fade left (not read)
+        ecx = 0;
+        8
+    };
+    let o = s.wrapping_add(0x130 * i);
+    let esp = fr.esp.wrapping_sub(0x20);
+    for (k, v) in (1u32..).zip([i, ecx, 0x9b, w(0x52)]) {
+        g.write::<u32>(esp + 4 * k, v);
+    }
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x45)));
+    let start = Frame {
+        at: img.rel32_target(f + 0x62),
+        esp,
+        edx: o,
+        xmm,
+        ..*fr
+    };
+    crate::s6_misc::start_object_anim_2(g, img, &start);
+    let v = g.read::<u32>(s + 0x2450);
+    g.write::<u32>(o + 0xc4, v);
+    g.write::<u32>(o + 0x104, w(0x7c));
+    g.write::<u8>(o + 0x126, 2);
+    Ret::eax(v)
+}
+
+/// [`object_or_fade`] (138 bytes, 1 overlay).
+pub const OBJECT_OR_FADE: Sig = Sig {
+    len: 138,
+    hash: 0x9656_555d_c1aa_c460,
+    calls: &[
+        (0x33, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x62, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+    ],
+    imports: &[],
+};

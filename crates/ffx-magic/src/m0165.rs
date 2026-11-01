@@ -525,3 +525,169 @@ pub const THREE_TASKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the block's scale task (0x100029b0, a table entry, no
+/// arguments): [`scale_task`](crate::s4_misc::scale_task) on `*G_B +
+/// 0x59f8` (operand `+0x02`; `xmm2`/`xmm1` the floats at `+0x0a`/`+0x12`,
+/// the count 0), then slot 371 `(0, 0x10000)` and `(1, 0x20000)` (the
+/// earlier words left under each). Returns the last call's `eax`.
+pub fn scale_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let b = g.read::<u32>(w(0x2));
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(g.read::<u32>(w(0xa)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x12)));
+    let task = Frame {
+        at: img.rel32_target(f + 0x1f),
+        esp: fr.esp.wrapping_sub(8),
+        ecx: b.wrapping_add(0x59f8),
+        xmm,
+        ..*fr
+    };
+    g.write::<u32>(task.esp + 4, 0);
+    crate::s4_misc::scale_task(g, img, &task);
+    let t = slot_target(g, w(0x24), 371);
+    g.call(t, 0, &[0, 0x1_0000, 0]);
+    let t = slot_target(g, w(0x38), 371);
+    Ret::eax(g.call(t, 0, &[1, 0x2_0000, 0, 0x1_0000, 0]).eax)
+}
+
+/// [`scale_start`] (79 bytes, 1 overlay).
+pub const SCALE_START: Sig = Sig {
+    len: 79,
+    hash: 0xd053_acbb_6068_1110,
+    calls: &[(0x1f, Callee::Sig(&crate::s4_misc::SCALE_TASK))],
+    imports: &[],
+};
+
+/// Starts the selected object (0x10002db0, a table entry, no arguments;
+/// the block `S = *G_S`, operand `+0x0b`): with `i = S + 0x5f1c`, the
+/// object `O = S + 0x130 i` ([`start_object_plain`](crate::s4_misc::start_object_plain),
+/// scale the float at `+0x04`, index `i`); `O + 0xd0..0xdc` = `S +
+/// 0x9f0..`, `O + 0xc4` = `S + 0x5ee8`, `O + 0xe8` 90.0 and `O + 0xd4`
+/// less the float at `+0x67`. Returns the word copied to `+0xc4`.
+pub fn selected_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    let s = g.read::<u32>(w(0xb));
+    let i = g.read::<u32>(s + 0x5f1c);
+    let o = i.wrapping_mul(0x130).wrapping_add(s);
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x27), o, scale, i);
+    for k in 0..4u32 {
+        let v = g.read::<u32>(s + 0x9f0 + 4 * k);
+        g.write::<u32>(o + 0xd0 + 4 * k, v);
+    }
+    let y = sub(g.read::<f32>(o + 0xd4), g.read::<f32>(w(0x67)));
+    let v = g.read::<u32>(s + 0x5ee8);
+    g.write::<u32>(o + 0xc4, v);
+    g.write::<u32>(o + 0xe8, 0x42b4_0000);
+    g.write::<f32>(o + 0xd4, y);
+    Ret::eax(v)
+}
+
+/// [`selected_start`] (143 bytes, 1 overlay).
+pub const SELECTED_START: Sig = Sig {
+    len: 143,
+    hash: 0x53b9_f322_7d29_5181,
+    calls: &[(0x27, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};
+
+/// Starts the second object and its record (0x10002f10, a table entry,
+/// no arguments; the block `S = *G_S`, operand `+0x0c`): the object `S +
+/// 0x260` ([`start_object_plain`](crate::s4_misc::start_object_plain),
+/// scale the float at `+0x04`, index 2); its `+0x104` = the immediate
+/// `+0x26`, `+0xc4` = `S + 0x5ee8`; bit 0 set in the halfword `+0x124`
+/// of object `S + 0x5f1c`; the record `R = S + 0x5960` gets `[0, 0x50,
+/// 0x14, 0]`, `+0x10`/`+0x14` 0x3c and the halfword `+0x18` 0; a pool
+/// node ([`take`](crate::sa_pool::take), owner the immediate `+0x57`)
+/// holds it (`+0x14`, byte `+0x18` 1, `+0x4` 0) at the end of the task
+/// list (first `+0x8f`/`+0xc1`, last `+0xa8`/`+0xb2`). Returns the node.
+pub fn record_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    let s = g.read::<u32>(w(0xc));
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x1c), s + 0x260, scale, 2);
+    g.write::<u32>(s + 0x364, w(0x26));
+    let v = g.read::<u32>(s + 0x5ee8);
+    g.write::<u32>(s + 0x324, v);
+    let i = g.read::<u32>(s + 0x5f1c);
+    let h = i.wrapping_mul(0x130).wrapping_add(s).wrapping_add(0x124);
+    let x = g.read::<u16>(h);
+    g.write::<u16>(h, x | 1);
+    let r = s + 0x5960;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x50),
+        (8, 0x14),
+        (0xc, 0),
+        (0x14, 0x3c),
+        (0x10, 0x3c),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    g.write::<u16>(r + 0x18, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x89), w(0x57));
+    let empty = g.read::<u32>(w(0x8f)) == 0;
+    g.write::<u32>(node + 0x14, r);
+    g.write::<u8>(node + 0x18, 1);
+    g.write::<u32>(node + 4, 0);
+    crate::s3_misc::append_task(g, node, w(0xc1), w(0xb2), empty);
+    Ret::eax(node)
+}
+
+/// [`record_start`] (206 bytes, 1 overlay).
+pub const RECORD_START: Sig = Sig {
+    len: 206,
+    hash: 0x694d_0088_6572_7134,
+    calls: &[
+        (0x1c, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x89, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// Starts the turning object (0x100038d0, a table entry, no arguments;
+/// the block `S = *G_S`, operand `+0x0d`): the object `O = S + 0x720`
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale the
+/// float at `+0x04`, index 6); slot 237 `(*G_M, 0x8a, 0, O + 0xd0)`
+/// (operand `+0x3e`), `O + 0xdc` 1.0, `O + 0xc0` pi/4; the angle `S +
+/// 0x5ee8` plus `A` (`+0x61`), less `W` (`+0x75`) when above `H` (`+0x6b`)
+/// or plus `W` when below `L` (`+0x7f`), goes to `O + 0xc4`; `O + 0xd4`
+/// less the float at `+0x9c`. Returns slot 237's `eax`.
+pub fn turn_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let scale = k(g, 0x4);
+    let s = g.read::<u32>(w(0xd));
+    let o = s + 0x720;
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x1f), o, scale, 6);
+    let t = slot_target(g, w(0x24), 237);
+    let m = g.read::<u32>(w(0x3e));
+    let eax = g.call(t, 0, &[m, 0x8a, 0, o + 0xd0]).eax;
+    g.write::<u32>(o + 0xdc, 0x3f80_0000);
+    g.write::<u32>(o + 0xc0, 0x3f49_0fdb);
+    let mut x = add(g.read::<f32>(s + 0x5ee8), k(g, 0x61));
+    // comiss x, H; jbe: below, equal or unordered
+    if x > k(g, 0x6b) {
+        x = sub(x, k(g, 0x75));
+    } else if k(g, 0x7f) > x {
+        x = add(x, k(g, 0x8c));
+    }
+    let y = sub(g.read::<f32>(o + 0xd4), k(g, 0x9c));
+    g.write::<f32>(o + 0xc4, x);
+    g.write::<f32>(o + 0xd4, y);
+    Ret::eax(eax)
+}
+
+/// [`turn_start`] (180 bytes, 1 overlay).
+pub const TURN_START: Sig = Sig {
+    len: 180,
+    hash: 0x5e2f_5d3b_e03c_2217,
+    calls: &[(0x1f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};

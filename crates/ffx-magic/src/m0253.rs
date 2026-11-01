@@ -92,3 +92,40 @@ pub const PART_SLOTS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The static record's node and its record (0x100018e0, a table entry,
+/// no arguments): [`static_record_node`](crate::o4_small::static_record_node),
+/// then the six words at operands `+0x07`..`+0x39` `[0, 2.0, 0, 0, 0,
+/// 0]`. Returns the node call's `eax`.
+pub fn record_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x1),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    let r = crate::o4_small::static_record_node(g, img, &callee);
+    for (o, v) in [
+        (0x7u32, 0u32),
+        (0x11, 0x4000_0000),
+        (0x1b, 0),
+        (0x25, 0),
+        (0x2f, 0),
+        (0x39, 0),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    Ret::eax(r.eax)
+}
+
+/// [`record_start`] (66 bytes, 1 overlay).
+pub const RECORD_START: Sig = Sig {
+    len: 66,
+    hash: 0x4d2d_9850_3999_26fc,
+    calls: &[(
+        0x1,
+        Callee::Sig(&crate::o4_small::STATIC_RECORD_NODE_0253_48D0),
+    )],
+    imports: &[],
+};

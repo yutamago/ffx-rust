@@ -175,3 +175,36 @@ pub const MARK: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An effect object's set-up (0x100016f0, cdecl `(a)`): `a + 0x100` 0,
+/// `+0x104` the float at `+0x24`, `+0x108`/`+0x10c` 0; slot 440 `(*G_E,
+/// a, 0, 2)` (operand `+0x2b`); `*G_F` (`+0x60`) 0; slot 450 `(a, F)` (`F`
+/// the immediate `+0x53`; the first call's words under it). Returns slot
+/// 450's `eax`.
+pub fn object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    g.write::<u32>(a + 0x100, 0);
+    let k = g.read::<u32>(w(0x24));
+    g.write::<u32>(a + 0x104, k);
+    g.write::<u32>(a + 0x108, 0);
+    g.write::<u32>(a + 0x10c, 0);
+    let e = g.read::<u32>(w(0x2b));
+    let mut s = Pushes::default();
+    s.push_all(&[2, 0, a, e]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x4), 440), fr.ecx);
+    g.write::<u32>(w(0x60), 0);
+    s.push_all(&[w(0x53), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0x4e), 450), fr.ecx).eax)
+}
+
+/// [`object_setup`] (112 bytes, 1 overlay).
+pub const OBJECT_SETUP: Sig = Sig {
+    len: 112,
+    hash: 0xd0fc_82a0_3c32_6df0,
+    calls: &[],
+    imports: &[],
+};

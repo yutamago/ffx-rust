@@ -75,3 +75,33 @@ pub const MODE_SWITCH: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A strip from a static record (0x10006eb0, internal, no arguments):
+/// the static's vtable word (operand `+0x2c`) the immediate `+0x30`;
+/// [`strip_record`] of the local `[A, B, 0, 0, C]` (`ebp - 0x14`; the
+/// immediates `+0x0e`, `+0x15`, `+0x26`). Returns its `eax`.
+pub fn static_strip<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rec = fr.esp.wrapping_sub(0x18);
+    for (i, v) in (0u32..).zip([w(0xe), w(0x15), 0, 0, w(0x26)]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    g.write::<u32>(w(0x2c), w(0x30));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x35),
+        esp: rec.wrapping_sub(4),
+        ecx: rec,
+        eax: 0,
+        ..*fr
+    };
+    strip_record(g, img, &callee)
+}
+
+/// [`static_strip`] (61 bytes, 1 overlay).
+pub const STATIC_STRIP: Sig = Sig {
+    len: 61,
+    hash: 0x37b6_9514_3d7c_4151,
+    calls: &[(0x35, crate::Callee::Sig(&STRIP_RECORD))],
+    imports: &[],
+};
