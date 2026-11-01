@@ -1786,3 +1786,39 @@ fn sprite_fade_nodes() {
         }
     }
 }
+
+/// Row 420: a spline's second derivatives in the three DLLs, for knot
+/// counts 0..7 (every loop run, skipped, and the short systems) and
+/// each component.
+#[test]
+fn spline_moments() {
+    for (dll, rva) in [(432u16, 0x4ef0u32), (434, 0xe0b0), (610, 0x5420)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let (p, x) = (SCRATCH + 0x1000, SCRATCH + 0x400);
+        let (m, h, u) = (SCRATCH + 0x600, SCRATCH + 0x700, SCRATCH + 0x800);
+        for (k, n) in [0u32, 1, 2, 3, 4, 5, 7].into_iter().enumerate() {
+            let k = k as u32;
+            for (i, base) in (0u32..).zip([m, h, u]) {
+                // the rows from one word before (index -1 when n is 0)
+                t.write(base - 0x10, &varied(0x60, k + i));
+            }
+            for i in 0..8u32 {
+                let xi = 0.75 * i as f32 + 0.125 * (i * i) as f32 + k as f32;
+                t.set_u32(x + 4 * i, xi.to_bits());
+                for c in 0..4u32 {
+                    let y = ((i * 7 + c * 3 + k) % 11) as f32 * 0.5 - 2.0;
+                    t.set_u32(p + 0x10 * i + 4 * c, y.to_bits());
+                }
+            }
+            let c = Call {
+                ecx: p,
+                edx: x,
+                ..Call::default()
+            };
+            t.check(f, c, &[m, h, u, k % 4, n], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::spline_moments(g, img, fr))
+            });
+        }
+    }
+}

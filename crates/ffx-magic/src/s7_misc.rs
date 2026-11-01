@@ -2112,3 +2112,88 @@ pub const SPRITE_FADE_NODE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A spline's second derivatives for one component (internal: `ecx` the
+/// points `P` (16 bytes each, the component at word `c`), `edx` the
+/// knots `X`; the stack `(M, H, U, c, n)`: the results `M`, the steps
+/// `H` and the work row `U`, `n` the knot count, `m = n - 1`). The
+/// tridiagonal system solved as the original does, each step one `f32`
+/// operation in its order (`K` the DLL's constant, 2):
+/// - `M[0] = M[m] = 0`; for `i < m`: `H[i] = X[i+1] - X[i]`, `U[i+1] =
+///   (P[i+1] - P[i]) / H[i]`;
+/// - `M[1] = U[2] - U[1]`, `U[1] = (X[2] - X[0]) K`;
+/// - for `j` in `1..m-1`: `r = H[j] / U[j]`, `M[j+1] = (U[j+2] - U[j+1])
+///   - M[j] r`, `U[j+1] = (X[j+2] - X[j]) K - H[j] r`;
+/// - `M[m-1] -= H[m-1] M[m]`, and for `k` from `m - 1` down to 1: `M[k] =
+///   (M[k] - H[k] M[k+1]) / U[k]`.
+///
+/// Returns what the original leaves in `eax`: `&U[1]` after the last
+/// loop ran, else `&U[2]`.
+///
+/// `magic_0432` 0x10004ef0 (437 bytes, `ecx`/`edx`; 3 DLLs).
+pub fn spline_moments<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let k = g.read::<f32>(op(img, fr.at, 0x9f));
+    let (p, x) = (fr.ecx, fr.edx);
+    let [m_, h, u, c, n] = [0, 1, 2, 3, 4].map(|i| fr.arg(g, i));
+    let at = |base: u32, i: u32| base.wrapping_add(i.wrapping_mul(4));
+    let rd = |g: &G, base: u32, i: u32| g.read::<f32>(at(base, i));
+    let m = n.wrapping_sub(1);
+    g.write::<u32>(m_, 0);
+    g.write::<u32>(at(m_, m), 0);
+    let comp = p.wrapping_add(c.wrapping_mul(4));
+    // the original keeps scratch in its argument word `n` (`ebp+0x18`):
+    // `X - U` for the first loop, the second loop's count after
+    let n_word = fr.esp + 0x14;
+    if m.cast_signed() > 0 {
+        g.write::<u32>(n_word, x.wrapping_sub(u));
+        for i in 0..m {
+            let step = sub(rd(g, x, i + 1), rd(g, x, i));
+            g.write::<f32>(at(h, i), step);
+            let pi = |i: u32| comp.wrapping_add(i.wrapping_mul(0x10));
+            let d = sub(g.read::<f32>(pi(i + 1)), g.read::<f32>(pi(i)));
+            g.write::<f32>(at(u, i + 1), div(d, step));
+        }
+    }
+    let v = sub(rd(g, u, 2), rd(g, u, 1));
+    g.write::<f32>(at(m_, 1), v);
+    let v = mul(sub(rd(g, x, 2), rd(g, x, 0)), k);
+    g.write::<f32>(at(u, 1), v);
+    let last = m.wrapping_sub(1);
+    if last.cast_signed() > 1 {
+        // counted down to 0
+        g.write::<u32>(n_word, 0);
+        for j in 1..last {
+            let r = div(rd(g, h, j), rd(g, u, j));
+            let a = sub(rd(g, u, j + 2), rd(g, u, j + 1));
+            let v = sub(a, mul(rd(g, m_, j), r));
+            g.write::<f32>(at(m_, j + 1), v);
+            let a = mul(sub(rd(g, x, j + 2), rd(g, x, j)), k);
+            let v = sub(a, mul(rd(g, h, j), r));
+            g.write::<f32>(at(u, j + 1), v);
+        }
+    }
+    let v = sub(
+        rd(g, m_, m.wrapping_sub(1)),
+        mul(rd(g, h, m.wrapping_sub(1)), rd(g, m_, m)),
+    );
+    g.write::<f32>(at(m_, m.wrapping_sub(1)), v);
+    if last.cast_signed() <= 0 {
+        return at(u, 2);
+    }
+    for i in (1..=last).rev() {
+        let v = div(
+            sub(rd(g, m_, i), mul(rd(g, h, i), rd(g, m_, i + 1))),
+            rd(g, u, i),
+        );
+        g.write::<f32>(at(m_, i), v);
+    }
+    at(u, 1)
+}
+
+/// [`spline_moments`].
+pub const SPLINE_MOMENTS: Sig = Sig {
+    len: 437,
+    hash: 0xa09e_d671_1264_35e8,
+    calls: &[],
+    imports: &[],
+};
