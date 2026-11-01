@@ -1627,6 +1627,7 @@ fn dll_main_writes_only_crt_state() {
         PACKED_SPRITE,
         BASIS_START,
         OVERLAY_SETUP,
+        SCENE_END,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -4405,6 +4406,72 @@ fn fam2_overlay_setup() {
                 t.set_u32(w(&t, o), 0x4000_0000 + c);
             }
             t.check_entry(f, regs(rva, c), &[arg], Eax::Checked);
+        }
+    }
+}
+
+const SCENE_END: &[(u16, u32)] = &[(610, 0xab20), (434, 0x5b90)];
+
+/// `o6_fam_pairs6::scene_end`: one and three actors; the skip flag set
+/// (only the parts) and clear; the flag `*G_F` and the index `*G_I`
+/// letting slots 217/255 run or not; the halfword `*G_H` 0 or not; a held
+/// node or none. Slot 288 answers an empty list (the party and the
+/// others run through no actors).
+#[test]
+fn fam2_scene_end() {
+    for &(n, rva) in SCENE_END {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        registered(&t, rva, "o6 fam pairs6 scene_end");
+        stubs4(&mut t);
+        t.stub(288, |m, a| {
+            m.w32(a[1], 0);
+            0x288
+        });
+        let f = t.at(rva);
+        let early = n == 434;
+        let sh = |o: u32| match (early, o) {
+            (false, _) | (true, ..0x96) => o,
+            (true, 0x96..0x9b) => o + 5,
+            (true, 0x9b..0x15c) => o + 0xf,
+            (true, _) => o + 0xa,
+        };
+        let w = |t: &Twin, o: u32| t.img.word(f + sh(o));
+        let ids = SCRATCH + 0x3000;
+        t.write(ids, &[3, 1, 4, 1, 5, 2, 6, 0]);
+        t.set_u32(w(&t, 0x11), ids);
+        t.set_u32(w(&t, 0x6d), ids);
+        let s = SCRATCH + 0x4000;
+        t.set_u32(w(&t, 0x97), s);
+        let skip_at = s + w(&t, 0x9d);
+        let (node, done) = (SCRATCH + 0x3100, SCRATCH + 0x3200);
+        t.set_u32(w(&t, 0x15d), done);
+        let saved = t.save();
+        // (actors, skip, *G_F, index, *G_H, a held node)
+        let cases = [
+            (1u32, 1u32, 0u32, 3u32, 0u16, false),
+            (3, 0, 0, 3, 0, true),
+            (3, 0, 0, 0x20, 1, false),
+            (2, 0, 1, 3, 0, true),
+            (3, 0, 0, 0xffff_fffe, 2, false),
+        ];
+        for (c, (actors, skip, flag, index, half, held)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            t.set_u32(w(&t, 0x59), actors);
+            t.set_u32(skip_at, skip);
+            t.set_u32(w(&t, 0xb5), flag);
+            t.set_u32(w(&t, 0xc4), index);
+            t.set_u32(w(&t, 0xbc), 0x00bc_0000 + c);
+            t.set_u16(w(&t, 0x10a), half);
+            t.set_u32(w(&t, 0x11b), 0x0011_b000 + c);
+            t.set_u32(w(&t, 0x131), 0x31);
+            rest_node(&mut t, node);
+            t.set_u32(w(&t, 0x140), if held { node } else { 0 });
+            t.set_u32(done, 0x55 + c);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                o6_fam_pairs6::scene_end(g, img, fr)
+            });
         }
     }
 }

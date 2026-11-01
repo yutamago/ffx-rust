@@ -1758,4 +1758,124 @@ pub fn overlay_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(0)
 }
 
+/// A scene's end step (no arguments; a /GS frame, `ebp` = the entry
+/// `esp - 4`; `magic_0610` 0x1000ab20, 374 bytes, and `magic_0434`
+/// 0x10005b90, 384 bytes; family `F0610_1000ab20`):
+/// - slot 384 on the first actor's word (`T[G_IDS[0]]`), slots 25 and 24
+///   `(0x3018, 1 / 0)`; slot 547 on the word of every further actor (1
+///   up to `*G_N`; the code's `-1` case reads `*G_ONE`). `magic_0434`
+///   then registers the parts ([`crate::sa_misc::register_parts`]) and
+///   clears a global;
+/// - unless `*G_S + K` (an offset of the code) is set: the party's
+///   actors run ([`crate::sa_script::each_actor`] with 1); with `*G_F`
+///   0 and the index `*G_I` below 0x20, slots 217 and 255 `(i, &L)`;
+///   slot 211 `(*G_ONE, 0)`; with the halfword `*G_H` 0, slot 213
+///   `(*G_W, 0)`; `*G_SHOWN` = 1 and the others shown
+///   ([`crate::sb_vm::show_others`] with 1); a held node given back
+///   ([`crate::sa_pool::give_back`]) and cleared;
+/// - `magic_0610` registers the parts here; `**G_DONE` = 0.
+///
+/// Returns `*G_DONE`.
+pub fn scene_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // `call rel32` right after the loop (0434: the parts first)
+    let early = img.word(f + 0x96) as u8 == 0xe8;
+    // the code offsets are `0610`'s; `0434`'s are 5 bytes later after its
+    // early call, 15 after the global it clears, 10 after `0610`'s late
+    // call
+    let sh = |o: u32| match (early, o) {
+        (false, _) | (true, ..0x96) => o,
+        (true, 0x96..0x9b) => o + 5,
+        (true, 0x9b..0x15c) => o + 0xf,
+        (true, _) => o + 0xa,
+    };
+    let w = |o: u32| img.word(f + sh(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let slot = |g: &G, n: u32| slot_target(g, w(0x21), n);
+    let word = |g: &G, ids: u32, table: u32, i: u32| {
+        let id = u32::from(g.read::<u8>(g.read::<u32>(w(ids)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * id))
+    };
+    let first = word(g, 0x11, 0x1c, 0);
+    let t = slot(g, 384);
+    // call width: 1
+    let mut eax = g.call(t, 0, &[first]).eax;
+    for (n, o) in [(25u32, 0x33u32), (24, 0x44)] {
+        let t = slot(g, n);
+        // call width: 2
+        eax = g.call(t, 0, &[w(o + 5), disp8(img, f + o)]).eax;
+    }
+    let mut i = 1u32;
+    while i.cast_signed() < g.read::<u32>(w(0x59)).cast_signed() {
+        let v = if i == u32::MAX {
+            g.read::<u32>(w(0x66))
+        } else {
+            word(g, 0x6d, 0x78, i)
+        };
+        let t = slot(g, 547);
+        // call width: 1
+        eax = g.call(t, 0, &[v]).eax;
+        i = i.wrapping_add(1);
+    }
+    let parts = |g: &mut G, at: u32, eax: u32| {
+        crate::sa_misc::register_parts(g, img, img.rel32_target(f + at), eax);
+    };
+    if early {
+        parts(g, 0x97, eax);
+        g.write::<u32>(img.word(f + 0xa2), 0);
+    }
+    let s = g.read::<u32>(w(0x97));
+    if g.read::<u32>(s.wrapping_add(w(0x9d))) == 0 {
+        crate::sa_script::each_actor(
+            g,
+            img,
+            img.rel32_target(f + sh(0xaf)),
+            1,
+            ebp.wrapping_sub(0x20),
+        );
+        let one = g.read::<u32>(w(0xbc));
+        if g.read::<u32>(w(0xb5)) == 0 {
+            let idx = g.read::<u32>(w(0xc4));
+            if idx.cast_signed() < 0x20 {
+                let l = ebp.wrapping_sub(0x14);
+                for n in [217u32, 255] {
+                    let t = slot(g, n);
+                    // call width: 2
+                    g.call(t, 0, &[idx, l]);
+                }
+            }
+        }
+        let t = slot(g, 211);
+        // call width: 2
+        g.call(t, 0, &[one, 0]);
+        if g.read::<u16>(w(0x10a)) == 0 {
+            let x = g.read::<u32>(w(0x11b));
+            let t = slot(g, 213);
+            // call width: 2
+            g.call(t, 0, &[x, 0]);
+        }
+        g.write::<u32>(w(0x131), 1);
+        eax = crate::sb_vm::show_others(
+            g,
+            img,
+            img.rel32_target(f + sh(0x13a)),
+            ebp.wrapping_sub(0x1c),
+            1,
+        );
+        let node = g.read::<u32>(w(0x140));
+        if node != 0 {
+            eax = crate::sa_pool::give_back(g, img, img.rel32_target(f + sh(0x149)), node);
+            g.write::<u32>(w(0x14f), 0);
+        }
+    } else {
+        eax = s;
+    }
+    if !early {
+        parts(g, 0x158, eax);
+    }
+    let done = g.read::<u32>(w(0x15d));
+    g.write::<u32>(done, 0);
+    Ret::eax(done)
+}
+
 include!("o6_fam_pairs6_table.rs.in");

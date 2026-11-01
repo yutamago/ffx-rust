@@ -314,3 +314,35 @@ pub const OVERLAY_SETUP_0253_1000: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0610_1000ab20 (0610@ab20)
+
+/// [`scene_end`] in `magic_0610` (0x1000ab20, 374 bytes; row own:3306).
+pub const SCENE_END_0610_AB20: Sig = Sig {
+    len: 374,
+    hash: 0xd90e_2752_fe4f_c4f0,
+    calls: &[
+        (0xaf, Callee::Sig(&crate::sa_script::EACH_ACTOR)),
+        (0x13a, Callee::Sig(&crate::sb_vm::SHOW_OTHERS)),
+        (0x149, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x158, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (0x16e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0610_1000ab20 (0434@5b90)
+
+/// [`scene_end`] in `magic_0434` (0x10005b90, 384 bytes; row own:2411).
+pub const SCENE_END_0434_5B90: Sig = Sig {
+    len: 384,
+    hash: 0x2907_2d05_9af0_af34,
+    calls: &[
+        (0x97, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (0xbe, Callee::Sig(&crate::sa_script::EACH_ACTOR)),
+        (0x149, Callee::Sig(&crate::sb_vm::SHOW_OTHERS)),
+        (0x158, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x178, Callee::Any),
+    ],
+    imports: &[],
+};
