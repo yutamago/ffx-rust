@@ -1106,6 +1106,8 @@ ports! {
     "r11 launches (b) 0535" => r11_misc::LAUNCHES_P048_0535, r11_misc::launches_p048;
     "r11 records start 0393" => r11_misc::RECORDS_START_0393, r11_misc::records_start_p063;
     "r11 records start 0450" => r11_misc::RECORDS_START_0450, r11_misc::records_start_p063;
+    "r11 task step 0064" => r11_misc::TASK_STEP_0064, r11_misc::task_step_0064;
+    "r11 task step 0052" => r11_misc::TASK_STEP_0052, r11_misc::task_step_0064;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0481 burst frame" => m0481::BURST_FRAME, m0481::burst_frame;

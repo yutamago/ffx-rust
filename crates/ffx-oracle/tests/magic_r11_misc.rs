@@ -539,3 +539,96 @@ fn scene_ctor_p030() {
         }
     }
 }
+
+/// `magic_0064` 0x10002920 (`r11_misc::task_step_0064`): every slot
+/// answers its number; the motion done or waiting; mode 1 with the delay
+/// running, reaching 0 (the actor's model index below 0x20 or not, `G`
+/// set or not) and out (the counter to 4, to 0x46); mode 0 with the
+/// second delay reaching 0 and out; the counter past 0x64 with mode 1 and
+/// not.
+#[test]
+fn task_step_0064() {
+    task_step_in(64, 0x2920);
+}
+
+/// `magic_0052` 0x10001390 (the same step with `*X` and slot 594 before
+/// the model reset): as `magic_0064`'s, then the counter past 0x64 with
+/// `*X` 0, with slot 594 busy, and with both clear.
+#[test]
+fn task_step_0052() {
+    task_step_in(52, 0x1390);
+}
+
+fn task_step_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    for s in 0..1024u32 {
+        t.stub(s, move |_, _| (s << 20) | 5);
+    }
+    // the float slots the arc and the clock light read
+    t.stub_st0(333, |_, _| 0.75);
+    t.stub_st0(364, |_, _| 2.0);
+    t.stub_st0(16, |_, _| 1.5);
+    let motion = t.img.rel32_target(f + 0x05);
+    let done = t.img.word(motion + 0x02);
+    let wait = t.img.word(motion + 0x11);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(op(&t, 0x37), sel);
+    // junk next to the actor byte
+    t.set_u8(sel + 1, 0x40);
+    for i in 0..0x40 {
+        t.set_u32(op(&t, 0xe1) + 4 * i, 0x00c0_0000 + i);
+    }
+    t.set_u32(op(&t, 0x99), 0x0099_0099);
+    let task = SCRATCH + 0x900;
+    let node = SCRATCH + 0x980;
+    // (mode M, delay C, G, byte, counter N, motion done r); the motion
+    // waits (its wait word 5) when not done
+    for (mode, c, g, b, n, r) in [
+        (1u32, 2u32, 0u32, 3u8, 0u32, 0u32),
+        (1, 1, 0, 3, 0x70, 1),
+        (1, 1, 1, 3, 0, 0),
+        (1, 1, 0, 0x30, 0, 0),
+        (1, 0, 0, 3, 3, 1),
+        (1, 0, 0, 3, 0x10, 0),
+        (1, 0, 1, 3, 0x45, 0),
+        (1, 0, 0, 3, 0x45, 0),
+        (1, 0, 0, 0x30, 0x45, 0),
+        (0, 1, 0, 3, 0x70, 1),
+        (0, 2, 0, 3, 0x70, 1),
+        (0, 0, 0, 3, 0, 1),
+        (2, 1, 0, 3, 0x70, 1),
+        (1, 1, 0, 0x20, 0, 0),
+        (1, 0, 0, 3, 0xe, 0),
+        (1, 0, 0, 3, 0x63, 1),
+    ] {
+        t.set_u32(op(&t, 0x0b), mode);
+        t.set_u32(op(&t, 0x1a), c);
+        t.set_u32(op(&t, 0x31), g);
+        t.set_u8(sel, b);
+        t.set_u32(op(&t, 0x6a), n);
+        t.set_u32(done, r);
+        t.set_u32(wait, 5);
+        t.write(task, &[0x5e; 0x20]);
+        t.set_u32(task + 8, node);
+        t.write(node, &[0x5f; 0x20]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    if dll == 52 {
+        let busy = SCRATCH + 0xa0;
+        t.stub(594, move |m, _| m.r32(busy));
+        for (x, b) in [(0u32, 0u32), (1, 7), (1, 0)] {
+            t.set_u32(op(&t, 0x0b), 1);
+            t.set_u32(op(&t, 0x1a), 0);
+            t.set_u32(op(&t, 0x6a), 0x70);
+            t.set_u32(done, 1);
+            t.set_u32(op(&t, 0x14d), x);
+            t.set_u32(busy, b);
+            t.write(task, &[0x5e; 0x20]);
+            t.set_u32(task + 8, node);
+            t.write(node, &[0x5f; 0x20]);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}

@@ -1419,3 +1419,176 @@ scene_ctor_p030_copies! {
     SCENE_CTOR_0150, 0x25aa_41a9_5c71_15ab, "`magic_0150` 0x1000b720";
     SCENE_CTOR_0603, 0x2eeb_05f6_0af8_194f, "`magic_0603` 0x1000b650";
 }
+
+/// The task step of `magic_0064` (0x10002920, 402 bytes, cdecl `(task)`):
+/// the motion advances ([`motion_step`](crate::s3_motion::motion_step),
+/// `r`); in mode 1 (`*M` `+0x0b`) a delay `*C` (`+0x1a`) runs down and at
+/// 0 shows the actor (slot 530 `(byte, 0)` for a model index below 0x20
+/// with `*G` (`+0x31`) 0, else slot 249 `(CHR[byte], 0)`), the clock
+/// light ([`clock_light`](crate::s5_misc::clock_light)) running while
+/// the delay does; past it the counter `*N` (`+0x6a`) goes up, from 16
+/// on the arc carried ([`arc_carry`](crate::s5_misc::arc_carry)), and at
+/// 0x46 slot 239 `(*A, -5, 0)` and the actor shown again (slot 530
+/// `(byte, -1)`, or slot 249 `(CHR[byte], 0x100 with *G set, else -1)`)
+/// before the clock light; in other modes a second delay `*D` (`+0xfd`)
+/// runs down to slot 239 `(*A, -5, 0)`, or `*N` = 0x65 once it is out.
+/// Then with `r` 1 and `*N` above 0x64: in mode 1 the model reset
+/// ([`reset_model`](crate::m0052::reset_model)) and slots 6 `(chr, 0)`
+/// and 547 `(chr)`; the task's `+0x14` = 3 and its node's `+0x10` the
+/// next step (`+0x18b`). Returns the last callee's `eax` as the original
+/// leaves it.
+#[allow(clippy::too_many_lines)]
+pub fn task_step_0064<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = fr.esp;
+    // push ebp; push esi: the callees' frames
+    let inner = Frame {
+        esp: e - 0xc,
+        ..*fr
+    };
+    let r = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x05));
+    let mut eax;
+    let byte_of = |g: &G, p: u32| u32::from(g.read::<u8>(g.read::<u32>(w(p))));
+    let show =
+        |g: &mut G, (gop, p, t530, chr, t249): (u32, u32, u32, u32, u32), w530: u32, w249: u32| {
+            let b = byte_of(g, p);
+            let mut s = crate::pushes::Pushes::default();
+            if g.read::<u32>(w(gop)) == 0 && b < 0x20 {
+                s.push_all(&[w530, b]);
+                // call width: 12 (Pushes caps the words at 12)
+                s.call(g, slot_target(g, w(t530), 0x848 / 4), 0).eax
+            } else {
+                let c = g.read::<u32>(w(chr).wrapping_add(4 * b));
+                let word = if g.read::<u32>(w(gop)) == 0 {
+                    w530
+                } else {
+                    w249
+                };
+                s.push_all(&[word, c]);
+                // call width: 12 (Pushes caps the words at 12)
+                s.call(g, slot_target(g, w(t249), 0x3e4 / 4), 0).eax
+            }
+        };
+    let clock = |g: &mut G, call: u32| {
+        let fr2 = Frame {
+            at: img.rel32_target(f + call),
+            ..inner
+        };
+        crate::s5_misc::clock_light(g, img, &fr2).eax
+    };
+    let n_at = w(0x6a);
+    if g.read::<u32>(w(0x0b)) == 1 {
+        let c = g.read::<u32>(w(0x1a));
+        if c.cast_signed() > 0 {
+            let c = c.wrapping_sub(1);
+            g.write::<u32>(w(0x25), c);
+            if c == 0 {
+                show(g, (0x31, 0x37, 0x46, 0xe1, 0xe6), 0, 0);
+            }
+            eax = clock(g, 0xf6);
+        } else {
+            let n = g.read::<u32>(n_at).wrapping_add(1);
+            g.write::<u32>(w(0x70), n);
+            if n.cast_signed() > 0xf {
+                let fr2 = Frame {
+                    at: img.rel32_target(f + 0x7a),
+                    ..inner
+                };
+                crate::s5_misc::arc_carry(g, img, &fr2);
+            }
+            if g.read::<u32>(w(0x7f)) == 0x46 {
+                let t = g.read::<u32>(w(0x89));
+                let mut s = crate::pushes::Pushes::default();
+                s.push_all(&[0, 0xffff_fffb, g.read::<u32>(w(0x99))]);
+                // call width: 12 (Pushes caps the words at 12)
+                s.call(g, g.read::<u32>(t + 0x3bc), 0);
+                show(g, (0xad, 0xa1, 0xbf, 0xe1, 0xe6), u32::MAX, w(0xd6));
+            }
+            eax = clock(g, 0xf6);
+        }
+    } else {
+        let d = g.read::<u32>(w(0xfd));
+        if d.cast_signed() > 0 {
+            let d = d.wrapping_sub(1);
+            g.write::<u32>(w(0x107), d);
+            eax = d;
+            if d == 0 {
+                let t = g.read::<u32>(w(0x10e));
+                let mut s = crate::pushes::Pushes::default();
+                s.push_all(&[0, 0xffff_fffb, g.read::<u32>(w(0x11e))]);
+                // call width: 12 (Pushes caps the words at 12)
+                eax = s.call(g, g.read::<u32>(t + 0x3bc), 0).eax;
+            }
+        } else {
+            g.write::<u32>(w(0x12b), w(0x12f));
+            eax = d;
+        }
+    }
+    if r != 1 || g.read::<u32>(w(0x13a)).cast_signed() <= 0x64 {
+        return Ret::eax(eax);
+    }
+    // `magic_0052`'s copy: `*N` = 0x64, and on only with `*X` 1 and slot
+    // 594 `()` 0; the rest 0x23 bytes later
+    let d = if img.word(f + 0x141).to_le_bytes()[0] == 0xc7 {
+        g.write::<u32>(w(0x143), w(0x147));
+        if g.read::<u32>(w(0x14d)) != 1 {
+            return Ret::eax(eax);
+        }
+        let busy = g.call(slot_target(g, w(0x154), 0x948 / 4), 0, &[]).eax;
+        if busy != 0 {
+            return Ret::eax(busy);
+        }
+        0x23
+    } else {
+        0
+    };
+    let w2 = |o: u32| img.word(f + o + d);
+    if g.read::<u32>(w2(0x143)) == 1 {
+        crate::m0052::reset_model(g, img, img.rel32_target(f + 0x14a + d));
+        let chr = g.read::<u32>(w2(0x15b).wrapping_add(4 * byte_of(g, 0x14f + d)));
+        let mut s = crate::pushes::Pushes::default();
+        s.push_all(&[0, chr]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w2(0x160), 0x18 / 4), 0);
+        s.push(chr);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w2(0x16b), 0x88c / 4), 0);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let node = g.read::<u32>(task + 8);
+    g.write::<u32>(node + 0x10, w2(0x18b));
+    Ret::eax(node)
+}
+
+/// [`task_step_0064`] in `magic_0052` (0x10001390, 437 bytes: the extra
+/// test before the model reset).
+pub const TASK_STEP_0052: Sig = Sig {
+    len: 437,
+    hash: 0xbf47_5e10_49f4_0250,
+    calls: &[
+        (0x05, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x59, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0x7a, Callee::Sig(&crate::s5_misc::ARC_CARRY)),
+        (0xcf, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0xf6, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0x16d, Callee::Sig(&crate::m0052::RESET_MODEL)),
+    ],
+    imports: &[],
+};
+
+/// [`task_step_0064`] (`magic_0064` 0x10002920).
+pub const TASK_STEP_0064: Sig = Sig {
+    len: 402,
+    hash: 0x3242_2892_3d17_f794,
+    calls: &[
+        (0x05, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x59, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0x7a, Callee::Sig(&crate::s5_misc::ARC_CARRY)),
+        (0xcf, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0xf6, Callee::Sig(&crate::s5_misc::CLOCK_LIGHT)),
+        (0x14a, Callee::Sig(&crate::m0052::RESET_MODEL)),
+    ],
+    imports: &[],
+};
