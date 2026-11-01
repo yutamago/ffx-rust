@@ -3,6 +3,7 @@
 //! FMOD audio stream set-up (`PVideoPlaybackWin32_AudioInit`).
 
 /// The originals over game memory.
+#[allow(clippy::many_single_char_names)] // the original's registers and slots
 pub mod bridge {
     use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
@@ -931,6 +932,323 @@ pub mod bridge {
                 }
             }
         }
+    }
+
+    /// What `Gui_MovieDebugProc` calls besides [`nameinput_proc`]'s
+    /// callees: `Gu_WindowControlSetText` itself (the Dolby button),
+    /// `Gui_AddrOfGlobal025d5fa0_00941820()` (the browsed path),
+    /// `MsGetSaveMenu()`, `AtelSetDolby(on)`, the movie player's
+    /// `movie_stop_prog()`, `movie_start_debug_name(sz, dat, 0)`,
+    /// `movie_play_prog()`, `movie_sync_prog()`, `SndGetNowPlayMusic()`,
+    /// `SndMusicStop(music)`, the CRT's `report_rangecheckfailure()`.
+    pub const WINDOW_SET_TEXT: u32 = 0x0084_a710;
+    pub const PATH_ADDR: u32 = 0x0094_1820;
+    pub const GET_SAVE_MENU: u32 = 0x0078_5290;
+    pub const SET_DOLBY: u32 = 0x0086_f9e0;
+    pub const MOVIE_STOP: u32 = 0x0076_f090;
+    pub const MOVIE_START_NAME: u32 = 0x0076_f070;
+    pub const MOVIE_PLAY: u32 = 0x0076_f040;
+    pub const MOVIE_SYNC: u32 = 0x0076_f0a0;
+    pub const SND_NOW_MUSIC: u32 = 0x0088_63f0;
+    pub const SND_MUSIC_STOP: u32 = 0x0088_6a60;
+    pub const RANGECHECK_FAILURE: u32 = 0x0094_9b02;
+    /// The movie window's flags (open `0x0193c151`, playing
+    /// `0x0193c144`), its default path (`0x00c611e0`) and empty row text
+    /// (`0x00c611e8`), the Dolby button's two texts, its title, the
+    /// assertion's file, the two names it prints.
+    pub const MOVIE_OPEN: u32 = 0x0193_c151;
+    pub const MOVIE_PLAYING: u32 = 0x0193_c144;
+    pub const MOVIE_DEFAULT: u32 = 0x00c6_11e0;
+    pub const MOVIE_EMPTY: u32 = 0x00c6_11e8;
+    pub const MOVIE_DOLBY_TEXTS: [u32; 2] = [0x00b5_d1e4, 0x00b5_c9dc];
+    pub const MOVIE_TITLE: u32 = 0x00b6_8f40;
+    pub const MOVIE_ERR_FILE: u32 = 0x00b6_8f10;
+    pub const MOVIE_SZ_MSG: u32 = 0x00b6_8f64;
+    pub const MOVIE_DAT_MSG: u32 = 0x00b6_8f6c;
+    /// `Gui_MovieDebugProc`'s frame: the `sprintf` buffer at
+    /// `ebp - 0x404`, the `.sz` and `.dat` names at `ebp - 0x604` and
+    /// `ebp - 0x204`.
+    pub const MOVIE_FRAME: u32 = 0x604;
+
+    /// The sixteen list rows from the scroll position `+0x21c`, as
+    /// [`name_rows`].
+    fn movie_rows(h: &mut impl Host, window: u32, p: u32) {
+        let first = wi(&*h, p, 0x21c);
+        let mut row = 0_u32;
+        let mut idx = first;
+        let mut off = first.cast_unsigned() << 9;
+        while idx < wi(&*h, p, 0x218) {
+            let names: u32 = h.read(p.wrapping_add(0x214));
+            c(
+                h,
+                CONTROL_SET_TEXT,
+                &[window, row + 0x103, names.wrapping_add(off)],
+            );
+            row += 1;
+            idx = idx.wrapping_add(1);
+            off = off.wrapping_add(0x200);
+            if row >= 0x10 {
+                return;
+            }
+        }
+        let blank = h.rebase(NAME_BLANK);
+        while row < 0x10 {
+            c(h, CONTROL_SET_TEXT, &[window, row + 0x103, blank]);
+            row += 1;
+        }
+    }
+
+    /// The browsed path at `path` (its length at `NAME_PATH_LEN`) after
+    /// a directory row `name` failed to open: a leading '.' climbs to the
+    /// slash before the last and cuts there, else the name and a '/' are
+    /// appended.
+    fn browse(h: &mut impl Host, path: u32, name: u32) {
+        let len_at = h.rebase(NAME_PATH_LEN);
+        let first: u8 = h.read(name);
+        let mut i: i32 = h.read::<u32>(len_at).cast_signed();
+        if first == b'.' {
+            while i >= 0 && h.read::<u8>(path.wrapping_add_signed(i)) != b'/' {
+                i -= 1;
+            }
+            i -= 1;
+            while i >= 0 && h.read::<u8>(path.wrapping_add_signed(i)) != b'/' {
+                i -= 1;
+            }
+            i += 1;
+            h.write(path.wrapping_add_signed(i), 0_u8);
+            h.write(len_at, i);
+        } else {
+            h.write(path.wrapping_add_signed(i), first);
+            let mut s = name;
+            while h.read::<u8>(s) != 0 {
+                i = i.wrapping_add(1);
+                s = s.wrapping_add(1);
+                h.write(len_at, i);
+                let b: u8 = h.read(s);
+                h.write(path.wrapping_add_signed(i), b);
+            }
+            h.write(path.wrapping_add_signed(i), b'/');
+            i = i.wrapping_add(1);
+            h.write(len_at, i);
+            h.write(path.wrapping_add_signed(i), 0_u8);
+        }
+    }
+
+    /// `Gui_MovieDebugProc(window, msg, param)` (`0x0093dc00`) -> 0: the
+    /// "MOVIE VIEW" debug window (data `p` from `Gu_WindowGetArg`, laid
+    /// out as the name window's). 0x8001 builds it (the Dolby toggle, up
+    /// and down, sixteen rows, the path reset to `0x00c611e0`), 0x8003
+    /// frees it, 0x8011 drops the playing flag once `movie_sync_prog`
+    /// says 1; 0x8005 scrolls (0x113/0x114) unless a movie plays; 0x8006
+    /// 0x115 flips Dolby, a row (0x103..0x112) opens the file: a
+    /// `.sz`/`.dat` name plays the pair (`movie_start_debug_name`, the
+    /// music stopped), anything else is shown; a row that can't be
+    /// opened is browsed into as a directory.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn movie_debug_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let p = c(h, WINDOW_GET_ARG, &[window]);
+        let at = |o: u32| p.wrapping_add(o);
+        let playing = h.rebase(MOVIE_PLAYING);
+        match msg {
+            0x8001 => {
+                let open = h.rebase(MOVIE_OPEN);
+                h.write(open, 1_u8);
+                let p = c(h, USER_MALLOC, &[0x224]);
+                if p == 0 {
+                    let (e, f) = (h.rebase(NAME_ERR_EXPR), h.rebase(MOVIE_ERR_FILE));
+                    c(h, MOVIE_ERR, &[e, f, 0x65]);
+                }
+                c(h, MEMSET, &[p, 0, 0x224]);
+                c(h, WINDOW_SET_ARG, &[window, p]);
+                let title = h.rebase(MOVIE_TITLE);
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                let menu = c(h, GET_SAVE_MENU, &[]);
+                let on = h.read::<u8>(menu) & 0x80 != 0;
+                let text = h.rebase(MOVIE_DOLBY_TEXTS[usize::from(on)]);
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x115, text, 0x14, 0, 0x30, 10],
+                );
+                let (up, down) = (h.rebase(NAME_UP), h.rebase(NAME_DOWN));
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x113, up, 0xc4, 0x10, 0x10, 10],
+                );
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x114, down, 0xc4, 0x30, 0x10, 10],
+                );
+                let path = c(h, PATH_ADDR, &[]);
+                let def = h.rebase(MOVIE_DEFAULT);
+                let mut k = 0_u32;
+                loop {
+                    let b: u8 = h.read(def.wrapping_add(k));
+                    h.write(path.wrapping_add(k), b);
+                    if b == 0 {
+                        break;
+                    }
+                    k = k.wrapping_add(1);
+                }
+                h.write(p.wrapping_add(0x200), 0_u32);
+                h.write(p.wrapping_add(0x220), 0x1c_u32);
+                let len_at = h.rebase(NAME_PATH_LEN);
+                h.write(len_at, 1_u32);
+                h.write(p.wrapping_add(0x204), 0_u32);
+                h.write(p.wrapping_add(0x214), 0_u32);
+                let empty = h.rebase(MOVIE_EMPTY);
+                for (id, y) in (0x103..).zip((0xe..=0x95).step_by(9)) {
+                    c(h, WINDOW_ADD_BUTTON, &[window, id, empty, 8, y, 0xb4, 8]);
+                }
+                c(h, SET_PATH_NAME, &[window, p, 0x112, 1]);
+            }
+            0x8003 => {
+                let list: u32 = h.read(at(0x214));
+                if list != 0 {
+                    c(h, USER_FREE, &[list]);
+                }
+                c(h, USER_FREE, &[p]);
+                let open = h.rebase(MOVIE_OPEN);
+                h.write(open, 0_u8);
+            }
+            0x8005 => {
+                if (param == 0x113 || param == 0x114) && h.read::<u8>(playing) == 0 {
+                    let first = wi(&*h, p, 0x21c);
+                    if param == 0x113 {
+                        if first > 0 {
+                            h.write(at(0x21c), first - 1);
+                        }
+                    } else if first.wrapping_add(0x10) < wi(&*h, p, 0x218) {
+                        h.write(at(0x21c), first.wrapping_add(1));
+                    }
+                    movie_rows(h, window, p);
+                }
+            }
+            0x8006 => match param.cast_signed() {
+                0x115 => {
+                    let menu = c(h, GET_SAVE_MENU, &[]);
+                    let on = h.read::<u8>(menu) & 0x80 == 0;
+                    c(h, SET_DOLBY, &[u32::from(on)]);
+                    let text = h.rebase(MOVIE_DOLBY_TEXTS[usize::from(on)]);
+                    c(h, WINDOW_SET_TEXT, &[window, 0x115, text]);
+                }
+                0x103..=0x112 => {
+                    if h.read::<u8>(playing) != 0 {
+                        return 0;
+                    }
+                    let k = param.wrapping_sub(0x103).wrapping_add(h.read(at(0x21c)));
+                    if k.cast_signed() >= wi(&*h, p, 0x218) {
+                        return 0;
+                    }
+                    let names: u32 = h.read(at(0x214));
+                    let name = (k << 9).wrapping_add(names);
+                    if name == 0 {
+                        return 0;
+                    }
+                    movie_open_row(h, ebp, window, p, name);
+                }
+                _ => {}
+            },
+            0x8011 if h.read::<u8>(playing) != 0 => {
+                let r = c(h, MOVIE_SYNC, &[]);
+                let keep: u8 = if r == 1 { 0 } else { 0xff };
+                let v: u8 = h.read(playing);
+                h.write(playing, v & keep);
+            }
+            _ => {}
+        }
+        0
+    }
+
+    /// `Gui_MovieDebugProc`'s row `name`: opened, played when it is a
+    /// `.sz`/`.dat` pair, or browsed into; the text it leaves in the
+    /// window's name with the cursor at its end.
+    fn movie_open_row(h: &mut impl Host, ebp: u32, window: u32, p: u32, name: u32) {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let buf = fr(0x404);
+        c(h, MOVIE_STOP, &[]);
+        let m = h.rebase(NAME_PICK_MSG);
+        c(h, DBG_PRINTF, &[m, name]);
+        let path = c(h, PATH_ADDR, &[]);
+        let f = h.rebase(NAME_HOST_FMT);
+        sprintf(h, &[buf, f, path, name]);
+        let fd = c(h, SCE_OPEN, &[buf, 1]);
+        if fd.cast_signed() < 0 {
+            browse(h, path, name);
+            c(h, SET_PATH_NAME, &[window, p, 0x112, 1]);
+            let f = h.rebase(NAME_NAME_FMT);
+            sprintf(h, &[buf, f, path.wrapping_add(0x11)]);
+        } else {
+            c(h, SCE_CLOSE, &[fd]);
+            let (sz, dat) = (fr(0x604), fr(0x204));
+            // both copies of the text
+            let mut n = 0_u32;
+            loop {
+                let b: u8 = h.read(buf.wrapping_add(n));
+                h.write(sz.wrapping_add(n), b);
+                h.write(dat.wrapping_add(n), b);
+                if b == 0 {
+                    break;
+                }
+                n += 1;
+            }
+            // back to the last '.' (or '/', or the start)
+            let mut e = n.cast_signed();
+            if e != 0 {
+                e -= 1;
+                while e > 0 {
+                    let b: u8 = h.read(dat.wrapping_add_signed(e));
+                    if b == b'/' || b == b'.' {
+                        break;
+                    }
+                    e -= 1;
+                }
+            }
+            let dotted = n == 0 || bi(&*h, dat, e) == b'.';
+            let ext = dotted
+                && ((bi(&*h, dat, e + 1) == b's'
+                    && bi(&*h, dat, e + 2) == b'z'
+                    && bi(&*h, dat, e + 3) == 0)
+                    || (bi(&*h, dat, e + 1) == b'd'
+                        && bi(&*h, dat, e + 2) == b'a'
+                        && bi(&*h, dat, e + 3) == b't'
+                        && bi(&*h, dat, e + 4) == 0));
+            if ext {
+                h.write(dat.wrapping_add_signed(e + 2), b'a');
+                h.write(dat.wrapping_add_signed(e + 1), b'd');
+                h.write(dat.wrapping_add_signed(e + 3), b't');
+                if e.wrapping_add(4).cast_unsigned() >= 0x200 {
+                    c(h, RANGECHECK_FAILURE, &[]);
+                    return;
+                }
+                h.write(sz.wrapping_add_signed(e + 1), 0x7a73_u16);
+                h.write(dat.wrapping_add_signed(e + 4), 0_u8);
+                if e.wrapping_add(3).cast_unsigned() >= 0x200 {
+                    c(h, RANGECHECK_FAILURE, &[]);
+                    return;
+                }
+                h.write(sz.wrapping_add_signed(e + 3), 0_u8);
+                h.write(h.rebase(MOVIE_PLAYING), 1_u8);
+                let (ms, md) = (h.rebase(MOVIE_SZ_MSG), h.rebase(MOVIE_DAT_MSG));
+                c(h, DBG_PRINTF, &[ms, sz]);
+                c(h, DBG_PRINTF, &[md, dat]);
+                let music = c(h, SND_NOW_MUSIC, &[]);
+                c(h, SND_MUSIC_STOP, &[music]);
+                c(h, MOVIE_START_NAME, &[sz, dat, 0]);
+                c(h, MOVIE_PLAY, &[]);
+            }
+        }
+        c(h, STRING_COPY, &[p, buf]);
+        h.write(p.wrapping_add(0x200), 0_u32);
+        let mut n = 0_u32;
+        while h.read::<u8>(buf.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+            h.write(p.wrapping_add(0x200), n);
+        }
+        let cur: u32 = h.read(p.wrapping_add(0x200));
+        h.write(p.wrapping_add(0x200), cur.wrapping_sub(5));
     }
 
     #[cfg(test)]

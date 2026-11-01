@@ -8054,3 +8054,129 @@ fn l8_gui_nameinput_proc() {
         t.skip = 0;
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_gui_movie_debug_proc() {
+    // every message: built (Dolby on and off), freed with and without a
+    // list, synced (1 or not, playing or not); scrolled at both ends and
+    // while playing; Dolby flipped; a row past the list, a file (.sz,
+    // .dat, other extensions, no dot, a dot in the directory, empty) or
+    // a directory entered or climbed
+    Twins::each(|t| {
+        let mut rng = Rng(0x0093_dc00);
+        let window = 0x00ab_d000;
+        for case in 0..800_u32 {
+            t.reset();
+            t.skip = 4;
+            let p = t.zeros(0x240);
+            let n_names = rng.below(24);
+            let list = if rng.chance(5) {
+                0
+            } else {
+                t.zeros(0x200 * 24)
+            };
+            if list != 0 {
+                for k in 0..n_names {
+                    let first = if rng.chance(3) { b'.' } else { b'm' };
+                    t.write(list + 0x200 * k, &[first, b'v', b'a' + k as u8, 0]);
+                }
+            }
+            t.w32(p + 0x214, list);
+            t.w32(p + 0x218, if list == 0 { 0 } else { n_names });
+            // sometimes exactly sixteen rows before the end
+            let first = if rng.chance(3) {
+                n_names.saturating_sub(16)
+            } else {
+                rng.below(10)
+            };
+            t.w32(p + 0x21c, first);
+            t.w32(p + 0x220, rng.below(0x80));
+            let fresh = t.zeros(0x240);
+            let menu = t.words(&[rng.next()]);
+            let path = t.zeros(0x80);
+            let pb: &[u8] = [&b"host:/mv/aa/"[..], b"x/", b"/"][rng.below(3) as usize];
+            t.write(path, pb);
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, p),
+                (l8u::USER_MALLOC, false, 1, 0, fresh),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::CONTROL_SET_TEXT, false, 3, 0, 0x15),
+                (l8u::SET_PATH_NAME, false, 4, 0, 0x16),
+                (l8u::STRING_COPY, false, 2, 0, 0x17),
+                (l8u::USER_FREE, false, 1, 0, 0x1b),
+                (l8u::DBG_PRINTF, false, 2, 0, 0x1c),
+                (l8u::SCE_CLOSE, false, 1, 0, 0x1d),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x1e),
+                (l8u::PATH_ADDR, false, 0, 0, path),
+                (l8u::GET_SAVE_MENU, false, 0, 0, menu),
+                (l8u::SET_DOLBY, false, 1, 0, 0x1f),
+                (l8u::MOVIE_STOP, false, 0, 0, 0x20),
+                (l8u::MOVIE_START_NAME, false, 3, 0, 0x21),
+                (l8u::MOVIE_PLAY, false, 0, 0, 0x22),
+                (l8u::MOVIE_SYNC, false, 0, 0, rng.below(3)),
+                (l8u::SND_NOW_MUSIC, false, 0, 0, 0x23),
+                (l8u::SND_MUSIC_STOP, false, 1, 0, 0x24),
+            ]);
+            let fd = [3, 0, 0xffff_ffff][rng.below(3) as usize];
+            t.stub(l8u::SCE_OPEN, false, 2, 0, fd);
+            let texts: [&[u8]; 11] = [
+                b"host:/mv/g.datx",
+                b"host:/mv/h.szq",
+                b"host:/mv/a.sz",
+                b"host:/mv/b.dat",
+                b"host:/mv/c.da",
+                b"host:/mv/d.szz",
+                b"host:/m.v/e",
+                b"host:/mv/f.",
+                b"",
+                b".sz",
+                b"x.dat",
+            ];
+            let text = texts[rng.below(11) as usize];
+            let mut s = text.to_vec();
+            s.push(0);
+            let src = t.alloc(&s);
+            let printer = t.stub_code(0x5f5f, false, 3, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(src, s.len() as u32);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let len = match rng.below(4) {
+                0 => 0,
+                1 => (-1_i32).cast_unsigned(),
+                _ => pb.len() as u32,
+            };
+            t.patch(t.rebase(l8u::NAME_PATH_LEN), &len.to_le_bytes());
+            t.patch(t.rebase(l8u::MOVIE_PLAYING), &[u8::from(rng.chance(4))]);
+            t.patch(t.rebase(l8u::MOVIE_OPEN), &[rng.next() as u8]);
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => (0x8003, 0),
+                2 => (0x8011, 0),
+                3 => (0x8005, 0x113 + rng.below(2)),
+                4 | 5 => (0x8006, 0x103 + rng.below(0x10)),
+                6 => (0x8006, [0x115, 0x113, 0x102, 0x116][rng.below(4) as usize]),
+                _ => (
+                    [0x8002, 0x8005, 0x7fff, 0x8012][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Gui_MovieDebugProc",
+                0x0093_dc00,
+                Conv::Cdecl,
+                &args,
+                l8u::MOVIE_FRAME,
+                |g, ebp| Out::U32(l8u::movie_debug_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}

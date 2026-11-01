@@ -1288,4 +1288,11 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::NAME_FRAME;
         ffx_pcui::l8_pcui::bridge::nameinput_proc(&mut mem(), ebp, window, msg, param)
     }
+    /// `(window, msg, param)` -> 0: the "MOVIE VIEW" debug window (its
+    /// `sprintf` buffer and the `.sz`/`.dat` names in a frame).
+    Gui_MovieDebugProc @ 0x0093_dc00 => extern "C" fn gui_movie_debug_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::MOVIE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::MOVIE_FRAME;
+        ffx_pcui::l8_pcui::bridge::movie_debug_proc(&mut mem(), ebp, window, msg, param)
+    }
 }
