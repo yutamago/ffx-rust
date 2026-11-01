@@ -194,7 +194,8 @@ fn refresh() {
             t.set_u32(x + 8, parent);
         }
         t.set_u32(cur, node);
-        t.set_u32(cur + 4, 0x3700_5a5a);
+        // the cursor's mode byte (`+5`) the DLL's 0x37
+        t.set_u32(cur + 4, 0x5a5a_375a);
         t.check(at, Call::this(cur), &[], Eax::Checked, |g, img, fr| {
             m0573::refresh(g, img, fr)
         });
@@ -237,8 +238,9 @@ fn motion_task() {
         t.set_u32(r + 0x20, n);
         t.set_u32(r + 0x24, k as u32 % 3);
         t.set_u32(r + 0x2c, o);
-        t.set_u32(r + 0x28, 2.0f32.to_bits());
-        t.set_u32(r + 0x19c, [9.0f32, 2.25, 1.0][k % 3].to_bits());
+        // the floor apart from the object pointer next to it read as a float
+        t.set_u32(r + 0x28, 5.0f32.to_bits());
+        t.set_u32(r + 0x19c, [9.0f32, 5.25, 1.0, 5.0][k % 4].to_bits());
         t.write(o, &[0x4d; 0x100]);
         t.set_u32(o + 0x50, 0x00c0_0050);
         t.set_u8(o + 0x90, 0x10 | (k as u8 & 1));
@@ -248,5 +250,74 @@ fn motion_task() {
         t.set_u32(node + 8, prev);
         t.set_u32(cell, bits);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// 0x100074c0: the motion set-up: the size through slot 333 and slot
+/// 601, the kind 0xc9 and another, the node list empty and not.
+#[test]
+fn motion_setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x74c0);
+    let list = t.img.word(at + 0x5c);
+    let ring_last = t.img.word(at + 0x24);
+    let ring_flags = t.img.word(at + 0x42);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            m.w32(a[1 + i as usize], (3.5 + i as f32).to_bits());
+        }
+        0x262
+    });
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(cell))));
+    rec(&mut t, 601, 2, move |m, a| {
+        let v = m.r32(cell);
+        m.w32(a[1], v ^ 0x0040_0000);
+        0x601
+    });
+    rec(&mut t, 415, 1, move |m, _| m.r32(cell + 4));
+    recs(&mut t, &[(211, 2), (213, 2), (538, 2)]);
+    // the model state's slots: three coordinates and a scale in ST0, or
+    // slot 290 filling the vector
+    for s in [15u32, 16, 17, 277] {
+        rec(&mut t, s, 1, move |_, _| s);
+        t.stub_st0(s, move |_, _| 0.75 + f64::from(s));
+    }
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[1] + 4 * i, (5.5 + i as f32).to_bits());
+        }
+        0x290
+    });
+    let obj = SCRATCH + 0x1000;
+    let src = SCRATCH + 0x1400;
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (bit, size, kind, empty) in [
+        (1u8, 0.5f32, 0xc9u32, true),
+        (0, 3.25, 0x10, false),
+        (1, -2.0, 0xc8, false),
+    ] {
+        t.write(obj, &[0x5b; 0x300]);
+        t.write(src, &[0x2a; 0x100]);
+        t.set_u8(src + 0x90, bit | 0x40);
+        t.set_u32(cell, size.to_bits());
+        t.set_u32(cell + 4, kind);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        let c = Call {
+            ecx: obj,
+            edx: src,
+            ..Call::default()
+        };
+        t.check(at, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0573::motion_setup(g, img, fr))
+        });
     }
 }

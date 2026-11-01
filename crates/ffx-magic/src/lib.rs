@@ -1111,6 +1111,11 @@ ports! {
     "m0540 setup" => m0540::SETUP, m0540::setup;
     "m0535 frame step" => m0535::FRAME_STEP, m0535::frame_step;
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
+    "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
+    "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
+    "m0587 sway frame" => m0587::SWAY_FRAME, m0587::sway_frame;
+    "m0577 spark task" => m0577::SPARK_TASK, m0577::spark_task;
+    "m0589 blend" => m0589::BLEND, m0589::blend;
     // end of magic r6 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2322,6 +2327,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0533 model setup", &m0533::MODEL_SETUP),
     ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
+    ("m0573 motion setup", &m0573::MOTION_SETUP),
+    ("m0577 spark setup", &m0577::SPARK_SETUP),
+    ("m0577 light node", &m0577::LIGHT_NODE),
+    ("m0588 actor matrix", &m0588::ACTOR_MATRIX_0588),
+    ("m0600 actor matrix", &m0588::ACTOR_MATRIX_0600),
+    ("m0585 drift setup", &m0585::DRIFT_SETUP),
     // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),

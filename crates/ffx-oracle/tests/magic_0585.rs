@@ -170,3 +170,62 @@ fn glow_clear() {
         });
     }
 }
+
+/// 0x10007bd0: the drift task through every state, the level at and off
+/// its limits, the wait out or not.
+#[test]
+fn drift_task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7bd0);
+    let (task, r, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x240,
+        SCRATCH + 0x280,
+    );
+    for state in 0..14u32 {
+        for (wait, level) in [(5u32, 0x4cu8), (0, 0x04), (0xffff_fff0, 0x30)] {
+            t.write(r, &[0x3c; 0x100]);
+            t.set_u32(r + 0x18, state);
+            t.set_u32(r + 0x34, wait);
+            t.set_u8(r + 0xc3, level);
+            for (i, o) in [0x30u32, 0x38, 0x3c, 0x40, 0xe0, 0xe4]
+                .into_iter()
+                .enumerate()
+            {
+                t.set_u32(r + o, 0x0100_0000 * (i as u32 + 1) + 0x111 * state);
+            }
+            t.set_u32(task, node);
+            t.set_u32(task + 4, r);
+            t.set_u32(node + 4, next);
+            t.set_u32(node + 8, prev);
+            t.check_entry(at, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}
+
+/// 0x10008250: the drift object's set-up; slot 234 keeps the local
+/// colour it gets.
+#[test]
+fn drift_setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8250);
+    let ring_last = t.img.word(at + 0x35);
+    let ring_flags = t.img.word(at + 0x54);
+    magic_owna::rec(&mut t, 234, 3, |m, a| {
+        let k = m.r32(magic_owna::row(234));
+        magic_owna::dump(m, 0x100 + k % 0x40, a[1], 4);
+        0x234
+    });
+    recs(&mut t, &[(544, 2), (588, 2), (232, 2)]);
+    let obj = SCRATCH + 0x1000;
+    let old = SCRATCH + 0x800;
+    t.write(obj, &[0x5b; 0x100]);
+    t.write(old, &[0x6c; 0x40]);
+    t.set_u32(ring_last, old);
+    t.set_u32(ring_flags, 0x8000_0007);
+    t.check(at, Call::this(obj), &[], Eax::Checked, |g, img, fr| {
+        Ret::eax(m0585::drift_setup(g, img, fr))
+    });
+}

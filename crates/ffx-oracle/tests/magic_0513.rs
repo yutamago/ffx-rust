@@ -287,6 +287,11 @@ fn for_target() {
         t.write(obj, &[0x5b; 0x200]);
         t.write(src, &[0x2c; 0x100]);
         t.write(a, &[0x3d; 0x100]);
+        // the handles next to each other distinct
+        for o in [0x50u32, 0x54, 0x58] {
+            t.set_u32(src + o, 0x00a1_0000 + o);
+            t.set_u32(a + o, 0x00a2_0000 + o);
+        }
         t.set_u8(a + 0x90, bit | 0x5a);
         t.set_u32(cell, size.to_bits());
         t.set_u32(cell + 4, y.to_bits());

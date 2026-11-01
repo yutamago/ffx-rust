@@ -1,10 +1,12 @@
 //! `magic_0573.dll`'s own functions (besides the runtime and the shared
 //! code).
 
-use crate::h6_setup::unlink_task;
+use crate::h6_setup::{ring_join, static_child, unlink_task};
 use crate::l3_common::{ListAt, attach, node_init};
+use crate::m0018::st0_f32;
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, mul, sub};
+use crate::s4_summon::trunc;
+use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -390,5 +392,131 @@ pub const MOTION_TASK: Sig = Sig {
     len: 531,
     hash: 0xabe7_6dd1_7540_8b6f,
     calls: &[(0x147, Callee::Sig(&crate::sa_misc::OBJECT_TO_NODE))],
+    imports: &[],
+};
+
+/// Sets up the summon object for its motion task (0x100074c0, internal:
+/// `ecx` = the object, `edx` = the source object): the object joins the
+/// DLL's ring ([`ring_join`], its step the motion task); children `c =
+/// obj + 0x17c` (handlers `+0x98`), `d = obj + 0x1d4` (`+0xf1`, set
+/// first) and `e = obj + 0x1a8` (`+0x212`) of the DLL's node list; slot
+/// 262 `(src[0x54], obj + 0x198, obj + 0x19c, obj + 0x1a0)` the source's
+/// point (`+0x28` its height, `+0x19c` raised by `K`, `+0x1a4` 1); the
+/// size `s` (slot 333 `(src[0x54])` with bit 0 of `src[0x90]`, else slot
+/// 601 `(src[0x50], &s)`, through the frame word `ebp - 4`) gives `+0x1f4`
+/// = `(K1 - s) * K2 / K3` truncated; the model state
+/// ([`model_state`](crate::m0070::model_state)) of `[src, obj + 0x1c4]`
+/// (`ebp - 8`), the node insert ([`node_insert`](crate::nodes::node_insert))
+/// of `[obj + 0x30, LIST, NAME, c, d, e]` (`ebp - 0x24`); slot 211
+/// `(src[0x54], obj + 0xcc)`, the source's flags `|= 0x10`, `src[0x4c]` =
+/// `obj + 0x30`, slot 415 `(src[0x50])` the kind; `+0x2c` the source,
+/// `+0x20`/`+0x18` 0, `+0x24` = kind is not 0xc9. Returns slot 415's
+/// `eax`.
+pub fn motion_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let obj = fr.ecx;
+    let src = fr.edx;
+    ring_join(g, img, f, obj, [0x15, 0x1c, 0x24, 0x2e, 0x33, 0x42, 0x49]);
+    let c = obj + 0x17c;
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0x5c, 0x63, 0x68, 0x70, 0x78, 0x80, 0x8c, 0x92],
+    );
+    g.write::<u32>(c, w(0x98));
+    let t = slot_target(g, w(0xab), 262);
+    let h = g.read::<u32>(src + 0x54);
+    g.call(t, 0, &[h, obj + 0x198, obj + 0x19c, obj + 0x1a0]);
+    let y = g.read::<u32>(obj + 0x19c);
+    g.write::<u32>(obj + 0x28, y);
+    let x = add(g.read::<f32>(obj + 0x19c), k(g, 0xd0));
+    g.write::<u32>(obj + 0x1a4, 0x3f80_0000);
+    g.write::<f32>(obj + 0x19c, x);
+    let d = obj + 0x1d4;
+    g.write::<u32>(d, w(0xf1));
+    static_child(
+        g,
+        img,
+        f,
+        d,
+        [0x104, 0x10b, 0x110, 0x118, 0x11d, 0x125, 0x131, 0x137],
+    );
+    g.write::<u32>(obj + 0x1f8, 0);
+    g.write::<u32>(obj + 0x1f0, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let word = ebp.wrapping_sub(4);
+    let size = if g.read::<u8>(src + 0x90) & 1 != 0 {
+        let t = slot_target(g, w(0x159), 333);
+        let h = g.read::<u32>(src + 0x54);
+        let v = st0_f32(g.call(t, 0, &[h]).st0);
+        g.write::<f32>(word, v);
+        sub(k(g, 0x16f), g.read::<f32>(word))
+    } else {
+        let t = slot_target(g, w(0x182), 601);
+        let h = g.read::<u32>(src + 0x50);
+        g.call(t, 0, &[h, word]);
+        sub(k(g, 0x195), g.read::<f32>(word))
+    };
+    let n = trunc(div(mul(size, k(g, 0x1a5)), k(g, 0x1b3)));
+    g.write::<u32>(obj + 0x1f4, n);
+    let e = obj + 0x1a8;
+    static_child(
+        g,
+        img,
+        f,
+        e,
+        [0x1d0, 0x1d7, 0x1dc, 0x1e4, 0x1e9, 0x1f1, 0x1fd, 0x209],
+    );
+    g.write::<u32>(e, w(0x212));
+    let rec = ebp.wrapping_sub(8);
+    g.write::<u32>(rec, src);
+    g.write::<u32>(rec + 4, obj + 0x1c4);
+    crate::m0070::model_state(g, img, img.rel32_target(f + 0x21d), rec);
+    let group = ebp.wrapping_sub(0x24);
+    for (i, v) in (0u32..).zip([obj + 0x30, w(0x23c), w(0x243), c, d, e]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    crate::nodes::node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x24e),
+            // push ebp; sub esp, 0x24; three pushes: the call's esp
+            esp: fr.esp.wrapping_sub(0x38),
+            ecx: group,
+            ..Frame::default()
+        },
+    );
+    let t = slot_target(g, w(0x25d), 211);
+    let h = g.read::<u32>(src + 0x54);
+    let mut stack = vec![h, obj + 0xcc];
+    g.call(t, 0, &stack);
+    let fl = g.read::<u16>(src + 0x90);
+    g.write::<u16>(src + 0x90, fl | 0x10);
+    let t = slot_target(g, w(0x275), 415);
+    g.write::<u32>(src + 0x4c, obj + 0x30);
+    let m = g.read::<u32>(src + 0x50);
+    stack.insert(0, m);
+    // call width: 18 at most (the earlier calls' words)
+    let kind = g.call(t, 0, &stack).eax;
+    g.write::<u32>(obj + 0x2c, src);
+    g.write::<u32>(obj + 0x20, 0);
+    g.write::<u32>(obj + 0x18, 0);
+    g.write::<u32>(obj + 0x24, u32::from(kind != 0xc9));
+    kind
+}
+
+/// [`motion_setup`] (687 bytes, 1 overlay).
+pub const MOTION_SETUP: Sig = Sig {
+    len: 687,
+    hash: 0x49ca_f9fc_0166_701b,
+    calls: &[
+        (0x21d, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x24e, Callee::Sig(&crate::nodes::INSERT)),
+    ],
     imports: &[],
 };

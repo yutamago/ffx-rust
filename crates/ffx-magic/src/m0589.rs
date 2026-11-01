@@ -3,6 +3,7 @@
 
 use crate::o4_more::push_head;
 use crate::sa_pool::take;
+use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// Starts the flash (0x100028b0, an overlay table entry, no arguments;
@@ -75,5 +76,52 @@ pub const TWO_PARTS: Sig = Sig {
         (0x67, Callee::Sig(&crate::sa_pool::TAKE)),
         (0x10d, Callee::Sig(&crate::sa_pool::TAKE)),
     ],
+    imports: &[],
+};
+
+/// Blends the summon's three colours (0x100047d0, no arguments): for
+/// each of the three countdowns `S[0x2208 + 4j]` (`S = *G_S`; down by one
+/// while above 0) the weight `t = n / D_j` blends the start colour
+/// `S[0x1a40 + 0x10j]` (times `1 - t`) with the end colour `S[0x1a10 +
+/// 0x10j]` (times `t`) into `S[0x1950 + 0x20j]`, its second component
+/// copied unblended and its alpha 1.0 (each product and sum one `f32`
+/// step, in the original's order). Returns the last countdown (`eax`).
+pub fn blend<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let s = g.read::<u32>(w(0x5));
+    let fl = |g: &G, o: u32| g.read::<f32>(s + o);
+    let one = g.read::<f32>(w(0x2c));
+    let mut out = [[0u32; 4]; 3];
+    let mut eax = 0;
+    for (j, d) in (0u32..).zip([0x34u32, 0xac, 0x121]) {
+        let c = s + 0x2208 + 4 * j;
+        let n = g.read::<u32>(c);
+        eax = n;
+        if n.cast_signed() > 0 {
+            eax = n - 1;
+            g.write::<u32>(c, eax);
+        }
+        let t = div(cvt(g.read::<u32>(c)), g.read::<f32>(w(d)));
+        let u = sub(one, t);
+        let b = 0x10 * j;
+        let x = add(mul(fl(g, 0x1a40 + b), u), mul(fl(g, 0x1a10 + b), t));
+        let y = fl(g, 0x1a44 + b).to_bits();
+        let z = add(mul(fl(g, 0x1a48 + b), u), mul(fl(g, 0x1a18 + b), t));
+        out[j as usize] = [x.to_bits(), y, z.to_bits(), 0x3f80_0000];
+    }
+    for (j, v) in (0u32..).zip(out) {
+        for (i, x) in (0u32..).zip(v) {
+            g.write::<u32>(s + 0x1950 + 0x20 * j + 4 * i, x);
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`blend`] (481 bytes, 1 overlay).
+pub const BLEND: Sig = Sig {
+    len: 481,
+    hash: 0x789a_5a2f_4b7e_37ed,
+    calls: &[],
     imports: &[],
 };

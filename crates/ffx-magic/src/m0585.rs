@@ -1,6 +1,7 @@
 //! `magic_0585.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::h6_setup::unlink_task;
 use crate::runtime::slot_target;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
@@ -290,5 +291,214 @@ pub const GLOW_CLEAR: Sig = Sig {
     len: 199,
     hash: 0x09ad_d30b_2f5a_262b,
     calls: &[],
+    imports: &[],
+};
+
+/// The camera drift task (0x10007bd0, `(task)`, a task step) on the
+/// record `r = task[1]`, by the state `+0x18` (a wait `+0x34`, the
+/// level byte `+0xc3`, two speeds `+0x30`/`+0x38` with their steps
+/// `+0x3c`/`+0x40`):
+/// - 0: state 1, speeds `(200000, 0)`, steps `(20000, 2000)`, then at
+///   once 1: the level up by 4; at 0x50 state 2, steps `(-5000, -500)`,
+///   a wait of 60;
+/// - 2: when the wait is out, state 3, steps `(10000, 1000)`, a wait of
+///   30; 3: when out, state 4, steps 0, a wait of 240; 4: when out,
+///   state 5;
+/// - 5: the level down by 4; at 0 state 10 at once; 10: bit 4 of the u16
+///   `+0xec`, state 11 and a wait of 2; 11: when the wait is out, the
+///   task's node leaves its ring, state 20000.
+///
+/// Every exit moves the point: `+0xe0 -= speed1`, `+0xe4 -= speed2`,
+/// each speed plus its step, the wait down. Returns the record.
+pub fn drift_task<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let wait_out = |g: &G| g.read::<i32>(r + 0x34) <= 0;
+    let next = |g: &mut G| {
+        let s = g.read::<u32>(r + 0x18);
+        g.write::<u32>(r + 0x18, s.wrapping_add(1));
+    };
+    let steps = |g: &mut G, a: u32, b: u32| {
+        g.write::<u32>(r + 0x3c, a);
+        g.write::<u32>(r + 0x40, b);
+    };
+    let mut state = g.read::<u32>(r + 0x18);
+    loop {
+        match state {
+            0 | 1 => {
+                if state == 0 {
+                    next(g);
+                    g.write::<u32>(r + 0x30, 0x3_0d40);
+                    g.write::<u32>(r + 0x38, 0);
+                    steps(g, 0x4e20, 0x7d0);
+                }
+                let b = g.read::<u8>(r + 0xc3).wrapping_add(4);
+                g.write::<u8>(r + 0xc3, b);
+                if g.read::<u8>(r + 0xc3) == 0x50 {
+                    next(g);
+                    steps(g, 0xffff_ec78, 0xffff_fe0c);
+                    g.write::<u32>(r + 0x34, 0x3c);
+                }
+            }
+            2 if wait_out(g) => {
+                next(g);
+                steps(g, 0x2710, 0x3e8);
+                g.write::<u32>(r + 0x34, 0x1e);
+            }
+            3 if wait_out(g) => {
+                next(g);
+                steps(g, 0, 0);
+                g.write::<u32>(r + 0x34, 0xf0);
+            }
+            4 if wait_out(g) => next(g),
+            5 => {
+                let b = g.read::<u8>(r + 0xc3).wrapping_add(0xfc);
+                g.write::<u8>(r + 0xc3, b);
+                if b == 0 {
+                    g.write::<u32>(r + 0x18, 10);
+                    state = 10;
+                    continue;
+                }
+            }
+            10 | 11 => {
+                if state == 10 {
+                    let fl = g.read::<u16>(r + 0xec);
+                    g.write::<u16>(r + 0xec, fl | 0x10);
+                    next(g);
+                    g.write::<u32>(r + 0x34, 2);
+                }
+                if wait_out(g) {
+                    unlink_task(g, task);
+                    g.write::<u32>(r + 0x18, 0x4e20);
+                }
+            }
+            _ => {}
+        }
+        break;
+    }
+    let s1 = g.read::<u32>(r + 0x30);
+    let d1 = g.read::<u32>(r + 0x3c);
+    let s2 = g.read::<u32>(r + 0x38);
+    let x = g.read::<u32>(r + 0xe0);
+    g.write::<u32>(r + 0xe0, x.wrapping_sub(s1));
+    let y = g.read::<u32>(r + 0xe4);
+    g.write::<u32>(r + 0xe4, y.wrapping_sub(s2));
+    g.write::<u32>(r + 0x30, d1.wrapping_add(s1));
+    let d2 = g.read::<u32>(r + 0x40);
+    let n = g.read::<u32>(r + 0x34);
+    g.write::<u32>(r + 0x34, n.wrapping_sub(1));
+    g.write::<u32>(r + 0x38, d2.wrapping_add(s2));
+    Ret::eax(r)
+}
+
+/// [`drift_task`] (356 bytes, 1 overlay).
+pub const DRIFT_TASK: Sig = Sig {
+    len: 356,
+    hash: 0xf141_d09a_20b2_1836,
+    calls: &[],
+    imports: &[],
+};
+
+/// Sets up the camera drift object (0x10008250, internal: `ecx` = the
+/// object; a /GS frame): its task node `n = obj + 0xb8` (owner `obj`,
+/// handlers `+0x23`, step the drift task `+0x30`) joins the DLL's ring;
+/// four colour keys `(slot 544 (k, obj + o))` each scaled by a local
+/// colour `V` (`ebp - 0x14`) through slot 234 `(obj + o + 0x10, &V, obj +
+/// o)`; slot 588 `(2, obj + 0x50)` and slot 232 normalise two vectors
+/// (`+0x60` = `(0.5, -1, 0, 1)` first); `+0xb0`, `+0xb4`, `+0xd0` 0.
+/// Each call sees the words the earlier ones left on the stack, up to
+/// the clean-ups. Returns the last call's `eax`.
+pub fn drift_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let obj = fr.ecx;
+    let n = obj + 0xb8;
+    g.write::<u32>(n + 0x14, obj);
+    g.write::<u32>(n, w(0x23));
+    g.write::<u32>(n + 8, n);
+    g.write::<u32>(n + 4, n);
+    g.write::<u32>(n + 0x10, w(0x30));
+    let last = g.read::<u32>(w(0x35));
+    g.write::<u32>(n + 8, last);
+    g.write::<u32>(n + 4, w(0x3f));
+    let last = g.read::<u32>(w(0x44));
+    g.write::<u32>(last + 4, n);
+    let t = slot_target(g, w(0x4e), 544);
+    let fl = g.read::<u32>(w(0x54));
+    g.write::<u32>(w(0x54), fl & !1);
+    g.write::<u32>(w(0x5b), n);
+    let mut stack = vec![3, obj];
+    g.call(t, 0, &stack);
+    let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let colour = |g: &mut G, c: [u32; 4]| {
+        for (i, x) in (0u32..).zip(c) {
+            g.write::<u32>(v + 4 * i, x);
+        }
+    };
+    let keys: [(u32, u32, u32, u32, [u32; 4]); 3] = [
+        (0x71, 0x20, obj, 0, [0x3e99_999a; 4]),
+        (
+            0xb6,
+            0x40,
+            obj + 0x30,
+            0x9a,
+            [0x3ee6_6666, 0x3e19_999a, 0x3dcc_cccd, 0x3f80_0000],
+        ),
+        (0x101, 0xa0, obj + 0x90, 0xdf, [0, 0, 0, 0x3f80_0000]),
+    ];
+    for (k, (tab, dst, key, t544, c)) in (0u32..).zip(keys) {
+        if k > 0 {
+            let t = slot_target(g, w(t544), 544);
+            stack.splice(0..0, [3 - k, key]);
+            // call width: 12 at most
+            g.call(t, 0, &stack);
+        }
+        let t = slot_target(g, w(tab), 234);
+        colour(g, c);
+        stack.splice(0..0, [obj + dst, v, key]);
+        // call width: 15 at most
+        g.call(t, 0, &stack);
+    }
+    let t = slot_target(g, w(0x12a), 544);
+    stack.splice(0..0, [0, obj + 0x70]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    colour(g, [0, 0, 0, 0x3f80_0000]);
+    let t = slot_target(g, w(0x168), 234);
+    let mut stack = vec![obj + 0x80, v, obj + 0x70];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x175), 588);
+    stack.splice(0..0, [2, obj + 0x50]);
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x188), 232);
+    stack.splice(0..0, [obj + 0x50, obj + 0x50]);
+    // call width: 7
+    g.call(t, 0, &stack);
+    for (o, x) in [
+        (0x60u32, 0x3f00_0000u32),
+        (0x64, 0xbf80_0000),
+        (0x68, 0),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(obj + o, x);
+    }
+    let t = slot_target(g, w(0x1a2), 232);
+    stack.splice(0..0, [obj + 0x60, obj + 0x60]);
+    // call width: 9
+    let e = g.call(t, 0, &stack).eax;
+    for o in [0xb0u32, 0xb4, 0xd0] {
+        g.write::<u32>(obj + o, 0);
+    }
+    e
+}
+
+/// [`drift_setup`] (500 bytes, 1 overlay).
+pub const DRIFT_SETUP: Sig = Sig {
+    len: 500,
+    hash: 0xde3f_d94c_d05b_3b07,
+    calls: &[
+        // __security_check_cookie
+        (0x1ec, Callee::Any),
+    ],
     imports: &[],
 };
