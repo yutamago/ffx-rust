@@ -46,6 +46,7 @@ pub mod ob_summon;
 pub mod objcb;
 pub mod opu;
 pub mod opu_parts;
+pub mod part_draw;
 pub mod pe;
 pub mod pushes;
 pub mod rcef;
@@ -171,9 +172,92 @@ pub mod m0394;
 pub mod m0395;
 pub mod m0396;
 pub mod m0397;
+pub mod m0450;
+pub mod m0473;
+pub mod m0474;
+pub mod m0475;
+pub mod m0476;
+pub mod m0477;
+pub mod m0478;
+pub mod m0479;
+pub mod m0480;
 pub mod m0481;
+pub mod m0482;
+pub mod m0483;
+pub mod m0484;
+pub mod m0486;
+pub mod m0487;
+pub mod m0488;
+pub mod m0489;
+pub mod m0490;
+pub mod m0493;
+pub mod m0496;
+pub mod m0497;
+pub mod m0498;
+pub mod m0499;
+pub mod m0505;
+pub mod m0508;
+pub mod m0510;
+pub mod m0511;
+pub mod m0512;
+pub mod m0513;
+pub mod m0514;
+pub mod m0519;
+pub mod m0522;
+pub mod m0523;
+pub mod m0525;
+pub mod m0526;
+pub mod m0527;
+pub mod m0528;
+pub mod m0529;
+pub mod m0530;
+pub mod m0531;
+pub mod m0534;
+pub mod m0536;
+pub mod m0537;
+pub mod m0539;
+pub mod m0540;
+pub mod m0561;
+pub mod m0564;
+pub mod m0573;
+pub mod m0577;
+pub mod m0582;
+pub mod m0585;
+pub mod m0587;
+pub mod m0588;
+pub mod m0589;
 pub mod m0596;
+pub mod m0597;
+pub mod m0598;
+pub mod m0601;
+pub mod m0602;
 pub mod m0604;
+pub mod m0605;
+pub mod m0606;
+pub mod m0608;
+pub mod m0609;
+pub mod m0610;
+pub mod m0613;
+pub mod m0616;
+pub mod m0617;
+pub mod m0640;
+pub mod m0641;
+pub mod m0645;
+pub mod m0661;
+pub mod m0664;
+pub mod m0665;
+pub mod m0666;
+pub mod m0669;
+pub mod m0671;
+pub mod m0672;
+pub mod m0673;
+pub mod m0680;
+pub mod m0704;
+pub mod m0705;
+pub mod m0706;
+pub mod m0707;
+pub mod m0708;
+pub mod m0709;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -835,6 +919,175 @@ ports! {
     "m0396 task step" => ob_summon::STEP_0396, ob_summon::step;
     "m0397 task step" => ob_summon::STEP_0397, ob_summon::step;
     "m0596 task step (no pause)" => ob_summon::STEP_PLAIN_0596, ob_summon::step_plain;
+    // magic r5 own (0450 and up): entries
+    "m0450 frame" => m0450::FRAME, m0450::frame;
+    "m0450 load models" => m0450::LOAD_MODELS, m0450::load_models;
+    "m0450 place camera" => m0450::PLACE_CAMERA, m0450::place_camera;
+    "m0450 blend camera" => m0450::BLEND_CAMERA, m0450::blend_camera;
+    "m0450 swing start" => m0450::SWING_START, m0450::swing_start;
+    "m0450 model reset" => m0450::MODEL_RESET, m0450::model_reset;
+    "m0450 flight start" => m0450::FLIGHT_START, m0450::flight_start;
+    "m0450 flight frame" => m0450::FLIGHT_FRAME, m0450::flight_frame;
+    "m0450 shrink" => m0450::SHRINK, m0450::shrink;
+    "m0450 turn step" => m0450::TURN_STEP, m0450::turn_step;
+    "m0475 task" => m0475::TASK, m0475::task;
+    "m0476 fade step" => m0476::FADE_STEP, m0476::fade_step;
+    "m0477 e1070" => m0477::E1070, m0477::e1070;
+    "m0477 e1250" => m0477::E1250, m0477::e1250;
+    "m0477 e1430" => m0477::E1430, m0477::e1430;
+    "m0477 e1580" => m0477::E1580, m0477::e1580;
+    "m0477 e1670" => m0477::E1670, m0477::e1670;
+    "m0477 e17b0" => m0477::E17B0, m0477::e17b0;
+    "m0477 e1850" => m0477::E1850, m0477::e1850;
+    "m0477 e1980" => m0477::E1980, m0477::e1980;
+    "m0477 e1d50" => m0477::E1D50, m0477::e1d50;
+    "m0477 e1de0" => m0477::E1DE0, m0477::e1de0;
+    "m0477 start-up" => m0477::START_UP, m0477::start_up;
+    "m0478 task" => m0478::TASK, m0478::task;
+    "m0482 task" => m0482::TASK, m0482::task;
+    "m0483 start" => m0483::START, m0483::start;
+    "m0483 end" => m0483::END, m0483::end;
+    "m0484 e1000" => m0484::E1000, m0484::e1000;
+    "m0484 e1100" => m0484::E1100, m0484::e1100;
+    "m0484 e1360" => m0484::E1360, m0484::e1360;
+    "m0484 e13f0" => m0484::E13F0, m0484::e13f0;
+    "m0484 start-up" => m0484::START_UP, m0484::start_up;
+    "m0484 frame" => m0484::FRAME, m0484::frame;
+    "m0486 e1070" => m0486::E1070, m0486::e1070;
+    "m0486 e1250" => m0486::E1250, m0486::e1250;
+    "m0486 e13f0" => m0486::E13F0, m0486::e13f0;
+    "m0486 start-up" => m0486::START_UP, m0486::start_up;
+    "m0486 frame" => m0486::FRAME, m0486::frame;
+    "m0487 start" => m0487::START, m0487::start;
+    "m0487 step" => m0487::STEP, m0487::step;
+    "m0487 start-up" => m0487::START_UP, m0487::start_up;
+    "m0487 frame" => m0487::FRAME, m0487::frame;
+    "m0488 start-up" => m0488::START_UP, m0488::start_up;
+    "m0489 e1980" => m0489::E1980, m0489::e1980;
+    "m0489 e1a80" => m0489::E1A80, m0489::e1a80;
+    "m0489 e1c20" => m0489::E1C20, m0489::e1c20;
+    "m0489 e1d00" => m0489::E1D00, m0489::e1d00;
+    "m0489 start-up" => m0489::START_UP, m0489::start_up;
+    "m0489 frame" => m0489::FRAME, m0489::frame;
+    "m0490 start-up" => m0490::START_UP, m0490::start_up;
+    "m0496 e1000" => m0496::E1000, m0496::e1000;
+    "m0496 e11a0" => m0496::E11A0, m0496::e11a0;
+    "m0496 e1310" => m0496::E1310, m0496::e1310;
+    "m0496 e13c0" => m0496::E13C0, m0496::e13c0;
+    "m0496 start-up" => m0496::START_UP, m0496::start_up;
+    "m0496 frame" => m0496::FRAME, m0496::frame;
+    "m0497 e1000" => m0497::E1000, m0497::e1000;
+    "m0497 e10d0" => m0497::E10D0, m0497::e10d0;
+    "m0497 start-up" => m0497::START_UP, m0497::start_up;
+    "m0498 start-up" => m0498::START_UP, m0498::start_up;
+    "m0499 start" => m0499::START, m0499::start;
+    "m0505 e1180" => m0505::E1180, m0505::e1180;
+    "m0505 e1380" => m0505::E1380, m0505::e1380;
+    "m0505 e1210" => m0505::E1210, m0505::e1210;
+    "m0505 register" => m0505::REGISTER, m0505::register;
+    "m0505 frame" => m0505::FRAME, m0505::frame;
+    "m0508 e1b40" => m0508::E1B40, m0508::e1b40;
+    "m0510 e1000" => m0510::E1000, m0510::e1000;
+    "m0510 e11b0" => m0510::E11B0, m0510::e11b0;
+    "m0510 e12a0" => m0510::E12A0, m0510::e12a0;
+    "m0510 e1380" => m0510::E1380, m0510::e1380;
+    "m0510 e1680" => m0510::E1680, m0510::e1680;
+    "m0511 fade" => m0511::FADE, m0511::fade;
+    "m0511 e2c50" => m0511::E2C50, m0511::e2c50;
+    "m0511 e2da0" => m0511::E2DA0, m0511::e2da0;
+    "m0511 sprite start" => m0511::SPRITE_START, m0511::sprite_start;
+    "m0510 e1b10" => m0510::E1B10, m0510::e1b10;
+    "m0510 e1db0" => m0510::E1DB0, m0510::e1db0;
+    "m0512 task" => m0512::TASK, m0512::task;
+    "m0513 end" => m0513::END, m0513::end;
+    "m0514 e7260" => m0514::E7260, m0514::e7260;
+    "m0514 e7660" => m0514::E7660, m0514::e7660;
+    "m0522 e1140" => m0522::E1140, m0522::e1140;
+    "m0522 e1360" => m0522::E1360, m0522::e1360;
+    "m0522 e1400" => m0522::E1400, m0522::e1400;
+    "m0523 e1000" => m0523::E1000, m0523::e1000;
+    "m0523 e1150" => m0523::E1150, m0523::e1150;
+    "m0523 e1240" => m0523::E1240, m0523::e1240;
+    "m0523 e1380" => m0523::E1380, m0523::e1380;
+    "m0525 e10b0" => m0525::E10B0, m0525::e10b0;
+    "m0525 e11c0" => m0525::E11C0, m0525::e11c0;
+    "m0525 e12f0" => m0525::E12F0, m0525::e12f0;
+    "m0525 e1650" => m0525::E1650, m0525::e1650;
+    "m0525 e16d0" => m0525::E16D0, m0525::e16d0;
+    "m0526 e1140" => m0526::E1140, m0526::e1140;
+    "m0526 e1650" => m0526::E1650, m0526::e1650;
+    "m0526 e16e0" => m0526::E16E0, m0526::e16e0;
+    "m0527 draw" => m0527::DRAW, m0527::draw;
+    "m0527 frame" => m0527::FRAME, m0527::frame;
+    "m0528 e1000" => m0528::E1000, m0528::e1000;
+    "m0528 e14f0" => m0528::E14F0, m0528::e14f0;
+    "m0529 e1000" => m0529::E1000, m0529::e1000;
+    "m0529 e1100" => m0529::E1100, m0529::e1100;
+    "m0529 e1790" => m0529::E1790, m0529::e1790;
+    "m0529 e16c0" => m0529::E16C0, m0529::e16c0;
+    "m0529 e1800" => m0529::E1800, m0529::e1800;
+    "m0530 start" => m0530::START, m0530::start;
+    "m0531 start" => m0531::START, m0531::start;
+    "m0534 e11a0" => m0534::E11A0, m0534::e11a0;
+    "m0534 e12b0" => m0534::E12B0, m0534::e12b0;
+    "m0534 e1390" => m0534::E1390, m0534::e1390;
+    "m0536 start" => m0536::START, m0536::start;
+    "m0536 frame" => m0536::FRAME, m0536::frame;
+    "m0537 frame" => m0537::FRAME, m0537::frame;
+    "m0539 frame obj" => m0539::FRAME_OBJ, m0539::frame_obj;
+    "m0539 frame" => m0539::FRAME, m0539::frame;
+    "m0540 e10a0" => m0540::E10A0, m0540::e10a0;
+    "m0540 e1170" => m0540::E1170, m0540::e1170;
+    "m0540 e1250" => m0540::E1250, m0540::e1250;
+    "m0540 e12c0" => m0540::E12C0, m0540::e12c0;
+    "m0540 frame" => m0540::FRAME, m0540::frame;
+    "m0561 frame" => m0561::FRAME, m0561::frame;
+    "m0573 task" => m0573::TASK, m0573::task;
+    "m0577 end" => m0577::END, m0577::end;
+    "m0577 task" => m0577::TASK, m0577::task;
+    "m0582 start" => m0582::START, m0582::start;
+    "m0585 sound" => m0585::SOUND, m0585::sound;
+    "m0585 two sounds" => m0585::TWO_SOUNDS, m0585::two_sounds;
+    "m0587 glow start" => m0587::GLOW_START, m0587::glow_start;
+    "m0587 glow colour" => m0587::GLOW_COLOUR, m0587::glow_colour;
+    "m0587 glow turn" => m0587::GLOW_TURN, m0587::glow_turn;
+    "m0588 sound" => m0588::SOUND, m0588::sound;
+    "m0588 part start" => m0588::PART_START, m0588::part_start;
+    "m0588 colours" => m0588::COLOURS, m0588::colours;
+    "m0589 flash" => m0589::FLASH, m0589::flash;
+    "m0589 two parts" => m0589::TWO_PARTS, m0589::two_parts;
+    "m0588 light" => m0588::LIGHT, m0588::light;
+    "m0597 frame" => m0597::FRAME, m0597::frame;
+    "m0598 fade out" => m0598::FADE_OUT, m0598::fade_out;
+    "m0601 end" => m0601::END, m0601::end;
+    "m0605 end" => m0605::END, m0605::end;
+    "m0606 show targets" => m0606::SHOW_TARGETS, m0606::show_targets;
+    "m0606 camera points" => m0606::CAMERA_POINTS, m0606::camera_points;
+    "m0608 start" => m0608::START, m0608::start;
+    "m0616 frame" => m0616::FRAME, m0616::frame;
+    "m0616 start up" => m0616::START_UP, m0616::start_up;
+    "m0617 frame" => m0617::FRAME, m0617::frame;
+    "m0640 register" => m0640::REGISTER, m0640::register;
+    "m0641 flash parts" => m0641::FLASH_PARTS, m0641::flash_parts;
+    "m0641 glow parts" => m0641::GLOW_PARTS, m0641::glow_parts;
+    "m0645 value task" => m0645::VALUE_TASK, m0645::value_task;
+    "m0661 sound stop" => m0661::SOUND_STOP, m0661::sound_stop;
+    "m0661 glow part" => m0661::GLOW_PART, m0661::glow_part;
+    "m0664 ring part" => m0664::RING_PART, m0664::ring_part;
+    "m0664 frame" => m0664::FRAME, m0664::frame;
+    "m0664 effect frame" => m0664::EFFECT_FRAME, m0664::effect_frame;
+    "m0666 spark" => m0666::SPARK, m0666::spark;
+    "m0666 ring" => m0666::RING, m0666::ring;
+    "m0669 frame" => m0669::FRAME, m0669::frame;
+    "m0669 draw" => m0669::DRAW, m0669::draw;
+    "m0706 start" => m0706::START, m0706::start;
+    "m0709 start" => m0709::START, m0709::start;
+    "m0673 start" => m0673::START, m0673::start;
+    "m0665 frame" => m0665::FRAME, m0665::frame;
+    "m0666 flare" => m0666::FLARE, m0666::flare;
+    "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
+    "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
+    // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
     "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
@@ -1957,6 +2210,78 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0596 part init", &m0596::PART_INIT),
     ("m0596 object init", &m0596::OBJECT_INIT),
     ("m0596 place pair", &m0596::PLACE_PAIR),
+    // magic r5 own (0450 and up): internal functions
+    ("m0450 orient", &m0450::ORIENT),
+    ("m0450 show models", &m0450::SHOW_MODELS),
+    ("m0473 scale start", &m0473::SCALE_START),
+    ("m0474 timed start", &m0474::TIMED_START),
+    ("m0478 init", &m0478::INIT),
+    ("m0479 start", &m0479::START),
+    ("m0480 clear", &m0480::CLEAR),
+    ("m0482 insert", &m0482::INSERT),
+    ("m0483 draw", &m0483::DRAW),
+    ("m0488 draw", &m0488::DRAW),
+    ("m0493 init", &m0493::INIT),
+    ("m0505 clear", &m0505::CLEAR),
+    ("m0512 insert", &m0512::INSERT),
+    ("m0514 timed init", &m0514::TIMED_INIT),
+    ("m0514 scaled init", &m0514::SCALED_INIT),
+    ("m0519 place", &m0519::PLACE),
+    ("m0519 filter", &m0519::FILTER),
+    ("m0519 fade", &m0519::FADE),
+    ("m0537 start", &m0537::START),
+    ("m0537 draw", &m0537::DRAW),
+    ("m0564 hide", &m0564::HIDE),
+    ("m0573 show", &m0573::SHOW),
+    ("m0573 add node", &m0573::ADD_NODE),
+    ("m0573 init", &m0573::INIT),
+    ("m0577 colour", &m0577::COLOUR),
+    ("m0577 flash off", &m0577::FLASH_OFF),
+    ("m0577 glow off", &m0577::GLOW_OFF),
+    ("m0577 move start", &m0577::MOVE_START),
+    ("m0577 draw detached", &m0577::DRAW_DETACHED),
+    ("m0577 place", &m0577::PLACE),
+    ("m0577 halve", &m0577::HALVE),
+    ("m0577 centre", &m0577::CENTRE),
+    ("m0585 setup", &m0585::SETUP),
+    ("m0585 sound start", &m0585::SOUND_START),
+    ("m0585 two sounds start", &m0585::TWO_SOUNDS_START),
+    ("m0585 glow clear", &m0585::GLOW_CLEAR),
+    ("m0587 camera reset", &m0587::CAMERA_RESET),
+    ("m0587 load groups", &m0587::LOAD_GROUPS),
+    ("m0601 static node", &m0601::STATIC_NODE),
+    ("m0602 sounds free", &m0602::SOUNDS_FREE),
+    ("m0602 sounds stop", &m0602::SOUNDS_STOP),
+    ("m0605 move pieces", &m0605::MOVE_PIECES),
+    ("m0605 actor part", &m0605::ACTOR_PART),
+    ("m0609 task start", &m0609::TASK_START),
+    ("m0610 check targets", &m0610::CHECK_TARGETS),
+    ("m0613 task start", &m0613::TASK_START),
+    ("m0613 centre", &m0613::CENTRE),
+    ("m0641 clear pool", &m0641::CLEAR_POOL),
+    ("m0641 take requests", &m0641::TAKE_REQUESTS),
+    ("m0641 step flashes", &m0641::STEP_FLASHES),
+    ("m0641 part defaults", &m0641::PART_DEFAULTS),
+    ("m0645 setup", &m0645::SETUP),
+    ("m0645 value start", &m0645::VALUE_START),
+    ("m0645 mover", &m0645::MOVER),
+    ("m0665 timeline reset", &m0665::TIMELINE_RESET),
+    ("m0672 camera reset", &m0672::CAMERA_RESET),
+    ("m0680 task", &m0680::TASK),
+    ("m0704 fade", &m0704::FADE),
+    ("m0704 load", &m0704::LOAD),
+    ("m0705 fade", &m0705::FADE),
+    ("m0705 tint", &m0705::TINT),
+    ("m0705 glow", &m0705::GLOW),
+    ("m0707 start", &m0707::START),
+    ("m0708 fade", &m0708::FADE),
+    ("m0708 rise", &m0708::RISE),
+    ("m0708 bind parts", &m0708::BIND_PARTS),
+    ("m0708 shake", &m0708::SHAKE),
+    ("m0708 place", &m0708::PLACE),
+    ("m0671 start", &m0671::START),
+    ("m0672 copy keys", &m0672::COPY_KEYS),
+    // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
     ("m0394 scaled", &m0394::SCALED),

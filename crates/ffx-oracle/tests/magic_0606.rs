@@ -1,0 +1,70 @@
+//! `magic_0606.dll` against its Rust port (`ffx_magic::m0606`). Needs
+//! `FFX_GAME_DIR`.
+
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::needless_range_loop,
+    clippy::type_complexity,
+    clippy::many_single_char_names
+)]
+
+mod magic;
+mod magic_hi;
+mod magic_l3;
+mod magic_owna;
+
+use magic::{Call, Eax, SCRATCH};
+use magic_owna::{recs, twin};
+
+const N: u16 = 606;
+
+#[test]
+fn dll_main_writes_only_crt_state() {
+    magic_l3::dll_main(N);
+}
+
+/// 0x10007a10: no, negative and four targets, in and out of battle.
+#[test]
+fn show_targets() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x7a10);
+    recs(&mut t, &[(530, 2), (249, 2)]);
+    let list = SCRATCH + 0x300;
+    t.set_u32(t.img.word(at + 0x19), list);
+    t.write(list, &[3, 0x25, 0x1f, 0x20]);
+    let table = t.img.word(at + 0x55);
+    for k in 0..0x40 {
+        t.set_u32(table + 4 * k, 0x00ab_0000 + k);
+    }
+    for (n, battle) in [(0i32, 0u32), (-1, 0), (4, 0), (4, 1)] {
+        t.set_u32(t.img.word(at + 0x5), n.cast_unsigned());
+        t.set_u32(t.img.word(at + 0x12), battle);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(at, c, &[], Eax::Checked);
+    }
+}
+
+/// 0x10008990: slot 520 saying 0x1590000 and something else.
+#[test]
+fn camera_points() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8990);
+    recs(&mut t, &[(327, 2)]);
+    magic_owna::rec(&mut t, 229, 5, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, (0.5 + i as f32 * -1.75).to_bits());
+        }
+        0x0229_0000
+    });
+    let cell = SCRATCH + 0x10;
+    magic_owna::rec(&mut t, 520, 0, move |m, _| m.r32(cell));
+    t.set_u32(t.img.word(at + 0x13), SCRATCH + 0x4000);
+    for answer in [0x0159_0000u32, 0x0158_0000] {
+        t.set_u32(cell, answer);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
