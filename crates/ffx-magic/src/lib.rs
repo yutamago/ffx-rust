@@ -2647,6 +2647,8 @@ ports! {
     "summon start task (0247)" => s9_misc::SUMMON_START_TASK_0247, s9_misc::summon_start_task_0247;
     "summon nodes start" => s9_misc::SUMMON_NODES_START, s9_misc::summon_nodes_start;
     "summon start task (0132)" => s9_misc::SUMMON_START_TASK_0132, s9_misc::summon_start_task_0132;
+    "summon targets start" => s9_misc::SUMMON_TARGETS_START, s9_misc::summon_targets_start;
+    "summon start task (0347)" => s9_misc::SUMMON_START_TASK_0347, s9_misc::summon_start_task_0347;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

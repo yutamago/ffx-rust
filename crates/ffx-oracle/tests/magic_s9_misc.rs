@@ -2595,3 +2595,80 @@ fn summon_nodes_started() {
         }
     }
 }
+
+/// Rows 167/168: the summon's task nodes per target in both DLLs,
+/// directly and through its start task: no targets, one, three (found in
+/// the table or not, the table empty), in and out of a battle, the free
+/// ring with enough nodes, the task list empty or not.
+#[test]
+fn summon_targets_started() {
+    for (dll, task, f) in [(347u16, 0x3490u32, 0x35c0u32), (491, 0x3480, 0x35b0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let task = t.at(task);
+        let f = t.at(f);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        let pi = t.img.rel32_target(f + 0x46);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let ans = SCRATCH + 0x7d0;
+        let targets = SCRATCH + 0x7c0;
+        let list = SCRATCH + 0x900;
+        log_calls(&mut t, 225, 1, &[], move |m, _, _| m.r32(ans));
+        log_calls(&mut t, 226, 2, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 227, 1, &[], move |m, _, _| m.r32(ans + 4));
+        log_calls(&mut t, 719, 3, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 711, 3, &[], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, 4, &[], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 617, 1, &[], move |m, a, _| {
+            m.w32(a[1], m.r32(targets));
+            list
+        });
+        log_calls(&mut t, 271, 1, &[], |_, a, _| a[0]);
+        for s in [215u32, 413] {
+            log_calls(&mut t, s, 1, &[], move |_, a, _| (s << 16) ^ a[0]);
+        }
+        t.set_u32(w(&t, 0x55), 0x0a0a_0001);
+        t.write(list, &[7, 3, 9, 1]);
+        let table = SCRATCH + 0x980;
+        t.write(table, &[1, 9, 5, 3, 8]);
+        t.set_u32(w(&t, 0xb6), table);
+        t.set_u32(w(&t, 0x1bb), 0x0c0c_0005);
+        // (targets, table bytes, in a battle, load: busy / first / ready)
+        for (k, (n, m, battle, busy, once, ready)) in [
+            (0i32, 5i32, 0u32, 0u32, 0u32, 1u32),
+            (1, 5, 1, 0, 1, 1),
+            (3, 5, 0, 0, 0, 2),
+            (3, 0, 1, 1, 0, 1),
+            (2, 3, 0, 0, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            for direct in [true, false] {
+                t.set_u32(LOG, 0);
+                t.set_u32(ans, if direct { 0 } else { busy });
+                t.set_u32(ans + 4, ready);
+                t.set_u32(op(&t, task, 0x18), once);
+                t.set_u32(targets, n.cast_unsigned());
+                t.set_u32(w(&t, 0x92), m.cast_unsigned());
+                t.set_u32(w(&t, 0x1ce), battle);
+                t.set_u32(w(&t, 0x205), battle);
+                // the globals and records the start sets hold other values
+                for o in [0x1b6u32, 0x1d4, 0x1e0, 0x210, 0x22a, 0x234, 0x23d, 0x3ce] {
+                    t.set_u32(w(&t, o), 0x5a5a_0000 + o);
+                }
+                let recs = w(&t, 0x8b) - 0x508;
+                t.write(recs, &varied(0x520 * 3 + 0x10, k + 2));
+                let free = n.cast_unsigned() + 5 + k % 2;
+                task_ring(&mut t, f, (0xd1, 0x86, 0x151, 0x169), k, free);
+                scrub(&mut t);
+                let call = Call {
+                    eax: 0x35c0 + k,
+                    ecx: 0x0ecc_0000 + k,
+                    ..Call::default()
+                };
+                t.check_entry(if direct { f } else { task }, call, &[], Eax::Checked);
+            }
+        }
+    }
+}
