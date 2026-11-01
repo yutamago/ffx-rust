@@ -472,3 +472,161 @@ fn start_0705() {
         t.check_entry(f, Call::default(), &[0x0a0a_0000 + k as u32], Eax::Checked);
     }
 }
+
+/// `m0704::frame` (0x10001400): each wait, paused, the first frame (one
+/// sound id 0xff), the sounds' steps (0xb0 to 0xb1 at their time, 0xb1 to
+/// 0xb2 at frame 0x5a), the light's start at the first sound's frame 0x22,
+/// the second part's start at the light's time 0x50000 and its run (its
+/// time 0xf000 and not).
+#[test]
+fn frame_0704() {
+    let Some(mut t) = magic_l3::twin(704) else {
+        return;
+    };
+    let f = t.at(0x1400);
+    let g = |t: &Twin, op: u32| t.img.word(f + op);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x14));
+    rec(&mut t, 253, 0, |m, _| m.r32(SCRATCH + 0x18));
+    let table = SCRATCH + 0x800;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0b00_0000 + 0x11 * i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 247, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, (a[1] ^ i).wrapping_mul(0x0101_0101));
+        }
+        0x247
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 8 * i) ^ (i << 4);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 289, 1, |_, a| 0x0289_0000 ^ a[0]);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0x3f) * 0.25 - 1.0);
+    recs(
+        &mut t,
+        &[
+            (226, 2),
+            (228, 2),
+            (220, 3),
+            (714, 5),
+            (237, 4),
+            (217, 2),
+            (239, 3),
+        ],
+    );
+    let lock = SCRATCH + 0x7f0;
+    let sp = t.img.rel32_target(f + 0x20f);
+    t.set_u32(t.img.word(sp + 0x04), lock);
+    let rec0 = g(&t, 0x1a9);
+    // (go, once, run, 225, 227, 253, first, [(step, time, frame)], light, part, part time)
+    let s3 = |a: (u32, u32, u32)| [a, (0, 0, 0), (0, 0, 0)];
+    let cases: Vec<(
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        bool,
+        [(u32, u32, u32); 3],
+        (u16, u32),
+        u16,
+        u32,
+    )> = vec![
+        (0, 0, 0, 1, 1, 1, false, s3((0, 0, 0)), (0, 0), 0, 0),
+        (0, 0, 0, 0, 0, 1, false, s3((0, 0, 0)), (0, 0), 0, 0),
+        (0, 0, 0, 0, 1, 0, false, s3((0, 0, 0)), (0, 0), 0, 0),
+        (1, 1, 1, 0, 1, 1, true, s3((0, 0, 0)), (0, 0), 0, 0),
+        (
+            1,
+            1,
+            1,
+            0,
+            1,
+            1,
+            false,
+            [(0xb0, 7, 7), (0xb1, 0, 0x5a), (0xb0, 3, 4)],
+            (1, 0x5_0000),
+            0,
+            0,
+        ),
+        (
+            1,
+            1,
+            1,
+            0,
+            1,
+            1,
+            false,
+            [(0xb1, 0, 0x22), (0xb1, 0, 0x59), (0xb2, 0, 0)],
+            (1, 0x4_0000),
+            1,
+            0xf000,
+        ),
+        (
+            1,
+            1,
+            1,
+            0,
+            1,
+            1,
+            false,
+            [(0xb1, 0, 0x5a), (0xb0, 9, 9), (0xb1, 0, 0x5a)],
+            (0, 0x5_0000),
+            1,
+            0xe000,
+        ),
+        (
+            1,
+            1,
+            1,
+            0,
+            1,
+            1,
+            false,
+            [(0xb1, 0, 0x23), (0, 0, 0), (0, 0, 0)],
+            (0, 0),
+            0,
+            0,
+        ),
+    ];
+    for (k, (go, once, run, s225, s227, s253, first, sounds, light, part, ptime)) in
+        cases.into_iter().enumerate()
+    {
+        t.set_u32(g(&t, 0x12), go);
+        t.set_u32(g(&t, 0x3f), once);
+        t.set_u32(g(&t, 0x6a), run);
+        t.set_u32(SCRATCH + 0x10, s225);
+        t.set_u32(SCRATCH + 0x14, s227);
+        t.set_u32(SCRATCH + 0x18, s253);
+        t.set_u32(g(&t, 0xc4), u32::from(!first));
+        for (i, (step, time, frame)) in (0u32..).zip(sounds) {
+            let at = rec0 + 0x18 * i;
+            t.set_u32(at - 0x10, if i == 1 && k == 3 { 0xff } else { 5 + i });
+            t.set_u32(at - 8, step);
+            t.set_u32(at - 4, time);
+            t.set_u32(at, frame);
+            t.set_u32(at + 4, 0x1234_0000 + i);
+        }
+        // the shade the light's angle comes from
+        t.set_u16(rec0 + 6, 0x0123 + k as u16);
+        let lp = g(&t, 0x390);
+        t.set_u16(lp, light.0);
+        t.set_u32(g(&t, 0x3a0), light.1);
+        t.set_u16(g(&t, 0x43b), part);
+        t.set_u32(g(&t, 0x482), ptime);
+        t.set_u32(lock, 0x4444 + k as u32);
+        // the light's words the start clears: old values
+        for op in [0x258u32, 0x25e] {
+            let a = g(&t, op);
+            t.set_u32(a, 0x5a5a_0000 | op);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
