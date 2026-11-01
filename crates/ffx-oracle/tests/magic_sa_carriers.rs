@@ -5924,7 +5924,7 @@ const CARRIERS: &[(&str, &[(u16, u32)])] = &[
         ],
     ),
     (
-        "rotate offset, list pop",
+        "turn a point",
         &[
             (644, 0x35a0),
             (692, 0x35a0),

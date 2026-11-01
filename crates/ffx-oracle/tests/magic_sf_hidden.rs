@@ -2,7 +2,11 @@
 //! (`ffx_magic::sf_hidden`, census2 2026-11-01) against every DLL
 //! carrying each. Needs `FFX_GAME_DIR`.
 
-#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 
 mod magic;
 #[path = "magic/sa.rs"]
@@ -737,7 +741,14 @@ fn spark_burst_task() {
         set_f(&mut t, scale, rnd);
         t.set_u8(sel, (k % 4) as u8);
         free_ring(&mut t, take, SCRATCH + 0x5000, 4);
-        t.set_u32(w(&t, 0x4ee), if k % 2 == 0 { 0 } else { SCRATCH + 0x6000 });
+        t.set_u32(
+            w(&t, 0x4ee),
+            if k.is_multiple_of(2) {
+                0
+            } else {
+                SCRATCH + 0x6000
+            },
+        );
         t.set_u32(w(&t, 0x507), SCRATCH + 0x6000);
         t.write(SCRATCH + 0x6000, &varied(0x20, k));
         for i in 0..8 {

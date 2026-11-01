@@ -310,7 +310,10 @@ pub fn fly_in_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let y = sub(k(g, 0xd6), arc);
     g.write::<f32>(w(0xea), y);
     // comiss next, ONE; jb: below or unordered
-    if !(next >= k(g, 0xca)) {
+    if next
+        .partial_cmp(&k(g, 0xca))
+        .is_none_or(std::cmp::Ordering::is_lt)
+    {
         return Ret::eax(eax);
     }
     let removed =
@@ -1028,6 +1031,8 @@ fn ring_append<G: Game>(g: &mut G, n: u32, l: u32) {
 /// stored at 0x10007320).
 #[allow(clippy::too_many_lines)] // the original's set-up, store by store
 pub fn shade_fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    const ONE: u32 = 0x3f80_0000;
+    const K: u32 = 0x3ecc_cccd;
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let task = fr.arg(g, 0);
@@ -1043,8 +1048,6 @@ pub fn shade_fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let t = slot_target(g, w(table), 256);
         g.call(t, fr.ecx, &[c, r, gr, b, 0xf]).eax
     };
-    const ONE: u32 = 0x3f80_0000;
-    const K: u32 = 0x3ecc_cccd;
     let mut step = g.read::<u32>(step_at);
     let eax = loop {
         if step == 0x2710 {
@@ -1254,6 +1257,7 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<i32>(left_at, left);
     let mut st = Pushes::default();
     st.push_all(&[1, 9, w(0x4d)]);
+    // call width: 12 (the most `Pushes::words` holds)
     let obj = st.call(g, slot(g, 0x38, 719), fr.ecx).eax;
     let i = g.read::<u32>(left_at);
     let r = i.wrapping_mul(0x3d0).wrapping_add(blk);
@@ -1265,6 +1269,7 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let chr = g.read::<u32>(w(0xa5));
     st.push_all(&[0x18, chr]);
     record(g, v, &[0xc4fa_0000, 0, 0, ONE]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x79, 237), fr.ecx);
     g.write::<u32>(r.wrapping_add(0xc), ONE);
     let actor = |g: &G, sel: u32, table: u32| {
@@ -1274,8 +1279,10 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let p = r.wrapping_add(0x30);
     let a0 = actor(g, 0xd3, 0xe3);
     st.push_all(&[p + 8, p + 4, p, a0]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0xec, 262), fr.ecx);
     st.push_all(&[v, 6, a0]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x105, 268), fr.ecx);
     let vy = g.read::<u32>(v + 4);
     g.write::<u32>(p + 4, vy);
@@ -1298,8 +1305,10 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let turn = wrap_ops(g, img, f, turn, [0x1e5, 0x1db, 0x1f5, 0x1db]);
     let mut st = Pushes::default();
     st.push_all(&[turn.to_bits(), mtx, mtx]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x20f, 329), fr.ecx);
     st.push_all(&[vec, mtx, vec]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x22b, 229), fr.ecx);
     let x = add(g.read::<f32>(p), g.read::<f32>(vec));
     g.write::<f32>(p, x);
@@ -1307,6 +1316,7 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(p + 8, z);
     let a1 = actor(g, 0x256, 0x260);
     st.push(a1);
+    // call width: 12 (the most `Pushes::words` holds)
     let ground = st0_f32(st.call(g, slot(g, 0x265, 12), fr.ecx).st0);
     let a = add(ground, k(g, 0x27c));
     let dz = sub(g.read::<f32>(p + 8), g.read::<f32>(r.wrapping_add(8)));
@@ -1319,15 +1329,18 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let r4 = random(g, 0x31b, 0x3fc9_0fdb);
     let mut st = Pushes::default();
     st.push_all(&[r4.to_bits(), mtx, mtx]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x344, 330), fr.ecx);
     st.pop(2);
     st.set_top(yaw.to_bits());
     st.push_all(&[mtx, mtx]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x365, 329), fr.ecx);
     let r5 = random(g, 0x372, 0x4220_0000);
     record(g, vec, &[0, r5.to_bits(), 0, ONE]);
     let mut st = Pushes::default();
     st.push_all(&[0x4220_0000, vec, mtx, vec]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x3a4, 229), fr.ecx);
     let rv = [0u32, 4, 8].map(|o| g.read::<f32>(vec + o));
     // the two inner points: R+0x10 at 0.33 moved by v, R+0x20 at 0.66 by
@@ -1394,6 +1407,7 @@ pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let a2 = actor(g, 0x564, 0x57d);
     let mut st = Pushes::default();
     st.push_all(&[w(0x550), 6, 0x23, 1, w(0x569), w(0x571), w(0x576), a2]);
+    // call width: 12 (the most `Pushes::words` holds)
     st.call(g, slot(g, 0x582, 262), fr.ecx);
     let y = sub(k(g, 0x592), k(g, 0x59a));
     g.write::<u32>(w(0x5b0), ONE);
