@@ -163,7 +163,26 @@ fn camera_turn() {
         (-3.1, -3.1),
     ];
     let counts = [0u32, 1, 20, 0x8000_0000].into_iter().cycle();
-    for ((a, b), count) in pairs.into_iter().zip(counts) {
+    let mut cases: Vec<(f32, f32, u32)> = pairs
+        .into_iter()
+        .zip(counts)
+        .map(|((a, b), c)| (a, b, c))
+        .collect();
+    // with the count left at 0 the wrap undoes the turn round: these keep
+    // a blend (count 2), put a or b at 0 exactly and the blend on PI and
+    // LO themselves
+    let pi = f32::from_bits(t.u32(t.img.word(at + 0x33)));
+    let lo = f32::from_bits(t.u32(t.img.word(at + 0x2b)));
+    cases.extend([
+        (-2.5, 2.5, 2),
+        (2.5, -2.5, 2),
+        (0.0, -3.2, 2),
+        (-3.2, 0.0, 2),
+        (3.2, 0.0, 2),
+        (0.5, pi, 0),
+        (-0.5, lo, 0),
+    ]);
+    for (a, b, count) in cases {
         t.write(fx + 0x23f0, &[0x77; 0x10]);
         t.set_u32(fx + 0x23f4, a.to_bits());
         t.set_u32(fx + 0x23f8, b.to_bits());
@@ -181,7 +200,8 @@ fn party_mean() {
     let at = t.at(0x1120);
     let list = SCRATCH + 0x700;
     let count = SCRATCH + 0x6f0;
-    t.write(list, &[4, 0, 9, 2]);
+    // the second actor's x not 0, so the sums' order shows
+    t.write(list, &[4, 1, 9, 2]);
     rec(&mut t, 288, 2, move |m: &mut dyn StubMem, a: &[u32]| {
         let n = m.r32(count);
         m.w32(a[1], n);

@@ -351,15 +351,60 @@ fn shake_task() {
     }
 }
 
+/// Every copy of [`s4_misc::follow_task`] (census2, 2026-11-01: the
+/// copies calling `s4_small::turn_point` are the same function).
+const FOLLOW_TASKS: &[(u16, u32)] = &[
+    (52, 0x2730),
+    (53, 0x2cd0),
+    (55, 0x2ef0),
+    (64, 0x1b50),
+    (65, 0x2310),
+    (67, 0x1ef0),
+    (149, 0x1960),
+    (163, 0x28f0),
+    (199, 0x2740),
+    (200, 0x26f0),
+    (243, 0x2dc0),
+    (245, 0x2010),
+    (247, 0x20f0),
+    (248, 0x1f30),
+    (249, 0x34f0),
+    (250, 0x28e0),
+    (251, 0x2af0),
+    (269, 0x35c0),
+    (275, 0x1990),
+    (299, 0x28d0),
+    (303, 0x4a80),
+    (318, 0x1e10),
+    (325, 0x2590),
+    (354, 0x26b0),
+    (380, 0x38c0),
+    (385, 0x22b0),
+    (390, 0x4080),
+    (394, 0x35f0),
+    (447, 0x2e20),
+    (472, 0x1960),
+    (475, 0x22e0),
+    (508, 0x2eb0),
+    (562, 0x3650),
+    (659, 0x20f0),
+    (660, 0x18b0),
+];
+
 /// `magic_0052` 0x10002730: the follow task in each mode (no mode, on a
 /// target with and without the turned offset, on the actors' mean), its
 /// script waiting, ending with the give-back flag and without it.
 #[test]
 #[allow(clippy::too_many_lines)] // one set-up per callee
 fn follow_task() {
-    for (n, rva) in [(52u16, 0x2730u32), (55, 0x2ef0), (303, 0x4a80)] {
+    for &(n, rva) in FOLLOW_TASKS {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(rva);
+        assert_eq!(
+            ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0),
+            Some("follow task"),
+            "magic_{n:04}"
+        );
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         let map = SCRATCH + 0x5000;
         let chrs = w(&t, 0x4a);

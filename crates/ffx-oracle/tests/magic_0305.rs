@@ -64,6 +64,19 @@ fn frame() {
     let w = |t: &Twin, off: u32| t.img.word(at + off);
     let ms = t.img.rel32_target(at + 0x7d);
     let ro = t.img.rel32_target(at + 0x84);
+    // one part for the tail's register_parts (slots 941, 772, 779), its
+    // lock at P + 0x200, so the callee's address matters
+    let rp = t.img.rel32_target(at + 0xb4);
+    let parts = SCRATCH + 0x5000;
+    t.write(parts, &[0x5e; 0x80]);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(t.img.word(rp + 0x43), parts + 0x200);
+    t.set_u32(t.img.word(rp + 0x5f), parts + 0x200);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ a[1]);
+    t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[1]);
+    rec(&mut t, 779, 4, |_, a| 0x0779_0000 ^ a[2]);
     for (a, b, busy, done, bits) in [
         (1i32, 1i32, false, true, 0x8000u32),
         (2, 1, false, true, 0x8000),

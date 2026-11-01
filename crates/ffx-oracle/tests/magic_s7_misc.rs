@@ -102,6 +102,8 @@ fn handles_registered() {
             (3, 0x7fff_f7dc),
             (-1, 0x1234_5678),
             (2, 0xffff_f000),
+            // the first address exactly 0 (`cdq` of 0 is 0, not -1)
+            (1, 0xffff_f7e4),
         ]
         .into_iter()
         .enumerate()
@@ -289,6 +291,11 @@ fn scaled_matrices() {
                 m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i));
             }
             m.w32(row + 0x40, a[1]);
+            // and the local `A` above `C` (its scaled diagonal is
+            // dead after, but must be what the original leaves)
+            for i in 0..16u32 {
+                m.w32(row + 0x44 + 4 * i, m.r32(a[2] + 0x40 + 4 * i));
+            }
             0x0231_0000 ^ a[1]
         });
         for k in 0..3u32 {
@@ -447,15 +454,27 @@ fn countdown_children() {
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
         let nodes = SCRATCH + 0x800;
-        log_calls(&mut t, 434, log, 2, None, move |m, _, k| {
-            let n = nodes + 0x100 * (k % 4);
-            m.w32(n + 0xac, k % 3);
-            n
+        for s in [434, 436] {
+            log_calls(&mut t, s, log, 2, None, move |m, _, k| {
+                let n = nodes + 0x100 * (k % 4);
+                m.w32(n + 0xac, k % 3);
+                n
+            });
+        }
+        // with the flag set, slot 942 moves slot 434's table word to slot
+        // 436's trap: the original reads the table again for each child
+        let moves = SCRATCH + 0x7f00;
+        log_calls(&mut t, 942, log, 1, None, move |m, a, k| {
+            if m.r32(moves) != 0 {
+                m.w32(magic::TABLE + 4 * 434, trap(436));
+            }
+            m.r32(a[0]) ^ (k << 12)
         });
-        log_calls(&mut t, 942, log, 1, None, |m, a, k| m.r32(a[0]) ^ (k << 12));
-        for (k, timer) in [5i32, 1, 2, 0, -3, 0x7fff_ffff].into_iter().enumerate() {
+        for (k, timer) in [5i32, 1, 2, 0, -3, 0x7fff_ffff, 4].into_iter().enumerate() {
             let k = k as u32;
             let o = SCRATCH + 0x400;
+            t.set_u32(moves, u32::from(k == 6));
+            t.set_u32(magic::TABLE + 4 * 434, trap(434));
             t.set_u32(log, 0);
             t.write(o, &varied(0x200, k));
             t.write(nodes, &varied(0x400, k + 1));
@@ -873,8 +892,11 @@ fn light_nodes() {
 /// Row 174: the loading summon frame of the five DLLs: each load state
 /// busy and done (0 and 1 run on), state 2 with its call, the frame with
 /// an empty ring, two nodes and the ring skipped. The two nodes are
-/// already at the pass.
+/// already at the pass, except in the last two cases: there `B`'s child
+/// moves the pass, so `C` sees the pass read again. A ring whose nodes
+/// leave it empty sets the flag too.
 #[test]
+#[allow(clippy::too_many_lines)] // the cases' rings, one by one
 fn summon_load_frames() {
     for (dll, rva) in [
         (152u16, 0xc7b0u32),
@@ -898,28 +920,57 @@ fn summon_load_frames() {
         t.set_u32(w(&t, 0x99), sa::node(21));
         let vt = sa::node(22);
         t.set_u32(vt + 0x20, magic::TRAPS);
-        rec(&mut t, 0, 1, |m, a| {
+        let root = w(&t, 0xca);
+        // with this flag the node's method empties the ring
+        let empties = SCRATCH + 0x2f4;
+        rec(&mut t, 0, 1, move |m, a| {
             let x = m.r32(a[0]);
             let k = m.r32(sa::node(23));
             m.w32(sa::node(23), k + 1);
             m.w32(sa::node(23) + 4 + 4 * (k % 8), x);
             m.w32(sa::node(23) + 0x24 + 4 * (k % 8), m.r32(a[0] + 4));
+            if m.r32(empties) != 0 {
+                m.w32(root + 8, root);
+            }
             0x77
         });
-        let root = w(&t, 0xca);
         assert_eq!(w(&t, 0xaa), root + 8);
-        // (state, busy bits, skip, nodes)
-        for (k, (state, b, skip, n)) in [
-            (0u32, 0xffu32, 0u32, 0u32),
-            (0, 0, 0, 2),
-            (1, 1 << (313 % 8), 0, 0),
-            (0, 1 << (313 % 8), 0, 0),
-            (1, 0, 0, 1),
-            (2, 1 << (549 % 8), 0, 0),
-            (2, 0, 1, 2),
-            (3, 0xff, 0, 0),
-            (4, 0, 1, 0),
-            (0xffff_ffff, 0, 0, 2),
+        // the skip test and the walk's loop test compare with the same
+        // head, and the walk reads the same first node and pass again
+        assert_eq!(w(&t, 0xe8), root);
+        assert_eq!(w(&t, 0xfb), root);
+        assert_eq!(w(&t, 0xf5), root + 8);
+        assert_eq!(w(&t, 0xef), w(&t, 0xb4));
+        assert_eq!(w(&t, 0xc2), w(&t, 0xb4));
+        assert_eq!(w(&t, 0x11d), w(&t, 0xb4));
+        // `B`'s child (its handler, slot 2, moves the pass to 0x99)
+        let (bn, cn) = (w(&t, 0x113), w(&t, 0x12b));
+        let child = sa::node(24);
+        let vt2 = sa::node(25);
+        t.set_u32(vt2 + 0x1c, magic::TRAPS + 16 * 2);
+        let pass_global = w(&t, 0xb4);
+        rec(&mut t, 2, 1, move |m, _| {
+            let (at, sh) = (pass_global & !3, 8 * (pass_global & 3));
+            let v = m.r32(at);
+            m.w32(at, v & !(0xff << sh) | 0x99 << sh);
+            0x22
+        });
+        // (state, busy bits, skip, nodes, the nodes empty the ring, `B`
+        // moves the pass)
+        for (k, (state, b, skip, n, empty, moves)) in [
+            (0u32, 0xffu32, 0u32, 0u32, false, false),
+            (0, 0, 0, 2, false, false),
+            (1, 1 << (313 % 8), 0, 0, false, false),
+            (0, 1 << (313 % 8), 0, 0, false, false),
+            (1, 0, 0, 1, false, false),
+            (2, 1 << (549 % 8), 0, 0, false, false),
+            (2, 0, 1, 2, false, false),
+            (3, 0xff, 0, 0, false, false),
+            (4, 0, 1, 0, false, false),
+            (0xffff_ffff, 0, 0, 2, false, false),
+            (4, 0, 0, 2, true, false),
+            (4, 0, 0, 1, false, true),
+            (4, 0, 1, 0, false, true),
         ]
         .into_iter()
         .enumerate()
@@ -945,6 +996,16 @@ fn summon_load_frames() {
             // the two nodes at the new pass: nothing moves
             for o in [0x113u32, 0x12b] {
                 t.set_u8(w(&t, o) + 0x1a, p.wrapping_add(1));
+            }
+            t.set_u32(empties, u32::from(empty));
+            if moves {
+                // `B` behind: its one child runs and moves the pass
+                t.set_u8(bn + 0x1a, p);
+                t.write(child, &varied(0x40, k));
+                t.set_u32(child, vt2);
+                t.set_u32(child + 8, bn);
+                t.set_u32(bn + 0x10, child);
+                t.set_u32(cn + 0x10, cn);
             }
             t.set_u32(w(&t, 0x104), 0x10 | (k & 1));
             scrub(&mut t);
@@ -1499,6 +1560,10 @@ fn near_points_fades() {
         log_calls(&mut t, 942, log + 0x200, 1, None, |m, a, k| m.r32(a[0]) ^ k);
         let cf = t.img.rel32_target(f + 0xe0);
         t.set_u32(op(&t, cf, 0x79), 30);
+        // the fade's factors (`K1 K2` 1.5) and divisor
+        for (o, x) in [(0x8u32, 3.0f32), (0x10, 0.5), (0xac, 4.0)] {
+            t.set_u32(op(&t, cf, o), x.to_bits());
+        }
         t.set_u32(op(&t, f, 0xa2), 1.0f32.to_bits());
         let points = op(&t, f, 0x4c);
         let flags = op(&t, f, 0xb2);
@@ -1509,6 +1574,8 @@ fn near_points_fades() {
             t.set_u32(op(&t, f, 0x40), n.cast_unsigned());
             t.write(o, &varied(0x200, k));
             t.set_u32(o + 0xac, k % 3);
+            // the count far below the limit, in the last five, past it
+            t.set_u32(o + 0x2c + 0x10 * (k % 3), [2, 27, 40, 5][k as usize]);
             t.set_u32(o + 0xd0, 0.5f32.to_bits());
             t.set_u32(o + 0xd8, (-1.0f32).to_bits());
             t.set_u32(o + 0xdc, 2.0f32.to_bits());
@@ -1644,6 +1711,8 @@ fn two_stage_fades() {
             t.set_u32(node + 8, SCRATCH + 0x740);
             t.write(SCRATCH + 0x700, &varied(0x80, k));
             t.set_u32(op(&t, f, 0x5b + d), 0xffff_0003 ^ k);
+            // `*G_A`, which stage 1 clears
+            t.set_u32(op(&t, f, 0x56 + d), 0x5656_0000 ^ k);
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[task], Eax::Checked);
         }
@@ -1725,7 +1794,8 @@ fn stream_blocks() {
             });
         }
         log_calls(&mut t, 776, log, 1, None, |_, a, _| a[0] << 8);
-        log_calls(&mut t, 777, log, 1, None, |_, a, _| a[0] & 0xff);
+        // (bits that overlap slot 776's: the flags are or-ed)
+        log_calls(&mut t, 777, log, 1, None, |_, a, _| a[0] & 0xff | 0xff00);
         let tbl = SCRATCH + 0x1000;
         let a = SCRATCH + 0x800;
         // (state at, block, bytes, open, rate, count)
@@ -1867,6 +1937,8 @@ fn sprite_fade_nodes() {
             (4, 1, 0, 0, 1, 0xff),
             (4, 3, 0, 0, 0, 0xff),
             (4, 1, 0, 0, 0, 0xff),
+            // alpha 16 x 0.5 = 8.0, exactly the bound: not drawn
+            (4, 1, 2, 0, 0, 16),
         ]
         .into_iter()
         .enumerate()
@@ -2148,8 +2220,10 @@ fn thunder_nodes() {
         let log = SCRATCH + 0x6000;
         let vt = ring_handler(&mut t, log);
         // the vector: scaled, then normalised (both write it)
-        log_calls(&mut t, 233, log, 3, None, |m, a, k| {
+        log_calls(&mut t, 233, log, 3, None, move |m, a, k| {
             for i in 0..4 {
+                // what the vector held before (the frame's (0, 0, -1, 1))
+                m.w32(log + 0x4e0 + 4 * i, m.r32(a[0] + 4 * i));
                 let x = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
                 m.w32(a[0] + 4 * i, x.to_bits());
             }
@@ -2391,11 +2465,19 @@ fn aimed_in(
             (-0.5, -1.0, -3.0, false),
             (2.0, 0.0, -0.75, true),
             (0.0, 1.0, 0.0, false),
+            // yaw 0 exactly on the upper bound, then on the lower one
+            (1.0, 0.5, 0.0, false),
+            (1.0, 0.5, 0.0, true),
         ]
         .into_iter()
         .enumerate()
         {
             let k = k as u32;
+            let (upper, lower) = match k {
+                5 => (0.0f32, -1.0f32),
+                6 => (1.0, 0.0),
+                _ => (1.0, -1.0),
+            };
             t.write(e, &varied(0x390, k));
             for (i, x) in (0u32..).zip([dx, dy, dz]) {
                 t.set_u32(e + pos + 4 * i, (0.5 * k as f32).to_bits());
@@ -2404,13 +2486,13 @@ fn aimed_in(
             t.write(node - 0x40, &varied(0x60, k + 9));
             t.write(node, &varied(0x20, k));
             // the yaw's constants (`K`, `H`, `T`, `L`, `T`): 0, 1, 2.5, -1,
-            // 2.5, so the yaws cross both bounds
+            // 2.5, so the yaws cross both bounds (or meet one exactly)
             let ks = if take_at == 0x1be {
                 [0xfeu32, 0x10d, 0x11d, 0x127, 0x134]
             } else {
                 [0x107, 0x116, 0x126, 0x130, 0x13d]
             };
-            for (o, x) in ks.into_iter().zip([0.0f32, 1.0, 2.5, -1.0, 2.5]) {
+            for (o, x) in ks.into_iter().zip([0.0f32, upper, 2.5, lower, 2.5]) {
                 t.set_u32(w(&t, o), x.to_bits());
             }
             t.set_u32(node, ring[0]);
@@ -2864,10 +2946,16 @@ fn two_sparks() {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
+        // with this flag the second number (the `z` offset) is a quiet NaN
+        // and so is `P.z`: the sum's order picks the payload
+        let nans = SCRATCH + 0x2f4;
         for s in [314u32, 404] {
             log_calls(&mut t, s, log, 1, None, move |_, a, k| a[0] ^ (s << 20) ^ k);
             t.stub_st0(s, move |m, a| {
                 let k = m.r32(log);
+                if k == 2 && m.r32(nans) != 0 {
+                    return f64::from_bits(0x7ff8_8000_0000_0000);
+                }
                 f64::from(f32::from_bits(a[0])) * (0.25 + f64::from(k % 7))
             });
         }
@@ -2889,12 +2977,13 @@ fn two_sparks() {
         }
         let p = SCRATCH + 0x300;
         // (records free, the flags)
-        for (k, (n, fl)) in [(0u32, 0u8), (1, 0), (2, 0), (2, 4), (3, 0xf8)]
+        for (k, (n, fl)) in [(0u32, 0u8), (1, 0), (2, 0), (2, 4), (3, 0xf8), (2, 0)]
             .into_iter()
             .enumerate()
         {
             let k = k as u32;
             t.set_u32(log, 0);
+            t.set_u32(nans, u32::from(k == 5));
             t.set_u8(flags, fl);
             t.set_u32(op(&t, pt, 0x0f), 8);
             t.set_u32(op(&t, pt, 0x08), 0);
@@ -2906,6 +2995,12 @@ fn two_sparks() {
             t.write(p, &varied(0x10, k + 2));
             t.set_u32(p, (1.5 * k as f32).to_bits());
             t.set_u32(p + 8, (-2.0 + k as f32).to_bits());
+            if k == 5 {
+                // `addss` keeps its first operand's NaN; the emulator keeps
+                // the larger payload: the first one is the larger here
+                // (`P.z` first in 0565, the number first in 0644)
+                t.set_u32(p + 8, if d == 0 { 0x7fe0_1234 } else { 0x7fc0_1234 });
+            }
             scrub(&mut t);
             let call = Call {
                 ecx: p,
@@ -2933,7 +3028,11 @@ fn summon_object_setups() {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
-        log_calls(&mut t, 268, log, 3, None, |m, a, k| {
+        log_calls(&mut t, 268, log, 3, None, move |m, a, k| {
+            // `B`'s links (`O+0x13c` is `B+0x1c`): `+4` the parent, `+8`
+            // the old last, as they are while `B` is the last child
+            m.w32(log + 0x400, m.r32(a[2] - 0x18));
+            m.w32(log + 0x404, m.r32(a[2] - 0x14));
             m.w32(a[2], a[0] ^ k);
             0x268
         });
@@ -2978,6 +3077,8 @@ fn summon_object_setups() {
             ] {
                 t.set_u32(w(&t, o_), x.to_bits());
             }
+            // `*G_S`, slot 239's first word
+            t.set_u32(w(&t, 0x21d), 0x0021_d000 + k);
             scrub(&mut t);
             let c = Call {
                 ecx: o,
@@ -3153,9 +3254,14 @@ fn actors_objects_started() {
             0x268
         });
         log_calls(&mut t, 333, log, 1, None, |_, a, _| a[0]);
+        // its own count, kept across the cases, so every value comes up
+        let turns = SCRATCH + 0x2f8;
+        t.set_u32(turns, 0);
         t.stub_st0(333, move |m, _| {
+            let k = m.r32(turns);
+            m.w32(turns, k + 1);
             // (-2.0 and 4.0: the yaw at each bound)
-            [0.25, 7.5, -6.0, 1.0, -2.0, 4.0][(m.r32(log) % 6) as usize]
+            [0.25, 7.5, -6.0, 1.0, -2.0, 4.0][(k % 6) as usize]
         });
         // the object start's (`s4_misc::start_object_first`)
         let table = SCRATCH + 0x3400;
@@ -3282,16 +3388,33 @@ fn camera_blends() {
             [(-0.5, 0.5), (2.0, 1.0)],
             [(-2.9, 2.9), (2.9, -2.9)],
         ];
-        for k in 0..3u32 {
+        // the bounds met exactly: `a` or `b` 0 with the two `K1` apart
+        // (half way), and blends of exactly `K1` and `-K1` (at `b`)
+        let exact: [[(f32, f32); 2]; 3] = [
+            [(0.0, -3.5), (-3.5, 0.0)],
+            [(3.5, 0.0), (1.0, 1.0)],
+            [(2.0, 3.0), (-2.0, -3.0)],
+        ];
+        for k in 0..4u32 {
             t.write(s, &varied(0x200, k));
             t.set_u32(task + 0x14, s);
-            for (i, pair) in (0u32..).zip(angles) {
+            let (set, step) = if k < 3 {
+                (angles, k as f32)
+            } else {
+                (exact, 0.0)
+            };
+            for (i, pair) in (0u32..).zip(set) {
                 let b = s + 0x30 + 0x38 * i;
                 for (c, (a, e)) in (0u32..).zip(pair) {
-                    t.set_u32(b - 0x20 + 4 * c, (a + 0.1 * k as f32).to_bits());
-                    t.set_u32(b - 0x10 + 4 * c, (e - 0.2 * k as f32).to_bits());
+                    t.set_u32(b - 0x20 + 4 * c, (a + 0.1 * step).to_bits());
+                    t.set_u32(b - 0x10 + 4 * c, (e - 0.2 * step).to_bits());
                 }
-                t.set_u32(b, (i + k) % 3);
+                let timer = if k < 3 {
+                    (i + k) % 3
+                } else {
+                    [2, 2, 0][i as usize]
+                };
+                t.set_u32(b, timer);
                 t.set_u32(b + 4, 4);
             }
             for i in 0..4u32 {
@@ -3334,8 +3457,10 @@ fn flight_steps() {
         }
         log_calls(&mut t, 314, log, 1, None, |_, a, _| a[0]);
         t.stub_st0(314, move |m, _| 0.375 + f64::from(m.r32(log) % 5));
-        log_calls(&mut t, 229, log, 3, None, |m, a, _| {
+        log_calls(&mut t, 229, log, 3, None, move |m, a, _| {
             for i in 0..4u32 {
+                // the vector as the frame holds it (`w` 1.0)
+                m.w32(log + 0x400 + 4 * i, m.r32(a[2] + 4 * i));
                 let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
                 m.w32(a[0] + 4 * i, v & 0x7fff_ffff);
             }
@@ -3343,9 +3468,7 @@ fn flight_steps() {
         });
         for (o, x) in [
             (0xe9u32, 0.0f32),
-            (0xf8, 1.0),
             (0x108, 2.5),
-            (0x112, -1.0),
             (0x11f, 2.5),
             (0x13b, 0.5),
             (0x1b7, 0.25),
@@ -3356,23 +3479,29 @@ fn flight_steps() {
         let e = SCRATCH + 0x300;
         let p = SCRATCH + 0x400;
         let a = SCRATCH + 0x500;
-        for (k, (dx, dy, dz, first)) in [
-            (1.0f32, 0.5f32, 1.0f32, true),
-            (-1.0, 2.0, 0.25, true),
-            (-0.5, -1.0, -3.0, true),
-            (0.5, 0.0, 0.0, false),
+        // (dx, dy, dz, the first step, the yaw's bounds `H` and `L`)
+        for (k, (dx, dy, dz, first, (upper, lower))) in [
+            (1.0f32, 0.5f32, 1.0f32, true, (1.0f32, -1.0f32)),
+            (-1.0, 2.0, 0.25, true, (1.0, -1.0)),
+            (-0.5, -1.0, -3.0, true, (1.0, -1.0)),
+            (0.5, 0.0, 0.0, false, (1.0, -1.0)),
+            // yaw 0 exactly on the upper bound, then on the lower one
+            (1.0, 0.5, 0.0, true, (0.0, -1.0)),
+            (1.0, 0.5, 0.0, true, (1.0, 0.0)),
         ]
         .into_iter()
         .enumerate()
         {
             let k = k as u32;
+            t.set_u32(op(&t, f, 0xf8), upper.to_bits());
+            t.set_u32(op(&t, f, 0x112), lower.to_bits());
             t.set_u32(log, 0);
             t.write(e, &varied(0x30, k));
             t.set_u32(e + 0x28, u32::from(!first));
             t.write(p, &varied(0x20, k + 1));
             for (i, x) in (0u32..).zip([dx, dy, dz]) {
                 t.set_u32(p + 0x10 + 4 * i, x.to_bits());
-                t.set_u32(p + 4 * i, (0.5 * i as f32).to_bits());
+                t.set_u32(p + 4 * i, (0.5 * i as f32 + 0.25).to_bits());
             }
             for i in 0..8u32 {
                 t.set_u32(e + 4 * i, (0.25 * i as f32 - 1.0).to_bits());
@@ -3414,7 +3543,11 @@ fn lit_colour_nodes() {
         for (s, n) in [(821u32, 1usize), (822, 4), (823, 2), (824, 4)] {
             log_calls(&mut t, s, log, n, None, move |_, a, k| a[0] ^ (s << 16) ^ k);
         }
-        for (o, x) in [(0x63u32, 1.0f32), (0x19a, 1.0), (0xca, 2.0), (0xea, 0.5)] {
+        // one constant `K` 2.0 (the operands at 0x63, 0xca and 0x19a: the
+        // light's numerator and both clocks' end)
+        assert_eq!(op(&t, f, 0x63), op(&t, f, 0xca));
+        assert_eq!(op(&t, f, 0x19a), op(&t, f, 0xca));
+        for (o, x) in [(0xcau32, 2.0f32), (0xea, 0.5)] {
             t.set_u32(op(&t, f, o), x.to_bits());
         }
         let s = SCRATCH + 0x300;
@@ -3432,6 +3565,12 @@ fn lit_colour_nodes() {
             (4, 0, 0.5, 2.0, 1.5, 0.25),
             (4, 0, 0.5, 2.0, 0.25, 1.5),
             (4, 0xfc, 0.5, 2.0, f32::NAN, 0.25),
+            // the clocks reaching `K` in the step, past it, at it
+            (4, 0, 0.5, 2.0, 1.875, 1.95),
+            (4, 0, 0.5, 2.0, 2.5, 0.25),
+            (4, 0, 0.5, 2.0, 0.25, 2.5),
+            (4, 0, 0.5, 2.0, 2.0, 2.0),
+            (4, 0, 0.5, 2.0, 1.75, 1.875),
         ]
         .into_iter()
         .enumerate()
@@ -3456,7 +3595,9 @@ fn lit_colour_nodes() {
             t.set_u32(r + 0x64, (-0.5f32).to_bits());
             t.set_u32(r + 0x6c, q);
             t.set_u32(r + 0x70, q + 0x100);
-            t.write(q, &varied(0x200, k + 1));
+            // (two patterns: `varied` repeats every 0x100 bytes)
+            t.write(q, &varied(0x100, k + 1));
+            t.write(q + 0x100, &varied(0x100, k + 5));
             scrub(&mut t);
             let call = Call {
                 ecx: s,
@@ -3641,6 +3782,11 @@ fn reel_step_in(dll: u16, rva: u32) {
     t.stub_st0(651, |_, _| 0.0);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let base = w(&t, 0x1a);
+    // the curves' first weight (`u^4`'s) is 0.0 in the DLLs: 0.5 here, so
+    // the term counts
+    for o in [0xeeu32, 0x283] {
+        t.set_u32(w(&t, o), 0.5f32.to_bits());
+    }
     let strip = SCRATCH + 0x700;
     t.set_u32(strip, 4);
     t.set_u32(strip + 4, SCRATCH + 0x720);
@@ -3694,7 +3840,9 @@ fn reel_step_in(dll: u16, rva: u32) {
 /// thrown effect, `magic_0620`/`0676` with the summon object) in every
 /// step: 0 (through 10 and 11 at once), 10, 11 waiting, with the slot
 /// taken, a throw with throws left and the last one, 12 below and at
-/// its count, 0x2710 and others.
+/// its count, 0x2710 and others. Steps 0 and 10 also with the words they
+/// clear set, one weight (the throw's pick past every share) and three
+/// with the pick exactly on the first share.
 #[test]
 fn staged_volley_tasks() {
     for (dll, rva) in [
@@ -3810,25 +3958,41 @@ fn staged_volley_in(dll: u16, rva: u32) {
     let node = SCRATCH + 0x380;
     let count = w(&t, 0x167);
     let count_wait = (t.img.word(f + 0x314) & 0xff).cast_signed();
-    // (step, the wait, the throws left, the count, the slot j's word)
-    for (k, (step, wait, left, n, slot_w)) in [
-        (0u32, 0i32, 0u32, 0i32, 0xffu32),
-        (10, 0, 0, 0, 0xff),
-        (11, 3, 4, 0, 0xff),
-        (11, 0, 4, 0, 0x12),
-        (11, 0, 4, 0, 0xff),
-        (11, 0, 1, 0, 0xff),
-        (12, 0, 0, count_wait - 1, 0),
-        (12, 0, 0, count_wait, 0),
-        (0x2710, 0, 0, 0, 0),
-        (5, 0, 0, 0, 0),
-        (13, 0, 0, 0, 0),
+    // the weights' records (slot 291 answers 1 + their first word's low
+    // bits) and its first word
+    let recs = w(&t, 0xf6);
+    let x110 = w(&t, 0x110);
+    // (step, the wait, the throws left, the count, the slot j's word, the
+    // weights' count, the records' first words)
+    for (k, (step, wait, left, n, slot_w, weights, firsts)) in [
+        (0u32, 0i32, 0u32, 0i32, 0xffu32, 3u32, None),
+        (10, 0, 0, 0, 0xff, 3, None),
+        (11, 3, 4, 0, 0xff, 3, None),
+        (11, 0, 4, 0, 0x12, 3, None),
+        (11, 0, 4, 0, 0xff, 3, None),
+        (11, 0, 1, 2, 0xff, 3, None),
+        (12, 0, 0, count_wait - 1, 0, 3, None),
+        (12, 0, 0, count_wait, 0, 3, None),
+        (0x2710, 0, 0, 0, 0, 3, None),
+        (5, 0, 0, 0, 0, 3, None),
+        (13, 0, 0, 0, 0, 3, None),
+        // weights 2, 1, 1: the pick 0.75 - 0.25 is the first share
+        (0, 3, 4, 2, 0xff, 3, Some([1u32, 0, 0])),
+        (10, 3, 4, 2, 0xff, 3, Some([1, 0, 0])),
+        // one weight: the pick 2.5 - 0.25 past it
+        (10, 0, 0, 0, 0xff, 1, Some([2, 0, 0])),
     ]
     .into_iter()
     .enumerate()
     {
         let k = k as u32;
         t.set_u32(log, 0);
+        t.set_u32(x110, 0x0110_0000 + k);
+        if let Some(words) = firsts {
+            for (i, x) in (0u32..).zip(words) {
+                t.set_u32(recs + 0x98 * i, x);
+            }
+        }
         t.write(s, &varied(0x1300, k));
         t.set_u32(s + 0x18, step);
         t.set_u32(s + 0x3c, wait.cast_unsigned());
@@ -3840,7 +4004,7 @@ fn staged_volley_in(dll: u16, rva: u32) {
         }
         let j = left % 5;
         t.set_u32(s + 0x340 + 0x310 * j, slot_w);
-        t.set_u32(count, 3);
+        t.set_u32(count, weights);
         t.set_u32(task, node);
         t.set_u32(task + 4, s);
         t.write(node, &varied(0x10, k + 3));
@@ -3853,8 +4017,8 @@ fn staged_volley_in(dll: u16, rva: u32) {
 }
 
 /// Row 334: the aim records of the four DLLs: points in each quarter
-/// (the yaw past both bounds), the task list empty and not, one and
-/// several nodes free.
+/// (the yaw past both bounds, and exactly on each), the task list empty
+/// and not, one and several nodes free.
 #[test]
 fn aim_records() {
     for (dll, rva) in [
@@ -3866,32 +4030,49 @@ fn aim_records() {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
+        // the points' way: 0 behind on both axes, 1 straight ahead on `x`
+        // (yaw 0), 2 on `z` (yaw a quarter turn)
+        let way = SCRATCH + 0x2f0;
         for s in [588u32, 544] {
             log_calls(&mut t, s, log, 2, None, move |m, a, k| {
                 for i in 0..4 {
-                    m.w32(a[1] + 4 * i, ((s + k + i) as f32 * 0.25 - 4.0).to_bits());
+                    let mut v = (s + k + i) as f32 * 0.25 - 4.0;
+                    if s == 588 && (i == 0 || i == 2) {
+                        v = match (m.r32(way), i) {
+                            (1, 0) | (2, 2) => -1.0,
+                            (1 | 2, _) => 0.0,
+                            _ => v,
+                        };
+                    }
+                    m.w32(a[1] + 4 * i, v.to_bits());
                 }
                 s
             });
         }
-        for (o, x) in [
-            (0x15au32, 0.0f32),
-            (0x169, 1.0),
-            (0x173, 2.5),
-            (0x17d, -1.0),
-            (0x18a, 2.5),
-        ] {
+        for (o, x) in [(0x15au32, 0.0f32), (0x173, 2.5), (0x18a, 2.5)] {
             t.set_u32(op(&t, f, o), x.to_bits());
         }
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         let o = SCRATCH + 0x1000;
         let node = |i: u32| SCRATCH + 0x400 + 0x40 * i;
-        for (k, (free, listed)) in [(1u16, false), (3, true), (2, false)]
-            .into_iter()
-            .enumerate()
+        // (free nodes, listed, the points' way, the yaw's bounds)
+        for (k, (free, listed, at, (upper, lower))) in [
+            (1u16, false, 0u32, (1.0f32, -1.0f32)),
+            (3, true, 0, (1.0, -1.0)),
+            (2, false, 0, (1.0, -1.0)),
+            // yaw 0 on the upper bound, on the lower one, then below it
+            (1, false, 1, (0.0, -1.0)),
+            (1, false, 1, (1.0, 0.0)),
+            (1, false, 2, (1.0, -1.0)),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let k = k as u32;
             t.set_u32(log, 0);
+            t.set_u32(way, at);
+            t.set_u32(op(&t, f, 0x169), upper.to_bits());
+            t.set_u32(op(&t, f, 0x17d), lower.to_bits());
             t.write(o, &varied(0x240, k));
             t.write(node(0) - 0x40, &varied(0x140, k + 1));
             t.set_u32(node(0), node(2));
@@ -3984,6 +4165,8 @@ fn model_object_setups() {
             ] {
                 t.set_u32(w(&t, o_), x.to_bits());
             }
+            // `*G_F`, whose bit 0 the set-up clears
+            t.set_u32(w(&t, 0x46), 0xf0f0_0003 ^ (k << 8));
             scrub(&mut t);
             let c = Call {
                 ecx: o,
@@ -4062,28 +4245,38 @@ fn flagged_two_sparks() {
 }
 
 /// Row 618: the summon's four objects started in both DLLs: yaws past
-/// both bounds and kept, in a battle and not, the task list empty and
-/// not.
+/// both bounds, at each and kept, in a battle and not, the task list
+/// empty and not. Slot 262 moves the actor word, which the code reads
+/// again for slot 333.
 #[test]
+#[allow(clippy::too_many_lines)] // the slots the callees reach
 fn summon_objects_started() {
     for (dll, rva) in [(248u16, 0x1340u32), (660, 0x31a0)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
+        let actor = t.img.word(f + 0x143);
         log_calls(&mut t, 719, log, 3, None, |_, a, k| a[0] ^ k);
         log_calls(&mut t, 711, log, 3, None, |_, a, k| a[1] ^ k);
         log_calls(&mut t, 710, log, 4, None, |_, a, k| a[0] ^ k);
-        log_calls(&mut t, 262, log, 6, None, |m, a, k| {
+        log_calls(&mut t, 262, log, 6, None, move |m, a, k| {
             for (i, &x) in (1u32..).zip(&a[1..4]) {
                 if (SCRATCH..SCRATCH + 0x4_0000).contains(&x) {
                     m.w32(x, (0.5 * i as f32 + k as f32).to_bits());
                 }
             }
+            m.w32(actor, m.r32(actor) + 0x100);
             0x262
         });
         log_calls(&mut t, 333, log, 7, None, |_, a, _| a[0]);
+        // its own count, kept across the cases, so every value comes up
+        let turns = SCRATCH + 0x2f8;
+        t.set_u32(turns, 0);
         t.stub_st0(333, move |m, _| {
-            [0.25, 7.5, -6.0, 1.0][(m.r32(log) % 4) as usize]
+            let k = m.r32(turns);
+            m.w32(turns, k + 1);
+            // (-1.0: the yaw 1.0 on the upper bound)
+            [0.25, 7.5, -6.0, 1.0, -1.0][(k % 5) as usize]
         });
         for s in [413u32, 215] {
             log_calls(&mut t, s, log, 1, None, move |_, a, _| a[0] ^ (s << 16));
@@ -4161,6 +4354,9 @@ fn summon_objects_started() {
             t.set_u32(w(&t, 0x256), node(0));
             t.set_u32(w(&t, 0x2bd), if listed { node(3) } else { 0 });
             t.set_u32(w(&t, 0x2cf), node(3));
+            // the record's words it sets, seeded
+            t.set_u32(w(&t, 0x223), 0x0223_0000 + k);
+            t.set_u16(w(&t, 0x237), 0x5555);
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
         }
@@ -4169,7 +4365,9 @@ fn summon_objects_started() {
 
 /// Rows 144 and 148: the reels' phases in both DLLs: phase 0, phase 1
 /// with the reels not done and done (the round below and at its count),
-/// phase 2 with the handle set and -1, and unknown phases.
+/// phase 2 with the handle set and -1, and unknown phases. The round is
+/// the reel step's index (one global) and its count the party colours'
+/// member count (another): the cases set them last.
 #[test]
 fn reel_phases() {
     for (dll, rva) in [(644u16, 0x60c0u32), (565, 0x1f30)] {
@@ -4188,15 +4386,20 @@ fn reel_phases() {
         t.set_u32(strip, 4);
         t.set_u32(strip + 4, SCRATCH + 0x720);
         t.write(SCRATCH + 0x720, &[3, 1, 2, 3]);
-        // (phase, the reels' state, the round, its count, the handle)
+        assert_eq!(w(&t, 0x4c), t.img.word(reel + 0x2));
+        assert_eq!(w(&t, 0x55), t.img.word(pc + 0x13));
+        // (phase, the reels' state, the round, its count, the handle; the
+        // party's colours: one member in phase 2)
         for (k, (phase, rs, n, m, h)) in [
             (0u32, 0u32, 0u32, 0u32, 0u32),
             (1, 5, 0, 3, 0),
             (1, 4, 0, 3, 0),
             (1, 4, 2, 3, 0),
+            (1, 4, 1, 3, 0),
+            (1, 4, 1, 2, 0),
             (1, 4, 0xffff_fffe, 3, 0),
-            (2, 0, 0, 0, 0x2311),
-            (2, 0, 0, 0, 0xffff_ffff),
+            (2, 0, 0, 1, 0x2311),
+            (2, 0, 0, 1, 0xffff_ffff),
             (3, 0, 0, 0, 0x2311),
             (0x8000_0000, 0, 0, 0, 0),
         ]
@@ -4205,25 +4408,26 @@ fn reel_phases() {
         {
             let k = k as u32;
             t.set_u32(log, 0);
+            t.set_u32(t.img.word(pc + 0x38), k % 3);
+            // the reels' record (`reel_step`, also the record reset's) of
+            // the round
+            let r = base.wrapping_add(n.wrapping_mul(0x78));
+            if n.cast_signed() >= 0 {
+                t.write(r, &varied(0x78, k));
+                for c in 0..3u32 {
+                    let row = r + 0x1c * c;
+                    t.set_u32(row, strip);
+                    t.set_u16(row + 6, (c + k) as u16 % 4);
+                }
+                t.set_u32(r + 0x60, 2);
+            }
+            // (below the reels only the state word: other globals lie
+            // there; state 4 reads nothing else)
+            t.set_u32(r + 0x68, rs);
             t.set_u32(w(&t, 0x1), phase);
             t.set_u32(w(&t, 0x4c), n);
             t.set_u32(w(&t, 0x55), m);
             t.set_u32(w(&t, 0x16), h);
-            // the reels' record (`reel_step`, also the record reset's)
-            let i = k % 2;
-            t.set_u32(t.img.word(reel + 0x2), i);
-            let r = base + 0x78 * i;
-            t.write(r, &varied(0x78, k));
-            for c in 0..3u32 {
-                let row = r + 0x1c * c;
-                t.set_u32(row, strip);
-                t.set_u16(row + 6, (c + k) as u16 % 4);
-            }
-            t.set_u32(r + 0x68, rs);
-            t.set_u32(r + 0x60, 2);
-            // the party's colours: one member in phase 2
-            t.set_u32(t.img.word(pc + 0x13), u32::from(phase == 2));
-            t.set_u32(t.img.word(pc + 0x38), k % 3);
             scrub(&mut t);
             t.check(f, Call::default(), &[], Eax::Checked, s7_misc::reel_phases);
         }

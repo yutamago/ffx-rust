@@ -208,6 +208,18 @@ fn start_up() {
         t.set_u32(t.img.word(at + 0x94), head);
         t.set_u32(t.img.word(at + 0xab), head);
         t.set_u32(lock, 0x77);
+        // the globals the start-up clears or sets hold junk (their
+        // neighbours too, so a wider store shows)
+        for (op, v) in [
+            (0x63u32, 0x6363_6363u32),
+            (0x6e, 0x6e6e_6e6e),
+            (0x76, 0x7676_7676),
+            (0x101, 0x0101_0101),
+            (0x111, 0x0111_0111),
+            (0x11b, 0x011b_011b),
+        ] {
+            t.set_u32(t.img.word(at + op), v);
+        }
         t.check(at, Call::default(), &[], Eax::Checked, m0395::start_up);
     }
 }

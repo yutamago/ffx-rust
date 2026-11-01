@@ -87,6 +87,8 @@ fn start() {
     let task = SCRATCH + 0x100;
     for k in [0x1041u32, 0x1040, 0] {
         t.set_u32(kind, k);
+        // *Z, which the start clears, holds junk
+        t.set_u32(t.img.word(at + 0x37), 0x3737_3737);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }

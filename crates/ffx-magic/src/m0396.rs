@@ -1,53 +1,11 @@
 //! `magic_0396.dll`'s own functions (besides the runtime, the object
 //! host and [`crate::ob_summon`], which has its facing and small
-//! entries): the aim angles, the start, the parts' refresh, the cues
+//! entries): the start, the parts' refresh, the cues
 //! and an object's fade-out.
 
 use crate::m0596::host_start;
-use crate::ob_model::wrap_once;
 use crate::runtime::slot_target;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
-
-/// The angles from `from` to `to` (0x10003910, `ecx` = `out`, `edx` =
-/// `from`, cdecl `(to)`): the pitch `atan2(dy, sqrt(dz dz + dx dx))`
-/// into `out.x`; the yaw `A - atan2(dz, dx)` wrapped once into `out.y`;
-/// `out.z` = 0. The square root is `_libm_sse2_sqrt_precise` (correctly
-/// rounded, as `f64::sqrt`), the arcs `_CIatan2`, each rounded to `f64`
-/// then `f32`. (`eax` is what `_CIatan2` left: no caller reads it.)
-pub fn aim<G: Game>(g: &mut G, img: &Image, f: u32, out: u32, from: u32, to: u32) {
-    let r = |p: u32, k: u32| g.read::<f32>(p + 4 * k);
-    let dy = r(to, 1) - r(from, 1);
-    let dx = r(to, 0) - r(from, 0);
-    let dz = r(to, 2) - r(from, 2);
-    let s = dz * dz + dx * dx;
-    let h = f64::from(s).sqrt();
-    let pitch = g.atan2(f64::from(dy), h) as f32;
-    g.write::<f32>(out, pitch);
-    let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
-    let y = g.read::<f32>(img.word(f + 0xbc)) - yaw;
-    let hi = g.read::<f32>(img.word(f + 0xcb));
-    let w = wrap_once(g, img, f, y, [0xcb, 0xd5, 0xee, 0xfb]);
-    if y > hi {
-        g.write::<u32>(out + 8, 0);
-        g.write::<f32>(out + 4, w);
-    } else {
-        g.write::<f32>(out + 4, w);
-        g.write::<u32>(out + 8, 0);
-    }
-}
-
-/// [`aim`] (338 bytes with the object host's `list_pop_tail` after it at
-/// 0x10003a20, 1 overlay).
-pub const AIM: Sig = Sig {
-    len: 338,
-    hash: 0x3d34_b77d_3125_548c,
-    calls: &[
-        (0x5a, Callee::Import("_libm_sse2_sqrt_precise")),
-        (0x6d, Callee::Import("_CIatan2")),
-        (0xaa, Callee::Import("_CIatan2")),
-    ],
-    imports: &[],
-};
 
 /// Table `+0x0` (0x10004570, cdecl `(arg)`): the object host's start
 /// ([`host_start`]), then the effect's stream cued (slot 551 `(slot 719

@@ -6216,7 +6216,7 @@ pub const OBJECTS_AT_TARGETS: Sig = Sig {
 /// slot 858's `eax`. Each call sees the words the earlier ones left on
 /// the stack.
 ///
-/// `magic_0563` 0x10001800 (735 bytes; 2 DLLs).
+/// `magic_0563` 0x10001800 (798 bytes; 2 DLLs).
 pub fn scene_light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -6324,10 +6324,12 @@ pub fn scene_light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(eax)
 }
 
-/// [`scene_light`] (the `rel32`: `__security_check_cookie`).
+/// [`scene_light`] (the `rel32`: `__security_check_cookie`). Until
+/// census2 (2026-11-01) 735 bytes, the old census's row; the function
+/// ends at 798 with the stores of `hi` and the /GS epilogue.
 pub const SCENE_LIGHT: Sig = Sig {
-    len: 735,
-    hash: 0x57a8_d1a5_6bb5_7b4d,
+    len: 798,
+    hash: 0x03f2_c45b_b5f6_f717,
     calls: &[(0x316, Callee::Any)],
     imports: &[],
 };
@@ -6858,10 +6860,12 @@ pub fn camera_behind_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 }
 
 /// [`camera_behind_start`] (the `rel32`s: [`camera_behind`],
-/// [`block_defaults`] and `__security_check_cookie`).
+/// [`block_defaults`] and `__security_check_cookie`). Until census2
+/// (2026-11-01) 831 bytes; the function ends at 841 with the /GS
+/// epilogue.
 pub const CAMERA_BEHIND_START: Sig = Sig {
-    len: 831,
-    hash: 0x8fcc_1db3_6ddf_4182,
+    len: 841,
+    hash: 0x4647_644e_4db9_5436,
     calls: &[
         (0x2ed, Callee::Sig(&CAMERA_BEHIND)),
         (0x32d, Callee::Sig(&BLOCK_DEFAULTS)),

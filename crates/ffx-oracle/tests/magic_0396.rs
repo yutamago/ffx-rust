@@ -15,7 +15,7 @@ mod magic_l3;
 #[path = "magic/ownb.rs"]
 mod ownb;
 
-use ffx_magic::{Ret, m0396};
+use ffx_magic::{Ret, m0171, m0396};
 use magic::{Call, Eax, SCRATCH, Twin};
 use ownb::{dirty_stack, fill, floats, rec, rec_all, rec_seq, reset_counters};
 
@@ -61,9 +61,10 @@ fn aim() {
             edx: from,
             ..Call::default()
         };
+        assert_eq!(ffx_magic::covered(&t.img, f), Some("m0171 aim"));
         t.check(f, c, &[to], Eax::Junk, |g, img, fr| {
             let to = fr.arg(g, 0);
-            m0396::aim(g, img, fr.at, fr.ecx, fr.edx, to);
+            m0171::aim(g, img, fr.at, fr.ecx, fr.edx, to);
             Ret::default()
         });
     }

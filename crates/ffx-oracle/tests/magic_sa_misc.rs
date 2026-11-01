@@ -1885,11 +1885,7 @@ fn host_start_d_and_rotate_add() {
         edx: out,
         ..Call::default()
     };
-    t.check(f, c, &[v], Eax::Checked, |g, img, fr| {
-        ffx_magic::Ret::eax(ffx_magic::sb_misc::rotate_offset(
-            g, img, fr.at, fr.esp, fr.ecx, fr.edx,
-        ))
-    });
+    t.check(f, c, &[v], Eax::Checked, ffx_magic::s4_small::turn_point);
 }
 
 #[test]

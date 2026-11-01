@@ -9,6 +9,45 @@ use magic_owna::twin;
 
 const N: u16 = 342;
 
+/// A moving bone for one case: its three objects' handler +0x1c (slot
+/// 1001), the table entry (slot 32) and slots 233/325, each logging, so
+/// `bone_plain`'s body (and its address) shows. Returns the bone node.
+fn moving_bone(t: &mut Twin, at: u32) -> u32 {
+    let bone = t.img.word(at + 0x92);
+    let bvt = SCRATCH + 0x880;
+    t.set_u32(magic::TABLE + 4 * 1001, magic::TRAPS + 16 * 1001);
+    t.set_u32(bvt + 0x1c, magic::TRAPS + 16 * 1001);
+    for (k, s) in (0u32..).zip([1001u32, 32, 233, 325]) {
+        let row = SCRATCH + 0x3400 + 0x40 * k;
+        t.stub(s, move |m, a| {
+            let c = m.r32(row + 0x3c).wrapping_add(1);
+            m.w32(row + 0x3c, c);
+            m.w32(row + 4 * (c % 8), a[0] ^ a.get(1).copied().unwrap_or(0));
+            if s == 233 {
+                // the vector slot 233 fills (dest, src, rate)
+                for i in 0..4 {
+                    m.w32(a[0] + 4 * i, a[2] ^ (0x8000_0000 + i));
+                }
+            }
+            0x0400_0000 + s
+        });
+    }
+    let bt = t.img.rel32_target(at + 0x9b);
+    let table = t.img.word(bt + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    for (i, off) in (0u32..).zip([0x13cu32, 0x144, 0x140]) {
+        let o = SCRATCH + 0x5000 + 0x100 * i;
+        t.write(o, &[0x40 + u8::try_from(i).unwrap(); 0x100]);
+        t.set_u32(o, bvt);
+        t.set_u32(bone + off, o);
+    }
+    t.set_u32(bone + 0x128, 0);
+    t.set_u8(bone + 0x148, 1);
+    bone
+}
+
 /// 0x10007440: the summon's frame before its phase, with and without
 /// children, the flag set and clear, the done bit and the closing slot
 /// each way.
@@ -47,9 +86,10 @@ fn summon_frame() {
     let vt = SCRATCH + 0x800;
     t.set_u32(magic::TABLE + 4 * 1000, magic::TRAPS + 16 * 1000);
     t.set_u32(vt + 0x20, magic::TRAPS + 16 * 1000);
+    let bone = moving_bone(&mut t, at);
     t.set_u32(w(&t, 0x18), 0x0018_0018);
     let kid = |i: u32| SCRATCH + 0x1000 + 0x100 * i;
-    for (phase, flag, kids, done0, half, pass) in [
+    for (k, (phase, flag, kids, done0, half, pass)) in (0u32..).zip([
         (3u32, 0u32, 0u32, 0u32, 0u16, 0x41u8),
         (4, 0, 2, 0, 0, 0x41),
         (5, 0, 0, 0, 0, 0x41),
@@ -57,7 +97,8 @@ fn summon_frame() {
         (5, 1, 0, 0, 1, 0x41),
         (6, 0, 1, 1, 0, 0xff),
         (7, 1, 1, 1, 0, 0x41),
-    ] {
+        (5, 1, 0, 0, 0, 0x52),
+    ]) {
         t.set_u32(w(&t, 0x0b), phase);
         t.set_u32(w(&t, 0x35), flag);
         t.set_u32(SCRATCH + 0x37f0, u32::from(flag == 0));
@@ -71,9 +112,10 @@ fn summon_frame() {
             t.set_u32(kid(i) + 8, if i + 1 == kids { root } else { kid(i + 1) });
         }
         t.set_u32(first, if kids == 0 { root } else { kid(0) });
-        let bone = w(&t, 0x92);
         t.set_u32(bone + 0x10, bone);
-        t.set_u8(bone + 0x1a, pass.wrapping_add(1));
+        // the last case's bone moves (its pass byte not the cursor's)
+        let moving = k == 7;
+        t.set_u8(bone + 0x1a, pass.wrapping_add(if moving { 9 } else { 1 }));
         for node in [w(&t, 0xb3), w(&t, 0xd3)] {
             t.set_u32(node + 0x10, node);
             t.set_u8(node + 0x1a, 0);
