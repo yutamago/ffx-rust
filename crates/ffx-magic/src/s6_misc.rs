@@ -4015,3 +4015,108 @@ pub const PARTICLE_HAND_OVER: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A summon's three camera blocks reset (cdecl, no arguments): the
+/// camera made (slot 287 `(8, 0, 7)` into `*G_C`), slot 281 `(1)` and
+/// slot 283 `(*G_C, 0)`, `(*G_C, 1)`, each seeing the words the earlier
+/// ones left on the stack; then the three blocks' words (u16, byte and
+/// word stores at the DLL's globals, in the original's order: zeros, the
+/// two scales 1.0 and the distance 1024 each) and `*G_D = 0`. Returns
+/// the last slot 283's `eax`.
+///
+/// `magic_0515` 0x100012d0 (653 bytes; 5 DLLs).
+pub fn camera_blocks_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let target = |g: &G, t: u32, n: u32| crate::runtime::slot_target(g, w(t), n);
+    let mut st = Pushes::default();
+    st.push_all(&[7, 0, 8]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let c = st.call(g, target(g, 0x1, 287), 0).eax;
+    g.write::<u32>(w(0x14), c);
+    st.push(1);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x19, 281), 0);
+    let mut eax = 0;
+    for (t, n) in [(0x28u32, 0u32), (0x3d, 1)] {
+        let c = g.read::<u32>(w(if n == 0 { 0x30 } else { 0x45 }));
+        st.push_all(&[n, c]);
+        // call width: 12 (the most `Pushes::words` holds)
+        eax = st.call(g, target(g, t, 283), 0).eax;
+    }
+    for (o, size, v) in [
+        (0x57u32, 2u8, 0x0u32),
+        (0x5f, 1, 0x0),
+        (0x66, 4, 0x0),
+        (0x70, 4, 0x3f80_0000),
+        (0x7a, 4, 0x3f80_0000),
+        (0x84, 4, 0x0),
+        (0x8e, 4, 0x0),
+        (0x98, 4, 0x0),
+        (0xa2, 4, 0x0),
+        (0xac, 4, 0x0),
+        (0xb6, 4, 0x0),
+        (0xc0, 4, 0x0),
+        (0xca, 4, 0x0),
+        (0xd4, 4, 0x0),
+        (0xde, 4, 0x0),
+        (0xe8, 4, 0x0),
+        (0xf2, 4, 0x0),
+        (0xfc, 4, 0x0),
+        (0x106, 4, 0x4480_0000),
+        (0x111, 2, 0x0),
+        (0x119, 1, 0x0),
+        (0x120, 4, 0x0),
+        (0x12a, 4, 0x3f80_0000),
+        (0x134, 4, 0x3f80_0000),
+        (0x13e, 4, 0x0),
+        (0x148, 4, 0x0),
+        (0x152, 4, 0x0),
+        (0x15c, 4, 0x0),
+        (0x166, 4, 0x0),
+        (0x170, 4, 0x0),
+        (0x17a, 4, 0x0),
+        (0x184, 4, 0x0),
+        (0x18e, 4, 0x0),
+        (0x198, 4, 0x0),
+        (0x1a2, 4, 0x0),
+        (0x1ac, 4, 0x0),
+        (0x1b6, 4, 0x0),
+        (0x1c0, 4, 0x4480_0000),
+        (0x1cb, 2, 0x0),
+        (0x1d3, 1, 0x0),
+        (0x1da, 4, 0x0),
+        (0x1e4, 4, 0x3f80_0000),
+        (0x1ee, 4, 0x3f80_0000),
+        (0x1f8, 4, 0x0),
+        (0x202, 4, 0x0),
+        (0x20c, 4, 0x0),
+        (0x216, 4, 0x0),
+        (0x220, 4, 0x0),
+        (0x22a, 4, 0x0),
+        (0x234, 4, 0x0),
+        (0x23e, 4, 0x0),
+        (0x248, 4, 0x0),
+        (0x252, 4, 0x0),
+        (0x25c, 4, 0x0),
+        (0x266, 4, 0x0),
+        (0x270, 4, 0x0),
+        (0x27a, 4, 0x4480_0000),
+        (0x284, 4, 0x0),
+    ] {
+        match size {
+            1 => g.write::<u8>(w(o), v as u8),
+            2 => g.write::<u16>(w(o), v as u16),
+            _ => g.write::<u32>(w(o), v),
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`camera_blocks_reset`].
+pub const CAMERA_BLOCKS_RESET: Sig = Sig {
+    len: 653,
+    hash: 0x00fd_0e68_c041_258a,
+    calls: &[],
+    imports: &[],
+};

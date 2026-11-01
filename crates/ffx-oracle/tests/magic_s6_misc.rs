@@ -2780,3 +2780,21 @@ fn particles_drifting_5() {
         t.check_entry(h, Call::default(), &[p], Eax::Checked);
     }
 }
+
+/// Row 202: `magic_0515`'s camera blocks reset (the blocks' globals
+/// holding other values first).
+#[test]
+fn camera_blocks_reset() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x12d0);
+    rec(&mut t, 287, 3, |_, a| 0x0287_0000 ^ a[0]);
+    rec(&mut t, 281, 1, |_, a| 0x0281_0000 ^ a[0]);
+    rec(&mut t, 283, 2, |_, a| 0x0283_0000 ^ a[1]);
+    let first = op(&t, f, 0xac);
+    let last = op(&t, f, 0x27a);
+    for k in 0..2u32 {
+        t.write(first - 0x40, &varied(last + 0x48 - first, k));
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
