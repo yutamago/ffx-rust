@@ -1738,6 +1738,19 @@ cursor, so Enter answered `EscMenuResume`): with ticks the movie's calls
 are the original's, call for call (`EscMenuHelpTextRefresh` pages and
 rows, `playEscSound`), as the hook's Iggy log of the original shows.
 
+The other replays with Iggy players, the same build, one at a time on
+PC2:
+
+| Replay | Trace events | Screenshots | Iggy on the way |
+|---|---|---|---|
+| menu-browse | same (2 ranges) | 5 of 5, 0 pixels | the opening logos' player (transparent) |
+| event-besaid | same (9 ranges) | 5 of 5, 0 pixels | the autosave chocobo (`chocobo.swf`, 50x50 at 1220,660) composited, transparent at the shots |
+| movie-fmv (extra) | same (3 ranges) | 4 of 4, 0 pixels | - |
+
+movie-fmv's user stream reached the mixer: `fmod: movie stream released:
+520192 frames read, 513600 played` (10.7 s at 48 kHz; the device output
+is off in harness games, and PC2 mutes them anyway).
+
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
 The i686 `ffx-rust.exe` still ends a few seconds past its third frame in
