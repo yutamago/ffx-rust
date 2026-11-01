@@ -58,6 +58,10 @@ fn object_steps() {
             t.write(obj, &[0x5c; 0x140]);
             t.set_u32(obj + 0xac, i);
             t.set_u32(obj + 0x2c + 16 * i, 3);
+            if rva == 0x1400 {
+                // the global the object start clears
+                t.set_u32(w(&t, 0x7e), 0x7e7e_7e7e);
+            }
             t.check_entry(at, Call::default(), &[obj], Eax::Checked);
         }
     }

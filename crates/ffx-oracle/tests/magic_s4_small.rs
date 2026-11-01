@@ -3257,11 +3257,86 @@ fn static_moves_light_nodes() {
     }
 }
 
+/// Every copy of [`s4_small::turn_point`] (176 bytes; census2,
+/// 2026-11-01: the old census's 242-byte "rotate offset, list pop" rows
+/// were this function and `l5_objhost::list_pop_tail`).
+const TURN_POINTS: &[(u16, u32)] = &[
+    (52, 0x2840),
+    (53, 0x2de0),
+    (55, 0x30f0),
+    (64, 0x1c60),
+    (65, 0x2420),
+    (67, 0x20f0),
+    (149, 0x1a70),
+    (163, 0x2a00),
+    (171, 0x3ab0),
+    (199, 0x2850),
+    (200, 0x2800),
+    (243, 0x2ed0),
+    (245, 0x2120),
+    (247, 0x2200),
+    (248, 0x2040),
+    (249, 0x3600),
+    (250, 0x29f0),
+    (251, 0x2c00),
+    (269, 0x36d0),
+    (275, 0x1aa0),
+    (299, 0x29e0),
+    (303, 0x4c90),
+    (318, 0x1f20),
+    (325, 0x26a0),
+    (354, 0x27c0),
+    (380, 0x39d0),
+    (385, 0x23c0),
+    (390, 0x4190),
+    (391, 0x6230),
+    (394, 0x3700),
+    (446, 0x7cb0),
+    (447, 0x2f30),
+    (448, 0x3350),
+    (472, 0x1a70),
+    (475, 0x23f0),
+    (508, 0x2fc0),
+    (543, 0x7da0),
+    (544, 0x79b0),
+    (545, 0x79b0),
+    (546, 0x79b0),
+    (555, 0x79e0),
+    (556, 0x79b0),
+    (557, 0x79b0),
+    (558, 0x79b0),
+    (559, 0x79b0),
+    (562, 0x3760),
+    (565, 0xa0d0),
+    (644, 0x35a0),
+    (659, 0x2200),
+    (660, 0x19c0),
+    (691, 0xa0d0),
+    (692, 0x35a0),
+    (693, 0xa0d0),
+    (694, 0x35a0),
+    (695, 0xa0d0),
+    (696, 0x35a0),
+    (697, 0xa0d0),
+    (698, 0x35a0),
+];
+
 #[test]
 fn turns() {
-    let Some(mut t) = twin(55) else { return };
-    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 3), (248, 3)]);
-    let f = t.at(0x30f0);
+    for &(n, rva) in TURN_POINTS {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        assert_eq!(
+            ffx_magic::covered(&t.img, f),
+            Some("turn a point"),
+            "magic_{n:04}"
+        );
+        turn_once(&mut t, f);
+    }
+}
+
+fn turn_once(t: &mut Twin, f: u32) {
+    recs(t, &[(235, 1), (328, 3), (329, 3), (229, 3), (248, 3)]);
     let (ang, out, point) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x300);
     t.set_u32(ang, 0.5f32.to_bits());
     t.set_u32(ang + 4, (-1.25f32).to_bits());

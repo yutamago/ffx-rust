@@ -63,12 +63,29 @@ fn frame() {
     let ro = t.img.rel32_target(at + 0x0b);
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x06), fx);
+    // one part for the tail's register_parts (slots 941, 772, 779), its
+    // lock at P + 0x200, so the callee's address matters
+    let rp = t.img.rel32_target(at + 0x6c);
+    let parts = SCRATCH + 0x5000;
+    t.write(parts, &[0x5e; 0x80]);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(t.img.word(rp + 0x43), parts + 0x200);
+    t.set_u32(t.img.word(rp + 0x5f), parts + 0x200);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ a[1]);
+    t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[1]);
+    rec(&mut t, 779, 4, |_, a| 0x0779_0000 ^ a[2]);
     for (busy, d1, d2) in [
         (false, 1u32, 1u32),
         (false, 1, 0),
         (false, 2, 1),
         (true, 1, 1),
     ] {
+        // the three words the end sets to 1.0 hold junk
+        for op in [0x29, 0x3d, 0x53] {
+            t.set_u32(t.img.word(at + op), 0x2929_0000 + op);
+        }
         t.set_u32(fx + 0x110, d1);
         t.set_u32(fx + 0x114, d2);
         host(&mut t, ro, 0, busy, true);

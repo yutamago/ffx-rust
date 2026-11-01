@@ -9,6 +9,16 @@ use magic_owna::{rec, twin};
 
 const N: u16 = 388;
 
+/// `n` bytes, each byte other than its neighbours (`seed` makes runs
+/// differ), so that a read of a neighbouring word gives another value.
+fn pattern(seed: u8, n: usize) -> Vec<u8> {
+    (0u8..=255)
+        .cycle()
+        .take(n)
+        .map(|b| b.wrapping_mul(0x1d) ^ seed)
+        .collect()
+}
+
 /// 0x10007610: state 0 (the motion ended or not, either model kind),
 /// state 10 with the countdown at 0 and above, another state.
 #[test]
@@ -37,7 +47,8 @@ fn motion_wait() {
         t.set_u32(st + 0x18, state);
         t.set_u32(st + 0x1c, count);
         t.set_u32(st + 0x20, obj);
-        t.write(obj, &[0x33; 0xa0]);
+        // the model +0x54 and the object +0x50 other than their neighbours
+        t.write(obj, &pattern(0x33, 0xa0));
         t.set_u8(obj + 0x90, kind);
         t.set_u32(node + 4, prev);
         t.set_u32(node + 8, next);
@@ -61,8 +72,11 @@ fn motion_task() {
     let (node, obj, last) = (SCRATCH + 0x100, SCRATCH + 0x300, SCRATCH + 0x500);
     for kind in [1u8, 0, 0x81] {
         t.write(node, &[0x22; 0x30]);
-        t.write(obj, &[0x33; 0xa0]);
+        // the model +0x54 and the object +0x50 other than their
+        // neighbours; the flags' high byte clear, so bits 8 and 9 show
+        t.write(obj, &pattern(0x33 ^ kind, 0xa0));
         t.set_u8(obj + 0x90, kind);
+        t.set_u8(obj + 0x91, 0);
         t.write(last, &[0x44; 0x10]);
         t.set_u32(w(&t, 0x1c), last);
         t.set_u32(w(&t, 0x36), 0xff);

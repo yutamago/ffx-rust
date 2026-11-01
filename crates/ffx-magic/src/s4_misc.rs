@@ -16,8 +16,8 @@ use crate::sa_misc::{
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, SET_SPEED, anim_step, set_speed};
 use crate::sb_misc::{
-    ACTOR_SCALE, ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, actor_scale,
-    anim_reset, ease_angle, ease_sample, mean_position, rotate_offset,
+    ACTOR_SCALE, ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, actor_scale, anim_reset,
+    ease_angle, ease_sample, mean_position,
 };
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -679,7 +679,7 @@ pub const SHAKE_TASK: Sig = Sig {
 ///   position (slot 262 into `[ebp - 0x14]`, `w` 1.0); with flag `+0x40`
 ///   bit 0 the offset `s` is turned by the target's angle
 ///   ([`target_angle`], the angles `(0, a, 0)` at `[ebp - 0x24]`) and
-///   added to it ([`rotate_offset`]);
+///   added to it ([`crate::s4_small::turn_point`]);
 /// - 2: the actors' mean position ([`mean_position`]);
 /// - else the object keeps its place.
 ///
@@ -690,35 +690,6 @@ pub const SHAKE_TASK: Sig = Sig {
 ///
 /// `magic_0052` 0x10002730 (258 bytes; 26 DLLs).
 pub fn follow_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    follow_task_at(g, img, fr, false)
-}
-
-/// [`follow_task`] whose offset is turned by
-/// [`crate::s4_small::turn_point`] (the same steps in a frame of its own)
-/// instead of [`rotate_offset`].
-///
-/// `magic_0055` 0x10002ef0 and `magic_0303` 0x10004a80 (258 bytes).
-pub fn follow_task_turned<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    follow_task_at(g, img, fr, true)
-}
-
-/// [`follow_task_turned`].
-pub const FOLLOW_TASK_TURNED: Sig = Sig {
-    len: 258,
-    hash: 0x0715_19c5_1314_f28a,
-    calls: &[
-        (0x29, Callee::Sig(&MEAN_POSITION)),
-        (0x83, Callee::Sig(&TARGET_ANGLE)),
-        (0x9b, Callee::Sig(&crate::s4_small::TURN_POINT)),
-        (0xce, Callee::Sig(&OBJ_SCRIPT)),
-        (0xee, Callee::Sig(&GIVE_BACK)),
-        (0xfa, Callee::Any),
-    ],
-    imports: &[],
-};
-
-/// [`follow_task`]; `turned` picks the turning callee.
-fn follow_task_at<G: Game>(g: &mut G, img: &Image, fr: &Frame, turned: bool) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let ebp = fr.esp.wrapping_sub(4);
@@ -748,19 +719,14 @@ fn follow_task_at<G: Game>(g: &mut G, img: &Image, fr: &Frame, turned: bool) -> 
                 // sub esp, 0x24; push esi; push edi; push s; call
                 let esp = ebp.wrapping_sub(0x34);
                 g.write::<u32>(esp + 4, s);
-                let at = img.rel32_target(f + 0x9b);
-                if turned {
-                    let turn = Frame {
-                        at,
-                        esp,
-                        ecx: angles,
-                        edx: pos,
-                        ..*fr
-                    };
-                    crate::s4_small::turn_point(g, img, &turn);
-                } else {
-                    rotate_offset(g, img, at, esp, angles, pos);
-                }
+                let turn = Frame {
+                    at: img.rel32_target(f + 0x9b),
+                    esp,
+                    ecx: angles,
+                    edx: pos,
+                    ..*fr
+                };
+                crate::s4_small::turn_point(g, img, &turn);
             }
             true
         }
@@ -805,7 +771,7 @@ pub const FOLLOW_TASK: Sig = Sig {
     calls: &[
         (0x29, Callee::Sig(&MEAN_POSITION)),
         (0x83, Callee::Sig(&TARGET_ANGLE)),
-        (0x9b, Callee::Sig(&ROTATE_OFFSET)),
+        (0x9b, Callee::Sig(&crate::s4_small::TURN_POINT)),
         (0xce, Callee::Sig(&OBJ_SCRIPT)),
         (0xee, Callee::Sig(&GIVE_BACK)),
         (0xfa, Callee::Any),

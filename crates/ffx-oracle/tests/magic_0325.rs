@@ -68,6 +68,9 @@ fn frame() {
         (1i32, 0u32, 3i32, false, true),
         (1, 1, 3, false, true),
         (1, 0, 0x40, false, false),
+        // the sound limit itself and just below
+        (1, 0, 0x20, false, true),
+        (1, 0, 0x1f, false, true),
         (2, 0, 3, true, true),
         (0, 0, 3, false, true),
     ] {

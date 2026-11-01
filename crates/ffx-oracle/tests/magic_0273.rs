@@ -64,11 +64,14 @@ fn sprite_setup() {
     });
     let r = SCRATCH + 0x100;
     let sprite = SCRATCH + 0x1000;
-    for (k, v) in (0u32..).zip([sprite, 0xa, 0xb, 0xc, 0x0000_0099, 0xd]) {
+    // the kind byte +0x10 with a non-zero byte above it
+    for (k, v) in (0u32..).zip([sprite, 0xa, 0xb, 0xc, 0x0000_7799, 0xd]) {
         t.set_u32(r + 4 * k, v);
     }
     for flags in [0u16, 0xffff, 0x0400, 0xfffe] {
-        t.write(sprite, &[0x5c; 0xa0]);
+        // each word of the sprite other than its neighbours
+        let fill: Vec<u8> = (0u8..0xa0).map(|b| b.wrapping_mul(0x1d) ^ 0x5c).collect();
+        t.write(sprite, &fill);
         t.set_u16(sprite + 0x90, flags);
         t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
         t.check(at, Call::this(r), &[], Eax::Checked, m0273::sprite_setup);
