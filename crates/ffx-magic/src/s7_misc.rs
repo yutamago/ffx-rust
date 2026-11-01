@@ -4478,6 +4478,7 @@ pub fn emitter_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let e = fr.ecx;
     let mut st = Pushes::default();
     st.push_all(&[0, 9, w(0x11)]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let h = st.call(g, slot_target(g, w(0x1), 719), e).eax;
     st.pop(3);
     g.write::<u32>(e, h);
@@ -4489,6 +4490,7 @@ pub fn emitter_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(e + 0x1c, 0x8080_8080);
     g.write::<u32>(e + 0x20, 0x3d8f_5c29);
     g.write::<u32>(e + 0x278, 0x3d8f_5c29);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     let h2 = st.call(g, slot_target(g, w(0x46), 719), e).eax;
     // the sprites' entry `esp`: `push esi`, the colour word and the call
     let esp = fr.esp.wrapping_sub(0xc);
@@ -4598,8 +4600,10 @@ pub fn reel_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             s(g, 0x3c, 654, &[]);
             let mut st = Pushes::default();
             st.push(0x41a0_0000);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
             st.call(g, slot_target(g, w(0x49), 657), ecx);
             st.push_all(&[0x81, 0x138]);
+            // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
             st.call(g, slot_target(g, w(0x5e), 658), ecx);
             s(g, 0x75, 659, &[]);
             let eax = s(g, 0x85, 660, &[]);
@@ -5013,12 +5017,15 @@ pub fn aim_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let mut st = Pushes::default();
     for i in 0..3u32 {
         st.push_all(&[o + 0x1b8 + 0x10 * i, i]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x2a), 588), o);
         st.push_all(&[o + 0x1e8 + 0x10 * i, i]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
         st.call(g, slot_target(g, w(0x38), 544), o);
         st.pop(4);
     }
     st.push_all(&[o + 0x218, 3]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
     st.call(g, slot_target(g, w(0x60), 544), o);
     for j in 0..3u32 {
         let p = o + 0x1bc + 0x10 * j;
