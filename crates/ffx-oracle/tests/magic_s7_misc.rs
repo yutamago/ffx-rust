@@ -3142,3 +3142,90 @@ fn actors_objects_started() {
         }
     }
 }
+
+/// Row 206: the camera blends of the five DLLs: angle pairs on each side
+/// of 0 (brought round and not), results past both bounds, timers above
+/// 0 and at it; the slots see the frame's matrices and vector.
+#[test]
+fn camera_blends() {
+    for (dll, rva) in [
+        (348u16, 0x3330u32),
+        (350, 0x3970),
+        (353, 0x5400),
+        (473, 0x4350),
+        (480, 0x29a0),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 235, log, 1, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { k + i });
+            }
+            0x235
+        });
+        for s in [328u32, 329] {
+            log_calls(&mut t, s, log, 3, None, move |m, a, k| {
+                for i in 0..16u32 {
+                    m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i) ^ a[2] ^ (k << 4));
+                }
+                s
+            });
+        }
+        log_calls(&mut t, 229, log, 3, None, |m, a, _| {
+            for i in 0..4u32 {
+                m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i));
+            }
+            0x229
+        });
+        t.stub(590, move |m, a| {
+            let row = log + 0x400 + 0x20 * (a[0] % 8);
+            for i in 0..4u32 {
+                m.w32(row + 4 * i, m.r32(a[1] + 4 * i));
+            }
+            0x590 + a[0]
+        });
+        t.stub(589, move |m, a| {
+            let row = log + 0x600 + 0x20 * (a[0] % 8);
+            for i in 0..4u32 {
+                m.w32(row + 4 * i, m.r32(a[1] + 4 * i));
+            }
+            0x589 + a[0]
+        });
+        for (o, x) in [(0x56u32, 3.0f32), (0x5e, 6.0), (0x8c, 1.0), (0xad, -3.0)] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let task = SCRATCH + 0x300;
+        let s = SCRATCH + 0x1000;
+        let angles: [[(f32, f32); 2]; 3] = [
+            [(-2.5, 2.0), (1.0, -2.75)],
+            [(-0.5, 0.5), (2.0, 1.0)],
+            [(-2.9, 2.9), (2.9, -2.9)],
+        ];
+        for k in 0..3u32 {
+            t.write(s, &varied(0x200, k));
+            t.set_u32(task + 0x14, s);
+            for (i, pair) in (0u32..).zip(angles) {
+                let b = s + 0x30 + 0x38 * i;
+                for (c, (a, e)) in (0u32..).zip(pair) {
+                    t.set_u32(b - 0x20 + 4 * c, (a + 0.1 * k as f32).to_bits());
+                    t.set_u32(b - 0x10 + 4 * c, (e - 0.2 * k as f32).to_bits());
+                }
+                t.set_u32(b, (i + k) % 3);
+                t.set_u32(b + 4, 4);
+            }
+            for i in 0..4u32 {
+                let p = s + 0xa8 + 0x38 * i;
+                t.set_u32(p + 0x30, (i + 2 * k) % 4);
+                t.set_u32(p + 0x34, 3);
+                for c in 0..3u32 {
+                    t.set_u32(p + 0x10 + 4 * c, (0.5 * c as f32 + i as f32).to_bits());
+                    t.set_u32(p + 0x20 + 4 * c, (-1.5 * c as f32 + k as f32).to_bits());
+                }
+            }
+            t.set_u32(log, 0);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}

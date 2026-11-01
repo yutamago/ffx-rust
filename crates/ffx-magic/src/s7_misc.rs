@@ -4036,3 +4036,105 @@ pub const ACTORS_OBJECTS_START: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// One step of a timed blend (`timer` counts down when above 0): the
+/// weight `t = timer / length` (both words as floats) and `1 - t` (`K0`
+/// the code's 1.0).
+fn blend_weight<G: Game>(g: &mut G, at: u32, one: f32) -> (f32, f32) {
+    let v = g.read::<i32>(at);
+    if v > 0 {
+        g.write::<i32>(at, v - 1);
+    }
+    let t = div(cvt(g.read::<u32>(at)), cvt(g.read::<u32>(at + 4)));
+    (t, sub(one, t))
+}
+
+/// Three camera angle blends and four point blends sent (cdecl `(task)`,
+/// `S = task[0x14]`; a /GS frame, `ebp` = `esp - 4` at the entry, the
+/// matrices `M` (`ebp-0xa4`) and `M2` (`ebp-0x64`), the vector `V`
+/// (`ebp-0x24`) and `U = (0, 0, 1, 1)` (`ebp-0x14`) locals). `M` = slot
+/// 235. For each of three blocks `i` (0x38 bytes from `S+0x30`): its
+/// timer gives `t` ([`blend_weight`]); its two angles go from `b` to `a`
+/// as `(1 - t) b + a t`, `b` first brought round by a turn when the two
+/// lie on the far sides of 0 more than `K1` apart, the result kept in
+/// `-K1..K1` (by `K2`); `M2` = `M` turned by the two angles (slots 328,
+/// 329), `V` = slot 229 `(V, M2, U)` and slot 590 `(i, V)`. Then the
+/// block's point at `P = S+0xa8 + 0x38 i` (and a fourth after the
+/// three) blends `+0x20..` into `+0x10..` by its own timer (`w` 1.0) and
+/// goes to slot 589 `(i, P)`, whose last `eax` it returns.
+///
+/// `magic_0348` 0x10003330 (750 bytes; 5 DLLs).
+pub fn camera_blends<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(fr.arg(g, 0).wrapping_add(0x14));
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |d: u32| ebp.wrapping_sub(d);
+    let (m, m2, v, u) = (at(0xa4), at(0x64), at(0x24), at(0x14));
+    for (i, x) in (0u32..).zip([0, 0, 0x3f80_0000, 0x3f80_0000]) {
+        g.write::<u32>(u + 4 * i, x);
+    }
+    slot(g, img, f, 0x24, 235, 0, &[m]);
+    let one = k(g, 0x8c);
+    let (k1, k2, k5) = (k(g, 0x56), k(g, 0x5e), k(g, 0xad));
+    // a point blended by its own timer and sent
+    let point = |g: &mut G, p: u32, i: u32, table: u32| {
+        let (t, u) = blend_weight(g, p + 0x30, one);
+        for c in 0..3u32 {
+            let a = mul(g.read::<f32>(p + 0x20 + 4 * c), u);
+            let b = mul(g.read::<f32>(p + 0x10 + 4 * c), t);
+            g.write::<f32>(p + 4 * c, add(a, b));
+        }
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+        slot(g, img, f, table, 589, 0, &[i, p]).eax
+    };
+    let mut blk = s + 0x30;
+    let mut p = s + 0xa8;
+    for i in 0..3u32 {
+        let (t, rest) = blend_weight(g, blk, one);
+        for c in 0..2u32 {
+            let a = g.read::<f32>(blk - 0x20 + 4 * c);
+            let mut b = g.read::<f32>(blk - 0x10 + 4 * c);
+            if 0.0 > a {
+                if b > 0.0 && sub(b, a) > k1 {
+                    b = sub(k5, sub(k1, b));
+                }
+            } else if 0.0 > b && sub(a, b) > k1 {
+                b = add(add(b, k1), k1);
+            }
+            let mut x = add(mul(rest, b), mul(a, t));
+            if x > k1 {
+                x = sub(x, k2);
+            } else if k5 > x {
+                x = add(x, k2);
+            }
+            g.write::<f32>(blk - 0x30 + 4 * c, x);
+        }
+        let mut st = Pushes::default();
+        let yaw = g.read::<u32>(blk - 0x30);
+        st.push_all(&[yaw, m, m2]);
+        st.call(g, slot_target(g, w(0x13c), 328), 0);
+        st.pop(2);
+        let pitch = g.read::<u32>(blk - 0x2c);
+        st.set_top(pitch);
+        st.push_all(&[m2, m2]);
+        st.call(g, slot_target(g, w(0x15b), 329), 0);
+        st.push_all(&[u, m2, v]);
+        st.call(g, slot_target(g, w(0x174), 229), 0);
+        st.push_all(&[v, i]);
+        st.call(g, slot_target(g, w(0x185), 590), 0);
+        blk += 0x38;
+        point(g, p, i, 0x1d2);
+        p += 0x38;
+    }
+    Ret::eax(point(g, p, 3, 0x283))
+}
+
+/// [`camera_blends`] (the `rel32`: `__security_check_cookie`).
+pub const CAMERA_BLENDS: Sig = Sig {
+    len: 750,
+    hash: 0x4311_2989_63cf_417c,
+    calls: &[(0x2e6, Callee::Any)],
+    imports: &[],
+};

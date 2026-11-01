@@ -2198,6 +2198,7 @@ ports! {
     "camera path task" => s7_misc::CAMERA_PATH_TASK, s7_misc::camera_path_task;
     "children items node" => s7_misc::CHILDREN_ITEMS_NODE, s7_misc::children_items_node;
     "actors objects start" => s7_misc::ACTORS_OBJECTS_START, s7_misc::actors_objects_start;
+    "camera blends" => s7_misc::CAMERA_BLENDS, s7_misc::camera_blends;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
