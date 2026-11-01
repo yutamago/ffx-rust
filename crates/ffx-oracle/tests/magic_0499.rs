@@ -78,9 +78,9 @@ fn parts_refresh() {
                 }
             }
             // slot 231 keeps the matrix it gets last (the local `A`)
-            if s == 231 && a[2] >= 0x2000_0000 {
+            if s == 231 && a[0] >= 0x2000_0000 {
                 let k = m.r32(magic_owna::row(231));
-                magic_owna::dump(m, 0x100 + k % 0x40, a[2], 16);
+                magic_owna::dump(m, 0x100 + k % 0x40, a[0], 16);
             }
             (0x5a5a_0000 + s) ^ a[0]
         });
@@ -161,7 +161,13 @@ fn frame() {
         m.w32(part_cell, 0);
         table
     });
-    recs(&mut t, &[(226, 2), (711, 3), (710, 4), (714, 5), (214, 1)]);
+    recs(&mut t, &[(226, 2), (710, 4), (714, 5), (214, 1)]);
+    // slot 711 keeps the game flag it runs under
+    rec(&mut t, 711, 3, |m, _| {
+        let l = m.r32(SCRATCH + 0x20);
+        m.w32(SCRATCH + 0x2_0c00, l);
+        0x711
+    });
     let w = |t: &magic::Twin, op: u32| t.img.word(at + op);
     let (lock, stop, part) = (SCRATCH + 0x20, SCRATCH + 0x30, SCRATCH + 0x40);
     for (op, v) in [

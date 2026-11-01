@@ -96,6 +96,8 @@ fn tasks() {
         t.set_u32(r + 0x1c, wait);
         t.set_u8(r + 0x2b8, byte);
         t.set_u8(r + 0x1eb, byte);
+        // the word after the wait distinct from it
+        t.set_u32(r + 0x20, wait ^ 0x5555);
         t.check_entry(t.at(rva), Call::default(), &[task], Eax::Checked);
     }
 }
@@ -158,6 +160,8 @@ fn fade_task() {
             (0, 0x7e, 0x00, 1),
             (0xffff_fff0, 0x50, 0x40, 2),
             (0, 0x62, 0x20, 1),
+            // `+0xa8` reaching 0x80 with `+0xa9` non-zero next to it
+            (0, 0x7e, 0x60, 2),
         ] {
             let task = task_rec(&mut t, state, wait);
             t.set_u8(r + 0xa8, a8);
@@ -176,7 +180,12 @@ fn colour_task() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x6f40);
     let ftu = t.img.rel32_target(at + 0x10c);
-    recs(&mut t, &[(325, 2), (713, 1)]);
+    // slot 325 keeps the vector it gets (the local `V`)
+    rec(&mut t, 325, 2, |m, a| {
+        magic_owna::dump(m, 325, a[1], 4);
+        0x325
+    });
+    recs(&mut t, &[(713, 1)]);
     let (p1, p2) = (SCRATCH + 0x20, SCRATCH + 0x30);
     let g1 = t.img.word(ftu + 0x01);
     t.set_u32(g1, p1);

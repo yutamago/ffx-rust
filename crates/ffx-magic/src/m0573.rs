@@ -1,9 +1,10 @@
 //! `magic_0573.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::h6_setup::unlink_task;
 use crate::l3_common::{ListAt, attach, node_init};
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, mul};
+use crate::sb_sse::{add, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -220,5 +221,174 @@ pub const INIT: Sig = Sig {
         (0xd3, Callee::Sig(&crate::nodes::INSERT)),
         (0x10a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
     ],
+    imports: &[],
+};
+
+/// A summon node's refresh (0x10002d60, internal, `ecx` = the cursor
+/// `[node, .., flag, mode]`): the walk of the node's children
+/// ([`walk`](crate::nodes::walk)); when it ran, slot 275 `(node[0x20])`
+/// and, with bit 0 of `node[0x24]`, its model `node[0x1c]` leaves its
+/// parent ([`leave`](crate::sa_misc::leave)), the model is set up
+/// ([`model_setup`](crate::sa_summon::model_setup), the local cursor
+/// `[model]` at `ebp - 4`) and the node leaves its parent. Returns the
+/// last call's `eax`.
+pub fn refresh<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let cur = fr.ecx;
+    let (eax, done) = crate::nodes::walk(g, cur, cur, fr.eax);
+    let Some(node) = done else {
+        return Ret::eax(eax);
+    };
+    let t = slot_target(g, w(0x4c), 275);
+    let h = g.read::<u32>(node + 0x20);
+    let eax = g.call(t, 0, &[h]).eax;
+    if g.read::<u8>(node + 0x24) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let model = g.read::<u32>(node + 0x1c);
+    crate::sa_misc::leave(g, model, eax);
+    let model = g.read::<u32>(node + 0x1c);
+    let local = fr.esp.wrapping_sub(8);
+    g.write::<u32>(local, model);
+    let r = crate::sa_summon::model_setup(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x76),
+            // push ebp; push ecx; push ebx; push esi; call
+            esp: fr.esp.wrapping_sub(0x14),
+            eax: model,
+            ecx: local,
+            ..Frame::default()
+        },
+    );
+    Ret::eax(crate::sa_misc::leave(g, node, r.eax))
+}
+
+/// [`refresh`] (135 bytes, 1 overlay).
+pub const REFRESH: Sig = Sig {
+    len: 135,
+    hash: 0x9bbe_9abe_42f8_8a17,
+    calls: &[
+        (0x68, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x76, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x7d, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};
+
+/// The summon's motion task (0x100072a0, `(task)`, a task step) on the
+/// record `r = task[1]`, its object `o = r[0x2c]` and its motion set `m
+/// = r[0x24]` (five words each in the DLL's table, operands
+/// `+0x6c`..`+0x18f`); each motion is slot 228 `(o[0x50], id)` and the
+/// next state:
+/// - 0: motion 0; 1: once the motion is done (slot 411 `(o[0x50])`),
+///   motion 1 and a wait `+0x1c` of 69; 2: when the wait is out, state 10
+///   at once; 10: motion 2; 11: once done, motion 3 and a wait of 30;
+/// - 12: when the wait is out, state 10000 at once; 10000: motion 4;
+///   10001: once done, the object leaves its model
+///   ([`object_to_node`](crate::sa_misc::object_to_node)), slot 213
+///   `(o[0x50], 0)` and the task's node leaves its ring, state 20000.
+///
+/// Every exit counts `+0x20` up; from 40 on the size `+0x19c` shrinks by
+/// `K` down to `+0x28` while above it. The wait goes down at every exit.
+/// Returns the count before the step plus 1.
+pub fn motion_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let model = |g: &G| {
+        let o = g.read::<u32>(r + 0x2c);
+        g.read::<u32>(o + 0x50)
+    };
+    let done = |g: &mut G, op: u32| {
+        let t = slot_target(g, w(op), 411);
+        let m = model(g);
+        g.call(t, 0, &[m]).eax != 0
+    };
+    // slot 228 with the set's motion from the table at operand `tab`
+    let play = |g: &mut G, tab: u32, op: u32| {
+        let set = g.read::<u32>(r + 0x24);
+        let id = g.read::<u32>(w(tab).wrapping_add(set.wrapping_mul(20)));
+        let m = model(g);
+        let t = slot_target(g, w(op), 228);
+        g.call(t, 0, &[m, id]);
+    };
+    let next = |g: &mut G| {
+        let s = g.read::<u32>(r + 0x18);
+        g.write::<u32>(r + 0x18, s.wrapping_add(1));
+    };
+    loop {
+        let state = g.read::<u32>(r + 0x18);
+        match state {
+            0 => {
+                play(g, 0x6c, 0x19a);
+                next(g);
+            }
+            1 if done(g, 0x7c) => {
+                play(g, 0x9c, 0xa7);
+                g.write::<u32>(r + 0x1c, 0x45);
+                next(g);
+            }
+            2 if g.read::<i32>(r + 0x1c) <= 0 => {
+                g.write::<u32>(r + 0x18, 10);
+                continue;
+            }
+            10 => {
+                play(g, 0xc8, 0x19a);
+                next(g);
+            }
+            11 if done(g, 0xd8) => {
+                play(g, 0xf8, 0x103);
+                g.write::<u32>(r + 0x1c, 0x1e);
+                next(g);
+            }
+            12 if g.read::<i32>(r + 0x1c) <= 0 => {
+                g.write::<u32>(r + 0x18, 0x2710);
+                continue;
+            }
+            0x2710 => {
+                play(g, 0x18f, 0x19a);
+                next(g);
+            }
+            0x2711 if done(g, 0x130) => {
+                let o = g.read::<u32>(r + 0x2c);
+                crate::sa_misc::object_to_node(g, img, img.rel32_target(f + 0x147), o, 0);
+                let t = slot_target(g, w(0x154), 213);
+                let m = model(g);
+                g.call(t, 0, &[m, 0]);
+                unlink_task(g, task);
+                g.write::<u32>(r + 0x18, 0x4e20);
+            }
+            _ => {}
+        }
+        break;
+    }
+    let n = g.read::<u32>(r + 0x20);
+    g.write::<u32>(r + 0x20, n.wrapping_add(1));
+    if n.cast_signed() >= 0x28 {
+        let x = g.read::<f32>(r + 0x19c);
+        if x > g.read::<f32>(r + 0x28) {
+            let x = sub(x, g.read::<f32>(w(0x1cc)));
+            g.write::<f32>(r + 0x19c, x);
+            let lo = g.read::<f32>(r + 0x28);
+            // comiss + jb: the floor only when it is not below (ordered)
+            if lo >= x {
+                g.write::<f32>(r + 0x19c, lo);
+            }
+        }
+    }
+    let wt = g.read::<u32>(r + 0x1c);
+    g.write::<u32>(r + 0x1c, wt.wrapping_sub(1));
+    Ret::eax(n.wrapping_add(1))
+}
+
+/// [`motion_task`] (531 bytes, 1 overlay).
+pub const MOTION_TASK: Sig = Sig {
+    len: 531,
+    hash: 0xabe7_6dd1_7540_8b6f,
+    calls: &[(0x147, Callee::Sig(&crate::sa_misc::OBJECT_TO_NODE))],
     imports: &[],
 };

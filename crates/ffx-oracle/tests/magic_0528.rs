@@ -40,6 +40,7 @@ fn steps() {
     // the flags word's bit 4 clear first (`|= 0x10` shows), and the
     // word the start clears non-zero
     t.write(seq, &[0x41; 0x140]);
+    t.set_u32(seq + 0xc0, 0x2c2c_2c2c);
     let cleared = t.img.word(t.at(0x1000) + 0x5b);
     t.set_u32(cleared, 0x5a5a_5a5a);
     for rva in [0x1000u32, 0x14f0] {
