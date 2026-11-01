@@ -3519,7 +3519,8 @@ fn weapon_bounces_in(dll: u16, rva: u32) {
         // the height reaching the floor exactly; speeds against their
         // bounds' signs (kept); a fall that stops at -0 (kept as it is);
         // bounds of 0
-        (3, -0.5, [1.0, 0.5, -1.0], [1.0, -1.0], [0.5, -0.5]),
+        // (NaN: the height set so that the step lands on the floor exactly)
+        (3, f32::NAN, [1.0, 0.5, -1.0], [1.0, -1.0], [0.5, -0.5]),
         (1, 5.0, [-1.0, 4.0, 1.0], [1.0, -1.0], [0.5, 1.0]),
         (1, 5.0, [1.0, -0.4, 1.0], [1.0, 1.0], [0.5, 1.0]),
         (1, 5.0, [1.0, 4.0, -1.0], [0.0, 0.0], [0.5, 1.0]),
@@ -3536,7 +3537,15 @@ fn weapon_bounces_in(dll: u16, rva: u32) {
         t.set_u32(SCRATCH + 0x34c, 0);
         t.set_u32(task + 0x14, obj);
         t.set_u32(obj + 0x50c, count);
-        t.set_u32(obj + 0x264, fl(floor + dy));
+        let y0 = if dy.is_nan() {
+            let vy = v[1] + f32::from_bits(t.u32(op(&t, f, 0x57)));
+            let y0 = floor - vy;
+            assert_eq!((y0 + vy).to_bits(), floor.to_bits());
+            y0
+        } else {
+            floor + dy
+        };
+        t.set_u32(obj + 0x264, fl(y0));
         for (i, x) in v.into_iter().enumerate() {
             t.set_u32(obj + 0x2a0 + 4 * i as u32, fl(x));
         }
