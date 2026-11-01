@@ -62,6 +62,18 @@ pub const FRAME: f64 = 2.0 * 0.016_683_333_333_333_335;
 /// An update that runs this long (host time) frees the loader inside it
 /// (the hook's 100 ms, scaled for the emulator).
 const STALL: Duration = Duration::from_secs(3);
+/// [`STALL`], or `FFX_HOST_LOADER_STALL_MS` (a diagnostic: a long one
+/// shows what waits on the loader inside a long update).
+fn stall() -> Duration {
+    static MS: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    MS.get_or_init(|| {
+        std::env::var("FFX_HOST_LOADER_STALL_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+    })
+    .map_or(STALL, Duration::from_millis)
+}
+
 /// How long a turn is waited for before the boundary gives up.
 const PATIENCE: Duration = Duration::from_secs(120);
 /// How long the boundary waits for the render thread to let the lock go.
@@ -181,6 +193,37 @@ impl Clock {
     #[must_use]
     pub fn loader_turns(&self) -> (u32, u32) {
         (
+            self.loader_turns.load(Ordering::Acquire),
+            self.loader_freed.load(Ordering::Acquire),
+        )
+    }
+
+    /// The render and loader threads' ids (0 until seen).
+    #[must_use]
+    pub fn roles(&self) -> (u32, u32) {
+        (
+            self.render.load(Ordering::Acquire),
+            self.loader.load(Ordering::Acquire),
+        )
+    }
+
+    /// The boundary's and the turns' state, for the harness's `stacks`.
+    #[must_use]
+    pub fn state(&self) -> String {
+        let b = |a: &AtomicBool| u8::from(a.load(Ordering::Acquire));
+        let update_ms = self
+            .update_started
+            .lock()
+            .ok()
+            .and_then(|s| *s)
+            .map_or(0, |s| s.elapsed().as_millis());
+        format!(
+            "frame {} boundary {} update_ms {update_ms} turn {} render_waiting {} main_sleeping {} loader_turns {} freed {}",
+            self.frame(),
+            b(&self.at_boundary),
+            b(&self.turn),
+            b(&self.render_waiting),
+            b(&self.main_sleeping),
             self.loader_turns.load(Ordering::Acquire),
             self.loader_freed.load(Ordering::Acquire),
         )
@@ -493,7 +536,7 @@ fn loader_wait(e: &Exec) {
             .lock()
             .ok()
             .and_then(|s| *s)
-            .is_some_and(|s| s.elapsed() > STALL);
+            .is_some_and(|s| s.elapsed() > stall());
         if c.main_sleeping.load(Ordering::Acquire) || long {
             freed = true;
             return true;
