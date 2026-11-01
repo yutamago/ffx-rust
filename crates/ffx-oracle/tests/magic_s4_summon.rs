@@ -660,11 +660,26 @@ fn particle_node_draws() {
 
 /// `magic_0042` 0x1000b170: the summon's frame before stage 4, with an
 /// empty ring, a ring of two and the ring skipped; the bone and the two
-/// nodes already at the pass.
+/// nodes already at the pass. Also `magic_0426` 0x100077e0, the copy
+/// with slot 673 before the stage test (`sf_hidden`, census2), its stage
+/// operand at `+0x19`.
 #[test]
 fn summon_frame_b() {
-    let Some(mut t) = twin(42) else { return };
-    let f = t.at(0xb170);
+    for (n, rva, stage_at, name) in [
+        (42u16, 0xb170u32, 0xbu32, "summon frame (0042)"),
+        (426, 0x77e0, 0x19, "sf summon frame 673 first"),
+    ] {
+        summon_frame_b_in(n, rva, stage_at, name);
+    }
+}
+
+fn summon_frame_b_in(n: u16, rva: u32, stage_at: u32, name: &str) {
+    let Some(mut t) = twin(n) else { return };
+    let f = t.at(rva);
+    assert_eq!(
+        ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0),
+        Some(name)
+    );
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let bm = t.img.rel32_target(f + 0x3a);
     t.set_u32(t.img.word(bm + 0x7e), node(20));
@@ -689,7 +704,7 @@ fn summon_frame_b() {
         (5, 1, 2),
         (4, 1, 0),
     ] {
-        t.set_u32(w(&t, 0xb), stage);
+        t.set_u32(w(&t, stage_at), stage);
         t.set_u32(w(&t, 0x4d), skip);
         let pass = t.u32(w(&t, 0x3f)) as u8;
         // the ring: n nodes after the root

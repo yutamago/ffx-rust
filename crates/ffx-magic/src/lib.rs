@@ -86,6 +86,9 @@ pub mod s6_misc;
 // the shared work list's seventh round (shared-7)
 pub mod s7_misc;
 
+// census2: functions the old census hid inside merged rows
+pub mod sf_hidden;
+
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
 pub mod o6_fam_boot;
@@ -656,6 +659,16 @@ impl Image {
     pub fn in_text(&self, addr: u32) -> bool {
         let r = addr.wrapping_sub(self.base);
         r >= self.text.0 && r < self.text.1
+    }
+
+    /// Whether `addr` lies inside a relocated word (an operand, or a jump
+    /// table's entry): never an instruction's first byte, so never a
+    /// function start.
+    #[must_use]
+    pub fn in_reloc(&self, addr: u32) -> bool {
+        let a = addr.wrapping_sub(self.base);
+        let i = self.relocs.partition_point(|&r| r <= a);
+        i > 0 && a - self.relocs[i - 1] < 4
     }
 
     /// The export's address.
@@ -1393,7 +1406,6 @@ ports! {
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
-    "follow task (turned)" => s4_misc::FOLLOW_TASK_TURNED, s4_misc::follow_task_turned;
     "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
     "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
     "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
@@ -2157,6 +2169,20 @@ ports! {
     "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
     "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
     "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
+    // census2: functions the old census hid inside merged rows (sf_hidden)
+    "sf elem point table" => sf_hidden::ELEM_POINT_TABLE, sf_hidden::elem_point_table;
+    "sf optpos point" => sf_hidden::OPTPOS_POINT, sf_hidden::optpos_point;
+    "sf elem point offset" => sf_hidden::ELEM_POINT_OFFSET, sf_hidden::elem_point_offset;
+    "sf spin angles" => sf_hidden::SPIN_ANGLES, sf_hidden::spin_angles;
+    "sf caster script task" => sf_hidden::CASTER_SCRIPT_TASK, sf_hidden::caster_script_task;
+    "sf summon frame 673 first" => sf_hidden::SUMMON_FRAME_673_FIRST, sf_hidden::summon_frame_673_first;
+    "sf fly-in task" => sf_hidden::FLY_IN_TASK, sf_hidden::fly_in_task;
+    "sf motion sequence task" => sf_hidden::MOTION_SEQUENCE_TASK, sf_hidden::motion_sequence_task;
+    "sf two model task" => sf_hidden::TWO_MODEL_TASK, sf_hidden::two_model_task;
+    "sf centred parts task" => sf_hidden::CENTRED_PARTS_TASK, sf_hidden::centred_parts_task;
+    "sf shade fade task" => sf_hidden::SHADE_FADE_TASK, sf_hidden::shade_fade_task;
+    "sf spark burst task" => sf_hidden::SPARK_BURST_TASK, sf_hidden::spark_burst_task;
+    // sf_hidden: end of ports
     "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
@@ -2708,7 +2734,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0394 place", &m0394::PLACE),
     ("m0395 face", &ob_summon::FACE_0395),
     ("m0396 face", &ob_summon::FACE_0396),
-    ("m0396 aim", &m0396::AIM),
     ("m0396 refresh", &m0396::REFRESH),
     ("m0395 resets", &m0395::RESETS),
     ("pool take", &sa_pool::TAKE),
@@ -2735,7 +2760,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("register parts", &sa_misc::REGISTER_PARTS),
     ("records init", &sa_misc::RECORDS_INIT),
     ("me block", &sa_misc::ME_BLOCK),
-    ("/GS epilogue", &sa_misc::GS_EPILOGUE),
     ("script run", &sa_script::RUN),
     ("link part", &sa_misc::LINK_PART),
     ("timeline", &sa_misc::TIMELINE),
@@ -2823,7 +2847,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("pool take (0x74)", &sb_misc::POOL_TAKE),
     ("node append", &sb_misc::NODE_APPEND),
     ("part setup", &sb_misc::PART_SETUP),
-    ("rotate offset, list pop", &sb_misc::ROTATE_OFFSET),
     ("move start", &sb_misc::MOVE_START),
     ("move start 2", &sb_misc::MOVE_START_2),
     ("ease sample", &sb_misc::EASE_SAMPLE),
@@ -3456,7 +3479,7 @@ pub fn covered(img: &Image, addr: u32) -> Option<&'static str> {
     bind(img, addr).map(|i| PORTS[i].0).or_else(|| {
         INTERNAL
             .iter()
-            .find(|(_, sig)| img.in_text(addr) && img.matches(addr, sig))
+            .find(|(_, sig)| img.in_text(addr) && !img.in_reloc(addr) && img.matches(addr, sig))
             .map(|(n, _)| *n)
     })
 }
@@ -3464,9 +3487,15 @@ pub fn covered(img: &Image, addr: u32) -> Option<&'static str> {
 /// The port of the function at `addr` of `img`: its index in [`PORTS`].
 /// `None` when no port matches the code there. Slot thunks differ only
 /// in the slot, so they bind by shape ([`runtime::slot_of_thunk`]).
+///
+/// An address inside a relocated word binds nothing: `ffx-host` offers
+/// every relocated word pointing into `.text`, and a jump table's address
+/// (`jmp [eax*4 + table]`) is one. `magic_0168` 0x10005c94 and seven
+/// others start with `0xc3`, which the lone `ret` matched, and the
+/// host's `int3` there broke the table's first entry.
 #[must_use]
 pub fn bind(img: &Image, addr: u32) -> Option<usize> {
-    if !img.in_text(addr) {
+    if !img.in_text(addr) || img.in_reloc(addr) {
         return None;
     }
     if runtime::table_global(img)

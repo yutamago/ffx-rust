@@ -589,11 +589,24 @@ fn dll_main_writes_only_crt_state() {
 
 /// The step at 0x1000d410: each wait state and its answer, the node list
 /// run (two nodes, handlers slot 950) or held, and the two gated visits
-/// (their nodes without children).
+/// (their nodes without children). Also `magic_0570`'s copy at
+/// 0x1000cb10, which binds since the Sig ends at the function's own end
+/// (census2, 2026-11-01).
 #[test]
 fn step_d410() {
-    let Some(mut t) = twin() else { return };
-    let f = t.at(0xd410);
+    for (n, rva) in [(N, 0xd410u32), (570, 0xcb10)] {
+        step_d410_in(n, rva);
+    }
+}
+
+fn step_d410_in(n: u16, rva: u32) {
+    let Some(mut t) = Twin::load(n) else { return };
+    t.init();
+    let f = t.at(rva);
+    assert_eq!(
+        ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0),
+        Some("m0070 step d410")
+    );
     let cfg = SCRATCH + 0x200;
     for (k, s) in [(0u32, 225u32), (1, 313), (2, 549), (3, 227)] {
         let row = SCRATCH + 0x3_0000 + 0x40 * s;

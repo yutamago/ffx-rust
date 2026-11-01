@@ -3360,10 +3360,21 @@ fn objects_at_targets_started() {
     }
 }
 
+/// Both copies (798 bytes since census2, 2026-11-01).
 #[test]
 fn scene_lights() {
-    let Some(mut t) = twin(563) else { return };
-    let f = t.at(0x1800);
+    for (n, rva) in [(563u16, 0x1800u32), (612, 0x76e0)] {
+        scene_lights_in(n, rva);
+    }
+}
+
+fn scene_lights_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let f = t.at(rva);
+    assert_eq!(
+        ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0),
+        Some("scene_light")
+    );
     for (s, n, words, fill) in [
         (235u32, 1usize, 16u32, Some(0usize)),
         (328, 3, 16, Some(0)),
@@ -3596,10 +3607,21 @@ fn scene_two_records_set() {
     }
 }
 
+/// Both copies (841 bytes since census2, 2026-11-01).
 #[test]
 fn camera_behind_starts() {
-    let Some(mut t) = twin(188) else { return };
+    for n in [188u16, 690] {
+        camera_behind_starts_in(n);
+    }
+}
+
+fn camera_behind_starts_in(n: u16) {
+    let Some(mut t) = twin(n) else { return };
     let f = t.at(0x2860);
+    assert_eq!(
+        ffx_magic::bind(&t.img, f).map(|i| ffx_magic::PORTS[i].0),
+        Some("camera_behind_start")
+    );
     let data = SCRATCH + 0x800;
     rec(&mut t, 803, 2, |_, _| 0x0200_0000);
     recs(

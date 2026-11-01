@@ -700,10 +700,9 @@ pub const THREE_POINTS_AROUND: Sig = Sig {
 /// `S+0x104` and `+0x108` 50, `+0x10c` 8, u16 `+0x126` 0; a task node for
 /// [`sprite_fan_task`] (the callback immediate `CB`; [`take`], `+0x14 =
 /// S`, `+0x4` 0) appended to the task list (`G_HEAD`, `G_TAIL`). Returns
-/// the node. The 1204 bytes of its identity hold the task function too
-/// (no padding between them).
+/// the node.
 ///
-/// `magic_0598` 0x10004530 (112 bytes, `ecx` = the state; 2 DLLs).
+/// `magic_0598` 0x10004530 (112 bytes, `ecx` = the state; 7 DLLs).
 pub fn sprite_fan_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -729,16 +728,12 @@ pub fn sprite_fan_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(node)
 }
 
-/// [`sprite_fan_start`] with [`sprite_fan_task`] after it (the `rel32`s:
-/// [`take`], and the task's [`screen_place`] and [`give_back`]).
+/// [`sprite_fan_start`] (the `rel32`: [`take`]). Until census2
+/// (2026-11-01) 1204 bytes, [`sprite_fan_task`] included.
 pub const SPRITE_FAN_START: Sig = Sig {
-    len: 1204,
-    hash: 0x1413_1a57_8d92_eb25,
-    calls: &[
-        (0x30, Callee::Sig(&TAKE)),
-        (0x15d, Callee::Sig(&SCREEN_PLACE)),
-        (0x493, Callee::Sig(&GIVE_BACK)),
-    ],
+    len: 112,
+    hash: 0x7060_ae31_b759_9b58,
+    calls: &[(0x30, Callee::Sig(&TAKE))],
     imports: &[],
 };
 
@@ -760,7 +755,7 @@ pub const SPRITE_FAN_START: Sig = Sig {
 /// bit 15 and the task node goes back to the pool ([`give_back`]).
 /// Returns the count left, or [`give_back`]'s `eax`.
 ///
-/// `magic_0598` 0x100045a0 (1140 bytes; 2 DLLs).
+/// `magic_0598` 0x100045a0 (1092 bytes; 19 DLLs).
 #[allow(clippy::too_many_lines)] // the original's packet, word by word
 pub fn sprite_fan_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
@@ -903,9 +898,11 @@ pub fn sprite_fan_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 }
 
 /// [`sprite_fan_task`] (the `rel32`s: [`screen_place`] and [`give_back`]).
+/// Until census2 (2026-11-01) 1140 bytes, the padding and the next
+/// function's first instructions included.
 pub const SPRITE_FAN_TASK: Sig = Sig {
-    len: 1140,
-    hash: 0xa98e_636c_7f0a_a1ef,
+    len: 1092,
+    hash: 0x8172_3c29_b79a_519c,
     calls: &[
         (0xed, Callee::Sig(&SCREEN_PLACE)),
         (0x423, Callee::Sig(&GIVE_BACK)),
@@ -3951,7 +3948,7 @@ pub const SPRITE_GS_PACKET: Sig = Sig {
 /// `+0x17c = *G_S`, `+0x18c = -0.05` and the other words cleared; then
 /// slots 458 `(*G_X, p, 1)`, 450 `(p, CB)` and 451 `(p, 0x14)`, each seeing
 /// the words the earlier ones left on the stack. Returns slot 451's
-/// `eax`. The 643 bytes of its identity hold [`particle_hand_over`] too.
+/// `eax`.
 ///
 /// `magic_0384` 0x10002060 (528 bytes; 3 DLLs).
 #[allow(clippy::too_many_lines)] // the original's words, one by one
@@ -4008,10 +4005,11 @@ pub fn particle_drift_5<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(st.call(g, target(g, 0x1f8, 451), 0).eax)
 }
 
-/// [`particle_drift_5`] with [`particle_hand_over`] after it.
+/// [`particle_drift_5`]. Until census2 (2026-11-01) 643 bytes,
+/// [`particle_hand_over`] included.
 pub const PARTICLE_DRIFT_5: Sig = Sig {
-    len: 643,
-    hash: 0xcdb8_42fc_edac_efc6,
+    len: 528,
+    hash: 0xc282_5168_44d7_b4b3,
     calls: &[],
     imports: &[(0x9, "rand")],
 };
