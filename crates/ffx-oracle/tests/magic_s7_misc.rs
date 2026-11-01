@@ -3047,3 +3047,98 @@ fn children_items_nodes() {
         }
     }
 }
+
+/// Row 623: the actors' objects started in both DLLs: no entries, two
+/// and three (numbers found in the DLL's list and not, an empty list),
+/// the yaw brought back from both sides; the task node with the list
+/// empty and not.
+#[test]
+fn actors_objects_started() {
+    for dll in [10u16, 14] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x1370);
+        let log = SCRATCH + 0x6000;
+        let plan = SCRATCH + 0x2f0;
+        let list = SCRATCH + 0x2e0;
+        log_calls(&mut t, 719, log, 3, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 412, log, 3, None, move |m, a, _| {
+            m.w32(a[1], m.r32(plan));
+            list
+        });
+        log_calls(&mut t, 711, log, 3, None, |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 710, log, 4, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 262, log, 4, None, |m, a, k| {
+            for i in 1..4 {
+                m.w32(a[i as usize], (0.5 * i as f32 + k as f32).to_bits());
+            }
+            0x262
+        });
+        log_calls(&mut t, 268, log, 3, None, |m, a, k| {
+            m.w32(a[2] + 4, a[0] ^ k);
+            0x268
+        });
+        log_calls(&mut t, 333, log, 1, None, |_, a, _| a[0]);
+        t.stub_st0(333, move |m, _| {
+            [0.25, 7.5, -6.0, 1.0][(m.r32(log) % 4) as usize]
+        });
+        // the object start's (`s4_misc::start_object_first`)
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        let soa = t.img.rel32_target(f + 0xde);
+        let start = t.img.rel32_target(soa + 0x80);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+        t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x7f0);
+        t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x780);
+        let pa = t.img.rel32_target(soa + 0x9b);
+        t.set_u16(op(&t, pa, 0x04), 8);
+        let pi = t.img.rel32_target(f + 0x3a);
+        t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        for (o, x) in [
+            (0x17du32, 1.0f32),
+            (0x18c, 3.0),
+            (0x196, 6.0),
+            (0x1a0, -3.0),
+            (0x1ad, 6.0),
+        ] {
+            t.set_u32(w(&t, o), x.to_bits());
+        }
+        let bl = SCRATCH + 0x900;
+        let actors = w(&t, 0xfe);
+        let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+        // (entries, the DLL's list size, listed)
+        for (k, (n, m, listed)) in [
+            (0u32, 0i32, false),
+            (2, 3, true),
+            (3, 0, false),
+            (3, 2, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(plan, n);
+            t.write(list, &[1, 5, 2, 9]);
+            t.set_u32(w(&t, 0x82), m.cast_unsigned());
+            t.set_u32(w(&t, 0xaf), bl);
+            t.write(bl, &[2, 1, 7, 0]);
+            for i in 0..8u32 {
+                t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+            }
+            t.write(node(0) - 0x40, &varied(0x140, k + 1));
+            t.set_u32(node(0), node(2));
+            t.set_u32(node(0) + 4, node(1));
+            t.set_u16(w(&t, 0x233), 2);
+            t.set_u32(w(&t, 0x242), node(0));
+            t.set_u32(w(&t, 0x2a9), if listed { node(3) } else { 0 });
+            t.set_u32(w(&t, 0x2b9), node(3));
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

@@ -3834,3 +3834,205 @@ pub const CHILDREN_ITEMS_NODE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A node off the DLL's free ring (count u16 `*G_C`, head `*G_F`) and
+/// onto its live list (`*G_L` first, `*G_T` last), as the original
+/// inlines it (see [`node_to_live`]): the operands `(count, head, head
+/// write, head clear, callback, count write, first, last read, last
+/// write, first write, last write 2)`. With none free the node is 0 and
+/// the original writes to address 4 (not run).
+fn free_to_live<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 11]) -> u32 {
+    let w = |o: u32| op(img, f, o);
+    let [
+        count,
+        head,
+        head_w,
+        head_0,
+        cb,
+        count_w,
+        first,
+        last_r,
+        last_w,
+        first_w,
+        last_w2,
+    ] = ops;
+    let mut free = g.read::<u16>(w(count));
+    let mut n = 0;
+    if free != 0 {
+        n = g.read::<u32>(w(head));
+        let (next, prev) = (g.read::<u32>(n), g.read::<u32>(n + 4));
+        g.write::<u32>(next.wrapping_add(4), prev);
+        let (prev, next) = (g.read::<u32>(n + 4), g.read::<u32>(n));
+        g.write::<u32>(prev, next);
+        if free > 1 {
+            let prev = g.read::<u32>(n + 4);
+            g.write::<u32>(w(head_w), prev);
+        } else {
+            g.write::<u32>(w(head_0), 0);
+        }
+        free = free.wrapping_sub(1);
+        for off in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(n + off, 0);
+        }
+        g.write::<u32>(n + 8, n);
+        g.write::<u32>(n + 0x10, w(cb));
+        g.write::<u8>(n + 0x18, 0);
+        g.write::<u16>(w(count_w), free);
+    }
+    let any = g.read::<u32>(w(first));
+    g.write::<u32>(n.wrapping_add(4), 0);
+    if any == 0 {
+        g.write::<u32>(n, 0);
+        g.write::<u32>(w(first_w), n);
+        g.write::<u32>(n.wrapping_add(8), n);
+        g.write::<u32>(w(last_w2), n);
+    } else {
+        let last = g.read::<u32>(w(last_r));
+        g.write::<u32>(n, last);
+        g.write::<u32>(last.wrapping_add(4), n);
+        g.write::<u32>(n.wrapping_add(8), n);
+        g.write::<u32>(w(last_w), n);
+    }
+    n
+}
+
+/// A summon's actors' objects started (cdecl, no arguments; `ebp` =
+/// `esp - 4` at the entry, the count `c` and the list `L` locals): slot
+/// 719 `(G_D, 8, 0)` into `*G_H` (`*G_1`, `*G_2` set to immediates first;
+/// two of its words stay on the stack), the part set up
+/// ([`part_init`](crate::l5_objhost::part_init)), slot 412 `(*G_X, &c,
+/// 0)`. For each of the `c` entries `i`: the battle number `L[i]` is
+/// looked up in the DLL's byte list `G_B` (`*G_N` entries; index `j`,
+/// else 0); the object `O = B0 + 0x130 i` started at scale `K`
+/// ([`start_object_first`](crate::s4_misc::start_object_first), owner
+/// `15 i`); with the actor `A = *(G_T + 4 G_B[j])`, slot 262 `(A, O+0xd0,
+/// O+0xd4, O+0xd8)` and slot 268 `(A, 0x11, O+0xd0)`, `O+0xdc = 1.0`,
+/// `O+0xd4 -= K2`; the yaw `K3 - slot 333 (A)` (ST0), brought back by
+/// `T` once when above `H` or below `Lo`, into `O+0xc4`; `O+0x120 =
+/// G_B[j]`; the record `E = E0 + 0x34 i` cleared (vtables `VT`, `VT2`)
+/// and `O+0x110 = E`. (The code's `obj` is `O + 0xd4`, `rec` is `E +
+/// 0x14`.) Then a task node is taken and listed
+/// ([`free_to_live`]). Returns 0.
+///
+/// `magic_0010` 0x10001370 (748 bytes; 2 DLLs).
+pub fn actors_objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let (count, list) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x18));
+    let mut st = Pushes::default();
+    st.push_all(&[0, 8, w(0x17)]);
+    g.write::<u32>(w(0x1d), w(0x21));
+    g.write::<u32>(w(0x27), w(0x2b));
+    let h = st.call(g, slot_target(g, w(0x7), 719), fr.ecx).eax;
+    st.pop(1);
+    g.write::<u32>(w(0x35), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x3a));
+    let x = g.read::<u32>(w(0x4b));
+    st.push_all(&[0, count, x]);
+    let l = st.call(g, slot_target(g, w(0x45), 412), fr.ecx).eax;
+    st.pop(5);
+    g.write::<u32>(list, l);
+    let mut owner = 0u32;
+    let mut i = 0u32;
+    let (mut obj, mut rec) = (w(0x75), w(0x7a));
+    let actor = |g: &G, j: u32, none: u32, b: u32, t: u32| {
+        if j == u32::MAX {
+            g.read::<u32>(w(none))
+        } else {
+            let n = g.read::<u8>(g.read::<u32>(w(b)).wrapping_add(j));
+            g.read::<u32>(u32::from(n).wrapping_mul(4).wrapping_add(w(t)))
+        }
+    };
+    while i.cast_signed() < g.read::<i32>(count) {
+        let n = g.read::<i32>(w(0x82));
+        let mut found = 0u32;
+        // (the start's first stack word, the entry or the last number
+        // compared, is not read)
+        if n > 0 {
+            let want = u32::from(g.read::<u8>(g.read::<u32>(list).wrapping_add(i)));
+            let mut j = 0u32;
+            loop {
+                let have = if j == u32::MAX {
+                    g.read::<u32>(w(0xa7))
+                } else {
+                    u32::from(g.read::<u8>(g.read::<u32>(w(0xaf)).wrapping_add(j)))
+                };
+                if want == have {
+                    found = j;
+                    break;
+                }
+                j = j.wrapping_add(1);
+                if j.cast_signed() >= n {
+                    break;
+                }
+            }
+        }
+        let start = img.rel32_target(f + 0xde);
+        let o = obj.wrapping_sub(0xd4);
+        crate::s4_misc::start_object_first(g, img, start, o, k(g, 0xcc), owner);
+        let a = actor(g, found, 0xec, 0xf3, 0xfe);
+        let p = obj.wrapping_sub(4);
+        st.push_all(&[obj + 4, obj, p, a]);
+        st.call(g, slot_target(g, w(0x107), 262), fr.ecx);
+        st.push_all(&[p, 0x11, a]);
+        st.call(g, slot_target(g, w(0x11d), 268), fr.ecx);
+        st.pop(7);
+        g.write::<u32>(obj + 8, 0x3f80_0000);
+        let v = sub(g.read::<f32>(obj), k(g, 0x141));
+        g.write::<f32>(obj, v);
+        let a = actor(g, found, 0x152, 0x159, 0x164);
+        let t = slot(g, img, f, 0x16a, 333, fr.ecx, &[a]);
+        let t = crate::m0018::st0_f32(t.st0);
+        g.write::<f32>(ebp.wrapping_sub(0xc), t);
+        let mut y = sub(k(g, 0x17d), t);
+        if y > k(g, 0x18c) {
+            y = sub(y, k(g, 0x196));
+        } else if k(g, 0x1a0) > y {
+            y = add(y, k(g, 0x1ad));
+        }
+        g.write::<f32>(obj.wrapping_sub(0x10), y);
+        let b = if found == u32::MAX {
+            g.read::<u32>(w(0x1bc))
+        } else {
+            u32::from(g.read::<u8>(g.read::<u32>(w(0x1c3)).wrapping_add(found)))
+        };
+        owner = owner.wrapping_add(0xf);
+        for off in [4u32, 0, 0xffff_fffc, 8] {
+            g.write::<u32>(rec.wrapping_add(off), 0);
+        }
+        g.write::<u32>(obj + 0x4c, b);
+        g.write::<u16>(rec + 0x1c, 0);
+        g.write::<u32>(rec + 0xc, w(0x1fd));
+        g.write::<u32>(rec + 0x10, w(0x204));
+        g.write::<u32>(rec + 0x14, 0);
+        g.write::<u32>(rec + 0x18, 0);
+        g.write::<u32>(obj + 0x3c, rec.wrapping_sub(0x14));
+        obj = obj.wrapping_add(0x130);
+        rec = rec.wrapping_add(0x34);
+        i += 1;
+    }
+    free_to_live(
+        g,
+        img,
+        f,
+        [
+            0x233, 0x242, 0x25f, 0x267, 0x298, 0x2a3, 0x2a9, 0x2b9, 0x2c7, 0x2d9, 0x2e2,
+        ],
+    );
+    Ret::eax(0)
+}
+
+/// [`actors_objects_start`] (the `rel32`s:
+/// [`part_init`](crate::l5_objhost::part_init) and
+/// [`start_object_first`](crate::s4_misc::start_object_first)).
+pub const ACTORS_OBJECTS_START: Sig = Sig {
+    len: 748,
+    hash: 0xe0c9_6ed6_38d7_d57d,
+    calls: &[
+        (0x3a, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0xde, Callee::Sig(&crate::s4_misc::START_OBJECT_FIRST)),
+    ],
+    imports: &[],
+};
