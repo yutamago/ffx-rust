@@ -1207,3 +1207,215 @@ records_start_p063_copies! {
     RECORDS_START_0393, 0x0ca3_9f48_ba84_daf6, crate::m0393::FACE, "`magic_0393` 0x100041c0";
     RECORDS_START_0450, 0x0ca3_9f48_ba84_daf6, crate::m0450::ORIENT, "`magic_0450` 0x10007fe0";
 }
+
+/// Parameter family P030 (`magic_0150` 0x1000b720 and `magic_0603`
+/// 0x1000b650, 903 bytes, a frame of 0x24; `ecx` = the effect `E`, `edx`
+/// a word `A`; the field offsets and globals differ, read from the code):
+/// two of `E`'s nodes put at the head of the scene list (`*L`, the flag
+/// word `*F` bit 0 cleared), three of its children (`E + d`) given an
+/// owner ring each and appended to the root's child list (`R`, count
+/// `C`), colour words 1.0; a child object set up on the frame block
+/// ([`child_object_setup`](crate::s8_misc::child_object_setup)), slot 325
+/// `(P, Q)`; slots 719 `(NAME, 4, 0)` and `(NAME, 9, 0)` and a sprite
+/// node ([`sprite_node`](crate::s4_small::sprite_node)) with them, the
+/// flag `*N == 1`; three `rand`-like slot 324 values `r % 20 * 0x4000 /
+/// 90` into `E`; three words. Returns the last value.
+#[allow(clippy::too_many_lines)]
+pub fn scene_ctor_p030<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let e = fr.ecx;
+    let arg = fr.edx;
+    let at = |o: u32| e.wrapping_add(w(o));
+    // `E[d] = E`, `E[d] = imm` twice
+    g.write::<u32>(at(0x0d), e);
+    g.write::<u32>(at(0x13), w(0x17));
+    g.write::<u32>(at(0x1d), w(0x21));
+    // a node goes first on the scene list
+    let push_front =
+        |g: &mut G, n: u32, (l1, head, l2, fl, imm8, l3): (u32, u32, u32, u32, u32, u32)| {
+            let first = g.read::<u32>(w(l1));
+            g.write::<u32>(n + 8, first);
+            g.write::<u32>(n + 4, w(head));
+            let first = g.read::<u32>(w(l2));
+            g.write::<u32>(first + 4, n);
+            let flags = g.read::<u32>(w(fl));
+            g.write::<u32>(
+                w(fl),
+                flags
+                    & i32::from(img.word(f + imm8).to_le_bytes()[0].cast_signed()).cast_unsigned(),
+            );
+            g.write::<u32>(w(l3), n);
+        };
+    let a = at(0x27);
+    let b = at(0x2d);
+    g.write::<u32>(a + 8, a);
+    g.write::<u32>(a + 4, a);
+    push_front(g, a, (0x38, 0x42, 0x47, 0x52, 0x56, 0x59));
+    g.write::<u32>(at(0x5f), w(0x63));
+    g.write::<u32>(b, w(0x69));
+    g.write::<u32>(b + 8, b);
+    g.write::<u32>(b + 4, b);
+    g.write::<u32>(b + 0x10, w(0x76));
+    g.write::<u32>(b + 0x14, e);
+    push_front(g, b, (0x7e, 0x88, 0x8d, 0x9c, 0xa0, 0xa3));
+    g.write::<u32>(at(0xa9), w(0xad));
+    // a child of the root: owner ring, appended to the root's children
+    let child = |g: &mut G, c: u32, ops: [u32; 9]| {
+        let [vtable, half, a14, a4, q1, q2, root, r_first, cnt_q] = ops;
+        if vtable != 0 {
+            g.write::<u32>(c, w(vtable));
+        }
+        let h = img.word(f + half).to_le_bytes();
+        g.write::<u16>(c + 0x1a, u16::from_le_bytes([h[0], h[1]]));
+        g.write::<u32>(c + 0x10, c);
+        g.write::<u32>(c + 0xc, c);
+        g.write::<u32>(c + 0x14, w(a14));
+        g.write::<u32>(c + 4, w(a4));
+        let last = g.read::<u32>(w(q1));
+        g.write::<u32>(c + 8, last);
+        let last = g.read::<u32>(w(q2));
+        if last == w(root) {
+            g.write::<u32>(w(r_first), c);
+        } else {
+            g.write::<u32>(last + 4, c);
+        }
+        let n = g.read::<u16>(w(cnt_q));
+        g.write::<u16>(w(cnt_q), n.wrapping_add(1));
+        c
+    };
+    let s = child(
+        g,
+        at(0x93),
+        [0, 0xb5, 0xc0, 0xc7, 0xcc, 0xd4, 0xdc, 0xe4, 0xf0],
+    );
+    g.write::<u32>(w(0xf6), s);
+    g.write::<u32>(s, w(0xfc));
+    for o in [0x100u32, 0x10a, 0x114, 0x11e] {
+        g.write::<u32>(at(o + 2), w(o + 6));
+    }
+    let d = child(
+        g,
+        at(0x12a),
+        [
+            0x130, 0x138, 0x143, 0x14a, 0x14f, 0x157, 0x15c, 0x164, 0x170,
+        ],
+    );
+    g.write::<u32>(w(0x176), d);
+    let c = child(
+        g,
+        at(0x17c),
+        [
+            0x182, 0x18a, 0x195, 0x19c, 0x1a1, 0x1a9, 0x1ae, 0x1b6, 0x1c2,
+        ],
+    );
+    g.write::<u32>(w(0x1c8), c);
+    // the frame block for the child object set-up
+    let block = ebp - 0x24;
+    let obj = at(0x1ce);
+    g.write::<u32>(block, obj);
+    let sv = g.read::<u32>(w(0x1d6));
+    g.write::<u32>(c.wrapping_add(w(0x1dc)), w(0x1e0));
+    g.write::<u32>(c.wrapping_add(w(0x1e6)), d);
+    g.write::<u32>(c.wrapping_add(w(0x1ec)), s);
+    g.write::<u32>(c.wrapping_add(w(0x1f2)), w(0x1f6));
+    g.write::<u8>(
+        c.wrapping_add(w(0x1fc)),
+        img.word(f + 0x200).to_le_bytes()[0],
+    );
+    g.write::<u32>(block + 0x10, c);
+    g.write::<u32>(block + 4, w(0x20a));
+    g.write::<u32>(block + 8, e);
+    g.write::<u32>(block + 0xc, w(0x214));
+    g.write::<u32>(block + 0x14, arg);
+    g.write::<u32>(block + 0x18, w(0x21e));
+    g.write::<u32>(block + 0x1c, sv);
+    g.write::<u32>(ebp - 4, arg);
+    let esp = ebp - 0x24 - 0xc;
+    let call = Frame {
+        at: img.rel32_target(f + 0x226),
+        esp: esp - 4,
+        ecx: block,
+        ..*fr
+    };
+    crate::s8_misc::child_object_setup(g, img, &call);
+    let first = g.read::<u32>(block);
+    g.write::<u32>(first, w(0x234));
+    let mut st = crate::pushes::Pushes::default();
+    st.push_all(&[w(0x22e), w(0x23e)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, slot_target(g, w(0x239), 0x514 / 4), 0);
+    let flag = u32::from(g.read::<u32>(w(0x24b)) == 1);
+    let mut st = crate::pushes::Pushes::default();
+    st.push_all(&[0, byte(img, f + 0x26c), w(0x26e)]);
+    // call width: 12 (Pushes caps the words at 12)
+    let h4 = st.call(g, slot_target(g, w(0x25f), 0xb3c / 4), 0).eax;
+    g.write::<u32>(block + 0xc, at(0x278));
+    g.write::<u32>(block + 0x10, arg);
+    let mut st = crate::pushes::Pushes::default();
+    st.push_all(&[0, byte(img, f + 0x29c), w(0x29e)]);
+    let t719 = slot_target(g, w(0x289), 0xb3c / 4);
+    g.write::<u32>(block, at(0x297));
+    g.write::<u32>(block + 4, w(0x2a8));
+    g.write::<u32>(block + 8, w(0x2af));
+    // call width: 12 (Pushes caps the words at 12)
+    let h9 = st.call(g, t719, 0).eax;
+    g.write::<u32>(block + 0x14, h9);
+    g.write::<u32>(block + 0x18, h4);
+    g.write::<u32>(block + 0x1c, flag);
+    let call = Frame {
+        at: img.rel32_target(f + 0x2c5),
+        esp: esp - 4,
+        ecx: block,
+        ..*fr
+    };
+    crate::s4_small::sprite_node(g, img, &call);
+    let first = g.read::<u32>(block);
+    g.write::<u32>(first, w(0x2ce));
+    let divisor = w(0x2e1);
+    let magic = w(0x2e8).cast_signed();
+    let mut last = 0u32;
+    for (table, dst) in [(0x2d3u32, 0x301u32), (0x306, 0x335), (0x325, 0x35e)] {
+        let r = g
+            .call(slot_target(g, w(table), 0x510 / 4), 0, &[])
+            .eax
+            .cast_signed();
+        let m = r.wrapping_rem(divisor.cast_signed()).wrapping_shl(14);
+        // imul: the high word of the product
+        #[allow(clippy::cast_possible_truncation)]
+        let hi = ((i64::from(magic) * i64::from(m)) >> 32) as i32;
+        let q = hi.wrapping_add(m) >> 6;
+        last = q
+            .wrapping_add((q.cast_unsigned() >> 31).cast_signed())
+            .cast_unsigned();
+        g.write::<u32>(e.wrapping_add(w(dst)), last);
+    }
+    for o in [0x362u32, 0x36c, 0x376] {
+        g.write::<u32>(at(o + 2), w(o + 6));
+    }
+    Ret::eax(last)
+}
+
+/// [`scene_ctor_p030`] in each member.
+macro_rules! scene_ctor_p030_copies {
+    ($($sig:ident, $hash:literal, $doc:literal;)*) => {
+        $(
+            #[doc = concat!("[`scene_ctor_p030`] in ", $doc, ".")]
+            pub const $sig: Sig = Sig {
+                len: 903,
+                hash: $hash,
+                calls: &[
+                    (0x226, Callee::Sig(&crate::s8_misc::CHILD_OBJECT_SETUP)),
+                    (0x2c5, Callee::Sig(&crate::s4_small::SPRITE_NODE)),
+                ],
+                imports: &[],
+            };
+        )*
+    };
+}
+
+scene_ctor_p030_copies! {
+    SCENE_CTOR_0150, 0x25aa_41a9_5c71_15ab, "`magic_0150` 0x1000b720";
+    SCENE_CTOR_0603, 0x2eeb_05f6_0af8_194f, "`magic_0603` 0x1000b650";
+}

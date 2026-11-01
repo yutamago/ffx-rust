@@ -2796,6 +2796,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &r11_effect::EFFECT_START_LOOKUP_0197,
     ),
     ("r11 colour start 0065", &r11_misc::COLOUR_START_0065),
+    ("r11 scene ctor 0150", &r11_misc::SCENE_CTOR_0150),
+    ("r11 scene ctor 0603", &r11_misc::SCENE_CTOR_0603),
     ("r11 sized actors 0233", &r11_objects::SIZED_ACTORS_0233),
     ("r11 state two fades 0100", &r11_fades::STATE_TWO_FADES_0100),
     (

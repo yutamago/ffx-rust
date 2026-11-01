@@ -479,3 +479,63 @@ fn records_start_p063() {
         }
     }
 }
+
+/// Parameter family P030 (`r11_misc::scene_ctor_p030`, `magic_0150`
+/// 0x1000b720 and `magic_0603` 0x1000b650; `ecx` the effect, `edx` a
+/// word): every slot answers its number (slot 324 counting up, negative
+/// once); the root's child list empty and not; the flag word 1 and not.
+#[test]
+fn scene_ctor_p030() {
+    for (dll, rva) in [(150u16, 0xb720u32), (603, 0xb650)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+        for s in 0..1024u32 {
+            t.stub(s, move |_, _| (s << 20) | 5);
+        }
+        let k = SCRATCH + 0x98;
+        t.stub(324, move |m, _| {
+            let n = m.r32(k);
+            m.w32(k, n + 1);
+            if n == 1 { 0xffff_ff9b } else { 0x1234 + 97 * n }
+        });
+        // slot 390: a model id with slot 362 (the block's `+0x1c` used) or not
+        let id = SCRATCH + 0x9c;
+        t.stub(390, move |m, _| m.r32(id));
+        for (listed, flag, model) in [(false, 1u32, 0x1071u32), (true, 0, 0x2000)] {
+            t.set_u32(id, model);
+            t.set_u32(k, 0);
+            let e = SCRATCH + 0x1_0000;
+            t.write(e, &vec![0x3b; 0x3000]);
+            let node = SCRATCH + 0x600;
+            t.write(node, &[0x44; 0x20]);
+            for o in [0x38, 0x47, 0x7e, 0x8d] {
+                t.set_u32(op(&t, o), node);
+            }
+            t.set_u32(op(&t, 0x52), 0x0000_00ff);
+            let root = op(&t, 0xdc);
+            let last = if listed { SCRATCH + 0x640 } else { root };
+            t.write(SCRATCH + 0x640, &[0x45; 0x20]);
+            t.set_u32(op(&t, 0xcc), last);
+            t.set_u16(op(&t, 0xf0), 3);
+            t.set_u32(op(&t, 0x24b), flag);
+            t.set_u32(op(&t, 0x1d6), 0x01d6_01d6);
+            // the sprite node's parent: an empty child ring
+            let parent = op(&t, 0x2a8);
+            t.set_u32(parent + 0xc, parent);
+            t.set_u32(parent + 0x10, parent);
+            let call = Call {
+                ecx: e,
+                edx: 0x00ed_00ed,
+                ..Call::default()
+            };
+            t.check(
+                f,
+                call,
+                &[],
+                Eax::Checked,
+                ffx_magic::r11_misc::scene_ctor_p030,
+            );
+        }
+    }
+}
