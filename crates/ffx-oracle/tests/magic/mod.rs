@@ -679,15 +679,17 @@ impl Twin {
         }
         // (operand, the function using it); the /GS cookie the CRT sets
         // is left out: a function's `mov eax, [__security_cookie]; xor
-        // eax, ebp` (a1 <cookie> 33 c5) only guards its own frame, which
-        // the ports don't model (the check always passes)
+        // eax, ebp` (a1 <cookie> 33 c5; `xor eax, esp`, 33 c4, in the
+        // aligned frames) only guards its own frame, which the ports don't
+        // model (the check always passes)
         let img = &self.img;
         let cookies: Vec<u32> = fns
             .iter()
             .flat_map(|&(a, n)| {
                 (a..a + n.saturating_sub(6)).filter_map(move |p| {
                     let b = |q: u32| img.word(q) as u8;
-                    (b(p) == 0xa1 && b(p + 5) == 0x33 && b(p + 6) == 0xc5).then(|| img.word(p + 1))
+                    (b(p) == 0xa1 && b(p + 5) == 0x33 && matches!(b(p + 6), 0xc4 | 0xc5))
+                        .then(|| img.word(p + 1))
                 })
             })
             .collect();

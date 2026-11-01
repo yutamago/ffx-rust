@@ -2244,6 +2244,15 @@ ports! {
     "o6 fam pairs5 particle_rows 0568@2510" => o6_fam_pairs5::PARTICLE_ROWS_0568_2510, o6_fam_pairs5::particle_rows;
     "o6 fam pairs5 node_rings 0150@b210" => o6_fam_pairs5::NODE_RINGS_0150_B210, o6_fam_pairs5::node_rings;
     "o6 fam pairs5 node_rings 0603@b140" => o6_fam_pairs5::NODE_RINGS_0603_B140, o6_fam_pairs5::node_rings;
+    "o6 fam pairs5 two_pass_particles 0304@2740" => o6_fam_pairs5::TWO_PASS_PARTICLES_0304_2740, o6_fam_pairs5::two_pass_particles;
+    "o6 fam pairs5 two_pass_particles 0568@2170" => o6_fam_pairs5::TWO_PASS_PARTICLES_0568_2170, o6_fam_pairs5::two_pass_particles;
+    "o6 fam pairs5 mesh_centres 0307@2010" => o6_fam_pairs5::MESH_CENTRES_0307_2010, o6_fam_pairs5::mesh_centres;
+    "o6 fam pairs5 mesh_centres 0605@7990" => o6_fam_pairs5::MESH_CENTRES_0605_7990, o6_fam_pairs5::mesh_centres;
+    "o6 fam pairs5 target_objects 0644@8900" => o6_fam_pairs5::TARGET_OBJECTS_0644_8900, o6_fam_pairs5::target_objects;
+    "o6 fam pairs5 target_objects 0565@48e0" => o6_fam_pairs5::TARGET_OBJECTS_0565_48E0, o6_fam_pairs5::target_objects;
+    "o6 fam pairs5 moving_sprites 0250@1ee0" => o6_fam_pairs5::MOVING_SPRITES_0250_1EE0, o6_fam_pairs5::moving_sprites;
+    "o6 fam pairs5 actor_light 0565@5470" => o6_fam_pairs5::ACTOR_LIGHT_0565_5470, o6_fam_pairs5::actor_light;
+    "o6 fam pairs5 actor_light 0644@92b0" => o6_fam_pairs5::ACTOR_LIGHT_0644_92B0, o6_fam_pairs5::actor_light;
     // families2 (o6_fam_pairs5..): end of ports
 }
 
@@ -3128,6 +3137,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o6 fam pairs5 light_setup 0644@b390",
         &o6_fam_pairs5::LIGHT_SETUP_0644_B390,
+    ),
+    (
+        "o6 fam pairs5 sprite_frame 0206@2730",
+        &o6_fam_pairs5::SPRITE_FRAME_0206_2730,
     ),
     // families2 (o6_fam_pairs5..): end of INTERNAL
 ];

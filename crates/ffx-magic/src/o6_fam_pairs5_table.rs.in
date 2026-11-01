@@ -418,3 +418,153 @@ pub const NODE_RINGS_0603_B140: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0304_10002740
+
+/// [`two_pass_particles`] in `magic_0304` (0x10002740, 924 bytes; row own:1680).
+pub const TWO_PASS_PARTICLES_0304_2740: Sig = Sig {
+    len: 924,
+    hash: 0xe5b2_d933_464d_c163,
+    calls: &[
+        (0xa6, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x394, Callee::Any),
+    ],
+    imports: &[(0x312, "rand")],
+};
+
+/// [`two_pass_particles`] in `magic_0568` (0x10002170, 924 bytes; row own:2969).
+pub const TWO_PASS_PARTICLES_0568_2170: Sig = Sig {
+    len: 924,
+    hash: 0x5e9d_6d47_e21b_bfa3,
+    calls: &[
+        (0xa6, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x394, Callee::Any),
+    ],
+    imports: &[(0x312, "rand")],
+};
+
+// family F0307_10002010
+
+/// [`mesh_centres`] in `magic_0307` (0x10002010, 1045 bytes; row own:1700).
+pub const MESH_CENTRES_0307_2010: Sig = Sig {
+    len: 1045,
+    hash: 0x4d4d_df3d_3b9d_defc,
+    calls: &[
+        (0x40d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`mesh_centres`] in `magic_0605` (0x10007990, 1045 bytes; row own:3249).
+pub const MESH_CENTRES_0605_7990: Sig = Sig {
+    len: 1045,
+    hash: 0x9194_83f2_7575_82e3,
+    calls: &[
+        (0x40d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0644_10008900
+
+/// [`target_objects`] in `magic_0644` (0x10008900, 1089 bytes; row shared:209).
+pub const TARGET_OBJECTS_0644_8900: Sig = Sig {
+    len: 1089,
+    hash: 0x5951_0b91_14a1_5b1b,
+    calls: &[
+        (0x155, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x168, Callee::Import("_CIatan2")),
+        (0x1a6, Callee::Import("_CIatan2")),
+        (0x22d, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x281, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x3a7, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x439, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`target_objects`] in `magic_0565` (0x100048e0, 1089 bytes; row shared:210).
+pub const TARGET_OBJECTS_0565_48E0: Sig = Sig {
+    len: 1089,
+    hash: 0xe068_aa37_3458_ced4,
+    calls: &[
+        (0x155, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x168, Callee::Import("_CIatan2")),
+        (0x1a6, Callee::Import("_CIatan2")),
+        (0x22d, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x281, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x3a7, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x439, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0206_10002730
+
+/// [`sprite_frame`] in `magic_0206` (0x10002730, 997 bytes; row shared:75) and
+/// `magic_0371` (0x10002480; row own:2014): the same code.
+pub const SPRITE_FRAME_0206_2730: Sig = Sig {
+    len: 997,
+    hash: 0xf8dc_657a_52e7_e512,
+    calls: &[
+        (0x330, Callee::Any),
+        (0x3bd, Callee::Any),
+        (0x3cb, Callee::Sig(&crate::opu::DEBUG_PRINTF)),
+        (0x3dd, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0250_10001ee0
+
+/// [`moving_sprites`] in `magic_0250` (0x10001ee0, 1051 bytes; row shared:208) and
+/// `magic_0251` (0x10002090; row own:1442): the same code.
+pub const MOVING_SPRITES_0250_1EE0: Sig = Sig {
+    len: 1051,
+    hash: 0x8ec0_97f1_defc_1fff,
+    calls: &[
+        (0x3c3, Callee::Sig(&crate::sa_misc::LINK_PART)),
+        (0x413, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0565_10005470 (0565@5470)
+
+/// [`actor_light`] in `magic_0565` (0x10005470, 1665 bytes; row shared:220).
+pub const ACTOR_LIGHT_0565_5470: Sig = Sig {
+    len: 1665,
+    hash: 0x8d96_11c6_ea8f_6882,
+    calls: &[
+        (0xde, Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390)),
+        (0xfb, Callee::Sig(&crate::o6_fam_pairs2::ACTOR_OBJECT_START_0565_4DD0)),
+        (0x161, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1eb, Callee::Any),
+        (0x3eb, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x3fe, Callee::Import("_CIatan2")),
+        (0x42d, Callee::Import("_CIatan2")),
+        (0x5c9, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x679, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0565_10005470 (0644@92b0)
+
+/// [`actor_light`] in `magic_0644` (0x100092b0, 1665 bytes; row shared:221).
+pub const ACTOR_LIGHT_0644_92B0: Sig = Sig {
+    len: 1665,
+    hash: 0xc730_2811_f2fa_4fcc,
+    calls: &[
+        (0xde, Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390)),
+        (0xfb, Callee::Sig(&crate::o6_fam_pairs2::ACTOR_OBJECT_START_0644_8DF0)),
+        (0x161, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1eb, Callee::Any),
+        (0x3eb, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x3fe, Callee::Import("_CIatan2")),
+        (0x42d, Callee::Import("_CIatan2")),
+        (0x5c9, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x679, Callee::Any),
+    ],
+    imports: &[],
+};
