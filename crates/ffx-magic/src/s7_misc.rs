@@ -1914,3 +1914,80 @@ pub const STREAM_BLOCK: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A summon's loading and fade-in frame (cdecl, no arguments). With `S =
+/// *G_S`, the steps each run once (their flag word set after): `*G_A`:
+/// slot 225 `(S)` until it is 0; `*G_B`: slot 226 `(S, 1)`; `*G_C`: slot
+/// 227 `(S)` until it is at least 1; then while `*G_D` is negative,
+/// slot 347 `(S)`'s bit 0 waits, slot 239 `(S, -5, 0)` and slot 220
+/// `(*G_S2, 0x40, 0x100)` (with `*G_D = 0`). Then slot 349 `(*G_X,
+/// *G_Y)` and, for `D = *G_D` in 1..=15, slot 348 `(*G_X, *G_Y, 0, -q,
+/// q, 0)` with `q = 64 D / 15`; for `D` in 16..=45, the same with `q =
+/// 64 - 64 (D - 15) / 30`. Returns 0.
+///
+/// `magic_0701` 0x10001320 (422 bytes; 3 DLLs).
+pub fn summon_fade_in<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let v = |g: &G, o: u32| g.read::<u32>(w(o));
+    let ecx = fr.ecx;
+    if v(g, 0x2) == 0 {
+        let s = v(g, 0x10);
+        if slot(g, img, f, 0xa, 225, ecx, &[s]).eax != 0 {
+            return Ret::eax(0);
+        }
+        let n = v(g, 0x29).wrapping_add(1);
+        g.write::<u32>(w(0x29), n);
+    }
+    if v(g, 0x2f) == 0 {
+        let s = v(g, 0x3f);
+        let t = slot_target(g, w(0x37), 226);
+        g.write::<u32>(w(0x4b), 1);
+        g.call(t, ecx, &[s, 1]);
+    }
+    if v(g, 0x5a) == 0 {
+        let s = v(g, 0x68);
+        if slot(g, img, f, 0x62, 227, ecx, &[s]).eax.cast_signed() < 1 {
+            return Ret::eax(0);
+        }
+        let n = v(g, 0x82).wrapping_add(1);
+        g.write::<u32>(w(0x82), n);
+    }
+    if v(g, 0x88).cast_signed() < 0 {
+        let s = v(g, 0x96);
+        if slot(g, img, f, 0x90, 347, ecx, &[s]).eax & 1 == 0 {
+            return Ret::eax(0);
+        }
+        let s = v(g, 0xbe);
+        slot(g, img, f, 0xae, 239, ecx, &[s, (-5i32).cast_unsigned(), 0]);
+        let t = slot_target(g, w(0xc5), 220);
+        let s2 = v(g, 0xd8);
+        g.write::<u32>(w(0xde), 0);
+        g.call(t, ecx, &[s2, 0x40, 0x100]);
+    }
+    let (y, x) = (v(g, 0xed), v(g, 0xf8));
+    slot(g, img, f, 0xf2, 349, ecx, &[x, y]);
+    let d = v(g, 0x106).cast_signed();
+    if (1..=15).contains(&d) {
+        let q = (d << 6) / 15;
+        let (y, x) = (v(g, 0x13a), v(g, 0x146));
+        let args = [x, y, 0, (-q).cast_unsigned(), q.cast_unsigned(), 0];
+        slot(g, img, f, 0x132, 348, ecx, &args);
+    }
+    let e = v(g, 0x14e).cast_signed().wrapping_sub(15);
+    if (1..=30).contains(&e) {
+        let c = 0x40 - (e << 6) / 30;
+        let (y, x) = (v(g, 0x193), v(g, 0x199));
+        let args = [x, y, 0, (-c).cast_unsigned(), c.cast_unsigned(), 0];
+        slot(g, img, f, 0x181, 348, ecx, &args);
+    }
+    Ret::eax(0)
+}
+
+/// [`summon_fade_in`].
+pub const SUMMON_FADE_IN: Sig = Sig {
+    len: 422,
+    hash: 0xe1a8_5681_4004_5fe7,
+    calls: &[],
+    imports: &[],
+};

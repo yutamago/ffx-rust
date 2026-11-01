@@ -1651,3 +1651,64 @@ fn stream_blocks() {
         }
     }
 }
+
+/// Row 419: the summon's loading and fade-in frame in the three DLLs:
+/// each step waiting and done, the fade's two ranges and their bounds.
+#[test]
+fn summon_fade_ins() {
+    for (dll, rva) in [(701u16, 0x1320u32), (702, 0x1320), (703, 0x1310)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let answers = SCRATCH + 0x2f0;
+        // slots 225, 227 and 347 answer from the plan; the rest log
+        for (i, s) in (0u32..).zip([225u32, 227, 347]) {
+            log_calls(&mut t, s, log, 1, None, move |m, _, _| {
+                m.r32(answers + 4 * i)
+            });
+        }
+        for (s, n) in [(226u32, 2usize), (239, 3), (220, 3), (349, 2), (348, 6)] {
+            log_calls(&mut t, s, log, n, None, |_, a, k| a[0] ^ (k << 8));
+        }
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        for (o, v) in [
+            (0x10u32, 0x5150_0000u32),
+            (0xd8, 0x5250_0000),
+            (0xed, 0xeded),
+            (0xf8, 0xf8f8),
+        ] {
+            t.set_u32(w(&t, o), v);
+        }
+        // (A, B, C, D, the answers of 225, 227 and 347)
+        for (k, (a, b, c, d, ans)) in [
+            (0u32, 0u32, 0u32, -1i32, [1u32, 1, 1]),
+            (0, 0, 0, -1, [0, 0, 1]),
+            (1, 0, 0, -1, [0, 1, 0]),
+            (1, 1, 0, -1, [0, 1, 1]),
+            (1, 1, 1, -1, [0, 0, 0xfe]),
+            (1, 1, 1, 0, [0, 0, 0]),
+            (1, 1, 1, 1, [0, 0, 0]),
+            (1, 1, 1, 15, [0, 0, 0]),
+            (1, 1, 1, 16, [0, 0, 0]),
+            (1, 1, 1, 45, [0, 0, 0]),
+            (1, 1, 1, 46, [0, 0, 0]),
+            (1, 1, 1, 22, [0, 0, 0]),
+            (0, 1, 1, 7, [0, 0, 0]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(w(&t, 0x2), a);
+            t.set_u32(w(&t, 0x2f), b);
+            t.set_u32(w(&t, 0x5a), c);
+            t.set_u32(w(&t, 0x88), d.cast_unsigned());
+            for (i, x) in (0u32..).zip(ans) {
+                t.set_u32(answers + 4 * i, x);
+            }
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

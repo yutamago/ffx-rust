@@ -2185,6 +2185,7 @@ ports! {
     "two-stage fade" => s7_misc::TWO_STAGE_FADE, s7_misc::two_stage_fade;
     "two-stage fade (two constants)" => s7_misc::TWO_STAGE_FADE_B, s7_misc::two_stage_fade;
     "random part" => s7_misc::RANDOM_PART, s7_misc::random_part;
+    "summon fade-in" => s7_misc::SUMMON_FADE_IN, s7_misc::summon_fade_in;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
