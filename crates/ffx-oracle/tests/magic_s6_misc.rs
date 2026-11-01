@@ -2974,7 +2974,7 @@ fn rings_taken() {
         t.write(b, &varied(0x30, k + 3));
         t.set_u32(s, b);
         t.set_u16(s + 4, n);
-        t.set_u32(b + 0x1c, 0x1234_5600 + 0x40 * k);
+        t.set_u32(b + 0x1c, 0x1234_5604 + 0x40 * k);
         t.set_u16(b + 0x20, size.cast_unsigned());
         t.set_u16(b + 0x22, 0x18 + k as u16);
         t.set_u16(b + 0x24, h);
