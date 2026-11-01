@@ -85,3 +85,83 @@ pub const STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A fading node handler (0x100034c0, `ecx` = the cursor; reached
+/// through its `ecx` thunk): the walk (each child of the cursor's node
+/// gets its method `+0x1c` with the cursor; then the node takes the
+/// pass); when the cursor moved, with a count `node[0x54]`: slot 252
+/// `(*G_H, colour, alpha, 0x80)` (`*G_H` operand `+0x82`; the answer back
+/// into it, `+0x9e`), and once `node[0x4c]` is not below `K` (`+0x99`)
+/// slot 234 `(node + 0x1c, node + 0x2c, node + 0x3c)`, the count down and `node[0x4c]` 0; with none, bit 0 of
+/// `node[0x58]` makes the node leave its parent
+/// ([`leave`](crate::sa_misc::leave)). Returns the last call's `eax`,
+/// else what the walk left (the low byte a pass byte).
+///
+/// The colour is built from four stack words the original never writes
+/// (`ebp - 0x8`, `- 0xc`, `- 0x10`, `- 0x14`) and the alpha word has
+/// only its low byte written (`ebp - 4`, `node[0x5a]`).
+pub fn fade_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let cur = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let node = g.read::<u32>(cur);
+    let pass = g.read::<u8>(node + 0x1a);
+    let mut eax = (fr.eax & !0xff) | u32::from(pass);
+    if pass == g.read::<u8>(cur + 5) {
+        g.write::<u8>(cur + 4, 0);
+    } else {
+        let mut child = g.read::<u32>(node + 0x10);
+        while child != node {
+            g.write::<u32>(cur, child);
+            let c = g.read::<u32>(cur);
+            child = g.read::<u32>(child + 8);
+            let m = g.read::<u32>(g.read::<u32>(c) + 0x1c);
+            eax = g.call(m, cur, &[cur]).eax;
+        }
+        let pass = g.read::<u8>(cur + 5);
+        g.write::<u32>(cur, node);
+        g.write::<u8>(node + 0x1a, pass);
+        g.write::<u8>(cur + 4, 1);
+        eax = (eax & !0xff) | u32::from(pass);
+    }
+    if g.read::<u8>(cur + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(cur);
+    if g.read::<u32>(n + 0x54) == 0 {
+        if g.read::<u8>(n + 0x58) & 1 == 0 {
+            return Ret::eax(eax);
+        }
+        return Ret::eax(crate::sa_misc::leave(g, n, eax));
+    }
+    // junk read: [ebp-0x4]'s upper bytes never written; 0 (brief 2026-10-24)
+    let alpha = u32::from(g.read::<u8>(n + 0x5a));
+    g.write::<u8>(ebp.wrapping_sub(4), g.read::<u8>(n + 0x5a));
+    // junk read: [ebp-0x8], [ebp-0xc], [ebp-0x10], [ebp-0x14] never
+    // written; 0 (brief 2026-10-24)
+    let colour = 0;
+    let h = g.read::<u32>(w(0x82));
+    let t = slot_target(g, w(0x7c), 252);
+    let eax = g.call(t, 0, &[h, colour, alpha, 0x80]).eax;
+    g.write::<u32>(w(0x9e), eax);
+    // comiss x, K; jb: below or unordered
+    let reached = g.read::<f32>(n + 0x4c) >= g.read::<f32>(w(0x99));
+    if !reached {
+        return Ret::eax(eax);
+    }
+    let t = slot_target(g, w(0xb1), 234);
+    let eax = g.call(t, 0, &[n + 0x1c, n + 0x2c, n + 0x3c]).eax;
+    let c = g.read::<u32>(n + 0x54);
+    g.write::<u32>(n + 0x54, c.wrapping_sub(1));
+    g.write::<u32>(n + 0x4c, 0);
+    Ret::eax(eax)
+}
+
+/// [`fade_visit`] (227 bytes, 1 overlay).
+pub const FADE_VISIT: Sig = Sig {
+    len: 227,
+    hash: 0x75c4_73d1_b3c6_a2e2,
+    calls: &[(0xd9, Callee::Sig(&crate::sa_misc::LEAVE))],
+    imports: &[],
+};

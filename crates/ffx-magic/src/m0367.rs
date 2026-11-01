@@ -179,3 +179,48 @@ pub const FOURTH_START: Sig = Sig {
     calls: &[(0x13, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
     imports: &[],
 };
+
+/// Starts the second objects of two records (0x10001410, a table entry,
+/// no arguments): the objects at the immediates `+0x0c` and `+0x23`
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale the
+/// float at `+0x04`/`+0x1b`, index 2), each followed by its callback word
+/// (`+0x2b`/`+0x5b` = the immediate `+0x2f`/`+0x5f`) and its point
+/// (`+0x35`.. / `+0x65`..: `(3000, 100, 650)`, the second's `z` -650).
+/// Returns the second object.
+pub fn pair_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x13), w(0xc), scale, 2);
+    let scale = g.read::<f32>(w(0x1b));
+    g.write::<u32>(w(0x2b), w(0x2f));
+    for (o, v) in [
+        (0x35u32, 0x453b_8000u32),
+        (0x3f, 0x42c8_0000),
+        (0x49, 0x4422_8000),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    let o =
+        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x52), w(0x23), scale, 2);
+    g.write::<u32>(w(0x5b), w(0x5f));
+    for (o, v) in [
+        (0x65u32, 0x453b_8000u32),
+        (0x6f, 0x42c8_0000),
+        (0x79, 0xc422_8000),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    Ret::eax(o)
+}
+
+/// [`pair_start`] (130 bytes, 1 overlay).
+pub const PAIR_START: Sig = Sig {
+    len: 130,
+    hash: 0xa7bd_07f0_5f3d_edef,
+    calls: &[
+        (0x13, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x52, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+    ],
+    imports: &[],
+};

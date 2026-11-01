@@ -244,6 +244,7 @@ pub mod m0350;
 pub mod m0351;
 pub mod m0352;
 pub mod m0353;
+pub mod m0354;
 pub mod m0356;
 pub mod m0357;
 pub mod m0359;
@@ -2761,6 +2762,21 @@ ports! {
     "m0353 record words" => m0353::RECORD_WORDS, m0353::record_words;
     "m0367 fourth start" => m0367::FOURTH_START, m0367::fourth_start;
     "m0377 parts step" => m0377::PARTS_STEP, m0377::parts_step;
+    "m0380 scripts step" => m0380::SCRIPTS_STEP, m0380::scripts_step;
+    "m0381 scripts step" => m0381::SCRIPTS_STEP, m0381::scripts_step;
+    "m0393 fifth start" => m0393::FIFTH_START, m0393::fifth_start;
+    "m0432 object start" => m0432::OBJECT_START, m0432::object_start;
+    "m0430 scale e3c" => m0430::SCALE_E3C, m0430::scale_e3c;
+    "m0432 point below" => m0432::POINT_BELOW, m0432::point_below;
+    "m0434 second start" => m0434::SECOND_START, m0434::second_start;
+    "m0396 object or fade" => m0396::OBJECT_OR_FADE, m0396::object_or_fade;
+    "m0393 ninth start" => m0393::NINTH_START, m0393::ninth_start;
+    "m0445 fade visit" => m0445::FADE_VISIT, m0445::fade_visit;
+    "thunk: m0445 fade visit" => sl_wrap::JMP_FADE_VISIT, sl_wrap::ecx_jmp;
+    "m0367 pair start" => m0367::PAIR_START, m0367::pair_start;
+    "m0354 countdown step" => m0354::COUNTDOWN_STEP, m0354::countdown_step;
+    "m0393 ninth scaled" => m0393::NINTH_SCALED, m0393::ninth_scaled;
+    "m0397 object fade" => m0397::OBJECT_FADE, m0397::object_fade;
     // magic small-lo: end of ports
 }
 

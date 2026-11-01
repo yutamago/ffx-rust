@@ -14,7 +14,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 9] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
         (&m0164::MEAN_VISIT, m0164::mean_visit::<G>),
@@ -25,6 +25,7 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
             Ret::eax(crate::s7_misc::lit_colour_node(g, img, fr))
         }),
         (&crate::m0573::REFRESH, crate::m0573::refresh::<G>),
+        (&crate::m0445::FADE_VISIT, crate::m0445::fade_visit::<G>),
         (
             &crate::o6_fam_pairs5::SPRITE_VISIT_0585_3110,
             crate::o6_fam_pairs5::sprite_visit::<G>,
@@ -80,6 +81,8 @@ thunks! {
     JMP_LIT_COLOUR_NODE => crate::s7_misc::LIT_COLOUR_NODE;
     /// `magic_0573` 0x10002df0 over [`crate::m0573::refresh`].
     JMP_REFRESH_0573 => crate::m0573::REFRESH;
+    /// `magic_0445` 0x100035b0 over [`crate::m0445::fade_visit`].
+    JMP_FADE_VISIT => crate::m0445::FADE_VISIT;
     /// `magic_0585` 0x10003410 over [`crate::o6_fam_pairs5::sprite_visit`].
     JMP_SPRITE_VISIT_0585 => crate::o6_fam_pairs5::SPRITE_VISIT_0585_3110;
 }

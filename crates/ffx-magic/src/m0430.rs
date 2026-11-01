@@ -168,3 +168,41 @@ pub const FADE_START: Sig = Sig {
     calls: &[(0x26, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
+
+/// Slot 371 `(0, 0x10000)` and `(1, 0x20000)` (the first call's words
+/// left under the second's), then the block's scale task on `*G_B +
+/// 0xe3c` (0x10002280, a table entry, no arguments; `*G_B` operand
+/// `+0x0e`; [`scale_task_edx`](crate::s4_small::scale_task_edx), `edx`
+/// 30, `xmm2`/`xmm1` the floats at `+0x33`/`+0x3b`, the word 0x10000
+/// still pushed). Returns the task's node.
+pub fn scale_e3c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let b = g.read::<u32>(w(0xe));
+    let t = slot_target(g, w(0x1), 371);
+    g.call(t, 0, &[0, 0x1_0000]);
+    let t = slot_target(g, w(0x1c), 371);
+    g.call(t, 0, &[1, 0x2_0000, 0, 0x1_0000]);
+    let esp = fr.esp.wrapping_sub(12);
+    g.write::<u32>(esp + 4, 0x1_0000);
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(g.read::<u32>(w(0x33)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x3b)));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x4e),
+        esp,
+        ecx: b.wrapping_add(0xe3c),
+        edx: 0x1e,
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::scale_task_edx(g, img, &callee)
+}
+
+/// [`scale_e3c`] (87 bytes, 1 overlay).
+pub const SCALE_E3C: Sig = Sig {
+    len: 87,
+    hash: 0x2076_a523_74e6_9599,
+    calls: &[(0x4e, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX))],
+    imports: &[],
+};

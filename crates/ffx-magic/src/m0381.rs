@@ -99,3 +99,59 @@ pub const START_UP_0383: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A task step over two motion scripts (0x100013e0, cdecl `(task)`):
+/// the scripts of the records at `+0x06` and `+0x10`
+/// ([`motion_script`](crate::s4_misc::motion_script)) and the objects run
+/// ([`run_objects`](crate::l5_objhost::run_objects)); when all three give
+/// 1, `clears` (the halfword operands and masks, `magic_0380`'s copy)
+/// are applied, the task's state is 3 and its record's `+0x10` the
+/// immediate at `next`. Returns the record, else the objects' result.
+pub fn two_scripts_step<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    clears: &[(u32, u16)],
+    next: u32,
+) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0xb), w(0x6));
+    let b = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x17), w(0x10));
+    // push ebp; push esi; push edi; the call
+    let r = crate::l5_objhost::run_objects(
+        g,
+        img,
+        img.rel32_target(f + 0x1e),
+        fr.esp.wrapping_sub(0x10),
+    );
+    if r != 1 || a != 1 || b != 1 {
+        return Ret::eax(r);
+    }
+    for &(o, m) in clears {
+        let h = g.read::<u16>(w(o));
+        g.write::<u16>(w(o), h & m);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), w(next));
+    Ret::eax(rec)
+}
+
+/// [`two_scripts_step`] without clears (0x100013e0).
+pub fn scripts_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    two_scripts_step(g, img, fr, &[], 0x3f)
+}
+
+/// [`scripts_step`] (71 bytes, 1 overlay).
+pub const SCRIPTS_STEP: Sig = Sig {
+    len: 71,
+    hash: 0xaccb_a28b_ff9b_2d48,
+    calls: &[
+        (0xb, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x17, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1e, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+    ],
+    imports: &[],
+};
