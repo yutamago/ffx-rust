@@ -1722,6 +1722,7 @@ fn sprite_fade_nodes() {
     for dll in [202u16, 273] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(0x12c0);
+        let thunk = 0x1480;
         let log = SCRATCH + 0x6000;
         let vt = ring_handler(&mut t, log);
         log_calls(&mut t, 245, log, 1, None, |m, a, k| {
@@ -1783,6 +1784,8 @@ fn sprite_fade_nodes() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::sprite_fade_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -1868,7 +1871,7 @@ fn spline_setups() {
 /// running with each pair of signs (and a NaN timer).
 #[test]
 fn shake_nodes() {
-    for (dll, rva) in [(513u16, 0x4510u32), (577, 0x65b0)] {
+    for (dll, rva, thunk) in [(513u16, 0x4510u32, 0x46c0u32), (577, 0x65b0, 0x6760)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -1924,6 +1927,8 @@ fn shake_nodes() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::shake_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -2015,7 +2020,11 @@ fn sprite_systems_global() {
 /// slot logs what its pointers see.
 #[test]
 fn thunder_nodes() {
-    for (dll, rva) in [(387u16, 0x7ca0u32), (578, 0x64a0), (649, 0x6540)] {
+    for (dll, rva, thunk) in [
+        (387u16, 0x7ca0u32, 0x7e40u32),
+        (578, 0x64a0, 0x6690),
+        (649, 0x6540, 0x6730),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -2094,6 +2103,8 @@ fn thunder_nodes() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::thunder_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }

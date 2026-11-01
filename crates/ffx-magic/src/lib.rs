@@ -2179,6 +2179,9 @@ ports! {
     "thunk: handles registered" => s7_misc::JMP_HANDLES_REGISTERED, s7_misc::ecx_jmp;
     "thunk: model points node" => s7_misc::JMP_MODEL_POINTS_NODE, s7_misc::ecx_jmp;
     "thunk: ring key frame" => s7_misc::JMP_RING_KEY_FRAME, s7_misc::ecx_jmp;
+    "thunk: thunder node" => s7_misc::JMP_THUNDER_NODE, s7_misc::ecx_jmp;
+    "thunk: sprite fade node" => s7_misc::JMP_SPRITE_FADE_NODE, s7_misc::ecx_jmp;
+    "thunk: shake node" => s7_misc::JMP_SHAKE_NODE, s7_misc::ecx_jmp;
     "camera settings (after 267)" => s7_misc::CAMERA_SETTINGS_4, s7_misc::camera_settings_4;
     "fading level" => s7_misc::FADING_LEVEL, s7_misc::fading_level;
     "near points fade" => s7_misc::NEAR_POINTS_FADE, s7_misc::near_points_fade;

@@ -1347,7 +1347,7 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ecx,
         ..*fr
     };
-    let handlers: [(&Sig, fn(&mut G, &Image, &Frame) -> u32); 7] = [
+    let handlers: [(&Sig, fn(&mut G, &Image, &Frame) -> u32); 10] = [
         (&MOVING_LIGHT_NODE, moving_light_node),
         (&COUNT_FADE, count_fade),
         (&MODEL_DRAW_NODE, model_draw_node),
@@ -1355,6 +1355,9 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         (&HANDLES_REGISTERED, handles_registered),
         (&MODEL_POINTS_NODE, model_points_node),
         (&RING_KEY_FRAME, ring_key_frame),
+        (&THUNDER_NODE, thunder_node),
+        (&SPRITE_FADE_NODE, sprite_fade_node),
+        (&SHAKE_NODE, shake_node),
     ];
     for (sig, port) in handlers {
         if img.matches(target, sig) {
@@ -2457,5 +2460,29 @@ pub const THUNDER_NODE: Sig = Sig {
     len: 406,
     hash: 0xc0d4_84f1_bd49_7891,
     calls: &[(0x18e, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0387` 0x10007e40 (3 DLLs) over [`thunder_node`].
+pub const JMP_THUNDER_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&THUNDER_NODE))],
+    imports: &[],
+};
+
+/// `magic_0202` 0x10001480 (2 DLLs) over [`sprite_fade_node`].
+pub const JMP_SPRITE_FADE_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&SPRITE_FADE_NODE))],
+    imports: &[],
+};
+
+/// `magic_0513` 0x100046c0 (2 DLLs) over [`shake_node`].
+pub const JMP_SHAKE_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&SHAKE_NODE))],
     imports: &[],
 };
