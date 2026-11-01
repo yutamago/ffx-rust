@@ -8,6 +8,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_graphic::host::Conv;
+use ffx_pcui::l6_pcui::bridge as l6u;
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
@@ -1193,5 +1194,11 @@ ported! {
     /// `FUN_00945350(this)`: `EnterCriticalSection(this)`.
     Lock_enter_00945350 @ 0x0094_5350 => extern "thiscall" fn lock_enter(this: u32) -> u32 {
         ll::lock_enter(&mut mem(), this)
+    }
+    // ---- round 6 (left6) batch 2 (ffx_pcui::l6_pcui) ----
+    /// `(window, id, state; slots)`: the character page's buttons (writes
+    /// its `id` and `state` slots before the toggle buttons' tail jump).
+    ChrMenu_buttons_0084cf60 @ 0x0084_cf60 => extern "C" fn chrmenu_buttons(window: u32, id: u32, state: u32; slots: u32) -> u32 {
+        l6u::chr_buttons(&mut mem(), slots, window, id, state)
     }
 }

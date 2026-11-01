@@ -33,6 +33,7 @@ pub mod dyngeo;
 pub mod iggy;
 pub mod input;
 pub mod item;
+pub mod l6_pcui;
 pub mod link;
 pub mod m5u_a;
 pub mod m5u_b;

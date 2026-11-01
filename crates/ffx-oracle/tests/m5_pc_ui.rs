@@ -6826,3 +6826,103 @@ fn rp4_lock_enter_matches_the_original() {
         }
     });
 }
+
+// ---- round 6 (left6) batch 2 (ffx_pcui::l6_pcui) ----
+
+use ffx_pcui::l6_pcui::bridge as l6u;
+
+#[test]
+fn l6_chr_buttons_match_the_original() {
+    // every button, the lists empty and not, the light mode both ways, the
+    // icon mode wrapping, the wind on and off; ids outside the table
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6d01);
+        let ids = [
+            1_u32, 2, 3, 0x36, 0x43, 0x45, 0x47, 0x4e, 0x54, 0x5a, 0x5d, 0x64, 0x65, 0x68, 0x69,
+        ];
+        for case in 0..120_u32 {
+            let id = match case % 20 {
+                18 => rng.below(0x70),
+                19 => rng.word(),
+                k => ids[k as usize % ids.len()],
+            };
+            for (sym, v) in [
+                (l6u::WIND_TOGGLE, rng.next()),
+                (l6u::CHR_STR_A, rng.next()),
+                (l6u::CHR_STR_B, rng.next()),
+                (
+                    l6u::CHR_COUNT,
+                    [0, 0xffff_ffff, 1, 7][rng.below(4) as usize],
+                ),
+                (
+                    l6u::MOTION_COUNT,
+                    [0, 0xffff_ffff, 1, 7][rng.below(4) as usize],
+                ),
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            let modes = [rng.below(3) as u8, rng.next() as u8];
+            let at = t.rebase(l6u::LIGHT_MODE);
+            t.patch(at, &modes);
+            let line = t.rebase(l6u::DEBUG_LINE);
+            t.patch(line, &[0; 16]);
+            let fill = if rng.chance(2) { 0 } else { rng.next() };
+            let calc = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(2)
+            };
+            t.stubs(&[
+                (l6u::SG_SET_RESOURCE, false, 2, 0, rng.next()),
+                (l6u::UPDATE_LIGHT_TEXTS, false, 1, 0, rng.next()),
+                (l6u::SELECTOR_ALLOCATE, false, 0, 0, rng.next()),
+                (l6u::LIST_CHARACTERS, false, 1, 0, rng.next()),
+                (l6u::SELECTOR_SET_SELECT_STR, false, 2, 0, rng.next()),
+                (l6u::SELECTOR_OPEN, false, 3, 0, rng.next()),
+                (l6u::LIST_MOTIONS, false, 1, 0, rng.next()),
+                (l6u::SG_GET_RESOURCE_STR, false, 1, 0, rng.next()),
+                (l6u::MESSAGE_BOX, false, 1, 0, rng.next()),
+                (l6u::FILL_SELECTOR, false, 1, 0, fill),
+                (l6u::WINDOW_CREATE, false, 6, 0, rng.next()),
+                (l6u::CALC_NORMAL_GET, false, 0, 0, calc),
+                (l6u::CALC_NORMAL_SET_ALL, false, 1, 0, rng.next()),
+                (l6u::BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (l6u::DBG_WINDOW_A, false, 0, 0, rng.next()),
+                (l6u::DBG_WINDOW_B, false, 0, 0, rng.next()),
+                (l6u::DBG_WINDOW_C, false, 0, 0, rng.next()),
+                (l6u::SET_DRAW_ICON, false, 1, 0, rng.next()),
+                (l6u::SET_DRAW_ICON2, false, 1, 0, rng.next()),
+                (l6u::WINDOW_SET_TEXT, false, 3, 0, rng.next()),
+                (l6u::TOGGLE_GLOBAL, false, 0, 0, rng.next()),
+                (l6u::MOTION_HALF_GET, false, 0, 0, calc ^ 1),
+                (l6u::MOTION_HALF_SET, false, 1, 0, rng.next()),
+                (l6u::SET_WIND, false, 3, 0, rng.next()),
+            ]);
+            let state = t.words(&[rng.next(), rng.next()]);
+            let window = rng.next();
+            let args = [window, id, state];
+            let slot = t.frame_ebp(3) + 8;
+            for (k, v) in (0_u32..).zip(args) {
+                t.b.write(slot + 4 * k, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(slot - 0x200));
+            t.check(
+                "ChrMenu_buttons_0084cf60",
+                0x0084_cf60,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l6u::chr_buttons(g, slot, window, id, state)),
+            );
+            t.b.set_call_top(None);
+            for k in 0..3 {
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, slot + 4 * k),
+                    Mem::read::<u32>(&t.b, slot + 4 * k),
+                    "ChrMenu_buttons_0084cf60: slot {k}"
+                );
+            }
+            t.reset();
+        }
+    });
+}

@@ -5513,3 +5513,147 @@ fn r5v_gdraw_draw_indexed_triangles_matches_the_original() {
         }
     });
 }
+
+// ---- round 6 (left6) batch 1 (ffx_glue_other::l6_vfx) ----
+
+use ffx_glue_other::l6_vfx::{self as l6, bridge as l6v};
+
+/// The stack top `+0xaac`: the main target (its base `+0x9cc`), an entry
+/// with a size, or one without.
+fn l6_target_top(t: &mut Twins, rng: &mut Rng, s: u32, case: u32) {
+    let top = match case % 3 {
+        0 => s + 0x9cc,
+        k => {
+            let e = t.zeros(0x20);
+            for off in (4..0x14).step_by(4) {
+                t.w32(e + off, rng.next());
+            }
+            t.w32(e + 0x18, if k == 1 { rng.next() | 1 } else { 0 });
+            e
+        }
+    };
+    t.w32(s + 0xaac, top);
+    for off in (0x6d8..0x6f8).step_by(4) {
+        t.w32(s + off, rng.next());
+    }
+}
+
+#[test]
+fn l6_gdraw_target_projection_matches_the_original() {
+    // drawing whole (no call), the main target, an entry with and
+    // without a size
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6c01);
+        for case in 0..24_u32 {
+            let s = gdraw_state(t, &mut rng);
+            l6_target_top(t, &mut rng, s, case);
+            t.w32(s + 0x6f8, u32::from(case % 4 == 3) * rng.next().max(1));
+            t.stub_sym(l6::SET_PROJECTION, 1, false, 4, 0, Ret::Val(rng.next()));
+            t.check(
+                "gdraw_targetProjection_00a3c350",
+                0x00a3_c350,
+                Conv::Cdecl,
+                &[],
+                |o| l6v::target_projection(o).map_or(Out::None, Out::U32),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_gdraw_rt_bind_matches_the_original() {
+    // with and without the second depth view; the projection called or
+    // not (then the viewport's eax)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6c02);
+        for case in 0..24_u32 {
+            let s = gdraw_state(t, &mut rng);
+            l6_target_top(t, &mut rng, s, case / 2);
+            t.w32(s + 0x6f8, u32::from(case % 4 < 2));
+            t.w32(s + 0x788, if case % 2 == 0 { 0 } else { rng.next() });
+            if case % 5 == 0 {
+                // no first depth view: still bound
+                t.w32(s + 0x784, 0);
+            }
+            t.stub_sym(
+                l6::DEPTH_STENCIL_STATE,
+                1,
+                false,
+                4,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l6::DRAW_TARGET_QUAD, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(l6::BIND_OUTPUT, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                l6::SET_VIEWPORT_FOR_TARGET,
+                4,
+                false,
+                0,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l6::SET_PROJECTION, 5, false, 4, 0, Ret::Val(rng.next()));
+            t.zero_frames();
+            let mask = rng.next();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - l6::RT_BIND_FRAME - 0x40);
+            t.check(
+                "gdraw_rt_bind_00a37410",
+                0x00a3_7410,
+                Conv::Stdcall,
+                &[mask],
+                |o| Out::U32(l6v::rt_bind(o, ebp, mask)),
+            );
+            t.same_stack("gdraw_rt_bind_00a37410", ebp - 0x30, 0x30);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_ppp_mdl_rev_matrix_matches_the_original() {
+    // the rotation and the view product for real; each sign flag on and
+    // off; scales and rows with NaNs, infinities and zeros
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6c11);
+        for _ in 0..40_u32 {
+            let work = t.zeros(0x200);
+            for k in 0..0x80 {
+                let v = match rng.below(6) {
+                    0 => [0x7fc0_0001, 0xff80_0000, 0x7f80_0000, 0x8000_0000, 0]
+                        [rng.below(5) as usize],
+                    1 => rng.next() & 0xbfff_ffff,
+                    _ => (rng.below(4000) as f32 / 256.0 - 8.0).to_bits(),
+                };
+                t.w32(work + 4 * k, v);
+            }
+            // the offsets: position, angles, scale, flags
+            let offs = [0x00_u32, 0x10, 0x20, 0x30, 0x40, 0x50];
+            let d = t.words(&offs);
+            for k in 0..3 {
+                t.w8(work + 0xa0 + 0x50 + 1 + k, u8::from(rng.chance(2)));
+            }
+            let rec = t.zeros(0x20);
+            t.w32(rec + 0xc, d);
+            let view = t.rebase(l6::VIEW_MATRIX_COPY);
+            let mut old = vec![0; 64];
+            Mem::read_bytes(&t.b, view, &mut old);
+            t.patched.push((view, old));
+            for k in 0..16 {
+                t.w32(view + 4 * k, (rng.below(400) as f32 / 64.0 - 3.0).to_bits());
+            }
+            let unused = rng.next();
+            t.check(
+                "ppp_mdl_rev_matrix_007401d0",
+                0x0074_01d0,
+                Conv::Cdecl,
+                &[work, unused, rec],
+                |o| Out::U32(l6v::rev_matrix(o, work, rec)),
+            );
+            t.reset();
+        }
+    });
+}
