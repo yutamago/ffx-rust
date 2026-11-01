@@ -1593,3 +1593,60 @@ fn bone_nodes() {
         }
     }
 }
+
+/// The light swing in both DLLs: counts below, at and past 20 (the
+/// swing's ST0, the reset and the new accelerations from the matrix).
+#[test]
+fn light_swings() {
+    for (dll, rva) in [(312u16, 0x17b0u32), (510, 0x17e0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let y = SCRATCH + 0x5000;
+        t.set_u32(op(&t, f, 0x11), y);
+        t.set_u32(op(&t, f, 0x214), y);
+        t.set_u32(y + 0x1a0, 0x0a1a_0000);
+        t.set_u32(y + 0x198, 0x0a19_0000);
+        for (s, n) in [
+            (480u32, 2usize),
+            (479, 4),
+            (484, 3),
+            (446, 2),
+            (478, 3),
+            (445, 1),
+            (450, 2),
+        ] {
+            log_calls(&mut t, s, n, &[], move |_, a, k| a[0] ^ (s << 16) ^ k);
+        }
+        log_calls(&mut t, 479, 4, &[3], |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 482, 4, &[], |_, a, _| a[2]);
+        t.stub_st0(482, |_, a| f64::from(f32::from_bits(a[2])) * 0.75 + 0.125);
+        log_calls(&mut t, 477, 1, &[], |_, a, _| a[0]);
+        t.stub_st0(477, |m, _| f64::from(m.r32(LOG)) * 0.5 - 1.0);
+        log_calls(&mut t, 463, 3, &[], |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[2] + 4 * i, ((i as f32 - 3.0) * 0.5 + k as f32).to_bits());
+            }
+            0x463
+        });
+        for (o, x) in [(0x51u32, 20.0f32), (0x88, 0.25), (0x23a, 0.5), (0x287, 1.5)] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let floats_ops = [
+            0xcfu32, 0xd7, 0xdf, 0xe7, 0xef, 0xf7, 0x107, 0x10f, 0x12c, 0x134, 0x144, 0x14c, 0x15f,
+            0x172, 0x185, 0x198, 0x1a8, 0x1bc, 0x1d0, 0x1e4, 0x232,
+        ];
+        for (k, n) in [0u32, 7, 19, 20, 21, 0x40].into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            for (i, &o) in (0u32..).zip(&floats_ops) {
+                t.set_u32(
+                    op(&t, f, o),
+                    ((i as f32 - 9.0) * 0.375 + k as f32).to_bits(),
+                );
+            }
+            t.set_u32(op(&t, f, 0x33), n);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[0x0a00_0000 + k], Eax::Checked);
+        }
+    }
+}

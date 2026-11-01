@@ -2206,3 +2206,139 @@ pub const CALL_BONE_NODE: Sig = Sig {
     calls: &[(8, Callee::Sig(&BONE_NODE))],
     imports: &[],
 };
+
+/// A summon's light swing (cdecl `(A)`; a /GS frame; the actor `C =
+/// [*G_Y + 0x1a0]`). The handle `H` = slot 480 `(C, 6)`; the swing `x` =
+/// slot 482 `(0, pi, n / K, 2)`'s ST0 while the count `n = *G_N` is below
+/// 20, else `K2`; slot 479 `(C, H, G_L, L)` with `L = (0, slot 477 (C)'s
+/// ST0, x)` on the frame. Then the four positions `P_i += V_i`, the
+/// velocities `V_i += W_i` (the accelerations as they were) and `W_i +=
+/// J_i`; slot 484 `(C, G_L, 0)`; the count goes up. Past 20: the count
+/// is reset, slot 446 `(C, 0x1c)`, `V_1 -= *G_S K3`, slot 478 `(2, 0x40,
+/// 0x1e)`, the matrix `M` of `[*G_Y + 0x198]` (slot 463 `(.., 0, M)`) gives
+/// the new accelerations `W_i = M[8 + i] K4` (the jerks cleared), slot
+/// 445 `(1)` and slot 450 `(A, CB)`. Each call sees the words the earlier
+/// ones left. Returns the count, or slot 450's `eax`.
+///
+/// `magic_0312` 0x100017b0 (813 bytes; 2 DLLs).
+pub fn light_swing<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
+    let r = |g: &G, o: u32| f32_at(g, w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let a = fr.arg(g, 0);
+    let actor = g.read::<u32>(g.read::<u32>(w(0x11)).wrapping_add(0x1a0));
+    let mut st = Pushes::default();
+    st.push_all(&[6, actor]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let h = st.call(g, tab(g, 0x22, 480), 0).eax;
+    st.pop(2);
+    let n = g.read::<i32>(w(0x33));
+    let x = if n < 0x14 {
+        let k = div(cvt(n.cast_unsigned()), r(g, 0x51));
+        st.push(2);
+        st.push_all(&[k.to_bits(), 0x4049_0fdb, 0]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        let out = st.call(g, tab(g, 0x49, 482), 0);
+        st.pop(4);
+        crate::ob_model::st0_f32(out.st0)
+    } else {
+        r(g, 0x88)
+    };
+    let l = ebp.wrapping_sub(0x14);
+    g.write::<u32>(l, 0);
+    st.push(actor);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    let out = st.call(g, tab(g, 0x8d, 477), 0);
+    g.write::<f32>(l + 4, crate::ob_model::st0_f32(out.st0));
+    g.write::<f32>(l + 8, x);
+    st.push_all(&[l, w(0xb8), h, actor]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0xb3, 479), 0);
+    // the four positions, velocities, accelerations and jerks (operands)
+    let wv = [r(g, 0xdf), r(g, 0xe7), r(g, 0xef), r(g, 0xf7)];
+    let x0 = add(r(g, 0xcf), r(g, 0xd7));
+    g.write::<f32>(w(0xff), x0);
+    let x1 = add(r(g, 0x107), r(g, 0x10f));
+    st.push_all(&[0, w(0x11b), actor]);
+    g.write::<f32>(w(0x124), x1);
+    for (to, from, d) in [(0x13cu32, 0x12cu32, 0x134u32), (0x154, 0x144, 0x14c)] {
+        let x = add(r(g, from), r(g, d));
+        g.write::<f32>(w(to), x);
+    }
+    for (i, (to, from)) in [
+        (0x167u32, 0x15fu32),
+        (0x17a, 0x172),
+        (0x18d, 0x185),
+        (0x1a0, 0x198),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = add(wv[i], r(g, from));
+        g.write::<f32>(w(to), x);
+    }
+    for (i, (to, from)) in [
+        (0x1b4u32, 0x1a8u32),
+        (0x1c8, 0x1bc),
+        (0x1dc, 0x1d0),
+        (0x1f0, 0x1e4),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = add(r(g, from), wv[i]);
+        g.write::<f32>(w(to), x);
+    }
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x114, 484), 0);
+    let n = g.read::<u32>(w(0x1fd)).wrapping_add(1);
+    st.pop(8);
+    g.write::<u32>(w(0x206), n);
+    if n.cast_signed() <= 0x14 {
+        return Ret::eax(n);
+    }
+    let obj = g.read::<u32>(g.read::<u32>(w(0x214)).wrapping_add(0x198));
+    st.push_all(&[0x1c, actor]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x221, 446), 0);
+    let d = sub(r(g, 0x242), mul(r(g, 0x232), r(g, 0x23a)));
+    st.push_all(&[0x1e, 0x40, 2]);
+    g.write::<u32>(w(0x257), 0);
+    g.write::<f32>(w(0x263), d);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x247, 478), 0);
+    let m = ebp.wrapping_sub(0x54);
+    st.push_all(&[m, 0, obj]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x274, 463), 0);
+    let k4 = r(g, 0x287);
+    let row = |g: &G, i: u32| mul(f32_at(g, m + 0x20 + 4 * i), k4);
+    let x = row(g, 0);
+    g.write::<u32>(w(0x29b), 0);
+    g.write::<f32>(w(0x2a7), x);
+    let x = row(g, 1);
+    g.write::<u32>(w(0x2b6), 0);
+    g.write::<u32>(w(0x2c0), 0);
+    g.write::<f32>(w(0x2cc), x);
+    let x = row(g, 2);
+    g.write::<u32>(w(0x2db), 0);
+    st.push(1);
+    g.write::<f32>(w(0x2e9), x);
+    let x = row(g, 3);
+    g.write::<f32>(w(0x2fa), x);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x295, 445), 0);
+    st.push_all(&[w(0x30c), a]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    Ret::eax(st.call(g, tab(g, 0x307, 450), 0).eax)
+}
+
+/// [`light_swing`] (the `rel32`: `__security_check_cookie`).
+pub const LIGHT_SWING: Sig = Sig {
+    len: 813,
+    hash: 0x1286_2733_2099_ab9d,
+    calls: &[(0x325, Callee::Any)],
+    imports: &[],
+};
