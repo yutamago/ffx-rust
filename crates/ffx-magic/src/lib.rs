@@ -2393,6 +2393,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("move ends (the DLL's object)", &s6_misc::MOVE_ENDS_OF),
     ("model direct", &s6_misc::MODEL_DIRECT),
     ("spline point", &s6_misc::SPLINE_POINT),
+    ("level look matrix", &s6_misc::LEVEL_LOOK_MATRIX),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

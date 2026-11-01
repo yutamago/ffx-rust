@@ -3696,3 +3696,83 @@ pub const CAMERA_TRACKS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A level look matrix (internal: `ecx` = the matrix out, `edx` = a
+/// source, `xmm2` = a height, `xmm3` = a scale; a /GS frame): a matrix
+/// `A` from the source (slot 236 `(edx, 3, A)`, a local) with its three
+/// rows normalised (slot 232); its second row flattened (`y = 0`, slot
+/// 325, normalised into `N`), `C = up x N`, `R = N x C` (slot 266, `up`
+/// = `(0, 1, 0, 1)`), both normalised; the rotation `M = [C, R, N, A's
+/// fourth row with y = height]` (`w`s 0, the last 1; slot 325 copies the
+/// row) and a scale matrix `S` (slot 235, diagonal `xmm3`) give the
+/// matrix out (slot 231 `(out, M, S)`). Each call sees the words the
+/// earlier ones left on the stack. Returns slot 231's `eax`.
+///
+/// `magic_0045` 0x10001000 (579 bytes, `ecx`/`edx`/`xmm2`/`xmm3`; 3
+/// DLLs).
+#[allow(clippy::too_many_lines)] // the original's calls, one by one
+pub fn level_look_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let out = fr.ecx;
+    let (height, scale) = (fr.xmm[2] as u32, fr.xmm[3] as u32);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let a = at(0xd4);
+    let (p, n, c, r, up, m, s) = (
+        at(0x94),
+        at(0x24),
+        at(0x14),
+        at(0x34),
+        at(0x44),
+        at(0x84),
+        at(0x114),
+    );
+    let target = |g: &G, t: u32, k: u32| crate::runtime::slot_target(g, w(t), k);
+    let mut st = Pushes::default();
+    let call = |g: &mut G, st: &mut Pushes, words: &[u32], t: u32, k: u32| {
+        st.push_all(words);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, target(g, t, k), 0).eax
+    };
+    call(g, &mut st, &[a, 3, fr.edx], 0x1c, 236);
+    for (row, t) in [(0u32, 0x46u32), (0x10, 0x5b), (0x20, 0x70)] {
+        call(g, &mut st, &[a + row, a + row], t, 232);
+    }
+    call(g, &mut st, &[a + 0x10, p], 0x8b, 325);
+    g.write::<u32>(p + 4, 0);
+    for (o, v) in [(0u32, 0u32), (4, 0x3f80_0000), (8, 0), (0xc, 0x3f80_0000)] {
+        g.write::<u32>(up + o, v);
+    }
+    call(g, &mut st, &[p, n], 0xa3, 232);
+    call(g, &mut st, &[n, up, c], 0xe2, 266);
+    st.pop(16);
+    call(g, &mut st, &[c, n, r], 0xfe, 266);
+    call(g, &mut st, &[c, c], 0x110, 232);
+    call(g, &mut st, &[r, r], 0x122, 232);
+    for (row, src) in [(0u32, c), (0x10, r), (0x20, n)] {
+        for o in [0u32, 4, 8] {
+            let x = g.read::<u32>(src + o);
+            g.write::<u32>(m + row + o, x);
+        }
+        g.write::<u32>(m + row + 0xc, 0);
+    }
+    for (o, v) in [(0x30u32, 0u32), (0x34, 0), (0x38, 0), (0x3c, 0x3f80_0000)] {
+        g.write::<u32>(m + o, v);
+    }
+    call(g, &mut st, &[a + 0x30, m + 0x30], 0x192, 325);
+    g.write::<u32>(m + 0x34, height);
+    call(g, &mut st, &[s], 0x1e4, 235);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(s + o, scale);
+    }
+    call(g, &mut st, &[s, m, out], 0x20c, 231)
+}
+
+/// [`level_look_matrix`] (the `rel32`: `__security_check_cookie`).
+pub const LEVEL_LOOK_MATRIX: Sig = Sig {
+    len: 579,
+    hash: 0x651a_167a_e72b_1b92,
+    calls: &[(0x23b, Callee::Any)],
+    imports: &[],
+};

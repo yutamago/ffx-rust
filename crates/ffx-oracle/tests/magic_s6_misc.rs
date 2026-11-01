@@ -2645,3 +2645,69 @@ fn camera_tracks_set() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Row 427: `magic_0045`'s level look matrix: the slots fill their
+/// outputs from their inputs so that each local's words reach the
+/// matrix out.
+#[test]
+fn level_look_matrices() {
+    let Some(mut t) = twin(45) else { return };
+    let f = t.at(0x1000);
+    let fv = |m: &dyn StubMem, a: u32| f32::from_bits(m.r32(a));
+    rec(&mut t, 236, 3, |m, a| {
+        for i in 0..16 {
+            m.w32(
+                a[2] + 4 * i,
+                (0.5 * i as f32 - 3.0 + (a[0] & 3) as f32).to_bits(),
+            );
+        }
+        0x236
+    });
+    rec(&mut t, 232, 2, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) * 0.5;
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x232
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec(&mut t, 266, 3, move |m, a| {
+        let (u, v) = (a[1], a[2]);
+        let c = [
+            fv(m, u + 4) * fv(m, v + 8) - fv(m, u + 8) * fv(m, v + 4),
+            fv(m, u + 8) * fv(m, v) - fv(m, u) * fv(m, v + 8),
+            fv(m, u) * fv(m, v + 4) - fv(m, u + 4) * fv(m, v),
+        ];
+        for (i, x) in (0u32..).zip(c) {
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x266
+    });
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 231, 3, 16, None);
+    let out = SCRATCH + 0x300;
+    for k in 0..3u32 {
+        t.write(out, &varied(0x40, k));
+        let c = Call {
+            ecx: out,
+            edx: 0x0dd0_0000 + k,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            Xmm::f32(9.0),
+            Xmm::f32(8.0),
+            Xmm::f32(1.5 + k as f32),
+            Xmm::f32(0.25 * (k as f32 + 1.0)),
+        ]);
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::level_look_matrix(g, img, fr))
+        });
+    }
+}
