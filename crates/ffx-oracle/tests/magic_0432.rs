@@ -16,8 +16,11 @@ fn sound_start() {
     let at = t.at(0x5240);
     let w = |t: &Twin, off: u32| t.img.word(at + off);
     let lock = SCRATCH + 0x600;
+    // slot 711 copies the lock word out (its answer is not used)
     rec(&mut t, 711, 3, move |m: &mut dyn StubMem, a: &[u32]| {
-        m.r32(lock) ^ a[0]
+        let v = m.r32(lock);
+        m.w32(lock + 0x40, v);
+        v ^ a[0]
     });
     rec(&mut t, 710, 7, |_, a| 0x0710_0000 ^ a[2]);
     t.set_u32(w(&t, 0x04), lock);

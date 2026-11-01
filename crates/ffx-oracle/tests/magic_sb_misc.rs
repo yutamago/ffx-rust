@@ -12,7 +12,7 @@
 mod magic;
 mod magic_l3;
 
-use ffx_magic::{Ret, Xmm, sb_misc};
+use ffx_magic::{Ret, Xmm, l5_objhost, s4_small, sb_misc};
 use magic::{Call, Eax, SCRATCH, Twin};
 
 const LOG: u32 = SCRATCH + 0x8000;
@@ -82,6 +82,8 @@ fn mean_position() {
     }
 }
 
+/// The turn (`s4_small::turn_point`) and the list pop after it
+/// (`l5_objhost::list_pop_tail`), `magic_0052`'s copies.
 #[test]
 fn rotate_offset_and_list_pop() {
     let Some(mut t) = magic_l3::twin(52) else {
@@ -104,11 +106,7 @@ fn rotate_offset_and_list_pop() {
         },
         &[out],
         Eax::Checked,
-        |g, img, fr| {
-            Ret::eax(sb_misc::rotate_offset(
-                g, img, fr.at, fr.esp, fr.ecx, fr.edx,
-            ))
-        },
+        s4_small::turn_point,
     );
     // the list: three nodes, the cursor on each in turn, then empty
     let list = SCRATCH + 0x400;
@@ -129,7 +127,7 @@ fn rotate_offset_and_list_pop() {
                 Call::this(list),
                 &[],
                 Eax::Checked,
-                |g, img, fr| Ret::eax(sb_misc::list_pop(g, img, fr.at, fr.ecx)),
+                |g, img, fr| Ret::eax(l5_objhost::list_pop_tail(g, img, fr.at, fr.ecx)),
             );
         }
     }

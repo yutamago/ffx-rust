@@ -79,6 +79,8 @@ fn camera_start() {
     let byte = SCRATCH + 0x700;
     t.set_u32(w(&t, 0x8c), byte);
     t.set_u8(byte, 0x13);
+    // a non-zero byte above the index byte
+    t.set_u8(byte + 1, 0x7f);
     let base = f32::from_bits(t.u32(w(&t, 0x4f)));
     let hi = f32::from_bits(t.u32(w(&t, 0x5e)));
     let lo = f32::from_bits(t.u32(w(&t, 0x72)));
@@ -87,6 +89,8 @@ fn camera_start() {
         base - hi - 1.0,
         base - lo + 1.0,
         base - 0.5,
+        // h inside (LO, 0)
+        base + 1.0,
         f32::NAN,
         -20.0,
         20.0,
@@ -124,7 +128,13 @@ fn actors_pass() {
     rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ (a[1] << 8));
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     let flag = SCRATCH + 0x600;
-    rec(&mut t, 779, 4, move |m, a| m.r32(flag) ^ a[3]);
+    // slot 779 copies the flag out (its answer is not used)
+    rec(&mut t, 779, 4, move |m, a| {
+        let k = m.r32(magic_owna::row(779));
+        let v = m.r32(flag);
+        m.w32(SCRATCH + 0x4000 + 4 * (k % 0x100), v);
+        v ^ a[3]
+    });
     t.set_u32(w(&t, 0x34), flag);
     let table = w(&t, 0x0c);
     for last in [0u32, 0x0a0f] {

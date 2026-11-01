@@ -22,6 +22,7 @@
 //! Development only: the release runs no `FFX.exe` code (rewrite-plan, M5).
 
 pub mod seh;
+pub mod spot;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -300,6 +301,8 @@ pub struct Shared {
     finished: Mutex<Profile>,
     /// Every live emulator (thread id, Unicorn handle), for the watchdog.
     emulators: Mutex<Vec<(u32, usize)>>,
+    /// Every live thread's host entries, for the harness's `stacks`.
+    pub spots: Mutex<Vec<Arc<spot::Spot>>>,
     /// Thread-pool work items: handle → (callback, context).
     pub pool_work: Mutex<HashMap<u32, (u32, u32)>>,
     running: AtomicU32,
@@ -410,6 +413,7 @@ impl Shared {
             threads: Mutex::new(Vec::new()),
             finished: Mutex::new(Profile::default()),
             emulators: Mutex::new(Vec::new()),
+            spots: Mutex::new(Vec::new()),
             pool_work: Mutex::new(HashMap::new()),
             running: AtomicU32::new(0),
             x87: Arc::new(HashMap::new()),
@@ -650,6 +654,18 @@ impl Shared {
     pub fn arena(&self) -> &Arc<Arena> {
         &self.arena
     }
+
+    /// The name of bound import `i` (`DLL!name`).
+    #[must_use]
+    pub fn import_name(&self, i: usize) -> Option<&str> {
+        self.imports.bound(i).map(|b| b.name.as_str())
+    }
+
+    /// The function-table entry's name at `at`.
+    #[must_use]
+    pub fn port_name(&self, at: u32) -> Option<&'static str> {
+        self.table.get(at).map(|e| e.name)
+    }
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
@@ -715,6 +731,8 @@ pub struct Exec {
     /// How many of [`crate::library`]'s overlay counting hooks this
     /// thread's emulator has.
     pub(crate) overlay_hooks: usize,
+    /// Its host entries, for the harness's `stacks`.
+    spot: Arc<spot::Spot>,
 }
 
 /// A trap's own return ([`Exec::trap_exit`], set by its Rust side): the
@@ -731,6 +749,9 @@ impl Drop for Exec {
         let id = self.id;
         if let Ok(mut l) = self.shared.emulators.lock() {
             l.retain(|&(t, _)| t != id);
+        }
+        if let Ok(mut l) = self.shared.spots.lock() {
+            l.retain(|s| s.id != id);
         }
     }
 }
@@ -813,9 +834,13 @@ impl Exec {
             x87_depth: 0,
             trap_exit: None,
             overlay_hooks: 0,
+            spot: Arc::new(spot::Spot::new(id, (stack_base, stack_base + stack_size))),
         };
         if let Ok(mut l) = exec.shared.emulators.lock() {
             l.push((id, exec.uc.get_handle() as usize));
+        }
+        if let Ok(mut l) = exec.shared.spots.lock() {
+            l.push(Arc::clone(&exec.spot));
         }
         exec.write_stubs(stubs_at);
         exec.sync_regions()?;
@@ -1130,13 +1155,17 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
+        let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
         let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
+            self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
-                self.run_port_from_rust(entry, args)?
+                self.run_port_from_rust(entry, args)
             } else {
-                self.run_port(entry, args)
+                Ok(self.run_port(entry, args))
             };
+            self.spot.leave();
+            let ret = ret?;
             if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1148,7 +1177,12 @@ impl Exec {
                 .imports
                 .bound(i)
                 .is_some_and(|b| b.name.ends_with("!RaiseException"));
-            if raise {
+            self.spot.enter(
+                spot::Kind::Import,
+                u32::try_from(i).unwrap_or(u32::MAX),
+                esp,
+            );
+            let r = if raise {
                 // the dispatch runs in the executor's loop
                 self.call_unicorn(addr, conv, args)
             } else if args.slots == 0 && !args.stack.is_empty() {
@@ -1160,9 +1194,13 @@ impl Exec {
                     .and_then(|r| r)
             } else {
                 self.run_import(i, args)
-            }
+            };
+            self.spot.leave();
+            r
         } else if let Some(t) = self.shared.trap(addr) {
+            self.spot.enter(spot::Kind::Trap, addr, esp);
             let ret = (t.run)(self, t.tag, args);
+            self.spot.leave();
             if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1194,11 +1232,15 @@ impl Exec {
     pub fn call_original(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         if let Some(entry) = self.shared.table.wrapped_port(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
+            let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
+            self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
-                self.run_port_from_rust(entry, args)?
+                self.run_port_from_rust(entry, args)
             } else {
-                self.run_port(entry, args)
+                Ok(self.run_port(entry, args))
             };
+            self.spot.leave();
+            let ret = ret?;
             return if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1387,7 +1429,7 @@ impl Exec {
                     } else if self.shared.table.get(at).is_some() {
                         self.enter_port(at)
                     } else if let Some(t) = self.shared.trap(at) {
-                        self.enter_trap(t)
+                        self.enter_trap(t, at)
                     } else {
                         // a stray int3: EXCEPTION_BREAKPOINT at it
                         self.uc.reg_write(RegisterX86::EIP, u64::from(at))?;
@@ -1484,7 +1526,9 @@ impl Exec {
         *self.stats.ports.entry(at).or_default() += 1;
         let args = self.entry_args(entry.words)?;
         let saved = self.save_regs()?;
+        self.spot.enter(spot::Kind::Port, at, args.slots - 4);
         let ret = self.run_port(entry, &args);
+        self.spot.leave();
         self.restore_regs(&saved)?;
         if self.halted() {
             return Err(Error::Stopped);
@@ -1632,11 +1676,13 @@ impl Exec {
     }
 
     /// Runs trap `t` for Unicorn code that called it.
-    fn enter_trap(&mut self, t: Trap) -> Result<u32> {
+    fn enter_trap(&mut self, t: Trap, at: u32) -> Result<u32> {
         let args = self.entry_args(t.words)?;
         let saved = self.save_regs()?;
         self.trap_exit = None;
+        self.spot.enter(spot::Kind::Trap, at, args.slots - 4);
         let ret = (t.run)(self, t.tag, &args);
+        self.spot.leave();
         let exit = self.trap_exit.take();
         self.restore_regs(&saved)?;
         if self.halted() {
@@ -1742,7 +1788,13 @@ impl Exec {
         let words = self.shared.imports.bound(i).map_or(0, |b| b.words);
         let args = self.entry_args(words)?;
         let saved = self.save_regs()?;
+        self.spot.enter(
+            spot::Kind::Import,
+            u32::try_from(i).unwrap_or(u32::MAX),
+            args.slots - 4,
+        );
         let ret = self.run_import(i, &args);
+        self.spot.leave();
         self.restore_regs(&saved)?;
         let ret = ret?;
         if self.seh.pending.is_some() {

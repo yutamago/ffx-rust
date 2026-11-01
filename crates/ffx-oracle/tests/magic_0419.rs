@@ -35,6 +35,18 @@ fn frame() {
     t.set_u32(n + 8, obj);
     t.set_u16(obj + 0x124, 0x8001);
     let (task, record) = (SCRATCH + 0x100, SCRATCH + 0x180);
+    // one part for the tail's register_parts, its lock at P + 0x200, so
+    // the callee's address matters
+    let rp = t.img.rel32_target(at + 0xea);
+    let parts = SCRATCH + 0x5000;
+    t.write(parts, &[0x5e; 0x80]);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(t.img.word(rp + 0x43), parts + 0x200);
+    t.set_u32(t.img.word(rp + 0x5f), parts + 0x200);
+    t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[1]);
+    // slot 213's first word *X
+    t.set_u32(w(&t, 0x9c), 0x00ab_009c);
     for (count, flag, sound, half, busy, bits, left) in [
         (1i32, 0u32, 3i32, 0u16, false, 0x8000u32, 0i32),
         (1, 1, 3, 1, false, 0x8000, 0),
@@ -47,7 +59,8 @@ fn frame() {
         t.set_u32(w(&t, 0x1e), flag);
         t.set_u32(w(&t, 0x26), sound.cast_unsigned());
         t.set_u32(w(&t, 0x48), 0x00ab_0048);
-        t.set_u16(w(&t, 0x8c), half);
+        // the halfword with a non-zero halfword above it
+        t.set_u32(w(&t, 0x8c), 0x00ff_0000 | u32::from(half));
         t.set_u32(w(&t, 0xc1), bits);
         t.set_u32(w(&t, 0xcd), left.cast_unsigned());
         t.set_u32(list + 8, if busy { n } else { 0 });

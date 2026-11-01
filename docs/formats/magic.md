@@ -249,7 +249,16 @@ OPU host in 130. The addresses that differ between DLLs (their globals,
 tables and strings) are read from the original instructions' operands:
 `img.word(f + off)`, where `off` is the operand's offset in the function
 (the comments name the instruction). Slot thunks differ only in their
-slot and bind by shape (`runtime::slot_of_thunk`).
+slot and bind by shape (`runtime::slot_of_thunk`). An address inside a
+relocated word binds nothing (`Image::in_reloc`): `ffx-host` offers every
+relocated word pointing into `.text`, jump-table addresses included, and
+until 2026-11-01 the lone `ret` matched the `0xc3` first byte of 8 jump
+tables (`magic_0168` 0x10005c94, `0568` 0x10004394, `0596`, `0598`,
+`0602`, `0605`, `0610` 0x10002094, `0673` 0x10002394), so the host's
+`int3` there broke each table's first entry. The hook binds only where
+native code enters `.text` (a call or jump through a pointer the game
+holds), and jumps inside the overlay stay in Unicorn, so it never hit
+this.
 
 **The interface.** Ports are generic over `ffx_magic::Game`
 (`ffx_bridge::Mem` plus `call(target, ecx, args) -> Out` with `eax`,
@@ -377,9 +386,11 @@ battle-ifrit `magic_0309`, `0596`).
 **One port per identity.** Two ports with the same code identity
 (length, masked hash, callees and imports: `ffx_magic::sigs_overlap`)
 would both match one address and `bind` would silently take the first, so
-`PORTS` and `INTERNAL` refuse a second registration when the crate builds
-(`first_overlap`; `cargo test -p ffx-magic one_port_per_identity` names
-the pair). Before porting a function, look it up (`magic-sig --covered`)
+`cargo test -p ffx-magic one_port_per_identity` fails on a second
+registration in `PORTS` or `INTERNAL` and names the pair (run it before
+committing a port; the merge check runs it too). It was a compile-time
+assert until 2026-11-01, when the pairwise comparison had grown to 70 % of
+every `ffx-magic` build. Before porting a function, look it up (`magic-sig --covered`)
 and reuse the existing port; a test of another DLL's copy binds to it
 through `check_entry`.
 
@@ -446,6 +457,20 @@ functions after such a start had no port (and 150 `__security_check_cookie`
 copies merged behind a slot thunk, CRT). `worklist5.tsv` (from `census2`):
 4,316 identities, 52 CRT, 2,428 covered, 1,836 left (230 shared, 1,606
 own); the first census gave 4,578, 76, 2,649 and 1,853 with the same ports.
+
+Ports cut to the old rows were fixed against `census2` (magic-sigfix,
+2026-11-01): the `INTERNAL` "/GS epilogue" (9 bytes, bound only at
+labels inside 51 functions) is gone; Sigs that ran into the next
+function were cut to the function (rotate offset 242 -> 176 bytes, which
+made it `s4_small::turn_point`, and the follow task's two copies one
+port; sprite fan start 1204 -> 112, sprite fan task 1140 -> 1092,
+particle drift (5) 643 -> 528, m0070 step d410 434 -> 416, m0396 aim 338
+-> 272, which is `m0171::aim`); scene_light (735 -> 798) and
+camera_behind_start (831 -> 841) now reach their functions' ends. Of the
+44 functions behind a covered row start, 19 are
+`__security_check_cookie` copies (CRT); the other 25 (12 identities)
+are in `sf_hidden.rs`, tested in every DLL carrying them
+(`magic_sf_hidden.rs`).
 
 **Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
 and 66 internal functions (plus the slot thunks by shape): the runtime,

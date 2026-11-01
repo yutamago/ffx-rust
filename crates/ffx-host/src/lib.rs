@@ -43,6 +43,7 @@ pub mod log;
 pub mod ports;
 pub mod replay;
 pub mod report;
+pub mod stacks;
 pub mod stand_ins;
 pub mod sync;
 pub mod table;

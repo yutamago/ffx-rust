@@ -20,7 +20,13 @@ fn frame() {
         0x0772_0000 ^ a[0] ^ (k << 8)
     });
     t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[0]);
-    rec(&mut t, 779, 4, |_, a| 0x0779_0000 ^ a[2]);
+    // slot 779 copies the game flag out (it is 1 during the call)
+    rec(&mut t, 779, 4, |m, a| {
+        let k = m.r32(row(779));
+        let v = m.r32(SCRATCH + 0x600);
+        m.w32(SCRATCH + 0x4000 + 4 * (k % 0x40), v);
+        0x0779_0000 ^ a[2]
+    });
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(w(&t, 0x0a), fx);
     t.set_u32(w(&t, 0x3f), SCRATCH + 0x600);
@@ -100,7 +106,8 @@ fn camera_start() {
     let base = f32::from_bits(t.u32(w(&t, 0x36)));
     let hi = f32::from_bits(t.u32(w(&t, 0x45)));
     let lo = f32::from_bits(t.u32(w(&t, 0x59)));
-    let mut angles = vec![base, base - hi - 1.0, base - lo + 1.0, f32::NAN];
+    // h = 0, above HI, below LO, NaN, and inside (LO, 0)
+    let mut angles = vec![base, base - hi - 1.0, base - lo + 1.0, f32::NAN, base + 1.0];
     for bound in [hi, lo] {
         let guess = (base - bound).to_bits();
         if let Some(r) = (0..256u32)

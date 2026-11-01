@@ -74,7 +74,8 @@ pub fn aim<G: crate::Game>(g: &mut G, img: &Image, f: u32, out: u32, from: u32, 
     to
 }
 
-/// [`aim`] (272 bytes, 1 overlay).
+/// [`aim`] (272 bytes, 2 overlays: also `magic_0396` 0x10003910, whose
+/// Sig ran 66 bytes into the next function until census2, 2026-11-01).
 pub const AIM: Sig = Sig {
     len: 272,
     hash: 0xfe5c_16a6_9bb7_6c27,
