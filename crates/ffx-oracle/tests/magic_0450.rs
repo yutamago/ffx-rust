@@ -206,15 +206,21 @@ fn place_camera() {
         0x329
     });
     rec(&mut t, 229, 6, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
     });
     rec(&mut t, 248, 3, |m, a| {
+        let w = m.r32(a[1] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[1] + 4 * i).wrapping_add(m.r32(a[2] + 4 * i));
+            let v = m
+                .r32(a[1] + 4 * i)
+                .wrapping_add(m.r32(a[2] + 4 * i))
+                .wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x248
@@ -270,15 +276,21 @@ fn matrix_stubs(t: &mut Twin) {
         });
     }
     rec(t, 229, 6, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
     });
     rec(t, 248, 3, |m, a| {
+        let w = m.r32(a[1] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[1] + 4 * i).wrapping_add(m.r32(a[2] + 4 * i));
+            let v = m
+                .r32(a[1] + 4 * i)
+                .wrapping_add(m.r32(a[2] + 4 * i))
+                .wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x248
@@ -419,8 +431,10 @@ fn shrink() {
         0x327
     });
     rec(&mut t, 229, 3, |m, a| {
+        // the vector's w mixed into every lane, so a w left out shows
+        let w = m.r32(a[2] + 0xc);
         for i in 0..4 {
-            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            let v = (m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i)).wrapping_add(w);
             m.w32(a[0] + 4 * i, v);
         }
         0x229
