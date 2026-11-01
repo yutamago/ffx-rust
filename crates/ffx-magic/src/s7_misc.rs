@@ -4419,3 +4419,111 @@ pub const LIT_COLOUR_NODE: Sig = Sig {
     calls: &[(0x22d, Callee::Any), (0x2fb, Callee::Any)],
     imports: &[],
 };
+
+/// A summon's load wait, then its objects (cdecl, no arguments): busy
+/// while slot 225 `(1)` is not 0; once, `*G_A` 0, slot 226 `(*G_B, 1)`
+/// and `*G_A = 1`; busy while slot 227 `(*G_B)` is below 1; then the
+/// actors' objects start ([`actors_objects_start`]) and the two
+/// callbacks `*G_1 = CB1`, `*G_2 = CB2` are set. Returns 0.
+///
+/// `magic_0010` 0x10001210 (119 bytes; 2 DLLs).
+pub fn summon_load_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    if slot(g, img, f, 0x1, 225, fr.ecx, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    if g.read::<u32>(w(0x18)) == 0 {
+        let b = g.read::<u32>(w(0x27));
+        slot(g, img, f, 0x1f, 226, fr.ecx, &[b, 1]);
+        g.write::<u32>(w(0x38), 1);
+    }
+    let b = g.read::<u32>(w(0x47));
+    if slot(g, img, f, 0x41, 227, fr.ecx, &[b]).eax.cast_signed() < 1 {
+        return Ret::eax(0);
+    }
+    let start = Frame {
+        at: img.rel32_target(f + 0x5c),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    actors_objects_start(g, img, &start);
+    g.write::<u32>(w(0x62), w(0x66));
+    g.write::<u32>(w(0x6c), w(0x70));
+    Ret::eax(0)
+}
+
+/// [`summon_load_objects`] (the `rel32`: [`actors_objects_start`]).
+pub const SUMMON_LOAD_OBJECTS: Sig = Sig {
+    len: 119,
+    hash: 0x2da6_1889_6875_2369,
+    calls: &[(0x5c, Callee::Sig(&ACTORS_OBJECTS_START))],
+    imports: &[],
+};
+
+/// An emitter set up and aimed (internal: `ecx` = the emitter `E`): `E[0]`
+/// = slot 719 `(G_D, 9, 0)`, u16 `+8 = -1`, `+4 = 1`, u16 `+0xa = 0x200`,
+/// u16 `+0x284 = 1`, `+0x1c = 0x80808080`, `+0x20 = +0x278 = 0.07`; the
+/// sprites at `E+0x24` set up with slot 719's second answer and the
+/// colour at `E+0xc`
+/// ([`sprite_init_colour`](crate::sb_misc::sprite_init_colour)); the
+/// colours `+0x230 = 0x40808080`, `+0x234 = 0x808080`, `+0x248 = 8`,
+/// `+0x240 = 3.0`, `+0x23c = 0.8`; then it jumps to the aimed emitter
+/// ([`aimed_emitter`], `xmm1` = `K`), whose `eax` it returns.
+///
+/// `magic_0284` 0x10001f70 (197 bytes, `ecx`; 4 DLLs).
+pub fn emitter_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let e = fr.ecx;
+    let mut st = Pushes::default();
+    st.push_all(&[0, 9, w(0x11)]);
+    let h = st.call(g, slot_target(g, w(0x1), 719), e).eax;
+    st.pop(3);
+    g.write::<u32>(e, h);
+    g.write::<u16>(e + 8, 0xffff);
+    g.write::<u32>(e + 4, 1);
+    g.write::<u16>(e + 0xa, 0x200);
+    g.write::<u16>(e + 0x284, 1);
+    st.push_all(&[e + 0xc, 0, 9, w(0x6d)]);
+    g.write::<u32>(e + 0x1c, 0x8080_8080);
+    g.write::<u32>(e + 0x20, 0x3d8f_5c29);
+    g.write::<u32>(e + 0x278, 0x3d8f_5c29);
+    let h2 = st.call(g, slot_target(g, w(0x46), 719), e).eax;
+    // the sprites' entry `esp`: `push esi`, the colour word and the call
+    let esp = fr.esp.wrapping_sub(0xc);
+    g.write::<u32>(esp + 4, e + 0xc);
+    crate::sb_misc::sprite_init_colour(g, esp, e + 0x24, h2);
+    for (at, v) in [
+        (0x230u32, 0x4080_8080u32),
+        (0x234, 0x0080_8080),
+        (0x248, 8),
+        (0x240, 0x4040_0000),
+        (0x23c, 0x3f4c_cccd),
+    ] {
+        g.write::<u32>(e + at, v);
+    }
+    let k = g.read::<u32>(w(0x84));
+    let mut xmm = fr.xmm;
+    xmm[1] = u128::from(k);
+    let aim = Frame {
+        at: img.rel32_target(f + 0xc1),
+        ecx: e,
+        xmm,
+        ..*fr
+    };
+    Ret::eax(aimed_emitter(g, img, &aim))
+}
+
+/// [`emitter_setup`] (the `rel32`s:
+/// [`sprite_init_colour`](crate::sb_misc::sprite_init_colour) and the
+/// tail jump to [`aimed_emitter`]).
+pub const EMITTER_SETUP: Sig = Sig {
+    len: 197,
+    hash: 0x8492_c8fb_a2db_85eb,
+    calls: &[
+        (0x7c, Callee::Sig(&crate::sb_misc::SPRITE_INIT_COLOUR)),
+        (0xc1, Callee::Sig(&AIMED_EMITTER)),
+    ],
+    imports: &[],
+};
