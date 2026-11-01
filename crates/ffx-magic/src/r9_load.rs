@@ -187,4 +187,6 @@ copies! {
     load_0084 => LOAD_0084, One, crate::r11_fades::state_yaw_two_fades, crate::r11_fades::STATE_YAW_TWO_FADES_0084;
     /// `magic_0102` 0x10001300.
     load_0102 => LOAD_0102, One, crate::r11_fades::kinds_two_fades, crate::r11_fades::KINDS_TWO_FADES_0102;
+    /// `magic_0274` 0x100032d0.
+    load_0274 => LOAD_0274, Zero, crate::r11_objects::two_objects_0274, crate::r11_objects::TWO_OBJECTS_0274;
 }

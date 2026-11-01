@@ -573,3 +573,106 @@ pub const PART_AT_EFFECT_0429: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `mov dword [reg + d8], imm32` (`c7 4x d8`) at each instruction offset
+/// of `ats`, `reg` = `base`.
+fn disp8_stores<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, ats: &[u32]) {
+    for &at in ats {
+        let d = byte(img, f + at + 2);
+        g.write::<u32>(base.wrapping_add(d), img.word(f + at + 3));
+    }
+}
+
+/// Parameter family P070 (`magic_0162` 0x10002f90 and `magic_0586`
+/// 0x10002ba0, 309 bytes; the block offsets differ, read from the
+/// code): with `B = *G_B` (`+0x0c`), the object `B + 0x390` starts
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale
+/// `*K` `+0x04`, index 3); its point gets four words of `B` (the `mov`
+/// pairs from `+0x22`), `y` less `K2` (`+0x64`), and one more word (`+0x5a`,
+/// `+0x68`); the state `S = B + d` (`+0x82`) set (`+0x0`..`+0x14`, halfword
+/// `+0x18` 0) and handed to a task node ([`take`](crate::sa_pool::take),
+/// owner `+0x74`; byte 1, `+0x14` = `S`) appended to the task list (first
+/// `+0xba`, last `+0xd1`); the fader `F = B + d` (`+0xe9`) set up
+/// ([`fader_task`](crate::s4_small::fader_task)), its halfword `+0x2c` |=
+/// 3 and seven words set. Returns the fader task's `eax`.
+pub fn fader_start_p070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x04));
+    let b = g.read::<u32>(w(0x0c));
+    let obj = b.wrapping_add(w(0x15));
+    let at = img.rel32_target(f + 0x1e);
+    crate::s4_misc::start_object_plain(g, img, at, obj, scale, byte(img, f + 0x1a));
+    for k in 0..4 {
+        let v = g.read::<u32>(b.wrapping_add(w(0x24 + 12 * k)));
+        g.write::<u32>(obj.wrapping_add(w(0x2a + 12 * k)), v);
+    }
+    let y = sub(
+        g.read::<f32>(obj.wrapping_add(w(0x56))),
+        g.read::<f32>(w(0x64)),
+    );
+    let v = g.read::<u32>(b.wrapping_add(w(0x5c)));
+    g.write::<u32>(obj.wrapping_add(w(0x6a)), v);
+    g.write::<f32>(obj.wrapping_add(w(0x7c)), y);
+    let state = b.wrapping_add(w(0x82));
+    g.write::<u32>(state, w(0x88));
+    disp8_stores(g, img, f, state, &[0x8c, 0x93, 0x9a, 0xa1, 0xa8]);
+    g.write::<u16>(state + 0x18, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xb4), w(0x74));
+    let first = g.read::<u32>(w(0xba));
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(0x14), state);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0xe3), node);
+    } else {
+        let last = g.read::<u32>(w(0xd1));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+    }
+    let fader = b.wrapping_add(w(0xe9));
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0xf3), node);
+    let call = Frame {
+        at: img.rel32_target(f + 0xf8),
+        esp: fr.esp.wrapping_sub(0xc),
+        ecx: fader,
+        ..*fr
+    };
+    let out = crate::s4_small::fader_task(g, img, &call);
+    let bits = g.read::<u16>(fader + 0x2c);
+    g.write::<u16>(fader + 0x2c, bits | 3);
+    disp8_stores(
+        g,
+        img,
+        f,
+        fader,
+        &[0x102, 0x109, 0x110, 0x117, 0x11e, 0x125, 0x12c],
+    );
+    Ret::eax(out.eax)
+}
+
+/// [`fader_start_p070`] in each member (hash, start, take, fader `Sig`s).
+macro_rules! fader_start_p070_copies {
+    ($($sig:ident, $hash:literal, $doc:literal;)*) => {
+        $(
+            #[doc = concat!("[`fader_start_p070`] in ", $doc, ".")]
+            pub const $sig: Sig = Sig {
+                len: 309,
+                hash: $hash,
+                calls: &[
+                    (0x1e, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+                    (0xb4, Callee::Sig(&crate::sa_pool::TAKE)),
+                    (0xf8, Callee::Sig(&crate::s4_small::FADER_TASK_40)),
+                ],
+                imports: &[],
+            };
+        )*
+    };
+}
+
+fader_start_p070_copies! {
+    FADER_START_0162, 0x058e_f6b6_e9fd_b1da, "`magic_0162` 0x10002f90";
+    FADER_START_0586, 0x93ce_da9d_0e84_1fba, "`magic_0586` 0x10002ba0";
+}

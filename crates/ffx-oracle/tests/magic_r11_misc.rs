@@ -210,3 +210,27 @@ fn part_at_effect_0429() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// Parameter family P070 (`r11_misc::fader_start_p070`, `magic_0162`
+/// 0x10002f90 and `magic_0586` 0x10002ba0): the task list empty and not.
+#[test]
+fn fader_start_p070() {
+    for (dll, rva) in [(162u16, 0x2f90u32), (586, 0x2ba0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+        for listed in [false, true] {
+            magic_r11::pools(&mut t, f, 309);
+            magic_r11::object_slots(&mut t);
+            let start = t.img.rel32_target(f + 0x1e);
+            magic_r11::object_start_auto(&mut t, start);
+            let b = SCRATCH + 0x1_0000;
+            t.write(b, &vec![0x3b; 0x9000]);
+            t.set_u32(op(&t, 0x0c), b);
+            t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+            t.set_u32(op(&t, 0xba), if listed { SCRATCH + 0x600 } else { 0 });
+            t.set_u32(op(&t, 0xd1), SCRATCH + 0x600);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

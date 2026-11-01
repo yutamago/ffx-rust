@@ -687,3 +687,36 @@ pub fn kinds_setup(t: &mut magic::Twin, f: u32, k1: bool, k2: bool, listed: bool
     rec(t, 390, 1, move |_, a| if a[0] == 0x77 { c2 } else { c1 });
     t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
 }
+
+/// What `r11_objects::two_objects_0274` (at `f`) needs: the pools, the
+/// slots (268 fills the vector; 333 answers `yaw`), the object starts,
+/// `G_H`, the first actor, the records and the task list.
+pub fn two_objects_setup(t: &mut magic::Twin, f: u32, yaw: f32, listed: bool) {
+    let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    pools(t, f, 807);
+    object_slots(t);
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(a[2] + 4 * i, 0x4000_0000 + (a[0] & 0xff) * 0x1000 + i);
+        }
+        0x268
+    });
+    rec(t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    rec(t, 413, 1, |_, a| 0x0413_0000 ^ a[0]);
+    rec(t, 333, 1, |_, a| a[0] ^ 0x333);
+    let v = SCRATCH + 0x94;
+    t.set_u32(v, yaw.to_bits());
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(v))));
+    for s in [0x5f, 0x169] {
+        let start = t.img.rel32_target(f + s);
+        object_start_auto(t, start);
+    }
+    t.set_u32(op(t, 0x7f), 0x7f7f);
+    first_actor(t, f, 0x16e, 0x182);
+    for o in [0x10a, 0x15a, 0x23b, 0x28b, 0x29b, 0x2a5, 0x2ad, 0x2c5] {
+        t.set_u32(op(t, o), 0x5a5a_5a5b);
+    }
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(op(t, 0x2e9), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(op(t, 0x2f9), SCRATCH + 0x600);
+}

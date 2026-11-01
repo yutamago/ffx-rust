@@ -422,3 +422,10 @@ fn load_0102() {
         magic_r11::kinds_setup(t, start, true, false, false);
     });
 }
+
+#[test]
+fn load_0274() {
+    copy(274, 0x32d0, false, |t, start| {
+        magic_r11::two_objects_setup(t, start, 1.0, false);
+    });
+}

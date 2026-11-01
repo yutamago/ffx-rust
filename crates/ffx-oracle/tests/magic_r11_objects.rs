@@ -144,3 +144,29 @@ fn sized_actors_0233() {
         );
     }
 }
+
+/// `magic_0274` 0x10003400 (`r11_objects::two_objects_0274`): the yaw on
+/// each side of its wraps and NaN, the task list empty and not.
+#[test]
+fn two_objects_0274() {
+    let Some(mut t) = twin(274) else { return };
+    let f = t.at(0x3400);
+    let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+    let k = kf(&t, 0xa9);
+    let (hi, lo) = (kf(&t, 0xc0), kf(&t, 0xd0));
+    for (v, listed) in [
+        (0.0f32, false),
+        (k - hi - 1.0, true),
+        (k - lo + 1.0, true),
+        (f32::NAN, false),
+    ] {
+        magic_r11::two_objects_setup(&mut t, f, v, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r11_objects::two_objects_0274,
+        );
+    }
+}

@@ -836,3 +836,159 @@ pub const SIZED_ACTORS_0233: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Two effect objects, the second at the first actor (`magic_0274`
+/// 0x10003400, 807 bytes, a /GS frame): `*G_A`/`*G_B` set, slot 719
+/// `(NAME, 8, 0)` into `G_PART` (`+0x3e`), the part set up; `OBJ1`
+/// (`+0x53`, scale `*K` `+0x4b`) starts
+/// ([`start_object_at`](crate::s4_misc::start_object_at), `(1, 0x16, -,
+/// 0)`); slot 262 `(*G_H, P, P + 4, P + 8)` (`+0x7f`; the immediates
+/// `+0x79`, `+0x74`, `+0x69`), `P.w` 1.0, slot 333 `(*G_H)`'s float `v`
+/// makes `K3 - v` (`+0xa9`) wrapped once (above `+0xc0` less `T`
+/// `+0xb6`, below `+0xd0` plus `T`) into `+0xfa`; a word and the first
+/// record set; `OBJ2` (`+0xf2`, scale `+0xe1`, `(0, 0x26, -, CB)`
+/// `+0xe7`) starts; slot 262 `(chr, Q, Q + 4, Q + 8)` for the first
+/// actor's character (`+0x16e`, `+0x182`; the immediates `+0x18c`,
+/// `+0x17b`, `+0x173`), slot 268 `(chr, 6, &V)` (`V` on the frame at
+/// `ebp - 0x14`), `Q.y` = `V.y`, `Q.w` 1.0; slot 333 `(*G_H)` again:
+/// `K3 - v` wrapped (`HI` `+0x1eb`, `LO` `+0x1f3`, `T` `+0x1fb`), plus
+/// `HI` and wrapped again, into `+0x235`; the second record and the
+/// colour bytes set; the counters' task
+/// ([`counted_task`](crate::s4_small::counted_task)), the actor block
+/// ([`me_block`](crate::sa_misc::me_block), the immediate `+0x2d1`); a
+/// pool node ([`take`](crate::sa_pool::take), owner `+0x2de`) appended to
+/// the task list (first `+0x2e9`, last `+0x2f9`). Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn two_objects_0274<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let wrap = |x: f32, hi: f32, lo: f32, t: f32| {
+        if x > hi {
+            sub(x, t)
+        } else if lo > x {
+            add(x, t)
+        } else {
+            x
+        }
+    };
+    let half = |img: &Image, at: u32| {
+        let b = img.word(at).to_le_bytes();
+        u16::from_le_bytes([b[0], b[1]])
+    };
+    let ebp = fr.esp.wrapping_sub(4);
+    let v_at = ebp - 0x14;
+    let s719 = slot_target(g, w(0x11), 0xb3c / 4);
+    stores(g, img, f, &[0x24, 0x2e]);
+    let part = g.call(s719, 0, &[w(0x20), 8, 0]).eax;
+    g.write::<u32>(w(0x3e), part);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x43));
+    let at = img.rel32_target(f + 0x5f);
+    let (index, owner) = (
+        crate::r11_misc::byte(img, f + 0x5d),
+        crate::r11_misc::byte(img, f + 0x5b),
+    );
+    crate::s4_misc::start_object_at(g, img, at, w(0x53), k(g, 0x4b), index, owner, 0);
+    let mut s = crate::pushes::Pushes::default();
+    // the start's words stay under (the pushed `ecx` and the rest left out)
+    s.push_all(&[owner, index]);
+    let h = g.read::<u32>(w(0x7f));
+    s.push_all(&[w(0x69), w(0x74), w(0x79), h]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x64), 0x418 / 4), 0);
+    let t333 = g.read::<u32>(w(0x86));
+    s.push(g.read::<u32>(w(0x8c)));
+    stores(g, img, f, &[0x90]);
+    // call width: 12 (Pushes caps the words at 12)
+    let v = crate::m0018::st0_f32(s.call(g, g.read::<u32>(t333 + 0x534), 0).st0);
+    let t = k(g, 0xb6);
+    let yaw = wrap(sub(k(g, 0xa9), v), k(g, 0xc0), k(g, 0xd0), t);
+    g.write::<f32>(w(0xfa), yaw);
+    stores(
+        g,
+        img,
+        f,
+        &[0xfe, 0x108, 0x112, 0x11c, 0x126, 0x130, 0x13a, 0x144, 0x14e],
+    );
+    g.write::<u16>(w(0x15a), 0);
+    stores(g, img, f, &[0x15e]);
+    let at = img.rel32_target(f + 0x169);
+    let owner2 = crate::r11_misc::byte(img, f + 0xef);
+    crate::s4_misc::start_object_at(g, img, at, w(0xf2), k(g, 0xe1), 0, owner2, w(0xe7));
+    let sel = g.read::<u32>(w(0x16e));
+    let b = u32::from(g.read::<u8>(sel));
+    let chr = g.read::<u32>(w(0x182).wrapping_add(4 * b));
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[owner2, 0]);
+    s.push_all(&[w(0x173), w(0x17b), w(0x18c), chr]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x187), 0x418 / 4), 0);
+    s.push_all(&[v_at, 6, chr]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x19e), 0x430 / 4), 0);
+    let vy = g.read::<u32>(v_at + 4);
+    let t333 = g.read::<u32>(w(0x1b3));
+    s.push(g.read::<u32>(w(0x1b9)));
+    g.write::<u32>(w(0x1c1), vy);
+    stores(g, img, f, &[0x1c5]);
+    // call width: 12 (Pushes caps the words at 12)
+    let v = crate::m0018::st0_f32(s.call(g, g.read::<u32>(t333 + 0x534), 0).st0);
+    let (hi, lo, t) = (k(g, 0x1eb), k(g, 0x1f3), k(g, 0x1fb));
+    let x = wrap(sub(k(g, 0x1de), v), hi, lo, t);
+    let yaw2 = wrap(add(x, hi), hi, lo, t);
+    g.write::<f32>(w(0x235), yaw2);
+    stores(
+        g,
+        img,
+        f,
+        &[0x239, 0x243, 0x24d, 0x257, 0x261, 0x26b, 0x275, 0x27f],
+    );
+    g.write::<u16>(w(0x28b), 0);
+    stores(g, img, f, &[0x28f, 0x299]);
+    g.write::<u8>(w(0x2a5), img.word(f + 0x2a9).to_le_bytes()[0]);
+    g.write::<u16>(img.word(f + 0x2ad), half(img, f + 0x2b1));
+    g.write::<u8>(w(0x2b4), 0);
+    stores(g, img, f, &[0x2b8]);
+    g.write::<u16>(img.word(f + 0x2c5), half(img, f + 0x2c9));
+    let counted = Frame {
+        at: img.rel32_target(f + 0x2cc),
+        esp: ebp - 0x18 - 4,
+        ..*fr
+    };
+    crate::s4_small::counted_task(g, img, &counted);
+    crate::sa_misc::me_block(g, img, img.rel32_target(f + 0x2d6), w(0x2d1));
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x2e3), w(0x2de));
+    let first = g.read::<u32>(w(0x2e9));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x30b), node);
+    } else {
+        let last = g.read::<u32>(w(0x2f9));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x316), node);
+    // __security_check_cookie leaves `eax`
+    Ret::eax(0)
+}
+
+/// [`two_objects_0274`] (`magic_0274` 0x10003400).
+pub const TWO_OBJECTS_0274: Sig = Sig {
+    len: 807,
+    hash: 0x37d0_3868_dd9d_0325,
+    calls: &[
+        (0x43, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x5f, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x169, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x2cc, Callee::Sig(&crate::s4_small::COUNTED_TASK_16)),
+        (0x2d6, Callee::Sig(&crate::sa_misc::ME_BLOCK)),
+        (0x2e3, Callee::Sig(&crate::sa_pool::TAKE)),
+        // __security_check_cookie
+        (0x31f, Callee::Any),
+    ],
+    imports: &[],
+};
