@@ -43,4 +43,11 @@ ported! {
         let ebp = f.at() + 4 * rb::HISTORY_FRAME_WORDS;
         rb::history::camera_history(&mut mem(), ebp, this, camera)
     }
+    /// `Phyre_PPostProcessing_PDepthOfField_renderPass_00a1ca10(effect; renderer, a, near, far, out)`:
+    /// the surfaces and bindings in a frame; the first error or the last call's `eax`.
+    Phyre_PPostProcessing_PDepthOfField_renderPass_00a1ca10 @ 0x00a1_ca10 => extern "thiscall" fn rbp2_00a1ca10(this: u32, renderer: u32, a: u32, near: u32, far: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<{ rb::DOF_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * rb::DOF_FRAME_WORDS;
+        rb::dof::dof_render_pass(&mut mem(), ebp, this, renderer, a, near, far, out)
+    }
 }

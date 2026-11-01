@@ -742,3 +742,378 @@ pub mod history {
         eax
     }
 }
+
+/// `PRendererBase::renderMeshInstanceForPass_005b9a70` (thiscall
+/// `(renderer; instance)`).
+pub const RENDER_FOR_PASS: u32 = 0x005b_9a70;
+/// `Phyre_PParameterBuffer_setTextureChecked_0056e670` (thiscall
+/// `(buffer; param, binding)`).
+pub const SET_TEXTURE_CHECKED: u32 = 0x0056_e670;
+/// `ShaderParamBuffer_SetValue` (thiscall `(buffer; param, src)`).
+pub const SET_VALUE: u32 = 0x0063_8780;
+/// The depth-of-field passes' render states (`renderer + 0x48`): the
+/// first pass, the second, the two blur passes, the final one.
+pub const DOF_STATES: [u32; 4] = [0x0194_4d14, 0x0194_4934, 0x0194_35d8, 0x0194_4d24];
+/// `0x00a1ca10`'s frame below `ebp` (five surfaces from `ebp - 0x8c`, the
+/// bindings at `- 0x3c`, `- 0x2c`, `- 0x1c`), in words.
+pub const DOF_FRAME_WORDS: u32 = 0x8c / 4;
+
+pub mod dof {
+    //! `0x00a1ca10` over game memory.
+
+    #[allow(clippy::wildcard_imports)] // the module's constants
+    use super::*;
+    use ffx_graphic::host::{Conv, Host};
+
+    fn this_call(h: &mut impl Host, f: u32, this: u32, args: &[u32]) -> u32 {
+        h.call_sym(f, Conv::Thiscall(this), args)
+    }
+
+    /// The parameter buffer (`[[fx + 0xf3c] + 4]`).
+    fn buffer(h: &impl Host, fx: u32) -> u32 {
+        let params: u32 = h.read(fx + 0xf3c);
+        h.read(params + 4)
+    }
+
+    /// Where a parameter's bytes go in `buffer`: `None` (3) when the
+    /// offset is below 4 or they don't fit the buffer's size word.
+    fn place(h: &impl Host, param: u32, buffer: u32) -> Option<(u32, u32)> {
+        let offset = u32::from(h.read::<u16>(param + 8));
+        let size = u32::from(h.read::<u16>(param + 0xa) & 0x1fff);
+        if offset.wrapping_add(size) > h.read::<u32>(buffer) || offset < 4 {
+            None
+        } else {
+            Some((offset, size))
+        }
+    }
+
+    /// A texture parameter (`fx + slot`) set as `setTextureChecked` does,
+    /// inline: the binding `{0x42, 0, fx + owner, texture}` at `binding`;
+    /// 5 for a type other than 0x42, 0xd9..0xdc or 0x12,
+    /// `TrophyManager_Install`'s error, 3 when it doesn't fit; 0.
+    fn set_texture(
+        h: &mut impl Host,
+        fx: u32,
+        slot: u32,
+        owner: u32,
+        texture: u32,
+        binding: u32,
+    ) -> u32 {
+        let param: u32 = h.read(fx + slot);
+        if param == 0 {
+            return 0;
+        }
+        let buffer = buffer(h, fx);
+        let kind: u8 = h.read(param + 2);
+        let owner = fx.wrapping_add(owner);
+        h.write(binding, [0x42u32, 0, owner, texture]);
+        if !matches!(kind, 0x42 | 0xd9..=0xdc | 0x12) {
+            return 5;
+        }
+        if owner != 0 && texture != 0 {
+            let err = this_call(h, TROPHY_INSTALL, owner, &[texture]);
+            if err != 0 {
+                return err;
+            }
+        }
+        match place(h, param, buffer) {
+            None => 3,
+            Some((offset, size)) => {
+                h.call_sym(
+                    MEMCPY,
+                    Conv::Cdecl,
+                    &[offset.wrapping_add(buffer), binding, size],
+                );
+                0
+            }
+        }
+    }
+
+    /// A parameter (`fx + slot`) taking the effect's bytes at `fx + src`:
+    /// 1 when that address is 0, 3 when they don't fit; 0.
+    fn set_bytes(h: &mut impl Host, fx: u32, slot: u32, src: u32) -> u32 {
+        let param: u32 = h.read(fx + slot);
+        if param == 0 {
+            return 0;
+        }
+        let buffer = buffer(h, fx);
+        let src = fx.wrapping_add(src);
+        if src == 0 {
+            return 1;
+        }
+        match place(h, param, buffer) {
+            None => 3,
+            Some((offset, size)) => {
+                h.call_sym(
+                    MEMCPY,
+                    Conv::Cdecl,
+                    &[offset.wrapping_add(buffer), src, size],
+                );
+                0
+            }
+        }
+    }
+
+    /// A render target's texture for a binding: `[target]` unless its
+    /// byte `+4` is set (0 then).
+    fn texture_of(h: &impl Host, fx: u32, slot: u32) -> u32 {
+        let target: u32 = h.read(fx + slot);
+        if h.read::<u8>(target + 4) == 0 {
+            h.read(target)
+        } else {
+            0
+        }
+    }
+
+    /// `setTextureChecked(buffer; [fx + slot], binding)` with the binding
+    /// `{0x42, 0, fx + owner, texture}` at `ebp - 0x3c`, when the slot is
+    /// set.
+    fn bind(h: &mut impl Host, ebp: u32, fx: u32, slot: u32, owner: u32, texture: u32) -> u32 {
+        let param: u32 = h.read(fx + slot);
+        if param == 0 {
+            return 0;
+        }
+        let b = ebp - 0x3c;
+        h.write(b, [0x42u32, 0, fx.wrapping_add(owner), texture]);
+        let buffer = buffer(h, fx);
+        this_call(h, SET_TEXTURE_CHECKED, buffer, &[param, b])
+    }
+
+    /// `ShaderParamBuffer_SetValue(buffer; [fx + slot], fx + src)` when the
+    /// slot is set.
+    fn set_value(h: &mut impl Host, fx: u32, slot: u32, src: u32) -> u32 {
+        let param: u32 = h.read(fx + slot);
+        if param == 0 {
+            return 0;
+        }
+        let buffer = buffer(h, fx);
+        this_call(h, SET_VALUE, buffer, &[param, fx.wrapping_add(src)])
+    }
+
+    /// A pass into the surface at `surface` (made by [`open`]): the colour
+    /// target, a scene with the
+    /// mesh instance (`renderMeshInstance` for the first pass,
+    /// `renderMeshInstanceForPass` after); the first error.
+    fn pass(h: &mut impl Host, r: u32, fx: u32, surface: u32, first: bool) -> u32 {
+        let err = this_call(h, SET_COLOR_TARGET, r, &[surface, 0]);
+        if err != 0 {
+            return err;
+        }
+        let err = this_call(h, BEGIN_SCENE, r, &[0]);
+        if err != 0 {
+            return err;
+        }
+        let instance: u32 = h.read(fx + 0xf38);
+        let err = if first {
+            let contexts: u32 = h.read(r + 0x13c);
+            let list: u32 = h.read(instance + 0x10);
+            this_call(h, RENDER_MESH_INSTANCE, r, &[instance, list, 0, contexts])
+        } else {
+            this_call(h, RENDER_FOR_PASS, r, &[instance])
+        };
+        if err != 0 {
+            return err;
+        }
+        this_call(h, END_SCENE, r, &[1])
+    }
+
+    /// The surfaces made so far (at most five), to destroy in reverse.
+    struct Surfaces([u32; 5], usize);
+
+    impl Surfaces {
+        fn push(&mut self, at: u32) {
+            if let Some(slot) = self.0.get_mut(self.1) {
+                *slot = at;
+                self.1 += 1;
+            }
+        }
+    }
+
+    /// Sets the render state and constructs the pass's surface of
+    /// `[fx + target]`.
+    fn open(h: &mut impl Host, r: u32, fx: u32, state: u32, target: u32, surface: u32) {
+        let s = h.rebase(state);
+        h.write(r + 0x48, s);
+        let t: u32 = h.read(fx + target);
+        this_call(h, SURFACE_CTOR, surface, &[t, 0]);
+    }
+
+    /// The passes after the setup; `surfaces` collects the ones to
+    /// destroy.
+    fn passes(
+        h: &mut impl Host,
+        ebp: u32,
+        fx: u32,
+        r: u32,
+        tex: u32,
+        out: u32,
+        surfaces: &mut Surfaces,
+    ) -> u32 {
+        let [s1, s2, s3, s4] = DOF_STATES;
+        let surface = ebp - 0x8c;
+        open(h, r, fx, s1, 0xfb0, surface);
+        surfaces.push(surface);
+        let err = pass(h, r, fx, surface, true);
+        if err != 0 {
+            return err;
+        }
+        let surface = ebp - 0x7c;
+        open(h, r, fx, s2, 0xf2c, surface);
+        surfaces.push(surface);
+        let err = pass(h, r, fx, surface, false);
+        if err != 0 {
+            return err;
+        }
+        let err = set_value(h, fx, 0xfa0, 0x51c);
+        if err != 0 {
+            return err;
+        }
+        let t = texture_of_if(h, fx, 0xf88, 0xf2c);
+        let err = bind(h, ebp, fx, 0xf88, 0xf40, t);
+        if err != 0 {
+            return err;
+        }
+        let err = set_value(h, fx, 0xf9c, 0x50c);
+        if err != 0 {
+            return err;
+        }
+        let surface = ebp - 0x6c;
+        open(h, r, fx, s3, 0xf30, surface);
+        surfaces.push(surface);
+        let err = pass(h, r, fx, surface, false);
+        if err != 0 {
+            return err;
+        }
+        let err = set_value(h, fx, 0xfa0, 0x58c);
+        if err != 0 {
+            return err;
+        }
+        let t = texture_of_if(h, fx, 0xf88, 0xf30);
+        let err = bind(h, ebp, fx, 0xf88, 0xf64, t);
+        if err != 0 {
+            return err;
+        }
+        let surface = ebp - 0x5c;
+        open(h, r, fx, s3, 0xf34, surface);
+        surfaces.push(surface);
+        let err = pass(h, r, fx, surface, false);
+        if err != 0 {
+            return err;
+        }
+        let err = bind(h, ebp, fx, 0xf88, 0xf64, tex);
+        if err != 0 {
+            return err;
+        }
+        for (slot, target) in [(0xf8c, 0xf2c), (0xf90, 0xf34), (0xf98, 0xfb0)] {
+            let t = texture_of_if(h, fx, slot, target);
+            let err = bind(h, ebp, fx, slot, 0xf64, t);
+            if err != 0 {
+                return err;
+            }
+        }
+        for (slot, src) in [(0xfa4, 0x5fc), (0xfa8, 0xc1c), (0xfac, 0x90c)] {
+            let err = set_value(h, fx, slot, src);
+            if err != 0 {
+                return err;
+            }
+        }
+        // the final pass into `out` (its surface made even without one)
+        let surface = ebp - 0x4c;
+        this_call(h, SURFACE_CTOR, surface, &[out, 0]);
+        surfaces.push(surface);
+        let err = if out == 0 {
+            this_call(h, SET_COLOR_TARGET, r, &[0, 0])
+        } else {
+            this_call(h, SET_COLOR_TARGET, r, &[surface, 0])
+        };
+        if err != 0 {
+            return err;
+        }
+        let err = this_call(h, SET_DEPTH_TARGET, r, &[0]);
+        if err != 0 {
+            return err;
+        }
+        let err = this_call(h, BEGIN_SCENE, r, &[0]);
+        if err != 0 {
+            return err;
+        }
+        let state = h.rebase(s4);
+        h.write(r + 0x48, state);
+        let instance: u32 = h.read(fx + 0xf38);
+        let err = this_call(h, RENDER_FOR_PASS, r, &[instance]);
+        if err != 0 {
+            return err;
+        }
+        let err = this_call(h, END_SCENE, r, &[1]);
+        if err != 0 {
+            return err;
+        }
+        this_call(h, SET_COLOR_TARGET, r, &[0, 0])
+    }
+
+    /// The binding texture of `[fx + target]`, read only when the slot is
+    /// set (as the original reads it inside its test).
+    fn texture_of_if(h: &impl Host, fx: u32, slot: u32, target: u32) -> u32 {
+        if h.read::<u32>(fx + slot) == 0 {
+            0
+        } else {
+            texture_of(h, fx, target)
+        }
+    }
+
+    /// `Phyre_PPostProcessing_PDepthOfField_renderPass_00a1ca10(effect;
+    /// renderer, a, near, far, out)` (thiscall, ret 0x14): 0x15 without
+    /// the mesh instance (`+0xf38`); the two texture parameters (`+0xf88`
+    /// with `near`, owner `+0xf64`, binding at `ebp - 0x1c`; `+0xf94` with
+    /// `far`, owner `+0xf40`, at `ebp - 0x2c`) and three byte parameters
+    /// (`+0xfb4`..`+0xfbc` from `+0x14`..`+0x1c`) into the parameter
+    /// buffer (`[[+0xf3c] + 4]`), the first error returned; no depth
+    /// target; then four passes into the effect's targets (`+0xfb0`,
+    /// `+0xf2c`, `+0xf30`, `+0xf34`; surfaces from `ebp - 0x8c`) with
+    /// their render states and parameters (`setTextureChecked` with
+    /// bindings at `ebp - 0x3c`, `ShaderParamBuffer_SetValue`), and the
+    /// last into `out` (or no colour target), the colour target cleared
+    /// again. Every surface made is destroyed, the last first; the first
+    /// error, or the last call's `eax`. `a` is never read.
+    #[allow(clippy::too_many_arguments)] // the original's five words, the host and the frame
+    pub fn dof_render_pass(
+        h: &mut impl Host,
+        ebp: u32,
+        fx: u32,
+        renderer: u32,
+        a: u32,
+        near: u32,
+        far: u32,
+        out: u32,
+    ) -> u32 {
+        let _ = a;
+        if h.read::<u32>(fx + 0xf38) == 0 {
+            return 0x15;
+        }
+        let err = set_texture(h, fx, 0xf88, 0xf64, near, ebp - 0x1c);
+        if err != 0 {
+            return err;
+        }
+        let err = set_texture(h, fx, 0xf94, 0xf40, far, ebp - 0x2c);
+        if err != 0 {
+            return err;
+        }
+        for (slot, src) in [(0xfb4, 0x14), (0xfb8, 0x18), (0xfbc, 0x1c)] {
+            let err = set_bytes(h, fx, slot, src);
+            if err != 0 {
+                return err;
+            }
+        }
+        let err = this_call(h, SET_DEPTH_TARGET, renderer, &[0]);
+        if err != 0 {
+            return err;
+        }
+        let mut surfaces = Surfaces([0; 5], 0);
+        let err = passes(h, ebp, fx, renderer, near, out, &mut surfaces);
+        let Surfaces(at, n) = surfaces;
+        for &s in at.iter().take(n).rev() {
+            this_call(h, SURFACE_DTOR, s, &[]);
+        }
+        err
+    }
+}
