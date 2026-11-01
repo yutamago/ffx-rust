@@ -1123,6 +1123,7 @@ ports! {
     "r12h three objects 0511" => r12h_fam::THREE_OBJECTS_0511, r12h_fam::three_objects_0511;
     "r12h three objects 0589" => r12h_fam::THREE_OBJECTS_0589, r12h_fam::three_objects_0589;
     "m0505 spark record" => m0505::SPARK_RECORD, m0505::spark_record;
+    "m0512 particles task" => m0512::PARTICLES_TASK, m0512::particles_task;
     "m0664 look draw" => m0664::LOOK_DRAW, m0664::look_draw;
     "m0664 look draw fade" => m0664::LOOK_DRAW_FADE, m0664::look_draw_fade;
     "m0672 cue start" => m0638::CUE_START_0672, m0638::cue_start;

@@ -589,3 +589,61 @@ fn spark_record_0505() {
         t.check_entry(f, Call::default(), &[point], Eax::Checked);
     }
 }
+
+/// `m0512::particles_task` (0x10008b60): every step, the wait running
+/// and down, one node and two.
+#[test]
+fn particles_task_0512() {
+    let Some(mut t) = magic_l3::twin(512) else {
+        return;
+    };
+    let at = t.at(0x8b60);
+    let pnw = t.img.rel32_target(at + 0x6c);
+    let table = SCRATCH + 0x300;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x400;
+    t.set_u32(t.img.word(pnw + 0x0d), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    rec(&mut t, 941, 1, move |_, _| table);
+    for (slot, n) in [(714u32, 5), (325, 2)] {
+        rec(&mut t, slot, n, move |_, a| (slot << 16) ^ a[0]);
+    }
+    let list = t.img.word(pnw + 0x26);
+    t.set_u32(list + 0x10, list);
+    let (task, r, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x240,
+        SCRATCH + 0x280,
+    );
+    for (state, wait, two, ratio) in [
+        (0u32, 0u32, 0u32, 0.0f32),
+        (0, 2, 1, 0.0),
+        (1, 3, 0, 0.0),
+        (1, 0, 0, 0.0),
+        (1, 0xffff_ffff, 1, 0.5),
+        (1, 0, 1, 1.0e6),
+        (1, 0, 1, -3.0),
+        (2, 0, 0, 0.0),
+        (2, 5, 0, 0.0),
+        (3, 0, 0, 0.0),
+        (0x2710, 0, 0, 0.0),
+        (7, 0, 0, 0.0),
+        (0x4e20, 0, 0, 0.0),
+    ] {
+        t.write(r, &[0x3c; 0x600]);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x1c, two);
+        t.set_u32(r + 0x20, wait);
+        t.set_u32(r + 0x24, 0x40 + state);
+        t.set_u32(r + 0x28, ratio.to_bits());
+        t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
