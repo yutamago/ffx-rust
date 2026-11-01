@@ -735,4 +735,12 @@ ported! {
         let ebp = fr.at().wrapping_add(0x124);
         mn::camera_proc(&mut mem(), ebp, win, msg, id)
     }
+    // ---- round 8 (left8) (ffx_menu::l8_mbs) ----
+    /// `Ms_Gui_ShakeProc(window, msg, param)` -> 0: the battle's screen
+    /// shake debug window (its text buffer in a frame).
+    Ms_Gui_ShakeProc @ 0x007d_fde0 => extern "C" fn ms_gui_shake_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut fr = StackFrame::<{ (ffx_menu::l8_mbs::bridge::SHAKE_FRAME / 4) as usize }>::new();
+        let ebp = fr.at().wrapping_add(ffx_menu::l8_mbs::bridge::SHAKE_FRAME);
+        ffx_menu::l8_mbs::bridge::shake_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

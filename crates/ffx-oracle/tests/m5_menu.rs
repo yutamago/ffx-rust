@@ -7947,3 +7947,93 @@ fn r5b12_camera_proc_matches_the_original() {
         }
     });
 }
+
+// ---- round 8 (left8) (ffx_menu::l8_mbs) ----
+
+use ffx_menu::l8_mbs::bridge as l8b;
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_shake_proc() {
+    // every message; each button with steps of 1, 10 and 100, the
+    // auto-repeat saying go or not; counts, amplitudes and lengths at and
+    // past their limits, decays near 0 and negative, NaNs and infinities;
+    // the roundings, the on/off bits, the shake, the dump, the draw
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_fde0);
+        let window = 0x00ac_0000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let state = t.zeros(0x200);
+            let mut bytes: Vec<u8> = (0..0x200).map(|_| rng.next() as u8).collect();
+            for o in [0x178usize, 0x188, 0x19c, 0x1ac] {
+                let v = match rng.below(4) {
+                    0 => (rng.below(40) as f32 * 0.001 - 0.01).to_bits(),
+                    _ => debug_float(&mut rng),
+                };
+                bytes[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            for o in [0x18cusize, 0x1b0] {
+                bytes[o] = [0, 1, 2, 98, 99, 100, 255][rng.below(7) as usize];
+            }
+            for o in [0x18eusize, 0x1b2, 0x172, 0x196] {
+                let v: i16 = [-0x100, -0xff, 0x100, 0xff, -1, 0, 0x7fff, 0x7ffe, -0x8000]
+                    [rng.below(9) as usize];
+                let v = if rng.chance(3) { rng.next() as i16 } else { v };
+                bytes[o..o + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            t.write(state, &bytes);
+            let at = t.rebase(l8b::BTL_SCREEN);
+            t.patch(at, &state.to_le_bytes());
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::SCREEN_SHAKE2, false, 9, 0, 0x18),
+                (l8b::SHAKE_LOG, false, 1, 0, 0x19),
+                (l8b::DBG_PRINTF, false, 2, 0, 0x1a),
+            ]);
+            t.stub_import(l8b::SPRINTF_SLOT, false, 3, 0, 0x1b);
+            let params: [u32; 34] = [
+                0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x75, 0x76, 0x77, 0x78,
+                0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf2,
+                0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+            ];
+            let (msg, param) = match case % 9 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a, 0x800e][rng.below(4) as usize], 0),
+                2 => (0x8011, 0),
+                3..=7 => (
+                    [0x8005, 0x8009, 0x800d][rng.below(3) as usize],
+                    params[rng.below(34) as usize],
+                ),
+                _ => (
+                    [0x8005, 0x8002, 0x8010, 0x8012, 0x7fff][rng.below(5) as usize],
+                    [0x60, 0x6b, 0x74, 0xf9, 0xea, 0x7f][rng.below(6) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_ShakeProc",
+                0x007d_fde0,
+                Conv::Cdecl,
+                &args,
+                l8b::SHAKE_FRAME,
+                |g, ebp| Out::U32(l8b::shake_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
