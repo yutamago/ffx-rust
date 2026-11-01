@@ -1782,6 +1782,7 @@ ports! {
     "bone walk tail" => s6_misc::BONE_WALK_TAIL, s6_misc::bone_walk_tail;
     "particle drift" => s6_misc::PARTICLE_DRIFT, s6_misc::particle_drift;
     "homing part task" => s6_misc::HOMING_PART_TASK, s6_misc::homing_part_task;
+    "camera tracks" => s6_misc::CAMERA_TRACKS, s6_misc::camera_tracks;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;

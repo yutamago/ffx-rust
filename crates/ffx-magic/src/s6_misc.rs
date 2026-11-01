@@ -3578,3 +3578,121 @@ pub const HOMING_PART_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The camera tracks of a summon set from its script record (cdecl, no
+/// arguments; `R = *G_R`, `d = R+0x24 - (i16) *G_T` the frames left, `1`
+/// the constant `K1`). Track 1: `G_A = R[0]`, `G_B = 0`, `G_C = R[4]`,
+/// `G_D = d`. Without `R+0x10`: its rate `1 / (d / R[4])` with kind 3;
+/// track 2 `R[8]`, 0, the rate `1 / (d / R[0xc])`, `d`, `R[0xc]`, kind 3;
+/// track 3 from `R+0x14` by `(R+0x18 - R+0x14) / d`, `R+0x10`, kind 1.
+/// With it: track 1 also `R+0x10` and the rate `1 / d`, kind 4; track 2
+/// `R[8]`, `R[0xc]`, `R+0x10`, 0, `1 / d`, `d`, kind 4; track 3 from the
+/// record `R+0x14` (`R+0x10`, 0, `1 / d`, kinds 2 and 3, `2d`). Then the
+/// angle track from `a = R+0x1c` to `b = R+0x20`, the end taken the
+/// short way round (`b - K2 + K3` for `a < 0 < b` farther than `K2`, `b
+/// + 2 K2` for `b < 0 <= a` likewise), `d` twice and on. Returns `d`.
+///
+/// `magic_0515` 0x10003f70 (598 bytes; 4 DLLs).
+#[allow(clippy::too_many_lines)] // the original's tracks, word by word
+pub fn camera_tracks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let one = k(g, 0x4);
+    let base = i32::from(g.read::<i16>(w(0xc)));
+    let r = g.read::<u32>(w(0x14));
+    let rd = |g: &G, o: u32| g.read::<u32>(r.wrapping_add(o));
+    let left = |g: &G| rd(g, 0x24).wrapping_sub(base.cast_unsigned());
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let fl = |x: u32| x.cast_signed() as f32;
+    let d = left(g);
+    let flag = rd(g, 0x10);
+    let set = |g: &mut G, o: u32, v: u32| g.write::<u32>(w(o), v);
+    set(g, 0x2d, rd(g, 0));
+    set(g, 0x33, 0);
+    set(g, 0x3d, rd(g, 4));
+    set(g, 0x43, d);
+    let eax = if flag == 0 {
+        set(g, 0x5b, 3);
+        let rate = div(one, div(fl(d), fl(rd(g, 4))));
+        g.write::<f32>(w(0x72), rate);
+        let d = left(g);
+        let c = rd(g, 0xc);
+        let x = div(fl(d), fl(c));
+        set(g, 0x94, rd(g, 8));
+        set(g, 0x9e, flag);
+        g.write::<f32>(w(0xa6), div(one, x));
+        set(g, 0xac, d);
+        set(g, 0xb2, c);
+        set(g, 0xb8, 3);
+        let (a, b) = (
+            g.read::<f32>(r.wrapping_add(0x14)),
+            g.read::<f32>(r.wrapping_add(0x18)),
+        );
+        let d = left(g);
+        set(g, 0xd7, a.to_bits());
+        set(g, 0xe4, flag);
+        set(g, 0xee, 1);
+        g.write::<f32>(w(0xfa), div(sub(b, a), fl(d)));
+        d
+    } else {
+        g.write::<f32>(w(0x114), div(one, fl(d)));
+        set(g, 0x10c, flag);
+        set(g, 0x11a, 4);
+        let d = left(g);
+        let (c, fl10, e8) = (rd(g, 0xc), rd(g, 0x10), rd(g, 8));
+        set(g, 0x13f, e8);
+        set(g, 0x145, c);
+        set(g, 0x14b, fl10);
+        set(g, 0x151, 0);
+        g.write::<f32>(w(0x15d), div(one, fl(d)));
+        set(g, 0x163, d);
+        set(g, 0x169, 4);
+        let d = left(g);
+        let fl10 = rd(g, 0x10);
+        set(g, 0x188, r.wrapping_add(0x14));
+        set(g, 0x18e, fl10);
+        set(g, 0x194, 0);
+        g.write::<f32>(w(0x1a0), div(one, fl(d)));
+        set(g, 0x1a9, 2);
+        set(g, 0x1b3, 3);
+        d.wrapping_mul(2)
+    };
+    set(g, 0x1bc, eax);
+    let (a, b) = (
+        g.read::<f32>(r.wrapping_add(0x1c)),
+        g.read::<f32>(r.wrapping_add(0x20)),
+    );
+    let d = left(g);
+    // comiss: each test false when unordered
+    let end = if 0.0 > a {
+        let kk = k(g, 0x1e3);
+        if b > 0.0 && sub(b, a) > kk {
+            sub(k(g, 0x1f7), sub(kk, b))
+        } else {
+            b
+        }
+    } else {
+        let kk = k(g, 0x20e);
+        if 0.0 > b && sub(a, b) > kk {
+            add(add(b, kk), kk)
+        } else {
+            b
+        }
+    };
+    g.write::<f32>(w(0x22d), end);
+    g.write::<f32>(w(0x235), a);
+    g.write::<f32>(w(0x23d), b);
+    set(g, 0x242, d);
+    set(g, 0x247, d);
+    set(g, 0x24d, 1);
+    Ret::eax(d)
+}
+
+/// [`camera_tracks`] (the `jmp rel32` inside stays in the hash).
+pub const CAMERA_TRACKS: Sig = Sig {
+    len: 598,
+    hash: 0x78db_7a9c_b5b3_52d5,
+    calls: &[],
+    imports: &[],
+};

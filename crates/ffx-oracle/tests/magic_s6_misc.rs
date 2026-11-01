@@ -2604,3 +2604,44 @@ fn homing_part_tasks() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// Row 254: `magic_0515`'s camera tracks, with and without `R+0x10`, and
+/// the angle's every way round (`a`, `b` of each sign, near and far,
+/// NaN).
+#[test]
+fn camera_tracks_set() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x3f70);
+    let r = SCRATCH + 0x300;
+    t.set_u32(op(&t, f, 0x14), r);
+    t.set_u16(op(&t, f, 0xc), 5);
+    let pi = std::f32::consts::PI;
+    for (k, (flag, a, b)) in [
+        (0u32, -1.0f32, 2.0f32),
+        (1, -3.0, 3.0),
+        (0, -0.5, -0.25),
+        (1, 3.0, -3.0),
+        (0, 2.0, -0.5),
+        (1, 0.5, 1.0),
+        (0, f32::NAN, 1.0),
+        (1, 1.0, f32::NAN),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(r, &varied(0x30, k));
+        t.set_u32(r, 0x0a00_0000 + k);
+        t.set_u32(r + 4, 3 + k);
+        t.set_u32(r + 8, 0x0b00_0000 + k);
+        t.set_u32(r + 0xc, 7 + k);
+        t.set_u32(r + 0x10, flag * (0x10 + k));
+        t.set_u32(r + 0x14, (0.5 * pi).to_bits());
+        t.set_u32(r + 0x18, (-1.25f32).to_bits());
+        t.set_u32(r + 0x1c, a.to_bits());
+        t.set_u32(r + 0x20, b.to_bits());
+        t.set_u32(r + 0x24, 0x20 + 3 * k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
