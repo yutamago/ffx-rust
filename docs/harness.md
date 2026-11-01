@@ -1261,6 +1261,29 @@ the archive reader that stands in for `debugLoadForViewer` (the hook's
 `devsave.rs`). That is a host gap, not a replay fault: the replays stay
 on the extra list and pass once the host serves both.
 
+ffx-rust.exe serves both since 2026-11-01 (host-devsave,
+`crates/ffx-host/src/devsave.rs`). One run of each on PC2 (that branch
+before the Iggy compositing merge, `FFX_HARNESS_EXE=rust`, one game at a
+time), against PC2's recordings: every save loads and every replay runs to
+its end (12-21 min each), with the recordings' trace events in all six
+once the monsters' HP ranges leave out their first event (below), and the
+five field replays' shots to the pixel but one: devsave-109-sin-2 lacks the
+autosave chocobo at the bottom right (851 pixels, x 1227..1261, y
+661..706; the two original runs agree there), which that build did not
+composite (Iggy's players came with the host-iggy merge). devsave-22-luca's
+shot 1 is the same to the pixel and shot 2 differs by 1,090 pixels around
+Tidus's sword (x 564..759, y 331..526): his idle pose, the same
+difference as in the third original run (by eye).
+
+The monsters' HP ranges (`*0x011334d4+0x13d10` and the three after) are
+read through a pointer that is still 0 on the field, so their first event
+reads the 32-bit process's low memory at 0x13d10..0x16bc4: `FFX.exe`'s
+process maps it (Windows' own blocks at 0x10000), and the original reads
+one fixed value there; `ffx-rust.exe`'s arena maps nothing there and the
+trace says `-`. Every event after that is the same. `run-all.sh` passes
+those four ranges as `replay-compare.py --null-first`, which leaves the
+first event out when one side read `-` there and compares the rest.
+
 Measured on 2026-10-26: two recordings and a third original run gave the
 same traces; the settings shots were the same to a few pixels (the
 chocobo icon on Besaid beach and in the agency, which animates by the
@@ -1961,6 +1984,13 @@ The harness command `devsave <n> [lockstep]` then calls the original
 - the reply: `ok developer save <n> map <m> entrance <e> scenario <s> place
   <p> context <ctx> (from the title)`.
 
+`ffx-rust.exe` serves the same command (`crates/ffx-host/src/devsave.rs`,
+2026-11-01, host-devsave): `debugLoadForViewer` is wrapped in the
+function table, so the original `TkDebugLoadViewerSave` (in Unicorn) calls
+the same reader through the same file layer; without the harness the wrap
+runs the original. The title's part is `loadsave`'s `leave_title`, shared
+with `loadsave` there too.
+
 No save file is read or written: the sweep's games run with
 `copy_user_data: false` (an empty save folder in the sandbox). Saving from
 such a game afterwards would write the developer's state into the sandbox's
@@ -2262,7 +2292,9 @@ records).
   `FFX.exe`'s process and patches its imports and functions, where
   `ffx-host` owns the imports and the device. What it serves:
   `ping`, `stats`, `frame`, `wait`, `waitfor`, `shotwhen`, `holdfor`,
-  `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events`,
+  `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `devsave` (with the
+  archive reader under `debugLoadForViewer` in the table,
+  `crates/ffx-host/src/devsave.rs`; "Developer saves"), `trace`, `events`,
   `read`, `readp`, `readabs`, `write`, `writep`, `keys`, `key`, `pad`,
   `press`, `shot`, `gfxcapture`, `notes` (the run's notes so far, a
   failed game thread among them, listed as `events` lists), `stacks`
@@ -2286,7 +2318,7 @@ records).
   which `ffx-host`'s clock wraps (`docs/host.md`, "The clock"). There, on
   the main thread and after an in-process `--replay` script's turn, the
   trace samples, the jobs run (`call`, `wait`, `press`'s release,
-  `waitfor`, `shotwhen`, `holdfor`, `loadsave`, `pin`) and lockstep holds
+  `waitfor`, `shotwhen`, `holdfor`, `loadsave`, `devsave`, `pin`) and lockstep holds
   until the script allows more updates; then the clock's loader, vsync
   and FMOD turns, the `callnext` calls and the update. The clock is always
   virtual and the frames always run back to back (fast mode); lockstep is

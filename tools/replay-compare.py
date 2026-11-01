@@ -9,7 +9,7 @@ traces drift even when the logic agrees.
   (a battle's draws and an event script's) interleave differently between
   runs; per generator their order is fixed.
 
-Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace] [--ignore N,...] [--sampled N,...]
+Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace] [--ignore N,...] [--sampled N,...] [--null-first N,...]
 Exits 1 when anything differs. With `--also`, a second run of the original:
 a range passes when B matches either original run (the originals themselves
 can differ by an event where a press lands a frame apart). `--ignore`
@@ -23,6 +23,12 @@ runs more 30 Hz ticks in it (`Sg_FrameSync`'s hold), and the trace, taken
 once a frame, misses the values in between (docs/harness.md, event-cliff);
 and for event-agency's player position, which skipped a value in one of six
 original runs in lockstep.
+`--null-first` leaves out a range's first event when one run read it as
+`-` (unreadable) and the other did not: ranges read through a pointer that
+is still 0 there (the developer-save replays' monster HP,
+`*0x011334d4+0x13d10..`, before the battle) land in the 32-bit process's
+low memory, which `FFX.exe`'s process maps (Windows' own blocks at
+0x10000) and `ffx-rust.exe`'s arena does not. The rest must agree.
 """
 import sys
 from collections import defaultdict
@@ -76,6 +82,11 @@ def main():
         k = argv.index("--sampled")
         sampled = {int(x) for x in argv[k + 1].split(",")}
         argv = argv[:k] + argv[k + 2:]
+    null_first = set()
+    if "--null-first" in argv:
+        k = argv.index("--null-first")
+        null_first = {int(x) for x in argv[k + 1].split(",")}
+        argv = argv[:k] + argv[k + 2:]
     sys.argv = sys.argv[:1] + argv
     if len(sys.argv) not in (3, 5):
         sys.exit(__doc__)
@@ -83,6 +94,14 @@ def main():
     ea, eb = events(sys.argv[1]), events(sys.argv[2])
     for i, (x, y) in enumerate(zip(ea, eb)):
         if i in ignore:
+            continue
+        if (
+            i in null_first
+            and x[:1] != y[:1]
+            and "-" in (x[:1] + y[:1])
+            and (x[1:] == y[1:] or (also is not None and i < len(also) and also[i][1:] == y[1:]))
+        ):
+            print(f"range {i}: the same events after the first (read through a null pointer)")
             continue
         if x != y and also is not None and i < len(also) and also[i] == y:
             print(f"range {i}: matches the second original run")
