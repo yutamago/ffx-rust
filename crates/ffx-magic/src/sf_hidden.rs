@@ -258,3 +258,81 @@ pub const SUMMON_FRAME_673_FIRST: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A fly-in task (cdecl `(task)`): a countdown `G_N` (`+0x04`); while it
+/// is above 1 it only counts (returning the count). At 1 it reaches 0 and
+/// the end point `P` is taken from the character (slot 237
+/// `Ch_ElemGetPos` `(*G_CHR, ELEMS[*G_I], 0, P)`, `P.w` 1.0). Then each
+/// frame the mover `V` is put between `A` and `P` at `t = *G_T` (slot 326
+/// `FFXVu0InterVectorXYZ` `(V, A, P, t)`), its height `V.y` lowered by
+/// the arc `(1 - t) t K2 K3 + (1 - t)^2 0 + t^2 0` (the zero terms kept
+/// for the original's rounding), and `t` steps by `KS`. Returns slot
+/// 326's `eax` while `t + KS < 1` (or unordered); else the node list
+/// `L` loses `V`'s item ([`list_remove`](crate::l5_objhost::list_remove));
+/// when one was removed `*G_P = ITEM` and the parts go (slot 713
+/// `pppAllFreePObject` on the item, u16 `G_F &= 0x7fff`); then the task
+/// is given back ([`give_back`](crate::sa_pool::give_back), a tail jump),
+/// whose `eax` is returned.
+///
+/// `magic_0241` 0x100018b0 and four more (314 bytes, 5 DLLs; stored in a
+/// task's `+0x10`).
+pub fn fly_in_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let n = g.read::<i32>(w(0x04));
+    if n > 0 {
+        let n = n - 1;
+        g.write::<i32>(w(0x0e), n);
+        if n > 0 {
+            return Ret::eax(n.cast_unsigned());
+        }
+        let i = g.read::<u32>(w(0x1b));
+        let elem = g.read::<u32>(w(0x29).wrapping_add(i.wrapping_mul(4)));
+        let chr = g.read::<u32>(w(0x34));
+        let t = slot_target(g, w(0x2e), 237);
+        g.call(t, fr.ecx, &[chr, elem, 0, w(0x20)]);
+        g.write::<u32>(w(0x45), 0x3f80_0000);
+    }
+    let t0 = g.read::<u32>(w(0x51));
+    let s = slot_target(g, w(0x56), 326);
+    let eax = g.call(s, fr.ecx, &[w(0x71), w(0x6c), w(0x67), t0]).eax;
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = k(g, 0x7b);
+    let u = sub(k(g, 0x83), t);
+    let mid = mul(mul(mul(t, u), k(g, 0xa0)), k(g, 0xac));
+    let ends = mul(mul(u, u), 0.0);
+    let tail = mul(mul(t, t), 0.0);
+    let next = add(t, k(g, 0xbf));
+    let arc = add(add(mid, ends), tail);
+    g.write::<f32>(w(0xde), next);
+    let y = sub(k(g, 0xd6), arc);
+    g.write::<f32>(w(0xea), y);
+    // comiss next, ONE; jb: below or unordered
+    if !(next >= k(g, 0xca)) {
+        return Ret::eax(eax);
+    }
+    let removed =
+        crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0xfb), w(0xf6), w(0xf1));
+    if removed != 0 {
+        g.write::<u32>(g.read::<u32>(w(0x104)), w(0x10f));
+        let s = slot_target(g, w(0x114), 713);
+        g.call(s, fr.ecx, &[w(0x109)]);
+        let fl = g.read::<u16>(w(0x12b)) & 0x7fff;
+        g.write::<u16>(w(0x12b), fl);
+    }
+    let eax = crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x134), task);
+    Ret::eax(eax)
+}
+
+/// [`fly_in_task`] (the `rel32`s: the list removal and the give-back).
+pub const FLY_IN_TASK: Sig = Sig {
+    len: 314,
+    hash: 0x99f7_ee88_64c7_39cc,
+    calls: &[
+        (0xfb, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x134, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

@@ -251,3 +251,58 @@ fn caster_script_task_in(n: u16, rva: u32) {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0241` 0x100018b0 and its copies: the countdown above 1, at 1
+/// (the end point taken), done; `t` short of the end and past it (the
+/// mover's item in the list or not).
+#[test]
+fn fly_in_task() {
+    for n in [241u16, 650, 652, 653, 656] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(0x18b0);
+        bound(&t, f, "sf fly-in task");
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        t.set_u32(w(&t, 0x34), 0x0c0c_0241);
+        rec_point(&mut t, 237, 4, None, 3);
+        rec_point(&mut t, 326, 4, Some(2), 0);
+        rec(&mut t, 713, 1, |_, a| 0x7130_0000 ^ a[0]);
+        let (list, item) = (w(&t, 0xf6), w(&t, 0xf1));
+        let node = SCRATCH + 0x900;
+        let task = SCRATCH + 0x800;
+        for (k, (count, at, found)) in [
+            (3i32, 0.25f32, false),
+            (1, 0.25, false),
+            (0, 0.5, false),
+            (-2, 1.0, false),
+            (0, 1.0, true),
+            (1, 1.5, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(w(&t, 0x04), count.cast_unsigned());
+            t.set_u32(w(&t, 0x1b), k % 2);
+            t.set_u32(w(&t, 0x29) + 4 * (k % 2), 0x20 + k);
+            let ta = w(&t, 0x51);
+            set_f(&mut t, ta, at);
+            t.write(w(&t, 0x71), &varied(0x10, k));
+            t.write(w(&t, 0x20), &varied(0x10, k + 1));
+            t.write(list, &varied(0x10, k + 2));
+            t.write(node, &varied(0x10, k + 3));
+            t.set_u32(list, if found { node } else { 0 });
+            t.set_u32(list + 8, node);
+            t.set_u32(node + 4, 0);
+            t.set_u32(node + 8, item);
+            t.set_u16(w(&t, 0x12b), 0x8123);
+            // the task node at rest for the give-back
+            t.write(task, &varied(0x20, k));
+            t.set_u32(task, 0);
+            t.set_u32(task + 4, 0);
+            t.set_u32(task + 8, SCRATCH + 0x840);
+            t.set_u32(SCRATCH + 0x84c, 0);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}

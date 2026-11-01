@@ -2138,6 +2138,7 @@ ports! {
     "sf spin angles" => sf_hidden::SPIN_ANGLES, sf_hidden::spin_angles;
     "sf caster script task" => sf_hidden::CASTER_SCRIPT_TASK, sf_hidden::caster_script_task;
     "sf summon frame 673 first" => sf_hidden::SUMMON_FRAME_673_FIRST, sf_hidden::summon_frame_673_first;
+    "sf fly-in task" => sf_hidden::FLY_IN_TASK, sf_hidden::fly_in_task;
     // sf_hidden: end of ports
     "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
