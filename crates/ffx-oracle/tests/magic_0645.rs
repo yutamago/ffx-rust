@@ -126,7 +126,12 @@ fn value_start() {
 fn mover() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x7a40);
-    recs(&mut t, &[(210, 2), (229, 5)]);
+    recs(&mut t, &[(210, 2)]);
+    // slot 229 keeps the vector it gets
+    magic_owna::rec(&mut t, 229, 5, |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
+        0x5a5a_0229 ^ a[0]
+    });
     ring(&mut t, at, 0x30);
     let (obj, src) = (SCRATCH + 0x1000, SCRATCH + 0x200);
     t.write(obj, &[0x4e; 0x400]);

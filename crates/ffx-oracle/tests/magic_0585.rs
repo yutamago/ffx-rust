@@ -40,11 +40,18 @@ fn ring(t: &mut Twin, at: u32, last: u32) {
 fn setup() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x78a0);
-    recs(&mut t, &[(236, 3), (229, 6), (719, 9)]);
+    recs(&mut t, &[(236, 3), (719, 9)]);
+    // slot 229 keeps the vector it gets
+    magic_owna::rec(&mut t, 229, 6, |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
+        0x5a5a_0229 ^ a[0]
+    });
     ring(&mut t, at, 0x37);
+    // the ring's flag word with bit 0 set, so its clear shows
+    t.set_u32(t.img.word(at + 0x4f), 0x00f1_a6c3);
     let (obj, src) = (SCRATCH + 0x1000, SCRATCH + 0x200);
     t.write(obj, &[0x4e; 0x1000]);
-    t.write(src, &[0x5e; 0x80]);
+    t.write(src, &magic_h6::varied(0x80, 0x5e));
     let c = Call {
         ecx: obj,
         edx: src,
@@ -93,6 +100,11 @@ fn sound() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x7990);
     recs(&mut t, &[(709, 1)]);
+    // the half-word after each sound id non-zero (an id read as u32 shows)
+    let ids = t.img.word(at + 0x27);
+    for i in 0..3 {
+        t.set_u16(ids + 8 * i + 2, 0x5a5a);
+    }
     for (i, (state, count)) in (0u32..).zip(STATES) {
         let task = task(&mut t, state, count, i % 3);
         magic_h6::scrub(&mut t);
@@ -119,6 +131,10 @@ fn sound_start() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x7a20);
     recs(&mut t, &[(709, 1)]);
+    let ids = t.img.word(at + 0x37);
+    for i in 0..3 {
+        t.set_u16(ids + 8 * i + 2, 0x5a5a);
+    }
     let obj = SCRATCH + 0x1000;
     for i in [0u32, 2] {
         ring(&mut t, at, 0x1d);
