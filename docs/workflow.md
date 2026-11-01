@@ -343,20 +343,27 @@ expression, in braces for a match arm's body), around the smallest
 expression or statement run holding the change (`tools/mutants-rs` finds
 those with `syn`, and keeps only nodes whose function still parses with the
 schema in place and that are not in a const context; a `let` change keeps
-the rest of its block inside the schema). The `ffx-oracle` test binary is
+the rest of its block inside the schema; nodes whose two arms surely differ in
+type or borrow a temporary are skipped: an array or tuple whose length
+changes, a reference to a temporary, and for a change inside a type such as
+`read::<u8>` -> `read::<u16>` the expressions of that type). The `ffx-oracle` test binary is
 built once with `--features ffx-core/mutants`, and each mutant runs that
 binary with `FFX_MUTANT=k` on the image and each snapshot, `MUT_JOBS`
 (default cores / 2) at a time. A schema with a compiler error inside it
-moves to a larger node; one that still fails falls back to a rebuild for
-that mutant alone, so none is lost. Errors whose spans point into no schema
-(a type that leaks out of one, say) are traced by building halves of the
-schema set, and only the schemata behind them are dropped to the rebuild
-path; the rest still build as one. A mutant that does not build on its own
+moves to a larger node (during the first 8 builds); one that still fails
+falls back to a rebuild for that mutant alone, so none is lost. A
+name-resolution error (E0425 and the like) inside a mutant's own text is an
+ERROR at once: built alone it fails the same way. Errors whose spans point
+into no schema (a type that leaks out of one, say) are traced by building
+halves of the schema set, and only the schemata behind them are dropped to
+the rebuild path; the rest still build as one. The builds go on until one
+succeeds; a failed build never sends the whole batch to the rebuild path.
+Every error of every schema build is in `MUT_WORK/schema-errors.log`. A mutant that does not build on its own
 is an ERROR, never a kill. Without the feature `ffx_core::mutant` is a
 constant `false`; release builds never enable it.
 `python3 tools/mutants.py --self-test` checks the rewrite with rustc alone
 (match arms with and without braces, overlapping deletions, a tail
-insertion, a const): one build, and every schema behaves as its mutant
+insertion, a const, an array length, a cast's type): one build, and every schema behaves as its mutant
 rebuilt. Run it after changing `tools/mutants.py` or `tools/mutants-rs`.
 
 The schema wraps the smallest node, so an operator mutant keeps the
@@ -380,6 +387,15 @@ is the one build. After the match-arm and bisection fixes (2026-10-20) the
 same sets give the same verdicts in 161 s, and menu round 24 group 1, whose
 one unbuildable schema used to send all 46 mutants to rebuilds (483 s), runs
 in 37 s with none rebuilt.
+Overlay ports (2026-11-01): m0513's 368 generated mutants (genmut-style, one
+per code line plus a deletion per store or call) used to exhaust the 8 schema
+rounds on 11 mutants that name an unimported `add` and on `<u8>` -> `<u16>`
+and array-length mutants that moved one node per 25 s build, after which all
+368 rebuilt (35-48 s each, 3.6-4.9 h). Now: 6 schema builds, 345 schemata, 11
+ERRORs without a build, 12 rebuilt, 841 s in all (MUT_JOBS=2 MUT_THREADS=2),
+with the same verdicts as the slow path on a 30-mutant sample. m0477
+(184 mutants) 449 s with 18 rebuilt, m0450 (416) 438 s with 2 rebuilt; both
+used to rebuild every mutant.
 
 ## Progress and ownership
 
