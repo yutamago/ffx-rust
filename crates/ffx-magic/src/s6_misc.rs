@@ -2630,3 +2630,12 @@ pub const KEYED_PART_STEP: Sig = Sig {
     calls: &[(0x18c, Callee::Sig(&LINK_PART)), (0x19b, Callee::Any)],
     imports: &[],
 };
+
+/// [`reset_state`] with `+0x11c` = 0x1e (`magic_0100` 0x10002080, 273
+/// bytes; 4 DLLs).
+pub const RESET_STATE_1E: Sig = Sig {
+    len: 273,
+    hash: 0x6117_a5df_89ed_a129,
+    calls: &[],
+    imports: &[],
+};

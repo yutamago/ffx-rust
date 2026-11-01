@@ -1900,3 +1900,32 @@ fn keyed_parts_stepped() {
         });
     }
 }
+
+/// Row 314: `magic_0100`'s state block reset with the count 0x1e
+/// (`m0032::reset_state`).
+#[test]
+fn state_blocks_reset_1e() {
+    let Some(mut t) = twin(100) else { return };
+    let f = t.at(0x2080);
+    let obj = SCRATCH + 0x1000;
+    for k in 0..2u32 {
+        t.write(obj, &varied(0x140, k));
+        let c = Call {
+            ecx: obj,
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(
+            f,
+            c,
+            &[0x0bad_0001, 0x0a00_0000 + k],
+            Eax::Checked,
+            |g, _, fr| {
+                let arg = fr.arg(g, 1);
+                ffx_magic::m0032::reset_state(g, fr.ecx, arg, 0, 0x1e);
+                Ret::eax(0x8000)
+            },
+        );
+    }
+}
