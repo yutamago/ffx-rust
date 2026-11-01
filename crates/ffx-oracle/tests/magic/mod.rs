@@ -127,6 +127,11 @@ fn new_pages(before: &[u8], after: &[u8]) -> Vec<u32> {
     out
 }
 
+/// The arena pages a dropped [`Twin`] wrote outside the regions (its own
+/// pages and the original's): the next [`Twin::load`] clears them, so one
+/// test's words there are not another's (both sides start from zeros).
+static STALE: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
+
 fn lock() -> MutexGuard<'static, ()> {
     static L: Mutex<()> = Mutex::new(());
     L.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -553,6 +558,16 @@ fn zero(m: &mut impl Mem, at: u32, len: u32) {
     }
 }
 
+impl Drop for Twin {
+    fn drop(&mut self) {
+        let mut stale = STALE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        stale.extend(self.port.pages.keys());
+        stale.extend(&self.orig_pages);
+    }
+}
+
 impl Twin {
     /// Loads `magic_NNNN.dll` (`number`), starts its CRT in Unicorn and
     /// copies the result to the port's side. `None` without
@@ -590,6 +605,14 @@ impl Twin {
         zero(&mut a, HEAP, HEAP_LEN);
         zero(&mut a, STACK_TOP - STACK_LEN, STACK_LEN);
         zero(&mut a, SCRATCH, SCRATCH_LEN);
+        let stale = std::mem::take(
+            &mut *STALE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        for p in stale {
+            zero(&mut a, p << 12, 0x1000);
+        }
         for o in ffx_overlay_loaded() {
             o.unload();
         }
