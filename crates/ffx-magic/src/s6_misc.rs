@@ -1549,8 +1549,9 @@ pub const SPRING_WALK: Sig = Sig {
 
 /// The 12-byte register thunk ([`crate::s3_wrap`]'s shape: `ecx` = the
 /// first stack word, then a jump to the handler with the caller's stack)
-/// over this list's handlers: [`spring_walk`]. A target that is none of
-/// them cannot bind (the thunk's `Sig` names its callee).
+/// over this list's handlers: [`spring_walk`] and [`aimed_node_walk`]. A
+/// target that is none of them cannot bind (the thunk's `Sig` names its
+/// callee).
 pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ecx = fr.arg(g, 0);
     let target = img.rel32_target(fr.at + 8);
@@ -1561,6 +1562,9 @@ pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     };
     if img.matches(target, &SPRING_WALK) {
         return Ret::eax(spring_walk(g, img, &fr));
+    }
+    if img.matches(target, &AIMED_NODE_WALK) {
+        return Ret::eax(aimed_node_walk(g, img, &fr));
     }
     Ret::eax(fr.eax)
 }
@@ -4254,5 +4258,13 @@ pub const AIMED_NODE_WALK: Sig = Sig {
     len: 708,
     hash: 0xe524_388a_fba6_d5d9,
     calls: &[(0x2bc, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0482` 0x10003940 (2 DLLs) over [`aimed_node_walk`].
+pub const JMP_AIMED_NODE_WALK: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&AIMED_NODE_WALK))],
     imports: &[],
 };

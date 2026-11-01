@@ -2802,7 +2802,8 @@ fn camera_blocks_reset() {
     }
 }
 
-/// Row 451: `magic_0482`'s aimed node walk for the shared rings (the
+/// Rows 451 and 452: `magic_0482`'s aimed node walk (and its thunk) for
+/// the shared rings (the
 /// cursor moved or not), the slots filling their outputs from their
 /// inputs.
 #[test]
@@ -2863,8 +2864,16 @@ fn aimed_node_walks() {
         t.set_u32(n + 0x138, 1.5f32.to_bits());
         let eax = if k == 0 { Eax::Junk } else { Eax::Checked };
         scrub(&mut t);
-        t.check(f, Call::this(sa::CURSOR), &[], eax, |g, img, fr| {
-            Ret::eax(s6_misc::aimed_node_walk(g, img, fr))
-        });
+        // and through row 452, the register thunk over it
+        let thunk = t.at(0x3940);
+        t.check_thunked(
+            f,
+            thunk,
+            false,
+            Call::this(sa::CURSOR),
+            &[],
+            eax,
+            |g, img, fr| Ret::eax(s6_misc::aimed_node_walk(g, img, fr)),
+        );
     }
 }
