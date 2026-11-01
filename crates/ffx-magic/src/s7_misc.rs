@@ -2342,3 +2342,36 @@ pub const SHAKE_NODE: Sig = Sig {
     calls: &[(0x145, Callee::Sig(&crate::sa_misc::LEAVE))],
     imports: &[],
 };
+
+/// [`sprites_step`](crate::s6_misc::sprites_step) on a system in the
+/// DLL's globals (cdecl, no arguments; an aligned frame): the count
+/// `G_N`, the sprites `*G_P`, gravity `G_A` and its step `G_B`, the cap
+/// `G_C` and its limit `G_D` (the operands; one block in the DLLs seen).
+///
+/// `magic_0206` 0x10002d30 (376 bytes; 4 DLLs).
+pub fn sprites_step_global<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let words = crate::s6_misc::SpriteSystem {
+        count: w(0x16),
+        sprites: w(0x10),
+        gravity: w(0x97),
+        step: w(0xa7),
+        cap: w(0xb2),
+        limit: w(0x121),
+    };
+    Ret::eax(crate::s6_misc::sprites_step_on(g, img, f, fr.eax, &words))
+}
+
+/// [`sprites_step_global`] (the `rel32`s: the sprite fade, `memset` and
+/// the square root).
+pub const SPRITES_STEP_GLOBAL: Sig = Sig {
+    len: 376,
+    hash: 0xcacc_9289_f665_9304,
+    calls: &[
+        (0x2c, Callee::Sig(&crate::sa_misc::SPRITE_FADE)),
+        (0x83, Callee::Import("memset")),
+        (0x103, Callee::Import("_libm_sse2_sqrt_precise")),
+    ],
+    imports: &[],
+};

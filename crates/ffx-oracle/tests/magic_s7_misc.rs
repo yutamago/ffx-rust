@@ -1927,3 +1927,85 @@ fn shake_nodes() {
         }
     }
 }
+
+/// Row 320: the sprite system step on the DLL's globals in the four
+/// DLLs: no sprites, a sprite that ends (released and cleared), a dead
+/// one, and held ones with gravity and the speed cap on and off. The
+/// original's `eax` after the square root is the CRT's (junk).
+#[test]
+fn sprite_systems_global() {
+    for (dll, rva) in [
+        (206u16, 0x2d30u32),
+        (505, 0x2b70),
+        (641, 0x2ee0),
+        (669, 0x3360),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        rec(&mut t, 248, 3, |m, a| {
+            for i in 0..3 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x248
+        });
+        let table = SCRATCH + 0x3400;
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+        let lock = SCRATCH + 0x7f0;
+        let lg = op(&t, f, 0x58);
+        t.set_u32(lg, lock);
+        log_calls(&mut t, 779, SCRATCH + 0x6000, 2, Some(lg), |_, _, _| 0x779);
+        let parts = SCRATCH + 0x1000;
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        for (k, (count, gravity, cap)) in [
+            (0u32, 0u32, 0u32),
+            (4, 1, 0),
+            (4, 0, 1),
+            (4, 1, 1),
+            (3, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(lock, 0x5a5a_0000 + k);
+            t.set_u32(w(&t, 0x16), count);
+            t.set_u32(w(&t, 0x10), parts);
+            t.set_u32(w(&t, 0x97), gravity);
+            t.set_u32(w(&t, 0xa7), (-0.5f32).to_bits());
+            t.set_u32(w(&t, 0xb2), cap);
+            t.set_u32(w(&t, 0x121), 2.0f32.to_bits());
+            // (live, held, the velocity)
+            for (i, (live, hold, v)) in [
+                (1u32, 0u32, [1.0f32, 2.0, 2.0]),
+                (0, 1, [1.0, 1.0, 1.0]),
+                (1, 1, [3.0, 4.0, 0.0]),
+                (1, 1, [0.5, 0.25, -0.5]),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let p = parts + 0x94 * i as u32;
+                t.write(p, &varied(0x94, i as u32 + k));
+                t.set_u32(p, live * (0x100 + i as u32));
+                t.set_u32(p + 0x2c, hold);
+                t.set_u32(p + 0x28, 1);
+                t.set_u32(p + 0x30, 0x0300_0000 + i as u32);
+                for (j, x) in (0u32..).zip(v) {
+                    t.set_u32(p + 0x14 + 4 * j, x.to_bits());
+                }
+            }
+            let eax = if cap != 0 { Eax::Junk } else { Eax::Checked };
+            let c = Call {
+                eax: 0x0eaa_0000 + k,
+                ..Call::default()
+            };
+            scrub(&mut t);
+            t.check(f, c, &[], eax, |g, img, fr| {
+                Ret::eax(s7_misc::sprites_step_global(g, img, fr).eax)
+            });
+        }
+    }
+}

@@ -1219,13 +1219,44 @@ pub const OBJECTS_FREED: Sig = Sig {
 ///
 /// `magic_0370` 0x10002d90 (368 bytes, `ecx` = the system; 7 DLLs).
 pub fn sprites_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
-    let f = fr.at;
-    let w = |o: u32| op(img, f, o);
     let sys = fr.ecx;
-    let mut eax = fr.eax;
-    let mut p = g.read::<u32>(sys + 4);
+    let words = SpriteSystem {
+        count: sys,
+        sprites: sys + 4,
+        gravity: sys + 8,
+        step: sys + 0xc,
+        cap: sys + 0x10,
+        limit: sys + 0x14,
+    };
+    sprites_step_on(g, img, fr.at, fr.eax, &words)
+}
+
+/// Where a sprite system's words are (the system's fields, or the DLL's
+/// globals in `s7_misc::sprites_step_global`).
+pub(crate) struct SpriteSystem {
+    pub count: u32,
+    pub sprites: u32,
+    pub gravity: u32,
+    pub step: u32,
+    pub cap: u32,
+    pub limit: u32,
+}
+
+/// [`sprites_step`] on the system's words at `sys` (the code at `f`, its
+/// slot calls' operands at the same offsets in both copies; `eax` the
+/// entry's).
+pub(crate) fn sprites_step_on<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    eax: u32,
+    sys: &SpriteSystem,
+) -> u32 {
+    let w = |o: u32| op(img, f, o);
+    let mut eax = eax;
+    let mut p = g.read::<u32>(sys.sprites);
     let mut i = 0u32;
-    while i.cast_signed() < g.read::<i32>(sys) {
+    while i.cast_signed() < g.read::<i32>(sys.count) {
         if g.read::<u32>(p) != 0 {
             let fade = sprite_fade(g, img, img.rel32_target(f + 0x2c), p);
             eax = fade;
@@ -1242,11 +1273,11 @@ pub fn sprites_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
                 eax = p;
                 g.write::<u32>(p, 0);
             } else {
-                if g.read::<u32>(sys + 8) != 0 {
-                    let y = add(g.read::<f32>(sys + 0xc), g.read::<f32>(p + 0x18));
+                if g.read::<u32>(sys.gravity) != 0 {
+                    let y = add(g.read::<f32>(sys.step), g.read::<f32>(p + 0x18));
                     g.write::<f32>(p + 0x18, y);
                 }
-                if g.read::<u32>(sys + 0x10) != 0 {
+                if g.read::<u32>(sys.cap) != 0 {
                     let v = [0x14u32, 0x18, 0x1c].map(|o| g.read::<f32>(p + o));
                     let s = add(add(mul(v[0], v[0]), mul(v[1], v[1])), mul(v[2], v[2]));
                     let l = f64::from(s).sqrt() as f32;
@@ -1255,7 +1286,7 @@ pub fn sprites_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
                     // ucomiss; lahf; test ah, 0x44; jnp: skipped when 0
                     #[allow(clippy::float_cmp)] // the original's exact test
                     if l != 0.0 {
-                        let d = sub(l, g.read::<f32>(sys + 0x14));
+                        let d = sub(l, g.read::<f32>(sys.limit));
                         // comiss 0, d; jbe: the excess kept when 0 <= d or
                         // unordered, else 0
                         let top = if 0.0 > d { 0.0 } else { d };
