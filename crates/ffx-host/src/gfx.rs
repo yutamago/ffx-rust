@@ -39,6 +39,8 @@ use crate::com_methods::{CLASSES, Returns, class};
 use crate::exec::{Exec, Stop};
 use crate::table::{Args, Ret};
 
+mod composite;
+
 /// `D3D_FEATURE_LEVEL_11_0`.
 pub const FEATURE_LEVEL_11_0: u32 = 0xb000;
 /// `DI_NOTATTACHED` (`S_FALSE`: the device is not attached).
@@ -484,6 +486,8 @@ pub struct Gfx {
     pub unhandled: BTreeSet<String>,
     /// Draws, clears and copies per frame, the frame being made last.
     pub frame_sizes: Vec<(u32, u32, u32)>,
+    /// The objects of Iggy's composite ([`Gfx::composite`]).
+    composite: composite::Objects,
 }
 
 impl std::fmt::Debug for Gfx {
@@ -623,6 +627,7 @@ impl Gfx {
             counts: BTreeMap::new(),
             unhandled: BTreeSet::new(),
             frame_sizes: vec![(0, 0, 0)],
+            composite: composite::Objects::default(),
         };
         let bb = desc.back_buffer();
         g.resources.insert(
