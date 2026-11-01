@@ -45,13 +45,21 @@ fn start() {
 fn draw() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x17d0);
-    for (s, n) in [(723u32, 1usize), (724, 2), (258, 3), (231, 6), (230, 8)] {
-        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
-    }
     let lock = SCRATCH + 0x600;
+    // the slots copy the block pointer **P out (it changes before 712)
+    let pp = SCRATCH + 0x640;
+    for (k, (s, n)) in (0u32..).zip([(723u32, 1usize), (724, 2), (258, 3), (231, 6), (230, 8)]) {
+        rec(&mut t, s, n, move |m, a| {
+            let v = m.r32(pp);
+            m.w32(lock + 0x48 + 4 * k, v);
+            (0x0100_0000 + s) ^ a[0]
+        });
+    }
     rec(&mut t, 712, 10, move |m, a| {
         let seen = m.r32(lock);
         m.w32(lock + 0x40, seen);
+        let v = m.r32(pp);
+        m.w32(lock + 0x44, v);
         0x0712_0000 ^ a[1]
     });
     t.set_u32(t.img.word(at + 0x8a), lock);
@@ -79,6 +87,10 @@ fn frame() {
     for op in [0x13u32, 0x1a, 0xbe] {
         t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
     }
+    // the timelines live (no events), so a run moves their time on
+    // (slot 253 says so): which ones run shows
+    rec(&mut t, 253, 0, |_, _| 1);
+    let tls = [0x3au32, 0x5a, 0x7a].map(|op| t.img.word(at + op));
     for (started, set) in [
         (0u32, [1u32, 1, 1, 1]),
         (1, [0, 0, 0, 0]),
@@ -91,6 +103,11 @@ fn frame() {
             t.set_u32(flags + 4 * k, v);
         }
         t.set_u32(p, 0x88);
+        for (k, tl) in (0u32..).zip(tls) {
+            t.set_u32(tl, 0x100 * k);
+            t.set_u32(tl + 4, 0);
+            t.set_u32(tl + 8, 1);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

@@ -51,7 +51,8 @@ fn copies_and_marks() {
     let n_at = t.img.word(at + 0x0f);
     for n in [0u32, 8, 9, 20] {
         t.set_u32(n_at, n);
-        t.write(obj, &[0x5c; 0x40]);
+        // the flags word with bit 2 clear (the mark sets it)
+        t.write(obj, &[0x5a; 0x40]);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
