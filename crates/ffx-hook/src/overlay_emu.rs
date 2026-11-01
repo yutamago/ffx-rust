@@ -54,9 +54,10 @@ use windows_sys::Win32::System::Performance::{QueryPerformanceCounter, QueryPerf
 
 use crate::log::log;
 
-/// `g_MagicImports` and its 744 slots (docs/formats/magic.md).
+/// `g_MagicImports` and its 947 slots, up to the zero word at +0xecc
+/// (docs/formats/magic.md).
 const MAGIC_IMPORTS: u32 = 0x00c6_4ce8;
-const MAGIC_SLOTS: u32 = 744;
+const MAGIC_SLOTS: u32 = 947;
 /// The stack the driver leaves to the overlay code above it.
 const GAP: u32 = 0x1_0000;
 
