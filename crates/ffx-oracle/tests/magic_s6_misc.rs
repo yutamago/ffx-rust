@@ -2448,3 +2448,58 @@ fn particles_drifting() {
         t.check_entry(f, Call::default(), &[p], Eax::Checked);
     }
 }
+
+/// Row 426: `magic_0432`'s spline sample: times before the first key,
+/// between keys, on a key, past the last, NaN, and one key only.
+#[test]
+fn spline_points() {
+    let Some(mut t) = twin(432) else { return };
+    let f = t.at(0x4cc0);
+    let times = SCRATCH + 0x300;
+    let keys = SCRATCH + 0x400;
+    let d = [SCRATCH + 0x600, SCRATCH + 0x680, SCRATCH + 0x700];
+    let out = SCRATCH + 0x800;
+    for (i, v) in (0u32..).zip([0.0f32, 1.0, 2.5, 4.0, 7.0, 7.5]) {
+        t.set_u32(times + 4 * i, v.to_bits());
+    }
+    for i in 0..24u32 {
+        t.set_u32(
+            keys + 4 * i,
+            (i as f32 * 0.75 - 4.0 + (i % 3) as f32).to_bits(),
+        );
+    }
+    for (j, &dd) in d.iter().enumerate() {
+        for i in 0..6u32 {
+            t.set_u32(dd + 4 * i, ((i as f32 - 2.0) * 0.5 + j as f32).to_bits());
+        }
+    }
+    for (k, (x, n)) in [
+        (-1.0f32, 6u32),
+        (0.5, 6),
+        (2.5, 6),
+        (3.0, 6),
+        (7.25, 6),
+        (9.0, 6),
+        (f32::NAN, 6),
+        (1.5, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.write(out, &varied(0x10, k as u32));
+        let c = Call {
+            ecx: out,
+            edx: keys,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(x)]);
+        scrub(&mut t);
+        t.check(
+            f,
+            c,
+            &[times, d[0], d[1], d[2], n],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(s6_misc::spline_point(g, img, fr)),
+        );
+    }
+}

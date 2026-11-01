@@ -2390,6 +2390,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("smoke puff", &s6_misc::SMOKE_PUFF),
     ("move ends (the DLL's object)", &s6_misc::MOVE_ENDS_OF),
     ("model direct", &s6_misc::MODEL_DIRECT),
+    ("spline point", &s6_misc::SPLINE_POINT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -3382,3 +3382,77 @@ pub const PARTICLE_DRIFT: Sig = Sig {
     calls: &[],
     imports: &[(0x16, "rand")],
 };
+
+/// The key `i` of a sorted time table `T` (`n` keys) for the time `x`:
+/// the binary search of the overlays (`lo = 0`, `hi = n - 1`; `x > T[mid]`
+/// moves `lo` past `mid`, anything else, unordered too, moves `hi` to it),
+/// then the key before (key 0 for `lo` 0).
+fn spline_key<G: Game>(g: &G, times: u32, n: i32, x: f32) -> u32 {
+    let (mut lo, mut hi) = (0i32, n - 1);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let t = g.read::<f32>(times.wrapping_add(4 * mid.cast_unsigned()));
+        if x > t {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if lo > 0 { (lo - 1).cast_unsigned() } else { 0 }
+}
+
+/// A cubic Hermite spline of three coordinates sampled at a time
+/// (internal: `ecx` = the point out, `edx` = the keys (four floats each),
+/// `xmm0` = the time `x`, the stack `(T, D0, D1, D2, n)`: the key times
+/// and the three coordinates' tangents). For each coordinate `c` the key
+/// `i` ([`spline_key`]) gives `dt = x - T[i]`, `h = T[i+1] - T[i]`, `a =
+/// Dc[i]`, `b = Dc[i+1]`, and the value `P[i] + dt ((P[i+1] - P[i]) / h -
+/// (a K1 + b) h + dt (dt (b - a) / h + a K2))` (`K1`, `K2` the DLL's
+/// constants; the second coordinate adds its terms the other way round).
+/// The point's `w` is 1.0. Returns the point out.
+///
+/// `magic_0432` 0x10004cc0 (559 bytes; 3 DLLs).
+pub fn spline_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let k = |g: &G, o: u32| g.read::<f32>(op(img, f, o));
+    let (out, keys) = (fr.ecx, fr.edx);
+    let x = fr.xmm_f32(0);
+    let times = fr.arg(g, 0);
+    let n = fr.arg(g, 4).cast_signed();
+    let rd = |g: &G, a: u32| g.read::<f32>(a);
+    for (c, (dk, k1, k2)) in (0u32..).zip([
+        (1u32, 0x74u32, 0x94u32),
+        (2, 0x132, 0x124),
+        (3, 0x1db, 0x1f2),
+    ]) {
+        let d = fr.arg(g, dk);
+        let i = spline_key(g, times, n, x);
+        let ti = times.wrapping_add(4 * i);
+        let dt = sub(x, rd(g, ti));
+        let h = sub(rd(g, ti + 4), rd(g, ti));
+        let (a, b) = (
+            rd(g, d.wrapping_add(4 * i)),
+            rd(g, d.wrapping_add(4 * i + 4)),
+        );
+        let p0 = rd(g, keys.wrapping_add(0x10 * i + 4 * c));
+        let p1 = rd(g, keys.wrapping_add(0x10 * i + 0x10 + 4 * c));
+        let lin = mul(add(mul(a, k(g, k1)), b), h);
+        let s = sub(div(sub(p1, p0), h), lin);
+        let q = mul(add(div(mul(sub(b, a), dt), h), mul(a, k(g, k2))), dt);
+        let v = if c == 1 { add(q, s) } else { add(s, q) };
+        let v = add(mul(v, dt), p0);
+        if c == 2 {
+            g.write::<u32>(out + 0xc, 0x3f80_0000);
+        }
+        g.write::<f32>(out + 4 * c, v);
+    }
+    out
+}
+
+/// [`spline_point`].
+pub const SPLINE_POINT: Sig = Sig {
+    len: 559,
+    hash: 0xa20d_d045_e524_971c,
+    calls: &[],
+    imports: &[],
+};
