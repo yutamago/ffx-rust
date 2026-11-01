@@ -1448,6 +1448,8 @@ fn fading_levels() {
             (1, 1, f32::NAN),
             (1, 0, 0.5),
             (1, 0, 2.0),
+            // (-0.0: not below 0, kept as it is)
+            (1, 0, -0.0),
         ]
         .into_iter()
         .enumerate()
