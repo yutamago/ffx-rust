@@ -485,6 +485,7 @@
 0x00a282f0	31	0	PVideoPlaybackWin32_play
 0x00a3d4d0	5	0	GDraw_teardown_thunk_00a3d4d0
 0x00a45860	5	0	abmap_cheng_panel_thunk_00a45860
+0x00a5bf50	305	0	code_00a5bf50
 0x00a63a40	67	0	opd_debug_on_00a63a40
 0x00a77970	5	0	Native_4031_GetCameraFollow
 0x00a77a00	8	0	Native_4035_GetMapAlphaDropped

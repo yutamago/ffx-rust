@@ -16,6 +16,12 @@ compile_error!(
      without it is the stage 4 gate (docs/rewrite-plan.md, M5)"
 );
 
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!(
+    "ffx-host is 64-bit only (x86_64-pc-windows-msvc, or a 64-bit Linux for the tests): the \
+     i686 ffx-rust.exe was dropped (docs/host.md, \"Building for Windows\")"
+);
+
 pub mod arena;
 pub mod audio;
 pub mod clock;
@@ -35,8 +41,6 @@ pub mod imports;
 pub mod library;
 pub mod log;
 pub mod ports;
-#[cfg(all(windows, target_pointer_width = "32"))]
-pub mod relaunch;
 pub mod replay;
 pub mod report;
 pub mod stand_ins;

@@ -31,7 +31,7 @@
 //! |---|---|
 //! | `ping`, `stats`, `frame` | the clock's frame; `stats` also counts presents, flips queued and run |
 //! | `wait`, `press`, `key`, `waitfor`, `shotwhen`, `holdfor`, `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events` | as the hook's, at the clock's boundary |
-//! | `read`, `readp`, `readabs`, `write`, `writep` | arena memory (on i686 a game address is the process address) |
+//! | `read`, `readp`, `readabs`, `write`, `writep` | arena memory (a game address is an offset into the arena) |
 //! | `keys`, `key` | the `DirectInput` keyboard's state (`GetDeviceState`) |
 //! | `pad`, `press` | the buttons the clock's `Input_KeyHeld` wrapper answers for |
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |
@@ -305,15 +305,16 @@ fn cloth_job(e: &mut Exec, args: &Args) -> Ret {
     seeded_job(e, 1, first, 0x0082_e390, args)
 }
 
-/// `FFX_HARNESS_CLOTH_ORDER=1` (an experiment, docs/host.md "The cloth
-/// race"): in lockstep, a cloth job waits until the render thread has
-/// presented every flip queued before it, so that the previous update's
-/// draw has read the cloth vertices (`ClothInstancingDynamicMesh_submit`
-/// copies them) before this update's cloth step writes them. At most 2 s
-/// of host time, then it goes on and notes it.
+/// The cloth order (docs/host.md, "The cloth race"; the hook's harness
+/// does the same): in lockstep, a cloth job waits until the render thread
+/// has presented every flip queued before it, so that the previous
+/// update's draw has staged the cloth vertices (setting the slots' flags)
+/// before this update's submit (`ClothInstancingDynamicMesh_submit`, after
+/// the jobs) looks at them. On by default; `FFX_HARNESS_CLOTH_ORDER=0`
+/// turns it off. At most 2 s of host time, then it goes on and notes it.
 fn cloth_order(e: &Exec) {
     static ON: OnceLock<bool> = OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var("FFX_HARNESS_CLOTH_ORDER").is_ok_and(|v| v == "1"))
+    if !*ON.get_or_init(|| std::env::var("FFX_HARNESS_CLOTH_ORDER").map_or(true, |v| v != "0"))
         || !enabled()
         || !LOCKSTEP.load(Ordering::Acquire)
     {

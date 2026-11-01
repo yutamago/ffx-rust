@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds ffx-rust.exe (crate ffx-host) for 32-bit Windows (docs/host.md).
+# Builds ffx-rust.exe (crate ffx-host) for 64-bit Windows, x86_64-pc-windows-msvc
+# (docs/host.md, "Building for Windows"; the i686 build was dropped 2026-10-31).
 # Usage: tools/build-host.sh [build|clippy] [extra cargo args]
 #
 # Unicorn (unicorn-engine-sys) builds with cmake for the MSVC target, which
@@ -13,9 +14,11 @@
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cmd=build
-# FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit program (docs/host.md,
-# "Building for Windows")
-target="${FFX_HOST_TARGET:-i686-pc-windows-msvc}"
+target=x86_64-pc-windows-msvc
+if [[ -n "${FFX_HOST_TARGET:-}" && "$FFX_HOST_TARGET" != "$target" ]]; then
+    echo "build-host.sh: ffx-rust.exe is built for $target only (FFX_HOST_TARGET=$FFX_HOST_TARGET)" >&2
+    exit 2
+fi
 if [[ "${1:-}" == build || "${1:-}" == clippy ]]; then
     cmd=$1
     shift
@@ -36,7 +39,7 @@ if ! command -v llvm-lib >/dev/null; then
     [[ -n "$lib" ]] && ln -sf "$(command -v "$lib")" "$shims/llvm-lib"
 fi
 # ml64 (MASM) for unicorn's x86_64 setjmp wrapper: LLVM's llvm-ml64
-if [[ "$target" == x86_64-* ]] && ! command -v ml64 >/dev/null; then
+if ! command -v ml64 >/dev/null; then
     ml="$(compgen -c llvm-ml64- | grep -E '^llvm-ml64-[0-9]+$' | sort -t- -k3 -n | tail -1)"
     [[ -n "$ml" ]] && ln -sf "$(command -v "$ml")" "$shims/ml64"
 fi

@@ -37,7 +37,6 @@ same memory. The release runs no `FFX.exe` code.
 | `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
 | `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
-| `src/relaunch.rs` | i686 Windows: the game in a child process whose `FFX.exe` range was reserved before it ran (below, "The arena") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
 | `tests/table.rs` | the `ported!` lists in the table: entries, parity with Unicorn, the boot |
@@ -53,7 +52,7 @@ cargo run --release -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X
 python3 -I tools/host-com-methods.py && cargo fmt -p ffx-host   # regenerates src/com_methods.rs
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-host
 FFX_HOST_TRACE=200 ffx-rust ...   # the last 200 basic blocks of a thread that failed
-tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn needs cmake and ninja, below)
+tools/build-host.sh        # x86_64-pc-windows-msvc, through cargo xwin (Unicorn needs cmake, ninja and ml64, below)
 ```
 
 - `--documents DIR`: the folder the game sees as `C:\FFXDocuments`
@@ -104,11 +103,20 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
 Every game address is a `u32` offset from `Arena::base`. The bridges'
 `Mem` reads and writes through it, so a port runs unchanged on any target.
 
-| | x86_64 (stage 4) | i686 (stage 3) |
-|---|---|---|
-| base | one 4 GB reservation (`mmap PROT_NONE` / `VirtualAlloc MEM_RESERVE`) | 0: the process's own address space |
-| a region | committed inside the reservation (`mprotect` / `MEM_COMMIT`) | `VirtualAlloc` at its game address; refused if the address is taken |
-| game address = host pointer | no: `base + addr` | yes |
+The host is 64-bit only (x86_64 Windows, and 64-bit Linux for the
+tests; the crate refuses other targets). The arena:
+
+| | |
+|---|---|
+| base | one 4 GB reservation (`mmap PROT_NONE` / `VirtualAlloc MEM_RESERVE`) |
+| a region | committed inside the reservation (`mprotect` / `MEM_COMMIT`) |
+| game address = host pointer | no: `base + addr` |
+
+Until 2026-10-31 there was an i686 build too (stage 3's stepping stone),
+whose arena was the process's own address space (base 0, game address =
+host pointer); it never got past Unicorn's 32-bit translator (below, "The
+i686 build") and was dropped with what only it needed (the child process
+that reserved `FFX.exe`'s range, `src/relaunch.rs`; the `/BASE` link).
 
 Regions (`Arena::regions`):
 
@@ -123,23 +131,6 @@ Regions are 64 KB aligned, Windows' allocation granularity. Pages outside
 every region stay unmapped: Unicorn reports an access there as
 `BadAccess`, and `ArenaMem` reads zeros, drops the write and counts it
 (the report lists the first ones).
-
-On i686 `ffx-rust.exe` must leave `0x00400000`–`0x0277d000` free. It
-links at `/BASE:0x70000000`, and `main` reserves the range first thing
-(`arena::reserve_image_range`; the image's regions are then committed
-inside that reservation). That is not enough: Windows creates the main
-thread's stack and the first heaps at the lowest free addresses before
-any of the program's code runs, and on the first launch the stack's 1 MB
-reservation sat at `0x00400000` (`VirtualQuery`: `MEM_RESERVE`,
-`MEM_PRIVATE`, allocation base `0x00400000`). So when the reservation
-fails, `ffx-rust.exe` starts itself again (`src/relaunch.rs`): suspended,
-with bottom-up ASLR off (as `ffx-launch` does for `FFX.exe`), reserves the
-range in the child with `VirtualAllocEx` while nothing in it has run,
-resumes it with `FFX_HOST_IMAGE_RESERVED=1` (the child adopts the
-reservation after checking it with `VirtualQuery`), waits for it and
-exits with its code. The child is in a job that ends it when the parent
-goes. A child whose range is taken anyway would be ended and another
-started (8 tries); every launch so far got it on the first.
 
 The release maps only the data sections (`.rdata`, `.data`, `.rodata`,
 `_RDATA`, `.rsrc`). This build maps `.text` too, read as data, for Unicorn.
@@ -809,8 +800,7 @@ thread waits on both thread handles: the count is exactly 6,000.
   kept by class. `CreateWindowExA` makes the real window with the game's
   strings, styles and size, then gives the game's procedure its
   `WM_CREATE` with a `CREATESTRUCTA` in the arena, as Windows would have
-  during the call. The game holds the real `HWND` (32 bits on i686; the
-  handle table maps it at stage 4).
+  during the call. The game holds the real `HWND` (a 32-bit value).
 - **Messages.** `PeekMessageA/W` peek the real queue into the game's
   `MSG`; `DispatchMessageA/W` of a message for the game's window calls
   the game's procedure through `Exec::call` (emulated or ported), other
@@ -835,12 +825,6 @@ thread waits on both thread handles: the count is exactly 6,000.
   the 1 ms granularity the game asks for (its threads poll with
   `Sleep(1)`: 7,755 calls on the way to the third frame), not Windows'
   default 15.6 ms.
-- **Memory.** On i686 a region (`VirtualAlloc`, a thread's stack) goes
-  into the first free gap of the process's own address space, which the
-  GPU driver fills with reservations of hundreds of MB. Probing those 64 KB
-  at a time made each of the boot's 765 `VirtualAlloc`s take tens of ms:
-  190 s to the third `Present`. `Arena::map_anywhere` now jumps past what
-  `VirtualQuery` says holds a refused address: 27 s (Linux: 7 s).
 - **Input.** `DirectInput` stays the layer's (no devices: the real
   keyboard, mouse and pads never reach the game); the harness's `keys`
   fill the keyboard's `GetDeviceState`. XInput is never called (the game
@@ -910,19 +894,19 @@ unhandled report (above, "Exceptions").
 ## Building for Windows
 
 `tools/build-host.sh` (`build`, or `clippy` with cargo's arguments after
-it) builds `ffx-rust.exe` for i686 through cargo xwin, like the hook.
+it) builds `ffx-rust.exe` for x86_64 (`x86_64-pc-windows-msvc`, the only
+target since 2026-10-31; `FFX_HOST_TARGET` set to anything else is
+refused) through cargo xwin, like the hook.
 Unicorn's C build needs cmake, ninja and `llvm-lib`, and cargo-xwin's
 cmake toolchain file sets `CMAKE_MSVC_RUNTIME_LIBRARY`, which unicorn's
 `CMakeLists.txt` refuses next to the `-MT` that `cc` passes. The script
 supplies cmake and ninja through `uvx` when they are missing, links the
-versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc`
+versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_<target>`
 at a copy of the toolchain file without that line (all under
-`target/host-shims`). `build.rs` links the program at `/BASE:0x70000000`
-with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
-use the upper 2 GB. `FFX_HOST_TARGET=x86_64-pc-windows-msvc` builds the
-64-bit program instead (the arena with a base, stage 4); Unicorn's
-`setjmp` wrapper is MASM there, assembled by LLVM's `llvm-ml64` under the
-name `ml64`.
+`target/host-shims`). Unicorn's `setjmp` wrapper is MASM, assembled by
+LLVM's `llvm-ml64` under the name `ml64`. The hook (`dinput8.dll`) stays
+32-bit (`tools/build-hook.sh`), and so does its 32-bit clippy
+(`-p ffx-hook`); `ffx-host` is no longer in it.
 
 ## Status (2026-10-29, the device round)
 
@@ -1364,14 +1348,79 @@ What it found and what was fixed:
   load in menu-save one fewer. Events and state agree (the traces
   compare values); what follows the absolute update count shows it: the
   title's cursor glow and header band (menu-save-4 and -6, boot-4; the
-  menu timer `0x01840884` counts the title's updates). Suspects, not
-  measured: `FileSys_SubmitRead` running every read and its
-  decompression at once on the calling thread ("The clock", "Reads"),
-  where the hook's harness paces the loader by its turn at each boundary
-  ("Load pacing" in `docs/harness.md`), and the loader turn's 3 s rule.
-  Next: count `AsyncLoadManager` requests per update in both programs
-  over `load direct` (`FFX_HOST_WATCH` on the loader's functions; the
-  hook's loader-turn log).
+  menu timer `0x01840884` counts the title's updates). Measured in the
+  next round: "The update phase" below (not the reads: the hook's
+  virtual clock makes `FileSys_SubmitRead` synchronous too).
+
+#### The update phase (2026-11-01, host-phase)
+
+Measured on PC2 with probe replays that trace, every update, the
+loader's two request counts (`g_AsyncLoadManager` `+0x20`, `+0x2c`), the
+whole manager, ctrl work 0, the CD channels and `g_PhyreScene` in 4 KB
+chunks, in both programs (`~/ffx-work/host-phase/probe-*.txt`), and a
+diagnostic build of the hook that logs each render-lock take of the
+loader with its update and wait (not committed). Two separate things:
+
+1. **The ~10 updates before `loadsave` are real time in the original.**
+   field-walk's probe from the title on: the `loadsave` came at update
+   160, 163 and 163 in three original runs and at 152 in ffx-rust; from
+   it on, both take the same 103 updates to the shot. The title's asset
+   request, queued at update 108, keeps the loader busy until update 159
+   in the original and is done at 109 in ffx-rust. Before `loadsave ...
+   lockstep` the hook's harness holds nothing: the loader runs free and
+   took the render lock once or twice per (fast, about 1 ms) update,
+   between its reads and decompression, so the title's load spread over
+   about 50 updates, by host speed (the three runs above differ by 3).
+   ffx-rust's clock gives the loader its turn from the main loop's first
+   boundary on, so the load is done in one. No port is involved, and an
+   emulated program cannot reproduce a count that follows the host's
+   real time. It does not reach the comparisons: everything after the
+   `loadsave` runs in lockstep, `pin` resets what the title leaves, and
+   the traces are compared by events.
+2. **In lockstep, one update less at menu-save's game over.** A probe of
+   menu-save's way back to the title (`call 0x0086da10`, then the same
+   waits) in both programs, aligned at the call: the map words change at
+   +0, +1 and +5 in the original, +0, +1 and +4 in ffx-rust, and every
+   later change keeps that one update (the title shot at +379 against
+   +378). In the original the request the call's update queues is still
+   in the list at the next boundary and runs in that boundary's turn; in
+   ffx-rust it ran inside the call's update. The cause is the in-update
+   rule: ffx-rust frees the loader when an update runs 3 s of host time
+   (the hook's 100 ms, scaled), and the emulated game-over update takes
+   far longer than that without waiting for the loader, while natively
+   it takes well under 100 ms. That is the "-12 after update 1213" of
+   the gate, and the title's cursor-glow phase in menu-save-4 and -6.
+   **Not fixed**: with the host-time rule replaced by one counted in the
+   main thread's own sleeps (100 ms of `Sleep`/`SleepThreadInMillisecond`
+   in one update, which frees the map loads' updates as the hook's stall
+   does), the game-over update never ends: the main thread calls
+   `PRenderThread_sync` (it waits on the render thread's sync event,
+   set at `0x00593782`) over and over, and the render thread sits in a
+   take of the render lock (`Phyre_PMutex_lockInner_00431850`, the lock
+   free, itself the only waiter, in no Windows wait) until the loader is
+   let go; with a 600 s guard the update still ran into it. In the hook
+   that update never stalls (its log frees the loader only in the two map
+   loads). So under emulation the render thread depends on the loader
+   inside that update where natively it doesn't; what links them was not
+   found (the guest-stack scans gave only stale words). The rule stays
+   as it was. What `FFX_HOST_WATCH` showed (the 3 s rule in place): the
+   emulated game-over update ran about 47 s of the main thread's own
+   work, then queued a `RegistTask` and about 30 cluster loads, then
+   called `PRenderThread_sync`; the render thread's
+   `processRenderCommands` ended (and the sync with it) only after the
+   loader's first cluster loads had run. Holding cluster loads queued
+   inside an update until the turn (a wrapper on
+   `AsyncLoadManager_LoadClusterRequest_run_00691320`) therefore hung the
+   field's map load (the main thread waits there without `Sleep`) and was
+   dropped. Next: the render thread's guest stack at the stall (a
+   `stacks` command in ffx-rust's harness, as the hook has), and the same
+   update traced in the hook with its loader-take log, to see whether the
+   original's render thread also waits for a cluster load there (and why
+   that costs it no stall).
+3. The opening's map load (`memochek` to the title) is freed in the
+   main thread's wait in both programs, but one update earlier in
+   ffx-rust (+194 against the original's +196, with the shift above
+   +195): the same rule's other side; the sleep rule did not change it.
 
 #### The cloth race (2026-10-31, host-gate)
 
@@ -1448,6 +1497,23 @@ staged update `n`), so each submit finds its flag set and copies:
   `n + 1`; the 2 s limit and its note are there in case a lock proves
   otherwise.
 
+**Done in both programs (2026-10-31, host-phase; the user's decision).**
+The wait is on by default in lockstep, in ffx-rust (`harness.rs`
+`cloth_order`) and in the hook's harness (`crates/ffx-hook/src/harness.rs`
+`cloth_order`, with `FLIPS_DONE` counted after `Renderer_PresentFlip`'s
+original), for the original code and the ports alike;
+`FFX_HARNESS_CLOTH_ORDER=0` turns it off (`tools/run-game.sh` passes the
+variable to both programs). `stats` counts `cloth_waits` in both. It sits
+in the cloth job, not in a wrapper of
+`graphicCharacterInstanceSetClothVertexBuffers`: the job wrapper exists in
+both programs already (the seeded jobs) and runs whichever code is on,
+where that function is a `ported!` entry in the hook, so a wrapper there
+would need a second fallback hook for original-code runs (as
+`loader_turn::install_fallback` does for the render lock). A frame with
+cloth meshes but no cloth job has nothing to order (no step wrote new
+vertices). What it changes in the references: below, "The cloth order
+against the references".
+
 **Which replays need re-recording**: the order chosen is the one the
 originals show almost always (event-besaid-4 matched the existing
 references pixel for pixel with it), so none is expected to. The
@@ -1461,6 +1527,34 @@ draw-gate-besaid with their `dg-*` references; the cloth-ring and hood
 entries of the accepted residue (`docs/harness.md`, "Accepted residue")
 and of the scene-gate allow lists should then go. The menu replays draw
 no cloth character.
+
+#### The cloth order against the references (2026-11-01, host-phase)
+
+The original code (the hooked game with every replacement off, as
+`run-all.sh --record` runs it) with the cloth order on, twice per replay,
+on PC2, each shot compared with PC2's current references
+(`shot-compare.py`: pixels where the run differs from the references
+although the two references agree; the `eye` replays against `orig/eye`).
+Nothing was re-recorded.
+
+| Replay | Run 1 | Run 2 | Would change |
+|---|---|---|---|
+| event-besaid | 5 of 5, 0 pixels | 5 of 5, 0 pixels | no |
+| battle-attack | 2 of 2, 0 pixels | 2 of 2, 0 pixels | no |
+| battle-magic | 3 of 3, 0 pixels | 3 of 3, 0 pixels | no |
+| field-walk | coarse 0.0, 0.0 | coarse 0.0, 0.0 | no |
+| battle-ifrit (extra) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no |
+| battle-overdrive (`eye`) | shot 1: 49 pixels (x 530..684, y 384..613: the edges of a party member's skirt and belt cloth); 2-9: 0 | the same 49 pixels | **shot 1** |
+| boot (`realtime`) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no (no lockstep: the order is off) |
+| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own |
+
+So with the order the original code gives the current references in every
+lockstep replay but **battle-overdrive-1** (49 pixels on cloth edges, the
+same in both runs): that one would need recording again. The draw gates
+with cloth (draw-gate-kami, draw-gate-besaid) were not checked: their
+`dg-*` references are on the main machine only, and games don't run
+there. The hood and cloth-ring entries of the accepted residue stay until
+the user decides.
 
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
@@ -1491,11 +1585,16 @@ Not chased further, for these reasons:
   child process with the image range reserved) exists only for it, and
   `docs/harness.md` describes both.
 
-Proposal (the coordinator decides): keep i686 compiling (it is the hook's
-target, and the 32-bit clippy covers `ffx-host` too) but drop it from the
-host gate's runs and from `tools/run-game.sh --rust`'s default
-(`FFX_HOST_TARGET` defaulting to x86_64), and remove `relaunch.rs` when
-the i686 build is dropped entirely.
+Proposal: drop it from the host gate's runs and from `tools/run-game.sh
+--rust`'s default, and remove `relaunch.rs` when the i686 build is dropped
+entirely.
+
+**Decided (the user, 2026-10-31): dropped entirely** (host-phase).
+`tools/build-host.sh` builds x86_64 only, `tools/run-game.sh --rust` and
+`run-all.sh` run that build, `src/relaunch.rs`, `build.rs` (the `/BASE`
+and `/LARGEADDRESSAWARE` link for i686) and the arena's 32-bit back end are
+gone, and `ffx-host` refuses a target that is not 64-bit. The 32-bit
+clippy covers `ffx-hook` (the hook stays 32-bit), not `ffx-host`.
 
 #### The first comparison
 
@@ -1561,10 +1660,8 @@ runs past the third frame (the Unicorn abort).
    "Status on Windows"). (a) Settled for stage 4 (2026-10-29, host-pc2):
    the 64-bit build runs on PC2 and on the main machine once our handler
    commits Unicorn's translation buffers ("The 64-bit build on PC2"); the
-   i686 abort in Unicorn's 32-bit TCG backend (`tcg_reg_alloc`) a few
-   seconds past the third frame is still there and only matters if
-   stage 3 needs i686 runs (the stage 3 gate ran on x86_64; the case for
-   dropping the i686 runs: "The i686 build", host-gate). (b) Done (host-pc2): the harness's frame
+   i686 build, which aborted in Unicorn's 32-bit TCG backend
+   (`tcg_reg_alloc`), was dropped on 2026-10-31 ("The i686 build"). (b) Done (host-pc2): the harness's frame
    commands run on the clock's boundary (`docs/harness.md`, "Two
    processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
@@ -1581,11 +1678,15 @@ runs past the third frame (the Unicorn abort).
    game Rust addresses (the reader's buffer, the parser's objects, the
    decoded frames and samples); in ffx-host they are game memory now and
    movie-fmv passes ("The stage 3 gate on PC2").
-9. **Load pacing** (host-gate): `load direct`'s map load takes about 10
-   updates fewer than in the hooked original, so free-running timers
-   (the title's cursor glow: menu-save-4/-6, boot-4) show another phase;
-   events and state agree ("The stage 3 gate on PC2").
-10. **The cloth race** (host-gate): ordered by `FFX_HARNESS_CLOTH_ORDER=1`
-    in ffx-rust; the same wait in the hook's harness is the plan ("The
-    cloth race"); the coordinator decides on the references.
+9. **Load pacing** (host-gate, measured by host-phase: "The update
+   phase"): the ~10 updates are the title before `loadsave`, which runs
+   free in the hook and follows the host's real time (not reproducible,
+   and not in any comparison); in lockstep one update is lost at
+   menu-save's game over, where ffx-rust's 3 s in-update rule lets the
+   loader run inside a long emulated update (menu-save-4/-6's glow
+   phase). Open: the render thread waits for the loader inside that
+   update, so the rule can't simply go.
+10. **The cloth race** (host-gate): ordered in both programs, on by
+    default in lockstep (host-phase, "The cloth race"); which references
+    it changes is listed for the user's decision.
 
