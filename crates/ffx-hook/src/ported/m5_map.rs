@@ -14,6 +14,7 @@ use ffx_prender::l6_map4::bridge as l6m4;
 use ffx_prender::l6_map5::bridge as l6m5;
 use ffx_prender::l6_map6::bridge as l6m6;
 use ffx_prender::l6_map7::bridge as l6m7;
+use ffx_prender::l7_map::bridge as l7m;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -869,5 +870,55 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::l6_map2::bridge::GUIDE_CONV_FRAME;
         l6m2::guide_conv(&mut mem(), ebp, id)
+    }
+    // ---- round 7 (left7) batch 1 (ffx_prender::l7_map) ----
+    /// `(window, msg, param)`: the layer animation window's procedure (its
+    /// count text and mouse deltas in a frame).
+    rcuiAnimeProc @ 0x0093_13f0 => extern "C" fn rcui_anime_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l7_map::ANIME_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l7_map::ANIME_FRAME;
+        l7m::anime_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the camera window's procedure (its texts,
+    /// drag value and mouse deltas in a frame).
+    rcuiCameraProc @ 0x0093_1910 => extern "C" fn rcui_camera_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::CAMERA_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::CAMERA_FRAME;
+        l7m::camera_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the layer window's procedure (its texts and
+    /// mouse deltas in a frame).
+    rcuiLayerProc @ 0x0093_4470 => extern "C" fn rcui_layer_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::LAYER_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::LAYER_FRAME;
+        l7m::layer_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the VRAM window's procedure (its name table
+    /// and text in a frame).
+    rcuiVramProc_00936a00 @ 0x0093_6a00 => extern "C" fn rcui_vram_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::VRAM_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::VRAM_FRAME;
+        l7m::vram_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the FP adjust window's procedure (its
+    /// manager pointer, matrix, angles and text in a frame).
+    rcuiFpAdjProc_00932f20 @ 0x0093_2f20 => extern "C" fn rcui_fp_adj_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::FP_ADJ_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::FP_ADJ_FRAME;
+        l7m::fp_adj_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the particle window's procedure (its text
+    /// and scale copy in a frame).
+    rcuiParticleProc_00935970 @ 0x0093_5970 => extern "C" fn rcui_particle_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::PARTICLE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::PARTICLE_FRAME;
+        l7m::particle_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(model, path)` -> 1 (0 when the file doesn't load): the model
+    /// built from an `.rsd` file (its kinds and descriptor in a frame).
+    rcbgModelCreateFromFile @ 0x0093_a280 => extern "C" fn rcbg_model_create_from_file(model: u32, path: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l7m::MODEL_FILE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::MODEL_FILE_FRAME;
+        l7m::model_create_from_file(&mut mem(), ebp, model, path)
     }
 }
