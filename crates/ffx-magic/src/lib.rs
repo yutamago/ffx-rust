@@ -3686,6 +3686,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     ("node ease", &s9_misc::NODE_EASE),
     ("node ease (0570)", &s9_misc::NODE_EASE_B),
+    ("sprite frames", &s9_misc::SPRITE_FRAMES),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

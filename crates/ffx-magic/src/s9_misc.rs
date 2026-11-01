@@ -4231,3 +4231,74 @@ pub const NODE_EASE_B: Sig = Sig {
     hash: 0x3ccf_28f8_43ec_2d2e,
     ..NODE_EASE
 };
+
+/// The DLL's sprite records drawn (internal: `xmm3` = the time step `dt`;
+/// a /GS frame aligned to 8, `E` = `((esp - 4) & !7) - 0x28` after the
+/// saved registers, `dt` kept at `E+0x10`, the word `x` at `E+0xc`): `x`
+/// starts as `*G_X`; for each of the `*G_N` records `R = *G_R + 0x94 i`
+/// with `R+0` set: slot 325 `(R+0x44, P)` with `P` = `R+4`, or, while
+/// `*G_F` is set, slot 229's `(L, V, R+4)` result `L` (`E+0x14`); then
+/// `x` = the record `R+0x30`'s frame
+/// ([`sprite_frame`](crate::o6_fam_pairs5::sprite_frame), `xmm3` = `dt`,
+/// stack `(x, i)`). Returns `x`.
+///
+/// `magic_0206` 0x10002f30 (200 bytes; 4 DLLs).
+pub fn sprite_frames<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x72), s);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x28);
+    let dt = fr.xmm_f32(3).to_bits();
+    let mut x = g.read::<u32>(w(0x1b));
+    let base = g.read::<u32>(w(0x22));
+    g.write::<u32>(e + 0x10, dt);
+    g.write::<u32>(e + 0xc, x);
+    let frame_at = img.rel32_target(f + 0x91);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0x15)) {
+        let rec = base.wrapping_add(i.wrapping_mul(0x94));
+        if g.read::<u32>(rec) != 0 {
+            let p = if g.read::<u32>(w(0x47)) == 0 {
+                rec.wrapping_add(4)
+            } else {
+                let l = e + 0x14;
+                g.call(
+                    slot_target(g, w(0x5d), 229),
+                    0,
+                    &[l, w(0x57), rec.wrapping_add(4)],
+                );
+                l
+            };
+            g.call(t(g, 325), 0, &[rec.wrapping_add(0x44), p]);
+            g.write::<u32>(e.wrapping_sub(8), x);
+            g.write::<u32>(e.wrapping_sub(4), i);
+            let sub = Frame {
+                at: frame_at,
+                esp: e.wrapping_sub(0xc),
+                eax: 0,
+                ecx: rec.wrapping_add(0x30),
+                edx: 0,
+                xmm: [0, 0, 0, u128::from(dt)],
+            };
+            x = crate::o6_fam_pairs5::sprite_frame(g, img, &sub).eax;
+            g.write::<u32>(e + 0xc, x);
+        }
+        i += 1;
+    }
+    Ret::eax(x)
+}
+
+/// [`sprite_frames`] (the `rel32`s: the record's frame,
+/// `__security_check_cookie`).
+pub const SPRITE_FRAMES: Sig = Sig {
+    len: 200,
+    hash: 0x6606_ddc1_2a24_1818,
+    calls: &[
+        (
+            0x91,
+            Callee::Sig(&crate::o6_fam_pairs5::SPRITE_FRAME_0206_2730),
+        ),
+        (0xc0, Callee::Any),
+    ],
+    imports: &[],
+};
