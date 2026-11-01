@@ -323,6 +323,15 @@ must leave the same room. The memory comparison skips the stack below
 the entry, so a stub that receives such a pointer reads what is there
 (`magic_0052.rs`).
 
+The comparison covers every page the test set up or the port touched,
+and also every page the original's run made resident (found with
+`mincore`), so a port that leaves out a store the original makes fails
+even when the test never touched that page. The 4 GiB arena is taken
+zeroed from the allocator instead of cleared, so only touched pages are
+resident. Words one DLL's test writes outside its regions are cleared
+when the next DLL loads, so tests in one process don't see each other's
+leftovers (2026-11-01, magic-testgaps).
+
 **The gate in the game.** `FFX_MAGIC_RUST=1` (every DLL) or a comma list
 of numbers (`FFX_MAGIC_RUST=604,309`) makes `overlay_emu.rs` answer each
 trapped call into a selected DLL's code with the port bound there; code

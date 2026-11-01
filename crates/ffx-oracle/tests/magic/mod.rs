@@ -14,8 +14,9 @@
 //!   the bytes popped; a tail jump's target and stack);
 //! - every call-out: target (slot), and the argument words the port
 //!   passes against the original's stack;
-//! - memory: every page either side's set-up or the port wrote, the
-//!   image, the stack, the data pages and the heap, byte for byte.
+//! - memory: every page either side's set-up, the port or the original
+//!   wrote, the image, the stack, the data pages and the heap, byte for
+//!   byte.
 //!
 //! Stubs ([`Twin::stub`]) answer a slot for both sides alike and may read
 //! and write memory. Tests run one at a time (the arena is shared).
@@ -27,7 +28,7 @@
     clippy::unused_self
 )]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -62,10 +63,16 @@ struct Arena {
 fn arena() -> &'static Arena {
     static A: OnceLock<Arena> = OnceLock::new();
     A.get_or_init(|| {
-        let layout = std::alloc::Layout::from_size_align(1 << 32, 1 << 16).unwrap();
-        // SAFETY: a non-zero layout; pages stay untouched until used.
-        let base = unsafe { std::alloc::alloc_zeroed(layout) } as usize;
-        assert!(base != 0);
+        // 64 KiB more than the 4 GiB, aligned by hand: an alignment the
+        // allocator must honour itself makes `alloc_zeroed` clear the whole
+        // block (4 GiB written, all of it resident), where `calloc`'s fresh
+        // mapping is zero already and stays untouched until used
+        let layout = std::alloc::Layout::from_size_align((1 << 32) + (1 << 16), 16).unwrap();
+        // SAFETY: a non-zero layout; never freed (the arena lives as long
+        // as the process).
+        let block = unsafe { std::alloc::alloc_zeroed(layout) } as usize;
+        assert!(block != 0);
+        let base = (block + 0xffff) & !0xffff;
         ffx_overlay::configure(Config {
             base,
             service: SERVICE,
@@ -74,6 +81,56 @@ fn arena() -> &'static Arena {
         Arena { base }
     })
 }
+
+/// The arena's pages in memory, a byte each (`mincore`; bit 0 set for a
+/// page that is). A page the original's code made resident during a run
+/// is one it wrote (or read) outside the pages the comparison knew of: a
+/// port that drops a store there would otherwise pass, as the port's side
+/// never touched the page (magic-families, 2026-11-01).
+#[cfg(target_os = "linux")]
+fn resident() -> Vec<u8> {
+    unsafe extern "C" {
+        fn mincore(addr: *mut std::ffi::c_void, len: usize, vec: *mut u8) -> i32;
+    }
+    let mut v = vec![0u8; 1 << 20];
+    // SAFETY: the arena's 4 GiB, one mapping; one byte per 4 KiB page.
+    let r = unsafe {
+        mincore(
+            arena().base as *mut std::ffi::c_void,
+            1 << 32,
+            v.as_mut_ptr(),
+        )
+    };
+    assert_eq!(r, 0, "mincore: {}", std::io::Error::last_os_error());
+    v
+}
+
+/// Elsewhere no page list: the comparison covers the known pages only.
+#[cfg(not(target_os = "linux"))]
+fn resident() -> Vec<u8> {
+    Vec::new()
+}
+
+/// The pages resident in `after` but not in `before`.
+fn new_pages(before: &[u8], after: &[u8]) -> Vec<u32> {
+    let mut out = Vec::new();
+    for (i, (b, a)) in (0u32..).zip(before.chunks(8).zip(after.chunks(8))) {
+        if a == b {
+            continue;
+        }
+        for (j, (x, y)) in (0u32..).zip(b.iter().zip(a)) {
+            if y & 1 != 0 && x & 1 == 0 {
+                out.push(8 * i + j);
+            }
+        }
+    }
+    out
+}
+
+/// The arena pages a dropped [`Twin`] wrote outside the regions (its own
+/// pages and the original's): the next [`Twin::load`] clears them, so one
+/// test's words there are not another's (both sides start from zeros).
+static STALE: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
 
 fn lock() -> MutexGuard<'static, ()> {
     static L: Mutex<()> = Mutex::new(());
@@ -447,6 +504,9 @@ pub struct Twin {
     heap: u32,
     /// Words the next comparison leaves out (the CRT's own state).
     ignore: Vec<u32>,
+    /// Pages the original's runs made resident outside the regions (see
+    /// [`resident`]): compared, like the port's own pages, from then on.
+    orig_pages: BTreeSet<u32>,
     /// The original's registers after the last [`Twin::check`] (for
     /// results outside `eax`/ST0, such as an internal function's `xmm0`).
     pub last: Regs,
@@ -498,6 +558,16 @@ fn zero(m: &mut impl Mem, at: u32, len: u32) {
     }
 }
 
+impl Drop for Twin {
+    fn drop(&mut self) {
+        let mut stale = STALE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        stale.extend(self.port.pages.keys());
+        stale.extend(&self.orig_pages);
+    }
+}
+
 impl Twin {
     /// Loads `magic_NNNN.dll` (`number`), starts its CRT in Unicorn and
     /// copies the result to the port's side. `None` without
@@ -535,6 +605,14 @@ impl Twin {
         zero(&mut a, HEAP, HEAP_LEN);
         zero(&mut a, STACK_TOP - STACK_LEN, STACK_LEN);
         zero(&mut a, SCRATCH, SCRATCH_LEN);
+        let stale = std::mem::take(
+            &mut *STALE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        for p in stale {
+            zero(&mut a, p << 12, 0x1000);
+        }
         for o in ffx_overlay_loaded() {
             o.unload();
         }
@@ -564,6 +642,7 @@ impl Twin {
             functions,
             heap: HEAP,
             ignore: Vec::new(),
+            orig_pages: BTreeSet::new(),
             last: Regs::default(),
         };
         // this thread's Unicorn engine (its thread block comes from the
@@ -675,6 +754,11 @@ impl Twin {
             let mut b = vec![0u8; len as usize];
             ArenaMem.read_bytes(at, &mut b);
             self.port.write_bytes(at, &b);
+        }
+        let mut b = [0u8; 4096];
+        for &p in &self.orig_pages {
+            ArenaMem.read_bytes(p << 12, &mut b);
+            self.port.write_bytes(p << 12, &b);
         }
     }
 
@@ -803,10 +887,13 @@ impl Twin {
             calls: Vec::new(),
             heap: self.heap,
         };
+        let before = resident();
         let r = ffx_overlay::call(&mut host, at, &regs)
             .unwrap_or_else(|e| panic!("{}: original at {at:#010x}: {e}", self.name));
         self.heap = host.heap;
-        (r, host.calls)
+        let calls = host.calls;
+        self.orig_pages.extend(new_pages(&before, &resident()));
+        (r, calls)
     }
 
     /// Runs the original at `at` and `port` from the same registers and
@@ -931,6 +1018,7 @@ impl Twin {
 
     fn compare_memory(&mut self, at: u32) {
         let mut pages: Vec<u32> = self.port.pages.keys().copied().collect();
+        pages.extend(&self.orig_pages);
         for (a, len) in self.regions() {
             pages.extend((a >> 12)..((a + len) >> 12));
         }
