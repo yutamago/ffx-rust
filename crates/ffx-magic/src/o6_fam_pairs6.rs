@@ -1100,4 +1100,175 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
 }
 
+/// The task of a fading spark source with a trail (stack `(task)`, `o` =
+/// the task's `+0x14`, its trail `T = o + 0x2c0`, `W = *G_W`; a /GS
+/// frame, `ebp` = the entry `esp - 4`; `magic_0544`, `magic_0555`,
+/// `magic_0556` 0x10002250, 629 bytes; family `F0544_10002250`):
+/// - the timer `o + 0x50c` drops while positive; still `>= 0`: the place
+///   `V` = `(1 - s) o.270.. + s o.260..` (`s` = timer `/ o.510`, `K`
+///   = 1 from the code), `V.w` = 1; `W + 0x5c04` picks the sparks at `V`
+///   (0: [`crate::s4_fam446::sparks_a`], 2: `sparks_c`, 3: `sparks_d`);
+///   the part's matrix ([`crate::sa_misc::part_matrix`], `magic_0555`:
+///   [`crate::s5_misc::weapon_matrix`]) from `o + 0x280` and `V`; `o +
+///   0xd0..` = the place, `+0xdc` 1.0. At timer 0: a child starts
+///   ([`crate::s4_fam446::start_child_a`] with `W + 0x5c04`); with that
+///   word 0 the timer goes on below 0, else the object leaves the host
+///   list (slot 713 `(o)`, `*G_P` = the code's word, `o + 0x124 &=
+///   0x7fff` when it was there), `W + 0x5c0c` rises and the task is given
+///   back ([`crate::sa_pool::give_back`]);
+/// - below 0: the trail shortens (`T + 0x228`; at 0 `W + 0x5c0c` rises
+///   and the task is given back, the object staying listed), `V` = `o +
+///   0x270..`;
+/// - with `W + 0x5c04` 0 the trail is drawn
+///   ([`trail_draw`]) with the basis 0.2 times the unit (slot 235).
+///
+/// Returns the last callee's `eax` (the trail count left in the second
+/// case without drawing).
+#[allow(clippy::too_many_lines)] // the original's three paths, one step at a time
+pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task.wrapping_add(0x14));
+    let ww = g.read::<u32>(w(0x21));
+    let trail = o.wrapping_add(0x2c0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |off: u32| ebp.wrapping_sub(off);
+    let (v, m) = (at(0x18), at(0x5c));
+    let mode = |g: &G| g.read::<u32>(ww.wrapping_add(0x5c04));
+    let timer = o.wrapping_add(0x50c);
+    let t0 = g.read::<u32>(timer);
+    if t0.cast_signed() > 0 {
+        g.write::<u32>(timer, t0.wrapping_sub(1));
+    }
+    let t = g.read::<u32>(timer);
+    // the object leaves (the host list first when `unlist`), `W + 0x5c0c`
+    // rises, the task is given back
+    let leave = |g: &mut G, unlist: bool| {
+        let list_at = img.rel32_target(f + 0x188);
+        if unlist && crate::l5_objhost::list_remove(g, img, list_at, w(0x183), o) != 0 {
+            let p = g.read::<u32>(w(0x191));
+            g.write::<u32>(p, w(0x198));
+            let s = slot_target(g, w(0x19d), 713);
+            // call width: 1
+            g.call(s, 0, &[o]);
+            let x = g.read::<u16>(o.wrapping_add(0x124)) & 0x7fff;
+            g.write::<u16>(o.wrapping_add(0x124), x);
+        }
+        let n = g.read::<u32>(ww.wrapping_add(0x5c0c)).wrapping_add(1);
+        g.write::<u32>(ww.wrapping_add(0x5c0c), n);
+        Ret::eax(crate::sa_pool::give_back(
+            g,
+            img,
+            img.rel32_target(f + 0x1c1),
+            task,
+        ))
+    };
+    if t.cast_signed() >= 0 {
+        let s = div(cvt(t), cvt(g.read::<u32>(o.wrapping_add(0x510))));
+        let r = sub(g.read::<f32>(w(0x5d)), s);
+        let md = mode(g);
+        g.write::<u32>(at(0xc), 0x3f80_0000);
+        for (i, keep) in [(0u32, 0x6cu32), (1, 0x64), (2, 0x60)] {
+            let a = mul(g.read::<f32>(o.wrapping_add(0x260 + 4 * i)), s);
+            let x = add(mul(g.read::<f32>(o.wrapping_add(0x270 + 4 * i)), r), a);
+            g.write::<f32>(at(keep), x);
+            g.write::<f32>(v.wrapping_add(4 * i), x);
+        }
+        let sparks = match md {
+            0 => Some((
+                0x10d,
+                crate::s4_fam446::sparks_a::<G> as fn(&mut G, &Image, &Frame) -> Ret,
+            )),
+            2 => Some((
+                0x103,
+                crate::s4_fam446::sparks_c::<G> as fn(&mut G, &Image, &Frame) -> Ret,
+            )),
+            3 => Some((
+                0xf9,
+                crate::s4_fam446::sparks_d::<G> as fn(&mut G, &Image, &Frame) -> Ret,
+            )),
+            _ => None,
+        };
+        if let Some((call, port)) = sparks {
+            let fr = Frame {
+                at: img.rel32_target(f + call),
+                esp: at(0x80),
+                ecx: v,
+                ..Frame::default()
+            };
+            port(g, img, &fr);
+        }
+        let mat_at = img.rel32_target(f + 0x11c);
+        let ang = o.wrapping_add(0x280);
+        let eax = if img.matches(mat_at, &crate::s5_misc::WEAPON_MATRIX) {
+            crate::s5_misc::weapon_matrix(g, img, mat_at, at(0x84), ang, v)
+        } else {
+            let fr = Frame {
+                at: mat_at,
+                esp: at(0x84),
+                ecx: ang,
+                edx: v,
+                ..Frame::default()
+            };
+            crate::sa_misc::part_matrix(g, img, &fr)
+        };
+        for (i, keep) in [(0u32, 0x6cu32), (1, 0x64), (2, 0x60)] {
+            let x = g.read::<u32>(at(keep));
+            g.write::<u32>(o.wrapping_add(0xd0 + 4 * i), x);
+        }
+        g.write::<u32>(o.wrapping_add(0xdc), 0x3f80_0000);
+        if g.read::<u32>(timer) != 0 {
+            if mode(g) != 0 {
+                return Ret::eax(eax);
+            }
+        } else {
+            let child = crate::o6_fam_pairs5::stack_args(
+                g,
+                img.rel32_target(f + 0x170),
+                at(0x84),
+                o,
+                ang,
+                &[mode(g)],
+            );
+            crate::s4_fam446::start_child_a(g, img, &child);
+            if mode(g) != 0 {
+                return leave(g, true);
+            }
+            let t = g.read::<u32>(timer).wrapping_sub(1);
+            g.write::<u32>(timer, t);
+        }
+    } else {
+        let count = g.read::<u32>(trail.wrapping_add(0x228));
+        if count.cast_signed() <= 0 {
+            return leave(g, false);
+        }
+        let count = count.wrapping_sub(1);
+        g.write::<u32>(trail.wrapping_add(0x228), count);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(o.wrapping_add(0x270 + 4 * i));
+            g.write::<u32>(v.wrapping_add(4 * i), x);
+        }
+        if mode(g) != 0 {
+            return Ret::eax(count);
+        }
+    }
+    let s = slot_target(g, w(0x231), 235);
+    // call width: 1 (the word stays on the stack under the next call's)
+    g.call(s, 0, &[m]);
+    for i in [0u32, 5, 10] {
+        g.write::<u32>(m.wrapping_add(4 * i), 0x3e4c_cccd);
+    }
+    let draw = crate::o6_fam_pairs5::stack_args(
+        g,
+        img.rel32_target(f + 0x25d),
+        at(0x88),
+        trail,
+        m,
+        &[v, m],
+    );
+    trail_draw(g, img, &draw)
+}
+
 include!("o6_fam_pairs6_table.rs.in");

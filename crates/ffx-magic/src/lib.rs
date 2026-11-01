@@ -2550,6 +2550,9 @@ ports! {
     "o6 fam pairs6 actor_spawner 0644@9a00" => o6_fam_pairs6::ACTOR_SPAWNER_0644_9A00, o6_fam_pairs6::actor_spawner;
     "o6 fam pairs6 staged_nodes 0398@6960" => o6_fam_pairs6::STAGED_NODES_0398_6960, o6_fam_pairs6::staged_nodes;
     "o6 fam pairs6 staged_nodes 0402@6960" => o6_fam_pairs6::STAGED_NODES_0402_6960, o6_fam_pairs6::staged_nodes;
+    "o6 fam pairs6 trail_task 0544@2250" => o6_fam_pairs6::TRAIL_TASK_0544_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 trail_task 0555@2250" => o6_fam_pairs6::TRAIL_TASK_0555_2250, o6_fam_pairs6::trail_task;
+    "o6 fam pairs6 trail_task 0556@2250" => o6_fam_pairs6::TRAIL_TASK_0556_2250, o6_fam_pairs6::trail_task;
     // families2 (o6_fam_pairs5..): end of ports
 }
 

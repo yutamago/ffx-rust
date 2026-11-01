@@ -162,3 +162,66 @@ pub const TRAIL_DRAW_0544_4CE0: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0544_10002250 (0544@2250)
+
+/// [`trail_task`] in `magic_0544` (0x10002250, 629 bytes; row shared:428).
+pub const TRAIL_TASK_0544_2250: Sig = Sig {
+    len: 629,
+    hash: 0x80a8_3361_a849_1411,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0x103, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (0x11c, Callee::Sig(&crate::sa_misc::PART_MATRIX)),
+        (0x170, Callee::Sig(&crate::s4_fam446::START_CHILD_A)),
+        (0x188, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x1c1, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x1ce, Callee::Any),
+        (0x25d, Callee::Sig(&crate::o6_fam_pairs6::TRAIL_DRAW_0544_4CE0)),
+        (0x26d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0544_10002250 (0555@2250)
+
+/// [`trail_task`] in `magic_0555` (0x10002250, 629 bytes; row shared:805).
+pub const TRAIL_TASK_0555_2250: Sig = Sig {
+    len: 629,
+    hash: 0x80a8_3361_a849_1411,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0x103, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (0x11c, Callee::Sig(&crate::s5_misc::WEAPON_MATRIX)),
+        (0x170, Callee::Sig(&crate::s4_fam446::START_CHILD_A)),
+        (0x188, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x1c1, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x1ce, Callee::Any),
+        (0x25d, Callee::Sig(&crate::o6_fam_pairs6::TRAIL_DRAW_0446_4E20)),
+        (0x26d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+// family F0544_10002250 (0556@2250)
+
+/// [`trail_task`] in `magic_0556` (0x10002250, 629 bytes; row shared:429).
+pub const TRAIL_TASK_0556_2250: Sig = Sig {
+    len: 629,
+    hash: 0x80a8_3361_a849_1411,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0x103, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (0x11c, Callee::Sig(&crate::sa_misc::PART_MATRIX)),
+        (0x170, Callee::Sig(&crate::s4_fam446::START_CHILD_A)),
+        (0x188, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x1c1, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x1ce, Callee::Any),
+        (0x25d, Callee::Sig(&crate::o6_fam_pairs6::TRAIL_DRAW_0446_4E20)),
+        (0x26d, Callee::Any),
+    ],
+    imports: &[],
+};
