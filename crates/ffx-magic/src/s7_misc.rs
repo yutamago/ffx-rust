@@ -2590,3 +2590,80 @@ pub const SPLINE_OBJECT: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An emitter aimed at its target and a task node for it (internal:
+/// `ecx` = the emitter `E`, `xmm1` = the speed `v`; a /GS frame aligned
+/// to 8, the matrix `M` a local). `E+0x25c..` = `(0, 0, -v, 0)` (the
+/// sign flipped by the DLL's mask) and `E+0x274 = v`; with `d = E+0x24c..
+/// - E+0xc..`: the pitch `atan2(dy, sqrt(dz dz + dx dx))` and the yaw `y
+/// = K - atan2(dz, dx)` (brought back by `T` once when above `H` or below
+/// `L`), the arcs `_CIatan2`'s and the root `f64`; `M` a unit matrix
+/// (slot 235) turned by the pitch (slot 328) and the yaw (slot 329), and
+/// `E+0x25c` = slot 229 `(E+0x25c, M, E+0x25c)`. A node from the pool
+/// ([`take`](crate::sa_pool::take), owner `CB`) with `+0x14 = E` is
+/// appended to the DLL's task list (`*G_HEAD`, `*G_TAIL`). Returns the
+/// node; with none left the original writes to address 0x14 (not run).
+///
+/// `magic_0284` 0x10003a40 (518 bytes, `ecx`/`xmm1`; 4 DLLs).
+pub fn aimed_emitter<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.ecx;
+    let speed = fr.xmm[1] as u32;
+    let neg = speed ^ g.read::<u32>(w(0x1a));
+    g.write::<u32>(e + 0x264, neg);
+    for at in [0x25cu32, 0x260, 0x268] {
+        g.write::<u32>(e + at, 0);
+    }
+    let d = |g: &G, at: u32| sub(g.read::<f32>(e + 0x240 + at), g.read::<f32>(e + at));
+    let (dy, dx, dz) = (d(g, 0x10), d(g, 0xc), d(g, 0x14));
+    let s = add(mul(dz, dz), mul(dx, dx));
+    // `_libm_sse2_sqrt_precise`, then `_CIatan2` on x87
+    let h = f64::from(s).sqrt();
+    let pitch = g.atan2(f64::from(dy), h) as f32;
+    let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut y = sub(k(g, 0xfe), yaw);
+    if y > k(g, 0x10d) {
+        y = sub(y, k(g, 0x11d));
+    } else if k(g, 0x127) > y {
+        y = add(y, k(g, 0x134));
+    }
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x70);
+    let m = base + 0x28;
+    slot(g, img, f, 0x144, 235, e, &[m]);
+    slot(g, img, f, 0x166, 328, e, &[m, m, pitch.to_bits()]);
+    slot(g, img, f, 0x187, 329, e, &[m, m, y.to_bits()]);
+    let p = e + 0x25c;
+    slot(g, img, f, 0x19a, 229, e, &[p, m, p]);
+    g.write::<u32>(e + 0x274, speed);
+    let n = crate::sa_pool::take(g, img, img.rel32_target(f + 0x1be), w(0x1b1));
+    g.write::<u32>(n.wrapping_add(0x14), e);
+    g.write::<u32>(n.wrapping_add(4), 0);
+    if g.read::<u32>(w(0x1c4)) != 0 {
+        let tail = g.read::<u32>(w(0x1d7));
+        g.write::<u32>(n, tail);
+        g.write::<u32>(tail.wrapping_add(4), n);
+    } else {
+        g.write::<u32>(n, 0);
+        g.write::<u32>(w(0x1e9), n);
+    }
+    g.write::<u32>(w(0x1f6), n);
+    g.write::<u32>(n.wrapping_add(8), n);
+    n
+}
+
+/// [`aimed_emitter`] (the `rel32`s: the square root's and `_CIatan2`'s
+/// thunks, the pool's take and `__security_check_cookie`).
+pub const AIMED_EMITTER: Sig = Sig {
+    len: 518,
+    hash: 0xa960_562b_d1bd_2d25,
+    calls: &[
+        (0xaa, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xbd, Callee::Import("_CIatan2")),
+        (0xec, Callee::Import("_CIatan2")),
+        (0x1be, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1fe, Callee::Any),
+    ],
+    imports: &[],
+};

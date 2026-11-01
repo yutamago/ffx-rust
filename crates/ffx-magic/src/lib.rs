@@ -2968,6 +2968,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("shake node", &s7_misc::SHAKE_NODE),
     ("thunder node", &s7_misc::THUNDER_NODE),
     ("spline object", &s7_misc::SPLINE_OBJECT),
+    ("aimed emitter", &s7_misc::AIMED_EMITTER),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

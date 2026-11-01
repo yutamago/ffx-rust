@@ -2186,3 +2186,80 @@ fn spline_objects() {
         }
     }
 }
+
+/// Row 301: the aimed emitter of the four DLLs: targets in each quarter
+/// (the yaw brought back from above and below and kept), the task list
+/// empty and not; the matrix slots see the frame's matrix.
+#[test]
+fn aimed_emitters() {
+    for (dll, rva) in [
+        (284u16, 0x3a40u32),
+        (285, 0x26d0),
+        (286, 0x36b0),
+        (287, 0x26d0),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 235, log, 1, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { k + i });
+            }
+            0x235
+        });
+        for s in [328u32, 329] {
+            log_calls(&mut t, s, log, 3, None, move |m, a, k| {
+                let v = m.r32(a[1] + 4 * (k % 16)) ^ a[2];
+                m.w32(a[0] + 4 * (k % 16), v);
+                s
+            });
+        }
+        log_calls(&mut t, 229, log, 3, None, |m, a, _| {
+            for i in 0..4u32 {
+                let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x229
+        });
+        let take = t.img.rel32_target(f + 0x1be);
+        let e = SCRATCH + 0x1000;
+        let node = SCRATCH + 0x400;
+        let ring = [SCRATCH + 0x480, SCRATCH + 0x4c0];
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        // (dx, dy, dz, the list's head)
+        for (k, (dx, dy, dz, listed)) in [
+            (1.0f32, 0.5f32, 1.0f32, false),
+            (-1.0, 2.0, 0.25, true),
+            (-0.5, -1.0, -3.0, false),
+            (2.0, 0.0, -0.75, true),
+            (0.0, 1.0, 0.0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.write(e, &varied(0x280, k));
+            for (i, x) in (0u32..).zip([dx, dy, dz]) {
+                t.set_u32(e + 0xc + 4 * i, (0.5 * k as f32).to_bits());
+                t.set_u32(e + 0x24c + 4 * i, (0.5 * k as f32 + x).to_bits());
+            }
+            t.write(node, &varied(0x20, k));
+            t.set_u32(node, ring[0]);
+            t.set_u32(node + 4, ring[1]);
+            t.set_u16(op(&t, take, 0x04), 3);
+            t.set_u32(op(&t, take, 0x17), node);
+            t.set_u32(w(&t, 0x1c4), if listed { SCRATCH + 0x500 } else { 0 });
+            t.set_u32(w(&t, 0x1d7), SCRATCH + 0x540);
+            t.write(SCRATCH + 0x500, &varied(0x80, k + 1));
+            scrub(&mut t);
+            let c = Call {
+                ecx: e,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::f32(9.0), Xmm::f32(1.5 + k as f32)]);
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::aimed_emitter(g, img, fr))
+            });
+        }
+    }
+}
