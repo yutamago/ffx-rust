@@ -171,6 +171,17 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        ffx_oracle::check_width(
+            "Host::call_u64",
+            addr,
+            args.len(),
+            host::max_words(c, false),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        (u64::from(r.edx) << 32) | u64::from(r.eax)
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -345,7 +356,13 @@ impl Twins {
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        // a full cave: the stub goes to fresh code memory (the same
+        // address in both oracles); the cave stays for cave_code
+        if addr + c.len() as u32 + 0x40 > self.cave + CAVE_LEN {
+            let x = self.a.alloc_code(&c).unwrap();
+            assert_eq!(self.b.alloc_code(&c).unwrap(), x);
+            return x;
+        }
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
         addr
@@ -7539,5 +7556,909 @@ fn l7_camera_test_proc_matches_the_original() {
             );
             t.reset();
         }
+    });
+}
+
+// ---- round 8 (left8) (ffx_pcui::l8_pcui) ----
+
+use ffx_pcui::l8_pcui::bridge as l8u;
+
+#[test]
+fn l8_gdraw_release_objects() {
+    // every slot empty or holding an object (the words between kept);
+    // one release moves g_GDrawState to a second block, whose slots the
+    // rest come from while the first block's slot is the one cleared
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_5c90);
+        for case in 0..12 {
+            t.reset();
+            let at = t.rebase(l8u::GDRAW);
+            // eight logging releases (each logs the object it gets)
+            let mut vts = Vec::new();
+            for k in 0..8 {
+                let release = t.stub_code(0x5000 + k, false, 1, 1, k);
+                vts.push(t.words(&[0, 0, release]));
+            }
+            let blocks = [t.zeros(0xa00), t.zeros(0xa00)];
+            let slots: Vec<u32> = l8u::slots().collect();
+            for &gd in &blocks {
+                for k in 0..0x280 {
+                    let w = if !slots.contains(&(4 * k)) {
+                        rng.next()
+                    } else if rng.chance(3) {
+                        0
+                    } else {
+                        let vt = vts[rng.below(8) as usize];
+                        t.words(&[vt, k])
+                    };
+                    t.w32(gd + 4 * k, w);
+                }
+            }
+            // a release that switches the state block
+            if case % 3 != 0 {
+                let release = t.stub_code(0x7777, false, 1, 1, 0);
+                let mut c = vec![0xc7, 0x05];
+                c.extend(at.to_le_bytes());
+                c.extend(blocks[1].to_le_bytes()); // mov dword [g_GDrawState], second
+                let here = t.cave_next;
+                c.push(0xe9);
+                c.extend(
+                    release
+                        .wrapping_sub(here + c.len() as u32 + 4)
+                        .to_le_bytes(),
+                );
+                let code = t.cave_code(&c);
+                let vt = t.words(&[0, 0, code]);
+                let obj = t.words(&[vt, 0]);
+                let off = [0x14, 0x104, 0x25c, 0x7b0, 0x984][case % 5];
+                t.w32(blocks[0] + off, obj);
+            }
+            t.patch(at, &blocks[0].to_le_bytes());
+            t.check(
+                "GDraw_releaseObjects_00a35c90",
+                0x00a3_5c90,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    l8u::release_objects(g);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stdcall bump allocator `(size, file, line)` (`ret 0xc`) behind the
+    /// import slot `slot`: 16-byte aligned blocks from a pool filled with
+    /// 0xcd, 0 once `fail_after` blocks were handed out; the last file and
+    /// line kept in cells (so the diff sees them).
+    fn stub_import_alloc3(&mut self, slot: u32, fail_after: u32) {
+        let pool = self.alloc(&vec![0xcd; 0x1_0000]);
+        let cur = self.words(&[pool, fail_after, 0, 0]);
+        let mut c = vec![0x83, 0x3d];
+        c.extend((cur + 4).to_le_bytes());
+        c.push(0x00); // cmp dword [left], 0
+        c.extend([0x75, 0x05, 0x31, 0xc0, 0xc2, 0x0c, 0x00]); // jne +5; xor eax, eax; ret 0xc
+        c.extend([0xff, 0x0d]);
+        c.extend((cur + 4).to_le_bytes()); // dec dword [left]
+        c.push(0xa1);
+        c.extend(cur.to_le_bytes()); // mov eax, [cur]
+        c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+        c.extend([0x83, 0xc1, 0x0f, 0x83, 0xe1, 0xf0, 0x01, 0xc1]); // round up; add ecx, eax
+        c.extend([0x89, 0x0d]);
+        c.extend(cur.to_le_bytes()); // mov [cur], ecx
+        for (k, at) in [(8u8, cur + 8), (0xc, cur + 0xc)] {
+            c.extend([0x8b, 0x4c, 0x24, k]); // mov ecx, [esp+k]
+            c.extend([0x89, 0x0d]);
+            c.extend(at.to_le_bytes()); // mov [at], ecx
+        }
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+}
+
+#[test]
+fn l8_gdraw_create_context() {
+    // the block, pool A or pool B failing; State_InitBuffers failing (al
+    // 0 with eax set) or not; a pool init that moves g_GDrawState (the
+    // checks and the frees read it again)
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_5780);
+        for case in 0..16_u32 {
+            t.reset();
+            t.stub_import_alloc3(l8u::MALLOC_IAT, case % 4);
+            t.stub_import(l8u::FREE_IAT, false, 1, 1, 0x0f0f);
+            t.stub(l8u::MEMSET, false, 3, 0, 0x5e5e);
+            let moved = case / 4 == 3;
+            if moved {
+                // every pool init moves the state to a second block
+                let second = t.zeros(0xb00);
+                for off in [0xab0, 0xab4] {
+                    let w = if rng.chance(3) { 0 } else { rng.next() };
+                    t.w32(second + off, w);
+                }
+                let log = t.stub_code(l8u::NODE_POOL_INIT, false, 3, 0, 0x9b9b);
+                let gd = t.rebase(l8u::GDRAW);
+                let mut c = vec![0xc7, 0x05];
+                c.extend(gd.to_le_bytes());
+                c.extend(second.to_le_bytes()); // mov dword [g_GDrawState], second
+                let here = t.cave_next;
+                c.push(0xe9);
+                c.extend(log.wrapping_sub(here + c.len() as u32 + 4).to_le_bytes());
+                let code = t.cave_code(&c);
+                t.jump(l8u::NODE_POOL_INIT, code);
+            } else {
+                t.stub(l8u::NODE_POOL_INIT, false, 3, 0, 0x9b9b);
+            }
+            let ok = if case % 8 < 4 { 1 } else { 0x100 };
+            t.stub(l8u::INIT_BUFFERS, false, 1, 0, ok);
+            t.stub(l8u::CREATE_DEVICE_OBJECTS, false, 0, 0, 0xde0b);
+            for sym in [l8u::POOL_A, l8u::POOL_B, l8u::POOL_STATE] {
+                let at = t.rebase(sym);
+                let n = rng.below(16);
+                t.patch(at, &n.to_le_bytes());
+                let v = rng.next();
+                t.patch(at + 4, &v.to_le_bytes());
+            }
+            let size = rng.next();
+            t.patch(t.rebase(l8u::BUFFER_SIZE), &size.to_le_bytes());
+            t.patch(t.rebase(l8u::GDRAW), &rng.next().to_le_bytes());
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            t.check(
+                "gdraw_createContext_00a35780",
+                0x00a3_5780,
+                Conv::Cdecl,
+                &args,
+                |g| Out::U32(l8u::create_context(g, args[0], args[1], args[2], args[3])),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A stdcall method stub (4 words logged and popped, `hr` returned,
+    /// `this` on the stack) that first writes `val` through its fourth
+    /// word (the out pointer of `CreateTexture2D` and
+    /// `CreateShaderResourceView`).
+    fn com_out_method(&mut self, tag: u32, hr: u32, val: u32) -> u32 {
+        let log = self.stub_code(tag, false, 4, 4, hr);
+        let at = self.cave_next;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x10]; // mov eax, [esp+0x10]
+        c.extend([0xc7, 0x00]);
+        c.extend(val.to_le_bytes()); // mov dword [eax], val
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        self.cave_code(&c)
+    }
+}
+
+#[test]
+fn l8_gdraw_create_raw_texture() {
+    // every format (the four made, 5/6 and others warned); mip chains
+    // shrinking past 1 (13 levels at most: 24 would overrun the
+    // original's array into its saved registers); CreateTexture2D or the view
+    // failing (out of memory or another error), the wrap returning 0 or a
+    // handle; the frame's description and data array compared
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_7c20);
+        for case in 0..40_u32 {
+            t.reset();
+            t.skip = 4;
+            let format = match case % 8 {
+                0 => 0,
+                1 => 9,
+                2 => 10,
+                3 => 11,
+                4 => [5, 6, 1, 12, 0xff][rng.below(5) as usize],
+                _ => [0, 9, 10, 11][rng.below(4) as usize],
+            };
+            let info = t.zeros(0x10);
+            let off = rng.below(0x1000);
+            t.w32(info, off);
+            t.write(info + 4, &[format, rng.below(14) as u8]);
+            let (w, h) = (rng.below(0x800) as u16, rng.below(0x800) as u16);
+            t.write(info + 6, &w.to_le_bytes());
+            t.write(info + 8, &h.to_le_bytes());
+            let base = rng.next();
+            let tex = t.com_object(0x7e0, 0x11);
+            let srv = t.com_object(0x7e1, 0x12);
+            let oom = 0x8007_000e;
+            let hr1 = match rng.below(6) {
+                0 => oom,
+                1 => 0x8000_4005,
+                _ => rng.below(2),
+            };
+            let hr2 = match rng.below(6) {
+                0 => oom,
+                1 => 0x8007_0057,
+                _ => 0,
+            };
+            let create = t.com_out_method(0x7e2, hr1, tex);
+            let view = t.com_out_method(0x7e3, hr2, srv);
+            let mut slots = vec![0; 8];
+            slots[5] = create;
+            slots[7] = view;
+            let vt = t.words(&slots);
+            let device = t.words(&[vt]);
+            let state = t.words(&[device]);
+            t.patch(t.rebase(l8u::GDRAW), &state.to_le_bytes());
+            let handle = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            t.stub(l8u::WRAP_TEXTURE, false, 1, 0, handle);
+            t.stub(l8u::MEMSET, false, 3, 0, 0x5e5e);
+            let warned = if format > 11 || (1..9).contains(&format) {
+                3
+            } else if hr1 == oom || (hr1 < 0x8000_0000 && hr2 == oom) {
+                4
+            } else {
+                5
+            };
+            t.stub_import(l8u::WARNING_IAT, false, warned, 0, 0x3a3a);
+            let args = [base, rng.next(), info];
+            t.check_framed(
+                "GDraw_createRawTexture_00a37c20",
+                0x00a3_7c20,
+                Conv::Stdcall,
+                &args,
+                0x16c,
+                |g, ebp| Out::U32(l8u::create_raw_texture(g, ebp, base, info)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+impl Twins {
+    /// A recording stub at `sym` (`this` logged when `this`, `n` words
+    /// logged, `pops` popped, `ret` in `eax`) that first runs `pre`
+    /// (machine code that must keep `esp` and the arguments).
+    #[allow(clippy::too_many_arguments)]
+    fn stub_pre(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32, pre: &[u8]) {
+        let log = self.stub_code(sym, this, n, pops, ret);
+        let at = self.cave_next;
+        let mut c = pre.to_vec();
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.cave_code(&c);
+        self.jump(sym, code);
+    }
+}
+
+/// `mov eax, [esp+k]; mov dword [eax], v`: a callee writing `v` through
+/// its argument word at `esp + k`.
+fn write_through(k: u8, v: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, k, 0xc7, 0x00];
+    c.extend(v.to_le_bytes());
+    c
+}
+
+#[test]
+fn l8_video_audio_init() {
+    // every early return (the synthesis or block init failing, the sound
+    // not made: the queue destroyed, the sound not playing), the stream
+    // playing; rates and channel counts past the top bit (the unsigned
+    // corrections), durations out of the int range (fistp's indefinite)
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_73b0);
+        for case in 0..24_u32 {
+            t.reset();
+            t.skip = 0x14;
+            let player = t.zeros(0x300);
+            let words: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+            t.write(player, &words);
+            for (o, v) in [
+                (0x294, rng.next()),
+                (0x110, rng.next()),
+                (0x298, rng.next()),
+            ] {
+                t.w32(player + o, v);
+            }
+            let fail = case % 6;
+            let pick = |rng: &mut Rng, ok: bool| if ok { 0 } else { 1 + rng.below(0x1000) * 0x100 };
+            t.stubs(&[
+                (l8u::SET_GLOBALS, false, 4, 0, 0x60),
+                (l8u::VORBIS_INFO_INIT, false, 1, 0, 0x61),
+                (l8u::VORBIS_COMMENT_INIT, false, 1, 0, 0x62),
+                (l8u::VORBIS_HEADERIN, false, 3, 0, rng.below(0x40)),
+            ]);
+            let si = pick(&mut rng, fail != 0);
+            let bi = pick(&mut rng, fail != 1);
+            t.stubs(&[
+                (l8u::VORBIS_SYNTHESIS_INIT, false, 2, 0, si),
+                (l8u::VORBIS_BLOCK_INIT, false, 2, 0, bi),
+                (
+                    l8u::GET_CHANNELS,
+                    true,
+                    0,
+                    0,
+                    [1, 2, 6, 0x8000_0001][rng.below(4) as usize],
+                ),
+                (l8u::QUEUE_INIT, true, 4, 4, 0x63),
+                (l8u::QUEUE_DESTROY, true, 0, 0, 0x6400 | rng.below(0x100)),
+                (l8u::MEMSET, false, 3, 0, 0x65),
+                (l8u::SET_USER_DATA, false, 2, 2, 0x66),
+                (l8u::SET_PRIORITY, false, 2, 2, 0x6700 | rng.below(0x100)),
+            ]);
+            let size = rng.below(0x1000);
+            t.stub_pre(
+                l8u::GET_CODEC_PRIVATE,
+                true,
+                1,
+                1,
+                rng.next(),
+                &write_through(4, size),
+            );
+            let rate = match rng.below(4) {
+                0 => 48000.0,
+                1 => 44100.7,
+                2 => 3.5e9,
+                _ => f64::from(rng.below(100_000)) + 0.25,
+            };
+            let cell = t.alloc(&rate.to_le_bytes());
+            let mut fld = vec![0xdd, 0x05]; // fld qword [cell]
+            fld.extend(cell.to_le_bytes());
+            t.stub_pre(l8u::GET_SAMPLING_RATE, true, 0, 0, 0x68, &fld);
+            let ns: u64 = match rng.below(3) {
+                0 => u64::from(rng.next()) * 1000,
+                1 => (u64::from(rng.next()) << 32) | u64::from(rng.next()),
+                _ => 90_000_000_000,
+            };
+            let mut hi = vec![0xba]; // mov edx, hi
+            hi.extend(((ns >> 32) as u32).to_le_bytes());
+            t.stub_pre(l8u::GET_DURATION, true, 0, 0, ns as u32, &hi);
+            let cs = pick(&mut rng, fail != 2);
+            t.stub_pre(
+                l8u::CREATE_SOUND,
+                false,
+                5,
+                5,
+                cs,
+                &write_through(0x14, 0x5050_5050),
+            );
+            let ps = pick(&mut rng, fail != 3);
+            t.stub_pre(
+                l8u::PLAY_SOUND,
+                false,
+                5,
+                5,
+                ps,
+                &write_through(0x14, 0x6060_6060),
+            );
+            t.check_framed(
+                "PVideoPlaybackWin32_AudioInit_00a273b0",
+                0x00a2_73b0,
+                Conv::Fastcall,
+                &[player, 0],
+                l8u::AUDIO_FRAME,
+                |g, ebp| Out::U32(l8u::audio_init(g, ebp, player)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// After the log: copies the NUL-terminated `n` bytes at `src` to the
+/// first argument (a `sprintf` that prints them).
+fn print_first_code(src: u32, n: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe]; // push esi; push edi; mov edi, [esp+0xc]; mov esi,
+    c.extend(src.to_le_bytes());
+    c.push(0xb9);
+    c.extend(n.to_le_bytes()); // mov ecx, n
+    c.extend([0xf3, 0xa4, 0x5f, 0x5e]); // rep movsb; pop edi; pop esi
+    c
+}
+
+#[test]
+fn l8_gui_nameinput_proc() {
+    // every message: the window built from the key table, freed with and
+    // without a list, drawn; OK, the list scrolled at both ends, a row
+    // opened (a file) or entered (a directory, '..' climbing past the
+    // start), rows past the list; each key (typing, deleting before and
+    // at the cursor, moving it at 0 and 0x40), an id no key has
+    Twins::each(|t| {
+        let mut rng = Rng(0x0093_e570);
+        let window = 0x00ab_c000;
+        for case in 0..800_u32 {
+            t.reset();
+            t.skip = 4;
+            let p = t.zeros(0x240);
+            let name: Vec<u8> = (0..rng.below(0x30))
+                .map(|_| b'a' + rng.below(26) as u8)
+                .collect();
+            t.write(p, &name);
+            let n_names = rng.below(10);
+            let list = if rng.chance(5) {
+                0
+            } else {
+                t.zeros(0x200 * 10)
+            };
+            for k in 0..n_names.min(10) {
+                if list != 0 {
+                    let first = if rng.chance(3) { b'.' } else { b'd' };
+                    t.write(list + 0x200 * k, &[first, b'x', b'0' + k as u8, 0]);
+                }
+            }
+            t.w32(p + 0x214, list);
+            // no list, no names (a row past a null list reads address 0x200 k)
+            t.w32(p + 0x218, if list == 0 { 0 } else { n_names });
+            t.w32(p + 0x21c, rng.below(6));
+            let cur = match rng.below(4) {
+                0 => 0,
+                1 => 0x40,
+                2 => (name.len() as u32).saturating_sub(5),
+                _ => rng.below(name.len() as u32 + 1),
+            };
+            t.w32(p + 0x200, cur);
+            t.w32(p + 0x220, rng.below(0x80));
+            let fresh = t.zeros(0x240);
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, p),
+                (l8u::USER_MALLOC, false, 1, 0, fresh),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::CONTROL_SET_TEXT, false, 3, 0, 0x15),
+                (l8u::SET_PATH_NAME, false, 4, 0, 0x16),
+                (l8u::STRING_COPY, false, 2, 0, 0x17),
+                (l8u::PRINT_SET_X, false, 1, 0, 0x18),
+                (l8u::PRINT_SET_Y, false, 1, 0, 0x19),
+                (l8u::PRINTF, false, 1, 0, 0x1a),
+                (l8u::USER_FREE, false, 1, 0, 0x1b),
+                (l8u::DBG_PRINTF, false, 1, 0, 0x1c),
+                (l8u::SCE_CLOSE, false, 1, 0, 0x1d),
+            ]);
+            let fd = [3, 0, 0xffff_ffff][rng.below(3) as usize];
+            t.stub(l8u::SCE_OPEN, false, 2, 0, fd);
+            let text: &[u8] = [&b"name:/x/"[..], b"", b"host:abcdefgh"][rng.below(3) as usize];
+            let mut s = text.to_vec();
+            s.push(0);
+            let src = t.alloc(&s);
+            let printer = t.stub_code(0x5f5f, false, 3, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(src, s.len() as u32);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            // the browsed path and its length
+            let path: &[u8] = [&b"host:/aa/bbb/cc/"[..], b"x/", b"/"][rng.below(3) as usize];
+            let mut pb = path.to_vec();
+            pb.resize(0x40, 0);
+            t.patch(t.rebase(l8u::NAME_PATH), &pb);
+            let len = match rng.below(4) {
+                0 => 0,
+                1 => (-1_i32).cast_unsigned(),
+                _ => path.len() as u32,
+            };
+            t.patch(t.rebase(l8u::NAME_PATH_LEN), &len.to_le_bytes());
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => (0x8003, 0),
+                2 => (0x8011, 0),
+                3 => (0x8006, 0x100 + rng.below(9)),
+                4 => (0x8006, 0x2b + rng.below(4)),
+                5 => (0x8006, 1 + rng.below(0x40)),
+                6 => (0x8006, [0x99, 0x109, 0x200, 0][rng.below(4) as usize]),
+                _ => (
+                    [0x8002, 0x8010, 0x7fff, 0x8012][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Gui_NameinputProc",
+                0x0093_e570,
+                Conv::Cdecl,
+                &args,
+                l8u::NAME_FRAME,
+                |g, ebp| Out::U32(l8u::nameinput_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_gui_movie_debug_proc() {
+    // every message: built (Dolby on and off), freed with and without a
+    // list, synced (1 or not, playing or not); scrolled at both ends and
+    // while playing; Dolby flipped; a row past the list, a file (.sz,
+    // .dat, other extensions, no dot, a dot in the directory, empty) or
+    // a directory entered or climbed
+    Twins::each(|t| {
+        let mut rng = Rng(0x0093_dc00);
+        let window = 0x00ab_d000;
+        for case in 0..800_u32 {
+            t.reset();
+            t.skip = 4;
+            let p = t.zeros(0x240);
+            let n_names = rng.below(24);
+            let list = if rng.chance(5) {
+                0
+            } else {
+                t.zeros(0x200 * 24)
+            };
+            if list != 0 {
+                for k in 0..n_names {
+                    let first = if rng.chance(3) { b'.' } else { b'm' };
+                    t.write(list + 0x200 * k, &[first, b'v', b'a' + k as u8, 0]);
+                }
+            }
+            t.w32(p + 0x214, list);
+            t.w32(p + 0x218, if list == 0 { 0 } else { n_names });
+            // sometimes exactly sixteen rows before the end
+            let first = if rng.chance(3) {
+                n_names.saturating_sub(16)
+            } else {
+                rng.below(10)
+            };
+            t.w32(p + 0x21c, first);
+            t.w32(p + 0x220, rng.below(0x80));
+            let fresh = t.zeros(0x240);
+            let menu = t.words(&[rng.next()]);
+            let path = t.zeros(0x80);
+            let pb: &[u8] = [&b"host:/mv/aa/"[..], b"x/", b"/"][rng.below(3) as usize];
+            t.write(path, pb);
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, p),
+                (l8u::USER_MALLOC, false, 1, 0, fresh),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::CONTROL_SET_TEXT, false, 3, 0, 0x15),
+                (l8u::SET_PATH_NAME, false, 4, 0, 0x16),
+                (l8u::STRING_COPY, false, 2, 0, 0x17),
+                (l8u::USER_FREE, false, 1, 0, 0x1b),
+                (l8u::DBG_PRINTF, false, 2, 0, 0x1c),
+                (l8u::SCE_CLOSE, false, 1, 0, 0x1d),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x1e),
+                (l8u::PATH_ADDR, false, 0, 0, path),
+                (l8u::GET_SAVE_MENU, false, 0, 0, menu),
+                (l8u::SET_DOLBY, false, 1, 0, 0x1f),
+                (l8u::MOVIE_STOP, false, 0, 0, 0x20),
+                (l8u::MOVIE_START_NAME, false, 3, 0, 0x21),
+                (l8u::MOVIE_PLAY, false, 0, 0, 0x22),
+                (l8u::MOVIE_SYNC, false, 0, 0, rng.below(3)),
+                (l8u::SND_NOW_MUSIC, false, 0, 0, 0x23),
+                (l8u::SND_MUSIC_STOP, false, 1, 0, 0x24),
+            ]);
+            let fd = [3, 0, 0xffff_ffff][rng.below(3) as usize];
+            t.stub(l8u::SCE_OPEN, false, 2, 0, fd);
+            let texts: [&[u8]; 11] = [
+                b"host:/mv/g.datx",
+                b"host:/mv/h.szq",
+                b"host:/mv/a.sz",
+                b"host:/mv/b.dat",
+                b"host:/mv/c.da",
+                b"host:/mv/d.szz",
+                b"host:/m.v/e",
+                b"host:/mv/f.",
+                b"",
+                b".sz",
+                b"x.dat",
+            ];
+            let text = texts[rng.below(11) as usize];
+            let mut s = text.to_vec();
+            s.push(0);
+            let src = t.alloc(&s);
+            let printer = t.stub_code(0x5f5f, false, 3, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(src, s.len() as u32);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let len = match rng.below(4) {
+                0 => 0,
+                1 => (-1_i32).cast_unsigned(),
+                _ => pb.len() as u32,
+            };
+            t.patch(t.rebase(l8u::NAME_PATH_LEN), &len.to_le_bytes());
+            t.patch(t.rebase(l8u::MOVIE_PLAYING), &[u8::from(rng.chance(4))]);
+            t.patch(t.rebase(l8u::MOVIE_OPEN), &[rng.next() as u8]);
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => (0x8003, 0),
+                2 => (0x8011, 0),
+                3 => (0x8005, 0x113 + rng.below(2)),
+                4 | 5 => (0x8006, 0x103 + rng.below(0x10)),
+                6 => (0x8006, [0x115, 0x113, 0x102, 0x116][rng.below(4) as usize]),
+                _ => (
+                    [0x8002, 0x8005, 0x7fff, 0x8012][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Gui_MovieDebugProc",
+                0x0093_dc00,
+                Conv::Cdecl,
+                &args,
+                l8u::MOVIE_FRAME,
+                |g, ebp| Out::U32(l8u::movie_debug_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_chr_view_proc() {
+    // every message and button: no window data (no character), block
+    // and plain characters, motions set or not, selectors with a name
+    // or none, file lists empty or not, the motion window when the handle
+    // is null or not, the clip toggle
+    Twins::each(|t| {
+        let mut rng = Rng(0x0084_c1e0);
+        let window = 0x00ab_e000;
+        for case in 0..600_u32 {
+            t.reset();
+            t.skip = 4;
+            let p = if case % 13 == 12 { 0 } else { t.zeros(0xa0) };
+            let chr = t.zeros(0x200);
+            let kind: u16 = if rng.chance(2) {
+                0xf000 | rng.below(0x100) as u16
+            } else {
+                rng.below(0x8000) as u16
+            };
+            t.write(chr, &kind.to_le_bytes());
+            t.w32(chr + 4, rng.next());
+            t.w32(chr + 0x194, rng.next());
+            if p != 0 {
+                let words: Vec<u8> = (0..0xa0).map(|_| b'a' + rng.below(26) as u8).collect();
+                t.write(p, &words);
+                for o in [0x2b, 0x4f, 0x6f, 0x8f] {
+                    t.write(p + o, &[0]);
+                }
+                if rng.chance(3) {
+                    t.write(p + 0xc, &[0]);
+                }
+                for o in [0, 4, 8, 0x90, 0x94] {
+                    let v = rng.next();
+                    t.w32(p + o, v);
+                }
+            }
+            let item = t.alloc(b"item7\0");
+            let names = t.words(&[item, item + 1, item + 2]);
+            let fresh = t.zeros(0xa0);
+            let (msg, param) = match case % 6 {
+                0 => (0x8001, 0),
+                1 | 2 => (
+                    0x8006,
+                    [3, 4, 5, 8, 9, 0xa, 0xb, 0xd, 0x11, 0x12, 0x13, 6, 0x14]
+                        [rng.below(13) as usize],
+                ),
+                3 => (0x8007, [0xc, 0xb][rng.below(2) as usize]),
+                4 => (0x8012, [4, 0x12, 0x13, 5][rng.below(4) as usize]),
+                _ => ([0x8011, 0x8002, 0x8013, 0x7fff][rng.below(4) as usize], 4),
+            };
+            // a selector without a choice only where the original checks
+            let chosen = if param == 4 && rng.chance(4) { 0 } else { item };
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, p),
+                (l8u::GET_PTR32, false, 1, 0, chr),
+                (l8u::SET_PTR32, false, 1, 0, 0x7777),
+                (l8u::IS_PTR32_NULL, false, 1, 0, u32::from(rng.chance(3))),
+                (l8u::USER_MALLOC, false, 1, 0, fresh),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::WINDOW_ADD_STATIC, false, 7, 0, 0x15),
+                (l8u::WINDOW_SET_CLIENT_H, false, 2, 0, 0x16),
+                (l8u::MOUSE_SET_WINDOW, false, 1, 0, 0x17),
+                (l8u::SELECTOR_ALLOCATE, false, 0, 0, 0x5e1),
+                (l8u::SELECTOR_ITEM_NAME, false, 1, 0, chosen),
+                (l8u::SELECTOR_OPEN, false, 3, 0, 0x18),
+                (l8u::SELECTOR_RESET, false, 2, 0, 0x19),
+                (l8u::SELECTOR_SET_ITEM, false, 4, 0, 0x1a),
+                (l8u::SELECTOR_SET_STR, false, 2, 0, 0x1b),
+                (l8u::BUTTON_SET_TOGGLE, false, 3, 0, 0x1c),
+                (l8u::WINDOW_SET_PARENT, false, 2, 0, 0x1d),
+                (l8u::WINDOW_START_DRAG, false, 1, 0, 0x1e),
+                (l8u::WINDOW_CREATE, false, 6, 0, 0x3333),
+                (l8u::MESSAGE_BOX, false, 1, 0, 0x1f),
+                (l8u::CH_READ_MOTION_VIEWER, false, 4, 0, 0x20),
+                (l8u::CH_GET_CLIP, false, 1, 0, rng.below(2)),
+                (l8u::CH_EN_CLIP, false, 2, 0, 0x21),
+                (l8u::CH_BLK_DIR_NAME, false, 1, 0, item),
+                (l8u::CH_DISPOSE, false, 1, 0, 0x22),
+                (l8u::CH_BLK_DISPOSE, false, 1, 0, 0x23),
+                (l8u::CH_ALLOCATE, false, 1, 0, chr),
+                (l8u::CHN_DATA_DISPOSE, false, 2, 0, 0x24),
+                (l8u::CH_CALC_HEIGHT, false, 1, 0, 0x25),
+                (l8u::SG_SET_PLAYER, false, 1, 0, 0x26),
+                (l8u::TEX_ANIM_DLG, false, 1, 0, 0x4444),
+                (l8u::MAKE_FILELIST, false, 3, 0, 0x27),
+                (l8u::CHR_VIEW_LIST, false, 3, 0, 0x28),
+                (l8u::CHR_VIEW_FLAGS, false, 2, 0, 0x29),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x2a),
+                (l8u::DBG_PRINTF, false, 1, 0, 0x2b),
+            ]);
+            // sprintf: logs its first three words, prints a short line
+            let line = t.alloc(b"host0:dir\0");
+            let printer = t.stub_code(0x5f5f, false, 3, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(line, 10);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let list = t.rebase(l8u::FILE_LIST);
+            let mut fl = vec![0u8; 12];
+            fl[..4].copy_from_slice(
+                &[0u32, 1, 3, (-1_i32).cast_unsigned()][rng.below(4) as usize].to_le_bytes(),
+            );
+            fl[8..].copy_from_slice(&names.to_le_bytes());
+            t.patch(list, &fl);
+            if p == 0 && msg != 0x8001 {
+                // no data: only the messages that never read it
+                continue;
+            }
+            let args = [window, msg, param];
+            t.check_framed(
+                "ChrViewProc",
+                0x0084_c1e0,
+                Conv::Cdecl,
+                &args,
+                l8u::CHR_VIEW_FRAME,
+                |g, ebp| Out::U32(l8u::chr_view_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_gui_spline_edit_proc() {
+    // every message and button: the editor opened and freed, angles
+    // turned on a selected point (none selected, null arrays, empty
+    // lines), the mode and line toggles at each value, the name and
+    // test windows, the draw with and without a pending name window,
+    // a dragged window, a button that just ran, a selected point or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x0093_ee10);
+        let window = 0x00ab_f000;
+        for case in 0..600_u32 {
+            t.reset();
+            t.skip = 4;
+            let data = t.zeros(0x10);
+            let block = t.zeros(0x400);
+            // two lines of points (12 bytes) and values (16 bytes)
+            let mut arrays = [0u32; 4];
+            for (k, a) in arrays.iter_mut().enumerate() {
+                if rng.chance(6) {
+                    continue;
+                }
+                let stride = if k < 2 { 12 } else { 16 };
+                let bytes: Vec<u8> = (0..8 * stride).map(|_| rng.next() as u8).collect();
+                *a = t.alloc(&bytes);
+            }
+            // lines 2 and 3 only for the buttons (elsewhere they index past
+            // the arrays); a selection only on a line with points
+            let line = if case % 8 == 3 {
+                rng.below(4)
+            } else {
+                rng.below(2)
+            };
+            let selected = if rng.chance(3) || line > 1 || arrays[line as usize] == 0 {
+                u32::MAX
+            } else {
+                rng.below(8)
+            };
+            let globals = [
+                (l8u::SPL_POINTS, arrays[0]),
+                (l8u::SPL_POINTS + 4, arrays[1]),
+                (l8u::SPL_VALUES, arrays[2]),
+                (l8u::SPL_VALUES + 4, arrays[3]),
+                (l8u::SPL_VALUES + 8, rng.next()),
+                (l8u::SPL_VALUES + 0xc, rng.next()),
+                (l8u::SPL_COUNTS, rng.below(9)),
+                (
+                    l8u::SPL_COUNTS + 4,
+                    [0, 3, 8, (-1_i32).cast_unsigned()][rng.below(4) as usize],
+                ),
+                (l8u::SPL_LINE, line),
+                (
+                    l8u::SPL_POINT_MODE,
+                    [0, 1, 2, 0x7fff_ffff, 0xffff_ffff][rng.below(5) as usize],
+                ),
+                (l8u::SPL_SELECTED, selected),
+                (l8u::SPL_NAME_WINDOW, rng.next()),
+                (l8u::SPL_NAME_WINDOW + 4, u32::from(rng.chance(2))),
+            ];
+            for (sym, v) in globals {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            for sym in [
+                l8u::SPL_FLAG2C,
+                l8u::SPL_FLAG2D,
+                l8u::SPL_DIRTY,
+                l8u::SPL_NAME_KIND,
+                l8u::SPL_TEST_OPEN,
+                l8u::SPL_FLAG31,
+                l8u::SPL_FLAG32,
+                l8u::SPL_OPEN,
+                l8u::SPL_FLAG29,
+            ] {
+                let at = t.rebase(sym);
+                t.patch(at, &[rng.below(2) as u8]);
+            }
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, data),
+                (l8u::USER_MALLOC, false, 1, 0, block),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x15),
+                (l8u::USER_FREE, false, 1, 0, 0x16),
+                (l8u::DBG_PRINTF, false, 1, 0, 0x17),
+                (l8u::PRINT_SET_X, false, 1, 0, 0x18),
+                (l8u::PRINT_SET_Y, false, 1, 0, 0x19),
+                (l8u::PRINTF, false, 1, 0, 0x1a),
+                (l8u::WINDOW_START_DRAG, false, 1, 0, 0x1b),
+                (l8u::WINDOW_CREATE, false, 6, 0, 0x5151),
+                (l8u::TK_SET_DEBUG_MENU, false, 1, 0, 0x1c),
+                (l8u::SET_GLOBAL_1BC4, false, 1, 0, 0x1d),
+                (l8u::CAMERA_GET_POS, false, 2, 0, 0x1e),
+                (l8u::ATEL_GET_CAMERA_ID, false, 3, 0, 0x2222),
+                (l8u::ATEL_FREE_CAMERA_ID, false, 2, 0, 0x1f),
+                (l8u::SA_CAMERA_SET, false, 1, 0, 0x20),
+                (l8u::WINDOW_IS_DRAG, false, 1, 0, u32::from(rng.chance(3))),
+                (l8u::TK_CONTROLER_HIST, false, 3, 0, rng.next()),
+                (l8u::SPLINE_DRAG, false, 1, 0, 0x21),
+                (l8u::SPL_FN_2, false, 0, 0, 0x22),
+                (l8u::SPL_FN_3, false, 0, 0, 0x23),
+                (l8u::SPL_FN_4, false, 0, 0, 0x24),
+                (l8u::SPL_FN_7, false, 0, 0, 0x25),
+                (l8u::SPL_FN_6, false, 0, 0, 0x26),
+                (l8u::SPL_FN_8, false, 0, 0, 0x27),
+                (l8u::SPL_FN_B, false, 0, 0, 0x28),
+                (l8u::SPL_FN_D, false, 0, 0, 0x29),
+                (l8u::SPL_FN_13, false, 0, 0, 0x2a),
+                (l8u::SPL_FN_NAME0, false, 0, 0, 0x2b),
+                (l8u::SPL_FN_NAME1, false, 0, 0, 0x2c),
+            ]);
+            // sprintf: logs its first two words (the "---" call passes
+            // two), prints a short line
+            let line = t.alloc(b"12\0");
+            let printer = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(line, 3);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => (0x8003, 0),
+                2 => (0x8005, [0xe, 0xf, 0xd][rng.below(3) as usize]),
+                3 | 4 => (0x8007, rng.below(0x16)),
+                5 | 6 => (0x8011, 0),
+                _ => (
+                    [0x8002, 0x8012, 0x7fff, 0x8013][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Gui_SplineEditProc_0093ee10",
+                0x0093_ee10,
+                Conv::Cdecl,
+                &args,
+                l8u::SPL_FRAME,
+                |g, ebp| Out::U32(l8u::spline_edit_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
     });
 }

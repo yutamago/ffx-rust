@@ -49,6 +49,7 @@ pub mod opu;
 pub mod opu_parts;
 pub mod part_draw;
 pub mod pe;
+pub mod pf_throws;
 pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
 pub mod r9_load;
@@ -1025,6 +1026,11 @@ ports! {
     "r9 load step 0390" => r9_load::LOAD_0390, r9_load::load_0390;
     "r9 load step 0395" => r9_load::LOAD_0395, r9_load::load_0395;
     "r9 load step 0447" => r9_load::LOAD_0447, r9_load::load_0447;
+    "pf throws 0412" => pf_throws::THROWS_0412, pf_throws::throws_0412;
+    "pf throws 0414" => pf_throws::THROWS_0414, pf_throws::throws_0414;
+    "pf throws 0425" => pf_throws::THROWS_0425, pf_throws::throws_0425;
+    "pf throws 0439" => pf_throws::THROWS_0439, pf_throws::throws_0439;
+    "pf throws 0441" => pf_throws::THROWS_0441, pf_throws::throws_0441;
     "r9 load step 0108" => r9_load::LOAD_0108, r9_load::load_0108;
     "r9 load step 0221" => r9_load::LOAD_0221, r9_load::load_0221;
     "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;

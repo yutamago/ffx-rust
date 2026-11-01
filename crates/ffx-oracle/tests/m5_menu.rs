@@ -7947,3 +7947,427 @@ fn r5b12_camera_proc_matches_the_original() {
         }
     });
 }
+
+// ---- round 8 (left8) (ffx_menu::l8_mbs) ----
+
+use ffx_menu::l8_mbs::bridge as l8b;
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_shake_proc() {
+    // every message; each button with steps of 1, 10 and 100, the
+    // auto-repeat saying go or not; counts, amplitudes and lengths at and
+    // past their limits, decays near 0 and negative, NaNs and infinities;
+    // the roundings, the on/off bits, the shake, the dump, the draw
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_fde0);
+        let window = 0x00ac_0000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let state = t.zeros(0x200);
+            let mut bytes: Vec<u8> = (0..0x200).map(|_| rng.next() as u8).collect();
+            for o in [0x178usize, 0x188, 0x19c, 0x1ac] {
+                let v = match rng.below(4) {
+                    0 => (rng.below(40) as f32 * 0.001 - 0.01).to_bits(),
+                    _ => debug_float(&mut rng),
+                };
+                bytes[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            for o in [0x18cusize, 0x1b0] {
+                bytes[o] = [0, 1, 2, 98, 99, 100, 255][rng.below(7) as usize];
+            }
+            for o in [0x18eusize, 0x1b2, 0x172, 0x196] {
+                let v: i16 = [-0x100, -0xff, 0x100, 0xff, -1, 0, 0x7fff, 0x7ffe, -0x8000]
+                    [rng.below(9) as usize];
+                let v = if rng.chance(3) { rng.next() as i16 } else { v };
+                bytes[o..o + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            t.write(state, &bytes);
+            let at = t.rebase(l8b::BTL_SCREEN);
+            t.patch(at, &state.to_le_bytes());
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::SCREEN_SHAKE2, false, 9, 0, 0x18),
+                (l8b::SHAKE_LOG, false, 1, 0, 0x19),
+                (l8b::DBG_PRINTF, false, 2, 0, 0x1a),
+            ]);
+            t.stub_import(l8b::SPRINTF_SLOT, false, 3, 0, 0x1b);
+            let params: [u32; 34] = [
+                0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x75, 0x76, 0x77, 0x78,
+                0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf2,
+                0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+            ];
+            let (msg, param) = match case % 9 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a, 0x800e][rng.below(4) as usize], 0),
+                2 => (0x8011, 0),
+                3..=7 => (
+                    [0x8005, 0x8009, 0x800d][rng.below(3) as usize],
+                    params[rng.below(34) as usize],
+                ),
+                _ => (
+                    [0x8005, 0x8002, 0x8010, 0x8012, 0x7fff][rng.below(5) as usize],
+                    [0x60, 0x6b, 0x74, 0xf9, 0xea, 0x7f][rng.below(6) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_ShakeProc",
+                0x007d_fde0,
+                Conv::Cdecl,
+                &args,
+                l8b::SHAKE_FRAME,
+                |g, ebp| Out::U32(l8b::shake_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// Before the log: copies a `sprintf` call's words (the buffer, the
+/// format and one word per '%' in the format: no `%%`, no doubles) to
+/// the buffer whose cursor is at `cursor` (advanced).
+fn sprintf_words_code(cursor: u32) -> Vec<u8> {
+    let mut c = vec![
+        0x56, 0x57, 0x51, // push esi; push edi; push ecx
+        0x8b, 0x74, 0x24, 0x14, // mov esi, [esp+0x14] (the format)
+        0x31, 0xc9, // xor ecx, ecx
+        0x8a, 0x06, 0x84, 0xc0, 0x74, 0x08, // mov al, [esi]; test al, al; jz done
+        0x3c, 0x25, 0x75, 0x01, 0x41, // cmp al, '%'; jne +1; inc ecx
+        0x46, 0xeb, 0xf2, // inc esi; jmp back
+        0x83, 0xc1, 0x02, // done: add ecx, 2
+        0x8b, 0x3d,
+    ];
+    c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+    c.extend([0x8d, 0x74, 0x24, 0x10, 0xf3, 0xa5, 0x89, 0x3d]); // lea esi, [esp+0x10]; rep movsd; mov [cursor], edi
+    c.extend(cursor.to_le_bytes());
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+    c
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_battle_info_proc() {
+    // every message and page and row set; the selectors stepped up and
+    // down past both ends; a battle running or not (the rows through
+    // FUN_007dbee0), the scene names, the voice and mode words, the
+    // event map's ratios, actors and commands, the save window counts
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_aed0);
+        let window = 0x00ac_1000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let voice = t.alloc(&(0..0x20).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            if rng.chance(3) {
+                let k = rng.below(8);
+                t.write(voice + 0xc + 2 * k, &0x3fffu16.to_le_bytes());
+            }
+            let cmd = t.zeros(0x80);
+            let cmd_bytes: Vec<u8> = (0..0x80).map(|_| rng.next() as u8).collect();
+            t.write(cmd, &cmd_bytes);
+            t.write(cmd + 2, &[rng.below(4) as u8]);
+            let chr = t.alloc(&(0..0xe00).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            let save = t.alloc(&(0..8).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            let words = t.zeros(0x1000);
+            let cursor = t.words(&[words]);
+            for (sym, bytes) in [
+                (0x0112_a8e0u32, 1),
+                (0x0112_a8e4, 1),
+                (0x0112_c258, 1),
+                (0x0112_c259, 1),
+                (0x0112_bde0, 4),
+                (0x0112_c254, 4),
+                (0x0112_a9d6, 2),
+                (0x0112_c9d0, 1),
+                (0x0112_c9d4, 2),
+                (0x0112_c9e0, 1),
+                (0x0112_c9e4, 1),
+                (0x0112_c9e6, 1),
+                (0x0112_c9ea, 1),
+                (0x0112_c9ec, 1),
+                (0x0112_c9f5, 2),
+                (0x0112_ca01, 1),
+                (0x0112_ca15, 1),
+                (0x0112_c8f8, 4),
+            ] {
+                let v: Vec<u8> = (0..bytes)
+                    .map(|_| if rng.chance(3) { 0 } else { rng.next() as u8 })
+                    .collect();
+                t.patch(t.rebase(sym), &v);
+            }
+            let field: u16 = if rng.chance(2) { 0 } else { rng.next() as u16 };
+            t.patch(t.rebase(0x0112_c256), &field.to_le_bytes());
+            for sym in [0x0112_a9dcu32, 0x0112_a9e0, 0x0112_a9e4] {
+                let v = (rng.below(2000) as f32 * 0.37 - 20.0).to_bits();
+                t.patch(t.rebase(sym), &v.to_le_bytes());
+            }
+            t.patch(t.rebase(l8b::BTL_VOICE_EVENT), &voice.to_le_bytes());
+            let rows = [0u32, 1, 1, 2, 0xffff_ffff][rng.below(5) as usize];
+            let page = [0u32, 1, 2, 3, 4][rng.below(5) as usize];
+            t.patch(t.rebase(l8b::INFO_ROWS), &rows.to_le_bytes());
+            t.patch(t.rebase(l8b::INFO_PAGE), &page.to_le_bytes());
+            t.patch(t.rebase(l8b::INFO_FIELD), &rng.next().to_le_bytes());
+            let top = u32::from(!rng.chance(3));
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::LAST_MAGIC, false, 0, 0, 0x21),
+                (l8b::SEP_TRANS_AMOUNT, false, 1, 0, 0x22),
+                (l8b::READ_CUE_LEVEL, false, 1, 0, 0x23),
+                (l8b::SND_READ, false, 0, 0, rng.below(2)),
+                (l8b::SND_READ_VAG, false, 0, 0, rng.below(3)),
+                (l8b::SND_READ_SHOUT, false, 0, 0, rng.below(2)),
+                (l8b::BATTLE_GET_STATUS, false, 0, 0, rng.below(2)),
+                (l8b::BATTLE_PHASE, false, 0, 0, 0x24),
+                (l8b::GET_CHR_COMMAND, false, 1, 0, cmd),
+                (l8b::GET_CHR_BIT, false, 4, 0, rng.next()),
+                // one word logged: the rows pass one, the command line five
+                // (those four reach the sprintf stand-in as its words)
+                (l8b::GET_CHR, false, 1, 0, chr),
+                (l8b::GET_CHR_TOP, false, 0, 0, top),
+                (l8b::GET_MON, false, 1, 0, chr + 0x10),
+                (l8b::EVENT_JUMP_MAP, false, 0, 0, rng.next()),
+                (l8b::INFO_ROW, false, 5, 0, 0x25),
+            ]);
+            // MsGetSaveWindow(a, b, &n) writes n
+            let log = t.stub_code(l8b::GET_SAVE_WINDOW, false, 3, 0, save);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00];
+            c.extend((rng.below(100)).to_le_bytes()); // mov eax, [esp+0xc]; mov dword [eax], n
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.jump(l8b::GET_SAVE_WINDOW, code);
+            // sprintf: every word it gets copied out, two logged
+            let log = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let mut c = sprintf_words_code(cursor);
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8b::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a][rng.below(3) as usize], 0),
+                2..=4 => (0x8011, 0),
+                5 | 6 => (
+                    [0x8005, 0x8009][rng.below(2) as usize],
+                    [0x40, 0x91, 0x51, 0xa5][rng.below(4) as usize],
+                ),
+                _ => (
+                    [0x8002, 0x8010, 0x8012, 0x7fff][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleInfoProc",
+                0x007d_aed0,
+                Conv::Cdecl,
+                &args,
+                // the two text buffers (the counters below them are the
+                // original's spills; MsGetSaveWindow's count is logged)
+                0x204,
+                |g, ebp| Out::U32(l8b::battle_info_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_battle_chr2_proc() {
+    // every message and button at steps of 1, 10 and 100; the actor at
+    // both ends of the party and monster ranges; values at and past their
+    // limits, NaNs and infinities among the floats; a battle running or
+    // not, the actor with a model or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_e790);
+        let window = 0x00ac_2000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let mut bytes: Vec<u8> = (0..0x500).map(|_| rng.next() as u8).collect();
+            for o in (0x4bc..0x4e0).step_by(4) {
+                let v = debug_float(&mut rng);
+                bytes[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            for o in [0x4b9usize, 0x4ba, 0x4bb, 0x40c, 0x40d, 0x40e] {
+                bytes[o] = [0, 1, 5, 0x7e, 0x7f, 0x80, 0xfe, 0xff][rng.below(8) as usize];
+            }
+            bytes[0x4b8] = [0, 1, 0x7e, 0x7f, 0x80, 0xff][rng.below(6) as usize];
+            for o in [0x4b0usize, 0x4b2] {
+                let v: u16 = [0, 1, 50, 0xffff][rng.below(4) as usize];
+                bytes[o..o + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            if rng.chance(3) {
+                bytes[..4].copy_from_slice(&[0, 0, 0, 0]);
+            }
+            let chr = t.alloc(&bytes);
+            let words = t.zeros(0x1000);
+            let cursor = t.words(&[words]);
+            t.patch(t.rebase(l8b::BTL_STATUS), &[u8::from(!rng.chance(5))]);
+            let actor = [0u32, 1, 0x13, 0x14, 0x15, 0x1d, 0x1e, 7][rng.below(8) as usize];
+            t.patch(t.rebase(l8b::CHR2_ACTOR), &actor.to_le_bytes());
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::GET_CHR, false, 1, 0, chr),
+                (l8b::DBG_PRINTF, false, 2, 0, 0x18),
+                (l8b::CH_SET_WEIGHT, false, 2, 0, 0x19),
+                (l8b::SET_MOT_BIN, false, 2, 0, 0x1a),
+                (l8b::PLY_SAVE_NAME, false, 2, 0, 0x1b),
+                (l8b::PLY_SAVE, false, 1, 0, 0x1c),
+                (l8b::SET_FILE_NAME, false, 2, 0, 0x1d),
+                (l8b::MON_SAVE, false, 3, 0, 0x1e),
+                (l8b::STR_COPY, false, 3, 0, 0x1f),
+            ]);
+            let log = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let mut c = sprintf_words_code(cursor);
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8b::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 9 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a, 0x800e][rng.below(4) as usize], 0),
+                2 => (0x8011, 0),
+                3..=7 => (
+                    [0x8005, 0x8009, 0x800d][rng.below(3) as usize],
+                    [0x61 + rng.below(0x26), 0xd5, 0xd6, 0xd7, 0x62, 0x7d, 0x7e]
+                        [rng.below(7) as usize],
+                ),
+                _ => (
+                    [0x8005, 0x8002, 0x8012][rng.below(3) as usize],
+                    [0x60, 0x87, 0xd4, 0xd8][rng.below(4) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleChr2Proc",
+                0x007d_e790,
+                Conv::Cdecl,
+                &args,
+                l8b::CHR2_FRAME,
+                |g, ebp| Out::U32(l8b::battle_chr2_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn l8_ms_gui_battle_config_proc() {
+    // every message; every button and some ids without one, the
+    // auto-repeat saying go or not; the flags at 0, 1 and past them (the
+    // on/off texts index sign-extended)
+    Twins::each(|t| {
+        let mut rng = Rng(0x007c_6e20);
+        let window = 0x00ac_4000;
+        let mut ids: Vec<u32> = l8b::CONFIG_TOGGLES.iter().map(|x| x.0).collect();
+        ids.extend(l8b::CONFIG_COMMANDS.iter().map(|x| x.0));
+        ids.extend([0x52, 0x54, 0x5e, 0x96, 0xd5, 0xf8, 0xfa, 0x100]);
+        for case in 0..700_u32 {
+            t.reset();
+            t.skip = 4;
+            for (_, flag) in l8b::CONFIG_TOGGLES {
+                let v = [0_u8, 1, 0, 1, 2, 0xff][rng.below(6) as usize];
+                t.patch(t.rebase(flag), &[v]);
+            }
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::ENV_SAVE, false, 1, 0, 0x18),
+                (l8b::FULL_ITEM, false, 0, 0, 0x19),
+                (l8b::FULL_COMMAND, false, 0, 0, 0x1a),
+                (l8b::FULL_MEMBER, false, 0, 0, 0x1b),
+                (l8b::ALL_SP, false, 0, 0, 0x1c),
+                (l8b::FULL_GILL, false, 0, 0, 0x1d),
+                (l8b::FULL_STATS, false, 0, 0, 0x1e),
+                (l8b::WEAK_ALL, false, 0, 0, 0x1f),
+                (l8b::ALL_ITEMS_ONE, false, 0, 0, 0x20),
+                (l8b::ABILITY_ONE, false, 0, 0, 0x21),
+                (l8b::CLEAR_ITEMS, false, 0, 0, 0x22),
+                (l8b::WEAK_PARTY, false, 1, 0, 0x23),
+                (l8b::WEAK_MONSTERS, false, 1, 0, 0x24),
+                (l8b::CAMERA_PRIORITY_MASK, false, 1, 0, 0x25),
+            ]);
+            t.stub_import(l8b::SPRINTF_SLOT, false, 2, 0, 0x26);
+            let (msg, param) = match case % 7 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a][rng.below(3) as usize], 0),
+                2 => (0x8011, 0),
+                3..=5 => (
+                    [0x8005, 0x8009][rng.below(2) as usize],
+                    ids[rng.below(ids.len() as u32) as usize],
+                ),
+                _ => (
+                    [0x8002, 0x800d, 0x8010, 0x8012, 0x7fff][rng.below(5) as usize],
+                    [0x53, 0x5f, 0x97][rng.below(3) as usize],
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleConfigProc",
+                0x007c_6e20,
+                Conv::Cdecl,
+                &args,
+                l8b::CONFIG_FRAME,
+                |g, ebp| Out::U32(l8b::battle_config_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
