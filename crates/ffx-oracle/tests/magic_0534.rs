@@ -81,7 +81,12 @@ fn aim() {
     for i in 0..4u32 {
         t.set_u32(s + 0x1a0 + 4 * i, 0x00a0_0000 + i);
     }
+    // the handle and the word after it distinct
+    t.set_u32(s + 0x198, 0x00a0_0198);
+    t.set_u32(s + 0x19c, 0x00a0_019c);
     rec(&mut t, 474, 4, |m, a| {
+        // the vector A as it gets it
+        magic_owna::dump(m, 474, a[2], 4);
         for i in 0..4u32 {
             m.w32(a[3] + 4 * i, (1.5 + i as f32).to_bits());
         }
@@ -101,7 +106,12 @@ fn aim() {
         0x453
     });
     t.stub_st0(453, move |m, _| f64::from(f32::from_bits(m.r32(cell))));
-    recs(&mut t, &[(444, 1), (440, 4), (450, 2)]);
+    // slot 444 keeps the vector D it gets
+    rec(&mut t, 444, 2, |m, a| {
+        magic_owna::dump(m, 444, a[1], 4);
+        0x444
+    });
+    recs(&mut t, &[(440, 4), (450, 2)]);
     let seq = SCRATCH + 0x1000;
     for (k, len) in [(0u32, 33.5f32), (1, 0.25), (0, 900.0)] {
         t.write(seq, &[0x3c; 0x140]);
@@ -109,6 +119,9 @@ fn aim() {
         t.set_u32(seq + 0x2c + 16 * k, 2 - k);
         t.set_u32(cell, len.to_bits());
         magic_h6::scrub(&mut t);
+        // junk read: A's fourth word (ebp - 0x38) is never written; 0 on
+        // both sides (brief 2026-10-24)
+        t.set_u32(magic::STACK_TOP - 0x100 - 4 - 0x38, 0);
         t.check_entry(at, Call::default(), &[seq], Eax::Checked);
     }
 }
