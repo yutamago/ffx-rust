@@ -2092,7 +2092,14 @@ pub const WEAPON_MATRIX: Sig = Sig {
 /// [`weapon_matrix`] at `f`, or [`part_matrix`] where the DLL's callee
 /// is that one (`magic_0544`'s copies of the swing functions call it:
 /// the same registers, `esp` and result).
-fn swing_matrix<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, ang: u32, pos: u32) -> u32 {
+pub(crate) fn swing_matrix<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    ang: u32,
+    pos: u32,
+) -> u32 {
     if img.matches(f, &PART_MATRIX) {
         let fr = Frame {
             at: f,

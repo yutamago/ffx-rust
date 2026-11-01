@@ -92,6 +92,8 @@ pub mod s6_misc;
 pub mod s7_misc;
 // the shared work list's eighth round (shared-8, worklist5)
 pub mod s8_misc;
+// the shared work list's ninth round (shared-9, worklist5)
+pub mod s9_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
@@ -1448,6 +1450,9 @@ ports! {
     "start seq" => sb_misc::START_SEQ, sb_misc::start_seq;
     // shared-3 list
     "thunk: place" => s3_wrap::JMP_PLACE, s3_wrap::ecx_jmp;
+    "thunk: node ease" => s3_wrap::JMP_NODE_EASE, s3_wrap::ecx_jmp;
+    "thunk: node ease (0570)" => s3_wrap::JMP_NODE_EASE_B, s3_wrap::ecx_jmp;
+    "thunk: node sparks" => s3_wrap::JMP_NODE_SPARKS, s3_wrap::ecx_jmp;
     "thunk: model setup" => s3_wrap::JMP_MODEL_SETUP, s3_wrap::ecx_jmp;
     "thunk: sub walk" => s3_wrap::JMP_SUB_WALK, s3_wrap::ecx_jmp;
     "thunk: scaled place" => s3_wrap::JMP_SCALED_PLACE, s3_wrap::ecx_jmp;
@@ -2696,6 +2701,52 @@ ports! {
     "o6 fam pairs6 overlay_setup 0673@1000" => o6_fam_pairs6::OVERLAY_SETUP_0673_1000, o6_fam_pairs6::overlay_setup;
     "o6 fam pairs6 overlay_setup 0253@1000" => o6_fam_pairs6::OVERLAY_SETUP_0253_1000, o6_fam_pairs6::overlay_setup;
     // families2 (o6_fam_pairs5..): end of ports
+    // round 9, shared-9 (s9_misc)
+    "scene start (node tree)" => s9_misc::SCENE_START_TREE, s9_misc::scene_start_tree;
+    "paired objects start" => s9_misc::PAIRED_OBJECTS_START, s9_misc::paired_objects_start;
+    "summon load (paired objects)" => s9_misc::SUMMON_LOAD_PAIRED, s9_misc::summon_load_paired;
+    "reels draw" => s9_misc::REELS_DRAW, s9_misc::reels_draw;
+    "model sprites (a)" => s9_misc::MODEL_SPRITES_A, s9_misc::model_sprites_a;
+    "model sprites (b)" => s9_misc::MODEL_SPRITES_B, s9_misc::model_sprites_b;
+    "model sprites (b, 0085)" => s9_misc::MODEL_SPRITES_B_0085, s9_misc::model_sprites_b;
+    "model sprites (b, 0093)" => s9_misc::MODEL_SPRITES_B_0093, s9_misc::model_sprites_b;
+    "model sprites (c)" => s9_misc::MODEL_SPRITES_C, s9_misc::model_sprites_c;
+    "model sprites (d)" => s9_misc::MODEL_SPRITES_D, s9_misc::model_sprites_d;
+    "beams aimed" => s9_misc::BEAMS_AIMED, s9_misc::beams_aimed;
+    "beams with sprites" => s9_misc::BEAMS_SPRITES, s9_misc::beams_sprites;
+    "beams one by one" => s9_misc::BEAMS_ONE_BY_ONE, s9_misc::beams_one_by_one;
+    "beams spread" => s9_misc::BEAMS_SPREAD, s9_misc::beams_spread;
+    "beams spread (slot 38)" => s9_misc::BEAMS_SPREAD_38, s9_misc::beams_spread_38;
+    "mov eax, 1; ret" => runtime::ONE_RET, runtime::one_ret;
+    "beams spread (flat)" => s9_misc::BEAMS_SPREAD_FLAT, s9_misc::beams_spread_flat;
+    "trail head (0446)" => s9_misc::TRAIL_HEAD_0446, s9_misc::trail_head;
+    "trail head (0544)" => s9_misc::TRAIL_HEAD_0544, s9_misc::trail_head;
+    "light fly-in (0565)" => s9_misc::LIGHT_FLY_IN_0565, s9_misc::light_fly_in;
+    "light fly-in (0644)" => s9_misc::LIGHT_FLY_IN_0644, s9_misc::light_fly_in;
+    "light arc (0565)" => s9_misc::LIGHT_ARC_0565, s9_misc::light_arc;
+    "light arc (0644)" => s9_misc::LIGHT_ARC_0644, s9_misc::light_arc;
+    "light drift" => s9_misc::LIGHT_DRIFT, s9_misc::light_drift;
+    "light landing (0644)" => s9_misc::LIGHT_LAND_0644, s9_misc::light_land_0644;
+    "light landing (0565)" => s9_misc::LIGHT_LAND_0565, s9_misc::light_land_0565;
+    "light bounce" => s9_misc::LIGHT_BOUNCE, s9_misc::light_bounce;
+    "thunk: lit colour node" => s9_misc::LIT_COLOUR_NODE_THUNK, s9_misc::lit_colour_node_thunk;
+    "texture fade" => s9_misc::TEXTURE_FADE, s9_misc::texture_fade;
+    "summon pair start" => s9_misc::SUMMON_PAIR_START, s9_misc::summon_pair_start;
+    "summon start task (0242)" => s9_misc::SUMMON_START_TASK_0242, s9_misc::summon_start_task_0242;
+    "summon actor pair start" => s9_misc::SUMMON_ACTOR_PAIR_START, s9_misc::summon_actor_pair_start;
+    "summon start task (0241)" => s9_misc::SUMMON_START_TASK_0241, s9_misc::summon_start_task_0241;
+    "launch after carry (0544)" => s9_misc::LAUNCH_AFTER_CARRY_0544, s9_misc::launch_after_carry;
+    "launch after carry (0555)" => s9_misc::LAUNCH_AFTER_CARRY_0555, s9_misc::launch_after_carry;
+    "camera frame" => s9_misc::CAMERA_FRAME, s9_misc::camera_frame;
+    "trail head (0565)" => s9_misc::TRAIL_HEAD_0565, s9_misc::trail_head;
+    "trail task (0565)" => s9_misc::TRAIL_TASK_0565, o6_fam_pairs6::trail_task;
+    "summon ring start" => s9_misc::SUMMON_RING_START, s9_misc::summon_ring_start;
+    "summon start task (0247)" => s9_misc::SUMMON_START_TASK_0247, s9_misc::summon_start_task_0247;
+    "summon nodes start" => s9_misc::SUMMON_NODES_START, s9_misc::summon_nodes_start;
+    "summon start task (0132)" => s9_misc::SUMMON_START_TASK_0132, s9_misc::summon_start_task_0132;
+    "summon targets start" => s9_misc::SUMMON_TARGETS_START, s9_misc::summon_targets_start;
+    "summon start task (0347)" => s9_misc::SUMMON_START_TASK_0347, s9_misc::summon_start_task_0347;
+    // round 9, shared-9 (s9_misc): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -3791,6 +3842,28 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &o6_fam_pairs6::SCENE_END_0434_5B90,
     ),
     // families2 (o6_fam_pairs5..): end of INTERNAL
+    // round 9, shared-9 (s9_misc)
+    ("reel frame", &s9_misc::REEL_FRAME),
+    ("reel next glyphs", &s9_misc::REEL_NEXT_GLYPHS),
+    ("reel window", &s9_misc::REEL_WINDOW),
+    ("reel draw", &s9_misc::REEL_DRAW),
+    ("sprite packets", &s9_misc::SPRITE_PACKETS),
+    ("camera aimed", &s9_misc::CAMERA_AIMED),
+    ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
+    ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
+    ("node ease", &s9_misc::NODE_EASE),
+    ("node ease (0570)", &s9_misc::NODE_EASE_B),
+    ("sprite frames", &s9_misc::SPRITE_FRAMES),
+    ("block sprite frames", &s9_misc::BLOCK_SPRITE_FRAMES),
+    (
+        "block sprite frames (0371)",
+        &s9_misc::BLOCK_SPRITE_FRAMES_B,
+    ),
+    ("node sparks", &s9_misc::NODE_SPARKS),
+    ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
+    ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
+    ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
+    // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

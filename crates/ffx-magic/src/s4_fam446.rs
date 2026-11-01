@@ -1614,10 +1614,26 @@ pub const EFFECT_NODE_B: Sig = Sig {
 /// A screen coordinate as the family computes it: `(n * K1 - K2 + K3)`
 /// truncated to an integer and back to a float (the operand offsets of
 /// `K1`, `K2`, `K3`).
-fn screen_coord<G: Game>(g: &G, img: &Image, f: u32, n: u32, [k1, k2, k3]: [u32; 3]) -> u32 {
+fn screen_coord<G: Game>(g: &G, img: &Image, f: u32, n: u32, ks: [u32; 3]) -> u32 {
+    cvt(screen_int(g, img, f, n, ks)).to_bits()
+}
+
+/// [`screen_coord`]'s value before the conversion: `n * K1 - K2 + K3`
+/// (`f32`) and that truncated (`cvttss2si`).
+pub(crate) fn screen_int<G: Game>(g: &G, img: &Image, f: u32, n: u32, ks: [u32; 3]) -> u32 {
+    cvttsd2si(f64::from(screen_f32(g, img, f, n, ks)))
+}
+
+/// [`screen_int`] before the truncation.
+pub(crate) fn screen_f32<G: Game>(
+    g: &G,
+    img: &Image,
+    f: u32,
+    n: u32,
+    [k1, k2, k3]: [u32; 3],
+) -> f32 {
     let k = |o: u32| f32_at(g, img.word(f + o));
-    let x = add(sub(mul(cvt(n), k(k1)), k(k2)), k(k3));
-    cvt(cvttsd2si(f64::from(x))).to_bits()
+    add(sub(mul(cvt(n), k(k1)), k(k2)), k(k3))
 }
 
 /// Draws one glyph quad (internal, `ecx` = the glyph, `edx` = a row, the

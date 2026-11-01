@@ -19,7 +19,7 @@ use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 type Handler<G> = fn(&mut G, &Image, &Frame) -> u32;
 
 /// The word at `f + off` of the code (an operand).
-fn op(img: &Image, f: u32, off: u32) -> u32 {
+pub(crate) fn op(img: &Image, f: u32, off: u32) -> u32 {
     img.word(f + off)
 }
 
@@ -385,7 +385,15 @@ pub const CAMERA_RIGS_STEP: Sig = Sig {
 
 /// A call through slot `s` of the import table whose global is the
 /// operand at `f + t`.
-fn slot<G: Game>(g: &mut G, img: &Image, f: u32, t: u32, s: u32, ecx: u32, args: &[u32]) -> Out {
+pub(crate) fn slot<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    t: u32,
+    s: u32,
+    ecx: u32,
+    args: &[u32],
+) -> Out {
     let target = slot_target(g, op(img, f, t), s);
     g.call(target, ecx, args)
 }
@@ -561,11 +569,13 @@ pub const TABLE_FLIGHT_STEP_B: Sig = Sig {
 
 /// The summon's start task (cdecl, no arguments): nothing while slot 225
 /// (`op_pray_effect_check(1)`) answers non-zero; once (`*G_F`) slot 226
-/// `MsEffectReady(*G_A, 0)`; then, when slot 227
+/// `MsEffectReady(*G_A, R)`; then, when slot 227
 /// `MsEffectMotionLevel(*G_A)` is at least 1, the summon's objects start
 /// (`start`, the `rel32` at `+0x5b`) and the DLL's draw and update
-/// callbacks `*G_D`, `*G_U` become the immediates. Returns 0.
-fn summon_start_task<G: Game>(
+/// callbacks `*G_D`, `*G_U` become the immediates. Returns 0. `R` is 0
+/// (`push eax` at `+0x1e`), or `magic_0132`'s copy pushes the immediate 1
+/// and has its operands from `+0x1e` on one byte later.
+pub(crate) fn summon_start_task<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,
@@ -573,26 +583,33 @@ fn summon_start_task<G: Game>(
 ) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
+    let pushed = img.word(f + 0x1e) as u8 != 0x50;
+    let k = u32::from(pushed);
+    let r = if pushed { img.word(f + 0x24) & 0xff } else { 0 };
     if slot(g, img, f, 0x1, 225, fr.ecx, &[1]).eax != 0 {
         return Ret::eax(0);
     }
     if g.read::<u32>(w(0x18)) == 0 {
-        let a = g.read::<u32>(w(0x26));
-        slot(g, img, f, 0x20, 226, fr.ecx, &[a, 0]);
-        g.write::<u32>(w(0x37), 1);
+        let a = g.read::<u32>(w(0x26 + k));
+        slot(g, img, f, 0x20 - k, 226, fr.ecx, &[a, r]);
+        g.write::<u32>(w(0x37 + k), 1);
     }
-    let a = g.read::<u32>(w(0x46));
-    if slot(g, img, f, 0x40, 227, fr.ecx, &[a]).eax.cast_signed() < 1 {
+    let a = g.read::<u32>(w(0x46 + k));
+    if slot(g, img, f, 0x40 + k, 227, fr.ecx, &[a])
+        .eax
+        .cast_signed()
+        < 1
+    {
         return Ret::eax(0);
     }
     let sub = Frame {
-        at: img.rel32_target(f + 0x5b),
+        at: img.rel32_target(f + 0x5b + k),
         esp: fr.esp.wrapping_sub(4),
         ..*fr
     };
     start(g, img, &sub);
-    g.write::<u32>(w(0x61), w(0x65));
-    g.write::<u32>(w(0x6b), w(0x6f));
+    g.write::<u32>(w(0x61 + k), w(0x65 + k));
+    g.write::<u32>(w(0x6b + k), w(0x6f + k));
     Ret::eax(0)
 }
 

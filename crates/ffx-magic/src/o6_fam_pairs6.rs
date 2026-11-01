@@ -820,6 +820,18 @@ struct TrailOps {
     /// `link_part` with `(G_REC, k)` (`0544`) instead of `draw_frame`
     /// with `(G_REC)` (`0446`).
     link: bool,
+    /// `E` below `ebp & !0xf`, the matrices `M1`, `M2` and `M4` (none in
+    /// `0565`'s copy, which multiplies `M3` by `M1` instead) from `E`.
+    frame: u32,
+    m1: u32,
+    m2: u32,
+    m4: Option<u32>,
+    /// The operands of `G_M3`, `G_M4`, the ring's size, the sprites' count
+    /// and the animation step's `rel32` (before `+0x338`).
+    globals: (u32, u32),
+    ring: u32,
+    left_init: u32,
+    anim: u32,
 }
 
 /// A trail of up to 32 points drawn as sprites along it (internal: `ecx`
@@ -858,7 +870,35 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let slot = |g: &G, n: u32| slot_target(g, w(0x25), n);
     // `inc eax` (0446) or `lea eax, [esi + 1]` (0544) at +0x344
-    let ops = if img.word(f + 0x344) as u8 == 0x40 {
+    let ops = if img.word(f + 8) == 0x128 {
+        // `magic_0565` 0x10006ea0: a smaller frame, no `M4`
+        TrailOps {
+            acc: 0x14,
+            seg: 0x18,
+            idx: 0x1c,
+            seed: 0x20,
+            left: 0x24,
+            p: 0x40,
+            d: 0x58,
+            scale: 0x2c,
+            k1: 0x353,
+            k2: 0x44e,
+            k3: 0x456,
+            k4: 0,
+            alpha: 0x4ba,
+            rec: 0x527,
+            call: 0x531,
+            link: false,
+            frame: 0x130,
+            m1: 0xe8,
+            m2: 0xa8,
+            m4: None,
+            globals: (0x61, 0x54),
+            ring: 0xab,
+            left_init: 0xc8,
+            anim: 0xdd,
+        }
+    } else if img.word(f + 0x344) as u8 == 0x40 {
         TrailOps {
             acc: 0x14,
             seg: 0x18,
@@ -876,6 +916,14 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             rec: 0x53c,
             call: 0x546,
             link: false,
+            frame: 0x170,
+            m1: 0x128,
+            m2: 0xe8,
+            m4: Some(0xa8),
+            globals: (0x57, 0x63),
+            ring: 0xad,
+            left_init: 0xca,
+            anim: 0xdf,
         }
     } else {
         TrailOps {
@@ -895,23 +943,38 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             rec: 0x556,
             call: 0x55d,
             link: true,
+            frame: 0x170,
+            m1: 0x128,
+            m2: 0xe8,
+            m4: Some(0xa8),
+            globals: (0x57, 0x63),
+            ring: 0xad,
+            left_init: 0xca,
+            anim: 0xdf,
         }
     };
     let o = fr.ecx;
     let basis = fr.edx;
     let point = fr.arg(g, 0);
     let ebp = fr.esp.wrapping_sub(4);
-    let e = (ebp & !0xf).wrapping_sub(0x170);
+    let e = (ebp & !0xf).wrapping_sub(ops.frame);
     let at = |off: u32| e.wrapping_add(off);
-    let (m1, m2, m3, m4, q) = (at(0x128), at(0xe8), at(0x68), at(0xa8), at(0x30));
+    let (m1, m2, m3, q) = (at(ops.m1), at(ops.m2), at(0x68), at(0x30));
+    let m4 = ops.m4.map(at);
     let of = |off: u32| o.wrapping_add(off);
     for (m, n) in [(m1, 723u32), (m2, 724)] {
         let t = slot(g, n);
         // call width: 1
         g.call(t, o, &[m]);
     }
-    g.write::<u32>(w(0x57), m3);
-    g.write::<u32>(w(0x63), m4);
+    // `0565`'s copy clears `G_M4` first and has no `M4`
+    if let Some(m4) = m4 {
+        g.write::<u32>(w(ops.globals.0), m3);
+        g.write::<u32>(w(ops.globals.1), m4);
+    } else {
+        g.write::<u32>(w(ops.globals.1), 0);
+        g.write::<u32>(w(ops.globals.0), m3);
+    }
     let h = g.read::<u32>(of(0x224));
     for i in 0..4u32 {
         let x = g.read::<u32>(point.wrapping_add(4 * i));
@@ -920,7 +983,7 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let h = g.read::<u32>(of(0x224));
     g.write::<u8>(of(0x22c).wrapping_add(h), 1);
     let h = g.read::<u32>(of(0x224));
-    let ring = disp8(img, f + 0xad);
+    let ring = disp8(img, f + ops.ring);
     let next = h.wrapping_add(1);
     let next = if next.cast_signed() >= ring.cast_signed() {
         0
@@ -931,11 +994,11 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let mut seed = g.read::<u32>(of(0x220));
     let mut idx = h;
     g.write::<u32>(at(ops.idx), idx);
-    g.write::<u32>(at(ops.left), w(0xca));
+    g.write::<u32>(at(ops.left), w(ops.left_init));
     g.write::<u32>(at(ops.seed), seed);
     g.write::<f32>(at(ops.seg), 0.0);
     g.write::<f32>(at(ops.acc), 0.0);
-    let stepped = crate::sb_common::anim_step(g, img, img.rel32_target(f + 0xdf), o);
+    let stepped = crate::sb_common::anim_step(g, img, img.rel32_target(f + ops.anim), o);
     let mut kk = 0u32;
     g.write::<u32>(at(0x10), kk);
     if g.read::<u32>(of(0x228)).cast_signed() <= 0 {
@@ -1057,11 +1120,17 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             let t = slot(g, 229);
             // call width: 3
             g.call(t, o, &[m3.wrapping_add(0x30), m2, q]);
-            let t = slot(g, 230);
-            // call width: 2
-            g.call(t, o, &[m4, m3]);
-            let tz = sub(g.read::<f32>(at(0xe0)), k(g, ops.k4));
-            g.write::<f32>(at(0xe0), tz);
+            if let Some(m4) = m4 {
+                let t = slot(g, 230);
+                // call width: 2
+                g.call(t, o, &[m4, m3]);
+                let tz = sub(g.read::<f32>(m4 + 0x38), k(g, ops.k4));
+                g.write::<f32>(m4 + 0x38, tz);
+            } else {
+                let t = slot(g, 231);
+                // call width: 3
+                g.call(t, o, &[m3, m1, m3]);
+            }
             if g.read::<u8>(w(ops.alpha)) != 0 {
                 let table = |g: &mut G| {
                     let key = g.read::<u32>(o);
@@ -1136,6 +1205,17 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, cvt, div, mul, sub};
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
+    // `magic_0565`'s copy places a light (`push 0x80` at +0x117), starts
+    // the child with its sound and takes the object off its list before
+    // asking the mode
+    let flat = img.word(f + 0x117) as u8 == 0x68;
+    // (list, its call, `G_P`, the word, slot 713's table, the give-back,
+    // slot 235's table, the trail draw)
+    let ops = if flat {
+        [0x17e, 0x183, 0x18c, 0x193, 0x198, 0x26c, 0x21f, 0x24b]
+    } else {
+        [0x183, 0x188, 0x191, 0x198, 0x19d, 0x1c1, 0x231, 0x25d]
+    };
     let task = fr.arg(g, 0);
     let o = g.read::<u32>(task.wrapping_add(0x14));
     let ww = g.read::<u32>(w(0x21));
@@ -1152,23 +1232,28 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let t = g.read::<u32>(timer);
     // the object leaves (the host list first when `unlist`), `W + 0x5c0c`
     // rises, the task is given back
-    let leave = |g: &mut G, unlist: bool| {
-        let list_at = img.rel32_target(f + 0x188);
-        if unlist && crate::l5_objhost::list_remove(g, img, list_at, w(0x183), o) != 0 {
-            let p = g.read::<u32>(w(0x191));
-            g.write::<u32>(p, w(0x198));
-            let s = slot_target(g, w(0x19d), 713);
+    let unlist = |g: &mut G| {
+        let list_at = img.rel32_target(f + ops[1]);
+        if crate::l5_objhost::list_remove(g, img, list_at, w(ops[0]), o) != 0 {
+            let p = g.read::<u32>(w(ops[2]));
+            g.write::<u32>(p, w(ops[3]));
+            let s = slot_target(g, w(ops[4]), 713);
             // call width: 1
             g.call(s, 0, &[o]);
             let x = g.read::<u16>(o.wrapping_add(0x124)) & 0x7fff;
             g.write::<u16>(o.wrapping_add(0x124), x);
+        }
+    };
+    let leave = |g: &mut G, off_list: bool| {
+        if off_list {
+            unlist(g);
         }
         let n = g.read::<u32>(ww.wrapping_add(0x5c0c)).wrapping_add(1);
         g.write::<u32>(ww.wrapping_add(0x5c0c), n);
         Ret::eax(crate::sa_pool::give_back(
             g,
             img,
-            img.rel32_target(f + 0x1c1),
+            img.rel32_target(f + ops[5]),
             task,
         ))
     };
@@ -1184,32 +1269,28 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<f32>(v.wrapping_add(4 * i), x);
         }
         let sparks = match md {
-            0 => Some((
-                0x10d,
-                crate::s4_fam446::sparks_a::<G> as fn(&mut G, &Image, &Frame) -> Ret,
-            )),
-            2 => Some((
-                0x103,
-                crate::s4_fam446::sparks_c::<G> as fn(&mut G, &Image, &Frame) -> Ret,
-            )),
-            3 => Some((
-                0xf9,
-                crate::s4_fam446::sparks_d::<G> as fn(&mut G, &Image, &Frame) -> Ret,
-            )),
+            0 => Some(0x10d),
+            2 => Some(0x103),
+            3 => Some(0xf9),
             _ => None,
         };
-        if let Some((call, port)) = sparks {
+        if let Some(call) = sparks {
+            // the `0446` family's sparks, or `0565`'s
+            crate::s9_misc::sparks_move(g, img, img.rel32_target(f + call), at(0x7c), v);
+        }
+        let mat_at = img.rel32_target(f + if flat { 0x120 } else { 0x11c });
+        let ang = o.wrapping_add(0x280);
+        let eax = if flat {
+            g.write::<u32>(at(0x80), 0x80);
             let fr = Frame {
-                at: img.rel32_target(f + call),
-                esp: at(0x80),
-                ecx: v,
+                at: mat_at,
+                esp: at(0x84),
+                ecx: ang,
+                edx: v,
                 ..Frame::default()
             };
-            port(g, img, &fr);
-        }
-        let mat_at = img.rel32_target(f + 0x11c);
-        let ang = o.wrapping_add(0x280);
-        let eax = if img.matches(mat_at, &crate::s5_misc::WEAPON_MATRIX) {
+            crate::o6_fam_pairs5::light_setup(g, img, &fr).eax
+        } else if img.matches(mat_at, &crate::s5_misc::WEAPON_MATRIX) {
             crate::s5_misc::weapon_matrix(g, img, mat_at, at(0x84), ang, v)
         } else {
             let fr = Frame {
@@ -1233,15 +1314,23 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         } else {
             let child = crate::o6_fam_pairs5::stack_args(
                 g,
-                img.rel32_target(f + 0x170),
+                img.rel32_target(f + if flat { 0x174 } else { 0x170 }),
                 at(0x84),
                 o,
                 ang,
                 &[mode(g)],
             );
-            crate::s4_fam446::start_child_a(g, img, &child);
-            if mode(g) != 0 {
-                return leave(g, true);
+            if flat {
+                crate::s4_fam446::start_child_sound_a(g, img, &child);
+                unlist(g);
+                if mode(g) != 0 {
+                    return leave(g, false);
+                }
+            } else {
+                crate::s4_fam446::start_child_a(g, img, &child);
+                if mode(g) != 0 {
+                    return leave(g, true);
+                }
             }
             let t = g.read::<u32>(timer).wrapping_sub(1);
             g.write::<u32>(timer, t);
@@ -1261,7 +1350,7 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             return Ret::eax(count);
         }
     }
-    let s = slot_target(g, w(0x231), 235);
+    let s = slot_target(g, w(ops[6]), 235);
     // call width: 1 (the word stays on the stack under the next call's)
     g.call(s, 0, &[m]);
     for i in [0u32, 5, 10] {
@@ -1269,7 +1358,7 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let draw = crate::o6_fam_pairs5::stack_args(
         g,
-        img.rel32_target(f + 0x25d),
+        img.rel32_target(f + ops[7]),
         at(0x88),
         trail,
         m,

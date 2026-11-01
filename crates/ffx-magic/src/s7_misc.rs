@@ -3882,7 +3882,7 @@ pub const CHILDREN_ITEMS_NODE: Sig = Sig {
 /// write, head clear, callback, count write, first, last read, last
 /// write, first write, last write 2)`. With none free the node is 0 and
 /// the original writes to address 4 (not run).
-fn free_to_live<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 11]) -> u32 {
+pub(crate) fn free_to_live<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 11]) -> u32 {
     let w = |o: u32| op(img, f, o);
     let [
         count,
@@ -4436,6 +4436,17 @@ pub const LIT_COLOUR_NODE: Sig = Sig {
 ///
 /// `magic_0010` 0x10001210 (119 bytes; 2 DLLs).
 pub fn summon_load_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    load_then_start(g, img, fr, actors_objects_start)
+}
+
+/// [`summon_load_objects`] with the objects' start `start` (the copies
+/// differ only in the function the `rel32` at `+0x5c` calls).
+pub(crate) fn load_then_start<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    start: fn(&mut G, &Image, &Frame) -> Ret,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     if slot(g, img, f, 0x1, 225, fr.ecx, &[1]).eax != 0 {
@@ -4450,12 +4461,12 @@ pub fn summon_load_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     if slot(g, img, f, 0x41, 227, fr.ecx, &[b]).eax.cast_signed() < 1 {
         return Ret::eax(0);
     }
-    let start = Frame {
+    let start_fr = Frame {
         at: img.rel32_target(f + 0x5c),
         esp: fr.esp.wrapping_sub(4),
         ..*fr
     };
-    actors_objects_start(g, img, &start);
+    start(g, img, &start_fr);
     g.write::<u32>(w(0x62), w(0x66));
     g.write::<u32>(w(0x6c), w(0x70));
     Ret::eax(0)
