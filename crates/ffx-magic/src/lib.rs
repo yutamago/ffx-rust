@@ -81,6 +81,21 @@ pub mod s4_wrap;
 // the shared work list's fifth round (shared-5: rows 737 on)
 pub mod s5_misc;
 
+// round 6, the shape families across both work lists (o6_fam_*)
+pub mod o6_fam_bone;
+pub mod o6_fam_boot;
+pub mod o6_fam_cursor;
+pub mod o6_fam_launch;
+pub mod o6_fam_node;
+pub mod o6_fam_object;
+pub mod o6_fam_pairs;
+pub mod o6_fam_pairs2;
+pub mod o6_fam_pairs3;
+pub mod o6_fam_pairs4;
+pub mod o6_fam_pool;
+pub mod o6_fam_setup;
+pub mod o6_fam_start;
+
 // round 4, the own work list's families (o4_*)
 pub mod o4_ctor;
 pub mod o4_effect;
@@ -1760,6 +1775,64 @@ ports! {
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
+    // round 6, the shape families (o6_fam_*)
+    "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0361@18f0" => o6_fam_setup::OBJECT_SETUP_0361_18F0, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0361@19f0" => o6_fam_setup::OBJECT_SETUP_0361_19F0, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0384@14b0" => o6_fam_setup::OBJECT_SETUP_0384_14B0, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0415@12a0" => o6_fam_setup::OBJECT_SETUP_0415_12A0, o6_fam_setup::object_setup;
+    "o6 fam start host_start_parts 0162@10a0" => o6_fam_start::HOST_START_PARTS_0162_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0165@10a0" => o6_fam_start::HOST_START_PARTS_0165_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0304@10a0" => o6_fam_start::HOST_START_PARTS_0304_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0430@10a0" => o6_fam_start::HOST_START_PARTS_0430_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0568@10a0" => o6_fam_start::HOST_START_PARTS_0568_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0586@10a0" => o6_fam_start::HOST_START_PARTS_0586_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0588@10a0" => o6_fam_start::HOST_START_PARTS_0588_10A0, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0606@6370" => o6_fam_start::HOST_START_PARTS_0606_6370, o6_fam_start::host_start_parts;
+    "o6 fam boot effect_boot 0368@1140" => o6_fam_boot::EFFECT_BOOT_0368_1140, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0527@11c0" => o6_fam_boot::EFFECT_BOOT_0527_11C0, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0255@12e0" => o6_fam_boot::EFFECT_BOOT_0255_12E0, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0617@11b0" => o6_fam_boot::EFFECT_BOOT_0617_11B0, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0372@1220" => o6_fam_boot::EFFECT_BOOT_0372_1220, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0669@1ce0" => o6_fam_boot::EFFECT_BOOT_0669_1CE0, o6_fam_boot::effect_boot;
+    "o6 fam boot effect_boot 0206@1940" => o6_fam_boot::EFFECT_BOOT_0206_1940, o6_fam_boot::effect_boot;
+    "o6 fam setup object_setup 0193@1660" => o6_fam_setup::OBJECT_SETUP_0193_1660, o6_fam_setup::object_setup;
+    "o6 fam setup object_setup 0382@1ae0" => o6_fam_setup::OBJECT_SETUP_0382_1AE0, o6_fam_setup::object_setup;
+    "o6 fam pairs scene_start 0162@3820" => o6_fam_pairs::SCENE_START_0162_3820, o6_fam_pairs::scene_start;
+    "o6 fam pairs scene_start 0586@3430" => o6_fam_pairs::SCENE_START_0586_3430, o6_fam_pairs::scene_start;
+    "o6 fam pairs ring_part_start 0666@1250" => o6_fam_pairs::RING_PART_START_0666_1250, o6_fam_pairs::ring_part_start;
+    "o6 fam pairs ring_part_start 0666@2080" => o6_fam_pairs::RING_PART_START_0666_2080, o6_fam_pairs::ring_part_start;
+    "o6 fam pairs angle_reset 0353@1980" => o6_fam_pairs::ANGLE_RESET_0353_1980, o6_fam_pairs::angle_reset;
+    "o6 fam pairs angle_reset 0672@1500" => o6_fam_pairs::ANGLE_RESET_0672_1500, o6_fam_pairs::angle_reset;
+    "o6 fam pairs placed_part_start 0206@17b0" => o6_fam_pairs::PLACED_PART_START_0206_17B0, o6_fam_pairs::placed_part_start;
+    "o6 fam pairs placed_part_start 0376@1170" => o6_fam_pairs::PLACED_PART_START_0376_1170, o6_fam_pairs::placed_part_start;
+    "o6 fam pairs slot_part_start 0371@1520" => o6_fam_pairs::SLOT_PART_START_0371_1520, o6_fam_pairs::slot_part_start;
+    "o6 fam pairs slot_part_start 0371@1620" => o6_fam_pairs::SLOT_PART_START_0371_1620, o6_fam_pairs::slot_part_start;
+    "o6 fam pairs2 list_angle_reset 0348@6600" => o6_fam_pairs2::LIST_ANGLE_RESET_0348_6600, o6_fam_pairs2::list_angle_reset;
+    "o6 fam pairs2 list_angle_reset 0350@5a50" => o6_fam_pairs2::LIST_ANGLE_RESET_0350_5A50, o6_fam_pairs2::list_angle_reset;
+    "o6 fam pairs2 shake_visit_thunk 0201@4910" => o6_fam_pairs2::SHAKE_VISIT_THUNK_0201_4910, o6_fam_pairs2::shake_visit_thunk;
+    "o6 fam pairs2 shake_visit_thunk 0387@6040" => o6_fam_pairs2::SHAKE_VISIT_THUNK_0387_6040, o6_fam_pairs2::shake_visit_thunk;
+    "o6 fam pairs3 two_node_start 0638@3270" => o6_fam_pairs3::TWO_NODE_START_0638_3270, o6_fam_pairs3::two_node_start;
+    "o6 fam pairs3 two_node_start 0689@32c0" => o6_fam_pairs3::TWO_NODE_START_0689_32C0, o6_fam_pairs3::two_node_start;
+    "o6 fam pairs3 matrix_scale_setup 0434@7c90" => o6_fam_pairs3::MATRIX_SCALE_SETUP_0434_7C90, o6_fam_pairs3::matrix_scale_setup;
+    "o6 fam pairs3 party_colours 0644@6150" => o6_fam_pairs3::PARTY_COLOURS_0644_6150, o6_fam_pairs3::party_colours;
+    "o6 fam pairs3 bone_transform 0249@1d70" => o6_fam_pairs3::BONE_TRANSFORM_0249_1D70, o6_fam_pairs3::bone_transform;
+    "o6 fam pairs3 models_detach_thunk 0164@80c0" => o6_fam_pairs3::MODELS_DETACH_THUNK_0164_80C0, o6_fam_pairs3::models_detach_thunk;
+    "o6 fam pairs3 models_detach_thunk 0155@8040" => o6_fam_pairs3::MODELS_DETACH_THUNK_0155_8040, o6_fam_pairs3::models_detach_thunk;
+    "o6 fam pairs3 walk_scale_steps_thunk 0262@4650" => o6_fam_pairs3::WALK_SCALE_STEPS_THUNK_0262_4650, o6_fam_pairs3::walk_scale_steps_thunk;
+    "o6 fam pairs3 visit_pool_thunk 0042@10b0" => o6_fam_pairs3::VISIT_POOL_THUNK_0042_10B0, o6_fam_pairs3::visit_pool_thunk;
+    "o6 fam pairs3 spin_visit_thunk 0071@4080" => o6_fam_pairs3::SPIN_VISIT_THUNK_0071_4080, o6_fam_pairs3::spin_visit_thunk;
+    "o6 fam pairs3 random_particle_setup 0359@1580" => o6_fam_pairs3::RANDOM_PARTICLE_SETUP_0359_1580, o6_fam_pairs3::random_particle_setup;
+    "o6 fam pairs3 random_particle_setup 0359@16d0" => o6_fam_pairs3::RANDOM_PARTICLE_SETUP_0359_16D0, o6_fam_pairs3::random_particle_setup;
+    "o6 fam pairs3 button_timelines 0375@2370" => o6_fam_pairs3::BUTTON_TIMELINES_0375_2370, o6_fam_pairs3::button_timelines;
+    "o6 fam pairs3 button_timelines 0376@2700" => o6_fam_pairs3::BUTTON_TIMELINES_0376_2700, o6_fam_pairs3::button_timelines;
+    "o6 fam pairs3 near_bone_matrix 0172@1920" => o6_fam_pairs3::NEAR_BONE_MATRIX_0172_1920, o6_fam_pairs3::near_bone_matrix;
+    "o6 fam pairs3 near_bone_matrix 0174@1ad0" => o6_fam_pairs3::NEAR_BONE_MATRIX_0174_1AD0, o6_fam_pairs3::near_bone_matrix;
+    "o6 fam pairs4 pulse_lights 0249@1f30" => o6_fam_pairs4::PULSE_LIGHTS_0249_1F30, o6_fam_pairs4::pulse_lights;
+    "o6 fam pairs4 battle_effect_end 0434@95e0" => o6_fam_pairs4::BATTLE_EFFECT_END_0434_95E0, o6_fam_pairs4::battle_effect_end;
+    "o6 fam pairs4 battle_effect_end 0610@d4b0" => o6_fam_pairs4::BATTLE_EFFECT_END_0610_D4B0, o6_fam_pairs4::battle_effect_end;
+    // round 6, the shape families (o6_fam_*): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2338,6 +2411,148 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("burst records", &s5_misc::BURST_RECORDS),
     ("parts vertices", &s5_misc::PARTS_VERTICES),
     ("thrown effect (far nodes)", &s5_misc::THROWN_EFFECT_FAR),
+    // round 6, the shape families (o6_fam_*)
+    (
+        "o6 fam pool pool_reset_take 0180@2140",
+        &o6_fam_pool::POOL_RESET_TAKE_0180_2140,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0205@2a60",
+        &o6_fam_pool::POOL_RESET_TAKE_0205_2A60,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0243@2800",
+        &o6_fam_pool::POOL_RESET_TAKE_0243_2800,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0350@2cf0",
+        &o6_fam_pool::POOL_RESET_TAKE_0350_2CF0,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0385@1df0",
+        &o6_fam_pool::POOL_RESET_TAKE_0385_1DF0,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0417@4350",
+        &o6_fam_pool::POOL_RESET_TAKE_0417_4350,
+    ),
+    (
+        "o6 fam object start_object_first 0074@1c70",
+        &o6_fam_object::START_OBJECT_FIRST_0074_1C70,
+    ),
+    (
+        "o6 fam object start_object_first 0247@25e0",
+        &o6_fam_object::START_OBJECT_FIRST_0247_25E0,
+    ),
+    (
+        "o6 fam object start_object_first 0200@2be0",
+        &o6_fam_object::START_OBJECT_FIRST_0200_2BE0,
+    ),
+    (
+        "o6 fam object start_object_first 0369@2c10",
+        &o6_fam_object::START_OBJECT_FIRST_0369_2C10,
+    ),
+    (
+        "o6 fam object start_object_first 0606@4d70",
+        &o6_fam_object::START_OBJECT_FIRST_0606_4D70,
+    ),
+    (
+        "o6 fam object start_object_first 0166@1fd0",
+        &o6_fam_object::START_OBJECT_FIRST_0166_1FD0,
+    ),
+    (
+        "o6 fam bone bone_node_setup 0201@6f20",
+        &o6_fam_bone::BONE_NODE_SETUP_0201_6F20,
+    ),
+    (
+        "o6 fam bone bone_node_setup 0203@7710",
+        &o6_fam_bone::BONE_NODE_SETUP_0203_7710,
+    ),
+    (
+        "o6 fam bone bone_node_setup 0273@7770",
+        &o6_fam_bone::BONE_NODE_SETUP_0273_7770,
+    ),
+    (
+        "o6 fam node node_reset_sound 0577@36d0",
+        &o6_fam_node::NODE_RESET_SOUND_0577_36D0,
+    ),
+    (
+        "o6 fam node node_reset_sound 0155@2fc0",
+        &o6_fam_node::NODE_RESET_SOUND_0155_2FC0,
+    ),
+    (
+        "o6 fam node node_reset_sound 0070@3ed0",
+        &o6_fam_node::NODE_RESET_SOUND_0070_3ED0,
+    ),
+    (
+        "o6 fam launch random_launch 0384@15e0",
+        &o6_fam_launch::RANDOM_LAUNCH_0384_15E0,
+    ),
+    (
+        "o6 fam launch random_launch 0421@15e0",
+        &o6_fam_launch::RANDOM_LAUNCH_0421_15E0,
+    ),
+    (
+        "o6 fam launch random_launch 0535@15c0",
+        &o6_fam_launch::RANDOM_LAUNCH_0535_15C0,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0250@1e00",
+        &o6_fam_pool::POOL_RESET_TAKE_0250_1E00,
+    ),
+    (
+        "o6 fam pool pool_reset_take 0284@3430",
+        &o6_fam_pool::POOL_RESET_TAKE_0284_3430,
+    ),
+    (
+        "o6 fam pairs2 models_detach 0164@7cf0",
+        &o6_fam_pairs2::MODELS_DETACH_0164_7CF0,
+    ),
+    (
+        "o6 fam pairs2 models_detach 0155@7c70",
+        &o6_fam_pairs2::MODELS_DETACH_0155_7C70,
+    ),
+    (
+        "o6 fam pairs2 actor_object_start 0644@8df0",
+        &o6_fam_pairs2::ACTOR_OBJECT_START_0644_8DF0,
+    ),
+    (
+        "o6 fam pairs2 actor_object_start 0565@4dd0",
+        &o6_fam_pairs2::ACTOR_OBJECT_START_0565_4DD0,
+    ),
+    (
+        "o6 fam pairs2 shake_visit 0201@4780",
+        &o6_fam_pairs2::SHAKE_VISIT_0201_4780,
+    ),
+    (
+        "o6 fam pairs2 shake_visit 0387@5eb0",
+        &o6_fam_pairs2::SHAKE_VISIT_0387_5EB0,
+    ),
+    (
+        "o6 fam object start_object_first 0132@3cc0",
+        &o6_fam_object::START_OBJECT_FIRST_0132_3CC0,
+    ),
+    (
+        "o6 fam object start_object_first 0126@22a0",
+        &o6_fam_object::START_OBJECT_FIRST_0126_22A0,
+    ),
+    (
+        "o6 fam pairs3 part_matrix_handover 0307@2550",
+        &o6_fam_pairs3::PART_MATRIX_HANDOVER_0307_2550,
+    ),
+    (
+        "o6 fam pairs3 part_matrix_handover 0605@7ed0",
+        &o6_fam_pairs3::PART_MATRIX_HANDOVER_0605_7ED0,
+    ),
+    (
+        "o6 fam pairs4 three_pass_model 0162@1a80",
+        &o6_fam_pairs4::THREE_PASS_MODEL_0162_1A80,
+    ),
+    (
+        "o6 fam pairs4 three_pass_model 0586@1a20",
+        &o6_fam_pairs4::THREE_PASS_MODEL_0586_1A20,
+    ),
+    // round 6, the shape families (o6_fam_*): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
