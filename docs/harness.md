@@ -1215,9 +1215,14 @@ updates after its window opened. About 15-25 s each on the original code.
   run without presses for 1,650 updates after event count 64 (the voiced
   lines go on by themselves; "Sound in lockstep"), then starts the docks'
   battle field (12, `lchb02_00`) from inside the scene as the sweep did;
-  Tidus and Yuna attack. Its trace has ctrl work 0's first word and
-  message windows 0 and 1 (`0x01326d84`, `0x01326db0`, 12 bytes each)
-  instead of the position and the menu mask. No shot of the scene: two
+  Tidus and Yuna attack. Its trace has ctrl work 0's first word instead
+  of the position and the menu mask, and no message windows: the
+  subtitles keep time with the voice, and in a run with the Rust
+  replacements (`FFX.exe`, slower updates) they came 59 updates later
+  against the event count than in three original runs, so the battle
+  request, a fixed number of updates in, cut the scene before its third
+  subtitle instead of after it (window 0: 40 events against 44). No
+  shot of the scene: two
   original runs read the same event count and showed the same subtitle at
   each of four fixed updates, but the camera stood elsewhere on its pan
   (39,000 to 635,000 pixels apart), so the scene's camera seems to follow
@@ -1246,7 +1251,9 @@ Measured on PC2 (2026-11-01): three original runs of each, one at a
 time, gave the same trace events in all six; the shots of the five field
 replays were the same to the pixel in all three (the main menu's clock
 included), devsave-22-luca's as above. The recordings are the first two
-runs. ffx-rust.exe (64-bit, main 1b399d26) fails all six at their first
+runs. `FFX.exe` with the Rust replacements (two runs of devsave-22-luca,
+one of the others) gave the recordings' trace events and, in the five
+field replays, their shots to the pixel. ffx-rust.exe (64-bit, main 1b399d26) fails all six at their first
 line: `load devsave` sends the harness's `devsave` command, which
 `ffx-host`'s server answers `err devsave: not served by ffx-rust yet`
 (`crates/ffx-host/src/harness.rs`); the host has neither the command nor
