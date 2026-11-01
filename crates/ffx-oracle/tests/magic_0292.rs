@@ -9,10 +9,16 @@ use magic_owna::{rec, twin};
 
 /// The draws' slots; 712 answers the case's word.
 fn stubs(t: &mut Twin) {
-    for (s, n) in [(258u32, 1usize), (231, 3), (230, 2), (713, 1), (714, 5)] {
+    for (s, n) in [(258u32, 1usize), (231, 3), (230, 2), (714, 5)] {
         rec(t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
     }
     rec(t, 712, 2, |m, _| m.r32(SCRATCH + 0x6f0));
+    // slot 713 copies the flag (`SCRATCH + 0x600`) it sees out
+    rec(t, 713, 1, |m, a| {
+        let seen = m.r32(SCRATCH + 0x600);
+        m.w32(SCRATCH + 0x6e0, seen);
+        (0x0100_0000 + 713) ^ a[0]
+    });
 }
 
 /// `magic_0293` 0x10001070 and `magic_0292` 0x10001110: slot 712
@@ -34,6 +40,8 @@ fn draws() {
             let gp = SCRATCH + 0x680;
             t.set_u32(w(&t, 0xb7), gp);
             t.set_u32(gp + 0x10, 0x00de_0010);
+            // the restart's block pointer, apart from the draw's
+            t.set_u32(w(&t, 0x8f), SCRATCH + 0x650);
             let sp = t.img.rel32_target(at + 0xdc);
             t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x6c0);
         }

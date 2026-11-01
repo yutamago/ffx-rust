@@ -95,3 +95,78 @@ pub const PART_DRAW: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A part draw that restarts (0x100019a0, cdecl `(part)`): slot 258
+/// `(part)`, slot 231 `(*D, *E, *C)` (`D` `+0x2f`, `E` `+0x23`, `C`
+/// `+0x18`), slot 230 `(*B, *D)` (`B` `+0x42`, `D` again `+0x37`), the
+/// pointer `*P` (`+0x4f`) gets the block `+0x57` and slot 712 `(part,
+/// 0x30)` runs with the game flag `*L` (`L` = `*Q`, `+0x5c`, again
+/// `+0x78`) 1 around it; when slot 712 answers non-zero: `*P` again
+/// (`+0x86`/`+0x8d`), slot 713 `(part)`, `*P` again (`+0x9f`/`+0xa5`) and
+/// the program from slot 941 `((*S)[4])`'s list (`S` `+0xaa`, its
+/// `+0x28`) started at the part ([`start_part`](crate::opu_parts::start_part)
+/// `(part, 0x1000, program, 1)`, `+0xcd`). Returns 1. The slot calls pass
+/// the words the original leaves on the stack.
+pub fn part_restart<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let part = fr.arg(g, 0);
+    let mut st = crate::pushes::Pushes::default();
+    let s = crate::runtime::slot_target(g, w(0x04), 0x408 / 4);
+    st.push(part);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let c = g.read::<u32>(w(0x18));
+    let s = crate::runtime::slot_target(g, w(0x1d), 0x39c / 4);
+    let e = g.read::<u32>(w(0x23));
+    let d = g.read::<u32>(w(0x2f));
+    st.push_all(&[c, e, d]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let d = g.read::<u32>(w(0x37));
+    let s = crate::runtime::slot_target(g, w(0x3c), 0x398 / 4);
+    let b = g.read::<u32>(w(0x42));
+    st.push_all(&[d, b]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let ptr = g.read::<u32>(w(0x4f));
+    st.push(0x30);
+    g.write::<u32>(ptr, w(0x57));
+    let lock = g.read::<u32>(w(0x5c));
+    st.push(part);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let s = crate::runtime::slot_target(g, w(0x6a), 0xb20 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, s, 0).eax;
+    let lock = g.read::<u32>(w(0x78));
+    g.write::<u32>(lock, saved);
+    if r == 0 {
+        return Ret::eax(1);
+    }
+    let mut st = crate::pushes::Pushes::default();
+    let ptr = g.read::<u32>(w(0x86));
+    st.push(part);
+    g.write::<u32>(ptr, w(0x8d));
+    let s = crate::runtime::slot_target(g, w(0x92), 0xb24 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let ptr = g.read::<u32>(w(0x9f));
+    g.write::<u32>(ptr, w(0xa5));
+    let x = g.read::<u32>(g.read::<u32>(w(0xaa)) + 0x10);
+    st.push(x);
+    let s = crate::runtime::slot_target(g, w(0xb2), 0xeb4 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let list = st.call(g, s, 0).eax;
+    let prog = g.read::<u32>(list + 0x28);
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0xcd), part, 0x1000, prog, 1);
+    Ret::eax(1)
+}
+
+/// [`part_restart`] (221 bytes, 1 overlay).
+pub const PART_RESTART: Sig = Sig {
+    len: 221,
+    hash: 0x39f3_ebb7_f0cf_e7f1,
+    calls: &[(0xcd, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};

@@ -62,3 +62,44 @@ fn part_draw() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x100019a0: slot 712 answering 0 and not (the restart); the lock seen
+/// during slot 712 copied out.
+#[test]
+fn part_restart() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x19a0);
+    for (s, n) in [(258u32, 1usize), (231, 4), (230, 6), (713, 1)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
+    let lock = SCRATCH + 0x600;
+    let answer = SCRATCH + 0x6f0;
+    rec(&mut t, 712, 2, move |m, _| {
+        let seen = m.r32(lock);
+        m.w32(lock + 0x40, seen);
+        m.r32(answer)
+    });
+    let list = SCRATCH + 0x700;
+    for i in 0..12 {
+        t.set_u32(list + 4 * i, 0x0900_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| list);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let sp = t.img.rel32_target(at + 0xcd);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x680);
+    t.set_u32(t.img.word(at + 0x5c), lock);
+    t.set_u32(t.img.word(at + 0x4f), SCRATCH + 0x640);
+    let s = SCRATCH + 0x6c0;
+    t.set_u32(t.img.word(at + 0xaa), s);
+    t.set_u32(s + 0x10, 0x00ab_0010);
+    for (k, op) in [0x18u32, 0x23, 0x2f, 0x42].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + u32::try_from(k).unwrap());
+    }
+    let part = SCRATCH + 0x1000;
+    for (drawn, old) in [(0u32, 0u32), (5, 0x77)] {
+        t.set_u32(lock, old);
+        t.set_u32(answer, drawn);
+        t.write(part, &[0x5c; 0x80]);
+        t.check_entry(at, Call::default(), &[part], Eax::Checked);
+    }
+}

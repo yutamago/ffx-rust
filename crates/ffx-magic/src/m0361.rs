@@ -217,3 +217,69 @@ pub const OBJECT_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The effect's sound start (0x10001110, cdecl `(task)`): with `E` =
+/// `*G` (`+0x04`), `a` = `E + 0x198` and `b` = `E + 0x1a0`: slot 447 `(a,
+/// 0x10)`, slot 492 `(b)`; by the kind `*K` (`+0x47`) 0 or 1, slot 486
+/// `(a, 2, 0, 0, 0x1e, 0x20, 0x20, v, 0, 0, 0)` with `v` = (`V` `+0x42`
+/// when slot 492 answered above 0, else 0) plus `D0` (`+0x61`) or `D1`
+/// (`+0x57`); then slot 444 `(0)`, slot 450 `(task, F1)` and slot 449
+/// `(task, F2)` (`+0xc6`/`+0xd3`), and the task's list word `2 i` (`i` =
+/// `+0xac`) gets `a`. Returns `2 i`. Each slot call passes the words the
+/// original leaves on the stack.
+pub fn sound_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::add;
+    let w = |off: u32| img.word(fr.at + off);
+    let e = g.read::<u32>(w(0x04));
+    let b = g.read::<u32>(e + 0x1a0);
+    let a = g.read::<u32>(e + 0x198);
+    let mut st = Pushes::default();
+    st.push_all(&[0x10, a]);
+    let s = slot_target(g, w(0x17), 0x6fc / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push(b);
+    let s = slot_target(g, w(0x27), 0x7b0 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, s, 0).eax;
+    let v = if r.cast_signed() > 0 {
+        g.read::<f32>(w(0x42))
+    } else {
+        0.0
+    };
+    let d = match g.read::<u32>(w(0x47)) {
+        0 => Some(0x61),
+        1 => Some(0x57),
+        _ => None,
+    };
+    if let Some(d) = d {
+        let v = add(v, g.read::<f32>(w(d)));
+        let s = slot_target(g, w(0x66), 0x798 / 4);
+        g.call(s, 0, &[a, 2, 0, 0, 0x1e, 0x20, 0x20, v.to_bits(), 0, 0, 0]);
+    }
+    let mut st = Pushes::default();
+    st.push(0);
+    let s = slot_target(g, w(0xa9), 0x6f0 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let task = fr.arg(g, 0);
+    let s = slot_target(g, w(0xb8), 0x708 / 4);
+    st.push_all(&[w(0xc6), task]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push_all(&[w(0xd3), task]);
+    let s = slot_target(g, w(0xce), 0x704 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let i = g.read::<u32>(task + 0xac).wrapping_mul(2);
+    g.write::<u32>(task.wrapping_add(i.wrapping_mul(8)).wrapping_add(0x2c), a);
+    Ret::eax(i)
+}
+
+/// [`sound_start`] (243 bytes, 1 overlay).
+pub const SOUND_START: Sig = Sig {
+    len: 243,
+    hash: 0xa53f_f44a_96d3_9ff5,
+    calls: &[],
+    imports: &[],
+};

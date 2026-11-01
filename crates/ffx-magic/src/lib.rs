@@ -2065,6 +2065,8 @@ ports! {
     "m0370 frame" => m0370::FRAME, m0370::frame;
     "m0361 object start" => m0361::OBJECT_START, m0361::object_start;
     "m0370 part start" => m0370::PART_START, m0370::part_start;
+    "m0375 part restart" => m0375::PART_RESTART, m0375::part_restart;
+    "m0361 sound start" => m0361::SOUND_START, m0361::sound_start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
