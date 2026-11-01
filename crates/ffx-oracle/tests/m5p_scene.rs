@@ -3641,3 +3641,524 @@ fn m5p_scene_big_box_between() {
         }
     }
 }
+
+// ---- big-phyre2: the occluder classes' Bind tables (h1_bind) ----
+
+/// Recording stubs for every callee of a `Bind`: the data member
+/// constructor, the class member constructor and its finder (answering
+/// `found`), `RegisterType`, the type getters, `atexit` and
+/// `addToNamespace` (returning a tag, the function's `eax`).
+fn bind_stubs(tw: &mut Twins, found: u32) {
+    tw.stub(0x0057_52a0, true, 6, 6, 0);
+    tw.stub(0x0043_a080, true, 3, 3, 0);
+    tw.stub(0x0043_59d0, true, 1, 1, found);
+    tw.stub(0x0043_c140, true, 0, 0, 0x0043_c140);
+    tw.stub(0x0043_95b0, false, 1, 0, 0);
+    tw.stub(0x0094_9207, false, 1, 0, 0);
+    tw.stub(0x0043_7fc0, false, 0, 0, 0x0043_7fc0);
+    tw.stub(0x0045_fd90, false, 0, 0, 0x0045_fd90);
+}
+
+#[test]
+fn m5p_scene_bp2_occluder_binds() {
+    use ffx_prender::h1_bind::bridge::bind;
+    use ffx_prender::m5p_scene_bp2 as b;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x00a3_0c90);
+        // the guards as found (all built on the snapshots: register, the
+        // caller stores, addToNamespace), callees stubbed (the original
+        // RegisterType walks heap state the snapshot's loader owns)
+        bind_stubs(&mut tw, 0);
+        let what = format!("{label}: instance bind as found");
+        tw.run(&what, b::INSTANCE_BIND_ADDR, Conv::Cdecl, &[], |g| {
+            bind(g, b::INSTANCE_BIND)
+        });
+        let what = format!("{label}: object bind as found");
+        tw.run(&what, b::OBJECT_BIND_ADDR, Conv::Cdecl, &[], |g| {
+            bind(g, b::OBJECT_BIND)
+        });
+        tw.unstub();
+        // stubbed callees: every guard bit clear, all set, random bits; the
+        // method member with a name or none, found or not
+        let owner = tw.zeros(0x100);
+        let tail = tw.zeros(0x10);
+        let method = tw.rebase(0x01a8_5510);
+        for round in 0..12u32 {
+            let found = u32::from(round % 3 == 2);
+            bind_stubs(&mut tw, found);
+            let guard = match round {
+                0..=2 => 0,
+                3 => 0xffff_ffff,
+                _ => rng.next(),
+            };
+            let at = tw.rebase(b::INSTANCE_GUARD);
+            tw.w32(at, guard);
+            let at = tw.rebase(b::OBJECT_GUARD);
+            tw.w32(at, guard.rotate_left(round));
+            // the class member as its constructor leaves it: owner, name
+            tw.w32(method + 8, owner);
+            tw.w32(method + 0xc, if round == 1 { 0 } else { 0x00b1_071c });
+            tw.w32(owner + 0x4c, owner + 0x4c);
+            tw.w32(owner + 0x50, tail);
+            let flags = tw.rebase(0x01a8_5a20);
+            let v = rng.next();
+            tw.w32(flags, v);
+            let what = format!("{label}: instance bind {round}");
+            tw.run(&what, b::INSTANCE_BIND_ADDR, Conv::Cdecl, &[], |g| {
+                bind(g, b::INSTANCE_BIND)
+            });
+            let what = format!("{label}: object bind {round}");
+            tw.run(&what, b::OBJECT_BIND_ADDR, Conv::Cdecl, &[], |g| {
+                bind(g, b::OBJECT_BIND)
+            });
+            tw.unstub();
+        }
+    }
+}
+
+/// A float in `[-10, 10)` in steps of 0.01.
+fn centi(rng: &mut Rng) -> f32 {
+    f32::from(u16::try_from(rng.next() % 2000).unwrap()) / 100.0 - 10.0
+}
+
+/// `0x005d6f00` with the original matrix callees on both sides: random
+/// controllers and targets, a target straight above and below (`|f.y|`
+/// over 0.999), just under the limit, the target at the position (a zero
+/// direction: infinities and NaNs), NaN and infinite inputs (only
+/// synthetic data reaches it: no camera controller flies on the
+/// snapshots). The port's calls run below the original's frame, whose words are compared
+/// after the call (`ebp - 4` holds only a copy of a word the original
+/// never writes: not compared).
+#[test]
+fn m5p_scene_bp2_look_at() {
+    use ffx_prender::m5p_scene_bp2::look::look_at;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x005d_6f00);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 - 8;
+        for k in 0..240u32 {
+            let this = tw.zeros(0x80);
+            let mut m: Vec<f32> = (0..12).map(|_| centi(&mut rng)).collect();
+            let mut t: Vec<f32> = (0..3).map(|_| centi(&mut rng)).collect();
+            // the position is the 4x4's row 3: the 3x4's (m8, m9, m10)
+            match k {
+                0 => t = vec![m[8], m[9] + 5.0, m[10]],
+                1 => t = vec![m[8], m[9] - 5.0, m[10]],
+                2 => t = vec![m[8] + 0.04, m[9] + 1.0, m[10]],
+                3 => t = vec![m[8] + 0.0447, m[9] + 1.0, m[10]],
+                4 => t = vec![m[8], m[9], m[10]],
+                5 => t[1] = f32::NAN,
+                6 => m[9] = f32::from_bits(0xffc0_1234),
+                7 => m[0] = f32::INFINITY,
+                // a direction (0, 1, z) whose normalised y is exactly the
+                // limit f32(0.999) (found by search): not over it
+                8 | 9 => {
+                    m[8] = 0.0;
+                    m[9] = 0.0;
+                    m[10] = 0.0;
+                    let z = f32::from_bits(0x3d37_4fac);
+                    t = vec![0.0, if k == 8 { -1.0 } else { 1.0 }, -z];
+                }
+                _ => {}
+            }
+            let bytes: Vec<u8> = m.iter().flat_map(|f| f.to_le_bytes()).collect();
+            tw.write(this + 4, &bytes);
+            let bytes: Vec<u8> = t.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let target = tw.alloc(&bytes);
+            let junk: Vec<u8> = (0..0x90u32).map(|i| (i * 7 + k) as u8).collect();
+            tw.write(ebp - 0x90, &junk);
+            tw.b.set_call_top(Some(ebp - 0x90 - 0x100));
+            let what = format!("{label}: look at {k}");
+            tw.run(&what, 0x005d_6f00, Conv::Thiscall(this), &[target], |g| {
+                look_at(g, ebp, this, target)
+            });
+            tw.b.set_call_top(None);
+            let mut x = vec![0; 0x8c];
+            let mut y = vec![0; 0x8c];
+            tw.a.read_bytes(ebp - 0x90, &mut x);
+            tw.b.read_bytes(ebp - 0x90, &mut y);
+            assert_eq!(x, y, "{what}: frame");
+        }
+    }
+}
+
+/// A plane set for `planesBelow` (four planes as the columns of a 4x4):
+/// `Some(true)` every point below all four, `Some(false)` no point
+/// below any, `None` random planes.
+fn plane_set(rng: &mut Rng, kind: Option<bool>) -> Vec<u8> {
+    let w: Vec<f32> = (0..16)
+        .map(|i| match kind {
+            Some(below) if i >= 12 => {
+                if below {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            Some(_) => 0.0,
+            None => (tw_rand(rng) - 0.5) * 4.0,
+        })
+        .collect();
+    w.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn tw_rand(rng: &mut Rng) -> f32 {
+    f32::from(u16::try_from(rng.next() % 10_000).unwrap()) / 10_000.0
+}
+
+/// A case of [`m5p_scene_bp2_box_planes`]: the outer plane sets, an
+/// empty range, the inner set, a NaN extent.
+type BoxCase = (Vec<Option<bool>>, bool, Option<bool>, bool);
+
+/// `0x009f2a60` with the original matrix and plane callees on both sides:
+/// outer plane sets that let every corner through (one, several, an
+/// empty range: the loop runs once), one that a corner is below (first
+/// and later in the range), random planes and boxes, inner sets passing
+/// every corner, none, or some; a NaN extent. The corners are compared in
+/// the frame after the call. Only synthetic data reaches it.
+#[test]
+fn m5p_scene_bp2_box_planes() {
+    use ffx_prender::m5p_scene_bp2::box_planes::box_planes;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x009f_2a60);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 6 - 8;
+        let mut seen = std::collections::BTreeSet::new();
+        // (outer sets, empty range, inner set, NaN extent)
+        let cases: Vec<BoxCase> = vec![
+            (vec![Some(false)], false, Some(false), false),
+            (vec![Some(false)], false, Some(true), false),
+            (
+                vec![Some(false), Some(false), Some(false)],
+                false,
+                None,
+                false,
+            ),
+            (vec![Some(false), Some(true)], false, Some(false), false),
+            (vec![Some(true)], false, Some(false), false),
+            (vec![Some(false)], true, Some(true), false),
+            (vec![None], false, None, false),
+            (vec![None, None], false, None, false),
+            (vec![Some(false)], false, None, true),
+            // patched below: a set some corners are below (x < 0)
+            (vec![Some(true)], false, Some(false), false),
+        ];
+        let cut = cases.len() - 1;
+        for k in 0..30usize {
+            let (outer, empty, inner, nan) = if k < cases.len() {
+                cases[k].clone()
+            } else {
+                (vec![Some(false)], false, None, false)
+            };
+            let mut planes = Vec::new();
+            for &o in &outer {
+                planes.extend(plane_set(&mut rng, o));
+            }
+            if k == cut {
+                // plane 0 is x < 0, the others never below; the box
+                // -0.5..0.5 under the identity straddles it
+                let mut set = [0f32; 16];
+                set[0] = 1.0;
+                set[13] = -1.0;
+                set[14] = -1.0;
+                set[15] = -1.0;
+                planes = set.iter().flat_map(|f| f.to_le_bytes()).collect();
+            }
+            let first = tw.alloc(&planes);
+            let last = if empty {
+                first
+            } else {
+                first + 0x40 * outer.len() as u32
+            };
+            let bytes = plane_set(&mut rng, inner);
+            let inner_at = tw.alloc(&bytes);
+            let origin: Vec<u8> = (0..3)
+                .flat_map(|_| {
+                    if k == cut {
+                        -0.5
+                    } else {
+                        (tw_rand(&mut rng) - 0.5) * 2.0
+                    }
+                    .to_le_bytes()
+                })
+                .collect();
+            let origin = tw.alloc(&origin);
+            let mut e: Vec<f32> = (0..3)
+                .map(|_| if k == cut { 1.0 } else { tw_rand(&mut rng) })
+                .collect();
+            if nan {
+                e[1] = f32::NAN;
+            }
+            let e: Vec<u8> = e.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let extent = tw.alloc(&e);
+            let m: Vec<u8> = (0..16)
+                .flat_map(|i| {
+                    let v = if i % 5 == 0 {
+                        1.0
+                    } else if k == cut {
+                        0.0
+                    } else {
+                        (tw_rand(&mut rng) - 0.5) * 0.5
+                    };
+                    f32::to_le_bytes(v)
+                })
+                .collect();
+            let m = tw.alloc(&m);
+            let junk: Vec<u8> = (0..0x80u32).map(|i| (i * 13 + k as u32) as u8).collect();
+            tw.write(ebp - 0x80, &junk);
+            tw.b.set_call_top(Some(ebp - 0x80 - 0x100));
+            let what = format!("{label}: box planes {k}");
+            let args = [first, last, inner_at, origin, extent, m];
+            let r = tw.run(&what, 0x009f_2a60, Conv::Cdecl, &args, |g| {
+                box_planes(g, ebp, first, last, inner_at, origin, extent, m)
+            });
+            seen.insert(r);
+            tw.b.set_call_top(None);
+            let mut x = vec![0; 0x80];
+            let mut y = vec![0; 0x80];
+            tw.a.read_bytes(ebp - 0x80, &mut x);
+            tw.b.read_bytes(ebp - 0x80, &mut y);
+            assert_eq!(x, y, "{what}: frame");
+        }
+        assert_eq!(
+            seen.into_iter().collect::<Vec<_>>(),
+            [0, 1, u32::MAX],
+            "{label}: results"
+        );
+    }
+}
+
+/// An occluder of [`m5p_scene_bp2_box_occluded`]: (plane sets, block);
+/// `Some(false)` lets every point through, `Some(true)` has every point
+/// below, `None` random.
+type Occ = (Vec<Option<bool>>, Option<bool>);
+
+/// `PVisibilityCheck_isBoxOccluded` with the original matrix and plane
+/// callees on both sides: no occluders (a zero count first); an occluder
+/// whose plane sets let every corner through and whose block every
+/// corner is below (occluded: 0), one with a corner outside a set
+/// (skipped), one whose block lets a corner through, the second or
+/// fourth occluder occluding, random planes; a NaN extent. The corners
+/// and the origin copy are compared in the frame after the call. Only
+/// synthetic data reaches it.
+#[test]
+fn m5p_scene_bp2_box_occluded() {
+    use ffx_prender::m5p_scene_bp2::box_occluded::is_box_occluded;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x009f_4100);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 3 - 8;
+        let mut seen = std::collections::BTreeSet::new();
+        let never = Some(false);
+        let all = Some(true);
+        let cases: Vec<(Vec<Occ>, bool)> = vec![
+            (vec![], false),
+            (vec![(vec![never], all)], false),
+            (vec![(vec![never, never], never)], false),
+            (vec![(vec![never, all], all)], false),
+            (vec![(vec![all], all), (vec![never], all)], false),
+            (
+                vec![
+                    (vec![never], never),
+                    (vec![never], never),
+                    (vec![never], never),
+                    (vec![never; 3], all),
+                ],
+                false,
+            ),
+            (vec![(vec![None], None), (vec![None, None], None)], false),
+            (vec![(vec![never], None), (vec![None], all)], false),
+            (vec![(vec![never], all)], true),
+            // four occluders, none occluding: the list's end
+            (vec![(vec![never], never); 4], false),
+            // patched below: a set some corners are below (x < 0)
+            (vec![(vec![all], all)], false),
+        ];
+        let cut = cases.len() - 1;
+        for k in 0..24usize {
+            let (occs, nan) = cases
+                .get(k)
+                .cloned()
+                .unwrap_or_else(|| (vec![(vec![None], None), (vec![never], None)], false));
+            let mut counts = [0u32; 4];
+            let mut sets = Vec::new();
+            let mut blocks = vec![0u8; 0x40 * 4];
+            for (i, (s, b)) in occs.iter().enumerate() {
+                counts[i] = s.len() as u32;
+                for &p in s {
+                    sets.extend(plane_set(&mut rng, p));
+                }
+                blocks[0x40 * i..0x40 * (i + 1)].copy_from_slice(&plane_set(&mut rng, *b));
+            }
+            let mut o = vec![0u8; 0x310 + 0x40 * 4];
+            for (i, c) in counts.iter().enumerate() {
+                o[4 * i..4 * i + 4].copy_from_slice(&c.to_le_bytes());
+            }
+            o[0x10..0x10 + sets.len()].copy_from_slice(&sets);
+            o[0x310..].copy_from_slice(&blocks);
+            if k == cut {
+                // plane 0 is x < 0, the others never below; the box
+                // -0.5..0.5 under the identity straddles it
+                let mut set = [0f32; 16];
+                set[0] = 1.0;
+                set[13] = -1.0;
+                set[14] = -1.0;
+                set[15] = -1.0;
+                let bytes: Vec<u8> = set.iter().flat_map(|f| f.to_le_bytes()).collect();
+                o[0x10..0x50].copy_from_slice(&bytes);
+            }
+            let occluders = tw.alloc(&o);
+            let origin: Vec<u8> = (0..3)
+                .flat_map(|_| {
+                    if k == cut {
+                        -0.5
+                    } else {
+                        (tw_rand(&mut rng) - 0.5) * 2.0
+                    }
+                    .to_le_bytes()
+                })
+                .collect();
+            let origin = tw.alloc(&origin);
+            let mut e: Vec<f32> = (0..3)
+                .map(|_| if k == cut { 1.0 } else { tw_rand(&mut rng) })
+                .collect();
+            if nan {
+                e[2] = f32::NAN;
+            }
+            let e: Vec<u8> = e.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let extent = tw.alloc(&e);
+            let m: Vec<u8> = (0..16)
+                .flat_map(|i| {
+                    let v = if i % 5 == 0 {
+                        1.0
+                    } else if k == cut {
+                        0.0
+                    } else {
+                        (tw_rand(&mut rng) - 0.5) * 0.5
+                    };
+                    f32::to_le_bytes(v)
+                })
+                .collect();
+            let m = tw.alloc(&m);
+            let junk: Vec<u8> = (0..0x118u32).map(|i| (i * 13 + k as u32) as u8).collect();
+            tw.write(ebp - 0x118, &junk);
+            tw.b.set_call_top(Some(ebp - 0x118 - 0x100));
+            let what = format!("{label}: box occluded {k}");
+            let r = tw.run_al(
+                &what,
+                0x009f_4100,
+                Conv::Thiscall(occluders),
+                &[origin, extent, m],
+                |g| is_box_occluded(g, ebp, occluders, origin, extent, m),
+            );
+            seen.insert(r);
+            tw.b.set_call_top(None);
+            // the corners and the origin copy (the rest holds the
+            // original's copies of its inputs)
+            for (from, len) in [
+                (0x118u32, 0xc),
+                (0x104, 0xc),
+                (0xf4, 0xc),
+                (0xe4, 0xc),
+                (0xd4, 0xc),
+                (0x54, 0xc),
+                (0x40, 0xc),
+                (0x24, 0x1c),
+            ] {
+                let mut x = vec![0; len];
+                let mut y = vec![0; len];
+                tw.a.read_bytes(ebp - from, &mut x);
+                tw.b.read_bytes(ebp - from, &mut y);
+                assert_eq!(x, y, "{what}: frame at -{from:#x}");
+            }
+        }
+        assert_eq!(
+            seen.into_iter().collect::<Vec<_>>(),
+            [0, 1],
+            "{label}: results"
+        );
+    }
+}
+
+/// `0x00a2fe70` with the original matrix and min/max callees on both
+/// sides: rays from inside the box and from outside towards it and away,
+/// a direction with zero components (infinite reciprocals), a NaN start,
+/// `near`/`far` null or not; random boxes, matrices and rays. The frame's
+/// distances are compared after the call. Only synthetic data reaches it.
+#[test]
+fn m5p_scene_bp2_ray_box() {
+    use ffx_prender::m5p_scene_bp2::ray_box::ray_box;
+    for (label, mut tw) in Twins::all() {
+        let mut rng = Rng(0x00a2_fe70);
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 7 - 8;
+        let mut seen = std::collections::BTreeSet::new();
+        for k in 0..120u32 {
+            let mut r = || (tw_rand(&mut rng) - 0.5) * 4.0;
+            let lo = [r() - 1.0, r() - 1.0, r() - 1.0];
+            let hi = [lo[0] + 2.0, lo[1] + 1.5, lo[2] + 2.5];
+            let mut p = match k % 3 {
+                0 => [lo[0] + 0.5, lo[1] + 0.5, lo[2] + 0.5],
+                _ => [r() * 2.0, r() * 2.0, r() * 2.0],
+            };
+            let mut d = [r(), r(), r()];
+            if k % 7 == 3 {
+                d[1] = 0.0;
+            }
+            if k % 11 == 5 {
+                d = [0.0, 0.0, r()];
+            }
+            if k == 13 || k == 14 {
+                // a NaN start, inside the box on the other axes (14: and
+                // in x too, so the NaN alone decides)
+                p = [f32::NAN, lo[1] + 0.5, lo[2] + 0.5];
+            }
+            if k == 15 {
+                p = [lo[0] + 0.5, f32::NAN, f32::NAN];
+            }
+            let m: Vec<f32> = (0..16)
+                .map(|i| {
+                    if i % 5 == 0 {
+                        1.0
+                    } else if i % 4 == 3 {
+                        0.0
+                    } else {
+                        (tw_rand(&mut rng) - 0.5) * 0.4
+                    }
+                })
+                .collect();
+            let bytes = |v: &[f32]| v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>();
+            let m = tw.alloc(&bytes(&m));
+            let lo_at = tw.alloc(&bytes(&lo));
+            let hi_at = tw.alloc(&bytes(&hi));
+            let p_at = tw.alloc(&bytes(&[p[0], p[1], p[2], 1.0]));
+            let d_at = tw.alloc(&bytes(&[d[0], d[1], d[2], 0.0]));
+            let near = if k % 5 == 4 { 0 } else { tw.zeros(4) };
+            let far = if k % 6 == 5 { 0 } else { tw.zeros(4) };
+            let junk: Vec<u8> = (0..0x4cu32).map(|i| (i * 3 + k) as u8).collect();
+            tw.write(ebp - 0x4c, &junk);
+            tw.b.set_call_top(Some(ebp - 0x4c - 0x100));
+            let what = format!("{label}: ray box {k}");
+            let args = [m, lo_at, hi_at, p_at, d_at, near, far];
+            let res = tw.run_al(&what, 0x00a2_fe70, Conv::Cdecl, &args, |g| {
+                ray_box(g, ebp, m, lo_at, hi_at, p_at, d_at, near, far)
+            });
+            seen.insert(res);
+            tw.b.set_call_top(None);
+            // the distances and their min/max (the rest holds the
+            // original's compare copies)
+            for from in [0x4cu32, 0x3c, 0x2c, 0x1c] {
+                let mut x = vec![0; 0xc];
+                let mut y = vec![0; 0xc];
+                tw.a.read_bytes(ebp - from, &mut x);
+                tw.b.read_bytes(ebp - from, &mut y);
+                assert_eq!(x, y, "{what}: frame at -{from:#x}");
+            }
+        }
+        assert_eq!(
+            seen.into_iter().collect::<Vec<_>>(),
+            [0, 1],
+            "{label}: results"
+        );
+    }
+}

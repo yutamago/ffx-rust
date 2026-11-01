@@ -4336,3 +4336,142 @@ fn big_frame_input_matches_the_original() {
         }
     }
 }
+
+// ---- big-phyre2: the motion blur's render pass (m5p_framework_input_bp2) ----
+
+/// One parameter of `0x00a1eb10`'s effect: type byte, offset, size.
+fn blur_param(t: &mut Twins, kind: u8, off: u16, size: u16) -> u32 {
+    let p = t.zeros(0x10);
+    t.w8(p + 2, kind);
+    t.write(p + 8, &off.to_le_bytes());
+    t.write(p + 0xa, &size.to_le_bytes());
+    p
+}
+
+/// `0x00a1eb10` on every path: no mesh instance (0x15); each of the four
+/// parameters absent, of a wrong type (5), failing `TrophyManager_Install`
+/// (its error; skipped without a texture), not fitting (3: past the size
+/// word, offset below 4); a target or none; each scene call failing in
+/// turn; the whole pass (the last colour target call's `eax`). The two
+/// `+ 0` byte sources (`effect + 0xcd4`, `+ 0x94` null) need an effect at
+/// a wrapping address and are not run. Only synthetic data reaches it.
+#[test]
+fn bp2_blur_render_pass() {
+    use ffx_pother_b::m5p_framework_input_bp2::{self as bl, bridge as blb};
+    for (label, mut t) in Twins::all() {
+        // per parameter: None absent, Some((type, offset, size)); the
+        // install error; the target; the failing call (0 surface colour,
+        // 1 depth, 2 begin, 3 mesh, 4 end, 5 last colour; 9 none)
+        type P = Option<(u8, u16, u16)>;
+        let ok: P = Some((0x42, 8, 0x10));
+        let cases: &[([P; 4], u32, u32, bool, u32)] = &[
+            ([None; 4], 0, 0, true, 9),
+            (
+                [ok, ok, Some((0x12, 0x18, 8)), Some((0xd9, 0x24, 4))],
+                0,
+                0x7e01,
+                true,
+                9,
+            ),
+            ([ok, ok, ok, ok], 0, 0x7e02, false, 9),
+            ([Some((0x41, 8, 0x10)), ok, ok, ok], 0, 0x7e03, true, 9),
+            ([ok, Some((0xdd, 8, 0x10)), ok, ok], 0, 0x7e04, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0x7e05, true, 9),
+            ([ok, ok, ok, ok], 0x33, 0, true, 9),
+            ([Some((0xda, 0x1c, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([Some((0xdb, 3, 8)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([ok, Some((0xdc, 0x20, 1)), ok, ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 0x1c, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 2, 8)), ok], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0x10, 0xe011))], 0, 0x7e06, true, 9),
+            ([ok, ok, ok, Some((0x42, 0, 4))], 0, 0x7e06, true, 9),
+            ([ok, ok, Some((0x42, 8, 0xe008)), ok], 0, 0x7e06, true, 9),
+            ([Some((0x42, 8, 0xe008)), ok, ok, ok], 0, 0x7e06, true, 9),
+            ([None; 4], 0, 0x7e07, true, 0),
+            ([None; 4], 0, 0x7e07, false, 0),
+            ([None; 4], 0, 0x7e07, true, 1),
+            ([None; 4], 0, 0x7e07, true, 2),
+            ([None; 4], 0, 0x7e07, true, 3),
+            ([None; 4], 0, 0x7e07, true, 4),
+            ([None; 4], 0, 0x7e07, true, 5),
+        ];
+        for (k, &(params, install, texture, with_target, fail)) in cases.iter().enumerate() {
+            let fx = t.junk(0xd50, k as u8);
+            let instance = if k == 0 { 0 } else { t.junk(0x20, 0x11) };
+            t.w32(fx + 0xcdc, instance);
+            let buffer = t.zeros(0x40);
+            t.w32(buffer, 0x20);
+            let holder = t.zeros(8);
+            t.w32(holder + 4, buffer);
+            t.w32(fx + 0xd28, holder);
+            for (slot, p) in [0xd2cu32, 0xd30, 0xd38, 0xd44].into_iter().zip(params) {
+                let at = match p {
+                    None => 0,
+                    Some((kind, off, size)) => blur_param(&mut t, kind, off, size),
+                };
+                t.w32(fx + slot, at);
+            }
+            let renderer = t.junk(0x140, 0x40 ^ k as u8);
+            let target = if with_target { 0x5a5a } else { 0 };
+            let err = |i: u32| if i == fail { 0x20 + i } else { 0 };
+            t.stub(bl::PASS_SETUP, true, 1, 1, 0xa254);
+            t.stub(bl::TROPHY_INSTALL, true, 1, 1, install);
+            t.stub(bl::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(bl::SURFACE_CTOR, true, 2, 2, 0x5c);
+            t.stub(bl::SURFACE_DTOR, true, 0, 0, 0x5d);
+            // the colour target: the first call's answer, then the last's
+            let color = t.stub_code(bl::SET_COLOR_TARGET, true, 2, 2, err(0));
+            let last = t.stub_code(bl::SET_COLOR_TARGET ^ 1, true, 2, 2, err(5));
+            let flip = t.zeros(4);
+            // `cmp dword [flip], 0; jne last; inc dword [flip]; jmp color`
+            let mut c = vec![0x83, 0x3d];
+            c.extend(flip.to_le_bytes());
+            c.push(0x00);
+            let head = c.len();
+            c.extend([0x0f, 0x85, 0, 0, 0, 0]); // jne rel32 (patched)
+            c.extend([0xff, 0x05]);
+            c.extend(flip.to_le_bytes());
+            c.extend([0xe9, 0, 0, 0, 0]); // jmp rel32 (patched)
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let jne_end = code + head as u32 + 6;
+            c[head + 2..head + 6].copy_from_slice(&last.wrapping_sub(jne_end).to_le_bytes());
+            let jmp_end = code + c.len() as u32;
+            let n = c.len();
+            c[n - 4..].copy_from_slice(&color.wrapping_sub(jmp_end).to_le_bytes());
+            t.write(code, &c);
+            let at = t.rebase(bl::SET_COLOR_TARGET);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            t.stub(bl::SET_DEPTH_TARGET, true, 1, 1, err(1));
+            t.stub(bl::BEGIN_SCENE, true, 1, 1, err(2));
+            t.stub(bl::RENDER_MESH_INSTANCE, true, 4, 4, err(3));
+            t.stub(bl::END_SCENE, true, 1, 1, err(4));
+            let end = t.b.stack_range().end;
+            let ebp = end - 0x100 - 4 * 5 - 8;
+            let args = [renderer, target, 0xaa, texture, texture ^ 0x10];
+            let what = format!("{label}: blur pass {k}");
+            let junk: Vec<u8> = (0..0x3cu32).map(|i| (i * 5 + k as u32) as u8).collect();
+            t.write(ebp - 0x3c, &junk);
+            t.check_frame(&what, 0x00a1_eb10, Conv::Thiscall(fx), &args, 0, |g| {
+                Out::U32(blb::blur_render_pass(
+                    g,
+                    ebp,
+                    fx,
+                    renderer,
+                    target,
+                    0xaa,
+                    texture,
+                    texture ^ 0x10,
+                ))
+            });
+            let x = Oracle::read(&mut t.a, ebp - 0x2c, 0x20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x2c, 0x20).unwrap();
+            assert_eq!(x, y, "{what}: the bindings");
+            t.reset();
+        }
+    }
+}

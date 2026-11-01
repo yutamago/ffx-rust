@@ -32,6 +32,7 @@
 //! - [`m5p_tmpl_abstract_ab`]: the `PClassDescriptorAbstract<T>` slots 7, 12, 13, 14 (M5 lists tmpl-abstract-a, -b).
 //! - [`m5p_tmpl_abstract_cd`]: the same slots for M5 lists tmpl-abstract-c, -d (the ab ports, one more for slot 4).
 //! - [`m5p_registry_b`]: the conversion kernels and type-system helpers of M5 list registry-load-b.
+//! - [`m5p_registry_b_bp2`]: the visibility check's occluder gathering (M5 list registry-load-b, round big-phyre2).
 //! - [`m5p_tmpl_fortype`]: `PClassDescriptorForType<T>`'s slots, one port per shape with per-copy tables (M5 stage 1).
 //! - [`m5p_registry_load_a_convert`]: the serialization's data-conversion kernels (M5 phyre-registry-load-a);
 //! - [`m5p_registry_load_a_ptype`]: `PType` and `PTypeDefault<T>`'s methods (M5 phyre-registry-load-a);
@@ -58,6 +59,7 @@ pub mod m5_static_init_b;
 pub mod m5_static_init_c;
 pub mod m5_static_init_d;
 pub mod m5p_registry_b;
+pub mod m5p_registry_b_bp2;
 pub mod m5p_registry_load_a_convert;
 pub mod m5p_registry_load_a_desc;
 pub mod m5p_registry_load_a_left;
