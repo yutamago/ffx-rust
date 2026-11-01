@@ -1403,9 +1403,20 @@ loader with its update and wait (not committed). Two separate things:
    loads). So under emulation the render thread depends on the loader
    inside that update where natively it doesn't; what links them was not
    found (the guest-stack scans gave only stale words). The rule stays
-   as it was. Next: the render thread's guest stack at the stall (a
-   `stacks` command in ffx-rust's harness, as the hook has), then the
-   take it repeats.
+   as it was. What `FFX_HOST_WATCH` showed (the 3 s rule in place): the
+   emulated game-over update ran about 47 s of the main thread's own
+   work, then queued a `RegistTask` and about 30 cluster loads, then
+   called `PRenderThread_sync`; the render thread's
+   `processRenderCommands` ended (and the sync with it) only after the
+   loader's first cluster loads had run. Holding cluster loads queued
+   inside an update until the turn (a wrapper on
+   `AsyncLoadManager_LoadClusterRequest_run_00691320`) therefore hung the
+   field's map load (the main thread waits there without `Sleep`) and was
+   dropped. Next: the render thread's guest stack at the stall (a
+   `stacks` command in ffx-rust's harness, as the hook has), and the same
+   update traced in the hook with its loader-take log, to see whether the
+   original's render thread also waits for a cluster load there (and why
+   that costs it no stall).
 3. The opening's map load (`memochek` to the title) is freed in the
    main thread's wait in both programs, but one update earlier in
    ffx-rust (+194 against the original's +196, with the shift above
