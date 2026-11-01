@@ -385,9 +385,10 @@ through `check_entry`.
 
 **Claiming and naming.** The first work list, `~/ffx-work/m5/magic/worklist.tsv`,
 cut the DLLs into 15 lists (contiguous ranges of about equal bytes); that
-membership is fixed. The current one is `~/ffx-work/m5/magic/worklist2.tsv`
+membership is fixed. The current one is `~/ffx-work/m5/magic/worklist5.tsv`
 (`tools/magic-worklist.py`, from `tools/overlay-census.py`'s
-`overlay-dll-functions.tsv`; a rerun never rewrites the lists file and
+`overlay-dll-functions.tsv` in `~/ffx-work/m5/magic/census2`; a rerun
+never rewrites the lists file and
 refuses to overwrite its output without `--replace`): one row per
 function not covered yet, by code identity (the identity `bind` uses;
 the census hash also keeps read-only constants and splits what one port
@@ -395,11 +396,11 @@ covers), "shared first": every function used by 2 or more DLLs, callees
 before callers, then each DLL's own code (the replays' DLLs first). Each
 row gives the `Sig` length and hash, the DLLs using it, the owner (the
 lowest-numbered DLL, and its list) and the uncovered callees.
-`worklist2-dlls.tsv` gives per DLL what is covered and left and the
+`worklist5-dlls.tsv` gives per DLL what is covered and left and the
 shared functions it waits on. The CRT is never ported: its mnemonic
-groups and every function using its failure imports
-(`__report_gsfailure`, `__raise_securityfailure`, which the census cuts
-as one 312-byte function) count as covered. Claim DLLs with
+groups (`magic_0481`'s CRT tail, and `magic_0267`'s stack probe at
+`0x10005c80`) and every function using its failure imports
+(`__report_gsfailure`, `__raise_securityfailure`) count as covered. Claim DLLs with
 `tools/claim.py magic_NNNN --agent <id>` (the DLL name is the claim).
 Modules: `ffx-magic/src/mNNNN.rs` for a DLL's own functions, named for
 what the code does once known (`opu.rs`, the OPU host); a function shared
@@ -411,6 +412,40 @@ prints the hash; `--bind <dll> <addr>…` shows what binds), a line in the
 `ports!` list (entries) or `INTERNAL` (internal functions), the parity
 test, the mutants, and the replay that reaches the DLL with
 `FFX_MAGIC_RUST`.
+
+**The census's functions (2026-11-01).** `tools/overlay-census.py` cuts
+each DLL's `.text` by recursive descent over objdump's instructions
+(disassembled again from any address the linear sweep did not decode as
+an instruction start: it desyncs on the jump tables MSVC puts after a
+function). A function starts only at the entry point, an export, a
+pointer into `.text` from a data section, a direct call target, a code
+pointer taken in reachable code (`push offset f`, `mov [x], offset f`)
+or a tail-call target (a jump out of a function's range); the starts
+are found to a fixed point. Each function covers every instruction
+reachable from its start by fall-through, jumps, conditional jumps and
+jump tables (not calls) up to the next start, plus its jump tables and
+byte index tables after its code, and ends at the last of them. The
+CRT's `__try` filters and handlers (the `__SEH_prolog4` scope tables'
+words) are labels of their function, not starts. The first census
+(`~/ffx-work/m5/magic/census`) also started a function at every 16-byte
+aligned address after a `0xcc` byte and kept only starts the linear
+sweep decoded: an instruction ending in `0xcc` (`lea eax, [ebp-0x34]`,
+`subss xmm1, xmm4`) cut one function into rows ending mid-instruction
+(`magic_0162` `0x100021d0`, 2074 bytes, was 3 rows), call targets after a
+jump table were lost and merged into their neighbour, and functions
+reached only through a code pointer (`magic_0176` `0x10001710`) were
+merged into the one before. `census2` has 95,313 rows (95,586 before):
+against the first census 1,830 clusters merged, 3,300 split, 451
+resized, 2 recut (`overlay-row-changes.tsv`; `--old DIR` prints them per
+DLL), no code left unreached (`overlay-unreached.tsv` lists any). Ports
+bind by their own `Sig`, not by the rows, so a port of a cut piece still
+binds where the bytes match; `magic-sig --covered-len <dll> <addr>…`
+prints the bound `Sig`'s length to compare with a row's size. A merged
+row whose start a port covered counted as covered as a whole: 44
+functions after such a start had no port (and 150 `__security_check_cookie`
+copies merged behind a slot thunk, CRT). `worklist5.tsv` (from `census2`):
+4,316 identities, 52 CRT, 2,428 covered, 1,836 left (230 shared, 1,606
+own); the first census gave 4,578, 76, 2,649 and 1,853 with the same ports.
 
 **Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
 and 66 internal functions (plus the slot thunks by shape): the runtime,

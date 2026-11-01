@@ -3,7 +3,7 @@
 
 use crate::part_draw::{Camera, camera, start_part};
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, cvt, div, mul};
+use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// Starts the part (0x10001000, internal: `ecx` = the part): program 0
@@ -150,5 +150,105 @@ pub const FRAME: Sig = Sig {
         (0x72, Callee::Sig(&crate::sa_misc::TIMELINE)),
         (0x8d, Callee::Sig(&crate::sb_misc::TIMELINE_STOP_GLOBAL)),
     ],
+    imports: &[],
+};
+
+/// The effect's set-up (0x100012a0, an overlay table entry, `(arg)`): the
+/// point `P` (three floats, operand `+0x07`..) moved a part `K` (an
+/// `f64`, `+0x17`) of the way to `Q` (`+0x0f`..: `P + (Q - P) K` in
+/// double, rounded to `f32`); slot 803 `(0x1000000, 16)` the buffer (its
+/// address and `+0x80000` to two globals, the argument to a third), the
+/// name global set and slot 718 `(NAME)`, slot 222 `(*G_N, 0, 1000,
+/// 0x2000)`, a handle `h` from slot 719 `(*G_N, 8, 0)` (kept), slot 711
+/// `(h, PROG, 0)` under `**G_LOCK` 1 and slot 710 `(BLOCK, *G_H, *G_BUF,
+/// 0x80000)`; the handle's three program tables (slot 941 `(h[0x14 +
+/// 4i])`, kept); the 0x110-byte timeline block zeroed (`memset`) with its
+/// callback, counts and flags. Each call sees the words the earlier ones
+/// left on the stack, up to the clean-up. Returns 1.
+pub fn setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, op: u32| g.read::<u32>(w(op));
+    let k = g.read::<f64>(w(0x17));
+    let t = slot_target(g, w(0x20), 803);
+    for (a, b, dst) in [
+        (0x7u32, 0xfu32, 0x4au32),
+        (0x36, 0x52, 0x78),
+        (0x64, 0x80, 0x9e),
+    ] {
+        let p = g.read::<f32>(w(a));
+        let d = sub(g.read::<f32>(w(b)), p);
+        // cvtpd2ps: rounded to the nearest f32
+        #[allow(clippy::cast_possible_truncation)]
+        let x = (f64::from(d) * k + f64::from(p)) as f32;
+        g.write::<f32>(w(dst), x);
+    }
+    let mut stack = vec![0x100_0000, 0x10];
+    let buf = g.call(t, 0, &stack).eax;
+    g.write::<u32>(w(0xab), buf);
+    g.write::<u32>(w(0xb5), buf.wrapping_add(0x8_0000));
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0xbd), arg);
+    let t = slot_target(g, w(0xc2), 718);
+    g.write::<u32>(w(0xd3), w(0xd7));
+    stack.insert(0, w(0xc7));
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0xde), 222);
+    let n = r(g, 0xf6);
+    stack.splice(0..0, [n, 0, 0x3e8, 0x2000]);
+    // call width: 7
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0xfd), 719);
+    let n = r(g, 0x10d);
+    stack.splice(0..0, [n, 8, 0]);
+    // call width: 10
+    let h = g.call(t, 0, &stack).eax;
+    let lock = r(g, 0x115);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x11e), h);
+    let t = slot_target(g, w(0x129), 711);
+    g.write::<u32>(lock, 1);
+    stack.splice(0..0, [h, w(0x123), 0]);
+    // call width: 13
+    g.call(t, 0, &stack);
+    let lock = r(g, 0x13c);
+    let b = r(g, 0x147);
+    g.write::<u32>(lock, saved);
+    let h2 = r(g, 0x14f);
+    let t = slot_target(g, w(0x154), 710);
+    stack.splice(0..0, [w(0x159), h2, b, 0x8_0000]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    let mut stack = Vec::new();
+    for (k, (hop, tab, dst)) in [
+        (0x166u32, 0x171u32, 0x17eu32),
+        (0x183, 0x18b, 0x198),
+        (0x19d, 0x1a5, 0x1be),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let h = r(g, hop);
+        let x = g.read::<u32>(h + 0x14 + 4 * k as u32);
+        let t = slot_target(g, w(tab), 941);
+        stack.insert(0, x);
+        // call width: 18 at most (the earlier calls' words)
+        let v = g.call(t, 0, &stack).eax;
+        g.write::<u32>(w(dst), v);
+    }
+    g.write_bytes(w(0x1b9), &[0u8; 0x110]);
+    g.write::<u32>(w(0x1cc), w(0x1d0));
+    for (op, v) in [(0x1d6u32, 2u32), (0x1e0, 2), (0x1ea, 1), (0x1f4, 1)] {
+        g.write::<u32>(w(op), v);
+    }
+    Ret::eax(1)
+}
+
+/// [`setup`] (516 bytes, 1 overlay).
+pub const SETUP: Sig = Sig {
+    len: 516,
+    hash: 0x5c74_8806_70e3_731f,
+    calls: &[(0x1c3, Callee::Import("memset"))],
     imports: &[],
 };

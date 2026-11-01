@@ -1,6 +1,8 @@
 //! `magic_0641.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::part_draw::{Camera, camera};
+use crate::runtime::slot_target;
 use crate::sb_sse::sub;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
@@ -263,5 +265,83 @@ pub const GLOW_PARTS: Sig = Sig {
     len: 171,
     hash: 0x0830_272b_5cd9_6a91,
     calls: &[(0x40, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// The effect's frame (0x10001f20, an overlay table entry, no
+/// arguments): nothing while the DLL's flag (operand `+0x02`) is 0
+/// (returns 0); else the camera matrices ([`camera`]), a word copied
+/// through a pointer global, the DLL's frame word kept; with slot 261
+/// `(13)` set, timeline A stops
+/// ([`timeline_stop`](crate::sb_misc::timeline_stop)) and the effect
+/// ends (slots 376 `(*G_S)`, 381 `(0)`, 214 `(*G_H)`); else timeline B
+/// runs ([`timeline_run`](crate::sb_misc::timeline_run)) with slot 261
+/// `(11)` set, and with slot 261 `(12)` set both stop and the effect
+/// ends; otherwise the frame counter goes up. Returns 1.
+pub fn frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    if g.read::<u32>(w(0x2)) == 0 {
+        return Ret::eax(0);
+    }
+    let c = Camera {
+        gp: 0xd,
+        cam: 0x13,
+        item: 0x19,
+        t723: 0x1e,
+        t724: 0x2b,
+        m: 0x31,
+    };
+    let mut stack = camera(g, img, f, &c, &[]);
+    let v = g.read::<u32>(w(0x3f));
+    let x = g.read::<u32>(w(0x44));
+    g.write::<u32>(v, x);
+    let k = g.read::<u32>(w(0x4b));
+    g.write::<u32>(w(0x50), k);
+    let t = slot_target(g, w(0x55), 261);
+    stack.insert(0, 0xd);
+    let stop = |g: &mut G, tl: u32| crate::sb_misc::timeline_stop(g, tl);
+    // call width: 18 at most (the earlier calls' words)
+    if g.call(t, 0, &stack).eax == 0 {
+        let t = slot_target(g, w(0xb3), 261);
+        if g.call(t, 0, &[0xb]).eax != 0 {
+            crate::sb_misc::timeline_run(g, img, img.rel32_target(f + 0xce), w(0xc9));
+        }
+        let t = slot_target(g, w(0xd3), 261);
+        if g.call(t, 0, &[0xc]).eax == 0 {
+            let n = g.read::<u32>(w(0xfe));
+            g.write::<u32>(w(0xfe), n.wrapping_add(1));
+            return Ret::eax(1);
+        }
+        stop(g, w(0xe9));
+        stop(g, w(0xf3));
+    } else {
+        stop(g, w(0x6b));
+    }
+    let t = slot_target(g, w(0x75), 376);
+    let a = g.read::<u32>(w(0x7b));
+    let mut stack = vec![a];
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x88), 381);
+    stack.insert(0, 0);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x97), 214);
+    let h = g.read::<u32>(w(0x9d));
+    stack.insert(0, h);
+    // call width: 18 at most (the earlier calls' words)
+    g.call(t, 0, &stack);
+    Ret::eax(1)
+}
+
+/// [`frame`] (264 bytes, 1 overlay).
+pub const FRAME: Sig = Sig {
+    len: 264,
+    hash: 0xbcb2_4bcb_f23f_7a11,
+    calls: &[
+        (0x70, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+        (0xce, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0xee, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+    ],
     imports: &[],
 };

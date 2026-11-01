@@ -59,3 +59,23 @@ fn two_parts() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x100047d0: the colour blend with the countdowns above, at and below
+/// 0.
+#[test]
+fn blend() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x47d0);
+    let s = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(at + 0x5), s);
+    for counts in [[5u32, 1, 0], [0, 0xffff_fffe, 30], [12, 7, 3]] {
+        t.write(s, &[0x2b; 0x2300]);
+        for i in 0..0x18u32 {
+            t.set_u32(s + 0x1a10 + 4 * i, (0.125 + 0.5 * i as f32).to_bits());
+        }
+        for (j, n) in (0u32..).zip(counts) {
+            t.set_u32(s + 0x2208 + 4 * j, n);
+        }
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

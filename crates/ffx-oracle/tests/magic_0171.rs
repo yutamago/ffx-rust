@@ -68,3 +68,57 @@ fn aim() {
         });
     }
 }
+
+/// 0x10001340: the start-up into an empty and a filled task list, the
+/// object block with no entries and with two.
+#[test]
+fn start_up() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1340);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let bytes = SCRATCH + 0x600;
+    t.write(bytes, &[3, 9, 0, 0]);
+    rec(&mut t, 407, 3, move |_, _| bytes);
+    for (s, n) in [
+        (719u32, 3usize),
+        (711, 3),
+        (710, 4),
+        (215, 1),
+        (413, 1),
+        (291, 5),
+        (367, 8),
+    ] {
+        rec(&mut t, s, n, move |_, a| (0x0700_0000 + s) ^ a[0]);
+    }
+    // the part's set-up: its lock and buffers
+    let pi = t.img.rel32_target(at + 0x67);
+    t.set_u32(t.img.word(pi + 0x01), SCRATCH + 0x700);
+    t.set_u32(t.img.word(pi + 0x07), SCRATCH + 0x740);
+    t.set_u32(t.img.word(pi + 0x11), SCRATCH + 0x780);
+    t.set_u32(w(&t, 0x08), 0x00ab_0008);
+    // the pool: a ring of four nodes
+    let take = t.img.rel32_target(at + 0x95);
+    let (count, head) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+    let node = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
+    let last = SCRATCH + 0x1a00;
+    let block = w(&t, 0x3d);
+    // the words it stores hold junk
+    for op in [0x1d, 0x27, 0x31, 0x62, 0x7c, 0x81, 0x86, 0x8c] {
+        t.set_u32(w(&t, op), 0x5a5a_5a5b);
+    }
+    t.set_u16(w(&t, 0x77), 0x5a5a);
+    for (head0, entries) in [(0u32, 0u32), (last, 2), (last, 0), (0, 2)] {
+        for i in 0..4 {
+            t.write(node(i), &[0x5a; 0x40]);
+            t.set_u32(node(i), node((i + 3) % 4));
+            t.set_u32(node(i) + 4, node((i + 1) % 4));
+        }
+        t.set_u32(head, node(0));
+        t.set_u16(count, 4);
+        t.write(last, &[0x66; 0x10]);
+        t.set_u32(w(&t, 0x9b), head0);
+        t.set_u32(w(&t, 0xb2), head0);
+        t.set_u32(block + 4, entries);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
