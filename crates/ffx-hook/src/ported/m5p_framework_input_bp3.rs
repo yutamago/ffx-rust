@@ -15,4 +15,11 @@ ported! {
         let ebp = f.at() + 4 * fi::INPUT_LOG_FRAME_WORDS;
         fi::input_log::read_input_log(&mut mem(), ebp, app, path)
     }
+    /// `Phyre_PFramework_PInputMapping_valueOf_00628f00(mapper; input)` -> `ST0`:
+    /// the normalised touch directions in a frame.
+    Phyre_PFramework_PInputMapping_valueOf_00628f00 @ 0x0062_8f00 => extern "thiscall" fn fibp3_00628f00(this: u32, input: u32) -> f32 {
+        let mut f = StackFrame::<{ fi::AXIS_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * fi::AXIS_FRAME_WORDS;
+        fi::axis::value_of(&mut mem(), ebp, this, input)
+    }
 }
