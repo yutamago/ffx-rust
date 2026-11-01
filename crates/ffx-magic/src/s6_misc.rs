@@ -15,7 +15,7 @@ use crate::s4_misc::{FREE_RECORD, append_object, free_record};
 use crate::s4_misc::{
     SCREEN_PLACE, START_OBJECT_ANIM, screen_place, start_object, start_object_anim,
 };
-use crate::s4_small::{FADER_TASK, fader_task};
+use crate::s4_small::{FADER_TASK, MOVE_ENDS, fader_task, move_ends};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
 use crate::sa_misc::{
@@ -2987,5 +2987,69 @@ pub const SMOKE_PUFF: Sig = Sig {
     len: 408,
     hash: 0xb3a0_0e1f_220f_5cd1,
     calls: &[(0x9, Callee::Sig(&RING_TAKE_68))],
+    imports: &[],
+};
+
+/// [`move_ends`] for the DLL's object (internal: `edx` = `from`, the
+/// stack `(to)`): the record `[G_O, from, to, 0]` in a local. Returns
+/// [`move_ends`]'s `eax`.
+///
+/// `magic_0070` 0x10009450 (41 bytes; 2 DLLs).
+pub fn move_ends_of<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let rec = ebp.wrapping_sub(0x10);
+    let to = fr.arg(g, 0);
+    for (i, v) in (0u32..).zip([op(img, f, 0xf), fr.edx, to, 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let call = Frame {
+        at: img.rel32_target(f + 0x21),
+        esp: ebp.wrapping_sub(0x14),
+        ecx: rec,
+        ..*fr
+    };
+    Ret::eax(move_ends(g, img, &call).eax)
+}
+
+/// [`move_ends_of`] (the `rel32`: [`move_ends`]).
+pub const MOVE_ENDS_OF: Sig = Sig {
+    len: 41,
+    hash: 0x0f66_d207_2050_1d3a,
+    calls: &[(0x21, Callee::Sig(&MOVE_ENDS))],
+    imports: &[],
+};
+
+/// Whether a model takes the direct way (internal, `ecx` = the user's
+/// handle; its model is slot 390's): models
+/// 0x1071..0x108c the DLL's byte table maps to the first way are; the
+/// others are when slot 534 `(handle)` says so (0 or 1). Returns the
+/// answer.
+///
+/// `magic_0094` 0x10006420 (112 bytes with its tables, `ecx` = the
+/// handle; 2 DLLs).
+pub fn model_direct<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let m = fr.ecx;
+    let id = slot(g, img, f, 0x1, 390, &[m]).eax;
+    let i = id.wrapping_add(0xffff_ef8f);
+    // the switch's tables are in the code: the byte table, then the
+    // jump table's two ways
+    if i <= 0x1b {
+        let b = img.word(w(0x21).wrapping_add(i)) & 0xff;
+        if img.word(w(0x28).wrapping_add(4 * b)) == f + 0x2c {
+            return Ret::eax(1);
+        }
+    }
+    let r = slot(g, img, f, 0x34, 534, &[m]).eax;
+    Ret::eax(u32::from(r != 0))
+}
+
+/// [`model_direct`].
+pub const MODEL_DIRECT: Sig = Sig {
+    len: 112,
+    hash: 0x1969_315b_858e_f59a,
+    calls: &[],
     imports: &[],
 };

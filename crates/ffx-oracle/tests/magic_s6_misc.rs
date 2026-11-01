@@ -2130,3 +2130,70 @@ fn smoke_puffs() {
         });
     }
 }
+
+/// Row 510: `magic_0070`'s move ends for its object (through
+/// `s4_small::move_ends`), for the modes the record's 0 picks.
+#[test]
+fn move_ends_of_the_object() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x9450);
+    let obj = op(&t, f, 0xf);
+    let (from, to) = (SCRATCH + 0x300, SCRATCH + 0x340);
+    for k in 0..2u32 {
+        t.write(obj, &varied(0x140, k));
+        t.write(from, &varied(0x10, k + 1));
+        t.write(to, &varied(0x10, k + 2));
+        let c = Call {
+            edx: from,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[to], Eax::Checked, |g, img, fr| {
+            s6_misc::move_ends_of(g, img, fr)
+        });
+    }
+}
+
+/// Row 603: `magic_0094`'s direct-way test: models below, inside and
+/// past the table's range, both ways of the table, slot 534's answers.
+#[test]
+fn models_direct() {
+    let Some(mut t) = twin(94) else { return };
+    let f = t.at(0x6420);
+    let model = SCRATCH + 0x7e0;
+    rec(&mut t, 390, 1, move |m, _| m.r32(model));
+    let ans = SCRATCH + 0x7e4;
+    rec(&mut t, 534, 1, move |m, _| m.r32(ans));
+    for (k, (id, a)) in (0u32..).zip([
+        (0x1070u32, 0u32),
+        (0x1071, 0),
+        (0x1072, 5),
+        (0x1080, 0),
+        (0x108c, 1),
+        (0x108d, 0),
+        (0x2000, 7),
+    ]) {
+        t.set_u32(model, id);
+        t.set_u32(ans, a);
+        scrub(&mut t);
+        t.check(
+            f,
+            Call::this(0x0aa0_0000 + k),
+            &[],
+            Eax::Checked,
+            |g, img, fr| s6_misc::model_direct(g, img, fr),
+        );
+    }
+    // every model of the table's range
+    for id in 0x1071..=0x108cu32 {
+        t.set_u32(model, id);
+        t.set_u32(ans, 0);
+        t.check(
+            f,
+            Call::this(0x0bb0_0000),
+            &[],
+            Eax::Checked,
+            |g, img, fr| s6_misc::model_direct(g, img, fr),
+        );
+    }
+}
