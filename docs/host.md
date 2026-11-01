@@ -1706,6 +1706,38 @@ can't be compared pixel for pixel in a `realtime` replay unless it is
 pinned to an event count (a `waitfor` on `0x01325d94`) instead of 80
 frames; nothing was changed or re-recorded.
 
+#### Iggy's screens drawn (2026-11-01, host-iggy)
+
+The x86_64 `ffx-rust.exe` with `swf` (built on the main machine: Ruffle's
+build needs Java, which PC2 lacks), iggy-menus through `run-all.sh --extra
+iggy-menus` on PC2, against PC2's recordings (`orig/eye`):
+
+| | Trace events | Shots 1-9 (pixels off by more than 24 / 8 levels) | Shots 10-12 |
+|---|---|---|---|
+| before (host-b9) | same (4 ranges) | 436,391-470,140 (no menu image) | 0 |
+| host-iggy | same (4 ranges), 359 s | 1: 4,055 / 7,645; 2: 1,449 / 4,825; 3: 4,410 / 13,315; 4: 3,820 / 9,563; 5: 1,776 / 6,817; 6: 1,299 / 4,365; 7: 9,797 / 21,367; 8: 15,621 / 25,137; 9: 38,673 / 44,945 | 0 |
+
+By eye shots 1-8 are the original's screens: the same pages, rows, texts,
+cursor and backdrop; what is left is Ruffle against `GDraw` (glyph and edge
+filtering, the selected row's band a shade brighter on shot 8, the pilot's
+measured residue, docs/formats/pc-ui.md "Ruffle"). Shot 9 (Change
+parameters) lacks the page's three rows ("Get all items", "Unlock all
+skills", "MAX gil" with their Get buttons): the game makes the same
+`addChangeParaPageItem` calls and the page works (the help text is row
+0's), but Ruffle draws no `spinnerButton` row there; the pilot's offline
+replay (`iggy-replay`, `ruffle-iggy-menus/iggy-menus-9-ruffle.png`) shows
+the same, so it is Ruffle's (or the movie on Ruffle), not the host's. Open
+for `ffx-swf`.
+
+What it took, besides the composite ("Iggy" above): no menu had ever
+ticked or drawn in `ffx-rust` (the null `IggyGDrawMallocAnnotated` left
+`GDraw` without a context, so `IggyMenuManager_Render_00a267f0` skipped
+every menu); and once the AS3 calls reached the game live, the first
+round's run diverged at the PC menu (the unticked movie never moved its
+cursor, so Enter answered `EscMenuResume`): with ticks the movie's calls
+are the original's, call for call (`EscMenuHelpTextRefresh` pages and
+rows, `playEscSound`), as the hook's Iggy log of the original shows.
+
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
 The i686 `ffx-rust.exe` still ends a few seconds past its third frame in
@@ -1786,15 +1818,16 @@ runs past the third frame (the Unicorn abort).
    page's 24 Iggy calls run, and the loads run free beside it then (no
    lockstep before the first update). Suspects: the Iggy value-path
    imports (`IggyValueRefCreateArray`, `IggyValuePathFromRef`,
-   `MakeArrayRef`, `SetArrayIndex` are still null and write nothing into
-   the frames `IggyStringArray_ctor_006fcbc0` hands them), and
+   `MakeArrayRef`, `SetArrayIndex` were null and wrote nothing into
+   the frames `IggyStringArray_ctor_006fcbc0` hands them; since host-iggy
+   they write Iggy's 24-byte paths there), and
    lock-prefixed instructions, which are atomic only within one Unicorn
    instance.
-3. **Iggy's image.** With `--features swf` each player renders in Ruffle;
-   compositing the image into the back buffer through the D3D11 layer
-   (a texture, a quad, GDraw's premultiplied blend) is not done; the
-   AS3 external calls' answers reach the game but not the movie
-   (`undefined`); the value-path imports (string arrays) are null.
+3. Done (host-iggy, 2026-11-01): **Iggy's image.** The players tick
+   and draw (`GDraw`'s memory imports), the image is composited through
+   the D3D11 layer, the AS3 calls get the game's answers, the value refs
+   and paths work ("Iggy", "Iggy's screens drawn"). Left: Ruffle draws no
+   Change parameters rows (iggy-menus-9).
 4. **The `ported!` lists in the table**: done (2026-10-29, above, "One
    source of truth"), and the speed-up the profile promised (below,
    "With the table"). Left: the held shims (their locals to
@@ -1813,9 +1846,10 @@ runs past the third frame (the Unicorn abort).
    i686 build, which aborted in Unicorn's 32-bit TCG backend
    (`tcg_reg_alloc`), was dropped on 2026-10-31 ("The i686 build"). (b) Done (host-pc2): the harness's frame
    commands run on the clock's boundary (`docs/harness.md`, "Two
-   processes"), and field-walk passes. Left: (c) FMOD's device output
-   (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
-   yet; the movie's audio stream is silent.
+   processes"), and field-walk passes. (c) Done (host-iggy): the device
+   output is the hook's `rust_audio_out.rs`, compiled into `ffx-host`
+   (off in harness games), and the movie's user stream is mixed from the
+   game's read callback ("FMOD").
 7. Done (host-battle, 2026-10-29/31: a signal block at a host address,
    and the spell overlays; "The battle replays on PC2"). Was: **Battles in `ffx-rust.exe`** (host-pc2, 2026-10-29). A battle started
    from the field never gets past `g_BtlStatus` `0x16`: monsters `0x14`

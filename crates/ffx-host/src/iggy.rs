@@ -642,12 +642,7 @@ fn value_set_string(e: &mut Exec, args: &Args) -> Ret {
 /// value converted as AS3 does, else 1 and `out` left alone.
 fn value_get_s32(e: &mut Exec, args: &Args) -> Ret {
     let out = a(args, 3);
-    let found = value_at(e, a(args, 0));
-    crate::log::note(&format!(
-        "iggy: get s32 at {:x?}: {found:?}",
-        read_path(e, a(args, 0))
-    ));
-    let v = match found {
+    let v = match value_at(e, a(args, 0)) {
         Some(Value::Number(n)) => to_int32(n),
         Some(Value::Bool(b)) => i32::from(b),
         Some(Value::String(s)) => s.trim().parse::<f64>().map_or(0, to_int32),
