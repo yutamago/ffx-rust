@@ -1103,13 +1103,36 @@ pub const PARTICLE_NODE: Sig = Sig {
 ///
 /// `magic_0042` 0x1000b170 (288 bytes; 10 DLLs).
 pub fn summon_frame_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_frame_b_on(g, img, fr, false)
+}
+
+/// [`summon_frame_b`]; with `slot_first` slot 673 runs before the stage
+/// test (`magic_0426`'s copy, `sf_hidden::summon_frame_673_first`: the
+/// stage operand at `+0x19`, the table at `+0x07`), else after it.
+pub(crate) fn summon_frame_b_on<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    slot_first: bool,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
-    if g.read::<i32>(w(0xb)) < 4 {
+    let (stage, table) = if slot_first {
+        (0x19, 0x07)
+    } else {
+        (0xb, 0x18)
+    };
+    if slot_first {
+        let t = slot_target(g, w(table), 673);
+        g.call(t, 0, &[]);
+    }
+    if g.read::<i32>(w(stage)) < 4 {
         return Ret::eax(0);
     }
-    let t = slot_target(g, w(0x18), 673);
-    g.call(t, 0, &[]);
+    if !slot_first {
+        let t = slot_target(g, w(table), 673);
+        g.call(t, 0, &[]);
+    }
     let p = g.read::<u32>(w(0x25));
     g.write::<u32>(p, w(0x2b));
     let y = g.read::<u32>(w(0x30));

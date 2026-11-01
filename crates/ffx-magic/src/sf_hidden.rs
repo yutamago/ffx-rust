@@ -234,3 +234,27 @@ pub const CASTER_SCRIPT_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The summon's frame with slot 673 first
+/// ([`summon_frame_b`](crate::s4_summon::summon_frame_b) with the slot
+/// call moved before the stage test: slot 673 runs every frame, the rest
+/// from stage 4). Returns 0.
+///
+/// `magic_0426` 0x100077e0 (288 bytes, 1 DLL; a word in the overlay
+/// table).
+pub fn summon_frame_673_first<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::s4_summon::summon_frame_b_on(g, img, fr, true)
+}
+
+/// [`summon_frame_673_first`].
+pub const SUMMON_FRAME_673_FIRST: Sig = Sig {
+    len: 288,
+    hash: 0xd2ee_2eae_62d7_2075,
+    calls: &[
+        (0x3a, Callee::Sig(&crate::sa_summon::BIND_MODELS)),
+        (0xac, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xc9, Callee::Sig(&crate::nodes::GATED)),
+        (0xe9, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
