@@ -3046,3 +3046,89 @@ pub const MODEL_ITEMS_NODE: Sig = Sig {
     calls: &[(0x256, Callee::Any)],
     imports: &[],
 };
+
+/// A model's sound record sent (cdecl, no arguments; a frame aligned to
+/// 16 through `ebx`, `B` its base, the matrix `M` at `B-0x48` and the
+/// record `L` at `B-0xc0`). With `C = (**G_A)+0x20 + 0x8e0` and its model
+/// `D = C[0x1c]`: `M` = slot 298 `(M)` with its diagonal 1.0 and the
+/// point `(*G_X, *G_Y + K, *G_Z, 1)`, then slot 231 `(M, *G_W, M)`; `L` =
+/// 0xc, `*G_P`, the u16 `D+0x16`, `M`, zeros. The handle `h` = slot 772
+/// `(0x203, 0)`; slot 773 `(h)` says whether it is open; open: slot 819
+/// `(h, C, &L)` and slot 870 `(h)`; not: the flags `F` = slot 776 (the
+/// low byte of `D+0x16`) | slot 777 `(0)` | 0x40 and slot 871 `(h, C, &L,
+/// F)`. Every call after the handle runs with `**G_LOCK` 1 and puts the
+/// word back. Returns the lock's pointer `*G_LOCK`.
+///
+/// `magic_0515` 0x10004a40 (657 bytes; 4 DLLs).
+pub fn sound_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let b = fr.esp.wrapping_sub(0xc) & !0xf;
+    let (m, l) = (b.wrapping_sub(0x48), b.wrapping_sub(0xc0));
+    let c = g
+        .read::<u32>(g.read::<u32>(g.read::<u32>(w(0x27))).wrapping_add(0x20))
+        .wrapping_add(0x8e0);
+    let d = g.read::<u32>(c.wrapping_add(0x1c));
+    slot(g, img, f, 0x45, 298, 0, &[m]);
+    g.write::<f32>(m + 0x30, k(g, 0x55));
+    let y = add(k(g, 0x62), k(g, 0x6a));
+    g.write::<f32>(m + 0x34, y);
+    let wm = g.read::<u32>(w(0x77));
+    for at in [0x28u32, 0x14, 0] {
+        g.write::<u32>(m + at, 0x3f80_0000);
+    }
+    g.write::<f32>(m + 0x38, k(g, 0x84));
+    g.write::<u32>(m + 0x3c, 0x3f80_0000);
+    slot(g, img, f, 0x8a, 231, 0, &[m, wm, m]);
+    g.write::<u8>(l + 0x1b, 0);
+    g.write::<u32>(l, 0xc);
+    let kind = g.read::<u16>(d.wrapping_add(0x16));
+    g.write::<u16>(l + 8, kind);
+    g.write::<u8>(l + 0xa, 0);
+    for at in [0x1cu32, 0x3c, 0x38] {
+        g.write::<u32>(l + at, 0);
+    }
+    let p = g.read::<u32>(g.read::<u32>(w(0xd4)));
+    g.write::<u32>(l + 4, p);
+    g.write::<u32>(l + 0x20, m);
+    for at in [0xcu32, 0x10, 0x40, 0x44, 0x2c, 0x28, 0x24] {
+        g.write::<u32>(l + at, 0);
+    }
+    let h = slot(g, img, f, 0x112, 772, 0, &[0x203, 0]);
+    let lock = |g: &G, at: u32| g.read::<u32>(w(at));
+    let lp = lock(g, 0x167);
+    let saved = g.read::<u32>(lp);
+    g.write::<u32>(lp, 1);
+    let open = slot(g, img, f, 0x179, 773, 0, &[h.eax, h.edx, 0x203, 0]).eax;
+    let lp = lock(g, 0x19b);
+    g.write::<u32>(lp, saved);
+    if open != 0 {
+        g.write::<u32>(lp, 1);
+        slot(g, img, f, 0x1bc, 819, 0, &[h.eax, h.edx, c, l]);
+        g.write::<u32>(lock(g, 0x1d1), 1);
+        let words = [h.eax, h.edx, h.eax, h.edx, c, l];
+        slot(g, img, f, 0x1dd, 870, 0, &words);
+        let lp = lock(g, 0x1eb);
+        g.write::<u32>(lp, saved);
+        return Ret::eax(lp);
+    }
+    let x = slot(g, img, f, 0x216, 776, 0, &[u32::from(kind as u8)]).eax;
+    let y = g.read::<u32>(l + 0x44);
+    let flags = x | slot(g, img, f, 0x224, 777, 0, &[y]).eax | 0x40;
+    let lp = lock(g, 0x23e);
+    let saved = g.read::<u32>(lp);
+    g.write::<u32>(lp, 1);
+    slot(g, img, f, 0x25c, 871, 0, &[h.eax, h.edx, c, l, flags]);
+    let lp = lock(g, 0x275);
+    g.write::<u32>(lp, saved);
+    Ret::eax(lp)
+}
+
+/// [`sound_record`] (the `rel32`s: two `__security_check_cookie`s).
+pub const SOUND_RECORD: Sig = Sig {
+    len: 657,
+    hash: 0x97d0_bbca_fcca_22c4,
+    calls: &[(0x202, Callee::Any), (0x286, Callee::Any)],
+    imports: &[],
+};

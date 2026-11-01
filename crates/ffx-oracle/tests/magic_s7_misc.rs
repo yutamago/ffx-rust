@@ -2574,3 +2574,87 @@ fn model_items_nodes() {
         }
     }
 }
+
+/// Row 328: the model's sound record in the four DLLs: the handle open
+/// (slots 819 and 870) and not (the flags, slot 871); the slots log the
+/// record, the matrix and the lock word.
+#[test]
+fn model_sound_records() {
+    for (dll, rva) in [
+        (515u16, 0x4a40u32),
+        (611, 0x4a70),
+        (667, 0x4810),
+        (668, 0x4830),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let lock = SCRATCH + 0x2f0;
+        let lg = op(&t, f, 0x167);
+        t.set_u32(lg, lock);
+        let open = SCRATCH + 0x2f4;
+        log_calls(&mut t, 298, log, 1, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, k << 8 | i);
+            }
+            0x298
+        });
+        log_calls(&mut t, 231, log, 3, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, m.r32(a[2] + 4 * i) ^ a[1] ^ k);
+            }
+            0x231
+        });
+        log_calls(&mut t, 772, log, 2, Some(lg), |_, a, k| a[0] ^ (k << 8));
+        t.stub_edx(772, |_, a| a[0].rotate_left(4));
+        log_calls(&mut t, 773, log, 2, Some(lg), move |m, _, _| m.r32(open));
+        log_calls(&mut t, 776, log, 1, Some(lg), |_, a, _| a[0] << 4);
+        log_calls(&mut t, 777, log, 1, Some(lg), |_, a, _| a[0] ^ 0x0100);
+        for s in [819u32, 870, 871] {
+            t.stub(s, move |m, a| {
+                let row = log + 0x400 + 0x100 * (s % 4);
+                let n = match s {
+                    819 => 4,
+                    870 => 2,
+                    _ => 5,
+                };
+                for (i, x) in (0u32..).zip(a.iter().take(n)) {
+                    m.w32(row + 4 * i, *x);
+                }
+                m.w32(row + 0x14, m.r32(m.r32(lg)));
+                if s != 870 {
+                    for i in 0..0x12u32 {
+                        m.w32(row + 0x18 + 4 * i, m.r32(a[3] + 4 * i));
+                    }
+                    let mtx = m.r32(a[3] + 0x20);
+                    for i in 0..16u32 {
+                        m.w32(row + 0x60 + 4 * i, m.r32(mtx + 4 * i));
+                    }
+                }
+                s
+            });
+        }
+        let ga = op(&t, f, 0x27);
+        t.set_u32(ga, SCRATCH + 0x700);
+        t.set_u32(SCRATCH + 0x700, SCRATCH + 0x740);
+        t.set_u32(SCRATCH + 0x760, SCRATCH + 0x1000);
+        let c = SCRATCH + 0x1000 + 0x8e0;
+        t.set_u32(c + 0x1c, SCRATCH + 0x800);
+        t.set_u32(op(&t, f, 0xd4), SCRATCH + 0x780);
+        t.set_u32(SCRATCH + 0x780, 0x0780_1234);
+        for (o, x) in [(0x55u32, 1.5f32), (0x62, -2.0), (0x6a, 0.25), (0x84, 3.0)] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        t.set_u32(op(&t, f, 0x77), 0x0077_0000);
+        for (k, op_) in [0u32, 1, 0, 2].into_iter().enumerate() {
+            let k = k as u32;
+            t.write(log, &varied(0x800, k));
+            t.set_u32(log, 0);
+            t.set_u32(lock, 0x0bad_0000 + k);
+            t.set_u32(open, op_);
+            t.write(SCRATCH + 0x800, &varied(0x40, k + 1));
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
