@@ -45,7 +45,15 @@ fn part_and_frame() {
     // slot 712 keeps the part pointer's cell and the game flag
     let fd = t.at(0x1150);
     let (gp, lock) = (magic_h6::cell(&t, fd, 0x4b), magic_h6::cell(&t, fd, 0x58));
-    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| m.r32(cell) & 1);
+    // ... and moves the part cell on (as the game's part code may); slot
+    // 713 keeps both too, so the part pointer stored again before it shows
+    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| {
+        m.w32(gp, 0x6666_0712);
+        m.r32(cell) & 1
+    });
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
+    });
     rec(&mut t, 253, 0, move |m, _| (m.r32(cell) >> 4) & 1);
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     recs(
@@ -55,7 +63,6 @@ fn part_and_frame() {
             (258, 1),
             (231, 3),
             (230, 2),
-            (713, 1),
             (723, 1),
             (724, 2),
             (214, 1),

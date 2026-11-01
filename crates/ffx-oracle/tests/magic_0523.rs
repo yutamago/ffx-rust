@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -42,12 +43,19 @@ fn entries() {
         m.w32(cell, k.wrapping_mul(0x0101_0101).wrapping_add(0x1357));
         k
     });
-    // slot 712 also keeps the game flag it runs under
+    // slot 712 also keeps the game flag it runs under, and moves the
+    // part cell on (as the game's part code may); slot 713 keeps both, so
+    // the part pointer stored again before it shows
     let lock = t.u32(t.img.word(t.at(0x1150) + 0x8c));
+    let gp = t.u32(t.img.word(t.at(0x1150) + 0x7f));
     rec(&mut t, 712, 2, move |m, _| {
         let l = m.r32(lock);
         m.w32(SCRATCH + 0x2_0100, l);
+        m.w32(gp, 0x6666_0712);
         m.r32(cell) & 1
+    });
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
     });
     recs(
         &mut t,
@@ -56,7 +64,6 @@ fn entries() {
             (237, 4),
             (258, 1),
             (231, 3),
-            (713, 1),
             (400, 1),
             (401, 9),
             (398, 2),
@@ -75,7 +82,6 @@ fn entries() {
         t.set_u32(levels + 4 * i, (10.0 + 7.0 * i as f32).to_bits());
     }
     // the part pointer's cell, set again before each call
-    let gp = t.u32(t.img.word(t.at(0x1150) + 0x7f));
     for (k, r) in [0u32, 1].into_iter().enumerate() {
         let obj = base + 0x80 * r;
         t.set_u32(cell, 0x4321 + k as u32);
