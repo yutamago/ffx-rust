@@ -287,3 +287,58 @@ pub const WEAPON_FRAME: Sig = Sig {
     calls: &[(0x15a, Callee::Any)],
     imports: &[],
 };
+
+/// A task's end (0x10004af0, cdecl `(node)`): with `E` = `*G` (`+0x06`,
+/// read first) the 0x30-byte block `B` (`+0x10`, `memset`) is cleared,
+/// its halfword `*H` (`+0x21`) gets 0x80 and `*W` (`+0x2e`) the word `*V`
+/// (`+0x26`); the script runs ([`run`](crate::sa_script::run), `+0x33`);
+/// while the game is paused (slot 561, called through `ecx`) its result
+/// is returned; else the motion steps
+/// ([`motion_step`](crate::s3_motion::motion_step), `+0x4c`) and when
+/// neither is 0 `E + 0x2458` becomes 1, the parts are refreshed
+/// ([`refresh`], `+0x63`) and the node goes back to the pool
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump, `+0x6e`).
+/// Returns the motion step's result otherwise.
+pub fn script_end<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let e = g.read::<u32>(w(0x06));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let h = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), h | 0x80);
+    let v = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x2e), v);
+    let a = crate::sa_script::run(g, img, img.rel32_target(f + 0x33));
+    let s = slot_target(g, w(0x39), 0x8c4 / 4);
+    let paused = g.call(s, s, &[]).eax;
+    if paused != 0 {
+        return Ret::eax(paused);
+    }
+    let m = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x4c));
+    if a == 0 || m == 0 {
+        return Ret::eax(m);
+    }
+    g.write::<u32>(e + 0x2458, 1);
+    refresh(g, img, img.rel32_target(f + 0x63));
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x6e),
+        node,
+    ))
+}
+
+/// [`script_end`] (118 bytes, 1 overlay).
+pub const SCRIPT_END: Sig = Sig {
+    len: 118,
+    hash: 0x17fd_c111_04cf_a420,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x33, Callee::Sig(&crate::sa_script::RUN)),
+        (0x4c, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x63, Callee::Sig(&REFRESH)),
+        (0x6e, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

@@ -239,3 +239,66 @@ fn flight() {
 //   deleted: the same store twice, only slots 235/328/329 run in between
 //   on the matrix at `ebp - 0x64`); `tt * tt` as `tt + tt` inside `* 0.0`
 //   (the same +0 or NaN for every `t`).
+
+/// 0x10004800: paused, the script or the motion still running, and the
+/// end (two parts registered, then the node alone given back to the
+/// pool).
+#[test]
+fn script_end() {
+    let Some(mut t) = twin() else { return };
+    let at = t.at(0x4800);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let paused = SCRATCH + 0x5f0;
+    rec(&mut t, 561, 0, move |m, _| m.r32(paused));
+    rec(&mut t, 628, 1, |_, a| a[0] ^ 0x628);
+    rec(&mut t, 941, 1, |_, a| a[0] ^ 0x0941_0000);
+    rec(&mut t, 772, 2, |_, a| a[0] ^ 0x0772_0000);
+    t.stub_edx(772, |_, a| a[1] ^ 0x0edd_0000);
+    rec(&mut t, 779, 4, |_, a| a[3] ^ 0x779);
+    t.set_u32(w(&t, 0x07), STATE);
+    let rp = t.img.rel32_target(at + 0x75);
+    let parts = SCRATCH + 0xc000;
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(parts + 0x30, 0x0a30);
+    t.set_u32(parts + 0x30 + 0x74, 0x0aa4);
+    let lock = SCRATCH + 0x5e0;
+    t.set_u32(t.img.word(rp + 0x43), lock);
+    t.set_u32(t.img.word(rp + 0x5f), lock);
+    t.set_u32(t.img.word(rp + 0x76), 0);
+    let run = t.img.rel32_target(at + 0x33);
+    let ms = t.img.rel32_target(at + 0x4c);
+    let give = t.img.rel32_target(at + 0x80);
+    let s = t.img.word(run + 0x1c);
+    let node = SCRATCH + 0x2000;
+    for (p, mode, done, n) in [
+        (1u32, 0u8, true, 2u32),
+        (0, 2, true, 2),
+        (0, 0, false, 2),
+        (0, 0, true, 2),
+        (0, 0, true, 0),
+    ] {
+        t.set_u32(paused, p);
+        t.set_u32(t.img.word(rp + 0x0e), n);
+        t.set_u32(lock, 0x77);
+        t.set_u32(w(&t, 0x26), 0x0026_0026);
+        t.set_u16(w(&t, 0x21), 0x1234);
+        // the script ended (mode 0, returns 1) or waiting for ever (2)
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(s + 0x54, 0xffff);
+        t.set_u32(s + 0x24, 0);
+        t.set_u32(s + 0x28, 0);
+        t.set_u32(t.img.word(ms + 0x02), u32::from(done));
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        t.set_u32(STATE + 0xc94, 0x0c94);
+        // the node alone (no siblings, nothing chained) for the pool
+        t.write(node, &[0; 0x1c]);
+        t.set_u32(node + 8, node);
+        for op in [0x48, 0x55, 0x64, 0x74] {
+            t.set_u32(t.img.word(give + op), SCRATCH + 0x3000 + op);
+        }
+        t.set_u32(SCRATCH + 0x3074, SCRATCH + 0x3074);
+        t.set_u32(SCRATCH + 0x3078, SCRATCH + 0x3074);
+        t.set_u16(t.img.word(give + 0x8e), 7);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}
