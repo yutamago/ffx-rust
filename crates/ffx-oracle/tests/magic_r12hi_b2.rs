@@ -339,3 +339,31 @@ fn sprites_setup_0599() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `r12h_fam::three_objects_0511`/`_0589` (`magic_0511` 0x10003c80,
+/// `magic_0589` 0x10003870): the object pool free, short and empty.
+#[test]
+fn three_objects() {
+    for (n, rva) in [(511u16, 0x3c80u32), (589, 0x3870)] {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        let f = t.at(rva);
+        rec(&mut t, 941, 1, |_, _| SCRATCH + 0x400);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[0]);
+        for i in 0..8 {
+            t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+        }
+        let r = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(f + 0x0b), r);
+        let s = t.img.rel32_target(f + 0x20);
+        if n == 511 {
+            t.set_u32(t.img.word(f + 0x85), 0.375f32.to_bits());
+        }
+        for (k, count) in [3u16, 2, 0].into_iter().enumerate() {
+            anim_setup(&mut t, s, count, if k == 1 { SCRATCH + 0x600 } else { 0 });
+            t.write(r, &vec![0x31 + k as u8; 0x2400]);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

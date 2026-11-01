@@ -548,3 +548,44 @@ fn cues_0661() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `m0505::spark_record` (0x10001000): no record free, and records taken
+/// with several draws.
+#[test]
+fn spark_record_0505() {
+    let Some(mut t) = magic_l3::twin(505) else {
+        return;
+    };
+    let hdr = SCRATCH + 0x400;
+    t.write(hdr, &[0x99; 0x20]);
+    rec(&mut t, 942, 1, |_, a| 0x9420_0000 ^ a[0]);
+    rec(&mut t, 941, 1, move |_, _| hdr);
+    rec(&mut t, 324, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0x20);
+        m.w32(SCRATCH + 0x20, k + 1);
+        k.wrapping_mul(0x9e37_79b9) >> 9
+    });
+    rec(&mut t, 403, 1, |_, a| 0x0403_0000 ^ a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 1.5 - 0.25);
+    let recs_at = SCRATCH + 0x1000;
+    let point = SCRATCH + 0x200;
+    let f = t.at(0x1000);
+    let take = t.img.rel32_target(f + 0x0c);
+    t.set_u32(t.img.word(take + 0xb), recs_at);
+    t.set_u32(t.img.word(f + 0x06), 0x00a1_0000);
+    for (k, (n, used)) in [(0u32, 0u32), (3, 3), (3, 1), (2, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        t.write(recs_at, &[0x22; 0x94 * 3]);
+        for i in 0..3 {
+            t.set_u32(recs_at + 0x94 * i, u32::from(i < used));
+        }
+        t.set_u32(t.img.word(take + 0x2), n);
+        for i in 0..3u32 {
+            t.set_u32(point + 4 * i, (1.5f32 + i as f32 - k as f32).to_bits());
+        }
+        t.set_u32(SCRATCH + 0x20, 5 * k as u32);
+        t.check_entry(f, Call::default(), &[point], Eax::Checked);
+    }
+}
