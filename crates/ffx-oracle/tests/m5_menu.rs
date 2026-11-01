@@ -8037,3 +8037,167 @@ fn l8_ms_gui_shake_proc() {
         t.skip = 0;
     });
 }
+
+/// Before the log: copies a `sprintf` call's words (the buffer, the
+/// format and one word per '%' in the format: no `%%`, no doubles) to
+/// the buffer whose cursor is at `cursor` (advanced).
+fn sprintf_words_code(cursor: u32) -> Vec<u8> {
+    let mut c = vec![
+        0x56, 0x57, 0x51, // push esi; push edi; push ecx
+        0x8b, 0x74, 0x24, 0x14, // mov esi, [esp+0x14] (the format)
+        0x31, 0xc9, // xor ecx, ecx
+        0x8a, 0x06, 0x84, 0xc0, 0x74, 0x08, // mov al, [esi]; test al, al; jz done
+        0x3c, 0x25, 0x75, 0x01, 0x41, // cmp al, '%'; jne +1; inc ecx
+        0x46, 0xeb, 0xf2, // inc esi; jmp back
+        0x83, 0xc1, 0x02, // done: add ecx, 2
+        0x8b, 0x3d,
+    ];
+    c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+    c.extend([0x8d, 0x74, 0x24, 0x10, 0xf3, 0xa5, 0x89, 0x3d]); // lea esi, [esp+0x10]; rep movsd; mov [cursor], edi
+    c.extend(cursor.to_le_bytes());
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+    c
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_ms_gui_battle_info_proc() {
+    // every message and page and row set; the selectors stepped up and
+    // down past both ends; a battle running or not (the rows through
+    // FUN_007dbee0), the scene names, the voice and mode words, the
+    // event map's ratios, actors and commands, the save window counts
+    Twins::each(|t| {
+        let mut rng = Rng(0x007d_aed0);
+        let window = 0x00ac_1000;
+        for case in 0..900_u32 {
+            t.reset();
+            t.skip = 4;
+            let voice = t.alloc(&(0..0x20).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            if rng.chance(3) {
+                let k = rng.below(8);
+                t.write(voice + 0xc + 2 * k, &0x3fffu16.to_le_bytes());
+            }
+            let cmd = t.zeros(0x80);
+            let cmd_bytes: Vec<u8> = (0..0x80).map(|_| rng.next() as u8).collect();
+            t.write(cmd, &cmd_bytes);
+            t.write(cmd + 2, &[rng.below(4) as u8]);
+            let chr = t.alloc(&(0..0xe00).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            let save = t.alloc(&(0..8).map(|_| rng.next() as u8).collect::<Vec<u8>>());
+            let words = t.zeros(0x1000);
+            let cursor = t.words(&[words]);
+            for (sym, bytes) in [
+                (0x0112_a8e0u32, 1),
+                (0x0112_a8e4, 1),
+                (0x0112_c258, 1),
+                (0x0112_c259, 1),
+                (0x0112_bde0, 4),
+                (0x0112_c254, 4),
+                (0x0112_a9d6, 2),
+                (0x0112_c9d0, 1),
+                (0x0112_c9d4, 2),
+                (0x0112_c9e0, 1),
+                (0x0112_c9e4, 1),
+                (0x0112_c9e6, 1),
+                (0x0112_c9ea, 1),
+                (0x0112_c9ec, 1),
+                (0x0112_c9f5, 2),
+                (0x0112_ca01, 1),
+                (0x0112_ca15, 1),
+                (0x0112_c8f8, 4),
+            ] {
+                let v: Vec<u8> = (0..bytes)
+                    .map(|_| if rng.chance(3) { 0 } else { rng.next() as u8 })
+                    .collect();
+                t.patch(t.rebase(sym), &v);
+            }
+            let field: u16 = if rng.chance(2) { 0 } else { rng.next() as u16 };
+            t.patch(t.rebase(0x0112_c256), &field.to_le_bytes());
+            for sym in [0x0112_a9dcu32, 0x0112_a9e0, 0x0112_a9e4] {
+                let v = (rng.below(2000) as f32 * 0.37 - 20.0).to_bits();
+                t.patch(t.rebase(sym), &v.to_le_bytes());
+            }
+            t.patch(t.rebase(l8b::BTL_VOICE_EVENT), &voice.to_le_bytes());
+            let rows = [0u32, 1, 1, 2, 0xffff_ffff][rng.below(5) as usize];
+            let page = [0u32, 1, 2, 3, 4][rng.below(5) as usize];
+            t.patch(t.rebase(l8b::INFO_ROWS), &rows.to_le_bytes());
+            t.patch(t.rebase(l8b::INFO_PAGE), &page.to_le_bytes());
+            t.patch(t.rebase(l8b::INFO_FIELD), &rng.next().to_le_bytes());
+            let top = u32::from(!rng.chance(3));
+            t.stubs(&[
+                (l8b::WINDOW_SET_TITLE, false, 2, 0, 0x11),
+                (l8b::WINDOW_ADD_BUTTON, false, 7, 0, 0x12),
+                (l8b::WINDOW_SET_TEXT, false, 3, 0, 0x13),
+                (l8b::PRINT_SET_X, false, 1, 0, 0x14),
+                (l8b::PRINT_SET_Y, false, 1, 0, 0x15),
+                (l8b::PRINTF, false, 1, 0, 0x16),
+                (l8b::AUTO_REPEAT_INIT, false, 3, 0, 0x17),
+                (
+                    l8b::AUTO_REPEAT_CHECK,
+                    false,
+                    2,
+                    0,
+                    u32::from(!rng.chance(5)),
+                ),
+                (l8b::LAST_MAGIC, false, 0, 0, 0x21),
+                (l8b::SEP_TRANS_AMOUNT, false, 1, 0, 0x22),
+                (l8b::READ_CUE_LEVEL, false, 1, 0, 0x23),
+                (l8b::SND_READ, false, 0, 0, rng.below(2)),
+                (l8b::SND_READ_VAG, false, 0, 0, rng.below(3)),
+                (l8b::SND_READ_SHOUT, false, 0, 0, rng.below(2)),
+                (l8b::BATTLE_GET_STATUS, false, 0, 0, rng.below(2)),
+                (l8b::BATTLE_PHASE, false, 0, 0, 0x24),
+                (l8b::GET_CHR_COMMAND, false, 1, 0, cmd),
+                (l8b::GET_CHR_BIT, false, 4, 0, rng.next()),
+                // one word logged: the rows pass one, the command line five
+                // (those four reach the sprintf stand-in as its words)
+                (l8b::GET_CHR, false, 1, 0, chr),
+                (l8b::GET_CHR_TOP, false, 0, 0, top),
+                (l8b::GET_MON, false, 1, 0, chr + 0x10),
+                (l8b::EVENT_JUMP_MAP, false, 0, 0, rng.next()),
+                (l8b::INFO_ROW, false, 5, 0, 0x25),
+            ]);
+            // MsGetSaveWindow(a, b, &n) writes n
+            let log = t.stub_code(l8b::GET_SAVE_WINDOW, false, 3, 0, save);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00];
+            c.extend((rng.below(100)).to_le_bytes()); // mov eax, [esp+0xc]; mov dword [eax], n
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.jump(l8b::GET_SAVE_WINDOW, code);
+            // sprintf: every word it gets copied out, two logged
+            let log = t.stub_code(0x5f5f, false, 2, 0, 9);
+            let mut c = sprintf_words_code(cursor);
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8b::SPRINTF_SLOT), &code.to_le_bytes());
+            let (msg, param) = match case % 8 {
+                0 => (0x8001, 0),
+                1 => ([0x8003, 0x8006, 0x800a][rng.below(3) as usize], 0),
+                2..=4 => (0x8011, 0),
+                5 | 6 => (
+                    [0x8005, 0x8009][rng.below(2) as usize],
+                    [0x40, 0x91, 0x51, 0xa5][rng.below(4) as usize],
+                ),
+                _ => (
+                    [0x8002, 0x8010, 0x8012, 0x7fff][rng.below(4) as usize],
+                    rng.next(),
+                ),
+            };
+            let args = [window, msg, param];
+            t.check_framed(
+                "Ms_Gui_BattleInfoProc",
+                0x007d_aed0,
+                Conv::Cdecl,
+                &args,
+                // the two text buffers (the counters below them are the
+                // original's spills; MsGetSaveWindow's count is logged)
+                0x204,
+                |g, ebp| Out::U32(l8b::battle_info_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
