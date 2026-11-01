@@ -862,22 +862,15 @@ pub const fn first_overlap(a: &[(&str, &Sig)], b: &[(&str, &Sig)]) -> Option<(us
     None
 }
 
-/// Every port: its name, signature and a dispatcher index. A signature
-/// registered twice (here or in [`INTERNAL`]) does not build: one port
-/// per code identity.
+/// Every port: its name, signature and a dispatcher index. One port per
+/// code identity: a signature registered twice (here or in [`INTERNAL`])
+/// fails `cargo test -p ffx-magic one_port_per_identity`. (That check ran
+/// at compile time until 2026-11-01; pairwise over ~1,000 ports it made
+/// 21 s of every 25 s `cargo check` and 52 s of every 73 s release build.)
 macro_rules! ports {
     ($($name:literal => $sig:path, $m:ident :: $f:ident;)*) => {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
-
-        // the pairwise check grows with the square of the ports and now
-        // runs longer than the lint's limit (it does finish)
-        #[allow(long_running_const_eval)]
-        const _: () = assert!(
-            first_overlap(PORTS, INTERNAL).is_none(),
-            "two ports (PORTS or INTERNAL) with the same code identity: \
-             keep one (cargo test -p ffx-magic one_port_per_identity names them)"
-        );
 
         /// The port at `PORTS[i]` for a game type.
         #[must_use]
