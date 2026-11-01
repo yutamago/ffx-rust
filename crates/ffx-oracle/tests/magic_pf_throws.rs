@@ -218,7 +218,7 @@ fn throws() {
             case(0, 0, 0, 0, 3),
             case(5, 0, 0, 7, 3),
             case(10, 0, 0, 0, 0),
-            case(10, 0, 0, 0, 1),
+            case(10, 4, 5, 0, 1),
             case(11, 4, 9, 0, 3),
             Case {
                 flag: 0x7f,
@@ -231,6 +231,8 @@ fn throws() {
             case(11, 0, 0xffff_fff9, 0, 2),
             case(12, 0, 0, 0x10, 3),
             case(12, 0, 0, 0x50, 3),
+            // exactly the closing wait (`u32::MAX`: the copy's own `+0x35a`)
+            case(12, 0, 0, u32::MAX, 3),
             Case {
                 done: 0,
                 ..case(0x2710, 0, 0, 0, 3)
@@ -249,7 +251,12 @@ fn throws() {
             t.write(s, &varied(0x2400, k + 1));
             t.set_u32(s + 0x18, c.state);
             t.set_u32(s + 0x3c, c.wait);
-            t.set_u32(s + 0x40, c.frames);
+            let frames = if c.frames == u32::MAX {
+                u32::from(t.img.word(f + 0x35a) as u8)
+            } else {
+                c.frames
+            };
+            t.set_u32(s + 0x40, frames);
             t.set_u32(s + 0x44, c.left);
             for i in 0..4 {
                 t.set_u32(s + 0x1c + 4 * i, (0.25f32 + 0.125 * i as f32).to_bits());
