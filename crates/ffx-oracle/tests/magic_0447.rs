@@ -41,6 +41,10 @@ fn object_fade() {
     let sel = SCRATCH + 0x180;
     t.set_u32(t.img.word(at + 0x52), sel);
     t.set_u8(sel, 4);
+    t.set_u8(sel + 1, 0x5a);
+    // junk under the entry and above it (the words the original pushes
+    // must be written, and read where they are)
+    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
     for i in 0..8 {
         t.set_u32(t.img.word(at + 0x62) + 4 * i, 0x00c0_0000 + i);
     }
@@ -113,6 +117,7 @@ fn camera_turn() {
     });
     rec(&mut t, 248, 3, |m, a| {
         dump(m, 248, a[2], 4);
+        dump(m, 249, a[1], 4);
         0x248
     });
     for (s, n) in [(328u32, 3usize), (329, 3), (623, 7), (17, 2), (19, 1)] {
@@ -128,7 +133,11 @@ fn camera_turn() {
     t.stub_st0(790, |_, _| 0.625);
     let fade = t.img.rel32_target(at + 0x28f);
     let take = t.img.rel32_target(fade + 0x75);
+    let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(t.img.word(at + o)));
+    let hi_v = kf(&t, 0x65) - kf(&t, 0x74);
+    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
     for (flag, s, y, hh) in [
+        (0u32, 3u8, hi_v, 1.5f32),
         (0u32, 3u8, 0.0f32, 1.5f32),
         (0, 0x20, 8.0, 1.5),
         (1, 3, 2.0, 1.5),
@@ -137,6 +146,7 @@ fn camera_turn() {
     ] {
         t.set_u32(t.img.word(at + 0xa5), flag);
         t.set_u8(sel, s);
+        t.set_u8(sel + 1, 0x5a);
         t.set_u32(yaw, f(y));
         t.set_u32(h, f(hh));
         t.write(state, &[0x6c; 0x800]);
@@ -154,7 +164,7 @@ fn camera_turn() {
         for op in [0x24du32, 0x257, 0x261, 0x26d] {
             t.set_u32(t.img.word(at + op), 0x0b0b_0000 + op);
         }
-        t.check_entry(at, Call::default(), &[], Eax::Checked);
+        t.check_entry(at, Call::default(), &[0x1357_9bdf; 0x30], Eax::Checked);
     }
 }
 

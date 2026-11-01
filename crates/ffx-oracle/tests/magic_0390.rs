@@ -466,6 +466,16 @@ fn entry_1750() {
     let cases = [
         // flag, selector, yaw, height, Q (x, z), free nodes, list
         (0u32, 3u8, 0.0f32, 1.5f32, (10.0f32, 20.0f32), 3u16, 0u32),
+        // K - yaw == HI (pi) exactly
+        (
+            0,
+            3,
+            1.5 * std::f32::consts::PI - std::f32::consts::PI,
+            1.5,
+            (10.0, 20.0),
+            3,
+            0,
+        ),
         (0, 0x20, 8.0, 1.5, (150.0, 1.0), 2, SCRATCH + 0x600),
         (1, 3, 2.0, 1.5, (300.0, 7.0), 1, 0),
         (0, 0x1f, f32::NAN, -4.0, (60.0, 90.0), 3, SCRATCH + 0x600),

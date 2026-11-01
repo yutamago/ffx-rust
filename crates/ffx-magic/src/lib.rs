@@ -53,6 +53,7 @@ pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
 pub mod r9_load;
 pub mod r9_misc;
+pub mod r9_summon;
 pub mod rcef;
 pub mod runtime;
 // the shared work list's chunk A (functions used by 2 or more overlays):
@@ -1023,6 +1024,17 @@ ports! {
     "m0447 object fade 5290" => m0447::OBJECT_FADE, m0447::object_fade;
     "m0447 camera turn 4cb0" => m0447::CAMERA_TURN, m0447::camera_turn;
     "m0447 camera curve 4f60" => m0447::CAMERA_CURVE, m0447::camera_curve;
+    "r9 summon start 0077" => r9_summon::START_0077, r9_summon::start_0077;
+    "r9 summon start 0078" => r9_summon::START_0078, r9_summon::start_0078;
+    "r9 summon start 0079" => r9_summon::START_0079, r9_summon::start_0079;
+    "r9 summon start 0080" => r9_summon::START_0080, r9_summon::start_0080;
+    "r9 summon start 0081" => r9_summon::START_0081, r9_summon::start_0081;
+    "r9 summon start (nodes) 0083" => r9_summon::NODES_0083, r9_summon::nodes_0083;
+    "r9 summon start (nodes) 0091" => r9_summon::NODES_0091, r9_summon::nodes_0091;
+    "r9 summon start (nodes) 0094" => r9_summon::NODES_0094, r9_summon::nodes_0094;
+    "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
+    "r9 summon start (nodes) 0096" => r9_summon::NODES_0096, r9_summon::nodes_0096;
+    "r9 summon start (nodes) 0097" => r9_summon::NODES_0097, r9_summon::nodes_0097;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0596 start" => m0596::START, m0596::start;
@@ -2575,6 +2587,58 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "r9 start object (state) 0100",
         &r9_misc::START_OBJECT_STATE_0100,
+    ),
+    (
+        "r9 start object (reset) 0182",
+        &r9_misc::START_OBJECT_RESET_0182,
+    ),
+    (
+        "r9 start object (reset) 0197",
+        &r9_misc::START_OBJECT_RESET_0197,
+    ),
+    (
+        "r9 start object (reset) 0252",
+        &r9_misc::START_OBJECT_RESET_0252,
+    ),
+    (
+        "r9 start object (reset) 0266",
+        &r9_misc::START_OBJECT_RESET_0266,
+    ),
+    (
+        "r9 start object (reset) 0311",
+        &r9_misc::START_OBJECT_RESET_0311,
+    ),
+    (
+        "r9 start object (reset) 0365",
+        &r9_misc::START_OBJECT_RESET_0365,
+    ),
+    (
+        "r9 start object (bare reset) 0245",
+        &r9_misc::START_OBJECT_BARE_0245,
+    ),
+    (
+        "r9 start object (bare reset) 0298",
+        &r9_misc::START_OBJECT_BARE_0298,
+    ),
+    (
+        "r9 start object (bare reset) 0308",
+        &r9_misc::START_OBJECT_BARE_0308,
+    ),
+    (
+        "r9 start object (bare reset) 0435",
+        &r9_misc::START_OBJECT_BARE_0435,
+    ),
+    (
+        "r9 start object (edx reset) 0108",
+        &r9_misc::START_OBJECT_EDX_0108,
+    ),
+    (
+        "r9 start object (edx reset) 0221",
+        &r9_misc::START_OBJECT_EDX_0221,
+    ),
+    (
+        "r9 start object (edx reset) 0419",
+        &r9_misc::START_OBJECT_EDX_0419,
     ),
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
