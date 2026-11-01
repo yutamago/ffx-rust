@@ -1350,7 +1350,7 @@ fn summon_frames_colours() {
         let gg = SCRATCH + 0x5f60;
         t.set_u32(op(&t, f, 0x79), gg);
         // (on, sound, stage, level word, other level word, **G_V)
-        let cases: [(bool, u16, u32, u32, u32, u32); 20] = [
+        let cases: [(bool, u16, u32, u32, u32, u32); 24] = [
             (false, 0, 1, 0, 0, 0),
             (true, 1, 1, 0x0004_0000, 0x0010_0000, 0),
             (true, 0, 1, 0x0004_0000, 0x0004_0000, 1),
@@ -1371,6 +1371,11 @@ fn summon_frames_colours() {
             (true, 0, 23, 0xff00, 0, 0),
             (true, 0, 2, 0, 0, 0),
             (true, 1, 24, 0, 0, 1),
+            // the boundaries
+            (true, 0, 1, 0x0005_1000, 0x0001_0000, 0),
+            (true, 0, 16, 0x112, 0, 0),
+            (true, 0, 21, 0x37, 0, 0),
+            (true, 0, 21, 0x91, 0, 0),
         ];
         for (k, (on, sound, stage, lv, lv2, v)) in cases.into_iter().enumerate() {
             let k = k as u32;
@@ -1433,7 +1438,7 @@ fn summon_frames_colours_b() {
         let gy = SCRATCH + 0x5f78;
         t.set_u32(op(&t, f, 0x300), gy);
         // (sound, stage, level word, other level word, **G_V)
-        let cases: [(u16, u32, u32, u32, u32); 19] = [
+        let cases: [(u16, u32, u32, u32, u32); 25] = [
             (1, 0, 0x10, 0, 0),
             (0, 0, 0x15, 0, 1),
             (0, 0, 0xfffe, 0, 0),
@@ -1453,6 +1458,13 @@ fn summon_frames_colours_b() {
             (0, 23, 0x1e, 0, 0),
             (0, 2, 0, 0, 0),
             (1, 0x18, 0, 0, 1),
+            // the boundaries
+            (0, 0, 0, 0, 0),
+            (0, 1, 0x0005_1000, 0x0001_0000, 0),
+            (0, 16, 0x14, 0, 0),
+            (0, 16, 0x112, 0, 0),
+            (0, 21, 0x55, 0, 0),
+            (0, 21, 0xaf, 0, 0),
         ];
         for (k, (sound, stage, lv, lv2, v)) in cases.into_iter().enumerate() {
             let k = k as u32;
@@ -1474,6 +1486,110 @@ fn summon_frames_colours_b() {
             t.set_u32(SCRATCH + 0x2f0, 0x1100 + k);
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// The bone node's handler in both DLLs, directly and through its thunk:
+/// not passed; passed with an empty ring and with two nodes; without the
+/// parent bone and with it.
+#[test]
+fn bone_nodes() {
+    for dll in [150u16, 603] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x35a0);
+        for s in [1000u32, 1001] {
+            t.set_u32(magic::TABLE + 4 * s, magic::TRAPS + 16 * s);
+        }
+        // the handlers log their cursor and its node and pass byte
+        log_calls(&mut t, 1000, 1, &[0], |m, a, k| {
+            m.w32(SCRATCH + 0x6e00 + 4 * (k % 32), m.r32(a[0] + 4) & 0xff00);
+            0x1000_0000 + k
+        });
+        log_calls(&mut t, 1001, 2, &[0, 1], |_, a, k| a[1] ^ k);
+        let table = op(&t, f, 0xed);
+        for i in 0..4 {
+            t.set_u32(table + 4 * i, magic::TRAPS + 16 * 1001);
+        }
+        log_calls(&mut t, 233, 3, &[0, 1], |m, a, k| {
+            for i in 0..4u32 {
+                m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i) ^ a[2] ^ k);
+            }
+            0x233
+        });
+        for (s, n) in [(325u32, 2usize), (230, 2), (231, 3), (229, 3), (668, 3)] {
+            log_calls(&mut t, s, n, &[0, 1], move |m, a, k| {
+                m.w32(a[0], a[1] ^ (s << 16) ^ k);
+                s
+            });
+        }
+        t.set_u32(op(&t, f, 0x109), f32::to_bits(0.5));
+        t.set_u32(op(&t, f, 0x1fa), f32::to_bits(1.5));
+        t.set_u32(op(&t, f, 0x2b1), f32::to_bits(1.5));
+        let (s, r, p) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x2000);
+        let vt = SCRATCH + 0x3000;
+        t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1000);
+        let linked = [SCRATCH + 0x3100, SCRATCH + 0x3200, SCRATCH + 0x3300];
+        let ring = [SCRATCH + 0x3400, SCRATCH + 0x3440];
+        for (k, (pass, byte, nodes, parent)) in [
+            (3u8, 3u8, 0usize, false),
+            (4, 3, 0, false),
+            (5, 3, 2, false),
+            (6, 1, 0, true),
+            (7, 2, 2, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.write(s, &varied(0x10, k));
+            t.set_u32(s, r);
+            t.set_u8(s + 5, pass);
+            t.write(r, &floats(0x150 / 4, k));
+            t.set_u8(r + 0x1a, byte);
+            t.set_u8(r + 0x148, (k % 4) as u8);
+            let mut prev = r;
+            for (i, &nd) in ring.iter().enumerate().take(nodes) {
+                t.write(nd, &varied(0x40, k + i as u32));
+                t.set_u32(nd, vt);
+                if i == 0 {
+                    t.set_u32(r + 0x10, nd);
+                } else {
+                    t.set_u32(prev + 8, nd);
+                }
+                prev = nd;
+            }
+            if nodes == 0 {
+                t.set_u32(r + 0x10, r);
+            } else {
+                t.set_u32(prev + 8, r);
+            }
+            for (&l, o) in linked.iter().zip([0x13cu32, 0x144, 0x140]) {
+                t.write(l, &floats(0x30 / 4, k + o));
+                t.set_u32(l, vt);
+                t.set_u32(r + o, l);
+            }
+            if parent {
+                t.write(p, &floats(0x150 / 4, k + 9));
+                t.set_u32(p, vt);
+                t.set_u32(r + 0x128, p);
+            } else {
+                t.set_u32(r + 0x128, 0);
+            }
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                eax: 0x1234_5600 + k,
+                ..Call::default()
+            };
+            let base = t.save();
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s8_misc::bone_node(g, img, fr))
+            });
+            t.restore(&base);
+            t.set_u32(LOG, 0);
+            t.check_entry(t.at(0x3900), Call::default(), &[s], Eax::Checked);
         }
     }
 }

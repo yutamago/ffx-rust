@@ -15,6 +15,9 @@ use crate::runtime::slot_target;
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
+/// A handler's port on the frame its thunk hands it.
+type Handler<G> = fn(&mut G, &Image, &Frame) -> u32;
+
 /// The word at `f + off` of the code (an operand).
 fn op(img: &Image, f: u32, off: u32) -> u32 {
     img.word(f + off)
@@ -1983,5 +1986,223 @@ pub const SUMMON_FRAME_COLOURS_B: Sig = Sig {
         (0x2d9, Callee::Sig(&crate::s4_small::LEVEL_COLOUR)),
         (0x2e1, Callee::Sig(&EMITTER_SOUNDS)),
     ],
+    imports: &[],
+};
+
+/// The pass over a ring's nodes the node handlers start with (`S` the
+/// cursor: `S[0]` the ring `R`, byte `+4` "passed", byte `+5` the pass
+/// number; the same steps as `s7_misc`'s handlers). When `R`'s byte
+/// `+0x1a` is not the pass, each node of `R` (from `R+0x10`, on through
+/// `+8`) becomes `S[0]` and gets its handler `[[node] + 0x1c] (S)`; then
+/// `S[0] = R`, `R+0x1a` = the pass and "passed" is set, else "passed" is
+/// cleared. Returns whether it passed and the `eax` the original leaves
+/// (the low byte the test loaded over the entry's or the last handler's
+/// `eax`).
+fn ring_visit<G: Game>(g: &mut G, s: u32, eax: u32) -> (bool, u32) {
+    let r = g.read::<u32>(s);
+    let low = |eax: u32, b: u8| (eax & !0xff) | u32::from(b);
+    let mut eax = low(eax, g.read::<u8>(r + 0x1a));
+    if g.read::<u8>(r + 0x1a) == g.read::<u8>(s + 5) {
+        g.write::<u8>(s + 4, 0);
+        return (false, eax);
+    }
+    let mut node = g.read::<u32>(r + 0x10);
+    while node != r {
+        g.write::<u32>(s, node);
+        let cur = g.read::<u32>(s);
+        node = g.read::<u32>(node + 8);
+        let handler = g.read::<u32>(g.read::<u32>(cur).wrapping_add(0x1c));
+        eax = g.call(handler, s, &[s]).eax;
+    }
+    eax = low(eax, g.read::<u8>(s + 5));
+    g.write::<u32>(s, r);
+    g.write::<u8>(r + 0x1a, eax as u8);
+    g.write::<u8>(s + 4, 1);
+    (true, eax)
+}
+
+/// A bone node's handler (internal, `ecx` = the cursor `S`; a /GS frame;
+/// the node `R = S[0]`, its parent bone `P = R[0x128]`): the ring pass
+/// ([`ring_visit`]); passed, the three linked nodes `R[0x13c]`,
+/// `R[0x144]`, `R[0x140]` and `P` (when set) get their handlers with a
+/// cursor `C` on the frame (`C[0]` the node, byte `+5` the pass); the
+/// DLL's function `T[byte R[0x148]]` (the table immediate) gets `(R +
+/// 0x5c, R[0x144] + 0x1c)`; `R + 0x1c..+0x4c` are `R + 0x5c..` scaled
+/// by the three terms of `B + 0x1c` scaled by `B[0x28] K` (slot 233, `B
+/// = R[0x140]`, a vector `V` on the frame), and slot 325 `(R + 0x4c,
+/// R[0x13c] + 0x1c)`. Without `P`: `R + 0x11c` = the four words of
+/// `R[0x144] + 0x1c`, slot 325 `(R + 0x12c, B + 0x1c)`, `R[0x138] *= K2`,
+/// slot 230 `(R + 0xdc, R + 0x5c)` and `(R + 0x9c, R + 0x1c)`; returns
+/// slot 230's `eax`. With `P`: `R + 0x11c..+0x124` = `R[0x144] + 0x1c..`
+/// plus `P + 0x11c..` (as integers), slot 668
+/// `(R + 0x12c, P + 0x12c, B + 0x1c)`, `R[0x138] *= K2`, slot 231
+/// `(R + 0xdc, P + 0xdc, R + 0x5c)` and `(R + 0x9c, P + 0x9c, R + 0x1c)`,
+/// slot 229 `(R + 0xcc, P + 0xdc, R + 0x4c)` and `R + 0xcc..+0xd4` plus
+/// `P + 0xcc..`; returns `P`. Not passed: returns the pass test's `eax`
+/// (its byte over the cookie xor `ebp`). Each call sees the words the
+/// earlier ones left.
+///
+/// `magic_0150` 0x100035a0 (862 bytes; 2 DLLs).
+pub fn bone_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
+    let s = fr.ecx;
+    let r = g.read::<u32>(s);
+    let p = g.read::<u32>(r + 0x128);
+    let ebp = fr.esp.wrapping_sub(4);
+    // `eax` is the /GS cookie xor `ebp` when the pass test loads its byte
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    let (passed, eax) = ring_visit(g, s, cookie);
+    if !passed {
+        return eax;
+    }
+    let (c, v) = (ebp.wrapping_sub(0x1c), ebp.wrapping_sub(0x14));
+    let mut st = Pushes::default();
+    let visit = |g: &mut G, st: &mut Pushes, node: u32| {
+        let pass = g.read::<u8>(s + 5);
+        g.write::<u32>(c, node);
+        g.write::<u8>(c + 5, pass);
+        let h = g.read::<u32>(g.read::<u32>(node).wrapping_add(0x1c));
+        st.push(c);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, h, c);
+    };
+    for o in [0x13cu32, 0x144, 0x140] {
+        let node = g.read::<u32>(r + o);
+        visit(g, &mut st, node);
+    }
+    st.pop(3);
+    let third = g.read::<u32>(r + 0x128);
+    if third != 0 {
+        visit(g, &mut st, third);
+        st.pop(1);
+    }
+    let a = g.read::<u32>(r + 0x144);
+    let idx = u32::from(g.read::<u8>(r + 0x148));
+    let func = g.read::<u32>(w(0xed).wrapping_add(idx.wrapping_mul(4)));
+    let q = r + 0x5c;
+    st.push_all(&[a.wrapping_add(0x1c), q]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, func, idx);
+    st.pop(1);
+    let b = g.read::<u32>(r + 0x140);
+    let x = mul(f32_at(g, b.wrapping_add(0x28)), f32_at(g, w(0x109)));
+    st.set_top(x.to_bits());
+    st.push_all(&[b.wrapping_add(0x1c), v]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x11b, 233), 0);
+    st.pop(2);
+    for (i, (from, to, t)) in [
+        (q, r + 0x1c, 0x13au32),
+        (r + 0x6c, r + 0x2c, 0x15c),
+        (r + 0x7c, r + 0x3c, 0x17e),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        st.set_top(g.read::<u32>(v + 4 * i as u32));
+        st.push_all(&[from, to]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, t, 233), 0);
+        if i < 2 {
+            st.pop(2);
+        }
+    }
+    let cn = g.read::<u32>(r + 0x13c);
+    st.push_all(&[cn.wrapping_add(0x1c), r + 0x4c]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x195, 325), 0);
+    st.pop(5);
+    let a = g.read::<u32>(r + 0x144);
+    if p == 0 {
+        for i in 0..2 {
+            let x = g.read::<u32>(a + 0x1c + 4 * i);
+            g.write::<u32>(r + 0x11c + 4 * i, x);
+        }
+        let b = g.read::<u32>(r + 0x140);
+        st.push_all(&[b.wrapping_add(0x1c), r + 0x12c]);
+        for i in 2..4 {
+            let x = g.read::<u32>(a + 0x1c + 4 * i);
+            g.write::<u32>(r + 0x11c + 4 * i, x);
+        }
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x1da, 325), 0);
+        let x = mul(f32_at(g, r + 0x138), f32_at(g, w(0x1fa)));
+        st.push_all(&[q, r + 0xdc]);
+        g.write::<f32>(r + 0x138, x);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        st.call(g, tab(g, 0x207, 230), 0);
+        st.push_all(&[r + 0x1c, r + 0x9c]);
+        // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+        return st.call(g, tab(g, 0x227, 230), 0).eax;
+    }
+    for (i, o) in (0u32..).zip([0x1cu32, 0x20, 0x24]) {
+        let a = g.read::<u32>(r + 0x144);
+        let x = g
+            .read::<u32>(a.wrapping_add(o))
+            .wrapping_add(g.read::<u32>(p + 0x11c + 4 * i));
+        g.write::<u32>(r + 0x11c + 4 * i, x);
+    }
+    let b = g.read::<u32>(r + 0x140);
+    st.push_all(&[b.wrapping_add(0x1c), p + 0x12c, r + 0x12c]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x299, 668), 0);
+    let x = mul(f32_at(g, r + 0x138), f32_at(g, w(0x2b1)));
+    st.push_all(&[q, p + 0xdc, r + 0xdc]);
+    g.write::<f32>(r + 0x138, x);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x2c5, 231), 0);
+    st.push_all(&[r + 0x1c, p + 0x9c, r + 0x9c]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x2ee, 231), 0);
+    st.push_all(&[r + 0x4c, p + 0xdc, r + 0xcc]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, tab(g, 0x2ff, 229), 0);
+    let e = r + 0xcc;
+    let x = add(f32_at(g, e), f32_at(g, p + 0xcc));
+    g.write::<f32>(e, x);
+    let x = add(f32_at(g, p + 0xd0), f32_at(g, e + 4));
+    g.write::<f32>(e + 4, x);
+    let x = add(f32_at(g, p + 0xd4), f32_at(g, e + 8));
+    g.write::<f32>(e + 8, x);
+    p
+}
+
+/// [`bone_node`] (the `rel32`: `__security_check_cookie`).
+pub const BONE_NODE: Sig = Sig {
+    len: 862,
+    hash: 0x8caf_4e6d_95c0_2d5d,
+    calls: &[(0x23f, Callee::Any), (0x356, Callee::Any)],
+    imports: &[],
+};
+
+/// The 15-byte calling thunk (`ecx` = the first stack word, a call; its
+/// frame's `ebp` and the caller's `ecx` pushed) over this list's
+/// handlers. A target that is none of them cannot bind (the thunk's
+/// `Sig` names its callee). Returns the handler's `eax`.
+pub fn ecx_call<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    let target = img.rel32_target(fr.at + 8);
+    let fr = Frame {
+        at: target,
+        esp: fr.esp.wrapping_sub(12),
+        ecx,
+        ..*fr
+    };
+    let handlers: [(&Sig, Handler<G>); 1] = [(&BONE_NODE, bone_node)];
+    for (sig, port) in handlers {
+        if img.matches(target, sig) {
+            return Ret::eax(port(g, img, &fr));
+        }
+    }
+    Ret::eax(fr.eax)
+}
+
+/// The calling thunk over [`bone_node`] (`magic_0150` 0x10003900).
+pub const CALL_BONE_NODE: Sig = Sig {
+    len: 15,
+    hash: crate::s3_wrap::ECX_CALL_HASH,
+    calls: &[(8, Callee::Sig(&BONE_NODE))],
     imports: &[],
 };
