@@ -46,10 +46,11 @@ fn part_draw() {
     let pp = SCRATCH + 0x640;
     // 712 copies the lock and the block pointer **P out
     rec(&mut t, 712, 2, move |m, _| {
+        // **P first: the lock's copy lands on P's word (lock + 0x40)
+        let v = m.r32(pp);
+        m.w32(lock + 0x60, v);
         let seen = m.r32(lock);
         m.w32(lock + 0x40, seen);
-        let v = m.r32(pp);
-        m.w32(lock + 0x44, v);
         m.r32(answers)
     });
     rec(&mut t, 261, 1, move |m, _| m.r32(answers + 4));
@@ -83,10 +84,11 @@ fn part_restart() {
     // 712 and 713 copy the block pointer **P out; 713 leaves junk there
     // (the restart stores it again after the call)
     rec(&mut t, 712, 2, move |m, _| {
+        // **P first: the lock's copy lands on P's word (lock + 0x40)
+        let v = m.r32(pp);
+        m.w32(lock + 0x60, v);
         let seen = m.r32(lock);
         m.w32(lock + 0x40, seen);
-        let v = m.r32(pp);
-        m.w32(lock + 0x44, v);
         m.r32(answer)
     });
     rec(&mut t, 713, 1, move |m, a| {

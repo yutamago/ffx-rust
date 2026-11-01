@@ -56,10 +56,11 @@ fn draw() {
         });
     }
     rec(&mut t, 712, 10, move |m, a| {
+        // **P first: the lock's copy lands on P's word (lock + 0x40)
+        let v = m.r32(pp);
+        m.w32(lock + 0x60, v);
         let seen = m.r32(lock);
         m.w32(lock + 0x40, seen);
-        let v = m.r32(pp);
-        m.w32(lock + 0x44, v);
         0x0712_0000 ^ a[1]
     });
     t.set_u32(t.img.word(at + 0x8a), lock);
