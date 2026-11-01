@@ -323,6 +323,7 @@ pub mod m0537;
 pub mod m0539;
 pub mod m0540;
 pub mod m0561;
+pub mod m0563;
 pub mod m0564;
 pub mod m0568;
 pub mod m0573;
@@ -1140,6 +1141,15 @@ ports! {
     "m0511 object ab0" => m0511::OBJECT_AB0, m0511::object_ab0;
     "m0511 object 5f0" => m0511::OBJECT_5F0, m0511::object_5f0;
     "m0514 burst step" => m0514::BURST_STEP, m0514::burst_step;
+    "m0563 frame" => m0563::FRAME, m0563::frame;
+    "m0563 scale start" => m0563::SCALE_START, m0563::scale_start;
+    "m0563 object start" => m0563::OBJECT_START, m0563::object_start;
+    "m0563 pair start" => m0563::PAIR_START, m0563::pair_start;
+    "m0564 task" => m0564::TASK, m0564::task;
+    "m0568 task" => m0568::TASK, m0568::task;
+    "m0568 pair start" => m0568::PAIR_START, m0568::pair_start;
+    "m0568 object start" => m0568::OBJECT_START, m0568::object_start;
+    "m0577 start steps" => m0577::START_STEPS, m0577::start_steps;
     "m0475 task" => m0475::TASK, m0475::task;
     "m0476 fade step" => m0476::FADE_STEP, m0476::fade_step;
     "m0477 e1070" => m0477::E1070, m0477::e1070;
@@ -2964,6 +2974,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0514 spark setup", &m0514::SPARK_SETUP),
     ("m0533 model setup", &m0533::MODEL_SETUP),
     ("m0533 model setup args", &m0533::MODEL_SETUP_ARGS),
+    ("m0577 unlink end", &m0577::UNLINK_END),
+    ("m0585 light object", &m0585::LIGHT_OBJECT),
     ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
     ("m0573 motion setup", &m0573::MOTION_SETUP),

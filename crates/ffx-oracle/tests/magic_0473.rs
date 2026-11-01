@@ -90,7 +90,6 @@ fn task() {
         t.write(fx + 0x380, &[0x2c; 0x240]);
         t.set_u32(fx + 0x380 + 0x228, 0);
         t.set_u32(fx + 0x610, 0x0610_0000);
-        t.set_u32(t.img.word(at + 0x56), 7);
         magic_hi::lone_node(&mut t, give, node);
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }

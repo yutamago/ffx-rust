@@ -110,7 +110,7 @@ fn task() {
         t.set_u32(w(&t, 0xc3), flag);
         t.set_u16(w(&t, 0xd0), half);
         t.set_u32(w(&t, 0x6f), 9);
-        t.set_u32(w(&t, 0xf1), 9);
+        // +0xf1 is the motion script's done word (ms + 0x14)
         t.set_u32(ms + 0x14, u32::from(done));
         t.set_u16(ms + 0x18, 3);
         magic_hi::objects(&mut t, ro, running);
@@ -127,6 +127,8 @@ fn task() {
         t.write(n, &[0x4e; 0x20]);
         t.set_u32(n + 8, task);
         t.write(task, &[0x7a; 0x20]);
+        // the flag word lies inside the flight object (+0x51's 0xc0 bytes)
+        t.set_u32(w(&t, 0xc3), flag);
         t.check_entry(at, Call::default(), &[n], Eax::Checked);
     }
 }

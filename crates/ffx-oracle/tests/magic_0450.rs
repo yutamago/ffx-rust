@@ -547,6 +547,10 @@ fn task() {
         }
         t.set_u32(fx + 0x1eec, u32::MAX);
         t.write(fx + 0x1b80, &[0x61; 0xa0]);
+        for i in 0..4 {
+            t.set_u32(fx + 0x1ba0 + 4 * i, 0x1ba0_0000 + i);
+            t.set_u32(fx + 0x1c00 + 4 * i, 0x1c00_0000 + i);
+        }
         lone_node(&mut t, give, node);
         magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[node], Eax::Checked);

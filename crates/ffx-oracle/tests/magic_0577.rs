@@ -577,3 +577,68 @@ fn light_node() {
         });
     }
 }
+
+/// 0x100046d0: no parent; a node at both ends of its parent's list; one
+/// in the middle.
+#[test]
+fn unlink_end() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x46d0);
+    recs(&mut t, &[(846, 2)]);
+    let (n, parent, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+        SCRATCH + 0x400,
+    );
+    for (has, ends) in [(false, false), (true, true), (true, false)] {
+        for a in [n, parent, prev, next] {
+            t.write(a, &[0x2a; 0x20]);
+        }
+        t.set_u32(n + 0x14, if has { parent } else { 0 });
+        t.set_u32(n + 4, if ends { parent } else { prev });
+        t.set_u32(n + 8, if ends { parent } else { next });
+        t.set_u16(parent + 0x18, 3);
+        t.check(at, Call::this(n), &[0x77], Eax::Checked, |g, img, fr| {
+            m0577::unlink_end(g, img, fr)
+        });
+    }
+}
+
+/// 0x1000dc90: states 0 and 1 (busy and not), 2 (busy and not), 3, 4.
+#[test]
+fn start_steps() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xdc90);
+    let busy = SCRATCH + 0x40;
+    for s in [225u32, 313, 549] {
+        rec(&mut t, s, 1, move |m, _| m.r32(busy));
+    }
+    recs(&mut t, &[(226, 2), (673, 0)]);
+    t.set_u32(t.img.word(at + 0x6f), 0x006f_0001);
+    let ring = t.img.word(at + 0xa3);
+    let state = t.img.word(at + 0x4);
+    // the visit gated: the root's byte +0x1b and the gate global set
+    let root = t.img.word(at + 0xbb);
+    t.set_u8(root + 0x1b, 1);
+    let vg = t.img.rel32_target(at + 0xc0);
+    t.set_u32(t.img.word(vg + 0x12), 1);
+    for (st, b) in [
+        (0u32, 0u32),
+        (0, 1),
+        (1, 0),
+        (2, 1),
+        (2, 0),
+        (3, 0),
+        (4, 0),
+        (7, 0),
+    ] {
+        t.set_u32(state, st);
+        t.set_u32(busy, b);
+        t.set_u32(ring + 0xc, ring + 4);
+        t.set_u32(ring + 0xc, ring + 4);
+        t.set_u32(ring + 0x10, 0x10);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
