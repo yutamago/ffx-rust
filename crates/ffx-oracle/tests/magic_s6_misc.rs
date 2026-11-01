@@ -1766,3 +1766,54 @@ fn host_starts_one_object() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Row 180: `magic_0515`'s turning path follower: the last frame and two
+/// times inside the path; the matrix slots seeing (and filling) the
+/// locals.
+#[test]
+fn turning_paths_stepped() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x1d20);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, Some(0));
+    }
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    let s = SCRATCH + 0x300;
+    let out = SCRATCH + 0x380;
+    let keys = SCRATCH + 0x1000;
+    let base = SCRATCH + 0x3c0;
+    for (k, (left, time, step, n)) in [
+        (1u32, 0.0f32, 0.0f32, 4u32),
+        (5, 0.25, 0.5, 4),
+        (3, 1.5, 0.75, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &varied(0x40, k));
+        t.set_u32(s + 0x20, keys);
+        t.set_u32(s + 0x24, base);
+        t.set_u32(s + 0x2c, time.to_bits());
+        t.set_u32(s + 0x30, step.to_bits());
+        t.set_u32(s + 0x34, left);
+        t.set_u32(s + 0x38, n);
+        for i in 0..24u32 {
+            t.set_u32(keys + 4 * i, (i as f32 * 0.75 - 3.0 + k as f32).to_bits());
+        }
+        for (i, v) in (0u32..).zip([0.5f32, -1.25, 2.0]) {
+            t.set_u32(base + 4 * i, (v + k as f32).to_bits());
+        }
+        t.write(out, &varied(0x10, k));
+        let c = Call {
+            ecx: s,
+            edx: out,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::turning_path_step(g, img, fr))
+        });
+    }
+}

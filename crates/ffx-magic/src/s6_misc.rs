@@ -24,7 +24,7 @@ use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
     ANIM_RESET_2, MOVE_START, MOVE_START_2, anim_reset_2, move_start, move_start_2,
 };
-use crate::sb_misc::{EASE_SAMPLE, ease_sample};
+use crate::sb_misc::{EASE_ANGLE, EASE_SAMPLE, ease_angle, ease_sample};
 use crate::sb_nodes::{EFFECT_NODE, PARTICLE_NODE, effect_node, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
@@ -2449,6 +2449,100 @@ pub const HOST_START_OBJECT: Sig = Sig {
         (0x34, Callee::Sig(&PART_INIT)),
         (0x49, Callee::Sig(&START_OBJECT_RESET)),
         (0xfe, Callee::Sig(&POP_NODE)),
+    ],
+    imports: &[],
+};
+
+/// [`path_step`] for a turning follower (internal: `ecx` = the follower
+/// `F`, `edx` = the point out; a /GS frame): on the last frame the last
+/// key's angles (and `F+0x3c = 0`), else the time steps on and the three
+/// angles are [`ease_angle`], [`ease_angle`] and [`ease_sample`] at it.
+/// The point `(0, 0, z, 1)` is turned by a matrix (a local: slot 235,
+/// then slots 330 `0`, 328 `x`, 329 `y`) through slot 229, and the base
+/// point `*F+0x24` plus it is the point out. Each call sees the words the
+/// earlier ones left on the stack. Returns the base point's address.
+///
+/// `magic_0515` 0x10001d20 (385 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn turning_path_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (s, out) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let left = g.read::<u32>(s + 0x34).wrapping_sub(1);
+    g.write::<u32>(s + 0x34, left);
+    let tab = g.read::<u32>(s + 0x20);
+    let (x, y, z) = if left == 0 {
+        let n = g.read::<u32>(s + 0x38);
+        let last = tab.wrapping_add(n.wrapping_mul(12)).wrapping_sub(0xc);
+        let key = |g: &G, o: u32| g.read::<f32>(last.wrapping_add(o));
+        let (x, y, z) = (key(g, 0), key(g, 4), key(g, 8));
+        g.write::<u32>(s + 0x3c, 0);
+        (x, y, z)
+    } else {
+        let t = add(g.read::<f32>(s + 0x30), g.read::<f32>(s + 0x2c));
+        g.write::<f32>(s + 0x2c, t);
+        let n = g.read::<u32>(s + 0x38);
+        // push 3 (the stride) for each sample, popped after the third
+        let esp = |g: &mut G, i: u32| {
+            let at = ebp.wrapping_sub(0x78 + 4 * i);
+            g.write::<u32>(at + 4, 3);
+            at
+        };
+        let at = esp(g, 0);
+        let x = ease_angle(g, img, img.rel32_target(f + 0x40), at, tab, n, t);
+        let at = esp(g, 1);
+        let y = ease_angle(g, img, img.rel32_target(f + 0x56), at, tab + 4, n, t);
+        let at = esp(g, 2);
+        let z = ease_sample(g, img, img.rel32_target(f + 0x6c), at, tab + 8, n, t);
+        (x, y, z)
+    };
+    let (m, v) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
+    for (o, val) in [(0u32, 0u32), (4, 0), (8, z.to_bits()), (0xc, 0x3f80_0000)] {
+        g.write::<u32>(v + o, val);
+    }
+    let target = |g: &G, t: u32, n: u32| crate::runtime::slot_target(g, w(t), n);
+    let mut st = Pushes::default();
+    st.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0xa9, 235), 0);
+    for (i, (t, n, a)) in [
+        (0xdcu32, 330u32, 0u32),
+        (0xfb, 328, x.to_bits()),
+        (0x11a, 329, y.to_bits()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // add esp, 8 after each but the last; `mov [esp], a`
+        if i > 0 {
+            st.pop(2);
+        }
+        st.set_top(a);
+        st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, target(g, t, n), 0);
+    }
+    st.push_all(&[v, m, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x133, 229), 0);
+    let base = g.read::<u32>(s + 0x24);
+    for o in [0u32, 4, 8] {
+        let p = add(g.read::<f32>(base.wrapping_add(o)), g.read::<f32>(v + o));
+        g.write::<f32>(out + o, p);
+    }
+    base
+}
+
+/// [`turning_path_step`] (the `rel32`s: two [`ease_angle`]s,
+/// [`ease_sample`] and `__security_check_cookie`).
+pub const TURNING_PATH_STEP: Sig = Sig {
+    len: 385,
+    hash: 0x8d96_d614_a54a_7860,
+    calls: &[
+        (0x40, Callee::Sig(&EASE_ANGLE)),
+        (0x56, Callee::Sig(&EASE_ANGLE)),
+        (0x6c, Callee::Sig(&EASE_SAMPLE)),
+        (0x179, Callee::Any),
     ],
     imports: &[],
 };
