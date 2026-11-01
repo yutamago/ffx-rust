@@ -159,4 +159,24 @@ copies! {
     load_0127 => LOAD_0127, One, crate::r11_objects::three_nodes_scaled, crate::r11_objects::THREE_NODES_SCALED_0127;
     /// `magic_0105` 0x10002fd0.
     load_0105 => LOAD_0105, One, crate::r11_fades::object_two_fades, crate::r11_fades::OBJECT_TWO_FADES_0105;
+    /// `magic_0101` 0x10002e70.
+    load_0101 => LOAD_0101, One, crate::r11_fades::object_colour_two_fades, crate::r11_fades::OBJECT_COLOUR_TWO_FADES_0101;
+    /// `magic_0093` 0x10003120.
+    load_0093 => LOAD_0093, One, crate::r11_fades::part_object_two_fades, crate::r11_fades::PART_OBJECT_TWO_FADES_0093;
+    /// `magic_0085` 0x100030a0.
+    load_0085 => LOAD_0085, One, crate::r11_fades::yaw_two_fades, crate::r11_fades::YAW_TWO_FADES_0085;
+    /// `magic_0103` 0x10003220.
+    load_0103 => LOAD_0103, One, crate::r11_fades::mean_two_fades, crate::r11_fades::MEAN_TWO_FADES_0103;
+    /// `magic_0252` 0x10001210.
+    load_0252 => LOAD_0252, Zero, crate::r11_effect::effect_start_flat, crate::r11_effect::EFFECT_START_FLAT_0252;
+    /// `magic_0365` 0x10002ab0.
+    load_0365 => LOAD_0365, One, crate::r11_effect::effect_start_height, crate::r11_effect::EFFECT_START_HEIGHT_0365;
+    /// `magic_0197` 0x10001210.
+    load_0197 => LOAD_0197, Zero, crate::r11_effect::effect_start_lookup, crate::r11_effect::EFFECT_START_LOOKUP_0197;
+    /// `magic_0065` 0x10002e90.
+    load_0065 => LOAD_0065, Zero, crate::r11_misc::colour_start_0065, crate::r11_misc::COLOUR_START_0065;
+    /// `magic_0054` 0x10001210.
+    load_0054 => LOAD_0054, One, crate::r11_misc::two_anim_objects_0054, crate::r11_misc::TWO_ANIM_OBJECTS_0054;
+    /// `magic_0231` 0x10001210.
+    load_0231 => LOAD_0231, One, crate::r11_effect::effect_start_kind, crate::r11_effect::EFFECT_START_KIND_0231;
 }

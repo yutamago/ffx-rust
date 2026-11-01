@@ -52,3 +52,38 @@ fn main_object_0369() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0065` 0x10002fd0: the flag bit set and clear, the task list
+/// empty and not.
+#[test]
+fn colour_start_0065() {
+    let Some(mut t) = twin(65) else { return };
+    let f = t.at(0x2fd0);
+    for (bit, listed) in [(false, false), (true, false), (true, true), (false, true)] {
+        magic_r11::colour_start_setup(&mut t, f, bit, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r11_misc::colour_start_0065,
+        );
+    }
+}
+
+/// `magic_0054` 0x10001370: the task list empty and not.
+#[test]
+fn two_anim_objects_0054() {
+    let Some(mut t) = twin(54) else { return };
+    let f = t.at(0x1370);
+    for listed in [false, true] {
+        magic_r11::two_anim_setup(&mut t, f, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r11_misc::two_anim_objects_0054,
+        );
+    }
+}

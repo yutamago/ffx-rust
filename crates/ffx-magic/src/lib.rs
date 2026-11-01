@@ -52,6 +52,7 @@ pub mod pe;
 pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
 pub mod r11_actors;
+pub mod r11_effect;
 pub mod r11_fades;
 pub mod r11_misc;
 pub mod r11_objects;
@@ -1059,6 +1060,16 @@ ports! {
     "r9 load step 0126" => r9_load::LOAD_0126, r9_load::load_0126;
     "r9 load step 0127" => r9_load::LOAD_0127, r9_load::load_0127;
     "r9 load step 0105" => r9_load::LOAD_0105, r9_load::load_0105;
+    "r9 load step 0101" => r9_load::LOAD_0101, r9_load::load_0101;
+    "r9 load step 0093" => r9_load::LOAD_0093, r9_load::load_0093;
+    "r9 load step 0085" => r9_load::LOAD_0085, r9_load::load_0085;
+    "r9 load step 0103" => r9_load::LOAD_0103, r9_load::load_0103;
+    "r9 load step 0252" => r9_load::LOAD_0252, r9_load::load_0252;
+    "r9 load step 0365" => r9_load::LOAD_0365, r9_load::load_0365;
+    "r9 load step 0197" => r9_load::LOAD_0197, r9_load::load_0197;
+    "r9 load step 0065" => r9_load::LOAD_0065, r9_load::load_0065;
+    "r9 load step 0054" => r9_load::LOAD_0054, r9_load::load_0054;
+    "r9 load step 0231" => r9_load::LOAD_0231, r9_load::load_0231;
     "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
     "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
     "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
@@ -2695,6 +2706,37 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "r11 object two fades 0105",
         &r11_fades::OBJECT_TWO_FADES_0105,
+    ),
+    (
+        "r11 object colour two fades 0101",
+        &r11_fades::OBJECT_COLOUR_TWO_FADES_0101,
+    ),
+    (
+        "r11 part object two fades 0093",
+        &r11_fades::PART_OBJECT_TWO_FADES_0093,
+    ),
+    ("r11 yaw two fades 0085", &r11_fades::YAW_TWO_FADES_0085),
+    ("r11 mean two fades 0103", &r11_fades::MEAN_TWO_FADES_0103),
+    (
+        "r11 effect start (flat) 0252",
+        &r11_effect::EFFECT_START_FLAT_0252,
+    ),
+    (
+        "r11 effect start (height) 0365",
+        &r11_effect::EFFECT_START_HEIGHT_0365,
+    ),
+    (
+        "r11 effect start (lookup) 0197",
+        &r11_effect::EFFECT_START_LOOKUP_0197,
+    ),
+    ("r11 colour start 0065", &r11_misc::COLOUR_START_0065),
+    (
+        "r11 effect start (kind) 0231",
+        &r11_effect::EFFECT_START_KIND_0231,
+    ),
+    (
+        "r11 two anim objects 0054",
+        &r11_misc::TWO_ANIM_OBJECTS_0054,
     ),
     // round 9 (magic-r9-own)
     ("m0390 facing", &m0390::FACING),

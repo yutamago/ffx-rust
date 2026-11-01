@@ -318,3 +318,57 @@ fn load_0116() {
 fn load_0117() {
     copy(117, 0x2da0, true, two_per_actor);
 }
+
+#[test]
+fn load_fades() {
+    for (n, rva) in [
+        (101u16, 0x2e70u32),
+        (93, 0x3120),
+        (85, 0x30a0),
+        (103, 0x3220),
+    ] {
+        copy(n, rva, true, magic_r11::fades_row);
+    }
+}
+
+#[test]
+fn load_0252() {
+    copy(252, 0x1210, false, |t, start| {
+        magic_r11::effect_flat_setup(t, start, 1.0, false);
+    });
+}
+
+#[test]
+fn load_0365() {
+    copy(365, 0x2ab0, true, |t, start| {
+        magic_r11::effect_height_setup(t, start, 1.0, false);
+    });
+}
+
+#[test]
+fn load_0197() {
+    copy(197, 0x1210, false, |t, start| {
+        magic_r11::effect_lookup_setup(t, start, 1.0, false, false);
+    });
+}
+
+#[test]
+fn load_0065() {
+    copy(65, 0x2e90, false, |t, start| {
+        magic_r11::colour_start_setup(t, start, true, false);
+    });
+}
+
+#[test]
+fn load_0054() {
+    copy(54, 0x1210, true, |t, start| {
+        magic_r11::two_anim_setup(t, start, false);
+    });
+}
+
+#[test]
+fn load_0231() {
+    copy(231, 0x1210, true, |t, start| {
+        magic_r11::effect_kind_setup(t, start, 1.0, 0, false);
+    });
+}
