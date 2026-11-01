@@ -68,7 +68,8 @@ fn step_flashes() {
     let cases: [(u32, u32, u32, f32, f32, u32, u32); 9] = [
         (1, 0, 0, 0.0, 0.0, 0, 0),
         (1, 1, 1, h, s, 1, 1),
-        (0, 0, 1, 0.5, 0.0, 1, 5),
+        // the timer off, so the flash's going off (ecx set) starts it
+        (0, 0, 1, 0.5, 0.0, 0, 5),
         (0, 1, 0, h, h + s + 1.0, 0, 0),
         (2, 0, 1, h, s * 0.5, 1, 2),
         (0, 0, 0, h, 0.25 * h + s, 0, 0),

@@ -55,10 +55,13 @@ fn load_groups() {
         a[0] ^ a[1]
     });
     t.stub_edx(772, |_, a| a[1] + 0x77);
-    recs(&mut t, &[(779, 4)]);
     let flag = SCRATCH + 0x10;
     t.set_u32(t.img.word(at + 0x5b), flag);
     t.set_u32(flag, 0x00f1_0000);
+    // slot 779 keeps the game flag it runs under
+    magic_h6::rec_cells(&mut t, 779, 4, &[flag], |_, a| {
+        0x5a5a_0779 ^ a.first().copied().unwrap_or(0)
+    });
     let r = SCRATCH + 0x4000;
     t.set_u32(t.img.word(at + 0x8), r);
     for (k, n) in (0u32..).zip([0i32, 1, 3, -1]) {
@@ -139,9 +142,16 @@ fn glow_turn() {
         (f32::NAN, 0),
     ] {
         t.write(r + 0x980, &[0x3c; 0x100]);
+        // the step x = 0.5 - 0.25 non-zero (an add for the sub shows), the
+        // angle after the step as listed
         t.set_u32(r + 0xa84, f(0.5));
-        t.set_u32(r + 0xa94, f(0.5));
-        t.set_u32(r + 0xa44, f(angle));
+        t.set_u32(r + 0xa94, f(0.25));
+        let a = if angle.is_nan() {
+            angle
+        } else {
+            magic_h6::hits(angle, 0.25)
+        };
+        t.set_u32(r + 0xa44, f(a));
         t.set_u32(r + 0xa54, f(1.25));
         for k in 0..4 {
             t.set_u8(

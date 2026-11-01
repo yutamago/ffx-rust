@@ -143,3 +143,12 @@ pub fn models_beyond(t: &mut Twin, g_at: u32, models: &[crate::magic_hi::Model],
         }
     }
 }
+
+/// `n` bytes counting up from `seed` by 7 (each word differs from its
+/// neighbours, so a field read one word on shows).
+#[must_use]
+pub fn varied(n: u32, seed: u8) -> Vec<u8> {
+    (0..n)
+        .map(|i| seed.wrapping_add((i.wrapping_mul(7)).to_le_bytes()[0]))
+        .collect()
+}

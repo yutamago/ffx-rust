@@ -69,6 +69,14 @@ fn entries() {
     for i in 0..3 {
         t.set_u32(recs_at + 0x30 + 0x94 * i, 0x00c0_0000 + i);
     }
+    // slot 779 keeps the game flag it runs under; the word slot 804 gets
+    // distinct
+    let lock = magic_h6::cell(&t, reg, 0x43);
+    t.set_u32(lock, 0x00a1_0000);
+    magic_h6::rec_cells(&mut t, 779, 4, &[lock], |_, a| {
+        0x5a5a_0779 ^ a.first().copied().unwrap_or(0)
+    });
+    magic_h6::distinct(&mut t, reg, &[0x7e]);
     for n in [0u32, 1, 3] {
         t.set_u32(t.img.word(reg + 0x14), n);
         t.check_entry(reg, Call::default(), &[], Eax::Checked);
