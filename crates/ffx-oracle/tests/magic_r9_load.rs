@@ -5,6 +5,7 @@
 
 mod magic;
 mod magic_owna;
+mod magic_r11;
 mod magic_r9;
 
 use ffx_magic::{Image, l5_objhost, m0032, sa_pool};
@@ -236,4 +237,195 @@ fn load_0166() {
 #[test]
 fn load_0308() {
     copy(308, 0x1210, false, effect);
+}
+
+/// Round 11's start-up with three task nodes
+/// (`r11_objects::three_nodes`): two actors, enough free nodes for both
+/// runs.
+fn three_nodes(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0110() {
+    copy(110, 0x12b0, true, three_nodes);
+}
+
+#[test]
+fn load_0112() {
+    copy(112, 0x12b0, true, three_nodes);
+}
+
+#[test]
+fn load_0121() {
+    copy(121, 0x2d60, true, three_nodes);
+}
+
+/// Round 11's start-up with two objects per actor
+/// (`r11_objects::two_per_actor`).
+fn two_per_actor(t: &mut Twin, start: u32) {
+    magic_r11::two_per_actor_setup(t, start, 2, 7, false);
+}
+
+/// Round 11's start-up with slot 12's heights
+/// (`r11_objects::three_nodes_height`).
+fn three_nodes_height(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_height_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0120() {
+    copy(120, 0x12b0, true, three_nodes_height);
+}
+
+/// Round 11's scaled start-ups (`r11_objects::three_nodes_kind`,
+/// `three_nodes_scaled`).
+fn three_nodes_kind(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_kind_setup(t, start, 2, 7, false);
+}
+
+fn three_nodes_scaled(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_scaled_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0126() {
+    copy(126, 0x1300, true, three_nodes_kind);
+}
+
+#[test]
+fn load_0127() {
+    copy(127, 0x2bd0, true, three_nodes_scaled);
+}
+
+/// Round 11's start-up with an object and two fades
+/// (`r11_fades::object_two_fades`).
+fn object_two_fades(t: &mut Twin, start: u32) {
+    magic_r11::object_two_fades_setup(t, start, false);
+}
+
+#[test]
+fn load_0105() {
+    copy(105, 0x2fd0, true, object_two_fades);
+}
+
+#[test]
+fn load_0116() {
+    copy(116, 0x1300, true, two_per_actor);
+}
+
+#[test]
+fn load_0117() {
+    copy(117, 0x2da0, true, two_per_actor);
+}
+
+#[test]
+fn load_fades() {
+    for (n, rva) in [
+        (101u16, 0x2e70u32),
+        (93, 0x3120),
+        (85, 0x30a0),
+        (103, 0x3220),
+    ] {
+        copy(n, rva, true, magic_r11::fades_row);
+    }
+}
+
+#[test]
+fn load_0252() {
+    copy(252, 0x1210, false, |t, start| {
+        magic_r11::effect_flat_setup(t, start, 1.0, false);
+    });
+}
+
+#[test]
+fn load_0365() {
+    copy(365, 0x2ab0, true, |t, start| {
+        magic_r11::effect_height_setup(t, start, 1.0, false);
+    });
+}
+
+#[test]
+fn load_0197() {
+    copy(197, 0x1210, false, |t, start| {
+        magic_r11::effect_lookup_setup(t, start, 1.0, false, false);
+    });
+}
+
+#[test]
+fn load_0065() {
+    copy(65, 0x2e90, false, |t, start| {
+        magic_r11::colour_start_setup(t, start, true, false);
+    });
+}
+
+#[test]
+fn load_0054() {
+    copy(54, 0x1210, true, |t, start| {
+        magic_r11::two_anim_setup(t, start, false);
+    });
+}
+
+#[test]
+fn load_0231() {
+    copy(231, 0x1210, true, |t, start| {
+        magic_r11::effect_kind_setup(t, start, 1.0, 0, false);
+    });
+}
+
+#[test]
+fn load_0233() {
+    copy(233, 0x1210, true, |t, start| {
+        magic_r11::sized_actors_setup(t, start, 2, 4, false);
+    });
+}
+
+#[test]
+fn load_0100() {
+    copy(100, 0x12b0, true, |t, start| {
+        magic_r11::fades_setup(
+            t,
+            start,
+            668,
+            &[0x5d, 0xe8],
+            (0x62, 0x76),
+            &[0x14e, 0x20a, 0x221],
+            (0x25c, 0x272, false),
+        );
+        let sl = t.img.rel32_target(start + 0x3d);
+        t.set_u32(t.img.word(sl + 0x01), magic::SCRATCH + 0x180);
+        magic_owna::rec(t, 534, 1, |_, _| 0);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    });
+}
+
+#[test]
+fn load_0084() {
+    copy(84, 0x1300, true, |t, start| {
+        magic_r11::fades_setup(
+            t,
+            start,
+            730,
+            &[0x6b, 0x106],
+            (0x70, 0x84),
+            &[0x1e2, 0x1dc, 0x271],
+            (0x298, 0x2aa, false),
+        );
+        let sl = t.img.rel32_target(start + 0x4b);
+        magic_r11::state_slots(t, sl, false, 1.0);
+    });
+}
+
+#[test]
+fn load_0102() {
+    copy(102, 0x1300, true, |t, start| {
+        magic_r11::kinds_setup(t, start, true, false, false);
+    });
+}
+
+#[test]
+fn load_0274() {
+    copy(274, 0x32d0, false, |t, start| {
+        magic_r11::two_objects_setup(t, start, 1.0, false);
+    });
 }

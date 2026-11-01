@@ -141,4 +141,52 @@ copies! {
     load_0308 => LOAD_0308, Zero, crate::r9_misc::effect_start_bare, crate::r9_misc::EFFECT_START_0308;
     /// `magic_0447` 0x100049b0.
     load_0447 => LOAD_0447, Zero, crate::m0390::start_up_0447, crate::m0390::START_UP_0447;
+    /// `magic_0110` 0x100012b0.
+    load_0110 => LOAD_0110, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0110;
+    /// `magic_0112` 0x100012b0.
+    load_0112 => LOAD_0112, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0112;
+    /// `magic_0121` 0x10002d60.
+    load_0121 => LOAD_0121, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0121;
+    /// `magic_0116` 0x10001300.
+    load_0116 => LOAD_0116, One, crate::r11_objects::two_per_actor, crate::r11_objects::TWO_PER_ACTOR_0116;
+    /// `magic_0117` 0x10002da0.
+    load_0117 => LOAD_0117, One, crate::r11_objects::two_per_actor, crate::r11_objects::TWO_PER_ACTOR_0117;
+    /// `magic_0120` 0x100012b0.
+    load_0120 => LOAD_0120, One, crate::r11_objects::three_nodes_height, crate::r11_objects::THREE_NODES_HEIGHT_0120;
+    /// `magic_0126` 0x10001300.
+    load_0126 => LOAD_0126, One, crate::r11_objects::three_nodes_kind, crate::r11_objects::THREE_NODES_KIND_0126;
+    /// `magic_0127` 0x10002bd0.
+    load_0127 => LOAD_0127, One, crate::r11_objects::three_nodes_scaled, crate::r11_objects::THREE_NODES_SCALED_0127;
+    /// `magic_0105` 0x10002fd0.
+    load_0105 => LOAD_0105, One, crate::r11_fades::object_two_fades, crate::r11_fades::OBJECT_TWO_FADES_0105;
+    /// `magic_0101` 0x10002e70.
+    load_0101 => LOAD_0101, One, crate::r11_fades::object_colour_two_fades, crate::r11_fades::OBJECT_COLOUR_TWO_FADES_0101;
+    /// `magic_0093` 0x10003120.
+    load_0093 => LOAD_0093, One, crate::r11_fades::part_object_two_fades, crate::r11_fades::PART_OBJECT_TWO_FADES_0093;
+    /// `magic_0085` 0x100030a0.
+    load_0085 => LOAD_0085, One, crate::r11_fades::yaw_two_fades, crate::r11_fades::YAW_TWO_FADES_0085;
+    /// `magic_0103` 0x10003220.
+    load_0103 => LOAD_0103, One, crate::r11_fades::mean_two_fades, crate::r11_fades::MEAN_TWO_FADES_0103;
+    /// `magic_0252` 0x10001210.
+    load_0252 => LOAD_0252, Zero, crate::r11_effect::effect_start_flat, crate::r11_effect::EFFECT_START_FLAT_0252;
+    /// `magic_0365` 0x10002ab0.
+    load_0365 => LOAD_0365, One, crate::r11_effect::effect_start_height, crate::r11_effect::EFFECT_START_HEIGHT_0365;
+    /// `magic_0197` 0x10001210.
+    load_0197 => LOAD_0197, Zero, crate::r11_effect::effect_start_lookup, crate::r11_effect::EFFECT_START_LOOKUP_0197;
+    /// `magic_0065` 0x10002e90.
+    load_0065 => LOAD_0065, Zero, crate::r11_misc::colour_start_0065, crate::r11_misc::COLOUR_START_0065;
+    /// `magic_0054` 0x10001210.
+    load_0054 => LOAD_0054, One, crate::r11_misc::two_anim_objects_0054, crate::r11_misc::TWO_ANIM_OBJECTS_0054;
+    /// `magic_0231` 0x10001210.
+    load_0231 => LOAD_0231, One, crate::r11_effect::effect_start_kind, crate::r11_effect::EFFECT_START_KIND_0231;
+    /// `magic_0233` 0x10001210.
+    load_0233 => LOAD_0233, One, crate::r11_objects::sized_actors_0233, crate::r11_objects::SIZED_ACTORS_0233;
+    /// `magic_0100` 0x100012b0.
+    load_0100 => LOAD_0100, One, crate::r11_fades::state_two_fades, crate::r11_fades::STATE_TWO_FADES_0100;
+    /// `magic_0084` 0x10001300.
+    load_0084 => LOAD_0084, One, crate::r11_fades::state_yaw_two_fades, crate::r11_fades::STATE_YAW_TWO_FADES_0084;
+    /// `magic_0102` 0x10001300.
+    load_0102 => LOAD_0102, One, crate::r11_fades::kinds_two_fades, crate::r11_fades::KINDS_TWO_FADES_0102;
+    /// `magic_0274` 0x100032d0.
+    load_0274 => LOAD_0274, Zero, crate::r11_objects::two_objects_0274, crate::r11_objects::TWO_OBJECTS_0274;
 }

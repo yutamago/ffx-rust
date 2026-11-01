@@ -52,6 +52,11 @@ pub mod pe;
 pub mod pf_throws;
 pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
+pub mod r11_actors;
+pub mod r11_effect;
+pub mod r11_fades;
+pub mod r11_misc;
+pub mod r11_objects;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1059,6 +1064,52 @@ ports! {
     "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
     "r9 summon start (nodes) 0096" => r9_summon::NODES_0096, r9_summon::nodes_0096;
     "r9 summon start (nodes) 0097" => r9_summon::NODES_0097, r9_summon::nodes_0097;
+    // round 11 (magic-r11-own): more load-step copies (r9_load)
+    "r9 load step 0110" => r9_load::LOAD_0110, r9_load::load_0110;
+    "r9 load step 0112" => r9_load::LOAD_0112, r9_load::load_0112;
+    "r9 load step 0121" => r9_load::LOAD_0121, r9_load::load_0121;
+    "r9 load step 0116" => r9_load::LOAD_0116, r9_load::load_0116;
+    "r9 load step 0117" => r9_load::LOAD_0117, r9_load::load_0117;
+    "r9 load step 0120" => r9_load::LOAD_0120, r9_load::load_0120;
+    "r9 load step 0126" => r9_load::LOAD_0126, r9_load::load_0126;
+    "r9 load step 0127" => r9_load::LOAD_0127, r9_load::load_0127;
+    "r9 load step 0105" => r9_load::LOAD_0105, r9_load::load_0105;
+    "r9 load step 0101" => r9_load::LOAD_0101, r9_load::load_0101;
+    "r9 load step 0093" => r9_load::LOAD_0093, r9_load::load_0093;
+    "r9 load step 0085" => r9_load::LOAD_0085, r9_load::load_0085;
+    "r9 load step 0103" => r9_load::LOAD_0103, r9_load::load_0103;
+    "r9 load step 0252" => r9_load::LOAD_0252, r9_load::load_0252;
+    "r9 load step 0365" => r9_load::LOAD_0365, r9_load::load_0365;
+    "r9 load step 0197" => r9_load::LOAD_0197, r9_load::load_0197;
+    "r9 load step 0065" => r9_load::LOAD_0065, r9_load::load_0065;
+    "r9 load step 0054" => r9_load::LOAD_0054, r9_load::load_0054;
+    "r9 load step 0231" => r9_load::LOAD_0231, r9_load::load_0231;
+    "r9 load step 0233" => r9_load::LOAD_0233, r9_load::load_0233;
+    "r9 load step 0100" => r9_load::LOAD_0100, r9_load::load_0100;
+    "r9 load step 0084" => r9_load::LOAD_0084, r9_load::load_0084;
+    "r9 load step 0102" => r9_load::LOAD_0102, r9_load::load_0102;
+    "r9 load step 0274" => r9_load::LOAD_0274, r9_load::load_0274;
+    "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
+    "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
+    "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
+    "r11 main object 0369" => r11_misc::MAIN_OBJECT_0369, r11_misc::main_object_0369;
+    "r11 aim at target 0191" => r11_misc::AIM_AT_TARGET_0191, r11_misc::aim_at_target_0191;
+    "r11 between actors 0194" => r11_misc::BETWEEN_ACTORS_0194, r11_misc::between_actors_0194;
+    "r11 part at effect 0429" => r11_misc::PART_AT_EFFECT_0429, r11_misc::part_at_effect_0429;
+    "r11 fader start 0162" => r11_misc::FADER_START_0162, r11_misc::fader_start_p070;
+    "r11 fader start 0586" => r11_misc::FADER_START_0586, r11_misc::fader_start_p070;
+    "r11 anim start 0168" => r11_misc::ANIM_START_0168, r11_misc::anim_start_p061;
+    "r11 anim start 0587" => r11_misc::ANIM_START_0587, r11_misc::anim_start_p061;
+    "r11 launches 0421" => r11_misc::LAUNCHES_0421, r11_misc::launches_p055;
+    "r11 launches 0535" => r11_misc::LAUNCHES_0535, r11_misc::launches_p055;
+    "r11 sparks 0393" => r11_misc::SPARKS_0393, r11_misc::sparks_p034;
+    "r11 sparks 0450" => r11_misc::SPARKS_0450, r11_misc::sparks_p034;
+    "r11 launches (b) 0421" => r11_misc::LAUNCHES_P048_0421, r11_misc::launches_p048;
+    "r11 launches (b) 0535" => r11_misc::LAUNCHES_P048_0535, r11_misc::launches_p048;
+    "r11 records start 0393" => r11_misc::RECORDS_START_0393, r11_misc::records_start_p063;
+    "r11 records start 0450" => r11_misc::RECORDS_START_0450, r11_misc::records_start_p063;
+    "r11 task step 0064" => r11_misc::TASK_STEP_0064, r11_misc::task_step_0064;
+    "r11 task step 0052" => r11_misc::TASK_STEP_0052, r11_misc::task_step_0064;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0481 burst frame" => m0481::BURST_FRAME, m0481::burst_frame;
@@ -2753,6 +2804,69 @@ ports! {
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 11 (magic-r11-own)
+    ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),
+    ("r11 three nodes 0112", &r11_objects::THREE_NODES_0112),
+    ("r11 three nodes 0121", &r11_objects::THREE_NODES_0121),
+    ("r11 two per actor 0116", &r11_objects::TWO_PER_ACTOR_0116),
+    ("r11 two per actor 0117", &r11_objects::TWO_PER_ACTOR_0117),
+    (
+        "r11 three nodes (height) 0120",
+        &r11_objects::THREE_NODES_HEIGHT_0120,
+    ),
+    (
+        "r11 three nodes (kind) 0126",
+        &r11_objects::THREE_NODES_KIND_0126,
+    ),
+    (
+        "r11 three nodes (scaled) 0127",
+        &r11_objects::THREE_NODES_SCALED_0127,
+    ),
+    (
+        "r11 object two fades 0105",
+        &r11_fades::OBJECT_TWO_FADES_0105,
+    ),
+    (
+        "r11 object colour two fades 0101",
+        &r11_fades::OBJECT_COLOUR_TWO_FADES_0101,
+    ),
+    (
+        "r11 part object two fades 0093",
+        &r11_fades::PART_OBJECT_TWO_FADES_0093,
+    ),
+    ("r11 yaw two fades 0085", &r11_fades::YAW_TWO_FADES_0085),
+    ("r11 mean two fades 0103", &r11_fades::MEAN_TWO_FADES_0103),
+    (
+        "r11 effect start (flat) 0252",
+        &r11_effect::EFFECT_START_FLAT_0252,
+    ),
+    (
+        "r11 effect start (height) 0365",
+        &r11_effect::EFFECT_START_HEIGHT_0365,
+    ),
+    (
+        "r11 effect start (lookup) 0197",
+        &r11_effect::EFFECT_START_LOOKUP_0197,
+    ),
+    ("r11 colour start 0065", &r11_misc::COLOUR_START_0065),
+    ("r11 scene ctor 0150", &r11_misc::SCENE_CTOR_0150),
+    ("r11 scene ctor 0603", &r11_misc::SCENE_CTOR_0603),
+    ("r11 sized actors 0233", &r11_objects::SIZED_ACTORS_0233),
+    ("r11 state two fades 0100", &r11_fades::STATE_TWO_FADES_0100),
+    (
+        "r11 state yaw two fades 0084",
+        &r11_fades::STATE_YAW_TWO_FADES_0084,
+    ),
+    ("r11 kinds two fades 0102", &r11_fades::KINDS_TWO_FADES_0102),
+    ("r11 two objects 0274", &r11_objects::TWO_OBJECTS_0274),
+    (
+        "r11 effect start (kind) 0231",
+        &r11_effect::EFFECT_START_KIND_0231,
+    ),
+    (
+        "r11 two anim objects 0054",
+        &r11_misc::TWO_ANIM_OBJECTS_0054,
+    ),
     // round 9 (magic-r9-own)
     ("m0390 facing", &m0390::FACING),
     ("m0390 facing 0447", &m0390::FACING_0447),
