@@ -94,7 +94,7 @@ pub fn live_timeline_global(t: &mut Twin, run: u32, ev: u32, time: u32) {
 pub fn scrub(t: &mut Twin) {
     let entry = crate::magic::STACK_TOP - 0x100;
     let junk: Vec<u8> = (0..0x1000u32)
-        .map(|i| (i.wrapping_mul(0x2b) ^ 0x5b) as u8)
+        .map(|i| (i.wrapping_mul(0x2b) ^ 0x5b).to_le_bytes()[0])
         .collect();
     t.write(entry - 0x1000, &junk);
 }
@@ -106,7 +106,7 @@ pub fn hits(target: f32, step: f32) -> f32 {
     let mut x = target - step;
     for _ in 0..64 {
         let s = x + step;
-        if s == target {
+        if s.to_bits() == target.to_bits() {
             return x;
         }
         x = if s < target {
