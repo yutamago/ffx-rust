@@ -2402,6 +2402,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("level look matrix", &s6_misc::LEVEL_LOOK_MATRIX),
     ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
     ("aimed node walk", &s6_misc::AIMED_NODE_WALK),
+    ("ring take", &s6_misc::RING_TAKE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

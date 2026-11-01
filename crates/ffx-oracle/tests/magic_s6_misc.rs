@@ -2945,3 +2945,43 @@ fn camera_tracks_from_record() {
         t.check_entry(f, Call::this(r), &[], Eax::Checked);
     }
 }
+
+/// Row 398: `magic_0150`'s ring take: a count over the size (negative
+/// sizes too), a take inside, one ending at the size, split takes, and
+/// the mark below, at and over the size.
+#[test]
+fn rings_taken() {
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0x6e80);
+    let (s, b) = (SCRATCH + 0x300, SCRATCH + 0x400);
+    for (k, &(n, size, h, mark)) in [
+        (5u16, 4i16, 0u16, 0u16),
+        (2, 10, 3, 0),
+        (3, 10, 7, 9),
+        (4, 10, 8, 10),
+        (4, 10, 8, 3),
+        (0, 0, 0, 0),
+        (1, -1, 0, 0),
+        (2, 10, 1, 12),
+        (0, -3, 5, 2),
+        (6, 10, 9, 8),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &varied(0x20, k));
+        t.write(b, &varied(0x30, k + 3));
+        t.set_u32(s, b);
+        t.set_u16(s + 4, n);
+        t.set_u32(b + 0x1c, 0x1234_5600 + 0x40 * k);
+        t.set_u16(b + 0x20, size.cast_unsigned());
+        t.set_u16(b + 0x22, 0x18 + k as u16);
+        t.set_u16(b + 0x24, h);
+        t.set_u16(b + 0x26, mark);
+        scrub(&mut t);
+        t.check(f, Call::this(s), &[], Eax::Checked, |g, _, fr| {
+            Ret::eax(s6_misc::ring_take(g, fr))
+        });
+    }
+}

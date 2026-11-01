@@ -4339,3 +4339,79 @@ pub const HOST_START_WHEN_READY: Sig = Sig {
     calls: &[(0x5c, Callee::Sig(&HOST_START_OBJECT))],
     imports: &[],
 };
+
+/// Room taken in a ring of fixed-size slots (internal, `ecx` = the
+/// request `S`: `+0` the ring `B`, u16 `+4` the count `n`; the ring:
+/// `+0x1c` its base, i16 `+0x20` its size `N`, u16 `+0x22` the slot size,
+/// u16 `+0x24` the head `h`, `+0x26` the high-water mark, `+0x28` a copy
+/// of the head). A count above `N` takes nothing (`S+6 = 0`). Else
+/// `S+0xc = base + h * size` and the head moves to `e = h + n`: past `N`
+/// the request splits (`S+6 = N - h` slots there, `S+8 = e - N` more from
+/// `S+0x10 = base`, head `e - N`), else `S+6 = n`, `S+8 = 0`, head `e` (0
+/// at exactly `N`). Then the mark: at `N` or more the head is copied to
+/// `+0x28`; else it grows by `n`, held at `N`. Returns `eax` as the
+/// original leaves it (the size, or with the copied head in its low half).
+///
+/// `magic_0150` 0x10006e80 (187 bytes, `ecx` = the request; 3 DLLs).
+pub fn ring_take<G: Game>(g: &mut G, fr: &Frame) -> u32 {
+    let s = fr.ecx;
+    let b = g.read::<u32>(s);
+    let n = g.read::<u16>(s + 4);
+    let size = |g: &G| g.read::<i16>(b + 0x20);
+    if i32::from(n) > i32::from(size(g)) {
+        g.write::<u16>(s + 6, 0);
+        return 0;
+    }
+    let h = g.read::<u16>(b + 0x24);
+    let base = g.read::<u32>(b + 0x1c);
+    let at = u32::from(g.read::<u16>(b + 0x22))
+        .wrapping_mul(u32::from(h))
+        .wrapping_add(base);
+    g.write::<u32>(s + 0xc, at);
+    let e = n.wrapping_add(h);
+    let cap = size(g);
+    let eax;
+    if i32::from(e) > i32::from(cap) {
+        let base = g.read::<u32>(b + 0x1c);
+        let first = cap.cast_unsigned().wrapping_sub(h);
+        g.write::<u32>(s + 0x10, base);
+        let rest = size(g).cast_unsigned().wrapping_sub(first);
+        eax = (base & 0xffff_0000) | u32::from(rest);
+        g.write::<u16>(s + 6, first);
+        let head = e.wrapping_sub(size(g).cast_unsigned());
+        g.write::<u16>(s + 8, rest);
+        g.write::<u16>(b + 0x24, head);
+    } else {
+        g.write::<u16>(s + 6, g.read::<u16>(s + 4));
+        g.write::<u16>(s + 8, 0);
+        let cap = size(g);
+        if i32::from(e) == i32::from(cap) {
+            g.write::<u16>(b + 0x24, 0);
+            eax = 0;
+        } else {
+            g.write::<u16>(b + 0x24, e);
+            eax = i32::from(cap).cast_unsigned();
+        }
+    }
+    let mark = g.read::<u16>(b + 0x26);
+    if i32::from(mark) >= i32::from(size(g)) {
+        let head = g.read::<u16>(b + 0x24);
+        g.write::<u16>(b + 0x28, head);
+        return (eax & 0xffff_0000) | u32::from(head);
+    }
+    let m = g.read::<u16>(s + 4).wrapping_add(mark);
+    g.write::<u16>(b + 0x26, m);
+    let cap = size(g);
+    if i32::from(m) > i32::from(cap) {
+        g.write::<u16>(b + 0x26, cap.cast_unsigned());
+    }
+    i32::from(cap).cast_unsigned()
+}
+
+/// [`ring_take`].
+pub const RING_TAKE: Sig = Sig {
+    len: 187,
+    hash: 0x6935_c228_4f5a_44fb,
+    calls: &[],
+    imports: &[],
+};
