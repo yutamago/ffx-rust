@@ -227,6 +227,7 @@ pub mod m5p_render_b_small;
 pub mod m5p_scene;
 pub mod m5p_scene_b;
 pub mod m5p_scene_bp2;
+pub mod m5p_scene_bp3;
 pub mod m5p_scene_c;
 pub mod m5p_scene_d;
 pub mod m5p_scene_df;

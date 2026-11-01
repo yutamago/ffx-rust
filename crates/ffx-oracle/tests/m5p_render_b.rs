@@ -8445,7 +8445,8 @@ fn bp3_render_batch() {
                 alloca
             };
             for w in 0..(bytes / 4) {
-                let v = 0.25f32 * f32::from(u8::try_from(w % 7).unwrap()) + if w % 5 == 0 { 1.0 } else { 0.0 };
+                let v = 0.25f32 * f32::from(u8::try_from(w % 7).unwrap())
+                    + if w % 5 == 0 { 1.0 } else { 0.0 };
                 t.w32(base + 4 * w, v.to_bits());
             }
             t.seq_answers(singleton, false, 0, 0, &[0x6100]);

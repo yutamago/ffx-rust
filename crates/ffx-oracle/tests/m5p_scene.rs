@@ -4718,3 +4718,196 @@ fn m5p_scene_bp2_turn() {
         }
     }
 }
+
+// ---- big-phyre3 ----
+
+impl Twins {
+    /// `code` placed at the original `sym` (a `jmp` there).
+    fn place(&mut self, sym: u32, code: &[u8]) {
+        let addr = self.a.alloc_code(code).unwrap();
+        assert_eq!(self.b.alloc_code(code).unwrap(), addr);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+
+    /// The logging part of a stub: `tag`, `ecx` when `this`, `n` stack
+    /// words.
+    fn log_part(&self, tag: u32, this: bool, n: u32) -> Vec<u8> {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c
+    }
+
+    /// A recording stub answering `answers` in turn (0 past the end).
+    fn seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, answers: &[u32]) {
+        let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+        table.extend([0u8; 64]);
+        let table = self.alloc(&table);
+        let cell = self.alloc(&table.to_le_bytes());
+        let mut c = self.log_part(sym, this, n);
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x8b, 0x10]); // mov edx, [eax]
+        c.extend([0x83, 0x05]);
+        c.extend(cell.to_le_bytes());
+        c.push(0x04); // add dword [cell], 4
+        c.extend([0x89, 0xd0]); // mov eax, edx
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
+        self.place(sym, &c);
+    }
+}
+
+/// `0x004d4810` (`PContextSwitchLights::getStringsFromPackedState`) with
+/// every callee recorded: the string builders' constructor stores its
+/// text and a length (0 in some runs: no copy), each append grows the
+/// length, so the copies the function makes depend on the calls made.
+/// Cases: 0, 1 and 3 lights, with and without shadows; the string array
+/// the right size or not (old words owned or a view); each allocation
+/// failing in turn (the builders made destroyed). Only synthetic data
+/// reaches it.
+#[test]
+#[allow(clippy::too_many_lines)] // the case data
+fn m5p_scene_bp3_light_strings() {
+    use ffx_prender::m5p_scene_bp3::{self as sc};
+    let [
+        decode,
+        malloc,
+        release,
+        ctor,
+        append,
+        append_int,
+        memcpy,
+        free,
+        light_table,
+        shadow_table,
+        dtor,
+        truncate,
+    ] = sc::LIGHT_STRING_CALLS;
+    for (label, mut tw) in Twins::all() {
+        let end = tw.a.stack_range().end;
+        let ebp = end - 0x100 - 4 * 3 - 8;
+        for k in 0..30u32 {
+            let n = [3u32, 1, 0][k as usize % 3];
+            // decodePairs: types and shadows written, n returned
+            let mut c = tw.log_part(decode, false, 4);
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            for i in 0..8u8 {
+                c.extend([0xc7, 0x42, 4 * i]);
+                c.extend((0x10 + u32::from(i)).to_le_bytes()); // mov dword [edx+4i], type
+            }
+            c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+            for i in 0..8u8 {
+                let s = if (u32::from(i) + k) % 3 == 1 {
+                    0
+                } else {
+                    0x20 + u32::from(i)
+                };
+                c.extend([0xc7, 0x42, 4 * i]);
+                c.extend(s.to_le_bytes()); // mov dword [edx+4i], shadow
+            }
+            c.push(0xb8);
+            c.extend(n.to_le_bytes()); // mov eax, n
+            c.push(0xc3);
+            tw.place(decode, &c);
+            // the builder: +4 text, +8 length; appends grow the length
+            let len0: u32 = if k % 7 == 3 { 0 } else { 6 };
+            let mut c = tw.log_part(ctor, true, 1);
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x51, 0x04]); // mov [ecx+4], edx
+            c.extend([0xc7, 0x41, 0x08]);
+            c.extend(len0.to_le_bytes()); // mov dword [ecx+8], len0
+            c.extend([0xc2, 0x04, 0x00]); // ret 4
+            tw.place(ctor, &c);
+            for sym in [append, append_int] {
+                let mut c = tw.log_part(sym, true, 1);
+                if len0 != 0 {
+                    c.extend([0xff, 0x41, 0x08]); // inc dword [ecx+8]
+                }
+                c.extend([0xc2, 0x04, 0x00]); // ret 4
+                tw.place(sym, &c);
+            }
+            let fail = k / 3;
+            let mut blocks: Vec<u32> = (0..12)
+                .map(|j| {
+                    if j == fail {
+                        0
+                    } else {
+                        let b = tw.zeros(0x20);
+                        tw.write(b, &[0xa5; 0x20]);
+                        b
+                    }
+                })
+                .collect();
+            tw.stub(release, false, 2, 0, 0x31);
+            tw.stub(memcpy, false, 3, 0, 0x32);
+            tw.stub(free, false, 1, 0, 0x33);
+            let light_entry = tw.zeros(8);
+            tw.w32(light_entry + 4, 0x4c00);
+            let shadow_entry = tw.zeros(8);
+            tw.w32(shadow_entry + 4, 0x5c00);
+            tw.stub(light_table, false, 1, 0, light_entry);
+            tw.stub(shadow_table, false, 1, 0, shadow_entry);
+            tw.stub(dtor, true, 0, 0, 0x34);
+            tw.stub(truncate, true, 1, 1, 0x35);
+            let this = tw.zeros(8);
+            tw.w32(this + 4, 0x7e00);
+            let out = tw.zeros(8);
+            let old = tw.zeros(0x40);
+            for w in 0..16 {
+                tw.w32(old + 4 * w, (0x100 + w) | (w & 1));
+            }
+            let size = if k % 4 == 1 { 2 * n + 1 } else { 5 };
+            tw.w32(out, size | (k & 8) << 28);
+            tw.w32(out + 4, old);
+            if k % 5 == 2 && fail != 0 {
+                // the new block is the old one
+                blocks[0] = old;
+            }
+            tw.seq(malloc, false, 2, 0, &blocks);
+            let junk: Vec<u8> = (0..0x90u32).map(|i| (i * 5 + k) as u8).collect();
+            tw.write(ebp - 0x90, &junk);
+            tw.b.set_call_top(Some(ebp - 0x90 - 0x100));
+            let what = format!("{label}: light strings {k}");
+            tw.run(
+                &what,
+                0x004d_4810,
+                Conv::Thiscall(this),
+                &[0xa1, 0xa2, out],
+                |g| sc::light_strings::get_strings(g, ebp, this, 0xa1, 0xa2, out),
+            );
+            tw.b.set_call_top(None);
+            for (from, to) in [(0x88u32, 0x64u32), (0x50, 0x10)] {
+                let mut x = vec![0; (from - to) as usize];
+                let mut y = vec![0; (from - to) as usize];
+                tw.a.read_bytes(ebp - from, &mut x);
+                tw.b.read_bytes(ebp - from, &mut y);
+                assert_eq!(x, y, "{what}: frame");
+            }
+            tw.unstub();
+        }
+    }
+}
