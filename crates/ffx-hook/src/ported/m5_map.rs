@@ -12,6 +12,7 @@ use ffx_prender::l6_map2::bridge as l6m2;
 use ffx_prender::l6_map3::bridge as l6m3;
 use ffx_prender::l6_map4::bridge as l6m4;
 use ffx_prender::l6_map5::bridge as l6m5;
+use ffx_prender::l6_map6::bridge as l6m6;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -779,5 +780,31 @@ ported! {
     /// `(scene, parse)`: the scene text's camera line.
     rcbgSceneLoadTextCamera_0093af60 @ 0x0093_af60 => extern "C" fn rcbg_scene_load_text_camera(scene: u32, parse: u32) -> u32 {
         l6m5::camera_line(&mut mem(), scene, parse)
+    }
+    /// `(window, msg, param; slots)`: the slider window's procedure (the
+    /// mouse deltas in a frame; floats in its `msg` slot).
+    rcuiSliderProc_0093c860 @ 0x0093_c860 => extern "C" fn rcui_slider_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::SLIDER_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::SLIDER_FRAME;
+        l6m5::slider_proc(&mut mem(), ebp, slots, window, msg, param)
+    }
+    /// `(window, msg, param)`: the motion test window's procedure (the
+    /// speed text in a frame).
+    rcuiMotionProc @ 0x0093_5340 => extern "C" fn rcui_motion_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::MOTION_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::MOTION_FRAME;
+        l6m5::motion_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    /// `(window, msg, param)`: the layer alpha window's procedure (the
+    /// FIX text in a frame).
+    rcuiAlphaProc @ 0x0093_1050 => extern "C" fn rcui_alpha_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map5::bridge::ALPHA_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map5::bridge::ALPHA_FRAME;
+        l6m5::alpha_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    // ---- round 6 (left6) batch 4 (ffx_prender::l6_map6) ----
+    /// `(window, msg, param)`: the map tool's main menu window.
+    rcuiMenuProc_00935000 @ 0x0093_5000 => extern "C" fn rcui_menu_proc(window: u32, msg: u32, param: u32) -> u32 {
+        l6m6::menu_proc(&mut mem(), window, msg, param).unwrap_or(0)
     }
 }

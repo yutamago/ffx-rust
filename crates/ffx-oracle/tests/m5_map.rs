@@ -5734,3 +5734,345 @@ fn l6_scene_camera_line_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn l6_slider_proc_matches_the_original() {
+    // every message and button; parts at and past their bounds; the mouse
+    // on either gauge, another id, a zero delta; no entry, a hidden one
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b51);
+        for case in 0..300_u32 {
+            let e = t.zeros(0x40);
+            t.w32(e, u32::from(!rng.chance(5)));
+            let target = t.zeros(8);
+            t.w32(e + 4, target);
+            t.w32(e + 8, float_word(&mut rng));
+            for off in [0xc, 0x10] {
+                let v = match rng.below(4) {
+                    0 => rng.word(),
+                    1 => [0, 99, 100, 999, 1000][rng.below(5) as usize],
+                    _ => rng.below(1000),
+                };
+                t.w32(e + off, v);
+            }
+            let (msg, param) = match rng.below(8) {
+                0..=2 => (0x8006, rng.below(14)),
+                3 => (0x8007, rng.below(11)),
+                4 | 5 => (0x8011, rng.next()),
+                6 => (l6_msg(&mut rng), rng.next()),
+                _ => (0x8003, rng.next()),
+            };
+            let safe = msg == 0x8011
+                || msg == 0x8001
+                || msg == 0x8007
+                || !(0x8001..=0x8011).contains(&msg);
+            let arg = if safe && case % 6 == 1 { 0 } else { e };
+            t.stub_sym(l65::bridge::WINDOW_GET_ARG, 1, false, 1, 0, Ret::Val(arg));
+            t.stub_sym(l65::bridge::ADD_ITEMS, 2, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                l65::bridge::ADD_CLIENT,
+                3,
+                false,
+                6,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::CLOSE_TREE,
+                4,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::MOVE_RESET,
+                5,
+                false,
+                0,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::MOVE_BEGIN,
+                6,
+                false,
+                2,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(l65::bridge::MOVE_END, 7, false, 0, 0, Ret::Val(rng.next()));
+            let moving = u32::from(rng.chance(2));
+            t.stub_sym(l65::bridge::MOVE_IS_ID, 8, false, 1, 0, Ret::Val(moving));
+            let id = [8, 9, 7, rng.next()][rng.below(4) as usize];
+            t.stub_sym(l65::bridge::MOVE_GET_ID, 9, false, 0, 0, Ret::Val(id));
+            let dy = if rng.chance(4) { 0 } else { rng.word() };
+            let mut get = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov [eax], dx
+            get.extend(rng.next().to_le_bytes());
+            get.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]); // mov eax, [esp+8]; mov [eax], dy
+            get.extend(dy.to_le_bytes());
+            get.push(0xc3);
+            r5_code(t, l65::bridge::MOVE_GET, &get);
+            t.stub_sym(
+                l65::bridge::GAUGE_DRAW,
+                10,
+                false,
+                4,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::PRINT_SET_X,
+                11,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::PRINT_SET_Y,
+                12,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                l65::bridge::PRINT_SET_METRICS,
+                13,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let pr = l6_seq(t, &mut rng, 8);
+            let texts = l65::bridge::SLIDER_TEXTS;
+            l6_printf(
+                t,
+                l65::bridge::GU_PRINTF,
+                14,
+                &[(texts[0], 1), (texts[1], 1)],
+                pr,
+            );
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let args = [window, msg, param];
+            let slots = l6_arg_slots(t, &args);
+            let ebp = frame_ebp(&t.a, 3);
+            t.check(
+                "rcuiSliderProc_0093c860",
+                0x0093_c860,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l6m5::slider_proc(o, ebp, slots, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiSliderProc_0093c860", ebp, ebp - 0xc, 0xc);
+            l6_same_words(t, "rcuiSliderProc_0093c860 slots", ebp, slots, 0xc);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_motion_proc_matches_the_original() {
+    // no work area, no character; every button with the motion at its
+    // ends; paused, stepping and running; other messages
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b61);
+        for case in 0..300_u32 {
+            let w = if case % 23 == 7 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xa00)
+            };
+            if w != 0 {
+                let sel = rng.below(4);
+                t.w32(w + 0x8b0, sel);
+                let chr = if rng.chance(4) { u32::MAX } else { rng.next() };
+                t.w32(w + 0x870 + 4 * sel, chr);
+                // a motion inside the table (the draw reads its name)
+                let m = [0, 1, 0x68, 0x67, rng.below(0x69)][rng.below(5) as usize];
+                t.w32(w + 0x8d8, m);
+                for off in [0x8dc, 0x8e4] {
+                    t.w32(w + off, u32::from(rng.chance(2)));
+                }
+                t.w32(w + 0x8d4, [0, 0x100, rng.next()][rng.below(3) as usize]);
+            }
+            t.global(l65::bridge::RCUI_WORK, w);
+            for (sym, tag, n) in [
+                (l65::bridge::ADD_ITEMS, 1, 2),
+                (l65::bridge::END_MOTION, 2, 2),
+                (l65::bridge::CHR_HANDLE_INDEX, 3, 1),
+                (l65::bridge::SET_MOTION, 4, 2),
+                (l65::bridge::GET_SEQ_FRAME, 5, 1),
+                (l65::bridge::MOTION_STEP, 6, 1),
+                (l65::bridge::NUMBER_CREATE, 7, 5),
+                (l65::bridge::SET_MOTION_SPEED, 8, 2),
+                (l65::bridge::MOTION_GET_FRAME, 9, 1),
+                (l65::bridge::PRINT_SET_X, 10, 1),
+                (l65::bridge::PRINT_SET_Y, 11, 1),
+                (l65::bridge::GU_PRINTF, 12, 3),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l65::bridge::SET_TEXT, 13, 3, 2, 2, rng.next());
+            let (msg, param) = match rng.below(8) {
+                0..=2 => (0x8006, 0x98 + rng.below(9)),
+                3 => (0x800a, 0x9d + rng.below(4)),
+                4 | 5 => (0x8011, rng.next()),
+                6 => (l6_msg(&mut rng), rng.next()),
+                _ => (0x8003, rng.next()),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l65::bridge::MOTION_FRAME - 0x40);
+            t.check(
+                "rcuiMotionProc",
+                0x0093_5340,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m5::motion_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiMotionProc", ebp, ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_alpha_proc_matches_the_original() {
+    // no work area, system, map or layers; every button with each field
+    // value 0..3; the FIX entered or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b71);
+        for case in 0..300_u32 {
+            let w = if case % 29 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x500)
+            };
+            let k = rng.below(4);
+            if w != 0 {
+                t.w32(w + 0x288, k);
+            }
+            t.global(l65::bridge::RCUI_WORK, w);
+            let layers = l6_random(t, &mut rng, 0xc0 * 4);
+            let n = [0, 0xffff_ffff, 4][rng.below(3) as usize];
+            let list = t.words(&[0, if case % 5 == 0 { n } else { 4 }, layers]);
+            let map = t.words(&[0, 0, list]);
+            l6_map_system(t, &mut rng, map);
+            t.stub_sym(l65::bridge::ADD_ITEMS, 1, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(l65::bridge::MOVE_END, 2, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                l65::bridge::NUMBER_CREATE,
+                3,
+                false,
+                5,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let ok = if rng.chance(2) { 0 } else { rng.next() };
+            t.stub_sym(l65::bridge::NUMBER_IS_OK, 4, false, 1, 0, Ret::Val(ok));
+            // names by pointer (a field of 3 indexes past the name tables;
+            // the FIX text is compared in the frame)
+            t.stub_sym(l65::bridge::SET_TEXT, 5, false, 3, 0, Ret::Val(rng.next()));
+            let (msg, param) = match rng.below(7) {
+                0..=2 => (0x8006, 0x3d + rng.below(11)),
+                3 | 4 => (0x8011, rng.next()),
+                5 => (l6_msg(&mut rng), rng.next()),
+                _ => (0x8003, rng.next()),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l65::bridge::ALPHA_FRAME - 0x40);
+            t.check(
+                "rcuiAlphaProc",
+                0x0093_1050,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m5::alpha_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiAlphaProc", ebp, ebp - 0x18, 0x14);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 6 (left6) batch 4 (ffx_prender::l6_map6) ----
+
+use ffx_prender::l6_map6::{self as l66, bridge as l6m6};
+
+#[test]
+fn l6_menu_proc_matches_the_original() {
+    // no work area or system; every button with and without a scene and
+    // layers; the shutdown with the work area cleared under it; the draw
+    // with and without a map, both resolutions
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6b81);
+        for case in 0..300_u32 {
+            let w = if case % 31 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x100)
+            };
+            if w != 0 {
+                t.w32(w + 0x5c, u32::from(rng.chance(2)));
+            }
+            t.global(l66::RCUI_WORK, w);
+            let n = [0, 0xffff_ffff, 3][rng.below(3) as usize];
+            let list = l6_random(t, &mut rng, 0x100);
+            t.w32(list + 4, n);
+            t.w32(list + 0xf8, u32::from(rng.chance(2)));
+            let map = t.words(&[0, 0, list]);
+            l6_map_system(t, &mut rng, map);
+            for (sym, tag, k) in [
+                (l66::ADD_ITEMS, 1, 2),
+                (l66::MAKE_BASE_PATH, 2, 0),
+                (l66::WINDOW_CREATE, 3, 9),
+                (l66::LOAD_SET_TITLE, 4, 0),
+                (l66::FP_MEM_WIN_OPEN, 5, 0),
+                (l66::PRINT_SET_X, 7, 1),
+                (l66::PRINT_SET_Y, 8, 1),
+                (l66::PRINT_SET_BOLD, 9, 1),
+                (l66::GU_PRINTF, 10, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            // the shutdown: clears g_RcuiWork in some cases
+            let mut sd = vec![];
+            if rng.chance(2) {
+                sd.extend([0xc7, 0x05]);
+                sd.extend(t.rebase(l66::RCUI_WORK).to_le_bytes());
+                sd.extend(0_u32.to_le_bytes()); // mov dword [g_RcuiWork], 0
+            }
+            sd.push(0xb8);
+            sd.extend(rng.next().to_le_bytes()); // mov eax, x
+            sd.push(0xc3);
+            r5_code(t, l66::SHUTDOWN, &sd);
+            let (msg, param) = match rng.below(7) {
+                0 => (0x8006, 3),
+                1 | 2 => (0x8006, rng.below(14)),
+                3 => (0x8011, rng.next()),
+                4 => (0x8003, rng.next()),
+                5 => (l6_msg(&mut rng), rng.next()),
+                _ => (0x8001, rng.next()),
+            };
+            // the menu's holder is the work area's first word: a closing
+            // menu clears it, and the shutdown's own test runs before
+            let window = rng.next();
+            t.check(
+                "rcuiMenuProc_00935000",
+                0x0093_5000,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m6::menu_proc(o, window, msg, param)),
+            );
+            t.reset();
+        }
+    });
+}
