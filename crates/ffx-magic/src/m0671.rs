@@ -81,3 +81,48 @@ pub const END: Sig = Sig {
     calls: &[(0xd, Callee::Sig(&crate::s6_misc::OBJECTS_FREED))],
     imports: &[],
 };
+
+/// The effect's object started (0x10001480, no arguments): slot 583
+/// `(1)`; the object `O` (operand `+0x1b`) with the scale `K` (`+0x13`)
+/// ([`start_object_first`](crate::o6_fam_object::start_object_first),
+/// the `rel32` at `+0x20`; three never-written stack words under it,
+/// which it does not read); the callback word (`+0x2f` = the immediate
+/// at `+0x33`) and the byte `+0x39` = the immediate at `+0x3d`; slot
+/// 312 `(F, 0, 0, 0)` (`F` at `+0x47`) into `+0x51`. Returns slot 312's
+/// `eax`.
+pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 583);
+    // call width: 1
+    g.call(t, 0, &[1]);
+    let scale = g.read::<u32>(w(0x13));
+    // push 1; sub esp, 0xc; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x20),
+        esp: fr.esp.wrapping_sub(0x14),
+        edx: w(0x1b),
+        xmm: [0, 0, 0, u128::from(scale)],
+        ..Frame::default()
+    };
+    crate::o6_fam_object::start_object_first(g, img, callee.at, &callee);
+    g.write::<u32>(w(0x2f), w(0x33));
+    g.write::<u8>(w(0x39), w(0x3d) as u8);
+    let t = slot_target(g, w(0x25), 312);
+    // call width: 4 (the words under them: three never written, then
+    // slot 583's 1)
+    let h = g.call(t, 0, &[w(0x47), 0, 0, 0]).eax;
+    g.write::<u32>(w(0x51), h);
+    Ret::eax(h)
+}
+
+/// [`object_start`] (86 bytes, 1 overlay).
+pub const OBJECT_START: Sig = Sig {
+    len: 86,
+    hash: 0xd535_af70_adc2_b9b9,
+    calls: &[(
+        0x20,
+        Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0671_2C60),
+    )],
+    imports: &[],
+};

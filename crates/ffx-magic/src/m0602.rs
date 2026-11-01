@@ -3,7 +3,7 @@
 
 use crate::runtime::slot_target;
 use crate::sa_pool::give_back;
-use crate::{Callee, Frame, Game, Image, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// Whether the three sounds 0x301a..0x301c are all free (0x10006a20,
 /// internal, no arguments): for each, slot 5 `(id)` must say 0 and slot
@@ -89,5 +89,59 @@ pub const SOUNDS_STOP: Sig = Sig {
     len: 233,
     hash: 0x3e88_2253_0b7b_7d0a,
     calls: &[(0xda, Callee::Sig(&crate::sa_pool::GIVE_BACK))],
+    imports: &[],
+};
+
+/// The effect's start (0x10006650, an overlay table entry, cdecl
+/// `(arg)`): [`crate::m0599::start`]'s head (the object block, slots
+/// 556, 555, 331, the scale, the task ring, the payloads, slot 720), then
+/// the states 0x301a..0x301c ([`crate::s4_small::states_301a`]); slot 718
+/// `(D)`, slots 222 and 221 `(D, 0, 1000, 1)`, slot 718 `(E)`, slot 221
+/// `(E, 0, 1000, 1)`; a word 0. Each call sees the words the earlier
+/// ones left. Returns 0.
+pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let mut stack = crate::m0599::start_head(g, img, fr);
+    // ebp, the two words slot 720 left, the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0xc7),
+        esp: fr.esp.wrapping_sub(0x10),
+        ..Frame::default()
+    };
+    crate::s4_small::states_301a(g, img, &callee);
+    stack.insert(0, w(0xd1));
+    let t = slot_target(g, w(0xcc), 718);
+    // call width: 3
+    g.call(t, 0, &stack);
+    stack.splice(0..0, [w(0xf2), 0, 0x3e8, 1]);
+    let t = slot_target(g, w(0xde), 222);
+    // call width: 7
+    g.call(t, 0, &stack);
+    stack.splice(0..0, [w(0x10d), 0, 0x3e8, 1]);
+    let t = slot_target(g, w(0xf9), 221);
+    // call width: 11
+    g.call(t, 0, &stack);
+    stack.insert(0, w(0x119));
+    let t = slot_target(g, w(0x114), 718);
+    // call width: 12
+    g.call(t, 0, &stack[..12]);
+    let t = slot_target(g, w(0x126), 221);
+    // call width: 4 (the earlier words under them past the twelve the
+    // harness and the hosts pass)
+    g.call(t, 0, &[w(0x13a), 0, 0x3e8, 1]);
+    g.write::<u32>(w(0x145), 0);
+    Ret::eax(0)
+}
+
+/// [`start`] (337 bytes, 1 overlay).
+pub const START: Sig = Sig {
+    len: 337,
+    hash: 0x3e4e_76f7_3a7b_d05c,
+    calls: &[
+        (0x0d, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+        (0xc7, Callee::Sig(&crate::s4_small::STATES_301A)),
+    ],
     imports: &[],
 };

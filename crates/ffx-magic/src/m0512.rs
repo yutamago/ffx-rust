@@ -418,3 +418,108 @@ pub const GROUND: Sig = Sig {
     calls: &[(0x1c8, Callee::Sig(&crate::nodes::INSERT))],
     imports: &[],
 };
+
+/// [`crate::s3_nodes::particle_node_with`] called at `f + call` with `ecx`
+/// = `node`, the stack words `(a, _, _, index)` (the two in the middle
+/// never written); its `esp` is `m - 0x1c` (`m` the aligned frame).
+fn node_with<G: Game>(g: &mut G, img: &Image, call: u32, m: u32, node: u32, a: u32, index: u32) {
+    let sp = m.wrapping_sub(0x1c);
+    g.write::<u32>(sp + 4, a);
+    g.write::<u32>(sp + 0x10, index);
+    let callee = Frame {
+        at: img.rel32_target(call),
+        esp: sp,
+        ecx: node,
+        ..Frame::default()
+    };
+    crate::s3_nodes::particle_node_with(g, img, &callee);
+}
+
+/// The particles' task (0x10008b60, cdecl `(task)`, `r = task[1]`, its
+/// step `+0x18`, the wait `+0x20`; the steps from the jump table at
+/// operand `+0x37`):
+/// - 0: step 1 and on to 1;
+/// - 1: once the wait is down: with no `+0x1c`, one particle node
+///   (`r + 0x360`, `(r + 0x2c, 3)`); otherwise two (`r + 0x360`, `(r +
+///   0x2c, 4)`, and `r + 0x460`, `(r + 0x184, 6)`), `+0x54c` 1 and the
+///   word `+0x536` = `trunc(max(K2 - r[0x28] / K1, 0) * K3)`; then the
+///   next step and the wait `r[0x24] + 30`;
+/// - 2: once the wait is down, the next step;
+/// - 3: step 10000, then as 10000;
+/// - 10000: the task's node `*task` leaves its ring, step 20000.
+///
+/// The wait goes down at every exit. Returns `r[0x24] + 30` after the
+/// nodes, the node's next after the unlink, or the step.
+pub fn particles_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{div, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    // push ebp; and esp, -8; push esi; push edi
+    let m = fr.esp.wrapping_sub(4) & !7;
+    let step = |g: &mut G| {
+        let s = g.read::<u32>(r + 0x18);
+        g.write::<u32>(r + 0x18, s.wrapping_add(1));
+    };
+    let mut state = g.read::<u32>(r + 0x18);
+    if state == 3 {
+        g.write::<u32>(r + 0x18, 0x2710);
+        state = 0x2710;
+    }
+    let eax = match state {
+        0 | 1 => {
+            if state == 0 {
+                step(g);
+            }
+            if g.read::<i32>(r + 0x20) > 0 {
+                state
+            } else {
+                if g.read::<u32>(r + 0x1c) == 0 {
+                    node_with(g, img, f + 0xea, m, r + 0x360, r + 0x2c, 3);
+                } else {
+                    node_with(g, img, f + 0x6c, m, r + 0x360, r + 0x2c, 4);
+                    node_with(g, img, f + 0x86, m, r + 0x460, r + 0x184, 6);
+                    g.write::<u32>(r + 0x54c, 1);
+                    let x = sub(k(g, 0xa5), div(g.read::<f32>(r + 0x28), k(g, 0x9d)));
+                    // comiss 0, x; jbe: below 0 is 0 (unordered stays)
+                    let x = if 0.0 > x { 0.0 } else { x };
+                    let v = crate::s4_summon::trunc(mul(x, k(g, 0xbf)));
+                    g.write::<u16>(r + 0x536, v as u16);
+                }
+                let eax = g.read::<u32>(r + 0x24).wrapping_add(0x1e);
+                step(g);
+                g.write::<u32>(r + 0x20, eax);
+                eax
+            }
+        }
+        2 => {
+            if g.read::<i32>(r + 0x20) <= 0 {
+                step(g);
+            }
+            2
+        }
+        0x2710 => {
+            let next = crate::h6_setup::unlink_task(g, task);
+            g.write::<u32>(r + 0x18, 0x4e20);
+            next
+        }
+        _ => state,
+    };
+    let n = g.read::<u32>(r + 0x20);
+    g.write::<u32>(r + 0x20, n.wrapping_sub(1));
+    Ret::eax(eax)
+}
+
+/// [`particles_task`] (322 bytes, 1 overlay).
+pub const PARTICLES_TASK: Sig = Sig {
+    len: 322,
+    hash: 0xe730_d3da_a08c_ffe6,
+    calls: &[
+        (0x6c, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x86, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xea, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+    ],
+    imports: &[],
+};

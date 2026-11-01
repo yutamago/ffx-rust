@@ -3,7 +3,7 @@
 
 use crate::o4_more::push_head;
 use crate::runtime::slot_target;
-use crate::{Callee, Game, Image, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The effect's start (0x10003c60, internal, no arguments): the two
 /// buffer globals (operands `+0x16`/`+0x1a`, `+0x20`/`+0x24`) set, slot
@@ -39,5 +39,46 @@ pub const START: Sig = Sig {
         (0x33, Callee::Sig(&crate::l5_objhost::PART_INIT)),
         (0x5f, Callee::Sig(&crate::m0032::POP_NODE)),
     ],
+    imports: &[],
+};
+
+/// Starts the object of a record (0x10003ba0, cdecl `(rec)`): the
+/// object `O + 0x130 * rec[+0x2c]` (operand `+0x1a`) started with the
+/// scale `K` (`+0x0a`)
+/// ([`start_object_first`](crate::o6_fam_object::start_object_first),
+/// the `rel32` at `+0x24`;
+/// its four stack words are never written and it reads none), then its
+/// `+0xd0`, `+0xd4`, `+0xd8` and `+0xc4` from immediates. Returns the
+/// object.
+pub fn record_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let rec = fr.arg(g, 0);
+    let index = g.read::<u32>(rec.wrapping_add(0x2c));
+    let obj = index.wrapping_mul(0x130).wrapping_add(w(0x1a));
+    let scale = g.read::<u32>(w(0x0a));
+    // push ebp; push esi; sub esp, 0x10; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x24),
+        esp: fr.esp.wrapping_sub(0x1c),
+        edx: obj,
+        xmm: [0, 0, 0, u128::from(scale)],
+        ..Frame::default()
+    };
+    let eax = crate::o6_fam_object::start_object_first(g, img, callee.at, &callee);
+    for (d, op) in [(0xd0u32, 0x31u32), (0xd4, 0x3b), (0xd8, 0x45), (0xc4, 0x4f)] {
+        g.write::<u32>(obj.wrapping_add(d), w(op));
+    }
+    Ret::eax(eax)
+}
+
+/// [`record_object`] (86 bytes, 1 overlay).
+pub const RECORD_OBJECT: Sig = Sig {
+    len: 86,
+    hash: 0x6c1a_cc05_b16e_d629,
+    calls: &[(
+        0x24,
+        Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0369_2C10),
+    )],
     imports: &[],
 };

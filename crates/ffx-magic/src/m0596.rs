@@ -7,6 +7,7 @@
 use crate::l5_objhost::{self as host, ONE};
 use crate::ob_model::{Angle, ModelOps, Who, scale_model, st0_f32, who, wrap_once};
 use crate::runtime::slot_target;
+use crate::sb_sse::sub;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The part's set-up (0x10005060, cdecl `(buf)`): `pppInitData(G_PART,
@@ -335,8 +336,11 @@ pub fn place_pair<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
     let rot = st0_f32(g.call(s333, 0, &stack).st0);
     let ang = g.read::<f32>(w(0x9c)) - rot;
     let ang = wrap_once(g, img, f, ang, [0xab, 0xba, 0xc4, 0xd1]);
-    // junk read: [ebp-0x18] never written; 0 (brief 2026-10-24)
-    g.write::<u32>(state + 0x41c, 0);
+    // [ebp-0x18] is never written here: the stack's stale word, read as
+    // it is (the only caller, `start2`, leaves its part set-up's buffer
+    // there, and its port writes that word too)
+    let leftover = g.read::<u32>(l(0x18));
+    g.write::<u32>(state + 0x41c, leftover);
     g.write::<u32>(state + 0x410, 0);
     g.write::<f32>(state + 0x414, ang);
     g.write::<u32>(state + 0x418, 0);
@@ -378,7 +382,7 @@ pub fn place_pair<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         index: Index::Byte(selp),
     };
     let pos = l(0x24);
-    let moved = place_model(
+    place_model(
         g,
         img,
         f,
@@ -387,8 +391,8 @@ pub fn place_pair<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         ang,
     );
     // the null-matrix path handed `ebp - 0x24` to its slots; its fourth
-    // word is `ebp - 0x18` (else the junk read above: 0)
-    let l18 = if moved { g.read::<u32>(l(0x18)) } else { 0 };
+    // word is `ebp - 0x18` (else the stale word above)
+    let l18 = g.read::<u32>(l(0x18));
     for k in 0..4 {
         let v = g.read::<u32>(state + 0x420 + 4 * k);
         g.write::<u32>(state + 0x3c0 + 4 * k, v);
@@ -549,6 +553,226 @@ pub const PLACE_OBJECT: Sig = Sig {
         (0x7e, Callee::Sig(&crate::opu_parts::START_PART)),
         (0x88, Callee::Sig(&OBJECT_INIT)),
         (0x90, Callee::Sig(&host::POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// A task node (the pool take at the `rel32` `call`, owner `CB` at
+/// `cb`) of kind 1 or 2 appended to the task list (operands `ops`, as
+/// [`crate::r12h_start::append`] takes them). Returns the node.
+fn task_node<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (cb, call, kind): (u32, u32, u8),
+    ops: [u32; 5],
+) -> u32 {
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + call), img.word(f + cb));
+    g.write::<u8>(node.wrapping_add(0x18), kind);
+    crate::r12h_start::append(g, img, f, node, ops);
+    node
+}
+
+/// The 32-bit stores `mov dword [G], imm32` (10 bytes each) at the
+/// offsets `at`: `G` (`+2`) = the immediate (`+6`).
+fn stores<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
+    for &o in at {
+        g.write::<u32>(img.word(f + o + 2), img.word(f + o + 6));
+    }
+}
+
+/// The effect's second start (0x10007360, no arguments): four globals
+/// from immediates; slot 719 `(P, 8, 0)` into `G_H`; the part set up
+/// ([`part_init`] `(BUF)`); the pair placed ([`place_pair`]); the
+/// effect's turned matrix ([`crate::o4_effect::start_turned`]); the two
+/// script blocks' callbacks, words, halfwords and bytes; slot 271 `(4)`;
+/// two task nodes (kinds 1 and 2) appended to the task list, the records
+/// set up ([`crate::sa_misc::records_init_400`]) between them. Returns 0.
+pub fn start2<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    stores(g, img, f, &[0x14, 0x1e, 0x28, 0x32]);
+    let t = slot_target(g, w(0x01), 719);
+    // call width: 3
+    let h = g.call(t, 0, &[w(0x10), 8, 0]).eax;
+    g.write::<u32>(w(0x42), h);
+    // slot 719's 0 left; push BUF; the return address
+    let esp = fr.esp.wrapping_sub(0xc);
+    g.write::<u32>(esp + 8, 0);
+    g.write::<u32>(esp + 4, w(0x47));
+    part_init(g, img, img.rel32_target(f + 0x4c), w(0x47));
+    // the part set-up's frame leaves `BUF` in the word the placement
+    // reads without writing (its `ebp - 0x18`)
+    g.write::<u32>(esp.wrapping_sub(0x1c), w(0x47));
+    place_pair(g, img, img.rel32_target(f + 0x51), esp);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x56),
+        esp,
+        ..Frame::default()
+    };
+    crate::o4_effect::start_turned(g, img, &callee);
+    g.write::<u32>(w(0x61), w(0x65));
+    g.write::<u32>(w(0x6b), w(0x6f));
+    g.write::<u16>(w(0x76), w(0x7a) as u16);
+    g.write::<u8>(w(0x7e), w(0x82) as u8);
+    g.write::<u32>(w(0x85), w(0x89));
+    g.write::<u32>(w(0x8f), w(0x93));
+    g.write::<u16>(w(0x9a), w(0x9e) as u16);
+    g.write::<u8>(w(0xa2), w(0xa6) as u8);
+    let t = slot_target(g, w(0x5b), 271);
+    // call width: 3 (the part set-up's words under it)
+    g.call(t, 0, &[4, w(0x47), 0]);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xba), w(0xb5));
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    crate::r12h_start::append(g, img, f, node, [0xc0, 0xd4, 0xf3, 0xe6, 0xf3]);
+    crate::sa_misc::records_init_400(g, img, img.rel32_target(f + 0xf8), w(0xeb));
+    task_node(
+        g,
+        img,
+        f,
+        (0xfd, 0x102, 2),
+        [0x108, 0x11c, 0x129, 0x137, 0x13f],
+    );
+    Ret::eax(0)
+}
+
+/// [`start2`] (326 bytes, 1 overlay).
+pub const START2: Sig = Sig {
+    len: 326,
+    hash: 0xb0df_13a1_ef72_7e74,
+    calls: &[
+        (0x4c, Callee::Sig(&PART_INIT)),
+        (0x51, Callee::Sig(&PLACE_PAIR)),
+        (0x56, Callee::Sig(&crate::o4_effect::START_TURNED_0596_7060)),
+        (0xba, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xf8, Callee::Sig(&crate::sa_misc::RECORDS_INIT_400)),
+        (0x102, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// The summon's objects started (0x10007150, no arguments): with the
+/// record `R = *G_R`, the object `O = R + 0x260` placed
+/// ([`place_object`], scale `K`; four never-written stack words under
+/// it, which it does not read), its `+0xd0..+0xdc` from `R + 0x450..`,
+/// `+0xc4` from `R + 0x6d4`, `+0xd4 -= D`; `R + 0x444` = `R + 0x454`,
+/// `R + 0x424` and `+0x3c4` = it less `E`; the timer block `T = R +
+/// 0x48c` (0, 40, 0, 50, 1, 1, a halfword 0) on a task node (kind 1,
+/// callback `CB`, `+0x14` = `T`) appended to the task list; the record
+/// node `R + 0x4d8` ([`crate::o4_small::record_node`]) with flags 3 and
+/// its scale and count; the object `R + 0x578`'s colour and fields and
+/// its pool node ([`crate::s8_misc::object_node`]); the fade task on
+/// `R + 0x540` ([`crate::s3_misc::fade_task`], `edx` 16, two scales,
+/// 180). Returns the fade task's node.
+pub fn objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let scale = k(g, 0x04);
+    let r = g.read::<u32>(w(0x0c));
+    let obj = r.wrapping_add(0x260);
+    place_object(g, img, img.rel32_target(f + 0x1c), obj, scale);
+    for o in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(r.wrapping_add(0x450 + o));
+        g.write::<u32>(obj.wrapping_add(0xd0 + o), v);
+    }
+    let x = sub(g.read::<f32>(obj + 0xd4), k(g, 0x62));
+    let v = g.read::<u32>(r.wrapping_add(0x6d4));
+    g.write::<u32>(obj + 0xc4, v);
+    g.write::<f32>(obj + 0xd4, x);
+    let y = g.read::<f32>(r.wrapping_add(0x454));
+    let low = sub(y, k(g, 0x8d));
+    g.write::<f32>(r.wrapping_add(0x444), y);
+    g.write::<f32>(r.wrapping_add(0x424), low);
+    g.write::<f32>(r.wrapping_add(0x3c4), low);
+    let timer = r.wrapping_add(0x48c);
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x28),
+        (8, 0),
+        (0xc, 0x32),
+        (0x14, 1),
+        (0x10, 1),
+    ] {
+        g.write::<u32>(timer + o, v);
+    }
+    g.write::<u16>(timer + 0x18, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xdd), w(0x72));
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(0x14), timer);
+    crate::r12h_start::append(g, img, f, node, [0xe3, 0xfa, 0x11c, 0x10c, 0x11c]);
+    let rn = r.wrapping_add(0x4d8);
+    // push esi; push edi; the return address
+    let esp = fr.esp.wrapping_sub(0xc);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x121),
+        esp,
+        ecx: rn,
+        ..Frame::default()
+    };
+    crate::o4_small::record_node(g, img, &callee);
+    let v = g.read::<u16>(rn + 0x2c);
+    g.write::<u16>(rn + 0x2c, v | 3);
+    let o2 = r.wrapping_add(0x578);
+    for (o, v) in [
+        (4u32, 0x3f80_0000u32),
+        (8, 0x3f80_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4080_0000),
+        (0x18, 0),
+        (0x24, 0x16),
+    ] {
+        g.write::<u32>(rn + o, v);
+    }
+    g.write::<u32>(o2 + 0xf0, 0x4080_8080);
+    g.write::<u16>(o2 + 0x124, 2);
+    for (o, v) in [
+        (0x11cu32, u32::MAX),
+        (0x120, 0x5c),
+        (0x110, 0x76),
+        (0xf8, 0),
+        (0xfc, 0x3d4c_cccd),
+        (0x100, 0),
+    ] {
+        g.write::<u32>(o2 + o, v);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x1b4),
+        esp,
+        ecx: o2,
+        ..Frame::default()
+    };
+    crate::s8_misc::object_node(g, img, &callee);
+    // push 0xb4 under the return address
+    let esp = fr.esp.wrapping_sub(0x10);
+    g.write::<u32>(esp + 4, 0xb4);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x1d9),
+        esp,
+        ecx: r.wrapping_add(0x540),
+        edx: 0x10,
+        xmm: [
+            0,
+            u128::from(k(g, 0x1c4).to_bits()),
+            u128::from(k(g, 0x1bc).to_bits()),
+            0,
+        ],
+        ..Frame::default()
+    };
+    Ret::eax(crate::s3_misc::fade_task(g, img, &callee))
+}
+
+/// [`objects_start`] (483 bytes, 1 overlay).
+pub const OBJECTS_START: Sig = Sig {
+    len: 483,
+    hash: 0xab2a_3ffb_7ea7_33ad,
+    calls: &[
+        (0x1c, Callee::Sig(&PLACE_OBJECT)),
+        (0xdd, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x121, Callee::Sig(&crate::o4_small::RECORD_NODE_0596_3900)),
+        (0x1b4, Callee::Sig(&crate::s8_misc::OBJECT_NODE)),
+        (0x1d9, Callee::Sig(&crate::s3_misc::FADE_TASK)),
     ],
     imports: &[],
 };

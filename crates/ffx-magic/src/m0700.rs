@@ -19,8 +19,23 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// 349 `(model, clut)`. Each call sees the words the earlier ones left on
 /// the stack. Returns 0.
 pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_with(g, img, fr, 0)
+}
+
+/// [`start`] as `magic_0703` has it: the first program (`push [eax]`, a
+/// byte shorter: the code after `+0xed` one byte back).
+pub fn start_0703<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_with(g, img, fr, 1)
+}
+
+/// [`start`]'s body; `shift` 1: `push [eax]` (program 0) and the code
+/// after it one byte back, else `push [eax + d8]` (the `disp8` at
+/// `+0xef` picks the program).
+fn start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, shift: u32) -> Ret {
     let f = fr.at;
-    let w = |off: u32| img.word(f + off);
+    // operands after the program's push (+0xed) move back by `shift`
+    let o = |x: u32| if x > 0xed { x - shift } else { x };
+    let w = |off: u32| img.word(f + o(off));
     let r = |g: &G, off: u32| g.read::<u32>(w(off));
     let slot = |g: &mut G, p: &Pushes, slot: u32| {
         let t = slot_target(g, w(0xe), slot);
@@ -68,9 +83,14 @@ pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(r(g, 0xcc), w(0xd2));
     p.push(r(g, 0xdd));
     let table = slot(g, &p, 941);
-    let prog = g.read::<u32>(table.wrapping_add(0xc));
+    let entry = if shift == 0 {
+        crate::o4_parts::disp8(img, f + 0xef)
+    } else {
+        0
+    };
+    let prog = g.read::<u32>(table.wrapping_add(entry));
     let part = w(0xf6);
-    let start = img.rel32_target(f + 0xfb);
+    let start = img.rel32_target(f + o(0xfb));
     crate::opu_parts::start_part(g, img, start, part, 0x1000, prog, 1);
     for (src, dst) in [(0x102u32, 0x10cu32), (0x114, 0x12c), (0x133, 0x147)] {
         let (s, d) = (w(src), w(dst));
@@ -212,5 +232,38 @@ pub const FRAME: Sig = Sig {
     len: 422,
     hash: 0x6291_a50b_dc98_b1d9,
     calls: &[],
+    imports: &[],
+};
+
+/// [`start`] in `magic_0701` (0x10001110; program 2).
+pub const START_0701: Sig = Sig {
+    len: 449,
+    hash: 0xfdaf_4541_1550_055f,
+    calls: &[
+        (0x79, Callee::Sig(&crate::s4_misc::PART_START)),
+        (0xfb, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// [`start`] in `magic_0702` (0x10001110; program 1).
+pub const START_0702: Sig = Sig {
+    len: 449,
+    hash: 0xffe5_57a5_44ca_cb73,
+    calls: &[
+        (0x79, Callee::Sig(&crate::s4_misc::PART_START)),
+        (0xfb, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// [`start_0703`] (0x10001110, 448 bytes, 1 overlay).
+pub const START_0703: Sig = Sig {
+    len: 448,
+    hash: 0x542d_06c4_a50e_844d,
+    calls: &[
+        (0x79, Callee::Sig(&crate::s4_misc::PART_START)),
+        (0xfa, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
     imports: &[],
 };

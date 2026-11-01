@@ -2,6 +2,7 @@
 //! code).
 
 use crate::part_draw::{start_pair, start_part};
+use crate::runtime::slot_target;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -159,6 +160,182 @@ pub const START_B: Sig = Sig {
     calls: &[
         (0x44, Callee::Sig(&crate::opu_parts::START_PART)),
         (0x70, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// The effect's frame on its cues (0x10002a90, an overlay table entry, no
+/// arguments): nothing (returns 0) until the run flag (`+0x02`) is set;
+/// else `*G_P = ITEM`, slot 723 `(*G_A)` and slot 724 `(*G_B)` (the first
+/// call's word under it), `*G_Q = *G_V`; then for the cues 0..3 (slot
+/// 261 `(k)`): cue 0 runs timeline 1; cue 1 stops timeline 1 once (its
+/// flag) and runs timeline 2; cue 2 stops timeline 2 once and runs
+/// timeline 3; cue 3 stops timeline 3 and ends the effect (slot 214
+/// `(*G_E)`). Without cue 3 the frame counter counts up. Returns 1
+/// ([`crate::sb_misc::timeline_run`], [`crate::sb_misc::timeline_stop`]).
+pub fn cue_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    if g.read::<u32>(w(0x02)) == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(w(0x0d));
+    let a = g.read::<u32>(w(0x13));
+    g.write::<u32>(p, w(0x19));
+    let t = slot_target(g, w(0x1e), 723);
+    // call width: 1
+    g.call(t, 0, &[a]);
+    let b = g.read::<u32>(w(0x31));
+    let t = slot_target(g, w(0x2b), 724);
+    // call width: 2 (the first call's word under it)
+    g.call(t, 0, &[b, a]);
+    let q = g.read::<u32>(w(0x3f));
+    let v = g.read::<u32>(w(0x44));
+    g.write::<u32>(q, v);
+    let cue = |g: &mut G, table: u32, k: u32| {
+        let t = slot_target(g, w(table), 261);
+        // call width: 3 at most (the earlier calls' words under it)
+        let words = [k, b, a];
+        let n = if k == 0 { 3 } else { 1 };
+        g.call(t, 0, &words[..n]).eax != 0
+    };
+    let run = |g: &mut G, call: u32, tl: u32| {
+        crate::sb_misc::timeline_run(g, img, img.rel32_target(f + call), w(tl));
+    };
+    if cue(g, 0x4b, 0) {
+        run(g, 0x66, 0x61);
+    }
+    // (the cue's table, its stop-once flag and immediate, the timeline
+    // stopped and the stop's call, the timeline run and the run's call)
+    for (table, flag, stop, run_at) in [
+        (0x6bu32, 0x82u32, (0x8au32, 0x99u32), (0x9eu32, 0xa3u32)),
+        (0xa8, 0xbf, (0xc7, 0xd6), (0xdb, 0xe0)),
+    ] {
+        let k = if table == 0x6b { 1 } else { 2 };
+        if !cue(g, table, k) {
+            continue;
+        }
+        if g.read::<u32>(w(flag)) == 0 {
+            g.write::<u32>(w(flag + 0xe), w(flag + 0x12));
+            crate::sb_misc::timeline_stop(g, w(stop.0));
+        }
+        run(g, run_at.1, run_at.0);
+    }
+    if cue(g, 0xe5, 3) {
+        crate::sb_misc::timeline_stop(g, w(0xfb));
+        let e = g.read::<u32>(w(0x10b));
+        let t = slot_target(g, w(0x105), 214);
+        // call width: 1
+        g.call(t, 0, &[e]);
+        return Ret::eax(1);
+    }
+    let n = g.read::<u32>(w(0x122)).wrapping_add(1);
+    g.write::<u32>(w(0x122), n);
+    Ret::eax(1)
+}
+
+/// [`cue_frame`] (300 bytes, 1 overlay).
+pub const CUE_FRAME: Sig = Sig {
+    len: 300,
+    hash: 0x3f4c_1ff1_bf6e_5e3f,
+    calls: &[
+        (0x66, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0x99, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+        (0xa3, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0xd6, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+        (0xe0, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0x100, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+    ],
+    imports: &[],
+};
+
+/// An object drawn on the level look matrix (0x10001330, an overlay table
+/// entry, `(obj)`; a /GS frame with the matrix `M` at `ebp - 0x44`): the
+/// matrix ([`crate::s6_misc::level_look_matrix`], height `K`, scale `obj +
+/// 0x60`) from `*G_S`, or `*G_T` for an object not within the 0x80 bytes
+/// from `BASE`; slot 230 `(*G_A, M)`, slot 231 `(*G_C, *G_B, *G_A)` and
+/// slot 230 `(*G_D, *G_C)` (each seeing the earlier words, down to the
+/// saved register under slot 231's); `*G_P = ITEM`; slot 712 `(obj,
+/// 0x30)` with the game flag `*G_LOCK` 1 around it; when that is nonzero,
+/// `*G_P = ITEM`, slot 713 `(obj)`, `*G_P = ITEM` again and part 13 of
+/// slot 941 `((*G_Q)[0x10])` started on `obj`
+/// ([`crate::opu_parts::start_part`], `0x1000`, `(entry, 1)`). Returns 1.
+pub fn look_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, op: u32| g.read::<u32>(w(op));
+    let obj = fr.arg(g, 0);
+    let first = obj.wrapping_sub(w(0x2a)) & 0xffff_ff80 == 0;
+    let src = if first { r(g, 0x1a) } else { r(g, 0x3a) };
+    let ebp = fr.esp.wrapping_sub(4);
+    let m = ebp.wrapping_sub(0x44);
+    let height = g.read::<u32>(w(0x14));
+    let scale = g.read::<u32>(obj.wrapping_add(0x60));
+    // edi pushed under the frame; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x3f),
+        esp: m.wrapping_sub(8),
+        ecx: m,
+        edx: src,
+        xmm: [0, 0, u128::from(height), u128::from(scale)],
+        ..Frame::default()
+    };
+    crate::s6_misc::level_look_matrix(g, img, &callee);
+    let a = r(g, 0x4e);
+    let t = slot_target(g, w(0x48), 230);
+    // call width: 2
+    g.call(t, 0, &[a, m]);
+    // push esi (a saved register) under the next calls' words: they get
+    // the words above it
+    let words = [r(g, 0x77), r(g, 0x71), r(g, 0x6b)];
+    let t = slot_target(g, w(0x5b), 231);
+    // call width: 3
+    g.call(t, 0, &words);
+    let mut stack = words.to_vec();
+    stack.splice(0..0, [r(g, 0x8a), r(g, 0x7f)]);
+    let t = slot_target(g, w(0x84), 230);
+    // call width: 5
+    g.call(t, 0, &stack);
+    let p = r(g, 0x97);
+    g.write::<u32>(p, w(0x9f));
+    let lock = r(g, 0xa4);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    stack.splice(0..0, [obj, 0x30]);
+    let t = slot_target(g, w(0xb2), 712);
+    // call width: 7
+    let done = g.call(t, 0, &stack).eax;
+    let lock = r(g, 0xc0);
+    g.write::<u32>(lock, saved);
+    if done == 0 {
+        return Ret::eax(1);
+    }
+    let p = r(g, 0xcf);
+    g.write::<u32>(p, w(0xd6));
+    let t = slot_target(g, w(0xdb), 713);
+    // call width: 1
+    g.call(t, lock, &[obj]);
+    let p = r(g, 0xe8);
+    g.write::<u32>(p, w(0xee));
+    let q = r(g, 0xf3);
+    let d = g.read::<u32>(q.wrapping_add(0x10));
+    let t = slot_target(g, w(0xfb), 941);
+    // call width: 2 (slot 713's word under it)
+    let list = g.call(t, lock, &[d, obj]).eax;
+    let entry = g.read::<u32>(list.wrapping_add(0x34));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x116), obj, 0x1000, entry, 1);
+    Ret::eax(1)
+}
+
+/// [`look_draw`] (305 bytes, 1 overlay).
+pub const LOOK_DRAW: Sig = Sig {
+    len: 305,
+    hash: 0x09da_09f6_de05_5395,
+    calls: &[
+        (0x3f, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX)),
+        (0x116, Callee::Sig(&crate::opu_parts::START_PART)),
+        // __security_check_cookie
+        (0x129, Callee::Any),
     ],
     imports: &[],
 };

@@ -108,3 +108,44 @@ pub const START_OBJECT_FIRST_0126_22A0: Sig = Sig {
     ],
     imports: &[],
 };
+
+// round 12 (magic-r12-own-hi): copies with the round-4 state resets and the 30-frame owners reset
+
+/// [`start_object_first`] in `magic_0671` (0x10002c60, 225 bytes): the
+/// bare state reset.
+pub const START_OBJECT_FIRST_0671_2C60: Sig = Sig {
+    len: 225,
+    hash: 0x9340_ab38_6cfe_268d,
+    calls: &[
+        (0x7d, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x87, Callee::Sig(&crate::o4_state::RESET_STATE_BARE_0671_2B50)),
+        (0x8f, Callee::Sig(&crate::l5_objhost::POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// [`start_object_first`] in `magic_0475` (0x100027e0, 231 bytes): the
+/// state reset with its second word.
+pub const START_OBJECT_FIRST_0475_27E0: Sig = Sig {
+    len: 231,
+    hash: 0xa281_110d_314d_b0b4,
+    calls: &[
+        (0x7d, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x8d, Callee::Sig(&crate::o4_state::RESET_STATE_ARG_0475_26C0)),
+        (0x95, Callee::Sig(&crate::l5_objhost::POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// [`start_object_first`] in `magic_0492` (0x10001e90, 243 bytes): the
+/// 30-frame owners reset.
+pub const START_OBJECT_FIRST_0492_1E90: Sig = Sig {
+    len: 243,
+    hash: 0x59cf_2bf2_6360_f1b6,
+    calls: &[
+        (0x84, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x97, Callee::Sig(&crate::s4_small::RESET_OWNERS_30)),
+        (0x9f, Callee::Sig(&crate::l5_objhost::POOL_ALLOC)),
+    ],
+    imports: &[],
+};

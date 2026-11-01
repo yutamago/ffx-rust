@@ -255,3 +255,171 @@ pub const FRAME_BONE: Sig = Sig {
     calls: &[(0x10b, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// The look-matrix draw's tail after the matrix `M` is made (operands at
+/// `magic_0664` 0x10001e20's offsets plus `b`, those after slot 712
+/// plus `b2`): slot 230 `(*G_A, M)`, slot 231 `(*G_C, *G_B, *G_A)`, slot
+/// 230 `(*G_D, *G_C)`; `*G_P = ITEM`; slot 712 `(obj, 0x30)` with the game
+/// flag `*G_LOCK` 1 around it; when that is nonzero, `*G_P = ITEM`, slot
+/// 713 `(obj)`, `*G_P = ITEM` again and part 13 of the list slot 941
+/// `((*G_Q)[0x10])` gives started on `obj`
+/// ([`crate::opu_parts::start_part`], `0x1000`, `(entry, 1)`). Each call
+/// sees the words the earlier ones left (the saved register under them
+/// is left out: no callee reads that deep). Returns 1.
+fn look_tail<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (obj, m): (u32, u32),
+    (b, b2): (u32, u32),
+) -> Ret {
+    let w = |o: u32| img.word(f + b + o);
+    let r = |g: &G, o: u32| g.read::<u32>(w(o));
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[m, r(g, 0x3b)]);
+    let t = slot_target(g, w(0x35), 230);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, t, 0);
+    s.push_all(&[r(g, 0x49), r(g, 0x54), r(g, 0x60)]);
+    let t = slot_target(g, w(0x4e), 231);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, t, 0);
+    s.push_all(&[r(g, 0x68), r(g, 0x73)]);
+    let t = slot_target(g, w(0x6d), 230);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, t, 0);
+    let p = r(g, 0x80);
+    s.push(0x30);
+    g.write::<u32>(p, w(0x88));
+    let lock = r(g, 0x8d);
+    s.push(obj);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0x9b), 712);
+    // call width: 12 (Pushes caps the words at 12)
+    let done = s.call(g, t, 0).eax;
+    let lock = r(g, 0xa9);
+    g.write::<u32>(lock, saved);
+    if done == 0 {
+        return Ret::eax(1);
+    }
+    let w2 = |o: u32| img.word(f + b2 + o);
+    let p = g.read::<u32>(w2(0xb7));
+    g.write::<u32>(p, w2(0xbe));
+    let t = slot_target(g, w2(0xc3), 713);
+    // call width: 1
+    g.call(t, lock, &[obj]);
+    let p = g.read::<u32>(w2(0xd0));
+    g.write::<u32>(p, w2(0xd6));
+    let q = g.read::<u32>(w2(0xdb));
+    let d = g.read::<u32>(q.wrapping_add(0x10));
+    let t = slot_target(g, w2(0xe3), 941);
+    // call width: 2 (slot 713's word under it)
+    let list = g.call(t, lock, &[d, obj]).eax;
+    let entry = g.read::<u32>(list.wrapping_add(0x34));
+    crate::opu_parts::start_part(
+        g,
+        img,
+        img.rel32_target(f + b2 + 0xfe),
+        obj,
+        0x1000,
+        entry,
+        1,
+    );
+    Ret::eax(1)
+}
+
+/// The level look matrix (`magic_0664`'s
+/// [`crate::s6_misc::level_look_matrix`], the `rel32` at `call`) into
+/// `M` (`ebp - 0x44`) from the source `src`, the height `K` (operand
+/// `+0x14`) and the scale `obj + 0x60`; `ebp` = `esp - 4` at the entry,
+/// `pushed` words under the 0x44-byte frame.
+fn look_matrix<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    call: u32,
+    src: u32,
+    pushed: u32,
+) -> (u32, u32) {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let m = ebp.wrapping_sub(0x44);
+    let height = g.read::<u32>(img.word(f + 0x14));
+    let scale = g.read::<u32>(obj.wrapping_add(0x60));
+    let callee = Frame {
+        at: img.rel32_target(f + call),
+        esp: m.wrapping_sub(4 * pushed + 4),
+        ecx: m,
+        edx: src,
+        xmm: [0, 0, u128::from(height), u128::from(scale)],
+        ..Frame::default()
+    };
+    crate::s6_misc::level_look_matrix(g, img, &callee);
+    (obj, m)
+}
+
+/// An object drawn on the level look matrix (0x10001e20, an overlay
+/// table entry, `(obj)`; a /GS frame of 0x44 bytes): the matrix from
+/// `*G_S` (`+0x1a`), then [`look_tail`]. Returns 1.
+pub fn look_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let src = g.read::<u32>(img.word(fr.at + 0x1a));
+    // esi and edi pushed under the frame
+    let (obj, m) = look_matrix(g, img, fr, 0x2c, src, 2);
+    look_tail(g, img, fr.at, (obj, m), (0, 0))
+}
+
+/// [`look_draw`] (282 bytes, 1 overlay).
+pub const LOOK_DRAW: Sig = Sig {
+    len: 282,
+    hash: 0x3672_a1d3_072a_6bdb,
+    calls: &[
+        (0x2c, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX)),
+        (0xfe, Callee::Sig(&crate::opu_parts::START_PART)),
+        // __security_check_cookie
+        (0x112, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// An object drawn on the level look matrix, fading out (0x100014e0, an
+/// overlay table entry, `(obj)`; a /GS frame of 0x44 bytes): the object
+/// within the 0x80 bytes from `BASE` (`+0x24`) takes the matrix from
+/// `*G_S` (`+0x34`) and, once the frame counter `*G_N` (`+0x3f`) is past
+/// 0xb90, its halfword `+0x76` drops by 409; below 1 the call ends there
+/// (returns 0). Any other object takes the matrix from `*G_T` (`+0x6c`).
+/// Then [`look_tail`] (the operands 0x46 and 0x47 bytes on). Returns 1.
+pub fn look_draw_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let first = obj.wrapping_sub(img.word(f + 0x24)) & 0xffff_ff80 == 0;
+    // edi pushed under the frame
+    let (src, call) = if first { (0x34, 0x39) } else { (0x6c, 0x71) };
+    let src = g.read::<u32>(img.word(f + src));
+    let (obj, m) = look_matrix(g, img, fr, call, src, 1);
+    if first && g.read::<i32>(img.word(f + 0x3f)) > 0xb90 {
+        let v = g.read::<u16>(obj.wrapping_add(0x76)).wrapping_add(0xfe67);
+        g.write::<u16>(obj.wrapping_add(0x76), v);
+        if v.cast_signed() < 1 {
+            return Ret::eax(0);
+        }
+    }
+    look_tail(g, img, f, (obj, m), (0x46, 0x47))
+}
+
+/// [`look_draw_fade`] (352 bytes, 1 overlay).
+pub const LOOK_DRAW_FADE: Sig = Sig {
+    len: 352,
+    hash: 0xace1_b6a7_4b11_12e5,
+    calls: &[
+        (0x39, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX)),
+        // __security_check_cookie
+        (0x62, Callee::Any),
+        (0x71, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX)),
+        (0x145, Callee::Sig(&crate::opu_parts::START_PART)),
+        // __security_check_cookie
+        (0x158, Callee::Any),
+    ],
+    imports: &[],
+};

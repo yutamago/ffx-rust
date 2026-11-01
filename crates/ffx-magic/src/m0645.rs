@@ -208,3 +208,235 @@ pub const MOVER: Sig = Sig {
     calls: &[(0xd0, Callee::Any)],
     imports: &[],
 };
+
+/// The caster's fade task (0x10006f50, a task callback, cdecl `(task)`,
+/// `S = task[1]`; the argument's word reused as scratch): two random
+/// offsets `(K2 - (slot 307 - K1)) * K3` added to `S+0x28`/`+0x2c` into
+/// `S+0x4c`/`+0x54`; then by the step `S+0x18`: 0 starts the wait 30; 1
+/// waits, then step 20; 20 sets the fade (`+0x24` 0.005, `+0x20` 0.05,
+/// the wait 180) and becomes 21; 21 waits, then fades the character
+/// ([`crate::l3_common::chr_fade`] on `[S[0x1084], 0, 0x40]` at `ebp -
+/// 0xc`), `+0x107c` 1, the wait 64 and step 22; 22 waits, then step
+/// 0x2710: the task's node leaves its ring and the step is 0x4e20. The
+/// wait `S+0x1c` drops by one on every way out. Returns the `eax` the
+/// original leaves.
+pub fn caster_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    caster_fade_with(g, img, fr, false)
+}
+
+/// [`caster_fade`] with the alpha ramp (0x100072c0): the record at
+/// `+0x1058` and the flag at `+0x1050`; 21 waiting and 22 also step the
+/// ramp (`+0x20 += +0x24`, `+0x50 +=` it, the halfword-sized counter
+/// `+0x80 += 0x20`) before their wait, and 21's fade goes on to it.
+pub fn caster_fade_ramp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    caster_fade_with(g, img, fr, true)
+}
+
+/// The two fades' body (`ramp`: the 0x100072c0 copy).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+fn caster_fade_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, ramp: bool) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 4);
+    let a = fr.esp + 4;
+    let mut eax = 0;
+    for (table, ops, src, dst) in [
+        (0x07u32, [0x27u32, 0x2f, 0x40], 0x28u32, 0x4cu32),
+        (0x34, [0x62, 0x6a, 0x76], 0x2c, 0x54),
+    ] {
+        let t = slot_target(g, w(table), 307);
+        // call width: 0
+        let out = g.call(t, 0, &[]);
+        eax = out.eax;
+        let r = crate::ob_model::st0_f32(out.st0);
+        g.write::<f32>(a, r);
+        let x = sub(r, k(g, ops[0]));
+        let v = mul(sub(k(g, ops[1]), x), k(g, ops[2]));
+        let v = add(v, g.read::<f32>(s + src));
+        g.write::<f32>(s + dst, v);
+    }
+    // the ramp's step (0x100072c0), then the wait: true when it runs out
+    let ramp_step = |g: &mut G| -> bool {
+        let r = add(g.read::<f32>(s + 0x24), g.read::<f32>(s + 0x20));
+        g.write::<f32>(s + 0x20, r);
+        let c = g.read::<u32>(s + 0x80).wrapping_add(0x20);
+        g.write::<u32>(s + 0x80, c);
+        let v = add(g.read::<f32>(s + 0x50), r);
+        g.write::<f32>(s + 0x50, v);
+        g.read::<i32>(s + 0x1c) <= 0
+    };
+    let (rec_op, flag_op, call) = if ramp {
+        (0xccu32, 0xeeu32, 0xe5u32)
+    } else {
+        (0xd0, 0xf2, 0xe9)
+    };
+    loop {
+        let step = g.read::<u32>(s + 0x18);
+        let wait = g.read::<i32>(s + 0x1c);
+        if step > 0x15 {
+            if step == 0x16 {
+                if ramp {
+                    if !ramp_step(g) {
+                        break;
+                    }
+                } else if wait > 0 {
+                    break;
+                }
+                g.write::<u32>(s + 0x18, 0x2710);
+                continue;
+            }
+            if step == 0x2710 {
+                eax = crate::r12h_volley::unring(g, g.read::<u32>(task));
+                g.write::<u32>(s + 0x18, 0x4e20);
+            }
+            break;
+        }
+        if step != 0x15 {
+            match step {
+                0 => {
+                    g.write::<u32>(s + 0x18, 1);
+                    g.write::<u32>(s + 0x1c, 0x1d);
+                    return Ret::eax(0);
+                }
+                1 => {
+                    eax = 0;
+                    if wait > 0 {
+                        break;
+                    }
+                    g.write::<u32>(s + 0x18, 0x14);
+                    continue;
+                }
+                0x14 => {
+                    eax = 0x15;
+                    g.write::<u32>(s + 0x24, 0x3ba3_d70a);
+                    g.write::<u32>(s + 0x20, 0x3d4c_cccd);
+                    g.write::<u32>(s + 0x1c, 0xb4);
+                    g.write::<u32>(s + 0x18, 0x15);
+                }
+                _ => {
+                    eax = step.wrapping_sub(0x14);
+                    break;
+                }
+            }
+        }
+        if g.read::<i32>(s + 0x1c) <= 0 {
+            let rec = fr.esp.wrapping_sub(0x10);
+            let chr = g.read::<u32>(s.wrapping_add(w(rec_op)));
+            for (i, v) in (0u32..).zip([chr, 0, 0x40]) {
+                g.write::<u32>(rec + 4 * i, v);
+            }
+            eax = crate::l3_common::chr_fade(g, img, img.rel32_target(f + call), rec);
+            g.write::<u32>(s + 0x18, 0x16);
+            g.write::<u32>(s.wrapping_add(w(flag_op)), 1);
+            g.write::<u32>(s + 0x1c, 0x40);
+        }
+        if ramp && ramp_step(g) {
+            g.write::<u32>(s + 0x18, 0x2710);
+            continue;
+        }
+        break;
+    }
+    let wait = g.read::<u32>(s + 0x1c).wrapping_sub(1);
+    g.write::<u32>(s + 0x1c, wait);
+    Ret::eax(eax)
+}
+
+/// [`caster_fade`] (369 bytes, 1 overlay).
+pub const CASTER_FADE: Sig = Sig {
+    len: 369,
+    hash: 0x25be_f89c_276a_46e2,
+    calls: &[(0xe9, Callee::Sig(&crate::l3_common::CHR_FADE))],
+    imports: &[],
+};
+
+/// [`caster_fade_ramp`] (405 bytes, 1 overlay).
+pub const CASTER_FADE_RAMP: Sig = Sig {
+    len: 405,
+    hash: 0xbebc_5fd0_45f2_5dc8,
+    calls: &[(0xe5, Callee::Sig(&crate::l3_common::CHR_FADE))],
+    imports: &[],
+};
+
+/// A colour node's visit (0x100033d0, thiscall: `ecx` = the visit group
+/// `V`; a /GS frame): the walk over the node's children
+/// ([`crate::nodes::walk`]); when it ran (`V+4` bit 0) and the node `N`
+/// (`V[0]`) has steps left (`+0x54`), its colour `+0x1c..+0x28` moves by
+/// `+0x3c.. * +0x50` and its integer parts make the colour word `((c3 <<
+/// 8 | c2) << 8 | c1) << 8 | c0`; `+0x4c += +0x50`; slot 252 `(*G_S,
+/// colour, the byte +0x5a, 0x80)` into `G_S` (the byte's word on the frame
+/// has three never-written bytes: 0, brief 2026-10-24); once `+0x4c`
+/// reaches `K`, slot 234 `(N + 0x1c, N + 0x2c, N + 0x3c)`, a step fewer
+/// and `+0x4c` 0. With no steps left and `+0x58` bit 0, the node leaves
+/// ([`crate::sa_misc::leave`]). Returns the `eax` the original leaves.
+pub fn colour_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let v = fr.ecx;
+    // eax: the frame's cookie word (`*G_COOKIE ^ ebp`) when the walk starts
+    let cookie = g.read::<u32>(w(0x07)) ^ fr.esp.wrapping_sub(4);
+    let (eax, _) = crate::nodes::walk(g, v, v, cookie);
+    if g.read::<u8>(v + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(v);
+    if g.read::<u32>(n + 0x54) == 0 {
+        if g.read::<u8>(n + 0x58) & 1 == 0 {
+            return Ret::eax(eax);
+        }
+        return Ret::eax(crate::sa_misc::leave(g, n, eax));
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let rate = g.read::<f32>(n + 0x50);
+    let mut parts = [0u32; 4];
+    for (i, part) in (0u32..).zip(parts.iter_mut()) {
+        let x = add(
+            mul(g.read::<f32>(n + 0x3c + 4 * i), rate),
+            g.read::<f32>(n + 0x1c + 4 * i),
+        );
+        *part = crate::s4_summon::trunc(x);
+        g.write::<f32>(n + 0x1c + 4 * i, x);
+        g.write::<u32>(ebp.wrapping_sub(0x14 - 4 * i), *part);
+    }
+    // junk read: [ebp-0x17..-0x15] never written; 0 (brief 2026-10-24)
+    let byte = u32::from(g.read::<u8>(n + 0x5a));
+    g.write::<u32>(ebp.wrapping_sub(0x18), byte);
+    let t = add(g.read::<f32>(n + 0x50), g.read::<f32>(n + 0x4c));
+    let colour = (((parts[3] << 8 | parts[2]) << 8 | parts[1]) << 8) | parts[0];
+    g.write::<f32>(n + 0x4c, t);
+    let s = g.read::<u32>(w(0xcf));
+    let tbl = slot_target(g, w(0xc9), 252);
+    // call width: 4
+    let r = g.call(tbl, 0, &[s, colour, byte, 0x80]).eax;
+    g.write::<u32>(w(0xeb), r);
+    let k = g.read::<f32>(w(0xe6));
+    // comiss + jb: below or unordered keeps going
+    let x = g.read::<f32>(n + 0x4c);
+    if x < k || x.is_nan() || k.is_nan() {
+        return Ret::eax(r);
+    }
+    let tbl = slot_target(g, w(0xfa), 234);
+    // call width: 3
+    let r = g.call(tbl, 0, &[n + 0x1c, n + 0x2c, n + 0x3c]).eax;
+    let left = g.read::<u32>(n + 0x54).wrapping_sub(1);
+    g.write::<u32>(n + 0x54, left);
+    g.write::<u32>(n + 0x4c, 0);
+    Ret::eax(r)
+}
+
+/// [`colour_visit`] (323 bytes, 1 overlay).
+pub const COLOUR_VISIT: Sig = Sig {
+    len: 323,
+    hash: 0x948f_3f6a_06a7_bd08,
+    calls: &[
+        // __security_check_cookie
+        (0x11d, Callee::Any),
+        (0x12e, Callee::Sig(&crate::sa_misc::LEAVE)),
+        // __security_check_cookie
+        (0x13b, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -57,6 +57,9 @@ pub mod r11_effect;
 pub mod r11_fades;
 pub mod r11_misc;
 pub mod r11_objects;
+pub mod r12h_fam;
+pub mod r12h_start;
+pub mod r12h_volley;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -284,6 +287,7 @@ pub mod m0447;
 pub mod m0449;
 pub mod m0450;
 pub mod m0459;
+pub mod m0472;
 pub mod m0473;
 pub mod m0474;
 pub mod m0475;
@@ -344,6 +348,7 @@ pub mod m0591;
 pub mod m0596;
 pub mod m0597;
 pub mod m0598;
+pub mod m0599;
 pub mod m0601;
 pub mod m0602;
 pub mod m0604;
@@ -369,6 +374,7 @@ pub mod m0672;
 pub mod m0673;
 pub mod m0680;
 pub mod m0684;
+pub mod m0688;
 pub mod m0689;
 pub mod m0700;
 pub mod m0704;
@@ -1117,6 +1123,76 @@ ports! {
     "m0689 cue start" => m0638::CUE_START_0689, m0638::cue_start;
     "m0689 start" => m0689::START, m0689::start;
     "m0591 cue start" => m0591::CUE_START, m0591::cue_start;
+    // round 12 (magic-r12-own-hi)
+    "m0469 cue start" => m0638::CUE_START_0469, m0638::cue_start;
+    "m0551 cue start" => m0638::CUE_START_0551, m0638::cue_start;
+    "m0470 cue start" => m0638::CUE_START_0470, m0638::cue_start_1;
+    "m0554 cue start" => m0638::CUE_START_0554, m0638::cue_start_1;
+    "m0590 cue start" => m0638::CUE_START_0590, m0638::cue_start_1;
+    "m0479 cue start" => m0638::CUE_START_0479, m0638::cue_start_0479;
+    "m0671 cue start" => m0638::CUE_START_0671, m0638::cue_start_0671;
+    "m0479 record object" => m0479::RECORD_OBJECT, m0479::record_object;
+    "m0671 object start" => m0671::OBJECT_START, m0671::object_start;
+    "m0472 cue start" => m0638::CUE_START_0472, m0638::cue_start;
+    "m0472 start" => m0472::START, m0472::start;
+    "m0475 cue start" => m0638::CUE_START_0475, m0638::cue_start;
+    "m0475 start" => m0475::START, m0475::start;
+    "m0701 start" => m0700::START_0701, m0700::start;
+    "m0702 start" => m0700::START_0702, m0700::start;
+    "m0703 start" => m0700::START_0703, m0700::start_0703;
+    "m0499 tick" => m0499::TICK, m0499::tick;
+    "m0537 restart" => m0537::RESTART, m0537::restart;
+    "m0540 part start of 4" => m0540::PART_START_OF4, m0540::part_start_of4;
+    "m0540 part start 5" => m0540::PART_START_5, m0540::part_start_5;
+    "m0688 cue start" => m0638::CUE_START_0688, m0638::cue_start;
+    "m0688 start" => m0688::START, m0688::start;
+    "m0688 script step" => m0688::SCRIPT_STEP, m0688::script_step;
+    "m0688 spark" => m0688::SPARK, m0688::spark;
+    "m0476 task" => m0476::TASK, m0476::task;
+    "m0476 start" => m0476::START, m0476::start;
+    "m0476 cue start" => m0638::CUE_START_0476, m0638::cue_start;
+    "r12h short volley task 0495" => r12h_volley::SHORT_VOLLEY_TASK_0495, r12h_volley::short_volley_task;
+    "r12h short volley task 0500" => r12h_volley::SHORT_VOLLEY_TASK_0500, r12h_volley::short_volley_task;
+    "m0589 objects by record 3c50" => m0589::OBJECTS_BY_RECORD_3C50, m0589::objects_by_record;
+    "m0589 objects by record 3e00" => m0589::OBJECTS_BY_RECORD_3E00, m0589::objects_by_record;
+    "m0488 spark take" => m0488::SPARK_TAKE, m0488::spark_take;
+    "r12h object swap 0511" => r12h_fam::OBJECT_SWAP_0511, r12h_fam::object_swap;
+    "r12h object swap 0589" => r12h_fam::OBJECT_SWAP_0589, r12h_fam::object_swap;
+    "m0599 start" => m0599::START, m0599::start;
+    "m0599 sprites setup" => m0599::SPRITES_SETUP, m0599::sprites_setup;
+    "m0645 caster fade" => m0645::CASTER_FADE, m0645::caster_fade;
+    "m0645 caster fade (ramp)" => m0645::CASTER_FADE_RAMP, m0645::caster_fade_ramp;
+    "m0669 spark record" => m0669::SPARK_RECORD, m0669::spark_record;
+    "m0669 spark record (short)" => m0669::SPARK_RECORD_SHORT, m0669::spark_record_short;
+    "m0673 effect start" => m0673::EFFECT_START, m0673::effect_start;
+    "m0673 cue start" => m0638::CUE_START_0673, m0638::cue_start;
+    "m0673 drift record" => m0673::DRIFT_RECORD, m0673::drift_record;
+    "m0673 timers start" => m0673::TIMERS_START, m0673::timers_start;
+    "m0666 cue frame" => m0666::CUE_FRAME, m0666::cue_frame;
+    "m0666 look draw" => m0666::LOOK_DRAW, m0666::look_draw;
+    "m0645 colour visit" => m0645::COLOUR_VISIT, m0645::colour_visit;
+    "m0602 start" => m0602::START, m0602::start;
+    "m0661 cues" => m0661::CUES, m0661::cues;
+    "r12h three objects 0511" => r12h_fam::THREE_OBJECTS_0511, r12h_fam::three_objects_0511;
+    "r12h three objects 0589" => r12h_fam::THREE_OBJECTS_0589, r12h_fam::three_objects_0589;
+    "m0505 spark record" => m0505::SPARK_RECORD, m0505::spark_record;
+    "m0512 particles task" => m0512::PARTICLES_TASK, m0512::particles_task;
+    "m0664 look draw" => m0664::LOOK_DRAW, m0664::look_draw;
+    "m0664 look draw fade" => m0664::LOOK_DRAW_FADE, m0664::look_draw_fade;
+    "m0672 cue start" => m0638::CUE_START_0672, m0638::cue_start;
+    "m0672 start" => m0672::START, m0672::start;
+    "m0672 task" => m0672::TASK, m0672::task;
+    "m0672 packed frame" => m0672::PACKED_FRAME, m0672::packed_frame;
+    "m0672 spawn 18e0" => m0672::SPAWN_18E0, m0672::spawn;
+    "m0672 spawn 1a30" => m0672::SPAWN_1A30, m0672::spawn;
+    "m0596 cue start" => m0638::CUE_START_0596, m0638::cue_start;
+    "m0596 start 2" => m0596::START2, m0596::start2;
+    "m0596 objects start" => m0596::OBJECTS_START, m0596::objects_start;
+    "r12h objects start 0469" => r12h_start::OBJECTS_START_0469, r12h_start::objects_start;
+    "r12h objects start 0551" => r12h_start::OBJECTS_START_0551, r12h_start::objects_start;
+    "r12h objects start b 0470" => r12h_start::OBJECTS_START_B_0470, r12h_start::objects_start_b_up;
+    "r12h objects start b 0554" => r12h_start::OBJECTS_START_B_0554, r12h_start::objects_start_b_up;
+    "r12h objects start b 0590" => r12h_start::OBJECTS_START_B_0590, r12h_start::objects_start_b_down;
     "m0591 scale up a" => m0591::SCALE_UP_A, m0591::scale_up_a;
     "m0591 scale up b" => m0591::SCALE_UP_B, m0591::scale_up_b;
     "m0528 step" => m0528::STEP, m0528::step;
@@ -2619,6 +2695,8 @@ ports! {
     "summon load objects" => s7_misc::SUMMON_LOAD_OBJECTS, s7_misc::summon_load_objects;
     "staged volley task" => s7_misc::STAGED_VOLLEY_TASK, s7_misc::staged_volley_task;
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
+    "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
+    "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3781,6 +3859,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o6 fam object start_object_first 0166@1fd0",
         &o6_fam_object::START_OBJECT_FIRST_0166_1FD0,
+    ),
+    (
+        "o6 fam object start_object_first 0671@2c60",
+        &o6_fam_object::START_OBJECT_FIRST_0671_2C60,
+    ),
+    (
+        "o6 fam object start_object_first 0475@27e0",
+        &o6_fam_object::START_OBJECT_FIRST_0475_27E0,
+    ),
+    (
+        "o6 fam object start_object_first 0492@1e90",
+        &o6_fam_object::START_OBJECT_FIRST_0492_1E90,
     ),
     (
         "o6 fam bone bone_node_setup 0201@6f20",

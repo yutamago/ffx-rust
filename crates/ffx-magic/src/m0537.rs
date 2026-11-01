@@ -271,3 +271,44 @@ pub const DRAW_ENTRY: Sig = Sig {
     calls: &[(0x19, Callee::Sig(&DRAW))],
     imports: &[],
 };
+
+/// A part restarted from its record (0x100010c0, cdecl `(rec)`): `i =
+/// (rec - R) >> 2` (`R` at `+0x0a`; arithmetic), the part `P + 0x80 i`
+/// (`+0x18`) started ([`start`]); the record's vector `V + 0x10 i`
+/// (`+0x28`) scaled: `x *= KX` (`+0x30`), `y *= KY`, `z *= KY` (`+0x4b`,
+/// `+0x6f`); slot 325 `(P + 0x80 i + 0x40, V + 0x10 i)`. Returns 1.
+pub fn restart<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let rec = fr.arg(g, 0);
+    let i = (rec.wrapping_sub(w(0x0a)).cast_signed() >> 2).cast_unsigned();
+    let part = i << 7;
+    start(
+        g,
+        img,
+        img.rel32_target(f + 0x1d),
+        part.wrapping_add(w(0x18)),
+    );
+    let v = i << 4;
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let x = mul(g.read::<f32>(v.wrapping_add(w(0x28))), k(g, 0x30));
+    let vec = v.wrapping_add(w(0x36));
+    g.write::<f32>(vec, x);
+    let y = mul(g.read::<f32>(v.wrapping_add(w(0x43))), k(g, 0x4b));
+    let at = part.wrapping_add(w(0x51));
+    g.write::<f32>(v.wrapping_add(w(0x5f)), y);
+    let z = mul(g.read::<f32>(v.wrapping_add(w(0x67))), k(g, 0x6f));
+    g.write::<f32>(v.wrapping_add(w(0x77)), z);
+    let t = slot_target(g, w(0x57), 325);
+    // call width: 2
+    g.call(t, 0, &[at, vec]);
+    Ret::eax(1)
+}
+
+/// [`restart`] (143 bytes, 1 overlay).
+pub const RESTART: Sig = Sig {
+    len: 143,
+    hash: 0xa1a3_728d_2071_21db,
+    calls: &[(0x1d, Callee::Sig(&START))],
+    imports: &[],
+};

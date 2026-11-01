@@ -29,56 +29,61 @@ fn recs(t: &mut Twin, slots: &[(u32, usize)]) {
     }
 }
 
-/// `m0700::start` (0x10001110): the actor's mode byte through slot 218,
-/// the lock held around slot 711, the part data's programs, the clut.
+/// `m0700::start` (0x10001110) and its copies in `magic_0701`, `0702`
+/// (other programs) and `0703` (program 0, the code after it a byte
+/// back): the actor's mode byte through slot 218, the lock held around
+/// slot 711, the part data's programs, the clut.
 #[test]
 fn start_0700() {
-    let Some(mut t) = magic_l3::twin(700) else {
-        return;
-    };
-    let f = t.at(0x1110);
-    let modes = SCRATCH + 0x700;
-    t.set_u32(modes, 0x5a5a_5a37);
-    rec(&mut t, 218, 2, move |_, _| modes);
-    let table = SCRATCH + 0x800;
-    for i in 0..8 {
-        t.set_u32(table + 4 * i, 0x0b00_0000 + 0x11 * i);
-    }
-    rec(&mut t, 941, 1, move |_, _| table);
-    let lock = SCRATCH + 0x7f0;
-    t.set_u32(t.img.word(f + 0x7e), lock);
-    rec(&mut t, 711, 3, move |m, a| {
-        m.w32(SCRATCH + 0x7f8, m.r32(lock));
-        0x0711_0000 ^ a[0]
-    });
-    recs(
-        &mut t,
-        &[
-            (168, 1),
-            (215, 1),
-            (710, 4),
-            (718, 1),
-            (222, 4),
-            (221, 4),
-            (719, 3),
-            (714, 5),
-            (268, 3),
-            (345, 1),
-            (350, 1),
-            (351, 3),
-            (349, 2),
-        ],
-    );
-    let v = t.img.word(f + 0x10c);
-    fill(&mut t, v, 12, 3);
-    for k in 0..2u32 {
-        t.set_u32(lock, 0x4444 + k);
-        // the words the start sets: old values
-        let flag = t.img.word(f + 0x11f);
-        t.set_u32(flag, 0x5a5a_5a5a);
-        let one = t.img.word(f + 0x160);
-        t.set_u32(one, 0x1234);
-        t.check_entry(f, Call::default(), &[0x0a0a_0000 + k], Eax::Checked);
+    for (n, shift) in [(700u16, 0u32), (701, 0), (702, 0), (703, 1)] {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        let f = t.at(0x1110);
+        let o = |x: u32| if x > 0xed { x - shift } else { x };
+        let modes = SCRATCH + 0x700;
+        t.set_u32(modes, 0x5a5a_5a37);
+        rec(&mut t, 218, 2, move |_, _| modes);
+        let table = SCRATCH + 0x800;
+        for i in 0..8 {
+            t.set_u32(table + 4 * i, 0x0b00_0000 + 0x11 * i);
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        let lock = SCRATCH + 0x7f0;
+        t.set_u32(t.img.word(f + 0x7e), lock);
+        rec(&mut t, 711, 3, move |m, a| {
+            m.w32(SCRATCH + 0x7f8, m.r32(lock));
+            0x0711_0000 ^ a[0]
+        });
+        recs(
+            &mut t,
+            &[
+                (168, 1),
+                (215, 1),
+                (710, 4),
+                (718, 1),
+                (222, 4),
+                (221, 4),
+                (719, 3),
+                (714, 5),
+                (268, 3),
+                (345, 1),
+                (350, 1),
+                (351, 3),
+                (349, 2),
+            ],
+        );
+        let v = t.img.word(f + o(0x10c));
+        fill(&mut t, v, 12, 3);
+        for k in 0..2u32 {
+            t.set_u32(lock, 0x4444 + k);
+            // the words the start sets: old values
+            let flag = t.img.word(f + o(0x11f));
+            t.set_u32(flag, 0x5a5a_5a5a);
+            let one = t.img.word(f + o(0x160));
+            t.set_u32(one, 0x1234);
+            t.check_entry(f, Call::default(), &[0x0a0a_0000 + k], Eax::Checked);
+        }
     }
 }
 
