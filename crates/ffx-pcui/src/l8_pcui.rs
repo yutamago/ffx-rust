@@ -1251,6 +1251,339 @@ pub mod bridge {
         h.write(p.wrapping_add(0x200), cur.wrapping_sub(5));
     }
 
+    /// `ChrViewProc`'s callees (cdecl): `get_ptr32_func(h)`,
+    /// `set_ptr32(p)`, `is_ptr32_null(h)`, `Gu_WindowAddStatic(w, id, s,
+    /// x, y, cx, cy)`, `Gu_WindowSetClientH(w, h)`, `Gu_MouseSetWindow(w)`,
+    /// `Gu_SelectorAllocate()`, `Gu_SelectorGetItemName(s)`,
+    /// `Gu_SelectorOpen(s, w, id)`, `Gu_SelectorResetNbItem(s, n)`,
+    /// `Gu_SelectorSetItem(s, i, name, i)`, `Gu_SelectorSetSelectSTR(s,
+    /// str)`, `Gu_ButtonSetToggleValue(w, id, v)`, `Gu_WindowSetParent(w,
+    /// parent)`, `Gu_WindowStartDrag(w)`, `Gu_WindowCreate(x, y, cx, cy,
+    /// ?, proc)`, `Gu_MessageBox(s)`, `Ch_ReadMotionViewer(chr, a, b, c)`,
+    /// `Ch_GetClip(chr)`, `Ch_EnClip(chr, on)`, `Ch_GetBlkDirName(chr)`,
+    /// `Ch_Dispose(chr)`, `Ch_BlkDisposeHandle(id)`, `Ch_Allocate(id)`,
+    /// `ChN_DataDispose(id, 0)`, `Ch_CalcHeight(chr)`, `Sg_SetPlayer(chr)`,
+    /// `tex_anim_dlg(chr)`, `sg_make_filelist(list, cmd, 0)`,
+    /// `FUN_0084d3a0(a, s, cmd)`, `FUN_0084cc30(w, chr)`; the motion
+    /// window's procedure `ChrViewMotionCtlProc`.
+    pub const GET_PTR32: u32 = 0x00a4_4650;
+    pub const SET_PTR32: u32 = 0x00a4_4700;
+    pub const IS_PTR32_NULL: u32 = 0x00a4_46a0;
+    pub const WINDOW_ADD_STATIC: u32 = 0x0084_a4d0;
+    pub const WINDOW_SET_CLIENT_H: u32 = 0x0084_b580;
+    pub const MOUSE_SET_WINDOW: u32 = 0x0084_9b90;
+    pub const SELECTOR_ALLOCATE: u32 = 0x0084_9bb0;
+    pub const SELECTOR_ITEM_NAME: u32 = 0x0084_9d30;
+    pub const SELECTOR_OPEN: u32 = 0x0084_9d60;
+    pub const SELECTOR_RESET: u32 = 0x0084_9f40;
+    pub const SELECTOR_SET_ITEM: u32 = 0x0084_9fd0;
+    pub const SELECTOR_SET_STR: u32 = 0x0084_a110;
+    pub const BUTTON_SET_TOGGLE: u32 = 0x0084_93e0;
+    pub const WINDOW_SET_PARENT: u32 = 0x0084_b660;
+    pub const WINDOW_START_DRAG: u32 = 0x0084_a580;
+    pub const WINDOW_CREATE: u32 = 0x0084_a920;
+    pub const MESSAGE_BOX: u32 = 0x0084_9970;
+    pub const CH_READ_MOTION_VIEWER: u32 = 0x0082_83c0;
+    pub const CH_GET_CLIP: u32 = 0x0082_ab40;
+    pub const CH_EN_CLIP: u32 = 0x0082_aa30;
+    pub const CH_BLK_DIR_NAME: u32 = 0x0082_6a60;
+    pub const CH_DISPOSE: u32 = 0x0082_66f0;
+    pub const CH_BLK_DISPOSE: u32 = 0x0082_59f0;
+    pub const CH_ALLOCATE: u32 = 0x0082_4f90;
+    pub const CHN_DATA_DISPOSE: u32 = 0x0082_4f00;
+    pub const CH_CALC_HEIGHT: u32 = 0x0083_0b20;
+    pub const SG_SET_PLAYER: u32 = 0x0082_dad0;
+    pub const TEX_ANIM_DLG: u32 = 0x0077_e920;
+    pub const MAKE_FILELIST: u32 = 0x0085_09e0;
+    pub const CHR_VIEW_LIST: u32 = 0x0084_d3a0;
+    pub const CHR_VIEW_FLAGS: u32 = 0x0084_cc30;
+    pub const MOTION_CTL_PROC: u32 = 0x0084_bc00;
+    /// `g_DebugLine` (the command line buffer), the file list
+    /// (`0x023cbc40` count, `0x023cbc48` names), the list file's name
+    /// and the commands, the "No items found." text.
+    pub const DEBUG_LINE: u32 = 0x023c_4000;
+    pub const FILE_LIST: u32 = 0x023c_bc40;
+    pub const LIST_NAME: u32 = 0x00b5_aadc;
+    pub const DIR_CMD: u32 = 0x00b5_ac30;
+    pub const DIR_BLK_CMD: u32 = 0x00b5_ac64;
+    pub const DIR_ANM_CMD: u32 = 0x00b5_ac8c;
+    pub const DIR_TYPE_CMD: u32 = 0x00b5_acdc;
+    pub const NEWLINE: u32 = 0x00b7_cae0;
+    pub const NO_ITEMS: u32 = 0x00b5_accc;
+    /// `ChrViewProc`'s window: (static, id, text, y) at x 0, 0x50 x 0xa.
+    pub const CHR_VIEW_CONTROLS: [(bool, u32, u32, u32); 15] = [
+        (false, 3, 0x00b5_abe4, 0),
+        (false, 8, 0x00b5_9368, 0xe),
+        (true, 7, 0x00b5_abec, 0x18),
+        (false, 5, 0x00b5_abe4, 0x22),
+        (false, 4, 0x00b4_02ac, 0x2d),
+        (true, 0x14, 0x00b8_fbeb, 0x3a),
+        (false, 0x12, 0x00b5_abf4, 0x43),
+        (true, 0x15, 0x00b8_fbeb, 0x4e),
+        (false, 0x13, 0x00b5_abfc, 0x57),
+        (false, 0xa, 0x00b5_ac04, 0x64),
+        (false, 0xc, 0x00b5_ac0c, 0x73),
+        (false, 0x11, 0x00b5_ac18, 0x7e),
+        (false, 9, 0x00b5_55c0, 0x89),
+        (false, 0xd, 0x00b5_ac20, 0x94),
+        (false, 0xb, 0x00b5_ac28, 0x9f),
+    ];
+    /// `ChrViewProc`'s frame: the command line at `ebp - 0x84`.
+    pub const CHR_VIEW_FRAME: u32 = 0x84;
+
+    /// `strcpy(dst, src)` as the original's byte loops.
+    fn copy_str(h: &mut impl Host, dst: u32, src: u32) {
+        let mut k = 0_u32;
+        loop {
+            let b: u8 = h.read(src.wrapping_add(k));
+            h.write(dst.wrapping_add(k), b);
+            if b == 0 {
+                break;
+            }
+            k = k.wrapping_add(1);
+        }
+    }
+
+    /// A selector filled from `sg_make_filelist` of the command already
+    /// in `g_DebugLine` (its count re-read each step), its selection
+    /// `sel` and opened as `id`; "No items found." for an empty list.
+    fn chr_view_selector(h: &mut impl Host, window: u32, s: u32, sel: u32, id: u32) {
+        let (list, line) = (h.rebase(FILE_LIST), h.rebase(DEBUG_LINE));
+        c(h, MAKE_FILELIST, &[list, line, 0]);
+        let n: u32 = h.read(list);
+        if n.cast_signed() <= 0 {
+            let m = h.rebase(NO_ITEMS);
+            c(h, MESSAGE_BOX, &[m]);
+            return;
+        }
+        c(h, SELECTOR_RESET, &[s, n]);
+        let mut i = 0_u32;
+        while i.cast_signed() < h.read::<u32>(list).cast_signed() {
+            let names: u32 = h.read(list.wrapping_add(8));
+            let name: u32 = h.read(names.wrapping_add(4 * i));
+            c(h, SELECTOR_SET_ITEM, &[s, i, name, i]);
+            i += 1;
+        }
+        c(h, SELECTOR_SET_STR, &[s, sel]);
+        c(h, SELECTOR_OPEN, &[s, window, id]);
+    }
+
+    /// `ChrViewProc(window, msg, param)` (`0x0084c1e0`) -> 0: the
+    /// character viewer debug window (data `p` from `Gu_WindowGetArg`,
+    /// 0x98 bytes: `+0` its selector, `+4` the character handle, `+8` the
+    /// motion window, `+0xc` the motion name, `+0x2c` the motion list,
+    /// `+0x50`/`+0x70` the character type and name, `+0x90`/`+0x94`
+    /// their selectors). 0x8001 builds it; 0x8006 reloads the character
+    /// (3) and its motion (5), lists the motions (4: `dir` on the host
+    /// into the selector), flips flag bit 6 of `+0x194` (8), makes it the
+    /// player (9), opens the motion window (10), disposes of it (11),
+    /// opens the texture animation window (13), recomputes its height
+    /// (0x11), lists the types and names (0x12/0x13); 0x8007 toggles
+    /// clipping (0xc); 0x8011 shows type and name; 0x8012 takes a
+    /// selector's choice (4 also reloads the motion).
+    ///
+    /// For 4 on a block character the original also copies the block's
+    /// directory name into a frame buffer with '/' turned into '\\' and
+    /// never reads it; the port leaves that copy out.
+    #[allow(clippy::too_many_lines)]
+    pub fn chr_view_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let p = c(h, WINDOW_GET_ARG, &[window]);
+        let at = |o: u32| p.wrapping_add(o);
+        let chr = if p == 0 {
+            0
+        } else {
+            let hd: u32 = h.read(at(4));
+            c(h, GET_PTR32, &[hd])
+        };
+        match msg {
+            0x8001 => {
+                let p = c(h, USER_MALLOC, &[0x98]);
+                c(h, MEMSET, &[p, 0, 0x98]);
+                c(h, WINDOW_SET_ARG, &[window, p]);
+                for (is_static, id, text, y) in CHR_VIEW_CONTROLS {
+                    let f = if is_static {
+                        WINDOW_ADD_STATIC
+                    } else {
+                        WINDOW_ADD_BUTTON
+                    };
+                    let text = h.rebase(text);
+                    c(h, f, &[window, id, text, 0, y, 0x50, 10]);
+                }
+                c(h, WINDOW_SET_CLIENT_H, &[window, 0xaa]);
+                c(h, MOUSE_SET_WINDOW, &[window]);
+                let s = c(h, SELECTOR_ALLOCATE, &[]);
+                h.write(p, s);
+            }
+            0x8006 => chr_view_command(h, ebp, window, p, chr, param),
+            0x8007 => {
+                if param == 0xc {
+                    let clip = c(h, CH_GET_CLIP, &[chr]);
+                    c(h, CH_EN_CLIP, &[chr, 1_u32.wrapping_sub(clip)]);
+                    let clip = c(h, CH_GET_CLIP, &[chr]);
+                    c(
+                        h,
+                        BUTTON_SET_TOGGLE,
+                        &[window, 0xc, 1_u32.wrapping_sub(clip)],
+                    );
+                }
+            }
+            0x8011 => {
+                c(h, WINDOW_SET_TEXT, &[window, 0x14, at(0x50)]);
+                c(h, WINDOW_SET_TEXT, &[window, 0x15, at(0x70)]);
+            }
+            0x8012 => match param {
+                4 => {
+                    let s: u32 = h.read(p);
+                    let name = c(h, SELECTOR_ITEM_NAME, &[s]);
+                    if name != 0 {
+                        copy_str(h, at(0xc), name);
+                        c(h, WINDOW_SET_TEXT, &[window, 7, name]);
+                        c(
+                            h,
+                            CH_READ_MOTION_VIEWER,
+                            &[chr, at(0x50), at(0x70), at(0xc)],
+                        );
+                    }
+                }
+                0x12 | 0x13 => {
+                    let (sel, dst) = if param == 0x12 {
+                        (0x90, 0x50)
+                    } else {
+                        (0x94, 0x70)
+                    };
+                    let s: u32 = h.read(at(sel));
+                    let name = c(h, SELECTOR_ITEM_NAME, &[s]);
+                    copy_str(h, at(dst), name);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        0
+    }
+
+    /// The character the window's handle `+4` points at.
+    fn chr_handle(h: &mut impl Host, p: u32) -> u32 {
+        let hd: u32 = h.read(p.wrapping_add(4));
+        c(h, GET_PTR32, &[hd])
+    }
+
+    /// `Ch_ReadMotionViewer` of `chr` with the window's type, name and
+    /// motion, when a motion is set (`+0xc`).
+    fn chr_read_motion(h: &mut impl Host, p: u32, chr: u32) {
+        if h.read::<u8>(p.wrapping_add(0xc)) != 0 {
+            let a = [
+                chr,
+                p.wrapping_add(0x50),
+                p.wrapping_add(0x70),
+                p.wrapping_add(0xc),
+            ];
+            c(h, CH_READ_MOTION_VIEWER, &a);
+        }
+    }
+
+    /// `ChrViewProc`'s 0x8006 (a button) on the window's data `p` and
+    /// character `chr`.
+    #[allow(clippy::too_many_lines)]
+    fn chr_view_command(h: &mut impl Host, ebp: u32, window: u32, p: u32, chr: u32, param: u32) {
+        let at = |o: u32| p.wrapping_add(o);
+        match param {
+            3 => {
+                let c1 = chr_handle(h, p);
+                let id = u32::from(h.read::<u16>(c1));
+                let c2 = chr_handle(h, p);
+                c(h, CH_DISPOSE, &[c2]);
+                c(h, CH_BLK_DISPOSE, &[id]);
+                let n = c(h, CH_ALLOCATE, &[id]);
+                let hd = c(h, SET_PTR32, &[n]);
+                h.write(at(4), hd);
+                c(h, SG_SET_PLAYER, &[n]);
+                let c3 = chr_handle(h, p);
+                let title: u32 = h.read(c3.wrapping_add(4));
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                chr_read_motion(h, p, n);
+            }
+            5 => chr_read_motion(h, p, chr),
+            4 => {
+                let (line, name, cmd) =
+                    (h.rebase(DEBUG_LINE), h.rebase(LIST_NAME), h.rebase(DIR_CMD));
+                sprintf(h, &[line, cmd, name]);
+                let buf = ebp.wrapping_sub(CHR_VIEW_FRAME);
+                if h.read::<u16>(chr) & 0xf000 == 0xf000 {
+                    // the directory copied into the frame and never read
+                    c(h, CH_BLK_DIR_NAME, &[chr]);
+                    let dir = c(h, CH_BLK_DIR_NAME, &[chr]);
+                    let f = h.rebase(DIR_BLK_CMD);
+                    sprintf(h, &[buf, f, dir, name]);
+                } else {
+                    let f = h.rebase(DIR_ANM_CMD);
+                    sprintf(h, &[buf, f, at(0x50), at(0x70), name]);
+                }
+                c(h, DBG_PRINTF, &[buf]);
+                let nl = h.rebase(NEWLINE);
+                c(h, DBG_PRINTF, &[nl]);
+                let s: u32 = h.read(p);
+                c(h, CHR_VIEW_LIST, &[at(0x2c), s, buf]);
+                let s: u32 = h.read(p);
+                c(h, SELECTOR_OPEN, &[s, window, 4]);
+            }
+            8 => {
+                let v: u32 = h.read(chr.wrapping_add(0x194));
+                let x = ((((v >> 6).wrapping_sub(1)) << 6) ^ v) & 0x40 ^ v;
+                h.write(chr.wrapping_add(0x194), x);
+                c(h, CHR_VIEW_FLAGS, &[window, chr]);
+            }
+            9 => {
+                let c1 = chr_handle(h, p);
+                c(h, SG_SET_PLAYER, &[c1]);
+            }
+            0xa => {
+                let hd: u32 = h.read(at(4));
+                if c(h, IS_PTR32_NULL, &[hd]) == 0 {
+                    let f = h.rebase(MOTION_CTL_PROC);
+                    let w = c(h, WINDOW_CREATE, &[0, 0xae, 0x200, 0x28, 0xe, f]);
+                    c(h, WINDOW_SET_ARG, &[w, p]);
+                    c(h, WINDOW_SET_PARENT, &[w, window]);
+                    h.write(at(8), w);
+                }
+            }
+            0xb => {
+                let c1 = chr_handle(h, p);
+                let id = u32::from(h.read::<u16>(c1));
+                let c2 = chr_handle(h, p);
+                c(h, CH_DISPOSE, &[c2]);
+                c(h, CHN_DATA_DISPOSE, &[id, 0]);
+                c(h, WINDOW_START_DRAG, &[window]);
+            }
+            0xd => {
+                let c1 = chr_handle(h, p);
+                let w = c(h, TEX_ANIM_DLG, &[c1]);
+                c(h, WINDOW_SET_PARENT, &[w, window]);
+            }
+            0x11 => {
+                c(h, CH_CALC_HEIGHT, &[chr]);
+            }
+            0x12 | 0x13 => {
+                let s = c(h, SELECTOR_ALLOCATE, &[]);
+                let (line, name) = (h.rebase(DEBUG_LINE), h.rebase(LIST_NAME));
+                if param == 0x12 {
+                    h.write(at(0x90), s);
+                    let cmd = h.rebase(DIR_CMD);
+                    sprintf(h, &[line, cmd, name]);
+                    let s: u32 = h.read(at(0x90));
+                    chr_view_selector(h, window, s, s, 0x12);
+                } else {
+                    h.write(at(0x94), s);
+                    let cmd = h.rebase(DIR_TYPE_CMD);
+                    sprintf(h, &[line, cmd, at(0x50), name]);
+                    let s: u32 = h.read(at(0x94));
+                    chr_view_selector(h, window, s, at(0x70), 0x13);
+                }
+            }
+            _ => {}
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]

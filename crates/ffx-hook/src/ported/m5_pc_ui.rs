@@ -1295,4 +1295,11 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::MOVIE_FRAME;
         ffx_pcui::l8_pcui::bridge::movie_debug_proc(&mut mem(), ebp, window, msg, param)
     }
+    /// `(window, msg, param)` -> 0: the character viewer debug window
+    /// (its command line in a frame).
+    ChrViewProc @ 0x0084_c1e0 => extern "C" fn chr_view_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::CHR_VIEW_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::CHR_VIEW_FRAME;
+        ffx_pcui::l8_pcui::bridge::chr_view_proc(&mut mem(), ebp, window, msg, param)
+    }
 }

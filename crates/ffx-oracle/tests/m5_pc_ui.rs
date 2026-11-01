@@ -356,7 +356,13 @@ impl Twins {
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        // a full cave: the stub goes to fresh code memory (the same
+        // address in both oracles); the cave stays for cave_code
+        if addr + c.len() as u32 + 0x40 > self.cave + CAVE_LEN {
+            let x = self.a.alloc_code(&c).unwrap();
+            assert_eq!(self.b.alloc_code(&c).unwrap(), x);
+            return x;
+        }
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
         addr
@@ -8175,6 +8181,134 @@ fn l8_gui_movie_debug_proc() {
                 &args,
                 l8u::MOVIE_FRAME,
                 |g, ebp| Out::U32(l8u::movie_debug_proc(g, ebp, window, msg, param)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case table
+fn l8_chr_view_proc() {
+    // every message and button: no window data (no character), block
+    // and plain characters, motions set or not, selectors with a name
+    // or none, file lists empty or not, the motion window when the handle
+    // is null or not, the clip toggle
+    Twins::each(|t| {
+        let mut rng = Rng(0x0084_c1e0);
+        let window = 0x00ab_e000;
+        for case in 0..600_u32 {
+            t.reset();
+            t.skip = 4;
+            let p = if case % 13 == 12 { 0 } else { t.zeros(0xa0) };
+            let chr = t.zeros(0x200);
+            let kind: u16 = if rng.chance(2) {
+                0xf000 | rng.below(0x100) as u16
+            } else {
+                rng.below(0x8000) as u16
+            };
+            t.write(chr, &kind.to_le_bytes());
+            t.w32(chr + 4, rng.next());
+            t.w32(chr + 0x194, rng.next());
+            if p != 0 {
+                let words: Vec<u8> = (0..0xa0).map(|_| b'a' + rng.below(26) as u8).collect();
+                t.write(p, &words);
+                for o in [0x2b, 0x4f, 0x6f, 0x8f] {
+                    t.write(p + o, &[0]);
+                }
+                if rng.chance(3) {
+                    t.write(p + 0xc, &[0]);
+                }
+                for o in [0, 4, 8, 0x90, 0x94] {
+                    let v = rng.next();
+                    t.w32(p + o, v);
+                }
+            }
+            let item = t.alloc(b"item7\0");
+            let names = t.words(&[item, item + 1, item + 2]);
+            let fresh = t.zeros(0xa0);
+            let (msg, param) = match case % 6 {
+                0 => (0x8001, 0),
+                1 | 2 => (
+                    0x8006,
+                    [3, 4, 5, 8, 9, 0xa, 0xb, 0xd, 0x11, 0x12, 0x13, 6, 0x14]
+                        [rng.below(13) as usize],
+                ),
+                3 => (0x8007, [0xc, 0xb][rng.below(2) as usize]),
+                4 => (0x8012, [4, 0x12, 0x13, 5][rng.below(4) as usize]),
+                _ => ([0x8011, 0x8002, 0x8013, 0x7fff][rng.below(4) as usize], 4),
+            };
+            // a selector without a choice only where the original checks
+            let chosen = if param == 4 && rng.chance(4) { 0 } else { item };
+            t.stubs(&[
+                (l8u::WINDOW_GET_ARG, false, 1, 0, p),
+                (l8u::GET_PTR32, false, 1, 0, chr),
+                (l8u::SET_PTR32, false, 1, 0, 0x7777),
+                (l8u::IS_PTR32_NULL, false, 1, 0, u32::from(rng.chance(3))),
+                (l8u::USER_MALLOC, false, 1, 0, fresh),
+                (l8u::MEMSET, false, 3, 0, 0x11),
+                (l8u::WINDOW_SET_ARG, false, 2, 0, 0x12),
+                (l8u::WINDOW_SET_TITLE, false, 2, 0, 0x13),
+                (l8u::WINDOW_ADD_BUTTON, false, 7, 0, 0x14),
+                (l8u::WINDOW_ADD_STATIC, false, 7, 0, 0x15),
+                (l8u::WINDOW_SET_CLIENT_H, false, 2, 0, 0x16),
+                (l8u::MOUSE_SET_WINDOW, false, 1, 0, 0x17),
+                (l8u::SELECTOR_ALLOCATE, false, 0, 0, 0x5e1),
+                (l8u::SELECTOR_ITEM_NAME, false, 1, 0, chosen),
+                (l8u::SELECTOR_OPEN, false, 3, 0, 0x18),
+                (l8u::SELECTOR_RESET, false, 2, 0, 0x19),
+                (l8u::SELECTOR_SET_ITEM, false, 4, 0, 0x1a),
+                (l8u::SELECTOR_SET_STR, false, 2, 0, 0x1b),
+                (l8u::BUTTON_SET_TOGGLE, false, 3, 0, 0x1c),
+                (l8u::WINDOW_SET_PARENT, false, 2, 0, 0x1d),
+                (l8u::WINDOW_START_DRAG, false, 1, 0, 0x1e),
+                (l8u::WINDOW_CREATE, false, 6, 0, 0x3333),
+                (l8u::MESSAGE_BOX, false, 1, 0, 0x1f),
+                (l8u::CH_READ_MOTION_VIEWER, false, 4, 0, 0x20),
+                (l8u::CH_GET_CLIP, false, 1, 0, rng.below(2)),
+                (l8u::CH_EN_CLIP, false, 2, 0, 0x21),
+                (l8u::CH_BLK_DIR_NAME, false, 1, 0, item),
+                (l8u::CH_DISPOSE, false, 1, 0, 0x22),
+                (l8u::CH_BLK_DISPOSE, false, 1, 0, 0x23),
+                (l8u::CH_ALLOCATE, false, 1, 0, chr),
+                (l8u::CHN_DATA_DISPOSE, false, 2, 0, 0x24),
+                (l8u::CH_CALC_HEIGHT, false, 1, 0, 0x25),
+                (l8u::SG_SET_PLAYER, false, 1, 0, 0x26),
+                (l8u::TEX_ANIM_DLG, false, 1, 0, 0x4444),
+                (l8u::MAKE_FILELIST, false, 3, 0, 0x27),
+                (l8u::CHR_VIEW_LIST, false, 3, 0, 0x28),
+                (l8u::CHR_VIEW_FLAGS, false, 2, 0, 0x29),
+                (l8u::WINDOW_SET_TEXT, false, 3, 0, 0x2a),
+                (l8u::DBG_PRINTF, false, 1, 0, 0x2b),
+            ]);
+            // sprintf: logs its first three words, prints a short line
+            let line = t.alloc(b"host0:dir\0");
+            let printer = t.stub_code(0x5f5f, false, 3, 0, 9);
+            let at = t.cave_next;
+            let mut c = print_first_code(line, 10);
+            c.push(0xe9);
+            c.extend(printer.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.patch(t.rebase(l8u::SPRINTF_SLOT), &code.to_le_bytes());
+            let list = t.rebase(l8u::FILE_LIST);
+            let mut fl = vec![0u8; 12];
+            fl[..4].copy_from_slice(
+                &[0u32, 1, 3, (-1_i32).cast_unsigned()][rng.below(4) as usize].to_le_bytes(),
+            );
+            fl[8..].copy_from_slice(&names.to_le_bytes());
+            t.patch(list, &fl);
+            if p == 0 && msg != 0x8001 {
+                // no data: only the messages that never read it
+                continue;
+            }
+            let args = [window, msg, param];
+            t.check_framed(
+                "ChrViewProc",
+                0x0084_c1e0,
+                Conv::Cdecl,
+                &args,
+                l8u::CHR_VIEW_FRAME,
+                |g, ebp| Out::U32(l8u::chr_view_proc(g, ebp, window, msg, param)),
             );
         }
         t.skip = 0;
