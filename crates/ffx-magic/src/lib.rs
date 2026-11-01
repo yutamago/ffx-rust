@@ -2379,6 +2379,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("turning path step", &s6_misc::TURNING_PATH_STEP),
     ("keyed part step", &s6_misc::KEYED_PART_STEP),
     ("m0032 state reset (0x1e)", &s6_misc::RESET_STATE_1E),
+    ("lights and give back", &s6_misc::LIGHTS_AND_GIVE_BACK),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

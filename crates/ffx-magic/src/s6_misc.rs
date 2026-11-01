@@ -2639,3 +2639,122 @@ pub const RESET_STATE_1E: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`give_back`] as the overlays inline it (the operands, in `f`'s
+/// code: the cursor `cur` and its store `cur_store`, the head and tail
+/// checks with their stores, the free ring's head `free` and its store
+/// `free_store`, the u16 count `count` and its store `count_store`; the
+/// chained children go to the pool's own [`give_back`], `rel32` at
+/// `call`). Returns the `eax` the original leaves (the count in the low
+/// half, the last word loaded above it).
+fn inline_give_back<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    call: u32,
+    [
+        cur,
+        head,
+        head_store,
+        tail,
+        tail_store,
+        free,
+        count,
+        free_store,
+        count_store,
+        cur_store,
+    ]: [u32; 10],
+) -> u32 {
+    let w = |o: u32| op(img, f, o);
+    let mut eax = g.read::<u32>(node + 8);
+    if g.read::<u32>(eax.wrapping_add(0xc)) != 0 {
+        loop {
+            let child = g.read::<u32>(node + 8);
+            let next = g.read::<u32>(child.wrapping_add(0xc));
+            g.write::<u32>(child.wrapping_add(0xc), 0);
+            let c = g.read::<u32>(node + 8);
+            eax = give_back(g, img, img.rel32_target(f + call), c);
+            g.write::<u32>(node + 8, next);
+            if g.read::<u32>(next.wrapping_add(0xc)) == 0 {
+                break;
+            }
+        }
+    }
+    let prev = g.read::<u32>(node);
+    if prev != 0 {
+        eax = g.read::<u32>(node + 4);
+        g.write::<u32>(prev.wrapping_add(4), eax);
+    }
+    let next = g.read::<u32>(node + 4);
+    if next != 0 {
+        eax = g.read::<u32>(node);
+        g.write::<u32>(next, eax);
+    }
+    let mut c = g.read::<u32>(w(cur));
+    if c == node {
+        c = g.read::<u32>(node + 4);
+    }
+    if g.read::<u32>(w(head)) == node {
+        eax = g.read::<u32>(node);
+        g.write::<u32>(w(head_store), eax);
+    }
+    if g.read::<u32>(w(tail)) == node {
+        eax = g.read::<u32>(node + 4);
+        g.write::<u32>(w(tail_store), eax);
+    }
+    let h = g.read::<u32>(w(free));
+    if h == 0 {
+        g.write::<u32>(node + 4, node);
+        g.write::<u32>(node, node);
+    } else {
+        g.write::<u32>(node + 4, h);
+        eax = g.read::<u32>(h);
+        g.write::<u32>(node, eax);
+        g.write::<u32>(h, node);
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    if n == 0x100 {
+        c = 0;
+    }
+    g.write::<u32>(w(free_store), node);
+    g.write::<u16>(w(count_store), n);
+    g.write::<u32>(w(cur_store), c);
+    (eax & 0xffff_0000) | u32::from(n)
+}
+
+/// An effect's four light directions set and its task node given back
+/// (internal, `ecx` = the effect `E`): for `i` in 0..3 slot 590 `(i, L_i -
+/// 0x30)` and slot 589 `(i, L_i)` (`L_i = E + 0x1e8 + 0x10 i`), slot 589
+/// `(3, L_3)`; then the node `E+0x228`, if any, goes back to the pool
+/// ([`inline_give_back`]) and `E+0x228 = 0`. Returns slot 589's `eax`, or
+/// the give-back's.
+///
+/// `magic_0348` 0x10003210 (286 bytes, `ecx` = the effect; 4 DLLs).
+pub fn lights_and_give_back<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let e = fr.ecx;
+    for i in 0..3u32 {
+        let l = e + 0x1e8 + 0x10 * i;
+        slot(g, img, f, 0x15, 590, &[i, l - 0x30]);
+        slot(g, img, f, 0x23, 589, &[i, l]);
+    }
+    let mut eax = slot(g, img, f, 0x4b, 589, &[3, e + 0x218]).eax;
+    let node = g.read::<u32>(e + 0x228);
+    if node != 0 {
+        let ops = [
+            0xa9, 0xb6, 0xbf, 0xc5, 0xcf, 0xd5, 0xef, 0x104, 0x10a, 0x110,
+        ];
+        eax = inline_give_back(g, img, f, node, 0x83, ops);
+        g.write::<u32>(e + 0x228, 0);
+    }
+    eax
+}
+
+/// [`lights_and_give_back`] (the `rel32`: [`give_back`]).
+pub const LIGHTS_AND_GIVE_BACK: Sig = Sig {
+    len: 286,
+    hash: 0x088e_7763_cadd_42f4,
+    calls: &[(0x83, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};

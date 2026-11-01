@@ -1929,3 +1929,52 @@ fn state_blocks_reset_1e() {
         );
     }
 }
+
+/// Row 315: `magic_0348`'s light directions and task node give-back: no
+/// node; a node in the middle of its list with an empty free ring; the
+/// node at the list's ends, the cursor on it, the count reaching 0x100
+/// and a chained child given back through the pool's own function.
+#[test]
+fn lights_set_and_given_back() {
+    let Some(mut t) = twin(348) else { return };
+    let f = t.at(0x3210);
+    rec_mem(&mut t, 590, 2, 4, None);
+    rec_mem(&mut t, 589, 2, 4, None);
+    let e = SCRATCH + 0x1000;
+    let node = SCRATCH + 0x300;
+    let (prev, next) = (SCRATCH + 0x340, SCRATCH + 0x380);
+    let (pay, pay2) = (SCRATCH + 0x3c0, SCRATCH + 0x400);
+    let free = SCRATCH + 0x440;
+    let g_ = |t: &Twin, o: u32| op(t, f, o);
+    for (k, (has, ends, cur_on, count, chained, ring)) in [
+        (false, false, false, 3u16, false, false),
+        (true, false, false, 3, false, false),
+        (true, true, true, 0xff, true, true),
+        (true, true, false, 7, false, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(e, &varied(0x240, k));
+        t.set_u32(e + 0x228, if has { node } else { 0 });
+        for a in [node, prev, next, pay, pay2, free] {
+            t.write(a, &varied(0x20, a + k));
+        }
+        t.set_u32(node, if ends { 0 } else { prev });
+        t.set_u32(node + 4, if ends { 0 } else { next });
+        t.set_u32(node + 8, pay);
+        t.set_u32(pay + 0xc, if chained { pay2 } else { 0 });
+        t.set_u32(pay2 + 0xc, 0);
+        // the inlined give-back's globals, and the pool's own
+        t.set_u32(g_(&t, 0xa9), if cur_on { node } else { SCRATCH + 0x500 });
+        t.set_u32(g_(&t, 0xb6), if ends { node } else { SCRATCH + 0x504 });
+        t.set_u32(g_(&t, 0xc5), if ends { node } else { SCRATCH + 0x508 });
+        t.set_u32(g_(&t, 0xd5), if ring { free } else { 0 });
+        t.set_u16(g_(&t, 0xef), count);
+        scrub(&mut t);
+        t.check(f, Call::this(e), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::lights_and_give_back(g, img, fr))
+        });
+    }
+}
