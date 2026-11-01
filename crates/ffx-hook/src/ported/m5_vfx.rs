@@ -860,4 +860,14 @@ ported! {
         let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::DEFINE_FRAME;
         ffx_glue_other::l7_vfx::bridge::symbol_define(&mut mem(), ebp, name, value, desc, kind)
     }
+    /// `(tree, src, name, &pos, end, eol)` -> 0 or -1: the op script
+    /// compiler's macro expansion (its token buffer and positions in a
+    /// frame; `op_token_get_007e1d50` may move the line end in the `eol`
+    /// argument slot).
+    op_macro_expand_007e2a60 @ 0x007e_2a60 => extern "C" fn op_macro_expand(tree: u32, src: u32, name: u32, pos: u32, end: u32, eol: u32; slots: u32) -> u32 {
+        let _ = eol; // read through its slot
+        let mut frame = StackFrame::<{ (ffx_glue_other::l7_vfx::bridge::EXPAND_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::l7_vfx::bridge::EXPAND_FRAME;
+        ffx_glue_other::l7_vfx::bridge::macro_expand(&mut mem(), ebp, slots, tree, src, name, pos, end)
+    }
 }

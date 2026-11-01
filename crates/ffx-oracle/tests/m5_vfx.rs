@@ -5757,3 +5757,111 @@ fn l7_symbol_define_matches_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn l7_macro_expand_matches_the_original() {
+    // no macro, no body; no parameters, 1..3 (too few and too many
+    // arguments, the arguments not opening with "("); body tokens of
+    // every class, identifiers expanded (at depths 0..3; the inner
+    // expansions find no macro), saved values or none
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a14);
+        for case in 0..500_u32 {
+            let strs: Vec<u32> = (0..4)
+                .map(|k| l7_cstr(t, [&b"ab"[..], b"", b"Zq9", b"x"][k]))
+                .collect();
+            let np = rng.below(4);
+            let mut params = 0;
+            for _ in 0..np {
+                let w: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+                let p = t.words(&w);
+                t.w32(p + 4, if rng.chance(3) { 0 } else { strs[0] });
+                t.w32(p + 0x20, params);
+                params = p;
+            }
+            let mut w: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+            w[1] = if case % 19 == 4 { 0 } else { rng.next() | 1 };
+            w[2] = params;
+            let sym = t.words(&w);
+            let len = [0_u16, 1, 2, 4, 0xffff][rng.below(5) as usize];
+            t.write(sym + 0x16, &len.to_le_bytes());
+            // the macro, then nothing for the expansions inside it: the
+            // original recursing into itself runs in a frame of its own
+            // whose buffers the stubs would log at different addresses
+            // (so an inner expansion returns -1 here, never 0)
+            let finds = if case % 23 == 7 {
+                t.seq(&[0])
+            } else {
+                t.seq(&[sym, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            };
+            t.stub_sym(l7v::SYMBOL_FIND, 1, false, 2, 0, finds);
+            let open: u32 = [0x78, 0x79, 0x28, 0x28, 0x28][rng.below(5) as usize];
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x0c]; // mov ecx, [esp+0xc]
+            x.extend([0xc7, 0x01]);
+            x.extend(open.to_le_bytes()); // mov dword [ecx], "(" or "x"
+            t.stub_sym_x(l7v::TOKEN_GET, 2, false, 7, 0, Ret::Val(rng.next()), &x);
+            let args: Vec<u32> = (0..5)
+                .map(|_| [0, 1, 1, 2][rng.below(4) as usize])
+                .collect();
+            let args = t.seq(&args);
+            let mut x = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp+8]
+            x.extend([0xc7, 0x01]);
+            x.extend(0x0031_6261_u32.to_le_bytes()); // mov dword [ecx], "ab1"
+            x.extend([0x8b, 0x4c, 0x24, 0x0c, 0xff, 0x01]); // mov ecx, [esp+0xc]; inc dword [ecx]
+            t.stub_sym_x(l7v::TOKEN_EXPR, 3, false, 5, 0, args, &x);
+            let copies: Vec<u32> = (0..6).map(|k| strs[k % 4]).collect();
+            let copies = t.seq(&copies);
+            t.stub_sym(l7v::OP_STRDUP, 4, false, 1, 0, copies);
+            // the body's tokens: classes, each moving the position by 1
+            let classes: Vec<u32> = (0..24)
+                .map(|_| [1, 2, 3, 2][rng.below(4) as usize])
+                .collect();
+            let classes = t.seq(&classes);
+            let x = vec![0x8b, 0x4c, 0x24, 0x0c, 0xff, 0x01]; // mov ecx, [esp+0xc]; inc dword [ecx]
+            t.stub_sym_x(l7v::TOKEN, 5, false, 5, 0, classes, &x);
+            let saved: Vec<u32> = (0..8)
+                .map(|_| {
+                    if rng.chance(3) {
+                        0
+                    } else {
+                        let w: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+                        t.words(&w)
+                    }
+                })
+                .collect();
+            let saved = t.seq(&saved);
+            t.stub_sym(l7v::LIST_VALUES, 6, false, 1, 0, saved);
+            t.stub_sym(l7v::MS_FREE, 7, false, 1, 0, Ret::Val(rng.next()));
+            let lens = t.seq(&(0..32).map(|_| rng.below(4)).collect::<Vec<u32>>());
+            t.stub_sym(l7v::OP_STRLEN, 8, false, 1, 0, lens);
+            t.stub_sym(l7v::DBG_PRINTF, 9, false, 2, 0, Ret::Val(rng.next()));
+            t.global(l7v::SCRIPT_ERRORS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::SCRIPT_WARNINGS, [0, rng.next()][rng.below(2) as usize]);
+            t.global(l7v::EXPAND_DEPTH, rng.below(4));
+            t.global(l7v::SCRIPT_TREE, rng.next());
+            let out = t.zeros(0x40);
+            let pos = t.words(&[rng.below(8)]);
+            let (tree, src, end, eol) = (rng.next(), rng.next(), rng.below(0x30), rng.next());
+            let top = call_top(&t.a);
+            let fill: Vec<u8> = (0..0x100).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.a.write(top - 0x400, &fill).unwrap();
+            t.b.write(top - 0x400, &fill).unwrap();
+            let call = [tree, src, out, pos, end, eol];
+            let slots = t.arg_slots(&call);
+            let ebp = frame_ebp(&t.a, 6);
+            t.b_top = Some(ebp - l7v::EXPAND_FRAME - 0x40);
+            t.check(
+                "op_macro_expand_007e2a60",
+                0x007e_2a60,
+                Conv::Cdecl,
+                &call,
+                |o| Out::U32(l7v::macro_expand(o, ebp, slots, tree, src, out, pos, end)),
+            );
+            t.same_stack("op_macro_expand_007e2a60", ebp - 0x21c, 0x218);
+            t.same_stack("op_macro_expand_007e2a60 slots", slots, 0x18);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}

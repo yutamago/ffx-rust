@@ -189,4 +189,169 @@ pub mod bridge {
         h.write(at(sym, 0x16), len as u16);
         sym
     }
+
+    /// `op_token_get_007e1d50(file, src, out, &pos, max, &eol, flags)`,
+    /// `op_token_007e1f80(src, out, &pos, max, eol)`,
+    /// `op_list_values_007e2720(node)`, this function itself (the
+    /// recursion), the expansion depth (`0x0113fc7c`), "(" and the two
+    /// argument-count messages (too many, too few).
+    pub const TOKEN_GET: u32 = 0x007e_1d50;
+    pub const TOKEN: u32 = 0x007e_1f80;
+    pub const LIST_VALUES: u32 = 0x007e_2720;
+    pub const MACRO_EXPAND: u32 = 0x007e_2a60;
+    pub const EXPAND_DEPTH: u32 = 0x0113_fc7c;
+    pub const S_OPEN: u32 = 0x00b5_7fb8;
+    pub const S_TOO_MANY: u32 = 0x00b5_7f88;
+    pub const S_TOO_FEW: u32 = 0x00b5_7f64;
+    /// `op_macro_expand_007e2a60`'s frame.
+    pub const EXPAND_FRAME: u32 = 0x21c;
+
+    /// The file and line, when set, then `msg` with `src`, and
+    /// `g_OpLastError = code` (the compiler's error report).
+    fn report(h: &mut impl Host, msg: u32, src: u32, code: u32) {
+        let file = g(h, SCRIPT_ERRORS);
+        if file != 0 {
+            let f = h.rebase(FORMAT_FILE);
+            cdecl(h, DBG_PRINTF, &[f, file]);
+        }
+        let line = g(h, SCRIPT_WARNINGS);
+        if line != 0 {
+            let f = h.rebase(FORMAT_LINE);
+            cdecl(h, DBG_PRINTF, &[f, line]);
+        }
+        let m = h.rebase(msg);
+        cdecl(h, DBG_PRINTF, &[m, src]);
+        h.write(h.rebase(LAST_ERROR), code);
+    }
+
+    /// `op_macro_expand_007e2a60(tree, src, name, &pos, end, eol)` -> 0,
+    /// or -1 when `name` is no macro in `tree` (or has no body) or its
+    /// arguments don't open with "(": a macro's expansion into the output
+    /// at `name` (the macro's name is the output's start). With
+    /// parameters (the symbol's token list) the arguments are read from
+    /// `src` at `*pos` (`op_token_get_007e1d50`, which may move the line
+    /// end in the `eol` argument slot, `slots + 0x14`; then
+    /// `op_token_expr_007e2140` per argument), each copied to its
+    /// parameter (`+4`, its length `+0x16`); too many or too few are
+    /// reported (`g_OpLastError` 0xc, 0xb), `*pos` updated. Then the body
+    /// (`+4`, its length `+0x16`) is tokenized into the output
+    /// (`op_token_007e1f80`), each identifier token (class 2) expanded in
+    /// turn, up to three deep (`0x0113fc7c`), against the script's
+    /// symbols and then the macro's own parameters (their values saved
+    /// and put back around it), the output advancing by its length. The
+    /// parameters' values are freed at the end. `ebp` is the original's
+    /// frame (the token at `ebp - 0x204`, the positions at `- 0x214`, `-
+    /// 0x20c`, the spills at `- 0x21c..`).
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn macro_expand<H: Host>(
+        h: &mut H,
+        ebp: u32,
+        slots: u32,
+        tree: u32,
+        src: u32,
+        name: u32,
+        pos: u32,
+        end: u32,
+    ) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let (buf, pos1, pos2) = (fr(0x204), fr(0x214), fr(0x20c));
+        let eol = slots.wrapping_add(0x14);
+        h.write(fr(0x21c), name);
+        h.write(fr(0x208), pos);
+        let sym = cdecl(h, SYMBOL_FIND, &[name, tree]);
+        h.write(fr(0x210), sym);
+        if sym == 0 || h.read::<u32>(at(sym, 4)) == 0 {
+            return u32::MAX;
+        }
+        let mut param: u32 = h.read(at(sym, 8));
+        if param != 0 {
+            let p: u32 = h.read(pos);
+            h.write(pos1, p);
+            cdecl(h, TOKEN_GET, &[0, src, buf, pos1, 0x200, eol, 5]);
+            let open = h.rebase(S_OPEN);
+            let mut k = 0_u32;
+            loop {
+                let c: u8 = h.read(buf.wrapping_add(k));
+                if c != h.read::<u8>(open.wrapping_add(k)) {
+                    return u32::MAX;
+                }
+                k += 1;
+                if c == 0 {
+                    break;
+                }
+            }
+            loop {
+                let e: u32 = h.read(eol);
+                let more = cdecl(h, TOKEN_EXPR, &[src, buf, pos1, 0x200, e]);
+                if param == 0 {
+                    report(h, S_TOO_MANY, src, 0xc);
+                } else {
+                    let copy = cdecl(h, OP_STRDUP, &[buf]);
+                    h.write(at(param, 4), copy);
+                    let len = if copy == 0 { 0 } else { strlen(h, copy) };
+                    h.write(at(param, 0x16), len as u16);
+                    param = h.read(at(param, 0x20));
+                }
+                if more == 0 {
+                    break;
+                }
+            }
+            if param != 0 {
+                report(h, S_TOO_FEW, src, 0xb);
+            }
+            let p: u32 = h.read(pos1);
+            let pos: u32 = h.read(fr(0x208));
+            h.write(pos, p);
+            param = h.read(at(sym, 8));
+        }
+        let len = i32::from(h.read::<i16>(at(sym, 0x16))).cast_unsigned();
+        h.write(fr(0x208), len);
+        h.write(pos2, 0_u32);
+        let mut done = 0_u32;
+        loop {
+            let room = end.wrapping_sub(done);
+            let dst = done.wrapping_add(name);
+            h.write(fr(0x218), dst);
+            let body: u32 = h.read(at(sym, 4));
+            let class = cdecl(h, TOKEN, &[body, dst, pos2, room, len]);
+            let depth = g(h, EXPAND_DEPTH);
+            if class == 2 && depth.cast_signed() < 3 {
+                h.write(h.rebase(EXPAND_DEPTH), depth.wrapping_add(1));
+                let saved = cdecl(h, LIST_VALUES, &[param]);
+                let top = g(h, SCRIPT_TREE);
+                let body: u32 = h.read(at(sym, 4));
+                let r = cdecl(h, MACRO_EXPAND, &[top, body, dst, pos2, room, len]);
+                if r != 0 && param != 0 {
+                    let body: u32 = h.read(at(sym, 4));
+                    cdecl(h, MACRO_EXPAND, &[param, body, dst, pos2, room, len]);
+                }
+                if saved != 0 {
+                    let (mut p, mut v) = (param, saved);
+                    while p != 0 {
+                        let w: u32 = h.read(v);
+                        h.write(at(p, 4), w);
+                        p = h.read(at(p, 0x20));
+                        v = v.wrapping_add(4);
+                    }
+                    cdecl(h, MS_FREE, &[saved]);
+                }
+                let depth = g(h, EXPAND_DEPTH).wrapping_sub(1);
+                h.write(h.rebase(EXPAND_DEPTH), depth);
+            }
+            done = cdecl(h, OP_STRLEN, &[name]);
+            if h.read::<u32>(pos2).cast_signed() >= len.cast_signed() {
+                break;
+            }
+        }
+        let mut p = param;
+        while p != 0 {
+            let v: u32 = h.read(at(p, 4));
+            if v != 0 {
+                cdecl(h, MS_FREE, &[v]);
+                h.write(at(p, 4), 0_u32);
+            }
+            p = h.read(at(p, 0x20));
+        }
+        0
+    }
 }
