@@ -2516,3 +2516,133 @@ pub const SPARK_BURST: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A vertex of the mesh's i16 table `v` (6 bytes each) as three floats,
+/// and its `z` as the integer.
+fn mesh_vertex<G: Game>(g: &G, v: u32, i: u32) -> ([f32; 3], i32) {
+    let at = v.wrapping_add(i.wrapping_mul(6));
+    let c = |k: u32| i32::from(g.read::<i16>(at.wrapping_add(2 * k)));
+    (
+        [
+            cvt(c(0).cast_unsigned()),
+            cvt(c(1).cast_unsigned()),
+            cvt(c(2).cast_unsigned()),
+        ],
+        c(2),
+    )
+}
+
+/// The bounds `lo`/`hi` (`comiss`: only a smaller or larger value moves
+/// them) and the sum `s` taking the point `p` (the sum's `z` as `p.z +
+/// s.z`, the operands' order).
+fn mesh_take<G: Game>(g: &mut G, (lo, hi, s): (u32, u32, u32), p: [f32; 3]) {
+    for (k, &x) in (0u32..).zip(&p) {
+        if f32_at(g, lo + 4 * k) > x {
+            g.write::<f32>(lo + 4 * k, x);
+        }
+    }
+    for (k, &x) in (0u32..).zip(&p) {
+        if x > f32_at(g, hi + 4 * k) {
+            g.write::<f32>(hi + 4 * k, x);
+        }
+    }
+    let x = add(f32_at(g, s), p[0]);
+    g.write::<f32>(s, x);
+    let x = add(f32_at(g, s + 4), p[1]);
+    g.write::<f32>(s + 4, x);
+    let x = add(p[2], f32_at(g, s + 8));
+    g.write::<f32>(s + 8, x);
+}
+
+/// A mesh's bounds, vertex sum and mean normal (internal: `ecx` = the
+/// mesh `M`, `edx` = the low bound `lo`; cdecl `(hi, sum)`; a /GS frame).
+/// `lo` starts at 20000, `hi` at -20000, the sum at 0. The groups (from
+/// `M + M[4]`, `i16 M[0x10]` faces in all) of kind 3 (byte `+1`) hold
+/// `i16 +2` triangles of 0x28 bytes from `+0x10`, each three u16 vertex
+/// indices `+0xc..+0x10` into the i16 table `M + M[8]`: every vertex moves
+/// the bounds and goes into the sum, and the face's normal (the cross
+/// product of its edges, normalised by slot 232 on the frame) into the
+/// normal sum `N` (on the frame, `(0, 0, 0, 0)` first). Other groups are
+/// skipped with their header. Then slot 564 `(sum, sum, n K)` and slot
+/// 232 `(N, N)`; returns its `eax`.
+///
+/// `magic_0162` 0x100016a0 (992 bytes; 2 DLLs).
+pub fn mesh_bounds<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let m = fr.ecx;
+    let lo = fr.edx;
+    let (hi, s) = (fr.arg(g, 0), fr.arg(g, 1));
+    for k in 0..3 {
+        g.write::<u32>(lo + 4 * k, 0x469c_4000);
+    }
+    for k in 0..3 {
+        g.write::<u32>(hi + 4 * k, 0xc69c_4000);
+    }
+    let mut grp = m.wrapping_add(g.read::<u32>(m + 4));
+    let verts = m.wrapping_add(g.read::<u32>(m + 8));
+    for k in 0..3 {
+        g.write::<u32>(s + 4 * k, 0);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let (nrm, face) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x24));
+    for k in 0..4 {
+        g.write::<u32>(nrm + 4 * k, 0);
+    }
+    let mut left = i32::from(g.read::<i16>(m + 0x10));
+    let mut st = Pushes::default();
+    while left > 0 {
+        let mut tri = grp.wrapping_add(0x10);
+        let count = i32::from(g.read::<i16>(grp.wrapping_add(2)));
+        if g.read::<u8>(grp.wrapping_add(1)) == 3 && count > 0 {
+            let mut j = 0;
+            while j < count {
+                let idx = |g: &G, o: u32| u32::from(g.read::<u16>(tri.wrapping_add(o)));
+                let (p0, z0) = mesh_vertex(g, verts, idx(g, 0xc));
+                mesh_take(g, (lo, hi, s), p0);
+                let (p1, _) = mesh_vertex(g, verts, idx(g, 0xe));
+                mesh_take(g, (lo, hi, s), p1);
+                let (p2, _) = mesh_vertex(g, verts, idx(g, 0x10));
+                mesh_take(g, (lo, hi, s), p2);
+                let z0 = cvt(z0.cast_unsigned());
+                let (ax, ay, az) = (sub(p2[0], p0[0]), sub(p2[1], p0[1]), sub(p2[2], z0));
+                let (bx, by, bz) = (sub(p1[0], p0[0]), sub(p1[1], p0[1]), sub(p1[2], z0));
+                g.write::<u32>(ebp.wrapping_sub(0x18), 0x3f80_0000);
+                let nx = sub(mul(az, by), mul(ay, bz));
+                let ny = sub(mul(ax, bz), mul(az, bx));
+                let nz = sub(mul(ay, bx), mul(ax, by));
+                g.write::<f32>(face, nx);
+                g.write::<f32>(face + 4, ny);
+                g.write::<f32>(face + 8, nz);
+                st.push_all(&[face, face]);
+                // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+                st.call(g, slot_target(g, w(0x2e7), 232), tri);
+                st.pop(2);
+                for k in 0..3 {
+                    let x = add(f32_at(g, face + 4 * k), f32_at(g, nrm + 4 * k));
+                    g.write::<f32>(nrm + 4 * k, x);
+                }
+                tri = tri.wrapping_add(0x28);
+                j += 1;
+            }
+        }
+        left -= count;
+        grp = tri;
+    }
+    let n = cvt(i32::from(g.read::<i16>(m + 0x10)).cast_unsigned());
+    st.push(mul(n, f32_at(g, w(0x3ad))).to_bits());
+    st.push_all(&[s, s]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, slot_target(g, w(0x39c), 564), 0);
+    st.push_all(&[nrm, nrm]);
+    // call width: 12 (the most `Pushes::words` holds; slots take at most 11)
+    st.call(g, slot_target(g, w(0x3c0), 232), 0).eax
+}
+
+/// [`mesh_bounds`] (the `rel32`: `__security_check_cookie`).
+pub const MESH_BOUNDS: Sig = Sig {
+    len: 992,
+    hash: 0xae3d_d9e9_ee71_4dc5,
+    calls: &[(0x3d8, Callee::Any)],
+    imports: &[],
+};

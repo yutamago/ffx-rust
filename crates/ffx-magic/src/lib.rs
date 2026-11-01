@@ -3350,6 +3350,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("child object set-up", &s8_misc::CHILD_OBJECT_SETUP),
     ("bone node", &s8_misc::BONE_NODE),
     ("spark burst", &s8_misc::SPARK_BURST),
+    ("mesh bounds", &s8_misc::MESH_BOUNDS),
     // round 8, shared-8 (s8_misc): end of INTERNAL
     // round 6, the shape families (o6_fam_*)
     (

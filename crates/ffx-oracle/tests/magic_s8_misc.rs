@@ -1761,3 +1761,89 @@ fn spark_bursts() {
         }
     }
 }
+
+/// The mesh bounds in both DLLs: no vertices, a skipped group, triangle
+/// groups (vertices below, above and inside the running bounds, equal
+/// ones), an empty kind-3 group.
+#[test]
+fn mesh_bounds() {
+    for (dll, rva) in [(162u16, 0x16a0u32), (586, 0x1640)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        log_calls(&mut t, 232, 2, &[0], |m, a, k| {
+            for i in 0..3u32 {
+                let x = f32::from_bits(m.r32(a[0] + 4 * i)) * 0.125;
+                m.w32(a[1] + 4 * i, x.to_bits());
+            }
+            0x232 + k
+        });
+        log_calls(&mut t, 564, 3, &[0], |_, a, k| a[2] ^ k);
+        let (m, lo, hi, s) = (
+            SCRATCH + 0x1000,
+            SCRATCH + 0x100,
+            SCRATCH + 0x140,
+            SCRATCH + 0x180,
+        );
+        let verts = m + 0x800;
+        let grps = m + 0x40;
+        for i in 0..32u32 {
+            for (k, v) in [
+                (0u32, (i * 37 % 61) as i16 - 30),
+                (1, (i * 11 % 23) as i16 - 9),
+                (2, (i * 5 % 17) as i16 * -3),
+            ] {
+                t.set_u16(verts + 6 * i + 2 * k, v.cast_unsigned());
+            }
+        }
+        // the groups: (kind, triangles)
+        for (k, groups) in [
+            &[][..],
+            &[(2u8, 2i16)][..],
+            &[(3, 2), (1, 1), (3, 3)][..],
+            &[(3, 0), (3, 4)][..],
+            &[(3, 1)][..],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.write(m, &varied(0x40, k));
+            t.set_u32(m + 4, grps - m);
+            t.set_u32(m + 8, verts - m);
+            let total: i16 = groups.iter().map(|g| g.1).sum();
+            t.set_u16(m + 0x10, total.cast_unsigned());
+            let mut at = grps;
+            for (gi, &(kind, n)) in groups.iter().enumerate() {
+                t.write(at, &varied(0x10, k + gi as u32));
+                t.set_u8(at + 1, kind);
+                t.set_u16(at + 2, n.cast_unsigned());
+                at += 0x10;
+                if kind == 3 {
+                    for j in 0..u32::from(n.max(0).cast_unsigned()) {
+                        t.write(at, &varied(0x28, k + j));
+                        for (o, v) in [0xcu32, 0xe, 0x10].into_iter().zip([
+                            j * 3 + k,
+                            j * 5 + 1,
+                            (j * 7 + k * 3) % 32,
+                        ]) {
+                            t.set_u16(at + o, (v % 32) as u16);
+                        }
+                        at += 0x28;
+                    }
+                }
+            }
+            t.write(lo, &varied(0xc0, k));
+            scrub(&mut t);
+            let c = Call {
+                ecx: m,
+                edx: lo,
+                eax: 0x0eee_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, c, &[hi, s], Eax::Checked, |g, img, fr| {
+                Ret::eax(s8_misc::mesh_bounds(g, img, fr))
+            });
+        }
+    }
+}
