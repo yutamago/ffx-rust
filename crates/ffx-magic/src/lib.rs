@@ -2621,6 +2621,7 @@ ports! {
     "beams spread" => s9_misc::BEAMS_SPREAD, s9_misc::beams_spread;
     "beams spread (slot 38)" => s9_misc::BEAMS_SPREAD_38, s9_misc::beams_spread_38;
     "mov eax, 1; ret" => runtime::ONE_RET, runtime::one_ret;
+    "beams spread (flat)" => s9_misc::BEAMS_SPREAD_FLAT, s9_misc::beams_spread_flat;
     // round 9, shared-9 (s9_misc): end of ports
 }
 

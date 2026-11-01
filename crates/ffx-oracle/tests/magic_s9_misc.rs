@@ -959,8 +959,8 @@ fn beams_one_by_one() {
     }
 }
 
-/// Rows 16, 63: three beams spread from the actors' mean in five of the
-/// DLLs (two with slot 38 after the tail): one to three actors, the object on its list and not, a count
+/// Rows 16, 62, 63: three beams spread from the actors' mean in seven of
+/// the DLLs (four with slot 38 after the tail, two without the height): one to three actors, the object on its list and not, a count
 /// that truncates to 0.
 #[test]
 fn beams_spread() {
@@ -970,10 +970,14 @@ fn beams_spread() {
         (555, 0x4440),
         (565, 0x65e0),
         (697, 0x65e0),
+        (644, 0xa430),
+        (692, 0xa430),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let w = |t: &Twin, o: u32| op(t, f, o);
+        // `magic_0644`'s copy has no height step: 0x20 bytes less from +0x9d
+        let sh = if rva == 0xa430 { 0x20 } else { 0 };
+        let w = move |t: &Twin, o: u32| op(t, f, if o >= 0x9d { o - sh } else { o });
         log_calls(&mut t, 219, 2, &[], |_, a, k| a[0] ^ 0x0219_0000 ^ k);
         log_calls(&mut t, 237, 4, &[], |m, a, k| {
             for i in 0..3 {
@@ -1016,7 +1020,7 @@ fn beams_spread() {
         log_calls(&mut t, 713, 1, &[0], |_, _, _| 0x713);
         log_calls(&mut t, 257, 2, &[], |_, a, _| a[0] ^ 0x0257_0000);
         log_calls(&mut t, 38, 3, &[], |_, a, _| a[0] ^ 0x0038_0000);
-        let soa = t.img.rel32_target(f + 0x374);
+        let soa = t.img.rel32_target(f + 0x374 - sh);
         let mean = t.img.rel32_target(f + 0x79);
         let b = SCRATCH + 0x10000;
         t.set_u32(w(&t, 0x29), b);
@@ -1056,6 +1060,9 @@ fn beams_spread() {
             }
             t.write(b, &varied(0xec00, k + 1));
             set_f(&mut t, b + 0xebf0, 0.5 - 0.25 * k as f32);
+            // the scene global slot 219 reads (twice)
+            let gc = w(&t, 0x32);
+            t.set_u32(gc, 0x0c0c_0000 + k);
             let obj = b + w(&t, 0x46c);
             let node = SCRATCH + 0x5400;
             t.write(node, &varied(0x10, k));
@@ -1070,7 +1077,8 @@ fn beams_spread() {
                 t.set_u32(list, 0);
             }
             t.set_u32(list + 0xc, 1);
-            task_ring(&mut t, f, (0x37e, 0x3b7, 0x41e, 0x436), k, 3 + k % 2);
+            let ring = (0x37e - sh, 0x3b7 - sh, 0x41e - sh, 0x436 - sh);
+            task_ring(&mut t, f, ring, k, 3 + k % 2);
             scrub(&mut t);
             let c = Call {
                 eax: 0x4480 + k,

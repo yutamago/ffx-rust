@@ -1528,85 +1528,139 @@ fn unlist_object<G: Game>(
     }
 }
 
-/// [`beams_spread`]'s operands (for [`beams_tail`]).
-const BEAMS_SPREAD_OPS: BeamOps = BeamOps {
-    table: 0x1b,
-    n: 0,
-    b: 0x29,
-    c: 0x32,
-    c_end: 0x4c5,
-    k1: 0,
-    actor: (0, 0, 0),
-    aim: [0x2ad, 0x2bc, 0x2c6, 0x2d0, 0x2dd],
+/// Where [`beams_spread`]'s copies differ: `magic_0644`'s has no height
+/// step (slot 12), so its code from `+0x9d` on sits `shift` = 0x20 bytes
+/// earlier, and its frame swaps `P` and `M`; the mean position's call sees
+/// a different stack depth (`esp` at `S - mean_esp`).
+pub struct Spread {
+    shift: u32,
+    p: u32,
+    m: u32,
+    mean_esp: u32,
+    height: bool,
+}
+
+/// `magic_0446` 0x10004480 and `magic_0565` 0x100065e0.
+const SPREAD_A: Spread = Spread {
+    shift: 0,
+    p: 0x68,
+    m: 0x58,
+    mean_esp: 0x1c,
+    height: true,
 };
+
+/// `magic_0644` 0x1000a430.
+const SPREAD_B: Spread = Spread {
+    shift: 0x20,
+    p: 0x58,
+    m: 0x68,
+    mean_esp: 4,
+    height: false,
+};
+
+/// [`beams_spread`]'s operands for [`beams_tail`] and [`aim_at`] (the
+/// `magic_0446` offsets less `shift` from `+0x9d` on).
+fn spread_ops(shift: u32) -> BeamOps {
+    let at = |o: u32| o - shift;
+    BeamOps {
+        table: 0x1b,
+        n: 0,
+        b: 0x29,
+        c: 0x32,
+        c_end: at(0x4c5),
+        k1: 0,
+        actor: (0, 0, 0),
+        aim: [0x2ad, 0x2bc, 0x2c6, 0x2d0, 0x2dd].map(at),
+    }
+}
 
 /// Three beams spread from the actors' mean position (cdecl, no
 /// arguments; a /GS frame aligned to 8, `S` = `(ebp & !7) - 0xd0`: the
-/// angle `t` at `S+0x24`, the offset `V` at `S+0x48`, the mean `M` at
-/// `S+0x58`, the point `P` at `S+0x68`, the turned offset `W` at `S+0x78`,
-/// the matrix `X` at `S+0x88`): `P` = slot 237 `(slot 219 (*G_C, 0), 0,
-/// 0, P)` with `w` 1.0, `t = B[0xebf0]` (`B = *G_B`), `V.w` = 1.0, `M` the
-/// actors' mean position ([`mean_position`](crate::sb_misc::mean_position))
-/// with `M.y` = slot 12 of the first entry's actor (ST0). For each beam
-/// `i` of 3 (`E = B + 0xd9d8 + 0x520 i`): `E-0x18 = P`, `E-8 = M`; `V` =
-/// `(0, -25, 0)` for the first, `(40, 0, slot 314 (15.0))` and `(-40, 0,
-/// slot 314 (15.0))` for the others; `X` = slot 235, turned by slot 328
-/// `(X, X, 0.0)` and 329 `(X, X, t)`; `W` = slot 229 `(W, X, V)`, slot 248
-/// `(E-8, E-8, W)`; `E+4 = 1.0`; the aim ([`aim_at`]); the count
-/// `distance / KD` (1 when negative, 2 more for the first) into `E+0x294`
-/// and `+0x298`; the object `E - 0x278` started at the scale `K` with the
-/// program 3 ([`start_object_at`](crate::s4_misc::start_object_at)),
-/// `E-0x1b8.. = E+8..`, `E+0x29c = i`, a task node taken and listed
+/// angle `t` at `S+0x24`, the offset `V` at `S+0x48`, the mean `M` and the
+/// point `P` at `S+0x58`/`+0x68` ([`Spread`]), the turned offset `W` at
+/// `S+0x78`, the matrix `X` at `S+0x88`): `P` = slot 237 `(slot 219
+/// (*G_C, 0), 0, 0, P)` with `w` 1.0, `t = B[T]` (`B = *G_B`, `T` the
+/// code's displacement), `V.w` = 1.0, `M` the actors' mean position
+/// ([`mean_position`](crate::sb_misc::mean_position)), its `y` = slot 12
+/// of the first entry's actor (ST0) where the copy has the height step.
+/// For each beam `i` of 3 (`E = B + E0 + 0x520 i`, `E0` an immediate):
+/// `E-0x18 = P`, `E-8 = M`; `V` = `(0, -25, 0)` for the first, `(40, 0,
+/// slot 314 (15.0))` and `(-40, 0, slot 314 (15.0))` for the others (in
+/// `magic_0446`; `magic_0644`'s are -15 and 10, the code's immediates); `X` =
+/// slot 235, turned by slot 328 `(X, X, 0.0)` and 329 `(X, X, t)`; `W` =
+/// slot 229 `(W, X, V)`, slot 248 `(E-8, E-8, W)`; `E+4 = 1.0`; the aim
+/// ([`aim_at`]); the count `distance / KD` (1 when negative, 2 more for the
+/// first) into `E+0x294` and `+0x298`; the object `E - 0x278` started at
+/// the scale `K` with the program (an immediate)
+/// ([`start_object_at`](crate::s4_misc::start_object_at)), `E-0x1b8.. =
+/// E+8..`, `E+0x29c = i`, a task node taken and listed
 /// ([`free_to_live`](crate::s7_misc::free_to_live)) with `+0x14 = E -
-/// 0x278`. Then `B[0xebe0] = 3`, `B[0xebe4] = 0`, the object `B+0x2860`
-/// off its list ([`unlist_object`]). Returns [`beams_tail`]'s `eax`.
+/// 0x278`. Then the object `O = B + O0` gets `O[W1] = 3`, `O[W2] = 0` and
+/// leaves its list ([`unlist_object`]). Returns [`beams_tail`]'s `eax`.
 ///
 /// `magic_0446` 0x10004480 (1,273 bytes; 10 DLLs).
 pub fn beams_spread<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    let f = beams_spread_body(g, img, fr);
-    beams_tail(g, img, f, &BEAMS_SPREAD_OPS)
+    beams_spread_body(g, img, fr, &SPREAD_A);
+    beams_tail(g, img, fr.at, &spread_ops(0))
 }
 
-/// [`beams_spread`] with the program `0x27`, the object at `B+0x2730`
-/// (its words `+0xc4b0`, `+0xc4b4`) and, after the tail, slot 38 `(slot
-/// 219 (*G_C, 0), 0.0, 1)`, whose `eax` it returns (the program, the
-/// object's offset and its words' are the code's immediates).
-///
-/// `magic_0565` 0x100065e0 (1,321 bytes; 5 DLLs).
-pub fn beams_spread_38<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    let f = beams_spread_body(g, img, fr);
-    let w = |o: u32| op(img, f, o);
-    beams_tail(g, img, f, &BEAMS_SPREAD_OPS);
+/// [`beams_spread`] followed by slot 38 `(slot 219 (*G_C, 0), 0.0, 1)`,
+/// whose `eax` it returns.
+fn spread_38<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &Spread) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o - l.shift);
+    beams_spread_body(g, img, fr, l);
+    beams_tail(g, img, f, &spread_ops(l.shift));
     let c = g.read::<u32>(w(0x4ea));
-    let x = g.call(slot_target(g, w(0x1b), 219), 0, &[c, 0]).eax;
+    let x = g
+        .call(slot_target(g, op(img, f, 0x1b), 219), 0, &[c, 0])
+        .eax;
     Ret::eax(g.call(slot_target(g, w(0x505), 38), 0, &[x, 0, 1]).eax)
 }
 
-/// [`beams_spread`] up to its tail; returns the function's address.
-fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+/// [`beams_spread`] with slot 38 after the tail ([`spread_38`]; its
+/// program 0x27 and object `B+0x2730`).
+///
+/// `magic_0565` 0x100065e0 (1,321 bytes; 5 DLLs).
+pub fn beams_spread_38<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spread_38(g, img, fr, &SPREAD_A)
+}
+
+/// [`beams_spread_38`] without the height step ([`SPREAD_B`]).
+///
+/// `magic_0644` 0x1000a430 (1,289 bytes; 5 DLLs).
+pub fn beams_spread_flat<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spread_38(g, img, fr, &SPREAD_B)
+}
+
+/// [`beams_spread`] up to its tail.
+fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &Spread) {
     use crate::sb_sse::div;
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    let w = |o: u32| op(img, f, if o >= 0x9d { o - l.shift } else { o });
     let t = |g: &G, s: u32| slot_target(g, w(0x1b), s);
-    let ops = &BEAMS_SPREAD_OPS;
+    let ops = spread_ops(l.shift);
     let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xd0);
-    let (tilt, v, m, p, wv, x) = (s + 0x24, s + 0x48, s + 0x58, s + 0x68, s + 0x78, s + 0x88);
+    let (tilt, v, wv, x) = (s + 0x24, s + 0x48, s + 0x78, s + 0x88);
+    let (p, m) = (s + l.p, s + l.m);
     let b = g.read::<u32>(w(0x29));
     let c = g.read::<u32>(w(0x32));
     let scene = g.call(t(g, 219), 0, &[c, 0]).eax;
     g.call(t(g, 237), 0, &[scene, 0, 0, p]);
-    let k = g.read::<u32>(b.wrapping_add(0xebf0));
+    let k = g.read::<u32>(b.wrapping_add(w(0x57)));
     g.write::<u32>(p + 0xc, 0x3f80_0000);
     g.write::<u32>(tilt, k);
     g.write::<u32>(v + 0xc, 0x3f80_0000);
     let mean = img.rel32_target(f + 0x79);
-    crate::sb_misc::mean_position(g, img, mean, s.wrapping_sub(0x1c), m);
-    let first = u32::from(g.read::<u8>(g.read::<u32>(w(0x7e))));
-    let actor = g.read::<u32>(first.wrapping_mul(4).wrapping_add(w(0x88)));
-    let y = crate::m0018::st0_f32(g.call(t(g, 12), 0, &[actor]).st0);
-    g.write::<f32>(m + 4, y);
-    let mut e = b.wrapping_add(0xd9d8);
-    let start = img.rel32_target(f + 0x374);
+    crate::sb_misc::mean_position(g, img, mean, s.wrapping_sub(l.mean_esp), m);
+    if l.height {
+        let first = u32::from(g.read::<u8>(g.read::<u32>(w(0x7e))));
+        let actor = g.read::<u32>(first.wrapping_mul(4).wrapping_add(w(0x88)));
+        let y = crate::m0018::st0_f32(g.call(t(g, 12), 0, &[actor]).st0);
+        g.write::<f32>(m + 4, y);
+    }
+    let mut e = b.wrapping_add(w(0xa1));
+    let start = img.rel32_target(f + 0x374 - l.shift);
     for i in 0..3u32 {
         for j in 0..4 {
             let a = g.read::<u32>(p + 4 * j);
@@ -1617,14 +1671,15 @@ fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
             let a = g.read::<u32>(m + 4 * j);
             g.write::<u32>(to + 4 * j, a);
         }
+        // the offsets are the code's immediates (`mov [esp+n], imm32`)
         if i == 0 {
-            g.write::<u32>(v, 0);
-            g.write::<u32>(v + 4, 0xc1c8_0000);
-            g.write::<u32>(v + 8, 0);
+            g.write::<u32>(v, w(0x147));
+            g.write::<u32>(v + 4, w(0x14f));
+            g.write::<u32>(v + 8, w(0x157));
         } else {
-            g.write::<u32>(v, if i == 1 { 0x4220_0000 } else { 0xc220_0000 });
-            g.write::<u32>(v + 4, 0);
-            let z = crate::m0018::st0_f32(g.call(t(g, 314), 0, &[0x4170_0000]).st0);
+            g.write::<u32>(v, w(if i == 1 { 0x119 } else { 0x10f }));
+            g.write::<u32>(v + 4, w(0x127));
+            let z = crate::m0018::st0_f32(g.call(t(g, 314), 0, &[w(0x134)]).st0);
             g.write::<f32>(v + 8, z);
         }
         g.call(t(g, 235), 0, &[x]);
@@ -1654,7 +1709,8 @@ fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         g.write::<u32>(e + 0x29c, i);
         let ring = [
             0x37e, 0x3b7, 0x3d4, 0x3dc, 0x40d, 0x418, 0x41e, 0x436, 0x459, 0x449, 0x459,
-        ];
+        ]
+        .map(|o| o - l.shift);
         let node = crate::s7_misc::free_to_live(g, img, f, ring);
         g.write::<u32>(node.wrapping_add(0x14), obj);
         e = e.wrapping_add(0x520);
@@ -1662,8 +1718,8 @@ fn beams_spread_body<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let obj = b.wrapping_add(w(0x46c));
     g.write::<u32>(obj.wrapping_add(w(0x472)), 3);
     g.write::<u32>(obj.wrapping_add(w(0x47c)), 0);
-    unlist_object(g, img, f, obj, (0x487, 0x48c, 0x495, 0x49c, 0x1b));
-    f
+    let list = [0x487, 0x48c, 0x495, 0x49c].map(|o| o - l.shift);
+    unlist_object(g, img, f, obj, (list[0], list[1], list[2], list[3], 0x1b));
 }
 
 /// [`beams_spread`] (the `rel32`s: the mean position, the square roots,
@@ -1698,6 +1754,24 @@ pub const BEAMS_SPREAD_38: Sig = Sig {
         (0x374, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
         (0x48c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
         (0x521, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`beams_spread_flat`] (the `rel32`s as [`BEAMS_SPREAD`]'s, 0x20 bytes
+/// earlier from the square roots on).
+pub const BEAMS_SPREAD_FLAT: Sig = Sig {
+    len: 1289,
+    hash: 0x8cae_44b7_7c19_daa9,
+    calls: &[
+        (0x79, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x22a, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x23d, Callee::Import("_CIatan2")),
+        (0x27b, Callee::Import("_CIatan2")),
+        (0x301, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x354, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x46c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x501, Callee::Any),
     ],
     imports: &[],
 };
