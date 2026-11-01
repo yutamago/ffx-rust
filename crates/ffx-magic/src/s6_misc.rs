@@ -4258,8 +4258,10 @@ pub const AIMED_NODE_WALK: Sig = Sig {
 };
 
 /// A task pool reset and its first task (internal, `ecx` = the pool `P`):
-/// `*G_P = P`, the 128 entries' first words `P+0x48+0x50 i` cleared, the
-/// counters `G_A`, `G_B` zero and the size `G_N = 128`. When the free
+/// `*G_P = P`, the `n` entries' first words `P + a + s i` cleared, the
+/// counters `G_A`, `G_B` zero and the size `G_N = n` (`a`, `s` and `n`
+/// read from the code: 0x48, 0x50, 128 in `magic_0180`; 0x6c, 0x74, 256
+/// in `magic_0205`). When the free
 /// count `G_F` (u16) is not zero the free head `T = *G_H` is unlinked
 /// (`T.prev.next = T.next`, `T.next.prev = T.prev`), `*G_H` becomes
 /// `T.next` (0 when it was the last), the count drops and `T` is cleared
@@ -4267,18 +4269,24 @@ pub const AIMED_NODE_WALK: Sig = Sig {
 /// code); `T` (0 when nothing was free) then goes to the end of the live
 /// list (`G_L` its head, `G_E` its tail). Returns `T`.
 ///
-/// `magic_0180` 0x10002140 (221 bytes, `ecx` = the pool; 7 DLLs).
+/// `magic_0180` 0x10002140 (221 bytes, `ecx` = the pool; 7 DLLs) and
+/// `magic_0205` 0x10002a60 (5 DLLs).
 pub fn task_pool_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let p = fr.ecx;
     g.write::<u32>(w(0x2), p);
-    for i in 0..0x80u32 {
-        g.write::<u32>(p + 0x48 + 0x50 * i, 0);
+    // `add ecx, imm8` and `lea ecx, [ecx + imm8]`: sign-extended bytes
+    let imm8 = |o: u32| i32::from((w(o) as u8).cast_signed()).cast_unsigned();
+    let (first, stride, n) = (imm8(0x8), imm8(0x18), w(0xa));
+    let mut e = p.wrapping_add(first);
+    for _ in 0..n {
+        g.write::<u32>(e, 0);
+        e = e.wrapping_add(stride);
     }
     let mut count = g.read::<u16>(w(0x20));
     g.write::<u32>(w(0x25), 0);
-    g.write::<u32>(w(0x2b), 0x80);
+    g.write::<u32>(w(0x2b), w(0x2f));
     g.write::<u32>(w(0x34), 0);
     let mut t = 0u32;
     if count != 0 {
@@ -4319,6 +4327,15 @@ pub fn task_pool_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const TASK_POOL_RESET: Sig = Sig {
     len: 221,
     hash: 0xe221_f81b_ac54_7c93,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`task_pool_reset`] (`magic_0205`'s pool: other entry offset, stride
+/// and count).
+pub const TASK_POOL_RESET_B: Sig = Sig {
+    len: 221,
+    hash: 0x4b70_3b1d_1565_601d,
     calls: &[],
     imports: &[],
 };
