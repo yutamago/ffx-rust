@@ -3299,6 +3299,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("lit colour node", &s7_misc::LIT_COLOUR_NODE),
     ("emitter set-up", &s7_misc::EMITTER_SETUP),
     ("reel step", &s7_misc::REEL_STEP),
+    ("reel phases", &s7_misc::REEL_PHASES),
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
     ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),

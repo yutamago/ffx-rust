@@ -4126,3 +4126,66 @@ fn summon_objects_started() {
         }
     }
 }
+
+/// Rows 144 and 148: the reels' phases in both DLLs: phase 0, phase 1
+/// with the reels not done and done (the round below and at its count),
+/// phase 2 with the handle set and -1, and unknown phases.
+#[test]
+fn reel_phases() {
+    for (dll, rva) in [(644u16, 0x60c0u32), (565, 0x1f30)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 311, log, 1, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 808, log, 4, None, |_, a, k| a[0] ^ a[2] ^ k);
+        log_calls(&mut t, 651, log, 0, None, |_, _, _| 1);
+        t.stub_st0(651, move |m, _| f64::from(m.r32(log)) * 0.5);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let reel = t.img.rel32_target(f + 0x41);
+        let base = t.img.word(reel + 0x1a);
+        let pc = t.img.rel32_target(f + 0x11);
+        let strip = SCRATCH + 0x700;
+        t.set_u32(strip, 4);
+        t.set_u32(strip + 4, SCRATCH + 0x720);
+        t.write(SCRATCH + 0x720, &[3, 1, 2, 3]);
+        // (phase, the reels' state, the round, its count, the handle)
+        for (k, (phase, rs, n, m, h)) in [
+            (0u32, 0u32, 0u32, 0u32, 0u32),
+            (1, 5, 0, 3, 0),
+            (1, 4, 0, 3, 0),
+            (1, 4, 2, 3, 0),
+            (1, 4, 0xffff_fffe, 3, 0),
+            (2, 0, 0, 0, 0x2311),
+            (2, 0, 0, 0, 0xffff_ffff),
+            (3, 0, 0, 0, 0x2311),
+            (0x8000_0000, 0, 0, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(w(&t, 0x1), phase);
+            t.set_u32(w(&t, 0x4c), n);
+            t.set_u32(w(&t, 0x55), m);
+            t.set_u32(w(&t, 0x16), h);
+            // the reels' record (`reel_step`, also the record reset's)
+            let i = k % 2;
+            t.set_u32(t.img.word(reel + 0x2), i);
+            let r = base + 0x78 * i;
+            t.write(r, &varied(0x78, k));
+            for c in 0..3u32 {
+                let row = r + 0x1c * c;
+                t.set_u32(row, strip);
+                t.set_u16(row + 6, (c + k) as u16 % 4);
+            }
+            t.set_u32(r + 0x68, rs);
+            t.set_u32(r + 0x60, 2);
+            // the party's colours: one member in phase 2
+            t.set_u32(t.img.word(pc + 0x13), u32::from(phase == 2));
+            t.set_u32(t.img.word(pc + 0x38), k % 3);
+            scrub(&mut t);
+            t.check(f, Call::default(), &[], Eax::Checked, s7_misc::reel_phases);
+        }
+    }
+}

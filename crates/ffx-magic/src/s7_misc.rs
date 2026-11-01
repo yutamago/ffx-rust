@@ -4680,6 +4680,71 @@ pub const REEL_STEP: Sig = Sig {
     imports: &[],
 };
 
+/// The reels' phases (cdecl, no arguments): by the phase `*G_S`
+/// - 0: the record reset ([`record_reset`](crate::s4_fam446::record_reset)),
+///   phase 1, returns 0;
+/// - 1: the reels stepped ([`reel_step`]); when it returns 1, the round
+///   `*G_N` goes up and the phase becomes 0 while it is below `*G_M`
+///   (signed), else 2; returns 0;
+/// - 2: the party's colours
+///   ([`party_colours`](crate::o6_fam_pairs3::party_colours)), then slot
+///   311 `(*G_H)` and `*G_H = -1` unless it is already -1; returns 1;
+/// - any other: returns 0.
+///
+/// `magic_0644` 0x100060c0 and `magic_0565` 0x10001f30 (129 bytes; 5 DLLs
+/// each).
+pub fn reel_phases<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let sub = |o: u32| Frame {
+        at: img.rel32_target(f + o),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    match g.read::<u32>(w(0x1)) {
+        0 => {
+            crate::s4_fam446::record_reset(g, img, &sub(0x70));
+            g.write::<u32>(w(0x76), 1);
+            Ret::eax(0)
+        }
+        1 => {
+            if reel_step(g, img, &sub(0x41)).eax == 1 {
+                let n = g.read::<i32>(w(0x4c)).wrapping_add(1);
+                let phase = if n < g.read::<i32>(w(0x55)) { 0 } else { 2 };
+                g.write::<u32>(w(0x62), phase);
+                g.write::<i32>(w(0x68), n);
+            }
+            Ret::eax(0)
+        }
+        2 => {
+            crate::o6_fam_pairs3::party_colours(g, img, &sub(0x11));
+            let h = g.read::<u32>(w(0x16));
+            if h != 0xffff_ffff {
+                slot(g, img, f, 0x21, 311, fr.ecx, &[h]);
+                g.write::<u32>(w(0x32), 0xffff_ffff);
+            }
+            Ret::eax(1)
+        }
+        _ => Ret::eax(0),
+    }
+}
+
+/// [`reel_phases`] (the `rel32`s: [`party_colours`](crate::o6_fam_pairs3::party_colours),
+/// [`reel_step`] and [`record_reset`](crate::s4_fam446::record_reset)).
+pub const REEL_PHASES: Sig = Sig {
+    len: 129,
+    hash: 0xb6e7_fc9a_deb9_6060,
+    calls: &[
+        (
+            0x11,
+            Callee::Sig(&crate::o6_fam_pairs3::PARTY_COLOURS_0644_6150),
+        ),
+        (0x41, Callee::Sig(&REEL_STEP)),
+        (0x70, Callee::Sig(&crate::s4_fam446::RECORD_RESET)),
+    ],
+    imports: &[],
+};
+
 /// A summon's staged volley task (cdecl `(task)`, `S = task[1]`, its step
 /// `S+0x18`, the frame count `S+0x40` (up once on every way out); `ebp` =
 /// `esp - 4` at the entry, the task's argument word `A = ebp+8` reused
