@@ -2382,6 +2382,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("lights and give back", &s6_misc::LIGHTS_AND_GIVE_BACK),
     ("scene point", &s6_misc::SCENE_POINT),
     ("ring sparks", &s6_misc::RING_SPARKS),
+    ("smoke puff", &s6_misc::SMOKE_PUFF),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -2090,3 +2090,43 @@ fn ring_sparks_scattered() {
         });
     }
 }
+
+/// Row 321: `magic_0284`'s smoke puff: the ring full (nothing), and two
+/// puffs with the emitter's `+0x250` below and above the bound.
+#[test]
+fn smoke_puffs() {
+    let Some(mut t) = twin(284) else { return };
+    let f = t.at(0x2040);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    let calls = SCRATCH + 0x7e0;
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ (a[0] & 0xff));
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * f64::from(k % 5 + 1)
+    });
+    let take = t.img.rel32_target(f + 0x9);
+    let ring = SCRATCH + 0x1000;
+    t.set_u32(op(&t, take, 0x17), ring);
+    t.set_u32(op(&t, take, 0x0a), 4);
+    let e = SCRATCH + 0x300;
+    for (k, (full, y)) in [(true, 0.0f32), (false, -2.0), (false, 5.0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(ring, &varied(0x68 * 4, k));
+        for i in 0..4u32 {
+            t.set_u32(ring + 0x68 * i + 0x60, u32::from(full || i != 2));
+        }
+        t.set_u32(op(&t, take, 0x02), 1);
+        t.write(e, &varied(0x280, k));
+        t.set_u32(e + 0x250, y.to_bits());
+        t.set_u32(e + 0x25c, 1.5f32.to_bits());
+        t.set_u32(e + 0x264, (-0.75f32).to_bits());
+        scrub(&mut t);
+        t.check(f, Call::this(e), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::smoke_puff(g, img, fr))
+        });
+    }
+}

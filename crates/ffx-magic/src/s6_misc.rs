@@ -18,7 +18,10 @@ use crate::s4_misc::{
 use crate::s4_small::{FADER_TASK, fader_task};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
-use crate::sa_misc::{LINK_PART, RING_RESERVE, SPRITE_FADE, link_part, ring_reserve, sprite_fade};
+use crate::sa_misc::{
+    LINK_PART, RING_RESERVE, RING_TAKE_68, SPRITE_FADE, link_part, ring_reserve, ring_take_68,
+    sprite_fade,
+};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
@@ -2892,5 +2895,97 @@ pub const RING_SPARKS: Sig = Sig {
     len: 328,
     hash: 0x53e7_76f1_0014_6be3,
     calls: &[(0xe, Callee::Sig(&RING_RESERVE))],
+    imports: &[],
+};
+
+/// A smoke puff started from an emitter (internal, `ecx` = the emitter
+/// `E`): an entry `S` of the DLL's ring ([`ring_take_68`]; none: returns
+/// 0). `S[0]` = slot 719 `(D, 9, 0)` (`D` an immediate), u16 `+8 = -1`,
+/// `+4 = 1`, u16 `+0xa = 0x200`, `+0xc..+0x18` the emitter's
+/// `+0x24c..+0x258` (`+0x10` set to -0.5 unless below `K` or unordered),
+/// `+0x1c = CB`; four random floats (slot 314 `(0.02)`, `(0.2)`, `(0.02)`,
+/// `(0.01)`, ST0) give `+0x20 = (r1 + K1) E+0x25c`, `+0x24 = r2 - K2`,
+/// `+0x28 = (r3 + K1) E+0x264` and `+0x30 = r4 + K3`; then the constants
+/// `+0x2c = 0`, `+0x34 = 2`, `+0x38 = 0.9`, `+0x3c = -0.5`, `+0x40`,
+/// `+0x44 = 0`, `+0x48 = 0.07`, `+0x4c`, `+0x50 = 0x10`, `+0x54 = 0`,
+/// byte `+0x5f = 0`, u16 `+0x64 = 0`. Each call sees the words the
+/// earlier ones left on the stack. Returns 0.
+///
+/// `magic_0284` 0x10002040 (408 bytes, `ecx` = the emitter; 4 DLLs).
+pub fn smoke_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.ecx;
+    let s = ring_take_68(g, img, img.rel32_target(f + 0x9));
+    if s == 0 {
+        return 0;
+    }
+    let mut st = Pushes::default();
+    st.push_all(&[0, 9, w(0x28)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let d = st
+        .call(g, crate::runtime::slot_target(g, w(0x19), 719), 0)
+        .eax;
+    st.pop(3);
+    g.write::<u32>(s, d);
+    g.write::<u16>(s + 8, 0xffff);
+    g.write::<u32>(s + 4, 1);
+    g.write::<u16>(s + 0xa, 0x200);
+    for o in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(e + 0x24c + o);
+        g.write::<u32>(s + 0xc + o, v);
+    }
+    let x = g.read::<f32>(s + 0x10);
+    // comiss x, K; jb: kept below `K` or unordered
+    if !(x < k(g, 0x73) || x.is_nan()) {
+        g.write::<u32>(s + 0x10, 0xbf00_0000);
+    }
+    g.write::<u32>(s + 0x1c, w(0x8c));
+    let frnd = |g: &mut G, st: &mut Pushes, t: u32, a: u32| {
+        // `mov [esp], a`: the pushed word replaced
+        st.set_top(a);
+        // call width: 12 (the most `Pushes::words` holds)
+        let o = st.call(g, crate::runtime::slot_target(g, w(t), 314), 0);
+        crate::m0018::st0_f32(o.st0)
+    };
+    // push ecx (slot 719's target, then replaced)
+    st.push(crate::runtime::slot_target(g, w(0x19), 719));
+    let r1 = frnd(g, &mut st, 0x84, 0x3ca3_d70a);
+    g.write::<f32>(s + 0x20, mul(add(r1, k(g, 0xab)), g.read::<f32>(e + 0x25c)));
+    let r2 = frnd(g, &mut st, 0xb0, 0x3e4c_cccd);
+    g.write::<f32>(s + 0x24, sub(r2, k(g, 0xdc)));
+    let r3 = frnd(g, &mut st, 0xe1, 0x3ca3_d70a);
+    g.write::<u32>(s + 0x2c, 0);
+    g.write::<f32>(
+        s + 0x28,
+        mul(add(r3, k(g, 0x105)), g.read::<f32>(e + 0x264)),
+    );
+    let r4 = frnd(g, &mut st, 0x10a, 0x3c23_d70a);
+    for (o, v) in [(0x34u32, 0x4000_0000u32), (0x38, 0x3f66_6666)] {
+        g.write::<u32>(s + o, v);
+    }
+    g.write::<f32>(s + 0x30, add(r4, k(g, 0x13d)));
+    for (o, v) in [
+        (0x3cu32, 0xbf00_0000u32),
+        (0x40, 0),
+        (0x44, 0),
+        (0x48, 0x3d8f_5c29),
+        (0x4c, 0x10),
+        (0x50, 0x10),
+        (0x54, 0),
+    ] {
+        g.write::<u32>(s + o, v);
+    }
+    g.write::<u8>(s + 0x5f, 0);
+    g.write::<u16>(s + 0x64, 0);
+    0
+}
+
+/// [`smoke_puff`] (the `rel32`: [`ring_take_68`]).
+pub const SMOKE_PUFF: Sig = Sig {
+    len: 408,
+    hash: 0xb3a0_0e1f_220f_5cd1,
+    calls: &[(0x9, Callee::Sig(&RING_TAKE_68))],
     imports: &[],
 };
