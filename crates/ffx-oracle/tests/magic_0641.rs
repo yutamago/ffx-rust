@@ -17,7 +17,7 @@ mod magic_owna;
 use ffx_magic::{Ret, m0641};
 use magic::{Call, Eax, SCRATCH};
 use magic_hi::{f, konst};
-use magic_owna::twin;
+use magic_owna::{rec, recs, twin};
 
 const N: u16 = 641;
 
@@ -133,5 +133,32 @@ fn nine_parts() {
         t.set_u32(t.img.word(at + 0x11), SCRATCH + 0x24);
         t.write(base, &[0x5b; 9 * 0x80]);
         t.check_entry(at, Call::default(), &[base], Eax::Checked);
+    }
+}
+
+/// 0x10001f20: off, and on with slot 261's answers (the timelines idle);
+/// the words it copies and passes distinct.
+#[test]
+fn frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1f20);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
+    recs(&mut t, &[(723, 1), (724, 2), (376, 1), (381, 1), (214, 1)]);
+    for op in [0x44u32, 0x4b, 0x7b, 0x9d] {
+        let g = t.img.word(at + op);
+        t.set_u32(g, 0x00a5_0000 + op);
+    }
+    for (on, bits) in [
+        (0u32, 0u32),
+        (1, 0b0010),
+        (1, 0b1000),
+        (1, 0b0001),
+        (1, 0b1001),
+        (1, 0),
+    ] {
+        t.set_u32(t.img.word(at + 0x2), on);
+        t.set_u32(cell, bits);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

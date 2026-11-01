@@ -21,6 +21,9 @@ use magic_owna::{rec, recs, twin};
 
 const N: u16 = 577;
 
+/// The trap slot the DLL's matrix function pointer answers through.
+const BUILD: u32 = 901;
+
 #[test]
 fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
@@ -346,5 +349,207 @@ fn task() {
         t.set_u32(r + 0x1a0, 0x00a1_0000);
         t.set_u32(r + 0x1b4, 0x00a2_0000);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// 0x1000aac0: the exit task through its states (the motion done or
+/// not) and states it ignores.
+#[test]
+fn exit_task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xaac0);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 411, 1, move |m, _| m.r32(cell) & 1);
+    rec(&mut t, 228, 2, |_, a| 0x0228_0000 ^ a[1]);
+    recs(&mut t, &[(239, 3), (388, 3), (213, 2)]);
+    t.set_u32(t.img.word(at + 0x7f), 0x00a5_007f);
+    let (task, r, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x240,
+        SCRATCH + 0x280,
+    );
+    let o = SCRATCH + 0x1400;
+    for state in [
+        0u32, 1, 2, 0x31, 0x32, 0x33, 0x34, 0x35, 0x2710, 0x2711, 0x2712, 0x4e20,
+    ] {
+        for bits in [0u32, 1] {
+            t.write(r, &[0x3c; 0x40]);
+            t.set_u32(r + 0x1c, state);
+            t.set_u32(r + 0x18, 7);
+            t.set_u32(r + 0x20, o);
+            t.write(o, &[0x4d; 0x60]);
+            t.set_u32(o + 0x50, 0x00c0_0050);
+            t.set_u32(task, node);
+            t.set_u32(task + 4, r);
+            t.set_u32(node + 4, next);
+            t.set_u32(node + 8, prev);
+            t.set_u32(cell, bits);
+            t.check_entry(at, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}
+
+/// 0x1000b3a0: the spark set-up for two table indexes; the matrix slots
+/// fill and keep the local direction, slot 324 draws from a cell.
+#[test]
+fn spark_setup() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xb3a0);
+    let ring_last = t.img.word(at + 0x2e);
+    let ring_flags = t.img.word(at + 0x4a);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(cell);
+        m.w32(cell, k.wrapping_mul(0x0101_0101).wrapping_add(0x1357));
+        k
+    });
+    for (slot, n) in [(236u32, 3usize), (234, 3), (232, 2), (233, 3)] {
+        rec(&mut t, slot, n, move |m, a| {
+            let k = m.r32(magic_owna::row(slot));
+            if slot == 234 {
+                for i in 0..4u32 {
+                    m.w32(a[0] + 4 * i, (0.25 + i as f32 + k as f32).to_bits());
+                }
+            }
+            if a[0] >= 0x2000_0000 && a[0] < 0x3000_0000 {
+                magic_owna::dump(m, 0x100 + slot % 0x40, a[0], 4);
+            }
+            if a.len() > 1 && a[1] >= 0x2000_0000 && a[1] < 0x3000_0000 {
+                magic_owna::dump(m, 0x140 + slot % 0x40, a[1], 4);
+            }
+            slot
+        });
+    }
+    let tab = t.img.word(at + 0x56);
+    for i in 0..4u32 {
+        t.set_u32(tab + 4 * i, 0x00ab_0000 + i);
+    }
+    let obj = SCRATCH + 0x1000;
+    let src = SCRATCH + 0x1400;
+    let old = SCRATCH + 0x800;
+    for (i, k) in [(0u32, 0x4321u32), (2, 0x9876)] {
+        t.write(obj, &[0x5b; 0x100]);
+        t.set_u32(obj + 0xb8, 2.5f32.to_bits());
+        t.set_u32(obj + 0xbc, 7.0f32.to_bits());
+        t.write(src, &[0x2a; 0x60]);
+        t.set_u32(src + 0x54, 0x00a1_0054);
+        t.set_u32(src + 0x58, 0x00a1_0058);
+        t.write(old, &[0x6c; 0x40]);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        t.set_u32(cell, k);
+        let c = Call {
+            ecx: obj,
+            edx: src,
+            ..Call::default()
+        };
+        t.check(
+            at,
+            c,
+            &[i, SCRATCH + 0x900, 0x00cc_0000],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(m0577::spark_setup(g, img, fr)),
+        );
+    }
+}
+
+/// 0x1000b190: the spark task through its states (the wait, the alpha
+/// at and above 0, the speed above and below its bound); the DLL's
+/// matrix function pointer a trap for the test.
+#[test]
+fn spark_task() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0xb190);
+    let fnp = t.img.word(at + 0x1a7);
+    t.set_u32(fnp, magic::TRAPS + 16 * BUILD);
+    rec(&mut t, BUILD, 2, |m, a| {
+        for i in 0..16u32 {
+            m.w32(a[0] + 4 * i, (0.5 + i as f32).to_bits());
+        }
+        0x901
+    });
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 324, 0, move |m, _| m.r32(cell));
+    for (slot, n) in [(21u32, 3usize), (233, 3), (248, 3), (231, 3), (9, 3)] {
+        rec(&mut t, slot, n, move |m, a| {
+            let k = m.r32(magic_owna::row(slot));
+            for (j, &x) in a.iter().take(n).enumerate() {
+                if (0x3000_0000 - 0x1_0000..0x3000_0000).contains(&x) {
+                    magic_owna::dump(m, 0x100 + (slot + k + j as u32) % 0x40, x, 4);
+                }
+            }
+            slot
+        });
+    }
+    let (task, r, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x240,
+        SCRATCH + 0x280,
+    );
+    let o = SCRATCH + 0x1400;
+    for (state, wait, alpha, speed) in [
+        (0u32, 0u32, 1.0f32, 2.0f32),
+        (1, 3, 1.0, 0.5),
+        (1, 0, 0.5, 2.0),
+        (2, 0, 0.75, 2.0),
+        (2, 0, 0.01, 0.5),
+        (0x2710, 0, 0.0, 2.0),
+        (7, 0, 0.0, 2.0),
+    ] {
+        t.write(r, &[0x3c; 0x100]);
+        t.set_u32(r + 0x20, state);
+        t.set_u32(r + 0x18, wait);
+        t.set_u32(r + 0x1c, 1);
+        t.set_u32(r + 0x28, alpha.to_bits());
+        t.set_u32(r + 0x24, speed.to_bits());
+        t.set_u32(r + 0x2c, o);
+        for (i, a) in [0xd4u32, 0xd8, 0xdc].into_iter().enumerate() {
+            t.set_u32(r + a, 100 + 37 * i as u32);
+        }
+        t.write(o, &[0x4d; 0x60]);
+        t.set_u32(o + 0x54, 0x00a1_0054);
+        t.set_u32(o + 0x58, 0x00a1_0058);
+        t.set_u32(r + 0xb8, 1.5f32.to_bits());
+        t.set_u32(r + 0xbc, 9.0f32.to_bits());
+        t.set_u32(r + 0x30, SCRATCH + 0x1800);
+        t.set_u32(r + 0x34, SCRATCH + 0x1900);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.set_u32(cell, 0x1234 + state);
+        t.check_entry(at, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// 0x10001d20: the light node with no parent and with one (its child
+/// list empty and not); slot 558 fills the four integers.
+#[test]
+fn light_node() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1d20);
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[0] + 4 * i, 0x30 + 7 * i);
+        }
+        0x558
+    });
+    recs(&mut t, &[(331, 1), (353, 1), (271, 1)]);
+    let group = SCRATCH + 0x100;
+    let (node, parent, last) = (SCRATCH + 0x1000, SCRATCH + 0x1400, SCRATCH + 0x1600);
+    for (p, empty) in [(0u32, true), (parent, true), (parent, false)] {
+        t.write(node, &[0x5b; 0x100]);
+        t.write(parent, &[0x2c; 0x40]);
+        t.write(last, &[0x3d; 0x40]);
+        t.set_u32(parent + 0x10, if empty { parent } else { last });
+        t.set_u32(group, node);
+        t.set_u32(group + 4, p);
+        t.check(at, Call::this(group), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0577::light_node(g, img, fr))
+        });
     }
 }

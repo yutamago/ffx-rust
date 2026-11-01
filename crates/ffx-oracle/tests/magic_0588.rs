@@ -93,3 +93,56 @@ fn light() {
     t.set_u32(r + 0xdf4, 0x3fc9_0fdb);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// The actor matrix frame (shared with `magic_0600`): two actors, the
+/// float slots answering in ST0, the matrix slots keeping what they get.
+#[test]
+fn actor_matrix() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x25b0);
+    let s = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(at + 0x18), s);
+    let actors = SCRATCH + 0x300;
+    t.set_u32(t.img.word(at + 0x11), actors);
+    let hs = t.img.word(at + 0x25);
+    for i in 0..8u32 {
+        t.set_u32(hs + 4 * i, 0x00ac_0000 + i);
+    }
+    for (slot, n) in [(277u32, 1usize), (15, 1), (16, 1), (17, 1)] {
+        magic_owna::rec(&mut t, slot, n, move |_, _| slot);
+        t.stub_st0(slot, move |_, a| {
+            0.375 + f64::from(slot) / 64.0 + f64::from(a[0] & 7)
+        });
+    }
+    for (slot, n) in [
+        (210u32, 2usize),
+        (211, 2),
+        (235, 1),
+        (330, 3),
+        (328, 3),
+        (329, 3),
+        (257, 2),
+    ] {
+        magic_owna::rec(&mut t, slot, n, move |m, a| {
+            if slot == 210 {
+                for i in 0..16u32 {
+                    m.w32(a[1] + 4 * i, (1.5 + i as f32).to_bits());
+                }
+            }
+            if slot >= 328 {
+                magic_owna::dump(m, 0x100 + slot % 0x40, a[0], 16);
+            }
+            slot
+        });
+    }
+    for b in [1u8, 3] {
+        t.write(s, &[0x2b; 0x1000]);
+        for i in 0..0x40u32 {
+            t.set_u32(s + 0xb00 + 4 * i, (0.5 + 0.25 * i as f32).to_bits());
+        }
+        t.write(actors, &[b; 4]);
+        t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::m0588::actor_matrix(g, img, fr)
+        });
+    }
+}
