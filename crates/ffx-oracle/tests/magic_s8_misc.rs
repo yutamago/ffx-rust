@@ -1684,7 +1684,10 @@ fn spark_bursts() {
         });
         log_calls(&mut t, 268, 3, &[], |_, a, k| a[2] ^ k);
         log_calls(&mut t, 333, 1, &[], |_, a, _| a[0]);
-        t.stub_st0(333, |m, _| [0.5, 7.0, -7.0][(m.r32(ANSWER) % 3) as usize]);
+        // the yaw inside, past both bounds and on each
+        t.stub_st0(333, |m, _| {
+            [0.5, 7.0, -7.0, -2.5, 3.5][(m.r32(ANSWER) % 5) as usize]
+        });
         log_calls(&mut t, 307, 0, &[], |_, _, _| 0x307);
         t.stub_st0(307, |m, _| f64::from(m.r32(LOG) % 7) * 0.25);
         log_calls(&mut t, 232, 2, &[0], |m, a, _| {
@@ -1722,6 +1725,10 @@ fn spark_bursts() {
             (-10, 0, 70),
             (-150, 1, 5),
             (-1, 1, 70),
+            (-200, 2, 70),
+            (-1000, 2, 70),
+            (-201, 2, 70),
+            (-1001, 2, 70),
         ]
         .into_iter()
         .enumerate()
