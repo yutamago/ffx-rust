@@ -443,3 +443,98 @@ fn two_model_task() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0257` 0x10006690: every step, each frame gate short and met,
+/// the centre slot taken and skipped (`G_HIDE` bit 0).
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per callee
+fn centred_parts_task() {
+    let Some(mut t) = twin(257) else { return };
+    let f = t.at(0x6690);
+    bound(&t, f, "sf centred parts task");
+    let w = |t: &Twin, o: u32| op(t, f, o);
+    recs(
+        &mut t,
+        &[
+            (413, 1),
+            (215, 1),
+            (14, 2),
+            (218, 2),
+            (228, 2),
+            (366, 2),
+            (325, 2),
+            (714, 5),
+            (719, 3),
+            (8, 2),
+            (257, 2),
+            (38, 3),
+            (296, 2),
+            (541, 3),
+            (538, 2),
+            (213, 2),
+            (211, 2),
+            (35, 5),
+            (34, 2),
+            (547, 2),
+            (276, 2),
+            (219, 2),
+        ],
+    );
+    rec(&mut t, 7, 1, |_, a| 0x0700_0007 ^ a[0]);
+    rec(&mut t, 333, 1, |_, a| 0x3330_0000 ^ a[0]);
+    t.stub_st0(333, |_, _| 0.5);
+    let table = SCRATCH + 0x3000;
+    for i in 0..0x40 {
+        t.set_u32(table + 4 * i, 0x0a0a_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    let owner = SCRATCH + 0x3800;
+    t.write(owner, &varied(0x100, 9));
+    t.set_u32(w(&t, 0x1ad), owner);
+    t.set_u32(w(&t, 0xf8), 0x0c0c_0257);
+    t.set_u32(w(&t, 0x12b), 0x0c0c_1257);
+    t.set_u32(w(&t, 0x1fe), 0x0c0c_2257);
+    t.set_u32(w(&t, 0x7f), 0x0b0b_0257);
+    t.set_u32(w(&t, 0xb8), 0x0b0b_1257);
+    let (task, s) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    let (node, prev, next) = (SCRATCH + 0xb00, SCRATCH + 0xb40, SCRATCH + 0xb80);
+    let hide = w(&t, 0x118);
+    let mut k = 0u32;
+    for (step, frames, hidden) in [
+        (0u32, 0i32, 0u8),
+        (0xa, 0, 1),
+        (0x1e, 0xa9, 0),
+        (0x1e, 0xaa, 0),
+        (0x3c, -1, 0),
+        (0x3c, 0, 0),
+        (0x3c, 5, 1),
+        (0x3d, 0xc7, 0),
+        (0x3d, 0xc8, 0),
+        (0x2710, 0, 0),
+        (0x1f, 0, 0),
+        (0x4000, 0, 0),
+    ] {
+        k += 1;
+        t.write(task, &varied(0x20, k));
+        t.write(s, &varied(0x40, k));
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.set_u32(s + 0x18, step);
+        t.set_u32(s + 0x2c, frames.cast_unsigned());
+        for (a, p, n) in [(node, prev, next), (prev, next, node), (next, node, prev)] {
+            t.set_u32(a + 4, p);
+            t.set_u32(a + 8, n);
+        }
+        t.set_u8(hide, hidden);
+        // the lists empty: the parts' list and the particle list
+        for l in [w(&t, 0x93), w(&t, 0x1c8)] {
+            t.write(l, &[0; 0x20]);
+            t.set_u32(l + 0xc, l);
+            t.set_u32(l + 0x10, l);
+        }
+        let scale = w(&t, 0x2cd);
+        set_f(&mut t, scale, 0.25 * k as f32);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

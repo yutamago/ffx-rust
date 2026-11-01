@@ -679,3 +679,288 @@ pub const TWO_MODEL_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `S+0x2c` (the frame count) up by one.
+fn bump_frames<G: Game>(g: &mut G, s: u32) {
+    let v = g.read::<u32>(s.wrapping_add(0x2c)).wrapping_add(1);
+    g.write::<u32>(s.wrapping_add(0x2c), v);
+}
+
+/// The operand offsets of a [`centred_pair`].
+struct PairOps {
+    /// (`rel32`, node, list) of the first append.
+    append_a: (u32, u32, u32),
+    hide: u32,
+    /// (table, the part's point, the character) of slot 366.
+    centre: (u32, u32, u32),
+    w_one: u32,
+    append_b: (u32, u32, u32),
+    colour: [(u32, u32); 4],
+    /// The node, its parent, the first part, the part's owner.
+    insert: [u32; 4],
+    insert_call: u32,
+    flag: u32,
+    /// The node, its list, its parent node, the owner global, the part.
+    particle: [u32; 5],
+    index: u32,
+    vtable: (u32, u32),
+    particle_call: u32,
+}
+
+/// A centred part pair of [`centred_parts_task`]: two parts appended to
+/// the list ([`node_append`](crate::sb_misc::node_append)), the first
+/// placed on the character's centre unless bit 0 of `G_HIDE` is set (slot
+/// 366 `MsGetChrCenterPos(*G_CHR, A+0x1c)`), the second given `w` 1.0
+/// first and its colour; then the node inserted with a record whose last
+/// word is the second part (the `ecx` the append leaves) and the particle
+/// node set up. `between` runs after the first part is placed (the second
+/// pair's scale step). Returns the particle node's `eax`.
+fn centred_pair<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    rec: u32,
+    o: &PairOps,
+    between: impl FnOnce(&mut G),
+) -> u32 {
+    let f = fr.at;
+    let w = |x: u32| op(img, f, x);
+    let append = |g: &mut G, (call, node, list): (u32, u32, u32)| {
+        crate::sb_misc::node_append(g, img, img.rel32_target(f + call), w(node), w(list), 0);
+    };
+    append(g, o.append_a);
+    if g.read::<u8>(w(o.hide)) & 1 == 0 {
+        let chr = g.read::<u32>(w(o.centre.2));
+        let t = slot_target(g, w(o.centre.0), 366);
+        g.call(t, fr.ecx, &[chr, w(o.centre.1)]);
+    }
+    between(g);
+    g.write::<u32>(w(o.w_one), 0x3f80_0000);
+    append(g, o.append_b);
+    // mov [esp + 0x24], ecx: the append leaves the part in ecx
+    g.write::<u32>(rec + 0x14, w(o.append_b.1));
+    for (a, v) in o.colour {
+        g.write::<u32>(w(a), v);
+    }
+    // mov [esp + 0x14], edx: the append leaves the list in edx
+    let words = [
+        w(o.insert[0]),
+        w(o.append_b.2),
+        w(o.insert[1]),
+        w(o.insert[2]),
+        w(o.insert[3]),
+    ];
+    record(g, rec, &words);
+    let ins = Frame {
+        at: img.rel32_target(f + o.insert_call),
+        esp: rec.wrapping_sub(0x14),
+        ecx: rec,
+        ..*fr
+    };
+    crate::nodes::node_insert(g, img, &ins);
+    let owner = g.read::<u32>(w(o.particle[3]));
+    g.write::<u8>(w(o.flag), 1);
+    let words = [
+        w(o.particle[0]),
+        w(o.particle[1]),
+        w(o.particle[2]),
+        owner,
+        w(o.particle[4]),
+        o.index,
+    ];
+    record(g, rec, &words);
+    g.write::<u32>(w(o.vtable.0), w(o.vtable.1));
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + o.particle_call), rec)
+}
+
+/// A summon task with centred parts (cdecl `(task)`; the state `S =
+/// task[1]`, a frame aligned to 8 with a set-up record on it). By the
+/// step `S+0x18`:
+/// - 0: the model nodes ([`model_nodes`](crate::s3_summon::model_nodes)
+///   on `{G, LIST, *G_ACTOR, 0, 1}`) and the effect's model node `M`
+///   ([`model_node_init`](crate::sa_summon::model_node_init)), step 10,
+///   then as 10;
+/// - 10: `MsEffectSetMotion(*G_CHR, 0x4a)` (slot 228), the first part
+///   pair ([`centred_pair`]), the effect level's low two bits cleared
+///   (slots 7 and 8), the effect node set up
+///   ([`effect_node`](crate::sb_nodes::effect_node): its vtable, flag
+///   bit 0, a word cleared), step 0x1e (returning the effect node's
+///   record word);
+/// - 0x1e: from frame 0xaa on, `M` faded to 0 over 10
+///   ([`chr_fade`](crate::l3_common::chr_fade)), step 0x3c;
+/// - 0x3c: from frame 0 on, the second pair (its scale `+= K` between),
+///   the step up;
+/// - 0x3d: from frame 0xc8 on, step 0x2710;
+/// - 0x2710: the list's current node unlinked
+///   ([`list_unlink_current`](crate::l3_common::list_unlink_current)),
+///   `M`'s model set up ([`model_setup`](crate::sa_summon::model_setup))
+///   and the task's node leaves its ring;
+/// - any other: nothing.
+///
+/// The frame count `S+0x2c` goes up on every path (after being cleared
+/// where a step starts). Returns the last callee's `eax`, the node's
+/// `+0x4` after the unlink, or the step.
+///
+/// `magic_0257` 0x10006690 (1039 bytes, 1 DLL; stored at 0x10006c10).
+#[allow(clippy::too_many_lines)] // the original's steps, store by store
+pub fn centred_parts_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task.wrapping_add(4));
+    let step_at = s.wrapping_add(0x18);
+    let frames = s.wrapping_add(0x2c);
+    let step = g.read::<u32>(step_at);
+    // push ebp; and esp, -8; sub esp, 0x20; push esi; push edi
+    let e = fr.esp.wrapping_sub(4) & !7;
+    let body = e.wrapping_sub(0x28);
+    let rec = body + 0x10;
+    let callee = |at_off: u32, ecx: u32| Frame {
+        at: img.rel32_target(f + at_off),
+        esp: body.wrapping_sub(4),
+        ecx,
+        ..*fr
+    };
+    // a step starts: the frame count 0, then up
+    let restart = |g: &mut G, next: u32| {
+        g.write::<u32>(frames, 1);
+        g.write::<u32>(step_at, next);
+    };
+    let eax = match step {
+        0 | 0xa => {
+            if step == 0 {
+                let actor = g.read::<u32>(w(0x7f));
+                record(g, rec, &[w(0x8b), w(0x93), actor, 0]);
+                g.write::<u8>(rec + 0x10, 1);
+                g.write::<u32>(w(0xaa), w(0xae));
+                crate::s3_summon::model_nodes(g, img, &callee(0xb3, rec));
+                let x = g.read::<u32>(w(0xb8));
+                record(g, rec, &[w(0xc4), w(0xcc), x]);
+                g.write::<u8>(rec + 0xc, 0);
+                g.write::<u32>(w(0xdb), w(0xdf));
+                crate::sa_summon::model_node_init(g, img, img.rel32_target(f + 0xe4), rec);
+                g.write::<u32>(step_at, 0xa);
+            }
+            let chr = g.read::<u32>(w(0xf8));
+            let t = slot_target(g, w(0xf0), 228);
+            g.call(t, fr.ecx, &[chr, 0x4a]);
+            let first = PairOps {
+                append_a: (0x112, 0x10d, 0x108),
+                hide: 0x118,
+                centre: (0x120, 0x125, 0x12b),
+                w_one: 0x146,
+                append_b: (0x14f, 0x140, 0x13b),
+                colour: [
+                    (0x15d, 0x3f80_0000),
+                    (0x167, 0x3f80_0000),
+                    (0x171, 0x3f80_0000),
+                    (0x17b, 0x3e85_1eb8),
+                ],
+                insert: [0x187, 0x193, 0x19b, 0x1a3],
+                insert_call: 0x1a8,
+                flag: 0x1b7,
+                particle: [0x1c0, 0x1c8, 0x1d0, 0x1ad, 0x1dc],
+                index: 0,
+                vtable: (0x1ea, 0x1ee),
+                particle_call: 0x1f3,
+            };
+            centred_pair(g, img, fr, rec, &first, |_| {});
+            let c = g.read::<u32>(w(0x1fe));
+            let t = slot_target(g, w(0x1f8), 7);
+            let level = g.call(t, fr.ecx, &[c]).eax & !3;
+            let c = g.read::<u32>(w(0x215));
+            let t = slot_target(g, w(0x20f), 8);
+            g.call(t, fr.ecx, &[c, level]);
+            let words = [w(0x229), w(0x231), w(0x239), w(0x241), w(0x249), 0];
+            record(g, rec, &words);
+            crate::sb_nodes::effect_node(g, img, img.rel32_target(f + 0x256), rec);
+            let node = g.read::<u32>(rec);
+            g.write::<u32>(node, w(0x260));
+            let fl = g.read::<u32>(w(0x266)) | 1;
+            g.write::<u32>(w(0x266), fl);
+            g.write::<u32>(w(0x26d), 0);
+            restart(g, 0x1e);
+            return Ret::eax(node);
+        }
+        0x1e if g.read::<i32>(frames) >= 0xaa => {
+            record(g, rec, &[w(0x4e), 0, 0xa]);
+            let eax = crate::l3_common::chr_fade(g, img, img.rel32_target(f + 0x63), rec);
+            restart(g, 0x3c);
+            return Ret::eax(eax);
+        }
+        0x3c if g.read::<i32>(frames) >= 0 => {
+            let second = PairOps {
+                append_a: (0x2a1, 0x29c, 0x297),
+                hide: 0x2a7,
+                centre: (0x2af, 0x2b4, 0x2ba),
+                w_one: 0x2e5,
+                append_b: (0x2f6, 0x2df, 0x2da),
+                colour: [
+                    (0x304, 0x3f80_0000),
+                    (0x30e, 0x3f80_0000),
+                    (0x318, 0x3f80_0000),
+                    (0x322, 0x3fe6_6666),
+                ],
+                insert: [0x32e, 0x33a, 0x342, 0x34a],
+                insert_call: 0x34f,
+                flag: 0x35e,
+                particle: [0x367, 0x36f, 0x377, 0x354, 0x383],
+                index: 1,
+                vtable: (0x391, 0x395),
+                particle_call: 0x39a,
+            };
+            let eax = centred_pair(g, img, fr, rec, &second, |g| {
+                let x = crate::sb_sse::add(g.read::<f32>(w(0x2cd)), g.read::<f32>(w(0x2d5)));
+                // stored after `w` 1.0 in the original: other words, so the
+                // order is not visible
+                g.write::<f32>(w(0x2f1), x);
+            });
+            let next = g.read::<u32>(step_at).wrapping_add(1);
+            restart(g, next);
+            return Ret::eax(eax);
+        }
+        0x3d => {
+            if g.read::<i32>(frames) >= 0xc8 {
+                g.write::<u32>(step_at, 0x2710);
+            }
+            step
+        }
+        0x2710 => {
+            crate::l3_common::list_unlink_current(g, img, img.rel32_target(f + 0x3be), step);
+            let cursor = body + 0xc;
+            g.write::<u32>(cursor, w(0x3ca));
+            crate::sa_summon::model_setup(g, img, &callee(0x3cf, cursor));
+            let eax = unring_task(g, task);
+            bump_frames(g, s);
+            return Ret::eax(eax);
+        }
+        _ => step,
+    };
+    bump_frames(g, s);
+    Ret::eax(eax)
+}
+
+/// [`centred_parts_task`] (the `rel32`s: the fade, the model nodes, the
+/// model node, the appends, the inserts, the particle nodes, the effect
+/// node, the unlink and the model set-up).
+pub const CENTRED_PARTS_TASK: Sig = Sig {
+    len: 1039,
+    hash: 0x2fb3_b091_cfa8_875d,
+    calls: &[
+        (0x63, Callee::Sig(&crate::l3_common::CHR_FADE)),
+        (0xb3, Callee::Sig(&crate::s3_summon::MODEL_NODES)),
+        (0xe4, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x112, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x14f, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x1a8, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1f3, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x256, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x2a1, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x2f6, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x34f, Callee::Sig(&crate::nodes::INSERT)),
+        (0x39a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x3be, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x3cf, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+    ],
+    imports: &[],
+};
