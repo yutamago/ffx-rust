@@ -50,7 +50,10 @@ On PC the projected point is never computed (`FFXVu0FTOI4Vector`,
 and the depth comes from stale scratch memory. The port reads its own
 zeroed locals instead, which gives an empty box and a visibility of 0. A
 renderer that wants flare occlusion has to supply the point and the depth
-at this seam. Until then the port stays out of the hook table.
+at this seam. Under the junk-read ruling (2026-10-24, 2026-10-27) the
+port is hooked with those zeroes (`ported/m5_vfx.rs`, M5 left8); no
+coverage run has reached it, so whether a flare in the original showed
+(and now stays hidden on its measuring frames) is still open.
 
 ### To observe
 
@@ -68,8 +71,9 @@ in the original:
 - the projected point it reads (`ebp - 0x14 .. - 0xc`) and whether that
   stale data repeats from frame to frame.
 
-If the flare shows in the original, the hook needs those values from
-somewhere other than zeroed locals before it can go in.
+If the flare shows in the original, the port needs those values from
+somewhere other than zeroed locals (`FFX_HOOK_DISABLE=pppKeLnsLpTOtDraw`
+turns the hook off for the comparison).
 
 ## Model draws (`pppDrawMdl*`)
 

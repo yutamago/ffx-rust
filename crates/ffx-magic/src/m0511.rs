@@ -1,6 +1,7 @@
 //! `magic_0511.dll`'s own functions (besides the runtime and the shared
 //! code).
 
+use crate::runtime::slot_target;
 use crate::sa_pool::take;
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -186,5 +187,32 @@ pub const SPRITE_START: Sig = Sig {
         // __security_check_cookie
         (0xe2, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// An object placed at the actor's point 0xe (0x10003df0, a callback,
+/// cdecl `(obj)`): slot 219 `(*G_M as a byte, 0)` gives the model, slot
+/// 268 `(model, 0xe, obj + 0xd0)` (with the first call's words under it).
+/// Returns slot 268's `eax`.
+pub fn place_at_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let m = u32::from(g.read::<u8>(g.read::<u32>(w(0x4))));
+    let mut p = crate::pushes::Pushes::default();
+    p.push_all(&[0, m]);
+    let t = slot_target(g, w(0xf), 219);
+    // call width: 12 (Pushes caps the words at 12)
+    let model = p.call(g, t, 0).eax;
+    let obj = fr.arg(g, 0);
+    p.push_all(&[obj.wrapping_add(0xd0), 0xe, model]);
+    let t = slot_target(g, w(0x29), 268);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(p.call(g, t, 0).eax)
+}
+
+/// [`place_at_point`] (58 bytes, 1 overlay).
+pub const PLACE_AT_POINT: Sig = Sig {
+    len: 58,
+    hash: 0x032d_ec4b_d056_ea54,
+    calls: &[],
     imports: &[],
 };

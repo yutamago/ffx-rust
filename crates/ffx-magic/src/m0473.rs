@@ -53,3 +53,26 @@ pub const SCALE_START: Sig = Sig {
     calls: &[(0x7b, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
+
+/// Slot 239 `(*G_ARG, -5, 0)` (operands `+0x1`, `+0x11`), then the
+/// objects freed ([`objects_freed`](crate::s6_misc::objects_freed), a
+/// tail jump; 0x100020e0, no arguments). Returns its result.
+pub fn end_objects<G: crate::Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let t = crate::runtime::slot_target(g, w(0x1), 239);
+    let a = g.read::<u32>(w(0x11));
+    g.call(t, 0, &[a, 0xffff_fffb, 0]);
+    let callee = crate::Frame {
+        at: img.rel32_target(fr.at + 0x1b),
+        ..*fr
+    };
+    crate::s6_misc::objects_freed(g, img, &callee)
+}
+
+/// [`end_objects`] (31 bytes, 1 overlay).
+pub const END_OBJECTS: Sig = Sig {
+    len: 31,
+    hash: 0xa8d8_403c_6ae8_df20,
+    calls: &[(0x1b, Callee::Sig(&crate::s6_misc::OBJECTS_FREED))],
+    imports: &[],
+};

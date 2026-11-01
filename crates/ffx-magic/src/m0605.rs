@@ -180,3 +180,30 @@ pub const ACTOR_PART: Sig = Sig {
     calls: &[(0x4d, Callee::Sig(&crate::sa_script::ACTOR_MODE))],
     imports: &[],
 };
+
+/// A scale task of 30 on the block's `+0x2dac` (`*G_B`, operand `+0x2`)
+/// with the constants at `+0xa` (`xmm2`) and `+0x12` (`xmm1`)
+/// ([`scale_task_edx`](crate::s4_small::scale_task_edx), a tail jump;
+/// 0x1000aef0, no arguments). Returns the task's node.
+pub fn scale_30<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let block = g.read::<u32>(w(0x2));
+    let x2 = g.read::<u32>(w(0xa));
+    let x1 = g.read::<u32>(w(0x12));
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 0x22),
+        ecx: block.wrapping_add(0x2dac),
+        edx: 0x1e,
+        xmm: [0, u128::from(x1), u128::from(x2), 0],
+        ..*fr
+    };
+    crate::s4_small::scale_task_edx(g, img, &callee)
+}
+
+/// [`scale_30`] (38 bytes, 1 overlay).
+pub const SCALE_30: Sig = Sig {
+    len: 38,
+    hash: 0x8775_de5f_015a_6507,
+    calls: &[(0x22, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX))],
+    imports: &[],
+};

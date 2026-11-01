@@ -2,6 +2,8 @@
 # Builds ffx-rust.exe (crate ffx-host) for 64-bit Windows, x86_64-pc-windows-msvc
 # (docs/host.md, "Building for Windows"; the i686 build was dropped 2026-10-31).
 # Usage: tools/build-host.sh [build|clippy] [extra cargo args]
+# Features: FFX_HOST_FEATURES (default "swf": Iggy's Flash screens on Ruffle,
+# composited through the D3D11 layer; docs/host.md, "Iggy"); empty for none.
 #
 # Unicorn (unicorn-engine-sys) builds with cmake for the MSVC target, which
 # needs three things cargo-xwin doesn't give it:
@@ -55,6 +57,8 @@ if [[ -f "$xwin_toolchain" ]]; then
 fi
 # cargo-xwin's environment, its CRT cache set up under a lock (tools/xwin-env.sh)
 eval "$(tools/xwin-env.sh "$target")"
-env "${toolchain_env[@]}" cargo "$cmd" --release --target "$target" -p ffx-host "$@"
+features=(--features "${FFX_HOST_FEATURES-swf}")
+[[ -z "${FFX_HOST_FEATURES-swf}" ]] && features=()
+env "${toolchain_env[@]}" cargo "$cmd" --release --target "$target" -p ffx-host "${features[@]}" "$@"
 [[ "$cmd" == build ]] && echo "built: $repo/target/$target/release/ffx-rust.exe"
 exit 0

@@ -2,6 +2,7 @@
 //! code): the object callbacks and the light of its table.
 
 use crate::part_draw::start_part;
+use crate::pushes::Pushes;
 use crate::runtime::slot_target;
 use crate::sb_sse::{cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -268,5 +269,115 @@ pub const E1380: Sig = Sig {
     len: 348,
     hash: 0xca89_effc_e025_6ce8,
     calls: &[(0x14c, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// The effect's start (0x10001520, an overlay table entry, cdecl
+/// `(arg)`): [`effect_head`] with the half at `+0x80000` and the table
+/// reset ([`table_reset`](crate::o4_list::table_reset)); then slot 260
+/// `(0x14)` and `(0x15)` into the globals at operands `+0x13c` and
+/// `+0x150`, each seeing the earlier words. Returns 1.
+pub fn effect_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let mut p = effect_head(g, img, fr, 0x8_0000, |g, callee| {
+        crate::o4_list::table_reset(g, img, callee);
+    });
+    for (k, dst) in [(0x14u32, 0x13cu32), (0x15, 0x150)] {
+        p.push(k);
+        let t = slot_target(g, w(0x4), 260);
+        // call width: 12 (Pushes caps the words at 12)
+        let v = p.call(g, t, 0).eax;
+        g.write::<u32>(w(dst), v);
+    }
+    Ret::eax(1)
+}
+
+/// The first 0x12c bytes of [`effect_start`] and of `magic_0536`'s
+/// [`effect_start`](crate::m0536::effect_start) (`arg` the entry's
+/// argument): a 16 MiB block from slot 803 `(0x1000000, 0x10)` into
+/// `G_BUF` (`+0x19`; `+half` into `+0x23`), `arg` into `+0x2b`; the name
+/// `NAME` (`+0x35`) into `G_NAME` (`+0x41`) and slot 718 `(NAME)`; slot
+/// 222 `(*G_NAME, 0, 1000, 0x2000)`; the part data `D` = slot 719
+/// `(*G_NAME, 8, 0)` into `G_D`; slot 711 `(D, LIST, 0)` with `**G_LOCK`
+/// 1 around it, slot 710 `(ENV, *G_D, *G_BUF, half)`; the programs of
+/// slot 941 `(D[0x14])`, `(D[0x18])`, `(D[0x1c])` into three globals;
+/// then `reset` (the DLL's table reset, the `rel32` at `+0x128`). Each
+/// call sees the words the earlier ones left on the stack. Returns those
+/// words (one is left).
+pub(crate) fn effect_head<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    half: u32,
+    reset: impl FnOnce(&mut G, &Frame),
+) -> Pushes {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let r = |g: &G, off: u32| g.read::<u32>(w(off));
+    let call = |g: &mut G, p: &Pushes, slot: u32| {
+        let t = slot_target(g, w(0x4), slot);
+        // call width: 12 (Pushes caps the words at 12)
+        p.call(g, t, 0).eax
+    };
+    let mut p = Pushes::default();
+    p.push_all(&[0x10, 0x100_0000]);
+    let buf = call(g, &p, 803);
+    g.write::<u32>(w(0x19), buf);
+    g.write::<u32>(w(0x23), buf.wrapping_add(half));
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x2b), arg);
+    p.push(w(0x35));
+    g.write::<u32>(w(0x41), w(0x45));
+    call(g, &p, 718);
+    p.push_all(&[0x2000, 0x3e8, 0]);
+    p.push(r(g, 0x64));
+    call(g, &p, 222);
+    p.push_all(&[0, 8]);
+    p.push(r(g, 0x7b));
+    let d = call(g, &p, 719);
+    let lockp = r(g, 0x83);
+    p.push(0);
+    let saved = g.read::<u32>(lockp);
+    g.write::<u32>(w(0x8c), d);
+    p.push_all(&[w(0x91), d]);
+    g.write::<u32>(lockp, 1);
+    call(g, &p, 711);
+    let lockp = r(g, 0xaa);
+    p.push_all(&[half, r(g, 0xb5)]);
+    g.write::<u32>(lockp, saved);
+    p.push_all(&[r(g, 0xbd), w(0xc7)]);
+    call(g, &p, 710);
+    p.pop(17);
+    for (k, (src, dst)) in [(0xd4u32, 0xecu32), (0xf1, 0x106), (0x10b, 0x123)]
+        .into_iter()
+        .enumerate()
+    {
+        let d = r(g, src);
+        p.push(g.read::<u32>(d.wrapping_add(0x14 + 4 * k as u32)));
+        let v = call(g, &p, 941);
+        if k == 2 {
+            p.pop(2);
+        }
+        g.write::<u32>(w(dst), v);
+    }
+    // push ebp, push esi, the word left, the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x128),
+        esp: fr.esp.wrapping_sub(0x10),
+        eax: 0,
+        ecx: 0,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    reset(g, &callee);
+    p
+}
+
+/// [`effect_start`] (351 bytes, 1 overlay).
+pub const EFFECT_START: Sig = Sig {
+    len: 351,
+    hash: 0x37a7_0d6f_7809_ed8d,
+    calls: &[(0x128, Callee::Sig(&crate::o4_list::TABLE_RESET_0523_21B0))],
     imports: &[],
 };
