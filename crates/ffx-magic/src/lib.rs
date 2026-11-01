@@ -2182,6 +2182,9 @@ ports! {
     "camera settings (after 267)" => s7_misc::CAMERA_SETTINGS_4, s7_misc::camera_settings_4;
     "fading level" => s7_misc::FADING_LEVEL, s7_misc::fading_level;
     "near points fade" => s7_misc::NEAR_POINTS_FADE, s7_misc::near_points_fade;
+    "two-stage fade" => s7_misc::TWO_STAGE_FADE, s7_misc::two_stage_fade;
+    "two-stage fade (two constants)" => s7_misc::TWO_STAGE_FADE_B, s7_misc::two_stage_fade;
+    "random part" => s7_misc::RANDOM_PART, s7_misc::random_part;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;

@@ -1462,3 +1462,108 @@ fn sparks_at_points() {
         }
     }
 }
+
+/// Rows 191 and 416: the two-stage fade (one constant in `magic_0083`'s
+/// five copies, two in `magic_0091`'s three) in every stage: 0 below and
+/// at its time (and NaN), 1 below and at its time, the stages past 1.
+#[test]
+fn two_stage_fades() {
+    for (dll, two) in [
+        (83u16, false),
+        (86, false),
+        (87, false),
+        (88, false),
+        (89, false),
+        (91, true),
+        (96, true),
+        (97, true),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x66c0);
+        let d = if two { 4 } else { 0 };
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 239, log, 3, None, |_, a, k| a[0] ^ (k << 8));
+        t.set_u32(op(&t, f, 0x16), 0.5f32.to_bits());
+        t.set_u32(op(&t, f, 0x173 + d), 2.0f32.to_bits());
+        t.set_u32(op(&t, f, if two { 0x3c } else { 0x3d }), 4.0f32.to_bits());
+        if two {
+            t.set_u32(op(&t, f, 0x4a), 1.25f32.to_bits());
+        }
+        for (i, o) in (0u32..).zip([0x51u32, 0x82, 0xbd, 0xf1, 0x10c, 0x11f, 0x127, 0x137, 0x13f]) {
+            t.set_u32(op(&t, f, o + d), (0.125 * (i + 1) as f32 - 0.5).to_bits());
+        }
+        t.set_u32(op(&t, f, 0x18a + d), 0x0018_a000);
+        let task = SCRATCH + 0x300;
+        let o = SCRATCH + 0x400;
+        let node = SCRATCH + 0x380;
+        // (stage, clock before the step)
+        for (k, (stage, clock)) in [
+            (0u16, 0.0f32),
+            (0, 1.5),
+            (0, f32::NAN),
+            (1, 2.0),
+            (1, 3.5),
+            (1, 7.0),
+            (2, 9.0),
+            (0xffff, 9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(o, &varied(0x2d0, k));
+            t.set_u32(o + 0x2c4, clock.to_bits());
+            t.set_u16(o + 0x2c8, stage);
+            t.set_u32(task, node);
+            t.set_u32(task + 4, o);
+            t.write(node, &varied(0x10, k + 3));
+            t.set_u32(node + 4, SCRATCH + 0x700);
+            t.set_u32(node + 8, SCRATCH + 0x740);
+            t.write(SCRATCH + 0x700, &varied(0x80, k));
+            t.set_u32(op(&t, f, 0x5b + d), 0xffff_0003 ^ k);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+}
+
+/// Row 417: the random part of the three DLLs (both `rand()`s seen in the
+/// scales; the three slots log their words).
+#[test]
+fn random_parts() {
+    for (dll, rva) in [(191u16, 0x19a0u32), (415, 0x1980), (534, 0x19b0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 458, log, 3, None, |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 450, log, 2, None, |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 451, log, 2, None, |_, a, k| a[1] ^ (k << 4));
+        for (o, x) in [
+            (0x25u32, 32768.0f32),
+            (0x2d, 3.0),
+            (0x71, 16384.0),
+            (0x89, 0.75),
+            (0x91, 1.5),
+            (0x9e, -0.25),
+        ] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        t.set_u32(op(&t, f, 0xb8), 0x00b8_0000);
+        let o = SCRATCH + 0x400;
+        let p = SCRATCH + 0x800;
+        for k in 0..4u32 {
+            t.set_u32(log, 0);
+            t.write(o, &varied(0x200, k));
+            t.set_u32(o + 0xac, k % 3);
+            t.set_u32(o + 0x2c + 0x10 * (k % 3), p);
+            t.write(p, &varied(0x100, k + 1));
+            for i in 0..3u32 {
+                t.set_u32(p + 0xd0 + 4 * i, (i as f32 - 0.5 * k as f32).to_bits());
+                t.set_u32(p + 0xe0 + 4 * i, (2.0 * i as f32 + 0.25).to_bits());
+            }
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[o], Eax::Checked);
+        }
+    }
+}

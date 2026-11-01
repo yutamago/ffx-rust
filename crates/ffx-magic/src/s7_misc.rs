@@ -1629,3 +1629,191 @@ pub const SPARK_AT_POINT: Sig = Sig {
     calls: &[(0x17, Callee::Sig(&crate::sb_misc::POOL_TAKE))],
     imports: &[],
 };
+
+/// A ring node taken out of its ring (`prev.next = next`, `next.prev =
+/// prev`, each read again after the store before) and closed on itself.
+/// Returns what the original leaves in `eax`: the `prev` read last.
+fn unring<G: Game>(g: &mut G, node: u32) -> u32 {
+    let prev = g.read::<u32>(node + 4);
+    let next = g.read::<u32>(node + 8);
+    g.write::<u32>(prev.wrapping_add(8), next);
+    let next = g.read::<u32>(node + 8);
+    let prev = g.read::<u32>(node + 4);
+    g.write::<u32>(next.wrapping_add(4), prev);
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 4, node);
+    prev
+}
+
+/// A two-stage fade task (cdecl `(task)`, `task[0]` its ring node,
+/// `O = task[1]`): the clock `O+0x2c4 += K` and the stage u16 `O+0x2c8`.
+/// Stage 0: once the clock is at `K0` (ordered), slot 239 `(*G_S, -5,
+/// 0)` and the next stage. Stage 1: once it is at `K1`, `*G_A = 0`, eight
+/// targets `*D_i = K2 - *X_i` (and one `*X - *Y`), seven words 1.0, one
+/// 0.05, `*G_F = (*G_F & !1) | 4`, and the task's node leaves its ring.
+/// Other stages: nothing. Returns what the original leaves in `eax`
+/// (slot 239's, the ring's `prev`, else the stage minus 1 or 0).
+///
+/// `magic_0083` 0x100066c0 (413 bytes; 5 DLLs; `K1` and `K2` the same
+/// constant) and `magic_0091` 0x100066c0 (417 bytes; 3 DLLs; two).
+pub fn two_stage_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // `movss xmm1, [K]; comiss xmm0, xmm1` (0083) or `comiss xmm0, [K1];
+    // movss xmm1, [K2]` (0091): the code after it sits 4 bytes later
+    let two = img.word(f + 0x39) & 0xff == 0x0f;
+    let d = if two { 4 } else { 0 };
+    let w = |o: u32| op(img, f, o);
+    let wd = |o: u32| op(img, f, o + d);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task + 4);
+    let clock = add(g.read::<f32>(o + 0x2c4), k(g, 0x16));
+    let stage = g.read::<u16>(o + 0x2c8);
+    g.write::<f32>(o + 0x2c4, clock);
+    match stage {
+        0 => {
+            // `comiss`/`jb`: below or unordered waits
+            if !(clock >= g.read::<f32>(wd(0x173))) {
+                return Ret::eax(0);
+            }
+            let s = g.read::<u32>(wd(0x18a));
+            let r = slot(
+                g,
+                img,
+                f,
+                0x17a + d,
+                239,
+                fr.ecx,
+                &[s, (-5i32).cast_unsigned(), 0],
+            );
+            let n = g.read::<u16>(o + 0x2c8).wrapping_add(1);
+            g.write::<u16>(o + 0x2c8, n);
+            Ret::eax(r.eax)
+        }
+        1 => {
+            // the compare's constant: `movss`'s operand (0083) or
+            // `comiss`'s (0091)
+            if !(clock >= k(g, if two { 0x3c } else { 0x3d })) {
+                return Ret::eax(0);
+            }
+            let k2 = if two { k(g, 0x4a) } else { k(g, 0x3d) };
+            let diff = |g: &G, x: u32| sub(k2, g.read::<f32>(wd(x)));
+            let x = diff(g, 0x51);
+            g.write::<u32>(wd(0x56), 0);
+            let flags = g.read::<u32>(wd(0x5b));
+            for at in [0x61u32, 0x6b] {
+                g.write::<u32>(wd(at), 0x3f80_0000);
+            }
+            g.write::<f32>(wd(0x77), x);
+            let x = diff(g, 0x82);
+            for at in [0x88u32, 0x92, 0x9c, 0xa6] {
+                g.write::<u32>(wd(at), 0x3f80_0000);
+            }
+            g.write::<f32>(wd(0xb2), x);
+            let x = diff(g, 0xbd);
+            g.write::<u32>(wd(0xc3), 0x3f80_0000);
+            g.write::<u32>(wd(0xcd), wd(0xd1));
+            g.write::<u32>(wd(0xd7), 0x3f80_0000);
+            g.write::<f32>(wd(0xe6), x);
+            let x = diff(g, 0xf1);
+            g.write::<u32>(wd(0xf9), (flags & !1) | 4);
+            g.write::<f32>(wd(0x101), x);
+            let x = diff(g, 0x10c);
+            g.write::<f32>(wd(0x114), x);
+            let x = diff(g, 0x11f);
+            let y = diff(g, 0x127);
+            g.write::<f32>(wd(0x12f), x);
+            let z = sub(g.read::<f32>(wd(0x137)), g.read::<f32>(wd(0x13f)));
+            g.write::<f32>(wd(0x147), y);
+            g.write::<f32>(wd(0x14f), z);
+            let node = g.read::<u32>(task);
+            Ret::eax(unring(g, node))
+        }
+        s => Ret::eax(u32::from(s).wrapping_sub(1)),
+    }
+}
+
+/// [`two_stage_fade`] in `magic_0083`.
+pub const TWO_STAGE_FADE: Sig = Sig {
+    len: 413,
+    hash: 0xef0f_794d_141b_de93,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`two_stage_fade`] in `magic_0091`.
+pub const TWO_STAGE_FADE_B: Sig = Sig {
+    len: 417,
+    hash: 0xd7c2_4f1a_07d1_2e81,
+    calls: &[],
+    imports: &[],
+};
+
+/// A part started at its parent with random scales (cdecl `(O)`; `P` the
+/// parent `O + 0x2c + 0x10 O[0xac]`): `r1 = rand()`, `s = r1 / K1 K2`
+/// (into the argument's word), `r2 = rand()`, `O+0xbc |= 0x4000`; `O`'s
+/// point `+0xd0..` = `P`'s (`w` 0), its `+0xe0..` = `P`'s times `K3` (`w`
+/// 0), `+0x100 = +0x104 = 0`, `+0x108 = s`, `+0x10c = 0`, the scale
+/// `+0x130..+0x138 = r2 / K1 K4 + K5` (`+0x13c` 0) and the colour
+/// `(1.42, 1.11, 0.8, 1)`; then slot 458 `(*G_X, O, 1)`, slot 450 `(O,
+/// CB)` and slot 451 `(O, 10)`, whose `eax` it returns.
+///
+/// `magic_0191` 0x100019a0 (418 bytes; 3 DLLs).
+pub fn random_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let o = fr.arg(g, 0);
+    let p = g.read::<u32>(counter(g, o));
+    let r1 = g.rand();
+    let s = mul(div(cvt(r1), k(g, 0x25)), k(g, 0x2d));
+    g.write::<f32>(fr.esp + 4, s);
+    let r2 = g.rand();
+    let v = g.read::<u32>(o + 0xbc) | 0x4000;
+    g.write::<u32>(o + 0xbc, v);
+    let pf = |g: &G, at: u32| g.read::<f32>(p.wrapping_add(at));
+    let by = k(g, 0x91);
+    let far = [0xe0u32, 0xe4, 0xe8].map(|at| mul(pf(g, at), by));
+    let near = [0xd0u32, 0xd4, 0xd8].map(|at| pf(g, at));
+    let scale = add(mul(div(cvt(r2), k(g, 0x71)), k(g, 0x89)), k(g, 0x9e));
+    for (at, x) in [0xd0u32, 0xd4, 0xd8].into_iter().zip(near) {
+        g.write::<f32>(o + at, x);
+    }
+    g.write::<u32>(o + 0xdc, 0);
+    for (at, x) in [0xe0u32, 0xe4, 0xe8].into_iter().zip(far) {
+        g.write::<f32>(o + at, x);
+    }
+    for at in [0xecu32, 0x100, 0x104] {
+        g.write::<u32>(o + at, 0);
+    }
+    g.write::<f32>(o + 0x108, s);
+    g.write::<u32>(o + 0x10c, 0);
+    for at in [0x130u32, 0x134, 0x138] {
+        g.write::<f32>(o + at, scale);
+    }
+    g.write::<u32>(o + 0x13c, 0);
+    for (at, v) in [
+        (0x170u32, 0x3fb5_c28fu32),
+        (0x174, 0x3f8e_147b),
+        (0x178, 0x3f4c_cccd),
+        (0x17c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(o + at, v);
+    }
+    let mut st = Pushes::default();
+    let x = g.read::<u32>(w(0xb8));
+    st.push_all(&[1, o, x]);
+    st.call(g, slot_target(g, w(0x96), 458), fr.ecx);
+    st.push_all(&[w(0x17e), o]);
+    st.call(g, slot_target(g, w(0x179), 450), fr.ecx);
+    st.push_all(&[10, o]);
+    Ret::eax(st.call(g, slot_target(g, w(0x18c), 451), fr.ecx).eax)
+}
+
+/// [`random_part`] (the imports: `rand`, twice).
+pub const RANDOM_PART: Sig = Sig {
+    len: 418,
+    hash: 0x2a1e_ab84_9e89_eae8,
+    calls: &[],
+    imports: &[(0x16, "rand"), (0x38, "rand")],
+};
