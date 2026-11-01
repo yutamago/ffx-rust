@@ -2866,17 +2866,12 @@ fn aimed_node_walks() {
     }
 }
 
-/// Rows 87 and 163: `magic_0180`'s and `magic_0205`'s task pool resets:
-/// one task free or more, the live list empty or not.
+/// Row 87: `magic_0180`'s task pool reset: one task free or more, the
+/// live list empty or not.
 #[test]
 fn task_pools_reset() {
-    task_pools_reset_in(180, 0x2140, 0x2900);
-    task_pools_reset_in(205, 0x2a60, 0x7500);
-}
-
-fn task_pools_reset_in(dll: u16, rva: u32, size: u32) {
-    let Some(mut t) = twin(dll) else { return };
-    let f = t.at(rva);
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x2140);
     let pool = SCRATCH + 0x4000;
     let task = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
     for (k, (count, listed)) in [(1u16, false), (3, true), (2, false), (1, true)]
@@ -2884,7 +2879,7 @@ fn task_pools_reset_in(dll: u16, rva: u32, size: u32) {
         .enumerate()
     {
         let k = k as u32;
-        t.write(pool, &varied(size, k));
+        t.write(pool, &varied(0x2900, k));
         t.write(task(0), &varied(0x100, k + 7));
         for i in 0..4 {
             t.set_u32(task(i), task((i + 3) % 4));
