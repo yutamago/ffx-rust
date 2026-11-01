@@ -82,6 +82,8 @@ pub mod s4_wrap;
 // the shared work list's fifth round (shared-5: rows 737 on)
 pub mod s5_misc;
 pub mod s6_misc;
+// the shared work list's seventh round (shared-7)
+pub mod s7_misc;
 
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
@@ -2160,6 +2162,13 @@ ports! {
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
+    // round 7, shared-7 (s7_misc)
+    "scaled matrices" => s7_misc::SCALED_MATRICES, s7_misc::scaled_matrices;
+    "countdown children" => s7_misc::COUNTDOWN_CHILDREN, s7_misc::countdown_children;
+    "summon frame (bound, bone first)" => s7_misc::SUMMON_FRAME_BOUND, s7_misc::summon_frame_bound;
+    "summon frame (bound, ring first)" => s7_misc::SUMMON_FRAME_RING, s7_misc::summon_frame_ring;
+    "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
+    "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
@@ -2915,6 +2924,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
     ("aimed node walk", &s6_misc::AIMED_NODE_WALK),
     ("ring take", &s6_misc::RING_TAKE),
+    // round 7, shared-7 (s7_misc)
+    ("handles registered", &s7_misc::HANDLES_REGISTERED),
+    ("count fade", &s7_misc::COUNT_FADE),
+    ("ring key frame", &s7_misc::RING_KEY_FRAME),
+    ("global differences", &s7_misc::GLOBAL_DIFFERENCES),
+    ("start object (reset state 0x1e)", &s7_misc::START_OBJECT_RESET_1E),
+    ("node to live", &s7_misc::NODE_TO_LIVE),
+    ("model points node", &s7_misc::MODEL_POINTS_NODE),
+    ("light node", &s7_misc::LIGHT_NODE),
+    ("model draw node", &s7_misc::MODEL_DRAW_NODE),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

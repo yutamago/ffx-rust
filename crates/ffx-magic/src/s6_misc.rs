@@ -2189,7 +2189,15 @@ pub fn start_object_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let table = slot(g, img, f, 0x63, 941, &[d]).eax;
     let program = g.read::<u32>(table);
     start_part(g, img, img.rel32_target(f + 0x7d), obj, 0x1000, program, 1);
-    reset_state(g, obj, w(0x85), 0, 0x14);
+    // the state block's count: 0x1e where the callee is that copy
+    // (`s7_misc::START_OBJECT_RESET_1E`), else 0x14
+    let reset = img.rel32_target(f + 0x8d);
+    let count = if img.matches(reset, &RESET_STATE_1E) {
+        0x1e
+    } else {
+        0x14
+    };
+    reset_state(g, obj, w(0x85), 0, count);
     let list = [0xa0, 0xb3, 0xb9, 0xc2, 0xcd, 0xd6, 0xdf];
     append_object(g, img, f, img.rel32_target(f + 0x95), obj, list);
     obj
