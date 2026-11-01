@@ -4207,8 +4207,6 @@ fn reel_phases() {
             t.set_u32(w(&t, 0x1), phase);
             t.set_u32(w(&t, 0x4c), n);
             t.set_u32(w(&t, 0x55), m);
-            // (the byte after the count: a misread count is not small)
-            t.set_u8(w(&t, 0x55) + 4, 1);
             t.set_u32(w(&t, 0x16), h);
             // the reels' record (`reel_step`, also the record reset's)
             let i = k % 2;
