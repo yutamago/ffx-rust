@@ -540,9 +540,12 @@ advances the same way whatever the host's (or the emulator's) speed:
   `+0x2c`) are not empty and waits out; the render thread (noted by the
   wrapped `Renderer_PresentFlip` `0x00593760`) waits at its next take
   meanwhile. Inside an update the loader waits, unless the main thread
-  sleeps (the hook's stall case: `CdReadSync` waiting for a read) or the
-  update has run 3 s of host time (the hook's 100 ms, scaled for the
-  emulator).
+  waits for it: inside `CdReadSync_0076c490`'s read loop (any mode but 1,
+  wrapped: the map loads and the game over's title load wait there) or in
+  a `Sleep`. That is where the hook's 100 ms stall rule frees it in the
+  original, where an update only stalls while it waits; emulated work
+  frees nothing however long it takes (2026-11-01, host-b9, "The update
+  phase"). A guard frees it after 600 s of one update, with a note.
 - **FMOD's turn.** `FmodManager_tick` (`0x006fa700`, wrapped) runs once per
   boundary from the first one on, when the main thread gives the turn and
   waits for it; in between it serves the synchronous command the main
@@ -1390,7 +1393,8 @@ loader with its update and wait (not committed). Two separate things:
    far longer than that without waiting for the loader, while natively
    it takes well under 100 ms. That is the "-12 after update 1213" of
    the gate, and the title's cursor-glow phase in menu-save-4 and -6.
-   **Not fixed**: with the host-time rule replaced by one counted in the
+   **Fixed (2026-11-01, host-b9)**, below "The game over's wait". What
+   this round tried first: with the host-time rule replaced by one counted in the
    main thread's own sleeps (100 ms of `Sleep`/`SleepThreadInMillisecond`
    in one update, which frees the map loads' updates as the hook's stall
    does), the game-over update never ends: the main thread calls
@@ -1400,7 +1404,7 @@ loader with its update and wait (not committed). Two separate things:
    free, itself the only waiter, in no Windows wait) until the loader is
    let go; with a 600 s guard the update still ran into it. In the hook
    that update never stalls (its log frees the loader only in the two map
-   loads). So under emulation the render thread depends on the loader
+   loads; host-b9: one of the two is this update). So under emulation the render thread depends on the loader
    inside that update where natively it doesn't; what links them was not
    found (the guest-stack scans gave only stale words). The rule stays
    as it was. What `FFX_HOST_WATCH` showed (the 3 s rule in place): the
@@ -1417,6 +1421,33 @@ loader with its update and wait (not committed). Two separate things:
    update traced in the hook with its loader-take log, to see whether the
    original's render thread also waits for a cluster load there (and why
    that costs it no stall).
+   **The game over's wait (2026-11-01, host-b9).** The harness's new
+   `stacks` command (docs/harness.md, "Two processes") showed what the
+   game-over update waits on: with the in-update rule pushed to 300 s
+   (`FFX_HOST_LOADER_STALL_MS`, a diagnostic), the main thread sat in
+   `CdReadSync_0076c490` <- `TkCdReadWithMallocWithMessage` <-
+   `AtelEventSetUp` <- `TkInitScene` <- `TkUpdateEventJump` <-
+   `Sg_MainLoop` (the title's load), inside `MovieCdReadTaskLoop`'s
+   `WaitSema`/`PollSema_ps2` (1 ms `WaitForSingleObject`s, no `Sleep`),
+   and the loader in its take of the render lock
+   (`Phyre_PBinary_loadClusterTextures` <- `PRenderScopeLock_enter`); the
+   render thread idled in its event wait. So the main thread waits for the
+   loader there, as in a map load; the sleep rule above hung because that
+   wait is no `Sleep`, not because of the render thread. And the original
+   frees the loader in that update too: the hook's log of the same probe
+   (`call 0x0086da10` at boundary 275) says `loader freed in update 276`
+   (its count of the update the call's boundary starts), the 100 ms stall
+   rule, which in a native update only a wait can reach. The 3 s rule
+   freed it about 3 s into the 50 s of emulated work before that wait, so
+   the requests queued meanwhile ran at once, where the original runs them
+   only once the main thread waits. Now the loader is let go inside an
+   update while the main thread is in `CdReadSync`'s read loop (or a
+   `Sleep`), whatever the time; a 600 s guard (with a note) stays for a
+   wait the rule does not know. The probe's trace (7 ranges: the map
+   words, ctrl work 0's events, the request lists, the menu timer,
+   `g_PhyreScene`, the manager) then changes at the same updates relative
+   to the call as the original's in every range (map words +0, +1, +5,
+   the 3 s rule's +4); the map load at 152 is freed the same way.
 3. The opening's map load (`memochek` to the title) is freed in the
    main thread's wait in both programs, but one update earlier in
    ffx-rust (+194 against the original's +196, with the shift above
@@ -1684,8 +1715,10 @@ runs past the third frame (the Unicorn abort).
    and not in any comparison); in lockstep one update is lost at
    menu-save's game over, where ffx-rust's 3 s in-update rule lets the
    loader run inside a long emulated update (menu-save-4/-6's glow
-   phase). Open: the render thread waits for the loader inside that
-   update, so the rule can't simply go.
+   phase). Fixed (host-b9, 2026-11-01): the main thread waits for the
+   loader in `CdReadSync`'s read loop there (not the render thread), and
+   the loader now runs inside an update only while the main thread waits
+   there or sleeps ("The update phase", "The game over's wait").
 10. **The cloth race** (host-gate): ordered in both programs, on by
     default in lockstep (host-phase, "The cloth race"); which references
     it changes is listed for the user's decision.
