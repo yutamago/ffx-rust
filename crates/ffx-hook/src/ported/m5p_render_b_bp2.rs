@@ -50,4 +50,11 @@ ported! {
         let ebp = f.at() + 4 * rb::DOF_FRAME_WORDS;
         rb::dof::dof_render_pass(&mut mem(), ebp, this, renderer, a, near, far, out)
     }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_renderPass_00a220b0(effect; renderer, out, a, b, c)`:
+    /// the surfaces and bindings in a frame; the first error or the last call's `eax`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_renderPass_00a220b0 @ 0x00a2_20b0 => extern "thiscall" fn rbp2_00a220b0(this: u32, renderer: u32, out: u32, a: u32, b: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<{ rb::SSR_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * rb::SSR_FRAME_WORDS;
+        rb::ssr::ssr_render_pass(&mut mem(), ebp, this, renderer, out, a, b, c)
+    }
 }

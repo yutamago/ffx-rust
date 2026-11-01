@@ -6908,7 +6908,11 @@ fn bp2_dof_render_pass() {
                 if ki == 0 {
                     answers[5] |= 0x0b00;
                 }
-                t.seq_answers(sym, this, n, pops, &answers);
+                if sym == bp::SET_TEXTURE_CHECKED {
+                    t.binding_stub(sym, &answers);
+                } else {
+                    t.seq_answers(sym, this, n, pops, &answers);
+                }
             }
             let out = if with_out { 0x5a5a } else { 0 };
             let ebp = t.ebp_for(5);
@@ -6929,5 +6933,173 @@ fn bp2_dof_render_pass() {
             );
             t.reset();
         }
+    }
+}
+
+/// `0x00a220b0` with every callee stubbed: no mesh instance; each setup
+/// parameter absent, of a wrong type, failing, not fitting; each call of
+/// each kind failing in turn (the surfaces made destroyed, the last
+/// first); targets with and without a texture; no final target; the
+/// whole pass. Only synthetic data reaches it.
+#[test]
+#[allow(clippy::type_complexity)] // the case table
+fn bp2_ssr_render_pass() {
+    use ffx_prender::m5p_render_b_bp2::{self as bp};
+    // (sym, this, logged words, pops, calls in a full run)
+    let kinds: [(u32, bool, u32, u32, usize); 8] = [
+        (bp::SET_COLOR_TARGET, true, 2, 2, 8),
+        (bp::SET_DEPTH_TARGET, true, 1, 1, 4),
+        (bp::BEGIN_SCENE, true, 1, 1, 4),
+        (bp::END_SCENE, true, 1, 1, 4),
+        (bp::RENDER_MESH_INSTANCE, true, 4, 4, 1),
+        (bp::RENDER_FOR_PASS, true, 1, 1, 3),
+        (bp::SET_TEXTURE_CHECKED, true, 2, 2, 5),
+        (bp::WRITE_PARAMETER, true, 2, 2, 1),
+    ];
+    for (label, mut t) in Twins::all() {
+        // (setup variant, failing kind and call, all slots set, final target)
+        let mut cases: Vec<(u32, Option<(usize, usize)>, bool, bool)> = vec![
+            (0, None, true, true),
+            (0, None, false, true),
+            (0, None, true, false),
+            (1, None, true, true),
+            (2, None, true, true),
+            (3, None, true, true),
+            (4, None, true, true),
+            (5, None, true, true),
+            (6, None, true, true),
+            (7, None, true, true),
+        ];
+        for (ki, &(.., calls)) in kinds.iter().enumerate() {
+            for j in 0..calls {
+                cases.push((0, Some((ki, j)), true, true));
+            }
+        }
+        for (k, &(setup, fail, all, with_out)) in cases.iter().enumerate() {
+            let fx = t.junk(0x100, k as u8);
+            let instance = if setup == 5 { 0 } else { t.junk(0x20, 0x11) };
+            t.w32(fx + 0x1c, instance);
+            let buffer = t.zeros(0x40);
+            t.w32(buffer, 0x30);
+            let holder = t.zeros(8);
+            t.w32(holder + 4, buffer);
+            t.w32(fx + 0x74, holder);
+            let param = |t: &mut Twins, kind: u8, off: u16, size: u16| {
+                let p = t.zeros(0x10);
+                t.w8(p + 2, kind);
+                t.write(p + 8, &off.to_le_bytes());
+                t.write(p + 0xa, &size.to_le_bytes());
+                p
+            };
+            let p1 = param(&mut t, if setup == 1 { 0x41 } else { 0x42 }, 8, 0x10);
+            let p2 = param(&mut t, 0xd9, if setup == 2 { 2 } else { 0x18 }, 0x10);
+            let p3 = param(&mut t, if setup == 6 { 0xdd } else { 0x12 }, 0, 0);
+            let p4 = param(&mut t, 0x42, 4, if setup == 3 { 0x30 } else { 4 });
+            t.w32(fx + 0x78, p1);
+            t.w32(fx + 0x7c, p2);
+            t.w32(fx + 0x84, p3);
+            t.w32(fx + 0x8c, p4);
+            let p5 = param(&mut t, 0x42, 0x28, if setup == 7 { 0xe010 } else { 4 });
+            t.w32(fx + 0x90, p5);
+            for slot in [0x80u32, 0x88] {
+                let v = if all { t.junk(0x10, slot as u8) } else { 0 };
+                t.w32(fx + slot, v);
+            }
+            for (i, slot) in [0x68u32, 0x6c, 0x70].into_iter().enumerate() {
+                let target = t.junk(0x10, 0x20 + i as u8);
+                t.w8(target + 4, u8::from(i == 1));
+                t.w32(fx + slot, target);
+            }
+            let renderer = t.junk(0x140, 0x40 ^ k as u8);
+            t.stub(
+                bp::TROPHY_INSTALL,
+                true,
+                1,
+                1,
+                if setup == 4 { 0x77 } else { 0 },
+            );
+            t.stub(bp::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(bp::SURFACE_CTOR, true, 2, 2, 0x5c);
+            t.stub(bp::SURFACE_DTOR, true, 0, 0, 0x5d);
+            for (ki, &(sym, this, n, pops, calls)) in kinds.iter().enumerate() {
+                let mut answers = vec![0u32; calls];
+                if let Some((_, fj)) = fail.filter(|&(fk, _)| fk == ki) {
+                    answers[fj] = 0x30 + ki as u32;
+                }
+                if ki == 0 {
+                    answers[7] |= 0x0b00;
+                }
+                if sym == bp::SET_TEXTURE_CHECKED {
+                    t.binding_stub(sym, &answers);
+                } else {
+                    t.seq_answers(sym, this, n, pops, &answers);
+                }
+            }
+            let out = if with_out { 0x5a5a } else { 0 };
+            let ebp = t.ebp_for(5);
+            let args = [renderer, out, 0x7e01, 0x7e02, 0x7e03];
+            t.check_frame(
+                &format!("{label}: ssr pass {k}"),
+                0x00a2_20b0,
+                Conv::Thiscall(fx),
+                &args,
+                ebp,
+                0x7c,
+                (0x3c, 0xc),
+                |g| {
+                    Out::U32(bp::ssr::ssr_render_pass(
+                        g, ebp, fx, renderer, out, 0x7e01, 0x7e02, 0x7e03,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, two stack words, popping
+    /// them) that logs its tag, `ecx`, its first word and the four words
+    /// its second word points at (a texture binding), answering from
+    /// `answers` in turn (0 past the end).
+    fn binding_stub(&mut self, sym: u32, answers: &[u32]) {
+        let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+        table.extend([0u8; 64]);
+        let table = self.alloc(&table);
+        let cell = self.alloc(&table.to_le_bytes());
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+        c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+        for k in 0..4u8 {
+            c.extend([0xff, 0x72, 4 * k]); // push dword [edx+4k]
+            c.extend([0x8f, 0x40, 0x0c + 4 * k]); // pop dword [eax+0xc+4k]
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x8b, 0x10]); // mov edx, [eax]
+        c.extend([0x83, 0x05]);
+        c.extend(cell.to_le_bytes());
+        c.push(0x04); // add dword [cell], 4
+        c.extend([0x89, 0xd0]); // mov eax, edx
+        c.extend([0xc2, 0x08, 0x00]); // ret 8
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
     }
 }
