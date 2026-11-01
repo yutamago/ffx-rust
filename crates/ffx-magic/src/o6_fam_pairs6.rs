@@ -1271,4 +1271,160 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     trail_draw(g, img, &draw)
 }
 
+/// Where a copy of [`packed_sprite`] keeps its operands: the lock
+/// global (taken, put back), the scale `K`, the three slot-table
+/// globals, slot 776's byte, the two words of slot 905's pair, the
+/// global the second float comes from instead of the stack (`magic_0266`)
+/// and the colour words `S` (offsets below `ebp`, then the code word
+/// written there, `None` for the scaled size `x`).
+struct PackedOps {
+    lock: u32,
+    unlock: u32,
+    k: u32,
+    slots: [u32; 3],
+    kind: u32,
+    pair: [u32; 2],
+    second: Option<u32>,
+    colour: [(u32, Option<u32>); 4],
+}
+
+/// The operands of the [`packed_sprite`] copy at `f`.
+fn packed_ops(img: &Image, f: u32) -> PackedOps {
+    // `sub esp, 0x120` (0266); `mulss` right after the shift (0353)
+    if img.word(f + 0x5) as u8 == 0x20 {
+        PackedOps {
+            lock: 0x51,
+            unlock: 0xf5,
+            k: 0x93,
+            slots: [0xd5, 0x106, 0x158],
+            kind: 0x10b,
+            pair: [0x13c, 0x134],
+            second: Some(0x26),
+            colour: [
+                (0x114, Some(0xb0)),
+                (0x110, Some(0xa6)),
+                (0x10c, Some(0xba)),
+                (0x108, None),
+            ],
+        }
+    } else if img.word(f + 0x79) as u8 == 0xf3 {
+        PackedOps {
+            lock: 0x3c,
+            unlock: 0xe3,
+            k: 0x7d,
+            slots: [0xc3, 0xf4, 0x143],
+            kind: 0xf9,
+            pair: [0x127, 0x11f],
+            second: None,
+            colour: [
+                (0x114, None),
+                (0x110, Some(0xa0)),
+                (0x10c, Some(0x96)),
+                (0x108, None),
+            ],
+        }
+    } else {
+        PackedOps {
+            lock: 0x3c,
+            unlock: 0xe5,
+            k: 0x83,
+            slots: [0xc5, 0xf6, 0x145],
+            kind: 0xfb,
+            pair: [0x129, 0x121],
+            second: None,
+            colour: [
+                (0x114, Some(0xa0)),
+                (0x110, Some(0x96)),
+                (0x10c, Some(0xaa)),
+                (0x108, None),
+            ],
+        }
+    }
+}
+
+/// A sprite from a packed 64-bit descriptor (internal: `ecx` = the
+/// owner, stack `(-, buffer, lo, hi, a, b, n)`; a /GS frame, `ebp` = the
+/// entry `esp - 4`; `magic_0353` 0x100013b0, 358 bytes, `magic_0672`
+/// 0x10001310, 360 bytes, and `magic_0266` 0x10001310, 379 bytes;
+/// family `F0353_100013b0`): with the lock `**G_L` 1, slot 885 `(lo &
+/// 0x3fff, (d >> 20) & 0x3f, 0, 0, 1 << ((d >> 26) & 15), 1 << ((d >>
+/// 30) & 15), &B)` (`d` the descriptor, the shifts 16-bit, `B` 0x100
+/// bytes at `ebp - 0x104`) and the lock put back. Then, if slot 885
+/// answered, slot 905 `(owner + 0x830, &B, buffer, a, b, k, k, &S, slot
+/// 776 (kind))`. `S` is four floats at `ebp - 0x114` built from `x =
+/// (n * 128 / 128) * K` (`0353`: `(x, 1, 1, x)`; `0672`: `(0.75, 0.75,
+/// 1, x)`; `0266`: `(0.5, 0.5, 1, x)`, and its `b` is a constant of the
+/// DLL, its `k` 0). Returns slot 905's `eax`, or 0.
+pub fn packed_sprite<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{cvt, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ops = packed_ops(img, f);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (b, s) = (ebp.wrapping_sub(0x104), ebp.wrapping_sub(0x114));
+    let owner = g.read::<u32>(fr.ecx.wrapping_add(0x830));
+    let buffer = fr.arg(g, 1);
+    let (lo, hi) = (fr.arg(g, 2), fr.arg(g, 3));
+    let first = fr.arg(g, 4);
+    let n = fr.arg(g, 6);
+    // `shl 7; cdq; and edx, 0x7f; add; sar 7`: a division by 128 toward 0
+    let m = n << 7;
+    let q = m
+        .wrapping_add((m.cast_signed() >> 31).cast_unsigned() & 0x7f)
+        .cast_signed()
+        >> 7;
+    let x = mul(cvt(q.cast_unsigned()), g.read::<f32>(w(ops.k)));
+    let lock = g.read::<u32>(w(ops.lock));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let d = (u64::from(hi) << 32) | u64::from(lo);
+    let bit = |sh: u32| u32::from(1u16 << ((d >> sh) & 0xf));
+    for (off, word) in ops.colour {
+        let v = word.map_or(x.to_bits(), &w);
+        g.write::<u32>(ebp.wrapping_sub(off), v);
+    }
+    let t = slot_target(g, w(ops.slots[0]), 885);
+    // call width: 7
+    let made = g
+        .call(
+            t,
+            0,
+            &[
+                lo & 0x3fff,
+                ((d >> 20) & 0x3f) as u32,
+                0,
+                0,
+                bit(26),
+                bit(30),
+                b,
+            ],
+        )
+        .eax;
+    let lock = g.read::<u32>(w(ops.unlock));
+    g.write::<u32>(lock, saved);
+    if made == 0 {
+        return Ret::eax(0);
+    }
+    let t = slot_target(g, w(ops.slots[1]), 776);
+    // call width: 1
+    let kind = g.call(t, 0, &[disp8(img, f + ops.kind)]).eax;
+    let second = ops
+        .second
+        .map_or_else(|| fr.arg(g, 5), |o| g.read::<u32>(w(o)));
+    let t = slot_target(g, w(ops.slots[2]), 905);
+    // call width: 9
+    let args = [
+        owner,
+        b,
+        buffer,
+        first,
+        second,
+        w(ops.pair[0]),
+        w(ops.pair[1]),
+        s,
+        kind,
+    ];
+    Ret::eax(g.call(t, 0, &args).eax)
+}
+
 include!("o6_fam_pairs6_table.rs.in");

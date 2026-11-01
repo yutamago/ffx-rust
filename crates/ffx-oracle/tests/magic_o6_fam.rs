@@ -1624,6 +1624,7 @@ fn dll_main_writes_only_crt_state() {
         STAGED_NODES,
         TRAIL_DRAW,
         TRAIL_TASK,
+        PACKED_SPRITE,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -4138,4 +4139,87 @@ fn matrix_stubs(t: &mut Twin) {
         m.w32(SCRATCH + 0x3fb0, k + 1);
         if k % 2 == 0 { 0x0773_0000 ^ a[0] } else { 0 }
     });
+}
+
+const PACKED_SPRITE: &[(u16, u32)] = &[(353, 0x13b0), (672, 0x1310), (266, 0x1310)];
+
+/// `o6_fam_pairs6::packed_sprite`: descriptors with their fields spread
+/// (the shifted bits from 0 to 15), sizes positive and negative (the
+/// division toward 0); slot 885 answering 0 (nothing more) or not. Slot
+/// 885 fills its buffer from its words and the lock; 905 hashes the
+/// buffer and the colour words it is handed.
+#[test]
+fn fam2_packed_sprite() {
+    for &(n, rva) in PACKED_SPRITE {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        registered(&t, rva, "o6 fam pairs6 packed_sprite");
+        stubs4(&mut t);
+        let f = t.at(rva);
+        let lock_at = t.img.word(f + if n == 266 { 0x51 } else { 0x3c });
+        let lock = SCRATCH + 0x3f00;
+        t.set_u32(lock_at, lock);
+        t.stub(885, move |m, a| {
+            let mut x = 0x885 ^ m.r32(lock).rotate_left(13);
+            for (i, w) in (0u32..).zip(&a[..6]) {
+                x = x.rotate_left(7) ^ *w;
+                m.w32(a[6] + 4 * i, x);
+            }
+            m.w32(SCRATCH + 0x3f10, x);
+            if m.r32(SCRATCH + 0x3f20) == 0 {
+                0
+            } else {
+                x | 1
+            }
+        });
+        t.stub(905, |m, a| {
+            let mut x = 0x905u32;
+            for (i, w) in (0u32..).zip(&a[..9]) {
+                x = x.rotate_left(5) ^ *w ^ i;
+            }
+            for i in 0..6 {
+                x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+            }
+            for i in 0..4 {
+                x = x.rotate_left(3) ^ m.r32(a[7] + 4 * i);
+            }
+            m.w32(SCRATCH + 0x3f14, x);
+            x
+        });
+        let (owner, buffer) = (SCRATCH + 0x4000, SCRATCH + 0x5000);
+        let saved = t.save();
+        // (lo, hi, n, slot 885 answers)
+        let cases = [
+            (0x1234_5678u32, 0x0000_0002u32, 7u32, 1u32),
+            (0xfedc_ba98, 0xffff_fff1, 0xffff_fffd, 1),
+            (0x4c00_3fff, 0x0000_0003, 0x0100_0001, 1),
+            (0x0000_0000, 0x0000_0000, 0, 1),
+            (0x8765_4321, 0x0000_000c, 5, 0),
+        ];
+        for (c, (lo, hi, size, answers)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            t.write(owner, &[0x2d; 0x840]);
+            t.set_u32(owner + 0x830, 0x0083_0000 + c);
+            t.write(buffer, &[0x5c; 0x20]);
+            t.set_u32(lock, 0x55 + c);
+            t.set_u32(SCRATCH + 0x3f20, answers);
+            let call = Call {
+                ecx: owner,
+                ..Call::default()
+            };
+            let args = [
+                0x00a0_0000 + c,
+                buffer,
+                lo,
+                hi,
+                (1.5f32 + c as f32).to_bits(),
+                (-0.25f32 * c as f32).to_bits(),
+                size,
+            ];
+            t.check(f, call, &args, Eax::Checked, |g, img, fr| {
+                o6_fam_pairs6::packed_sprite(g, img, fr)
+            });
+        }
+    }
 }

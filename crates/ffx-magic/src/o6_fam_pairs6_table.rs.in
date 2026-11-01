@@ -225,3 +225,35 @@ pub const TRAIL_TASK_0556_2250: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0353_100013b0
+
+/// [`packed_sprite`] in `magic_0353` (0x100013b0, 358 bytes; row own:1902).
+pub const PACKED_SPRITE_0353_13B0: Sig = Sig {
+    len: 358,
+    hash: 0x139a_3c9d_8094_0982,
+    calls: &[
+        (0x15e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`packed_sprite`] in `magic_0672` (0x10001310, 360 bytes; row own:3477).
+pub const PACKED_SPRITE_0672_1310: Sig = Sig {
+    len: 360,
+    hash: 0xadca_846d_b3e9_4a91,
+    calls: &[
+        (0x160, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`packed_sprite`] in `magic_0266` (0x10001310, 379 bytes; row own:1508).
+pub const PACKED_SPRITE_0266_1310: Sig = Sig {
+    len: 379,
+    hash: 0xf07e_12e1_7499_837d,
+    calls: &[
+        (0x173, Callee::Any),
+    ],
+    imports: &[],
+};
