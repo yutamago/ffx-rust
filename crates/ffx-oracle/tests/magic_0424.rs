@@ -27,7 +27,9 @@ fn release() {
         (parent, a, b),
         (parent, a, parent),
     ] {
-        t.write(node, &[0x5c; 0x100]);
+        // each node word other than its neighbours (slot 376 gets +0xf0)
+        let fill: Vec<u8> = (0u8..=255).map(|b| b.wrapping_mul(0x1d) ^ 0x5c).collect();
+        t.write(node, &fill);
         t.write(parent, &[0x3c; 0x20]);
         t.set_u16(parent + 0x18, 5);
         t.write(a, &[0x1c; 0x10]);

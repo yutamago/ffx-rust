@@ -54,6 +54,10 @@ fn frame() {
         t.set_u32(t.img.word(ms + 0x02), u32::from(done));
         t.set_u16(t.img.word(ms + 0x11), 5);
         t.set_u32(w(&t, 0x6a), count);
+        // the word copied (*X) and its two copies' old values
+        t.set_u32(w(&t, 0x44), 0x00ab_0044);
+        t.set_u32(w(&t, 0x51), 0x5151_5151);
+        t.set_u32(w(&t, 0x56), 0x5656_5656);
         t.write(task, &[0x11; 0x20]);
         t.set_u32(task + 8, record);
         t.write(record, &[0x22; 0x20]);

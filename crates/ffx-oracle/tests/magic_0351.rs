@@ -93,6 +93,10 @@ fn part_starts() {
     for (rva, call) in [(0x15f0u32, 0x36u32), (0x2130, 0x36), (0x2270, 0x35)] {
         let at = t.at(rva);
         part_setup(&mut t, at, call);
+        if rva == 0x2270 {
+            // slot 220's first word *X
+            t.set_u32(t.img.word(at + 0x47), 0x00c4_7047);
+        }
         for v in [1.5f32, -0.25] {
             t.write(obj, &[0x5c; 0x80]);
             t.set_u32(obj + 0x44, v.to_bits());

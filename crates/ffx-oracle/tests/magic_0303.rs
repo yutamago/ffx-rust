@@ -28,20 +28,23 @@ fn frame() {
     let (task, record) = (SCRATCH + 0x100, SCRATCH + 0x180);
     let node = SCRATCH + 0x3000;
     let ctxs = [w(&t, 0x0c), w(&t, 0x18)];
-    for (done, s2, busy, with_node, flag, sound) in [
-        (true, 0u8, false, true, 0u32, 3i32),
-        (true, 0, false, false, 1, 3),
-        (true, 0, false, true, 0, 0x20),
-        (false, 0, false, true, 0, 3),
-        (true, 2, false, true, 0, 3),
-        (true, 0, true, true, 0, 3),
+    // the sound *T of slot 257's branch
+    t.set_u32(w(&t, 0x80), 0x00ab_0080);
+    for (done, s1, s2, busy, with_node, flag, sound) in [
+        (true, 0u8, 0u8, false, true, 0u32, 3i32),
+        (true, 0, 0, false, false, 1, 3),
+        (true, 0, 0, false, true, 0, 0x20),
+        (false, 0, 0, false, true, 0, 3),
+        (true, 2, 0, false, true, 0, 3),
+        (true, 0, 2, false, true, 0, 3),
+        (true, 0, 0, true, true, 0, 3),
     ] {
         t.set_u32(t.img.word(ms + 0x02), u32::from(done));
         t.set_u16(t.img.word(ms + 0x11), 5);
         // the scripts: mode byte +0x56 (0 ended), wait +0x54 forever
         for (k, c) in ctxs.into_iter().enumerate() {
             t.write(c, &[0; 0x60]);
-            t.set_u8(c + 0x56, if k == 1 { s2 } else { 0 });
+            t.set_u8(c + 0x56, if k == 1 { s2 } else { s1 });
             t.set_u16(c + 0x54, 0xffff);
         }
         t.set_u32(list + 8, if busy { n } else { 0 });
@@ -72,15 +75,21 @@ fn place() {
         }
         0x262
     });
-    for (s, n) in [(255u32, 2usize), (33, 4), (32, 3)] {
+    // slot 255 copies the vector out (its fourth word 1.0 included)
+    rec(&mut t, 255, 2, |m, a| {
+        magic_owna::dump(m, 255, a[1], 4);
+        0x0100_0255 ^ a[0]
+    });
+    for (s, n) in [(33u32, 4usize), (32, 3)] {
         rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
     }
     rec(&mut t, 11, 1, |m, _| m.r32(SCRATCH + 0x6f0));
     let pm = t.img.rel32_target(at + 0x5f);
     let pw = |t: &Twin, off: u32| t.img.word(pm + off);
     t.set_u32(t.img.word(at + 0x23), 0x00ab_0023);
-    t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
     for (battle, me, grounded) in [(0u32, 3u32, 0u32), (1, 3, 0), (0, 0x40, 1), (1, 5, 1)] {
+        // the frame scrubbed each case (the vector's 1.0 is not left over)
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
         t.set_u32(pw(&t, 0x02), battle);
         t.set_u32(pw(&t, 0x0d), me);
         t.set_u32(pw(&t, 0x32), 0x0b0b_0032);
