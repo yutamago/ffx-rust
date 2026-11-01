@@ -49,6 +49,8 @@ fn frame() {
         (0x7f80_0001u32, false, e + 1.0),
         (f(h), true, f32::NAN),
         (f(0.0), false, e),
+        // -0.0: not below 0, so it stays -0.0
+        (f(-0.0), false, e),
     ] {
         t.set_u32(level, x);
         t.set_u32(m, f(if mk { k } else { k + 1.0 }));
