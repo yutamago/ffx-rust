@@ -44,6 +44,10 @@ fn start() {
         0x268
     });
     recs(&mut t, &[(714, 5), (393, 3)]);
+    // the globals the calls pass, distinct from their neighbours
+    for op in [0x46, 0x60, 0xc8] {
+        t.set_u32(t.img.word(at + op), 0x00a5_0000 + op);
+    }
     let obj = SCRATCH + 0x1000;
     for flag in [0u32, 1] {
         t.set_u32(t.img.word(at + 0xa9), flag);
