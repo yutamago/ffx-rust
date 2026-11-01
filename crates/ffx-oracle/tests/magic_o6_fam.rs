@@ -1618,6 +1618,10 @@ fn dll_main_writes_only_crt_state() {
         SPRITE_FRAME,
         MOVING_SPRITES,
         ACTOR_LIGHT,
+        AIMED_OBJECTS,
+        CURVE_FLYERS,
+        ACTOR_SPAWNER,
+        STAGED_NODES,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -1633,7 +1637,7 @@ fn slot_words(s: u32) -> usize {
         714 => 5,
         231 | 233 | 234 | 236 | 266 => 3,
         217 | 229 | 230 | 232 | 325 | 712 | 941 => 2,
-        307 | 545 | 562 => 0,
+        307 | 545 | 562 | 790 => 0,
         _ => 1,
     }
 }
@@ -3373,6 +3377,338 @@ fn fam2_actor_light() {
             t.write(busy_node, &[0x66; 0x20]);
             t.set_u32(w(&t, 0x167), if busy { busy_node } else { 0 });
             t.set_u32(w(&t, 0x17a), busy_node);
+            t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
+        }
+    }
+}
+
+const AIMED_OBJECTS: &[(u16, u32)] = &[(565, 0x40d0), (644, 0x80f0)];
+
+/// `o6_fam_pairs6::aimed_objects`: no targets, three (the free count 3,
+/// the busy list empty) and one (the free count 1, the busy list holding
+/// a node); the pass word 0 (the sprite set up, `rand` drawn) or not.
+/// Slot 262 writes the target's position, slot 237 the vector `L`; the
+/// objects start as ported.
+#[test]
+fn fam2_aimed_objects() {
+    for (d, (n, rva)) in (0u32..).zip(copies("o6 fam pairs6 aimed_objects", AIMED_OBJECTS)) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        t.stub(237, |m, a| {
+            for i in 0..4 {
+                m.w32(a[3] + 4 * i, (1.5 - i as f32).to_bits());
+            }
+            0x237
+        });
+        t.stub(262, |m, a| {
+            for (i, &p) in a[1..4].iter().enumerate() {
+                let x = ((a[0] ^ p) % 23) as f32 * 0.75 - 8.0 + i as f32;
+                m.w32(p, x.to_bits());
+            }
+            0x262
+        });
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let obj = 0x6d00_0000 + 0x0100_0000 * d;
+        let list = SCRATCH + 0x3000;
+        t.set_u32(w(&t, 0x18), obj);
+        t.set_u32(w(&t, 0xd6), SCRATCH + 0x3100);
+        t.write(SCRATCH + 0x3100, &[1, 2, 3, 0, 2, 1, 3, 0]);
+        t.set_u32(w(&t, 0x280), SCRATCH + 0x3300);
+        fill(&mut t, SCRATCH + 0x3300, 0x10, 7);
+        let start = t.img.rel32_target(f + 0x2d6);
+        t.set_u32(t.img.word(start + 0x04), SCRATCH + 0x3200);
+        t.set_u32(t.img.word(start + 0x5e), SCRATCH + 0x3a00);
+        fill(&mut t, SCRATCH + 0x3a00, 0x10, 5);
+        fill(&mut t, P, 0x40, 17);
+        t.stub(941, |m, a| {
+            m.w32(SCRATCH + 0x3b00, a[0]);
+            P
+        });
+        let saved = t.save();
+        for (c, (count, free, busy, pass)) in
+            (0u32..).zip([(0u32, 3u16, false, 0u32), (3, 3, false, 0), (1, 1, true, 1)])
+        {
+            t.restore(&saved);
+            t.write(obj, &vec![0x11; 0x10000]);
+            t.set_u32(obj + w(&t, 0x1f), list);
+            t.write(list, &[0x22; 0x20]);
+            t.set_u32(list + 4, count);
+            for i in 0..8 {
+                t.set_u8(list + 8 + i, (i * 3 + c) as u8 % 6);
+            }
+            t.set_u32(obj + w(&t, 0x277), pass);
+            let node = |i: u32| SCRATCH + 0x3400 + 0x40 * i;
+            for i in 0..3 {
+                t.write(node(i), &[0x77; 0x20]);
+                t.set_u32(node(i), node((i + 2) % 3));
+                t.set_u32(node(i) + 4, node((i + 1) % 3));
+            }
+            t.set_u32(w(&t, 0x323), node(1));
+            t.set_u16(w(&t, 0x2e0), free);
+            let held = SCRATCH + 0x3600;
+            t.write(held, &[0x66; 0x20]);
+            t.set_u32(w(&t, 0x38a), if busy { held } else { 0 });
+            t.set_u32(w(&t, 0x3a0), held);
+            t.check_entry(f, regs(rva, c), &[], Eax::Checked);
+        }
+    }
+}
+
+const CURVE_FLYERS: &[(u16, u32)] = &[(307, 0x2be0), (563, 0x26d0)];
+
+/// `o6_fam_pairs6::curve_flyers`: the two records' times before and past
+/// the end, their countdowns running or out (the record in the list or
+/// not, the task given back); the pool with eight free records, or with
+/// the third one taken (the first record's particles stop there and the
+/// second's at once). Slot 314 answers floats from its word and a count.
+#[test]
+fn fam2_curve_flyers() {
+    for (d, (n, rva)) in (0u32..).zip(copies("o6 fam pairs6 curve_flyers", CURVE_FLYERS)) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        t.stub_st0(314, |m, a| {
+            let k = m.r32(SCRATCH + 0x3800);
+            m.w32(SCRATCH + 0x3800, k + 1);
+            f64::from(f32::from_bits(a[0])) * 0.375 + f64::from(k % 5) * 0.25
+        });
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let own = 0x0100_0000 * d;
+        let obj = 0x6e00_0000 + own;
+        t.set_u32(w(&t, 0x27), obj);
+        let recs = obj + w(&t, 0x2d);
+        t.set_u32(w(&t, 0x1f4), SCRATCH + 0x3000);
+        t.set_u32(w(&t, 0x241), SCRATCH + 0x3100);
+        fill(&mut t, SCRATCH + 0x3100, 8, 3);
+        let take = t.img.rel32_target(f + 0x231);
+        let tw = |t: &Twin, o: u32| t.img.word(take + o);
+        let pool = 0x5900_0000 + own;
+        let start = 20u32;
+        t.set_u32(tw(&t, 0x37), pool + 0x74 * start);
+        let list = w(&t, 0x1e6);
+        let task = SCRATCH + 0x3200;
+        let saved = t.save();
+        // (times, countdowns, the first record listed, the busy record)
+        let cases = [
+            ([0.25f32, 0.5], [3u32, 2], false, None),
+            ([0.875, 0.75], [0, 5], true, Some(2u32)),
+            ([0.5, 0.95], [1, 0], false, Some(0)),
+        ];
+        for (c, (times, counts, listed, busy)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            t.write(obj, &vec![0x21; (w(&t, 0x2d) + 0x400) as usize]);
+            for i in 0..2u32 {
+                let r = recs + 0x190 * i;
+                for j in 0..16u32 {
+                    let x = ((j * 7 + i * 3 + c) % 11) as f32 * 0.5 - 2.0;
+                    t.set_u32(r + 0x130 + 4 * j, x.to_bits());
+                }
+                t.set_u32(r + 0x180, times[i as usize].to_bits());
+                t.set_u32(r + 0x184, 0.125f32.to_bits());
+                t.set_u32(r + 0x188, counts[i as usize]);
+                t.set_u32(r + 0x124, 0xffff_8123);
+            }
+            let lnode = SCRATCH + 0x3300;
+            t.write(lnode, &[0; 0x10]);
+            t.set_u32(lnode + 8, if listed { recs } else { 0x1234 });
+            t.set_u32(list, lnode);
+            t.set_u32(list + 4, lnode);
+            t.set_u32(list + 8, 0);
+            t.set_u32(list + 0xc, 1);
+            t.set_u32(tw(&t, 0x08), start.wrapping_neg());
+            t.set_u32(tw(&t, 0x0f), 1);
+            t.write(pool, &vec![0x33; 0x74 * 10]);
+            for i in 0..10 {
+                t.set_u32(pool + 0x74 * i + 0x6c, u32::from(Some(i) == busy));
+            }
+            // the task at rest for the pool's give-back
+            rest_node(&mut t, task);
+            t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
+        }
+    }
+}
+
+const ACTOR_SPAWNER: &[(u16, u32)] = &[(565, 0x5bd0), (644, 0x9a00)];
+
+/// `o6_fam_pairs6::actor_spawner`: still waiting; the mode 0 (the start
+/// turned and moved, the target pushed by slot 314) and 1 (slot 237's
+/// start); not the last actor and the last (the task marked); the busy
+/// list empty or holding a node; slot 324 answering a positive and a
+/// negative roll. Slot 262 writes the target, 229 transforms and 248 adds
+/// the vectors they are handed, 314 answers floats from its word.
+#[test]
+fn fam2_actor_spawner() {
+    for (d, (n, rva)) in (0u32..).zip(copies("o6 fam pairs6 actor_spawner", ACTOR_SPAWNER)) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 1.5 - 0.25);
+        t.stub(237, |m, a| {
+            for i in 0..4 {
+                m.w32(a[3] + 4 * i, (2.5 - i as f32).to_bits());
+            }
+            0x237
+        });
+        t.stub(262, |m, a| {
+            for (i, &p) in a[1..4].iter().enumerate() {
+                let x = ((a[0] ^ p) % 23) as f32 * 0.75 - 8.0 + i as f32;
+                m.w32(p, x.to_bits());
+            }
+            0x262
+        });
+        t.stub(229, |m, a| {
+            for i in 0..4 {
+                let x = f32::from_bits(m.r32(a[2] + 4 * i)) * 1.25 + 0.5;
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x229
+        });
+        t.stub(248, |m, a| {
+            for i in 0..4 {
+                let x = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+                m.w32(a[0] + 4 * i, x.to_bits());
+            }
+            0x248
+        });
+        t.stub(324, |m, _| m.r32(SCRATCH + 0x3900));
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let obj = 0x7000_0000 + 0x0100_0000 * d;
+        t.set_u32(w(&t, 0x1a), obj);
+        let a = obj + w(&t, 0x22);
+        let list = SCRATCH + 0x3000;
+        t.set_u32(w(&t, 0x1de), SCRATCH + 0x3100);
+        t.write(SCRATCH + 0x3100, &[1, 2, 3, 0, 2, 1, 3, 0]);
+        let take = t.img.rel32_target(f + 0x46d);
+        let (count, head) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+        let task = SCRATCH + 0x3200;
+        let saved = t.save();
+        // (wait, mode, spawned, of, busy list held, roll)
+        let cases = [
+            (2u32, 0u32, 0u32, 3u32, false, 5u32),
+            (0, 0, 0, 3, false, 13),
+            (0, 1, 2, 3, true, 0xffff_fff3),
+            (0, 1, 0, 3, true, 7),
+        ];
+        for (c, (wait, mode, spawned, of, busy, roll)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            t.write(obj, &vec![0x11; 0x10000]);
+            t.set_u32(obj + w(&t, 0x1b8), list);
+            t.write(list, &[0x22; 0x20]);
+            for i in 0..8 {
+                t.set_u8(list + 8 + i, (i * 3 + c) as u8 % 6);
+            }
+            for (i, o) in [0x5au32, 0x68, 0x76, 0x84].into_iter().enumerate() {
+                t.set_u32(obj + w(&t, o), (1.25 * i as f32 - 0.5 + c as f32).to_bits());
+            }
+            t.set_u32(obj + w(&t, 0xd1), 0.375f32.to_bits());
+            t.set_u32(a + 0x5200, wait);
+            t.set_u32(a + 0x5204, spawned);
+            t.set_u32(a + 0x5208, mode);
+            t.set_u32(a + 0x520c, of);
+            t.set_u32(SCRATCH + 0x3900, roll);
+            let ring = |i: u32| SCRATCH + 0x3600 + 0x40 * i;
+            for i in 0..3 {
+                t.write(ring(i), &[0x77; 0x20]);
+                t.set_u32(ring(i), ring((i + 2) % 3));
+                t.set_u32(ring(i) + 4, ring((i + 1) % 3));
+            }
+            t.set_u16(count, 3);
+            t.set_u32(head, ring(1));
+            let busy_node = SCRATCH + 0x3800;
+            t.write(busy_node, &[0x66; 0x20]);
+            t.set_u32(w(&t, 0x473), if busy { busy_node } else { 0 });
+            t.set_u32(w(&t, 0x486), busy_node);
+            t.write(task, &[0x44; 0x60]);
+            t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
+        }
+    }
+}
+
+const STAGED_NODES: &[(u16, u32)] = &[(398, 0x6960), (402, 0x6960)];
+
+/// `o6_fam_pairs6::staged_nodes`: every state (0, an idle one, 10, 11
+/// before and past its counter, 12 before 20, with more indices and the
+/// last, 13 before and past 80, 10000, a large one); the parent's list
+/// empty or holding a child. Slot 218 gives one model, 941 a program
+/// table; the node set-ups run as ported.
+#[test]
+#[allow(clippy::too_many_lines)] // the set-up of seven callees
+fn fam2_staged_nodes() {
+    for (n, rva) in copies("o6 fam pairs6 staged_nodes", STAGED_NODES) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        t.stub(218, |m, a| {
+            m.w32(a[1], 1);
+            m.w32(SCRATCH + 0x3880, a[0]);
+            SCRATCH + 0x3890
+        });
+        t.write(SCRATCH + 0x3890, &[7, 0, 0, 0]);
+        // the model's time (model_node_init stores slot 333's ST0)
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.5);
+        // the colour block's float (slot 790) and the node's (289)
+        t.stub_st0(790, |_, _| 0.625);
+        t.stub_st0(289, |_, a| f64::from(a[0] & 0xf) * 0.25);
+        fill(&mut t, P, 0x40, 17);
+        t.stub(941, |m, a| {
+            m.w32(SCRATCH + 0x3884, a[0]);
+            P
+        });
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let parent = w(&t, 0x162);
+        t.set_u32(w(&t, 0x2f0), SCRATCH + 0x3a00);
+        fill(&mut t, SCRATCH + 0x3a00, 0x10, 5);
+        let (task, s, link) = (SCRATCH + 0x3000, SCRATCH + 0x3100, SCRATCH + 0x3200);
+        let saved = t.save();
+        // (state, counter, index, the index count, the parent holding a child)
+        let cases = [
+            (0u32, 0u32, 0u32, 2u32, false),
+            (5, 3, 0, 2, false),
+            (10, 7, 1, 2, true),
+            (11, 0x10, 1, 2, false),
+            (11, 0x60, 1, 2, true),
+            (12, 0x10, 0, 2, false),
+            (12, 0x30, 0, 2, false),
+            (12, 0x30, 1, 2, false),
+            (13, 0x20, 0, 2, false),
+            (13, 0x60, 0, 2, false),
+            (0x2710, 0, 0, 2, false),
+            (0x3000, 0, 0, 2, false),
+        ];
+        for (c, (state, counter, index, count, held)) in (0u32..).zip(cases) {
+            t.restore(&saved);
+            t.write(s, &[0x31; 0x40]);
+            t.set_u32(s + 0x18, state);
+            t.set_u32(s + 0x28, counter);
+            t.set_u32(s + 0x24, index);
+            t.set_u32(s + 0x1c, 0.5f32.to_bits());
+            t.set_u32(s + 0x20, 1.5f32.to_bits());
+            t.set_u32(w(&t, 0x1ec), count);
+            t.set_u32(task, link);
+            t.set_u32(task + 4, s);
+            let (prev, next) = (SCRATCH + 0x3280, SCRATCH + 0x32c0);
+            t.write(link, &[0x66; 0x10]);
+            t.set_u32(link + 4, prev);
+            t.set_u32(link + 8, next);
+            t.write(parent, &[0x55; 0x20]);
+            let child = SCRATCH + 0x3300;
+            t.write(child, &[0x44; 0x20]);
+            t.set_u32(parent + 0x10, if held { child } else { parent });
+            t.set_u16(parent + 0x18, u16::from(held));
+            // the other nodes' parents: empty lists
+            for o in [0x6bu32, 0x9f, 0x30d] {
+                let l = w(&t, o);
+                t.set_u32(l + 0x10, l);
+            }
             t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
         }
     }

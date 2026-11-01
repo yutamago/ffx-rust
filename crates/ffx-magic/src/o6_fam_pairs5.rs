@@ -184,21 +184,21 @@ pub fn global_node_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// and displacements (217, 234, the three 233 calls), `G_FREE` (read),
 /// the `+0xa4` and `+0x9c` immediates, `G_HEAD`, the callback,
 /// `G_FREE` (written), `G_LAST` (compared, read, written), `G_FIRST`.
-struct NodeOps {
-    a: u32,
-    t217: (u32, u32),
-    t234: (u32, u32),
-    t233: [(u32, u32); 3],
-    free: u32,
-    k_a4: u32,
-    k_9c: u32,
-    head: u32,
-    callback: u32,
-    free_w: u32,
-    last_cmp: u32,
-    last: u32,
-    last_w: u32,
-    first_w: u32,
+pub(crate) struct NodeOps {
+    pub(crate) a: u32,
+    pub(crate) t217: (u32, u32),
+    pub(crate) t234: (u32, u32),
+    pub(crate) t233: [(u32, u32); 3],
+    pub(crate) free: u32,
+    pub(crate) k_a4: u32,
+    pub(crate) k_9c: u32,
+    pub(crate) head: u32,
+    pub(crate) callback: u32,
+    pub(crate) free_w: u32,
+    pub(crate) last_cmp: u32,
+    pub(crate) last: u32,
+    pub(crate) last_w: u32,
+    pub(crate) first_w: u32,
 }
 
 /// The body of [`record_node_start`] for the record `r`.
@@ -283,7 +283,7 @@ fn node_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, r: u32, ops: &NodeOps
 /// port writes there too). Returns `eax` as the original leaves it: the
 /// old last node, or 0xffff when the list was empty (0 with no free
 /// node).
-fn take_busy_node<G: Game>(
+pub(crate) fn take_busy_node<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -1657,7 +1657,7 @@ pub fn light_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 
 /// `x` wrapped once into `[LO, HI]` by a turn (the `comiss`/`jbe` pair:
 /// `x - turn` above `HI`, `x + turn` below `LO`; NaN stays).
-fn wrap_turn(x: f32, hi: f32, lo: f32, turn: f32) -> f32 {
+pub(crate) fn wrap_turn(x: f32, hi: f32, lo: f32, turn: f32) -> f32 {
     if x > hi {
         crate::sb_sse::sub(x, turn)
     } else if lo > x {
@@ -1910,7 +1910,14 @@ pub fn particle_rows<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 
 /// Writes `words` as the stack arguments of a call whose callee's `esp`
 /// (its return address) is `esp`, and gives the callee's frame.
-fn stack_args<G: Game>(g: &mut G, at: u32, esp: u32, ecx: u32, edx: u32, words: &[u32]) -> Frame {
+pub(crate) fn stack_args<G: Game>(
+    g: &mut G,
+    at: u32,
+    esp: u32,
+    ecx: u32,
+    edx: u32,
+    words: &[u32],
+) -> Frame {
     for (i, &v) in (0u32..).zip(words) {
         g.write::<u32>(esp.wrapping_add(4 + 4 * i), v);
     }

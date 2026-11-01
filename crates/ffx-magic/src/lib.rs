@@ -96,6 +96,7 @@ pub mod o6_fam_pairs2;
 pub mod o6_fam_pairs3;
 pub mod o6_fam_pairs4;
 pub mod o6_fam_pairs5;
+pub mod o6_fam_pairs6;
 pub mod o6_fam_pool;
 pub mod o6_fam_setup;
 pub mod o6_fam_start;
@@ -2496,6 +2497,14 @@ ports! {
     "o6 fam pairs5 moving_sprites 0250@1ee0" => o6_fam_pairs5::MOVING_SPRITES_0250_1EE0, o6_fam_pairs5::moving_sprites;
     "o6 fam pairs5 actor_light 0565@5470" => o6_fam_pairs5::ACTOR_LIGHT_0565_5470, o6_fam_pairs5::actor_light;
     "o6 fam pairs5 actor_light 0644@92b0" => o6_fam_pairs5::ACTOR_LIGHT_0644_92B0, o6_fam_pairs5::actor_light;
+    "o6 fam pairs6 aimed_objects 0565@40d0" => o6_fam_pairs6::AIMED_OBJECTS_0565_40D0, o6_fam_pairs6::aimed_objects;
+    "o6 fam pairs6 aimed_objects 0644@80f0" => o6_fam_pairs6::AIMED_OBJECTS_0644_80F0, o6_fam_pairs6::aimed_objects;
+    "o6 fam pairs6 curve_flyers 0307@2be0" => o6_fam_pairs6::CURVE_FLYERS_0307_2BE0, o6_fam_pairs6::curve_flyers;
+    "o6 fam pairs6 curve_flyers 0563@26d0" => o6_fam_pairs6::CURVE_FLYERS_0563_26D0, o6_fam_pairs6::curve_flyers;
+    "o6 fam pairs6 actor_spawner 0565@5bd0" => o6_fam_pairs6::ACTOR_SPAWNER_0565_5BD0, o6_fam_pairs6::actor_spawner;
+    "o6 fam pairs6 actor_spawner 0644@9a00" => o6_fam_pairs6::ACTOR_SPAWNER_0644_9A00, o6_fam_pairs6::actor_spawner;
+    "o6 fam pairs6 staged_nodes 0398@6960" => o6_fam_pairs6::STAGED_NODES_0398_6960, o6_fam_pairs6::staged_nodes;
+    "o6 fam pairs6 staged_nodes 0402@6960" => o6_fam_pairs6::STAGED_NODES_0402_6960, o6_fam_pairs6::staged_nodes;
     // families2 (o6_fam_pairs5..): end of ports
 }
 
