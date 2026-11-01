@@ -182,3 +182,40 @@ pub const START_UP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A task step (0x10001a80, cdecl `(task)`): the motion script of the
+/// record at `+0x05` ([`motion_script`](crate::s4_misc::motion_script))
+/// and the objects run ([`run_objects`](crate::l5_objhost::run_objects));
+/// when both give 1 and `*G_D` (`+0x20`) is 1, the grid is drawn
+/// ([`draw_grid`](crate::sb_misc::draw_grid)), the task's state is 3 and
+/// its record's `+0x10` the immediate `+0x3b`. Returns the record, else
+/// the objects' result.
+pub fn grid_step<G: crate::Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> crate::Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let m = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0xa), w(0x5));
+    // push ebp; push esi; call
+    let r =
+        crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0x11), fr.esp.wrapping_sub(12));
+    if r != 1 || m != 1 || g.read::<u32>(w(0x20)) != 1 {
+        return crate::Ret::eax(r);
+    }
+    crate::sb_misc::draw_grid(g, img, img.rel32_target(f + 0x27));
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), w(0x3b));
+    crate::Ret::eax(rec)
+}
+
+/// [`grid_step`] (66 bytes, 1 overlay).
+pub const GRID_STEP: Sig = Sig {
+    len: 66,
+    hash: 0x5461_8f50_1ab1_90d6,
+    calls: &[
+        (0xa, crate::Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x11, crate::Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x27, crate::Callee::Sig(&crate::sb_misc::DRAW_GRID)),
+    ],
+    imports: &[],
+};

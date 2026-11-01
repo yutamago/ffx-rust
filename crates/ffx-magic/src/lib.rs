@@ -94,6 +94,7 @@ pub mod s8_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
+pub mod sl_wrap;
 
 // round 6, the shape families across both work lists (o6_fam_*)
 pub mod o6_fam_bone;
@@ -174,6 +175,7 @@ pub mod m0152;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
+pub mod m0162;
 pub mod m0163;
 pub mod m0164;
 pub mod m0165;
@@ -182,6 +184,7 @@ pub mod m0168;
 pub mod m0170;
 pub mod m0171;
 pub mod m0176;
+pub mod m0180;
 pub mod m0183;
 pub mod m0184;
 pub mod m0186;
@@ -2690,6 +2693,24 @@ ports! {
     "o6 fam pairs6 overlay_setup 0673@1000" => o6_fam_pairs6::OVERLAY_SETUP_0673_1000, o6_fam_pairs6::overlay_setup;
     "o6 fam pairs6 overlay_setup 0253@1000" => o6_fam_pairs6::OVERLAY_SETUP_0253_1000, o6_fam_pairs6::overlay_setup;
     // families2 (o6_fam_pairs5..): end of ports
+    "thunk: m0146 sub-node visit" => sl_wrap::JMP_SUB_NODE_VISIT, sl_wrap::ecx_jmp;
+    "thunk: m0186 int motion" => sl_wrap::JMP_INT_MOTION, sl_wrap::ecx_jmp;
+    "thunk: m0201 matrix visit" => sl_wrap::JMP_MATRIX_VISIT, sl_wrap::ecx_jmp;
+    "m0052 load step" => m0052::LOAD_STEP, m0052::load_step;
+    "m0098 motion step" => m0098::MOTION_STEP, m0098::motion_step;
+    "m0162 scale start" => m0162::SCALE_START, m0162::scale_start;
+    "m0162 object start" => m0162::OBJECT_START, m0162::object_start;
+    "m0164 mean visit" => m0164::MEAN_VISIT, m0164::mean_visit;
+    "thunk: m0164 mean visit" => sl_wrap::JMP_MEAN_VISIT, sl_wrap::ecx_jmp;
+    "m0165 scale start" => m0165::SCALE_START, m0165::scale_start;
+    "m0165 selected start" => m0165::SELECTED_START, m0165::selected_start;
+    "m0165 record start" => m0165::RECORD_START, m0165::record_start;
+    "m0165 turn start" => m0165::TURN_START, m0165::turn_start;
+    "m0168 object start" => m0168::OBJECT_START, m0168::object_start;
+    "m0171 grid step" => m0171::GRID_STEP, m0171::grid_step;
+    "m0180 square step" => m0180::SQUARE_STEP, m0180::square_step;
+    "m0180 main start" => m0180::MAIN_START, m0180::main_start;
+    // magic small-lo: end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -3785,6 +3806,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &o6_fam_pairs6::SCENE_END_0434_5B90,
     ),
     // families2 (o6_fam_pairs5..): end of INTERNAL
+    ("m0152 build node", &m0152::BUILD_NODE),
+    ("m0168 object task", &m0168::OBJECT_TASK),
+    ("m0184 scatter", &m0184::SCATTER),
+    ("m0186 model node", &m0186::MODEL_NODE),
+    ("m0186 cleared node", &m0186::CLEARED_NODE),
+    // magic small-lo: end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

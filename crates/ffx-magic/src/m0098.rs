@@ -1258,3 +1258,31 @@ pub const PART_BEGIN: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The motion step (0x10002380, a table entry, no arguments): slot 211
+/// `(*G_M, D)` (operands `+0x0c`, `+0x06`), then the motion sequence
+/// ([`motion_sequence`]) of the record at `+0x23` while `*G_S` (`+0x1d`)
+/// is set, else of the one at `+0x2a`. Returns 1 when `*G_E` (`+0x37`)
+/// is 0, else 0.
+pub fn motion_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = slot_target(g, w(0x1), 211);
+    let m = g.read::<u32>(w(0xc));
+    g.call(t, 0, &[m, w(0x6)]);
+    let rec = if g.read::<u32>(w(0x1d)) == 0 {
+        w(0x2a)
+    } else {
+        w(0x23)
+    };
+    motion_sequence(g, img, img.rel32_target(f + 0x2f), rec);
+    Ret::eax(u32::from(g.read::<u32>(w(0x37)) == 0))
+}
+
+/// [`motion_step`] (63 bytes, 1 overlay).
+pub const MOTION_STEP: Sig = Sig {
+    len: 63,
+    hash: 0x1799_b536_cd2c_e241,
+    calls: &[(0x2f, Callee::Sig(&MOTION_SEQUENCE))],
+    imports: &[],
+};
