@@ -3340,3 +3340,82 @@ fn flight_steps() {
         }
     }
 }
+
+/// Row 447: the lit colour node of both DLLs: not passed; the light on
+/// and off (alpha and `+0x5c` above 0 and not); the easing with bit 1;
+/// the stepping before, across and past both clocks' end.
+#[test]
+fn lit_colour_nodes() {
+    for dll in [152u16, 533] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x1160);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        log_calls(&mut t, 231, log, 3, None, |m, a, k| {
+            for i in 0..16u32 {
+                m.w32(a[0] + 4 * i, m.r32(a[2] + 4 * i) ^ a[1] ^ k);
+            }
+            0x231
+        });
+        log_calls(&mut t, 245, log, 1, None, |m, a, k| {
+            m.w32(a[0], 0x2450_0000 + k);
+            0x245
+        });
+        for (s, n) in [(821u32, 1usize), (822, 4), (823, 2), (824, 4)] {
+            log_calls(&mut t, s, log, n, None, move |_, a, k| a[0] ^ (s << 16) ^ k);
+        }
+        for (o, x) in [(0x63u32, 1.0f32), (0x19a, 1.0), (0xca, 2.0), (0xea, 0.5)] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let q = SCRATCH + 0x1800;
+        // (ring byte, flags, alpha, the light's +0x5c, clock +0x50, +0x58)
+        for (k, (byte, bits, alpha, d, c1, c2)) in [
+            (3u8, 1u8, 1.0f32, 1.0f32, 0.0f32, 0.0f32),
+            (4, 1, 0.5, 2.0, 0.25, 0.25),
+            (4, 1, 0.5, 0.0, 0.25, 0.25),
+            (4, 1, -0.5, 2.0, 0.5, 0.9),
+            (4, 3, 0.5, 2.0, 0.0, 0.0),
+            (4, 2, 0.5, 2.0, 0.0, 0.0),
+            (4, 0, 0.5, 2.0, 0.875, 0.95),
+            (4, 0, 0.5, 2.0, 1.5, 0.25),
+            (4, 0, 0.5, 2.0, 0.25, 1.5),
+            (4, 0xfc, 0.5, 2.0, f32::NAN, 0.25),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(r, &varied(0x80, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u8(r + 0x68, bits);
+            for i in 0..4u32 {
+                t.set_u32(r + 0x1c + 4 * i, (0.25 * i as f32).to_bits());
+                t.set_u32(r + 0x2c + 4 * i, (1.0 + 0.5 * i as f32).to_bits());
+                t.set_u32(r + 0x3c + 4 * i, (0.125 * i as f32 - 0.25).to_bits());
+            }
+            t.set_u32(r + 0x28, alpha.to_bits());
+            t.set_u32(r + 0x4c, 0.25f32.to_bits());
+            t.set_u32(r + 0x50, c1.to_bits());
+            t.set_u32(r + 0x54, 0.125f32.to_bits());
+            t.set_u32(r + 0x58, c2.to_bits());
+            t.set_u32(r + 0x5c, d.to_bits());
+            t.set_u32(r + 0x60, 3.5f32.to_bits());
+            t.set_u32(r + 0x64, (-0.5f32).to_bits());
+            t.set_u32(r + 0x6c, q);
+            t.set_u32(r + 0x70, q + 0x100);
+            t.write(q, &varied(0x200, k + 1));
+            scrub(&mut t);
+            let call = Call {
+                ecx: s,
+                eax: 0x1160_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::lit_colour_node(g, img, fr))
+            });
+        }
+    }
+}

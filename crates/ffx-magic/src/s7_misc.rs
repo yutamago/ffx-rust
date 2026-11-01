@@ -4297,3 +4297,125 @@ pub const FLIGHT_STEP: Sig = Sig {
     ],
     imports: &[(0x1eb, "rand")],
 };
+
+/// A ring node's handler that lights its model and eases its colour
+/// (internal: `ecx` = the cursor `S`; a ring pass first, [`ring_pass`],
+/// over the frame's cookie word; a /GS frame, `ebp` = `esp - 4` at the
+/// entry). Passed, with `R = S[0]`: with bit 0 of `R+0x68` and the alpha
+/// `R+0x28` above 0, slot 231 `(ebp-0x44, G_M, R[0x70] + 0x9c)` and slot
+/// 245 `(ebp-0x4c)`; with `R+0x5c` above 0, `inv = K / R+0x5c` (at
+/// `ebp-0x48`), slot 821 `(0)`, slot 822 with the colour `R+0x1c..` times
+/// `K2`, slot 823 `(inv, inv)` and slot 824 with `R[0x6c]`'s point and
+/// 1.0. Then with bit 1 of `R+0x68` the colour eases toward `R+0x2c..` by
+/// `R+0x4c` and `R+0x5c` toward `R+0x60` by `R+0x54`; without it the
+/// colour steps by `R+0x3c.. R+0x4c` while the clock `R+0x50` (stepped by
+/// `R+0x4c`) is below `K` and is `R+0x2c..` from then on, and `R+0x5c`
+/// steps by `R+0x64 R+0x54` while `R+0x58` (stepped by `R+0x54`) is below
+/// `K`, `R+0x60` once it is not (the original tests `R+0x50` for that
+/// last copy). Returns what the original leaves in `eax`: the last
+/// slot's, the last word copied, or what the pass left.
+///
+/// `magic_0152` 0x10001160 (771 bytes; 2 DLLs).
+pub fn lit_colour_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let s = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    let (passed, mut eax) = ring_pass(g, s, cookie);
+    if !passed {
+        return eax;
+    }
+    let r = g.read::<u32>(s);
+    let rf = |g: &G, o: u32| g.read::<f32>(r + o);
+    if g.read::<u8>(r + 0x68) & 1 != 0 && rf(g, 0x28) > 0.0 {
+        let src = g.read::<u32>(r + 0x70).wrapping_add(0x9c);
+        slot(
+            g,
+            img,
+            f,
+            0x95,
+            231,
+            s,
+            &[ebp.wrapping_sub(0x44), w(0x8f), src],
+        );
+        eax = slot(g, img, f, 0xa6, 245, s, &[ebp.wrapping_sub(0x4c)]).eax;
+        let d = rf(g, 0x5c);
+        if d > 0.0 {
+            let inv = div(g.read::<f32>(w(0xca)), d);
+            g.write::<f32>(ebp.wrapping_sub(0x48), inv);
+            slot(g, img, f, 0xcf, 821, s, &[0]);
+            let k2 = g.read::<f32>(w(0xea));
+            let c = [0x1cu32, 0x20, 0x24, 0x28].map(|o| mul(rf(g, o), k2).to_bits());
+            slot(g, img, f, 0xf4, 822, s, &c);
+            let inv = g.read::<u32>(ebp.wrapping_sub(0x48));
+            slot(g, img, f, 0x13f, 823, s, &[inv, inv]);
+            let q = g.read::<u32>(r + 0x6c);
+            let pt = [0x1cu32, 0x20, 0x24].map(|o| g.read::<u32>(q.wrapping_add(o)));
+            eax = slot(
+                g,
+                img,
+                f,
+                0x182,
+                824,
+                s,
+                &[pt[0], pt[1], pt[2], 0x3f80_0000],
+            )
+            .eax;
+        }
+    }
+    // the constant `K` as the second half loads it
+    let k = g.read::<f32>(w(0x19a));
+    let ease = |g: &mut G, at: u32, to: u32, by: u32| {
+        let v = rf(g, at);
+        let x = add(mul(sub(rf(g, to), v), rf(g, by)), v);
+        g.write::<f32>(r + at, x);
+    };
+    if g.read::<u8>(r + 0x68) & 2 != 0 {
+        for c in [0u32, 4, 8, 0xc] {
+            ease(g, 0x1c + c, 0x2c + c, 0x4c);
+        }
+        ease(g, 0x5c, 0x60, 0x54);
+        return eax;
+    }
+    let reached = |g: &G| rf(g, 0x50) >= k;
+    let mut copy = reached(g);
+    if !copy {
+        for c in [0u32, 4, 8, 0xc] {
+            let v = add(mul(rf(g, 0x3c + c), rf(g, 0x4c)), rf(g, 0x1c + c));
+            g.write::<f32>(r + 0x1c + c, v);
+        }
+        let t = add(rf(g, 0x50), rf(g, 0x4c));
+        g.write::<f32>(r + 0x50, t);
+        copy = t >= k;
+    }
+    if copy {
+        for c in [0u32, 4, 8, 0xc] {
+            eax = g.read::<u32>(r + 0x2c + c);
+            g.write::<u32>(r + 0x1c + c, eax);
+        }
+    }
+    let u = rf(g, 0x58);
+    let last = if u >= k {
+        true
+    } else {
+        let x = add(mul(rf(g, 0x64), rf(g, 0x54)), rf(g, 0x5c));
+        g.write::<f32>(r + 0x58, add(u, rf(g, 0x54)));
+        g.write::<f32>(r + 0x5c, x);
+        // (the original tests the colour's clock here)
+        reached(g)
+    };
+    if last {
+        eax = g.read::<u32>(r + 0x60);
+        g.write::<u32>(r + 0x5c, eax);
+    }
+    eax
+}
+
+/// [`lit_colour_node`] (the `rel32`s: two `__security_check_cookie`s).
+pub const LIT_COLOUR_NODE: Sig = Sig {
+    len: 771,
+    hash: 0x525a_7793_a2e6_a93d,
+    calls: &[(0x22d, Callee::Any), (0x2fb, Callee::Any)],
+    imports: &[],
+};
