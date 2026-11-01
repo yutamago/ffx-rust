@@ -170,3 +170,22 @@ fn frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001280: slots 260 and 719, the block and the pool cleared.
+#[test]
+fn state_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1280);
+    rec(&mut t, 260, 1, |_, a| 0x0260_0000 ^ a[0]);
+    rec(&mut t, 719, 4, |_, a| 0x0719_0000 ^ a[0]);
+    t.set_u32(t.img.word(at + 0x25), 0x0025_0001);
+    t.write(t.img.word(at + 0x30), &[0x5c; 0x30]);
+    let cp = t.img.rel32_target(at + 0x57);
+    let pool_at = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(cp + 0x7), pool_at);
+    t.write(pool_at, &vec![0x99; 0x94 * 100]);
+    for op in [0x60, 0x6a, 0x74] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

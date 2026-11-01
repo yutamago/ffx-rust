@@ -345,3 +345,45 @@ pub const FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the effect's state (0x10001280, an overlay table entry, no
+/// arguments): slot 260 `(20)` into `+0x10`, slot 719 `(*G_NAME, 4, 0)`
+/// into `+0x35`; the 0x30-byte block `B` (`+0x30`) zeroed (`memset`),
+/// its half-word `+2` 0x80 and `+4` 0x80808080; the pool cleared
+/// ([`clear_pool`], slot 260's 20 under it), three globals (`+0x60`,
+/// `+0x6a`, `+0x74`) 0. Returns 1.
+pub fn state_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 260);
+    let v = g.call(t, 0, &[0x14]).eax;
+    g.write::<u32>(w(0x10), v);
+    let t = slot_target(g, w(0x15), 719);
+    let name = g.read::<u32>(w(0x25));
+    let d = g.call(t, 0, &[name, 4, 0, 0x14]).eax;
+    g.write::<u32>(w(0x35), d);
+    g.write_bytes(w(0x30), &[0u8; 0x30]);
+    g.write::<u16>(w(0x48), 0x80);
+    g.write::<u32>(w(0x4e), 0x8080_8080);
+    let clear = Frame {
+        at: img.rel32_target(f + 0x57),
+        esp: fr.esp.wrapping_sub(8),
+        ..*fr
+    };
+    clear_pool(g, img, &clear);
+    for op in [0x60, 0x6a, 0x74] {
+        g.write::<u32>(w(op), 0);
+    }
+    Ret::eax(1)
+}
+
+/// [`state_start`] (130 bytes, 1 overlay).
+pub const STATE_START: Sig = Sig {
+    len: 130,
+    hash: 0x093c_4c7f_98f5_32b7,
+    calls: &[
+        (0x3a, Callee::Import("memset")),
+        (0x57, Callee::Sig(&CLEAR_POOL)),
+    ],
+    imports: &[],
+};

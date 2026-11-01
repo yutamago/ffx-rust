@@ -367,3 +367,107 @@ pub const SPAWN_PAIR_0600: Sig = Sig {
     calls: SPAWN_PAIR.calls,
     imports: &[],
 };
+
+/// Starts the effect block's two objects (0x10002230, an overlay table
+/// entry, no arguments): `*G_FX + 0x130` (scale `*K` `+0x4`, index 1)
+/// and `*G_FX` itself (scale `*K` `+0x2c`, index 0), each
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain)) at the
+/// point `+0xc04` lowered by `K` (`+0x66`, `+0xc6`), its `+0xc4` the
+/// angle `+0xdf4`, which it returns.
+pub fn objects_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0xc));
+    let mut a = 0;
+    for (o, k, call, index, low) in [
+        (fx.wrapping_add(0x130), 0x4, 0x1e, 1, 0x66),
+        (fx, 0x2c, 0x86, 0, 0xc6),
+    ] {
+        let scale = g.read::<f32>(w(k));
+        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + call), o, scale, index);
+        for i in 0..4 {
+            let v = g.read::<u32>(fx + 0xc04 + 4 * i);
+            g.write::<u32>(o + 0xd0 + 4 * i, v);
+        }
+        let y = sub(g.read::<f32>(o + 0xd4), g.read::<f32>(w(low)));
+        a = g.read::<u32>(fx + 0xdf4);
+        g.write::<u32>(o + 0xc4, a);
+        g.write::<f32>(o + 0xd4, y);
+    }
+    Ret::eax(a)
+}
+
+/// [`objects_start`] (228 bytes, 1 overlay).
+pub const OBJECTS_START: Sig = Sig {
+    len: 228,
+    hash: 0xd7c5_851d_5cad_37fd,
+    calls: &[
+        (0x1e, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x86, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+    ],
+    imports: &[],
+};
+
+/// Restarts the effect's light (0x10002320, an overlay table entry, no
+/// arguments; a cookie frame): the scale task of `*G_FX + 0xd7c`
+/// ([`scale_task_fixed`](crate::s4_small::scale_task_fixed): `xmm1` 0,
+/// `xmm2` = `*K` `+0x14`, the entry's `ecx` pushed under it); `+0xd88` 0
+/// and `+0xd98` 1.0. When the object list `+0x3b` held `*G_FX + 0x980`
+/// ([`list_remove`](crate::l5_objhost::list_remove)): `**G_P` (`+0x5d`)
+/// = the immediate `+0x64`, slot 713 `(obj)` and the object's flag bit
+/// 0x8000 cleared. Then `+0x204` and `+0xd4` = `+0xc08`, and slot 332
+/// gets the local copy (`ebp - 0x14`) of the four floats at operands
+/// `+0xa0`, `+0xad`, `+0xba`, `+0xca`. Returns slot 332's `eax`.
+pub fn light_restart<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x1c));
+    // push ebp; sub esp, 0x14; push esi, edi, ecx; the return address
+    let ebp = fr.esp.wrapping_sub(4);
+    let esp = ebp.wrapping_sub(0x14 + 0x10);
+    g.write::<u32>(esp + 4, fr.ecx);
+    let mut xmm = fr.xmm;
+    xmm[1] = 0;
+    xmm[2] = u128::from(g.read::<u32>(w(0x14)));
+    let task = Frame {
+        at: img.rel32_target(f + 0x2b),
+        esp,
+        ecx: fx.wrapping_add(0xd7c),
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::scale_task_fixed(g, img, &task);
+    g.write::<u32>(fx + 0xd88, 0);
+    g.write::<u32>(fx + 0xd98, 0x3f80_0000);
+    let obj = fx.wrapping_add(0x980);
+    if crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0x54), w(0x3b), obj) != 0 {
+        g.write::<u32>(g.read::<u32>(w(0x5d)), w(0x64));
+        let t = slot_target(g, w(0x69), 713);
+        g.call(t, 0, &[obj]);
+        let v = g.read::<u16>(obj + 0x124);
+        g.write::<u16>(obj + 0x124, v & 0x7fff);
+    }
+    let y = g.read::<u32>(fx + 0xc08);
+    g.write::<u32>(fx + 0x204, y);
+    g.write::<u32>(fx + 0xd4, y);
+    let local = ebp.wrapping_sub(0x14);
+    for (i, op) in [0xa0u32, 0xad, 0xba, 0xca].into_iter().enumerate() {
+        let v = g.read::<u32>(w(op));
+        g.write::<u32>(local + 4 * i as u32, v);
+    }
+    let t = slot_target(g, w(0xd0), 332);
+    Ret::eax(g.call(t, 0, &[local]).eax)
+}
+
+/// [`light_restart`] (244 bytes, 1 overlay).
+pub const LIGHT_RESTART: Sig = Sig {
+    len: 244,
+    hash: 0x9e96_9a47_f602_237d,
+    calls: &[
+        (0x2b, Callee::Sig(&crate::s4_small::SCALE_TASK_1)),
+        (0x54, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        // __security_check_cookie
+        (0xec, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -206,3 +206,50 @@ fn spawn_pair() {
         }
     }
 }
+
+/// 0x10002230 (the two objects) and 0x10002320 (the old object listed
+/// and not).
+#[test]
+fn objects_and_light() {
+    let Some(mut t) = twin(N) else { return };
+    let fx = SCRATCH + 0x1_0000;
+    let at = t.at(0x2230);
+    t.set_u32(t.img.word(at + 0xc), fx);
+    let so = t.img.rel32_target(at + 0x1e);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x280);
+    let sp = t.img.rel32_target(so + 0x84);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    t.write(fx, &[0x3c; 0xe00]);
+    for i in 0..4 {
+        t.set_u32(fx + 0xc04 + 4 * i, magic_hi::f(1.5 + i as f32));
+    }
+    magic_h6::scrub(&mut t);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+    let at = t.at(0x2320);
+    let st = t.img.rel32_target(at + 0x2b);
+    let take = t.img.rel32_target(st + 0x7b);
+    pool(&mut t, take, SCRATCH + 0x6000, 3);
+    recs(&mut t, &[(713, 1), (332, 1)]);
+    let list = t.img.word(at + 0x3b);
+    let n = SCRATCH + 0x7000;
+    t.set_u32(t.img.word(at + 0x5d), SCRATCH + 0x7100);
+    for (k, op) in [0xa0u32, 0xad, 0xba, 0xca].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), magic_hi::f(0.5 + k as f32));
+    }
+    for listed in [false, true] {
+        t.write(n, &[0; 0x10]);
+        t.set_u32(n + 8, fx + 0x980);
+        t.set_u32(list, if listed { n } else { 0 });
+        t.set_u32(list + 4, if listed { n } else { 0 });
+        t.set_u16(fx + 0x980 + 0x124, 0x8123);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
+    }
+}

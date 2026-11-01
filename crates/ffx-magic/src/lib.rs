@@ -1155,6 +1155,14 @@ ports! {
     "m0587 glow scale start" => m0587::GLOW_SCALE_START, m0587::glow_scale_start;
     "m0605 scale start" => m0605::SCALE_START, m0605::scale_start;
     "m0605 object 720" => m0605::OBJECT_720, m0605::object_720;
+    "m0609 link object" => m0609::LINK_OBJECT, m0609::link_object;
+    "m0588 objects start" => m0588::OBJECTS_START, m0588::objects_start;
+    "m0588 light restart" => m0588::LIGHT_RESTART, m0588::light_restart;
+    "m0641 state start" => m0641::STATE_START, m0641::state_start;
+    "m0673 task" => m0673::TASK, m0673::task;
+    "m0673 start row of" => m0673::START_ROW_OF, m0673::start_row_of;
+    "m0673 rows b c" => m0673::ROWS_B_C, m0673::rows_b_c;
+    "m0673 rows many" => m0673::ROWS_MANY, m0673::rows_many;
     "m0588 spawn pair 0600" => m0588::SPAWN_PAIR_0600, m0588::spawn_pair;
     "m0514 burst step" => m0514::BURST_STEP, m0514::burst_step;
     "m0563 frame" => m0563::FRAME, m0563::frame;
@@ -2991,6 +2999,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0533 model setup", &m0533::MODEL_SETUP),
     ("m0533 model setup args", &m0533::MODEL_SETUP_ARGS),
     ("m0577 unlink end", &m0577::UNLINK_END),
+    ("m0673 start row", &m0673::START_ROW),
     ("m0585 light object", &m0585::LIGHT_OBJECT),
     ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
