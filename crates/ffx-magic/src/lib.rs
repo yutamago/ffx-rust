@@ -1780,6 +1780,7 @@ ports! {
     "summon script task" => s6_misc::SUMMON_SCRIPT_TASK, s6_misc::summon_script_task;
     "static part start" => s6_misc::STATIC_PART_START, s6_misc::static_part_start;
     "bone walk tail" => s6_misc::BONE_WALK_TAIL, s6_misc::bone_walk_tail;
+    "particle drift" => s6_misc::PARTICLE_DRIFT, s6_misc::particle_drift;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;

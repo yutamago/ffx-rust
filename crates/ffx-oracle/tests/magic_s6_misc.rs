@@ -2421,3 +2421,30 @@ fn eased_turning_paths_stepped() {
         });
     }
 }
+
+/// Row 425: `magic_0191`'s particle drift, for three records (the
+/// constants set to values that are not 1).
+#[test]
+fn particles_drifting() {
+    let Some(mut t) = twin(191) else { return };
+    let f = t.at(0x1720);
+    rec(&mut t, 458, 3, |_, a| 0x0458_0000 ^ a[1]);
+    rec(&mut t, 450, 2, |_, a| 0x0450_0000 ^ a[1]);
+    rec(&mut t, 451, 2, |_, a| 0x0451_0000 ^ a[1]);
+    for (o, v) in [(0x33u32, 0.75f32), (0x63, 1.5), (0xaf, 0.25), (0xed, 2.5)] {
+        t.set_u32(op(&t, f, o), v.to_bits());
+    }
+    let p = SCRATCH + 0x1000;
+    for k in 0..3u32 {
+        t.write(p, &varied(0x160, k));
+        t.set_u32(p + 0xac, k);
+        let r = SCRATCH + 0x2000 + 0x200 * k;
+        t.set_u32(p + 0x2c + 0x10 * k, r);
+        t.write(r, &varied(0x100, k + 5));
+        for (i, o) in (0u32..).zip([0xe0u32, 0xe4, 0xe8]) {
+            t.set_u32(r + o, (1.5 * i as f32 - 2.0 + k as f32).to_bits());
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+    }
+}

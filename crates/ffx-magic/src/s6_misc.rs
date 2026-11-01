@@ -3308,3 +3308,77 @@ pub const BONE_WALK_TAIL: Sig = Sig {
     calls: &[(0x1c, Callee::Sig(&BONE)), (0x1f8, Callee::Any)],
     imports: &[],
 };
+
+/// A particle's drift set from its current record and three random
+/// numbers (cdecl `(p)`; `R = p[0x2c + 0x10 p[0xac]]` the record, `D` the
+/// divisor constant): `p+0x108 = (r1 / D) K1`, the flags `+0xbc |=
+/// 0x4000`, `+0x130..+0x138 = (r2 / D) K2 + K2`; the record's point
+/// `+0xd0..+0xd8` copied, its `+0xe0`, `+0xe8` times `K3` and `+0xe4 = R+0xe4
+/// K3 - ((r3 / D) K4 + K4)`; `+0xdc`, `+0xec`, `+0x100`, `+0x104`,
+/// `+0x10c`, `+0x13c`, `+0x14c` cleared and `+0x140..+0x148 = 0.008`
+/// (`r1..r3` from `rand`). Then slot 458 `(*G_X, p, 0)`, slot 450 `(p,
+/// CB)` and slot 451 `(p, 0x14)`, each seeing the words the earlier ones
+/// left on the stack; the argument word is overwritten with the scaled
+/// `R+0xe4`. Returns slot 451's `eax`.
+///
+/// `magic_0191` 0x10001720 (530 bytes; 3 DLLs).
+pub fn particle_drift<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let p = fr.arg(g, 0);
+    let idx = g.read::<u32>(p + 0xac);
+    let r = g.read::<u32>(p.wrapping_add(idx.wrapping_mul(0x10)).wrapping_add(0x2c));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let unit = |g: &mut G, d: u32| div(g.rand().cast_signed() as f32, k(g, d));
+    let x1 = mul(unit(g, 0x2b), k(g, 0x33));
+    let u2 = unit(g, 0x53);
+    let fl = g.read::<u32>(p + 0xbc) | 0x4000;
+    g.write::<u32>(p + 0xbc, fl);
+    let y = add(mul(u2, k(g, 0x63)), k(g, 0x7b));
+    let pt = [0xd0u32, 0xd4, 0xd8].map(|o| g.read::<u32>(r + o));
+    let k3 = k(g, 0xaf);
+    let [e0, e4, e8] = [0xe0u32, 0xe4, 0xe8].map(|o| mul(g.read::<f32>(r + o), k3));
+    // the scaled +0xe4 is kept over the argument word (`movss [ebp+8]`)
+    g.write::<f32>(fr.esp + 4, e4);
+    let z = add(mul(unit(g, 0xe0), k(g, 0xed)), k(g, 0x107));
+    for (o, v) in [0xd0u32, 0xd4, 0xd8].into_iter().zip(pt) {
+        g.write::<u32>(p + o, v);
+    }
+    g.write::<f32>(p + 0xe0, e0);
+    g.write::<f32>(p + 0xe8, e8);
+    g.write::<f32>(p + 0x108, x1);
+    g.write::<u32>(p + 0xdc, 0);
+    g.write::<f32>(p + 0xe4, sub(e4, z));
+    for o in [0xecu32, 0x100, 0x104, 0x10c] {
+        g.write::<u32>(p + o, 0);
+    }
+    for o in [0x130u32, 0x134, 0x138] {
+        g.write::<f32>(p + o, y);
+    }
+    g.write::<u32>(p + 0x13c, 0);
+    for o in [0x140u32, 0x144, 0x148] {
+        g.write::<u32>(p + o, 0x3c03_126f);
+    }
+    g.write::<u32>(p + 0x14c, 0);
+    let target = |g: &G, t: u32, n: u32| crate::runtime::slot_target(g, w(t), n);
+    let mut st = Pushes::default();
+    let x = g.read::<u32>(w(0x155));
+    st.push_all(&[0, p, x]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0xf2, 458), 0);
+    st.push_all(&[w(0x1e6), p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, target(g, 0x1ec, 450), 0);
+    st.push_all(&[0x14, p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    Ret::eax(st.call(g, target(g, 0x1f9, 451), 0).eax)
+}
+
+/// [`particle_drift`] (the imports: `rand`, through a register).
+pub const PARTICLE_DRIFT: Sig = Sig {
+    len: 530,
+    hash: 0x5b48_823f_5a87_679c,
+    calls: &[],
+    imports: &[(0x16, "rand")],
+};
