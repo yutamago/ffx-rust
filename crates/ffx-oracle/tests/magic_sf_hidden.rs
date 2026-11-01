@@ -342,3 +342,104 @@ fn motion_sequence_task() {
         }
     }
 }
+
+/// Each listed slot recorded with `n` words, answering a number of its
+/// own.
+fn recs(t: &mut Twin, slots: &[(u32, usize)]) {
+    for &(s, n) in slots {
+        rec(t, s, n, move |_, a| {
+            (s << 20) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+}
+
+/// `magic_0310` 0x10006570: the set-up from step 0 and from step 10 (the
+/// list's last the sentinel or a node), the end with the flag clear and
+/// set, an unknown step.
+#[test]
+fn two_model_task() {
+    let Some(mut t) = twin(310) else { return };
+    let f = t.at(0x6570);
+    bound(&t, f, "sf two model task");
+    let w = |t: &Twin, o: u32| op(t, f, o);
+    recs(
+        &mut t,
+        &[
+            (413, 1),
+            (215, 1),
+            (14, 2),
+            (237, 4),
+            (325, 2),
+            (714, 5),
+            (719, 3),
+            (257, 2),
+            (38, 3),
+            (296, 2),
+            (541, 3),
+            (538, 2),
+            (213, 2),
+            (211, 2),
+            (35, 5),
+            (34, 2),
+            (547, 2),
+            (276, 2),
+            (219, 2),
+            (695, 1),
+        ],
+    );
+    rec(&mut t, 333, 1, |_, a| 0x3330_0000 ^ a[0]);
+    t.stub_st0(333, |_, _| 0.5);
+    let table = SCRATCH + 0x3000;
+    for i in 0..0x40 {
+        t.set_u32(table + 4 * i, 0x0a0a_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    t.set_u32(w(&t, 0x139), 0x0c0c_0310);
+    t.set_u32(w(&t, 0x96), 0x0b0b_0310);
+    // the particle's program owner (its `+0x10` for slot 941)
+    let owner = SCRATCH + 0x3800;
+    t.write(owner, &varied(0x100, 9));
+    t.set_u32(w(&t, 0x238), owner);
+    let (task, s) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    let (node, prev, next) = (SCRATCH + 0xb00, SCRATCH + 0xb40, SCRATCH + 0xb80);
+    let other = SCRATCH + 0xc00;
+    let flags = w(&t, 0x2e);
+    for (k, (step, last_is_sentinel, flag)) in [
+        (0u32, true, 0u8),
+        (0xa, false, 0),
+        (0x2710, true, 0),
+        (0x2710, true, 4),
+        (5, true, 4),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(task, &varied(0x20, k));
+        t.write(s, &varied(0x40, k));
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.set_u32(s + 0x18, step);
+        for (a, p, n) in [(node, prev, next), (prev, next, node), (next, node, prev)] {
+            t.set_u32(a + 4, p);
+            t.set_u32(a + 8, n);
+        }
+        t.write(other, &varied(0x20, k + 1));
+        let last = if last_is_sentinel {
+            w(&t, 0x109)
+        } else {
+            other
+        };
+        t.set_u32(w(&t, 0xce), last);
+        t.set_u8(flags, flag);
+        // the lists empty: the model and node list (the parts' sentinel)
+        // and the particle list
+        for l in [w(&t, 0xaa), w(&t, 0x253)] {
+            t.write(l, &[0; 0x20]);
+            t.set_u32(l + 0xc, l);
+            t.set_u32(l + 0x10, l);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
