@@ -32,6 +32,8 @@ fn actor(t: &mut Twin, at: u32, (e, table): (u32, u32), i: u8) {
     let rec = SCRATCH + 0x80;
     t.set_u32(t.img.word(at + e), rec);
     t.set_u8(rec + 1, i);
+    // the byte after the index non-zero (an index read as u16 shows)
+    t.set_u8(rec + 2, 0x3c);
     let table = t.img.word(at + table);
     for k in 0..8 {
         t.set_u32(table + 4 * k, 0x00ac_0000 + k);
@@ -45,7 +47,10 @@ fn sound() {
     let at = t.at(0x1e10);
     rec(&mut t, 0, 1, |_, a| a[0] ^ 0x00f0_0000);
     recs(&mut t, &[(26, 3), (10, 5), (257, 7)]);
+    // the byte after the one the start sets, non-zero
+    let byte = t.img.word(at + 0x2a);
     for i in [0u8, 3] {
+        t.set_u32(byte, 0x6d6d_6d00);
         actor(&mut t, at, (0x3e, 0x55), i);
         magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
@@ -90,7 +95,12 @@ fn colours() {
 fn light() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x2860);
-    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 6), (248, 9)]);
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (248, 9)]);
+    // slot 229 keeps the vector it gets
+    rec(&mut t, 229, 6, |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
+        0x5a5a_0229
+    });
     let r = SCRATCH + 0x4000;
     t.set_u32(t.img.word(at + 0x11), r);
     t.write(r + 0xb00, &[0x3e; 0x400]);
