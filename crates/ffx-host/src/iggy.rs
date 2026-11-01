@@ -434,7 +434,15 @@ fn composite(e: &Exec, image: Option<&(u32, u32, Vec<u8>)>) {
     } else {
         &iggy(e).not_composited
     };
-    counter.fetch_add(1, Ordering::Relaxed);
+    let n = counter.fetch_add(1, Ordering::Relaxed);
+    if n < 3 || n.is_power_of_two() {
+        let covered = rows.chunks(4).filter(|p| p[3] != 0).count();
+        crate::log::note(&format!(
+            "iggy: draw {} {}: {width}x{height} at ({x}, {y}) on view {view:#x}, {covered} pixels not transparent",
+            if done { "composited" } else { "not composited" },
+            n + 1
+        ));
+    }
 }
 
 /// `IggyMakeEventMouseMove(ev, x, y)`: the layer's own event layout
@@ -628,7 +636,12 @@ fn value_set_string(e: &mut Exec, args: &Args) -> Ret {
 /// value converted as AS3 does, else 1 and `out` left alone.
 fn value_get_s32(e: &mut Exec, args: &Args) -> Ret {
     let out = a(args, 3);
-    let v = match value_at(e, a(args, 0)) {
+    let found = value_at(e, a(args, 0));
+    crate::log::note(&format!(
+        "iggy: get s32 at {:x?}: {found:?}",
+        read_path(e, a(args, 0))
+    ));
+    let v = match found {
         Some(Value::Number(n)) => to_int32(n),
         Some(Value::Bool(b)) => i32::from(b),
         Some(Value::String(s)) => s.trim().parse::<f64>().map_or(0, to_int32),
@@ -683,6 +696,7 @@ pub fn as3_call(e: &mut Exec, player: u32, name: &str, args: &[Value]) -> Option
     }
     let mut temps = Vec::new();
     iggy(e).count(&format!("as3 {name}"));
+    crate::log::note(&format!("iggy: {player:#x} calls the game: {name}{args:?}"));
     let strings: usize = args
         .iter()
         .map(|v| match v {
