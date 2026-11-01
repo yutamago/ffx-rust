@@ -51,6 +51,8 @@ fn entries() {
     rec(&mut t, 712, 2, move |m, _| {
         let l = m.r32(lock);
         m.w32(SCRATCH + 0x2_0100, l);
+        let p = m.r32(gp);
+        m.w32(SCRATCH + 0x2_0104, p);
         m.w32(gp, 0x6666_0712);
         m.r32(cell) & 1
     });
