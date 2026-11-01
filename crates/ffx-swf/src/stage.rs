@@ -79,12 +79,19 @@ pub struct CallOut {
     pub args: Vec<Value>,
 }
 
-/// Answers the movie's external calls with the recorded answers, in order
-/// per name, and keeps what it was asked.
+/// A live answer to the movie's external calls: called with the name and
+/// the arguments while the movie waits (`ffx-host` runs the game's callback
+/// there); its value is the call's result in the movie.
+pub type Live = Box<dyn FnMut(&str, &[Value]) -> Value>;
+
+/// Answers the movie's external calls: with [`Answers::live`] set, live;
+/// else with the recorded answers, in order per name, keeping what it was
+/// asked.
 #[derive(Default)]
 pub struct Answers {
     pub queued: HashMap<String, VecDeque<Option<String>>>,
     pub asked: Vec<CallOut>,
+    pub live: Option<Live>,
 }
 
 struct Provider(Rc<RefCell<Answers>>);
@@ -92,6 +99,9 @@ struct Provider(Rc<RefCell<Answers>>);
 impl ExternalInterfaceProvider for Provider {
     fn call_method(&self, _context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
         let mut a = self.0.borrow_mut();
+        if let Some(live) = a.live.as_mut() {
+            return live(name, args);
+        }
         a.asked.push(CallOut {
             name: name.to_owned(),
             args: args.to_vec(),
@@ -289,6 +299,44 @@ impl Stage {
     pub fn call(&mut self, name: &str, args: &[Arg]) -> Value {
         let values: Vec<Value> = args.iter().map(to_value).collect();
         self.lock().call_internal_interface(name, values)
+    }
+
+    /// `IggyPlayerCallFunctionRS` with Ruffle's values (string arrays as
+    /// `Value::List`).
+    pub fn call_values(&mut self, name: &str, args: Vec<Value>) -> Value {
+        self.lock().call_internal_interface(name, args)
+    }
+
+    /// The movie's image now, premultiplied RGBA rows (`width * 4` bytes
+    /// each) as the renderer leaves them: what Iggy's `GDraw` blends over
+    /// the scene (`ONE`, `INV_SRC_ALPHA`). Display size only (no
+    /// supersampling).
+    ///
+    /// # Errors
+    /// The renderer gave no image, or the stage is supersampled.
+    pub fn capture_premultiplied(&mut self) -> Result<(u32, u32, Vec<u8>)> {
+        if self.ss > 1 {
+            return Err(anyhow!("a supersampled stage has no premultiplied image"));
+        }
+        let mut p = self.lock();
+        p.render();
+        let renderer =
+            <dyn std::any::Any>::downcast_mut::<WgpuRenderBackend<TextureTarget>>(p.renderer_mut())
+                .ok_or_else(|| anyhow!("not the wgpu texture renderer"))?;
+        let device = renderer.descriptors().device.clone();
+        let target = renderer.target();
+        let (w, h) = (target.size.width, target.size.height);
+        let info = target.buffer.as_ref().ok_or_else(|| anyhow!("no frame"))?;
+        let (buffer, dims) = info.buffer.inner();
+        let rows =
+            ruffle_render_wgpu::utils::capture_image(&device, buffer, dims, None, |rgba, _| {
+                let mut out = Vec::with_capacity(dims.height * dims.unpadded_bytes_per_row);
+                for row in rgba.chunks(dims.padded_bytes_per_row as usize) {
+                    out.extend_from_slice(&row[..dims.unpadded_bytes_per_row.min(row.len())]);
+                }
+                out
+            });
+        Ok((w, h, rows))
     }
 
     /// The movie's image now (straight alpha), as Iggy's draw would show it.

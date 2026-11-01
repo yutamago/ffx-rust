@@ -17,7 +17,11 @@
 //! | `IggyPlayerCallFunctionRS(p, result, name, argc, args)` | the AS3 function `name` with the `IggyDataValue`s; `result` undefined |
 //! | `IggyPlayerReadyToTick(p)` / `TickRS` | the player's accumulator on the virtual clock: ready while it holds a frame period |
 //! | `IggyPlayerSetDisplaySize`, `DispatchEventRS` (mouse moves), `Draw` | the Ruffle stage's size, events, image |
-//! | `IggySetAS3ExternalFunctionCallbackUTF8(cb, user)` | an AS3 `ExternalInterface.call` runs `cb(user, player, call)` (stdcall); the answer is what the game sets with `IggyPlayerCallbackResultPath` + `IggyValueSetStringUTF8RS` |
+//! | `IggySetAS3ExternalFunctionCallbackUTF8(cb, user)` | an AS3 `ExternalInterface.call` runs `cb(user, player, call)` (stdcall) while the movie waits; the answer is what the game sets with `IggyPlayerCallbackResultPath` + `IggyValueSetStringUTF8RS`, the call's result in the movie |
+//! | `IggyValueRefCreateArray`, `RefFromTempRef`, `RefFree` | arrays the layer keeps by handle (string arrays the game passes as type 9 values; arrays AS3 passes to the callback as type 10 temporary refs) |
+//! | `IggyValuePathFromRef`, `PathMakeArrayRef`, `PathSetArrayIndex` | a value path in the game's 24-byte frame: player, parent path, name, ref, index, kind (Iggy's own words, as the hook's Iggy log shows them) |
+//! | `IggyValueSetStringUTF8RS`, `GetS32RS`, `GetStringUTF8RS` | an array element through its path (or the callback's answer) |
+//! | `IggyPlayerDraw` | the movie's image composited over `GDraw`'s target (`crate::gfx` `Gfx::composite`) |
 //! | the rest | 0 |
 
 use std::collections::HashMap;
@@ -36,6 +40,24 @@ const BLOCK: u32 = 0x100;
 const PROPS: u32 = 0x40;
 const RESULT_PATH: u32 = 0x80;
 
+/// `GDraw`'s D3D11 state (`DAT_01a858b4`, a pointer): the target view
+/// `+0x780` and the draw's origin `+0x6c8`, `+0x6cc` that
+/// `gdraw_setRenderTargetView_00a38300` stores right before
+/// `IggyPlayerDraw` (`IggyPlayer_tickDraw_00a3d9f0`).
+const GDRAW_STATE: u32 = 0x01a8_58b4;
+
+/// A value path's kinds (word 5 of the 24-byte path): from a ref, an
+/// array element (Iggy's own numbers), and the layer's callback result.
+const PATH_REF: u32 = 4;
+const PATH_ELEMENT: u32 = 1;
+const PATH_RESULT: u32 = 0x100;
+
+/// `IggyDataValue` types the layer reads and writes beyond 3-6: a
+/// value ref (the game's string arrays, `IggyValue_setType9_00a28dd0`) and
+/// a temporary ref (an array AS3 passes to the callback).
+const TYPE_REF: u32 = 9;
+const TYPE_TEMP_REF: u32 = 10;
+
 /// A value passed to or from AS3.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -47,6 +69,35 @@ pub enum Value {
     Number(f64),
     /// Types 5 (UTF-8) and 6 (UTF-16).
     String(String),
+    /// An array: type 9 (a ref the game built) into AS3, type 10 (a
+    /// temporary ref) from AS3.
+    List(Vec<Value>),
+}
+
+/// The arrays the layer keeps for value refs.
+#[derive(Debug, Default)]
+struct Refs {
+    next: u32,
+    arrays: HashMap<u32, Vec<Value>>,
+}
+
+impl Refs {
+    fn add(&mut self, values: Vec<Value>) -> u32 {
+        // non-zero, never reused
+        self.next = self.next.wrapping_add(1).max(0x100);
+        self.arrays.insert(self.next, values);
+        self.next
+    }
+}
+
+/// `ToInt32` of a number, as AS3 converts (wraps modulo 2^32).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn to_int32(n: f64) -> i32 {
+    if !n.is_finite() {
+        return 0;
+    }
+    let t = n.trunc().rem_euclid(4_294_967_296.0);
+    (t as u64 as u32).cast_signed()
 }
 
 /// One player.
@@ -75,6 +126,11 @@ pub struct Iggy {
     user: AtomicU32,
     /// The answer the game set during an AS3 callback.
     answer: Mutex<Option<String>>,
+    /// Value refs (arrays).
+    refs: Mutex<Refs>,
+    /// Images composited, and draws that had none (for the report).
+    pub composited: AtomicU32,
+    pub not_composited: AtomicU32,
     /// Calls the game made, by function (for the report).
     pub calls: Mutex<std::collections::BTreeMap<String, u64>>,
     #[cfg(feature = "swf")]
@@ -173,7 +229,7 @@ fn create_from_memory(e: &mut Exec, args: &Args) -> Ret {
     mem.write(p + PROPS + 8, fps);
     mem.write(p + PROPS + 12, fps);
     #[cfg(feature = "swf")]
-    iggy(e).swf.create(p, &swf, (width, height));
+    swf::create(e, p, &swf, (width, height));
     let player = Player {
         swf,
         width,
@@ -200,7 +256,7 @@ fn destroy(e: &mut Exec, args: &Args) -> Ret {
         ps.remove(&p);
     }
     #[cfg(feature = "swf")]
-    iggy(e).swf.destroy(p);
+    swf::destroy(e, p);
     Ret::VOID
 }
 
@@ -234,6 +290,12 @@ fn read_values(e: &Exec, at: u32, count: u32) -> Vec<Value> {
             let value = at + 16 * i;
             let (text, len) = (mem.read::<u32>(value + 8), mem.read::<u32>(value + 12));
             match mem.read::<u32>(value) {
+                TYPE_REF => iggy(e)
+                    .refs
+                    .lock()
+                    .ok()
+                    .and_then(|r| r.arrays.get(&text).cloned())
+                    .map_or(Value::Undefined, Value::List),
                 3 => Value::Bool(mem.read::<u8>(value + 8) != 0),
                 4 => Value::Number(mem.read::<f64>(value + 8)),
                 5 => {
@@ -294,6 +356,9 @@ fn tick(e: &mut Exec, args: &Args) -> Ret {
             let period = 1.0 / f64::from(pl.fps.max(1.0));
             pl.owed = (pl.owed - period).max(0.0);
             pl.ticks += 1;
+            if pl.ticks.is_power_of_two() {
+                crate::log::note(&format!("iggy: {p:#x} tick {}", pl.ticks));
+            }
             true
         })
     });
@@ -318,22 +383,72 @@ fn initialize_and_tick(e: &mut Exec, args: &Args) -> Ret {
 
 fn set_display_size(e: &mut Exec, args: &Args) -> Ret {
     #[cfg(feature = "swf")]
-    iggy(e).swf.set_size(a(args, 0), (a(args, 1), a(args, 2)));
+    swf::set_size(e, a(args, 0), (a(args, 1), a(args, 2)));
     #[cfg(not(feature = "swf"))]
     let _ = (e, args);
     Ret::VOID
 }
 
+/// `IggyPlayerDraw(player)`: the movie's image over `GDraw`'s target, at
+/// the origin `IggyPlayer_tickDraw_00a3d9f0` set, in the order the game
+/// draws its menus (on the render thread, between its own draws).
 fn draw(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
     if let Ok(mut ps) = iggy(e).players.lock()
         && let Some(pl) = ps.get_mut(&p)
     {
         pl.draws += 1;
+        if pl.draws.is_power_of_two() {
+            crate::log::note(&format!("iggy: {p:#x} draw {}", pl.draws));
+        }
     }
     #[cfg(feature = "swf")]
-    swf::draw(e, p);
+    {
+        let image = swf::draw(e, p);
+        composite(e, image.as_ref());
+    }
     Ret::VOID
+}
+
+/// Hands a player's image to the D3D11 layer: premultiplied RGBA rows
+/// over `GDraw`'s target view at its origin.
+#[cfg_attr(not(feature = "swf"), allow(dead_code))]
+fn composite(e: &Exec, image: Option<&(u32, u32, Vec<u8>)>) {
+    let Some((width, height, rows)) = image else {
+        iggy(e).not_composited.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    let mem = e.mem();
+    let state = mem.read::<u32>(GDRAW_STATE);
+    let (view, x, y) = if state == 0 {
+        (0, 0, 0)
+    } else {
+        (
+            mem.read::<u32>(state + 0x780),
+            mem.read::<u32>(state + 0x6c8).cast_signed(),
+            mem.read::<u32>(state + 0x6cc).cast_signed(),
+        )
+    };
+    let done = view != 0
+        && e.shared()
+            .gfx
+            .lock()
+            .as_mut()
+            .is_some_and(|g| g.composite(view, (x, y), (*width, *height), rows));
+    let counter = if done {
+        &iggy(e).composited
+    } else {
+        &iggy(e).not_composited
+    };
+    let n = counter.fetch_add(1, Ordering::Relaxed);
+    if n < 3 || n.is_power_of_two() {
+        let covered = rows.chunks(4).filter(|p| p[3] != 0).count();
+        crate::log::note(&format!(
+            "iggy: draw {} {}: {width}x{height} at ({x}, {y}) on view {view:#x}, {covered} pixels not transparent",
+            if done { "composited" } else { "not composited" },
+            n + 1
+        ));
+    }
 }
 
 /// `IggyMakeEventMouseMove(ev, x, y)`: the layer's own event layout
@@ -359,14 +474,14 @@ fn dispatch_event(e: &mut Exec, args: &Args) -> Ret {
     let (p, ev, out) = (a(args, 0), a(args, 1), a(args, 2));
     let mem = e.mem();
     if mem.read::<u32>(ev) == 7 {
-        #[cfg(feature = "swf")]
-        iggy(e).swf.mouse_move(
-            p,
+        let (x, y) = (
             mem.read::<u32>(ev + 8).cast_signed(),
             mem.read::<u32>(ev + 12).cast_signed(),
         );
+        #[cfg(feature = "swf")]
+        swf::mouse_move(e, p, x, y);
         #[cfg(not(feature = "swf"))]
-        let _ = p;
+        let _ = (p, x, y);
     }
     if out != 0 {
         e.mem().write_bytes(out, &[0u8; 12]);
@@ -380,21 +495,205 @@ fn set_as3_callback(e: &mut Exec, args: &Args) -> Ret {
     Ret::VOID
 }
 
-fn callback_result_path(_: &mut Exec, args: &Args) -> Ret {
+/// `IggyPlayerCallbackResultPath(player)`: a path (in the player's block)
+/// whose value is the answer to the AS3 call in progress.
+fn callback_result_path(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
-    Ret::eax(if p == 0 { 0 } else { p + RESULT_PATH })
+    if p == 0 {
+        return Ret::eax(0);
+    }
+    write_path(e, p + RESULT_PATH, [p, 0, 0, 0, 0, PATH_RESULT]);
+    Ret::eax(p + RESULT_PATH)
 }
 
-/// `IggyValueSetStringUTF8RS(path, sub, sub2, s, len)`: on a player's
-/// callback result path, the answer to the AS3 call in progress.
-fn value_set_string(e: &mut Exec, args: &Args) -> Ret {
-    let (s, len) = (a(args, 3), a(args, 4));
-    let mut b = vec![0u8; len.min(1 << 16) as usize];
-    e.mem().read_bytes(s, &mut b);
-    if let Ok(mut ans) = iggy(e).answer.lock() {
-        *ans = Some(String::from_utf8_lossy(&b).into_owned());
+/// A value path: 24 bytes in the game's frame, Iggy's six words (player,
+/// parent path, name, ref, index, kind).
+fn write_path(e: &Exec, at: u32, words: [u32; 6]) {
+    if at != 0 {
+        e.mem().write(at, words);
     }
-    Ret::eax(1)
+}
+
+fn read_path(e: &Exec, at: u32) -> [u32; 6] {
+    if at == 0 {
+        return [0; 6];
+    }
+    e.mem().read(at)
+}
+
+/// Where a path points: an array ref and an element index.
+fn element(e: &Exec, path: u32) -> Option<(u32, usize)> {
+    let p = read_path(e, path);
+    if p[5] != PATH_ELEMENT {
+        return None;
+    }
+    let parent = read_path(e, p[1]);
+    (parent[5] == PATH_REF).then_some((parent[3], p[4] as usize))
+}
+
+/// The value at a path (an element of an array ref), or `None`.
+fn value_at(e: &Exec, path: u32) -> Option<Value> {
+    let (r, i) = element(e, path)?;
+    iggy(e).refs.lock().ok()?.arrays.get(&r)?.get(i).cloned()
+}
+
+/// `IggyValueRefCreateArray(player, n)`: a ref to an array of `n`
+/// undefined values.
+fn ref_create_array(e: &mut Exec, args: &Args) -> Ret {
+    iggy(e).count("ValueRefCreateArray");
+    let n = a(args, 1).min(1 << 16) as usize;
+    let h = iggy(e)
+        .refs
+        .lock()
+        .map_or(0, |mut r| r.add(vec![Value::Undefined; n]));
+    Ret::eax(h)
+}
+
+/// `IggyValueRefFromTempRef(player, temp, flags)`: a ref of its own to a
+/// temporary ref's array (the temporary one goes when the callback
+/// returns).
+fn ref_from_temp(e: &mut Exec, args: &Args) -> Ret {
+    let temp = a(args, 1);
+    let h = iggy(e).refs.lock().map_or(0, |mut r| {
+        let values = r.arrays.get(&temp).cloned().unwrap_or_default();
+        r.add(values)
+    });
+    Ret::eax(h)
+}
+
+/// `IggyValueRefFree(player, ref)`.
+fn ref_free(e: &mut Exec, args: &Args) -> Ret {
+    if let Ok(mut r) = iggy(e).refs.lock() {
+        r.arrays.remove(&a(args, 1));
+    }
+    Ret::eax(0)
+}
+
+/// `IggyValuePathFromRef(path, player, ref)` -> path.
+fn path_from_ref(e: &mut Exec, args: &Args) -> Ret {
+    let path = a(args, 0);
+    write_path(e, path, [a(args, 1), 0, 0, a(args, 2), 0, PATH_REF]);
+    Ret::eax(path)
+}
+
+/// `IggyValuePathMakeArrayRef(path, parent, index)` -> path.
+fn path_make_array_ref(e: &mut Exec, args: &Args) -> Ret {
+    let (path, parent) = (a(args, 0), a(args, 1));
+    let player = read_path(e, parent)[0];
+    write_path(e, path, [player, parent, 0, 0, a(args, 2), PATH_ELEMENT]);
+    Ret::eax(path)
+}
+
+/// `IggyValuePathSetArrayIndex(path, index)` -> path.
+fn path_set_array_index(e: &mut Exec, args: &Args) -> Ret {
+    let path = a(args, 0);
+    if path != 0 {
+        e.mem().write(path + 16, a(args, 1));
+    }
+    Ret::eax(path)
+}
+
+/// A UTF-8 argument: `len` bytes, or up to the NUL when `len` is
+/// negative.
+fn utf8_arg(e: &Exec, s: u32, len: u32) -> String {
+    let mem = e.mem();
+    let bytes: Vec<u8> = if len.cast_signed() < 0 {
+        (0..1u32 << 16)
+            .map(|i| mem.read::<u8>(s + i))
+            .take_while(|&b| b != 0)
+            .collect()
+    } else {
+        let mut b = vec![0u8; len.min(1 << 16) as usize];
+        mem.read_bytes(s, &mut b);
+        b
+    };
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// `IggyValueSetStringUTF8RS(path, sub, sub_utf8, s, len)`: on a
+/// player's callback result path, the answer to the AS3 call in progress;
+/// on an element path, that element of the array (the game's string
+/// arrays, `IggyStringArray_ctor_006fcbc0`). True (1) when set.
+fn value_set_string(e: &mut Exec, args: &Args) -> Ret {
+    let path = a(args, 0);
+    let s = utf8_arg(e, a(args, 3), a(args, 4));
+    if read_path(e, path)[5] == PATH_RESULT {
+        if let Ok(mut ans) = iggy(e).answer.lock() {
+            *ans = Some(s);
+        }
+        return Ret::eax(1);
+    }
+    let Some((r, i)) = element(e, path) else {
+        return Ret::eax(0);
+    };
+    let set = iggy(e).refs.lock().is_ok_and(|mut refs| {
+        refs.arrays.get_mut(&r).is_some_and(|v| {
+            if v.len() <= i {
+                v.resize(i + 1, Value::Undefined);
+            }
+            v[i] = Value::String(s);
+            true
+        })
+    });
+    Ret::eax(u32::from(set))
+}
+
+/// `IggyValueGetS32RS(path, sub, sub_utf8, out)`: 0 (success) with the
+/// value converted as AS3 does, else 1 and `out` left alone.
+fn value_get_s32(e: &mut Exec, args: &Args) -> Ret {
+    let out = a(args, 3);
+    let v = match value_at(e, a(args, 0)) {
+        Some(Value::Number(n)) => to_int32(n),
+        Some(Value::Bool(b)) => i32::from(b),
+        Some(Value::String(s)) => s.trim().parse::<f64>().map_or(0, to_int32),
+        _ => return Ret::eax(1),
+    };
+    if out != 0 {
+        e.mem().write(out, v);
+    }
+    Ret::eax(0)
+}
+
+/// `IggyValueGetStringUTF8RS(path, sub, sub_utf8, size, buf, len_out)`:
+/// 0 with the string (at most `size - 1` bytes, NUL-terminated) and its
+/// length, else 1.
+fn value_get_string(e: &mut Exec, args: &Args) -> Ret {
+    let (size, buf, len_out) = (a(args, 3), a(args, 4), a(args, 5));
+    let s = match value_at(e, a(args, 0)) {
+        Some(Value::String(s)) => s,
+        Some(Value::Number(n)) => format!("{n}"),
+        Some(Value::Bool(b)) => format!("{b}"),
+        _ => return Ret::eax(1),
+    };
+    let n = s.len().min(size.saturating_sub(1) as usize);
+    let n32 = u32::try_from(n).unwrap_or(0);
+    let mut mem = e.mem();
+    if buf != 0 && size != 0 {
+        mem.write_bytes(buf, &s.as_bytes()[..n]);
+        mem.write(buf + n32, 0u8);
+    }
+    if len_out != 0 {
+        mem.write(len_out, n32);
+    }
+    Ret::eax(0)
+}
+
+/// `IggyGDrawMallocAnnotated(size, file, line)`: `GDraw`'s memory (its
+/// state, the quad index buffer's contents, the render-target pool) from
+/// the arena heap. With the null stand-in's 0 `IggyGDraw_setup_00a3baf0`
+/// failed, `g_GDrawContext` stayed 0 and `IggyMenuManager_Render_00a267f0`
+/// drew no menu: no tick, no draw.
+fn gdraw_malloc(e: &mut Exec, args: &Args) -> Ret {
+    Ret::eax(e.alloc(a(args, 0)))
+}
+
+/// `IggyGDrawFree(p)`.
+fn gdraw_free(e: &mut Exec, args: &Args) -> Ret {
+    let p = a(args, 0);
+    if p != 0 {
+        e.release(p);
+    }
+    Ret::VOID
 }
 
 fn background_color(e: &mut Exec, args: &Args) -> Ret {
@@ -406,14 +705,17 @@ fn background_color(e: &mut Exec, args: &Args) -> Ret {
 /// An AS3 `ExternalInterface.call(name, args)` reaching the game: the
 /// game's callback (`IggyMenuManager_callback_00a260f0`, stdcall(user,
 /// player, call); the call: NUL-terminated name pointer, length, argument
-/// count, then `IggyDataValue`s from `+0x10`) on this thread; returns the
-/// answer the game set.
+/// count, then `IggyDataValue`s from `+0x10`; an array as a temporary ref,
+/// type 10 with the ref at `+4`, as Iggy passes them) on this thread;
+/// returns the answer the game set.
 pub fn as3_call(e: &mut Exec, player: u32, name: &str, args: &[Value]) -> Option<String> {
     let cb = iggy(e).callback.load(Ordering::Acquire);
     if cb == 0 {
         return None;
     }
+    let mut temps = Vec::new();
     iggy(e).count(&format!("as3 {name}"));
+    crate::log::note(&format!("iggy: {player:#x} calls the game: {name}{args:?}"));
     let strings: usize = args
         .iter()
         .map(|v| match v {
@@ -457,6 +759,12 @@ pub fn as3_call(e: &mut Exec, player: u32, name: &str, args: &[Value]) -> Option
                 mem.write(text + u32::try_from(s.len()).ok()?, 0u8);
                 text += u32::try_from(s.len() + 1).ok()?;
             }
+            Value::List(items) => {
+                let temp = iggy(e).refs.lock().map_or(0, |mut r| r.add(items.clone()));
+                temps.push(temp);
+                mem.write(at, TYPE_TEMP_REF);
+                mem.write(at + 4, temp);
+            }
         }
     }
     if let Ok(mut ans) = iggy(e).answer.lock() {
@@ -465,6 +773,11 @@ pub fn as3_call(e: &mut Exec, player: u32, name: &str, args: &[Value]) -> Option
     let user = iggy(e).user.load(Ordering::Acquire);
     let _ = e.call_stdcall(cb, &[user, player, block]);
     e.release(block);
+    if let Ok(mut r) = iggy(e).refs.lock() {
+        for t in temps {
+            r.arrays.remove(&t);
+        }
+    }
     iggy(e).answer.lock().ok().and_then(|mut a| a.take())
 }
 
@@ -566,6 +879,64 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         Conv::Stdcall,
         2,
         background_color,
+    ),
+    (
+        IGGY,
+        "_IggyGDrawMallocAnnotated@12",
+        Conv::Stdcall,
+        3,
+        gdraw_malloc,
+    ),
+    (IGGY, "_IggyGDrawFree@4", Conv::Stdcall, 1, gdraw_free),
+    (
+        IGGY,
+        "_IggyValueRefCreateArray@8",
+        Conv::Stdcall,
+        2,
+        ref_create_array,
+    ),
+    (
+        IGGY,
+        "_IggyValueRefFromTempRef@12",
+        Conv::Stdcall,
+        3,
+        ref_from_temp,
+    ),
+    (IGGY, "_IggyValueRefFree@8", Conv::Stdcall, 2, ref_free),
+    (
+        IGGY,
+        "_IggyValuePathFromRef@12",
+        Conv::Stdcall,
+        3,
+        path_from_ref,
+    ),
+    (
+        IGGY,
+        "_IggyValuePathMakeArrayRef@12",
+        Conv::Stdcall,
+        3,
+        path_make_array_ref,
+    ),
+    (
+        IGGY,
+        "_IggyValuePathSetArrayIndex@8",
+        Conv::Stdcall,
+        2,
+        path_set_array_index,
+    ),
+    (
+        IGGY,
+        "_IggyValueGetS32RS@16",
+        Conv::Stdcall,
+        4,
+        value_get_s32,
+    ),
+    (
+        IGGY,
+        "_IggyValueGetStringUTF8RS@24",
+        Conv::Stdcall,
+        6,
+        value_get_string,
     ),
 ];
 

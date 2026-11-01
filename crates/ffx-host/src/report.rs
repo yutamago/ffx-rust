@@ -257,7 +257,15 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
     if !players.is_empty() {
         let _ = writeln!(
             out,
-            "iggy: players (handle, movie bytes, ticks, draws): {players:x?}; calls: {:?}",
+            "iggy: players (handle, movie bytes, ticks, draws): {players:x?}; images composited {}, draws without one {}; calls: {:?}",
+            shared
+                .iggy
+                .composited
+                .load(std::sync::atomic::Ordering::Relaxed),
+            shared
+                .iggy
+                .not_composited
+                .load(std::sync::atomic::Ordering::Relaxed),
             shared
                 .iggy
                 .calls

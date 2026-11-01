@@ -39,6 +39,8 @@ use crate::com_methods::{CLASSES, Returns, class};
 use crate::exec::{Exec, Stop};
 use crate::table::{Args, Ret};
 
+mod composite;
+
 /// `D3D_FEATURE_LEVEL_11_0`.
 pub const FEATURE_LEVEL_11_0: u32 = 0xb000;
 /// `DI_NOTATTACHED` (`S_FALSE`: the device is not attached).
@@ -484,6 +486,8 @@ pub struct Gfx {
     pub unhandled: BTreeSet<String>,
     /// Draws, clears and copies per frame, the frame being made last.
     pub frame_sizes: Vec<(u32, u32, u32)>,
+    /// The objects of Iggy's composite ([`Gfx::composite`]).
+    composite: composite::Objects,
 }
 
 impl std::fmt::Debug for Gfx {
@@ -623,6 +627,7 @@ impl Gfx {
             counts: BTreeMap::new(),
             unhandled: BTreeSet::new(),
             frame_sizes: vec![(0, 0, 0)],
+            composite: composite::Objects::default(),
         };
         let bb = desc.back_buffer();
         g.resources.insert(
@@ -1901,6 +1906,29 @@ impl Gfx {
                 self.backend.op(&Op::ClearState);
             }
             "Flush" => self.backend.op(&Op::Flush),
+            "OMGetRenderTargets" => {
+                // (num, views, depth): the bound views, each with a
+                // reference, as the API hands them out
+                // (`IggyPlayer_tickDraw_00a3d9f0` asks when its device
+                // record has none)
+                let (num, views, depth) = (a[1].min(8), a[2], a[3]);
+                let bound = (self.bound.rtv, self.bound.dsv);
+                if views != 0 {
+                    for i in 0..num {
+                        let v = bound.0[i as usize];
+                        if v != 0 {
+                            self.com.add_ref(v);
+                        }
+                        e.mem().write(views + 4 * i, v);
+                    }
+                }
+                if depth != 0 {
+                    if bound.1 != 0 {
+                        self.com.add_ref(bound.1);
+                    }
+                    e.mem().write(depth, bound.1);
+                }
+            }
             "GetType" | "GetContextFlags" => return Some(0),
             "SetPredication"
             | "SetResourceMinLOD"
