@@ -6177,8 +6177,18 @@ fn l6_fp_proc_matches_the_original() {
                 l6_random(t, &mut rng, 0xa00)
             };
             if w != 0 {
-                let v = [0, 1, 9, 10, 0x62, 0x63, 0x5a, 0x64, 0xffff_fff0, rng.below(100)]
-                    [rng.below(10) as usize];
+                let v = [
+                    0,
+                    1,
+                    9,
+                    10,
+                    0x62,
+                    0x63,
+                    0x5a,
+                    0x64,
+                    0xffff_fff0,
+                    rng.below(100),
+                ][rng.below(10) as usize];
                 t.w32(w + 0x5fc, v);
                 t.w32(w + 0x8b0, rng.below(4));
                 t.w32(w + 0x8b4, u32::from(rng.chance(2)));
@@ -6228,6 +6238,190 @@ fn l6_fp_proc_matches_the_original() {
                 |o| l6_out(l6m6::fp_proc(o, ebp, window, msg, param)),
             );
             l6_same_words(t, "rcuiFpProc_00933cc0", ebp, ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 6 (left6) batch 6 (ffx_prender::l6_map7) ----
+
+use ffx_prender::l6_map7::{self as l67, bridge as l6m7};
+
+#[test]
+fn l6_load_proc_matches_the_original() {
+    // no work area or system; the mouse in and out of the list, past its
+    // end; a directory then a map (text or chunk, chunk made or there,
+    // its load failing); the draw cut at the list's end; window sizes
+    // giving no columns or rows
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6bb1);
+        for case in 0..300_u32 {
+            let w = if case % 41 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0xd00)
+            };
+            let n = rng.below(12);
+            let mut names = vec![];
+            for k in 0..12_u32 {
+                let s = format!("e{k}_{}\0", rng.below(100));
+                names.push(t.alloc(s.as_bytes()));
+            }
+            let names = t.words(&names);
+            if w != 0 {
+                t.w32(w + 0x68, n);
+                t.w32(w + 0x70, names);
+                t.w8(w + 0x274, u8::from(rng.chance(2)) * b'd');
+                t.w8(w + 0x74, b'b');
+                t.w8(w + 0x75, 0);
+                t.w8(w + 0x174, b'm');
+                t.w8(w + 0x175, 0);
+                t.w32(w + 0x60, u32::from(rng.chance(2)));
+            }
+            t.global(l67::RCUI_WORK, w);
+            let chunk = t.words(&[rng.next(), 0]);
+            let sys_v = if case % 13 == 5 {
+                0
+            } else {
+                t.words(&[0, 0, 0, 0, 0, 0, if rng.chance(2) { 0 } else { chunk }])
+            };
+            t.global(l67::YN_MAP_SYSTEM, sys_v);
+            let width = [0, 79, 80, 240, 400][rng.below(5) as usize];
+            let height = [0, 10, 20, 45, 100][rng.below(5) as usize];
+            t.stub_sym(l67::GET_WIDTH, 1, false, 1, 0, Ret::Val(width));
+            t.stub_sym(l67::GET_HEIGHT, 2, false, 1, 0, Ret::Val(height));
+            let mx = [0xffff_fff0, 0, 79, 80, 170, 300][rng.below(6) as usize];
+            let my = [0xffff_fff0, 5, 10, 25, 99][rng.below(5) as usize];
+            t.stub_sym(l67::MOUSE_WINDOW_Y, 3, false, 1, 0, Ret::Val(mx));
+            t.stub_sym(l67::MOUSE_WINDOW_X, 4, false, 1, 0, Ret::Val(my));
+            for (sym, tag, k) in [
+                (l67::MAKE_BASE_PATH, 5, 0),
+                (l67::LOAD_SET_TITLE, 6, 0),
+                (l67::MAKE_FULL_PATH, 8, 0),
+                (l67::RESET, 9, 0),
+                (l67::PRE_LOAD_TEXT, 10, 0),
+                (l67::PRE_BG_SET_DATA, 13, 1),
+                (l67::RC_FREE, 14, 1),
+                (l67::ID_LOAD, 16, 0),
+                (l67::RESET_CHR_POS, 17, 0),
+                (l67::CLOSE_WINDOW, 18, 1),
+                (l67::PRINT_SET_X, 19, 1),
+                (l67::PRINT_SET_Y, 20, 1),
+                (l67::PRINT_SET_BOLD, 21, 1),
+            ] {
+                t.stub_sym(sym, tag, false, k, 0, Ret::Val(rng.next()));
+            }
+            l6_copy(t, l67::MAKE_FILE_LIST, 7, 2, 1, 2, rng.next());
+            t.stub_sym(l67::CHUNK_NEW, 11, false, 0, 0, Ret::Val(chunk));
+            let ok = u32::from(rng.chance(2));
+            l6_copy(t, l67::CHUNK_LOAD, 12, 2, 1, 2, ok);
+            t.stub_sym(l67::SET_PTR32, 15, false, 1, 0, Ret::Val(rng.next()));
+            l6_printf(t, l67::GU_PRINTF, 22, &[], Ret::Val(rng.next()));
+            let msg = match rng.below(8) {
+                0..=2 => 0x8006,
+                3 | 4 => 0x8011,
+                5 => [0x8001, 0x800a, 0x800e, 0x8003][rng.below(4) as usize],
+                _ => l6_msg(&mut rng),
+            };
+            let window = rng.next();
+            let param = rng.next();
+            l6_fill_stack(t, &mut rng, 0x400);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l67::LOAD_FRAME - 0x60);
+            t.check(
+                "rcuiLoadProc",
+                0x0093_4bc0,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| Out::U32(l6m7::load_proc(o, ebp, window, msg)),
+            );
+            l6_same_words(t, "rcuiLoadProc", ebp, ebp - 0x11c, 0x118);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn l6_layer_rect_proc_matches_the_original() {
+    // no work area, system, map or layers; every button with and without
+    // an entry open; the presets taken by either take and restored; ftol
+    // both ways (the CRT's SSE2 flag)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6bc1);
+        for case in 0..300_u32 {
+            let w = if case % 29 == 3 {
+                0
+            } else {
+                l6_random(t, &mut rng, 0x500)
+            };
+            let k = rng.below(4);
+            if w != 0 {
+                t.w32(w + 0x288, k);
+                t.w32(w + 0x398, if rng.chance(3) { rng.next() | 2 } else { 0 });
+                t.w32(w + 0x3d8, 0x38 + rng.below(8));
+                for off in (0x3b8..0x3d8).step_by(4) {
+                    t.w32(w + off, float_word(&mut rng));
+                }
+            }
+            t.global(l67::RCUI_WORK, w);
+            let layers = l6_random(t, &mut rng, 0xc0 * 4);
+            for j in 0..4 {
+                for off in (0x14..0x24).step_by(4) {
+                    let v = if rng.chance(5) {
+                        float_word(&mut rng)
+                    } else {
+                        (rng.below(4000) as f32 / 8.0 - 250.0).to_bits()
+                    };
+                    t.w32(layers + 0xc0 * j + off, v);
+                }
+            }
+            let n = [0, 0xffff_ffff, 4][rng.below(3) as usize];
+            let list = t.words(&[0, if case % 5 == 0 { n } else { 4 }, layers]);
+            let map = t.words(&[0, 0, list]);
+            l6_map_system(t, &mut rng, map);
+            if case % 2 == 1 {
+                t.global(ffx_bridge::x87::SSE2_AVAILABLE.sym, 1);
+            }
+            for (sym, tag, n) in [
+                (l67::bridge::ADD_ITEMS, 1, 2),
+                (l67::bridge::NUM_WINDOW_CREATE, 2, 4),
+                (l67::bridge::PACKET_BEGIN_TAG, 6, 1),
+                (l67::bridge::SET_PRIM, 7, 1),
+                (l67::bridge::SET_RGBAQ, 8, 4),
+                (l67::bridge::SET_XYZF2, 9, 2),
+                (l67::bridge::PACKET_END_TAG, 10, 0),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(rng.next()));
+            }
+            for (sym, tag) in [
+                (l67::bridge::TAKE_14, 3),
+                (l67::bridge::TAKE_1C, 4),
+                (l67::bridge::TAKE_18, 5),
+            ] {
+                let v = if rng.chance(2) { 0 } else { rng.next() };
+                t.stub_sym(sym, tag, false, 1, 0, Ret::Val(v));
+            }
+            l6_copy(t, l67::bridge::SET_TEXT, 11, 3, 2, 3, rng.next());
+            let (msg, param) = match rng.below(7) {
+                0..=2 => (0x8006, 0x35 + rng.below(11)),
+                3 | 4 => (0x8011, rng.next()),
+                5 => (l6_msg(&mut rng), rng.next()),
+                _ => ([0x8001, 0x8003][rng.below(2) as usize], rng.next()),
+            };
+            let window = rng.next();
+            l6_fill_stack(t, &mut rng, 0x300);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - l67::bridge::RECT_FRAME - 0x40);
+            t.check(
+                "rcuiLayerRectProc_00932a60",
+                0x0093_2a60,
+                Conv::Cdecl,
+                &[window, msg, param],
+                |o| l6_out(l6m7::rect_proc(o, ebp, window, msg, param)),
+            );
+            l6_same_words(t, "rcuiLayerRectProc_00932a60", ebp, ebp - 0x18, 0x14);
             t.b_top = None;
             t.reset();
         }

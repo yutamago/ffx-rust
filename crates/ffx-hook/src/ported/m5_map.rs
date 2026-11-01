@@ -13,6 +13,7 @@ use ffx_prender::l6_map3::bridge as l6m3;
 use ffx_prender::l6_map4::bridge as l6m4;
 use ffx_prender::l6_map5::bridge as l6m5;
 use ffx_prender::l6_map6::bridge as l6m6;
+use ffx_prender::l6_map7::bridge as l6m7;
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
@@ -822,5 +823,21 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::l6_map6::bridge::FP_FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::l6_map6::bridge::FP_FRAME;
         l6m6::fp_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
+    }
+    // ---- round 6 (left6) batch 6 (ffx_prender::l6_map7) ----
+    /// `(window, msg, param)`: the load window's procedure (the original's
+    /// 0x11c-byte frame, its path and list layout, in this shim's); the
+    /// third word is not read.
+    rcuiLoadProc @ 0x0093_4bc0 => extern "C" fn rcui_load_proc(window: u32, msg: u32, _param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::LOAD_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::LOAD_FRAME;
+        l6m7::load_proc(&mut mem(), ebp, window, msg)
+    }
+    /// `(window, msg, param)`: the layer rectangle window's procedure
+    /// (its text and a copied preset in a frame).
+    rcuiLayerRectProc_00932a60 @ 0x0093_2a60 => extern "C" fn rcui_layer_rect_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::l6_map7::bridge::RECT_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::l6_map7::bridge::RECT_FRAME;
+        l6m7::rect_proc(&mut mem(), ebp, window, msg, param).unwrap_or(0)
     }
 }
