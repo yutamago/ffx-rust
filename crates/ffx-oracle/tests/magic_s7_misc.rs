@@ -4207,6 +4207,8 @@ fn reel_phases() {
             t.set_u32(w(&t, 0x1), phase);
             t.set_u32(w(&t, 0x4c), n);
             t.set_u32(w(&t, 0x55), m);
+            // (the byte after the count: a misread count is not small)
+            t.set_u8(w(&t, 0x55) + 4, 1);
             t.set_u32(w(&t, 0x16), h);
             // the reels' record (`reel_step`, also the record reset's)
             let i = k % 2;
@@ -4262,10 +4264,32 @@ fn flagged_object_steps() {
             (255, 2),
             (538, 2),
         ] {
-            log_calls(&mut t, s, log, n, None, move |_, a, k| {
+            // (the point's `y` and `w` words kept: the stack locals they see)
+            log_calls(&mut t, s, log, n, None, move |m, a, k| {
+                // (the point argument: the first, slot 255's second)
+                let p = match s {
+                    234 | 667 | 233 | 248 => Some(a[0]),
+                    255 => Some(a[1]),
+                    _ => None,
+                };
+                if let Some(p) = p {
+                    m.w32(log + 0x1800 + 8 * (k % 16), m.r32(p + 4));
+                    m.w32(log + 0x1804 + 8 * (k % 16), m.r32(p + 0xc));
+                }
+                if s == 248 {
+                    m.w32(log + 0x1980 + 4 * (k % 16), m.r32(a[2] + 0xc));
+                }
                 (s << 16) ^ a[n - 1] ^ k
             });
         }
+        // the frame record's handler: slot 1001, logging its pass byte
+        t.set_u32(magic::TABLE + 4 * 1001, trap(1001));
+        log_calls(&mut t, 1001, log, 1, None, move |m, a, k| {
+            m.w32(log + 0x1900 + 4 * (k % 16), m.r32(a[0] + 4));
+            k
+        });
+        let cvt = SCRATCH + 0x780;
+        t.set_u32(cvt + 0x1c, trap(1001));
         log_calls(&mut t, 217, log, 2, None, move |m, a, k| {
             let y = f32::from_bits(m.r32(ctl + 4));
             m.w32(a[1], (0.5 * k as f32).to_bits());
@@ -4308,6 +4332,7 @@ fn flagged_object_steps() {
             (4, 0x40, 1, 9.0, 1, 0, 0, 1, 0.25),
             (4, 0x40, 1, 9.0, 1, 0, 0, 3, f32::NAN),
             (4, 0x40, 0, f32::NAN, 1, 0, 0, 1, 2.0),
+            (4, 0x440, 0, 9.0, 1, 0, 0, 2, 1.0),
         ]
         .into_iter()
         .enumerate()
@@ -4319,7 +4344,7 @@ fn flagged_object_steps() {
             t.write(o, &varied(0xa0, k));
             set_ring(&mut t, s, o, (3, byte), k % 2, vt, k);
             t.write(c, &varied(0x40, k + 9));
-            t.set_u32(c, vt);
+            t.set_u32(c, cvt);
             t.set_u32(o + 0x4c, c);
             t.set_u16(o + 0x90, flags);
             t.set_u16(o + 0x92, o92);
