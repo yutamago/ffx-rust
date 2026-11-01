@@ -103,6 +103,11 @@ fn frame() {
     // slot 261 (k) answers bit k of the cell
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     recs(&mut t, &[(718, 1), (222, 4), (378, 1), (214, 1)]);
+    // the copied words distinct, the copy's target in scratch
+    t.set_u32(t.img.word(at + 0x1f), SCRATCH + 0x30);
+    t.set_u32(t.img.word(at + 0x24), 0x00a2_0024);
+    t.set_u32(t.img.word(at + 0x2b), 0x00a2_002b);
+    t.set_u32(t.img.word(at + 0xf2), 0x00a2_00f2);
     for (on, bits) in [
         (1u32, 0b0_0000u32),
         (0, 0b1_0000),
