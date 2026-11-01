@@ -35,6 +35,7 @@
 #![allow(clippy::many_single_char_names)]
 
 // the runtime and code shared by many overlays
+pub mod h6_setup;
 pub mod l1_opu;
 pub mod l3_common;
 pub mod l3_opu;
@@ -1088,6 +1089,15 @@ ports! {
     "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
     "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
     // end of magic r5 own (0450 and up) entries
+    // magic r6 own (0450 and up): entries
+    "m0499 frame" => m0499::FRAME, m0499::frame;
+    "m0513 task" => m0513::TASK, m0513::task;
+    "m0513 motion task" => m0513::MOTION_TASK, m0513::motion_task;
+    "m0513 light task" => m0513::LIGHT_TASK, m0513::light_task;
+    "m0514 motion task" => m0514::MOTION_TASK, m0514::motion_task;
+    "m0514 fade task" => m0514::FADE_TASK, m0514::fade_task;
+    "m0514 colour task" => m0514::COLOUR_TASK, m0514::colour_task;
+    // end of magic r6 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
     "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
@@ -2282,6 +2292,20 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0671 start", &m0671::START),
     ("m0672 copy keys", &m0672::COPY_KEYS),
     // end of magic r5 own (0450 and up) internal functions
+    // magic r6 own (0450 and up): internal functions
+    ("m0499 parts refresh", &m0499::PARTS_REFRESH),
+    ("m0512 setup", &m0512::SETUP),
+    ("m0512 setup from", &m0512::SETUP_FROM),
+    ("m0512 ground", &m0512::GROUND),
+    ("m0513 over node", &m0513::OVER_NODE),
+    ("m0513 between", &m0513::BETWEEN),
+    ("m0513 for target", &m0513::FOR_TARGET),
+    ("m0513 lit node", &m0513::LIT_NODE),
+    ("m0514 colour setup", &m0514::COLOUR_SETUP),
+    ("m0514 glow setup", &m0514::GLOW_SETUP),
+    ("m0514 burst setup", &m0514::BURST_SETUP),
+    ("m0514 spark setup", &m0514::SPARK_SETUP),
+    // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
     ("m0394 scaled", &m0394::SCALED),

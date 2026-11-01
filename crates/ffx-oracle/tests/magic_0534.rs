@@ -52,6 +52,10 @@ fn steps() {
     for (k, n) in [0u32, 1, 2, 7].into_iter().enumerate() {
         t.set_u32(count, n);
         t.write(seq, &[0; 0x140]);
+        // the words past the colour non-zero, so the cleared `+0x13c`
+        // shows (and a store one word on)
+        t.set_u32(seq + 0x13c, 0x5a5a_5a5a);
+        t.set_u32(seq + 0x140, 0x5a5a_5a5a);
         t.write(other, &[0; 0x100]);
         t.set_u32(seq + 0xac, k as u32);
         t.set_u32(other + 0xac, 3 - k as u32);

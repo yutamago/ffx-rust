@@ -37,7 +37,11 @@ fn steps() {
         &[(21, 3), (278, 3), (450, 2), (449, 2), (441, 3), (440, 4)],
     );
     let seq = SCRATCH + 0x1000;
-    t.write(seq, &[0x51; 0x140]);
+    // the flags word's bit 4 clear first (`|= 0x10` shows), and the
+    // word the start clears non-zero
+    t.write(seq, &[0x41; 0x140]);
+    let cleared = t.img.word(t.at(0x1000) + 0x5b);
+    t.set_u32(cleared, 0x5a5a_5a5a);
     for rva in [0x1000u32, 0x14f0] {
         t.check_entry(t.at(rva), Call::default(), &[seq], Eax::Checked);
     }

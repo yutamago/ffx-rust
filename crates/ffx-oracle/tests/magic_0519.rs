@@ -43,6 +43,9 @@ fn internals() {
         t.set_u32(p + 4 * i, f(i as f32 * 2.5 - 1.0));
     }
     let at = t.at(0x22b0);
+    // the flag byte's neighbours non-zero (a wider store shows)
+    let flag = t.img.word(at + 0x8);
+    t.set_u32(flag, 0x5a5a_5a5a);
     t.check(at, Call::this(p), &[], Eax::Checked, |g, img, fr| {
         Ret::eax(m0519::place(g, img, fr.at, fr.ecx))
     });
