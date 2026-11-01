@@ -19,7 +19,7 @@ use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 type Handler<G> = fn(&mut G, &Image, &Frame) -> u32;
 
 /// The word at `f + off` of the code (an operand).
-fn op(img: &Image, f: u32, off: u32) -> u32 {
+pub(crate) fn op(img: &Image, f: u32, off: u32) -> u32 {
     img.word(f + off)
 }
 
@@ -385,7 +385,15 @@ pub const CAMERA_RIGS_STEP: Sig = Sig {
 
 /// A call through slot `s` of the import table whose global is the
 /// operand at `f + t`.
-fn slot<G: Game>(g: &mut G, img: &Image, f: u32, t: u32, s: u32, ecx: u32, args: &[u32]) -> Out {
+pub(crate) fn slot<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    t: u32,
+    s: u32,
+    ecx: u32,
+    args: &[u32],
+) -> Out {
     let target = slot_target(g, op(img, f, t), s);
     g.call(target, ecx, args)
 }

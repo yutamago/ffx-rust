@@ -87,6 +87,8 @@ pub mod s6_misc;
 pub mod s7_misc;
 // the shared work list's eighth round (shared-8, worklist5)
 pub mod s8_misc;
+// the shared work list's ninth round (shared-9, worklist5)
+pub mod s9_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
@@ -2602,6 +2604,21 @@ ports! {
     "o6 fam pairs6 overlay_setup 0673@1000" => o6_fam_pairs6::OVERLAY_SETUP_0673_1000, o6_fam_pairs6::overlay_setup;
     "o6 fam pairs6 overlay_setup 0253@1000" => o6_fam_pairs6::OVERLAY_SETUP_0253_1000, o6_fam_pairs6::overlay_setup;
     // families2 (o6_fam_pairs5..): end of ports
+    // round 9, shared-9 (s9_misc)
+    "scene start (node tree)" => s9_misc::SCENE_START_TREE, s9_misc::scene_start_tree;
+    "paired objects start" => s9_misc::PAIRED_OBJECTS_START, s9_misc::paired_objects_start;
+    "summon load (paired objects)" => s9_misc::SUMMON_LOAD_PAIRED, s9_misc::summon_load_paired;
+    "reels draw" => s9_misc::REELS_DRAW, s9_misc::reels_draw;
+    "model sprites (a)" => s9_misc::MODEL_SPRITES_A, s9_misc::model_sprites_a;
+    "model sprites (b)" => s9_misc::MODEL_SPRITES_B, s9_misc::model_sprites_b;
+    "model sprites (b, 0085)" => s9_misc::MODEL_SPRITES_B_0085, s9_misc::model_sprites_b;
+    "model sprites (b, 0093)" => s9_misc::MODEL_SPRITES_B_0093, s9_misc::model_sprites_b;
+    "model sprites (c)" => s9_misc::MODEL_SPRITES_C, s9_misc::model_sprites_c;
+    "model sprites (d)" => s9_misc::MODEL_SPRITES_D, s9_misc::model_sprites_d;
+    "beams aimed" => s9_misc::BEAMS_AIMED, s9_misc::beams_aimed;
+    "beams with sprites" => s9_misc::BEAMS_SPRITES, s9_misc::beams_sprites;
+    "beams one by one" => s9_misc::BEAMS_ONE_BY_ONE, s9_misc::beams_one_by_one;
+    // round 9, shared-9 (s9_misc): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -3625,6 +3642,13 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &o6_fam_pairs6::SCENE_END_0434_5B90,
     ),
     // families2 (o6_fam_pairs5..): end of INTERNAL
+    // round 9, shared-9 (s9_misc)
+    ("reel frame", &s9_misc::REEL_FRAME),
+    ("reel next glyphs", &s9_misc::REEL_NEXT_GLYPHS),
+    ("reel window", &s9_misc::REEL_WINDOW),
+    ("reel draw", &s9_misc::REEL_DRAW),
+    ("sprite packets", &s9_misc::SPRITE_PACKETS),
+    // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
