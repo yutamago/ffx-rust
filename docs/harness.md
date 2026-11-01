@@ -1961,6 +1961,13 @@ The harness command `devsave <n> [lockstep]` then calls the original
 - the reply: `ok developer save <n> map <m> entrance <e> scenario <s> place
   <p> context <ctx> (from the title)`.
 
+`ffx-rust.exe` serves the same command (`crates/ffx-host/src/devsave.rs`,
+2026-11-01, host-devsave): `debugLoadForViewer` is wrapped in the
+function table, so the original `TkDebugLoadViewerSave` (in Unicorn) calls
+the same reader through the same file layer; without the harness the wrap
+runs the original. The title's part is `loadsave`'s `leave_title`, shared
+with `loadsave` there too.
+
 No save file is read or written: the sweep's games run with
 `copy_user_data: false` (an empty save folder in the sandbox). Saving from
 such a game afterwards would write the developer's state into the sandbox's
@@ -2262,7 +2269,9 @@ records).
   `FFX.exe`'s process and patches its imports and functions, where
   `ffx-host` owns the imports and the device. What it serves:
   `ping`, `stats`, `frame`, `wait`, `waitfor`, `shotwhen`, `holdfor`,
-  `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events`,
+  `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `devsave` (with the
+  archive reader under `debugLoadForViewer` in the table,
+  `crates/ffx-host/src/devsave.rs`; "Developer saves"), `trace`, `events`,
   `read`, `readp`, `readabs`, `write`, `writep`, `keys`, `key`, `pad`,
   `press`, `shot`, `gfxcapture`, `notes` (the run's notes so far, a
   failed game thread among them, listed as `events` lists), `stacks`
@@ -2286,7 +2295,7 @@ records).
   which `ffx-host`'s clock wraps (`docs/host.md`, "The clock"). There, on
   the main thread and after an in-process `--replay` script's turn, the
   trace samples, the jobs run (`call`, `wait`, `press`'s release,
-  `waitfor`, `shotwhen`, `holdfor`, `loadsave`, `pin`) and lockstep holds
+  `waitfor`, `shotwhen`, `holdfor`, `loadsave`, `devsave`, `pin`) and lockstep holds
   until the script allows more updates; then the clock's loader, vsync
   and FMOD turns, the `callnext` calls and the update. The clock is always
   virtual and the frames always run back to back (fast mode); lockstep is
