@@ -36,6 +36,7 @@ fn end() {
     let (a, b) = (SCRATCH + 0x2000, SCRATCH + 0x3000);
     for case in 0..3 {
         t.write(n, &[0x31; 0x20]);
+        t.set_u16(n + 0x18, 5);
         t.write(a, &[0x32; 0x20]);
         t.write(b, &[0x33; 0x20]);
         t.set_u32(w(&t, 0x2), if case == 0 { 0 } else { n });
