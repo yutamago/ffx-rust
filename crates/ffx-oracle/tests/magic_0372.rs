@@ -56,6 +56,7 @@ fn frame() {
     let tw = |t: &magic::Twin, off: u32| t.img.word(tl + off);
     t.set_u32(w(&t, 0x0d), SCRATCH + 0x640);
     t.set_u32(w(&t, 0x44), 0x00aa_0044);
+    t.set_u32(w(&t, 0x70), 0x00aa_0070);
     for (running, on, live) in [(0u32, 1u32, 0u32), (1, 0, 0), (1, 1, 0), (1, 1, 1)] {
         t.set_u32(w(&t, 0x02), running);
         t.set_u32(SCRATCH + 0x6f0, on);

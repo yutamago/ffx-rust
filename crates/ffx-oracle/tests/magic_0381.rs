@@ -32,7 +32,8 @@ fn poses() {
     ] {
         t.set_u32(w(&t, 0x02), battle);
         t.set_u32(w(&t, 0x0a), caster);
-        t.write(tb, &[target]);
+        // the byte's neighbours junk (the port reads 8 bits)
+        t.write(tb, &[target, 0x5a, 0x5a, 0x5a]);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -54,7 +55,7 @@ fn start_up_0383() {
     let (count, head) = (t.img.word(pop + 0x04), t.img.word(pop + 0x13));
     let (n1, n2) = (SCRATCH + 0x1800, SCRATCH + 0x1840);
     let last = SCRATCH + 0x1900;
-    for op in [0x16, 0x20, 0x2e, 0x3c, 0x46] {
+    for op in [0x16, 0x20, 0x2e, 0x3c, 0x46, 0x51, 0x59] {
         t.set_u32(w(&t, op), 0x5a5a_5a5b);
     }
     for first in [0u32, last] {

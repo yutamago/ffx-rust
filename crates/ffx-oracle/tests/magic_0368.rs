@@ -17,7 +17,12 @@ fn draw() {
     for (s, n) in [(258u32, 1usize), (231, 3)] {
         rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
     }
-    rec(&mut t, 712, 2, |m, _| m.r32(SCRATCH + 0x6f0));
+    // slot 712 also copies the flag (`SCRATCH + 0x600`) it sees out
+    rec(&mut t, 712, 2, |m, _| {
+        let seen = m.r32(SCRATCH + 0x600);
+        m.w32(SCRATCH + 0x6e0, seen);
+        m.r32(SCRATCH + 0x6f0)
+    });
     let lock = SCRATCH + 0x600;
     t.set_u32(t.img.word(at + 0x5f), lock);
     t.set_u32(t.img.word(at + 0x52), SCRATCH + 0x640);

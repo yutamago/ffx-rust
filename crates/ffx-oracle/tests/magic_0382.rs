@@ -31,7 +31,7 @@ fn context(t: &mut Twin, at: u32, ctx_op: u32) {
 fn run_obj(t: &mut Twin, at: u32) {
     let obj = SCRATCH + 0x1000;
     for i in [0u32, 2] {
-        t.write(obj, &[0x5c; 0x140]);
+        t.write(obj, &[0x5c; 0x400]);
         t.set_u32(obj + 0xac, i);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
