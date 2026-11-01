@@ -32,8 +32,12 @@ fn static_node() {
     let at = t.at(0x7d30);
     let (parent, child) = (SCRATCH + 0x100, SCRATCH + 0x200);
     for case in 0..3 {
-        t.write(parent, &[0x2b; 0x20]);
-        t.write(child, &[0x2c; 0x20]);
+        // varied bytes (a field read one word on shows), and the node's
+        // words after its 0xff half-word non-zero
+        let pat = |k: u32| -> Vec<u8> { (0..0x20u32).map(|i| (k + 7 * i) as u8).collect() };
+        t.write(parent, &pat(0x2b));
+        t.write(child, &pat(0x2c));
+        t.set_u32(t.img.word(at + 0x6), 0x5d5d_0000);
         t.set_u32(parent + 0x10, if case == 2 { child } else { parent });
         let c = Call {
             edx: if case == 0 { 0 } else { parent },

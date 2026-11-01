@@ -96,6 +96,7 @@ fn centre() {
     for n in [0i32, -2, 1, 3] {
         t.set_u32(obj + 0x162c, n.cast_unsigned());
         t.write(out, &[0x55; 0x10]);
+        magic_h6::scrub(&mut t);
         t.check(at, Call::this(rec), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0613::centre(g, img, fr))
         });

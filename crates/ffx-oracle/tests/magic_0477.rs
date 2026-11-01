@@ -35,9 +35,9 @@ fn cells(t: &Twin) -> (u32, u32) {
 /// The DLL's state for the part functions: the point globals each copy
 /// reads (filled with distinct floats), the slots' stubs, slot 712's
 /// answer from `answer`. Slots 258, 712 and 713 keep the part pointer's
-/// cell and the game flag as they find them, and 712 moves both on (as
-/// the game's part code may), so a store left out before or after a call
-/// shows.
+/// cell and the game flag as they find them, and 230 and 712 move them on
+/// (as the game's part code may), so a store left out before or after a
+/// call shows.
 fn setup(t: &mut Twin, answer: u32) {
     for (a, n) in [
         (0x1005_c600u32, 0x100u32),
@@ -79,7 +79,11 @@ fn setup(t: &mut Twin, answer: u32) {
             (0x5a5a_0000 + slot) ^ a.first().copied().unwrap_or(0)
         });
     }
-    recs(t, &[(723, 1), (724, 2), (231, 3), (230, 2), (714, 5)]);
+    rec(t, 230, 2, move |m, _| {
+        m.w32(gp, 0x6666_0230);
+        0x5a5a_0230
+    });
+    recs(t, &[(723, 1), (724, 2), (231, 3), (714, 5)]);
 }
 
 /// Every part function, with slot 712 saying 0 and 1.
@@ -131,5 +135,9 @@ fn start_up() {
     ] {
         t.write(a, &vec![0x5e; n as usize]);
     }
+    // the word below the first record (a cleared word one record early
+    // shows)
+    let rec0 = t.img.word(at + 0x2e1);
+    t.set_u32(rec0 - 0x10, 0x5e5e_5e5f);
     t.check_entry(at, Call::default(), &[0x00a6_0000], Eax::Checked);
 }

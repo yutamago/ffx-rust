@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -172,7 +173,16 @@ fn sway_frame() {
     let sr = t.img.rel32_target(at + 0xb1);
     let h = t.img.word(sr + 0x1d);
     t.set_u32(h, 0x00a5_001d);
-    for angle in [10.0f32, 0.5, -10.0] {
+    // the step, the bounds: also exactly at each bound after the step
+    let step = magic_hi::konst(&t, at, 0xc1);
+    let (hi, lo) = (magic_hi::konst(&t, at, 0xcb), magic_hi::konst(&t, at, 0xdf));
+    for angle in [
+        10.0f32,
+        0.5,
+        -10.0,
+        magic_h6::hits(hi, step),
+        magic_h6::hits(lo, step),
+    ] {
         t.write(s, &[0x2b; 0xb00]);
         for (i, o) in [0xa80u32, 0xa88, 0xa90, 0xa98, 0xa94, 0xa9c, 0x6c0, 0x6c8]
             .into_iter()
