@@ -8,7 +8,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// object ([`pool_take_140`](crate::sb_misc::pool_take_140); none: 0) is
 /// started ([`start_object_at`](crate::s4_misc::start_object_at), scale
 /// the float at `+0x13`, index 0, owners 0 and the immediate `+0x19`, the
-/// caller's `ecx` among the words); slot 325 `(O + 0xd0, p + 0x24c)` (the
+/// object among the words); slot 325 `(O + 0xd0, p + 0x24c)` (the
 /// start's words left under it); `O + 0x120` = `*G_ME` (`+0x56`) for
 /// actor `p[0x280]` -1, else the byte `(*G_L)[actor]` (`+0x6b`); then a
 /// tail jump into [`smoke_puff`](crate::s6_misc::smoke_puff) with `ecx`
@@ -24,7 +24,8 @@ pub fn smoke_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x25), o, scale, 0, 0, w(0x19));
     let p = fr.arg(g, 0);
     let t = slot_target(g, w(0x3b), 325);
-    g.call(t, 0, &[o + 0xd0, p + 0x24c, 0, 0, fr.ecx, w(0x19)]);
+    // the start's words: `ecx` was the pool take's record (the object)
+    g.call(t, 0, &[o + 0xd0, p + 0x24c, 0, 0, o, w(0x19)]);
     let i = g.read::<u32>(p + 0x280);
     let (v, jmp) = if i == u32::MAX {
         (g.read::<u32>(w(0x56)), 0x66)

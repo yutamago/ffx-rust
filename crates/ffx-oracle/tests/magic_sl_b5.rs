@@ -15,6 +15,14 @@ fn dirty(t: &mut Twin) {
     t.write(STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
 }
 
+/// `n` bytes that differ from word to word (seeded by `seed`), so a port
+/// that reads the wrong word of a block reads another value.
+fn varied(n: usize, seed: u8) -> Vec<u8> {
+    (0..n)
+        .map(|i| u8::try_from((i * 7 + usize::from(seed)) % 251).unwrap())
+        .collect()
+}
+
 /// Every slot in `slots` recorded with its word count, answering a
 /// distinct value mixed with its first word.
 fn recs(t: &mut Twin, slots: &[(u32, usize)]) {
@@ -88,7 +96,7 @@ fn obj_setup(t: &mut Twin, s: u32, count: u16) {
 
 /// A motion script record at `sc` done or waiting.
 fn script(t: &mut Twin, sc: u32, done: bool) {
-    t.write(sc, &[0x5a; 0x20]);
+    t.write(sc, &varied(0x20, 0x5a));
     t.set_u32(sc + 0x14, u32::from(done));
     t.set_u16(sc + 0x18, 3);
 }
@@ -116,9 +124,9 @@ fn scripts_steps_0380_0381() {
                 t.set_u32(t.img.word(at + 0x37), 0xffff_ffff);
                 t.set_u32(t.img.word(at + 0x43), 0xffff_ffff);
             }
-            t.write(task, &[0x11; 0x20]);
+            t.write(task, &varied(0x20, 0x11));
             t.set_u32(task + 8, r);
-            t.write(r, &[0x22; 0x20]);
+            t.write(r, &varied(0x20, 0x22));
             dirty(&mut t);
             t.check_entry(at, Call::default(), &[task], Eax::Checked);
         }
@@ -141,7 +149,7 @@ fn object_starts_0393_0432() {
         t.set_u32(t.img.word(at + sop), blk);
         for count in [3u16, 0] {
             obj_setup(&mut t, s, count);
-            t.write(blk, &[0x5a; 0x3400]);
+            t.write(blk, &varied(0x3400, 0x5a));
             dirty(&mut t);
             t.check_entry(at, Call::this(0x0ecc_0005), &[], Eax::Checked);
         }
@@ -158,7 +166,7 @@ fn scale_e3c_0430() {
     t.set_u32(t.img.word(at + 0xe), blk);
     for k in 0..2u32 {
         pools(&mut t, at, 0x58, 2 + k);
-        t.write(blk + 0xe00, &[0x55; 0x80]);
+        t.write(blk + 0xe00, &varied(0x80, 0x55));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
@@ -178,7 +186,7 @@ fn point_below_0432() {
     });
     t.set_u32(t.img.word(at + 0x2b), 0x00e0_002b);
     let a = SCRATCH + 0x3000;
-    t.write(a, &[0x44; 0x100]);
+    t.write(a, &varied(0x100, 0x44));
     dirty(&mut t);
     t.check_entry(at, Call::default(), &[a], Eax::Checked);
 }
@@ -196,7 +204,7 @@ fn second_start_0434() {
     for (k, count) in [3u16, 0].into_iter().enumerate() {
         obj_setup(&mut t, s, count);
         t.set_u32(SCRATCH + 0x20, u32::try_from(k).unwrap() + 3);
-        t.write(blk, &[0x5a; 0x800]);
+        t.write(blk, &varied(0x800, 0x5a));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
@@ -215,7 +223,7 @@ fn object_or_fade_0396() {
         obj_setup(&mut t, s, count);
         pools(&mut t, at, 0x40, 3);
         t.set_u32(t.img.word(at + 0x2), flag);
-        t.write(blk, &[0x5a; 0x2500]);
+        t.write(blk, &varied(0x2500, 0x5a));
         dirty(&mut t);
         t.check_entry(at, Call::this(0x0ecc_0006), &[], Eax::Checked);
     }
@@ -251,14 +259,14 @@ fn fade_visit_0445() {
     .into_iter()
     .enumerate()
     {
-        t.write(node, &[0x22; 0x60]);
+        t.write(node, &varied(0x60, 0x22));
         t.set_u32(node, vt);
         t.set_u8(node + 0x1a, 5);
         t.set_u32(node + 0x10, node);
         t.set_u32(node + 0x14, parent);
         t.set_u32(node + 4, parent);
         t.set_u32(node + 8, parent);
-        t.write(parent, &[0x33; 0x20]);
+        t.write(parent, &varied(0x20, 0x33));
         t.set_u16(parent + 0x18, 2);
         t.set_u32(node + 0x54, count);
         t.set_u8(node + 0x58, flag);
@@ -294,8 +302,8 @@ fn pair_start_0367() {
     let s = t.img.rel32_target(at + 0x13);
     for count in [3u16, 1, 0] {
         obj_setup(&mut t, s, count);
-        t.write(t.img.word(at + 0xc), &[0x5a; 0x130]);
-        t.write(t.img.word(at + 0x23), &[0x5a; 0x130]);
+        t.write(t.img.word(at + 0xc), &varied(0x130, 0x5a));
+        t.write(t.img.word(at + 0x23), &varied(0x130, 0x5a));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
@@ -341,13 +349,13 @@ fn countdown_step_0354() {
         t.set_u32(t.img.word(at + 0x4), count);
         t.set_u32(t.img.word(at + 0x47), d);
         let sc = t.img.word(at + 0x51);
-        t.write(sc, &[0x5a; 0x20]);
+        t.write(sc, &varied(0x20, 0x5a));
         t.set_u32(sc + 0x14, u32::from(done));
         t.set_u16(sc + 0x18, 3);
         magic_hi::objects(&mut t, ro, running);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -369,7 +377,7 @@ fn starts_with_tasks_0393_0397() {
         for (k, count) in [3u16, 0].into_iter().enumerate() {
             obj_setup(&mut t, s, count);
             pools(&mut t, at, 0xb0, 2 + u32::try_from(k).unwrap());
-            t.write(blk, &[0x5a; 0x2500]);
+            t.write(blk, &varied(0x2500, 0x5a));
             dirty(&mut t);
             t.check_entry(at, Call::this(0x0ecc_0009), &[], Eax::Checked);
         }

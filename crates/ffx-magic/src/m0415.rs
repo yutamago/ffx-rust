@@ -62,3 +62,60 @@ pub const TURNS_STEP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An effect object on a model (0x10001b90, cdecl `(a)`): slot 444 `(1)`;
+/// with `m = (*G_E)[0x1a0 + 4 a[0x2c + 16 a[0xac]]]` (`*G_E` operand
+/// `+0x26`): slot 446 `(m, 0)`, slot 442 `(a, m, 6)`, slot 443 `(a,
+/// 0x10)`; `a + 0xd0..0xdc` `(0, 0, -4, 0)`, `+0x130..0x138` 0.3, `+0x13c`
+/// 0; slot 440 `(*G_E, a, 0, 2)` (`+0x6c`), slot 450 `(a, F1)` and slot
+/// 449 `(a, F2)` (the immediates `+0xce`, `+0xe1`), each over the earlier
+/// words. Returns slot 449's `eax`.
+pub fn model_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let mut s = Pushes::default();
+    s.push(1);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x4), 444), fr.ecx);
+    let a = fr.arg(g, 0);
+    let i = g.read::<u32>(a + 0xac);
+    let c = g.read::<u32>(a.wrapping_add(i.wrapping_mul(16)).wrapping_add(0x2c));
+    let m = g.read::<u32>(
+        g.read::<u32>(w(0x26))
+            .wrapping_add(c.wrapping_mul(4))
+            .wrapping_add(0x1a0),
+    );
+    s.push_all(&[0, m]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x32), 446), fr.ecx);
+    s.push_all(&[6, m, a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x40), 442), fr.ecx);
+    s.push_all(&[0x10, a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x51), 443), fr.ecx);
+    s.push_all(&[2, 0, a, g.read::<u32>(w(0x6c))]);
+    for (o, v) in [(0xd0u32, 0u32), (0xd4, 0), (0xd8, 0xc080_0000), (0xdc, 0)] {
+        g.write::<u32>(a + o, v);
+    }
+    for o in [0x130u32, 0x134, 0x138] {
+        g.write::<u32>(a + o, 0x3e99_999a);
+    }
+    g.write::<u32>(a + 0x13c, 0);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x61), 440), fr.ecx);
+    s.push_all(&[w(0xce), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xc9), 450), fr.ecx);
+    s.push_all(&[w(0xe1), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0xdc), 449), fr.ecx).eax)
+}
+
+/// [`model_setup`] (245 bytes, 1 overlay).
+pub const MODEL_SETUP: Sig = Sig {
+    len: 245,
+    hash: 0x1db6_cebc_5cd3_6ff9,
+    calls: &[],
+    imports: &[],
+};

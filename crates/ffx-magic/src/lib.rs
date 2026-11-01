@@ -94,6 +94,7 @@ pub mod s8_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
+pub mod sl_host;
 pub mod sl_wrap;
 
 // round 6, the shape families across both work lists (o6_fam_*)
@@ -225,6 +226,7 @@ pub mod m0292;
 pub mod m0295;
 pub mod m0297;
 pub mod m0298;
+pub mod m0300;
 pub mod m0301;
 pub mod m0303;
 pub mod m0304;
@@ -2777,6 +2779,12 @@ ports! {
     "m0354 countdown step" => m0354::COUNTDOWN_STEP, m0354::countdown_step;
     "m0393 ninth scaled" => m0393::NINTH_SCALED, m0393::ninth_scaled;
     "m0397 object fade" => m0397::OBJECT_FADE, m0397::object_fade;
+    "m0300 object setup" => m0300::OBJECT_SETUP, m0300::object_setup;
+    "m0301 aimed setup" => m0301::AIMED_SETUP, m0301::aimed_setup;
+    "m0301 thrown setup" => m0301::THROWN_SETUP, m0301::thrown_setup;
+    "m0300 bone setup" => m0300::BONE_SETUP, m0300::bone_setup;
+    "m0300 offset setup" => m0300::OFFSET_SETUP, m0300::offset_setup;
+    "m0415 model setup" => m0415::MODEL_SETUP, m0415::model_setup;
     // magic small-lo: end of ports
 }
 
@@ -3883,6 +3891,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0348 lights models", &m0348::LIGHTS_MODELS),
     ("m0350 lights models parts", &m0350::LIGHTS_MODELS_PARTS),
     ("m0389 static strip", &m0389::STATIC_STRIP),
+    ("sl_host 0391", &sl_host::HOSTED_0391),
+    ("sl_host 0448", &sl_host::HOSTED_0448),
+    ("sl_host 0444", &sl_host::HOSTED_0444),
+    ("sl_host 0199", &sl_host::HOSTED_0199),
     // magic small-lo: end of INTERNAL
 ];
 

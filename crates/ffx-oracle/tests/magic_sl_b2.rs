@@ -18,6 +18,14 @@ fn dirty(t: &mut Twin) {
     t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
 }
 
+/// `n` bytes that differ from word to word (seeded by `seed`), so a port
+/// that reads the wrong word of a block reads another value.
+fn varied(n: usize, seed: u8) -> Vec<u8> {
+    (0..n)
+        .map(|i| u8::try_from((i * 7 + usize::from(seed)) % 251).unwrap())
+        .collect()
+}
+
 /// The pool takes reached from `at` (`len` bytes, one call deep).
 fn takes(img: &Image, at: u32, len: u32, depth: u32, out: &mut Vec<u32>) {
     for p in at..at + len {
@@ -51,7 +59,7 @@ fn pools(t: &mut Twin, at: u32, len: u32, n: u32) {
 /// or holding a node.
 fn task_list(t: &mut Twin, head: u32, tail: u32, full: bool) {
     let node = SCRATCH + 0x7000;
-    t.write(node, &[0x3a; 0x1c]);
+    t.write(node, &varied(0x1c, 0x3a));
     t.set_u32(head, if full { node } else { 0 });
     t.set_u32(tail, if full { node } else { 0 });
 }
@@ -68,8 +76,8 @@ fn scale_start_0162() {
     t.set_u32(w(&t, 0x13), s);
     for full in [false, true] {
         pools(&mut t, at, 202, 3);
-        t.write(s + 0x8390, &[0x77; 0x20]);
-        t.write(s + 0x8428, &[0x55; 0x40]);
+        t.write(s + 0x8390, &varied(0x20, 0x77));
+        t.write(s + 0x8428, &varied(0x40, 0x55));
         let (h, l) = (w(&t, 0x92), w(&t, 0x9a));
         task_list(&mut t, h, l, full);
         dirty(&mut t);
@@ -87,7 +95,7 @@ fn scale_start_0165() {
     t.set_u32(w(&t, 0x2), b);
     for k in 0..2u32 {
         pools(&mut t, at, 79, 2 + k);
-        t.write(b + 0x59f8, &[0x55; 0x40]);
+        t.write(b + 0x59f8, &varied(0x40, 0x55));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
@@ -125,7 +133,7 @@ fn object_start_0162() {
     t.set_u32(t.img.word(at + 0xb), blk);
     for (count, tail) in [(3u16, 0u32), (2, SCRATCH + 0x600), (0, 0)] {
         object_setup(&mut t, s, count, tail);
-        t.write(blk + 0x130, &[0x5a; 0x130]);
+        t.write(blk + 0x130, &varied(0x130, 0x5a));
         for i in 0..4u32 {
             t.set_u32(blk + 0x960 + 4 * i, (1.5 + i as f32).to_bits());
         }
@@ -145,8 +153,12 @@ fn mean_visit_0164() {
     let thunk = t.at(0x49a0);
     let slot = 1000u32;
     t.set_u32(magic::TABLE + 4 * slot, TRAPS + 16 * slot);
+    // the method logs the second word of what it gets (the object's
+    // local: the pass byte in it)
     rec(&mut t, slot, 1, |m, a| {
-        m.r32(a[0]) ^ m.r32(a[0] + 4) ^ 0x1000
+        let v = m.r32(a[0] + 4);
+        m.w32(SCRATCH + 0x37f0, v);
+        m.r32(a[0]) ^ v ^ 0x1000
     });
     rec(&mut t, 234, 3, |_, a| a[0] ^ a[1] ^ a[2]);
     let vt = SCRATCH + 0x900;
@@ -166,16 +178,16 @@ fn mean_visit_0164() {
     .into_iter()
     .enumerate()
     {
-        t.write(node, &[0x22; 0x40]);
+        t.write(node, &varied(0x40, 0x22));
         t.set_u32(node, vt);
         t.set_u8(node + 0x1a, 5);
         t.set_u32(node + 0x10, if kids { kid } else { node });
-        t.write(kid, &[0x44; 0x20]);
+        t.write(kid, &varied(0x20, 0x44));
         t.set_u32(kid, vt);
         t.set_u32(kid + 8, node);
         t.set_u32(node + 0x2c, if has { obj } else { 0 });
         t.set_u32(node + 0x1c, out);
-        t.write(obj, &[0x33; 0x1700]);
+        t.write(obj, &varied(0x1700, 0x33));
         t.set_u32(obj, vt);
         t.set_u8(obj + 0x1640, 8);
         t.set_u32(cur, node);
@@ -221,12 +233,12 @@ fn object_starts_0165() {
         {
             let k = u32::try_from(k).unwrap();
             object_setup(&mut t, s, count, tail);
-            t.write(blk, &[0x5a; 0x1000]);
+            t.write(blk, &varied(0x1000, 0x5a));
             for i in 0..4u32 {
                 t.set_u32(blk + 0x9f0 + 4 * i, (2.5 + i as f32).to_bits());
             }
             t.set_u32(blk + 0x5f1c, k + 1);
-            t.write(blk + 0x5960, &[0x77; 0x20]);
+            t.write(blk + 0x5960, &varied(0x20, 0x77));
             let angle = [7.0f32, 0.25, -7.0][k as usize];
             t.set_u32(blk + 0x5ee8, angle.to_bits());
             if rva == 0x2f10 {
@@ -250,7 +262,7 @@ fn object_task_0168() {
         pools(&mut t, at, 112, 2);
         let (h, l) = (t.img.word(at + 0x63), t.img.word(at + 0x54));
         task_list(&mut t, h, l, full);
-        t.write(obj, &[0x5a; 0x130]);
+        t.write(obj, &varied(0x130, 0x5a));
         t.check(at, Call::this(obj), &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::m0168::object_task(g, img, fr.at, fr.ecx))
         });
@@ -268,7 +280,10 @@ fn object_start_0168() {
     t.set_u32(t.img.word(at + 0xc), blk);
     for (count, tail) in [(3u16, 0u32), (2, SCRATCH + 0x600), (0, 0)] {
         anim_setup(&mut t, s, count, tail);
-        t.write(blk, &[0x5a; 0x1000]);
+        t.write(blk, &varied(0x1000, 0x5a));
+        for i in 0..4u32 {
+            t.set_u32(blk + 0xac0 + 4 * i, 0x0ac0_0000 + i);
+        }
         t.set_u32(blk + 0x3150, 0x0031_5000 + u32::from(count));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
@@ -298,7 +313,7 @@ fn anim_setup(t: &mut Twin, s: u32, count: u16, tail: u32) {
 
 /// A motion script record at `sc` done or waiting.
 fn script(t: &mut Twin, sc: u32, done: bool) {
-    t.write(sc, &[0x5a; 0x20]);
+    t.write(sc, &varied(0x20, 0x5a));
     t.set_u32(sc + 0x14, u32::from(done));
     t.set_u16(sc + 0x18, 3);
 }
@@ -325,9 +340,9 @@ fn grid_step_0171() {
         script(&mut t, sc, done);
         magic_hi::objects(&mut t, ro, running);
         t.set_u32(t.img.word(at + 0x20), flag);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -351,9 +366,9 @@ fn square_step_0180() {
         magic_hi::motion(&mut t, ms, done);
         magic_hi::objects(&mut t, ro, running);
         t.set_u32(t.img.word(at + 0x1f), flag);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -372,7 +387,7 @@ fn main_start_0180() {
         let count = [3u16, 0, 2][k];
         let tail = if k == 2 { SCRATCH + 0x600 } else { 0 };
         at_setup(&mut t, s, count, tail);
-        t.write(obj, &[0x5a; 0x130]);
+        t.write(obj, &varied(0x130, 0x5a));
         t.set_u32(t.img.word(at + 0x3e), angle.to_bits());
         for o in [
             0x81u32, 0x8b, 0x95, 0x9f, 0xa9, 0xb3, 0xbd, 0xc7, 0xd7, 0xe1,
@@ -474,8 +489,8 @@ fn nodes_0186() {
     for (at, pop) in [(mn, 0x24u32), (cn, 0x12)] {
         let parent = t.img.word(at + pop);
         for with_kid in [false, true] {
-            t.write(node, &[0x5c; 0x200]);
-            t.write(kid, &[0x2c; 0x40]);
+            t.write(node, &varied(0x200, 0x5c));
+            t.write(kid, &varied(0x40, 0x2c));
             t.set_u32(parent + 0x10, if with_kid { kid } else { parent });
             t.set_u16(parent + 0x18, 5);
             dirty(&mut t);

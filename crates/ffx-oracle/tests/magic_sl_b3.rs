@@ -16,6 +16,14 @@ fn dirty(t: &mut Twin) {
     t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
 }
 
+/// `n` bytes that differ from word to word (seeded by `seed`), so a port
+/// that reads the wrong word of a block reads another value.
+fn varied(n: usize, seed: u8) -> Vec<u8> {
+    (0..n)
+        .map(|i| u8::try_from((i * 7 + usize::from(seed)) % 251).unwrap())
+        .collect()
+}
+
 /// Every slot in `slots` recorded with its word count, answering a
 /// distinct value mixed with its first word.
 fn recs(t: &mut Twin, slots: &[(u32, usize)]) {
@@ -28,7 +36,7 @@ fn recs(t: &mut Twin, slots: &[(u32, usize)]) {
 
 /// A motion script record at `sc` done or waiting.
 fn script(t: &mut Twin, sc: u32, done: bool) {
-    t.write(sc, &[0x5a; 0x20]);
+    t.write(sc, &varied(0x20, 0x5a));
     t.set_u32(sc + 0x14, u32::from(done));
     t.set_u16(sc + 0x18, 3);
 }
@@ -51,9 +59,9 @@ fn script_step_0199() {
         script(&mut t, sc, done);
         magic_hi::objects(&mut t, ro, running);
         t.set_u32(t.img.word(at + 0x20), flag);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -96,7 +104,7 @@ fn model_visit_0203() {
         .into_iter()
         .enumerate()
     {
-        t.write(node, &[0x22; 0x40]);
+        t.write(node, &varied(0x40, 0x22));
         t.set_u32(node, vt);
         t.set_u8(node + 0x1a, 5);
         t.set_u32(node + 0x10, node);
@@ -105,10 +113,10 @@ fn model_visit_0203() {
         t.set_u32(node + 0x20, owner);
         t.set_u32(node + 0x24, 0x0024_0024);
         t.set_u8(node + 0x28, flag);
-        t.write(model, &[0x33; 0xa0]);
+        t.write(model, &varied(0xa0, 0x33));
         t.set_u32(model + 0x14, parent);
         t.set_u32(model + 0x90, 1);
-        t.write(parent, &[0x44; 0x20]);
+        t.write(parent, &varied(0x20, 0x44));
         t.set_u16(parent + 0x18, 3);
         t.set_u32(parent + 0x10, model);
         t.set_u32(model + 8, parent);
@@ -140,11 +148,11 @@ fn records_start_0206() {
     let rc = t.img.rel32_target(at + 0x5f);
     let recs_at = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(rc + 0x7), recs_at);
-    t.write(recs_at, &[0x5a; 0x1000]);
+    t.write(recs_at, &varied(0x1000, 0x5a));
     for o in [0x68u32, 0x72, 0x7c] {
         t.set_u32(t.img.word(at + o), 0x7777_7777);
     }
-    t.write(t.img.word(at + 0x38), &[0x66; 0x30]);
+    t.write(t.img.word(at + 0x38), &varied(0x30, 0x66));
     dirty(&mut t);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
@@ -169,8 +177,8 @@ fn copy_node_0207() {
         t.set_u32(src + 4 * i, 0x5000_0000 + i);
     }
     for with_kid in [false, true] {
-        t.write(node, &[0x5c; 0x200]);
-        t.write(kid, &[0x2c; 0x40]);
+        t.write(node, &varied(0x200, 0x5c));
+        t.write(kid, &varied(0x40, 0x2c));
         t.set_u32(parent + 0x10, if with_kid { kid } else { parent });
         t.set_u16(parent + 0x18, 5);
         dirty(&mut t);
@@ -198,16 +206,21 @@ fn grid_step_0250() {
         (2, None, true, false),
     ] {
         for i in 0..4 {
-            let v = if clear == Some(i) { 0x7fff } else { 0x8000 | i };
+            // the record past the last one counted lacks the bit
+            let v = if clear == Some(i) || i == 3 {
+                0x7fff
+            } else {
+                0x8000 | i
+            };
             t.set_u16(recs_at + 0xb4 * i, v.try_into().unwrap());
         }
         t.set_u32(t.img.word(at + 0x8), n);
         let sc = t.img.word(at + 0x38);
         script(&mut t, sc, done);
         magic_hi::objects(&mut t, ro, running);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -250,7 +263,7 @@ fn spark_0250() {
         }
         t.set_u32(count, n);
         t.set_u32(rover, 0);
-        t.write(p, &[0x44; 0xb0]);
+        t.write(p, &varied(0xb0, 0x44));
         t.set_u8(p + 0xa4, flag);
         t.set_u32(p + 0xa0, 2);
         dirty(&mut t);
@@ -292,13 +305,25 @@ fn camera_step_0249() {
         (true, true, 0),
         (true, false, 1),
         (true, false, 0),
+        (true, true, 1),
+        (false, false, 1),
     ] {
         magic_hi::motion(&mut t, ms, done);
         magic_hi::objects(&mut t, ro, running);
         t.set_u32(t.img.word(pl + 0x12), on);
-        t.write(task, &[0x11; 0x20]);
+        // every light fading past its cap: the pulse answers 1
+        let lights = t.img.word(pl + 0x3a);
+        let cap = f32::from_bits(t.u32(t.img.word(pl + 0x187)));
+        let step = f32::from_bits(t.u32(t.img.word(pl + 0x180)));
+        for i in 0..6u32 {
+            let l = lights + 0x34 * i;
+            t.set_u32(l, 5);
+            t.set_u32(l + 8, 1);
+            t.set_u32(l - 8, (cap - step + 1.0).to_bits());
+        }
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -343,9 +368,9 @@ fn programs_step_0260() {
     for (done, running) in [(false, false), (true, true), (true, false)] {
         magic_hi::motion(&mut t, ms, done);
         magic_hi::objects(&mut t, ro, running);
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -388,7 +413,7 @@ fn actor_start_0260() {
     {
         at_setup(&mut t, s, [3u16, 2, 0, 1][k], 0);
         t.write(base, &[0x5a; 0x130 * 3]);
-        t.write(p, &[0x44; 0x400]);
+        t.write(p, &varied(0x400, 0x44));
         t.set_u32(p + 0x390, i);
         t.set_u32(p + 0xc4, angle.to_bits());
         for o in [0xa8u32, 0xb2, 0xbc, 0xc6, 0xd0, 0xda, 0xe4, 0xee, 0xf8] {
@@ -413,7 +438,7 @@ fn point_below_0271() {
     });
     t.set_u32(t.img.word(at + 0x28), 0x00e0_0028);
     let a = SCRATCH + 0x3000;
-    t.write(a, &[0x44; 0x100]);
+    t.write(a, &varied(0x100, 0x44));
     dirty(&mut t);
     t.check_entry(at, Call::default(), &[a], Eax::Checked);
 }
@@ -435,10 +460,21 @@ fn smoke_start_0284() {
     t.write(list, &[9, 8, 7, 6]);
     t.set_u32(t.img.word(at + 0x56), 0x00ee_0056);
     let p = SCRATCH + 0x3000;
+    // the 0x140-byte records: two, both busy in case 0, the second free
+    // after
+    let recs_at = SCRATCH + 0x6000;
+    t.set_u32(t.img.word(pt + 0x09), 2);
+    t.set_u32(t.img.word(pt + 0x16), recs_at);
     for (k, actor) in [0u32, u32::MAX, 2].into_iter().enumerate() {
-        let _ = pt;
+        t.set_u32(t.img.word(pt + 0x01), 0);
+        t.write(recs_at, &varied(0x280, 0x41));
+        for i in 0..2u32 {
+            let busy = k == 0 || i == 0;
+            t.set_u32(recs_at + 0x140 * i + 0x130, u32::from(busy));
+            t.set_u16(recs_at + 0x140 * i + 0x124, 0x8000);
+        }
         at_setup(&mut t, s, if k == 0 { 0 } else { 3 }, 0);
-        t.write(p, &[0x44; 0x300]);
+        t.write(p, &varied(0x300, 0x44));
         t.set_u32(p + 0x280, actor);
         dirty(&mut t);
         t.check_entry(at, Call::this(0x0ecc_0001), &[p], Eax::Checked);
@@ -484,8 +520,8 @@ fn smoke_main_0287() {
     let p = SCRATCH + 0x3000;
     for count in [3u16, 0] {
         owners_setup(&mut t, s, count);
-        t.write(t.img.word(at + 0x18), &[0x5a; 0x130]);
-        t.write(p, &[0x44; 0x300]);
+        t.write(t.img.word(at + 0x18), &varied(0x130, 0x5a));
+        t.write(p, &varied(0x300, 0x44));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[p], Eax::Checked);
     }
@@ -521,10 +557,10 @@ fn leave_and_register_0295() {
     .into_iter()
     .enumerate()
     {
-        t.write(node, &[0x22; 0x40]);
-        t.write(parent, &[0x33; 0x20]);
-        t.write(a, &[0x44; 0x10]);
-        t.write(b, &[0x55; 0x10]);
+        t.write(node, &varied(0x40, 0x22));
+        t.write(parent, &varied(0x20, 0x33));
+        t.write(a, &varied(0x10, 0x44));
+        t.write(b, &varied(0x10, 0x55));
         t.set_u32(node + 0x14, if par { parent } else { 0 });
         t.set_u32(node + 4, prev);
         t.set_u32(node + 8, next);
@@ -574,9 +610,9 @@ fn models_step_0298() {
         for i in 0..4 {
             t.set_u32(recs_at + 0x54 * i, if empty == Some(i) { 0 } else { 1 + i });
         }
-        t.write(task, &[0x11; 0x20]);
+        t.write(task, &varied(0x20, 0x11));
         t.set_u32(task + 8, r);
-        t.write(r, &[0x22; 0x20]);
+        t.write(r, &varied(0x20, 0x22));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
@@ -623,7 +659,7 @@ fn setups_0301() {
     let a = SCRATCH + 0x3000;
     for rva in [0x20c0u32, 0x2140] {
         let at = t.at(rva);
-        t.write(a, &[0x44; 0x140]);
+        t.write(a, &varied(0x140, 0x44));
         dirty(&mut t);
         t.check_entry(at, Call::this(0x0ecc_0001), &[a], Eax::Checked);
     }
@@ -694,7 +730,7 @@ fn light_start_0303() {
     t.set_u32(t.img.word(at + 0x34), 0x00e0_0034);
     for count in [3u16, 0] {
         obj_setup(&mut t, s, count);
-        t.write(t.img.word(at + 0x24), &[0x5a; 0x130]);
+        t.write(t.img.word(at + 0x24), &varied(0x130, 0x5a));
         dirty(&mut t);
         t.check_entry(at, Call::this(0x0ecc_0003), &[], Eax::Checked);
     }
@@ -725,7 +761,7 @@ fn place_point_0304() {
     });
     let s = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x13), s);
-    t.write(s + 0x1400, &[0x3f; 0x100]);
+    t.write(s + 0x1400, &varied(0x100, 0x3f));
     t.set_u32(s + 0x145c, 0.75f32.to_bits());
     dirty(&mut t);
     t.check_entry(at, Call::default(), &[], Eax::Checked);
@@ -747,7 +783,7 @@ fn host_start_0304() {
     t.set_u32(t.img.word(at + 0xb), blk);
     for count in [3u16, 0] {
         obj_setup(&mut t, s, count);
-        t.write(blk, &[0x5a; 0x1800]);
+        t.write(blk, &varied(0x1800, 0x5a));
         dirty(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }

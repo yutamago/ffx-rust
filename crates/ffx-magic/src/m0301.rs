@@ -184,3 +184,117 @@ pub const CALLBACKS_SETUP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An effect object aimed at its point (0x10001ea0, cdecl `(a)`): with
+/// the point `P` = `T + 16 * a[0x2c + 16 * a[0xac]]` (`T` the immediate
+/// `+0x23`) and `K` the float at `+0x07`: `a + 0xe0..0xec` = `((P.x -
+/// a.x) K, (P.y - a.y) K - K2, (P.z - a.z) K, 0)` (`a.x` = `a[0xd0]`, `K2`
+/// at `+0x65`), `+0xf0..0xfc` `(0, 0.6, 0, 0)`, `+0x130..0x138` 0.06 and
+/// `+0x13c` 0; slot 440 `(*G_E, a, 0, 0)` (operand `+0x55`), slot 450 `(a,
+/// F)` (`F` the immediate `+0xed`) and slot 451 `(a, 0x14)`, each over the
+/// earlier words. Returns slot 451's `eax`.
+pub fn aimed_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let a = fr.arg(g, 0);
+    let k = g.read::<f32>(w(0x7));
+    let i = g.read::<u32>(a + 0xac);
+    let e = g.read::<u32>(a.wrapping_add(i.wrapping_mul(16)).wrapping_add(0x2c));
+    let p = e.wrapping_shl(4).wrapping_add(w(0x23));
+    let y = sub(
+        mul(sub(g.read::<f32>(p + 4), g.read::<f32>(a + 0xd4)), k),
+        g.read::<f32>(w(0x65)),
+    );
+    let x = mul(sub(g.read::<f32>(p), g.read::<f32>(a + 0xd0)), k);
+    let z = mul(sub(g.read::<f32>(p + 8), g.read::<f32>(a + 0xd8)), k);
+    let mut s = Pushes::default();
+    s.push_all(&[0, 0, a, g.read::<u32>(w(0x55))]);
+    g.write::<f32>(a + 0xe0, x);
+    g.write::<u32>(a + 0xec, 0);
+    g.write::<f32>(a + 0xe4, y);
+    g.write::<f32>(a + 0xe8, z);
+    for (o, v) in [(0xf0u32, 0u32), (0xf4, 0x3f19_999a), (0xf8, 0), (0xfc, 0)] {
+        g.write::<u32>(a + o, v);
+    }
+    for o in [0x130u32, 0x134, 0x138] {
+        g.write::<u32>(a + o, 0x3d75_c28f);
+    }
+    g.write::<u32>(a + 0x13c, 0);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x4f), 440), fr.ecx);
+    s.push_all(&[w(0xed), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xe8), 450), fr.ecx);
+    s.push_all(&[0x14, a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0xfb), 451), fr.ecx).eax)
+}
+
+/// [`aimed_setup`] (272 bytes, 1 overlay).
+pub const AIMED_SETUP: Sig = Sig {
+    len: 272,
+    hash: 0xfab1_2c23_376b_2a3d,
+    calls: &[],
+    imports: &[],
+};
+
+/// A thrown object from a step of its path (0x10001fb0, cdecl `(a)`):
+/// `e = a[0x2c + 16 a[0xac]]` (written over the argument word); slot 434
+/// `(*G_E, F)` (`*G_E` operand `+0x35`; `F` the immediate `+0x28` for an
+/// odd `e`, `+0x2f` else) gives the object `O`; slot 477 `(T[e / 2])`
+/// (`T` the immediate `+0x4b`, ST0 kept as f32 at `ebp - 4`) gives `v`;
+/// `O + 0xd0` = `P[e].x`, `+0xd4` = `P[e].y - K1`, `+0xd8` = `P[e].z`
+/// (`P` the 16-byte points at the immediates `+0x80`, `+0x8e`, `+0xad`;
+/// `K1` at `+0x96`), `+0xdc`, `+0x100`, `+0x108`, `+0x10c` 0 and `+0x104`
+/// = `(-v - K2) K3` (the sign mask at `+0x6a`, `K2`/`K3` at `+0x72`/`+0x9e`);
+/// then slot 450 `(a, F1)` and slot 449 `(a, F2)` over slot 477's word
+/// (the immediates `+0x7a`, `+0xfa`). Returns slot 449's `eax`.
+pub fn thrown_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let a = fr.arg(g, 0);
+    let i = g.read::<u32>(a + 0xac);
+    let e = g.read::<u32>(a.wrapping_add(i.wrapping_mul(16)).wrapping_add(0x2c));
+    g.write::<u32>(fr.esp + 4, e);
+    let cb = if e & 1 == 0 { w(0x2f) } else { w(0x28) };
+    let t = slot_target(g, w(0x1b), 434);
+    let obj = g.call(t, 0, &[g.read::<u32>(w(0x35)), cb]).eax;
+    let half = (e.cast_signed() / 2).cast_unsigned();
+    let x = g.read::<u32>(w(0x4b).wrapping_add(half.wrapping_mul(4)));
+    let t = slot_target(g, w(0x50), 477);
+    let v = crate::m0018::st0_f32(g.call(t, 0, &[x]).st0);
+    g.write::<f32>(ebp.wrapping_sub(4), v);
+    let neg = f32::from_bits(v.to_bits() ^ g.read::<u32>(w(0x6a)));
+    let r = mul(sub(neg, k(g, 0x72)), k(g, 0x9e));
+    let c = e.wrapping_shl(4);
+    let px = g.read::<u32>(c.wrapping_add(w(0x80)));
+    g.write::<u32>(obj + 0xd0, px);
+    let py = sub(g.read::<f32>(c.wrapping_add(w(0x8e))), k(g, 0x96));
+    g.write::<f32>(obj + 0xd4, py);
+    let pz = g.read::<u32>(c.wrapping_add(w(0xad)));
+    g.write::<u32>(obj + 0xd8, pz);
+    g.write::<u32>(obj + 0xdc, 0);
+    g.write::<u32>(obj + 0x100, 0);
+    g.write::<f32>(obj + 0x104, r);
+    g.write::<u32>(obj + 0x108, 0);
+    g.write::<u32>(obj + 0x10c, 0);
+    let mut s = Pushes::default();
+    s.push_all(&[x, w(0x7a), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xb8), 450), fr.ecx);
+    s.push_all(&[w(0xfa), a]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0xf5), 449), fr.ecx).eax)
+}
+
+/// [`thrown_setup`] (272 bytes, 1 overlay).
+pub const THROWN_SETUP: Sig = Sig {
+    len: 272,
+    hash: 0x5531_a7a2_b8a9_8937,
+    calls: &[],
+    imports: &[],
+};
