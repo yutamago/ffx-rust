@@ -1317,6 +1317,7 @@ fn pulse_lights_in_every_copy() {
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         let lights = w(&t, 0x3a);
+        t.set_u32(w(&t, 0x18), 0x0a0a_0018);
         let cap = f32::from_bits(t.u32(w(&t, 0x187)));
         let step = f32::from_bits(t.u32(w(&t, 0x180)));
         let saved = t.save();
@@ -1332,7 +1333,7 @@ fn pulse_lights_in_every_copy() {
                 let (count, fading, level) = match i {
                     0 => (5u32, 1u32, cap - step + 1.0),
                     1 => (5, 1, cap - step - 1.0),
-                    2 => (5, 0, 0.0),
+                    2 => (5, 0, 0.75),
                     4 => (2, 0, 0.0),
                     _ => (1, 0, 0.0),
                 };
@@ -1414,12 +1415,17 @@ fn battle_effect_end_in_every_copy() {
         };
         stubs(&mut t);
         t.stub(288, |m, a| {
-            m.w32(a[1], 0);
+            m.w32(a[1], 2);
             SCRATCH + 0x4000
         });
+        t.write(SCRATCH + 0x4000, &[3, 5]);
         t.stub(293, |_, a| a[0] & 1);
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
+        for (o, v) in [(0x3a, 0x0a0a_003a), (0x9b, 0x0a0a_009b)] {
+            t.set_u32(w(&t, o), v);
+        }
+        t.set_u32(w(&t, 0x8a) + 2, 0x7777);
         let scene = SCRATCH + 0x3000;
         t.set_u32(w(&t, 0x13), scene);
         let (node_a, node_b) = (SCRATCH + 0x3400, SCRATCH + 0x3500);
@@ -1469,10 +1475,15 @@ fn camera_reset_nodes_in_every_copy() {
             (hi + 1.0, 3u32, false),
             (lo - 1.0, 2, true),
             (hi.midpoint(lo), 3, true),
+            (hi, 3, true),
+            (lo, 2, false),
         ]) {
             t.restore(&saved);
             t.write(block + 0x16d0, &[0x5a; 0x800]);
             t.write(block + 0x1e30, &[0x5a; 0x40]);
+            // the node word `+0x2864` (its page is compared only when the
+            // set-up touches it)
+            t.write(block + 0x2860, &[0x5a; 0x10]);
             t.set_u32(block + 0xc24, (x + k1).to_bits());
             let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
             for i in 1..=ring {
@@ -1520,14 +1531,16 @@ fn spark_task_in_every_copy() {
         // the rover at 6 (it wraps)
         let take = t.img.rel32_target(f + 0x4a);
         let ring = SCRATCH + 0x5000;
+        t.set_u32(t.img.word(f + 0x9b), 0x0a0a_009b);
         t.set_u32(t.img.word(take + 0x09), 8);
         t.set_u32(t.img.word(take + 0x16), ring);
         let saved = t.save();
-        for (c, (delay, life)) in (0u32..).zip([(3u16, 5u16), (0, 1), (0, 4)]) {
+        for (c, (delay, life)) in (0u32..).zip([(3u16, 5u16), (0, 1), (0, 4), (0, 4)]) {
             t.restore(&saved);
             t.write(ring, &[0x5a; 0x280]);
+            // the last case: a full ring (no spark at all)
             for i in 0..8 {
-                t.set_u32(ring + 0x50 * i + 0x48, u32::from(i == 7));
+                t.set_u32(ring + 0x50 * i + 0x48, u32::from(i == 7 || c == 3));
             }
             t.set_u32(t.img.word(take + 0x01), 6);
             rest_node(&mut t, task);
@@ -1536,7 +1549,7 @@ fn spark_task_in_every_copy() {
             t.set_u16(task + 0x16, life);
             let r = t.check_entry(f, regs(rva, c), &[task], Eax::Checked);
             // the alive case reaches the sparks (the ring has room)
-            assert!(c < 2 || r.eax != 0, "{n}: no spark taken");
+            assert!(c != 2 || r.eax != 0, "{n}: no spark taken");
         }
     }
 }
