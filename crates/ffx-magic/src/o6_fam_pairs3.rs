@@ -256,7 +256,7 @@ pub fn bone_transform<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// esp; mov ecx, [ebp + 8]; pop ebp; jmp T`; family `F0070_100014a0`,
 /// whose members differ only in `T`): the handler at `T` with `ecx` = the
 /// cursor and the caller's stack (the jump leaves it as it was).
-fn thunk_to<G: Game>(g: &mut G, img: &Image, fr: &Frame, handler: Entry<G>) -> Ret {
+pub(crate) fn thunk_to<G: Game>(g: &mut G, img: &Image, fr: &Frame, handler: Entry<G>) -> Ret {
     let inner = Frame {
         at: img.rel32_target(fr.at + 8),
         ecx: fr.arg(g, 0),

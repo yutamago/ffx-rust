@@ -94,6 +94,7 @@ pub mod o6_fam_pairs;
 pub mod o6_fam_pairs2;
 pub mod o6_fam_pairs3;
 pub mod o6_fam_pairs4;
+pub mod o6_fam_pairs5;
 pub mod o6_fam_pool;
 pub mod o6_fam_setup;
 pub mod o6_fam_start;
@@ -2221,6 +2222,29 @@ ports! {
     "o6 fam pairs4 camera_reset_nodes 0605@a100" => o6_fam_pairs4::CAMERA_RESET_NODES_0605_A100, o6_fam_pairs4::camera_reset_nodes;
     "o6 fam pairs4 spark_task 0249@1b20" => o6_fam_pairs4::SPARK_TASK_0249_1B20, o6_fam_pairs4::spark_task;
     // round 6, the shape families (o6_fam_*): end of ports
+    "o6 fam pairs5 look_matrix_callback 0664@16e0" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0664_16E0, o6_fam_pairs5::look_matrix_callback;
+    "o6 fam pairs5 look_matrix_callback 0045@1310" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0045_1310, o6_fam_pairs5::look_matrix_callback;
+    "o6 fam pairs5 record_unlist 0479@3c00" => o6_fam_pairs5::RECORD_UNLIST_0479_3C00, o6_fam_pairs5::record_unlist;
+    "o6 fam pairs5 record_unlist 0673@15b0" => o6_fam_pairs5::RECORD_UNLIST_0673_15B0, o6_fam_pairs5::record_unlist;
+    "o6 fam pairs5 two_particle_burst 0162@48a0" => o6_fam_pairs5::TWO_PARTICLE_BURST_0162_48A0, o6_fam_pairs5::two_particle_burst;
+    "o6 fam pairs5 two_particle_burst 0598@7ef0" => o6_fam_pairs5::TWO_PARTICLE_BURST_0598_7EF0, o6_fam_pairs5::two_particle_burst;
+    "o6 fam pairs5 level_particles 0307@5310" => o6_fam_pairs5::LEVEL_PARTICLES_0307_5310, o6_fam_pairs5::level_particles;
+    "o6 fam pairs5 level_particles 0563@35b0" => o6_fam_pairs5::LEVEL_PARTICLES_0563_35B0, o6_fam_pairs5::level_particles;
+    "o6 fam pairs5 two_part_visit_thunk 0070@14a0" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0070_14A0, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 scrolled_texture 0188@1220" => o6_fam_pairs5::SCROLLED_TEXTURE_0188_1220, o6_fam_pairs5::scrolled_texture;
+    "o6 fam pairs5 scrolled_texture 0351@1080" => o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080, o6_fam_pairs5::scrolled_texture;
+    "o6 fam pairs5 ribbon_visit_thunk 0070@8840" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0070_8840, o6_fam_pairs5::ribbon_visit_thunk;
+    "o6 fam pairs5 ribbon_visit_thunk 0155@8340" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0155_8340, o6_fam_pairs5::ribbon_visit_thunk;
+    "o6 fam pairs5 timed_items_visit_thunk 0155@8050" => o6_fam_pairs5::TIMED_ITEMS_VISIT_THUNK_0155_8050, o6_fam_pairs5::timed_items_visit_thunk;
+    "o6 fam pairs5 timed_items_visit_thunk 0164@80d0" => o6_fam_pairs5::TIMED_ITEMS_VISIT_THUNK_0164_80D0, o6_fam_pairs5::timed_items_visit_thunk;
+    "o6 fam pairs5 sprite_visit_thunk 0578@33c0" => o6_fam_pairs5::SPRITE_VISIT_THUNK_0578_33C0, o6_fam_pairs5::sprite_visit_thunk;
+    "o6 fam pairs5 turn_box 0307@1d20" => o6_fam_pairs5::TURN_BOX_0307_1D20, o6_fam_pairs5::turn_box;
+    "o6 fam pairs5 turn_box 0605@76a0" => o6_fam_pairs5::TURN_BOX_0605_76A0, o6_fam_pairs5::turn_box;
+    "o6 fam pairs5 particle_rows 0304@2ae0" => o6_fam_pairs5::PARTICLE_ROWS_0304_2AE0, o6_fam_pairs5::particle_rows;
+    "o6 fam pairs5 particle_rows 0568@2510" => o6_fam_pairs5::PARTICLE_ROWS_0568_2510, o6_fam_pairs5::particle_rows;
+    "o6 fam pairs5 node_rings 0150@b210" => o6_fam_pairs5::NODE_RINGS_0150_B210, o6_fam_pairs5::node_rings;
+    "o6 fam pairs5 node_rings 0603@b140" => o6_fam_pairs5::NODE_RINGS_0603_B140, o6_fam_pairs5::node_rings;
+    // families2 (o6_fam_pairs5..): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -3057,6 +3081,55 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &o6_fam_pairs4::THREE_PASS_MODEL_0586_1A20,
     ),
     // round 6, the shape families (o6_fam_*): end of INTERNAL
+    (
+        "o6 fam pairs5 record_node_start 0199@2160",
+        &o6_fam_pairs5::RECORD_NODE_START_0199_2160,
+    ),
+    (
+        "o6 fam pairs5 record_node_start 0251@2550",
+        &o6_fam_pairs5::RECORD_NODE_START_0251_2550,
+    ),
+    (
+        "o6 fam pairs5 global_node_start 0253@4370",
+        &o6_fam_pairs5::GLOBAL_NODE_START_0253_4370,
+    ),
+    (
+        "o6 fam pairs5 global_node_start 0311@1f60",
+        &o6_fam_pairs5::GLOBAL_NODE_START_0311_1F60,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0070@1160",
+        &o6_fam_pairs5::TWO_PART_VISIT_0070_1160,
+    ),
+    (
+        "o6 fam pairs5 ribbon_visit 0070@86d0",
+        &o6_fam_pairs5::RIBBON_VISIT_0070_86D0,
+    ),
+    (
+        "o6 fam pairs5 ribbon_visit 0155@8170",
+        &o6_fam_pairs5::RIBBON_VISIT_0155_8170,
+    ),
+    (
+        "o6 fam pairs5 timed_items_visit 0155@7d70",
+        &o6_fam_pairs5::TIMED_ITEMS_VISIT_0155_7D70,
+    ),
+    (
+        "o6 fam pairs5 timed_items_visit 0164@7df0",
+        &o6_fam_pairs5::TIMED_ITEMS_VISIT_0164_7DF0,
+    ),
+    (
+        "o6 fam pairs5 sprite_visit 0578@30d0",
+        &o6_fam_pairs5::SPRITE_VISIT_0578_30D0,
+    ),
+    (
+        "o6 fam pairs5 sprite_visit 0585@3110",
+        &o6_fam_pairs5::SPRITE_VISIT_0585_3110,
+    ),
+    (
+        "o6 fam pairs5 light_setup 0644@b390",
+        &o6_fam_pairs5::LIGHT_SETUP_0644_B390,
+    ),
+    // families2 (o6_fam_pairs5..): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
