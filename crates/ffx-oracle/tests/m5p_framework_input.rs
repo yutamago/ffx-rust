@@ -4475,3 +4475,144 @@ fn bp2_blur_render_pass() {
         }
     }
 }
+
+// ---- big-phyre3 ----
+
+/// `0x0062b5f0` (`PApplicationScriptProxy::readInputLog`): the reader
+/// stubbed (`readAll` hands out the text), `nextToken` and the CRT string
+/// functions run as the originals (the oracle's), `sscanf_s` a stub that
+/// stores a value per call (the next of a table, `"%d:%d:%d"` three).
+/// Cases: the file not opening; `readAll` failing; texts with comments,
+/// lines without a `:` or a token, `KB` entries with and without a
+/// keyboard (the warning once), `IK` entries with a name (`+` or not)
+/// and without, script commands found (case-insensitive) and unknown, a
+/// last line without `\n`; the text owned or not; no script commands.
+/// Only synthetic data reaches it.
+#[test]
+fn bp3_read_input_log_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_bp3::{self as il};
+    let [
+        ctor,
+        is_open,
+        read_all,
+        close,
+        dtor,
+        printf,
+        _,
+        resize,
+        free,
+    ] = il::INPUT_LOG_CALLS;
+    let texts: [&[u8]; 5] = [
+        b"# input log\n#1:KB:1:1:1\n10:KB:1:2:3\n20:IK:abc:+:5\n30:IK::x\n40:JUMP:p1 p2\n50:Nothing:zz\n60\n70:KB:0:0:0\n80:IK:q:-:1\n90:Jump:\n100:KB:9\0",
+        b"5:KB:1\n6:IK:ab\n\0",
+        b"\0",
+        b"1:Jump:x\n2:Jump:y\n3:KB:4\n#\n:\n\0",
+        b"1:KB:2\n\0",
+    ];
+    for (label, mut t) in Twins::all() {
+        for k in 0..12u32 {
+            let text = texts[k as usize % 5];
+            let data = t.alloc(text);
+            // text 1 ends its length on its last `\n` (not a line end)
+            let len = (text.len() - 1) as u32 - u32::from(k % 5 == 1);
+            let head = if k % 3 == 1 { 0x8000_0000 | len } else { len };
+            let open = u32::from(k != 4);
+            let result = if k == 8 { 7 } else { 0 };
+            t.stub(ctor, true, 1, 1, 0);
+            t.stub(is_open, true, 0, 0, open | 0x100);
+            // readAll: the array filled, `result` returned
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], head
+            c.extend(head.to_le_bytes());
+            c.extend([0xc7, 0x40, 0x04]); // mov dword [eax+4], data
+            c.extend(data.to_le_bytes());
+            let log_part = t.stub_code(read_all, true, 2, 2, result);
+            c.push(0xe9);
+            let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+            c.extend(log_part.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log_part
+            t.write(at, &c);
+            place_code(&mut t, read_all, at);
+            t.stub(close, true, 0, 0, 0);
+            t.stub(dtor, true, 0, 0, 0);
+            t.stub(printf, false, 2, 0, 0);
+            t.stub(resize, true, 1, 1, 0);
+            t.stub(free, false, 1, 0, 0);
+            // sscanf_s: the next table value through the first pointer;
+            // "%d:%d:%d" also 0x41 and 0x42 through the next two
+            let kb_fmt = t.rebase(il::INPUT_LOG_TEXTS[3]);
+            let vals: Vec<u32> = (0..64)
+                .map(|i| [10u32, 1, 3, 0, 2, 5][(i + k as usize) % 6])
+                .collect();
+            let tab = t.alloc(
+                &vals
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let cell = t.alloc(&tab.to_le_bytes());
+            // each call's string pointer into a trace (compared as memory)
+            let trace = t.zeros(0x100);
+            let tcell = t.alloc(&trace.to_le_bytes());
+            let mut c = vec![0xa1];
+            c.extend(tcell.to_le_bytes()); // mov eax, [tcell]
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x10]); // mov [eax], edx
+            c.extend([0x83, 0x05]);
+            c.extend(tcell.to_le_bytes());
+            c.push(0x04); // add dword [tcell], 4
+            c.push(0xa1);
+            c.extend(cell.to_le_bytes()); // mov eax, [cell]
+            c.extend([0x8b, 0x10]); // mov edx, [eax]
+            c.extend([0x83, 0x05]);
+            c.extend(cell.to_le_bytes());
+            c.push(0x04); // add dword [cell], 4
+            c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            c.extend([0x89, 0x10]); // mov [eax], edx
+            c.extend([0x81, 0x7c, 0x24, 0x08]);
+            c.extend(kb_fmt.to_le_bytes()); // cmp dword [esp+8], kb_fmt
+            // jne past both stores (odd runs: always past, the deadbeefs stay)
+            c.extend([if k % 2 == 0 { 0x75 } else { 0xeb }, 0x14]);
+            c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+            c.extend([0xc7, 0x00, 0x41, 0, 0, 0]); // mov dword [eax], 0x41
+            c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14]
+            c.extend([0xc7, 0x00, 0x42, 0, 0, 0]); // mov dword [eax], 0x42
+            c.extend([0xb8, 1, 0, 0, 0, 0xc3]); // mov eax, 1; ret
+            let sscanf = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), sscanf);
+            let slot = t.rebase(il::INPUT_LOG_IMPORTS[1]);
+            let old = Oracle::read(&mut t.a, slot, 4).unwrap();
+            t.saved.entry(slot).or_insert(old);
+            t.w32(slot, sscanf);
+            // the log array: room for 16 entries
+            let [array, once] = il::INPUT_LOG_GLOBALS.map(|a| t.rebase(a));
+            let entries = t.zeros(0x90 * 16);
+            t.write(entries, &vec![0xa5; 0x90 * 16]);
+            t.w32(array, 16);
+            t.w32(array + 4, entries);
+            t.write(once, &[u8::from(k % 5 == 2)]);
+            // the application: keyboards for keys 1 and 3; script commands
+            let input = t.zeros(0x100);
+            for key in [1u32, 3] {
+                t.w32(input + 0x80 + 4 * key, 0x6b00 + key);
+            }
+            let scripts = t.zeros(0x20);
+            let recs = t.zeros(0x48 * 3);
+            for (i, name) in [&b"walk\0"[..], b"jump\0", b"run\0"].iter().enumerate() {
+                t.write(recs + 0x48 * i as u32 + 4, name);
+            }
+            t.w32(scripts + 0x14, recs);
+            t.w32(scripts + 0x18, if k % 6 == 5 { 0 } else { 3 });
+            let app = t.zeros(0x2c0);
+            t.w32(app + 0x2b8, input);
+            t.w32(app + 0x2c, scripts);
+            let path = t.alloc(b"input.log\0");
+            let what = format!("{label}: input log {k}");
+            t.frame_len = 0x24;
+            t.check_frame(&what, 0x0062_b5f0, Conv::Cdecl, &[app, path], 0x70, |g| {
+                let ebp = g.1 + 0x60;
+                Out::U32(il::input_log::read_input_log(g, ebp, app, path))
+            });
+            t.reset();
+        }
+    }
+}
