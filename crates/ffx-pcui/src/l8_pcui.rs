@@ -528,6 +528,411 @@ pub mod bridge {
         (r & !0xff) | 1
     }
 
+    /// The debug GUI calls `Gui_NameinputProc` makes (cdecl):
+    /// `Gu_WindowGetArg(w)`, `Gu_WindowSetArg(w, p)`,
+    /// `Gu_WindowSetTitle(w, s)`, `Gu_WindowAddButton(w, id, s, x, y, cx,
+    /// cy)`, `Gu_WindowControlSetText(w, id, s)`, `set_path_name(w, p, id,
+    /// n)`, `FUN_00942030(dst, src)` (a string copy), `Gu_PrintSetX(x)`,
+    /// `Gu_PrintSetY(y)`, `Gu_Printf(s, ...)`; `user_malloc(n)`,
+    /// `user_free_thunk(p)`, `movie_err(expr, file, line)`,
+    /// `dbgPrintf(fmt, ...)`, `sceOpen(path, mode)`, `sceClose(fd)`.
+    pub const WINDOW_GET_ARG: u32 = 0x0084_aec0;
+    pub const WINDOW_SET_ARG: u32 = 0x0084_b560;
+    pub const WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
+    pub const WINDOW_ADD_BUTTON: u32 = 0x0084_a470;
+    pub const CONTROL_SET_TEXT: u32 = 0x0094_11f0;
+    pub const SET_PATH_NAME: u32 = 0x0094_2360;
+    pub const STRING_COPY: u32 = 0x0094_2030;
+    pub const PRINT_SET_X: u32 = 0x0084_8820;
+    pub const PRINT_SET_Y: u32 = 0x0084_8860;
+    pub const PRINTF: u32 = 0x0084_8880;
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const MOVIE_ERR: u32 = 0x0076_efa0;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    /// The name window's data: its key table (`0x00c612c0`, string
+    /// pointers, 0xa a new row, 0 the end), the default name
+    /// (`0x00c6137c`), the empty list text (`0x00c61384`), the camera
+    /// directory (`0x00c61238`), the browsed path (`0x025d5fa0`, its
+    /// length `0x025d5f94`, its tail past "host:..." `0x025d5fb1`), the
+    /// selected file name and its flag (`0x025d60a0`, `0x025d5f9c`); the
+    /// strings it prints and its buttons' texts.
+    pub const NAME_KEYS: u32 = 0x00c6_12c0;
+    pub const NAME_DEFAULT: u32 = 0x00c6_137c;
+    pub const NAME_EMPTY: u32 = 0x00c6_1384;
+    pub const NAME_CAMERA_DIR: u32 = 0x00c6_1238;
+    pub const NAME_PATH: u32 = 0x025d_5fa0;
+    pub const NAME_PATH_LEN: u32 = 0x025d_5f94;
+    pub const NAME_PATH_TAIL: u32 = 0x025d_5fb1;
+    pub const NAME_FILE: u32 = 0x025d_60a0;
+    pub const NAME_FILE_SET: u32 = 0x025d_5f9c;
+    pub const NAME_TITLE: u32 = 0x00b6_902c;
+    pub const NAME_ERR_EXPR: u32 = 0x00b6_8f34;
+    pub const NAME_ERR_FILE: u32 = 0x00b6_8fac;
+    pub const NAME_OK: u32 = 0x00b5_1c04;
+    pub const NAME_UP: u32 = 0x00b6_7ef4;
+    pub const NAME_DOWN: u32 = 0x00b5_b24c;
+    pub const NAME_FREE_MSG: u32 = 0x00b6_9038;
+    pub const NAME_OK_MSG: u32 = 0x00b6_9050;
+    pub const NAME_HOST_FMT: u32 = 0x00b6_8f58;
+    pub const NAME_PICK_MSG: u32 = 0x00b6_8f4c;
+    pub const NAME_NAME2_FMT: u32 = 0x00b6_9054;
+    pub const NAME_NAME_FMT: u32 = 0x00b6_8f74;
+    pub const NAME_BLANK: u32 = 0x00b2_0b30;
+    pub const NAME_CURSOR: u32 = 0x00b5_5e74;
+    /// `Gui_NameinputProc`'s frame: the `sprintf` buffer at `ebp - 0x204`.
+    pub const NAME_FRAME: u32 = 0x204;
+
+    /// The CRT's `sprintf` (import slot).
+    pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+
+    /// The `i32` at `p + o`.
+    fn wi(h: &impl Host, p: u32, o: u32) -> i32 {
+        h.read::<u32>(p.wrapping_add(o)).cast_signed()
+    }
+
+    /// The byte at `p + o` (a signed offset).
+    fn bi(h: &impl Host, p: u32, o: i32) -> u8 {
+        h.read(p.wrapping_add_signed(o))
+    }
+
+    fn c(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+        h.call_sym(sym, Conv::Cdecl, args)
+    }
+
+    fn sprintf(h: &mut impl Host, args: &[u32]) {
+        let f: u32 = h.read(h.rebase(SPRINTF_SLOT));
+        h.call(f, Conv::Cdecl, args);
+    }
+
+    /// The six list rows from the scroll position `+0x21c`: the names
+    /// (`[+0x214] + 0x200 k`, `+0x218` of them), then blanks.
+    fn name_rows(h: &mut impl Host, window: u32, p: u32) {
+        let first = h.read::<u32>(p.wrapping_add(0x21c)).cast_signed();
+        let mut row = 0_u32;
+        let mut idx = first;
+        let mut off = first.cast_unsigned() << 9;
+        loop {
+            if idx >= h.read::<u32>(p.wrapping_add(0x218)).cast_signed() {
+                break;
+            }
+            let names: u32 = h.read(p.wrapping_add(0x214));
+            c(
+                h,
+                CONTROL_SET_TEXT,
+                &[window, row + 0x103, names.wrapping_add(off)],
+            );
+            row += 1;
+            idx = idx.wrapping_add(1);
+            off = off.wrapping_add(0x200);
+            if row >= 6 {
+                return;
+            }
+        }
+        let blank = h.rebase(NAME_BLANK);
+        while row < 6 {
+            c(h, CONTROL_SET_TEXT, &[window, row + 0x103, blank]);
+            row += 1;
+        }
+    }
+
+    /// `Gui_NameinputProc(window, msg, param)` (`0x0093e570`) -> 0: the
+    /// debug camera's "NAME EDIT" window (its data from
+    /// `Gu_WindowGetArg`, `p`). 0x8001 builds it (a `0x224`-byte block:
+    /// the name at `+0`, the cursor `+0x200`, the list `+0x214` /
+    /// `+0x218` / `+0x21c`, the text row `+0x220`; the key buttons from
+    /// the key table, OK, up/down and six list rows); 0x8003 frees it;
+    /// 0x8011 prints the name and the cursor; 0x8006: OK (0x100) takes
+    /// `host:` + the camera directory + the name as the file, up/down
+    /// (0x101/0x102) scroll the list, a row (0x103..0x108) opens the
+    /// file or, when it can't, enters (or for a leading '.' leaves) that
+    /// directory, then shows `name:` + the path (and the file); a key
+    /// (its index + 1) types its character, 0x2b/0x2c delete before/at
+    /// the cursor, 0x2d/0x2e move it (within 0..0x40).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn nameinput_proc(h: &mut impl Host, ebp: u32, window: u32, msg: u32, param: u32) -> u32 {
+        let buf = ebp.wrapping_sub(NAME_FRAME);
+        let mut p = c(h, WINDOW_GET_ARG, &[window]);
+        let at = |p: u32, o: u32| p.wrapping_add(o);
+        match msg {
+            0x8001 => {
+                p = c(h, USER_MALLOC, &[0x224]);
+                if p == 0 {
+                    let (e, f) = (h.rebase(NAME_ERR_EXPR), h.rebase(NAME_ERR_FILE));
+                    c(h, MOVIE_ERR, &[e, f, 0x1d4]);
+                }
+                c(h, MEMSET, &[p, 0, 0x224]);
+                c(h, WINDOW_SET_ARG, &[window, p]);
+                let title = h.rebase(NAME_TITLE);
+                c(h, WINDOW_SET_TITLE, &[window, title]);
+                let (mut x, mut y, mut id) = (4_u32, 0_u32, 1_u32);
+                let mut key = h.rebase(NAME_KEYS);
+                loop {
+                    let s: u32 = h.read(key);
+                    if s == 0xa {
+                        y = y.wrapping_add(0xc);
+                        x = 4;
+                    } else if s == 0 {
+                        break;
+                    } else {
+                        let mut len = 0_u32;
+                        while h.read::<u8>(s.wrapping_add(len)) != 0 {
+                            len = len.wrapping_add(1);
+                        }
+                        c(
+                            h,
+                            WINDOW_ADD_BUTTON,
+                            &[window, id, s, x, y, len.wrapping_mul(14), 10],
+                        );
+                        x = x.wrapping_add(len << 4);
+                    }
+                    key = key.wrapping_add(4);
+                    id = id.wrapping_add(1);
+                }
+                let ok = h.rebase(NAME_OK);
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x100, ok, x.wrapping_add(0x3a), y, 0x18, 10],
+                );
+                // strcpy of the default name
+                let def = h.rebase(NAME_DEFAULT);
+                let mut k = 0_u32;
+                loop {
+                    let b: u8 = h.read(def.wrapping_add(k));
+                    h.write(p.wrapping_add(k), b);
+                    if b == 0 {
+                        break;
+                    }
+                    k = k.wrapping_add(1);
+                }
+                h.write(at(p, 0x220), y.wrapping_add(0xe));
+                h.write(at(p, 0x200), 0_u32);
+                let y = y.wrapping_add(0x18);
+                let (up, down) = (h.rebase(NAME_UP), h.rebase(NAME_DOWN));
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x101, up, 0x8c, y.wrapping_add(8), 0xe, 0xc],
+                );
+                c(
+                    h,
+                    WINDOW_ADD_BUTTON,
+                    &[window, 0x102, down, 0x8c, y.wrapping_add(0x1c), 0xe, 0xc],
+                );
+                let empty = h.rebase(NAME_EMPTY);
+                for k in 0..6 {
+                    c(
+                        h,
+                        WINDOW_ADD_BUTTON,
+                        &[window, 0x103 + k, empty, 8, y.wrapping_add(9 * k), 0x78, 8],
+                    );
+                }
+                c(h, SET_PATH_NAME, &[window, p, 0x108, 0x11]);
+            }
+            0x8003 => {
+                let m = h.rebase(NAME_FREE_MSG);
+                c(h, DBG_PRINTF, &[m]);
+                let list: u32 = h.read(at(p, 0x214));
+                if list != 0 {
+                    c(h, USER_FREE, &[list]);
+                }
+                c(h, USER_FREE, &[p]);
+            }
+            0x8011 => {
+                c(h, PRINT_SET_X, &[2]);
+                let row: u32 = h.read(at(p, 0x220));
+                c(h, PRINT_SET_Y, &[row]);
+                c(h, PRINTF, &[p]);
+                let cur: u32 = h.read(at(p, 0x200));
+                c(h, PRINT_SET_X, &[cur.wrapping_mul(9).wrapping_add(0x2f)]);
+                let row: u32 = h.read(at(p, 0x220));
+                c(h, PRINT_SET_Y, &[row.wrapping_add(2)]);
+                let cursor = h.rebase(NAME_CURSOR);
+                c(h, PRINTF, &[cursor]);
+            }
+            0x8006 => name_command(h, buf, window, p, param),
+            _ => {}
+        }
+        0
+    }
+
+    /// `Gui_NameinputProc`'s 0x8006 (a button) with the window's data
+    /// `p` and the frame's buffer `buf`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    fn name_command(h: &mut impl Host, buf: u32, window: u32, p: u32, param: u32) {
+        let at = |o: u32| p.wrapping_add(o);
+        match param.wrapping_sub(0x100) {
+            0 => {
+                let m = h.rebase(NAME_OK_MSG);
+                c(h, DBG_PRINTF, &[m]);
+                let (f, dir) = (h.rebase(NAME_HOST_FMT), h.rebase(NAME_CAMERA_DIR));
+                sprintf(h, &[buf, f, dir, at(5)]);
+                let file = h.rebase(NAME_FILE);
+                c(h, STRING_COPY, &[file, buf]);
+                let set = h.rebase(NAME_FILE_SET);
+                h.write(set, 1_u32);
+            }
+            1 => {
+                let first = wi(&*h, p, 0x21c);
+                if first > 0 {
+                    h.write(at(0x21c), first - 1);
+                }
+                name_rows(h, window, p);
+            }
+            2 => {
+                let first = wi(&*h, p, 0x21c);
+                if first.wrapping_add(6) < wi(&*h, p, 0x218) {
+                    h.write(at(0x21c), first.wrapping_add(1));
+                }
+                name_rows(h, window, p);
+            }
+            3..=8 => {
+                let k = param.wrapping_sub(0x103).wrapping_add(h.read(at(0x21c)));
+                if k.cast_signed() >= wi(&*h, p, 0x218) {
+                    return;
+                }
+                let names: u32 = h.read(at(0x214));
+                let name = (k << 9).wrapping_add(names);
+                if name == 0 {
+                    return;
+                }
+                let m = h.rebase(NAME_PICK_MSG);
+                c(h, DBG_PRINTF, &[m, name]);
+                let (f, path) = (h.rebase(NAME_HOST_FMT), h.rebase(NAME_PATH));
+                sprintf(h, &[buf, f, path, name]);
+                let fd = c(h, SCE_OPEN, &[buf, 1]);
+                let tail = h.rebase(NAME_PATH_TAIL);
+                if fd.cast_signed() >= 0 {
+                    c(h, SCE_CLOSE, &[fd]);
+                    let f = h.rebase(NAME_NAME2_FMT);
+                    sprintf(h, &[buf, f, tail, name]);
+                } else {
+                    let len_at = h.rebase(NAME_PATH_LEN);
+                    let first: u8 = h.read(name);
+                    let mut i: i32 = h.read::<u32>(len_at).cast_signed();
+                    if first == b'.' {
+                        // back over the last directory: to its '/', then
+                        // to the one before it, and cut after that
+                        while i >= 0 && h.read::<u8>(path.wrapping_add_signed(i)) != b'/' {
+                            i -= 1;
+                        }
+                        i -= 1;
+                        while i >= 0 && h.read::<u8>(path.wrapping_add_signed(i)) != b'/' {
+                            i -= 1;
+                        }
+                        i += 1;
+                        h.write(path.wrapping_add_signed(i), 0_u8);
+                        h.write(len_at, i);
+                    } else {
+                        h.write(path.wrapping_add_signed(i), first);
+                        let mut s = name;
+                        while h.read::<u8>(s) != 0 {
+                            i = i.wrapping_add(1);
+                            s = s.wrapping_add(1);
+                            h.write(len_at, i);
+                            let b: u8 = h.read(s);
+                            h.write(path.wrapping_add_signed(i), b);
+                        }
+                        h.write(path.wrapping_add_signed(i), b'/');
+                        i = i.wrapping_add(1);
+                        h.write(len_at, i);
+                        h.write(path.wrapping_add_signed(i), 0_u8);
+                    }
+                    c(h, SET_PATH_NAME, &[window, p, 0x108, 0x11]);
+                    let f = h.rebase(NAME_NAME_FMT);
+                    sprintf(h, &[buf, f, tail]);
+                }
+                c(h, STRING_COPY, &[p, buf]);
+                h.write(at(0x200), 0_u32);
+                let mut n = 0_u32;
+                while h.read::<u8>(buf.wrapping_add(n)) != 0 {
+                    n = n.wrapping_add(1);
+                    h.write(at(0x200), n);
+                }
+                let cur: u32 = h.read(at(0x200));
+                h.write(at(0x200), cur.wrapping_sub(5));
+            }
+            _ => {
+                // a key: the table entry whose index + 1 is param
+                let keys = h.rebase(NAME_KEYS);
+                let mut idx = 0_u32;
+                let mut e: u32 = h.read(keys);
+                loop {
+                    if e == 0 {
+                        return;
+                    }
+                    if e != 0xa && param == idx.wrapping_add(1) {
+                        break;
+                    }
+                    e = h.read(keys.wrapping_add(4 * (idx + 1)));
+                    idx += 1;
+                }
+                let cur = wi(&*h, p, 0x200);
+                match param {
+                    0x2b => {
+                        if cur == 0 {
+                            return;
+                        }
+                        let b = bi(&*h, p, cur + 5);
+                        h.write(p.wrapping_add_signed(cur + 4), b);
+                        let mut j = 0;
+                        while bi(&*h, p, wi(&*h, p, 0x200) + j + 5) != 0 {
+                            j += 1;
+                            let i = wi(&*h, p, 0x200) + j;
+                            let b = bi(&*h, p, i + 5);
+                            h.write(p.wrapping_add_signed(i + 4), b);
+                        }
+                        let cur = wi(&*h, p, 0x200);
+                        h.write(at(0x200), cur.wrapping_sub(1));
+                    }
+                    0x2c => {
+                        let b = bi(&*h, p, cur + 6);
+                        h.write(p.wrapping_add_signed(cur + 5), b);
+                        let mut j = 0;
+                        while bi(&*h, p, wi(&*h, p, 0x200) + j + 6) != 0 {
+                            j += 1;
+                            let i = wi(&*h, p, 0x200) + j;
+                            let b = bi(&*h, p, i + 6);
+                            h.write(p.wrapping_add_signed(i + 5), b);
+                        }
+                    }
+                    0x2d => {
+                        if cur != 0 {
+                            h.write(at(0x200), cur - 1);
+                        }
+                    }
+                    0x2e => {
+                        if cur != 0x40 {
+                            h.write(at(0x200), cur + 1);
+                        }
+                    }
+                    _ => {
+                        if cur == 0x40 {
+                            return;
+                        }
+                        let mut end = 0_i32;
+                        while bi(&*h, p, end) != 0 {
+                            end += 1;
+                        }
+                        while end >= wi(&*h, p, 0x200) + 5 {
+                            let b = bi(&*h, p, end - 1);
+                            h.write(p.wrapping_add_signed(end), b);
+                            end -= 1;
+                        }
+                        let s: u32 = h.read(keys.wrapping_add(4 * idx));
+                        let ch: u8 = h.read(s);
+                        let cur = wi(&*h, p, 0x200);
+                        h.write(p.wrapping_add_signed(cur + 5), ch);
+                        h.write(at(0x200), cur.wrapping_add(1));
+                    }
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]

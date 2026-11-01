@@ -1281,4 +1281,11 @@ ported! {
         let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::AUDIO_FRAME;
         ffx_pcui::l8_pcui::bridge::audio_init(&mut mem(), ebp, player)
     }
+    /// `(window, msg, param)` -> 0: the debug camera's name entry window
+    /// (its `sprintf` buffer in a frame).
+    Gui_NameinputProc @ 0x0093_e570 => extern "C" fn gui_nameinput_proc(window: u32, msg: u32, param: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_pcui::l8_pcui::bridge::NAME_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_pcui::l8_pcui::bridge::NAME_FRAME;
+        ffx_pcui::l8_pcui::bridge::nameinput_proc(&mut mem(), ebp, window, msg, param)
+    }
 }
