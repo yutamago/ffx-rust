@@ -27,8 +27,13 @@
 //!   (`0x00c94ee4`) only in its turn, which the boundary gives while its
 //!   request lists are not empty and waits out; the render thread's next
 //!   take of the lock waits meanwhile. While an update runs the loader
-//!   waits, unless the main thread sleeps inside it (`CdReadSync` waiting
-//!   for a read) or the update takes longer than [`STALL`].
+//!   waits, unless the main thread waits for it there: inside
+//!   `CdReadSync_0076c490`'s blocking read loop (the map loads, the game
+//!   over's title load) or in a `Sleep`. That is where the hook's 100 ms
+//!   stall rule frees it in the original (a native update stalls only
+//!   while it waits); emulated work, however long, frees nothing. A guard
+//!   ([`STALL`]) frees it after that much host time of one update, with a
+//!   note, in case the main thread waits for it somewhere else.
 //! - **FMOD's turn**: `FmodManager_tick` (`0x006fa700`) runs once per
 //!   boundary, when the main thread gives the turn, and serves the
 //!   synchronous commands the main thread waits for in between.
@@ -60,8 +65,12 @@ pub const VIRTUAL_START: f64 = 1_048_576.0;
 /// One frame of the limiter at two vsyncs a frame.
 pub const FRAME: f64 = 2.0 * 0.016_683_333_333_333_335;
 /// An update that runs this long (host time) frees the loader inside it
-/// (the hook's 100 ms, scaled for the emulator).
-const STALL: Duration = Duration::from_secs(3);
+/// even when the main thread is not seen waiting (a guard against a wait
+/// the rule doesn't know: noted; the emulated game over takes about 50 s).
+const STALL: Duration = Duration::from_secs(600);
+/// `CdReadSync_0076c490` (cdecl(mode)): any mode but 1 runs the read loop
+/// that waits for the reads (`MovieCdReadTaskLoop_0076e660`).
+const CD_READ_SYNC: u32 = 0x0076_c490;
 /// [`STALL`], or `FFX_HOST_LOADER_STALL_MS` (a diagnostic: a long one
 /// shows what waits on the loader inside a long update).
 fn stall() -> Duration {
@@ -117,6 +126,10 @@ pub struct Clock {
     lockstep: AtomicBool,
     /// The main thread sleeps (inside an update).
     main_sleeping: AtomicBool,
+    /// The main thread is inside `CdReadSync`'s read loop (depth).
+    main_reading: AtomicU32,
+    /// The last update a loader free was noted in (+1; 0 none).
+    freed_noted: AtomicU32,
     /// When the running update started (host time), for [`STALL`].
     update_started: Mutex<Option<Instant>>,
     /// The vsync handler and the vsyncs run so far.
@@ -218,12 +231,13 @@ impl Clock {
             .and_then(|s| *s)
             .map_or(0, |s| s.elapsed().as_millis());
         format!(
-            "frame {} boundary {} update_ms {update_ms} turn {} render_waiting {} main_sleeping {} loader_turns {} freed {}",
+            "frame {} boundary {} update_ms {update_ms} turn {} render_waiting {} main_sleeping {} main_reading {} loader_turns {} freed {}",
             self.frame(),
             b(&self.at_boundary),
             b(&self.turn),
             b(&self.render_waiting),
             b(&self.main_sleeping),
+            self.main_reading.load(Ordering::Acquire),
             self.loader_turns.load(Ordering::Acquire),
             self.loader_freed.load(Ordering::Acquire),
         )
@@ -519,11 +533,12 @@ fn before_take(e: &Exec, this: u32, owner: u32) {
 }
 
 /// The loader before a take of the render lock: waits for its turn,
-/// unless the main thread sleeps inside an update or the update takes
-/// longer than [`STALL`].
+/// unless the main thread waits for it inside the update (in
+/// `CdReadSync`'s read loop or a `Sleep`), or the update has run longer
+/// than [`STALL`].
 fn loader_wait(e: &Exec) {
     let c = clock(e);
-    let mut freed = false;
+    let mut freed = None;
     c.wait_until(e, Duration::MAX, || {
         if c.turn.load(Ordering::Acquire) {
             return true;
@@ -537,21 +552,39 @@ fn loader_wait(e: &Exec) {
             .ok()
             .and_then(|s| *s)
             .is_some_and(|s| s.elapsed() > stall());
-        if c.main_sleeping.load(Ordering::Acquire) || long {
-            freed = true;
-            return true;
-        }
-        false
+        freed = if c.main_reading.load(Ordering::Acquire) > 0 {
+            Some("the main thread waits for a read")
+        } else if c.main_sleeping.load(Ordering::Acquire) {
+            Some("the main thread sleeps")
+        } else if long {
+            Some("the update ran past the guard")
+        } else {
+            None
+        };
+        freed.is_some()
     });
-    if freed {
-        let n = c.loader_freed.fetch_add(1, Ordering::AcqRel);
-        if n < 20 {
-            crate::log::note(&format!(
-                "the loader freed inside update {} (the main thread sleeps or stalls)",
-                c.frame()
-            ));
+    if let Some(why) = freed {
+        c.loader_freed.fetch_add(1, Ordering::AcqRel);
+        let frame = c.frame();
+        if c.freed_noted.swap(frame + 1, Ordering::AcqRel) != frame + 1 {
+            crate::log::note(&format!("the loader freed inside update {frame} ({why})"));
         }
     }
+}
+
+/// `CdReadSync_0076c490(mode)` (cdecl, 0/1): on the main thread, any mode
+/// but 1 (the read loop) frees the loader while it runs ([`loader_wait`]).
+fn cd_read_sync(e: &mut Exec, args: &Args) -> Ret {
+    let waits = e.is_main() && args.stack.first().copied() != Some(1);
+    if waits {
+        clock(e).main_reading.fetch_add(1, Ordering::AcqRel);
+        clock(e).notify();
+    }
+    let r = e.call_original(CD_READ_SYNC, Conv::Cdecl, args);
+    if waits {
+        clock(e).main_reading.fetch_sub(1, Ordering::AcqRel);
+    }
+    r.unwrap_or(Ret::eax(0))
 }
 
 fn loader_busy(e: &Exec) -> bool {
@@ -777,6 +810,12 @@ pub fn register(t: &mut Table) {
             lock_inner,
         ),
         &[0x55, 0x8b, 0xec, 0x51, 0x53, 0x56, 0x57],
+    );
+    // push ebp; mov ebp, esp (then a relative call)
+    t.wrap(
+        CD_READ_SYNC,
+        entry("CdReadSync_0076c490", Conv::Cdecl, 1, cd_read_sync),
+        &[0x55, 0x8b, 0xec],
     );
     // push ebp; mov ebp, esp; sub esp, 8
     t.wrap(
