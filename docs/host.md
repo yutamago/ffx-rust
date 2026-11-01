@@ -1746,11 +1746,9 @@ PC2:
 | menu-browse | same (2 ranges) | 5 of 5, 0 pixels | the opening logos' player (transparent) |
 | event-besaid | same (9 ranges) | 5 of 5, 0 pixels | the autosave chocobo (`chocobo.swf`, 50x50 at 1220,660) composited, transparent at the shots |
 | movie-fmv (extra) | same (3 ranges) | 4 of 4, 0 pixels | - |
-| boot (`realtime`) | (none recorded) | 4 of 4, 0 pixels over 24 levels | the opening logos (`OpeningScreen.swf`) |
-| menu-save | (see below) | 6 of 6, 0 pixels over 24 levels | the save and load lists (`saveload_jp.swf`), the title |
-
-(boot and menu-save were compared by hand against `orig`, the run's own
-comparison and event-agency still running at the end of the round.)
+| boot (`realtime`) | (none recorded) | 4 of 4, 0 pixels | the opening logos (`OpeningScreen.swf`) |
+| menu-save | same (14 ranges) | 6 of 6, 0 pixels over 24 levels (compared by hand: `run-all.sh`'s comparison stopped at event-agency's coarse shots, PC2's `python3` having no numpy) | the save and load lists (`saveload_jp.swf`), the title |
+| event-agency | same (11 ranges) | 1-3 of 3, 0 pixels (4-6 coarse: not run, no numpy) | the autosave chocobo |
 
 movie-fmv's user stream reached the mixer: `fmod: movie stream released:
 520192 frames read, 513600 played` (10.7 s at 48 kHz; the device output
