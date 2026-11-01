@@ -2194,6 +2194,7 @@ ports! {
     "summon set-up task" => s7_misc::SUMMON_SETUP_TASK, s7_misc::summon_setup_task;
     "model items node" => s7_misc::MODEL_ITEMS_NODE, s7_misc::model_items_node;
     "model sound record" => s7_misc::SOUND_RECORD, s7_misc::sound_record;
+    "falling sparks" => s7_misc::FALLING_SPARKS, s7_misc::falling_sparks;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;

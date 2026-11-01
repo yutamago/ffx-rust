@@ -3132,3 +3132,140 @@ pub const SOUND_RECORD: Sig = Sig {
     calls: &[(0x202, Callee::Any), (0x286, Callee::Any)],
     imports: &[],
 };
+
+/// A summon's falling-sparks frame (cdecl `(node)`; `ebp` = `esp - 4` at
+/// the entry, a scratch float at `ebp-4`). While the delay `*G_C` is
+/// above 0 it counts down (still above: it returns it); when it reaches
+/// 0, slot 237 `(*G_S, T[*G_I], 0, G_PT)` and `*G_W = 1.0`. Then slot
+/// 326 `(G_A, G_B, G_PT, v)` with `v = *G_V`; the height `*G_Y -= v (K1 -
+/// v) K2 K3 + (K1 - v)^2 0 + v^2 0` (each product kept, the zeros
+/// included) and `*G_V = v + K4`. Below `K1` (or unordered) four sparks
+/// start: each a record `p` from the ring ([`ring_take`]; none ends it,
+/// returning 0): u16 `+0xa = 0x200`, `+8 = -1`, `+0 = **G_Q`, `+4 = 1`,
+/// its point (slot 325 `(p+0xc, G_PT)`) moved by three random floats
+/// (slot 314 `(1.0)`, ST0), `+0x1c..+0x24 = (r - K5) K6` (slot 307,
+/// ST0), `+0x28 = 0`, `+0x2c = 0.01`, `+0x34 = +0x38 = 0x18`, byte
+/// `+0x47 = 0` (the last slot's `eax` returned). Else the object `G_O`
+/// leaves the list `G_L` ([`list_remove`]); when it was there `*G_P =
+/// ITEM`, slot 713 `(G_O)` and u16 `*G_F &= 0x7fff`; then the node goes
+/// back to its pool ([`give_back`]), whose `eax` it returns.
+///
+/// [`ring_take`]: crate::sa_misc::ring_take
+/// [`list_remove`]: crate::l5_objhost::list_remove
+/// [`give_back`]: crate::sa_pool::give_back
+///
+/// `magic_0242` 0x10003aa0 (689 bytes; 5 DLLs).
+pub fn falling_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let c = g.read::<i32>(w(0x5));
+    if c > 0 {
+        let c = c - 1;
+        g.write::<i32>(w(0xf), c);
+        if c > 0 {
+            return Ret::eax(c.cast_unsigned());
+        }
+        let i = g.read::<u32>(w(0x1c));
+        let tv = g.read::<u32>(i.wrapping_mul(4).wrapping_add(w(0x2a)));
+        let s = g.read::<u32>(w(0x35));
+        slot(g, img, f, 0x2f, 237, fr.ecx, &[s, tv, 0, w(0x21)]);
+        g.write::<u32>(w(0x46), w(0x4a));
+    }
+    let v = g.read::<u32>(w(0x52));
+    slot(
+        g,
+        img,
+        f,
+        0x57,
+        326,
+        fr.ecx,
+        &[w(0x72), w(0x6d), w(0x68), v],
+    );
+    let v = k(g, 0x7c);
+    let left = sub(k(g, 0x84), v);
+    let a = mul(mul(mul(v, left), k(g, 0xa1)), k(g, 0xad));
+    let a = add(a, mul(mul(left, left), 0.0));
+    let b = mul(mul(v, v), 0.0);
+    let next = add(v, k(g, 0xc0));
+    let a = add(a, b);
+    let y = g.read::<f32>(w(0xd7));
+    g.write::<f32>(w(0xdf), next);
+    g.write::<f32>(w(0xeb), sub(y, a));
+    // `comiss`/`jb`: below `K1` or unordered starts the sparks
+    if next >= k(g, 0xcb) {
+        let removed = crate::l5_objhost::list_remove(g, img, call(0xfc), w(0xf7), w(0xf2));
+        if removed != 0 {
+            let p = g.read::<u32>(w(0x105));
+            g.write::<u32>(p, w(0x110));
+            slot(g, img, f, 0x115, 713, fr.ecx, &[w(0x10a)]);
+            let v = g.read::<u16>(w(0x12c)) & 0x7fff;
+            g.write::<u16>(w(0x12c), v);
+        }
+        let node = fr.arg(g, 0);
+        return Ret::eax(crate::sa_pool::give_back(g, img, call(0x134), node));
+    }
+    let scratch = fr.esp.wrapping_sub(8);
+    let mut eax = 0;
+    for _ in 0..4 {
+        let p = crate::sa_misc::ring_take(g, img, call(0x145));
+        if p == 0 {
+            return Ret::eax(0);
+        }
+        let q = g.read::<u32>(g.read::<u32>(w(0x155)));
+        g.write::<u16>(p + 0xa, 0x200);
+        g.write::<u16>(p + 8, 0xffff);
+        g.write::<u32>(p, q);
+        g.write::<u32>(p + 4, 1);
+        slot(g, img, f, 0x165, 325, fr.ecx, &[p + 0xc, w(0x180)]);
+        let rnd = |g: &mut G, t: u32, s: u32, args: &[u32]| {
+            let o = slot(g, img, f, t, s, fr.ecx, args);
+            let x = crate::m0018::st0_f32(o.st0);
+            g.write::<f32>(scratch, x);
+            (x, o.eax)
+        };
+        let one = [0x3f80_0000];
+        let (r, _) = rnd(g, 0x188, 314, &one);
+        let x = add(g.read::<f32>(p + 0xc), r);
+        g.write::<f32>(p + 0xc, x);
+        let (r, _) = rnd(g, 0x1ab, 314, &one);
+        let y = add(r, g.read::<f32>(p + 0x10));
+        g.write::<f32>(p + 0x10, y);
+        let (r, _) = rnd(g, 0x1d0, 314, &one);
+        let z = add(r, g.read::<f32>(p + 0x14));
+        g.write::<f32>(p + 0x14, z);
+        // (the slot table, the two constants' operands)
+        for (t, ks, km, at) in [
+            (0x1f6u32, 0x216u32, 0x223u32, 0x1cu32),
+            (0x21b, 0x240, 0x24d, 0x20),
+        ] {
+            let (r, _) = rnd(g, t, 307, &[]);
+            g.write::<f32>(p + at, mul(sub(r, k(g, ks)), k(g, km)));
+        }
+        let (r, e) = rnd(g, 0x245, 307, &[]);
+        eax = e;
+        let d = sub(r, k(g, 0x26a));
+        g.write::<u32>(p + 0x28, 0);
+        g.write::<u32>(p + 0x2c, 0x3c23_d70a);
+        g.write::<u32>(p + 0x34, 0x18);
+        g.write::<u32>(p + 0x38, 0x18);
+        g.write::<u8>(p + 0x47, 0);
+        g.write::<f32>(p + 0x24, mul(d, k(g, 0x288)));
+    }
+    Ret::eax(eax)
+}
+
+/// [`falling_sparks`] (the `rel32`s: [`list_remove`](crate::l5_objhost::list_remove),
+/// [`give_back`](crate::sa_pool::give_back) and
+/// [`ring_take`](crate::sa_misc::ring_take)).
+pub const FALLING_SPARKS: Sig = Sig {
+    len: 689,
+    hash: 0xa0db_6813_4541_7448,
+    calls: &[
+        (0xfc, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x134, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x145, Callee::Sig(&crate::sa_misc::RING_TAKE)),
+    ],
+    imports: &[],
+};

@@ -2660,3 +2660,78 @@ fn model_sound_records() {
         }
     }
 }
+
+/// Row 205: the falling sparks frame of the five DLLs: the delay above
+/// 1, at 1 (slot 237), 0; the level below its end (four sparks, the ring
+/// with room, one slot and none) and at it (the object on the list or
+/// not, the node given back).
+#[test]
+fn falling_sparks() {
+    for dll in [242u16, 651, 654, 655, 657] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x3aa0);
+        let log = SCRATCH + 0x6000;
+        for (s, n) in [(237u32, 4usize), (326, 4), (713, 1), (325, 2)] {
+            log_calls(&mut t, s, log, n, None, move |_, a, k| a[0] ^ (s << 16) ^ k);
+        }
+        for (s, n) in [(314u32, 1usize), (307, 0)] {
+            log_calls(&mut t, s, log, n, None, move |_, _, k| (s << 16) ^ k);
+            t.stub_st0(s, move |m, _| {
+                let k = m.r32(log);
+                0.375 + f64::from(k % 7) * 0.5
+            });
+        }
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let take = t.img.rel32_target(f + 0x145);
+        let ring = SCRATCH + 0x2000;
+        t.set_u32(op(&t, take, 0x16), ring);
+        t.set_u32(w(&t, 0x155), SCRATCH + 0x2f0);
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_4321);
+        t.set_u32(w(&t, 0x105), SCRATCH + 0x2f4);
+        for (o, x) in [(0x84u32, 2.0f32), (0xa1, 0.5), (0xad, 3.0), (0xc0, 0.25)] {
+            t.set_u32(w(&t, o), x.to_bits());
+        }
+        let list = w(&t, 0xf7);
+        let item = w(&t, 0xf2);
+        let node = SCRATCH + 0x400;
+        let lnode = SCRATCH + 0x500;
+        // (the delay, the level, the ring's size, the list holds the item)
+        for (k, (delay, v, n, listed)) in [
+            (3i32, 0.5f32, 8u32, false),
+            (1, 0.5, 8, false),
+            (0, 1.0, 2, false),
+            (0, 1.0, 0, false),
+            (-1, 1.75, 8, true),
+            (0, 1.75, 8, false),
+            (0, f32::NAN, 8, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(w(&t, 0x5), delay.cast_unsigned());
+            t.set_u32(w(&t, 0x1c), k % 2);
+            t.set_u32(w(&t, 0x52), v.to_bits());
+            t.set_u32(w(&t, 0xd7), (4.0 + k as f32).to_bits());
+            t.set_u32(op(&t, take, 0x09), n);
+            t.set_u32(op(&t, take, 0x01), 0);
+            t.write(ring, &varied(0x50 * 8, k));
+            for i in 0..8u32 {
+                t.set_u32(ring + 0x50 * i + 0x48, u32::from(i == 3 && n == 2));
+            }
+            t.write(lnode, &varied(0x10, k));
+            t.set_u32(lnode + 4, 0);
+            t.set_u32(lnode + 8, if listed { item } else { 0x1234 });
+            t.set_u32(list, lnode);
+            t.set_u32(list + 4, lnode);
+            t.set_u32(list + 8, 0);
+            t.set_u16(w(&t, 0x12c), 0xffff);
+            t.write(node, &varied(0x20, k + 1));
+            t.set_u32(node + 8, node);
+            t.set_u32(node + 0xc, 0);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[node], Eax::Checked);
+        }
+    }
+}
