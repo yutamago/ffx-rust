@@ -249,6 +249,9 @@ pub enum ObjectStart {
     /// [`start_object_first`](crate::s4_misc::start_object_first)
     /// (`magic_0229`).
     First,
+    /// [`start_object_first`](crate::o6_fam_object::start_object_first)
+    /// (`magic_0110`, `0112`).
+    Fam,
 }
 
 /// A start-up with one object per actor (internal, no arguments; 544
@@ -284,12 +287,32 @@ pub fn objects_start<G: crate::Game>(
     let part = g.call(s719, 0, &[w(0x17), 8, 0]).eax;
     g.write::<u32>(w(0x35), part);
     crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x3a));
+    actor_objects(g, img, fr, start, 0x4a, 0);
+    objects_tail(g, img, f)
+}
+
+/// [`objects_start`]'s loop (the start-up at `fr.at`, its operands from
+/// `+0x64` on): for each of the `*G_N` actors (`G_N` the operand
+/// `n_first` for the first test, `+0x158` in the loop's) the object
+/// starts with the owner `owner0 + 15 i` and gets the actor's point, byte
+/// and record.
+pub(crate) fn actor_objects<G: crate::Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &crate::Frame,
+    start: ObjectStart,
+    n_first: u32,
+    owner0: u32,
+) {
+    use crate::runtime::slot_target;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
     // push ebp; sub esp, 8; push esi; push ebx; push edi; sub esp, 8;
     // push owner; push ecx; call
     let esp = fr.esp.wrapping_sub(0x2c);
-    let mut owner = 0u32;
+    let mut owner = owner0;
     let mut i = 0u32;
-    if g.read::<u32>(w(0x4a)).cast_signed() > 0 {
+    if g.read::<u32>(w(n_first)).cast_signed() > 0 {
         loop {
             let obj = w(0x75).wrapping_add(i.wrapping_mul(0x130));
             let scale = g.read::<f32>(w(0x64));
@@ -310,6 +333,16 @@ pub fn objects_start<G: crate::Game>(
                 }
                 ObjectStart::First => {
                     crate::s4_misc::start_object_first(g, img, at, obj, scale, owner);
+                }
+                ObjectStart::Fam => {
+                    let call = crate::Frame {
+                        at,
+                        esp,
+                        edx: obj,
+                        xmm: [0, 0, 0, u128::from(scale.to_bits())],
+                        ..*fr
+                    };
+                    crate::o6_fam_object::start_object_first(g, img, at, &call);
                 }
             }
             let p = obj + 0xd0;
@@ -346,6 +379,11 @@ pub fn objects_start<G: crate::Game>(
             }
         }
     }
+}
+
+/// [`objects_start`] after the loop: the task node.
+fn objects_tail<G: crate::Game>(g: &mut G, img: &Image, f: u32) -> crate::Ret {
+    let w = |o: u32| img.word(f + o);
     // the task node, the pool's take inlined
     let free = g.read::<u16>(w(0x167));
     let node = if free == 0 {

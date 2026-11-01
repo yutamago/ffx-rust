@@ -51,6 +51,10 @@ pub mod part_draw;
 pub mod pe;
 pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
+pub mod r11_actors;
+pub mod r11_fades;
+pub mod r11_misc;
+pub mod r11_objects;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1045,6 +1049,20 @@ ports! {
     "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
     "r9 summon start (nodes) 0096" => r9_summon::NODES_0096, r9_summon::nodes_0096;
     "r9 summon start (nodes) 0097" => r9_summon::NODES_0097, r9_summon::nodes_0097;
+    // round 11 (magic-r11-own): more load-step copies (r9_load)
+    "r9 load step 0110" => r9_load::LOAD_0110, r9_load::load_0110;
+    "r9 load step 0112" => r9_load::LOAD_0112, r9_load::load_0112;
+    "r9 load step 0121" => r9_load::LOAD_0121, r9_load::load_0121;
+    "r9 load step 0116" => r9_load::LOAD_0116, r9_load::load_0116;
+    "r9 load step 0117" => r9_load::LOAD_0117, r9_load::load_0117;
+    "r9 load step 0120" => r9_load::LOAD_0120, r9_load::load_0120;
+    "r9 load step 0126" => r9_load::LOAD_0126, r9_load::load_0126;
+    "r9 load step 0127" => r9_load::LOAD_0127, r9_load::load_0127;
+    "r9 load step 0105" => r9_load::LOAD_0105, r9_load::load_0105;
+    "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
+    "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
+    "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
+    "r11 main object 0369" => r11_misc::MAIN_OBJECT_0369, r11_misc::main_object_0369;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0596 start" => m0596::START, m0596::start;
@@ -2656,6 +2674,28 @@ ports! {
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 11 (magic-r11-own)
+    ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),
+    ("r11 three nodes 0112", &r11_objects::THREE_NODES_0112),
+    ("r11 three nodes 0121", &r11_objects::THREE_NODES_0121),
+    ("r11 two per actor 0116", &r11_objects::TWO_PER_ACTOR_0116),
+    ("r11 two per actor 0117", &r11_objects::TWO_PER_ACTOR_0117),
+    (
+        "r11 three nodes (height) 0120",
+        &r11_objects::THREE_NODES_HEIGHT_0120,
+    ),
+    (
+        "r11 three nodes (kind) 0126",
+        &r11_objects::THREE_NODES_KIND_0126,
+    ),
+    (
+        "r11 three nodes (scaled) 0127",
+        &r11_objects::THREE_NODES_SCALED_0127,
+    ),
+    (
+        "r11 object two fades 0105",
+        &r11_fades::OBJECT_TWO_FADES_0105,
+    ),
     // round 9 (magic-r9-own)
     ("m0390 facing", &m0390::FACING),
     ("m0390 facing 0447", &m0390::FACING_0447),

@@ -5,6 +5,7 @@
 
 mod magic;
 mod magic_owna;
+mod magic_r11;
 mod magic_r9;
 
 use ffx_magic::{Image, l5_objhost, m0032, sa_pool};
@@ -236,4 +237,84 @@ fn load_0166() {
 #[test]
 fn load_0308() {
     copy(308, 0x1210, false, effect);
+}
+
+/// Round 11's start-up with three task nodes
+/// (`r11_objects::three_nodes`): two actors, enough free nodes for both
+/// runs.
+fn three_nodes(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0110() {
+    copy(110, 0x12b0, true, three_nodes);
+}
+
+#[test]
+fn load_0112() {
+    copy(112, 0x12b0, true, three_nodes);
+}
+
+#[test]
+fn load_0121() {
+    copy(121, 0x2d60, true, three_nodes);
+}
+
+/// Round 11's start-up with two objects per actor
+/// (`r11_objects::two_per_actor`).
+fn two_per_actor(t: &mut Twin, start: u32) {
+    magic_r11::two_per_actor_setup(t, start, 2, 7, false);
+}
+
+/// Round 11's start-up with slot 12's heights
+/// (`r11_objects::three_nodes_height`).
+fn three_nodes_height(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_height_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0120() {
+    copy(120, 0x12b0, true, three_nodes_height);
+}
+
+/// Round 11's scaled start-ups (`r11_objects::three_nodes_kind`,
+/// `three_nodes_scaled`).
+fn three_nodes_kind(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_kind_setup(t, start, 2, 7, false);
+}
+
+fn three_nodes_scaled(t: &mut Twin, start: u32) {
+    magic_r11::three_nodes_scaled_setup(t, start, 2, 7, false);
+}
+
+#[test]
+fn load_0126() {
+    copy(126, 0x1300, true, three_nodes_kind);
+}
+
+#[test]
+fn load_0127() {
+    copy(127, 0x2bd0, true, three_nodes_scaled);
+}
+
+/// Round 11's start-up with an object and two fades
+/// (`r11_fades::object_two_fades`).
+fn object_two_fades(t: &mut Twin, start: u32) {
+    magic_r11::object_two_fades_setup(t, start, false);
+}
+
+#[test]
+fn load_0105() {
+    copy(105, 0x2fd0, true, object_two_fades);
+}
+
+#[test]
+fn load_0116() {
+    copy(116, 0x1300, true, two_per_actor);
+}
+
+#[test]
+fn load_0117() {
+    copy(117, 0x2da0, true, two_per_actor);
 }

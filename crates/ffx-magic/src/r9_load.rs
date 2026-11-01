@@ -141,4 +141,22 @@ copies! {
     load_0308 => LOAD_0308, Zero, crate::r9_misc::effect_start_bare, crate::r9_misc::EFFECT_START_0308;
     /// `magic_0447` 0x100049b0.
     load_0447 => LOAD_0447, Zero, crate::m0390::start_up_0447, crate::m0390::START_UP_0447;
+    /// `magic_0110` 0x100012b0.
+    load_0110 => LOAD_0110, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0110;
+    /// `magic_0112` 0x100012b0.
+    load_0112 => LOAD_0112, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0112;
+    /// `magic_0121` 0x10002d60.
+    load_0121 => LOAD_0121, One, crate::r11_objects::three_nodes, crate::r11_objects::THREE_NODES_0121;
+    /// `magic_0116` 0x10001300.
+    load_0116 => LOAD_0116, One, crate::r11_objects::two_per_actor, crate::r11_objects::TWO_PER_ACTOR_0116;
+    /// `magic_0117` 0x10002da0.
+    load_0117 => LOAD_0117, One, crate::r11_objects::two_per_actor, crate::r11_objects::TWO_PER_ACTOR_0117;
+    /// `magic_0120` 0x100012b0.
+    load_0120 => LOAD_0120, One, crate::r11_objects::three_nodes_height, crate::r11_objects::THREE_NODES_HEIGHT_0120;
+    /// `magic_0126` 0x10001300.
+    load_0126 => LOAD_0126, One, crate::r11_objects::three_nodes_kind, crate::r11_objects::THREE_NODES_KIND_0126;
+    /// `magic_0127` 0x10002bd0.
+    load_0127 => LOAD_0127, One, crate::r11_objects::three_nodes_scaled, crate::r11_objects::THREE_NODES_SCALED_0127;
+    /// `magic_0105` 0x10002fd0.
+    load_0105 => LOAD_0105, One, crate::r11_fades::object_two_fades, crate::r11_fades::OBJECT_TWO_FADES_0105;
 }
