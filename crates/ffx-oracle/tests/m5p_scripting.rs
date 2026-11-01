@@ -4263,3 +4263,217 @@ fn bp2_silhouette_planes() {
         t.unstub();
     }
 }
+
+// ---- big-phyre3 ----
+
+/// A recording stub at `sym` (`tag` the address, `ecx` when `this`, `n`
+/// stack words, popping `pops`) answering `answers` in turn (0 past the
+/// end).
+fn bp3_seq_stub(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, answers: &[u32]) {
+    let mut table: Vec<u8> = answers.iter().flat_map(|v| v.to_le_bytes()).collect();
+    table.extend([0u8; 256]);
+    let table = t.alloc(&table);
+    let cell = t.alloc(&table.to_le_bytes());
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    if this {
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    }
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x8b, 0x10]); // mov edx, [eax]
+    c.extend([0x83, 0x05]);
+    c.extend(cell.to_le_bytes());
+    c.push(0x04); // add dword [cell], 4
+    c.extend([0x89, 0xd0]); // mov eax, edx
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+    }
+    let code = t.code(&c);
+    t.place(sym, code);
+}
+
+/// `0x0061a2a0` (`PCallerScript::vcall`) with every callee recorded: no
+/// argument types, no function name; both scheduler pools null, full or
+/// with a free context, the first state failing; the script not loading,
+/// its run failing (with the message), no function; no arguments, bool
+/// arguments (from the `va` cell) and others each pusher taking or none
+/// (the warning); the call failing; each popper taking, the `PBase`
+/// result, no return context; the context given back only when it is
+/// still the pool's last. The object's argument slot goes to `pushBase`.
+/// Only synthetic data reaches it.
+#[test]
+fn bp3_vcall_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_bp3::{self as v};
+    let [
+        copy_block,
+        load_script,
+        pcall,
+        getglobal,
+        lua_type,
+        push_base,
+        bool_type,
+        check,
+        push_bool,
+        tostring,
+        settop,
+        printf,
+        base_desc,
+        get_base,
+    ] = v::VCALL_CALLS;
+    for (label, mut t) in Twins::all() {
+        let end = t.a.stack_range().end;
+        let slots = end - 0x100 - 0x10;
+        for k in 0..40u32 {
+            let l = 0x00c9_1100;
+            // the pools: null, full, free
+            let pool = |t: &mut Twins, kind: u32| -> u32 {
+                if kind == 0 {
+                    return 0;
+                }
+                let p = t.zeros(0x40);
+                let ctxs = t.zeros(0x80);
+                t.w32(p + 0x2c, ctxs);
+                t.w32(p + 0x28, 4 | 0x8000_0000);
+                t.w32(p + 0x30, if kind == 1 { 4 } else { 2 });
+                p
+            };
+            let p0 = pool(&mut t, [2, 0, 1, 2, 2][k as usize % 5]);
+            let p1 = pool(&mut t, [2, 2, 2, 0, 1][(k / 5) as usize % 5]);
+            t.w32(t.rebase(v::VCALL_GLOBALS[0]), p0);
+            t.w32(t.rebase(v::VCALL_GLOBALS[1]), p1);
+            let states = if k % 9 == 4 { vec![0, l] } else { vec![l, l] };
+            bp3_seq_stub(&mut t, copy_block, true, 0, 0, &states);
+            t.stub(load_script, false, 2, 0, u32::from(k % 13 != 6));
+            // the first pcall answers 0 or 2, the second 0 or 3
+            let pcalls = [
+                if k % 11 == 7 { 2 } else { 0 },
+                if k % 7 == 3 { 3 } else { 0 },
+            ];
+            bp3_seq_stub(&mut t, pcall, false, 6, 0, &pcalls);
+            t.stub(getglobal, false, 2, 0, 0x51);
+            t.stub(lua_type, false, 2, 0, u32::from(k % 17 != 9) * 6);
+            t.stub(push_base, false, 2, 0, 0x52);
+            let bool_t = 0x7700;
+            t.stub(bool_type, false, 0, 0, bool_t);
+            t.stub(check, false, 2, 0, 0x53);
+            t.stub(push_bool, false, 2, 0, 0x54);
+            t.stub(tostring, false, 3, 0, 0x5500);
+            t.stub(settop, false, 2, 0, 0x56);
+            // printf: the words each message has (three for the copy
+            // warning, four for the pcall failure, two otherwise)
+            let [_, _, cannot_copy, failed, _] = v::VCALL_GLOBALS.map(|a| t.rebase(a));
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(printf.to_le_bytes()); // mov [eax], tag
+            for i in 0..2u8 {
+                c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+                c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+            }
+            for (fmt, words) in [(cannot_copy, 3u8), (failed, 4)] {
+                c.extend([0x81, 0x7c, 0x24, 0x08]);
+                c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+                let body: Vec<u8> = (2..words)
+                    .flat_map(|i| [0x8b, 0x54, 0x24, 4 + 4 * i, 0x89, 0x50, 8 + 4 * i])
+                    .collect();
+                c.extend([0x75, body.len() as u8]); // jne past
+                c.extend(body);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(printf, code);
+            t.stub(base_desc, false, 0, 0, 0x6600);
+            t.stub(get_base, false, 1, 0, 0x6601);
+            // pushers: argument i is taken by pusher (i + k) % 13 (12: none)
+            let types = t.zeros(0x20);
+            let nargs = [0u32, 1, 3, 5][k as usize % 4];
+            for i in 0..nargs {
+                let ty = if (i + k) % 4 == 1 { bool_t } else { 0x7100 + i };
+                t.w32(types + 4 * i, ty);
+            }
+            for (j, &p) in v::VCALL_PUSHERS.iter().enumerate() {
+                let answers: Vec<u32> = (0..8)
+                    .map(|i| u32::from((i + k) % 13 == j as u32) | 0x100)
+                    .collect();
+                bp3_seq_stub(&mut t, p, false, 3, 0, &answers);
+            }
+            let take = k % 14; // popper index, 11: PBase, 12+: none
+            for (j, &p) in v::VCALL_POPPERS.iter().enumerate() {
+                bp3_seq_stub(
+                    &mut t,
+                    p,
+                    false,
+                    3,
+                    0,
+                    &[u32::from(take == j as u32) | 0x200],
+                );
+            }
+            let ret = if take == 11 { 0x6601 } else { 0x6000 };
+            let holder = t.zeros(8);
+            t.w32(holder, if k == 39 { 0 } else { types });
+            let vals = t.zeros(0x20);
+            for i in 0..8 {
+                t.w32(vals + 4 * i, ((i + k / 4) % 2) * 0x10);
+            }
+            let va = t.zeros(4);
+            t.w32(va, vals);
+            let script = t.zeros(0x40);
+            t.w32(script + 0x28, 0x5c01);
+            let name = if k == 38 { 1 } else { 0x4e00 | (k & 1) };
+            t.w32(script + 0x30, name);
+            let this = t.zeros(8);
+            t.w32(this + 4, script);
+            let object = 0x0b1e;
+            t.w32(slots, object);
+            if k % 6 == 5 {
+                // another borrow meanwhile: the context is no longer the
+                // pool's last, so it is not given back
+                for p in [p0, p1] {
+                    if p != 0 {
+                        let used = t.r32(p + 0x30);
+                        t.w32(p + 0x30, used);
+                    }
+                }
+                let mut c = Vec::new();
+                for p in [p0, p1] {
+                    if p != 0 {
+                        c.extend([0xff, 0x05]);
+                        c.extend((p + 0x30).to_le_bytes()); // inc dword [p+0x30]
+                    }
+                }
+                c.push(0xb8);
+                c.extend(l.to_le_bytes()); // mov eax, L
+                c.push(0xc3);
+                let code = t.code(&c);
+                t.place(copy_block, code);
+            }
+            let what = format!("{label}: vcall {k}");
+            t.this(&what, 0x0061_a2a0, this, &[object, ret, holder, va], |g| {
+                Some(v::vcall::vcall(g, slots, this, ret, holder, va))
+            });
+        }
+        t.unstub();
+    }
+}
