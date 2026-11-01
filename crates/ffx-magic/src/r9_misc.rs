@@ -1,7 +1,7 @@
 //! Round 9 (magic-r9-own): small functions shared by two or three of the
 //! own rows below `magic_0450` (each named for the DLLs carrying it).
 
-use crate::{Callee, Image, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// Starts an effect object (internal: `edx` = the object, `xmm3` its
 /// scale, the stack `(index)`): [`start_object`](crate::s4_misc) with its
@@ -578,5 +578,317 @@ pub const EFFECT_START_0308: Sig = Sig {
         (0x15c, Callee::Sig(&crate::sa_misc::ME_BLOCK)),
         (0x164, Callee::Sig(&crate::m0032::POP_NODE)),
     ],
+    imports: &[],
+};
+
+/// A task step (the owner value of a start-up's task node, cdecl
+/// `(node)`; `magic_0391` 0x10001310 and `magic_0448` 0x10004c10, 110
+/// bytes): the block `BLK` (the immediate `+0x10`, 0x30 bytes) cleared
+/// (`memset`), bit 7 of its halfword `BLK + 2` (`+0x21`) set and `*G_SRC`
+/// (`+0x26`) copied into `+0x2e`; the script ([`run`](crate::sa_script::run))
+/// and the motion ([`motion_step`](crate::s3_motion::motion_step)); once
+/// both report done, `G_STATE + D` = 1 (`G_STATE` `+0x07` read first, `D`
+/// the displacement `+0x4d`), slot 542 for each actor
+/// ([`each_542`](crate::s4_small::each_542), `ecx` = 1), the parts
+/// registered ([`register_parts`](crate::sa_misc::register_parts)) and
+/// the node given back to its pool ([`give_back`](crate::sa_pool::give_back),
+/// a tail jump with `ecx` = `node`). Returns the motion's result, or the
+/// give-back's.
+pub fn task_step_542<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let state = g.read::<u32>(w(0x07));
+    // memset(BLK, 0, 0x30)
+    g.write_bytes(w(0x10), &[0; 0x30]);
+    let v = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), v | 0x80);
+    let src = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x2e), src);
+    let script = crate::sa_script::run(g, img, img.rel32_target(f + 0x33));
+    let motion = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x3a));
+    if script == 0 || motion == 0 {
+        return Ret::eax(motion);
+    }
+    g.write::<u32>(state.wrapping_add(w(0x4d)), 1);
+    // push ebp; push esi; push edi; call
+    let each = Frame {
+        at: img.rel32_target(f + 0x56),
+        esp: fr.esp.wrapping_sub(0x10),
+        eax: motion,
+        ecx: 1,
+        ..*fr
+    };
+    let eax = crate::s4_small::each_542(g, img, &each).eax;
+    crate::sa_misc::register_parts(g, img, img.rel32_target(f + 0x5b), eax);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x66),
+        node,
+    ))
+}
+
+/// [`task_step_542`]'s identity in each DLL.
+macro_rules! step_542_copies {
+    ($($sig:ident, $hash:literal, $doc:literal;)*) => {
+        $(
+            #[doc = concat!("[`task_step_542`] in ", $doc, ".")]
+            pub const $sig: Sig = Sig {
+                len: 110,
+                hash: $hash,
+                calls: &[
+                    (0x15, Callee::Import("memset")),
+                    (0x33, Callee::Sig(&crate::sa_script::RUN)),
+                    (0x3a, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+                    (0x56, Callee::Sig(&crate::s4_small::EACH_542)),
+                    (0x5b, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+                    (0x66, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+                ],
+                imports: &[],
+            };
+        )*
+    };
+}
+
+step_542_copies! {
+    TASK_STEP_542_0391, 0xb951_ed5f_462e_891f, "`magic_0391` 0x10001310";
+    TASK_STEP_542_0448, 0x2cee_4207_3bf2_08cf, "`magic_0448` 0x10004c10";
+}
+
+/// An emitter's start (cdecl `(e)`; `magic_0285` 0x10004e20 and
+/// `magic_0286` 0x10001cd0, 72 bytes): the object `OBJ` (`+0x17`, scale
+/// `*K` `+0x07`) starts
+/// ([`start_object_at`](crate::s4_misc::start_object_at): the index the
+/// byte `+0x15`, the owner the byte `+0x13`, the second owner the
+/// immediate `+0x0d`), slot 325 `(DATA, e + 0x24c)` (`DATA` the
+/// immediate `+0x30`), then the puff ([`smoke_puff`](crate::s6_misc::smoke_puff),
+/// a tail jump with `ecx` = `e`). Returns the puff's 0.
+pub fn smoke_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x07));
+    let (index, owner) = (w(0x15) & 0xff, w(0x13) & 0xff);
+    crate::s4_misc::start_object_at(
+        g,
+        img,
+        img.rel32_target(f + 0x1c),
+        w(0x17),
+        scale,
+        index,
+        owner,
+        w(0x0d),
+    );
+    let e = fr.arg(g, 0);
+    let t = crate::runtime::slot_target(g, w(0x2b), 0x514 / 4);
+    g.call(t, 0, &[w(0x30), e.wrapping_add(0x24c)]);
+    let puff = Frame {
+        at: img.rel32_target(f + 0x44),
+        ecx: e,
+        ..*fr
+    };
+    Ret::eax(crate::s6_misc::smoke_puff(g, img, &puff))
+}
+
+/// [`smoke_start`] in `magic_0285` (index 0).
+pub const SMOKE_START_0285: Sig = Sig {
+    len: 72,
+    hash: 0x43fa_818b_d27e_9d88,
+    calls: &[
+        (0x1c, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x44, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
+    ],
+    imports: &[],
+};
+
+/// [`smoke_start`] in `magic_0286` (index 1).
+pub const SMOKE_START_0286: Sig = Sig {
+    len: 72,
+    hash: 0x6ef7_5d19_262e_80ab,
+    calls: SMOKE_START_0285.calls,
+    imports: &[],
+};
+
+/// Starts the effect's main object and its fade (internal, no
+/// arguments; `magic_0392` 0x10002120 and `magic_0449` 0x10005c40, 167
+/// bytes; the block's fields are the code's displacements): the object
+/// `S + D1` (`S` = `*G_S` `+0x0c`, `D1` `+0x15`; scale `*K` `+0x04`)
+/// starts ([`start_object_plain`](crate::s4_misc::start_object_plain),
+/// index 4); `S + D4` (`+0x38`) = `S + D2` (`+0x22`); the record `R` =
+/// `S + D3` (`+0x3e`; `+0x10..+0x1c`, `+0x28`, `+0x2c`, halfword `+0x30`
+/// 0, `+0x20`/`+0x24` the immediates `+0x72`/`+0x79`) goes into `S + D6`
+/// (`+0x98`) and `S + D5` (`+0x44`) = the immediate `+0x48`; then the
+/// fade task `S + D7` (`+0x8d`) starts
+/// ([`fade_task`](crate::s3_misc::fade_task): `edx` 0x32, `xmm1`/`xmm2`
+/// the floats `+0x32`/`+0x2a`, the stack word 0). Returns its node.
+pub fn main_object_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x04));
+    let s = g.read::<u32>(w(0x0c));
+    let at = |o: u32| s.wrapping_add(w(o));
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x1c), at(0x15), scale, 4);
+    let v = g.read::<u32>(at(0x22));
+    g.write::<u32>(at(0x38), v);
+    let rec = at(0x3e);
+    g.write::<u32>(at(0x44), w(0x48));
+    for o in [0x18, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(rec + o, 0);
+    }
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(rec + 0x20, w(0x72));
+    g.write::<u32>(rec + 0x24, w(0x79));
+    g.write::<u32>(rec + 0x28, 0);
+    g.write::<u32>(rec + 0x2c, 0);
+    g.write::<u32>(at(0x98), rec);
+    // push esi/edi; sub esp, 0xc; push 4 (popped later); push ecx; call
+    let fade = Frame {
+        at: img.rel32_target(f + 0x9d),
+        esp: fr.esp.wrapping_sub(0x20),
+        ecx: at(0x8d),
+        edx: 0x32,
+        xmm: [
+            0,
+            u128::from(g.read::<u32>(w(0x32))),
+            u128::from(g.read::<u32>(w(0x2a))),
+            0,
+        ],
+        ..*fr
+    };
+    g.write::<u32>(fade.esp + 4, 0);
+    Ret::eax(crate::s3_misc::fade_task(g, img, &fade))
+}
+
+/// [`main_object_fade`] in `magic_0392` (0x10002120).
+pub const MAIN_OBJECT_FADE_0392: Sig = Sig {
+    len: 167,
+    hash: 0x287b_55c0_0d5c_ea95,
+    calls: &[
+        (0x1c, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x9d, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+    ],
+    imports: &[],
+};
+
+/// [`main_object_fade`] in `magic_0449` (0x10005c40).
+pub const MAIN_OBJECT_FADE_0449: Sig = Sig {
+    len: 167,
+    hash: 0x09a6_89f2_9870_da9d,
+    calls: MAIN_OBJECT_FADE_0392.calls,
+    imports: &[],
+};
+
+/// Two objects of the block `B` = `*G_B` (`+0x0b`) started (a table
+/// entry, no arguments; `magic_0350` 0x10006780 and `magic_0352`
+/// 0x10004db0, 162 bytes): `B + 0x720` and `B + 0x850`
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain): scale
+/// `*K` `+0x04`/`+0x43`, the index the byte `+0x1b`/`+0x5e`), each
+/// followed by slot 237 `(*G_H, 0x17 / 0x1a, 0, p)` into its point `p` =
+/// `B + 0x7f0` / `B + 0x920` (`w` 1.0); `B + 0x7e4` and `B + 0x914` take
+/// `B + 0x984`. Returns that word.
+pub fn two_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let b = g.read::<u32>(w(0x0b));
+    let scale = g.read::<f32>(w(0x04));
+    crate::s4_misc::start_object_plain(
+        g,
+        img,
+        img.rel32_target(f + 0x1d),
+        b + 0x720,
+        scale,
+        w(0x1b) & 0xff,
+    );
+    let t = crate::runtime::slot_target(g, w(0x22), 0x3b4 / 4);
+    let h = g.read::<u32>(w(0x39));
+    g.call(t, 0, &[h, 0x17, 0, b + 0x7f0]);
+    let scale = g.read::<f32>(w(0x43));
+    g.write::<u32>(b + 0x7fc, 0x3f80_0000);
+    let v = g.read::<u32>(b + 0x984);
+    g.write::<u32>(b + 0x7e4, v);
+    crate::s4_misc::start_object_plain(
+        g,
+        img,
+        img.rel32_target(f + 0x66),
+        b + 0x850,
+        scale,
+        w(0x5e) & 0xff,
+    );
+    let t = crate::runtime::slot_target(g, w(0x6b), 0x3b4 / 4);
+    let h = g.read::<u32>(w(0x82));
+    g.call(t, 0, &[h, 0x1a, 0, b + 0x920]);
+    g.write::<u32>(b + 0x92c, 0x3f80_0000);
+    let v = g.read::<u32>(b + 0x984);
+    g.write::<u32>(b + 0x914, v);
+    Ret::eax(v)
+}
+
+/// [`two_objects`] in `magic_0350` (index 5).
+pub const TWO_OBJECTS_0350: Sig = Sig {
+    len: 162,
+    hash: 0x21f6_5d3d_bef4_fd89,
+    calls: &[
+        (0x1d, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x66, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+    ],
+    imports: &[],
+};
+
+/// [`two_objects`] in `magic_0352` (index 0).
+pub const TWO_OBJECTS_0352: Sig = Sig {
+    len: 162,
+    hash: 0x0628_5381_6730_611f,
+    calls: TWO_OBJECTS_0350.calls,
+    imports: &[],
+};
+
+/// An object of the block `S` = `*G_S` (`+0x0b`) started at the block's
+/// point (a table entry, no arguments; `magic_0165` 0x10002e40 and
+/// 0x10003310, 134 bytes; offsets and immediates read from the code):
+/// the object `S + D` (`+0x15`; scale `*K` `+0x04`, the index the byte
+/// `+0x1a`) starts ([`start_object_plain`](crate::s4_misc::start_object_plain));
+/// its point `+0xd0..+0xdc` takes four words of `S` (displacements
+/// `+0x24`, `+0x30`, `+0x3c`, `+0x48`), the point's y less `K2`
+/// (`+0x5e`), `+0xc4` = `S + E` (`+0x64`) and `+0xe8` the immediate
+/// `+0x77`. Returns the `+0xc4` word.
+pub fn object_at_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x04));
+    let s = g.read::<u32>(w(0x0b));
+    let obj = s.wrapping_add(w(0x15));
+    crate::s4_misc::start_object_plain(
+        g,
+        img,
+        img.rel32_target(f + 0x1e),
+        obj,
+        scale,
+        w(0x1a) & 0xff,
+    );
+    for (i, o) in (0u32..).zip([0x24u32, 0x30, 0x3c, 0x48]) {
+        let v = g.read::<u32>(s.wrapping_add(w(o)));
+        g.write::<u32>(obj + 0xd0 + 4 * i, v);
+    }
+    let y = crate::sb_sse::sub(g.read::<f32>(obj + 0xd4), g.read::<f32>(w(0x5e)));
+    let v = g.read::<u32>(s.wrapping_add(w(0x64)));
+    g.write::<u32>(obj + 0xc4, v);
+    g.write::<u32>(obj + 0xe8, w(0x77));
+    g.write::<f32>(obj + 0xd4, y);
+    Ret::eax(v)
+}
+
+/// [`object_at_point`] in `magic_0165` (0x10002e40, object 1).
+pub const OBJECT_AT_POINT_0165_2E40: Sig = Sig {
+    len: 134,
+    hash: 0x328c_5a3a_86c6_da19,
+    calls: &[(0x1e, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};
+
+/// [`object_at_point`] in `magic_0165` (0x10003310, object 4).
+pub const OBJECT_AT_POINT_0165_3310: Sig = Sig {
+    len: 134,
+    hash: 0x6978_af97_3996_54b1,
+    calls: OBJECT_AT_POINT_0165_2E40.calls,
     imports: &[],
 };

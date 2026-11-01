@@ -1021,6 +1021,14 @@ ports! {
     "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;
     "r9 load step 0166" => r9_load::LOAD_0166, r9_load::load_0166;
     "r9 load step 0308" => r9_load::LOAD_0308, r9_load::load_0308;
+    "r9 task step (542) 0391" => r9_misc::TASK_STEP_542_0391, r9_misc::task_step_542;
+    "r9 task step (542) 0448" => r9_misc::TASK_STEP_542_0448, r9_misc::task_step_542;
+    "r9 smoke start 0285" => r9_misc::SMOKE_START_0285, r9_misc::smoke_start;
+    "r9 smoke start 0286" => r9_misc::SMOKE_START_0286, r9_misc::smoke_start;
+    "r9 two objects 0350" => r9_misc::TWO_OBJECTS_0350, r9_misc::two_objects;
+    "r9 two objects 0352" => r9_misc::TWO_OBJECTS_0352, r9_misc::two_objects;
+    "r9 object at point 0165@2e40" => r9_misc::OBJECT_AT_POINT_0165_2E40, r9_misc::object_at_point;
+    "r9 object at point 0165@3310" => r9_misc::OBJECT_AT_POINT_0165_3310, r9_misc::object_at_point;
     "m0447 object fade 5290" => m0447::OBJECT_FADE, m0447::object_fade;
     "m0447 camera turn 4cb0" => m0447::CAMERA_TURN, m0447::camera_turn;
     "m0447 camera curve 4f60" => m0447::CAMERA_CURVE, m0447::camera_curve;
@@ -2693,6 +2701,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r9 objects start 0229", &r9_misc::OBJECTS_START_0229),
     ("r9 effect start 0166", &r9_misc::EFFECT_START_0166),
     ("r9 effect start 0308", &r9_misc::EFFECT_START_0308),
+    ("r9 main object fade 0392", &r9_misc::MAIN_OBJECT_FADE_0392),
+    ("r9 main object fade 0449", &r9_misc::MAIN_OBJECT_FADE_0449),
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),
