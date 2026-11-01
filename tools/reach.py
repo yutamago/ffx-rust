@@ -33,8 +33,13 @@ Roots, in this order (each kind's count is what it adds to the ones before):
               pointer
   native      the Atel native tables (AtelSetUpCallFunc's tables, 16-byte
               records)
-  magic       g_MagicImports (0x00c64ce8, 744 slots), the table every
-              magic_*.dll gets; the overlays reach FFX.exe only through it
+  magic       g_MagicImports (0x00c64ce8), the table every magic_*.dll
+              gets; the overlays reach FFX.exe only through it. Its length
+              comes from the image (Image.magic_imports): 947 slots
+              (0xecc bytes) in FFX.exe, all filled at load time (nothing in
+              FFX.exe writes it; MagicFile_Start's push is its only
+              reference); the overlays call slots up to 946 (+0xec8). Slots
+              744-946 used to count as data roots
   rdata/data  any other relocated pointer into .text in a data section
               (callback tables, function pointers in .data)
   code-imm    a relocated immediate in .text pointing into another node
@@ -85,7 +90,8 @@ import refs  # noqa: E402
 WORK = progress.WORK
 REPO = progress.REPO
 VERSION = 1
-MAGIC_IMPORTS, MAGIC_SLOTS = 0x00C64CE8, 744
+# g_MagicImports; its slot count comes from the image (Image.magic_imports)
+MAGIC_IMPORTS = 0x00C64CE8
 # from the first __xc_a initialiser to the end of .text: only the compiler's
 # dynamic initialisers of globals (game and library alike) and the atexit
 # destructors they register (unnamed but for FFXApplication_atexit_dtor; all
@@ -148,6 +154,33 @@ class Image:
 
     def in_text(self, v):
         return v is not None and self.text_lo <= v < self.text_hi
+
+    def magic_imports(self, table=None):
+        """(slots, refs) of g_MagicImports, read from the image: the table
+        runs from its address while every word is a relocated pointer or 0,
+        up to the next address a relocated word points at (the next object;
+        in FFX.exe an RTTI type descriptor at +0xed0); trailing zeros are
+        padding. refs are the relocated words pointing into the table (in
+        FFX.exe only MagicFile_Start's `push offset g_MagicImports`, so
+        nothing in FFX.exe writes it: the load-time words are all of it)."""
+        if table is None:
+            table = MAGIC_IMPORTS
+        near = defaultdict(list)
+        for r in self.relocs:
+            v = self.dword(r)
+            if v is not None and table <= v < table + 0x4000:
+                near[v].append(r)
+        n = 0
+        while True:
+            a = table + 4 * n
+            w = self.dword(a)
+            if (n and a in near) or w is None or (w and a not in self.reloc_set):
+                break
+            n += 1
+        while n and not self.dword(table + 4 * (n - 1)):
+            n -= 1
+        refs_in = sorted(r for v, rs in near.items() if v < table + 4 * n for r in rs)
+        return n, refs_in
 
     def imports(self):
         """IAT address -> 'dll!name'."""
@@ -520,8 +553,8 @@ def find_roots(g, by_name):
 
     # classify data sites: {site: kind}
     site_kind = {}
-    # g_MagicImports
-    for i in range(MAGIC_SLOTS):
+    # g_MagicImports: every slot, its length read from the image
+    for i in range(img.magic_imports()[0]):
         site_kind[MAGIC_IMPORTS + 4 * i] = "magic"
     # code relocs, sorted, for "push offset X" patterns
     code_relocs = [r for r in img.relocs if img.text_lo <= r < img.text_hi]
@@ -1058,6 +1091,14 @@ def main():
     L.append(f"CRT initialiser tables found: {', '.join(f'{lo:#x}..{hi:#x}' for lo, hi in crt_tables) or 'none'}; "
              f"native tables: {n_native}; TLS callbacks: {len(img.tls_callbacks())}; "
              f"SafeSEH handlers: {len(img.safeseh())}; exports: {len(img.exports())}.")
+    nslots, mrefs = img.magic_imports()
+    mwords = [img.dword(MAGIC_IMPORTS + 4 * i) for i in range(nslots)]
+    L.append(f"g_MagicImports: {nslots} slots ({4 * nslots:#x} bytes) from {MAGIC_IMPORTS:#010x}: "
+             f"{sum(1 for w in mwords if img.in_text(w))} into .text, "
+             f"{sum(1 for w in mwords if w and not img.in_text(w))} data pointers, "
+             f"{sum(1 for w in mwords if not w)} null; relocated words pointing into it: "
+             f"{', '.join(f'{r:#010x}' for r in mrefs) or 'none'} (one, MagicFile_Start's push, means "
+             f"nothing in FFX.exe fills it at run time).")
     L.append("")
     L.append("## Sanity checks")
     L.append("")
