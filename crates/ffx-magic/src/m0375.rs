@@ -170,3 +170,35 @@ pub const PART_RESTART: Sig = Sig {
     calls: &[(0xcd, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// The start-up's records (0x10001670, a table entry, no arguments):
+/// slot 719 `(*G_D, 4, 2)` (operand `+0x11`) into `+0x1b`; the records
+/// cleared ([`records_clear`](crate::s4_small::records_clear), one word
+/// of the call left on the stack); the words `+0x29`, `+0x33`, `+0x3d` 0.
+/// Returns 1.
+pub fn records_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = crate::runtime::slot_target(g, w(0x1), 719);
+    let d = g.read::<u32>(w(0x11));
+    let a = g.call(t, 0, &[d, 4, 2]).eax;
+    g.write::<u32>(w(0x1b), a);
+    let clear = Frame {
+        at: img.rel32_target(f + 0x20),
+        esp: fr.esp.wrapping_sub(8),
+        ..*fr
+    };
+    crate::s4_small::records_clear(g, img, &clear);
+    for o in [0x29u32, 0x33, 0x3d] {
+        g.write::<u32>(w(o), 0);
+    }
+    Ret::eax(1)
+}
+
+/// [`records_start`] (75 bytes, 1 overlay).
+pub const RECORDS_START: Sig = Sig {
+    len: 75,
+    hash: 0xd740_216b_142a_a4b2,
+    calls: &[(0x20, Callee::Sig(&crate::s4_small::RECORDS_CLEAR_500))],
+    imports: &[],
+};

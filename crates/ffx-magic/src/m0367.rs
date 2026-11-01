@@ -153,3 +153,29 @@ pub const START_UP_0369: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the fourth object (0x100014a0, a table entry, no arguments):
+/// the object at the immediate `+0x0c`
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale the
+/// float at `+0x04`, index 4), then the 16 bytes at `+0x1a` copied to
+/// `+0x24`. Returns the object.
+pub fn fourth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x4));
+    let o =
+        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x13), w(0xc), scale, 4);
+    for k in 0..4u32 {
+        let v = g.read::<u32>(w(0x1a) + 4 * k);
+        g.write::<u32>(w(0x24) + 4 * k, v);
+    }
+    Ret::eax(o)
+}
+
+/// [`fourth_start`] (41 bytes, 1 overlay).
+pub const FOURTH_START: Sig = Sig {
+    len: 41,
+    hash: 0x6905_fd44_96bb_19ce,
+    calls: &[(0x13, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};

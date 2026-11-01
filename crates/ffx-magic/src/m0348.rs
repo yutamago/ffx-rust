@@ -86,3 +86,43 @@ pub const TASKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The lights given back and the models of slot 288 `(9, &n)` shown
+/// (internal, no arguments): [`lights_and_give_back`](crate::s6_misc::lights_and_give_back)
+/// on `*G_E + D` (operand `+0x06`, the displacement `+0x0e`), then slot
+/// 296 `(byte, 1)` for each of the `n` model bytes (`n` a local at `ebp -
+/// 4`, read again each round). Returns the last call's `eax`.
+pub fn lights_models<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let e = g.read::<u32>(w(0x6)).wrapping_add(w(0xe));
+    // push ecx; push esi; push edi; the call
+    let callee = Frame {
+        at: img.rel32_target(f + 0x13),
+        esp: ebp.wrapping_sub(0x10),
+        ecx: e,
+        ..*fr
+    };
+    crate::s6_misc::lights_and_give_back(g, img, &callee);
+    let n = ebp.wrapping_sub(4);
+    let t = slot_target(g, w(0x1c), 288);
+    let bytes = g.call(t, 0, &[9, n]).eax;
+    let mut eax = bytes;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(n).cast_signed() {
+        let b = u32::from(g.read::<u8>(bytes.wrapping_add(i)));
+        let t = slot_target(g, w(0x45), 296);
+        eax = g.call(t, 0, &[b, 1]).eax;
+        i += 1;
+    }
+    eax
+}
+
+/// [`lights_models`] (`magic_0348` 0x10006720, 99 bytes, 1 overlay).
+pub const LIGHTS_MODELS: Sig = Sig {
+    len: 99,
+    hash: 0x0d2a_2294_1f2e_a44f,
+    calls: &[(0x13, Callee::Sig(&crate::s6_misc::LIGHTS_AND_GIVE_BACK))],
+    imports: &[],
+};

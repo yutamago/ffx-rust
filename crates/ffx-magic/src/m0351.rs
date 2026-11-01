@@ -286,3 +286,24 @@ pub const FRAME: Sig = Sig {
     calls: &[(0x7f, crate::Callee::Sig(&crate::sa_misc::TIMELINE))],
     imports: &[],
 };
+
+/// The model reset ([`model_reset`]), then `*G_S` (operand `+0x07`) 1.0
+/// (0x100014e0, a table entry, no arguments). Returns 1.
+pub fn reset_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 0x1),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    model_reset(g, img, &callee);
+    g.write::<u32>(img.word(fr.at + 0x7), 0x3f80_0000);
+    Ret::eax(1)
+}
+
+/// [`reset_scale`] (21 bytes, 1 overlay).
+pub const RESET_SCALE: Sig = Sig {
+    len: 21,
+    hash: 0x2da0_fcee_9248_a170,
+    calls: &[(0x1, crate::Callee::Sig(&MODEL_RESET))],
+    imports: &[],
+};

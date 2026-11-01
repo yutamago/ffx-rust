@@ -87,3 +87,39 @@ pub const FADE_STEP: Sig = Sig {
     calls: &[(0x84, Callee::Sig(&crate::sa_pool::GIVE_BACK))],
     imports: &[],
 };
+
+/// The record's node and its words (0x10002580, a table entry, no
+/// arguments; the record `R = *G_R + 0x10e0`, operand `+0x03`):
+/// [`record_node`](crate::o4_small::record_node) of `R`, then bits 0-1 set
+/// in the halfword `R + 0x2c` and `R + 0x4..0x18` `[0.2, 0.1, 0, 5.0, 3.0,
+/// 0]`. Returns the node call's `eax`.
+pub fn record_words<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = g.read::<u32>(img.word(f + 0x3)).wrapping_add(0x10e0);
+    // push esi; the call
+    let callee = Frame {
+        at: img.rel32_target(f + 0x10),
+        esp: fr.esp.wrapping_sub(8),
+        ecx: r,
+        ..*fr
+    };
+    let eax = crate::o4_small::record_node(g, img, &callee).eax;
+    let h = g.read::<u16>(r + 0x2c);
+    g.write::<u16>(r + 0x2c, h | 3);
+    for (o, v) in
+        (4u32..)
+            .step_by(4)
+            .zip([0x3e4c_cccdu32, 0x3dcc_cccd, 0, 0x40a0_0000, 0x4040_0000, 0])
+    {
+        g.write::<u32>(r + o, v);
+    }
+    Ret::eax(eax)
+}
+
+/// [`record_words`] (69 bytes, 1 overlay).
+pub const RECORD_WORDS: Sig = Sig {
+    len: 69,
+    hash: 0x64d5_19a2_9bd3_4783,
+    calls: &[(0x10, Callee::Sig(&crate::o4_small::RECORD_NODE_0353_4A00))],
+    imports: &[],
+};

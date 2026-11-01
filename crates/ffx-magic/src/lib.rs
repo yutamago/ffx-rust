@@ -234,11 +234,13 @@ pub mod m0311;
 pub mod m0312;
 pub mod m0313;
 pub mod m0316;
+pub mod m0318;
 pub mod m0325;
 pub mod m0330;
 pub mod m0341;
 pub mod m0342;
 pub mod m0348;
+pub mod m0350;
 pub mod m0351;
 pub mod m0352;
 pub mod m0353;
@@ -253,6 +255,7 @@ pub mod m0370;
 pub mod m0371;
 pub mod m0372;
 pub mod m0375;
+pub mod m0377;
 pub mod m0378;
 pub mod m0379;
 pub mod m0380;
@@ -2741,6 +2744,23 @@ ports! {
     "thunk: s7 lit colour node" => sl_wrap::JMP_LIT_COLOUR_NODE, sl_wrap::ecx_jmp;
     "thunk: m0573 refresh" => sl_wrap::JMP_REFRESH_0573, sl_wrap::ecx_jmp;
     "thunk: 0585 sprite visit" => sl_wrap::JMP_SPRITE_VISIT_0585, sl_wrap::ecx_jmp;
+    "m0307 scale 255c" => m0307::SCALE_255C, m0307::scale_255c;
+    "m0307 scale 2524" => m0307::SCALE_2524, m0307::scale_2524;
+    "m0307 seventh start" => m0307::SEVENTH_START, m0307::seventh_start;
+    "m0307 pair start" => m0307::PAIR_START, m0307::pair_start;
+    "m0307 third restart" => m0307::THIRD_RESTART, m0307::third_restart;
+    "m0313 object setup" => m0313::OBJECT_SETUP, m0313::object_setup;
+    "m0316 scale two" => m0316::SCALE_TWO, m0316::scale_two;
+    "m0318 count step" => m0318::COUNT_STEP, m0318::count_step;
+    "m0341 bone midpoint" => m0341::BONE_MIDPOINT, m0341::bone_midpoint;
+    "m0351 reset scale" => m0351::RESET_SCALE, m0351::reset_scale;
+    "m0352 fifth start" => m0352::FIFTH_START, m0352::fifth_start;
+    "m0361 flag after 213" => m0361::FLAG_AFTER_213, m0361::flag_after_213;
+    "m0371 records start" => m0371::RECORDS_START, m0371::records_start;
+    "m0375 records start" => m0375::RECORDS_START, m0375::records_start;
+    "m0353 record words" => m0353::RECORD_WORDS, m0353::record_words;
+    "m0367 fourth start" => m0367::FOURTH_START, m0367::fourth_start;
+    "m0377 parts step" => m0377::PARTS_STEP, m0377::parts_step;
     // magic small-lo: end of ports
 }
 
@@ -3844,6 +3864,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0186 cleared node", &m0186::CLEARED_NODE),
     ("m0207 copy node", &m0207::COPY_NODE),
     ("m0295 leave and register", &m0295::LEAVE_AND_REGISTER),
+    ("m0348 lights models", &m0348::LIGHTS_MODELS),
+    ("m0350 lights models parts", &m0350::LIGHTS_MODELS_PARTS),
+    ("m0389 static strip", &m0389::STATIC_STRIP),
     // magic small-lo: end of INTERNAL
 ];
 

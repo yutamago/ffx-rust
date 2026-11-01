@@ -283,3 +283,24 @@ pub const SOUND_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Slot 213 `((*G_A)[0x1a0], 0)` (operands `+0x04`, `+0x11`), then bit 2
+/// set in `*a` (0x10002920, cdecl `(a)`). Returns `a`.
+pub fn flag_after_213<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let m = g.read::<u32>(g.read::<u32>(w(0x4)) + 0x1a0);
+    let t = slot_target(g, w(0x11), 213);
+    g.call(t, 0, &[m, 0]);
+    let a = fr.arg(g, 0);
+    let v = g.read::<u32>(a);
+    g.write::<u32>(a, v | 4);
+    Ret::eax(a)
+}
+
+/// [`flag_after_213`] (40 bytes, 1 overlay).
+pub const FLAG_AFTER_213: Sig = Sig {
+    len: 40,
+    hash: 0x1edc_0d6a_ea66_f6a4,
+    calls: &[],
+    imports: &[],
+};
