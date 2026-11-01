@@ -130,3 +130,17 @@ fn frame() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001580: the data, the block and the objects cleared.
+#[test]
+fn state_start() {
+    let Some(mut t) = twin(505) else { return };
+    let at = t.at(0x1580);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    t.set_u32(t.img.word(at + 0x11), 0x0011_0001);
+    t.write(t.img.word(at + 0x1c), &[0x5c; 0x30]);
+    for op in [0x4c, 0x56, 0x60, 0x6a] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

@@ -2,6 +2,7 @@
 //! `FFX_GAME_DIR`.
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -46,4 +47,26 @@ fn model_setup() {
             Ret::eax(m0533::model_setup(g, img, fr))
         });
     }
+}
+
+/// 0x10008180: the group built from `ecx`, the immediates and the 5th
+/// and 7th stack words.
+#[test]
+fn model_setup_args() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x8180);
+    rec(&mut t, 287, 3, |_, _| 0x0287_0000);
+    recs(&mut t, &[(281, 1), (283, 2)]);
+    let obj = SCRATCH + 0x1000;
+    let parent = t.img.word(at + 0x18);
+    t.write(obj, &[0x5b; 0x200]);
+    t.write(parent, &[0x2c; 0x40]);
+    t.set_u32(parent + 0x10, parent);
+    t.set_u32(obj + 0x10, obj);
+    t.set_u16(obj + 0x18, 0x0102);
+    magic_h6::scrub(&mut t);
+    let args: Vec<u32> = (0..7).map(|i| 0x00a0_0000 + i).collect();
+    t.check(at, Call::this(obj), &args, Eax::Checked, |g, img, fr| {
+        Ret::eax(m0533::model_setup_args(g, img, fr).eax)
+    });
 }

@@ -63,3 +63,54 @@ fn start_up() {
     t.write(blk, &[0x5e; 0x110]);
     t.check_entry(at, Call::default(), &[0x00a6_0000], Eax::Checked);
 }
+
+/// 0x10001170: the state, the block and the records cleared.
+#[test]
+fn state_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1170);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    t.set_u32(t.img.word(at + 0x11), 0x0011_0001);
+    t.write(t.img.word(at + 0x1c), &[0x5c; 0x30]);
+    for op in [0x4c, 0x56, 0x60] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    let rc = t.img.rel32_target(at + 0x43);
+    let recs_at = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(rc + 0x7), recs_at);
+    t.write(recs_at, &vec![0x99; 0x94 * 1000]);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}
+
+/// 0x10001410: parts 0 and 2, drawn and removed.
+#[test]
+fn draw_at_actor() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1410);
+    let base = t.img.word(at + 0x21);
+    let table = t.img.word(at + 0x2b);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, 0x00ac_0000 + i);
+    }
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[1] + 4 * i, 0x3f80_0000 + i);
+        }
+        0x210
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, 0x4000_0000 + i);
+        }
+        0x235
+    });
+    let ret712 = SCRATCH + 0x40;
+    rec(&mut t, 712, 2, move |m, _| m.r32(ret712));
+    recs(&mut t, &[(231, 3), (258, 1)]);
+    for (i, r) in [(0u32, 0u32), (2, 1)] {
+        t.set_u32(ret712, r);
+        let part = base + 0x80 * i;
+        t.write(part, &[0x19; 0x80]);
+        t.check_entry(at, Call::default(), &[part], Eax::Checked);
+    }
+}

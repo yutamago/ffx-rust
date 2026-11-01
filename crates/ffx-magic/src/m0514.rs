@@ -944,3 +944,83 @@ pub const SPARK_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The burst's state step (0x10007cd0, cdecl `(p)`, `p = [node, s]`):
+/// by the state `s + 0x18`: 0 clears the count `+0x1c` and the round
+/// `+0x20` and becomes 1; 0 and 1 then start a burst when the count is
+/// at or below 0 and `+0x58` is 20000 ([`burst_setup`]: `ecx` = `s +
+/// 0x40`, `edx` = `+0x24`, the stack `(+0x28, +0x2c, +0x30)`; the round
+/// up, the count 10). 10000 with a bit of 0x4e20 in `+0x58` unlinks the
+/// node from its ring (a ring of its own), the count down and the state
+/// 20000, and returns. Every other way ends with the count down.
+/// Returns the `eax` the original leaves (0, the state's distance from
+/// 10000, the burst's answer or the unlinked node's old next).
+pub fn burst_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = fr.arg(g, 0);
+    let s = g.read::<u32>(p + 4);
+    let state = g.read::<u32>(s + 0x18);
+    let mut eax = 0;
+    let try_burst = match state {
+        0 => {
+            g.write::<u32>(s + 0x1c, 0);
+            g.write::<u32>(s + 0x20, 0);
+            g.write::<u32>(s + 0x18, 1);
+            true
+        }
+        1 => true,
+        0x2710 => {
+            if g.read::<u32>(s + 0x58) & 0x4e20 != 0 {
+                let d = g.read::<u32>(p);
+                let next = g.read::<u32>(d + 4);
+                let prev = g.read::<u32>(d + 8);
+                g.write::<u32>(next + 8, prev);
+                let prev = g.read::<u32>(d + 8);
+                let next = g.read::<u32>(d + 4);
+                g.write::<u32>(prev + 4, next);
+                g.write::<u32>(d + 8, d);
+                g.write::<u32>(d + 4, d);
+                let n = g.read::<u32>(s + 0x1c);
+                g.write::<u32>(s + 0x1c, n.wrapping_sub(1));
+                g.write::<u32>(s + 0x18, 0x4e20);
+                return Ret::eax(next);
+            }
+            false
+        }
+        _ => {
+            eax = state.wrapping_sub(0x2710);
+            false
+        }
+    };
+    if try_burst && g.read::<u32>(s + 0x1c).cast_signed() <= 0 && g.read::<u32>(s + 0x58) == 0x4e20
+    {
+        // push ebp, esi, the three words, the return address
+        let esp = fr.esp.wrapping_sub(0x18);
+        for (i, o) in (1u32..).zip([0x28, 0x2c, 0x30]) {
+            let v = g.read::<u32>(s + o);
+            g.write::<u32>(esp + 4 * i, v);
+        }
+        let burst = Frame {
+            at: img.rel32_target(f + 0x81),
+            esp,
+            ecx: s + 0x40,
+            edx: g.read::<u32>(s + 0x24),
+            ..*fr
+        };
+        eax = burst_setup(g, img, &burst);
+        let r = g.read::<u32>(s + 0x20);
+        g.write::<u32>(s + 0x20, r.wrapping_add(1));
+        g.write::<u32>(s + 0x1c, 10);
+    }
+    let n = g.read::<u32>(s + 0x1c);
+    g.write::<u32>(s + 0x1c, n.wrapping_sub(1));
+    Ret::eax(eax)
+}
+
+/// [`burst_step`] (152 bytes, 1 overlay).
+pub const BURST_STEP: Sig = Sig {
+    len: 152,
+    hash: 0xf6fd_5bfd_7b28_25d3,
+    calls: &[(0x81, Callee::Sig(&BURST_SETUP))],
+    imports: &[],
+};

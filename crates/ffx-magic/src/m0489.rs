@@ -551,3 +551,42 @@ pub const FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Starts the effect's state (0x10001680, an overlay table entry, no
+/// arguments): slot 719 `(*G_NAME, 4, 1)` gives the data (`+0x26`); the
+/// 100 records cleared
+/// ([`records_clear_100`](crate::s4_small::records_clear_100): `ecx` the
+/// header `+0x21`, `edx` = `*G_RECS` `+0x19`; slot 719's first word
+/// under it), three globals (`+0x34`, `+0x3e`, `+0x48`) 0. Returns 1.
+pub fn state_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x1), 719);
+    let name = g.read::<u32>(w(0x11));
+    let d = g.call(t, 0, &[name, 4, 1]).eax;
+    let recs = g.read::<u32>(w(0x19));
+    g.write::<u32>(w(0x26), d);
+    let clear = Frame {
+        at: img.rel32_target(f + 0x2b),
+        esp: fr.esp.wrapping_sub(8),
+        ecx: w(0x21),
+        edx: recs,
+        ..*fr
+    };
+    crate::s4_small::records_clear_100(g, img, &clear);
+    for op in [0x34, 0x3e, 0x48] {
+        g.write::<u32>(w(op), 0);
+    }
+    Ret::eax(1)
+}
+
+/// [`state_start`] (86 bytes, 1 overlay).
+pub const STATE_START: Sig = Sig {
+    len: 86,
+    hash: 0xb164_c7ef_1dcf_77b0,
+    calls: &[(
+        0x2b,
+        crate::Callee::Sig(&crate::s4_small::RECORDS_CLEAR_100),
+    )],
+    imports: &[],
+};

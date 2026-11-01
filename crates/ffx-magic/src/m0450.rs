@@ -804,3 +804,188 @@ pub const TURN_STEP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The effect's per-frame task callback (0x100056b0, cdecl `(node)`):
+/// the 0x30-byte block `B` (operand `+0x10`) zeroed (`memset`), the
+/// half-word `B + 2` (`+0x21`) gets bit 0x80, `+0x2e` = `*G` (`+0x26`);
+/// the script runs ([`run`](crate::sa_script::run)) and slot 561 `()`
+/// (`ecx` the import table) answers: non-zero is returned as it is.
+/// Else the two motion scripts (`+0x51`, `+0x5b`;
+/// [`motion_script`](crate::s4_misc::motion_script)) step; when the
+/// script and the first motion script are both done, `*G_FX + 0x1efc` =
+/// 1, the models are shown ([`show_models`]) and the node is given back
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
+/// the node; its `eax` returned). Otherwise the points `+0x1ba0` and
+/// `+0x1c00` are copied to `+0x1b80` and `+0x1be0`, returning the last
+/// word copied.
+pub fn task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x7));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let h = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), h | 0x80);
+    let v = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x2e), v);
+    let script = crate::sa_script::run(g, img, img.rel32_target(f + 0x33));
+    let table = g.read::<u32>(w(0x39));
+    let t = slot_target(g, w(0x39), 561);
+    let busy = g.call(t, table, &[]).eax;
+    if busy != 0 {
+        return Ret::eax(busy);
+    }
+    let m1 = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x56), w(0x51));
+    crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x62), w(0x5b));
+    if script != 0 && m1 != 0 {
+        g.write::<u32>(fx + 0x1efc, 1);
+        show_models(g, img, img.rel32_target(f + 0x79));
+        let node = fr.arg(g, 0);
+        return Ret::eax(crate::sa_pool::give_back(
+            g,
+            img,
+            img.rel32_target(f + 0x85),
+            node,
+        ));
+    }
+    let mut last = 0;
+    for (from, to) in [(0x1ba0, 0x1b80), (0x1c00, 0x1be0)] {
+        for i in 0..4 {
+            last = g.read::<u32>(fx + from + 4 * i);
+            g.write::<u32>(fx + to + 4 * i, last);
+        }
+    }
+    Ret::eax(last)
+}
+
+/// [`task`] (238 bytes, 1 overlay).
+pub const TASK: Sig = Sig {
+    len: 238,
+    hash: 0x8e91_d266_1956_8854,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x33, Callee::Sig(&crate::sa_script::RUN)),
+        (0x56, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x62, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x79, Callee::Sig(&SHOW_MODELS)),
+        (0x85, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// Starts the second object (0x10006ed0, an overlay table entry, no
+/// arguments, `ecx` passed on): the point `*G_FX + 0x1c10` copied to
+/// `+0x1ba0`; the actor `a = T[b[1]]` (`b = *G_B`, operand `+0x40`, `T`
+/// the table at `+0x4b`): when the effect has a second model (`+0x1eec`
+/// not -1) slot 632 `(a, 0, 0)`, then slot 632 `(a, *G_M, 0x12)`
+/// (`+0x6f`). The object `+0x850` starts
+/// ([`start_object_at`](crate::s4_misc::start_object_at): scale `*K`
+/// `+0x80`, index 7, owners 0), its callback `+0x954` the immediate
+/// `+0xa2`, byte `+0x976` 2, `+0x970` 6. Returns the object.
+pub fn second_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x3));
+    for i in 0..4 {
+        let v = g.read::<u32>(fx + 0x1c10 + 4 * i);
+        g.write::<u32>(fx + 0x1ba0 + 4 * i, v);
+    }
+    let b = g.read::<u32>(w(0x40));
+    let i = u32::from(g.read::<u8>(b + 1));
+    let a = g.read::<u32>(w(0x4b).wrapping_add(4 * i));
+    if g.read::<u32>(fx + 0x1eec) != u32::MAX {
+        let t = slot_target(g, w(0x52), 632);
+        g.call(t, 0, &[a, 0, 0]);
+    }
+    let t = slot_target(g, w(0x67), 632);
+    let m = g.read::<u32>(w(0x6f));
+    g.call(t, 0, &[a, m, 0x12]);
+    let scale = g.read::<f32>(w(0x80));
+    let obj = fx.wrapping_add(0x850);
+    let o =
+        crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x95), obj, scale, 7, 0, 0);
+    g.write::<u32>(fx + 0x954, w(0xa2));
+    g.write::<u8>(fx + 0x976, 2);
+    g.write::<u32>(fx + 0x970, 6);
+    Ret::eax(o)
+}
+
+/// [`second_start`] (186 bytes, 1 overlay).
+pub const SECOND_START: Sig = Sig {
+    len: 186,
+    hash: 0x70da_7d1a_9031_3f46,
+    calls: &[(0x95, Callee::Sig(&crate::s4_misc::START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// Starts the first object (0x10006ff0, an overlay table entry, no
+/// arguments, `ecx` passed on): the object `*G_FX + 0x5f0` starts
+/// ([`start_object_at`](crate::s4_misc::start_object_at): scale `*K`
+/// `+0x4`, index 5, owner 0xc, second owner 0); `+0x6b0` = pi/4,
+/// `+0x6b4` = the angle `+0x1ee0`, the callback `+0x6f4` the immediate
+/// `+0x42`. Returns the angle's bits.
+pub fn first_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let scale = g.read::<f32>(w(0x4));
+    let fx = g.read::<u32>(w(0xb));
+    crate::s4_misc::start_object_at(
+        g,
+        img,
+        img.rel32_target(f + 0x1e),
+        fx.wrapping_add(0x5f0),
+        scale,
+        5,
+        0xc,
+        0,
+    );
+    g.write::<u32>(fx + 0x6b0, 0x3f49_0fdb);
+    let a = g.read::<u32>(fx + 0x1ee0);
+    g.write::<u32>(fx + 0x6b4, a);
+    g.write::<u32>(fx + 0x6f4, w(0x42));
+    Ret::eax(a)
+}
+
+/// [`first_start`] (72 bytes, 1 overlay).
+pub const FIRST_START: Sig = Sig {
+    len: 72,
+    hash: 0x1a41_1254_dcc5_ca94,
+    calls: &[(0x1e, Callee::Sig(&crate::s4_misc::START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// Starts the colour scale (0x10007c40, an overlay table entry, no
+/// arguments): the point `*G_FX + 0x1c10` copied to `+0x1ba0`, then the
+/// scale task of `+0x1e08`
+/// ([`scale_task`](crate::s4_misc::scale_task): `xmm1`/`xmm2` the
+/// constants at `+0x18`/`+0xa`, the count 60), whose node it returns.
+pub fn scale_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x2));
+    for i in 0..4 {
+        let v = g.read::<u32>(fx + 0x1c10 + 4 * i);
+        g.write::<u32>(fx + 0x1ba0 + 4 * i, v);
+    }
+    // push 0x3c: the task's frame (its return address below the count)
+    let esp = fr.esp.wrapping_sub(8);
+    g.write::<u32>(esp + 4, 0x3c);
+    let mut xmm = fr.xmm;
+    xmm[1] = u128::from(g.read::<u32>(w(0x18)));
+    xmm[2] = u128::from(g.read::<u32>(w(0xa)));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x4f),
+        esp,
+        ecx: fx.wrapping_add(0x1e08),
+        xmm,
+        ..*fr
+    };
+    crate::s4_misc::scale_task(g, img, &callee)
+}
+
+/// [`scale_start`] (85 bytes, 1 overlay).
+pub const SCALE_START: Sig = Sig {
+    len: 85,
+    hash: 0xc4c6_7b2e_c5dc_3ac9,
+    calls: &[(0x4f, Callee::Sig(&crate::s4_misc::SCALE_TASK))],
+    imports: &[],
+};

@@ -1122,6 +1122,24 @@ ports! {
     "m0450 flight frame" => m0450::FLIGHT_FRAME, m0450::flight_frame;
     "m0450 shrink" => m0450::SHRINK, m0450::shrink;
     "m0450 turn step" => m0450::TURN_STEP, m0450::turn_step;
+    "m0450 task" => m0450::TASK, m0450::task;
+    "m0450 second start" => m0450::SECOND_START, m0450::second_start;
+    "m0450 first start" => m0450::FIRST_START, m0450::first_start;
+    "m0450 scale start" => m0450::SCALE_START, m0450::scale_start;
+    "m0473 task" => m0473::TASK, m0473::task;
+    "m0480 task" => m0480::TASK, m0480::task;
+    "m0480 records reset" => m0480::RECORDS_RESET, m0480::records_reset;
+    "m0488 state start" => m0488::STATE_START, m0488::state_start;
+    "m0488 draw at actor" => m0488::DRAW_AT_ACTOR, m0488::draw_at_actor;
+    "m0489 state start" => m0489::STATE_START, m0489::state_start;
+    "m0505 state start" => m0505::STATE_START, m0505::state_start;
+    "m0508 task" => m0508::TASK, m0508::task;
+    "m0511 models end" => m0511::MODELS_END, m0511::models_end;
+    "m0511 object e40" => m0511::OBJECT_E40, m0511::object_e40;
+    "m0511 object d10" => m0511::OBJECT_D10, m0511::object_d10;
+    "m0511 object ab0" => m0511::OBJECT_AB0, m0511::object_ab0;
+    "m0511 object 5f0" => m0511::OBJECT_5F0, m0511::object_5f0;
+    "m0514 burst step" => m0514::BURST_STEP, m0514::burst_step;
     "m0475 task" => m0475::TASK, m0475::task;
     "m0476 fade step" => m0476::FADE_STEP, m0476::fade_step;
     "m0477 e1070" => m0477::E1070, m0477::e1070;
@@ -2945,6 +2963,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0514 burst setup", &m0514::BURST_SETUP),
     ("m0514 spark setup", &m0514::SPARK_SETUP),
     ("m0533 model setup", &m0533::MODEL_SETUP),
+    ("m0533 model setup args", &m0533::MODEL_SETUP_ARGS),
     ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
     ("m0573 motion setup", &m0573::MOTION_SETUP),
