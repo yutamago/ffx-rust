@@ -35,6 +35,9 @@ fn sound_stop() {
         t.set_u32(t.img.word(at + 0x3), if has { r } else { 0 });
         t.write(r, &[0x3c; 0x900]);
         t.set_u8(r + 0x180, byte);
+        // the sound handle and the word after it distinct
+        t.set_u32(r + 0x830, 0x0083_0000);
+        t.set_u32(r + 0x834, 0x0083_4000);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

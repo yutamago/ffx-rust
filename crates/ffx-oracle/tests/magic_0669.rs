@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -48,6 +49,8 @@ fn frame() {
         (0x7f80_0001u32, false, e + 1.0),
         (f(h), true, f32::NAN),
         (f(0.0), false, e),
+        // -0.0: not below 0, so it stays -0.0
+        (f(-0.0), false, e),
     ] {
         t.set_u32(level, x);
         t.set_u32(m, f(if mk { k } else { k + 1.0 }));
@@ -100,11 +103,22 @@ fn draw_restart() {
     }
     magic_owna::rec(&mut t, 941, 1, move |_, _| table);
     let cell = magic::SCRATCH + 0x10;
-    magic_owna::rec(&mut t, 712, 2, move |m, _| m.r32(cell));
-    recs(&mut t, &[(714, 5), (258, 1), (231, 4), (230, 6), (713, 1)]);
+    // slots 712 and 713 keep the part cell and the game flag; 712 moves
+    // the part cell on (as the game's part code may)
+    let gp = magic::SCRATCH + 0x24;
+    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| {
+        m.w32(gp, 0x6666_0712);
+        m.r32(cell)
+    });
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
+    });
+    recs(&mut t, &[(714, 5), (258, 1), (231, 4), (230, 6)]);
     let obj = magic::SCRATCH + 0x1000;
     for answer in [0u32, 1] {
         t.set_u32(cell, answer);
+        t.set_u32(gp, 0x7777_7777);
+        t.set_u32(lock, 0x00a1_0000);
         t.write(obj, &[0x5b; 0x80]);
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
@@ -134,12 +148,14 @@ fn frame_at() {
         let p = m.r32(gp);
         m.w32(SCRATCH + 0x2_0400, l);
         m.w32(SCRATCH + 0x2_0404, p);
+        // the part cell moved on, as the game's part code may
+        m.w32(gp, 0x6666_0712);
         m.r32(cell) & 1
     });
-    recs(
-        &mut t,
-        &[(325, 2), (258, 1), (231, 3), (230, 2), (713, 1), (714, 5)],
-    );
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
+    });
+    recs(&mut t, &[(325, 2), (258, 1), (231, 3), (230, 2), (714, 5)]);
     for op in [0x4au32, 0x55, 0x61, 0x69, 0x74] {
         let g = t.img.word(at + op);
         t.set_u32(g, 0x00a5_0000 + op);

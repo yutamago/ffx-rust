@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -35,6 +36,7 @@ fn fade() {
     for n in [5u32, 1, 0, 0xffff_fff0] {
         t.write(fx + 0xe90, &[0x1d; 0x20]);
         t.set_u32(fx + 0x225c, n);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
@@ -52,7 +54,9 @@ fn starts() {
             pool(&mut t, take, SCRATCH + 0x2000, 3);
             let (head, tail) = (t.img.word(at + 0x6d), t.img.word(at + 0x83));
             list(&mut t, head, tail, SCRATCH + 0x3000, full);
-            t.write(fx + 0x1b00, &[0x5a; 0x200]);
+            // the whole effect block dirty (the parts' words it clears show)
+            t.write(fx, &[0x5a; 0x2100]);
+            magic_h6::scrub(&mut t);
             t.check_entry(at, Call::default(), &[], Eax::Checked);
         }
     }
@@ -70,7 +74,8 @@ fn sprite_start() {
     t.set_u32(t.img.word(at + 0x18), fx);
     let b = SCRATCH + 0x20;
     t.set_u32(t.img.word(at + 0x21), b);
-    t.set_u32(b, 3);
+    // the byte after the index non-zero (an index read as u16 shows)
+    t.set_u32(b, 0x3c03);
     magic_owna::rec(&mut t, 219, 2, |_, a| 0x0219_0000 ^ a[0]);
     magic_owna::rec(&mut t, 268, 3, |m, a| {
         for i in 0..4 {
@@ -84,6 +89,7 @@ fn sprite_start() {
         let (head, tail) = (t.img.word(at + 0xbe), t.img.word(at + 0xab));
         list(&mut t, head, tail, SCRATCH + 0x3000, full);
         t.write(fx + 0x2000, &[0x5a; 0x280]);
+        magic_h6::scrub(&mut t);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

@@ -70,6 +70,8 @@ fn frame() {
         t.set_u16(w(&t, 0xf7), half);
         t.set_u32(w(&t, 0x105), 0x00fd_0000);
         t.set_u8(pass, 0x41);
+        // the word the frame clears non-zero
+        t.set_u32(w(&t, 0x3c), 0x00a5_003c);
         for i in 0..kids {
             t.write(kid(i), &[0x22; 0x40]);
             t.set_u32(kid(i), vt);

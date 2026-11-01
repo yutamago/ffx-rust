@@ -45,7 +45,15 @@ fn entries() {
     // slot 712 keeps the part pointer's cell and the game flag
     let fd = t.at(0x1170);
     let (gp, lock) = (magic_h6::cell(&t, fd, 0x7a), magic_h6::cell(&t, fd, 0x8a));
-    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| m.r32(cell));
+    // ... and moves the part cell on (as the game's part code may); slot
+    // 713 keeps both too, so the part pointer stored again before it shows
+    magic_h6::rec_cells(&mut t, 712, 2, &[gp, lock], move |m, _| {
+        m.w32(gp, 0x6666_0712);
+        m.r32(cell)
+    });
+    magic_h6::rec_cells(&mut t, 713, 1, &[gp, lock], |_, a| {
+        0x5a5a_0713 ^ a.first().copied().unwrap_or(0)
+    });
     recs(
         &mut t,
         &[
@@ -58,7 +66,6 @@ fn entries() {
             (231, 3),
             (230, 2),
             (275, 1),
-            (713, 1),
             (846, 0),
         ],
     );
@@ -75,19 +82,17 @@ fn entries() {
 }
 
 /// 0x10001a00: off, and on with slot 261's answers, the task started
-/// once (the timelines idle).
+/// once (the timelines live, so running or stopping one, or the wrong
+/// one, shows).
 #[test]
 fn frame() {
     let Some(mut t) = twin(N) else { return };
     let cell = SCRATCH + 0x10;
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     rec(&mut t, 417, 4, |_, _| 0x0041_7000);
+    rec(&mut t, 253, 0, |_, _| 1);
     recs(&mut t, &[(723, 1), (724, 2), (418, 1), (214, 2)]);
     let at = t.at(0x1a00);
-    for op in [0xa6, 0xc6, 0xf9] {
-        let tl = t.img.word(at + op);
-        t.set_u32(tl + 8, 0);
-    }
     let started = t.img.word(at + 0x62);
     // the word the frame copies and the one slot 214 gets, distinct
     magic_h6::distinct(&mut t, at, &[0x44, 0x11d]);
@@ -101,6 +106,10 @@ fn frame() {
         t.set_u32(t.img.word(at + 0x2), on);
         t.set_u32(cell, bits);
         t.set_u32(started, s);
+        for (k, op) in (0u32..).zip([0xa6, 0xc6, 0xf9, 0x103, 0x10d]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
