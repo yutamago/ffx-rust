@@ -1577,7 +1577,7 @@ Nothing was re-recorded.
 | battle-ifrit (extra) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no |
 | battle-overdrive (`eye`) | shot 1: 49 pixels (x 530..684, y 384..613: the edges of a party member's skirt and belt cloth); 2-9: 0 | the same 49 pixels | **shot 1** |
 | boot (`realtime`) | 4 of 4, 0 pixels | 4 of 4, 0 pixels | no (no lockstep: the order is off) |
-| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own |
+| event-arrival (`realtime`, `eye`) | 1-4: 0; 5: 16; 6: 920,223; 7: BLIND | 1-4: 0; 5: 261,746; 6: 920,065; 7: BLIND | not by the order (no lockstep, so it is off there); shot 6 differs from both references in both fresh runs, so those references look stale on their own (host-b9: they are not; a third fresh run matched them, "The main list with the read-wait rule") |
 
 So with the order the original code gives the current references in every
 lockstep replay but **battle-overdrive-1** (49 pixels on cloth edges, the
@@ -1586,6 +1586,53 @@ with cloth (draw-gate-kami, draw-gate-besaid) were not checked: their
 `dg-*` references are on the main machine only, and games don't run
 there. The hood and cloth-ring entries of the accepted residue stay until
 the user decides.
+
+#### The main list with the read-wait rule (2026-11-01, host-b9)
+
+The x86_64 `ffx-rust.exe` with the new in-update loader rule ("The
+update phase", "The game over's wait"), each replay alone through
+`run-all.sh <replay>` (`FFX_HARNESS_EXE=rust`) on PC2, against PC2's
+own recordings; nothing re-recorded. Every replay of the main list has
+the original's trace events:
+
+| Replay | Trace events | Screenshots |
+|---|---|---|
+| menu-save | same (14 ranges) | **6 of 6, 0 pixels** (4 and 6, the title's cursor glow and header band, were 520 and 574) |
+| field-walk | same (4 ranges) | 2 of 2 (coarse 0.0) |
+| battle-attack | same (8 ranges) | 2 of 2, 0 pixels |
+| menu-browse | same (2 ranges) | 5 of 5, 0 pixels |
+| boot (`realtime`) | (none recorded) | 4 of 4, 0 pixels (boot-4 was 27) |
+| battle-magic | same (10 ranges) | 3 of 3 (one cursor-glow pixel, as before) |
+| battle-overdrive (`eye`) | same (14 ranges) | 8 of 9; shot 1 55 pixels on the skirt and belt cloth edges (x 530..684, y 384..611): the reference the cloth order changes (the original code gives 49 there, "The cloth order against the references") |
+| event-besaid | same (9 ranges) | 5 of 5, 0 pixels |
+| event-cliff (`realtime`, `eye`) | same (8 ranges) | by eye, as in the gate: 1,716-14,699 pixels, the originals 383,758-648,872 apart |
+| menu-shop | same (7 ranges) | 8 of 8, 0 pixels |
+| menu-grid | same (6 ranges) | 9 of 9 (4 cursor-glow pixels, as before) |
+| event-agency | same (11 ranges) | 7 of 7 (4-6 coarse 0.0) |
+| event-arrival (`realtime`, `eye`) | same (10 ranges) | 2-4 within 4 pixels; 1, 5, 7 less than the originals differ between themselves; 6 534,868 (below) |
+
+(`run-all.sh`'s exit status is 1 for field-walk and event-agency on PC2
+only because its `python3` has no numpy for the coarse comparison; the
+coarse numbers above are `uv run --with numpy` of the same command.)
+
+**event-arrival-6 is a phase, not a stale reference.** Two fresh runs of
+the original code (the hook, every replacement off) on PC2: the first's
+shot 6 matches both references with 0 pixels, the second's differs by
+526,946, about what ffx-rust's and the last round's two fresh originals
+(920,223 and 920,065) did. The shot comes 80 frames after shot 5, with
+the kicked ball filling the screen and the camera moving fast, and the
+replay is `realtime` (the scene keeps time with its voice stream): ctrl
+work 0's event count read with the shot was `0x655` in the matching run
+and `0x654` in the other (shot 5 `0x603` in both), so one event count
+moves most of the screen. The two references happen to agree exactly
+there (0 pixels apart, where every other shot of theirs differs by
+99,356-837,737), so `shot-compare.py` allows nothing for shot 6 and any
+run off by a count fails it. ffx-rust's run read `0x650` (its other
+shots 3-4 counts behind the first fresh run): the same real-time
+pacing as the other `realtime` shots, no difference of its own. Shot 6
+can't be compared pixel for pixel in a `realtime` replay unless it is
+pinned to an event count (a `waitfor` on `0x01325d94`) instead of 80
+frames; nothing was changed or re-recorded.
 
 #### The i686 build: a case for dropping it (2026-10-31, host-gate)
 
