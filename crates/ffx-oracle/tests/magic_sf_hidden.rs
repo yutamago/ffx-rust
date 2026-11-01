@@ -60,7 +60,8 @@ fn rec_point(t: &mut Twin, slot: u32, n: usize, read: Option<usize>, out: usize)
             }
         }
         for j in 0..4 {
-            m.w32(a[out] + 4 * j, (slot << 16) ^ (k << 8) ^ j);
+            let v = 1.0 + 0.5 * j as f32 + 0.125 * (slot % 16) as f32 + k as f32;
+            m.w32(a[out] + 4 * j, v.to_bits());
         }
         0x5100_0000 ^ slot ^ (k << 12)
     });
@@ -152,6 +153,15 @@ fn spin_angles() {
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[p], Eax::Checked);
         }
+        // the angles exactly at HI and LO (kept: the tests are strict)
+        let (hi, lo) = (t.u32(op(&t, f, 0xa)), t.u32(op(&t, f, 0x2c)));
+        t.write(chrs, &[0; 0x4f0]);
+        t.set_u32(p + 0x390, 0);
+        for (j, x) in [hi, lo, 0].into_iter().enumerate() {
+            t.set_u32(p + 0xc0 + 4 * j as u32, x);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
     }
 }
 
@@ -218,6 +228,8 @@ fn caster_script_task_in(n: u16, rva: u32) {
     t.set_u32(op(&t, sc, 0x13), 0x0aaa_0001);
     t.set_u32(op(&t, sc, 0x2b), 0x0bbb_0002);
     t.set_u16(op(&t, sc, 0x3), 0);
+    rec(&mut t, 2, 1, |_, _| 0x22);
+    rec(&mut t, 32, 1, |_, _| 0x33);
     let task = SCRATCH + 0x800;
     let done = op(&t, ms, 0x02);
     let wait = op(&t, ms, 0x11);
@@ -240,9 +252,11 @@ fn caster_script_task_in(n: u16, rva: u32) {
         t.set_u32(block + 0xebf4, index);
         t.set_u32(block + 0xebf8, st);
         t.set_u32(SCRATCH + 0x200, mode);
-        t.write(s, &[0; 0x60]);
+        t.write(s, &varied(0x60, k + 7));
         t.set_u32(s, prog);
         t.set_u8(s + 0x56, 1);
+        t.set_u32(s + 0x24, magic::TRAPS + 16 * 2);
+        t.set_u32(s + 0x28, magic::TRAPS + 16 * 32);
         // the task node at rest for the give-back
         t.write(task, &varied(0x20, k));
         t.set_u32(task, 0);
@@ -275,6 +289,7 @@ fn fly_in_task() {
         let task = SCRATCH + 0x800;
         for (k, (count, at, found)) in [
             (3i32, 0.25f32, false),
+            (2, 0.25, false),
             (1, 0.25, false),
             (0, 0.5, false),
             (-2, 1.0, false),
@@ -497,9 +512,11 @@ fn centred_parts_task() {
     t.set_u32(w(&t, 0x1ad), owner);
     t.set_u32(w(&t, 0xf8), 0x0c0c_0257);
     t.set_u32(w(&t, 0x12b), 0x0c0c_1257);
-    t.set_u32(w(&t, 0x1fe), 0x0c0c_2257);
+    t.set_u32(w(&t, 0x1fe), 0x0c0c_2250);
     t.set_u32(w(&t, 0x7f), 0x0b0b_0257);
-    t.set_u32(w(&t, 0xb8), 0x0b0b_1257);
+    // the model word slot 7 is asked about (M+0x54, from slot 215): its
+    // answer keeps the low two bits set
+    t.set_u32(w(&t, 0xb8), 0x0b0b_1254);
     let (task, s) = (SCRATCH + 0x800, SCRATCH + 0x900);
     let (node, prev, next) = (SCRATCH + 0xb00, SCRATCH + 0xb40, SCRATCH + 0xb80);
     let hide = w(&t, 0x118);
@@ -724,9 +741,13 @@ fn spark_burst_task() {
         t.set_u32(w(&t, 0xe3) + 4 * i, 0x0a0a_0000 + i);
     }
     let task = SCRATCH + 0x800;
+    let hi = f32::from_bits(t.u32(w(&t, 0x1e5)));
+    let lo = f32::from_bits(t.u32(w(&t, 0x1f5)));
     let mut k = 0u32;
     for (count, left, angle, rnd) in [
-        (3i32, 2i32, 0.0f32, 1.0f32),
+        (1i32, 3i32, hi, 0.0f32),
+        (1, 3, lo, 0.0),
+        (3, 2, 0.0, 1.0),
         (1, 3, 3.1, 1.0),
         (0, 2, -3.1, -1.0),
         (1, 4, 0.5, 0.25),
