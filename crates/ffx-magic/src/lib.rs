@@ -2612,7 +2612,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0394 place", &m0394::PLACE),
     ("m0395 face", &ob_summon::FACE_0395),
     ("m0396 face", &ob_summon::FACE_0396),
-    ("m0396 aim", &m0396::AIM),
     ("m0396 refresh", &m0396::REFRESH),
     ("m0395 resets", &m0395::RESETS),
     ("pool take", &sa_pool::TAKE),
