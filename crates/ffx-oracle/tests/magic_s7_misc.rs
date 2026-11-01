@@ -3957,3 +3957,66 @@ fn model_object_setups() {
         }
     }
 }
+
+/// Row 186: the flagged two sparks of the five DLLs: blocked by the
+/// flags, no free record, one, two.
+#[test]
+fn flagged_two_sparks() {
+    for dll in [565u16, 691, 693, 695, 697] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x3730);
+        let log = SCRATCH + 0x6000;
+        for s in [314u32, 404] {
+            log_calls(&mut t, s, log, 1, None, move |_, a, k| a[0] ^ (s << 20) ^ k);
+            t.stub_st0(s, move |m, a| {
+                let k = m.r32(log);
+                f64::from(f32::from_bits(a[0])) * (0.25 + f64::from(k % 7))
+            });
+        }
+        let pt = t.img.rel32_target(f + 0x17);
+        let recs = SCRATCH + 0x2000;
+        t.set_u32(op(&t, pt, 0x37), recs);
+        let flags = SCRATCH + 0x2f0;
+        t.set_u32(op(&t, f, 0x5), flags);
+        let block = SCRATCH + 0x700;
+        t.set_u32(op(&t, f, 0x27), block);
+        for (o, x) in [
+            (0xd7u32, 0.5f32),
+            (0x151, -0.25),
+            (0x16e, 3.0),
+            (0x23c, 0.75),
+            (0x2b6, 1.5),
+            (0x2d6, 2.0),
+        ] {
+            t.set_u32(op(&t, f, o), x.to_bits());
+        }
+        let p = SCRATCH + 0x300;
+        for (k, (n, fl)) in [(0u32, 0u8), (1, 0), (2, 0), (2, 2), (3, 0xfc)]
+            .into_iter()
+            .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u8(flags, fl);
+            t.set_u32(op(&t, pt, 0x0f), 8);
+            t.set_u32(op(&t, pt, 0x08), 0);
+            t.write(recs, &varied(0x74 * 8, k));
+            for i in 0..8u32 {
+                t.set_u32(recs + 0x74 * i + 0x6c, u32::from(i >= n));
+            }
+            t.write(block, &varied(0x50, k + 1));
+            t.write(p, &varied(0x10, k + 2));
+            t.set_u32(p, (1.5 * k as f32).to_bits());
+            t.set_u32(p + 8, (-2.0 + k as f32).to_bits());
+            scrub(&mut t);
+            let call = Call {
+                ecx: p,
+                eax: 0x3730_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::flagged_two_sparks(g, img, fr))
+            });
+        }
+    }
+}

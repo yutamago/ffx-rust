@@ -3300,6 +3300,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("reel step", &s7_misc::REEL_STEP),
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
+    ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",

@@ -5227,3 +5227,175 @@ pub const MODEL_OBJECT_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Where one spark's operands are in its code (offsets in the function).
+struct SparkOps {
+    /// The pool take's `rel32`; the block global and the byte of its
+    /// field.
+    take: u32,
+    block: u32,
+    field: u32,
+    /// The seven random calls: the slot table operand, the immediate
+    /// (the call's one word), the slot (314 or 404).
+    rnd: [(u32, u32, u32); 7],
+    /// `K` added to the fourth (404) random, the sign mask, the step's
+    /// `y` immediate, `K2` and `K3` of the size.
+    k: u32,
+    mask: u32,
+    dy: u32,
+    k2: u32,
+    k3: u32,
+    /// The tail: `Some(imm)` for `+0x4c = -1, +0x50 = 0, +0x68 = imm`,
+    /// else `+0x4c = +0x50 = 0x20` and the bytes `+0x67 = 0xa0`, `+0x6b`.
+    tail: Option<u32>,
+}
+
+/// One spark at the point `P` (a record from the pool; none: `None`):
+/// u16 `+0x38 = -1`, `+0x3a = 0x200`, `+0x30` the block's word, `+0x34 =
+/// 1`, `(P.x + r, P.y, r + P.z, 1)`, `+0x10 = r`, `+0x14 = -(r + K)`
+/// (the mask's sign), `+0x18 = r`, `+0x1c = r`, the step `(0, D, 0, 1)`,
+/// the tail and `+0x3c = (r + K2) K3` (`r` each random's ST0 as `f32`,
+/// kept in the frame word `scratch`). Returns the last random's `eax`.
+fn spark_from<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    p: u32,
+    scratch: u32,
+    o: &SparkOps,
+) -> Option<u32> {
+    let w = |off: u32| op(img, f, off);
+    let k = |g: &G, off: u32| g.read::<f32>(w(off));
+    let r = crate::sb_misc::pool_take(g, img, img.rel32_target(f + o.take));
+    if r == 0 {
+        return None;
+    }
+    let field = img.word(f + o.field) & 0xff;
+    let word = g.read::<u32>(g.read::<u32>(w(o.block)).wrapping_add(field));
+    g.write::<u16>(r + 0x38, 0xffff);
+    g.write::<u16>(r + 0x3a, 0x200);
+    g.write::<u32>(r + 0x30, word);
+    g.write::<u32>(r + 0x34, 1);
+    let mut eax = 0;
+    let mut rnd = |g: &mut G, i: usize| {
+        let (t, x, s) = o.rnd[i];
+        let out = slot(g, img, f, t, s, word, &[w(x)]);
+        eax = out.eax;
+        let v = crate::m0018::st0_f32(out.st0);
+        g.write::<f32>(scratch, v);
+        v
+    };
+    let a = rnd(g, 0);
+    g.write::<f32>(r, add(g.read::<f32>(p), a));
+    let y = g.read::<u32>(p + 4);
+    g.write::<u32>(r + 4, y);
+    let b = rnd(g, 1);
+    let z = add(b, g.read::<f32>(p + 8));
+    g.write::<u32>(r + 0xc, 0x3f80_0000);
+    g.write::<f32>(r + 8, z);
+    let v = rnd(g, 2);
+    g.write::<f32>(r + 0x10, v);
+    let v = rnd(g, 3);
+    let v = f32::from_bits(add(v, k(g, o.k)).to_bits() ^ g.read::<u32>(w(o.mask)));
+    g.write::<f32>(r + 0x14, v);
+    let v = rnd(g, 4);
+    g.write::<f32>(r + 0x18, v);
+    let v = rnd(g, 5);
+    g.write::<f32>(r + 0x1c, v);
+    for (at, v) in [
+        (0x20u32, 0u32),
+        (0x24, w(o.dy)),
+        (0x28, 0),
+        (0x2c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(r + at, v);
+    }
+    let v = add(rnd(g, 6), k(g, o.k2));
+    match o.tail {
+        Some(imm) => {
+            g.write::<u32>(r + 0x4c, 0xffff_ffff);
+            g.write::<u32>(r + 0x50, 0);
+            g.write::<u32>(r + 0x68, w(imm));
+        }
+        None => {
+            g.write::<u32>(r + 0x4c, 0x20);
+            g.write::<u32>(r + 0x50, 0x20);
+            g.write::<u8>(r + 0x67, 0xa0);
+            g.write::<u8>(r + 0x6b, 0);
+        }
+    }
+    g.write::<f32>(r + 0x3c, mul(v, k(g, o.k3)));
+    Some(eax)
+}
+
+/// Two sparks at a point, after the flags (internal: `ecx` = the point
+/// `P`; `ebp` = `esp - 4` at the entry): nothing while bit 0 or 1 of
+/// `**G_F` is set (returning `*G_F`); else the two sparks ([`spark_from`]:
+/// the first with the bytes, the second with the `+0x68` word), each
+/// from the pool (none: 0). Returns the last random's `eax`.
+///
+/// `magic_0565` 0x10003730 (741 bytes; 5 DLLs).
+pub fn flagged_two_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let p = fr.ecx;
+    let flags = g.read::<u32>(op(img, f, 0x5));
+    if g.read::<u8>(flags) & 3 != 0 {
+        return flags;
+    }
+    let scratch = fr.esp.wrapping_sub(8);
+    let first = SparkOps {
+        take: 0x17,
+        block: 0x27,
+        field: 0x30,
+        rnd: [
+            (0x3f, 0x57, 314),
+            (0x7b, 0x6c, 314),
+            (0x95, 0xa3, 314),
+            (0xb8, 0xbf, 404),
+            (0xdc, 0xe3, 314),
+            (0xff, 0x106, 314),
+            (0x116, 0x13f, 314),
+        ],
+        k: 0xd7,
+        mask: 0xea,
+        dy: 0x124,
+        k2: 0x151,
+        k3: 0x16e,
+        tail: None,
+    };
+    if spark_from(g, img, f, p, scratch, &first).is_none() {
+        return 0;
+    }
+    let second = SparkOps {
+        take: 0x17c,
+        block: 0x18c,
+        field: 0x195,
+        rnd: [
+            (0x1a4, 0x1bc, 314),
+            (0x1e0, 0x1d1, 314),
+            (0x1fa, 0x208, 314),
+            (0x21d, 0x224, 404),
+            (0x241, 0x248, 314),
+            (0x264, 0x26b, 314),
+            (0x27b, 0x2a4, 314),
+        ],
+        k: 0x23c,
+        mask: 0x24f,
+        dy: 0x289,
+        k2: 0x2b6,
+        k3: 0x2d6,
+        tail: Some(0x2ce),
+    };
+    spark_from(g, img, f, p, scratch, &second).unwrap_or(0)
+}
+
+/// [`flagged_two_sparks`] (the `rel32`s: two of the pool's take).
+pub const FLAGGED_TWO_SPARKS: Sig = Sig {
+    len: 741,
+    hash: 0x1b88_81e8_f56b_5499,
+    calls: &[
+        (0x17, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x17c, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+    ],
+    imports: &[],
+};
