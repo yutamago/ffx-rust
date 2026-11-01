@@ -3528,3 +3528,167 @@ pub const TWO_SPARKS_B: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A node appended to the DLL's parent `P` (its first `*G_PF`, last
+/// `*G_PL`, count u16 `*G_PC`), as the original inlines it: u16 `+0x1a
+/// = 0xff`, its own child links, `+0x14 = +4 = P`, `+8` the old last,
+/// the first set when `P` was empty (else the old last's `+4`), and the
+/// vtable `VT`. The operands: `(+0x14's P, +4's P, last, last, P, first,
+/// count, last, VT)`.
+fn parent_append<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+    let w = |o: u32| op(img, f, o);
+    let [p14, p4, l1, l2, p, first, count, l3, vt] = ops;
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, w(p14));
+    g.write::<u32>(node + 4, w(p4));
+    let last = g.read::<u32>(w(l1));
+    g.write::<u32>(node + 8, last);
+    let last = g.read::<u32>(w(l2));
+    if last == w(p) {
+        g.write::<u32>(w(first), node);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), node);
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    g.write::<u16>(w(count), n);
+    g.write::<u32>(w(l3), node);
+    g.write::<u32>(node, w(vt));
+}
+
+/// A summon object set up and listed (internal: `ecx` = the object `O`,
+/// `edx` = a record `R`, `xmm2` a scale `s`; an aligned frame, the
+/// set-up record `L` a local). `O` joins the DLL's task ring (vtable
+/// `VT`, callback `CB`; bit 0 of `*G_F` cleared); its nodes `B = O+0x120`
+/// and `C = O+0x14c` are appended to the parent `P` ([`parent_append`]),
+/// `B`'s point slot 268 `(R[0x54], 0x11, O+0x13c)` (`w` 1.0) and `C`'s
+/// colour `(1, 1, 1, s K)`; the node `N = O+0x178` inserted
+/// ([`node_insert`](crate::nodes::node_insert): `(N, P, G_V, B, G_W,
+/// C)`), the particle `O+0x20` set up
+/// ([`particle_node`](crate::sb_nodes::particle_node): `(p, G_O, N,
+/// *G_D, G_E, 0)`), the effect node `E = O+0x2d8`
+/// ([`effect_node`](crate::sb_nodes::effect_node): `(E, P, G_V, B, CB2,
+/// 0)`, then vtable `VT4`, `+0x2c |= 1`, `+0x30 = 0`), slot 239 `(*G_S,
+/// R[0x50], 0x20)`; `O+0x13c..` moved by three random offsets (`(r -
+/// K) K' - K''`, `r` slot 307's ST0), `O+0x2d4 = R`, `+0x2c8 = s` and
+/// `+0x2c4`, `+0x2cc`, `+0x2d0` 0. Returns slot 307's last `eax`.
+///
+/// `magic_0412` 0x10006a60 (796 bytes, `ecx`/`edx`/`xmm2`; 4 DLLs).
+pub fn summon_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let (o, r) = (fr.ecx, fr.edx);
+    let s = fr.xmm_f32(2);
+    g.write::<u32>(o + 8, o);
+    g.write::<u32>(o + 4, o);
+    g.write::<u32>(o, w(0x1c));
+    g.write::<u32>(o + 0x10, w(0x23));
+    g.write::<u32>(o + 0x14, o);
+    let last = g.read::<u32>(w(0x2b));
+    g.write::<u32>(o + 8, last);
+    g.write::<u32>(o + 4, w(0x35));
+    let last = g.read::<u32>(w(0x3a));
+    g.write::<u32>(last.wrapping_add(4), o);
+    let v = g.read::<u32>(w(0x49)) & !1;
+    g.write::<u32>(w(0x49), v);
+    g.write::<u32>(w(0x50), o);
+    let (b, c) = (o + 0x120, o + 0x14c);
+    parent_append(
+        g,
+        img,
+        f,
+        b,
+        [0x63, 0x6a, 0x6f, 0x77, 0x80, 0x88, 0x94, 0xa5, 0xac],
+    );
+    let h = g.read::<u32>(r.wrapping_add(0x54));
+    slot(g, img, f, 0x99, 268, b, &[h, 0x11, o + 0x13c]);
+    g.write::<u32>(o + 0x148, 0x3f80_0000);
+    parent_append(
+        g,
+        img,
+        f,
+        c,
+        [0xdc, 0xe3, 0xe8, 0xf0, 0xf5, 0xfd, 0x109, 0x11d, 0x123],
+    );
+    let alpha = mul(s, k(g, 0x117));
+    for at in [0x168u32, 0x16c, 0x170] {
+        g.write::<u32>(o + at, 0x3f80_0000);
+    }
+    g.write::<f32>(o + 0x174, alpha);
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    let rec = base + 0x18;
+    let set = |g: &mut G, words: [u32; 6]| {
+        for (i, v) in (0u32..).zip(words) {
+            g.write::<u32>(rec + 4 * i, v);
+        }
+    };
+    let n = o + 0x178;
+    set(g, [n, w(0x163), w(0x16b), b, w(0x177), c]);
+    let insert = Frame {
+        at: call(0x17c),
+        esp: base.wrapping_sub(4),
+        ecx: rec,
+        ..*fr
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    let d = g.read::<u32>(w(0x181));
+    let q = o + 0x20;
+    g.write::<u32>(rec, q);
+    g.write::<u32>(q, w(0x18e));
+    for (i, v) in (1u32..).zip([w(0x19a), n, d, w(0x1aa), 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::particle_node(g, img, call(0x1b7), rec);
+    let e = o + 0x2d8;
+    set(g, [e, w(0x1cd), w(0x1d5), b, w(0x1e1), 0]);
+    crate::sb_nodes::effect_node(g, img, call(0x1ee), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0x1fa));
+    let v = g.read::<u32>(e + 0x2c) | 1;
+    g.write::<u32>(e + 0x2c, v);
+    g.write::<u32>(e + 0x30, 0);
+    // `[esp + 0x18]` after a push: the local holding `R`, not the record
+    let x = g.read::<u32>(r.wrapping_add(0x50));
+    let sv = g.read::<u32>(w(0x21d));
+    slot(g, img, f, 0x203, 239, rec, &[sv, x, 0x20]);
+    let local = base + 0x14;
+    let mut eax = 0;
+    // (the slot table, K, K', K'', the field)
+    for (t, k1, k2, k3, at) in [
+        (0x224u32, 0x241u32, 0x24eu32, 0x256u32, 0x13cu32),
+        (0x246, 0x280, 0x28d, 0x295, 0x140),
+        (0x285, 0x2bf, 0x2c7, 0x2cf, 0x144),
+    ] {
+        let rnd = slot(g, img, f, t, 307, rec, &[]);
+        eax = rnd.eax;
+        let v = crate::m0018::st0_f32(rnd.st0);
+        g.write::<f32>(local, v);
+        let v = sub(mul(sub(v, k(g, k1)), k(g, k2)), k(g, k3));
+        let v = add(v, g.read::<f32>(o + at));
+        g.write::<f32>(o + at, v);
+    }
+    g.write::<u32>(o + 0x2d4, r);
+    g.write::<f32>(o + 0x2c8, s);
+    for at in [0x2c4u32, 0x2cc, 0x2d0] {
+        g.write::<u32>(o + at, 0);
+    }
+    eax
+}
+
+/// [`summon_object_setup`] (the `rel32`s:
+/// [`node_insert`](crate::nodes::node_insert),
+/// [`particle_node`](crate::sb_nodes::particle_node) and
+/// [`effect_node`](crate::sb_nodes::effect_node)).
+pub const SUMMON_OBJECT_SETUP: Sig = Sig {
+    len: 796,
+    hash: 0x8fe8_82ab_ab67_f324,
+    calls: &[
+        (0x17c, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1b7, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x1ee, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};

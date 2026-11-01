@@ -2876,3 +2876,76 @@ fn two_sparks() {
         }
     }
 }
+
+/// Row 332: the summon object set up in the four DLLs: the parent empty
+/// and holding a node, the task ring's last node; the slots log their
+/// words.
+#[test]
+fn summon_object_setups() {
+    for (dll, rva) in [
+        (412u16, 0x6a60u32),
+        (495, 0x6640),
+        (620, 0x6a60),
+        (676, 0x6a60),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        log_calls(&mut t, 268, log, 3, None, |m, a, k| {
+            m.w32(a[2], a[0] ^ k);
+            0x268
+        });
+        log_calls(&mut t, 239, log, 3, None, |_, a, k| a[1] ^ k);
+        log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+        t.stub_st0(307, move |m, _| 0.625 + f64::from(m.r32(log) % 5));
+        // the particle's and the effect node's slots
+        let table = SCRATCH + 0x3400;
+        for i in 0..0x10 {
+            t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+        rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+        rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0]);
+        let pn = t.img.rel32_target(f + 0x1b7);
+        let start = t.img.rel32_target(pn + 0x88);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        t.set_u32(w(&t, 0x181), SCRATCH + 0x900);
+        let parent = w(&t, 0x80);
+        let pl = w(&t, 0x19a);
+        let o = SCRATCH + 0x1000;
+        let r = SCRATCH + 0x400;
+        for (k, held) in [false, true, false].into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.write(o, &varied(0x340, k));
+            t.write(r, &varied(0x60, k + 1));
+            t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
+            t.set_u32(w(&t, 0x2b), SCRATCH + 0x500);
+            t.write(SCRATCH + 0x500, &varied(0x20, k + 2));
+            t.set_u32(w(&t, 0x77), if held { SCRATCH + 0x540 } else { parent });
+            t.write(SCRATCH + 0x540, &varied(0x20, k + 3));
+            t.write(pl, &varied(0x1c, k + 6));
+            t.set_u32(pl + 0x10, pl);
+            for (o_, x) in [
+                (0x117u32, 0.5f32),
+                (0x241, 0.25),
+                (0x24e, 2.0),
+                (0x256, 1.0),
+            ] {
+                t.set_u32(w(&t, o_), x.to_bits());
+            }
+            scrub(&mut t);
+            let c = Call {
+                ecx: o,
+                edx: r,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(1.5 + k as f32)]);
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::summon_object_setup(g, img, fr))
+            });
+        }
+    }
+}
