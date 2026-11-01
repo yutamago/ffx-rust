@@ -1602,3 +1602,386 @@ pub const MODEL_EFFECT_PLACED: Sig = Sig {
     calls: &[(0x308, Callee::Any)],
     imports: &[],
 };
+
+/// Calls a cdecl colour helper at the `rel32` `call` with `words` pushed
+/// below `esp` (the first word on top), `ecx` and `edx` as given.
+fn colour_call<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (call, esp, ecx, edx): (u32, u32, u32, u32),
+    words: &[u32],
+    port: fn(&mut G, &Image, &Frame) -> Ret,
+) -> u32 {
+    let top = esp.wrapping_sub(4 * words.len() as u32);
+    for (i, &x) in (0u32..).zip(words) {
+        g.write::<u32>(top + 4 * i, x);
+    }
+    let fr = Frame {
+        at: img.rel32_target(f + call),
+        esp: top.wrapping_sub(4),
+        eax: 0,
+        ecx,
+        edx,
+        xmm: [0; 4],
+    };
+    port(g, img, &fr).eax
+}
+
+/// The opening of [`summon_frame_colours`] and [`summon_frame_colours_b`]
+/// (their first 0x149 bytes are the same): `None` when `*G_A` or `*G_B`
+/// is clear, else the slots, the sound record and the 17 parts; returns
+/// the aligned stack.
+fn colours_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Option<u32> {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let esp = fr.esp.wrapping_sub(4) & !7;
+    if g.read::<u32>(w(0x8)) == 0 || g.read::<u32>(w(0x15)) == 0 {
+        return None;
+    }
+    let c = g.read::<u32>(w(0x27));
+    slot(g, img, f, 0x21, 723, fr.ecx, &[c]);
+    let d = g.read::<u32>(w(0x43));
+    slot(g, img, f, 0x34, 724, fr.ecx, &[d]);
+    let e = g.read::<u32>(w(0x4a));
+    g.write::<u32>(e, w(0x53));
+    let sub_at = |at: u32, eax: u32| Frame {
+        at: img.rel32_target(f + at),
+        esp: esp.wrapping_sub(4),
+        eax,
+        ..*fr
+    };
+    if g.read::<u16>(w(0x5a)) != 0 {
+        slot(g, img, f, 0x62, 315, fr.ecx, &[0]);
+        crate::s7_misc::sound_record(g, img, &sub_at(0x74, 0));
+    }
+    let at = g.read::<u32>(w(0x79));
+    g.write::<u32>(at, w(0x84));
+    let mut eax = at;
+    for i in 0..17u32 {
+        // `mov ecx, imm32; call`: the first part's `mov ecx` comes before
+        // the store
+        let (ecx_at, call) = if i == 0 {
+            (0x7e, 0x89)
+        } else {
+            (0x84 + 0xa * i, 0x89 + 0xa * i)
+        };
+        let refresh = img.rel32_target(f + call);
+        eax = crate::sa_misc::part_refresh_b(g, img, refresh, w(ecx_at), eax);
+    }
+    if g.read::<u16>(w(0x130)) != 0 {
+        slot(g, img, f, 0x138, 275, fr.ecx, &[1]);
+    }
+    Some(esp)
+}
+
+/// The end of [`summon_frame_colours`] and [`summon_frame_colours_b`]
+/// at `b` (their emitters' call): the emitters' sounds
+/// ([`emitter_sounds`]); unless `**G_V` is set the stage becomes `*G_W`
+/// and the count `*G_N` goes up; `*G_X = **G_Y`.
+fn colours_tail<G: Game>(g: &mut G, img: &Image, fr: &Frame, esp: u32, b: u32) {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, b + o);
+    let em = Frame {
+        at: img.rel32_target(f + b + 1),
+        esp: esp.wrapping_sub(4),
+        eax: 0,
+        ..*fr
+    };
+    emitter_sounds(g, img, &em);
+    if g.read::<u32>(g.read::<u32>(w(0x6))) == 0 {
+        let st = g.read::<u32>(w(0x10));
+        let n = g.read::<u32>(w(0x16)).wrapping_add(1);
+        g.write::<u32>(w(0x16), n);
+        g.write::<u32>(w(0x1b), st);
+    }
+    let x = g.read::<u32>(g.read::<u32>(w(0x20)));
+    g.write::<u32>(w(0x27), x);
+}
+
+/// A summon's frame with its parts, colours and emitters (cdecl, no
+/// arguments; a frame aligned to 8). Nothing (0) unless `*G_A` and `*G_B`
+/// are set. Slots 723 `(*G_C)` and 724 `(*G_D)`, `**G_E` the immediate;
+/// with the u16 `*G_F` set slot 315 `(0)` and the model's sound record
+/// ([`sound_record`](crate::s7_misc::sound_record)); `**G_G` the
+/// immediate and the 17 parts (the immediates) refreshed
+/// ([`part_refresh_b`](crate::sa_misc::part_refresh_b)); slot 275 `(1)`
+/// with `*G_F` set. Then by the stage `*G_ST` a colour:
+/// - 1: the level `(*G_Q >> 12) - (*G_P >> 12) + 0x41` of 20, black
+///   ([`level_colour`](crate::s4_small::level_colour));
+/// - 3: `40 - *G_R` of 40, black;
+/// - 16: the pulses ([`pulse_colour`](crate::s4_small::pulse_colour)) at
+///   `*G_S - 20` and `*G_S - 274`, `(0x40, 0x40, 0x40)` with 0x48;
+/// - 21: the white pulse at `*G_T - 55` (0x44), then from `*G_T` past
+///   0x91 the level `*G_T - 0x91` of 60 in white (up to 60);
+/// - 23: `30 - *G_U` of 30, white.
+///
+/// Then the emitters' sounds ([`emitter_sounds`]); unless `**G_V` is set
+/// the stage becomes `*G_W` and the count `*G_N` goes up; `*G_X =
+/// **G_Y`. Returns 0.
+///
+/// `magic_0515` 0x10008cb0 (771 bytes with its tables; 2 DLLs).
+pub fn summon_frame_colours<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let Some(esp) = colours_head(g, img, fr) else {
+        return Ret::eax(0);
+    };
+    let level = crate::s4_small::level_colour;
+    let pulse = crate::s4_small::pulse_colour;
+    let sx16 = |g: &G, o: u32| i32::from(g.read::<i16>(w(o)));
+    match g.read::<u32>(w(0x14a)) {
+        1 => {
+            let a = (g.read::<i32>(w(0x167)) >> 12) - 0x41;
+            let c = g.read::<i32>(w(0x16d)) >> 12;
+            if c >= a && c - a > 0 {
+                let n = (c - a).cast_unsigned();
+                colour_call(g, img, f, (0x29b, esp, n, 0x14), &[0, 0, 0], level);
+            }
+        }
+        3 => {
+            let r = sx16(g, 0x19e);
+            if r < 0x28 {
+                let n = (0x28 - r).cast_unsigned();
+                colour_call(g, img, f, (0x29b, esp, n, 0x28), &[0, 0, 0], level);
+            }
+        }
+        16 => {
+            let s = sx16(g, 0x1ce) - 0x14;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x1e7, esp, n, 0x40),
+                    &[0x40, 0x40, 0x48, 0],
+                    pulse,
+                );
+            }
+            let s = sx16(g, 0x1ed) - 0x112;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x210, esp, n, 0x40),
+                    &[0x40, 0x40, 0x48, 0],
+                    pulse,
+                );
+            }
+        }
+        21 => {
+            let s = sx16(g, 0x21e) - 0x37;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x23e, esp, n, 0xff),
+                    &[0xff, 0xff, 0x44, 0],
+                    pulse,
+                );
+            }
+            let t = sx16(g, 0x244);
+            let s = t - 0x91;
+            if t > 0x91 && s <= 0x3c && s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(g, img, f, (0x29b, esp, n, 0x3c), &[0xff, 0xff, 0xff], level);
+            }
+        }
+        23 => {
+            let u = sx16(g, 0x270);
+            if u < 0x1e {
+                let n = (0x1e - u).cast_unsigned();
+                colour_call(g, img, f, (0x29b, esp, n, 0x1e), &[0xff, 0xff, 0xff], level);
+            }
+        }
+        _ => {}
+    }
+    colours_tail(g, img, fr, esp, 0x2a2);
+    Ret::eax(0)
+}
+
+/// [`summon_frame_colours`] (the `rel32`s: the sound record, the 17
+/// part refreshes, the colours and the emitters' sounds).
+pub const SUMMON_FRAME_COLOURS: Sig = Sig {
+    len: 771,
+    hash: 0x49e4_0e10_5ef8_d3c0,
+    calls: &[
+        (0x74, Callee::Sig(&crate::s7_misc::SOUND_RECORD)),
+        (0x89, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x93, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x9d, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xa7, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xb1, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xbb, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xc5, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xcf, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xd9, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xe3, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xed, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xf7, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x101, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x10b, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x115, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x11f, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x129, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x1e7, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x210, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x23e, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x29b, Callee::Sig(&crate::s4_small::LEVEL_COLOUR)),
+        (0x2a3, Callee::Sig(&EMITTER_SOUNDS)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_frame_colours`]'s copy with other stages (cdecl, no
+/// arguments): by the stage `*G_ST`
+/// - 0: `*G_A'` (up to 20) of 20, black
+///   ([`level_colour`](crate::s4_small::level_colour));
+/// - 1: the level `(*G_Q >> 12) - (*G_P >> 12) + 0x41` of 20, black;
+/// - 3: `40 - *G_R` of 40, black;
+/// - 16: the pulses ([`pulse_colour`](crate::s4_small::pulse_colour)) at
+///   `*G_S - 20` and `*G_S - 274`;
+/// - 21: `40 - *G_T` of 40 black, the white pulse at `*G_T - 85`, then
+///   from `*G_T` past 0xaf the level `*G_T - 0xaf` of 60 in white (up to
+///   60);
+/// - 23: `30 - *G_U` of 30, white.
+///
+/// The rest is [`summon_frame_colours`]'s. Returns 0.
+///
+/// `magic_0611` 0x10008bf0 (840 bytes with its tables; 2 DLLs).
+pub fn summon_frame_colours_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let Some(esp) = colours_head(g, img, fr) else {
+        return Ret::eax(0);
+    };
+    let level = crate::s4_small::level_colour;
+    let pulse = crate::s4_small::pulse_colour;
+    let sx16 = |g: &G, o: u32| i32::from(g.read::<i16>(w(o)));
+    let black = |g: &mut G, n: i32, full: u32| {
+        if n > 0 {
+            let n = n.cast_unsigned();
+            colour_call(g, img, f, (0x2d9, esp, n, full), &[0, 0, 0], level);
+        }
+    };
+    match g.read::<u32>(w(0x14a)) {
+        0 => {
+            let a = sx16(g, 0x167);
+            if a <= 0x14 {
+                black(g, a, 0x14);
+            }
+        }
+        1 => {
+            let a = (g.read::<i32>(w(0x191)) >> 12) - 0x41;
+            let c = g.read::<i32>(w(0x197)) >> 12;
+            if c >= a {
+                black(g, c - a, 0x14);
+            }
+        }
+        3 => {
+            let r = sx16(g, 0x1b2);
+            if r < 0x28 {
+                black(g, 0x28 - r, 0x28);
+            }
+        }
+        16 => {
+            let s = sx16(g, 0x1e2) - 0x14;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x1fb, esp, n, 0x40),
+                    &[0x40, 0x40, 0x48, 0],
+                    pulse,
+                );
+            }
+            let s = sx16(g, 0x201) - 0x112;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x224, esp, n, 0x40),
+                    &[0x40, 0x40, 0x48, 0],
+                    pulse,
+                );
+            }
+        }
+        21 => {
+            let t = sx16(g, 0x233);
+            if t < 0x28 && 0x28 - t > 0 {
+                let n = (0x28 - t).cast_unsigned();
+                colour_call(g, img, f, (0x257, esp, n, 0x28), &[0, 0, 0], level);
+            }
+            let s = sx16(g, 0x25e) - 0x55;
+            if s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(
+                    g,
+                    img,
+                    f,
+                    (0x281, esp, n, 0xff),
+                    &[0xff, 0xff, 0x44, 0],
+                    pulse,
+                );
+            }
+            let t = sx16(g, 0x288);
+            let s = t - 0xaf;
+            if t > 0xaf && s <= 0x3c && s > 0 {
+                let n = s.cast_unsigned();
+                colour_call(g, img, f, (0x2d9, esp, n, 0x3c), &[0xff, 0xff, 0xff], level);
+            }
+        }
+        23 => {
+            let u = sx16(g, 0x2ae);
+            if u < 0x1e && 0x1e - u > 0 {
+                let n = (0x1e - u).cast_unsigned();
+                colour_call(g, img, f, (0x2d9, esp, n, 0x1e), &[0xff, 0xff, 0xff], level);
+            }
+        }
+        _ => {}
+    }
+    colours_tail(g, img, fr, esp, 0x2e0);
+    Ret::eax(0)
+}
+
+/// [`summon_frame_colours_b`].
+pub const SUMMON_FRAME_COLOURS_B: Sig = Sig {
+    len: 840,
+    hash: 0xa3a1_524b_cd37_ce19,
+    calls: &[
+        (0x74, Callee::Sig(&crate::s7_misc::SOUND_RECORD)),
+        (0x89, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x93, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x9d, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xa7, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xb1, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xbb, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xc5, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xcf, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xd9, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xe3, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xed, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0xf7, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x101, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x10b, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x115, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x11f, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x129, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x1fb, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x224, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x257, Callee::Sig(&crate::s4_small::LEVEL_COLOUR)),
+        (0x281, Callee::Sig(&crate::s4_small::PULSE_COLOUR)),
+        (0x2d9, Callee::Sig(&crate::s4_small::LEVEL_COLOUR)),
+        (0x2e1, Callee::Sig(&EMITTER_SOUNDS)),
+    ],
+    imports: &[],
+};

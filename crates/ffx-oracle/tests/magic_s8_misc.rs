@@ -1305,3 +1305,175 @@ fn model_effects_placed() {
         }
     }
 }
+
+/// The summon frame with its colours in both DLLs: off (`*G_A`, `*G_B`),
+/// each colour stage with levels inside and outside their ranges, the
+/// sound record on and off, `**G_V` set and not.
+#[test]
+fn summon_frames_colours() {
+    for (dll, rva) in [(515u16, 0x8cb0u32), (667, 0x8910)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        for (s, n) in [
+            (723u32, 1usize),
+            (724, 1),
+            (315, 1),
+            (275, 1),
+            (712, 8),
+            (258, 1),
+        ] {
+            log_calls(&mut t, s, n, &[], move |_, a, k| a[0] ^ (s << 16) ^ k);
+        }
+        log_calls(&mut t, 776, 1, &[], |_, a, _| a[0] << 4);
+        log_calls(&mut t, 915, 5, &[], |_, a, k| a[0] ^ a[3] ^ k);
+        log_calls(&mut t, 235, 1, &[], |_, a, _| a[0]);
+        // the emitters: none with a bank
+        let em = t.img.rel32_target(f + 0x2a3);
+        let recs = op(&t, em, 0x7a);
+        t.write(recs - 0x34, &vec![0; 0x100 * 0x4c]);
+        t.set_u32(op(&t, em, 0x2e1), SCRATCH + 0x5f70);
+        // the sound record (`model_sound_records`' set-up), slot 773 open
+        let sr = t.img.rel32_target(f + 0x74);
+        t.set_u32(op(&t, sr, 0x167), SCRATCH + 0x2f0);
+        // its `**G_A` is the block this frame stores first (the same global)
+        let block = op(&t, f, 0x53);
+        t.set_u32(block + 0x20, SCRATCH + 0x1000);
+        t.set_u32(SCRATCH + 0x1000 + 0x8e0 + 0x1c, SCRATCH + 0x800);
+        t.set_u32(op(&t, sr, 0xd4), SCRATCH + 0x780);
+        log_calls(&mut t, 773, 2, &[], |_, _, _| 1);
+        let gv = SCRATCH + 0x5f74;
+        t.set_u32(op(&t, f, 0x2a8), gv);
+        let gy = SCRATCH + 0x5f78;
+        t.set_u32(op(&t, f, 0x2c2), gy);
+        let ge = SCRATCH + 0x5f7c;
+        t.set_u32(op(&t, f, 0x4a), ge);
+        let gg = SCRATCH + 0x5f60;
+        t.set_u32(op(&t, f, 0x79), gg);
+        // (on, sound, stage, level word, other level word, **G_V)
+        let cases: [(bool, u16, u32, u32, u32, u32); 20] = [
+            (false, 0, 1, 0, 0, 0),
+            (true, 1, 1, 0x0004_0000, 0x0010_0000, 0),
+            (true, 0, 1, 0x0004_0000, 0x0004_0000, 1),
+            (true, 0, 1, 0x0006_0000, 0x0002_0000, 0),
+            (true, 0, 3, 10, 0, 0),
+            (true, 0, 3, 0x28, 0, 1),
+            (true, 0, 3, 0xfff0, 0, 0),
+            (true, 0, 16, 0x15, 0, 0),
+            (true, 0, 16, 0x14, 0, 0),
+            (true, 0, 16, 0x120, 0, 0),
+            (true, 0, 21, 0x30, 0, 0),
+            (true, 0, 21, 0x40, 0, 0),
+            (true, 0, 21, 0xa0, 0, 0),
+            (true, 0, 21, 0xcd, 0, 0),
+            (true, 0, 21, 0xce, 0, 0),
+            (true, 0, 23, 0x1d, 0, 0),
+            (true, 0, 23, 0x1e, 0, 0),
+            (true, 0, 23, 0xff00, 0, 0),
+            (true, 0, 2, 0, 0, 0),
+            (true, 1, 24, 0, 0, 1),
+        ];
+        for (k, (on, sound, stage, lv, lv2, v)) in cases.into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.set_u32(op(&t, f, 0x8), u32::from(on || k.is_multiple_of(2)));
+            t.set_u32(op(&t, f, 0x15), u32::from(on));
+            t.set_u16(op(&t, f, 0x5a), sound);
+            t.set_u16(op(&t, f, 0x130), sound ^ (k % 2) as u16);
+            t.set_u32(op(&t, f, 0x14a), stage);
+            t.set_u32(op(&t, f, 0x167), lv);
+            t.set_u32(op(&t, f, 0x16d), lv2);
+            for o in [0x19eu32, 0x1ce, 0x21e, 0x270] {
+                t.set_u16(op(&t, f, o), lv as u16);
+            }
+            t.set_u32(gv, v);
+            t.set_u32(gy, 0x0a00_0000 + k);
+            t.set_u32(op(&t, f, 0x2b2), 0x0b00_0000 + k);
+            t.set_u32(op(&t, f, 0x2b8), k);
+            t.set_u32(SCRATCH + 0x2f0, 0x1100 + k);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+/// The second summon frame with colours in both DLLs: every stage with
+/// levels inside and outside their ranges.
+#[test]
+fn summon_frames_colours_b() {
+    for (dll, rva) in [(611u16, 0x8bf0u32), (668, 0x87f0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        for (s, n) in [
+            (723u32, 1usize),
+            (724, 1),
+            (315, 1),
+            (275, 1),
+            (712, 8),
+            (258, 1),
+        ] {
+            log_calls(&mut t, s, n, &[], move |_, a, k| a[0] ^ (s << 16) ^ k);
+        }
+        log_calls(&mut t, 776, 1, &[], |_, a, _| a[0] << 4);
+        log_calls(&mut t, 915, 5, &[], |_, a, k| a[0] ^ a[3] ^ k);
+        log_calls(&mut t, 235, 1, &[], |_, a, _| a[0]);
+        let em = t.img.rel32_target(f + 0x2e1);
+        let recs = op(&t, em, 0x7a);
+        t.write(recs - 0x34, &vec![0; 0x100 * 0x4c]);
+        t.set_u32(op(&t, em, 0x2e1), SCRATCH + 0x5f70);
+        let sr = t.img.rel32_target(f + 0x74);
+        t.set_u32(op(&t, sr, 0x167), SCRATCH + 0x2f0);
+        let block = op(&t, f, 0x53);
+        t.set_u32(block + 0x20, SCRATCH + 0x1000);
+        t.set_u32(SCRATCH + 0x1000 + 0x8e0 + 0x1c, SCRATCH + 0x800);
+        t.set_u32(op(&t, sr, 0xd4), SCRATCH + 0x780);
+        log_calls(&mut t, 773, 2, &[], |_, _, _| 0);
+        log_calls(&mut t, 777, 1, &[], |_, a, _| a[0] ^ 0xfff0);
+        let gv = SCRATCH + 0x5f74;
+        t.set_u32(op(&t, f, 0x2e6), gv);
+        let gy = SCRATCH + 0x5f78;
+        t.set_u32(op(&t, f, 0x300), gy);
+        // (sound, stage, level word, other level word, **G_V)
+        let cases: [(u16, u32, u32, u32, u32); 19] = [
+            (1, 0, 0x10, 0, 0),
+            (0, 0, 0x15, 0, 1),
+            (0, 0, 0xfffe, 0, 0),
+            (0, 1, 0x0004_0000, 0x0010_0000, 0),
+            (0, 1, 0x0006_0000, 0x0002_0000, 0),
+            (0, 1, 0x0004_0000, 0x0003_f000, 0),
+            (0, 3, 10, 0, 0),
+            (0, 3, 0x28, 0, 0),
+            (0, 16, 0x15, 0, 0),
+            (0, 16, 0x120, 0, 0),
+            (0, 21, 0x10, 0, 0),
+            (0, 21, 0x60, 0, 0),
+            (0, 21, 0xc0, 0, 0),
+            (0, 21, 0xeb, 0, 0),
+            (0, 21, 0xec, 0, 0),
+            (0, 23, 0x1d, 0, 0),
+            (0, 23, 0x1e, 0, 0),
+            (0, 2, 0, 0, 0),
+            (1, 0x18, 0, 0, 1),
+        ];
+        for (k, (sound, stage, lv, lv2, v)) in cases.into_iter().enumerate() {
+            let k = k as u32;
+            t.set_u32(LOG, 0);
+            t.set_u32(op(&t, f, 0x8), 1);
+            t.set_u32(op(&t, f, 0x15), 1);
+            t.set_u16(op(&t, f, 0x5a), sound);
+            t.set_u16(op(&t, f, 0x130), sound ^ (k % 2) as u16);
+            t.set_u32(op(&t, f, 0x14a), stage);
+            t.set_u32(op(&t, f, 0x191), lv);
+            t.set_u32(op(&t, f, 0x197), lv2);
+            for o in [0x167u32, 0x1b2, 0x1e2, 0x233, 0x2ae] {
+                t.set_u16(op(&t, f, o), lv as u16);
+            }
+            t.set_u32(gv, v);
+            t.set_u32(gy, 0x0a00_0000 + k);
+            t.set_u32(op(&t, f, 0x2f0), 0x0b00_0000 + k);
+            t.set_u32(op(&t, f, 0x2f6), k);
+            t.set_u32(SCRATCH + 0x2f0, 0x1100 + k);
+            scrub(&mut t);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

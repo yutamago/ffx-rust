@@ -2493,6 +2493,8 @@ ports! {
     "objects freed, fan, fade" => s8_misc::OBJECTS_FREED_FAN_FADE, s8_misc::objects_freed_fan_fade;
     "emitter sounds" => s8_misc::EMITTER_SOUNDS, s8_misc::emitter_sounds;
     "model effect placed" => s8_misc::MODEL_EFFECT_PLACED, s8_misc::model_effect_placed;
+    "summon frame (colours)" => s8_misc::SUMMON_FRAME_COLOURS, s8_misc::summon_frame_colours;
+    "summon frame (colours, b)" => s8_misc::SUMMON_FRAME_COLOURS_B, s8_misc::summon_frame_colours_b;
     // round 8, shared-8 (s8_misc): end of ports
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
