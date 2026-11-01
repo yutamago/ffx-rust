@@ -36,4 +36,11 @@ ported! {
         let ebp = f.at() + 4 * rb::BLUR_MATRICES_FRAME_WORDS;
         rb::blur_matrices::blur_matrices(&mut mem(), ebp, this, camera)
     }
+    /// `Phyre_PPostProcessing_PMotionBlur_cameraHistory_00a13b90(effect; camera)`:
+    /// the matrices and products in a frame; the last `PMatrix4_Copy`'s `eax`.
+    Phyre_PPostProcessing_PMotionBlur_cameraHistory_00a13b90 @ 0x00a1_3b90 => extern "thiscall" fn rbp2_00a13b90(this: u32, camera: u32) -> u32 {
+        let mut f = StackFrame::<{ rb::HISTORY_FRAME_WORDS as usize }>::new();
+        let ebp = f.at() + 4 * rb::HISTORY_FRAME_WORDS;
+        rb::history::camera_history(&mut mem(), ebp, this, camera)
+    }
 }

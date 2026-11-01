@@ -6694,3 +6694,67 @@ fn bp2_blur_matrices() {
         }
     }
 }
+
+/// `0x00a13b90` with every matrix callee original on both sides: random
+/// cameras, effect matrices and the 16 slots' current and previous
+/// matrices (near-identity, so the inverses exist), a zero projection term
+/// (1/0), a NaN in a slot. Every slot's output, the moved matrices and the
+/// frame's products are compared. Only synthetic data reaches it.
+#[test]
+fn bp2_camera_history() {
+    use ffx_prender::m5p_render_b_bp2::history::camera_history;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x00a1_3b90);
+        let mut unit = move || f32::from(u16::try_from(rng.next() % 2000).unwrap()) / 1000.0 - 1.0;
+        for k in 0..4u32 {
+            let mut cam: Vec<f32> = (0..0x14).map(|_| unit()).collect();
+            for c in cam.iter_mut().take(12).step_by(5) {
+                *c += 2.0;
+            }
+            if k == 1 {
+                cam[17] = 0.0;
+            }
+            let bytes: Vec<u8> = cam.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let camera = t.alloc(&bytes);
+            // A, B, then 16 current and 16 previous 4x4s, then the outputs
+            let mut fx: Vec<f32> = vec![0.0; (0x8d4 + 0x400) / 4];
+            for (i, v) in fx.iter_mut().enumerate().skip(5) {
+                let j = (i - 5) % 16;
+                *v = if j % 5 == 0 {
+                    1.0 + unit() * 0.1
+                } else {
+                    unit() * 0.3
+                };
+            }
+            if k == 2 {
+                fx[(0xd4 + 0x40 * 3 + 8) / 4] = f32::NAN;
+            }
+            let bytes: Vec<u8> = fx.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let fx = t.alloc(&bytes);
+            let ebp = t.ebp_for(1);
+            t.check_frame(
+                &format!("{label}: camera history {k}"),
+                0x00a1_3b90,
+                Conv::Thiscall(fx),
+                &[camera],
+                ebp,
+                0x30c,
+                (0x10c, 0xec),
+                |g| Out::U32(camera_history(g, ebp, fx, camera)),
+            );
+            // the other products (the words between hold the original's
+            // pointers and loop count)
+            for (from, len) in [
+                (0xe4u32, 0x60usize),
+                (0x80, 0x40),
+                (0x2cc, 0xc0),
+                (0x20c, 0x40),
+            ] {
+                let x = Oracle::read(&mut t.a, ebp - from, len).unwrap();
+                let y = Oracle::read(&mut t.b, ebp - from, len).unwrap();
+                assert_eq!(x, y, "{label}: camera history {k}: frame at -{from:#x}");
+            }
+            t.reset();
+        }
+    }
+}

@@ -583,3 +583,162 @@ pub mod blur_matrices {
         h.call_sym(copy, Conv::Thiscall(b_m), &[camera + 0x30])
     }
 }
+
+/// `0x00a13b90`'s callees: `PMatrix4_FromMatrix3x4` (thiscall `(out;
+/// m)`), `sce::Vectormath::Aos::inverse` (cdecl `(out, m)`),
+/// `PMatrix4_RowTimes` (thiscall `(m; out, v)` -> `out`),
+/// `PMatrix4_FromRows` (thiscall `(out; r0, r1, r2, r3)`),
+/// `PMatrix4_Copy_00453340` (thiscall `(dst; src)`).
+pub const HISTORY_CALLS: [u32; 5] = [
+    0x0045_1080,
+    0x0057_3d00,
+    0x004c_9c20,
+    0x0045_0d40,
+    0x0045_3340,
+];
+/// The words of `0x00a13b90`'s frame below `ebp`.
+pub const HISTORY_FRAME_WORDS: u32 = 0x30c / 4;
+
+pub mod history {
+    //! `0x00a13b90` over game memory.
+
+    use super::{HISTORY_CALLS, MINUS_ONE};
+    use ffx_bridge::x87::{self, Reg};
+    use ffx_graphic::host::{Conv, Host};
+
+    fn ld(h: &impl Host, at: u32) -> f64 {
+        x87::load(h.read(at))
+    }
+
+    fn copy_words(h: &mut impl Host, dst: u32, src: u32, n: u32) {
+        for k in 0..n {
+            let w: u32 = h.read(src.wrapping_add(4 * k));
+            h.write(dst.wrapping_add(4 * k), w);
+        }
+    }
+
+    fn copy_floats(h: &mut impl Host, dst: u32, src: u32, n: u32) {
+        for k in 0..n {
+            let x = ld(h, src.wrapping_add(4 * k));
+            h.write(dst.wrapping_add(4 * k), x87::store(x));
+        }
+    }
+
+    /// `m` times four row vectors (`PMatrix4_RowTimes` into `outs`, the
+    /// last row first), the four results copied through the x87 into the
+    /// rows at `dst`.
+    fn times_rows(h: &mut impl Host, m: u32, outs: [u32; 4], rows: [u32; 4], dst: [u32; 4]) {
+        let row_times = HISTORY_CALLS[2];
+        let mut r = [0u32; 4];
+        for k in (0..4).rev() {
+            r[k] = h.call_sym(row_times, Conv::Thiscall(m), &[outs[k], rows[k]]);
+        }
+        for k in 0..4 {
+            copy_floats(h, dst[k], r[k], 4);
+        }
+    }
+
+    /// The product the original computes inline: row `r` of `l` (rows at
+    /// `l[r]`) times the columns of the rows at `rr`, each element
+    /// `((l0 r0 + l1 r1) + l2 r2) + l3 r3` stored as `f32` into the rows at
+    /// `out`.
+    fn product(h: &mut impl Host, l: [u32; 4], rr: [u32; 4], out: [u32; 4]) {
+        let mut res = [[0u32; 4]; 4];
+        for (r, row) in res.iter_mut().enumerate() {
+            for (c, cell) in row.iter_mut().enumerate() {
+                let c4 = 4 * c as u32;
+                let term = |h: &dyn Fn(u32) -> f64, k: usize| {
+                    x87::mul(h(l[r] + 4 * k as u32), h(rr[k] + c4))
+                };
+                let get = |at: u32| ld(h, at);
+                let s = x87::add(term(&get, 0), term(&get, 1));
+                let s = x87::add(s, term(&get, 2));
+                let s = x87::add(s, term(&get, 3));
+                *cell = x87::store(s);
+            }
+        }
+        for (r, row) in res.iter().enumerate() {
+            h.write(out[r], *row);
+        }
+    }
+
+    /// `Phyre_PPostProcessing_PMotionBlur_cameraHistory_00a13b90(effect;
+    /// camera)` (thiscall, ret 4): the scale `S` (`ebp - 0x1cc`: `1 /
+    /// camera[0x30]`, `1 / camera[0x44]`, -1.0, 1 on the diagonal); the
+    /// camera's 3x4 as a 4x4 and its inverse `I` (`ebp - 0xd4`). For each
+    /// of the 16 history slots: `Q` the inverse of the slot's current
+    /// matrix (`+0xd4 + 0x40 i`, into `ebp - 0x20c`); `N` = the effect's
+    /// `B = +0x54` times the rows of `A = +0x14` times the rows of the
+    /// slot's previous matrix (`+0x4d4 + 0x40 i`; `RowTimes`, at `ebp -
+    /// 0x18c` and `- 0x40`); `X = Q N` and `Y = I X` (inline, in the frame);
+    /// `Y` times the rows of `S` (`RowTimes`) rebuilt by `FromRows` into
+    /// `+0x8d4 + 0x40 i`; the previous matrix takes the current one.
+    /// `eax` is the last `PMatrix4_Copy`'s.
+    #[allow(clippy::too_many_lines)] // one original
+    pub fn camera_history(h: &mut impl Host, ebp: u32, fx: u32, camera: u32) -> u32 {
+        let [from_3x4, inverse, _, from_rows, copy] = HISTORY_CALLS;
+        copy_words(h, ebp - 0xe4, camera + 0x40, 4);
+        copy_words(h, ebp - 0x80, camera + 0x30, 4);
+        let p0: u32 = h.read(ebp - 0x80);
+        let p1: u32 = h.read(ebp - 0xe0);
+        let a = x87::store(x87::div(1.0, x87::load(p0)));
+        h.write(ebp - 0x80, a);
+        let b = x87::store(Reg::ONE.div_m32(f32::from_bits(p1)).value());
+        h.write(ebp - 0x7c, b);
+        let minus_one: u32 = h.read(h.rebase(MINUS_ONE));
+        let flip = x87::store(x87::load(minus_one));
+        let one = 1.0f32.to_bits();
+        let s = ebp - 0x1cc;
+        h.write(s, [a, 0, 0, 0, 0, b, 0, 0, 0, 0, flip, 0, 0, 0, 0, one]);
+        let m = ebp - 0x20c;
+        h.call_sym(from_3x4, Conv::Thiscall(m), &[camera]);
+        copy_words(h, ebp - 0x14c, m, 16);
+        let inv = ebp - 0xd4;
+        h.call_sym(inverse, Conv::Cdecl, &[inv, ebp - 0x14c]);
+        let a_m = fx + 0x14;
+        let b_m = fx + 0x54;
+        let rows = |at: u32| [at, at + 0x10, at + 0x20, at + 0x30];
+        let mut eax = 0;
+        for i in 0..16u32 {
+            let cur = fx + 0xd4 + 0x40 * i;
+            let prev = fx + 0x4d4 + 0x40 * i;
+            let q = ebp - 0x20c;
+            h.call_sym(inverse, Conv::Cdecl, &[q, cur]);
+            let n1 = rows(ebp - 0x18c);
+            times_rows(
+                h,
+                a_m,
+                [ebp - 0x21c, ebp - 0x23c, ebp - 0x22c, ebp - 0x25c],
+                rows(prev),
+                n1,
+            );
+            let n2 = rows(ebp - 0x40);
+            times_rows(
+                h,
+                b_m,
+                [ebp - 0x28c, ebp - 0x2bc, ebp - 0x29c, ebp - 0x27c],
+                n1,
+                n2,
+            );
+            let x = [ebp - 0x60, ebp - 0x70, ebp - 0x50, ebp - 0x94];
+            product(h, rows(q), n2, x);
+            let y = [ebp - 0x10c, ebp - 0xfc, ebp - 0xe4, ebp - 0x80];
+            product(h, rows(inv), x, y);
+            let z = ebp - 0x14c;
+            for (k, &row) in y.iter().enumerate() {
+                copy_floats(h, z + 0x10 * k as u32, row, 4);
+            }
+            let row_times = HISTORY_CALLS[2];
+            let outs = [ebp - 0x2ac, ebp - 0x26c, ebp - 0x2cc, ebp - 0x24c];
+            let s_rows = rows(s);
+            let mut zr = [0u32; 4];
+            for k in (0..4).rev() {
+                zr[k] = h.call_sym(row_times, Conv::Thiscall(z), &[outs[k], s_rows[k]]);
+            }
+            h.call_sym(from_rows, Conv::Thiscall(ebp - 0x30c), &zr);
+            h.call_sym(copy, Conv::Thiscall(fx + 0x8d4 + 0x40 * i), &[ebp - 0x30c]);
+            eax = h.call_sym(copy, Conv::Thiscall(prev), &[cur]);
+        }
+        eax
+    }
+}
