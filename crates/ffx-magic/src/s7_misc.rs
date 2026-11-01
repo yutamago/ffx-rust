@@ -2271,3 +2271,74 @@ pub const SPLINE_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A ring node's handler that shakes the screen (internal: `ecx` = the
+/// cursor `S`; a ring pass first, [`ring_pass`]; `ebp` = `esp - 4` at
+/// the entry). Passed, with `R = S[0]`: without bit 0 of the byte
+/// `R+0x40`, slot 250 `(0, 0)`. Else the timer `t = R+0x2c` goes down by
+/// `K`; a timer that was 0 clears bit 0, and with bit 1 the node leaves
+/// its parent ([`leave`](crate::sa_misc::leave)) and slot 250 `(0, 0)`
+/// follows. Otherwise, with `v = r - K2` (`r` slot 307's ST0) and two
+/// random signs `s1`, `s2` (slot 324's bit 1: -1, else 1): the fade `f
+/// = R+0x38 - t / R+0x30 R+0x3c` (into `R+0x34`), and slot 250 `(f (R+0x1c
+/// + R+0x20 v) s1, (R+0x24 + R+0x28 v) s2 f)`. Returns slot 250's `eax`,
+/// else what the pass or the flags left.
+///
+/// `magic_0513` 0x10004510 (370 bytes; 2 DLLs).
+pub fn shake_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = fr.ecx;
+    let (passed, eax) = ring_pass(g, s, fr.eax);
+    if !passed {
+        return eax;
+    }
+    let r = g.read::<u32>(s);
+    let bits = g.read::<u8>(r + 0x40);
+    let shake = |g: &mut G, x: u32, y: u32| slot(g, img, f, 0x15c, 250, s, &[x, y]).eax;
+    if bits & 1 == 0 {
+        return shake(g, 0, 0);
+    }
+    let t = g.read::<f32>(r + 0x2c);
+    g.write::<f32>(r + 0x2c, sub(t, k(g, 0x6a)));
+    // `ucomiss`/`lahf`/`test ah, 0x44`/`jnp`: only an ordered 0 ends it
+    if t == 0.0 {
+        let bits = bits & !1;
+        g.write::<u8>(r + 0x40, bits);
+        // `ah`: `lahf`'s flags of the equal compare (ZF and bit 1)
+        let eax = (eax & !0xffff) | 0x4200 | u32::from(bits);
+        if bits & 2 == 0 {
+            return eax;
+        }
+        crate::sa_misc::leave(g, r, eax);
+        return shake(g, 0, 0);
+    }
+    let rnd = slot(g, img, f, 0x7e, 307, s, &[]);
+    let v = sub(crate::m0018::st0_f32(rnd.st0), k(g, 0x96));
+    let sign = |e: u32| cvt(1u32.wrapping_sub(e & 2));
+    let e1 = slot(g, img, f, 0x9b, 324, s, &[]).eax;
+    let a = mul(
+        add(mul(g.read::<f32>(r + 0x20), v), g.read::<f32>(r + 0x1c)),
+        sign(e1),
+    );
+    let e2 = slot(g, img, f, 0xc8, 324, s, &[]).eax;
+    let ratio = mul(
+        div(g.read::<f32>(r + 0x2c), g.read::<f32>(r + 0x30)),
+        g.read::<f32>(r + 0x3c),
+    );
+    let b = add(mul(g.read::<f32>(r + 0x28), v), g.read::<f32>(r + 0x24));
+    let fade = sub(g.read::<f32>(r + 0x38), ratio);
+    g.write::<f32>(r + 0x34, fade);
+    let y = mul(mul(b, sign(e2)), fade);
+    let x = mul(fade, a);
+    shake(g, x.to_bits(), y.to_bits())
+}
+
+/// [`shake_node`] (the `rel32`: [`leave`](crate::sa_misc::leave)).
+pub const SHAKE_NODE: Sig = Sig {
+    len: 370,
+    hash: 0x3666_4bb9_9fb5_4a61,
+    calls: &[(0x145, Callee::Sig(&crate::sa_misc::LEAVE))],
+    imports: &[],
+};

@@ -1862,3 +1862,68 @@ fn spline_setups() {
         }
     }
 }
+
+/// Row 467: the shake node of both DLLs: not passed, bit 0 clear, the
+/// timer at 0 (with and without bit 1: the node leaves its parent), and
+/// running with each pair of signs (and a NaN timer).
+#[test]
+fn shake_nodes() {
+    for (dll, rva) in [(513u16, 0x4510u32), (577, 0x65b0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let vt = ring_handler(&mut t, log);
+        let signs = SCRATCH + 0x2f0;
+        log_calls(&mut t, 324, log, 0, None, move |m, _, k| {
+            m.r32(signs) >> (2 * (k % 2))
+        });
+        log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+        t.stub_st0(307, |_, _| 0.625);
+        log_calls(&mut t, 250, log, 2, None, |_, a, k| a[0] ^ a[1] ^ k);
+        t.set_u32(op(&t, f, 0x6a), 0.5f32.to_bits());
+        t.set_u32(op(&t, f, 0x96), 0.25f32.to_bits());
+        let s = SCRATCH + 0x300;
+        let r = SCRATCH + 0x1000;
+        let parent = SCRATCH + 0x1800;
+        // (ring byte, flags, timer, sign bits)
+        for (k, (byte, bits, timer, sg)) in [
+            (3u8, 1u8, 2.0f32, 0u32),
+            (4, 0xfe, 2.0, 0),
+            (4, 1, 0.0, 0),
+            (4, 3, 0.0, 0),
+            (4, 3, -0.0, 0),
+            (4, 1, 2.0, 0),
+            (4, 1, 2.0, 2),
+            (4, 1, 2.0, 8),
+            (4, 1, 3.5, 0xa),
+            (4, 1, f32::NAN, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(signs, sg);
+            t.write(r, &varied(0x48, k));
+            set_ring(&mut t, s, r, (3, byte), k % 2, vt, k);
+            t.set_u8(r + 0x40, bits);
+            for (i, at) in (0u32..).zip([0x1cu32, 0x20, 0x24, 0x28, 0x30, 0x38, 0x3c]) {
+                t.set_u32(r + at, (0.5 + 0.25 * i as f32 + k as f32).to_bits());
+            }
+            t.set_u32(r + 0x2c, timer.to_bits());
+            t.write(parent, &varied(0x40, k + 3));
+            t.set_u32(r + 0x14, parent);
+            t.set_u32(r + 4, parent + 0x20);
+            t.set_u32(r + 8, parent + 0x20);
+            scrub(&mut t);
+            let call = Call {
+                ecx: s,
+                eax: 0x4510_0000 + k,
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::shake_node(g, img, fr))
+            });
+        }
+    }
+}
