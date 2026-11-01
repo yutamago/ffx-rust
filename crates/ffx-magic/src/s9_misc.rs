@@ -4407,3 +4407,223 @@ pub const BLOCK_SPRITE_FRAMES_B: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A node's sparks spawned, moved and drawn (thiscall, `ecx` = the group
+/// `C`; a /GS frame aligned to 16, `P` = `((esp - 4) & !0xf) - 0x100`
+/// after the saved registers): the walk ([`walk`](crate::nodes::walk),
+/// `eax` the cookie word, `ecx` the owner for every method; nothing more
+/// when it stops). Then, with `N` the owner:
+/// - when `K0 > N+0x60`: a request (`P+0x1c`: `N`, a count of `slot 324
+///   & 0x1f + 0x10`) takes records off `N`'s ring
+///   ([`ring_take`](crate::m0070::ring_take), one or two pieces); each
+///   record `R` (0x40 bytes) gets `f` = slot 307 (ST0) `- K1`, `R+0x12`/
+///   `+0x30` = slot 324, the kind `R+0x24` = whether its low two bits are
+///   0 (colour `R+0x28` 0x80808080, else 0x40808080), the size `R+0x20 =
+///   f * K2 + K3`, the live byte `R+0x34 = 1`, `R+0x2c = 0`, slot 325
+///   `(R, N+0x38)`, `R+0..+8 += K4 - (slot 307 - K1) * K5` each, and the
+///   speed `R+0x14..+0x1c = N+0x48.. * K6 * f`;
+/// - else, with no sparks counted (`N+0x64`), the node is released
+///   ([`node_release`](crate::s6_misc::node_release), `ecx` = `&N`) and
+///   that is all.
+///
+/// Then the draw: a render state at `P+0x30` (`+2` = 0x80, `+0x10` and
+/// `+0x1c` its matrix `P+0xb8`, `+0x14` = `*G_Z`, its words cleared) and
+/// the local matrix at `P+0x68`; `N+0x64 = 0`. For both lists (records
+/// at `N+0x24 + 4j`, u16 counts at `N+0x2c + 2j`) each record with its
+/// live byte and `+0x2b` set: slot 229 `(P+0x98, V, R)`; the scale `x =
+/// R+0x20 * R+0x2c` on the diagonal; the first two rows turned by the
+/// angle word `R+0x30` (the sine table; the terms with the rows as the
+/// last record left them) and set by slot 325; slot 230 `(P+0xb8,
+/// P+0x68)`; the fade `R+0x2c` grows by `K8` below `K7` (capped at 4.0);
+/// the colour into the render state; the record's sequence step
+/// ([`motion_sequence_step`](crate::s6_misc::motion_sequence_step),
+/// `ecx` = `R+0x10`, `edx` = `N+0x58`'s entry of its kind, the stack
+/// `(P+0x30)`) gives the live byte; `R+0x2b -= 4`; the position moves by
+/// the speed, the speed's `x` and `z` scale by `K9`, its `y` drops by
+/// `K10`; `N+0x64` counts it. `*G_Z` = the render state's `+0x14`, `N+0x60
+/// += K11`. Returns that word, the release's `eax` or the walk's.
+///
+/// `magic_0070` 0x100018e0 (1,584 bytes; 3 DLLs).
+#[allow(clippy::too_many_lines)] // the original's three phases, in order
+pub fn node_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, s: u32| slot_target(g, w(0x85), s);
+    let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
+    let s = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0xf8);
+    let p = s.wrapping_sub(8);
+    let cookie = g.read::<u32>(w(0xd)) ^ s;
+    let (eax, owner) = crate::nodes::walk(g, fr.ecx, g.read::<u32>(fr.ecx), cookie);
+    let Some(n) = owner else {
+        return Ret::eax(eax);
+    };
+    let rf = |g: &G, o: u32| g.read::<f32>(n.wrapping_add(o));
+    if k(g, 0x76) > rf(g, 0x60) {
+        g.write::<u32>(p + 0x1c, n);
+        let r = g.call(t(g, 324), 0, &[]).eax;
+        g.write::<u16>(p + 0x20, ((r & 0x1f) + 0x10) as u16);
+        crate::m0070::ring_take(g, p + 0x1c);
+        for j in 0..2u32 {
+            let mut rec = g.read::<u32>(p + 0x28 + 4 * j);
+            let count = g.read::<u16>(p + 0x22 + 2 * j);
+            for _ in 0..count {
+                g.write::<u32>(rec + 0x10, 0);
+                let fv = sub(st0(g.call(t(g, 307), 0, &[])), k(g, 0xe5));
+                let r = g.call(t(g, 324), 0, &[]).eax;
+                // `test al, 3; sete`: the low two bits clear
+                let kind = u32::from(r.trailing_zeros() >= 2);
+                g.write::<u16>(rec + 0x12, r as u16);
+                g.write::<u32>(rec + 0x30, r & 0xffff);
+                g.write::<u32>(rec + 0x20, 0x3d4c_cccd);
+                g.write::<u32>(rec + 0x24, kind);
+                g.write::<u32>(
+                    rec + 0x28,
+                    if kind != 0 { 0x8080_8080 } else { 0x4080_8080 },
+                );
+                let size = add(mul(fv, k(g, 0x138)), k(g, 0x144));
+                g.write::<u8>(rec + 0x34, 1);
+                g.write::<u32>(rec + 0x2c, 0);
+                g.write::<f32>(rec + 0x20, size);
+                g.call(t(g, 325), 0, &[rec, n + 0x38]);
+                for o in [0u32, 4, 8] {
+                    let v = sub(st0(g.call(t(g, 307), 0, &[])), k(g, 0xe5));
+                    let d = sub(k(g, 0x18c), mul(v, k(g, 0x199)));
+                    let x = add(d, g.read::<f32>(rec + o));
+                    g.write::<f32>(rec + o, x);
+                }
+                for o in [0u32, 4, 8] {
+                    let v = mul(mul(rf(g, 0x48 + o), k(g, 0x20c)), fv);
+                    g.write::<f32>(rec + 0x14 + o, v);
+                }
+                rec = rec.wrapping_add(0x40);
+            }
+        }
+    } else if g.read::<u32>(n + 0x64) == 0 {
+        g.write::<u32>(p + 0xc, n);
+        let release = Frame {
+            at: img.rel32_target(f + 0x618),
+            esp: p.wrapping_sub(4),
+            eax: 0,
+            ecx: p + 0xc,
+            edx: 0,
+            xmm: [0; 4],
+        };
+        return Ret::eax(crate::s6_misc::node_release(g, img, &release));
+    }
+    // the draw
+    let l = |g: &G, o: u32| g.read::<f32>(p + o);
+    let m = p + 0xb8;
+    g.write::<u32>(p + 0x4c, m);
+    g.write::<u32>(p + 0x40, m);
+    g.write::<u16>(p + 0x32, 0x80);
+    let z = g.read::<u32>(w(0x29b));
+    g.write::<u32>(p + 0x44, z);
+    for o in [
+        0x6cu32, 0x70, 0x74, 0x78, 0x80, 0x84, 0x88, 0x8c, 0x94, 0x38,
+    ] {
+        g.write::<u32>(p + o, 0);
+    }
+    g.write::<u8>(p + 0x48, 0);
+    g.write::<u32>(n + 0x64, 0);
+    let table = |g: &G| g.read::<u32>(w(0x370));
+    let step_at = img.rel32_target(f + 0x531);
+    for j in 0..2u32 {
+        let mut rec = g.read::<u32>(n + 0x24 + 4 * j);
+        let counts = n + 0x2c + 2 * j;
+        let mut i = 0u32;
+        while i < u32::from(g.read::<u16>(counts)) {
+            if g.read::<u8>(rec + 0x34) != 0 && g.read::<u8>(rec + 0x2b) != 0 {
+                g.call(t(g, 229), 0, &[p + 0x98, w(0x352), rec]);
+                let x3 = mul(g.read::<f32>(rec + 0x20), g.read::<f32>(rec + 0x2c));
+                let tb = table(g);
+                for o in [0x90u32, 0x7c, 0x68] {
+                    g.write::<f32>(p + o, x3);
+                }
+                let a = g.read::<u32>(rec + 0x30);
+                let sine = |g: &G, a: u32| g.read::<f32>(tb.wrapping_add(4 * ((a >> 4) & 0xfff)));
+                let (sn, cs) = (sine(g, a), sine(g, a.wrapping_add(0x4000)));
+                let row = [
+                    (0xa8u32, add(mul(cs, x3), mul(sn, l(g, 0x78)))),
+                    (0x1c, sub(mul(cs, l(g, 0x78)), mul(sn, x3))),
+                    (0xac, add(mul(sn, x3), mul(cs, l(g, 0x6c)))),
+                    (0x20, sub(mul(cs, x3), mul(sn, l(g, 0x6c)))),
+                    (0xb0, add(mul(sn, l(g, 0x80)), mul(cs, l(g, 0x70)))),
+                    (0x24, sub(mul(cs, l(g, 0x80)), mul(sn, l(g, 0x70)))),
+                    (0xb4, add(mul(sn, l(g, 0x84)), mul(cs, l(g, 0x74)))),
+                    (0x28, sub(mul(cs, l(g, 0x84)), mul(sn, l(g, 0x74)))),
+                ];
+                for (o, v) in row {
+                    g.write::<f32>(p + o, v);
+                }
+                g.call(t(g, 325), 0, &[p + 0x68, p + 0xa8]);
+                g.call(t(g, 325), 0, &[p + 0x78, p + 0x1c]);
+                g.call(t(g, 230), 0, &[p + 0xb8, p + 0x68]);
+                let fade = g.read::<f32>(rec + 0x2c);
+                let top = k(g, 0x4f2);
+                if top > fade {
+                    let v = add(fade, k(g, 0x502));
+                    g.write::<f32>(rec + 0x2c, v);
+                    if v > top {
+                        g.write::<u32>(rec + 0x2c, 0x4080_0000);
+                    }
+                }
+                let colour = g.read::<u32>(rec + 0x28);
+                g.write::<u32>(p + 0x34, colour);
+                let kind = g.read::<u32>(rec + 0x24);
+                let q = g.read::<u32>(kind.wrapping_mul(4).wrapping_add(n + 0x58));
+                g.write::<u32>(p.wrapping_sub(0xc), p + 0x30);
+                let step = Frame {
+                    at: step_at,
+                    esp: p.wrapping_sub(0x10),
+                    eax: 0,
+                    ecx: rec + 0x10,
+                    edx: q,
+                    xmm: [0; 4],
+                };
+                let live = crate::s6_misc::motion_sequence_step(g, img, &step);
+                g.write::<u8>(rec + 0x34, live as u8);
+                let (vx, x0, vy, vz) = (
+                    g.read::<f32>(rec + 0x14),
+                    g.read::<f32>(rec),
+                    g.read::<f32>(rec + 0x18),
+                    g.read::<f32>(rec + 0x1c),
+                );
+                let b = g.read::<u8>(rec + 0x2b).wrapping_add(0xfc);
+                g.write::<u8>(rec + 0x2b, b);
+                g.write::<f32>(rec, add(x0, vx));
+                let y = add(vy, g.read::<f32>(rec + 4));
+                g.write::<f32>(rec + 0x14, mul(vx, k(g, 0x55f)));
+                g.write::<f32>(rec + 4, y);
+                let zz = add(g.read::<f32>(rec + 8), vz);
+                g.write::<f32>(rec + 0x18, sub(vy, k(g, 0x576)));
+                g.write::<f32>(rec + 8, zz);
+                g.write::<f32>(rec + 0x1c, mul(vz, k(g, 0x55f)));
+                let c = g.read::<u32>(n + 0x64).wrapping_add(1);
+                g.write::<u32>(n + 0x64, c);
+            }
+            i += 1;
+            rec = rec.wrapping_add(0x40);
+        }
+    }
+    let z = g.read::<u32>(p + 0x44);
+    g.write::<u32>(w(0x5db), z);
+    g.write::<f32>(n + 0x60, add(rf(g, 0x60), k(g, 0x5e8)));
+    Ret::eax(z)
+}
+
+/// [`node_sparks`] (the `rel32`s: the ring take, the sequence step,
+/// `__security_check_cookie` twice, the release).
+pub const NODE_SPARKS: Sig = Sig {
+    len: 1584,
+    hash: 0x54c9_f75a_27b0_7666,
+    calls: &[
+        (0xa5, Callee::Sig(&crate::m0070::RING_TAKE)),
+        (0x531, Callee::Sig(&crate::s6_misc::MOTION_SEQUENCE_STEP)),
+        (0x5fd, Callee::Any),
+        (0x618, Callee::Sig(&crate::s6_misc::NODE_RELEASE)),
+        (0x628, Callee::Any),
+    ],
+    imports: &[],
+};

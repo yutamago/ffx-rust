@@ -1359,6 +1359,7 @@ ports! {
     "thunk: place" => s3_wrap::JMP_PLACE, s3_wrap::ecx_jmp;
     "thunk: node ease" => s3_wrap::JMP_NODE_EASE, s3_wrap::ecx_jmp;
     "thunk: node ease (0570)" => s3_wrap::JMP_NODE_EASE_B, s3_wrap::ecx_jmp;
+    "thunk: node sparks" => s3_wrap::JMP_NODE_SPARKS, s3_wrap::ecx_jmp;
     "thunk: model setup" => s3_wrap::JMP_MODEL_SETUP, s3_wrap::ecx_jmp;
     "thunk: sub walk" => s3_wrap::JMP_SUB_WALK, s3_wrap::ecx_jmp;
     "thunk: scaled place" => s3_wrap::JMP_SCALED_PLACE, s3_wrap::ecx_jmp;
@@ -3692,6 +3693,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "block sprite frames (0371)",
         &s9_misc::BLOCK_SPRITE_FRAMES_B,
     ),
+    ("node sparks", &s9_misc::NODE_SPARKS),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

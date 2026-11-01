@@ -3037,3 +3037,129 @@ fn block_sprite_frames() {
         }
     }
 }
+
+/// Rows 97/98: the node's sparks in two DLLs, directly and through the
+/// thunk, on every ring shape (the first does not move): spawning (the
+/// ring's head wrapping or not), drawing only, and the release when
+/// nothing is counted; records live or not, both kinds, the fade below
+/// and reaching its cap, the sequence step loaded or not.
+#[test]
+fn node_sparks() {
+    use sa::{RINGS, check_this_thunk, handler_stubs, node, ring};
+    for (dll, rva, thunk) in [(70u16, 0x18e0u32, 0x1fe0u32), (597, 0x1840, 0x1f40)] {
+        let Some(mut t) = sa::twin(dll) else { return };
+        handler_stubs(&mut t);
+        let f = t.at(rva);
+        sine_table(&mut t, f, 0x370, |i| match i {
+            7 => Some(-0.0),
+            9 => Some(1.0e30),
+            _ => None,
+        });
+        let lock = SCRATCH + 0x7f0;
+        let step = t.img.rel32_target(f + 0x531);
+        t.set_u32(op(&t, step, 0x24), lock);
+        let release = t.img.rel32_target(f + 0x618);
+        for o in [0x6bu32, 0x90] {
+            let at = op(&t, release, o);
+            t.set_u32(at, lock);
+        }
+        let loaded = SCRATCH + 0x7e0;
+        log_calls(&mut t, 324, 0, &[], |_, _, k| {
+            0x1235u32.wrapping_mul(k + 3) ^ 0x51
+        });
+        log_calls(&mut t, 307, 0, &[], |_, _, k| k);
+        t.stub_st0(307, |m, _| f64::from(m.r32(LOG) % 7) * 0.375 - 0.75);
+        log_calls(&mut t, 325, 2, &[1], |_, a, k| a[0] ^ k);
+        log_calls(&mut t, 229, 3, &[], |m, a, k| {
+            for i in 0..4 {
+                m.w32(a[0] + 4 * i, (k as f32 * 0.25 + i as f32).to_bits());
+            }
+            0x229
+        });
+        log_calls(&mut t, 230, 2, &[], |m, a, k| {
+            let mut x = k;
+            for i in 0..16 {
+                x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+            }
+            x
+        });
+        log_calls(&mut t, 773, 2, &[], move |m, _, k| m.r32(loaded) ^ (k & 1));
+        // slots 774 and 778 also log the render state they get (`m`)
+        for (s, n, ptrs) in [
+            (774u32, 5usize, &[3usize][..]),
+            (775, 2, &[]),
+            (776, 1, &[]),
+            (777, 1, &[]),
+            (778, 6, &[3]),
+            (779, 2, &[]),
+        ] {
+            log_calls(&mut t, s, n, ptrs, move |m, a, k| {
+                (s << 16) ^ a[0] ^ k ^ m.r32(lock)
+            });
+        }
+        let k0 = f32::from_bits(t.u32(op(&t, f, 0x76)));
+        let k7 = f32::from_bits(t.u32(op(&t, f, 0x4f2)));
+        let recs = SCRATCH + 0x9000;
+        let q = SCRATCH + 0x8800;
+        // (the timer against K0, sparks counted, the ring's head)
+        let cases = [
+            (-1.0f32, 0u32, 0x18u16),
+            (0.5, 3, 0),
+            (0.5, 0, 0),
+            (-1.0, 2, 2),
+            (0.0, 1, 0),
+        ];
+        for (k, &(c, p, cp)) in RINGS.iter().enumerate() {
+            for (case, &(dt, counted, head)) in cases.iter().enumerate() {
+                let case = case as u32;
+                ring(&mut t, c, p, cp, 0x30 + k as u8);
+                let n = node(0);
+                for j in 0..0x10u32 {
+                    let v = (j as f32 - 3.5) * 0.25 + case as f32;
+                    t.set_u32(n + 0x38 + 4 * j, v.to_bits());
+                }
+                t.set_u16(n + 0x1c, 0x20);
+                t.set_u16(n + 0x1e, 0x40);
+                t.set_u32(n + 0x20, recs);
+                t.set_u32(n + 0x24, recs + 0x40 * 3);
+                t.set_u32(n + 0x28, recs);
+                t.set_u16(n + 0x2c, 4);
+                t.set_u16(n + 0x2e, 2);
+                t.set_u16(n + 0x30, head);
+                t.set_u16(n + 0x32, 0x1e);
+                t.set_u16(n + 0x34, 1);
+                t.set_u32(n + 0x58, q);
+                t.set_u32(n + 0x5c, q + 0x100);
+                t.set_u32(n + 0x60, (k0 + dt).to_bits());
+                t.set_u32(n + 0x64, counted);
+                // the sequences (both kinds)
+                for (qq, len) in [(q, 0x100i16), (q + 0x100, 0x180)] {
+                    t.write(qq, &varied(0x100, case + 1));
+                    t.set_u16(qq + 6, 3);
+                    for i in 0..4u32 {
+                        let r = qq + 0x10 + 8 * i;
+                        t.set_u16(r, (0x80 + 0x20 * i) as u16);
+                        t.set_u16(r + 2, len.cast_unsigned());
+                        t.set_u32(qq + 0x80 + 0x20 * i + 4, 0x10);
+                    }
+                }
+                // the records: live or not, the fade below and near its cap
+                for i in 0..0x20u32 {
+                    let r = recs + 0x40 * i;
+                    t.write(r, &floats(0x10, i + case));
+                    t.set_u8(r + 0x34, u8::from(i % 5 != 1));
+                    t.set_u8(r + 0x2b, if i % 7 == 3 { 0 } else { 0x40 });
+                    t.set_u32(r + 0x24, i % 2);
+                    t.set_u32(r + 0x30, 0x1234 * i);
+                    t.set_u32(r + 0x2c, [0.5f32, 3.9, 4.5, k7][(i % 4) as usize].to_bits());
+                    t.set_u16(r + 0x10, (i % 4) as u16);
+                    t.set_u16(r + 0x12, 0x80);
+                }
+                t.set_u32(loaded, case % 2);
+                t.set_u32(lock, 0x5a5a_0000 + case);
+                t.set_u32(LOG, 0);
+                check_this_thunk(&mut t, f, thunk, s9_misc::node_sparks, Eax::Checked);
+            }
+        }
+    }
+}
