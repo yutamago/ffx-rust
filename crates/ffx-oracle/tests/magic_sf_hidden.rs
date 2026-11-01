@@ -634,3 +634,126 @@ fn shade_fade_task() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `n` free nodes on the pool's ring for [`ffx_magic::sa_pool::take`]
+/// (the function at `take`), 0x40 bytes apart from `at`.
+fn free_ring(t: &mut Twin, take: u32, at: u32, n: u32) {
+    let node = |i: u32| at + 0x40 * i;
+    for i in 1..=n {
+        t.write(node(i), &varied(0x1c, i + 0x30));
+        t.set_u32(node(i), node(if i == 1 { n } else { i - 1 }));
+        t.set_u32(node(i) + 4, node(if i == n { 1 } else { i + 1 }));
+    }
+    t.set_u32(t.img.word(take + 0x17), node(1));
+    t.set_u16(t.img.word(take + 0x04), n as u16);
+}
+
+/// `magic_0271` 0x10001810: the countdown still running; a spark with
+/// sparks left (the turn and the yaw wrapped down, up and kept, the inner
+/// points' heights capped or not); the last spark and the end (the object
+/// start's environment as in `magic_o6_fam.rs`).
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per callee
+fn spark_burst_task() {
+    let Some(mut t) = twin(271) else { return };
+    let f = t.at(0x1810);
+    bound(&t, f, "sf spark burst task");
+    let w = |t: &Twin, o: u32| op(t, f, o);
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    rec_point(&mut t, 237, 4, Some(2), 3);
+    // slot 262: three floats, one per pointer
+    let row = SCRATCH + 0x3_8000;
+    rec(&mut t, 262, 4, move |m, a| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        for (i, x) in [1.5f32, -0.75, 2.25].into_iter().enumerate() {
+            let v = x + (k as f32) * 0.5 + f32::from((a[0] & 7) as u8);
+            m.w32(a[1 + i], v.to_bits());
+        }
+        0x262
+    });
+    rec_point(&mut t, 268, 3, None, 2);
+    rec_point(&mut t, 235, 1, None, 0);
+    rec_point(&mut t, 329, 3, Some(1), 0);
+    rec_point(&mut t, 330, 3, Some(1), 0);
+    rec_point(&mut t, 229, 3, Some(2), 0);
+    rec_point(&mut t, 326, 4, Some(2), 0);
+    for s in [314u32, 404, 12] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    let scale = SCRATCH + 0x3_9000;
+    t.stub_st0(314, move |m, a| {
+        f64::from(f32::from_bits(a[0])) * f64::from(f32::from_bits(m.r32(scale)))
+    });
+    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 0.375);
+    t.stub_st0(12, |_, _| -1.25);
+    // the object start (the end): slot 941's list, slot 714 logged, the
+    // pool with free nodes
+    let at = t.img.rel32_target(f + 0x55f);
+    t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(at + 0x5e), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        SCRATCH + 0x400
+    });
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    let pa = t.img.rel32_target(at + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let nodes = t.img.word(pa + 0x27) - 8;
+    let tail = t.img.word(at + 0xa8);
+    let take = t.img.rel32_target(f + 0x4e8);
+    let blk = SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x1a), blk);
+    t.set_u32(w(&t, 0xa5), 0x0c0c_0271);
+    let sel = SCRATCH + 0x700;
+    t.set_u32(w(&t, 0xd3), sel);
+    for i in 0..4 {
+        t.set_u32(w(&t, 0xe3) + 4 * i, 0x0a0a_0000 + i);
+    }
+    let task = SCRATCH + 0x800;
+    let mut k = 0u32;
+    for (count, left, angle, rnd) in [
+        (3i32, 2i32, 0.0f32, 1.0f32),
+        (1, 3, 3.1, 1.0),
+        (0, 2, -3.1, -1.0),
+        (1, 4, 0.5, 0.25),
+        (1, 1, 2.0, 0.5),
+        (-5, 1, -1.0, 2.0),
+    ] {
+        k += 1;
+        t.write(blk, &varied(0x2000, k));
+        t.set_u32(blk + 0x1f28, count.cast_unsigned());
+        t.set_u32(blk + 0x1f2c, left.cast_unsigned());
+        set_f(&mut t, blk + 0x1f24, angle);
+        set_f(&mut t, scale, rnd);
+        t.set_u8(sel, (k % 4) as u8);
+        free_ring(&mut t, take, SCRATCH + 0x5000, 4);
+        t.set_u32(w(&t, 0x4ee), if k % 2 == 0 { 0 } else { SCRATCH + 0x6000 });
+        t.set_u32(w(&t, 0x507), SCRATCH + 0x6000);
+        t.write(SCRATCH + 0x6000, &varied(0x20, k));
+        for i in 0..8 {
+            t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+            t.set_u32(nodes + 12 * i + 8, 0);
+        }
+        t.set_u16(free, 3);
+        t.set_u32(tail, 0);
+        // the task node at rest for the give-back
+        t.write(task, &varied(0x20, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x840);
+        t.set_u32(SCRATCH + 0x84c, 0);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

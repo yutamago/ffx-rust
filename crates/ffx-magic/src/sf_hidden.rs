@@ -1174,3 +1174,279 @@ pub const SHADE_FADE_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `x` wrapped once by the constants at operand offsets `hi`, `lo` (`-
+/// T` above `HI`, `+ T` below `LO`, the `comiss`/`jbe` pair skipping both
+/// for a NaN; `t_sub`/`t_add` the operands of `T` on each path).
+fn wrap_ops<G: Game>(g: &G, img: &Image, f: u32, x: f32, [hi, t_sub, lo, t_add]: [u32; 4]) -> f32 {
+    use crate::sb_sse::{add, sub};
+    let k = |o: u32| g.read::<f32>(op(img, f, o));
+    if x > k(hi) {
+        sub(x, k(t_sub))
+    } else if k(lo) > x {
+        add(x, k(t_add))
+    } else {
+        x
+    }
+}
+
+/// A spark burst task (cdecl `(task)`; a frame aligned to 8 with a stack
+/// cookie; the effect's block `B = *G_BLK`). The countdown `B+0x1f28`
+/// goes down; while it stays positive nothing else happens (returning
+/// `task`). Else a spark `R = B + 0x3d0 * i` is made, `i = B+0x1f2c`
+/// counted down first:
+/// - its sprite record `R+0x170` set up
+///   ([`sprite_init`](crate::sb_misc::sprite_init)) for slot 719's object
+///   `(PROG, 9, 1)`; `R+0x398` 0x10, `+0x38c` 1.5, `+0x388` 0.7;
+/// - `R` the character's element 0x18 point (slot 237 `Ch_ElemGetPos`
+///   with the offset `(-2000, 0, 0, 1)` on the frame), `w` 1.0; `R+0x30`
+///   the selected actor's position (slot 262 `Ch_GetPos`), its `y` the
+///   actor's option point's `y` (slot 268 `Ch_OptposGet(a, 6, V)`) plus
+///   `op_random(5)` (slot 314), `w` 1.0;
+/// - a frame matrix turned by `B+0x1f24 + op_random(1.414)` (wrapped)
+///   moves `(0, 0, op_random_p(2) + K1)` (slot 404), which is added to
+///   `R+0x30`'s `x` and `z`;
+/// - `a = Ch_GetJimen(actor) + K2` (slot 12); the yaw `K3 - atan2(dz,
+///   dx)` from `R` to `R+0x30` (`_CIatan2`, wrapped); a matrix turned by
+///   `op_random(pi/2)` about z (slot 330) and the yaw about y gives `v =
+///   M (0, op_random(40), 0, 1)`;
+/// - `R+0x10` and `R+0x20` are `R`..`R+0x30` at 0.33 and 0.66 (slot 326
+///   `FFXVu0InterVectorXYZ`) moved by `v` and `v K4`, each `y` kept at
+///   most `a`, `w` 1.0; `R+0x3bc` 0x1e, `+0x3c0` 0;
+/// - a task node for the spark's callback ([`take`](crate::sa_pool::take),
+///   `+0x14` = the index) appended to the task list; the countdown
+///   becomes `rand() % 6 + 1`.
+///
+/// When no spark is left (`i` not above 0) the burst ends: the effect
+/// object started ([`start_object_at`](crate::s4_misc::start_object_at)),
+/// placed on the actor (slot 262, `y - K6`, `w` 1.0, its angle
+/// `B+0x1f24`), the node `B+0x1ef0` reset for it, a fade
+/// ([`fade_task`](crate::s3_misc::fade_task) on `B+0x1eb8`, 0x3c), its
+/// colours 0.7, `B+0x1f30` 1, and the task given back
+/// ([`give_back`](crate::sa_pool::give_back)), whose `eax` is returned.
+/// Otherwise returns `rand() / 6`.
+///
+/// `magic_0271` 0x10001810 (1637 bytes, 1 DLL; its address goes to a
+/// task set-up in `ecx`).
+#[allow(clippy::too_many_lines)] // the original's steps, call by call
+pub fn spark_burst_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::ob_model::st0_f32;
+    use crate::pushes::Pushes;
+    use crate::sb_sse::{add, mul, sub};
+    const ONE: u32 = 0x3f80_0000;
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, table: u32, n: u32| slot_target(g, w(table), n);
+    let task = fr.arg(g, 0);
+    let blk = g.read::<u32>(w(0x1a));
+    let count_at = blk.wrapping_add(0x1f28);
+    let left_at = blk.wrapping_add(0x1f2c);
+    let n = g.read::<i32>(count_at).wrapping_sub(1);
+    g.write::<i32>(count_at, n);
+    if g.read::<i32>(count_at) > 0 {
+        return Ret::eax(task);
+    }
+    // push ebp; and esp, -8; sub esp, 0x74; push ebx; push esi; push edi
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x80);
+    let (v, mtx, vec) = (b + 0x28, b + 0x38, b + 0x18);
+    let left = g.read::<i32>(left_at).wrapping_sub(1);
+    g.write::<i32>(left_at, left);
+    let mut st = Pushes::default();
+    st.push_all(&[1, 9, w(0x4d)]);
+    let obj = st.call(g, slot(g, 0x38, 719), fr.ecx).eax;
+    let i = g.read::<u32>(left_at);
+    let r = i.wrapping_mul(0x3d0).wrapping_add(blk);
+    crate::sb_misc::sprite_init(g, r.wrapping_add(0x170), obj);
+    st.push_all(&[r, v]);
+    g.write::<u32>(r.wrapping_add(0x398), 0x10);
+    g.write::<u32>(r.wrapping_add(0x38c), 0x3fc0_0000);
+    g.write::<u32>(r.wrapping_add(0x388), 0x3f33_3333);
+    let chr = g.read::<u32>(w(0xa5));
+    st.push_all(&[0x18, chr]);
+    record(g, v, &[0xc4fa_0000, 0, 0, ONE]);
+    st.call(g, slot(g, 0x79, 237), fr.ecx);
+    g.write::<u32>(r.wrapping_add(0xc), ONE);
+    let actor = |g: &G, sel: u32, table: u32| {
+        let i = u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+        g.read::<u32>(w(table).wrapping_add(4 * i))
+    };
+    let p = r.wrapping_add(0x30);
+    let a0 = actor(g, 0xd3, 0xe3);
+    st.push_all(&[p + 8, p + 4, p, a0]);
+    st.call(g, slot(g, 0xec, 262), fr.ecx);
+    st.push_all(&[v, 6, a0]);
+    st.call(g, slot(g, 0x105, 268), fr.ecx);
+    let vy = g.read::<u32>(v + 4);
+    g.write::<u32>(p + 4, vy);
+    g.write::<u32>(p + 0xc, ONE);
+    // add esp, 0x34; mov [esp], x: op_random(x), one word
+    let random = |g: &mut G, table: u32, x: u32| {
+        let t = slot_target(g, w(table), 314);
+        st0_f32(g.call(t, fr.ecx, &[x]).st0)
+    };
+    let r1 = random(g, 0x11f, 0x40a0_0000);
+    let y = add(g.read::<f32>(r.wrapping_add(0x34)), r1);
+    g.write::<f32>(r.wrapping_add(0x34), y);
+    let t = slot(g, 0x149, 404);
+    let r2 = st0_f32(g.call(t, fr.ecx, &[0x4000_0000]).st0);
+    let z = add(r2, k(g, 0x18a));
+    record(g, vec, &[0, 0, z.to_bits(), ONE]);
+    g.call(slot(g, 0x194, 235), fr.ecx, &[mtx]);
+    let r3 = random(g, 0x1af, 0x3fb4_f4ab);
+    let turn = add(g.read::<f32>(blk.wrapping_add(0x1f24)), r3);
+    let turn = wrap_ops(g, img, f, turn, [0x1e5, 0x1db, 0x1f5, 0x1db]);
+    let mut st = Pushes::default();
+    st.push_all(&[turn.to_bits(), mtx, mtx]);
+    st.call(g, slot(g, 0x20f, 329), fr.ecx);
+    st.push_all(&[vec, mtx, vec]);
+    st.call(g, slot(g, 0x22b, 229), fr.ecx);
+    let x = add(g.read::<f32>(p), g.read::<f32>(vec));
+    g.write::<f32>(p, x);
+    let z = add(g.read::<f32>(p + 8), g.read::<f32>(vec + 8));
+    g.write::<f32>(p + 8, z);
+    let a1 = actor(g, 0x256, 0x260);
+    st.push(a1);
+    let ground = st0_f32(st.call(g, slot(g, 0x265, 12), fr.ecx).st0);
+    let a = add(ground, k(g, 0x27c));
+    let dz = sub(g.read::<f32>(p + 8), g.read::<f32>(r.wrapping_add(8)));
+    let dx = sub(g.read::<f32>(p), g.read::<f32>(r));
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let atan = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let yaw = sub(k(g, 0x2c8), atan);
+    let yaw = wrap_ops(g, img, f, yaw, [0x2d7, 0x2e7, 0x2f1, 0x2fe]);
+    g.call(slot(g, 0x30e, 235), fr.ecx, &[mtx]);
+    let r4 = random(g, 0x31b, 0x3fc9_0fdb);
+    let mut st = Pushes::default();
+    st.push_all(&[r4.to_bits(), mtx, mtx]);
+    st.call(g, slot(g, 0x344, 330), fr.ecx);
+    st.pop(2);
+    st.set_top(yaw.to_bits());
+    st.push_all(&[mtx, mtx]);
+    st.call(g, slot(g, 0x365, 329), fr.ecx);
+    let r5 = random(g, 0x372, 0x4220_0000);
+    record(g, vec, &[0, r5.to_bits(), 0, ONE]);
+    let mut st = Pushes::default();
+    st.push_all(&[0x4220_0000, vec, mtx, vec]);
+    st.call(g, slot(g, 0x3a4, 229), fr.ecx);
+    let rv = [0u32, 4, 8].map(|o| g.read::<f32>(vec + o));
+    // the two inner points: R+0x10 at 0.33 moved by v, R+0x20 at 0.66 by
+    // v K4; each `y` kept at most `a`, `w` 1.0
+    for (q, at_t, table, scaled) in [
+        (0x10u32, 0x3ea8_f5c3u32, 0x3cf, false),
+        (0x20, 0x3f28_f5c3, 0x43a, true),
+    ] {
+        let q = r.wrapping_add(q);
+        g.call(slot(g, table, 326), fr.ecx, &[q, r, p, at_t]);
+        let m = if scaled {
+            let kk = k(g, 0x455);
+            let m = [mul(rv[0], kk), mul(rv[1], kk), mul(rv[2], kk)];
+            record(g, vec, &[m[0].to_bits(), m[1].to_bits(), m[2].to_bits()]);
+            m
+        } else {
+            rv
+        };
+        if scaled {
+            let x = add(g.read::<f32>(q), m[0]);
+            g.write::<f32>(q, x);
+            let y = add(m[1], g.read::<f32>(q + 4));
+            g.write::<f32>(q + 4, y);
+            let z = add(m[2], g.read::<f32>(q + 8));
+            g.write::<f32>(q + 8, z);
+        } else {
+            let x = add(m[0], g.read::<f32>(q));
+            g.write::<f32>(q, x);
+            let y = add(m[1], g.read::<f32>(q + 4));
+            g.write::<f32>(q + 4, y);
+            let z = add(g.read::<f32>(q + 8), m[2]);
+            g.write::<f32>(q + 8, z);
+        }
+        g.write::<u32>(q + 0xc, ONE);
+        if g.read::<f32>(q + 4) > a {
+            g.write::<f32>(q + 4, a);
+        }
+    }
+    g.write::<u32>(r.wrapping_add(0x3bc), 0x1e);
+    g.write::<u32>(r.wrapping_add(0x3c0), 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x4e8), w(0x4cf));
+    let empty = g.read::<u32>(w(0x4ee)) == 0;
+    let i = g.read::<u32>(left_at);
+    g.write::<u32>(node.wrapping_add(0x14), i);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    crate::s3_misc::append_task(g, node, w(0x4ee), w(0x507), empty);
+    // rand() % 6 + 1 (cdq; idiv): the quotient stays in eax
+    let rnd = g.rand().cast_signed();
+    g.write::<i32>(count_at, rnd % 6 + 1);
+    let quotient = (rnd / 6).cast_unsigned();
+    if g.read::<i32>(left_at) > 0 {
+        return Ret::eax(quotient);
+    }
+    crate::s4_misc::start_object_at(
+        g,
+        img,
+        img.rel32_target(f + 0x55f),
+        w(0x55a),
+        k(g, 0x54b),
+        1,
+        0x23,
+        w(0x550),
+    );
+    let a2 = actor(g, 0x564, 0x57d);
+    let mut st = Pushes::default();
+    st.push_all(&[w(0x550), 6, 0x23, 1, w(0x569), w(0x571), w(0x576), a2]);
+    st.call(g, slot(g, 0x582, 262), fr.ecx);
+    let y = sub(k(g, 0x592), k(g, 0x59a));
+    g.write::<u32>(w(0x5b0), ONE);
+    g.write::<f32>(w(0x5c2), y);
+    let angle = g.read::<u32>(blk.wrapping_add(0x1f24));
+    g.write::<u32>(w(0x5d2), angle);
+    let n2 = blk.wrapping_add(0x1ef0);
+    for o in [0x18u32, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(n2 + o, 0);
+    }
+    g.write::<u16>(n2 + 0x30, 0);
+    g.write::<u32>(n2 + 0x20, w(0x5fe));
+    g.write::<u32>(n2 + 0x24, w(0x605));
+    g.write::<u32>(n2 + 0x28, 0);
+    g.write::<u32>(n2 + 0x2c, 0);
+    g.write::<u32>(w(0x620), n2);
+    // push 0x3c: the fade's stack word, 9 words below `b`
+    g.write::<u32>(b.wrapping_sub(0x24), 0x3c);
+    let fade = Frame {
+        at: img.rel32_target(f + 0x625),
+        esp: b.wrapping_sub(0x28),
+        ecx: blk.wrapping_add(0x1eb8),
+        edx: 0x10,
+        xmm: [
+            0,
+            u128::from(k(g, 0x5aa).to_bits()),
+            u128::from(k(g, 0x5a2).to_bits()),
+            0,
+        ],
+        ..*fr
+    };
+    crate::s3_misc::fade_task(g, img, &fade);
+    g.write::<u32>(blk.wrapping_add(0x1eb8), 0x3f33_3333);
+    g.write::<u32>(blk.wrapping_add(0x1ec0), 0x3f33_3333);
+    g.write::<u32>(blk.wrapping_add(0x1f30), 1);
+    let eax = crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x64f), task);
+    Ret::eax(eax)
+}
+
+/// [`spark_burst_task`] (the `rel32`s: the sprite set-up, `_CIatan2`,
+/// the pool take, the object start, the fade, the give-back and
+/// `__security_check_cookie`; `call [rand]`).
+pub const SPARK_BURST_TASK: Sig = Sig {
+    len: 1637,
+    hash: 0x0696_0ea4_a204_6470,
+    calls: &[
+        (0x6e, Callee::Sig(&crate::sb_misc::SPRITE_INIT)),
+        (0x2b6, Callee::Import("_CIatan2")),
+        (0x4e8, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x55f, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x625, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x64f, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x65d, Callee::Any),
+    ],
+    imports: &[(0x527, "rand")],
+};
