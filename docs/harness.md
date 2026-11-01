@@ -2334,9 +2334,10 @@ records).
   (the import's Rust side never shows one).
 - **Sandbox and sound.** `FFX_HARNESS_HOME` is the game's Documents folder
   (`--documents`), made by `Game::launch` as for `FFX.exe`, with the
-  sandbox's `GameSetting.ini` (`FFX_TEST_VOLUME` included). ffx-rust has no
-  sound yet (FMOD is missing, `docs/host.md`), so nothing reaches the
-  speakers either way.
+  sandbox's `GameSetting.ini` (`FFX_TEST_VOLUME` included). ffx-rust mixes
+  FMOD's sound on its own mixer; its device output (WASAPI) stays off in
+  harness games unless `FFX_RUST_AUDIO_OUT=1` (`docs/host.md`, "FMOD"), so
+  nothing reaches the speakers.
 - **Screenshots.** `shot` reads the back buffer (a staging copy of the
   swap chain's buffer 0) of the update the main thread stands after, or a
   later one, into a 32-bit BMP; the reply says `update <n>`, as the hook's.

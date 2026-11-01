@@ -179,3 +179,66 @@ pub const ACTORS_PASS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A task step (the owner value of the start-up's task node, cdecl
+/// `(node)`; 0x100053b0): the block `BLK` (the immediate `+0x10`, 0x30
+/// bytes) cleared (`memset`), bit 7 of its halfword `+0x21` set and
+/// `*G_SRC` (`+0x26`) copied into `+0x2e`; the script
+/// ([`run`](crate::sa_script::run)) and the motion
+/// ([`motion_step`](crate::s3_motion::motion_step)). Until both report
+/// done, the four words `S + 0xf60..` go to `S + 0xd40..` (`S` = `*G_S`
+/// `+0x07`, read first; displacements from the code) and the last is
+/// returned; then `S + 0x56fc` = 1, the actors' pass ([`actors_pass`])
+/// and the node given back to its pool
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
+/// `node`), whose result is returned.
+pub fn task_step_pass<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x07));
+    // memset(BLK, 0, 0x30)
+    g.write_bytes(w(0x10), &[0; 0x30]);
+    let v = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), v | 0x80);
+    let src = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x2e), src);
+    let script = crate::sa_script::run(g, img, img.rel32_target(f + 0x33));
+    let motion = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x3a));
+    if script == 0 || motion == 0 {
+        let mut last = 0;
+        for (from, to) in [(0x62, 0x68), (0x6e, 0x74), (0x7a, 0x80), (0x86, 0x8c)] {
+            last = g.read::<u32>(s.wrapping_add(w(from)));
+            g.write::<u32>(s.wrapping_add(w(to)), last);
+        }
+        return Ret::eax(last);
+    }
+    g.write::<u32>(s.wrapping_add(w(0x48)), 1);
+    // push ebp; push esi; push edi; call
+    let pass = Frame {
+        at: img.rel32_target(f + 0x51),
+        esp: fr.esp.wrapping_sub(0x10),
+        ..*fr
+    };
+    actors_pass(g, img, &pass);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x5c),
+        node,
+    ))
+}
+
+/// [`task_step_pass`] (148 bytes, 1 overlay).
+pub const TASK_STEP_PASS: Sig = Sig {
+    len: 148,
+    hash: 0x79f1_93f9_16d6_a019,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x33, Callee::Sig(&crate::sa_script::RUN)),
+        (0x3a, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x51, Callee::Sig(&ACTORS_PASS)),
+        (0x5c, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

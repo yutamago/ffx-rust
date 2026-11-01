@@ -17,8 +17,8 @@
 //! - The output: none (the null output: the blocks are counted), or with
 //!   `--audio-wav FILE` (`Options::audio_wav`) the mix in FMOD's WAV writer
 //!   format, as the audio gate's captures (`FFX_AUDIO_WAV`).
-//! - Not here yet: the movie's user stream (`createSound` with
-//!   `FMOD_OPENUSER`) is a silent sound.
+//! - The movie's user stream (`createSound` with `FMOD_OPENUSER`) is
+//!   mixed from the game's read callback ([`movie`]).
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -30,6 +30,27 @@ use ffx_sound::mixer::BLOCK;
 use ffx_sound::replay::{Call, Engine, Files};
 
 use crate::exec::{Exec, Trap};
+
+mod movie;
+
+/// The mix on the default output device (WASAPI, shared mode): the hook's
+/// `rust_audio_out.rs`, the same file, compiled here too. Off in harness
+/// games (their clock is virtual, as the hook keeps it off under the
+/// virtual clock) unless `FFX_RUST_AUDIO_OUT=1`; off with `--audio-wav`.
+#[path = "../../ffx-hook/src/rust_audio_out.rs"]
+#[allow(dead_code)] // `on` is the hook's; off Windows only `start` and `push`
+#[cfg_attr(not(windows), allow(unused_imports))]
+mod device;
+
+/// Starts the device output once, as [`device`] says.
+fn start_device(wav: bool) {
+    let env = |n: &str| std::env::var(n).unwrap_or_default();
+    let harness = !env("FFX_HARNESS").is_empty();
+    if wav || (harness && env("FFX_RUST_AUDIO_OUT") != "1") {
+        return;
+    }
+    device::start();
+}
 use crate::imports::{ImportFn, a};
 use crate::table::{Args, Conv, Ret};
 
@@ -146,7 +167,9 @@ struct State {
     callbacks: HashMap<u32, (u32, u32)>,
     sounds: HashMap<u32, String>,
     subsounds: HashMap<u32, (u32, u32)>,
-    movie: Option<u32>,
+    movie: Option<movie::Movie>,
+    /// Movie chunks to read after the block just mixed.
+    reads: usize,
     wav: Option<std::fs::File>,
     /// Blocks mixed.
     updates: u64,
@@ -222,6 +245,7 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
             .ok()
             .and_then(|w| w.clone())
             .and_then(|p| wav_file(&p));
+        start_device(wav.is_some());
         *guard = Some(State {
             engine: Engine::new(SharedFiles(Arc::clone(&files))),
             files,
@@ -230,6 +254,7 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
             sounds: HashMap::new(),
             subsounds: HashMap::new(),
             movie: None,
+            reads: 0,
             wav,
             updates: 0,
             project_vt: 0,
@@ -455,10 +480,13 @@ fn ok(_: &mut Exec, _: &Args) -> Ret {
 fn event_system_update(e: &mut Exec, _: &Args) -> Ret {
     let due = with(e, |s| {
         s.engine.update_frames(BLOCK);
-        let block = std::mem::take(&mut s.engine.out);
+        let mut block = std::mem::take(&mut s.engine.out);
+        s.reads = s.movie.as_mut().map_or(0, |m| m.mix(&mut block));
         if let Some(f) = s.wav.as_mut() {
             let bytes: Vec<u8> = block.iter().flat_map(|x| x.to_le_bytes()).collect();
             let _ = f.write_all(&bytes);
+        } else {
+            device::push(&block);
         }
         s.updates += 1;
         s.engine
@@ -468,6 +496,8 @@ fn event_system_update(e: &mut Exec, _: &Args) -> Ret {
             .collect::<Vec<_>>()
     })
     .unwrap_or_default();
+    let reads = with(e, |s| std::mem::take(&mut s.reads)).unwrap_or(0);
+    movie_reads(e, reads);
     for (ev, kind, f, user) in due {
         callback(e, ev, kind, f, user);
     }
@@ -624,8 +654,8 @@ fn system_create_sound(e: &mut Exec, args: &Args) -> Ret {
     let r = with(e, |s| {
         let h = s.handle();
         if movie {
-            // the movie's user stream: silent here (not mixed yet)
-            s.movie = Some(h);
+            // the movie's user stream: made below, read twice
+            s.movie = None;
             return Some(h);
         }
         let name = text?;
@@ -639,6 +669,11 @@ fn system_create_sound(e: &mut Exec, args: &Args) -> Ret {
         Some(h)
     })
     .flatten();
+    if movie && let Some(h) = r {
+        let m = movie::Movie::new(e, h, exinfo);
+        with(e, |s| s.movie = Some(m));
+        movie_reads(e, 2);
+    }
     match r {
         Some(h) => {
             put(e, out, h);
@@ -648,12 +683,35 @@ fn system_create_sound(e: &mut Exec, args: &Args) -> Ret {
     }
 }
 
+/// Runs the movie's read callback `n` times (outside the state's lock:
+/// the callback asks for the sound's user data) and queues the chunks.
+fn movie_reads(e: &mut Exec, n: usize) {
+    for _ in 0..n {
+        let Some(req) = with(e, |s| s.movie.as_ref().and_then(movie::Movie::request)).flatten()
+        else {
+            return;
+        };
+        let samples = movie::read(e, req);
+        with(e, |s| {
+            if let Some(m) = s.movie.as_mut().filter(|m| m.sound == req.1) {
+                m.push(&samples);
+            }
+        });
+    }
+}
+
+fn is_movie_channel(s: &State, ch: u32) -> bool {
+    ch != 0 && s.movie.as_ref().is_some_and(|m| m.channel == ch)
+}
+
 fn system_play_sound(e: &mut Exec, args: &Args) -> Ret {
     let (sound, paused, out) = (a(args, 2), a(args, 3) & 0xff, a(args, 4));
     let old: u32 = if out == 0 { 0 } else { e.mem().read(out) };
     let ch = with(e, |s| {
-        if s.movie == Some(sound) {
-            return sound | 4;
+        if let Some(m) = s.movie.as_mut().filter(|m| m.sound == sound) {
+            m.channel = sound | 4;
+            m.paused = paused != 0;
+            return m.channel;
         }
         // CHANNEL_REUSE: the channel the game passes back, else a new one
         let ch = if old != 0 && old & 0xff == 5 {
@@ -671,8 +729,13 @@ fn system_play_sound(e: &mut Exec, args: &Args) -> Ret {
 fn sound_release(e: &mut Exec, args: &Args) -> Ret {
     let sound = a(args, 0);
     with(e, |s| {
-        if s.movie == Some(sound) {
-            s.movie = None;
+        if s.movie.as_ref().is_some_and(|m| m.sound == sound)
+            && let Some(m) = s.movie.take()
+        {
+            crate::log::note(&format!(
+                "fmod: movie stream released: {} frames read, {} played",
+                m.fetched, m.mixed
+            ));
         }
     });
     Ret::eax(OK)
@@ -749,7 +812,11 @@ fn sound_get_user_data(e: &mut Exec, args: &Args) -> Ret {
 fn channel_set_volume(e: &mut Exec, args: &Args) -> Ret {
     let (ch, v) = (a(args, 0), a(args, 1));
     with(e, |s| {
-        if s.movie.map(|m| m | 4) != Some(ch) {
+        if is_movie_channel(s, ch) {
+            if let Some(m) = s.movie.as_mut() {
+                m.volume = f32::from_bits(v);
+            }
+        } else {
             s.call("Channel::setVolume", &[ch, v], &[], &[]);
         }
     });
@@ -782,7 +849,11 @@ fn channel_get_loop_count(e: &mut Exec, args: &Args) -> Ret {
 fn channel_set_paused(e: &mut Exec, args: &Args) -> Ret {
     let (ch, p) = (a(args, 0), a(args, 1) & 0xff);
     with(e, |s| {
-        if s.movie.map(|m| m | 4) != Some(ch) {
+        if is_movie_channel(s, ch) {
+            if let Some(m) = s.movie.as_mut() {
+                m.paused = p != 0;
+            }
+        } else {
             s.call("Channel::setPaused", &[ch, p], &[], &[]);
         }
     });

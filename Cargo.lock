@@ -1039,6 +1039,7 @@ dependencies = [
  "miniz_oxide 0.9.1",
  "thiserror",
  "unicorn-engine",
+ "wasapi",
  "windows",
  "windows-sys",
 ]

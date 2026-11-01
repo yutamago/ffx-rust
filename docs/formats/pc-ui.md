@@ -628,11 +628,11 @@ log; `swf-compare` builds the comparison page
 |---|---|
 | `IggyPlayerCreateFromMemory` | `SwfMovieData::from_data`, `PlayerBuilder` with a wgpu `TextureTarget`, transparent window mode |
 | `IggyPlayerCallFunctionRS(name, args)` | `Player::call_internal_interface` (the `addCallback` names); string arrays (type 9 refs) become `Value::List` |
-| AS3 callback | an `ExternalInterfaceProvider` answering the recorded result strings |
+| AS3 callback | an `ExternalInterfaceProvider` answering the recorded result strings (`iggy-replay`), or live (`Answers::live`: `ffx-host` runs the game's callback while the movie waits, docs/host.md "Iggy") |
 | `IggyPlayerTickRS` | `Player::tick(1/fps)` (one frame, timers by the same time) |
 | `IggyPlayerSetDisplaySize` | `set_viewport_dimensions` |
 | `DispatchEventRS` mouse move | `PlayerEvent::MouseMove` |
-| `IggyPlayerDraw` | `render` + `capture_frame` |
+| `IggyPlayerDraw` | `render` + `capture_frame` (straight alpha), or `capture_premultiplied` (the target's premultiplied bytes, which `ffx-host` composites with `GDraw`'s blend) |
 
 Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
 

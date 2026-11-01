@@ -158,3 +158,51 @@ fn actors_pass() {
         );
     }
 }
+
+/// 0x100053b0: the script and the motion each done or not; when both
+/// are, the actors' pass and the node given back.
+#[test]
+fn task_step_pass() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x53b0);
+    let w = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, at, 0x07), s);
+    t.write(w(&t, at, 0x10), &[0x3b; 0x30]);
+    t.set_u32(w(&t, at, 0x26), 0x0026_0026);
+    let run = t.img.rel32_target(at + 0x33);
+    let motion = t.img.rel32_target(at + 0x3a);
+    let pass = t.img.rel32_target(at + 0x51);
+    let gb = t.img.rel32_target(at + 0x5c);
+    t.set_u32(w(&t, run, 0x07), SCRATCH + 0x700);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ (a[1] << 8));
+    rec(&mut t, 779, 4, |_, a| a[3]);
+    let flag = SCRATCH + 0x600;
+    t.set_u32(w(&t, pass, 0x34), flag);
+    let table = w(&t, pass, 0x0c);
+    for i in 0..16 {
+        t.set_u32(table + 4 * i, if i == 3 { 0x0a03 } else { 0 });
+    }
+    let node = SCRATCH + 0x200;
+    let (prev, next) = (SCRATCH + 0x280, SCRATCH + 0x2c0);
+    for (mode, done) in [(0u8, 1u32), (7, 1), (0, 0), (7, 0)] {
+        t.set_u8(w(&t, run, 0x01), mode);
+        t.set_u32(w(&t, motion, 0x02), done);
+        t.set_u16(w(&t, motion, 0x11), 5);
+        t.write(s, &vec![0x6c; 0x6000]);
+        for i in 0..4 {
+            t.set_u32(s + 0xf60 + 4 * i, 0x0f60_0000 + i);
+        }
+        t.write(node, &[0x3c; 0x20]);
+        t.set_u32(node, prev);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, node);
+        t.set_u32(node + 0xc, 0);
+        t.write(prev, &[0x11; 0x10]);
+        t.write(next, &[0x22; 0x10]);
+        t.set_u32(w(&t, gb, 0x74), 0);
+        t.set_u16(w(&t, gb, 0x8e), 7);
+        t.set_u32(w(&t, gb, 0x48), node);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}
