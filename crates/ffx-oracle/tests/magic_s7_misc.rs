@@ -3543,3 +3543,99 @@ fn emitters_set_up() {
         }
     }
 }
+
+/// Rows 143 and 147: the reel step of `magic_0644` and `magic_0565` (four
+/// copies each): every state, each count above and at 0, the counters
+/// done and not, the reels matched and not, slot 653's wait.
+#[test]
+fn reel_steps() {
+    for (dll, rva) in [
+        (644u16, 0x5da0u32),
+        (692, 0x5da0),
+        (694, 0x5da0),
+        (696, 0x5da0),
+        (698, 0x5da0),
+        (565, 0x1c10),
+        (691, 0x1c10),
+        (693, 0x1c10),
+        (695, 0x1c10),
+        (697, 0x1c10),
+    ] {
+        reel_step_in(dll, rva);
+    }
+}
+
+fn reel_step_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let log = SCRATCH + 0x6000;
+    let ans = SCRATCH + 0x2f0;
+    for (s, n) in [
+        (654u32, 0usize),
+        (657, 1),
+        (658, 3),
+        (659, 0),
+        (660, 0),
+        (662, 0),
+        (661, 0),
+        (648, 0),
+    ] {
+        log_calls(&mut t, s, log, n, None, move |_, a, k| {
+            (s << 16) ^ a.first().copied().unwrap_or(0) ^ k
+        });
+    }
+    log_calls(&mut t, 653, log, 0, None, move |m, _, _| m.r32(ans));
+    log_calls(&mut t, 719, log, 3, None, |_, a, k| a[0] ^ k);
+    log_calls(&mut t, 220, log, 3, None, |_, a, k| a[1] ^ k);
+    log_calls(&mut t, 651, log, 0, None, |_, _, _| 1);
+    t.stub_st0(651, |_, _| 0.0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let base = w(&t, 0x1a);
+    let strip = SCRATCH + 0x700;
+    t.set_u32(strip, 4);
+    t.set_u32(strip + 4, SCRATCH + 0x720);
+    t.write(SCRATCH + 0x720, &[3, 3, 3, 3]);
+    let strip2 = SCRATCH + 0x740;
+    t.set_u32(strip2, 4);
+    t.set_u32(strip2 + 4, SCRATCH + 0x760);
+    t.write(SCRATCH + 0x760, &[1, 2, 5, 4]);
+    // (state, count, the counters' state, the second reel's strip,
+    // +0x70, slot 653's answer)
+    for (k, (state, n, cs, s2, x70, a653)) in [
+        (0u32, 5u32, 0u32, strip, 0u32, 0u32),
+        (0, 1, 0, strip, 0, 0),
+        (1, 1, 1, strip, 0, 0),
+        (1, 1, 0, strip, 0, 0),
+        (1, 1, 0, strip2, 0, 0),
+        (2, 3, 0, strip, 1, 0),
+        (2, 3, 0, strip, 1, 1),
+        (2, 1, 0, strip, 0, 0),
+        (3, 7, 0, strip, 0, 0),
+        (3, 1, 0, strip, 0, 0),
+        (3, 0x8000_0001, 0, strip, 0, 0),
+        (4, 1, 0, strip, 0, 0),
+        (5, 1, 0, strip, 0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(log, 0);
+        t.set_u32(ans, a653);
+        let i = k % 2;
+        t.set_u32(w(&t, 0x2), i);
+        let r = base + 0x78 * i;
+        t.write(r, &varied(0x78, k));
+        for c in 0..3u32 {
+            let row = r + 0x1c * c;
+            t.set_u32(row, if c == 1 { s2 } else { strip });
+            t.set_u16(row + 6, (c + k) as u16 % 4);
+            t.set_u32(row + 0x18, cs);
+        }
+        t.set_u32(r + 0x60, n);
+        t.set_u32(r + 0x68, state);
+        t.set_u32(r + 0x70, x70);
+        scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, s7_misc::reel_step);
+    }
+}

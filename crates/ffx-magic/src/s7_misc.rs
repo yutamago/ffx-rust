@@ -4527,3 +4527,155 @@ pub const EMITTER_SETUP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The reel's eased position from a countdown `n` (the operands: the
+/// divisor, 1.0, `K3`, the five weights and the two end scales; `minus`
+/// for the first curve's signs). With `t = n / D` and `u = 1 - t`: the
+/// quartic `u^4 Ka -+ u^3 t K3 Kb -+ u^2 t^2 K3 Kc + u t^3 K3 Kd + t^4`
+/// (`-` for the first two terms with `minus`, each product in the
+/// original's order), then `(1 - q) Kf + q Ke`, truncated.
+fn reel_curve<G: Game>(g: &G, img: &Image, f: u32, n: u32, minus: bool, ops: [u32; 9]) -> u32 {
+    let k = |i: usize| g.read::<f32>(op(img, f, ops[i]));
+    let one = k(1);
+    let t = div(cvt(n), k(0));
+    let k3 = k(2);
+    let u = sub(one, t);
+    let u2 = mul(u, u);
+    let ut = mul(u, t);
+    let t2 = mul(t, t);
+    let a = mul(mul(u2, u2), k(3));
+    let b = mul(mul(mul(ut, u2), k3), k(4));
+    let mut q = if minus { sub(a, b) } else { add(b, a) };
+    let c = mul(mul(mul(t2, u2), k3), k(5));
+    q = if minus { sub(q, c) } else { add(q, c) };
+    let d = mul(mul(mul(t2, ut), k3), k(6));
+    q = add(q, d);
+    q = add(q, mul(t2, t2));
+    let v = add(mul(sub(one, q), k(8)), mul(q, k(7)));
+    crate::s4_summon::trunc(v)
+}
+
+/// A slot reel's step (internal, no arguments; the reel `R = G_R + 0x78
+/// *G_I`, its state `R+0x68`; the original's jump table is in the code).
+/// State 0 counts `R+0x60` down, easing `R+0x58` along the first curve
+/// ([`reel_curve`]); at 0 slots 654, 657 `(20.0)`, 658 `(0x138, 0x81)`,
+/// 659 and 660, `R+0x58 = 0xa6`, the timers reset
+/// ([`timers_reset`](crate::sa_misc::timers_reset)) and state 1. State
+/// 1 waits for the counters ([`counters_step`](crate::s6_misc::counters_step)),
+/// then slot 662 and the reels' match
+/// ([`reels_match`](crate::sa_misc::reels_match)): matched, slot 220
+/// through [`call_220`](crate::sb_misc::call_220) `(G_C, 1; 0x40, 0x100)`,
+/// slot 661 and `R+0x60 = 1`; else `R+0x60 = 5`; state 2. State 2 waits
+/// for slot 653 when `R+0x70` is 1, then counts `R+0x60` down; at 0 slot
+/// 648, `R+0x60 = 10` and state 3. State 3 counts down along the second
+/// curve; at 0 `R+0x74 = 0`, `R+0x6c = 8`, `R+0x58 = 0xb5` and state 4.
+/// Returns 1 in state 4, else 0.
+///
+/// `magic_0644` 0x10005da0 and `magic_0565` 0x10001c10 (788 bytes with
+/// the jump table; 5 DLLs each).
+pub fn reel_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let i = g.read::<u32>(w(0x2));
+    let r = i.wrapping_mul(0x78).wrapping_add(w(0x1a));
+    let ecx = i.wrapping_mul(15);
+    let count = |g: &mut G| {
+        let n = g.read::<u32>(r + 0x60).wrapping_sub(1);
+        g.write::<u32>(r + 0x60, n);
+        n
+    };
+    let s = |g: &mut G, t: u32, n: u32, args: &[u32]| slot(g, img, f, t, n, ecx, args).eax;
+    match g.read::<u32>(r + 0x68) {
+        0 => {
+            let n = count(g);
+            if n.cast_signed() > 0 {
+                let ops = [0xbe, 0xb6, 0xc6, 0xee, 0xfe, 0x115, 0x130, 0x144, 0x14c];
+                let v = reel_curve(g, img, f, n, true, ops);
+                g.write::<u32>(r + 0x58, v);
+                return Ret::eax(0);
+            }
+            s(g, 0x3c, 654, &[]);
+            let mut st = Pushes::default();
+            st.push(0x41a0_0000);
+            st.call(g, slot_target(g, w(0x49), 657), ecx);
+            st.push_all(&[0x81, 0x138]);
+            st.call(g, slot_target(g, w(0x5e), 658), ecx);
+            s(g, 0x75, 659, &[]);
+            let eax = s(g, 0x85, 660, &[]);
+            g.write::<u32>(r + 0x58, 0xa6);
+            crate::sa_misc::timers_reset(g, r, eax);
+            g.write::<u32>(r + 0x68, 1);
+        }
+        1 => {
+            let step = Frame {
+                at: call(0x163),
+                esp: fr.esp.wrapping_sub(0xc),
+                ecx: r,
+                ..*fr
+            };
+            if crate::s6_misc::counters_step(g, img, &step) != 1 {
+                return Ret::eax(0);
+            }
+            s(g, 0x171, 662, &[]);
+            if crate::sa_misc::reels_match(g, r) == 1 {
+                // `push 0x100; push 0x40; call`: the callee's entry `esp`
+                let esp = fr.esp.wrapping_sub(0x14);
+                g.write::<u32>(esp + 4, 0x40);
+                g.write::<u32>(esp + 8, 0x100);
+                crate::sb_misc::call_220(g, img, call(0x198), esp, w(0x193), 1);
+                s(g, 0x19d, 661, &[]);
+                g.write::<u32>(r + 0x60, 1);
+            } else {
+                g.write::<u32>(r + 0x60, 5);
+            }
+            g.write::<u32>(r + 0x68, 2);
+        }
+        2 => {
+            if g.read::<u32>(r + 0x70) == 1 && s(g, 0x1d9, 653, &[]) == 0 {
+                return Ret::eax(0);
+            }
+            if count(g).cast_signed() > 0 {
+                return Ret::eax(0);
+            }
+            s(g, 0x1fa, 648, &[]);
+            g.write::<u32>(r + 0x60, 10);
+            g.write::<u32>(r + 0x68, 3);
+        }
+        3 => {
+            let n = count(g);
+            if n.cast_signed() > 0 {
+                let ops = [
+                    0x253, 0x24b, 0x25b, 0x283, 0x293, 0x2aa, 0x2c5, 0x2d9, 0x2e1,
+                ];
+                let v = reel_curve(g, img, f, n, false, ops);
+                g.write::<u32>(r + 0x58, v);
+                return Ret::eax(0);
+            }
+            g.write::<u32>(r + 0x74, 0);
+            g.write::<u32>(r + 0x6c, 8);
+            g.write::<u32>(r + 0x58, 0xb5);
+            g.write::<u32>(r + 0x68, 4);
+        }
+        4 => return Ret::eax(1),
+        _ => {}
+    }
+    Ret::eax(0)
+}
+
+/// [`reel_step`] (the `rel32`s:
+/// [`timers_reset`](crate::sa_misc::timers_reset),
+/// [`counters_step`](crate::s6_misc::counters_step),
+/// [`reels_match`](crate::sa_misc::reels_match) and
+/// [`call_220`](crate::sb_misc::call_220)).
+pub const REEL_STEP: Sig = Sig {
+    len: 788,
+    hash: 0x579d_989f_ccc3_2d5f,
+    calls: &[
+        (0x9b, Callee::Sig(&crate::sa_misc::TIMERS_RESET)),
+        (0x163, Callee::Sig(&crate::s6_misc::COUNTERS_STEP)),
+        (0x180, Callee::Sig(&crate::sa_misc::REELS_MATCH)),
+        (0x198, Callee::Sig(&crate::sb_misc::CALL_220)),
+    ],
+    imports: &[],
+};
