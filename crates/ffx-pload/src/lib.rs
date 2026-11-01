@@ -60,6 +60,7 @@ pub mod m5_static_init_c;
 pub mod m5_static_init_d;
 pub mod m5p_registry_b;
 pub mod m5p_registry_b_bp2;
+pub mod m5p_registry_load_a_bp3;
 pub mod m5p_registry_load_a_convert;
 pub mod m5p_registry_load_a_desc;
 pub mod m5p_registry_load_a_left;
