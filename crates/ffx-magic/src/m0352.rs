@@ -127,3 +127,57 @@ pub const CAMERA_POINT_SHOW: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The camera's start (0x10004cd0, internal, no arguments): with `E` = `*G`
+/// (`+0x0e`): `E + 0x980` = 0; slot 333 `(*A)`'s angle `a` (`A` `+0x26`)
+/// turned into `h = K - a` (`K` `+0x36`) wrapped once by `T`
+/// (`+0x4f`/`+0x66`) above `HI` (`+0x45`) or below `LO` (`+0x59`) into
+/// `E + 0x984`, `E + 0x988` and `E + 0x98c` 0; with `C` = `E + 0x990` slot
+/// 262 `(*A, C, C + 4, C + 8)` (`A` again `+0x88`) and slot 12 `(*A)`'s
+/// float into `C + 4`, `C + 0xc` = 1.0, `E + 0xbd8` = 0 and `*D` (`+0xd1`)
+/// = 1. Returns `E`. The slot calls pass the words the original leaves on
+/// the stack.
+pub fn camera_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let w = |off: u32| img.word(fr.at + off);
+    let e = g.read::<u32>(w(0x0e));
+    g.write::<u32>(e + 0x980, 0);
+    let s = slot_target(g, w(0x07), 0x534 / 4);
+    let x = g.read::<u32>(w(0x26));
+    let a = crate::m0018::st0_f32(g.call(s, 0, &[x]).st0);
+    let h = sub(g.read::<f32>(w(0x36)), a);
+    let h = if h > g.read::<f32>(w(0x45)) {
+        sub(h, g.read::<f32>(w(0x4f)))
+    } else if g.read::<f32>(w(0x59)) > h {
+        add(h, g.read::<f32>(w(0x66)))
+    } else {
+        h
+    };
+    g.write::<f32>(e + 0x984, h);
+    g.write::<u32>(e + 0x988, 0);
+    g.write::<u32>(e + 0x98c, 0);
+    let x = g.read::<u32>(w(0x88));
+    let c = e + 0x990;
+    let mut st = crate::pushes::Pushes::default();
+    let s = slot_target(g, w(0x97), 0x418 / 4);
+    st.push_all(&[c + 8, c + 4, c, x]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push(x);
+    let s = slot_target(g, w(0xaa), 0x30 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    let v = crate::m0018::st0_f32(st.call(g, s, 0).st0);
+    g.write::<f32>(c + 4, v);
+    g.write::<u32>(c + 0xc, 0x3f80_0000);
+    g.write::<u32>(e + 0xbd8, 0);
+    g.write::<u32>(w(0xd1), 1);
+    Ret::eax(e)
+}
+
+/// [`camera_start`] (222 bytes, 1 overlay).
+pub const CAMERA_START: Sig = Sig {
+    len: 222,
+    hash: 0xbaf9_8392_9182_d72c,
+    calls: &[],
+    imports: &[],
+};

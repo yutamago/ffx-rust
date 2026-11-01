@@ -64,3 +64,58 @@ fn draw() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x10001d80: not started; the flags each set or clear (the timelines
+/// idle), flag 3 clear and set (the stops and slot 214).
+#[test]
+fn frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1d80);
+    let flags = SCRATCH + 0x6e0;
+    rec(&mut t, 261, 1, move |m, a| m.r32(flags + 4 * (a[0] & 3)));
+    rec(&mut t, 214, 1, |_, a| 0x0214_0000 ^ a[0]);
+    let p = SCRATCH + 0x610;
+    t.set_u32(t.img.word(at + 0x0e), p);
+    for op in [0x13u32, 0x1a, 0xbe] {
+        t.set_u32(t.img.word(at + op), 0x00ab_0000 + op);
+    }
+    for (started, set) in [
+        (0u32, [1u32, 1, 1, 1]),
+        (1, [0, 0, 0, 0]),
+        (1, [1, 0, 1, 0]),
+        (1, [0, 1, 0, 1]),
+        (3, [1, 1, 1, 1]),
+    ] {
+        t.set_u32(t.img.word(at + 0x02), started);
+        for (k, v) in (0u32..).zip(set) {
+            t.set_u32(flags + 4 * k, v);
+        }
+        t.set_u32(p, 0x88);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x10001000: a part's start for a part inside and past the table's
+/// first 0x80 bytes.
+#[test]
+fn part_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1000);
+    let list = SCRATCH + 0x700;
+    for i in 0..4 {
+        t.set_u32(list + 4 * i, 0x0900_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| list);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let sp = t.img.rel32_target(at + 0x36);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x600);
+    t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x640);
+    let l = SCRATCH + 0x680;
+    t.set_u32(t.img.word(at + 0x10), l);
+    t.set_u32(l + 0x10, 0x00ab_0010);
+    let table = t.img.word(at + 0x3d);
+    for part in [table, table + 0x40, table + 0x80, table + 0x100] {
+        t.write(part, &[0x5c; 0x80]);
+        t.check_entry(at, Call::default(), &[part], Eax::Checked);
+    }
+}

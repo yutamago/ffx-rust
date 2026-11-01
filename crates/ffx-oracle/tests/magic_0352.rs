@@ -75,3 +75,53 @@ fn camera_point() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x10004cd0 (internal): the camera's start, the angle above, inside
+/// and below the range (and NaN).
+#[test]
+fn camera_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x4cd0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    rec(&mut t, 262, 4, |m, a| {
+        for (i, at) in (0u32..).zip(&a[1..4]) {
+            m.w32(*at, 0x0262_0000 + i);
+        }
+        0x262
+    });
+    let angle = SCRATCH + 0x600;
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(angle))));
+    rec(&mut t, 12, 2, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| 7.5);
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x0e), fx);
+    t.set_u32(w(&t, 0x26), 0x00ab_0026);
+    let base = f32::from_bits(t.u32(w(&t, 0x36)));
+    let hi = f32::from_bits(t.u32(w(&t, 0x45)));
+    let lo = f32::from_bits(t.u32(w(&t, 0x59)));
+    let mut angles = vec![base, base - hi - 1.0, base - lo + 1.0, f32::NAN];
+    for bound in [hi, lo] {
+        let guess = (base - bound).to_bits();
+        if let Some(r) = (0..256u32)
+            .flat_map(|d| [guess.wrapping_add(d), guess.wrapping_sub(d)])
+            .map(f32::from_bits)
+            .find(|&r| (base - r).to_bits() == bound.to_bits())
+        {
+            angles.push(r);
+        }
+    }
+    for a in angles {
+        t.set_u32(angle, a.to_bits());
+        t.write(fx + 0x970, &[0x33; 0x40]);
+        t.set_u32(fx + 0xbd8, 7);
+        t.set_u32(w(&t, 0xd1), 7);
+        t.check(
+            at,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::m0352::camera_start,
+        );
+    }
+}

@@ -90,3 +90,19 @@ fn start() {
         t.check_entry(at, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// 0x10001af0: an object's start.
+#[test]
+fn object_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1af0);
+    for (s, n) in [(441u32, 3usize), (440, 7), (450, 2), (449, 2)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[1]);
+    }
+    let fx = SCRATCH + 0x8000;
+    t.set_u32(t.img.word(at + 0x04), fx);
+    t.set_u32(fx + 0x198, 0x00e0_0198);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x5c; 0x140]);
+    t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+}

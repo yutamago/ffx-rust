@@ -162,3 +162,58 @@ pub const START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An object's start (0x10001af0, cdecl `(obj)`): with `E` = `*G`
+/// (`+0x04`): slot 441 `(obj, E + 0x198, 0x119)`; the object's position
+/// `+0xd0` (5.0, 0, 0, 0), angles `+0x100` (0, 0, -90.0, 0) and scale
+/// `+0x130` (0.15 three times, 0); slot 440 `(*G, obj, 0, 2)` (`G` again
+/// `+0x31`), slot 450 `(obj, F1)` and slot 449 `(obj, F2)` (the callbacks
+/// `+0xbb`/`+0xce`). Returns slot 449's `eax`. Each slot call passes the
+/// words the original leaves on the stack.
+pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let e = g.read::<u32>(w(0x04));
+    let obj = fr.arg(g, 0);
+    let mut st = Pushes::default();
+    st.push_all(&[0x119, g.read::<u32>(e + 0x198)]);
+    let s = slot_target(g, w(0x18), 0x6e4 / 4);
+    st.push(obj);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    let s = slot_target(g, w(0x26), 0x6e0 / 4);
+    st.push_all(&[2, 0, obj, g.read::<u32>(w(0x31))]);
+    for (off, v) in [
+        (0xd0, 0x40a0_0000),
+        (0xd4, 0),
+        (0xd8, 0),
+        (0xdc, 0),
+        (0x100, 0),
+        (0x104, 0),
+        (0x108, 0xc2b4_0000),
+        (0x10c, 0),
+        (0x130, 0x3e19_999a),
+        (0x134, 0x3e19_999a),
+        (0x138, 0x3e19_999a),
+        (0x13c, 0),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push_all(&[w(0xbb), obj]);
+    let s = slot_target(g, w(0xb6), 0x708 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, s, 0);
+    st.push_all(&[w(0xce), obj]);
+    let s = slot_target(g, w(0xc9), 0x704 / 4);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(st.call(g, s, 0).eax)
+}
+
+/// [`object_start`] (225 bytes, 1 overlay).
+pub const OBJECT_START: Sig = Sig {
+    len: 225,
+    hash: 0x5cd4_dde8_1ca2_8c65,
+    calls: &[],
+    imports: &[],
+};

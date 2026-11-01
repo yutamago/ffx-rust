@@ -2062,6 +2062,9 @@ ports! {
     "m0370 draw" => m0370::DRAW, m0370::draw;
     "m0267 frame" => m0267::FRAME, m0267::frame;
     "m0361 start" => m0361::START, m0361::start;
+    "m0370 frame" => m0370::FRAME, m0370::frame;
+    "m0361 object start" => m0361::OBJECT_START, m0361::object_start;
+    "m0370 part start" => m0370::PART_START, m0370::part_start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2690,6 +2693,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0395 start-up", &m0395::START_UP),
     ("m0273 sprite setup", &m0273::SPRITE_SETUP),
     ("m0267 scale matrix", &m0267::SCALE_MATRIX),
+    ("m0352 camera start", &m0352::CAMERA_START),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
