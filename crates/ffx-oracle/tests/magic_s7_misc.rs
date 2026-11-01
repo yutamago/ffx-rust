@@ -2996,6 +2996,7 @@ fn summon_object_setups() {
 /// passed with both groups empty, one empty, both holding items; the
 /// children's handlers and every slot log what they see.
 #[test]
+#[allow(clippy::too_many_lines)] // the slots log the frame record
 fn children_items_nodes() {
     for (dll, rva) in [
         (42u16, 0x1c10u32),
