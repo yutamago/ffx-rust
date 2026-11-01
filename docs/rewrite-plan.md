@@ -488,8 +488,8 @@ byte-compatible, and the original stays untouched next to it.
 - **Delivery.** `ffx-rust.exe` sits next to `FFX.exe` in the game folder
   and is started by `ffx-launch` or a Steam launch option. `FFX.exe`,
   the saves and the data stay untouched.
-- **Luau after M5.** L1 and L2 start once the 64-bit program runs,
-  against the function table.
+- **Luau after M5.** L1 starts once the 64-bit program runs, against
+  the function table. Atel (`docs/atel-plan.md`) does not wait for it.
 
 **Stages.** Each one is merged and verified before the next depends on
 it. Stages 1 and 2 run in the current 32-bit process, so every existing
@@ -682,50 +682,46 @@ afterwards:
 The original's fixed array sizes stay only where save compatibility needs
 them.
 
-### Scripting for modders (Luau)
+### Scripting for modders
 
-FFX's events, cutscenes, field logic and monster AI are Atel bytecode run by
-the script VM (`Script_Run`, in Rust since M1), and everything a script does
-goes through the VM's natives. Modders should not need Atel: the plan adds
-Luau on top, in three stages (user's decision, 2026-10-17). Luau is
-Roblox's open-source (MIT) dialect of Lua 5.1: the language most beginners
-already meet (Roblox), with current docs and tutorials (luau.org), gradual
-types for autocomplete and early errors, and a sandbox made for untrusted
-scripts. It embeds from Rust (`mlua`, `luau` feature), and its coroutines
-match Atel's model: workers that run a little each frame and wait on
-signals, moves and messages. (FFX.exe links a Lua 5.2.1 of its own through
-PhyreEngine, but never runs it and exposes nothing of the game to it:
-`docs/formats/lua.md`. This is a new runtime, not that one.)
+FFX's events, cutscenes, field logic and monster AI are ATEL bytecode run
+by the script VM (`Script_Run`, in Rust since M1), and everything a script
+does goes through the VM's natives. Two ways in for modders:
 
-- **Prerequisite, from M1 on: a documented native API.** Every native that
-  moves to Rust gets its name, its arguments and their meaning, and what it
-  waits for, in `docs/formats/script.md`. One machine-readable API
-  description is generated from that table, and from it the Luau type
-  definitions and TypeScript declarations (below). This is part of each
-  script round, not extra work.
-- **TypeScript, optional.** Modders who prefer it write TypeScript and
-  compile it to Luau with roblox-ts (MIT); the game still runs one runtime.
-  It needs Node on the modder's machine, documented as a one-time setup.
-  C# and Python are not offered: .NET is a large runtime that cannot
-  sandbox untrusted code, and embedded Python is slow and hard to sandbox.
-- **Getting started is part of the work.** A first-mod tutorial, small
+- **Atel, a C# subset compiled to ATEL (user, 2026-10-31 and 2026-11-01;
+  plan: `docs/atel-plan.md`).** Every shipped event, monster and battle
+  script decompiles into standard C# that reads like what the developers
+  meant, and compiles back to the same bytes. Roslyn parses and checks it;
+  our backend writes ATEL bytecode, and analyzers enforce what ATEL can
+  run. Mods are C# projects that change existing workers (`partial class`,
+  prefix and postfix patches) and add new ones; they ship compiled, and the
+  launcher links them onto the player's own files in load order. The
+  scripts keep running on the ATEL VM, original or ours, so .NET is never
+  embedded in the game and the VM stays the sandbox. This replaces the old
+  stages L2 (Atel to Luau) and L3 (Luau to Atel). It does not wait for M5.
+- **L1, Luau beside Atel (after M5, user 2026-10-27).** Mods ship Luau
+  scripts that hook game events (map entered, worker started, signal sent,
+  battle started, command chosen) and call the natives through a typed API
+  (`chr.move_to`, `msg.show`, `wait.frames`). The original scripts stay as
+  they are; a mod adds behaviour or replaces one worker's. Runs in the
+  64-bit program, on its function table. Luau is Roblox's open-source
+  (MIT) dialect of Lua 5.1, with gradual types and a sandbox made for
+  untrusted scripts; it embeds from Rust (`mlua`, `luau` feature). (FFX.exe
+  links a Lua 5.2.1 of its own through PhyreEngine, but never runs it and
+  exposes nothing of the game to it: `docs/formats/lua.md`. This is a new
+  runtime, not that one.) Whether L1 is still wanted beside Atel is open.
+
+Both need:
+
+- **A documented native API, from M1 on.** Every native that moves to
+  Rust gets its name, its arguments and their meaning, and what it waits
+  for, in `docs/formats/script.md`. One machine-readable API description is
+  generated from that table, and from it Atel's reference assembly (and the
+  Luau type definitions, if L1 goes ahead). This is part of each script
+  round, not extra work.
+- **Getting started as part of the work.** A first-mod tutorial, small
   example mods to copy, the API reference with editor autocomplete, and
   errors that point at the mod's own line.
-- **L1, Luau beside Atel (after M5, user 2026-10-27).** Mods
-  ship Luau (or TypeScript) scripts that hook game events (map entered,
-  worker started, signal sent, battle started, command chosen) and call the
-  natives through a typed API (`chr.move_to`, `msg.show`, `wait.frames`).
-  The original scripts stay as they are; a mod adds behaviour or replaces
-  one worker's. Runs in the 64-bit program, on its function table.
-- **L2, Atel to Luau (after M5).** A decompiler turns every shipped event
-  and battle script into readable Luau (workers as coroutines, natives by
-  name, variables by their descriptors), and the engine runs the Luau.
-  Checked like everything else: a decompiled script must give the original's
-  replay. This is what lets the community edit existing cutscenes and
-  fights, not only add to them.
-- **L3, Luau to Atel (optional, on demand).** A compiler back to bytecode,
-  so an edited script also runs in the unmodified game. Only if there is
-  demand; constructs without an Atel equivalent are refused.
 
 ## Risks
 

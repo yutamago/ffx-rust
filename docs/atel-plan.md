@@ -2,33 +2,49 @@
 
 Goal: turn every compiled ATEL script of FFX (events, monster AI, battle
 scripts) back into source code that reads like what the developers meant,
-in a new C#-like language called **Atel**, and compile that source back into
-the same bytes. Atel then becomes the language mods are written in.
+and compile that source back into the same bytes. The source language is
+**Atel: standard C#, restricted to what ATEL can run**, parsed and checked
+by Roslyn and compiled by our own backend to ATEL bytecode. Atel then
+becomes the language mods are written in.
 
-This replaces the Lua plan of the same day and stage L2 ("Atel to Luau") in
-`docs/rewrite-plan.md`, "Scripting for modders (Luau)"; that section is to
-be updated once this plan is accepted.
+This replaces the Lua plan of 2026-10-31 and stages L2 ("Atel to Luau")
+and L3 ("Luau to Atel") in `docs/rewrite-plan.md`, "Scripting for
+modders". Accepted 2026-11-01.
 
-## Decisions (user, 2026-10-31)
+## Decisions (user)
 
-- **A custom language, close to C#.** Most modders, including the Fahrenheit
-  community, know C#. Custom syntax is fine where ATEL needs it, but the
-  language should feel like C#. Files end in `.atel`.
+2026-10-31:
+
+- **Close to C#.** Most modders, including the Fahrenheit community, know
+  C#.
 - **Byte-identical round trip** is the acceptance bar: decompile, compile,
   and get the original script block and containing file back, for every
   script.
 - **The decompiled source lives in a private GitHub repo,
   `yutamago/ffx-atel-src`**, versioned. Claude may create it when the time
-  comes. The tools (decompiler, compiler, libraries) live in `ffx-rust`; no
-  decompiled output goes into `ffx-rust`.
+  comes. No decompiled output goes into `ffx-rust`.
 - **Mods change things, they don't replace files.** Vanilla files stay
   untouched; mods are composed in load order (as the size tables already
   are, `docs/hooking.md`).
 - Work starts when the user says so.
 
+2026-11-01 (replacing the custom syntax of the first version):
+
+- **Standard C#, not a C#-like language.** Files are `.cs`, projects are
+  `.csproj`, and Rider, Visual Studio and VS Code work unchanged. The
+  subset that compiles to ATEL is enforced by analyzers. Precedent:
+  UdonSharp (C# through Roslyn to VRChat's Udon VM), Unity Burst.
+- **The language tooling is written in C#** (.NET 10): decompiler,
+  compiler, analyzers, the game's reference assembly, the mod linker. Rust
+  keeps what runs inside the game: the interpreter, the hook and the
+  existing `ffx-script` crate.
+- **Mods ship compiled.** Players need neither a compiler nor a decompiler;
+  the launcher links compiled mod packages onto the player's own files.
+
 ## What the bytecode says about the original language
 
-From all 758 scripts (17.3 million instructions; survey 2026-10-31):
+From all 758 scripts (17.3 million instructions, 57.9 MB of script
+sections; survey 2026-10-31):
 
 - C expressions and types: `+ - * / %`, comparisons, `&& ||` (not
   short-circuit), `& | !`, `<<`; separate signed and unsigned compares;
@@ -48,25 +64,41 @@ From all 758 scripts (17.3 million instructions; survey 2026-10-31):
 
 ## The language
 
-### Files and order
+Everything below is valid C#; what makes it Atel is the reference assembly
+(the game's API) and the analyzers (what ATEL can run).
 
-- Every file starts with the script it belongs to, like a C# file-scoped
-  namespace: `event Bjyt0400;`, `monster M001;`, `battle Cdsp00_00;`.
-- A script is a folder, one file per worker, plus a main file:
-  `event/bj/bjyt0400/Bjyt0400.atel`, `Wakka.atel`, `Lulu.atel`.
-- The main file declares the worker order once, `workers { Director,
-  Wakka, Lulu }`; a worker's position is its number.
-- File-level variables are shared by all workers of the script.
-- `partial class` splits a big worker over several files.
-- `using Ffx.Battle;` imports the generated libraries.
+### Scripts, files and order
+
+- A script is a namespace and a folder, one file per worker:
+  `Events/Bj/Bjyt0400/Bjyt0400.cs`, `Wakka.cs`, `Lulu.cs`, each starting
+  with `namespace Events.Bj.Bjyt0400;`.
+- The main file holds the script class, which names the file and the
+  worker order once; a worker's position is its number. Its static fields
+  are the variables shared by all workers (storage 6):
+
+  ```csharp
+  [Event("bjyt0400")]
+  [Workers(typeof(Director), typeof(Wakka), typeof(Lulu))]
+  static partial class Bjyt0400
+  {
+      public static int TimesTalked;
+  }
+  ```
+
+  Monsters and battle scripts use `[Monster("m001")]` and
+  `[Battle("cdsp00_00")]`.
+- `partial class` splits a big worker over several files; `using
+  Ffx.Battle;` imports the libraries.
+- How many scripts go into one project (one compilation) is measured in
+  Phase 6: the whole corpus at once is likely too much for an IDE.
 
 ### Workers and entries
 
 - A worker is a `class`. Its base class says what it is (`Npc`, `Monster`,
   …; one per worker type, see "Worker types"); function workers are
   `static class`es.
-- Entries the engine calls by number are base class members and use
-  `override`: `Init` (entry 0, run at priority 7), `Main` (entry 1,
+- Entries the engine calls by number are virtual base class members and
+  use `override`: `Init` (entry 0, run at priority 7), `Main` (entry 1,
   priority 0), talk, touch, battle turns, … Other entries are `async`;
   plain methods are helpers (see "Three kinds of code").
 - Entry numbers are implicit (base class first, then files in path order,
@@ -99,12 +131,12 @@ worker gets to it. The language keeps the original's three kinds apart:
 
 | Kind | Declared as | Runs |
 |---|---|---|
-| Function worker (type 0) | `static class Common { static void SetupModels(int mode) { … } }` | synchronously on the caller's worker (`call`) |
+| Function worker (type 0) | `static class Common { public static void SetupModels(int mode) { … } }` | synchronously on the caller's worker (`call`) |
 | Helper method (new code) | a plain method in a class: `void FaceThePlayer() { … }` | synchronously; the compiler makes it a hidden function worker and `call`s it |
 | Entry | `override` (engine-run) or `async Task NameAsync()` (requestable) | on its own worker, through a request |
 
 `call` limits apply to static functions and helpers: at most 3 deep, no
-recursion (compile error), no `await` on them.
+recursion (analyzer error), no `await` on them.
 
 ### Parameters and return values
 
@@ -117,41 +149,46 @@ carries only entry, worker and priority. The compiler provides both:
 - **Entries:** parameters and the return value go through hidden fields of
   the receiving worker, written at the request and read after
   `.Finished`. Safe while one request at a time is pending for that entry.
-  The compiler sees every caller (requests stay within one script, and
-  mods are composed before compiling), so it warns when two callers could
-  have the same entry pending at once. A return value requires waiting
-  for `.Finished`.
+  The compiler sees every caller (requests stay within one script), so it
+  warns when two callers could have the same entry pending at once. A
+  return value requires waiting for `.Finished`.
 - Decompiled code has neither (the original had none); this is for new
   code only.
 
 ### Requests between workers
 
+- `Task` and `Task<T>` here are the reference assembly's own task-like
+  types (`Ffx.Atel.Task`, with `[AsyncMethodBuilder]`), not .NET's; the
+  projects do not import `System.Threading.Tasks`.
 - An entry other workers may run is declared `async Task NameAsync()`
   (`async Task<int> NameAsync(int x)` with a parameter and a result).
 - `_ = Lulu.LookAtWakkaAsync();` queues it and carries on (`req`).
 - `await Lulu.LookAtWakkaAsync();` or `await Lulu.LookAtWakkaAsync().Finished;`
   waits until it ends (`reqe`).
 - `await Lulu.LookAtWakkaAsync().Started;` waits until it begins (`reqw`).
-- A request without `await` or `_ =` gets a hint. Requesting an entry that
-  is not `async` is an error.
+- A request without `await` or `_ =` gets a hint (as C#'s own CS4014).
+  Requesting an entry that is not `async` is an error.
 - A worker can request its own entries (641 `req`, 130 `reqe` in the
   shipped scripts). Awaiting one works only at a priority above the one
   the worker runs at: it interrupts, runs, and the caller continues. At the
   same or a lower priority it cannot start while the caller waits (to
-  confirm in Phase 0); the compiler reports that as an error where it
+  confirm in Phase 0); the analyzer reports that as an error where it
   knows the caller's priority (`Main` P0, `Init` P7) and warns elsewhere.
   A helper method is usually the better choice.
-- Priorities: `Priority.P0_Main` … `Priority.P8_…`, zero-based, sorted by
-  level, names after the number from Phase 0. P1–P6 are for scripts; P0
-  (`Main`'s level), P7 (`Init`, battle system) and P8 (unused) compile with
-  a warning. A common default makes most calls omit it.
+- Priorities: `Priority.P0_Main` … `Priority.P8_…`, an enum, zero-based,
+  sorted by level, names after the number from Phase 0. P1–P6 are for
+  scripts; P0 (`Main`'s level), P7 (`Init`, battle system) and P8 (unused)
+  compile with a warning. An optional parameter with a common default makes
+  most calls omit it.
 - `await` on something that cannot be awaited (a native that waits anyway,
-  a function or helper) is dropped, with a hint.
+  a function or helper) is dropped, with a hint. In C# terms these return
+  an awaitable that completes at once.
 
 ### Variables
 
-- Fields live in the script's data (storage 2, 3, 4), with initial values;
-  file-level variables in the shared area (storage 6).
+- Fields live in the script's data (storage 2, 3, 4), with initial values
+  as field initializers; the script class's static fields in the shared
+  area (storage 6).
 - `[Register] int Count;` / `[Register(2)] int Count;` puts a field in one
   of the worker's registers; the compiler assigns slots in declaration
   order unless pinned. Function and helper parameters also use registers
@@ -161,21 +198,27 @@ carries only entry, worker and priority. The compiler provides both:
   Decompiled locals that do not cross a wait stay plain locals; registers
   the original kept across a wait become `[Register]` fields.
 - Register fields used across a wait while another entry of the same
-  worker writes them give warning ATL0001, suppressible
-  (`#pragma warning disable ATL0001`).
-- The save game is the predefined `Save` library (`Save.StoryProgress`),
+  worker writes them give warning ATL0001, suppressible as any C# warning
+  (`#pragma warning disable ATL0001`, `.editorconfig`).
+- Types: `int`, `uint`, `short`, `ushort`, `sbyte`, `byte`, `float`,
+  `bool`, enums, fixed-size arrays. `long`, `double`, `decimal`, `string`
+  (outside `Debug`) are errors.
+- The save game is the predefined `Save` class (`Save.StoryProgress`),
   from `docs/formats/save.md` and Fahrenheit's names; unnamed offsets are
   `Save.Unknown_0123`.
 
 ### Readability
 
-- Natives are grouped static classes and methods (`Msg.Say`, `Cam.Move`,
-  `Chr.PlayMotion`); on the worker itself without a prefix (`PlayMotion`).
-- Actor properties are properties: `Radius = 35.0;`, `if (Hp < 100)`,
-  `Party.Alive.Defense = 0;`. `Position = (x, y, z);`. Named arguments
-  where they help (`frames: 15`).
+- Natives are static classes and methods (`Msg.Say`, `Cam.Move`,
+  `Chr.PlayMotion`); those acting on the worker itself are inherited
+  members, called without a prefix (`PlayMotion`). XML doc comments carry
+  what is known about each, so the IDE shows it on hover.
+- Actor properties are properties: `Radius = 35f;`, `if (Hp < 100)`,
+  `Party.Alive.Defense = 0;`. `Position = (x, y, z);` through a tuple
+  conversion. Named arguments where they help (`frames: 15`).
+- Float literals need C#'s `f` (`35f`); the decompiler writes them so.
 - Values are typed by use: `Item[] Rewards = { Item.Potion, … }`,
-  `Motion.Idle`, `Command.Bite`, `Target.Party & Target.Alive`.
+  `Motion.Idle`, `Command.Bite`, `Target.Party | Target.Alive`.
 - Story progress: `Story.S1340_WakkaJoinsParty`, the value zero-padded in
   the name so alphabetical order is progress order; auto-named from the
   script that sets each value, renamed by hand.
@@ -186,15 +229,18 @@ carries only entry, worker and priority. The compiler provides both:
 
 ### Text
 
-- Messages by ID: `Msg.Say(Text[12]);`. The language server shows the text
-  (inlay hint, hover) in a chosen language; the formatter can keep an
-  optional `// "…"` comment for reading outside an editor.
+- Messages by ID through the worker's `Text` indexer:
+  `Msg.Say(Text[12]);`. An editor extension (VS Code, Rider) shows the text
+  as inlay hint and hover, in a chosen language, from the player's message
+  tables; the formatter can keep an optional `// "…"` comment for reading
+  outside an editor.
 - New messages: `Text.New("Nice throw!")`. A script holds one index for
-  all languages, so the compiler adds the message at the same index in
-  every language's table: the mod's source language (`mod.toml`) gets the
-  text, the others a copy marked untranslated. The formatter rewrites the
-  call to `Text[173]`; translators work in the per-language TOML
-  (`ffx text export/import`).
+  all languages, so every language's table gets the message at the same
+  index: the mod's source language (`mod.toml`) gets the text, the others a
+  copy marked untranslated. In mods the index is assigned when the
+  launcher links, so the source keeps `Text.New`; in hand edits of the
+  vanilla source the formatter may rewrite it to `Text[173]`. Translators
+  work in the per-language TOML (`ffx text export/import`).
 - Debug text is a real `string`, allowed only for `Debug.*`:
   `Debug.Print($"hp = {Hp}");`. It calls new natives in a group the game
   leaves empty (2, 3, a, e or f), provided by our hook or a Fahrenheit
@@ -202,38 +248,66 @@ carries only entry, worker and priority. The compiler provides both:
 
 ### Control flow and semantics
 
-- `if`/`else`, `while`, `do`, `switch` with `case`, `default`, `break`,
-  `goto case`; `goto` for flow that has no structured form. Ternary and
-  `for` if Phase 0 shows the original compiler produced them; the compiler
-  accepts both for mods either way.
-- ATEL semantics, documented: `&&` and `||` do not short-circuit; `int` is
-  32-bit with wrap-around; `float` is `f32` (`35.0` is a float, `35.0f`
-  also accepted); unsigned compares follow the operand types.
-- No objects, strings (outside `Debug`), generics, exceptions or LINQ:
-  "not available in Atel".
-- Escape hatches for the round trip: `asm { … }` (the existing assembly
-  syntax) for code the decompiler cannot express yet, and attributes that
-  pin layout details (constant-pool order, a variable's storage area and
-  offset, unknown header data).
+- `if`/`else`, `while`, `do`, `for`, `?:`, `switch` with `case`,
+  `default`, `break`, `goto case`; `goto` for flow that has no structured
+  form.
+- Logic: C#'s `&` and `|` on `bool` evaluate both sides, as ATEL's `land`
+  and `lor` do, so the decompiler writes those; `&&` and `||`
+  short-circuit as in C# and compile to branches. How an `int` used as a
+  condition is written so that it compiles back to the same bytes (`x !=
+  0` may or may not have been in the original) is settled in Phase 3.
+- `int` is 32-bit and wraps (C#'s default `unchecked`; `checked` is an
+  error); `float` is `f32`; unsigned compares follow the operand types.
+- Not available, with an analyzer error naming the construct: classes
+  with `new`, `string` (outside `Debug`), collections, generics beyond the
+  reference assembly's, lambdas and delegates, exceptions, LINQ,
+  recursion, anything from the .NET base library.
+- Escape hatches for the round trip: `Asm("""…""");`, a raw string in the
+  existing assembly syntax, for code the decompiler cannot express yet,
+  and attributes that pin layout details (constant-pool order, a
+  variable's storage area and offset, unknown header data).
+
+## Toolchain
+
+A .NET 10 solution in `ffx-rust`, `atel/` (MIT OR Apache-2.0, as the rest;
+Roslyn is MIT):
+
+| Project | Does |
+|---|---|
+| `Ffx.Atel.Bytecode` | script files, disassembler and assembler (our own `ffx-script` crate, ported); a test checks both agree on all 758 scripts |
+| `Ffx.Atel.Game` | the reference assembly: natives, properties, enums, `Save`, `Story`, `Priority`, base classes, `Task`; generated from `ffx script natives --json` and the signature tables |
+| `Ffx.Atel.Decompiler` | bytecode to C# syntax trees (Roslyn `SyntaxFactory`), the formatter |
+| `Ffx.Atel.Compiler` | a Roslyn compilation of a project to ATEL: lowering, register allocation, layout |
+| `Ffx.Atel.Analyzers` | the subset rules, ATL warnings, code fixes |
+| `Ffx.Atel.Linker` | applies compiled mod packages to vanilla scripts in load order; a library (Fahrenheit can load it directly) and a NativeAOT command for the Rust launcher |
+| `Ffx.Atel.Cli` | `atel decompile`, `atel compile`, `atel link`, `atel roundtrip` |
+| `Ffx.Atel.Sdk` | NuGet package: reference assembly, analyzers and MSBuild targets, so `dotnet build` of a mod project writes the mod package |
 
 ## Compiler output
 
 - One script file (`.ebp`, monster or battle file) with the rebuilt script
-  block, through `Script::rebuild`.
+  block (vanilla source, hand edits).
+- A mod package: the mod's compiled code and data only, with the vanilla
+  points it attaches to (see "Mods").
 - A package for runtime injection: the bytecode plus any message additions,
   so a debugger or mod can load it into a running game and extend the
   event's message table in memory (ctrl work `+0x34`).
 
 ## Mods
 
-- The launcher builds on the player's machine: it decompiles the player's
-  own vanilla scripts, applies the enabled mods in load order, compiles
-  each affected script once and writes the results to a generated folder
-  that the hook serves like any mod file. Vanilla files are never edited;
-  disabling a mod is a rebuild without it. No mod contains game code.
+- The modder builds with their own game: `dotnet build` compiles the mod
+  against the decompiled vanilla source and writes a package with only the
+  mod's code, fields, entries and messages. No package contains game code.
 - A mod changes an existing worker with `partial class Wakka { … }` and adds
-  new workers, entries, fields and messages by name; every number is
-  assigned at build time.
+  new workers, entries, fields and messages by name. The package refers to
+  vanilla by script, worker, entry and field, plus a hash of each vanilla
+  part it attaches to.
+- The launcher links on the player's machine, with no compiler: it checks
+  the hashes against the player's files, applies the enabled packages in
+  load order, assigns every new number (entries, workers, variable
+  offsets, message indices) and writes the results to a generated folder
+  that the hook serves like any mod file. Vanilla files are never edited;
+  disabling a mod is a relink without it.
 - Patches on entries, after Harmony and Mixins: `[Prefix(nameof(OnTalk))]`,
   `[Postfix(…)]`, `[Inject(…)]` at a point inside an entry, `[Replace(…)]`;
   ordering with `[Before("mod")]` / `[After("mod")]`.
@@ -243,6 +317,8 @@ carries only entry, worker and priority. The compiler provides both:
 - The launcher shows a conflict report before the game starts: what two
   mods both touch and who wins. Additions and prefix/postfix chains combine
   automatically; replacements and same-field edits are reported conflicts.
+  A hash mismatch (another game version, a mod built on edited vanilla) is
+  reported too.
 - Open: saved data for mods. The save has no known free space; storage 3
   can be redirected through the ctrl work's `+0x54` callback, which nothing
   uses, so the hook might give each mod its own saved variables in a side
@@ -254,9 +330,9 @@ carries only entry, worker and priority. The compiler provides both:
 
 ## Phases
 
-Each phase ends with a corpus test in `ffx-rust` (`FFX_GAME_DIR`, skipped
-without it) and numbers: scripts that round-trip, instructions inside `asm`,
-`goto` count, names placed.
+Each phase ends with a corpus test (`FFX_GAME_DIR`, skipped without it)
+and numbers: scripts that round-trip, instructions inside `Asm`, `goto`
+count, names placed.
 
 0. **Measure the corpus** (2–3 days). Stack depth at labels and jumps; jump
    shapes; encoding choices (immediate vs pool, `func` vs `func_facc`,
@@ -268,34 +344,36 @@ without it) and numbers: scripts that round-trip, instructions inside `asm`,
    values by the script that sets them; whether `UseCommand` checks the
    monster's command list; near-duplicate workers; whether anything stores
    entry numbers (saves); unreachable code; `CDfileSize_CD_EX` on PC.
-1. **Native signatures and libraries** (3–5 days). Argument count, kinds,
-   result and polling for every native, from the Rust ports and from stack
-   balance, compared. Generated from it: the Atel library declarations
-   (natives, enums, `Save`, `Story`, `Priority`, base classes).
-2. **Skeleton round trip** (1 week). New crate `crates/ffx-atel`;
-   `ffx script decompile` and `ffx script compile`. Declarations plus every
-   entry as `asm { … }`; a hand-written parser; every script round-trips.
+1. **Native signatures and the reference assembly** (3–5 days). Argument
+   count, kinds, result and polling for every native, from the Rust ports
+   and from stack balance, compared; exported as JSON. Generated from it:
+   `Ffx.Atel.Game`.
+2. **Skeleton round trip** (1–1.5 weeks). The solution, `Ffx.Atel.Bytecode`
+   with the cross-check against `ffx-script`, `atel decompile` and `atel
+   compile`. Declarations plus every entry as `Asm("""…""")`; every script
+   round-trips.
 3. **Expressions and statements** (1 week). Stack code to expressions and
    calls, registers to locals and `[Register]` fields.
 4. **Control flow** (1–2 weeks). `if`/`while`/`switch`/`goto case`, label
-   order and branch polarity matching the original. Exit: no `asm` left.
+   order and branch polarity matching the original. Exit: no `Asm` left.
 5. **Typing and naming** (ongoing). Enums by use, properties, text IDs,
    story constants, base classes and engine entries, Fahrenheit's names.
-6. **Source layout.** Folders, one file per worker, `partial`, `using`,
-   library base classes for duplicated workers.
+6. **Source layout.** Folders, one file per worker, `partial`, project
+   granularity, library base classes for duplicated workers.
 7. **The private repo.** `yutamago/ffx-atel-src`; a `generated` branch
    written only by the tool and a `main` branch for hand edits, merged with
    git; the round-trip check runs locally (it needs the game). Commits as
    Yutamago, no user paths.
-8. **Tooling.** TextMate grammar; a language server (completion of natives
-   and enums, hover, text inlays, warnings, saved-locals and register
-   hints); the formatter (the decompiler's printer).
-9. **Mod system.** `mod.toml`, patch attributes, the launcher's build step,
+8. **Tooling.** Analyzers and code fixes, the SDK package, the editor
+   extension for message text (VS Code, Rider). No grammar, parser or
+   language server of our own.
+9. **Mod system.** Package format, `Ffx.Atel.Linker` (library and NativeAOT
+   command), the launcher's link step, `mod.toml`, patch attributes,
    per-field data edits, the conflict report.
 10. **Debug text and runtime packages.** The `Debug.*` natives in a free
     group (hook and Fahrenheit), the injection package.
-11. **Documentation.** A language reference, the encoding rules, a
-    first-mod tutorial.
+11. **Documentation.** A language reference (which C# is Atel), the
+    encoding rules, a first-mod tutorial.
 
 Phases 0–4: about 5–7 weeks to a fully structured, byte-identical decompile
 of every script. 5–11 follow and partly run alongside.
@@ -303,5 +381,5 @@ of every script. 5–11 follow and partly run alongside.
 ## Out of scope for now
 
 - Running something other than the ATEL VM (the old L2 idea of running
-  Luau). Atel compiles to ATEL bytecode, so the existing Rust interpreter
-  and the oracle's byte parity keep working.
+  Luau, or running the C# on .NET). Atel compiles to ATEL bytecode, so the
+  existing Rust interpreter and the oracle's byte parity keep working.
