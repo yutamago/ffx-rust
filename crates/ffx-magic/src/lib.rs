@@ -85,6 +85,8 @@ pub mod s5_misc;
 pub mod s6_misc;
 // the shared work list's seventh round (shared-7)
 pub mod s7_misc;
+// the shared work list's eighth round (shared-8, worklist5)
+pub mod s8_misc;
 
 // census2: functions the old census hid inside merged rows
 pub mod sf_hidden;
@@ -2469,6 +2471,28 @@ ports! {
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
+    // round 8, shared-8 (s8_misc)
+    "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
+    "reel game phases" => s8_misc::REEL_GAME_PHASES, s8_misc::reel_game_phases;
+    "table flight step (a)" => s8_misc::TABLE_FLIGHT_STEP_A, s8_misc::table_flight_step;
+    "table flight step (b)" => s8_misc::TABLE_FLIGHT_STEP_B, s8_misc::table_flight_step;
+    "summon start task (0248)" => s8_misc::SUMMON_START_TASK_0248, s8_misc::summon_start_task_0248;
+    "opu boot (6 MiB)" => s8_misc::OPU_BOOT_6M, s8_misc::opu_boot_6m;
+    "parts placed" => s8_misc::PARTS_PLACED, s8_misc::parts_placed;
+    "weapon point" => s8_misc::WEAPON_POINT, s8_misc::weapon_point;
+    "staged script" => s8_misc::STAGED_SCRIPT, s8_misc::staged_script;
+    "summon frame (camera rigs)" => s8_misc::SUMMON_FRAME_RIGS, s8_misc::summon_frame_rigs;
+    "summon frame (camera rigs, fade)" => s8_misc::SUMMON_FRAME_FADE, s8_misc::summon_frame_fade;
+    "object, fan, two fades" => s8_misc::OBJECT_FAN_TWO_FADES, s8_misc::object_fan_two_fades;
+    "object, fan, two fades (b)" => s8_misc::OBJECT_FAN_TWO_FADES_B, s8_misc::object_fan_two_fades;
+    "objects freed, fan, fade" => s8_misc::OBJECTS_FREED_FAN_FADE, s8_misc::objects_freed_fan_fade;
+    "emitter sounds" => s8_misc::EMITTER_SOUNDS, s8_misc::emitter_sounds;
+    "model effect placed" => s8_misc::MODEL_EFFECT_PLACED, s8_misc::model_effect_placed;
+    "summon frame (colours)" => s8_misc::SUMMON_FRAME_COLOURS, s8_misc::summon_frame_colours;
+    "summon frame (colours, b)" => s8_misc::SUMMON_FRAME_COLOURS_B, s8_misc::summon_frame_colours_b;
+    "thunk: bone node" => s8_misc::CALL_BONE_NODE, s8_misc::ecx_call;
+    "light swing" => s8_misc::LIGHT_SWING, s8_misc::light_swing;
+    // round 8, shared-8 (s8_misc): end of ports
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
@@ -3371,6 +3395,13 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
     ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
+    // round 8, shared-8 (s8_misc)
+    ("object node", &s8_misc::OBJECT_NODE),
+    ("child object set-up", &s8_misc::CHILD_OBJECT_SETUP),
+    ("bone node", &s8_misc::BONE_NODE),
+    ("spark burst", &s8_misc::SPARK_BURST),
+    ("mesh bounds", &s8_misc::MESH_BOUNDS),
+    // round 8, shared-8 (s8_misc): end of INTERNAL
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",
