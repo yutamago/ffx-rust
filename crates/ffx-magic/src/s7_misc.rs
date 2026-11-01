@@ -1817,3 +1817,100 @@ pub const RANDOM_PART: Sig = Sig {
     calls: &[],
     imports: &[(0x16, "rand"), (0x38, "rand")],
 };
+
+/// A stream's next block sent (internal: `ecx` = the state `S` (u16 `+0`
+/// the block, u16 `+2` the bytes in it), `edx` = the table `T` (i16
+/// `+6` the count; entry `i` at `T + 8 (i + 2)`: i16 `+0` its data's
+/// offset from `T`, u16 `+2` its length), the stack word `A`; a
+/// frame, `ebp` = `esp - 4` at the entry, the local `L = T` at
+/// `ebp-0x10`). `S` is a 64-bit handle `(S, sign)`; every slot call runs
+/// with `**G_LOCK` 1 and puts the word back after (except the second of
+/// a pair). Past the last block: slot 779 `(S, sign)` and 0. Else with
+/// the block's data `E`: slot 773 `(S, sign)` says whether it is open;
+/// open, slot 774 `(S, sign, &L, A, block)` and slot 775 `(S, sign)`;
+/// not, the rate byte `E + E[1] + 4` (0: 0x48) through slot 776 and
+/// slot 777 `(A+0x1c)` give flags `F` and slot 778 `(S, sign, &L, A,
+/// block, F)`. Then `S+2 += 0x100`; at the block's length or past it the
+/// block goes up and `S+2` keeps the rest, and past the count the state
+/// is cleared. Returns 1.
+///
+/// `magic_0150` 0x10003f60 (422 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn stream_block<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (s, t) = (fr.ecx, fr.edx);
+    let a = fr.arg(g, 0);
+    // `cdq`: the state's address as a signed 64-bit handle
+    let hi = if s.cast_signed() < 0 { u32::MAX } else { 0 };
+    let ebp = fr.esp.wrapping_sub(4);
+    let local = ebp.wrapping_sub(0x10);
+    let count = i32::from(g.read::<i16>(t + 6));
+    let block = g.read::<u16>(s);
+    let lock = |g: &G, o: u32| g.read::<u32>(w(o));
+    // a slot call with the lock word 1, the old word returned
+    let locked = |g: &mut G, o: u32| {
+        let l = lock(g, o);
+        let saved = g.read::<u32>(l);
+        g.write::<u32>(l, 1);
+        saved
+    };
+    if i32::from(block) >= count {
+        let saved = locked(g, 0x27);
+        let l = lock(g, 0x27);
+        slot(g, img, f, 0x2d, 779, l, &[s, hi]);
+        let l = lock(g, 0x42);
+        g.write::<u32>(l, saved);
+        return 0;
+    }
+    let entry = t.wrapping_add(8 * (u32::from(block) + 2));
+    let e = i32::from(g.read::<i16>(entry))
+        .cast_unsigned()
+        .wrapping_add(t);
+    g.write::<u32>(local, t);
+    let saved = locked(g, 0x68);
+    let open = slot(g, img, f, 0x77, 773, saved, &[s, hi]).eax;
+    let l = lock(g, 0x88);
+    g.write::<u32>(l, saved);
+    if open != 0 {
+        let block = u32::from(g.read::<u16>(s));
+        g.write::<u32>(l, 1);
+        slot(g, img, f, 0xa7, 774, saved, &[s, hi, local, a, block]);
+        let l = lock(g, 0xbe);
+        g.write::<u32>(l, 1);
+        slot(g, img, f, 0xcc, 775, saved, &[s, hi]);
+        let l = lock(g, 0xdd);
+        g.write::<u32>(l, saved);
+    } else {
+        let rate = g.read::<u8>(g.read::<u32>(e + 4).wrapping_add(e).wrapping_add(4));
+        let rate = if rate == 0 { 0x48 } else { u32::from(rate) };
+        let x = slot(g, img, f, 0x100, 776, saved, &[rate]).eax;
+        let y = g.read::<u32>(a + 0x1c);
+        let flags = x | slot(g, img, f, 0x112, 777, saved, &[y]).eax;
+        let block = u32::from(g.read::<u16>(s));
+        let saved = locked(g, 0x12a);
+        let args = [s, hi, local, a, block, flags];
+        slot(g, img, f, 0x149, 778, saved, &args);
+        let l = lock(g, 0x159);
+        g.write::<u32>(l, saved);
+    }
+    let n = g.read::<u16>(s + 2).wrapping_add(0x100);
+    g.write::<u16>(s + 2, n);
+    let len = g.read::<u16>(entry + 2);
+    if i32::from(n) >= i32::from(len.cast_signed()) {
+        let b = g.read::<u16>(s).wrapping_add(1);
+        g.write::<u16>(s, b);
+        g.write::<u16>(s + 2, n.wrapping_sub(len));
+        if i32::from(b) >= i32::from(g.read::<i16>(t + 6)) {
+            g.write::<u32>(s, 0);
+        }
+    }
+    1
+}
+
+/// [`stream_block`].
+pub const STREAM_BLOCK: Sig = Sig {
+    len: 422,
+    hash: 0xf565_585c_b593_e295,
+    calls: &[],
+    imports: &[],
+};

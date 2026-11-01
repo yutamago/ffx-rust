@@ -1567,3 +1567,87 @@ fn random_parts() {
         }
     }
 }
+
+/// Row 193: a stream's next block in the five DLLs: past the last block,
+/// an open block and a closed one (rate 0 and not), the block's bytes
+/// below and at its length, the last block ending the stream; the
+/// state at a negative address (the handle's sign word).
+#[test]
+fn stream_blocks() {
+    for (dll, rva) in [
+        (150u16, 0x3f60u32),
+        (153, 0x1650),
+        (295, 0x1650),
+        (374, 0x1770),
+        (603, 0x3f60),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let log = SCRATCH + 0x6000;
+        let lock = SCRATCH + 0x2f0;
+        let lg = op(&t, f, 0x27);
+        t.set_u32(lg, lock);
+        let open = SCRATCH + 0x2f4;
+        for (s, n) in [(773u32, 2usize), (775, 2), (779, 2)] {
+            log_calls(&mut t, s, log, n, Some(lg), move |m, a, k| {
+                if s == 773 { m.r32(open) } else { a[0] ^ k }
+            });
+        }
+        for (s, n) in [(774u32, 5usize), (778, 6)] {
+            log_calls(&mut t, s, log, n, Some(lg), move |m, a, k| {
+                // the local the original hands over
+                let row = log + 0x400 + 0x10 * (k % 8);
+                m.w32(row, m.r32(a[2]));
+                m.w32(a[2], 0x7777_0000 + k);
+                a[3] ^ k
+            });
+        }
+        log_calls(&mut t, 776, log, 1, None, |_, a, _| a[0] << 8);
+        log_calls(&mut t, 777, log, 1, None, |_, a, _| a[0] & 0xff);
+        let tbl = SCRATCH + 0x1000;
+        let a = SCRATCH + 0x800;
+        // (state at, block, bytes, open, rate, count)
+        for (k, (s, block, bytes, op_, rate, len)) in [
+            (SCRATCH + 0x300, 3u16, 0u16, 0u32, 0u8, 0x200u16),
+            (SCRATCH + 0x300, 0, 0, 1, 0, 0x200),
+            (SCRATCH + 0x300, 1, 0x100, 1, 0, 0x200),
+            (SCRATCH + 0x300, 2, 0x180, 0, 0, 0x200),
+            (SCRATCH + 0x300, 2, 0x180, 0, 7, 0x8000),
+            (SCRATCH + 0x300, 1, 0x40, 0, 0x30, 0x100),
+            (0x9000_0000, 0, 0, 1, 0, 0x200),
+            (0x9000_0000, 5, 0, 1, 0, 0x200),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            t.set_u32(log, 0);
+            t.set_u32(lock, 0x0bad_0000 + k);
+            t.set_u32(open, op_);
+            t.write(s, &varied(8, k));
+            t.set_u16(s, block);
+            t.set_u16(s + 2, bytes);
+            t.write(tbl, &varied(0x100, k));
+            t.set_u16(tbl + 6, 3);
+            for i in 0..3u32 {
+                let e = tbl + 8 * (i + 2);
+                t.set_u16(e, (0x40 + 0x20 * i) as u16);
+                t.set_u16(e + 2, len);
+                // the data: `+4` the rate's offset from it
+                let d = tbl + 0x40 + 0x20 * i;
+                t.set_u32(d + 4, 8);
+                t.set_u8(d + 0xc, rate);
+            }
+            t.write(a, &varied(0x40, k + 1));
+            scrub(&mut t);
+            let c = Call {
+                ecx: s,
+                edx: tbl,
+                ..Call::default()
+            };
+            t.check(f, c, &[a], Eax::Checked, |g, img, fr| {
+                Ret::eax(s7_misc::stream_block(g, img, fr))
+            });
+        }
+    }
+}

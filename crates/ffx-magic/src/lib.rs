@@ -2956,6 +2956,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("look matrix", &s7_misc::LOOK_MATRIX),
     ("moving light node", &s7_misc::MOVING_LIGHT_NODE),
     ("spark at a point", &s7_misc::SPARK_AT_POINT),
+    ("stream block", &s7_misc::STREAM_BLOCK),
     // round 6, the shape families (o6_fam_*)
     (
         "o6 fam pool pool_reset_take 0180@2140",
