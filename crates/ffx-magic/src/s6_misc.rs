@@ -18,7 +18,7 @@ use crate::s4_misc::{
 use crate::s4_small::{FADER_TASK, fader_task};
 use crate::s4_summon::trunc;
 use crate::s5_misc::list_push;
-use crate::sa_misc::{SPRITE_FADE, sprite_fade};
+use crate::sa_misc::{LINK_PART, SPRITE_FADE, link_part, sprite_fade};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_SLOT256, actor_slot256};
 use crate::sb_misc::{
@@ -2544,5 +2544,89 @@ pub const TURNING_PATH_STEP: Sig = Sig {
         (0x6c, Callee::Sig(&EASE_SAMPLE)),
         (0x179, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// A part's per-frame step with its keyed motion (internal: `ecx` = the
+/// part `P`, `edx` = a 3x3 matrix `R`; a /GS frame): the screen and
+/// camera matrices into locals (slots 723, 724), a third local `M` made
+/// a unit one (slot 235; `*G_M = M`, `*G_N = 0`), `*G_A = P+0x1c`, `M`'s
+/// three rows `R`'s scaled by `P+0x20`, and `P+0xc` through the camera
+/// into a local point (slot 229). The key table is slot 941 `(P[0])`;
+/// while `P+4` is set the key's time `P+0xa` runs down by 0x200, and at
+/// its end the key `P+8` steps on: past the last (`table+6`) it wraps to
+/// 0 when the last key's byte `+4` has bit 7, else it stays on the last
+/// and `P+4` is cleared; a new key takes its time from its record
+/// (`table + 0x10 + 8 key + 2`). Then [`link_part`] `(P, the key's record,
+/// G_O, 0)`. Returns its `eax`.
+///
+/// `magic_0180` 0x10001080 (419 bytes, `ecx`/`edx`; 5 DLLs).
+pub fn keyed_part_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (p, r) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let [screen, cam, m, pt] = [0xccu32, 0x8c, 0x4c, 0x1c].map(|o| ebp.wrapping_sub(o));
+    slot(g, img, f, 0x1d, 723, &[screen]);
+    slot(g, img, f, 0x38, 724, &[cam]);
+    g.write::<u32>(w(0x4b), m);
+    g.write::<u32>(w(0x57), 0);
+    slot(g, img, f, 0x51, 235, &[m]);
+    let a = g.read::<u32>(p + 0x1c);
+    g.write::<u32>(w(0x6b), a);
+    let s = g.read::<f32>(p + 0x20);
+    for o in [0u32, 4, 8, 0x10, 0x14, 0x18, 0x20, 0x24, 0x28] {
+        let x = mul(g.read::<f32>(r + o), s);
+        g.write::<f32>(m + o, x);
+    }
+    slot(g, img, f, 0xb9, 229, &[pt, cam, p + 0xc]);
+    let d = g.read::<u32>(p);
+    let table = slot(g, img, f, 0x111, 941, &[d]).eax;
+    let rec = |key: u16| table.wrapping_add(8 * (i32::from(key.cast_signed()) + 2).cast_unsigned());
+    let key = g.read::<u16>(p + 8);
+    let mut at = rec(key);
+    if g.read::<u32>(p + 4) != 0 {
+        let time = g.read::<u16>(p + 0xa).wrapping_add(0xfe00);
+        g.write::<u16>(p + 0xa, time);
+        if time.cast_signed() <= 0 {
+            let next = key.wrapping_add(1);
+            g.write::<u16>(p + 8, next);
+            let new_key = if next.cast_signed() < g.read::<i16>(table.wrapping_add(6)) {
+                true
+            } else if g.read::<u8>(at.wrapping_add(4)) & 0x80 != 0 {
+                g.write::<u16>(p + 8, 0);
+                true
+            } else {
+                g.write::<u16>(p + 8, key);
+                g.write::<u32>(p + 4, 0);
+                false
+            };
+            if new_key {
+                at = rec(g.read::<u16>(p + 8));
+                let t = g.read::<u16>(at.wrapping_add(2));
+                g.write::<u16>(p + 0xa, t);
+            }
+        }
+    }
+    // push 0, push G_O; call: the callee's frame
+    let esp = ebp.wrapping_sub(0xe0);
+    g.write::<u32>(esp + 4, w(0x185));
+    g.write::<u32>(esp + 8, 0);
+    let link = Frame {
+        at: img.rel32_target(f + 0x18c),
+        esp,
+        ecx: p,
+        edx: at,
+        ..*fr
+    };
+    link_part(g, img, &link)
+}
+
+/// [`keyed_part_step`] (the `rel32`s: [`link_part`] and
+/// `__security_check_cookie`).
+pub const KEYED_PART_STEP: Sig = Sig {
+    len: 419,
+    hash: 0x0c17_279d_cae8_af64,
+    calls: &[(0x18c, Callee::Sig(&LINK_PART)), (0x19b, Callee::Any)],
     imports: &[],
 };

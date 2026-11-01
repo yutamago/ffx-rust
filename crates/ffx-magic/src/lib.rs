@@ -2377,6 +2377,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("parts ring", &s6_misc::PARTS_RING),
     ("live parts axes", &s6_misc::LIVE_PARTS_AXES),
     ("turning path step", &s6_misc::TURNING_PATH_STEP),
+    ("keyed part step", &s6_misc::KEYED_PART_STEP),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

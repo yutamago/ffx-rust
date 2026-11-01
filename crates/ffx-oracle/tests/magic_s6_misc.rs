@@ -1817,3 +1817,86 @@ fn turning_paths_stepped() {
         });
     }
 }
+
+/// Row 192: `magic_0180`'s keyed part step: the motion off, a key
+/// running, a key ending (the next key, the last key wrapping and
+/// holding), the part linked (registered and not).
+#[test]
+#[allow(clippy::too_many_lines)] // the callees' slots
+fn keyed_parts_stepped() {
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x1080);
+    rec_mem(&mut t, 723, 1, 16, Some(0));
+    rec_mem(&mut t, 724, 1, 16, Some(0));
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    // (the point's 4 words: 16 would reach the frame's cookie)
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    let table = SCRATCH + 0x3000;
+    rec(&mut t, 941, 1, move |_, _| table);
+    // the link's slots (`sa_misc::link_part`)
+    let link = t.img.rel32_target(f + 0x18c);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(op(&t, link, 0x4f), lock);
+    let loaded = SCRATCH + 0x7e0;
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    rec_lock(&mut t, 773, 2, lock, move |m, _| m.r32(loaded));
+    rec_lock(&mut t, 774, 5, lock, |_, _| 0x774);
+    rec_lock(&mut t, 775, 2, lock, |_, _| 0x775);
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 | (a[0] << 4));
+    rec(&mut t, 777, 1, |_, a| 0x0777_0001 ^ a[0]);
+    rec_lock(&mut t, 778, 6, lock, |_, _| 0x778);
+    let p = SCRATCH + 0x300;
+    let r = SCRATCH + 0x400;
+    let owner = op(&t, f, 0x185);
+    // (on, key, time, count, the last key's byte, registered)
+    for (k, (on, key, time, count, byte, reg)) in [
+        (0u32, 1u16, 0x400u16, 4i16, 0u8, 1u32),
+        (1, 1, 0x400, 4, 0, 0),
+        (1, 1, 0x100, 4, 0, 1),
+        (1, 3, 0x200, 4, 0x80, 0),
+        (1, 3, 0x200, 4, 0x7f, 1),
+        (1, 2, 0x8100, 3, 0x81, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.set_u32(loaded, reg);
+        t.write(p, &varied(0x30, k));
+        t.set_u32(p, 0x0d00_0000 + k);
+        t.set_u32(p + 4, on);
+        t.set_u16(p + 8, key);
+        t.set_u16(p + 0xa, time);
+        t.set_u32(p + 0x20, (1.5 + k as f32).to_bits());
+        for i in 0..12u32 {
+            t.set_u32(r + 4 * i, (0.5 * i as f32 - 1.0).to_bits());
+        }
+        t.write(table, &varied(0x80, k));
+        t.set_u16(table + 6, count.cast_unsigned());
+        for i in 0..6u32 {
+            let e = table + 0x10 + 8 * i;
+            t.set_u16(e, (0x20 + 8 * i) as u16);
+            t.set_u16(e + 2, (0x300 + 0x40 * i) as u16);
+            t.set_u8(
+                e + 4,
+                if i + 1 == u32::from(count.cast_unsigned()) {
+                    byte
+                } else {
+                    0x11
+                },
+            );
+        }
+        t.write(owner, &varied(0x20, k + 1));
+        let c = Call {
+            ecx: p,
+            edx: r,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::keyed_part_step(g, img, fr))
+        });
+    }
+}
