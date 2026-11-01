@@ -1631,4 +1631,385 @@ pub mod bridge {
         cdecl(h, LISTS_DELETE, &[rsd]);
         1
     }
+
+    /// `sceOpen(path, mode)`, `sceWrite(fd, buf, n)`, `sceClose(fd)`,
+    /// `SystemOnHost(command, out)`, `rcPrint(fmt, ...)`; the out word
+    /// `SystemOnHost` gets (`0x00c498dc`).
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const SCE_WRITE: u32 = 0x0062_fdc0;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    pub const SYSTEM_ON_HOST: u32 = 0x0084_ede0;
+    pub const RC_PRINT: u32 = 0x0092_7550;
+    pub const SYSTEM_OUT: u32 = 0x00c4_98dc;
+    /// The text save's strings: the path, the error line ("Error in %s,
+    /// line %d: ", the source file, "Save(Text) Failed."), the chmod
+    /// command and its report.
+    pub const ST_PATH: u32 = 0x00b6_8a60;
+    pub const ST_ERROR: u32 = 0x00b6_7878;
+    pub const ST_FILE: u32 = 0x00b6_8a74;
+    pub const ST_FAILED: u32 = 0x00b6_8a98;
+    pub const ST_CHMOD: u32 = 0x00b6_8a3c;
+    pub const ST_SYSTEM: u32 = 0x00b6_8a4c;
+    /// The text's lines (formats): "BG {", "\tOffX %d", "\tOffY %d",
+    /// "\tAdjY %d", "}" (also each layer's end), "Layer {", "\tFlag %d",
+    /// "\tX %d", "\tY %d", "\tZ %f %f %f %f", "\tSpeedX %d", "\tSpeedY
+    /// %d", "\tAlpha %d", "\tAnime {", "\t\tDataCnt %d", "\t\tData {",
+    /// "\t\t\t%d %d %d %d", "\t\t}", "\t}", "\tPal {", "\t\tType %d",
+    /// "\t\tTime %d".
+    pub const ST_BG: u32 = 0x00b6_8aac;
+    pub const ST_OFF_X: u32 = 0x00b6_8ab4;
+    pub const ST_OFF_Y: u32 = 0x00b6_8ac0;
+    pub const ST_ADJ_Y: u32 = 0x00b6_8acc;
+    pub const ST_END: u32 = 0x00b6_8ad8;
+    pub const ST_LAYER: u32 = 0x00b6_8adc;
+    pub const ST_FLAG: u32 = 0x00b6_8ae8;
+    pub const ST_X: u32 = 0x00b6_8af4;
+    pub const ST_Y: u32 = 0x00b6_8afc;
+    pub const ST_Z: u32 = 0x00b6_8b04;
+    pub const ST_SPEED_X: u32 = 0x00b6_8b14;
+    pub const ST_SPEED_Y: u32 = 0x00b6_8b20;
+    pub const ST_ALPHA: u32 = 0x00b6_8b2c;
+    pub const ST_ANIME: u32 = 0x00b6_8b38;
+    pub const ST_DATA_CNT: u32 = 0x00b6_8b44;
+    pub const ST_DATA: u32 = 0x00b6_8b54;
+    pub const ST_FRAME: u32 = 0x00b6_8b60;
+    pub const ST_DATA_END: u32 = 0x00b6_8b70;
+    pub const ST_SUB_END: u32 = 0x00b6_8b78;
+    pub const ST_PAL: u32 = 0x00b6_8b7c;
+    pub const ST_TYPE: u32 = 0x00b6_8b88;
+    pub const ST_TIME: u32 = 0x00b6_8b94;
+    /// `rcbgSaveText`'s frame.
+    pub const SAVE_TEXT_FRAME: u32 = 0x214;
+
+    /// `rcbgSaveText`'s line writer: `sprintf(buf, fmt, args)` through
+    /// the given `sprintf`, then `sceWrite(fd, buf, strlen(buf))`.
+    fn emit(h: &mut impl Host, sprintf: u32, buf: u32, fd: u32, fmt: u32, args: &[u32]) {
+        let fmt = h.rebase(fmt);
+        let mut words = vec![buf, fmt];
+        words.extend_from_slice(args);
+        // the four f64 of the z line take ten words: the wide call
+        if words.len() > 6 {
+            h.call_wide(sprintf, &words);
+        } else {
+            h.call(sprintf, Conv::Cdecl, &words);
+        }
+        let mut n = 0_u32;
+        while h.read::<u8>(buf.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        cdecl(h, SCE_WRITE, &[fd, buf, n]);
+    }
+
+    /// `rcbgSaveText()` -> the last `rcPrint`'s `eax`: the current map's
+    /// layers written as text to `host:<dir>/txt/<name>.2d` (the
+    /// directory and name at `g_RcuiWork + 0x174`, `+ 0x27c`): the scene's
+    /// offsets (`+0x5c`, `+0x60`, `+0x64`), then per layer (`+8`, 0xc0
+    /// bytes each, `+4` of them; bit 1 of each one's flags cleared first)
+    /// its flags, x/y, the four z floats, the speeds, the alpha word, its
+    /// animation (`+0x98` count, `+0x9c` 4-byte frames) and its palette
+    /// cycle (`+0xba` type, `+0xbb` time); then the file closed and
+    /// `chmod 666` run on the host. A failed open prints the error. The
+    /// scene is read without a check (no map: the original reads address
+    /// 0x5c, as this port does). `ebp` is the original's frame (the path at
+    /// `ebp - 0x204`, the line at `- 0x104`, the scene, layer, counter and
+    /// animation pointers at `- 0x214`, `- 0x20c`, `- 0x210`, `- 0x208`).
+    #[allow(clippy::too_many_lines)]
+    pub fn save_text<H: Host>(h: &mut H, ebp: u32) -> u32 {
+        let fr = |o: u32| ebp.wrapping_sub(o);
+        let sys: u32 = h.read(h.rebase(YN_MAP_SYSTEM));
+        let map = if sys == 0 { 0 } else { h.read::<u32>(sys) };
+        let scene = if map == 0 { 0 } else { h.read(at(map, 8)) };
+        let w = work(h);
+        let mut sprintf: u32 = h.read(h.rebase(SPRINTF_SLOT));
+        let (path, buf) = (fr(0x204), fr(0x104));
+        h.write(fr(0x214), scene);
+        let fmt = h.rebase(ST_PATH);
+        h.call(
+            sprintf,
+            Conv::Cdecl,
+            &[path, fmt, at(w, 0x174), at(w, 0x27c)],
+        );
+        let fd = cdecl(h, SCE_OPEN, &[path, 0x602]);
+        if fd == u32::MAX {
+            let (e, f) = (h.rebase(ST_ERROR), h.rebase(ST_FILE));
+            cdecl(h, RC_PRINT, &[e, f, 0x34]);
+            let m = h.rebase(ST_FAILED);
+            return cdecl(h, RC_PRINT, &[m]);
+        }
+        emit(h, sprintf, buf, fd, ST_BG, &[]);
+        for (fmt, off) in [(ST_OFF_X, 0x5c), (ST_OFF_Y, 0x60), (ST_ADJ_Y, 0x64)] {
+            let v: u32 = h.read(at(scene, off));
+            emit(h, sprintf, buf, fd, fmt, &[v]);
+        }
+        emit(h, sprintf, buf, fd, ST_END, &[]);
+        let mut layer: u32 = h.read(at(scene, 8));
+        h.write(fr(0x20c), layer);
+        h.write(fr(0x210), 0_u32);
+        let mut k = 0_u32;
+        if h.read::<u32>(at(scene, 4)).cast_signed() > 0 {
+            let mut anim = at(layer, 0x98);
+            h.write(fr(0x208), anim);
+            loop {
+                emit(h, sprintf, buf, fd, ST_LAYER, &[]);
+                let f = h.read::<u32>(layer) & !2;
+                h.write(layer, f);
+                let f: u32 = h.read(layer);
+                emit(h, sprintf, buf, fd, ST_FLAG, &[f]);
+                for (fmt, off) in [(ST_X, 0xc), (ST_Y, 0x10)] {
+                    let v: u32 = h.read(at(layer, off));
+                    emit(h, sprintf, buf, fd, fmt, &[v]);
+                }
+                let mut z = Vec::with_capacity(8);
+                for off in [0x14, 0x18, 0x1c, 0x20] {
+                    let b = x87::load(h.read(at(layer, off))).to_bits();
+                    #[allow(clippy::cast_possible_truncation)] // the two halves
+                    z.extend([b as u32, (b >> 32) as u32]);
+                }
+                emit(h, sprintf, buf, fd, ST_Z, &z); // call width: 10 (two words and four f64)
+                for (fmt, off) in [(ST_SPEED_X, 0x2c), (ST_SPEED_Y, 0x30), (ST_ALPHA, 0x38)] {
+                    let v: u32 = h.read(at(layer, off));
+                    emit(h, sprintf, buf, fd, fmt, &[v]);
+                }
+                let count = |h: &H| -> i32 { h.read::<u32>(anim).cast_signed() };
+                if count(h) > 0 {
+                    emit(h, sprintf, buf, fd, ST_ANIME, &[]);
+                    let n: u32 = h.read(anim);
+                    emit(h, sprintf, buf, fd, ST_DATA_CNT, &[n]);
+                    if count(h) > 0 {
+                        emit(h, sprintf, buf, fd, ST_DATA, &[]);
+                        let mut p: u32 = h.read(at(anim, 4));
+                        let mut i = 0_i32;
+                        while i < count(h) {
+                            let b0 = u32::from(h.read::<u8>(p));
+                            let b1 = u32::from(h.read::<u8>(at(p, 1)));
+                            let b2 = i32::from(h.read::<i8>(at(p, 2))).cast_unsigned();
+                            let b3 = i32::from(h.read::<i8>(at(p, 3))).cast_unsigned();
+                            // the loop's calls read the slot each time
+                            let f: u32 = h.read(h.rebase(SPRINTF_SLOT));
+                            emit(h, f, buf, fd, ST_FRAME, &[b0, b1, b2, b3]);
+                            i += 1;
+                            p = p.wrapping_add(4);
+                        }
+                        sprintf = h.read(h.rebase(SPRINTF_SLOT));
+                        emit(h, sprintf, buf, fd, ST_DATA_END, &[]);
+                    }
+                    emit(h, sprintf, buf, fd, ST_SUB_END, &[]);
+                }
+                let ty: u8 = h.read(at(anim, 0x22));
+                if ty != 0 {
+                    emit(h, sprintf, buf, fd, ST_PAL, &[]);
+                    emit(h, sprintf, buf, fd, ST_TYPE, &[u32::from(ty)]);
+                    let time = u32::from(h.read::<u8>(at(anim, 0x23)));
+                    emit(h, sprintf, buf, fd, ST_TIME, &[time]);
+                    emit(h, sprintf, buf, fd, ST_SUB_END, &[]);
+                }
+                emit(h, sprintf, buf, fd, ST_END, &[]);
+                k = k.wrapping_add(1);
+                layer = layer.wrapping_add(0xc0);
+                anim = anim.wrapping_add(0xc0);
+                h.write(fr(0x20c), layer);
+                h.write(fr(0x208), anim);
+                h.write(fr(0x210), k);
+                let scene: u32 = h.read(fr(0x214));
+                if k.cast_signed() >= h.read::<u32>(at(scene, 4)).cast_signed() {
+                    break;
+                }
+            }
+        }
+        cdecl(h, SCE_CLOSE, &[fd]);
+        let fmt = h.rebase(ST_CHMOD);
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, fr(0x1ff)]);
+        let out: u32 = h.read(h.rebase(SYSTEM_OUT));
+        let r = cdecl(h, SYSTEM_ON_HOST, &[buf, out]);
+        let m = h.rebase(ST_SYSTEM);
+        cdecl(h, RC_PRINT, &[m, buf, r])
+    }
+
+    /// The fog window's callees: `Gu_WindowGetArg(window)`,
+    /// `user_malloc(n)`, `Gu_WindowSetArg(window, arg)`,
+    /// `Gu_WindowSetTitle(window, text)`, `Gu_WindowAddStatic(window, id,
+    /// text, x, y, w, h)`, `Gu_WindowAddButton(window, id, text, x, y, w,
+    /// h)`, `yiRender_setupFogParam(r)`, `yiRender_setupparamGS(r)`.
+    pub const GET_ARG: u32 = 0x0084_aec0;
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const SET_ARG: u32 = 0x0084_b560;
+    pub const SET_TITLE: u32 = 0x0084_b6a0;
+    pub const ADD_STATIC: u32 = 0x0084_a4d0;
+    pub const ADD_BUTTON: u32 = 0x0084_a470;
+    pub const SETUP_FOG_PARAM: u32 = 0x0090_d1b0;
+    pub const SETUP_PARAM_GS: u32 = 0x0090_d260;
+    /// `g_YiRender`, `g_YiRenderStatus` (bit 3: fog off), the fog colour
+    /// bytes (`g_YiRenderWord` 0x018df140..42) and floats (limit, near,
+    /// far: 0x018df144..4c).
+    pub const YI_RENDER: u32 = 0x0187_6e00;
+    pub const YI_RENDER_STATUS: u32 = 0x018d_ed08;
+    pub const FOG_RGB: u32 = 0x018d_f140;
+    pub const FOG_FLOATS: u32 = 0x018d_f144;
+    /// The window's title, row labels ("R", "G", "B", "LIMIT", "NEAR",
+    /// "FAR"), the "<" and ">" buttons, the switch's empty text,
+    /// "DISABLE", "ENABLE", "%03d".
+    pub const FOG_TITLE: u32 = 0x00b6_7140;
+    pub const FOG_LABELS: [u32; 6] = [
+        0x00b8_f7e8,
+        0x00b8_f7bc,
+        0x00b8_f7ac,
+        0x00b6_7150,
+        0x00b6_7158,
+        0x00b6_7160,
+    ];
+    pub const S_LEFT: u32 = 0x00b5_5220;
+    pub const S_RIGHT: u32 = 0x00b4_8250;
+    pub const S_EMPTY: u32 = 0x00b8_fbeb;
+    pub const S_DISABLE: u32 = 0x00b6_7164;
+    pub const S_ENABLE: u32 = 0x00b6_716c;
+    pub const FORMAT_03D: u32 = 0x00b5_ad90;
+
+    /// The switch's text: "DISABLE" while the fog is off.
+    fn fog_switch_text(h: &mut impl Host, window: u32) {
+        let off = h.read::<u32>(h.rebase(YI_RENDER_STATUS)) & 8 != 0;
+        let s = h.rebase(if off { S_DISABLE } else { S_ENABLE });
+        cdecl(h, SET_TEXT, &[window, 0x19, s]);
+    }
+
+    /// `yiGui_setfogparam_proc(window, msg, param)` -> 0: the fog window.
+    /// 0x8001 gives the window a zeroed 0x54-byte argument and its rows
+    /// (colour R, G, B bytes, LIMIT, NEAR, FAR floats, each with "<" and
+    /// ">"), and the on/off switch; 0x8006 flips the switch (0x19); 0x8005
+    /// steps a value by 1 and 0x8009 by 10 (the colour 0..255 unsigned,
+    /// LIMIT 0..255 and NEAR/FAR 0..9999 through `ftol`), then the renderer
+    /// takes the fog (`yiRender_setupFogParam`, `yiRender_setupparamGS`);
+    /// 0x8011 prints the values. The float steps keep their integer in the
+    /// msg argument slot (`slots + 4`, `fild` from it), as the original
+    /// does.
+    #[allow(clippy::too_many_lines)]
+    pub fn fog_param_proc(h: &mut impl Host, slots: u32, window: u32, msg: u32, param: u32) -> u32 {
+        cdecl(h, GET_ARG, &[window]);
+        let slot = slots.wrapping_add(4);
+        let rgb = |k: u32| FOG_RGB + k;
+        let flt = |k: u32| FOG_FLOATS + 4 * k;
+        match msg {
+            0x8001 => {
+                let arg = cdecl(h, USER_MALLOC, &[0x54]);
+                cdecl(h, MEMSET, &[arg, 0, 0x54]);
+                cdecl(h, SET_ARG, &[window, arg]);
+                let t = h.rebase(FOG_TITLE);
+                cdecl(h, SET_TITLE, &[window, t]);
+                let (l, r) = (h.rebase(S_LEFT), h.rebase(S_RIGHT));
+                for (k, &label) in FOG_LABELS.iter().enumerate() {
+                    let (id, y) = (1 + 4 * k as u32, 0xb * k as u32);
+                    let s = h.rebase(label);
+                    cdecl(h, ADD_STATIC, &[window, id, s, 0, y, 0x30, 10]);
+                    cdecl(h, ADD_BUTTON, &[window, id + 1, l, 0x40, y, 0x10, 10]);
+                    cdecl(h, ADD_BUTTON, &[window, id + 2, r, 0x80, y, 0x10, 10]);
+                }
+                let e = h.rebase(S_EMPTY);
+                cdecl(h, ADD_BUTTON, &[window, 0x19, e, 0, 0x42, 0x80, 10]);
+                fog_switch_text(h, window);
+            }
+            0x8006 => {
+                if param == 0x19 {
+                    let at_s = h.rebase(YI_RENDER_STATUS);
+                    let s: u32 = h.read(at_s);
+                    h.write(at_s, if s & 8 != 0 { s ^ 8 } else { s | 8 });
+                }
+                fog_switch_text(h, window);
+            }
+            0x8005 | 0x8009 => {
+                let ten = msg == 0x8009;
+                let j = param.wrapping_sub(2);
+                // the rows: 2/3 R, 6/7 G, 10/11 B, 14/15 LIMIT, 18/19 NEAR,
+                // 22/23 FAR (down, up); the others change nothing
+                if j <= 0x15 && j % 4 < 2 {
+                    let row = j / 4;
+                    let up = j % 4 == 1;
+                    if row < 3 {
+                        let p = h.rebase(rgb(row));
+                        let v: u8 = h.read(p);
+                        let v = match (ten, up) {
+                            (false, false) => {
+                                if v == 0 {
+                                    v
+                                } else {
+                                    v - 1
+                                }
+                            }
+                            (false, true) => {
+                                if v == 0xff {
+                                    v
+                                } else {
+                                    v + 1
+                                }
+                            }
+                            (true, false) => v.saturating_sub(10),
+                            (true, true) => {
+                                if v >= 0xf5 {
+                                    0xff
+                                } else {
+                                    v + 10
+                                }
+                            }
+                        };
+                        h.write(p, v);
+                    } else {
+                        let p = h.rebase(flt(row - 3));
+                        let top = if row == 3 { 0xff } else { 9999 };
+                        let x = x87::ftol(h, x87::load(h.read(p))).cast_signed();
+                        let v = match (ten, up) {
+                            (false, false) => {
+                                if x > 0 {
+                                    x - 1
+                                } else {
+                                    x
+                                }
+                            }
+                            (false, true) => {
+                                if x < top {
+                                    x + 1
+                                } else {
+                                    x
+                                }
+                            }
+                            (true, false) => {
+                                if x > 10 {
+                                    x - 10
+                                } else {
+                                    0
+                                }
+                            }
+                            (true, true) => {
+                                if x < top - 10 {
+                                    x + 10
+                                } else {
+                                    top
+                                }
+                            }
+                        };
+                        h.write(slot, v);
+                        h.write(p, x87::store(f64::from(v)));
+                    }
+                }
+                let r = h.rebase(YI_RENDER);
+                cdecl(h, SETUP_FOG_PARAM, &[r]);
+                cdecl(h, SETUP_PARAM_GS, &[r]);
+            }
+            0x8011 => {
+                for (k, y) in [(0, 2), (1, 0xd), (2, 0x18)] {
+                    cdecl(h, PRINT_SET_Y, &[y]);
+                    cdecl(h, PRINT_SET_X, &[0x54]);
+                    let v = u32::from(h.read::<u8>(h.rebase(rgb(k))));
+                    let f = h.rebase(FORMAT_03D);
+                    cdecl(h, GU_PRINTF, &[f, v]);
+                }
+                for (k, y) in [(0, 0x23), (1, 0x2e), (2, 0x39)] {
+                    let v = x87::ftol(h, x87::load(h.read(h.rebase(flt(k)))));
+                    cdecl(h, PRINT_SET_Y, &[y]);
+                    cdecl(h, PRINT_SET_X, &[0x54]);
+                    let f = h.rebase(FORMAT_D);
+                    cdecl(h, GU_PRINTF, &[f, v]);
+                }
+            }
+            _ => {}
+        }
+        0
+    }
 }

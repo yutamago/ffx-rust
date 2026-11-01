@@ -1240,4 +1240,10 @@ ported! {
         let ebp = frame.at() + l6u3::QUAD_FRAME;
         l6u3::quad(&mut mem(), ebp, [src, stats, x0, y0, x1, y1])
     }
+    // ---- round 7 (left7) (ffx_pcui::l7_pcui) ----
+    /// `(out, from, to, centre, t)`: the sphere grid token's point on its
+    /// arc (`eax` the sine's index, as the original leaves it).
+    AbmapUpdateMovingChrPos @ 0x00a5_63b0 => extern "C" fn abmap_update_moving_chr_pos(out: u32, from: u32, to: u32, centre: u32, t: u32) -> u32 {
+        ffx_pcui::l7_pcui::bridge::update_moving_chr_pos(&mut mem(), out, from, to, centre, t)
+    }
 }

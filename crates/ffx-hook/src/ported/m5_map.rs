@@ -921,4 +921,17 @@ ported! {
         let ebp = frame.at() + l7m::MODEL_FILE_FRAME;
         l7m::model_create_from_file(&mut mem(), ebp, model, path)
     }
+    /// `()` -> the last `rcPrint`'s `eax`: the current map's layers saved
+    /// as text (the original's 0x214-byte frame, its path and line, in this
+    /// shim's).
+    rcbgSaveText @ 0x0093_9b10 => extern "C" fn rcbg_save_text() -> u32 {
+        let mut frame = StackFrame::<{ (l7m::SAVE_TEXT_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + l7m::SAVE_TEXT_FRAME;
+        l7m::save_text(&mut mem(), ebp)
+    }
+    /// `(window, msg, param)` -> 0: the fog window's procedure (the float
+    /// steps keep their integer in the msg argument slot).
+    yiGui_setfogparam_proc @ 0x0091_62f0 => extern "C" fn yi_gui_setfogparam_proc(window: u32, msg: u32, param: u32; slots: u32) -> u32 {
+        l7m::fog_param_proc(&mut mem(), slots, window, msg, param)
+    }
 }

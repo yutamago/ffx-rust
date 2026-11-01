@@ -52,6 +52,13 @@ const POISON: u32 = 0xdead_beef;
 /// in `ST0`; the cave function is 1864 bytes long).
 const TRAMPOLINE: [u8; 9] = [0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3];
 
+/// After the poison (`+0x14`): `fld qword [esp+4]; fld qword [esp+0xc];
+/// call [esp+0x14]; ret`, for [`Host::call_intrinsic2`] (operands in
+/// `ST1` and `ST0`).
+const TRAMPOLINE2: [u8; 13] = [
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
+];
+
 /// Deterministic xorshift stream.
 struct Rng(u32);
 
@@ -144,6 +151,21 @@ impl Host for G<'_> {
             .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
         r.st0_f64().expect("the intrinsic's ST0")
     }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let (bx, by) = (x.to_bits(), y.to_bits());
+        let words = [
+            bx as u32,
+            (bx >> 32) as u32,
+            by as u32,
+            (by >> 32) as u32,
+            addr,
+        ];
+        let r = self
+            .0
+            .call(self.1 + 0x14, Conv::Cdecl, &words)
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f32().expect("the intrinsic's ST0")
+    }
     fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -211,6 +233,7 @@ impl Twins {
         code.push(0xc3);
         t.write(at, &code);
         t.write(at + 8, &TRAMPOLINE);
+        t.write(at + 0x14, &TRAMPOLINE2);
         t
     }
 
@@ -7345,6 +7368,65 @@ fn l6_gdraw_draw_quad_matches_the_original() {
                     0x14 - k
                 );
             }
+            t.reset();
+        }
+    });
+}
+
+// ---- round 7 (left7) (ffx_pcui::l7_pcui) ----
+
+use ffx_pcui::l7_pcui::bridge as l7u;
+
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn l7_update_moving_chr_pos_matches_the_original() {
+    // points on all sides of the centre (the angle difference past +-pi
+    // both ways), t inside and outside 0..1, the CRT's SSE2 flag both ways
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_7a10);
+        for case in 0..3000_u32 {
+            let p = |rng: &mut Rng| -> u32 {
+                match rng.below(9) {
+                    0 => 0,
+                    8 => [0xffc0_0000, 0x7fc0_0000, 0xffc0_1234][rng.below(3) as usize],
+                    1 => (rng.below(4000) as f32 - 2000.0).to_bits(),
+                    2 => ((rng.below(200) as f32 - 100.0) * 0.37).to_bits(),
+                    _ => (rng.below(600) as f32 - 300.0).to_bits(),
+                }
+            };
+            // vf00 is (0, 0, 0, 1) in the game; other values show which
+            // of its words each step adds
+            if rng.chance(2) {
+                let v: Vec<u8> = [p(&mut rng), p(&mut rng), p(&mut rng), p(&mut rng)]
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect();
+                let at = t.rebase(l7u::VU0_VF00);
+                t.patch(at, &v);
+            }
+            let centre = [p(&mut rng), p(&mut rng), p(&mut rng), rng.next()];
+            let from = [p(&mut rng), p(&mut rng), rng.next(), rng.next()];
+            let to = [p(&mut rng), p(&mut rng), rng.next(), rng.next()];
+            let (c, f, to) = (t.words(&centre), t.words(&from), t.words(&to));
+            let out = t.words(&[rng.next(); 4]);
+            let tt = [0.0_f32, 0.25, 0.5, 1.0, 0.125, -0.5, 1.5, 0.9][rng.below(8) as usize];
+            let tt = if case % 9 == 4 {
+                (rng.below(1000) as f32 / 999.0).to_bits()
+            } else {
+                tt.to_bits()
+            };
+            if rng.chance(2) {
+                let at = t.rebase(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+                t.patch(at, &1_u32.to_le_bytes());
+            }
+            let args = [out, f, to, c, tt];
+            t.check(
+                "AbmapUpdateMovingChrPos",
+                0x00a5_63b0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(l7u::update_moving_chr_pos(o, out, f, to, c, tt)),
+            );
             t.reset();
         }
     });
