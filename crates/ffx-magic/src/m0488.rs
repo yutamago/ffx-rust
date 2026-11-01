@@ -2,7 +2,7 @@
 //! code).
 
 use crate::runtime::slot_target;
-use crate::{Frame, Game, Image, Ret, Sig};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// Draws a part with a matrix (0x10001350, internal: `ecx` = the part,
 /// `edx` = a matrix): slot 258 `(part)`, slot 231 `(*G, matrix, *G)`,
@@ -145,5 +145,68 @@ pub const START_UP: Sig = Sig {
     len: 460,
     hash: 0x8018_f80d_1368_75a7,
     calls: &[(0x14a, crate::Callee::Import("memset"))],
+    imports: &[],
+};
+
+/// A spark taken and scattered around a point (0x10001000, `ecx` = the
+/// sprite pool, cdecl `(point)`): a sprite from the pool
+/// ([`crate::s4_misc::sprite_take`], the resource `*G_RES`; none: returns
+/// 0) gets its time `+0x28` 16, `+0x4..+0xc` the point's `x, y, z` each
+/// moved by `((r / R - H) * A) * B` (`r` slot 324's low 15 bits), `+0x58`
+/// slot 403 `(r / R * S)` (ST0, as `f32`; the word on the stack) and
+/// `+0x54` `r / R * T`. Returns the last draw's low 15 bits.
+pub fn spark_take<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let res = g.read::<u32>(w(0x06));
+    // push ebp; push ecx; push edi; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x0c),
+        esp: fr.esp.wrapping_sub(0x10),
+        ecx: fr.ecx,
+        edx: res,
+        ..Frame::default()
+    };
+    let spark = crate::s4_misc::sprite_take(g, img, &callee).eax;
+    if spark == 0 {
+        return Ret::eax(0);
+    }
+    g.write::<u32>(spark + 0x28, 0x10);
+    let draw = |g: &mut G, table: u32| {
+        let t = slot_target(g, w(table), 324);
+        // call width: 0
+        g.call(t, 0, &[]).eax & 0x7fff
+    };
+    let point = fr.arg(g, 0);
+    for (i, (table, ops)) in (0u32..).zip([
+        (0x1cu32, [0x43u32, 0x50, 0x58, 0x60]),
+        (0x48, [0x8a, 0x92, 0x9a, 0xa2]),
+        (0x82, [0xcd, 0xd5, 0xdd, 0xe5]),
+    ]) {
+        let r = draw(g, table);
+        let d = div(cvt(r), k(g, ops[0]));
+        let d = mul(mul(sub(d, k(g, ops[1])), k(g, ops[2])), k(g, ops[3]));
+        let v = add(d, g.read::<f32>(point + 4 * i));
+        g.write::<f32>(spark + 4 + 4 * i, v);
+    }
+    let r = draw(g, 0xc5);
+    let x = mul(div(cvt(r), k(g, 0x110)), k(g, 0x11e));
+    let t = slot_target(g, w(0x108), 403);
+    // call width: 1
+    let out = g.call(t, 0, &[x.to_bits()]);
+    g.write::<f32>(spark + 0x58, crate::ob_model::st0_f32(out.st0));
+    let r = draw(g, 0x12e);
+    let x = mul(div(cvt(r), k(g, 0x14e)), k(g, 0x156));
+    g.write::<f32>(spark + 0x54, x);
+    Ret::eax(r)
+}
+
+/// [`spark_take`] (356 bytes, 1 overlay).
+pub const SPARK_TAKE: Sig = Sig {
+    len: 356,
+    hash: 0x6275_5531_4225_6359,
+    calls: &[(0x0c, Callee::Sig(&crate::s4_misc::SPRITE_TAKE))],
     imports: &[],
 };

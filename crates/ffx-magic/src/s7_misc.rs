@@ -4889,8 +4889,10 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         if i > 0 {
             shares(g, 0x167);
         }
+        // six `mov dword [esi + d32], 0xff` (10 bytes each): the slots'
+        // flags (`+0x340 + 0x310 j` in `magic_0678`)
         for j in 0..6u32 {
-            g.write::<u32>(s + 0x340 + 0x310 * j, 0xff);
+            g.write::<u32>(s.wrapping_add(w(0x16f + 10 * j)), 0xff);
         }
         let n = g.read::<u32>(s + 0x18).wrapping_add(1);
         g.write::<u32>(s + 0x18, n);
@@ -4904,8 +4906,9 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let total = g.read::<i32>(s + 0x44);
     let j = total.wrapping_rem(5);
     let q = total.wrapping_div(5);
-    let jo = j.cast_unsigned().wrapping_mul(0x310);
-    if g.read::<u32>(s.wrapping_add(jo) + 0x340) != 0xff {
+    // the slot's stride (`imul imm32`) and its flag's displacement
+    let jo = j.cast_unsigned().wrapping_mul(w(0x1d3));
+    if g.read::<u32>(s.wrapping_add(jo).wrapping_add(w(0x1da))) != 0xff {
         return done(g, q.cast_unsigned());
     }
     let r = slot(g, img, f, 0x1e9, 307, s, &[]);
@@ -4939,9 +4942,14 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         xmm,
         ..*fr
     };
-    // `magic_0620`'s copy throws the summon object instead
+    // `magic_0620`'s copy throws the summon object instead, `magic_0677`
+    // the model object, `magic_0682` the thrown effect
     let eax = if img.matches(throw.at, &SUMMON_OBJECT_SETUP) {
         summon_object_setup(g, img, &throw)
+    } else if img.matches(throw.at, &MODEL_OBJECT_SETUP) {
+        model_object_setup(g, img, &throw)
+    } else if img.matches(throw.at, &crate::s5_misc::THROWN_EFFECT_FAR) {
+        crate::s5_misc::thrown_effect_far(g, img, &throw)
     } else {
         crate::s6_misc::thrown_effect_plain(g, img, &throw)
     };
@@ -4996,6 +5004,37 @@ pub const STAGED_VOLLEY_TASK_B: Sig = Sig {
         (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
     ],
     ..STAGED_VOLLEY_TASK
+};
+
+/// [`staged_volley_task`] in `magic_0677` (0x10006e40; its own
+/// immediates; the throw is [`model_object_setup`]).
+pub const STAGED_VOLLEY_TASK_0677: Sig = Sig {
+    len: 898,
+    hash: 0xda8f_c44e_a2e3_39fe,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&MODEL_OBJECT_SETUP)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    imports: &[],
+};
+
+/// [`staged_volley_task`] in `magic_0682` (0x100070d0; its own
+/// immediates and slot strides; the throw is
+/// [`thrown_effect_far`](crate::s5_misc::thrown_effect_far)).
+pub const STAGED_VOLLEY_TASK_0682: Sig = Sig {
+    len: 898,
+    hash: 0xab9b_cfcb_bd84_3ae4,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&crate::s5_misc::THROWN_EFFECT_FAR)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    imports: &[],
 };
 
 /// A summon's aim records set up (internal: `ecx` = the object `O`; a

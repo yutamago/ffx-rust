@@ -125,3 +125,139 @@ pub const BLEND: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The summon's objects started, by the record `R = *G_R` (0x10003c50
+/// and 0x10003e00, no arguments; the same code with their own
+/// displacements and immediates; family `P057`): the object `O = R + d1`
+/// started ([`crate::s4_misc::start_object_anim`], scale `K`, `(part,
+/// value)` from the two `push imm8`; two never-written stack words under
+/// them, which it does not read), its `+0xd0..+0xdc` from four `R`
+/// words, `+0xc4` from a fifth, `+0xd4 -= D`; the timer block `T = R +
+/// d2` (colour bytes, counts 10, a halfword 0x48) on a task node (`CB`,
+/// `+0x14` = `T`) appended to the task list; the sprite fan state `R +
+/// d3` (its colour, fields and its task:
+/// [`crate::s6_misc::sprite_fan_start`]); two fade tasks
+/// ([`crate::s3_misc::fade_task`] on `R + d4` `(1, K1, K2, 0)` and `R +
+/// d5` `(20, K2, K1, 10)`). Returns the second fade task's node.
+pub fn objects_by_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let byte = |op: u32| w(op) & 0xff;
+    let scale = k(g, 0x04);
+    let r = g.read::<u32>(w(0x0c));
+    let obj = r.wrapping_add(w(0x15));
+    crate::s4_misc::start_object_anim(
+        g,
+        img,
+        img.rel32_target(f + 0x20),
+        obj,
+        scale,
+        byte(0x1c),
+        byte(0x1a),
+    );
+    for (i, op) in (0u32..).zip([0x26u32, 0x32, 0x3e, 0x4a]) {
+        let v = g.read::<u32>(r.wrapping_add(w(op)));
+        g.write::<u32>(obj.wrapping_add(0xd0 + 4 * i), v);
+    }
+    let x = sub(g.read::<f32>(obj.wrapping_add(0xd4)), k(g, 0x66));
+    let v = g.read::<u32>(r.wrapping_add(w(0x5e)));
+    g.write::<u32>(obj.wrapping_add(0xc4), v);
+    g.write::<f32>(obj.wrapping_add(0xd4), x);
+    let timer = r.wrapping_add(w(0x82));
+    g.write::<u32>(timer + 0x81, 0x80_8080);
+    g.write::<u8>(timer + 0x80, 0x80);
+    g.write::<u16>(timer + 0x86, 0);
+    g.write::<u8>(timer + 0x85, 0);
+    g.write::<u32>(timer + 0x88, 0xa);
+    g.write::<u16>(timer + 0x98, 0x48);
+    for (o, v) in [(0x90u32, 0xau32), (0x8c, 0xa), (0x94, 0)] {
+        g.write::<u32>(timer + o, v);
+    }
+    let node = take(g, img, img.rel32_target(f + 0xd9), w(0x74));
+    g.write::<u32>(node.wrapping_add(0x14), timer);
+    crate::r12h_start::append(g, img, f, node, [0xdf, 0xf2, 0x112, 0x104, 0x112]);
+    let fan = r.wrapping_add(w(0x10d));
+    g.write::<u32>(fan + 0xf0, 0x4080_8080);
+    g.write::<u16>(fan + 0x124, 4);
+    for (o, v) in [
+        (0x120u32, 0u32),
+        (0x110, 0),
+        (0xf8, 0x3ca3_d70a),
+        (0xfc, 0x3c23_d70a),
+        (0x100, 0),
+    ] {
+        g.write::<u32>(fan + o, v);
+    }
+    // push esi; push edi; the return address
+    let callee = Frame {
+        at: img.rel32_target(f + 0x15f),
+        esp: fr.esp.wrapping_sub(0xc),
+        ecx: fan,
+        ..Frame::default()
+    };
+    crate::s6_misc::sprite_fan_start(g, img, &callee);
+    let mut eax = 0;
+    for (state, edx, xmm1, xmm2, word, call, esp) in [
+        (
+            0x177u32,
+            w(0x17c),
+            0x16f,
+            0x167,
+            0,
+            0x181,
+            fr.esp.wrapping_sub(0x10),
+        ),
+        (
+            0x199,
+            w(0x19e),
+            0x191,
+            0x189,
+            byte(0x196),
+            0x1a3,
+            fr.esp.wrapping_sub(0x14),
+        ),
+    ] {
+        g.write::<u32>(esp + 4, word);
+        let callee = Frame {
+            at: img.rel32_target(f + call),
+            esp,
+            ecx: r.wrapping_add(w(state)),
+            edx,
+            xmm: [
+                0,
+                u128::from(g.read::<u32>(w(xmm1))),
+                u128::from(g.read::<u32>(w(xmm2))),
+                0,
+            ],
+            ..Frame::default()
+        };
+        eax = crate::s3_misc::fade_task(g, img, &callee);
+    }
+    Ret::eax(eax)
+}
+
+/// [`objects_by_record`]'s callees.
+const OBJECTS_BY_RECORD_CALLS: &[(u32, Callee)] = &[
+    (0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    (0xd9, Callee::Sig(&crate::sa_pool::TAKE)),
+    (0x15f, Callee::Sig(&crate::s6_misc::SPRITE_FAN_START)),
+    (0x181, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+    (0x1a3, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+];
+
+/// [`objects_by_record`] at 0x10003c50.
+pub const OBJECTS_BY_RECORD_3C50: Sig = Sig {
+    len: 429,
+    hash: 0x26f5_32ee_3f5d_b7bf,
+    calls: OBJECTS_BY_RECORD_CALLS,
+    imports: &[],
+};
+
+/// [`objects_by_record`] at 0x10003e00.
+pub const OBJECTS_BY_RECORD_3E00: Sig = Sig {
+    len: 429,
+    hash: 0xaaf8_6f67_511d_4db2,
+    calls: OBJECTS_BY_RECORD_CALLS,
+    imports: &[],
+};

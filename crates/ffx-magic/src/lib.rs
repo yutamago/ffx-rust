@@ -51,7 +51,9 @@ pub mod part_draw;
 pub mod pe;
 pub mod pushes;
 // round 9, own rows below 0450 (magic-r9-own): the load-step family
+pub mod r12h_fam;
 pub mod r12h_start;
+pub mod r12h_volley;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -338,6 +340,7 @@ pub mod m0591;
 pub mod m0596;
 pub mod m0597;
 pub mod m0598;
+pub mod m0599;
 pub mod m0601;
 pub mod m0602;
 pub mod m0604;
@@ -1087,6 +1090,17 @@ ports! {
     "m0688 script step" => m0688::SCRIPT_STEP, m0688::script_step;
     "m0688 spark" => m0688::SPARK, m0688::spark;
     "m0476 task" => m0476::TASK, m0476::task;
+    "m0476 start" => m0476::START, m0476::start;
+    "m0476 cue start" => m0638::CUE_START_0476, m0638::cue_start;
+    "r12h short volley task 0495" => r12h_volley::SHORT_VOLLEY_TASK_0495, r12h_volley::short_volley_task;
+    "r12h short volley task 0500" => r12h_volley::SHORT_VOLLEY_TASK_0500, r12h_volley::short_volley_task;
+    "m0589 objects by record 3c50" => m0589::OBJECTS_BY_RECORD_3C50, m0589::objects_by_record;
+    "m0589 objects by record 3e00" => m0589::OBJECTS_BY_RECORD_3E00, m0589::objects_by_record;
+    "m0488 spark take" => m0488::SPARK_TAKE, m0488::spark_take;
+    "r12h object swap 0511" => r12h_fam::OBJECT_SWAP_0511, r12h_fam::object_swap;
+    "r12h object swap 0589" => r12h_fam::OBJECT_SWAP_0589, r12h_fam::object_swap;
+    "m0599 start" => m0599::START, m0599::start;
+    "m0599 sprites setup" => m0599::SPRITES_SETUP, m0599::sprites_setup;
     "m0664 look draw" => m0664::LOOK_DRAW, m0664::look_draw;
     "m0664 look draw fade" => m0664::LOOK_DRAW_FADE, m0664::look_draw_fade;
     "m0672 cue start" => m0638::CUE_START_0672, m0638::cue_start;
@@ -2602,6 +2616,8 @@ ports! {
     "summon load objects" => s7_misc::SUMMON_LOAD_OBJECTS, s7_misc::summon_load_objects;
     "staged volley task" => s7_misc::STAGED_VOLLEY_TASK, s7_misc::staged_volley_task;
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
+    "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
+    "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)

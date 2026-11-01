@@ -219,3 +219,11 @@ pub const CUE_START_0596: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&crate::m0596::START2))],
     imports: &[],
 };
+
+/// [`cue_start`] in `magic_0476` (0x100012b0).
+pub const CUE_START_0476: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&crate::m0476::START))],
+    imports: &[],
+};

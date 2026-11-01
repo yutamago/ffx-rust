@@ -3850,6 +3850,8 @@ fn staged_volley_tasks() {
         (679, 0x6db0),
         (620, 0x6d80),
         (676, 0x6d80),
+        (677, 0x6e40),
+        (682, 0x70d0),
     ] {
         staged_volley_in(dll, rva);
     }
@@ -3918,19 +3920,59 @@ fn staged_volley_in(dll: u16, rva: u32) {
     });
     rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
     let throw = t.img.rel32_target(f + 0x26d);
-    let pn = t.img.rel32_target(throw + 0x1b7);
-    let start = t.img.rel32_target(pn + 0x88);
-    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
-    t.set_u32(op(&t, throw, 0x181), SCRATCH + 0x900);
-    t.set_u32(op(&t, throw, 0x2b), SCRATCH + 0x580);
-    for o in [0x63u32, 0x80, 0x19a] {
-        let l = op(&t, throw, o);
-        t.write(l - 0x20, &varied(0x40, o));
-        t.set_u32(l + 0x10, l);
-    }
-    for o in [0x6fu32, 0x77] {
-        let l = op(&t, throw, o);
-        t.set_u32(l, op(&t, throw, if o == 0x6f { 0x63 } else { 0x80 }));
+    match dll {
+        // the model object set-up (`model_object_setup`)
+        677 => {
+            rec(&mut t, 390, 1, |_, _| 0x2000);
+            rec(&mut t, 534, 1, |_, _| 0);
+            rec(&mut t, 12, 1, |_, a| a[0]);
+            t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5);
+            let pn = t.img.rel32_target(throw + 0x264);
+            let start = t.img.rel32_target(pn + 0x88);
+            t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+            t.set_u32(op(&t, throw, 0x23d), SCRATCH + 0x900);
+            t.set_u32(op(&t, throw, 0x28), SCRATCH + 0x500);
+            t.write(SCRATCH + 0x500, &varied(0x20, 2));
+            let pl = op(&t, throw, 0x253);
+            t.write(pl, &varied(0x1c, 6));
+            t.set_u32(pl + 0x10, pl);
+            t.set_u32(op(&t, throw, 0x6c), op(&t, throw, 0x85));
+        }
+        // the thrown effect with far nodes (`s5_misc::thrown_effect_far`)
+        682 => {
+            rec(&mut t, 390, 1, |_, _| 0x2000);
+            rec(&mut t, 534, 1, |_, a| a[0] & 1);
+            rec(&mut t, 12, 1, |_, a| a[0]);
+            t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+            let pn = t.img.rel32_target(throw + 0x2c7);
+            let start = t.img.rel32_target(pn + 0x88);
+            t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+            t.set_u32(op(&t, throw, 0x298), SCRATCH + 0x900);
+            t.set_u32(op(&t, throw, 0x27), SCRATCH + 0x580);
+            let sentinel = op(&t, throw, 0x82);
+            t.write(sentinel - 0x10, &varied(0x2c, 9));
+            t.set_u32(sentinel + 0x18, 0);
+            t.set_u32(op(&t, throw, 0x6b), sentinel);
+            let plist = op(&t, throw, 0x2b6);
+            t.write(plist, &varied(0x1c, 2));
+            t.set_u32(plist + 0x10, plist);
+        }
+        _ => {
+            let pn = t.img.rel32_target(throw + 0x1b7);
+            let start = t.img.rel32_target(pn + 0x88);
+            t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+            t.set_u32(op(&t, throw, 0x181), SCRATCH + 0x900);
+            t.set_u32(op(&t, throw, 0x2b), SCRATCH + 0x580);
+            for o in [0x63u32, 0x80, 0x19a] {
+                let l = op(&t, throw, o);
+                t.write(l - 0x20, &varied(0x40, o));
+                t.set_u32(l + 0x10, l);
+            }
+            for o in [0x6fu32, 0x77] {
+                let l = op(&t, throw, o);
+                t.set_u32(l, op(&t, throw, if o == 0x6f { 0x63 } else { 0x80 }));
+            }
+        }
     }
     for (o, x) in [
         (0x8du32, 0.5f32),
@@ -4003,7 +4045,8 @@ fn staged_volley_in(dll: u16, rva: u32) {
             t.set_u32(s + 0x48 + 4 * i, 2 + i);
         }
         let j = left % 5;
-        t.set_u32(s + 0x340 + 0x310 * j, slot_w);
+        // the slot's flag (its stride and displacement from the code)
+        t.set_u32(s + w(&t, 0x1da) + w(&t, 0x1d3) * j, slot_w);
         t.set_u32(count, weights);
         t.set_u32(task, node);
         t.set_u32(task + 4, s);
@@ -4576,5 +4619,171 @@ fn flagged_object_steps() {
             });
             t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
+    }
+}
+
+/// `r12h_volley::short_volley_task` (`magic_0495` 0x10006960 with the
+/// summon object, `magic_0500` 0x10006a20 with the model object) in every
+/// step: 0 (through 10 and 11), 10, 11 waiting, the slot taken, a throw
+/// with throws left and the last one (slot 228), 0x2710 with slot 411
+/// saying 0 and not, and others.
+#[test]
+fn short_volley_tasks() {
+    for (dll, rva) in [(495u16, 0x6960u32), (500, 0x6a20)] {
+        short_volley_in(dll, rva);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // the slots the callees reach
+fn short_volley_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let log = SCRATCH + 0x6000;
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let tl = SCRATCH + 0x7c0;
+    t.write(tl, &[5, 7, 9, 11]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        tl
+    });
+    for s in [413u32, 215] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    log_calls(&mut t, 291, log, 5, None, |m, a, k| {
+        m.w32(a[2], 0x2910_0000 + k);
+        1 + (a[1] & 3)
+    });
+    log_calls(&mut t, 307, log, 0, None, |_, _, k| 0x307 + k);
+    t.stub_st0(307, move |m, _| {
+        [0.75, 0.125, 2.5, 0.0][(m.r32(log) % 4) as usize]
+    });
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            m.w32(a[i], a[0].wrapping_mul(i as u32));
+        }
+        0x14
+    });
+    rec(&mut t, 333, 5, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125);
+    rec(&mut t, 411, 1, |m, _| m.r32(SCRATCH + 0x7f0));
+    rec(&mut t, 213, 2, |_, a| 0x0213_0000 ^ a[0]);
+    rec(&mut t, 228, 2, |_, a| 0x0228_0000 ^ a[0]);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 325, 2, |m, a| {
+        m.w32(a[0], m.r32(a[1]));
+        0x325
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        m.w32(a[2], a[0]);
+        0x268
+    });
+    rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
+    let throw = t.img.rel32_target(f + 0x1f9);
+    if dll == 500 {
+        rec(&mut t, 390, 1, |_, _| 0x2000);
+        rec(&mut t, 534, 1, |_, _| 0);
+        rec(&mut t, 12, 1, |_, a| a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5);
+        let pn = t.img.rel32_target(throw + 0x264);
+        let start = t.img.rel32_target(pn + 0x88);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+        t.set_u32(op(&t, throw, 0x23d), SCRATCH + 0x900);
+        t.set_u32(op(&t, throw, 0x28), SCRATCH + 0x500);
+        t.write(SCRATCH + 0x500, &varied(0x20, 2));
+        let pl = op(&t, throw, 0x253);
+        t.write(pl, &varied(0x1c, 6));
+        t.set_u32(pl + 0x10, pl);
+        t.set_u32(op(&t, throw, 0x6c), op(&t, throw, 0x85));
+    } else {
+        rec(&mut t, 12, 1, |_, a| a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5);
+        let pn = t.img.rel32_target(throw + 0x1b7);
+        let start = t.img.rel32_target(pn + 0x88);
+        t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+        t.set_u32(op(&t, throw, 0x181), SCRATCH + 0x900);
+        t.set_u32(op(&t, throw, 0x2b), SCRATCH + 0x580);
+        for o in [0x63u32, 0x80, 0x19a] {
+            let l = op(&t, throw, o);
+            t.write(l - 0x20, &varied(0x40, o));
+            t.set_u32(l + 0x10, l);
+        }
+        for o in [0x6fu32, 0x77] {
+            let l = op(&t, throw, o);
+            t.set_u32(l, op(&t, throw, if o == 0x6f { 0x63 } else { 0x80 }));
+        }
+    }
+    for (o, x) in [
+        (0x18bu32, 0.25f32),
+        (0x1d0, 0.25),
+        (0x1e1, 2.0),
+        (0x1f2, 1.0),
+    ] {
+        t.set_u32(w(&t, o), x.to_bits());
+    }
+    t.set_u32(w(&t, 0x30), SCRATCH + 0x5000);
+    t.write(SCRATCH + 0x5000, &varied(0x40, 1));
+    let tp = w(&t, 0x41);
+    t.write(tp, &varied(0x1c, 6));
+    t.set_u32(tp + 0x10, tp);
+    let task = SCRATCH + 0x300;
+    let s = SCRATCH + 0x8000;
+    let node = SCRATCH + 0x380;
+    let count = w(&t, 0xec);
+    let recs = w(&t, 0x7c);
+    let x96 = w(&t, 0x96);
+    // (step, the wait, the throws left, slot 411's answer, the slot j's
+    // word, the weights' count, the records' first words)
+    for (k, (step, wait, left, s411, slot_w, weights, firsts)) in [
+        (0u32, 0i32, 0u32, 0u32, 0xffu32, 3u32, None),
+        (10, 0, 0, 0, 0xff, 3, None),
+        (11, 3, 4, 0, 0xff, 3, None),
+        (11, 0, 4, 0, 0x12, 3, None),
+        (11, 0, 4, 0, 0xff, 3, None),
+        (11, 0, 1, 0, 0xff, 3, None),
+        (0x2710, 0, 0, 0, 0, 3, None),
+        (0x2710, 0, 0, 5, 0, 3, None),
+        (5, 0, 0, 0, 0, 3, None),
+        (13, 0, 0, 0, 0, 3, None),
+        (0, 3, 4, 0, 0xff, 3, Some([1u32, 0, 0])),
+        (10, 3, 4, 0, 0xff, 3, Some([1, 0, 0])),
+        (10, 0, 0, 0, 0xff, 1, Some([2, 0, 0])),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(log, 0);
+        t.set_u32(x96, 0x0096_0000 + k);
+        t.set_u32(SCRATCH + 0x7f0, s411);
+        if let Some(words) = firsts {
+            for (i, x) in (0u32..).zip(words) {
+                t.set_u32(recs + 0x98 * i, x);
+            }
+        }
+        t.write(s, &varied(0x1300, k));
+        t.set_u32(s + 0x18, step);
+        t.set_u32(s + 0x3c, wait.cast_unsigned());
+        t.set_u32(s + 0x40, left);
+        for i in 0..3u32 {
+            t.set_u32(s + 0x1c + 4 * i, (0.5 * (i + 1) as f32).to_bits());
+            t.set_u32(s + 0x44 + 4 * i, 2 + i);
+        }
+        let j = left % 5;
+        t.set_u32(s + w(&t, 0x15f) + w(&t, 0x158) * j, slot_w);
+        t.set_u32(count, weights);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.write(node, &varied(0x10, k + 3));
+        t.set_u32(node + 4, SCRATCH + 0x700);
+        t.set_u32(node + 8, SCRATCH + 0x740);
+        t.write(SCRATCH + 0x700, &varied(0x80, k));
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
