@@ -1109,6 +1109,9 @@ fn spring_walks() {
 /// A counter's set-up: (state, timer, value, step).
 type Counter = (u32, i32, i32, i32);
 
+/// A motion record of the motion-sequence cases: motion, frame, callback.
+type Record = (u32, u32, bool);
+
 /// Row 142: `magic_0644`'s three counters through every state: done,
 /// counting (and at the end of the count), waiting (another's turn, the
 /// flag, slot 651 at 0 and not), the run down (low half above the step
@@ -1299,7 +1302,7 @@ fn motion_scripts_stepped() {
     t.set_u32(op(&t, f, 0x2f), 0x0c40_0001);
     // (step, playing, slot 18's answer, slot 22's frame word, the records:
     // motion, frame, callback)
-    let cases: [(u32, u32, u32, u32, [(u32, u32, bool); 4]); 8] = [
+    let cases: [(u32, u32, u32, u32, [Record; 4]); 8] = [
         (
             1,
             0,
@@ -1725,8 +1728,8 @@ fn host_starts_one_object() {
     let obj_tail = op(&t, start, 0xa0);
     // the actor and its points
     rec(&mut t, 262, 4, |m, a| {
-        for i in 1..4 {
-            m.w32(a[i], (1.5f32 + i as f32).to_bits());
+        for (i, &p) in a.iter().enumerate().take(4).skip(1) {
+            m.w32(p, (1.5f32 + i as f32).to_bits());
         }
         0x262
     });
@@ -2181,7 +2184,7 @@ fn models_direct() {
             Call::this(0x0aa0_0000 + k),
             &[],
             Eax::Checked,
-            |g, img, fr| s6_misc::model_direct(g, img, fr),
+            s6_misc::model_direct,
         );
     }
     // every model of the table's range
@@ -2193,7 +2196,7 @@ fn models_direct() {
             Call::this(0x0bb0_0000),
             &[],
             Eax::Checked,
-            |g, img, fr| s6_misc::model_direct(g, img, fr),
+            s6_misc::model_direct,
         );
     }
 }
