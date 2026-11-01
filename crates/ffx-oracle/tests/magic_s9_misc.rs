@@ -3163,3 +3163,137 @@ fn node_sparks() {
         }
     }
 }
+
+/// Row 127: the host's objects run in two DLLs: one pass over six
+/// objects (not live; bit 1; waiting; mode 0 flagged 0x4000 with its
+/// update, hook and target; mode 1 that slot 712 lets go; mode 2 with
+/// its callback and target), and one over objects none of which is live
+/// (no context word). The frame word the original copies into a target
+/// before any mode 2 object sets it is 0 on both sides.
+#[test]
+fn host_objects_run() {
+    use sa::{HANDLER_SLOT, HANDLER_SLOT_2, handler_stubs};
+    for (dll, rva) in [(244u16, 0x1af0u32), (568, 0x77e0)] {
+        let Some(mut t) = twin(dll) else { return };
+        handler_stubs(&mut t);
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| op(t, f, o);
+        // the pointer globals and the value globals
+        for (o, at) in [
+            (0x22u32, SCRATCH + 0x7c0),
+            (0x33, SCRATCH + 0x7c4),
+            (0x351, SCRATCH + 0x7c8),
+            (0x35f, SCRATCH + 0x7d0),
+            (0x3d7, SCRATCH + 0x7e0),
+        ] {
+            let g = w(&t, o);
+            t.set_u32(g, at);
+        }
+        for o in [0x40u32, 0x4c, 0x337, 0x382, 0x3ac] {
+            let g = w(&t, o);
+            t.set_u32(g, 0x00a0_0000 + o);
+        }
+        for (s, n) in [
+            (723u32, 1usize),
+            (724, 1),
+            (231, 3),
+            (713, 1),
+            (160, 3),
+            (719, 3),
+            (220, 6),
+        ] {
+            log_calls(&mut t, s, n, &[], move |_, a, k| (s << 16) ^ a[0] ^ k);
+        }
+        log_calls(&mut t, 235, 1, &[], |m, a, _| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (i as f32 * 0.5 - 2.0).to_bits());
+            }
+            0x235
+        });
+        for s in [554u32, 330, 328, 329] {
+            log_calls(&mut t, s, 3, &[1], move |m, a, k| {
+                for i in 0..12 {
+                    let v = f32::from_bits(m.r32(a[1] + 4 * i)) + (s - 300 + k) as f32;
+                    m.w32(a[0] + 4 * i, v.to_bits());
+                }
+                s
+            });
+        }
+        log_calls(&mut t, 229, 3, &[1], |m, a, k| {
+            for i in 0..3 {
+                m.w32(a[0] + 4 * i, (k as f32 + 0.25 * i as f32).to_bits());
+            }
+            0x229
+        });
+        log_calls(&mut t, 552, 2, &[1], |_, a, _| a[0]);
+        log_calls(&mut t, 230, 2, &[1], |m, a, _| m.r32(a[1] + 8));
+        log_calls(&mut t, 712, 2, &[], |m, a, _| m.r32(a[0] + 0x12c));
+        let host = SCRATCH + 0x3000;
+        let list = host + 0x30;
+        let nodes = SCRATCH + 0x3100;
+        let obj = |i: u32| SCRATCH + 0x4000 + 0x140 * i;
+        let targets = SCRATCH + 0x5000;
+        // (flags, wait, mode, update/hook, 712's answer, callback, target)
+        let objs: [(u16, u32, u8, bool, u32, bool, bool); 6] = [
+            (0, 0, 0, false, 0, false, false),
+            (0x8001, 0, 0, false, 0, false, false),
+            (0x8000, 2, 0, false, 0, false, false),
+            (0xc000, 0, 0, true, 0, false, true),
+            (0x8000, 0, 1, false, 1, false, false),
+            (0x8000, 0, 2, true, 0, true, true),
+        ];
+        for (c, live) in [(0u32, true), (1, false)] {
+            t.set_u32(LOG, 0);
+            t.write(host, &varied(0x30, c));
+            let n = objs.len() as u32;
+            for (i, &(flags, wait, mode, calls, gone, cb, target)) in (0u32..).zip(&objs) {
+                let x = obj(i);
+                t.write(x, &floats(0x140 / 4, i + c));
+                t.set_u16(x + 0x124, if live { flags } else { flags & 0x7fff });
+                t.set_u32(x + 0x114, wait);
+                t.set_u8(x + 0x126, mode);
+                let h = |s: u32| magic::TRAPS + 16 * s;
+                t.set_u32(x + 0x104, if calls { h(HANDLER_SLOT) } else { 0 });
+                t.set_u32(x + 0x100, if calls { h(HANDLER_SLOT_2) } else { 0 });
+                t.set_u32(x + 0x118, 3);
+                t.set_u32(x + 0x11c, if i == 3 { 3 } else { 4 });
+                t.set_u32(x + 0x12c, gone);
+                t.set_u32(x + 0x10c, if cb { 0x0cb0_0000 + i } else { 0 });
+                t.set_u32(x + 0x108, if i % 2 == 1 { 0x0108_0000 + i } else { 0 });
+                let tg = targets + 0x40 * i;
+                t.set_u32(x + 0x110, if target { tg } else { 0 });
+                // the target's script: its wait runs out, then command 0
+                // (slot 220) and a wait
+                t.write(tg, &varied(0x40, i));
+                t.set_u32(tg + 0x2c, 1);
+                t.set_u32(tg + 0x10, 0);
+                let cmds = targets + 0x400 + 0x40 * i;
+                t.write(cmds, &varied(0x18, i + 1));
+                t.set_u32(cmds, 0);
+                t.set_u32(cmds + 12, 3);
+                t.set_u32(tg + 0x24, cmds);
+                t.set_u32(tg + 0x28, 0);
+                // the list node
+                let node = nodes + 12 * i;
+                t.set_u32(node, if i == 0 { 0 } else { node - 12 });
+                t.set_u32(node + 4, if i + 1 == n { 0 } else { node + 12 });
+                t.set_u32(node + 8, x);
+            }
+            t.set_u32(list, nodes);
+            t.set_u32(list + 4, nodes + 12 * (n - 1));
+            t.set_u32(list + 8, 0);
+            t.set_u32(list + 0xc, n);
+            scrub(&mut t);
+            // the frame word `T+0xc` (`ebp - 8`) the port takes as 0
+            t.set_u32(ENTRY_ESP - 0xc, 0);
+            let call = Call {
+                ecx: host,
+                edx: if live { 0x0edd_0001 } else { 0 },
+                ..Call::default()
+            };
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                s9_misc::host_objects_run(g, img, fr)
+            });
+        }
+    }
+}

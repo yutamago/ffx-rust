@@ -3694,6 +3694,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &s9_misc::BLOCK_SPRITE_FRAMES_B,
     ),
     ("node sparks", &s9_misc::NODE_SPARKS),
+    ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 

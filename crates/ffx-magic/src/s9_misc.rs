@@ -4627,3 +4627,217 @@ pub const NODE_SPARKS: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The host's objects run and drawn (internal: `ecx` = the host `C`,
+/// `edx` = a context word; an `ebp` frame: the matrix `M` at `ebp-0x94`,
+/// the vector `D` at `ebp-0x54`, the object's matrix `O` at `ebp-0x44`,
+/// its place `T` at `ebp-0x14`). The list `L = C+0x30` restarts (`L+8 =
+/// L+0`), `*G_HOST = C`, `*G_CTX = edx` unless 0; slots 723 `(*G_A)`, 724
+/// `(*G_B)`, 235 `(M)`. For each object `X` of the list
+/// ([`list_cur`](crate::l5_objhost::list_cur)):
+/// - not live (`u16 X+0x124` without 0x8000): skipped, not counted; with
+///   bit 1, or while its wait `X+0x114` counts down: counted;
+/// - its update `X+0x104` and, when its frame `X+0x11c` is its count
+///   `X+0x118`, its hook `X+0x100` (cdecl `(X)`); by the mode byte
+///   `X+0x126`: 1 slot 554 `(O, M, X+0xc0)`; 2 `O` = `X+0x80..+0xac`, `T`
+///   = `M`'s last row; else slots 330 `(O, M, X+0xc8)`, 328 `(O, O,
+///   X+0xc0)`, 329 `(O, O, X+0xc4)`;
+/// - slot 229 `(D, O, X+0xe0)`, `O`'s rows scaled by `X+0x60`, `+0x64`,
+///   `+0x68`, `T` = `X+0xd0.. + D`, slot 552 `(X+0x40, T)`, slot 230
+///   `(*G_O, O)`; `*G_P = X+0x108` unless 0; `X+0xf0..+0xfc` into `*G_V`;
+///   slots 231 `(*G_C, *G_D, *G_O)` and 230 `(*G_E, *G_C)`;
+/// - flagged 0x4000 (the flag dropped), or when slot 712 `(X, 0x30)`
+///   answers 1 (with `*G_LOCK` 1 around it): `*G_HOST = C`, slot 713
+///   `(X)`, the flag 0x8000 dropped and `X` off the list
+///   ([`list_remove`](crate::l5_objhost::list_remove)); otherwise slot
+///   160 `(X, X+0x10c, X)` when `X+0x10c` is set;
+/// - its target `X+0x110` (when set) takes `T` (its last word 0 until a
+///   mode 2 object sets it: the original's frame word there is never
+///   written before) and runs its script
+///   ([`obj_script`](crate::l5_objhost::obj_script)); the count `X+0x118`
+///   goes up; counted.
+///
+/// After each object the list's cursor moves on when it still points at
+/// it. Returns 1 when no object was counted, else 0.
+///
+/// `magic_0244` 0x10001af0 (1,262 bytes; 3 DLLs).
+#[allow(clippy::too_many_lines)] // the original's per-object steps, in order
+pub fn host_objects_run<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x3a), s);
+    let host = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, d, o, tv) = (
+        ebp.wrapping_sub(0x94),
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0x44),
+        ebp.wrapping_sub(0x14),
+    );
+    // `T`'s last word is written only by mode 2; before that the
+    // original copies whatever the frame holds there into a target. The
+    // port uses 0 there (the never-written stack read rule).
+    g.write::<u32>(tv + 0xc, 0);
+    let list = host.wrapping_add(0x30);
+    let first = g.read::<u32>(list);
+    g.write::<u32>(list + 8, first);
+    g.write::<u32>(ebp.wrapping_sub(0x98), host);
+    let gh = g.read::<u32>(w(0x22));
+    g.write::<u32>(gh, host);
+    if fr.edx != 0 {
+        let gc = g.read::<u32>(w(0x33));
+        g.write::<u32>(gc, fr.edx);
+    }
+    let b = g.read::<u32>(w(0x4c));
+    let a = g.read::<u32>(w(0x40));
+    g.call(t(g, 723), 0, &[a]);
+    g.call(t(g, 724), 0, &[b]);
+    g.call(t(g, 235), 0, &[m]);
+    let mut counted = 0u32;
+    let rf = |g: &G, x: u32, off: u32| g.read::<f32>(x.wrapping_add(off));
+    let mut x = crate::l5_objhost::list_cur(g, list);
+    while x != 0 {
+        let flags = g.read::<u16>(x + 0x124);
+        let mut count = true;
+        if flags & 0x8000 == 0 {
+            count = false;
+        } else if flags & 1 != 0 {
+        } else if g.read::<u32>(x + 0x114) != 0 {
+            let left = g.read::<u32>(x + 0x114).wrapping_sub(1);
+            g.write::<u32>(x + 0x114, left);
+        } else {
+            let update = g.read::<u32>(x + 0x104);
+            if update != 0 {
+                g.call(update, 0, &[x]);
+            }
+            let hook = g.read::<u32>(x + 0x100);
+            if hook != 0 && g.read::<u32>(x + 0x11c) == g.read::<u32>(x + 0x118) {
+                g.call(hook, hook, &[x]);
+            }
+            match g.read::<u8>(x + 0x126) {
+                1 => {
+                    g.call(t(g, 554), 0, &[o, m, x + 0xc0]);
+                }
+                2 => {
+                    for i in 0..12 {
+                        let v = g.read::<u32>(x + 0x80 + 4 * i);
+                        g.write::<u32>(o + 4 * i, v);
+                    }
+                    for i in 0..4 {
+                        let v = g.read::<u32>(m + 0x30 + 4 * i);
+                        g.write::<u32>(tv + 4 * i, v);
+                    }
+                }
+                _ => {
+                    let c8 = g.read::<u32>(x + 0xc8);
+                    g.call(t(g, 330), 0, &[o, m, c8]);
+                    let c0 = g.read::<u32>(x + 0xc0);
+                    g.call(t(g, 328), 0, &[o, o, c0]);
+                    let c4 = g.read::<u32>(x + 0xc4);
+                    g.call(t(g, 329), 0, &[o, o, c4]);
+                }
+            }
+            g.call(t(g, 229), 0, &[d, o, x + 0xe0]);
+            for (row, k) in [(0u32, 0x60u32), (0x10, 0x64), (0x20, 0x68)] {
+                let s = rf(g, x, k);
+                for i in 0..3 {
+                    let v = mul(g.read::<f32>(o + row + 4 * i), s);
+                    g.write::<f32>(o + row + 4 * i, v);
+                }
+            }
+            for i in 0..3 {
+                let v = add(rf(g, x, 0xd0 + 4 * i), g.read::<f32>(d + 4 * i));
+                g.write::<f32>(tv + 4 * i, v);
+            }
+            g.call(t(g, 552), 0, &[x + 0x40, tv]);
+            let go = g.read::<u32>(w(0x337));
+            g.call(t(g, 230), 0, &[go, o]);
+            let target = g.read::<u32>(x + 0x108);
+            if target != 0 {
+                let gp = g.read::<u32>(w(0x351));
+                g.write::<u32>(gp, target);
+            }
+            let gv = g.read::<u32>(w(0x35f));
+            for i in 0..4 {
+                let v = g.read::<u32>(x + 0xf0 + 4 * i);
+                g.write::<u32>(gv + 4 * i, v);
+            }
+            let (gd, gc, go) = (
+                g.read::<u32>(w(0x382)),
+                g.read::<u32>(w(0x373)),
+                g.read::<u32>(w(0x365)),
+            );
+            g.call(t(g, 231), 0, &[gd, gc, go]);
+            let (ge, gd) = (g.read::<u32>(w(0x3ac)), g.read::<u32>(w(0x3a1)));
+            g.call(t(g, 230), 0, &[ge, gd]);
+            let flags = g.read::<u16>(x + 0x124);
+            let leave = if flags & 0x4000 != 0 {
+                g.write::<u16>(x + 0x124, flags & 0xbfff);
+                true
+            } else {
+                let gh = g.read::<u32>(w(0x3ca));
+                g.write::<u32>(gh, host);
+                let lock = g.read::<u32>(w(0x3d7));
+                g.write::<u32>(lock, 1);
+                let r = g.call(t(g, 712), 0, &[x, 0x30]).eax;
+                let lock = g.read::<u32>(w(0x3f3));
+                g.write::<u32>(lock, 0);
+                if r != 1 {
+                    let cb = g.read::<u32>(x + 0x10c);
+                    if cb != 0 {
+                        g.call(t(g, 160), 0, &[x, cb, x]);
+                    }
+                }
+                r == 1
+            };
+            if leave {
+                let gh = g.read::<u32>(w(0x431));
+                g.write::<u32>(gh, host);
+                g.call(t(g, 713), 0, &[x]);
+                let fl = g.read::<u16>(x + 0x124) & 0x7fff;
+                g.write::<u16>(x + 0x124, fl);
+                crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0x45f), list, x);
+            }
+            let target = g.read::<u32>(x + 0x110);
+            if target != 0 {
+                for i in 0..4 {
+                    let v = g.read::<u32>(tv + 4 * i);
+                    g.write::<u32>(target + 4 * i, v);
+                }
+                let target = g.read::<u32>(x + 0x110);
+                crate::l5_objhost::obj_script(g, img, img.rel32_target(f + 0x49b), target);
+            }
+            let n = g.read::<u32>(x + 0x118).wrapping_add(1);
+            g.write::<u32>(x + 0x118, n);
+        }
+        if count {
+            counted += 1;
+        }
+        if x == crate::l5_objhost::list_cur(g, list) {
+            let cur = g.read::<u32>(list + 8);
+            if cur != 0 {
+                let next = g.read::<u32>(cur + 4);
+                g.write::<u32>(list + 8, next);
+            }
+        }
+        x = crate::l5_objhost::list_cur(g, list);
+    }
+    Ret::eax(u32::from(counted == 0))
+}
+
+/// [`host_objects_run`] (the `rel32`s: the list's current object three
+/// times, the removal, the script, `__security_check_cookie`).
+pub const HOST_OBJECTS_RUN: Sig = Sig {
+    len: 1262,
+    hash: 0x17c9_8375_34be_2ce4,
+    calls: &[
+        (0x7a, Callee::Sig(&crate::l5_objhost::LIST_CUR)),
+        (0x45f, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x49b, Callee::Sig(&crate::l5_objhost::OBJ_SCRIPT)),
+        (0x4b2, Callee::Sig(&crate::l5_objhost::LIST_CUR)),
+        (0x4c8, Callee::Sig(&crate::l5_objhost::LIST_CUR)),
+        (0x4e6, Callee::Any),
+    ],
+    imports: &[],
+};
