@@ -4303,7 +4303,8 @@ fn fam2_basis_start() {
             0x230
         });
         t.stub(712, |m, a| {
-            let mut x = 0x712 ^ a[0] ^ a[1];
+            // the lock held while it runs
+            let mut x = 0x712 ^ a[0] ^ a[1] ^ m.r32(SCRATCH + 0x3f04).rotate_left(9);
             for i in 0..16u32 {
                 x = x.rotate_left(5) ^ m.r32(SCRATCH + 0x3400 + 4 * i);
             }
@@ -4447,6 +4448,10 @@ fn fam2_scene_end() {
         let skip_at = s + w(&t, 0x9d);
         let (node, done) = (SCRATCH + 0x3100, SCRATCH + 0x3200);
         t.set_u32(w(&t, 0x15d), done);
+        if early {
+            // the global 0434 clears after its early parts
+            t.set_u32(t.img.word(f + 0xa2), 0x77);
+        }
         let saved = t.save();
         // (actors, skip, *G_F, index, *G_H, a held node)
         let cases = [
