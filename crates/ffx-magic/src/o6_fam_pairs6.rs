@@ -1674,4 +1674,88 @@ pub fn basis_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(u32::from(r == 0))
 }
 
+/// An effect overlay's set-up (stack `(arg)`; `magic_0673` 0x10001000,
+/// 272 bytes, and `magic_0253` 0x10001000, 284 bytes; family
+/// `F0673_10001000`): `*G_ARG` = `arg` (`0253` first runs the object
+/// block's set-up, [`crate::l5_objhost::obj_block_init`] with `arg`);
+/// slots 556, 555 and 331 on three of the overlay's records; three
+/// scales set to 1.0; slot 790's float into a global; the task ring
+/// ([`crate::l5_objhost::tasks_init`]); the 0x3ff entries of 12 bytes from
+/// a table cleared (their first word), the free count 0x3ff and the used
+/// count 0 (`u16`); slot 720 `(0x3400, 0x800)`, slot 718 `(R)`, slot 222
+/// `(R, 0, kind, 1)` and slot 221 `(R, 0, 1000, 1)` (`R` a record of the
+/// overlay, `kind` a byte of the code); a global cleared. Returns 0.
+pub fn overlay_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // `mov ecx, [ebp + 8]` (0253: the block's set-up first) or `mov eax`
+    let block = (img.word(f + 3) >> 8) as u8 == 0x4d;
+    // the code offsets are `0673`'s; `0253`'s are 6 bytes later up to its
+    // loop, 12 after (its loop is aligned)
+    let sh = |o: u32| match (block, o < 0x84) {
+        (false, _) => o,
+        (true, true) => o + 6,
+        (true, false) => o + 0xc,
+    };
+    let w = |o: u32| img.word(f + sh(o));
+    let arg = fr.arg(g, 0);
+    // `0673`'s store is `a3` (one byte shorter than `0253`'s `89 0d`)
+    g.write::<u32>(img.word(f + if block { 0x8 } else { 0x7 }), arg);
+    if block {
+        crate::l5_objhost::obj_block_init(g, img, img.rel32_target(f + 0xd), arg);
+    }
+    let slot = |g: &G, n: u32| slot_target(g, w(0xc), n);
+    for (n, o) in [(556u32, 0x11u32), (555, 0x23), (331, 0x35)] {
+        let t = slot(g, n);
+        // call width: 1
+        g.call(t, 0, &[w(o)]);
+    }
+    for o in [0x51u32, 0x5b, 0x65] {
+        g.write::<u32>(w(o), 0x3f80_0000);
+    }
+    let t = slot(g, 790);
+    // call width: 0
+    let x = crate::ob_model::st0_f32(g.call(t, 0, &[]).st0);
+    g.write::<f32>(w(0x71), x);
+    crate::l5_objhost::tasks_init(g, img, img.rel32_target(f + sh(0x76)));
+    let table = w(0x7b);
+    for i in 0..w(0x80) {
+        g.write::<u32>(table.wrapping_add(0xc * i), 0);
+    }
+    g.write::<u16>(w(0x97), w(0x91) as u16);
+    g.write::<u16>(w(0x9f), 0);
+    let t = slot(g, 720);
+    // call width: 2
+    g.call(t, 0, &[w(0xb4), w(0xa9)]);
+    let rec = w(0xc0);
+    let t = slot(g, 718);
+    // call width: 1
+    g.call(t, 0, &[rec]);
+    let t = slot(g, 222);
+    // call width: 4
+    g.call(
+        t,
+        0,
+        &[
+            w(0xde),
+            disp8(img, f + sh(0xdc)),
+            disp8(img, f + sh(0xda)),
+            disp8(img, f + sh(0xd2)),
+        ],
+    );
+    let t = slot(g, 221);
+    // call width: 4
+    g.call(
+        t,
+        0,
+        &[
+            w(0xf9),
+            disp8(img, f + sh(0xf7)),
+            w(0xf2),
+            disp8(img, f + sh(0xea)),
+        ],
+    );
+    g.write::<u32>(w(0x104), 0);
+    Ret::eax(0)
+}
+
 include!("o6_fam_pairs6_table.rs.in");

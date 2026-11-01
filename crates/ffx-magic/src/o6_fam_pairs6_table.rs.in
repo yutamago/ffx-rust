@@ -289,3 +289,28 @@ pub const BASIS_START_0665_1B10: Sig = Sig {
     ],
     imports: &[],
 };
+
+// family F0673_10001000 (0673@1000)
+
+/// [`overlay_setup`] in `magic_0673` (0x10001000, 272 bytes; row own:3488).
+pub const OVERLAY_SETUP_0673_1000: Sig = Sig {
+    len: 272,
+    hash: 0xd1aa_49f1_1f94_410c,
+    calls: &[
+        (0x76, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+    ],
+    imports: &[],
+};
+
+// family F0673_10001000 (0253@1000)
+
+/// [`overlay_setup`] in `magic_0253` (0x10001000, 284 bytes; row own:1458).
+pub const OVERLAY_SETUP_0253_1000: Sig = Sig {
+    len: 284,
+    hash: 0xbae6_fe99_cfff_6ccf,
+    calls: &[
+        (0xd, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+    ],
+    imports: &[],
+};

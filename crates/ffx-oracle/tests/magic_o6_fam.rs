@@ -1626,6 +1626,7 @@ fn dll_main_writes_only_crt_state() {
         TRAIL_TASK,
         PACKED_SPRITE,
         BASIS_START,
+        OVERLAY_SETUP,
     ];
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
@@ -4358,6 +4359,52 @@ fn fam2_basis_start() {
             t.set_u32(SCRATCH + 0x3f04, 0x77 + c);
             t.set_u32(SCRATCH + 0x3f20, answers);
             t.check_entry(f, regs(rva, c), &[p], Eax::Checked);
+        }
+    }
+}
+
+const OVERLAY_SETUP: &[(u16, u32)] = &[(673, 0x1000), (253, 0x1000)];
+
+/// `o6_fam_pairs6::overlay_setup`: two arguments, slot 790 answering two
+/// floats, the cleared table and counts dirty before. The task ring and
+/// (0253) the object block are set up as ported.
+#[test]
+fn fam2_overlay_setup() {
+    for (n, rva) in copies("o6 fam pairs6 overlay_setup", OVERLAY_SETUP) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        t.stub_st0(790, |m, _| {
+            let k = m.r32(SCRATCH + 0x3f40);
+            m.w32(SCRATCH + 0x3f40, k + 1);
+            1.25 + f64::from(k)
+        });
+        let f = t.at(rva);
+        let block = n == 253;
+        let sh = |o: u32| match (block, o < 0x84) {
+            (false, _) => o,
+            (true, true) => o + 6,
+            (true, false) => o + 0xc,
+        };
+        let w = |t: &Twin, o: u32| t.img.word(f + sh(o));
+        let saved = t.save();
+        for c in 0..2u32 {
+            t.restore(&saved);
+            let arg = SCRATCH + 0x3000 + 0x100 * c;
+            t.write(arg, &[0x4a; 0x40]);
+            // the table and the counts dirty before
+            let table = w(&t, 0x7b);
+            for i in 0..0x3ffu32 {
+                t.set_u32(table + 0xc * i, 0x5a5a_0000 + i + c);
+            }
+            t.set_u16(w(&t, 0x97), 7);
+            t.set_u16(w(&t, 0x9f), 9);
+            t.set_u32(w(&t, 0x104), 0x55);
+            for o in [0x51u32, 0x5b, 0x65] {
+                t.set_u32(w(&t, o), 0x4000_0000 + c);
+            }
+            t.check_entry(f, regs(rva, c), &[arg], Eax::Checked);
         }
     }
 }

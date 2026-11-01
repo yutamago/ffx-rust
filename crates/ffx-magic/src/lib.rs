@@ -2582,6 +2582,8 @@ ports! {
     "o6 fam pairs6 basis_start 0666@1900" => o6_fam_pairs6::BASIS_START_0666_1900, o6_fam_pairs6::basis_start;
     "o6 fam pairs6 basis_start 0664@18d0" => o6_fam_pairs6::BASIS_START_0664_18D0, o6_fam_pairs6::basis_start;
     "o6 fam pairs6 basis_start 0665@1b10" => o6_fam_pairs6::BASIS_START_0665_1B10, o6_fam_pairs6::basis_start;
+    "o6 fam pairs6 overlay_setup 0673@1000" => o6_fam_pairs6::OVERLAY_SETUP_0673_1000, o6_fam_pairs6::overlay_setup;
+    "o6 fam pairs6 overlay_setup 0253@1000" => o6_fam_pairs6::OVERLAY_SETUP_0253_1000, o6_fam_pairs6::overlay_setup;
     // families2 (o6_fam_pairs5..): end of ports
 }
 
