@@ -410,6 +410,7 @@ fn nodes_to_live() {
         {
             let k = k as u32;
             t.write(o, &varied(0x140, k));
+            t.write(node(0) - 0x40, &varied(0x40, k + 7));
             for i in 0..4 {
                 t.write(node(i), &varied(0x40, k + i));
             }
@@ -678,7 +679,8 @@ fn summon_frame_with(dll: u16, rva: u32, ops: &FrameOps) {
         for o in nodes {
             t.set_u8(w(&t, o) + 0x1a, now);
         }
-        t.set_u32(w(&t, flags), 0x10);
+        // bit 0 of the flags already set in every other case
+        t.set_u32(w(&t, flags), 0x10 | (k & 1));
         t.set_u32(w(&t, mask), fl);
         t.set_u16(w(&t, word), wd);
         t.set_u32(w(&t, z), 0x2a2a_0000 + k);
@@ -944,7 +946,7 @@ fn summon_load_frames() {
             for o in [0x113u32, 0x12b] {
                 t.set_u8(w(&t, o) + 0x1a, p.wrapping_add(1));
             }
-            t.set_u32(w(&t, 0x104), 0x10);
+            t.set_u32(w(&t, 0x104), 0x10 | (k & 1));
             scrub(&mut t);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
         }
