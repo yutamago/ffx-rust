@@ -2711,3 +2711,32 @@ fn level_look_matrices() {
         });
     }
 }
+
+/// Row 453: `magic_0202`'s sprite GS packet, for both values of the
+/// tag bit and a few corners, zooms and colour bytes.
+#[test]
+fn sprite_gs_packets() {
+    let Some(mut t) = twin(202) else { return };
+    let f = t.at(0x1000);
+    let o = SCRATCH + 0x300;
+    let p = SCRATCH + 0x1000;
+    for (k, (bit, z, c)) in [(0u32, 0.5f32, 3u8), (1, 1.25, 0xf0), (3, -0.75, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(o, &varied(0x50, k));
+        t.write(p, &varied(0x100, k + 1));
+        t.set_u32(o + 0x20, bit);
+        t.set_u32(o + 0x2c, z.to_bits());
+        t.set_u32(o + 0x10, (12.5 + k as f32).to_bits());
+        t.set_u32(o + 0x14, (-3.25 * k as f32).to_bits());
+        t.set_u8(o + 0x48, c);
+        t.set_u16(o + 0x28, (0x123 + 0x40 * k) as u16);
+        t.set_u32(o + 0x34, p);
+        scrub(&mut t);
+        t.check(f, Call::this(o), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::sprite_gs_packet(g, img, fr))
+        });
+    }
+}

@@ -2394,6 +2394,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model direct", &s6_misc::MODEL_DIRECT),
     ("spline point", &s6_misc::SPLINE_POINT),
     ("level look matrix", &s6_misc::LEVEL_LOOK_MATRIX),
+    ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

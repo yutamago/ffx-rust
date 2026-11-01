@@ -3776,3 +3776,121 @@ pub const LEVEL_LOOK_MATRIX: Sig = Sig {
     calls: &[(0x23b, Callee::Any)],
     imports: &[],
 };
+
+/// A sprite's GS packet written (internal, `ecx` = the sprite `O`; `P =
+/// O+0x34` the packet buffer): the GIF tag from bit 0 of `O+0x20` (as
+/// [`sprite_packet`](crate::s5_misc::sprite_packet) builds it), the
+/// register words from the colour byte `c = O+0x48` (`c + 6`, `c + 0x47`,
+/// `c + 0x42`, `c + 0x14`, `c + 8`, each as a 64-bit word) and `O+0x24`,
+/// the corners from `O+0x10` (`a`), `O+0x14` (`b`) and the zoom `z =
+/// O+0x2c`: `(a - z a) K`, `(b - z b) K`, `((K1 - a) z + a) K`, `((K2 - b)
+/// z + b) K`; the colour `O+0..+0xc`, the texture words from u16 `O+0x28`
+/// (`n`, `n + 0x2000`) and the constants. The buffer pointer moves on by
+/// 0x100, which it returns.
+///
+/// `magic_0202` 0x10001000 (607 bytes, `ecx` = the sprite; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's packet, word by word
+pub fn sprite_gs_packet<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let k = |g: &G, o: u32| g.read::<f32>(op(img, f, o));
+    let o = fr.ecx;
+    let e = g.read::<u32>(o + 0x20) & 1;
+    let p = g.read::<u32>(o + 0x34);
+    let n = u32::from(g.read::<u16>(o + 0x28));
+    let kk = k(g, 0x3e);
+    let tag = ((u64::from(e | 0x2a80) << 6) | u64::from(e)) << 14;
+    let set = |g: &mut G, at: u32, v: u32| g.write::<u32>(p.wrapping_add(at), v);
+    set(g, 0x14, (tag >> 32) as u32);
+    set(g, 0x10, tag as u32 | (e << 5));
+    set(g, 0, 0);
+    let c = u32::from(g.read::<u8>(o + 0x48));
+    set(g, 4, 0);
+    for (at, add_) in [(0x18u32, 6u32), (0x28, 0x47)] {
+        set(g, at, c + add_);
+        set(g, at + 4, 0);
+    }
+    let x24 = g.read::<u32>(o + 0x24);
+    set(g, 0x30, x24);
+    for (at, add_) in [(0x38u32, 0x42u32), (0x48, 0x14)] {
+        set(g, at, c + add_);
+        set(g, at + 4, 0);
+    }
+    set(g, 0x58, c + 8);
+    set(g, 8, 0xeeeee);
+    let (z, a, b) = (
+        g.read::<f32>(o + 0x2c),
+        g.read::<f32>(o + 0x10),
+        g.read::<f32>(o + 0x14),
+    );
+    let x70 = mul(sub(a, mul(z, a)), kk);
+    for (at, v) in [
+        (0xcu32, 0u32),
+        (0x20, 0),
+        (0x24, 0),
+        (0x34, 0),
+        (0x40, 0x61),
+        (0x44, 0),
+        (0x50, 0),
+        (0x54, 0),
+        (0x5c, 0),
+    ] {
+        set(g, at, v);
+    }
+    let x74 = mul(sub(b, mul(z, b)), kk);
+    set(g, 0x70, x70.to_bits());
+    for (at, v) in [
+        (0x60u32, 0u32),
+        (0x64, 0),
+        (0x68, 0x2424_2412),
+        (0x6c, 4),
+        (0x78, 0x3f80_0000),
+    ] {
+        set(g, at, v);
+    }
+    set(g, 0x74, x74.to_bits());
+    for i in 0..4u32 {
+        let v = g.read::<u32>(o + 4 * i);
+        set(g, 0x80 + 4 * i, v);
+    }
+    let xa = mul(add(mul(sub(k(g, 0x14e), a), z), a), kk);
+    let xb = mul(add(mul(sub(k(g, 0x15e), b), z), b), kk);
+    let x74 = g.read::<u32>(p.wrapping_add(0x74));
+    set(g, 0xa4, x74);
+    let x70 = g.read::<u32>(p.wrapping_add(0x70));
+    set(g, 0xb0, n + 0x2000);
+    set(g, 0xc0, x70);
+    set(g, 0xf0, n + 0x2000);
+    for (at, v) in [
+        (0x90u32, n),
+        (0x94, 0),
+        (0x98, 0),
+        (0x9c, 0),
+        (0xa0, xa.to_bits()),
+        (0xb4, 0),
+        (0xb8, 0),
+        (0xbc, 0),
+        (0xc4, xb.to_bits()),
+        (0xd0, n),
+        (0xd4, 0x1a00),
+        (0xd8, 0),
+        (0xdc, 0),
+        (0xe0, xa.to_bits()),
+        (0xe4, xb.to_bits()),
+        (0xf4, 0x1a00),
+        (0xf8, 0),
+        (0xfc, 0),
+    ] {
+        set(g, at, v);
+    }
+    let next = p.wrapping_add(0x100);
+    g.write::<u32>(o + 0x34, next);
+    next
+}
+
+/// [`sprite_gs_packet`].
+pub const SPRITE_GS_PACKET: Sig = Sig {
+    len: 607,
+    hash: 0x527d_8d97_9bc6_f91b,
+    calls: &[],
+    imports: &[],
+};
