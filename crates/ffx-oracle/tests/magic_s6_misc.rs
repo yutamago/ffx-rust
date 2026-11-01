@@ -2903,3 +2903,47 @@ fn task_pools_reset_in(dll: u16, rva: u32, size: u32) {
         t.check_entry(f, Call::this(pool), &[], Eax::Checked);
     }
 }
+
+/// Rows 141 and 145: `magic_0644`'s and `magic_0565`'s colour from byte
+/// curves: no records, a negative count, and records whose keys run
+/// below, at and past their curves' ends (negative keys too).
+#[test]
+fn curve_colours() {
+    curve_colours_in(644, 0x6150);
+    curve_colours_in(565, 0x1fc0);
+}
+
+fn curve_colours_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    t.stub_st0(651, |_, _| 0.8125);
+    rec_mem(&mut t, 808, 4, 3, None);
+    let recs = op(&t, f, 0x33);
+    let index = op(&t, f, 0x38);
+    let curve = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for i in 0..12u32 {
+        let data = curve(i) + 0x10;
+        t.set_u32(curve(i), 2 + i % 5);
+        t.set_u32(curve(i) + 4, data);
+        t.write(data - 8, &varied(0x30, i));
+    }
+    let keys: [i16; 12] = [0, 1, 2, -1, 3, -5, 4, 0, 6, 1, -2, 2];
+    for (k, n) in [0i32, -1, 1, 3, 4].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(recs - 0x1c, &varied(0x78 * 4 + 0x40, k));
+        for i in 0..4u32 {
+            let r = recs + 0x78 * i;
+            for (c, at) in [r - 0x1c, r, r + 0x1c].into_iter().enumerate() {
+                let c = c as u32;
+                let j = (3 * i + c + k) % 12;
+                t.set_u32(at, curve(j));
+                t.write(at + 6, &keys[j as usize].to_le_bytes());
+            }
+            t.set_u32(index + 4 * i, (i + k) % 4);
+        }
+        t.set_u32(op(&t, f, 0x13), n.cast_unsigned());
+        t.set_u32(op(&t, f, 0xdf), 0x0808_0000 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -4339,3 +4339,58 @@ pub const TASK_POOL_RESET_B: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A colour sampled from byte curves (cdecl, no arguments; a /GS frame).
+/// The local colour bytes `C` (12 bytes at `ebp-0x10`) start as 0xff;
+/// for each of the `*G_N` records `R_i = G_R + 0x78 i` (signed count) and
+/// its index `j = G_J[i]`, the three curves at `R_i - 0x1c`, `R_i` and
+/// `R_i + 0x1c` (a pointer to `{count, bytes}` and the current key, i16
+/// at `+6`) each give `bytes[k]` with `k` the key plus one (0 from the
+/// count on) into `C[3 j + c]`. Then `x` = slot 651's `st0` and slot 808
+/// `(*G_H, C, x, 20.0)`. Returns slot 808's `eax`.
+///
+/// `magic_0644` 0x10006150 (253 bytes; 5 DLLs) and `magic_0565`
+/// 0x10001fc0 (5 DLLs).
+pub fn curve_colour<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let n = g.read::<i32>(w(0x13));
+    let c = ebp.wrapping_sub(0x10);
+    for k in 0..3u32 {
+        g.write::<u32>(c + 4 * k, u32::MAX);
+    }
+    let zero = ebp.wrapping_sub(0x14);
+    let (mut r, mut jx) = (w(0x33), w(0x38));
+    for _ in 0..n.max(0) {
+        let base = g.read::<u32>(jx).wrapping_mul(3);
+        for (k, at) in [
+            (0u32, r.wrapping_sub(0x1c)),
+            (1, r),
+            (2, r.wrapping_add(0x1c)),
+        ] {
+            let curve = g.read::<u32>(at);
+            let key = i32::from(g.read::<i16>(at + 6)).wrapping_add(1);
+            g.write::<u32>(zero, 0);
+            let i = if key >= g.read::<i32>(curve) { 0 } else { key };
+            let b = g.read::<u8>(g.read::<u32>(curve + 4).wrapping_add(i.cast_unsigned()));
+            g.write::<u8>(c.wrapping_add(base).wrapping_add(k), b);
+        }
+        r = r.wrapping_add(0x78);
+        jx = jx.wrapping_add(4);
+    }
+    let x = crate::m0018::st0_f32(slot(g, img, f, 0xb0, 651, &[]).st0);
+    g.write::<f32>(zero, x);
+    let h = g.read::<u32>(w(0xdf));
+    Ret::eax(slot(g, img, f, 0xd9, 808, &[h, c, x.to_bits(), 0x41a0_0000]).eax)
+}
+
+/// [`curve_colour`] (the `rel32`: `__security_check_cookie`).
+pub const CURVE_COLOUR: Sig = Sig {
+    len: 253,
+    hash: 0x5dbd_0833_49f2_caf2,
+    calls: &[(0xf5, Callee::Any)],
+    imports: &[],
+};
