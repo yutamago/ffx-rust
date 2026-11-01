@@ -931,3 +931,22 @@ pub const LIGHT_NODE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`draw_detached`] on the holder `arg` (0x100025d0, cdecl `(arg)`: `ecx`
+/// = `arg`, a tail jump). Returns its `eax`.
+pub fn draw_detached_arg<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 0x8),
+        ecx: fr.arg(g, 0),
+        ..*fr
+    };
+    Ret::eax(draw_detached(g, img, &callee))
+}
+
+/// [`draw_detached_arg`] (12 bytes, 1 overlay).
+pub const DRAW_DETACHED_ARG: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[(0x8, Callee::Sig(&DRAW_DETACHED))],
+    imports: &[],
+};

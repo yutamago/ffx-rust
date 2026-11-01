@@ -292,3 +292,24 @@ pub const SWAY_FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The record's `+0x30fc` cleared (`R = *G_R`, operand `+0x1`), then
+/// [`load_groups`] (0x10002f20, no arguments; a tail jump). Returns its
+/// result.
+pub fn reload_groups<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let r = g.read::<u32>(img.word(fr.at + 0x1));
+    g.write::<u32>(r.wrapping_add(0x30fc), 0);
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 0x10),
+        ..*fr
+    };
+    load_groups(g, img, &callee)
+}
+
+/// [`reload_groups`] (20 bytes, 1 overlay).
+pub const RELOAD_GROUPS: Sig = Sig {
+    len: 20,
+    hash: 0x9176_b07c_9612_1f52,
+    calls: &[(0x10, Callee::Sig(&LOAD_GROUPS))],
+    imports: &[],
+};

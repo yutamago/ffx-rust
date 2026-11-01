@@ -93,3 +93,37 @@ pub const FRAME: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The effect's start (0x10001340, an overlay table entry, cdecl
+/// `(arg)`): [`effect_head`](crate::m0523::effect_head) with the half at
+/// `+0x100000` and the block defaults
+/// ([`block_defaults`](crate::s4_small::block_defaults)); then slot 260
+/// `(0x14)` into the global at operand `+0x13f` and slot 38 `(that, 0,
+/// 0)`. Returns 1.
+pub fn effect_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let mut p = crate::m0523::effect_head(g, img, fr, 0x10_0000, |g, callee| {
+        crate::s4_small::block_defaults(g, img, callee);
+    });
+    p.push(0x14);
+    let t = slot_target(g, w(0x4), 260);
+    // call width: 12 (Pushes caps the words at 12)
+    let v = p.call(g, t, 0).eax;
+    p.pop(2);
+    g.write::<u32>(w(0x13f), v);
+    // push 0; push ecx; mov [esp], 0; push eax
+    p.push_all(&[0, 0, v]);
+    let t = slot_target(g, w(0x14f), 38);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t, 0);
+    Ret::eax(1)
+}
+
+/// [`effect_start`] (358 bytes, 1 overlay).
+pub const EFFECT_START: Sig = Sig {
+    len: 358,
+    hash: 0xc0d9_b63f_af24_b5b4,
+    calls: &[(0x128, Callee::Sig(&crate::s4_small::BLOCK_DEFAULTS))],
+    imports: &[],
+};

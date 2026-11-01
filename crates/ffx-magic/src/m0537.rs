@@ -252,3 +252,22 @@ pub const SETUP: Sig = Sig {
     calls: &[(0x1c3, Callee::Import("memset"))],
     imports: &[],
 };
+
+/// The part of a table entry drawn (0x10001230, cdecl `(entry)`): the
+/// part `PARTS + 0x80 * ((entry - TABLE) >> 2)` (operands `+0x14`,
+/// `+0x8`; an arithmetic shift) through [`draw`]. Returns 1.
+pub fn draw_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let i = fr.arg(g, 0).wrapping_sub(w(0x8)).cast_signed() >> 2;
+    let part = (i.cast_unsigned() << 7).wrapping_add(w(0x14));
+    draw(g, img, img.rel32_target(fr.at + 0x19), part);
+    Ret::eax(1)
+}
+
+/// [`draw_entry`] (36 bytes, 1 overlay).
+pub const DRAW_ENTRY: Sig = Sig {
+    len: 36,
+    hash: 0x6da3_bfc9_69e5_ae9f,
+    calls: &[(0x19, Callee::Sig(&DRAW))],
+    imports: &[],
+};
