@@ -27,7 +27,8 @@ fn dll_main_writes_only_crt_state() {
 }
 
 /// 0x10001000, 0x10001150 (slot 712 saying 0 and 1) and 0x10001580 (off,
-/// on with slot 261's answers; the timeline idle).
+/// on with slot 261's answers; the timeline live, so running or stopping
+/// it, or not, shows).
 #[test]
 fn part_and_frame() {
     let Some(mut t) = twin(N) else { return };
@@ -62,9 +63,6 @@ fn part_and_frame() {
     );
     let at = t.at(0x1580);
     let ftl = t.img.rel32_target(at + 0x72);
-    let fst = t.img.rel32_target(at + 0x8d);
-    t.set_u32(t.img.word(ftl + 0x06), 0);
-    t.set_u32(t.img.word(fst + 0x02), 0);
     // the word the frame copies and the one it passes to slot 214
     magic_h6::distinct(&mut t, at, &[0x55, 0x98]);
     let part = SCRATCH + 0x1000;
@@ -94,6 +92,7 @@ fn part_and_frame() {
             |g, img, fr| Ret::eax(m0537::draw(g, img, fr.at, fr.ecx)),
         );
         t.set_u32(t.img.word(at + 0x16), on);
+        magic_h6::live_timeline_global(&mut t, ftl, SCRATCH + 0x600, 0x40);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

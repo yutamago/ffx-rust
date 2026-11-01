@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -136,8 +137,9 @@ fn nine_parts() {
     }
 }
 
-/// 0x10001f20: off, and on with slot 261's answers (the timelines idle);
-/// the words it copies and passes distinct.
+/// 0x10001f20: off, and on with slot 261's answers (the timelines live,
+/// so running or stopping one, or the wrong one, shows); the words it
+/// copies and passes distinct.
 #[test]
 fn frame() {
     let Some(mut t) = twin(N) else { return };
@@ -145,6 +147,7 @@ fn frame() {
     let cell = SCRATCH + 0x10;
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     recs(&mut t, &[(723, 1), (724, 2), (376, 1), (381, 1), (214, 1)]);
+    rec(&mut t, 253, 0, |_, _| 1);
     for op in [0x44u32, 0x4b, 0x7b, 0x9d] {
         let g = t.img.word(at + op);
         t.set_u32(g, 0x00a5_0000 + op);
@@ -159,6 +162,10 @@ fn frame() {
     ] {
         t.set_u32(t.img.word(at + 0x2), on);
         t.set_u32(cell, bits);
+        for (k, op) in (0u32..).zip([0x6b, 0xc9, 0xe9, 0xf3]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

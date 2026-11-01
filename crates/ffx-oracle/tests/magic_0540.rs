@@ -75,19 +75,17 @@ fn entries() {
 }
 
 /// 0x10001a00: off, and on with slot 261's answers, the task started
-/// once (the timelines idle).
+/// once (the timelines live, so running or stopping one, or the wrong
+/// one, shows).
 #[test]
 fn frame() {
     let Some(mut t) = twin(N) else { return };
     let cell = SCRATCH + 0x10;
     rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 3)) & 1);
     rec(&mut t, 417, 4, |_, _| 0x0041_7000);
+    rec(&mut t, 253, 0, |_, _| 1);
     recs(&mut t, &[(723, 1), (724, 2), (418, 1), (214, 2)]);
     let at = t.at(0x1a00);
-    for op in [0xa6, 0xc6, 0xf9] {
-        let tl = t.img.word(at + op);
-        t.set_u32(tl + 8, 0);
-    }
     let started = t.img.word(at + 0x62);
     // the word the frame copies and the one slot 214 gets, distinct
     magic_h6::distinct(&mut t, at, &[0x44, 0x11d]);
@@ -101,6 +99,10 @@ fn frame() {
         t.set_u32(t.img.word(at + 0x2), on);
         t.set_u32(cell, bits);
         t.set_u32(started, s);
+        for (k, op) in (0u32..).zip([0xa6, 0xc6, 0xf9, 0x103, 0x10d]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

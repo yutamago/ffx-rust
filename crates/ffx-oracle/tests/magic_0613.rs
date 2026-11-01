@@ -10,6 +10,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -36,6 +37,11 @@ fn task_start() {
     for bits in [0u16, 0x8001] {
         t.write(tail, &[0x1b; 0x20]);
         t.set_u32(t.img.word(at + 0x4), tail);
+        // the flag word (bit 0 set, so its clear shows) and the words
+        // the start clears, distinct and non-zero
+        magic_h6::distinct(&mut t, at, &[0x5f, 0x69, 0x54]);
+        let flag = t.img.word(at + 0x3e);
+        t.set_u32(flag, 0x00f1_a6c3);
         t.write(obj, &[0x4e; 0x100]);
         t.set_u16(obj + 0x90, bits);
         let c = Call {
@@ -65,6 +71,13 @@ fn centre() {
         0x0032_5000
     });
     magic_owna::rec(&mut t, 268, 3, |m, a| {
+        // the vector's 4 words as the call finds them (the previous
+        // part's difference and its w), per call
+        let k = m.r32(magic_owna::row(268)).wrapping_sub(1);
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x3_c000 + 0x10 * (k % 0x40) + 4 * i, v);
+        }
         for i in 0..3 {
             m.w32(
                 a[2] + 4 * i,

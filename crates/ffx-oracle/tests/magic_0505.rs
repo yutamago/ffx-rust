@@ -9,6 +9,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -89,15 +90,12 @@ fn clear() {
 }
 
 /// 0x10001a20: the frame off (slot 253 0, the flag clear) and on with
-/// slot 261's answers (the timelines idle).
+/// slot 261's answers (the timelines live, so running or stopping one, or
+/// the wrong one, shows).
 #[test]
 fn frame() {
     let Some(mut t) = twin(N) else { return };
     let at = t.at(0x1a20);
-    for op in [0x4b, 0x6b] {
-        let tl = t.img.word(at + op);
-        t.set_u32(tl + 8, 0);
-    }
     let cell = SCRATCH + 0x10;
     rec(&mut t, 253, 0, move |m, _| (m.r32(cell) >> 4) & 1);
     // slot 261 (k) answers bit k of the cell
@@ -117,6 +115,10 @@ fn frame() {
     ] {
         t.set_u32(t.img.word(at + 0x16), on);
         t.set_u32(cell, bits);
+        for (k, op) in (0u32..).zip([0x4b, 0x6b, 0x8b, 0x95]) {
+            let tl = t.img.word(at + op);
+            magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+        }
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

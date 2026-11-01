@@ -49,3 +49,40 @@ pub fn distinct(t: &mut Twin, f: u32, ops: &[u32]) {
 pub fn cell(t: &Twin, f: u32, op: u32) -> u32 {
     t.u32(t.img.word(f + op))
 }
+
+/// A timeline ([`timeline_run`](ffx_magic::sb_misc::timeline_run)'s
+/// layout) with one live event that hasn't started (its start far
+/// ahead, no callbacks; the event record at `ev`) and the time `time`:
+/// a run calls slot 253 and moves the time on, a stop ends the event
+/// (the live word and the count go to 0), so a port that runs or stops
+/// the wrong timeline, or skips one, shows. Set it again before each
+/// case (a stop leaves it idle).
+pub fn live_timeline(t: &mut Twin, tl: u32, ev: u32, time: u32) {
+    t.set_u32(tl, time);
+    t.set_u32(tl + 4, 1);
+    t.set_u32(tl + 8, 1);
+    t.set_u32(tl + 0xc, 1);
+    t.set_u32(tl + 0x10c, ev);
+    t.write(ev, &[0; 0x18]);
+    t.set_u32(ev, 0x7fff_0000);
+    t.set_u32(ev + 4, 1);
+}
+
+/// [`live_timeline`] for a DLL's own timeline
+/// ([`timeline`](ffx_magic::sa_misc::timeline) at `run`; its globals: the
+/// live count `+0x06`, the events pointer `+0x17`, the live words
+/// `+0x1f`, the event count `+0x25`, the time `+0x41`): one live event
+/// that hasn't started, at `ev`.
+pub fn live_timeline_global(t: &mut Twin, run: u32, ev: u32, time: u32) {
+    let w = |t: &Twin, op: u32| t.img.word(run + op);
+    let (live, events, flags, count, now) =
+        (w(t, 0x06), w(t, 0x17), w(t, 0x1f), w(t, 0x25), w(t, 0x41));
+    t.set_u32(live, 1);
+    t.set_u32(events, ev);
+    t.set_u32(flags, 1);
+    t.set_u32(count, 1);
+    t.set_u32(now, time);
+    t.write(ev, &[0; 0x18]);
+    t.set_u32(ev, 0x7fff_0000);
+    t.set_u32(ev + 4, 1);
+}

@@ -9,6 +9,7 @@
 )]
 
 mod magic;
+mod magic_h6;
 mod magic_hi;
 mod magic_l3;
 mod magic_owna;
@@ -24,9 +25,19 @@ fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
 }
 
+/// The part pointer's cell and the game flag's (the same globals in
+/// every copy).
+fn cells(t: &Twin) -> (u32, u32) {
+    let at = t.at(0x1070);
+    (magic_h6::cell(t, at, 0x2d), magic_h6::cell(t, at, 0xed))
+}
+
 /// The DLL's state for the part functions: the point globals each copy
 /// reads (filled with distinct floats), the slots' stubs, slot 712's
-/// answer from `answer`.
+/// answer from `answer`. Slots 258, 712 and 713 keep the part pointer's
+/// cell and the game flag as they find them, and 712 moves both on (as
+/// the game's part code may), so a store left out before or after a call
+/// shows.
 fn setup(t: &mut Twin, answer: u32) {
     for (a, n) in [
         (0x1005_c600u32, 0x100u32),
@@ -57,19 +68,18 @@ fn setup(t: &mut Twin, answer: u32) {
     }
     let cell = SCRATCH + 0x10;
     t.set_u32(cell, answer);
-    rec(t, 712, 2, move |m, _| m.r32(cell));
-    recs(
-        t,
-        &[
-            (723, 1),
-            (724, 2),
-            (258, 1),
-            (231, 3),
-            (230, 2),
-            (713, 1),
-            (714, 5),
-        ],
-    );
+    let (gp, lock) = cells(t);
+    magic_h6::rec_cells(t, 712, 2, &[gp, lock], move |m, _| {
+        m.w32(gp, 0x6666_0712);
+        m.w32(lock, 0x0712_0712);
+        m.r32(cell)
+    });
+    for slot in [258u32, 713] {
+        magic_h6::rec_cells(t, slot, 1, &[gp, lock], move |_, a| {
+            (0x5a5a_0000 + slot) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    recs(t, &[(723, 1), (724, 2), (231, 3), (230, 2), (714, 5)]);
 }
 
 /// Every part function, with slot 712 saying 0 and 1.
@@ -82,6 +92,9 @@ fn part_functions() {
             0x1070u32, 0x1250, 0x1430, 0x1580, 0x1670, 0x17b0, 0x1850, 0x1980, 0x1d50, 0x1de0,
         ] {
             let at = t.at(rva);
+            let (gp, lock) = cells(&t);
+            t.set_u32(gp, 0x7777_7777);
+            t.set_u32(lock, 0x00a1_0000);
             t.check_entry(at, Call::default(), &[], Eax::Checked);
         }
     }
@@ -100,7 +113,13 @@ fn start_up() {
     rec(&mut t, 719, 3, move |_, a| d + (a[1] & 0xc));
     rec(&mut t, 941, 3, |_, a| 0x0941_0000 ^ a[0]);
     rec(&mut t, 260, 1, |_, a| 0x0260_0000 ^ a[0]);
-    recs(&mut t, &[(718, 3), (222, 4), (711, 3), (710, 4)]);
+    // slot 711 keeps the game flag
+    let lock = magic_h6::cell(&t, at, 0x8f);
+    t.set_u32(lock, 0x00a1_0000);
+    magic_h6::rec_cells(&mut t, 711, 3, &[lock], |_, a| {
+        0x5a5a_0000 ^ a.first().copied().unwrap_or(0)
+    });
+    recs(&mut t, &[(718, 3), (222, 4), (710, 4)]);
     for (a, n) in [
         (0x1004_a200u32, 0x30u32),
         (0x1004_a420, 0x110),
