@@ -601,3 +601,89 @@ pub fn effect_kind_setup(t: &mut magic::Twin, f: u32, yaw: f32, kind: u32, liste
     t.set_u32(op(t, 0x1f7), if listed { SCRATCH + 0x600 } else { 0 });
     t.set_u32(op(t, 0x207), SCRATCH + 0x600);
 }
+
+/// What `r11_objects::sized_actors_0233` (at `f`) needs: the part
+/// set-up, the slots (268 fills the vector, 364/16 sizes), the object
+/// start, `n` actors, the records, the free ring (`free` nodes) and the
+/// task list.
+pub fn sized_actors_setup(t: &mut magic::Twin, f: u32, n: u32, free: u16, listed: bool) {
+    let op = |t: &magic::Twin, a: u32, o: u32| t.img.word(a + o);
+    pools(t, f, 677);
+    object_slots(t);
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(a[2] + 4 * i, 0x4000_0000 + (a[0] & 0xff) * 0x1000 + i);
+        }
+        0x268
+    });
+    t.stub_st0(364, |_, a| f64::from(a[0] & 0xff) * 0.75);
+    t.stub_st0(16, |_, a| f64::from(a[0] & 0xff) * 0.5 + 1.0);
+    object_start_setup(t, t.img.rel32_target(f + 0x7e), (0x80, 0x9b));
+    t.set_u32(op(t, f, 0x54), n);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(op(t, f, 0x99), sel);
+    for i in 0..8u8 {
+        t.set_u8(sel + u32::from(i), 3 + 5 * i);
+    }
+    for i in 0..0x40 {
+        t.set_u32(op(t, f, 0xa4) + 4 * i, 0x00c0_0000 + i);
+    }
+    t.write(op(t, f, 0x193), &[0x5c; 0x34 * 4]);
+    ring(t, op(t, f, 0x1ef), op(t, f, 0x1fe), free, SCRATCH + 0x8000);
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(op(t, f, 0x265), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(op(t, f, 0x275), SCRATCH + 0x600);
+}
+
+/// The actor-state check (`state_listed` at `sl`) answering `listed`,
+/// slots 12 and 333 (`yaw` its float).
+pub fn state_slots(t: &mut magic::Twin, sl: u32, listed: bool, yaw: f32) {
+    t.set_u32(t.img.word(sl + 0x01), SCRATCH + 0x180);
+    let first = t.u32(t.img.word(sl + 0x20));
+    let kind = SCRATCH + 0x9c;
+    t.set_u32(kind, if listed { first } else { 0x7777_7777 });
+    rec(t, 390, 1, move |m, _| m.r32(kind));
+    rec(t, 534, 1, |_, _| 0);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec(t, 333, 1, |_, a| a[0] ^ 0x333);
+    let v = SCRATCH + 0x94;
+    t.set_u32(v, yaw.to_bits());
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(v))));
+}
+
+/// What `r11_fades::kinds_two_fades` (`magic_0102`, at `f`) needs: the
+/// fade start-up's, the mean position over two actors, slot 390 answering
+/// a kind in the first list or not (`k1`) and in the second or not
+/// (`k2`), slot 12's height.
+pub fn kinds_setup(t: &mut magic::Twin, f: u32, k1: bool, k2: bool, listed: bool) {
+    fades_setup(
+        t,
+        f,
+        740,
+        &[0x120, 0x1bf],
+        (0x94, 0x9e),
+        &[0x164, 0x1fa, 0x223],
+        (0x24a, 0x25b, listed),
+    );
+    let m = t.img.rel32_target(f + 0x4c);
+    t.set_u32(t.img.word(m + 0x11), 2);
+    first_actor(t, m, 0x4d, 0x58);
+    let a = t.img.word(f + 0xc6);
+    t.set_u32(a, 0x77);
+    // the last kind of each list (the scan walks past the first)
+    let last = |t: &magic::Twin, at: u32| {
+        let mut at = at;
+        while t.u32(at + 4) != u32::MAX {
+            at += 4;
+        }
+        t.u32(at)
+    };
+    let first = last(t, t.img.word(f + 0x70));
+    let second = last(t, t.img.word(f + 0xe1));
+    let (c1, c2) = (
+        if k1 { first } else { 0x7777_0001 },
+        if k2 { second } else { 0x7777_0002 },
+    );
+    rec(t, 390, 1, move |_, a| if a[0] == 0x77 { c2 } else { c1 });
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+}

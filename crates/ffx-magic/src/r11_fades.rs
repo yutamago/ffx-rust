@@ -525,3 +525,404 @@ pub const MEAN_TWO_FADES_0103: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0100` 0x100013e0 (668 bytes): the head (two words, the part
+/// set up), then by the actor's state
+/// ([`state_listed`](crate::s4_misc::state_listed)) one of two objects
+/// started ([`start_object_state`](crate::r9_misc::start_object_state),
+/// scale `+0x45`): unlisted, `OBJ1` (`+0x55`, index 0) at the first
+/// actor's point `P1` (slots 262 and 268, then slot 12's height less `K`
+/// into `P1.y`, `P1.w` 1.0); listed, `OBJ2` (`+0xdf`, index 1) at `P2`
+/// (slots 262 and 268, `P2.w` 1.0); the object's record (`+0x14e` ..
+/// `+0x1a0`, into its `+0x110`) and the colour words, the colour task
+/// ([`colour_task`](crate::s4_small::colour_task)), two fades (`K` and
+/// `K5` `+0x146` crossed), slot 271 `(4)`, the task node (byte 2).
+/// Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn state_two_fades<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = fr.esp;
+    let s719 = slot_target(g, w(0x01), 0xb3c / 4);
+    stores(g, img, f, &[0x16, 0x20]);
+    let h = g.call(s719, 0, &[w(0x12), 8, 0]).eax;
+    g.write::<u32>(w(0x30), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x35));
+    let listed = Frame {
+        at: img.rel32_target(f + 0x3d),
+        esp: e - 0xc,
+        ..*fr
+    };
+    let state = crate::s4_misc::state_listed(g, img, &listed).eax;
+    let scale = g.read::<f32>(w(0x45));
+    let (obj, k) = if state == 0 {
+        let obj = w(0x55);
+        let at = img.rel32_target(f + 0x5d);
+        crate::r9_misc::start_object_state(g, img, at, obj, scale, 0);
+        let mut s = actor_point(g, img, f, (0x62, 0x76, 0x7b, 0x67, 0x6f, 0x80, 0x8e, 0x93));
+        s.push(first_actor(g, img, f, 0x62, 0x76));
+        // call width: 12 (Pushes caps the words at 12)
+        let top = s.call(g, slot_target(g, w(0xa3), 0x30 / 4), 0).st0;
+        g.write::<f32>(w(0xaf), crate::m0018::st0_f32(top));
+        let y = crate::sb_sse::sub(g.read::<f32>(w(0xb7)), g.read::<f32>(w(0xbf)));
+        stores(g, img, f, &[0xca]);
+        g.write::<f32>(w(0xd8), y);
+        (obj, 0xbf)
+    } else {
+        let obj = w(0xdf);
+        let at = img.rel32_target(f + 0xe8);
+        crate::r9_misc::start_object_state(g, img, at, obj, scale, 1);
+        actor_point(
+            g,
+            img,
+            f,
+            (0xed, 0x101, 0x106, 0xf2, 0xfa, 0x10b, 0x119, 0x11e),
+        );
+        stores(g, img, f, &[0x138]);
+        (obj, 0x131)
+    };
+    stores(
+        g,
+        img,
+        f,
+        &[0x14c, 0x156, 0x160, 0x16a, 0x174, 0x17e, 0x188, 0x192],
+    );
+    g.write::<u16>(w(0x19e), 0);
+    g.write::<u32>(obj + 0x110, w(0x1a8));
+    stores(
+        g,
+        img,
+        f,
+        &[0x1ac, 0x1b6, 0x1c0, 0x1ca, 0x1d4, 0x1de, 0x1e8],
+    );
+    zero_eax(g, img, f, &[0x1f2]);
+    let colour = Frame {
+        at: img.rel32_target(f + 0x1f8),
+        esp: e - 0xc,
+        ..*fr
+    };
+    crate::s4_small::colour_task(g, img, &colour);
+    let word1 = crate::r11_misc::byte(img, f + 0x1fd);
+    fade(
+        g,
+        img,
+        fr,
+        e - 0x10,
+        (k, 0x146, word1, w(0x1ff), 0x20a, 0x20f),
+    );
+    let word2 = crate::r11_misc::byte(img, f + 0x214);
+    let edx = w(0x216);
+    stores(g, img, f, &[0x225]);
+    fade(g, img, fr, e - 0x14, (0x146, k, word2, edx, 0x221, 0x230));
+    let s271 = g.read::<u32>(w(0x235));
+    stores(g, img, f, &[0x239]);
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[word1, word2, 4]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, g.read::<u32>(s271 + 0x43c), 0);
+    task_node(
+        g,
+        img,
+        f,
+        0x256,
+        Some(0x265),
+        (0x25c, 0x272, 0x27f, 0x28d, 0x295),
+    );
+    Ret::eax(0)
+}
+
+/// [`state_two_fades`] (`magic_0100` 0x100013e0).
+pub const STATE_TWO_FADES_0100: Sig = Sig {
+    len: 668,
+    hash: 0x10a8_47ae_ebc0_cc98,
+    calls: &[
+        (0x35, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x3d, Callee::Sig(&crate::s4_misc::STATE_LISTED)),
+        (0x5d, Callee::Sig(&crate::r9_misc::START_OBJECT_STATE_0100)),
+        (0xe8, Callee::Sig(&crate::r9_misc::START_OBJECT_STATE_0100)),
+        (0x1f8, Callee::Sig(&crate::s4_small::COLOUR_TASK)),
+        (0x20f, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x230, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x256, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0084` 0x10001430 (730 bytes, a frame with one local): the head
+/// (three words, the part set up; operands 4 bytes later than
+/// [`object_two_fades`]'), then by the actor's state
+/// ([`state_listed`](crate::s4_misc::state_listed)) one of two objects
+/// started ([`start_object`](crate::m0084::start_object), scale `+0x53`):
+/// unlisted, `OBJ1` (`+0x63`, index 0) at the first actor's point `P1`
+/// (slots 262 and 268, slot 12's height less `K` `+0xcd` into `P1.y`,
+/// `P1.w` 1.0, two words set); listed, `OBJ2` (`+0xfd`, index 1) at `P2`
+/// (slots 262 and 268, three words set); slot 333 `(*A)` (`+0x173`) gives
+/// the yaw `K3 - v` (`+0x186`) wrapped once (above `+0x195` less `+0x19f`,
+/// below `+0x1a9` plus `+0x1b6`; a NaN stays) into the object's `+0xc4`;
+/// its record (`+0x1e2` .. `+0x234`, into its `+0x110`) and four words; two
+/// fades (`xmm1`/`xmm2` from `+0x1be`/`+0x1c6`, then `+0x262`/`+0x1be`),
+/// slot 271 `(4)`, the task node. Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn state_yaw_two_fades<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.esp;
+    // push ebp; push ecx; push esi; push edi
+    let s719 = slot_target(g, w(0x05), 0xb3c / 4);
+    stores(g, img, f, &[0x1a, 0x24, 0x2e]);
+    let h = g.call(s719, 0, &[w(0x16), 8, 0]).eax;
+    g.write::<u32>(w(0x3e), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x43));
+    let listed = Frame {
+        at: img.rel32_target(f + 0x4b),
+        esp: e - 0x14,
+        ..*fr
+    };
+    let state = crate::s4_misc::state_listed(g, img, &listed).eax;
+    let scale = k(g, 0x53);
+    let obj = if state == 0 {
+        let obj = w(0x63);
+        crate::m0084::start_object(g, img, img.rel32_target(f + 0x6b), obj, scale, 0);
+        let mut s = actor_point(g, img, f, (0x70, 0x84, 0x89, 0x75, 0x7d, 0x8e, 0x9c, 0xa1));
+        s.push(first_actor(g, img, f, 0x70, 0x84));
+        // call width: 12 (Pushes caps the words at 12)
+        let top = s.call(g, slot_target(g, w(0xb1), 0x30 / 4), 0).st0;
+        g.write::<f32>(w(0xbd), crate::m0018::st0_f32(top));
+        let y = sub(k(g, 0xc5), k(g, 0xcd));
+        stores(g, img, f, &[0xd4, 0xde, 0xe8]);
+        g.write::<f32>(w(0xf6), y);
+        obj
+    } else {
+        let obj = w(0xfd);
+        crate::m0084::start_object(g, img, img.rel32_target(f + 0x106), obj, scale, 1);
+        actor_point(
+            g,
+            img,
+            f,
+            (0x10b, 0x11f, 0x124, 0x110, 0x118, 0x129, 0x137, 0x13c),
+        );
+        stores(g, img, f, &[0x14e, 0x158, 0x162]);
+        obj
+    };
+    let mut s = crate::pushes::Pushes::default();
+    let t333 = g.read::<u32>(w(0x16d));
+    s.push(g.read::<u32>(w(0x173)));
+    // call width: 12 (Pushes caps the words at 12)
+    let v = crate::m0018::st0_f32(s.call(g, g.read::<u32>(t333 + 0x534), 0).st0);
+    let x = sub(k(g, 0x186), v);
+    let yaw = if x > k(g, 0x195) {
+        sub(x, k(g, 0x19f))
+    } else if k(g, 0x1a9) > x {
+        add(x, k(g, 0x1b6))
+    } else {
+        x
+    };
+    g.write::<f32>(obj + 0xc4, yaw);
+    stores(
+        g,
+        img,
+        f,
+        &[0x1e0, 0x1ea, 0x1f4, 0x1fe, 0x208, 0x212, 0x21c, 0x226],
+    );
+    g.write::<u16>(w(0x232), 0);
+    g.write::<u32>(obj + 0x110, w(0x23c));
+    stores(g, img, f, &[0x240]);
+    zero_eax(g, img, f, &[0x24a, 0x24f, 0x254]);
+    fade(g, img, fr, e - 0x18, (0x1c6, 0x1be, 0, 8, 0x1dc, 0x25a));
+    let word2 = crate::r11_misc::byte(img, f + 0x267);
+    fade(
+        g,
+        img,
+        fr,
+        e - 0x1c,
+        (0x1be, 0x262, word2, w(0x269), 0x271, 0x276),
+    );
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[0, word2, 4]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x27b), 0x43c / 4), 0);
+    task_node(g, img, f, 0x292, None, (0x298, 0x2aa, 0x2b7, 0x2c8, 0x2d0));
+    Ret::eax(0)
+}
+
+/// [`state_yaw_two_fades`] (`magic_0084` 0x10001430).
+pub const STATE_YAW_TWO_FADES_0084: Sig = Sig {
+    len: 730,
+    hash: 0x9271_1ef4_1b0c_d3d4,
+    calls: &[
+        (0x43, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x4b, Callee::Sig(&crate::s4_misc::STATE_LISTED)),
+        (0x6b, Callee::Sig(&crate::m0084::START_OBJECT)),
+        (0x106, Callee::Sig(&crate::m0084::START_OBJECT)),
+        (0x25a, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x276, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x292, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// Whether `v` is in the word list at `list` (ended by -1).
+fn listed<G: Game>(g: &G, list: u32, v: u32) -> bool {
+    let mut at = list;
+    loop {
+        let x = g.read::<u32>(at);
+        if x == u32::MAX {
+            return false;
+        }
+        if x == v {
+            return true;
+        }
+        at = at.wrapping_add(4);
+    }
+}
+
+/// `magic_0102` 0x10001460 (740 bytes, a /GS frame): the head (two
+/// words, the part set up); the actors' mean position into the frame
+/// (`V` at `ebp - 0x14`; [`mean_position`](crate::sb_misc::mean_position));
+/// slot 390 `(SEL[0])`: a kind in the list `+0x70` puts `V` at the first
+/// actor's point (slots 262 and 268 into `V`) and `Y` = `V.y`; else `Y` =
+/// slot 12 `(chr)`'s height less `K` (`+0xb8`); slot 390 `(*A)` (`+0xc6`):
+/// a kind in the list `+0xe1` picks the callback `+0x2b8`, else `+0x104`;
+/// two objects start ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2):
+/// `OBJ1` `+0x11b` with `(0, -, 0x1e, CB1)` (`+0x116`, `+0x111`), `OBJ2`
+/// `+0x156` with `(1, -, 0, 0)`; scale `+0x10c`), each followed by `(V.x,
+/// Y, V.z)` copied into a point; the record between them (its callback
+/// the one picked); two fades, slot 271 `(4)`, the task node. Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn kinds_two_fades<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::m0018::st0_f32;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = fr.esp;
+    let ebp = e - 4;
+    let v = ebp - 0x14;
+    let local_y = ebp - 0x18;
+    let s719 = slot_target(g, w(0x11), 0xb3c / 4);
+    stores(g, img, f, &[0x25, 0x2f]);
+    let h = g.call(s719, 0, &[w(0x21), 8, 0]).eax;
+    g.write::<u32>(w(0x3f), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x44));
+    crate::sb_misc::mean_position(g, img, img.rel32_target(f + 0x4c), e - 0x2c, v);
+    let byte = |g: &G, sel: u32| u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+    let mut s = crate::pushes::Pushes::default();
+    s.push(byte(g, 0x51));
+    // call width: 12 (Pushes caps the words at 12)
+    let kind = s.call(g, slot_target(g, w(0x5a), 0x618 / 4), 0).eax;
+    let y = if listed(g, w(0x70), kind) {
+        let chr = g.read::<u32>(w(0x271).wrapping_add(4 * byte(g, 0x267)));
+        let mut s = crate::pushes::Pushes::default();
+        s.push_all(&[v + 8, v + 4, v, chr]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(0x282), 0x418 / 4), 0);
+        s.push_all(&[v, 0x11, chr]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(0x294), 0x430 / 4), 0);
+        let y = g.read::<f32>(v + 4);
+        g.write::<u32>(ebp - 8, 0x3f80_0000);
+        y
+    } else {
+        let chr = g.read::<u32>(w(0x9e).wrapping_add(4 * byte(g, 0x94)));
+        let mut s = crate::pushes::Pushes::default();
+        s.push(chr);
+        // call width: 12 (Pushes caps the words at 12)
+        let top = st0_f32(s.call(g, slot_target(g, w(0xa3), 0x30 / 4), 0).st0);
+        crate::sb_sse::sub(top, g.read::<f32>(w(0xb8)))
+    };
+    let t390 = g.read::<u32>(w(0xc0));
+    let mut s = crate::pushes::Pushes::default();
+    s.push(g.read::<u32>(w(0xc6)));
+    g.write::<f32>(local_y, y);
+    // call width: 12 (Pushes caps the words at 12)
+    let kind2 = s.call(g, g.read::<u32>(t390 + 0x618), 0).eax;
+    let callback = if listed(g, w(0xe1), kind2) {
+        w(0x2b8)
+    } else {
+        w(0x104)
+    };
+    // the starts' four words below the frame: (index, ecx, a, b)
+    let below = e - 0x30;
+    let start = |g: &mut G, (obj, call): (u32, u32), args: [u32; 4]| {
+        for (i, x) in (0u32..).zip(args) {
+            g.write::<u32>(below + 4 * i, x);
+        }
+        let fr2 = Frame {
+            at: img.rel32_target(f + call),
+            esp: below - 4,
+            edx: w(obj),
+            xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0x10c)))],
+            ..*fr
+        };
+        crate::s6_misc::start_object_anim_2(g, img, &fr2);
+    };
+    let a = crate::r11_misc::byte(img, f + 0x116);
+    start(g, (0x11b, 0x120), [0, 0, a, w(0x111)]);
+    let copy = |g: &mut G, ops: [u32; 3]| {
+        for (o, at) in ops.into_iter().zip([v, local_y, v + 8]) {
+            let x = g.read::<u32>(at);
+            g.write::<u32>(w(o), x);
+        }
+    };
+    copy(g, [0x13b, 0x149, 0x15e]);
+    stores(g, img, f, &[0x162, 0x16c, 0x176, 0x180, 0x18a]);
+    g.write::<u32>(w(0x196), callback);
+    stores(g, img, f, &[0x19a, 0x1a4]);
+    g.write::<u16>(w(0x1b0), 0);
+    stores(g, img, f, &[0x1b4]);
+    start(g, (0x156, 0x1bf), [1, 0, 0, 0]);
+    copy(g, [0x1dc, 0x1e9, 0x202]);
+    let word1 = crate::r11_misc::byte(img, f + 0x1f3);
+    fade(
+        g,
+        img,
+        fr,
+        e - 0x38,
+        (0x1cc, 0x1d4, word1, w(0x1f5), 0x1fa, 0x207),
+    );
+    let word2 = crate::r11_misc::byte(img, f + 0x21c);
+    fade(
+        g,
+        img,
+        fr,
+        e - 0x3c,
+        (0x20f, 0x217, word2, w(0x21e), 0x223, 0x228),
+    );
+    let mut s = crate::pushes::Pushes::default();
+    s.push_all(&[1, word1, word2, 4]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x22d), 0x43c / 4), 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x244), w(0x23f));
+    let first = g.read::<u32>(w(0x24a));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x2c8), node);
+    } else {
+        let last = g.read::<u32>(w(0x25b));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x2d3), node);
+    // __security_check_cookie leaves `eax`
+    Ret::eax(0)
+}
+
+/// [`kinds_two_fades`] (`magic_0102` 0x10001460).
+pub const KINDS_TWO_FADES_0102: Sig = Sig {
+    len: 740,
+    hash: 0x21e2_3609_4b4a_8ea8,
+    calls: &[
+        (0x44, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x4c, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x120, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+        (0x1bf, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+        (0x207, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x228, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x244, Callee::Sig(&crate::sa_pool::TAKE)),
+        // __security_check_cookie
+        (0x2dc, Callee::Any),
+    ],
+    imports: &[],
+};

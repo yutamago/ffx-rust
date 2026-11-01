@@ -179,4 +179,12 @@ copies! {
     load_0054 => LOAD_0054, One, crate::r11_misc::two_anim_objects_0054, crate::r11_misc::TWO_ANIM_OBJECTS_0054;
     /// `magic_0231` 0x10001210.
     load_0231 => LOAD_0231, One, crate::r11_effect::effect_start_kind, crate::r11_effect::EFFECT_START_KIND_0231;
+    /// `magic_0233` 0x10001210.
+    load_0233 => LOAD_0233, One, crate::r11_objects::sized_actors_0233, crate::r11_objects::SIZED_ACTORS_0233;
+    /// `magic_0100` 0x100012b0.
+    load_0100 => LOAD_0100, One, crate::r11_fades::state_two_fades, crate::r11_fades::STATE_TWO_FADES_0100;
+    /// `magic_0084` 0x10001300.
+    load_0084 => LOAD_0084, One, crate::r11_fades::state_yaw_two_fades, crate::r11_fades::STATE_YAW_TWO_FADES_0084;
+    /// `magic_0102` 0x10001300.
+    load_0102 => LOAD_0102, One, crate::r11_fades::kinds_two_fades, crate::r11_fades::KINDS_TWO_FADES_0102;
 }

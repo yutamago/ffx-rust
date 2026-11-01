@@ -182,3 +182,99 @@ fn effect_start_kind() {
         );
     }
 }
+
+/// `magic_0100` 0x100013e0 (`r11_fades::state_two_fades`): the actor's
+/// state listed (the second object) and not (slot 534 answering 0: the
+/// first), the task list empty and not.
+#[test]
+fn state_two_fades_0100() {
+    let Some(mut t) = twin(100) else { return };
+    let f = t.at(0x13e0);
+    let sl = t.img.rel32_target(f + 0x3d);
+    let listed_kind = t.u32(t.img.word(sl + 0x20));
+    let kind = magic::SCRATCH + 0x9c;
+    for (state, listed) in [(false, false), (true, true), (false, true), (true, false)] {
+        magic_r11::fades_setup(
+            &mut t,
+            f,
+            668,
+            &[0x5d, 0xe8],
+            (0x62, 0x76),
+            &[0x14e, 0x20a, 0x221],
+            (0x25c, 0x272, listed),
+        );
+        t.set_u32(t.img.word(sl + 0x01), magic::SCRATCH + 0x180);
+        t.set_u32(kind, if state { listed_kind } else { 0x7777_7777 });
+        magic_owna::rec(&mut t, 390, 1, move |m, _| m.r32(kind));
+        magic_owna::rec(&mut t, 534, 1, |_, _| 0);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r11_fades::state_two_fades,
+        );
+    }
+}
+
+/// `magic_0084` 0x10001430 (`r11_fades::state_yaw_two_fades`): both
+/// states, the yaw on each side of its wrap and NaN, the task list empty
+/// and not.
+#[test]
+fn state_yaw_two_fades_0084() {
+    let Some(mut t) = twin(84) else { return };
+    let f = t.at(0x1430);
+    let sl = t.img.rel32_target(f + 0x4b);
+    let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+    let k = kf(&t, 0x186);
+    let (hi, lo) = (kf(&t, 0x195), kf(&t, 0x1a9));
+    for (state, listed, v) in [
+        (false, false, 0.0f32),
+        (true, true, k - hi - 1.0),
+        (false, true, k - lo + 1.0),
+        (true, false, f32::NAN),
+    ] {
+        magic_r11::fades_setup(
+            &mut t,
+            f,
+            730,
+            &[0x6b, 0x106],
+            (0x70, 0x84),
+            &[0x1e2, 0x1dc, 0x271],
+            (0x298, 0x2aa, listed),
+        );
+        magic_r11::state_slots(&mut t, sl, state, v);
+        t.set_u32(t.img.word(f + 0x173), 0x0173_0000 ^ v.to_bits());
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r11_fades::state_yaw_two_fades,
+        );
+    }
+}
+
+/// `magic_0102` 0x10001460 (`r11_fades::kinds_two_fades`): both kinds
+/// listed or not, the task list empty and not.
+#[test]
+fn kinds_two_fades_0102() {
+    let Some(mut t) = twin(102) else { return };
+    let f = t.at(0x1460);
+    for (k1, k2, listed) in [
+        (false, false, false),
+        (true, true, true),
+        (true, false, false),
+        (false, true, true),
+    ] {
+        magic_r11::kinds_setup(&mut t, f, k1, k2, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r11_fades::kinds_two_fades,
+        );
+    }
+}

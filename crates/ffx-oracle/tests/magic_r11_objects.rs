@@ -125,3 +125,22 @@ fn two_per_actor() {
         }
     }
 }
+
+/// `magic_0233` 0x10001370 (`r11_objects::sized_actors_0233`): no, one
+/// and three actors; one and three free nodes; the task list empty and
+/// not.
+#[test]
+fn sized_actors_0233() {
+    let Some(mut t) = twin(233) else { return };
+    let f = t.at(0x1370);
+    for (n, free, listed) in [(0u32, 3u16, false), (1, 1, true), (3, 3, true)] {
+        magic_r11::sized_actors_setup(&mut t, f, n, free, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r11_objects::sized_actors_0233,
+        );
+    }
+}

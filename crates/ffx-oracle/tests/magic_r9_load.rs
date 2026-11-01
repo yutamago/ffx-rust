@@ -372,3 +372,53 @@ fn load_0231() {
         magic_r11::effect_kind_setup(t, start, 1.0, 0, false);
     });
 }
+
+#[test]
+fn load_0233() {
+    copy(233, 0x1210, true, |t, start| {
+        magic_r11::sized_actors_setup(t, start, 2, 4, false);
+    });
+}
+
+#[test]
+fn load_0100() {
+    copy(100, 0x12b0, true, |t, start| {
+        magic_r11::fades_setup(
+            t,
+            start,
+            668,
+            &[0x5d, 0xe8],
+            (0x62, 0x76),
+            &[0x14e, 0x20a, 0x221],
+            (0x25c, 0x272, false),
+        );
+        let sl = t.img.rel32_target(start + 0x3d);
+        t.set_u32(t.img.word(sl + 0x01), magic::SCRATCH + 0x180);
+        magic_owna::rec(t, 534, 1, |_, _| 0);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    });
+}
+
+#[test]
+fn load_0084() {
+    copy(84, 0x1300, true, |t, start| {
+        magic_r11::fades_setup(
+            t,
+            start,
+            730,
+            &[0x6b, 0x106],
+            (0x70, 0x84),
+            &[0x1e2, 0x1dc, 0x271],
+            (0x298, 0x2aa, false),
+        );
+        let sl = t.img.rel32_target(start + 0x4b);
+        magic_r11::state_slots(t, sl, false, 1.0);
+    });
+}
+
+#[test]
+fn load_0102() {
+    copy(102, 0x1300, true, |t, start| {
+        magic_r11::kinds_setup(t, start, true, false, false);
+    });
+}

@@ -1070,10 +1070,17 @@ ports! {
     "r9 load step 0065" => r9_load::LOAD_0065, r9_load::load_0065;
     "r9 load step 0054" => r9_load::LOAD_0054, r9_load::load_0054;
     "r9 load step 0231" => r9_load::LOAD_0231, r9_load::load_0231;
+    "r9 load step 0233" => r9_load::LOAD_0233, r9_load::load_0233;
+    "r9 load step 0100" => r9_load::LOAD_0100, r9_load::load_0100;
+    "r9 load step 0084" => r9_load::LOAD_0084, r9_load::load_0084;
+    "r9 load step 0102" => r9_load::LOAD_0102, r9_load::load_0102;
     "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
     "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
     "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
     "r11 main object 0369" => r11_misc::MAIN_OBJECT_0369, r11_misc::main_object_0369;
+    "r11 aim at target 0191" => r11_misc::AIM_AT_TARGET_0191, r11_misc::aim_at_target_0191;
+    "r11 between actors 0194" => r11_misc::BETWEEN_ACTORS_0194, r11_misc::between_actors_0194;
+    "r11 part at effect 0429" => r11_misc::PART_AT_EFFECT_0429, r11_misc::part_at_effect_0429;
     "m0481 start" => m0481::START, m0481::start;
     "m0481 end" => m0481::END, m0481::end;
     "m0596 start" => m0596::START, m0596::start;
@@ -2730,6 +2737,13 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         &r11_effect::EFFECT_START_LOOKUP_0197,
     ),
     ("r11 colour start 0065", &r11_misc::COLOUR_START_0065),
+    ("r11 sized actors 0233", &r11_objects::SIZED_ACTORS_0233),
+    ("r11 state two fades 0100", &r11_fades::STATE_TWO_FADES_0100),
+    (
+        "r11 state yaw two fades 0084",
+        &r11_fades::STATE_YAW_TWO_FADES_0084,
+    ),
+    ("r11 kinds two fades 0102", &r11_fades::KINDS_TWO_FADES_0102),
     (
         "r11 effect start (kind) 0231",
         &r11_effect::EFFECT_START_KIND_0231,

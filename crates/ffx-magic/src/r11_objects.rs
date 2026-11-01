@@ -703,3 +703,136 @@ three_nodes_copies! {
     THREE_NODES_0121, 0x1e48_5c43_827e_25ef, crate::s4_misc::START_OBJECT_FIRST,
         "`magic_0121` 0x10002ec0";
 }
+
+/// One object per actor, each point's height lowered by the actor's size
+/// (`magic_0233` 0x10001370, 677 bytes, a /GS frame): the head as in
+/// [`three_nodes`] (operands `+0x11` .. `+0x44`); for each of the `*G_N` (`+0x54`, `+0x1e0`) actors
+/// `i`: the object `OBJ + 0x130 i` (`+0x75`) starts
+/// ([`start_object_first`](crate::s4_misc::start_object_first), scale
+/// `*K` `+0x64`, owner `15 i`); slot 262 `(chr, p, p + 4, p + 8)` for its
+/// point `p = obj + 0xd0` (`chr` = `CHR[SEL[i]]`, `+0xa4`, `+0x99`); the
+/// size `s` = slot 16 `(chr)` times slot 364 `(chr)` (`+0xdd`, `+0xd2`);
+/// slot 268 `(chr, 6, &V)` (`V` on the frame at `ebp - 0x14`); `p + 0xc`
+/// 1.0, `p.y` = `V.y - s K2` (`+0x133`) plus `K3` (`+0x15b`); the actor's
+/// byte (`+0x174`) into `obj + 0x120`, the record `REC + 0x34 i`
+/// (`+0x193`; `+0x189` cleared first, the immediates `+0x1b1`, `+0x1b8`)
+/// into `obj + 0x110`. Then a task node taken inline from the free ring
+/// (count `u16 +0x1ef`, head `+0x1fe`; owner `+0x254`) goes last on the
+/// task list (first `+0x265`, last `+0x275`). Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn sized_actors_0233<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::m0018::st0_f32;
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let v_at = ebp - 0x14;
+    let s719 = slot_target(g, w(0x11), 0xb3c / 4);
+    crate::r11_fades::stores(g, img, f, &[0x25, 0x2f]);
+    let part = g.call(s719, 0, &[w(0x21), 8, 0]).eax;
+    g.write::<u32>(w(0x3f), part);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x44));
+    let mut owner = 0u32;
+    let mut i = 0u32;
+    if g.read::<u32>(w(0x54)).cast_signed() > 0 {
+        loop {
+            let obj = w(0x75).wrapping_add(i.wrapping_mul(0x130));
+            let scale = g.read::<f32>(w(0x64));
+            let at = img.rel32_target(f + 0x7e);
+            crate::s4_misc::start_object_first(g, img, at, obj, scale, owner);
+            let p = obj + 0xd0;
+            let chr_of = |g: &G, sel: u32, table: u32| {
+                let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel)).wrapping_add(i)));
+                g.read::<u32>(w(table).wrapping_add(4 * b))
+            };
+            let chr = chr_of(g, 0x99, 0xa4);
+            let mut s = crate::pushes::Pushes::default();
+            s.push_all(&[p + 8, p + 4, p, chr]);
+            // call width: 12 (Pushes caps the words at 12)
+            s.call(g, slot_target(g, w(0xad), 0x418 / 4), 0);
+            let mut s = crate::pushes::Pushes::default();
+            let chr2 = chr_of(g, 0xd2, 0xdd);
+            s.push(chr2);
+            // call width: 12 (Pushes caps the words at 12)
+            let a = st0_f32(s.call(g, slot_target(g, w(0xe6), 0x5b0 / 4), 0).st0);
+            s.push(chr2);
+            // call width: 12 (Pushes caps the words at 12)
+            let b = st0_f32(s.call(g, slot_target(g, w(0xf6), 0x40 / 4), 0).st0);
+            let size = mul(b, a);
+            s.push_all(&[v_at, 6, chr]);
+            // call width: 12 (Pushes caps the words at 12)
+            s.call(g, slot_target(g, w(0x114), 0x430 / 4), 0);
+            let drop = mul(size, g.read::<f32>(w(0x133)));
+            let vy = g.read::<f32>(v_at + 4);
+            g.write::<u32>(p + 0xc, 0x3f80_0000);
+            g.write::<f32>(p + 4, sub(vy, drop));
+            let y = add(g.read::<f32>(p + 4), g.read::<f32>(w(0x15b)));
+            g.write::<f32>(p + 4, y);
+            let sel = g.read::<u32>(w(0x174));
+            let byte = u32::from(g.read::<u8>(sel.wrapping_add(i)));
+            g.write::<u32>(obj + 0x120, byte);
+            let off = i.wrapping_mul(0x34);
+            g.write::<u32>(w(0x189).wrapping_add(off), 0);
+            let rec = w(0x193).wrapping_add(off);
+            for o in [0x14, 0x10, 0x1c] {
+                g.write::<u32>(rec + o, 0);
+            }
+            g.write::<u32>(rec + 0x20, w(0x1b1));
+            g.write::<u32>(rec + 0x24, w(0x1b8));
+            g.write::<u32>(rec + 0x28, 0);
+            g.write::<u32>(rec + 0x2c, 0);
+            g.write::<u16>(rec + 0x30, 0);
+            g.write::<u32>(obj + 0x110, rec);
+            owner = owner.wrapping_add(0xf);
+            i = i.wrapping_add(1);
+            if i.cast_signed() >= g.read::<u32>(w(0x1e0)).cast_signed() {
+                break;
+            }
+        }
+    }
+    // the task node, the ring's take inlined (node 0 when it is empty:
+    // the original faults there)
+    let free = g.read::<u16>(w(0x1ef));
+    let node = if free == 0 {
+        0
+    } else {
+        let n = g.read::<u32>(w(0x1fe));
+        unlink(g, n);
+        if free > 1 {
+            let next = g.read::<u32>(n + 4);
+            g.write::<u32>(w(0x21b), next);
+        } else {
+            g.write::<u32>(w(0x223), 0);
+        }
+        clear(g, n, w(0x254));
+        g.write::<u16>(w(0x25f), free - 1);
+        n
+    };
+    let first = g.read::<u32>(w(0x265));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x288), node);
+    } else {
+        let last = g.read::<u32>(w(0x275));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last + 4, node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x296), node);
+    // __security_check_cookie leaves `eax`
+    Ret::eax(0)
+}
+
+/// [`sized_actors_0233`] (`magic_0233` 0x10001370).
+pub const SIZED_ACTORS_0233: Sig = Sig {
+    len: 677,
+    hash: 0xe12e_838e_4711_c98d,
+    calls: &[
+        (0x44, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x7e, Callee::Sig(&crate::s4_misc::START_OBJECT_FIRST)),
+        // __security_check_cookie
+        (0x29d, Callee::Any),
+    ],
+    imports: &[],
+};
