@@ -1334,3 +1334,88 @@ pub const SUMMON_SCRIPT_FRAME_B: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The 12-byte `mov ecx, [ebp + 8]; jmp X` thunks (the node tables'
+/// entries, `crate::s3_wrap`) over this list's handlers: `X` runs with
+/// the cursor in `ecx` and the caller's stack. A target that is none of
+/// them cannot bind (each thunk's `Sig` names its callee).
+pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    let target = img.rel32_target(fr.at + 8);
+    let fr = Frame {
+        at: target,
+        ecx,
+        ..*fr
+    };
+    let handlers: [(&Sig, fn(&mut G, &Image, &Frame) -> u32); 7] = [
+        (&MOVING_LIGHT_NODE, moving_light_node),
+        (&COUNT_FADE, count_fade),
+        (&MODEL_DRAW_NODE, model_draw_node),
+        (&LIGHT_NODE, light_node),
+        (&HANDLES_REGISTERED, handles_registered),
+        (&MODEL_POINTS_NODE, model_points_node),
+        (&RING_KEY_FRAME, ring_key_frame),
+    ];
+    for (sig, port) in handlers {
+        if img.matches(target, sig) {
+            return Ret::eax(port(g, img, &fr));
+        }
+    }
+    Ret::eax(fr.eax)
+}
+
+/// `magic_0155` 0x10004890 (4 DLLs) over [`moving_light_node`].
+pub const JMP_MOVING_LIGHT_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&MOVING_LIGHT_NODE))],
+    imports: &[],
+};
+
+/// `magic_0384` 0x10001f10 (3 DLLs) over [`count_fade`].
+pub const JMP_COUNT_FADE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&COUNT_FADE))],
+    imports: &[],
+};
+
+/// `magic_0478` 0x10004050 (3 DLLs) over [`model_draw_node`].
+pub const JMP_MODEL_DRAW_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&MODEL_DRAW_NODE))],
+    imports: &[],
+};
+
+/// `magic_0150` 0x10001140 (2 DLLs) over [`light_node`].
+pub const JMP_LIGHT_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&LIGHT_NODE))],
+    imports: &[],
+};
+
+/// `magic_0150` 0x10006e60 (2 DLLs) over [`handles_registered`].
+pub const JMP_HANDLES_REGISTERED: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&HANDLES_REGISTERED))],
+    imports: &[],
+};
+
+/// `magic_0150` 0x10002e60 (2 DLLs) over [`model_points_node`].
+pub const JMP_MODEL_POINTS_NODE: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&MODEL_POINTS_NODE))],
+    imports: &[],
+};
+
+/// `magic_0578` 0x10006780 (2 DLLs) over [`ring_key_frame`].
+pub const JMP_RING_KEY_FRAME: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&RING_KEY_FRAME))],
+    imports: &[],
+};

@@ -80,7 +80,7 @@ fn log_calls(
 /// `cdq`), the lock word seen by each registration.
 #[test]
 fn handles_registered() {
-    for (dll, rva) in [(150u16, 0x4110u32), (603, 0x4110)] {
+    for (dll, rva, thunk) in [(150u16, 0x4110u32, 0x6e60u32), (603, 0x4110, 0x6e60)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -120,6 +120,8 @@ fn handles_registered() {
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::handles_registered(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[cell], Eax::Checked);
         }
     }
 }
@@ -129,7 +131,11 @@ fn handles_registered() {
 /// for `rand()`'s 1-in-16 node start (slots 434 and 942 logged).
 #[test]
 fn count_fades() {
-    for (dll, rva) in [(384u16, 0x1d30u32), (421, 0x1d20), (535, 0x1d00)] {
+    for (dll, rva, thunk) in [
+        (384u16, 0x1d30u32, 0x1f10u32),
+        (421, 0x1d20, 0x1f00),
+        (535, 0x1d00, 0x1ee0),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -162,6 +168,8 @@ fn count_fades() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::count_fade(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[o], Eax::Checked);
         }
     }
 }
@@ -172,7 +180,7 @@ fn count_fades() {
 /// the table's count.
 #[test]
 fn ring_key_frames() {
-    for (dll, rva) in [(578u16, 0x66a0u32), (649, 0x6740)] {
+    for (dll, rva, thunk) in [(578u16, 0x66a0u32, 0x6780u32), (649, 0x6740, 0x6820)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -250,6 +258,8 @@ fn ring_key_frames() {
             t.check(f, call, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::ring_key_frame(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -661,7 +671,7 @@ fn ring_handler(t: &mut Twin, log: u32) -> u32 {
 /// no child).
 #[test]
 fn model_points_nodes() {
-    for (dll, rva) in [(150u16, 0x2d30u32), (603, 0x2d30)] {
+    for (dll, rva, thunk) in [(150u16, 0x2d30u32, 0x2e60u32), (603, 0x2d30, 0x2e60)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -700,6 +710,8 @@ fn model_points_nodes() {
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::model_points_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -708,7 +720,7 @@ fn model_points_nodes() {
 /// count, a value not above 0 (0, negative, NaN) and above it.
 #[test]
 fn light_nodes() {
-    for (dll, rva) in [(150u16, 0x1000u32), (603, 0x1000)] {
+    for (dll, rva, thunk) in [(150u16, 0x1000u32, 0x1140u32), (603, 0x1000, 0x1140)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -753,6 +765,8 @@ fn light_nodes() {
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::light_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -844,7 +858,11 @@ fn summon_load_frames() {
 /// (the slots see the matrix and the draw record).
 #[test]
 fn model_draw_nodes() {
-    for (dll, rva) in [(478u16, 0x3f00u32), (513, 0x3f80), (514, 0x4320)] {
+    for (dll, rva, thunk) in [
+        (478u16, 0x3f00u32, 0x4050u32),
+        (513, 0x3f80, 0x40d0),
+        (514, 0x4320, 0x4470),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let log = SCRATCH + 0x6000;
@@ -888,6 +906,8 @@ fn model_draw_nodes() {
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::model_draw_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }
@@ -1041,11 +1061,11 @@ fn landing_puffs() {
 /// at and past its bound (and NaN).
 #[test]
 fn moving_light_nodes() {
-    for (dll, rva) in [
-        (155u16, 0x4720u32),
-        (164, 0x4710),
-        (609, 0x47c0),
-        (613, 0x4790),
+    for (dll, rva, thunk) in [
+        (155u16, 0x4720u32, 0x4890u32),
+        (164, 0x4710, 0x4880),
+        (609, 0x47c0, 0x4930),
+        (613, 0x4790, 0x4900),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
@@ -1103,6 +1123,8 @@ fn moving_light_nodes() {
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 Ret::eax(s7_misc::moving_light_node(g, img, fr))
             });
+            // and through its thunk (`ecx` from the stack)
+            t.check_entry(t.at(thunk), Call::default(), &[s], Eax::Checked);
         }
     }
 }

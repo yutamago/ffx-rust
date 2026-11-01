@@ -2172,6 +2172,13 @@ ports! {
     "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;
     "summon script frame" => s7_misc::SUMMON_SCRIPT_FRAME, s7_misc::summon_script_frame;
     "summon script frame (selection groups)" => s7_misc::SUMMON_SCRIPT_FRAME_B, s7_misc::summon_script_frame;
+    "thunk: moving light node" => s7_misc::JMP_MOVING_LIGHT_NODE, s7_misc::ecx_jmp;
+    "thunk: count fade" => s7_misc::JMP_COUNT_FADE, s7_misc::ecx_jmp;
+    "thunk: model draw node" => s7_misc::JMP_MODEL_DRAW_NODE, s7_misc::ecx_jmp;
+    "thunk: light node" => s7_misc::JMP_LIGHT_NODE, s7_misc::ecx_jmp;
+    "thunk: handles registered" => s7_misc::JMP_HANDLES_REGISTERED, s7_misc::ecx_jmp;
+    "thunk: model points node" => s7_misc::JMP_MODEL_POINTS_NODE, s7_misc::ecx_jmp;
+    "thunk: ring key frame" => s7_misc::JMP_RING_KEY_FRAME, s7_misc::ecx_jmp;
     // round 6, the shape families (o6_fam_*)
     "o6 fam setup object_setup 0361@16a0" => o6_fam_setup::OBJECT_SETUP_0361_16A0, o6_fam_setup::object_setup;
     "o6 fam setup object_setup 0361@17f0" => o6_fam_setup::OBJECT_SETUP_0361_17F0, o6_fam_setup::object_setup;
