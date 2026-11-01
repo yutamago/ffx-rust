@@ -4302,3 +4302,108 @@ pub const SPRITE_FRAMES: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`sprite_frames`] over a block (internal: `ecx` = the block `B`,
+/// `xmm3` = the time step `dt`): the count at `B+0`, the records at
+/// `*(B+4)`, the flag at `B+0x18`, slot 229's vector `B+0x1c`, `x`
+/// from `*G_X`. `magic_0375`'s copy keeps its words on an `ebp` frame
+/// (`dt` at `ebp-0x20`, `x` at `-0x1c`, `L` at `-0x18`, `B` at `-0x24`),
+/// `magic_0371`'s on a frame aligned to 8 (`E` = `((esp - 4) & !7) -
+/// 0x30`: `dt` at `E+0x14`, `x` at `+0x10`, `L` at `+0x1c`, `B` at
+/// `+0x18`). Returns `x`.
+///
+/// `magic_0375` 0x10003890 (168 bytes; 3 DLLs), `magic_0371` 0x10002bf0
+/// (181 bytes; 3 DLLs).
+pub fn block_sprite_frames<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let aligned = img.word(f + 3) & 0xff00 == 0xe400;
+    // (x's global, slot 229's table, slot 325's table, the frame's call)
+    let ops = if aligned {
+        [0x15, 0x4f, 0x64, 0x83]
+    } else {
+        [0x11, 0x48, 0x5c, 0x79]
+    };
+    let ebp = fr.esp.wrapping_sub(4);
+    // (dt, x, L, B, the frame's `esp`)
+    let [dt_at, x_at, l, b_at, call] = if aligned {
+        let e = (ebp & !7).wrapping_sub(0x30);
+        [e + 0x14, e + 0x10, e + 0x1c, e + 0x18, e.wrapping_sub(0xc)]
+    } else {
+        let s = |o: u32| ebp.wrapping_sub(o);
+        [s(0x20), s(0x1c), s(0x18), s(0x24), s(0x40)]
+    };
+    let b = fr.ecx;
+    let dt = fr.xmm_f32(3).to_bits();
+    let mut x = g.read::<u32>(w(ops[0]));
+    let base = g.read::<u32>(b.wrapping_add(4));
+    g.write::<u32>(dt_at, dt);
+    g.write::<u32>(b_at, b);
+    g.write::<u32>(x_at, x);
+    let frame_at = img.rel32_target(f + ops[3]);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(b) {
+        let rec = base.wrapping_add(i.wrapping_mul(0x94));
+        if g.read::<u32>(rec) != 0 {
+            let p = if g.read::<u32>(b.wrapping_add(0x18)) == 0 {
+                rec.wrapping_add(4)
+            } else {
+                let v = b.wrapping_add(0x1c);
+                g.call(
+                    slot_target(g, w(ops[1]), 229),
+                    0,
+                    &[l, v, rec.wrapping_add(4)],
+                );
+                l
+            };
+            g.call(
+                slot_target(g, w(ops[2]), 325),
+                0,
+                &[rec.wrapping_add(0x44), p],
+            );
+            g.write::<u32>(call + 4, x);
+            g.write::<u32>(call + 8, i);
+            let sub = Frame {
+                at: frame_at,
+                esp: call,
+                eax: 0,
+                ecx: rec.wrapping_add(0x30),
+                edx: 0,
+                xmm: [0, 0, 0, u128::from(dt)],
+            };
+            x = crate::o6_fam_pairs5::sprite_frame(g, img, &sub).eax;
+            g.write::<u32>(x_at, x);
+        }
+        i += 1;
+    }
+    Ret::eax(x)
+}
+
+/// [`block_sprite_frames`] in `magic_0375` (the `rel32`s: the record's
+/// frame, `__security_check_cookie`).
+pub const BLOCK_SPRITE_FRAMES: Sig = Sig {
+    len: 168,
+    hash: 0xa702_d613_9ae4_f596,
+    calls: &[
+        (
+            0x79,
+            Callee::Sig(&crate::o6_fam_pairs5::SPRITE_FRAME_0206_2730),
+        ),
+        (0xa0, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`block_sprite_frames`] in `magic_0371` (the frame aligned to 8).
+pub const BLOCK_SPRITE_FRAMES_B: Sig = Sig {
+    len: 181,
+    hash: 0xfa84_9339_b622_a4fd,
+    calls: &[
+        (
+            0x83,
+            Callee::Sig(&crate::o6_fam_pairs5::SPRITE_FRAME_0206_2730),
+        ),
+        (0xad, Callee::Any),
+    ],
+    imports: &[],
+};

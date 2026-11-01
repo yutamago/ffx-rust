@@ -2861,6 +2861,48 @@ fn nodes_eased() {
     }
 }
 
+/// `o6_fam_pairs5::sprite_frame`'s stubs (at `sf`), as `magic_o6_fam.rs`'
+/// test sets them up, and its table ([`fill_tbl`]). Returns the table and
+/// the lock word.
+fn sprite_stubs(t: &mut Twin, sf: u32) -> (u32, u32) {
+    let tbl = SCRATCH + 0x3200;
+    let lock = SCRATCH + 0x3100;
+    t.set_u32(op(t, sf, 0x290), lock);
+    let k = op(t, sf, 0x179);
+    set_f(t, k, 2.5);
+    log_calls(t, 941, 1, &[], move |_, _, _| tbl);
+    log_calls(t, 772, 2, &[], |_, a, _| a[0] ^ a[1]);
+    t.stub_edx(772, |_, _| 0x0772_0002);
+    log_calls(t, 773, 4, &[], |_, a, _| u32::from(a[3] & 1 == 0));
+    for (s, n) in [
+        (774u32, 5usize),
+        (775, 2),
+        (778, 6),
+        (776, 1),
+        (777, 1),
+        (723, 1),
+        (724, 1),
+        (235, 1),
+        (383, 2),
+        (231, 3),
+        (330, 3),
+        (230, 2),
+        (325, 2),
+    ] {
+        log_calls(t, s, n, &[], move |m, a, k| {
+            (s << 16) ^ a[0] ^ k ^ m.r32(lock)
+        });
+    }
+    log_calls(t, 229, 3, &[2], |m, a, k| {
+        for i in 0..3 {
+            m.w32(a[0] + 4 * i, (k as f32 + 0.5 * i as f32).to_bits());
+        }
+        0x229
+    });
+    fill_tbl(t, tbl);
+    (tbl, lock)
+}
+
 /// Row 85: the DLL's sprite records drawn in two DLLs: no records, three
 /// (one empty), with and without slot 229's point; each record's frame
 /// (`o6_fam_pairs5::sprite_frame`, its slots stubbed as
@@ -2874,44 +2916,10 @@ fn sprite_frames() {
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| op(t, f, o);
         let sf = t.img.rel32_target(f + 0x91);
-        let tbl = SCRATCH + 0x3200;
-        let lock = SCRATCH + 0x3100;
-        t.set_u32(op(&t, sf, 0x290), lock);
-        let k = op(&t, sf, 0x179);
-        set_f(&mut t, k, 2.5);
-        log_calls(&mut t, 941, 1, &[], move |_, _, _| tbl);
-        log_calls(&mut t, 772, 2, &[], |_, a, _| a[0] ^ a[1]);
-        t.stub_edx(772, |_, _| 0x0772_0002);
-        log_calls(&mut t, 773, 4, &[], |_, a, _| u32::from(a[3] & 1 == 0));
-        for (s, n) in [
-            (774u32, 5usize),
-            (775, 2),
-            (778, 6),
-            (776, 1),
-            (777, 1),
-            (723, 1),
-            (724, 1),
-            (235, 1),
-            (383, 2),
-            (231, 3),
-            (330, 3),
-            (230, 2),
-            (325, 2),
-        ] {
-            log_calls(&mut t, s, n, &[], move |m, a, k| {
-                (s << 16) ^ a[0] ^ k ^ m.r32(lock)
-            });
-        }
-        log_calls(&mut t, 229, 3, &[2], |m, a, k| {
-            for i in 0..3 {
-                m.w32(a[0] + 4 * i, (k as f32 + 0.5 * i as f32).to_bits());
-            }
-            0x229
-        });
+        let (tbl, lock) = sprite_stubs(&mut t, sf);
         let base = SCRATCH + 0x4000;
         t.set_u32(w(&t, 0x22), base);
         t.set_u32(w(&t, 0x1b), 0x00ab_0001);
-        fill_tbl(&mut t, tbl);
         // (records, *G_F)
         for (c, (n, flag)) in [(0u32, 0u32), (3, 1), (3, 0), (2, 1)]
             .into_iter()
@@ -2929,7 +2937,14 @@ fn sprite_frames() {
                 let r = rec + 0x30;
                 t.set_u32(r, 0x0941_0000 + i);
                 t.set_u16(r + 8, (i + c) as u16 % 3);
-                t.set_u16(r + 0x10, if (i + c).is_multiple_of(2) { 0x200 } else { 0x300 });
+                t.set_u16(
+                    r + 0x10,
+                    if (i + c).is_multiple_of(2) {
+                        0x200
+                    } else {
+                        0x300
+                    },
+                );
                 t.set_u32(r + 0xc, tbl + 0x80);
             }
             scrub(&mut t);
@@ -2957,5 +2972,68 @@ fn fill_tbl(t: &mut Twin, tbl: u32) {
     }
     for i in 0..4u32 {
         t.set_u32(tbl + 0x80 + 8 * i + 4, 0x10 + i);
+    }
+}
+
+/// Rows 108/109: the block's sprite records drawn in both copies (an
+/// `ebp` frame, one aligned to 8), two DLLs each: no records, three (one
+/// empty), with and without slot 229's point.
+#[test]
+fn block_sprite_frames() {
+    use ffx_magic::Xmm;
+    for (dll, rva, call) in [
+        (375u16, 0x3890u32, 0x79u32),
+        (489, 0x3960, 0x79),
+        (371, 0x2bf0, 0x83),
+        (488, 0x2a70, 0x83),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let sf = t.img.rel32_target(f + call);
+        let (tbl, lock) = sprite_stubs(&mut t, sf);
+        let x_op = if call == 0x79 { 0x11 } else { 0x15 };
+        let x_at = op(&t, f, x_op);
+        t.set_u32(x_at, 0x00ab_0001);
+        let (b, base) = (SCRATCH + 0x3f00, SCRATCH + 0x4000);
+        // (records, the flag)
+        for (c, (n, flag)) in [(0u32, 0u32), (3, 1), (3, 0), (2, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let c = c as u32;
+            t.set_u32(LOG, 0);
+            t.write(b, &floats(0x10, c + 7));
+            t.set_u32(b, n);
+            t.set_u32(b + 4, base);
+            t.set_u32(b + 0x18, flag);
+            t.set_u32(lock, 0x55 + c);
+            for i in 0..3u32 {
+                let rec = base + 0x94 * i;
+                t.write(rec, &floats(0x94 / 4, c + i));
+                t.set_u32(rec, u32::from(i != 1 || c == 3));
+                let r = rec + 0x30;
+                t.set_u32(r, 0x0941_0000 + i);
+                t.set_u16(r + 8, (i + c) as u16 % 3);
+                t.set_u16(
+                    r + 0x10,
+                    if (i + c).is_multiple_of(2) {
+                        0x200
+                    } else {
+                        0x300
+                    },
+                );
+                t.set_u32(r + 0xc, tbl + 0x80);
+            }
+            scrub(&mut t);
+            let call = Call::this(b).with_xmm(&[
+                Xmm::f32(9.0),
+                Xmm::f32(8.0),
+                Xmm::f32(7.0),
+                Xmm::f32(0.25 + c as f32),
+            ]);
+            t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+                s9_misc::block_sprite_frames(g, img, fr)
+            });
+        }
     }
 }

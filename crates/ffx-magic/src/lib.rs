@@ -3687,6 +3687,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("node ease", &s9_misc::NODE_EASE),
     ("node ease (0570)", &s9_misc::NODE_EASE_B),
     ("sprite frames", &s9_misc::SPRITE_FRAMES),
+    ("block sprite frames", &s9_misc::BLOCK_SPRITE_FRAMES),
+    (
+        "block sprite frames (0371)",
+        &s9_misc::BLOCK_SPRITE_FRAMES_B,
+    ),
     // round 9, shared-9 (s9_misc): end of INTERNAL
 ];
 
