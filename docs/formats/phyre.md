@@ -359,7 +359,9 @@ New joints in the hierarchy are not written.
 
 A loaded model keeps the file's layout: each object sits in its instance
 list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
-0x84, `PNode` 0x54), with pointers fixed up. The table gives the
+0x84, `PNode` 0x54), with pointers fixed up. The class descriptor
+constructors declare those sizes (`0x00486cc0`, `0x004f2200`,
+`0x00504ae0`). The table gives the
 offsets a reader needs to walk a loaded model. The first two rows are what
 the loader adds: the Direct3D buffers. The others are the classes' own
 field offsets.
@@ -397,22 +399,28 @@ clusters) says +0x4c: the last float of `m_localMatrix`. All other
 byte-offset fixups are at the member (strings) or its pointer word (+4,
 arrays). The loaded node has its name pointer at +0x50 and
 `m_localMatrix`'s last element (+0x4c) is untouched: 1.0 in every node
-(see Verification). The loader does not write at the fixup's byte
-offset. `Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers`
-(`0x0057a320`) applies the array fixups: it unpacks them with
-`Cluster_UnpackArrayFixups(..., 0)` (with the header's `+0x18` count),
-resolves each to a member of the runtime class with `Fixup_FindMember`
+checked (see Verification). The loader does not write at the fixup's
+byte offset.
+`Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers`
+(`0x0057a320`) applies the array fixups. It sizes its record buffer from
+the file header's `+0x18` (word 6, the cluster's total array fixup
+count), and `Cluster_UnpackArrayFixups(..., 0)` fills it list by list
+with each list header's `+0x18` count (see Array fixups). It resolves
+each record to a member of the runtime class with `Fixup_FindMember`
 (`0x0057a280`) and sets the array through that member. It prints "Array
 fixup refers to array ... not in current runtime" when the member has no
 runtime counterpart.
+
 Bit 31 of word 0 (the field) decides how the field is named. With bit 31
 clear, word 0 is a member index; with it set, `fixupDataPointers` passes
 the low 31 bits as a byte offset and member index -1 (a byte-offset
 fixup). `Fixup_FindMember` takes the member from the namespace's member
-table when the member index is valid. For a byte-offset fixup, it
-calls `Class_FindMemberByOffset` (`0x0047d5f0`), which adjusts by the
-class's base offsets. Why the result is +0x50 for `PNode` is not traced
-(see Open questions). ffx-phyre's fallback (the node's only array fixup)
+table when the index is below the member count, so -1 never takes that
+branch. A byte-offset fixup gets its member from
+`Class_FindMemberByOffset` (`0x0047d5f0`), called directly or through a
+cache of the last class and offset. That function calls `0x0047d3e0`,
+which looks up the member at the offset. Why the result is +0x50 for
+`PNode` is not traced (see Open questions). ffx-phyre's fallback (the node's only array fixup)
 reads the right string, so exports are unaffected.
 
 ### Character asset lists
@@ -509,16 +517,17 @@ same author that loads FFX through Fahrenheit and used these facts in game
 (`runtime/ffxremix.runtime/Scene/AssetIds.cs`, `tools/probe-ids.sh`;
 Fahrenheit alpha12 with ffx-rust's harness). The runtime hooked
 `loadCluster`, tagged the device's creates made on the loading thread
-during each load with its path, then walked the cluster with the offsets above. It was checked in
-three frames, each in two runs, and the scene draws' IDs were identical
-in both: the campfire opening at event counts 908 and 1208, and the
-Thunder Plains (`kami0000`, developer save 51) at count 101. In those
-frames, the index buffer of every scene draw except the blob shadow (a
-dynamic quad) was named by a segment found this way. Every texture the
-draws sampled, other than render targets, came from a `*.dds.phyre` load.
-840 cluster loads, 588 segments, and 3,054 `PNode`s: 3,019 with a name
-pointer at +0x50, none at +0x4c, 35 without a name, and +0x4c = 1.0 in
-all 3,054 (measured in the second run).
+during each load with its path, then walked the cluster with the offsets
+above. It was checked in three frames, each in two runs, and the scene
+draws' IDs were identical in both: the campfire opening at event counts
+908 and 1208, and the Thunder Plains (`kami0000`, developer save 51) at
+count 101. In those frames, a segment found this way named the index
+buffer of every scene draw except the character shadow draw
+(`chry0shadow`), whose index and vertex buffers are dynamic. Every
+texture the draws sampled, other than render targets, came from a
+`*.dds.phyre` load. 840 cluster loads, 588 segments, and 3,054 `PNode`s:
+3,019 with a name pointer at +0x50, none at +0x4c, 35 without a name,
+and +0x4c = 1.0 in all 3,054 (measured in the second run).
 
 ## Open questions
 
@@ -528,5 +537,5 @@ all 3,054 (measured in the second run).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.
 - Why `PNode`'s name array fixup (+0x4c in the file) lands at +0x50 in
-  memory: which branch of `Fixup_FindMember` (`0x0057a280`) it takes and
-  which member and base offset it returns.
+  memory: what `Class_FindMemberByOffset` (`0x0047d5f0`, through
+  `0x0047d3e0`) returns for `PNode` at +0x4c.
