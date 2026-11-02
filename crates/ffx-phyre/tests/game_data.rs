@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use ffx_phyre::{Error, Format, Texture};
+use ffx_phyre::{Error, Format, Kind, Texture};
 use ffx_vbf::Archive;
 
 #[test]
@@ -96,7 +96,10 @@ fn every_twentieth_texture_resizes_and_changes_format() {
         } else {
             Format::Argb8
         };
-        for levels in [ffx_phyre::full_mip_levels(w, h), 1] {
+        // One-level cube maps are refused (no shipped cube map has one
+        // level); they get two.
+        let one = if texture.kind == Kind::CubeMap { 2 } else { 1 };
+        for levels in [ffx_phyre::full_mip_levels(w, h), one] {
             let big = texture
                 .with_rgba(w, h, &rgba, format, levels)
                 .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
@@ -119,7 +122,8 @@ fn every_twentieth_texture_resizes_and_changes_format() {
                 .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
             if restored.bytes() != texture.bytes() {
                 // Word 20 of the few tiny block textures whose chain is over
-                // twice their top level: the writer leaves room for it.
+                // twice their top level: the writer leaves room for it. The
+                // rest of the file is the original.
                 let tiny = ffx_phyre::chain_size(
                     texture.format,
                     texture.width,
@@ -127,6 +131,12 @@ fn every_twentieth_texture_resizes_and_changes_format() {
                     texture.mip_levels,
                 ) > 2 * texture.format.level_size(texture.width, texture.height);
                 assert!(tiny, "{} restored differs", entry.path);
+                let mask = |b: &[u8]| [&b[..0x50], &b[0x54..]].concat();
+                assert!(
+                    mask(restored.bytes()) == mask(texture.bytes()),
+                    "{} restored differs outside word 20",
+                    entry.path
+                );
             }
         }
         done += 1;

@@ -253,6 +253,11 @@ impl Texture {
             }
             other => return Err(Error::Unsupported(format!("class {other:?}"))),
         };
+        // A full chain at the largest side has 15 levels; past 32 the size
+        // math below is meaningless.
+        if max_mip >= 32 {
+            return Err(Error::Malformed("mip count over 32"));
+        }
         let mip_levels = max_mip + 1;
         let data = header.buffers();
         let expected = chain_size(format, width, height, mip_levels) * kind.faces();
@@ -385,6 +390,39 @@ fn put_u32(b: &mut [u8], at: usize, v: u32) {
 const FLAG_AUTO_MAX_MIP: u32 = 0x2;
 
 impl Texture {
+    /// Checks a new size and mip count before any size math on them
+    /// ([`Texture::rebuilt`], [`Texture::with_any_dds`] and
+    /// [`Texture::with_rgba`] call it first).
+    ///
+    /// # Errors
+    /// Fails on sizes the game cannot create (0, over [`MAX_SIDE`], a cube
+    /// map that is not square), more mip levels than the size has, and cube
+    /// maps with one level: no shipped cube map has one, so the one-level
+    /// flag convention (`m_textureFlags` bit 1) is untested for them.
+    pub fn check_shape(&self, width: u32, height: u32, mip_levels: u32) -> Result<()> {
+        let bad = |what: String| Err(Error::Mismatch(what));
+        if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
+            return bad(format!(
+                "size {width}x{height}: sides must be 1 to {MAX_SIDE}"
+            ));
+        }
+        if self.kind == Kind::CubeMap && width != height {
+            return bad(format!("cube map {width}x{height} is not square"));
+        }
+        let full = full_mip_levels(width, height);
+        if mip_levels == 0 || mip_levels > full {
+            return bad(format!(
+                "{mip_levels} mip levels: {width}x{height} has 1 to {full}"
+            ));
+        }
+        if self.kind == Kind::CubeMap && mip_levels == 1 && full > 1 {
+            return Err(Error::Unsupported(
+                "a cube map with one level: no shipped cube map has one, give it 2 or more".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// A copy of this cluster holding another image: any format of
     /// [`Format`], size and mip count. `pixels` is upright (top row first,
     /// as DDS stores it): every level, largest first, per face for cube maps.
@@ -404,9 +442,8 @@ impl Texture {
     /// [`Texture::with_dds`]'s.
     ///
     /// # Errors
-    /// Fails on sizes the game cannot create (0, over [`MAX_SIDE`], a cube
-    /// map that is not square), more mip levels than the size has, and pixel
-    /// data of another size.
+    /// Fails on what [`Texture::check_shape`] refuses and on pixel data of
+    /// another size.
     pub fn rebuilt(
         &self,
         format: Format,
@@ -415,21 +452,9 @@ impl Texture {
         mip_levels: u32,
         pixels: &[u8],
     ) -> Result<Self> {
-        let bad = |what: String| Err(Error::Mismatch(what));
-        if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
-            return bad(format!(
-                "size {width}x{height}: sides must be 1 to {MAX_SIDE}"
-            ));
-        }
-        if self.kind == Kind::CubeMap && width != height {
-            return bad(format!("cube map {width}x{height} is not square"));
-        }
+        self.check_shape(width, height, mip_levels)?;
         let full = full_mip_levels(width, height);
-        if mip_levels == 0 || mip_levels > full {
-            return bad(format!(
-                "{mip_levels} mip levels: {width}x{height} has 1 to {full}"
-            ));
-        }
+        let bad = |what: String| Err(Error::Mismatch(what));
         let faces = self.kind.faces();
         let chain = chain_size(format, width, height, mip_levels) * faces;
         if pixels.len() != chain {
@@ -492,6 +517,7 @@ impl Texture {
         }
         let format = Format::from_dds(info.format)
             .ok_or_else(|| Error::Mismatch(format!("DDS format {:?}", info.format)))?;
+        self.check_shape(info.width, info.height, info.mip_levels)?;
         let chain =
             chain_size(format, info.width, info.height, info.mip_levels) * self.kind.faces();
         // Trailing bytes some tools leave are dropped.
@@ -525,6 +551,7 @@ impl Texture {
                 format.name()
             )));
         }
+        self.check_shape(width, height, mip_levels)?;
         let face = width as usize * height as usize * 4;
         if rgba.len() != face * self.kind.faces() {
             return Err(Error::Mismatch(format!(
@@ -758,6 +785,47 @@ mod tests {
         assert!(t.rebuilt(Format::Dxt1, 16, 16, 6, &px(16, 16, 6)).is_err());
         assert!(t.rebuilt(Format::Dxt1, 16, 16, 5, &px(16, 16, 4)).is_err());
         assert!(t.rebuilt(Format::Dxt1, 16, 16, 5, &px(16, 16, 5)).is_ok());
+    }
+
+    /// Absurd sizes and mip counts fail before any size math or mip loop
+    /// on them (no overflow in debug builds, no huge allocation).
+    #[test]
+    fn absurd_inputs_fail_before_size_math() {
+        let t = synthetic(Format::Dxt1, 8, 8, 4);
+        let mut dds = t.to_dds();
+        for (w, h, levels) in [
+            (u32::MAX, u32::MAX, 1),
+            (8, 8, u32::MAX),
+            (u32::MAX, 1, u32::MAX),
+        ] {
+            dds[12..16].copy_from_slice(&h.to_le_bytes());
+            dds[16..20].copy_from_slice(&w.to_le_bytes());
+            dds[28..32].copy_from_slice(&levels.to_le_bytes());
+            assert!(t.with_any_dds(&dds).is_err(), "{w}x{h} {levels}");
+            assert!(
+                t.with_rgba(w, h, &[], Format::Argb8, levels).is_err(),
+                "{w}x{h} {levels}"
+            );
+        }
+        let mut bad = t.bytes().to_vec();
+        let end = Header::parse(&bad).unwrap().instance_data_end();
+        put_u32(&mut bad, end - 0x20, u32::MAX);
+        assert!(Texture::parse(bad).is_err());
+    }
+
+    #[test]
+    fn one_level_cube_maps_are_refused() {
+        let cube = Texture {
+            kind: Kind::CubeMap,
+            ..synthetic(Format::Dxt1, 8, 8, 4)
+        };
+        assert!(matches!(
+            cube.check_shape(64, 64, 1),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(cube.check_shape(64, 64, 2).is_ok());
+        assert!(cube.check_shape(1, 1, 1).is_ok());
+        assert!(cube.check_shape(64, 32, 7).is_err());
     }
 
     #[test]

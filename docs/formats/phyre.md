@@ -573,13 +573,15 @@ Limits:
   two.
 - **Mips**: 1 up to a full chain; partial chains are allowed. Fewer than
   `q + 1` levels turn the texture-quality setting off for that texture.
-- **Cube maps**: square.
+- **Cube maps**: square, and at least two levels unless 1x1. No shipped
+  cube map has one level, so the one-level flag convention is untested for
+  them; `Texture::check_shape` refuses it.
 
-The External File Loader texture packs (ffgriever's, now Fahrenheit's) only
-redirect file opens; their files are textures rebuilt this way, made with
-ffgriever's closed `dds-phyre-tool` from the original file. Tools built on
-it, such as NfgOdin's FFX Phyre Tool, compress without mips
-(`-nomipmap`), so those textures have one level.
+Fahrenheit's file loader (`FhFileLoaderModule.init` and `h_fopen` in
+`src/runtime/fileloader.cs`) hooks `Phyre_PSerialization_PStreamFile_ctor`
+and the `BigFileStream` opens and points a game path at a file under a
+mod's `efl/` folder; it does not touch the file's contents. A replacement
+texture is therefore an ordinary `*.dds.phyre` that `FFX.exe` loads as above.
 
 In the running game (2026-11-02, through ffx-remix's test path, a
 Fahrenheit mod with the files under `efl/x/`):
@@ -605,8 +607,18 @@ The 30 textures with a big-endian PS3 header (`"PHYR"`, platform GCM) are
 all in `ffx_data/gamedata/ps3data/magic/magic_0668/tex/d3d11/`. The folder's
 `texlist.log` lists them as `R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`:
 the PS3 build's output, copied into the D3D11 folder. The folder holds
-nothing else but the texture lists, and the archive has no PC copy of
-these 30 textures. This crate does not read them.
+nothing else but the texture lists. This crate does not read them.
+
+Each of the 30 has a PC copy: a little-endian texture with the same file
+name in `magic_0611/tex/d3d11/` (all 30) and in `magic_0667` and
+`magic_0515` (28 of them; not `14720_19_0_0_256_256` and
+`14848_19_0_0_128_256`). All are `DXT5` with full chains at the HD size
+(256x256 to 1024x512). The PC copy's pixel data (`Texture::pixels`) is the
+last bytes of the big-endian file, byte for byte: for
+`13312_19_0_0_256_256` the 349,552 bytes after the PC copy's 2,684-byte
+header end the 353,562-byte big-endian file. The same pixels also appear
+under other names, for example `magic_0705/tex/d3d11/13888_19_0_0_128_256`
+for `14304_19_0_0_128_256`.
 
 ## Verification
 
@@ -615,9 +627,10 @@ textures, exports each to DDS and imports it back, and checks the result is
 the original file byte for byte, directly and through the writer for new
 sizes (`with_any_dds`). Every 20th texture is also written at twice its
 size in another uncompressed format, once with a full chain and once with
-one level: it reads back with that size, format and image, and writing the
-original image into it gives the original file again (word 20 aside for a
-few tiny block textures). Samples of each format were rendered to
+one level (two for cube maps): it reads back with that size, format and
+image, and writing the original image into it gives the original file again
+(word 20 aside for a few tiny block textures, whose files match with word 20
+masked). Samples of each format were rendered to
 PNG and checked by eye (menu art, the keyboard icon sheet, the logo).
 
 The same test exports all 1,266 models that have meshes, about 9.5 million
