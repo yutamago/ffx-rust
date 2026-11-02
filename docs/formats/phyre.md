@@ -596,12 +596,16 @@ Limits:
   fails; 1008x1008 works.
   `Texture::check_shape` refuses these sizes for every quality and names
   the size to use (`ffx_phyre::created_size` is the loader's computation).
-  It lets a texture's own shipped format, size and mip count through, so
-  an unchanged texture still writes back as it is.
+  It lets the texture's own current format, size and mip count through,
+  so an unchanged texture still writes back as it is. The exemption is
+  for the texture being rewritten only: a 1x256 `DXT5` (below) written at
+  another size cannot be written back at 1x256 from that copy; rewrite
+  the shipped file instead.
   `Phyre_PBinary_reloadClusterTextures` (`0x00466da0`, when the quality
   changes while the game runs) drops `q` levels without the back-off
-  (`0x00466f50`..`0x00466f70`); 28 shipped full-chain textures in the two
-  archives with a side of 4 or 8 (8x8 with 4 levels, 128x8, 32x8, 64x4)
+  (`0x00466f50`..`0x00466f70`); 28 shipped full-chain block textures in
+  the two archives with a side of 4 or 8 (8x8 with 4 levels, 128x8, 32x8,
+  64x4)
   would come out under 4 there too, so the check follows the load path.
 - **Mips**: 1 up to a full chain; partial chains are allowed. Fewer than
   `q + 1` levels turn the texture-quality setting off for that texture.
@@ -654,13 +658,16 @@ the PS3 build's output, copied into the D3D11 folder. The folder holds
 nothing else but the texture lists. This crate does not read them.
 
 Each of the 30 has a PC copy: a little-endian texture with the same file
-name in `magic_0611/tex/d3d11/` (all 30) and in `magic_0667` and
-`magic_0515` (28 of them; not `14720_19_0_0_256_256` and
-`14848_19_0_0_128_256`). All are `DXT5` with full chains at the HD size
-(256x256 to 1024x512). The PC copy's pixel data (`Texture::pixels`) is the
-last bytes of the big-endian file, byte for byte: for
+name in `magic_0611/tex/d3d11/`. All are `DXT5` with full chains at the HD
+size (256x128 to 1024x512). The PC copy's pixel data (`Texture::pixels`)
+is the last bytes of the big-endian file, byte for byte: for
 `13312_19_0_0_256_256` the 349,552 bytes after the PC copy's 2,684-byte
-header end the 353,562-byte big-endian file. The same pixels also appear
+header end the 353,562-byte big-endian file. `magic_0667/tex/d3d11/` and
+`magic_0515/tex/d3d11/` also have all 30 names, same format, size and
+levels; 28 have identical pixel data, the two others differ
+(`14720_19_0_0_256_256` and `14848_19_0_0_128_256`, whose pixel data
+shares only its last 0 and 4 bytes with the big-endian file's end). The
+same pixels also appear
 under other names, for example `magic_0705/tex/d3d11/13888_19_0_0_128_256`
 for `14304_19_0_0_128_256`.
 

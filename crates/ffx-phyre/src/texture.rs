@@ -429,7 +429,9 @@ impl Texture {
     /// ([`created_size`]): the top level the game creates must be a
     /// multiple of 4 on both sides. This texture's own format, size and
     /// mip count always pass, so a shipped texture can be written back as
-    /// it is.
+    /// it is. Only the current ones do: a 1x256 `DXT5` rewritten at another
+    /// size cannot go back to 1x256 from that copy; rewrite the shipped
+    /// file instead.
     pub fn check_shape(
         &self,
         format: Format,
