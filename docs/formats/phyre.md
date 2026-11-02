@@ -571,11 +571,55 @@ Limits:
   to 16384 at 11_0 (8192 at 10_x). `FFX.exe` is large-address aware; the
   loader holds twice word 20 while it reads. Sides need not be powers of
   two.
+- **Block formats** (`DXT1`, `DXT3`, `DXT5`, `BC4`, `BC5`): the top level
+  the game creates must be a multiple of 4 on both sides. This is
+  Direct3D's rule, not the game's: "For mipmaps, the top level map is
+  required to be a multiple of 4 size in all dimensions" (Direct3D 11.3
+  Functional Specification, 19.5.1 "Overview" of the block compression
+  formats; the lower levels may be any size and are padded to whole
+  blocks). The specification gives it for every block format with no
+  feature level exception, and the game only uses 10_0 and above.
+  `CreateTexture2D` returns `E_INVALIDARG` for such a texture
+  (`CREATETEXTURE2D_INVALIDDIMENSIONS` in the debug layer), and
+  `PTexture2DD3D11_CreateDeviceTexture_0058fc20` passes `m_width` and
+  `m_height` to it unchanged (`0x0058fd15`, `0x0058fd22`) and returns 9 when
+  it fails (`0x00590009`, `0x005901f2`). The size it gets is the one after
+  the texture-quality drop (step 4 above, `0x00466126`..`0x00466148`):
+  `w >> q`, `h >> q` with `q` up to 2 (`TQ_LOW`, the last of the three
+  `TextureQuality` values `Settings_SetValue`, `0x00401930`, accepts), for
+  a 2D texture backed off only while a side would go under 4, for a cube
+  map not at all. So a one-level block texture needs sides that are
+  multiples of 4, a two-level one multiples of 8 (dropped by at most one
+  level), and one with three or more levels multiples of 16, apart from
+  small sizes the back-off saves (8x8 with 4 levels is created at 4x4).
+  1000x1000 `DXT1` with 10 levels is created at 250x250 at `TQ_LOW` and
+  fails; 1008x1008 works.
+  `Texture::check_shape` refuses these sizes for every quality and names
+  the size to use (`ffx_phyre::created_size` is the loader's computation).
+  It lets a texture's own shipped format, size and mip count through, so
+  an unchanged texture still writes back as it is.
+  `Phyre_PBinary_reloadClusterTextures` (`0x00466da0`, when the quality
+  changes while the game runs) drops `q` levels without the back-off
+  (`0x00466f50`..`0x00466f70`); 28 shipped full-chain textures in the two
+  archives with a side of 4 or 8 (8x8 with 4 levels, 128x8, 32x8, 64x4)
+  would come out under 4 there too, so the check follows the load path.
 - **Mips**: 1 up to a full chain; partial chains are allowed. Fewer than
   `q + 1` levels turn the texture-quality setting off for that texture.
-- **Cube maps**: square, and at least two levels unless 1x1. No shipped
-  cube map has one level, so the one-level flag convention is untested for
-  them; `Texture::check_shape` refuses it.
+- **Cube maps**: square, and at least two levels (so at least 2x2). No
+  shipped cube map has one level, so the one-level flag convention is
+  untested for them; `Texture::check_shape` refuses it.
+
+The only shipped block textures with a side that is not a multiple of 4
+are six full-chain (9 levels) 1x256 `DXT5` textures,
+`ffx_data/gamedata/ps3data/help_{ch,de,es,fr,it,kr}/mon_boku/2/d3d11/2_256_0_1_257.dds.phyre`
+(the `help` and `help_us` copies are `ARGB8`, one level). D3D11 would
+refuse them at any quality: a 2D texture backs off to `q = 0` when a side
+is under 4. The game never loads them. They sit next to slices of the
+monster book's help pages (`mon_boku/<n>/d3d11/<n>_<x>_<y>_<w>_<h>`);
+`MenuTextureManager_LoadMon_BokuTextures` (`0x0067cbd0`) loads the four
+whole pages `PS3Data/help<_lang>/mon_boku/D3D11/<n>.dds.phyre` from the
+table at `0x00c59dcc`, no format string in `FFX.exe` builds the slice
+names, and no other file in `FFX_Data.vbf` or `FFX2_Data.vbf` names them.
 
 Fahrenheit's file loader (`FhFileLoaderModule.init` and `h_fopen` in
 `src/runtime/fileloader.cs`) hooks `Phyre_PSerialization_PStreamFile_ctor`

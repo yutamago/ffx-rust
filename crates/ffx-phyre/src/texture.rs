@@ -4,7 +4,7 @@
 //! (`"PTexture2D\0DXT5\0"`). The texture's fields sit at fixed distances from
 //! the end of the instance data:
 //!
-//! | Class | Max mip level | Width | Height |
+//! | Class | `m_mipmapCount` (levels − 1) | Width | Height |
 //! |---|---|---|---|
 //! | `PTexture2D` | end − `0x20` | end − `0x10` | end − `0x0c` |
 //! | `PTextureCubeMap` | end − `0x14` | end − `0x04` (square) | |
@@ -379,6 +379,32 @@ pub fn full_mip_levels(width: u32, height: u32) -> u32 {
     32 - width.max(height).max(1).leading_zeros()
 }
 
+/// The highest texture quality setting, `TQ_LOW` (`TextureQuality` in
+/// `GameSetting.ini`: `TQ_HIGH`, `TQ_MEDIUM`, `TQ_LOW` are 0, 1, 2,
+/// `Settings_SetValue`, `0x00401930`): the number of top mip levels the
+/// loader drops.
+pub const MAX_TEXTURE_QUALITY: u32 = 2;
+
+/// The top level's size the game creates a texture with at texture
+/// quality `q` (`Phyre_PBinary_loadClusterTextures`, `0x00465ab0`): with
+/// `m_mipmapCount >= q` the top `q` levels are dropped, and for a 2D
+/// texture `q` first backs off while the top level shifted by `q` is under
+/// 4 wide or high (`0x00466126`..`0x00466148`). That size goes to
+/// `PTexture2DD3D11_CreateDeviceTexture_0058fc20` unchanged.
+#[must_use]
+pub fn created_size(kind: Kind, width: u32, height: u32, mip_levels: u32, q: u32) -> (u32, u32) {
+    if mip_levels <= q {
+        return (width, height);
+    }
+    let mut q = q;
+    if kind == Kind::Texture2D {
+        while q > 0 && ((width >> q) < 4 || (height >> q) < 4) {
+            q -= 1;
+        }
+    }
+    (width >> q, height >> q)
+}
+
 fn put_u32(b: &mut [u8], at: usize, v: u32) {
     b[at..at + 4].copy_from_slice(&v.to_le_bytes());
 }
@@ -390,16 +416,27 @@ fn put_u32(b: &mut [u8], at: usize, v: u32) {
 const FLAG_AUTO_MAX_MIP: u32 = 0x2;
 
 impl Texture {
-    /// Checks a new size and mip count before any size math on them
-    /// ([`Texture::rebuilt`], [`Texture::with_any_dds`] and
+    /// Checks a new format, size and mip count before any size math on
+    /// them ([`Texture::rebuilt`], [`Texture::with_any_dds`] and
     /// [`Texture::with_rgba`] call it first).
     ///
     /// # Errors
     /// Fails on sizes the game cannot create (0, over [`MAX_SIDE`], a cube
-    /// map that is not square), more mip levels than the size has, and cube
-    /// maps with one level: no shipped cube map has one, so the one-level
-    /// flag convention (`m_textureFlags` bit 1) is untested for them.
-    pub fn check_shape(&self, width: u32, height: u32, mip_levels: u32) -> Result<()> {
+    /// map that is not square), more mip levels than the size has, cube
+    /// maps with one level (no shipped cube map has one, so the one-level
+    /// flag convention, `m_textureFlags` bit 1, is untested for them) and
+    /// block-format sizes D3D11 refuses at some texture quality
+    /// ([`created_size`]): the top level the game creates must be a
+    /// multiple of 4 on both sides. This texture's own format, size and
+    /// mip count always pass, so a shipped texture can be written back as
+    /// it is.
+    pub fn check_shape(
+        &self,
+        format: Format,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+    ) -> Result<()> {
         let bad = |what: String| Err(Error::Mismatch(what));
         if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
             return bad(format!(
@@ -415,10 +452,44 @@ impl Texture {
                 "{mip_levels} mip levels: {width}x{height} has 1 to {full}"
             ));
         }
-        if self.kind == Kind::CubeMap && mip_levels == 1 && full > 1 {
+        if self.kind == Kind::CubeMap && mip_levels == 1 {
             return Err(Error::Unsupported(
-                "a cube map with one level: no shipped cube map has one, give it 2 or more".into(),
+                "a cube map with one level: no shipped cube map has one, give it 2 or more (2x2 or larger)".into(),
             ));
+        }
+        let own = (format, width, height, mip_levels)
+            == (self.format, self.width, self.height, self.mip_levels);
+        if format.is_block() && !own {
+            for q in 0..=MAX_TEXTURE_QUALITY {
+                let (w, h) = created_size(self.kind, width, height, mip_levels, q);
+                if w.is_multiple_of(4) && h.is_multiple_of(4) {
+                    continue;
+                }
+                // Multiples of this need no back-off and stay multiples
+                // of 4 after every drop.
+                let step = 4 << (mip_levels - 1).min(MAX_TEXTURE_QUALITY);
+                let up = |n: u32| n.next_multiple_of(step);
+                let when = match q {
+                    0 => String::new(),
+                    _ => format!(
+                        " at TextureQuality {} (the top {q} levels dropped)",
+                        ["TQ_HIGH", "TQ_MEDIUM", "TQ_LOW"][q as usize]
+                    ),
+                };
+                return bad(format!(
+                    "{} {width}x{height} with {mip_levels} levels: the game creates it{when} \
+                     at {w}x{h}, and D3D11 needs a block-compressed texture's top level to be \
+                     a multiple of 4 on both sides; use {}x{} (multiples of {step}){}",
+                    format.name(),
+                    up(width),
+                    up(height),
+                    if mip_levels > 1 && width.is_multiple_of(4) && height.is_multiple_of(4) {
+                        ", or 1 level"
+                    } else {
+                        ""
+                    }
+                ));
+            }
         }
         Ok(())
     }
@@ -452,7 +523,7 @@ impl Texture {
         mip_levels: u32,
         pixels: &[u8],
     ) -> Result<Self> {
-        self.check_shape(width, height, mip_levels)?;
+        self.check_shape(format, width, height, mip_levels)?;
         let full = full_mip_levels(width, height);
         let bad = |what: String| Err(Error::Mismatch(what));
         let faces = self.kind.faces();
@@ -517,7 +588,7 @@ impl Texture {
         }
         let format = Format::from_dds(info.format)
             .ok_or_else(|| Error::Mismatch(format!("DDS format {:?}", info.format)))?;
-        self.check_shape(info.width, info.height, info.mip_levels)?;
+        self.check_shape(format, info.width, info.height, info.mip_levels)?;
         let chain =
             chain_size(format, info.width, info.height, info.mip_levels) * self.kind.faces();
         // Trailing bytes some tools leave are dropped.
@@ -551,7 +622,7 @@ impl Texture {
                 format.name()
             )));
         }
-        self.check_shape(width, height, mip_levels)?;
+        self.check_shape(format, width, height, mip_levels)?;
         let face = width as usize * height as usize * 4;
         if rgba.len() != face * self.kind.faces() {
             return Err(Error::Mismatch(format!(
@@ -718,7 +789,15 @@ mod tests {
     fn resized_textures_parse_back() {
         let t = synthetic(Format::Dxt1, 64, 32, 7);
         for format in Format::ALL {
-            for (w, h, levels) in [(256, 128, 9), (256, 128, 1), (100, 30, 3), (4096, 16, 13)] {
+            // Sides that are not powers of two; for the block formats
+            // multiples of 4 that stay so after the texture-quality drop
+            // (16 with 3 or more levels).
+            let odd = if format.is_block() {
+                [(80, 48, 3), (100, 36, 1)]
+            } else {
+                [(100, 30, 3), (7, 3, 1)]
+            };
+            for (w, h, levels) in [(256, 128, 9), (256, 128, 1), (4096, 16, 13), odd[0], odd[1]] {
                 let pixels = vec![0x5a; chain_size(format, w, h, levels)];
                 let r = t.rebuilt(format, w, h, levels, &pixels).unwrap();
                 assert_eq!(
@@ -819,13 +898,69 @@ mod tests {
             kind: Kind::CubeMap,
             ..synthetic(Format::Dxt1, 8, 8, 4)
         };
+        let f = Format::Argb8;
         assert!(matches!(
-            cube.check_shape(64, 64, 1),
+            cube.check_shape(f, 64, 64, 1),
             Err(Error::Unsupported(_))
         ));
-        assert!(cube.check_shape(64, 64, 2).is_ok());
-        assert!(cube.check_shape(1, 1, 1).is_ok());
-        assert!(cube.check_shape(64, 32, 7).is_err());
+        assert!(matches!(
+            cube.check_shape(f, 1, 1, 1),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(cube.check_shape(f, 64, 64, 2).is_ok());
+        assert!(cube.check_shape(f, 2, 2, 2).is_ok());
+        assert!(cube.check_shape(f, 64, 32, 7).is_err());
+    }
+
+    /// D3D11 refuses a block-compressed texture whose top level is not a
+    /// multiple of 4 on both sides; the game creates the top level after
+    /// the texture-quality drop.
+    #[test]
+    fn block_sizes_follow_the_d3d11_rule() {
+        let t = synthetic(Format::Dxt5, 64, 32, 7);
+        let ok = |f, w, h, l| t.check_shape(f, w, h, l).is_ok();
+        // Uncompressed formats take any size.
+        assert!(ok(Format::Argb8, 1, 256, 9));
+        assert!(ok(Format::L8, 1000, 1000, 10));
+        // One level is never reduced: multiples of 4 are enough.
+        assert!(ok(Format::Dxt1, 100, 36, 1));
+        assert!(!ok(Format::Dxt1, 100, 30, 1));
+        assert!(!ok(Format::Dxt5, 1, 256, 1));
+        assert!(!ok(Format::Bc4, 2, 2, 1));
+        // 1000x1000 is 250x250 at TQ_LOW; 1008x1008 is 252x252.
+        assert!(!ok(Format::Dxt1, 1000, 1000, 10));
+        let Err(Error::Mismatch(why)) = t.check_shape(Format::Dxt1, 1000, 1000, 10) else {
+            panic!("not refused");
+        };
+        assert!(
+            why.contains("250x250") && why.contains("1008x1008"),
+            "{why}"
+        );
+        assert!(ok(Format::Dxt1, 1008, 1008, 10));
+        // Two levels drop at most one: multiples of 8.
+        assert!(ok(Format::Dxt1, 24, 40, 2));
+        assert!(!ok(Format::Dxt1, 20, 40, 2));
+        // The 2D back-off keeps small textures whole: 8x8 at TQ_LOW is
+        // created at 4x4, 4x4 as it is.
+        assert!(ok(Format::Bc5, 8, 8, 4));
+        assert!(ok(Format::Bc5, 4, 4, 3));
+        assert_eq!(created_size(Kind::Texture2D, 8, 8, 4, 2), (4, 4));
+        assert_eq!(created_size(Kind::Texture2D, 1000, 1000, 10, 2), (250, 250));
+        assert_eq!(
+            created_size(Kind::Texture2D, 1000, 1000, 2, 2),
+            (1000, 1000)
+        );
+        // Cube maps do not back off.
+        let cube = Texture {
+            kind: Kind::CubeMap,
+            ..t.clone()
+        };
+        assert!(cube.check_shape(Format::Dxt1, 4, 4, 3).is_err());
+        assert!(cube.check_shape(Format::Dxt1, 16, 16, 3).is_ok());
+        // A texture's own shape passes (six shipped 1x256 DXT5 textures).
+        let own = synthetic(Format::Dxt5, 1, 256, 9);
+        assert!(own.check_shape(Format::Dxt5, 1, 256, 9).is_ok());
+        assert!(own.check_shape(Format::Dxt1, 1, 256, 9).is_err());
     }
 
     #[test]
