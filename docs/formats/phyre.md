@@ -355,6 +355,39 @@ asset list naming the texture) every run.
 
 New joints in the hierarchy are not written.
 
+### In the running game (D3D11)
+
+A loaded model keeps the file's layout: each object sits in its instance
+list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
+0x84, `PNode` 0x54), with pointers fixed up. What the loader adds:
+
+| Object | In memory |
+|---|---|
+| `PMeshSegment` | `m_indexData` (+0x30) is a `PIndexDataBlockD3D11`: its (`ID3D11Buffer`, SRV) pairs are a PSharray at block +0x14 (count, bit 31 a flag; one pair inline at +0x18, more through the pointer at +0x18), 0x14 bytes a pair (`PIndexDataBlockD3D11_create` `0x00561e90`) |
+| `PDataBlockD3D11` | the same pairs at +0x18 (`PDataBlockD3D11_create` `0x005620c0`); a segment's blocks are at `m_vertexData` (+0x28 count, +0x2c pointer) |
+| `PMeshInstance` | `m_mesh` +0, `m_localToWorldMatrix` +4, `m_name` +0x2c (`PString`) |
+| `PMesh` | `m_meshSegments` +0 (count) and +4 (pointer to the segments) |
+| `PNode` | `m_worldMatrix` +0xc (the same pointer as its instance's `m_localToWorldMatrix`), `m_name` +0x50 |
+
+`Phyre_PSerialization_PBinary_loadCluster` (`0x0057bce0`) is cdecl
+`(stream, cluster, path, key)`: both `Phyre_PCluster_LoadAssetFile`s
+(`0x004406c0`, `0x004407e0`) pass the file's path as the third argument.
+The cluster's Direct3D objects are created inside that call, on the
+loading thread: `Phyre_PBinary_loadClusterTextures` (`0x00465ab0`)
+makes the textures (`0x0058fc20`), index buffers (`0x00561e90`) and
+vertex buffers (`0x005620c0`), and the pixel and vertex shaders of
+`shaders/d3d11/*.fx*.phyre` were created during their loads too (2,981
+of a run's 3,056 pixel shaders and 1,395 of its 1,401 vertex shaders;
+the rest are made outside cluster loads). So the device's create calls
+made during a load belong to that file.
+
+**`PNode.m_name` is at +0x50 in memory.** The files' array fixups say
++0x4c, but the loaded node has its name pointer at +0x50 and
+`m_localMatrix`'s last element (+0x4c) is untouched: 1.0 in every node
+(see Verification). The fixup's byte offset is not where the loader
+writes. ffx-phyre's fallback (the node's only array fixup) reads the
+right string, so exports are unaffected.
+
 ### Character asset lists
 
 `Ch_LoadHdRenderData` (`0x0082a1c0`) reads
@@ -443,17 +476,22 @@ clusters, all models plus every 50th other cluster. It runs both the Rust
 port and the original `0x60db20` / `0x60dac0` under emulation, and the
 records must be identical.
 
+The in-memory layout above was checked in the running game on
+2026-11-02 by ffx-remix's runtime (`runtime/ffxremix.runtime/Scene/AssetIds.cs`,
+`tools/probe-ids.sh`; Fahrenheit alpha12 with ffx-rust's harness). The
+runtime hooked `loadCluster`, tagged the device's creates made during each
+load with its path, then walked the cluster with the offsets above.
+It was checked in three frames, each in two runs with identical results:
+the campfire opening at event counts 908 and 1208, and the Thunder
+Plains (`kami0000`, developer save 51) at count 101. In those frames, the
+index buffer of every scene draw except the blob shadow (a dynamic quad)
+was named by a segment found this way. Every texture the draws sampled
+came from a `*.dds.phyre` load. 840 cluster loads, 588 segments, and
+3,054 `PNode`s: 3,019 with a name pointer at +0x50, none at +0x4c, 35
+without a name, and +0x4c = 1.0 in all 3,054.
+
 ## Open questions
 
-- `PNode.m_name` is at +0x50 in the namespace and in FFX.exe's own
-  registration of the class (`PNode_RegisterClass`, `0x00505450`:
-  `m_next` 0, `m_parent` 4, `m_firstChild` 8, `m_worldMatrix` 0xc,
-  `m_localMatrix` 0x10, `m_name` 0x50), but every one of its array fixups
-  (5,761 in a sample of 80 clusters) says +0x4c: the last float of
-  `m_localMatrix`. All other byte-offset fixups are at the member (strings)
-  or its pointer word (+4, arrays). Names are taken from the node's only
-  array fixup; whether the loader writes over the matrix element needs a
-  look at a running game.
 - What the remaining material parameters do in the shaders.
 - New hierarchy joints (`PNode`s); new texture clusters (a new texture is
   made by copying one of the same size and format and importing pixels).
