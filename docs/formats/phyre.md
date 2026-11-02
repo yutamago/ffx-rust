@@ -355,6 +355,74 @@ asset list naming the texture) every run.
 
 New joints in the hierarchy are not written.
 
+### In the running game (D3D11)
+
+A loaded model keeps the file's layout: each object sits in its instance
+list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
+0x84, `PNode` 0x54), with pointers fixed up. The class descriptor
+constructors declare those sizes (`0x00486cc0`, `0x004f2200`,
+`0x00504ae0`). The table gives the
+offsets a reader needs to walk a loaded model. The first two rows are what
+the loader adds: the Direct3D buffers. The others are the classes' own
+field offsets.
+
+| Object | In memory |
+|---|---|
+| `PMeshSegment` | `m_indexData` (+0x30) is a `PIndexDataBlockD3D11`: its (`ID3D11Buffer`, SRV) pairs are a PSharray at block +0x14 (count, bit 31 a flag; one pair inline at +0x18, more through the pointer at +0x18), 0x14 bytes a pair (`PIndexDataBlockD3D11_create` `0x00561e90`). `m_vertexData` (+0x28 count, +0x2c pointer) is a `PArray` of the `PDataBlockD3D11` objects themselves, not of pointers (`0x0055edf0`), one every 0x40 bytes (the class size) |
+| `PDataBlockD3D11` | the same PSharray at +0x18 (count at +0x18, pairs at +0x1c; `PDataBlockD3D11_create` `0x005620c0`) |
+| `PMeshInstance` | `m_mesh` +0, `m_localToWorldMatrix` +4, `m_name` +0x2c (`PString`) (`Phyre_PRendering_PMeshInstance_Bind` `0x004f38a0`) |
+| `PMesh` | `m_meshSegments` +0 (count) and +4 (pointer to the segments) (`Phyre_PGeometry_PMesh_Bind` `0x00490250`) |
+| `PNode` | `m_worldMatrix` +0xc (the same pointer as its instance's `m_localToWorldMatrix`), `m_name` +0x50 (`PNode_RegisterClass` `0x00505450`) |
+
+`Phyre_PSerialization_PBinary_loadCluster` (`0x0057bce0`) is cdecl
+`(stream, cluster, path, key)`: both `Phyre_PCluster_LoadAssetFile`s
+(`0x004406c0`, `0x004407e0`) pass the file's path as the third argument.
+The cluster's Direct3D objects are created inside that call, on the
+loading thread. `loadCluster` calls the thunk `0x00465aa0`, which jumps
+to `Phyre_PBinary_loadClusterTextures` (`0x00465ab0`). That function
+makes the textures (`0x0058fc20`), index buffers (`0x00561e90`) and
+vertex buffers (`0x005620c0`). It also calls
+`PShaderFragmentProgramD3D11_create` (`0x0058d1c0`) and
+`PShaderVertexProgramD3D11_create` (`0x0058d780`), so the pixel and
+vertex shaders of `shaders/d3d11/*.fx*.phyre` are created during their
+loads too. In one run, cluster loads created 2,981 of the 3,056 pixel
+shaders and 1,395 of the 1,401 vertex shaders; the game makes the rest
+outside cluster loads. So the device's create calls made on a thread
+while a load runs on that thread belong to that file.
+
+**`PNode.m_name` is at +0x50 in memory.** It is at +0x50 in the
+namespace and in FFX.exe's own registration of the class
+(`PNode_RegisterClass`, `0x00505450`: `m_next` 0, `m_parent` 4,
+`m_firstChild` 8, `m_worldMatrix` 0xc, `m_localMatrix` 0x10, `m_name`
+0x50), but every one of its array fixups (5,761 in a sample of 80
+clusters) says +0x4c: the last float of `m_localMatrix`. All other
+byte-offset fixups are at the member (strings) or its pointer word (+4,
+arrays). The loaded node has its name pointer at +0x50 and
+`m_localMatrix`'s last element (+0x4c) is untouched: 1.0 in every node
+checked (see Verification). The loader does not write at the fixup's
+byte offset.
+`Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers`
+(`0x0057a320`) applies the array fixups. It sizes its record buffer from
+the file header's `+0x18` (word 6, the cluster's total array fixup
+count), and `Cluster_UnpackArrayFixups(..., 0)` fills it list by list
+with each list header's `+0x18` count (see Array fixups). It resolves
+each record to a member of the runtime class with `Fixup_FindMember`
+(`0x0057a280`) and sets the array through that member. It prints "Array
+fixup refers to array ... not in current runtime" when the member has no
+runtime counterpart.
+
+Bit 31 of word 0 (the field) decides how the field is named. With bit 31
+clear, word 0 is a member index; with it set, `fixupDataPointers` passes
+the low 31 bits as a byte offset and member index -1 (a byte-offset
+fixup). `Fixup_FindMember` takes the member from the namespace's member
+table when the index is below the member count, so -1 never takes that
+branch. A byte-offset fixup gets its member from
+`Class_FindMemberByOffset` (`0x0047d5f0`), called directly or through a
+cache of the last class and offset. That function calls `0x0047d3e0`,
+which looks up the member at the offset. Why the result is +0x50 for
+`PNode` is not traced (see Open questions). ffx-phyre's fallback (the node's only array fixup)
+reads the right string, so exports are unaffected.
+
 ### Character asset lists
 
 `Ch_LoadHdRenderData` (`0x0082a1c0`) reads
@@ -443,19 +511,31 @@ clusters, all models plus every 50th other cluster. It runs both the Rust
 port and the original `0x60db20` / `0x60dac0` under emulation, and the
 records must be identical.
 
+The in-memory layout above was checked in the running game on
+2026-11-02 by the runtime of ffx-remix, a separate modding project by the
+same author that loads FFX through Fahrenheit and used these facts in game
+(`runtime/ffxremix.runtime/Scene/AssetIds.cs`, `tools/probe-ids.sh`;
+Fahrenheit alpha12 with ffx-rust's harness). The runtime hooked
+`loadCluster`, tagged the device's creates made on the loading thread
+during each load with its path, then walked the cluster with the offsets
+above. It was checked in three frames, each in two runs, and the scene
+draws' IDs were identical in both: the campfire opening at event counts
+908 and 1208, and the Thunder Plains (`kami0000`, developer save 51) at
+count 101. In those frames, a segment found this way named the index
+buffer of every scene draw except the character shadow draw
+(`chry0shadow`), whose index and vertex buffers are dynamic. Every
+texture the draws sampled, other than render targets, came from a
+`*.dds.phyre` load. 840 cluster loads, 588 segments, and 3,054 `PNode`s:
+3,019 with a name pointer at +0x50, none at +0x4c, 35 without a name,
+and +0x4c = 1.0 in all 3,054 (measured in the second run).
+
 ## Open questions
 
-- `PNode.m_name` is at +0x50 in the namespace and in FFX.exe's own
-  registration of the class (`PNode_RegisterClass`, `0x00505450`:
-  `m_next` 0, `m_parent` 4, `m_firstChild` 8, `m_worldMatrix` 0xc,
-  `m_localMatrix` 0x10, `m_name` 0x50), but every one of its array fixups
-  (5,761 in a sample of 80 clusters) says +0x4c: the last float of
-  `m_localMatrix`. All other byte-offset fixups are at the member (strings)
-  or its pointer word (+4, arrays). Names are taken from the node's only
-  array fixup; whether the loader writes over the matrix element needs a
-  look at a running game.
 - What the remaining material parameters do in the shaders.
 - New hierarchy joints (`PNode`s); new texture clusters (a new texture is
   made by copying one of the same size and format and importing pixels).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.
+- Why `PNode`'s name array fixup (+0x4c in the file) lands at +0x50 in
+  memory: what `Class_FindMemberByOffset` (`0x0047d5f0`, through
+  `0x0047d3e0`) returns for `PNode` at +0x4c.
