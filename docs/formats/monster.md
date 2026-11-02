@@ -16,6 +16,18 @@ kernel `monster` tables into the battle actor, then requests the file as
 (`0x00783b00`) points the actor at its sections and `MsSetRamChr`
 (`0x0079b4f0`) builds the enemy from them.
 
+A file is read once per battle: for a slot whose monster an earlier slot
+already has, `MsBtlReadMonster` takes that slot's buffer (`+0x48`; it also
+clears the actor's `+0x11` and sets `+0x14` to `0x14` plus the earlier
+slot) instead of reading the file again, so both actors' `+0xf78` point at
+the same script block. `Mon_LoadAll` (`0x00784070`) registers each slot's
+block with `MsAtelRegist(1, …)` (`0x00797a40`), a shared one once per slot,
+and `AtelBattleSetUp` sets up a set of works for each registration. Two
+monsters of one kind thus share the block's code, shared data (storage 4)
+and event data (storage 6), while each has its own works, levels,
+registers and private data (storage 3, work `+0xb8`;
+[script.md](script.md#variables)).
+
 ## Container
 
 | Offset | Type | Meaning |
