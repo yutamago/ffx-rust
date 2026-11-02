@@ -241,11 +241,15 @@ pop-an-integer.
 ### Variables
 
 The worker header's `+0x14` (relative to the block) points to 8-byte
-descriptors: a location word and, at `+4`, the array length (`u16`; `+6`
-another `u16`, `AtelGetVarArrayRange`). The word holds the type in bits
-28-31 (`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32`; past 6 nothing is
-read or stored), the storage area in bits 25-27 and the offset in bits 0-23
-(`AtelGetRealVarAdrs`):
+descriptors: a location word and, at `+4`, the array length (`u16`). The
+`u16` at `+6` (`AtelGetVarArrayRange`) is the inner dimension of a
+two-dimensional array and 0 otherwise: it divides the length in all 922
+shipped descriptors where it is set, and the debugger's watch prints an
+element `e` as `[e / +6][e % +6]` when it is 2 or more
+(`AtelDebug_DrawWatch_00884d90`). The word holds the type in bits 28-31
+(`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32`; past 6 nothing is read or
+stored), the storage area in bits 25-27, an array flag in bit 24 and the
+offset in bits 0-23 (`AtelGetRealVarAdrs`):
 
 | Storage | Area |
 |---|---|
@@ -254,6 +258,24 @@ read or stored), the storage area in bits 25-27 and the offset in bits 0-23
 | 5 | inside the worker, from `+0x48` |
 | 6 | block `+0x20` (shared by the block's workers) |
 | 7 | none (address 0) |
+
+Bit 24 marks a variable declared as an array. In the shipped scripts it is
+set on 4,597 of 29,103 descriptors: every one with a length above 1, plus
+421 one-element arrays. Those variables are reached only through the
+element opcodes (`pushva` `22`, `popva` `23`, `pushvref` `27`), and the
+other 24,506 only through `pushv`/`popv` (`1f`, `20`, `21`). No opcode
+checks the flag, though. `AtelGetRealVarAdrs` strips it
+(`and 0x0fffffff`, then `and 0xf0ffffff` in each case), the type
+dispatches use `>> 28`, and none of its 49 callers touches bits 24-27. So
+it only records the source's declaration: `pushv` and `popv` on an array
+use element 0. The only code that compares it is the debugger's watch
+lookup, `Atel_FindVarSlot_0087bc90`, which matches a reference against
+each entry on `word & 0x0fffffff`; a `pushvref` reference keeps the
+entry's bit 24. The debugger's location print
+(`AtelDebug_PrintVarLocation_0087e880`: `[GBL]`, `[LCL]`, `[FIX]`, `[MY]`,
+`[DAT]`, `[ITR]`, `[LC2]` for storage 0-6) shows the same 28 bits as
+`%06x`. Fahrenheit's `AtelScriptVar` reads byte 3 (bits 24-27) as the
+location, which gives twice the storage number, plus 1 for an array.
 
 An element index is clamped to `0..length-1` (`AtelGetValueAdrs`,
 `0x0086c570`; element sizes 1, 2 or 4, `AtelGetValueIncValue`).
