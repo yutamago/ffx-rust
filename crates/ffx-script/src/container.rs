@@ -1,7 +1,10 @@
 //! The files scripts live in.
 //!
-//! - Monster files (`battle/mon/_mNNN/mNNN.bin`): `u32` count 8, then eight
-//!   `u32` section offsets; the script is section 0.
+//! - Monster files (`battle/mon/_mNNN/mNNN.bin`) and battle scripts
+//!   (`battle/btl/*/*.bin`): a `u32` section count, then as many `u32`
+//!   section offsets; the script is section 0. Monsters have 8 sections,
+//!   battle scripts 8, 7 or 5, and some battle offsets point past the end
+//!   of the file (`kino03_00`: `0xb00` in a file of `0xaf8` bytes).
 //! - Event files (`event/**/*.ebp`): `"EV01"`, then section offsets from
 //!   `0x04` up to a `0xffffffff` terminator, 0 for absent sections; the
 //!   script is section 0, at `0x40`. All offsets are multiples of `0x40`.
@@ -14,6 +17,7 @@ use crate::{Error, Result};
 /// Which kind of file holds the script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    /// A section count and table: monsters and battle scripts.
     Monster,
     Event,
 }
@@ -39,8 +43,11 @@ fn u32_at(b: &[u8], o: usize) -> Option<usize> {
 /// later ones by a multiple of it.
 const ALIGN: usize = 0x40;
 
+/// Most sections a counted table may have; the shipped files have 5 to 8.
+const MAX_SECTIONS: usize = 16;
+
 impl Container {
-    /// Opens a monster or event file.
+    /// Opens a monster, battle or event file.
     ///
     /// # Errors
     /// Fails on files of neither kind and malformed scripts.
@@ -51,8 +58,11 @@ impl Container {
                 .take_while(|&o| u32_at(&bytes, o).is_some_and(|v| v != 0xffff_ffff))
                 .collect();
             (Kind::Event, words)
-        } else if u32_at(&bytes, 0) == Some(8) {
-            (Kind::Monster, (1..=8).map(|i| i * 4).collect())
+        } else if let Some(count) = u32_at(&bytes, 0)
+            && (1..=MAX_SECTIONS).contains(&count)
+            && bytes.len() >= 4 + 4 * count
+        {
+            (Kind::Monster, (1..=count).map(|i| i * 4).collect())
         } else {
             return Err(Error::Malformed("neither a monster nor an event file"));
         };
@@ -64,12 +74,18 @@ impl Container {
         let start = *offsets
             .first()
             .ok_or(Error::Malformed("no script section"))?;
+        if start >= bytes.len() {
+            return Err(Error::Malformed("script section past the end"));
+        }
+        // Later sections may start past the end of a battle file; the
+        // script then runs to the end.
         let end = offsets
             .iter()
             .copied()
             .find(|&o| o > start)
-            .unwrap_or(bytes.len());
-        if end > bytes.len() || offsets.windows(2).any(|w| w[0] > w[1]) {
+            .unwrap_or(bytes.len())
+            .min(bytes.len());
+        if offsets.windows(2).any(|w| w[0] > w[1]) {
             return Err(Error::Malformed("sections out of order"));
         }
         let script = Script::parse(bytes[start..end].to_vec())?;

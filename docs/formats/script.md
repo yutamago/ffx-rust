@@ -5,7 +5,12 @@ interpreter, `Script_Run` (`0x008641e0`). Scripts live in:
 
 - event files, `ffx_ps2/ffx/master/jppc/event/**/*.ebp` (397), section 0;
 - monster files, `ffx_ps2/ffx/master/jppc/battle/mon/_mNNN/mNNN.bin` (361),
-  section 0 (registered by `Mon_LoadAll` through `0x00797a40`).
+  section 0 (registered by `Mon_LoadAll` through `0x00797a40`);
+- battle scripts, `ffx_ps2/ffx/master/jppc/battle/btl/*/*.bin` (863),
+  section 0 of the same container as monsters, with 8, 7 or 5 sections
+  (817, 37 and 9 files). In 15 of them later section offsets lie past the
+  end of the file (`kino03_00`: `0xb00` in a file of `0xaf8` bytes); the
+  script then runs to the end.
 
 Disassembler/assembler: [`crates/ffx-script`](../../crates/ffx-script).
 
@@ -72,11 +77,10 @@ address (and name, when `symbols/ffx.sym` has one); for example
 
 `ffx script natives` lists every native the event, monster and battle scripts call, with its
 call count, the number of scripts calling it, its four handler slots and
-its name. 1056 of the 1059 are named in `symbols/ffx.sym` (by their result
-handler, else their start, else their poll); 1029 of the names are
-`Native_*`, with arguments in push order and the evidence. The names
-cover 99.96 % of the 3.1 million calls; the three without a name are
-`0x70a9`, `0x7043` and `0x706d` (1139 calls). By group:
+its name. All 1059 are named in `symbols/ffx.sym` (by their result
+handler, else their start, else their poll); 1032 of the names are
+`Native_*`, with arguments in push order and the evidence. Together the
+scripts make 3.1 million calls. By group:
 
 | Group | Area | Examples |
 |---|---|---|
@@ -90,6 +94,35 @@ cover 99.96 % of the 3.1 million calls; the three without a name are
 
 Names marked `?` in their comments are inferred, not traced end to end.
 
+### Signatures
+
+Every native pushes exactly one result: `Script_FinishNative`
+(`0x008777f0`) calls the float slot and pushes its value as a float, else
+the int slot and pushes an integer, else pushes 0. `func_facc` then pops
+it into the float accumulator, so a `func_facc` statement leaves the
+stack as it was before the arguments. Every request opcode (`36`–`38`,
+`39`–`3b`, `45`–`53`) pops level, worker and entry and pushes a success
+value (the result of `AtelRegistSignal*`; `Script_OpReq`, `Script_OpReqSw`,
+`Script_OpReqEw` and the `PREQ` cases in `Script_Run`).
+
+A native's argument count can be measured two ways:
+
+- in the handlers: `AtelPopStackInteger`/`AtelPopStackFloat` calls minus
+  `AtelPushStack*` calls, through the slot handlers and their callees
+  (the dump);
+- in the scripts: the stack depth before each `func_facc` statement,
+  from the opcodes' stack effects.
+
+[Atel#](https://github.com/yutamago/ffx-atel-sharp) does both
+(`tools/gen-natives.cs`). Of the 1511 entries in the native tables, 1059
+are called. The two counts agree for 818; they disagree for 5, where the
+statements are right: the motion natives `0x5019`, `0x501a`
+(`Native_ChrPlayMotion`), `0x5042`, `0x5089` and `0x508b` share
+`Native_PlayMotionCommon` (`0x00a7aae0`), which pops a sixth value (a
+worker) only when its caller passes one; these five do not, and every
+statement passes 5. The other 688 have no `func_facc` statement
+(most are never called), so their count comes from the handlers alone.
+
 ## Script block
 
 All offsets are relative to the block start (`B`). Code offsets in tables
@@ -98,13 +131,21 @@ are relative to the code start.
 | Offset | Type | Meaning |
 |---|---|---|
 | `0x00` | `u32` | Code length |
+| `0x04` | `u32` | Map entrances, `0x20` bytes each, up to the author string; 0 in every monster and battle block and in 7 event blocks |
+| `0x08` | `u32` | Author string (`"keisuke"`, …) |
+| `0x0c` | `u32` | Name string (`"001"`, …) |
 | `0x10` | `u32` | Block length |
+| `0x14`–`0x1f` | | Fahrenheit: `0x18` main script, `0x1e` zone bytes; the rest unknown |
+| `0x20` | `u32` | Event data, variable storage 6 |
+| `0x24` | `u32` | Unknown |
+| `0x28` | `u32` | Area (Fahrenheit's `offset_area`): 0 or 32 bytes |
+| `0x2c` | `u32` | "Other" (Fahrenheit's `offset_other`): always `0x40` bytes |
 | `0x30` | `u32` | Code start; the only header field `Script_Run` reads |
 | `0x34` | `u16` | Worker count |
+| `0x36` | `u16` | Workers that are not function workers (type ≠ 0); true in every block with workers |
 | `0x38` | `u32` × *n* | Worker header offsets |
 
-Other header words (`0x04`–`0x2c`) point to tables before and after the
-code and are kept as they are.
+The names from `0x04` to `0x2c` follow Fahrenheit's `AtelScriptChunk`.
 
 Worker header (`0x34` bytes):
 
@@ -116,11 +157,56 @@ Worker header (`0x34` bytes):
 | `0x06` | `u16` | Float constant count; table at `0x1c`, ending at the code start |
 | `0x08` | `u16` | Entry point count; table at `0x20` |
 | `0x0a` | `u16` | Jump label count; table at `0x24` (`Script_Jump`, `0x008726f0`) |
-| `0x30` | `u32` | End of the code, rounded up to 4 |
+| `0x0c` | | Unknown |
+| `0x10` | `u32` | Private data length (Fahrenheit's `priv_data_len`) |
+| `0x28` | `u32` | Storage 2 base; 0 in every shipped script |
+| `0x2c` | `u32` | Private data, storage 3: 0 or the block after the worker's tables |
+| `0x30` | `u32` | Shared data, storage 4: after the code, aligned to 32; the same in every worker |
+
+The variable, integer and float tables (`0x14`–`0x1c`) and their counts
+are one set per block, shared by all workers, in every shipped script.
 
 Every worker's entries and labels lie inside its own contiguous code range,
-and the ranges follow worker order. This holds for all 758 shipped scripts,
+and the ranges follow worker order. This holds for all 1621 shipped scripts,
 which is what lets the disassembler name jump targets per worker.
+
+### Layout
+
+The regions follow each other in this order, each where the previous
+ends unless stated otherwise:
+
+1. The header, `0x38 + 4n` bytes, then the worker headers.
+2. The map entrances, if any; the author (NUL-terminated); the name
+   (NUL-terminated, then aligned to 4).
+3. The variable table (aligned to 4), the integer constants, the float
+   constants.
+4. The code: the workers' code in worker order.
+5. Shared data (storage 4), aligned to 32. In 934 blocks (352 of the 758
+   event and monster blocks) it starts 32 bytes later; nothing in the
+   block says why, perhaps code space the original compiler reserved.
+6. "Other" (`0x40` bytes), event data (storage 6), the area (0 or 32
+   bytes).
+7. Per worker, in worker order: its entry table, its label table and, if
+   `+0x2c` is set, its private data: `+0x10` bytes rounded up to 16, at
+   least 16.
+8. The end, aligned to 16, is the block length at `+0x10`. The file's
+   section may run on to the next `0x40` boundary.
+
+A region whose pointer is 0 is absent: "other" in the developer maps
+`sample01`, `sample02`, `test28`, `test33` and `test34`; event data in
+`test28` and `test34`; the area in `test28`, `test33` and `test34`. 23
+blocks have no workers: the empty monster slots `m332` and `m347`–`m360`
+(1024-byte blocks) and 8 battle scripts (`klyt01_01`–`03`, `_05`, `_06`,
+`system_00`, `test00_04`, `test00_06`). With no worker pointing at it, the
+shared data is still there, where rule 5 puts it.
+
+The shared area holds more than variables' initial values: `m001`'s starts
+with a timestamp (`01/28 13:20:44`), a run of `0xff` and words that point
+back into the block. Atel#'s `ScriptImage` lays out every shipped block
+from these rules plus the pinned offsets above (the 32-byte gap, 5 battle
+blocks whose event data sits elsewhere, the block ends of `test28` and
+`test34`) and gets all 1621 back byte for byte
+(`docs/formats/script-block.md` there has the measurements).
 
 ## Assembly
 
@@ -151,8 +237,9 @@ start at `+0x30`; nothing else in the block moves.
 ## Verification
 
 `cargo test -p ffx-script` (with `FFX_GAME_DIR`) disassembles and
-reassembles all 758 scripts, 17.3 million instructions, and checks that
-script blocks and their files come back byte for byte. A second test grows
+reassembles all 758 event and monster scripts, 17.3 million instructions,
+and the 863 battle scripts, 4.0 million, and checks that script blocks and their files
+come back byte for byte. A second test grows
 a worker of `m001` past its range and checks the relocated code, the
 shifted sections and that the result round-trips again.
 
@@ -3467,4 +3554,6 @@ workers the init bit in both runs and compares the rest.
 
 - What calls `Script_LineActorSide` (`0x008632b0`), the reader of the
   `+0x2e4` table that opcode `7a` writes.
-- The block header words `0x04`–`0x2c` and the tables they point to.
+- The block header words `0x14`–`0x1f` and `0x24`, worker header `0x0c`,
+  the 32-byte gap before the shared data, and what the shared, "other"
+  and area data hold besides variables.

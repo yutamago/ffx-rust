@@ -33,22 +33,8 @@ fn every_script_disassembles_and_reassembles_exactly() {
     let (mut monsters, mut events, mut instructions) = (0, 0, 0);
     for path in script_paths(&archive) {
         let original = archive.read(archive.find(&path).unwrap()).unwrap();
-        let file = Container::parse(original.clone()).unwrap_or_else(|e| panic!("{path}: {e}"));
-        let text = disassemble(&file.script).unwrap();
-        let rebuilt = assemble(&file.script, &text).unwrap_or_else(|e| panic!("{path}: {e}"));
-        assert_eq!(
-            rebuilt.bytes(),
-            file.script.bytes(),
-            "{path}: script round trip"
-        );
-        let repacked = file.replace_script(&rebuilt).unwrap();
-        assert_eq!(
-            repacked.bytes(),
-            &original[..],
-            "{path}: container round trip"
-        );
-        instructions += text.lines().filter(|l| l.starts_with("    ")).count();
-        match file.kind {
+        instructions += round_trip(&path, &original);
+        match Container::parse(original).unwrap().kind {
             Kind::Monster => monsters += 1,
             Kind::Event => events += 1,
         }
@@ -56,6 +42,55 @@ fn every_script_disassembles_and_reassembles_exactly() {
     assert_eq!((monsters, events), (361, 397));
     eprintln!(
         "{monsters} monster and {events} event scripts, {instructions} instructions round-tripped"
+    );
+}
+
+/// Disassembles and reassembles one file's script and puts it back; returns
+/// the instruction count.
+fn round_trip(path: &str, original: &[u8]) -> usize {
+    let file = Container::parse(original.to_vec()).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let text = disassemble(&file.script).unwrap();
+    let rebuilt = assemble(&file.script, &text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert_eq!(
+        rebuilt.bytes(),
+        file.script.bytes(),
+        "{path}: script round trip"
+    );
+    let repacked = file.replace_script(&rebuilt).unwrap();
+    assert_eq!(repacked.bytes(), original, "{path}: container round trip");
+    text.lines().filter(|l| l.starts_with("    ")).count()
+}
+
+#[test]
+fn every_battle_script_round_trips() {
+    let Some(archive) = archive() else { return };
+    let paths: Vec<&str> = archive
+        .entries()
+        .iter()
+        .map(|e| e.path.as_str())
+        .filter(|p| p.starts_with("ffx_ps2/ffx/master/jppc/battle/btl/") && p.ends_with(".bin"))
+        .collect();
+    // Section counts: 8, 7 or 5; some offsets lie past the end of the file.
+    let mut by_count = std::collections::BTreeMap::<u32, usize>::new();
+    let (mut past_end, mut instructions) = (0, 0);
+    for path in &paths {
+        let original = archive.read(archive.find(path).unwrap()).unwrap();
+        let count = u32::from_le_bytes(original[..4].try_into().unwrap());
+        *by_count.entry(count).or_default() += 1;
+        past_end += usize::from((1..=count as usize).any(|i| {
+            u32::from_le_bytes(original[4 * i..4 * i + 4].try_into().unwrap()) as usize
+                > original.len()
+        }));
+        instructions += round_trip(path, &original);
+    }
+    assert_eq!(
+        by_count.into_iter().collect::<Vec<_>>(),
+        [(5, 9), (7, 37), (8, 817)]
+    );
+    assert_eq!(past_end, 15);
+    eprintln!(
+        "{} battle scripts ({past_end} with sections past the end), {instructions} instructions round-tripped",
+        paths.len()
     );
 }
 
