@@ -90,6 +90,34 @@ constants").
 
 Menu textures (`menu/`, Tk 2D) are named `TBP_PSM` too.
 
+The 2D backgrounds (`YNSC` layers, `docs/formats/field.md`) are
+`map/<area>/<map>/2d/tex/d3d11/<layer>_<part>_<w>_<h>_<frame>.dds.phyre`,
+2048-square DXT5 for a 512 x 448 PS2 part. Sorted by (layer, part) they pair
+with the PS2 part transfers in file order (the PS2 sizes are padded, within 8
+texels). The HD re-framed 37 rooms for 16:9 (bika01, hiku00, luca06,
+kami01, ...): their PS2 picture is a zoomed crop of the HD one. Parts with
+several HD frames (texture animation such as azit00's wheel) hold one
+picture on the PS2 (ffx-demaster `docs/screen.md`).
+
+## The PS2 font (`menu/base.ftc`)
+
+The PS2 International font, `uspc/menu/base.ftc` (the German disc's
+`jppc/menu/base.ftc` is the same file, 14,096 bytes), is an FTC of type 4
+with a bitmap: 200 glyphs in 14 x 18 cells, the bitmap at `+0x40` one
+128 x 216 page of 4 bits per texel (low nibble first) that holds two 2-bit
+pages, bits 0-1 page 0 and bits 2-3 page 1. A 2-bit value is coverage (3
+full, 1-2 the anti-aliased edge); the colours come from a CLUT built at run
+time, not stored in the ELF. The width table at `+0x3640` (208 bytes) is in
+whole texels, and every glyph starts at its cell's left edge.
+
+The PC keeps the PS2 glyph order and cell grid: `TOGetFontInfo`
+(`0x008b7240`, `docs/formats/system.md`, "Text helpers") puts glyph `i` on
+page `i & 1` at `((i % 18) / 2 * 14, i / 18 * 18)` and reads the PC width
+table (`ffx_ps2/ffx/master/uspc/menu/base.ftc`, type 4 without a bitmap,
+230 glyphs, 128 x 234 pages) in quarter texels, so a PS2 width w is `4w`
+there. Glyphs 0..185 exist in both; 99, 103 (`Œ`, `œ`), 170 and 187-229
+are PC additions (ffx-demaster `docs/font.md`).
+
 ## Which HD models kept the PS2 mesh
 
 The HD characters are PS2 meshes with upscaled textures, or remodels
