@@ -363,8 +363,8 @@ list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
 
 | Object | In memory |
 |---|---|
-| `PMeshSegment` | `m_indexData` (+0x30) is a `PIndexDataBlockD3D11`: its (`ID3D11Buffer`, SRV) pairs are a PSharray at block +0x14 (count, bit 31 a flag; one pair inline at +0x18, more through the pointer at +0x18), 0x14 bytes a pair (`PIndexDataBlockD3D11_create` `0x00561e90`) |
-| `PDataBlockD3D11` | the same PSharray at +0x18 (count at +0x18, pairs at +0x1c; `PDataBlockD3D11_create` `0x005620c0`); a segment's blocks are at `m_vertexData` (+0x28 count, +0x2c pointer) |
+| `PMeshSegment` | `m_indexData` (+0x30) is a `PIndexDataBlockD3D11`: its (`ID3D11Buffer`, SRV) pairs are a PSharray at block +0x14 (count, bit 31 a flag; one pair inline at +0x18, more through the pointer at +0x18), 0x14 bytes a pair (`PIndexDataBlockD3D11_create` `0x00561e90`). `m_vertexData` (+0x28 count, +0x2c pointer) is a `PArray` of the `PDataBlockD3D11` objects themselves, not of pointers (`0x0055edf0`), one every 0x40 bytes (the class size) |
+| `PDataBlockD3D11` | the same PSharray at +0x18 (count at +0x18, pairs at +0x1c; `PDataBlockD3D11_create` `0x005620c0`) |
 | `PMeshInstance` | `m_mesh` +0, `m_localToWorldMatrix` +4, `m_name` +0x2c (`PString`) |
 | `PMesh` | `m_meshSegments` +0 (count) and +4 (pointer to the segments) |
 | `PNode` | `m_worldMatrix` +0xc (the same pointer as its instance's `m_localToWorldMatrix`), `m_name` +0x50 |
@@ -375,22 +375,32 @@ list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
 The cluster's Direct3D objects are created inside that call, on the
 loading thread: `Phyre_PBinary_loadClusterTextures` (`0x00465ab0`)
 makes the textures (`0x0058fc20`), index buffers (`0x00561e90`) and
-vertex buffers (`0x005620c0`), and the pixel and vertex shaders of
-`shaders/d3d11/*.fx*.phyre` were created during their loads too (2,981
-of a run's 3,056 pixel shaders and 1,395 of its 1,401 vertex shaders;
-the rest are made outside cluster loads). So the device's create calls
-made during a load belong to that file.
+vertex buffers (`0x005620c0`). It also calls
+`PShaderFragmentProgramD3D11_create` (`0x0058d1c0`) and
+`PShaderVertexProgramD3D11_create` (`0x0058d780`), so the pixel and
+vertex shaders of `shaders/d3d11/*.fx*.phyre` are created during their
+loads too. In one run, cluster loads create 2,981 of the 3,056 pixel
+shaders and 1,395 of the 1,401 vertex shaders; the game makes the rest
+outside cluster loads. So the device's create calls made during a load
+belong to that file.
 
 **`PNode.m_name` is at +0x50 in memory.** The files' array fixups say
 +0x4c, but the loaded node has its name pointer at +0x50 and
 `m_localMatrix`'s last element (+0x4c) is untouched: 1.0 in every node
 (see Verification). The loader does not write at the fixup's byte
-offset: `Cluster_ApplyPointerArrayFixups` (`0x0057acd0`) resolves it to a
-member of the runtime class with `Fixup_FindMember` (`0x0057a280`), which
-calls `Class_FindMemberByOffset` (`0x0047d5f0`) to adjust by the class's
-base offsets, and sets the array through that member. Why the result is
-+0x50 for `PNode` was not traced. ffx-phyre's fallback (the node's only
-array fixup) reads the right string, so exports are unaffected.
+offset. `Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers`
+(`0x0057a320`) applies the array fixups: it unpacks them with
+`Cluster_UnpackArrayFixups(..., 0)` (with the header's `+0x18` count),
+resolves each to a member of the runtime class with `Fixup_FindMember`
+(`0x0057a280`) and sets the array through that member. It prints "Array
+fixup refers to array ... not in current runtime" when the member has no
+runtime counterpart.
+`Fixup_FindMember` takes the member from the namespace's member table
+when the fixup gives a valid member index. For a byte-offset fixup, it
+calls `Class_FindMemberByOffset` (`0x0047d5f0`), which adjusts by the
+class's base offsets. Why the result is +0x50 for `PNode` is not traced
+(see Open questions). ffx-phyre's fallback (the node's only array fixup)
+reads the right string, so exports are unaffected.
 
 ### Character asset lists
 
@@ -504,3 +514,6 @@ all 3,054 (measured in the second run).
   made by copying one of the same size and format and importing pixels).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.
+- Why `PNode`'s name array fixup (+0x4c in the file) lands at +0x50 in
+  memory: which branch of `Fixup_FindMember` (`0x0057a280`) it takes and
+  which member and base offset it returns.
