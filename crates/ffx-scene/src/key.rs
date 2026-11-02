@@ -36,13 +36,7 @@ pub fn static_buffer(bytes: &[u8], indices: bool) -> Key {
 /// The `DXGI_FORMAT` of a texture cluster's format.
 #[must_use]
 pub fn dxgi_format(format: ffx_phyre::Format) -> u32 {
-    match format {
-        ffx_phyre::Format::Dxt1 => 71,  // BC1_UNORM
-        ffx_phyre::Format::Dxt3 => 74,  // BC2_UNORM
-        ffx_phyre::Format::Dxt5 => 77,  // BC3_UNORM
-        ffx_phyre::Format::Argb8 => 87, // B8G8R8A8_UNORM
-        ffx_phyre::Format::L8 => 61,    // R8_UNORM
-    }
+    format.dxgi()
 }
 
 /// FNV-1a 64 of raw bytes: a texture level's texels alone, to tell which

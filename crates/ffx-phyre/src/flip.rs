@@ -7,16 +7,16 @@ use crate::texture::Format;
 /// Flips one mip level of `height` pixel rows in place.
 pub(crate) fn flip_level(format: Format, width: u32, height: u32, level: &mut [u8]) {
     match format {
-        Format::Argb8 | Format::L8 => {
-            let row = width as usize * if format == Format::Argb8 { 4 } else { 1 };
+        Format::Argb8 | Format::Rgba8 | Format::L8 => {
+            let row = width as usize * format.bits() as usize / 8;
             let rows = height as usize;
             for y in 0..rows / 2 {
                 let (top, bottom) = level.split_at_mut((rows - 1 - y) * row);
                 top[y * row..(y + 1) * row].swap_with_slice(&mut bottom[..row]);
             }
         }
-        Format::Dxt1 | Format::Dxt3 | Format::Dxt5 => {
-            let block = if format == Format::Dxt1 { 8 } else { 16 };
+        Format::Dxt1 | Format::Dxt3 | Format::Dxt5 | Format::Bc4 | Format::Bc5 => {
+            let block = format.bits() as usize * 2;
             let row = width.div_ceil(4).max(1) as usize * block;
             let block_rows = height.div_ceil(4).max(1) as usize;
             // Rows of blocks swap ends...
@@ -33,9 +33,15 @@ pub(crate) fn flip_level(format: Format, width: u32, height: u32, level: &mut [u
                         reverse_units(&mut b[..8], 2, valid);
                         flip_color(&mut b[8..], valid);
                     }
-                    _ => {
+                    Format::Dxt5 => {
                         flip_alpha5(&mut b[..8], valid);
                         flip_color(&mut b[8..], valid);
+                    }
+                    // One or two alpha-style channel blocks.
+                    _ => {
+                        for channel in b.as_chunks_mut::<8>().0 {
+                            flip_alpha5(channel, valid);
+                        }
                     }
                 }
             }
@@ -82,13 +88,7 @@ mod tests {
 
     #[test]
     fn flips_are_involutions() {
-        for format in [
-            Format::Dxt1,
-            Format::Dxt3,
-            Format::Dxt5,
-            Format::Argb8,
-            Format::L8,
-        ] {
+        for format in Format::ALL {
             for (w, h) in [(8, 8), (16, 4), (8, 2), (4, 1), (12, 20)] {
                 let size = format.level_size(w, h);
                 let original: Vec<u8> = (0..size)

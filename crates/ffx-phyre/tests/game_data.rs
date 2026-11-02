@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use ffx_phyre::{Error, Texture};
+use ffx_phyre::{Error, Format, Texture};
 use ffx_vbf::Archive;
 
 #[test]
@@ -36,6 +36,12 @@ fn every_texture_round_trips_through_dds() {
             .with_dds(&dds)
             .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
         assert_eq!(back.bytes(), &bytes[..], "{}", entry.path);
+        // The writer for new sizes and formats gives the same file for the
+        // same image.
+        let same = texture
+            .with_any_dds(&dds)
+            .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        assert_eq!(same.bytes(), &bytes[..], "{}", entry.path);
         *kinds
             .entry(format!("{:?} {:?}", texture.kind, texture.format))
             .or_default() += 1;
@@ -44,6 +50,89 @@ fn every_texture_round_trips_through_dds() {
     assert_eq!(total, 44_364);
     assert_eq!(big_endian, 30);
     eprintln!("{total} textures round-tripped through DDS: {kinds:?}");
+}
+
+/// Every 20th texture at twice its size in another format, with a full mip
+/// chain and with one level: it parses back with that size, format and mip
+/// count, and writing the original image into it gives the original file
+/// again (so the fields the writer sets follow the shipped conventions for
+/// one-level and full-chain textures, word 20 included).
+#[test]
+fn every_twentieth_texture_resizes_and_changes_format() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let mut done = 0;
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".dds.phyre") && e.size > 0)
+        .step_by(20)
+    {
+        let Ok(texture) = Texture::parse(archive.read(entry).unwrap()) else {
+            continue;
+        };
+        let (w, h) = (texture.width * 2, texture.height * 2);
+        // The top level at twice the size (each pixel four times), on every
+        // face.
+        let doubled: Vec<u8> = texture
+            .to_rgba()
+            .chunks_exact(texture.width as usize * 4)
+            .flat_map(|r| {
+                let wide: Vec<u8> = r
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| [*p, *p].concat())
+                    .collect();
+                [wide.clone(), wide].concat()
+            })
+            .collect();
+        let rgba = doubled.repeat(texture.kind.faces());
+        let format = if texture.format == Format::Argb8 {
+            Format::Rgba8
+        } else {
+            Format::Argb8
+        };
+        for levels in [ffx_phyre::full_mip_levels(w, h), 1] {
+            let big = texture
+                .with_rgba(w, h, &rgba, format, levels)
+                .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+            let back = Texture::parse(big.bytes().to_vec()).unwrap();
+            assert_eq!(
+                (
+                    back.kind,
+                    back.format,
+                    back.width,
+                    back.height,
+                    back.mip_levels
+                ),
+                (texture.kind, format, w, h, levels),
+                "{}",
+                entry.path
+            );
+            assert!(back.to_rgba() == doubled, "{}", entry.path);
+            let restored = big
+                .with_any_dds(&texture.to_dds())
+                .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+            if restored.bytes() != texture.bytes() {
+                // Word 20 of the few tiny block textures whose chain is over
+                // twice their top level: the writer leaves room for it.
+                let tiny = ffx_phyre::chain_size(
+                    texture.format,
+                    texture.width,
+                    texture.height,
+                    texture.mip_levels,
+                ) > 2 * texture.format.level_size(texture.width, texture.height);
+                assert!(tiny, "{} restored differs", entry.path);
+            }
+        }
+        done += 1;
+    }
+    assert!(done > 2000, "{done}");
+    eprintln!("{done} textures resized and restored");
 }
 
 #[test]

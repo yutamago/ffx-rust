@@ -420,12 +420,7 @@ fn upload_subresources(
         }
     }
     // The upload's level layout.
-    let (bpp, block) = match t.format {
-        ffx_phyre::Format::Dxt1 => (4, true),
-        ffx_phyre::Format::Dxt3 | ffx_phyre::Format::Dxt5 => (8, true),
-        ffx_phyre::Format::Argb8 => (32, false),
-        ffx_phyre::Format::L8 => (8, false),
-    };
+    let (bpp, block) = (t.format.bits() as usize, t.format.is_block());
     let round = |x: usize| if block { (x + 3) & !3 } else { x };
     let (top_w, top_h) = (t.width >> first, t.height >> first);
     let (mut w, mut h) = (top_w as usize, top_h as usize);

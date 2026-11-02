@@ -707,7 +707,8 @@ enum TextureCommand {
         #[arg(short, long)]
         out: PathBuf,
     },
-    /// Replace a texture's pixels with a DDS of the same format and size.
+    /// Replace a texture's pixels with a DDS of the same format and size
+    /// (or, with `--resize`, any size, mip count and game format).
     Import {
         #[command(flatten)]
         game: GameArgs,
@@ -715,6 +716,10 @@ enum TextureCommand {
         path: String,
         /// The edited DDS file.
         dds: PathBuf,
+        /// Take the DDS's size, mip count and format (DXT1/3/5, BC4, BC5,
+        /// RGBA8, BGRA8, L8) instead of requiring the original's.
+        #[arg(long)]
+        resize: bool,
         /// Write the texture here.
         #[arg(short, long, conflicts_with = "mod_dir")]
         out: Option<PathBuf>,
@@ -767,14 +772,18 @@ fn texture(cmd: TextureCommand) -> Result<()> {
             game,
             path,
             dds,
+            resize,
             out,
             mod_dir,
         } => {
             let game = Game::open(&game)?;
             let texture = ffx_phyre::Texture::parse(read_file(&game.archive, &path)?)?;
-            let edited = texture.with_dds(
-                &std::fs::read(&dds).with_context(|| format!("reading {}", dds.display()))?,
-            )?;
+            let dds = std::fs::read(&dds).with_context(|| format!("reading {}", dds.display()))?;
+            let edited = if resize {
+                texture.with_any_dds(&dds)?
+            } else {
+                texture.with_dds(&dds)?
+            };
             let dest = match (out, mod_dir) {
                 (Some(p), _) => p,
                 (None, Some(dir)) => dir.join(safe_relative(&path)?),
