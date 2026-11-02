@@ -75,6 +75,23 @@ address (and name, when `symbols/ffx.sym` has one); for example
 `0x70ab` → `0x007a5360`, which sets a battle actor property
 (`0x007b4b70`).
 
+`AtelInitTotal` first gives every group the default table
+(`AtelSetUpCallFunc(g, 0)` stores `g_NativeTableEmpty`, `0x00c52b60`, for a
+null table), then registers the groups above, so **2, 3, a, e and f stay
+empty**. `AtelSetUpCallFunc` (`0x00877880`) is the only writer of
+`g_NativeTables` (`0x01328558`), and `AtelInitTotal` runs once, from
+`TkInit`. The default table has 8 entries, each with a start that only
+returns (`0x00877710`) and a poll that returns 0, "not done"
+(`0x00877720`), and no result handlers; after its 128 bytes comes group
+1's table. The dispatchers (`Script_CallNative` `0x008777a0`,
+`Script_PollNative` `0x00877730`, `Script_FinishNative` `0x008777f0`)
+do not check the group or the index, so a script calling into an empty
+group does not crash: with an index below 8 that level of the worker polls
+for ever, with 8 or more it runs the handlers of group 1's table at that
+place (`0x2008` runs `0x1000`'s) and then reads on into other data. A mod can
+register a table of its own for a free group after `AtelInitTotal`
+(Atel# takes group f for `Debug.Print`; its `docs/formats/debug.md`).
+
 `ffx script natives` lists every native the event, monster and battle scripts call, with its
 call count, the number of scripts calling it, its four handler slots and
 its name. All 1059 are named in `symbols/ffx.sym` (by their result
@@ -271,7 +288,7 @@ the battle snapshot ctrl works 2 (75 workers) and 3 (6) are in use too.
 | `0x1c` | `u32` | the first worker | `AtelGetBasicWork` |
 | `0x20` | `u32` | `&AtelGetBasicWork` (field snapshot) | |
 | `0x2c`, `0x30` | `u32` | bases of variable storage 0 and 1 (storage 0 is in the save data in the field) | `AtelGetRealVarAdrs` (`0x0086c2e0`) |
-| `0x34`, `0x38` | `u32` | the event's message tables | `AtelActorSetUp2`, `Msg_Text` |
+| `0x34`, `0x38` | `u32` | the event's message tables: `Msg_Text` (`0x0086bf30`) reads `+0x34` on every call (entry `i` at `+i*8`, no bounds check; offset 0 falls back to `g_EventEbpMessages`). The buffer is owned through `g_EventMessageBuffer` (`0x01327128`), which `AtelEventSetUp` frees, not through `+0x34`, so a table put into `+0x34` by a mod is never freed by the game | `AtelActorSetUp2`, `Msg_Text` |
 | `0x44` | `u32` | `AtelSetVibrateStreamExt`'s value | `0x008715e0` |
 | `0x48` | `u32` | a map record; `+0x18` the map camera (ctrl work 0's) | `AtelGetEventMapCameraId` (`0x0086b5d0`) |
 | `0x4c` | `u32` | `AtelExecCtrlEvent` for the event | `AtelActorSetUp2` (`0x00875510`) |

@@ -18513,11 +18513,13 @@
 0x00877520 function Atel_PutDigits             # (v, dst, base): v as digits over the divisor table 0x00c52b18 (0-ended), each + base -> what is left of v; name ours; ported in helpers (script round 15)
 0x00877610 function Atel_StrTrimLeading        # (s, n, ch): up to n leading ch dropped in place (the copy starts at the last one when all n match) -> the terminator; name ours; ported in helpers (script round 14)
 0x00877660 function Atel_ParseHex              # (s) -> the hex number after an optional 0x or $; name ours; ported in helpers (script round 16)
+0x00877710 function Native_DefaultStart      # a bare ret: the start slot of every entry of g_NativeTableEmpty (0x00c52b60); name ours
+0x00877720 function Native_DefaultPoll       # xor eax, eax; ret: 0, "not done", so a call into an empty native group polls for ever; the poll slot of g_NativeTableEmpty (0x00c52b60); name ours
 0x00877730 function Script_PollNative         # slot 1; no handler = done
 0x00877770 function Script_NativeEntry        # (id) -> g_NativeTables[id >> 12] + (id & 0xfff) * 16; ffx_script::vm::bridge::run
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
-0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable; ported in helpers (script round 15)
+0x00877880 function AtelSetUpCallFunc         # (group, table): g_NativeTables[group] = table, or g_NativeTableEmpty (0x00c52b60) for a null table; the only writer of g_NativeTables; was Script_SetNativeTable; ported in helpers (script round 15)
 0x008778b0 function Native_100a_Echo                # 0x100a: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12); name from pops v and returns it (the popped value)
 0x008778d0 function Native_100b_ShiftLeft15 # 0x100b: (v) -> v << 15; ported in native_mods (script round 19); name from (v) -> v << 15
 0x008778f0 function AtelCall_Math_Ftoul_RI # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI; 0x100c: (x f) -> ftol(f32(x * double 0x00b51588)); ported in native_mods (script round 19)
@@ -28284,6 +28286,7 @@
 0x00c52760 label g_CdSize2aKB # i32: file 0x2a's size in KB + 0x20, -1 until TkCdSizeKBCached_008741d0 fills it
 0x00c52768 label g_EventLangDirs # char*[12] by language: "" but fr/ sp/ de/ it/ (2..5); getEventLocTexListPath reads it and points word 11 at "cn/" (language 11, map 0x79)
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
+0x00c52b60 label    g_NativeTableEmpty        # 8 native entries {Native_DefaultStart, Native_DefaultPoll, 0, 0}: AtelSetUpCallFunc stores it for a null table; AtelInitTotal gives it to all 16 groups first, so groups 2, 3, a, e, f keep it (index 8 and up reads on into group 1's table 0x00c52be0); name ours
 0x00c54db0 label    g_SndDefaultWaves         # i16[16] wave ids, -1 unused (0, 1, 0x7d5 in the image); SndSetWaveData/SndSortCommonWave default
 0x00c54dd0 label    g_SndLastFadeOutMusic     # u32, -1 in the image: SndMusicVolumeFadeOut's music; SndMusicCrossStart starts it at volume 0 when nothing plays
 0x00c54e28 label    g_PadButtonCodes          # bytes, the button codes TkFindPadButton looks up in g_PadButtonMap
@@ -29291,6 +29294,7 @@
 0x0132711c label    g_AtelMapIdPage              # bytes: +0 state (AtelSetMapIdPage 2, AtelClearPreBgPage 0), +1 (0xff when cleared), +2 page, +3 event mode (AtelGetEventMode; 0xff reads as 1)
 0x01327120 label    g_AtelExpandFTCAdrs          # read by AtelGetExpandFTCAdrs (0x00873ac0)
 0x01327124 label    g_AtelHalfTurnAngle       # f32 degrees: AtelSetHalfTurnAngle; Native_GetTurnKind's threshold
+0x01327128 label    g_EventMessageBuffer      # TKMallocAndReadEventMessage(g_EventName)'s buffer: AtelEventSetUp TkFrees the previous one through this pointer and stores the new one (0x008731c6-0x008731fc, the only references); ctrl work 0 +0x34 gets the same table (AtelActorSetUp2) but only this pointer is freed; name ours
 0x01327130 label    g_AtelMusicNumber            # AtelGetMusicNumber (0x00873b00), AtelRegistMusicNumber (0x00873d00)
 0x01327134 label    g_AtelVagStreamVolume     # u8: AtelSetVagStreamVolume; 0x7f after an event set-up (0x00872ef0)
 0x01327135 label    g_AtelVoicePan            # u8: AtelSetVoicePan; 0x3f after an event set-up (0x00872ef0)
@@ -29370,7 +29374,7 @@
 0x01330280 label    g_TkControlerWork         # 2 words, zeroed by TkInitControlerWork
 0x01330488 label    g_PadButtonMap            # 16-byte rows: Pad_MapButtons(a, b, buttons) moves bit i of buttons to bit row[a + b][i]
 0x0133080c label    g_TkSyncH                 # words, TkGetSyncH(i) (unchecked)
-0x01330830 label    g_TkLang                  # i8, FFXSetLang / TkGetLang (sign-extended)
+0x01330830 label    g_TkLang                  # i8, FFXSetLang / TkGetLang (sign-extended); 0 on PC with the English files (Atel# in game, 2026-11-02: text encoded by it came out Japanese); the language of the files is TOGetFFXLang (0x006410e0)
 0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
 0x01330844 label    g_GraphicMapId            # the map id graphicIsMapInList tests
