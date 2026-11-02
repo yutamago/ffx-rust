@@ -274,6 +274,23 @@ Another language for 0x3d01/0x3d60 reads the word at `k + 4 * index` (a
 null-page read in the original). Any other id prints "VIRTUOS
 ASSERTION:Font not found." and returns `k`.
 
+The European languages share one font. `TOGetFontInfo` gives every
+glyph of a language other than 0, 9 and 10 the id 0x3d40 (and its width
+from `TOGetFontWidthTblAdrs(TOGetInternationalBaseDicType())`, dictionary
+4), and for that id both tables
+(`0x00c595e8`, `0x00c59628`) hold `menu_us/base_ftc/D3D11/font_0_{0,1}`
+and `shadow_0_{0,1}` in all eight slots. The exe names no `base_ftc`
+under `menu_de`, `menu_fr`, `menu_it` or `menu_es` (strings.tsv: only
+`menu`, `menu_us`, `menu_ch`, `menu_cn`, `menu_kr`), so those archive
+folders are unused. The width table comes from `TOInit` (`0x008ad4d0`):
+languages 0, 9 and 10 read their event FTC and `newkit`, every other
+language `TODVDFileLoad(4, 0)`, which the game resolves to
+`ffx_ps2/ffx/master/uspc/menu/base.ftc` (304 bytes, a type-4 FTC
+without a bitmap: 230 width bytes in quarter texels). Replacing those
+four pages and that one file changes the face and the advance of every
+Tk text in English, French, Italian, German and Spanish (ffx-demaster
+`docs/font.md`, checked in the game for English).
+
 The help pictures (`getSa_MenuTextureName`, `0x00774ae0`) are
 `help%d.dds.phyre` under `help`, `help_us`, `help_fr`, `help_es`,
 `help_de`, `help_it` (languages 0..5), `help_kr` and `help_ch` (9, 10).
@@ -639,6 +656,18 @@ scaled for the shape's sheet:
 For any other shape the original passes a stale stack word as the
 texture; the port passes 0. The quad goes to `graphicDrawUIElement`
 with grey corners, or with the C2 colours.
+
+The sizes `TOGetImageWH` (`0x008ac400`) gives these sheets are the PS2
+ones (0x3e00 and 0x3f00 256 x 256, 0x3dc0 256 x 128, 0x2ecc 512 x 128,
+0x2eac 512 x 416), and the UVs are in PS2 texels over them. The HD
+atlases (`menu_*/d3d11/meswin`, `battle`, `icon`, `strtex`, 4x the PS2
+size) are the PS2 layouts at 4x, and an image of the PS2 size fits the
+same UVs. The PS2 files behind them: `meswin.fmt` (0x3e00), `battle.fmt`
+(0x3f00), `icon.fmt` (0x3dc0), `strtex.fmt` (0x2ecc), `worldmap.fmt`
+(0x2eac), `face_ply.fmt`/`face_smn.fmt` (0x2ed0/0x2ed4, a different HD
+layout), indexed images whose palettes are in `menu.clp` except for
+`icon` and `strtex`, coloured at run time through the RGBA the callers pass
+(`TOAddPktMenuIconRGBA`, ffx-demaster `docs/ui.md`).
 
 `TODrawMenuPlateXYWHType` (`0x008f5f70`, module `plate`) draws the menu
 plates of types 1-14 from four kinds of pieces, all sized through the HD UI
@@ -1705,6 +1734,42 @@ pushed as literals (no relocation entries), not addresses.
   `TOGetPadStatusPrepare` unless it is below `0.3f32`, returning 0 and 1.
   A NaN opening runs the handler. `TOOpenBtlWinLeft`/`Right` start scene
   `"bleftwlay"`/`"brightwlay"` in slot 2 and return 1.
+- The input delay of the battle windows. Every `TOWaitBtlWin*` step
+  (`w +0x9c`, stored by `TOBtlSetCallback` `0x008a0de0`) compares the
+  window's open time (`f32 w +0xe0`, `graphicGetTime() - w +0xdc`) with a
+  shared constant and skips the pad read below it, so a fresh window
+  ignores every button for 0.3 or 0.45 s. The skip branches (ffx-demaster
+  `docs/patches.md`, which turns them into `nop`s; read from the code):
+
+  | Branch | Function | Constant | Bytes |
+  |---|---|---|---|
+  | `0x008a87b7` | `TOWaitBtlWinChange` (`0x008a87a0`) | `k_ThreeTenthsF32` `0x00b3eb44` (f32 0.3, about 20 readers) | `74 09` |
+  | `0x008a8a57` | `TOWaitBtlWinLeft` (`0x008a8a40`) | `k_PointFortyFiveF64` `0x00b43d50` (0.45f32 as f64) | `7b 09` |
+  | `0x008a8aa1` | `TOWaitBtlWinMain` (`0x008a8a70`) | 0.45 | `7b 09` |
+  | `0x008a8ad7` | `TOWaitBtlWinPrepare_008a8ac0` | 0.3 | `74 09` |
+  | `0x008a8b07` | `TOWaitBtlWinRight_008a8af0` | 0.45 | `7b 09` |
+  | `0x008a8b37` | `TOWaitBtlWinStd_008a8b20` (magic, items, skills, targets) | 0.3 | `74 09` |
+  | `0x008a8b67` | `TOWaitBtlWinStdMode2_008a8b50` (summons) | 0.45 | `7b 1d` |
+  | `0x008a8ba7` | `TOWaitBtlWinStdMode3_008a8b90` (weapons) | 0.45 | `7a 04` (`jp` to the read) |
+
+  The 0.3 tests use `test ah, 0x41` (`je` skips), the 0.45 ones
+  `test ah, 5` (`jnp` skips); a NaN reads the pad in all of them. The
+  draw side is separate: `TODrawWaitBtlWinMain`/`Right`/`Left`/`Change`
+  show only the opening plate while the open time is below 0.2
+  (`k_FifthF64` `0x00b3eb60`, 0.2f32 as f64, about 20 readers) and then
+  slide the rows in 0.1 s apart; input is not gated by that.
+- Lulu's Fury spins (`TOBtlCtrlLuluLimitWindow`, `0x00891b80`, state 4
+  with the stick). Each call reads the right stick twice
+  (`TkGetControlerAnalogHist(0, 0, axis, hist)`, `0x00888c20`, hist -1
+  and 0) and `TOControlBtlWindow` calls it twice a frame, so the code
+  expects four samples a frame. On PC the samples come from the frame's
+  one `PInput` update, so a frame gives about one real reading. A
+  diagonal zone (codes 4-7, thresholds 0x60/0xa0) is about 61 degrees
+  wide: a spin faster than about 5 turns a second skips a zone, and one
+  skipped zone fails the five-code circle (ffx-demaster `docs/patches.md`,
+  a model of the state-4 code `0x00891cd2..0x00891f60`: at 120 degrees a
+  frame 0.6 circles in 300 frames). The PS2's sampling rate here is not
+  known.
   `TOFuncPadMessageNormal(w)` runs the message window's `+0xf8` function
   on trigger bit 0x20 and, on an Eternal Calm map, `TOTimedMacroMessage`
   (tail call, `w` its argument). `TOMenuEndScreenX2_008e2790(w)` clears

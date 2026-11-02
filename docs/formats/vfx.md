@@ -809,6 +809,56 @@ range of an oef2's textures and CLUTs and then, for 25 scripted magics
 (`MagicFile_GetMagicId`), records the step the range stands for in
 `g_VfxPhase` (`0x00ccb9d4`), which the renderer reads (`op.rs`).
 
+## oef2 blocks (`op_oef2_set`, `op_oef2_a_get`)
+
+The texture functions of the effect code take an oef2 (ffx-demaster
+`docs/effects.md`). It has two parts with one header layout, 16-byte
+aligned: the table (what goes where) and the data block (where the
+bytes are). `op_oef2_set(table, data)` (`0x007e3b70`) adds the data
+block's address to each of its non-zero offsets and writes the result
+into the table's entries, once: it sets the data block's `u16 +0x40`
+(0 in the file) to 1.
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+4 × kind` | `u32` | offset (from the header) of the kind's sub-table; `op_oef2_a_get(oef, kind, i)` (`0x007e3810`) |
+| `+0x08` | | kind 2, textures: table entries of 32 bytes, data one `u32` offset per texture |
+| `+0x0c` | | kind 3, CLUTs: table entries of 16 bytes, data one `u32` offset per CLUT |
+| `+0x18`, `+0x20` | | kind 6 (16-byte entries) and kind 8 (particle groups; the PC prints "Virtuos: OEF2 get particle data for VFX!!") |
+| `+0x3c` | `u32` | table only: offset of its own data block |
+| `+0x40 + 2 × kind` | `u16` | entry count per kind (`+0x44` textures, `+0x46` CLUTs) |
+
+`op_oef2_a_get` returns 0 for a texture entry whose size (`+0x10`) is 0
+and a CLUT entry whose size (`+2`) is 0. A texture entry:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0x00` | `u64` | the `TEX0` the effect draws with; its low 14 bits are also the upload's DBP (`op_oef2_texture_load` `0x007e5030`; `op_oef2_tex_pos_set` `0x007e4ff0` rewrites them) |
+| `+0x08`, `+0x09` | `u8` | upload x / 16, y / 16 |
+| `+0x0a` | `u8` | DBW = `byte × 16 >> 6` |
+| `+0x0c`, `+0x0e` | `u16` | upload width and height (may be smaller than `TEX0`'s) |
+| `+0x10` | `u32` | byte size (0 = unused entry); `op_oef2_tex_clut_cue_loop` sums it |
+| `+0x14` | `u32` | the texel pointer `op_oef2_set` writes |
+| `+0x18` | `u8` | upload PSM (equal to `TEX0`'s: PSMT8 nearly always, PSMCT32 in 112, PSMT4 in 21 of the disc's entries) |
+| `+0x1f` | `u8` | set by `op_oef2_tex_pos_set` |
+
+A CLUT entry is `u16` CBP, `u16` byte size (`0x400` 256 colours, `0x40`
+16), `u32` pointer (written by `op_oef2_set`), `u32 0x100`, `u32 0`. Every
+`TEX0`'s CBP has its CLUT in the same table (7,574 checked), CSA is
+always 0. Texels are linear as uploaded (`sceGsSetDefLoadImage(dbp, dbw,
+psm, x, y, w, h)`); `op_oef2_texture_load` splits uploads over 256 KB
+into 256-row strips. 256-colour palettes are in CSM1 order, 16-colour
+ones (an 8×2 upload) linear (`docs/formats/ps2-textures.md`).
+
+On the PS2 disc the spell data are `host0:magic/mag_NNNN.bin` (584
+files, `cdrom.fnd` names them without the `host0:/ffx/master/` prefix):
+a MIPS overlay linked at `0x01b00000` followed by its data, with no index
+of its oef2s (the code holds their addresses). The field and battle
+maps' particle effects keep theirs in `mapout.txa`, monsters in their
+`.chr`. The PC has the overlays as `magic_NNNN.dll` and loads each
+texture as a named Phyre file; the HD names are in
+`docs/formats/ps2-textures.md`.
+
 ## Breaking models (`opus_mdc_break_make_VitaSafe`)
 
 `opus_mdc_break_make_VitaSafe(mdc, out, params, view)` (`0x008059c0`) turns

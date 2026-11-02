@@ -88,6 +88,20 @@ reference capture draws into the shadow targets: on this frame the
 materials still get this frame's cascade values. Cluster `+0x28c4`, the
 blob shadows, is in the characters' world for solution 2 (draw 115).
 
+Forcing solution 0 everywhere (a hook on
+`ShadowManager_selectShadowSolution` that lets it run, so the level word
+`+0x4050` and the cascade constants are still set, and returns 0; and
+`PhyreScene_ForceSetShadowSolution` `0x006513f0` storing 0) gives every
+map and battle the blob shadow under each character and no shadow maps.
+The blob is `Ch_DrawShadowQuad`'s quad with `chry0shadow.fx`, black with
+the alpha of the character's tile in the 1024 x 1024 atlas
+(`ShadowManager_renderCharacterTiles_006caee0`), which solution 4 maps
+(Besaid beach, Mi'ihen, Bikanel) never draw. Open: in maps that were 2-4,
+`PhyreScene_fieldMapInitialize` then gives the map materials no cascade
+matrices and samplers, so shaders that sample them read whatever is bound
+(ffx-demaster `docs/render.md`, `render.shadows`; harness check on Besaid
+with `graphicShadowReset_00643e80(1)` after spoofing the level word).
+
 The capture shows exactly that: 128 scene draws (draws with two render
 targets and a depth buffer, as `gfx/live.rs` defines scene draws).
 

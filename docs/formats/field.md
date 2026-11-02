@@ -462,6 +462,57 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   The original leaves the current object and camera uninitialised, so
   files start with an object. Its load-image packet is a 16-byte aligned
   stack buffer; the port takes it as a parameter.
+- The texture records in the PS2 data (ffx-demaster `docs/maps.md`,
+  `docs/research/ps2-textures.md`; record header at `R`, as
+  `yiMapFileRead` reads them):
+  - kind 2 (only in `mapout.txa`, section 1, with the kind-3 bank; the PC
+    ships no `.txa`): `R+0x40` 1, `+0x44` DBP, `+0x48` DBW, `+0x4c` PSM
+    (`0x14` T4, `0x13` T8, `0x1b` T8H, `0x2c` T4HL, `0x24` T4HH, `0x02`
+    CT16), `+0x50`/`+0x54` width and height, `+0x78` kept as the entry's
+    `+0x20`; the texels from `+0x80` (the load gets `R+0x7c`). T4 records
+    are stored pre-swizzled, as the PSMCT32 words of a half-width,
+    quarter-height rectangle at half the DBW (the upload above), so they
+    read back as PSMT4 from GS memory; the other formats are linear
+    (4-bit ones low nibble first; the `H` formats fill the top byte or
+    nibble of a 32-bit word). The 295 `.txa` hold mostly 256×256 T4 and T8
+    pages, then T8H, T4HL and T4HH; CT16 in five maps.
+  - kind 3: `R+0x24` the allocation mode (2, 3 or 4; 0 in five files,
+    which keeps the previous mode and uploads nothing), then `0x400`-byte
+    256-colour CT32 palettes (72 in mode 4), each sent as a 16×16 PSMCT32
+    rectangle. The PC packet leaves `BITBLTBUF`/`TRXPOS`/`TRXREG` 0; the
+    PS2 `yiClutAlloc_makepacket` (ELF `0x0018aba8`) gives CLUT `i` the
+    address (in words) `base + 0x800 (i / 4) + off[i % 4]` while `i <
+    split`, else `0xb8000 + 0x100 (i - split)`, CBP = address >> 6: mode 2
+    base `0xb4000`, split 32, offsets `0x400, 0x500, 0x600, 0x700`; mode 3
+    base `0x18000`, split 32, mode 4 base `0x82000`, split 16, both with
+    offsets `0x100, 0x300, 0x500, 0x700` (bsil00, mode 4: CBP `0x2084` is
+    CLUT 0).
+  - kind 6, a texture-swap frame: data `+0` the animation slot (frame `n`
+    is the slot's `n`-th record), header `+0x58` the packet's quadwords,
+    the packet at `+0x80` (A+D `BITBLTBUF`/`TRXPOS`/`TRXREG`, an IMAGE
+    tag and the texels), header `+0x64` the quadwords of the frame's own
+    CLUT right after the packet (16 colours for 4-bit frames, in index
+    order), `+0x5c`, `+0x60`, `+0x68` kept as halves; `+0x44..+0x54`, when
+    `+0x44` is set, the slot's five words. The HD versions of these are
+    `tex/texswap/<region>_NNN`, kept at the PS2 size.
+  - The `.vpa` kind-1 and kind-6 packets carry the `TEX0` that binds a
+    page to its CLUT: A+D writes of `TEX0_1`/`TEX0_2` (registers 6, 7), at
+    any 4-byte alignment (VIF codes shift the GIF data by a word). Usually
+    two in a row: a PSMT8 `TEX0` with `CLD` set that only loads the
+    256-entry CLUT, then the real one (for example PSMT4, CBP `0x2084`,
+    CSA 6), and `CLAMP_2`. A 4-bit `TEX0` with `CSA n` reads entries
+    `16n..16n+15` of that CLUT. Then a GIF tag with `NLOOP` 2, `NREG` 9 (`ST`,
+    `RGBAQ`, `XYZ2` × 3) and `PRIM` `0x2bb`/`0x29d` (context 2, TME,
+    `ST` floats, AA1, no blending; 1,950 of bsil00's draws), `0x25d`/`0x27b`
+    (ABE, `ALPHA_2` `0x44`: 1,012) or `0x23b`/`0x21d` (784); `TCC` is set
+    in 809 of 813 `TEX0` writes. Map draws choose blending per draw: the
+    same page is drawn both ways (`0x2f00`: 72 blended, 35 not).
+  - The PC copies zero the texels of section 1's textures and most of the
+    kind-1 and kind-6 packets (bsil00: 2.0 of 2.47 MB of kind 1), and the
+    picture of section 0 (the `YNSC` layers; `0x1a1..0x38a00` in bsil00).
+    A `YNSC` layer part is one PSMT8 image transfer (bsil00: `BITBLTBUF`
+    DBP `0x3c00`, DBW 8, 512×448, linear texels at `+0x1b0`) followed by
+    its 16×16 CT32 CLUT transfer (DBP `0x2e00`).
 - Background files (`rcbgLoadBin` `0x00921d60`, from `Yn_PreBgSetData`):
   a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
   `rcbgChkId` table, `+4` the length in 16-byte units, `+0xa` a scene

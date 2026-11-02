@@ -520,6 +520,19 @@ code call the `graphic*` wrappers, which call the manager
 | `graphicDestroyFmv` `0x0063df30` | `PhyFMVPlayerManager_DestroyFMVPlayer` `0x006d71b0` | `PVideoPlaybackWin32_terminate` `0x00a28430` |
 | `graphicIsVideoPlaying` `0x00641cf0`, `graphicGetCurrentFrame` `0x006410d0`, `graphicisVideoAtEndFrame` `0x00645e50` | `+0x6d0`, `+0x6d8`, `PhyFMVPlayerManager_isVideoAtEndFrame` `0x006da240` | |
 
+`graphicInitFMVPlayer` returns `PhyFMVPlayerManager_initialize`'s `eax
+!= 0`, and `initialize` returns 0 on every path that sets the player up
+(`0x006da184: xor eax, eax`); only `PTextureD3D11_register_0058cf80`'s
+error skips that store (`0x006d9e67`). The normal movie natives ignore the
+result. `Native_b00a_MovieStartPicture` (`0x0076eb80`) does not: at
+`0x0076ebb4` (`74 28`, `je`) a 0 skips `graphicPlayVideo(0)`,
+`g_WaitFramesByTime`, `g_MovieDone` and `g_MoviePictureOn`, so a loaded
+picture movie is never played. Its only real user is the Farplane
+(`ikai0800`, worker 25 entry 0: movie 104, flags `0x480`, `0x80` the
+loop; the others are the dev maps `test01`/`test11`), whose background
+video therefore never shows on PC. ffx-demaster (`docs/patches.md`) and
+Nexus mod 355 replace the branch with `90 90`.
+
 Texture videos (video on map geometry, no sound) use a second player in
 the scene (`scene+0xde8`, `PhyreScene_textureVideoLoad` `0x0066fb70`,
 `PhyreScene_UpdateTextureVideo` `0x00654960`).

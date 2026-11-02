@@ -205,6 +205,19 @@ Only level 0's up pass reaches the screen: levels 2 and 1 add into their
 own `+0x84[i]`, which nothing reads afterwards. Round 2 must still make
 those draws (the draw stream is compared).
 
+Turning the glow off. The render returns `ret 0x14`; a hook that returns
+0 without drawing removes it and nothing else: the glow map
+(`prepareGlowMap`, target `+0xa4`) is still drawn and the brightness pass
+overwrites that target in the same frame, and the effects
+(`PhyreScene_DrawMostVFX`, after the glow) keep their own additive
+blending. Clearing the switch `+0x123b3` instead gives the same picture,
+but the game sets it again at every scene start, and the two resize
+helpers (`PostProcessManager_resizeTargets_00697f20`,
+`PostProcessManager_resizeTarget_006980a0`) only resize while one of
+`+0x123b0..+0x123b3` is set (ffx-demaster `docs/render.md`,
+`render.glow`). `0x00694f00` is a bare `jmp` to the render with no
+reference (`tools/refs.py`: 0 refs).
+
 ### Distortion (draws 177-178)
 
 `Distortion_renderDistortion` (`0x006c2dc0`) on `Distortion_GetInstance`,
