@@ -652,10 +652,12 @@ seen; these runs used `FFX_HOOK_ONLY=none`.
 
 The 30 textures with a big-endian PS3 header (`"PHYR"`, platform GCM) are
 all in `ffx_data/gamedata/ps3data/magic/magic_0668/tex/d3d11/`, which holds
-nothing else. The texture lists one folder up, in `magic_0668/tex/`
-(`texlist.log`, `texlist.txt`, `00texlist.txt`, `texlist.pal`), list them as
-`R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`: the PS3 build's
-output, copied into the D3D11 folder. This crate does not read them.
+nothing else. The texture lists sit one folder up, in `magic_0668/tex/`.
+Of them, `texlist.log` names all 30 as
+`R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`, each with a hash:
+the PS3 build's output, copied into the D3D11 folder. `texlist.txt` and
+`00texlist.txt` hold bare file names, and `texlist.pal` is 30 binary records
+of 20 bytes that start with those hashes. This crate does not read them.
 
 Each of the 30 has a PC copy: a little-endian texture with the same file
 name in `magic_0611/tex/d3d11/`. All are `DXT5` with full chains at the HD
