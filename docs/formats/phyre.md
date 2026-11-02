@@ -364,7 +364,7 @@ list at the size its class gives (`PMeshSegment` 0x6c, `PMeshInstance`
 | Object | In memory |
 |---|---|
 | `PMeshSegment` | `m_indexData` (+0x30) is a `PIndexDataBlockD3D11`: its (`ID3D11Buffer`, SRV) pairs are a PSharray at block +0x14 (count, bit 31 a flag; one pair inline at +0x18, more through the pointer at +0x18), 0x14 bytes a pair (`PIndexDataBlockD3D11_create` `0x00561e90`) |
-| `PDataBlockD3D11` | the same pairs at +0x18 (`PDataBlockD3D11_create` `0x005620c0`); a segment's blocks are at `m_vertexData` (+0x28 count, +0x2c pointer) |
+| `PDataBlockD3D11` | the same PSharray at +0x18 (count at +0x18, pairs at +0x1c; `PDataBlockD3D11_create` `0x005620c0`); a segment's blocks are at `m_vertexData` (+0x28 count, +0x2c pointer) |
 | `PMeshInstance` | `m_mesh` +0, `m_localToWorldMatrix` +4, `m_name` +0x2c (`PString`) |
 | `PMesh` | `m_meshSegments` +0 (count) and +4 (pointer to the segments) |
 | `PNode` | `m_worldMatrix` +0xc (the same pointer as its instance's `m_localToWorldMatrix`), `m_name` +0x50 |
@@ -384,9 +384,13 @@ made during a load belong to that file.
 **`PNode.m_name` is at +0x50 in memory.** The files' array fixups say
 +0x4c, but the loaded node has its name pointer at +0x50 and
 `m_localMatrix`'s last element (+0x4c) is untouched: 1.0 in every node
-(see Verification). The fixup's byte offset is not where the loader
-writes. ffx-phyre's fallback (the node's only array fixup) reads the
-right string, so exports are unaffected.
+(see Verification). The loader does not write at the fixup's byte
+offset: `Cluster_ApplyPointerArrayFixups` (`0x0057acd0`) resolves it to a
+member of the runtime class with `Fixup_FindMember` (`0x0057a280`), which
+calls `Class_FindMemberByOffset` (`0x0047d5f0`) to adjust by the class's
+base offsets, and sets the array through that member. Why the result is
++0x50 for `PNode` was not traced. ffx-phyre's fallback (the node's only
+array fixup) reads the right string, so exports are unaffected.
 
 ### Character asset lists
 
@@ -477,18 +481,21 @@ port and the original `0x60db20` / `0x60dac0` under emulation, and the
 records must be identical.
 
 The in-memory layout above was checked in the running game on
-2026-11-02 by ffx-remix's runtime (`runtime/ffxremix.runtime/Scene/AssetIds.cs`,
-`tools/probe-ids.sh`; Fahrenheit alpha12 with ffx-rust's harness). The
-runtime hooked `loadCluster`, tagged the device's creates made during each
-load with its path, then walked the cluster with the offsets above.
-It was checked in three frames, each in two runs with identical results:
-the campfire opening at event counts 908 and 1208, and the Thunder
-Plains (`kami0000`, developer save 51) at count 101. In those frames, the
-index buffer of every scene draw except the blob shadow (a dynamic quad)
-was named by a segment found this way. Every texture the draws sampled
-came from a `*.dds.phyre` load. 840 cluster loads, 588 segments, and
-3,054 `PNode`s: 3,019 with a name pointer at +0x50, none at +0x4c, 35
-without a name, and +0x4c = 1.0 in all 3,054.
+2026-11-02 by the runtime of ffx-remix, a separate modding project by the
+same author that loads FFX through Fahrenheit and used these facts in game
+(`runtime/ffxremix.runtime/Scene/AssetIds.cs`, `tools/probe-ids.sh`;
+Fahrenheit alpha12 with ffx-rust's harness). The runtime hooked
+`loadCluster`, tagged the device's creates made during each load with its
+path, then walked the cluster with the offsets above. It was checked in
+three frames, each in two runs, and the scene draws' IDs were identical
+in both: the campfire opening at event counts 908 and 1208, and the
+Thunder Plains (`kami0000`, developer save 51) at count 101. In those
+frames, the index buffer of every scene draw except the blob shadow (a
+dynamic quad) was named by a segment found this way. Every texture the
+draws sampled, other than render targets, came from a `*.dds.phyre` load.
+840 cluster loads, 588 segments, and 3,054 `PNode`s: 3,019 with a name
+pointer at +0x50, none at +0x4c, 35 without a name, and +0x4c = 1.0 in
+all 3,054 (measured in the second run).
 
 ## Open questions
 
