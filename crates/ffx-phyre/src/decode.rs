@@ -89,8 +89,8 @@ impl Texture {
             }
         };
         match self.format {
-            Format::Dxt1 | Format::Dxt3 | Format::Dxt5 => {
-                let block_len = if self.format == Format::Dxt1 { 8 } else { 16 };
+            Format::Dxt1 | Format::Dxt3 | Format::Dxt5 | Format::Bc4 | Format::Bc5 => {
+                let block_len = self.format.bits() as usize * 2;
                 let bw = w.div_ceil(4);
                 for (n, b) in src[..self.format.level_size(self.width, self.height)]
                     .chunks(block_len)
@@ -99,6 +99,12 @@ impl Texture {
                     let (bx, by) = (n % bw, n / bw);
                     let mut px = match self.format {
                         Format::Dxt1 => color_block(b, true),
+                        // One channel as grey; two as red and green.
+                        Format::Bc4 => alpha_block(b).map(|v| [v, v, v, 255]),
+                        Format::Bc5 => {
+                            let (r, g) = (alpha_block(&b[..8]), alpha_block(&b[8..]));
+                            std::array::from_fn(|i| [r[i], g[i], 0, 255])
+                        }
                         _ => color_block(&b[8..], false),
                     };
                     match self.format {
@@ -123,6 +129,11 @@ impl Texture {
             Format::Argb8 => {
                 for (i, p) in src[..w * h * 4].chunks(4).enumerate() {
                     put(i % w, i / w, [p[2], p[1], p[0], p[3]]);
+                }
+            }
+            Format::Rgba8 => {
+                for (i, p) in src[..w * h * 4].chunks(4).enumerate() {
+                    put(i % w, i / w, [p[0], p[1], p[2], p[3]]);
                 }
             }
             Format::L8 => {

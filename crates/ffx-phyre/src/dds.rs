@@ -1,5 +1,6 @@
 //! Minimal DDS reading and writing: the classic 124-byte header, for the
-//! formats the game uses.
+//! formats the game uses. Reading also takes the `DX10` extension header
+//! (as `texconv` writes it for BC4, BC5 and the sRGB formats).
 
 /// The DDS pixel formats we write and accept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +11,9 @@ pub enum PixelFormat {
     Bgra8,
     /// 8-bit luminance.
     L8,
+    /// 32-bit with masks R `0x000000ff`, G `0x0000ff00`, B `0x00ff0000`,
+    /// A `0xff000000` (bytes R, G, B, A).
+    Rgba8,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -18,6 +22,10 @@ pub enum DdsError {
     NotDds,
     #[error("unsupported DDS pixel format")]
     UnsupportedFormat,
+    #[error("DXGI format {0} ({1}): the game has no such texture format")]
+    UnsupportedDxgi(u32, &'static str),
+    #[error("DDS texture arrays and volume textures are not supported")]
+    UnsupportedLayout,
 }
 
 /// The parts of a DDS header the game's textures need.
@@ -66,7 +74,7 @@ impl Dds {
         };
         let pitch = match self.format {
             PixelFormat::FourCc(_) => u32::try_from(self.top_level_size).unwrap_or(u32::MAX),
-            PixelFormat::Bgra8 => self.width * 4,
+            PixelFormat::Bgra8 | PixelFormat::Rgba8 => self.width * 4,
             PixelFormat::L8 => self.width,
         };
         let (pf_flags, four_cc, bits, masks) = match self.format {
@@ -78,6 +86,12 @@ impl Dds {
                 [0x00ff_0000, 0x0000_ff00, 0x0000_00ff, 0xff00_0000],
             ),
             PixelFormat::L8 => (DDPF_LUMINANCE, [0; 4], 8, [0xff, 0, 0, 0]),
+            PixelFormat::Rgba8 => (
+                DDPF_RGB | DDPF_ALPHAPIXELS,
+                [0; 4],
+                32,
+                [0x0000_00ff, 0x0000_ff00, 0x00ff_0000, 0xff00_0000],
+            ),
         };
         let mut caps = DDSCAPS_TEXTURE;
         if self.mip_levels > 1 {
@@ -139,19 +153,39 @@ impl Dds {
             u32_at(bytes, 100),
             u32_at(bytes, 104),
         ];
+        let mut cube = u32_at(bytes, 112) & 0x200 != 0;
+        let mut data = 128;
         let format = if pf_flags & DDPF_FOURCC != 0 {
             match &four_cc {
-                b"DXT1" | b"DXT3" | b"DXT5" => PixelFormat::FourCc(four_cc),
+                b"DXT1" | b"DXT3" | b"DXT5" | b"ATI1" | b"ATI2" => PixelFormat::FourCc(four_cc),
+                b"BC4U" => PixelFormat::FourCc(*b"ATI1"),
+                b"BC5U" => PixelFormat::FourCc(*b"ATI2"),
+                b"DX10" => {
+                    if bytes.len() < 148 {
+                        return Err(DdsError::NotDds);
+                    }
+                    data = 148;
+                    let (dimension, misc, array) =
+                        (u32_at(bytes, 132), u32_at(bytes, 136), u32_at(bytes, 140));
+                    cube = misc & 0x4 != 0;
+                    // D3D10_RESOURCE_DIMENSION_TEXTURE2D, one texture (or
+                    // one cube).
+                    if dimension != 3 || array > 1 {
+                        return Err(DdsError::UnsupportedLayout);
+                    }
+                    dxgi_format(u32_at(bytes, 128))?
+                }
                 _ => return Err(DdsError::UnsupportedFormat),
             }
         } else if bits == 32 && masks == [0x00ff_0000, 0x0000_ff00, 0x0000_00ff, 0xff00_0000] {
             PixelFormat::Bgra8
+        } else if bits == 32 && masks == [0x0000_00ff, 0x0000_ff00, 0x00ff_0000, 0xff00_0000] {
+            PixelFormat::Rgba8
         } else if bits == 8 && pf_flags & DDPF_LUMINANCE != 0 {
             PixelFormat::L8
         } else {
             return Err(DdsError::UnsupportedFormat);
         };
-        let cube = u32_at(bytes, 112) & 0x200 != 0;
         let top_level_size = u32_at(bytes, 20) as usize;
         Ok((
             Self {
@@ -162,9 +196,30 @@ impl Dds {
                 format,
                 top_level_size,
             },
-            &bytes[128..],
+            &bytes[data..],
         ))
     }
+}
+
+/// The pixel format of a `DX10` header's `DXGI_FORMAT`. The sRGB variants
+/// read as their UNORM formats (the same bytes): the game has no sRGB
+/// textures and samples every texture as UNORM.
+fn dxgi_format(dxgi: u32) -> Result<PixelFormat, DdsError> {
+    Ok(match dxgi {
+        71 | 72 => PixelFormat::FourCc(*b"DXT1"),
+        74 | 75 => PixelFormat::FourCc(*b"DXT3"),
+        77 | 78 => PixelFormat::FourCc(*b"DXT5"),
+        80 => PixelFormat::FourCc(*b"ATI1"),
+        83 => PixelFormat::FourCc(*b"ATI2"),
+        28 | 29 => PixelFormat::Rgba8,
+        87 | 91 => PixelFormat::Bgra8,
+        61 => PixelFormat::L8,
+        81 => return Err(DdsError::UnsupportedDxgi(dxgi, "BC4_SNORM")),
+        84 => return Err(DdsError::UnsupportedDxgi(dxgi, "BC5_SNORM")),
+        94..=96 => return Err(DdsError::UnsupportedDxgi(dxgi, "BC6H")),
+        97..=99 => return Err(DdsError::UnsupportedDxgi(dxgi, "BC7")),
+        _ => return Err(DdsError::UnsupportedDxgi(dxgi, "not one of the game's")),
+    })
 }
 
 #[cfg(test)]
@@ -175,7 +230,9 @@ mod tests {
     fn writes_and_reads_back() {
         for format in [
             PixelFormat::FourCc(*b"DXT5"),
+            PixelFormat::FourCc(*b"ATI1"),
             PixelFormat::Bgra8,
+            PixelFormat::Rgba8,
             PixelFormat::L8,
         ] {
             let dds = Dds {
@@ -201,5 +258,40 @@ mod tests {
             assert_eq!(pixels, &[7; 10]);
         }
         assert_eq!(Dds::read(b"nope").unwrap_err(), DdsError::NotDds);
+    }
+
+    /// A `DX10` header as `texconv` writes it.
+    fn dx10(dxgi: u32, misc: u32) -> Vec<u8> {
+        let mut file = Dds {
+            width: 8,
+            height: 8,
+            mip_levels: 1,
+            cube: false,
+            format: PixelFormat::FourCc(*b"DX10"),
+            top_level_size: 64,
+        }
+        .write(&[]);
+        for v in [dxgi, 3, misc, 1, 0] {
+            file.extend(v.to_le_bytes());
+        }
+        file.extend([9; 4]);
+        file
+    }
+
+    #[test]
+    fn reads_dx10_headers() {
+        let file = dx10(83, 0);
+        let (dds, pixels) = Dds::read(&file).unwrap();
+        assert_eq!(dds.format, PixelFormat::FourCc(*b"ATI2"));
+        assert_eq!(pixels, &[9; 4]);
+        assert_eq!(
+            Dds::read(&dx10(72, 0)).unwrap().0.format,
+            PixelFormat::FourCc(*b"DXT1")
+        );
+        assert!(Dds::read(&dx10(28, 4)).unwrap().0.cube);
+        assert_eq!(
+            Dds::read(&dx10(98, 0)).unwrap_err(),
+            DdsError::UnsupportedDxgi(98, "BC7")
+        );
     }
 }

@@ -12,7 +12,8 @@ Reader/writer: [`crates/ffx-phyre`](../../crates/ffx-phyre).
 
 21 little-endian `u32`s (`0x54` bytes); PC files start with `"RYHP"`
 (`0x50485952`) and platform `"11XD"` (D3D11). 30 textures still carry a
-big-endian PS3 header (`"PHYR"`) and are not read.
+big-endian PS3 header (`"PHYR"`) and are not read (see
+[The big-endian textures](#the-big-endian-textures)).
 
 | Word | Meaning |
 |---|---|
@@ -31,7 +32,7 @@ big-endian PS3 header (`"PHYR"`) and are not read.
 | 16 | Header class fixup count |
 | 18 | Models: index buffer size |
 | 19 | Models: vertex buffer size |
-| 20 | 2D textures: size of the top mip level |
+| 20 | Textures: size of the top mip level (six times that for cube maps); the loader allocates twice this word |
 
 Word names follow the strings the namespace itself contains
 (`m_packedNamespaceSize`, `m_instanceListCount`, …).
@@ -441,44 +442,248 @@ raises the count and the named indices.
 ## Textures (`*.dds.phyre`)
 
 The user fixup data starts with the class and format names
-(`"PTexture2D\0DXT5\0"`). The texture's fields sit at fixed distances from
-the end of the instance data:
+(`"PTexture2D\0DXT5\0"`). The texture object ends the instance data, so its
+fields sit at fixed distances from the end of it (`Header::instance_data_end`):
 
-| Class | Max mip level | Width | Height |
-|---|---|---|---|
-| `PTexture2D` | end − `0x20` | end − `0x10` | end − `0x0c` |
-| `PTextureCubeMap` | end − `0x14` | end − `0x04` (square) | |
+| Class | Object | `m_mipmapCount` (+0xc) | `m_maxMipLevel` (+0x10) | `m_textureFlags` (+0x14) | Width (+0x1c) | Height (+0x20) |
+|---|---|---|---|---|---|---|
+| `PTexture2D` | end − `0x2c` | end − `0x20` | end − `0x1c` | end − `0x18` | end − `0x10` | end − `0x0c` |
+| `PTextureCubeMap` | end − `0x20` | end − `0x14` | end − `0x10` | end − `0x0c` | end − `0x04` (square) | |
 
-The buffer is the full mip chain, largest first, per face for cube maps.
+`m_mipmapCount` is the number of levels less one. The buffer is the mip
+chain, largest first, per face for cube maps. Header word 20 is the size of
+the top level (times six for cube maps) in every shipped texture.
 **Rows are stored bottom first** (the PS3 version's convention): exported
 as is, every texture with text is upside down. Export flips each mip level
 upright; import flips it back (for DXT formats that means reversing block
 rows and the pixel rows inside each block).
 
-| Format | Count | DDS |
-|---|---|---|
-| DXT5 | 29,452 + 3 cube | `DXT5` |
-| DXT1 | 13,404 + 107 cube | `DXT1` |
-| ARGB8 | 1,062 | 32-bit, bytes B G R A |
-| DXT3 | 335 | `DXT3` |
-| L8 | 1 | luminance |
+| Format | FFX | FFX-2 | DDS |
+|---|---|---|---|
+| DXT5 | 29,452 + 3 cube | 55,797 + 2 cube | `DXT5` |
+| DXT1 | 13,404 + 107 cube | 15,932 + 89 cube | `DXT1` |
+| ARGB8 | 1,062 | 557 + 1 cube | 32-bit, bytes B G R A |
+| DXT3 | 335 | 195 | `DXT3` |
+| L8 | 1 | 1 | luminance |
 
 Widths and heights are the HD sizes; file names such as
-`13184_19_0_0_128_64.dds.phyre` keep the PS2 ones.
+`13184_19_0_0_128_64.dds.phyre` keep the PS2 ones. Of the 116,938 textures
+(both archives), 51,477 2D textures have a single level, 333 have a side
+that is not a power of two, and the largest is 4096x4096.
 
 ```bash
 ffx texture export ffx_data/gamedata/ps3data/menu/ -o textures/
 ffx texture import ffx_data/gamedata/ps3data/menu/d3d11/skip_us.dds.phyre skip_us.dds --mod-dir mods/my-mod
+ffx texture import --resize ffx_data/gamedata/ps3data/menu/d3d11/skip_us.dds.phyre skip_us_4x.dds --mod-dir mods/my-mod
 ```
 
-An imported DDS must keep the original's format, size and mip count; it
-replaces only the pixel data.
+Without `--resize` an imported DDS must keep the original's format, size and
+mip count, and replaces only the pixel data. With it (`Texture::with_any_dds`,
+`Texture::rebuilt`, `Texture::with_rgba`) the DDS may have any size, mip
+count and format of the table below.
+
+### How the game loads a texture
+
+`Phyre_PSerialization_PBinary_loadCluster` (`0x0057bce0`) reads the cluster
+up to the buffers. `Phyre_PBinary_copyHeaderWords_004647a0` copies header
+words 18, 19 and 20 to the loader, and `Phyre_PBinary_loadClusterTextures`
+(`0x00465ab0`) then:
+
+1. allocates **twice word 20** for the levels (one buffer for the cluster,
+   without a bounds check on the reads into it);
+2. gets the texture quality `q` (0 high, 1 medium, 2 low, `TextureQuality`
+   in `GameSetting.ini`);
+3. reads each level with `readExact` from the file: `bits × w × h / 8`
+   bytes, `w` and `h` rounded up to 4 for block formats and halved per
+   level down to 1. The size comes from the object (`m_width`, `m_height`,
+   `m_mipmapCount`) and the bits from the format record, not from the file
+   size: the file only has to hold that much;
+4. drops the top `q` levels (reads them into the same place) when
+   `m_mipmapCount >= q`. For a 2D texture `q` first backs off while the
+   top level shifted by `q` is under 4 wide or high. A texture with fewer
+   than `q + 1` levels keeps all of them: **a one-level texture is never
+   reduced**;
+5. calls `Phyre_PRendering_PTexture2DBase_setDimensions` (`0x004c40c0`)
+   with the reduced size, and `PTexture2DD3D11_CreateDeviceTexture_0058fc20`,
+   which creates the `ID3D11Texture2D`: `MipLevels` = `m_mipmapCount + 1`,
+   format = the format record's `+0x18`, bind flag shader resource, no
+   `GENERATE_MIPS` (a one-level texture stays one level). A texture whose
+   format is the `UNKNOWN` record is error 7.
+
+`setDimensions` fails (3) when the larger side is under `1 << levels-1`, and
+with `m_textureFlags` bit 1 sets `m_maxMipLevel` from the size
+(`GetMipCountForTextureSize`, `0x004c2430`). The shipped textures follow two
+conventions: full chains have flag 0 and `m_maxMipLevel = m_mipmapCount`;
+one-level textures have flag 2 and `m_maxMipLevel` = log2 of the larger
+side. `CreateDeviceTexture` places the subresources with the sides halved
+without the floor of 1 (a 0 side taken as the top level's), so for a
+non-square texture the smallest levels it uploads are not the ones read;
+those levels are a few pixels and the reads stay inside the buffer.
+`Phyre_PBinary_reloadClusterTextures` (`0x00466da0`) does the same when the
+quality changes.
+
+### Formats the game accepts
+
+The format name in the user fixup data is looked up among the 33 records of
+`g_TextureFormats_00ca2fcc`, registered by
+`PTextureFormatDesc_registerAll_004c1050` and filled by static constructors
+through `Phyre_PRendering_Ctor8_005844a0`. A record holds the bits per pixel
+(`+0xc`), the block flag (`+0x10` bit 0) and the `DXGI_FORMAT` of the
+texture (`+0x18`). The ones useful for textures:
+
+| Name | DXGI | Bits | Shipped |
+|---|---|---|---|
+| `DXT1`, `DXT3`, `DXT5` | `BC1_UNORM` 71, `BC2_UNORM` 74, `BC3_UNORM` 77 | 4, 8, 8 (blocks) | yes |
+| `BC4`, `BC5` | `BC4_UNORM` 80, `BC5_UNORM` 83 | 4, 8 (blocks) | no |
+| `ARGB8` | `B8G8R8A8_UNORM` 87 | 32 | yes |
+| `RGBA8` | `R8G8B8A8_UNORM` 28 | 32 | no |
+| `L8`, `A8` | `R8_UNORM` 61 | 8 | `L8` |
+| `LA8`, `RG8` | `R8G8_UNORM` 49 | 16 | no |
+| `A2RGB10` | `R10G10B10A2_UNORM` 24 | 32 | no |
+| `RGBA16F`, `RGBA32F` | 10, 2 | 64, 128 | no |
+
+The rest are 16-bit and float one- and two-channel formats, `RGBA16`
+(`R16G16B16A16_UINT`), depth formats and `UNKNOWN`. There is **no BC6H, BC7
+or sRGB format**: a BC7 texture has to go through a pack and the external
+renderer, or be converted to BC3. `ffx-phyre` reads and writes `DXT1`,
+`DXT3`, `DXT5`, `BC4`, `BC5`, `ARGB8`, `RGBA8` and `L8`; DDS files with a
+`DX10` header are read too, sRGB formats as their UNORM twins.
+
+### Changing size, format and mip count
+
+Nothing else in the cluster refers to the texture's size or format, so a
+new size, format or mip count rewrites (`Texture::rebuilt`):
+
+- `m_mipmapCount`, `m_maxMipLevel`, `m_textureFlags` bit 1, `m_width`,
+  `m_height`, following the two shipped conventions above;
+- the format name in the user fixup data, its record's length, the later
+  records' offsets and header word 13 (the fixup tables name user fixups by
+  index, so they stay valid; everything after moves with the data);
+- header word 20: the top level (times six for a cube map), or half the
+  chain when that is more (only tiny block textures, where the shipped
+  word 20 is short of it too);
+- the pixel data.
+
+Limits:
+
+- **Size**: the device is made with feature level 11_0, 10_1 or 10_0
+  (`PRendererD3D11_createDeviceAndSwapChain_00595800`), so a side may be up
+  to 16384 at 11_0 (8192 at 10_x). `FFX.exe` is large-address aware; the
+  loader holds twice word 20 while it reads. Sides need not be powers of
+  two.
+- **Block formats** (`DXT1`, `DXT3`, `DXT5`, `BC4`, `BC5`): the top level
+  the game creates must be a multiple of 4 on both sides. This is
+  Direct3D's rule, not the game's: "For mipmaps, the top level map is
+  required to be a multiple of 4 size in all dimensions" (Direct3D 11.3
+  Functional Specification, 19.5.1 "Overview" of the block compression
+  formats; the lower levels may be any size and are padded to whole
+  blocks). The specification gives it for every block format with no
+  feature level exception, and the game only uses 10_0 and above.
+  Direct3D refuses to create such a texture (not observed in a game run),
+  and `PTexture2DD3D11_CreateDeviceTexture_0058fc20` passes `m_width` and
+  `m_height` to it unchanged (`0x0058fd15`, `0x0058fd22`) and returns 9 when
+  it fails (`0x00590009`, `0x005901f2`). The size it gets is the one after
+  the texture-quality drop (step 4 above, `0x00466126`..`0x00466148`):
+  `w >> q`, `h >> q` with `q` up to 2 (`TQ_LOW`, the last of the three
+  `TextureQuality` values `Settings_SetValue`, `0x00401930`, accepts), for
+  a 2D texture backed off only while a side would go under 4, for a cube
+  map not at all. So a one-level block texture needs sides that are
+  multiples of 4, a two-level one multiples of 8 (dropped by at most one
+  level), and one with three or more levels multiples of 16, apart from
+  small sizes the back-off saves (8x8 with 4 levels is created at 4x4).
+  1000x1000 `DXT1` with 10 levels is created at 250x250 at `TQ_LOW` and
+  fails; 1008x1008 works.
+  `Texture::check_shape` refuses these sizes for every quality and names
+  the size to use (`ffx_phyre::created_size` is the loader's computation).
+  It lets the texture's own current format, size and mip count through,
+  so an unchanged texture still writes back as it is. The exemption is
+  for the texture being rewritten only: a 1x256 `DXT5` (below) written at
+  another size cannot be written back at 1x256 from that copy; rewrite
+  the shipped file instead.
+  `Phyre_PBinary_reloadClusterTextures` (`0x00466da0`, when the quality
+  changes while the game runs) drops `q` levels without the back-off
+  (`0x00466f50`..`0x00466f70`); 28 shipped full-chain block textures in
+  the two archives with a side of 4 or 8 (8x8 with 4 levels, 128x8, 32x8,
+  64x4)
+  would come out under 4 there too, so the check follows the load path.
+- **Mips**: 1 up to a full chain; partial chains are allowed. Fewer than
+  `q + 1` levels turn the texture-quality setting off for that texture.
+- **Cube maps**: square, and at least two levels (so at least 2x2). No
+  shipped cube map has one level, so the one-level flag convention is
+  untested for them; `Texture::check_shape` refuses it.
+
+The only shipped block textures with a side that is not a multiple of 4
+are six full-chain (9 levels) 1x256 `DXT5` textures,
+`ffx_data/gamedata/ps3data/help_{ch,de,es,fr,it,kr}/mon_boku/2/d3d11/2_256_0_1_257.dds.phyre`
+(the `help` and `help_us` copies are `ARGB8`, one level). D3D11 would
+refuse them at any quality: a 2D texture backs off to `q = 0` when a side
+is under 4. The game never loads them. They sit next to slices of the
+monster book's help pages (`mon_boku/<n>/d3d11/<n>_<x>_<y>_<w>_<h>`);
+`MenuTextureManager_LoadMon_BokuTextures` (`0x0067cbd0`) loads the four
+whole pages `PS3Data/help<_lang>/mon_boku/D3D11/<n>.dds.phyre` from the
+table at `0x00c59dcc`, no format string in `FFX.exe` builds the slice
+names, and no other file in `FFX_Data.vbf` or `FFX2_Data.vbf` names them.
+
+Fahrenheit's file loader (`FhFileLoaderModule.init` and `h_fopen` in
+`src/runtime/fileloader.cs`) hooks `Phyre_PSerialization_PStreamFile_ctor`
+and the `BigFileStream` opens and points a game path at a file under a
+mod's `efl/` folder; it does not touch the file's contents. A replacement
+texture is therefore an ordinary `*.dds.phyre` that `FFX.exe` loads as above.
+
+In the running game (2026-11-02, through ffx-remix's test path, a
+Fahrenheit mod with the files under `efl/x/`):
+
+- `chr/pc/c004/tex/d3d11/c004.dds.phyre` (Kimahri, 1024x1024 `DXT5`)
+  as `RGBA8`, a format no shipped texture uses, 11 levels, recoloured:
+  drawn recoloured in the campfire opening;
+- `znkd06_wall_08.dds.phyre` (1024x1024 `DXT1`, 11 levels) at
+  2048x2048 as one level of `ARGB8`: drawn, marked;
+- `znkd06_sky_01.dds.phyre` (4096x1024 `DXT1`, 13 levels) at
+  16384x4096, the feature level 11_0 limit, `DXT1` with 15 levels
+  (44.7 MB): drawn, marked. The logo and title screens were the same
+  pixels as without the files.
+
+ffx-rust's own hook replaces `Phyre_PSerialization_PStreamFile_ctor`
+(`0x00607bc0`, `ported/p1_load.rs`), the function Fahrenheit's file
+loader hooks, so with the hook's ports on the loader's files are not
+seen; these runs used `FFX_HOOK_ONLY=none`.
+
+### The big-endian textures
+
+The 30 textures with a big-endian PS3 header (`"PHYR"`, platform GCM) are
+all in `ffx_data/gamedata/ps3data/magic/magic_0668/tex/d3d11/`, which holds
+nothing else. The texture lists sit one folder up, in `magic_0668/tex/`.
+Of them, `texlist.log` names all 30 as
+`R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`, each with a hash:
+the PS3 build's output, copied into the D3D11 folder. `texlist.txt` and
+`00texlist.txt` hold bare file names, and `texlist.pal` is 30 binary records
+of 20 bytes that start with those hashes. This crate does not read them.
+
+Each of the 30 has a PC copy: a little-endian texture with the same file
+name in `magic_0611/tex/d3d11/`. All are `DXT5` with full chains at the HD
+size (256x128 to 1024x512). The PC copy's pixel data (`Texture::pixels`)
+is the last bytes of the big-endian file, byte for byte: for
+`13312_19_0_0_256_256` the 349,552 bytes after the PC copy's 2,684-byte
+header end the 353,562-byte big-endian file. `magic_0667/tex/d3d11/` and
+`magic_0515/tex/d3d11/` also have all 30 names, same format, size and
+levels; 28 have identical pixel data, the two others differ
+(`14720_19_0_0_256_256` and `14848_19_0_0_128_256`, whose pixel data
+shares only its last 0 and 4 bytes with the big-endian file's end). The
+same pixels also appear
+under other names, for example `magic_0705/tex/d3d11/13888_19_0_0_128_256`
+for `14304_19_0_0_128_256`.
 
 ## Verification
 
 `cargo test -p ffx-phyre` (with `FFX_GAME_DIR`) parses all 44,364 PC
 textures, exports each to DDS and imports it back, and checks the result is
-the original file byte for byte. Samples of each format were rendered to
+the original file byte for byte, directly and through the writer for new
+sizes (`with_any_dds`). Every 20th texture is also written at twice its
+size in another uncompressed format, once with a full chain and once with
+one level (two for cube maps): it reads back with that size, format and
+image, and writing the original image into it gives the original file again
+(word 20 aside for a few tiny block textures, whose files match with word 20
+masked). Samples of each format were rendered to
 PNG and checked by eye (menu art, the keyboard icon sheet, the logo).
 
 The same test exports all 1,266 models that have meshes, about 9.5 million
@@ -535,7 +740,7 @@ and +0x4c = 1.0 in all 3,054 (measured in the second run).
 - New hierarchy joints (`PNode`s); new texture clusters (a new texture is
   made by copying one of the same size and format and importing pixels).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
-- Changing a texture's size or format.
+- Whether the game ever loads `magic_0668`'s textures.
 - Why `PNode`'s name array fixup (+0x4c in the file) lands at +0x50 in
   memory: what `Class_FindMemberByOffset` (`0x0047d5f0`, through
   `0x0047d3e0`) returns for `PNode` at +0x4c.
