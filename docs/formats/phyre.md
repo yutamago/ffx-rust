@@ -32,7 +32,7 @@ big-endian PS3 header (`"PHYR"`) and are not read (see
 | 16 | Header class fixup count |
 | 18 | Models: index buffer size |
 | 19 | Models: vertex buffer size |
-| 20 | 2D textures: size of the top mip level |
+| 20 | Textures: size of the top mip level (six times that for cube maps); the loader allocates twice this word |
 
 Word names follow the strings the namespace itself contains
 (`m_packedNamespaceSize`, `m_instanceListCount`, …).
@@ -579,9 +579,8 @@ Limits:
   formats; the lower levels may be any size and are padded to whole
   blocks). The specification gives it for every block format with no
   feature level exception, and the game only uses 10_0 and above.
-  `CreateTexture2D` returns `E_INVALIDARG` for such a texture
-  (`CREATETEXTURE2D_INVALIDDIMENSIONS` in the debug layer), and
-  `PTexture2DD3D11_CreateDeviceTexture_0058fc20` passes `m_width` and
+  Direct3D refuses to create such a texture (not observed in a game run),
+  and `PTexture2DD3D11_CreateDeviceTexture_0058fc20` passes `m_width` and
   `m_height` to it unchanged (`0x0058fd15`, `0x0058fd22`) and returns 9 when
   it fails (`0x00590009`, `0x005901f2`). The size it gets is the one after
   the texture-quality drop (step 4 above, `0x00466126`..`0x00466148`):
@@ -652,10 +651,11 @@ seen; these runs used `FFX_HOOK_ONLY=none`.
 ### The big-endian textures
 
 The 30 textures with a big-endian PS3 header (`"PHYR"`, platform GCM) are
-all in `ffx_data/gamedata/ps3data/magic/magic_0668/tex/d3d11/`. The folder's
-`texlist.log` lists them as `R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`:
-the PS3 build's output, copied into the D3D11 folder. The folder holds
-nothing else but the texture lists. This crate does not read them.
+all in `ffx_data/gamedata/ps3data/magic/magic_0668/tex/d3d11/`, which holds
+nothing else. The texture lists one folder up, in `magic_0668/tex/`
+(`texlist.log`, `texlist.txt`, `00texlist.txt`, `texlist.pal`), list them as
+`R:/FFX_Data/GameData/PS3Data/magic/magic_0668/tex/GCM/…`: the PS3 build's
+output, copied into the D3D11 folder. This crate does not read them.
 
 Each of the 30 has a PC copy: a little-endian texture with the same file
 name in `magic_0611/tex/d3d11/`. All are `DXT5` with full chains at the HD
