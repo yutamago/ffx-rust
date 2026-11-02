@@ -363,6 +363,29 @@ offset in bits 0-23 (`AtelGetRealVarAdrs`):
 | 6 | block `+0x20` (shared by the block's workers) |
 | 7 | none (address 0) |
 
+The work passed in is the one running the code, also inside a called
+function worker: `call` (`33`, in `Script_Run`) saves the return offset and
+the callee's index in the level and moves the program counter to the
+callee's entry 0, but keeps the work and its header (`+0x00`, `+0x04`);
+only jumps look up the callee's label table (`Script_Jump`, `0x008726f0`,
+through the index at the call depth). A function worker's variables
+therefore resolve through its caller: its storage 2, 3 and 4 are the
+caller's. Where storage 3 lives:
+
+- With no `+0x54` callback (events, the menu): the block plus the work's
+  header `+0x2c`, one area per worker of the block.
+- In battle, `AtelBattleSetUp` sets `+0x54` to `0x008756b0`, which returns
+  work `+0xb8` plus the offset. `MsAtelSetUp` (`0x00798390`) allocates, per
+  script manager, the sum over its registered blocks of each actor worker's
+  (the first `+0x36`) header `+0x10` rounded up to 16
+  (`AtelGetMyBufferSize`, `0x0086c0c0`); manager 2 (the battle camera)
+  uses a fixed area instead and calls `MsBattleError` when the actor
+  buffers and these together pass 0x800 bytes. `AtelSetMyWorkAdrs`
+  gives each actor work its slice and clears `+0x10` bytes of it. So in
+  battle storage 3 is one area per work, sized by `+0x10`, zero at
+  set-up; header `+0x2c` and the block's private bytes are not read.
+  Function workers get no slice (their storage 3 is their caller's).
+
 Bit 24 marks a variable declared as an array. In the shipped scripts it is
 set on 4,597 of 29,103 descriptors: every one with a length above 1, plus
 421 one-element arrays. Those variables are reached only through the
