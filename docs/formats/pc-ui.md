@@ -472,6 +472,19 @@ screens:
 The title menu (New Game / Load) is not Flash: it is the PS2 menu code;
 no Iggy player draws on the title.
 
+The logos (Square Enix, Virtuos, CRI, Dolby) are that one movie.
+`PhyreScene_beginRenderOpeningScreen` (`0x006579d0`) registers
+`PhyreScene_onOpeningScreenFinish_00652400` for its `Finish` callback
+(`push 0x00652400` at `0x00657a08`) and sets `g_PhyreSceneOpeningPlaying`
+(`0x00ccb9c2`); the callback only clears that byte. `graphicInitScene`
+(`0x006416c0`) loops `PInput_Update` and `PhyreScene_renderOpeningScreen`
+while `PhyreScene_isOpeningScreenPlaying` (`0x00660400`, `mov al,
+[0x00ccb9c2]`; its only caller, `0x0064185a`) answers 1, then deletes the
+player (`PhyreScene_deleteIggyMenu_0065b750`). A hook that returns 0
+there skips the logos; the player is still created and deleted, unseen
+(ffx-demaster `docs/patches.md`, run under Fahrenheit; the harness clears
+the byte instead, `docs/host.md`).
+
 **AS3 functions the game calls** (`IggyMenu_callIggyAS3External`
 `0x00a28ba0`: `IggyPlayerCreateFastNameUTF8` at `0x00a28bcc`, then
 `IggyPlayerCallFunctionRS` at `0x00a28be7`, on the main thread; arguments

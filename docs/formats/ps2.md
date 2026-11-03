@@ -4,6 +4,11 @@ The PC port turned the PS2's hand-written R5900 and VU0 assembly into C
 that keeps the registers in globals (`docs/rewrite-plan.md`, "The PS2
 emulation registers"), and kept the VU0 vector library (`FFXVu0*`).
 
+The PS2 data formats the PC no longer ships or reads by number:
+`docs/formats/ps2-disc.md` (disc tables, file names, compression),
+`docs/formats/ps2-movie.md` (movies), `docs/formats/ps2-music.md`
+(sequences, instrument banks, the IOP sound driver).
+
 ## Register set-up (`AsmEmuInit`, `0x0042ee40`)
 
 | Address | | Set to |

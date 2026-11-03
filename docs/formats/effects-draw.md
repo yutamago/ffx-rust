@@ -212,6 +212,17 @@ pixel shader, over the eight frames:
 Write mask 15. One flags value can come with two source factors (open
 question 2).
 
+What `vfxadditiveshader` computes (ffx-demaster `docs/effects.md`, from
+its DXBC through `ffx-dxbc`): the vertex shader doubles the vertex colour
+(PS2 `0x80` = 1.0), the pixel shader writes `tex.rgb × colour.rgb` and
+`tex.a × colour.a × fades`, each clamped to 1 by the 8-bit target. The GS
+clamps `Ct × Cv` to 1.0 as well, but `At × Av` only at `0xff`, which is
+2.0, so on the PS2 a vertex alpha above `0x80` can still double a
+texture's colour in the `Cs × As` blend and burn it out to white; on the
+PC the alpha side stops at 1.0. The HD effect textures store most glows,
+trails and rings (greyscale on the PS2, alpha `0x80`) as white with the
+brightness in alpha, which keeps that headroom on the colour side.
+
 Used constants (`cb0` of each stage; reflection, used variables only):
 
 | Shader | Vertex | Pixel |

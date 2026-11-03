@@ -133,7 +133,11 @@ callers' side):
   `graphicDrawDream`, `PhyreScene_drawMainMenuWaveEffect`, the pause
   background `PhyFMVPlayerManager_renderPauseBG`, `rcPrimDraw2D`,
   `AbmapDrawBar`; 36 callers in `calls.tsv`). PC button icons go through
-  `RemapButtonIcon_remapButtonIcon` first and may be replaced.
+  `RemapButtonIcon_remapButtonIcon` first and may be replaced. The pad
+  glyphs come from `menu/d3d11/pad_icon` (or `keyboard_icon`), a 12 x 8
+  grid of 34 x 34 cells (`RemapButtonIcon_remapIconUV`: 1/12 by 1/8);
+  row 0 is X A B Y LB RB LT RT Back Start LS RS (ffx-demaster
+  `docs/ui.md`, which swaps PlayStation glyphs into those cells).
 - `graphicFontDraw(glyph, texture, …, page)`: one glyph quad. Callers: the
   font packet writers `TOMakePktFont1612Font`/`Shadow`/`Edge`,
   `TOMakePktFontLItalicFont`/`Edge`, `TOMakePktBtlEasyFont`/`Shadow`,

@@ -16,6 +16,10 @@ and libVorbis entry points over game memory). They decode every movie as
 the original does, bit for bit; the measurements and the hooks are in
 `docs/formats/platform.md` ("The libraries in Rust").
 
+The PS2 movie format and the PS2 viewer still in FFX.exe
+(`MovieViewer_IntraDecode_0077b480`, `MovieViewer_PredictedDecode_0077b630`)
+are in `docs/formats/ps2-movie.md`.
+
 ## `FFXSamp0UnitMatrix` (`0x0093d900`)
 
 `(m) -> 4`: the PS2 sample library's identity, 16 f32 row-major at `m`
