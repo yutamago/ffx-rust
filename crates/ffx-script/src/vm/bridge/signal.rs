@@ -762,8 +762,11 @@ pub fn script_op_req_wait(host: &mut impl Host, op: u8, w: u32, l: u32, s: u32) 
     0
 }
 
-/// `TkGetVibrateDefaultCurve(type)` (`0x00876390`): the default vibration
-/// curve (eight `u16`) by worker type: types 2 and 3, 5, 6, and the rest.
+/// `TkGetVibrateDefaultCurve(type)` (`0x00876390`): the default
+/// trigger-entry table (eight `u16`, the entry each trigger kind requests)
+/// by worker type: types 2 and 3, 5, 6, and the rest. Not a vibration
+/// curve; the name stays as the hook-table key (`docs/formats/script.md`,
+/// "Trigger entries").
 #[must_use]
 pub const fn tk_get_vibrate_default_curve(kind: u32) -> u32 {
     match kind {
@@ -774,11 +777,13 @@ pub const fn tk_get_vibrate_default_curve(kind: u32) -> u32 {
     }
 }
 
-/// `Script_Op79(worker, var, index, value)` (`0x00870d30`): the worker's
-/// vibration curve: stores the `u16` `value` at `index` (at most 7; a
-/// negative one goes below) of the eight-`u16` variable `var`, which the
-/// worker's `+0x44` then points at; the first time (`+0x44` null) the
-/// variable is filled from its type's default curve.
+/// `Script_Op79(worker, var, index, value)` (`0x00870d30`): the entry
+/// trigger kind `index` requests of the worker: stores the `u16` `value`
+/// at `index` (at most 7; a negative one goes below) of the eight-`u16`
+/// variable `var`, which the worker's `+0x44` then points at; the first
+/// time (`+0x44` null) the variable is filled from its type's default
+/// table. Atel# calls the opcode `SetTriggerEntry` (`docs/formats/script.md`,
+/// "Trigger entries").
 pub fn script_op79(host: &mut impl Host, w: u32, var: u32, index: u32, value: u32) {
     let at = atel_get_real_var_adrs(host, w, var);
     if host.read::<u32>(w + 0x44) == 0 {
