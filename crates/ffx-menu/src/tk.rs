@@ -853,7 +853,9 @@ pub mod bridge {
         mem.read(p + 0x22)
     }
 
-    /// The default vibration curves `TkGetVibrateCurve` picks by kind.
+    /// The default trigger-entry tables `TkGetVibrateCurve` picks by
+    /// worker type (eight `u16` entries, one per trigger kind; not
+    /// vibration curves, `docs/formats/script.md` "Trigger entries").
     pub const VIBRATE_CURVES: [Global<u16>; 4] = [
         Global::new(0x00c5_2ad8),
         Global::new(0x00c5_2ae8),
@@ -863,7 +865,10 @@ pub mod bridge {
 
     /// `TkGetVibrateCurve(kind, i, curve)` (`0x008763e0`): entry `i` of
     /// `curve`, or without one of the default for `kind` (2 and 3 the
-    /// second, 5 the third, 6 the fourth, others the first).
+    /// second, 5 the third, 6 the fourth, others the first). `kind` is the
+    /// worker type, `i` the trigger kind and `curve` the worker's
+    /// trigger-entry table (`+0x44`, set by opcode `79`): the result is the
+    /// entry the trigger requests, not a vibration value.
     pub fn tk_get_vibrate_curve(mem: &impl Mem, kind: u32, i: i32, curve: u32) -> u16 {
         let curve = if curve == 0 {
             tk_get_vibrate_default_curve(mem, kind)
@@ -1131,7 +1136,8 @@ pub mod bridge {
     }
 
     /// `TkGetVibrateDefaultCurve(kind)` (`0x00876390`): 2 and 3 the second
-    /// default curve, 5 the third, 6 the fourth, others the first.
+    /// default curve, 5 the third, 6 the fourth, others the first (the
+    /// worker type's default trigger-entry table).
     pub fn tk_get_vibrate_default_curve(mem: &impl Mem, kind: u32) -> u32 {
         let k = match kind {
             2 | 3 => 1,

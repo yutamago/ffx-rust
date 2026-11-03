@@ -1662,7 +1662,9 @@ pub fn native_010e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
 
 /// `Native_002a_TurnSetPitch` (`0x00859bb0`, `0x002a`, float): `(pitch)`: wrapped into
 /// the turn block's `+0x28`, and the wrapped rest to the position's pitch
-/// (`+0x38`) into `+0x34`; `ST0` the pitch.
+/// (`+0x38`) into `+0x34`; `ST0` the pitch. Despite the name it turns the
+/// `+0x38` axis (roll in `docs/formats/script.md`'s convention), where
+/// `0x0029` turns `+0x30` and `0x0028` the yaw `+0x34`.
 pub fn native_002a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let p = atel_get_pos_work_adrs(h, w);
     let v = popf(h, s);

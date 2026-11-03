@@ -161,7 +161,10 @@ pub fn atel_get_snd3d_work(m: &impl Mem, i: u32) -> u32 {
 
 /// `AtelSoundTableGet_00876860(kind, i)`: byte i of the table for kind 1
 /// (`0x00c52ac0`), 2 and 3 (`0x00c52ac8`), 5 and 6 (`0x00c52ad0`); 0xff
-/// for any other kind.
+/// for any other kind. `kind` is the worker type and `i` a trigger kind:
+/// the byte is the level the trigger's request runs at (`0xff` none). Its
+/// only callers are the trigger requests (`0x008764f0`..`0x00876780`);
+/// nothing about sound (`docs/formats/script.md`, "Trigger entries").
 pub fn atel_sound_table_get(m: &impl Mem, kind: u32, i: u32) -> u32 {
     let t = match kind {
         1 => 0x00c5_2ac0,
@@ -5170,7 +5173,10 @@ pub fn atel_set_party_mask(h: &mut impl ffx_bridge::Host, frame: u32) {
 /// (`AtelSoundTableGet_00876860(type, k)`) and vibration curve
 /// (`TkGetVibrateCurve(type, k, +0x44)`); when both exist and the
 /// worker's `+0xab` has bit `k` (of the low byte), a signal from `from`
-/// (`AtelRegistSignalWithoutSameTag(from, i, 0, sound, curve)`). The ctrl
+/// (`AtelRegistSignalWithoutSameTag(from, i, 0, sound, curve)`). The
+/// "sound" is the request's level and the "curve" its entry: this is a
+/// request for trigger `k`, as `AtelRequestTrigger_008764f0`
+/// (`docs/formats/script.md`, "Trigger entries"). The ctrl
 /// work back. Returns the signal's result, 0 without one.
 pub fn atel_regist_vibrate_signal(h: &mut impl ffx_bridge::Host, from: u32, i: u32, k: u32) -> u32 {
     vibrate_signal(h, 0x0086_ec40, from, i, k, None)
