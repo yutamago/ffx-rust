@@ -73,12 +73,12 @@ save variables).
 | `0xea` | `u16` | `sphere_monitor` | `AtelGetSphereMonitor` (`0x0086c4b0`) |
 | `0x279`-`0x3f1` | `u8` | `progression_flags_*`, `luca_controllable_character` | Fahrenheit, not checked (script variables) |
 | `0x3fc`-`0x400` | 3 × `u16` | `lightning_dodging_*` | Fahrenheit, not checked |
-| `0x5ec` | `u8` | `soundtrack_type` | Fahrenheit, not checked |
+| `0x5ec` | `u8` | `soundtrack_type` | 0 arranged, 1 original: `iMusicRefreshBgmType` (`0x008cc170`) passes bit 0 to `iMuiscSetBgmType`, and FMOD music set 1 is `Music_PS2/ffx_music_PS2.fev` (`docs/formats/audio-platform.md`). Written by `MenuConfig_SetBgmType` (`0x008cb0b0`) and natives 0x0264/0x0267; `MsSetSaveStartGame` (`0x00786b00`) clears it with the rest of `g_SaveData`, so a new game starts arranged and a loaded save keeps its own choice (ffx-demaster `docs/patches.md`) |
 | `0xbec` | `u16` | `story_progress` | `g_SaveScenario`, `AtelGetScenarioFlag` |
 | `0xc38`-`0xc91` | | celestials, airship, Jecht spheres, aeons, dark aeons | `+0xc89` is `g_SaveInterValefor` (`getInterValefor`); the rest Fahrenheit, not checked |
 | `0xcd7` | 42 × `u8` | `battle_dialog_lines_seen` | Fahrenheit, not checked |
 | `0x1984` | | `blitzball_data` | Fahrenheit, not checked |
-| `0x3d0c` | `u32` | `config` | `g_SaveMenu`: bit 1 cursor memory, bit 3 hiragana (`MsGetSaveConfigCursorSave`, `MsGetSaveConfigHiragana`); the other bits Fahrenheit, not checked |
+| `0x3d0c` | `u32` | `config` | `g_SaveMenu`, read by the `MsGetSaveConfig*` getters (`0x007851a0..0x00785230`, alphabetical, each the mirror of its `MsSetSaveConfig*` setter's mask): bit 0 stereo, 1 cursor memory, 2 controller, 3 hiragana, 4 vibrate, 5 credit name, 6 guide map, 9 subtitles (`MsGetSaveConfigSubTitle` `0x00785210`, 0 while `g_BtlMuteSubtitle` is set; Fahrenheit's `config_subtitles`), 16 English (`MsSetSaveConfigEnglish`; its getter returns 0 on PC). Bit 9 is set in the new-game word (`0x00002f61`, read after `MsSetSaveStartGame`) and in the PC saves measured, and nothing on PC clears it (`MsSetSaveConfigSubTitle` has no caller): scripted battle lines (native 0x70de) are subtitled (ffx-demaster `docs/patches.md`) |
 | `0x3d10` | `u32` | `unlocked_primers` | Fahrenheit, not checked |
 | `0x3d14` | `u32` | `battle_count` | `g_SaveBattleCount` |
 | `0x3d48` | `u32` | `gil` | `g_SaveGil` |

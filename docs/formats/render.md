@@ -213,6 +213,48 @@ The `PhyreScene` object. Fields the game's `graphic*` calls use:
 | `0x10dd0` | `i32` | screen width (`graphicFontGetEdgeRatio`: width / 1920, at most 1) |
 | `0x1232c` | ptr | a cell like `+0xac` |
 
+## Character light levels
+
+How the PC lights characters (`phyrechrlitshader.fx`, every lit
+variant; read from the shaders by ffx-demaster, `docs/render.md`):
+
+```
+lit = GlobalAmbientColor + CharacterAmbientLight + CharacterShadeColor x CharacterShadeCoeff
+    + sum over i = 0..2 of Light_i.m_colorIntensity x (dot(L_i, N) x 0.5 + 0.5)^2
+colour = texture x vertex colour x MaterialColour x lit, then fog and grey scale
+```
+
+No normal map, rim light or general specular; the only specular is the
+PS2's `SgSpec_*` spot. The colours and directions are the PS2 code's
+(`Sg_LightSetColor` `0x00836310`, `Sg_LightSetDir` `0x00836430`, which
+fill the VU0 matrices and pass the same floats to `g_CharacterLighting`
+`0x00ccca84`). The PC changes three things on the way:
+
+1. Levels: `Phyre_CharacterLighting_applyIntensityMultiplier`
+   (`0x006a6e90`, thiscall(cl; i, flag) ret 8) sets light `i`'s level
+   (PLight `+0x24`; the shader's `m_colorIntensity` is colour x level) to
+   (1 - glow factor) x 1.2 x intensity x factor x 0.95 (1.05 and `+0x1a4`
+   for the ambient, whose colour x level goes to the lighting record
+   `+0xac`, `CharacterAmbientLight`); factor is 1, or 1.16 without
+   `+0x230`. The intensities (`+0x1a8 + 0xc i`) come from the HD map's
+   lighting object (`PhyreScene_setupCharacterLighting_0066eb20`), the
+   glow factors from `balanceLumWithGlow`. Besaid beach (map intensity
+   1.7): light 0 2.10, lights 1 and 2 1.31, ambient 1.45.
+2. Rotations: `Phyre_CharacterLighting_setRotation` (`0x006aaea0`,
+   thiscall(cl; i, pitch, yaw) ret 0xc, degrees) turns light `i` per map
+   (4 calls from `PhyreScene_setupCharacterLighting_0066eb20`; Besaid's are
+   0).
+3. The falloff: half-Lambert squared instead of the PS2's `max(0, N.L)`.
+
+The PS2 formula is still in the `PS2Lighting` path magic uses
+(`PS2LightingSetup_apply_006e5a40`: `LvMatrix`, `LcMatrix`, `charlight`):
+`lit = max(0, LcMatrix x max(0, LvMatrix x N) + ambient) x charlight / 128`.
+With level 1 for every light and the ambient (and the luminances
+`+0x1d0..`, `+0x1dc` recomputed) and rotations 0, the HD shader gets the
+PS2 colours at unit scale; the falloff stays the shader's (ffx-demaster
+`docs/render.md`, `render.lighting`; Besaid in the harness: light 0's
+luminance 0.608).
+
 ## UI coordinates
 
 The remaps take a remaster coordinate to the PS2 screen (512 x 416):
@@ -369,6 +411,29 @@ scene `+0x10d8c` is 1; a camera's `+0xbc` far plane, `+0x150` aspect,
   `a * 3 * 0.25 * 16/9`; a reflection camera of kind (`+0x10d90`) 0 or 1
   gets that times 0.5 or 2, and then the main camera `window_w * a *
   0.75 / window_h` times the same.
+  The `a` it gets is the PS2's: `Cam_Apply` (`0x007bc980`) passes
+  `(512 / (2 fx)) / (448 / (2 fy))` from screen 0's `+0x10`/`+0x14`
+  (`0x01137010`/`0x01137014`; 0.8 and 0.9333 on Besaid), which is 4/3.
+  So a 3D scene stores 16/9 with the PS2's vertical field of view: the
+  PS2 picture is the middle 4:3 of the HD one (240 of 1920 columns cut
+  each side). With `g_PhyreScene3D` clear (the 2D-background rooms;
+  `PhyreScene_fieldMapLoad` sets it only for 3D maps outside
+  `g_PhyreScene2DMaps_b421c8`) the camera keeps `a` (4/3, from
+  `rcbgSceneSetMatrix`'s `+0xb4 = +0xb0 * 1.1666666`) on the 16:9 target,
+  the PS2 view stretched by 4/3 (ffx-demaster `docs/screen.md`, measured
+  in the harness on Besaid and hiku00).
+- The output shape: the last copy into the back buffer goes through
+  `PostProcessManager_setNon16By9Viewport` (`0x00698750`), which fits the
+  frame to `g_PostProcessOutputAspect` (`0x00c34154`, f32 16/9 in `.data`,
+  that function its only reader) with bars and gives the Iggy menus the
+  same rectangle (`IggyMenuManager_setViewportRect_00a26bd0`). Writing
+  4/3 there pillarboxes the frame to 4:3 (linear filter, a squeeze of the
+  16:9 targets); with the camera hook above passing `a * 3/4` the 3D comes
+  out in PS2 proportions and the PS2-placed 2D lands at its PS2 place
+  (ffx-demaster `docs/screen.md`, `render.aspect`; seen at 3440 x 1440
+  under Fahrenheit). The sphere grid's camera is set separately, to
+  `k_SixteenByNineF32` (`0x00b41cf0`, read by `PhyreScene_RenderABmap` at
+  `0x00652a7a`, `graphicGetScreenRatio` and `PhyreScene_initScene`).
 - `PhyreScene_setAbmapCamera(x, y, z, h, scale)` (`0x0066ca60`): the
   area-map camera (`+0xbe0`, world matrix `+0xd34`, pointed at by
   `+0xc90`) looks from `(-z*1920/512, x*1080*16/13/scale - h*1080*4/1536,

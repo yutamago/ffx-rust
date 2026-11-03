@@ -231,6 +231,33 @@ model, part, motion id and the current map number (`g_CurrentMapNo`,
 scales 1.03 by default, 1.05, 1.165, 1.2, 1.25), `Ch_ShouldDisableClothForMotion`,
 `Ch_ClothSetAtariJimenCheck` (a case byte per id at `0x008248ac`).
 
+### The PC's cloth files (`.cdf`, `.cmf`)
+
+`Ch_LoadClothFileTask` (`0x0082a140`) writes `cdf` and then `cmf` over
+the last characters of the model path and loads each
+(`ClusterManager_createPreallocateDataList`). `Ch_ClothMeshMapping`
+(`0x00826340`) reads the `.cdf` (`Cache_Exist_ClothMeshData`): six `f32`
+(a bounding box in HD units, kept × 1000 at `+0x840..+0x854`, with the
+reciprocal extents after it), then per PS2 cloth piece a header `u16`
+model, `u16` piece, `u16` triangle count, `u16` pad, then that many
+32-byte triangles: `u16` vertex indices of the model (each one marked in
+the model's per-vertex byte map, model `+0x30`), a `u16` kept in the
+piece's second list (piece + 100 × k), and three `f32` (u, v) pairs (PS2
+UVs, 1/16 texel; not read here). A model id `0xffff` ends the file. Every
+PS2 cloth piece is listed, also those the HD model has no segment for
+(c001 model 1 pieces 0, 3, 4). No character ships a `.cmf` (baked
+bindings).
+
+A segment draws a piece when `PMeshSegment` `+0x20`/`+0x24` (model, piece;
+-1 none) name it (`graphicCharacterInstanceGetClothVertexBuffers`
+`0x0063a810`). `Ch_PreCalcActiveClothMesh` (`0x00827e90`) binds each of
+its vertices to the simulated triangle it lies in (`InsideTriangle`
+`0x00828c10`, bind pose × 1000 against the PS2 model vertices), unless
+the vertex colour keeps it skinned: with r, g and b all at most 0.3 the
+vertex follows the skin; larger values pick the binding mode. The HD
+cloth segments use (255, 255, 255) or (255, 0, 0) on free vertices and
+(26, 26, 26) on anchored ones (ffx-demaster `docs/models.md`, "Cloth").
+
 
 ## Module settings
 
@@ -321,6 +348,47 @@ play modes are 1 and 4 (hold), 2 (blink: wait 60-149 frames, then 4
 steps per frame) and 3 (step and scroll). For mode 3 it then copies the
 frame's rectangle (12 bytes from `[src+4]`: x, y, width, height, pixel
 offset) into the destination, row by row with `memcpy`.
+
+The new-format source (texture data `+0x20`; kind 2, form 1 in every
+`.chr` the demaster surveyed; ffx-demaster `docs/models.md`, "Texture
+animation", `docs/research/ps2-textures.md`), as `chr_texanim_set_new`
+(`0x0077f9c0`) and `chr_texanim_main_sub_new` (`0x0077f360`) read it:
+
+| Offset | Meaning |
+|---|---|
+| `+0` `u8` | kind (2 = patch animation) |
+| `+1` `u8` | entry count |
+| `+2` `u8` | form (0 old, 1 new) |
+| `+4` `u32` | patch table: 12 bytes each, `u16` destination image width and height, `u16` w, h, `u32` offset of a 32-byte upload header with the 8-bit texels after it (drawn through the image's CLUT 0) |
+| `+8` `u32` | entries, `0x110` bytes each: `u16` x, y of the destination `+8`, `u16` image `+0xc`, then 32 states × (`u32` frame list offset, `i16` count) from `+0x10` |
+| `+0xc` | 32 bytes: per entry its mode (`0xff` unused), copied to work `+0xd08` |
+
+A frame is `i16` duration, `u8` patch, `u8` random extra. Mode 0 blinks (a
+random 60-150 update wait, then the list), 4 plays the list, 1 holds a
+frame, 3 scrolls. States 1, 2 and 21 always run, plus the one the event
+sets (`tex_anim_no_set_new`). `setLoadImageTagsTexAnim` (`0x0077eff0`)
+builds the PSMT8 transfer of a patch into the image;
+`chr_texanim_draw_sub_new` (`0x0077f210`) checks it stays inside ("tex
+anim area over").
+
+On the PC the step also calls `TextureAnimationManager_setAnimatedMaterialsChar`
+(`0x006b3060`) with group `G<entry>`, animation `Animation<state>` and the
+frame index. The `textureanimationchar.ags.phyre` record
+(`PSpriteAnimationInfoChar`) of those names gives `m_subTextureIDs[frame]`,
+a texture: the n-th cluster of the character's asset list, which lists
+the animation textures before `textureAnimationChar`
+(`PhyreScene_doOnCharacterAllAssetsLoaded` `0x0065a760` passes that
+range). Its floats `mUStart, mVStart, mUEnd, mVEnd` hold the PS2 patch
+rectangle as `w/W, h/H, x/W, y/H` (W, H the image size). The material that
+shows it is named `Mat_CTA_G0G1…` after the groups it takes; it stacks the
+groups set in layers 1-3 (1-6 with `CHR_TEXTURE_ANIMATION_UV`, newest on
+top) and the pixel shader replaces the colour inside each layer's
+rectangle: `t = (uv - T) / S`, drawn where `0.001 <= t <= 0.999`, with v up
+from the image's bottom row. Two shader variants: `_GAME` takes
+`AnimTranslate_GAME<n> = (mUEnd, mVEnd)` and `AnimScale_GAME<n> = (mUStart,
+mVStart)` from the record; `_MAYA` (c001-c003, c005-c008, c043) has one
+fixed rectangle per layer in the material and ignores the record's
+floats (ffx-demaster `docs/models.md`).
 
 ## Motion sequences
 
@@ -434,6 +502,95 @@ bytes, `+0x6ec`, `Ch_TextureSetImage`). A texture's base is `u16` `+0x38`
 and `+0x3a`, copied into bits 0..13 of `+0x24` (`Sg_GsloadSetBase`).
 List entries take the image base into bits 0..13 of `+0x14` and the clut
 base into bits 7..20 of `+0x18` (`Ch_TextureSetTex0`).
+
+### Texture data (archive entry 1)
+
+The file side of the texture data (ffx-demaster
+`docs/research/ps2-textures.md`; offsets relative to the block, relocated
+by `Ch_TexDataMapping` `0x0083cba0`):
+
+| Offset | Type | Meaning | Read by |
+|---|---|---|---|
+| `+0x00` | `u32` | self pointer (0 in the file) | `Ch_TexDataMapping` |
+| `+0x04` | `u16` | texture-list count | `Ch_TextureReMapping` (`0x0083cdd0`) |
+| `+0x08` | `u16` | CLUT count | `Ch_TexGetNbClut` (`0x0083cd90`) |
+| `+0x0c` | `u16` | image count | `Ch_TexGetNbImage` (`0x0083cdb0`) |
+| `+0x10` | `u16` | version (`0x1126` in every file) | `Ch_TexDataMapping` |
+| `+0x14` | `u32` | texture list, 16 bytes per entry | `Ch_TextureSetRegs` (`0x0083d250`) |
+| `+0x18` | `u32` | CLUT table, 8 bytes per entry | `Ch_TexGetClut` (`0x0083cd20`) |
+| `+0x1c` | `u32` | image table, 16 bytes per entry | `Ch_TexGetImage` (`0x0083cd50`) |
+| `+0x20` | `u32` | texture animation (0 = none) | `Ch_TextureReMapping` (to `+0x6fc`), `chr_texanim_set` |
+
+A texture-list entry is a material, an image read through a CLUT
+(`Ch_TextureSetRegs` fills the 32-byte runtime entry from it):
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0` | `u8` | image index (runtime `+2`, the TEX0 base) |
+| `+1` | `u8` | CLUT index (runtime `+0`, the CLUT base) |
+| `+2` | `u16` | PSM (`0x13` PSMT8 in all 857 files), into TEX0 bits 20..25 |
+| `+4`, `+6` | `u16` | width, height (TW, TH from the next power of two; TBW = width / 64) |
+| `+8`, `+9` | `u8` | runtime `+0x11`, `+0x12`: the `ALPHA_2` register (below); `44 00` in every file |
+
+The high TEX0 word gets `& 0x801fff9f | 0x10`, which leaves CPSM, CSM
+and CSA 0: a PSMCT32 palette in CSM1 order (`docs/formats/ps2-textures.md`).
+
+A CLUT entry is a `u32` (`0x400` in every file; `Ch_TextureSetClut`
+`0x0083d1e0` reserves one GS block when it is `<= 0x10`, else four) and
+the `u32` data offset. An image entry is `u16` PSM, `u16` size in GS
+blocks (runtime `+0x36`; 256×256 at 8 bits is `0x100`), `u32` 0, `u16`
+width and height at `+8`, and the `u32` data offset at `+0xc`
+(`Ch_TextureSetImage` `0x0083d220`; transfer width `+8 >> 6`). Both data
+blocks start with a 32-byte upload header: 12 zero bytes, VIF `DIRECT`
+(`0x50000041`; the PC patches it to `0x51`, `DIRECTHL`), and a GIF tag with
+`FLG=IMAGE`, `EOP` and `NLOOP` 0x40 for a palette (256 entries) or
+`w × h / 16` for an image. Image texels are linear PSMT8 (row-major; the
+GS swizzles them on upload). One image is usually shared by several list
+entries with different CLUTs (c001: one 256×256 image, CLUT 0 for face,
+skin and hair, CLUT 1 for clothes and metal).
+
+All 857 `.chr` files the PC ships (`FFX_Data.vbf`) differ from the PS2
+disc's only inside the image texels and the texture-animation patch
+texels: CLUTs and upload headers are kept, the texels zeroed (the test
+files `k999`, `c999` and the patches of 17 monsters and NPCs, m003, m030,
+m105, n238, n356, ..., kept theirs).
+
+## Mesh groups and the character packet (`0x008423c0`)
+
+A model's mesh group (12 bytes, ffx-demaster `docs/models.md`, as the
+packet builder `0x008423c0` walks them; caller `0x0082e610`):
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0` | `u8` | flags: bit 0 strips (else triangles), bit 1 textured, bits 2 and 3 pick the draw state (index into the 3-byte table `0x00b5a6b0`) with the cull byte (`Ch_PacketSetCull`), the specular byte (`Ch_PacketSetSpecular`) and the shadow byte (+4) |
+| `+1` | `u8` | MAT: index into the material table (`Ch_PacketSetName`'s pointer); `0x008437f0` sends its RGB (bytes `+4..+6`) × 2 × the effect colour and the effect alpha |
+| `+2` | `u8` | texture-list index; `0x008438b0` sends that entry's TEX0 when it changes |
+| `+4` | `u16` | count (strips or triangles) |
+| `+8` | `u32` | data |
+
+Points are four `u16`: vertex, normal, u, v (UVs in 1/16 texel, so a
+256-texel image spans 0..4096). A vertex or normal with bit 15 set repeats
+an earlier halfword: with `k = value & 0x7fff` and `p` the point's first
+halfword, the vertex is `p[-(k × 4 / 3)]` and the normal `p[-1 - (k × 4 /
+3)]` (`Ch_EffectPacketCreateMain` `0x00842c80`,
+`Ch_EffectPacketStoreStrip` `0x00844370`). In a strip, point `k >= 2`
+makes the triangle (k-2, k-1, k) for odd `k` and (k-1, k-2, k) for even
+`k`; a triangle group holds 24 bytes per triangle (three points).
+
+The GIF tag's `PRIM` of every group has ABE and context 2 (`0x240`), plus
+TME and FST (`0x110`) for a textured group while textures are on
+(`Ch_PacketSetTexture`), FGE when `0x00842ff0` says so, and the
+triangle or strip type with Gouraud shading (`0xb` / `0xc`). So every
+character polygon is alpha blended. `0x008438b0` writes, per texture:
+`TEXFLUSH`, `TEX0_2` (the runtime entry's `+0x14`), and `ALPHA_2`
+(register `0x43`) with the low word from the runtime `+0x11` and the high
+word from `+0x12`: the list entry's `+8`/`+9`, `0x44` and 0 in every file,
+which is (Cs − Cd) × As + Cd with the texture's alpha. A texel with GS
+alpha under `0x80` is see-through (hair, fur and feather fringes). The PC
+draws characters with PhyreEngine materials instead; there the alpha comes
+from the material's effect variant (`ALPHA_ENABLED`, `UATFOPQ`,
+`AlphaThreshold`; ffx-demaster `docs/models.md`, "Alpha", on its branch
+of 2026-11-02).
 
 ## Effect packets
 

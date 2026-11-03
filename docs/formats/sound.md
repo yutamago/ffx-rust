@@ -8,7 +8,7 @@ with 33,362 samples:
 | Folder | Banks | What |
 |---|---|---|
 | `sound_pc/music/` | 1 (89 samples, 554 MB) | the remastered soundtrack, named (`1_09_battle_theme`), with loop points |
-| `sound_pc/music_ps2/` | 1 (89 samples) | the original soundtrack |
+| `sound_pc/music_ps2/` | 1 (89 samples) | the original soundtrack: a recording of the PS2's output, each track peak-normalised and limited (the PS2 sequences and banks: `ps2-music.md`) |
 | `sound_pc/voice/us/`, `voice/jp/` | 25 each | voice |
 | `sound_pc/sfx/us/`, `sfx/jp/` | 604 each | sound effects, one bank per number (`0201_bank00.fsb`) |
 
@@ -353,6 +353,14 @@ mapped, -1 otherwise; `0x00708be0`); the events are the named tracks
 event, `+8` state, `+0x24..+0x38` volume translation: active, frames left,
 current, target, step). The PC build also tries `Music/MusicIDMapper.txt`
 (`FmodMusic_initList`, never called; not in the data).
+
+The table's ids are also the PS2 music file numbers (`musicNNN.bgm`,
+`ps2-music.md`), so it ties each event of `ffx_music_ps2.fev` to its PS2
+sequence. A replacement `music_ps2` bank with the same sample names and
+order, IMA ADPCM codec 7, and the original's 32 bytes at `0x1c` (flags and
+hash) copied plays through the unchanged `.fev` (ffx-demaster
+`docs/music.md`: a battle's captured mix matched the replacement sample for
+sample).
 
 **Voice.** `Voice/VoiceIDMapper.txt` and `Voice/US/VoiceFevMapper.txt`
 (`JP`) are `ML` files: `"ML\0\0", u32 count, count x {u32 key, u32

@@ -59,6 +59,18 @@ matrix equals this bind pose (checked on c001). A bone's local transform is
 `T · Rz · Ry · Rx · S`: the x axis of c001's bone 11 (24.57°, 8.92°,
 15.55°) is (0.952, 0.265, −0.155) in both.
 
+The node and the bone agree for every bone that skins a vertex, but other
+HD nodes can differ: c001's bones 103-135 are identity in the HD model,
+c101's base bone 150 has a zero matrix, and c041 lacks 30 nodes and
+differs on bones 87-91 (ffx-demaster `docs/models.md`). A model's stored
+vertices are the bind pose in its base bone's frame: posed by the skin
+lists' bones and weights, Σ w · bone · p matches base · vertex to within
+0.01-0.04 units, so the skin lists (`docs/formats/main.md`,
+`sg_calcenvelope_asm`) only add bones and weights. For the kept monsters,
+NPCs and weapons, an HD vertex × 1000 equals the PS2 `i16` bit for bit
+(ffx-demaster `docs/research/hd-vs-ps2-assets.md`). Party models carry up
+to 8 bones per vertex, m112 up to 14.
+
 ## Motion group (`.mgrp`)
 
 `SG_AddMotionGroup` (`0x00836c90`) registers a group and
