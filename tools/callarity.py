@@ -32,6 +32,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Twice the stack words any FFX.exe function takes (the most is 34);
+# a larger measure is a lost esp (0x00935000 measured 337,854,481 and its
+# packet grew to 7.4 GB on 2026-11-01).
+MAX_STACK_WORDS = 64
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import disasm_cache  # noqa: E402
 
@@ -207,6 +212,11 @@ class Exe:
                 target = int(l.split("0x")[1], 16)
                 if not a <= target < a + size:
                     forwards = True
+        if reads + 1 > MAX_STACK_WORDS:
+            # a broken measure (an esp the scan lost track of): unknown,
+            # not a count that tools expand into argument lists
+            self.cache[a] = (None, POPS_OVERRIDE.get(a, pops), forwards)
+            return self.cache[a]
         self.cache[a] = (reads + 1, POPS_OVERRIDE.get(a, pops), forwards)
         return self.cache[a]
 

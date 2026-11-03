@@ -51,6 +51,10 @@ _spec = importlib.util.spec_from_file_location("check_clobber", TOOLS / "check-c
 clobber = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(clobber)
 
+# A packet is 10-60 KB, the biggest about 400 KB; anything past this is a
+# generator bug (0x00935000's grew to 7.4 GB on 2026-11-01), so it is cut.
+MAX_PACKET_BYTES = 4 << 20
+
 SECURITY_COOKIE = 0x00C613D8  # tools/ownership.py
 # module -> oracle test file stem (the rest are the module name)
 TEST_STEM = {"map": "field", "ps2-emu": "ps2", "pc-ui": "pc_ui"}
@@ -806,7 +810,7 @@ def packet(w, a):
     if sym and sym[2]:
         out.append(f"- ffx.sym: {sym[2][:700]}")
     conv = convention(w, a)
-    out.append(f"- measured convention: {conv[0]}, {conv[1]} stack word(s)"
+    out.append(f"- measured convention: {conv[0]}, {'unknown' if conv[1] is None else conv[1]} stack word(s)"
                + (f", ret {conv[2]}" if conv[2] else "") + (", returns a float in ST0" if conv[3] else "")
                + f" (Ghidra: `{sig}`)")
     if callers:
@@ -912,6 +916,15 @@ def resolve(w, key):
     return a
 
 
+def capped(text, a):
+    """TEXT cut to MAX_PACKET_BYTES, with a note saying so."""
+    if len(text.encode("utf-8")) <= MAX_PACKET_BYTES:
+        return text
+    note = f"\n\n**Cut at {MAX_PACKET_BYTES >> 20} MB: {a:#x}'s packet ran away (a generator bug; report it).**\n"
+    print(f"packet {a:#x}: over {MAX_PACKET_BYTES >> 20} MB, cut", file=sys.stderr)
+    return text.encode("utf-8")[:MAX_PACKET_BYTES].decode("utf-8", "ignore") + note
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("function", nargs="?")
@@ -930,12 +943,13 @@ def main():
                 continue
             a = int(line.split()[0], 16)
             p = d / f"0x{a:08x}_{w.name(a)}.md"
-            p.write_text(packet(w, a), encoding="utf-8")
+            p.write_text(capped(packet(w, a), a), encoding="utf-8")
             print(p)
         return
     if not args.function:
         ap.error("give a function or --batch")
-    text = packet(w, resolve(w, args.function))
+    a = resolve(w, args.function)
+    text = capped(packet(w, a), a)
     if args.out:
         pathlib.Path(args.out).write_text(text, encoding="utf-8")
     else:
