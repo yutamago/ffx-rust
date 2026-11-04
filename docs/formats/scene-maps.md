@@ -5,7 +5,10 @@ salvage ship deck, `cdsp0000`. This page widens it to three more maps and
 answers the general questions that page left open: Q1 (texture quality),
 Q6 (render orders), Q7 (shadow solutions) and Q8 (unidentified functions).
 The answers cite the FFX.exe functions they come from. The names are in
-`symbols/ffx.sym`.
+`symbols/ffx.sym`. The last section adds what the game sets up at map
+entry and the files leave implicit: how the 2D layers are drawn, where a
+map's starting camera is, and the event scripts' placements of map
+objects.
 
 ## Captures
 
@@ -304,6 +307,209 @@ What each solution does (`PhyreScene_fieldMapInitialize` from
   passes `app +0x40`, and the function reads `+8`). Read in the game on
   `cdsp0000`: thread count 1, list count 0, so the single-threaded loop
   runs.
+
+## Map entry state: 2D layers, script placements, starting cameras
+
+Found on 2026-11-03/04 by ffx-remix, a separate modding project by the
+same author, while its offline map viewer was made to show maps as the
+game does (its M3 review; `native/crates/ffx-remix-native/src/scene.rs`
+and `event.rs`, the notes in `~/ffx-work/ffx-remix/m3/review1/`). The
+facts below come from FFX.exe functions already named in `ffx.sym`, the
+map files, and three captures of the original (`kami0100-a`,
+`cdsp0000-a`, `bsil0000-a`). Counts are over the archive's 329 field
+maps. What was not checked is marked so.
+
+### The `YNSC` layer record
+
+`rcbgSceneLoad` (`0x0092b5e0`) reads a `YNSC` chunk of `MAP1` section 0
+(`docs/formats/field.md`, "Background files"): the layer count, 12
+bytes, the layers (`rcbgLayerLoad` `0x0092b1a0`), then the scene's
+camera block (below). A layer starts with a 0x90-byte record:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0` | `u32` | flags (`0x8000` on the layers read) |
+| `+4` | `i32` | width, PS2 pixels |
+| `+8` | `i32` | height |
+| `+0xc` | `i32` | x on the 512 x 448 PS2 screen |
+| `+0x10` | `i32` | y |
+| `+0x14` | `f32` | depth |
+
+The record is followed by the frame count (16 bytes), the frames (4
+bytes each, padded to 16) and their transfer, if any, then 16 bytes and
+the image transfer (a transfer is 32 bytes plus count x size, the words
+at `+0x18` and `+0x1c`).
+
+- **Depth.** For 1,035 of the 1,075 layer instances `+0x14` is the z of
+  the layer mesh's vertices in the PC file (`scene<s>layer<l>` in
+  `2d/mdl/d3d11/`). The other 40 differ, probably layers the remaster
+  retouched. Smaller is nearer.
+- **x, y.** On `kami0100` layer 2 they are 328 and 42 for a layer that
+  does not fill the screen, so they look like the top-left corner in PS2
+  pixels. That reading is **not checked** against the layer meshes' x
+  and y.
+
+### How the game draws the 2D layers
+
+- **The pass.** `PhyreScene_DrawNonUIPrerenderScene` (`0x006507d0`;
+  port: `draw_non_ui_prerender_scene` in
+  `crates/ffx-prender/src/h3_glue43.rs`) renders the prerender world
+  (scene `+0x8c`, the 2D model's instances) with camera `+0x7e0`, before
+  the 3D world: `preOpaque`, then `preTransparentATC`, or
+  `preTransparent` on four maps (`PLAIN_TRANSPARENT_MAPS`: `0xa0`,
+  `0xa1`, `0x101`, `0x16c`). Then it puts camera `+0xdc` back on the
+  renderer.
+- **The layer camera.** `PhyreScene_initScene` (`0x0065f450`; port:
+  `init_scene` in `crates/ffx-prender/src/h3_glue59.rs`) sets up camera
+  `+0x7e0`: aspect `0x3f924925` (8/7), near 0.001 (`0x3a83126f`), the
+  main camera's far (65536 on the field), `+0x154` = 512 / aspect x 2.5
+  x 0.5 = **560**, and as its world the start matrix turned by pi about
+  y. The port's comment calls it "the light camera". It is the
+  **orthographic** camera of the 2D layers: in the `kami0100-a` capture
+  the layer draws' `View` is `x' = -x`, `z' = -z - 1` (turned by pi
+  about y, at z -1) and their projection scales x by 1/640 and y by
+  1/420 (560 x 3/4, the squeeze below). With the 2D placement (`(-256,
+  -224)`, then `diag(-2.5, -2.5, 1)`;
+  `PhyreScene_doOnFieldMapAssetLoaded`, `docs/formats/scene.md` Q4) the
+  512 x 448 screen fills ±640 x ±560, so a vertex's x and y are its PS2
+  pixel whatever its z. The camera's turn undoes the placement's x
+  mirror.
+- **The 16:9 window.** Unless `+0xf9c7` or `g_PhyreScene3D` is set, the
+  pass translates the projection by (`+0xfa34`, `+0xfa38`) and squeezes
+  it as `PhyreScene_GetScreenAdjustedView_00651650` does
+  (`docs/formats/render.md`, round 20): y x 4/3, then moved by
+  `d = 1/3 - 2 (+0xf9bc + +0xf9c0)`. So 336 of the 448 rows show, 16:9
+  once the PS2's 7/6-wide pixels are taken, and the top row shown is
+  `112 - 336 (+0xf9bc + +0xf9c0)`: the game pans a 16:9 window over the
+  picture.
+  `+0xf9bc` follows the player's height on the screen
+  (`PhyreScene_getChaPos` `0x0065d860`), clamped to 0.035..0.295 (the
+  `.rdata` constants `0x00b3eb40`, `0x00b43d00`), and is 0.035 while
+  `+0xf9c4` is clear (`PhyreScene_change2DSceneNum(1)` sets it). In the
+  `kami0100-a` capture it is 0.275, which shows PS2 rows 19.6..355.6.
+  The ffx-remix notes also read 0.285 and 0.2 on a few events and
+  `+0xf9c0` = 0.23 on level `0xec1`, -0.01 on `0xc58`; those are not
+  re-traced here.
+- **Depth and order.** The layers' vertex shader
+  (`phyreprerenderedshader`, all five variants the maps use) takes a
+  position as `(x, y, -10 z, 1)` (`mul r0.xyz, v0.xyz, (1, 1, -10)`). x
+  and y go through `WorldViewProjection` (the layer camera), but the
+  output depth comes from rows 2 and 3 of `scene.Projection`, the
+  **main** camera's projection (near 1, far 65536, the field camera's
+  field of view). So a layer gets the field camera's depth at 10 times
+  its file depth, on the same scale as the characters drawn after it,
+  and the depth test (`LESS_EQUAL`; cut-outs write depth, blended layers
+  do not) draws the layers in file-depth order, nearer over farther,
+  whatever the view. The layers' world bounds sit at z -10 x depth, not
+  at the mesh's z, which matters for anything that culls or picks them.
+- **Scenes.** A map's `YNSC` scenes are alternative pictures of the same
+  room (`kami0100`: two scenes of 11 layers each). After `rcbgLoadBin`,
+  `Yn_PreBgSetData` (`0x0091aa60`) calls `rcbgPreSetSceneNo(0)`
+  (`0x009217e0`): it sets scene 0's camera (`rcbgSceneSetMatrix`) and,
+  through `graphicChangeSceneNum` and `PhyreScene_change2DSceneNum`
+  (`0x006587d0`), shows only the layers whose name holds `scene0`. So a
+  map **starts on scene 0** and shows one scene at a time. Scripts
+  change it later (`yiSetPreBgPage` `0x0090a6f0` → `Yn_PreBgChangeStage`
+  `0x0091a0d0`). This is census failure 1's `kami0100` case above.
+
+With these rules ffx-remix's offline frame of `kami0100` (the start
+scene, the layer camera, the capture's bias) matches the game's
+screenshot of `kami0100-a` to the pixel: mean difference 5.05/255,
+median 0, 7.8% of pixels off by more than 8 (characters, the minimap,
+objects on the counter, post-processing).
+
+### Map cameras in the files
+
+A map's starting camera is in one of two places.
+
+- **The `YNSC` camera block** (2D maps). After a scene's layers: eye,
+  look-at and up (16 bytes each), the field of view in degrees (`f32`)
+  and a y offset (`i32`). The roll (`+0xac` of the scene in memory) is
+  not in the file. The values are field units before the scene's `+0xf4`
+  scale (10, `rcbgSceneInit`). **79 maps** have one or more blocks with
+  a field of view (54 one, 11 two, 9 three, 3 four, 2 five; `kami0100`
+  two, 43.52 degrees): 51 maps of 2D layers only and 28 with a 3D model
+  too. Other 3D maps have none or a zeroed one. `rcbgPreSetSceneNo(0)`
+  starts on scene 0's block. The block is the main (field) camera, the
+  one the characters are drawn with; the layers themselves are drawn
+  with the layer camera above. In 3D, ffx-remix's reading is: eye and
+  target x 10 (`rcbgSetViewMatrix`, `rcbgScaleVector`) with x and y
+  negated (as `graphicCameraSetWorldMatrix` turns the PS2 view), up with
+  x and y negated, vertical field of view `2 atan(0.75 tan(fov / 2))`
+  (the `kami0100-a` main camera's projection y, 3.34032, agrees), and
+  the y offset as a shift of the screen centre by that many of 448 rows
+  (`rcbgSetProjectionMatrixSub`). That reading is **not checked against
+  a capture** of any of the 28 3D maps, and how the PC renderer uses the
+  y offset is open.
+- **The event script's camera worker** (3D maps). `AtelRequestMapCamera`
+  (`0x0086ed80`) signals the camera worker (script block `+0x18`) with
+  the camera entry of the current entrance's record (`+6`; the record
+  also holds the yaw at `+8` and the position at `+0xc..+0x14`,
+  `docs/formats/script.md`). When that entry's straight-line start puts
+  the reference on the player (`Native_CamRefSetTarget`, `0x6027`:
+  target, bone, y offset) or on a point (`Native_CamRefSetPos`,
+  `0x6020`), the eye around it (`Native_CamSetPolar`, `0x6004`: theta,
+  phi in degrees, length) and the zoom (`Native_CamSetScreenDepth`,
+  `0x603b`), the follow camera can be read without running the game. On
+  `cdsp0000` (camera worker 27, entry 6) the `cdsp0000-a` capture's
+  camera has exactly the script's angles (-116.33, -10.33) and length
+  (88.72), and a field of view of 46.10 degrees for depth 564, which is
+  `2 atan(240 / depth)`; the 240 is fitted to this capture, not traced.
+  The eye is `target + length (cos phi cos theta, sin phi, cos phi sin
+  theta)` in field units, then `(-x, -y, z)` into the world. **29 field
+  maps** have such an entry for entrance 0 (12 of the 177 maps with only
+  a 3D model); 10 of them also have a `YNSC` block, so **19** get their
+  starting camera only from the script. The other camera entries use
+  fixed eyes (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes
+  are not checked, and views built from them looked wrong, e.g.
+  `mihn0600` upside down), eye rails (`0x6006`-`0x6008`, 64 maps,
+  meaning unknown) or focus lists over script data (about 100 maps).
+
+### Script placements at map entry
+
+Map objects that a script binds and moves are placed by the event script
+at map entry, not by the model file: in the file they sit at the origin.
+
+- A worker binds itself to a map group (`Native_0004_WorkerSetType4`:
+  `+0xa8` the group, `+0xaa` 4) or a display object
+  (`Native_0197_WorkerAttachDobj`: `+0xa8` the object, `+0xaa` 5) in its
+  init entry (entry 0), then sets a position (`Native_SetPos_0126`) and
+  angles (`Native_SetPitch` `0x0096` into position block `+0x30`,
+  `Native_SetYaw` `0x0095` `+0x34`, `Native_0183_StopTurnSetAngle38`
+  `+0x38`).
+- `AtelSetBindObject` (`0x0086f4c0`) hands them to `yiSetRotTransGroup`
+  (`0x0090a830`, kind 4) or `yiSetRotTransDObj` (`0x0090a750`, kind 5),
+  which reach `PhyreScene_setObjectTranslation` and
+  `PhyreScene_setObjectRotation` (`0x0066e3e0`, `0x0066db00`;
+  `docs/formats/render.md`, "Object translation/rotation"). Every mesh
+  of the object gets the translation `(-x, -y, z)` and 10 x the turns;
+  the file's node world is dropped.
+- The PC model's `PMeshInstance` has the class fields `m_objID` (the
+  object a script names) and `m_RotType` (a turn order). ffx-remix uses
+  `m_RotType` as the `order` argument of `setObjectRotation` (0 z y x
+  ... 5 x y z). Turns about one axis are checked against the capture;
+  the order of a product of several turns, and that `m_RotType` equals
+  the DObj's order word (`+0x76`, which `yiSetRotTransDObj` passes), are
+  **not checked**.
+
+Read from straight-line init entries with constant arguments (through
+`ffx-script`'s disassembler), **105 field maps** have such placements:
+554 workers, 427 binding a group and 127 a display object. Positions the
+script computes, entries that branch first, and the motion after entry
+(the workers' loops, the `MAP1` keyframe animations of
+`yiAnimAttachDefault`) are not read that way.
+
+Example, `cdsp0000`: the winch wheel `FBXASC051_0Shape` (`m_groupID` 13,
+`m_objID` 3) is at the origin in the file, and `MAP1` section 1's object
+3 has a zero transform and no default animation. Worker 25's init entry
+binds group 13 (`WorkerSetType4(13)`), then `SetPos(0, -12.8, 196.7)`
+and `SetYaw(0)`; its entry 1 loops `TurnSetPitch`. In the `cdsp0000-a`
+capture the wheel's world translation is `(0, 12.8, 196.7)`, turning
+about x. The hatch (`FBXASC053_0Shape`, worker 22) and the crane arm
+(`FBXASC057_0Shape`, worker 23) get the capture's translations the same
+way, and `FBXASC056_0Shape` (worker 24) the x = +123.7 of R2a's answer
+to Q3 in `docs/formats/scene.md`. `cdsp0200` has the same wheel
+(`FBXASC0490_0Shape`).
 
 ## Notes for docs/formats/scene.md
 

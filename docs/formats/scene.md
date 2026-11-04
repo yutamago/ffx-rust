@@ -460,9 +460,17 @@ and derives the matrices.
    | Instance | Writes per update | Writer |
    |---|---|---|
    | slots 0 and 1 (DObj kind 1, `FBXASC0491/0492`, swaying) | 1 | `setObjectRotation` (store before `0x0066e369`) |
-   | slot 22 (the crane, object id 3) | 2 | `setObjectRotation` (`0x0066e357`) and `setObjectTranslation` (`0x0066e47c`) |
+   | slot 22 (object id 3: the winch wheel `FBXASC051_0Shape`, not the crane; corrected below) | 2 | `setObjectRotation` (`0x0066e357`) and `setObjectTranslation` (`0x0066e47c`) |
    | slot 2 (a common one) | 0 | none |
    | Besaid slots 7-9 | 2 | both (`0x0066e34e`, `0x0066e476`) |
+
+   **Correction (ffx-remix M3, `docs/formats/scene-maps.md`, "Script
+   placements at map entry").** Object id 3 on `cdsp00` is the salvage
+   ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3, `m_groupID` 13),
+   not a crane; the crane arm is `FBXASC057_0Shape` (worker 23). Event
+   script worker 25 binds the wheel's group, places it at map entry and
+   keeps turning it about x in its loop, which fits the two writers on
+   it every update.
 
    Every write came from the main thread. So the Worlds are game state that
    moves every frame for the DObjs and is fixed at load for everything

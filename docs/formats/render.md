@@ -488,6 +488,9 @@ shown, `+1` group (signed byte), `+2` id (signed `i16`), `+4` the mesh),
 `PhyreScene_show2DLayer`/`hide2DLayer(id)` (`0x0066f2f0`/`0x0065f050`)
 set the first matching entry and its mesh's draw pointer (`+0x1c` of
 the mesh's `+0x1c`: the mesh, or 0).
+The camera the layers are drawn with (`+0x7e0`), their depth and the
+16:9 window: `docs/formats/scene-maps.md`, "How the game draws the 2D
+layers".
 
 `graphicConvertScreenCoords(x, y, *fx, *fy)` (`0x0063de10`) maps PS2
 screen units to the 1920x1080 frame: `x * 3.75`, `y * 2.5961537`.

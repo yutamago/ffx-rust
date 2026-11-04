@@ -521,7 +521,9 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
   transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
   scene, `YNGM` a model replacing the last one of scene `+0xa`, `YNED`
-  the end. Then `rcbgPreSetSceneNo(0)`.
+  the end. Then `rcbgPreSetSceneNo(0)`. The `YNSC` layer record and
+  camera block, and how the PC draws the layers:
+  `docs/formats/scene-maps.md`, "Map entry state".
 - GS memory for image layers (`rcbgSceneChkSortLayer`): each layer with
   flag 0x10 gets its image page at `+0x34` (64-word units, the 128x64
   rounded size; past `0x68000` words the images move to page `0x2f00`
