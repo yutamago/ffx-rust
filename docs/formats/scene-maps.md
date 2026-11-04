@@ -354,11 +354,15 @@ at `+0x18` and `+0x1c`).
 - **The pass.** `PhyreScene_DrawNonUIPrerenderScene` (`0x006507d0`;
   port: `draw_non_ui_prerender_scene` in
   `crates/ffx-prender/src/h3_glue43.rs`) renders the prerender world
-  (scene `+0x8c`, the 2D model's instances) with camera `+0x7e0`, before
-  the 3D world: `preOpaque`, then `preTransparentATC`, or
+  (scene `+0x8c`, the 2D model's instances) with camera `+0x7e0`:
+  `preOpaque`, then `preTransparentATC`, or
   `preTransparent` on four maps (`PLAIN_TRANSPARENT_MAPS`: `0xa0`,
   `0xa1`, `0x101`, `0x16c`). Then it puts camera `+0xdc` back on the
-  renderer.
+  renderer. `PhyreScene_render` (`0x00668930`, port in
+  `crates/ffx-prender/src/h3e_scene.rs`) calls it, with the 2D level
+  loaded (`+0x93c`), before `Draw3DWorld` when `+0xd4` (map alpha fast)
+  is set, and after it when `+0xd4` is clear, followed then by world
+  `+0xbc`'s `Transparent` pass on shadow solution 0.
 - **The layer camera.** `PhyreScene_initScene` (`0x0065f450`; port:
   `init_scene` in `crates/ffx-prender/src/h3_glue59.rs`) sets up camera
   `+0x7e0`: aspect `0x3f924925` (8/7), near 0.001 (`0x3a83126f`), the
@@ -386,8 +390,11 @@ at `+0x18` and `+0x1c`).
   16:9 window over the picture. `b` follows the player's height on
   the screen (`PhyreScene_getChaPos` `0x0065d860`), clamped to
   0.035..0.295 (the `.rdata` constants `0x00b3eb40`, `0x00b43d00`), with
-  fixed values on a few events (`ffx.sym`), and is 0.035 while `+0xf9c4`
-  is clear (`PhyreScene_change2DSceneNum(1)` sets it). In the
+  fixed values on a few events (port:
+  `crates/ffx-prender/src/h3_glue27.rs`), and is 0.035 under `g_PhyreScene3D` or while `+0xf9c4` is clear (set
+  by the scene's constructor and by `PhyreScene_change2DSceneNum(1)`;
+  cleared by the soft reset and by loading a `znkd12` map or level
+  `0x220`). In the
   `kami0100-a` capture it is 0.275, which shows PS2 rows 19.6..355.6.
 - **Depth and order.** The layers' vertex shader
   (`phyreprerenderedshader`, all five variants the maps use) takes a
@@ -396,7 +403,8 @@ at `+0x18` and `+0x1c`).
   output depth comes from rows 2 and 3 of `scene.Projection`, the
   **main** camera's projection (near 1, far 65536, the field camera's
   field of view). So a layer gets the field camera's depth at 10 times
-  its file depth, on the same scale as the characters drawn after it,
+  its file depth, on the same scale as the characters drawn with that
+  camera,
   and the depth test (`LESS_EQUAL`; cut-outs write depth, blended layers
   do not) draws the layers in file-depth order, nearer over farther,
   whatever the view. A layer is drawn at z = -10 x depth, not at the
@@ -405,9 +413,12 @@ at `+0x18` and `+0x1c`).
 - **Scenes.** A map's `YNSC` scenes are alternative pictures of the same
   room (`kami0100`: two scenes of 11 layers each). After `rcbgLoadBin`,
   `Yn_PreBgSetData` (`0x0091aa60`) calls `rcbgPreSetSceneNo(0)`
-  (`0x009217e0`): it sets scene 0's camera (`rcbgSceneSetMatrix`) and,
-  through `graphicChangeSceneNum` and `PhyreScene_change2DSceneNum`
-  (`0x006587d0`), shows only the layers whose name holds `scene0`. So a
+  (`0x009217e0`; port `rcbg_pre_set_scene_no` in
+  `crates/ffx-field/src/guide.rs`): it makes scene 0 the current one
+  (map `+8`), whose camera block `rcbgSceneProc_00920aa0` sets every
+  frame (`rcbgSceneSetMatrix`), and, through `graphicChangeSceneNum` and
+  `PhyreScene_change2DSceneNum` (`0x006587d0`), shows only the layers
+  whose name holds `scene0`. So a
   map **starts on scene 0** and shows one scene at a time. Scripts
   change it later (`yiSetPreBgPage` `0x0090a6f0` → `Yn_PreBgChangeStage`
   `0x0091a0d0`). This is census failure 1's `kami0100` case above.
@@ -429,18 +440,22 @@ A map's starting camera is in one of two places.
   scale (10, `rcbgSceneInit`). **79 maps** have one or more blocks with
   a field of view (54 one, 11 two, 9 three, 3 four, 2 five; `kami0100`
   two, 43.52 degrees): 51 maps of 2D layers only and 28 with a 3D model
-  too. Other 3D maps have none or a zeroed one. `rcbgPreSetSceneNo(0)`
-  starts on scene 0's block. The block is the main (field) camera, the
-  one the characters are drawn with; the layers themselves are drawn
-  with the layer camera above. In 3D, ffx-remix's reading is: eye and
-  target x 10 (`rcbgSetViewMatrix`, `rcbgScaleVector`) with x and y
-  negated (as `graphicCameraSetWorldMatrix` turns the PS2 view), up with
-  x and y negated, vertical field of view `2 atan(0.75 tan(fov / 2))`
-  (the `kami0100-a` main camera's projection y, 3.34032, agrees), and
-  the y offset as a shift of the screen centre by that many of 448 rows
-  (`rcbgSetProjectionMatrixSub`). That reading is **not checked against
-  a capture** of any of the 28 3D maps, and how the PC renderer uses the
-  y offset is open.
+  too. Other 3D maps have none or a zeroed one. In memory the block is
+  the scene's `+0x64` (y offset), `+0x68` (eye), `+0x78` (look-at),
+  `+0x88` (up) and `+0xa8` (field of view)
+  (`crates/ffx-field/src/camera.rs`, `mod view`). The map starts on scene 0's block (`rcbgPreSetSceneNo(0)`,
+  above). The block is the main (field) camera, the one the characters
+  are drawn with; the layers themselves are drawn with the layer camera
+  above. `rcbgSceneSetMatrix` (`0x00920c00`, port in `camera.rs`) gives
+  the renderer the vertical field of view `2 atan(448 / (2 sy) /
+  depth)`, which is `2 atan(0.75 tan(fov / 2))` (the `kami0100-a` main
+  camera's projection y, 3.34032, agrees), and moves the screen centre
+  by the y offset (`rcbgSetProjectionMatrixSub`). In the 3D world,
+  ffx-remix takes the eye and target x 10 (`rcbgSetViewMatrix`,
+  `rcbgScaleVector`) with x and y negated (as
+  `graphicCameraSetWorldMatrix` turns the PS2 view), and up with x and y
+  negated. That conversion is **not checked against a capture** of any
+  of the 28 3D maps, and how the PC renderer uses the y offset is open.
 - **The event script's camera worker** (3D maps). `AtelRequestMapCamera`
   (`0x0086ed80`) signals the camera worker (script block `+0x18`) with
   the camera entry of the current entrance's record (`+6`; the record

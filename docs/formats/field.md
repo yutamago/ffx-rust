@@ -517,7 +517,7 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
   `rcbgChkId` table, `+4` the length in 16-byte units, `+0xa` a scene
   index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
-  scene (`rcbgSceneLoad`: layers, colours, `rcbgSceneChkLayers` /
+  scene (`rcbgSceneLoad`: layers, the camera block, `rcbgSceneChkLayers` /
   `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
   transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
   scene, `YNGM` a model replacing the last one of scene `+0xa`, `YNED`
