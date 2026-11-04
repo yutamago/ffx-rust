@@ -390,8 +390,11 @@ at `+0x18` and `+0x1c`).
   taken, and the top row shown is `112 - 336 b`: the game pans a 16:9
   window over the picture. `b` follows the player's height on the screen
   (`PhyreScene_getChaPos` `0x0065d860`), clamped to 0.035..0.295 (the
-  `.rdata` constants `0x00b3eb40`, `0x00b43d00`), with fixed values on a
-  few events (port: `crates/ffx-prender/src/h3_glue27.rs`), and is 0.035
+  `.rdata` constants `0x00b3eb40`, `0x00b43d00`; then 0 in battle scene
+  `0x2050000`, and levels `0x5c8` and `0x2ed` add `+0xfa38`), with fixed
+  values on a few events and levels (port:
+  `crates/ffx-prender/src/h3_glue27.rs`, `scene_get_cha_pos`), and is
+  0.035
   under `g_PhyreScene3D` or while `+0xf9c4` is clear (set by the scene's
   constructor and by `PhyreScene_change2DSceneNum(1)`; cleared by the
   soft reset and by loading a `znkd12` map or level `0x220`). In the
@@ -404,9 +407,12 @@ at `+0x18` and `+0x1c`).
   **main** camera's projection (near 1, far 65536, the field camera's
   field of view). So a layer gets the field camera's depth at 10 times
   its file depth, on the same scale as the characters drawn with that
-  camera, and the depth test (`LESS_EQUAL`; cut-outs write depth,
-  blended layers do not) draws the layers in file-depth order, nearer
-  over farther, whatever the view. A layer is drawn at z = -10 x depth,
+  camera. With the depth test (`LESS_EQUAL`), layers that write depth
+  (the cut-outs of `preTransparentATC`) cover each other in file-depth
+  order, nearer over farther, whatever the view. Blended layers
+  (`preTransparent`, the four maps above) write no depth, so among
+  themselves the pass's draw order decides; that order was not
+  checked. A layer is drawn at z = -10 x depth,
   not at the mesh's z where its file bounds are: anything that culls or
   picks layers has to apply the same scale.
 - **Scenes.** A map's `YNSC` scenes are alternative pictures of the same
@@ -442,7 +448,9 @@ A map's starting camera is in one of two places.
   too. Other 3D maps have none or a zeroed one. In memory the block is
   the scene's `+0x64` (y offset), `+0x68` (eye), `+0x78` (look-at),
   `+0x88` (up) and `+0xa8` (field of view)
-  (`crates/ffx-field/src/camera.rs`, `mod view`). The map starts on
+  (`crates/ffx-field/src/camera.rs`, `mod view`; `docs/formats/field.md`,
+  "Map camera, ID-map guide model, swizzle, map reads (round 9)"). The
+  map starts on
   scene 0's block (`rcbgPreSetSceneNo(0)`, above). The block is the main
   (field) camera, the one the characters are drawn with; the layers
   themselves are drawn with the layer camera above. `rcbgSceneSetMatrix`
@@ -484,7 +492,9 @@ A map's starting camera is in one of two places.
 ### Script placements at map entry
 
 Map objects that a script binds and moves are placed by the event script
-at map entry, not by the model file: in the file they sit at the origin.
+at map entry, not by the model file. On `cdsp0000` they sit at the origin
+in the file; the file worlds of the other maps' bound objects were not
+counted.
 
 - A worker binds itself to a map group (`Native_0004_WorkerSetType4`:
   `+0xa8` the group, `+0xaa` 4) or a display object
