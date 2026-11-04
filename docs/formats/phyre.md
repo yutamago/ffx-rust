@@ -648,6 +648,28 @@ ffx-rust's own hook replaces `Phyre_PSerialization_PStreamFile_ctor`
 loader hooks, so with the hook's ports on the loader's files are not
 seen; these runs used `FFX_HOOK_ONLY=none`.
 
+ffx-remix's pack loader serves replacements the same way from a hook of
+`0x00607bc0` of its own (ffx-remix `docs/pack-format.md`, "The runtime's
+pack loader"; live runs of 2026-11-04 on `bsvr0200`'s rug,
+`map/bsvr/bsvr02/tex/d3d11/15872_20_000_000_4_256_256.dds.phyre`, 1024x1024
+`DXT1`, 11 levels). What it saw:
+
+- **Paths at the hook.** Under Fahrenheit, `PStreamFile_ctor` gets
+  texture paths such as
+  `/FFX_Data/GameData/PS3Data/map/bsvr/bsvr02/tex/D3D11/<n>.dds.phyre`:
+  mixed case, one leading `/` and no `../../..` stream prefix. A hook
+  that matches archive paths (lower case, no leading `/`) has to
+  normalise them first.
+- **The quality drop applies to a replacement too.** At `TQ_LOW` from
+  the start, a served 2048x2048 `DXT5` with 12 levels was created at
+  512x512 with 10 levels (two top levels dropped, as above), where the
+  probe's other runs created it at 2048x2048 with 12 levels.
+- **Reloads.** A `TextureQuality` change while the game runs reopens
+  every registered texture file through the same function with the
+  same path, on the main thread (`docs/formats/scene-maps.md`, "Q1:
+  texture quality"); the replacement was served again and stayed, with
+  its lower levels at `TQ_MEDIUM` and `TQ_LOW`.
+
 ### The big-endian textures
 
 The 30 textures with a big-endian PS3 header (`"PHYR"`, platform GCM) are

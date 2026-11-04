@@ -132,7 +132,22 @@ the index of the value in that key's table (`g_SettingsValueStrings`
 `0x00c94f00`). It is stored at `+0x1340`, and when it changes every
 texture file registered at `+0x1344` is reloaded.
 `Phyre_PFramework_PApplication_frame` (`0x00627bcc`) calls it again when
-the setting changes.
+the application asks for it: the byte at `*g_PhyreApplication`
+(`0x00cc9cd8`) `+0x15` is the pending flag the options change sets, and
+the frame then passes `g_Settings +0x34` to it under the render lock and
+clears the flag (port `crates/ffx-prender/src/p6_appframe.rs`).
+**Writing `g_Settings` (`*0x022fb504`) `+0x34` alone changes nothing**
+until the pending byte is set to 1 as well; the next frame applies it
+(ffx-remix's live check, `tools/probe-pack.sh --tq` in that repository,
+2026-11-04: TQ_MEDIUM, TQ_LOW and back to TQ_HIGH in a running game).
+The reload opens every registered texture file again, by the path it
+was first opened with, on the **main thread**:
+`Phyre_PSerialization_PStreamReaderFile_PStreamReaderFile`
+(`0x005766d0`), then `Phyre_PSerialization_PStreamFile_ctor`
+(`0x00607bc0`), where the map's cluster loads opened it on the asset
+loader thread. A hook of `0x00607bc0` that serves a file therefore
+serves its reloads too (`docs/formats/phyre.md`, "Changing size, format
+and mip count").
 
 The function that drops the levels is
 **`Phyre_PBinary_loadClusterTextures` (`0x00465ab0`)**, called through
