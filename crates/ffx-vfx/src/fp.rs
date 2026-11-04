@@ -1253,9 +1253,10 @@ pub mod bridge {
     /// `g_CurrentMapNo` (`0x012fbc40`).
     const MAP_NO: Global<u32> = Global::new(0x012f_bc40);
 
-    /// Whether `pppFpLoop` runs effect `i` of a centred effect (`u16 +0x44`
-    /// 0) that `pppCheckViewCylinder` sees: on map 0x136 all but 2, 6 and
-    /// 10; on map 0x31 only effect 0x26, while `getScenerioFlag()` is at
+    /// Whether `pppFpLoop` still runs effect `i`, an entry of ID 0 (`u16
+    /// +0x44`) that `pppCheckViewCylinder` puts out of view (a non-zero
+    /// result; the local `seen` in [`ppp_fp_loop`] holds it): on map 0x136
+    /// all but 2, 6 and 10; on map 0x31 only effect 0x26, while `getScenerioFlag()` is at
     /// most 0x2c; on map 0x176 only effect 0xd; elsewhere none.
     fn runs_in_view<M: Mem>(
         mem: &mut M,
@@ -1294,10 +1295,11 @@ pub mod bridge {
     /// current, both point-light words cleared. Then each effect `i` of
     /// [`DATA`] (the count re-read every pass): hidden (display record
     /// bit 0x10) it gets `hideDisplayOffParticle(run)`; else [`YIQ_MODE`]
-    /// is `i` and a started one (counter not -0x1000) runs, unless it is
-    /// centred (`u16 +0x44` 0), inside the view cylinder
-    /// (`pppCheckViewCylinder(camera, run + 0x40, x, y, z)` with the run's
-    /// floats `+0x20..+0x28`) and not let through by [`runs_in_view`].
+    /// is `i` and a started one (counter not -0x1000) runs, unless it has
+    /// ID 0 (`u16 +0x44`), lies out of view (`pppCheckViewCylinder(camera,
+    /// run + 0x40, far, radius, height)` non-zero, with the run's floats
+    /// `+0x20..+0x28`; a `far` below 0 turns the test off) and is not let
+    /// through by [`runs_in_view`].
     /// Running: [`CURRENT_ID`] is its `+0x44`; a non-negative counter
     /// counts down, and on passing below 0 the objects are freed and the
     /// part restarted with `pppStartPart(run, 0x1000, p, 1)`, `p` being

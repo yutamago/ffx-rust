@@ -318,8 +318,10 @@ game does (its M3 review; `native/crates/ffx-remix-native/src/scene.rs`
 and `event.rs`, the notes in `~/ffx-work/ffx-remix/m3/review1/`). The
 facts below come from FFX.exe functions already named in `ffx.sym`, the
 map files, and two captures of the original (`kami0100-a`,
-`cdsp0000-a`). It covers the 2D layers, the map cameras and the script
-placements. Counts are over the archive's 329 field maps. What was not
+`cdsp0000-a`). It covers the 2D layers, the map cameras, the script
+placements and the map effects' table. Counts are over the archive's
+329 field maps, except the effects', which are over its 433 `MAP1` files
+(`mapout.vpa`; several events can share one map folder). What was not
 checked is marked so.
 
 ### The `YNSC` layer record
@@ -571,10 +573,12 @@ the same wheel (`FBXASC0490_0Shape`).
 
 ### Map effects: the field-program table
 
-A map's own particle effects (the light beams of `cdsp0000`'s tower
-lamps, save-sphere glows, smoke) are **field programs**: entries of the
-effect table in section 10 of the map's `MAP1` file (`mapout.vpa`,
-section offsets at `+0x10 + 4i`). `yiMapReadMaster` (`0x009093b0`)
+A map's own particle effects (on the Salvage Ship's deck, the light
+beams of the tower lamps and the save sphere's glow) are **field
+programs**: entries of the effect table in section 10 of the map
+folder's `MAP1` file (`map/<area>/<map>/bin/mapout.vpa`, section
+offsets at `+0x10 + 4i`). The examples below are the folder `cdsp00`,
+whose event is `cdsp0000`. `yiMapReadMaster` (`0x009093b0`)
 hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
 `ppp_set_fp_pdt` in `crates/ffx-vfx/src/fp.rs`), which installs it as
 `g_FpData` and relocates it with `pppInitData` (`0x00711fa0`,
@@ -583,7 +587,7 @@ hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
 | Offset | Type | Field |
 |---|---|---|
 | `+1` | `u8` | blocks of 8 KB for a second heap (0: none) |
-| `+2` | `u8` | packet buffer size class (0 0xc0000, 1 0x100000, 2 0x140000 bytes) |
+| `+2` | `u8` | packet buffer size: 1 0x100000, 2 0x140000, else 0xc0000 bytes |
 | `+4` | `u16` | entry count |
 | `+6` | `u16` | program (part data) count; their offsets at `+0x10` |
 | `+8` | `u16` | count of 0x20-byte records at `+0x14` |
@@ -592,46 +596,53 @@ hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
 | `+0x10..+0x1c` | `u32` | the four tables, offsets from the section start |
 | `+0x20` | | the entries, 0x50 bytes each |
 
+The second heap and the packet buffer are allocated once, by the first
+table that asks for them; later tables' `+1` and `+2` are not read
+again.
+
 An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 `+0x40..+0x6c`, the part's position, angles and scale that
 `pppSetMatrix` reads):
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | `f32` x 3 | position, field units |
-| `+0x10` | `f32` x 4 | angles (`pppFpSetRotMatrix`) |
-| `+0x20` | `f32` x 4 | scale |
+| `+0` | `f32` x 3 | position, field units (`+0xc` is 1.0 in the data and not read) |
+| `+0x10` | `i32` x 3 | angles, 0x10000 a turn (`pppGetRotMatrix*` through `pppFpSetRotMatrix`; `+0x1c` not read) |
+| `+0x20` | `f32` x 3 | scale (`+0x2c` is 1.0 in the data and not read) |
 | `+0x30` | `i32` | first frame counter: 0 runs from the map load, -0x1000 waits for a script (`pppFpLoop` skips it until `Fp_Restart`) |
 | `+0x34` | `u32` | the program it runs: index into the program list (`+0x10`) |
-| `+0x38..+0x40` | `f32` x 3 | view cylinder (`pppCheckViewCylinder`, only for ID 0) |
-| `+0x44` | `u16` | ID: what `Native_FpRun`, `Native_FpShow` and the `Fp_*` functions match |
+| `+0x38..+0x40` | `f32` x 3 | view cylinder for ID 0: far (below 0: no test), radius, height. `pppCheckViewCylinder` non-zero (out of view) makes `pppFpLoop` skip the entry, but for a few entries of maps 0x136, 0x31 and 0x176 |
+| `+0x44` | `u16` | ID: what `Native_FpRun`, `Native_FpShow`, `Fp_Restart`, `Fp_RestartMode2`, `Fp_End` and `pppFpIDdispOn/Off` match |
 | `+0x46` | `u16` | group (`Fp_RestartGroup`, `Fp_EndGroup`, `pppFpGroupDispOn/Off`) |
 | `+0x4a` | `u8` | draw matrix mode (`pppFpSetDrawMatrix`; 2 faces the camera and sets `g_pppFpWood`) |
 | `+0x4b` | `u8` | turn order (`pppFpSetRotMatrix`: 1 XZY ... 5 ZYX, else XYZ) |
 
-The 0x20-byte records at `+0x14` (`pppInitData` relocates their
-`+0x14..+0x1c`) carry a GS `TEX0` at `+0xc` (`TBP0`, `PSM`, `TW`, `TH`)
-for the sprites that have a texture. Their `TBP0` and `PSM` are the
+Some of the 0x20-byte records at `+0x14` (`pppInitData` relocates
+their `+0x14..+0x1c`) carry a GS `TEX0` at `+0xc` (`TBP0`, `PSM`, `TW`,
+`TH`). Their `TBP0` and `PSM` are the
 first two fields of the map's HD effect textures,
 `map/<area>/<map>/fp/tex/d3d11/<TBP>_<PSM>_<X>_<Y>_<W>_<H>.dds.phyre`
 (`docs/formats/ps2-textures.md`, "Effect textures"; `fp/tex/texlist.txt`
-lists them). On `cdsp00` 9 of the 14 records name 5 of the 7 files. How
+lists them). On `cdsp00` 9 of the 14 records carry a `TEX0`, naming 5
+of the 7 files. How
 a program refers to a record was not read, so which textures an entry
 draws with is open.
 
 **On the archive** (433 `mapout.vpa`): 272 have entries, 5,630 in all
 (at most 113 in one table). 3,768 run from the load and 1,862 wait for a
 script; 265 tables start at least one at load. The ID is not unique:
-2,750 entries have ID 0 (the view cylinder's case), and 42 non-zero IDs
-repeat within a table. 95 tables use groups.
+2,750 entries have ID 0 (2,179 of them with the view test on), and 21
+non-zero IDs repeat within their table (12 tables, 63 entries;
+`stbv01` uses IDs 20 and 30 ten times each). 95 tables use groups.
 
 **Position.** As for the script placements above, an entry's world
 place is `(-x, -y, z)` of its position: on `cdsp00` the six tower lamps'
 twelve entries (IDs 11-16 with programs 3-8, and 21-26 all running
-program 9) land on the lamps of the offline map, and entry 0 (ID 1, at
-the origin) is bound to the save sphere by the event script's worker 21
-(`Native_FpBind`). IDs 2-6 wait for the script (cutscenes). Checked on
-that map only, by eye.
+program 9) land on the lamps of the offline map. Entry 0 (ID 1, at the
+origin) is the save sphere's glow: worker 21 of the `cdsp0000` event
+script binds it to itself (read from the script's disassembly, not
+traced in the game). IDs 2-6 wait for a script. The position was
+checked on that map only, by eye.
 
 ## Notes for docs/formats/scene.md
 

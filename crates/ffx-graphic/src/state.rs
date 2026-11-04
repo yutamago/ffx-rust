@@ -849,8 +849,9 @@ pub mod bridge {
     // ---- 2D layers ----
 
     /// `PhyreScene_show2DLayer(this, id)` and `PhyreScene_hide2DLayer`:
-    /// in a 3D scene with 2D layers (`+0x1128`), the first layer of the
-    /// current group (`+0x11d8`) with that id gets its shown byte, and its
+    /// with the 2D level loaded (`+0x93c`) and 2D layers (`+0x1128`), the
+    /// first layer of the current group (`+0x11d8`) with that id gets its
+    /// shown byte, and its
     /// mesh's draw pointer (`+0x1c` of the mesh's `+0x1c`) is set to the
     /// mesh (shown) or cleared.
     pub fn scene_set_2d_layer_shown(m: &mut impl Mem, scene: u32, id: u32, shown: bool) {

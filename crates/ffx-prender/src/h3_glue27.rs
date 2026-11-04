@@ -320,11 +320,11 @@ pub mod bridge {
     /// give `0x00b43cfc`; 0x226d on map 0x133 gives `0x00b412c4`; 0x159c
     /// with scenario 0x7e4 and `0x0193bf68` set, `+0xf9c4` clear (set by
     /// the constructor and `PhyreScene_change2DSceneNum(1)`) or a 3D scene
-    /// (`g_PhyreScene3D` set) give `0x00b3eb40`. Else `p` is projected and `(h / 2 -
-    /// (h >> 3) - y) / h` (the window height `+0x270`, each term rounded to
-    /// `f32` through `p`'s slot) is clamped to `[0x00b3eb40, 0x00b43d00]`,
-    /// 0 in battle scene 0x2050000, and the levels 0x5c8 and 0x2ed add
-    /// `+0xfa38`.
+    /// (`g_PhyreScene3D` set) give `0x00b3eb40`. Else `p` is projected and
+    /// `(h / 2 - (h >> 3) - y) / h` (the window height `+0x270`, each term
+    /// rounded to `f32` through `p`'s slot) is clamped to `[0x00b3eb40,
+    /// 0x00b43d00]`, 0 in battle scene 0x2050000, and the levels 0x5c8 and
+    /// 0x2ed add `+0xfa38`.
     pub fn scene_get_cha_pos(h: &mut impl Host, ebp: u32, slots: u32, this: u32, p: u32) {
         let out = this + 0xf9bc;
         let level: u32 = h.read(this + 0xfaf4);
