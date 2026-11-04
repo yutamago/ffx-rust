@@ -436,7 +436,9 @@ transfer (a transfer is 32 bytes plus count x entry size, those two at
   whose name holds `scene0`. So a map **starts on scene 0** and shows
   one scene at a time. Scripts change it later (`yiSetPreBgPage`
   `0x0090a6f0` → `Yn_PreBgChangeStage` `0x0091a0d0`). This is census
-  failure 1's `kami0100` case above.
+  failure 1's `kami0100` case above: the start state comes from
+  `change2DSceneNum`; `PhyreScene_show2DLayer` shows or hides single
+  layers.
 
 With these rules ffx-remix's offline frame of `kami0100` (the start
 scene, the layer camera, the capture's bias) lines up with the game's
@@ -480,34 +482,36 @@ A map's starting camera is in one of two places.
   `AtelRequestMapCamera` (`0x0086ed80`) signals the camera worker
   (script block `+0x18`) with the camera entry of the current entrance's
   record (`+6`; the record also holds the yaw at `+8` and the position
-  at `+0xc..+0x14`, `docs/formats/script.md`). When that entry's
-  straight-line start puts the reference on the player
-  (`Native_CamRefSetTarget`, `0x6027`: target, a bone (uncertain in
-  `ffx.sym`), y offset) or on a point (`Native_CamRefSetPos`, `0x6020`),
-  the eye around it (`Native_CamSetPolar`, `0x6004`: theta, phi in
-  degrees, length) and the zoom (`Native_CamSetScreenDepth`, `0x603b`),
-  the follow camera can be read without running the game. On `cdsp0000`
-  (camera worker 27, entry 6) the `cdsp0000-a` capture's camera has
-  exactly the script's angles (-116.33, -10.33) and length (88.72), and
-  a field of view of 46.10 degrees for depth 564. That is `Cam_Apply`'s
-  (`0x007bc980`, port in `crates/ffx-sg/src/camera.rs`) `2 atan((448 /
-  (2 b)) / depth)` with `b` the screen's y scale, 0.9333 (`render.md`,
-  the aspect ratio), which gives `2 atan(240 / depth)`; other screen
-  scales and `Cam_Apply`'s narrow case were not checked. ffx-remix takes
-  the reference at entrance 0's position plus the y offset; the
-  capture's player stood elsewhere, so the camera's position is not
-  checked, only its angles, length and field of view. The eye is `length
-  (cos phi cos theta, sin phi, cos phi sin theta)` from the target, in
-  field units, then `(-x, -y, z)` into the world. **29 field maps** have
-  such an entry for entrance 0 (12 of the 177 maps with only a 3D
-  model); 10 of them also have a `YNSC` block, so **19** get their
-  starting camera only from the script. On those 10, which of the two
-  cameras the game shows first was not checked. The other camera entries
-  use fixed eyes (`Native_CamSetPos`, `0x6002`, about 30 maps; their
-  axes are not checked, and views built from them looked wrong, e.g.
-  `mihn0600` upside down), the eye set-ups `Native_Cam_6006`-`6008`
-  (kinds 4-6, `docs/formats/script.md`; 64 maps, not read) or focus
-  lists over script data (about 100 maps).
+  at `+0xc..+0x14`: `Native_GetEntranceYaw`, `Native_GetEntranceX/Y/Z`
+  in `ffx.sym`). When that entry's straight-line start puts the
+  reference on the player (`Native_CamRefSetTarget`, `0x6027`: target, a
+  bone (uncertain in `ffx.sym`), y offset) or on a point
+  (`Native_CamRefSetPos`, `0x6020`), the eye around it
+  (`Native_CamSetPolar`, `0x6004`: theta, phi in degrees, length) and
+  the zoom (`Native_CamSetScreenDepth`, `0x603b`), the follow camera can
+  be read without running the game. On `cdsp0000` (camera worker 27,
+  entry 6) the `cdsp0000-a` capture's camera has exactly the script's
+  angles (-116.33, -10.33) and length (88.72), and a field of view of
+  46.10 degrees for depth 564. That is `Cam_Apply`'s (`0x007bc980`, port
+  in `crates/ffx-sg/src/camera.rs`) `2 atan((448 / (2 b)) / depth)` with
+  `b` the screen's y scale. `render.md` (the aspect ratio) reads 0.9333
+  on Besaid, which gives `2 atan(240 / depth)`; the capture's 46.10
+  degrees for depth 564 fits it on `cdsp0000` too; other screen scales
+  and `Cam_Apply`'s narrow case were not checked. ffx-remix takes the
+  reference at entrance 0's position plus the y offset; the capture's
+  player stood elsewhere, so the camera's position is not checked, only
+  its angles, length and field of view. The eye is `length (cos phi cos
+  theta, sin phi, cos phi sin theta)` from the target, in field units,
+  then `(-x, -y, z)` into the world. **29 field maps** have such an
+  entry for entrance 0 (12 of the 177 maps with only a 3D model); 10 of
+  them also have a `YNSC` block, so **19** get their starting camera
+  only from the script. On those 10, which of the two cameras the game
+  shows first was not checked. The other camera entries use fixed eyes
+  (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes are not
+  checked, and views built from them looked wrong, e.g. `mihn0600`
+  upside down), the eye set-ups `Native_Cam_6006`-`6008` (kinds 4-6,
+  `docs/formats/script.md`; 64 maps, not read) or focus lists over
+  script data (about 100 maps).
 
 ### Script placements at map entry
 
@@ -552,13 +556,14 @@ Example, `cdsp0000`: the winch wheel `FBXASC051_0Shape` (`m_groupID` 13,
 `m_objID` 3) is at the origin in the file, and `MAP1` section 1's object
 3 has a zero transform and no default animation. Worker 25's init entry
 binds group 13 (`WorkerSetType4(13)`), then `SetPos(0, -12.8, 196.7)`
-and `SetYaw(0)`; its entry 1 loops `TurnSetPitch`. In the `cdsp0000-a`
-capture the wheel's world translation is `(0, 12.8, 196.7)`, turning
-about x. The hatch (`FBXASC053_0Shape`, worker 22) and the crane arm
-(`FBXASC057_0Shape`, worker 23) get the capture's translations the same
-way, and `FBXASC056_0Shape` (worker 24) the x = +123.7 of R2a's answer
-to Q3 in `docs/formats/scene.md`. `cdsp0200` has the same wheel
-(`FBXASC0490_0Shape`).
+and `SetYaw(0)`; its entry 1 loops a `TurnSetPitch` (which of `0x0029`
+and `0x002a`, `docs/formats/script.md`, was not recorded). In the
+`cdsp0000-a` capture the wheel's world translation is `(0, 12.8,
+196.7)`, turning about x. The hatch (`FBXASC053_0Shape`, worker 22) and
+the crane arm (`FBXASC057_0Shape`, worker 23) get the capture's
+translations the same way, and `FBXASC056_0Shape` (worker 24) the x =
++123.7 of R2a's answer to Q3 in `docs/formats/scene.md`. `cdsp0200` has
+the same wheel (`FBXASC0490_0Shape`).
 
 ## Notes for docs/formats/scene.md
 

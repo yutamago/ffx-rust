@@ -469,8 +469,8 @@ and derives the matrices.
    is the salvage ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3,
    `m_groupID` 13), not a crane; the crane arm is `FBXASC057_0Shape`
    (worker 23). Event script worker 25 binds the wheel's group, places
-   it at map entry and keeps turning it about x in its loop, which fits
-   the two writers on it every update.
+   it at map entry and keeps turning it in its loop (about x in the
+   `cdsp0000-a` capture), which fits the two writers on it every update.
 
    Every write came from the main thread. So the Worlds are game state that
    moves every frame for the DObjs and is fixed at load for everything
