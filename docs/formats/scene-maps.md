@@ -84,8 +84,10 @@ results on every map.
    parts' hidden-at-start bit. On `cdsp0000`, `FBXASC056_0Shape` is the
    only instance with `m_groupID` `0xc`, a lead for Q3. On `kami0100`, the
    `scene1layer0..10Shape` instances do not draw: they are the second 2D
-   layer group, and `scene0layer*` is shown (`PhyreScene_show2DLayer`
-   `0x0066f2f0`, scene `+0x1140`). The builder has to take the hidden
+   layer group, and `scene0layer*` is shown. (Corrected in "Map entry
+   state": the start scene comes from `PhyreScene_change2DSceneNum`;
+   `PhyreScene_show2DLayer` `0x0066f2f0`, scene `+0x1140`, switches
+   single layers.) The builder has to take the hidden
    state from the game (R2a's snapshot: `m_meshInstance` 0, groups,
    layers). The file's flags are not enough.
 2. **`kami0100`: `scene.ViewProjection` is not `Projection . View`** on
@@ -465,19 +467,20 @@ A map's starting camera is in one of two places.
   reads (round 9)"). On a scene with layers the map starts on scene 0's
   block (`rcbgPreSetSceneNo(0)`, above); a scene without layers only
   gets its block set once, as `rcbgSceneLoad` loads it (the last scene
-  loaded wins). Whether the 28 maps with a 3D model have layers in their
-  scenes was not checked. The block is the main (field) camera, the one
-  the characters are drawn with; the layers themselves are drawn with
-  the layer camera above. `rcbgSceneSetMatrix` (`0x00920c00`, port in
-  `camera.rs`) gives the renderer the vertical field of view `2 atan(448
-  / (2 sy) / depth)`, which is `2 atan(0.75 tan(fov / 2))` (the
-  `kami0100-a` main camera's projection y, 3.34032, agrees), and moves
-  the screen centre by the y offset (`rcbgSetProjectionMatrixSub`). In
-  the 3D world, ffx-remix takes the eye and target x 10
-  (`rcbgSetViewMatrix`, `rcbgScaleVector`) with x and y negated (as
-  `graphicCameraSetWorldMatrix` turns the PS2 view), and up with x and y
-  negated. That conversion is **not checked against a capture** of any
-  of the 28 3D maps, and how the PC renderer uses the y offset is open.
+  loaded with a field of view wins). Whether the 28 maps with a 3D model
+  have layers in their scenes was not checked. The block is the main
+  (field) camera, the one the characters are drawn with; the layers
+  themselves are drawn with the layer camera above. `rcbgSceneSetMatrix`
+  (`0x00920c00`, port in `camera.rs`) gives the renderer the vertical
+  field of view `2 atan(448 / (2 sy) / depth)`, which is `2 atan(0.75
+  tan(fov / 2))` (the `kami0100-a` main camera's projection y, 3.34032,
+  agrees), and moves the screen centre by the y offset
+  (`rcbgSetProjectionMatrixSub`). In the 3D world, ffx-remix takes the
+  eye and target x 10 (`rcbgSetViewMatrix`, `rcbgScaleVector`) with x
+  and y negated (as `graphicCameraSetWorldMatrix` turns the PS2 view),
+  and up with x and y negated. That conversion is **not checked against
+  a capture** of any of the 28 3D maps, and how the PC renderer uses the
+  y offset is open.
 - **The event script's camera worker**, on any map that has one.
   `AtelRequestMapCamera` (`0x0086ed80`) signals the camera worker
   (script block `+0x18`) with the camera entry of the current entrance's
@@ -494,19 +497,20 @@ A map's starting camera is in one of two places.
   angles (-116.33, -10.33) and length (88.72), and a field of view of
   46.10 degrees for depth 564. That is `Cam_Apply`'s (`0x007bc980`, port
   in `crates/ffx-sg/src/camera.rs`) `2 atan((448 / (2 b)) / depth)` with
-  `b` the screen's y scale. `render.md` (the aspect ratio) reads 0.9333
-  on Besaid, which gives `2 atan(240 / depth)`; the capture's 46.10
-  degrees for depth 564 fits it on `cdsp0000` too; other screen scales
-  and `Cam_Apply`'s narrow case were not checked. ffx-remix takes the
-  reference at entrance 0's position plus the y offset; the capture's
-  player stood elsewhere, so the camera's position is not checked, only
-  its angles, length and field of view. The eye is `length (cos phi cos
-  theta, sin phi, cos phi sin theta)` from the target, in field units,
-  then `(-x, -y, z)` into the world. **29 field maps** have such an
-  entry for entrance 0 (12 of the 177 maps with only a 3D model); 10 of
-  them also have a `YNSC` block, so **19** get their starting camera
-  only from the script. On those 10, which of the two cameras the game
-  shows first was not checked. The other camera entries use fixed eyes
+  `b` the screen's y scale. `docs/formats/render.md`, "Scene state"
+  (`PhyreScene_setCameraAspectRatio`), reads 0.9333 on Besaid, which
+  gives `2 atan(240 / depth)`; the capture's 46.10 degrees for depth 564
+  fits it on `cdsp0000` too; other screen scales and `Cam_Apply`'s
+  narrow case were not checked. ffx-remix takes the reference at
+  entrance 0's position plus the y offset; the capture's player stood
+  elsewhere, so the camera's position is not checked, only its angles,
+  length and field of view. The eye is `length (cos phi cos theta, sin
+  phi, cos phi sin theta)` from the target, in field units, then `(-x,
+  -y, z)` into the world. **29 field maps** have such an entry for
+  entrance 0 (12 of the 177 maps with only a 3D model); 10 of them also
+  have a `YNSC` block, so **19** get their starting camera only from the
+  script. On those 10, which of the two cameras the game shows first was
+  not checked. The other camera entries use fixed eyes
   (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes are not
   checked, and views built from them looked wrong, e.g. `mihn0600`
   upside down), the eye set-ups `Native_Cam_6006`-`6008` (kinds 4-6,
