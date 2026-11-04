@@ -464,8 +464,8 @@ and derives the matrices.
    | slot 2 (a common one) | 0 | none |
    | Besaid slots 7-9 | 2 | both (`0x0066e34e`, `0x0066e476`) |
 
-   **Correction (ffx-remix M3, `docs/formats/scene-maps.md`, "Script
-   placements at map entry").** Object id 3 on `cdsp00` is the salvage
+   **Correction (ffx-remix M3, `docs/formats/scene-maps.md`, "Map entry
+   state", "Script placements at map entry").** Object id 3 on `cdsp00` is the salvage
    ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3, `m_groupID` 13),
    not a crane; the crane arm is `FBXASC057_0Shape` (worker 23). Event
    script worker 25 binds the wheel's group, places it at map entry and
