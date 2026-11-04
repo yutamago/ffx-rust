@@ -742,7 +742,8 @@ pub mod bridge {
 
     /// `PhyreScene_setCameraFOVy(this, fovy)`: the main camera (`+0xdc`)
     /// and the minimap camera (`+0x654`); with the 2D level loaded (byte
-    /// `+0x93c`, not a 3D flag) fixed angles on levels `0xec1` (both),
+    /// `+0x93c`, not a 3D flag) fixed angles on levels `0xec1` (all
+    /// three cameras: the reflection one below takes the same value),
     /// `0x107` and `0xf48` (the minimap camera); the reflection camera
     /// (`+0x238`) when `+0x10d8c` is 1. Returns the last update's `eax`.
     pub fn scene_set_camera_fovy(h: &mut impl Host, scene: u32, fovy: u32) -> u32 {

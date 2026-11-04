@@ -336,8 +336,8 @@ map files, and two captures of the original (`kami0100-a`,
 `cdsp0000-a`). It covers the 2D layers, the map cameras, the script
 placements and the map effects' table. Counts are over the archive's
 329 field maps, except the effects', which are over its 433 `MAP1` files
-(`mapout.vpa`; several events can share one map folder). What was not
-checked is marked so.
+(`map/<area>/<map>/bin/mapout.vpa`: one per map folder, a different count
+from the field maps'). What was not checked is marked so.
 
 ### The `YNSC` layer record
 
@@ -611,9 +611,11 @@ hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
 | `+0x10..+0x1c` | `u32` | the four tables, offsets from the section start |
 | `+0x20` | | the entries, 0x50 bytes each |
 
-The second heap and the packet buffer are allocated once, by the first
-table that asks for them; later tables' `+1` and `+2` are not read
-again.
+The second heap and the packet buffer are allocated by the first
+`pppSetFpPdt` after `pppFpFree` (`ppp_fp_free`), which frees both when
+a map is torn down (`yiResetObj`, `yi_reset_obj` in
+`crates/ffx-field/src/yi.rs`). A table installed while they are still
+allocated has its `+1` and `+2` ignored.
 
 An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 `+0x40..+0x6c`, the part's position, angles and scale that
@@ -621,7 +623,7 @@ An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | `f32` x 3 | position, field units (`+0xc` is 1.0 in the data and not read) |
+| `+0` | `f32` x 3 | position, field units (`+0xc` not read; 1.0 in the first entry of every table and in all of `cdsp00`'s) |
 | `+0x10` | `i32` x 3 | angles, 0x10000 a turn (`pppGetRotMatrix*` through `pppFpSetRotMatrix`; `+0x1c` not read) |
 | `+0x20` | `f32` x 3 | scale (`+0x2c` is 1.0 in the data and not read) |
 | `+0x30` | `i32` | first frame counter: 0 runs from the map load, -0x1000 waits for a script (`pppFpLoop` skips it until `Fp_Restart`) |

@@ -317,10 +317,11 @@ pub mod bridge {
     /// screen as a fraction (`+0xf9bc`). Fixed values for some events: the
     /// level (`+0xfaf4`) 0x220, 0x11ee with scenario 0x1c7 (while
     /// `0x01325b40` is set), 0x1e8 or 0x1ea, 0x1e63 with scenario 0x194
-    /// give `0x00b43cfc`; 0x226d on map 0x133 gives `0x00b412c4`; 0x159c
-    /// with scenario 0x7e4 and `0x0193bf68` set, `+0xf9c4` clear (set by
-    /// the constructor and `PhyreScene_change2DSceneNum(1)`) or a 3D scene
-    /// (`g_PhyreScene3D` set) give `0x00b3eb40`. Else `p` is projected and
+    /// give `0x00b43cfc`; 0x226d on map 0x133 gives `0x00b412c4`; any of
+    /// level 0x159c with scenario 0x7e4 and `0x0193bf68` set, or
+    /// `+0xf9c4` clear (set by the constructor and
+    /// `PhyreScene_change2DSceneNum(1)`), or a 3D scene (`g_PhyreScene3D`
+    /// set) gives `0x00b3eb40`. Else `p` is projected and
     /// `(h / 2 - (h >> 3) - y) / h` (the window height `+0x270`, each term
     /// rounded to `f32` through `p`'s slot) is clamped to `[0x00b3eb40,
     /// 0x00b43d00]`, 0 in battle scene 0x2050000, and the levels 0x5c8 and

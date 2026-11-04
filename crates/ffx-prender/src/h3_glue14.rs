@@ -200,8 +200,8 @@ pub mod bridge {
 
     /// `FUN_006518c0(scene)` (frame: the cursor at `ebp - 0x28`, the
     /// scene at `ebp - 8`, the object at `ebp - 4`): with a field map
-    /// (`+0x1128`) and its flag `+0x93c`, the map's objects of class
-    /// `0x00c93608` are walked; the one named `GLOBAL_NAME` (its name
+    /// (`+0x1128`) and the 2D level flag `+0x93c`, the map's objects of
+    /// class `0x00c93608` are walked; the one named `GLOBAL_NAME` (its name
     /// pointer `+0xd0`, low bit a tag; the same pointer, or equal text)
     /// becomes the scene's `+0x4f8`. Returns 0.
     pub fn scene_find_global_object(h: &mut impl Host, ebp: u32, scene: u32) -> u32 {
