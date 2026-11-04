@@ -323,19 +323,23 @@ checked is marked so.
 ### The `YNSC` layer record
 
 `rcbgSceneLoad` (`0x0092b5e0`) reads a `YNSC` chunk of `MAP1` section 0
-(`docs/formats/field.md`, "Background files"): the layer count, 12
-bytes, the layers (`rcbgLayerLoad` `0x0092b1a0`), then the scene's
-camera block (below). A layer starts with a 0x90-byte record, which
-`rcbgLayerLoad` copies unchanged into the first 0x90 bytes of the
-0xc0-byte layer in memory (port: `rcbg_layer_load` in
-`crates/ffx-field/src/scene.rs`). The map tool's layer window
-(`rcuiLayerProc` `0x00934470`) names its fields:
+(`docs/formats/field.md`, "Map file reader, background loading, window
+drawing (round 8)", "Background files"): the layer count, 12 bytes, the
+layers (`rcbgLayerLoad` `0x0092b1a0`), then the scene's camera block
+(below). A layer starts with a 0x90-byte record, which `rcbgLayerLoad`
+copies unchanged into the first 0x90 bytes of the 0xc0-byte layer in
+memory (port: `rcbg_layer_load` in `crates/ffx-field/src/scene.rs`). The
+map tool's layer window (`rcuiLayerProc` `0x00934470`) names the flags,
+x, y and depth. Width and height are ffx-remix's reading (`kami0100`'s
+full-screen layers are 512 x 448), and `rcbgSceneChkLayers` compares
+`+8` with 448 (0x1c0).
+
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | `u32` | flags: the tool edits bits 1, 4, 0x10 (an image layer, `rcbgSceneChkSortLayer`), 0x20 and 0x40 |
-| `+4` | `i32` | width, PS2 pixels |
-| `+8` | `i32` | height |
+| `+0` | `u32` | flags: the tool edits the bits 0x1, 0x4, 0x10 (an image layer, `rcbgSceneChkSortLayer`), 0x20 and 0x40 |
+| `+4` | `i32` | width, PS2 pixels (ffx-remix) |
+| `+8` | `i32` | height (ffx-remix) |
 | `+0xc` | `i32` | x on the 512 x 448 PS2 screen |
 | `+0x10` | `i32` | y |
 | `+0x14` | `f32` | depth ("Layer Z" in the tool) |
@@ -343,8 +347,8 @@ camera block (below). A layer starts with a 0x90-byte record, which
 After the record come the frame count (16 bytes), the frames (4 bytes
 each, padded to 16) and their transfer, if any, then 16 bytes (the port
 keeps two of them, at `+0xba` and `+0xbb`, and skips 14) and the image
-transfer (a transfer is 32 bytes plus count x size, the words at `+0x18`
-and `+0x1c`).
+transfer (a transfer is 32 bytes plus count x entry size, those two at
+`+0x18` and `+0x1c` of the transfer in the file).
 
 - **Depth.** For 1,035 of the 1,075 layer instances `+0x14` is the z of
   the layer mesh's vertices in the PC file (`scene<s>layer<l>` in
@@ -481,18 +485,24 @@ A map's starting camera is in one of two places.
   the follow camera can be read without running the game. On `cdsp0000`
   (camera worker 27, entry 6) the `cdsp0000-a` capture's camera has
   exactly the script's angles (-116.33, -10.33) and length (88.72), and
-  a field of view of 46.10 degrees for depth 564, which is `2 atan(240 /
-  depth)`; the 240 is fitted to this capture, not traced. The eye is
+  a field of view of 46.10 degrees for depth 564. That is `Cam_Apply`'s
+  (`0x007bc980`, port in `crates/ffx-sg/src/camera.rs`) `2 atan((448 /
+  (2 b)) / depth)` with `b` the screen's y scale, 0.9333 (`render.md`,
+  the aspect ratio), which gives `2 atan(240 / depth)`; other screen
+  scales and `Cam_Apply`'s narrow case were not checked. ffx-remix takes
+  the reference at entrance 0's position plus the y offset; the
+  capture's player stood elsewhere, so the camera's position is not
+  checked, only its angles, length and field of view. The eye is
   `target + length (cos phi cos theta, sin phi, cos phi sin theta)` in
-  field units, then `(-x, -y, z)` into the world. **29 field maps** have
-  such an entry for entrance 0 (12 of the 177 maps with only a 3D
-  model); 10 of them also have a `YNSC` block, so **19** get their
-  starting camera only from the script. The other camera entries use
-  fixed eyes (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes
-  are not checked, and views built from them looked wrong, e.g.
-  `mihn0600` upside down), the eye set-ups `Native_Cam_6006`-`6008`
-  (kinds 4-6, `docs/formats/script.md`; 64 maps, not read) or focus
-  lists over script data (about 100 maps).
+  field units, then `(-x, -y, z)` into the world. **29 field maps**
+  have such an entry for entrance 0 (12 of the 177 maps with only a 3D model); 10
+  of them also have a `YNSC` block, so **19** get their starting camera
+  only from the script. The other camera entries use fixed eyes
+  (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes are not
+  checked, and views built from them looked wrong, e.g. `mihn0600`
+  upside down), the eye set-ups `Native_Cam_6006`-`6008` (kinds 4-6,
+  `docs/formats/script.md`; 64 maps, not read) or focus lists over
+  script data (about 100 maps).
 
 ### Script placements at map entry
 
@@ -519,10 +529,12 @@ were not counted.
 - The PC model's `PMeshInstance` has the class fields `m_objID` (the
   object a script names) and `m_RotType` (a turn order). ffx-remix uses
   `m_RotType` as the `order` argument of `setObjectRotation` (0 z y x
-  ... 5 x y z). Turns about one axis are checked against the capture;
-  the order of a product of several turns, and that `m_RotType` equals
-  the DObj's order word (`+0x76`, which `yiSetRotTransGroup` and
-  `yiSetRotTransDObj` both pass), are **not checked**.
+  ... 5 x y z). A single turn follows the port of `setObjectRotation`;
+  the capture shows only the axes (the wheel about x, the arm about y),
+  since the loops keep turning the objects. The order of a product of
+  several turns, and that `m_RotType` equals the DObj's order word
+  (`+0x76`, which `yiSetRotTransGroup` and `yiSetRotTransDObj` both
+  pass), are **not checked**.
 
 Read from straight-line init entries with constant arguments (through
 `ffx-script`'s disassembler), **105 field maps** have such placements:
@@ -545,8 +557,8 @@ to Q3 in `docs/formats/scene.md`. `cdsp0200` has the same wheel
 
 ## Notes for docs/formats/scene.md
 
-The coordinator should carry these over, since this page doesn't edit
-that one:
+The coordinator should carry these over, since round 2 didn't edit that
+page:
 
 - "Passes": `cdsp0000`'s shadow solution is 2, not 0. Cluster `+0x28c4`
   is in `+0x7c` for 0 and 2, in `+0xbc` for 1 and 3, and in no world for
