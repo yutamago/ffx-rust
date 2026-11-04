@@ -592,6 +592,34 @@ from the material's effect variant (`ALPHA_ENABLED`, `UATFOPQ`,
 `AlphaThreshold`; ffx-demaster `docs/models.md`, "Alpha", on its branch
 of 2026-11-02).
 
+The draw state table `g_ChrPacketDrawModes` (`0x00b5a6b0`) holds 8 × 3
+bytes (MSCAL entry, ?, matrix-set kind): `04 00 00`, `06 00 00`,
+`08 01 01`, `0a 01 01`, `0c 00 00`, `0e 00 00`, `10 00 02`, `12 00 02`.
+The builder's caller `Ch_DrawPs2Packets_0082e610` is the PS2 character
+draw kept in FFX.exe with its packets unused (shadow mode,
+`Sg_LightSetChr`, `Ch_DrawCalcShade` -> `Ch_EffectSetColor`, per model the
+VU1 matrices, then the builder); the VU1 program the MSCAL entries call is
+in `docs/formats/ps2-elf.md`.
+
+The PC's material switches (ffx-demaster `docs/models.md`, "Alpha";
+`PShaderPassD3D11.m_state` and DXBC reflection):
+
+- `UATFOPQ`: the `Opaque` pass with alpha to coverage on and the alpha
+  test (`AlphaThreshold` read by 39 of 43 pixel shaders).
+- `ALPHA_ENABLED`: only a `Transparent` pass (src alpha / inverse src
+  alpha, depth write, `LESS_EQUAL`; `AlphaThreshold` read by all).
+- neither: opaque, alpha ignored (`AlphaThreshold` unused in 41 of 43).
+
+Of the 220 variants 86 are `ALPHA_ENABLED` and 35 `UATFOPQ`.
+`PMaterial.m_effectVariant` is a user fixup: a big-endian index into the
+`PAssetReferenceImport` list (`PS3Data/Shaders/PhyreChrLitShader.fx#<MD5>`);
+a variant that a model newly uses must be in the character's `.ahwin32`
+D3D11 list (`Ch_LoadHdRenderData` `0x0082a1c0`). In battle,
+`ALPHA_ENABLED` segments that lie over the same character's opaque body
+are not drawn (Lulu's necklace, Kimahri's leg wraps, Tidus's wristband);
+the same segments draw in cut scenes and with `UATFOPQ`. The cause is not
+known.
+
 ## Effect packets
 
 `Ch_EffectPacketStorePoly` (`0x00845820`) writes 28 bytes per triangle

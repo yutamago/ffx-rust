@@ -255,6 +255,64 @@ PS2 colours at unit scale; the falloff stays the shader's (ffx-demaster
 `docs/render.md`, `render.lighting`; Besaid in the harness: light 0's
 luminance 0.608).
 
+### The shaders in detail (ffx-demaster)
+
+`phyrechrlitshader.fx#*` (199 of 220 files) holds 1854 pixel shader
+containers that read `Light0`..`Light2` (216 unique per light count 1-3,
+648 in all). Each light is `dp3 rA.c, cb0[Light_i.m_direction].xyz, N;
+mad rA.c, rA.c, 0.5, 0.5; mul rA.c, rA.c, rA.c` (2-light variants
+vectorise the `mul` over two components; 2 shaders use the half-Lambert
+unsquared), then `mad lit, m_colorIntensity, rA.c, lit`. The final colour
+is `min(texture x COLOR0 x MaterialColour x lit (+ fog), 1)`. The
+`LgtMatVec`/`LgtMatClr` vertex shaders (55 unique) compute one more light
+(`setLightMatrix`) as half-Lambert squared into `TEXCOORD4`, which the
+pixel shader applies as `max(TEXCOORD4, 1)` (ffx-dxbc reflection and WGSL
+translation).
+
+The material colour: in `Ch_DrawMain` (at `0x0082f64c`), with
+`g_ChrShadeByLight` (`0x00c496ea`, 1 in the shipped `.data`) the shade is
+multiplied by (light value `+0x36c` x 0.85 + 0.15) (`k_PointEightFiveF64`
+`0x00b501a8`, `k_PointFifteenF64` `0x00b59870`) and passed to
+`graphicCharacterInstanceSetMeshColor` (`MaterialColour`); the PS2's
+`Ch_DrawCalcShade` uses the light value as it is. `k_ShadeCoeffF64`
+(`0x00b48300`, 0.208125) is read only by
+`Phyre_CharacterLighting_setShadeCoeff`. The PS2's own vertex lighting
+(VU1) is in `docs/formats/ps2-elf.md`, "VU1 programs".
+
+DXBC checksum: MD5 over bytes 20.. with the bit length as the first word
+of the last block and `(bits >> 2) | 1` as its last word, instead of MD5's
+64-bit length. It matches every container of the game's 793 shader files
+(ffx-demaster `converter/src/dxbc.rs`), so an edited shader can be
+re-signed.
+
+## Samplers (ffx-demaster)
+
+`PTextureD3D11_register_0058cf80` registers `PSamplerStateD3D11` objects:
+its tree `g_SamplerStateCache` (`0x00c25374`) is the sampler cache. A
+model's material samplers are made inside `loadCluster` of the model's own
+cluster (`chr/.../mdl/D3D11/*.dae.phyre`, `map/.../mdl/...`) with min 5,
+mag 1, address 0 (Phyre clamp); the effect shaders' (`Vfx*.fx.phyre`) and
+the post-process shaders' samplers come from their shader clusters
+(Fahrenheit hook log).
+
+`PRendererD3D11_mapSamplerFilter_0058aa10(min, mag, cmp)`:
+
+| min | mag 0 | mag set |
+|---|---|---|
+| 0, 2 | `MIN_MAG_MIP_POINT` | `MIN_POINT_MAG_LINEAR_MIP_POINT` |
+| 1, 3 | `MIN_LINEAR_MAG_MIP_POINT` | `MIN_MAG_LINEAR_MIP_POINT` |
+| 4 | `MIN_MAG_POINT_MIP_LINEAR` | `MIN_POINT_MAG_MIP_LINEAR` |
+| 5 | `MIN_LINEAR_MAG_POINT_MIP_LINEAR` | `MIN_MAG_MIP_LINEAR` |
+
+then `ANISOTROPIC` whenever `g_SamplerMaxAnisotropy` (`0x00c25370`) is
+above 1.0, and `| 0x80` with `cmp`.
+
+## Z pre-pass
+
+`PhyreScene_DrawZPrePass` (`0x00651070`) renders, in pass `ZPrePass`, the
+instances of loaded characters that have a material with switch
+`ADDITIONAL_ZPREPASS` (and not `BUILT_IN_ZPREPASS`), except on map 0x180.
+
 ## UI coordinates
 
 The remaps take a remaster coordinate to the PS2 screen (512 x 416):

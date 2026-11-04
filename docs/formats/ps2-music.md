@@ -91,6 +91,20 @@ What they do:
 | `70 b` | delta offset (clamped to +-9999) |
 | `78` | random variation |
 
+### What the disc's sequences use
+
+A scan of the 112 BGMs of the German disc (ffx-demaster `docs/studio.md`;
+the studio re-encodes them byte for byte):
+
+- The header's size (`0x10`) is the end of the last track, or up to 3
+  bytes more (music052, 127, 190, 191, 193, 194, 196, 240). The bytes
+  after the last track are not always zero (music127 `c8 ff c1`, 193
+  `88`, 196 `7f 3e 78`, 197 `01 d4`). Files are padded to 8.
+- Header flag `0x10000` (automatic key-off one tick before the next
+  command), counted loops `0x04`/`0x05` and ties `0x2a`/`0x2b` are used;
+  `0x2e` only in music240; no sequence uses `0x70` (delta offset). Every
+  varlen is minimal. Every other song ends its notes with `0x18`/`0x1a`.
+
 ## WD instrument bank
 
 Header: `WD`, `u16` bank id, `u32` sample data size, `u32` instruments,
@@ -160,3 +174,38 @@ Checked by rendering 86 tracks and comparing them with the PC's recording:
 few ms in 60 (battle theme 78.317 s against 78.318 s). A bank written in
 the PC's format with these renders (same names and order, the 32 bytes at
 `0x1c` copied) plays in the game in place of the recording.
+
+## Missing banks and streamed pieces
+
+`wave_wd.sec` lists no bank for music052, 190 (191 uses 190's) and
+193..199: their sequences name WD banks that `wave_wd.dat` does not hold,
+and they are nowhere on the German disc. The ISO holds 1154 WD headers
+(any 16-byte boundary): 834 in `wave_wd.dat` (all indexed by
+`wave_wd.sec`) and 320 sound-effect banks (ids 1000+) inside
+`jppc/battle/mon/_mNNN/mNNN.bin`. The driver loads a song's bank by the
+number in its header (`%swave/wave%4.4u.wd`) and does not play a song
+whose bank is not loaded (`MUSIC PLAY : Wave-Data was not entry.
+(MUSIC%3.3u.BGM)`; `strings` of `iopsound.irx`).
+
+IRX `0x001012d8` (per interrupt, for every voice with ENVX > 0 whose
+region has WD flag `0x10`) reads `NAX` (`0x2240`) and `LSAX` (`0x2140`)
+and writes LSA + `0x2000` when LSA <= NAX < LSA + `0x2000`. With the
+key-on's LSA = SSA + `0x2000` for flag-`0x10` regions (`0x00101d20`), a
+sample cut into `0x2000`-byte pieces that each end in loop end + repeat
+(ADPCM flags 3) plays through once. Only WD banks 143 (Good Night) and
+149 (Hum of the Fayth, temples) have such regions.
+
+## Music ids in the event data
+
+The event header's sound table (`hdr + [hdr + 0x2c]`, `hdr` = `EV01`
+`+4`) has a music word at `+0x38`. On the PS2 disc 31 maps set one
+(`jppc/event/obj/*/*/*.ebp`): klyt0300/0500/0600/0700/0900 and djyt0300
+149; genk0000/0100/1500/1600 128; mcfr0100/0200 and mtgz0600 139;
+zkrn0100/0200 141; kino0800 174; omeg0100 172. 256 means fade out (over
+240 or 120 frames).
+
+The Luca sphere theater (`lchb1200`, shared data `0x2040`, 95 bytes,
+`V18`) lists its tracks as music ids: M01..M92 = 130, 48, 161, ... (index
+= the theater's track number; M71 = 46 "Wakka's Theme", M72 = 180 "Hum Of
+The Fayth (Yuna)", M91 = 149, M92 = 179); worker W06 plays `V18[V46]`
+(Atel# source of `lchb1200`; titles from `ffx text export lchb1200`).

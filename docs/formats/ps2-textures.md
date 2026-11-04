@@ -118,6 +118,40 @@ table (`ffx_ps2/ffx/master/uspc/menu/base.ftc`, type 4 without a bitmap,
 there. Glyphs 0..185 exist in both; 99, 103 (`Œ`, `œ`), 170 and 187-229
 are PC additions (ffx-demaster `docs/font.md`).
 
+## Menu sheets
+
+`menu.clp` sits at GS block `0x2ea0` (meswin CBP `0x2ea0`, battle
+`0x2ea4`); the sheets' textures and the code drawing them are in
+`docs/formats/ps2-elf.md` (source: ffx-demaster `docs/ui.md`).
+
+Item icons (`icon.fmt`, PSMT4 at `0x3dc0`): icon `id` uses the 16-colour
+row CSA `id & 15` of the CLUT loaded from CBP `0x2ec0 + 4 (id >> 4)`, so
+icon CLUT k is `menu.clp` CLUT 8, 9, 12, 13, 10, 11, 14, 15 (PSMCT32 block
+order). Every row's entries 2..15 have alpha `0x80`; index 0 (alpha 0)
+appears only in two 3-texel corner triangles, so the PS2 icons sit on
+opaque slanted tiles. Icon ids 45..50 and the buttons are shapes 600+ with
+CLUT 13 row 2. (The icons' background indices are opaque in these rows;
+not resolved.)
+
+Battle words and `strtex` use CBP `0x2ecc` (`menu.clp` CLUT 13), CSA
+`13 - kind` for the words and 7 for `strtex`.
+
+### Menu fonts M and S
+
+Sheet `0x3d80` (`xfont1208.fmt`) holds the menu fonts M and S. Glyph
+`i = c - 0x20` is on page `i & 1`:
+
+| Font | Cell | Place | Advance |
+|---|---|---|---|
+| M | 10 × 12 | `((i % 24) / 2 × 10, 144 + i / 24 × 12)` | 12 |
+| S | 8 × 10 | `((i % 32) / 2 × 8, 192 + i / 32 × 10)` | 10 |
+
+Values end at x + 2. The shadow is drawn at (+1, +1) with CLUT CBP
+`0x2ebc` (`menu.clp` CLUT 7) row `2 (c >> 4) + page`, the face with CBP
+`0x2eb8` (CLUT 6) row `2 (c & 15) + page`. The PC's sheet `0x3d80`
+(`menu/subfont`) is not in the archive (`docs/formats/system.md`, "Shape
+layout tables").
+
 ## Which HD models kept the PS2 mesh
 
 The HD characters are PS2 meshes with upscaled textures, or remodels

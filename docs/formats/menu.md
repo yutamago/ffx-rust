@@ -1265,3 +1265,173 @@ are disposed, the new model id read (`MsGetSaveChrWeaponModel` /
 `Ch_DataReadSync` stops returning 1, allocated and bound to element
 `+0xafc` / `+0xb00` with clip flags from `+0xb08` / `+0xb0c` (bit 0
 `Ch_EnClip`, bit 1 `Ch_Vu1SetClipmode`).
+
+## Menu records (ffx-demaster)
+
+The words of a menu record, as the screens' records show them (source:
+ffx-demaster `docs/ui.md`; the PS2 twins in `docs/formats/ps2-elf.md`,
+"Menu screens"): `+0` the control step (`TkMenuCtrl*`, run by
+`TkMenuCloseAll`, the "close callback" of the table under "Menu slots"),
+`+4` the draw, `+8` the layout or page set-up (often a 5-byte `jmp` to the
+function that reads the screen's layout from the menu sequence), `+0xc`
+the open, `+0x10` the close (stops the scenes), `+0x14`.
+
+| Record | `+0` | `+4` | `+8` | `+0xc` | `+0x10` | `+0x14` |
+|---|---|---|---|---|---|---|
+| `g_TkMenuItemRecord` `0x00c5a2fc` | `TkMenuCtrlItem` | `0x008c5ee0` | `0x008c5ef0` | `MenuItem_Open_008c5f20` | `0x008c6050` | `0x008c60a0` |
+| `g_TkMenuAbilityRecord` `0x00c5a320` | `TkMenuCtrlAbility` | `0x008c64a0` | `0x008c64f0` | `0x008c6520` | `0x008c66c0` | `0x008c66f0` |
+| `g_TkMenuConfigRecord` `0x00c5a5e4` | `TkMenuCtrlConfig` | `MenuConfig_Draw` | `0x008cb350` | `MenuConfig_Open_008cb3c0` | `0x008cb410` (ret) | `0x008cb420` (ret) |
+| `g_TkMenuEquipRecord` `0x00c5a744` | `TkMenuCtrlEquip` | `MenuEquip_Draw_008cf670` | `0x008cf820` -> `MenuEquip_InitLayout_008cfc40` | `MenuEquip_Open_008cf830` | `0x008cf910` | `0x008cf940` (ret) |
+| `g_TkMenuLimitRecord` `0x00c5a768` | `TkMenuCtrlLimit` | `0x008d09b0` | `0x008d0a10` -> `MenuLimit_InitLayout_008d0cd0` | `MenuLimit_Open_008d0a20` | `0x008d0c70` | `0x008d0c80` (ret) |
+| `g_TkMenuMainRecord` `0x00c5b2b0` | `TkMenuCtrlMain` | `TkMenuDrawMain` | | | | |
+
+The Customize screen's set-up is `code_008d55d0` -> `MenuKaizou_InitLayout_008d6be0`.
+`0x008d09b0` draws the Overdrive screen: `TODrawMenuBG`,
+`MenuDrawDividerShapes(5)`, `TOMenuDrawChrStatusPlate_008ff490`,
+`DrawLimitPageOverDrive`. The main menu window's draw (`+0x10`, stored at
+`0x008a8e8e` by `TOMenuMainWindowOpen_008a8e70`) is the help bar,
+`TkMenuMain_DrawHelpBar_008a9350`: `g_TkMenuHelpMessage`, HD plates, then
+`TOMkpCrossExtMesFontLClut`.
+
+`TOMenuGetYesNoWindow` (`0x008a9b60`, a Fahrenheit BSim name) returns
+`[0x01841c2c]`, the party mask `g_TkMenuPartyBits`, not a window; the name
+is doubtful.
+
+## Screen layouts (ffx-demaster)
+
+Each screen reads its places and colours from the menu sequence
+(`menu_script.bin`) by name: `TkMn2SeqGetPos` stores `i16 x, y`
+(`TOSeqGetPoint` writes words), `TkMn2SeqGetRect` `i16 x, y, w, h`, and a
+common-plate record is 0x18 bytes (rectangle, c0 `+8`, c1 `+0xc`, shapes
+`+0x10`/`+0x14`). Unlike `TOSeqInitParam`'s outputs
+(`docs/formats/system.md`), these are stored in order. Values were read in
+the game; the PS2 addresses are `SLPM_675.13`'s.
+
+Status (`TkMn2GetStatusPos` `0x008d4920`; PS2 `0x00228c48`, the same name
+strings in the same order): PS2 `0x00693880..0x00693a70` ->
+`0x0186a83c..0x0186a9f8`, `0x00325878..0x003258b0` ->
+`0x023cc3e0..0x023cc420`; the common plates `0x0186a888` + 0x18k (PS2
+`0x006938e8` + 0x18k: `rect_lgplt`, `rect_ltplt`, `rect_ltbplt`, then
+`pos_typshape`, `pos_lgshape`, `pos_ltstr`, `rect_lg`, `col_lmtg0/1`,
+`col_lmtgf0` to `0x00693a40`). Named: `pos_wpnmoji` =
+`g_TkMenuStatusOrigin` (`0x0186a86c`); `pos_pmshape` =
+`g_TkMenuStatusPlateShift` (`0x023cc420`, used by the equip and Overdrive
+rows: `0xd7` at x + `pos_pmshape`.x + 0x58); `rect_wpnlplt`'s plate
+`g_TkMenuStatusWeaponPlate` (`0x0186a900`) and its armour-row copy at
+`0x0186a948` (y + `num_wpnplt`). Equip draws the status page too
+(`MenuStatus_DrawPage` page 0).
+
+Equip (`MenuEquip_InitLayout_008cfc40`, `g_TkMenuEquipLayout`):
+
+| Name | FFX.exe | PS2 |
+|---|---|---|
+| `r_somojiplt` | `0x0186a634` | `0x00693ac8` |
+| `pos_sobiplt` | `0x0186a63c` | `0x00693ad0` |
+| `r_somojiplt2` | `0x0186a640` | `0x00693ad8` |
+| `pos_soabplt` | `0x0186a648` | `0x00693ae0` |
+| `r_soscrol` | `0x0186a64c` | `0x00693ae8` |
+
+Overdrive (`MenuLimit_InitLayout_008d0cd0`, names at `0x00b65e60`..):
+
+| Name | FFX.exe | PS2 |
+|---|---|---|
+| `pos_4nameplt` | `0x0186a6d8` | `0x00693c08`.. |
+| `rect_2lgplt` | `0x0186a6dc` | |
+| `rect_lwplt` (plate) | `0x0186a6e4` | |
+| `pos_2llplt` | `0x0186a6fc` | |
+| `pos_2lrplt` | `0x0186a700` | |
+| `rect_lscroll` | `0x0186a704` | |
+| `rect_lmojiplt` | `0x0186a70c` | ..`0x00693c48` |
+
+Customize (`MenuKaizou_InitLayout_008d6be0`; PS2 `0x002315f0`, with
+`0x0022ce78` and `0x00228c48` for the shared names; the second part is
+stored downwards on PC):
+
+| Name | FFX.exe | PS2 |
+|---|---|---|
+| `pos_kzonmplt` | `0x0186aa40` | `0x00693d68` |
+| `r_kmojiplt1` | `0x0186aa44` | `0x00693d70` |
+| `r_kmojiplt2` | `0x0186aa4c` | `0x00693d78` |
+| `pos_kabplt` | `0x0186aa54` | `0x00693d80` |
+| `pos_ksobiplt` | `0x0186aa58` | `0x00693d88` |
+| `r_kscrol` | `0x0186aa5c` | `0x00693d90` |
+| `pos_ksobiplt2` | `0x0186aa64` | `0x00693d98` |
+| `r_kbackplt` (plate) | `0x023cc3a0` | `0x00325ad0` |
+| `r_kmojiplt3` | `0x023cc370` | `0x00325b00` |
+| `pos_kbackplt` | `0x023cc3b8` | `0x00325ac8` |
+| `pos_kitmplt` | `0x023cc388` | `0x00325ae8` |
+| `r_kmojiplt4` | `0x023cc380` | `0x00325af0` |
+| `pos_kmaru` | `0x023cc378` | `0x00325af8` |
+| `pos_klshohi` | `0x023cc368` | `0x00325b08` |
+| `pos_krshohi` | `0x023cc364` | `0x00325b10` |
+| `r_shohiplt` | `0x023cc440` | `0x00325a40` |
+| `pos_shiplt` | `0x023cc430` | `0x00325a58` |
+| `pos_shshape` | `0x023cc42c` | `0x00325a60` |
+| `pos_lshohi` | `0x023cc428` | `0x00325a68` |
+| `pos_rshohi` | `0x023cc424` | `0x00325a70` |
+| `pos_pmshape` | `0x023cc420` | `0x00325878` |
+| `col_menubg0`, `col_menubg1` | `0x023cc41c`, `0x023cc418` | `0x0032587c`, `0x00325880` |
+
+The Customize windows: equipment list `g_TkMenuKaizouListWindow`
+(`0x0186aa30`), abilities to add `g_TkMenuKaizouAbilityWindow`
+(`0x0186aa34`), the weapon list pointer and count `0x0186aa38` /
+`0x0186aa3c`, the state `g_TkMenuKaizouState` (`0x0186aa68`).
+
+Config (`MenuConfig_InitLayout_008cc050`; PS2 `0x00234a38`):
+
+| Name | FFX.exe | PS2 |
+|---|---|---|
+| `r_cnameplt` (plate) | `0x0186a450` | `0x00693f78` |
+| `rect_cchoplt` | `0x0186a468` | `0x00693f90` |
+| `pos_cchoplt` | `0x0186a470` | `0x00693f98` |
+| `rect_cbline` | `0x0186a474` | `0x00693fa0` |
+| `pos_cbline` | `0x0186a47c` | `0x00693fa8` |
+| `pos_cname` | `0x0186a480` | `0x00693fb0` |
+| `c_cbline0`, `c_cbline1` | `0x0186a484`, `0x0186a488` | `0x00693fb4`, `0x00693fb8` |
+| `num_cnameplt` | `0x0186a48c` | `0x00693fbc` |
+| `rect_cscroll` | `0x0186a490` | `0x00693fc0` |
+| `col_helpplt0`, `col_helpplt1` | `0x0186a498`, `0x0186a49c` | `0x00693fc8`, `0x00693fcc` |
+
+The plate and the step are read under their `_nonhdd` names on both
+machines (`GetU32_023cbeb0` is 0 on PC, as the PS2's `0x005661ec`).
+The config option records are `g_TkMenuConfigOptions` (`0x00c5a344`, 0x2c
+apart; `0x00c5a528` the soundtrack row) and the row lists
+`0x00c5a554`, `0x00c5a578`, `0x00c5a598`, `0x00c5a5c0` (picked by
+`0x008cb350`).
+
+Items and the main menu: `p_linmline` / `p_rinmline` `0x0186a400` /
+`0x0186a404`, `rect_iscroll` `0x0186a410` (256, 82, 10, 330),
+`rect_abscroll` `0x0186a418`; `rect_noactive` `0x023cc138`,
+`pos_noactive` `0x023cc144`, `col_noactive0` `0x023cc148`,
+`col_noactive1` `0x023cc140` (`TkMn2GetMainPos`).
+
+## `menu_script.bin` and the menu scenes (ffx-demaster)
+
+`menu_script.bin` holds the menu sequence: the values `TOSeqInitParam`
+and the `TkMn2SeqGet*` calls read, and the scenes. The PC reads
+`ffx_ps2/ffx/master/jppc/menu/menu_script.bin` (the Japanese
+International's) for every language. The German PAL disc's
+`jppc/menu/menu_script.bin` (18,768 bytes) differs: its Config
+`r_cnameplt_nonhdd` y is 65 and `num_cnameplt_nonhdd` 47, where the PC's
+file has 55 and 45 (words at file `0x189c` / `0x2260` of the `uspc` copy).
+Served to the PC, the disc's file gives the PS2's Config rows (PCSX2 PINE
+reads of `0x00693f78`, `0x00693fbc` against the harness).
+
+Scenes run through `g_TOSeqSlots` (`0x01865f20`; PS2 `0x0068f440` + 0x100
+seq, 8 slots of 0x20: `+0` state, `+8` name, `+0x1c` handle). Scenes
+running on the PS2 (sequence 1, read in PCSX2):
+
+| Screen | Scenes |
+|---|---|
+| Main menu | scene26 |
+| Items | scene0, scene9 |
+| Abilities | scene0, scene10 |
+| Overdrive | scene0, scene14 |
+| Status | scene0, scene11 |
+| Config | scene4, scene17 |
+| Equip | scene0, scene11, scene20 |
+| Customize | scene0, scene21 |
+
+`MenuEquip_Open_008cf830` starts scene0, scene11 and scene20 as the PS2
+does; FFX.exe's Config open does not start scene4 and scene17 (started on
+PC they draw a dark blue band sliding up at the right edge).
