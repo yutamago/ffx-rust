@@ -7,8 +7,9 @@ Q6 (render orders), Q7 (shadow solutions) and Q8 (unidentified functions).
 The answers cite the FFX.exe functions they come from. The names are in
 `symbols/ffx.sym`. The section "Map entry state" adds what the game
 sets up at map entry and the files leave implicit: how the 2D layers are
-drawn, where a map's starting camera is, and the event scripts'
-placements of map objects.
+drawn, where a map's starting camera is, the event scripts'
+placements of map objects, and the map effects' table (`MAP1` section
+10).
 
 ## Captures
 
@@ -618,12 +619,13 @@ whose event is `cdsp0000`. `yiMapReadMaster` (`0x009093b0`) and
 
 `pppSetFpPdt` allocates the packet buffer when there is none, and the
 second heap when there is none and the table's `+1` is not 0. Both live
-until `pppFpFree` (`ppp_fp_free`) frees them when a map is torn down
-(`yiResetObj`, `yi_reset_obj` in `crates/ffx-field/src/yi.rs`). So the
-first table (the first ever, or the first after a teardown) sizes the
+until `pppFpFree` (`ppp_fp_free`) frees them: when a map is torn down
+(`yiResetObj`, `yi_reset_obj` in `crates/ffx-field/src/yi.rs`), and on
+the debug path `yiLoadFieldParticle` before its own table. So the first
+table (the first ever, or the first after a `pppFpFree`) sizes the
 packet buffer, the first such table with a non-zero `+1` sizes the
 second heap, and later tables' `+1` and `+2` are ignored until the next
-teardown.
+`pppFpFree`.
 
 An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 `+0x40..+0x6c`, the part's position, angles and scale that
@@ -634,7 +636,7 @@ An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 | `+0` | `f32` x 3 | position, field units (`+0xc` not read by `pppSetMatrix`; 1.0 in the first entry of every table and in all of `cdsp00`'s) |
 | `+0x10` | `i32` x 3 | angles, 0x10000 a turn (`pppGetRotMatrix*` through `pppFpSetRotMatrix`; `+0x1c` not read by it) |
 | `+0x20` | `f32` x 3 | scale (`+0x2c` is 1.0 in the data and not read by `pppSetMatrix`; whether a part program reads these fourth words of the run record was not checked) |
-| `+0x30` | `i32` | first frame counter: 0 runs from the map load, -0x1000 waits (`pppFpLoop` skips it until a restart: `Fp_Restart`, `Fp_RestartMode2`, `Fp_RestartGroup`, which the scripts call, or `pppFpLoadStat` on a restored state) |
+| `+0x30` | `i32` | first frame counter: 0 runs from the map load, -0x1000 waits (`pppFpLoop` skips it until a restart: `Fp_Restart`, `Fp_RestartMode2` or `Fp_RestartGroup`, from the scripts (`Native_FpRun`, `Native_8035_FpRunGroup`) or from map code such as `rcbgFPmRestart` and `Atel_ShowWaterFps_008682a0`; or `pppFpLoadStat` on a restored state) |
 | `+0x34` | `u32` | the program it runs: index into the program list (`+0x10`) |
 | `+0x38..+0x40` | `f32` x 3 | view cylinder for ID 0: far (below 0: no test), radius, height. `pppCheckViewCylinder` non-zero (out of view) makes `pppFpLoop` skip the entry, except on map 0x136 (all but entries 2, 6 and 10 still run), 0x31 (entry 0x26 while `getScenerioFlag()` is at most 0x2c) and 0x176 (entry 0xd) |
 | `+0x44` | `u16` | ID: what `Native_FpRun`, `Native_FpShow`, `Fp_Restart`, `Fp_RestartMode2`, `Fp_End` and `pppFpIDdispOn/Off` match |
@@ -656,7 +658,7 @@ textures an entry draws with is open.
 **On the field maps** (433 `mapout.vpa` under `map/`; the battle maps'
 under `btlmap/` were not counted): 272 have entries, 5,630 in all
 (at most 113 in one table). 3,768 run from the load and 1,862 wait for a
-script; 265 tables start at least one at load. The ID is not unique:
+restart; 265 tables start at least one at load. The ID is not unique:
 2,750 entries have ID 0 (2,179 of them with the view test on), and 21
 non-zero IDs repeat within their table (12 tables, 63 entries;
 `stbv01` uses IDs 20 and 30 ten times each). 95 tables use groups.
@@ -667,7 +669,8 @@ twelve entries (IDs 11-16 with programs 3-8, and 21-26 all running
 program 9) land on the lamps of the offline map. Entry 0 (ID 1, at the
 origin) is the save sphere's glow: worker 21 of the `cdsp0000` event
 script binds it to itself (read from the script's disassembly, not
-traced in the game). IDs 2-6 wait for a script. The position was
+traced in the game). IDs 2-6 wait for a restart (by a script, as far
+as the polish work read; not traced). The position was
 checked on that map only, by eye.
 
 ## Notes for docs/formats/scene.md

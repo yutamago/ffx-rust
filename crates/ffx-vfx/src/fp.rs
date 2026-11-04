@@ -942,7 +942,8 @@ pub mod bridge {
     /// `g_pppFpPacketBuf` (`0x00cec220`): the field effects' packet buffer
     /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated by
     /// `pppSetFpPdt` when there is none (the first table, and the first
-    /// after [`ppp_fp_free`], which frees it when a map is torn down).
+    /// after [`ppp_fp_free`], which frees it when a map is torn down and
+    /// on `yiLoadFieldParticle`'s debug path).
     pub const PACKET_BUF: Global<u32> = Global::new(0x00ce_c220);
     /// `g_pppFpHeap2Buf` (`0x00cec224`): the second heap's block, allocated
     /// by `pppSetFpPdt` when there is none and the table asks for one (the
