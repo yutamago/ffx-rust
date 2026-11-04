@@ -466,11 +466,11 @@ and derives the matrices.
 
    **Correction (ffx-remix M3, `docs/formats/scene-maps.md`, "Map entry
    state", "Script placements at map entry").** Object id 3 on `cdsp00`
-   is the salvage ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3, `m_groupID` 13),
-   not a crane; the crane arm is `FBXASC057_0Shape` (worker 23). Event
-   script worker 25 binds the wheel's group, places it at map entry and
-   keeps turning it about x in its loop, which fits the two writers on
-   it every update.
+   is the salvage ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3,
+   `m_groupID` 13), not a crane; the crane arm is `FBXASC057_0Shape`
+   (worker 23). Event script worker 25 binds the wheel's group, places
+   it at map entry and keeps turning it about x in its loop, which fits
+   the two writers on it every update.
 
    Every write came from the main thread. So the Worlds are game state that
    moves every frame for the DObjs and is fixed at load for everything

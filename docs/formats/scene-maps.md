@@ -430,12 +430,13 @@ transfer (a transfer is 32 bytes plus count x entry size, those two at
   (`0x009217e0`; port `rcbg_pre_set_scene_no` in
   `crates/ffx-field/src/guide.rs`): it makes scene 0 the current one
   (map `+8`), whose camera block `rcbgSceneProc_00920aa0` sets every
-  frame (`rcbgSceneSetMatrix`), and, through
-  `graphicChangeSceneNum_00639d90` and `PhyreScene_change2DSceneNum`
-  (`0x006587d0`), shows only the layers whose name holds `scene0`. So a
-  map **starts on scene 0** and shows one scene at a time. Scripts
-  change it later (`yiSetPreBgPage` `0x0090a6f0` → `Yn_PreBgChangeStage`
-  `0x0091a0d0`). This is census failure 1's `kami0100` case above.
+  frame while the scene has layers (`+4`; `rcbgSceneSetMatrix`), and,
+  through `graphicChangeSceneNum_00639d90` and
+  `PhyreScene_change2DSceneNum` (`0x006587d0`), shows only the layers
+  whose name holds `scene0`. So a map **starts on scene 0** and shows
+  one scene at a time. Scripts change it later (`yiSetPreBgPage`
+  `0x0090a6f0` → `Yn_PreBgChangeStage` `0x0091a0d0`). This is census
+  failure 1's `kami0100` case above.
 
 With these rules ffx-remix's offline frame of `kami0100` (the start
 scene, the layer camera, the capture's bias) lines up with the game's
@@ -459,12 +460,15 @@ A map's starting camera is in one of two places.
   `+0x88` (up) and `+0xa8` (field of view)
   (`crates/ffx-field/src/camera.rs`, `mod view`;
   `docs/formats/field.md`, "Map camera, ID-map guide model, swizzle, map
-  reads (round 9)"). The map starts on scene 0's block
-  (`rcbgPreSetSceneNo(0)`, above). The block is the main (field) camera,
-  the one the characters are drawn with; the layers themselves are drawn
-  with the layer camera above. `rcbgSceneSetMatrix` (`0x00920c00`, port
-  in `camera.rs`) gives the renderer the vertical field of view `2
-  atan(448 / (2 sy) / depth)`, which is `2 atan(0.75 tan(fov / 2))` (the
+  reads (round 9)"). On a scene with layers the map starts on scene 0's
+  block (`rcbgPreSetSceneNo(0)`, above); a scene without layers only
+  gets its block set once, as `rcbgSceneLoad` loads it (the last scene
+  loaded wins). Whether the 28 maps with a 3D model have layers in their
+  scenes was not checked. The block is the main (field) camera, the one
+  the characters are drawn with; the layers themselves are drawn with
+  the layer camera above. `rcbgSceneSetMatrix` (`0x00920c00`, port in
+  `camera.rs`) gives the renderer the vertical field of view `2 atan(448
+  / (2 sy) / depth)`, which is `2 atan(0.75 tan(fov / 2))` (the
   `kami0100-a` main camera's projection y, 3.34032, agrees), and moves
   the screen centre by the y offset (`rcbgSetProjectionMatrixSub`). In
   the 3D world, ffx-remix takes the eye and target x 10
@@ -492,17 +496,18 @@ A map's starting camera is in one of two places.
   scales and `Cam_Apply`'s narrow case were not checked. ffx-remix takes
   the reference at entrance 0's position plus the y offset; the
   capture's player stood elsewhere, so the camera's position is not
-  checked, only its angles, length and field of view. The eye is
-  `target + length (cos phi cos theta, sin phi, cos phi sin theta)` in
-  field units, then `(-x, -y, z)` into the world. **29 field maps**
-  have such an entry for entrance 0 (12 of the 177 maps with only a 3D model); 10
-  of them also have a `YNSC` block, so **19** get their starting camera
-  only from the script. The other camera entries use fixed eyes
-  (`Native_CamSetPos`, `0x6002`, about 30 maps; their axes are not
-  checked, and views built from them looked wrong, e.g. `mihn0600`
-  upside down), the eye set-ups `Native_Cam_6006`-`6008` (kinds 4-6,
-  `docs/formats/script.md`; 64 maps, not read) or focus lists over
-  script data (about 100 maps).
+  checked, only its angles, length and field of view. The eye is `length
+  (cos phi cos theta, sin phi, cos phi sin theta)` from the target, in
+  field units, then `(-x, -y, z)` into the world. **29 field maps** have
+  such an entry for entrance 0 (12 of the 177 maps with only a 3D
+  model); 10 of them also have a `YNSC` block, so **19** get their
+  starting camera only from the script. On those 10, which of the two
+  cameras the game shows first was not checked. The other camera entries
+  use fixed eyes (`Native_CamSetPos`, `0x6002`, about 30 maps; their
+  axes are not checked, and views built from them looked wrong, e.g.
+  `mihn0600` upside down), the eye set-ups `Native_Cam_6006`-`6008`
+  (kinds 4-6, `docs/formats/script.md`; 64 maps, not read) or focus
+  lists over script data (about 100 maps).
 
 ### Script placements at map entry
 
