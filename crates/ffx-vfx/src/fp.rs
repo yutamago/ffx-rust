@@ -945,7 +945,8 @@ pub mod bridge {
     /// after [`ppp_fp_free`], which frees it when a map is torn down).
     pub const PACKET_BUF: Global<u32> = Global::new(0x00ce_c220);
     /// `g_pppFpHeap2Buf` (`0x00cec224`): the second heap's block, allocated
-    /// by the first `pppSetFpPdt` after [`ppp_fp_free`] that asks for one.
+    /// by `pppSetFpPdt` when there is none and the table asks for one (the
+    /// first such table, or the first after [`ppp_fp_free`]).
     pub const HEAP2_BUF: Global<u32> = Global::new(0x00ce_c224);
     /// `g_pppFpWide` (`0x00cec228`): set for a table of 0x28 effects or the
     /// level whose name hash is 0x234; 0x00756740 then uses 1.1 for some
@@ -962,8 +963,8 @@ pub mod bridge {
     /// [`FP_DISP`] on, [`DATA`] = `data`, `pppInitData(data,
     /// g_pppProgramTable, 0)`, `pppInitEnv(g_pppFpHeap, data, ENV,
     /// 0x40000)`. When there is no second heap and the table asks for one
-    /// (`byte +1` blocks of 8 KB; after [`ppp_fp_free`], the first such
-    /// table) it is allocated (`user_malloc`) and made
+    /// (`byte +1` blocks of 8 KB: the first such table, or the first after
+    /// [`ppp_fp_free`]) it is allocated (`user_malloc`) and made
     /// (`pppCreateHeap(g_pppFpHeap2, ..)`). The heap use and peak are reset,
     /// the heap display redone (`op_heap_display_clear(0x601)`,
     /// `op_heap_display_set_par(g_pppFpHeap, 0x8603)`), [`HEAP_DISPLAY_SET`]
@@ -974,8 +975,8 @@ pub mod bridge {
     /// words and a unit matrix (`FFXVu0UnitMatrix`). An effect with kind
     /// byte `+0x4a` 2 sets [`WOOD`]. [`WIDE`] for 0x28 effects or level
     /// hash 0x234 (`graphicLevelGetNameHash`, not asked for 0x28). The
-    /// packet buffer is allocated when there is none (the first table
-    /// after `pppFpFree`): 0xc0000 bytes, 0x100000 for `byte +2` 1,
+    /// packet buffer is allocated when there is none (the first table, or
+    /// the first after `pppFpFree`): 0xc0000 bytes, 0x100000 for `byte +2` 1,
     /// 0x140000 for 2; its use and peak reset. Callees through `call`.
     pub fn ppp_set_fp_pdt<M: Mem>(
         mem: &mut M,

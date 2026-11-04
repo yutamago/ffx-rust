@@ -28544,8 +28544,8 @@
 0x00cec20c label    g_pppFpHeapUsed           # last pppFpLoop's heap use
 0x00cec210 label    g_pppFpHeapPeak           # peak of g_pppFpHeapUsed
 0x00cec218 label    g_pppFpHeapDisplaySet     # set by pppFpInitHeapDisplay and pppSetFpPdt; pppPartLoop runs pppFpInitHeapDisplay while it is 0; name ours (fp::bridge::HEAP_DISPLAY_SET)
-0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it when there is none, the first table after pppFpFree (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
-0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB when there is none (the first table after pppFpFree that asks) and pppCreateHeap's it, pppFpFree frees it; name ours
+0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it when there is none: the first table, or the first after pppFpFree (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
+0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB when there is none (the first table that asks, or the first after pppFpFree that asks) and pppCreateHeap's it, pppFpFree frees it; name ours
 0x00cec228 label    g_pppFpWide               # pppSetFpPdt sets it for 0x28 effects or graphicLevelGetNameHash() 0x234; 0x00756740 then uses -1.1/1.1 for two -1/1 bounds; name ours
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
 0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
