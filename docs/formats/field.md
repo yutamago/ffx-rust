@@ -620,7 +620,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   section 0 the 2D map (`graphicFieldMapLoad(name, 0)`,
   `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
   `yiArc_readmem`), `alarm + 2` the alarms, 10 effect data
-  (`pppSetFpPdt`), 12 and 11 more backgrounds; the CD ids go to
+  (`pppSetFpPdt`; the field-program table, `docs/formats/scene-maps.md`,
+  "Map effects: the field-program table"), 12 and 11 more backgrounds; the CD ids go to
   `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
   map circle, else -9) and the default animations. `yiMapSetup`
   (`0x00909680`) is the debug path: `host0:<dir><name>.vpa` read whole

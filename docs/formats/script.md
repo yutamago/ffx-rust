@@ -152,7 +152,7 @@ are relative to the code start.
 | `0x08` | `u32` | Author string (`"keisuke"`, …) |
 | `0x0c` | `u32` | Name string (`"001"`, …) |
 | `0x10` | `u32` | Block length |
-| `0x14`–`0x1f` | | Fahrenheit: `0x18` main script, `0x1e` zone bytes; the rest unknown |
+| `0x14`–`0x1f` | | `0x18` (`u16`): the camera worker, `0xffff` for none (`AtelRequestMapCamera` `0x0086ed80` signals it with the entrance's camera; Fahrenheit calls it the main script); Fahrenheit: `0x1e` zone bytes; the rest unknown |
 | `0x20` | `u32` | Event data, variable storage 6 |
 | `0x24` | `u32` | Unknown |
 | `0x28` | `u32` | Area (Fahrenheit's `offset_area`): 0 or 32 bytes |

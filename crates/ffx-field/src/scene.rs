@@ -451,9 +451,10 @@ pub mod bridge {
 
     /// `rcbgSceneLoad(scene, parse)` (`0x0092b5e0`): the layer count
     /// (`+4`), 12 bytes skipped, the layers (`0xc0` bytes each,
-    /// [`rcbg_layer_load`]), the colours and fog (`+0x68`, `+0x78`,
-    /// `+0x88`, `+0xa8`, `+0x64`), [`rcbg_scene_chk_layers`] and
-    /// `rcbgSceneSetMatrix` (through `call`).
+    /// [`rcbg_layer_load`]), the camera block (eye `+0x68`, look-at
+    /// `+0x78`, up `+0x88`, field of view `+0xa8`, y offset `+0x64`;
+    /// `docs/formats/scene-maps.md`, "Map cameras in the files"),
+    /// [`rcbg_scene_chk_layers`] and `rcbgSceneSetMatrix` (through `call`).
     pub fn rcbg_scene_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         s: u32,
