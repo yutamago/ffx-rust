@@ -707,7 +707,9 @@ machine-readable export that Atel's reference assembly is generated from.
   make Rust results differ in the last bit. Replay parity shows where, and
   some functions may need x87-faithful arithmetic to match.
 - **Timing.** Logic tied to the frame rate (30/60 fps paths) has to keep its
-  exact frame behaviour.
+  exact frame behaviour. The world ticks 30 times a second, a number of ticks
+  per drawn frame that `Sg_FrameSync` derives from the frame's real time; the
+  60 fps main menu stops the world (`docs/formats/frame-timing.md`).
 - **Size.** About 17,000 functions. The tooling in M0 and the bulk names are
   what keep the cost per function low; without them this does not finish.
 - **Facts only.** Fahrenheit, the PhyreEngine SDK and VBFExtract stay
