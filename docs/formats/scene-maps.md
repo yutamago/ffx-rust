@@ -7,8 +7,9 @@ Q6 (render orders), Q7 (shadow solutions) and Q8 (unidentified functions).
 The answers cite the FFX.exe functions they come from. The names are in
 `symbols/ffx.sym`. The section "Map entry state" adds what the game
 sets up at map entry and the files leave implicit: how the 2D layers are
-drawn, where a map's starting camera is, and the event scripts'
-placements of map objects.
+drawn, where a map's starting camera is, the event scripts'
+placements of map objects, and the map effects' table (`MAP1` section
+10).
 
 ## Captures
 
@@ -131,8 +132,24 @@ the index of the value in that key's table (`g_SettingsValueStrings`
 `Phyre_PRenderInterface_setTextureQuality` (`0x0058e000`, this =
 `0x00c94f00`). It is stored at `+0x1340`, and when it changes every
 texture file registered at `+0x1344` is reloaded.
-`Phyre_PFramework_PApplication_frame` (`0x00627bcc`) calls it again when
-the setting changes.
+`Phyre_PFramework_PApplication_frame` (`0x00627940`; the call at
+`0x00627bcc`) calls it again when the application asks for it: the byte
+at `*g_PhyreApplication` (`0x00cc9cd8`) `+0x15` is a pending flag
+(presumably set by the options menu; its writer was not traced), and
+the frame then passes `g_Settings +0x34` to it under the render lock and
+clears the flag (port `crates/ffx-prender/src/p6_appframe.rs`).
+**Writing `g_Settings` (`*0x022fb504`) `+0x34` alone changes nothing**
+until the pending byte is set to 1 as well; the next frame applies it
+(ffx-remix's live check, `tools/probe-pack.sh --tq` in that repository,
+2026-11-04: TQ_MEDIUM, TQ_LOW and back to TQ_HIGH in a running game).
+The reload opens every registered texture file again, by the path it
+was first opened with, on the **main thread**:
+`Phyre_PSerialization_PStreamReaderFile_PStreamReaderFile`
+(`0x005766d0`), then `Phyre_PSerialization_PStreamFile_ctor`
+(`0x00607bc0`), where the map's cluster loads opened it on the asset
+loader thread. A hook of `0x00607bc0` that serves a file therefore
+serves its reloads too (`docs/formats/phyre.md`, "Changing size, format
+and mip count").
 
 The function that drops the levels is
 **`Phyre_PBinary_loadClusterTextures` (`0x00465ab0`)**, called through
@@ -318,9 +335,13 @@ game does (its M3 review; `native/crates/ffx-remix-native/src/scene.rs`
 and `event.rs`, the notes in `~/ffx-work/ffx-remix/m3/review1/`). The
 facts below come from FFX.exe functions already named in `ffx.sym`, the
 map files, and two captures of the original (`kami0100-a`,
-`cdsp0000-a`). It covers the 2D layers, the map cameras and the script
-placements. Counts are over the archive's 329 field maps. What was not
-checked is marked so.
+`cdsp0000-a`). It covers the 2D layers, the map cameras, the script
+placements and the map effects' table. Counts are over the archive's 329
+field maps, except the effects', which are over the 433 field-map
+`MAP1` files (`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`:
+one per map folder, a different count from the field maps'); the 58
+`btlmap/<area>/<map>_<v>/bin/mapout.vpa` files (51 battle maps,
+variants `_a` to `_c`), also `MAP1` files, are not counted. What was not checked is marked so.
 
 ### The `YNSC` layer record
 
@@ -568,6 +589,90 @@ the crane arm (`FBXASC057_0Shape`, worker 23) get the capture's
 translations the same way, and `FBXASC056_0Shape` (worker 24) the x =
 +123.7 of R2a's answer to Q3 in `docs/formats/scene.md`. `cdsp0200` has
 the same wheel (`FBXASC0490_0Shape`).
+
+### Map effects: the field-program table
+
+A map's own particle effects (on the Salvage Ship's deck, the light
+beams of the tower lamps and the save sphere's glow) are **field
+programs**: entries of the effect table in section 10 of the map
+folder's `MAP1` file
+(`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`, section
+offsets at `+0x10 + 4i`). The examples below are the folder `cdsp00`,
+whose event is `cdsp0000`. `yiMapReadMaster` (`0x009093b0`) and
+`yiObjReadCallback` (`0x009097c0`, the asynchronous `MAP1` read;
+`crates/ffx-field/src/yi.rs`) hand the section to `pppSetFpPdt` (`0x0072a7f0`, port
+`ppp_set_fp_pdt` in `crates/ffx-vfx/src/fp.rs`), which installs it as
+`g_FpData` and relocates it with `pppInitData` (`0x00711fa0`,
+`ppp_init_data` in `crates/ffx-vfx/src/part.rs`). The header:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+1` | `u8` | blocks of 8 KB for a second heap (0: none) |
+| `+2` | `u8` | packet buffer size: 1 0x100000, 2 0x140000, else 0xc0000 bytes |
+| `+4` | `u16` | entry count |
+| `+6` | `u16` | program (part data) count; their offsets at `+0x10` |
+| `+8` | `u16` | count of 0x20-byte records at `+0x14` |
+| `+0xa` | `u16` | count of words at `+0x18` |
+| `+0xc` | `u16` | count of 8-byte records at `+0x1c` |
+| `+0x10..+0x1c` | `u32` | the four tables, offsets from the section start |
+| `+0x20` | | the entries, 0x50 bytes each |
+
+`pppSetFpPdt` allocates the packet buffer when there is none, and the
+second heap when there is none and the table's `+1` is not 0. Both live
+until `pppFpFree` (`ppp_fp_free`) frees them: when a map is torn down
+(`yiResetObj`, `yi_reset_obj` in `crates/ffx-field/src/yi.rs`), and on
+the debug path `yiLoadFieldParticle` before its own table. So the first
+table (the first ever, or the first after a `pppFpFree`) sizes the
+packet buffer, the first such table with a non-zero `+1` sizes the
+second heap, and later tables' `+1` and `+2` are ignored until the next
+`pppFpFree`.
+
+An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
+`+0x40..+0x6c`, the part's position, angles and scale that
+`pppSetMatrix` reads):
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0` | `f32` x 3 | position, field units (`+0xc` not read by `pppSetMatrix`; 1.0 in the first entry of every table and in all of `cdsp00`'s) |
+| `+0x10` | `i32` x 3 | angles, 0x10000 a turn (`pppGetRotMatrix*` through `pppFpSetRotMatrix`; `+0x1c` not read by it) |
+| `+0x20` | `f32` x 3 | scale (`+0x2c` is 1.0 in the data and not read by `pppSetMatrix`; whether a part program reads these fourth words of the run record was not checked) |
+| `+0x30` | `i32` | first frame counter: 0 runs from the map load, -0x1000 waits (`pppFpLoop` skips it until a restart: `Fp_Restart`, `Fp_RestartMode2` or `Fp_RestartGroup`, from the scripts (`Native_FpRun`, `Native_FpRunMode2`, `Native_8035_FpRunGroup`) or from engine code such as `rcbgFPmRestart` and `Atel_ShowWaterFps_008682a0`; or `pppFpLoadStat` on a restored state) |
+| `+0x34` | `u32` | the program it runs: index into the program list (`+0x10`) |
+| `+0x38..+0x40` | `f32` x 3 | view cylinder for ID 0: far (below 0: no test), radius, height. `pppCheckViewCylinder` non-zero (out of view) makes `pppFpLoop` skip the entry, except on map 0x136 (all but entries 2, 6 and 10 still run), 0x31 (entry 0x26 while `getScenerioFlag()` is at most 0x2c) and 0x176 (entry 0xd) |
+| `+0x44` | `u16` | ID: what `Native_FpRun`, `Native_FpShow`, `Fp_Restart`, `Fp_RestartMode2`, `Fp_End` and `pppFpIDdispOn/Off` match |
+| `+0x46` | `u16` | group (`Fp_RestartGroup`, `Fp_EndGroup`, `pppFpGroupDispOn/Off`) |
+| `+0x4a` | `u8` | draw matrix mode (`pppFpSetDrawMatrix`; 2 faces the camera through `g_pppFpWoodMatrix`, which `pppFpLoop` builds when `pppSetFpPdt` has set `g_pppFpWood` for such an entry) |
+| `+0x4b` | `u8` | turn order (`pppFpSetRotMatrix`: 1 XZY ... 5 ZYX, else XYZ) |
+
+Some of the 0x20-byte records at `+0x14` (`pppInitData` relocates
+their `+0x14..+0x1c`) carry a GS `TEX0` at `+0xc` (`TBP0`, `PSM`, `TW`,
+`TH`). On `cdsp00` their `TBP0` and `PSM` are the first two fields of
+the map's HD effect textures (other maps were not checked),
+`ffx_data/gamedata/ps3data/map/<area>/<map>/fp/tex/d3d11/<TBP>_<PSM>_<X>_<Y>_<W>_<H>.dds.phyre`
+(the HD tree, not the PS2 one that holds `mapout.vpa`;
+`docs/formats/ps2-textures.md`, "Effect textures"; `fp/tex/texlist.txt`
+lists them). On `cdsp00` 9 of the 14 records carry a `TEX0`, naming 5 of
+the 7 files. How a program refers to a record was not read, so which
+textures an entry draws with is open.
+
+**On the field maps** (433 `mapout.vpa` under `map/`; the battle maps'
+under `btlmap/` were not counted): 272 have entries, 5,630 in all
+(at most 113 in one table). 3,768 run from the load and 1,862 wait for a
+restart; 265 tables start at least one at load. The ID is not unique:
+2,750 entries have ID 0 (2,179 of them with the view test on), and 21
+non-zero IDs repeat within their table (12 tables, 63 entries;
+`stbv01` uses IDs 20 and 30 ten times each). 95 tables use groups.
+
+**Position.** As for the script placements above, an entry's world
+place is `(-x, -y, z)` of its position: on `cdsp00` the six tower lamps'
+twelve entries (IDs 11-16 with programs 3-8, and 21-26 all running
+program 9) land on the lamps of the offline map. Entry 0 (ID 1, at the
+origin) is the save sphere's glow: worker 21 of the `cdsp0000` event
+script binds it to itself (read from the script's disassembly, not
+traced in the game). IDs 2-6 wait for a restart: workers 0, 21 and 29
+of the `cdsp0000` event script restart them (read from the script, not
+traced in the game). The position was
+checked on that map only, by eye.
 
 ## Notes for docs/formats/scene.md
 

@@ -740,9 +740,11 @@ pub mod bridge {
         h.call_virtual(camera, 1, &[])
     }
 
-    /// `PhyreScene_setCameraFOVy(this, fovy)`: the main camera (`+0xdc`),
-    /// and in a 3D scene the minimap camera (`+0x654`, with fixed angles
-    /// on maps `0xec1`, `0x107` and `0xf48`); the reflection camera
+    /// `PhyreScene_setCameraFOVy(this, fovy)`: the main camera (`+0xdc`)
+    /// and the minimap camera (`+0x654`); with the 2D level loaded (byte
+    /// `+0x93c`, not a 3D flag) fixed angles on levels `0xec1` (all
+    /// three cameras: the reflection one below takes the same value),
+    /// `0x107` and `0xf48` (the minimap camera); the reflection camera
     /// (`+0x238`) when `+0x10d8c` is 1. Returns the last update's `eax`.
     pub fn scene_set_camera_fovy(h: &mut impl Host, scene: u32, fovy: u32) -> u32 {
         const FOV: u32 = 0x154;
@@ -848,8 +850,9 @@ pub mod bridge {
     // ---- 2D layers ----
 
     /// `PhyreScene_show2DLayer(this, id)` and `PhyreScene_hide2DLayer`:
-    /// in a 3D scene with 2D layers (`+0x1128`), the first layer of the
-    /// current group (`+0x11d8`) with that id gets its shown byte, and its
+    /// with the 2D level loaded (`+0x93c`) and 2D layers (`+0x1128`), the
+    /// first layer of the current group (`+0x11d8`) with that id gets its
+    /// shown byte, and its
     /// mesh's draw pointer (`+0x1c` of the mesh's `+0x1c`) is set to the
     /// mesh (shown) or cleared.
     pub fn scene_set_2d_layer_shown(m: &mut impl Mem, scene: u32, id: u32, shown: bool) {

@@ -404,8 +404,10 @@ scene `+0x10d8c` is 1; a camera's `+0xbc` far plane, `+0x150` aspect,
 - `PhyreScene_setMinimapCameraWorldMatrix(m)` (`0x0066d940`) copies it to
   `+0x7b0`, points the minimap camera's `+0xb4` there and updates it.
 - `PhyreScene_setCameraFOVy(fovy)` (`0x0066cda0`) sets the main and
-  minimap cameras; in a 3D scene (`+0x93c`) map `0xec1` forces
-  `0x3ef126e9` and the minimap camera gets `0x3f2c49ba` on `0x107`,
+  minimap cameras; with the 2D level loaded (byte `+0x93c`: the 2D
+  flag, not a 3D one; `docs/formats/scene-maps.md`, "How the game draws
+  the 2D layers") level `0xec1` forces `0x3ef126e9` (0.471 rad, 27
+  degrees) and the minimap camera gets `0x3f2c49ba` on `0x107`,
   `0x3f5126e9` on `0xf48`.
 - `PhyreScene_setCameraAspectRatio(a)` (`0x0066cbe0`): in a 3D scene
   `a * 3 * 0.25 * 16/9`; a reflection camera of kind (`+0x10d90`) 0 or 1
