@@ -5,10 +5,10 @@ salvage ship deck, `cdsp0000`. This page widens it to three more maps and
 answers the general questions that page left open: Q1 (texture quality),
 Q6 (render orders), Q7 (shadow solutions) and Q8 (unidentified functions).
 The answers cite the FFX.exe functions they come from. The names are in
-`symbols/ffx.sym`. The last section adds what the game sets up at map
-entry and the files leave implicit: how the 2D layers are drawn, where a
-map's starting camera is, and the event scripts' placements of map
-objects.
+`symbols/ffx.sym`. The section "Map entry state" adds what the game
+sets up at map entry and the files leave implicit: how the 2D layers are
+drawn, where a map's starting camera is, and the event scripts'
+placements of map objects.
 
 ## Captures
 
@@ -315,8 +315,8 @@ same author, while its offline map viewer was made to show maps as the
 game does (its M3 review; `native/crates/ffx-remix-native/src/scene.rs`
 and `event.rs`, the notes in `~/ffx-work/ffx-remix/m3/review1/`). The
 facts below come from FFX.exe functions already named in `ffx.sym`, the
-map files, and three captures of the original (`kami0100-a`,
-`cdsp0000-a`, `bsil0000-a`). Counts are over the archive's 329 field
+map files, and two captures of the original (`kami0100-a`,
+`cdsp0000-a`). Counts are over the archive's 329 field
 maps. What was not checked is marked so.
 
 ### The `YNSC` layer record
@@ -374,22 +374,21 @@ at `+0x18` and `+0x1c`).
   512 x 448 screen fills ±640 x ±560, so a vertex's x and y are its PS2
   pixel whatever its z. The camera's turn undoes the placement's x
   mirror.
-- **The 16:9 window.** Unless `+0xf9c7` or `g_PhyreScene3D` is set, the
-  pass translates the projection by (`+0xfa34`, `+0xfa38`) and squeezes
-  it as `PhyreScene_GetScreenAdjustedView_00651650` does
-  (`docs/formats/render.md`, round 20): y x 4/3, then moved by
-  `d = 1/3 - 2 (+0xf9bc + +0xf9c0)`. So 336 of the 448 rows show, 16:9
-  once the PS2's 7/6-wide pixels are taken, and the top row shown is
-  `112 - 336 (+0xf9bc + +0xf9c0)`: the game pans a 16:9 window over the
-  picture.
-  `+0xf9bc` follows the player's height on the screen
-  (`PhyreScene_getChaPos` `0x0065d860`), clamped to 0.035..0.295 (the
-  `.rdata` constants `0x00b3eb40`, `0x00b43d00`), and is 0.035 while
-  `+0xf9c4` is clear (`PhyreScene_change2DSceneNum(1)` sets it). In the
+- **The 16:9 window.** The pass translates the camera's matrix by
+  (`+0xfa34`, `+0xfa38`). Then, unless `+0xf9c7` or `g_PhyreScene3D` is
+  set, it squeezes it (`squeeze` in `h3_glue43.rs`): y x 4/3, then moved
+  by `d = 1/3 - 2 b`, with `b` the float at scene `+0xf9bc`. Unlike
+  `PhyreScene_GetScreenAdjustedView_00651650` (`docs/formats/render.md`,
+  round 20), which the main camera gets, it does not add `+0xf9c0` (the
+  per-map value `PhyreScene_fieldMapInitialize` sets, `h3d_fmi.rs`). So
+  336 of the 448 rows show, 16:9 once the PS2's 7/6-wide pixels are
+  taken, and the top row shown is `112 - 336 b`: the game pans a
+  16:9 window over the picture. `b` follows the player's height on
+  the screen (`PhyreScene_getChaPos` `0x0065d860`), clamped to
+  0.035..0.295 (the `.rdata` constants `0x00b3eb40`, `0x00b43d00`), with
+  fixed values on a few events (`ffx.sym`), and is 0.035 while `+0xf9c4`
+  is clear (`PhyreScene_change2DSceneNum(1)` sets it). In the
   `kami0100-a` capture it is 0.275, which shows PS2 rows 19.6..355.6.
-  The ffx-remix notes also read 0.285 and 0.2 on a few events and
-  `+0xf9c0` = 0.23 on level `0xec1`, -0.01 on `0xc58`; those are not
-  re-traced here.
 - **Depth and order.** The layers' vertex shader
   (`phyreprerenderedshader`, all five variants the maps use) takes a
   position as `(x, y, -10 z, 1)` (`mul r0.xyz, v0.xyz, (1, 1, -10)`). x
@@ -400,8 +399,9 @@ at `+0x18` and `+0x1c`).
   its file depth, on the same scale as the characters drawn after it,
   and the depth test (`LESS_EQUAL`; cut-outs write depth, blended layers
   do not) draws the layers in file-depth order, nearer over farther,
-  whatever the view. The layers' world bounds sit at z -10 x depth, not
-  at the mesh's z, which matters for anything that culls or picks them.
+  whatever the view. A layer is drawn at z = -10 x depth, not at the
+  mesh's z where its file bounds are: anything that culls or picks
+  layers has to apply the same scale.
 - **Scenes.** A map's `YNSC` scenes are alternative pictures of the same
   room (`kami0100`: two scenes of 11 layers each). After `rcbgLoadBin`,
   `Yn_PreBgSetData` (`0x0091aa60`) calls `rcbgPreSetSceneNo(0)`
@@ -482,8 +482,9 @@ at map entry, not by the model file: in the file they sit at the origin.
   which reach `PhyreScene_setObjectTranslation` and
   `PhyreScene_setObjectRotation` (`0x0066e3e0`, `0x0066db00`;
   `docs/formats/render.md`, "Object translation/rotation"). Every mesh
-  of the object gets the translation `(-x, -y, z)` and 10 x the turns;
-  the file's node world is dropped.
+  of the object gets the translation `(-x, -y, z)` and 10 x the turns
+  (x and y by the negated angles, z as is, in the order the `order`
+  argument picks); the file's node world is dropped.
 - The PC model's `PMeshInstance` has the class fields `m_objID` (the
   object a script names) and `m_RotType` (a turn order). ffx-remix uses
   `m_RotType` as the `order` argument of `setObjectRotation` (0 z y x
