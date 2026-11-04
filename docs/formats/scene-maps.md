@@ -336,10 +336,11 @@ facts below come from FFX.exe functions already named in `ffx.sym`, the
 map files, and two captures of the original (`kami0100-a`,
 `cdsp0000-a`). It covers the 2D layers, the map cameras, the script
 placements and the map effects' table. Counts are over the archive's 329
-field maps, except the effects', which are over its 433 `MAP1` files
-(`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`: one per map
-folder, a different count from the field maps'). What was not checked is
-marked so.
+field maps, except the effects', which are over the 433 field-map
+`MAP1` files (`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`:
+one per map folder, a different count from the field maps'); the 58
+battle maps' `btlmap/<area>/<map>_a/bin/mapout.vpa`, also `MAP1` files,
+are not counted. What was not checked is marked so.
 
 ### The `YNSC` layer record
 
@@ -614,11 +615,13 @@ hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
 | `+0x10..+0x1c` | `u32` | the four tables, offsets from the section start |
 | `+0x20` | | the entries, 0x50 bytes each |
 
-The second heap and the packet buffer are allocated by the first
-`pppSetFpPdt` after `pppFpFree` (`ppp_fp_free`), which frees both when
-a map is torn down (`yiResetObj`, `yi_reset_obj` in
-`crates/ffx-field/src/yi.rs`). A table installed while they are still
-allocated has its `+1` and `+2` ignored.
+`pppSetFpPdt` allocates the packet buffer when there is none, and the
+second heap when there is none and the table's `+1` is not 0. Both live
+until `pppFpFree` (`ppp_fp_free`) frees them when a map is torn down
+(`yiResetObj`, `yi_reset_obj` in `crates/ffx-field/src/yi.rs`). So the
+first table after a teardown sizes the packet buffer, the first one
+after it with a non-zero `+1` sizes the second heap, and later tables'
+`+1` and `+2` are ignored until the next teardown.
 
 An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 `+0x40..+0x6c`, the part's position, angles and scale that
@@ -648,7 +651,8 @@ lists them). On `cdsp00` 9 of the 14 records carry a `TEX0`, naming 5 of
 the 7 files. How a program refers to a record was not read, so which
 textures an entry draws with is open.
 
-**On the archive** (433 `mapout.vpa`): 272 have entries, 5,630 in all
+**On the field maps** (433 `mapout.vpa` under `map/`; the battle maps'
+under `btlmap/` were not counted): 272 have entries, 5,630 in all
 (at most 113 in one table). 3,768 run from the load and 1,862 wait for a
 script; 265 tables start at least one at load. The ID is not unique:
 2,750 entries have ID 0 (2,179 of them with the view test on), and 21

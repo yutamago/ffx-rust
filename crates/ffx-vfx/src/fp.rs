@@ -940,9 +940,9 @@ pub mod bridge {
     /// `pppFpInitHeapDisplay` while it is 0.
     pub const HEAP_DISPLAY_SET: Global<u32> = Global::new(0x00ce_c218);
     /// `g_pppFpPacketBuf` (`0x00cec220`): the field effects' packet buffer
-    /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated by the first
-    /// `pppSetFpPdt` after [`ppp_fp_free`], which frees it when a map is
-    /// torn down.
+    /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated by
+    /// `pppSetFpPdt` when there is none (the first table, and the first
+    /// after [`ppp_fp_free`], which frees it when a map is torn down).
     pub const PACKET_BUF: Global<u32> = Global::new(0x00ce_c220);
     /// `g_pppFpHeap2Buf` (`0x00cec224`): the second heap's block, allocated
     /// by the first `pppSetFpPdt` after [`ppp_fp_free`] that asks for one.
@@ -961,8 +961,9 @@ pub mod bridge {
     /// `pppSetFpPdt(data)` (`0x0072a7f0`): installs a field's effect table:
     /// [`FP_DISP`] on, [`DATA`] = `data`, `pppInitData(data,
     /// g_pppProgramTable, 0)`, `pppInitEnv(g_pppFpHeap, data, ENV,
-    /// 0x40000)`. The first time a table asks for a second heap (`byte
-    /// +1` blocks of 8 KB) it is allocated (`user_malloc`) and made
+    /// 0x40000)`. When there is no second heap and the table asks for one
+    /// (`byte +1` blocks of 8 KB; after [`ppp_fp_free`], the first such
+    /// table) it is allocated (`user_malloc`) and made
     /// (`pppCreateHeap(g_pppFpHeap2, ..)`). The heap use and peak are reset,
     /// the heap display redone (`op_heap_display_clear(0x601)`,
     /// `op_heap_display_set_par(g_pppFpHeap, 0x8603)`), [`HEAP_DISPLAY_SET`]
