@@ -940,10 +940,12 @@ pub mod bridge {
     /// `pppFpInitHeapDisplay` while it is 0.
     pub const HEAP_DISPLAY_SET: Global<u32> = Global::new(0x00ce_c218);
     /// `g_pppFpPacketBuf` (`0x00cec220`): the field effects' packet buffer
-    /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated once.
+    /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated by the first
+    /// `pppSetFpPdt` after [`ppp_fp_free`], which frees it when a map is
+    /// torn down.
     pub const PACKET_BUF: Global<u32> = Global::new(0x00ce_c220);
     /// `g_pppFpHeap2Buf` (`0x00cec224`): the second heap's block, allocated
-    /// once.
+    /// by the first `pppSetFpPdt` after [`ppp_fp_free`] that asks for one.
     pub const HEAP2_BUF: Global<u32> = Global::new(0x00ce_c224);
     /// `g_pppFpWide` (`0x00cec228`): set for a table of 0x28 effects or the
     /// level whose name hash is 0x234; 0x00756740 then uses 1.1 for some
@@ -971,9 +973,9 @@ pub mod bridge {
     /// words and a unit matrix (`FFXVu0UnitMatrix`). An effect with kind
     /// byte `+0x4a` 2 sets [`WOOD`]. [`WIDE`] for 0x28 effects or level
     /// hash 0x234 (`graphicLevelGetNameHash`, not asked for 0x28). The
-    /// packet buffer is allocated once: 0xc0000 bytes, 0x100000 for `byte
-    /// +2` 1, 0x140000 for 2; its use and peak reset. Callees through
-    /// `call`.
+    /// packet buffer is allocated when there is none (the first table
+    /// after `pppFpFree`): 0xc0000 bytes, 0x100000 for `byte +2` 1,
+    /// 0x140000 for 2; its use and peak reset. Callees through `call`.
     pub fn ppp_set_fp_pdt<M: Mem>(
         mem: &mut M,
         data: u32,

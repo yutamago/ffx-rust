@@ -131,9 +131,10 @@ the index of the value in that key's table (`g_SettingsValueStrings`
 `Phyre_PRenderInterface_setTextureQuality` (`0x0058e000`, this =
 `0x00c94f00`). It is stored at `+0x1340`, and when it changes every
 texture file registered at `+0x1344` is reloaded.
-`Phyre_PFramework_PApplication_frame` (`0x00627bcc`) calls it again when
-the application asks for it: the byte at `*g_PhyreApplication`
-(`0x00cc9cd8`) `+0x15` is the pending flag the options change sets, and
+`Phyre_PFramework_PApplication_frame` (`0x00627940`; the call at
+`0x00627bcc`) calls it again when the application asks for it: the byte
+at `*g_PhyreApplication` (`0x00cc9cd8`) `+0x15` is a pending flag
+(presumably set by the options menu; its writer was not traced), and
 the frame then passes `g_Settings +0x34` to it under the render lock and
 clears the flag (port `crates/ffx-prender/src/p6_appframe.rs`).
 **Writing `g_Settings` (`*0x022fb504`) `+0x34` alone changes nothing**
@@ -334,10 +335,11 @@ and `event.rs`, the notes in `~/ffx-work/ffx-remix/m3/review1/`). The
 facts below come from FFX.exe functions already named in `ffx.sym`, the
 map files, and two captures of the original (`kami0100-a`,
 `cdsp0000-a`). It covers the 2D layers, the map cameras, the script
-placements and the map effects' table. Counts are over the archive's
-329 field maps, except the effects', which are over its 433 `MAP1` files
-(`map/<area>/<map>/bin/mapout.vpa`: one per map folder, a different count
-from the field maps'). What was not checked is marked so.
+placements and the map effects' table. Counts are over the archive's 329
+field maps, except the effects', which are over its 433 `MAP1` files
+(`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`: one per map
+folder, a different count from the field maps'). What was not checked is
+marked so.
 
 ### The `YNSC` layer record
 
@@ -591,7 +593,8 @@ the same wheel (`FBXASC0490_0Shape`).
 A map's own particle effects (on the Salvage Ship's deck, the light
 beams of the tower lamps and the save sphere's glow) are **field
 programs**: entries of the effect table in section 10 of the map
-folder's `MAP1` file (`map/<area>/<map>/bin/mapout.vpa`, section
+folder's `MAP1` file
+(`ffx_ps2/ffx/master/jppc/map/<area>/<map>/bin/mapout.vpa`, section
 offsets at `+0x10 + 4i`). The examples below are the folder `cdsp00`,
 whose event is `cdsp0000`. `yiMapReadMaster` (`0x009093b0`)
 hands the section to `pppSetFpPdt` (`0x0072a7f0`, port
@@ -631,19 +634,19 @@ An entry (`pppSetFpPdt` copies `+0..+0x2c` into its run record's
 | `+0x38..+0x40` | `f32` x 3 | view cylinder for ID 0: far (below 0: no test), radius, height. `pppCheckViewCylinder` non-zero (out of view) makes `pppFpLoop` skip the entry, but for a few entries of maps 0x136, 0x31 and 0x176 |
 | `+0x44` | `u16` | ID: what `Native_FpRun`, `Native_FpShow`, `Fp_Restart`, `Fp_RestartMode2`, `Fp_End` and `pppFpIDdispOn/Off` match |
 | `+0x46` | `u16` | group (`Fp_RestartGroup`, `Fp_EndGroup`, `pppFpGroupDispOn/Off`) |
-| `+0x4a` | `u8` | draw matrix mode (`pppFpSetDrawMatrix`; 2 faces the camera and sets `g_pppFpWood`) |
+| `+0x4a` | `u8` | draw matrix mode (`pppFpSetDrawMatrix`; 2 faces the camera through `g_pppFpWoodMatrix`, which `pppFpLoop` builds when `pppSetFpPdt` has set `g_pppFpWood` for such an entry) |
 | `+0x4b` | `u8` | turn order (`pppFpSetRotMatrix`: 1 XZY ... 5 ZYX, else XYZ) |
 
 Some of the 0x20-byte records at `+0x14` (`pppInitData` relocates
 their `+0x14..+0x1c`) carry a GS `TEX0` at `+0xc` (`TBP0`, `PSM`, `TW`,
 `TH`). Their `TBP0` and `PSM` are the
 first two fields of the map's HD effect textures,
-`map/<area>/<map>/fp/tex/d3d11/<TBP>_<PSM>_<X>_<Y>_<W>_<H>.dds.phyre`
-(`docs/formats/ps2-textures.md`, "Effect textures"; `fp/tex/texlist.txt`
-lists them). On `cdsp00` 9 of the 14 records carry a `TEX0`, naming 5
-of the 7 files. How
-a program refers to a record was not read, so which textures an entry
-draws with is open.
+`ffx_data/gamedata/ps3data/map/<area>/<map>/fp/tex/d3d11/<TBP>_<PSM>_<X>_<Y>_<W>_<H>.dds.phyre`
+(the HD tree, not the PS2 one that holds `mapout.vpa`;
+`docs/formats/ps2-textures.md`, "Effect textures"; `fp/tex/texlist.txt`
+lists them). On `cdsp00` 9 of the 14 records carry a `TEX0`, naming 5 of
+the 7 files. How a program refers to a record was not read, so which
+textures an entry draws with is open.
 
 **On the archive** (433 `mapout.vpa`): 272 have entries, 5,630 in all
 (at most 113 in one table). 3,768 run from the load and 1,862 wait for a

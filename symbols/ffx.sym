@@ -11831,7 +11831,7 @@
 0x00729850 function pppFpInfPrint             # fh v3:exact 0x00729940; ported M5 vfx r5 b11 (ffx_glue_other::m5v_p): cdecl() -> op_num's eax: at (2, 2) the camera position (row 3 of FFXVu0InversMatrix(g_pppCameraMatrix), ebp - 0x124), the player's (Ch_GetPos of Sg_GetPlayer, zero without one, ebp - 0x114) and the distance (pppVu0Length_copy_0072ab20 of their difference) as truncated integers (ftol2_sse), sprintf into ebp - 0x104
 0x007299e0 function pppFpInitHeapDisplay      # fh v3:exact 0x00729ad0; (heap): op_heap_display_clear(0x601), op_heap_display_set_par(heap, 0x8603), g_pppFpHeapDisplaySet = 1 (fp::bridge::ppp_fp_init_heap_display)
 0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00; (stat): the inverse of pppFpSaveStat, 2 bits per effect with a nonzero id: Fp_Restart, hidden flag (fp::bridge::ppp_fp_load_stat)
-0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0; ported r49: field effects frame (matrices, packet/heap stats); map 0x136 skips effects 2/6/10 in view, 0x31 runs only 0x26 while getScenerioFlag <= 0x2c, 0x176 only 0xd; restart pppStartPart(run, 0x1000, prog, 1) (4th word is a pushed 1 Ghidra drops)
+0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0; ported r49: field effects frame (matrices, packet/heap stats); ID-0 effects out of view (pppCheckViewCylinder non-zero) are skipped, except on map 0x136 (all but 2/6/10 still run), 0x31 (0x26 while getScenerioFlag <= 0x2c) and 0x176 (0xd); restart pppStartPart(run, 0x1000, prog, 1) (4th word is a pushed 1 Ghidra drops)
 0x00729f70 function pppFpPointLightInit       # fh v3:bsim1.00 0x0072a060
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080; (): point lights follow g_FpPointLightA: growing past g_FpPointLightCap saves the defined ones (Sg_PLightGet*), disposes, Sg_PLightAllocate, redefines them and switches the rest off; shrinking switches the extra ones off; then Ch_PLightSetEnable(h, g_FpPointLightB) for every character (fp::bridge::ppp_fp_point_light_proc)
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
@@ -28544,8 +28544,8 @@
 0x00cec20c label    g_pppFpHeapUsed           # last pppFpLoop's heap use
 0x00cec210 label    g_pppFpHeapPeak           # peak of g_pppFpHeapUsed
 0x00cec218 label    g_pppFpHeapDisplaySet     # set by pppFpInitHeapDisplay and pppSetFpPdt; pppPartLoop runs pppFpInitHeapDisplay while it is 0; name ours (fp::bridge::HEAP_DISPLAY_SET)
-0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it once (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
-0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB once and pppCreateHeap's it, pppFpFree frees it; name ours
+0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it when there is none, the first table after pppFpFree (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
+0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB when there is none (the first table after pppFpFree that asks) and pppCreateHeap's it, pppFpFree frees it; name ours
 0x00cec228 label    g_pppFpWide               # pppSetFpPdt sets it for 0x28 effects or graphicLevelGetNameHash() 0x234; 0x00756740 then uses -1.1/1.1 for two -1/1 bounds; name ours
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
 0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
