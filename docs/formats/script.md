@@ -328,6 +328,30 @@ A level (one request priority): `+0x18` program counter, `+0x1d` call depth
 (three return addresses from `+0`, worker IDs from `+0x10`), `+0x1f` request
 state, `+0x20` and `+0x24` registers A and B, `+0x28` the float accumulator.
 
+#### Worker types
+
+The type (worker header `+0x00`) decides what the engine does with a worker
+besides running its entries. Read off the functions that test the type byte:
+
+| Type | Frame step (`Atel_WorkerFrame_008666e0`) | Position block (`AtelGetPosWorkAdrs`) | Levels | Atel# name |
+|---|---|---|---|---|
+| 0 | none | `+0x558` | 9 | `FunctionWorker`: the target of `call`, not counted at block `+0x36` |
+| 1 | move, turn, character sync, then `Atel_CheckTouchTalk_00866980` against the player | `+0x558` | 9 | `Actor` |
+| 2 | `Atel_CheckLineTouch_008684b0`: the line `+0`..`+0x30` against the player's step (cross, touch, talk) | `+0x558` | 9 | `LineTrigger`; `BattleWorker` in monster and battle scripts, whose workers are all type 2 |
+| 3 | `Atel_CheckBoxTrigger_00866cc0`: the box around the position against the player (cross, touch, talk) | `+0x558` | 9 | `BoxTrigger` |
+| 4 | none | none (0) | 9 | `LogicWorker` |
+| 5 | `Atel_CheckLineCrosses_00868020`: the line against the target `+0x28` and the eight tracked workers of the line table `+0x2e4` (cross only) | `+0x284` | 2 | `LineSensor` |
+| 6 | `Atel_CheckBoxTouch_00867c10`: the box against the target `+0x28`, or the player for `0xffff` (touch, cross) | `+0x284` | 2 | `BoxSensor` |
+
+Only type 1 places a character (`Atel_WorkerPlaceChr_00866800`), binds
+effects (`AtelBindFp`) and loses the player's control in `AtelUcOff`;
+types 2 and 5 are the two-point ones (`AtelGetActorStartPos`,
+`Script_GetWorkerPos`, `LineExtend`); the guide map's record
+(`AtelGetGuideMapActorInfo`) gives 2 and 5 a line flag and 2, 3, 5 and 6
+no direction. The entries
+each trigger kind runs are under "Trigger entries" below. [Atel#](https://github.com/yutamago/ffx-atel-sharp)
+names its worker base classes after this table (`docs/language.md` there, "Workers").
+
 ### The stack
 
 19 tagged slots (`AtelPushStackInteger`, `0x0086e3f0`;
