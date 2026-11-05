@@ -28305,6 +28305,7 @@
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
+0x00c496d4 label    g_ExecFrames              # i8: world ticks per Sg_MainLoop (1 in the image; Sg_SetExecFrames clamps 0..99, the debug pad steps it in Sg_ControlMain); Sg_GetCurExecFrames reads it; docs/formats/frame-timing.md; name ours
 0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set; 1 in the shipped exe's .data (ffx-demaster docs/render.md)
@@ -29144,13 +29145,18 @@
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
 0x012fb7e4 label    g_FramSync                # set by setFramSync (0x00822720): 1 in a battle with a magic file loaded
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
+0x012fb7f8 label    g_FrameSyncCarry          # f32: Sg_FrameSync's 60 Hz carry (ticks due = (carry + dt) x 60); docs/formats/frame-timing.md; name ours
+0x012fb7fc label    g_FrameSyncTickCarry      # f32: Sg_FrameSync's 30 Hz carry; its whole part of (carry + dt) x 30 becomes g_VoiceHold; docs/formats/frame-timing.md; name ours
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
 0x012fb814 label    g_SyncFrameIndex          # Sg_SyncCutScene: index into the frame table 0x012fb828 (30 words, frame << 7)
 0x012fb8a0 label    g_SyncOn                  # Sg_SyncCutScene: 1 while the sound sync answers, 0 after 999; time 0x012fb8ac and rate 0x012fb8b0 (f32, x 1000)
+0x012fb8ac label    g_SyncTime                # f32: Sg_SyncCutScene's sync time (iSyncGetData x 1000, ms); Sg_FrameSync steps ticks to it while g_SyncOn; name ours
+0x012fb8b0 label    g_SyncRate                # f32: Sg_SyncCutScene's sync rate (iSyncGetData x 1000, ms); name ours
 0x012fb8b8 label g_BtlEffectPreloaded      # u32: magic file 0x15e taken preloaded (MsEffectRead)
 0x012fb8c0 label g_SaveLoadedPending # HandleSaveDataScreen: 1 after a successful load, then TkMenuJumpToLoadedScene in screen state 4
 0x012fb8f0 label    g_DreamOn                 # u32: the dream effect started (recallSceneEffect sets it and loads special texture 10); cleared by dreamParamReset
 0x012fb8f4 label    g_DreamPhase              # u32: the dream effect's phase; 5 draws it (graphicDrawDream from recallSceneEffect)
+0x012fbc34 label    g_KeepFps                 # u8: Sg_SetKeepFps / Sg_GetKeepFps; with it SG_UpdateMotion steps by Sg_MainCalcRate's rate (0x023cbbec); name ours
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
@@ -29181,6 +29187,9 @@
 0x013007a4 label    g_PlayerStickDirTaken     # f32 g_PlayerStickDir when Sg_ControlPlayer last took the camera yaw (follow mode 3); -1000 standing still; name ours
 0x013007a8 label    g_PlayerStickX            # i32 left stick x after the dead zone (88 < x < 168 -> 128), Sg_ControlPlayer; name ours
 0x013007ac label    g_PlayerStickY            # i32 left stick y after the dead zone (0x59..0xa7 -> 0x80), Sg_ControlPlayer; name ours
+0x013007b1 label    g_ExecSpecial             # u8: debug pad bit 0 in Sg_ControlMain; set, Sg_GetCurExecFrames gives g_ExecSpecialSpeed instead of g_ExecFrames; name ours
+0x013007b2 label    g_ExecSpecialSpeed        # i8: Sg_SetExecSpecialSpeed's; see g_ExecSpecial; name ours
+0x013007b3 label    g_ExecStep                # i8: Sg_GetExecStep's; set when the debug pad steps g_ExecFrames below 0 (one tick, then 0); name ours
 0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
 0x013007c4 label    g_PlayerDirFixOn          # u8 Sg_PlayerSetDirFix's flag: Sg_ControlPlayer turns the stick angle by g_PlayerDirFix instead of the camera yaw; name ours
 0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
@@ -29984,6 +29993,7 @@
 0x023c5d00 label    g_ClothTriBary             # 0x300 x 16 bytes: InsideTriangle 0x00828c10's barycentric coordinates (u, v, w) per candidate triangle; name ours
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
+0x023cbbec label    g_FrameRate88             # i32: Sg_MainCalcRate's rate, 8.8 fixed (0x100 = one tick: the v-blank count since the last call << 7, the sync frame while g_SyncOn, 0x100 when exec frames is not 1); name ours
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
 0x023cbc04 label    g_SgMouseWheel            # i32 wheel steps (Sg_MouseMain adds 0x01325294; Gu_Main clears it; Gu_ClientMouse scrolls 24 a step, Gu_WindowMouse sends 0x8017); name ours
