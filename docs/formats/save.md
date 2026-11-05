@@ -30,6 +30,37 @@ equals the word at `+0x64f4` and `TkCRC(0x64b8, buffer + 0x40)` gives it
 (the word is zeroed first), or always with `g_SaveData_CrcCheckOff`
 (`0x00ccb9a4`).
 
+## The PS2 save file
+
+Source: ffx-demaster `docs/compare.md` (MIPS disassembly of `SCES_504.92`,
+the German PAL disc; saves made this way load in PCSX2). PS2 addresses are
+ELF addresses (`docs/formats/ps2-elf.md`).
+
+The memory card holds folder and file `BESCES-50492FF0906nn/BESCES-50492FF0906nn`
+(nn = slot 0..98, listed in the game as file nn + 1), with the icon
+`010906nn.ico` and `icon.sys` beside it. The region prefixes are a table
+at `0x00326e50..0x00326ec0` (`BISLPS-25088`, `BASLUS-20312`,
+`BESCES-50490`..`50494`, `BISLPM-65115`, picked by `0x0020b858`), built
+into `0x00326f58` by `0x002413e0` with `FF0906%02d` (`0x00326ee0`). Path
+builders: `0x0023cbd8` data file, `0x0023cc58` icon, `0x0023cd38`
+`icon.sys`, `0x0023cdb8` folder.
+
+The file is `0x64f8` bytes: the `0x40` header and `0x64b8` bytes of game
+state (buffer `0x01d57b00`, state `0x01d57b40`), with the CRC as `u16` at
+header `+0x1a` and as a word at file `+0x64f4` (zeroed while computing).
+The CRC (`0x002510a8`, check at `0x00240f1c`, written at `0x0023d478`) is
+CRC-16 with polynomial `0x1021`, start `0xffff` and the result inverted,
+over a table built for entries 0..254 only (entry `0xff` stays 0). It is
+the PC's `TkCRC(0x64b8, buffer + 0x40)` (above): the PC's `ffx_NNN` files
+checked (slots 1 and 5) are this file zero-padded to `0x6900`, pass the
+PS2's check and load in PCSX2.
+
+On the PS2, `g_SaveData` is `0x003194d0` (cleared with size `0x64b8` at
+`0x001bc440`); `g_BtlFieldIndex` is `0x00318c76`, followed by the group
+(`+2`), the formation (`+3`) and the field name (`+4`): `22 00 00 01`
+`kami00_01` in a Thunder Plains encounter (PINE reads in PCSX2 against the
+loaded save).
+
 ## The game state block (`g_SaveData`, `0x0112ca90`)
 
 The `0x68c0` bytes the file keeps at `0x40`. The names are Fahrenheit's

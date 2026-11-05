@@ -1946,3 +1946,180 @@ pushed as literals (no relocation entries), not addresses.
 - Still open from the system worklist: `TOBtlGetMainPad` (`0x0089c900`),
   `TOBtlCtrlCtbWindow` (`0x0089ece0`), `TOBtlSetWindowLayout`
   (`0x008a10d0`).
+
+## Shape layout tables (ffx-demaster)
+
+The TO shape ids index three layout tables, each a `u32` count and the
+entries' offsets (source: ffx-demaster `docs/ui.md`, checked against
+FFX.exe's bytes and the PS2 ELF, `docs/formats/ps2-elf.md`):
+
+| Table | Sheet | Shape ids | Entries |
+|---|---|---|---|
+| `g_TOLayoutMeswin` (`0x00c5b460`) | `0x3e00` (`meswin`) | 0..198 and 200..398 (id - 200) | 85 |
+| `g_TOLayoutBattle` (`0x00c5c2c8`) | `0x3f00` (`battle`) | 400.. | 110 |
+| `g_TOLayoutIcon` (`0x00c5d578`) | `0x3dc0` (`icon`) | 600..649 | 25 |
+
+They equal the PS2's (`SLPM_675.13` `0x00321328`, `0x00322190`,
+`0x00323440`) entry by entry. A part record is `u8 u, v; i8 dx, dy; u16
+w, h`, then flip x and flip y (4 more bytes; the entry's `u32` part count
+comes first). `TOMkpShapePartIndexXYWHC2` does not add dx/dy.
+
+Negative ids in `TOMkpShapeXYWHUV`/`UVC2` (`0x00903bb0`, `0x00903ee0`):
+-1 = image `0x3e80` (16000), -2 = `0x3e82` (UV × 1/2048, 1/1024:
+`battle_kuang`), -3 = `0x3e83`, -4 = `0x3e84` (`stonetexture`, UV / 256),
+-6 = `0x3e86`.
+
+Shapes worth knowing:
+
+- 200-203 (meswin entries 0-3): (160,56) 16×24, (176,56) 8×24, (160,80)
+  16×8, (176,80) 8×8: the PS2 message window that `TOMkpWindowPlain_008f9a40`
+  draws, with a horizontal gradient on 201 and 203 from `col_mssgwind0`
+  (`g_TOColMssgWind0`: corner, left edge, gradient start) to
+  `col_mssgwind1`. `TOAdpWindowFrame_008f1e40` draws the same four as the
+  common window (200 in c0, 201 c0 -> c1, 202 in c0, 203 c0 -> c1).
+- 45: the PS2 cursor (ball and hand; `docs/formats/ps2-elf.md`). FFX.exe's
+  `TOMakePktShapeCursor` draws kind 0 as shape 400 instead.
+- `0x3e`: 17 parts, a black strip and the HELP text. FFX.exe's
+  `TOAdpEasyShapeXYWHC2` (`0x008ed380`) draws only its last part.
+- `0xd7` (entry 15): 25 parts of the 8 × 16 cell (96, 72), dx -88..104, dy
+  11 (a line, texel rows 81..83). `0x10a` (66): 22 such tiles at dy 11
+  plus the disc (48, 0). `0x107` (63): 19 parts.
+- 59: (0,224) 136 × 16, the Overdrive label (`EKSTASE` on the German disc;
+  the English `uspc/menu/meswin.fmt` cell holds only part of the O in
+  column 0). 64: the Overdrive bar (120,88) 136 × 24 at (-16,5) plus that
+  label at (28,3). No code passes 59 or 64 as an immediate.
+- Battle entries 13, 14 and 21: the Overdrive, trigger and both plates;
+  `TOMakePktSeqPrimLayout_008fe0b0` draws shape 413 only at y <= 300 and
+  skips 411, 415 and 507 (the PS2 draws them all).
+
+`TOGetShapTextureName(0x3dc0)` gives `menu_us/D3D11/icon.dds.phyre` in
+English (slot table `g_TOShapeTextureSlots` `0x00c59d58`: the menu set,
+then a set per language). Sheet `0x3d80` is
+`menu/subfont/D3D11/{font,shadow}_0_{0,1}.dds.phyre`, which is not in the
+archive (the PC opens `jppc/menu/subfont.fmt` = `xfont1208.fmt`, the PS2's
+fonts M and S). `TOMkpValueFontMClutRight` (`0x009042e0`) and
+`TOMkpValueFont3d80_00904310` draw nothing, even with those pages served
+and loaded (harness).
+
+`PhyreScene_loadMenuTexture` (`0x006651d0`) loads any cluster path
+asynchronously. The menu manager binds a texture by its name at draw time
+and skips the draw ("Need update TextureName") until it is loaded, so a
+mod can add a menu texture by name (ffx-demaster's `ps2win` sheet).
+
+## Plate pairs and windows (ffx-demaster)
+
+- `TOMkpShapeLeftRight_008f5e90(a, b, x, y, w, c0, c1)`: a stretched to
+  w - width(b) in c0 -> c1, then b in c1. `TOMkpShapePairStretchB_008f5e20`:
+  a in c0, b stretched c0 -> c1. `TOMkpShapeLeftRightH_008f5f00`: the first
+  with a height. Their cursor forms are `TOAdpShapePair_008f0990` (plate L)
+  and `TOAdpShapePairR_008f09f0` (plate R).
+- `TODrawMenuPlateXYWHType` type 10 is the HD message box: a shadow
+  `TODrawCrossBoxXYWHC2` (+6, +6, `0x401a1a1a`), the stone body (shape -4,
+  alpha 0x40), a gradient `TODrawCrossBoxXYWHC2Mode2` `0x608f2c45` /
+  `0x60501826` (sphere grid: `0x60340614` / `0x60300410`) and the meswin
+  frame (shape 200 with explicit UVs). Type 9 is the same with
+  `0x668f4b2d` / `0x6617080a`. Callers: `yiWindowDrawMenu`,
+  `TOMenuDrawYesNoWindow`, `TkBtlEndDrawLegendNotice`.
+- `yiWindowDrawMenu` (`0x00907060`, the kind-0 draw) is the remaster's;
+  `yiWindowDrawPlate` (`0x00907390`) is the PS2 kind-0 draw, and
+  `yiWindowDrawBar` (`0x00907c10`) the kind-10 copy of the main menu's help
+  bar `TkMenuMain_DrawHelpBar_008a9350`.
+
+## `TOSeqInitParam`'s outputs (ffx-demaster)
+
+`TOSeqInitParam` (`0x008ae6f0`) reads the same 92 values in the same order
+as the PS2's (`0x00209bc8`) into `g_TOSeqParams` (`0x025d1600`..`0x025d16b8`)
+and a few words near `0x025d0af0`, but passes the out pointers mirrored: a
+point (x, y) is stored y at a, x at a + 2; a rectangle (x, y, w, h) as
+(h, w, y, x) from its lowest address. Examples:
+
+| Name | PS2 | FFX.exe |
+|---|---|---|
+| `rect_nameplt` | `0x00324204` | x `0x025d1676`, y `0x1674`, w `0x1672` (h overlapped by `num_namepltspc` `0x025d1670` on both) |
+| `rect_complt` | | x `0x025d1648`, y `0x1646`, w `0x1644`, h `0x1642` |
+| `pos_namestr` | | x `0x025d1664`, y `0x1662` |
+| `dum79` | | x `0x025d0afa` (45), y `0x025d0af8` (339) |
+| `dum91`, `dum92` | `0x00324304`, `0x00324308` | `0x025d0af4`, `0x025d0af0` |
+| `dum75` | `0x003241cc` | `0x025d16ac` |
+| `col_mssgwind0`, `col_mssgwind1` | | `0x025d16b4`, `0x025d16b0` |
+
+Colours at run time (PC, English; bytes R G B A):
+
+| Name | Value |
+|---|---|
+| `col_mssgwind0` / `1` | `19 00 31 6b` / `34 00 66 6b` |
+| `col_complt0` / `1` | `4f 28 78 80` / `58 4a 82 80` |
+| `col_nameplt0` / `1` | `24 3e 53 80` / `11 18 40 80` |
+| `col_helpplt` | `09 09 09 80` |
+| `col_bsoplt0` / `1` | `3a 3a 3a 80` / `27 27 27 80` |
+| `col_bitemplt0` / `1` | `51 42 23 80` / `3c 3f 12 80` |
+| `col_babplt0` / `1` | `4a 1e 55 80` / `42 0d 39 80` |
+| `col_lmtplt0` / `1` | `1f 38 55 80` / `14 1c 38 80` |
+| `dum75` | `73 55 0b 80` |
+| `dum91` / `dum92` | `42 88 cb 3c` / `42 00 85 6e` |
+
+`TkMenuDrawAll` packs `col_menubg0` as R = byte `0x025d167f`, G
+`0x025d167d`, B `0x025d167e`, A `0x025d167c` (`col_menubg1`: `0x025d167b`,
+`0x025d1679`, `0x025d167a`, `0x025d1678`), as the PS2's `0x00243f98` packs
+`0x003241fc..ff`; the values are `6b aa cd 80` -> `ba c3 87 80`. The PS2
+draws them as a full-screen gradient; `TODrawMenuBGC2` (`0x008f5c60`, only
+caller `0x008aa338`) keeps only the alpha over `ffx_bg`. `col_bsoplt`,
+`col_bitemplt`, `col_babplt` and `col_lmtplt` colour menu plates
+(`TOAdpShapeByKind`), not battle rows.
+
+## The 16x12 font's size (ffx-demaster)
+
+The PC draws the 16x12 font smaller than the PS2 (a help line measures
+84 × 11.6 PS2 units against the PS2's 166 × 16).
+`TOAddPktBaseMesFontLClutTypeRGBA` (`0x008e92a0`) -> `TOMakePktFont1612Font`
+/ `TOMakePktFont1612Shadow`: glyph x1 = x + w × 0.78 × `g_TOScaleX`, y0 =
+y + 0.78 × yoff, y1 = y + `g_TOScaleY` × (18 + yoff) × 0.78 (both scales
+1.0 and never written; 0.78 becomes `g_TOFont1612KindScale` 1.0 for kinds
+1 and 3). The shadow is moved by `g_TOFontShadowX`/`Y` PS2 units (never
+written) and by `graphicFontDraw`'s +2.0 screen pixels. `graphicFontDraw`
+(`0x00640660`): X = x0 × 3.75 (`k_ThreeSevenFiveF64`) + a3, extent (x1 -
+x0) × 2.5961538 (`k_1080Over416F64`), the same for y.
+`TOAddFontWidthSpace` (`0x008e8ed0`): pen = round(x × s) / s +
+`TOGetFontWidthInPiexl` (`0x008fa6b0`, round(w × scale × t) / s) +
+`TOGetFontSpaceInPiexl` (`0x008fa570`, cached at `0x018716b4` /
+`0x018716b8`), with s = `g_TkMenuScissorScales`[0] (1920 / 512) and t =
+`0x018716ac` (1080 / 416). The PS2's (`docs/formats/ps2-elf.md`, "Fonts
+and numbers"): a w × 18 sprite, advance width + 2.
+
+`TOGetTextWidth_008b8040` (behind `TkMenuDraw1612Width` `0x008dc9e0`)
+returns garbage in the harness (f32 bit patterns summed as ints);
+`TkMn2StringWidth` (`0x008c2cb0`)'s low 16 bits give the PS2-unit width of
+a 16x12 text. `TOMkpBaseMesFont_00901cb0` (`TOAddPktBaseMesFont`) and
+`TOMkpBaseMesFontAlpha_00901ce0` are the PS2's `0x001f3810` and
+`0x001f3858`.
+
+## Battle windows and cursors (ffx-demaster)
+
+`g_BtlWindowRecords` (`0x0133c950`): 8 records of `0xf0` bytes, the same
+memory as `g_BtlActionStack` + `0x50` (the stack's `+0x51` is a record's
+`+1`). `TODrawBtlWindow` draws a record when byte `+1` > 2 and `+0x90` is
+set; the callbacks are `+0x90` draw, `+0x94`, `+0x98` open, `+0x9c` wait,
+`+0xa0` (the PS2's `+0x80`..`+0x90`, `docs/formats/ps2-elf.md`, "Battle
+windows"). `TOBtlDrawWeaponAbilityWindow` (`0x008f34c0`) is cdecl(weapon,
+f32 x, f32 y); `TOBtlDrawSummonPrim` (`0x008a0ba0`) cdecl(chr, x, y);
+`DrawCrossMenuScrollParts` (`0x008e6cc0`) cdecl(f32 x, y, w, h, first
+line, rows, lines), drawn only when rows < lines.
+
+`TODrawBtlWindow` draws the battle cursors after `TODrawScissorXYWH(0, 0,
+512, 416)` and `TOSeqDraw(2, 1, ...)`: `TOMakePktShapeCursor(kind, x, y)`
+for each of `g_BtlCurPosCount` entries of `g_BtlCurPos` (x + 2, y + 4 as
+i16), then the count is cleared, unless `0x0133d6e0` is set.
+
+`jppc/menu/battle_script.bin` holds the battle scenes in the TkMenu scene
+format (`crates/ffx-menu/src/scene.rs`): `bnormalllay` tracks 5 and 6 are
+shape 413 (x 70 -> 46, y 318), then an alpha blink 0x80 <-> 0x32. The PS2
+starts `bnormal{,e,l,t}` + `lay` and `bevent`/`blimit`/`btwo`/`bleftw`;
+FFX.exe only `bnormallay`, `bnormalllay` and `blimitlay`
+(`TOOpenBtlWinMain`, `TOOpenBtlLimitBreak`).
+
+`TOMakePktBtlIconA` (`0x008fbcc0`) draws the battle words (OVERKILL,
+IMMUNE, MISS, MP) from HD-pixel UVs ((108,452)-(550,506),
+(632,382)-(952,474), (304,392)-(464,432), (0,382)-(73,420)) at `X2(310)` ×
+`Y2(38)` and so on; shapes 600..649 in `TOMkpShapeXYWHUVC2` are sheet
+`0x3dc0` with u / 1024, v / 512. The PS2 draws them 1:1 from the rectangles at `0x00570000`
+(`docs/formats/ps2-elf.md`, "Battle windows").

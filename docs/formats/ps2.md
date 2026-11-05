@@ -7,7 +7,10 @@ emulation registers"), and kept the VU0 vector library (`FFXVu0*`).
 The PS2 data formats the PC no longer ships or reads by number:
 `docs/formats/ps2-disc.md` (disc tables, file names, compression),
 `docs/formats/ps2-movie.md` (movies), `docs/formats/ps2-music.md`
-(sequences, instrument banks, the IOP sound driver).
+(sequences, instrument banks, the IOP sound driver),
+`docs/formats/ps2-textures.md` (textures, fonts, menu sheets). The PS2
+ELF's code and its FFX.exe twins (menus, VU1, threads):
+`docs/formats/ps2-elf.md`.
 
 ## Register set-up (`AsmEmuInit`, `0x0042ee40`)
 
