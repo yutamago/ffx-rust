@@ -352,6 +352,17 @@ fn grown_and_shrunk_segments_read_back() {
         seg.colors.extend_from_within(..);
         seg.joints.extend_from_within(..);
         seg.weights.extend_from_within(..);
+        // Further sets: shifted, so that each set is told apart.
+        for (k, set) in seg.extra_uvs.iter_mut().enumerate() {
+            let shifted: Vec<[f32; 2]> = set
+                .iter()
+                .map(|&[u, v]| [u + 0.25 * f32::from(u8::try_from(k + 1).unwrap()), v])
+                .collect();
+            set.extend(shifted);
+        }
+        for set in &mut seg.extra_colors {
+            set.extend_from_within(..);
+        }
         let more: Vec<u16> = seg.indices.iter().map(|i| i + n16).collect();
         seg.indices.extend(more);
         let last = model.segments.len() - 1;
@@ -368,6 +379,9 @@ fn grown_and_shrunk_segments_read_back() {
             assert_eq!(a.positions, b.positions, "{}", entry.path);
             assert_eq!(a.normals, b.normals, "{}", entry.path);
             assert_eq!(a.uvs, b.uvs, "{}", entry.path);
+            assert_eq!(a.extra_uvs, b.extra_uvs, "{}", entry.path);
+            assert_eq!(a.colors, b.colors, "{}", entry.path);
+            assert_eq!(a.extra_colors, b.extra_colors, "{}", entry.path);
             assert_eq!(a.joints, b.joints, "{}", entry.path);
             assert_eq!(a.weights, b.weights, "{}", entry.path);
             assert_eq!(a.indices, b.indices, "{}", entry.path);
@@ -376,6 +390,140 @@ fn grown_and_shrunk_segments_read_back() {
     }
     eprintln!("{checked} models edited and read back");
     assert!(checked > 100);
+}
+
+/// Map segments with several texture coordinate and color sets export
+/// them all (`TEXCOORD_n`, `COLOR_n`) and read them back; set 0 is the first
+/// stream in block order.
+#[test]
+fn every_stream_set_exports_and_reads_back() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let path = "ffx_data/gamedata/ps3data/map/znkd/znkd14/mdl/d3d11/znkd14.dae.phyre";
+    let bytes = archive.read(archive.find(path).unwrap()).unwrap();
+    let model = ffx_phyre::Model::parse(&bytes).unwrap();
+    let (uv2, uv3, c2) = model.segments.iter().fold((0, 0, 0), |(a, b, c), s| {
+        (
+            a + usize::from(!s.extra_uvs.is_empty()),
+            b + usize::from(s.extra_uvs.len() > 1),
+            c + usize::from(!s.extra_colors.is_empty()),
+        )
+    });
+    eprintln!("{path}: {uv2} segments with 2+ UV sets, {uv3} with 3, {c2} with 2+ color sets");
+    assert!(uv2 > 0 && uv3 > 0 && c2 > 0);
+    let glb = model.to_glb();
+    let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    let json: serde_json::Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
+    let attrs: Vec<&serde_json::Value> = json["meshes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|m| m["primitives"].as_array().unwrap())
+        .map(|p| &p["attributes"])
+        .collect();
+    assert!(attrs.iter().any(|a| !a["TEXCOORD_2"].is_null()));
+    assert!(attrs.iter().any(|a| !a["COLOR_1"].is_null()));
+    // Edited sets come back as edited; the rest stays as stored.
+    let mut edited = model.clone();
+    let s = edited
+        .segments
+        .iter()
+        .position(|s| s.extra_uvs.len() > 1)
+        .unwrap();
+    for uv in &mut edited.segments[s].extra_uvs[1] {
+        uv[0] += 0.5;
+    }
+    let mut back = model.clone();
+    back.import_glb(&edited.to_glb()).unwrap();
+    // The edited set within float noise (v is flipped twice), the others
+    // bit for bit.
+    let close = |a: &[[f32; 2]], b: &[[f32; 2]]| {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .all(|(x, y)| (x[0] - y[0]).abs() < 1e-6 && (x[1] - y[1]).abs() < 1e-6)
+    };
+    assert!(close(
+        &back.segments[s].extra_uvs[1],
+        &edited.segments[s].extra_uvs[1]
+    ));
+    assert_eq!(
+        back.segments[s].extra_uvs[0],
+        model.segments[s].extra_uvs[0]
+    );
+    assert_eq!(back.segments[s].uvs, model.segments[s].uvs);
+    let written = back.write(&bytes).unwrap();
+    let reread = ffx_phyre::Model::parse(&written).unwrap();
+    assert_eq!(reread.segments[s].extra_uvs, back.segments[s].extra_uvs);
+    assert_eq!(reread.segments[s].uvs, model.segments[s].uvs);
+    assert_eq!(reread.segments[s].tangents, model.segments[s].tangents);
+}
+
+/// Geometry that grows past an unskinned instance's culling box grows the
+/// box (`PMeshInstanceBounds`); other instances keep theirs.
+#[test]
+fn edited_geometry_grows_its_culling_box() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let mut checked = 0;
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.contains("/map/") && e.path.ends_with(".dae.phyre") && e.size > 0)
+        .step_by(20)
+    {
+        let bytes = archive.read(entry).unwrap();
+        let Ok(mut model) = ffx_phyre::Model::parse(&bytes) else {
+            continue;
+        };
+        let Some((i, s)) = model.instances.iter().enumerate().find_map(|(i, inst)| {
+            let &(s, _) = inst.segments.first()?;
+            (inst.bounds.is_some()
+                && model.segments[s].joints.is_empty()
+                && model
+                    .instances
+                    .iter()
+                    .filter(|o| o.segments.iter().any(|&(x, _)| x == s))
+                    .count()
+                    == 1)
+                .then_some((i, s))
+        }) else {
+            continue;
+        };
+        let old = model.instances[i].bounds.unwrap();
+        let center = [0, 1, 2].map(|k| old.min[k] + old.size[k] / 2.0);
+        for p in &mut model.segments[s].positions {
+            for k in 0..3 {
+                p[k] = center[k] + (p[k] - center[k]) * 3.0 + 1.0;
+            }
+        }
+        let written = model.write(&bytes).unwrap();
+        let back = ffx_phyre::Model::parse(&written).unwrap();
+        let b = back.instances[i].bounds.unwrap();
+        for p in &model.segments[s].positions {
+            for k in 0..3 {
+                assert!(
+                    p[k] >= b.min[k] && p[k] <= b.min[k] + b.size[k] * 1.000_01 + 1e-4,
+                    "{}: instance {i} box {b:?} misses {p:?}",
+                    entry.path
+                );
+            }
+        }
+        for (j, (a, c)) in model.instances.iter().zip(&back.instances).enumerate() {
+            if j != i && !a.segments.iter().any(|&(x, _)| x == s) {
+                assert_eq!(a.bounds, c.bounds, "{}: instance {j}", entry.path);
+            }
+        }
+        checked += 1;
+    }
+    eprintln!("{checked} map models with a grown instance");
+    assert!(checked > 10);
 }
 
 /// Every model, and every 20th other cluster, rewritten through

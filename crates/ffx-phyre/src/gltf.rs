@@ -149,25 +149,29 @@ fn primitive(bin: &mut Bin, seg: &Segment, with_tangents: bool) -> Option<Value>
         );
         attributes.insert("TANGENT".into(), json!(acc));
     }
-    if seg.uvs.len() == count {
+    // Every set as TEXCOORD_n and COLOR_n: glTF numbers them without gaps,
+    // so a set of another length ends the run.
+    let uv_sets = std::iter::once(&seg.uvs).chain(&seg.extra_uvs);
+    for (k, set) in uv_sets.take_while(|set| set.len() == count).enumerate() {
         // Stored with v up, matching the bottom-first textures; glTF has v
         // down, matching the upright export.
-        let flipped: Vec<[f32; 2]> = seg.uvs.iter().map(|&uv| export_uv(uv)).collect();
+        let flipped: Vec<[f32; 2]> = set.iter().map(|&uv| export_uv(uv)).collect();
         let t = bin.accessor(
             &floats(&flipped),
             ARRAY_BUFFER,
             json!({"componentType": FLOAT, "count": count, "type": "VEC2"}),
         );
-        attributes.insert("TEXCOORD_0".into(), json!(t));
+        attributes.insert(format!("TEXCOORD_{k}"), json!(t));
     }
-    if seg.colors.len() == count {
-        let bytes: Vec<u8> = seg.colors.iter().flatten().copied().collect();
+    let color_sets = std::iter::once(&seg.colors).chain(&seg.extra_colors);
+    for (k, set) in color_sets.take_while(|set| set.len() == count).enumerate() {
+        let bytes: Vec<u8> = set.iter().flatten().copied().collect();
         let col = bin.accessor(
             &bytes,
             ARRAY_BUFFER,
             json!({"componentType": UNSIGNED_BYTE, "normalized": true, "count": count, "type": "VEC4"}),
         );
-        attributes.insert("COLOR_0".into(), json!(col));
+        attributes.insert(format!("COLOR_{k}"), json!(col));
     }
     let indices: Vec<u8> = seg.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
     let idx = bin.accessor(

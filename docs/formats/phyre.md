@@ -167,6 +167,40 @@ streams by order is wrong for about a fifth of the models.
 | `SkinWeights` | float4 |
 | `SkinIndices` | four bytes |
 
+### Stream sets
+
+A segment can have several streams of one semantic, told apart by
+`PVertexStream.m_streamSet` (`+9`): maps carry up to three `ST` sets
+(each with its own `Tangent` and `Binormal`) and up to three `Color` sets;
+the skin streams have set 255. The streams of a set sit in their own data
+block or with the others. A shader input of a render type reads the
+stream whose set the instance's segment context binds
+(`PMeshInstanceSegmentStreamBinding`, `docs/scene-builder.md`), else the
+first stream of that type in block order.
+
+A census of the 1,266 model clusters with segments (1,314 `.dae.phyre`
+files: 872 `chr/`, 382 `map/`, 60 `btlmap/`; the other 48 have no
+segments), by semantic, type and set in block order:
+
+| Segments | Layout |
+|---|---|
+| 19,750 | `Vertex Normal ST Tangent Binormal Color(float4)` |
+| 6,806 | the same with `ST`, `Tangent` and `Binormal` in set 1 only |
+| 3,081 | `Vertex Normal ST Tangent Binormal Color Color:1` |
+| 2,503 | `Vertex` only |
+| 2,441 | `SkinnableVertex SkinnableNormal ST SkinnableTangent SkinnableBinormal SkinWeights SkinIndices` |
+| 1,156 | the same with `Color` |
+| 1,020 | `ST`, `ST:1` (each with tangent and binormal), `Color` |
+| 1,020 | `ST:1`, `Color`, `Color:1` |
+| 430 | `SkinnableVertex SkinnableNormal SkinWeights SkinIndices` |
+| 901, 119, 102, … | 16 more layouts, among them `ST:1 ST:2`, `ST ST:1 ST:2` and `Color:2` (25 in all) |
+
+1,231 segments have more than one `ST` stream. `Model` reads the first
+stream of each semantic in block order into `uvs`, `colors`, `tangents`
+and `binormals`, and further `ST` and `Color` streams into `extra_uvs`
+and `extra_colors`; the glTF export writes them as `TEXCOORD_n` and
+`COLOR_n` in the same order.
+
 ### Scene
 
 - **Nodes.** `PNode` objects (`m_parent`, `m_name`, and `m_localMatrix`, a
@@ -280,9 +314,20 @@ updates the fields that describe them:
 | Header | words 18 and 19 (index and vertex buffer sizes) |
 
 Blocks keep their order in the vertex buffer, back to back; segments keep
-theirs in the index buffer. Tangents and binormals are recomputed from the
-UVs when a segment's vertex count changes. Materials and bounds are kept as they are;
-new segments, palettes and skeleton matrices are below.
+theirs in the index buffer. Each `ST` and `Color` stream is written from
+its set (see [Stream sets](#stream-sets)); a further set the caller leaves
+empty keeps its stored values, or takes the first set's when the vertex
+count changed. When a segment's vertex count changes, the n-th `Tangent`
+and `Binormal` streams are recomputed from the n-th UV set.
+
+The culling box of an unskinned instance whose segments' positions
+changed grows to hold them: `PMeshInstanceBounds.m_min` and `m_size`, in
+the instance's model space, which `PCheckVisibleBoundsJob_execute`
+(`0x009f3160`) tests through `viewproj . world`
+([scene.md](scene.md)). Without that, geometry that grows past its box is
+culled while it is still in view. Skinned instances' boxes are moved by
+the game. Materials are kept as they are; new segments, palettes and
+skeleton matrices are below.
 
 `ffx model import` reads the geometry from an exported `.glb`. Every
 primitive carries `extras.ffx_segment` and every mesh
@@ -355,6 +400,28 @@ it wears her colours. The first-scene game test loads that model (and the
 asset list naming the texture) every run.
 
 New joints in the hierarchy are not written.
+
+### Limits for edited and new geometry
+
+From the census above, the classes' field types and the shaders in
+`shaders/d3d11/` (`EffectVariant`, `crates/ffx-scene/src/effect.rs`):
+
+| What | Limit | Shipped maximum |
+|---|---|---|
+| Primitives | triangle lists (`m_primitiveType` 2) | all |
+| Indices | `u16` (`PIndexDataBlock.m_type` 12): at most 65,536 vertices per segment | 55,448 (`map/bika/bika01` segment 0) |
+| Weights per vertex | 4 (`SkinWeights` float4, `SkinIndices` four bytes) | 4 (91,952 vertices use all four) |
+| Bone palette per skinned segment | 80: every one of the 121 shader variants with `BoneTransforms` (0x8f, type `'1'`) has room `size >> 6 & 0x7f` = 80; the bones past the room get no matrix (`generateNodeParameterCaptureBuffer` `0x005b7fe0`, scene-chars.md) | 79, and one segment of 101 (`chr/pc/c902` segment 1) |
+| Segments per model, materials per model | not measured | 652 (`map/ptkl/ptkl06`), 249 (`map/lchb/lchb13`) |
+
+A material's effect import names a variant without `BoneTransforms`
+(4,023 of the 4,084 skinned segments; Tidus's `#851289fd…` reads only
+`Vertex`, `Normal` and `ST`), yet the game draws Tidus's skinned segments
+with `#0f527c1b…`, a variant that reads `SkinnableVertex`,
+`SkinnableNormal`, `SkinWeights` and `SkinIndices` and has room 80
+(scene-chars.md, "Draws of cdsp0000"). So the skinned variant is chosen
+at load or draw time, and the room of 80 holds for those segments too.
+Where it is chosen is not traced (see Open questions).
 
 ### In the running game (D3D11)
 
@@ -766,3 +833,9 @@ and +0x4c = 1.0 in all 3,054 (measured in the second run).
 - Why `PNode`'s name array fixup (+0x4c in the file) lands at +0x50 in
   memory: what `Class_FindMemberByOffset` (`0x0047d5f0`, through
   `0x0047d3e0`) returns for `PNode` at +0x4c.
+- Where the game picks the skinned shader variant for a skinned segment
+  whose material imports one without `BoneTransforms`, and what
+  `chr/pc/c902` segment 1 (a palette of 101, room 80) looks like in game.
+- Whether the game binds a segment's further `ST` and `Color` sets
+  anywhere but through segment context bindings (6,806 segments have
+  their only `ST` stream in set 1).

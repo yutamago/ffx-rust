@@ -355,7 +355,8 @@ impl Resolver<'_> {
 
     /// The `PMeshInstanceBounds` whose `m_meshInstance` is object `obj` of
     /// the `PMeshInstance` list `instances`.
-    fn instance_bounds(&self, instances: usize, obj: u32) -> Result<Option<Bounds>> {
+    /// Also gives the file offsets of `m_min` and `m_size`.
+    fn instance_bounds(&self, instances: usize, obj: u32) -> Result<Option<(Bounds, [usize; 2])>> {
         let c = self.c;
         let Some(list) = self.list_of("PMeshInstanceBounds") else {
             return Ok(None);
@@ -384,11 +385,14 @@ impl Resolver<'_> {
             }
             Ok(v)
         };
-        Ok(Some(Bounds {
-            min: v3(o_min)?,
-            size: v3(o_size)?,
-            render_order: crate::model::u32_at(self.bytes, at + o_order)?.cast_signed(),
-        }))
+        Ok(Some((
+            Bounds {
+                min: v3(o_min)?,
+                size: v3(o_size)?,
+                render_order: crate::model::u32_at(self.bytes, at + o_order)?.cast_signed(),
+            },
+            [at + o_min, at + o_size],
+        )))
     }
 
     /// Resolves the scene: materials, default materials per segment, the
@@ -514,8 +518,9 @@ impl Resolver<'_> {
                     .next()
                     .map(|f| (f.target_list(), f.target()));
                 let bounds = self.instance_bounds(instances, i)?;
+                scene.bounds_at.push(bounds.map(|b| b.1));
                 scene.instances.push(Instance {
-                    bounds,
+                    bounds: bounds.map(|b| b.0),
                     name: self
                         .array_string(instances, i, "PMeshInstance", "m_name")
                         .unwrap_or_default(),
@@ -599,4 +604,6 @@ pub(crate) struct Scene {
     pub skeletons: Vec<Skeleton>,
     pub nodes: Vec<Node>,
     pub instances: Vec<Instance>,
+    /// Per instance, the file offsets of its bounds' `m_min` and `m_size`.
+    pub bounds_at: Vec<Option<[usize; 2]>>,
 }
