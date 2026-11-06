@@ -435,14 +435,24 @@ transfer (a transfer is 32 bytes plus count x entry size, those two at
   (`phyreprerenderedshader`, all five variants the maps use) takes a
   position as `(x, y, -10 z, 1)` (`mul r0.xyz, v0.xyz, (1, 1, -10)`). x
   and y go through `WorldViewProjection` (the layer camera), but the
-  output depth comes from rows 2 and 3 of `scene.Projection`, the
-  **main** camera's projection (near 1, far 65536, the field camera's
-  field of view). So a layer gets the field camera's depth at 10 times
-  its mesh's z (the record's `+0x14` on 1,035 of 1,075 layers), on the
-  same scale as the characters drawn with that camera. With the depth
-  test (`LESS_EQUAL`), layers that write depth (the cut-outs of
-  `preTransparentATC`) cover each other in mesh-z order, nearer over
-  farther, whatever the view. Blended layers (`preTransparent`, the four
+  output depth comes from rows 2 and 3 of `scene.ViewProjection2` (the
+  shader's `$Globals`: `scene` at byte 48, `ViewProjection2` at `+208`,
+  registers 18 and 19): `z = ((row 2 . v) / (row 3 . v) + 1) / 2` with
+  `v = (x, y, -10 z, 1)`, and `w` from `WorldViewProjection`. Earlier
+  versions of this section named `scene.Projection`; the shader does not
+  read it. What the game puts into `ViewProjection2` while the layers draw
+  is not traced here. The depth is divided by the clip `w` a second time:
+  through the game's orthographic layer camera `w` is 1, so a layer's
+  depth follows 10 times its mesh's z (the record's `+0x14` on 1,035 of
+  1,075 layers), and with the depth test (`LESS_EQUAL`) layers that write
+  depth (the cut-outs of `preTransparentATC`) cover each other in mesh-z
+  order, nearer over farther. Through a perspective camera (a free
+  editor or renderer view) every layer's depth falls within one step of a
+  24-bit depth buffer, the depth test lets the last draw through and the
+  farthest layer can show in front: a renderer that draws layers through
+  its own perspective camera has to give the layers a depth of its own
+  (ffx-remix `docs/offline-scene.md`, "Layer order in a perspective
+  view"). Blended layers (`preTransparent`, the four
   maps above) write no depth, so among themselves the pass's draw order
   decides; that order was not checked. A layer is drawn at z = -10 x its
   mesh's z, not at the z where its file bounds are: anything that culls
