@@ -522,22 +522,34 @@ main.md):
   - the debug tweak `0x00698ab0`;
   - the natives:
     - `Native_FogSetParams` `0x0091b810` (`0x8037`: near, far, limit)
-      writes the PS2 fog through `yiSetFogParam` (`0x0090a350`). It
-      reaches the PC renderer only by map number (`g_CurrentMapNo`
-      `0x012fbc40`): on map `0xe0` (in `yiSetFogParam`) as near x 0.001,
-      far x 0.001, limit (1 - limit/255) x 0.4, curve 1; on map `0x140`
-      (`0x0091c8a0`) through `graphicSetFogNear`/`Far`/`Limit`(/255) and
-      curve 1.
+      writes the PS2 fog through `yiSetFogParam` (`0x0090a350`), which
+      divides near and far by `g_YiScaleFactor` (32 after `yiInit`; 10 on
+      one `Sg_MainLoop` path). It reaches the PC renderer only by map
+      number (`g_CurrentMapNo` `0x012fbc40`):
+      - on map `0xe0` (in `yiSetFogParam`) as near and far / scale x
+        0.001, limit (1 - limit/255) x 0.4, curve 1;
+      - on map `0x140` (`0x0091c8a0`) through `graphicSetFogNear`/`Far`/
+        `Limit`(/255) and curve 1.
     - `Native_FogSetParam0`/`1`/`2` (`0x8038`/`0x803a`/`0x803c`,
-      `0x0091b8b0`/`0x0091b960`/`0x0091ba10`) have no map test: unless
-      the level name hash is `0xca2`, `0x1e38` or `0x699`, each calls
-      `yiSetFogParam` and then `graphicSetFogNear`, `Far` or
+      `0x0091b8b0`/`0x0091b960`/`0x0091ba10`) have no map test. Unless the
+      level name hash is `0xca2`, `0x1e38` or `0x699`, each reads the three
+      values back (`yiGetFogParam`), replaces its own, calls
+      `yiSetFogParam`, and then calls `graphicSetFogNear`, `Far` or
       `Limit`(/255) directly, on every map; none sets the curve. On map
-      `0xe0` the direct call comes after `yiSetFogParam`'s scaled write,
-      so the value ends up unscaled.
-
-    `Native_FogSetColor` (`0x803e`, `0x0091bad0`) on map `0x140` passes
-    `ftol(c / 255)` per channel: each channel is 0, or 1 at 255.
+      `0xe0`:
+      - `yiGetFogParam` (`0x00908bb0`) returns the renderer's values, so
+        the two values a call does not set are rescaled and shrink with
+        every call;
+      - the value it does set ends up unscaled (the direct call comes
+        last).
+    - The colour natives `Native_FogSetColor` (`0x803e`, `0x0091bad0`) and
+      `Native_FogSetRed`/`Green`/`Blue` (`0x803f`-`0x8041`, `0x0091bbb0`/
+      `0x0091bc80`/`0x0091bd50`) first call `yiSetFogColor` (`0x0090a2c0`).
+      It stores the PS2 colour bytes and, on map `0xe0`, calls
+      `graphicSetFogColour(c / 255)` with exact fractions. Then, on map
+      `0x140`, they pass each channel truncated by `ftol`: for
+      `Native_FogSetColor`, `ftol(c / 255)`, so each channel is 0, or 1 at
+      255.
 - The `graphicSetFog*` setters go through `FogEffectManager` (`*0x00ce5170`,
   getter `0x006e32c0`, context through manager `+0xa0`). Each first asks
   `FogEffectManager_isMoving_006e3480`: the squared distance
