@@ -16548,7 +16548,7 @@
 0x00836400 function Sg_LightSetColorRGB       # ours (sorts between Sg_LightSetColor and Sg_LightSetDir, like Sg_LightSetDirXYZ): cdecl(kind, r, g, b f32): Sg_LightSetColor(kind, &(r, g, b, 0)) (fld/fstp each), its eax; caller Native_4012_LightSetColor; ported (ffx_sg::light, main round 16)
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
 0x008364f0 function Sg_LightSetDirXYZ         # (i, x, y, z): Sg_LightSetDir(i, &(x, y, z, 0)); script native at 0x00a77f70; between Sg_LightSetDir and Light_Set; name ours; ported (ffx_sg::control)
-0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430); exactly: colour f32(f32(int)/255) each, 4th word the frame's never-written local; direction (sin p cos y, sin y, cos p cos y) with each angle Angle_Wrap(f32(f32(deg) * 3.141592 / 180)), the CRT's sin/cos; g_FFXIsDebug: 0x0084eb10(args); eax the last call's; ported (ffx_sg::light, main round 16)
+0x00836520 function Light_Set                    # (light 0-3, r, g, b, azimuth deg p, elevation deg y; called pitch and yaw before, swapped): color /255 (0x00836310) and direction from the two angles (0x00836430); exactly: colour f32(f32(int)/255) each, 4th word the frame's never-written local; direction (sin p cos y, sin y, cos p cos y) with each angle Angle_Wrap(f32(f32(deg) * 3.141592 / 180)), the CRT's sin/cos; g_FFXIsDebug: 0x0084eb10(args); eax the last call's; ported (ffx_sg::light, main round 16)
 0x00836640 function Sg_SetSuimen              # fh switch:bsim1.00 0x71004143a0
 0x00836660 function Sg_SetWaterLimit          # (h): f32 0x013009dc; Fahrenheit Switch BSim 1.00 0x71004143d0
 0x00836670 function Sg_VectorGetLength        # (v) -> sqrt((x² + y²) + z²) through _CIsqrt, as f32; Switch name order after Sg_SetWaterLimit
@@ -29212,7 +29212,7 @@
 0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
 0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
-0x013008c4 label g_ChrShadowDir              # 2 words, Ch_DrawSetShadowDir / Ch_DrawGetShadowDir; ints (225, 45) from Sg_EventjumpInit, native 0x4043; Ch_DrawSingleShadow passes them as floats to the battle shadow light (+0x401c, +0x4018)
+0x013008c4 label g_ChrShadowDir              # 2 words, Ch_DrawSetShadowDir / Ch_DrawGetShadowDir; ints (225, 45) from Sg_EventjumpInit, native 0x4043, the debug Shadow window Gui_ShadowProc_008523e0; Ch_DrawSingleShadow passes them as floats to the battle shadow light (+0x401c, +0x4018)
 0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv; Ch_MotEvent 0x00834350 prints each fired event when set
 0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
 0x01300938 label g_ChrScreenMatrix           # 64 bytes, Ch_SysGetScreenMatrixPtr / Ch_SysSetScreenMatrix

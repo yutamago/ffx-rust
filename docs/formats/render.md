@@ -508,7 +508,10 @@ Their callers:
    ints) passes the colour `(r, g, b) / 255` to `Sg_LightSetColor`. It turns
    each angle to radians (`deg * 3.141592 / 180`, wrapped by
    `Angle_Wrap_00836720`) and passes the direction
-   `p = (sin a5 * cos a6, sin a6, cos a5 * cos a6)` to `Sg_LightSetDir`.
+   `p = (sin a5 * cos a6, sin a6, cos a5 * cos a6)` to `Sg_LightSetDir`:
+   a5 is the azimuth about y (from +z towards +x) and a6 the elevation.
+   (The argument names "pitch" and "yaw" used for `0x4013` elsewhere were
+   swapped; `docs/formats/script.md` now says azimuth and elevation.)
    That reaches `Phyre_CharacterLighting_setLightDir` through
    `graphicCharacterLightingSetLightDir` (`0x0063cb50`).
 2. `setLightDir` stores `d = (-p.x, -p.y, p.z)` and gives the PLight's node

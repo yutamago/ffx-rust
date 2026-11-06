@@ -417,7 +417,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   - Called without `Pause_Enter` (as M5a does), mode 1 gives that freeze
     without the PAUSE screen, the sound pause (`Sg_SetPauseAllSounds`
     `0x00821cc0`), the movie pause (`Pause_Enter` and `Pause_Leave` end in
-    `graphicVideoPause` `0x00645de0` while a movie plays with the 3D scene)
+    `graphicVideoPause` `0x00645de0` while a movie plays with the 3D scene
+    (`movie_with3DScene` `0x0076f0c0`) or the word at `0x0112a00c` is set)
     and the clock bookkeeping. `Pause_Enter` stores the time
     (`graphicGetTimeInMicroseconds`) at `0x012fb820`, and `Pause_Leave`
     adds the time paused to the u64 at `0x012fb818`. That is the cut-scene

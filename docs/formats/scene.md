@@ -311,7 +311,8 @@ at most 6,000 vertices in all, is a dome; a ring that stays near or below
 the horizon is counted separately. It checked 20 maps by rendering these
 parts alone; one false positive (`mcfr0000`'s forest backdrop) turned up.
 That gives 771 dome parts plus 69 rings below the horizon (on 24 maps),
-840 parts on 211 maps; the counts below are over all 840:
+840 parts on 211 maps. The counts below are over all 840, the false
+positive's 10 parts included:
 
 - **Shader.** `phyredefaultlitshader.fx` (752) or
   `phyreuvanimationshader.fx` (88, the scrolling clouds, e.g. Besaid). The

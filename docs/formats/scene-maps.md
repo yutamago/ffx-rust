@@ -267,8 +267,9 @@ direction in the field data; the cascades' light is nearly always vertical.
   second, as floats) for a character drawn with shadow mode 3
   (`graphicSetShadowFloats_00642fb0` →
   `ShadowManager_SetFloats401c`). `Sg_EventjumpInit` sets
-  `g_ChrShadowDir` to `(225, 45)` and native `0x4043`
-  (`Native_4043_SetShadowDir`) to the script's. Not checked: which
+  `g_ChrShadowDir` to `(225, 45)`, native `0x4043`
+  (`Native_4043_SetShadowDir`) to the script's, and the debug "Shadow"
+  window (`Gui_ShadowProc_008523e0`) to its spins'. Not checked: which
   battles draw mode-3 shadows, and so get a slanted light.
 
 The character key light is a separate light with its own direction
