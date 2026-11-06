@@ -641,6 +641,10 @@ pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<Imported> {
         .chain(new_prims.iter().map(|(_, t, used)| (*t, used.clone())))
         .collect();
     for (s, joints) in &wanted {
+        // Unskinned geometry (a new part of a map prop) needs no skeleton.
+        if joints.is_empty() {
+            continue;
+        }
         let k = skeleton_of(*s).ok_or_else(|| bad(format!("segment {s} has no skeleton")))?;
         for &h in joints {
             if known.contains_key(&(k, h)) {

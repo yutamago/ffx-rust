@@ -1039,3 +1039,29 @@ fn new_segments_and_joints_import() {
         s.bones[0].skeleton
     );
 }
+
+/// A new primitive beside an unskinned map part becomes a new segment of
+/// its instance (no skeleton involved).
+#[test]
+fn a_new_part_joins_an_unskinned_instance() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let path = "ffx_data/gamedata/ps3data/map/cdsp/cdsp00/mdl/d3d11/cdsp00.dae.phyre";
+    let bytes = archive.read(archive.find(path).unwrap()).unwrap();
+    let model = ffx_phyre::Model::parse(&bytes).unwrap();
+    let mut glb = Glb::parse(&model.to_glb());
+    // A copy of the first mesh's first primitive, without its segment tag.
+    let mut prim = glb.json["meshes"][0]["primitives"][0].clone();
+    prim["extras"] = serde_json::json!({});
+    glb.json["meshes"][0]["primitives"]
+        .as_array_mut()
+        .unwrap()
+        .push(prim);
+    let imported = ffx_phyre::import_into_cluster(&bytes, &glb.bytes()).unwrap();
+    let back = ffx_phyre::Model::parse(&imported.bytes).unwrap();
+    assert_eq!(back.segments.len(), model.segments.len() + 1);
+    assert_eq!(imported.new_textures, Vec::<String>::new());
+}
