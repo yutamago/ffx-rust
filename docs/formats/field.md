@@ -418,8 +418,10 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
     without the PAUSE screen, the sound pause (`Sg_SetPauseAllSounds`
     `0x00821cc0`) and the clock bookkeeping. `Pause_Enter` stores the time
     (`graphicGetTimeInMicroseconds`) at `0x012fb820`, and `Pause_Leave`
-    adds the time paused to the u64 at `0x012fb818`, which `Sg_FrameSync`
-    subtracts from the cut-scene sync clock. A caller that freezes this
+    adds the time paused to the u64 at `0x012fb818`. That is the cut-scene
+    sync's start time (`Sg_FrameSync` sets it when a synced scene starts
+    and measures elapsed time from it), so the start moves forward by the
+    pause. A caller that freezes this
     way has to do the same, or voice-synced scenes catch up afterwards.
 - Map teardown (`Yn_MapSystemFini` `0x00919a60` → `rcbgFini`
   `0x00921aa0`): the guide's minimap VFX (`graphicVFXDestroy(0, model

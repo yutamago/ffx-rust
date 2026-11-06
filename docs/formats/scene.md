@@ -303,12 +303,15 @@ parts`). The numbers below come from that dump.
 ### Sky domes
 
 The game has no sky shader, flag or pass. A map's sky is one or more
-ordinary mesh instances of the map cluster. To find them, ffx-remix took
-the parts at least 1,000 units from the world's y axis and roughly centred
-on it, with at most 6,000 vertices, and not drawn with
-`phyrewatershader.fx`. It checked 20 maps by rendering the sky parts alone;
-one false positive (`mcfr0000`'s forest backdrop) turned up. That gives
-840 sky parts on 211 maps:
+ordinary mesh instances of the map cluster. To find them, ffx-remix
+grouped the parts not drawn with `phyrewatershader.fx` that reach at
+least 1,000 units from the world's y axis, and kept the groups roughly
+centred on that axis. A group reaching high enough above its floor, with
+at most 6,000 vertices in all, is a dome; a ring that stays near or below
+the horizon is counted separately. It checked 20 maps by rendering these
+parts alone; one false positive (`mcfr0000`'s forest backdrop) turned up.
+That gives 771 dome parts plus 69 rings below the horizon (on 24 maps),
+840 parts on 211 maps; the counts below are over all 840:
 
 - **Shader.** `phyredefaultlitshader.fx` (752) or
   `phyreuvanimationshader.fx` (88, the scrolling clouds, e.g. Besaid). The
@@ -325,8 +328,9 @@ one false positive (`mcfr0000`'s forest backdrop) turned up. That gives
 - **Passes.** 361 draw in the opaque pass and 479 in the transparent one
   (blend `SRC_ALPHA, INV_SRC_ALPHA`, alpha `ONE, ZERO`). They sort as any
   instance ("Sort" above); `m_render_order` is 0 on 395 and 1 on 120.
-  `znkd08`'s outer night sky has 2000 (`ro % 1000` 0, so it still sorts
-  with the first).
+  The outer night sky of `znkd0800`, `znkd0801` and `znkd0900` has 2000
+  (8 parts each; `znkd0900` 1000 on 8 more): `ro % 1000` is 0, so it still
+  sorts with the first.
 - **Depth.** 835 of the 840 write depth (`LESS_EQUAL`, write mask all),
   the blended ones too. The other 5 are `MASK_DEPTH` variants. So a sky
   pixel holds the dome's depth; only pixels that no draw covers keep the
@@ -354,13 +358,15 @@ The second kind is drawn by `PhyreScene_render` (`0x00668930`) after the
 scene, with the scene depth (`docs/formats/postfx.md`, "Order"). A
 builder that runs only `OpaqueNoMSAA` and `TransparentNoMSAA` misses it.
 
-- Constants: `ScrollSpeed_tex0_X/Y`, `ScrollSpeed_nml1_X/Y`,
-  `ScrollSpeed_nml2_X/Y`, `MultiTexBlendFactor`, `SpecularColor`,
-  `SpecularShininess`, `MaterialColour`, `AlphaThreshold`.
+- Constants: `ScrollSpeed_tex0_X/Y`, `ScrollSpeed_tex1_X/Y` (305 parts),
+  `ScrollSpeed_nml1_X/Y`, `ScrollSpeed_nml2_X/Y`, `MultiTexBlendFactor`,
+  `SpecularColor`, `SpecularShininess`, `MaterialColour`,
+  `AlphaThreshold`.
 - Samplers: `CubeMapSampler` (`reflection`, `reflection2`,
-  `reflection3`), `NormalMapSampler` and `NormalMap2Sampler`
-  (`znkd08_water_0x_n`, shared across the game), and on some a
-  `TextureSampler`.
+  `reflection3`), `NormalMapSampler` and `NormalMap2Sampler` (307 parts
+  each; mostly `znkd08_water_01_n`..`_03_n`, shared across the game, else
+  `water_01_n`), and `TextureSampler` and `TextureSampler1` (305 parts,
+  those with `TEXTURE_ENABLED`).
 - **No water part is a morphing mesh.** All 3,336 morphing parts (80 maps)
   use `phyredefaultlitshader.fx`. Near the shore some of them are wave
   strips (`bsil00` `FBXASC0498..0512_0Shape`).
@@ -371,14 +377,16 @@ The water surface the characters swim in is script state, not map data.
 Native `0x4001` (`Native_4001_SetSuimen`, "suimen" = water surface) calls
 `Sg_SetSuimen(v)` (`0x00836640`), which sets both `g_Suimen`
 (`0x013009d8`) and `g_WaterLimit` (`0x013009dc`) to `v`. `Ch_CalcMain`
-reads both; `Ch_AutoMotion` and the effect programs read `g_Suimen`
-through `Sg_GetSuimen`. The surface's world y is about `-v`, because field
+reads both and `Ch_AutoMotion` reads `g_Suimen` directly (`0x00835de0`);
+`Sg_GetSuimen` is called only by the effect programs' `opu_jump_etc` and
+`opu_v_etc`. The surface's world y is about `-v`, because field
 coordinates have y down: the game negates x and y when it turns a field
 matrix into a world one (`PhyreScene_setMeshInstanceWorldMatrix`
 `0x0066d810`, `PhyreScene_setObjectTranslation` `0x0066e3e0`;
 `docs/formats/render.md`). The values below are the constants the event
 scripts pass to `0x4001` (all 319 scripts disassembled with `ffx-script`),
-next to the y of the map's water plane:
+next to the y of the map's water plane. 15 maps have both; on these 9
+`-v` is within 1.5 units of a plane:
 
 | Map | `v` | Water plane y |
 |---|---|---|
@@ -392,7 +400,12 @@ next to the y of the map's water plane:
 
 `mtgz0600` and `mtgz0700` (Gagazet's caves) set several levels, one per
 pool: each of their three water planes has a level within 1.5 units
-(`mtgz0600` also sets 70, which matches no plane). The camera's level is separate: natives `0x0212`/`0xc02f` set the
+(`mtgz0600` also sets 70, which matches no plane). On the other 6 the
+level does not match the water parts: `bjyt0800` (5.5, plane -4.0),
+`cdsp0000` (59, -57.4), `bltz0004` (-520, 246.8), `cdsp0700` and
+`cdsp0800` (several, plane 279.2), `genk0900` (several, 423.5 and 433.0).
+There the level is set for something other than the drawn water, or the
+plane is not the surface swum in (not checked). The camera's level is separate: natives `0x0212`/`0xc02f` set the
 current ctrl work's `+0x208`, and `AtelUpdateWaterStatus` compares ctrl
 work 0's against the camera (`g_AtelInWater`).
 

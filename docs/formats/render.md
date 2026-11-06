@@ -517,7 +517,8 @@ Their callers:
 3. `Phyre_CharacterLighting_applyRotation` (`0x006a7280`) then turns that
    node by the map's per-light yaw and pitch (`+0x1b0`/`+0x1ac + 0xc i`,
    from the `GlobalCamera`'s `m_characterLightYaw`/`m_charcterLightPitch`;
-   radians as `deg / 180 * 3.14`), when either is above 0.001. In the port
+   radians as `deg / 180 * 3.14`), when either is larger than 0.001 in
+   size (`fabs`). In the port
    (`ffx_pother_b::p4_light2`) it is the look-at times `Matrix_RotationY`
    (yaw), then times `Matrix_RotationX` (pitch), in the row form of
    `PMatrix4_Multiply_004ca360` (`out = b a`). With column vectors:
