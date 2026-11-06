@@ -520,16 +520,22 @@ main.md):
 - Writers:
   - at map load, `0x0066ee70` (above);
   - the debug tweak `0x00698ab0`;
-  - the natives. `Native_FogSetParams` `0x0091b810` (`0x8037`: near, far,
-    limit) and `0x8038`/`0x803a`/`0x803c` (one value each; skipped on
-    level name hashes `0xca2`, `0x1e38`, `0x699`) write the PS2 fog
-    through `yiSetFogParam` (`0x0090a350`) and reach the PC renderer by
-    map number (`g_CurrentMapNo` `0x012fbc40`):
-    - on map `0xe0` (in `yiSetFogParam`) as near x 0.001, far x 0.001,
-      limit (1 - limit/255) x 0.4, curve 1;
-    - on map `0x140` (`0x0091c8a0`) through `graphicSetFogNear`/`Far`/
-      `Limit`(/255) and curve 1.
-    
+  - the natives:
+    - `Native_FogSetParams` `0x0091b810` (`0x8037`: near, far, limit)
+      writes the PS2 fog through `yiSetFogParam` (`0x0090a350`). It
+      reaches the PC renderer only by map number (`g_CurrentMapNo`
+      `0x012fbc40`): on map `0xe0` (in `yiSetFogParam`) as near x 0.001,
+      far x 0.001, limit (1 - limit/255) x 0.4, curve 1; on map `0x140`
+      (`0x0091c8a0`) through `graphicSetFogNear`/`Far`/`Limit`(/255) and
+      curve 1.
+    - `Native_FogSetParam0`/`1`/`2` (`0x8038`/`0x803a`/`0x803c`,
+      `0x0091b8b0`/`0x0091b960`/`0x0091ba10`) have no map test: unless
+      the level name hash is `0xca2`, `0x1e38` or `0x699`, each calls
+      `yiSetFogParam` and then `graphicSetFogNear`, `Far` or
+      `Limit`(/255) directly, on every map; none sets the curve. On map
+      `0xe0` the direct call comes after `yiSetFogParam`'s scaled write,
+      so the value ends up unscaled.
+
     `Native_FogSetColor` (`0x803e`, `0x0091bad0`) on map `0x140` passes
     `ftol(c / 255)` per channel: each channel is 0, or 1 at 255.
 - The `graphicSetFog*` setters go through `FogEffectManager` (`*0x00ce5170`,
@@ -584,12 +590,11 @@ What `ffx-render` needs from the scene stream lives in a few objects the
 |---|---|---|
 | `0x50` | global ambient colour (3 floats) | `graphicSetGlobalAmbientColor` (`0x00643270`), `graphicGetGlobalAmbientColor` (`0x00641230`) |
 | `0x60` | fog colour (3 floats) | `graphicGetFogColor` (`0x00641160`) |
-| `0x70`, `0x74`, `0x7c` | fog near, far, limit | `graphicGetFogNear`/`Far`/`Limit` (`0x006411d0`, `0x006411b0`, `0x006411c0`) |
-| `0x78` | fog curve | `graphicSetFogParam_00643180` (`FogCurve`, scene-wide semantic 0x19) |
+| `0x70`, `0x74`, `0x78`, `0x7c` | fog near, far, curve, limit | `graphicGetFogNear`/`Far`/`Limit` (`0x006411d0`, `0x006411b0`, `0x006411c0`); the curve `graphicSetFogParam_00643180` (`FogCurve`, scene-wide semantic 0x19) |
+| `0x80` | background colour (3 floats) | `graphicSetBackgroundColour` (`0x00642e90`) |
 | `0xf4` | the character lights: a `PArray<PLight*>` of 4 (count `& 0x7fffffff`, data `+4`) | `Phyre_CharacterLighting_initialize_006a8f80` |
 | `0xfc..0x104` | `CharacterAmbientLight` (ambient colour x level) | `Phyre_CharacterLighting_applyIntensityMultiplier` (`0x006a6e90`) |
 | `0x120` | `GlobalTime` | `FFXApplication_updateGlobalTime_0042fa00` |
-| `0x80` | background colour (3 floats) | `graphicSetBackgroundColour` (`0x00642e90`) |
 | `0x26c`, `0x270` | window width and height (`u32`) | `PhyreScene_setCameraAspectRatio` |
 | `0x3ac` | keyframe animation on (byte) | `graphicFFXApplicationEnableKeyframeAnim` (`0x006401e0`) |
 
