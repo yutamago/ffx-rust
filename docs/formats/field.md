@@ -393,6 +393,34 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   destructors (library code) through callbacks.
   `FreeCamera_destroyInstance` (`0x00680000`) is called by
   `graphicFinalize`.
+- The free camera is also how the game freezes for its pause (ffx-remix
+  M5a, which uses it to pause the game under its editor):
+  - `FreeCamera_setFreeCameraMode(fc, mode)` (`0x006803a0`, thiscall,
+    `ret 4`) sets byte `+0x33c` to `mode != 0`. Turning it on while word
+    `+0` is 0 copies the scene camera (`*(g_PhyreScene +0xdc)`) into the
+    camera at `+0xc` (`Phyre_PCamera_assign_004533b0`, and its `+0x150`,
+    `+0x154`), and attaches the fly controller `+0x2bc` to it
+    (`FreeCamera_attach_0067fda0`). `graphicSetFreeCameraMode_00640e20`
+    calls it; `Pause_Enter` passes 1 and `Pause_Leave_008ab2d0` 0
+    (`0x008ab30d`).
+  - `graphicGetFreeCameraType` (`0x006411e0`) then answers 2 (2 while byte
+    `+0x338` or `+0x33c` is set, else word `+0`). On 2, `Sg_MainLoop`
+    returns right after `graphicVideoUpdate`, before
+    `TkUpdateScanControler` and `Sg_FrameSync`. The world, scripts,
+    battle, cameras and effects stop.
+  - `PhyreScene_render` still runs every frame. While byte `+0x338` or
+    `+0x33c` is set, or word `+0` is above 0, it copies the scene camera
+    into the free camera's second camera (`+0x168`, i.e. `+0x164`'s
+    `+4`), then the free camera's `+0xc` camera over the scene camera
+    (`0x00668b06`, `0x00668b76`). The frozen picture is drawn
+    from the copied camera, and `Present` goes on.
+  - Called without `Pause_Enter` (as M5a does), mode 1 gives that freeze
+    without the PAUSE screen, the sound pause (`Sg_SetPauseAllSounds`
+    `0x00821cc0`) and the clock bookkeeping. `Pause_Enter` stores the time
+    (`graphicGetTimeInMicroseconds`) at `0x012fb820`, and `Pause_Leave`
+    adds the time paused to the u64 at `0x012fb818`, which `Sg_FrameSync`
+    subtracts from the cut-scene sync clock. A caller that freezes this
+    way has to do the same, or voice-synced scenes catch up afterwards.
 - Map teardown (`Yn_MapSystemFini` `0x00919a60` → `rcbgFini`
   `0x00921aa0`): the guide's minimap VFX (`graphicVFXDestroy(0, model
   +0x14)`), `rcbgPreFini` (each scene, `0x110` bytes, `rcbgSceneFini`;

@@ -502,6 +502,43 @@ Their callers:
 - `Sg_LightSetDirXYZ2_00834320`, a copy of `Sg_LightSetDirXYZ` that
   nothing calls.
 
+**Light directions** (ffx-remix R-52, read in the dump and the ports):
+
+1. `Light_Set` (`0x00836520`, native `0x4013`: light, r, g, b, a5, a6, all
+   ints) passes the colour `(r, g, b) / 255` to `Sg_LightSetColor`. It turns
+   each angle to radians (`deg * 3.141592 / 180`, wrapped by
+   `Angle_Wrap_00836720`) and passes the direction
+   `p = (sin a5 * cos a6, sin a6, cos a5 * cos a6)` to `Sg_LightSetDir`.
+   That reaches `Phyre_CharacterLighting_setLightDir` through
+   `graphicCharacterLightingSetLightDir` (`0x0063cb50`).
+2. `setLightDir` stores `d = (-p.x, -p.y, p.z)` and gives the PLight's node
+   `PMatrix4_lookAt` from the origin towards `d`. The rows are `s, t, -f`,
+   so the node's -z is `d` normalised.
+3. `Phyre_CharacterLighting_applyRotation` (`0x006a7280`) then turns that
+   node by the map's per-light yaw and pitch (`+0x1b0`/`+0x1ac + 0xc i`,
+   from the `GlobalCamera`'s `m_characterLightYaw`/`m_charcterLightPitch`;
+   radians as `deg / 180 * 3.14`), when either is above 0.001. In the port
+   (`ffx_pother_b::p4_light2`) it is the look-at times `Matrix_RotationY`
+   (yaw), then times `Matrix_RotationX` (pitch), in the row form of
+   `PMatrix4_Multiply_004ca360` (`out = b a`). With column vectors:
+   `d_world = Rx(pitch) * Ry(yaw) * normalize(d)`, the direction the light
+   travels.
+4. The node's -z is the light's direction:
+   `Phyre_CharacterLighting_lightDirection_006a84d0` reads it that way
+   (`(0, 0, -1)` through the node's matrix; its only caller is the tweak
+   utility's `0x006a7850`). The shaders' `Light0`-`Light2.m_direction` come
+   from the same three `PLight`s (`docs/formats/scene-chars.md`).
+
+Over the map clusters' cameras, yaw is non-zero only on `mihn01`'s
+(`mihn0100`, `isho0000`: light 0 at 25 degrees) and `stbv01`'s
+(`stbv0100`, `stmm0100`: lights 0 and 1 at -10). Pitch is 0 on every map.
+So on most maps Light0's direction is the last one a writer set ("Who
+changes the lights later" above), mostly the scripts' `0x4013` and
+`0x4011` calls. One example: `bsil0000`'s scripts call
+`(0, 100, 110, 120, 243, 50)` and `(0, 98, 108, 118, 37, 42)` for light 0.
+Which call is active at a given moment is script state. Not checked
+against a capture: whether `mihn0100`'s painted sun matches its light 0.
+
 **PS2 point lights** (`*0x013008cc`, count `0x013008d0`; layout in
 main.md):
 - They are filled at run time by:
@@ -822,7 +859,8 @@ Not ported; listed for mod tools:
   character to stdout (a vertex-buffer dump; a model-export start).
 - `0x006411e0`/`0x00640e20`: create the free camera (`g_FreeCamera`,
   `FreeCamera_FreeCamera`, 0x340 bytes) on demand and read its mode or
-  pass it input: the developer fly camera.
+  pass it input: the developer fly camera, which the pause also uses to
+  freeze the game (`docs/formats/field.md`, "Free camera").
 - `0x006dd3b0`: writes `WIN32_VramDetail_<name>_<n>.csv` with a header
   and "Vram dump is not supported on platforms other than PS3/PSV.": the
   PS3 VRAM report, stubbed on PC.
