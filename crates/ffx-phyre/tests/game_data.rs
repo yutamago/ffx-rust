@@ -484,15 +484,7 @@ fn edited_geometry_grows_its_culling_box() {
         };
         let Some((i, s)) = model.instances.iter().enumerate().find_map(|(i, inst)| {
             let &(s, _) = inst.segments.first()?;
-            (inst.bounds.is_some()
-                && model.segments[s].joints.is_empty()
-                && model
-                    .instances
-                    .iter()
-                    .filter(|o| o.segments.iter().any(|&(x, _)| x == s))
-                    .count()
-                    == 1)
-                .then_some((i, s))
+            (inst.bounds.is_some() && inst.skeleton.is_none()).then_some((i, s))
         }) else {
             continue;
         };
@@ -524,6 +516,167 @@ fn edited_geometry_grows_its_culling_box() {
     }
     eprintln!("{checked} map models with a grown instance");
     assert!(checked > 10);
+
+    // A skinned instance's box is the game's to move: kept as it is.
+    let path = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
+    let bytes = archive.read(archive.find(path).unwrap()).unwrap();
+    let mut model = ffx_phyre::Model::parse(&bytes).unwrap();
+    let (i, inst) = model
+        .instances
+        .iter()
+        .enumerate()
+        .find(|(_, inst)| inst.skeleton.is_some() && inst.bounds.is_some())
+        .unwrap();
+    let s = inst.segments[0].0;
+    for p in &mut model.segments[s].positions {
+        *p = p.map(|v| v * 5.0 + 100.0);
+    }
+    let back = ffx_phyre::Model::parse(&model.write(&bytes).unwrap()).unwrap();
+    assert_eq!(back.instances[i].bounds, model.instances[i].bounds);
+}
+
+/// The writer's rules for further texture coordinate and color sets, on
+/// the map segments that have them (layouts with `Color` first, `ST:1 ST:2`,
+/// `Color:2`, three `ST` sets): a further set left empty keeps its stored
+/// values, or takes set 0's when the segment is resized; a resized segment
+/// gets each set's tangents from that set; an import of a glTF without a
+/// further `TEXCOORD_n` changes nothing.
+#[test]
+#[allow(clippy::too_many_lines, clippy::float_cmp)] // one pass per rule; fallback tangents are bit for bit equal
+fn further_sets_follow_the_writers_rules() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let (mut resized, mut flipped) = (0, 0);
+    for name in [
+        "znkd/znkd14/mdl/d3d11/znkd14",
+        "swin/swin00/mdl/d3d11/swin00",
+        "bika/bika04/mdl/d3d11/bika04",
+        "mihn/mihn02/mdl/d3d11/mihn02",
+    ] {
+        let path = format!("ffx_data/gamedata/ps3data/map/{name}.dae.phyre");
+        let bytes = archive.read(archive.find(&path).unwrap()).unwrap();
+        let model = ffx_phyre::Model::parse(&bytes).unwrap();
+        let multi: Vec<usize> = (0..model.segments.len())
+            .filter(|&s| {
+                let seg = &model.segments[s];
+                (!seg.extra_uvs.is_empty() || !seg.extra_colors.is_empty())
+                    && 2 * seg.positions.len() <= 0x1_0000
+            })
+            .collect();
+        assert!(!multi.is_empty(), "{path}");
+
+        // An emptied further set, vertex count unchanged: the file is unchanged.
+        let mut m = model.clone();
+        for &s in &multi {
+            for set in &mut m.segments[s].extra_uvs {
+                set.clear();
+            }
+            for set in &mut m.segments[s].extra_colors {
+                set.clear();
+            }
+        }
+        assert!(
+            m.write(&bytes).unwrap() == bytes,
+            "{path}: emptied sets changed the file"
+        );
+
+        // Resized (every vertex twice), further sets emptied: they take set 0.
+        // Resized with set 1 = set 0 mirrored in u: its tangents point the
+        // other way.
+        let grow = |seg: &mut ffx_phyre::Segment| {
+            let n = u16::try_from(seg.positions.len()).unwrap();
+            seg.positions.extend_from_within(..);
+            seg.normals.extend_from_within(..);
+            seg.uvs.extend_from_within(..);
+            seg.colors.extend_from_within(..);
+            let more: Vec<u16> = seg.indices.iter().map(|i| i + n).collect();
+            seg.indices.extend(more);
+        };
+        let (mut empty, mut mirrored) = (model.clone(), model.clone());
+        for &s in &multi {
+            grow(&mut empty.segments[s]);
+            empty.segments[s].extra_uvs.iter_mut().for_each(Vec::clear);
+            empty.segments[s]
+                .extra_colors
+                .iter_mut()
+                .for_each(Vec::clear);
+            let seg = &mut mirrored.segments[s];
+            grow(seg);
+            let first = seg.uvs.clone();
+            for set in &mut seg.extra_uvs {
+                *set = first.iter().map(|&[u, v]| [-u, v]).collect();
+            }
+            let colors = seg.colors.clone();
+            for set in &mut seg.extra_colors {
+                set.clone_from(&colors);
+            }
+        }
+        let back = ffx_phyre::Model::parse(&empty.write(&bytes).unwrap()).unwrap();
+        let back_m = ffx_phyre::Model::parse(&mirrored.write(&bytes).unwrap()).unwrap();
+        for &s in &multi {
+            let (b, e) = (&back.segments[s], &empty.segments[s]);
+            assert_eq!(b.positions, e.positions, "{path} segment {s}");
+            for set in &b.extra_uvs {
+                assert_eq!(
+                    set, &e.uvs,
+                    "{path} segment {s}: an empty set takes set 0's"
+                );
+            }
+            for set in &b.extra_colors {
+                assert_eq!(set, &e.colors, "{path} segment {s}");
+            }
+            let (b, m) = (&back_m.segments[s], &mirrored.segments[s]);
+            assert_eq!(b.extra_uvs, m.extra_uvs, "{path} segment {s}");
+            assert_eq!(b.extra_colors, m.extra_colors, "{path} segment {s}");
+            assert_eq!(b.uv_sets, model.segments[s].uv_sets, "{path} segment {s}");
+            if !b.tangents.is_empty() {
+                for t in &b.extra_tangents {
+                    let opposite = t
+                        .iter()
+                        .zip(&b.tangents)
+                        .filter(|(x, y)| x.iter().zip(y.iter()).all(|(a, b)| (a + b).abs() < 1e-4))
+                        .count();
+                    // Where the UVs give no direction (degenerate triangles),
+                    // both sets take the same fallback tangent.
+                    let same = t.iter().zip(&b.tangents).filter(|(x, y)| x == y).count();
+                    assert_eq!(
+                        opposite + same,
+                        t.len(),
+                        "{path} segment {s}: {opposite} opposite and {same} fallback tangents of {}",
+                        t.len()
+                    );
+                    flipped += opposite;
+                }
+            }
+            resized += 1;
+        }
+
+        // A glTF without the further TEXCOORD_n and COLOR_n: nothing changes.
+        let mut glb = Glb::parse(&model.to_glb());
+        for mesh in glb.json["meshes"].as_array_mut().unwrap() {
+            for prim in mesh["primitives"].as_array_mut().unwrap() {
+                let attrs = prim["attributes"].as_object_mut().unwrap();
+                attrs.retain(|k, _| {
+                    k == "TEXCOORD_0"
+                        || k == "COLOR_0"
+                        || !(k.starts_with("TEXCOORD_") || k.starts_with("COLOR_"))
+                });
+            }
+        }
+        let mut imported = model.clone();
+        imported.import_glb(&glb.bytes()).unwrap();
+        assert!(
+            imported.write(&bytes).unwrap() == bytes,
+            "{path}: an import without further sets changed the file"
+        );
+    }
+    eprintln!(
+        "{resized} multi-set segments resized and read back, {flipped} tangents of mirrored sets reversed"
+    );
+    assert!(resized > 10 && flipped > 10_000);
 }
 
 /// Every model, and every 20th other cluster, rewritten through

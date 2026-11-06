@@ -6,7 +6,8 @@
 //! `m_offsetInVertexBuffer` and `m_dataSize`, the embedded
 //! `PIndexDataBlock`'s `m_minimumIndex`, `m_maximumIndex`, `m_elementCount`,
 //! `m_offsetInIndexBuffer` and `m_dataSize`, and header words 18 and 19.
-//! Everything else (materials, skeleton, bone palettes, bounds) is kept.
+//! Materials, the skeleton and bone palettes are kept; culling boxes may
+//! grow (below).
 //!
 //! Values equal to the original keep their original bytes, so an unchanged
 //! model is written back byte for byte. Tangents and binormals are kept
@@ -14,10 +15,13 @@
 //! UVs otherwise: the n-th `Tangent` and `Binormal` streams of a segment
 //! from its n-th texture coordinate set.
 //!
-//! The culling box of an unskinned instance (`PMeshInstanceBounds`
+//! The culling box of an instance without a skeleton (`PMeshInstanceBounds`
 //! `m_min`, `m_size`, in the instance's model space) grows to hold the
 //! edited segments' vertices, so that edited geometry is not culled while
-//! it is in view. Skinned instances' boxes are moved by the game.
+//! it is in view. It only grows, never shrinks; its centre is also the
+//! instance's sort key (`docs/formats/scene.md#Sort`), so a grown box can
+//! change where the instance sorts. Boxes of instances with a skeleton
+//! are moved by the game and kept.
 
 use crate::model::{BlockLoc, Layout, Model, Segment};
 use crate::{Error, Result};
@@ -299,7 +303,10 @@ impl Model {
                 })
                 .map(|(_, seg)| seg)
                 .collect();
-            if segments.is_empty() || segments.iter().any(|seg| !seg.joints.is_empty()) {
+            if segments.is_empty()
+                || inst.skeleton.is_some()
+                || segments.iter().any(|seg| !seg.joints.is_empty())
+            {
                 continue;
             }
             let mut lo = old.min;
@@ -321,7 +328,9 @@ impl Model {
 
     /// Writes the model's segments into `original`, the cluster it was
     /// parsed from: vertices and triangles may change in number. Materials,
-    /// bone palettes and the scene are not written.
+    /// bone palettes and the scene are not written, apart from the culling
+    /// boxes of instances without a skeleton, which grow to hold edited
+    /// positions.
     ///
     /// # Errors
     /// Fails when `original` is not the model's cluster, an attribute has

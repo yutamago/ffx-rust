@@ -174,12 +174,25 @@ fn primitive(bin: &mut Bin, seg: &Segment, with_tangents: bool) -> Option<Value>
         attributes.insert(format!("COLOR_{k}"), json!(col));
     }
     let indices: Vec<u8> = seg.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+    // The stream set of each TEXCOORD_n and COLOR_n, when any is not the
+    // plain 0 (`m_streamSet`; the attributes are numbered by block order).
+    let mut extras = serde_json::Map::new();
+    if seg.uv_sets.iter().any(|&s| s != 0) {
+        extras.insert("ffx_uv_sets".into(), json!(seg.uv_sets));
+    }
+    if seg.color_sets.iter().any(|&s| s != 0) {
+        extras.insert("ffx_color_sets".into(), json!(seg.color_sets));
+    }
     let idx = bin.accessor(
         &indices,
         ELEMENT_ARRAY_BUFFER,
         json!({"componentType": UNSIGNED_SHORT, "count": seg.indices.len(), "type": "SCALAR"}),
     );
-    Some(json!({"attributes": attributes, "indices": idx, "mode": 4}))
+    let mut p = json!({"attributes": attributes, "indices": idx, "mode": 4});
+    if !extras.is_empty() {
+        p["extras"] = Value::Object(extras);
+    }
+    Some(p)
 }
 
 /// A normal as exported: unit length (a few stored ones are zero or
@@ -557,7 +570,7 @@ impl Model {
             if let Some(m) = material {
                 p["material"] = json!(m);
             }
-            p["extras"] = json!({"ffx_segment": s});
+            p["extras"]["ffx_segment"] = json!(s);
             Some(p)
         };
         let segment_list = |prims: &[Value]| -> Value {

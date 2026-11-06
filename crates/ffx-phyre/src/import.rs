@@ -5,7 +5,9 @@
 //! `extras.ffx_segments` (one per primitive, in order: editors such as
 //! Blender keep mesh extras but not primitive ones). A segment takes the
 //! first primitive naming it. Positions, normals, texture coordinates
-//! (flipped back to v up), colors, joints and weights are read; joints are
+//! (`TEXCOORD_n`, flipped back to v up), colors (`COLOR_n`), joints and
+//! weights are read, as many texture coordinate and color sets as the
+//! segment stores (further glTF sets are not read); joints are
 //! mapped through the primitive's skin, by joint name, back into the
 //! segment's bone palette. Values equal to what the export wrote keep
 //! their stored form, so an unedited glTF changes nothing.
@@ -237,6 +239,8 @@ impl Model {
                     positions,
                     material: old.material,
                     bones: old.bones.clone(),
+                    uv_sets: old.uv_sets.clone(),
+                    color_sets: old.color_sets.clone(),
                     ..Segment::default()
                 };
                 let present = |a: &str| !attrs[a].is_null();
@@ -268,6 +272,8 @@ impl Model {
                 }
                 // Further sets the cluster stores; one the glTF lacks keeps
                 // the stored values (or the first set's, when resized).
+                // Sets past the cluster's (a UV map added in an editor) are
+                // not read: the cluster has no stream for them.
                 for (k, old_set) in old.extra_uvs.iter().enumerate() {
                     let name = format!("TEXCOORD_{}", k + 1);
                     let mut set = Vec::new();

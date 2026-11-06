@@ -30,22 +30,31 @@ pub struct Segment {
     pub material: Option<usize>,
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// First texture coordinate set, as stored (OpenGL convention: v up):
+    /// The first texture coordinates, as stored (OpenGL convention: v up):
     /// the segment's first `ST` stream in block order, the one the game
-    /// binds unless the instance's segment context names another set
-    /// (`docs/formats/phyre.md#Stream sets`).
+    /// binds unless the instance's segment context names a stream set
+    /// (`docs/formats/phyre.md#Stream sets`). Attributes are numbered by
+    /// block order, not by `m_streamSet`: [`Segment::uv_sets`] gives each
+    /// one's stream set.
     pub uvs: Vec<[f32; 2]>,
-    /// Further texture coordinate sets: the segment's other `ST` streams,
-    /// in block order (maps have up to three). An empty set is not
-    /// written: [`Model::write`] keeps the stored values, or copies
+    /// Further texture coordinates: the segment's other `ST` streams, in
+    /// block order (up to two more). An empty one is not written:
+    /// [`Model::write`] keeps the stored values, or copies
     /// [`Segment::uvs`] when the vertex count changes.
     pub extra_uvs: Vec<Vec<[f32; 2]>>,
+    /// `PVertexStream.m_streamSet` of [`Segment::uvs`] and then of each of
+    /// [`Segment::extra_uvs`] (read only; e.g. `[1]` for a segment whose
+    /// only `ST` stream is set 1).
+    pub uv_sets: Vec<u8>,
     /// Vertex colors, when present, as RGBA bytes (float colors are
     /// clamped to 0–1 and scaled): the first `Color` stream in block order.
     pub colors: Vec<[u8; 4]>,
-    /// Further `Color` streams, in block order; empty ones as for
-    /// [`Segment::extra_uvs`].
+    /// The further `Color` stream, in block order (at most one ships);
+    /// empty ones as for [`Segment::extra_uvs`].
     pub extra_colors: Vec<Vec<[u8; 4]>>,
+    /// `m_streamSet` of [`Segment::colors`] and then of each of
+    /// [`Segment::extra_colors`] (read only).
+    pub color_sets: Vec<u8>,
     /// `SkinIndices`: indices into [`Segment::bones`].
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
@@ -54,6 +63,9 @@ pub struct Segment {
     /// set's from its texture coordinates for resized segments).
     pub tangents: Vec<[f32; 3]>,
     pub binormals: Vec<[f32; 3]>,
+    /// The further `Tangent` streams, in block order, as stored (read
+    /// only, like [`Segment::tangents`]).
+    pub extra_tangents: Vec<Vec<[f32; 3]>>,
     pub indices: Vec<u16>,
     /// The bone palette the joints index.
     pub bones: Vec<Bone>,
@@ -156,6 +168,8 @@ fn bytes4(b: &[u8], at: usize, stride: usize, count: usize) -> Result<Vec<[u8; 4
 struct Stream<'a> {
     semantic: &'a str,
     data_type: u8,
+    /// `m_streamSet`.
+    set: u8,
     /// File offset of the first element.
     at: usize,
     stride: usize,
@@ -195,6 +209,7 @@ impl Stream<'_> {
                 } else {
                     seg.extra_uvs.push(uvs);
                 }
+                seg.uv_sets.push(self.set);
                 seen.st += 1;
             }
             ("Color", BYTE4 | FLOAT4) => {
@@ -211,13 +226,17 @@ impl Stream<'_> {
                 } else {
                     seg.extra_colors.push(colors);
                 }
+                seg.color_sets.push(self.set);
                 seen.color += 1;
             }
             ("SkinIndices", BYTE4) => seg.joints = bytes4(bytes, at, stride, count)?,
             ("SkinWeights", FLOAT4) => seg.weights = f32s(bytes, at, stride, count)?,
             ("Tangent", FLOAT3) => {
+                let tangents = f32s(bytes, at, stride, count)?;
                 if seen.tangent == 0 {
-                    seg.tangents = f32s(bytes, at, stride, count)?;
+                    seg.tangents = tangents;
+                } else {
+                    seg.extra_tangents.push(tangents);
                 }
                 seen.tangent += 1;
             }
@@ -289,6 +308,9 @@ impl Model {
             need("PVertexStream", "m_offset")?,
             need("PVertexStream", "m_type")?,
         );
+        let o_stream_set = c
+            .member_offset("PVertexStream", "m_streamSet")
+            .map(|o| o as usize);
         let (o_prim, o_index, o_vertex_data) = (
             need("PMeshSegment", "m_primitiveType")?,
             need("PMeshSegment", "m_indexData")?,
@@ -368,6 +390,9 @@ impl Model {
                 data_type: *bytes
                     .get(s + o_stream_type)
                     .ok_or(Error::Malformed("truncated model"))?,
+                set: o_stream_set
+                    .and_then(|o| bytes.get(s + o).copied())
+                    .unwrap_or(0),
                 at: vertex_buffer
                     + u32_at(bytes, b + o_vb)? as usize
                     + u32_at(bytes, s + o_stream_offset)? as usize,
