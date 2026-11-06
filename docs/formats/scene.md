@@ -154,6 +154,116 @@ the World most map instances have (10 x unit); `FBXASC056_0Shape` passes it
 and still does not draw: hidden by the game, or its World is not the
 common one (open question). No drawn instance fails the test.
 
+### The cull in detail (ffx-remix R-50)
+
+Read from the code; nothing was run.
+
+- **The call chain.** `renderWorldCulledSorted` walks the world twice:
+  - `PWorldCursor_MeshInstanceBounds_004ff6e0` finds every
+    `PMeshInstanceBounds` (class `0x00ca89b8`);
+  - `PWorldCursor_OccluderGeometryInstance_009f23f0` finds the occluders
+    (class `0x01a85420`).
+
+  Then, in order:
+  - `PVisibilityCheck` `0x009f2580` (camera, dir);
+  - `startOccluderJobs` `0x009f20f0`;
+  - the occluder pass `0x009f2fd0`;
+  - `startJobsForAllBounds` `0x009f2250`;
+  - the visible counts `0x009f30d0`;
+  - `mergeResults` `0x009f3660`;
+  - the draw `0x005ba360` (visible entries, context `+8`);
+  - the cleanup `0x009f26c0`.
+- **`PVisibilityCheck`**: `+0` the camera, `+4` its cull matrix
+  (`PCamera +0x70`), `+8..+0x14` the depth plane. The plane comes from the
+  view (`PMatrix4_FromMatrix3x4_00451080`), negated when `dir` >= 0.
+- **The job** (`PCheckVisibleBoundsJob_execute`, ECX): `+0x10` the bounds
+  array, `+0x14` the count, `+0x18` the stride, `+0x1c..+0x28` the depth
+  plane, `+0x2c`/`+0x30` the output cursor and start, `+0x34`/`+0x38` the
+  `g_DepthBias` table, `+0x3c` the occluders (null on field maps), `+0x44`
+  the view-projection.
+  - Per bounds, the matrix is the view-projection alone when
+    `m_worldMatrix` (`+0xc`) is null (a world-space box). Otherwise it is
+    `PMatrix4_Multiply_004ca360(viewproj, *m_worldMatrix)`, so the world
+    matrix is read again every frame.
+  - The box is a model-space AABB that the job never rewrites.
+  - The only flag is `m_meshInstance` (`+0x1c`) == 0. There is no
+    distance cut, level of detail or per-segment test.
+  - A visible bounds gives a 12-byte entry (instance, key,
+    `m_render_order`).
+- **The box tests:**
+  - `BoundingBox_IsVisible_00663a30`, thiscall(bounds; `float[16]`) ret 4,
+    AL: any part of the box in the frustum (above).
+  - `BoundingBox_IsInside_006d27e0`: all eight outcodes 0 (the whole box
+    inside).
+  - `MeshInstance_isVisible_00663cc0`, thiscall(ECX = the
+    *bounds*; viewproj): builds `viewproj . world` from the bounds' `+0xc`
+    and calls `0x00663a30`. Its name says mesh instance, but ECX is a
+    `PMeshInstanceBounds`.
+  - `PhyreScene_isMeshVisible_006603c0`, thiscall(scene; mesh instance;
+    behind `graphicCharacterInstanceIsVisible`) returns 1 when scene
+    `+0x10d8c` is set or the instance has no bounds (instance `+0x1c`).
+    Otherwise it returns `0x00663cc0` against the scene camera's
+    (`+0xdc`) `+0x74`. Instance `+0x1c` and bounds `+0x1c` link the two
+    both ways.
+
+  `0x00663a30` is called from:
+  - the job (`0x009f3275`);
+  - `0x00663cc0` (`0x00663cf2`, `0x00663d15`);
+  - `PhyreScene_RenderMinimapStencil_00650340` (`0x006505d6`);
+  - `ShadowManager_collectCasters_006c8090` (`0x006c8236`, `0x006c8294`,
+    `0x006c83b0`).
+- **Shadow casters** (`PhyreScene_RenderShadow` `0x00653600`, solutions
+  2-4 in scene `+0xf9cc`) go through `ShadowManager_updateCascades_006ce860`
+  (thiscall(sm; force, kind, light, map)). It clears two 8x8 byte grids
+  (`+0x2b28` cascade A, `+0x2b68` B).
+  - `force` is `MsBattleCheck() != 0`. With it, and either `g_PhyreScene
+    +0x1196`, `MsGetEncountType()` > 0 or one of maps `0x11f7`, `0x1eda`,
+    `0x4a6`, grid A is all 1, grid B all 0, and
+    `ShadowManager_fitBattleCascade_006d00d0` fits the battle cascade with
+    no per-instance test.
+  - Otherwise `ShadowManager_collectCasters_006c8090` goes over the 64
+    cells. It takes a cell whose list `+0xde8 + 4c` is non-empty and whose
+    flags `+0xfe8`/`+0x10e8 + 4c` are 1 (optional callback `+0x4048`
+    when byte `+0x4030`). It tests the bounds `*(instance +0x1c)` of each
+    instance there, with world from the bounds' `+0xc`:
+    - kind 4 outside battle: `0x00663a30` against both light matrices
+      (`arg`, `arg + 0x40`); any hit marks the cell A or B;
+    - else, per cell: the intersect test when a cell float (`+0x6b8` or
+      `+0x7b8 + 4c`) is above `[0x00c34404]`, the fully-inside test
+      `0x006d27e0` otherwise. The cell is kept only if every instance
+      passes.
+
+    Kept cells are pushed through `0x006d26d0`. Outside battle every
+    cascade goes this way.
+- **Other box-tested passes** (not map parts):
+  - `PhyreScene_RenderABmap` `0x00652a10` culls the lists scene `+0x38cc`
+    (count `+0xf8cc`) and `+0x385c` (count `+0x3854`) with `0x00663cc0`.
+    It runs only with scene `+0x10dcc` or `g_MovieFading`.
+  - `PhyreScene_RenderMinimapStencil_00650340` (from `0x00653960` and
+    `PhyreScene_render`):
+    - list `+0x3868` is drawn by name match, without a box test;
+    - list `+0x3874` is box-tested against the camera at scene `+0x654`.
+- **Per-frame writes into map materials**: none for culling.
+  - `PhyreScene_RenderShadow` writes each frame, unless scene `+0x1195`:
+    - the cascade matrices into the material lists `+0x38a8`/`+0x38b0`;
+    - a caster value (`ShadowManager_AverageCasterValue` `0x006ccad0`)
+      into `+0x38b8`;
+    - the shadow sampler into `+0x38c0` on solution 4 (count `+0x38c4`).
+  - Texture animation steps in `TextureAnimation_Animate_00672000`
+    (`TextureAnimationInfo_update` `0x006b4450`, then
+    `TextureAnimationManager_updateSamplers_006b44a0`).
+  - Scrolling UVs read `GlobalTime`.
+  - `PhyreScene_setMaterialVisibilityBySetAlpha` (`0x0066d5c0`) and
+    `PhyreScene_setGroupMaterialAlpha_0066d6f0` (by group key, alpha
+    only) write `MaterialColour`.
+- **Consequences for code that wants an instance drawn whatever the
+  view.** There is no "never cull" flag. A box with the same centre and
+  huge size passes every frustum test, since each clip plane is a half
+  space, and keeps the sort key. Its only side effect is in shadow-cell
+  collection, in the fully-inside branch. The call at `0x009f3275` (`E8
+  B6 07 C7 FF`, ECX = bounds from EBX, the matrix pushed from `[ebp-0x15c]`,
+  `test al, al; jz 0x009f353e` after) is the main pass's test alone.
+
 ## Sort
 
 The same job keys each visible instance:
