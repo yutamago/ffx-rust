@@ -438,7 +438,7 @@ transfer (a transfer is 32 bytes plus count x entry size, those two at
   output depth comes from rows 2 and 3 of `scene.ViewProjection2` (the
   shader's `$Globals`: `scene` at byte 48, `ViewProjection2` at `+208`,
   registers 18 and 19; the game fills it from `g_PhyreApplication +0x90`,
-  [scene.md](scene.md), "Scene state"): `z = ((row 2 . v) / (row 3 . v)
+  [scene.md](scene.md), "Constants"): `z = ((row 2 . v) / (row 3 . v)
   + 1) / 2` with `v = (x, y, -10 z, 1)` (z the mesh's z: the record's
   `+0x14` on 1,035 of 1,075 layers), and `w` from `WorldViewProjection`.
   Earlier versions of this section named `scene.Projection`; the shader
