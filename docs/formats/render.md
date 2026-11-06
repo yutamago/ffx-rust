@@ -534,8 +534,8 @@ Over the map clusters' cameras, yaw is non-zero only on `mihn01`'s
 (`mihn0100`, `isho0000`: light 0 at 25 degrees) and `stbv01`'s
 (`stbv0100`, `stmm0100`: lights 0 and 1 at -10). Pitch is 0 on every map.
 So on most maps Light0's direction is the last one a writer set ("Who
-changes the lights later" above), mostly the scripts' `0x4013` and
-`0x4011` calls. One example: `bsil0000`'s scripts call
+changes the lights later" above), mostly the event scripts' `0x4013`
+calls (no event script calls `0x4011` or `0x4012`). One example: `bsil0000`'s scripts call
 `(0, 100, 110, 120, 243, 50)` and `(0, 98, 108, 118, 37, 42)` for light 0.
 Which call is active at a given moment is script state. Not checked
 against a capture: whether `mihn0100`'s painted sun matches its light 0.

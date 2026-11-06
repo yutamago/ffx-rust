@@ -327,10 +327,12 @@ That gives 771 dome parts plus 69 rings below the horizon (on 24 maps),
   the camera.
 - **Passes.** 361 draw in the opaque pass and 479 in the transparent one
   (blend `SRC_ALPHA, INV_SRC_ALPHA`, alpha `ONE, ZERO`). They sort as any
-  instance ("Sort" above); `m_render_order` is 0 on 395 and 1 on 120.
-  The outer night sky of `znkd0800`, `znkd0801` and `znkd0900` has 2000
-  (8 parts each; `znkd0900` 1000 on 8 more): `ro % 1000` is 0, so it still
-  sorts with the first.
+  instance ("Sort" above). `m_render_order` is 0 on 395 and 1 on 120;
+  the rest have small orders up to 78 (2, 3, 9, 10, 13, 26, 27, ...),
+  except the night sky below. The outer night sky of `znkd0800`,
+  `znkd0801` and `znkd0900` has 2000 (8 parts each; `znkd0900` 1000 on 8
+  more): `ro % 1000` is 0, so it sorts in the first `ro % 1000` group,
+  after the orders 0 and 1000 there.
 - **Depth.** 835 of the 840 write depth (`LESS_EQUAL`, write mask all),
   the blended ones too. The other 5 are `MASK_DEPTH` variants. So a sky
   pixel holds the dome's depth; only pixels that no draw covers keep the
@@ -362,8 +364,8 @@ builder that runs only `OpaqueNoMSAA` and `TransparentNoMSAA` misses it.
   `ScrollSpeed_nml1_X/Y`, `ScrollSpeed_nml2_X/Y`, `MultiTexBlendFactor`,
   `SpecularColor`, `SpecularShininess`, `MaterialColour`,
   `AlphaThreshold`.
-- Samplers: `CubeMapSampler` (`reflection`, `reflection2`,
-  `reflection3`), `NormalMapSampler` and `NormalMap2Sampler` (307 parts
+- Samplers: `CubeMapSampler` (`reflection2` on 209 parts, `reflection3`
+  53, `reflection` 38, `reflection1` 4, `reflection4` 3), `NormalMapSampler` and `NormalMap2Sampler` (307 parts
   each; mostly `znkd08_water_01_n`..`_03_n`, shared across the game, else
   `water_01_n`), and `TextureSampler` and `TextureSampler1` (305 parts,
   those with `TEXTURE_ENABLED`).
@@ -383,29 +385,32 @@ reads both and `Ch_AutoMotion` reads `g_Suimen` directly (`0x00835de0`);
 coordinates have y down: the game negates x and y when it turns a field
 matrix into a world one (`PhyreScene_setMeshInstanceWorldMatrix`
 `0x0066d810`, `PhyreScene_setObjectTranslation` `0x0066e3e0`;
-`docs/formats/render.md`). The values below are the constants the event
-scripts pass to `0x4001` (all 319 scripts disassembled with `ffx-script`),
-next to the y of the map's water plane. 15 maps have both; on these 9
-`-v` is within 1.5 units of a plane:
+`docs/formats/render.md`). The values below are the constants the event scripts pass to `0x4001`
+(329 scripts disassembled with `ffx-script`; 36 maps call `0x4001`), next
+to the y range of the map's flat water parts. 15 maps have both. On 11 of
+them `-v` is within 1.6 units of a water part's range:
 
-| Map | `v` | Water plane y |
+| Map | `v` | Water part y |
 |---|---|---|
-| `bsil0000` | 3.5 | -2.5 |
-| `bsil0100` | 3.5 | -3.0 |
+| `bsil0000` | 3.5 | -3.2..-2.5 |
+| `bsil0100` | 3.5 | -3.3..-3.0 |
 | `bsil0300` | 60 | -60.0 |
 | `bvyt1000` | 10 | -10.0 |
 | `bika0000` | 2.54 | -3.2 |
 | `bjyt0000` | -92 | 93.4 |
 | `bjyt0200` | -121 | 121.3 |
+| `bjyt0800` | 5.5 | -5.0..-4.0 |
+| `cdsp0000` | 59 | -57.4 |
+| `mtgz0600` | 88.2, -198.8, -127.2, 70 | -87.7, 199.3, 127.9 |
+| `mtgz0700` | -51.0, 149.2, 125.2, 126.2 | 51.1, -148.6..-148.4, -125.6..-125.2 |
 
-`mtgz0600` and `mtgz0700` (Gagazet's caves) set several levels, one per
-pool: each of their three water planes has a level within 1.5 units
-(`mtgz0600` also sets 70, which matches no plane). On the other 6 the
-level does not match the water parts: `bjyt0800` (5.5, plane -4.0),
-`cdsp0000` (59, -57.4), `bltz0004` (-520, 246.8), `cdsp0700` and
-`cdsp0800` (several, plane 279.2), `genk0900` (several, 423.5 and 433.0).
-There the level is set for something other than the drawn water, or the
-plane is not the surface swum in (not checked). The camera's level is separate: natives `0x0212`/`0xc02f` set the
+Gagazet's caves (`mtgz0600`, `mtgz0700`) set one level per pool;
+`mtgz0600`'s 70 matches no water part. On the other 4 the levels match no
+water part: `bltz0004` (-520; part at 246.8), `cdsp0700` (-30, -20, -10,
+-75, 0) and `cdsp0800` (-30.7, -40; both 279.2), `genk0900` (-350, -130,
+-150, -85; 407.9..433.0). There the level serves something other than the
+drawn water, or the drawn water is not the surface swum in (not
+checked). The camera's level is separate: natives `0x0212`/`0xc02f` set the
 current ctrl work's `+0x208`, and `AtelUpdateWaterStatus` compares ctrl
 work 0's against the camera (`g_AtelInWater`).
 
