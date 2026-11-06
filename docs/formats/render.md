@@ -544,12 +544,18 @@ main.md):
         last).
     - The colour natives `Native_FogSetColor` (`0x803e`, `0x0091bad0`) and
       `Native_FogSetRed`/`Green`/`Blue` (`0x803f`-`0x8041`, `0x0091bbb0`/
-      `0x0091bc80`/`0x0091bd50`) first call `yiSetFogColor` (`0x0090a2c0`).
-      It stores the PS2 colour bytes and, on map `0xe0`, calls
-      `graphicSetFogColour(c / 255)` with exact fractions. Then, on map
-      `0x140`, they pass each channel truncated by `ftol`: for
-      `Native_FogSetColor`, `ftol(c / 255)`, so each channel is 0, or 1 at
-      255.
+      `0x0091bc80`/`0x0091bd50`):
+      - The one-channel natives first read the colour back with
+        `yiGetFogColor` (`0x00908980`). It takes r, g, b, on every map,
+        from `graphicGetFogColor` x 255, or `graphicGetGlobalAmbientColor`
+        with render status bit 2 (`0x018ded08 & 4`), truncated. The two
+        channels a call does not set are therefore the live context's (in
+        whole 1/255 steps) or the global ambient.
+      - All four then call `yiSetFogColor` (`0x0090a2c0`), which stores the
+        PS2 colour bytes and, on map `0xe0`, calls
+        `graphicSetFogColour(c / 255)` with exact fractions.
+      - On map `0x140` all four pass `ftol(c / 255)` per channel: each
+        channel is 0, or 1 at 255.
 - The `graphicSetFog*` setters go through `FogEffectManager` (`*0x00ce5170`,
   getter `0x006e32c0`, context through manager `+0xa0`). Each first asks
   `FogEffectManager_isMoving_006e3480`: the squared distance
