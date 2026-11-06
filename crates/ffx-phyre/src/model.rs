@@ -30,18 +30,42 @@ pub struct Segment {
     pub material: Option<usize>,
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// First texture coordinate set, as stored (OpenGL convention: v up).
+    /// The first texture coordinates, as stored (OpenGL convention: v up):
+    /// the segment's first `ST` stream in block order, the one the game
+    /// binds unless the instance's segment context names a stream set
+    /// (`docs/formats/phyre.md#Stream sets`). Attributes are numbered by
+    /// block order, not by `m_streamSet`: [`Segment::uv_sets`] gives each
+    /// one's stream set.
     pub uvs: Vec<[f32; 2]>,
+    /// Further texture coordinates: the segment's other `ST` streams, in
+    /// block order (up to two more). An empty one is not written:
+    /// [`Model::write`] keeps the stored values, or copies
+    /// [`Segment::uvs`] when the vertex count changes.
+    pub extra_uvs: Vec<Vec<[f32; 2]>>,
+    /// `PVertexStream.m_streamSet` of [`Segment::uvs`] and then of each of
+    /// [`Segment::extra_uvs`] (read only; e.g. `[1]` for a segment whose
+    /// only `ST` stream is set 1).
+    pub uv_sets: Vec<u8>,
     /// Vertex colors, when present, as RGBA bytes (float colors are
-    /// clamped to 0–1 and scaled).
+    /// clamped to 0–1 and scaled): the first `Color` stream in block order.
     pub colors: Vec<[u8; 4]>,
+    /// The further `Color` stream, in block order (at most one ships);
+    /// empty ones as for [`Segment::extra_uvs`].
+    pub extra_colors: Vec<Vec<[u8; 4]>>,
+    /// `m_streamSet` of [`Segment::colors`] and then of each of
+    /// [`Segment::extra_colors`] (read only).
+    pub color_sets: Vec<u8>,
     /// `SkinIndices`: indices into [`Segment::bones`].
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
-    /// Tangents and binormals, as stored (read only: [`Model::write`] keeps
-    /// them, or recomputes them for resized segments).
+    /// Tangents and binormals of the first texture coordinate set, as
+    /// stored (read only: [`Model::write`] keeps them, or recomputes every
+    /// set's from its texture coordinates for resized segments).
     pub tangents: Vec<[f32; 3]>,
     pub binormals: Vec<[f32; 3]>,
+    /// The further `Tangent` streams, in block order, as stored (read
+    /// only, like [`Segment::tangents`]).
+    pub extra_tangents: Vec<Vec<[f32; 3]>>,
     pub indices: Vec<u16>,
     /// The bone palette the joints index.
     pub bones: Vec<Bone>,
@@ -106,6 +130,9 @@ pub(crate) struct Layout {
     pub index_fields: [usize; 5],
     /// `PDataBlock` member offsets: element count, buffer offset, data size.
     pub block_fields: [usize; 3],
+    /// Per instance, the file offsets of its `PMeshInstanceBounds`'
+    /// `m_min` and `m_size`.
+    pub bounds: Vec<Option<[usize; 2]>>,
 }
 
 pub(crate) fn u32_at(b: &[u8], o: usize) -> Result<u32> {
@@ -141,15 +168,27 @@ fn bytes4(b: &[u8], at: usize, stride: usize, count: usize) -> Result<Vec<[u8; 4
 struct Stream<'a> {
     semantic: &'a str,
     data_type: u8,
+    /// `m_streamSet`.
+    set: u8,
     /// File offset of the first element.
     at: usize,
     stride: usize,
     count: usize,
 }
 
+/// How many streams of each kind a segment has read so far: the first of
+/// each kind fills the segment's main attribute.
+#[derive(Default)]
+struct Seen {
+    st: usize,
+    color: usize,
+    tangent: usize,
+    binormal: usize,
+}
+
 impl Stream<'_> {
     /// Reads the stream into the segment's attribute for its semantic.
-    fn decode(&self, bytes: &[u8], seg: &mut Segment) -> Result<()> {
+    fn decode(&self, bytes: &[u8], seg: &mut Segment, seen: &mut Seen) -> Result<()> {
         let (at, stride, count) = (self.at, self.stride, self.count);
         match (
             self.semantic.trim_start_matches("Skinnable"),
@@ -163,25 +202,57 @@ impl Stream<'_> {
                     .collect();
             }
             ("Normal", FLOAT3) => seg.normals = f32s(bytes, at, stride, count)?,
-            ("ST", FLOAT2) => seg.uvs = f32s(bytes, at, stride, count)?,
-            ("Color", BYTE4) => seg.colors = bytes4(bytes, at, stride, count)?,
-            ("Color", FLOAT4) => {
-                seg.colors = f32s::<4>(bytes, at, stride, count)?
-                    .into_iter()
-                    .map(float_color)
-                    .collect();
+            ("ST", FLOAT2) => {
+                let uvs = f32s(bytes, at, stride, count)?;
+                if seen.st == 0 {
+                    seg.uvs = uvs;
+                } else {
+                    seg.extra_uvs.push(uvs);
+                }
+                seg.uv_sets.push(self.set);
+                seen.st += 1;
+            }
+            ("Color", BYTE4 | FLOAT4) => {
+                let colors = if self.data_type == BYTE4 {
+                    bytes4(bytes, at, stride, count)?
+                } else {
+                    f32s::<4>(bytes, at, stride, count)?
+                        .into_iter()
+                        .map(float_color)
+                        .collect()
+                };
+                if seen.color == 0 {
+                    seg.colors = colors;
+                } else {
+                    seg.extra_colors.push(colors);
+                }
+                seg.color_sets.push(self.set);
+                seen.color += 1;
             }
             ("SkinIndices", BYTE4) => seg.joints = bytes4(bytes, at, stride, count)?,
             ("SkinWeights", FLOAT4) => seg.weights = f32s(bytes, at, stride, count)?,
-            ("Tangent", FLOAT3) => seg.tangents = f32s(bytes, at, stride, count)?,
-            ("Binormal", FLOAT3) => seg.binormals = f32s(bytes, at, stride, count)?,
+            ("Tangent", FLOAT3) => {
+                let tangents = f32s(bytes, at, stride, count)?;
+                if seen.tangent == 0 {
+                    seg.tangents = tangents;
+                } else {
+                    seg.extra_tangents.push(tangents);
+                }
+                seen.tangent += 1;
+            }
+            ("Binormal", FLOAT3) => {
+                if seen.binormal == 0 {
+                    seg.binormals = f32s(bytes, at, stride, count)?;
+                }
+                seen.binormal += 1;
+            }
             ("Vertex" | "Normal" | "ST" | "Color" | "SkinIndices" | "SkinWeights", _) => {
                 return Err(Error::Unsupported(format!(
                     "{} stream of type {:#x}",
                     self.semantic, self.data_type
                 )));
             }
-            // Tangents, binormals, further texture coordinates.
+            // Streams of other semantics.
             _ => {}
         }
         Ok(())
@@ -237,6 +308,9 @@ impl Model {
             need("PVertexStream", "m_offset")?,
             need("PVertexStream", "m_type")?,
         );
+        let o_stream_set = c
+            .member_offset("PVertexStream", "m_streamSet")
+            .map(|o| o as usize);
         let (o_prim, o_index, o_vertex_data) = (
             need("PMeshSegment", "m_primitiveType")?,
             need("PMeshSegment", "m_indexData")?,
@@ -316,6 +390,13 @@ impl Model {
                 data_type: *bytes
                     .get(s + o_stream_type)
                     .ok_or(Error::Malformed("truncated model"))?,
+                // Clusters whose namespace lacks the member have one set.
+                set: match o_stream_set {
+                    Some(o) => *bytes
+                        .get(s + o)
+                        .ok_or(Error::Malformed("truncated model"))?,
+                    None => 0,
+                },
                 at: vertex_buffer
                     + u32_at(bytes, b + o_vb)? as usize
                     + u32_at(bytes, s + o_stream_offset)? as usize,
@@ -398,6 +479,7 @@ impl Model {
                 blocks: first..first + n,
             });
             let mut vertices = None;
+            let mut seen = Seen::default();
             for block in first..first + n {
                 let (k0, kn) = block_streams
                     .get(block)
@@ -411,7 +493,7 @@ impl Model {
                             "vertex streams of one segment differ in length",
                         ));
                     }
-                    s.decode(bytes, &mut seg)?;
+                    s.decode(bytes, &mut seg, &mut seen)?;
                 }
             }
             let vertices = vertices.unwrap_or(0);
@@ -427,6 +509,7 @@ impl Model {
             }
             segments.push(seg);
         }
+        layout.bounds = scene.bounds_at;
         Ok(Self {
             segments,
             materials: scene.materials,

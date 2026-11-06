@@ -149,33 +149,50 @@ fn primitive(bin: &mut Bin, seg: &Segment, with_tangents: bool) -> Option<Value>
         );
         attributes.insert("TANGENT".into(), json!(acc));
     }
-    if seg.uvs.len() == count {
+    // Every set as TEXCOORD_n and COLOR_n: glTF numbers them without gaps,
+    // so a set of another length ends the run.
+    let uv_sets = std::iter::once(&seg.uvs).chain(&seg.extra_uvs);
+    for (k, set) in uv_sets.take_while(|set| set.len() == count).enumerate() {
         // Stored with v up, matching the bottom-first textures; glTF has v
         // down, matching the upright export.
-        let flipped: Vec<[f32; 2]> = seg.uvs.iter().map(|&uv| export_uv(uv)).collect();
+        let flipped: Vec<[f32; 2]> = set.iter().map(|&uv| export_uv(uv)).collect();
         let t = bin.accessor(
             &floats(&flipped),
             ARRAY_BUFFER,
             json!({"componentType": FLOAT, "count": count, "type": "VEC2"}),
         );
-        attributes.insert("TEXCOORD_0".into(), json!(t));
+        attributes.insert(format!("TEXCOORD_{k}"), json!(t));
     }
-    if seg.colors.len() == count {
-        let bytes: Vec<u8> = seg.colors.iter().flatten().copied().collect();
+    let color_sets = std::iter::once(&seg.colors).chain(&seg.extra_colors);
+    for (k, set) in color_sets.take_while(|set| set.len() == count).enumerate() {
+        let bytes: Vec<u8> = set.iter().flatten().copied().collect();
         let col = bin.accessor(
             &bytes,
             ARRAY_BUFFER,
             json!({"componentType": UNSIGNED_BYTE, "normalized": true, "count": count, "type": "VEC4"}),
         );
-        attributes.insert("COLOR_0".into(), json!(col));
+        attributes.insert(format!("COLOR_{k}"), json!(col));
     }
     let indices: Vec<u8> = seg.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+    // The stream set of each TEXCOORD_n and COLOR_n, when any is not the
+    // plain 0 (`m_streamSet`; the attributes are numbered by block order).
+    let mut extras = serde_json::Map::new();
+    if seg.uv_sets.iter().any(|&s| s != 0) {
+        extras.insert("ffx_uv_sets".into(), json!(seg.uv_sets));
+    }
+    if seg.color_sets.iter().any(|&s| s != 0) {
+        extras.insert("ffx_color_sets".into(), json!(seg.color_sets));
+    }
     let idx = bin.accessor(
         &indices,
         ELEMENT_ARRAY_BUFFER,
         json!({"componentType": UNSIGNED_SHORT, "count": seg.indices.len(), "type": "SCALAR"}),
     );
-    Some(json!({"attributes": attributes, "indices": idx, "mode": 4}))
+    let mut p = json!({"attributes": attributes, "indices": idx, "mode": 4});
+    if !extras.is_empty() {
+        p["extras"] = Value::Object(extras);
+    }
+    Some(p)
 }
 
 /// A normal as exported: unit length (a few stored ones are zero or
@@ -553,7 +570,7 @@ impl Model {
             if let Some(m) = material {
                 p["material"] = json!(m);
             }
-            p["extras"] = json!({"ffx_segment": s});
+            p["extras"]["ffx_segment"] = json!(s);
             Some(p)
         };
         let segment_list = |prims: &[Value]| -> Value {
