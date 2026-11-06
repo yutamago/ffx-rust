@@ -244,6 +244,37 @@ paths (`~/ffx-work/m4/r2d/sol.c`), gives:
 cascade constants (`0x00c343ec..`, `0x00cdec2c`, `0x00cdec34`, sm
 `+0x4020..+0x4040`). Solution 3 sets a per-map callback at sm `+0x4048`.
 
+**The shadow light's direction** (ffx-remix R-52). There is no sun
+direction in the field data; the cascades' light is nearly always vertical.
+
+- Solutions 2 and 3 (`ShadowManager_fitFieldCascades_006cebd0`, its
+  branch for any solution but 4): the light's world matrix (to `[+0x8c]`)
+  is the identity with `[13] = -5` times a fixed
+  `Matrix_RotationX(-1.5708)`. Its z row is `(0, 1, 0)`: a vertical axis.
+- Solution 4: that matrix's z row is sm `+0x4020` normalised
+  (`Phyre_Vector4_normalize_005744a0`); the x and y rows are cross
+  products of it with row 0 of the camera's matrix, and the translation
+  is `(0, -500, 0)`. `selectShadowSolution` sets `+0x4020` to
+  `(0, -1, 0)` on every solution-4 level, again vertical. The exception is
+  `bsyt00` on map id `0x18a`, with `(0, -1, -1.732)`: 60 degrees from
+  vertical, in the y-z plane. The constructor's `(-0.3, -0.7, 0.3)`
+  (`ShadowManager_createResources_006d1b40`) is always replaced.
+- Battle (`ShadowManager_fitBattleCascade_006d00d0`): `RotationX(+0x4018)`
+  and `RotationY(-+0x401c)`, in degrees; after each fit it puts back
+  `+0x4018 = 90` and `+0x401c = 0`, a vertical light. Before a fit,
+  `Ch_DrawSingleShadow` (`0x00830240`) can set the two from
+  `g_ChrShadowDir` (`0x013008c4`: `+0x401c` the first word, `+0x4018` the
+  second, as floats) for a character drawn with shadow mode 3
+  (`graphicSetShadowFloats_00642fb0` →
+  `ShadowManager_SetFloats401c`). `Sg_EventjumpInit` sets
+  `g_ChrShadowDir` to `(225, 45)`, native `0x4043`
+  (`Native_4043_SetShadowDir`) to the script's, and the debug "Shadow"
+  window (`Gui_ShadowProc_008523e0`) to its spins'. Not checked: which
+  battles draw mode-3 shadows, and so get a slanted light.
+
+The character key light is a separate light with its own direction
+(`docs/formats/render.md`, "Light directions").
+
 **Round 1 had cdsp0000 at solution 0. It is 2** (read in the game; the
 table agrees).
 

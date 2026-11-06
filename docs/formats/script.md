@@ -1723,7 +1723,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4010` | `Native_4010_DropArgs` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
 | `0x4011` | `Native_4011_LightSetDir` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
 | `0x4012` | `Native_4012_LightSetColor` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
-| `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
+| `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, azimuth int (deg), elevation int (deg) (`Light_Set`: direction `(sin az cos el, sin el, cos az cos el)`, `docs/formats/render.md`) | 0 | - | int `0x00a78030` (native_move) |
 | `0x4014` | `Native_4014_EnFocus` | v int | int: Sg_EnFocus(v) (0x0082cb60) | - | int `0x00a780a0` (native_chr) |
 | `0x4015` | `Native_4015_SetFocus` | b int, a int | 0: Sg_SetFocus(b, a) (0x0082ce20) | - | int `0x00a780c0` (native_chr) |
 | `0x4016` | `Native_4016_PlayerSetSpeed` | i int, v f | 0: 0x0082d9e0(i, v) | - | int `0x00a780f0` (native_chr) |
