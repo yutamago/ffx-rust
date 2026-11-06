@@ -390,9 +390,13 @@ impl Model {
                 data_type: *bytes
                     .get(s + o_stream_type)
                     .ok_or(Error::Malformed("truncated model"))?,
-                set: o_stream_set
-                    .and_then(|o| bytes.get(s + o).copied())
-                    .unwrap_or(0),
+                // Clusters whose namespace lacks the member have one set.
+                set: match o_stream_set {
+                    Some(o) => *bytes
+                        .get(s + o)
+                        .ok_or(Error::Malformed("truncated model"))?,
+                    None => 0,
+                },
                 at: vertex_buffer
                     + u32_at(bytes, b + o_vb)? as usize
                     + u32_at(bytes, s + o_stream_offset)? as usize,

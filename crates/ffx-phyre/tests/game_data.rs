@@ -414,6 +414,14 @@ fn every_stream_set_exports_and_reads_back() {
     });
     eprintln!("{path}: {uv2} segments with 2+ UV sets, {uv3} with 3, {c2} with 2+ color sets");
     assert!(uv2 > 0 && uv3 > 0 && c2 > 0);
+    // Stream set numbers as stored (`m_streamSet`), and in the glTF extras.
+    assert_eq!(
+        model.segments[50].uv_sets,
+        [1],
+        "znkd14 segment 50: its only ST is set 1"
+    );
+    assert_eq!(model.segments[6].uv_sets, [1, 2]);
+    assert_eq!(model.segments[144].uv_sets, [0, 1, 2]);
     let glb = model.to_glb();
     let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
     let json: serde_json::Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
@@ -426,6 +434,38 @@ fn every_stream_set_exports_and_reads_back() {
         .collect();
     assert!(attrs.iter().any(|a| !a["TEXCOORD_2"].is_null()));
     assert!(attrs.iter().any(|a| !a["COLOR_1"].is_null()));
+    let prim_of = |seg: u64| {
+        json["meshes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|m| m["primitives"].as_array().unwrap())
+            .find(|p| p["extras"]["ffx_segment"] == seg)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(prim_of(50)["extras"]["ffx_uv_sets"], serde_json::json!([1]));
+    assert_eq!(
+        prim_of(144)["extras"]["ffx_uv_sets"],
+        serde_json::json!([0, 1, 2])
+    );
+    assert!(prim_of(0)["extras"].get("ffx_uv_sets").is_none());
+    for (other, seg, uv_sets, color_sets) in [
+        ("map/mihn/mihn02/mdl/d3d11/mihn02", 368, &[0u8, 2][..], None),
+        (
+            "map/swin/swin00/mdl/d3d11/swin00",
+            79,
+            &[0u8][..],
+            Some(&[0u8, 2][..]),
+        ),
+    ] {
+        let p = format!("ffx_data/gamedata/ps3data/{other}.dae.phyre");
+        let m = ffx_phyre::Model::parse(&archive.read(archive.find(&p).unwrap()).unwrap()).unwrap();
+        assert_eq!(m.segments[seg].uv_sets, uv_sets, "{p} segment {seg}");
+        if let Some(c) = color_sets {
+            assert_eq!(m.segments[seg].color_sets, c, "{p} segment {seg}");
+        }
+    }
     // Edited sets come back as edited; the rest stays as stored.
     let mut edited = model.clone();
     let s = edited
@@ -516,6 +556,25 @@ fn edited_geometry_grows_its_culling_box() {
     }
     eprintln!("{checked} map models with a grown instance");
     assert!(checked > 10);
+
+    // An instance with a skeleton keeps its box even when its edited
+    // segment has no joints (the skeleton alone decides).
+    let path = "ffx_data/gamedata/ps3data/map/cdsp/cdsp00/mdl/d3d11/cdsp00.dae.phyre";
+    let bytes = archive.read(archive.find(path).unwrap()).unwrap();
+    let mut model = ffx_phyre::Model::parse(&bytes).unwrap();
+    let i = model
+        .instances
+        .iter()
+        .position(|inst| inst.skeleton.is_none() && inst.bounds.is_some())
+        .unwrap();
+    let s = model.instances[i].segments[0].0;
+    assert_eq!(model.segments[s].joints, Vec::<[u8; 4]>::new());
+    model.instances[i].skeleton = Some(0);
+    for p in &mut model.segments[s].positions {
+        *p = p.map(|v| v * 5.0 + 100.0);
+    }
+    let back = ffx_phyre::Model::parse(&model.write(&bytes).unwrap()).unwrap();
+    assert_eq!(back.instances[i].bounds, model.instances[i].bounds);
 
     // A skinned instance's box is the game's to move: kept as it is.
     let path = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
