@@ -995,7 +995,7 @@ null device):
   devices), the file system (MD5 through `CryptoAPI`, `FFX_Data.vbf`
   opened and its tree built: `Vbf_InsertEntry` 71,979 times), nine job
   and loader threads (`Thread_Start_00679db0`) and the movie reader
-  (`PVideoPlaybackWin32__ReadingThread`) start;
+  (`0x00a27880`, started by `PVideoPlaybackWin32_initialize`) start;
 - the main loop runs. In 300 s: 7,400 `Present`s, 145,965 COM calls on
   33 methods, none unhandled; 834 buffers, 370 vertex and 378 pixel
   shaders, 370 input layouts, 383 samplers and 87 textures made. Every

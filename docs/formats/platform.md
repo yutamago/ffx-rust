@@ -586,10 +586,10 @@ the game's own scripts can start a movie that early is not checked.
 Measured 2026-11-07 with ffx-remix's runtime in harness games
 (ffx-remix's `tools/probe-movie.sh`): movie 2 as
 `tools/replays/movie-fmv.txt` plays it (save `ffx_003`, `bsil0000`'s
-worker 24 entry 5, the preload held until its 30 frames are decoded), in
-lockstep: the test-file runs below with the real clock (its
-`--realtime`), the open hook's runs with the virtual clock (two) and the
-real one (one).
+worker 24 entry 5, the preload held until its 30 frames are decoded).
+All runs were in lockstep. The test-file runs below used the real clock
+(the script's `--realtime`); the open hook's runs used the virtual clock
+(two) and the real one (one).
 
 - `PVideoPlaybackWin32_open` (`0x00a27f20`, thiscall(player, path,
   loop)) got the path `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm` and
@@ -610,21 +610,20 @@ real one (one).
 - A 3840 x 2160 VP8 file crashed the game when `Native_b000_MovieStart`
   loaded it (the preload, before any frame was decoded): an access
   violation writing to address 0 in `MSVCR110.dll` (`+0x31323`, one
-  minidump). The main thread's stack: `memset` (the fill `0xcd`) <-
-  `UserHeap_Malloc` (`0x006fb910`, through the jump `user_malloc`
-  `0x00687020`, returning to `0x006fb97d`) <- `Phyre_PhyreMalloc`
-  (`0x0042fb40`, returning to `0x0042fb50`) <- the frame queue's set-up
-  (`0x00a3ddf0`, returning to `0x00a3de52`) <-
-  `PVideoPlaybackWin32_open` (its second queue call, returning to
-  `0x00a28260`) <- `PhyFMVPlayerManager_fmvPlayer_play` (`0x006d8fc0`,
-  returning to `0x006d902f`) <- `PlayVideo` (`0x006d7430`, returning to
-  `0x006d754c`) <- `graphicPlayVideo(1)` (`0x006427c0`, returning to
-  `0x006427da`) <- `Native_b000_MovieStart` (`0x0076e910`, returning to
-  `0x0076e948`). The queue asked for 30 slots of (1.5 x width x height +
-  4) bytes, 373,248,120 in all, and `UserHeap_Malloc` for 385,689,751
-  (total plus one 1.5 x width x height frame plus `0x1f`); the user heap
-  could not give it, and `UserHeap_Malloc` filled the null block with
-  `0xcd`. At 1080p the block would be about 96 MB (computed).
+  minidump). The main thread's stack (each function with the return
+  address into it): `memset` (the fill `0xcd`) <- `user_malloc`
+  (`0x006fb910`, through the jump at `0x00687020`; `0x006fb97d`) <-
+  `Phyre_PhyreMalloc` (`0x0042fb40`; `0x0042fb50`) <- the frame queue's
+  set-up (`0x00a3ddf0`; `0x00a3de52`) <- `PVideoPlaybackWin32_open` (its
+  second queue call, `0x00a28260`) <-
+  `PhyFMVPlayerManager_fmvPlayer_play` (`0x006d8fc0`; `0x006d902f`) <-
+  `PlayVideo` (`0x006d7430`; `0x006d754c`) <- `graphicPlayVideo(1)`
+  (`0x006427c0`; `0x006427da`) <- `Native_b000_MovieStart`
+  (`0x0076e910`; `0x0076e948`). The queue asked for 30 slots of (1.5 x
+  width x height + 4) bytes, 373,248,120 in all, and `user_malloc` for
+  385,689,751 (total plus one 1.5 x width x height frame plus `0x1f`);
+  the user heap could not give it, and `user_malloc` filled the null
+  block with `0xcd`. At 1080p the block would be about 96 MB (computed).
 
 ### Drawing
 

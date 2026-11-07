@@ -154,19 +154,19 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
   otherwise it waits (5 ms sleeps) while `+0x20` is 0, reads one step at the cursor (time `f32`,
   rate `f32`, frame `i32`; the cursor moves 12 bytes), and at the end marker (1.0, 1.0, 999) clears
   `+8` and returns 999. `Sg_FrameSync` asks for steps only in its `g_VoiceHold == 0` branch, before
-  any of the drawn frame's updates run: one step, then one more for each update its catch-up loop
-  adds to `g_VoiceHold` (one tick per update at exec frames 1). The steps' times and rates (ms after
-  the x 1000) set how many updates each drawn frame gets and when it spins: the sync clock is
+  any of the drawn frame's world ticks run: one step, then one more for each update its catch-up
+  loop adds to `g_VoiceHold` (one tick per update at exec frames 1). The steps' times and rates (ms
+  after the × 1000) set how many updates each drawn frame gets and when it spins: the sync clock is
   compared with the time of the step read before, and an update is added while the clock is ahead of
-  it by more than the rate of the step just read. For each update `Sg_MainCalcRate` (`0x008206c0`)
-  stores its own step's frame (`frame << 7` from the frame table `0x012fb828`, 30 words, read at
-  index `0x012fb814` minus `g_VoiceHold`) as `Sg_MainCalcRate`'s rate (`0x023cbbec`; 0x100 at exec
-  frames other than 1), which only keep-fps motions step by (`SG_UpdateMotion` `0x00838c90`, for
-  actors with flag `0x100000` at `+0x194` while `Sg_GetKeepFps()` is not 0; above). So the n-th
-  update after the start gets the n-th step's frame as that rate, whatever real time it runs at.
-  When the end marker comes inside the catch-up loop, the sync is cleared there (the table zeroed),
-  so every update of that drawn frame, the added one included, runs with the sync off; the steps
-  already read for it are dropped.
+  it by more than the rate of the step just read. For each update, `Sg_MainCalcRate` (`0x008206c0`)
+  sets its rate (`0x023cbbec`) to that update's step frame (`frame << 7` from the frame table
+  `0x012fb828`, 30 words, read at index `0x012fb814` minus `g_VoiceHold`; 0x100 at exec frames other
+  than 1), which only keep-fps motions step by (`SG_UpdateMotion` `0x00838c90`, for actors with flag
+  `0x100000` at `+0x194` while `Sg_GetKeepFps()` is not 0; above). So the n-th update after the
+  start gets the n-th step's frame as that rate, whatever real time it runs at. When the end marker
+  comes inside the catch-up loop, the sync is cleared there (the table zeroed), so every update of
+  that drawn frame, the added one included, runs with the sync off; the steps already read for it
+  are dropped.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
