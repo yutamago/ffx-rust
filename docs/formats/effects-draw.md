@@ -291,7 +291,8 @@ A trace in the 32-bit game (ffx-remix's runtime, `FFXREMIX_FX_TRACE=1`,
 `Effects/EffectTrace.cs`; harness lockstep, fast mode, virtual clock, seed
 1): Lulu alone against the Thunder Plains' first formation (battle field
 34, formation 0: Larva, actor 20, and Gold Element, actor 21; the probe
-raises the monsters' HP to 99999) casts Fire (magic `0x4c`,
+the runs' probe raised the monsters' HP to 99999; its writes meant for
+Lulu's HP landed in her `+0x670` area instead) casts Fire (magic `0x4c`,
 `magic_0076.dll`) on the Larva. Hooks on `FFXApplication_animate` (one
 count per update; the magic ID and handle read at the start of each
 update, before the game's own), `PhyreScene_DrawMostVFX` (each list entry,
@@ -351,10 +352,11 @@ entries of `+0x38cc` whose mesh instance is in no table entry (329 entries,
 212 addresses, 154 of them in one frame only), most likely geometry already
 removed from the table: `graphicVFXDestroy` calls
 `ClassVFXRenderDataTable_Remove_0069fc10`, which erases the map node and
-puts the geometry in the delete pool and does not touch `+0x38cc` (only
-the Remove was checked). A hide by instance key therefore remembers the
+puts the geometry in the delete pool and does not touch `+0x38cc` (the geometry's
+virtual `+0x10` that `graphicVFXDestroy` calls first was not checked). A hide by instance key therefore remembers the
 spell's entries while the spell plays: in exit-fire2 ffx-remix's hide
-zeroed 4,891 entries against the 4,680 the tracer resolved as the spell's.
+zeroed 4,891 entries (a running count, Fire's alone in that run) against
+the 4,680 the tracer resolved as the spell's.
 The remembered addresses must be dropped a few frames after the spell: the
 game reuses them for other effects' geometry (an earlier version that kept
 them hid later effects' draws).
@@ -365,14 +367,15 @@ loop skips zero entries and the draw events still run at their places.
 
 **Where the actors are.** The caster is the actor with a command cue entry
 (`+0xde5` not `0xff`) and an effect state (`+0xdfb` not 0; sampled 16, 2,
-4, 5 over Fire: 16 is not in battle.md's `MsEffectStart` table, 3 and 11
-were not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
+4, 5 over Fire; 16 is no state of battle.md's `MsEffectStart` table, 3 and
+11 were not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
 battle character's place in the HD scene (the space the draws' world
 matrices use) was taken as `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on
 field maps: an effect placed there sat on the Larva in the live frames
 (checked by eye, run live3). The centre of the character's mesh bounds
-(render instance `+0x830`, each mesh instance's box) is not that place: it
-lay 20-55 units away, and an effect placed by it (run live2) stood on the
+(render instance `+0x830`, each mesh instance's box) is not that place: in
+live2 it lay 31.8 units from it for the Larva and 55.4 for Lulu (10.4-55.4
+over the five actors logged), and an effect placed by it stood on the
 ground beside the Larva.
 
 ## Gate
