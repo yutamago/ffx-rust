@@ -127,6 +127,18 @@ ported! {
         let at = slerp.at();
         ffx_panim::l9_batch::bridge::batch(&mut mem(), at, out, batch, cursors, targets)
     }
+    /// `(job)`: the scrolling model's vertex fill (a particle job, on a
+    /// worker thread): the two vertex arrays (`32 * n` bytes) through
+    /// `with_frame` (the heap past 16 KB), the normal and its transform in
+    /// a frame.
+    JobSchedule_pppPart_fillBuffer_drawModelScroll @ 0x0072_69a0 => extern "C" fn draw_model_scroll(job: u32) -> u32 {
+        use ffx_system::l9_scroll::bridge as scroll;
+        let mut scratch = StackFrame::<{ (scroll::SCRATCH / 4) as usize }>::new();
+        let at = scratch.at();
+        let n = scroll::vertex_count(&mem(), job);
+        let bytes = if n > 0 { scroll::arrays_size(n) } else { 0 };
+        with_frame(bytes, |arrays| scroll::fill(&mut mem(), arrays, at, job))
+    }
     /// `()`: the ability map's job wait (queue 0 of `0x00cdede4`).
     AbmapJobWait_00a8ecf0 @ 0x00a8_ecf0 => extern "C" fn abmap_job_wait() {
         ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());
