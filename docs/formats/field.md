@@ -1854,18 +1854,19 @@ The 4-component ones leave `a.w = b.w ± c.w`.
 
 The id map that `Sg_IdSetPtr` installs is the map's walk mesh (not the
 cloth triangles of main.md's "Round 13: the walk mesh's triangle
-exceptions"): the triangles characters stand on, with the kind bits that decide who may
-enter each one (`Sg_IdMatchChr`, main.md, "Bones, sequences, id kinds,
-the dream effect, cloth rods (round 4)"). It lives in `MAP1` sections 2
-to 8, pages 0 to 6 of `yiSetIDPage` and `yiSetPreBgPage`. Over the
-game's maps there are 383 pages: page 0 on 328 of the 329 maps with a
-`MAP1` file (`gameover`'s `titl01` has only section 0), page 1 on 32,
-page 2 on 14, page 3 on 5, pages 4 and 6 on 2 each. 59 maps also have a
-mesh of the same layout in section 9 (`lmyt0100` 163 vertices and 259
-triangles, the others 4 and 2). Page 7 would install it (`yiSetIDPage`
-does not check the page); whether a script asks for page 7 was not
-checked. The counts are per map: a `MAP1` file several maps share counts
-once for each of them.
+exceptions (`crates/ffx-sg/src/triangle.rs`)", which are cloth triangles
+despite the name): the triangles characters stand on, with the kind bits
+that decide who may enter each one (`Sg_IdMatchChr`, main.md, "Bones,
+sequences, id kinds, the dream effect, cloth rods (round 4)"). It lives
+in `MAP1` sections 2 to 8, pages 0 to 6 of `yiSetIDPage` and
+`yiSetPreBgPage`. Over the game's maps there are 383 pages: page 0 on
+328 of the 329 maps with a `MAP1` file (`gameover`'s `titl01` has only
+section 0), page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2
+each. 59 maps also have a mesh of the same layout in section 9
+(`lmyt0100` 163 vertices and 259 triangles, the others 4 and 2). Page 7
+would install it (`yiSetIDPage` does not check the page); whether a
+script asks for page 7 was not checked. The counts are per map: a `MAP1`
+file several maps share counts once for each of them.
 
 Every page has the same layout:
 

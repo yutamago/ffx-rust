@@ -294,7 +294,7 @@ behind them stays with those modules, which the bridges call.
   (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone
   but the player, 13 chocobos, 14 only the player. `0x30..0x3f` block as
   the kind the table holds for them, and every other kind blocks no one.
-  Its entries `0x30..0x3f` are cleared at each map change
+  `g_ChrIdMapTable`'s entries `0x30..0x3f` are cleared at each map change
   (`Sg_EventjumpInit` calls `Sg_IdEventInitAll`, `0x0083e8d0`) and
   scripts set entries with `Native_4017_IdSetMapTable`. Over the game's
   383 walk-mesh pages (field.md, "The walk mesh on disk (ffx-remix M8)",
@@ -723,11 +723,12 @@ x87 result.
   (`0x00871ab0`) sets the controlled character back, or 0 when a window
   or another context bit holds control or no worker qualifies.
   `Native_ControlDisable` (`0x005e`), `AtelSetEventJump` and
-  `AtelSetEventJump2` (map changes) and `AtelEventSetUpForBattleMusic`
-  call `AtelUcOff`, which leaves `g_Player` (`0x01300788`) 0 (the battle
-  set-up also calls `AtelUcOn`, but first sets the context's byte 3 bit
-  `0x80`, which skips it). `AtelUpdateWindowStatus` (message windows),
-  `AtelSetCtrlChar`, `Atel_UcResume` and `Atel_UcRestore` call
+  `AtelSetEventJump2` (map changes) call `AtelUcOff`, which leaves
+  `g_Player` (`0x01300788`) 0. `AtelEventSetUpForBattleMusic` calls
+  `AtelUcOff` and then `AtelUcOn` after setting ctrl work 0's byte 3 bit
+  `0x80`, which skips it when ctrl work 0 is the current one (which one
+  is current there was not checked). `AtelUpdateWindowStatus` (message
+  windows), `AtelSetCtrlChar`, `Atel_UcResume` and `Atel_UcRestore` call
   `AtelUcOff` and then `AtelUcOn` when control was on and no window
   holds it, so there the player often comes straight back. Scripts can
   also set the player directly (`Native_000c_SgSetPlayer`). ffx-remix's
