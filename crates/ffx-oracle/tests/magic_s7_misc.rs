@@ -3865,6 +3865,7 @@ fn staged_volley_tasks() {
         (682, 0x70d0),
         (674, 0x7210),
         (618, 0x6db0),
+        (685, 0x6d60),
     ] {
         staged_volley_in(dll, rva);
     }
@@ -3958,6 +3959,25 @@ fn staged_volley_in(dll: u16, rva: u32) {
                 t.set_u16(r + 0x18, 2);
             }
             let ring = op(&t, throw, if one { 0x35 } else { 0x80 });
+            t.write(ring, &[0; 0x10]);
+            t.set_u32(ring + 8, ring);
+        }
+        // `magic_0685`'s summon object (`s9_misc::summon_object_0685`)
+        685 => {
+            let pn = t.img.rel32_target(throw + 0x1b0);
+            t.set_u32(op(&t, pn, 0x45), SCRATCH + 0x7f10);
+            let wrapper = t.img.rel32_target(pn + 0x88);
+            t.set_u32(op(&t, wrapper, 0x04), SCRATCH + 0x2f0);
+            t.set_u32(op(&t, throw, 0x170), SCRATCH + 0x7a00);
+            t.set_u32(SCRATCH + 0x7a10, 0x7a10);
+            for o in [0x5cu32, 0x193] {
+                let r = op(&t, throw, o);
+                t.write(r, &[0; 0x20]);
+                t.set_u32(r + 0x10, r);
+                t.set_u32(r + 0xc, r);
+                t.set_u16(r + 0x18, 2);
+            }
+            let ring = op(&t, throw, 0x2e);
             t.write(ring, &[0; 0x10]);
             t.set_u32(ring + 8, ring);
         }

@@ -4531,3 +4531,81 @@ fn fam2_scene_end() {
         }
     }
 }
+
+/// `r13_misc::particles_reset` (family P019) in both copies: the two
+/// particle passes with the pool's first record busy (no particles); the
+/// task ring with three free nodes and two, the task list empty and not.
+#[test]
+fn fam_p019_particles_reset() {
+    for (d, (n, rva)) in (0u32..).zip([(304u16, 0x2fd0u32), (568, 0x28d0)]) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        for s in [314u32, 404] {
+            t.stub_st0(s, move |m, a| {
+                let k = m.r32(SCRATCH + 0x3800);
+                m.w32(SCRATCH + 0x3800, k + 1);
+                f64::from(f32::from_bits(a[0])) * 0.375 + f64::from((k + s) % 7) * 0.25
+            });
+        }
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let own = 0x0100_0000 * d;
+        let s = 0x6500_0000 + own;
+        t.set_u32(w(&t, 0x3), s);
+        // the passes' objects (the same block when they share the global)
+        let two = t.img.rel32_target(f + 0x2f6);
+        let rows = t.img.rel32_target(f + 0x2fb);
+        let obj = t.u32(t.img.word(two + 0x18));
+        let obj = if obj == 0 { s } else { obj };
+        t.set_u32(t.img.word(two + 0x18), obj);
+        t.set_u32(t.img.word(rows + 0x14), obj);
+        t.set_u32(t.img.word(two + 0xb6), SCRATCH + 0x3000);
+        t.set_u32(t.img.word(rows + 0x71), SCRATCH + 0x3000);
+        t.set_u32(SCRATCH + 0x300c, 0x0077_1234);
+        t.set_u32(SCRATCH + 0x3008, 0x0077_1234);
+        let take = t.img.rel32_target(two + 0xa6);
+        let tw = |t: &Twin, o: u32| t.img.word(take + o);
+        let pool = 0x5800_0000 + own;
+        let start = 140u32;
+        t.set_u32(tw(&t, 0x37), pool + 0x74 * start);
+        let take2 = t.img.rel32_target(rows + 0x61);
+        t.set_u32(t.img.word(take2 + 0x37), pool + 0x74 * start);
+        let node = |i: u32| SCRATCH + 0x4000 + 0x40 * i;
+        let saved = t.save();
+        for (c, (count, listed)) in (0u32..).zip([(3u16, false), (3, true), (2, true), (2, false)])
+        {
+            t.restore(&saved);
+            for take in [take, take2] {
+                t.set_u32(t.img.word(take + 0x08), start.wrapping_neg());
+                t.set_u32(t.img.word(take + 0x0f), 1);
+            }
+            t.write(pool, &vec![0x33; 0x74 * 130]);
+            for i in 0..130 {
+                t.set_u32(pool + 0x74 * i + 0x6c, u32::from(i == 0));
+            }
+            t.write(s, &vec![0x5a; 0x1600]);
+            // the free ring of `count` nodes
+            for i in 0..u32::from(count) {
+                let k = u32::from(count);
+                t.write(node(i), &[0x2e; 0x20]);
+                t.set_u32(node(i), node((i + k - 1) % k));
+                t.set_u32(node(i) + 4, node((i + 1) % k));
+            }
+            t.set_u16(w(&t, 0x302), count);
+            t.set_u32(w(&t, 0x34c), node(0));
+            let other = SCRATCH + 0x4400;
+            t.write(other, &[0x44; 0x20]);
+            t.set_u32(w(&t, 0x3b6), if listed { other } else { 0 });
+            t.set_u32(w(&t, 0x3ca), other);
+            t.check(
+                f,
+                regs(rva, c),
+                &[],
+                Eax::Checked,
+                ffx_magic::r13_misc::particles_reset,
+            );
+        }
+    }
+}

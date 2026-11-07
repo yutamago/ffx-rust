@@ -2804,6 +2804,7 @@ ports! {
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
     "staged volley task (0674)" => s7_misc::STAGED_VOLLEY_TASK_0674, s7_misc::staged_volley_task;
     "staged volley task (0618)" => s7_misc::STAGED_VOLLEY_TASK_0618, s7_misc::staged_volley_task;
+    "staged volley task (0685)" => s7_misc::STAGED_VOLLEY_TASK_0685, s7_misc::staged_volley_task;
     "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
     "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
@@ -3108,6 +3109,8 @@ ports! {
     "r13 scripts step (motion) 0606" => r13_misc::SCRIPTS_STEP_MOTION_0606, r13_misc::scripts_step_motion;
     "r13 script step 0307" => r13_misc::SCRIPT_STEP_0307, r13_misc::script_step;
     "r13 script step 0605" => r13_misc::SCRIPT_STEP_0605, r13_misc::script_step;
+    "r13 particles reset 0304" => r13_misc::PARTICLES_RESET_0304, r13_misc::particles_reset;
+    "r13 particles reset 0568" => r13_misc::PARTICLES_RESET_0568, r13_misc::particles_reset;
     // round 13 (magic-r13): end of ports
 }
 
@@ -4326,6 +4329,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
     ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
     ("effect group (one copy)", &s9_misc::EFFECT_GROUP_ONE),
+    ("summon object (0685)", &s9_misc::SUMMON_OBJECT_0685),
     ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
     (
         "summon object between (0132)",

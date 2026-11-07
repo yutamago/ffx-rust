@@ -5239,6 +5239,132 @@ pub const EFFECT_GROUP_ONE: Sig = Sig {
     imports: &[],
 };
 
+/// A summon object set up and listed, `magic_0685`'s copy (internal:
+/// `ecx` = `O`, `edx` = `R`, `xmm2` = `s`; an aligned frame, `P` =
+/// `((esp - 4) & !7) - 0x30` after the saved registers, `R` at `P+0xc`,
+/// `s` at `P+0x14`, the set-up record at `P+0x18`): `O` joins the task
+/// ring (as [`summon_object_setup`](crate::s7_misc::summon_object_setup));
+/// its nodes `B = O+0x120` and `C = O+0x14c` go on the node list
+/// ([`list_node`]); `C`'s colour `(1, 1, 1, s)`; the node `N = O+0x178`
+/// inserted ([`node_insert`](crate::nodes::node_insert): `(N, G_V, G_W, B,
+/// G_X, C)`); `B`'s point slot 268 `(R[0x54], 0x11, O+0x13c)` (`w` 1.0);
+/// the particle `O+0x20` ([`particle_node`](crate::sb_nodes::particle_node):
+/// program index 1); the effect node `E = O+0x2d8`
+/// ([`effect_node`](crate::sb_nodes::effect_node)) with its vtable, `+0x2c
+/// |= 1`, `+0x30 = 0`; `O+0x13c` and `O+0x144` (not `+0x140`) moved by a
+/// random step each (slot 307); `O+0x2d4 = R`, `+0x2c8 = s`, `+0x2c4`,
+/// `+0x2cc`, `+0x2d0` 0. Returns `R`.
+///
+/// `magic_0685` 0x10006aa0 (697 bytes).
+pub fn summon_object_0685<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (o, r) = (fr.ecx, fr.edx);
+    let s = fr.xmm_f32(2);
+    let p = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    g.write::<u32>(o + 8, o);
+    g.write::<u32>(o + 4, o);
+    g.write::<u32>(o, w(0x15));
+    g.write::<u32>(o + 0x10, w(0x1c));
+    g.write::<u32>(o + 0x14, o);
+    let last = g.read::<u32>(w(0x24));
+    g.write::<u32>(o + 8, last);
+    g.write::<u32>(o + 4, w(0x2e));
+    let last = g.read::<u32>(w(0x33));
+    g.write::<u32>(last.wrapping_add(4), o);
+    let fl = g.read::<u32>(w(0x42)) & !1;
+    g.write::<u32>(w(0x42), fl);
+    g.write::<u32>(w(0x49), o);
+    let (b, c) = (o + 0x120, o + 0x14c);
+    g.write::<f32>(p + 0x14, s);
+    g.write::<u32>(p + 0xc, r);
+    list_node(
+        g,
+        img,
+        f,
+        b,
+        [0x5c, 0x63, 0x68, 0x70, 0x83, 0x8b, 0x97, 0x9d, 0xa3],
+    );
+    list_node(
+        g,
+        img,
+        f,
+        c,
+        [0xbc, 0xc3, 0xc8, 0xd0, 0xd5, 0xdd, 0xe9, 0xef, 0xf5],
+    );
+    let rec = p + 0x18;
+    for at in [0x168u32, 0x16c, 0x170] {
+        g.write::<u32>(o + at, 0x3f80_0000);
+    }
+    g.write::<f32>(o + 0x174, s);
+    let n = o + 0x178;
+    for (i, v) in (0u32..).zip([n, w(0x135), w(0x13d), b, w(0x145), c]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let insert = Frame {
+        at: img.rel32_target(f + 0x14e),
+        esp: p.wrapping_sub(4),
+        ecx: rec,
+        ..Frame::default()
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    let h = g.read::<u32>(r.wrapping_add(0x54));
+    // call width: 3
+    g.call(slot_target(g, w(0x163), 268), 0, &[h, 0x11, o + 0x13c]);
+    let d = g.read::<u32>(w(0x170));
+    g.write::<u32>(o + 0x148, 0x3f80_0000);
+    let q = o + 0x20;
+    g.write::<u32>(rec, q);
+    g.write::<u32>(q, w(0x184));
+    for (i, v) in (1u32..).zip([w(0x193), n, d, w(0x1a3), 1]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x1b0), rec);
+    let e = o + 0x2d8;
+    for (i, v) in (0u32..).zip([e, w(0x1cc), w(0x1d4), b, w(0x1e0), 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::effect_node(g, img, img.rel32_target(f + 0x1ed), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0x1f7));
+    let fl = g.read::<u32>(e + 0x2c) | 1;
+    g.write::<u32>(e + 0x2c, fl);
+    g.write::<u32>(e + 0x30, 0);
+    // the two random steps (each slot 307's table its own operand)
+    for (at, (tab, k1, k2, k3)) in [
+        (0x13cu32, (0x1fcu32, 0x221u32, 0x22eu32, 0x236u32)),
+        (0x144, (0x226, 0x258, 0x26c, 0x288)),
+    ] {
+        let x = g.call(slot_target(g, w(tab), 307), 0, &[]);
+        let x = sub(crate::m0018::st0_f32(x.st0), g.read::<f32>(w(k1)));
+        let x = sub(mul(x, g.read::<f32>(w(k2))), g.read::<f32>(w(k3)));
+        if at == 0x144 {
+            g.write::<u32>(o + 0x2d4, r);
+            for z in [0x2c4u32, 0x2cc, 0x2d0] {
+                g.write::<u32>(o + z, 0);
+            }
+        }
+        let v = add(x, g.read::<f32>(o + at));
+        g.write::<f32>(o + at, v);
+    }
+    g.write::<f32>(o + 0x2c8, s);
+    Ret::eax(r)
+}
+
+/// [`summon_object_0685`] (the `rel32`s: the node insert, the particle
+/// node, the effect node).
+pub const SUMMON_OBJECT_0685: Sig = Sig {
+    len: 697,
+    hash: 0x14d9_8f7b_9139_76c0,
+    calls: &[
+        (0x14e, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1b0, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x1ed, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};
+
 /// `KA - a` brought back once into the range: less `KB` above `KC`, plus
 /// `KB` below `KD` (the operands `(KA, KB, KC, KD)` of `f`).
 fn fold_angle(g: &impl crate::Mem, img: &Image, f: u32, a: f32, ops: [u32; 4]) -> f32 {

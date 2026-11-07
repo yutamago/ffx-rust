@@ -4962,6 +4962,8 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         crate::s9_misc::effect_group_init(g, img, &throw).eax
     } else if img.matches(throw.at, &crate::s9_misc::EFFECT_GROUP_ONE) {
         crate::s9_misc::effect_group_one(g, img, &throw).eax
+    } else if img.matches(throw.at, &crate::s9_misc::SUMMON_OBJECT_0685) {
+        crate::s9_misc::summon_object_0685(g, img, &throw).eax
     } else if img.matches(throw.at, &MODEL_OBJECT_SETUP) {
         model_object_setup(g, img, &throw)
     } else if img.matches(throw.at, &crate::s5_misc::THROWN_EFFECT_FAR) {
@@ -5048,6 +5050,21 @@ pub const STAGED_VOLLEY_TASK_0618: Sig = Sig {
         (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
     ],
     ..STAGED_VOLLEY_TASK_0674
+};
+
+/// [`staged_volley_task`] in `magic_0685` (0x10006d60; its own wait and
+/// count immediates, the throw
+/// [`summon_object_0685`](crate::s9_misc::summon_object_0685)).
+pub const STAGED_VOLLEY_TASK_0685: Sig = Sig {
+    hash: 0xf839_19f1_0466_0876,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&crate::s9_misc::SUMMON_OBJECT_0685)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    ..STAGED_VOLLEY_TASK
 };
 
 /// [`staged_volley_task`] in `magic_0677` (0x10006e40; its own

@@ -399,3 +399,209 @@ pub const SCRIPT_STEP_0605: Sig = Sig {
     hash: 0x75b9_b87d_0597_4ae5,
     ..SCRIPT_STEP_0307
 };
+
+/// Takes the pool's free head `node` (the count `G_N` at the operand `n`):
+/// unlinked from its ring, `G_FREE` its next (the operand `free`, or
+/// `free0` storing 0 with one left), the count one less (stored at
+/// `n_out`), the node's words cleared, `+8` itself, `+0x10` the callback
+/// immediate `cb`, byte `+0x18` 0. Returns the count left and the new free
+/// head.
+fn pool_pop<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    (n, free, free0, cb, n_out): (u32, u32, u32, u32, u32),
+) -> (u16, u32) {
+    let w = |o: u32| img.word(f + o);
+    let (prev, next) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+    g.write::<u32>(prev.wrapping_add(4), next);
+    let next = g.read::<u32>(node + 4);
+    let prev = g.read::<u32>(node);
+    g.write::<u32>(next, prev);
+    let count = g.read::<u16>(w(n));
+    let head = if count > 1 {
+        let next = g.read::<u32>(node + 4);
+        g.write::<u32>(w(free), next);
+        next
+    } else {
+        g.write::<u32>(w(free0), 0);
+        0
+    };
+    let count = count.wrapping_sub(1);
+    for o in [0u32, 4, 0xc, 0x14] {
+        g.write::<u32>(node + o, 0);
+    }
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 0x10, w(cb));
+    g.write::<u8>(node + 0x18, 0);
+    g.write::<u16>(w(n_out), count);
+    (count, head)
+}
+
+/// The effect block's particle tables reset and two task nodes started
+/// (cdecl, no arguments; family P019, `magic_0304` 0x10002fd0 and
+/// `magic_0568` 0x100028d0, 1,254 bytes): with `S = *G_S` (`+0x3`): 0xc0
+/// bytes from `S+0x980` cleared, the 26 words `S+0x9d8..` the callback
+/// immediates (`+0x1f`, every 10 bytes), the first words of 26 records
+/// (0x2c apart) from `S+0xae4` and of 27 from `S+0xf5c` 0, `S+0xa40..0xab8`
+/// 0 and the 27 words `S+0xa50..` the second callback immediates
+/// (`+0x1d4..`), `S+0x49c` = `S+0x980`, `S+0x6fc` = `S+0xa40`; the two
+/// particle passes ([`two_pass_particles`](crate::o6_fam_pairs5::two_pass_particles),
+/// [`particle_rows`](crate::o6_fam_pairs5::particle_rows)). Then the
+/// record `A = S + D1` (`+0x308`: `0, 100, 40, 0, 80, 80`, u16 `+0x18` 0)
+/// and `B = S + D2` (`+0x3e5`) each get a node of the pool's ring (the
+/// free head, see [`pool_pop`]; `+0x14` the record, byte `+0x18` 1)
+/// appended to the task list (`G_HEAD` `+0x3b6`, `G_TAIL` `+0x3ca`); `B`
+/// gets `0, .., 0.1, 0, 40` and, after its node, `(4, 2, 0, 4, 2, 0)` and
+/// bits 0-1 of its u16 `+0x2c`. With the pool empty the original writes
+/// through 0 (as here). Returns 0xffff (0 with the pool empty at the
+/// second node).
+#[allow(clippy::too_many_lines)] // the original's stores, in order
+pub fn particles_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x3));
+    g.write_bytes(s + 0x980, &[0u8; 0xc0]);
+    for i in 0..26u32 {
+        g.write::<u32>(s + 0x9d8 + 4 * i, w(0x1f + 10 * i));
+    }
+    for i in 0..26u32 {
+        g.write::<u32>(s + 0xae4 + 0x2c * i, 0);
+    }
+    g.write::<u32>(s + 0x49c, s + 0x980);
+    for i in 0..12u32 {
+        g.write::<u32>(s + 0xa40 + 4 * i, 0);
+    }
+    for i in 0..19u32 {
+        g.write::<u32>(s + 0xa70 + 4 * i, 0);
+    }
+    for i in 0..27u32 {
+        g.write::<u32>(s + 0xa50 + 4 * i, w(0x1d4 + 10 * i));
+    }
+    for i in 0..27u32 {
+        g.write::<u32>(s + 0xf5c + 0x2c * i, 0);
+    }
+    g.write::<u32>(s + 0x6fc, s + 0xa40);
+    // push esi, edi, ebx; call
+    let callee = |at: u32| Frame {
+        at: img.rel32_target(f + at),
+        esp: fr.esp.wrapping_sub(0x10),
+        ..*fr
+    };
+    crate::o6_fam_pairs5::two_pass_particles(g, img, &callee(0x2f6));
+    crate::o6_fam_pairs5::particle_rows(g, img, &callee(0x2fb));
+    let count = g.read::<u16>(w(0x302));
+    let a = s.wrapping_add(w(0x308));
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x64),
+        (8, 0x28),
+        (0xc, 0),
+        (0x14, 0x50),
+        (0x10, 0x50),
+    ] {
+        g.write::<u32>(a + o, v);
+    }
+    g.write::<u16>(a + 0x18, 0);
+    let (first, count, free) = if count == 0 {
+        (0, 0, g.read::<u32>(w(0x342)))
+    } else {
+        let node = g.read::<u32>(w(0x34c));
+        let (count, free) = pool_pop(g, img, f, node, (0x362, 0x37d, 0x37d, 0x3a2, 0x3ad));
+        (node, count, free)
+    };
+    // (an empty pool: the free head is read but the node is 0)
+    g.write::<u32>(first.wrapping_add(0x14), a);
+    let head = g.read::<u32>(w(0x3b6));
+    g.write::<u8>(first.wrapping_add(0x18), 1);
+    g.write::<u32>(first.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x3df), first);
+    } else {
+        let tail = g.read::<u32>(w(0x3ca));
+        g.write::<u32>(first, tail);
+        g.write::<u32>(tail.wrapping_add(4), first);
+    }
+    let listed = head != 0 || first != 0;
+    let b = s.wrapping_add(w(0x3e5));
+    g.write::<u32>(first.wrapping_add(8), first);
+    for (o, v) in [
+        (0u32, 0u32),
+        (0x1c, 0),
+        (0x20, 0x3ccc_cccd),
+        (0x24, 0),
+        (0x28, 0x28),
+    ] {
+        g.write::<u32>(b + o, v);
+    }
+    g.write::<u16>(b + 0x2c, 0);
+    // the second node: the free head the first take left (`edx`)
+    let (second, eax) = if count == 0 {
+        (0, 0)
+    } else {
+        pool_pop(g, img, f, free, (0x42f, 0x43d, 0x445, 0x476, 0x481));
+        (free, 0xffff)
+    };
+    g.write::<u8>(second.wrapping_add(0x18), 1);
+    g.write::<u32>(second.wrapping_add(0x14), b);
+    g.write::<u32>(second.wrapping_add(4), 0);
+    if listed {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+    } else {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x4a7), second);
+    }
+    g.write::<u32>(second.wrapping_add(8), second);
+    for (o, v) in [
+        (4u32, 0x4080_0000u32),
+        (8, 0x4000_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4000_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(b + o, v);
+    }
+    let bits = g.read::<u16>(b + 0x2c) | 3;
+    g.write::<u16>(b + 0x2c, bits);
+    g.write::<u32>(w(0x4e0), second);
+    Ret::eax(eax)
+}
+
+/// [`particles_reset`] in `magic_0304` (0x10002fd0; the `rel32`s: the two
+/// particle passes).
+pub const PARTICLES_RESET_0304: Sig = Sig {
+    len: 1254,
+    hash: 0x3f16_04bd_9eca_1058,
+    calls: &[
+        (
+            0x2f6,
+            Callee::Sig(&crate::o6_fam_pairs5::TWO_PASS_PARTICLES_0304_2740),
+        ),
+        (
+            0x2fb,
+            Callee::Sig(&crate::o6_fam_pairs5::PARTICLE_ROWS_0304_2AE0),
+        ),
+    ],
+    imports: &[],
+};
+
+/// [`particles_reset`] in `magic_0568` (0x100028d0).
+pub const PARTICLES_RESET_0568: Sig = Sig {
+    len: 1254,
+    hash: 0x2c36_5952_d4a1_01d8,
+    calls: &[
+        (
+            0x2f6,
+            Callee::Sig(&crate::o6_fam_pairs5::TWO_PASS_PARTICLES_0568_2170),
+        ),
+        (
+            0x2fb,
+            Callee::Sig(&crate::o6_fam_pairs5::PARTICLE_ROWS_0568_2510),
+        ),
+    ],
+    imports: &[],
+};
