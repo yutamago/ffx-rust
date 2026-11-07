@@ -28508,7 +28508,7 @@
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance; a pointer (0x00692be0 is mov eax, [0x00ccc8a0]; ret); screen fade +0x1238c rgba floats (graphicGetScreenFadeColor 0x00641390), +0x1239c alpha mode, +0x123a0 lock byte, +0x123a4 last reason (docs/formats/render.md)
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca5c label    g_GuildMapOffsetX_00ccca5c # GuildMapDynamicGeometry_updateRenderData: the OffsetX value of a 3D scene (f32; 0x00ccca60 OffsetY, 0x00ccca64/0x00ccca68 the 2D pair); name ours
-0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
+0x00ccca6c label    g_VFXRenderDataTable      # a pointer to the ClassVFXRenderDataTable (mov ecx, [0x00ccca6c] at 0x006453e1; the table: std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
 0x00ccca70 label g_VFXRenderMap_00ccca70 # VFXRenderMap_CreateInstance_0069f440's 8-byte holder of a std::map head; name ours
 0x00ccca74 label    g_ChrShaderRender # the character shader renderer: graphicShaderGetVertexInfo passes it to ClassChrShaderRender_GetVertexInfo; graphicShadowStart/End_00643dc0/dd0 to 0x0069fcb0/0x0069fe40 (M4 h3)
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods

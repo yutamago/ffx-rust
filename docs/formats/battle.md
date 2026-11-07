@@ -323,6 +323,7 @@ Bit fields, from the properties' cases:
 | `+0xd34` | `i32` | `damage_hp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd38` | `i32` | `damage_mp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd3c` | `i32` | `damage_ctb` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xdc4` | `u32` | (the command's targets) | a bit per actor; `MsGetChrBit`'s selector -26 (self target) returns it. Live (Lulu's Fire on actor 20, 2026-11-07, ffx-remix M9): the caster's word is `0x00100000` from the update the magic is set to its end, the same mask as its command cue entry's `+0x14`; Larva's attack on Lulu after it: `0x20`. Not cleared when the command ends |
 | `+0xdc8` | `u8` | `in_battle` | property `0x15` `STAT_INBATTLE`; `MsBtlReadManage`, `MsBtlReadWeapon`, `MsGetSaveWindow`; the actor takes part: commands, lists and auto commands need it (`MsAutoCommandStatusCheck`) |
 | `+0xdca` | `u8` | `stat_target_list` | property `0x127` `STAT_TARGET_LIST`; `MsGetSaveWindow`, `MsChangeMonsterDir`, `MsGetChrStatInfo` |
 | `+0xdcc` | `u8` | `stat_death` | `MsDamageCheckDeath`, `MsRelife`, `MsSetChrWeak`; `MsGetChrStatDeath`; 2 KO'd (`g_BtlCameraKoHeight`) |
@@ -336,7 +337,7 @@ Bit fields, from the properties' cases:
 | `+0xdd7` | `u8 (bool)` | `in_ctb_list` | property `0x53` `STAT_CTB_LIST`; `MsBtlReadMonsterProcess`, `MsGetCTBlist`, `MsGetChrStatInfo` |
 | `+0xdd8` | `u8 (bool)` | `in_hp_list` | property `0xd7` `STAT_HP_LIST`; `MsGetSaveWindow`, `MsSetRamChrData`, `MsGetChrStatInfo` |
 | `+0xdd9` | `u8` | `stat_cursor` | property `0x52` `STAT_CURSOR`; `MsGetChrCursorFlag`, `MsCheckTargetsGone`, `MsSetRamChrData` |
-| `+0xdda` | `u8 (bool)` | `stat_effect_target_flag` | property `0xe1` `STAT_EFFECT_TARGET_FLAG`; `MsEffectCheckTarget`, `MsEffectGetTargetFlag`, `MsGetChrStatInfo` |
+| `+0xdda` | `u8 (bool)` | `stat_effect_target_flag` | property `0xe1` `STAT_EFFECT_TARGET_FLAG`; `MsEffectCheckTarget`, `MsEffectGetTargetFlag`, `MsGetChrStatInfo`. `MsEffectCheckTarget(mask)` keeps the bits of a mask of more than one actor whose flag is set; it is not the target list itself: in the M9 run it was 1 on every actor slot with a character, the caster and actors not in the fight included |
 | `+0xddb` | `u8 (bool)` | `stat_regen_damage_flag` | property `0x151` `STAT_REGEN_DAMAGE_FLAG`; `MsCheckStatusBeforeAction`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xddd` | `u8` | `stat_event_chr` | property `0x50` `STAT_EVENT_CHR`; `MsGetChrEventFlag`, `Native_704f_SelSetFieldDdd`, `MsGetChrStatInfo` |
 | `+0xdde` | `u16` | `stat_blow_exist_flag` | `MsGetChrEventFlag`, `MsSetRamChrData`, `MsGetChrStatInfo`; **a `u16`, not the blow-away flag**: an id (`0xff` none) that `MsGetChrEventFlag(i, id)` (`0x00794f20`) compares: with `+0xddd` set and `+0xdde` neither `0xff` nor `id` it returns 2; property `0x159` reads the word. The blow-away flag (property `0xac`) is `+0xdd3` |

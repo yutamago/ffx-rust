@@ -285,6 +285,61 @@ names a program without a draw or runner (`pppVertexAp`, `pppVertexApLc`,
 it made the instance is not settled (open question 1). The census marks
 them `NO-DRAW`.
 
+## A spell live: Fire (ffx-remix M9, 2026-11-07)
+
+A trace in the 32-bit game (ffx-remix's runtime, `FFXREMIX_FX_TRACE=1`,
+`Effects/EffectTrace.cs`; harness lockstep, fast mode, virtual clock, seed
+1): Lulu alone against the Thunder Plains' first formation (battle field
+34, formation 0) casts Fire (magic `0x4c`, `magic_0076.dll`) on the Larva
+(actor 20). Hooks on `FFXApplication_animate` (one count per update),
+`PhyreScene_DrawMostVFX` (each list entry, its geometry through the table
+and its instance key), `MsSetDamage`, `MsNumberRegist` and
+`MsEffectReady`. Counting updates from the update `g_MagicFile_MagicId`
+becomes `0x4c`, three runs gave the same numbers:
+
+| Update | What |
+|---|---|
+| +0 | `g_MagicFile_MagicId` = `0x4c` |
+| +1 | `g_MagicFile_Handle` valid |
+| +50 | `MsEffectReady(0x205, 1)` (kind 2, actor 5: the caster's effect state 4 → 5) |
+| +79 | the spell's own draws start |
+| +89 | `MsSetDamage(5, -5, 0)` and, in the same update, `MsNumberRegist(0x14, …, 170, …)`: the hit and its damage number |
+| +93 | `MsSetDamage(5, -5, 0)` again |
+| +128 | the spell's own draws end |
+| +138 | `MsSetDamage(5, -5, 0x400)` (the command's end) |
+| +139 | `g_MagicFile_MagicId` = -1 |
+
+So the damage number comes from the overlay's own call into `MsSetDamage`
+(`g_MagicImports` slot 239) on the update it decides; the spell's drawing
+plays no part. Hiding all of the spell's draws (below) left every row
+above on the same update, the target's HP changed on the same harness
+frame, and frame-by-frame shots showed the number first on the same frame
+(two runs, lockstep, seed 1).
+
+**Which draws are the spell's.** Every Fire draw from the overlay has a ppp
+key (`(g_pppCurrentProgram, object)`) whose object, and its birth record's
+program list (object `+8`, `+0`), lie inside the overlay's image (the
+module handle up to `SizeOfImage`); they use the overlay's textures
+(`magic/magic_0076/tex/...`). In the same frames: the casting pillar and
+other shared battle effects are ppp objects outside the image with
+`yonishi_data/dat_et/bat_eff/et_tex` textures (about 25 draws before,
+during and after the spell), and the battle map's field programs use
+`btlmap/kami/kami00_a/fp` textures. No op-record (`(0, record)`) draws.
+Entries whose geometry was destroyed (`graphicVFXDestroy` zeroes the table
+entry, not always the list's) stay in `+0x38cc` for a frame or two after
+the spell's last update.
+
+**Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
+`DrawMostVFX` runs (and putting them back after) hides those draws: the
+loop skips zero entries and the draw events still run at their places.
+
+**Where the actors are.** The caster is the actor with a command cue entry
+(`+0xde5` not `0xff`) and an effect state (`+0xdfb`, 16 → 2 → 4 → 5 over
+Fire); the targets are the bits of its `+0xdc4` (battle.md). A battle
+character's place in the HD scene (the space the draws' world matrices
+use) is `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on field maps: an
+effect placed there sat on the Larva in the live frames.
+
 ## Gate
 
 Every effect draw of the eight captured frames is traced: 1042 of 1042, to
@@ -298,7 +353,8 @@ frame.
 
 ## Open questions
 
-1. **Which ppp program made the instance.** The key's low word is
+1. **Which ppp program made the instance.** (Which *spell* made it: see "A
+   spell live: Fire".) The key's low word is
    `g_pppCurrentProgram`, but for 786 draws it names `pppVertexAp`,
    `pppVertexApLc` or `pppRandUpFV`, which have no draw (`pppVertexAp`
    births particles at vertices, `pppBornVertex`). Either the born objects

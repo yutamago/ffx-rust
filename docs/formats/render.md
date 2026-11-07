@@ -16,8 +16,11 @@ assembly.
 
 ### `g_VFXRenderDataTable` (`0x00ccca6c`)
 
-A `ClassVFXRenderDataTable`: a `std::map<u64, DynamicGeometry*>` from an
-effect instance to its dynamic geometry, with a one-entry cache.
+A pointer to a `ClassVFXRenderDataTable` (`graphicVFXGetRenderDataByInstance`
+loads `mov ecx, [0x00ccca6c]` at `0x006453e1` before the thiscall
+`ClassVFXRenderDataTable_GetVFXDataByInstance`): a
+`std::map<u64, DynamicGeometry*>` from an effect instance to its dynamic
+geometry, with a one-entry cache. The offsets below are the table's.
 
 | Offset | Type | Meaning |
 |---|---|---|
