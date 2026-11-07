@@ -330,7 +330,7 @@ through `g_MagicImports` slot 239 (`mov eax, [imports+0x3bc]` at
 a call and calls it at its stages' thresholds 0.35 and 0.5, which fits two
 calls 4 updates apart (u0 + 89, u0 + 93). `FFX.exe` has one other caller
 with the constants `(…, -5, 0)`, `MsEffectSignalDamage_007b7680` (reached
-through `0x007b74d0`, from the motions' effect signals and native
+through `MsEffectSignal_007b74d0`, from the motions' effect signals and native
 `0x709e`); the `0x400` call at u0 + 138 has no such site in the overlay;
 the only `MsSetDamage` call in `FFX.exe` passing a constant `0x400` is
 `MsBattleProcess_ChrDamage`'s (the call at `0x007912cb`, `push 0x400` at

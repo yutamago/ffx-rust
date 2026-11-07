@@ -323,7 +323,7 @@ Bit fields, from the properties' cases:
 | `+0xd34` | `i32` | `damage_hp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd38` | `i32` | `damage_mp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd3c` | `i32` | `damage_ctb` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
-| `+0xdc4` | `u32` | `command_target_bits` (ours) | a bit per actor: the targets of the actor's command; `MsGetChrBit`'s selector -26 (called "self target" in `symbols/ffx.sym`) returns it; not the target bits at `+0xdc0` (selector -16, `MsGetChrTargetInfo`; no row of their own here). Live (ffx-remix M9 run live2, 2026-11-07, Lulu's Fire on actor 20): the caster's word was already `0x00100000` at the first sample (the end of the update that set the magic ID, u0 - 1 in effects-draw.md's "A spell live: Fire") and still set during the next two magics; the same mask as its command cue entry's `+0x10` (a cue entry holds one target mask per hit at `0x10 * (byte +2 + 1)`, `+2` the current hit, as `MsGetChrBit` selector -3 reads it while the command actor's `+0xdf0` is not 0; the word at `+0x14 + 0x10 * (byte +2)` is the reflect step's per-hit mask (`MsEffectReflect_00789030`), 0 for Fire); Larva's attack on Lulu after it: `0x20` |
+| `+0xdc4` | `u32` | `command_target_bits` (ours) | a bit per actor: the targets of the actor's command; `MsGetChrBit`'s selector -26 (called "self target" in `symbols/ffx.sym`) returns it. Its only writer, `MsCommandCueProcess`, copies the target bits at `+0xdc0` (selector -16, `MsGetChrTargetInfo`; no row of their own here) into it when the command runs (`0x0079265c`), so it keeps the command's targets after `+0xdc0` changes. Live (ffx-remix M9 run live2, 2026-11-07, Lulu's Fire on actor 20): the caster's word was already `0x00100000` at the first sample (the end of the update that set the magic ID, u0 - 1 in effects-draw.md's "A spell live: Fire") and still set during the next two magics; the same mask as its command cue entry's `+0x10` (a cue entry holds one target mask per hit at `0x10 * (byte +2 + 1)`, `+2` the current hit, as `MsGetChrBit` selector -3 reads it while the command actor's `+0xdf0` is not 0; the word at `+0x14 + 0x10 * (byte +2)` is the reflect step's per-hit mask (`MsEffectReflect_00789030`), 0 for Fire); Larva's attack on Lulu after it: `0x20` |
 | `+0xdc8` | `u8` | `in_battle` | property `0x15` `STAT_INBATTLE`; `MsBtlReadManage`, `MsBtlReadWeapon`, `MsGetSaveWindow`; the actor takes part: commands, lists and auto commands need it (`MsAutoCommandStatusCheck`) |
 | `+0xdca` | `u8` | `stat_target_list` | property `0x127` `STAT_TARGET_LIST`; `MsGetSaveWindow`, `MsChangeMonsterDir`, `MsGetChrStatInfo` |
 | `+0xdcc` | `u8` | `stat_death` | `MsDamageCheckDeath`, `MsRelife`, `MsSetChrWeak`; `MsGetChrStatDeath`; 2 KO'd (`g_BtlCameraKoHeight`) |
@@ -565,8 +565,8 @@ no damage) and waits until none of those actors shows its reflect effect
 the hit most likely lands through the overlay's own `MsSetDamage` calls,
 and the `0x400` call at the command's end finds nothing left (the
 target's HP changed once, at u0 + 89; `docs/formats/effects-draw.md`, "A
-spell live: Fire"); other effects may land them
-otherwise (`MsSetDamage` has more callers).
+spell live: Fire"); other effects may land their
+hits otherwise (`MsSetDamage` has more callers).
 `0x00788f30` rewrites its own two argument slots before its tail call to
 `MsEffectCameraCall(-1, 1)`; no caller reads them back.
 
