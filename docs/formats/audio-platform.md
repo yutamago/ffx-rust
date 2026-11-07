@@ -314,7 +314,7 @@ To give the original's output:
   and 7 at 48,000, 76 with a loop chunk whose end is not the last frame
   (real loop points, e.g. `1_09_battle_theme` 1014349-4468084 of 4527424
   frames); voice 8,839 samples, 8,733 mono 48,000 Hz, 100 mono 32,000, 6
-  stereo 44,100, 8,621 with a loop chunk (nearly all whole-sample);
+  stereo 44,100, 8,621 with a loop chunk (all `(0, n - 1)` over the line's real length: `sound.md`);
   SFX 7,620 samples at 48,000 Hz, 2,371 mono and 5,249 stereo, 767 with a
   loop chunk. The FEV projects decide which of these loop, stream or are
   loaded whole, the events' volumes, fades and instance limits: the
