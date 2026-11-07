@@ -41,11 +41,41 @@ absent and section 7 empty in every file.
 | Section | Size | Use |
 |---|---|---|
 | 0 | 1–70 KB | Battle AI script, actor `+0xf78` (step 4) |
-| 1 | | Dispatch table into the script (`Mon_FindHandler`, `0x00797410`), `+0xf7c` |
+| 1 | | Handler table: which worker and entry the battle runs for which signal (`Mon_FindHandler`, `0x00797410`; below), `+0xf7c` |
 | 2 | 128 + strings | Stat record, `+0xf80`; copied into the actor by `MsSetRamChr` |
 | 4 | `0x118` + padding | Rewards, steal and bribe; copied per enemy slot, `+0xf88` |
 | 5 | | Passed to `0x007a01b0` when an actor flag is set |
 | 6 | 128 + strings | Copy of the stat record, `+0xf84`; identical to section 2 in every file |
+
+## Handler table (section 1)
+
+How the battle runs the script: for a signal `n` (a camera, a motion, an
+action) and a value `k`, which worker and which of its entries.
+`Mon_FindHandler(file, n, &k)` (`0x00797410`) reads it; battle files'
+section 1 has the same layout ([battle.md](battle.md#script-handlers)).
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x00` | `u8` | the script's work count (actor `+0xdf6`, `Mon_AttachData`): the next monster's works are numbered after these |
+| `0x01` | `u8` | signal count `N` |
+| `0x02` | `u8` × `N` | each signal's record slot, `0xff` none |
+| halfword `(N + 1) / 2` | 4 bytes per slot | `+0` the worker, `+1` the handler's kind, `+2` `i16` offset from the section to its entry list |
+| list | `u16` count, `u16` × count | the entry for each `k`; `0xffff` none |
+
+`MsAtelRequestExe` (`0x00797d50`) sends the worker a request for that
+entry at level 7. A monster file has four signals (332 of the 361
+files have `0x3d`, 218 `0x00`, 195 `0x40`, 153 `0x04`):
+
+| Signal | Kind | Asked for by | `k` |
+|---|---|---|---|
+| `0x00` | 0 | `MsAtelRequestCamera` (`0x00797bc0`), between the battle file's and `system_01`'s | camera number |
+| `0x3d` | 2 | `MsActionRequest` (`0x007aceb0`): the monster's action script | the action ([battle.md](battle.md#script-handlers)) |
+| `0x40` | 1 | `MsSetMotion` (`0x007ab360`), before the battle file's motion handler | motion |
+| `0x04` | 1 | `MsSetMotion`, after the battle file's motion handler | motion |
+
+`MsAtelChrInit` (`0x007976a0`) gives the workers of `0x3d`, `0x04` and
+`0x40` the monster's actor index. In every file a worker handles at most
+one signal and an entry at most one `k`.
 
 ## Stat record (sections 2 and 6, and the kernel `monster` records)
 
@@ -115,6 +145,6 @@ stats match its kernel record.
 
 ## Open questions
 
-- Sections 1, 5; the stat bytes after `0x27`; the meaning of stats
+- Section 5; the stat bytes after `0x27`; the meaning of stats
   `0x24`–`0x27` (presumably agility, luck, evasion, accuracy, but not yet
   confirmed by code).

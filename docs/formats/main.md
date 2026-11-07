@@ -288,8 +288,19 @@ behind them stays with those modules, which the bridges call.
   entry gets `seq`, its `u16` `+4` and `v` at `+0x10`. A full table asserts
   ("SG:AddMseq"). Either way `Ch_SeqLink` runs.
 - `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): id entry kinds (low 7 bits of
-  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit 2,
-  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`.
+  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit
+  2, 14 the player; `0x30..0x3f` through `g_ChrIdMapTable`. A match
+  keeps the character out: `Sg_IdWalk` stops at a neighbour that matches
+  (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone
+  but the player, 13 chocobos, 14 only the player. `0x30..0x3f` block as
+  the kind the table holds for them, and every other kind blocks no one.
+  `g_ChrIdMapTable`'s entries `0x30..0x3f` are cleared at each map change
+  (`Sg_EventjumpInit` calls `Sg_IdEventInitAll`, `0x0083e8d0`) and
+  scripts set entries with `Native_4017_IdSetMapTable`. Over the game's
+  383 walk-mesh pages (field.md, "The walk mesh on disk (ffx-remix M8)",
+  counted as there) 274,672 triangles are kind 0, 6,398 kind 14, 663
+  kind 1 and 20,245 `0x30..0x3d` (none `0x3c`); the section-9 meshes add
+  375 of kind 0. No triangle stores kind 2 or 13.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
   `0x00822620`): the dream effect. A shown layer whose display byte
   (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
@@ -681,6 +692,51 @@ the walk and run speeds (`0x013007b4`, `0x013007b8`; run without button
 (`Sg_PlayerSetDirFix`, `0x013007c8`) replacing the yaw when its flag
 (`0x013007c4`) is set. Every intermediate is an `f32` store of a 53-bit
 x87 result.
+
+### Who has the camera (ffx-remix M8)
+
+- Movement follows whichever camera is active: the direction is taken
+  against the yaw `MsCameraGetYaw` answers, read every frame except with
+  `g_CameraFollow` 3 (above). Unless the fixed direction is on, a camera
+  that replaces the game's only has to make `MsCameraGetYaw` answer its
+  own yaw for the stick to move the player relative to it.
+  `MsCameraGetYaw` is the polar angle of look-at minus eye taken from
+  `g_Camera + 0x50` and `+0x66c`, the positions before the shake (the
+  view below uses `+0x40` and `+0x65c`, with the shake). With `θ` the
+  angle of eye minus look-at in x and z, it answers `θ + π` (mod 2π).
+
+- `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)")
+  builds `g_CameraMatrix` (`0x02311440`) from the active channel
+  camera's eye (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls
+  `Cam_Apply` (`0x007bc980`: field of view, aspect,
+  `graphicCameraSetWorldMatrix`), except in two cases. With
+  `g_CamOverrideOn` (`0x0231142c`, set by `MsEffectCameraSet`
+  `0x007bbb10`) it builds the matrix from the override's eye, look-at,
+  up and roll and does not call `Cam_Apply`. With the camera matrices on
+  (`g_CameraMatrixOn`, `0x023114c4`) it builds no view matrix, skips
+  `MsScreenMatrix` and does not call `Cam_Apply`; of the view it sets
+  only the screen offset. battle.md also lists the three levels that
+  check the vectors first and the -1 for a screen that is off.
+
+- `Sg_GetPlayerControlEnable` reads the word `0x00c496d8`, which is 1 in
+  the image. Its only writer (`0x0082db10`) is never called, so the flag
+  stays 1. Scripts take the player's control by taking the player away:
+  `AtelUcOff` (`0x008719e0`) calls `Sg_SetPlayer(0)`. `AtelUcOn`
+  (`0x00871ab0`) sets the controlled character back, or 0 when a window
+  or another context bit holds control or no worker qualifies.
+  `Native_ControlDisable` (`0x005e`), `AtelSetEventJump` and
+  `AtelSetEventJump2` (map changes) call `AtelUcOff`, which leaves
+  `g_Player` (`0x01300788`) 0. `AtelEventSetUpForBattleMusic` calls
+  `AtelUcOff`, then `AtelUcOn` under the same test as below; the bit
+  `0x80` it has just set on ctrl work 0's byte 3 fails that test when
+  ctrl work 0 is current (which one is current there was not checked).
+  `AtelUpdateWindowStatus` (message windows), `AtelSetCtrlChar`,
+  `Atel_UcResume` and `Atel_UcRestore` call `AtelUcOff` and then
+  `AtelUcOn` when control was on and no window or other context bit
+  holds it, so there the player often comes straight back. Scripts can
+  also set the player directly (`Native_000c_SgSetPlayer`). ffx-remix's
+  free camera hands the view back to the game whenever `g_Player` is 0,
+  `g_CamOverrideOn` is set or `g_CameraMatrixOn` is on.
 
 ## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
 

@@ -13966,7 +13966,7 @@
 0x007972e0 function MsAtelUpdate0_007972e0    # (ctrl): AtelBattleSetUp's per-frame callback for script 0 (MsAtelSetUp passes it as MsAtelUpdate1/2 for 1, 2): each work's AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), then MsMotionProcess and MsBattleSpecial, then the signals again; name ours (after MsAtelUpdate1); ported (battle round 19)
 0x00797350 function MsAtelUpdate2             # cdecl(ctrl) -> eax: script 2's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp: over AtelGetCtrlworkActorTotal(ctrl) works AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), AtelDecodeSignal(k, -1); same code as 0x007973b0; ported (ffx_battle::atel, battle round 17); name ours
 0x007973b0 function MsAtelUpdate1             # cdecl(ctrl) -> eax: script 1's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp; same code as 0x00797350; ported (ffx_battle::atel, battle round 17); name ours
-0x00797410 function Mon_FindHandler           # lookup in monster file section 1
+0x00797410 function Mon_FindHandler           # (file, n, &k): handler n of a monster or battle file's section 1 (+1 signal count, +2 a slot byte per signal, 4-byte records from halfword (count+1)/2: worker, kind, i16 offset to a u16 count and an entry per k); k becomes its entry (-1 none); docs/formats/monster.md
 0x00797490 function MsAtelActorWorkInit          # callees: its named callees match the Switch 0x710033ced0 MsAtelActorWorkInit's (similarity 0.75: AtelChangeCurrentCtrl, AtelInitInternalActorWork, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
 0x00797500 function MsAtelCamInit             # fh v3:exact 0x00797510
@@ -14620,7 +14620,7 @@
 0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export; (i) -> 0 without g_BtlAction; else the ID MsGetCommand(i, 0, -1, list, &id) finds in the running command list of actor (+0xded)'s +0xc, or for 0x3074-0x3077 the reel entry's u16 +2 when not 0; ported (ffx_battle::minor, battle round 30)
 0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
-0x007aceb0 function MsActionRequest           # fh call.cs cdecl
+0x007aceb0 function MsActionRequest           # fh call.cs cdecl; ours: (i, who, k, special, mode, out) actor i's action handler (monster 0x3d, party 0x29+i) for k: 0 turn, 1 turn start, 2 targeted, 3 hit, 4 death, 5 enters, 6 turn end, 7 command played, 8 poison, 9-0x14 aeons (call sites in docs/formats/battle.md)
 0x007ad0c0 function MsActionTarget            # fh v3:exact 0x007ad0d0
 0x007ad130 function MsCheckBoundWeapon        # ours: weapon model ID in the zero-ended u16 list g_BtlBoundWeapons (MsBtlReadCueRegistWeapon queues its motion group too)
 0x007ad180 function MsBtlReadCueLevel         # fh v3:bsim1.00 0x007ad190
@@ -16772,7 +16772,7 @@
 0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e5f0 function Sg_IdChrMove              # ours (sorts between Sg_Debug and Sg_IdEventInitAll): cdecl(chr), from the push-apart pass 0x0083d3b0: chr move (+0x4c, +0x54) over the id map in its scale 0x01301a90: triangle +0x824 (Sg_IdFindTriangle when -1, -1 when ignored: Sg_GetIgnoreID and +0x194 bit 0x200), up to 4 Sg_IdWalk steps with Sg_IdSlideEdge, then +0x828 the triangle's word (table +16 i +0xc), normal +0x7c, height +0x16c (Sg_IdGetHeight ST0 / scale; 1 lower for the player on map 0x12a), x/z back out of scale; no id map: move added, ground reset; ported (ffx_sg::state, main round 16)
-0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
+0x0083e8d0 function Sg_IdEventInitAll         # (): clears 0x01301a98..ae4 (g_ChrIdMapTable[0x30..0x43]; 0x30..0x3f are the walk-mesh kinds scripts remap, main.md) and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
 0x0083e960 function Sg_IdGetMapTable          # (i) -> g_ChrIdMapTable[i]
 0x0083e970 function Sg_IdGetPtr               # fh v3:bsim1.00 0x0083e970
 0x0083e980 function Sg_IdGetShade             # (c) -> (c >> 17) & 0x7fff when Sg_IdExistShade, else 0x4210; Switch name
@@ -21122,7 +21122,7 @@
 0x0090a420 function YiRender_initFogDefault_0090a420 # cdecl() -> 0: yiRender_initfog(&g_YiRender); Native_021e_RenderInitFog's callee; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
-0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (an ID map) to Sg_IdFixupAndSet when present
+0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (walk-mesh page `page`, field.md) to Sg_IdFixupAndSet when present
 0x0090a4d0 function yiSetMIMeParamDObj           # layout and calls: the one unused Switch name between yiSetIDPage and yiSetMatrixDObj that fits (yiSetMIMeParamDObj, 76 bytes, calls graphicSetMeshVertexColorMorphValue; ours 56 bytes): (dobj, &value): stores the value in the DObj record (0x018df624 + dobj * 0xb4) when dobj < g_YiDObjCount and passes it to 0x00643700
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
@@ -28310,6 +28310,7 @@
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496d4 label    g_ExecFrames              # i8: world ticks per Sg_MainLoop (1 in the image; Sg_SetExecFrames clamps 0..99, the debug pad steps it in Sg_ControlMain); Sg_GetCurExecFrames reads it; docs/formats/frame-timing.md; name ours
 0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
+0x00c496d8 label    g_PlayerControlEnable     # u32: 1 in the image; Sg_GetPlayerControlEnable (0x0082d870) reads it, Sg_ControlPlayer gives the player speed 0 when it is 0; its only writer (0x0082db10) is dead code, so it stays 1; scripts take control with Sg_SetPlayer(0) (AtelUcOff); name ours
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set; 1 in the shipped exe's .data (ffx-demaster docs/render.md)
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
