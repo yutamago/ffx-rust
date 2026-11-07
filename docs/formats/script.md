@@ -582,8 +582,8 @@ level interrupted is not a start.
   them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
   clamped to 1 for types 5 and 6 and to 8 for the others. The two signals
   `AtelInitBasicWork` (`0x0086cb00`) sends each worker (entry 0 at level
-  7, 1 for types 5 and 6, which `AtelRegistSignalMain` clamps; then entry
-  1 at level 0) start here too.
+  7 (1 for types 5 and 6, which `AtelRegistSignalMain` clamps), then
+  entry 1 at level 0) start here too.
 - `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl) ends
   the running level: `index` is the worker's index in the current ctrl
   work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on entry.

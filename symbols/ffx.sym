@@ -18387,7 +18387,7 @@
 0x00872630 function GetFieldPtr4_00872630        # auto-port shape (return address of a field's target, cdecl): t0 = u32[(a0 + 0x4)]; t1 = u32[(t0 + 0x30)]; return ((t1 + t0) + a1); callers: ; name ours
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
-0x008727d0 function AtelSetCtrlEndCallback        # (ctrl, cb): ctrl +0x28 = cb, the callback Script_Run calls for the ends 3c/3e instead of AtelExecReturn; no callers, no data refs (name ours, M11)
+0x008727d0 function AtelSetCtrlEndCallback    # (ctrl, cb): ctrl +0x28 = cb, the callback Script_Run calls for the ends 3c/3e instead of AtelExecReturn; no callers, no data refs (name ours)
 0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
 0x008729c0 function Flag_01326b28_008729c0 # (): byte 0 of *0x01326b28 |= 0x80, +0x210 |= 2, returns the object; caller 0x006bce00; name ours
 0x008729e0 function Check_01326b28_008729e0 # (): 1 when 0x01325b88 is set and byte 3 of *0x01326b28 & 3 == 2; caller 0x006662f0; name ours
