@@ -114,3 +114,66 @@ fn draw_at_actor() {
         t.check_entry(at, Call::default(), &[part], Eax::Checked);
     }
 }
+
+/// 0x100011e0 (`r13_start::sparks_frame_0488`): the pool with three free
+/// sprites (the rest of the 50 sparks find none), live records counted
+/// with their colour words looked up, nothing to step or draw.
+#[test]
+fn sparks_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x11e0);
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[1] + 4 * i, (1.5 + i as f32 * 2.25).to_bits());
+        }
+        0x0210_0000 ^ a[0]
+    });
+    let k = SCRATCH + 0x40;
+    rec(&mut t, 324, 0, move |m, _| {
+        let n = m.r32(k);
+        m.w32(k, n + 1);
+        n.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(&mut t, 403, 1, |_, a| a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, a| table ^ (a[0] & 0xf0));
+    recs(&mut t, &[(942, 1), (714, 5), (779, 2)]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    let keys = t.img.word(at + 0x13);
+    for i in 0..5 {
+        t.set_u32(keys + 4 * i, 0x00e0_0000 + i);
+    }
+    let pool = t.img.word(at + 0x37);
+    let sprites = SCRATCH + 0x1000;
+    t.write(sprites, &vec![0x2a; 0x94 * 6]);
+    for i in 0..6u32 {
+        t.set_u32(sprites + 0x94 * i, u32::from(i % 2 == 1));
+        t.set_u32(sprites + 0x94 * i + 0x28, 0x20 + i);
+    }
+    t.set_u32(pool, 6);
+    t.set_u32(pool + 4, sprites);
+    let table = t.img.word(at + 0x6c);
+    for i in 0..0x40u32 {
+        t.set_u32(table.wrapping_sub(4 * i), 0x00c0_1000 + i);
+    }
+    // the step and the draw run on the same pool (`ecx` the pool's
+    // immediate): their slots
+    for (s, k) in [
+        (325u32, 2usize),
+        (229, 3),
+        (773, 4),
+        (774, 5),
+        (775, 2),
+        (776, 1),
+        (777, 1),
+        (778, 6),
+    ] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

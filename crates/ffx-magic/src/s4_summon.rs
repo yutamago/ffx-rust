@@ -563,7 +563,16 @@ pub fn targets_init_c<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: 
     targets(g, img, f, esp, actor, true, true)
 }
 
-/// [`targets_init`], [`targets_init_b`] and [`targets_init_c`].
+/// [`targets_init`] with the node family's statics (as
+/// [`targets_init_c`], slot 168's word left on the stack).
+///
+/// `magic_0387` 0x10008560 (245 bytes).
+pub fn targets_init_d<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u32) -> u32 {
+    targets(g, img, f, esp, actor, false, true)
+}
+
+/// [`targets_init`], [`targets_init_b`], [`targets_init_c`] and
+/// [`targets_init_d`].
 fn targets<G: Game>(
     g: &mut G,
     img: &Image,
@@ -661,10 +670,20 @@ pub const TARGETS_INIT: Sig = Sig {
     imports: &[],
 };
 
+/// [`targets_init_d`].
+pub const TARGETS_INIT_D: Sig = Sig {
+    calls: &[
+        (0xe0, Callee::Sig(&crate::sb_misc::STATIC_NODES_INIT)),
+        (0xed, Callee::Any),
+    ],
+    ..TARGETS_INIT
+};
+
 /// A summon's start (a table entry, cdecl `(actor)`): the targets
 /// ([`targets_init`]); the DLL's task list, two static nodes and their
 /// links set up (words and immediates from the code); slot 718 and slot
-/// 719 `(part, 8, 0)` on the DLL's part, whose handle goes into `G_H`;
+/// 719 `(part, 8, K)` on the DLL's part (`K` the immediate `+0xc2`),
+/// whose handle goes into `G_H`;
 /// slot 711 `(handle, program, 0)` with `**G_LOCK` 1 around it; slot 710
 /// loads the part's data; slots 222 and 221 `(part, 0, 1000, 2)`; a task
 /// is appended to the list (its links and three words cleared, the
@@ -701,7 +720,8 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     g.write::<u32>(w(0xb2), w(0xb6));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x0d), 718), 0);
-    s.push_all(&[0, 8, w(0xcc)]);
+    // the kind: the `push imm8` at +0xc1 (0; 2 in `magic_0330`)
+    s.push_all(&[u32::from(img.word(f + 0xc2) as u8), 8, w(0xcc)]);
     // call width: 12 (Pushes caps the words at 12)
     let handle = s.call(g, slot_target(g, w(0xbd), 719), 0).eax;
     let lock = g.read::<u32>(w(0xd4));
@@ -771,6 +791,12 @@ pub const SUMMON_START: Sig = Sig {
     hash: 0x3e98_7198_16df_4276,
     calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
+};
+
+/// [`summon_start`] in `magic_0330` (0x10006b60, slot 719's kind 2).
+pub const SUMMON_START_0330: Sig = Sig {
+    hash: 0xdf2f_b6d2_ea31_1d90,
+    ..SUMMON_START
 };
 
 /// A node holding one model node per target (internal, `ecx` = a set-up

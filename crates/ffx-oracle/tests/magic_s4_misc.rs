@@ -653,20 +653,32 @@ fn motion_script() {
     }
 }
 
-/// `magic_0018` 0x10002580: the trail with no sprites, a few, more than
-/// the ring holds, zero-length and NaN segments, spacing below and past
-/// the segments, drawn by known and new handles, alpha 0 and not.
+/// `magic_0018` 0x10002580, and `magic_0009`'s copy (0x100024f0, its
+/// operands earlier) in two of its DLLs: the trail with no sprites, a
+/// few, more than the ring holds, zero-length and NaN segments, spacing
+/// below and past the segments, drawn by known and new handles, alpha 0
+/// and not.
 #[test]
-#[allow(clippy::too_many_lines)] // one set-up per field
 fn trail_draw() {
-    let Some(mut t) = twin(18) else { return };
-    let f = t.at(0x2580);
+    for (dll, rva, lock_op, x_op) in [
+        (18u16, 0x2580u32, 0x46eu32, 0x52bu32),
+        (9, 0x24f0, 0x463, 0x520),
+        (491, 0x1100, 0x463, 0x520),
+    ] {
+        let Some(mut t) = twin(dll) else { return };
+        trail_draw_cases(&mut t, rva, lock_op, x_op);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // one set-up per field
+fn trail_draw_cases(t: &mut Twin, rva: u32, lock_op: u32, x_op: u32) {
+    let f = t.at(rva);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let lock = SCRATCH + 0x9000;
-    t.set_u32(w(&t, 0x46e), lock);
-    t.set_u32(w(&t, 0x52b), 0x0cc0_0cc0);
+    t.set_u32(w(t, lock_op), lock);
+    t.set_u32(w(t, x_op), 0x0cc0_0cc0);
     let table = SCRATCH + 0x8000;
-    rec(&mut t, 941, 1, move |_, _| table);
+    rec(t, 941, 1, move |_, _| table);
     t.write(table, &[0; 0x100]);
     t.set_u16(table + 6, 3);
     for k in 0..3u32 {
@@ -678,7 +690,7 @@ fn trail_draw() {
         t.set_u8(r + 4 * k + 4, 0x31 + k as u8);
     }
     for s in [723u32, 724, 235] {
-        rec(&mut t, s, 1, move |m, a| {
+        rec(t, s, 1, move |m, a| {
             for i in 0..16 {
                 let v = (i as f32 + 1.0) * if s == 235 { 1.0 } else { 0.5 };
                 m.w32(a[0] + 4 * i, v.to_bits());
@@ -687,21 +699,21 @@ fn trail_draw() {
         });
     }
     let fv = |m: &dyn magic::StubMem, a: u32| f32::from_bits(m.r32(a));
-    rec(&mut t, 234, 3, move |m, a| {
+    rec(t, 234, 3, move |m, a| {
         for i in 0..3 {
             let v = fv(m, a[1] + 4 * i) - fv(m, a[2] + 4 * i);
             m.w32(a[0] + 4 * i, v.to_bits());
         }
         0x234
     });
-    rec(&mut t, 248, 3, move |m, a| {
+    rec(t, 248, 3, move |m, a| {
         for i in 0..3 {
             let v = fv(m, a[1] + 4 * i) + fv(m, a[2] + 4 * i);
             m.w32(a[0] + 4 * i, v.to_bits());
         }
         0x248
     });
-    rec(&mut t, 229, 3, |m, a| {
+    rec(t, 229, 3, |m, a| {
         // the scaled matrix and the point it places
         let mut v = [0u32; 13];
         for (i, x) in v.iter_mut().enumerate().take(12) {
@@ -713,14 +725,14 @@ fn trail_draw() {
         log(m, &p);
         0x229
     });
-    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
-    rec(&mut t, 773, 4, move |m, a| {
+    rec(t, 773, 4, move |m, a| {
         m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
         (a[3] >> 1) & 1
     });
     for s in [774u32, 775, 778] {
-        rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
+        rec(t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
             m.w32(SCRATCH + 0x9300 + 4 * (s - 774), m.r32(lock));
             if s != 775 {
                 let c = m.r32(a[3]);
@@ -729,11 +741,11 @@ fn trail_draw() {
             s
         });
     }
-    rec(&mut t, 776, 1, |_, a| a[0] << 4);
-    rec(&mut t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
+    rec(t, 776, 1, |_, a| a[0] << 4);
+    rec(t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
     let (obj, rows, point) = (SCRATCH + 0x1000, SCRATCH + 0x2000, SCRATCH + 0x2100);
     for i in 0..12u32 {
-        set_f(&mut t, rows + 4 * i, 0.5 + i as f32 * 0.25);
+        set_f(t, rows + 4 * i, 0.5 + i as f32 * 0.25);
     }
     for (case, (n, spacing, newest, alpha)) in [
         (0u32, 1.0f32, 3u32, 0x80u8),
@@ -764,17 +776,17 @@ fn trail_draw() {
                 [r * a.cos(), k as f32 * 0.2, r * a.sin(), 1.0]
             };
             for (i, x) in (0u32..).zip(pt) {
-                set_f(&mut t, obj + 0xc + 16 * k + 4 * i, x);
+                set_f(t, obj + 0xc + 16 * k + 4 * i, x);
             }
         }
         t.write(obj + 0x20c, &[10, 200, 0, alpha, 250, 3, 128, alpha / 2]);
-        set_f(&mut t, obj + 0x214, 1.5);
-        set_f(&mut t, obj + 0x218, 0.25);
-        set_f(&mut t, obj + 0x21c, spacing);
+        set_f(t, obj + 0x214, 1.5);
+        set_f(t, obj + 0x218, 0.25);
+        set_f(t, obj + 0x21c, spacing);
         t.set_u32(obj + 0x220, newest);
         t.set_u32(obj + 0x224, n);
         for (i, x) in [0.5f32, 9.0, -1.0, 7.0].into_iter().enumerate() {
-            set_f(&mut t, point + 4 * i as u32, x);
+            set_f(t, point + 4 * i as u32, x);
         }
         let c = Call {
             ecx: obj,

@@ -295,21 +295,25 @@ fn reset_scale_0351() {
 }
 
 /// `m0352::fifth_start` (0x10004f00): the pool free and empty.
+/// Also `magic_0610` 0x1000d200 (family P096, round 13: its index and
+/// displacements read from the code).
 #[test]
 fn fifth_start_0352() {
-    let Some(mut t) = twin(352) else { return };
-    let at = t.at(0x4f00);
-    let s = t.img.rel32_target(at + 0x3c);
-    rec(&mut t, 282, 0, |_, _| 0x282);
-    t.stub_st0(282, |m, _| f64::from(m.r32(SCRATCH + 0x20)) * 0.125 + 0.3);
-    let blk = SCRATCH + 0x1_0000;
-    t.set_u32(t.img.word(at + 0x12), blk);
-    for (k, count) in [3u16, 0].into_iter().enumerate() {
-        plain_setup(&mut t, s, count);
-        t.set_u32(SCRATCH + 0x20, u32::try_from(k).unwrap() + 3);
-        t.write(blk, &varied(0x800, 0x5a));
-        dirty(&mut t);
-        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    for (dll, rva) in [(352u16, 0x4f00u32), (610, 0xd200)] {
+        let Some(mut t) = twin(dll) else { return };
+        let at = t.at(rva);
+        let s = t.img.rel32_target(at + 0x3c);
+        rec(&mut t, 282, 0, |_, _| 0x282);
+        t.stub_st0(282, |m, _| f64::from(m.r32(SCRATCH + 0x20)) * 0.125 + 0.3);
+        let blk = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(at + 0x12), blk);
+        for (k, count) in [3u16, 0].into_iter().enumerate() {
+            plain_setup(&mut t, s, count);
+            t.set_u32(SCRATCH + 0x20, u32::try_from(k).unwrap() + 3);
+            t.write(blk, &varied(0x800, 0x5a));
+            dirty(&mut t);
+            t.check_entry(at, Call::default(), &[], Eax::Checked);
+        }
     }
 }
 

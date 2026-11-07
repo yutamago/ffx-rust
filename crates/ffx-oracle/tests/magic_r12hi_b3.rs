@@ -366,7 +366,7 @@ fn look_draw_0666() {
     }
 }
 
-/// `m0645::colour_visit` (0x100033d0): the walk skipped (pass equal) and
+/// `m0645::colour_visit` (0x100033d0) and its thunk: the walk skipped (pass equal) and
 /// run over children (slot traps as methods); steps left with the
 /// threshold reached and not; no steps left with the leave flag on (a
 /// parent and none) and off.
@@ -388,59 +388,67 @@ fn colour_visit_0645() {
     t.set_u32(t.img.word(f + 0xcf), 0x00cf_00cf);
     let k = t.img.word(f + 0xe6);
     let kv = f32::from_bits(t.u32(k));
-    for (case, (pass, kids, steps, acc, flags, has_parent)) in [
-        (3u8, false, 2u32, 0.0f32, 0u8, false),
-        (4, true, 2, 0.0, 0, false),
-        (4, false, 2, kv, 0, false),
-        (4, false, 3, -kv, 0, false),
-        (4, false, 0, 0.0, 1, true),
-        (4, false, 0, 0.0, 1, false),
-        (4, false, 0, 0.0, 0, true),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        t.write(node, &[0; 0x60]);
-        t.set_u8(node + 0x1a, 3);
-        t.set_u32(node + 0x10, if kids { kid } else { node });
-        t.set_u32(node + 0xc, if kids { kid } else { node });
-        t.write(kid, &[0; 0x20]);
-        t.set_u32(kid, vt);
-        t.set_u32(kid + 8, node);
-        t.set_u32(kid + 4, node);
-        for i in 0..4u32 {
-            t.set_u32(node + 0x1c + 4 * i, (10.5f32 + i as f32 * 20.0).to_bits());
-            t.set_u32(node + 0x3c + 4 * i, (2.25f32 - i as f32).to_bits());
+    // the visit itself and its thunk (0x10003520, the group as its argument)
+    for thunk in [false, true] {
+        for (case, (pass, kids, steps, acc, flags, has_parent)) in [
+            (3u8, false, 2u32, 0.0f32, 0u8, false),
+            (4, true, 2, 0.0, 0, false),
+            (4, false, 2, kv, 0, false),
+            (4, false, 3, -kv, 0, false),
+            (4, false, 0, 0.0, 1, true),
+            (4, false, 0, 0.0, 1, false),
+            (4, false, 0, 0.0, 0, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.write(node, &[0; 0x60]);
+            t.set_u8(node + 0x1a, 3);
+            t.set_u32(node + 0x10, if kids { kid } else { node });
+            t.set_u32(node + 0xc, if kids { kid } else { node });
+            t.write(kid, &[0; 0x20]);
+            t.set_u32(kid, vt);
+            t.set_u32(kid + 8, node);
+            t.set_u32(kid + 4, node);
+            for i in 0..4u32 {
+                t.set_u32(node + 0x1c + 4 * i, (10.5f32 + i as f32 * 20.0).to_bits());
+                t.set_u32(node + 0x3c + 4 * i, (2.25f32 - i as f32).to_bits());
+            }
+            // a small rate: the threshold is reached only from `kv` on
+            t.set_u32(node + 0x50, 0.015_625f32.to_bits());
+            t.set_u32(node + 0x4c, acc.to_bits());
+            t.set_u32(node + 0x54, steps);
+            t.set_u8(node + 0x58, flags);
+            t.set_u8(node + 0x5a, 0x5a);
+            t.set_u8(node + 0x5b, 0xa5);
+            t.write(parent, &[0; 0x20]);
+            t.set_u32(parent + 0x10, node);
+            t.set_u32(parent + 0xc, node);
+            t.set_u16(parent + 0x18, 1);
+            t.set_u32(node + 4, if has_parent { parent } else { node });
+            t.set_u32(node + 8, if has_parent { parent } else { node });
+            t.set_u32(node + 0x14, if has_parent { parent } else { 0 });
+            t.set_u32(group, node);
+            t.set_u8(group + 4, 0xfe);
+            t.set_u8(group + 5, pass);
+            // the frame's never-written bytes (the byte's word): 0
+            ownb::dirty_stack(&mut t, 0x33d0 + case as u32, &[0x1c]);
+            let (at, ecx, args) = if thunk {
+                (t.at(0x3520), 0, &[group][..])
+            } else {
+                (f, group, &[][..])
+            };
+            t.check_entry(
+                at,
+                Call {
+                    eax: 0x1234_5600,
+                    ecx,
+                    ..Call::default()
+                },
+                args,
+                Eax::Checked,
+            );
         }
-        // a small rate: the threshold is reached only from `kv` on
-        t.set_u32(node + 0x50, 0.015_625f32.to_bits());
-        t.set_u32(node + 0x4c, acc.to_bits());
-        t.set_u32(node + 0x54, steps);
-        t.set_u8(node + 0x58, flags);
-        t.set_u8(node + 0x5a, 0x5a);
-        t.set_u8(node + 0x5b, 0xa5);
-        t.write(parent, &[0; 0x20]);
-        t.set_u32(parent + 0x10, node);
-        t.set_u32(parent + 0xc, node);
-        t.set_u16(parent + 0x18, 1);
-        t.set_u32(node + 4, if has_parent { parent } else { node });
-        t.set_u32(node + 8, if has_parent { parent } else { node });
-        t.set_u32(node + 0x14, if has_parent { parent } else { 0 });
-        t.set_u32(group, node);
-        t.set_u8(group + 4, 0xfe);
-        t.set_u8(group + 5, pass);
-        // the frame's never-written bytes (the byte's word): 0
-        ownb::dirty_stack(&mut t, 0x33d0 + case as u32, &[0x1c]);
-        t.check_entry(
-            f,
-            Call {
-                eax: 0x1234_5600,
-                ecx: group,
-                ..Call::default()
-            },
-            &[],
-            Eax::Checked,
-        );
     }
 }
 

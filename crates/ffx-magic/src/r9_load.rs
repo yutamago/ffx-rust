@@ -189,4 +189,28 @@ copies! {
     load_0102 => LOAD_0102, One, crate::r11_fades::kinds_two_fades, crate::r11_fades::KINDS_TWO_FADES_0102;
     /// `magic_0274` 0x100032d0.
     load_0274 => LOAD_0274, Zero, crate::r11_objects::two_objects_0274, crate::r11_objects::TWO_OBJECTS_0274;
+    /// `magic_0318` 0x10001210.
+    load_0318 => LOAD_0318, Zero, crate::r13_start::two_objects_0318, crate::r13_start::TWO_OBJECTS_0318;
+    /// `magic_0394` 0x100044e0.
+    load_0394 => LOAD_0394, Zero, crate::r13_start::start_0394, crate::r13_start::START_0394;
+    /// `magic_0348` 0x100050f0.
+    load_0348 => LOAD_0348, Zero, crate::r13_start::start_0348, crate::r13_start::START_0348;
+    /// `magic_0350` 0x10005730.
+    load_0350 => LOAD_0350, Zero, crate::r13_start::start_0350, crate::r13_start::START_0350;
+    /// `magic_0473` 0x100012b0.
+    load_0473 => LOAD_0473, Zero, crate::r13_start::start_0473, crate::r13_start::START_0473;
+    /// `magic_0325` 0x100012b0.
+    load_0325 => LOAD_0325, Zero, crate::r13_start::start_0325, crate::r13_start::START_0325;
+    /// `magic_0253` 0x10001210.
+    load_0253 => LOAD_0253, Zero, crate::r13_start::start_0253, crate::r13_start::START_0253;
+    /// `magic_0288` 0x10001210.
+    load_0288 => LOAD_0288, Zero, crate::r13_start::start_0288, crate::r13_start::START_0288;
+    /// `magic_0244` 0x10001210.
+    load_0244 => LOAD_0244, Zero, crate::r13_start::start_0244, crate::r13_start::START_0244;
+    /// `magic_0393` 0x100012e0.
+    load_0393 => LOAD_0393, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0393;
+    /// `magic_0450` 0x10005390.
+    load_0450 => LOAD_0450, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0450;
+    /// `magic_0352` 0x10004b10.
+    load_0352 => LOAD_0352, Zero, crate::r13_start::start_0352, crate::r13_start::START_0352;
 }

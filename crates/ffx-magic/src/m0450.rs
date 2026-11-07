@@ -76,6 +76,55 @@ pub fn show_models<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     crate::sa_misc::register_parts(g, img, img.rel32_target(f + 0x61), eax)
 }
 
+/// [`show_models`] with the camera's step (`magic_0393` 0x100018b0, 217
+/// bytes, a /GS frame; `esp` = the stack at its entry): the same models
+/// (operands `+0x1e`, `+0x11`, `+0x28`, `+0x33`, `+0x38`; the second
+/// `+0x51`, `+0x5c`, `+0x61`); then unless `*G_C` (`+0x72`) is set, a
+/// point `V` (`ebp - 0x14`) for `n = *G_N` (`+0x81`, signed, below 0x20):
+/// slot 217 `(n, V)` and slot 255 `(n, V)`; slot 211 `(*G_E, 0)` (`+0x79`)
+/// and the tail into [`register_parts`](crate::sa_misc::register_parts)
+/// with its `eax`, whose answer it returns.
+pub fn show_models_camera<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let fx = g.read::<u32>(w(0x1e));
+    g.call(slot_target(g, w(0x11), 628), 0, &[0]);
+    let b = g.read::<u32>(w(0x28));
+    let i = u32::from(g.read::<u8>(b + 1));
+    let m = g.read::<u32>(w(0x33).wrapping_add(4 * i));
+    // slot 628's word stays under it: call width 2
+    g.call(slot_target(g, w(0x38), 384), 0, &[m, 0]);
+    if g.read::<u32>(fx + 0x1eec) != u32::MAX {
+        let b = g.read::<u32>(w(0x51));
+        let i = u32::from(g.read::<u8>(b + 2));
+        let m = g.read::<u32>(w(0x5c).wrapping_add(4 * i));
+        g.call(slot_target(g, w(0x61), 384), 0, &[m]);
+    }
+    let held = g.read::<u32>(w(0x72));
+    let e = g.read::<u32>(w(0x79));
+    if held == 0 {
+        let n = g.read::<u32>(w(0x81));
+        if n.cast_signed() < 0x20 {
+            let v = esp.wrapping_sub(0x18);
+            g.call(slot_target(g, w(0x8f), 217), 0, &[n, v]);
+            g.call(slot_target(g, w(0xa1), 255), 0, &[n, v]);
+        }
+    }
+    let eax = g.call(slot_target(g, w(0xb2), 211), 0, &[e, 0]).eax;
+    crate::sa_misc::register_parts(g, img, img.rel32_target(f + 0xc5), eax)
+}
+
+/// [`show_models_camera`] (`magic_0393` 0x100018b0; the `rel32`s: the
+/// parts' registration and `__security_check_cookie`).
+pub const SHOW_MODELS_CAMERA: Sig = Sig {
+    len: 217,
+    hash: 0x3cb3_6b15_5af7_d5cb,
+    calls: &[
+        (0xc5, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (0xd1, Callee::Any),
+    ],
+    imports: &[],
+};
+
 /// [`show_models`] (101 bytes, 1 overlay).
 pub const SHOW_MODELS: Sig = Sig {
     len: 101,
@@ -812,7 +861,7 @@ pub const TURN_STEP: Sig = Sig {
 /// (`ecx` the import table) answers: non-zero is returned as it is.
 /// Else the two motion scripts (`+0x51`, `+0x5b`;
 /// [`motion_script`](crate::s4_misc::motion_script)) step; when the
-/// script and the first motion script are both done, `*G_FX + 0x1efc` =
+/// script and the first motion script are both done, `*G_FX + D` (`+0x70`) =
 /// 1, the models are shown ([`show_models`]) and the node is given back
 /// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
 /// the node; its `eax` returned). Otherwise the points `+0x1ba0` and
@@ -837,8 +886,15 @@ pub fn task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let m1 = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x56), w(0x51));
     crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x62), w(0x5b));
     if script != 0 && m1 != 0 {
-        g.write::<u32>(fx + 0x1efc, 1);
-        show_models(g, img, img.rel32_target(f + 0x79));
+        // the flag's displacement: 0x1efc here, 0x1f00 in `magic_0393`
+        g.write::<u32>(fx + img.word(f + 0x70), 1);
+        let shown = img.rel32_target(f + 0x79);
+        // `magic_0393`'s copy has a frame (`push ebp`); four pushes and the call
+        if img.word(shown) & 0xff == 0x55 {
+            show_models_camera(g, img, shown, fr.esp.wrapping_sub(0x14));
+        } else {
+            show_models(g, img, shown);
+        }
         let node = fr.arg(g, 0);
         return Ret::eax(crate::sa_pool::give_back(
             g,
@@ -867,6 +923,22 @@ pub const TASK: Sig = Sig {
         (0x56, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
         (0x62, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
         (0x79, Callee::Sig(&SHOW_MODELS)),
+        (0x85, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// [`task`] in `magic_0393` (0x10001600; its models shown with the
+/// camera's step, [`show_models_camera`]).
+pub const TASK_0393: Sig = Sig {
+    len: 238,
+    hash: 0xf182_53b3_b2eb_ccdf,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x33, Callee::Sig(&crate::sa_script::RUN)),
+        (0x56, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x62, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x79, Callee::Sig(&SHOW_MODELS_CAMERA)),
         (0x85, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
     ],
     imports: &[],

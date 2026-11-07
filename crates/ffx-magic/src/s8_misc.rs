@@ -1301,7 +1301,8 @@ pub const OBJECT_FAN_TWO_FADES_B: Sig = Sig {
 /// u16 `+0x124` cleared; then [`object_fan_body`] with one fade. Returns
 /// the fade's node.
 ///
-/// `magic_0511` 0x100043e0 (630 bytes; 2 DLLs).
+/// `magic_0511` 0x100043e0 (630 bytes; 2 DLLs) and `magic_0589`
+/// 0x100039d0 (its block's offsets 0x60 lower).
 pub fn objects_freed_fan_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -1340,6 +1341,12 @@ pub const OBJECTS_FREED_FAN_FADE: Sig = Sig {
         (0xc7, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))
     ),
     imports: &[],
+};
+
+/// [`objects_freed_fan_fade`] in `magic_0589` (0x100039d0).
+pub const OBJECTS_FREED_FAN_FADE_0589: Sig = Sig {
+    hash: 0xb38e_c3e4_5037_21e2,
+    ..OBJECTS_FREED_FAN_FADE
 };
 
 /// The sounds of the DLL's 256 emitters (cdecl, no arguments; a frame
@@ -2364,7 +2371,9 @@ pub const LIGHT_SWING: Sig = Sig {
 /// the actor `A = *G_P`). `A`'s point (slot 262 `(A, &x, &y, &z)`, slot
 /// 268 `(A, 0x11, &x)`) as `(x, y, z, 1)`; the burst's size by `n =
 /// -(*G_X / *G_D)` when `*G_X` is at most 0 and `*G_D` above 0: 24 sparks
-/// (kind 1) below 100, 32 (kind 2) below 500, else 64 (kind 2). The
+/// (kind `K1`) below 100, 32 (kind `K2`) below 500, else 64 (kind `K2`); `K1`
+/// and `K2` the immediates `+0x8d` and `+0xa3` (1 and 2; 2 and 1 in
+/// `magic_0132`). The
 /// object `O = S + 0x130` started
 /// ([`start_object_first`](crate::o6_fam_object::start_object_first),
 /// stack `(kind, n or *G_D, 0, n or *G_D)`, scale `K`) at the point, its
@@ -2378,7 +2387,8 @@ pub const LIGHT_SWING: Sig = Sig {
 /// and `+0x60` the group (one more every fourth spark). Returns the
 /// sparks made, 0 when the pool ran out, or `*G_Q` for none.
 ///
-/// `magic_0134` 0x10001ec0 (837 bytes; 2 DLLs).
+/// `magic_0134` 0x10001ec0 (837 bytes; 2 DLLs) and `magic_0132`
+/// 0x10001ec0.
 pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -2400,18 +2410,19 @@ pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let x = g.read::<i32>(w(0x4a));
     let d = g.read::<i32>(w(0x50));
     g.write::<u32>(at(8), 0x3f80_0000);
+    let (small, mid) = (img.word(f + 0x8d), img.word(f + 0xa3));
     let (count, kind, word) = if x <= 0 && d > 0 {
         let n = (x / d).wrapping_neg();
         let (count, kind) = if n < 100 {
-            (0x18, 1)
+            (0x18, small)
         } else if n < 500 {
-            (0x20, 2)
+            (0x20, mid)
         } else {
-            (0x40, 2)
+            (0x40, mid)
         };
         (count, kind, n.cast_unsigned())
     } else {
-        (0x18, 1, d.cast_unsigned())
+        (0x18, small, d.cast_unsigned())
     };
     let esp = fr.esp.wrapping_sub(0x34);
     for (i, word) in (1u32..).zip([kind, word, 0, word]) {
@@ -2532,6 +2543,12 @@ pub const SPARK_BURST: Sig = Sig {
         (0x33d, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`spark_burst`] in `magic_0132` (0x10001ec0, the kinds swapped).
+pub const SPARK_BURST_0132: Sig = Sig {
+    hash: 0xa09c_6150_845d_ed82,
+    ..SPARK_BURST
 };
 
 /// A vertex of the mesh's i16 table `v` (6 bytes each) as three floats,

@@ -4251,33 +4251,38 @@ fn object_models_and_key_curves() {
     t.set_u32(obj + 0x2c + 0x20, 5);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     drop(t);
-    let Some(mut t) = twin(55) else { return };
-    let f = t.at(0x3000);
-    let keys = SCRATCH + 0x100;
-    for i in 0..10u32 {
-        t.set_u32(keys - 0x20 + 16 * i, (1.5f32 * i as f32 - 3.0).to_bits());
-    }
-    for x in [
-        0.0f32,
-        0.25,
-        0.5,
-        1.25,
-        1.75,
-        3.5,
-        4.75,
-        5.0,
-        5.2,
-        5.9,
-        -0.5,
-        -1.5,
-        f32::NAN,
-    ] {
-        let c = Call {
-            ecx: keys,
-            ..Call::default()
+    // six keys and four
+    for (dll, rva) in [(55u16, 0x3000u32), (435, 0x22d0)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let keys = SCRATCH + 0x100;
+        for i in 0..10u32 {
+            t.set_u32(keys - 0x20 + 16 * i, (1.5f32 * i as f32 - 3.0).to_bits());
         }
-        .with_xmm(&[Xmm::f32(x)]);
-        t.check(f, c, &[], Eax::Checked, s4_small::key_curve);
+        for x in [
+            0.0f32,
+            0.25,
+            0.5,
+            1.25,
+            1.75,
+            2.5,
+            3.0,
+            3.5,
+            4.75,
+            5.0,
+            5.2,
+            5.9,
+            -0.5,
+            -1.5,
+            f32::NAN,
+        ] {
+            let c = Call {
+                ecx: keys,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::f32(x)]);
+            t.check(f, c, &[], Eax::Checked, s4_small::key_curve);
+        }
     }
 }
 
@@ -4480,24 +4485,27 @@ fn command_blocks_and_spin_records() {
     t.write(cmds - 0x10, &[0x5a; 0x70]);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
     drop(t);
-    let Some(mut t) = twin(563) else { return };
-    let f = t.at(0x4c20);
-    let b = SCRATCH + 0x1_0000;
-    t.set_u32(op(&t, f, 0x1), b);
-    let base = b + 0x2ed0;
-    for i in 0..(0x12 * 0x60 / 4) {
-        let v = match i % 7 {
-            0 => 3.0f32,
-            1 => -3.5,
-            2 => 0.25,
-            3 => f32::NAN,
-            4 => 1.5,
-            5 => -0.75,
-            _ => 2.75,
-        };
-        t.set_u32(base + 4 * i, v.to_bits());
+    // the records at 0x2ed0 and (`magic_0307`) 0x16d4
+    for (dll, rva) in [(563u16, 0x4c20u32), (307, 0x6a80)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let b = SCRATCH + 0x1_0000;
+        t.set_u32(op(&t, f, 0x1), b);
+        let base = b + t.img.word(f + 0x1e) - 0x38;
+        for i in 0..(0x12 * 0x60 / 4) {
+            let v = match i % 7 {
+                0 => 3.0f32,
+                1 => -3.5,
+                2 => 0.25,
+                3 => f32::NAN,
+                4 => 1.5,
+                5 => -0.75,
+                _ => 2.75,
+            };
+            t.set_u32(base + 4 * i, v.to_bits());
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
-    t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
 
 #[test]

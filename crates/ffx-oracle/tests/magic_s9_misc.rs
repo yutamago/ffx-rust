@@ -572,6 +572,8 @@ fn model_sprites() {
         (619, 0x37b0),
         (93, 0x34e0),
         (681, 0x3840),
+        (92, 0x1900),
+        (92, 0x1a00),
         (440, 0x34d0),
         (680, 0x1b70),
         (440, 0x3600),
@@ -1144,7 +1146,11 @@ fn trail_stubs(t: &mut Twin, trail_at: u32, flat: bool) {
         }
         0x248
     });
-    let (call, lock_offs): (u32, &[u32]) = if flat {
+    // `magic_0644`'s copy: `movss [esp + 0x14], xmm1` at +0x344
+    let own = op(t, trail_at, 0x344) as u8 == 0xf3;
+    let (call, lock_offs): (u32, &[u32]) = if own {
+        (0x59f, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+    } else if flat {
         (0x531, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
     } else if op(t, trail_at, 0x344) as u8 == 0x40 {
         (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
@@ -1158,12 +1164,20 @@ fn trail_stubs(t: &mut Twin, trail_at: u32, flat: bool) {
     }
     // the sprite slots 774/778 hash the matrices `*G_M3`, `*G_M4` and
     // the colour (what the sprite is drawn with)
-    let (m3_at, m4_at) = if flat { (0x61, 0x54) } else { (0x57, 0x63) };
+    let (m3_at, m4_at) = if flat && !own {
+        (0x61, 0x54)
+    } else {
+        (0x57, 0x63)
+    };
     let (gm3, gm4, gc) = (
         op(t, trail_at, m3_at),
         op(t, trail_at, m4_at),
-        op(t, trail_at, 0x236),
+        op(t, trail_at, if own { 0x248 } else { 0x236 }),
     );
+    if own {
+        // slot 231 (`M4`, `M3` with `M1`): its `eax` is what the draw returns
+        log_calls(t, 231, 3, &[], |_, a, k| 0x0231_0000 ^ a[0] ^ k);
+    }
     t.set_u32(gm3, SCRATCH + 0x3a00);
     t.set_u32(gm4, SCRATCH + 0x3a40);
     for s in [774u32, 778] {
@@ -1203,10 +1217,14 @@ fn trail_heads() {
         (546, 0x1e80),
         (565, 0x3a20),
         (697, 0x3a20),
+        (644, 0x7a40),
+        (692, 0x7a40),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let flat = rva == 0x3a20;
+        let flat = rva != 0x1e80;
+        // `magic_0644`'s copies: their own sparks for every kind
+        let own = rva == 0x7a40;
         let w = |t: &Twin, o: u32| op(t, f, o);
         log_calls(&mut t, 219, 2, &[], |_, a, k| a[0] ^ 0x0219_0000 ^ k);
         log_calls(&mut t, 237, 4, &[], |m, a, k| {
@@ -1233,13 +1251,22 @@ fn trail_heads() {
         let recs = SCRATCH + 0x4000;
         let (gf, r2) = (SCRATCH + 0x800, SCRATCH + 0x880);
         let mut takes = Vec::new();
-        for (call, take_at, gf_at, r2_at) in [
-            (0xfeu32, 0x9u32, 0x150u32, &[0x190u32][..]),
-            (0xf4, 0x13, 0x14c, &[0x5, 0x18f][..]),
-            (0xea, 0x17, 0x5, &[0x27, 0x18c][..]),
-        ]
-        .into_iter()
-        .take(if flat { 1 } else { 3 })
+        // (call, the pool take's `rel32`, the flags' operand, the block's)
+        let sparks: [(u32, u32, u32, &[u32]); 3] = if own {
+            [
+                (0xfe, 0x9, 0x150, &[0x190]),
+                (0xf4, 0x14, 0x14d, &[0x5]),
+                (0xea, 0x17, 0x5, &[0x27]),
+            ]
+        } else {
+            [
+                (0xfe, 0x9, 0x150, &[0x190]),
+                (0xf4, 0x13, 0x14c, &[0x5, 0x18f]),
+                (0xea, 0x17, 0x5, &[0x27, 0x18c]),
+            ]
+        };
+        for (call, take_at, gf_at, r2_at) in
+            sparks.into_iter().take(if flat && !own { 1 } else { 3 })
         {
             let sp = t.img.rel32_target(f + call);
             let take = t.img.rel32_target(sp + take_at);
@@ -1275,17 +1302,20 @@ fn trail_heads() {
         .enumerate()
         {
             let k = k as u32;
-            if flat && (kind == 2 || kind == 3) && wait > 0 {
+            if flat && !own && (kind == 2 || kind == 3) && wait > 0 {
                 continue;
             }
+            // the block's words (`magic_0644`'s 0x130 lower)
+            let (wait_at, kind_at, count_at) = (w(&t, 0x1b), w(&t, 0x6d), w(&t, 0x76));
+            let (kept_at, trail_off) = (w(&t, 0x89), w(&t, 0x159));
             t.set_u32(LOG, 0);
             t.write(b, &varied(0x5c10, k + 1));
-            t.set_u32(b + 0x5c00, wait.cast_unsigned());
-            t.set_u32(b + 0x5c04, kind);
-            t.set_u32(b + 0x5bd8, count.cast_unsigned());
-            t.write(b + 0x30a0, &floats(4, k));
+            t.set_u32(b + wait_at, wait.cast_unsigned());
+            t.set_u32(b + kind_at, kind);
+            t.set_u32(b + count_at, count.cast_unsigned());
+            t.write(b + kept_at, &floats(4, k));
             // the trail (its sprite count is the head's count `B[0x5bd8]`)
-            let o = b + 0x59b0;
+            let o = b + trail_off;
             t.set_u32(o, 0x0041_0000 + k);
             t.set_u32(o + 4, k % 2);
             t.set_u16(o + 8, 2);
@@ -1305,7 +1335,7 @@ fn trail_heads() {
             t.set_u32(o + 0x21c, 0.6f32.to_bits());
             t.set_u32(o + 0x220, 0x1234 + 0x111 * k);
             t.set_u32(o + 0x224, 5);
-            t.set_u32(b + 0x5bd8, count.cast_unsigned());
+            t.set_u32(b + count_at, count.cast_unsigned());
             t.write(SCRATCH + 0x3f00, &[0x31; 0x40]);
             t.set_u8(gf, 0);
             for &take in &takes {
@@ -2268,15 +2298,22 @@ fn cameras_aimed() {
     }
 }
 
-/// Row 50: `magic_0565`'s trail task in two DLLs: the timer running with
-/// the kind 0's sparks and without, reaching 0 (the child with its sound,
-/// the object off its list or not there; the kind 0 goes on, another
-/// gives the task back), below 0 with the trail drawn, its count run out.
+/// Row 50: `magic_0565`'s trail task in two DLLs, and `magic_0644`'s
+/// (its block words 0x130 lower, its own trail draw) in two: the timer
+/// running with the kind 0's sparks and without, reaching 0 (the child
+/// with its sound, the object off its list or not there; the kind 0 goes
+/// on, another gives the task back), below 0 with the trail drawn, its
+/// count run out.
 #[test]
 fn trail_tasks_0565() {
-    for dll in [565u16, 693] {
+    for (dll, rva) in [
+        (565u16, 0x3e40u32),
+        (693, 0x3e40),
+        (644, 0x7e60),
+        (694, 0x7e60),
+    ] {
         let Some(mut t) = twin(dll) else { return };
-        let f = t.at(0x3e40);
+        let f = t.at(rva);
         let w = |t: &Twin, o: u32| op(t, f, o);
         let light = t.img.rel32_target(f + 0x120);
         light_slots(&mut t, light);
@@ -2347,7 +2384,8 @@ fn trail_tasks_0565() {
                 t.set_u32(recs + 0x74 * i + 0x6c, 0);
             }
             t.write(ww, &varied(0x5c20, c + 1));
-            t.set_u32(ww + 0x5c04, kind);
+            // `mov eax, [edi + 0x5c04]` (`magic_0644`: 0x5ad4)
+            t.set_u32(ww + w(&t, 0x7f), kind);
             // the task at rest for the pool's give-back
             t.write(task, &varied(0x20, c));
             t.set_u32(task, 0);
@@ -2396,7 +2434,7 @@ fn trail_tasks_0565() {
             t.set_u32(list + 0xc, 1);
             scrub(&mut t);
             let call = Call {
-                eax: 0x3e40 + c,
+                eax: rva + c,
                 ecx: 0x0ecc_0000 + c,
                 ..Call::default()
             };
@@ -2773,12 +2811,14 @@ fn rotations_3650() {
 /// or not, a NaN step), the flag word's bits.
 #[test]
 fn nodes_eased() {
-    use sa::{RINGS, VTABLE_2, check_this_thunk, handler_stubs, node, rec, ring};
+    use sa::{RINGS, VTABLE_2, check_this_eax, check_this_thunk, handler_stubs, node, rec, ring};
     for (dll, f, thunk) in [
         (155u16, 0x31d0u32, 0x37c0u32),
         (613, 0x3240, 0x3830),
         (570, 0x40e0, 0x46d0),
         (597, 0x3e00, 0x43f0),
+        // (its thunk calls instead of jumping: not ported)
+        (70, 0x40e0, 0),
     ] {
         let Some(mut t) = sa::twin(dll) else { return };
         handler_stubs(&mut t);
@@ -2855,7 +2895,11 @@ fn nodes_eased() {
                         t.set_u32(n + off, 0);
                     }
                 }
-                check_this_thunk(&mut t, f, thunk, s9_misc::node_ease, Eax::Checked);
+                if thunk == 0 {
+                    check_this_eax(&mut t, f, s9_misc::node_ease, Eax::Checked);
+                } else {
+                    check_this_thunk(&mut t, f, thunk, s9_misc::node_ease, Eax::Checked);
+                }
             }
         }
     }
@@ -3398,7 +3442,12 @@ fn effect_groups_init() {
 /// actor's height and below, the pool with nodes and without.
 #[test]
 fn summon_objects_between() {
-    for (dll, rva) in [(134u16, 0x1980u32), (135, 0x4330)] {
+    for (dll, rva) in [
+        (134u16, 0x1980u32),
+        (135, 0x4330),
+        (132, 0x1980),
+        (133, 0x4230),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| op(t, f, o);
@@ -3448,6 +3497,7 @@ fn summon_objects_between() {
         let gs = SCRATCH + 0x980;
         t.set_u32(w(&t, 0x4f2), gs);
         t.set_u32(gs + 0x10, 0x00a5_0010);
+        t.set_u32(gs + 0x20, 0x00a5_0020);
         let x = SCRATCH + 0x1000;
         // a yaw that folds to the range's top exactly (`KA - yaw = KC`)
         let kf = |t: &Twin, o: u32| f32::from_bits(t.u32(w(t, o)));

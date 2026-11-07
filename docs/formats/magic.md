@@ -396,8 +396,11 @@ through `check_entry`.
 
 **Claiming and naming.** The first work list, `~/ffx-work/m5/magic/worklist.tsv`,
 cut the DLLs into 15 lists (contiguous ranges of about equal bytes); that
-membership is fixed. The current one is `~/ffx-work/m5/magic/worklist5.tsv`
-(`tools/magic-worklist.py`, from `tools/overlay-census.py`'s
+membership is fixed. The current one is `~/ffx-work/m5/magic/worklist7.tsv`
+(2026-11-07: 4,316 identities, 52 CRT, 3,131 covered, 1,133 left, of
+them 35 shared; 327 DLLs fully covered; `worklist5.tsv` below is the one
+the census notes describe) (`tools/magic-worklist.py`, from
+`tools/overlay-census.py`'s
 `overlay-dll-functions.tsv` in `~/ffx-work/m5/magic/census2`; a rerun
 never rewrites the lists file and
 refuses to overwrite its output without `--replace`): one row per

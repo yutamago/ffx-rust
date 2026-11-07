@@ -141,3 +141,92 @@ fn start_up() {
     t.set_u32(rec0 - 0x10, 0x5e5e_5e5f);
     t.check_entry(at, Call::default(), &[0x00a6_0000], Eax::Checked);
 }
+
+/// 0x10002350 (`r13_start::frame_0477`): off (slot 253 0, the flag 0);
+/// on with slot 261's answers (bit `k` for timeline `k`, bit 6 the stop):
+/// none, all with the fifth live and dead, the stop asked and not.
+#[test]
+fn frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x2350);
+    let w = |t: &Twin, o: u32| t.img.word(at + o);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 253, 0, move |m, _| (m.r32(cell) >> 8) & 1);
+    rec(&mut t, 261, 1, move |m, a| (m.r32(cell) >> (a[0] & 7)) & 1);
+    recs(&mut t, &[(214, 1)]);
+    let p = SCRATCH + 0x30;
+    t.set_u32(w(&t, 0x2b), p);
+    t.set_u32(w(&t, 0x30), 0x00a2_0030);
+    t.set_u32(w(&t, 0x37), 0x00a2_0037);
+    t.set_u32(w(&t, 0x106), 0x00a2_0106);
+    let stop = t.img.rel32_target(at + 0xfb);
+    let on = w(&t, 0x22);
+    for blk in [0x1005_c800u32, 0x1005_c85c] {
+        t.set_u32(blk, 0);
+    }
+    for (flag, bits, fifth_live) in [
+        (1u32, 0x000u32, true),
+        (0, 0x100, true),
+        (1, 0x100, true),
+        (1, 0x13e, true),
+        (1, 0x13e, false),
+        (1, 0x17e, true),
+        (1, 0x140, true),
+        (1, 0x102, false),
+    ] {
+        t.set_u32(on, flag);
+        t.set_u32(cell, bits);
+        for (k, op) in (0u32..).zip([0x57u32, 0x77, 0x97, 0xb7, 0xd7]) {
+            let tl = w(&t, op);
+            if k < 4 || fifth_live {
+                magic_h6::live_timeline(&mut t, tl, SCRATCH + 0x600 + 0x20 * k, 0x40 + k);
+            } else {
+                t.write(tl, &[0; 0x110]);
+            }
+        }
+        t.set_u32(t.img.word(stop + 0x02), 1);
+        t.set_u32(t.img.word(stop + 0x0d), 1);
+        t.set_u32(t.img.word(stop + 0x18), SCRATCH + 0x700);
+        t.write(SCRATCH + 0x700, &[0; 0x18]);
+        t.set_u32(SCRATCH + 0x704, 1);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// 0x10001b60 (`r13_start::sparks_0477`): three free sprites of the five
+/// asked for.
+#[test]
+fn sparks() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1b60);
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[2] + 4 * i, f(1.5 + i as f32 * 2.25));
+        }
+        0x268
+    });
+    let k = SCRATCH + 0x40;
+    rec(&mut t, 324, 0, move |m, _| {
+        let n = m.r32(k);
+        m.w32(k, n + 1);
+        n.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(&mut t, 403, 1, |_, a| a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, a| table ^ (a[0] & 0xf0));
+    rec(&mut t, 942, 1, |_, a| 0x0942_0000 ^ a[0]);
+    let pool = t.img.word(at + 0x47);
+    let sprites = SCRATCH + 0x1000;
+    t.write(sprites, &vec![0x2a; 0x94 * 4]);
+    for i in 0..4u32 {
+        t.set_u32(sprites + 0x94 * i, u32::from(i == 2));
+    }
+    t.set_u32(pool, 4);
+    t.set_u32(pool + 4, sprites);
+    t.set_u32(t.img.word(at + 0x1f), 0x00c0_001f);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

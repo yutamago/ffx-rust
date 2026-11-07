@@ -551,12 +551,14 @@ pub const CAMERA_RECT_TASK: Sig = Sig {
 
 /// An object host's start with one character loaded (cdecl `(arg)`):
 /// [`host_start_head`] (the code through `+0xaf` is `magic_0596`'s), slot
-/// 720 `(0x3400, 0x800)`, the character 0x10af read (slot 4) and set up
-/// (slot 27 `(0x10af, 1)`), the effect data `E` (an immediate) through
+/// 720 `(0x3400, 0x800)`, the character `C` read (slot 4) and set up
+/// (slot 27 `(C, 1)`; `C` the immediates `+0xcc` and `+0xe0`: 0x10af, in
+/// `magic_0205` 0x3014), the effect data `E` (an immediate) through
 /// slots 718 `(E)`, 222 and 221 `(E, 0, 1000, 1)`; each call sees the
 /// words the earlier ones left on the stack. `*G_DONE = 0`. Returns 0.
 ///
-/// `magic_0349` 0x10004360 (319 bytes; 2 DLLs).
+/// `magic_0349` 0x10004360 (319 bytes; 2 DLLs) and `magic_0205`
+/// 0x100010a0.
 pub fn host_start_chara<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -565,9 +567,9 @@ pub fn host_start_chara<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     s.push_all(&[0x800, 0x3400]);
     // call width: 12 (the most `Pushes::words` holds)
     s.call(g, slot_target(g, w(0xb0), 720), 0);
-    s.push(0x10af);
+    s.push(w(0xcc));
     s.call(g, slot_target(g, w(0xc7), 4), 0);
-    s.push_all(&[1, 0x10af]);
+    s.push_all(&[1, w(0xe0)]);
     // call width: 12 (the most `Pushes::words` holds)
     s.call(g, slot_target(g, w(0xd6), 27), 0);
     s.push(w(0xec));
@@ -591,6 +593,12 @@ pub const HOST_START_CHARA: Sig = Sig {
         (0x7c, Callee::Sig(&TASKS_INIT)),
     ],
     imports: &[],
+};
+
+/// [`host_start_chara`] in `magic_0205` (0x100010a0, character 0x3014).
+pub const HOST_START_CHARA_0205: Sig = Sig {
+    hash: 0x60a9_8ad9_3566_84bd,
+    ..HOST_START_CHARA
 };
 
 /// A particle node set up and linked under its parent (`ecx` = `[node,
@@ -2496,15 +2504,17 @@ fn near_angle(a: f32, b: f32, pi: f32, tau: f32) -> f32 {
     }
 }
 
-/// An angle key curve sampled (internal: `ecx` = six keys 16 bytes apart,
+/// An angle key curve sampled (internal: `ecx` = the keys 16 bytes apart,
 /// `xmm0` = the time `t`; the result in `xmm0`): the keys around `i =
 /// trunc(t)` (each `+ PI`, brought within `PI` of its neighbour), eased
 /// with the one before (the first half of a step, `frac < K_H`) or after
 /// it, then `a + (b - a) / (K / frac)` (`a` when `frac` is 0), wrapped
 /// into `[-PI, PI)` by whole turns. Returns the angle and what the
-/// original leaves in `eax` (the turns).
+/// original leaves in `eax` (the turns). The last key and the bounds of
+/// the one after the next are immediates (`+0x26`, `+0xe1`, `+0xe5`).
 ///
-/// `magic_0055` 0x100031a0 (427 bytes; 2 DLLs).
+/// `magic_0055` 0x100031a0 (427 bytes, six keys; 2 DLLs) and `magic_0435`
+/// 0x100023c0 (four keys).
 pub fn angle_keys<G: Game>(g: &mut G, img: &Image, f: u32, keys: u32, t: f32) -> (f32, u32) {
     let k = |g: &G, o: u32| g.read::<f32>(op(img, f, o));
     let (pi, tau) = (k(g, 0x4), k(g, 0xc));
@@ -2514,9 +2524,10 @@ pub fn angle_keys<G: Game>(g: &mut G, img: &Image, f: u32, keys: u32, t: f32) ->
             pi,
         )
     };
+    let imm8 = |o: u32| i32::from((img.word(f + o) as u8).cast_signed());
     let i = trunc(t).cast_signed();
     let mut a = key(g, i);
-    let mut b = if i == 5 {
+    let mut b = if i == imm8(0x26) {
         a
     } else {
         let b = key(g, i.wrapping_add(1));
@@ -2533,7 +2544,11 @@ pub fn angle_keys<G: Game>(g: &mut G, img: &Image, f: u32, keys: u32, t: f32) ->
             a = add(div(c, d), a);
         }
     } else {
-        let j = if i >= 4 { 5 } else { i + 2 };
+        let j = if i >= imm8(0xe1) {
+            img.word(f + 0xe5).cast_signed()
+        } else {
+            i + 2
+        };
         let d = near_angle(b, key(g, j), pi, tau);
         let u = sub(frac, k(g, 0x12f));
         let d = add(d, a);
@@ -2564,6 +2579,12 @@ pub const ANGLE_KEYS: Sig = Sig {
     hash: 0x68c2_d9a8_e212_ef37,
     calls: &[],
     imports: &[],
+};
+
+/// [`angle_keys`] in `magic_0435` (0x100023c0, four keys).
+pub const ANGLE_KEYS_0435: Sig = Sig {
+    hash: 0xdf6d_a921_6980_1afd,
+    ..ANGLE_KEYS
 };
 
 /// A summon's particle start (cdecl `(actor)`): the targets
@@ -2608,14 +2629,15 @@ pub fn summon_ppp_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 fn summon_ppp_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Pushes {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
-    // push ebp, esi; call: the callee's frame
-    targets_init(
-        g,
-        img,
-        img.rel32_target(f + 0x8),
-        fr.esp.wrapping_sub(0xc),
-        fr.arg(g, 0),
-    );
+    // push ebp, esi; call: the callee's frame (`magic_0387`'s targets
+    // reset the node family's statics)
+    let targets = img.rel32_target(f + 0x8);
+    let (esp, actor) = (fr.esp.wrapping_sub(0xc), fr.arg(g, 0));
+    if img.matches(targets, &crate::s4_summon::TARGETS_INIT_D) {
+        crate::s4_summon::targets_init_d(g, img, targets, esp, actor);
+    } else {
+        targets_init(g, img, targets, esp, actor);
+    }
     for (dst, v) in [
         (0x13u32, w(0x17)),
         (0x1d, w(0x21)),
@@ -2729,6 +2751,13 @@ pub const SUMMON_PPP_START_FLAG: Sig = Sig {
     hash: 0x5e21_50da_30c8_764e,
     calls: &[(0x8, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
+};
+
+/// [`summon_ppp_start_flag`] in `magic_0387` (0x1000d970; the `rel32`:
+/// [`targets_init_d`](crate::s4_summon::targets_init_d)).
+pub const SUMMON_PPP_START_FLAG_0387: Sig = Sig {
+    calls: &[(0x8, Callee::Sig(&crate::s4_summon::TARGETS_INIT_D))],
+    ..SUMMON_PPP_START_FLAG
 };
 
 /// A slot thunk's `Sig` (`mov eax, [G]; mov eax, [eax + 4 * slot]; jmp
@@ -5202,11 +5231,28 @@ pub const SPRITE_PACKET: Sig = Sig {
 /// last row becomes `(v1 - v2) K + *G_S+0x3620 + r+0x1c` (per axis, in
 /// the original's order), its three rows scaled by `K`, and the model
 /// `T[0x220 + 0x20 k + 0x1c]` (`T = *G_T`) is drawn with it
-/// ([`model_draw`]). Returns 0x460.
+/// ([`model_draw`]). Returns 0x460. The displacements and the models'
+/// span are the code's (`+0x26`, `+0x2c`, `+0xb2`, `+0x155`, `+0x163`,
+/// `+0x175`, `+0x268`).
 ///
 /// `magic_0563` 0x100021b0 (644 bytes; 2 DLLs).
 pub fn models_around<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    around(g, img, fr, false)
+}
+
+/// [`models_around`] in `magic_0307` (0x100026b0): the records at
+/// `+0x16d8`, the models `0x340 ..= 0x560`, the sound record
+/// [`effect_record`](crate::o4_fam4::effect_record) and the draw
+/// [`part_matrix_handover`](crate::o6_fam_pairs3::part_matrix_handover).
+pub fn models_around_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    around(g, img, fr, true)
+}
+
+/// [`models_around`] and [`models_around_0307`] (`handover`: the callees
+/// of the second).
+fn around<G: Game>(g: &mut G, img: &Image, fr: &Frame, handover: bool) -> Ret {
     let f = fr.at;
+    let d = |o: u32| img.word(f + o);
     let w = |o: u32| op(img, f, o);
     // push ebp; and esp, -8; sub esp, 0x64; three pushes
     let top = fr.esp.wrapping_sub(4) & !7;
@@ -5216,16 +5262,20 @@ pub fn models_around<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp: call_esp,
         ..*fr
     };
-    sound_record(g, img, &sound);
+    if handover {
+        crate::o4_fam4::effect_record(g, img, &sound);
+    } else {
+        sound_record(g, img, &sound);
+    }
     let b = g.read::<u32>(w(0x1e));
     let m = top.wrapping_sub(0x58);
     let v1 = top.wrapping_sub(0x28);
     let v2 = top.wrapping_sub(0x14);
     let k = g.read::<f32>(w(0x12c));
-    let base = b.wrapping_add(0x35a0);
-    let mut i = 0x220u32;
-    let mut r = b.wrapping_add(0x2ed4);
-    while i < 0x460 {
+    let base = b.wrapping_add(d(0xb2));
+    let mut i = d(0x26);
+    let mut r = b.wrapping_add(d(0x2c));
+    while i < d(0x268) {
         let t = g.read::<u32>(w(0x36));
         let mut s = Pushes::default();
         s.push(m);
@@ -5246,16 +5296,16 @@ pub fn models_around<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let src = r.wrapping_sub(0x14);
         slot_call(g, img, f, (0xdb, 229), &[v2, m, src]);
         slot_call(g, img, f, (0xf8, 229), &[v1, base, src]);
-        let d = [0u32, 4, 8].map(|o| mul(sub(g.read::<f32>(v1 + o), g.read::<f32>(v2 + o)), k));
-        for (o, x) in [0u32, 4, 8].into_iter().zip(d) {
+        let dv = [0u32, 4, 8].map(|o| mul(sub(g.read::<f32>(v1 + o), g.read::<f32>(v2 + o)), k));
+        for (o, x) in [0u32, 4, 8].into_iter().zip(dv) {
             g.write::<f32>(v1 + o, x);
         }
         let at = |g: &G, a: u32| g.read::<f32>(a);
-        let x = add(d[0], at(g, b.wrapping_add(0x3620)));
+        let x = add(dv[0], at(g, b.wrapping_add(d(0x155))));
         g.write::<f32>(v1, x);
-        let y = add(at(g, b.wrapping_add(0x3624)), d[1]);
+        let y = add(at(g, b.wrapping_add(d(0x163))), dv[1]);
         g.write::<f32>(v1 + 4, y);
-        let z = add(at(g, b.wrapping_add(0x3628)), d[2]);
+        let z = add(at(g, b.wrapping_add(d(0x175))), dv[2]);
         g.write::<f32>(v1 + 8, z);
         g.write::<f32>(v1, add(at(g, r.wrapping_add(0x1c)), x));
         g.write::<f32>(v1 + 4, add(at(g, r.wrapping_add(0x20)), y));
@@ -5265,7 +5315,19 @@ pub fn models_around<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<f32>(m + o, x);
         }
         let model = g.read::<u32>(t.wrapping_add(i).wrapping_add(0x1c));
-        model_draw(g, img, img.rel32_target(f + 0x251), call_esp, model, m);
+        let draw = img.rel32_target(f + 0x251);
+        if handover {
+            let fr = Frame {
+                at: draw,
+                esp: call_esp,
+                ecx: model,
+                edx: m,
+                ..*fr
+            };
+            crate::o6_fam_pairs3::part_matrix_handover(g, img, &fr);
+        } else {
+            model_draw(g, img, draw, call_esp, model, m);
+        }
         i += 0x20;
         r = r.wrapping_add(0x60);
     }
@@ -5280,6 +5342,21 @@ pub const MODELS_AROUND: Sig = Sig {
     calls: &[
         (0x18, Callee::Sig(&SOUND_RECORD)),
         (0x251, Callee::Sig(&MODEL_DRAW)),
+        (0x27c, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`models_around_0307`].
+pub const MODELS_AROUND_0307: Sig = Sig {
+    len: 644,
+    hash: 0x83a5_039c_7c37_c670,
+    calls: &[
+        (0x18, Callee::Sig(&crate::o4_fam4::EFFECT_RECORD_0307_24C0)),
+        (
+            0x251,
+            Callee::Sig(&crate::o6_fam_pairs3::PART_MATRIX_HANDOVER_0307_2550),
+        ),
         (0x27c, Callee::Any),
     ],
     imports: &[],
@@ -6606,13 +6683,15 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let at = |o: u32| ebp.wrapping_sub(o);
     let b = g.read::<u32>(w(0x13));
-    let p = b.wrapping_add(0xc74);
+    // the block's offsets (`disp32`s; 0xa0 and 0xc0 lower in `magic_0588`)
+    let bd = |o: u32| b.wrapping_add(img.word(f + o));
+    let p = bd(0x2c);
     for i in 0..4 {
-        let x = g.read::<u32>(b.wrapping_add(0xcc4 + 4 * i));
+        let x = g.read::<u32>(bd(0x1a).wrapping_add(4 * i));
         g.write::<u32>(p + 4 * i, x);
     }
     let (m, d, v, a) = (at(0x64), at(0x14), at(0x24), at(0x68));
-    let turn = g.read::<u32>(b.wrapping_add(0xeb4));
+    let turn = g.read::<u32>(bd(0x52));
     g.write::<u32>(a, turn);
     for (i, x) in [0xc1a0_0000_u32, 0, 0xc1a0_0000, 0x3f80_0000]
         .into_iter()
@@ -6641,7 +6720,7 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 12 (the most `Pushes::words` holds)
     s.call(g, slot_target(g, w(0xe6), 248), 0);
     g.write::<u32>(p + 0xc, 0x3f80_0000);
-    let q = b.wrapping_add(0xd80);
+    let q = bd(0xfd);
     for (o, x) in [
         (0x80u32, 0u32),
         (0x84, 0x8000_0000),
@@ -6660,16 +6739,13 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     link_after(g, (w(0x155), w(0x17d)), first, tail);
     let k = g.read::<f32>(w(0x18d));
     for i in 0..12 {
-        let at = b.wrapping_add(0xb84 + 4 * i);
+        let at = bd(0x185).wrapping_add(4 * i);
         let x = mul(g.read::<f32>(at), k);
         g.write::<f32>(at, x);
     }
-    let x = sub(
-        g.read::<f32>(b.wrapping_add(0xc78)),
-        g.read::<f32>(w(0x295)),
-    );
-    g.write::<f32>(b.wrapping_add(0xcb8), x);
-    let r = b.wrapping_add(0xe20);
+    let x = sub(g.read::<f32>(bd(0x28d)), g.read::<f32>(w(0x295)));
+    g.write::<f32>(bd(0x29d), x);
+    let r = bd(0x197);
     for (o, x) in [
         (0u32, 0u32),
         (4, 0x32),
@@ -6702,6 +6778,12 @@ pub const SCENE_TWO_RECORDS: Sig = Sig {
         (0x31f, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`scene_two_records`] in `magic_0588` (0x10002940).
+pub const SCENE_TWO_RECORDS_0588: Sig = Sig {
+    hash: 0xfe3c_0955_09ee_569f,
+    ..SCENE_TWO_RECORDS
 };
 
 /// An effect's start with the camera behind its user (cdecl `(user)`; a
@@ -7885,20 +7967,22 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let b = g.read::<u32>(w(0x1f));
+    // the block's offsets less 0x60 in `magic_0589` (its `+0x33`: 0x1a00)
+    let sh = b.wrapping_add(img.word(f + 0x33)).wrapping_sub(0x1a60);
     let scale = g.read::<f32>(w(0x17));
     start_object_anim(g, img, img.rel32_target(f + 0x2d), b, scale, 0, 0);
     let copy = |g: &mut G, to: u32| {
         for i in 0..4 {
-            let x = g.read::<u32>(b.wrapping_add(0x1a60 + 4 * i));
-            g.write::<u32>(b.wrapping_add(to + 4 * i), x);
+            let x = g.read::<u32>(sh.wrapping_add(0x1a60 + 4 * i));
+            g.write::<u32>(to.wrapping_add(4 * i), x);
         }
     };
-    copy(g, 0xd0);
+    copy(g, b.wrapping_add(0xd0));
     let y = sub(g.read::<f32>(b.wrapping_add(0xd4)), g.read::<f32>(w(0x73)));
-    let yaw = g.read::<u32>(b.wrapping_add(0x2258));
+    let yaw = g.read::<u32>(sh.wrapping_add(0x2258));
     g.write::<u32>(b.wrapping_add(0xc4), yaw);
     g.write::<f32>(b.wrapping_add(0xd4), y);
-    let r = b.wrapping_add(0x1b70);
+    let r = sh.wrapping_add(0x1b70);
     g.write::<u32>(r + 0x81, 0x0080_ffff);
     g.write::<u8>(r + 0x80, 0xff);
     g.write::<u16>(r + 0x86, 0);
@@ -7915,7 +7999,7 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0x121), node);
     let ebp = fr.esp.wrapping_sub(4);
     let at = |o: u32| ebp.wrapping_sub(o);
-    let a = g.read::<u32>(b.wrapping_add(0x2258));
+    let a = g.read::<u32>(sh.wrapping_add(0x2258));
     g.write::<u32>(at(0xa8), a);
     let (d, v) = (at(0x14), at(0x24));
     g.write::<u32>(d + 4, 0);
@@ -7949,8 +8033,8 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     .into_iter()
     .enumerate()
     {
-        copy(g, pt);
-        let p = b.wrapping_add(pt);
+        let p = sh.wrapping_add(pt);
+        copy(g, p);
         g.write::<u32>(d, x);
         g.write::<u32>(d + 8, z);
         s.push(m);
@@ -7991,6 +8075,13 @@ pub const OBJECT_THREE_POINTS: Sig = Sig {
         (0x3b6, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`object_three_points`] in `magic_0589` (0x10003fb0, the block's
+/// offsets 0x60 lower).
+pub const OBJECT_THREE_POINTS_0589: Sig = Sig {
+    hash: 0xa8bb_26a1_6e76_db1c,
+    ..OBJECT_THREE_POINTS
 };
 
 /// The character `T[*G_SEL[i]]` (or `*G_SELF` for -1) at operand

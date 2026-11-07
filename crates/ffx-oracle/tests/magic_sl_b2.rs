@@ -269,24 +269,28 @@ fn object_task_0168() {
     }
 }
 
-/// `m0168::object_start` (0x10002f40): a free pool and a tail, the pool
-/// empty.
+/// `m0168::object_start` (0x10002f40, and `magic_0587` 0x10002b50,
+/// family P094 in round 13: its displacements read from the code): a free
+/// pool and a tail, the pool empty.
 #[test]
 fn object_start_0168() {
-    let Some(mut t) = twin(168) else { return };
-    let at = t.at(0x2f40);
-    let s = t.img.rel32_target(at + 0x20);
-    let blk = SCRATCH + 0x1_0000;
-    t.set_u32(t.img.word(at + 0xc), blk);
-    for (count, tail) in [(3u16, 0u32), (2, SCRATCH + 0x600), (0, 0)] {
-        anim_setup(&mut t, s, count, tail);
-        t.write(blk, &varied(0x1000, 0x5a));
-        for i in 0..4u32 {
-            t.set_u32(blk + 0xac0 + 4 * i, 0x0ac0_0000 + i);
+    for (dll, rva) in [(168u16, 0x2f40u32), (587, 0x2b50)] {
+        let Some(mut t) = twin(dll) else { return };
+        let at = t.at(rva);
+        let s = t.img.rel32_target(at + 0x20);
+        let blk = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(at + 0xc), blk);
+        let (pt, word) = (t.img.word(at + 0x26), t.img.word(at + 0x59));
+        for (count, tail) in [(3u16, 0u32), (2, SCRATCH + 0x600), (0, 0)] {
+            anim_setup(&mut t, s, count, tail);
+            t.write(blk, &varied(0x4000, 0x5a));
+            for i in 0..4u32 {
+                t.set_u32(blk + pt + 4 * i, 0x0ac0_0000 + i);
+            }
+            t.set_u32(blk + word, 0x0031_5000 + u32::from(count));
+            dirty(&mut t);
+            t.check_entry(at, Call::default(), &[], Eax::Checked);
         }
-        t.set_u32(blk + 0x3150, 0x0031_5000 + u32::from(count));
-        dirty(&mut t);
-        t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
 

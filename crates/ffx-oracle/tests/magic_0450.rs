@@ -604,3 +604,113 @@ fn first_and_scale_start() {
     t.set_u32(fx + 0x1c10, f(2.5));
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// The parts' registration under the models' step: one part, no bank.
+fn parts_0393(t: &mut Twin, rp: u32) {
+    let parts = SCRATCH + 0x200;
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(parts + 0x30, 0x0941_0001);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x76), 0);
+    t.set_u32(t.img.word(rp + 0x43), SCRATCH + 0x300);
+}
+
+/// The models' table and indices of `magic_0393`'s step at `sm`.
+fn models_0393(t: &mut Twin, sm: u32, fx: u32) {
+    t.set_u32(t.img.word(sm + 0x1e), fx);
+    let b = SCRATCH + 0x20;
+    t.set_u32(t.img.word(sm + 0x28), b);
+    t.set_u32(b, 0x2a05_0300);
+    let table = t.img.word(sm + 0x33);
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0384_0000 + i);
+    }
+    let rp = t.img.rel32_target(sm + 0xc5);
+    parts_0393(t, rp);
+    t.set_u32(t.img.word(sm + 0x79), 0x0211_0e0e);
+    recs(
+        t,
+        &[
+            (628, 1),
+            (384, 1),
+            (217, 2),
+            (255, 2),
+            (211, 2),
+            (941, 1),
+            (772, 2),
+            (779, 4),
+        ],
+    );
+}
+
+/// `magic_0393` 0x100018b0 (the models shown with the camera's step):
+/// one model and two, the camera held and not, its index below 0x20, at
+/// it and negative.
+#[test]
+fn show_models_camera() {
+    let Some(mut t) = twin(393) else { return };
+    let at = t.at(0x18b0);
+    let fx = SCRATCH + 0x1000;
+    models_0393(&mut t, at, fx);
+    for (model, held, n) in [
+        (u32::MAX, 0u32, 3u32),
+        (0x77, 0, 0x1f),
+        (0x77, 1, 3),
+        (u32::MAX, 0, 0x20),
+        (0x77, 0, u32::MAX),
+    ] {
+        t.set_u32(fx + 0x1eec, model);
+        t.set_u32(t.img.word(at + 0x72), held);
+        t.set_u32(t.img.word(at + 0x81), n);
+        magic_h6::scrub(&mut t);
+        t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0450::show_models_camera(g, img, fr.at, fr.esp))
+        });
+    }
+}
+
+/// `magic_0393` 0x10001600 ([`task`]'s copy): slot 561 busy, the script
+/// or the first motion script running, and both done (the models shown
+/// with the camera's step, the node given back).
+#[test]
+fn task_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let at = t.at(0x1600);
+    let fx = fx(&mut t, at, 0x7);
+    let busy = SCRATCH + 0x40;
+    rec(&mut t, 561, 0, move |m, _| m.r32(busy));
+    let block = t.img.word(at + 0x10);
+    t.set_u32(t.img.word(at + 0x26), 0x0026_1234);
+    let run = t.img.rel32_target(at + 0x33);
+    let (m1, m2) = (t.img.word(at + 0x51), t.img.word(at + 0x5b));
+    let sm = t.img.rel32_target(at + 0x79);
+    models_0393(&mut t, sm, fx);
+    t.set_u32(t.img.word(sm + 0x72), 0);
+    t.set_u32(t.img.word(sm + 0x81), 5);
+    let give = t.img.rel32_target(at + 0x85);
+    let node = SCRATCH + 0x5000;
+    for (bz, mode, done1, done2) in [
+        (7u32, 0u8, 1u32, 1u32),
+        (0, 0, 1, 0),
+        (0, 0, 0, 1),
+        (0, 2, 1, 1),
+    ] {
+        t.set_u32(busy, bz);
+        t.write(block, &[0x5c; 0x30]);
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u16(t.img.word(run + 0x59), 0xffff);
+        for (ms, done) in [(m1, done1), (m2, done2)] {
+            t.set_u32(ms + 0x14, done);
+            t.set_u16(ms + 0x18, 3);
+        }
+        t.set_u32(fx + 0x1eec, 0x77);
+        t.write(fx + 0x1b80, &[0x61; 0xa0]);
+        for i in 0..4 {
+            t.set_u32(fx + 0x1ba0 + 4 * i, 0x1ba0_0000 + i);
+            t.set_u32(fx + 0x1c00 + 4 * i, 0x1c00_0000 + i);
+        }
+        lone_node(&mut t, give, node);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}

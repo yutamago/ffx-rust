@@ -3742,7 +3742,14 @@ fn fam2_staged_nodes() {
     }
 }
 
-const TRAIL_DRAW: &[(u16, u32)] = &[(446, 0x4e20), (544, 0x4ce0), (565, 0x6ea0), (697, 0x6ea0)];
+const TRAIL_DRAW: &[(u16, u32)] = &[
+    (446, 0x4e20),
+    (544, 0x4ce0),
+    (565, 0x6ea0),
+    (697, 0x6ea0),
+    (644, 0xacd0),
+    (698, 0xacd0),
+];
 
 /// `o6_fam_pairs6::trail_draw`: no sprites; a short trail; an unmarked
 /// point on the way back (it stops); a zero-length segment (a sprite
@@ -3760,19 +3767,34 @@ fn fam2_trail_draw() {
         let Some(mut t) = magic_l3::twin(n) else {
             return;
         };
-        // `magic_0565`'s copy (shared-9's `trail draw (0565)`) has no `M4`
+        // `magic_0565`'s copy (shared-9's `trail draw (0565)`) has no `M4`;
+        // `magic_0644`'s (`trail draw (0644)`) its own frame and `eax`
         let flat = rva == 0x6ea0;
+        let own = rva == 0xacd0;
         registered(
             &t,
             rva,
             if flat {
                 "trail draw (0565)"
+            } else if own {
+                "trail draw (0644)"
             } else {
                 "o6 fam pairs6 trail_draw"
             },
         );
         stubs4(&mut t);
         matrix_stubs(&mut t);
+        if own {
+            // `M4` and `M3` times `M1`: the draw returns the last one's `eax`
+            t.stub(231, |m, a| {
+                for i in 0..16u32 {
+                    let x = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5
+                        + f32::from_bits(m.r32(a[2] + 4 * i));
+                    m.w32(a[0] + 4 * i, x.to_bits());
+                }
+                0x0231_0000 ^ a[0]
+            });
+        }
         t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
         let table = P;
         t.stub(941, move |m, a| {
@@ -3808,7 +3830,7 @@ fn fam2_trail_draw() {
             (
                 t.img.word(f + 0x57),
                 t.img.word(f + 0x63),
-                t.img.word(f + 0x236),
+                t.img.word(f + if own { 0x248 } else { 0x236 }),
             )
         };
         for s in [774u32, 778] {
@@ -3835,6 +3857,8 @@ fn fam2_trail_draw() {
         // lock global points at a scratch word
         let (call, lock_offs): (u32, &[u32]) = if n == 446 {
             (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+        } else if own {
+            (0x59f, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
         } else if flat {
             (0x531, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
         } else {
@@ -4504,6 +4528,84 @@ fn fam2_scene_end() {
             t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
                 o6_fam_pairs6::scene_end(g, img, fr)
             });
+        }
+    }
+}
+
+/// `r13_misc::particles_reset` (family P019) in both copies: the two
+/// particle passes with the pool's first record busy (no particles); the
+/// task ring with three free nodes and two, the task list empty and not.
+#[test]
+fn fam_p019_particles_reset() {
+    for (d, (n, rva)) in (0u32..).zip([(304u16, 0x2fd0u32), (568, 0x28d0)]) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        stubs4(&mut t);
+        for s in [314u32, 404] {
+            t.stub_st0(s, move |m, a| {
+                let k = m.r32(SCRATCH + 0x3800);
+                m.w32(SCRATCH + 0x3800, k + 1);
+                f64::from(f32::from_bits(a[0])) * 0.375 + f64::from((k + s) % 7) * 0.25
+            });
+        }
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let own = 0x0100_0000 * d;
+        let s = 0x6500_0000 + own;
+        t.set_u32(w(&t, 0x3), s);
+        // the passes' objects (the same block when they share the global)
+        let two = t.img.rel32_target(f + 0x2f6);
+        let rows = t.img.rel32_target(f + 0x2fb);
+        let obj = t.u32(t.img.word(two + 0x18));
+        let obj = if obj == 0 { s } else { obj };
+        t.set_u32(t.img.word(two + 0x18), obj);
+        t.set_u32(t.img.word(rows + 0x14), obj);
+        t.set_u32(t.img.word(two + 0xb6), SCRATCH + 0x3000);
+        t.set_u32(t.img.word(rows + 0x71), SCRATCH + 0x3000);
+        t.set_u32(SCRATCH + 0x300c, 0x0077_1234);
+        t.set_u32(SCRATCH + 0x3008, 0x0077_1234);
+        let take = t.img.rel32_target(two + 0xa6);
+        let tw = |t: &Twin, o: u32| t.img.word(take + o);
+        let pool = 0x5800_0000 + own;
+        let start = 140u32;
+        t.set_u32(tw(&t, 0x37), pool + 0x74 * start);
+        let take2 = t.img.rel32_target(rows + 0x61);
+        t.set_u32(t.img.word(take2 + 0x37), pool + 0x74 * start);
+        let node = |i: u32| SCRATCH + 0x4000 + 0x40 * i;
+        let saved = t.save();
+        for (c, (count, listed)) in (0u32..).zip([(3u16, false), (3, true), (2, true), (2, false)])
+        {
+            t.restore(&saved);
+            for take in [take, take2] {
+                t.set_u32(t.img.word(take + 0x08), start.wrapping_neg());
+                t.set_u32(t.img.word(take + 0x0f), 1);
+            }
+            t.write(pool, &vec![0x33; 0x74 * 130]);
+            for i in 0..130 {
+                t.set_u32(pool + 0x74 * i + 0x6c, u32::from(i == 0));
+            }
+            t.write(s, &vec![0x5a; 0x1600]);
+            // the free ring of `count` nodes
+            for i in 0..u32::from(count) {
+                let k = u32::from(count);
+                t.write(node(i), &[0x2e; 0x40]);
+                t.set_u32(node(i), node((i + k - 1) % k));
+                t.set_u32(node(i) + 4, node((i + 1) % k));
+            }
+            t.set_u16(w(&t, 0x302), count);
+            t.set_u32(w(&t, 0x34c), node(0));
+            let other = SCRATCH + 0x4400;
+            t.write(other, &[0x44; 0x20]);
+            t.set_u32(w(&t, 0x3b6), if listed { other } else { 0 });
+            t.set_u32(w(&t, 0x3ca), other);
+            t.check(
+                f,
+                regs(rva, c),
+                &[],
+                Eax::Checked,
+                ffx_magic::r13_misc::particles_reset,
+            );
         }
     }
 }

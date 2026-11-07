@@ -427,6 +427,26 @@ pub fn colour_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(r)
 }
 
+/// The thunk over [`colour_visit`] (0x10003520, 12 bytes, cdecl
+/// `(group)`): `ecx` = the group, then the tail jump.
+pub fn colour_visit_thunk<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    let visit = Frame {
+        at: img.rel32_target(fr.at + 8),
+        ecx,
+        ..*fr
+    };
+    colour_visit(g, img, &visit)
+}
+
+/// [`colour_visit_thunk`] (the `rel32`: [`colour_visit`]).
+pub const COLOUR_VISIT_THUNK: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[(8, Callee::Sig(&COLOUR_VISIT))],
+    imports: &[],
+};
+
 /// [`colour_visit`] (323 bytes, 1 overlay).
 pub const COLOUR_VISIT: Sig = Sig {
     len: 323,

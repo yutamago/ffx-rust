@@ -25,6 +25,7 @@ fn copy(n: u16, rva: u32, s: Start) {
 }
 
 /// [`copy`] with the start-up's `rel32` and the lock's operand at `ops`.
+#[allow(clippy::too_many_lines)] // the slots, the start-up and each copy's junk words
 fn copy_at(n: u16, rva: u32, s: Start, (call, lock_op): (u32, u32)) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
@@ -103,7 +104,27 @@ fn copy_at(n: u16, rva: u32, s: Start, (call, lock_op): (u32, u32)) {
             let parts = sw(&t, s.part.0);
             t.set_u32(parts + 0x10, parts);
         }
-        if call == 0x195 {
+        if call == 0x213 {
+            // `magic_0090`'s own start (`r13_start::summon_start_0090`)
+            for o in [
+                0x1du32, 0x28, 0x32, 0x3c, 0x46, 0x50, 0x5a, 0x65, 0x6d, 0x77, 0x82, 0x8a, 0x94,
+                0x9e, 0xa9, 0xb1, 0xbb, 0xc5, 0xcf, 0xd9, 0xe3, 0xed, 0xf7, 0x101, 0x10b, 0x115,
+                0x11f, 0x134, 0x165,
+            ] {
+                t.set_u32(w(&t, o), 0x5a5a_5a5b);
+            }
+            // the count and the flag byte
+            t.set_u16(w(&t, 0x18), 0x0123);
+            t.set_u8(w(&t, 0x11), 0x45 + u8::from(filled));
+        } else if call == 0x1a4 {
+            // `magic_0076`'s own start (`r13_start::summon_start_0076`)
+            for o in [
+                0x0du32, 0x27, 0x31, 0x3b, 0x45, 0x4f, 0x59, 0x64, 0x6c, 0x76, 0x80, 0x8a, 0x95,
+                0x9d, 0xa7, 0xb1, 0xc1, 0xf3,
+            ] {
+                t.set_u32(w(&t, o), 0x5a5a_5a5b);
+            }
+        } else if call == 0x195 {
             for o in [
                 0x17u32, 0x21, 0x2b, 0x35, 0x3f, 0x49, 0x54, 0x5c, 0x66, 0x70, 0x7a, 0x85, 0x8d,
                 0x97, 0xa1, 0xb6, 0xe7,
@@ -138,6 +159,28 @@ fn start_0077() {
         a: 0,
     };
     copy(77, 0x69d0, s);
+}
+
+/// `magic_0076`'s start (`r13_start::summon_start_0076`: the part
+/// global set first, its own order of stores and pushes), with the model
+/// start-up `magic_0077`'s copy has.
+#[test]
+fn start_0076() {
+    let s = Start {
+        flag: 0x42,
+        last: 0x7f,
+        root: 0xba,
+        part: (0, 0),
+        a: 0,
+    };
+    copy_at(76, 0x69d0, s, (0x1a4, 0xe7));
+}
+
+/// `magic_0090`'s start (`r13_start::summon_start_0090`: the node
+/// graph's words, then the camera start-up as `magic_0083`'s copies).
+#[test]
+fn start_0090() {
+    copy_at(90, 0x6c80, S83, (0x213, 0x159));
 }
 
 #[test]

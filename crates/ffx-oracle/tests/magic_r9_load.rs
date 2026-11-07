@@ -6,6 +6,7 @@
 mod magic;
 mod magic_owna;
 mod magic_r11;
+mod magic_r13h;
 mod magic_r9;
 
 use ffx_magic::{Image, l5_objhost, m0032, sa_pool};
@@ -427,5 +428,14 @@ fn load_0102() {
 fn load_0274() {
     copy(274, 0x32d0, false, |t, start| {
         magic_r11::two_objects_setup(t, start, 1.0, false);
+    });
+}
+
+// round 13 (magic-r13)
+
+#[test]
+fn load_0318() {
+    copy(318, 0x1210, false, |t, start| {
+        magic_r13h::two_objects_0318(t, start, true);
     });
 }

@@ -60,6 +60,8 @@ pub mod r11_objects;
 pub mod r12h_fam;
 pub mod r12h_start;
 pub mod r12h_volley;
+pub mod r13_misc;
+pub mod r13_start;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1069,6 +1071,7 @@ ports! {
     "pf throws 0425" => pf_throws::THROWS_0425, pf_throws::throws_0425;
     "pf throws 0439" => pf_throws::THROWS_0439, pf_throws::throws_0439;
     "pf throws 0441" => pf_throws::THROWS_0441, pf_throws::throws_0441;
+    "pf throws 0411" => pf_throws::THROWS_0411, pf_throws::throws_0411;
     "r9 load step 0108" => r9_load::LOAD_0108, r9_load::load_0108;
     "r9 load step 0221" => r9_load::LOAD_0221, r9_load::load_0221;
     "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;
@@ -1121,6 +1124,19 @@ ports! {
     "r9 load step 0084" => r9_load::LOAD_0084, r9_load::load_0084;
     "r9 load step 0102" => r9_load::LOAD_0102, r9_load::load_0102;
     "r9 load step 0274" => r9_load::LOAD_0274, r9_load::load_0274;
+    "r9 load step 0318" => r9_load::LOAD_0318, r9_load::load_0318;
+    "r9 load step 0394" => r9_load::LOAD_0394, r9_load::load_0394;
+    "r9 load step 0348" => r9_load::LOAD_0348, r9_load::load_0348;
+    "r9 load step 0350" => r9_load::LOAD_0350, r9_load::load_0350;
+    "r9 load step 0473" => r9_load::LOAD_0473, r9_load::load_0473;
+    "r9 load step 0325" => r9_load::LOAD_0325, r9_load::load_0325;
+    "r9 load step 0253" => r9_load::LOAD_0253, r9_load::load_0253;
+    "r9 load step 0288" => r9_load::LOAD_0288, r9_load::load_0288;
+    "r9 load step 0244" => r9_load::LOAD_0244, r9_load::load_0244;
+    "r9 load step 0393" => r9_load::LOAD_0393, r9_load::load_0393;
+    "r9 load step 0450" => r9_load::LOAD_0450, r9_load::load_0450;
+    "r9 load step 0352" => r9_load::LOAD_0352, r9_load::load_0352;
+    // round 13 (magic-r13): end of r9 load steps
     "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
     "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
     "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
@@ -1197,6 +1213,7 @@ ports! {
     "m0666 cue frame" => m0666::CUE_FRAME, m0666::cue_frame;
     "m0666 look draw" => m0666::LOOK_DRAW, m0666::look_draw;
     "m0645 colour visit" => m0645::COLOUR_VISIT, m0645::colour_visit;
+    "m0645 colour visit thunk" => m0645::COLOUR_VISIT_THUNK, m0645::colour_visit_thunk;
     "m0602 start" => m0602::START, m0602::start;
     "m0661 cues" => m0661::CUES, m0661::cues;
     "r12h three objects 0511" => r12h_fam::THREE_OBJECTS_0511, r12h_fam::three_objects_0511;
@@ -1284,6 +1301,7 @@ ports! {
     "m0450 shrink" => m0450::SHRINK, m0450::shrink;
     "m0450 turn step" => m0450::TURN_STEP, m0450::turn_step;
     "m0450 task" => m0450::TASK, m0450::task;
+    "m0450 task (0393)" => m0450::TASK_0393, m0450::task;
     "m0450 second start" => m0450::SECOND_START, m0450::second_start;
     "m0450 first start" => m0450::FIRST_START, m0450::first_start;
     "m0450 scale start" => m0450::SCALE_START, m0450::scale_start;
@@ -1705,6 +1723,7 @@ ports! {
     "thunk: nodes reset" => s4_wrap::JMP_NODES_RESET, s4_wrap::ecx_jmp;
     "thunk: particle node" => s4_wrap::JMP_PARTICLE_NODE, s4_wrap::ecx_jmp;
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
+    "summon start (targets, 0330)" => s4_summon::SUMMON_START_0330, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
     "summon frame (0042)" => s4_summon::SUMMON_FRAME_B, s4_summon::summon_frame_b;
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
@@ -1942,6 +1961,7 @@ ports! {
     "actors restored" => s4_small::ACTORS_RESTORED, s4_small::actors_restored;
     "command block reset" => s4_small::COMMAND_BLOCK_RESET, s4_small::command_block_reset;
     "spin records move" => s4_small::SPIN_RECORDS_MOVE, s4_small::spin_records_move;
+    "spin records move (0307)" => s4_small::SPIN_RECORDS_MOVE_0307, s4_small::spin_records_move;
     "camera face actor" => s4_small::CAMERA_FACE_ACTOR, s4_small::camera_face_actor;
     "entry hook in" => s4_small::ENTRY_HOOK_IN, s4_small::entry_hook_in;
     "load steps and frame" => s4_small::LOAD_STEPS_AND_FRAME, s4_small::load_steps_and_frame;
@@ -2411,6 +2431,7 @@ ports! {
     "particles rethrow" => s5_misc::PARTICLES_RETHROW, s5_misc::particles_rethrow;
     "camera rect task" => s5_misc::CAMERA_RECT_TASK, s5_misc::camera_rect_task;
     "host start (chara 0x10af)" => s5_misc::HOST_START_CHARA, s5_misc::host_start_chara;
+    "host start (chara 0x3014)" => s5_misc::HOST_START_CHARA_0205, s5_misc::host_start_chara;
     "node set-up (0x1ac)" => s5_misc::NODE_SETUP, s5_misc::node_setup;
     "rising part" => s5_misc::RISING_PART, s5_misc::rising_part;
     "host start (sound bank)" => s5_misc::HOST_START_BANK, s5_misc::host_start_bank;
@@ -2445,6 +2466,7 @@ ports! {
     "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
     "summon ppp start (big env)" => s5_misc::SUMMON_PPP_START_BIG, s5_misc::summon_ppp_start_big;
     "summon ppp start (flag)" => s5_misc::SUMMON_PPP_START_FLAG, s5_misc::summon_ppp_start_flag;
+    "summon ppp start (flag, 0387)" => s5_misc::SUMMON_PPP_START_FLAG_0387, s5_misc::summon_ppp_start_flag;
     "three points ease" => s5_misc::THREE_POINTS_EASE, s5_misc::three_points_ease;
     "arc carry" => s5_misc::ARC_CARRY, s5_misc::arc_carry;
     "objects around" => s5_misc::OBJECTS_AROUND, s5_misc::objects_around;
@@ -2461,6 +2483,7 @@ ports! {
     "targets more, tasks" => s5_misc::TARGETS_MORE_TASKS, s5_misc::targets_more_tasks;
     "camera tree" => s5_misc::CAMERA_TREE, s5_misc::camera_tree;
     "models around" => s5_misc::MODELS_AROUND, s5_misc::models_around;
+    "models around (0307)" => s5_misc::MODELS_AROUND_0307, s5_misc::models_around_0307;
     "models around start" => s5_misc::MODELS_AROUND_START, s5_misc::models_around_start;
     "camera behind" => s5_misc::CAMERA_BEHIND, s5_misc::camera_behind;
     "look part" => s5_misc::LOOK_PART, s5_misc::look_part;
@@ -2472,6 +2495,7 @@ ports! {
     "spray_on_cue" => s5_misc::SPRAY_ON_CUE, s5_misc::spray_on_cue;
     "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
     "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
+    "scene_two_records (0588)" => s5_misc::SCENE_TWO_RECORDS_0588, s5_misc::scene_two_records;
     "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
     // census2: functions the old census hid inside merged rows (sf_hidden)
     "sf elem point table" => sf_hidden::ELEM_POINT_TABLE, sf_hidden::elem_point_table;
@@ -2492,6 +2516,7 @@ ports! {
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
     "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
+    "object_three_points (0589)" => s5_misc::OBJECT_THREE_POINTS_0589, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
     // round 5, own rows
@@ -2777,6 +2802,9 @@ ports! {
     "summon load objects" => s7_misc::SUMMON_LOAD_OBJECTS, s7_misc::summon_load_objects;
     "staged volley task" => s7_misc::STAGED_VOLLEY_TASK, s7_misc::staged_volley_task;
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
+    "staged volley task (0674)" => s7_misc::STAGED_VOLLEY_TASK_0674, s7_misc::staged_volley_task;
+    "staged volley task (0618)" => s7_misc::STAGED_VOLLEY_TASK_0618, s7_misc::staged_volley_task;
+    "staged volley task (0685)" => s7_misc::STAGED_VOLLEY_TASK_0685, s7_misc::staged_volley_task;
     "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
     "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
@@ -2796,6 +2824,7 @@ ports! {
     "object, fan, two fades" => s8_misc::OBJECT_FAN_TWO_FADES, s8_misc::object_fan_two_fades;
     "object, fan, two fades (b)" => s8_misc::OBJECT_FAN_TWO_FADES_B, s8_misc::object_fan_two_fades;
     "objects freed, fan, fade" => s8_misc::OBJECTS_FREED_FAN_FADE, s8_misc::objects_freed_fan_fade;
+    "objects freed, fan, fade (0589)" => s8_misc::OBJECTS_FREED_FAN_FADE_0589, s8_misc::objects_freed_fan_fade;
     "emitter sounds" => s8_misc::EMITTER_SOUNDS, s8_misc::emitter_sounds;
     "model effect placed" => s8_misc::MODEL_EFFECT_PLACED, s8_misc::model_effect_placed;
     "summon frame (colours)" => s8_misc::SUMMON_FRAME_COLOURS, s8_misc::summon_frame_colours;
@@ -2921,6 +2950,8 @@ ports! {
     "model sprites (b)" => s9_misc::MODEL_SPRITES_B, s9_misc::model_sprites_b;
     "model sprites (b, 0085)" => s9_misc::MODEL_SPRITES_B_0085, s9_misc::model_sprites_b;
     "model sprites (b, 0093)" => s9_misc::MODEL_SPRITES_B_0093, s9_misc::model_sprites_b;
+    "model sprites (a, 0092)" => s9_misc::MODEL_SPRITES_A_0092, s9_misc::model_sprites_a;
+    "model sprites (b, 0092)" => s9_misc::MODEL_SPRITES_B_0092, s9_misc::model_sprites_b;
     "model sprites (c)" => s9_misc::MODEL_SPRITES_C, s9_misc::model_sprites_c;
     "model sprites (d)" => s9_misc::MODEL_SPRITES_D, s9_misc::model_sprites_d;
     "beams aimed" => s9_misc::BEAMS_AIMED, s9_misc::beams_aimed;
@@ -2951,6 +2982,8 @@ ports! {
     "camera frame" => s9_misc::CAMERA_FRAME, s9_misc::camera_frame;
     "trail head (0565)" => s9_misc::TRAIL_HEAD_0565, s9_misc::trail_head;
     "trail task (0565)" => s9_misc::TRAIL_TASK_0565, o6_fam_pairs6::trail_task;
+    "trail head (0644)" => s9_misc::TRAIL_HEAD_0644, s9_misc::trail_head;
+    "trail task (0644)" => s9_misc::TRAIL_TASK_0644, o6_fam_pairs6::trail_task;
     "summon ring start" => s9_misc::SUMMON_RING_START, s9_misc::summon_ring_start;
     "summon start task (0247)" => s9_misc::SUMMON_START_TASK_0247, s9_misc::summon_start_task_0247;
     "summon nodes start" => s9_misc::SUMMON_NODES_START, s9_misc::summon_nodes_start;
@@ -3041,12 +3074,68 @@ ports! {
     "m0430 three start" => m0430::THREE_START, m0430::three_start;
     "m0434 main restart" => m0434::MAIN_RESTART, m0434::main_restart;
     // magic small-lo: end of ports
+    // round 13 (magic-r13)
+    "r13 lists done 0304" => r13_misc::LISTS_DONE_0304, r13_misc::lists_done;
+    "r13 lists done 0568" => r13_misc::LISTS_DONE_0568, r13_misc::lists_done;
+    "r13 sparks frame 0505" => r13_start::SPARKS_FRAME_0505, r13_start::sparks_frame_0505;
+    "r13 set-up 0505" => r13_start::SET_UP_0505, r13_start::set_up_0505;
+    "r13 set-up tail 0669" => r13_start::SET_UP_TAIL_0669, r13_start::set_up_tail_0669;
+    "r13 sparks frame 0669" => r13_start::SPARKS_FRAME_0669, r13_start::sparks_frame_0669;
+    "r13 sparks frame 0488" => r13_start::SPARKS_FRAME_0488, r13_start::sparks_frame_0488;
+    "r13 object start 0360" => r13_start::OBJECT_START_0360, r13_start::object_start_0360;
+    "r13 frame 0477" => r13_start::FRAME_0477, r13_start::frame_0477;
+    "r13 sparks 0477" => r13_start::SPARKS_0477, r13_start::sparks_0477;
+    "r13 summon start 0076" => r13_start::SUMMON_START_0076, r13_start::summon_start_0076;
+    "r13 summon start 0343" => r13_start::SUMMON_START_0343, r13_start::summon_start_0343;
+    "r13 summon start 0106" => r13_start::SUMMON_START_0106, r13_start::summon_start_0106;
+    "r13 summon start 0513" => r13_start::SUMMON_START_0513, r13_start::summon_start_0513;
+    "r13 set-up 0429" => r13_start::SET_UP_0429, r13_start::set_up_0429;
+    "r13 measures 0313" => r13_start::MEASURES_0313, r13_start::measures_0313;
+    "r13 set-up 0664" => r13_start::SET_UP_0664, r13_start::set_up_0664;
+    "r13 summon start 0090" => r13_start::SUMMON_START_0090, r13_start::summon_start_0090;
+    "r13 scripts step 0596" => r13_misc::SCRIPTS_STEP_0596, r13_misc::scripts_step;
+    "r13 scripts step 0304" => r13_misc::SCRIPTS_STEP_0304, r13_misc::scripts_step;
+    "r13 lists two done 0244" => r13_misc::LISTS_TWO_DONE_0244, r13_misc::lists_two_done_0244;
+    "r13 sprites frame 0371" => r13_start::SPRITES_FRAME_0371, r13_start::sprites_frame_0371;
+    "r13 object listed 0673" => r13_start::OBJECT_LISTED_0673, r13_start::object_listed_0673;
+    "r13 rows 0673" => r13_start::ROWS_0673, r13_start::rows_0673;
+    "r13 send 0415" => r13_start::SEND_0415, r13_start::send_0415;
+    "r13 targets 0421" => r13_start::TARGETS_0421, r13_start::targets_0421;
+    "r13 fifth start 0610" => m0352::FIFTH_START_0610, m0352::fifth_start;
+    "r13 scale start 0612" => m0563::SCALE_START_0612, m0563::scale_start;
+    "r13 object start 0587" => m0168::OBJECT_START_0587, m0168::object_start;
+    "r13 mean visit 0613" => m0164::MEAN_VISIT_0613, m0164::mean_visit;
+    "r13 scripts step (motion) 0165" => r13_misc::SCRIPTS_STEP_MOTION_0165, r13_misc::scripts_step_motion;
+    "r13 scripts step (motion) 0606" => r13_misc::SCRIPTS_STEP_MOTION_0606, r13_misc::scripts_step_motion;
+    "r13 script step 0307" => r13_misc::SCRIPT_STEP_0307, r13_misc::script_step;
+    "r13 script step 0605" => r13_misc::SCRIPT_STEP_0605, r13_misc::script_step;
+    "r13 particles reset 0304" => r13_misc::PARTICLES_RESET_0304, r13_misc::particles_reset;
+    "r13 particles reset 0568" => r13_misc::PARTICLES_RESET_0568, r13_misc::particles_reset;
+    "r13 load 0571" => r13_start::LOAD_0571, r13_start::load_0571;
+    "r13 load 0572" => r13_start::LOAD_0572, r13_start::load_0572;
+    // round 13 (magic-r13): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 13 (magic-r13)
+    ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
+    ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),
+    ("r13 object task 0673", &r13_misc::OBJECT_TASK_0673),
+    ("r13 start 0394", &r13_start::START_0394),
+    ("r13 start 0348", &r13_start::START_0348),
+    ("r13 start 0350", &r13_start::START_0350),
+    ("r13 start 0473", &r13_start::START_0473),
+    ("r13 start 0325", &r13_start::START_0325),
+    ("r13 start 0253", &r13_start::START_0253),
+    ("r13 start 0288", &r13_start::START_0288),
+    ("r13 start 0244", &r13_start::START_0244),
+    ("r13 start 0352", &r13_start::START_0352),
+    ("r13 start 0571", &r13_start::START_0571),
+    ("r13 start 0572", &r13_start::START_0572),
+    // round 13 (magic-r13): end of INTERNAL
     // round 11 (magic-r11-own)
     ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),
     ("r11 three nodes 0112", &r11_objects::THREE_NODES_0112),
@@ -3276,6 +3365,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // magic r5 own (0450 and up): internal functions
     ("m0450 orient", &m0450::ORIENT),
     ("m0450 show models", &m0450::SHOW_MODELS),
+    ("m0450 show models (camera)", &m0450::SHOW_MODELS_CAMERA),
     ("m0473 scale start", &m0473::SCALE_START),
     ("m0474 timed start", &m0474::TIMED_START),
     ("m0478 init", &m0478::INIT),
@@ -3581,9 +3671,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
+    ("trail draw (0009)", &s4_misc::TRAIL_DRAW_0009),
     ("targets init", &s4_summon::TARGETS_INIT),
     ("targets init (b)", &s4_summon::TARGETS_INIT_B),
     ("targets init (c)", &s4_summon::TARGETS_INIT_C),
+    ("targets init (d)", &s4_summon::TARGETS_INIT_D),
     ("target nodes", &s4_summon::TARGET_NODES),
     ("angle step", &s4_misc::ANGLE_STEP),
     ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),
@@ -3674,6 +3766,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("summon nodes (b)", &s4_small::SUMMON_NODES_B),
     ("start host object", &s4_small::START_HOST_OBJECT),
     ("key curve", &s4_small::KEY_CURVE),
+    ("key curve (0435)", &s4_small::KEY_CURVE_0435),
     ("light object", &s4_small::LIGHT_OBJECT),
     ("sprite node", &s4_small::SPRITE_NODE),
     ("named parts", &s4_small::NAMED_PARTS),
@@ -3840,6 +3933,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("thickness margin", &s5_misc::THICKNESS_MARGIN),
     ("weapon matrix", &s5_misc::WEAPON_MATRIX),
     ("angle keys", &s5_misc::ANGLE_KEYS),
+    ("angle keys (0435)", &s5_misc::ANGLE_KEYS_0435),
     ("model parts draw", &s5_misc::MODEL_PARTS_DRAW),
     ("aim task", &s5_misc::AIM_TASK),
     ("three parts draw", &s5_misc::THREE_PARTS_DRAW),
@@ -3978,6 +4072,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("child object set-up", &s8_misc::CHILD_OBJECT_SETUP),
     ("bone node", &s8_misc::BONE_NODE),
     ("spark burst", &s8_misc::SPARK_BURST),
+    ("spark burst (0132)", &s8_misc::SPARK_BURST_0132),
     ("mesh bounds", &s8_misc::MESH_BOUNDS),
     // round 8, shared-8 (s8_misc): end of INTERNAL
     // round 6, the shape families (o6_fam_*)
@@ -4223,9 +4318,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite packets", &s9_misc::SPRITE_PACKETS),
     ("camera aimed", &s9_misc::CAMERA_AIMED),
     ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
+    ("trail draw (0644)", &s9_misc::TRAIL_DRAW_0644),
     ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     ("node ease", &s9_misc::NODE_EASE),
     ("node ease (0570)", &s9_misc::NODE_EASE_B),
+    ("node ease (0070)", &s9_misc::NODE_EASE_0070),
     ("sprite frames", &s9_misc::SPRITE_FRAMES),
     ("block sprite frames", &s9_misc::BLOCK_SPRITE_FRAMES),
     (
@@ -4235,7 +4332,17 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("node sparks", &s9_misc::NODE_SPARKS),
     ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
     ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
+    ("effect group (one copy)", &s9_misc::EFFECT_GROUP_ONE),
+    ("summon object (0685)", &s9_misc::SUMMON_OBJECT_0685),
     ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
+    (
+        "summon object between (0132)",
+        &s9_misc::SUMMON_OBJECT_BETWEEN_0132,
+    ),
+    (
+        "summon object between (0133)",
+        &s9_misc::SUMMON_OBJECT_BETWEEN_0133,
+    ),
     // round 9, shared-9 (s9_misc): end of INTERNAL
     ("m0152 build node", &m0152::BUILD_NODE),
     ("m0168 object task", &m0168::OBJECT_TASK),
