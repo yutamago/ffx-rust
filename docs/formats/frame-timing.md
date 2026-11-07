@@ -75,7 +75,7 @@ its only setter (`0x00871020`) has no callers. This is not a rate control.
 |---|---|
 | `WaitFrames`, the poll natives (motion, move, turn, camera, message waits) | Movies: `updateTexture` takes one decoded frame per update (or per render command for `0x20`, `0x2e`, `0x48` and loops). The sound is an FMOD stream in real time, with no A/V clock ([platform.md](platform.md)) |
 | Motions (`SG_UpdateMotion`, in `Ch_CalcMain`), moves and turns (`Atel_MoveUpdate`), `Sg_AnimValF` eases | FMOD: music, voices and sounds mix on FMOD's threads in real time. A sound starts in a tick but plays at its own rate |
-| The camera (`MsCameraProcess`), the effects' update half (`MsEffectProcess(0)`), the field (`Yn_FieldProc_0091a8c0`) | Voice-synced cut scenes: with `g_SyncOn` (`0x012fb8a0`, set by `Sg_SyncCutScene` `0x00821d60` from `iSyncGetData`, the remaster's `SyncData` tables), `Sg_FrameSync` steps ticks while the sync clock (`graphicGetTimeInMicroseconds`) is behind and spins while it is 0.1 s or more ahead, so the scene keeps pace with the voices in real time |
+| The camera (`MsCameraProcess`), the effects' update half (`MsEffectProcess(0)`), the field (`Yn_FieldProc_0091a8c0`) | Voice-synced cut scenes: with `g_SyncOn` (`0x012fb8a0`, set by `Sg_SyncCutScene` `0x00821d60` from `iSyncGetData`, the remaster's `SyncData` tables), `Sg_FrameSync` adds ticks while the scene is behind the sync clock (`graphicGetTimeInMicroseconds`) by more than the step's rate and spins while the scene is 0.1 ms or more ahead of it, so the scene keeps pace with the voices in real time |
 | Battle (`MsBattleProcess`): turn order, counters, the battle's waits | Loading: the asset loader thread reads in real time, and the world update stops (`Sg_IsSceneLoading` `0x0081fcd0`) until it is done |
 | Message windows (`TOControlMessageWindow`), the pad's press edges as scripts see them | Input: the pad word is built once per drawn frame (`Virtuos_InputManager_updateInput` `0x00632a30`); hold repeats after 0.2333 s, then every 0.1 s |
 | Once per `Sg_MainLoop`, not per tick: `Ch_CalcMiddle`, the field animation (`Yi`), the v-blank counters (+2), `Sg_MainCalcRate`'s rate | The Iggy (Flash) PC menus at their own 30 fps; the speed-up booster's icon |
@@ -149,6 +149,27 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
 - **Voice-synced cut scenes.** `g_SyncOn` paces the ticks to the sync clock (real time), so the
   booster does nothing there. Exec frames would run n ticks per synced step and leave the voices
   behind.
+
+  `Sg_SyncCutScene` (`0x00821d60`) calls `iSyncGetData` (`0x0067a930`) -> `SyncManager_syncGetData`
+  (`0x006fb160`), which returns 999 at once when the manager's `+8` (the cursor) or `+0x1c` is 0;
+  otherwise it waits (5 ms sleeps) while `+0x20` is 0, reads one step at the cursor (time `f32`,
+  rate `f32`, frame `i32`; the cursor moves 12 bytes), and at the end marker (1.0, 1.0, 999) clears
+  `+8` and returns 999. `Sg_FrameSync` asks for steps only in its `g_VoiceHold == 0` branch, before
+  any of the drawn frame's world ticks run: one step, then one more for each update its catch-up
+  loop adds to `g_VoiceHold` (one tick per update at exec frames 1). The steps' times and rates (ms
+  after the × 1000) set how many updates each drawn frame gets and when it spins: the sync clock is
+  compared with the time of the step read before, and an update is added while the clock is ahead of
+  it by more than the rate of the step just read. For each update, `Sg_MainCalcRate` (`0x008206c0`)
+  sets its rate (`0x023cbbec`) to that update's step frame (`frame << 7` from the frame table
+  `0x012fb828`, 30 words, read at index `0x012fb814` minus `g_VoiceHold`; 0x100 at exec frames other
+  than 1), which only keep-fps motions step by (`SG_UpdateMotion` `0x00838c90`, for actors with flag
+  `0x100000` at `+0x194` while `Sg_GetKeepFps()` is not 0; above). So the n-th update after the
+  start gets the n-th step's frame as that rate, whatever real time it runs at, as long as no update
+  of a drawn frame is dropped (`Sg_MainLoop` clearing `g_VoiceHold` early, the `0x01340844 == 1`
+  path) and the game is not paused (`g_PauseOn`: no `Sg_FrameSync`, the updates keep the last
+  index). When the end marker comes inside the catch-up loop, the sync is cleared there (the table
+  zeroed), so every update of that drawn frame, the added one included, runs with the sync off; the
+  steps already read for it are dropped.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
