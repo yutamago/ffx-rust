@@ -313,6 +313,7 @@ index (`0x013270dc`, `0x013270e0`); `AtelRemoveCtrlWork` drops the cache.
 |---|---|---|---|
 | `0x00` | `u32` | worker header in the block; its first byte is the type | `AtelGetPosWorkAdrs`, `AtelGetActorType` |
 | `0x04` | `u32` | the script block | `AtelGetRealVarAdrs` |
+| `0x2c` | `u16` | the last entry started | `AtelStartSignal` (`0x008690a0`) |
 | `0x2e` | `u16` | worker index | `AtelGetActorId` (`0x0086a5d0`) |
 | `0x32` | `u8` | level running | `AtelPopStackFloat`'s error report |
 | `0x34`, `0x36` | `u16` | flags `Script_Run` tests | `Script_Run` |
@@ -559,31 +560,45 @@ level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
 
 #### Watching entries start and end
 
-Two functions see every entry of a ctrl work's workers start and end, so a
-hook on them gives each `(worker, entry)` at the frame it happens, with no
-script changed (used by ffx-remix's pack logic, M11):
+Two functions show a ctrl work's entries starting and ending, so hooks on
+them give each `(worker, entry)` at the update it happens, with no script
+changed (ffx-remix's pack logic, M11):
 
 - `AtelStartSignal(worker, node)` (`0x008690a0`, cdecl; one caller,
-  `AtelDecodeSignal` `0x00865469`) starts every requested entry: the node's
-  `+0x08` is the entry, `+0x0e` bits 0-3 the level, and it writes both to
-  the worker's `+0x2c` (entry) and `+0x32` (level; the level block it
-  sets up is clamped to 1 for types 5 and 6 and to 8 for the others). A new event's init entries (entry 0 of each
-  worker, level 7) start here too, before `g_EventName` (`0x023cbc60`)
-  names the new event.
-- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl;
-  called from `Script_Run` at the ends, `0x00865095`, `0x008650e8`,
-  `0x00865120`, `0x00865173`, and from `AtelExecReturn2` `0x00869350` and
-  `0x008694f0`) ends the current one: `index` is the worker's index in the
-  current ctrl work (`AtelGetBasicWork(index)`), whose `+0x32` is the level
-  ending. The entry is the one that level started; `+0x2c` is only the
-  last entry started, which need not be that level's.
+  `AtelDecodeSignal` at `0x00865469`) starts every requested entry: the
+  node's `+0x08` is the entry and `+0x0e` bits 0-3 the level. It writes
+  them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
+  clamped to 1 for types 5 and 6 and to 8 for the others. A new event's
+  init entries (entry 0 of each worker, level 7) start here too.
+- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl)
+  ends the running level: `index` is the worker's index in the current
+  ctrl work (`AtelGetBasicWork(index)`), whose `+0x32` is the level. The
+  entry is the one that level started; `+0x2c` is only the last entry
+  started, which need not be that level's. `Script_Run` calls it at the
+  ends (`0x00865095`, `0x008650e8`, `0x00865120`, `0x00865173`); `3c`
+  and `3e` go to the ctrl work's `+0x28` callback instead when it is set
+  (its only setter, `FUN_008727d0`, is never called). `AtelExecReturn2`
+  (`0x00869350`, from `MsAtelRequestCancel` and `MsAtelRequestExe`) and
+  its unused twin `AtelExecReturnForce2` (`0x008694f0`) call it too, only
+  while the worker's `+0x32` is set.
 
-`g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`) marks
-the event's own script; battle and menu ctrl works run through the same
-two functions. Checked in the game (Fahrenheit hooks, harness lockstep and
-virtual clock): the title demo `loopdemo`'s worker 21 starts entry 2 on
-frame 9 after the event begins and returns from it on frame 686, the same
-in two runs.
+`AtelExecReturn` runs again on every update while a level sits on its end
+opcode with nothing queued, so only the first call after a start is the
+entry's end: in the game, `memochek`'s worker 1 starts entry 2 (level 1)
+once and the end is seen on every update after it.
+
+`g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`)
+marks the event's own script; battle ctrl works go through the same
+functions (`AtelExecReturn2` from the `Ms` battle requests).
+
+Checked in the game with hooks on both (Fahrenheit, the harness's lockstep
+and virtual clock), counting `FFXApplication_animate` calls since
+`g_EventName` (`0x023cbc60`) last changed: the title demo `loopdemo`'s
+worker 21 starts entry 2 and returns from it on the same updates in every
+pair of runs (9 and 686 in the latest; 685 for the return in an earlier
+build). The hook sees a new event's init entries while `g_EventName` still
+holds the previous name, although `AtelEventSetUp` (`0x00872ef0`) writes
+it before `AtelActorSetUp2`; which caller starts them first is not known.
 
 Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
 table, eight `u16` in a variable (`+0x44` points at it, filled from
