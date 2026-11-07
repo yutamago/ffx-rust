@@ -291,7 +291,7 @@ A trace in the 32-bit game (ffx-remix's runtime, `FFXREMIX_FX_TRACE=1`,
 `Effects/EffectTrace.cs`; harness lockstep, fast mode, virtual clock, seed
 1): Lulu alone against the Thunder Plains' first formation (battle field
 34, formation 0: Larva, actor 20, and Gold Element, actor 21; the probe
-raises their HP and Lulu's to 99999) casts Fire (magic `0x4c`,
+raises the monsters' HP to 99999) casts Fire (magic `0x4c`,
 `magic_0076.dll`) on the Larva. Hooks on `FFXApplication_animate` (one
 count per update; the magic ID and handle read at the start of each
 update, before the game's own), `PhyreScene_DrawMostVFX` (each list entry,
@@ -306,22 +306,23 @@ u0 - 1):
 | u0 | starts with the magic ID `0x4c` |
 | u0 + 1 | starts with `g_MagicFile_Handle` valid |
 | u0 + 50 | `MsEffectReady(0x205, 1)` (kind 2, actor 5) |
-| u0 + 79 | the first draws of the spell's own (draws labelled with this count) |
+| u0 + 79 | the spell's own first draws (draws labelled with this count) |
 | u0 + 89 | `MsNumberRegist(0x14, …, 170, …)` and `MsSetDamage(5, -5, 0)`: the hit and its damage number |
 | u0 + 93 | `MsSetDamage(5, -5, 0)` again |
-| u0 + 129 | the last draws of the spell's own |
+| u0 + 129 | the spell's own last draws |
 | u0 + 138 | `MsSetDamage(5, -5, 0x400)` (the command's end); the magic ID is -1 at the start of u0 + 139 |
 
 Seven traced runs (ffx-remix `m9/probe` trace1, trace2, live1, live2,
 exit-vanilla, exit-fire, exit-fire2) had the same updates for the calls;
 the draw and handle rows are from the six after trace1 (its tracer did not
-yet read the table or log the handle). The replaced runs log the spell's
+yet read the table through the pointer or log the handle). The replaced runs log the spell's
 draws too: the tracer reads the list before the hide zeroes it.
 
 The hit comes from the overlay itself: `magic_0076.dll` calls `MsSetDamage`
 through `g_MagicImports` slot 239 (`mov eax, [imports + 0x3bc]` at
 `0x100064b9`, arguments `(…, -5, 0)`); the `0x400` call at u0 + 138 has no
-such site in the overlay and comes from the battle code. That
+such site in the overlay and comes from the battle code
+(`MsBattleProcess_ChrDamage`, `MsSetDamage(i, -5, 0x400)`, battle.md). That
 `MsNumberRegist` runs inside that `MsSetDamage` is inferred from the log
 (the number's line before the call's, which is written as it returns, in
 the same update). Hiding all of the spell's draws (below) left every row
@@ -369,7 +370,10 @@ were not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
 battle character's place in the HD scene (the space the draws' world
 matrices use) was taken as `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on
 field maps: an effect placed there sat on the Larva in the live frames
-(checked by eye, one battle).
+(checked by eye, run live3). The centre of the character's mesh bounds
+(render instance `+0x830`, each mesh instance's box) is not that place: it
+lay 20-55 units away, and an effect placed by it (run live2) stood on the
+ground beside the Larva.
 
 ## Gate
 
