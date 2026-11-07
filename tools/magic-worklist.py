@@ -15,7 +15,9 @@ identity. Each unit is ported once; its owner is the lowest-numbered DLL
 using it.
 
 Input: the census's overlay-dll-functions.tsv (one row per function per
-DLL: address, size) in --census (default $FFX_WORK/m5/magic/census); each
+DLL: address, size) in --census (default $FFX_WORK/m5/magic/census2, the
+recursive-descent census; the first census, `census`, cut functions at
+`int3`-aligned addresses and has rows inside functions); each
 DLL's code (objdump, for the `rel32` fields; cached in
 $FFX_WORK/cache/magic-worklist); what the ports cover now
 (`magic-sig --covered`/`--batch`, built from this checkout: cargo build
@@ -57,6 +59,8 @@ import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import reach  # noqa: E402
 REPO = HERE.parent
 WORK = pathlib.Path(os.environ.get("FFX_WORK", pathlib.Path.home() / "ffx-work"))
 CACHE = WORK / "cache" / "magic-worklist"
@@ -145,16 +149,52 @@ def scan_dll(args):
         imports = [] if parts[2] == "-" else parts[2].split(",")
         callees = [p for p in parts[3:] if p]
         info[a] = (int(parts[1], 16), imports, callees)
-    cov = set()
+    cov, bound = set(), {}
     addrs = [r[0] for r in fs]
     for k in range(0, len(addrs), 400):
-        r = subprocess.run([str(sig), "--covered", str(path), *[f"{x:#x}" for x in addrs[k:k + 400]]],
+        r = subprocess.run([str(sig), "--covered-len", str(path), *[f"{x:#x}" for x in addrs[k:k + 400]]],
                            capture_output=True, text=True, check=True)
         for line in r.stdout.splitlines():
-            x, _, name = line.partition(" ")
+            x, n, name = line.split(" ", 2)
             if name.strip() != "-":
                 cov.add(int(x, 16))
-    return d, info, cov
+                if n != "-":
+                    bound[int(x, 16)] = int(n)
+    return d, info, cov, fragments(path, fs, cov, bound, insns)
+
+
+def fragments(path, fs, cov, bound, insns):
+    """Rows that are pieces of a ported function rather than functions:
+    an uncovered row starting inside the range a port binds at a covered
+    row (its `Sig` length) that nothing enters on its own: no call
+    targets it, no jump from outside that range, no relocated word or
+    export points at it, and it is not the entry point. The first
+    census cut such pieces after `int3`-aligned addresses (an epilogue
+    `call __security_check_cookie; mov esp, ebp; pop ebp; ret` after
+    `xor ecx, esp`, 0x33 0xcc); a port covers them, so they are no
+    rows. A real separate entry inside a port's range stays a row."""
+    import bisect
+    spans = sorted((a, a + n) for a, n in bound.items())
+    lo = [s for s, _ in spans]
+    pieces, img, entries = {}, None, set()
+    for a, _size, *_ in fs:
+        if a in cov:
+            continue
+        i = bisect.bisect_right(lo, a) - 1
+        if i < 0 or not spans[i][0] < a < spans[i][1]:
+            continue
+        if img is None:
+            img = reach.Image(path)
+            entries = {img.entry, *img.exports()} | {img.dword(r) for r in img.relocs}
+        s, e = spans[i]
+
+        def enters(at, t):  # a call to a, or a jump to a from outside the port's range
+            return t == a and (img.dword(at) & 0xff == 0xe8 or not s <= at < e)
+
+        if a in entries or any(enters(at, t) for at, _k, t in insns):
+            continue
+        pieces[a] = s
+    return pieces
 
 
 def read_lists(path):
@@ -171,7 +211,7 @@ def read_lists(path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    ap.add_argument("--census", type=pathlib.Path, default=WORK / "m5/magic/census")
+    ap.add_argument("--census", type=pathlib.Path, default=WORK / "m5/magic/census2")
     ap.add_argument("--lists", type=pathlib.Path, default=WORK / "m5/magic/worklist.tsv")
     ap.add_argument("--out", type=pathlib.Path, default=None)
     ap.add_argument("--replace", action="store_true", help="overwrite --out if it exists")
@@ -197,10 +237,14 @@ def main():
     crt_ops = {r[3] for r in rows[CRT_FROM[0]] if r[0] >= CRT_FROM[1]}
     crt_ops |= {r[3] for d, a in CRT_ALSO for r in rows[d] if r[0] == a}
     jobs = [(d, fs, game / f"magicFiles/FFX/magic_{d:04}.dll", args.sig) for d, fs in sorted(rows.items())]
-    info, cov = {}, {}
+    info, cov, pieces = {}, {}, {}
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-        for d, i, c in ex.map(scan_dll, jobs):
-            info[d], cov[d] = i, c
+        for d, i, c, p in ex.map(scan_dll, jobs):
+            info[d], cov[d], pieces[d] = i, c, p
+    # pieces of a ported function are no rows (see fragments())
+    for d in rows:
+        if pieces[d]:
+            rows[d] = [r for r in rows[d] if r[0] not in pieces[d]]
     # identities, recursively over the callees inside each DLL
     size_of = {(d, r[0]): r[1] for d, fs in rows.items() for r in fs}
     memo = {}
@@ -311,6 +355,8 @@ def main():
           f"covered {sum(1 for x in units.values() if x['covered'] and not x['crt'])}, left {len(todo)} "
           f"({sum(units[u]['size'] for u in todo) // 1024} KB): shared first {len(shared)} "
           f"({sum(units[u]['size'] for u in shared) // 1024} KB), own {len(todo) - len(shared)}")
+    print(f"rows inside a port's range, not functions: {sum(len(p) for p in pieces.values())} "
+          f"in {sum(1 for p in pieces.values() if p)} DLLs")
     print(f"DLLs fully covered: {len(full)}; waiting on shared code: "
           f"{sum(1 for d in rows if waits_of[d])}")
     print(f"wrote {out_path} and {dll_path}")

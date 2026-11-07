@@ -396,12 +396,19 @@ through `check_entry`.
 
 **Claiming and naming.** The first work list, `~/ffx-work/m5/magic/worklist.tsv`,
 cut the DLLs into 15 lists (contiguous ranges of about equal bytes); that
-membership is fixed. The current one is `~/ffx-work/m5/magic/worklist7.tsv`
-(2026-11-07: 4,316 identities, 52 CRT, 3,131 covered, 1,133 left, of
-them 35 shared; 327 DLLs fully covered; `worklist5.tsv` below is the one
+membership is fixed. The current one is `~/ffx-work/m5/magic/worklist8.tsv`
+(2026-11-08: 4,316 identities, 52 CRT, 3,225 covered, 1,039 left, of
+them 31 shared; 353 DLLs fully covered; `worklist5.tsv` below is the one
 the census notes describe) (`tools/magic-worklist.py`, from
 `tools/overlay-census.py`'s
-`overlay-dll-functions.tsv` in `~/ffx-work/m5/magic/census2`; a rerun
+`overlay-dll-functions.tsv` in `~/ffx-work/m5/magic/census2`, the
+default; the first census's rows include pieces cut inside functions,
+such as `magic_0168`'s epilogue at `0x10002360` after `xor ecx, esp`
+(`33 cc`), and a recount on it reopened about 20 finished DLLs. The tool
+drops a row that starts inside the range a port binds at a covered row
+when nothing enters it on its own: no call, no jump from outside that
+range, no relocated word, export or entry point. A real entry inside
+the range stays a row; a rerun
 never rewrites the lists file and
 refuses to overwrite its output without `--replace`): one row per
 function not covered yet, by code identity (the identity `bind` uses;
