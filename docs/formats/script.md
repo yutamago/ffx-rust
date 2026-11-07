@@ -572,34 +572,34 @@ level interrupted is not a start.
   them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
   clamped to 1 for types 5 and 6 and to 8 for the others. A new event's
   init entries (entry 0 of each worker, level 7) start here too.
-- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl)
-  ends the running level: `index` is the worker's index in the current
-  ctrl work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on
-  entry. Its own `AtelDecodeSignal(index, 10)` may start the next request
+- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl) ends
+  the running level: `index` is the worker's index in the current ctrl
+  work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on entry.
+  Its own `AtelDecodeSignal(index, 10)` may start the next request
   (`AtelStartSignal`) or switch back to an interrupted level, and both
-  rewrite `+0x32`, so a hook reads it before calling through. The entry is
-  the one that level started; `+0x2c` is only the last entry started,
-  which need not be that level's. `Script_Run` calls it at the ends
-  (`3c` `0x00865095`, `3e` `0x008650e8`, `3d`/`3f` `0x00865120`, `54`
+  rewrite `+0x32`, so a hook reads it before calling through. The entry
+  is the one that level started; `+0x2c` is only the last entry started,
+  which need not be that level's. `Script_Run` calls it at the ends (`3c`
+  `0x00865095`, `3e` `0x008650e8`, `3d`/`3f` `0x00865120`, `54`
   `0x00865173`); `3c` and `3e` go to the ctrl work's `+0x28` callback
-  instead when it is set (the only code that stores a callback there,
-  `AtelSetCtrlEndCallback` (`0x008727d0`), is never called;
-  `AtelRequireCtrlWork` clears it). `AtelExecReturn2` (`0x00869350`, from
-  `MsAtelRequestCancel` and `MsAtelRequestExe`) and its unused twin
-  `AtelExecReturnForce2` (`0x008694f0`) call it too, only while the
-  worker's `+0x32` is set.
+  instead when it is set. Only `AtelSetCtrlEndCallback` (`0x008727d0`,
+  never called) stores one there; `AtelRequireCtrlWork` clears it.
+  `AtelExecReturn2` (`0x00869350`, from `MsAtelRequestCancel` and
+  `MsAtelRequestExe`) and its unused twin `AtelExecReturnForce2`
+  (`0x008694f0`) call it too, only while the worker's `+0x32` is set.
 
 `AtelExecReturn` runs again on every update while a level sits on its end
-opcode with nothing left in its queue (no request and no interrupted lower
-level to switch back to), so only the first call for that worker and
-level after its start is the entry's end: in the game, `memochek`'s worker 1 starts entry 2 (level 1)
-once per visit and the end is seen on every update after it, while
-`loopdemo`'s worker 21 ends entry 2 once. With nothing queued, after `3e`
-and `3f` the level runs entry 1 again without `AtelStartSignal` (the reset
-takes `+0x32` after the decode), so that run's end has no start. With a
-request queued or a lower level waiting, the reset hits that level
-instead: a just-started entry runs entry 1 (the start seen names the
-requested entry), and a resumed level restarts at entry 1.
+opcode with nothing left in its queue (no request and no interrupted
+lower level to switch back to), so only the first call for that worker
+and level after its start is the entry's end: in the game, `memochek`'s
+worker 1 starts entry 2 (level 1) once per visit and the end is seen on
+every update after it, while `loopdemo`'s worker 21 ends entry 2 once.
+With nothing queued, after `3e` and `3f` the level runs entry 1 again
+without `AtelStartSignal` (the reset takes `+0x32` after the decode), so
+that run's end has no start. With a request queued or a lower level
+waiting, the reset hits that level instead: a just-started entry runs
+entry 1 (the start seen names the requested entry), and a resumed level
+restarts at entry 1.
 
 `g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`)
 marks the event's own script; battle ctrl works go through the same
