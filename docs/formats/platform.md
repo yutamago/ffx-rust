@@ -548,7 +548,7 @@ ids are not: `g_FMVUnskippableIds` `0x00b49b08`); `g_FMVSkipped`
 
 | Thread | Proc | Work |
 |---|---|---|
-| reading | `PVideoPlaybackWin32_initialize` `0x00a27880` | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
+| reading | `0x00a27880` (started by `PVideoPlaybackWin32_initialize`) | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
 | decoding | `0x00a27b90` (started by `PVideoPlaybackWin32_open`) | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
 | FMOD stream | `PVideoPlaybackWin32_FmodReadCallback_00a27ee0` | `PVideoPlaybackWin32_AudioRead_00a27170`: 0x1000 frames per call, `vorbis_synthesis_pcmout`, s16 = clamp(floor(f x 32767.0 + 0.5)) interleaved; silent while prebuffering |
 | main or render | `UpdateTexture` / `updateVideoCallback` `0x006dae00` | `updateTexture`: one decoded frame into the next of three Y, U, V texture sets (`Map`/`Unmap` or `UpdateSubresource`) |
@@ -585,7 +585,7 @@ the game's own scripts can start a movie that early is not checked.
 
 Measured 2026-11-07 with ffx-remix's runtime in harness games
 (ffx-remix's `tools/probe-movie.sh`): movie 2 as
-`tools/replays/movie-fmv.txt` plays it (save `ffx_003`, bsil0000's
+`tools/replays/movie-fmv.txt` plays it (save `ffx_003`, `bsil0000`'s
 worker 24 entry 5, the preload held until its 30 frames are decoded), in
 lockstep: the test-file runs below with the real clock (its
 `--realtime`), the open hook's runs with the virtual clock (two) and the
@@ -605,26 +605,26 @@ real one (one).
   is b and then adds one; for this movie the manager's `UpdateTexture`
   (`0x006d7680`) then sets its `+0x6d8` from `getCurrentTime`'s b + 2
   frames (`updateVideoCallback` `0x006dae00` does the same for the
-  render-command movies), and the truncation to ms and `ftol` of ms x
-  29.97 x 0.001 bring that down to b + 1 (computed for b = 0 to 400).
-- A 3840 x 2160 VP8 file crashed the game when the script's MovieStart
+  render-command movies), and the truncation to ms and `ftol(f32(ms) x
+  29.97 x 0.001)` bring that down to b + 1 (computed for b = 0 to 400).
+- A 3840 x 2160 VP8 file crashed the game when `Native_b000_MovieStart`
   loaded it (the preload, before any frame was decoded): an access
   violation writing to address 0 in `MSVCR110.dll` (`+0x31323`, one
   minidump). The main thread's stack: `memset` (the fill `0xcd`) <-
-  `user_malloc` (`0x006fb910`, through the jump `0x00687020`, returning
-  to `0x006fb97d`) <- `PhyreMalloc` (`0x0042fb40`, returning to
-  `0x0042fb50`) <- the frame queue's set-up (`0x00a3ddf0`, returning to
-  `0x00a3de52`) <- `PVideoPlaybackWin32_open` (its second queue call,
-  returning to `0x00a28260`) <- `PhyFMVPlayerManager_fmvPlayer_play`
-  (`0x006d8fc0`, returning to `0x006d902f`) <- `PlayVideo`
-  (`0x006d7430`, returning to `0x006d754c`) <- `graphicPlayVideo(1)`
-  (`0x006427c0`, returning to `0x006427da`) <- `Native_b000_MovieStart`
-  (`0x0076e910`, returning to `0x0076e948`). The queue asked for 30
-  slots of (1.5 x width x height + 4) bytes, 373,248,120 in all, and
-  `user_malloc` for 385,689,751 (total plus one 1.5 x width x height
-  frame plus `0x1f`); the user heap could not give it, and `user_malloc`
-  filled the null block with `0xcd`. At 1080p the block would be about
-  96 MB (computed).
+  `UserHeap_Malloc` (`0x006fb910`, through the jump `user_malloc`
+  `0x00687020`, returning to `0x006fb97d`) <- `Phyre_PhyreMalloc`
+  (`0x0042fb40`, returning to `0x0042fb50`) <- the frame queue's set-up
+  (`0x00a3ddf0`, returning to `0x00a3de52`) <-
+  `PVideoPlaybackWin32_open` (its second queue call, returning to
+  `0x00a28260`) <- `PhyFMVPlayerManager_fmvPlayer_play` (`0x006d8fc0`,
+  returning to `0x006d902f`) <- `PlayVideo` (`0x006d7430`, returning to
+  `0x006d754c`) <- `graphicPlayVideo(1)` (`0x006427c0`, returning to
+  `0x006427da`) <- `Native_b000_MovieStart` (`0x0076e910`, returning to
+  `0x0076e948`). The queue asked for 30 slots of (1.5 x width x height +
+  4) bytes, 373,248,120 in all, and `UserHeap_Malloc` for 385,689,751
+  (total plus one 1.5 x width x height frame plus `0x1f`); the user heap
+  could not give it, and `UserHeap_Malloc` filled the null block with
+  `0xcd`. At 1080p the block would be about 96 MB (computed).
 
 ### Drawing
 

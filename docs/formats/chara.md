@@ -307,23 +307,23 @@ with (`u16` at the model data's `+0`, `Ch_ModelGetBaseMatrix`
 `0x00830500`); `Ch_ModelGetMatrix` (`0x00830550`) multiplies it by the
 root global matrix with `cdc_Mul4x4`.
 
-Measured (ffx-remix M10; the Besaid arrival, bsil0000 from save
+Measured (ffx-remix M10; the Besaid arrival, `bsil0000` from save
 `ffx_002`; two runs of 740 ticks, read at `MsScreenProcess`): the root
 global matrix `+0x1d0` holds the rotation times 0.001 (each row times
 1000 has length 1) with the field position (`+0xc`) as its translation
 (the 1000 of `Ch_DrawMainForSituation`, below). The elements' global
 matrices `+0x88` are relative to the character (its own space, not the
 field's); the root matrix places them. Their rotation rows mostly have
-length 1; some elements carry a scale (0.8 to 1.2 for `c101`'s 105 to
-107, 109, 113 to 115, 117, 121 and 122 (more than 1 % off) and `c001`'s
-89 and 102; 0.5 to 1.8 for `c101`'s 138, 142, 170, 183) and some have a
-zero rotation part (`c001`'s 118 to 135). ffx-remix posed the HD models
-with them (the model's skeleton node `SkeletonNode_i` takes element `i`
-as it is) and placed them with the root rotation times 1000; its offline
-pictures matched the game's shots of the same ticks by eye (five shots
-of one run). A slot can change characters within a scene: the arrival's
-slot 0 went from `0x0001` (`c001`) to `0x0065` (`c101`), at tick 62 in
-one run and 73 in the other.
+length 1. Some elements carry a scale (rows more than 1% off): 0.8 to
+1.2 for `c101`'s 105 to 107, 109, 113 to 117, 121 and 122 and for
+`c001`'s 89 and 102, and 0.5 to 1.8 for `c101`'s 138, 142, 170 and 183.
+Some have a zero rotation part (`c001`'s 118 to 135). ffx-remix posed
+the HD models with them (the model's skeleton node `SkeletonNode_i`
+takes element `i` as it is) and placed them with the root rotation times
+1000; its offline pictures matched the game's shots of the same ticks by
+eye (five shots of one run). A slot can change characters within a
+scene: the arrival's slot 0 went from `0x0001` (`c001`) to `0x0065`
+(`c101`), at tick 62 in one run and 73 in the other.
 
 ## Motion frames and sequences
 
