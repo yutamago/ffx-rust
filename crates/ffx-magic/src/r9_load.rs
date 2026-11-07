@@ -201,4 +201,14 @@ copies! {
     load_0473 => LOAD_0473, Zero, crate::r13_start::start_0473, crate::r13_start::START_0473;
     /// `magic_0325` 0x100012b0.
     load_0325 => LOAD_0325, Zero, crate::r13_start::start_0325, crate::r13_start::START_0325;
+    /// `magic_0253` 0x10001210.
+    load_0253 => LOAD_0253, Zero, crate::r13_start::start_0253, crate::r13_start::START_0253;
+    /// `magic_0288` 0x10001210.
+    load_0288 => LOAD_0288, Zero, crate::r13_start::start_0288, crate::r13_start::START_0288;
+    /// `magic_0244` 0x10001210.
+    load_0244 => LOAD_0244, Zero, crate::r13_start::start_0244, crate::r13_start::START_0244;
+    /// `magic_0393` 0x100012e0.
+    load_0393 => LOAD_0393, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0393;
+    /// `magic_0450` 0x10005390.
+    load_0450 => LOAD_0450, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0450;
 }

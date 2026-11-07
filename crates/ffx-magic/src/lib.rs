@@ -1129,6 +1129,11 @@ ports! {
     "r9 load step 0350" => r9_load::LOAD_0350, r9_load::load_0350;
     "r9 load step 0473" => r9_load::LOAD_0473, r9_load::load_0473;
     "r9 load step 0325" => r9_load::LOAD_0325, r9_load::load_0325;
+    "r9 load step 0253" => r9_load::LOAD_0253, r9_load::load_0253;
+    "r9 load step 0288" => r9_load::LOAD_0288, r9_load::load_0288;
+    "r9 load step 0244" => r9_load::LOAD_0244, r9_load::load_0244;
+    "r9 load step 0393" => r9_load::LOAD_0393, r9_load::load_0393;
+    "r9 load step 0450" => r9_load::LOAD_0450, r9_load::load_0450;
     // round 13 (magic-r13): end of r9 load steps
     "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
     "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
@@ -3071,6 +3076,10 @@ ports! {
     "r13 measures 0313" => r13_start::MEASURES_0313, r13_start::measures_0313;
     "r13 set-up 0664" => r13_start::SET_UP_0664, r13_start::set_up_0664;
     "r13 summon start 0090" => r13_start::SUMMON_START_0090, r13_start::summon_start_0090;
+    "r13 scripts step 0596" => r13_misc::SCRIPTS_STEP_0596, r13_misc::scripts_step;
+    "r13 scripts step 0304" => r13_misc::SCRIPTS_STEP_0304, r13_misc::scripts_step;
+    "r13 lists two done 0244" => r13_misc::LISTS_TWO_DONE_0244, r13_misc::lists_two_done_0244;
+    "r13 sprites frame 0371" => r13_start::SPRITES_FRAME_0371, r13_start::sprites_frame_0371;
     // round 13 (magic-r13): end of ports
 }
 
@@ -3087,6 +3096,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r13 start 0350", &r13_start::START_0350),
     ("r13 start 0473", &r13_start::START_0473),
     ("r13 start 0325", &r13_start::START_0325),
+    ("r13 start 0253", &r13_start::START_0253),
+    ("r13 start 0288", &r13_start::START_0288),
+    ("r13 start 0244", &r13_start::START_0244),
     // round 13 (magic-r13): end of INTERNAL
     // round 11 (magic-r11-own)
     ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),
