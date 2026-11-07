@@ -285,19 +285,21 @@ or `menu_es` (strings.tsv: only `menu`, `menu_us`, `menu_ch`, `menu_cn`,
 from `TOInit` (`0x008ad4d0`): languages 0, 9 and 10 read their event FTC
 and `newkit`, every other language `TODVDFileLoad(4, 0)`, which the game
 resolves to `ffx_ps2/ffx/master/uspc/menu/base.ftc` (304 bytes, an FTC of
-dictionary type 4 without a bitmap: 230 width bytes in quarter texels).
-`TOFTCTransfer` (`0x008ac130`) reads it: version `+0x04` at least 200,
-dictionary `+0x08` (4), the image fields `+0x20`..`+0x2a` (offset `0x40`,
-size 0, 128 x 234 pages), and the number of width bytes at `+0x10` (here
-230), copied from the offset at `+0x30` (here `0x40`). `+0x14`/`+0x16`
-hold 14 and 18, which match the 14-texel cell column (glyphs 2k and 2k+1
-share it, one per page) and 18-high row `TOGetFontInfo` hardcodes; no
-code reads them (`TOInit` frees the file right after the transfer). Glyph
-*n* is width byte *n* (code `0x30 + n`; glyph 208 + (*t* − `0x30`) for
-`2c` *t*), for example `i` (glyph `0x48`) 9 and `W` (`0x36`) 53 quarter
-texels. Replacing those four pages and that one file changes the face and
-the advance of every Tk text in English, French, Italian, German and
-Spanish (ffx-demaster `docs/font.md`, checked in the game for English).
+dictionary type 4 without a bitmap: 230 width bytes in quarter texels, of
+a 234-byte table). `TOFTCTransfer` (`0x008ac130`) reads it: version
+`+0x04` at least 200, dictionary `+0x08` (4), the image fields
+`+0x20`..`+0x2a` (offset `0x40`, size 0, image size 128 x 234), and the
+number of width bytes at `+0x10` (here 230), copied from the offset at
+`+0x30` (here `0x40`); `+0x34` (234) and the four bytes past the 230 (7
+each) are not read. `+0x14`/`+0x16` hold 14 and 18, which match the
+14-texel cell column (glyphs 2k and 2k+1 share it, one per page) and
+18-high row `TOGetFontInfo` hardcodes; no code reads them (`TOInit` frees
+the file right after the transfer). Glyph *n* is width byte *n* (code
+`0x30 + n`; glyph 208 + (*t* − `0x30`) for `2c` *t*), for example `i`
+(glyph `0x48`) 9 and `W` (`0x36`) 53 quarter texels. Replacing those four
+pages and that one file changes the face and the advance of every Tk text
+in English, French, Italian, German and Spanish (ffx-demaster
+`docs/font.md`, checked in the game for English).
 
 The help pictures (`getSa_MenuTextureName`, `0x00774ae0`) are
 `help%d.dds.phyre` under `help`, `help_us`, `help_fr`, `help_es`,
