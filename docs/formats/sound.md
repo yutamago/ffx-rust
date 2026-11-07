@@ -34,12 +34,12 @@ Little-endian; every bank is version 1, codec 7.
 | 0x3c | | sample headers, then the name table, then the data |
 
 A sample header is 64 bits: bit 0 chunks follow, bits 1–4 the rate index
-(1 8000, 2 11000, 3 11025, 4 16000, 5 22050, 6 24000, 7 32000, 8 44100,
-9 48000 Hz), bit 5 stereo, bits 6–33 the data offset / 16, bits 34–63 the
-frames. Each chunk is a 32-bit word (bit 0 another follows, bits 1–24 size,
-bits 25–31 type) and its bytes; type 3 is the loop (start and end frame,
-`u32` each), 1 the channel count, 2 the rate. A sample's data runs to the
-next sample's offset (the last to the end of the data).
+(0 4000, 1 8000, 2 11000, 3 11025, 4 16000, 5 22050, 6 24000, 7 32000, 8
+44100, 9 48000 Hz), bit 5 stereo, bits 6–33 the data offset / 16, bits
+34–63 the frames. Each chunk is a 32-bit word (bit 0 another follows, bits
+1–24 size, bits 25–31 type) and its bytes; type 3 is the loop (start and
+end frame, `u32` each), 1 the channel count, 2 the rate. A sample's data
+runs to the next sample's offset (the last to the end of the data).
 
 The name table is one `u32` offset per sample (from the table's start),
 then the zero-terminated names.
@@ -62,9 +62,9 @@ writes back byte for byte under these rules: ffx-remix's
 - The header's bytes `0x1c..0x24` are zero in every bank; `0x24..0x2c` are
   the 8-byte hash the project's bank entry repeats (all 1,260 banks; "FMOD
   Designer event projects", `LGCY`); `0x2c..0x3c` differ between most
-  banks (668 values in 1,260 banks) and are not in the project. A writer
-  copies all 32 bytes at `0x1c` from the original (as for `music_ps2`,
-  below), so the bank still matches its project.
+  banks (668 distinct values in 1,260 banks) and are not in the project. A
+  writer copies all 32 bytes at `0x1c` from the original (as for
+  `music_ps2`, below), so the bank still matches its project.
 - Chunks: only types 2 and 3 occur. A chunk's "another follows" bit is set
   on every chunk but the last. 90 JP voice samples are 35,000 Hz, which no
   rate index names: they have rate index 0 (4,000 Hz in FMOD's table, used
@@ -393,13 +393,13 @@ An **event** (every one is a simple event):
 
 A wave's `length in ms` is its sample's real length in milliseconds,
 rounded down, in 32,362 of the 33,362 waves (every voice wave), and 1 or 2
-ms less in the rest (925 and 75, music and SFX). The real length is the
-loop chunk's end + 1 when the chunk is `(0, end)` with the end in the last
-block (`frames - 64 <= end < frames`), else `frames`. A writer sets it to
-the real length rounded down (for a new sample, its length before padding
-to whole blocks; ffx-remix `audio/mod.rs`). FMOD hands it to the game as
-the event's length: a value shorter than the sound cuts a voice line
-("Replaced samples").
+ms less in the rest (925 and 75 waves, all music or SFX). The real length
+is the loop chunk's end + 1 when the chunk is `(0, end)` with the end in
+the last block (`frames - 64 <= end < frames`), else `frames`. A writer
+sets it to the real length rounded down (for a new sample with a `(0, n -
+1)` chunk, the frames it was encoded from; ffx-remix `audio/mod.rs`). FMOD
+hands it to the game as the event's length: a value shorter than the sound
+cuts a voice line ("Replaced samples").
 
 So a looping event loops its wave between the FSB sample's loop points
 (the whole wave when the sample has none), and nothing else in the
@@ -459,4 +459,4 @@ resolve without gaps:
 
 Ids a script computes at run time, and other natives
 (`Native_0168_MusicPlayFast`, ...), are not counted. ffx-remix
-`audio/bymap.rs` lists them per map.
+`audio/bymap.rs` lists the counted ids per map.
