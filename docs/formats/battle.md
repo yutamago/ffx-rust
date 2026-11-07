@@ -562,9 +562,10 @@ check, the reflect effect `MsStatusEffectReflect` and sound 0x3b; it calls
 no damage) and waits until none of those actors shows its reflect effect
 (`+0xea4` not 0; then cue `+5` 1 → 2), then ends (`+0xe0d`); a mask of 0
 (Fire's) ends it at once while `+0x432` is 0 or `+0x429` is not. For Fire
-the hits most likely land through the overlay's own `MsSetDamage` calls,
-and the `0x400` call at the command's end finds nothing left
-(effects-draw.md, "A spell live: Fire"); other effects may land them
+the hit most likely lands through the overlay's own `MsSetDamage` calls,
+and the `0x400` call at the command's end finds nothing left (the
+target's HP changed once, at u0 + 89; `docs/formats/effects-draw.md`, "A
+spell live: Fire"); other effects may land them
 otherwise (`MsSetDamage` has more callers).
 `0x00788f30` rewrites its own two argument slots before its tail call to
 `MsEffectCameraCall(-1, 1)`; no caller reads them back.

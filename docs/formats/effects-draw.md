@@ -327,20 +327,20 @@ The hit most likely comes from the overlay itself (inferred: the tracer
 did not log the caller): `magic_0076.dll` has one call to `MsSetDamage`
 through `g_MagicImports` slot 239 (`mov eax, [imports+0x3bc]` at
 `0x100064b9`, arguments `(…, -5, 0)`), in a timer routine that steps 1/30
-a call with thresholds 0.35 and 0.5, which fits two calls 4 updates apart
-(u0 + 89, u0 + 93). `FFX.exe` has other `(…, -5, 0)` callers
-(`MsEffectSignalDamage_007b7680` from the motions' effect signals,
-`Native_700e_BtlSetDamage`); the `0x400` call at u0 + 138 has no such site
-in the overlay; the only `MsSetDamage` call in `FFX.exe` passing a
-constant `0x400` is `MsBattleProcess_ChrDamage`'s (the call at
-`0x007912cb`, `push 0x400` at `0x007912c3`) (battle.md; the tracer did not
-log the caller). That `MsNumberRegist` runs inside that `MsSetDamage` is
-inferred from the log (the number's line before the call's, which is
-written as it returns, in the same update). Hiding all of the spell's
-draws (below) left every row above on the same update, the target's HP
-changed on the same harness frame, and frame-by-frame shots showed the
-number first on the same shot (exit-vanilla against exit-fire and
-exit-fire2).
+a call and calls it at its stages' thresholds 0.35 and 0.5, which fits two
+calls 4 updates apart (u0 + 89, u0 + 93). `FFX.exe` has one other caller
+with the constants `(…, -5, 0)`, `MsEffectSignalDamage_007b7680` (reached
+through `0x007b74d0`, from the motions' effect signals and native
+`0x709e`); the `0x400` call at u0 + 138 has no such site in the overlay;
+the only `MsSetDamage` call in `FFX.exe` passing a constant `0x400` is
+`MsBattleProcess_ChrDamage`'s (the call at `0x007912cb`, `push 0x400` at
+`0x007912c3`) (`docs/formats/battle.md`; the tracer did not log the
+caller). That `MsNumberRegist` runs inside that `MsSetDamage` is inferred
+from the log (the number's line before the call's, which is written as it
+returns, in the same update). Hiding all of the spell's draws (below) left
+every row above on the same update, the target's HP changed on the same
+harness frame, and frame-by-frame shots showed the number first on the
+same shot (exit-vanilla against exit-fire and exit-fire2).
 
 **Which draws are the spell's.** In the 142 drawn frames from u0 - 1 to
 u0 + 140 (the tracer's window: it logs three frames with the ID -1; the same
@@ -373,10 +373,10 @@ spell's entries while the spell plays: in exit-fire2 ffx-remix's hide
 zeroed 4,891 entries (a running count, Fire's alone in that run) against
 the 4,680 the tracer resolved as the spell's; the other 211 are most
 likely remembered entries whose geometry had left the table (exit-fire2
-has 224 "?" entries from u0 + 79 on); the count also covers one frame
-after the tracer's window. The remembered addresses must be dropped a few
-frames after the spell: the game reuses them for other effects' geometry
-(an earlier version that kept them hid later effects' draws).
+has 224 "?" entries from u0 + 79 to u0 + 140); the count also covers one
+frame after the tracer's window. The remembered addresses must be dropped
+a few frames after the spell: the game reuses them for other effects'
+geometry (an earlier version that kept them hid later effects' draws).
 
 **Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
 `DrawMostVFX` runs (and putting them back after) hides those draws: the
@@ -385,16 +385,16 @@ loop skips zero entries and the draw events still run at their places
 
 **Where the actors are.** The caster is the actor with a command cue entry
 (`+0xde5` not `0xff`) and an effect state (`+0xdfb` not 0; sampled 16, 2,
-4, 5 over Fire; 16 is no state of battle.md's `MsEffectStart` table, 3 and
-11 were not sampled); its targets are the bits of its `+0xdc4`
-(battle.md). A battle character's place in the HD scene (the space the
-draws' world matrices use) was taken as `(-x, -y, z)` of `Ch_GetPos` (chr
-`+0xc`), as on field maps: an effect placed there sat on the Larva in the
-live frames (checked by eye, run live3). The centre of the character's
-mesh bounds (the render instance at chr `+0x830`, each mesh instance's
-box) is not that place: in live2 it lay 31.8 units from it for the Larva,
-51.4 for the Gold Element and 55.4 for Lulu, and an effect placed by it
-stood on the ground beside the Larva.
+4, 5 over Fire; 16 appears nowhere in battle.md's `MsEffectStart` section,
+3 and 11 were not sampled); its targets are the bits of its `+0xdc4`
+(`docs/formats/battle.md`). A battle character's place in the HD scene
+(the space the draws' world matrices use) was taken as `(-x, -y, z)` of
+`Ch_GetPos` (chr `+0xc`), as on field maps: an effect placed there sat on
+the Larva in the live frames (checked by eye, run live3). The centre of
+the character's mesh bounds (the render instance at chr `+0x830`, each
+mesh instance's box) is not that place: in live2 it lay 31.8 units from it
+for the Larva, 51.4 for the Gold Element and 55.4 for Lulu, and an effect
+placed by it stood on the ground beside the Larva.
 
 ## Gate
 
