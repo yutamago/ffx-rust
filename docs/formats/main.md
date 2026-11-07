@@ -297,8 +297,9 @@ behind them stays with those modules, which the bridges call.
   table is cleared at each map change (`Sg_EventjumpInit` calls
   `Sg_IdEventInitAll`, `0x0083e8d0`) and scripts set entries with
   `Native_4017_IdSetMapTable`. Over the game's 383 walk-mesh pages
-  (field.md, "The walk mesh on disk (ffx-remix M8)"; counted per map: a `MAP1` file several
-  maps share counts once for each of them) 274,672 triangles are kind 0,
+  (field.md, "The walk mesh on disk (ffx-remix M8)"; counted per map:
+  a `MAP1` file several maps share counts once for each of them)
+  274,672 triangles are kind 0,
   6,398 kind 14, 663 kind 1 and 20,245 `0x30..0x3d` (none `0x3c`); the
   section-9 meshes add 375 of kind 0. No triangle stores kind 2 or 13.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,

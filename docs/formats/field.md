@@ -656,7 +656,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   section 0 the 2D map (`graphicFieldMapLoad(name, 0)`,
   `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
   `yiArc_readmem`), `page + 2` the walk-mesh page (`page` the fifth
-  argument; to `Sg_IdFixupAndSet`, "The walk mesh on disk (ffx-remix M8)"), 10 effect data
+  argument; to `Sg_IdFixupAndSet`, "The walk mesh on disk (ffx-remix
+  M8)"), 10 effect data
   (`pppSetFpPdt`; the field-program table, `docs/formats/scene-maps.md`,
   "Map effects: the field-program table"), 12 and 11 more backgrounds;
   the CD ids go to `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
