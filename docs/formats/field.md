@@ -1856,8 +1856,8 @@ to 8, pages 0 to 6 of `yiSetIDPage` and `yiSetPreBgPage`. Over the
 game's maps there are 348 pages: page 0 on 301 maps, page 1 on 27, page 2
 on 11, page 3 on 5, pages 4 and 6 on 2 each. 48 maps also have a mesh of
 the same layout in section 9 (`lmyt0100` 163 vertices and 259
-triangles, the others 4 and 2); page 7 would install it, which was not
-seen.
+triangles, the others 4 and 2). Page 7 would install it; whether a script
+asks for page 7 was not checked.
 
 Every page has the same layout:
 
@@ -1866,23 +1866,27 @@ Every page has the same layout:
 | `+0x00` | `u32` | the base the offsets are taken from: 0 in the file; `Sg_IdFixupAndSet` stores `address - base` here and adds it to the offsets, so a second call changes nothing |
 | `+0x04` | `i16` | version, `0x1203` on every page (above `0x1202` turns the id shades on) |
 | `+0x06` | `i16` | group count, 1 on every page (`Sg_IdSetPtr` reads only the first group) |
+| `+0x08` | `i16` | 0 on every page |
 | `+0x0a` | `i16` | vertex count |
 | `+0x0c` | `f32` | zoom: `Sg_IdSetPtr` keeps `zoom / 10` (`0x01301a90`); id units are field units times that |
+| `+0x10` | `u32` × 2 | 0 on every page |
 | `+0x18` | `u32` | the vertices, at `0x20`: 8 bytes each, `i16` x, y, z and a pad |
 | `+0x1c` | `u32` | the group table, last in the section: 16 bytes per group, 8 zero bytes, the `i16` triangle count at `+8` (`0x01301a88`), an `i16` 0, the triangles' offset at `+0xc` (`0x01301a84`) |
 
-The vertices are padded to 16 bytes before the triangles, and the
-section is padded to 16 at its end. The padding bytes are not always 0,
-so a writer that copies them gives the game's pages back byte for byte.
-A triangle is 16 bytes: three `u16` vertex numbers, three `i16`
+The vertices are padded to 16 bytes before the triangles. The pad bytes
+are not zero in the shipped pages, so a writer that copies them gives
+the game's pages back byte for byte. The group table follows the
+triangles and ends the section. A triangle is 16 bytes: three `i16`
+vertex numbers (read as such; all are below `0x8000`), three `i16`
 neighbours across the edges 0-1, 1-2 and 2-0 (-1 for none; `Sg_IdWalk`,
 chara.md), and the `u32` map id word (chara.md, "The map id word"). Most
 neighbours are the triangles that share the edge's two vertex numbers.
 A few pages link across edges whose triangles do not share vertex
-numbers, or have edges with three triangles, where the stored link picks
-one. A writer should keep the stored links. About 0.25% of the
+numbers, or have edges shared by more than two triangles, where the
+stored link picks one. A writer should keep the stored links. About 0.25% of the
 triangles are wound the other way round: `Sg_IdFindTriangle` never finds
-a point in them (main.md, round 13).
+a point in them (main.md, "Round 13: the id triangle under a point
+(`Sg_IdFindTriangle`)").
 
 ## Sqs standby requests and info paths (round 36)
 

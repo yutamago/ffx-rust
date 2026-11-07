@@ -28310,7 +28310,7 @@
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496d4 label    g_ExecFrames              # i8: world ticks per Sg_MainLoop (1 in the image; Sg_SetExecFrames clamps 0..99, the debug pad steps it in Sg_ControlMain); Sg_GetCurExecFrames reads it; docs/formats/frame-timing.md; name ours
 0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
-0x00c496d8 label    g_PlayerControlEnable     # u8: 1 in the image; Sg_GetPlayerControlEnable (0x0082d870) reads it, Sg_ControlPlayer gives the player speed 0 when it is 0; its only writer (0x0082db10) is dead code, so it stays 1; scripts take control with Sg_SetPlayer(0) (AtelUcOff); name ours
+0x00c496d8 label    g_PlayerControlEnable     # u32: 1 in the image; Sg_GetPlayerControlEnable (0x0082d870) reads it, Sg_ControlPlayer gives the player speed 0 when it is 0; its only writer (0x0082db10) is dead code, so it stays 1; scripts take control with Sg_SetPlayer(0) (AtelUcOff); name ours
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set; 1 in the shipped exe's .data (ffx-demaster docs/render.md)
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
