@@ -1701,6 +1701,12 @@ fn platform_job_waits_match_the_original() {
                 pf::wait_cloth(m);
                 Out::None
             });
+            // the ability map's copy (tail9)
+            let what = format!("AbmapJobWait_00a8ecf0 #{case}");
+            t.check(&what, 0x00a8_ecf0, Conv::Cdecl, &[], |m| {
+                pf::wait_cloth(m);
+                Out::None
+            });
         }
     });
 }
@@ -2100,6 +2106,17 @@ fn platform_job_queue_matches_the_original() {
                 0,
                 |m, ebp| Out::U32(pf::push_job(m, this, job, queue, Some(ebp + 0xc))),
             );
+            // the ability map's kicks (tail9): queue 0 of the scheduler at
+            // 0x00cdede4; the queue slot is the kick's own pushed word
+            // (the original's `ebp` with no arguments)
+            t.w32(this + 0x1f0, rng.below(8));
+            t.w32(this + 0x224, rng.below(8));
+            t.g32(pf::CLOTH_SCHEDULER, this);
+            let (kick, job) = ffx_system::l9_jobs::bridge::KICKS[case % 4];
+            let what = format!("{kick:#x} #{case}");
+            t.check_framed(&what, kick, Conv::Cdecl, &[], 0, |m, ebp| {
+                Out::U32(ffx_system::l9_jobs::bridge::kick(m, job, ebp))
+            });
             // the shutdown pushes onto queue 0: its free ring indices in range
             t.w32(this + 0x1f0, rng.below(8));
             t.w32(this + 0x224, rng.below(8));
@@ -3876,7 +3893,8 @@ fn glue_stubs_and_thunks_match_the_original() {
         let mut rng = Rng(0x5a30_0005);
         for case in 0..24 {
             t.reset();
-            for sym in [0x0062_f640u32, 0x0062_f980, 0x0062_fb00] {
+            // 0x00907e50: the idle window handler (tail9), the same code
+            for sym in [0x0062_f640u32, 0x0062_f980, 0x0062_fb00, 0x0090_7e50] {
                 let what = format!("{sym:#x} #{case}");
                 t.check(&what, sym, Conv::Cdecl, &[], |_| {
                     Out::U32(ffx_pcore::m5p_stubs::bridge::zero())

@@ -63,6 +63,8 @@ mod m5_system_a;
 mod m5_system_a_df;
 mod m5_system_a_stubs;
 mod m5_system_b;
+mod m5_tail9;
+mod m5_tail9_stubs;
 mod m5_vfx;
 mod m5_vfx_stubs;
 mod m5p_anim;
@@ -212,6 +214,8 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_system_a_df::hooks());
     all.extend(m5_system_a_stubs::hooks());
     all.extend(m5_system_b::hooks());
+    all.extend(m5_tail9::hooks());
+    all.extend(m5_tail9_stubs::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5_vfx_stubs::hooks());
     all.extend(m5p_anim::hooks());
