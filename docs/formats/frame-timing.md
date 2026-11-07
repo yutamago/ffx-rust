@@ -261,8 +261,10 @@ scripts and code (all of them written for 30), so it is not a mod-sized change.
 ## A frame-rate mod built on this
 
 Atel#'s `src/Ffx.Frames` (Fahrenheit mod `yuta.frames`, `docs/research/frame-timing.md` there,
-"What the Frames mod does") does (1) above as a mod. It has not run in the game yet. The engine
-facts it relies on, beyond the sections above:
+"What the Frames mod does") does (1) above as a mod. Its second in-game run (2026-11-07, about
+200 fps) kept the game's speed, but the effects ran too fast and slow character motions looked
+choppy, which the last four points below explain. The engine facts it relies on, beyond the
+sections above:
 
 - **The limiter's operands.** `Game_Main` computes the interval as `fild dword [g_FrameVsyncs]`
   (`0x0062f2fc`, `db 05`) times `fmul qword [0x00b412d8]` (`0x0062f318`, `dc 0d`, 1/59.94). A frame
@@ -287,6 +289,40 @@ facts it relies on, beyond the sections above:
   history and edges. A frame that does not tick has to skip all three, or it uses up a press.
 - **Not idempotent per update.** `Ch_CalcMiddle` (motion events through `Ch_MotEvent`), `yiAnimMain`,
   `Sg_DrawFilter` (the fade slots' i16 counters at `0x01300708 + 0x10 i`), `graphicVideoUpdate`,
-  the v-blank counters, and the Eternal Calm copyright count (`0x012fb7c0`).
+  the v-blank counters, the Eternal Calm copyright count (`0x012fb7c0`), the draw's effect loop
+  and the cloth (below).
+- **The effects step in the draw.** The draw's effect loop (`0x0082141d`..`0x008214ca`, `n = exec ?
+  exec : 1` passes) calls `op_loop_ffx_after` (`g_OpLoopCount`, the effects' pad and random
+  latches), `op_gs1_transfer`, `yiCallFieldParticle` (`pppFpLoop`: each map effect's countdown, then
+  its `ppp` program through `pppRunPartFp`, which moves the particles and writes their vertices in
+  the same pass), `MsEffectProcess(1)`, `pppPartLoop` (the parts' countdowns) and `op_ot_draw`. None
+  of them only draws, so a second draw of the same tick steps the effects again.
+- **Effect draws last one frame.** An effect is drawn in a frame only if something calls
+  `VfxGeometry_Register` (`0x006a52f0`, `VFXDynamicGeometry` vtable `+8`; under every
+  `graphicVFX*Update`) for it in that frame: `graphicClearSpecialRenderList` (the scene's VFX lists)
+  runs at the start of every `Sg_MainLoop`, and the dynamic-geometry memory (`g_DynGeoFillBuffer`,
+  two buffers) flips once per drawn frame (`graphicDynGeoMemManagerSwapBuffer(1)` from
+  `FFXApplication::afterGraphicSync`), resetting the new buffer, after which
+  `ClassVFXRenderDataTable_ClearVFXDrawData` clears each segment's array pointer for it
+  (`+0x34 + 0x1c n`). A segment keeps per buffer `n` its counts (`+0x2c`, `+0x30`) and five arrays
+  (`+0x34` positions 12 bytes a vertex, `+0x3c` colours 16, `+0x38` normals 12, `+0x40` uvs 8,
+  `+0x44` `u16` indices, each `+ 0x1c n`), as `graphicDynGeoMemManagerGetBufferForSegment` sets
+  them. The Esc menu's still picture works by stopping both: `animate` skips `updateFFX`, and
+  `afterGraphicSync` stops swapping once `graphicIsEscMenuActive()` (`+0x3ad`).
+- **How a character reaches the renderer.** `FFXVu0MulMatrix(out, a, b)` (`0x006ed5c0`, a jump to
+  `cdc_Mul4x4` `0x007059b0`, affine) computes `b × a` in row-vector form, so `Ch_DrawMain`'s world
+  matrix is `scale(1000) × +0x1d0`, and a part of an unskinned model `base element +0x88 × scale ×
+  +0x1d0`, handed to `graphicCharacterInstanceSetWorldMatrix(list, m)` / `…ByMdlID(list, m, model)`
+  for the lists `+0x830` and `+0x838`. The bones are set in `Ch_CalcMiddle`, not the draw:
+  `Ch_CalcElement` calls `graphicCharacterInstanceSetSkeletonMatrices(id, list, bones)` (`0x0063be60`)
+  for both lists; per instance (`[list] & 0x7fffffff` of them at `[list + 4]`) it copies
+  `[[instance] + 0x18] & 0x7fffffff` 64-byte matrices to `[instance + 0xc]`, the k-th from
+  `bones + 64 × remap[k]` (remap `[[list + 0x10] + 0x14][i]`; character `0x206a` skips bones from
+  `0x42`).
+- **The cloth steps per update, uploads per frame.** `Ch_DrawMain` runs `Ch_DrawClothClear` and
+  queues `Ch_Cloth_PerCharacter` (`Apply_Envelope`, `Sg_ClothStep`, `Sg_ClothPlaceAnchors`) for every
+  cloth character in each `Sg_MainLoop`. `FFXApplication_render` (its call at `0x0042f95e`) uploads the cloth's
+  CPU vertex records every drawn frame (`graphicCharacterInstanceSetClothVertexBuffers`), so
+  skipping the clear and the jobs keeps the last shape.
 - **Vsync.** `Renderer_PresentFlip` presents with sync interval 1 while the renderer's byte
   `+0x131c` is set and 0 otherwise. The 30 fps cap is the limiter's alone.
