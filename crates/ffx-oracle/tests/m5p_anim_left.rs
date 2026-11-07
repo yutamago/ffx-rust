@@ -4122,3 +4122,362 @@ fn member_binds_match_the_original() {
         t.reset();
     }
 }
+
+// ---- tail9: the component's binder lists (ffx_panim::l9_anim) ----
+
+use ffx_panim::l9_anim::bridge as l9a;
+
+impl Rng {
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+    fn chance(&mut self, n: u32) -> bool {
+        self.below(n) == 0
+    }
+}
+
+/// A `PhyreMalloc` stub (cdecl `(size, align)`, logged) handing out
+/// 16-byte aligned junk blocks, and 0 from the `fail_at`-th call on (0:
+/// never).
+fn bump_failing(t: &mut Twins, sym: u32, bytes: usize, fail_at: u32) {
+    let area = t.junk(bytes + 16, 0x6c);
+    let cur = t.alloc(&((area + 15) & !15).to_le_bytes());
+    let left = t.alloc(&(if fail_at == 0 { u32::MAX } else { fail_at }).to_le_bytes());
+    let mut tail = vec![0xff, 0x0d];
+    tail.extend(left.to_le_bytes()); // dec dword [left]
+    tail.extend([0x75, 0x03, 0x31, 0xc0, 0xc3]); // jnz +3; xor eax, eax; ret
+    tail.push(0xa1);
+    tail.extend(cur.to_le_bytes()); // mov eax, [cur]
+    tail.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    tail.extend([0x83, 0xc2, 0x0f, 0x83, 0xe2, 0xf0]); // add edx, 15; and edx, -16
+    tail.extend([0x01, 0xc2]); // add edx, eax
+    tail.extend([0x89, 0x15]);
+    tail.extend(cur.to_le_bytes()); // mov [cur], edx
+    tail.push(0xc3);
+    let code = t.stub_code_tail(sym, false, 2, &tail);
+    t.hook(sym, code);
+}
+
+/// The frame slots the lists and temporaries use (below `ebp`).
+const L9_SLOTS: [u32; 40] = [
+    0x84, 0x80, 0x4c, 0x74, 0x70, 0x28, 0x7c, 0x78, 0x44, 0x60, 0x5c, 0x18, 0x8c, 0x88, 0x68, 0x38,
+    0x34, 0x30, 0x58, 0x54, 0x40, 0x90, 0xac, 0xa8, 0xa4, 0xa0, 0xc0, 0xbc, 0xb8, 0xcc, 0xc8, 0xc4,
+    0xd8, 0xd4, 0xd0, 0xb4, 0xb0, 0x9c, 0x98, 0x94,
+];
+
+#[test]
+#[allow(clippy::too_many_lines)] // the set, the pairs and their classes
+fn l9_bind_targets_matches_the_original() {
+    // records of every kind (1 and 5 twice: once only), kind 1/2 classes
+    // and others, kind 4 classes repeated (W already has them); pairs
+    // deriving from the descriptors directly or through a parent, objects
+    // 0, 4 and real (+0xc set or not), classes 0; the storage running out
+    // at each allocation in turn; setNetwork's result
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0053_6230);
+        let (k1, k2, k5) = (
+            t.rebase(l9a::CLASS_K1),
+            t.rebase(l9a::CLASS_K2),
+            t.rebase(l9a::CLASS_K5),
+        );
+        for case in 0..800_u32 {
+            // classes: the three descriptors, two of their children, two
+            // unrelated ones (a chain ending in 0)
+            let other = t.zeros(0x44);
+            let other2 = t.zeros(0x44);
+            t.w32(other2 + 0x40, other);
+            let mut classes = vec![k1, k2, k5, other, other2];
+            for parent in [k1, k2, k5] {
+                let c = t.zeros(0x44);
+                t.w32(c + 0x40, parent);
+                classes.push(c);
+            }
+            let n_pairs = rng.below(10);
+            let mut pairs = Vec::new();
+            for _ in 0..n_pairs {
+                let object = match rng.below(5) {
+                    0 => 0,
+                    1 => 4,
+                    _ => {
+                        let o = t.junk(0x20, 0x31);
+                        let v = if rng.chance(3) { 0 } else { 0x77 };
+                        t.w32(o + 0xc, v);
+                        o
+                    }
+                };
+                let mut class = if rng.chance(8) {
+                    0
+                } else {
+                    classes[rng.below(classes.len() as u32) as usize]
+                };
+                // the object 4 (the kind 1 skip) only with kind 1's class:
+                // the other kinds read an object's +0xc
+                if object == 4 {
+                    class = k1;
+                }
+                pairs.push(object);
+                pairs.push(class);
+            }
+            let pair_words = t.alloc(
+                &pairs
+                    .iter()
+                    .chain([0_u32, 0].iter())
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let list = t.alloc(&[0; 8]);
+            t.w32(list, n_pairs | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            t.w32(list + 4, pair_words);
+            let n_recs = rng.below(12);
+            let recs = t.zeros(0x1c * 12 + 4);
+            for i in 0..n_recs {
+                let kind = rng.below(7);
+                let class = match kind {
+                    1 => {
+                        if rng.chance(4) {
+                            other
+                        } else {
+                            k1
+                        }
+                    }
+                    2 => {
+                        if rng.chance(2) {
+                            k2
+                        } else {
+                            classes[rng.below(classes.len() as u32) as usize]
+                        }
+                    }
+                    _ => classes[rng.below(classes.len() as u32) as usize],
+                };
+                t.w32(recs + 0x1c * i, class);
+                t.w32(recs + 0x1c * i + 0x10, kind);
+            }
+            let set = t.zeros(0x10);
+            t.w32(
+                set + 8,
+                n_recs | if rng.chance(5) { 0x8000_0000 } else { 0 },
+            );
+            t.w32(set + 0xc, recs);
+            // now and then 0x00ca91f8 derives from 0x00ca7228 (its parent
+            // word set for this case): a kind 1 pair then matches both, and
+            // the second match must not run for an object kind 1 took
+            let k1_parent: u32 = Mem::read(&t.a, k1 + 0x40);
+            // (not with the object 4: kind 2 reads an object's +0xc)
+            if case % 4 == 1 && !pairs.contains(&4) {
+                t.w32(k1 + 0x40, k2);
+            }
+            let fail_at = if rng.chance(2) { 1 + rng.below(12) } else { 0 };
+            bump_failing(&mut t, l9a::MALLOC, 0x4000, fail_at);
+            t.stub(l9a::FREE, false, 1, 0, 0);
+            let net_ret = if rng.chance(4) { 0x13 } else { 0 };
+            t.stub(l9a::SET_NETWORK, true, 3, 3, net_ret);
+            let (this, network) = (t.junk(0x40, 0x22), rng.next());
+            // the original's ebp: four argument words, the return address
+            // and ebp pushed below the call top
+            let top = t.a.stack_range().end - 0x100;
+            let ebp = top - 0x18;
+            let total_cell = std::cell::Cell::new(None);
+            let what = format!("{label}: bindTargets #{case}");
+            t.check_frame(
+                &what,
+                0x0053_6230,
+                Conv::Cdecl,
+                &[this, network, set, list],
+                0,
+                |h| {
+                    Out::U32(match l9a::collect(h, ebp, set, list) {
+                        Err(code) => code,
+                        Ok(total) => {
+                            // the alloca below the original's esp (ebp - 0xe8)
+                            let buf = (ebp - 0xe8).wrapping_sub(total.wrapping_mul(4)) & !0xf;
+                            total_cell.set(Some((buf, total)));
+                            l9a::finish(h, ebp, buf, this, network, total)
+                        }
+                    })
+                },
+            );
+            for o in L9_SLOTS {
+                let (x, y): (u32, u32) = (Mem::read(&t.a, ebp - o), Mem::read(&t.b, ebp - o));
+                assert_eq!(x, y, "{what}: frame word ebp - {o:#x}");
+            }
+            if let Some((buf, total)) = total_cell.get() {
+                for i in 0..total {
+                    let (x, y): (u32, u32) =
+                        (Mem::read(&t.a, buf + 4 * i), Mem::read(&t.b, buf + 4 * i));
+                    assert_eq!(x, y, "{what}: binder {i}");
+                }
+            }
+            t.w32(k1 + 0x40, k1_parent);
+            t.reset();
+        }
+    }
+}
+
+// ---- tail9: the animation controller's batch function (ffx_panim::l9_batch) ----
+
+use ffx_panim::l9_batch::bridge as l9b;
+
+/// A float for keyed values: small, round, negative, NaN (quiet) or a
+/// unit-ish quaternion lane.
+fn l9_value(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        // axis quaternions: dot products of exactly 0 and 0.7
+        6 => [0.0_f32, 1.0, 0.7, -1.0][rng.below(4) as usize].to_bits(),
+        7 => 0,
+        0 => (rng.below(200) as f32 / 50.0 - 2.0).to_bits(),
+        1 => (rng.below(1000) as f32 / 1000.0).to_bits(),
+        2 => (-(rng.below(1000) as f32) / 1000.0).to_bits(),
+        3 if rng.chance(4) => 0x7fc0_0000 | rng.below(8),
+        _ => (0.5_f32 - rng.below(100) as f32 / 400.0).to_bits(),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the clip, its tracks and targets
+fn l9_controller_batch_matches_the_original() {
+    // groups of 0..3 channels with 1..4 lanes (each window size), keys
+    // shared between channels (the cached search) or not, 1..40 keys;
+    // times before, at, between and after the keys, NaN, the cached
+    // time's start (-1); cursors in and out of range; every kind (linear,
+    // quaternion near and far, opposite signs, step, other); targets in
+    // and out of range; constant channels; each case run twice (the
+    // cursors as the first run left them)
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0052_58d0);
+        for case in 0..1500_u32 {
+            let n_targets = 1 + rng.below(6);
+            let first = rng.below(4);
+            let records = t.junk(0x10 * n_targets as usize, 0x55);
+            let targets = t.alloc(&[0; 12]);
+            t.w32(targets, records);
+            t.w32(targets + 4, n_targets);
+            t.w32(targets + 8, first);
+            let dst = t.junk(0x20 * n_targets as usize, 0x66);
+            let out = t.alloc(&dst.to_le_bytes());
+            let target = |rng: &mut Rng| {
+                (first + rng.below(n_targets + 2)).wrapping_sub(u32::from(rng.chance(9)))
+            };
+            let n_groups = rng.below(4);
+            let counts: Vec<u32> = (0..n_groups).map(|_| rng.below(4)).collect();
+            let n_anim: u32 = counts.iter().sum();
+            let n_static = rng.below(4);
+            let round4 = (n_groups + 3) & !3;
+            // the clip: header, counts, channel lists, tracks
+            let list_at = 8 + 2 * round4;
+            let tracks_at = list_at + 4 * (n_anim + n_static);
+            let clip = t.zeros((tracks_at + 0x10 * n_anim + 0x10) as usize);
+            t.write(clip + 2, &(n_anim as u16).to_le_bytes());
+            t.write(clip + 4, &(n_static as u16).to_le_bytes());
+            t.write(clip + 6, &(n_groups as u16).to_le_bytes());
+            for (g, c) in counts.iter().enumerate() {
+                t.write(clip + 8 + 2 * g as u32, &(*c as u16).to_le_bytes());
+            }
+            for i in 0..n_anim + n_static {
+                let tgt = target(&mut rng) as u16;
+                let kind = rng.below(5) as u16;
+                t.write(clip + list_at + 4 * i, &tgt.to_le_bytes());
+                t.write(clip + list_at + 4 * i + 2, &kind.to_le_bytes());
+            }
+            // tracks: keys (shared now and then) and values
+            let mut shared: Option<(u32, u32)> = None;
+            let mut d = 0;
+            for &c in &counts {
+                let comps = 1 + rng.below(4);
+                for _ in 0..c {
+                    let (keys, n) = match shared {
+                        Some(s) if rng.chance(2) => s,
+                        _ => {
+                            let n = 1 + rng.below(40);
+                            let mut k = rng.below(3) as f32 * 0.25;
+                            let mut words = Vec::new();
+                            for _ in 0..n {
+                                words.push(k.to_bits());
+                                k += if rng.chance(8) {
+                                    0.0
+                                } else {
+                                    0.25 * (1 + rng.below(4)) as f32
+                                };
+                            }
+                            let keys = t.alloc(
+                                &words
+                                    .iter()
+                                    .flat_map(|w| w.to_le_bytes())
+                                    .collect::<Vec<_>>(),
+                            );
+                            shared = Some((keys, n));
+                            (keys, n)
+                        }
+                    };
+                    let values: Vec<u32> = (0..(n + 2) * comps + 4)
+                        .map(|_| l9_value(&mut rng))
+                        .collect();
+                    let values = t.alloc(
+                        &values
+                            .iter()
+                            .flat_map(|w| w.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+                    let at = clip + tracks_at + 0x10 * d;
+                    t.w32(at, keys);
+                    t.w32(at + 4, values);
+                    t.w32(at + 8, n | (comps << 24));
+                    d += 1;
+                }
+            }
+            // the constant values: 0x34-byte records, lanes at +0x24
+            let statics: Vec<u32> = (0..13 * n_static.max(1))
+                .map(|_| l9_value(&mut rng))
+                .collect();
+            let statics = t.alloc(
+                &statics
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            // the batch: [batch] the header's offset, +0x14 the clip, +0x1c
+            // the constant values
+            let batch = t.zeros(0x60);
+            t.w32(batch, 0x40);
+            let time = match rng.below(7) {
+                0 => -1.0_f32,
+                1 => f32::from_bits(0x7fc0_0001),
+                2 => -0.5,
+                3 => 100.0,
+                _ => rng.below(40) as f32 * 0.125,
+            };
+            t.w32(batch + 0x40, time.to_bits());
+            t.write(batch + 0x46, &(n_static as u16).to_le_bytes());
+            t.w32(batch + 0x14, clip);
+            t.w32(batch + 0x1c, statics);
+            let cursors: Vec<u32> = (0..n_anim.max(1))
+                .map(|_| match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(50),
+                    2 => 0xffff_ffff,
+                    _ => rng.below(8),
+                })
+                .collect();
+            let cursors = t.alloc(
+                &cursors
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let (a2, a3) = (rng.next(), rng.next());
+            for run in 0..2 {
+                let what = format!("{label}: batch #{case} run {run}");
+                t.check(
+                    &what,
+                    0x0052_58d0,
+                    Conv::Cdecl,
+                    &[out, a2, a3, batch, cursors, targets],
+                    |g| {
+                        let scratch = g.1;
+                        Out::U32(l9b::batch(g, scratch, out, batch, cursors, targets))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}

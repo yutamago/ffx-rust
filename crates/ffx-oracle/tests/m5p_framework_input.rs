@@ -5034,3 +5034,24 @@ fn bp3_update_mouse_camera_matches_the_original() {
         }
     }
 }
+
+// ---- tail9 (ffx_pother_b::l9_input) ----
+
+#[test]
+fn l9_entry_ctor_matches_the_original() {
+    // the device entry constructor the vector constructor iterator runs
+    // (0x00620540), over junk
+    for (label, mut t) in Twins::all() {
+        for seed in [0x31_u8, 0x7f, 0xff] {
+            let entry = t.junk(0x40, seed);
+            t.check(
+                &format!("{label}: entry ctor {seed:#x}"),
+                0x0062_0540,
+                Conv::Thiscall(entry),
+                &[],
+                |g| Out::U32(ffx_pother_b::l9_input::bridge::entry_ctor(g, entry)),
+            );
+        }
+        t.reset();
+    }
+}

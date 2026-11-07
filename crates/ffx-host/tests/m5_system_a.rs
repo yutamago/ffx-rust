@@ -1,5 +1,6 @@
 //! The `host_only!` entries of M5 list `system-a` (`code_0062f640`,
-//! `code_0062f980`, `code_0062fb00`: `xor eax, eax; ret`, three bytes each;
+//! `code_0062f980`, `code_0062fb00`, and tail9's
+//! `YiWindowHandler_idle_00907e50`: `xor eax, eax; ret`, three bytes each;
 //! docs/porting.md, "Functions under five bytes") through ffx-host's
 //! function table: the 32-bit game has no hook for them, so this is where
 //! their table entries run. Each is called from Unicorn code the way its
@@ -14,7 +15,7 @@ use ffx_bridge::Mem as _;
 use ffx_host::exec::Exec;
 use ffx_host::table::{Conv, Table};
 
-const ZEROS: [u32; 3] = [0x0062_f640, 0x0062_f980, 0x0062_fb00];
+const ZEROS: [u32; 4] = [0x0062_f640, 0x0062_f980, 0x0062_fb00, 0x0090_7e50];
 
 fn exe() -> Option<PathBuf> {
     let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {

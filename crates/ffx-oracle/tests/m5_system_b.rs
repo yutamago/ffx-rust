@@ -9179,3 +9179,158 @@ fn bg15_cd_env_init_matches_the_original() {
         }
     });
 }
+
+// ---- tail9: the scrolling model's vertex fill (ffx_system::l9_scroll) ----
+
+use ffx_system::l9_scroll::bridge as l9s;
+
+/// A float in about -2..2 (0 now and then).
+fn l9_small(rng: &mut Rng) -> u32 {
+    if rng.below(8) == 0 {
+        0
+    } else {
+        (f32::from(rng.below(4000) as u16) / 1000.0 - 2.0).to_bits()
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the model, its records and the tables
+fn l9_draw_model_scroll_matches_the_original() {
+    // modes 0..3 (3: the coordinates the original never computes, 0 in
+    // both), 1..12 vertices, records of 1..3 triangles (the first of type
+    // 3, later ones other types now and then: the walk repeats the record
+    // the last type-3 one ended at), w 0 now and then, no vertices
+    Twins::each(|t| {
+        let mut rng = Rng(0x0072_69a0);
+        for case in 0..120_u32 {
+            t.reset();
+            let n = if case % 17 == 5 { 0 } else { 1 + rng.below(12) };
+            // the model: header, positions, normals, records
+            let n_normals = 6;
+            let mut records = Vec::new();
+            let mut left = n.cast_signed();
+            let mut n_recs = 0;
+            let mut first = true;
+            while left > 0 {
+                // an empty type-3 record now and then (the walk goes on at its
+                // first item, the next record)
+                if rng.chance(6) {
+                    let mut r = vec![0u8; 0x10];
+                    r[1] = 3;
+                    records.extend(&r);
+                    n_recs += 1;
+                }
+                let count = 1 + rng.below(3);
+                let kind = if first || !rng.chance(4) {
+                    3u8
+                } else {
+                    [0u8, 1, 2, 5][rng.below(4) as usize]
+                };
+                first = false;
+                let mut r = vec![0u8; 0x10];
+                r[1] = kind;
+                r[2..4].copy_from_slice(&(count as i16).to_le_bytes());
+                records.extend(&r);
+                for _ in 0..count {
+                    let mut item = vec![0u8; 0x28];
+                    for b in item.iter_mut().take(0xc) {
+                        *b = rng.next() as u8;
+                    }
+                    for c in 0..3 {
+                        let v = rng.below(n.max(1)) as u16;
+                        item[0xc + 2 * c..0xe + 2 * c].copy_from_slice(&v.to_le_bytes());
+                        let nn = rng.below(n_normals) as u16;
+                        item[0x20 + 2 * c..0x22 + 2 * c].copy_from_slice(&nn.to_le_bytes());
+                    }
+                    for b in item.iter_mut().take(0x20).skip(0x14) {
+                        *b = rng.next() as u8;
+                    }
+                    records.extend(&item);
+                }
+                left -= count.cast_signed();
+                n_recs += 1;
+                // a record of another type is walked again and again (the
+                // type-3 record's end is its own start) until the count runs
+                // out: nothing after it is reached
+                if kind != 3 {
+                    break;
+                }
+            }
+            // past the walk: a type-3 record the original never reaches
+            // (its table has no buffers: reaching it faults)
+            let mut tail = vec![0u8; 0x38];
+            tail[1] = 3;
+            tail[2] = 1;
+            records.extend(&tail);
+            let positions: Vec<u8> = (0..n.max(1) * 3)
+                .flat_map(|_| ((rng.below(2000) as i16) - 1000).to_le_bytes())
+                .collect();
+            let normals: Vec<u8> = (0..n_normals * 3)
+                .flat_map(|_| ((rng.below(8192) as i16) - 4096).to_le_bytes())
+                .collect();
+            let head = 0x14_u32;
+            let pos_at = head;
+            let nrm_at = pos_at + positions.len() as u32;
+            let rec_at = nrm_at + normals.len() as u32;
+            let model = t.zeros(rec_at as usize + records.len() + 0x40);
+            t.w32(model + 4, rec_at);
+            t.w32(model + 8, pos_at);
+            t.w32(model + 0xc, nrm_at);
+            t.write(model + 0x10, &(n as i16).to_le_bytes());
+            t.write(model + pos_at, &positions);
+            t.write(model + nrm_at, &normals);
+            t.write(model + rec_at, &records);
+            // the second model: the same records with other coordinates
+            let mut records1 = records.clone();
+            for b in &mut records1 {
+                *b ^= rng.next() as u8 & 0x0f;
+            }
+            let second = t.zeros(0x10 + records1.len() + 0x40);
+            t.w32(second + 4, 0x10);
+            t.write(second + 0x10, &records1);
+            // the output tables: one 0x6c-byte table per record
+            let tables = t.zeros(0x6c * (n_recs + 1) as usize);
+            for r in 0..n_recs {
+                let tb = tables + 0x6c * r;
+                for (o, size) in [(0xc_u32, 12), (0x14, 16), (0x18, 8), (0x1c, 2)] {
+                    let buf = t.zeros(size * 3 * 4);
+                    t.w32(tb + o, buf);
+                }
+            }
+            let output = t.zeros(0x100);
+            t.w32(output + 0x94, tables);
+            let job = t.zeros(0x100);
+            t.w32(job + 0x10, output);
+            t.w32(job + 0x14, model);
+            t.w32(job + 0x18, second);
+            for o in (0x20..0x40).step_by(4) {
+                let v = rng.below(600).cast_signed() - 100;
+                t.w32(job + o, v.cast_unsigned());
+            }
+            for o in (0x40..0xc0).step_by(4) {
+                let v = l9_small(&mut rng);
+                t.w32(job + o, v);
+            }
+            for o in [0xc0_u32, 0xc4, 0xd0, 0xd4, 0xd8] {
+                let v = l9_small(&mut rng);
+                t.w32(job + o, v);
+            }
+            t.w32(job + 0xcc, rng.next());
+            t.w32(job + 0xdc, case % 4);
+            // the original's frame: its words zeroed (the coordinates it
+            // never writes in mode 3 read as 0, as in the port)
+            let ebp = t.frame_ebp(1);
+            let arrays = ebp - 0x1_4064;
+            let zero = vec![0u8; 0x1_40e0];
+            t.write(ebp - 0x1_40e0, &zero);
+            let scratch = ebp - 0x1_4100;
+            t.check(
+                &format!("drawModelScroll #{case}"),
+                0x0072_69a0,
+                Conv::Cdecl,
+                &[job],
+                |m| Out::U32(l9s::fill(m, arrays, scratch, job)),
+            );
+        }
+    });
+}

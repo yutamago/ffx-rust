@@ -31,6 +31,7 @@
     clippy::similar_names
 )]
 
+pub mod l9_input;
 pub mod m4r_dynblocks;
 pub mod m4r_mesh;
 pub mod m5p_framework_input_app;

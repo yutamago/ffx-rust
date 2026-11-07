@@ -8462,3 +8462,907 @@ fn l8_gui_spline_edit_proc() {
         t.skip = 0;
     });
 }
+
+// ---- tail9 (list phyre-media): the movie player around the replaced
+// libraries (ffx_pcui::l9_video) ----
+
+use ffx_pcui::l9_video::bridge as l9v;
+
+/// `dec dword [counter]; jnz +10; mov dword [ecx + disp], 1`: a callee
+/// (thiscall) that sets the word `disp` past its `this` on its `n`-th call
+/// (`counter`, a fresh word, starts at `n`).
+fn set_on_nth(t: &mut Twins, n: u32, disp: u32) -> Vec<u8> {
+    let counter = t.words(&[n]);
+    let mut c = vec![0xff, 0x0d];
+    c.extend(counter.to_le_bytes());
+    c.extend([0x75, 0x0a, 0xc7, 0x81]);
+    c.extend(disp.to_le_bytes());
+    c.extend(1_u32.to_le_bytes());
+    c
+}
+
+/// `mov eax, [esp+8]; dec dword [counter]; mov edx, [counter]; mov [eax],
+/// edx`: `getOpenState(sound, &state, ...)` writing the countdown
+/// `n - 1, n - 2, ..., 0` into the state.
+fn open_state_countdown(t: &mut Twins, n: u32) -> Vec<u8> {
+    let counter = t.words(&[n]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0xff, 0x0d];
+    c.extend(counter.to_le_bytes());
+    c.extend([0x8b, 0x15]);
+    c.extend(counter.to_le_bytes());
+    c.extend([0x89, 0x10]);
+    c
+}
+
+/// A player block of random bytes.
+fn l9_player(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let bytes: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+    t.alloc(&bytes)
+}
+
+/// Runs the original at `sym` and `bridge` returning `edx:eax`.
+fn check_u64(
+    t: &mut Twins,
+    what: &str,
+    sym: u32,
+    conv: Conv,
+    args: &[u32],
+    bridge: impl FnOnce(&mut G) -> u64,
+) {
+    let addr = t.rebase(sym);
+    let ra =
+        t.a.call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+    let poison = t.rebase(POISON_AT);
+    let v = bridge(&mut G(&mut t.b, poison));
+    assert!(ra.st0_raw.is_none(), "{what}: ST0 left set");
+    assert_eq!(
+        (u64::from(ra.edx) << 32) | u64::from(ra.eax),
+        v,
+        "{what}: edx:eax"
+    );
+    t.diff(what);
+}
+
+#[test]
+fn l9_video_threads() {
+    // the reading thread: stopped from the start, stopped after 1-3
+    // passes; demux in states 1 and 2 unless at the end (+0xe8 2), none
+    // in other states. The decoding thread: one decode loop.
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_7880);
+        for case in 0..30_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            let passes = rng.below(3) + 1;
+            t.w32(player + 0xd0, if case % 5 == 0 { 1 } else { rng.below(3) });
+            t.w32(player + 0xe4, rng.below(4));
+            t.w32(player + 0xe8, if rng.chance(3) { 2 } else { rng.word() });
+            let stop = set_on_nth(t, passes, 0xd0_u32.wrapping_sub(0x2ac));
+            t.stub_pre(l9v::EVENT_WAIT, true, 0, 0, 0x71, &stop);
+            t.stub(l9v::DEMUX_LOOP, true, 0, 0, 0x72);
+            t.check(
+                &format!("ReadingThread #{case}"),
+                0x00a2_7880,
+                Conv::Cdecl,
+                &[player],
+                |g| Out::U32(l9v::reading_thread(g, player)),
+            );
+            t.stub(l9v::DECODE_LOOP, true, 0, 0, 0x73);
+            t.check(
+                &format!("VideoDecodingThread #{case}"),
+                0x00a2_7b90,
+                Conv::Cdecl,
+                &[player],
+                |g| Out::U32(l9v::decoding_thread(g, player)),
+            );
+        }
+    });
+}
+
+#[test]
+fn l9_video_audio_shutdown() {
+    // the open state reaching 0 after 1-4 successful polls (Sleep(1)
+    // between them); a failing getOpenState call loops forever in both,
+    // so every poll succeeds here
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_78f0);
+        for case in 0..16_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            t.stubs(&[
+                (l9v::QUEUE_CLOSE, true, 0, 0, 0x81),
+                (l9v::CHANNEL_STOP, false, 1, 1, 0x82),
+                (l9v::SOUND_RELEASE, false, 1, 1, 0x83),
+                (l9v::VORBIS_BLOCK_CLEAR, false, 1, 0, 0x84),
+                (l9v::VORBIS_DSP_CLEAR, false, 1, 0, 0x85),
+                (l9v::VORBIS_COMMENT_CLEAR, false, 1, 0, 0x86),
+                (l9v::VORBIS_INFO_CLEAR, false, 1, 0, 0x87),
+                (l9v::QUEUE_DESTROY, true, 0, 0, 0x88),
+                (l9v::OGG_RESET, false, 0, 0, 0x8900 | rng.below(0x100)),
+            ]);
+            t.stub_import(l9v::SLEEP_SLOT, false, 1, 1, 0);
+            let pre = open_state_countdown(t, rng.below(4) + 1);
+            t.stub_pre(l9v::SOUND_GET_OPEN_STATE, false, 5, 5, 0, &pre);
+            t.check_framed(
+                &format!("AudioShutdown #{case}"),
+                0x00a2_78f0,
+                Conv::Thiscall(player),
+                &[],
+                4,
+                |g, ebp| Out::U32(l9v::audio_shutdown(g, player, ebp - 4)),
+            );
+        }
+    });
+}
+
+#[test]
+fn l9_video_decode_loop() {
+    // stopped at once (+0xec 1); no packet; packets with and without a
+    // frame; no slot; 1-3 passes; planes with equal and unequal strides,
+    // 0 rows or 0 width
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_79b0);
+        for case in 0..40_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            t.w32(player + 0xec, if case % 7 == 0 { 1 } else { rng.below(3) });
+            let packet = if case % 9 == 1 {
+                0
+            } else {
+                t.words(&[rng.below(0x100), 0, 0])
+            };
+            let img = t.zeros(0x40);
+            for o in [0x24_u32, 0x28, 0x2c] {
+                let v = rng.next();
+                t.w32(img + o, v);
+            }
+            for o in [0x34_u32, 0x38, 0x3c] {
+                let v = rng.below(8) + 1;
+                t.w32(img + o, v);
+            }
+            for o in [0x14c_u32, 0x150, 0x2c0, 0x2c4] {
+                let v = rng.below(5);
+                t.w32(player + o, v);
+            }
+            // equal strides now and then
+            if rng.chance(2) {
+                let w = rng.below(6) + 1;
+                t.w32(player + 0x14c, w);
+                t.w32(img + 0x34, w);
+                t.w32(player + 0x2c0, w);
+                t.w32(img + 0x38, w);
+            }
+            let frame = if rng.chance(4) { 0 } else { img };
+            let slot = if case % 11 == 3 { 0 } else { t.zeros(0x10) };
+            let close = 0x9400 | rng.below(0x100);
+            t.stubs(&[
+                (l9v::QUEUE_FRONT, true, 0, 0, packet),
+                (l9v::VPX_DECODE, false, 5, 0, 0x91),
+                (l9v::VPX_GET_FRAME, false, 2, 0, frame),
+                (l9v::QUEUE_RESERVE, true, 1, 1, slot),
+                (l9v::MEMCPY, false, 3, 0, 0x92),
+                (l9v::QUEUE_COMMIT, true, 0, 0, 0x93),
+                (l9v::QUEUE_CLOSE, true, 0, 0, close),
+            ]);
+            let stop = set_on_nth(t, rng.below(3) + 1, 0xec);
+            t.stub_pre(l9v::QUEUE_POP, true, 0, 0, 0x95, &stop);
+            // only the iterator word (ebp - 0x10) is the frame's; the rest
+            // are register spills
+            t.skip = 0xc;
+            t.check_framed(
+                &format!("DecodeLoop #{case}"),
+                0x00a2_79b0,
+                Conv::Thiscall(player),
+                &[],
+                0x10,
+                |g, ebp| Out::U32(l9v::decode_loop(g, player, ebp - 0x10)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn l9_video_clock_and_state() {
+    // getCurrentTime: frame counts around the sign bit, frame times
+    // giving results past 2^63 and 2^64 (the u64 conversion's three
+    // paths), negative, infinite and NaN; getEndTime; seek; togglePause
+    // in each state with and without a channel; isPlaying's paths
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_7bd0);
+        for case in 0..60_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            let n = [0_u32, 1, 0x7fff_fffe, 0x7fff_ffff, 0xffff_ffff, rng.next()]
+                [rng.below(6) as usize];
+            t.w32(player + 0x100, n);
+            let ms = match rng.below(9) {
+                0 => 33.366_666,
+                1 => 1.0e10,
+                2 => 4.0e9,
+                3 => 9.3e18 / 4.0e9,
+                4 => -2.5,
+                5 => f64::INFINITY,
+                6 => f64::from_bits(0x7ff8_0000_0000_1234),
+                7 => 2.0e9 + f64::from(rng.below(1000)),
+                _ => f64::from(rng.below(100)) / 3.0,
+            };
+            t.write(player + 0x108, &ms.to_bits().to_le_bytes());
+            check_u64(
+                t,
+                &format!("getCurrentTime #{case}"),
+                0x00a2_7bd0,
+                Conv::Thiscall(player),
+                &[],
+                |g| l9v::get_current_time(g, player),
+            );
+            check_u64(
+                t,
+                &format!("getEndTime #{case}"),
+                0x00a2_7c40,
+                Conv::Thiscall(player),
+                &[],
+                |g| l9v::get_end_time(g, player),
+            );
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &format!("seek #{case}"),
+                0x00a2_7e10,
+                Conv::Thiscall(player),
+                &[a, b],
+                |_| Out::U8(1),
+            );
+            t.w32(player + 0xe4, rng.below(4));
+            let channel = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(player + 0x2a0, channel);
+            t.stub(l9v::CHANNEL_SET_PAUSED, false, 2, 2, 0xa1);
+            t.check(
+                &format!("togglePause #{case}"),
+                0x00a2_7e90,
+                Conv::Thiscall(player),
+                &[],
+                |g| Out::U8(l9v::toggle_pause(g, player)),
+            );
+            // isPlaying
+            let sound = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(player + 0x29c, sound);
+            let decoding = u8::from(rng.chance(3));
+            t.write(player + 0x154, &[decoding]);
+            let audio = if rng.chance(2) { 0 } else { rng.next() };
+            t.w32(player + 0x294, audio);
+            let open = if rng.chance(3) { 0x13 } else { 0 };
+            let queued = if rng.chance(2) { 0 } else { rng.below(5) + 1 };
+            let state = if rng.chance(2) { 0_u32 } else { rng.below(4) };
+            t.stub(l9v::QUEUE_COUNT, true, 0, 0, queued);
+            t.stub_pre(
+                l9v::SOUND_GET_OPEN_STATE,
+                false,
+                5,
+                5,
+                open,
+                &write_through(8, state),
+            );
+            // the state word is the pushed ecx until getOpenState writes it
+            t.skip = 4;
+            t.check_framed_init(
+                &format!("isPlaying #{case}"),
+                0x00a2_7c50,
+                Conv::Thiscall(player),
+                &[],
+                4,
+                &state.to_le_bytes(),
+                |g, ebp| Out::U8(l9v::is_playing(g, player, ebp - 4)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn l9_video_initialize_terminate() {
+    // initialize with 0 frames (30) and others; terminate
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_7cf0);
+        for case in 0..12_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            let created = 0xb300 | rng.below(0x100);
+            t.stubs(&[
+                (l9v::EVENT_INIT, true, 1, 1, 0xb1),
+                (l9v::THREAD_INIT, true, 1, 1, 0xb2),
+                (l9v::THREAD_CREATE, true, 1, 1, created),
+            ]);
+            let frames = if case % 3 == 0 { 0 } else { rng.below(64) };
+            let (unused, system) = (rng.next(), rng.next());
+            t.check_framed(
+                &format!("initialize #{case}"),
+                0x00a2_7cf0,
+                Conv::Thiscall(player),
+                &[unused, frames, system],
+                0x18,
+                |g, ebp| Out::U32(l9v::initialize(g, ebp, player, frames, system)),
+            );
+            let closed = 0xb600 | rng.below(0x100);
+            let code = rng.next();
+            t.stub_pre(l9v::THREAD_JOIN, true, 1, 1, 0, &write_through(4, code));
+            t.stubs(&[
+                (l9v::CLOSE, true, 0, 0, 0xb4),
+                (l9v::EVENT_SIGNAL, true, 0, 0, 0xb5),
+                (l9v::RETURN_ZERO, false, 0, 0, 0),
+                (l9v::CLOSE_HANDLE, true, 0, 0, closed),
+            ]);
+            t.check_framed(
+                &format!("terminate #{case}"),
+                0x00a2_8430,
+                Conv::Thiscall(player),
+                &[],
+                4,
+                |g, ebp| Out::U32(l9v::terminate(g, player, ebp - 4)),
+            );
+        }
+    });
+}
+
+#[test]
+fn l9_video_textures_and_callback() {
+    // MapTexture: the placeholder (7), bound or not, bind failing, the
+    // map failing or not, the level wrapping to 0 at the count (bit 31
+    // ignored, count 0 as 1); 0x005a8550 alike; the FMOD read callback
+    // with getUserData failing, giving 0 or a player
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_7e20);
+        for case in 0..48_u32 {
+            t.reset();
+            let tex = t.zeros(0x40);
+            let vt = if case % 8 == 0 {
+                t.rebase(l9v::PLACEHOLDER_VTABLE)
+            } else {
+                rng.next()
+            };
+            t.w32(tex, vt);
+            let flags = rng.next();
+            t.w32(tex + 4, flags);
+            let count = [0_u32, 1, 3, 0x8000_0003, rng.next()][rng.below(5) as usize];
+            t.w32(tex + 0x24, count);
+            let level = [0_u32, 1, 2, 0xffff_ffff, rng.next()][rng.below(5) as usize];
+            t.w32(tex + 8, level);
+            let out = rng.next();
+            let bound = [0_u32, 1, 0x100][rng.below(3) as usize];
+            let bind = if rng.chance(3) { 0x55 } else { 0 };
+            let map = if rng.chance(3) { 0x56 } else { 0 };
+            let upload = if rng.chance(3) { 3 } else { 0 };
+            t.stubs(&[
+                (l9v::TEX_IS_BOUND, true, 0, 0, bound),
+                (l9v::TEX_BIND, true, 0, 0, bind),
+                (l9v::TEX_MAP_LEVEL, true, 2, 2, map),
+                (l9v::TEX_UPLOAD_LEVEL, true, 2, 2, upload),
+            ]);
+            t.check(
+                &format!("MapTexture #{case}"),
+                0x00a2_7e20,
+                Conv::Thiscall(tex),
+                &[out],
+                |g| Out::U32(l9v::map_texture(g, tex, out)),
+            );
+            t.check(
+                &format!("0x005a8550 #{case}"),
+                0x005a_8550,
+                Conv::Thiscall(tex),
+                &[out],
+                |g| Out::U32(l9v::unmap_level(g, tex, out)),
+            );
+            let player = if rng.chance(3) { 0 } else { t.zeros(0x10) };
+            let pre = write_through(8, player);
+            let got = if rng.chance(4) { 0x1e } else { 0 };
+            t.stub_pre(l9v::SOUND_GET_USER_DATA, false, 2, 2, got, &pre);
+            t.stub(l9v::AUDIO_READ, true, 2, 2, 0xc1);
+            let (sound, data, len) = (rng.next(), rng.next(), rng.below(0x4000));
+            t.check_framed(
+                &format!("FmodReadCallback #{case}"),
+                0x00a2_7ee0,
+                Conv::Stdcall,
+                &[sound, data, len],
+                4,
+                |g, ebp| Out::U32(l9v::fmod_read_callback(g, ebp - 4, sound, data, len)),
+            );
+        }
+    });
+}
+
+/// `fld qword [at]`: a callee leaving the double at `at` in `ST0`.
+fn fld_qword(at: u32) -> Vec<u8> {
+    let mut c = vec![0xdd, 0x05];
+    c.extend(at.to_le_bytes());
+    c
+}
+
+/// `mov edx, v`: a callee's high result word.
+fn mov_edx(v: u32) -> Vec<u8> {
+    let mut c = vec![0xba];
+    c.extend(v.to_le_bytes());
+    c
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per early return and track set
+fn l9_video_open() {
+    // each early return (-1, -2, -3), closing or initializing first;
+    // tracks of each type and none; frame rates 0 (the default), -0,
+    // NaN and others; durations negative and past 2^63 ns-scaled
+    // results; no FMOD system (the audio track dropped); AudioInit
+    // failing or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_7f20);
+        for case in 0..48_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            t.write(player + 0xc4, &[u8::from(rng.chance(2))]);
+            if rng.chance(3) {
+                t.w32(player + 0x298, 0);
+            }
+            let fail = case % 8;
+            let ticks = rng.next();
+            t.stub_import(l9v::GET_TICK_COUNT_SLOT, false, 0, 0, ticks);
+            let iface = rng.next();
+            let reader = if fail == 2 { 0xffff_ffff } else { 0 };
+            t.stubs(&[
+                (l9v::CLOSE, true, 0, 0, 0xd1),
+                (l9v::INITIALIZE, true, 3, 3, 0xd2),
+                (l9v::VPX_MEM_SET, false, 7, 0, u32::from(fail == 0)),
+                (l9v::VPX_VP8_DX, false, 0, 0, iface),
+                (
+                    l9v::VPX_DEC_INIT,
+                    false,
+                    5,
+                    0,
+                    if fail == 1 { 3 } else { 0 },
+                ),
+                (l9v::MKV_SET_ALLOCATOR, false, 2, 0, 0xd3),
+                (l9v::READER_OPEN, true, 1, 1, reader),
+                (l9v::SEGMENT_LOAD, true, 0, 0, 0xd4),
+                (l9v::QUEUE_INIT, true, 4, 4, 0xd5),
+                (l9v::THREAD_INIT, true, 1, 1, 0xd6),
+                (l9v::THREAD_CREATE, true, 1, 1, 0xd7),
+                (l9v::EVENT_INIT, true, 1, 1, 0xd8),
+                (l9v::EVENT_SIGNAL, true, 0, 0, 0xd9),
+            ]);
+            // the segment and its tracks, read by the original accessors
+            let n = rng.below(4);
+            let mut entries = Vec::new();
+            for _ in 0..n {
+                let tr = t.zeros(0x40);
+                let ty = rng.below(4);
+                t.w32(tr + 0x20, ty);
+                entries.push(tr);
+            }
+            let array = t.words(&if entries.is_empty() {
+                vec![0]
+            } else {
+                entries.clone()
+            });
+            let tracks = t.zeros(0x40);
+            t.w32(tracks + 0x28, array);
+            t.w32(tracks + 0x2c, array + 4 * n);
+            let seg = t.zeros(0x80);
+            t.w32(seg + 0x74, tracks);
+            t.stub_pre(
+                l9v::SEGMENT_CREATE,
+                false,
+                4,
+                0,
+                0xda,
+                &write_through(16, seg),
+            );
+            let fps = match rng.below(6) {
+                0 => 0.0,
+                1 => -0.0,
+                2 => f64::from_bits(0x7ff8_0000_0000_0042),
+                3 => 29.97,
+                4 => 15.0,
+                _ => f64::from(rng.below(120)) + 0.5,
+            };
+            let fps_at = t.alloc(&fps.to_bits().to_le_bytes());
+            t.stub_pre(l9v::FRAME_RATE, true, 0, 0, 0, &fld_qword(fps_at));
+            let (w, ht) = (rng.below(2000), rng.below(1200));
+            t.stubs(&[(l9v::WIDTH, true, 0, 0, w), (l9v::HEIGHT, true, 0, 0, ht)]);
+            let ns = match rng.below(4) {
+                0 => u64::from(rng.next()) * 1000,
+                1 => 0xffff_ffff_0000_0000 | u64::from(rng.next()),
+                2 => 0x7fff_ffff_ffff_0000,
+                _ => u64::from(rng.next()) << 20,
+            };
+            t.stub_pre(
+                l9v::SEGMENT_DURATION,
+                true,
+                0,
+                0,
+                ns as u32,
+                &mov_edx((ns >> 32) as u32),
+            );
+            let audio = if rng.chance(2) { 0x101 } else { 0x200 };
+            t.stub(l9v::AUDIO_INIT, true, 0, 0, audio);
+            let (path, looping) = (rng.next(), rng.next());
+            // the thread's initialization object; the scratch words above
+            // it are the original's own
+            t.skip = 0x10;
+            t.check_framed(
+                &format!("open #{case}"),
+                0x00a2_7f20,
+                Conv::Thiscall(player),
+                &[path, looping],
+                0x28,
+                |g, ebp| Out::U32(l9v::open(g, ebp, player, path, looping)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn l9_video_update_texture() {
+    // not playing; prebuffering below and at the depth; textures at the
+    // size or not (bound or not, three buffers or not, setBufferCount
+    // failing, the placeholder); no frame; each texture mapped or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a2_84a0);
+        for case in 0..48_u32 {
+            t.reset();
+            let player = l9_player(t, &mut rng);
+            t.w32(player + 0xe4, if case % 9 == 0 { 2 } else { 1 });
+            t.write(player + 0x2a8, &[u8::from(rng.chance(3))]);
+            t.w32(player + 0x158, rng.below(4));
+            let (w, ht) = (rng.below(8) * 2, rng.below(8) * 2);
+            t.w32(player + 0x14c, w);
+            t.w32(player + 0x150, ht);
+            let mut texs = [0_u32; 3];
+            for (k, tex) in texs.iter_mut().enumerate() {
+                *tex = t.zeros(0x40);
+                let vt = if rng.chance(5) {
+                    t.rebase(l9v::PLACEHOLDER_VTABLE)
+                } else {
+                    rng.next()
+                };
+                t.w32(*tex, vt);
+                let (tw, th) = if k == 0 { (w, ht) } else { (w >> 1, ht >> 1) };
+                let same = rng.chance(2);
+                t.w32(*tex + 0x1c, if same { tw } else { tw + 1 });
+                t.w32(*tex + 0x20, th);
+                let count = [0_u32, 3, 0x8000_0003, 1][rng.below(4) as usize];
+                t.w32(*tex + 0x24, count);
+                let flags = rng.next();
+                t.w32(*tex + 0x14, flags);
+                t.w32(*tex + 8, rng.next());
+            }
+            let frame = if case % 7 == 3 { 0 } else { t.zeros(0x40) };
+            let queued = rng.below(5);
+            t.stubs(&[
+                (l9v::QUEUE_COUNT, true, 0, 0, queued),
+                (
+                    l9v::TEX_IS_BOUND,
+                    true,
+                    0,
+                    0,
+                    [0_u32, 1, 0x100][rng.below(3) as usize],
+                ),
+                (l9v::TEX_UNBIND, true, 0, 0, 0xe1),
+                (l9v::TEX_SET_DIMENSIONS, true, 4, 4, 0xe2),
+                (l9v::PRINTF, false, 2, 0, 0xe3),
+                (
+                    l9v::TEX_SET_BUFFER_COUNT,
+                    true,
+                    1,
+                    1,
+                    u32::from(rng.chance(3)),
+                ),
+                (l9v::TEX_UPDATE_MAX_LEVEL, true, 0, 0, 0xe4),
+                (l9v::TEX_BIND, true, 0, 0, 0xe5),
+                (l9v::QUEUE_FRONT, true, 0, 0, frame),
+                (l9v::MAPPING_CTOR, true, 0, 0, 0xe6),
+                (l9v::COPY_PLANE, false, 6, 0, 0xe7),
+                (l9v::UNMAP_LEVEL, true, 1, 1, 0xe8),
+                (l9v::QUEUE_POP, true, 0, 0, 0xe9),
+                (l9v::MAPPING_DTOR, true, 0, 0, 0xea),
+            ]);
+            // MapTexture writes the data pointer and pitch, fails at times
+            let mut pre = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x40, 0x04]; // mov eax, [esp+4]; mov dword [eax+4],
+            pre.extend(rng.next().to_le_bytes());
+            pre.extend([0xc7, 0x40, 0x08]); // mov dword [eax+8],
+            pre.extend((rng.below(64) * 4).to_le_bytes());
+            let mapped = if rng.chance(4) { 7 } else { 0 };
+            t.stub_pre(l9v::MAP_TEXTURE, true, 1, 1, mapped, &pre);
+            for o in [0x2c4_u32, 0x2c8, 0x2cc, 0x100] {
+                let v = rng.below(0x1000);
+                t.w32(player + o, v);
+            }
+            let [y, u, v] = texs;
+            // the mapping object's bytes; the cookie and SEH words above
+            // it are the original's own
+            t.skip = 0x10;
+            t.check_framed(
+                &format!("updateTexture #{case}"),
+                0x00a2_84a0,
+                Conv::Thiscall(player),
+                &[y, u, v],
+                0x74,
+                |g, ebp| Out::U8(l9v::update_texture(g, ebp - 0x74, player, y, u, v)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+// ---- tail9: the SPLINE EDIT window's mouse step (ffx_pcui::l9_camdebug) ----
+
+use ffx_pcui::l9_camdebug::bridge as l9c;
+
+/// `mov eax, [esp+k]; mov dword [eax + 4 i], v[i]`: a callee writing the
+/// words `v` through its argument at `esp + k`.
+fn write_words(k: u8, v: &[u32]) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, k];
+    for (i, w) in v.iter().enumerate() {
+        c.extend([0xc7, 0x40, (4 * i) as u8]);
+        c.extend(w.to_le_bytes());
+    }
+    c
+}
+
+/// `MsCameraGetPosNow(side, out)`: three words from `table + 16 side`.
+fn pos_by_side(table: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x04, 0x05];
+    c.extend(table.to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x08]);
+    for o in [0u8, 4, 8] {
+        c.extend([0x8b, 0x50, o, 0x89, 0x51, o]);
+    }
+    c
+}
+
+/// A float near the cursor's scale: small, negative, 0, -0, NaN now and
+/// then.
+fn l9_f(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => 0,
+        1 => 0x8000_0000,
+        2 if rng.chance(3) => 0x7fc0_0000,
+        3 => (f32::from(rng.below(4000) as u16) / 10.0).to_bits(),
+        _ => (f32::from(rng.below(400) as u16) / 4.0 - 50.0).to_bits(),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the window's state
+fn l9_cam_debug_mouse() {
+    // every pad bit (1, 2, 4, 0x100, 0x200, 0x400) and the release; the
+    // turn, move and raise flags; picks within and past 8 pixels (the
+    // release flagging one); drag modes 0 and 1; the camera near and far
+    // from its target (the two moves), positions with 0, -0 and NaN
+    Twins::each(|t| {
+        let mut rng = Rng(0x0094_0660);
+        for case in 0..200_u32 {
+            t.reset();
+            let spline = rng.below(2);
+            t.w32(t.rebase(l9c::SPLINE), spline);
+            let n = rng.below(4);
+            let flags = t.zeros(12 * 4);
+            let points = t.zeros(16 * 4);
+            let copies = t.zeros(16 * 4);
+            for i in 0..n {
+                let f = if rng.chance(3) { 0 } else { 1 + rng.below(4) };
+                t.w32(flags + 12 * i, f);
+                for j in 0..4 {
+                    let v = l9_f(&mut rng);
+                    t.w32(points + 16 * i + 4 * j, v);
+                    let v = l9_f(&mut rng);
+                    t.w32(copies + 16 * i + 4 * j, v);
+                }
+            }
+            for (table, v) in [
+                (l9c::FLAGS, flags),
+                (l9c::POINTS, points),
+                (l9c::COPIES, copies),
+                (l9c::COUNTS, n),
+            ] {
+                t.w32(t.rebase(table) + 4 * spline, v);
+            }
+            let picked = if rng.chance(3) { flags } else { 0 };
+            t.w32(t.rebase(l9c::PICKED) + 4 * spline, picked);
+            t.w32(t.rebase(l9c::PICKED_POINT) + 4 * spline, points);
+            t.w32(t.rebase(l9c::PICKED_INDEX) + 4 * spline, rng.below(4));
+            let pad = [1u32, 2, 4, 0x100, 0x200, 0x400, 0x101, 0x103, 0x202, 0]
+                [rng.below(10) as usize]
+                | if rng.chance(4) { rng.next() & 0x707 } else { 0 };
+            t.w32(t.rebase(l9c::PAD), pad);
+            for sym in [l9c::TURN, l9c::MOVE, l9c::RAISE] {
+                t.write(t.rebase(sym), &[u8::from(rng.chance(2))]);
+            }
+            for sym in [l9c::START_X, l9c::START_Y] {
+                let v = (rng.below(600) as u16).wrapping_sub(100);
+                t.write(t.rebase(sym), &v.to_le_bytes());
+            }
+            for j in 0..3 {
+                let v = l9_f(&mut rng);
+                t.w32(t.rebase(l9c::ANCHOR) + 4 * j, v);
+                let v = l9_f(&mut rng);
+                t.w32(t.rebase(l9c::ANGLES) + 4 * j, v);
+                for sym in [l9c::SAVE0, l9c::SAVE1] {
+                    let v = l9_f(&mut rng);
+                    t.w32(t.rebase(sym) + 4 * j, v);
+                }
+            }
+            t.w32(t.rebase(l9c::DRAG_MODE), rng.below(2));
+            t.w32(t.rebase(l9c::CAMERA), rng.next());
+            // the callees
+            let (mx, my) = (rng.below(640), rng.below(240));
+            t.stub(l9c::MOUSE_X, false, 0, 0, mx);
+            t.stub(l9c::MOUSE_Y, false, 0, 0, my);
+            let positions = t.zeros(0x20);
+            for w in 0..8 {
+                let v = l9_f(&mut rng);
+                t.w32(positions + 4 * w, v);
+            }
+            // the same x (and z) on both sides now and then: the turn's
+            // half-turn test sees 0
+            for o in [0_u32, 8] {
+                if rng.chance(2) {
+                    let v: u32 = Mem::read(&t.a, positions + o);
+                    t.w32(positions + 0x10 + o, v);
+                }
+            }
+            t.stub_pre(l9c::GET_POS, false, 2, 0, 0x31, &pos_by_side(positions));
+            let (px, py) = if rng.chance(2) {
+                (
+                    (mx + rng.below(17)).wrapping_sub(8),
+                    (my * 2 + rng.below(17)).wrapping_sub(8),
+                )
+            } else {
+                (rng.next(), rng.next())
+            };
+            t.stub_pre(l9c::PROJECT, false, 2, 0, 0x32, &write_words(8, &[px, py]));
+            t.stub(l9c::CAMERA_MATRIX, false, 2, 0, 0x5_0000);
+            let picked_at = [l9_f(&mut rng), l9_f(&mut rng), l9_f(&mut rng)];
+            t.stub_pre(
+                l9c::SCREEN_PICK,
+                false,
+                5,
+                0,
+                0x33,
+                &write_words(0x10, &picked_at),
+            );
+            t.stub(l9c::NAME_LIST_CLEAR, false, 0, 0, 0x34);
+            t.stub(l9c::SET_RECT, false, 3, 0, 0x35);
+            let mut angle = Vec::new();
+            for k in [4u8, 8, 0xc] {
+                angle.extend(write_words(k, &[l9_f(&mut rng)]));
+            }
+            t.stub_pre(l9c::GET_ANGLE, false, 3, 0, 0x36, &angle);
+            t.stub(l9c::SET_POLAR, false, 5, 0, 0x37);
+            let flags_arg = if rng.chance(4) { 0x40 } else { rng.below(0x40) };
+            // the original's frame: the callees see the point (ebp - 0x14),
+            // the projection (ebp - 0x24) and the offset (ebp - 0x48)
+            let ebp = t.frame_ebp(1);
+            t.write(ebp - 0x48, &[0; 0x48]);
+            t.b.set_call_top(Some(ebp - 0x148));
+            t.check(
+                &format!("CamDebug mouse #{case} pad {pad:#x} flags {flags_arg:#x}"),
+                0x0094_0660,
+                Conv::Cdecl,
+                &[flags_arg],
+                |g| {
+                    l9c::mouse(g, ebp, flags_arg);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            for (o, n) in [(0x14_u32, 16), (0x24, 8), (0x48, 12)] {
+                let mut x = vec![0; n];
+                let mut y = vec![0; n];
+                Mem::read_bytes(&t.a, ebp - o, &mut x);
+                Mem::read_bytes(&t.b, ebp - o, &mut y);
+                assert_eq!(x, y, "CamDebug mouse #{case}: frame ebp - {o:#x}");
+            }
+        }
+    });
+}
+
+// ---- tail9: the texture level mapping (ffx_pcui::l9_texmap) ----
+
+use ffx_pcui::l9_texmap::bridge as l9t;
+
+#[test]
+fn l9_texture_map_level() {
+    // levels past the count (3), a level without a resource (0x15); CPU
+    // textures (the buffer made now or kept; block formats; zero sizes)
+    // and D3D11 ones (Map failing, giving no data, or mapping every mip);
+    // one or more levels (inline element); the render interface made or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x0059_6b90);
+        for case in 0..80_u32 {
+            t.reset();
+            let n_levels = 1 + rng.below(3);
+            let elements = t.zeros(0x1c * 4);
+            for l in 0..n_levels {
+                let resource = if rng.chance(6) { 0 } else { 0x5500 + l };
+                t.w32(elements + 0x1c * l, resource);
+                let buf = if rng.chance(2) { t.zeros(0x40) } else { 0 };
+                t.w32(elements + 0x1c * l + 0x10, buf);
+            }
+            let fmt = t.zeros(0x20);
+            t.w32(fmt + 0xc, [8u32, 16, 32, 4][rng.below(4) as usize]);
+            t.write(fmt + 0x10, &[u8::from(rng.chance(2))]);
+            let tex = t.zeros(0x80);
+            t.w32(tex, fmt);
+            t.w32(tex + 0xc, rng.below(4));
+            t.w32(tex + 0x14, rng.next() & 6);
+            t.w32(tex + 0x1c, [0u32, 1, 5, 64, 100][rng.below(5) as usize]);
+            t.w32(tex + 0x20, [0u32, 1, 7, 32][rng.below(4) as usize]);
+            if n_levels == 1 {
+                // the element inline in the array object
+                for w in 0..7 {
+                    let v: u32 = Mem::read(&t.a, elements + 4 * w);
+                    t.w32(tex + 0x28 + 4 * w, v);
+                }
+                t.w32(tex + 0x24, 1);
+            } else {
+                t.w32(tex + 0x24, n_levels);
+                t.w32(tex + 0x28, elements);
+            }
+            t.write(tex + 0x60, &[rng.next() as u8]);
+            t.w32(tex + 0x68, if rng.chance(2) { 0x1_0000 } else { 0 });
+            t.w32(t.rebase(l9t::GUARD), rng.below(4));
+            let buffer = t.zeros(0x400);
+            t.stubs(&[
+                (l9t::PRINTF, false, 2, 0, 0x71),
+                (l9t::MALLOC, false, 2, 0, buffer),
+                (l9t::LOCK_ENTER, true, 0, 0, 0x72),
+                (l9t::LOCK_LEAVE, true, 0, 0, 0x73),
+                (l9t::INTERFACE_CTOR, true, 0, 0, 0x74),
+                (l9t::ATEXIT, false, 1, 0, 0x75),
+            ]);
+            // the device context: Map (slot 14, stdcall 6) writes its
+            // mapped data and pitch, fails now and then
+            let data = if rng.chance(5) {
+                0
+            } else {
+                0x6600 + rng.below(0x100)
+            };
+            let pitch = rng.below(0x1000);
+            let mut pre = vec![0x8b, 0x44, 0x24, 0x18]; // mov eax, [esp+0x18]
+            pre.extend([0xc7, 0x00]);
+            pre.extend(data.to_le_bytes());
+            pre.extend([0xc7, 0x40, 0x04]);
+            pre.extend(pitch.to_le_bytes());
+            let hr = if rng.chance(6) { 0x8007_000e } else { 0 };
+            let log = t.stub_code(0x5138, false, 6, 6, hr);
+            let at = t.cave_next;
+            pre.push(0xe9);
+            pre.extend(log.wrapping_sub(at + pre.len() as u32 + 4).to_le_bytes());
+            let map = t.cave_code(&pre);
+            let mut slots = vec![0u32; 15];
+            slots[14] = map;
+            let vt = t.words(&slots);
+            let ctx = t.words(&[vt, 0]);
+            t.g32(l9t::CONTEXT, ctx);
+            // junk in the list: the original clears its first word
+            let out = t.words(&[0xaaaa_aaaa; 0x10]);
+            let mut level = rng.below(n_levels + 1);
+            if rng.chance(10) {
+                // a count of 0 counts as 1: level 1 and past have none
+                t.w32(tex + 0x24, 0);
+                level = 1 + rng.below(2);
+            }
+            let ebp = t.frame_ebp(2);
+            // the lock (ebp - 0x2c) and the mapped subresource (ebp - 0x38)
+            // where the original has them
+            t.b.set_call_top(Some(ebp - 0x140));
+            t.check(
+                &format!("mapLevel #{case} level {level}"),
+                0x0059_6b90,
+                Conv::Thiscall(tex),
+                &[level, out],
+                |g| Out::U32(l9t::map_level(g, ebp, tex, level, out)),
+            );
+            t.b.set_call_top(None);
+        }
+    });
+}
