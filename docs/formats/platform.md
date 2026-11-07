@@ -583,9 +583,9 @@ the game's own scripts can start a movie that early is not checked.
 
 ### The open and other files (measured, ffx-remix M10)
 
-Measured 2026-11-07 with ffx-remix's runtime in harness games
-(ffx-remix's `tools/probe-movie.sh`): movie 2 as
-`tools/replays/movie-fmv.txt` plays it (save `ffx_003`, `bsil0000`'s
+Measured 2026-11-07 in harness games (ffx-remix's
+`tools/probe-movie.sh`; the open hook is ffx-remix's runtime): movie 2
+as `tools/replays/movie-fmv.txt` plays it (save `ffx_003`, `bsil0000`'s
 worker 24 entry 5, the preload held until its 30 frames are decoded).
 All runs were in lockstep. The test-file runs below used the real clock
 (the script's `--realtime`); the open hook's runs used the virtual clock

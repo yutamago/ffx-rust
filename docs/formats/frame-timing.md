@@ -149,6 +149,7 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
 - **Voice-synced cut scenes.** `g_SyncOn` paces the ticks to the sync clock (real time), so the
   booster does nothing there. Exec frames would run n ticks per synced step and leave the voices
   behind.
+
   `Sg_SyncCutScene` (`0x00821d60`) calls `iSyncGetData` (`0x0067a930`) -> `SyncManager_syncGetData`
   (`0x006fb160`), which returns 999 at once when the manager's `+8` (the cursor) or `+0x1c` is 0;
   otherwise it waits (5 ms sleeps) while `+0x20` is 0, reads one step at the cursor (time `f32`,
@@ -163,10 +164,12 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
   `0x012fb828`, 30 words, read at index `0x012fb814` minus `g_VoiceHold`; 0x100 at exec frames other
   than 1), which only keep-fps motions step by (`SG_UpdateMotion` `0x00838c90`, for actors with flag
   `0x100000` at `+0x194` while `Sg_GetKeepFps()` is not 0; above). So the n-th update after the
-  start gets the n-th step's frame as that rate, whatever real time it runs at. When the end marker
-  comes inside the catch-up loop, the sync is cleared there (the table zeroed), so every update of
-  that drawn frame, the added one included, runs with the sync off; the steps already read for it
-  are dropped.
+  start gets the n-th step's frame as that rate, whatever real time it runs at, as long as no update
+  of a drawn frame is dropped (`Sg_MainLoop` clearing `g_VoiceHold` early, the `0x01340844 == 1`
+  path) and the game is not paused (`g_PauseOn`: no `Sg_FrameSync`, the updates keep the last
+  index). When the end marker comes inside the catch-up loop, the sync is cleared there (the table
+  zeroed), so every update of that drawn frame, the added one included, runs with the sync off; the
+  steps already read for it are dropped.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
