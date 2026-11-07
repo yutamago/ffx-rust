@@ -320,8 +320,9 @@ Seven traced runs (ffx-remix `m9/probe` trace1, trace2, live1, live2,
 exit-vanilla, exit-fire, exit-fire2) had the same updates for the calls;
 the draw and handle rows are from the six after trace1 (its tracer did not
 yet read the table through the pointer or log the handle's change). The
-runs with ffx-remix's hide (live1, live2, exit-fire, exit-fire2) log the
-spell's draws too: the tracer reads the list before the hide zeroes it.
+traced runs with ffx-remix's hide (live1, live2, exit-fire, exit-fire2)
+log the spell's draws too: the tracer reads the list before the hide
+zeroes it.
 
 The hit most likely comes from the overlay itself (inferred: the tracer
 did not log the caller): `magic_0076.dll` has one call to `MsSetDamage`
@@ -330,17 +331,18 @@ through `g_MagicImports` slot 239 (`mov eax, [imports+0x3bc]` at
 a call and calls it at its stages' thresholds 0.35 and 0.5, which fits two
 calls 4 updates apart (u0 + 89, u0 + 93). `FFX.exe` has one other caller
 with the constants `(…, -5, 0)`, `MsEffectSignalDamage_007b7680` (reached
-through `MsEffectSignal_007b74d0`, from the motions' effect signals and native
-`0x709e`); the `0x400` call at u0 + 138 has no such site in the overlay;
-the only `MsSetDamage` call in `FFX.exe` passing a constant `0x400` is
-`MsBattleProcess_ChrDamage`'s (the call at `0x007912cb`, `push 0x400` at
-`0x007912c3`) (`docs/formats/battle.md`; the tracer did not log the
-caller). That `MsNumberRegist` runs inside that `MsSetDamage` is inferred
-from the log (the number's line before the call's, which is written as it
-returns, in the same update). Hiding all of the spell's draws (below) left
-every row above on the same update, the target's HP changed on the same
-harness frame, and frame-by-frame shots showed the number first on the
-same shot (exit-vanilla against exit-fire and exit-fire2).
+through `MsEffectSignal_007b74d0`, from the motions' effect signals and
+native `0x709e`); the `0x400` call at u0 + 138 has no such site in the
+overlay; the only `MsSetDamage` call in `FFX.exe` passing a constant
+`0x400` is `MsBattleProcess_ChrDamage`'s (the call at `0x007912cb`, `push
+0x400` at `0x007912c3`) (`docs/formats/battle.md`; the tracer did not log
+the caller). That `MsNumberRegist` runs inside that `MsSetDamage` is
+inferred from the log (the number's line before the call's, which is
+written as it returns, in the same update). Hiding all of the spell's
+draws (below) left every row above on the same update, the target's HP
+changed on the same harness frame, and frame-by-frame shots showed the
+number first on the same shot (exit-vanilla against exit-fire and
+exit-fire2).
 
 **Which draws are the spell's.** In the 142 drawn frames from u0 - 1 to
 u0 + 140 (the tracer's window: it logs three frames with the ID -1; the same
