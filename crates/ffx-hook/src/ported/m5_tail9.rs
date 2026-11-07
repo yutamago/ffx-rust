@@ -120,6 +120,13 @@ ported! {
             }),
         }
     }
+    /// `(out, _, _, batch, cursors, targets)` -> 0: the clip evaluated
+    /// into the targets; the slerp's quaternions and result in a frame.
+    PAnimationController_batch_005258d0 @ 0x0052_58d0 => extern "C" fn controller_batch(out: u32, _unused1: u32, _unused2: u32, batch: u32, cursors: u32, targets: u32) -> u32 {
+        let mut slerp = StackFrame::<{ (ffx_panim::l9_batch::bridge::SLERP_FRAME / 4) as usize }>::new();
+        let at = slerp.at();
+        ffx_panim::l9_batch::bridge::batch(&mut mem(), at, out, batch, cursors, targets)
+    }
     /// `()`: the ability map's job wait (queue 0 of `0x00cdede4`).
     AbmapJobWait_00a8ecf0 @ 0x00a8_ecf0 => extern "C" fn abmap_job_wait() {
         ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());

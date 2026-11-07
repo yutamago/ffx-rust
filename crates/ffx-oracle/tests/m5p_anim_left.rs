@@ -4312,3 +4312,172 @@ fn l9_bind_targets_matches_the_original() {
         }
     }
 }
+
+// ---- tail9: the animation controller's batch function (ffx_panim::l9_batch) ----
+
+use ffx_panim::l9_batch::bridge as l9b;
+
+/// A float for keyed values: small, round, negative, NaN (quiet) or a
+/// unit-ish quaternion lane.
+fn l9_value(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        // axis quaternions: dot products of exactly 0 and 0.7
+        6 => [0.0_f32, 1.0, 0.7, -1.0][rng.below(4) as usize].to_bits(),
+        7 => 0,
+        0 => (rng.below(200) as f32 / 50.0 - 2.0).to_bits(),
+        1 => (rng.below(1000) as f32 / 1000.0).to_bits(),
+        2 => (-(rng.below(1000) as f32) / 1000.0).to_bits(),
+        3 if rng.chance(4) => 0x7fc0_0000 | rng.below(8),
+        _ => (0.5_f32 - rng.below(100) as f32 / 400.0).to_bits(),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the clip, its tracks and targets
+fn l9_controller_batch_matches_the_original() {
+    // groups of 0..3 channels with 1..4 lanes (each window size), keys
+    // shared between channels (the cached search) or not, 1..40 keys;
+    // times before, at, between and after the keys, NaN, the cached
+    // time's start (-1); cursors in and out of range; every kind (linear,
+    // quaternion near and far, opposite signs, step, other); targets in
+    // and out of range; constant channels; each case run twice (the
+    // cursors as the first run left them)
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0052_58d0);
+        for case in 0..1500_u32 {
+            let n_targets = 1 + rng.below(6);
+            let first = rng.below(4);
+            let records = t.junk(0x10 * n_targets as usize, 0x55);
+            let targets = t.alloc(&[0; 12]);
+            t.w32(targets, records);
+            t.w32(targets + 4, n_targets);
+            t.w32(targets + 8, first);
+            let dst = t.junk(0x20 * n_targets as usize, 0x66);
+            let out = t.alloc(&dst.to_le_bytes());
+            let target = |rng: &mut Rng| {
+                (first + rng.below(n_targets + 2)).wrapping_sub(u32::from(rng.chance(9)))
+            };
+            let n_groups = rng.below(4);
+            let counts: Vec<u32> = (0..n_groups).map(|_| rng.below(4)).collect();
+            let n_anim: u32 = counts.iter().sum();
+            let n_static = rng.below(4);
+            let round4 = (n_groups + 3) & !3;
+            // the clip: header, counts, channel lists, tracks
+            let list_at = 8 + 2 * round4;
+            let tracks_at = list_at + 4 * (n_anim + n_static);
+            let clip = t.zeros((tracks_at + 0x10 * n_anim + 0x10) as usize);
+            t.write(clip + 2, &(n_anim as u16).to_le_bytes());
+            t.write(clip + 4, &(n_static as u16).to_le_bytes());
+            t.write(clip + 6, &(n_groups as u16).to_le_bytes());
+            for (g, c) in counts.iter().enumerate() {
+                t.write(clip + 8 + 2 * g as u32, &(*c as u16).to_le_bytes());
+            }
+            for i in 0..n_anim + n_static {
+                let tgt = target(&mut rng) as u16;
+                let kind = rng.below(5) as u16;
+                t.write(clip + list_at + 4 * i, &tgt.to_le_bytes());
+                t.write(clip + list_at + 4 * i + 2, &kind.to_le_bytes());
+            }
+            // tracks: keys (shared now and then) and values
+            let mut shared: Option<(u32, u32)> = None;
+            let mut d = 0;
+            for &c in &counts {
+                let comps = 1 + rng.below(4);
+                for _ in 0..c {
+                    let (keys, n) = match shared {
+                        Some(s) if rng.chance(2) => s,
+                        _ => {
+                            let n = 1 + rng.below(40);
+                            let mut k = rng.below(3) as f32 * 0.25;
+                            let mut words = Vec::new();
+                            for _ in 0..n {
+                                words.push(k.to_bits());
+                                k += if rng.chance(8) {
+                                    0.0
+                                } else {
+                                    0.25 * (1 + rng.below(4)) as f32
+                                };
+                            }
+                            let keys = t.alloc(
+                                &words
+                                    .iter()
+                                    .flat_map(|w| w.to_le_bytes())
+                                    .collect::<Vec<_>>(),
+                            );
+                            shared = Some((keys, n));
+                            (keys, n)
+                        }
+                    };
+                    let values: Vec<u32> = (0..(n + 2) * comps + 4)
+                        .map(|_| l9_value(&mut rng))
+                        .collect();
+                    let values = t.alloc(
+                        &values
+                            .iter()
+                            .flat_map(|w| w.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+                    let at = clip + tracks_at + 0x10 * d;
+                    t.w32(at, keys);
+                    t.w32(at + 4, values);
+                    t.w32(at + 8, n | (comps << 24));
+                    d += 1;
+                }
+            }
+            // the constant values: 0x34-byte records, lanes at +0x24
+            let statics: Vec<u32> = (0..13 * n_static.max(1))
+                .map(|_| l9_value(&mut rng))
+                .collect();
+            let statics = t.alloc(
+                &statics
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            // the batch: [batch] the header's offset, +0x14 the clip, +0x1c
+            // the constant values
+            let batch = t.zeros(0x60);
+            t.w32(batch, 0x40);
+            let time = match rng.below(7) {
+                0 => -1.0_f32,
+                1 => f32::from_bits(0x7fc0_0001),
+                2 => -0.5,
+                3 => 100.0,
+                _ => rng.below(40) as f32 * 0.125,
+            };
+            t.w32(batch + 0x40, time.to_bits());
+            t.write(batch + 0x46, &(n_static as u16).to_le_bytes());
+            t.w32(batch + 0x14, clip);
+            t.w32(batch + 0x1c, statics);
+            let cursors: Vec<u32> = (0..n_anim.max(1))
+                .map(|_| match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(50),
+                    2 => 0xffff_ffff,
+                    _ => rng.below(8),
+                })
+                .collect();
+            let cursors = t.alloc(
+                &cursors
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let (a2, a3) = (rng.next(), rng.next());
+            for run in 0..2 {
+                let what = format!("{label}: batch #{case} run {run}");
+                t.check(
+                    &what,
+                    0x0052_58d0,
+                    Conv::Cdecl,
+                    &[out, a2, a3, batch, cursors, targets],
+                    |g| {
+                        let scratch = g.1;
+                        Out::U32(l9b::batch(g, scratch, out, batch, cursors, targets))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}
