@@ -289,7 +289,14 @@ behind them stays with those modules, which the bridges call.
   ("SG:AddMseq"). Either way `Ch_SeqLink` runs.
 - `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): id entry kinds (low 7 bits of
   `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit 2,
-  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`.
+  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`. A match keeps
+  the character out: `Sg_IdWalk` stops at a neighbour that matches
+  (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone but
+  the player, 13 chocobos, 14 only the player, and every other kind
+  blocks no one. Over the game's walk meshes (the 348 pages and the 48
+  section-9 meshes, field.md) 257,084 triangles are kind 0, 6,398 kind
+  14, 663 kind 1 and about 20,000 `0x30..0x3d`, the passages scripts open and close with
+  `Native_4017_IdSetMapTable`; kinds 2 and 13 are not used.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
   `0x00822620`): the dream effect. A shown layer whose display byte
   (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
@@ -681,6 +688,34 @@ the walk and run speeds (`0x013007b4`, `0x013007b8`; run without button
 (`Sg_PlayerSetDirFix`, `0x013007c8`) replacing the yaw when its flag
 (`0x013007c4`) is set. Every intermediate is an `f32` store of a 53-bit
 x87 result.
+
+### Who has the camera (ffx-remix M8)
+
+- Movement follows whichever camera is active: the direction is taken
+  against `MsCameraGetYaw` every frame (with `g_CameraFollow` 3, when the
+  stick turns far enough). A camera that replaces the game's only has to
+  make `MsCameraGetYaw` answer its own yaw for the stick to move the
+  player relative to it. In the game, the answer is `θ + π` for `θ` the
+  eye's angle about the point looked at (`eye - target = (cos θ, ·, sin θ)`
+  in x and z, field units).
+- `MsScreenProcess` (battle.md) builds `g_CameraMatrix` (`0x02311440`)
+  every update from the active channel camera's eye (`g_Camera + 0x65c`)
+  and look-at (`+0x40`) and hands it on with `Cam_Apply` (`0x007bc980`:
+  field of view, aspect, `graphicCameraSetWorldMatrix`). With
+  `g_CamOverrideOn` (`0x0231142c`, set by `MsEffectCameraSet` `0x007bbb10`)
+  it builds the matrix from the override's eye, look-at, up and roll
+  instead and does not call `Cam_Apply`.
+- `Sg_GetPlayerControlEnable` reads `0x00c496d8`, which is 1 in the image.
+  Its only writer (`0x0082db10`) is never called, so the flag stays 1.
+  Scripts take the player's control by taking the player away:
+  `AtelUcOff` (`0x008719e0`) ends with `Sg_SetPlayer(0)`, and `AtelUcOn`
+  (`0x00871ab0`) sets it again. `Native_ControlDisable` (`0x005e`),
+  `AtelUpdateWindowStatus` (message windows), `AtelSetEventJump` and
+  `AtelSetEventJump2` (map changes), `AtelSetCtrlChar`,
+  `AtelEventSetUpForBattleMusic`, `Atel_UcResume` and `Atel_UcRestore`
+  call `AtelUcOff`. So `g_Player` (`0x01300788`) is 0 while a script holds
+  control: a replacement camera can hand the view back to the game
+  whenever it is 0 or `g_CamOverrideOn` is set.
 
 ## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
 

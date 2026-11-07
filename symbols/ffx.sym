@@ -21122,7 +21122,7 @@
 0x0090a420 function YiRender_initFogDefault_0090a420 # cdecl() -> 0: yiRender_initfog(&g_YiRender); Native_021e_RenderInitFog's callee; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
-0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (an ID map) to Sg_IdFixupAndSet when present
+0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (walk-mesh page `page`, field.md) to Sg_IdFixupAndSet when present
 0x0090a4d0 function yiSetMIMeParamDObj           # layout and calls: the one unused Switch name between yiSetIDPage and yiSetMatrixDObj that fits (yiSetMIMeParamDObj, 76 bytes, calls graphicSetMeshVertexColorMorphValue; ours 56 bytes): (dobj, &value): stores the value in the DObj record (0x018df624 + dobj * 0xb4) when dobj < g_YiDObjCount and passes it to 0x00643700
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
@@ -28310,6 +28310,7 @@
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496d4 label    g_ExecFrames              # i8: world ticks per Sg_MainLoop (1 in the image; Sg_SetExecFrames clamps 0..99, the debug pad steps it in Sg_ControlMain); Sg_GetCurExecFrames reads it; docs/formats/frame-timing.md; name ours
 0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
+0x00c496d8 label    g_PlayerControlEnable     # u8: 1 in the image; Sg_GetPlayerControlEnable (0x0082d870) reads it, Sg_ControlPlayer gives the player speed 0 when it is 0; its only writer (0x0082db10) is dead code, so it stays 1; scripts take control with Sg_SetPlayer(0) (AtelUcOff); name ours
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set; 1 in the shipped exe's .data (ffx-demaster docs/render.md)
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
