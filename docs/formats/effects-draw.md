@@ -290,55 +290,77 @@ them `NO-DRAW`.
 A trace in the 32-bit game (ffx-remix's runtime, `FFXREMIX_FX_TRACE=1`,
 `Effects/EffectTrace.cs`; harness lockstep, fast mode, virtual clock, seed
 1): Lulu alone against the Thunder Plains' first formation (battle field
-34, formation 0) casts Fire (magic `0x4c`, `magic_0076.dll`) on the Larva
-(actor 20). Hooks on `FFXApplication_animate` (one count per update),
-`PhyreScene_DrawMostVFX` (each list entry, its geometry through the table
-and its instance key), `MsSetDamage`, `MsNumberRegist` and
-`MsEffectReady`. Counting updates from the update `g_MagicFile_MagicId`
-becomes `0x4c`, three runs gave the same numbers:
+34, formation 0: Larva, actor 20, and Gold Element, actor 21; the probe
+raises their HP and Lulu's to 99999) casts Fire (magic `0x4c`,
+`magic_0076.dll`) on the Larva. Hooks on `FFXApplication_animate` (one
+count per update; the magic ID and handle read at the start of each
+update, before the game's own), `PhyreScene_DrawMostVFX` (each list entry,
+its geometry through the table and its instance key, labelled with the
+update count of the moment), `MsSetDamage` (logged when it returns),
+`MsNumberRegist` and `MsEffectReady`. Counting from u0, the first update
+that starts with `g_MagicFile_MagicId` = `0x4c` (it is set during update
+u0 - 1):
 
 | Update | What |
 |---|---|
-| +0 | `g_MagicFile_MagicId` = `0x4c` |
-| +1 | `g_MagicFile_Handle` valid |
-| +50 | `MsEffectReady(0x205, 1)` (kind 2, actor 5: the caster's effect state 4 → 5) |
-| +79 | the spell's own draws start |
-| +89 | `MsSetDamage(5, -5, 0)` and, in the same update, `MsNumberRegist(0x14, …, 170, …)`: the hit and its damage number |
-| +93 | `MsSetDamage(5, -5, 0)` again |
-| +128 | the spell's own draws end |
-| +138 | `MsSetDamage(5, -5, 0x400)` (the command's end) |
-| +139 | `g_MagicFile_MagicId` = -1 |
+| u0 | starts with the magic ID `0x4c` |
+| u0 + 1 | starts with `g_MagicFile_Handle` valid |
+| u0 + 50 | `MsEffectReady(0x205, 1)` (kind 2, actor 5) |
+| u0 + 79 | the first draws of the spell's own (draws labelled with this count) |
+| u0 + 89 | `MsNumberRegist(0x14, …, 170, …)` and `MsSetDamage(5, -5, 0)`: the hit and its damage number |
+| u0 + 93 | `MsSetDamage(5, -5, 0)` again |
+| u0 + 129 | the last draws of the spell's own |
+| u0 + 138 | `MsSetDamage(5, -5, 0x400)` (the command's end); the magic ID is -1 at the start of u0 + 139 |
 
-So the damage number comes from the overlay's own call into `MsSetDamage`
-(`g_MagicImports` slot 239) on the update it decides; the spell's drawing
-plays no part. Hiding all of the spell's draws (below) left every row
+Seven runs (ffx-remix `m9/probe` trace1, trace2, live1-3, exit-vanilla,
+exit-fire) had the same updates for the calls; the draw and handle rows
+are from the five whose tracer read the table (trace1's could not).
+
+The hit comes from the overlay itself: `magic_0076.dll` calls `MsSetDamage`
+through `g_MagicImports` slot 239 (`mov eax, [imports + 0x3bc]` at
+`0x100064b9`, arguments `(…, -5, 0)`); the `0x400` call at u0 + 138 has no
+such site in the overlay and comes from the battle code. That
+`MsNumberRegist` runs inside that `MsSetDamage` is inferred from the log
+(the number's line before the call's, which is written as it returns, in
+the same update). Hiding all of the spell's draws (below) left every row
 above on the same update, the target's HP changed on the same harness
-frame, and frame-by-frame shots showed the number first on the same frame
-(two runs, lockstep, seed 1).
+frame, and frame-by-frame shots showed the number first on the same shot
+(exit-vanilla and exit-fire).
 
-**Which draws are the spell's.** Every Fire draw from the overlay has a ppp
-key (`(g_pppCurrentProgram, object)`) whose object, and its birth record's
+**Which draws are the spell's.** In the frames from u0 - 1 to u0 + 141
+(the tracer's window), 4,680 entries are the spell's: ppp keys
+(`(g_pppCurrentProgram, object)`) whose object, and its birth record's
 program list (object `+8`, `+0`), lie inside the overlay's image (the
-module handle up to `SizeOfImage`); they use the overlay's textures
-(`magic/magic_0076/tex/...`). In the same frames: the casting pillar and
-other shared battle effects are ppp objects outside the image with
-`yonishi_data/dat_et/bat_eff/et_tex` textures (about 25 draws before,
-during and after the spell), and the battle map's field programs use
-`btlmap/kami/kami00_a/fp` textures. No op-record (`(0, record)`) draws.
-Entries whose geometry was destroyed (`graphicVFXDestroy` zeroes the table
-entry, not always the list's) stay in `+0x38cc` for a frame or two after
-the spell's last update.
+module handle up to `SizeOfImage`); the two tests never disagree, and all
+of them use the overlay's textures (`magic/magic_0076/tex/...`). The other
+draws of those frames: shared battle effects, ppp objects outside the
+image with `yonishi_data/dat_et/bat_eff/et_tex` textures (20-62 a frame,
+the casting pillar among them; 21-31 while the spell's own draws are on
+screen); about 3 untextured ppp draws a frame outside the image (flags 2
+or 3, programs 4, 5 and 12) and a few "empty" ones; and the battle map's
+field programs (`btlmap/kami/kami00_a/fp` textures). No op-record
+(`(0, record)`) draws.
+
+**List entries missing from the table.** Most frames have 1-14 entries of
+`+0x38cc` whose mesh instance is in no table entry (329 in 142 frames, new
+addresses each frame): geometry already removed from the table
+(`graphicVFXDestroy` → `ClassVFXRenderDataTable_Remove` `0x0069fc10`, which
+erases the map node and puts the geometry in the delete pool; it does not
+touch `+0x38cc`). A hide by instance key must remember the spell's entries
+for a frame or two: 2 such entries of Fire were still in the list after
+the magic ended.
 
 **Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
 `DrawMostVFX` runs (and putting them back after) hides those draws: the
 loop skips zero entries and the draw events still run at their places.
 
 **Where the actors are.** The caster is the actor with a command cue entry
-(`+0xde5` not `0xff`) and an effect state (`+0xdfb`, 16 → 2 → 4 → 5 over
-Fire); the targets are the bits of its `+0xdc4` (battle.md). A battle
-character's place in the HD scene (the space the draws' world matrices
-use) is `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on field maps: an
-effect placed there sat on the Larva in the live frames.
+(`+0xde5` not `0xff`) and an effect state (`+0xdfb`; sampled 16, 2, 4, 5
+over Fire: 16 is not in the `MsEffectStart` table above, 3 and 11 were
+not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
+battle character's place in the HD scene (the space the draws' world
+matrices use) is `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on field
+maps: an effect placed there sat on the Larva in the live frames.
 
 ## Gate
 
