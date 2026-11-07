@@ -573,7 +573,7 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
   file's background `+0x10`, render data `+0x14`, the walk-mesh page
   (section `page + 2` to `Sg_IdFixupAndSet`; `page` is the read
-  request's `+0x14`, its `+0x10` the file), `ppp` data
+  request's word `+0x14`, the file its word `+0x10`), `ppp` data
   `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
   the default animations), `yiObjReadFinish`. Animation slots:
   `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
@@ -1853,20 +1853,20 @@ The 4-component ones leave `a.w = b.w ± c.w`.
 ## The walk mesh on disk (ffx-remix M8)
 
 The id map that `Sg_IdSetPtr` installs is the map's walk mesh (not the
-cloth triangles of main.md's "Round 13: the walk mesh's triangle
-exceptions (`crates/ffx-sg/src/triangle.rs`)", which are cloth triangles
-despite the name): the triangles characters stand on, with the kind bits
-that decide who may enter each one (`Sg_IdMatchChr`, main.md, "Bones,
+triangles of main.md's "Round 13: the walk mesh's triangle exceptions
+(`crates/ffx-sg/src/triangle.rs`)", which despite the heading are cloth
+triangles): the triangles characters stand on, with the kind bits that
+decide who may enter each one (`Sg_IdMatchChr`, main.md, "Bones,
 sequences, id kinds, the dream effect, cloth rods (round 4)"). It lives
 in `MAP1` sections 2 to 8, pages 0 to 6 of `yiSetIDPage` and
 `yiSetPreBgPage`. Over the game's maps there are 383 pages: page 0 on
 328 of the 329 maps with a `MAP1` file (`gameover`'s `titl01` has only
 section 0), page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2
-each. 59 maps also have a mesh of the same layout in section 9
-(`lmyt0100` 163 vertices and 259 triangles, the others 4 and 2). Page 7
-would install it (`yiSetIDPage` does not check the page); whether a
-script asks for page 7 was not checked. The counts are per map: a `MAP1`
-file several maps share counts once for each of them.
+each, none page 5. 59 maps also have a mesh of the same layout in
+section 9 (`lmyt0100` 163 vertices and 259 triangles, the others 4 and
+2). Page 7 would install it (`yiSetIDPage` does not check the page);
+whether a script asks for page 7 was not checked. The counts are per
+map: a `MAP1` file several maps share counts once for each of them.
 
 Every page has the same layout:
 

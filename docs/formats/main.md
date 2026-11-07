@@ -696,14 +696,15 @@ x87 result.
 ### Who has the camera (ffx-remix M8)
 
 - Movement follows whichever camera is active: the direction is taken
-  against `MsCameraGetYaw`, every frame except with `g_CameraFollow` 3
-  (above). Unless the fixed direction is on, a camera that replaces the
-  game's only has to make `MsCameraGetYaw` answer its own yaw for the
-  stick to move the player relative to it. `MsCameraGetYaw` is the polar
-  angle of look-at minus eye taken from `g_Camera + 0x50` and `+0x66c`,
-  the positions before the shake (the view below uses `+0x40` and
-  `+0x65c`, with the shake). It answers `θ + π` (mod 2π), where `eye -
-  target = (cos θ, ·, sin θ)` in x and z.
+  against the yaw `MsCameraGetYaw` answers, read every frame except with
+  `g_CameraFollow` 3 (above). Unless the fixed direction is on, a camera
+  that replaces the game's only has to make `MsCameraGetYaw` answer its
+  own yaw for the stick to move the player relative to it.
+  `MsCameraGetYaw` is the polar angle of look-at minus eye taken from
+  `g_Camera + 0x50` and `+0x66c`, the positions before the shake (the
+  view below uses `+0x40` and `+0x65c`, with the shake). With `θ` the
+  angle of eye minus look-at in x and z, it answers `θ + π` (mod 2π).
+
 - `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)")
   builds `g_CameraMatrix` (`0x02311440`) from the active channel
   camera's eye (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls
@@ -715,7 +716,8 @@ x87 result.
   (`g_CameraMatrixOn`, `0x023114c4`) it builds no view matrix, skips
   `MsScreenMatrix` and does not call `Cam_Apply`; of the view it sets
   only the screen offset. battle.md also lists the three levels that
-  check the vectors first and the screen that is off.
+  check the vectors first and the -1 for a screen that is off.
+
 - `Sg_GetPlayerControlEnable` reads the word `0x00c496d8`, which is 1 in
   the image. Its only writer (`0x0082db10`) is never called, so the flag
   stays 1. Scripts take the player's control by taking the player away:
@@ -725,11 +727,12 @@ x87 result.
   `Native_ControlDisable` (`0x005e`), `AtelSetEventJump` and
   `AtelSetEventJump2` (map changes) call `AtelUcOff`, which leaves
   `g_Player` (`0x01300788`) 0. `AtelEventSetUpForBattleMusic` calls
-  `AtelUcOff` and then `AtelUcOn` after setting ctrl work 0's byte 3 bit
-  `0x80`, which skips it when ctrl work 0 is the current one (which one
-  is current there was not checked). `AtelUpdateWindowStatus` (message
-  windows), `AtelSetCtrlChar`, `Atel_UcResume` and `Atel_UcRestore` call
-  `AtelUcOff` and then `AtelUcOn` when control was on and no window
+  `AtelUcOff`, then `AtelUcOn` under the same test as below; the bit
+  `0x80` it has just set on ctrl work 0's byte 3 fails that test when
+  ctrl work 0 is current (which one is current there was not checked).
+  `AtelUpdateWindowStatus` (message windows), `AtelSetCtrlChar`,
+  `Atel_UcResume` and `Atel_UcRestore` call `AtelUcOff` and then
+  `AtelUcOn` when control was on and no window or other context bit
   holds it, so there the player often comes straight back. Scripts can
   also set the player directly (`Native_000c_SgSetPlayer`). ffx-remix's
   free camera hands the view back to the game whenever `g_Player` is 0,
