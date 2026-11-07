@@ -257,3 +257,36 @@ changes. At a
 decoupled draw rate (a), a script still sees only ticks. A mod that wanted finer steps would have
 to raise the tick rate itself, and that changes the meaning of every frame count in the game's
 scripts and code (all of them written for 30), so it is not a mod-sized change.
+
+## A frame-rate mod built on this
+
+Atel#'s `src/Ffx.Frames` (Fahrenheit mod `yuta.frames`, `docs/research/frame-timing.md` there,
+"What the Frames mod does") does (1) above as a mod. It has not run in the game yet. The engine
+facts it relies on, beyond the sections above:
+
+- **The limiter's operands.** `Game_Main` computes the interval as `fild dword [g_FrameVsyncs]`
+  (`0x0062f2fc`, `db 05`) times `fmul qword [0x00b412d8]` (`0x0062f318`, `dc 0d`, 1/59.94). A frame
+  starts when over = now − last − interval ≥ 0. Then last = now − min(over, interval), so it
+  catches up by at most one interval. Otherwise it sleeps `(int)(over × −1000.0)` ms
+  (`0x00b41328`, truncated). Pointing the two operands at other values gives any interval, and
+  0 gives no wait.
+- **Exec frames.** `Sg_GetCurExecFrames` (`0x0082d7e0`) returns (byte `0x013007b1` ? byte `0x013007b2`
+  : `g_ExecFrames` `0x00c496d4`) | byte `0x013007b3`, all signed bytes. Writing `g_ExecFrames` before
+  `Sg_MainLoop`'s update sets that update's ticks, 0 included.
+- **The hold.** After `Sg_FrameSync`, `Sg_MainLoop` takes one off `g_VoiceHold` above 1 and clears
+  it otherwise, and `updateFFX` repeats while it is not 0. So `g_VoiceHold` = n written after the
+  frame's first `Sg_FrameSync` gives n updates. The sync clock and `Sg_SyncCutScene` run only
+  inside `Sg_FrameSync`'s `g_VoiceHold == 0` branch.
+- **The camera reaches the renderer in the draw.** `MsScreenProcess` (`0x007bc110`, once per screen
+  of each `Sg_MainLoop`'s draw) computes `g_ScreenMatrix` and `g_CameraMatrix` and ends with
+  `Cam_Apply` → `graphicCameraSetWorldMatrix(&g_CameraMatrix)`. A point is drawn at
+  `p × camera × screen`. So the camera has to be swapped during the draw, at that call, not after
+  the tick.
+- **The pad.** `TkUpdateScanControler` (`0x00889a80`) scans the ports in every `Sg_MainLoop`.
+  `TkScanControler` (`Pad_UpdateFrame`, inside `Sg_FrameSync`) and `Sg_ControlMain` turn that into
+  history and edges. A frame that does not tick has to skip all three, or it uses up a press.
+- **Not idempotent per update.** `Ch_CalcMiddle` (motion events through `Ch_MotEvent`), `yiAnimMain`,
+  `Sg_DrawFilter` (the fade slots' i16 counters at `0x01300708 + 0x10 i`), `graphicVideoUpdate`,
+  the v-blank counters, and the Eternal Calm copyright count (`0x012fb7c0`).
+- **Vsync.** `Renderer_PresentFlip` presents with sync interval 1 while the renderer's byte
+  `+0x131c` is set and 0 otherwise. The 30 fps cap is the limiter's alone.
