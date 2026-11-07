@@ -288,13 +288,13 @@ them `NO-DRAW`.
 
 ## A spell live: Fire (ffx-remix M9, 2026-11-07)
 
-A trace in the 32-bit game (ffx-remix's runtime, `FFXREMIX_FX_TRACE=1`,
-`Effects/EffectTrace.cs`; harness lockstep, fast mode, virtual clock, seed
-1): Lulu alone against the Thunder Plains' first formation (battle field
-34, formation 0: Larva, actor 20, and Gold Element, actor 21; the runs'
-probe raised the monsters' HP to 99999; its writes meant for Lulu's HP
-landed at her `+0x674` and `+0x6b0`, inside `limits` `+0x670`, instead)
-casts Fire (magic `0x4c`, `magic_0076.dll`) on the Larva. Hooks on
+A trace in the 32-bit game: ffx-remix's runtime with `FFXREMIX_FX_TRACE=1`
+(`Effects/EffectTrace.cs`), harness lockstep, fast mode, virtual clock,
+seed 1. Lulu alone against the Thunder Plains' first formation (battle
+field 34, formation 0: Larva, actor 20, and Gold Element, actor 21) casts
+Fire (magic `0x4c`, `magic_0076.dll`) on the Larva. The runs' probe raised
+the monsters' HP to 99999; its writes meant for Lulu's HP landed at her
+`+0x674` and `+0x6b0`, inside `limits` (`+0x670`). Hooks on
 `FFXApplication_animate` (one count per update; the magic ID and handle
 read at the start of each update, before the game's own),
 `PhyreScene_DrawMostVFX` (each list entry, its geometry through the table
@@ -324,15 +324,15 @@ zeroes it.
 The hit comes from the overlay itself: `magic_0076.dll` calls
 `MsSetDamage` through `g_MagicImports` slot 239 (`mov eax,
 [imports+0x3bc]` at `0x100064b9`, arguments `(…, -5, 0)`); the `0x400`
-call at u0 + 138 has no such site in the overlay and comes from the battle
-code (`MsBattleProcess_ChrDamage`, `MsSetDamage(i, -5, 0x400)`,
-battle.md). That `MsNumberRegist` runs inside that `MsSetDamage` is
-inferred from the log (the number's line before the call's, which is
-written as it returns, in the same update). Hiding all of the spell's
-draws (below) left every row above on the same update, the target's HP
-changed on the same harness frame, and frame-by-frame shots showed the
-number first on the same shot (exit-vanilla against exit-fire and
-exit-fire2).
+call at u0 + 138 has no such site in the overlay; the only `MsSetDamage`
+call with `0x400` in `FFX.exe` is `MsBattleProcess_ChrDamage`'s
+(battle.md; the tracer did not log the caller). That `MsNumberRegist` runs
+inside that `MsSetDamage` is inferred from the log (the number's line
+before the call's, which is written as it returns, in the same update).
+Hiding all of the spell's draws (below) left every row above on the same
+update, the target's HP changed on the same harness frame, and
+frame-by-frame shots showed the number first on the same shot
+(exit-vanilla against exit-fire and exit-fire2).
 
 **Which draws are the spell's.** In the 142 drawn frames from u0 - 1 to u0
 + 140 (the tracer's window: it logs three frames with the ID -1; the same
