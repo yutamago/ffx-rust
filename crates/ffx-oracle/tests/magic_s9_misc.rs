@@ -2811,12 +2811,14 @@ fn rotations_3650() {
 /// or not, a NaN step), the flag word's bits.
 #[test]
 fn nodes_eased() {
-    use sa::{RINGS, VTABLE_2, check_this_thunk, handler_stubs, node, rec, ring};
+    use sa::{RINGS, VTABLE_2, check_this_eax, check_this_thunk, handler_stubs, node, rec, ring};
     for (dll, f, thunk) in [
         (155u16, 0x31d0u32, 0x37c0u32),
         (613, 0x3240, 0x3830),
         (570, 0x40e0, 0x46d0),
         (597, 0x3e00, 0x43f0),
+        // (its thunk calls instead of jumping: not ported)
+        (70, 0x40e0, 0),
     ] {
         let Some(mut t) = sa::twin(dll) else { return };
         handler_stubs(&mut t);
@@ -2893,7 +2895,11 @@ fn nodes_eased() {
                         t.set_u32(n + off, 0);
                     }
                 }
-                check_this_thunk(&mut t, f, thunk, s9_misc::node_ease, Eax::Checked);
+                if thunk == 0 {
+                    check_this_eax(&mut t, f, s9_misc::node_ease, Eax::Checked);
+                } else {
+                    check_this_thunk(&mut t, f, thunk, s9_misc::node_ease, Eax::Checked);
+                }
             }
         }
     }
@@ -3436,7 +3442,12 @@ fn effect_groups_init() {
 /// actor's height and below, the pool with nodes and without.
 #[test]
 fn summon_objects_between() {
-    for (dll, rva) in [(134u16, 0x1980u32), (135, 0x4330)] {
+    for (dll, rva) in [
+        (134u16, 0x1980u32),
+        (135, 0x4330),
+        (132, 0x1980),
+        (133, 0x4230),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| op(t, f, o);
@@ -3486,6 +3497,7 @@ fn summon_objects_between() {
         let gs = SCRATCH + 0x980;
         t.set_u32(w(&t, 0x4f2), gs);
         t.set_u32(gs + 0x10, 0x00a5_0010);
+        t.set_u32(gs + 0x20, 0x00a5_0020);
         let x = SCRATCH + 0x1000;
         // a yaw that folds to the range's top exactly (`KA - yaw = KC`)
         let kf = |t: &Twin, o: u32| f32::from_bits(t.u32(w(t, o)));

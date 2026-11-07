@@ -4153,8 +4153,11 @@ pub const ROTATION_3650: Sig = Sig {
 ///
 /// Returns slot 286's `eax`, or the walk's.
 ///
+/// The first cursor and `V` sit 4 bytes lower in `magic_0070`'s copy
+/// (its frame is 0x64 bytes; the cursor's `disp8` at `+0x6d`).
+///
 /// `magic_0155` 0x100031d0 (1,514 bytes; 4 DLLs), `magic_0570` 0x100040e0
-/// (1,514 bytes; 2 DLLs).
+/// (1,514 bytes; 2 DLLs), `magic_0070` 0x100040e0.
 pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, cvt, mul, sub};
     let f = fr.at;
@@ -4167,7 +4170,12 @@ pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     };
     let rf = |g: &G, o: u32| g.read::<f32>(n.wrapping_add(o));
     let t = |g: &G, s: u32| slot_target(g, w(0x135), s);
-    for (obj_at, local, to) in [(0x124u32, 0x5cu32, 0x2cu32), (0x128, 0xc, 0x4c)] {
+    // `mov [ebp - C], ecx`: `C` is 0x5c, or 0x60 in `magic_0070`
+    let low = i32::from((img.word(f + 0x6d) as u8).cast_signed())
+        .wrapping_neg()
+        .cast_unsigned()
+        .wrapping_sub(0x5c);
+    for (obj_at, local, to) in [(0x124u32, 0x5c + low, 0x2cu32), (0x128, 0xc, 0x4c)] {
         let obj = g.read::<u32>(n + obj_at);
         if obj == 0 {
             continue;
@@ -4184,7 +4192,7 @@ pub fn node_ease<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(n + to + 4 * i, x);
         }
     }
-    let v = ebp.wrapping_sub(0x54);
+    let v = ebp.wrapping_sub(0x54 + low);
     let ease = |g: &mut G, (x, to, rate): (u32, u32, u32)| {
         for i in 0..3 {
             let d = sub(rf(g, x + 4 * i), rf(g, to + 4 * i));
@@ -4315,6 +4323,13 @@ pub const NODE_EASE: Sig = Sig {
 /// columns).
 pub const NODE_EASE_B: Sig = Sig {
     hash: 0x3ccf_28f8_43ec_2d2e,
+    ..NODE_EASE
+};
+
+/// [`node_ease`] in `magic_0070` (0x100040e0: as `magic_0570`'s, its
+/// frame 4 bytes larger).
+pub const NODE_EASE_0070: Sig = Sig {
+    hash: 0x3b3d_7df1_23b8_3a9e,
     ..NODE_EASE
 };
 
@@ -5102,6 +5117,128 @@ pub const EFFECT_GROUP_INIT: Sig = Sig {
     imports: &[],
 };
 
+/// [`effect_group_init`]'s first copy alone (internal: `ecx` = `X`, `edx`
+/// = `D`, `xmm2` = `s`; the same frame, `D` kept at `P+0x14`): no switch,
+/// the particle node's program index 0. Its operands sit 0x4b bytes
+/// before the first copy's through the node insert (with the stored `D`'s
+/// four bytes from the first node's `+0x7c` on), and 0x1c4 / 0x1bc before
+/// the particle and effect nodes' and the random steps'; slot 268's table
+/// is the operand `+0x99`. Returns `D`.
+///
+/// `magic_0618` 0x10006aa0 (761 bytes).
+pub fn effect_group_one<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x99), s);
+    let (x, d) = (fr.ecx, fr.edx);
+    let s = fr.xmm_f32(2);
+    let p = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    g.write::<f32>(p + 0xc, s);
+    g.write::<u32>(x + 8, x);
+    g.write::<u32>(x + 4, x);
+    g.write::<u32>(x, w(0x1c));
+    g.write::<u32>(x + 0x10, w(0x23));
+    g.write::<u32>(x + 0x14, x);
+    let last = g.read::<u32>(w(0x2b));
+    g.write::<u32>(x + 8, last);
+    g.write::<u32>(x + 4, w(0x35));
+    let last = g.read::<u32>(w(0x3a));
+    let node = x + 0x220;
+    g.write::<u32>(last.wrapping_add(4), x);
+    let fl = g.read::<u32>(w(0x49)) & !1;
+    g.write::<u32>(w(0x49), fl);
+    g.write::<u32>(w(0x50), x);
+    g.write::<u32>(p + 0x14, d);
+    list_node(
+        g,
+        img,
+        f,
+        node,
+        [0x63, 0x6a, 0x6f, 0x77, 0x80, 0x88, 0x94, 0xa5, 0xac],
+    );
+    let h = g.read::<u32>(d + 0x54);
+    g.call(t(g, 268), 0, &[h, 0x11, x + 0x23c]);
+    g.write::<u32>(x + 0x248, 0x3f80_0000);
+    let second = x + 0x278;
+    list_node(
+        g,
+        img,
+        f,
+        second,
+        [0xdc, 0xe3, 0xe8, 0xf0, 0xf5, 0xfd, 0x109, 0x115, 0x11b],
+    );
+    let rec = p + 0x18;
+    g.write::<u32>(rec + 0x14, second);
+    for o in [0x294u32, 0x298, 0x29c] {
+        g.write::<u32>(x + o, 0x3f80_0000);
+    }
+    g.write::<f32>(x + 0x2a0, s);
+    let words = [x + 0x2d0, w(0x15b), w(0x163), node, w(0x16f)];
+    for (i, word) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    let insert = Frame {
+        at: img.rel32_target(f + 0x174),
+        esp: p.wrapping_sub(4),
+        ecx: rec,
+        ..Frame::default()
+    };
+    crate::nodes::node_insert(g, img, &insert);
+    let part = g.read::<u32>(w(0x179));
+    g.write::<u32>(rec, x + 0x20);
+    g.write::<u32>(x + 0x20, w(0x186));
+    let words = [w(0x192), x + 0x2d0, part, w(0x1a2), 0];
+    for (i, word) in (1u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x1af), rec);
+    let fx = x + 0x57c;
+    let words = [fx, w(0x1c5), w(0x1cd), node, w(0x1d9), 0];
+    for (i, word) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, word);
+    }
+    crate::sb_nodes::effect_node(g, img, img.rel32_target(f + 0x1e6), rec);
+    let n = g.read::<u32>(rec);
+    g.write::<u32>(n, w(0x1f0));
+    let fl = g.read::<u32>(fx + 0x2c) | 1;
+    g.write::<u32>(fx + 0x2c, fl);
+    g.write::<u32>(fx + 0x30, 0);
+    // the random steps (each slot 307's table its own operand)
+    for (o, (tab, k1, k2, k3)) in [
+        (0x23cu32, (0x1f5u32, 0x21au32, 0x227u32, 0x22fu32)),
+        (0x240, (0x21f, 0x259, 0x266, 0x26e)),
+        (0x244, (0x25e, 0x298, 0x2be, 0x2d0)),
+    ] {
+        let r = g.call(slot_target(g, w(tab), 307), 0, &[]);
+        let r = sub(crate::m0018::st0_f32(r.st0), g.read::<f32>(w(k1)));
+        let r = sub(mul(r, g.read::<f32>(w(k2))), g.read::<f32>(w(k3)));
+        if o == 0x244 {
+            g.write::<u32>(x + 0x578, d);
+            for z in [0x568u32, 0x570, 0x574] {
+                g.write::<u32>(x + z, 0);
+            }
+        }
+        let v = add(r, g.read::<f32>(x + o));
+        g.write::<f32>(x + o, v);
+    }
+    g.write::<f32>(x + 0x56c, s);
+    Ret::eax(d)
+}
+
+/// [`effect_group_one`] (the `rel32`s: the node insert, the particle
+/// node, the effect node).
+pub const EFFECT_GROUP_ONE: Sig = Sig {
+    len: 761,
+    hash: 0x5d92_8d14_541f_604a,
+    calls: &[
+        (0x174, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1af, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x1e6, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};
+
 /// `KA - a` brought back once into the range: less `KB` above `KC`, plus
 /// `KB` below `KD` (the operands `(KA, KB, KC, KD)` of `f`).
 fn fold_angle(g: &impl crate::Mem, img: &Image, f: u32, a: f32, ops: [u32; 4]) -> f32 {
@@ -5161,9 +5298,11 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     g.call(t(g, 262), 0, &[none, v1, v1 + 4, v1 + 8]);
     g.call(t(g, 268), 0, &[none, 0x11, v1]);
     g.write::<u32>(p + 0x3c, 0x3f80_0000);
-    // the object start: `(0, w, 0x10, P+0x28)`, `w` taken as 0
+    // the object start: `(I, w, 0x10, P+0x28)`, `w` taken as 0, `I` the
+    // immediate `+0xc4` (1 in `magic_0133`)
     let call = p.wrapping_sub(0x14);
-    for (k, word) in (1u32..).zip([0, 0, 0x10, p + 0x28]) {
+    let index = img.word(f + 0xc4) & 0xff;
+    for (k, word) in (1u32..).zip([index, 0, 0x10, p + 0x28]) {
         g.write::<u32>(call + 4 * k, word);
     }
     let start = img.rel32_target(f + 0xce);
@@ -5264,7 +5403,8 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     g.write::<u32>(x + 0x500, w(0x4d8));
     g.write::<u32>(x + 0x508, 0xc);
     g.write::<u32>(x + 0x510, 0x10);
-    let owner = g.read::<u32>(g.read::<u32>(w(0x4f2)) + 0x10);
+    // the owner's field: `+0x10`, `+0x20` in `magic_0132` and `0133`
+    let owner = g.read::<u32>(g.read::<u32>(w(0x4f2)) + (img.word(f + 0x4f8) & 0xff));
     g.write::<u32>(p.wrapping_sub(4), v0);
     let eax = crate::sb_misc::sprite_init_colour(g, p.wrapping_sub(8), x + 0x260, owner);
     g.write::<u32>(x + 0x484, 0x80);
@@ -5288,4 +5428,17 @@ pub const SUMMON_OBJECT_BETWEEN: Sig = Sig {
         (0x52b, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`summon_object_between`] in `magic_0132` (0x10001980, the owner's
+/// `+0x20`).
+pub const SUMMON_OBJECT_BETWEEN_0132: Sig = Sig {
+    hash: 0x02ef_cdfc_46dd_62dd,
+    ..SUMMON_OBJECT_BETWEEN
+};
+
+/// [`summon_object_between`] in `magic_0133` (0x10004230, index 1).
+pub const SUMMON_OBJECT_BETWEEN_0133: Sig = Sig {
+    hash: 0x4959_9de8_87d7_599e,
+    ..SUMMON_OBJECT_BETWEEN
 };

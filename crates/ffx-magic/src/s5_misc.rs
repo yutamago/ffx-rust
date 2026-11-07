@@ -2629,14 +2629,15 @@ pub fn summon_ppp_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 fn summon_ppp_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Pushes {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
-    // push ebp, esi; call: the callee's frame
-    targets_init(
-        g,
-        img,
-        img.rel32_target(f + 0x8),
-        fr.esp.wrapping_sub(0xc),
-        fr.arg(g, 0),
-    );
+    // push ebp, esi; call: the callee's frame (`magic_0387`'s targets
+    // reset the node family's statics)
+    let targets = img.rel32_target(f + 0x8);
+    let (esp, actor) = (fr.esp.wrapping_sub(0xc), fr.arg(g, 0));
+    if img.matches(targets, &crate::s4_summon::TARGETS_INIT_D) {
+        crate::s4_summon::targets_init_d(g, img, targets, esp, actor);
+    } else {
+        targets_init(g, img, targets, esp, actor);
+    }
     for (dst, v) in [
         (0x13u32, w(0x17)),
         (0x1d, w(0x21)),
@@ -2750,6 +2751,13 @@ pub const SUMMON_PPP_START_FLAG: Sig = Sig {
     hash: 0x5e21_50da_30c8_764e,
     calls: &[(0x8, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
+};
+
+/// [`summon_ppp_start_flag`] in `magic_0387` (0x1000d970; the `rel32`:
+/// [`targets_init_d`](crate::s4_summon::targets_init_d)).
+pub const SUMMON_PPP_START_FLAG_0387: Sig = Sig {
+    calls: &[(0x8, Callee::Sig(&crate::s4_summon::TARGETS_INIT_D))],
+    ..SUMMON_PPP_START_FLAG
 };
 
 /// A slot thunk's `Sig` (`mov eax, [G]; mov eax, [eax + 4 * slot]; jmp
@@ -6675,13 +6683,15 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let at = |o: u32| ebp.wrapping_sub(o);
     let b = g.read::<u32>(w(0x13));
-    let p = b.wrapping_add(0xc74);
+    // the block's offsets (`disp32`s; 0xa0 and 0xc0 lower in `magic_0588`)
+    let bd = |o: u32| b.wrapping_add(img.word(f + o));
+    let p = bd(0x2c);
     for i in 0..4 {
-        let x = g.read::<u32>(b.wrapping_add(0xcc4 + 4 * i));
+        let x = g.read::<u32>(bd(0x1a).wrapping_add(4 * i));
         g.write::<u32>(p + 4 * i, x);
     }
     let (m, d, v, a) = (at(0x64), at(0x14), at(0x24), at(0x68));
-    let turn = g.read::<u32>(b.wrapping_add(0xeb4));
+    let turn = g.read::<u32>(bd(0x52));
     g.write::<u32>(a, turn);
     for (i, x) in [0xc1a0_0000_u32, 0, 0xc1a0_0000, 0x3f80_0000]
         .into_iter()
@@ -6710,7 +6720,7 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 12 (the most `Pushes::words` holds)
     s.call(g, slot_target(g, w(0xe6), 248), 0);
     g.write::<u32>(p + 0xc, 0x3f80_0000);
-    let q = b.wrapping_add(0xd80);
+    let q = bd(0xfd);
     for (o, x) in [
         (0x80u32, 0u32),
         (0x84, 0x8000_0000),
@@ -6729,16 +6739,13 @@ pub fn scene_two_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     link_after(g, (w(0x155), w(0x17d)), first, tail);
     let k = g.read::<f32>(w(0x18d));
     for i in 0..12 {
-        let at = b.wrapping_add(0xb84 + 4 * i);
+        let at = bd(0x185).wrapping_add(4 * i);
         let x = mul(g.read::<f32>(at), k);
         g.write::<f32>(at, x);
     }
-    let x = sub(
-        g.read::<f32>(b.wrapping_add(0xc78)),
-        g.read::<f32>(w(0x295)),
-    );
-    g.write::<f32>(b.wrapping_add(0xcb8), x);
-    let r = b.wrapping_add(0xe20);
+    let x = sub(g.read::<f32>(bd(0x28d)), g.read::<f32>(w(0x295)));
+    g.write::<f32>(bd(0x29d), x);
+    let r = bd(0x197);
     for (o, x) in [
         (0u32, 0u32),
         (4, 0x32),
@@ -6771,6 +6778,12 @@ pub const SCENE_TWO_RECORDS: Sig = Sig {
         (0x31f, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`scene_two_records`] in `magic_0588` (0x10002940).
+pub const SCENE_TWO_RECORDS_0588: Sig = Sig {
+    hash: 0xfe3c_0955_09ee_569f,
+    ..SCENE_TWO_RECORDS
 };
 
 /// An effect's start with the camera behind its user (cdecl `(user)`; a
@@ -7954,20 +7967,22 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let b = g.read::<u32>(w(0x1f));
+    // the block's offsets less 0x60 in `magic_0589` (its `+0x33`: 0x1a00)
+    let sh = b.wrapping_add(img.word(f + 0x33)).wrapping_sub(0x1a60);
     let scale = g.read::<f32>(w(0x17));
     start_object_anim(g, img, img.rel32_target(f + 0x2d), b, scale, 0, 0);
     let copy = |g: &mut G, to: u32| {
         for i in 0..4 {
-            let x = g.read::<u32>(b.wrapping_add(0x1a60 + 4 * i));
-            g.write::<u32>(b.wrapping_add(to + 4 * i), x);
+            let x = g.read::<u32>(sh.wrapping_add(0x1a60 + 4 * i));
+            g.write::<u32>(to.wrapping_add(4 * i), x);
         }
     };
-    copy(g, 0xd0);
+    copy(g, b.wrapping_add(0xd0));
     let y = sub(g.read::<f32>(b.wrapping_add(0xd4)), g.read::<f32>(w(0x73)));
-    let yaw = g.read::<u32>(b.wrapping_add(0x2258));
+    let yaw = g.read::<u32>(sh.wrapping_add(0x2258));
     g.write::<u32>(b.wrapping_add(0xc4), yaw);
     g.write::<f32>(b.wrapping_add(0xd4), y);
-    let r = b.wrapping_add(0x1b70);
+    let r = sh.wrapping_add(0x1b70);
     g.write::<u32>(r + 0x81, 0x0080_ffff);
     g.write::<u8>(r + 0x80, 0xff);
     g.write::<u16>(r + 0x86, 0);
@@ -7984,7 +7999,7 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0x121), node);
     let ebp = fr.esp.wrapping_sub(4);
     let at = |o: u32| ebp.wrapping_sub(o);
-    let a = g.read::<u32>(b.wrapping_add(0x2258));
+    let a = g.read::<u32>(sh.wrapping_add(0x2258));
     g.write::<u32>(at(0xa8), a);
     let (d, v) = (at(0x14), at(0x24));
     g.write::<u32>(d + 4, 0);
@@ -8018,8 +8033,8 @@ pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     .into_iter()
     .enumerate()
     {
-        copy(g, pt);
-        let p = b.wrapping_add(pt);
+        let p = sh.wrapping_add(pt);
+        copy(g, p);
         g.write::<u32>(d, x);
         g.write::<u32>(d + 8, z);
         s.push(m);
@@ -8060,6 +8075,13 @@ pub const OBJECT_THREE_POINTS: Sig = Sig {
         (0x3b6, Callee::Any),
     ],
     imports: &[],
+};
+
+/// [`object_three_points`] in `magic_0589` (0x10003fb0, the block's
+/// offsets 0x60 lower).
+pub const OBJECT_THREE_POINTS_0589: Sig = Sig {
+    hash: 0xa8bb_26a1_6e76_db1c,
+    ..OBJECT_THREE_POINTS
 };
 
 /// The character `T[*G_SEL[i]]` (or `*G_SELF` for -1) at operand

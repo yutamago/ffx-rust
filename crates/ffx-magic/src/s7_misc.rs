@@ -4954,9 +4954,14 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ..*fr
     };
     // `magic_0620`'s copy throws the summon object instead, `magic_0677`
-    // the model object, `magic_0682` the thrown effect
+    // the model object, `magic_0682` the thrown effect, `magic_0674` the
+    // effect group
     let eax = if img.matches(throw.at, &SUMMON_OBJECT_SETUP) {
         summon_object_setup(g, img, &throw)
+    } else if img.matches(throw.at, &crate::s9_misc::EFFECT_GROUP_INIT) {
+        crate::s9_misc::effect_group_init(g, img, &throw).eax
+    } else if img.matches(throw.at, &crate::s9_misc::EFFECT_GROUP_ONE) {
+        crate::s9_misc::effect_group_one(g, img, &throw).eax
     } else if img.matches(throw.at, &MODEL_OBJECT_SETUP) {
         model_object_setup(g, img, &throw)
     } else if img.matches(throw.at, &crate::s5_misc::THROWN_EFFECT_FAR) {
@@ -5015,6 +5020,34 @@ pub const STAGED_VOLLEY_TASK_B: Sig = Sig {
         (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
     ],
     ..STAGED_VOLLEY_TASK
+};
+
+/// [`staged_volley_task`] in `magic_0674` (0x10007210; `magic_0620`'s
+/// immediates, the slots 0x5c0 bytes apart; the throw is
+/// [`effect_group_init`](crate::s9_misc::effect_group_init)).
+pub const STAGED_VOLLEY_TASK_0674: Sig = Sig {
+    hash: 0x2b32_61b5_f5db_2e03,
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&crate::s9_misc::EFFECT_GROUP_INIT)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    ..STAGED_VOLLEY_TASK
+};
+
+/// [`staged_volley_task`] in `magic_0618` (0x10006db0; as `magic_0674`'s,
+/// the throw [`effect_group_one`](crate::s9_misc::effect_group_one)).
+pub const STAGED_VOLLEY_TASK_0618: Sig = Sig {
+    calls: &[
+        (0x65, Callee::Sig(&crate::s4_summon::TARGET_NODES)),
+        (0x85, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xd8, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x26d, Callee::Sig(&crate::s9_misc::EFFECT_GROUP_ONE)),
+        (0x36e, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+    ],
+    ..STAGED_VOLLEY_TASK_0674
 };
 
 /// [`staged_volley_task`] in `magic_0677` (0x10006e40; its own

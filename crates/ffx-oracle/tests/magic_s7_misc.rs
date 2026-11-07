@@ -3863,6 +3863,8 @@ fn staged_volley_tasks() {
         (676, 0x6d80),
         (677, 0x6e40),
         (682, 0x70d0),
+        (674, 0x7210),
+        (618, 0x6db0),
     ] {
         staged_volley_in(dll, rva);
     }
@@ -3932,6 +3934,33 @@ fn staged_volley_in(dll: u16, rva: u32) {
     rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
     let throw = t.img.rel32_target(f + 0x26d);
     match dll {
+        // the effect group (`s9_misc::effect_group_init`, and in
+        // `magic_0618` its first copy alone)
+        674 | 618 => {
+            rec(&mut t, 390, 1, |_, _| 0x1071);
+            rec(&mut t, 534, 1, |_, a| a[0] & 1);
+            let one = dll == 618;
+            let pn = t.img.rel32_target(throw + if one { 0x1af } else { 0x36b });
+            t.set_u32(op(&t, pn, 0x45), SCRATCH + 0x7f10);
+            let wrapper = t.img.rel32_target(pn + 0x88);
+            t.set_u32(op(&t, wrapper, 0x04), SCRATCH + 0x2f0);
+            t.set_u32(
+                op(&t, throw, if one { 0x179 } else { 0x33d }),
+                SCRATCH + 0x7a00,
+            );
+            t.set_u32(SCRATCH + 0x7a10, 0x7a10);
+            let roots = if one { [0x63u32, 0x192] } else { [0xae, 0x356] };
+            for o in roots {
+                let r = op(&t, throw, o);
+                t.write(r, &[0; 0x20]);
+                t.set_u32(r + 0x10, r);
+                t.set_u32(r + 0xc, r);
+                t.set_u16(r + 0x18, 2);
+            }
+            let ring = op(&t, throw, if one { 0x35 } else { 0x80 });
+            t.write(ring, &[0; 0x10]);
+            t.set_u32(ring + 8, ring);
+        }
         // the model object set-up (`model_object_setup`)
         677 => {
             rec(&mut t, 390, 1, |_, _| 0x2000);

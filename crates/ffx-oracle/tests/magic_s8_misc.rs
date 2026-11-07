@@ -1034,6 +1034,7 @@ fn object_fans() {
         (602, 0x88f0, 0),
         (511, 0x43e0, 0xea),
         (602, 0x84c0, 0xea),
+        (589, 0x39d0, 0xea),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
@@ -1656,7 +1657,7 @@ fn light_swings() {
 /// yaw wrapped both ways and kept, the pool running out mid-burst.
 #[test]
 fn spark_bursts() {
-    for (dll, rva) in [(134u16, 0x1ec0u32), (135, 0x4870)] {
+    for (dll, rva) in [(134u16, 0x1ec0u32), (135, 0x4870), (132, 0x1ec0)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         // the object start (`start_object_first_in_every_copy`'s set-up)

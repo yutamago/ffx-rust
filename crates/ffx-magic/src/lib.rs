@@ -2466,6 +2466,7 @@ ports! {
     "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
     "summon ppp start (big env)" => s5_misc::SUMMON_PPP_START_BIG, s5_misc::summon_ppp_start_big;
     "summon ppp start (flag)" => s5_misc::SUMMON_PPP_START_FLAG, s5_misc::summon_ppp_start_flag;
+    "summon ppp start (flag, 0387)" => s5_misc::SUMMON_PPP_START_FLAG_0387, s5_misc::summon_ppp_start_flag;
     "three points ease" => s5_misc::THREE_POINTS_EASE, s5_misc::three_points_ease;
     "arc carry" => s5_misc::ARC_CARRY, s5_misc::arc_carry;
     "objects around" => s5_misc::OBJECTS_AROUND, s5_misc::objects_around;
@@ -2494,6 +2495,7 @@ ports! {
     "spray_on_cue" => s5_misc::SPRAY_ON_CUE, s5_misc::spray_on_cue;
     "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
     "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
+    "scene_two_records (0588)" => s5_misc::SCENE_TWO_RECORDS_0588, s5_misc::scene_two_records;
     "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
     // census2: functions the old census hid inside merged rows (sf_hidden)
     "sf elem point table" => sf_hidden::ELEM_POINT_TABLE, sf_hidden::elem_point_table;
@@ -2514,6 +2516,7 @@ ports! {
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
     "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
+    "object_three_points (0589)" => s5_misc::OBJECT_THREE_POINTS_0589, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
     "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
     // round 5, own rows
@@ -2799,6 +2802,8 @@ ports! {
     "summon load objects" => s7_misc::SUMMON_LOAD_OBJECTS, s7_misc::summon_load_objects;
     "staged volley task" => s7_misc::STAGED_VOLLEY_TASK, s7_misc::staged_volley_task;
     "staged volley task (b)" => s7_misc::STAGED_VOLLEY_TASK_B, s7_misc::staged_volley_task;
+    "staged volley task (0674)" => s7_misc::STAGED_VOLLEY_TASK_0674, s7_misc::staged_volley_task;
+    "staged volley task (0618)" => s7_misc::STAGED_VOLLEY_TASK_0618, s7_misc::staged_volley_task;
     "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
     "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
@@ -2818,6 +2823,7 @@ ports! {
     "object, fan, two fades" => s8_misc::OBJECT_FAN_TWO_FADES, s8_misc::object_fan_two_fades;
     "object, fan, two fades (b)" => s8_misc::OBJECT_FAN_TWO_FADES_B, s8_misc::object_fan_two_fades;
     "objects freed, fan, fade" => s8_misc::OBJECTS_FREED_FAN_FADE, s8_misc::objects_freed_fan_fade;
+    "objects freed, fan, fade (0589)" => s8_misc::OBJECTS_FREED_FAN_FADE_0589, s8_misc::objects_freed_fan_fade;
     "emitter sounds" => s8_misc::EMITTER_SOUNDS, s8_misc::emitter_sounds;
     "model effect placed" => s8_misc::MODEL_EFFECT_PLACED, s8_misc::model_effect_placed;
     "summon frame (colours)" => s8_misc::SUMMON_FRAME_COLOURS, s8_misc::summon_frame_colours;
@@ -4059,6 +4065,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("child object set-up", &s8_misc::CHILD_OBJECT_SETUP),
     ("bone node", &s8_misc::BONE_NODE),
     ("spark burst", &s8_misc::SPARK_BURST),
+    ("spark burst (0132)", &s8_misc::SPARK_BURST_0132),
     ("mesh bounds", &s8_misc::MESH_BOUNDS),
     // round 8, shared-8 (s8_misc): end of INTERNAL
     // round 6, the shape families (o6_fam_*)
@@ -4308,6 +4315,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     ("node ease", &s9_misc::NODE_EASE),
     ("node ease (0570)", &s9_misc::NODE_EASE_B),
+    ("node ease (0070)", &s9_misc::NODE_EASE_0070),
     ("sprite frames", &s9_misc::SPRITE_FRAMES),
     ("block sprite frames", &s9_misc::BLOCK_SPRITE_FRAMES),
     (
@@ -4317,7 +4325,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("node sparks", &s9_misc::NODE_SPARKS),
     ("host objects run", &s9_misc::HOST_OBJECTS_RUN),
     ("effect group init", &s9_misc::EFFECT_GROUP_INIT),
+    ("effect group (one copy)", &s9_misc::EFFECT_GROUP_ONE),
     ("summon object between", &s9_misc::SUMMON_OBJECT_BETWEEN),
+    (
+        "summon object between (0132)",
+        &s9_misc::SUMMON_OBJECT_BETWEEN_0132,
+    ),
+    (
+        "summon object between (0133)",
+        &s9_misc::SUMMON_OBJECT_BETWEEN_0133,
+    ),
     // round 9, shared-9 (s9_misc): end of INTERNAL
     ("m0152 build node", &m0152::BUILD_NODE),
     ("m0168 object task", &m0168::OBJECT_TASK),
