@@ -557,6 +557,34 @@ sender gets its reply), a running one by switching back to its level.
 level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
 `3e`/`3f`, resets the level to entry 1.
 
+#### Watching entries start and end
+
+Two functions see every entry of a ctrl work's workers start and end, so a
+hook on them gives each `(worker, entry)` at the frame it happens, with no
+script changed (used by ffx-remix's pack logic, M11):
+
+- `AtelStartSignal(worker, node)` (`0x008690a0`, cdecl; one caller,
+  `AtelDecodeSignal` `0x00865469`) starts every requested entry: the node's
+  `+0x08` is the entry, `+0x0e` bits 0-3 the level, and it writes both to
+  the worker's `+0x2c` (entry) and `+0x32` (level; the level block it
+  sets up is clamped to 1 for types 5 and 6 and to 8 for the others). A new event's init entries (entry 0 of each
+  worker, level 7) start here too, before `g_EventName` (`0x023cbc60`)
+  names the new event.
+- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl;
+  called from `Script_Run` at the ends, `0x00865095`, `0x008650e8`,
+  `0x00865120`, `0x00865173`, and from `AtelExecReturn2` `0x00869350` and
+  `0x008694f0`) ends the current one: `index` is the worker's index in the
+  current ctrl work (`AtelGetBasicWork(index)`), whose `+0x32` is the level
+  ending. The entry is the one that level started; `+0x2c` is only the
+  last entry started, which need not be that level's.
+
+`g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`) marks
+the event's own script; battle and menu ctrl works run through the same
+two functions. Checked in the game (Fahrenheit hooks, harness lockstep and
+virtual clock): the title demo `loopdemo`'s worker 21 starts entry 2 on
+frame 9 after the event begins and returns from it on frame 686, the same
+in two runs.
+
 Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
 table, eight `u16` in a variable (`+0x44` points at it, filled from
 `TkGetVibrateDefaultCurve` the first time; "Trigger entries" below); `7a` (`0x0086fab0`) sets a

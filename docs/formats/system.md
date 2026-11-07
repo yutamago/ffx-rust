@@ -286,7 +286,11 @@ folders are unused. The width table comes from `TOInit` (`0x008ad4d0`):
 languages 0, 9 and 10 read their event FTC and `newkit`, every other
 language `TODVDFileLoad(4, 0)`, which the game resolves to
 `ffx_ps2/ffx/master/uspc/menu/base.ftc` (304 bytes, a type-4 FTC
-without a bitmap: 230 width bytes in quarter texels). Replacing those
+without a bitmap: 230 width bytes in quarter texels; the file starts
+`FTCX`, holds the glyph count as `u16` at `+0x10` (230) and the cell size
+at `+0x14`/`+0x16` (14, 18), and the widths from `+0x40`, one byte per
+glyph in code order from `0x30`; checked against the HD font's narrow and
+wide letters: `i` 9, `W` 53). Replacing those
 four pages and that one file changes the face and the advance of every
 Tk text in English, French, Italian, German and Spanish (ffx-demaster
 `docs/font.md`, checked in the game for English).
