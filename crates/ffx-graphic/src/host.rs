@@ -141,7 +141,7 @@ pub trait Host: Mem {
     /// `PhyreScene_fieldMapLoad`). `args` is the stack as the original
     /// pushes it, lowest address first.
     ///
-    /// The game's host passes 32 words (the zero words past `args` sit on
+    /// The game's host passes 40 words (the zero words past `args` sit on
     /// the caller's side of the stack, which the caller pops) and refuses
     /// a longer list: nothing is called and it returns 0. The default
     /// forwards to [`Host::call`], so a test host whose bridges pass more
@@ -188,7 +188,7 @@ pub trait Host: Mem {
 pub const SCRATCH_LEN: u32 = 0x200;
 
 /// The most stack words [`Host::call_wide`] passes.
-pub const WIDE_WORDS: usize = 32;
+pub const WIDE_WORDS: usize = 40;
 
 #[cfg(target_arch = "x86")]
 thread_local! {

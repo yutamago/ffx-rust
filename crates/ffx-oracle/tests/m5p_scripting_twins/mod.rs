@@ -66,6 +66,13 @@ impl Host for G<'_> {
             .st0
             .unwrap_or_else(|| panic!("callee {addr:#x} left no ST0"))
     }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -264,6 +271,34 @@ impl Twins {
     /// [`Twins::stub_code`] placed at the original `sym`, tagged with `sym`.
     pub fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
         let code = self.stub_code(sym, this, n, pops, ret);
+        self.place(sym, code);
+    }
+
+    /// A cdecl recording stub at `sym` (logging `n` words) returning the
+    /// word of `table` its stack word `arg` indexes.
+    pub fn stub_table(&mut self, sym: u32, n: u32, arg: u32, table: u32) {
+        let mut c = self.log_body(sym, false, n);
+        c.extend([0x8b, 0x44, 0x24, (4 + 4 * arg) as u8]); // mov eax, [esp+4+4arg]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(table.to_le_bytes()); // mov eax, [table + eax*4]
+        c.push(0xc3);
+        let code = self.code(&c);
+        self.place(sym, code);
+    }
+
+    /// A cdecl recording stub at `sym` (logging `n` words) returning the
+    /// words of `table` one call after the other (`table` starts with
+    /// the count of calls so far).
+    pub fn stub_seq(&mut self, sym: u32, n: u32, table: u32) {
+        let mut c = self.log_body(sym, false, n);
+        c.push(0xa1);
+        c.extend(table.to_le_bytes()); // mov eax, [table]
+        c.extend([0xff, 0x05]);
+        c.extend(table.to_le_bytes()); // inc dword [table]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend((table + 4).to_le_bytes()); // mov eax, [table + 4 + eax*4]
+        c.push(0xc3);
+        let code = self.code(&c);
         self.place(sym, code);
     }
 

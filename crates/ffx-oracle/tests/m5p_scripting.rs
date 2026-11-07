@@ -4477,3 +4477,261 @@ fn bp3_vcall_matches_the_original() {
         t.unstub();
     }
 }
+
+/// Floats `print` formats with `%f`: signs, fractions, infinities, quiet
+/// NaNs (no signalling ones), a denormal; [`PRINT_HUGE`] only in vectors
+/// (sixteen of it would overflow the 0x200-byte buffer).
+const PRINT_FLOATS: [u32; 10] = [
+    0x0000_0000,
+    0x8000_0000,
+    0x3f80_0000,
+    0xbfc0_0000,
+    0x3dcc_cccd,
+    0x42f6_e979,
+    0x0000_0001,
+    0x7f80_0000,
+    0xff80_0000,
+    0xffc1_2345,
+];
+const PRINT_HUGE: u32 = 0x7149_f2ca;
+
+/// `Phyre_PScripting_Print` (`0x005d5c00`, tail10): Lua's `print` over
+/// every kind of stack value (strings, nil, booleans, other types,
+/// vectors, matrices: the 36-word `sprintf_s`, plain userdata, object
+/// userdata: no metatable, another metatable, a null pointer, a `PString`
+/// with and without its flag bit, another class), 0 to 6 values, and a
+/// negative top. Lua's API, the vector/matrix tests, the namespace and
+/// `PhyrePrintf` are recording stubs whose answers come from per-index
+/// tables; `sprintf_s` is the game's `MSVCR110.dll`. The port's buffer
+/// lies where the original's does (`[ebp-0x204]`), its calls below it;
+/// the 0x200 bytes are compared after each call. Every branch is
+/// synthetic (no coverage run reached it).
+#[test]
+fn l10_print_matches_the_original() {
+    use ffx_pother_a::l10_print::{self as pr, bridge as prb};
+    for (label, mut t) in Twins::all() {
+        let l = t.junk(0x40, 1);
+        // per-index answers (index 0..15)
+        let tables: Vec<u32> = (0..12).map(|_| t.zeros(0x40)).collect();
+        let [
+            isstring,
+            tolstring,
+            ty,
+            toboolean,
+            isuserdata,
+            topointer,
+            vector,
+            matrix,
+            touserdata,
+            getmeta,
+            rawequal,
+            typename,
+        ] = tables[..]
+        else {
+            unreachable!()
+        };
+        let names: Vec<u32> = [
+            "nil",
+            "boolean",
+            "lightuserdata",
+            "number",
+            "string",
+            "table",
+            "function",
+            "userdata",
+            "thread",
+        ]
+        .iter()
+        .map(|s| t.cstr(s))
+        .collect();
+        for (i, &n) in (0u32..).zip(&names) {
+            t.w32(typename + 4 * i, n);
+        }
+        let top = t.alloc(&[0; 4]);
+        let ns = t.junk(0x20, 2);
+        let string_class = t.junk(0x20, 3);
+        let other_class = t.junk(0x40, 4);
+        let class_name = t.cstr("PNode");
+        t.w32(other_class + 0x18, class_name);
+        let code = t.stub_code(pr::GLOBAL_NAMESPACE, false, 0, 0, ns);
+        t.place(pr::GLOBAL_NAMESPACE, code);
+        t.stub(pr::CLASS_DESCRIPTOR, true, 1, 1, string_class);
+        t.stub_table(pr::LUA_ISSTRING, 2, 1, isstring);
+        t.stub_table(pr::LUA_TOLSTRING, 3, 1, tolstring);
+        t.stub_table(pr::LUA_TYPE, 2, 1, ty);
+        t.stub_table(pr::LUA_TOBOOLEAN, 2, 1, toboolean);
+        t.stub_table(pr::LUA_ISUSERDATA, 2, 1, isuserdata);
+        t.stub_table(pr::LUA_TOPOINTER, 2, 1, topointer);
+        t.stub_table(pr::LUA_TYPENAME, 2, 1, typename);
+        t.stub_table(pr::CHECK_VECTOR, 2, 1, vector);
+        t.stub_table(pr::TEST_MATRIX, 2, 1, matrix);
+        t.stub_table(pr::LUA_TOUSERDATA, 2, 1, touserdata);
+        t.stub_table(pr::LUA_GETMETATABLE, 2, 1, getmeta);
+        t.stub_seq(pr::LUA_RAWEQUAL, 3, rawequal);
+        t.stub(pr::LUA_GETFIELD, false, 3, 0, 0);
+        t.stub(pr::LUA_SETTOP, false, 2, 0, 0);
+        t.stub(pr::PHYRE_PRINTF, false, 3, 0, 0);
+        // gettop answers the cell
+        let mut c = vec![0xa1];
+        c.extend(top.to_le_bytes()); // mov eax, [top]
+        c.push(0xc3);
+        let gettop = t.code(&c);
+        t.place(pr::LUA_GETTOP, gettop);
+        // the original's frame: one argument pushed from the call top
+        let ebp = t.a.stack_range().end - 0x100 - 4 - 8;
+        let buf = ebp - 0x204;
+        assert_eq!(t.b.stack_range(), t.a.stack_range());
+        let mut rng = Rng(0x5d5c_0001);
+        let strings: Vec<u32> = ["", "x", "hello", "%d%s", "tab\there"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        let mut kinds_seen = [0u32; 13];
+        let mut printed = [0u32; 7];
+        for case in 0..400u32 {
+            let n = match case {
+                0 => 0,
+                1 => 0xffff_fffe,
+                _ => 1 + rng.next() % 6,
+            };
+            t.w32(top, n);
+            for tb in [
+                isstring, tolstring, ty, toboolean, isuserdata, topointer, vector, matrix,
+                touserdata, getmeta, rawequal,
+            ] {
+                t.write(tb, &[0; 0x40]);
+            }
+            let mut eq_seq = Vec::new();
+            let mut big = false;
+            let count = if n > 6 { 0 } else { n };
+            for i in 1..=count {
+                let at = 4 * i;
+                let kind = if (2..15).contains(&case) {
+                    (case - 2 + i) % 13
+                } else {
+                    rng.next() % 13
+                };
+                kinds_seen[kind as usize] += 1;
+                let floats = |rng: &mut Rng, k: u32, huge: bool| -> Vec<u8> {
+                    (0..k)
+                        .flat_map(|_| {
+                            let r = rng.next();
+                            let v = if huge && r.is_multiple_of(5) {
+                                PRINT_HUGE
+                            } else {
+                                PRINT_FLOATS[(r >> 3) as usize % PRINT_FLOATS.len()]
+                            };
+                            v.to_le_bytes()
+                        })
+                        .collect()
+                };
+                match kind {
+                    0 => {
+                        t.w32(isstring + at, 1 + rng.next() % 3);
+                        let s = strings[rng.next() as usize % strings.len()];
+                        t.w32(tolstring + at, s);
+                    }
+                    1 => {}
+                    2 => {
+                        t.w32(ty + at, 1);
+                        t.w32(toboolean + at, rng.next() % 3);
+                    }
+                    3 => {
+                        t.w32(ty + at, 2 + rng.next() % 7);
+                        t.w32(topointer + at, rng.next());
+                    }
+                    _ => {
+                        t.w32(ty + at, 7);
+                        t.w32(isuserdata + at, 1 + rng.next() % 2);
+                        let u = match kind {
+                            4 => {
+                                let v = floats(&mut rng, 4, true);
+                                let p = t.alloc(&v);
+                                t.w32(vector + at, p);
+                                // the vector wins over a matrix
+                                if rng.next().is_multiple_of(2) {
+                                    let m = t.alloc(&floats(&mut rng, 16, false));
+                                    t.w32(matrix + at, m);
+                                }
+                                continue;
+                            }
+                            5 if !big => {
+                                big = true;
+                                let m = t.alloc(&floats(&mut rng, 16, false));
+                                t.w32(matrix + at, m);
+                                continue;
+                            }
+                            5 | 6 => {
+                                // no metatable
+                                let u = rng.next();
+                                t.w32(touserdata + at, u);
+                                continue;
+                            }
+                            7 => {
+                                // a metatable, not the object one
+                                eq_seq.push(0);
+                                t.junk(8, 5)
+                            }
+                            8 => {
+                                // the object metatable, a null userdata
+                                eq_seq.push(1 + rng.next() % 2);
+                                0
+                            }
+                            9 | 10 => {
+                                eq_seq.push(1);
+                                let text = t.cstr(if kind == 9 { "text" } else { "flagged" });
+                                let object = t.zeros(8);
+                                t.w32(object, text + u32::from(kind == 10));
+                                let u = t.zeros(8);
+                                t.w32(u, string_class);
+                                t.w32(u + 4, object);
+                                u
+                            }
+                            _ => {
+                                eq_seq.push(1);
+                                let u = t.zeros(8);
+                                t.w32(u, other_class);
+                                t.w32(u + 4, rng.next());
+                                u
+                            }
+                        };
+                        t.w32(touserdata + at, u);
+                        t.w32(getmeta + at, 1);
+                    }
+                }
+            }
+            for (k, &e) in (1u32..).zip(&eq_seq) {
+                t.w32(rawequal + 4 * k, e);
+            }
+            t.write(buf, &[0xcc; 0x200]);
+            let what = format!("{label}: print {case} (top {n})");
+            t.b.set_call_top(Some(buf - 0x100));
+            t.cdecl(&what, 0x005d_5c00, &[l], |g| Some(prb::print(g, l, buf)));
+            t.b.set_call_top(None);
+            let a = ffx_oracle::Oracle::read(&mut t.a, buf, 0x200).unwrap();
+            let b = ffx_oracle::Oracle::read(&mut t.b, buf, 0x200).unwrap();
+            assert_eq!(a, b, "{what}: the buffer");
+            let text = String::from_utf8_lossy(&a[..a.iter().position(|&c| c == 0).unwrap()]);
+            assert!(text.ends_with('\n'), "{what}: {text:?}");
+            for (k, key) in [
+                "Matrix:",
+                "Vector:",
+                "PNode:",
+                "flagged",
+                "userdata:",
+                "true",
+                "thread:",
+            ]
+            .iter()
+            .enumerate()
+            {
+                if text.contains(key) {
+                    printed[k] += 1;
+                }
+            }
+        }
+        assert!(kinds_seen.iter().all(|&k| k > 0), "{kinds_seen:?}");
+        assert!(printed.iter().all(|&k| k > 0), "{printed:?}");
+        t.unstub();
+    }
+}
