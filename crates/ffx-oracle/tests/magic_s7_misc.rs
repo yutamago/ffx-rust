@@ -3958,6 +3958,8 @@ fn staged_volley_in(dll: u16, rva: u32) {
                 t.set_u32(r + 0xc, r);
                 t.set_u16(r + 0x18, 2);
             }
+            // the ring's flags: bit 0 set, so its clearing shows
+            t.set_u32(op(&t, throw, if one { 0x49 } else { 0x94 }), 0x5555_5555);
             let ring = op(&t, throw, if one { 0x35 } else { 0x80 });
             t.write(ring, &[0; 0x10]);
             t.set_u32(ring + 8, ring);
@@ -4845,5 +4847,145 @@ fn short_volley_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x700, &varied(0x80, k));
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `r13_start::start_0571`/`start_0572` and their load steps
+/// (0x10001210): no actors, two and three (their objects seeded), the
+/// task list empty and not (0572: slot 293 answering 0 and not); the load
+/// step busy, once and not ready, and through to the start.
+#[test]
+fn actors_starts_0571() {
+    // (dll, record, selection, pool count and head, list head and tail)
+    for (dll, recs, sel, pool, list) in [
+        (
+            571u16,
+            0x184u32,
+            0x165u32,
+            (0x1dfu32, 0x1eeu32),
+            (0x255u32, 0x266u32),
+        ),
+        (572, 0x1a6, 0x168, (0x201, 0x210), (0x277, 0x288)),
+    ] {
+        actors_start_in(dll, recs, sel, pool, list);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // the slots the callees reach
+fn actors_start_in(dll: u16, recs: u32, sel: u32, pool: (u32, u32), list: (u32, u32)) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(0x1340);
+    let load = t.at(0x1210);
+    let log = SCRATCH + 0x6000;
+    let ans = SCRATCH + 0x2f0;
+    log_calls(&mut t, 225, log, 1, None, move |m, _, _| m.r32(ans));
+    log_calls(&mut t, 226, log, 2, None, |_, a, k| a[0] ^ k);
+    log_calls(&mut t, 227, log, 1, None, move |m, _, _| m.r32(ans + 4));
+    log_calls(&mut t, 719, log, 3, None, |_, a, k| a[0] ^ k);
+    log_calls(&mut t, 711, log, 3, None, |_, a, k| a[1] ^ k);
+    log_calls(&mut t, 710, log, 4, None, |_, a, k| a[0] ^ k);
+    log_calls(&mut t, 262, log, 4, None, |m, a, k| {
+        for (i, x) in (1u32..).zip(&a[1..4]) {
+            m.w32(*x, (0.5 * i as f32 + k as f32).to_bits());
+        }
+        0x262
+    });
+    log_calls(&mut t, 333, log, 1, None, |_, a, _| a[0]);
+    log_calls(&mut t, 293, log, 1, None, |_, a, k| (a[0] ^ k) & 1);
+    let turns = SCRATCH + 0x2f8;
+    t.set_u32(turns, 0);
+    t.stub_st0(333, move |m, _| {
+        let k = m.r32(turns);
+        m.w32(turns, k + 1);
+        [0.25, 7.5, -6.0, 1.0, -2.0, 4.0][(k % 6) as usize]
+    });
+    // the object start's (`s4_misc::start_object_first`)
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let soa = t.img.rel32_target(f + 0x7e);
+    let start = t.img.rel32_target(soa + 0x80);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+    t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x7f0);
+    t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x780);
+    let pa = t.img.rel32_target(soa + 0x9b);
+    t.set_u16(op(&t, pa, 0x04), 8);
+    let pi = t.img.rel32_target(f + 0x3b);
+    t.set_u32(op(&t, pi, 0x01), SCRATCH + 0x7e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (o, x) in [
+        (0xfau32, 1.0f32),
+        (0x109, 3.0),
+        (0x113, 6.0),
+        (0x11d, -3.0),
+        (0x12a, 6.0),
+    ] {
+        t.set_u32(w(&t, o), x.to_bits());
+    }
+    let bl = SCRATCH + 0x900;
+    let actors = w(&t, 0xa4);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    // (actors, listed; the load step's busy, once, ready: `None` runs the
+    // start itself)
+    for (k, (n, listed, step)) in [
+        (0u32, false, None),
+        (2, true, None),
+        (3, false, None),
+        (3, true, None),
+        (2, false, Some((1u32, 0u32, 1u32))),
+        (2, true, Some((0, 0, 0))),
+        (2, false, Some((0, 1, 5))),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(log, 0);
+        t.set_u32(w(&t, 0x4b), n);
+        t.write(w(&t, 0x75), &varied(0x130 * 3, k + 5));
+        t.write(w(&t, recs), &varied(0x34 * 3, k + 6));
+        for o in [0x99u32, 0xd6, sel] {
+            t.set_u32(w(&t, o), bl);
+        }
+        t.write(bl, &[2, 1, 7, 0]);
+        for i in 0..8u32 {
+            t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
+        }
+        t.write(node(0) - 0x40, &varied(0x140, k + 1));
+        t.set_u32(node(0), node(2));
+        t.set_u32(node(0) + 4, node(1));
+        t.set_u16(w(&t, pool.0), 2);
+        t.set_u32(w(&t, pool.1), node(0));
+        t.set_u32(w(&t, list.0), if listed { node(3) } else { 0 });
+        t.set_u32(w(&t, list.1), node(3));
+        scrub(&mut t);
+        match step {
+            None => {
+                let port = if dll == 571 {
+                    ffx_magic::r13_start::start_0571
+                } else {
+                    ffx_magic::r13_start::start_0572
+                };
+                t.check(f, Call::default(), &[], Eax::Checked, port);
+            }
+            Some((busy, once, ready)) => {
+                t.set_u32(ans, busy);
+                t.set_u32(ans + 4, ready);
+                t.set_u32(op(&t, load, 0x18), once);
+                t.set_u32(op(&t, load, 0x27), 0x0b0b_0000 + k);
+                for o in [0x62u32, 0x6c] {
+                    t.set_u32(op(&t, load, o), 0x0c0c_0000 + o);
+                }
+                let port = if dll == 571 {
+                    ffx_magic::r13_start::load_0571
+                } else {
+                    ffx_magic::r13_start::load_0572
+                };
+                t.check(load, Call::default(), &[], Eax::Checked, port);
+            }
+        }
     }
 }

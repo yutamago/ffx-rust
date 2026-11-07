@@ -406,7 +406,7 @@ pub const SCRIPT_STEP_0605: Sig = Sig {
 /// `n_out`), the node's words cleared, `+8` itself, `+0x10` the callback
 /// immediate `cb`, byte `+0x18` 0. Returns the count left and the new free
 /// head.
-fn pool_pop<G: Game>(
+pub(crate) fn pool_pop<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,

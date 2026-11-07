@@ -3111,6 +3111,8 @@ ports! {
     "r13 script step 0605" => r13_misc::SCRIPT_STEP_0605, r13_misc::script_step;
     "r13 particles reset 0304" => r13_misc::PARTICLES_RESET_0304, r13_misc::particles_reset;
     "r13 particles reset 0568" => r13_misc::PARTICLES_RESET_0568, r13_misc::particles_reset;
+    "r13 load 0571" => r13_start::LOAD_0571, r13_start::load_0571;
+    "r13 load 0572" => r13_start::LOAD_0572, r13_start::load_0572;
     // round 13 (magic-r13): end of ports
 }
 
@@ -3131,6 +3133,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r13 start 0288", &r13_start::START_0288),
     ("r13 start 0244", &r13_start::START_0244),
     ("r13 start 0352", &r13_start::START_0352),
+    ("r13 start 0571", &r13_start::START_0571),
+    ("r13 start 0572", &r13_start::START_0572),
     // round 13 (magic-r13): end of INTERNAL
     // round 11 (magic-r11-own)
     ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),

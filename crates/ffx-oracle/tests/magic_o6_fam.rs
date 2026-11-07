@@ -4589,7 +4589,7 @@ fn fam_p019_particles_reset() {
             // the free ring of `count` nodes
             for i in 0..u32::from(count) {
                 let k = u32::from(count);
-                t.write(node(i), &[0x2e; 0x20]);
+                t.write(node(i), &[0x2e; 0x40]);
                 t.set_u32(node(i), node((i + k - 1) % k));
                 t.set_u32(node(i) + 4, node((i + 1) % k));
             }

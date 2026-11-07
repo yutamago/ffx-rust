@@ -397,6 +397,8 @@ fn summon_start_in(n: u16, rva: u32) {
         t.set_u32(root + 4, 0);
         let flags = t.img.word(at + 0x197);
         t.set_u32(flags, 0x5555_5555 + k as u32);
+        // the word the start clears, set before
+        t.set_u32(t.img.word(at + 0x9d), 0x9d9d_0000 + k as u32);
         t.check_entry(at, magic::Call::default(), &[0x30 + k as u32], Eax::Checked);
     }
 }
