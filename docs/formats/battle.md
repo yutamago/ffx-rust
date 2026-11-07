@@ -373,6 +373,7 @@ Bit fields, from the properties' cases:
 | `+0xd34` | `i32` | `damage_hp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd38` | `i32` | `damage_mp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xd3c` | `i32` | `damage_ctb` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xdc4` | `u32` | `command_target_bits` (ours) | a bit per actor: the targets of the actor's command; `MsGetChrBit`'s selector -26 (called "self target" in `symbols/ffx.sym`) returns it. Its only writer, `MsCommandCueProcess`, copies the target bits at `+0xdc0` (selector -16, `MsGetChrTargetInfo`; no row of their own here) into it when the command runs (`0x0079265c`), so it keeps the command's targets after `+0xdc0` changes. Live (ffx-remix M9 run live2, 2026-11-07, Lulu's Fire on actor 20): the caster's word was already `0x00100000` at the first sample (the end of the update that set the magic ID, u0 - 1 in effects-draw.md's "A spell live: Fire") and still set during the next two magics; the same mask as its command cue entry's `+0x10` (a cue entry holds one target mask per hit at `0x10 * (byte +2 + 1)`, `+2` the current hit, as `MsGetChrBit` selector -3 reads it while the command actor's `+0xdf0` is not 0; the word at `+0x14 + 0x10 * (byte +2)` is the reflect step's per-hit mask (`MsEffectReflect_00789030`), 0 for Fire); Larva's attack on Lulu after it: `0x20` |
 | `+0xdc8` | `u8` | `in_battle` | property `0x15` `STAT_INBATTLE`; `MsBtlReadManage`, `MsBtlReadWeapon`, `MsGetSaveWindow`; the actor takes part: commands, lists and auto commands need it (`MsAutoCommandStatusCheck`) |
 | `+0xdca` | `u8` | `stat_target_list` | property `0x127` `STAT_TARGET_LIST`; `MsGetSaveWindow`, `MsChangeMonsterDir`, `MsGetChrStatInfo` |
 | `+0xdcc` | `u8` | `stat_death` | `MsDamageCheckDeath`, `MsRelife`, `MsSetChrWeak`; `MsGetChrStatDeath`; 2 KO'd (`g_BtlCameraKoHeight`) |
@@ -386,7 +387,7 @@ Bit fields, from the properties' cases:
 | `+0xdd7` | `u8 (bool)` | `in_ctb_list` | property `0x53` `STAT_CTB_LIST`; `MsBtlReadMonsterProcess`, `MsGetCTBlist`, `MsGetChrStatInfo` |
 | `+0xdd8` | `u8 (bool)` | `in_hp_list` | property `0xd7` `STAT_HP_LIST`; `MsGetSaveWindow`, `MsSetRamChrData`, `MsGetChrStatInfo` |
 | `+0xdd9` | `u8` | `stat_cursor` | property `0x52` `STAT_CURSOR`; `MsGetChrCursorFlag`, `MsCheckTargetsGone`, `MsSetRamChrData` |
-| `+0xdda` | `u8 (bool)` | `stat_effect_target_flag` | property `0xe1` `STAT_EFFECT_TARGET_FLAG`; `MsEffectCheckTarget`, `MsEffectGetTargetFlag`, `MsGetChrStatInfo` |
+| `+0xdda` | `u8 (bool)` | `stat_effect_target_flag` | property `0xe1` `STAT_EFFECT_TARGET_FLAG`; `MsEffectCheckTarget`, `MsEffectGetTargetFlag`, `MsGetChrStatInfo`. `MsEffectCheckTarget(mask)` keeps the bits of a mask of more than one actor whose flag is set (a one-actor mask comes back unchanged); it is not the target list itself: in the ffx-remix M9 run live2 of the six actors sampled it was 1 on actors 0, 4, 5, 20 and 21 (5 the caster; 0 and 4 party actors not in the fight; 20 and 21 the monsters) and 0 on actor 29 |
 | `+0xddb` | `u8 (bool)` | `stat_regen_damage_flag` | property `0x151` `STAT_REGEN_DAMAGE_FLAG`; `MsCheckStatusBeforeAction`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
 | `+0xddd` | `u8` | `stat_event_chr` | property `0x50` `STAT_EVENT_CHR`; `MsGetChrEventFlag`, `Native_704f_SelSetFieldDdd`, `MsGetChrStatInfo` |
 | `+0xdde` | `u16` | `stat_blow_exist_flag` | `MsGetChrEventFlag`, `MsSetRamChrData`, `MsGetChrStatInfo`; **a `u16`, not the blow-away flag**: an id (`0xff` none) that `MsGetChrEventFlag(i, id)` (`0x00794f20`) compares: with `+0xddd` set and `+0xdde` neither `0xff` nor `id` it returns 2; property `0x159` reads the word. The blow-away flag (property `0xac`) is `+0xdd3` |
@@ -605,10 +606,17 @@ from `MsBattleProcess` and moves each actor's effect state `+0xdfb` on:
 
 An effect reports back through `MsEffectReady(id, x)` (`0x00788200`):
 an actor's (`id >> 8` 2) in state 4 ends (`0x00788f90`) and goes to 5.
-The reflect step lands the hit on the cue entry's targets once (cue `+5`
-0 → 1: head target reset, overdrive status check, the reflect effect
-`MsStatusEffectReflect` and sound 0x3b) and waits until none of them
-shows its reflect effect (`+0xea4`, 1 → 2), then ends (`+0xe0d`).
+The reflect step runs once on the hit's reflect mask (cue
+`+0x14 + 0x10 * +2`; cue `+5` 0 → 1: head target reset, overdrive status
+check, the reflect effect `MsStatusEffectReflect` and sound 0x3b; it calls
+no damage) and waits until none of those actors shows its reflect effect
+(`+0xea4` not 0; then cue `+5` 1 → 2), then ends (`+0xe0d`); a mask of 0
+(Fire's) ends it at once while `+0x432` is 0 or `+0x429` is not. For Fire
+the hit most likely lands through the overlay's own `MsSetDamage` calls,
+and the `0x400` call at the command's end finds nothing left (the
+target's HP changed once, at u0 + 89; `docs/formats/effects-draw.md`, "A
+spell live: Fire"); other effects may land their
+hits otherwise (`MsSetDamage` has more callers).
 `0x00788f30` rewrites its own two argument slots before its tail call to
 `MsEffectCameraCall(-1, 1)`; no caller reads them back.
 

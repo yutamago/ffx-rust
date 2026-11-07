@@ -131,8 +131,10 @@ indices relative to their smallest. On all eight frames:
 - every expected draw is drawn, in list order, and every effect draw is an
   expected one, but for 24 draws (battle-magic-1: 7, battle-magic-3: 17)
   whose list entry the snapshot holds as 0: their geometry sits in the
-  table's delete pool (destroyed by `graphicVFXDestroy`, which zeroes the
-  entry, `PhyreScene_removeVFXFromRenderArray` `0x006687a0`), with the
+  table's delete pool (destroyed by `graphicVFXDestroy`; after the frame's
+  render `PhyreScene_doDeleteMeshInstances` zeroed the entry,
+  `PhyreScene_removeVFXFromRenderArray` `0x006687a0`, before the
+  snapshot), with the
   bytes the frame drew, at a zeroed entry between its neighbours' places;
 - only `DrawMostVFX` was in use (the other four lists were empty).
 
@@ -161,7 +163,8 @@ slot 2, uvs slot 3 (strides 12, 12, 16, 8; `POSITION0` f6, `NORMAL0` f6,
 bytes as the arrays hold them (the census compares them byte for byte).
 In these frames every drawn segment used its own arrays (slot `+4`).
 
-The table (`g_VFXRenderDataTable` `0x00ccca6c`, `docs/formats/render.md`)
+The table (the one `g_VFXRenderDataTable` `0x00ccca6c` points to,
+`docs/formats/render.md`)
 also keeps a delete pool: count `+8` (bit 31 a flag), keys `+0xc` (8 bytes
 each), counters `+0x14`, geometries `+0x1c`
 (`ClassVFXRenderDataTable_UpdateDeletePool` `0x0069fe50` counts them down
@@ -285,20 +288,131 @@ names a program without a draw or runner (`pppVertexAp`, `pppVertexApLc`,
 it made the instance is not settled (open question 1). The census marks
 them `NO-DRAW`.
 
+## A spell live: Fire (ffx-remix M9, 2026-11-07)
+
+A trace in the 32-bit game: ffx-remix's runtime with `FFXREMIX_FX_TRACE=1`
+(`Effects/EffectTrace.cs`), harness lockstep, fast mode, virtual clock,
+seed 1. Lulu alone against the Thunder Plains' first formation (battle
+field 34, formation 0: Larva, actor 20, and Gold Element, actor 21) casts
+Fire (magic `0x4c`, `magic_0076.dll`) on the Larva. The runs' probe raised
+the monsters' HP to 99999; its writes meant for Lulu's HP landed at her
+`+0x674` and `+0x6b0`, inside `limits` (`+0x670`). Hooks on
+`FFXApplication_animate` (one count per update; the magic ID and handle
+read at the start of each update, before the game's own),
+`PhyreScene_DrawMostVFX` (each list entry, its geometry through the table
+and its instance key, labelled with the update count of the moment),
+`MsSetDamage` (logged when it returns), `MsNumberRegist` and
+`MsEffectReady`. Counting from u0, the first update that starts with
+`g_MagicFile_MagicId` = `0x4c` (it is set during update u0 - 1):
+
+| Update | What |
+|---|---|
+| u0 | starts with the magic ID `0x4c` |
+| u0 + 1 | starts with `g_MagicFile_Handle` valid |
+| u0 + 50 | `MsEffectReady(0x205, 1)` (kind 2, actor 5) |
+| u0 + 79 | the spell's own first draws (draws labelled with this count) |
+| u0 + 89 | `MsNumberRegist(0x14, …, 170, …)` and `MsSetDamage(5, -5, 0)`: the hit and its damage number |
+| u0 + 93 | `MsSetDamage(5, -5, 0)` again |
+| u0 + 129 | the spell's own last draws |
+| u0 + 138 | `MsSetDamage(5, -5, 0x400)` (the command's end); the magic ID is -1 at the start of u0 + 139 |
+
+Seven traced runs (ffx-remix `m9/probe` trace1, trace2, live1, live2,
+exit-vanilla, exit-fire, exit-fire2) had the same updates for the calls;
+the draw and handle rows are from the six after trace1 (its tracer did not
+yet read the table through the pointer or log the handle's change). The
+traced runs with ffx-remix's hide (live1, live2, exit-fire, exit-fire2)
+log the spell's draws too: the tracer reads the list before the hide
+zeroes it.
+
+The hit most likely comes from the overlay itself (inferred: the tracer
+did not log the caller): `magic_0076.dll` has one call to `MsSetDamage`
+through `g_MagicImports` slot 239 (`mov eax, [imports+0x3bc]` at
+`0x100064b9`, arguments `(…, -5, 0)`), in a timer routine that steps 1/30
+a call and calls it at its stages' thresholds 0.35 and 0.5, which fits two
+calls 4 updates apart (u0 + 89, u0 + 93). `FFX.exe` has one other caller
+with the constants `(…, -5, 0)`, `MsEffectSignalDamage_007b7680` (reached
+through `MsEffectSignal_007b74d0`, from the motions' effect signals and
+native `0x709e`); the `0x400` call at u0 + 138 has no such site in the
+overlay; the only `MsSetDamage` call in `FFX.exe` passing a constant
+`0x400` is `MsBattleProcess_ChrDamage`'s (the call at `0x007912cb`, `push
+0x400` at `0x007912c3`) (`docs/formats/battle.md`; the tracer did not log
+the caller). That `MsNumberRegist` runs inside that `MsSetDamage` is
+inferred from the log (the number's line before the call's, which is
+written as it returns, in the same update). Hiding all of the spell's
+draws (below) left every row above on the same update, the target's HP
+changed on the same harness frame, and frame-by-frame shots showed the
+number first on the same shot (exit-vanilla against exit-fire and
+exit-fire2).
+
+**Which draws are the spell's.** In the 142 drawn frames from u0 - 1 to
+u0 + 140 (the tracer's window: it logs three frames with the ID -1; the same
+in each of the six runs that read the table), 4,680 entries are the
+spell's: ppp keys (`(g_pppCurrentProgram, object)`) whose object, and its
+birth record's program list (object `+8`, `+0`), lie inside the overlay's
+image (the module handle up to `SizeOfImage`); the two tests never
+disagree, and all of them use the overlay's textures
+(`magic/magic_0076/tex/...`). The other draws of those frames: shared
+battle effects, ppp objects outside the image with
+`yonishi_data/dat_et/bat_eff/et_tex` textures (20-62 a frame; 21-31 while
+the spell's own draws are on screen); 2-5 untextured ppp draws a frame
+outside the image (texture name `NoTexture`; flags 2 or 3, programs 4, 5
+and 12); two entries in all (at u0 - 1 and u0) with the texture name
+"empty"; and the battle map's field programs (`btlmap/kami/kami00_a/fp`
+textures). No op-record (`(0, record)`) draws.
+
+**List entries missing from the table.** In each of the six runs, 83 of
+the 142 frames have 1-16 entries of `+0x38cc` whose mesh instance is in no
+table entry (329 entries, 212 addresses, 154 of them in one frame only).
+`graphicVFXDestroy` takes a geometry out of the table at once
+(`ClassVFXRenderDataTable_Remove_0069fc10`: the map node erased, the
+geometry to the delete pool), but leaves its list entry: its virtual
+`+0x10` (`VfxRenderData_pushPair_006a0f50`) only queues the mesh instance
+on scene `+0x3894`, and `PhyreScene_doDeleteMeshInstances` (`0x0065a620`)
+zeroes the entry (`PhyreScene_removeVFXFromRenderArray`) after the frame's
+render. The entries missing from the table are most likely instances
+between those two steps. A hide by instance key therefore remembers the
+spell's entries while the spell plays: in exit-fire2 ffx-remix's hide
+zeroed 4,891 entries (a running count, Fire's alone in that run) against
+the 4,680 the tracer resolved as the spell's; the other 211 are most
+likely remembered entries whose geometry had left the table (exit-fire2
+has 224 "?" entries from u0 + 79 to u0 + 140); the count also covers one
+frame after the tracer's window. The remembered addresses must be dropped
+a few frames after the spell: the game reuses them for other effects'
+geometry (an earlier version that kept them hid later effects' draws).
+
+**Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
+`DrawMostVFX` runs (and putting them back after) hides those draws: the
+loop skips zero entries and the draw events still run at their places
+(read from the code: no Fire frame had an event).
+
+**Where the actors are.** The caster is the actor with a command cue entry
+(`+0xde5` not `0xff`) and an effect state (`+0xdfb` not 0; sampled 16, 2,
+4, 5 over Fire; 16 appears nowhere in battle.md's `MsEffectStart` section,
+3 and 11 were not sampled); its targets are the bits of its `+0xdc4`
+(`docs/formats/battle.md`). A battle character's place in the HD scene
+(the space the draws' world matrices use) was taken as `(-x, -y, z)` of
+`Ch_GetPos` (chr `+0xc`), as on field maps: an effect placed there sat on
+the Larva in the live frames (checked by eye, run live3). The centre of
+the character's mesh bounds (the render instance at chr `+0x830`, each
+mesh instance's box) is not that place: in live2 it lay 31.8 units from it
+for the Larva, 51.4 for the Gold Element and 55.4 for Lulu, and an effect
+placed by it stood on the ground beside the Larva.
+
 ## Gate
 
-Every effect draw of the eight captured frames is traced: 1042 of 1042, to
-the `DrawMostVFX` list place it is drawn from (1018 by the list entry, 24
-by a zeroed entry and the delete pool), the geometry and segment whose
-bytes it draws, the instance key and its maker (ppp object or op record),
-and the shader its flags give (`cargo test -p ffx-fxdraw --test captures`:
-"8 frames, 1042 effect draws traced"; no unexplained draw of any class in
-the frames). `tests/synthetic.rs` checks the census itself on a synthetic
-frame.
+The M4 census: every effect draw of the eight captured frames is traced:
+1042 of 1042, to the `DrawMostVFX` list place it is drawn from (1018 by
+the list entry, 24 by a zeroed entry and the delete pool), the geometry
+and segment whose bytes it draws, the instance key and its maker (ppp
+object or op record), and the shader its flags give (`cargo test -p
+ffx-fxdraw --test captures`: "8 frames, 1042 effect draws traced"; no
+unexplained draw of any class in the frames). `tests/synthetic.rs` checks
+the census itself on a synthetic frame.
 
 ## Open questions
 
-1. **Which ppp program made the instance.** The key's low word is
+1. **Which ppp program made the instance.** (Which *spell* made it: see "A
+   spell live: Fire".) The key's low word is
    `g_pppCurrentProgram`, but for 786 draws it names `pppVertexAp`,
    `pppVertexApLc` or `pppRandUpFV`, which have no draw (`pppVertexAp`
    births particles at vertices, `pppBornVertex`). Either the born objects
