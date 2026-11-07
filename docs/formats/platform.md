@@ -581,6 +581,29 @@ only `PVideoPlaybackWin32_initialize` (`0x00a27cf0`) sets it back to 0.
 So the reopened movie gets no packets and never shows a frame. Whether
 the game's own scripts can start a movie that early is not checked.
 
+### Other files in the player (measured, ffx-remix M10)
+
+Measured 2026-11-07 with ffx-remix's runtime in harness games (its
+`tools/probe-movie.sh`): movie 2 as movie-fmv plays it (save `ffx_003`,
+bsil0000's worker 24 entry 5, the preload held until its 30 frames are
+decoded), with Fahrenheit serving a test file (a frame number drawn as a
+barcode in each frame, Vorbis track silent) in place of `IWK_us.webm`.
+
+- `PVideoPlaybackWin32::open` (`0x00a27f20`, thiscall(player, path,
+  loop)) got the path `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm`
+  and loop 0; after it returns 0 the movie's size is at `+0x14c`, `+0x150`.
+- A 1920 × 1080 VP8 file played to the end of the shots. In each shot taken
+  when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode read 63, 127,
+  191, 255 and 319: the frame shown is `+0x6d8` − 1, the player's frames
+  shown (`+0x100`) when `updateTexture` uploaded it (it adds one after the
+  upload).
+- A 3840 × 2160 VP8 file crashed the game when the movie was requested:
+  an access violation writing to address 0 inside `MSVCR110.dll`
+  (`+0x31323`; one minidump). Inferred, not traced: an allocation of the
+  decoded-frame queue failed (30 slots of 1.5 × width × height bytes, 373
+  MB at this size against 93 MB at 1080p) and a copy went to the null
+  result.
+
 ### Drawing
 
 `Render` clears to black and draws one quad with `video.fx`

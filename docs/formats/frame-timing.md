@@ -149,6 +149,15 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
 - **Voice-synced cut scenes.** `g_SyncOn` paces the ticks to the sync clock (real time), so the
   booster does nothing there. Exec frames would run n ticks per synced step and leave the voices
   behind.
+  `SyncManager_syncGetData` (`0x006fb160`, through `0x0067a930`) answers one step per call from
+  the cursor at the manager's `+8`: three 4-byte values, time (`f32`), rate (`f32`) and frame
+  (`i32`), and the cursor moves 12 bytes; it waits (5 ms sleeps) while `+0x20` is 0, and answers
+  999 (and clears the cursor) when `+8` or `+0x1c` is 0 or at the end marker (1.0, 1.0, 999).
+  `Sg_FrameSync` asks one step per world tick it runs, so in a synced scene the n-th tick after the
+  start shows the n-th step whatever real time it runs at. Measured (ffx-remix M10, the arrival
+  scene of save `ffx_002`, two real-time runs of 740 ticks each): ctrl work 0's event count
+  (`0x01325d94`) equalled the number of `TkUpdateEventJump` calls since the map's first entry start
+  on every tick.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
