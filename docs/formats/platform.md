@@ -549,7 +549,7 @@ ids are not: `g_FMVUnskippableIds` `0x00b49b08`); `g_FMVSkipped`
 | Thread | Proc | Work |
 |---|---|---|
 | reading | `PVideoPlaybackWin32_initialize` `0x00a27880` | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
-| decoding | `PVideoPlaybackWin32_open` `0x00a27b90` | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
+| decoding | `0x00a27b90` (started by `PVideoPlaybackWin32_open`) | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
 | FMOD stream | `PVideoPlaybackWin32_FmodReadCallback_00a27ee0` | `PVideoPlaybackWin32_AudioRead_00a27170`: 0x1000 frames per call, `vorbis_synthesis_pcmout`, s16 = clamp(floor(f x 32767.0 + 0.5)) interleaved; silent while prebuffering |
 | main or render | `UpdateTexture` / `updateVideoCallback` `0x006dae00` | `updateTexture`: one decoded frame into the next of three Y, U, V texture sets (`Map`/`Unmap` or `UpdateSubresource`) |
 
@@ -581,7 +581,7 @@ only `PVideoPlaybackWin32_initialize` (`0x00a27cf0`) sets it back to 0.
 So the reopened movie gets no packets and never shows a frame. Whether
 the game's own scripts can start a movie that early is not checked.
 
-### Other files in the player (measured, ffx-remix M10)
+### The open and other files (measured, ffx-remix M10)
 
 Measured 2026-11-07 with ffx-remix's runtime in harness games
 (ffx-remix's `tools/probe-movie.sh`): movie 2 as
@@ -602,10 +602,11 @@ real one (one).
   shots taken when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode
   read 63, 127, 191, 255 and 319: the frame shown is `+0x6d8` - 1. From
   the code: `updateTexture` uploads frame b while the player's `+0x100`
-  is b and then adds one; `updateVideoCallback` (`0x006dae00`) sets the
-  manager's `+0x6d8` right after from `getCurrentTime`'s (`+0x100` + 1)
-  frames, and the truncation to ms and `ftol` of ms x 29.97 x 0.001
-  bring that down to b + 1 (computed for b = 0 to 400).
+  is b and then adds one; for this movie the manager's `UpdateTexture`
+  (`0x006d7680`) then sets its `+0x6d8` from `getCurrentTime`'s b + 2
+  frames (`updateVideoCallback` `0x006dae00` does the same for the
+  render-command movies), and the truncation to ms and `ftol` of ms x
+  29.97 x 0.001 bring that down to b + 1 (computed for b = 0 to 400).
 - A 3840 x 2160 VP8 file crashed the game when the script's MovieStart
   loaded it (the preload, before any frame was decoded): an access
   violation writing to address 0 in `MSVCR110.dll` (`+0x31323`, one
