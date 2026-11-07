@@ -1785,12 +1785,15 @@ pub const BEAMS_SPREAD_FLAT: Sig = Sig {
 
 /// The sparks that move a trail's head `p` (internal, `ecx` = `p`; the
 /// function at `target`, called with `esp` above its return address): the
-/// `0446` family's three or `0565`'s three. Returns its `eax`.
+/// `0446` family's three, `0565`'s or `0644`'s. Returns its `eax`.
 pub(crate) fn sparks_move<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32, p: u32) -> u32 {
     use crate::s4_fam446::{
         SPARKS_A, SPARKS_B, SPARKS_C, SPARKS_D, sparks_a, sparks_b, sparks_c, sparks_d,
     };
-    use crate::s7_misc::{FLAGGED_TWO_SPARKS, TWO_SPARKS, flagged_two_sparks, two_sparks};
+    use crate::s7_misc::{
+        FLAGGED_TWO_SPARKS, SPARK_AT_POINT, TWO_SPARKS, TWO_SPARKS_B, flagged_two_sparks,
+        spark_at_point, two_sparks,
+    };
     let fr = Frame {
         at: target,
         esp: esp.wrapping_sub(4),
@@ -1799,12 +1802,16 @@ pub(crate) fn sparks_move<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32
         edx: 0,
         xmm: [0; 4],
     };
-    let ports: [(&Sig, Port<G>); 6] = [
+    let ports: [(&Sig, Port<G>); 8] = [
         (&SPARKS_A, sparks_a),
         (&SPARKS_B, sparks_b),
         (&SPARKS_C, sparks_c),
         (&SPARKS_D, sparks_d),
         (&TWO_SPARKS, |g, img, fr| Ret::eax(two_sparks(g, img, fr))),
+        (&TWO_SPARKS_B, |g, img, fr| Ret::eax(two_sparks(g, img, fr))),
+        (&SPARK_AT_POINT, |g, img, fr| {
+            Ret::eax(spark_at_point(g, img, fr))
+        }),
         (&FLAGGED_TWO_SPARKS, |g, img, fr| {
             Ret::eax(flagged_two_sparks(g, img, fr))
         }),
@@ -1834,8 +1841,11 @@ pub(crate) fn sparks_move<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32
 /// [`sparks_d`]: crate::s4_fam446::sparks_d
 ///
 /// `magic_0446` 0x10001e80 (395 bytes; 6 DLLs), `magic_0544` 0x10001e80
-/// (3 DLLs, its own trail draw) and `magic_0565` 0x10003a20 (5 DLLs, its
-/// own sparks and trail draw).
+/// (3 DLLs, its own trail draw), `magic_0565` 0x10003a20 (5 DLLs, its
+/// own sparks and trail draw) and `magic_0644` 0x10007a40 (5 DLLs, its
+/// own sparks and trail draw; the block's words 0x130 lower, read from
+/// the code: `B[0x5ad0]` the wait, `B[0x5ad4]` the kind, `B[0x5aa8]` the
+/// count, `B+0x2f70` the kept point, `B+0x5880` the trail).
 pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -1844,17 +1854,21 @@ pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let (p, m) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x54));
     let esp = ebp.wrapping_sub(0x60);
     let b = g.read::<u32>(w(0x14));
-    let wait = g.read::<i32>(b.wrapping_add(0x5c00));
+    // the block's words (displacements: `magic_0644`'s are 0x130 lower)
+    let wait_at = b.wrapping_add(w(0x1b));
+    let kind_at = b.wrapping_add(w(0x6d));
+    let count_at = b.wrapping_add(w(0x76));
+    let kept = b.wrapping_add(w(0x89));
+    let wait = g.read::<i32>(wait_at);
     if wait > 0 {
-        g.write::<i32>(b.wrapping_add(0x5c00), wait - 1);
+        g.write::<i32>(wait_at, wait - 1);
     }
     let c = g.read::<u32>(w(0x36));
     let x = g.call(slot_target(g, w(0x2e), 219), 0, &[c, 0]).eax;
     g.call(slot_target(g, w(0x4c), 237), 0, &[x, 0, 0, p]);
     g.write::<u32>(p + 0xc, 0x3f80_0000);
-    let kind = |g: &G| g.read::<u32>(b.wrapping_add(0x5c04));
-    let kept = b.wrapping_add(0x30a0);
-    let eax = if g.read::<i32>(b.wrapping_add(0x5c00)) > 0 {
+    let kind = |g: &G| g.read::<u32>(kind_at);
+    let eax = if g.read::<i32>(wait_at) > 0 {
         let k = kind(g);
         let call = match k {
             0 => Some(0xfe),
@@ -1872,12 +1886,12 @@ pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         }
         eax
     } else {
-        let left = g.read::<i32>(b.wrapping_add(0x5bd8));
+        let left = g.read::<i32>(count_at);
         if kind(g) != 0 || left <= 0 {
             let back = img.rel32_target(f + 0xbe);
             return Ret::eax(crate::sa_pool::give_back(g, img, back, obj));
         }
-        g.write::<i32>(b.wrapping_add(0x5bd8), left - 1);
+        g.write::<i32>(count_at, left - 1);
         for j in 0..4 {
             let v = g.read::<u32>(kept + 4 * j);
             g.write::<u32>(p + 4 * j, v);
@@ -1894,7 +1908,7 @@ pub fn trail_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let draw = (
         img.rel32_target(f + 0x173),
         esp.wrapping_sub(4),
-        b.wrapping_add(0x59b0),
+        b.wrapping_add(w(0x159)),
         m,
     );
     sub_call(g, crate::o6_fam_pairs6::trail_draw, img, draw, &[p])
@@ -3460,6 +3474,64 @@ pub const TRAIL_TASK_0565: Sig = Sig {
         (0x174, Callee::Sig(&crate::s4_fam446::START_CHILD_SOUND_A)),
         (0x183, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
         (0x24b, Callee::Sig(&TRAIL_DRAW_0565)),
+        (0x25b, Callee::Any),
+        (0x26c, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x279, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_draw`](crate::o6_fam_pairs6::trail_draw) in `magic_0644`
+/// (0x1000acd0, 1497 bytes; 5 DLLs: `0644`, `0692`, `0694`, `0696`,
+/// `0698`): its own frame layout, `M4` and `M3` also through slot 231
+/// with `M1`, the loop's last `eax` returned (the `rel32`s: the
+/// animation step, the square root, the frame draw and the cookie check).
+pub const TRAIL_DRAW_0644: Sig = Sig {
+    len: 1497,
+    hash: 0x35c9_a9cd_b0db_5aa6,
+    calls: &[
+        (0xd9, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x1c2, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x59f, Callee::Sig(&crate::sb_misc::DRAW_FRAME)),
+        (0x5d1, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_head`] in `magic_0644` (0x10007a40, 395 bytes; 5 DLLs: its
+/// block words, sparks and trail draw).
+pub const TRAIL_HEAD_0644: Sig = Sig {
+    len: 395,
+    hash: 0x2999_09f2_a574_5f38,
+    calls: &[
+        (0xbe, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xcb, Callee::Any),
+        (0xea, Callee::Sig(&crate::s7_misc::SPARK_AT_POINT)),
+        (0xf4, Callee::Sig(&crate::s7_misc::TWO_SPARKS_B)),
+        (0xfe, Callee::Sig(&crate::s4_fam446::SPARKS_B)),
+        (0x173, Callee::Sig(&TRAIL_DRAW_0644)),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_task`](crate::o6_fam_pairs6::trail_task) in `magic_0644`
+/// (0x10007e60, 641 bytes; 5 DLLs): `magic_0565`'s with the block's
+/// words 0x130 lower, its own sparks and trail draw.
+pub const TRAIL_TASK_0644: Sig = Sig {
+    len: 641,
+    hash: 0x7230_e812_ce74_e02e,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s7_misc::SPARK_AT_POINT)),
+        (0x103, Callee::Sig(&crate::s7_misc::TWO_SPARKS_B)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_B)),
+        (
+            0x120,
+            Callee::Sig(&crate::o6_fam_pairs5::LIGHT_SETUP_0644_B390),
+        ),
+        (0x174, Callee::Sig(&crate::s4_fam446::START_CHILD_SOUND_A)),
+        (0x183, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x24b, Callee::Sig(&TRAIL_DRAW_0644)),
         (0x25b, Callee::Any),
         (0x26c, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
         (0x279, Callee::Any),

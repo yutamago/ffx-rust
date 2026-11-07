@@ -832,6 +832,15 @@ struct TrailOps {
     ring: u32,
     left_init: u32,
     anim: u32,
+    /// The seed's multiplier, increment and mask, the colour's four
+    /// bytes and the zero-length segment's `K` (the operands' offsets).
+    seed_ops: (u32, u32, u32),
+    colour: [u32; 4],
+    zero_k: u32,
+    /// `magic_0644`'s copy: `M4` and `M3` also go through slot 231 with
+    /// `M1`, and no `mov eax, 0x1f` before the loop's test (it returns
+    /// the last call's `eax`, or `lahf`'s on a zero-length segment).
+    m1_both: bool,
 }
 
 /// A trail of up to 32 points drawn as sprites along it (internal: `ecx`
@@ -841,7 +850,10 @@ struct TrailOps {
 /// `magic_0544` 0x10004ce0, 1436 bytes, which lays its frame out
 /// differently and links each sprite as a part
 /// ([`crate::sa_misc::link_part`]) where `0446` draws it
-/// ([`crate::sb_misc::draw_frame`]); family `F0446_10004e20`):
+/// ([`crate::sb_misc::draw_frame`]); family `F0446_10004e20`; also
+/// `magic_0565` 0x10006ea0 and `magic_0644` 0x1000acd0, 1497 bytes in 5
+/// DLLs, whose `M4` and `M3` then go through slot 231 `(M, M1, M)` and
+/// which returns the loop's last `eax`, see [`TrailOps`]):
 /// - slot 723 `(M1)`, 724 `(M2)`; `*G_M3`, `*G_M4` = the frame's `M3`,
 ///   `M4`; `point` into the ring `o + 0xc + 0x10 h` (`h = o + 0x224`,
 ///   marked in the bytes `o + 0x22c..`, then `h + 1` modulo 32); the
@@ -897,6 +909,42 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             ring: 0xab,
             left_init: 0xc8,
             anim: 0xdd,
+            seed_ops: (0x208, 0x20e, 0x210),
+            colour: [0x236, 0x262, 0x28e, 0x2bd],
+            zero_k: 0x1e4,
+            m1_both: false,
+        }
+    } else if img.word(f + 0x344) as u8 == 0xf3 {
+        // `magic_0644` 0x1000acd0: `movss [esp + 0x14], xmm1` at +0x344
+        TrailOps {
+            acc: 0x14,
+            seg: 0x18,
+            idx: 0x24,
+            seed: 0x1c,
+            left: 0x20,
+            p: 0x40,
+            d: 0x58,
+            scale: 0x28,
+            k1: 0x365,
+            k2: 0x460,
+            k3: 0x468,
+            k4: 0x4cf,
+            alpha: 0x528,
+            rec: 0x595,
+            call: 0x59f,
+            link: false,
+            frame: 0x170,
+            m1: 0xe8,
+            m2: 0x128,
+            m4: Some(0xa8),
+            globals: (0x57, 0x63),
+            ring: 0xb2,
+            left_init: 0xc8,
+            anim: 0xd9,
+            seed_ops: (0x21a, 0x220, 0x223),
+            colour: [0x248, 0x274, 0x2a0, 0x2cf],
+            zero_k: 0x1f9,
+            m1_both: true,
         }
     } else if img.word(f + 0x344) as u8 == 0x40 {
         TrailOps {
@@ -924,6 +972,10 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             ring: 0xad,
             left_init: 0xca,
             anim: 0xdf,
+            seed_ops: (0x208, 0x20e, 0x210),
+            colour: [0x236, 0x262, 0x28e, 0x2bd],
+            zero_k: 0x1e4,
+            m1_both: false,
         }
     } else {
         TrailOps {
@@ -951,6 +1003,10 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             ring: 0xad,
             left_init: 0xca,
             anim: 0xdf,
+            seed_ops: (0x208, 0x20e, 0x210),
+            colour: [0x236, 0x262, 0x28e, 0x2bd],
+            zero_k: 0x1e4,
+            m1_both: false,
         }
     };
     let o = fr.ecx;
@@ -1006,6 +1062,8 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let last = ring.wrapping_sub(1);
     let rd = |g: &G, off: u32| g.read::<f32>(at(off));
+    // the `eax` the loop's last step leaves (`m1_both`: no `mov eax, 0x1f`)
+    let mut eax = last;
     loop {
         let acc = rd(g, ops.acc);
         let seg = rd(g, ops.seg);
@@ -1042,16 +1100,18 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 return Ret::eax(left);
             }
             // `ucomiss; lahf; test ah, 0x44; jnp`: taken when equal (exactly)
-            draw = len != k(g, 0x1e4);
+            draw = len != k(g, ops.zero_k);
+            // `lahf` after an equal compare: ZF and the fixed bit 1 in `ah`
+            eax = (left & !0xff00) | 0x4200;
         }
         if draw {
             let count = g.read::<u32>(of(0x228));
             seed = seed
-                .wrapping_mul(w(0x208))
-                .wrapping_add(disp8(img, f + 0x20e))
-                & w(0x210);
+                .wrapping_mul(w(ops.seed_ops.0))
+                .wrapping_add(disp8(img, f + ops.seed_ops.1))
+                & w(ops.seed_ops.2);
             g.write::<u32>(at(ops.seed), seed);
-            for (ch, out) in [(0u32, 0x236u32), (1, 0x262), (2, 0x28e), (3, 0x2bd)] {
+            for (ch, out) in (0u32..).zip(ops.colour) {
                 let count = g.read::<u32>(of(0x228));
                 let kk = g.read::<u32>(at(0x10));
                 let c0 = u32::from(g.read::<u8>(of(0x20c + ch)));
@@ -1126,6 +1186,13 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.call(t, o, &[m4, m3]);
                 let tz = sub(g.read::<f32>(m4 + 0x38), k(g, ops.k4));
                 g.write::<f32>(m4 + 0x38, tz);
+                if ops.m1_both {
+                    for m in [m4, m3] {
+                        let t = slot(g, 231);
+                        // call width: 3
+                        eax = g.call(t, o, &[m, m1, m]).eax;
+                    }
+                }
             } else {
                 let t = slot(g, 231);
                 // call width: 3
@@ -1163,7 +1230,7 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                     crate::sa_misc::link_part(g, img, &callee);
                 } else {
                     g.write::<u32>(esp.wrapping_add(4), w(ops.rec));
-                    crate::sb_misc::draw_frame(g, img, callee_at, esp, o, entry);
+                    eax = crate::sb_misc::draw_frame(g, img, callee_at, esp, o, entry);
                 }
             }
         }
@@ -1171,7 +1238,7 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         kk = g.read::<u32>(at(0x10)).wrapping_add(1);
         g.write::<u32>(at(0x10), kk);
         if kk.cast_signed() >= g.read::<u32>(of(0x228)).cast_signed() {
-            return Ret::eax(last);
+            return Ret::eax(if ops.m1_both { eax } else { last });
         }
     }
 }
@@ -1179,7 +1246,9 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// The task of a fading spark source with a trail (stack `(task)`, `o` =
 /// the task's `+0x14`, its trail `T = o + 0x2c0`, `W = *G_W`; a /GS
 /// frame, `ebp` = the entry `esp - 4`; `magic_0544`, `magic_0555`,
-/// `magic_0556` 0x10002250, 629 bytes; family `F0544_10002250`):
+/// `magic_0556` 0x10002250, 629 bytes; family `F0544_10002250`; also
+/// `magic_0565` 0x10003e40, 641 bytes, and `magic_0644` 0x10007e60, its
+/// `W` words 0x130 lower, read from the code):
 /// - the timer `o + 0x50c` drops while positive; still `>= 0`: the place
 ///   `V` = `(1 - s) o.270.. + s o.260..` (`s` = timer `/ o.510`, `K`
 ///   = 1 from the code), `V.w` = 1; `W + 0x5c04` picks the sparks at `V`
@@ -1223,7 +1292,11 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let at = |off: u32| ebp.wrapping_sub(off);
     let (v, m) = (at(0x18), at(0x5c));
-    let mode = |g: &G| g.read::<u32>(ww.wrapping_add(0x5c04));
+    // `mov eax, [edi + 0x5c04]` at +0x7d (`magic_0644`: 0x5ad4); the count
+    // `W + 0x5c0c` is 8 above it
+    let mode_at = ww.wrapping_add(w(0x7f));
+    let left_at = mode_at.wrapping_add(8);
+    let mode = |g: &G| g.read::<u32>(mode_at);
     let timer = o.wrapping_add(0x50c);
     let t0 = g.read::<u32>(timer);
     if t0.cast_signed() > 0 {
@@ -1248,8 +1321,8 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         if off_list {
             unlist(g);
         }
-        let n = g.read::<u32>(ww.wrapping_add(0x5c0c)).wrapping_add(1);
-        g.write::<u32>(ww.wrapping_add(0x5c0c), n);
+        let n = g.read::<u32>(left_at).wrapping_add(1);
+        g.write::<u32>(left_at, n);
         Ret::eax(crate::sa_pool::give_back(
             g,
             img,

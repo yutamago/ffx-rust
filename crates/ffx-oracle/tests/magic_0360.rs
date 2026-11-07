@@ -63,3 +63,26 @@ fn object_steps() {
         run_obj(&mut t, at);
     }
 }
+
+/// 0x10001930 (`r13_start::object_start_0360`): the object started from
+/// the caster's place with two draws of `rand`, its flags kept.
+#[test]
+fn object_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1930);
+    rec(&mut t, 458, 3, |_, a| 0x0458_0000 ^ a[0]);
+    rec(&mut t, 450, 2, |_, a| 0x0450_0000 ^ a[1]);
+    rec(&mut t, 449, 2, |_, a| 0x0449_0000 ^ a[1]);
+    let c = SCRATCH + 0x800;
+    for (i, x) in (0u32..).zip([2.5f32, 1.5, 0.5, -0.5]) {
+        t.set_u32(c + 0xd0 + 4 * i, x.to_bits());
+    }
+    t.set_u32(t.img.word(at + 0x3e), c);
+    t.set_u32(t.img.word(at + 0x8b), 0x00c0_008b);
+    let o = SCRATCH + 0x1000;
+    for flags in [0u32, 0x8001] {
+        t.write(o, &[0x5d; 0x180]);
+        t.set_u32(o + 0xbc, flags);
+        t.check_entry(at, Call::default(), &[o], Eax::Checked);
+    }
+}

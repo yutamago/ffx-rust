@@ -11,6 +11,8 @@
 
 mod magic;
 mod magic_l3;
+mod magic_owna;
+mod magic_r11;
 #[path = "magic/ownb.rs"]
 mod ownb;
 
@@ -300,5 +302,48 @@ fn script_end() {
         t.set_u32(SCRATCH + 0x3078, SCRATCH + 0x3074);
         t.set_u16(t.img.word(give + 0x8e), 7);
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// 0x10005df0 (`r13_start::start_0394`) and its load step 0x100044e0
+/// (`r9_load::load_0394`): the start-up into an empty and a filled task
+/// list (the free ring and the place set up as in [`place`]); the load
+/// step busy, asking, not loaded and loaded.
+#[test]
+fn start_up() {
+    let Some(mut t) = twin() else { return };
+    let f = t.at(0x5df0);
+    let place = t.img.rel32_target(f + 0x56);
+    t.set_u32(t.img.word(place + 0x2f), CHRS + 0x51);
+    rec(&mut t, 251, 1, |_, _| 0);
+    t.stub_st0(251, |_, a| 2.0 + f64::from(a[0]));
+    rec(&mut t, 19, 1, |_, _| 0);
+    t.stub_st0(19, |_, a| 0.25 + f64::from(a[0] & 0xff));
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 271, 3, |_, a| 0x0271_0000 ^ a[0]);
+    magic_r11::pools(&mut t, f, 290);
+    let other = SCRATCH + 0x5f0;
+    for listed in [false, true] {
+        t.write(other, &[0x44; 0x10]);
+        let first = t.img.word(f + 0x9c);
+        t.set_u32(first, if listed { other } else { 0 });
+        t.set_u32(t.img.word(f + 0xb0), other);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r13_start::start_0394(g, img, fr)
+        });
+    }
+    // the load step
+    let at = t.at(0x44e0);
+    let busy = SCRATCH + 0x5e0;
+    let loaded = SCRATCH + 0x5e4;
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    t.set_u32(t.img.word(at + 0x26), 0x0000_5e5e);
+    for (b, asked, l) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 2)] {
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(t.img.word(at + 0x18), asked);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }

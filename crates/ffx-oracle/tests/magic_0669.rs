@@ -169,3 +169,102 @@ fn frame_at() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x10001640 (`r13_start::set_up_tail_0669`): the slots answering
+/// distinct words, the cleared blocks dirty before.
+#[test]
+fn set_up_tail() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1640);
+    t.set_u32(t.img.word(at + 0x11), 0x00c0_0011);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[2] << 8));
+    t.write(t.img.word(at + 0x38), &[0x3c; 0x30]);
+    let clear = t.img.rel32_target(at + 0x5f);
+    let recs_at = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(clear + 0x7), recs_at);
+    t.write(t.img.word(clear + 0x11), &[0x3e; 0x5c]);
+    t.write(recs_at, &vec![0x3d; 0x94 * 500]);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}
+
+/// 0x100016d0 (`r13_start::sparks_frame_0669`): the counts below, inside
+/// and above the range and NaN; four free records (the rest find none),
+/// live records counted (none, some), no sprites to step or draw.
+#[test]
+fn sparks_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x16d0);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[0] + 4 * i, f(1.5 + i as f32 * 2.25));
+        }
+        0x325
+    });
+    let k = SCRATCH + 0x40;
+    rec(&mut t, 324, 0, move |m, _| {
+        let n = m.r32(k);
+        m.w32(k, n + 1);
+        n.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(&mut t, 403, 1, |_, a| a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    recs(&mut t, &[(714, 5), (382, 2), (779, 2)]);
+    // the sprites stepped and drawn (the pool's count is the system's):
+    // their slots answer distinct words, slot 941 a table
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, a| table ^ (a[0] & 0xf0));
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    for (s, k) in [
+        (325u32, 2usize),
+        (229, 3),
+        (773, 4),
+        (774, 5),
+        (775, 2),
+        (776, 1),
+        (777, 1),
+        (778, 6),
+        (942, 1),
+    ] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    let (lo, hi) = (konst(&t, at, 0x2a), konst(&t, at, 0x3a));
+    let (ga, gb) = (t.img.word(at + 0x32), t.img.word(at + 0x5f));
+    let spark = t.img.rel32_target(at + 0x95);
+    let take = t.img.rel32_target(spark + 0x0c);
+    let recs_at = SCRATCH + 0x1000;
+    t.set_u32(t.img.word(take + 0x2), 8);
+    t.set_u32(t.img.word(take + 0xb), recs_at);
+    let short = t.img.rel32_target(at + 0xc5);
+    let take2 = t.img.rel32_target(short + 0x0c);
+    t.set_u32(t.img.word(take2 + 0x2), 8);
+    t.set_u32(t.img.word(take2 + 0xb), recs_at);
+    let frames = t.img.rel32_target(at + 0x109);
+    t.set_u32(t.img.word(frames + 0x1b), 0x00c0_001b);
+    let live = SCRATCH + 0x3000;
+    t.set_u32(t.img.word(at + 0xe5), live);
+    for (a, b, n) in [
+        (lo - 1.0, 2.0, 0i32),
+        (lo, 3.0, 2),
+        (3.0, hi + 7.0, 3),
+        (f32::NAN, 1.0, -1),
+        (2.0, f32::NAN, 5),
+        (hi + 0.5, lo - 0.5, 1),
+    ] {
+        t.write(recs_at, &vec![0x2a; 0x94 * 8]);
+        for i in 0..8 {
+            t.set_u32(recs_at + 0x94 * i, 0);
+        }
+        t.set_u32(ga, f(a));
+        t.set_u32(gb, f(b));
+        t.set_u32(t.img.word(at + 0xe0), n.cast_unsigned());
+        for i in 0..6u32 {
+            t.set_u32(live + 0x94 * i, i % 2);
+        }
+        t.set_u32(k, 0);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}

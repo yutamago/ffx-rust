@@ -3742,7 +3742,14 @@ fn fam2_staged_nodes() {
     }
 }
 
-const TRAIL_DRAW: &[(u16, u32)] = &[(446, 0x4e20), (544, 0x4ce0), (565, 0x6ea0), (697, 0x6ea0)];
+const TRAIL_DRAW: &[(u16, u32)] = &[
+    (446, 0x4e20),
+    (544, 0x4ce0),
+    (565, 0x6ea0),
+    (697, 0x6ea0),
+    (644, 0xacd0),
+    (698, 0xacd0),
+];
 
 /// `o6_fam_pairs6::trail_draw`: no sprites; a short trail; an unmarked
 /// point on the way back (it stops); a zero-length segment (a sprite
@@ -3760,19 +3767,34 @@ fn fam2_trail_draw() {
         let Some(mut t) = magic_l3::twin(n) else {
             return;
         };
-        // `magic_0565`'s copy (shared-9's `trail draw (0565)`) has no `M4`
+        // `magic_0565`'s copy (shared-9's `trail draw (0565)`) has no `M4`;
+        // `magic_0644`'s (`trail draw (0644)`) its own frame and `eax`
         let flat = rva == 0x6ea0;
+        let own = rva == 0xacd0;
         registered(
             &t,
             rva,
             if flat {
                 "trail draw (0565)"
+            } else if own {
+                "trail draw (0644)"
             } else {
                 "o6 fam pairs6 trail_draw"
             },
         );
         stubs4(&mut t);
         matrix_stubs(&mut t);
+        if own {
+            // `M4` and `M3` times `M1`: the draw returns the last one's `eax`
+            t.stub(231, |m, a| {
+                for i in 0..16u32 {
+                    let x = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5
+                        + f32::from_bits(m.r32(a[2] + 4 * i));
+                    m.w32(a[0] + 4 * i, x.to_bits());
+                }
+                0x0231_0000 ^ a[0]
+            });
+        }
         t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
         let table = P;
         t.stub(941, move |m, a| {
@@ -3808,7 +3830,7 @@ fn fam2_trail_draw() {
             (
                 t.img.word(f + 0x57),
                 t.img.word(f + 0x63),
-                t.img.word(f + 0x236),
+                t.img.word(f + if own { 0x248 } else { 0x236 }),
             )
         };
         for s in [774u32, 778] {
@@ -3835,6 +3857,8 @@ fn fam2_trail_draw() {
         // lock global points at a scratch word
         let (call, lock_offs): (u32, &[u32]) = if n == 446 {
             (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+        } else if own {
+            (0x59f, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
         } else if flat {
             (0x531, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
         } else {

@@ -144,3 +144,95 @@ fn state_start() {
     }
     t.check_entry(at, Call::default(), &[], Eax::Checked);
 }
+
+/// 0x10001690 (`r13_start::set_up_0505`): the set-up with its slots
+/// answering distinct words, the lists' handle a block of words, the
+/// cleared blocks dirty before.
+#[test]
+fn set_up() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1690);
+    let w = |t: &magic::Twin, o: u32| t.img.word(at + o);
+    let h = SCRATCH + 0x700;
+    for i in 0..16 {
+        t.set_u32(h + 4 * i, 0x00d0_0000 + i);
+    }
+    rec(&mut t, 803, 2, |_, a| 0x0080_0000 ^ a[1]);
+    rec(&mut t, 719, 3, move |_, a| {
+        if a[1] == 8 { h } else { 0x0719_0000 ^ a[1] }
+    });
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 260, 1, |_, a| 0x0260_0000 ^ a[0]);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x8d), lock);
+    t.set_u32(lock, 0x00a1_0000);
+    rec(&mut t, 711, 3, move |m, a| {
+        m.w32(SCRATCH + 0x7f4, m.r32(lock));
+        a[1]
+    });
+    recs(&mut t, &[(718, 1), (222, 4), (710, 4)]);
+    for (o, n) in [(0x131u32, 0x110usize), (0x147, 0x110), (0x1da, 0x30)] {
+        let b = w(&t, o);
+        t.write(b, &vec![0x3c; n]);
+    }
+    let first = t.img.word(t.img.rel32_target(at + 0x202) + 0x10);
+    t.write(first, &vec![0x3d; 0x94 * 0x64]);
+    t.check_entry(at, Call::default(), &[0x0a00_0505], Eax::Checked);
+}
+
+/// 0x10001600 (`r13_start::sparks_frame_0505`): two free spark records
+/// of six asked for (the rest find none), no sprites to step or draw.
+#[test]
+fn sparks_frame() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1600);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4u32 {
+            m.w32(a[3] + 4 * i, f(1.5 + i as f32 * 2.25));
+        }
+        0x237
+    });
+    let k = SCRATCH + 0x40;
+    rec(&mut t, 324, 0, move |m, _| {
+        let n = m.r32(k);
+        m.w32(k, n + 1);
+        n.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(&mut t, 403, 1, |_, a| a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    recs(&mut t, &[(714, 5), (779, 2)]);
+    // the sprites stepped and drawn (the pool's count is the system's):
+    // their slots answer distinct words, slot 941 a table
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, a| table ^ (a[0] & 0xf0));
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    for (s, k) in [
+        (325u32, 2usize),
+        (229, 3),
+        (773, 4),
+        (774, 5),
+        (775, 2),
+        (776, 1),
+        (777, 1),
+        (778, 6),
+        (942, 1),
+    ] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    let spark = t.img.rel32_target(at + 0x30);
+    let take = t.img.rel32_target(spark + 0x0c);
+    let recs_at = SCRATCH + 0x1000;
+    t.set_u32(t.img.word(take + 0x2), 2);
+    t.set_u32(t.img.word(take + 0xb), recs_at);
+    t.write(recs_at, &vec![0x2a; 0x94 * 2]);
+    t.set_u32(recs_at, 0);
+    t.set_u32(recs_at + 0x94, 0);
+    t.set_u32(t.img.word(at + 0x25), 0x00c0_0025);
+    let frames = t.img.rel32_target(at + 0x6d);
+    t.set_u32(t.img.word(frames + 0x1b), 0x00c0_001b);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}

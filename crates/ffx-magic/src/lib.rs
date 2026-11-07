@@ -60,6 +60,8 @@ pub mod r11_objects;
 pub mod r12h_fam;
 pub mod r12h_start;
 pub mod r12h_volley;
+pub mod r13_misc;
+pub mod r13_start;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1121,6 +1123,13 @@ ports! {
     "r9 load step 0084" => r9_load::LOAD_0084, r9_load::load_0084;
     "r9 load step 0102" => r9_load::LOAD_0102, r9_load::load_0102;
     "r9 load step 0274" => r9_load::LOAD_0274, r9_load::load_0274;
+    "r9 load step 0318" => r9_load::LOAD_0318, r9_load::load_0318;
+    "r9 load step 0394" => r9_load::LOAD_0394, r9_load::load_0394;
+    "r9 load step 0348" => r9_load::LOAD_0348, r9_load::load_0348;
+    "r9 load step 0350" => r9_load::LOAD_0350, r9_load::load_0350;
+    "r9 load step 0473" => r9_load::LOAD_0473, r9_load::load_0473;
+    "r9 load step 0325" => r9_load::LOAD_0325, r9_load::load_0325;
+    // round 13 (magic-r13): end of r9 load steps
     "r11 between actors 0356" => r11_actors::BETWEEN_ACTORS_0356, r11_actors::between_actors_0356;
     "r11 between actors 0357" => r11_actors::BETWEEN_ACTORS_0357, r11_actors::between_actors_0357;
     "r11 main object 0383" => r11_misc::MAIN_OBJECT_0383, r11_misc::main_object_0383;
@@ -2951,6 +2960,8 @@ ports! {
     "camera frame" => s9_misc::CAMERA_FRAME, s9_misc::camera_frame;
     "trail head (0565)" => s9_misc::TRAIL_HEAD_0565, s9_misc::trail_head;
     "trail task (0565)" => s9_misc::TRAIL_TASK_0565, o6_fam_pairs6::trail_task;
+    "trail head (0644)" => s9_misc::TRAIL_HEAD_0644, s9_misc::trail_head;
+    "trail task (0644)" => s9_misc::TRAIL_TASK_0644, o6_fam_pairs6::trail_task;
     "summon ring start" => s9_misc::SUMMON_RING_START, s9_misc::summon_ring_start;
     "summon start task (0247)" => s9_misc::SUMMON_START_TASK_0247, s9_misc::summon_start_task_0247;
     "summon nodes start" => s9_misc::SUMMON_NODES_START, s9_misc::summon_nodes_start;
@@ -3041,12 +3052,42 @@ ports! {
     "m0430 three start" => m0430::THREE_START, m0430::three_start;
     "m0434 main restart" => m0434::MAIN_RESTART, m0434::main_restart;
     // magic small-lo: end of ports
+    // round 13 (magic-r13)
+    "r13 lists done 0304" => r13_misc::LISTS_DONE_0304, r13_misc::lists_done;
+    "r13 lists done 0568" => r13_misc::LISTS_DONE_0568, r13_misc::lists_done;
+    "r13 sparks frame 0505" => r13_start::SPARKS_FRAME_0505, r13_start::sparks_frame_0505;
+    "r13 set-up 0505" => r13_start::SET_UP_0505, r13_start::set_up_0505;
+    "r13 set-up tail 0669" => r13_start::SET_UP_TAIL_0669, r13_start::set_up_tail_0669;
+    "r13 sparks frame 0669" => r13_start::SPARKS_FRAME_0669, r13_start::sparks_frame_0669;
+    "r13 sparks frame 0488" => r13_start::SPARKS_FRAME_0488, r13_start::sparks_frame_0488;
+    "r13 object start 0360" => r13_start::OBJECT_START_0360, r13_start::object_start_0360;
+    "r13 frame 0477" => r13_start::FRAME_0477, r13_start::frame_0477;
+    "r13 sparks 0477" => r13_start::SPARKS_0477, r13_start::sparks_0477;
+    "r13 summon start 0076" => r13_start::SUMMON_START_0076, r13_start::summon_start_0076;
+    "r13 summon start 0343" => r13_start::SUMMON_START_0343, r13_start::summon_start_0343;
+    "r13 summon start 0106" => r13_start::SUMMON_START_0106, r13_start::summon_start_0106;
+    "r13 summon start 0513" => r13_start::SUMMON_START_0513, r13_start::summon_start_0513;
+    "r13 set-up 0429" => r13_start::SET_UP_0429, r13_start::set_up_0429;
+    "r13 measures 0313" => r13_start::MEASURES_0313, r13_start::measures_0313;
+    "r13 set-up 0664" => r13_start::SET_UP_0664, r13_start::set_up_0664;
+    "r13 summon start 0090" => r13_start::SUMMON_START_0090, r13_start::summon_start_0090;
+    // round 13 (magic-r13): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 13 (magic-r13)
+    ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
+    ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),
+    ("r13 object task 0673", &r13_misc::OBJECT_TASK_0673),
+    ("r13 start 0394", &r13_start::START_0394),
+    ("r13 start 0348", &r13_start::START_0348),
+    ("r13 start 0350", &r13_start::START_0350),
+    ("r13 start 0473", &r13_start::START_0473),
+    ("r13 start 0325", &r13_start::START_0325),
+    // round 13 (magic-r13): end of INTERNAL
     // round 11 (magic-r11-own)
     ("r11 three nodes 0110", &r11_objects::THREE_NODES_0110),
     ("r11 three nodes 0112", &r11_objects::THREE_NODES_0112),
@@ -3581,6 +3622,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
+    ("trail draw (0009)", &s4_misc::TRAIL_DRAW_0009),
     ("targets init", &s4_summon::TARGETS_INIT),
     ("targets init (b)", &s4_summon::TARGETS_INIT_B),
     ("targets init (c)", &s4_summon::TARGETS_INIT_C),
@@ -4223,6 +4265,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sprite packets", &s9_misc::SPRITE_PACKETS),
     ("camera aimed", &s9_misc::CAMERA_AIMED),
     ("trail draw (0565)", &s9_misc::TRAIL_DRAW_0565),
+    ("trail draw (0644)", &s9_misc::TRAIL_DRAW_0644),
     ("rotation matrix (0x3650)", &s9_misc::ROTATION_3650),
     ("node ease", &s9_misc::NODE_EASE),
     ("node ease (0570)", &s9_misc::NODE_EASE_B),

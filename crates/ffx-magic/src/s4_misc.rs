@@ -1131,21 +1131,44 @@ pub const MOTION_SCRIPT: Sig = Sig {
 /// skips its sprite. Returns 0x1f, or the point's last word when there
 /// are no sprites.
 ///
-/// `magic_0018` 0x10002580 (1462 bytes; 20 DLLs).
+/// `magic_0018` 0x10002580 (1462 bytes; 20 DLLs), and `magic_0009`
+/// 0x100024f0 (1445 bytes; 5 DLLs: `0009`, `0165`, `0392`, `0449`,
+/// `0491`), the same steps in an 8-aligned frame of 0x124 bytes and three
+/// pushes: `E + 0xe8`, `+0xa8` the matrices, the sprite matrix `E + 0x68`,
+/// the segment's point `E + 0x48`, its step `E + 0x58`, the sprite's place
+/// `E + 0x38`, and its operands earlier ([`trail_op_0009`]).
 #[allow(clippy::too_many_lines)] // the original's walk and draw, step by step
 pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `and esp, -8` (`magic_0009`) or `and esp, -16` (`magic_0018`)
+    let small = (img.word(f + 4) >> 8) & 0xff == 0xf8;
+    let w = |o: u32| img.word(f + if small { trail_op_0009(o) } else { o });
     let (obj, rows) = (fr.ecx, fr.edx);
-    // push ebp; and esp, -16; sub esp, 0x138; two pushes
-    let e = (fr.esp.wrapping_sub(4) & !15).wrapping_sub(0x138 + 8);
+    // push ebp; and esp, -16; sub esp, 0x138; two pushes (`magic_0009`:
+    // and esp, -8; sub esp, 0x124; three pushes)
+    let e = if small {
+        (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x124 + 12)
+    } else {
+        (fr.esp.wrapping_sub(4) & !15).wrapping_sub(0x138 + 8)
+    };
     let at = |o: u32| e.wrapping_add(o);
+    // (M1, M2, the sprite matrix, the segment's point, its step, the place)
+    let (m1, m2, m, cur_pt, delta, p) = if small {
+        (at(0xe8), at(0xa8), at(0x68), at(0x48), at(0x58), at(0x38))
+    } else {
+        (at(0xf8), at(0xb8), at(0x78), at(0x60), at(0x50), at(0x40))
+    };
     let t = slot_target(g, w(0x25), 723);
-    g.call(t, 0, &[at(0xf8)]);
+    g.call(t, 0, &[m1]);
     let t = slot_target(g, w(0x47), 724);
-    g.call(t, 0, &[at(0xb8)]);
-    let entry = anim_step(g, img, img.rel32_target(f + 0x59), obj);
-    g.write::<u32>(w(0x66), at(0x78));
+    g.call(t, 0, &[m2]);
+    let entry = anim_step(
+        g,
+        img,
+        img.rel32_target(f + if small { 0x56 } else { 0x59 }),
+        obj,
+    );
+    g.write::<u32>(w(0x66), m);
     g.write::<u32>(w(0x6c), 0);
     let mut newest = g.read::<u32>(obj + 0x220).wrapping_add(1);
     g.write::<u32>(obj + 0x220, newest);
@@ -1164,7 +1187,6 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     if total <= 0 {
         return last;
     }
-    let (cur_pt, delta, p) = (at(0x60), at(0x50), at(0x40));
     let mut cur = newest;
     let mut walked = 0.0f32;
     let mut seg = 0.0f32;
@@ -1235,7 +1257,6 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
             mul(f32_at(g, obj + 0x218), frac),
         );
         set_f32(g, p + 0xc, 1.0);
-        let m = at(0x78);
         let t = slot_target(g, w(0x346), 235);
         g.call(t, 0, &[m]);
         for row in 0..3 {
@@ -1245,7 +1266,7 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
             }
         }
         let t = slot_target(g, w(0x419), 229);
-        g.call(t, 0, &[at(0xa8), at(0xb8), p]);
+        g.call(t, 0, &[m + 0x30, m2, p]);
         if g.read::<u8>(w(0x433)) != 0 {
             let t = slot_target(g, w(0x43f), 941);
             let table = g.call(t, 0, &[g.read::<u32>(obj)]).eax;
@@ -1299,6 +1320,45 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     }
 }
 
+/// Where `magic_0009`'s [`trail_draw`] has the operand that `magic_0018`'s
+/// has at `o` (the same instructions, earlier).
+fn trail_op_0009(o: u32) -> u32 {
+    match o {
+        0x25 => 0x26,
+        0x47 => 0x44,
+        0x66 => 0x63,
+        0x6c => 0x69,
+        0x158 => 0x152,
+        0x201 => 0x1fd,
+        0x22d => 0x225,
+        0x259 => 0x24d,
+        0x288 => 0x278,
+        0x2d1 => 0x2cd,
+        0x320 => 0x318,
+        0x346 => 0x33e,
+        0x419 => 0x3b4,
+        0x433 => 0x428,
+        0x43f => 0x434,
+        0x45a => 0x44f,
+        0x46e => 0x463,
+        0x480 => 0x475,
+        0x49c => 0x491,
+        0x4b3 => 0x4a8,
+        0x4b8 => 0x4ad,
+        0x4d1 => 0x4c6,
+        0x4df => 0x4d4,
+        0x4f1 => 0x4e6,
+        0x50e => 0x503,
+        0x51c => 0x511,
+        0x52b => 0x520,
+        0x539 => 0x52e,
+        0x545 => 0x53a,
+        0x54c => 0x541,
+        0x56b => 0x55d,
+        _ => o,
+    }
+}
+
 /// [`trail_draw`] (the `rel32`s: [`anim_step`], the square root and the
 /// cookie check).
 pub const TRAIL_DRAW: Sig = Sig {
@@ -1308,6 +1368,19 @@ pub const TRAIL_DRAW: Sig = Sig {
         (0x59, Callee::Sig(&ANIM_STEP)),
         (0x191, Callee::Import("_libm_sse2_sqrt_precise")),
         (0x5ae, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_draw`] in `magic_0009` (0x100024f0; the `rel32`s as
+/// [`TRAIL_DRAW`]'s).
+pub const TRAIL_DRAW_0009: Sig = Sig {
+    len: 1445,
+    hash: 0x8576_a13a_a023_8e41,
+    calls: &[
+        (0x56, Callee::Sig(&ANIM_STEP)),
+        (0x191, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x59d, Callee::Any),
     ],
     imports: &[],
 };
