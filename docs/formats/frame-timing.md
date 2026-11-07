@@ -149,15 +149,14 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
 - **Voice-synced cut scenes.** `g_SyncOn` paces the ticks to the sync clock (real time), so the
   booster does nothing there. Exec frames would run n ticks per synced step and leave the voices
   behind.
-  `SyncManager_syncGetData` (`0x006fb160`, through `0x0067a930`) answers one step per call from
-  the cursor at the manager's `+8`: three 4-byte values, time (`f32`), rate (`f32`) and frame
-  (`i32`), and the cursor moves 12 bytes; it waits (5 ms sleeps) while `+0x20` is 0, and answers
-  999 (and clears the cursor) when `+8` or `+0x1c` is 0 or at the end marker (1.0, 1.0, 999).
-  `Sg_FrameSync` asks one step per world tick it runs, so in a synced scene the n-th tick after the
-  start shows the n-th step whatever real time it runs at. Measured (ffx-remix M10, the arrival
-  scene of save `ffx_002`, two real-time runs of 740 ticks each): ctrl work 0's event count
-  (`0x01325d94`) equalled the number of `TkUpdateEventJump` calls since the map's first entry start
-  on every tick.
+  `Sg_SyncCutScene` (`0x00821d60`) calls `iSyncGetData` (`0x0067a930`) ->
+  `SyncManager_syncGetData` (`0x006fb160`), which returns 999 at once when the manager's `+8` (the
+  cursor) or `+0x1c` is 0; otherwise it waits (5 ms sleeps) while `+0x20` is 0, reads one step at
+  the cursor (time `f32`, rate `f32`, frame `i32`; the cursor moves 12 bytes), and at the end
+  marker (1.0, 1.0, 999) clears `+8` and returns 999. `Sg_FrameSync` asks for steps only in its
+  `g_VoiceHold == 0` branch, one per update it adds to `g_VoiceHold` (one tick per update at exec
+  frames 1), so the n-th update after the start uses the n-th step's time and frame, whatever real
+  time it runs at.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.

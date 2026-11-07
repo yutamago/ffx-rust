@@ -584,25 +584,37 @@ the game's own scripts can start a movie that early is not checked.
 ### Other files in the player (measured, ffx-remix M10)
 
 Measured 2026-11-07 with ffx-remix's runtime in harness games (its
-`tools/probe-movie.sh`): movie 2 as movie-fmv plays it (save `ffx_003`,
-bsil0000's worker 24 entry 5, the preload held until its 30 frames are
-decoded), with Fahrenheit serving a test file (a frame number drawn as a
-barcode in each frame, Vorbis track silent) in place of `IWK_us.webm`.
+`tools/probe-movie.sh`): movie 2 as `tools/replays/movie-fmv.txt` plays it
+(save `ffx_003`, bsil0000's worker 24 entry 5, the preload held until its
+30 frames are decoded), lockstep with the real clock.
 
-- `PVideoPlaybackWin32::open` (`0x00a27f20`, thiscall(player, path,
-  loop)) got the path `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm`
-  and loop 0; after it returns 0 the movie's size is at `+0x14c`, `+0x150`.
-- A 1920 × 1080 VP8 file played to the end of the shots. In each shot taken
-  when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode read 63, 127,
-  191, 255 and 319: the frame shown is `+0x6d8` − 1, the player's frames
-  shown (`+0x100`) when `updateTexture` uploaded it (it adds one after the
-  upload).
-- A 3840 × 2160 VP8 file crashed the game when the movie was requested:
-  an access violation writing to address 0 inside `MSVCR110.dll`
-  (`+0x31323`; one minidump). Inferred, not traced: an allocation of the
-  decoded-frame queue failed (30 slots of 1.5 × width × height bytes, 373
-  MB at this size against 93 MB at 1080p) and a copy went to the null
-  result.
+- `PVideoPlaybackWin32_open` (`0x00a27f20`, thiscall(player, path,
+  loop)) got the path
+  `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm` and loop 0; after it
+  returns 0 the width is at `+0x14c` and the height at `+0x150` (1280 and
+  720 for the original file; read in ffx-remix's runs with the original
+  file).
+- With Fahrenheit serving a test file in place of `IWK_us.webm` (a frame
+  number drawn as a barcode in each frame, 29.97 fps, a silent Vorbis
+  track): a 1920 x 1080 VP8 file played through frame 320 (the last
+  shot). In the shots taken when `+0x6d8` was 64, 128, 192, 256 and 320
+  the barcode read 63, 127, 191, 255 and 319: the frame shown is
+  `+0x6d8` - 1. From the code: that is the player's frames shown
+  (`+0x100`) when `updateTexture` uploaded it, which adds one after the
+  upload.
+- A 3840 x 2160 VP8 file crashed the game when the movie was started: an
+  access violation writing to address 0 in `MSVCR110.dll` (`+0x31323`,
+  one minidump). The main thread's stack: `memset` (the fill `0xcd`) <-
+  `user_malloc` (`0x006fb910`, returning to `0x006fb97d`) <- `PhyreMalloc`
+  (`0x0042fb40`) <- the frame queue's set-up (`0x00a3ddf0`, returning to
+  `0x00a3de52`) <- the open (`0x00a27f20`, its second queue call,
+  returning to `0x00a28260`) <- `0x006d8fc0` <- `PlayVideo` (`0x006d7430`)
+  <- `graphicPlayVideo` (`0x006427c0`) <- the movie native in
+  `0x0076e910`. The queue asked for 30 slots of (1.5 x width x height + 4)
+  bytes, 373,248,120 in all, and `user_malloc` for 385,689,751 (total plus
+  one slot plus `0x1f`); the user heap could not give it, and
+  `user_malloc` filled the null block with `0xcd`. At 1080p the block is
+  about 96 MB.
 
 ### Drawing
 

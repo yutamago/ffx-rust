@@ -307,16 +307,19 @@ with (`u16` at the model data's `+0`, `Ch_ModelGetBaseMatrix`
 `0x00830500`); `Ch_ModelGetMatrix` (`0x00830550`) multiplies it by the
 root global matrix with `cdc_Mul4x4`.
 
-Measured (ffx-remix M10, the arrival scene, two runs of 740 ticks read at
-`MsScreenProcess`): the root global matrix `+0x1d0` holds the rotation
-times 0.001 (each row of the rotation times 1000 has length 1.0) with the field position (`+0xc`) as its translation (the
-1000 of `Ch_DrawMainForSituation` above), and the elements' global
-matrices `+0x88` are in the character's own field units. ffx-remix posed
-the HD models with them (node `SkeletonNode_i` takes element `i` as it is)
-and placed them with the root rotation times 1000: the offline pictures
-matched the game's shots of the same updates. A slot can change
-characters within a scene: the arrival's slot 0 went from `0x0001`
-(`c001`) to `0x0065` (`c101`).
+Measured (ffx-remix M10; the Besaid arrival, bsil0000 from save
+`ffx_002`; two runs of 740 ticks, read at `MsScreenProcess`): the root
+global matrix `+0x1d0` holds the rotation times 0.001 (each row times 1000
+has length 1) with the field position (`+0xc`) as its translation (the
+1000 of `Ch_DrawMainForSituation`, below). The elements' global matrices
+`+0x88` are relative to the character (its own space, not the field's;
+their rotation rows have length 1); the root matrix places them. ffx-remix
+posed the HD models with them (the model's skeleton node `SkeletonNode_i`
+takes element `i` as it is) and placed them with the root rotation times
+1000; its offline pictures matched the game's shots of the same ticks by
+eye (five shots per run). A slot can change characters within a scene:
+the arrival's slot 0 went from `0x0001` (`c001`) to `0x0065` (`c101`), at
+tick 62 in one run and 73 in the other.
 
 ## Motion frames and sequences
 
