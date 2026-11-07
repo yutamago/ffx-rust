@@ -161,7 +161,7 @@ slot 2, uvs slot 3 (strides 12, 12, 16, 8; `POSITION0` f6, `NORMAL0` f6,
 bytes as the arrays hold them (the census compares them byte for byte).
 In these frames every drawn segment used its own arrays (slot `+4`).
 
-The table (`g_VFXRenderDataTable` `0x00ccca6c`, `docs/formats/render.md`)
+The table (the one `g_VFXRenderDataTable` `0x00ccca6c` points to,, `docs/formats/render.md`)
 also keeps a delete pool: count `+8` (bit 31 a flag), keys `+0xc` (8 bytes
 each), counters `+0x14`, geometries `+0x1c`
 (`ClassVFXRenderDataTable_UpdateDeletePool` `0x0069fe50` counts them down
@@ -312,9 +312,11 @@ u0 - 1):
 | u0 + 129 | the last draws of the spell's own |
 | u0 + 138 | `MsSetDamage(5, -5, 0x400)` (the command's end); the magic ID is -1 at the start of u0 + 139 |
 
-Seven runs (ffx-remix `m9/probe` trace1, trace2, live1-3, exit-vanilla,
-exit-fire) had the same updates for the calls; the draw and handle rows
-are from the five whose tracer read the table (trace1's could not).
+Eight runs (ffx-remix `m9/probe` trace1, trace2, live1-3, exit-vanilla,
+exit-fire, exit-fire2) had the same updates for the calls; the draw and
+handle rows are from the seven whose tracer read the table (trace1's could
+not). The replaced runs log the spell's draws too: the tracer reads the
+list before the hide zeroes it.
 
 The hit comes from the overlay itself: `magic_0076.dll` calls `MsSetDamage`
 through `g_MagicImports` slot 239 (`mov eax, [imports + 0x3bc]` at
@@ -325,42 +327,44 @@ such site in the overlay and comes from the battle code. That
 the same update). Hiding all of the spell's draws (below) left every row
 above on the same update, the target's HP changed on the same harness
 frame, and frame-by-frame shots showed the number first on the same shot
-(exit-vanilla and exit-fire).
+(exit-vanilla against exit-fire and exit-fire2).
 
-**Which draws are the spell's.** In the frames from u0 - 1 to u0 + 141
-(the tracer's window), 4,680 entries are the spell's: ppp keys
+**Which draws are the spell's.** In the 142 drawn frames from u0 - 1 to
+u0 + 140 (the tracer's window: it stops 3 frames after the magic ID is
+-1), 4,680 entries are the spell's: ppp keys
 (`(g_pppCurrentProgram, object)`) whose object, and its birth record's
 program list (object `+8`, `+0`), lie inside the overlay's image (the
 module handle up to `SizeOfImage`); the two tests never disagree, and all
 of them use the overlay's textures (`magic/magic_0076/tex/...`). The other
 draws of those frames: shared battle effects, ppp objects outside the
-image with `yonishi_data/dat_et/bat_eff/et_tex` textures (20-62 a frame,
-the casting pillar among them; 21-31 while the spell's own draws are on
-screen); about 3 untextured ppp draws a frame outside the image (flags 2
-or 3, programs 4, 5 and 12) and a few "empty" ones; and the battle map's
+image with `yonishi_data/dat_et/bat_eff/et_tex` textures (20-62 a frame;
+21-31 while the spell's own draws are on screen); 2-5 untextured ppp draws
+a frame outside the image (flags 2 or 3, programs 4, 5 and 12), 2 with the
+texture name "empty" (at u0 - 1 and u0); and the battle map's
 field programs (`btlmap/kami/kami00_a/fp` textures). No op-record
 (`(0, record)`) draws.
 
-**List entries missing from the table.** Most frames have 1-14 entries of
-`+0x38cc` whose mesh instance is in no table entry (329 in 142 frames, new
-addresses each frame): geometry already removed from the table
-(`graphicVFXDestroy` → `ClassVFXRenderDataTable_Remove` `0x0069fc10`, which
-erases the map node and puts the geometry in the delete pool; it does not
-touch `+0x38cc`). A hide by instance key must remember the spell's entries
-for a frame or two: 2 such entries of Fire were still in the list after
-the magic ended.
+**List entries missing from the table.** 83 of the 142 frames have 1-16
+entries of `+0x38cc` whose mesh instance is in no table entry (329 entries,
+212 addresses, some reused across frames): geometry already removed from
+the table (`graphicVFXDestroy` → `ClassVFXRenderDataTable_Remove_0069fc10`,
+which erases the map node and puts the geometry in the delete pool; it
+does not touch `+0x38cc`). A hide by instance key must remember the
+spell's entries for a few frames: ffx-remix's hide zeroed 2 remembered
+Fire entries after the magic ID was -1 (its log, live1-3 and exit-fire).
 
 **Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
 `DrawMostVFX` runs (and putting them back after) hides those draws: the
 loop skips zero entries and the draw events still run at their places.
 
 **Where the actors are.** The caster is the actor with a command cue entry
-(`+0xde5` not `0xff`) and an effect state (`+0xdfb`; sampled 16, 2, 4, 5
-over Fire: 16 is not in the `MsEffectStart` table above, 3 and 11 were
-not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
+(`+0xde5` not `0xff`) and an effect state (`+0xdfb` not 0; sampled 16, 2,
+4, 5 over Fire: 16 is not in battle.md's `MsEffectStart` table, 3 and 11
+were not sampled); its targets are the bits of its `+0xdc4` (battle.md). A
 battle character's place in the HD scene (the space the draws' world
-matrices use) is `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on field
-maps: an effect placed there sat on the Larva in the live frames.
+matrices use) was taken as `(-x, -y, z)` of `Ch_GetPos` (chr `+0xc`), as on
+field maps: an effect placed there sat on the Larva in the live frames
+(checked by eye, one battle).
 
 ## Gate
 

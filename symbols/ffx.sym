@@ -13859,7 +13859,7 @@
 0x00794240 function MsGetChrSbyte508_00794240 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x508 : 0; ported (ffx_battle::minor, battle round 29)
 0x00794280 function MsGetChrSbyte4fc_00794280 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x4fc : 0; ported (ffx_battle::minor, battle round 29); the field is STAT_AREA (property 0x1c), fh: Chr.area (docs/formats/battle.md, "The battle actor")
 0x007942c0 function MsGetChrBetweenDist          # layout+callees: sorts between MsGetChr and MsGetChrBit, and its named callees match the Switch 0x710034cdb0 MsGetChrBetweenDist's (similarity 0.67: MsGetChrPos, MsPointLen2D); symbols from Fahrenheit's server export
-0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
+0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4 (the actor's command targets, docs/formats/battle.md), -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
 0x00794830 function MsGetChrBottomPos         # fh v3:exact 0x00794840
 0x007948a0 function MsGetChrBtlDir            # fh v3:exact 0x007948b0
