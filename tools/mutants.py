@@ -43,7 +43,10 @@ Settings (environment, as in the agents' mut22.py; flags override):
   MUT_SNAPS   snapshots after the image, comma list (default battle,field; "" = image only)
   MUT_JOBS    parallel runs (default cores / 2)
   MUT_THREADS test threads per run (default cores / MUT_JOBS)
-  MUT_TIMEOUT seconds per run (default max(120, 20 x the unmutated run))
+  MUT_TIMEOUT seconds per run (default max(120, 20 x the unmutated run)); the run's
+              process group is ended then, and the kernel ends a test binary that
+              used MUT_TIMEOUT x MUT_THREADS + 60 CPU seconds even while this script
+              is stopped (PC2's yield watcher); both count as a timeout (KILLED)
   MUT_SCHEMA  0 = no schemata, every mutant rebuilds (the old way)
   MUT_SAMPLE  fraction of the list to run, 0-1 (default 0.3; 1 = all). The pick is fixed per
               mutant (a hash of its name and text), so a rerun after a test fix
@@ -175,16 +178,40 @@ def site(text, s, e, b):
     return s + p, e - q, b[p : len(b) - q]
 
 
-def run(cmd, timeout=None, **kw):
-    """subprocess.run that the interrupt handler can kill; None on timeout."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
+def kill_tree(p):
+    """SIGKILL a child started by run() and everything in its process group."""
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:
+        p.kill()
+
+
+def run(cmd, timeout=None, cpu_limit=None, **kw):
+    """subprocess.run that the interrupt handler can kill; None on timeout.
+
+    The child runs in its own process group, and a timeout ends the whole
+    group. With `cpu_limit` (CPU seconds) the kernel also ends the child
+    when it has used that much CPU (RLIMIT_CPU: SIGXCPU, then SIGKILL),
+    which holds even while this process cannot act: on PC2 the yield
+    watcher stops mutants.py (SIGSTOP) while the machine is short of
+    memory, and a looping test binary outside its pattern kept running
+    and holding memory, so the pause never ended (r13, 2026-11-07: 57
+    minutes past a 600 s limit)."""
+
+    if cpu_limit:  # prlimit execs the command: same process, limits set (no preexec_fn in threads)
+        n = int(cpu_limit)
+        cmd = ["prlimit", f"--cpu={n}:{n + 10}", "--core=0", "--", *cmd]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         start_new_session=True, **kw)
     with LIVE_LOCK:
         LIVE.add(p)
     try:
         out, _ = p.communicate(timeout=timeout)
+        if cpu_limit and p.returncode in (-signal.SIGXCPU, -signal.SIGKILL) and "test result" not in out:
+            return None, out  # ended at the CPU limit: a timeout
         return p.returncode, out
     except subprocess.TimeoutExpired:
-        p.kill()
+        kill_tree(p)
         p.communicate()
         return None, ""
     finally:
@@ -297,7 +324,10 @@ class Runner:
             env["FFX_MUTANT"] = str(mutant)
         cmd = [exe, f"--test-threads={self.threads}"] + ([self.args.filter] if self.args.filter else [])
         t0 = time.time()
-        code, out = run(cmd, timeout=self.timeout.get(snap), cwd=self.tree / "crates/ffx-oracle", env=env)
+        limit = self.timeout.get(snap)
+        # CPU seconds: every test thread busy for the whole limit, plus the start-up
+        cpu = limit * self.threads + 60 if limit else None
+        code, out = run(cmd, timeout=limit, cpu_limit=cpu, cwd=self.tree / "crates/ffx-oracle", env=env)
         dt = time.time() - t0
         if code is None:
             return "killed", 0, dt  # a hang is a behaviour change
@@ -628,7 +658,7 @@ def main():
     def stop(signum, _frame):
         with LIVE_LOCK:
             for p in LIVE:
-                p.kill()
+                kill_tree(p)
         timing_log.finish(128 + signum)
         os._exit(128 + signum)
 
