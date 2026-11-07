@@ -572,8 +572,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - Map (re)set-up: `yiResetObj` (teardown, a new `rcbgInit`,
   `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
   file's background `+0x10`, render data `+0x14`, the walk-mesh page
-  (section `page + 2` to `Sg_IdFixupAndSet`, `page` the request's
-  `+0x14`), `ppp` data
+  (section `page + 2` to `Sg_IdFixupAndSet`; `page` is the read
+  request's `+0x14`, its `+0x10` the file), `ppp` data
   `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
   the default animations), `yiObjReadFinish`. Animation slots:
   `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
@@ -1855,46 +1855,48 @@ The 4-component ones leave `a.w = b.w ± c.w`.
 
 The id map that `Sg_IdSetPtr` installs is the map's walk mesh: the
 triangles characters stand on, with the kind bits that decide who may
-enter each one (`Sg_IdMatchChr`, main.md). It lives in `MAP1` sections 2
+enter each one (`Sg_IdMatchChr`, main.md, "Bones, sequences, id kinds,
+the dream effect, cloth rods (round 4)"). It lives in `MAP1` sections 2
 to 8, pages 0 to 6 of `yiSetIDPage` and `yiSetPreBgPage`. Over the
 game's maps there are 383 pages: page 0 on 328 of the 329 maps with a
-`MAP1` file (`gameover`'s `titl01` has only section 0), page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2 each.
-59 maps also have a mesh of the same layout in section 9 (`lmyt0100`
-163 vertices and 259 triangles, the others 4 and 2). Page 7 would
-install it (`yiSetIDPage` does not check the page); whether a script
-asks for page 7 was not checked. The counts are per map: a `MAP1` file
-several maps share counts once for each of them.
+`MAP1` file (`gameover`'s `titl01` has only section 0), page 1 on 32,
+page 2 on 14, page 3 on 5, pages 4 and 6 on 2 each. 59 maps also have a
+mesh of the same layout in section 9 (`lmyt0100` 163 vertices and 259
+triangles, the others 4 and 2). Page 7 would install it (`yiSetIDPage`
+does not check the page); whether a script asks for page 7 was not
+checked. The counts are per map: a `MAP1` file several maps share counts
+once for each of them.
 
 Every page has the same layout:
 
 | Offset | Type | Meaning |
 |---|---|---|
 | `+0x00` | `u32` | the base the offsets are taken from: 0 in the file; `Sg_IdFixupAndSet` stores `address - base` here and adds it to the offsets, so a second call changes nothing |
-| `+0x04` | `i16` | version: `0x1203` on 348 pages and 48 section-9 meshes, `0x0723` on 35 pages and 11 (above `0x1202` turns the id shades on, so the maps of the older version have none) |
+| `+0x04` | `i16` | version: `0x1203` on 348 pages and 48 section-9 meshes, `0x0723` on 35 pages and 11 (above `0x1202` turns the id shades on, so pages of the older version install no shades) |
 | `+0x06` | `i16` | group count, 1 on every page (`Sg_IdSetPtr` reads only the first group) |
 | `+0x08` | `i16` | 0 on every page |
 | `+0x0a` | `i16` | vertex count |
-| `+0x0c` | `f32` | zoom: `Sg_IdSetPtr` keeps `zoom / 10` (`0x01301a90`); id units are field units times that |
+| `+0x0c` | `f32` | the scale times 10: `Sg_IdSetPtr` keeps it over 10 (`0x01301a90`, the id map's scale); id units are field units times that |
 | `+0x10` | `u32` × 2 | 0 on every page |
 | `+0x18` | `u32` | the vertices, at `0x20`: 8 bytes each, `i16` x, y, z and an `i16` 0 |
 | `+0x1c` | `u32` | the group table, last in the section: 16 bytes per group, 8 zero bytes, the `i16` triangle count at `+8` (`0x01301a88`), an `i16` 0, the triangles' offset at `+0xc` (`0x01301a84`) |
 
 The vertices are padded to 16 bytes before the triangles (an odd vertex
 count leaves 8 bytes). These pad bytes are not zero in the shipped
-pages, so a writer that copies them
-gives the game's pages back byte for byte. The group table follows the
-triangles and ends the section. A triangle is 16 bytes: three `i16`
-vertex numbers (read as such; all are below `0x8000`), three `i16`
-neighbours across the edges 0-1, 1-2 and 2-0 (-1 for none; chara.md,
-"The id map walk"), and the `u32` map id word (chara.md, "The map id
-word (`+0x828`)"). Most neighbours are the triangles that share the
-edge's two vertex numbers. A few pages link across edges whose
-triangles do not share vertex numbers, or have edges shared by more
-than two triangles, where the stored link picks one. A writer should
-keep the stored links. 717 of the pages' 301,978 triangles (0.24%) are
-wound the other way round: `Sg_IdFindTriangle` never finds a point in
-them (main.md,
-"Round 13: the id triangle under a point (`Sg_IdFindTriangle`)"). Another 720 have no area in x and z.
+pages, so a writer that copies them gives the game's pages back byte for
+byte (checked by ffx-remix M8's round trip of every page). The group
+table follows the triangles and ends the section. A triangle is 16
+bytes: three `i16` vertex numbers (read as such; all are below
+`0x8000`), three `i16` neighbours across the edges 0-1, 1-2 and 2-0 (-1
+for none; chara.md, "The id map walk"), and the `u32` map id word
+(chara.md, "The map id word (`+0x828`)"). Most neighbours are the
+triangles that share the edge's two vertex numbers. A few pages link
+across edges whose triangles do not share vertex numbers, or have edges
+shared by more than two triangles, where the stored link picks one. A
+writer should keep the stored links. 717 of the pages' 301,978 triangles
+(0.24%) are wound the other way round: `Sg_IdFindTriangle` never finds a
+point in them (main.md, "Round 13: the id triangle under a point
+(`Sg_IdFindTriangle`)"). Another 720 have no area in x and z.
 
 ## Sqs standby requests and info paths (round 36)
 

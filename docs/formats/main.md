@@ -705,31 +705,34 @@ x87 result.
   the positions before the shake (the view below uses `+0x40` and
   `+0x65c`, with the shake). It answers `θ + π` (mod 2π), where `eye -
   target = (cos θ, ·, sin θ)` in x and z.
-- `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)") builds
-  `g_CameraMatrix` (`0x02311440`) from the active channel camera's eye
-  (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls `Cam_Apply`
-  (`0x007bc980`: field of view, aspect, `graphicCameraSetWorldMatrix`),
-  except in two cases. With `g_CamOverrideOn` (`0x0231142c`, set by
-  `MsEffectCameraSet` `0x007bbb10`) it builds the matrix from the
-  override's eye, look-at, up and roll and does not call `Cam_Apply`.
-  With the camera matrices on (`g_CameraMatrixOn`, `0x023114c4`) it builds
-  no view matrix and does not call `Cam_Apply`; it sets only the screen
-  offset. battle.md also lists the three levels that check the vectors
-  first and the screen that is off.
+- `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)")
+  builds `g_CameraMatrix` (`0x02311440`) from the active channel
+  camera's eye (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls
+  `Cam_Apply` (`0x007bc980`: field of view, aspect,
+  `graphicCameraSetWorldMatrix`), except in two cases. With
+  `g_CamOverrideOn` (`0x0231142c`, set by `MsEffectCameraSet`
+  `0x007bbb10`) it builds the matrix from the override's eye, look-at,
+  up and roll and does not call `Cam_Apply`. With the camera matrices on
+  (`g_CameraMatrixOn`, `0x023114c4`) it builds no view matrix, skips
+  `MsScreenMatrix` and does not call `Cam_Apply`; of the view it sets
+  only the screen offset. battle.md also lists the three levels that
+  check the vectors first and the screen that is off.
 - `Sg_GetPlayerControlEnable` reads the word `0x00c496d8`, which is 1 in
   the image. Its only writer (`0x0082db10`) is never called, so the flag
   stays 1. Scripts take the player's control by taking the player away:
   `AtelUcOff` (`0x008719e0`) calls `Sg_SetPlayer(0)`. `AtelUcOn`
   (`0x00871ab0`) sets the controlled character back, or 0 when a window
-  or another context bit holds control or no worker qualifies. `Native_ControlDisable`
-  (`0x005e`), `AtelUpdateWindowStatus` (message windows),
-  `AtelSetEventJump` and `AtelSetEventJump2` (map changes),
+  or another context bit holds control or no worker qualifies.
+  `Native_ControlDisable` (`0x005e`), `AtelUpdateWindowStatus` (message
+  windows), `AtelSetEventJump` and `AtelSetEventJump2` (map changes),
   `AtelSetCtrlChar`, `AtelEventSetUpForBattleMusic`, `Atel_UcResume` and
   `Atel_UcRestore` call `AtelUcOff`, which leaves `g_Player`
   (`0x01300788`) 0 (scripts can also set the player directly,
-  `Native_000c_SgSetPlayer`). A replacement camera can hand the view back
-  to the game whenever `g_Player` is 0, `g_CamOverrideOn` is set or
-  `g_CameraMatrixOn` is on.
+  `Native_000c_SgSetPlayer`). `AtelUpdateWindowStatus`, `Atel_UcResume`
+  and `Atel_UcRestore` then call `AtelUcOn` when control was on and no
+  window holds it, so there the player often comes straight back. A
+  replacement camera can hand the view back to the game whenever
+  `g_Player` is 0, `g_CamOverrideOn` is set or `g_CameraMatrixOn` is on.
 
 ## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
 
