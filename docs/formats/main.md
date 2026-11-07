@@ -292,13 +292,14 @@ behind them stays with those modules, which the bridges call.
   14 the player; `0x30..0x3f` through `g_ChrIdMapTable`. A match keeps
   the character out: `Sg_IdWalk` stops at a neighbour that matches
   (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone but
-  the player, 13 chocobos, 14 only the player, and every other kind below
-  `0x30` blocks no one. `0x30..0x3f` block as the kind the table holds
-  for them; the table is 0 (open) until a script sets an entry with
+  the player, 13 chocobos, 14 only the player. `0x30..0x3f` block as the
+  kind the table holds for them, and every other kind blocks no one. The
+  table is cleared at each map change (`Sg_EventjumpInit` calls
+  `Sg_IdEventInitAll`, `0x0083e8d0`) and scripts set entries with
   `Native_4017_IdSetMapTable`. Over the game's walk meshes (field.md,
   "The walk mesh on disk"; counted per map, so a file several maps share
-  counts once for each) 257,084 triangles are kind 0, 6,398 kind 14, 663
-  kind 1 and about 20,000 `0x30..0x3d`. No triangle stores kind 2 or 13.
+  counts once for each) 275,047 triangles are kind 0, 6,398 kind 14, 663
+  kind 1 and 20,245 `0x30..0x3d`. No triangle stores kind 2 or 13.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
   `0x00822620`): the dream effect. A shown layer whose display byte
   (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
@@ -703,7 +704,7 @@ x87 result.
   `+0x65c`, with the shake). In the game it answers `θ + π` (mod 2π) for
   `θ` the eye's angle about the point looked at (`eye - target = (cos θ,
   ·, sin θ)` in x and z, field units).
-- `MsScreenProcess` (battle.md, "`MsScreenProcess`") builds
+- `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)") builds
   `g_CameraMatrix` (`0x02311440`) from the active channel camera's eye
   (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls `Cam_Apply`
   (`0x007bc980`: field of view, aspect, `graphicCameraSetWorldMatrix`),
@@ -711,20 +712,22 @@ x87 result.
   `MsEffectCameraSet` `0x007bbb10`) it builds the matrix from the
   override's eye, look-at, up and roll and does not call `Cam_Apply`.
   With the camera matrices on (`g_CameraMatrixOn`, `0x023114c4`) it builds
-  no matrix and calls nothing. battle.md also lists the three levels that
-  check the vectors first and the screen that is off.
+  no view matrix and does not call `Cam_Apply`; it sets only the screen
+  offset. battle.md also lists the three levels that check the vectors
+  first and the screen that is off.
 - `Sg_GetPlayerControlEnable` reads the word `0x00c496d8`, which is 1 in
   the image. Its only writer (`0x0082db10`) is never called, so the flag
   stays 1. Scripts take the player's control by taking the player away:
-  `AtelUcOff` (`0x008719e0`) ends with `Sg_SetPlayer(0)`. `AtelUcOn`
+  `AtelUcOff` (`0x008719e0`) calls `Sg_SetPlayer(0)`. `AtelUcOn`
   (`0x00871ab0`) sets the controlled character back, or 0 again while a
   window or another context bit holds control. `Native_ControlDisable`
   (`0x005e`), `AtelUpdateWindowStatus` (message windows),
   `AtelSetEventJump` and `AtelSetEventJump2` (map changes),
   `AtelSetCtrlChar`, `AtelEventSetUpForBattleMusic`, `Atel_UcResume` and
-  `Atel_UcRestore` call `AtelUcOff`. So `g_Player` (`0x01300788`) is 0
-  while a script holds control. A replacement camera can hand the view
-  back to the game whenever it is 0, `g_CamOverrideOn` is set or
+  `Atel_UcRestore` call `AtelUcOff`, which leaves `g_Player`
+  (`0x01300788`) 0 (scripts can also set the player directly,
+  `Native_000c_SgSetPlayer`). A replacement camera can hand the view back
+  to the game whenever `g_Player` is 0, `g_CamOverrideOn` is set or
   `g_CameraMatrixOn` is on.
 
 ## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
