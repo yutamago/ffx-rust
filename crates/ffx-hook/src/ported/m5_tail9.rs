@@ -7,7 +7,8 @@
 //! `__VideoDecodingThread`), FMOD's mixer thread the read callback; the
 //! rest runs on the main thread. Frames are a few words, per call.
 
-use super::{StackFrame, mem, ported};
+use super::{StackFrame, mem, ported, with_frame};
+use ffx_panim::l9_anim::bridge as anim;
 use ffx_pcui::l9_video::bridge as v;
 use ffx_system::l9_jobs::bridge as jobs;
 
@@ -106,6 +107,18 @@ ported! {
     /// `(entry)` -> `entry`: the input devices' entry constructor.
     PInputDevice_entryCtor_00620540 @ 0x0062_0540 => extern "thiscall" fn input_entry_ctor(entry: u32) -> u32 {
         ffx_pother_b::l9_input::bridge::entry_ctor(&mut mem(), entry)
+    }
+    /// `(this, network, set, pairs)` -> 0 or an error: the lists in a
+    /// frame laid out as the original's, the binder pointers in an alloca.
+    PAnimatableComponent_bindTargets_00536230 @ 0x0053_6230 => extern "C" fn bind_targets(this: u32, network: u32, set: u32, pairs: u32) -> u32 {
+        let mut frame = StackFrame::<{ (anim::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + anim::FRAME;
+        match anim::collect(&mut mem(), ebp, set, pairs) {
+            Err(code) => code,
+            Ok(total) => with_frame(total.wrapping_mul(4), |binders| {
+                anim::finish(&mut mem(), ebp, binders, this, network, total)
+            }),
+        }
     }
     /// `()`: the ability map's job wait (queue 0 of `0x00cdede4`).
     AbmapJobWait_00a8ecf0 @ 0x00a8_ecf0 => extern "C" fn abmap_job_wait() {

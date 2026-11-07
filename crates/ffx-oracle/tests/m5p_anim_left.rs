@@ -4122,3 +4122,193 @@ fn member_binds_match_the_original() {
         t.reset();
     }
 }
+
+// ---- tail9: the component's binder lists (ffx_panim::l9_anim) ----
+
+use ffx_panim::l9_anim::bridge as l9a;
+
+impl Rng {
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+    fn chance(&mut self, n: u32) -> bool {
+        self.below(n) == 0
+    }
+}
+
+/// A `PhyreMalloc` stub (cdecl `(size, align)`, logged) handing out
+/// 16-byte aligned junk blocks, and 0 from the `fail_at`-th call on (0:
+/// never).
+fn bump_failing(t: &mut Twins, sym: u32, bytes: usize, fail_at: u32) {
+    let area = t.junk(bytes + 16, 0x6c);
+    let cur = t.alloc(&((area + 15) & !15).to_le_bytes());
+    let left = t.alloc(&(if fail_at == 0 { u32::MAX } else { fail_at }).to_le_bytes());
+    let mut tail = vec![0xff, 0x0d];
+    tail.extend(left.to_le_bytes()); // dec dword [left]
+    tail.extend([0x75, 0x03, 0x31, 0xc0, 0xc3]); // jnz +3; xor eax, eax; ret
+    tail.push(0xa1);
+    tail.extend(cur.to_le_bytes()); // mov eax, [cur]
+    tail.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    tail.extend([0x83, 0xc2, 0x0f, 0x83, 0xe2, 0xf0]); // add edx, 15; and edx, -16
+    tail.extend([0x01, 0xc2]); // add edx, eax
+    tail.extend([0x89, 0x15]);
+    tail.extend(cur.to_le_bytes()); // mov [cur], edx
+    tail.push(0xc3);
+    let code = t.stub_code_tail(sym, false, 2, &tail);
+    t.hook(sym, code);
+}
+
+/// The frame slots the lists and temporaries use (below `ebp`).
+const L9_SLOTS: [u32; 40] = [
+    0x84, 0x80, 0x4c, 0x74, 0x70, 0x28, 0x7c, 0x78, 0x44, 0x60, 0x5c, 0x18, 0x8c, 0x88, 0x68, 0x38,
+    0x34, 0x30, 0x58, 0x54, 0x40, 0x90, 0xac, 0xa8, 0xa4, 0xa0, 0xc0, 0xbc, 0xb8, 0xcc, 0xc8, 0xc4,
+    0xd8, 0xd4, 0xd0, 0xb4, 0xb0, 0x9c, 0x98, 0x94,
+];
+
+#[test]
+#[allow(clippy::too_many_lines)] // the set, the pairs and their classes
+fn l9_bind_targets_matches_the_original() {
+    // records of every kind (1 and 5 twice: once only), kind 1/2 classes
+    // and others, kind 4 classes repeated (W already has them); pairs
+    // deriving from the descriptors directly or through a parent, objects
+    // 0, 4 and real (+0xc set or not), classes 0; the storage running out
+    // at each allocation in turn; setNetwork's result
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0053_6230);
+        let (k1, k2, k5) = (
+            t.rebase(l9a::CLASS_K1),
+            t.rebase(l9a::CLASS_K2),
+            t.rebase(l9a::CLASS_K5),
+        );
+        for case in 0..800_u32 {
+            // classes: the three descriptors, two of their children, two
+            // unrelated ones (a chain ending in 0)
+            let other = t.zeros(0x44);
+            let other2 = t.zeros(0x44);
+            t.w32(other2 + 0x40, other);
+            let mut classes = vec![k1, k2, k5, other, other2];
+            for parent in [k1, k2, k5] {
+                let c = t.zeros(0x44);
+                t.w32(c + 0x40, parent);
+                classes.push(c);
+            }
+            let n_pairs = rng.below(10);
+            let mut pairs = Vec::new();
+            for _ in 0..n_pairs {
+                let object = match rng.below(5) {
+                    0 => 0,
+                    1 => 4,
+                    _ => {
+                        let o = t.junk(0x20, 0x31);
+                        let v = if rng.chance(3) { 0 } else { 0x77 };
+                        t.w32(o + 0xc, v);
+                        o
+                    }
+                };
+                let mut class = if rng.chance(8) {
+                    0
+                } else {
+                    classes[rng.below(classes.len() as u32) as usize]
+                };
+                // the object 4 (the kind 1 skip) only with kind 1's class:
+                // the other kinds read an object's +0xc
+                if object == 4 {
+                    class = k1;
+                }
+                pairs.push(object);
+                pairs.push(class);
+            }
+            let pair_words = t.alloc(
+                &pairs
+                    .iter()
+                    .chain([0_u32, 0].iter())
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let list = t.alloc(&[0; 8]);
+            t.w32(list, n_pairs | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            t.w32(list + 4, pair_words);
+            let n_recs = rng.below(12);
+            let recs = t.zeros(0x1c * 12 + 4);
+            for i in 0..n_recs {
+                let kind = rng.below(7);
+                let class = match kind {
+                    1 => {
+                        if rng.chance(4) {
+                            other
+                        } else {
+                            k1
+                        }
+                    }
+                    2 => {
+                        if rng.chance(2) {
+                            k2
+                        } else {
+                            classes[rng.below(classes.len() as u32) as usize]
+                        }
+                    }
+                    _ => classes[rng.below(classes.len() as u32) as usize],
+                };
+                t.w32(recs + 0x1c * i, class);
+                t.w32(recs + 0x1c * i + 0x10, kind);
+            }
+            let set = t.zeros(0x10);
+            t.w32(
+                set + 8,
+                n_recs | if rng.chance(5) { 0x8000_0000 } else { 0 },
+            );
+            t.w32(set + 0xc, recs);
+            // now and then 0x00ca91f8 derives from 0x00ca7228 (its parent
+            // word set for this case): a kind 1 pair then matches both, and
+            // the second match must not run for an object kind 1 took
+            let k1_parent: u32 = Mem::read(&t.a, k1 + 0x40);
+            // (not with the object 4: kind 2 reads an object's +0xc)
+            if case % 4 == 1 && !pairs.contains(&4) {
+                t.w32(k1 + 0x40, k2);
+            }
+            let fail_at = if rng.chance(2) { 1 + rng.below(12) } else { 0 };
+            bump_failing(&mut t, l9a::MALLOC, 0x4000, fail_at);
+            t.stub(l9a::FREE, false, 1, 0, 0);
+            let net_ret = if rng.chance(4) { 0x13 } else { 0 };
+            t.stub(l9a::SET_NETWORK, true, 3, 3, net_ret);
+            let (this, network) = (t.junk(0x40, 0x22), rng.next());
+            // the original's ebp: four argument words, the return address
+            // and ebp pushed below the call top
+            let top = t.a.stack_range().end - 0x100;
+            let ebp = top - 0x18;
+            let total_cell = std::cell::Cell::new(None);
+            let what = format!("{label}: bindTargets #{case}");
+            t.check_frame(
+                &what,
+                0x0053_6230,
+                Conv::Cdecl,
+                &[this, network, set, list],
+                0,
+                |h| {
+                    Out::U32(match l9a::collect(h, ebp, set, list) {
+                        Err(code) => code,
+                        Ok(total) => {
+                            // the alloca below the original's esp (ebp - 0xe8)
+                            let buf = (ebp - 0xe8).wrapping_sub(total.wrapping_mul(4)) & !0xf;
+                            total_cell.set(Some((buf, total)));
+                            l9a::finish(h, ebp, buf, this, network, total)
+                        }
+                    })
+                },
+            );
+            for o in L9_SLOTS {
+                let (x, y): (u32, u32) = (Mem::read(&t.a, ebp - o), Mem::read(&t.b, ebp - o));
+                assert_eq!(x, y, "{what}: frame word ebp - {o:#x}");
+            }
+            if let Some((buf, total)) = total_cell.get() {
+                for i in 0..total {
+                    let (x, y): (u32, u32) =
+                        (Mem::read(&t.a, buf + 4 * i), Mem::read(&t.b, buf + 4 * i));
+                    assert_eq!(x, y, "{what}: binder {i}");
+                }
+            }
+            t.w32(k1 + 0x40, k1_parent);
+            t.reset();
+        }
+    }
+}
