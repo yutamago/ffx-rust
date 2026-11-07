@@ -324,4 +324,13 @@ copies! {
     /// `magic_0441` 0x10006e30.
     throws_0441 => THROWS_0441, 0x0642_cefc_0b69_a62f,
         crate::s5_misc::thrown_effect, crate::s5_misc::THROWN_EFFECT;
+    /// `magic_0411` 0x10007210 (round 13).
+    throws_0411 => THROWS_0411, 0x9664_0dc7_e4d2_54de,
+        group_setup, crate::s9_misc::EFFECT_GROUP_INIT;
+}
+
+/// `magic_0411`'s set-up as a [`Setup`]: the effect group's
+/// ([`effect_group_init`](crate::s9_misc::effect_group_init)), its `eax`.
+pub fn group_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    crate::s9_misc::effect_group_init(g, img, fr).eax
 }

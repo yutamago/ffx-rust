@@ -1071,6 +1071,7 @@ ports! {
     "pf throws 0425" => pf_throws::THROWS_0425, pf_throws::throws_0425;
     "pf throws 0439" => pf_throws::THROWS_0439, pf_throws::throws_0439;
     "pf throws 0441" => pf_throws::THROWS_0441, pf_throws::throws_0441;
+    "pf throws 0411" => pf_throws::THROWS_0411, pf_throws::throws_0411;
     "r9 load step 0108" => r9_load::LOAD_0108, r9_load::load_0108;
     "r9 load step 0221" => r9_load::LOAD_0221, r9_load::load_0221;
     "r9 load step 0229" => r9_load::LOAD_0229, r9_load::load_0229;
@@ -3080,6 +3081,10 @@ ports! {
     "r13 scripts step 0304" => r13_misc::SCRIPTS_STEP_0304, r13_misc::scripts_step;
     "r13 lists two done 0244" => r13_misc::LISTS_TWO_DONE_0244, r13_misc::lists_two_done_0244;
     "r13 sprites frame 0371" => r13_start::SPRITES_FRAME_0371, r13_start::sprites_frame_0371;
+    "r13 object listed 0673" => r13_start::OBJECT_LISTED_0673, r13_start::object_listed_0673;
+    "r13 rows 0673" => r13_start::ROWS_0673, r13_start::rows_0673;
+    "r13 send 0415" => r13_start::SEND_0415, r13_start::send_0415;
+    "r13 targets 0421" => r13_start::TARGETS_0421, r13_start::targets_0421;
     // round 13 (magic-r13): end of ports
 }
 

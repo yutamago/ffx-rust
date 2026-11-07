@@ -102,6 +102,7 @@ const COPIES: &[(u16, u32)] = &[
     (425, 0x6db0),
     (439, 0x70d0),
     (441, 0x6e30),
+    (411, 0x7210),
 ];
 
 /// One case: the state, the wait `S + 0x3c`, the objects left `S +
