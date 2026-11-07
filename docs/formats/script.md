@@ -582,8 +582,9 @@ level interrupted is not a start.
   which need not be that level's. `Script_Run` calls it at the ends
   (`0x00865095`, `0x008650e8`, `0x00865120`, `0x00865173`); `3c` and `3e`
   go to the ctrl work's `+0x28` callback instead when it is set (the only
-  code that stores a callback there, `AtelSetCtrlEndCallback` (`0x008727d0`), is never called;
-  `AtelRequireCtrlWork` clears it). `AtelExecReturn2` (`0x00869350`, from
+  code that stores a callback there, `AtelSetCtrlEndCallback`
+  (`0x008727d0`), is never called; `AtelRequireCtrlWork` clears it).
+  `AtelExecReturn2` (`0x00869350`, from
   `MsAtelRequestCancel` and `MsAtelRequestExe`) and its unused twin
   `AtelExecReturnForce2` (`0x008694f0`) call it too, only while the
   worker's `+0x32` is set.
