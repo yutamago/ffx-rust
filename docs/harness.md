@@ -1387,6 +1387,14 @@ things:
   `animate`, so the hold is the first boundary entered after the command;
   18 of 18 runs matched after that.
 
+Under Fahrenheit (ffx-remix's test installs, `fhstage0.exe`, 2026-11-07),
+after `lockstep on` FMOD stopped ticking: the marks' sample and update
+counts stayed put from the first mark on, although every marks file said
+`turns true`. The cause was not traced. There, captures run on the
+virtual clock without lockstep: FMOD then mixes one block per frame, but
+two runs are not guaranteed to agree sample for sample (the determinism
+notes above need the turns).
+
 One thing the harness does not pin: music that began before lockstep keeps
 the phase real time gave it. battle-ifrit's Thunder Plains music differed
 between original runs until it faded out for the battle (60 blocks), so its
