@@ -9189,7 +9189,7 @@ fn l9_small(rng: &mut Rng) -> u32 {
     if rng.below(8) == 0 {
         0
     } else {
-        (rng.below(4000) as f32 / 1000.0 - 2.0).to_bits()
+        (f32::from(rng.below(4000) as u16) / 1000.0 - 2.0).to_bits()
     }
 }
 
@@ -9272,7 +9272,7 @@ fn l9_draw_model_scroll_matches_the_original() {
             let pos_at = head;
             let nrm_at = pos_at + positions.len() as u32;
             let rec_at = nrm_at + normals.len() as u32;
-            let model = t.zeros((rec_at as usize + records.len() + 0x40) as usize);
+            let model = t.zeros(rec_at as usize + records.len() + 0x40);
             t.w32(model + 4, rec_at);
             t.w32(model + 8, pos_at);
             t.w32(model + 0xc, nrm_at);
@@ -9282,7 +9282,7 @@ fn l9_draw_model_scroll_matches_the_original() {
             t.write(model + rec_at, &records);
             // the second model: the same records with other coordinates
             let mut records1 = records.clone();
-            for b in records1.iter_mut() {
+            for b in &mut records1 {
                 *b ^= rng.next() as u8 & 0x0f;
             }
             let second = t.zeros(0x10 + records1.len() + 0x40);

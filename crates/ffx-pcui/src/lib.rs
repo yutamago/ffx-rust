@@ -38,6 +38,8 @@ pub mod l6_pcui2;
 pub mod l6_pcui3;
 pub mod l7_pcui;
 pub mod l8_pcui;
+pub mod l9_camdebug;
+pub mod l9_texmap;
 pub mod l9_video;
 pub mod link;
 pub mod m5u_a;

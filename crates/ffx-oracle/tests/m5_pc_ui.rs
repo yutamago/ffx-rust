@@ -9091,3 +9091,278 @@ fn l9_video_update_texture() {
         }
     });
 }
+
+// ---- tail9: the SPLINE EDIT window's mouse step (ffx_pcui::l9_camdebug) ----
+
+use ffx_pcui::l9_camdebug::bridge as l9c;
+
+/// `mov eax, [esp+k]; mov dword [eax + 4 i], v[i]`: a callee writing the
+/// words `v` through its argument at `esp + k`.
+fn write_words(k: u8, v: &[u32]) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, k];
+    for (i, w) in v.iter().enumerate() {
+        c.extend([0xc7, 0x40, (4 * i) as u8]);
+        c.extend(w.to_le_bytes());
+    }
+    c
+}
+
+/// `MsCameraGetPosNow(side, out)`: three words from `table + 16 side`.
+fn pos_by_side(table: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x04, 0x05];
+    c.extend(table.to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x08]);
+    for o in [0u8, 4, 8] {
+        c.extend([0x8b, 0x50, o, 0x89, 0x51, o]);
+    }
+    c
+}
+
+/// A float near the cursor's scale: small, negative, 0, -0, NaN now and
+/// then.
+fn l9_f(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => 0,
+        1 => 0x8000_0000,
+        2 if rng.chance(3) => 0x7fc0_0000,
+        3 => (f32::from(rng.below(4000) as u16) / 10.0).to_bits(),
+        _ => (f32::from(rng.below(400) as u16) / 4.0 - 50.0).to_bits(),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the window's state
+fn l9_cam_debug_mouse() {
+    // every pad bit (1, 2, 4, 0x100, 0x200, 0x400) and the release; the
+    // turn, move and raise flags; picks within and past 8 pixels (the
+    // release flagging one); drag modes 0 and 1; the camera near and far
+    // from its target (the two moves), positions with 0, -0 and NaN
+    Twins::each(|t| {
+        let mut rng = Rng(0x0094_0660);
+        for case in 0..200_u32 {
+            t.reset();
+            let spline = rng.below(2);
+            t.w32(t.rebase(l9c::SPLINE), spline);
+            let n = rng.below(4);
+            let flags = t.zeros(12 * 4);
+            let points = t.zeros(16 * 4);
+            let copies = t.zeros(16 * 4);
+            for i in 0..n {
+                let f = if rng.chance(3) { 0 } else { 1 + rng.below(4) };
+                t.w32(flags + 12 * i, f);
+                for j in 0..4 {
+                    let v = l9_f(&mut rng);
+                    t.w32(points + 16 * i + 4 * j, v);
+                    let v = l9_f(&mut rng);
+                    t.w32(copies + 16 * i + 4 * j, v);
+                }
+            }
+            for (table, v) in [
+                (l9c::FLAGS, flags),
+                (l9c::POINTS, points),
+                (l9c::COPIES, copies),
+                (l9c::COUNTS, n),
+            ] {
+                t.w32(t.rebase(table) + 4 * spline, v);
+            }
+            let picked = if rng.chance(3) { flags } else { 0 };
+            t.w32(t.rebase(l9c::PICKED) + 4 * spline, picked);
+            t.w32(t.rebase(l9c::PICKED_POINT) + 4 * spline, points);
+            t.w32(t.rebase(l9c::PICKED_INDEX) + 4 * spline, rng.below(4));
+            let pad = [1u32, 2, 4, 0x100, 0x200, 0x400, 0x101, 0x103, 0x202, 0]
+                [rng.below(10) as usize]
+                | if rng.chance(4) { rng.next() & 0x707 } else { 0 };
+            t.w32(t.rebase(l9c::PAD), pad);
+            for sym in [l9c::TURN, l9c::MOVE, l9c::RAISE] {
+                t.write(t.rebase(sym), &[u8::from(rng.chance(2))]);
+            }
+            for sym in [l9c::START_X, l9c::START_Y] {
+                let v = (rng.below(600) as u16).wrapping_sub(100);
+                t.write(t.rebase(sym), &v.to_le_bytes());
+            }
+            for j in 0..3 {
+                let v = l9_f(&mut rng);
+                t.w32(t.rebase(l9c::ANCHOR) + 4 * j, v);
+                let v = l9_f(&mut rng);
+                t.w32(t.rebase(l9c::ANGLES) + 4 * j, v);
+                for sym in [l9c::SAVE0, l9c::SAVE1] {
+                    let v = l9_f(&mut rng);
+                    t.w32(t.rebase(sym) + 4 * j, v);
+                }
+            }
+            t.w32(t.rebase(l9c::DRAG_MODE), rng.below(2));
+            t.w32(t.rebase(l9c::CAMERA), rng.next());
+            // the callees
+            let (mx, my) = (rng.below(640), rng.below(240));
+            t.stub(l9c::MOUSE_X, false, 0, 0, mx);
+            t.stub(l9c::MOUSE_Y, false, 0, 0, my);
+            let positions = t.zeros(0x20);
+            for w in 0..8 {
+                let v = l9_f(&mut rng);
+                t.w32(positions + 4 * w, v);
+            }
+            // the same x (and z) on both sides now and then: the turn's
+            // half-turn test sees 0
+            for o in [0_u32, 8] {
+                if rng.chance(2) {
+                    let v: u32 = Mem::read(&t.a, positions + o);
+                    t.w32(positions + 0x10 + o, v);
+                }
+            }
+            t.stub_pre(l9c::GET_POS, false, 2, 0, 0x31, &pos_by_side(positions));
+            let (px, py) = if rng.chance(2) {
+                (
+                    (mx + rng.below(17)).wrapping_sub(8),
+                    (my * 2 + rng.below(17)).wrapping_sub(8),
+                )
+            } else {
+                (rng.next(), rng.next())
+            };
+            t.stub_pre(l9c::PROJECT, false, 2, 0, 0x32, &write_words(8, &[px, py]));
+            t.stub(l9c::CAMERA_MATRIX, false, 2, 0, 0x5_0000);
+            let picked_at = [l9_f(&mut rng), l9_f(&mut rng), l9_f(&mut rng)];
+            t.stub_pre(
+                l9c::SCREEN_PICK,
+                false,
+                5,
+                0,
+                0x33,
+                &write_words(0x10, &picked_at),
+            );
+            t.stub(l9c::NAME_LIST_CLEAR, false, 0, 0, 0x34);
+            t.stub(l9c::SET_RECT, false, 3, 0, 0x35);
+            let mut angle = Vec::new();
+            for k in [4u8, 8, 0xc] {
+                angle.extend(write_words(k, &[l9_f(&mut rng)]));
+            }
+            t.stub_pre(l9c::GET_ANGLE, false, 3, 0, 0x36, &angle);
+            t.stub(l9c::SET_POLAR, false, 5, 0, 0x37);
+            let flags_arg = if rng.chance(4) { 0x40 } else { rng.below(0x40) };
+            // the original's frame: the callees see the point (ebp - 0x14),
+            // the projection (ebp - 0x24) and the offset (ebp - 0x48)
+            let ebp = t.frame_ebp(1);
+            t.write(ebp - 0x48, &[0; 0x48]);
+            t.b.set_call_top(Some(ebp - 0x148));
+            t.check(
+                &format!("CamDebug mouse #{case} pad {pad:#x} flags {flags_arg:#x}"),
+                0x0094_0660,
+                Conv::Cdecl,
+                &[flags_arg],
+                |g| {
+                    l9c::mouse(g, ebp, flags_arg);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            for (o, n) in [(0x14_u32, 16), (0x24, 8), (0x48, 12)] {
+                let mut x = vec![0; n];
+                let mut y = vec![0; n];
+                Mem::read_bytes(&t.a, ebp - o, &mut x);
+                Mem::read_bytes(&t.b, ebp - o, &mut y);
+                assert_eq!(x, y, "CamDebug mouse #{case}: frame ebp - {o:#x}");
+            }
+        }
+    });
+}
+
+// ---- tail9: the texture level mapping (ffx_pcui::l9_texmap) ----
+
+use ffx_pcui::l9_texmap::bridge as l9t;
+
+#[test]
+fn l9_texture_map_level() {
+    // levels past the count (3), a level without a resource (0x15); CPU
+    // textures (the buffer made now or kept; block formats; zero sizes)
+    // and D3D11 ones (Map failing, giving no data, or mapping every mip);
+    // one or more levels (inline element); the render interface made or not
+    Twins::each(|t| {
+        let mut rng = Rng(0x0059_6b90);
+        for case in 0..80_u32 {
+            t.reset();
+            let n_levels = 1 + rng.below(3);
+            let elements = t.zeros(0x1c * 4);
+            for l in 0..n_levels {
+                let resource = if rng.chance(6) { 0 } else { 0x5500 + l };
+                t.w32(elements + 0x1c * l, resource);
+                let buf = if rng.chance(2) { t.zeros(0x40) } else { 0 };
+                t.w32(elements + 0x1c * l + 0x10, buf);
+            }
+            let fmt = t.zeros(0x20);
+            t.w32(fmt + 0xc, [8u32, 16, 32, 4][rng.below(4) as usize]);
+            t.write(fmt + 0x10, &[u8::from(rng.chance(2))]);
+            let tex = t.zeros(0x80);
+            t.w32(tex, fmt);
+            t.w32(tex + 0xc, rng.below(4));
+            t.w32(tex + 0x14, rng.next() & 6);
+            t.w32(tex + 0x1c, [0u32, 1, 5, 64, 100][rng.below(5) as usize]);
+            t.w32(tex + 0x20, [0u32, 1, 7, 32][rng.below(4) as usize]);
+            if n_levels == 1 {
+                // the element inline in the array object
+                for w in 0..7 {
+                    let v: u32 = Mem::read(&t.a, elements + 4 * w);
+                    t.w32(tex + 0x28 + 4 * w, v);
+                }
+                t.w32(tex + 0x24, 1);
+            } else {
+                t.w32(tex + 0x24, n_levels);
+                t.w32(tex + 0x28, elements);
+            }
+            t.write(tex + 0x60, &[rng.next() as u8]);
+            t.w32(tex + 0x68, if rng.chance(2) { 0x1_0000 } else { 0 });
+            t.w32(t.rebase(l9t::GUARD), rng.below(4));
+            let buffer = t.zeros(0x400);
+            t.stubs(&[
+                (l9t::PRINTF, false, 2, 0, 0x71),
+                (l9t::MALLOC, false, 2, 0, buffer),
+                (l9t::LOCK_ENTER, true, 0, 0, 0x72),
+                (l9t::LOCK_LEAVE, true, 0, 0, 0x73),
+                (l9t::INTERFACE_CTOR, true, 0, 0, 0x74),
+                (l9t::ATEXIT, false, 1, 0, 0x75),
+            ]);
+            // the device context: Map (slot 14, stdcall 6) writes its
+            // mapped data and pitch, fails now and then
+            let data = if rng.chance(5) {
+                0
+            } else {
+                0x6600 + rng.below(0x100)
+            };
+            let pitch = rng.below(0x1000);
+            let mut pre = vec![0x8b, 0x44, 0x24, 0x18]; // mov eax, [esp+0x18]
+            pre.extend([0xc7, 0x00]);
+            pre.extend(data.to_le_bytes());
+            pre.extend([0xc7, 0x40, 0x04]);
+            pre.extend(pitch.to_le_bytes());
+            let hr = if rng.chance(6) { 0x8007_000e } else { 0 };
+            let log = t.stub_code(0x5138, false, 6, 6, hr);
+            let at = t.cave_next;
+            pre.push(0xe9);
+            pre.extend(log.wrapping_sub(at + pre.len() as u32 + 4).to_le_bytes());
+            let map = t.cave_code(&pre);
+            let mut slots = vec![0u32; 15];
+            slots[14] = map;
+            let vt = t.words(&slots);
+            let ctx = t.words(&[vt, 0]);
+            t.g32(l9t::CONTEXT, ctx);
+            // junk in the list: the original clears its first word
+            let out = t.words(&[0xaaaa_aaaa; 0x10]);
+            let mut level = rng.below(n_levels + 1);
+            if rng.chance(10) {
+                // a count of 0 counts as 1: level 1 and past have none
+                t.w32(tex + 0x24, 0);
+                level = 1 + rng.below(2);
+            }
+            let ebp = t.frame_ebp(2);
+            // the lock (ebp - 0x2c) and the mapped subresource (ebp - 0x38)
+            // where the original has them
+            t.b.set_call_top(Some(ebp - 0x140));
+            t.check(
+                &format!("mapLevel #{case} level {level}"),
+                0x0059_6b90,
+                Conv::Thiscall(tex),
+                &[level, out],
+                |g| Out::U32(l9t::map_level(g, ebp, tex, level, out)),
+            );
+            t.b.set_call_top(None);
+        }
+    });
+}

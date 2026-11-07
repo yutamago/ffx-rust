@@ -4911,3 +4911,180 @@ fn m5p_scene_bp3_light_strings() {
         }
     }
 }
+
+// ---- tail9: the context switch's light combinations (ffx_prender::l9_scene) ----
+
+use ffx_prender::l9_scene::bridge as l9l;
+
+/// A `PhyreMalloc` stand-in (cdecl `(size, align)`): 16-byte aligned
+/// junk blocks from a fresh area, 0 from the `fail_at`-th call on (0:
+/// never).
+fn l9_bump(tw: &mut Twins, fail_at: u32) {
+    // junk, so the stores the callers make show
+    let area = tw.alloc(&vec![0x6b; 0x4_0000]);
+    let cur = tw.alloc(&((area + 15) & !15).to_le_bytes());
+    let left = tw.alloc(&(if fail_at == 0 { u32::MAX } else { fail_at }).to_le_bytes());
+    let mut c = vec![0xff, 0x0d];
+    c.extend(left.to_le_bytes()); // dec dword [left]
+    c.extend([0x75, 0x03, 0x31, 0xc0, 0xc3]); // jnz +3; xor eax, eax; ret
+    c.push(0xa1);
+    c.extend(cur.to_le_bytes()); // mov eax, [cur]
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x83, 0xc2, 0x0f, 0x83, 0xe2, 0xf0]); // add edx, 15; and edx, -16
+    c.extend([0x01, 0xc2]); // add edx, eax
+    c.extend([0x89, 0x15]);
+    c.extend(cur.to_le_bytes()); // mov [cur], edx
+    c.push(0xc3);
+    let code = tw.a.alloc_code(&c).unwrap();
+    assert_eq!(tw.b.alloc_code(&c).unwrap(), code);
+    let at = tw.rebase(l9l::MALLOC);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut tw.a, at, 5).unwrap();
+    tw.saved.entry(at).or_insert(old);
+    tw.write(at, &j);
+}
+
+#[test]
+fn l9_build_combinations_matches_the_original() {
+    // 0..4 lights and 0..3 casters (the compatible descriptors and
+    // others, ids 0..31 at +0x10), up to 3 pairs; the output already
+    // sized or not, owned or not; the storage running out at each
+    // allocation in turn
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(0x004d_4e90);
+        let real_lights: Vec<u32> = sc::COMPATIBLE.iter().map(|&(l, _)| tw.rebase(l)).collect();
+        let real_casters: Vec<u32> = sc::COMPATIBLE.iter().map(|&(_, c)| tw.rebase(c)).collect();
+        for case in 0..150_u32 {
+            let fake = |tw: &mut Twins, rng: &mut Rng| {
+                let o = tw.zeros(0x20);
+                let id = rng.next() % 32;
+                tw.w32(o + 0x10, id);
+                o
+            };
+            let n = rng.next() % 5;
+            let m = rng.next() % 4;
+            let k = if n * (m + 1) > 6 {
+                rng.next() % 3
+            } else {
+                rng.next() % 4
+            };
+            let mut lights = Vec::new();
+            for _ in 0..n {
+                // a null light only alone (the sort's order reads +0xc)
+                let l = if n == 1 && rng.next().is_multiple_of(3) {
+                    0
+                } else if rng.next().is_multiple_of(2) {
+                    real_lights[(rng.next() % 3) as usize]
+                } else {
+                    fake(&mut tw, &mut rng)
+                };
+                lights.push(l);
+            }
+            let mut casters = Vec::new();
+            for _ in 0..m {
+                let c = if rng.next().is_multiple_of(2) {
+                    real_casters[(rng.next() % 3) as usize]
+                } else {
+                    fake(&mut tw, &mut rng)
+                };
+                casters.push(c);
+            }
+            let words = |v: &[u32]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>();
+            let lights_at = tw.alloc(
+                &words(&lights)
+                    .iter()
+                    .copied()
+                    .chain([0; 4])
+                    .collect::<Vec<_>>(),
+            );
+            let casters_at = tw.alloc(
+                &words(&casters)
+                    .iter()
+                    .copied()
+                    .chain([0; 4])
+                    .collect::<Vec<_>>(),
+            );
+            let this = tw.zeros(0x40);
+            tw.w32(this + 0x14, n);
+            tw.w32(this + 0x18, lights_at);
+            tw.w32(
+                this + 0x1c,
+                m | if rng.next().is_multiple_of(4) {
+                    0x8000_0000
+                } else {
+                    0
+                },
+            );
+            tw.w32(this + 0x20, casters_at);
+            tw.w32(this + 0x38, k);
+            let out = tw.zeros(8);
+            if rng.next().is_multiple_of(3) {
+                // an old output: two headers with storage, owned or not
+                let old = tw.zeros(0x10);
+                for i in 0..2 {
+                    let data = tw.zeros(8);
+                    tw.w32(old + 8 * i, 2);
+                    tw.w32(old + 8 * i + 4, data);
+                }
+                tw.w32(
+                    out,
+                    2 | if rng.next().is_multiple_of(2) {
+                        0x8000_0000
+                    } else {
+                        0
+                    },
+                );
+                tw.w32(out + 4, old);
+            }
+            if case % 3 == 2 {
+                // already sized: every header with storage (1 or 2 words,
+                // owned or not), reused or replaced
+                let p = n * (m + 1);
+                let mut total = 1_u32;
+                let mut term = 1_u32;
+                for _ in 0..k {
+                    term = term.wrapping_mul(p);
+                    total = total.wrapping_add(term);
+                }
+                let headers = tw.zeros(8 * total as usize);
+                for i in 0..total {
+                    let words = 1 + rng.next() % 2;
+                    let data = tw.zeros(8);
+                    let owned = if rng.next().is_multiple_of(3) {
+                        0x8000_0000
+                    } else {
+                        0
+                    };
+                    tw.w32(headers + 8 * i, words | owned);
+                    tw.w32(headers + 8 * i + 4, data);
+                }
+                // the not-owned bit makes the count differ: sized again
+                let flag = if rng.next().is_multiple_of(4) {
+                    0x8000_0000
+                } else {
+                    0
+                };
+                tw.w32(out, total | flag);
+                tw.w32(out + 4, headers);
+            }
+            let fail_at = if rng.next().is_multiple_of(3) {
+                1 + rng.next() % 10
+            } else {
+                0
+            };
+            l9_bump(&mut tw, fail_at);
+            tw.stub(l9l::FREE, false, 1, 0, 0);
+            // the bridge's frame and alloca low in B's stack, away from its
+            // calls
+            let base = tw.b.stack_range().start + 0x1000;
+            let ebp = base + 0x200;
+            let lights_buf = base + 0x400;
+            let label = format!("{what} buildCombinations #{case}");
+            tw.run(&label, 0x004d_4e90, Conv::Stdcall, &[this, out], |g| {
+                l9l::build(g, ebp, lights_buf, this, out)
+            });
+            tw.unstub();
+        }
+    }
+}

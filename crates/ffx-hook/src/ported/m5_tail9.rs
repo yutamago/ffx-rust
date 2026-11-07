@@ -139,6 +139,32 @@ ported! {
         let bytes = if n > 0 { scroll::arrays_size(n) } else { 0 };
         with_frame(bytes, |arrays| scroll::fill(&mut mem(), arrays, at, job))
     }
+    /// `(this, out)` -> 0 or 0xd: the light list's alloca through
+    /// `with_frame`, the keys, counters and bit writer in a frame laid
+    /// out as the original's.
+    PContextSwitchLights_buildCombinations_004d4e90 @ 0x004d_4e90 => extern "stdcall" fn build_combinations(this: u32, out: u32) -> u32 {
+        use ffx_prender::l9_scene::bridge as scene;
+        let mut frame = StackFrame::<{ (scene::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + scene::FRAME;
+        let bytes = scene::lights_size(&mem(), this);
+        with_frame(bytes, |lights| scene::build(&mut mem(), ebp, lights, this, out))
+    }
+    /// `(flags)`: the SPLINE EDIT window's mouse step; the point, its
+    /// projection and the offset in a frame laid out as the original's.
+    CamDebug_mouse_00940660 @ 0x0094_0660 => extern "C" fn cam_debug_mouse(flags: u32) {
+        use ffx_pcui::l9_camdebug::bridge as cam;
+        let mut frame = StackFrame::<{ (cam::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + cam::FRAME;
+        cam::mouse(&mut mem(), ebp, flags);
+    }
+    /// `(texture; level, out)`: the scope lock and the mapped subresource
+    /// in a frame.
+    PTexture2DD3D11_mapLevel_00596b90 @ 0x0059_6b90 => extern "thiscall" fn texture_map_level(tex: u32, level: u32, out: u32) -> u32 {
+        use ffx_pcui::l9_texmap::bridge as tm;
+        let mut frame = StackFrame::<{ (tm::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + tm::FRAME;
+        tm::map_level(&mut mem(), ebp, tex, level, out)
+    }
     /// `()`: the ability map's job wait (queue 0 of `0x00cdede4`).
     AbmapJobWait_00a8ecf0 @ 0x00a8_ecf0 => extern "C" fn abmap_job_wait() {
         ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());

@@ -167,6 +167,7 @@ pub mod l6_map5;
 pub mod l6_map6;
 pub mod l6_map7;
 pub mod l7_map;
+pub mod l9_scene;
 pub mod m4r_ctxcapture;
 pub mod m4r_fonttext;
 pub mod m4r_gauss;
