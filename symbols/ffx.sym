@@ -16772,7 +16772,7 @@
 0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e5f0 function Sg_IdChrMove              # ours (sorts between Sg_Debug and Sg_IdEventInitAll): cdecl(chr), from the push-apart pass 0x0083d3b0: chr move (+0x4c, +0x54) over the id map in its scale 0x01301a90: triangle +0x824 (Sg_IdFindTriangle when -1, -1 when ignored: Sg_GetIgnoreID and +0x194 bit 0x200), up to 4 Sg_IdWalk steps with Sg_IdSlideEdge, then +0x828 the triangle's word (table +16 i +0xc), normal +0x7c, height +0x16c (Sg_IdGetHeight ST0 / scale; 1 lower for the player on map 0x12a), x/z back out of scale; no id map: move added, ground reset; ported (ffx_sg::state, main round 16)
-0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
+0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 (0x01301a98..ad7 are g_ChrIdMapTable[0x30..0x3f], the walk-mesh kinds scripts remap, main.md) and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
 0x0083e960 function Sg_IdGetMapTable          # (i) -> g_ChrIdMapTable[i]
 0x0083e970 function Sg_IdGetPtr               # fh v3:bsim1.00 0x0083e970
 0x0083e980 function Sg_IdGetShade             # (c) -> (c >> 17) & 0x7fff when Sg_IdExistShade, else 0x4210; Switch name

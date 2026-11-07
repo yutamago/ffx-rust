@@ -572,7 +572,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - Map (re)set-up: `yiResetObj` (teardown, a new `rcbgInit`,
   `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
   file's background `+0x10`, render data `+0x14`, the walk-mesh page
-  (section `page + 2` to `Sg_IdFixupAndSet`), `ppp` data
+  (section `page + 2` to `Sg_IdFixupAndSet`, `page` the request's
+  `+0x14`), `ppp` data
   `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
   the default animations), `yiObjReadFinish`. Animation slots:
   `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
@@ -654,8 +655,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   size) reads a `MAP1` file into a `yiMalloc64` buffer (`g_YiMapData`):
   section 0 the 2D map (`graphicFieldMapLoad(name, 0)`,
   `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
-  `yiArc_readmem`), `page + 2` the walk-mesh page (to
-  `Sg_IdFixupAndSet`, "The walk mesh on disk"), 10 effect data
+  `yiArc_readmem`), `page + 2` the walk-mesh page (`page` the fifth
+  argument; to `Sg_IdFixupAndSet`, "The walk mesh on disk (ffx-remix M8)"), 10 effect data
   (`pppSetFpPdt`; the field-program table, `docs/formats/scene-maps.md`,
   "Map effects: the field-program table"), 12 and 11 more backgrounds;
   the CD ids go to `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
@@ -1855,13 +1856,13 @@ The id map that `Sg_IdSetPtr` installs is the map's walk mesh: the
 triangles characters stand on, with the kind bits that decide who may
 enter each one (`Sg_IdMatchChr`, main.md). It lives in `MAP1` sections 2
 to 8, pages 0 to 6 of `yiSetIDPage` and `yiSetPreBgPage`. Over the
-game's maps there are 383 pages: page 0 on all 328 maps with a `MAP1`
-file, page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2 each.
+game's maps there are 383 pages: page 0 on 328 of the 329 maps with a
+`MAP1` file (`gameover`'s `titl01` has only section 0), page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2 each.
 59 maps also have a mesh of the same layout in section 9 (`lmyt0100`
 163 vertices and 259 triangles, the others 4 and 2). Page 7 would
 install it (`yiSetIDPage` does not check the page); whether a script
-asks for page 7 was not checked. The counts are per map: maps that
-share a `MAP1` file count once each.
+asks for page 7 was not checked. The counts are per map: a `MAP1` file
+several maps share counts once for each of them.
 
 Every page has the same layout:
 
@@ -1877,8 +1878,9 @@ Every page has the same layout:
 | `+0x18` | `u32` | the vertices, at `0x20`: 8 bytes each, `i16` x, y, z and an `i16` 0 |
 | `+0x1c` | `u32` | the group table, last in the section: 16 bytes per group, 8 zero bytes, the `i16` triangle count at `+8` (`0x01301a88`), an `i16` 0, the triangles' offset at `+0xc` (`0x01301a84`) |
 
-The vertices are padded to 16 bytes before the triangles. These pad
-bytes are not zero in the shipped pages, so a writer that copies them
+The vertices are padded to 16 bytes before the triangles (an odd vertex
+count leaves 8 bytes). These pad bytes are not zero in the shipped
+pages, so a writer that copies them
 gives the game's pages back byte for byte. The group table follows the
 triangles and ends the section. A triangle is 16 bytes: three `i16`
 vertex numbers (read as such; all are below `0x8000`), three `i16`
@@ -1888,9 +1890,10 @@ word (`+0x828`)"). Most neighbours are the triangles that share the
 edge's two vertex numbers. A few pages link across edges whose
 triangles do not share vertex numbers, or have edges shared by more
 than two triangles, where the stored link picks one. A writer should
-keep the stored links. About 0.25% of the triangles are wound the other
-way round: `Sg_IdFindTriangle` never finds a point in them (main.md,
-"Round 13: the id triangle under a point (`Sg_IdFindTriangle`)").
+keep the stored links. 717 of the pages' 301,978 triangles (0.24%) are
+wound the other way round: `Sg_IdFindTriangle` never finds a point in
+them (main.md,
+"Round 13: the id triangle under a point (`Sg_IdFindTriangle`)"). Another 720 have no area in x and z.
 
 ## Sqs standby requests and info paths (round 36)
 

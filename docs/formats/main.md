@@ -296,10 +296,11 @@ behind them stays with those modules, which the bridges call.
   kind the table holds for them, and every other kind blocks no one. The
   table is cleared at each map change (`Sg_EventjumpInit` calls
   `Sg_IdEventInitAll`, `0x0083e8d0`) and scripts set entries with
-  `Native_4017_IdSetMapTable`. Over the game's walk meshes (field.md,
-  "The walk mesh on disk"; counted per map, so a file several maps share
-  counts once for each) 275,047 triangles are kind 0, 6,398 kind 14, 663
-  kind 1 and 20,245 `0x30..0x3d`. No triangle stores kind 2 or 13.
+  `Native_4017_IdSetMapTable`. Over the game's 383 walk-mesh pages
+  (field.md, "The walk mesh on disk (ffx-remix M8)"; counted per map: a `MAP1` file several
+  maps share counts once for each of them) 274,672 triangles are kind 0,
+  6,398 kind 14, 663 kind 1 and 20,245 `0x30..0x3d` (none `0x3c`); the
+  section-9 meshes add 375 of kind 0. No triangle stores kind 2 or 13.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
   `0x00822620`): the dream effect. A shown layer whose display byte
   (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
@@ -701,9 +702,8 @@ x87 result.
   stick to move the player relative to it. `MsCameraGetYaw` is the polar
   angle of look-at minus eye taken from `g_Camera + 0x50` and `+0x66c`,
   the positions before the shake (the view below uses `+0x40` and
-  `+0x65c`, with the shake). In the game it answers `θ + π` (mod 2π) for
-  `θ` the eye's angle about the point looked at (`eye - target = (cos θ,
-  ·, sin θ)` in x and z, field units).
+  `+0x65c`, with the shake). It answers `θ + π` (mod 2π), where `eye -
+  target = (cos θ, ·, sin θ)` in x and z.
 - `MsScreenProcess` (battle.md, "`MsScreenProcess` (`0x007bc110`)") builds
   `g_CameraMatrix` (`0x02311440`) from the active channel camera's eye
   (`g_Camera + 0x65c`) and look-at (`+0x40`) and calls `Cam_Apply`
@@ -719,8 +719,8 @@ x87 result.
   the image. Its only writer (`0x0082db10`) is never called, so the flag
   stays 1. Scripts take the player's control by taking the player away:
   `AtelUcOff` (`0x008719e0`) calls `Sg_SetPlayer(0)`. `AtelUcOn`
-  (`0x00871ab0`) sets the controlled character back, or 0 again while a
-  window or another context bit holds control. `Native_ControlDisable`
+  (`0x00871ab0`) sets the controlled character back, or 0 when a window
+  or another context bit holds control or no worker qualifies. `Native_ControlDisable`
   (`0x005e`), `AtelUpdateWindowStatus` (message windows),
   `AtelSetEventJump` and `AtelSetEventJump2` (map changes),
   `AtelSetCtrlChar`, `AtelEventSetUpForBattleMusic`, `Atel_UcResume` and
