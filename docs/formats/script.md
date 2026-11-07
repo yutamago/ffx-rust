@@ -551,13 +551,14 @@ waits (`+0x1f` 1) for the reply (`AtelSearchReplySignal`); opcodes
 (`AtelIsSignalQueued`).
 
 `AtelDecodeSignal` (`0x008653f0`) starts the head of the queue when it is
-a request above the running level: a queued one through
-`AtelStartSignal` (`0x008690a0`: entry, level, header, PC; a `REQSW`
-sender gets its reply), a running one by switching back to its level.
-`AtelExecReturn` (`0x008691d0`, the ends `3c`-`3f`, `54`) replies to a
-`REQEW` sender, frees the node, cancels what was queued above the given
-level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
-`3e`/`3f`, resets the level to entry 1.
+a request above the running level: a queued one through `AtelStartSignal`
+(`0x008690a0`: entry, level, header, PC; a `REQSW` sender gets its
+reply), a running one by switching back to its level. `AtelExecReturn`
+(`0x008691d0`, the ends `3c`-`3f`, `54`) replies to a `REQEW` sender,
+frees the node, cancels what was queued above the given level
+(`AtelCancelSignals`, `0x00872860`), decodes the next and, for `3e`/`3f`,
+resets the level running after the decode to entry 1 ("Watching entries
+start and end" below).
 
 Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
 table, eight `u16` in a variable (`+0x44` points at it, filled from
@@ -573,8 +574,8 @@ then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
 
 Two functions show a ctrl work's entries starting and ending, so hooks on
 them give each `(worker, entry)` at the update it happens, with no script
-changed (used by ffx-remix's pack logic). Switching back to a level another
-level interrupted is not a start.
+changed (used by ffx-remix's pack logic). Switching back to a level
+another level interrupted is not a start.
 
 - `AtelStartSignal(worker, node)` (`0x008690a0`, cdecl; one caller,
   `AtelDecodeSignal` at `0x00865469`) starts every requested entry: the
@@ -582,8 +583,8 @@ level interrupted is not a start.
   them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
   clamped to 1 for types 5 and 6 and to 8 for the others. The two signals
   `AtelInitBasicWork` (`0x0086cb00`) sends each worker (entry 0 at level
-  7 (1 for types 5 and 6, which `AtelRegistSignalMain` clamps), then
-  entry 1 at level 0) start here too.
+  7, then entry 1 at level 0; `AtelRegistSignalMain` clamps the 7 to 1
+  for types 5 and 6) start here too.
 - `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl) ends
   the running level: `index` is the worker's index in the current ctrl
   work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on entry.
