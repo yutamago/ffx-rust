@@ -288,8 +288,8 @@ language `TODVDFileLoad(4, 0)`, which the game resolves to
 `ffx_ps2/ffx/master/uspc/menu/base.ftc` (304 bytes, a type-4 FTC
 without a bitmap: 230 width bytes in quarter texels). `TOFTCTransfer`
 (`0x008ac130`) reads it: version `+0x04` at least 200, dictionary `+0x08`
-(4), and `+0x10` bytes of widths from the offset at `+0x30` (here 230
-from `0x40`); `+0x14`/`+0x16` hold 14 and 18, the PS2 grid's cell size,
+(4), and the number of width bytes at `+0x10` (here 230), copied from
+the offset at `+0x30` (here `0x40`); `+0x14`/`+0x16` hold 14 and 18, the PS2 grid's cell size,
 which no code reads. Glyph *i* is width byte *i* (code `0x30 + i`; from
 208, the `2c` pairs), for example `i` (glyph `0x48`) 9 and `W` (`0x36`)
 53 quarter texels. Replacing those four pages and that one file changes
