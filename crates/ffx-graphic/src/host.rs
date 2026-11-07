@@ -25,12 +25,14 @@ pub enum Conv {
 
 /// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`] /
 /// [`Host::call_st0_f64`] (`st0` true) passes in the game
-/// ([`ffx_bridge::RawMem`]) with `conv`: twelve for a plain `cdecl` call
-/// and sixteen stack words after `this` for a plain `thiscall`; eight
-/// otherwise (a fastcall's two register words included). The twelve cdecl
-/// words cover the glue's widest calls: `registAsyncLoadTask`'s nine
-/// (`PhyreScene_loadCharacterAsync`), the point-light setup's ten
-/// (`graphicPS2LightingSetupEffect`). The sixteen thiscall words cover
+/// ([`ffx_bridge::RawMem`]) with `conv`: twelve for a plain `cdecl` or
+/// `stdcall` call and sixteen stack words after `this` for a plain
+/// `thiscall`; eight otherwise (a fastcall's two register words included).
+/// The twelve cdecl words cover the glue's widest calls:
+/// `registAsyncLoadTask`'s nine (`PhyreScene_loadCharacterAsync`), the
+/// point-light setup's ten (`graphicPS2LightingSetupEffect`). The twelve
+/// stdcall words cover `ID3D11DeviceContext::CopySubresourceRegion`'s nine
+/// (`gdraw_rt_end_00a39200`). The sixteen thiscall words cover
 /// `PRenderThread::handleNonRenderInstanceCommand`'s fifteen (`0x0059bac0`).
 ///
 /// The game's host does not refuse a longer list: a cdecl call drops the
@@ -42,7 +44,7 @@ pub enum Conv {
 pub const fn max_words(conv: Conv, st0: bool) -> usize {
     match (conv, st0) {
         (Conv::Thiscall(_), false) => 16,
-        (Conv::Cdecl, false) => 12,
+        (Conv::Cdecl | Conv::Stdcall, false) => 12,
         _ => 8,
     }
 }
@@ -54,7 +56,8 @@ pub const fn max_words(conv: Conv, st0: bool) -> usize {
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
     /// rebased) with up to [`max_words`] 32-bit arguments (twelve for
-    /// `cdecl`, sixteen stack words for a `thiscall`, else eight); returns
+    /// `cdecl` and `stdcall`, sixteen stack words for a `thiscall`, else
+    /// eight); returns
     /// `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
@@ -260,7 +263,8 @@ impl Host for ffx_bridge::RawMem {
 
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
         // the bridges pass at most sixteen to a thiscall, twelve to a
-        // cdecl, eight to the others (no panics in what the game calls)
+        // cdecl or stdcall, eight to a fastcall (no panics in what the game
+        // calls)
         let mut a = [0u32; 16];
         for (w, &v) in a.iter_mut().zip(args) {
             *w = v;
@@ -272,7 +276,7 @@ impl Host for ffx_bridge::RawMem {
         match conv {
             Conv::Cdecl => route::cdecl(addr, &a[..12]),
             Conv::Thiscall(this) => route::thiscall(addr, this, &a[..n.min(16)]),
-            Conv::Stdcall => route::stdcall(addr, &a[..n.min(8)]),
+            Conv::Stdcall => route::stdcall(addr, &a[..n.min(12)]),
             // two or fewer: both registers, zero when missing
             Conv::Fastcall => route::fastcall(addr, &a[..n.clamp(2, 8)]),
         }

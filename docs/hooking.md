@@ -217,7 +217,7 @@ The bridge hosts:
 | `ffx_bridge::Host::call` (cdecl) | 0-6 (`CALL_WORDS`); more is not called (0) | `eax` |
 | `ffx_script` `NativeHost::call_n` | 0-12 (`CALL_N_WORDS`) | `eax` |
 | `ffx_script` `NativeHost::call_float` | 0-6 | `ST0` as `f64` |
-| `ffx_graphic::host::Host::call` (`Conv`) | 12 for cdecl, 16 stack words after `this` for thiscall, 8 otherwise (`max_words`) | `eax` |
+| `ffx_graphic::host::Host::call` (`Conv`) | 12 for cdecl and stdcall, 16 stack words after `this` for thiscall, 8 otherwise (`max_words`) | `eax` |
 | `ffx_graphic` `call_st0` / `call_st0_f64` | 8 | `ST0` as `f32` / `f64` |
 | `ffx_graphic` `call_u64` / `call_sym_u64` | 8 | `edx:eax` |
 | `ffx_graphic` `call_wide` / `call_sym_wide` (cdecl) | 0-40 (`WIDE_WORDS`); more is not called (0) | `eax` |

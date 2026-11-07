@@ -18,6 +18,7 @@ pub mod fixup;
 pub mod heap;
 pub mod instance;
 pub mod intl;
+pub mod l10_assets;
 pub mod l9_jobs;
 pub mod l9_scroll;
 pub mod m5a_assets;

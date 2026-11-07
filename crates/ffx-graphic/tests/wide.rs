@@ -57,3 +57,23 @@ fn call_wide_passes_forty_words() {
     assert!(rec.0[0][36..].iter().all(|&w| w == 0));
     assert_eq!(rec.0[1], words[..WIDE_WORDS]);
 }
+
+/// A plain stdcall passes up to twelve words (`max_words`): the nine of
+/// `ID3D11DeviceContext::CopySubresourceRegion` (`gdraw_rt_end_00a39200`).
+#[test]
+fn stdcall_passes_twelve_words() {
+    use ffx_graphic::host::{Conv, max_words};
+    let mut rec = Record(Vec::new());
+    let mut h = ffx_bridge::RawMem { image: 0x0040_0000 };
+    let words: Vec<u32> = (1..=12).collect();
+    {
+        let p = NonNull::from(&mut rec as &mut dyn Router);
+        // SAFETY: `rec` outlives the guard and is used only through it.
+        let _g = unsafe { route::enter(p) };
+        h.call(0x1000, Conv::Stdcall, &words[..9]);
+        h.call(0x1000, Conv::Stdcall, &words);
+    }
+    assert_eq!(max_words(Conv::Stdcall, false), 12);
+    assert_eq!(rec.0[0], words[..9]);
+    assert_eq!(rec.0[1], words);
+}

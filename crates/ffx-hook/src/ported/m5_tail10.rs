@@ -1,12 +1,18 @@
 //! M5 stage 1, round 10 (`tail10`): the last game-code and engine tail
-//! (`ffx_pother_a::l10_print`, ...). Parity tests in the lists' oracle
-//! files (`m5p_scripting.rs`, ...).
+//! (`ffx_pother_a::l10_print`, `ffx_system::l10_assets`,
+//! `ffx_pcui::l10_gdraw`, ...). Parity
+//! tests in the lists' oracle files (`m5p_scripting.rs`,
+//! `m5_system_b.rs`, `m5_pc_ui.rs`, ...).
 //!
 //! Threads: the script-running threads (main, the async init job) for
-//! `print`. Frames are per call.
+//! `print`; the scene loads (main, the async init job) for the asset
+//! header; the render thread for the `GDraw` target end. Frames are per call
+//! (the header's 0x47c bytes on the stack).
 
 use super::{StackFrame, mem, ported};
+use ffx_pcui::l10_gdraw::bridge as gdraw;
 use ffx_pother_a::l10_print::bridge as print;
+use ffx_system::l10_assets::bridge as assets;
 
 ported! {
     /// `(L) -> 0`: Lua's `print`, its 0x200-byte buffer in a frame.
@@ -14,5 +20,18 @@ ported! {
         let mut buf = StackFrame::<0x80>::new();
         let at = buf.at();
         print::print(&mut mem(), l, at)
+    }
+    /// `(reader; path)`: the asset list header into the reader; its strings and read buffer in a frame, the by-value string in another.
+    AssetListReader_readAssetHeader @ 0x006f_4900 => extern "thiscall" fn read_asset_header(reader: u32, path: u32) {
+        let mut frame = StackFrame::<0x11f>::new();
+        let mut arg = StackFrame::<6>::new();
+        let (f, a) = (frame.at(), arg.at());
+        assets::read_asset_header(&mut mem(), reader, path, f, a);
+    }
+    /// `(r, x0, y0, x1, y1, stats)`: the end of a `GDraw` render target; the locals the callees see in a frame.
+    gdraw_rt_end_00a39200 @ 0x00a3_9200 => extern "stdcall" fn gdraw_rt_end(r: u32, x0: u32, y0: u32, x1: u32, y1: u32, stats: u32) -> u32 {
+        let mut frame = StackFrame::<0x38>::new();
+        let f = frame.at();
+        gdraw::rt_end(&mut mem(), f, [r, x0, y0, x1, y1, stats])
     }
 }
