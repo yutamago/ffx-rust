@@ -161,7 +161,8 @@ slot 2, uvs slot 3 (strides 12, 12, 16, 8; `POSITION0` f6, `NORMAL0` f6,
 bytes as the arrays hold them (the census compares them byte for byte).
 In these frames every drawn segment used its own arrays (slot `+4`).
 
-The table (the one `g_VFXRenderDataTable` `0x00ccca6c` points to, `docs/formats/render.md`)
+The table (the one `g_VFXRenderDataTable` `0x00ccca6c` points to,
+`docs/formats/render.md`)
 also keeps a delete pool: count `+8` (bit 31 a flag), keys `+0xc` (8 bytes
 each), counters `+0x14`, geometries `+0x1c`
 (`ClassVFXRenderDataTable_UpdateDeletePool` `0x0069fe50` counts them down
@@ -351,17 +352,22 @@ textures). No op-record (`(0, record)`) draws.
 
 **List entries missing from the table.** 83 of the 142 frames have 1-16
 entries of `+0x38cc` whose mesh instance is in no table entry (329
-entries, 212 addresses, 154 of them in one frame only), most likely
-geometry already removed from the table: `graphicVFXDestroy` calls
-`ClassVFXRenderDataTable_Remove_0069fc10`, which erases the map node and
-puts the geometry in the delete pool and does not touch `+0x38cc` (the
-geometry's virtual `+0x10` that `graphicVFXDestroy` calls first was not
-checked). A hide by instance key therefore remembers the spell's entries
-while the spell plays: in exit-fire2 ffx-remix's hide zeroed 4,891 entries
-(a running count, Fire's alone in that run) against the 4,680 the tracer
-resolved as the spell's. The remembered addresses must be dropped a few
-frames after the spell: the game reuses them for other effects' geometry
-(an earlier version that kept them hid later effects' draws).
+entries, 212 addresses, 154 of them in one frame only).
+`graphicVFXDestroy` takes a geometry out of the table at once
+(`ClassVFXRenderDataTable_Remove_0069fc10`: the map node erased, the
+geometry to the delete pool), but leaves its list entry: its virtual
+`+0x10` (`VfxRenderData_pushPair_006a0f50`) only queues the mesh instance
+on scene `+0x3894`, and `PhyreScene_doDeleteMeshInstances` (`0x0065a620`)
+zeroes the entry (`PhyreScene_removeVFXFromRenderArray`) after the frame's
+render. The entries missing from the table are most likely instances
+between those two steps. A hide by instance key therefore remembers the
+spell's entries while the spell plays: in exit-fire2 ffx-remix's hide
+zeroed 4,891 entries (a running count, Fire's alone in that run) against
+the 4,680 the tracer resolved as the spell's; the other 211 are remembered
+entries whose geometry had left the table (the tracer's "?"). The
+remembered addresses must be dropped a few frames after the spell: the
+game reuses them for other effects' geometry (an earlier version that kept
+them hid later effects' draws).
 
 **Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
 `DrawMostVFX` runs (and putting them back after) hides those draws: the
@@ -369,8 +375,8 @@ loop skips zero entries and the draw events still run at their places.
 
 **Where the actors are.** The caster is the actor with a command cue entry
 (`+0xde5` not `0xff`) and an effect state (`+0xdfb` not 0; sampled 16, 2,
-4, 5 over Fire; 16 is no state of battle.md's `MsEffectStart` table, 3 and
-11 were not sampled); its targets are the bits of its `+0xdc4`
+4, 5 over Fire; 16 appears nowhere in battle.md's `MsEffectStart` table, 3
+and 11 were not sampled); its targets are the bits of its `+0xdc4`
 (battle.md). A battle character's place in the HD scene (the space the
 draws' world matrices use) was taken as `(-x, -y, z)` of `Ch_GetPos` (chr
 `+0xc`), as on field maps: an effect placed there sat on the Larva in the
@@ -383,8 +389,8 @@ ground beside the Larva.
 ## Gate
 
 The M4 census: every effect draw of the eight captured frames is
-traced: 1042 of 1042, to
-the `DrawMostVFX` list place it is drawn from (1018 by the list entry, 24
+traced: 1042 of 1042, to the `DrawMostVFX` list place it is drawn from
+(1018 by the list entry, 24
 by a zeroed entry and the delete pool), the geometry and segment whose
 bytes it draws, the instance key and its maker (ppp object or op record),
 and the shader its flags give (`cargo test -p ffx-fxdraw --test captures`:
