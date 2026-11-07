@@ -1045,6 +1045,20 @@ pub const MODEL_SPRITES_B_0093: Sig = Sig {
     imports: &[],
 };
 
+/// [`model_sprites_a`] in `magic_0092` (0x10001900; flag 0, the slot-815
+/// group at `+0x40`).
+pub const MODEL_SPRITES_A_0092: Sig = Sig {
+    hash: 0x8cba_7b2a_b16c_dfdd,
+    ..MODEL_SPRITES_A
+};
+
+/// [`model_sprites_b`] in `magic_0092` (0x10001a00; flag 0, the slot-815
+/// group at `+0x220`).
+pub const MODEL_SPRITES_B_0092: Sig = Sig {
+    hash: 0xa1d0_7b1c_2965_0fe9,
+    ..MODEL_SPRITES_B
+};
+
 /// [`model_sprites_c`].
 pub const MODEL_SPRITES_C: Sig = Sig {
     len: 291,

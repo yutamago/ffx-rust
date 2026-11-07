@@ -2578,3 +2578,93 @@ pub const TARGETS_0421: Sig = Sig {
     calls: &[(0x216, Callee::Import("memset")), (0x24d, Callee::Any)],
     imports: &[],
 };
+
+/// The effect's start-up (`magic_0352` 0x10005700, 345 bytes, run by its
+/// load step; no arguments): four words set (`+0x1c` .. `+0x3a`) and slot
+/// 719 `(PART, 8, 0)` (`+0x18`) into `+0x4a`; the particle set-up
+/// ([`part_setup`](crate::sb_misc::part_setup), its buffer `+0x4f`); the
+/// camera ([`camera_start`](crate::m0352::camera_start)); slot 620 `(R[k],
+/// 0x64a21a00, 6)` for the 51 records' words `R[k]` = `*G_R + 0x7c + 0x20 k`
+/// (`+0x71`); two words, a halfword and a byte set (`+0xa0` .. `+0xbd`);
+/// slot 271 `(4)`; two pool nodes ([`take`](crate::sa_pool::take), owners
+/// `+0xd2`, `+0x10e`, kinds 1 and 2) linked after the list's first or
+/// last, the second made the last. Returns 0.
+pub fn start_0352<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // push ebp; and esp, -8; push esi; push edi
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(8);
+    stores(g, img, f, &[0x1c, 0x26, 0x30, 0x3a]);
+    let t = slot_target(g, w(0x07), 0xb3c / 4);
+    // call width: 3
+    let h = g.call(t, fr.ecx, &[w(0x18), 8, 0]).eax;
+    g.write::<u32>(w(0x4a), h);
+    // add esp, 8: slot 719's last word stays; push BUF; call
+    let esp = base.wrapping_sub(0xc);
+    g.write::<u32>(esp.wrapping_add(4), w(0x4f));
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x54), esp);
+    let cam = Frame {
+        at: img.rel32_target(f + 0x5c),
+        esp: base.wrapping_sub(4),
+        ..*fr
+    };
+    crate::m0352::camera_start(g, img, &cam);
+    let mut k = 0x60u32;
+    while k <= 0x6a0 {
+        let r = g.read::<u32>(w(0x71));
+        let x = g.read::<u32>(r.wrapping_add(k).wrapping_add(0x1c));
+        let t = slot_target(g, w(0x81), 0x9b0 / 4);
+        // call width: 3
+        g.call(t, fr.ecx, &[x, 0x64a2_1a00, 6]);
+        k += 0x20;
+    }
+    stores(g, img, f, &[0xa0, 0xaa]);
+    g.write::<u16>(w(0xb7), 0);
+    g.write::<u8>(w(0xbf), 1);
+    let t = slot_target(g, w(0x9c), 0x43c / 4);
+    // call width: 1
+    g.call(t, fr.ecx, &[4]);
+    let first = crate::sa_pool::take(g, img, img.rel32_target(f + 0xd7), w(0xd2));
+    let mut head = g.read::<u32>(w(0xdd));
+    g.write::<u8>(first.wrapping_add(0x18), 1);
+    g.write::<u32>(first.wrapping_add(4), 0);
+    if head == 0 {
+        head = first;
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x109), first);
+    } else {
+        let tail = g.read::<u32>(w(0xf4));
+        g.write::<u32>(first, tail);
+        g.write::<u32>(tail.wrapping_add(4), first);
+    }
+    g.write::<u32>(first.wrapping_add(8), first);
+    let second = crate::sa_pool::take(g, img, img.rel32_target(f + 0x116), w(0x10e));
+    g.write::<u8>(second.wrapping_add(0x18), 2);
+    g.write::<u32>(second.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x146), second);
+        g.write::<u32>(second.wrapping_add(8), second);
+        g.write::<u32>(w(0x14e), second);
+    } else {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+        g.write::<u32>(second.wrapping_add(8), second);
+        g.write::<u32>(w(0x132), second);
+    }
+    Ret::eax(0)
+}
+
+/// [`start_0352`] (`magic_0352` 0x10005700; the `rel32`s: the particle
+/// set-up, the camera and the pool's take twice).
+pub const START_0352: Sig = Sig {
+    len: 345,
+    hash: 0x6602_6290_4144_1bdc,
+    calls: &[
+        (0x54, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x5c, Callee::Sig(&crate::m0352::CAMERA_START)),
+        (0xd7, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x116, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};

@@ -188,7 +188,9 @@ pub const CAMERA_START: Sig = Sig {
 /// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale
 /// `K1 / v * K2` with `K1`, `K2` at `+0x1f`, `+0x2f`, index 5); its
 /// `+0x104` the immediate `+0x49` and byte `+0x126` 2. Returns the
-/// object.
+/// object. Family P096 with `magic_0610` 0x1000d200 (round 13), whose
+/// index (2) and displacements (0x260, 0x364, 0x386) are read from the
+/// code (`+0x34`, `+0x37`, `+0x45`, `+0x4f`, the byte `+0x53`).
 pub fn fifth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{div, mul};
     let f = fr.at;
@@ -199,10 +201,12 @@ pub fn fifth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let v = crate::m0018::st0_f32(g.call(t, 0, &[]).st0);
     g.write::<f32>(ebp.wrapping_sub(4), v);
     let scale = mul(div(g.read::<f32>(w(0x1f)), v), g.read::<f32>(w(0x2f)));
-    let o = s.wrapping_add(0x5f0);
-    let r = crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x3c), o, scale, 5);
-    g.write::<u32>(s.wrapping_add(0x6f4), w(0x49));
-    g.write::<u8>(s.wrapping_add(0x716), 2);
+    let o = s.wrapping_add(w(0x37));
+    // push 5 (`6a 05`)
+    let index = w(0x34) & 0xff;
+    let r = crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x3c), o, scale, index);
+    g.write::<u32>(s.wrapping_add(w(0x45)), w(0x49));
+    g.write::<u8>(s.wrapping_add(w(0x4f)), w(0x53) as u8);
     Ret::eax(r)
 }
 
@@ -210,6 +214,14 @@ pub fn fifth_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const FIFTH_START: Sig = Sig {
     len: 89,
     hash: 0xb5ca_f286_10ba_3ec6,
+    calls: &[(0x3c, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};
+
+/// [`fifth_start`] in `magic_0610` (0x1000d200; family P096).
+pub const FIFTH_START_0610: Sig = Sig {
+    len: 89,
+    hash: 0x7db1_5876_e46f_b621,
     calls: &[(0x3c, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
     imports: &[],
 };

@@ -8854,16 +8854,18 @@ pub const OBJECT_MODEL_AND_CALLBACKS: Sig = Sig {
     imports: &[],
 };
 
-/// A value on a curve of six keys (internal, `ecx` = the keys, 16 bytes
-/// apart; `xmm0` = the time `t`): key `i = trunc(t)` and the next (key 5
-/// is the last), `frac = t - i`. Before the half (`frac < H`, operand
+/// A value on a curve of keys (internal, `ecx` = the keys, 16 bytes
+/// apart; `xmm0` = the time `t`): key `i = trunc(t)` and the next (key
+/// `L` is the last: the immediate `+0x12`, 5 or 3), `frac = t - i`. Before the half (`frac < H`, operand
 /// `+0x28`) the start is pulled toward the previous key's mean with the
 /// next, after it the end toward the mean of the start and the key after
-/// the next (key 5 at most); then the two are blended by `frac` (exactly
-/// the start at `frac == 0`). Returns the value in `xmm0` (`eax` keeps
-/// the key index doubled with `lahf`'s flags in `ah`).
+/// the next (key `L` at most: from the immediate `+0x75` on, the one at
+/// `+0x79`); then the two are blended by `frac` (exactly the start at
+/// `frac == 0`). Returns the value in `xmm0` (`eax` keeps the key index
+/// doubled with `lahf`'s flags in `ah`).
 ///
-/// `magic_0055` 0x10003000 (231 bytes; 2 DLLs).
+/// `magic_0055` 0x10003000 (231 bytes, six keys; 2 DLLs) and `magic_0435`
+/// 0x100022d0 (four keys).
 pub fn key_curve<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, cvt, div, mul, sub};
     let f = fr.at;
@@ -8874,7 +8876,8 @@ pub fn key_curve<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let i = crate::s4_summon::trunc(t);
     let mut start = key(g, i);
     let mut eax = i.wrapping_mul(2);
-    let mut end = if i == 5 {
+    let imm8 = |o: u32| i32::from((img.word(f + o) as u8).cast_signed()).cast_unsigned();
+    let mut end = if i == imm8(0x12) {
         start
     } else {
         eax = i.wrapping_add(1).wrapping_mul(2);
@@ -8891,8 +8894,8 @@ pub fn key_curve<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             start = add(div(sub(pull, start), span), start);
         }
     } else {
-        let j = if i.cast_signed() >= 4 {
-            5
+        let j = if i.cast_signed() >= imm8(0x75).cast_signed() {
+            img.word(f + 0x79)
         } else {
             i.wrapping_add(2)
         };
@@ -8925,6 +8928,12 @@ pub const KEY_CURVE: Sig = Sig {
     hash: 0xa53b_50d7_d70a_025e,
     calls: &[],
     imports: &[],
+};
+
+/// [`key_curve`] in `magic_0435` (0x100022d0, four keys).
+pub const KEY_CURVE_0435: Sig = Sig {
+    hash: 0xbc7c_e4e9_b7cf_cee0,
+    ..KEY_CURVE
 };
 
 /// A light object set up (internal: `ecx` = the object, `edx` = its
@@ -9343,23 +9352,28 @@ pub const COMMAND_BLOCK_RESET: Sig = Sig {
     imports: &[],
 };
 
-/// The block's 18 spinning records moved (no arguments): with `B` the
-/// word at operand `+0x1`, each record `B + 0x2ed0 + 0x60 k` adds its
+/// The block's 18 spinning records moved (no arguments; the count the
+/// immediate `+0x23`): with `B` the word at operand `+0x1` and `D` the
+/// immediate `+0x1e` (0x2f08; 0x170c in `magic_0307`), each record
+/// `B + D - 0x38 + 0x60 k` adds its
 /// speed `+0x40` to its velocity `+0x30` and that to its place `+0x20`,
 /// then its spin `+0x10` to its angles `+0x00`, each wrapped by `T`
 /// (operand `+0x11`) above `HI` (`+0x9`) or below `LO` (`+0x19`).
 /// Returns the address past the last record's velocity.
 ///
-/// `magic_0563` 0x10004c20 (251 bytes; 2 DLLs).
+/// `magic_0563` 0x10004c20 (251 bytes; 2 DLLs) and `magic_0307`
+/// 0x10006a80.
 pub fn spin_records_move<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::add;
     let f = fr.at;
     let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
     let k = |g: &G, o: u32| fl(g, op(img, f, o));
     let (hi, t, lo) = (k(g, 0x9), k(g, 0x11), k(g, 0x19));
-    let mut p = g.read::<u32>(op(img, f, 0x1)).wrapping_add(0x2f08);
+    let mut p = g
+        .read::<u32>(op(img, f, 0x1))
+        .wrapping_add(img.word(f + 0x1e));
     let at = |p: u32, o: i32| p.wrapping_add_signed(o);
-    for _ in 0..0x12 {
+    for _ in 0..img.word(f + 0x23) {
         // (from, to): to += from, in this order
         for (from, to) in [
             (8, -8),
@@ -9388,6 +9402,13 @@ pub const SPIN_RECORDS_MOVE: Sig = Sig {
     hash: 0xcdb7_a84e_68a2_dccd,
     calls: &[],
     imports: &[],
+};
+
+/// [`spin_records_move`] in `magic_0307` (0x10006a80, the records at
+/// `+0x170c - 0x38`).
+pub const SPIN_RECORDS_MOVE_0307: Sig = Sig {
+    hash: 0x7fec_db93_4b8e_f6c9,
+    ..SPIN_RECORDS_MOVE
 };
 
 /// The effect's camera turned to face an actor (no arguments): with `B`

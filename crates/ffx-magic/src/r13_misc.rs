@@ -251,3 +251,151 @@ pub const LISTS_TWO_DONE_0244: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The scripts' step with the motion step (a pool task, cdecl `(node)`;
+/// family P080, `magic_0165` 0x100016b0 and `magic_0606` 0x10006930, 163
+/// bytes): as [`scripts_step`] (the block `+0x10` cleared, bit 7 of
+/// `+0x21`, `+0x33` = `*G_S` `+0x26`, both scripts run, `ecx` `+0x2e`,
+/// `+0x3d`); while the first runs: `R = *G_R` (`+0x07`)'s four words at
+/// the displacements `+0x4e`, `+0x5a`, `+0x66`, `+0x72` go to `+0x54`,
+/// `+0x60`, `+0x6c`, `+0x78`, the motion steps
+/// ([`motion_step`](crate::s3_motion::motion_step)) and the rigs' step
+/// follows (a tail jump); once done, `R[+0x8b]` = 1, the actors are
+/// restored ([`actors_restored`](crate::s4_small::actors_restored)) and
+/// the task's node goes back ([`give_back`](crate::sa_pool::give_back), a
+/// tail jump).
+pub fn scripts_step_motion<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let r = g.read::<u32>(w(0x07));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let flags = g.read::<u16>(w(0x21)) | 0x80;
+    g.write::<u16>(w(0x21), flags);
+    let s = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x33), s);
+    let first = crate::sb_misc::script_run(g, img, img.rel32_target(f + 0x38), w(0x2e));
+    crate::sb_misc::script_run(g, img, img.rel32_target(f + 0x44), w(0x3d));
+    if first == 0 {
+        for (from, to) in [(0x4eu32, 0x54u32), (0x5a, 0x60), (0x66, 0x6c), (0x72, 0x78)] {
+            let v = g.read::<u32>(r.wrapping_add(w(from)));
+            g.write::<u32>(r.wrapping_add(w(to)), v);
+        }
+        crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x7d));
+        // pop edi; pop esi; pop ebp; jmp: the caller's stack as it came
+        let callee = Frame {
+            at: img.rel32_target(f + 0x85),
+            ..*fr
+        };
+        return crate::s8_misc::camera_rigs_step(g, img, &callee);
+    }
+    g.write::<u32>(r.wrapping_add(w(0x8b)), 1);
+    // push ebp; push esi; push edi; call
+    let restore = Frame {
+        at: img.rel32_target(f + 0x94),
+        esp: fr.esp.wrapping_sub(0x10),
+        ..*fr
+    };
+    crate::s4_small::actors_restored(g, img, &restore);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x9f),
+        node,
+    ))
+}
+
+/// [`scripts_step_motion`] in `magic_0165` (0x100016b0; the `rel32`s:
+/// `memset`, the scripts, the motion step, the rigs' step, the actors'
+/// restore and the give-back).
+pub const SCRIPTS_STEP_MOTION_0165: Sig = Sig {
+    len: 163,
+    hash: 0x7bbf_b577_54e1_c57d,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x38, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x44, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x7d, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x85, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x94, Callee::Sig(&crate::s4_small::ACTORS_RESTORED)),
+        (0x9f, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// [`scripts_step_motion`] in `magic_0606` (0x10006930).
+pub const SCRIPTS_STEP_MOTION_0606: Sig = Sig {
+    hash: 0x8d38_7f1f_777d_f4fa,
+    ..SCRIPTS_STEP_MOTION_0165
+};
+
+/// The script's step (a pool task, cdecl `(node)`; family P082,
+/// `magic_0307` 0x10001510 and `magic_0605` 0x10006e60, 142 bytes): with
+/// `S = *G_S` (`+0x06`), the block `+0x0f` cleared (`memset`, 0x30
+/// bytes), bit 7 of `+0x20` set, `+0x2a` = `*(+0x25)`, `+0x37` = `*(+0x2f)`;
+/// the DLL's script runs ([`run`](crate::sa_script::run)). Still running
+/// (0): the motion script ([`motion_script`](crate::s4_misc::motion_script),
+/// `ecx` `+0x45`) and the rigs' step (a tail jump). Done: unless `S[+0x57]`
+/// is 1 it returns the run's `eax`; else `S[+0x66]` = 1, a held node
+/// `*G_N` (`+0x60`) goes back to the pool (then `G_N` = 0) and the task's
+/// node goes back (a tail jump).
+pub fn script_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x06));
+    g.write_bytes(w(0x0f), &[0u8; 0x30]);
+    let flags = g.read::<u16>(w(0x20)) | 0x80;
+    g.write::<u16>(w(0x20), flags);
+    let v = g.read::<u32>(w(0x25));
+    g.write::<u32>(w(0x2a), v);
+    let v = g.read::<u32>(w(0x2f));
+    g.write::<u32>(w(0x37), v);
+    let r = crate::sa_script::run(g, img, img.rel32_target(f + 0x3c));
+    if r == 0 {
+        crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x4a), w(0x45));
+        // pop esi; pop ebp; jmp: the caller's stack as it came
+        let callee = Frame {
+            at: img.rel32_target(f + 0x51),
+            ..*fr
+        };
+        return crate::s8_misc::camera_rigs_step(g, img, &callee);
+    }
+    if g.read::<u32>(s.wrapping_add(w(0x57))) != 1 {
+        return Ret::eax(r);
+    }
+    let held = g.read::<u32>(w(0x60));
+    g.write::<u32>(s.wrapping_add(w(0x66)), 1);
+    if held != 0 {
+        crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x73), held);
+        g.write::<u32>(w(0x79), 0);
+    }
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x87),
+        node,
+    ))
+}
+
+/// [`script_step`] in `magic_0307` (0x10001510; the `rel32`s: `memset`,
+/// the script, the motion script, the rigs' step and the give-backs).
+pub const SCRIPT_STEP_0307: Sig = Sig {
+    len: 142,
+    hash: 0x74fd_c0f0_fb12_15b5,
+    calls: &[
+        (0x14, Callee::Import("memset")),
+        (0x3c, Callee::Sig(&crate::sa_script::RUN)),
+        (0x4a, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x51, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x73, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x87, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// [`script_step`] in `magic_0605` (0x10006e60).
+pub const SCRIPT_STEP_0605: Sig = Sig {
+    hash: 0x75b9_b87d_0597_4ae5,
+    ..SCRIPT_STEP_0307
+};

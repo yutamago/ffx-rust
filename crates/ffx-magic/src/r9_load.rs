@@ -211,4 +211,6 @@ copies! {
     load_0393 => LOAD_0393, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0393;
     /// `magic_0450` 0x10005390.
     load_0450 => LOAD_0450, Zero, crate::r11_misc::records_start_p063, crate::r11_misc::RECORDS_START_0450;
+    /// `magic_0352` 0x10004b10.
+    load_0352 => LOAD_0352, Zero, crate::r13_start::start_0352, crate::r13_start::START_0352;
 }

@@ -82,7 +82,10 @@ pub const OBJECT_TASK: Sig = Sig {
 /// the block `S = *G_S`, operand `+0x0c`): the object `O = S + 0x4c0`
 /// ([`start_object_anim`](crate::s4_misc::start_object_anim), scale the
 /// float at `+0x04`, index 4, value 0); `O + 0xd0..0xdc` = `S +
-/// 0xac0..`, `O + 0xc4` = `S + 0x3150`. Returns that word.
+/// 0xac0..`, `O + 0xc4` = `S + 0x3150`. Returns that word. Family P094
+/// with `magic_0587` 0x10002b50 (round 13), whose displacements (0xa60..,
+/// 0x30f0) are read from the code (`+0x26`, `+0x32`, `+0x3e`, `+0x4a`,
+/// `+0x59`).
 pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
@@ -90,11 +93,11 @@ pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let s = g.read::<u32>(w(0xc));
     let o = s + 0x4c0;
     crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x20), o, scale, 4, 0);
-    for k in 0..4u32 {
-        let v = g.read::<u32>(s + 0xac0 + 4 * k);
+    for (k, at) in (0u32..).zip([0x26u32, 0x32, 0x3e, 0x4a]) {
+        let v = g.read::<u32>(s.wrapping_add(w(at)));
         g.write::<u32>(o + 0xd0 + 4 * k, v);
     }
-    let v = g.read::<u32>(s + 0x3150);
+    let v = g.read::<u32>(s.wrapping_add(w(0x59)));
     g.write::<u32>(o + 0xc4, v);
     Ret::eax(v)
 }
@@ -103,6 +106,14 @@ pub fn object_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const OBJECT_START: Sig = Sig {
     len: 102,
     hash: 0xbff1_e65f_73b9_29a4,
+    calls: &[(0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM))],
+    imports: &[],
+};
+
+/// [`object_start`] in `magic_0587` (0x10002b50; family P094).
+pub const OBJECT_START_0587: Sig = Sig {
+    len: 102,
+    hash: 0x3fd6_067a_0771_c741,
     calls: &[(0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM))],
     imports: &[],
 };

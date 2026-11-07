@@ -189,8 +189,9 @@ pub const SUMMON_FRAME_214: Sig = Sig {
 /// method `+0x1c` gets a local `[C, _, pass, _]` (`ebp - 8`, only the
 /// word and the pass byte written), then [`mean_point`] of the record
 /// `[C, node + 0x1c, M]` (`ebp - 0x14`, `M` the immediate `+0x7c`) and
-/// the node's `+0x28` = 1.0. Returns the mean point's `eax`, else what the
-/// walk left (the low byte a pass byte).
+/// the node's `+0x28` = 1.0 (`magic_0613`'s copy: the parts' centre
+/// instead of the mean point). Returns the mean point's `eax`, else what
+/// the walk left (the low byte a pass byte).
 pub fn mean_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let w = |off: u32| img.word(fr.at + off);
     let cur = fr.ecx;
@@ -241,7 +242,12 @@ pub fn mean_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ecx: rec,
         ..*fr
     };
-    let eax = mean_point(g, img, &mean);
+    // `magic_0613`'s copy (family P081) calls its parts' centre instead
+    let eax = if img.matches(mean.at, &MEAN_POINT) {
+        mean_point(g, img, &mean)
+    } else {
+        crate::m0613::centre(g, img, &mean)
+    };
     g.write::<u32>(obj + 0x28, 0x3f80_0000);
     Ret::eax(eax)
 }
@@ -251,5 +257,14 @@ pub const MEAN_VISIT: Sig = Sig {
     len: 147,
     hash: 0x7d51_3467_9f1f_b260,
     calls: &[(0x81, Callee::Sig(&MEAN_POINT))],
+    imports: &[],
+};
+
+/// [`mean_visit`] in `magic_0613` (0x10004980; family P081, round 13):
+/// the same code calling the parts' centre ([`crate::m0613::centre`]).
+pub const MEAN_VISIT_0613: Sig = Sig {
+    len: 147,
+    hash: 0x7d51_3467_9f1f_b260,
+    calls: &[(0x81, Callee::Sig(&crate::m0613::CENTRE))],
     imports: &[],
 };

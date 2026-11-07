@@ -354,7 +354,7 @@ fn motion_state_steps() {
 /// the part and its program, with the lock word as the game left it.
 #[test]
 fn summon_start() {
-    for (n, rva) in [(3u16, 0x68d0u32), (202, 0x7760)] {
+    for (n, rva) in [(3u16, 0x68d0u32), (202, 0x7760), (330, 0x6b60)] {
         summon_start_in(n, rva);
     }
 }
@@ -406,7 +406,7 @@ fn summon_start_in(n: u16, rva: u32) {
 /// statics' reset under a root with and without a child.
 #[test]
 fn targets_init() {
-    for (n, rva) in [(3u16, 0x6390u32), (76, 0x62c0), (70, 0x9010)] {
+    for (n, rva) in [(3u16, 0x6390u32), (76, 0x62c0), (70, 0x9010), (387, 0x8560)] {
         targets_init_in(n, rva);
     }
 }
@@ -414,7 +414,7 @@ fn targets_init() {
 fn targets_init_in(n: u16, rva: u32) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
-    let b = n != 3;
+    let b = n != 3 && n != 387;
     let statics = t.img.rel32_target(at + 0xe0);
     let root = t.img.word(statics + 0x10d);
     let count_at = t.img.word(at + if b { 0x35 } else { 0x32 });
@@ -450,7 +450,9 @@ fn targets_init_in(n: u16, rva: u32) {
             &[],
             Eax::Checked,
             |g, img, fr| {
-                ffx_magic::Ret::eax(if n == 70 {
+                ffx_magic::Ret::eax(if n == 387 {
+                    s4_summon::targets_init_d(g, img, fr.at, fr.esp, fr.ecx)
+                } else if n == 70 {
                     s4_summon::targets_init_c(g, img, fr.at, fr.esp, fr.ecx)
                 } else if b {
                     s4_summon::targets_init_b(g, img, fr.at, fr.esp, fr.ecx)

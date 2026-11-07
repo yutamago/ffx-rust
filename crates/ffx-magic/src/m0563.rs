@@ -69,7 +69,8 @@ pub fn scale_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     xmm[1] = u128::from(g.read::<u32>(w(0x3a)));
     let task = Frame {
         at: img.rel32_target(f + 0x48),
-        ecx: fx.wrapping_add(0x3864),
+        // `add eax, 0x3864` (operand `+0x43`)
+        ecx: fx.wrapping_add(w(0x43)),
         xmm,
         ..*fr
     };
@@ -81,6 +82,15 @@ pub const SCALE_START: Sig = Sig {
     len: 76,
     hash: 0xcdad_a3b9_c558_2073,
     calls: &[(0x48, Callee::Sig(&crate::s4_small::SCALE_TASK_30))],
+    imports: &[],
+};
+
+/// [`scale_start`] in `magic_0612` (0x10008320; family P092, round 13):
+/// the same code with the 20-step scale task.
+pub const SCALE_START_0612: Sig = Sig {
+    len: 76,
+    hash: 0xcdad_a3b9_c558_2073,
+    calls: &[(0x48, Callee::Sig(&crate::s4_small::SCALE_TASK_20))],
     imports: &[],
 };
 
