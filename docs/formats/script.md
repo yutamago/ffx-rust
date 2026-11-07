@@ -581,7 +581,8 @@ level interrupted is not a start.
   node's `+0x08` is the entry and `+0x0e` bits 0-3 the level. It writes
   them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
   clamped to 1 for types 5 and 6 and to 8 for the others. A new event's
-  init entries (entry 0 of each worker, level 7) start here too.
+  init entries (entry 0 of each worker, level 7; 1 for types 5 and 6,
+  which `AtelRegistSignalMain` clamps) start here too.
 - `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl) ends
   the running level: `index` is the worker's index in the current ctrl
   work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on entry.
@@ -3424,7 +3425,8 @@ real spline functions.
   (`Atel_InitFreeSignals_0086d510`), `clear` zeroes the variables (header
   `+0x10` bytes at the code base + header `+0x2c`; the `+0xb8` area it
   would prefer is always 0 here, cleared above). Then two signals to
-  itself (`AtelRegistSignalMain`: level 7 entry 0, then level 0 entry 1;
+  itself (`AtelRegistSignalMain`: level 7 entry 0, clamped to 1 for types
+  5 and 6, then level 0 entry 1;
   none for index `0xffff`) and `AtelDecodeSignal(index, 10)`. Callers read
   no `EAX`.
 - `AtelEventRemoveForBattle()` (`0x00865dc0`) runs before a battle: it
