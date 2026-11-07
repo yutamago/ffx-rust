@@ -287,6 +287,7 @@ the battle snapshot ctrl works 2 (75 workers) and 3 (6) are in use too.
 | `0x1a` | `u16` | ctrl work number (0 = the event's) | `AtelGetBasicWork`'s cache, `AtelGetRealVarAdrs` |
 | `0x1c` | `u32` | the first worker | `AtelGetBasicWork` |
 | `0x20` | `u32` | `&AtelGetBasicWork` (field snapshot) | |
+| `0x28` | `u32` | callback `(worker index, opcode)` for the ends `3c` and `3e`; null in the game | `Script_Run`; cleared by `AtelRequireCtrlWork`, set only by `AtelSetCtrlEndCallback` (`0x008727d0`, no callers) |
 | `0x2c`, `0x30` | `u32` | bases of variable storage 0 and 1 (storage 0 is in the save data in the field) | `AtelGetRealVarAdrs` (`0x0086c2e0`) |
 | `0x34`, `0x38` | `u32` | the event's message tables: `Msg_Text` (`0x0086bf30`) reads `+0x34` on every call (entry `i` at `+i*8`, no bounds check; offset 0 falls back to `g_EventEbpMessages`). The buffer is owned through `g_EventMessageBuffer` (`0x01327128`), which `AtelEventSetUp` frees, not through `+0x34`, so a table put into `+0x34` by a mod is never freed by the game | `AtelActorSetUp2`, `Msg_Text` |
 | `0x44` | `u32` | `AtelSetVibrateStreamExt`'s value | `0x008715e0` |
@@ -313,8 +314,9 @@ index (`0x013270dc`, `0x013270e0`); `AtelRemoveCtrlWork` drops the cache.
 |---|---|---|---|
 | `0x00` | `u32` | worker header in the block; its first byte is the type | `AtelGetPosWorkAdrs`, `AtelGetActorType` |
 | `0x04` | `u32` | the script block | `AtelGetRealVarAdrs` |
+| `0x2c` | `u16` | the last entry started | `AtelStartSignal` (`0x008690a0`) |
 | `0x2e` | `u16` | worker index | `AtelGetActorId` (`0x0086a5d0`) |
-| `0x32` | `u8` | level running | `AtelPopStackFloat`'s error report |
+| `0x32` | `u8` | level running | `AtelPopStackFloat`'s error report; set by `AtelStartSignal` (`0x008690a0`), `AtelDecodeSignal` and `AtelInitBasicWork` |
 | `0x34`, `0x36` | `u16` | flags `Script_Run` tests | `Script_Run` |
 | `0x3c` | | camera handle cache | `AtelGetCameraWorkAdrs` (`0x0086ae50`) |
 | `0x48` | | storage 5 variables | `AtelGetRealVarAdrs` |
@@ -549,13 +551,14 @@ waits (`+0x1f` 1) for the reply (`AtelSearchReplySignal`); opcodes
 (`AtelIsSignalQueued`).
 
 `AtelDecodeSignal` (`0x008653f0`) starts the head of the queue when it is
-a request above the running level: a queued one through
-`AtelStartSignal` (`0x008690a0`: entry, level, header, PC; a `REQSW`
-sender gets its reply), a running one by switching back to its level.
-`AtelExecReturn` (`0x008691d0`, the ends `3c`-`3f`, `54`) replies to a
-`REQEW` sender, frees the node, cancels what was queued above the given
-level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
-`3e`/`3f`, resets the level to entry 1.
+a request above the running level: a queued one through `AtelStartSignal`
+(`0x008690a0`: entry, level, header, PC; a `REQSW` sender gets its
+reply), a running one by switching back to its level. `AtelExecReturn`
+(`0x008691d0`, the ends `3c`-`3f`, `54`) replies to a `REQEW` sender,
+frees the node, cancels what was queued above the given level
+(`AtelCancelSignals`, `0x00872860`), decodes the next and, for `3e`/`3f`,
+resets the level running after the decode to entry 1 ("Watching entries
+start and end" below).
 
 Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
 table, eight `u16` in a variable (`+0x44` points at it, filled from
@@ -566,6 +569,61 @@ through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
 u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
 then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
 (`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
+
+#### Watching entries start and end
+
+Two functions show a ctrl work's entries starting and ending, so hooks on
+them give each `(worker, entry)` at the update it happens, with no script
+changed (used by ffx-remix's pack logic). Switching back to a level
+another level interrupted is not a start.
+
+- `AtelStartSignal(worker, node)` (`0x008690a0`, cdecl; one caller,
+  `AtelDecodeSignal` at `0x00865469`) starts every requested entry: the
+  node's `+0x08` is the entry and `+0x0e` bits 0-3 the level. It writes
+  them to the worker's `+0x2c` and `+0x32`; the level block it sets up is
+  clamped to 1 for types 5 and 6 and to 8 for the others. The two signals
+  `AtelInitBasicWork` (`0x0086cb00`) sends each worker (entry 0 at level
+  7, then entry 1 at level 0; `AtelRegistSignalMain` clamps the 7 to 1
+  for types 5 and 6) start here too.
+- `AtelExecReturn(index, cancel level, reset)` (`0x008691d0`, cdecl) ends
+  the running level: `index` is the worker's index in the current ctrl
+  work (`AtelGetBasicWork(index)`), whose `+0x32` is the level on entry.
+  Its own `AtelDecodeSignal(index, 10)` may start the next request
+  (`AtelStartSignal`) or switch back to an interrupted level, and both
+  rewrite `+0x32`, so a hook reads it before calling through. The entry
+  is the one that level started; `+0x2c` is only the last entry started,
+  which need not be that level's. `Script_Run` calls it at the ends (`3c`
+  `0x00865095`, `3e` `0x008650e8`, `3d`/`3f` `0x00865120`, `54`
+  `0x00865173`); `3c` and `3e` go to the ctrl work's `+0x28` callback
+  instead when it is set. Only `AtelSetCtrlEndCallback` (`0x008727d0`,
+  never called) stores one there; `AtelRequireCtrlWork` clears it.
+  `AtelExecReturn2` (`0x00869350`, from `MsAtelRequestCancel` and
+  `MsAtelRequestExe`) and its unused twin `AtelExecReturnForce2`
+  (`0x008694f0`) call it too, only while the worker's `+0x32` is not 0.
+
+`AtelExecReturn` runs again on every update while a level sits on a `3c`,
+`3d` or `54` with nothing left in its queue (no request and no
+interrupted lower level to switch back to), so only the first call for
+that worker and level after its start is the entry's end: in the game,
+`memochek`'s worker 1 starts entry 2 (level 1) once per visit and the end
+is seen on every update after it, while `loopdemo`'s worker 21 ends entry
+2 once. With nothing queued, after `3e` and `3f` the level runs entry 1
+again without `AtelStartSignal` (the reset takes `+0x32` after the
+decode), so that run's end has no start. After `3e`/`3f` with a request
+queued or a lower level waiting, the reset hits that level instead: a
+just-started entry runs entry 1 (the start seen names the requested
+entry), and a resumed level restarts at entry 1.
+
+`g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`)
+marks the event's own script; battle ctrl works go through the same
+functions (`AtelExecReturn2` from the `Ms` battle requests).
+
+Checked in the game with hooks on both (a Fahrenheit module, run under
+the harness's lockstep and virtual clock, `docs/harness.md`), counting
+`FFXApplication_animate` calls since `g_EventName` (`0x023cbc60`) last
+changed: the title demo `loopdemo`'s worker 21 starts entry 2 and returns
+from it on the same updates in every completed pair of runs (updates 9
+and 686 in the latest; 685 for the return in an earlier build).
 
 ### Trigger entries
 
@@ -3369,9 +3427,9 @@ real spline functions.
   (`Atel_InitFreeSignals_0086d510`), `clear` zeroes the variables (header
   `+0x10` bytes at the code base + header `+0x2c`; the `+0xb8` area it
   would prefer is always 0 here, cleared above). Then two signals to
-  itself (`AtelRegistSignalMain`: level 7 entry 0, then level 0 entry 1;
-  none for index `0xffff`) and `AtelDecodeSignal(index, 10)`. Callers read
-  no `EAX`.
+  itself (`AtelRegistSignalMain`: level 7 entry 0, clamped to 1 for
+  types 5 and 6, then level 0 entry 1; none for index `0xffff`) and
+  `AtelDecodeSignal(index, 10)`. Callers read no `EAX`.
 - `AtelEventRemoveForBattle()` (`0x00865dc0`) runs before a battle: it
   keeps the field's draw mask (`g_AtelBattleDrawMask`, `0x01326b78`), effect
   stick state (`g_AtelBattleStickState`, `0x01326be0`, 0x100 bytes), lights
