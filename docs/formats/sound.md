@@ -50,21 +50,25 @@ writes back byte for byte under these rules: ffx-remix's
 `tests/audio.rs`, 1,260 banks, 33,362 samples):
 
 - After the names, zeros until the data starts on a multiple of 32 bytes
-  of the file (not of the table).
-- Each sample's data is whole IMA blocks, then zeros to a multiple of 32
-  bytes (so every data offset is a multiple of 32). `frames` is always a
+  of the file (not of the table). The zeros count in the name table's size
+  (`0x10`).
+- Each sample's data is whole IMA blocks, then 0 to 28 zero bytes to a
+  multiple of 32 (so every data offset is a multiple of 32); the data size
+  (`0x14`) includes the last sample's padding. `frames` is always a
   multiple of 64: whole blocks.
-- The header's bytes `0x1c..0x24` are zero in every bank; the next 16
-  differ per bank (the hash).
-- Chunks: only types 2 and 3 occur. 90 voice samples are 35,000 Hz, which
-  no rate index names: they have a rate chunk (type 2, `u32`). Loop chunks
-  (type 3) are inclusive (`start..=end`). Every voice loop chunk (15,202 of
-  the 18,112 voice samples) is `(0, n - 1)`, `n` the line's real length,
-  up to 63 frames below `frames`; the end of a whole-sample loop is the
-  real length, not the block-rounded one. Eight SFX loop chunks end far
-  past their sample (`50099_1` of bank 2547: `0..=417225393` of 192
-  frames; `51027_1` of 2570, `51034_1` of 2571, `51030_1` of 4093; US and
-  JP alike).
+- The header's bytes `0x1c..0x24` are zero in every bank; `0x24..0x3c` (a
+  hash and 8 more bytes) can't be derived: a writer copies all 32 bytes at
+  `0x1c` from the original (as for `music_ps2`, below).
+- Chunks: only types 2 and 3 occur. A chunk's "another follows" bit is set
+  on every chunk but the last. 90 voice samples are 35,000 Hz, which no rate
+  index names: they have rate index 0 and a rate chunk (type 2, `u32`)
+  first (86 then a loop chunk, 4 alone). Loop chunks (type 3) are
+  inclusive (`start..=end`). Every voice loop chunk (15,202 of the 18,112
+  voice samples) is `(0, n - 1)`: it ends on the line's last real frame,
+  1 to 63 frames below `frames` (never at `frames - 1`); 286 SFX loops do
+  end at `frames - 1`. Eight SFX loop chunks end far past their sample
+  (`50099_1` of bank 2547: `0..=417225393` of 192 frames; `51027_1` of
+  2570, `51034_1` of 2571, `51030_1` of 4093; US and JP alike).
 
 ## IMA ADPCM, Xbox layout
 
@@ -90,16 +94,18 @@ served at `PStreamFile`, the harness's `FFX_AUDIO_WAV` capture; ffx-remix
 - **FMOD Ex takes rebuilt banks.** A music bank with all 89 tracks replaced
   (other lengths, our own IMA ADPCM encoding, new loop chunks; 549 MB
   against 554) and a voice bank with one line replaced play through the
-  unchanged projects; the header's 32 bytes at `0x1c` were kept.
+  unchanged projects (a longer line is cut, below); the header's 32 bytes
+  at `0x1c` were kept.
 - **Streamed music loops at the loop chunk.** A replaced `1_02_zanarkand`
-  (the opening's music) with a 3 s loop body looped it every 3.00 s for
-  over two minutes and never played its tail. FMOD loops on whole blocks
+  (the opening's music) with a 3 s loop body looped it every 3 s (to the
+  0.1 s of the measurement) for minutes and never played its tail. FMOD loops on whole blocks
   (`audio-platform.md`, "Loops"), so a writer that wants an exact loop
   puts its start on a block and makes its length whole blocks.
 - **A voice line is cut at its project's length.** A 2.4 s replacement of
   `030401wk` (1.14 s) stopped after 1.15 s and its subtitle closed at the
   original's frame. FMOD gives the event's length (`Event::getInfo`
-  `lengthms`, `FmodVoice +0x6c`, the timeout of `0x0070b750`) from the
+  `lengthms`, `FmodVoice +0x6c`, the timeout of `0x0070b750`;
+  `audio-platform.md`, `Event::getInfo`) from the
   project's wave length (below, the sound definition's `length in ms`),
   not from the bank. With that word raised to 2,400 the whole line played
   and the subtitle stayed up for 77 frames instead of 40.
@@ -374,11 +380,12 @@ An **event** (every one is a simple event):
 | per layer | `u16` sound definition, 14 `u32` | word 3: 1 the wave plays once, 0 it loops (every music event but the seven `*_oneshot` tracks loops, as do 947 of the 984 `loop` SFX of the US data; every `nonloop` SFX and voice plays once); word 4 -1; words 1 and 9 `f32` 1.0; the rest 0 |
 | | `u32` 1, string | the category (`master`) |
 
-A wave's `length in ms` is its sample's real length (the loop chunk's end
-+ 1 when it starts at 0, else `frames`) in milliseconds, within 3 ms in
-every project: against the length rounded up, 16,696 voice waves are 1 ms
-shorter and 1,416 equal; SFX and music are 0 to 3 ms shorter, a few 3 ms
-longer. FMOD hands it to the game as the event's
+A wave's `length in ms` is its sample's real length in milliseconds:
+the loop chunk's end + 1 when the chunk is `(0, end)` with the end in the
+last block (`frames - 64 < end < frames`), else `frames`. In every
+project it is 0 to 3 ms below that length in ms rounded up (voice: 1,416
+equal, 16,696 1 ms below; SFX 4,880 / 9,590 / 602 at 0 / 1 / 2 ms; music
+and music_ps2 up to 3 ms). FMOD hands it to the game as the event's
 length; a longer replacement needs it raised ("Replaced samples").
 
 So a looping event loops its wave between the FSB sample's loop points
@@ -423,13 +430,15 @@ offset}`, zero-terminated strings at the offsets: voice id -> event name
 (`210101td`), and key -> project (`ffx_us_voice20`,
 `ffx_us_voice_nagisetsu`).
 
-**Which sounds a map names.** The field scripts' constant arguments of
-the sound natives (`script.md`'s native table) resolve without gaps: of
-329 event scripts, the 7,392 distinct voice ids passed to `0x00d5`
+**Which sounds a map names.** The constant first arguments of five sound
+natives (`script.md`'s native table) in the field scripts resolve without
+gaps: of 329 event scripts, the 7,392 distinct voice ids passed to `0x00d5`
 `Native_VoiceStandby_End` are all keys of `VoiceIDMapper.txt` (the id
-itself, not `id >> 12`); the 2,296 sound effects of `0x00df`
-`Native_SfxPlay` and `0x00fd` `Native_SfxPlayEx` (bit 31 the block SE
-flag) are all sample names of the US SFX banks (`<id>` or `<id>_<n>`); the
-music ids of `0x0102` `Native_MusicLoad` and `0x0104` `Native_MusicPlay`
-go through the table at `0x00b4f1c8` (FFX.exe's image: 92 of 0xb6 ids
-mapped). ffx-remix `audio/bymap.rs` lists them per map.
+itself; the stream lookup, `SndStreamDVDPos`, uses `id >> 12`); the 2,296
+distinct values passed to `0x00df` `Native_SfxPlay` and `0x00fd`
+`Native_SfxPlayEx` (bit 31 the block SE flag) all name samples of the US
+SFX banks (`<id>` or `<id>_<n>`, bit 31 cleared); the 89 distinct music
+ids of `0x0102` `Native_MusicLoad` and `0x0104` `Native_MusicPlay` are all
+mapped by the table at `0x00b4f1c8`. Ids a script computes at run time,
+and other natives (`Native_0168_MusicPlayFast`, ...), are not in these
+counts. ffx-remix `audio/bymap.rs` lists them per map.
