@@ -288,20 +288,19 @@ behind them stays with those modules, which the bridges call.
   entry gets `seq`, its `u16` `+4` and `v` at `+0x10`. A full table asserts
   ("SG:AddMseq"). Either way `Ch_SeqLink` runs.
 - `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): id entry kinds (low 7 bits of
-  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit 2,
-  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`. A match keeps
-  the character out: `Sg_IdWalk` stops at a neighbour that matches
-  (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone but
-  the player, 13 chocobos, 14 only the player. `0x30..0x3f` block as the
-  kind the table holds for them, and every other kind blocks no one. The
-  table is cleared at each map change (`Sg_EventjumpInit` calls
-  `Sg_IdEventInitAll`, `0x0083e8d0`) and scripts set entries with
-  `Native_4017_IdSetMapTable`. Over the game's 383 walk-mesh pages
-  (field.md, "The walk mesh on disk (ffx-remix M8)"; counted per map:
-  a `MAP1` file several maps share counts once for each of them)
-  274,672 triangles are kind 0,
-  6,398 kind 14, 663 kind 1 and 20,245 `0x30..0x3d` (none `0x3c`); the
-  section-9 meshes add 375 of kind 0. No triangle stores kind 2 or 13.
+  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit
+  2, 14 the player; `0x30..0x3f` through `g_ChrIdMapTable`. A match
+  keeps the character out: `Sg_IdWalk` stops at a neighbour that matches
+  (chara.md, "The id map walk"). So kind 1 blocks everyone, 2 everyone
+  but the player, 13 chocobos, 14 only the player. `0x30..0x3f` block as
+  the kind the table holds for them, and every other kind blocks no one.
+  Its entries `0x30..0x3f` are cleared at each map change
+  (`Sg_EventjumpInit` calls `Sg_IdEventInitAll`, `0x0083e8d0`) and
+  scripts set entries with `Native_4017_IdSetMapTable`. Over the game's
+  383 walk-mesh pages (field.md, "The walk mesh on disk (ffx-remix M8)",
+  counted as there) 274,672 triangles are kind 0, 6,398 kind 14, 663
+  kind 1 and 20,245 `0x30..0x3d` (none `0x3c`); the section-9 meshes add
+  375 of kind 0. No triangle stores kind 2 or 13.
 - `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
   `0x00822620`): the dream effect. A shown layer whose display byte
   (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
@@ -723,16 +722,17 @@ x87 result.
   `AtelUcOff` (`0x008719e0`) calls `Sg_SetPlayer(0)`. `AtelUcOn`
   (`0x00871ab0`) sets the controlled character back, or 0 when a window
   or another context bit holds control or no worker qualifies.
-  `Native_ControlDisable` (`0x005e`), `AtelUpdateWindowStatus` (message
-  windows), `AtelSetEventJump` and `AtelSetEventJump2` (map changes),
-  `AtelSetCtrlChar`, `AtelEventSetUpForBattleMusic`, `Atel_UcResume` and
-  `Atel_UcRestore` call `AtelUcOff`, which leaves `g_Player`
-  (`0x01300788`) 0 (scripts can also set the player directly,
-  `Native_000c_SgSetPlayer`). `AtelUpdateWindowStatus`, `Atel_UcResume`
-  and `Atel_UcRestore` then call `AtelUcOn` when control was on and no
-  window holds it, so there the player often comes straight back. A
-  replacement camera can hand the view back to the game whenever
-  `g_Player` is 0, `g_CamOverrideOn` is set or `g_CameraMatrixOn` is on.
+  `Native_ControlDisable` (`0x005e`), `AtelSetEventJump` and
+  `AtelSetEventJump2` (map changes) and `AtelEventSetUpForBattleMusic`
+  call `AtelUcOff`, which leaves `g_Player` (`0x01300788`) 0 (the battle
+  set-up also calls `AtelUcOn`, but first sets the context's byte 3 bit
+  `0x80`, which skips it). `AtelUpdateWindowStatus` (message windows),
+  `AtelSetCtrlChar`, `Atel_UcResume` and `Atel_UcRestore` call
+  `AtelUcOff` and then `AtelUcOn` when control was on and no window
+  holds it, so there the player often comes straight back. Scripts can
+  also set the player directly (`Native_000c_SgSetPlayer`). ffx-remix's
+  free camera hands the view back to the game whenever `g_Player` is 0,
+  `g_CamOverrideOn` is set or `g_CameraMatrixOn` is on.
 
 ## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
 

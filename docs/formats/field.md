@@ -657,13 +657,12 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
   `yiArc_readmem`), `page + 2` the walk-mesh page (`page` the fifth
   argument; to `Sg_IdFixupAndSet`, "The walk mesh on disk (ffx-remix
-  M8)"), 10 effect data
-  (`pppSetFpPdt`; the field-program table, `docs/formats/scene-maps.md`,
-  "Map effects: the field-program table"), 12 and 11 more backgrounds;
-  the CD ids go to `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
-  map circle, else -9) and the default animations. `yiMapSetup`
-  (`0x00909680`) is the debug path: `host0:<dir><name>.vpa` read whole
-  through `sceOpen`/`sceRead`.
+  M8)"), 10 effect data (`pppSetFpPdt`; the field-program table,
+  `docs/formats/scene-maps.md`, "Map effects: the field-program table"),
+  12 and 11 more backgrounds; the CD ids go to `0x01934ed4`. Then status
+  `| 0x11`, the draw mask (-1 with the battle map circle, else -9) and
+  the default animations. `yiMapSetup` (`0x00909680`) is the debug path:
+  `host0:<dir><name>.vpa` read whole through `sceOpen`/`sceRead`.
 - Smaller pieces: `rcbgSceneDelObject`, `Yn_SceneFindObject` (the
   current scene, then each scene), `rcbgPreAddFp`/`rcbgPreGetMapNo` (the
   field programs of maps 0x61, 0xad, 0x235/0x236 and the battles that
@@ -1853,8 +1852,9 @@ The 4-component ones leave `a.w = b.w ± c.w`.
 
 ## The walk mesh on disk (ffx-remix M8)
 
-The id map that `Sg_IdSetPtr` installs is the map's walk mesh: the
-triangles characters stand on, with the kind bits that decide who may
+The id map that `Sg_IdSetPtr` installs is the map's walk mesh (not the
+cloth triangles of main.md's "Round 13: the walk mesh's triangle
+exceptions"): the triangles characters stand on, with the kind bits that decide who may
 enter each one (`Sg_IdMatchChr`, main.md, "Bones, sequences, id kinds,
 the dream effect, cloth rods (round 4)"). It lives in `MAP1` sections 2
 to 8, pages 0 to 6 of `yiSetIDPage` and `yiSetPreBgPage`. Over the
