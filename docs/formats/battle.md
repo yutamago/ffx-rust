@@ -85,7 +85,7 @@ point 16 bytes past the end of the file; those sections are empty.
 | Section | Use |
 |---|---|
 | 0 | Battle event script → `0x0112a9ac` (an `ffx-script` script) |
-| 1 | Its first byte → `0x0112a9a4` |
+| 1 | Handler table ([monster.md](monster.md#handler-table-section-1), [below](#script-handlers)); its first byte, the script's work count, → `0x0112a9a4` |
 | 2 | The formation, 28 bytes → `0x0112a9c0` |
 | 3 | Positions: `0x20`-byte records with counts at `+4`, `+5`, `+6` and offsets from `+0x10` → `0x0112a9b0` |
 
@@ -107,6 +107,56 @@ slots as `M%d:%03d`):
 Each monster in a slot gets its file `battle/mon/_mNNN` read
 (`Mon_LoadAll`, `0x00784070`). In battle, the monster's id is at
 `+0x0e` of its actor.
+
+## Script handlers
+
+The battle runs its scripts through their files' handler tables
+(section 1; layout in [monster.md](monster.md#handler-table-section-1)).
+`MsAtelRequestAdd(kind, owner, n, k)` (`0x00797b70`) queues requests and
+`MsAtelRequestExe` (`0x00797d50`) runs the first one whose table has an
+entry for its `k`: kind 2 the battle's two scripts (owner 1 the
+formation file, owner 0 the one registered first, whose per-actor
+signals are those of `system_01`), 3 an actor's monster file, 4 the
+script camera. The record's kind byte agrees with the signal in every
+file. Signals of the battle files (`MsAtelChrInit` gives the per-actor
+ones their actor's index):
+
+| Signal | Kind | Asked for by | `k` |
+|---|---|---|---|
+| `0x00` | 0 | `MsAtelRequestCamera` (`0x00797bc0`) | camera number |
+| `0x03` | 1 | `MsSetMotion` (`0x007ab360`) | motion |
+| `0x04` | 1 | `MsSetMotion` for a monster with `+0x39` 1 (else `0x03`) | motion |
+| `0x05` + i | 1 | `MsSetMotion` for party member i (`0x21`-`0x23`: actors `0x1c`-`0x1e`, `MsAtelSetHandlerByte_007987b0`) | motion |
+| `0x25` + i | 2 | `MsActionRequest` with `special` for actors `0xe`-`0x11` | action |
+| `0x29` + i | 2 | `MsActionRequest` (`0x007aceb0`) for party member i | action |
+| `0x3e` | 4 | `MsAtelRequestSystem` (`0x007981e0`, native `0x7097`), `k` below 8 | the native's argument |
+| `0x3f` | 4 | the same, `k` 8-0x17 | the native's argument |
+| `0x41`, `0x44`, `0x47`, `0x4a` | 7-10 | `MsAtelRequestMagicCamera` (`0x00798000`) for IDs `0x3xxx`, `0x2xxx`, `0x4xxx`, `0x6xxx` | the ID's low 12 bits |
+| `0x4d`, `0x4e`, `0x4f` + i | 3 | `MsSetVoice`: party, monster, speaker i | line |
+| `0x6c`, `0x89` | 6 | `MsAtelRequestSystemCheckExe` (`0x007982a0`), in that order | 5 battle start (`MsBtlReadManage`), 4 end status known (`MsBattleProcess_Status_007917d0` step `0x17`), 0-3 end kinds (step `0x1d`: status 2 → 0, 1 → 1, 3 or 5 → 2, 4 → 3) |
+| `0x6d` + i | 5 | `MsSetVoiceCheck` (`0x007a07b0`) for actor i | cue: `MsActionRequest`'s `k` up to 8, else other moments |
+
+`MsActionRequest(i, who, k, special, mode, out)`: a monster's handler
+`0x3d`, a party member's `0x29` + i. The command the script leaves goes
+to the command cue (`mode` 0) or is inserted after `who`'s (`mode` 1).
+Its call sites:
+
+| `k` | Call site | Function | When |
+|---|---|---|---|
+| 0 | `0x00792566` | `MsCommandCueProcess` | the actor's turn, its cue entry without a command yet |
+| 1 | `0x00792ba8` | `MsBattleProcess_InputCue_00792a90` | its turn comes up (once, `+0xdf7`) |
+| 2 | `0x007ad10c` | `MsActionTarget`, from `MsCommandCueProcess` | each target of a command, before its damage (`who` the attacker, `mode` 1) |
+| 3 | `0x0078f5e0`, `0x0079257b` | `AfterDamageProcess`, `MsCommandCueProcess` | an actor a command hurt (`who` the attacker, `mode` 1); a counter entry's turn |
+| 4 | `0x0078c92d` | `MsDamageCheckDeath` | it dies (`who` the killer) |
+| 5 | `0x00783a6a`, `0x00783c32` | `MsBtlReadMonsterProcess`, `MsBtlReadPlayerProcess` | it comes into the battle |
+| 6 | `0x007b2274` | `MsDeleteInputCue` | its input entry goes, the next turn counted |
+| 7 | `0x00787d86`, `0x0078853d`, `0x007aec50` | `MsEffectBackToIdle_00787d70`, `MsEffectStart`, `MsParseCommand` | its command has played |
+| 8 | `0x007afb19` | `MsPoisonProcess` | poison damage after its turn (`who` itself) |
+| 9-0x14 | `0x007b2a30`, `0x007b2a8b`, `0x00792bc8`, `0x007b2ae8` | `MsCheckSummon`, `MsBattleProcess_InputCue_00792a90`, `MsDeathYoujinbou` | aeons: Yojimbo's and the Magus sisters' commands (0xd + command - `0x3124`), an aeon's turn (0xc), Yojimbo leaving (0xb) |
+
+Monster `m001`'s handler `0x3d` maps `k` 0 to an entry that picks a
+target and uses a command, and `k` 3 to one that reads the damage it
+took and who dealt it, as these call sites say.
 
 ## The battle actor (`chr`, 0xf90 bytes)
 
