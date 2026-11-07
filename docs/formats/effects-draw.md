@@ -382,7 +382,8 @@ ground beside the Larva.
 
 ## Gate
 
-The M4 census: every effect draw of the eight captured frames is traced: 1042 of 1042, to
+The M4 census: every effect draw of the eight captured frames is
+traced: 1042 of 1042, to
 the `DrawMostVFX` list place it is drawn from (1018 by the list entry, 24
 by a zeroed entry and the delete pool), the geometry and segment whose
 bytes it draws, the instance key and its maker (ppp object or op record),
