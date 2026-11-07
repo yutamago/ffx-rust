@@ -72,7 +72,7 @@ pub mod bridge {
     }
 
     /// `FUN_0065f0e0(scene)` (frame from `ebp - 0x24`: the cursor): with
-    /// the field map flag (`+0x93c`) and a map (`+0x1128`), each of the
+    /// the 2D level flag (`+0x93c`) and a map (`+0x1128`), each of the
     /// `+0x112c` objects of `+0x1134` has its objects of class
     /// `0x00ca7228` walked (cursor over the object's list `+0x1c`), and
     /// each one's object (`[offset + element + 0x1c]`, when set) gets

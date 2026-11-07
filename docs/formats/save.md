@@ -30,6 +30,37 @@ equals the word at `+0x64f4` and `TkCRC(0x64b8, buffer + 0x40)` gives it
 (the word is zeroed first), or always with `g_SaveData_CrcCheckOff`
 (`0x00ccb9a4`).
 
+## The PS2 save file
+
+Source: ffx-demaster `docs/compare.md` (MIPS disassembly of `SCES_504.92`,
+the German PAL disc; saves made this way load in PCSX2). PS2 addresses are
+ELF addresses (`docs/formats/ps2-elf.md`).
+
+The memory card holds folder and file `BESCES-50492FF0906nn/BESCES-50492FF0906nn`
+(nn = slot 0..98, listed in the game as file nn + 1), with the icon
+`010906nn.ico` and `icon.sys` beside it. The region prefixes are a table
+at `0x00326e50..0x00326ec0` (`BISLPS-25088`, `BASLUS-20312`,
+`BESCES-50490`..`50494`, `BISLPM-65115`, picked by `0x0020b858`), built
+into `0x00326f58` by `0x002413e0` with `FF0906%02d` (`0x00326ee0`). Path
+builders: `0x0023cbd8` data file, `0x0023cc58` icon, `0x0023cd38`
+`icon.sys`, `0x0023cdb8` folder.
+
+The file is `0x64f8` bytes: the `0x40` header and `0x64b8` bytes of game
+state (buffer `0x01d57b00`, state `0x01d57b40`), with the CRC as `u16` at
+header `+0x1a` and as a word at file `+0x64f4` (zeroed while computing).
+The CRC (`0x002510a8`, check at `0x00240f1c`, written at `0x0023d478`) is
+CRC-16 with polynomial `0x1021`, start `0xffff` and the result inverted,
+over a table built for entries 0..254 only (entry `0xff` stays 0). It is
+the PC's `TkCRC(0x64b8, buffer + 0x40)` (above): the PC's `ffx_NNN` files
+checked (slots 1 and 5) are this file zero-padded to `0x6900`, pass the
+PS2's check and load in PCSX2.
+
+On the PS2, `g_SaveData` is `0x003194d0` (cleared with size `0x64b8` at
+`0x001bc440`); `g_BtlFieldIndex` is `0x00318c76`, followed by the group
+(`+2`), the formation (`+3`) and the field name (`+4`): `22 00 00 01`
+`kami00_01` in a Thunder Plains encounter (PINE reads in PCSX2 against the
+loaded save).
+
 ## The game state block (`g_SaveData`, `0x0112ca90`)
 
 The `0x68c0` bytes the file keeps at `0x40`. The names are Fahrenheit's
@@ -77,7 +108,7 @@ save variables).
 | `0xbec` | `u16` | `story_progress` | `g_SaveScenario`, `AtelGetScenarioFlag` |
 | `0xc38`-`0xc91` | | celestials, airship, Jecht spheres, aeons, dark aeons | `+0xc89` is `g_SaveInterValefor` (`getInterValefor`); the rest Fahrenheit, not checked |
 | `0xcd7` | 42 × `u8` | `battle_dialog_lines_seen` | Fahrenheit, not checked |
-| `0x1984` | | `blitzball_data` | Fahrenheit, not checked |
+| `0x1984` | | `blitzball_data` | Fahrenheit, not checked; its `player_uncovered_techs_page_1` is 60 `u32`, not 240 ("Fields the event scripts explain" below) |
 | `0x3d0c` | `u32` | `config` | `g_SaveMenu`, read by the `MsGetSaveConfig*` getters (`0x007851a0..0x00785230`, alphabetical, each the mirror of its `MsSetSaveConfig*` setter's mask): bit 0 stereo, 1 cursor memory, 2 controller, 3 hiragana, 4 vibrate, 5 credit name, 6 guide map, 9 subtitles (`MsGetSaveConfigSubTitle` `0x00785210`, 0 while `g_BtlMuteSubtitle` is set; Fahrenheit's `config_subtitles`), 16 English (`MsSetSaveConfigEnglish`; its getter returns 0 on PC). Bit 9 is set in the new-game word (`0x00002f61`, read after `MsSetSaveStartGame`) and in the PC saves measured, and nothing on PC clears it (`MsSetSaveConfigSubTitle` has no caller): scripted battle lines (native 0x70de) are subtitled (ffx-demaster `docs/patches.md`) |
 | `0x3d10` | `u32` | `unlocked_primers` | Fahrenheit, not checked |
 | `0x3d14` | `u32` | `battle_count` | `g_SaveBattleCount` |
@@ -122,6 +153,47 @@ save variables).
 | `0x50`-`0x5c` | 4 × `u32` | `battle_count`, `enemies_defeated`, `deaths`, `limits_charged` | `MsSaveAddInfoData` (`0x00785a00`, kinds 0-3; nothing in `g_BtlBattleType` 2) |
 | `0x60` | 20 × `u16` | `limit_mode_counters` | Fahrenheit, not checked |
 | `0x88` | `u32` | `obtained_limit_modes` | Fahrenheit, not checked |
+
+### Fields the event scripts explain
+
+No FFX.exe function reads these fields; the event scripts do, through
+variable storage 0, which starts at `g_SaveData + 0x1ec` (a script's storage 0
+offset `x` is block offset `x + 0x1ec`). The meanings come from
+[Atel#](https://github.com/yutamago/ffx-atel-sharp) (`docs/research/save-fields.md`,
+`src/Ffx.Atel.Game/Save.cs`), which decompiles all 1,621 shipped scripts: a
+field is listed only when the dialogue shown next to it, or the only code
+that writes and reads it, says what it is. The names are Atel#'s.
+
+| Offset | Storage 0 | Type | Atel# name | What the scripts show |
+|---|---|---|---|---|
+| `0x3f4` | `0x0208` | bits | `LightningDodgingRewards` | Thunder Plains (`kami0000`, `kami0300`): bits 0-5 set when the highest dodge streak (`lightning_dodging_*`, `0x3fc`-`0x400`) reaches 5, 10, 20, 50, 100, 150; bits 6, 7 when the bolts struck reach 30, 80 (200 in a row sets a Thunder Plains progression bit instead). The agency chest (`kami0400`) gives one reward per set bit, with a message naming it |
+| `0x402` | `0x0216` | bits | `LightningDodgingRewardsClaimed` | the same bits: the chest sets the one it gives and gives only those clear here |
+| `0xc36` | `0x0a4a` | bits | `SaveSphereTipsShown` | each save sphere shows the "Save Sphere Level 1/2/3" tip while bit 0/1/2 is clear, then sets it |
+| `0xc4c` | `0x0a60` | `u8` | `AlBhedPrimersFound` | each primer adds 1 and picks the rank message by it |
+| `0xc54` | `0x0a68` | `u32` | `LastSaveSphereMap` | each save sphere stores the map (`GetNowEventJumpId`); the blitzball exit returns there with native `0x00ab` (map, entrance), the airship's scripts set its location from it |
+| `0xc58` | `0x0a6c` | `u32` | `LastSaveSphereEntrance` | the save sphere's own constant (1-8); read only as that entrance |
+| `0xc74` | `0x0a88` | 6 × `u8` | `BlitzballTeamSizes` | players per team; team 5 is the Besaid Aurochs (the stadium is refused while `[5] < 6`, signing adds 1, at most 8) |
+| `0xc86` | `0x0a9a` | `u8` | `AlBhedPrimerTutorialShown` | the first primer shows its introduction while 0, then sets 1 |
+| `0x11ec` | `0x1000` | 60 × `u32` | `BlitzballPlayerTechsLearnedPage1` | per player, bit n: tech n known (the scout screen lists it by name) |
+| `0x12dc` | `0x10f0` | 60 × `u32` | `BlitzballPlayerTechsLearnedPage2` | the same for techs 31-60 |
+| `0x1452` | `0x1266` | 60 × 5 × `u8` | `BlitzballPlayerTechs` | each player's five tech slots on the scout screen |
+| `0x157e` | `0x1392` | 60 × `u8` | `BlitzballPlayerTechSlots` | slots in use, set after a match from the level: 0 below 3, then 1, 2, 3, 4, 5 from 3, 7, 12, 20, 30 |
+| `0x15ba` | `0x13ce` | 60 × `u8` | `BlitzballPlayerLevels` | the "Level:" line; the stats are computed from it |
+| `0x1606` | `0x141a` | 6 × 8 × `u8` | `BlitzballTeamRosters` | player numbers per team (team 5 the Aurochs) |
+| `0x163e`, `0x163f` | `0x1452`, `0x1453` | `u8` | `BlitzballAurochsScore`, `BlitzballOpponentScore` | the scoreboard; a win is `0x163e > 0x163f` |
+| `0x1716` | `0x152a` | 60 × `u8` | `BlitzballPlayerContracts` | games left on the contract; 255 is permanent ("Cannot release that player") |
+| `0x1752` | `0x1566` | `u16` | `BlitzballAurochsWins` | wins, up to 65000; the team level shown is wins / 5 + 1 |
+| `0x1a0c` | `0x1820` | 60 × `u32` | `BlitzballPlayerUncoveredTechsPage1` | techs seen but not learnt (shown as unknown) |
+| `0x1afc` | `0x1910` | 60 × `u32` | `BlitzballPlayerUncoveredTechsPage2` | the same for techs 31-60 |
+
+Fahrenheit declares `player_uncovered_techs_page_1` as 240 × `u32`, which
+puts page 2 at `0x1dcc`; the scripts declare page 1 as 60 × `u32` (240
+bytes) and read page 2 at `0x1afc`, right after it, ORing it into the scout
+screen's list for techs 31-60 as page 1 for techs 1-30.
+
+The dark aeon bytes in `0xc38`-`0xc91` (`g_SaveInterValefor` among them):
+bit 7 is set by each area's battle event when its dark aeon is beaten, and
+the Penance unlock checks all eight.
 
 ## The load machine
 

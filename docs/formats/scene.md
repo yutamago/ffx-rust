@@ -154,6 +154,116 @@ the World most map instances have (10 x unit); `FBXASC056_0Shape` passes it
 and still does not draw: hidden by the game, or its World is not the
 common one (open question). No drawn instance fails the test.
 
+### The cull in detail (ffx-remix R-50)
+
+Read from the code; nothing was run.
+
+- **The call chain.** `renderWorldCulledSorted` walks the world twice:
+  - `PWorldCursor_MeshInstanceBounds_004ff6e0` finds every
+    `PMeshInstanceBounds` (class `0x00ca89b8`);
+  - `PWorldCursor_OccluderGeometryInstance_009f23f0` finds the occluders
+    (class `0x01a85420`).
+
+  Then, in order:
+  - `PVisibilityCheck` `0x009f2580` (camera, dir);
+  - `startOccluderJobs` `0x009f20f0`;
+  - the occluder pass `0x009f2fd0`;
+  - `startJobsForAllBounds` `0x009f2250`;
+  - the visible counts `0x009f30d0`;
+  - `mergeResults` `0x009f3660`;
+  - the draw `0x005ba360` (visible entries, context `+8`);
+  - the cleanup `0x009f26c0`.
+- **`PVisibilityCheck`**: `+0` the camera, `+4` its cull matrix
+  (`PCamera +0x70`), `+8..+0x14` the depth plane. The plane comes from the
+  view (`PMatrix4_FromMatrix3x4_00451080`), negated when `dir` >= 0.
+- **The job** (`PCheckVisibleBoundsJob_execute`, ECX): `+0x10` the bounds
+  array, `+0x14` the count, `+0x18` the stride, `+0x1c..+0x28` the depth
+  plane, `+0x2c`/`+0x30` the output cursor and start, `+0x34`/`+0x38` the
+  `g_DepthBias` table, `+0x3c` the occluders (null on field maps), `+0x44`
+  the view-projection.
+  - Per bounds, the matrix is the view-projection alone when
+    `m_worldMatrix` (`+0xc`) is null (a world-space box). Otherwise it is
+    `PMatrix4_Multiply_004ca360(viewproj, *m_worldMatrix)`, so the world
+    matrix is read again every frame.
+  - The box is a model-space AABB that the job never rewrites.
+  - The only flag is `m_meshInstance` (`+0x1c`) == 0. There is no
+    distance cut, level of detail or per-segment test.
+  - A visible bounds gives a 12-byte entry (instance, key,
+    `m_render_order`).
+- **The box tests:**
+  - `BoundingBox_IsVisible_00663a30`, thiscall(bounds; `float[16]`) ret 4,
+    AL: any part of the box in the frustum (above).
+  - `BoundingBox_IsInside_006d27e0`: all eight outcodes 0 (the whole box
+    inside).
+  - `MeshInstance_isVisible_00663cc0`, thiscall(ECX = the
+    *bounds*; viewproj): builds `viewproj . world` from the bounds' `+0xc`
+    and calls `0x00663a30`. Its name says mesh instance, but ECX is a
+    `PMeshInstanceBounds`.
+  - `PhyreScene_isMeshVisible_006603c0`, thiscall(scene; mesh instance;
+    behind `graphicCharacterInstanceIsVisible`) returns 1 when scene
+    `+0x10d8c` is set or the instance has no bounds (instance `+0x1c`).
+    Otherwise it returns `0x00663cc0` against the scene camera's
+    (`+0xdc`) `+0x74`. Instance `+0x1c` and bounds `+0x1c` link the two
+    both ways.
+
+  `0x00663a30` is called from:
+  - the job (`0x009f3275`);
+  - `0x00663cc0` (`0x00663cf2`, `0x00663d15`);
+  - `PhyreScene_RenderMinimapStencil_00650340` (`0x006505d6`);
+  - `ShadowManager_collectCasters_006c8090` (`0x006c8236`, `0x006c8294`,
+    `0x006c83b0`).
+- **Shadow casters** (`PhyreScene_RenderShadow` `0x00653600`, solutions
+  2-4 in scene `+0xf9cc`) go through `ShadowManager_updateCascades_006ce860`
+  (thiscall(sm; force, kind, light, map)). It clears two 8x8 byte grids
+  (`+0x2b28` cascade A, `+0x2b68` B).
+  - `force` is `MsBattleCheck() != 0`. With it, and either `g_PhyreScene
+    +0x1196`, `MsGetEncountType()` > 0 or one of maps `0x11f7`, `0x1eda`,
+    `0x4a6`, grid A is all 1, grid B all 0, and
+    `ShadowManager_fitBattleCascade_006d00d0` fits the battle cascade with
+    no per-instance test.
+  - Otherwise `ShadowManager_collectCasters_006c8090` goes over the 64
+    cells. It takes a cell whose list `+0xde8 + 4c` is non-empty and whose
+    flags `+0xfe8`/`+0x10e8 + 4c` are 1 (optional callback `+0x4048`
+    when byte `+0x4030`). It tests the bounds `*(instance +0x1c)` of each
+    instance there, with world from the bounds' `+0xc`:
+    - kind 4 outside battle: `0x00663a30` against both light matrices
+      (`arg`, `arg + 0x40`); any hit marks the cell A or B;
+    - else, per cell: the intersect test when a cell float (`+0x6b8` or
+      `+0x7b8 + 4c`) is above `[0x00c34404]`, the fully-inside test
+      `0x006d27e0` otherwise. The cell is kept only if every instance
+      passes.
+
+    Kept cells are pushed through `0x006d26d0`. Outside battle every
+    cascade goes this way.
+- **Other box-tested passes** (not map parts):
+  - `PhyreScene_RenderABmap` `0x00652a10` culls the lists scene `+0x38cc`
+    (count `+0xf8cc`) and `+0x385c` (count `+0x3854`) with `0x00663cc0`.
+    It runs only with scene `+0x10dcc` or `g_MovieFading`.
+  - `PhyreScene_RenderMinimapStencil_00650340` (from `0x00653960` and
+    `PhyreScene_render`):
+    - list `+0x3868` is drawn by name match, without a box test;
+    - list `+0x3874` is box-tested against the camera at scene `+0x654`.
+- **Per-frame writes into map materials**: none for culling.
+  - `PhyreScene_RenderShadow` writes each frame, unless scene `+0x1195`:
+    - the cascade matrices into the material lists `+0x38a8`/`+0x38b0`;
+    - a caster value (`ShadowManager_AverageCasterValue` `0x006ccad0`)
+      into `+0x38b8`;
+    - the shadow sampler into `+0x38c0` on solution 4 (count `+0x38c4`).
+  - Texture animation steps in `TextureAnimation_Animate_00672000`
+    (`TextureAnimationInfo_update` `0x006b4450`, then
+    `TextureAnimationManager_updateSamplers_006b44a0`).
+  - Scrolling UVs read `GlobalTime`.
+  - `PhyreScene_setMaterialVisibilityBySetAlpha` (`0x0066d5c0`) and
+    `PhyreScene_setGroupMaterialAlpha_0066d6f0` (by group key, alpha
+    only) write `MaterialColour`.
+- **Consequences for code that wants an instance drawn whatever the
+  view.** There is no "never cull" flag. A box with the same centre and
+  huge size passes every frustum test, since each clip plane is a half
+  space, and keeps the sort key. Its only side effect is in shadow-cell
+  collection, in the fully-inside branch. The call at `0x009f3275` (`E8
+  B6 07 C7 FF`, ECX = bounds from EBX, the matrix pushed from `[ebp-0x15c]`,
+  `test al, al; jz 0x009f353e` after) is the main pass's test alone.
+
 ## Sort
 
 The same job keys each visible instance:
@@ -181,6 +291,129 @@ equal orders, e.g. the six water planes (order 4) drawn far to near at
 view z -3477, -3229, -1684, -1033, -393, +139. `census::sort_check`
 finds the 20 neighbouring instance pairs of the frame in rule order, none
 out of order.
+
+## Sky domes and water (ffx-remix R-45, R-46)
+
+Found in 2026-11 by ffx-remix, a separate modding project by the same
+author. It dumped every mesh part of the 381 maps in its map catalogue
+(field maps and battle stages), with the effect variant, pass states and
+bounds that its scene builder draws the part with (`ffx-remix-view
+parts`). The numbers below come from that dump.
+
+### Sky domes
+
+The game has no sky shader, flag or pass. A map's sky is one or more
+ordinary mesh instances of the map cluster. To find them, ffx-remix
+grouped the parts not drawn with `phyrewatershader.fx` that reach at
+least 1,000 units from the world's y axis, and kept the groups roughly
+centred on that axis. A group reaching high enough above its floor, with
+at most 6,000 vertices in all, is a dome; a ring that stays near or below
+the horizon is counted separately. It checked 20 maps by rendering these
+parts alone; one false positive (`mcfr0000`'s forest backdrop) turned up.
+That gives 771 dome parts plus 69 rings below the horizon (on 24 maps),
+840 parts on 211 maps. The counts below are over all 840, the false
+positive's 10 parts included:
+
+- **Shader.** `phyredefaultlitshader.fx` (752) or
+  `phyreuvanimationshader.fx` (88, the scrolling clouds, e.g. Besaid). The
+  switches are those of other scenery: `VERTEX_COLOR_ENABLED` (all),
+  `RECEIVE_SHADOWS` and `TEXTURE_ENABLED` (837), `IGNORE_EMISSION` (644),
+  `IGNORE_CLIP` (542), `ALPHA_ENABLED` (479), `IGNORE_FOG` (90). The rest
+  are fogged like the map.
+- **Shape and place.** Caps, bands and rings round the y axis. Radius from
+  the axis 1,012 to 33,390 units, median about 4,180 (`bsil00` 3,100,
+  `luca01` 3,100, `kami00` 5,200, `mihn01` 5,600, `mtgz09` 11,400, `znkd08`
+  33,400). They have the static map World of every map instance
+  ("Game state" below). Nothing moves them per frame, so they do not follow
+  the camera.
+- **Passes.** 361 draw in the opaque pass and 479 in the transparent one
+  (blend `SRC_ALPHA, INV_SRC_ALPHA`, alpha `ONE, ZERO`). They sort as any
+  instance ("Sort" above). `m_render_order` is 0 on 395 and 1 on 120;
+  the rest have small orders up to 78 (2, 3, 9, 10, 13, 26, 27, ...),
+  except the night sky below. The outer night sky of `znkd0800`,
+  `znkd0801` and `znkd0900` has 2000 (8 parts each; `znkd0900` 1000 on 8
+  more): `ro % 1000` is 0, so it sorts in the first `ro % 1000` group,
+  after the orders 0 and 1000 there.
+- **Depth.** 835 of the 840 write depth (`LESS_EQUAL`, write mask all),
+  the blended ones too. The other 5 are `MASK_DEPTH` variants. So a sky
+  pixel holds the dome's depth; only pixels that no draw covers keep the
+  clear value.
+- **Distant scenery** is mostly separate parts: `znkd08`'s skyline bands
+  (`znkd08_background_0x`), `maca00`'s mountains, `nagi00`'s canyon walls.
+  `mihn01`'s setting sun is painted into the dome texture `dusk`.
+
+### Water
+
+`phyrewatershader.fx` draws 310 parts on 131 maps (plus
+`phyrewaveshader.fx`, 4 parts on 2 maps). Nearly all have
+`NORMAL_MAPPING_ENABLED`, `NORMAL_MAPPING2_ENABLED`, `MULTITEX1_ENABLED`,
+`SPECULAR_ENABLED`, `CUBEMAP_ENABLED` and `ALPHA_ENABLED`; 121 also have
+`MASK_DEPTH` (no depth write) and 29 `DOUBLE_SIDED`. The passes give two
+kinds of variant:
+
+| Passes | Extra switch | Parts | Example |
+|---|---|---|---|
+| `Transparent`, `TransparentNoMSAA` | - | 236 | `bsil00` `pCylinder1` (the far sea ring) |
+| `postOpaque`, `postTransparent` | `REFRACTION_ENABLED` (on exactly these 72) | 72, on 41 maps | `bsil00` `_FBXASC0498` (the beach sea) |
+| `Opaque`, `OpaqueNoMSAA` | - | 2 | |
+
+The second kind is drawn by `PhyreScene_render` (`0x00668930`) after the
+scene, with the scene depth (`docs/formats/postfx.md`, "Order"). A
+builder that runs only `OpaqueNoMSAA` and `TransparentNoMSAA` misses it.
+
+- Constants: `ScrollSpeed_tex0_X/Y`, `ScrollSpeed_tex1_X/Y` (305 parts),
+  `ScrollSpeed_nml1_X/Y`, `ScrollSpeed_nml2_X/Y`, `MultiTexBlendFactor`,
+  `SpecularColor`, `SpecularShininess`, `MaterialColour`,
+  `AlphaThreshold`.
+- Samplers: `CubeMapSampler` (`reflection2` on 209 parts, `reflection3`
+  53, `reflection` 38, `reflection1` 4, `reflection4` 3), `NormalMapSampler` and `NormalMap2Sampler` (307 parts
+  each; mostly `znkd08_water_01_n`..`_03_n`, shared across the game, else
+  `water_01_n`), and `TextureSampler` and `TextureSampler1` (305 parts,
+  those with `TEXTURE_ENABLED`).
+- **No water part is a morphing mesh.** All 3,336 morphing parts (80 maps)
+  use `phyredefaultlitshader.fx`. Near the shore some of them are wave
+  strips (`bsil00` `FBXASC0498..0512_0Shape`).
+
+### The water level
+
+The water surface the characters swim in is script state, not map data.
+Native `0x4001` (`Native_4001_SetSuimen`, "suimen" = water surface) calls
+`Sg_SetSuimen(v)` (`0x00836640`), which sets both `g_Suimen`
+(`0x013009d8`) and `g_WaterLimit` (`0x013009dc`) to `v`. `Ch_CalcMain`
+reads both and `Ch_AutoMotion` reads `g_Suimen` directly (`0x00835de0`);
+`Sg_GetSuimen` is called only by the effect programs' `opu_jump_etc` and
+`opu_v_etc`. The surface's world y is about `-v`, because field
+coordinates have y down: the game negates x and y when it turns a field
+matrix into a world one (`PhyreScene_setMeshInstanceWorldMatrix`
+`0x0066d810`, `PhyreScene_setObjectTranslation` `0x0066e3e0`;
+`docs/formats/render.md`). The values below are the constants the event scripts pass to `0x4001`
+(329 scripts disassembled with `ffx-script`; 36 maps call `0x4001`), next
+to the y range of the map's flat water parts. 15 maps have both. On 11 of
+them `-v` is within 1.6 units of a water part's range:
+
+| Map | `v` | Water part y |
+|---|---|---|
+| `bsil0000` | 3.5 | -3.2..-2.5 |
+| `bsil0100` | 3.5 | -3.3..-3.0 |
+| `bsil0300` | 60 | -60.0 |
+| `bvyt1000` | 10 | -10.0 |
+| `bika0000` | 2.54 | -3.2 |
+| `bjyt0000` | -92 | 93.4 |
+| `bjyt0200` | -121 | 121.3 |
+| `bjyt0800` | 5.5 | -5.0..-4.0 |
+| `cdsp0000` | 59 | -57.4 |
+| `mtgz0600` | 88.2, -198.8, -127.2, 70 | -87.7, 199.3, 127.9 |
+| `mtgz0700` | -51.0, 149.2, 125.2, 126.2 | 51.1, -148.6..-148.4, -125.6..-125.2 |
+
+Gagazet's caves (`mtgz0600`, `mtgz0700`) set one level per pool;
+`mtgz0600`'s 70 matches no water part. On the other 4 the levels match no
+water part: `bltz0004` (-520; part at 246.8), `cdsp0700` (-30, -20, -10,
+-75, 0) and `cdsp0800` (-30.7, -40; both 279.2), `genk0900` (-350, -130,
+-150, -85; 407.9..433.0). There the level serves something other than the
+drawn water, or the drawn water is not the surface swum in (not
+checked). The camera's level is separate: natives `0x0212`/`0xc02f` set the
+current ctrl work's `+0x208`, and `AtelUpdateWaterStatus` compares ctrl
+work 0's against the camera (`g_AtelInWater`).
 
 ## Constants
 
@@ -460,9 +693,17 @@ and derives the matrices.
    | Instance | Writes per update | Writer |
    |---|---|---|
    | slots 0 and 1 (DObj kind 1, `FBXASC0491/0492`, swaying) | 1 | `setObjectRotation` (store before `0x0066e369`) |
-   | slot 22 (the crane, object id 3) | 2 | `setObjectRotation` (`0x0066e357`) and `setObjectTranslation` (`0x0066e47c`) |
+   | slot 22 (object id 3: the winch wheel `FBXASC051_0Shape`, not the crane; corrected below) | 2 | `setObjectRotation` (`0x0066e357`) and `setObjectTranslation` (`0x0066e47c`) |
    | slot 2 (a common one) | 0 | none |
    | Besaid slots 7-9 | 2 | both (`0x0066e34e`, `0x0066e476`) |
+
+   **Correction (ffx-remix M3, `docs/formats/scene-maps.md`, "Map entry
+   state", "Script placements at map entry").** Object id 3 on `cdsp00`
+   is the salvage ship's winch wheel, `FBXASC051_0Shape` (`m_objID` 3,
+   `m_groupID` 13), not a crane; the crane arm is `FBXASC057_0Shape`
+   (worker 23). Event script worker 25 binds the wheel's group, places
+   it at map entry and keeps turning it in its loop (about x in the
+   `cdsp0000-a` capture), which fits the two writers on it every update.
 
    Every write came from the main thread. So the Worlds are game state that
    moves every frame for the DObjs and is fixed at load for everything

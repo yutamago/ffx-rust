@@ -393,6 +393,40 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   destructors (library code) through callbacks.
   `FreeCamera_destroyInstance` (`0x00680000`) is called by
   `graphicFinalize`.
+- The free camera is also how the game freezes for its pause (ffx-remix
+  M5a, which uses it to pause the game under its editor):
+  - `FreeCamera_setFreeCameraMode(fc, mode)` (`0x006803a0`, thiscall,
+    `ret 4`) sets byte `+0x33c` to `mode != 0`. Turning it on while word
+    `+0` is 0 copies the scene camera (`*(g_PhyreScene +0xdc)`) into the
+    camera at `+0xc` (`Phyre_PCamera_assign_004533b0`, and its `+0x150`,
+    `+0x154`), and attaches the fly controller `+0x2bc` to it
+    (`FreeCamera_attach_0067fda0`). `graphicSetFreeCameraMode_00640e20`
+    calls it; `Pause_Enter` passes 1 and `Pause_Leave_008ab2d0` 0
+    (`0x008ab30d`).
+  - `graphicGetFreeCameraType` (`0x006411e0`) then answers 2 (2 while byte
+    `+0x338` or `+0x33c` is set, else word `+0`). On 2, `Sg_MainLoop`
+    returns right after `graphicVideoUpdate`, before
+    `TkUpdateScanControler` and `Sg_FrameSync`. The world, scripts,
+    battle, cameras and effects stop.
+  - `PhyreScene_render` still runs every frame. While byte `+0x338` or
+    `+0x33c` is set, or word `+0` is above 0, it copies the scene camera
+    into the free camera's second camera (`+0x168`, i.e. `+0x164`'s
+    `+4`), then the free camera's `+0xc` camera over the scene camera
+    (`0x00668b06`, `0x00668b76`). The frozen picture is drawn
+    from the copied camera, and `Present` goes on.
+  - Called without `Pause_Enter` (as M5a does), mode 1 gives that freeze
+    without the PAUSE screen, the sound pause (`Sg_SetPauseAllSounds`
+    `0x00821cc0`), the movie pause (`Pause_Enter` and `Pause_Leave` end in
+    `graphicVideoPause` `0x00645de0` while a movie plays with the 3D scene
+    (`movie_with3DScene` `0x0076f0c0`) or the word at `0x0112a00c` is set)
+    and the clock bookkeeping. `Pause_Enter` stores the time
+    (`graphicGetTimeInMicroseconds`) at `0x012fb820`, and `Pause_Leave`
+    adds the time paused to the u64 at `0x012fb818`. That is the cut-scene
+    sync's start time (`Sg_FrameSync` sets it when a synced scene starts
+    and measures elapsed time from it), so the start moves forward by the
+    pause. `Sg_FrameSync` also subtracts a paused total of its own
+    (`0x012fb7e8` plus `g_FFEscMenuClosedTime` `0x00ccc868`). A caller that freezes this
+    way has to do the same, or voice-synced scenes catch up afterwards.
 - Map teardown (`Yn_MapSystemFini` `0x00919a60` → `rcbgFini`
   `0x00921aa0`): the guide's minimap VFX (`graphicVFXDestroy(0, model
   +0x14)`), `rcbgPreFini` (each scene, `0x110` bytes, `rcbgSceneFini`;
@@ -517,11 +551,13 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
   `rcbgChkId` table, `+4` the length in 16-byte units, `+0xa` a scene
   index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
-  scene (`rcbgSceneLoad`: layers, colours, `rcbgSceneChkLayers` /
+  scene (`rcbgSceneLoad`: layers, the camera block, `rcbgSceneChkLayers` /
   `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
   transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
   scene, `YNGM` a model replacing the last one of scene `+0xa`, `YNED`
-  the end. Then `rcbgPreSetSceneNo(0)`.
+  the end. Then `rcbgPreSetSceneNo(0)`. The `YNSC` layer record and
+  camera block, and how the PC draws the layers:
+  `docs/formats/scene-maps.md`, "Map entry state".
 - GS memory for image layers (`rcbgSceneChkSortLayer`): each layer with
   flag 0x10 gets its image page at `+0x34` (64-word units, the 128x64
   rounded size; past `0x68000` words the images move to page `0x2f00`
@@ -535,7 +571,9 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `*New` constructors allocate and run the matching `*Init`.
 - Map (re)set-up: `yiResetObj` (teardown, a new `rcbgInit`,
   `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
-  file's background `+0x10`, render data `+0x14`, alarm, `ppp` data
+  file's background `+0x10`, render data `+0x14`, the walk-mesh page
+  (section `page + 2` to `Sg_IdFixupAndSet`; `page` is the read
+  request's word `+0x14`, the file its word `+0x10`), `ppp` data
   `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
   the default animations), `yiObjReadFinish`. Animation slots:
   `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
@@ -617,12 +655,14 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   size) reads a `MAP1` file into a `yiMalloc64` buffer (`g_YiMapData`):
   section 0 the 2D map (`graphicFieldMapLoad(name, 0)`,
   `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
-  `yiArc_readmem`), `alarm + 2` the alarms, 10 effect data
-  (`pppSetFpPdt`), 12 and 11 more backgrounds; the CD ids go to
-  `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
-  map circle, else -9) and the default animations. `yiMapSetup`
-  (`0x00909680`) is the debug path: `host0:<dir><name>.vpa` read whole
-  through `sceOpen`/`sceRead`.
+  `yiArc_readmem`), `page + 2` the walk-mesh page (`page` the fifth
+  argument; to `Sg_IdFixupAndSet`, "The walk mesh on disk (ffx-remix
+  M8)"), 10 effect data (`pppSetFpPdt`; the field-program table,
+  `docs/formats/scene-maps.md`, "Map effects: the field-program table"),
+  12 and 11 more backgrounds; the CD ids go to `0x01934ed4`. Then status
+  `| 0x11`, the draw mask (-1 with the battle map circle, else -9) and
+  the default animations. `yiMapSetup` (`0x00909680`) is the debug path:
+  `host0:<dir><name>.vpa` read whole through `sceOpen`/`sceRead`.
 - Smaller pieces: `rcbgSceneDelObject`, `Yn_SceneFindObject` (the
   current scene, then each scene), `rcbgPreAddFp`/`rcbgPreGetMapNo` (the
   field programs of maps 0x61, 0xad, 0x235/0x236 and the battles that
@@ -1799,7 +1839,7 @@ The 4-component ones leave `a.w = b.w ± c.w`.
 ## The map's ID map pages and yiReset (round 37)
 
 - `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,
-  `0x019138a8`) section `page + 2`, an ID (shade) map, to
+  `0x019138a8`) section `page + 2`, walk-mesh page `page` (below), to
   `Sg_IdFixupAndSet` (through the thunk `0x00845000`) when
   there is a map file and it has that section (`yiMapGetSection`: `MAP1`
   data, a non-zero offset). `yiSetPreBgPage(page)` (`0x0090a6f0`) does the
@@ -1809,6 +1849,55 @@ The 4-component ones leave `a.w = b.w ± c.w`.
   `yiRender_resettex(&g_YiRender)`. It then sets both map ids
   (`0x01934edc`, `0x01934ee0`) to -1 and returns `Sg_IdFixupAndSet(0)`
   (no ID map).
+
+## The walk mesh on disk (ffx-remix M8)
+
+The id map that `Sg_IdSetPtr` installs is the map's walk mesh (not the
+triangles of main.md's "Round 13: the walk mesh's triangle exceptions
+(`crates/ffx-sg/src/triangle.rs`)", which despite the heading are cloth
+triangles): the triangles characters stand on, with the kind bits that
+decide who may enter each one (`Sg_IdMatchChr`, main.md, "Bones,
+sequences, id kinds, the dream effect, cloth rods (round 4)"). It lives
+in `MAP1` sections 2 to 8, pages 0 to 6 of `yiSetIDPage` and
+`yiSetPreBgPage`. Over the game's maps there are 383 pages: page 0 on
+328 of the 329 maps with a `MAP1` file (`gameover`'s `titl01` has only
+section 0), page 1 on 32, page 2 on 14, page 3 on 5, pages 4 and 6 on 2
+each, none page 5. 59 maps also have a mesh of the same layout in
+section 9 (`lmyt0100` 163 vertices and 259 triangles, the others 4 and
+2). Page 7 would install it (`yiSetIDPage` does not check the page);
+whether a script asks for page 7 was not checked. The counts are per
+map: a `MAP1` file several maps share counts once for each of them.
+
+Every page has the same layout:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0x00` | `u32` | the base the offsets are taken from: 0 in the file; `Sg_IdFixupAndSet` stores `address - base` here and adds it to the offsets, so a second call changes nothing |
+| `+0x04` | `i16` | version: `0x1203` on 348 pages and 48 section-9 meshes, `0x0723` on 35 pages and 11 (above `0x1202` turns the id shades on, so pages of the older version install no shades) |
+| `+0x06` | `i16` | group count, 1 on every page (`Sg_IdSetPtr` reads only the first group) |
+| `+0x08` | `i16` | 0 on every page |
+| `+0x0a` | `i16` | vertex count |
+| `+0x0c` | `f32` | the scale times 10: `Sg_IdSetPtr` keeps it over 10 (`0x01301a90`, the id map's scale); id units are field units times that |
+| `+0x10` | `u32` × 2 | 0 on every page |
+| `+0x18` | `u32` | the vertices, at `0x20`: 8 bytes each, `i16` x, y, z and an `i16` 0 |
+| `+0x1c` | `u32` | the group table, last in the section: 16 bytes per group, 8 zero bytes, the `i16` triangle count at `+8` (`0x01301a88`), an `i16` 0, the triangles' offset at `+0xc` (`0x01301a84`) |
+
+The vertices are padded to 16 bytes before the triangles (an odd vertex
+count leaves 8 bytes). These pad bytes are not zero in the shipped
+pages, so a writer that copies them gives the game's pages back byte for
+byte (checked by ffx-remix M8's round trip of every page). The group
+table follows the triangles and ends the section. A triangle is 16
+bytes: three `i16` vertex numbers (read as such; all are below
+`0x8000`), three `i16` neighbours across the edges 0-1, 1-2 and 2-0 (-1
+for none; chara.md, "The id map walk"), and the `u32` map id word
+(chara.md, "The map id word (`+0x828`)"). Most neighbours are the
+triangles that share the edge's two vertex numbers. A few pages link
+across edges whose triangles do not share vertex numbers, or have edges
+shared by more than two triangles, where the stored link picks one. A
+writer should keep the stored links. 717 of the pages' 301,978 triangles
+(0.24%) are wound the other way round: `Sg_IdFindTriangle` never finds a
+point in them (main.md, "Round 13: the id triangle under a point
+(`Sg_IdFindTriangle`)"). Another 720 have no area in x and z.
 
 ## Sqs standby requests and info paths (round 36)
 

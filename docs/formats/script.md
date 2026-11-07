@@ -152,7 +152,7 @@ are relative to the code start.
 | `0x08` | `u32` | Author string (`"keisuke"`, …) |
 | `0x0c` | `u32` | Name string (`"001"`, …) |
 | `0x10` | `u32` | Block length |
-| `0x14`–`0x1f` | | Fahrenheit: `0x18` main script, `0x1e` zone bytes; the rest unknown |
+| `0x14`–`0x1f` | | `0x18` (`u16`): the camera worker, `0xffff` for none (`AtelRequestMapCamera` `0x0086ed80` signals it with the entrance's camera; Fahrenheit calls it the main script); Fahrenheit: `0x1e` zone bytes; the rest unknown |
 | `0x20` | `u32` | Event data, variable storage 6 |
 | `0x24` | `u32` | Unknown |
 | `0x28` | `u32` | Area (Fahrenheit's `offset_area`): 0 or 32 bytes |
@@ -327,6 +327,30 @@ index (`0x013270dc`, `0x013270e0`); `AtelRemoveCtrlWork` drops the cache.
 A level (one request priority): `+0x18` program counter, `+0x1d` call depth
 (three return addresses from `+0`, worker IDs from `+0x10`), `+0x1f` request
 state, `+0x20` and `+0x24` registers A and B, `+0x28` the float accumulator.
+
+#### Worker types
+
+The type (worker header `+0x00`) decides what the engine does with a worker
+besides running its entries. Read off the functions that test the type byte:
+
+| Type | Frame step (`Atel_WorkerFrame_008666e0`) | Position block (`AtelGetPosWorkAdrs`) | Levels | Atel# name |
+|---|---|---|---|---|
+| 0 | none | `+0x558` | 9 | `FunctionWorker`: the target of `call`, not counted at block `+0x36` |
+| 1 | move, turn, character sync, then `Atel_CheckTouchTalk_00866980` against the player | `+0x558` | 9 | `Actor` |
+| 2 | `Atel_CheckLineTouch_008684b0`: the line `+0`..`+0x30` against the player's step (cross, touch, talk) | `+0x558` | 9 | `LineTrigger`; `BattleWorker` in monster and battle scripts, whose workers are all type 2 |
+| 3 | `Atel_CheckBoxTrigger_00866cc0`: the box around the position against the player (cross, touch, talk) | `+0x558` | 9 | `BoxTrigger` |
+| 4 | none | none (0) | 9 | `LogicWorker` |
+| 5 | `Atel_CheckLineCrosses_00868020`: the line against the target `+0x28` and the eight tracked workers of the line table `+0x2e4` (cross only) | `+0x284` | 2 | `LineSensor` |
+| 6 | `Atel_CheckBoxTouch_00867c10`: the box against the target `+0x28`, or the player for `0xffff` (touch, cross) | `+0x284` | 2 | `BoxSensor` |
+
+Only type 1 places a character (`Atel_WorkerPlaceChr_00866800`), binds
+effects (`AtelBindFp`) and loses the player's control in `AtelUcOff`;
+types 2 and 5 are the two-point ones (`AtelGetActorStartPos`,
+`Script_GetWorkerPos`, `LineExtend`); the guide map's record
+(`AtelGetGuideMapActorInfo`) gives 2 and 5 a line flag and 2, 3, 5 and 6
+no direction. The entries
+each trigger kind runs are under "Trigger entries" below. [Atel#](https://github.com/yutamago/ffx-atel-sharp)
+names its worker base classes after this table (`docs/language.md` there, "Workers").
 
 ### The stack
 
@@ -533,15 +557,78 @@ sender gets its reply), a running one by switching back to its level.
 level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
 `3e`/`3f`, resets the level to entry 1.
 
-Opcode `79` (`0x00870d30`) writes the worker's vibration curve, eight
-`u16` in a variable (`+0x44` points at it, filled from
-`TkGetVibrateDefaultCurve` the first time); `7a` (`0x0086fab0`) sets a
+Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
+table, eight `u16` in a variable (`+0x44` points at it, filled from
+`TkGetVibrateDefaultCurve` the first time; "Trigger entries" below); `7a` (`0x0086fab0`) sets a
 `(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
 That table is a script variable's storage, installed by `Native_00f0_LineSetTable`
 through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
 u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
 then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
 (`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
+
+### Trigger entries
+
+A worker is talked to, touched or crossed through triggers, and each kind
+of trigger asks the worker to run an entry point at a level. Which entry and
+which level come from two small tables by worker type. Several functions
+carry names from an older reading of them as vibration and sound tables;
+the names stay (they are hook-table keys), the comments in
+`symbols/ffx.sym` say what they are. Found while naming the opcode in
+[Atel#](https://github.com/yutamago/ffx-atel-sharp), which calls it
+`SetTriggerEntry`.
+
+The request, `AtelRequestTrigger_008764f0(from, to, kind)`: with ctrl work 0
+current, when the worker's `+0xab` has bit `kind`, it registers the signal
+`AtelRegistSignalWithoutSameLevel(from, to, 0, level, entry)` with
+
+- `level = AtelSoundTableGet_00876860(type, kind)` (`0xff`: no request), and
+- `entry = TkGetVibrateCurve(type, kind, worker +0x44)` (`0x008763e0`):
+  `table[kind]` of the worker's table, or of its type's default
+  (`TkGetVibrateDefaultCurve`, `0x00876390`) while `+0x44` is null
+  (`0xffff`: no request).
+
+(Native `0x0034` sets the `+0xab` bit, `0x0035` clears it.)
+
+`Atel_RegistVibrateSignal_00876590` and `Atel_RegistVibrateSignalWith_008766d0`
+are the same request through `AtelRegistSignalWithoutSameTag` and
+`AtelRegistSignal` (the second with an entry given by a line record, a
+negative one meaning the worker's own). The five functions at
+`0x008764f0`..`0x00876780` are the only callers of both tables.
+
+Opcode `79` (`Script_Op79`, `0x00870d30`) pops the entry, the kind and a
+variable; while `+0x44` is null it copies the type's default table into the
+variable; then `table[kind] = entry` (kinds above 7 write 7) and `+0x44`
+points at the variable. The scripts use it 1,566 times, mostly to change
+what talking to a worker does: an opened treasure chest (`Takarabox002`)
+points kind 0 at entry 6.
+
+The kinds, by who requests them:
+
+| Kind | Trigger | Requested by |
+|---|---|---|
+| 0 | talk | `Atel_RunCtrlWorkers_00867950`: the talk choice requests kind `ctrl +0x1e6` of the candidate the talk checks leave in `ctrl +0x1e8`; the checks only pick workers with `+0xab` bit 0, and Atel# reads the scripts' talk entries as kind 0 |
+| 3 | touch | `Atel_CheckTouchTalk_00866980`, `Atel_CheckLineTouch_008684b0`, `Atel_CheckBoxTrigger_00866cc0` |
+| 4 | line or box crossed | `Atel_CheckLineCross_008680a0`, `Atel_CheckLineTouch_008684b0`, `Atel_CheckBoxTrigger_00866cc0` |
+| 5 | touch began, or a line or box crossed without a touch | `Atel_CheckLineTouch_008684b0`, `Atel_CheckBoxTrigger_00866cc0`, `Atel_CheckBoxTouch_00867c10` |
+| 6 | after such a crossing, or a touch ended | the same three |
+| 1, 2 | not identified | perhaps the talk choice's `ctrl +0x1e6`; the other requesters are `Atel_RequestOwnerTrigger_008764a0` (kind from its caller `0x0083d3b0`), `0x00876630` and `0x00876780` |
+| 7 | never requested: its level is `0xff` for every type | |
+
+The defaults in FFX.exe (entries `0x00c52ad8`, levels `0x00c52ac0`; `-` is
+`0xffff`/`0xff`), by kind 0-7:
+
+| Type | Entries | Levels |
+|---|---|---|
+| 1 | `2 3 4 5 - - - 1` | `7 7 6 5 - - - -` |
+| 2, 3 | `2 3 - 5 4 6 7 1` | `7 7 - 3 5 4 2 -` |
+| 5 | `2 2 - 2 2 2 2 1` | `1 1 - 1 1 1 1 -` |
+| 6 | `2 2 - 2 2 2 3 1` | `1 1 - 1 1 1 1 -` |
+| others | `2 3 4 5 - - - 1` | none (`0xff`): no requests |
+
+So by default talking runs entry 2 and touching entry 5, and crossing a
+line runs entry 4 for types 2 and 3; types 5 and 6 have two levels, so
+theirs run at level 1.
 
 ### Natives in Rust
 
@@ -1015,7 +1102,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x0027` | `Native_0027_PosSetAngle38` | a f | float: position block +0x38 = the wrapped angle; that angle | - | float `0x00859f30` (native_mods) |
 | `0x0028` | `Native_TurnSetYaw` | yaw f (radians) | float: the wrapped yaw (turn target +0x20, remaining +0x2c) | - | float `0x00859640` (native) |
 | `0x0029` | `Native_TurnSetPitch` | angle f (radians, pitch) | float: the wrapped angle (+0x24, remaining +0x30) | - | float `0x00859880` (native) |
-| `0x002a` | `Native_002a_TurnSetPitch` | pitch f (radians) | float: the wrapped pitch (turn block +0x28; the rest to the position's pitch in +0x34) | - | float `0x00859bb0` (native_move) |
+| `0x002a` | `Native_002a_TurnSetPitch` | angle f (radians; despite the name the +0x38 axis, roll by the position's convention, where 0x0029 turns +0x30 and 0x0028 the yaw +0x34) | float: the wrapped angle (turn block +0x28; the rest from the position's +0x38 in +0x34) | - | float `0x00859bb0` (native_move) |
 | `0x002b` | `Native_002b_LevelSet5f4` | v f | float: 0x00871520(worker, level, v) | - | float `0x0085a0b0` (native_move) |
 | `0x002c` | `Native_002c_LevelSet5f8` | v f | float: 0x00871500(worker, level, v) | - | float `0x0085a1a0` (native_move) |
 | `0x002d` | `Native_SetArriveRadiusAll` | r f: arrive radius of every level | float: r | - | float `0x00858020` (native_move) |
@@ -1386,7 +1473,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x019a` | `Native_019a_AttachChrDobj` | obj int, _ int, slot int | 1; with a character, yiAttachChrDObj(obj, chr, slot) | - | int `0x00856040` (native_sys) |
 | `0x019b` | `Native_019b_AttachChrOwnDobj` | b int, a int | 1; with a character, yiAttachChrDObj(+0xa8, chr, a) (through a push and pop of +0xa8, b, a) | - | int `0x008563e0` (native_sys) |
 | `0x019c` | `Native_AlwaysTrue019c` | - | 1 | - | int `0x00856630` (native) |
-| `0x019d` | `Worker_Detach` | v int: also release the model when nonzero | 0: detaches the worker (+0xaa, +0xa8 = 0) | - | int `0x0085ca00` (native_move) |
+| `0x019d` | `Worker_Detach` | dispose int: nonzero also frees an attached model's data (ChN_DataDispose(+0xa8, 0)); the scripts nearly always pass 1 | 0: detaches the worker (+0xaa, +0xa8 = 0); 0x0005 is this with 0 (Atel# WorkerDetachAndDispose) | - | int `0x0085ca00` (native_move) |
 | `0x019e` | `Native_019e_IsCtrl0Running` | - | int: 0x0086c530(0) | - | int `0x00856950` (native_move) |
 | `0x019f` | `Native_019f_IsCtrlRunning` | v int | int: 0x0086c530(v) | - | int `0x008567a0` (native_move) |
 | `0x01a0` | `Native_01a0_SndSepPlay` | track int, b int, a int: as 0x0193 with volume a (halved when [record +0x28]) and 0x00886e20(track, 0xc, b) | int: track | - | int `0x0085f940` (native_move) |
@@ -1414,7 +1501,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x01b7` | `Native_01b7_ChangeWeaponWakka` | v int: 0x007ad640(v) when 0x007ad6e0() | int: 1, else 0 | - | int `0x00859800` (native_move) |
 | `0x01b8` | `Native_01b8_EquipMarkFirst` | - | int: 0x007ad710(1) | - | int `0x00859ba0` (native_move) |
 | `0x01b9` | `Native_01b9_EquipUnmarkFirst` | - | int: 0x007ad710(0)'s EAX | - | int `0x00859d20` (native_mods) |
-| `0x01ba` | `Native_01ba_ChrGetEquipModel` | worker int, on int (0..1) | int: 0x0086b150(its bound character, on), 0 for none | - | int `0x0085beb0` (native_move) |
+| `0x01ba` | `Native_01ba_ChrGetEquipModel` | worker int, on int (0..1) | int: 0x0086b150(its bound character, on), 0 for none: 0x0119 for another worker (Atel# ChrGetEquipModelOf) | - | int `0x0085beb0` (native_move) |
 | `0x01bb` | `Native_01bb_GetMusicPlayState` | - | int: 0x008863c0(0) | - | int `0x00859de0` (native_move) |
 | `0x01bc` | `Native_01bc_SetForcePlaceId` | v int: 0x00870140(v) | 1 | - | int `0x00859ec0` (native_move) |
 | `0x01bd` | `Native_01bd_SetWaterBattleEffect` | v int: 0x008715f0(v) | 1 | - | int `0x00859ff0` (native_move) |
@@ -1636,7 +1723,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4010` | `Native_4010_DropArgs` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
 | `0x4011` | `Native_4011_LightSetDir` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
 | `0x4012` | `Native_4012_LightSetColor` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
-| `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
+| `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, azimuth int (deg), elevation int (deg) (`Light_Set`: direction `(sin az cos el, sin el, cos az cos el)`, `docs/formats/render.md`) | 0 | - | int `0x00a78030` (native_move) |
 | `0x4014` | `Native_4014_EnFocus` | v int | int: Sg_EnFocus(v) (0x0082cb60) | - | int `0x00a780a0` (native_chr) |
 | `0x4015` | `Native_4015_SetFocus` | b int, a int | 0: Sg_SetFocus(b, a) (0x0082ce20) | - | int `0x00a780c0` (native_chr) |
 | `0x4016` | `Native_4016_PlayerSetSpeed` | i int, v f | 0: 0x0082d9e0(i, v) | - | int `0x00a780f0` (native_chr) |
@@ -1916,7 +2003,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x5054` | `Native_5054_ChrSetPartHide` | part int, on int | int: Ch_ModelSetHide(model, part, on) (0x0082aea0); 0 without a model | - | int `0x00a78960` (native_chr) |
 | `0x5055` | `Native_5055_ChrGetPartHide` | v int | int: Ch_ModelGetHide(model, v) (0x0082add0), 0 without a model | - | int `0x00a78a10` (native_mods) |
 | `0x5056` | `Native_5056_ChrSetBoneUpdate` | v int | int: Ch_SetCalcNorm(model, v) (0x00835750); 0 without a model | - | int `0x00a78a80` (native_chr) |
-| `0x5057` | `Native_ChrSetBoneUpdate` | worker int, on int | int: previous | - | int `0x00a78af0` (native) |
+| `0x5057` | `Native_ChrSetBoneUpdate` | worker int, on int | int: previous: 0x5056's Ch_SetCalcNorm for another worker's model, 0 without one (Atel# SetBoneUpdateOf) | - | int `0x00a78af0` (native) |
 | `0x5058` | `Native_5058_ChrAllBoneUpdate` | v int | 0: Ch_AllSetCalcNorm(v) (0x008325b0) | - | int `0x00a78b70` (native_chr) |
 | `0x5059` | `Native_5059_ChrSetSysMotion` | slot int, motion int | 0: Ch_SetSysMotion(model, slot, motion) (0x00837d00) for a model | - | int `0x00a78bd0` (native_mods) |
 | `0x505a` | `Native_505a_ChrSetClutBase` | b, a | Ch_TextureSetClutBase(model, b, a) (0x008313c0), 0 without a model | - | int `0x00a78c60` (native_chr) |
@@ -3085,8 +3172,8 @@ draws the guide map (`Yn_GuideMapProcEx(show)`): show for ctrl work 0's
 byte has `0x40`, or for `+3` bit 8; never while `+0x1f4` (unsigned) is
 below 3. `Atel_SetPartyMask_008623b0` keeps the three party members' bits
 in `g_AtelPartyMask` (`0x01326b7c`). `Atel_RegistVibrateSignal_00876590`
-sends a worker's sound and vibration curve as a signal when its `+0xab`
-allows sound `k`. `Native_DrawBarSegment_00855a30` draws one bar segment
+requests trigger `k` of a worker (its level and entry, "Trigger entries"
+above) when its `+0xab` allows it. `Native_DrawBarSegment_00855a30` draws one bar segment
 from the cursor `0x013259f4` (width `table(kind) * 0x013259f0 /
 0x013259e8`; the original traps on a zero divisor, the port gives 0).
 `Atel_BattleEndMapStart_008615b0(map)` queues the `"MAPR"` callback when
@@ -3611,6 +3698,34 @@ workers the init bit in both runs and compares the rest.
    other helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
+
+## Dead code in the scripts
+
+The original compiler kept code behind constant conditions: `if (0) { … }`
+is a `jmp` over code that is still in the file. Atel#'s catalogue of it
+(`docs/research/dead-code.md` in
+[Atel#](https://github.com/yutamago/ffx-atel-sharp)) counts 34,806 such
+blocks in 62 of the 1,621 shipped scripts, about 2.46 million dead
+instructions in 790 distinct shapes.
+
+Most of it is not cut content. The scripts were written with macros whose
+parameters were constants where they were used (`if (PLAYER == 0)` became
+`if (0)` or `if (1)` in each copy), so each copy carries the other copies'
+branches as dead code; 15,058 blocks have an identical live twin in their
+script. The blitzball scripts hold 96 % of the blocks (four of them in four
+variants each): the match HUD's per-player sprites, score windows and
+per-side motions. Others: the celestial weapon powering up in Macalania
+Woods (`mcfr0100`, one macro written out per character and level), empty
+blocks at the end of 19 battle scripts' entry tables, older copies of map
+exits and scene starts behind a native that returns 1 on PC (`0x0260`, in
+seven event scripts), and earlier battle camera positions.
+
+What has no live twin: the Dream Zanarkand crowd (`znkd1300`, 24 workers)
+reacting to each other when the player is near (each looks for another
+within 18 units in a 22.5° cone, stops and plays one of ten reaction
+motions), and two party battle lines on the Mi'ihen Highroad (`system_01`
+worker 3, lines 335 and 336 for Tidus, and Auron with Tidus). No dead block
+names a message constant that live code of its script does not also name.
 
 ## Open questions
 

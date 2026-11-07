@@ -255,6 +255,64 @@ PS2 colours at unit scale; the falloff stays the shader's (ffx-demaster
 `docs/render.md`, `render.lighting`; Besaid in the harness: light 0's
 luminance 0.608).
 
+### The shaders in detail (ffx-demaster)
+
+`phyrechrlitshader.fx#*` (199 of 220 files) holds 1854 pixel shader
+containers that read `Light0`..`Light2` (216 unique per light count 1-3,
+648 in all). Each light is `dp3 rA.c, cb0[Light_i.m_direction].xyz, N;
+mad rA.c, rA.c, 0.5, 0.5; mul rA.c, rA.c, rA.c` (2-light variants
+vectorise the `mul` over two components; 2 shaders use the half-Lambert
+unsquared), then `mad lit, m_colorIntensity, rA.c, lit`. The final colour
+is `min(texture x COLOR0 x MaterialColour x lit (+ fog), 1)`. The
+`LgtMatVec`/`LgtMatClr` vertex shaders (55 unique) compute one more light
+(`setLightMatrix`) as half-Lambert squared into `TEXCOORD4`, which the
+pixel shader applies as `max(TEXCOORD4, 1)` (ffx-dxbc reflection and WGSL
+translation).
+
+The material colour: in `Ch_DrawMain` (at `0x0082f64c`), with
+`g_ChrShadeByLight` (`0x00c496ea`, 1 in the shipped `.data`) the shade is
+multiplied by (light value `+0x36c` x 0.85 + 0.15) (`k_PointEightFiveF64`
+`0x00b501a8`, `k_PointFifteenF64` `0x00b59870`) and passed to
+`graphicCharacterInstanceSetMeshColor` (`MaterialColour`); the PS2's
+`Ch_DrawCalcShade` uses the light value as it is. `k_ShadeCoeffF64`
+(`0x00b48300`, 0.208125) is read only by
+`Phyre_CharacterLighting_setShadeCoeff`. The PS2's own vertex lighting
+(VU1) is in `docs/formats/ps2-elf.md`, "VU1 programs".
+
+DXBC checksum: MD5 over bytes 20.. with the bit length as the first word
+of the last block and `(bits >> 2) | 1` as its last word, instead of MD5's
+64-bit length. It matches every container of the game's 793 shader files
+(ffx-demaster `converter/src/dxbc.rs`), so an edited shader can be
+re-signed.
+
+## Samplers (ffx-demaster)
+
+`PTextureD3D11_register_0058cf80` registers `PSamplerStateD3D11` objects:
+its tree `g_SamplerStateCache` (`0x00c25374`) is the sampler cache. A
+model's material samplers are made inside `loadCluster` of the model's own
+cluster (`chr/.../mdl/D3D11/*.dae.phyre`, `map/.../mdl/...`) with min 5,
+mag 1, address 0 (Phyre clamp); the effect shaders' (`Vfx*.fx.phyre`) and
+the post-process shaders' samplers come from their shader clusters
+(Fahrenheit hook log).
+
+`PRendererD3D11_mapSamplerFilter_0058aa10(min, mag, cmp)`:
+
+| min | mag 0 | mag set |
+|---|---|---|
+| 0, 2 | `MIN_MAG_MIP_POINT` | `MIN_POINT_MAG_LINEAR_MIP_POINT` |
+| 1, 3 | `MIN_LINEAR_MAG_MIP_POINT` | `MIN_MAG_LINEAR_MIP_POINT` |
+| 4 | `MIN_MAG_POINT_MIP_LINEAR` | `MIN_POINT_MAG_MIP_LINEAR` |
+| 5 | `MIN_LINEAR_MAG_POINT_MIP_LINEAR` | `MIN_MAG_MIP_LINEAR` |
+
+then `ANISOTROPIC` whenever `g_SamplerMaxAnisotropy` (`0x00c25370`) is
+above 1.0, and `| 0x80` with `cmp`.
+
+## Z pre-pass
+
+`PhyreScene_DrawZPrePass` (`0x00651070`) renders, in pass `ZPrePass`, the
+instances of loaded characters that have a material with switch
+`ADDITIONAL_ZPREPASS` (and not `BUILT_IN_ZPREPASS`), except on map 0x180.
+
 ## UI coordinates
 
 The remaps take a remaster coordinate to the PS2 screen (512 x 416):
@@ -360,6 +418,227 @@ writes the address (minus `0x80000000` from `0x70000000` up), `bytes /
 `+4` the work buffer (64 animations of `0x34` bytes, active bytes at
 `+0xd08`), `+0xd` the format (0 old, 1 new), `+0xe` the timer.
 
+## Lights and fog at run time (ffx-remix R-43)
+
+Read from the code; nothing was run. `app` is `*g_PhyreApplication`
+(`0x00cc9cd8` holds a pointer; getter `0x00623b90` is `mov eax,
+[0x00cc9cd8]; ret`). The scene context (`*(scene +0xcc)`) is `app +0x50`,
+stored by `PhyreScene_initPostProcess_006656e0`. Offsets below are on the
+context; add 0x50 for `app`.
+
+**At map load** (`PhyreScene_fieldMapInitialize` `0x0065b8a0`). The map
+cluster's `GlobalCamera` is found by `PhyreScene_findGlobalCamera`
+(`0x006519f0`, into scene `+0x4f8`). It is a `PCameraPerspective` (class
+`0x00c93608`); `PhyreScene_findGlobalMapObject_006518c0` searches scene
+`+0x1128` when byte `+0x93c` is set. Its members are registered by
+`Phyre_PCamera_Bind` (`0x004537d0`), with the game's spelling; the object
+offset is the descriptor's + 4:
+
+| Member | Object | Goes to |
+|---|---|---|
+| `m_ambientColor` | `+0xc0` | context `+0x00` (`PhyreScene_updateLightingObjects_00651de0`, only when `Phyre_CharacterLighting_isInitSuccessful`; else 0) |
+| `m_fogColor`, `m_fogNear`, `m_fogFar`, `m_fogCurve`, `m_fogLimit` | `+0xd4`, `+0xe4`, `+0xe8`, `+0xec`, `+0xf0` | `+0x10`, `+0x20`, `+0x24`, `+0x28`, `+0x2c` (= limit / 255) (`PhyreScene_setupMapFog_0066ee70`) |
+| `m_charcterLightIntensity` | `+0x120` (4 floats: lights 0-2, ambient) | `CharacterLighting_setIntensity_006aa8c0` |
+| `m_charcterLightPitch`, `m_characterLightYaw` | `+0x130`, `+0x140` (degrees) | `Phyre_CharacterLighting_setRotation` (`0x006aaea0`) |
+
+Without a `GlobalCamera` the fog defaults are colour (0.28, 0.35, 0.6),
+near 65536, far 65537, curve 1, limit 1.
+`PhyreScene_setupCharacterLighting_0066eb20` (thiscall(scene; flag) ret
+4, called only from `0x0065b8a0`, so once per map load) does the
+following:
+
+1. It sets the four intensities and rotations, plus the tweak copies
+   (`CharacterLighting_setCoefficient_006aa920`, only with its enable
+   byte).
+2. On map `0x12ea` with `getScenerioFlag` (`0x00787360`) 0 it forces all
+   four to 1.
+3. It applies the ambient (`CharacterLighting_applyAmbient_006aa650`)
+   and the map name (`CharacterLighting_setMapName_006ab0d0`). On
+   `znkd06` that makes one PS2 point light,
+   `Sg_PLightDefine(0, -17, -1.5, 30, radius 30, colour 3, 3, 3, light 0)`.
+4. Unless on `znkd06`, it runs `balanceLumWithGlow` (`0x006a7550`).
+
+**`g_CharacterLighting`** (`*0x00ccca84`, 0x234 bytes):
+- `Phyre_CharacterLighting_initialize_006a8f80` (from
+  `PhyreScene_bootInit` `0x00657a50`) creates its four `PLight`s
+  (`PCluster_create(4, PLight)`) into context `+0xa4`. They are not map
+  data.
+- Fields: `+0xf0` that array, `+0xf4 + 0x10 i` the direction (x and y
+  negated), `+0x124 + 0x10 i` the colour, `+0x190` the ambient colour,
+  `+0x1a0`/`+0x1a4` the ambient intensity and level (default 1.2),
+  `+0x1a8 + 0xc i` intensity, `+0x1ac`/`+0x1b0` pitch and yaw, `+0x1cc`
+  enabled (4 lights), `+0x1d0` luminances, `+0x1e0` glow factors
+  (0.01..0.99), `+0x220` the map name, `+0x230` the flag.
+- Setters:
+  - `Phyre_CharacterLighting_setLightColor_006aa940`, thiscall(cl; i, r, g, b) ret 0x10:
+    PLight `+0..+0xc` = (r, g, b, 1) for `PLightType` `0x00c10828`;
+  - `CharacterLighting_setIntensity_006aa8c0`, ret 8;
+  - `Phyre_CharacterLighting_setRotation` `0x006aaea0`, ret 0xc;
+  - `Phyre_CharacterLighting_setLightDir` `0x006aa9f0`, ret 0x10. It builds a basis with up
+    (0, 1, 0), or (0, 0, 1) when the negated direction's y >= 0.9, and
+    writes it into the light's node (PLight `+0x10`) as a 3x4.
+
+  `applyIntensityMultiplier` writes PLight `+0x24`; its formula is above.
+- Map-specific boost: on `znkd10/14/08/09` the light colours, and on
+  `znkd14/08/09` the ambient, are pushed away from grey x2.6. For lights
+  0-2 that only changes the luminances (`+0x1d0`), not the PLight colours.
+
+**Who changes the lights later.** Nothing re-sets them per frame. The
+writers are:
+- `Sg_LightSetColor` `0x00836310` (colours at `0x00c49744 + 0x10 i`,
+  `FFXVu0LightColorMatrix` `0x006ed4f0` into `0x023c4400`, then
+  `graphicCharacterLightingSetLightColor` `0x0063cb00`);
+- `Sg_LightSetDir` `0x00836430` (directions at `0x00c49724`,
+  `0x00c49734`, `0x013008e8`; `FFXVu0NormalLightMatrix` `0x006ed620`
+  into `0x01300978`).
+
+Their callers:
+- natives `0x4011` (`Sg_LightSetDirXYZ` `0x008364f0`), `0x4012`
+  (`Sg_LightSetColorRGB` `0x00836400`) and `0x4013` (`Light_Set`
+  `0x00836520`, colour / 255 and two angles);
+- `Sg_EventjumpInit` `0x0083b460`, `opu_ffxlight` `0x00808cf0`,
+  `Atel_RestoreLights_0086e770`, `LightGroup_loadSave_0084e3c0` and
+  `SgGu_LightApply_0084ebd0`;
+- `Sg_LightSetDirXYZ2_00834320`, a copy of `Sg_LightSetDirXYZ` that
+  nothing calls.
+
+**Light directions** (ffx-remix R-52, read in the dump and the ports):
+
+1. `Light_Set` (`0x00836520`, native `0x4013`: light, r, g, b, a5, a6, all
+   ints) passes the colour `(r, g, b) / 255` to `Sg_LightSetColor`. It turns
+   each angle to radians (`deg * 3.141592 / 180`, wrapped by
+   `Angle_Wrap_00836720`) and passes the direction
+   `p = (sin a5 * cos a6, sin a6, cos a5 * cos a6)` to `Sg_LightSetDir`:
+   a5 is the azimuth about y (from +z towards +x) and a6 the elevation.
+   (The argument names "pitch" and "yaw" used for `0x4013` elsewhere were
+   swapped; `docs/formats/script.md` now says azimuth and elevation.)
+   That reaches `Phyre_CharacterLighting_setLightDir` through
+   `graphicCharacterLightingSetLightDir` (`0x0063cb50`).
+2. `setLightDir` stores `d = (-p.x, -p.y, p.z)` and gives the PLight's node
+   `PMatrix4_lookAt` from the origin towards `d`. The rows are `s, t, -f`,
+   so the node's -z is `d` normalised.
+3. `Phyre_CharacterLighting_applyRotation` (`0x006a7280`) then turns that
+   node by the map's per-light yaw and pitch (`+0x1b0`/`+0x1ac + 0xc i`,
+   from the `GlobalCamera`'s `m_characterLightYaw`/`m_charcterLightPitch`;
+   radians as `deg / 180 * 3.14`), when either is larger than 0.001 in
+   size (`fabs`). In the port
+   (`ffx_pother_b::p4_light2`) it is the look-at times `Matrix_RotationY`
+   (yaw), then times `Matrix_RotationX` (pitch), in the row form of
+   `PMatrix4_Multiply_004ca360` (`out = b a`). With column vectors:
+   `d_world = Rx(pitch) * Ry(yaw) * normalize(d)`, the direction the light
+   travels.
+4. The node's -z is the light's direction:
+   `Phyre_CharacterLighting_lightDirection_006a84d0` reads it that way
+   (`(0, 0, -1)` through the node's matrix; its only caller is the tweak
+   utility's `0x006a7850`). The shaders' `Light0`-`Light2.m_direction` come
+   from the same three `PLight`s (`docs/formats/scene-chars.md`).
+
+Over the map clusters' cameras, yaw is non-zero only on `mihn01`'s
+(`mihn0100`, `isho0000`: light 0 at 25 degrees) and `stbv01`'s
+(`stbv0100`, `stmm0100`: lights 0 and 1 at -10). Pitch is 0 on every map.
+So on most maps Light0's direction is the last one a writer set ("Who
+changes the lights later" above), mostly the event scripts' `0x4013`
+calls (no event script calls `0x4011` or `0x4012`). One example: `bsil0000`'s scripts set light 0
+with 12 argument sets, most often `(0, 100, 110, 120, 243, 50)` and
+`(0, 98, 108, 118, 37, 42)` (11 calls each).
+Which call is active at a given moment is script state. Not checked
+against a capture: whether `mihn0100`'s painted sun matches its light 0.
+
+**PS2 point lights** (`*0x013008cc`, count `0x013008d0`; layout in
+main.md):
+- They are filled at run time by:
+  - natives `0x4023`/`0x4025` (`0x00a78340`, `0x00a78370`);
+  - the effect programs `pppFpPointLightProc` `0x00729f90` and
+    `pppFpPointLight` `0x0075d7f0` (and `0x0075d930`, `0x0075db30`,
+    `0x0075dd70`, `0x0075df90`);
+  - the `znkd06` code above.
+- `Sg_PLightDefine` checks `i <= count`, one past the table.
+- They are read only by `Ch_PLightCalc` (`0x008305a0`, from `Ch_DrawMain`
+  per character). That goes to `graphicCharacterLightingSetLightMatrix`
+  (`0x0063cb80`), which writes the character material's `LgtMatVec` and
+  `LgtMatClr`. They are never Phyre lights and never reach map shaders.
+
+**Fog**:
+- Writers:
+  - at map load, `0x0066ee70` (above);
+  - the debug tweak `0x00698ab0`;
+  - the natives:
+    - `Native_FogSetParams` `0x0091b810` (`0x8037`: near, far, limit)
+      writes the PS2 fog through `yiSetFogParam` (`0x0090a350`), which
+      divides near and far by `g_YiScaleFactor` (32 after `yiInit`; 10 on
+      one `Sg_MainLoop` path). It reaches the PC renderer only by map
+      number (`g_CurrentMapNo` `0x012fbc40`):
+      - on map `0xe0` (in `yiSetFogParam`) as near and far / scale x
+        0.001, limit (1 - limit/255) x 0.4, curve 1;
+      - on map `0x140` (`0x0091c8a0`) through `graphicSetFogNear`/`Far`/
+        `Limit`(/255) and curve 1.
+    - `Native_FogSetParam0`/`1`/`2` (`0x8038`/`0x803a`/`0x803c`,
+      `0x0091b8b0`/`0x0091b960`/`0x0091ba10`) have no map test. Unless the
+      level name hash is `0xca2`, `0x1e38` or `0x699`, each reads the three
+      values back (`yiGetFogParam`), replaces its own, calls
+      `yiSetFogParam`, and then calls `graphicSetFogNear`, `Far` or
+      `Limit`(/255) directly, on every map; none sets the curve. On map
+      `0xe0`:
+      - `yiGetFogParam` (`0x00908bb0`) returns the renderer's values, so
+        the two values a call does not set are rescaled and shrink with
+        every call;
+      - the value it does set ends up unscaled (the direct call comes
+        last).
+    - The colour natives `Native_FogSetColor` (`0x803e`, `0x0091bad0`) and
+      `Native_FogSetRed`/`Green`/`Blue` (`0x803f`-`0x8041`, `0x0091bbb0`/
+      `0x0091bc80`/`0x0091bd50`):
+      - The one-channel natives first read the colour back with
+        `yiGetFogColor` (`0x00908980`). It takes r, g, b, on every map,
+        from `graphicGetFogColor` x 255, or `graphicGetGlobalAmbientColor`
+        with render status bit 2 (`0x018ded08 & 4`), truncated. The two
+        channels a call does not set are therefore the live context's (in
+        whole 1/255 steps) or the global ambient.
+      - All four then call `yiSetFogColor` (`0x0090a2c0`), which stores the
+        PS2 colour bytes and, on map `0xe0`, calls
+        `graphicSetFogColour(c / 255)` with exact fractions.
+      - On map `0x140` all four pass `ftol(c / 255)` per channel: each
+        channel is 0, or 1 at 255.
+- The `graphicSetFog*` setters go through `FogEffectManager` (`*0x00ce5170`,
+  getter `0x006e32c0`, context through manager `+0xa0`). Each first asks
+  `FogEffectManager_isMoving_006e3480`: the squared distance
+  (`0x006e3320`) between the manager's snapshot and the live context over
+  colour, near, far, curve and limit. Above 0.1 the setter does nothing.
+  Since near and far are world units, a difference of about 0.32 in
+  either blocks every setter. The snapshot (`+0` background, `+0x10`
+  colour, `+0x20` near, `+0x24` far, `+0x28` limit, `+0x2c` curve: limit
+  and curve swapped against the context) is refreshed by the setters and
+  by `FogEffectManager_copyParameters_006e3b80`.
+- `PhyreScene_animate` calls `FogEffectManager_updateChrFogFade_006e3f40`
+  every frame. It writes the materials' `fgEff`, not the context's fog.
+  `graphicSetGlobalAmbientColor` (`0x00643270`) has no direct callers.
+
+**What reaches the shaders, and when.**
+- `PSceneWideParameters_getBuffer` (`0x004fdec0`, per draw from
+  `allocateAndFillParameterBuffers` `0x005b5a50`) copies:
+  - 0x10 `GlobalAmbientColor` from `+0x00`;
+  - 0x11 from `+0xd0` (`GlobalTime`);
+  - 0x16-0x1a fog from `+0x10..+0x2c`;
+  - 0x1b `BGColor` from `+0x30`;
+  - 0x1c from `+0x40`.
+- The buffer is refilled only when its key changes. The key
+  (`PSceneWideParametersKey_initialize` `0x004fe940`) holds the camera,
+  near and far, the viewport, the ambient (`+0..+8`) and `GlobalTime`,
+  but no fog. So a fog-only write shows at the next refill.
+- `graphicRender` (`0x00642bb0`) runs once per frame from
+  `FFXApplication_render` (`0x0042f930`), after the cloth upload and
+  before `VsyncEmu_Wake`. It is skipped while `app +0x3ad` (loading) is
+  set or when `TrophyGetError()` == 1. It starts `mov ecx, [0x00ccb9d8]`
+  (6 bytes), calls `PhyreScene_render`, then
+  `JobScheduleWait_pppPart_fillBuffer` and
+  `PhyreScene_doDeleteMeshInstances`, and returns `PhyreScene_render`'s
+  result. Its entry is the place to set lights or fog for the frame's
+  draws; set the fog snapshot too, or the next script fog change is
+  refused.
+
+Open: `0x01300978` is `FFXVu0NormalLightMatrix`'s output but carries the
+label `g_Vu0ClipScreen` here. `Phyre_FogEffectManager_setParam20`/`24`/`28`
+and `graphicSetFogParam_00643180` are the near, far and curve setters.
+
 ## Scene state
 
 What `ffx-render` needs from the scene stream lives in a few objects the
@@ -371,8 +650,11 @@ What `ffx-render` needs from the scene stream lives in a few objects the
 |---|---|---|
 | `0x50` | global ambient colour (3 floats) | `graphicSetGlobalAmbientColor` (`0x00643270`), `graphicGetGlobalAmbientColor` (`0x00641230`) |
 | `0x60` | fog colour (3 floats) | `graphicGetFogColor` (`0x00641160`) |
-| `0x70`, `0x74`, `0x7c` | fog near, far, limit | `graphicGetFogNear`/`Far`/`Limit` (`0x006411d0`, `0x006411b0`, `0x006411c0`) |
+| `0x70`, `0x74`, `0x78`, `0x7c` | fog near, far, curve, limit | `graphicGetFogNear`/`Far`/`Limit` (`0x006411d0`, `0x006411b0`, `0x006411c0`); the curve `graphicSetFogParam_00643180` (`FogCurve`, scene-wide semantic 0x19) |
 | `0x80` | background colour (3 floats) | `graphicSetBackgroundColour` (`0x00642e90`) |
+| `0xf4` | the character lights: a `PArray<PLight*>` of 4 (count `& 0x7fffffff`, data `+4`) | `Phyre_CharacterLighting_initialize_006a8f80` |
+| `0xfc..0x104` | `CharacterAmbientLight` (ambient colour x level) | `Phyre_CharacterLighting_applyIntensityMultiplier` (`0x006a6e90`) |
+| `0x120` | `GlobalTime` | `FFXApplication_updateGlobalTime_0042fa00` |
 | `0x26c`, `0x270` | window width and height (`u32`) | `PhyreScene_setCameraAspectRatio` |
 | `0x3ac` | keyframe animation on (byte) | `graphicFFXApplicationEnableKeyframeAnim` (`0x006401e0`) |
 
@@ -404,8 +686,10 @@ scene `+0x10d8c` is 1; a camera's `+0xbc` far plane, `+0x150` aspect,
 - `PhyreScene_setMinimapCameraWorldMatrix(m)` (`0x0066d940`) copies it to
   `+0x7b0`, points the minimap camera's `+0xb4` there and updates it.
 - `PhyreScene_setCameraFOVy(fovy)` (`0x0066cda0`) sets the main and
-  minimap cameras; in a 3D scene (`+0x93c`) map `0xec1` forces
-  `0x3ef126e9` and the minimap camera gets `0x3f2c49ba` on `0x107`,
+  minimap cameras; with the 2D level loaded (byte `+0x93c`: the 2D
+  flag, not a 3D one; `docs/formats/scene-maps.md`, "How the game draws
+  the 2D layers") level `0xec1` forces `0x3ef126e9` (0.471 rad, 27
+  degrees) and the minimap camera gets `0x3f2c49ba` on `0x107`,
   `0x3f5126e9` on `0xf48`.
 - `PhyreScene_setCameraAspectRatio(a)` (`0x0066cbe0`): in a 3D scene
   `a * 3 * 0.25 * 16/9`; a reflection camera of kind (`+0x10d90`) 0 or 1
@@ -488,6 +772,9 @@ shown, `+1` group (signed byte), `+2` id (signed `i16`), `+4` the mesh),
 `PhyreScene_show2DLayer`/`hide2DLayer(id)` (`0x0066f2f0`/`0x0065f050`)
 set the first matching entry and its mesh's draw pointer (`+0x1c` of
 the mesh's `+0x1c`: the mesh, or 0).
+The camera the layers are drawn with (`+0x7e0`), their depth and the
+16:9 window: `docs/formats/scene-maps.md`, "How the game draws the 2D
+layers".
 
 `graphicConvertScreenCoords(x, y, *fx, *fy)` (`0x0063de10`) maps PS2
 screen units to the 1920x1080 frame: `x * 3.75`, `y * 2.5961537`.
@@ -577,7 +864,8 @@ Not ported; listed for mod tools:
   character to stdout (a vertex-buffer dump; a model-export start).
 - `0x006411e0`/`0x00640e20`: create the free camera (`g_FreeCamera`,
   `FreeCamera_FreeCamera`, 0x340 bytes) on demand and read its mode or
-  pass it input: the developer fly camera.
+  pass it input: the developer fly camera, which the pause also uses to
+  freeze the game (`docs/formats/field.md`, "Free camera").
 - `0x006dd3b0`: writes `WIN32_VramDetail_<name>_<n>.csv` with a header
   and "Vram dump is not supported on platforms other than PS3/PSV.": the
   PS3 VRAM report, stubbed on PC.

@@ -5,7 +5,9 @@
 //! `extras.ffx_segments` (one per primitive, in order: editors such as
 //! Blender keep mesh extras but not primitive ones). A segment takes the
 //! first primitive naming it. Positions, normals, texture coordinates
-//! (flipped back to v up), colors, joints and weights are read; joints are
+//! (`TEXCOORD_n`, flipped back to v up), colors (`COLOR_n`), joints and
+//! weights are read, as many texture coordinate and color sets as the
+//! segment stores (further glTF sets are not read); joints are
 //! mapped through the primitive's skin, by joint name, back into the
 //! segment's bone palette. Values equal to what the export wrote keep
 //! their stored form, so an unedited glTF changes nothing.
@@ -128,6 +130,23 @@ impl Doc<'_> {
     }
 }
 
+impl Doc<'_> {
+    /// A color accessor (RGB or RGBA) as RGBA bytes.
+    fn colors(&self, at: &Value) -> Result<Vec<[u8; 4]>> {
+        let imported: Vec<[f32; 4]> = match self.floats::<4>(at) {
+            Ok(c) => c,
+            Err(_) => self
+                .floats::<3>(at)?
+                .into_iter()
+                .map(|[r, g, b]| [r, g, b, 1.0])
+                .collect(),
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
+        let bytes = |c: [f32; 4]| c.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+        Ok(imported.iter().map(|&c| bytes(c)).collect())
+    }
+}
+
 /// Keeps `old` where the export of `old` equals the imported value.
 fn keep<T: Copy, E: PartialEq>(new: &mut [T], old: &[T], imported: &[E], export: impl Fn(T) -> E) {
     if new.len() == old.len() {
@@ -220,6 +239,8 @@ impl Model {
                     positions,
                     material: old.material,
                     bones: old.bones.clone(),
+                    uv_sets: old.uv_sets.clone(),
+                    color_sets: old.color_sets.clone(),
                     ..Segment::default()
                 };
                 let present = |a: &str| !attrs[a].is_null();
@@ -245,19 +266,31 @@ impl Model {
                     need("TEXCOORD_0", !old.uvs.is_empty())?;
                 }
                 if present("COLOR_0") {
-                    let imported: Vec<[f32; 4]> = match doc.floats::<4>(&attrs["COLOR_0"]) {
-                        Ok(c) => c,
-                        Err(_) => doc
-                            .floats::<3>(&attrs["COLOR_0"])?
-                            .into_iter()
-                            .map(|[r, g, b]| [r, g, b, 1.0])
-                            .collect(),
-                    };
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
-                    let bytes = |c: [f32; 4]| c.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
-                    seg.colors = imported.iter().map(|&c| bytes(c)).collect();
+                    seg.colors = doc.colors(&attrs["COLOR_0"])?;
                 } else {
                     need("COLOR_0", !old.colors.is_empty())?;
+                }
+                // Further sets the cluster stores; one the glTF lacks keeps
+                // the stored values (or the first set's, when resized).
+                // Sets past the cluster's (a UV map added in an editor) are
+                // not read: the cluster has no stream for them.
+                for (k, old_set) in old.extra_uvs.iter().enumerate() {
+                    let name = format!("TEXCOORD_{}", k + 1);
+                    let mut set = Vec::new();
+                    if present(&name) {
+                        let imported: Vec<[f32; 2]> = doc.floats(&attrs[name.as_str()])?;
+                        set = imported.iter().map(|&[u, v]| [u, 1.0 - v]).collect();
+                        keep(&mut set, old_set, &imported, export_uv);
+                    }
+                    seg.extra_uvs.push(set);
+                }
+                for k in 0..old.extra_colors.len() {
+                    let name = format!("COLOR_{}", k + 1);
+                    seg.extra_colors.push(if present(&name) {
+                        doc.colors(&attrs[name.as_str()])?
+                    } else {
+                        Vec::new()
+                    });
                 }
                 if !old.joints.is_empty() {
                     let (Some(names), true, true) =
@@ -608,6 +641,10 @@ pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<Imported> {
         .chain(new_prims.iter().map(|(_, t, used)| (*t, used.clone())))
         .collect();
     for (s, joints) in &wanted {
+        // Unskinned geometry (a new part of a map prop) needs no skeleton.
+        if joints.is_empty() {
+            continue;
+        }
         let k = skeleton_of(*s).ok_or_else(|| bad(format!("segment {s} has no skeleton")))?;
         for &h in joints {
             if known.contains_key(&(k, h)) {
