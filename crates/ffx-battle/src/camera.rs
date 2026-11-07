@@ -1769,8 +1769,8 @@ pub mod bridge {
     }
 
     /// `MsCameraGetYaw()` (`0x007bcf20`): the yaw of the camera in use
-    /// ([`CAMERA`]): `MsVectorRect2Polar` of its eye (`+0x50`) less its
-    /// look-at (`+0x66c`), the yaw into `local` (the original's stack
+    /// ([`CAMERA`]): `MsVectorRect2Polar` of its look-at (`+0x50`) less its
+    /// eye (`+0x66c`), the yaw into `local` (the original's stack
     /// word), read back as the result (`fld`).
     pub fn ms_camera_get_yaw(
         mem: &mut impl Mem,
