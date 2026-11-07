@@ -230,6 +230,7 @@ pub mod h4z_quad;
 pub mod l6_vfx;
 pub mod l7_vfx;
 pub mod l8_vfx;
+pub mod l9_vfx;
 pub mod m5v_a;
 pub mod m5v_b;
 pub mod m5v_c;

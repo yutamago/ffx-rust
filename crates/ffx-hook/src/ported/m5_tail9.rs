@@ -96,6 +96,17 @@ ported! {
     PTexture2DD3D11_unmapLevel_005a8550 @ 0x005a_8550 => extern "thiscall" fn unmap_level(tex: u32, data: u32) -> u32 {
         v::unmap_level(&mut mem(), tex, data)
     }
+    /// `(host, cmd)` -> the next command: the opus colour handler (table
+    /// entry 0x90); the CLUT green pass's two vectors in a frame.
+    OpusColour_00809f90 @ 0x0080_9f90 => extern "C" fn opus_colour(host: u32, cmd: u32) -> u32 {
+        let mut vectors = StackFrame::<{ (ffx_glue_other::l9_vfx::bridge::VECTORS / 4) as usize }>::new();
+        let at = vectors.at();
+        ffx_glue_other::l9_vfx::bridge::opus_colour(&mut mem(), at, host, cmd)
+    }
+    /// `(entry)` -> `entry`: the input devices' entry constructor.
+    PInputDevice_entryCtor_00620540 @ 0x0062_0540 => extern "thiscall" fn input_entry_ctor(entry: u32) -> u32 {
+        ffx_pother_b::l9_input::bridge::entry_ctor(&mut mem(), entry)
+    }
     /// `()`: the ability map's job wait (queue 0 of `0x00cdede4`).
     AbmapJobWait_00a8ecf0 @ 0x00a8_ecf0 => extern "C" fn abmap_job_wait() {
         ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());

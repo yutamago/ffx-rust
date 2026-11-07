@@ -463,6 +463,7 @@
 0x0061e740	Add_0061e740	system	11	tools/refs.py: 0 refs; address never taken, in no table; ported anyway (no coverage run saw it)
 0x0061e750	FUN_0061e750	system	21	tools/refs.py: 0 refs; address never taken, in no table
 0x0061e770	FUN_0061e770	system	21	tools/refs.py: 0 refs; address never taken, in no table
+0x006203b0	FUN_006203b0	phyre	368	tools/refs.py: 0 refs; address never taken, in no table; reach.py counted it only because its node ran on past its ret (0x0062051f) over the two undumped functions after it: 0x00620520 (0 refs) and 0x00620540, the device entry constructor PInputDeviceMouse_ctor and PInputDevicePad_ctor hand the vector constructor iterator (code-imm@0x00620131, @0x00620201), ported separately (PInputDevice_entryCtor_00620540, tail9)
 0x006231f0	FUN_006231f0	system	43	tools/refs.py: 0 refs; address never taken, in no table
 0x00623220	Settings_Create	system	117	tools/refs.py: 0 refs; address never taken, in no table
 0x00623e20	FUN_00623e20	system	54	tools/refs.py: 0 refs; address never taken, in no table

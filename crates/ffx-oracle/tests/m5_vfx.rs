@@ -6479,3 +6479,85 @@ fn l8_ppp_mdl_point_light_colours() {
         }
     });
 }
+
+// ---- round 9 (tail9) (ffx_glue_other::l9_vfx) ----
+
+use ffx_glue_other::l9_vfx::bridge as l9x;
+
+#[test]
+fn l9_opus_colour() {
+    // every nibble (0..0xf000) on random command data (floats around 0..1,
+    // negative, past 1, NaN, out of ftol's range), the draw mask and the
+    // g_Ee_Gpr / VU0 words; the CLUT green vectors at the original's
+    // 16-aligned frame
+    Twins::each(|t| {
+        let mut rng = Rng(0x0080_9f90);
+        for case in 0..64_u32 {
+            let host = t.zeros(0x240);
+            let data = t.zeros(0x60);
+            let nibble = (case % 16) << 12;
+            let mode = (nibble | rng.below(0x1000)) as u16;
+            t.write(host + 0x21a, &mode.to_le_bytes());
+            t.w32(host + 0x220, data);
+            for o in (0..0x10).step_by(4) {
+                let v = float_word(&mut rng);
+                t.w32(host + o, v);
+            }
+            for o in (0x30..0x50).step_by(4) {
+                let v = match rng.below(5) {
+                    0 => (rng.below(300) as f32 - 20.0).to_bits(),
+                    1 => (rng.below(1000) as f32 / 700.0).to_bits(),
+                    // -0.0 stays -0.0 (the clamp stores only below 0)
+                    2 => (-0.0_f32).to_bits(),
+                    _ => float_word(&mut rng),
+                };
+                t.w32(data + o, v);
+            }
+            for i in 0..4 {
+                let v = float_word(&mut rng);
+                t.global(l9x::EE_GPR + 4 * i, v);
+            }
+            let mask = rng.next();
+            for (sym, tag, n) in [
+                (l9x::RENDER_DISABLE, 1, 1),
+                (l9x::RENDER_ENABLE, 2, 1),
+                (l9x::SET_COLOR_SCALE, 3, 1),
+                (l9x::BACK_COLOR_RESTORE, 4, 1),
+                (l9x::COLOUR_SCALE2, 5, 4),
+                (l9x::RGBA_FREE, 6, 0),
+                (l9x::BACK_COLOR_SET, 7, 1),
+                (l9x::FIELD_VEC4I, 8, 4),
+                (l9x::SET_DRAW_MASK, 10, 1),
+                (l9x::SET_RENDER_PARAM, 11, 1),
+                (l9x::FIELD_VEC6, 12, 6),
+                (l9x::STORE_COMPUTED, 13, 1),
+                (l9x::COLOUR_PAIR, 14, 7),
+                (l9x::MATERIAL_SCALE2, 15, 4),
+                (l9x::CLUT_GREEN, 16, 2),
+                (l9x::CLEAR_BIT8, 17, 0),
+                (l9x::UPDATE_YIQ, 18, 0),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(0x100 + tag));
+            }
+            t.stub_sym(l9x::GET_DRAW_MASK, 9, false, 0, 0, Ret::Val(mask));
+            let cmd = rng.next();
+            // the original's 16-aligned ebp (two argument words, the return
+            // address and ebx pushed, esp - 8 rounded down to 16; push
+            // ebp) and its vectors
+            let ebp = (call_top(&t.a) - 8 - 16) & !0xf;
+            let vectors = ebp - 0x30;
+            t.zero_frames();
+            t.b_top = Some(vectors - 0x40);
+            t.check(
+                &format!("0x00809f90 #{case} {mode:#x}"),
+                0x0080_9f90,
+                Conv::Cdecl,
+                &[host, cmd],
+                |g| Out::U32(l9x::opus_colour(g, vectors, host, cmd)),
+            );
+            t.same_stack("0x00809f90 vectors", vectors, l9x::VECTORS as usize);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
