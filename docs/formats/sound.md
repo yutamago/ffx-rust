@@ -61,12 +61,14 @@ writes back byte for byte under these rules: ffx-remix's
   back to back.
 - The header's bytes `0x1c..0x24` are zero in every bank; `0x24..0x2c` are
   the 8-byte hash the project's bank entry repeats (all 1,260 banks;
-  "FMOD Designer event projects", `LGCY`); `0x2c..0x3c` vary per bank. A
+  "FMOD Designer event projects", `LGCY`); `0x2c..0x3c` differ between most banks (668 values in 1,260
+  banks) and are not in the project. A
   writer copies all 32 bytes at `0x1c` from the original (as for
   `music_ps2`, below), so the bank still matches its project.
 - Chunks: only types 2 and 3 occur. A chunk's "another follows" bit is set
   on every chunk but the last. 90 JP voice samples are 35,000 Hz, which no rate
-  index names: they have rate index 0 and a rate chunk (type 2, `u32`)
+  index names: they have rate index 0 (4,000 Hz in FMOD's table, used by
+  no other sample) and a rate chunk (type 2, `u32`)
   first (86 then a loop chunk, 4 alone). Loop chunks (type 3) are
   inclusive (`start..=end`). Every voice loop chunk (15,202 of the 18,112
   voice samples) is `(0, n - 1)`: it ends on the line's last real frame,
@@ -115,7 +117,8 @@ served at `PStreamFile`, the harness's `FFX_AUDIO_WAV` capture; ffx-remix
   length (the sound definition's `length in ms`, below), not from the
   bank, and the game clears a voice once that much time has passed
   (`Event::getInfo` `lengthms` into `FmodVoice +0x6c`, the timeout of
-  `0x0070b750`; `audio-platform.md`, `Event::getInfo`). With that word raised to 2,400 the whole line played
+  `0x0070b750`; `audio-platform.md`, `Event::getInfo`). With the wave's
+  `length in ms` raised to 2,400 the whole line played
   and the subtitle stayed up for 77 frames instead of 40.
 - **Codecs.** A bank has one codec for all its samples; FSB5 Vorbis would
   need FMOD's own encoder set-up, so replacements stay IMA ADPCM (not
@@ -393,7 +396,8 @@ rounded down, in 32,171 of the 33,362 waves, and 1 or 2 ms less in the
 rest (1,049 and 142). The real length is the loop chunk's end + 1 when the
 chunk is `(0, end)` with the end in the last block (`frames - 64 < end <
 frames`), else `frames`. A writer sets it to the real length rounded down
-(ffx-remix `audio/mod.rs`). FMOD hands it to the game as the event's
+(for a new sample, its length before padding to whole blocks;
+ffx-remix `audio/mod.rs`). FMOD hands it to the game as the event's
 length: a value shorter than the sound cuts a voice line ("Replaced
 samples").
 
