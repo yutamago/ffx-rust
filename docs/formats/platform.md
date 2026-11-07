@@ -586,7 +586,9 @@ the game's own scripts can start a movie that early is not checked.
 Measured 2026-11-07 with ffx-remix's runtime in harness games (its
 `tools/probe-movie.sh`): movie 2 as `tools/replays/movie-fmv.txt` plays it
 (save `ffx_003`, bsil0000's worker 24 entry 5, the preload held until its
-30 frames are decoded), lockstep with the real clock.
+30 frames are decoded), in lockstep; the test-file runs below with the
+real clock (its `--realtime`), the original-file runs with the virtual
+clock too.
 
 - `PVideoPlaybackWin32_open` (`0x00a27f20`, thiscall(player, path,
   loop)) got the path
@@ -596,21 +598,26 @@ Measured 2026-11-07 with ffx-remix's runtime in harness games (its
   file).
 - With Fahrenheit serving a test file in place of `IWK_us.webm` (a frame
   number drawn as a barcode in each frame, 29.97 fps, a silent Vorbis
-  track): a 1920 x 1080 VP8 file played through frame 320 (the last
-  shot). In the shots taken when `+0x6d8` was 64, 128, 192, 256 and 320
-  the barcode read 63, 127, 191, 255 and 319: the frame shown is
-  `+0x6d8` - 1. From the code: that is the player's frames shown
-  (`+0x100`) when `updateTexture` uploaded it, which adds one after the
-  upload.
-- A 3840 x 2160 VP8 file crashed the game when the movie was started: an
-  access violation writing to address 0 in `MSVCR110.dll` (`+0x31323`,
-  one minidump). The main thread's stack: `memset` (the fill `0xcd`) <-
+  track): a 1920 x 1080 VP8 file played on to the last shot. In the shots
+  taken when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode read 63,
+  127, 191, 255 and 319: the frame shown is `+0x6d8` - 1. From the code:
+  `updateTexture` uploads frame b while `+0x100` is b and then adds one;
+  `updateVideoCallback` (`0x006dae00`) sets `+0x6d8` right after from
+  `getCurrentTime`'s (`+0x100` + 1) frames, and the truncation to ms and
+  `ftol` of ms x 29.97 x 0.001 bring that down to b + 1 (computed for b =
+  0 to 400).
+- A 3840 x 2160 VP8 file crashed the game when the script's MovieStart
+  loaded it (the preload, before any frame was decoded): an access
+  violation writing to address 0 in `MSVCR110.dll` (`+0x31323`, one
+  minidump). The main thread's stack: `memset` (the fill `0xcd`) <-
   `user_malloc` (`0x006fb910`, returning to `0x006fb97d`) <- `PhyreMalloc`
-  (`0x0042fb40`) <- the frame queue's set-up (`0x00a3ddf0`, returning to
-  `0x00a3de52`) <- the open (`0x00a27f20`, its second queue call,
-  returning to `0x00a28260`) <- `0x006d8fc0` <- `PlayVideo` (`0x006d7430`)
-  <- `graphicPlayVideo` (`0x006427c0`) <- the movie native in
-  `0x0076e910`. The queue asked for 30 slots of (1.5 x width x height + 4)
+  (`0x0042fb40`, returning to `0x0042fb50`) <- the frame queue's set-up
+  (`0x00a3ddf0`, returning to `0x00a3de52`) <- `PVideoPlaybackWin32_open`
+  (its second queue call, returning to `0x00a28260`) <-
+  `PhyFMVPlayerManager_fmvPlayer_play` (`0x006d8fc0`) <- `PlayVideo`
+  (`0x006d7430`) <- `graphicPlayVideo(1)` (`0x006427c0`) <-
+  `Native_b000_MovieStart` (`0x0076e910`, returning to `0x0076e948`).
+  The queue asked for 30 slots of (1.5 x width x height + 4)
   bytes, 373,248,120 in all, and `user_malloc` for 385,689,751 (total plus
   one slot plus `0x1f`); the user heap could not give it, and
   `user_malloc` filled the null block with `0xcd`. At 1080p the block is

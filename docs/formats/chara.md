@@ -312,8 +312,10 @@ Measured (ffx-remix M10; the Besaid arrival, bsil0000 from save
 global matrix `+0x1d0` holds the rotation times 0.001 (each row times 1000
 has length 1) with the field position (`+0xc`) as its translation (the
 1000 of `Ch_DrawMainForSituation`, below). The elements' global matrices
-`+0x88` are relative to the character (its own space, not the field's;
-their rotation rows have length 1); the root matrix places them. ffx-remix
+`+0x88` are relative to the character (its own space, not the field's);
+the root matrix places them. Their rotation rows mostly have length 1;
+some elements carry a scale (here 0.5 to 1.8: `c101`'s 138, 142, 170,
+183) and some are all zero (`c001`'s 118 to 135). ffx-remix
 posed the HD models with them (the model's skeleton node `SkeletonNode_i`
 takes element `i` as it is) and placed them with the root rotation times
 1000; its offline pictures matched the game's shots of the same ticks by
