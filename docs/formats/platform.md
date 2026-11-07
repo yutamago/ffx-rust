@@ -573,7 +573,7 @@ Starting a preloaded movie early (replay-flakes7, `docs/harness.md`,
 resumes the preload only once its first frame is taken (`+0x6e4`, set
 by `UpdateTexture` `0x006d7680` when `updateTexture` returns a frame,
 after the 30-frame prebuffer); before that it opens the movie again
-(`0x006d8fc0` -> `PVideoPlaybackWin32__VideoDecodingThread` `0x00a27f20`,
+(`0x006d8fc0` -> `PVideoPlaybackWin32_open` `0x00a27f20`,
 which first closes the player, `0x00a28350`). The close ends the demux,
 which leaves the demux state (player `+0xe8`) at 2, and the reading
 thread (`0x00a27880`) runs the demux only while that state is not 2;
@@ -586,23 +586,23 @@ the game's own scripts can start a movie that early is not checked.
 Measured 2026-11-07 with ffx-remix's runtime in harness games (its
 `tools/probe-movie.sh`): movie 2 as `tools/replays/movie-fmv.txt` plays it
 (save `ffx_003`, bsil0000's worker 24 entry 5, the preload held until its
-30 frames are decoded), in lockstep; the test-file runs below with the
-real clock (its `--realtime`), the original-file runs with the virtual
-clock too.
+30 frames are decoded), in lockstep: the test-file runs below with the
+real clock (its `--realtime`), the open hook's runs with the virtual clock
+(two) and the real one (one).
 
 - `PVideoPlaybackWin32_open` (`0x00a27f20`, thiscall(player, path,
   loop)) got the path
   `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm` and loop 0; after it
   returns 0 the width is at `+0x14c` and the height at `+0x150` (1280 and
-  720 for the original file; read in ffx-remix's runs with the original
-  file).
+  720 for `IWK_us.webm`, as ffx-remix's open hook logged them).
 - With Fahrenheit serving a test file in place of `IWK_us.webm` (a frame
   number drawn as a barcode in each frame, 29.97 fps, a silent Vorbis
   track): a 1920 x 1080 VP8 file played on to the last shot. In the shots
   taken when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode read 63,
   127, 191, 255 and 319: the frame shown is `+0x6d8` - 1. From the code:
-  `updateTexture` uploads frame b while `+0x100` is b and then adds one;
-  `updateVideoCallback` (`0x006dae00`) sets `+0x6d8` right after from
+  `updateTexture` uploads frame b while the player's `+0x100` is b and then
+  adds one; `updateVideoCallback` (`0x006dae00`) sets the manager's
+  `+0x6d8` right after from
   `getCurrentTime`'s (`+0x100` + 1) frames, and the truncation to ms and
   `ftol` of ms x 29.97 x 0.001 bring that down to b + 1 (computed for b =
   0 to 400).
@@ -619,9 +619,9 @@ clock too.
   `Native_b000_MovieStart` (`0x0076e910`, returning to `0x0076e948`).
   The queue asked for 30 slots of (1.5 x width x height + 4)
   bytes, 373,248,120 in all, and `user_malloc` for 385,689,751 (total plus
-  one slot plus `0x1f`); the user heap could not give it, and
-  `user_malloc` filled the null block with `0xcd`. At 1080p the block is
-  about 96 MB.
+  one 1.5 x width x height frame plus `0x1f`); the user heap could not give it, and
+  `user_malloc` filled the null block with `0xcd`. At 1080p the block
+  would be about 96 MB (computed).
 
 ### Drawing
 

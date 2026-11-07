@@ -156,11 +156,14 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
   marker (1.0, 1.0, 999) clears `+8` and returns 999. `Sg_FrameSync` asks for steps only in its
   `g_VoiceHold == 0` branch, before any of the drawn frame's updates run: one step, then one more
   for each update its catch-up loop adds to `g_VoiceHold` (one tick per update at exec frames 1).
-  The step times only set how many updates each drawn frame gets (and when it spins); each update
-  then takes its step's frame as its motion rate (`frame << 7` from `0x012fb828`, `Sg_MainCalcRate`
+  The step's time and rate (both ms after the x 1000; the rate is how far the clock may run ahead
+  before another update is added) only set how many updates each drawn frame gets (and when it
+  spins); each update then takes its step's frame as its motion rate (`frame << 7` from the frame
+  table `0x012fb828`, 30 words, read at index `0x012fb814` - `g_VoiceHold`; `Sg_MainCalcRate`
   `0x008206c0`; forced to 0x100 at exec frames other than 1). So the n-th update after the start
   gets the n-th step's frame, whatever real time it runs at. When the end marker comes inside the
-  catch-up loop, the update it added has no step and runs with the sync off.
+  catch-up loop, the sync is cleared there (the table zeroed), so every update of that drawn frame,
+  the added one included, runs with the sync off; the steps already read for it are dropped.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
