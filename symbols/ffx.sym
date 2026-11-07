@@ -13966,7 +13966,7 @@
 0x007972e0 function MsAtelUpdate0_007972e0    # (ctrl): AtelBattleSetUp's per-frame callback for script 0 (MsAtelSetUp passes it as MsAtelUpdate1/2 for 1, 2): each work's AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), then MsMotionProcess and MsBattleSpecial, then the signals again; name ours (after MsAtelUpdate1); ported (battle round 19)
 0x00797350 function MsAtelUpdate2             # cdecl(ctrl) -> eax: script 2's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp: over AtelGetCtrlworkActorTotal(ctrl) works AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), AtelDecodeSignal(k, -1); same code as 0x007973b0; ported (ffx_battle::atel, battle round 17); name ours
 0x007973b0 function MsAtelUpdate1             # cdecl(ctrl) -> eax: script 1's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp; same code as 0x00797350; ported (ffx_battle::atel, battle round 17); name ours
-0x00797410 function Mon_FindHandler           # lookup in monster file section 1
+0x00797410 function Mon_FindHandler           # (file, n, &k): handler n of a monster or battle file's section 1 (+1 signal count, +2 a slot byte per signal, 4-byte records from halfword (count+1)/2: worker, kind, i16 offset to a u16 count and an entry per k); k becomes its entry (-1 none); docs/formats/monster.md
 0x00797490 function MsAtelActorWorkInit          # callees: its named callees match the Switch 0x710033ced0 MsAtelActorWorkInit's (similarity 0.75: AtelChangeCurrentCtrl, AtelInitInternalActorWork, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
 0x00797500 function MsAtelCamInit             # fh v3:exact 0x00797510
@@ -14620,7 +14620,7 @@
 0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export; (i) -> 0 without g_BtlAction; else the ID MsGetCommand(i, 0, -1, list, &id) finds in the running command list of actor (+0xded)'s +0xc, or for 0x3074-0x3077 the reel entry's u16 +2 when not 0; ported (ffx_battle::minor, battle round 30)
 0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
-0x007aceb0 function MsActionRequest           # fh call.cs cdecl
+0x007aceb0 function MsActionRequest           # fh call.cs cdecl; ours: (i, who, k, special, mode, out) actor i's action handler (monster 0x3d, party 0x29+i) for k: 0 turn, 1 turn start, 2 targeted, 3 hit, 4 death, 5 enters, 6 turn end, 7 command played, 8 poison, 9-0x14 aeons (call sites in docs/formats/battle.md)
 0x007ad0c0 function MsActionTarget            # fh v3:exact 0x007ad0d0
 0x007ad130 function MsCheckBoundWeapon        # ours: weapon model ID in the zero-ended u16 list g_BtlBoundWeapons (MsBtlReadCueRegistWeapon queues its motion group too)
 0x007ad180 function MsBtlReadCueLevel         # fh v3:bsim1.00 0x007ad190
