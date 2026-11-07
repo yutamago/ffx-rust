@@ -383,9 +383,10 @@ An **event** (every one is a simple event):
 A wave's `length in ms` is its sample's real length in milliseconds:
 the loop chunk's end + 1 when the chunk is `(0, end)` with the end in the
 last block (`frames - 64 < end < frames`), else `frames`. In every
-project it is 0 to 3 ms below that length in ms rounded up (voice: 1,416
-equal, 16,696 1 ms below; SFX 4,880 / 9,590 / 602 at 0 / 1 / 2 ms; music
-and music_ps2 up to 3 ms). FMOD hands it to the game as the event's
+project it is 0 to 3 ms below that length in ms rounded up (at 0 / 1 /
+2 / 3 ms below: voice 1,416 / 16,505 / 189 / 2, SFX 4,880 / 9,590 / 602 /
+0, music 2 / 63 / 23 / 1, music_ps2 0 / 50 / 37 / 2; ffx-remix
+`tests/audio.rs`, `every_project_parses_and_its_waves_name_samples`). FMOD hands it to the game as the event's
 length; a longer replacement needs it raised ("Replaced samples").
 
 So a looping event loops its wave between the FSB sample's loop points
