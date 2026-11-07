@@ -556,10 +556,12 @@ from `MsBattleProcess` and moves each actor's effect state `+0xdfb` on:
 
 An effect reports back through `MsEffectReady(id, x)` (`0x00788200`):
 an actor's (`id >> 8` 2) in state 4 ends (`0x00788f90`) and goes to 5.
-The reflect step lands the hit on the cue entry's targets once (cue `+5`
-0 → 1: head target reset, overdrive status check, the reflect effect
-`MsStatusEffectReflect` and sound 0x3b) and waits until none of them
-shows its reflect effect (`+0xea4`, 1 → 2), then ends (`+0xe0d`).
+The reflect step runs once on the hit's reflect mask (cue
+`+0x14 + 0x10 * +2`; cue `+5` 0 → 1: head target reset, overdrive status
+check, the reflect effect `MsStatusEffectReflect` and sound 0x3b; it calls
+no damage) and waits until none of those actors shows its reflect effect
+(`+0xea4`, 1 → 2), then ends (`+0xe0d`). The damage itself comes from the
+effect's own `MsSetDamage` calls (effects-draw.md, "A spell live: Fire").
 `0x00788f30` rewrites its own two argument slots before its tail call to
 `MsEffectCameraCall(-1, 1)`; no caller reads them back.
 
