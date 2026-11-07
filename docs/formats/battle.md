@@ -560,8 +560,9 @@ The reflect step runs once on the hit's reflect mask (cue
 `+0x14 + 0x10 * +2`; cue `+5` 0 → 1: head target reset, overdrive status
 check, the reflect effect `MsStatusEffectReflect` and sound 0x3b; it calls
 no damage) and waits until none of those actors shows its reflect effect
-(`+0xea4`, 1 → 2), then ends (`+0xe0d`); a mask of 0 (Fire's) ends it at
-once. For Fire the hits land through the overlay's own `MsSetDamage` calls,
+(`+0xea4` not 0; then cue `+5` 1 → 2), then ends (`+0xe0d`); a mask of 0
+(Fire's) ends it at once while `+0x432` is 0 or `+0x429` is not. For Fire
+the hits most likely land through the overlay's own `MsSetDamage` calls,
 and the `0x400` call at the command's end finds nothing left
 (effects-draw.md, "A spell live: Fire"); other effects may land them
 otherwise (`MsSetDamage` has more callers).

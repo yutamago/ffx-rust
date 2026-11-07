@@ -319,18 +319,23 @@ and its instance key, labelled with the update count of the moment),
 Seven traced runs (ffx-remix `m9/probe` trace1, trace2, live1, live2,
 exit-vanilla, exit-fire, exit-fire2) had the same updates for the calls;
 the draw and handle rows are from the six after trace1 (its tracer did not
-yet read the table through the pointer or log the handle). The runs with
-ffx-remix's hide (live1, live2, exit-fire, exit-fire2) log the spell's
-draws too: the tracer reads the list before the hide zeroes it.
+yet read the table through the pointer or log the handle's change). The
+runs with ffx-remix's hide (live1, live2, exit-fire, exit-fire2) log the
+spell's draws too: the tracer reads the list before the hide zeroes it.
 
-The hit comes from the overlay itself: `magic_0076.dll` calls
-`MsSetDamage` through `g_MagicImports` slot 239 (`mov eax,
-[imports+0x3bc]` at `0x100064b9`, arguments `(…, -5, 0)`); the `0x400`
-call at u0 + 138 has no such site in the overlay; the only `MsSetDamage`
-call in `FFX.exe` passing a constant `0x400` is
-`MsBattleProcess_ChrDamage`'s (`0x007912c3`) (battle.md; the tracer did
-not log the caller). That `MsNumberRegist` runs inside that `MsSetDamage`
-is inferred from the log (the number's line before the call's, which is
+The hit most likely comes from the overlay itself (inferred: the tracer
+did not log the caller): `magic_0076.dll` has one call to `MsSetDamage`
+through `g_MagicImports` slot 239 (`mov eax, [imports+0x3bc]` at
+`0x100064b9`, arguments `(…, -5, 0)`), in a timer routine that steps 1/30
+a call with thresholds 0.35 and 0.5, which fits two calls 4 updates apart
+(u0 + 89, u0 + 93). `FFX.exe` has other `(…, -5, 0)` callers
+(`MsEffectSignalDamage_007b7680` from the motions' effect signals,
+`Native_700e_BtlSetDamage`); the `0x400` call at u0 + 138 has no such site
+in the overlay; the only `MsSetDamage` call in `FFX.exe` passing a
+constant `0x400` is `MsBattleProcess_ChrDamage`'s (the call at
+`0x007912cb`, `push 0x400` at `0x007912c3`) (battle.md; the tracer did not
+log the caller). That `MsNumberRegist` runs inside that `MsSetDamage` is
+inferred from the log (the number's line before the call's, which is
 written as it returns, in the same update). Hiding all of the spell's
 draws (below) left every row above on the same update, the target's HP
 changed on the same harness frame, and frame-by-frame shots showed the
@@ -368,10 +373,10 @@ spell's entries while the spell plays: in exit-fire2 ffx-remix's hide
 zeroed 4,891 entries (a running count, Fire's alone in that run) against
 the 4,680 the tracer resolved as the spell's; the other 211 are most
 likely remembered entries whose geometry had left the table (exit-fire2
-has 224 "?" entries from u0 + 79 on); the count also covers up to four
-frames after the tracer's window. The remembered addresses must be dropped
-a few frames after the spell: the game reuses them for other effects'
-geometry (an earlier version that kept them hid later effects' draws).
+has 224 "?" entries from u0 + 79 on); the count also covers one frame
+after the tracer's window. The remembered addresses must be dropped a few
+frames after the spell: the game reuses them for other effects' geometry
+(an earlier version that kept them hid later effects' draws).
 
 **Zeroing list entries** of `+0x38cc` (count `+0xf8cc`) before
 `DrawMostVFX` runs (and putting them back after) hides those draws: the
@@ -393,14 +398,14 @@ stood on the ground beside the Larva.
 
 ## Gate
 
-The M4 census: every effect draw of the eight captured frames is
-traced: 1042 of 1042, to the `DrawMostVFX` list place it is drawn from
-(1018 by the list entry, 24 by a zeroed entry and the delete pool), the geometry and segment whose
-bytes it draws, the instance key and its maker (ppp object or op record),
-and the shader its flags give (`cargo test -p ffx-fxdraw --test captures`:
-"8 frames, 1042 effect draws traced"; no unexplained draw of any class in
-the frames). `tests/synthetic.rs` checks the census itself on a synthetic
-frame.
+The M4 census: every effect draw of the eight captured frames is traced:
+1042 of 1042, to the `DrawMostVFX` list place it is drawn from (1018 by
+the list entry, 24 by a zeroed entry and the delete pool), the geometry
+and segment whose bytes it draws, the instance key and its maker (ppp
+object or op record), and the shader its flags give (`cargo test -p
+ffx-fxdraw --test captures`: "8 frames, 1042 effect draws traced"; no
+unexplained draw of any class in the frames). `tests/synthetic.rs` checks
+the census itself on a synthetic frame.
 
 ## Open questions
 
