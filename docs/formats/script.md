@@ -580,23 +580,26 @@ level interrupted is not a start.
   rewrite `+0x32`, so a hook reads it before calling through. The entry is
   the one that level started; `+0x2c` is only the last entry started,
   which need not be that level's. `Script_Run` calls it at the ends
-  (`0x00865095`, `0x008650e8`, `0x00865120`, `0x00865173`); `3c` and `3e`
-  go to the ctrl work's `+0x28` callback instead when it is set (the only
-  code that stores a callback there, `AtelSetCtrlEndCallback`
-  (`0x008727d0`), is never called; `AtelRequireCtrlWork` clears it).
-  `AtelExecReturn2` (`0x00869350`, from
+  (`3c` `0x00865095`, `3e` `0x008650e8`, `3d`/`3f` `0x00865120`, `54`
+  `0x00865173`); `3c` and `3e` go to the ctrl work's `+0x28` callback
+  instead when it is set (the only code that stores a callback there,
+  `AtelSetCtrlEndCallback` (`0x008727d0`), is never called;
+  `AtelRequireCtrlWork` clears it). `AtelExecReturn2` (`0x00869350`, from
   `MsAtelRequestCancel` and `MsAtelRequestExe`) and its unused twin
   `AtelExecReturnForce2` (`0x008694f0`) call it too, only while the
   worker's `+0x32` is set.
 
 `AtelExecReturn` runs again on every update while a level sits on its end
 opcode with nothing left in its queue (no request and no interrupted lower
-level to switch back to), so only the first call after a start is the
-entry's end: in the game, `memochek`'s worker 1 starts entry 2 (level 1)
+level to switch back to), so only the first call for that worker and
+level after its start is the entry's end: in the game, `memochek`'s worker 1 starts entry 2 (level 1)
 once per visit and the end is seen on every update after it, while
 `loopdemo`'s worker 21 ends entry 2 once. With nothing queued, after `3e`
 and `3f` the level runs entry 1 again without `AtelStartSignal` (the reset
-takes `+0x32` after the decode), so that run's end has no start.
+takes `+0x32` after the decode), so that run's end has no start. With a
+request queued or a lower level waiting, the reset hits that level
+instead: a just-started entry runs entry 1 (the start seen names the
+requested entry), and a resumed level restarts at entry 1.
 
 `g_ScriptContext` (`0x01326b28`) equal to ctrl work 0 (`0x01325ba0`)
 marks the event's own script; battle ctrl works go through the same
