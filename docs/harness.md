@@ -1387,11 +1387,10 @@ things:
   `animate`, so the hold is the first boundary entered after the command;
   18 of 18 runs matched after that.
 
-Under Fahrenheit (ffx-remix's test installs, `fhstage0.exe`, 2026-11-07)
-the turns' hook does not go in: the log says `FmodManager_tick turns
-Ok([("FmodManager_tick", PrologueMismatch([233, ...]))])`, the prologue
-being a jump already, and after `lockstep on` FMOD never ticks again (the
-marks' sample and update counts stay put). There, captures run on the
+Under Fahrenheit (ffx-remix's test installs, `fhstage0.exe`, 2026-11-07),
+after `lockstep on` FMOD stopped ticking: the marks' sample and update
+counts stayed put from the first mark on, although every marks file said
+`turns true`. The cause was not traced. There, captures run on the
 virtual clock without lockstep: FMOD then mixes one block per frame, but
 two runs are not guaranteed to agree sample for sample (the determinism
 notes above need the turns).
