@@ -689,6 +689,14 @@ float mix identical to both original captures, which agree with each other.
 The other replays play no FMV, and none plays a texture video (the scene's
 second player, the same hooks).
 
+The library code behind those hooks is dropped from the port
+(`symbols/m5-dropped.tsv`, tail9): 111 mkvparser, libogg and libVorbis
+functions that `ffx-rust.exe` no longer reaches, found by
+`tools/reach-replaced.py` (the static graph with the 35 library hooks as
+leaves). The player around them stays reachable and is ported like any
+PhyreEngine code: `PVideoPlaybackWin32`'s threads, `open`, `initialize`,
+`updateTexture`, the clock and pause functions, `terminate`.
+
 ## What the Rust side must reproduce
 
 - **Window**: the class, styles and sizes above, the three screen modes by
