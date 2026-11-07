@@ -559,6 +559,16 @@ sender gets its reply), a running one by switching back to its level.
 level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
 `3e`/`3f`, resets the level to entry 1.
 
+Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
+table, eight `u16` in a variable (`+0x44` points at it, filled from
+`TkGetVibrateDefaultCurve` the first time; "Trigger entries" below); `7a` (`0x0086fab0`) sets a
+`(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
+That table is a script variable's storage, installed by `Native_00f0_LineSetTable`
+through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
+u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
+then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
+(`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
+
 #### Watching entries start and end
 
 Two functions show a ctrl work's entries starting and ending, so hooks on
@@ -586,7 +596,7 @@ level interrupted is not a start.
   never called) stores one there; `AtelRequireCtrlWork` clears it.
   `AtelExecReturn2` (`0x00869350`, from `MsAtelRequestCancel` and
   `MsAtelRequestExe`) and its unused twin `AtelExecReturnForce2`
-  (`0x008694f0`) call it too, only while the worker's `+0x32` is set.
+  (`0x008694f0`) call it too, only while the worker's `+0x32` is not 0.
 
 `AtelExecReturn` runs again on every update while a level sits on its end
 opcode with nothing left in its queue (no request and no interrupted
@@ -611,16 +621,6 @@ and virtual clock), counting `FFXApplication_animate` calls since
 worker 21 starts entry 2 and returns from it on the same updates in every
 completed pair of runs (updates 9 and 686 in the latest; 685 for the
 return in an earlier build).
-
-Opcode `79` (`0x00870d30`) writes one entry of the worker's trigger-entry
-table, eight `u16` in a variable (`+0x44` points at it, filled from
-`TkGetVibrateDefaultCurve` the first time; "Trigger entries" below); `7a` (`0x0086fab0`) sets a
-`(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
-That table is a script variable's storage, installed by `Native_00f0_LineSetTable`
-through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
-u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
-then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
-(`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
 
 ### Trigger entries
 
