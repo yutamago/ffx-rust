@@ -1639,6 +1639,10 @@ ports! {
     // round 21 (magic-r21)
     "r21 caster start 0393" => r21::CASTER_START_0393, r16::caster_start_0450;
     "r21 spark task 0347" => r21::SPARK_TASK_0347, r14::spark_task;
+    "r21 load step 0431" => r21::LOAD_0431, r21::load_0431;
+    "r21 load step 0440" => r21::LOAD_0440, r21::load_0440;
+    "r21 motion from 0201" => r21::MOTION_FROM_0201, r21::motion_from_0201;
+    "r21 pair start 0304" => r21::PAIR_START_0304, m0568::pair_start;
     "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
     "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
     "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;
@@ -3636,6 +3640,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ),
     ("r21 burst 0347", &r21::BURST_0347),
     ("r21 colour set-up 0388", &r21::COLOUR_SETUP_0388),
+    ("r21 start-up 0431", &r21::START_0431),
+    ("r21 start-up 0440", &r21::START_UP_0440),
     // round 21 (magic-r21): end of INTERNAL
     // round 19 (magic-r19)
     ("r19 three nodes 0128", &r19::THREE_NODES_0128),

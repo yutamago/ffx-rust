@@ -454,14 +454,31 @@ fn glow_task_0514() {
 /// two, three and five objects, dealt kinds whose actors check 0 (two
 /// objects) and not (one), bytes past the dealt ones -1 (the caster),
 /// the pool with enough nodes, the last one taken by the third node, the
-/// task list empty and not.
+/// task list empty and not. Also `magic_0440`'s load step (0x10002b70,
+/// the 118-byte shape) and start-up (0x10002ca0, `r21::sounds_0440` after
+/// the loop: the dealt count above 1 and not, `*G3` set and not).
 #[test]
 fn load_0680() {
-    let Some(mut t) = twin(680) else { return };
-    let f = t.at(0x12b0);
+    for (dll, rva, d) in [(680u16, 0x12b0u32, 1u32), (440, 0x2b70, 0)] {
+        load_dealt(dll, rva, d);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // one set-up per callee
+fn load_dealt(dll: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    let start = t.img.rel32_target(f + 0x5c);
-    let op = |t: &Twin, o: u32| t.img.word(start + o);
+    let start = t.img.rel32_target(f + 0x5b + d);
+    // `magic_0440`: the start-up's code from `+0x3d0` 0x91 bytes later
+    let m = |o: u32| {
+        if dll == 440 && o >= 0x3d0 {
+            o + 0x91
+        } else {
+            o
+        }
+    };
+    let op = |t: &Twin, o: u32| t.img.word(start + m(o));
     let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
     let deal = t.img.rel32_target(start + 0x58);
     let kc = t.img.rel32_target(start + 0x155);
@@ -552,8 +569,24 @@ fn load_0680() {
                 0x29, 0x33, 0x3d, 0x4b, 0x82, 0x8c, 0x3d9, 0x3e3, 0x3ed, 0x3f7, 0x401, 0x40b,
                 0x415, 0x41f, 0x429, 0x433, 0x43d, 0x447, 0x451, 0x503, 0x50d, 0x517, 0x521, 0x52b,
                 0x535, 0x53f, 0x549, 0x553, 0x55d, 0x567, 0x570, 0x576, 0x580, 0x58a, 0x639,
-            ],
+            ]
+            .map(m),
         );
+        if dll == 440 {
+            // the sound block: its globals junk, `*G2` an id, `*G3` set
+            // every other case, slots 413 and 215 logged
+            junk_ops(
+                &mut t,
+                start,
+                &[
+                    0x3d6, 0x3f4, 0x400, 0x406, 0x430, 0x436, 0x440, 0x44a, 0x454,
+                ],
+            );
+            t.set_u32(t.img.word(start + 0x3db), 0x0005_0000 + k);
+            t.set_u32(t.img.word(start + 0x3ee), k & 1);
+            rec(&mut t, 413, 1, |_, a| a[0] ^ 0x413);
+            rec(&mut t, 215, 1, |_, a| a[0] ^ 0x215);
+        }
         // the pool: three takes (with three nodes the last takes the
         // last one)
         let (count, head) = (op(&t, 0x3d3), op(&t, 0x46a));
@@ -568,8 +601,8 @@ fn load_0680() {
         t.set_u32(busy, b);
         t.set_u32(loaded, l);
         t.set_u32(w(&t, 0x18), k & 1);
-        t.set_u32(w(&t, 0x27), 0x0000_5e5e);
-        for o in [0x62u32, 0x6c] {
+        t.set_u32(w(&t, 0x26 + d), 0x0000_5e5e);
+        for o in [0x61 + d, 0x6b + d] {
             t.set_u32(w(&t, o), 0x0bad_0000 + o);
         }
         scrub(&mut t);
@@ -1614,6 +1647,8 @@ fn burst(dll: u16, arg: usize) {
         (-150, 0.5, 0x10),
         (-900, 0.25, 0x48),
         (-300, 1.0, 0),
+        // the far bound exactly
+        (-500, 0.25, 0x48),
     ]) {
         t.set_u32(dist, d.cast_unsigned());
         t.set_u32(yaw_in, (kv - yaw).to_bits());

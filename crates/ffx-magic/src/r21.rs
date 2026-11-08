@@ -2,7 +2,277 @@
 //! overlays below `magic_0450`, mostly copies of earlier ports that now
 //! read their differing operands from the code.
 
-use crate::{Callee, Sig};
+use crate::r11_fades::stores;
+use crate::r13_start::append_kind;
+use crate::runtime::slot_target;
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
+
+/// `magic_0201`'s second motion towards a point (0x100026e0, 306 bytes;
+/// `ecx` = `[obj, motion, to, len, start]`, an aligned /GS frame):
+/// [`motion_towards`](crate::s5_misc::motion_towards) with the record's
+/// u16 `+0x10` copied to `obj + 0x94` first (also when bit 0 of `obj +
+/// 0x90` stops it: the original then returns the cookie word with that
+/// halfword in its low half) and the motion's frame less the record's
+/// `+0x10` word. Returns slot 248's `eax` with the flags in its low half.
+pub fn motion_from_0201<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let this = fr.ecx;
+    // push ebp; and esp, -8; sub esp, 0x14: the vector `d` at the bottom
+    let d = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x14);
+    let obj = g.read::<u32>(this);
+    let start = g.read::<u16>(this + 0x10);
+    g.write::<u16>(obj + 0x94, start);
+    if g.read::<u16>(obj + 0x90) & 1 != 0 {
+        let cookie = g.read::<u32>(w(0xa)) ^ d;
+        return Ret::eax((cookie & 0xffff_0000) | u32::from(start));
+    }
+    let model = g.read::<u32>(obj + 0x50);
+    let motion = g.read::<u32>(this + 4);
+    // call width: 2
+    let m = g.call(t(g, 0x37, 228), 0, &[model, motion]).eax;
+    let m = m.wrapping_sub(g.read::<u32>(this + 0x10));
+    g.write::<u32>(obj + 0x5c, m);
+    // cvtdq2pd, plus 2^32 (the table's second double) when negative
+    let bias = g.read::<f64>(w(0x60) + 8 * (m >> 31));
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let frames = (f64::from(m.cast_signed()) + bias) as f32;
+    let pos = obj.wrapping_add(0x1c);
+    let model = g.read::<u32>(obj + 0x50);
+    g.write::<f32>(obj + 0x70, frames);
+    // call width: 4 (slot 228's words stay)
+    g.call(t(g, 0x65, 217), 0, &[model, pos, model, motion]);
+    let to = g.read::<u32>(this + 8);
+    // call width: 7
+    g.call(t(g, 0x87, 234), 0, &[d, to, pos, model, pos, model, motion]);
+    let [x, y, z] = [0u32, 4, 8].map(|o| g.read::<f32>(d + o));
+    let s = add(add(mul(y, y), mul(x, x)), mul(z, z));
+    #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
+    let r = f64::from(s).sqrt() as f32;
+    let k = div(sub(r, g.read::<f32>(this + 0xc)), r);
+    // call width: 3
+    g.call(t(g, 0xe0, 233), 0, &[d, d, k.to_bits()]);
+    let out = obj.wrapping_add(0x2c);
+    // call width: 3
+    let e = g.call(t(g, 0xf7, 248), 0, &[out, pos, d]).eax;
+    let flags = (g.read::<u16>(obj + 0x90) & 0xfff7) | 4;
+    g.write::<u16>(obj + 0x90, flags);
+    Ret::eax((e & 0xffff_0000) | u32::from(flags))
+}
+
+/// [`motion_from_0201`] (the `rel32`s: the square root and the cookie
+/// check).
+pub const MOTION_FROM_0201: Sig = Sig {
+    len: 306,
+    hash: 0xe478_8545_e26a_b3d4,
+    calls: &[
+        (0xbd, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x12a, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0304`'s pair of host objects (0x10002270, 312 bytes):
+/// [`pair_start`](crate::m0568::pair_start) with its own displacements
+/// and one more float moved.
+pub const PAIR_START_0304: Sig = Sig {
+    len: 312,
+    hash: 0xf5eb_b021_8732_e764,
+    calls: &[
+        (0x36, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+        (0xac, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0440`'s sound block in its start-up (the code at `+0x3d0` of
+/// 0x10002ca0, inlined; `owner` the loop's last owner word): `*G1` =
+/// `owner - 0x2d`; `*G4 = *G2`, `*G5` = `C1` when that is above 0 (signed),
+/// else `C2`, `*G6` = -1; slot 413 `(*G2)` when `*G3` is set, else slot
+/// 215 `(*G2)`, its `eax` into `*G7`; `*G8` -1, `*G9` 0, `*G10` 1 and the
+/// halfword `*G11` 1 when `*G3` is set (read again), else 0. (`f` the
+/// start-up; the operands are its own.)
+pub fn sounds_0440<G: Game>(g: &mut G, img: &Image, f: u32, owner: u32) {
+    let w = |o: u32| img.word(f + o);
+    let n = owner.wrapping_sub(0x2d);
+    g.write::<u32>(w(0x3d6), n);
+    let id = g.read::<u32>(w(0x3db));
+    let pick = if n.cast_signed() > 0 {
+        w(0x3e0)
+    } else {
+        w(0x3e5)
+    };
+    let on = g.read::<u32>(w(0x3ee)) != 0;
+    g.write::<u32>(w(0x3f4), id);
+    g.write::<u32>(w(0x400), pick);
+    g.write::<u32>(w(0x406), u32::MAX);
+    let slot = if on { 0x674 / 4 } else { 0x35c / 4 };
+    // call width: 1
+    let r = g.call(slot_target(g, w(0x3fa), slot), 0, &[id]).eax;
+    let on = g.read::<u32>(w(0x425)) != 0;
+    g.write::<u32>(w(0x430), r);
+    g.write::<u32>(w(0x436), u32::MAX);
+    g.write::<u32>(w(0x440), 0);
+    g.write::<u32>(w(0x44a), 1);
+    if on {
+        g.write::<u16>(w(0x45d), 1);
+    } else {
+        g.write::<u16>(w(0x454), 0);
+    }
+}
+
+/// `magic_0440`'s start-up (0x10002ca0, 1947 bytes):
+/// [`start_up_0680`](crate::r20::start_up_0680) with the sound block
+/// [`sounds_0440`] after the loop.
+pub const START_UP_0440: Sig = Sig {
+    len: 1947,
+    hash: 0xce47_6ae9_d6eb_4ef6,
+    calls: &[
+        (0x50, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x58, Callee::Sig(&crate::sb_misc::DEAL)),
+        (0x155, Callee::Sig(&crate::sa_misc::ACTOR_KIND_CHECK)),
+        (0x17d, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x24c, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x2f8, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        // __security_check_cookie
+        (0x793, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0440`'s load step (0x10002b70, the 118-byte shape) running
+/// [`start_up_0680`](crate::r20::start_up_0680)'s copy.
+pub fn load_0440<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(
+        g,
+        img,
+        fr,
+        crate::r9_load::Shape::Zero,
+        crate::r20::start_up_0680,
+    )
+}
+
+/// [`load_0440`].
+pub const LOAD_0440: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0440))],
+    imports: &[],
+};
+
+/// `magic_0431`'s start-up (0x10004390, 325 bytes, run by its load step
+/// [`load_0431`]; no arguments, no frame): eight words set (`+0x14` ..
+/// `+0x5a`) and slot 719 `(PART, 8, 0)` (`+0x10`) into `+0x6a`; the part
+/// set up ([`part_setup`](crate::sb_misc::part_setup), the pushed buffer
+/// `+0x6f`); the camera started ([`camera_start`](crate::m0431::camera_start));
+/// two words, a halfword 0 and a byte 1 set (`+0x82` .. `+0xa1`); slot
+/// 271 `(4)` (the buffer's words under it); a pool node
+/// ([`take`](crate::sa_pool::take), owner `+0xb4`, kind 1) appended to
+/// the task list, the 0x400 records set up
+/// ([`records_init_400`](crate::sa_misc::records_init_400), the block
+/// `+0xea`), a second node (owner `+0xfc`, kind 2) appended. Returns 0.
+pub fn start_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = fr.esp;
+    let s719 = slot_target(g, w(0x01), 719);
+    stores(g, img, f, &[0x14, 0x1e, 0x28, 0x32, 0x3c, 0x46, 0x50, 0x5a]);
+    // call width: 3
+    let part = g.call(s719, fr.ecx, &[w(0x10), 8, 0]).eax;
+    g.write::<u32>(w(0x6a), part);
+    // add esp, 8: the `push 0` stays; push BUF; call
+    g.write::<u32>(e.wrapping_sub(4), 0);
+    g.write::<u32>(e.wrapping_sub(8), w(0x6f));
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x74), e.wrapping_sub(0xc));
+    let camera = Frame {
+        at: img.rel32_target(f + 0x79),
+        esp: e.wrapping_sub(0xc),
+        ..*fr
+    };
+    crate::m0431::camera_start(g, img, &camera);
+    let s271 = slot_target(g, w(0x7e), 271);
+    stores(g, img, f, &[0x82, 0x8c]);
+    g.write::<u16>(w(0x99), 0);
+    g.write::<u8>(w(0xa1), 1);
+    // call width: 3 (the buffer's words stay under it)
+    g.call(s271, fr.ecx, &[4, w(0x6f), 0]);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xb9), w(0xb4));
+    append_kind(g, img, f, node, 1, [0xbf, 0xd3, 0xf2, 0xe5, 0xf2]);
+    crate::sa_misc::records_init_400(g, img, img.rel32_target(f + 0xf7), w(0xea));
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x101), w(0xfc));
+    append_kind(g, img, f, node, 2, [0x107, 0x11b, 0x128, 0x136, 0x13e]);
+    Ret::eax(0)
+}
+
+/// [`start_0431`] (the `rel32`s: the part's set-up, the camera start,
+/// the pool's take twice and the records).
+pub const START_0431: Sig = Sig {
+    len: 325,
+    hash: 0x37d3_f6c0_3016_9568,
+    calls: &[
+        (0x74, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x79, Callee::Sig(&crate::m0431::CAMERA_START)),
+        (0xb9, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xf7, Callee::Sig(&crate::sa_misc::RECORDS_INIT_400)),
+        (0x101, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0431`'s load step (0x10001250, 130 bytes; cdecl, no
+/// arguments): busy (0) while slot 225 `(1)` answers, or until both
+/// sounds are ready ([`sounds_ready`](crate::m0431::sounds_ready) 1);
+/// once, with `*G_A` 0, slot 226 `(*G_B, 0)` and `*G_A = 1`; busy while
+/// slot 227 `(*G_B)` is below 1; then [`start_0431`] and the two
+/// callbacks set (`+0x6b`, `+0x75`). Returns 0.
+pub fn load_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // call width: 1
+    if g.call(slot_target(g, w(0x01), 225), fr.ecx, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    let sub = |at: u32| Frame {
+        at: img.rel32_target(f + at),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    if crate::m0431::sounds_ready(g, img, &sub(0x17)).eax != 1 {
+        return Ret::eax(0);
+    }
+    if g.read::<u32>(w(0x22)) == 0 {
+        let b = g.read::<u32>(w(0x32));
+        let flag = crate::r11_misc::imm8(img, f + 0x2f);
+        // call width: 2
+        g.call(slot_target(g, w(0x2a), 226), fr.ecx, &[b, flag]);
+        g.write::<u32>(w(0x43), 1);
+    }
+    let b = g.read::<u32>(w(0x52));
+    // call width: 1
+    if g.call(slot_target(g, w(0x4c), 227), fr.ecx, &[b])
+        .eax
+        .cast_signed()
+        < 1
+    {
+        return Ret::eax(0);
+    }
+    start_0431(g, img, &sub(0x67));
+    stores(g, img, f, &[0x6b, 0x75]);
+    Ret::eax(0)
+}
+
+/// [`load_0431`] (the `rel32`s: the sounds' check and the start-up).
+pub const LOAD_0431: Sig = Sig {
+    len: 130,
+    hash: 0xfede_8aed_fe98_dfa9,
+    calls: &[
+        (0x17, Callee::Sig(&crate::m0431::SOUNDS_READY)),
+        (0x67, Callee::Sig(&START_0431)),
+    ],
+    imports: &[],
+};
 
 /// `magic_0304`'s caster and summon placement (0x100015d0, 1,588
 /// bytes): [`place_pair`](crate::m0596::place_pair) with the state's

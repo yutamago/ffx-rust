@@ -19,6 +19,29 @@ fn dll_main_writes_only_crt_state() {
     magic_l3::dll_main(N);
 }
 
+/// `magic_0304`'s copy of 0x10001cc0 (0x10002270): its angle and point
+/// 0x60 higher, `+0x146c` moved and copied.
+#[test]
+fn object_starts_0304() {
+    let Some(mut t) = twin(304) else { return };
+    let fx = SCRATCH + 0x1_0000;
+    let at = t.at(0x2270);
+    t.set_u32(t.img.word(at + 0x10), fx);
+    t.write(fx, &[0x3c; 0x1800]);
+    for (call, host_op) in [(0x36u32, 0x2cu32), (0xac, 0x93)] {
+        let so = t.img.rel32_target(at + call);
+        let host = t.img.word(at + host_op);
+        host_start(&mut t, so, host);
+    }
+    for i in 0..4 {
+        t.set_u32(fx + 0x14a8 + 4 * i, magic_hi::f(-2.5 + i as f32));
+    }
+    t.set_u32(fx + 0x171c, magic_hi::f(0.75));
+    t.set_u32(fx + 0x146c, magic_hi::f(-1.25));
+    magic_h6::scrub(&mut t);
+    t.check_entry(at, Call::default(), &[], Eax::Checked);
+}
+
 /// 0x10001c30: the sway at times inside the table, at its last key and
 /// past it.
 #[test]

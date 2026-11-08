@@ -563,11 +563,18 @@ fn pool_append_0680<G: Game>(
 /// cleared with its two callbacks. Then the light words, a pool node
 /// (record `+0x4d6`) last on the task list, more light words with the
 /// last owner `+ 0x28`, a second node (record `+0x60f`) after it, slot 271
-/// `(4)` and a third node without a record. Returns 0.
+/// `(4)` and a third node without a record. Returns 0. `magic_0440`
+/// 0x10002ca0 ([`START_UP_0440`](crate::r21::START_UP_0440), 1947 bytes)
+/// runs its sound block ([`sounds_0440`](crate::r21::sounds_0440)) after
+/// the loop.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `magic_0440`'s copy runs its sound block after the loop (`lea eax,
+    // [ebx - 0x2d]` at `+0x3d0`): the code from there 0x91 bytes later
+    let sounds = img.word(f + 0x3d0) & 0xff == 0x8d;
+    let m = |o: u32| if sounds && o >= 0x3d0 { o + 0x91 } else { o };
+    let w = |o: u32| img.word(f + m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let rd = |g: &G, o: u32| g.read::<u32>(w(o));
     let call = |o: u32| img.rel32_target(f + o);
@@ -696,6 +703,9 @@ pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         obj = obj.wrapping_add(0x130);
         rec = rec.wrapping_add(0x34);
     }
+    if sounds {
+        crate::r21::sounds_0440(g, img, f, owner);
+    }
     stores(
         g,
         img,
@@ -703,7 +713,8 @@ pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         &[
             0x3d7, 0x3e1, 0x3eb, 0x3f5, 0x3ff, 0x409, 0x413, 0x41d, 0x427, 0x431, 0x43b, 0x445,
             0x44f,
-        ],
+        ]
+        .map(m),
     );
     let node = rd(g, 0x46a);
     let (first, head) = pool_append_0680(
@@ -711,10 +722,10 @@ pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         img,
         f,
         node,
-        0x3d3,
-        (0x494, 0x494, 0x4b9, 0x4c4),
-        Some(0x4d6),
-        (0x4ca, 0x4f7, None, 0x4e4),
+        m(0x3d3),
+        (m(0x494), m(0x494), m(0x4b9), m(0x4c4)),
+        Some(m(0x4d6)),
+        (m(0x4ca), m(0x4f7), None, m(0x4e4)),
     );
     stores(
         g,
@@ -722,21 +733,22 @@ pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         f,
         &[
             0x501, 0x50b, 0x515, 0x51f, 0x529, 0x533, 0x53d, 0x547, 0x551, 0x55b, 0x565,
-        ],
+        ]
+        .map(m),
     );
     g.write::<u32>(w(0x570), owner.wrapping_add(0x28));
-    stores(g, img, f, &[0x574, 0x57e, 0x588]);
+    stores(g, img, f, &[0x574, 0x57e, 0x588].map(m));
     let (second, _) = pool_append_0680(
         g,
         img,
         f,
         head,
-        0x5fd,
-        (0x5b9, 0x5c1, 0x5f2, 0x5fd),
-        Some(0x60f),
-        (0x603, 0x62b, Some(first), 0),
+        m(0x5fd),
+        (m(0x5b9), m(0x5c1), m(0x5f2), m(0x5fd)),
+        Some(m(0x60f)),
+        (m(0x603), m(0x62b), Some(first), 0),
     );
-    stores(g, img, f, &[0x637]);
+    stores(g, img, f, &[m(0x637)]);
     g.write::<u32>(w(0x64b), second);
     g.call(t(g, 0x630, 271), 0, &[4]);
     let node = rd(g, 0x666);
@@ -745,10 +757,10 @@ pub fn start_up_0680<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         img,
         f,
         node,
-        0x654,
-        (0x683, 0x68b, 0x6b7, 0x6c2),
+        m(0x654),
+        (m(0x683), m(0x68b), m(0x6b7), m(0x6c2)),
         None,
-        (0x6c8, 0x6ed, None, 0x6da),
+        (m(0x6c8), m(0x6ed), None, m(0x6da)),
     );
     g.write::<u32>(w(0x6fb), third);
     Ret::eax(0)
