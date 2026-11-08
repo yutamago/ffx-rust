@@ -1096,6 +1096,8 @@ ports! {
     "r9 summon start 0080" => r9_summon::START_0080, r9_summon::start_0080;
     "r9 summon start 0081" => r9_summon::START_0081, r9_summon::start_0081;
     "r9 summon start (nodes) 0083" => r9_summon::NODES_0083, r9_summon::nodes_0083;
+    "r9 summon start (nodes) 0088" => r9_summon::NODES_0088, r9_summon::nodes_0088;
+    "r9 summon start (nodes) 0089" => r9_summon::NODES_0089, r9_summon::nodes_0089;
     "r9 summon start (nodes) 0091" => r9_summon::NODES_0091, r9_summon::nodes_0091;
     "r9 summon start (nodes) 0094" => r9_summon::NODES_0094, r9_summon::nodes_0094;
     "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
@@ -1547,6 +1549,10 @@ ports! {
     "r14 main object 0367" => r14::MAIN_OBJECT_0367, r14::main_object_0367;
     "r14 light restart 0430" => r14::LIGHT_RESTART_0430, r14::light_restart_0430;
     "r14 task 0288" => r14::TASK_0288, r14::task_0288;
+    "r14 spark task 0132" => r14::SPARK_TASK_0132, r14::spark_task;
+    "r14 spark task 0133" => r14::SPARK_TASK_0133, r14::spark_task;
+    "r14 spark task 0134" => r14::SPARK_TASK_0134, r14::spark_task;
+    "r14 spark task 0135" => r14::SPARK_TASK_0135, r14::spark_task;
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -2569,6 +2575,7 @@ ports! {
     "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
     "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
     "m0089 camera start 0089" => m0089::START_0089, m0089::start_0089;
+    "m0089 camera start 0088" => m0089::START_0088, m0089::start_0088;
     "m0089 camera start 0090" => m0089::START_0090, m0089::start_0090;
     "m0089 camera start 0091" => m0089::START_0091, m0089::start_0091;
     "m0089 camera start 0094" => m0089::START_0094, m0089::start_0094;

@@ -431,3 +431,260 @@ pub const TASK_0288: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A summon's spark task (cdecl `(task)`, a task callback; a /GS frame of
+/// 0x5c bytes, `ebp` = `esp - 4` at the entry; `magic_0132` and `magic_0134`
+/// 0x10002210, 934 bytes; `magic_0133` 0x10004ac0 and `magic_0135`
+/// 0x10004bc0, 937 bytes: one more `movaps` at `+0x171`, their operands
+/// from there on three bytes later). On the summon `S = task[0x14]`:
+/// - while the wait `S+0x50c` runs it counts down, and at 0 the object
+///   between the actors starts
+///   ([`summon_object_between`](crate::s9_misc::summon_object_between),
+///   `ecx` = `S`), whose `eax` it returns (else the new wait);
+/// - else while the pause `S+0x510` runs it counts down (returned);
+/// - else the curve's parameter `t = S+0x4fc` moves on by `S+0x500` (held
+///   at 1.0 above `K` `+0x7b`) and the point `L` (`ebp - 0x14`) on the
+///   cubic through `S+0x4bc`, `+0x4cc`, `+0x4dc`, `+0x4ec` (`K3` `+0xa2`
+///   the middle weights): per axis `((v v u K3) B + v^3 A) + u^2 v K3 C +
+///   u^3 D` with `v = K - t`, `L.w` 1.0;
+/// - with the burst count `S+0x508` at 0: the fade `S+0x484` halves while
+///   above 0 (then the trail), else the task is given back
+///   ([`give_back`](crate::sa_pool::give_back), its `eax` returned);
+/// - else the count goes down, at 0 the spark burst
+///   ([`spark_burst`](crate::s8_misc::spark_burst), `ecx` = `S`); then up
+///   to six sparks from the pool
+///   ([`pool_take`](crate::sb_misc::pool_take)): entry slot 719 `(PART, 9,
+///   1)` at `+0x30`, `+0x34` 1, u16 `+0x38` 0xffff and `+0x3a` 0x200,
+///   slot 325 `(n, L)`, the velocity `(R - K4) K5` from three slot 307
+///   ST0s at `+0x10..`, the rest the code's immediates;
+/// - the trail: slot 235 makes the matrix `M` (`ebp - 0x54`), its
+///   diagonal 0.03, and the trail draws
+///   ([`trail_draw`](crate::s4_misc::trail_draw), `ecx` = `S+0x260`, `edx`
+///   = `M`, the stack word `L`), whose `eax` it returns.
+#[allow(clippy::too_many_lines)] // the original's ways, one by one
+pub fn spark_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::m0018::st0_f32;
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    // `movaps xmm1, xmm6` (0x0f) or `addss xmm2, xmm0` (0xf3)
+    let d = if img.word(f + 0x171) & 0xff == 0x0f {
+        3
+    } else {
+        0
+    };
+    let m = |o: u32| if o >= 0x171 { o + d } else { o };
+    let w = |o: u32| img.word(f + m(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + m(o));
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let ebp = fr.esp.wrapping_sub(4);
+    // push ebp, the 0x5c-byte frame, edi; the return address
+    let inner = Frame {
+        esp: ebp.wrapping_sub(0x64),
+        ecx: s,
+        ..*fr
+    };
+    let wait = g.read::<i32>(s + 0x50c);
+    if wait > 0 {
+        let left = wait - 1;
+        g.write::<i32>(s + 0x50c, left);
+        if left != 0 {
+            return Ret::eax(left.cast_unsigned());
+        }
+        let between = Frame {
+            at: call(0x34),
+            ..inner
+        };
+        return crate::s9_misc::summon_object_between(g, img, &between);
+    }
+    let pause = g.read::<i32>(s + 0x510);
+    if pause > 0 {
+        let left = pause - 1;
+        g.write::<i32>(s + 0x510, left);
+        return Ret::eax(left.cast_unsigned());
+    }
+    let one = k(g, 0x7b);
+    let t = add(g.read::<f32>(s + 0x500), g.read::<f32>(s + 0x4fc));
+    g.write::<f32>(s + 0x4fc, t);
+    if t > one {
+        g.write::<u32>(s + 0x4fc, 0x3f80_0000);
+    }
+    let three = k(g, 0xa2);
+    let p = |g: &G, o: u32| g.read::<f32>(s + o);
+    let l = ebp.wrapping_sub(0x14);
+    for axis in 0..3u32 {
+        let u = p(g, 0x4fc);
+        let v = sub(one, u);
+        let uu = mul(u, u);
+        let a = mul(mul(v, v), v);
+        let b = mul(mul(mul(v, u), v), three);
+        let first = add(
+            mul(b, p(g, 0x4cc + 4 * axis)),
+            mul(a, p(g, 0x4bc + 4 * axis)),
+        );
+        let c = mul(mul(uu, v), three);
+        let x = add(
+            add(first, mul(c, p(g, 0x4dc + 4 * axis))),
+            mul(mul(uu, u), p(g, 0x4ec + 4 * axis)),
+        );
+        g.write::<f32>(l + 4 * axis, x);
+    }
+    g.write::<u32>(l + 0xc, 0x3f80_0000);
+    let count = g.read::<u32>(s + 0x508);
+    if count == 0 {
+        let fade = g.read::<i32>(s + 0x484);
+        if fade <= 0 {
+            return Ret::eax(crate::sa_pool::give_back(g, img, call(0x217), task));
+        }
+        g.write::<i32>(s + 0x484, fade / 2);
+    } else {
+        let count = count.wrapping_sub(1);
+        g.write::<u32>(s + 0x508, count);
+        if count == 0 {
+            let burst = Frame {
+                at: call(0x236),
+                ..inner
+            };
+            crate::s8_misc::spark_burst(g, img, &burst);
+        }
+        for _ in 0..6 {
+            let n = crate::sb_misc::pool_take(g, img, call(0x242));
+            if n == 0 {
+                break;
+            }
+            // call width: 3
+            let e = g
+                .call(slot_target(g, w(0x252), 719), 0, &[w(0x261), 9, 1])
+                .eax;
+            g.write::<u32>(n + 0x30, e);
+            g.write::<u16>(n + 0x3a, 0x200);
+            g.write::<u32>(n + 0x34, 1);
+            g.write::<u16>(n + 0x38, 0xffff);
+            // call width: 5 (slot 719's words under it)
+            g.call(slot_target(g, w(0x278), 325), 0, &[n, l, w(0x261), 9, 1]);
+            for (o, (tab, k1, k2)) in [
+                (0x10u32, (0x291u32, 0x2ac, 0x2b9)),
+                (0x14, (0x2b1, 0x2d6, 0x2e3)),
+                (0x18, (0x2db, 0x300, 0x31e)),
+            ] {
+                // call width: 0
+                let r = st0_f32(g.call(slot_target(g, w(tab), 307), 0, &[]).st0);
+                let x = mul(sub(r, k(g, k1)), k(g, k2));
+                if o == 0x18 {
+                    // `mov dword [esi + x], imm` (`magic_0133`/`0135`'s
+                    // `+0x24` is -0.02, the others' 0)
+                    for (z, imm) in [
+                        (0x1cu32, 0x308u32),
+                        (0x20, 0x30f),
+                        (0x24, 0x316),
+                        (0x28, 0x325),
+                        (0x2c, 0x32c),
+                    ] {
+                        g.write::<u32>(n + z, w(imm));
+                    }
+                }
+                g.write::<f32>(n + o, x);
+            }
+            for (z, imm) in [(0x3cu32, 0x338u32), (0x4c, 0x33f), (0x50, 0x346)] {
+                g.write::<u32>(n + z, w(imm));
+            }
+            g.write::<u8>(n + 0x6b, w(0x34d) as u8);
+        }
+    }
+    let mat = ebp.wrapping_sub(0x54);
+    // call width: 1
+    g.call(slot_target(g, w(0x361), 235), 0, &[mat]);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(mat + o, 0x3cf5_c28f);
+    }
+    // the stack words: `L` over `M` (slot 235's, not popped)
+    let esp = ebp.wrapping_sub(0x6c);
+    g.write::<u32>(esp + 4, l);
+    g.write::<u32>(esp + 8, mat);
+    let trail = Frame {
+        at: call(0x390),
+        esp,
+        ecx: s + 0x260,
+        edx: mat,
+        ..*fr
+    };
+    Ret::eax(crate::s4_misc::trail_draw(g, img, &trail))
+}
+
+/// [`spark_task`] in `magic_0132` (0x10002210, 934 bytes; its own object
+/// between and spark burst).
+pub const SPARK_TASK_0132: Sig = Sig {
+    len: 934,
+    hash: 0xe954_e609_449f_510a,
+    calls: &[
+        (
+            0x34,
+            Callee::Sig(&crate::s9_misc::SUMMON_OBJECT_BETWEEN_0132),
+        ),
+        (0x3f, Callee::Any),
+        (0x5f, Callee::Any),
+        (0x217, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x222, Callee::Any),
+        (0x236, Callee::Sig(&crate::s8_misc::SPARK_BURST_0132)),
+        (0x242, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x390, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x39e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`spark_task`] in `magic_0134` (0x10002210, 934 bytes).
+pub const SPARK_TASK_0134: Sig = Sig {
+    hash: 0xe954_e609_449f_510a,
+    calls: &[
+        (0x34, Callee::Sig(&crate::s9_misc::SUMMON_OBJECT_BETWEEN)),
+        (0x3f, Callee::Any),
+        (0x5f, Callee::Any),
+        (0x217, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x222, Callee::Any),
+        (0x236, Callee::Sig(&crate::s8_misc::SPARK_BURST)),
+        (0x242, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x390, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x39e, Callee::Any),
+    ],
+    ..SPARK_TASK_0132
+};
+
+/// [`spark_task`] in `magic_0135` (0x10004bc0, 937 bytes).
+pub const SPARK_TASK_0135: Sig = Sig {
+    len: 937,
+    hash: 0x97ca_deab_be09_f397,
+    calls: &[
+        (0x34, Callee::Sig(&crate::s9_misc::SUMMON_OBJECT_BETWEEN)),
+        (0x3f, Callee::Any),
+        (0x5f, Callee::Any),
+        (0x21a, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x225, Callee::Any),
+        (0x239, Callee::Sig(&crate::s8_misc::SPARK_BURST)),
+        (0x245, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x393, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x3a1, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`spark_task`] in `magic_0133` (0x10004ac0, 937 bytes).
+pub const SPARK_TASK_0133: Sig = Sig {
+    hash: 0x97ca_deab_be09_f397,
+    calls: &[
+        (
+            0x34,
+            Callee::Sig(&crate::s9_misc::SUMMON_OBJECT_BETWEEN_0133),
+        ),
+        (0x3f, Callee::Any),
+        (0x5f, Callee::Any),
+        (0x21a, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x225, Callee::Any),
+        (0x239, Callee::Sig(&crate::s8_misc::SPARK_BURST_0133)),
+        (0x245, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x393, Callee::Sig(&crate::s4_misc::TRAIL_DRAW)),
+        (0x3a1, Callee::Any),
+    ],
+    ..SPARK_TASK_0135
+};

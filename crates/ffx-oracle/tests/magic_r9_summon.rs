@@ -249,6 +249,26 @@ fn nodes_0083() {
     nodes(83, 0x6c50, S83);
 }
 
+/// `magic_0089`'s copy: no stream cued, its start-up's `rel32` at
+/// `+0x341`.
+#[test]
+fn nodes_0089() {
+    copy_at(89, 0x6c10, S83, (0x341, 0x2b2));
+}
+
+/// `magic_0088`'s copy (0x10006cd0): as `magic_0089`'s, its own start-up.
+#[test]
+fn nodes_0088() {
+    let s = Start {
+        flag: 0x51,
+        last: 0x92,
+        root: 0x77,
+        part: (0x2b2, 0x2d2),
+        a: 0x2a1,
+    };
+    copy_at(88, 0x6cd0, s, (0x341, 0x2b2));
+}
+
 #[test]
 fn nodes_0097() {
     nodes(97, 0x6c60, S83);

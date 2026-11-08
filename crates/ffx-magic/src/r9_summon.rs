@@ -94,6 +94,18 @@ fn tail<G: Game>(
     s.push_all(&[2, 1000, 0, w(0x160)]);
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x14c), 0x374 / 4), 0);
+    // `magic_0089`'s copy cues no stream: `add esp, 0x30` (0x83) where
+    // these load slot 719's table (0xa1); its start-up's `rel32` is 0x2b
+    // bytes earlier
+    if w(0x166) & 0xff == 0x83 {
+        let callee = Frame {
+            at: img.rel32_target(f + 0x16a + d),
+            esp,
+            ..*fr
+        };
+        start(g, img, &callee);
+        return Ret::eax(0);
+    }
     s.push_all(&[1, 6, w(0x176)]);
     // call width: 12 (Pushes caps the words at 12)
     let m = s.call(g, slot_target(g, w(0x167), 0xb3c / 4), 0).eax;
@@ -257,6 +269,42 @@ macro_rules! node_copies {
         )*
     };
 }
+
+/// [`summon_start_nodes`] in `magic_0089` (0x10006c10, 844 bytes: no
+/// stream cued; an environment of 0x200000 bytes).
+pub fn nodes_0089<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_start_nodes(g, img, fr, crate::m0089::start_0089)
+}
+
+/// [`nodes_0089`].
+pub const NODES_0089: Sig = Sig {
+    len: 844,
+    hash: 0x99fb_9993_0eff_056e,
+    calls: &[
+        (0x0e, Callee::Sig(&crate::s4_summon::TARGETS_INIT_B)),
+        (0x281, Callee::Sig(&crate::nodes::INSERT)),
+        (0x341, Callee::Sig(&crate::m0089::START_0089)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_start_nodes`] in `magic_0088` (0x10006cd0: as `magic_0089`'s,
+/// its own start-up).
+pub fn nodes_0088<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_start_nodes(g, img, fr, crate::m0089::start_0088)
+}
+
+/// [`nodes_0088`].
+pub const NODES_0088: Sig = Sig {
+    len: 844,
+    hash: 0x99fb_9993_0eff_056e,
+    calls: &[
+        (0x0e, Callee::Sig(&crate::s4_summon::TARGETS_INIT_B)),
+        (0x281, Callee::Sig(&crate::nodes::INSERT)),
+        (0x341, Callee::Sig(&crate::m0089::START_0088)),
+    ],
+    imports: &[],
+};
 
 node_copies! {
     /// `magic_0083` 0x10006c50.

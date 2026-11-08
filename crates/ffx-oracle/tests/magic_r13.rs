@@ -1246,6 +1246,13 @@ fn task_0288() {
     // the actor byte and the tables of character handles
     let sel = SCRATCH + 0x50;
     t.set_u8(sel, 2);
+    // (the byte after: a wider read shows)
+    t.set_u8(sel + 1, 0x70);
+    t.set_u32(w(&t, 0x1ac), 0x0ac7_0001);
+    // the objects' list empty: the run says 1 (no object ran)
+    let run = t.img.rel32_target(f + 0x17c);
+    let list = t.img.word(run + 0x7c);
+    t.write(list, &[0; 0x10]);
     for o in [0x40u32, 0xbd, 0x22b, 0x249, 0x269] {
         t.set_u32(w(&t, o), sel);
     }
@@ -1255,6 +1262,9 @@ fn task_0288() {
         }
     }
     // the camera script's commands: stop (op 5)
+    for i in 0..4u32 {
+        t.set_u32(SCRATCH + 0x4100 + 8 * i, 0xffff_ffff);
+    }
     let cmds = SCRATCH + 0x4000;
     t.write(cmds, &[0; 0x30]);
     t.set_u32(cmds, 5);
@@ -1283,12 +1293,21 @@ fn task_0288() {
             let m = m0 + 0x20 * i;
             t.write(m, &[0; 0x20]);
             t.set_u32(m + 0x14, done);
-            t.set_u16(m + 0x18, 3);
+            // a running script without a wait asks for its motion (slot
+            // 411), then stops at its next command (-1)
+            t.set_u16(m + 0x18, if done == 0 && i == 0 { 0 } else { 3 });
+            t.set_u32(m, SCRATCH + 0x4100);
         }
         t.write(q, &[0; 0x34]);
         t.set_u32(q + 0x24, cmds);
         t.set_u32(q + 0x2c, wait);
         t.set_u32(w(&t, 0x213), words);
+        // the globals the step stores: other values first
+        for o in [
+            0x87u32, 0x93, 0x10e, 0x11a, 0x15c, 0x1c1, 0x1ce, 0x1ea, 0x1f0,
+        ] {
+            t.set_u32(w(&t, o), 0x5a5a_0000 + o + k);
+        }
         t.set_u32(w(&t, 0x21f), 1);
         t.write(task, &[0x5a; 0x20]);
         t.set_u32(task + 8, record);
