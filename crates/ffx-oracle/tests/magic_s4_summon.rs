@@ -412,13 +412,17 @@ fn summon_start_in(n: u16, rva: u32, d: u32) {
         t.set_u32(lock, old);
         t.write(root, &[0x5a; 0x150]);
         t.set_u32(root + 4, 0);
-        // (`magic_0374`'s flags operand two bytes later still)
-        let flags = t
-            .img
-            .word(at + 0x197 + e - d + if n == 374 { 2 } else { 0 });
+        // (`magic_0374`'s flags operand: its own store order puts it at
+        // `+0x199`)
+        let flags = t.img.word(if n == 374 {
+            at + 0x199
+        } else {
+            at + 0x197 + e - d
+        });
         t.set_u32(flags, 0x5555_5555 + k as u32);
-        // the word the start clears, set before
+        // the words the start clears, set before
         t.set_u32(t.img.word(at + 0x9d + e), 0x9d9d_0000 + k as u32);
+        t.set_u32(t.img.word(at + 0x1a8 + e - d), 0x1a8a_0000 + k as u32);
         if e != 0 {
             // the actor's global: an old value
             t.set_u32(t.img.word(at + 0x8), 0x0a0a_0000 + k as u32);
