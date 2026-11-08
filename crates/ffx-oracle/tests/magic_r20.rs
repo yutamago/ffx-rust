@@ -1311,6 +1311,7 @@ fn strip_slots_0708(t: &mut Twin) {
     // under theirs; the call-out comparison checks the strips' second)
     rec(t, 941, 1, |m, a| {
         let tab = SCRATCH + 0x7000 + 0x100 * (a[0] & 7);
+        m.w32(tab + 4, 0x4444_0000 | a[0]);
         m.w32(tab + 8, 0x40);
         m.w32(tab + 0x10, (a[0] & 3) << 16);
         for i in 0..12u32 {
@@ -1412,7 +1413,8 @@ fn step_0708() {
     });
     rec(&mut t, 362, 4, |m, a| {
         // the record: three entries
-        m.w32(a[0] + 4, 3);
+        // (the count a halfword: junk above it)
+        m.w32(a[0] + 4, 0x5a5a_0003);
         for i in 0..3u32 {
             m.w32(a[0] + 0x10 + 0x10 * i, 0x40 + i);
             m.w32(a[0] + 0x14 + 0x10 * i, 0x50 + i);
@@ -1502,7 +1504,9 @@ fn step_0708() {
         t.set_u32(b1 + 0x20, 0x12);
         t.set_u32(b1 + 0x24, 0x42);
         let b2 = SCRATCH + 0x9400;
-        junk(&mut t, b2, 0x200, k);
+        junk(&mut t, b2 - 0x200, 0x600, k);
+        // the strips' factor (a global)
+        t.set_u32(op(&t, 0x49d), (1.5f32 + k as f32).to_bits());
         t.set_u32(op(&t, 0x4a8), b2);
         t.set_u32(op(&t, 0x27e), SCRATCH + 0x9800);
         let pa = op(&t, 0x674);
@@ -1590,4 +1594,151 @@ fn burst_0491() {
             ffx_magic::r20::burst_0491(g, img, fr)
         });
     }
+}
+
+/// `magic_0645` 0x100070d0 (`r20::effect_setup_0645`): the node list
+/// empty and not, the source's model state by slots 15-17 (flag bit 0)
+/// or slot 290.
+#[test]
+fn effect_setup_0645() {
+    let Some(mut t) = twin(645) else { return };
+    let f = t.at(0x70d0);
+    let list = t.img.word(f + 0x67);
+    let ring_last = t.img.word(f + 0x32);
+    let ring_flags = t.img.word(f + 0x4d);
+    vector_slots(&mut t);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0);
+        }
+        0x262
+    });
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x0100_0000);
+        }
+        0x327
+    });
+    for (s, x) in [(15u32, 0.5f64), (16, 0.75), (17, 1.5), (277, 2.0)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + 3.0);
+        }
+        0x290
+    });
+    for (s, n) in [(211u32, 2usize), (719, 3), (941, 1), (714, 5)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let obj = SCRATCH + 0x4000;
+    let src = SCRATCH + 0x2000;
+    let a = SCRATCH + 0x2800;
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (k, (empty, flag)) in (0u32..).zip([(true, 0u16), (false, 1), (true, 0x8001)]) {
+        junk(&mut t, obj, 0x1100, k);
+        junk(&mut t, src, 0x100, k + 1);
+        t.set_u32(src + 0x54, 0x00c0_0054 + k);
+        t.set_u32(src + 0x50, 0x00c0_0050 + k);
+        t.set_u16(src + 0x90, flag);
+        junk(&mut t, a, 0x100, k + 2);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if empty { list } else { prev });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        scrub(&mut t);
+        let c = Call {
+            ecx: obj,
+            edx: src,
+            ..Call::default()
+        };
+        t.check(f, c, &[a], Eax::Checked, |g, img, fr| {
+            ffx_magic::r20::effect_setup_0645(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0645` 0x100079a0 (`r20::colour_task_0645`): states 0, 10
+/// (waiting; the object of an even, odd and negative count not done and
+/// done), 10000 and another.
+#[test]
+fn colour_task_0645() {
+    let Some(mut t) = twin(645) else { return };
+    let f = t.at(0x79a0);
+    let at = t.at(0x77e0);
+    let list = t.img.word(at + 0x5d);
+    let ring_last = t.img.word(at + 0x25);
+    let ring_flags = t.img.word(at + 0x43);
+    let table = SCRATCH + 0x300;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    let o = SCRATCH + 0x400;
+    t.set_u32(t.img.word(at + 0x167), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    let list2 = t.img.word(at + 0x183);
+    t.set_u32(list2 + 0x10, list2);
+    let (task, node, prev, next) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+    );
+    let r = SCRATCH + 0x4000;
+    let (old, lp) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    // (state, wait, count, the object done)
+    let cases: [(u32, i32, i32, bool); 9] = [
+        (0, 5, 0, false),
+        (10, 3, 0, true),
+        (10, 0, 2, false),
+        (10, 0, 2, true),
+        (10, -1, 3, true),
+        (10, 0, -1, true),
+        (10, 0, -3, false),
+        (0x2710, 1, 0, false),
+        (7, 1, 0, false),
+    ];
+    for (k, (state, wait, n, done)) in (0u32..).zip(cases) {
+        junk(&mut t, r - 0x400, 0xa00, k);
+        t.set_u32(r + 0x28, state);
+        t.set_u32(r + 0x2c, wait.cast_unsigned());
+        t.set_u32(r + 0x30, n.cast_unsigned());
+        let off = n.wrapping_rem(2).cast_unsigned().wrapping_mul(0x2c0);
+        t.set_u32(
+            r.wrapping_add(0x58).wrapping_add(off),
+            if done { 0x4e20 } else { 0x2710 },
+        );
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        junk(&mut t, node, 0x20, k + 1);
+        t.set_u32(node + 4, prev);
+        t.set_u32(node + 8, next);
+        junk(&mut t, prev, 0x20, k + 2);
+        junk(&mut t, next, 0x20, k + 3);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(lp, &[0x7d; 0x40]);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(list + 0x10, if k % 2 == 0 { list } else { lp });
+        t.set_u32(list + 0xc, 0x00f1_0000);
+        t.set_u16(list + 0x18, 0x0305);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(325)) >= 3, "the set-ups ran");
 }

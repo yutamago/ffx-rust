@@ -2407,3 +2407,193 @@ pub const BURST_0491: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0645`'s effect object set-up (0x100070d0, 492 bytes; internal:
+/// `ecx` = the object, `edx` = the source `S`, one stack word `A`; a
+/// cookie frame, `ebp = E - 4`, the matrix `L` at `ebp - 0x4c`, the pair
+/// at `ebp - 0x5c`, the group at `ebp - 0x74`). The object joins the
+/// DLL's ring ([`ring_join`](crate::h6_setup::ring_join)); `b = obj +
+/// 0x30` a child of the DLL's node list (handlers `+0xb5`); the point
+/// `obj + 0x4c` = the source model's (slot 262, `w` 1.0) turned by `A +
+/// 0x9c` (slot 327 into `L`, slot 229); `c = obj + 0x5c` a child too
+/// (`+0x14a`); the model state into `obj + 0x78`
+/// ([`model_state`](crate::m0070::model_state)); the node insert
+/// ([`node_insert`](crate::nodes::node_insert)) of `[obj + 0xb4, LIST,
+/// A, b, NAME, c]`; slot 211 `(S[0x54], obj + 0x150)`, bit 4 of `u16
+/// S[0x90]`, `S[0x4c]` = `obj + 0xb4`; the effect set up
+/// ([`setup`](crate::m0645::setup), `obj + 0x200`); `+0x28`, `+0x2c` the
+/// point's `x` and `z`, `+0x1084` = `S`, `+0x18` 0. Returns the point's
+/// `z`.
+pub fn effect_setup_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::h6_setup::{ring_join, static_child};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let (obj, s) = (fr.ecx, fr.edx);
+    let a = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (l, pair, group) = (
+        ebp.wrapping_sub(0x4c),
+        ebp.wrapping_sub(0x5c),
+        ebp.wrapping_sub(0x74),
+    );
+    // push ebp; sub esp, 0x78; three pushes: a call's return address
+    let esp = fr.esp.wrapping_sub(0x8c);
+    ring_join(g, img, f, obj, [0x23, 0x2a, 0x32, 0x3c, 0x41, 0x4d, 0x54]);
+    let b = obj + 0x30;
+    static_child(
+        g,
+        img,
+        f,
+        b,
+        [0x67, 0x6e, 0x73, 0x7b, 0x85, 0x8d, 0x99, 0xa2],
+    );
+    let p = obj + 0x4c;
+    g.write::<u32>(b, w(0xb5));
+    let model = g.read::<u32>(s + 0x54);
+    // call width: 4
+    g.call(t(g, 0xaf, 262), 0, &[model, p, p + 4, p + 8]);
+    g.write::<u32>(obj + 0x58, 0x3f80_0000);
+    // call width: 2
+    g.call(t(g, 0xd3, 327), 0, &[l, a.wrapping_add(0x9c)]);
+    // call width: 3
+    g.call(t(g, 0xf0, 229), 0, &[p, l, p]);
+    let c = obj + 0x5c;
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0x111, 0x118, 0x11d, 0x125, 0x12a, 0x132, 0x13e, 0x144],
+    );
+    g.write::<u32>(c, w(0x14a));
+    g.write::<u32>(pair, s);
+    g.write::<u32>(pair + 4, obj + 0x78);
+    crate::m0070::model_state(g, img, img.rel32_target(f + 0x15b), pair);
+    let node = obj + 0xb4;
+    for (i, v) in (0u32..).zip([node, w(0x177), a, b, w(0x181), c]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    crate::nodes::node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x189),
+            esp,
+            ecx: group,
+            ..Frame::default()
+        },
+    );
+    let model = g.read::<u32>(s + 0x54);
+    // call width: 2
+    g.call(t(g, 0x198, 211), 0, &[model, node + 0x9c]);
+    let fl = g.read::<u16>(s + 0x90) | 0x10;
+    g.write::<u16>(s + 0x90, fl);
+    g.write::<u32>(s + 0x4c, node);
+    let sf = Frame {
+        at: img.rel32_target(f + 0x1be),
+        esp,
+        ecx: obj + 0x200,
+        edx: s,
+        ..*fr
+    };
+    crate::m0645::setup(g, img, &sf);
+    let x = g.read::<u32>(obj + 0x4c);
+    g.write::<u32>(obj + 0x28, x);
+    let z = g.read::<u32>(obj + 0x54);
+    g.write::<u32>(obj + 0x1084, s);
+    g.write::<u32>(obj + 0x2c, z);
+    g.write::<u32>(obj + 0x18, 0);
+    Ret::eax(z)
+}
+
+/// [`effect_setup_0645`] (492 bytes, 1 overlay).
+pub const EFFECT_SETUP_0645: Sig = Sig {
+    len: 492,
+    hash: 0xa110_5a7c_2628_aa68,
+    calls: &[
+        (0x15b, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x189, Callee::Sig(&crate::nodes::INSERT)),
+        (0x1be, Callee::Sig(&crate::m0645::SETUP)),
+        // __security_check_cookie
+        (0x1e4, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0645`'s colour task (0x100079a0, 153 bytes; cdecl `(task)`):
+/// the record `R = task[1]`, its state `+0x28`, wait `+0x2c` and count
+/// `+0x30`. State 0 sets the wait 0x28 and goes to 10; 10, the wait out:
+/// when the colour object `R + 0x40 + 0x2c0 i` (`i = n % 2`, signed) is
+/// done (`+0x18` 20000) it is set up again
+/// ([`colour_setup_0645`], `edx` = `R`), the count one up and the wait
+/// 0x37; 10000 takes the task's node off its ring and sets 20000. Every
+/// way out steps the wait down by one. Returns the `eax` each way leaves
+/// (the state, `0x2c0 i`, the set-up's answer, the node's old link).
+pub fn colour_task_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task.wrapping_add(4));
+    let at = |o: u32| r.wrapping_add(o);
+    let down = |g: &mut G, eax: u32| {
+        let c = g.read::<u32>(at(0x2c));
+        g.write::<u32>(at(0x2c), c.wrapping_sub(1));
+        Ret::eax(eax)
+    };
+    let state = g.read::<u32>(at(0x28));
+    match state {
+        0 => {
+            g.write::<u32>(at(0x28), 10);
+            g.write::<u32>(at(0x2c), 0x28);
+            down(g, 0)
+        }
+        10 => {
+            if g.read::<i32>(at(0x2c)) > 0 {
+                return down(g, 10);
+            }
+            let n = g.read::<i32>(at(0x30));
+            let off = n.wrapping_rem(2).cast_unsigned().wrapping_mul(0x2c0);
+            if g.read::<u32>(at(0x58).wrapping_add(off)) != 0x4e20 {
+                return down(g, off);
+            }
+            let cf = Frame {
+                at: img.rel32_target(fr.at + 0x71),
+                ecx: at(0x40).wrapping_add(off),
+                edx: r,
+                ..*fr
+            };
+            let eax = colour_setup_0645(g, img, &cf);
+            let n = g.read::<u32>(at(0x30));
+            g.write::<u32>(at(0x30), n.wrapping_add(1));
+            g.write::<u32>(at(0x2c), 0x36);
+            Ret::eax(eax)
+        }
+        0x2710 => {
+            let node = g.read::<u32>(task);
+            let (prev, next) = (
+                g.read::<u32>(node.wrapping_add(4)),
+                g.read::<u32>(node.wrapping_add(8)),
+            );
+            g.write::<u32>(prev.wrapping_add(8), next);
+            let (next, prev) = (
+                g.read::<u32>(node.wrapping_add(8)),
+                g.read::<u32>(node.wrapping_add(4)),
+            );
+            g.write::<u32>(next.wrapping_add(4), prev);
+            g.write::<u32>(node.wrapping_add(8), node);
+            g.write::<u32>(node.wrapping_add(4), node);
+            let c = g.read::<u32>(at(0x2c));
+            g.write::<u32>(at(0x2c), c.wrapping_sub(1));
+            g.write::<u32>(at(0x28), 0x4e20);
+            Ret::eax(prev)
+        }
+        _ => down(g, state),
+    }
+}
+
+/// [`colour_task_0645`] (153 bytes, 1 overlay).
+pub const COLOUR_TASK_0645: Sig = Sig {
+    len: 153,
+    hash: 0xdc5f_38e8_d742_4963,
+    calls: &[(0x71, Callee::Sig(&COLOUR_SETUP_0645))],
+    imports: &[],
+};
