@@ -1643,6 +1643,9 @@ ports! {
     "r21 load step 0440" => r21::LOAD_0440, r21::load_0440;
     "r21 motion from 0201" => r21::MOTION_FROM_0201, r21::motion_from_0201;
     "r21 pair start 0304" => r21::PAIR_START_0304, m0568::pair_start;
+    "r21 step 0382" => r21::STEP_0382, r21::step_0382;
+    "r21 throw 0382" => r21::THROW_0382, r21::throw_0382;
+    "r21 throw start 0382" => r21::THROW_START_0382, r21::throw_start_0382;
     "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
     "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
     "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;

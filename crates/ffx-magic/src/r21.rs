@@ -2,6 +2,7 @@
 //! overlays below `magic_0450`, mostly copies of earlier ports that now
 //! read their differing operands from the code.
 
+use crate::m0018::st0_f32;
 use crate::r11_fades::stores;
 use crate::r13_start::append_kind;
 use crate::runtime::slot_target;
@@ -85,6 +86,316 @@ pub const PAIR_START_0304: Sig = Sig {
         (0xac, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
     ],
     imports: &[],
+};
+
+/// `cvttss2si`: toward 0, `0x8000_0000` for a NaN or a value out of range.
+fn cvtt(x: f32) -> u32 {
+    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
+        0x8000_0000
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
+        let n = x as i32;
+        n.cast_unsigned()
+    }
+}
+
+/// `magic_0382`'s object step (0x10001270, cdecl `(obj)`, an `ebp` frame,
+/// the scale `s` at `ebp - 4`; 624 bytes): with `A = *G_A`, slot 474
+/// `(A[0x198], 0x29, P2, P1)` after `P2` = `(2.5, 2.5, 0, 0)`; the
+/// counter `n = *G_N`: at 0 first slot 440 `(*G_A, obj, 0, 2)` (and `n`
+/// read again); `n` one up. Below 0x19 `s = n K / K2`, below 0x32 `s =
+/// K`; from 0x32 on (`s = K`): slot 457 `(A[0x1a0], 2, P3)`, `Q = P3 -
+/// P1` (four floats), `x` = slot 453 `(Q, ...)`'s ST0 (stored as f32
+/// over the argument), `m = cvttss2si(x K3)` into `*G_I` and `*G_J`, `Q *=
+/// K4 / m`, slot 434 `(*G_A, CB, ...)` into `*G_R` and slot 461 `(obj,
+/// CB2, ...)`. Then `obj + 0xd0..` = `(P1.xyz, 0)`, `obj + 0x130..` =
+/// `(s, s, s, 0)`. Returns `n`, or slot 461's `eax` from 0x32 on.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn step_0382<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let obj = fr.arg(g, 0);
+    let a = g.read::<u32>(w(0x5));
+    let cam_a = g.read::<u32>(a.wrapping_add(0x198));
+    let cam_b = g.read::<u32>(a.wrapping_add(0x1a0));
+    let (p1, p2) = (w(0x1d), w(0x22));
+    stores(g, img, f, &[0x26, 0x30, 0x3a, 0x44]);
+    // call width: 4
+    g.call(t(g, 0x18, 474), 0, &[cam_a, 0x29, p2, p1]);
+    let mut n = g.read::<u32>(w(0x5a));
+    // `s` starts as `K`; the scale below uses `K` as read last
+    let mut kk = k(g, 0x62);
+    let mut s = kk;
+    if n == 0 {
+        let ga = g.read::<u32>(w(0x87));
+        // call width: 4
+        g.call(t(g, 0x76, 440), 0, &[ga, obj, 0, 2]);
+        n = g.read::<u32>(w(0x8e));
+        kk = k(g, 0x96);
+    }
+    let n = n.wrapping_add(1);
+    g.write::<u32>(w(0x9f), n);
+    let mut eax = n;
+    if n.cast_signed() < 0x19 {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let nf = n.cast_signed() as f32;
+        s = div(mul(nf, kk), k(g, 0xc0));
+    } else if n.cast_signed() >= 0x32 {
+        let p3 = w(0xd4);
+        let q = w(0xf9);
+        // call width: 3
+        g.call(t(g, 0xcf, 457), 0, &[cam_b, 2, p3]);
+        for (from, minus, to) in [
+            (0xe7u32, 0xefu32, 0x101u32),
+            (0x109, 0x111, 0x119),
+            (0x121, 0x129, 0x131),
+            (0x139, 0x141, 0x149),
+        ] {
+            let v = sub(k(g, from), k(g, minus));
+            g.write::<f32>(w(to), v);
+        }
+        // call width: 4 (slot 457's words stay under it)
+        let x = st0_f32(g.call(t(g, 0xf4, 453), 0, &[q, cam_b, 2, p3]).st0);
+        g.write::<f32>(fr.esp.wrapping_add(4), x);
+        let m = cvtt(mul(x, k(g, 0x161)));
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let r = div(k(g, 0x169), m.cast_signed() as f32);
+        g.write::<u32>(w(0x184), m);
+        for (from, to) in [
+            (0x190u32, 0x1a6u32),
+            (0x1ae, 0x1ba),
+            (0x1c2, 0x1ce),
+            (0x1d6, 0x1e2),
+        ] {
+            let v = mul(k(g, from), r);
+            g.write::<f32>(w(to), v);
+        }
+        g.write::<u32>(w(0x199), m);
+        let ga = g.read::<u32>(w(0x178));
+        let cb = w(0x16e);
+        // call width: 6 (the earlier words stay under it)
+        let h = g.call(t(g, 0x19e, 434), 0, &[ga, cb, q, cam_b, 2, p3]).eax;
+        g.write::<u32>(w(0x1ef), h);
+        // call width: 8
+        eax = g
+            .call(
+                t(g, 0x1f4, 461),
+                0,
+                &[obj, w(0x1f9), ga, cb, q, cam_b, 2, p3],
+            )
+            .eax;
+    }
+    for (i, o) in [0x20du32, 0x21d, 0x22d].into_iter().enumerate() {
+        let v = g.read::<u32>(w(o));
+        g.write::<u32>(obj + 0xd0 + 4 * i as u32, v);
+    }
+    g.write::<u32>(obj + 0xdc, 0);
+    for o in [0x130u32, 0x134, 0x138] {
+        g.write::<f32>(obj + o, s);
+    }
+    g.write::<u32>(obj + 0x13c, 0);
+    Ret::eax(eax)
+}
+
+/// [`step_0382`] (624 bytes, 1 overlay).
+pub const STEP_0382: Sig = Sig {
+    len: 624,
+    hash: 0xb2de_04ed_b4b2_f8b4,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0382`'s throw set-up (0x100014e0, cdecl `(obj)`, slot 461's
+/// callback in [`step_0382`]; a cookie frame, `ebp = E - 4`, the locals
+/// `V` at `ebp - 0x24`, `O` at `ebp - 0x14`, `M` at `ebp - 0x34`): `V`
+/// = `Q` (four floats), slot 464 `(V)`, `M` = `(0, -1, 0, 0)`, slot 512
+/// `(O, V, M)` (`O` its output); `d = O K` (four lanes), `c = *G_I / 2 + 1`
+/// (signed); `Q.xyz -= d.xyz c`; `obj + 0xd0..` = `(P1.xyz, 0)`, `+0xe0..`
+/// = `(Q.xyz, 0)`, `+0xf0..` = `(d.xyz, 0)`, `+0x130..` = `(0.03, 0.03,
+/// 0.03, 0)`; slot 434 `(*G_A, CB3)` into `R`: `R + 0xd0..` = `(P1.x,
+/// -0.1, P1.z, 0)`; slot 450 `(obj, CB4)`, slot 451 `(obj, *G_I)`. Each
+/// call sees the words the earlier ones left. Returns slot 451's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn throw_0382<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (v, o, m) = (
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x34),
+    );
+    for (i, q) in [0x14u32, 0x21, 0x32, 0x48].into_iter().enumerate() {
+        let x = g.read::<u32>(w(q));
+        g.write::<u32>(v + 4 * i as u32, x);
+    }
+    // call width: 1
+    g.call(t(g, 0x3b, 464), 0, &[v]);
+    for (i, x) in [0u32, 0xbf80_0000, 0, 0].into_iter().enumerate() {
+        g.write::<u32>(m + 4 * i as u32, x);
+    }
+    // call width: 4 (slot 464's word stays)
+    g.call(t(g, 0x66, 512), 0, &[o, v, m, v]);
+    let n = g.read::<u32>(w(0x8f)).cast_signed();
+    let kk = k(g, 0x97);
+    let d: [f32; 4] = [0u32, 4, 8, 0xc].map(|x| mul(g.read::<f32>(o + x), kk));
+    // cdq; sub eax, edx; sar eax, 1; inc eax: n / 2 toward 0, plus 1
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+    let c = (n / 2).wrapping_add(1) as f32;
+    for (i, x) in d.into_iter().enumerate() {
+        g.write::<f32>(o + 4 * i as u32, x);
+    }
+    for (i, (from, to)) in [(0xd5u32, 0xfeu32), (0x106, 0x119), (0x121, 0x12d)]
+        .into_iter()
+        .enumerate()
+    {
+        let x = sub(k(g, from), mul(d[i], c));
+        g.write::<f32>(w(to), x);
+    }
+    let rows: [(u32, [u32; 3]); 2] = [(0xd0, [0x135, 0x145, 0x155]), (0xe0, [0x16f, 0x17f, 0x18f])];
+    for (at, ops) in rows {
+        for (i, op) in ops.into_iter().enumerate() {
+            let x = g.read::<u32>(w(op));
+            g.write::<u32>(obj + at + 4 * i as u32, x);
+        }
+        g.write::<u32>(obj + at + 0xc, 0);
+    }
+    for (i, x) in d.into_iter().take(3).enumerate() {
+        g.write::<f32>(obj + 0xf0 + 4 * i as u32, x);
+    }
+    g.write::<u32>(obj + 0xfc, 0);
+    let ga = g.read::<u32>(w(0x1d3));
+    let cb3 = w(0x1cd);
+    for x in [0x130u32, 0x134, 0x138] {
+        g.write::<u32>(obj + x, 0x3cf5_c28f);
+    }
+    g.write::<u32>(obj + 0x13c, 0);
+    // call width: 6 (slot 512's words stay under it)
+    g.call(t(g, 0x1c8, 434), 0, &[ga, cb3, o, v, m, v]);
+    let r = g.read::<u32>(w(0x208));
+    let x = g.read::<u32>(w(0x210));
+    g.write::<u32>(r + 0xd0, x);
+    g.write::<u32>(r + 0xd4, 0xbdcc_cccd);
+    let z = g.read::<u32>(w(0x22a));
+    g.write::<u32>(r + 0xd8, z);
+    g.write::<u32>(r + 0xdc, 0);
+    let cb4 = w(0x246);
+    // call width: 8
+    g.call(t(g, 0x241, 450), 0, &[obj, cb4, ga, cb3, o, v, m, v]);
+    let i = g.read::<u32>(w(0x255));
+    // call width: 10
+    let eax = g
+        .call(
+            t(g, 0x25a, 451),
+            0,
+            &[obj, i, obj, cb4, ga, cb3, o, v, m, v],
+        )
+        .eax;
+    Ret::eax(eax)
+}
+
+/// [`throw_0382`] (633 bytes, 1 overlay; the cookie check).
+pub const THROW_0382: Sig = Sig {
+    len: 633,
+    hash: 0x4769_d153_6d95_2d78,
+    calls: &[(0x271, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0382`'s throw start (0x100018c0, cdecl `(obj)`, slot 449's
+/// callback; an `ebp` frame): `s = rand / K1 K2 + K2`; `obj + 0xbc` gets
+/// bit 14; with `S = *G_S`: `obj + 0xd0..` = `(S.d0, S.d4, S.d8, 0)`, `v =
+/// S.e0.. K3`, each lane plus `rand / K1 K4 - K5` (three more `rand`s;
+/// the first kept over the argument) into `obj + 0xe0..` (`w` 0); words
+/// at `+0x13c`, `+0x170..+0x18c`, `+0x130..` = `(s, s, s)`; slot 458
+/// `(*G_A, obj, 1)`, slot 450 `(obj, CB)`, slot 449 `(obj, CB2)` (each
+/// over the earlier words). Returns slot 449's `eax`.
+pub fn throw_start_0382<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps of rand (0..=0x7fff)
+    let rnd = |g: &mut G| g.rand().cast_signed() as f32;
+    let obj = fr.arg(g, 0);
+    let r = rnd(g);
+    let s = add(mul(div(r, k(g, 0x1e)), k(g, 0x30)), k(g, 0x3d));
+    let flags = g.read::<u32>(obj + 0xbc) | 0x4000;
+    g.write::<u32>(obj + 0xbc, flags);
+    let src = g.read::<u32>(w(0x35));
+    for x in [0xd0u32, 0xd4, 0xd8] {
+        let v = g.read::<u32>(src + x);
+        g.write::<u32>(obj + x, v);
+    }
+    g.write::<u32>(obj + 0xdc, 0);
+    let k3 = k(g, 0x6a);
+    let v: [f32; 3] = [0xe0u32, 0xe4, 0xe8].map(|x| mul(g.read::<f32>(src + x), k3));
+    let mut out = [0f32; 3];
+    for (i, (k1, k4, k5)) in [
+        (0xc8u32, 0xd0u32, 0xd8u32),
+        (0xf3, 0xfb, 0x103),
+        (0x123, 0x130, 0x145),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = rnd(g);
+        let x = sub(mul(div(r, k(g, k1)), k(g, k4)), k(g, k5));
+        out[i] = add(x, v[i]);
+    }
+    // the first lane's sum is kept over the argument
+    g.write::<f32>(fr.esp.wrapping_add(4), out[0]);
+    g.write::<f32>(obj + 0xe0, out[0]);
+    g.write::<f32>(obj + 0xe4, out[1]);
+    for (x, val) in [
+        (0xecu32, 0u32),
+        (0x13c, 0),
+        (0x170, 0x3f80_0000),
+        (0x174, 0x3e4c_cccd),
+    ] {
+        g.write::<u32>(obj + x, val);
+    }
+    g.write::<f32>(obj + 0xe8, out[2]);
+    for x in [0x130u32, 0x134, 0x138] {
+        g.write::<f32>(obj + x, s);
+    }
+    for (x, val) in [
+        (0x178u32, 0x3e4c_cccdu32),
+        (0x17c, 0x3f80_0000),
+        (0x180, 0),
+        (0x184, 0),
+        (0x188, 0),
+        (0x18c, 0xbdb8_51ec),
+    ] {
+        g.write::<u32>(obj + x, val);
+    }
+    let ga = g.read::<u32>(w(0x14e));
+    // call width: 3
+    g.call(t(g, 0x128, 458), 0, &[ga, obj, 1]);
+    let cb = w(0x1f6);
+    // call width: 5 (slot 458's words stay)
+    g.call(t(g, 0x1f1, 450), 0, &[obj, cb, ga, obj, 1]);
+    // call width: 7
+    let eax = g
+        .call(t(g, 0x204, 449), 0, &[obj, w(0x209), obj, cb, ga, obj, 1])
+        .eax;
+    Ret::eax(eax)
+}
+
+/// [`throw_start_0382`] (543 bytes, 1 overlay; `rand` through the IAT).
+pub const THROW_START_0382: Sig = Sig {
+    len: 543,
+    hash: 0xf67a_abd2_f84f_81a1,
+    calls: &[],
+    imports: &[(0x9, "rand")],
 };
 
 /// `magic_0440`'s sound block in its start-up (the code at `+0x3d0` of
