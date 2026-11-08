@@ -57,6 +57,16 @@ fn snapshot_holds_the_loaded_item_table() {
         "53-bit precision"
     );
 
+    // The snapshots were taken with the `test-potion` mod loaded
+    // (docs/hooking.md), so the table in memory is the mod's. A machine
+    // without a mods folder (PC2) can't rebuild that table: skip there
+    // rather than compare against the unmodded archive (2026-11-08).
+    if !exe.with_file_name("mods").is_dir() {
+        eprintln!(
+            "no mods folder next to FFX.exe; the snapshot's item table is test-potion's: skipping"
+        );
+        return;
+    }
     let path = ffx_kernel::Schema::by_file("item")
         .unwrap()
         .path(ffx_text::Language::English);
