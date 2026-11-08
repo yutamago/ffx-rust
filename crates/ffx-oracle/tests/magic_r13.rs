@@ -1030,8 +1030,9 @@ fn scale_start_0612() {
 }
 
 /// `magic_0613` 0x10004980 (`m0164::mean_visit`, family P081: the parts'
-/// centre `m0613::centre` instead of the mean point): visited, not visited
-/// with no object, with an object of two parts and of none.
+/// centre `m0613::centre` instead of the mean point), directly and
+/// through its thunk: visited, not visited with no object, with an
+/// object of two parts and of none.
 #[test]
 fn mean_visit_0613() {
     let Some(mut t) = twin(613) else { return };
@@ -1097,6 +1098,13 @@ fn mean_visit_0613() {
             ..Call::default()
         };
         t.check_entry(at, c, &[], Eax::Checked);
+        // and through its `ecx` thunk (0x10004a20, `sl_wrap::ecx_jmp`)
+        let thunk = t.at(0x4a20);
+        let c = Call {
+            eax: 0x1234_5679,
+            ..Call::default()
+        };
+        t.check_entry(thunk, c, &[cur], Eax::Checked);
     }
 }
 

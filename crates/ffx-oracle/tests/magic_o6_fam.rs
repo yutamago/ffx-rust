@@ -366,6 +366,7 @@ const EFFECT_BOOT: &[(u16, u32)] = &[
     (372, 0x1220),
     (669, 0x1ce0),
     (206, 0x1940),
+    (641, 0x1c70),
 ];
 
 /// `o6_fam_boot::effect_boot`: slot 803 gives the block, slot 719 a
@@ -402,9 +403,10 @@ fn effect_boot_in_every_copy() {
         // the cleared table: the push before `mov [G], eax; call memset`
         for k in 0..0x200u32 {
             let p = f + k;
+            // (and `magic_0641`'s second: `push M; call memset`)
             if t.img.word(p) & 0xff == 0x68
-                && t.img.word(p + 5) & 0xff == 0xa3
-                && t.img.word(p + 10) & 0xff == 0xe8
+                && (t.img.word(p + 5) & 0xff == 0xa3 && t.img.word(p + 10) & 0xff == 0xe8
+                    || t.img.word(p + 5) & 0xff == 0xe8 && t.img.word(p - 2) & 0xffff == 0x006a)
             {
                 let m = t.img.word(p + 1);
                 t.write(m, &[0x7e; 0x110]);

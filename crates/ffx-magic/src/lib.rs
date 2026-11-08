@@ -64,6 +64,7 @@ pub mod r13_misc;
 pub mod r13_start;
 pub mod r14;
 pub mod r15;
+pub mod r16;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -2873,6 +2874,33 @@ ports! {
     "staged volley task (0685)" => s7_misc::STAGED_VOLLEY_TASK_0685, s7_misc::staged_volley_task;
     "staged volley task 0677" => s7_misc::STAGED_VOLLEY_TASK_0677, s7_misc::staged_volley_task;
     "staged volley task 0682" => s7_misc::STAGED_VOLLEY_TASK_0682, s7_misc::staged_volley_task;
+    "r16 staged volley task 0621" => r16::STAGED_VOLLEY_TASK_0621, s7_misc::staged_volley_task;
+    "r16 load step 0619" => r16::LOAD_0619, r16::load_0619;
+    "r16 load step 0681" => r16::LOAD_0681, r16::load_0681;
+    "r16 object records 0480" => r16::OBJECT_RECORDS_0480, r16::object_records_0480;
+    "r16 load step 0480" => r16::LOAD_0480, r16::load_0480;
+    "r16 load step 0474" => r16::LOAD_0474, r16::load_0474;
+    "r16 load step 0494" => r16::LOAD_0494, r16::load_0494;
+    "r16 set-up 0666" => r16::SETUP_0666, r16::setup_0666;
+    "r16 place 0666" => r16::PLACE_0666, r16::place_0666;
+    "r16 summon set-up task 0683" => r16::SUMMON_SETUP_TASK_0683, s7_misc::summon_setup_task;
+    "r16 staged volley task 0683" => r16::STAGED_VOLLEY_TASK_0683, s7_misc::staged_volley_task;
+    "r16 frame 0661" => r16::FRAME_0661, r16::frame_0661;
+    "r16 set-up 0661" => r16::SETUP_0661, r16::setup_0661;
+    "r16 texture entry 0661" => r16::TEXTURE_ENTRY_0661, r16::texture_entry_0661;
+    "r16 spray 0489" => r16::SPRAY_0489, r16::spray_0489;
+    "r16 spray 2 0489" => r16::SPRAY2_0489, r16::spray2_0489;
+    "r16 caster start 0450" => r16::CASTER_START_0450, r16::caster_start_0450;
+    "r16 glide 0450" => r16::GLIDE_0450, r16::glide_0450;
+    "r16 rise 0450" => r16::RISE_0450, r16::rise_0450;
+    "r16 launch 0450" => r16::LAUNCH_0450, r16::launch_0450;
+    "r16 thunk: mean visit 0613" => r16::JMP_MEAN_VISIT_0613, sl_wrap::ecx_jmp;
+    "r16 load step 0675" => r16::LOAD_0675, r16::load_0675;
+    "r16 load step 0492" => r16::LOAD_0492, r16::load_0492;
+    "r16 parts 0641" => r16::PARTS_0641, r16::parts_0641;
+    "r16 parts scaled 0641" => r16::PARTS_SCALED_0641, r16::parts_scaled_0641;
+    "o6 fam boot effect_boot 0641@1c70" => r16::EFFECT_BOOT_0641_1C70, o6_fam_boot::effect_boot;
+    "r16 sparks 0641" => r16::SPARKS_0641, r16::sparks_0641;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3442,6 +3470,22 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0478 init", &m0478::INIT),
     ("m0479 start", &m0479::START),
     ("m0480 clear", &m0480::CLEAR),
+    // round 16 (magic-r16)
+    ("r16 dealt start 0619", &r16::DEALT_START_0619),
+    ("r16 dealt start 0681", &r16::DEALT_START_0681),
+    ("r16 aim records 0480", &r16::AIM_RECORDS_0480),
+    ("r16 start-up 0480", &r16::START_UP_0480),
+    ("r16 start-up 0474", &r16::START_UP_0474),
+    ("r16 dealt start 0494", &r16::DEALT_START_0494),
+    ("r16 dealt kind start 0675", &r16::DEALT_KIND_START_0675),
+    ("r16 dealt nodes start 0492", &r16::DEALT_NODES_START_0492),
+    ("r16 spawn 0641", &r16::SPAWN_0641),
+    ("r16 part aim 0641", &r16::PART_AIM_0641),
+    ("r16 summon object 0683", &r16::SUMMON_OBJECT_0683),
+    ("r16 texture 0661", &r16::TEXTURE_0661),
+    ("r16 spawn 0489", &r16::SPAWN_0489),
+    ("r16 spawn 2 0489", &r16::SPAWN2_0489),
+    // round 16 (magic-r16): end
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)
