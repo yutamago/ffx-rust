@@ -24,11 +24,43 @@ size `0x6900`, kept at manager `+0x350`/`+0x354`):
 | `0x00` | `0x40` | header; `+0x1a` `u16` CRC |
 | `0x40` | `0x68c0` | the game state block, copied to and from `g_SaveData` (`0x0112ca90`): `+0` map, `+2` previous map, `+0xc` entrance, `+0xba`/`+0xb8` the map and entrance to return to (`u16` each); the whole layout is under "The game state block" below, `+0xbec` story progress (`g_SaveScenario`), the party records at `0x0113205c` (block `+0x55cc`) |
 | `0x64f4` | 4 | the CRC again |
+| `0x64f8` | `0x408` | the tail: block `+0x64b8`..`+0x68c0`, copied with the block but outside the CRC; nothing reads it ("The tail" below) |
 
 `SaveDataCheckCrc` (`0x00647d70`) passes a buffer when the `u16` at `+0x1a`
 equals the word at `+0x64f4` and `TkCRC(0x64b8, buffer + 0x40)` gives it
 (the word is zeroed first), or always with `g_SaveData_CrcCheckOff`
 (`0x00ccb9a4`).
+
+### The tail
+
+The block the game copies is `0x68c0` bytes, but the CRC and the last
+field (`character_names`, `g_SaveChrNames` `0x01132ddc`, ends at block
+`+0x64b4`) stop at `+0x64b8`. The `0x408` bytes after them (`0x01132f48`..
+`0x01133350`, file `0x64f8`..`0x6900`) go everywhere the block goes and are
+never read:
+
+- `MenuSave_PackSave` (`0x008b3e60`) copies all `0x68c0` bytes from
+  `g_SaveData` into the file buffer. It stores a CRC over `0x68c0` bytes, but
+  every writer then calls `SaveDataWriteCrc` (`0x00648f20`), which
+  recomputes it over `0x64b8`: `SaveDataMachine_StartSave_006f07a0` (menu
+  save) and `SaveDataManager_debugSave_Internal_6f0650` (`0x006f0510`,
+  autosave). Fahrenheit's save module calls it too. `debugSave`
+  (`0x00646df0`) uses `0x64b8` directly.
+- `SaveDataCheckCrc` checks `0x64b8` bytes, so the tail can hold anything
+  and the save still loads. `TkMenuCopyLoadedSave` copies it into
+  `g_SaveData` with the rest.
+- `MsSetSaveStartGame` clears it with the block on a new game.
+  `TkMenuCtrlTuto` (`0x008db4e0`) keeps all `0x68c0` bytes while a tutorial
+  runs on its own save and copies them back afterwards.
+- The Ghidra dump's only reference into the range is a loop end
+  (`resetDefaultPlayerNameStatus`, one past the names' `+0x12` bytes). The
+  next label is the rename flag at `0x01133350`.
+- Five PC saves (the autosave and four manual saves) have all `0x408` bytes
+  zero. No shipped script declares a storage 0 variable there: storage 0
+  is block `+0x1ec`, so the tail is storage 0 `0x62cc`..`0x66d3`, and the
+  last storage 0 variable of the 1,621 scripts ends at `0x1a00`
+  ([Atel#](https://github.com/yutamago/ffx-atel-sharp) `docs/research/mod-saves.md`,
+  which uses the tail for mods' saved variables).
 
 ## The PS2 save file
 
