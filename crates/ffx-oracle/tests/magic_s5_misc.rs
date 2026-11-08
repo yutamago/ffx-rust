@@ -1580,6 +1580,8 @@ fn summon_ppp_starts() {
         (272, 0x7130),
         (71, 0x91f0),
         (387, 0xd970),
+        // `r14::summon_ppp_start_0146`: the tail's operands moved, slot 575
+        (146, 0x7a10),
     ] {
         summon_ppp_in(dll, rva);
     }
@@ -1605,8 +1607,16 @@ fn summon_ppp_in(dll: u16, rva: u32) {
     });
     rec(&mut t, 289, 1, |_, _| 0x289);
     t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
-    recs(&mut t, &[(718, 1), (710, 11), (222, 12), (221, 12)]);
+    recs(
+        &mut t,
+        &[(718, 1), (710, 11), (222, 12), (221, 12), (575, 0)],
+    );
     rec_lock(&mut t, 711, 7, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
+    let (flags_op, clear_op) = if dll == 146 {
+        (0x199, 0x1aa)
+    } else {
+        (0x197, 0x1a8)
+    };
     let data = SCRATCH + 0x800;
     rec(&mut t, 719, 4, move |_, _| data);
     let lock = SCRATCH + 0x7f0;
@@ -1631,13 +1641,13 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         // the ring's tail before: a record of its own
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x15a), SCRATCH + 0x7a0);
-        t.set_u32(op(&t, f, 0x197), 0xffff_ff0f + count);
+        t.set_u32(op(&t, f, flags_op), 0xffff_ff0f + count);
         // (the next instruction's bytes read as an address hold bits, so a
         // read that lands there shows)
-        t.set_u32(op(&t, f, 0x19b), 0xffff_fff0 ^ count);
-        if dll == 342 {
+        t.set_u32(op(&t, f, flags_op + 4), 0xffff_fff0 ^ count);
+        if dll == 342 || dll == 146 {
             // the word the start clears: set before
-            t.set_u32(op(&t, f, 0x1a8), 0x01a8_0000 + count);
+            t.set_u32(op(&t, f, clear_op), 0x01a8_0000 + count);
         }
         if dll == 71 {
             t.set_u32(op(&t, f, 0x1b2), 0x1b2);
@@ -1805,7 +1815,8 @@ fn root_point_parts() {
 
 #[test]
 fn summon_ppp_starts_stream() {
-    for (dll, rva) in [(186u16, 0x8230u32), (173, 0x7170)] {
+    // `magic_0153`'s copy clears two more words at the end
+    for (dll, rva) in [(186u16, 0x8230u32), (173, 0x7170), (153, 0x8710)] {
         summon_ppp_stream_in(dll, rva);
     }
 }
@@ -1859,6 +1870,11 @@ fn summon_ppp_stream_in(dll: u16, rva: u32) {
         t.set_u32(op(&t, f, 0x1c6), 0xffff_fff0 ^ count);
         // the word the start clears: set before
         t.set_u32(op(&t, f, 0x1d3), 0x01d3_0000 + count);
+        if dll == 153 {
+            for o in [0x1ddu32, 0x1e7] {
+                t.set_u32(op(&t, f, o), 0x0153_0000 + o + count);
+            }
+        }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0186_0040 + count], Eax::Checked);
     }

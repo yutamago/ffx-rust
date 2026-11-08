@@ -186,6 +186,28 @@ pub const TWO_PART_VISIT_THUNK_0070_14A0: Sig = Sig {
     imports: &[],
 };
 
+/// [`two_part_visit`] in `magic_0295` (0x10001000, 813 bytes: no bit-0
+/// test, easing on any flag).
+pub const TWO_PART_VISIT_0295_1000: Sig = Sig {
+    len: 813,
+    hash: 0x19c7_d0b3_3783_8c67,
+    calls: &[
+        (0x256, Callee::Any),
+        (0x325, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit_thunk`] in `magic_0295` (0x10001340, 12 bytes).
+pub const TWO_PART_VISIT_THUNK_0295_1340: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[
+        (0x8, Callee::Sig(&crate::o6_fam_pairs5::TWO_PART_VISIT_0295_1000)),
+    ],
+    imports: &[],
+};
+
 // family F0188_10001220
 
 /// [`scrolled_texture`] in `magic_0188` (0x10001220, 650 bytes; row shared:677).

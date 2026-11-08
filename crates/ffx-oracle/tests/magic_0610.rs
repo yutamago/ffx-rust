@@ -153,11 +153,18 @@ fn objhost_start() {
     }
 }
 
-/// 0x1000bb00: an odd count (nothing), the pool empty, a spark.
+/// 0x1000bb00: an odd count (nothing), the pool empty, a spark. Also
+/// `magic_0434`'s copy (0x10007bd0, the animated object start).
 #[test]
 fn spark() {
-    let Some(mut t) = twin(N) else { return };
-    let at = t.at(0xbb00);
+    for (n, rva) in [(N, 0xbb00u32), (434, 0x7bd0)] {
+        spark_in(n, rva);
+    }
+}
+
+fn spark_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x16), fx);
     t.set_u32(fx + 0x1a68, 0x1a68_0001);
@@ -207,10 +214,17 @@ fn spark() {
 }
 
 /// 0x1000ba00: `k` above 1 (nothing), the pool empty, sides 0 and 1.
+/// Also `magic_0434`'s copy (0x10007ad0, the animated object start).
 #[test]
 fn side_object() {
-    let Some(mut t) = twin(N) else { return };
-    let at = t.at(0xba00);
+    for (n, rva) in [(N, 0xba00u32), (434, 0x7ad0)] {
+        side_object_in(n, rva);
+    }
+}
+
+fn side_object_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x12), fx);
     t.set_u32(fx + 0x1a68, 0x1a68_0001);

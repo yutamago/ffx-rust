@@ -326,6 +326,61 @@ fn launches_p055() {
     }
 }
 
+/// `r14::launches_0384` (`magic_0384` 0x10001b60): the count below and
+/// at the first callback's bound 0x19, a multiple of 16 and not, and on
+/// both sides of 0x32.
+#[test]
+fn launches_0384() {
+    for (dll, rva) in [(384u16, 0x1b60u32)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+        let launch = t.img.rel32_target(f + 0x90);
+        for o in [0x97, 0x193, 0x20d] {
+            t.set_u32(t.img.word(launch + o), 5);
+        }
+        t.set_u32(t.img.word(launch + 0x67), 1.5f32.to_bits());
+        t.set_u32(t.img.word(launch + 0xa2), 1.25f32.to_bits());
+        t.set_u32(t.img.word(launch + 0xc7), 0.75f32.to_bits());
+        let g_d = t.u32(t.img.word(launch + 0xd4));
+        if g_d != 0 {
+            t.set_u32(g_d + 0x198, 0x0198_0000);
+        }
+        t.stub(474, |m, a| {
+            for (i, step) in (0u32..).zip([0.5f32, 1.0, 1.5, 2.0]) {
+                let v = m.r32(a[2] + 4 * i);
+                m.w32(a[3] + 4 * i, (f32::from_bits(v) + step).to_bits());
+            }
+            0x474
+        });
+        rec(&mut t, 458, 3, |_, a| a[1] ^ 0x458);
+        t.stub_st0(482, |_, a| f64::from(a[3]) * 0.5 + 0.25);
+        rec(&mut t, 482, 4, |_, a| a[0] ^ 0x482);
+        // slot 434 hands out three objects in turn
+        let k = SCRATCH + 0x98;
+        rec(&mut t, 434, 2, move |m, _| {
+            let n = m.r32(k);
+            m.w32(k, n + 1);
+            SCRATCH + 0x1000 + 0x400 * (n % 3)
+        });
+        let arg = SCRATCH + 0x900;
+        for n in [16u32, 5, 0x18, 0x19, 0x31, 0x32, 0x20] {
+            t.set_u32(k, 0);
+            for i in 0..3 {
+                let p = SCRATCH + 0x1000 + 0x400 * i;
+                t.write(p, &[0x11; 0x200]);
+                t.set_u32(p + 0xac, 1);
+            }
+            t.set_u32(op(&t, 0x0d), n);
+            t.set_u32(op(&t, 0x45), 2.0f32.to_bits());
+            t.set_u32(op(&t, 0x37), 3.0f32.to_bits());
+            t.set_u32(op(&t, 0x79), 0x0079_0079);
+            t.set_u32(arg, 0x10);
+            t.check_entry(f, Call::default(), &[arg], Eax::Checked);
+        }
+    }
+}
+
 /// Parameter family P034 (`r11_misc::sparks_p034`, `magic_0393`
 /// 0x10003690 and `magic_0450` 0x10007670): the counter reaching 0 (an
 /// object record free and not) and not; three sprite records free, and

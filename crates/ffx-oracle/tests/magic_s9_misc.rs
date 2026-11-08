@@ -1831,6 +1831,64 @@ fn texture_fades() {
     }
 }
 
+/// `s9_misc::texture_fade_0351` (`magic_0351` 0x10001500): the count
+/// above 0x3c (going on) and at it with `*G_A` 0 (waiting), the clock at
+/// and past 0xb9; the fade stepped, held and reaching its end.
+#[test]
+fn texture_fade_0351() {
+    let Some(mut t) = twin(351) else { return };
+    let f = t.at(0x1500);
+    let w = |t: &Twin, o: u32| op(t, f, o);
+    let b = |t: &Twin, o: u32| op(t, f, o + 0xd);
+    let down = SCRATCH + 0x7d0;
+    log_calls(&mut t, 253, 0, &[], move |m, _, _| m.r32(down));
+    log_calls(&mut t, 38, 3, &[], |_, a, _| a[1] ^ 0x0038_0000);
+    let tex = SCRATCH + 0x3000;
+    t.set_u32(tex, 0x4c0c_1234);
+    t.set_u32(tex + 4, 1);
+    log_calls(&mut t, 719, 3, &[], move |_, _, _| tex);
+    let scroll = t.img.rel32_target(f + 0x8e);
+    t.set_u32(op(&t, scroll, 0x3b), 0x0071_9000);
+    t.set_u32(op(&t, scroll, 0x10f), SCRATCH + 0x3040);
+    t.set_u32(op(&t, scroll, 0xb9), SCRATCH + 0x3100);
+    for (o, x) in [(0x36u32, 0.25f32), (0x4e, 1.0), (0x90, 0.5)] {
+        let a = b(&t, o);
+        set_f(&mut t, a, x);
+    }
+    // (count, `*G_A`, clock, slot 253, fade)
+    for (k, (n, a, clock, d, v)) in [
+        (0x3du32, 0u32, 0u32, 1u32, 0.75f32),
+        (0x3c, 0, 0x200, 1, 0.75),
+        (0x3c, 1, 0xb9, 1, 0.75),
+        (0x3c, 1, 0xba, 1, 0.75),
+        (0, 1, 0x100, 0, 1.5),
+        (0x40, 0, 0, 0, -0.5),
+        (0x40, 0, 0, 0, 0.5),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(LOG, 0);
+        t.set_u32(w(&t, 0x2), n);
+        t.set_u32(w(&t, 0xb), a);
+        t.set_u32(w(&t, 0x18), clock);
+        t.set_u32(down, d);
+        let fade = b(&t, 0x2a);
+        set_f(&mut t, fade, v);
+        t.set_u32(b(&t, 0x77), 0x0abc_0000 + k);
+        t.set_u32(b(&t, 0x9c), 0x5a5a);
+        t.write(SCRATCH + 0x3040, &varied(0x100, k));
+        scrub(&mut t);
+        let call = Call {
+            eax: 0x1500 + k,
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[], Eax::Checked);
+    }
+}
+
 /// The DLL's free node ring for `sa_pool::take` at `take`: `n` nodes at
 /// `at` (`+0` the previous, `+4` the next).
 fn take_ring(t: &mut Twin, take: u32, at: u32, n: u32, k: u32) {

@@ -4451,6 +4451,17 @@ pub const LIT_COLOUR_NODE: Sig = Sig {
     imports: &[],
 };
 
+/// [`lit_colour_node`] in `magic_0601` (0x10001160, 791 bytes): once the
+/// colour reached `R+0x2c..` it also copies `R+0x1c..` back to `R+0x2c..`
+/// (two `movq`, `+0x2bb`), the same 16 bytes the step just stored, so
+/// memory and `eax` are as in the 771-byte copies.
+pub const LIT_COLOUR_NODE_0601: Sig = Sig {
+    len: 791,
+    hash: 0x94b9_284d_aad9_2f1d,
+    calls: &[(0x22d, Callee::Any), (0x30f, Callee::Any)],
+    imports: &[],
+};
+
 /// A summon's load wait, then its objects (cdecl, no arguments): busy
 /// while slot 225 `(1)` is not 0; once, `*G_A` 0, slot 226 `(*G_B, 1)`
 /// and `*G_A = 1`; busy while slot 227 `(*G_B)` is below 1; then the

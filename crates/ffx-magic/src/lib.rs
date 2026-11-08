@@ -62,6 +62,7 @@ pub mod r12h_start;
 pub mod r12h_volley;
 pub mod r13_misc;
 pub mod r13_start;
+pub mod r14;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1347,6 +1348,8 @@ ports! {
     "m0673 record pair" => m0673::RECORD_PAIR, m0673::record_pair;
     "m0610 spark" => m0610::SPARK, m0610::spark;
     "m0610 side object" => m0610::SIDE_OBJECT, m0610::side_object;
+    "m0610 spark 0434" => m0610::SPARK_0434, m0610::spark;
+    "m0610 side object 0434" => m0610::SIDE_OBJECT_0434, m0610::side_object;
     "m0598 task" => m0598::TASK, m0598::task;
     "m0600 fade start" => m0600::FADE_START, m0600::fade_start;
     "m0562 task" => m0562::TASK, m0562::task;
@@ -1538,6 +1541,9 @@ ports! {
     "m0539 setup" => m0539::SETUP, m0539::setup;
     "m0540 setup" => m0540::SETUP, m0540::setup;
     "m0535 frame step" => m0535::FRAME_STEP, m0535::frame_step;
+    "m0535 frame step 0384" => m0535::FRAME_STEP_0384, m0535::frame_step;
+    "r14 launches 0384" => r14::LAUNCHES_0384, r14::launches_0384;
+    "r14 summon ppp start 0146" => r14::SUMMON_PPP_START_0146, r14::summon_ppp_start_0146;
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -1730,6 +1736,8 @@ ports! {
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
     "summon start (targets, 0330)" => s4_summon::SUMMON_START_0330, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
+    "summon start (targets, b) 0388" => s4_summon::SUMMON_START_B_0388, s4_summon::summon_start_b;
+    "summon start (targets) 0389" => s4_summon::SUMMON_START_0389, s4_summon::summon_start;
     "summon start (targets, b) 0203" => s4_summon::SUMMON_START_B_0203, s4_summon::summon_start_b;
     "summon frame (0042)" => s4_summon::SUMMON_FRAME_B, s4_summon::summon_frame_b;
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
@@ -2468,6 +2476,7 @@ ports! {
     "target measure (modes)" => s5_misc::TARGET_MEASURE_MODES, s5_misc::target_measure_modes;
     "root point part" => s5_misc::ROOT_POINT_PART, s5_misc::root_point_part;
     "summon ppp start (stream)" => s5_misc::SUMMON_PPP_START_STREAM, s5_misc::summon_ppp_start_stream;
+    "summon ppp start (stream) 0153" => s5_misc::SUMMON_PPP_START_STREAM_0153, s5_misc::summon_ppp_start_stream;
     "spark pairs" => s5_misc::SPARK_PAIRS, s5_misc::spark_pairs;
     "summon ppp start (stream 1)" => s5_misc::SUMMON_PPP_START_STREAM_1, s5_misc::summon_ppp_start_stream_1;
     "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
@@ -2510,6 +2519,7 @@ ports! {
     "sf elem point offset" => sf_hidden::ELEM_POINT_OFFSET, sf_hidden::elem_point_offset;
     "sf spin angles" => sf_hidden::SPIN_ANGLES, sf_hidden::spin_angles;
     "sf caster script task" => sf_hidden::CASTER_SCRIPT_TASK, sf_hidden::caster_script_task;
+    "sf caster script task 0446" => sf_hidden::CASTER_SCRIPT_TASK_0446, sf_hidden::caster_script_task;
     "sf summon frame 673 first" => sf_hidden::SUMMON_FRAME_673_FIRST, sf_hidden::summon_frame_673_first;
     "sf fly-in task" => sf_hidden::FLY_IN_TASK, sf_hidden::fly_in_task;
     "sf motion sequence task" => sf_hidden::MOTION_SEQUENCE_TASK, sf_hidden::motion_sequence_task;
@@ -2911,6 +2921,7 @@ ports! {
     "o6 fam pairs5 level_particles 0307@5310" => o6_fam_pairs5::LEVEL_PARTICLES_0307_5310, o6_fam_pairs5::level_particles;
     "o6 fam pairs5 level_particles 0563@35b0" => o6_fam_pairs5::LEVEL_PARTICLES_0563_35B0, o6_fam_pairs5::level_particles;
     "o6 fam pairs5 two_part_visit_thunk 0070@14a0" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0070_14A0, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 two_part_visit_thunk 0295@1340" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0295_1340, o6_fam_pairs5::two_part_visit_thunk;
     "o6 fam pairs5 scrolled_texture 0188@1220" => o6_fam_pairs5::SCROLLED_TEXTURE_0188_1220, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 scrolled_texture 0351@1080" => o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 ribbon_visit_thunk 0070@8840" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0070_8840, o6_fam_pairs5::ribbon_visit_thunk;
@@ -2981,7 +2992,9 @@ ports! {
     "light landing (0565)" => s9_misc::LIGHT_LAND_0565, s9_misc::light_land_0565;
     "light bounce" => s9_misc::LIGHT_BOUNCE, s9_misc::light_bounce;
     "thunk: lit colour node" => s9_misc::LIT_COLOUR_NODE_THUNK, s9_misc::lit_colour_node_thunk;
+    "thunk: lit colour node 0601" => s9_misc::LIT_COLOUR_NODE_THUNK_0601, s9_misc::lit_colour_node_thunk;
     "texture fade" => s9_misc::TEXTURE_FADE, s9_misc::texture_fade;
+    "texture fade 0351" => s9_misc::TEXTURE_FADE_0351, s9_misc::texture_fade_0351;
     "summon pair start" => s9_misc::SUMMON_PAIR_START, s9_misc::summon_pair_start;
     "summon start task (0242)" => s9_misc::SUMMON_START_TASK_0242, s9_misc::summon_start_task_0242;
     "summon actor pair start" => s9_misc::SUMMON_ACTOR_PAIR_START, s9_misc::summon_actor_pair_start;
@@ -4070,6 +4083,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("summon object set-up", &s7_misc::SUMMON_OBJECT_SETUP),
     ("flight step", &s7_misc::FLIGHT_STEP),
     ("lit colour node", &s7_misc::LIT_COLOUR_NODE),
+    ("lit colour node 0601", &s7_misc::LIT_COLOUR_NODE_0601),
     ("emitter set-up", &s7_misc::EMITTER_SETUP),
     ("reel step", &s7_misc::REEL_STEP),
     ("reel phases", &s7_misc::REEL_PHASES),
@@ -4259,6 +4273,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o6 fam pairs5 two_part_visit 0070@1160",
         &o6_fam_pairs5::TWO_PART_VISIT_0070_1160,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0295@1000",
+        &o6_fam_pairs5::TWO_PART_VISIT_0295_1000,
     ),
     (
         "o6 fam pairs5 ribbon_visit 0070@86d0",

@@ -706,11 +706,19 @@ pub fn level_particles<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// Returns `eax` as the original leaves it: the last call's, or the last
 /// word copied; on the first way (nothing to do) only its low byte is
 /// known (the byte compared; the rest is the /GS cookie's).
+///
+/// `magic_0295`'s copy (0x10001000, 813 bytes) lights without testing
+/// bit 0 (only `S + 0x28` above 0; `movss xmm0, [esi+0x28]` at `+0x8e`,
+/// its `K` at `+0x97`) and eases with any bit of `S + 0x68` set (`cmp
+/// dword, 0`); its operands from the light on are ten bytes earlier.
 #[allow(clippy::too_many_lines)] // the original's branches, one by one
 pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, div, mul, sub};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `movss xmm3, [K]` (`f3 0f 10 1d`) or `movss xmm0, [esi+0x28]` (`.. 46`)
+    let plain = img.word(f + 0x8e) >> 24 == 0x46;
+    let d = if plain { 10 } else { 0 };
+    let w = |o: u32| img.word(f + if o >= 0xb4 { o - d } else { o });
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let c = fr.ecx;
     let ebp = fr.esp.wrapping_sub(4);
@@ -754,8 +762,9 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         eax = words.call(g, visit, l).eax;
     }
     let slot = |g: &G, t: u32, d: u32| slot_target(g, w(t), w(d) / 4);
-    let mut one = k(g, 0x92);
-    if g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0 && g.read::<f32>(s.wrapping_add(0x28)) > 0.0 {
+    let mut one = k(g, if plain { 0x97 } else { 0x92 });
+    let bit0 = plain || g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0;
+    if bit0 && g.read::<f32>(s.wrapping_add(0x28)) > 0.0 {
         let b = g.read::<u32>(s.wrapping_add(0x70)).wrapping_add(w(0xb8));
         let mut st = Pushes::default();
         st.push_all(&[b, w(0xc1), ebp.wrapping_sub(0x44)]);
@@ -802,7 +811,12 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         one = k(g, 0x1cc);
     }
     let f32_at = |g: &G, o: u32| g.read::<f32>(s.wrapping_add(o));
-    if g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0 {
+    let ease = if plain {
+        g.read::<u32>(s.wrapping_add(0x68)) != 0
+    } else {
+        g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0
+    };
+    if ease {
         let rate = |g: &G| f32_at(g, 0x4c);
         for (x, to) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
             let v = add(mul(sub(f32_at(g, to), f32_at(g, x)), rate(g)), f32_at(g, x));

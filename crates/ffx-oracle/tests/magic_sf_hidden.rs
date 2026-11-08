@@ -176,6 +176,8 @@ const CASTER_SCRIPT_TASKS: &[(u16, u32)] = &[
     (557, 0x54b0),
     (558, 0x54b0),
     (559, 0x54b0),
+    // its caster shown through `o4_more2::slot_chain_jump`
+    (446, 0x4ad0),
 ];
 
 /// The caster's script task in every DLL: an unknown step, the script
@@ -192,7 +194,12 @@ fn caster_script_task() {
 fn caster_script_task_in(n: u16, rva: u32) {
     let Some(mut t) = twin(n) else { return };
     let f = t.at(rva);
-    bound(&t, f, "sf caster script task");
+    let name = if n == 446 {
+        "sf caster script task 0446"
+    } else {
+        "sf caster script task"
+    };
+    bound(&t, f, name);
     let run = t.img.rel32_target(f + 0x85);
     let sc = t.img.rel32_target(f + 0x9d);
     let ms = t.img.rel32_target(f + 0x42);

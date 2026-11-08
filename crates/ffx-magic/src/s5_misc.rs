@@ -2674,7 +2674,7 @@ pub fn summon_ppp_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// (through `+0x158`, the slot 221 call; the environment's size is the
 /// immediate at `+0x100`, the kind slot 719 gets the byte at `+0xc2`).
 /// Returns the words left on the stack.
-fn summon_ppp_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Pushes {
+pub(crate) fn summon_ppp_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Pushes {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     // push ebp, esi; call: the callee's frame (`magic_0387`'s targets
@@ -3154,7 +3154,8 @@ pub const ROOT_POINT_PART: Sig = Sig {
 ///
 /// `magic_0186` 0x10008230 (480 bytes; 2 DLLs; stream 2) and
 /// `magic_0173` 0x10007170 (480 bytes; 2 DLLs; stream 1, its own
-/// [`SUMMON_PPP_START_STREAM_1`]).
+/// [`SUMMON_PPP_START_STREAM_1`]). `magic_0153`'s copy (0x10008710, 500
+/// bytes) clears two more words at the end (operands `+0x1dd`, `+0x1e7`).
 pub fn summon_ppp_start_stream<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -3178,6 +3179,11 @@ pub fn summon_ppp_start_stream<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> R
     g.write::<u32>(w(0x1c2), flags);
     g.write::<u32>(w(0x1c9), w(0x1cd));
     g.write::<u32>(w(0x1d3), 0);
+    // `mov dword, 0` (0xc7) or the `xor eax, eax` at the end
+    if img.word(f + 0x1db) & 0xff == 0xc7 {
+        g.write::<u32>(w(0x1dd), 0);
+        g.write::<u32>(w(0x1e7), 0);
+    }
     Ret::eax(0)
 }
 
@@ -3198,6 +3204,15 @@ pub fn summon_ppp_start_stream_1<G: Game>(g: &mut G, img: &Image, fr: &Frame) ->
 pub const SUMMON_PPP_START_STREAM_1: Sig = Sig {
     len: 480,
     hash: 0xd4de_b5c5_1a46_b303,
+    calls: &[(0x8, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_ppp_start_stream`] in `magic_0153` (0x10008710, 500 bytes:
+/// stream 2, two more words cleared).
+pub const SUMMON_PPP_START_STREAM_0153: Sig = Sig {
+    len: 500,
+    hash: 0x94dd_2582_de07_04e1,
     calls: &[(0x8, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
 };

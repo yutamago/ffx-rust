@@ -19,10 +19,17 @@ fn dll_main_writes_only_crt_state() {
 }
 
 /// 0x10001000: the framing step for 0, 1 and 3 actors (heights and
-/// distances rising and not, the bound larger and smaller).
+/// distances rising and not, the bound larger and smaller). Also
+/// `magic_0384`'s copy (kind 0x4a, `V[0]` -4.0, one more range word).
 #[test]
 fn frame_step() {
-    let Some(mut t) = twin(N) else { return };
+    for n in [N, 384] {
+        frame_step_in(n);
+    }
+}
+
+fn frame_step_in(dll: u16) {
+    let Some(mut t) = twin(dll) else { return };
     let at = t.at(0x1000);
     let s = SCRATCH + 0x2000;
     t.write(s, &[0x2b; 0x200]);
@@ -48,7 +55,9 @@ fn frame_step() {
     }
     rec(&mut t, 474, 4, |m, a| {
         for i in 0..4u32 {
-            m.w32(a[3] + 4 * i, (1.5 + i as f32).to_bits());
+            // `V`'s words show in the result
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(a[3] + 4 * i, (1.5 + i as f32).to_bits() ^ v);
         }
         0x474
     });
@@ -62,6 +71,11 @@ fn frame_step() {
         }
         t.set_u32(cell, base.to_bits());
         t.write(blk, &[0x5b; 0x60]);
+        // the range words after the block (the copy clears one more)
+        let last = if dll == 384 { 0x203 } else { 0x1f9 };
+        for o in [0x1e5u32, 0x1ef, 0x1f9, last] {
+            t.set_u32(t.img.word(at + o), 0x7777_0000 + o);
+        }
         t.write(seq, &[0x3c; 0x40]);
         t.check_entry(at, Call::default(), &[seq], Eax::Checked);
     }

@@ -3533,7 +3533,8 @@ fn flight_steps() {
 /// again through the node's 12-byte thunk.
 #[test]
 fn lit_colour_nodes() {
-    for dll in [152u16, 533] {
+    // `magic_0601`'s node copies its colour back once more (791 bytes)
+    for (dll, thunk_at) in [(152u16, 0x1470u32), (533, 0x1470), (601, 0x1480)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(0x1160);
         let log = SCRATCH + 0x6000;
@@ -3624,7 +3625,7 @@ fn lit_colour_nodes() {
                 ecx: 0x0ecc_0000 + k,
                 ..call
             };
-            t.check_entry(t.at(0x1470), thunk, &[s], Eax::Checked);
+            t.check_entry(t.at(thunk_at), thunk, &[s], Eax::Checked);
         }
     }
 }

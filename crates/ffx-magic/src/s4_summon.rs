@@ -690,27 +690,42 @@ pub const TARGETS_INIT_D: Sig = Sig {
 /// list's flag bit 0 cleared). Returns 0. `cleared`: the operand
 /// offsets of the task's words cleared last (as in the 3-byte-longer
 /// layout: `magic_0203`'s copy pushes slot 222's count, 16, as an imm8).
+/// The copies in `magic_0388` and `0389` (`mov eax, [ebp+8]` at `+0x3`)
+/// keep the actor in a global (operand `+0x8`) and reset the summon's
+/// statics instead of the targets
+/// ([`statics_init`](crate::sa_summon::statics_init), the `rel32` at
+/// `+0xd`); their operands are five bytes later. The environment's size
+/// is the immediate at `+0x100` (0x100000; 0x80000 in `magic_0388`).
 fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let actor = fr.arg(g, 0);
+    // `mov eax, [ebp+8]` (8b 45 08) or `mov ecx, [ebp+8]` (8b 4d 08)
+    let e = if img.word(f + 0x3) >> 8 & 0xff == 0x45 {
+        g.write::<u32>(img.word(f + 0x8), actor);
+        // push ebp; push esi; call
+        crate::sa_summon::statics_init(g, img, img.rel32_target(f + 0xd), fr.esp.wrapping_sub(12));
+        5
+    } else {
+        // push ebp; push esi; call
+        targets_init(
+            g,
+            img,
+            img.rel32_target(f + 0x08),
+            fr.esp.wrapping_sub(12),
+            actor,
+        );
+        0
+    };
+    let w = |o: u32| img.word(f + o + e);
     // slot 222's count: `push 0x3e8` at +0x130, or a `push imm8` (three
     // bytes shorter: `magic_0203`'s 16), after which the operands are
     // three bytes earlier
-    let (k222, d) = if img.word(f + 0x130) & 0xff == 0x6a {
-        (u32::from(img.word(f + 0x131) as u8), 3)
+    let (k222, d) = if w(0x130) & 0xff == 0x6a {
+        (w(0x131) & 0xff, 3)
     } else {
-        (img.word(f + 0x131), 0)
+        (w(0x131), 0)
     };
-    let v = |o: u32| img.word(f + o - d);
-    let actor = fr.arg(g, 0);
-    // push ebp; push esi; call
-    targets_init(
-        g,
-        img,
-        img.rel32_target(f + 0x08),
-        fr.esp.wrapping_sub(12),
-        actor,
-    );
+    let v = |o: u32| img.word(f + o + e - d);
     for (dst, src) in [(0x13, 0x17), (0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35)] {
         g.write::<u32>(w(dst), w(src));
     }
@@ -731,7 +746,7 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x0d), 718), 0);
     // the kind: the `push imm8` at +0xc1 (0; 2 in `magic_0330`)
-    s.push_all(&[u32::from(img.word(f + 0xc2) as u8), 8, w(0xcc)]);
+    s.push_all(&[w(0xc2) & 0xff, 8, w(0xcc)]);
     // call width: 12 (Pushes caps the words at 12)
     let handle = s.call(g, slot_target(g, w(0xbd), 719), 0).eax;
     let lock = g.read::<u32>(w(0xd4));
@@ -744,7 +759,7 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let lock = g.read::<u32>(w(0xfb));
     g.write::<u32>(lock, saved);
     let handle = g.read::<u32>(w(0x112));
-    s.push_all(&[0x0010_0000, w(0x10c), handle, w(0x11d)]);
+    s.push_all(&[w(0x100), w(0x10c), handle, w(0x11d)]);
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x107), 710), 0);
     s.push_all(&[2, k222, 0, v(0x138)]);
@@ -792,6 +807,24 @@ pub const SUMMON_START_B: Sig = Sig {
     len: 437,
     hash: 0xe46b_13bb_4b92_a306,
     calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start`]'s copy in `magic_0389` (0x10007560, 462 bytes: the
+/// actor kept, the statics reset).
+pub const SUMMON_START_0389: Sig = Sig {
+    len: 462,
+    hash: 0x5f38_9609_e917_99bd,
+    calls: &[(0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start_b`]'s copy in `magic_0388` (0x10008020, 442 bytes: the
+/// actor kept, the statics reset, an environment of 0x80000 bytes).
+pub const SUMMON_START_B_0388: Sig = Sig {
+    len: 442,
+    hash: 0x8433_0817_2701_dadd,
+    calls: &[(0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT))],
     imports: &[],
 };
 

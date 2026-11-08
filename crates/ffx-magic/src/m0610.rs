@@ -91,7 +91,7 @@ pub fn spark<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
         crate::sb_sse::add(x, g.read::<f32>(w(0x4d))),
         g.read::<f32>(w(0x5c)),
     );
-    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x61), obj, scale, 3);
+    start_either(g, img, img.rel32_target(f + 0x61), obj, scale, 3);
     let p = obj.wrapping_add(0xd0);
     let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x66))));
     let a = g.read::<u32>(w(0x79).wrapping_add(4 * b));
@@ -123,6 +123,29 @@ pub const SPARK: Sig = Sig {
     imports: &[],
 };
 
+/// [`spark`] in `magic_0434` (0x10007bd0: the animated object start).
+pub const SPARK_0434: Sig = Sig {
+    len: 187,
+    hash: 0xf261_b044_514d_f6ce,
+    calls: &[
+        (0x1c, crate::Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0x61, crate::Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    ],
+    imports: &[],
+};
+
+/// The object start [`spark`] and [`side_object`] call: the plain one
+/// here, the animated one (its value 0, the `push 0x0` before the index)
+/// in `magic_0434`'s copies (0x10007bd0, 0x10007ad0), whose `push ecx;
+/// push 0x0` take the place of `sub esp, 8` (the same five bytes).
+fn start_either<G: Game>(g: &mut G, img: &Image, at: u32, obj: u32, scale: f32, index: u32) {
+    if img.matches(at, &crate::s4_misc::START_OBJECT_ANIM) {
+        crate::s4_misc::start_object_anim(g, img, at, obj, scale, index, 0);
+    } else {
+        crate::s4_misc::start_object_plain(g, img, at, obj, scale, index);
+    }
+}
+
 /// Spawns a placed object for side `k` (0x1000ba00, cdecl `(-, k)`):
 /// for `k` above 1 nothing (the caller's `eax` returned). Else a pool
 /// record ([`pool_take_140`](crate::sb_misc::pool_take_140); none: 0)
@@ -153,7 +176,7 @@ pub fn side_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
         crate::sb_sse::add(x, g.read::<f32>(w(0x4c))),
         g.read::<f32>(w(0x5b)),
     );
-    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x60), obj, scale, 4);
+    start_either(g, img, img.rel32_target(f + 0x60), obj, scale, 4);
     let p = obj.wrapping_add(0xd0);
     let a = g.read::<u32>(w(0x81));
     let tk = g.read::<u32>(w(0x7b).wrapping_add(k.wrapping_mul(4)));
@@ -181,6 +204,18 @@ pub const SIDE_OBJECT: Sig = Sig {
             0x60,
             crate::Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN),
         ),
+    ],
+    imports: &[],
+};
+
+/// [`side_object`] in `magic_0434` (0x10007ad0: the animated object
+/// start).
+pub const SIDE_OBJECT_0434: Sig = Sig {
+    len: 189,
+    hash: 0x1c6f_687a_34ff_30ce,
+    calls: &[
+        (0x1b, crate::Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0x60, crate::Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
     ],
     imports: &[],
 };
