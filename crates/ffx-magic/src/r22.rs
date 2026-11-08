@@ -2237,3 +2237,360 @@ pub const FLIGHT_STEP_0491: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `child` appended last to the children of `parent` (the parent's
+/// `+0x10` last, `+0x18` count): `+0x4` the parent, `+0x8` the old last,
+/// the old last's `+0x4` the child (the list is never empty here: the
+/// parent's own `+0x10` stands in), `+0x14` the parent.
+fn child_last_0601<G: Game>(g: &mut G, parent: u32, child: u32) {
+    g.write::<u32>(child + 4, parent);
+    let last = g.read::<u32>(parent + 0x10);
+    g.write::<u32>(child + 8, last);
+    let last = g.read::<u32>(parent + 0x10);
+    g.write::<u32>(last + 4, child);
+    g.write::<u32>(parent + 0x10, child);
+    g.write::<u32>(child + 0x14, parent);
+    let n = g.read::<u16>(parent + 0x18);
+    g.write::<u16>(parent + 0x18, n.wrapping_add(1));
+}
+
+/// `magic_0601`'s bone build (0x100035f0, 604 bytes; internal, `ecx` =
+/// the record `R = [N, parent, P, -, -, -, a, V, b, W]`). The node `N`
+/// gets three children with empty child lists: `C = N + 0x1d4` and `B =
+/// N + 0x1a8` (vtables first), `A = N + 0x17c` (no parent; vtable after),
+/// whose addresses go to `R + 0xc`, `+0x10` (`C`), `+0x14` (`B`). `N`
+/// joins `parent` (when there is one; [`attach`](crate::l3_common::attach)
+/// of a list object), `+0x128` = `P`, byte `+0x148` 0, its three objects
+/// `+0x13c` `A`, `+0x144` `C`, `+0x140` `B`; then `C`, `B`, `A` are
+/// appended to `N`'s own children in that order; `+0x15c` = `V`, `+0x164`
+/// = `a`, `+0x160` = `W`, `+0x168` = `b`; its words cleared, `+0x1fc` 1,
+/// the scales 1.0, byte `+0x178` 0; slot 281 `(1)`, the handle `+0x170`
+/// = slot 287 `(1, 0, 7)`, slot 283 `(h, 0)` and `(h, 1)`; the DLL's
+/// vtable into `N` last. Returns `N`.
+pub fn bone_build_0601<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    let (a, b, c) = (n + 0x17c, n + 0x1a8, n + 0x1d4);
+    g.write::<u32>(c, w(0x14));
+    g.write::<u16>(c + 0x1a, 0xff);
+    g.write::<u32>(c + 0x14, 0);
+    g.write::<u32>(r + 0xc, a);
+    g.write::<u32>(c + 0x10, c);
+    g.write::<u32>(c + 0xc, c);
+    g.write::<u16>(b + 0x1a, 0xff);
+    g.write::<u32>(b + 0x14, 0);
+    g.write::<u32>(b, w(0x5f));
+    g.write::<u32>(b + 0x10, b);
+    g.write::<u32>(b + 0xc, b);
+    g.write::<u32>(r + 0x10, c);
+    g.write::<u16>(a + 0x1a, 0xff);
+    g.write::<u32>(a + 0x10, a);
+    g.write::<u32>(a + 0xc, a);
+    g.write::<u32>(a + 0x14, 0);
+    g.write::<u32>(a, w(0x93));
+    g.write::<u32>(r + 0x14, b);
+    let parent = g.read::<u32>(r + 4);
+    g.write::<u16>(n + 0x1a, 0xff);
+    g.write::<u32>(n + 0x10, n);
+    g.write::<u32>(n + 0xc, n);
+    g.write::<u32>(n + 0x14, parent);
+    if parent != 0 {
+        crate::l3_common::attach(g, n, parent, crate::l3_common::ListAt::of(parent));
+    }
+    let p = g.read::<u32>(r + 8);
+    g.write::<u32>(n + 0x128, p);
+    g.write::<u8>(n + 0x148, 0);
+    g.write::<u32>(n + 0x13c, a);
+    g.write::<u32>(n + 0x144, c);
+    g.write::<u32>(n + 0x140, b);
+    child_last_0601(g, n, c);
+    child_last_0601(g, n, b);
+    // the last child's links before the record's word is read
+    g.write::<u32>(a + 4, n);
+    let last = g.read::<u32>(n + 0x10);
+    g.write::<u32>(a + 8, last);
+    let last = g.read::<u32>(n + 0x10);
+    g.write::<u32>(last + 4, a);
+    let v = g.read::<u32>(r + 0x1c);
+    g.write::<u32>(n + 0x10, a);
+    g.write::<u32>(a + 0x14, n);
+    let k = g.read::<u16>(n + 0x18);
+    g.write::<u16>(n + 0x18, k.wrapping_add(1));
+    g.write::<u32>(n + 0x15c, v);
+    for (dst, src) in [(0x164u32, 0x18u32), (0x160, 0x24), (0x168, 0x20)] {
+        let x = g.read::<u32>(r + src);
+        g.write::<u32>(n + dst, x);
+    }
+    for (off, x) in [
+        (0x1f8u32, 0u32),
+        (0x1f4, 0),
+        (0x1f0, 0),
+        (0x1fc, 1),
+        (0x1a0, 0),
+        (0x19c, 0),
+        (0x198, 0),
+        (0x1a4, 0x3f80_0000),
+        (0x1d0, 0x3f80_0000),
+        (0x1cc, 0x3f80_0000),
+        (0x1c8, 0x3f80_0000),
+        (0x1c4, 0x3f80_0000),
+    ] {
+        g.write::<u32>(n + off, x);
+    }
+    g.write::<u8>(n + 0x178, 0);
+    g.call(t(g, 0x17b, 281), 0, &[1]);
+    // call width: 3
+    let h = g.call(t(g, 0x207, 287), 0, &[1, 0, 7]).eax;
+    g.write::<u32>(n + 0x170, h);
+    // call width: 2
+    g.call(t(g, 0x229, 283), 0, &[h, 0]);
+    // call width: 2
+    g.call(t(g, 0x236, 283), 0, &[g.read::<u32>(n + 0x170), 1]);
+    let n = g.read::<u32>(r);
+    g.write::<u32>(n, w(0x251));
+    Ret::eax(n)
+}
+
+/// [`bone_build_0601`] (604 bytes, 1 overlay).
+pub const BONE_BUILD_0601: Sig = Sig {
+    len: 604,
+    hash: 0xa42b_4008_8da5_e2c9,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0601`'s node build (0x10007f80, 82 bytes; internal, `ecx` the
+/// node, the stack words 4 and 6 `a`, `b`): `m0152::build_node`'s
+/// record `[node, V1, V2, 0, 0, 0, a, V3, b, V2]` in the frame (`esp -
+/// 0x2c`) for [`bone_build_0601`]. Returns the node.
+pub fn node_build_0601<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (a, b) = (fr.arg(g, 4), fr.arg(g, 6));
+    let rec = fr.esp.wrapping_sub(0x2c);
+    let words = [fr.ecx, w(0x18), w(0x1f), 0, 0, 0, a, w(0x3b), b, w(0x45)];
+    for (i, v) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    let bf = Frame {
+        at: img.rel32_target(f + 0x4a),
+        esp: fr.esp.wrapping_sub(0x30),
+        ecx: rec,
+        ..*fr
+    };
+    bone_build_0601(g, img, &bf)
+}
+
+/// [`node_build_0601`] (82 bytes, 1 overlay).
+pub const NODE_BUILD_0601: Sig = Sig {
+    len: 82,
+    hash: 0x6c70_0d28_44d4_8098,
+    calls: &[(0x4a, Callee::Sig(&BONE_BUILD_0601))],
+    imports: &[],
+};
+
+/// A task node taken off `magic_0610`'s free ring and appended to the
+/// task list (inlined, the pool's take: the free count `u16` at `count`
+/// (read) and `count_w` (written), the free head at `free`, `free_w`,
+/// `free_0`; the node's callback the DLL word at `cb`, its byte `+0x18`
+/// `flag`; the list's head at `head`, tail at `tail`, `head_w`,
+/// `tail_w`). With no free node the original writes through address 0,
+/// as this does.
+fn task_node_0610<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (count, free, free_w, free_0, cb, count_w): (u32, u32, u32, u32, u32, u32),
+    (head, tail, head_w, tail_w): (u32, u32, u32, u32),
+    flag: u8,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let n = g.read::<u16>(w(count));
+    // no free node: the original skips the take's stores (`xor edx, edx`)
+    let node = if n == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(free));
+        let (next, prev) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+        g.write::<u32>(next + 4, prev);
+        let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node));
+        g.write::<u32>(prev, next);
+        if n > 1 {
+            let p = g.read::<u32>(node + 4);
+            g.write::<u32>(w(free_w), p);
+        } else {
+            g.write::<u32>(w(free_0), 0);
+        }
+        for off in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(node + off, 0);
+        }
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 0x10, w(cb));
+        g.write::<u8>(node + 0x18, 0);
+        g.write::<u16>(w(count_w), n - 1);
+        node
+    };
+    let listed = g.read::<u32>(w(head)) != 0;
+    g.write::<u8>(node.wrapping_add(0x18), flag);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let last = g.read::<u32>(w(tail));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(head_w), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(tail_w), node);
+    node
+}
+
+/// `magic_0610`'s start-up (0x1000d6c0, 943 bytes; internal, no
+/// arguments, no frame; called by its load step 0x10007180). Two words
+/// and five pointers set, the byte history `H[1..=n]` = `H[0..n]` (`n =
+/// *G_N`, one up after); slot 719 `(PART, 8, 0)` into `G_H`, slots 711
+/// `(h, BUF, 0)` (the game lock held) and 710 `(OUT, h, DST, 0x40000)`;
+/// four words 0; the caster placed
+/// ([`caster_place_0588`](crate::r18::caster_place_0588)); 100 records
+/// (0x140 apart) cleared and their counts; the effect reset
+/// ([`effect_reset`](crate::sb_misc::effect_reset)); the matrix `M` =
+/// slot 235 turned by the effect's `+0x1a68` (slot 329) and its last row
+/// the effect's `+0xc70..`; two node heads; slot 271 `(4)`; two task
+/// nodes (bytes 1 and 2) with the records set up between them
+/// ([`records_init`](crate::sa_misc::records_init)); when slot 520 says
+/// 0x1ad0001 a global steps by `K`. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    use crate::sb_sse::add;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let n = rd(g, 0x1);
+    g.write::<u32>(w(0x7), 0);
+    stores(g, img, f, &[0x12, 0x1c, 0x26, 0x30, 0x3a]);
+    let mut i = n.cast_signed().wrapping_sub(1);
+    if i >= 0 {
+        loop {
+            i = i.wrapping_sub(1);
+            let b = g.read::<u8>(w(0x53).wrapping_add(i.cast_unsigned()));
+            g.write::<u8>(w(0x59).wrapping_add(i.cast_unsigned()), b);
+            if i < 0 {
+                break;
+            }
+        }
+    }
+    let n = rd(g, 0x60).wrapping_add(1);
+    g.write::<u32>(w(0x68), n);
+    // call width: 3
+    let h = g.call(t(g, 0x6d, 719), 0, &[w(0x7c), 8, 0]).eax;
+    g.write::<u32>(w(0x8b), h);
+    let lock = rd(g, 0x84);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x98, 711), 0, &[h, w(0x92), 0]);
+    g.write::<u32>(rd(g, 0xab), saved);
+    // call width: 4
+    g.call(
+        t(g, 0xb7, 710),
+        0,
+        &[w(0xcd), rd(g, 0xc2), w(0xbc), 0x4_0000],
+    );
+    for o in [0xd8u32, 0xe2, 0xec, 0xf6] {
+        g.write::<u32>(w(o), 0);
+    }
+    // push esi; push edi: the return address at E - 0xc
+    let esp = fr.esp.wrapping_sub(0xc);
+    let cf = Frame {
+        at: call(0xff),
+        esp,
+        ..*fr
+    };
+    crate::r18::caster_place_0588(g, img, &cf);
+    stores(g, img, f, &[0x103]);
+    let mut rec = w(0x10e);
+    for _ in 0..0x64 {
+        g.write::<u32>(rec, 0);
+        rec = rec.wrapping_add(0x140);
+    }
+    let e = rd(g, 0x131);
+    g.write::<u32>(w(0x137), 0);
+    g.write::<u32>(w(0x13d), 0x64);
+    crate::sb_misc::effect_reset(g, img, call(0x146));
+    g.write::<u8>(w(0x151), 1);
+    g.call(t(g, 0x14b, 235), 0, &[w(0x15d)]);
+    let a = g.read::<u32>(e.wrapping_add(0x1a68));
+    // call width: 3
+    g.call(t(g, 0x16c, 329), 0, &[w(0x181), w(0x17c), a]);
+    for (j, o) in (0u32..).zip([0x198u32, 0x1a8, 0x1b8, 0x1c8]) {
+        let x = g.read::<u32>(e.wrapping_add(0xc70 + 4 * j));
+        g.write::<u32>(w(o), x);
+    }
+    stores(g, img, f, &[0x1cc]);
+    g.write::<u32>(w(0x1d8), 0);
+    g.write::<u16>(w(0x1e3), 0);
+    g.write::<u8>(w(0x1eb), 1);
+    stores(g, img, f, &[0x1f0]);
+    g.write::<u32>(w(0x1fc), 0);
+    g.write::<u16>(w(0x207), 0);
+    g.write::<u8>(w(0x20f), 1);
+    g.call(t(g, 0x190, 271), 0, &[4]);
+    task_node_0610(
+        g,
+        img,
+        f,
+        (0x221, 0x238, 0x255, 0x25d, 0x289, 0x294),
+        (0x29a, 0x2ad, 0x2c0, 0x2ce),
+        1,
+    );
+    crate::sa_misc::records_init(g, img, call(0x2d3), w(0x2c5));
+    task_node_0610(
+        g,
+        img,
+        f,
+        (0x2da, 0x2e9, 0x306, 0x30e, 0x33a, 0x345),
+        (0x34b, 0x360, 0x373, 0x387),
+        2,
+    );
+    if g.call(t(g, 0x378, 520), 0, &[]).eax == 0x01ad_0001 {
+        let v = add(g.read::<f32>(w(0x398)), g.read::<f32>(w(0x3a0)));
+        g.write::<f32>(w(0x3a8), v);
+    }
+    Ret::eax(0)
+}
+
+/// [`start_up_0610`] (943 bytes, 1 overlay).
+pub const START_UP_0610: Sig = Sig {
+    len: 943,
+    hash: 0x9d18_766b_cb8e_5a85,
+    calls: &[
+        (0xff, Callee::Sig(&crate::r18::CASTER_PLACE_0610)),
+        (0x146, Callee::Sig(&crate::sb_misc::EFFECT_RESET)),
+        (0x2d3, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0610`'s load step (0x10007180, 176 bytes; a table entry):
+/// [`cue_start`](crate::m0591::cue_start)'s copy that runs
+/// [`start_up_0610`] where the others set up their targets.
+pub fn cue_start_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::m0591::cue_start_with(g, img, fr, |g, img, fr| {
+        start_up_0610(g, img, fr);
+    })
+}
+
+/// [`cue_start_0610`] (176 bytes, 1 overlay).
+pub const CUE_START_0610: Sig = Sig {
+    len: 176,
+    hash: 0xa0ea_b140_6d8d_9c5e,
+    calls: &[(0x95, Callee::Sig(&START_UP_0610))],
+    imports: &[],
+};

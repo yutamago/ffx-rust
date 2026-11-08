@@ -1206,6 +1206,9 @@ fn step_0483() {
 
 /// `magic_0491`'s flight: the slots and globals of the start
 /// (0x10003c50), the step (0x100044f0), the burst and the trail.
+/// Where `magic_0491`'s test keeps the ground's lowering.
+const GROUND_0491: u32 = SCRATCH + 0x7f8;
+
 fn flight_setup_0491(t: &mut Twin) {
     magic_r11::object_slots(t);
     let step = t.at(0x44f0);
@@ -1228,8 +1231,14 @@ fn flight_setup_0491(t: &mut Twin) {
     });
     for (s, x) in [(333u32, 0.375f64), (314, 1.75), (404, -2.5), (12, 0.625)] {
         rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        // (slot 12, the ground: lowered by the float at GROUND)
         t.stub_st0(s, move |m, a| {
-            x + f64::from(a[0] & 7) * 0.5 + f64::from(m.r32(row(s)) % 3)
+            let low = if s == 12 {
+                f64::from(rf(m, GROUND_0491))
+            } else {
+                0.0
+            };
+            x + f64::from(a[0] & 7) * 0.5 + f64::from(m.r32(row(s)) % 3) - low
         });
     }
     rec(t, 235, 1, |m, a| {
@@ -1250,6 +1259,11 @@ fn flight_setup_0491(t: &mut Twin) {
         0x329
     });
     rec(t, 229, 3, |m, a| {
+        // the matrix's words too
+        for i in 0..16 {
+            let x = m.r32(a[1] + 4 * i);
+            fold(m, 0x3f0, i, x);
+        }
         for i in 0..4 {
             let x = m.r32(a[2] + 4 * i);
             fold(m, 229, 4 + i, x);
@@ -1359,11 +1373,12 @@ fn flight_0491() {
     let recs = SCRATCH + 0x2_0000;
     let sprite_owner = SCRATCH + 0x700;
     // (actor index, the table's yaw input, ground)
-    let starts: [(u32, f32, f32); 4] = [
+    let starts: [(u32, f32, f32); 5] = [
         (u32::MAX, 0.25, 10.0),
         (1, 5.0, -10.0),
         (2, -5.0, 0.0),
         (u32::MAX, 0.0, f32::NAN),
+        (3, 0.0, 0.0),
     ];
     let globals = |t: &mut Twin, k: u32| {
         t.write(map, &[2, 0, 1, 3, 1, 2, 0, 3]);
@@ -1389,6 +1404,8 @@ fn flight_0491() {
     };
     for (k, (idx, _yaw, _g)) in (0u32..).zip(starts) {
         junk(&mut t, o, 0x600, k);
+        // the last case's ground far below the middle point
+        t.set_u32(GROUND_0491, if k == 4 { 100.0f32 } else { 0.0 }.to_bits());
         t.set_u32(o + 0x504, idx);
         globals(&mut t, k);
         scrub(&mut t);
@@ -1407,7 +1424,7 @@ fn flight_0491() {
         (3, 0, 0.0, 0.1, 0, 2, 0x40),
         (1, 0, 0.0, 0.1, 0, 2, 0x40),
         (0, 4, 0.0, 0.1, 0, 2, 0x40),
-        (0, 0, 0.25, 0.1, 0, 3, 0x40),
+        (0, 0, 0.5, 0.5, 0, 3, 0x40),
         (0, 0, 0.95, 0.1, 0, 0, 0x40),
         (0, 0, 0.5, 0.0833, 5, 1, 0x40),
         (0, 0, 0.5, 0.0833, 5, 1, 3),
@@ -1463,4 +1480,171 @@ fn flight_0491() {
     }
     assert!(t.u32(row(325)) >= 6, "the sparks");
     assert!(t.u32(row(618)) >= 1, "the burst");
+}
+
+/// `magic_0601` 0x100035f0 (`r22::bone_build_0601`) and 0x10007f80
+/// (`r22::node_build_0601`): no parent, a parent with no children and
+/// one with a last child; the node build with its two stack words.
+#[test]
+fn bone_build_0601() {
+    let Some(mut t) = twin(601) else { return };
+    let f = t.at(0x35f0);
+    let nb = t.at(0x7f80);
+    rec(&mut t, 281, 1, |_, a| 0x0281_0000 ^ a[0]);
+    rec(&mut t, 287, 3, |m, _| 0x0287_0000 + m.r32(row(287)));
+    rec(&mut t, 283, 2, |_, a| 0x0283_0000 ^ a[0] ^ a[1]);
+    let (r, n, parent, kid) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x800,
+        SCRATCH + 0x900,
+    );
+    for (k, par) in (0u32..).zip([0u32, 1, 2]) {
+        junk(&mut t, n, 0x220, k);
+        junk(&mut t, r, 0x28, k + 1);
+        junk(&mut t, parent, 0x40, k + 2);
+        junk(&mut t, kid, 0x40, k + 3);
+        t.set_u32(r, n);
+        let p = match par {
+            0 => 0,
+            1 => {
+                t.set_u32(parent + 0x10, parent);
+                parent
+            }
+            _ => {
+                t.set_u32(parent + 0x10, kid);
+                parent
+            }
+        };
+        t.set_u32(r + 4, p);
+        scrub(&mut t);
+        let c = Call {
+            ecx: r,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r22::bone_build_0601(g, img, fr)
+        });
+    }
+    for k in 0..2u32 {
+        junk(&mut t, n, 0x220, k + 5);
+        // the record's parent (operand +0x18): a list with a last child
+        let v1 = t.img.word(nb + 0x18);
+        junk(&mut t, v1, 0x20, k);
+        t.set_u32(v1 + 0x10, if k == 0 { v1 } else { kid });
+        scrub(&mut t);
+        let c = Call {
+            ecx: n,
+            ..Call::default()
+        };
+        let args = [1, 2, 3, 4, 0x00a4_0000 + k, 6, 0x00b6_0000 + k];
+        t.check(nb, c, &args, Eax::Checked, |g, img, fr| {
+            ffx_magic::r22::node_build_0601(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0610` 0x10007180 (`r22::cue_start_0610`) running 0x1000d6c0
+/// (`r22::start_up_0610`): the waits, the once flag, slot 227 below 1,
+/// and the start-up with the history empty, of one and of five entries,
+/// the free ring of several nodes and of one, the task list empty and
+/// not, slot 520 0x1ad0001 and not.
+#[test]
+fn start_up_0610() {
+    let Some(mut t) = twin(610) else { return };
+    let f = t.at(0x7180);
+    let su = t.at(0xd6c0);
+    let g = |t: &Twin, op: u32| t.img.word(f + op);
+    let gs = |t: &Twin, op: u32| t.img.word(su + op);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 5, 1, |m, _| m.r32(SCRATCH + 0x14));
+    rec(&mut t, 28, 2, |m, _| m.r32(SCRATCH + 0x18));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    rec(&mut t, 520, 0, |m, _| m.r32(SCRATCH + 0x20));
+    // the caster placement's slots (as `magic_r18.rs`)
+    rec(&mut t, 262, 4, |m, a| {
+        for (i, v) in [1.5f32, -2.25, 0.75].into_iter().enumerate() {
+            m.w32(a[1 + i], (v + (a[0] & 0xf) as f32).to_bits());
+        }
+        0x0262
+    });
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125 - 1.0);
+    for (s, x) in [(277u32, 0.5f64), (15, 1.25), (16, -0.75), (17, 2.5)] {
+        rec(&mut t, s, 1, move |_, a| a[0] ^ (s << 16));
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xff) * 0.0625 + x);
+    }
+    rec(&mut t, 293, 1, |_, _| 0);
+    let list = SCRATCH + 0x760;
+    t.write(list, &[5, 0, 9, 0, 0x22, 0, 0, 0]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        list
+    });
+    for (s, n) in [
+        (210u32, 2usize),
+        (211, 2),
+        (235, 1),
+        (330, 3),
+        (328, 3),
+        (329, 3),
+        (238, 2),
+        (296, 2),
+        (257, 2),
+        (719, 3),
+        (711, 3),
+        (710, 4),
+        (271, 1),
+        (287, 3),
+        (283, 2),
+        (281, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (0x0abc_0000 | s) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(gs(&t, 0x84), lock);
+    magic_r11::pools(&mut t, su, 943);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    // (225, 5, 28, once, 227, history n, free nodes, listed, 520)
+    #[allow(clippy::type_complexity)]
+    let cases: [(u32, u32, u32, u32, u32, u32, u16, bool, u32); 7] = [
+        (1, 0, 0, 0, 1, 0, 4, false, 0),
+        (0, 1, 0, 0, 1, 0, 4, false, 0),
+        (0, 0, 2, 0, 1, 0, 4, false, 0),
+        (0, 0, 0, 0, 0, 0, 4, false, 0),
+        (0, 0, 0, 1, 1, 0, 4, false, 0x01ad_0001),
+        (0, 0, 0, 0, 3, 1, 3, true, 0),
+        (0, 0, 0, 1, 1, 5, 4, true, 0x01ad_0001),
+    ];
+    for (k, (w225, w5, w28, once, r227, hist, free, listed, r520)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x14, w5);
+        t.set_u32(SCRATCH + 0x18, w28);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(SCRATCH + 0x20, r520);
+        t.set_u32(g(&t, 0x50), once);
+        t.set_u32(gs(&t, 0x1), hist);
+        let hb = gs(&t, 0x53) - 1;
+        junk(&mut t, hb, 8, k);
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        let n = u32::from(free);
+        for i in 0..n {
+            t.write(node(i), &[0x40 + i as u8; 0x1c]);
+            t.set_u32(node(i), node((i + n - 1) % n));
+            t.set_u32(node(i) + 4, node((i + 1) % n));
+        }
+        t.set_u32(gs(&t, 0x238), node(0));
+        t.set_u16(gs(&t, 0x221), free);
+        let tail = SCRATCH + 0x1400;
+        t.write(tail, &[0x66; 0x1c]);
+        t.set_u32(gs(&t, 0x29a), if listed { tail } else { 0 });
+        t.set_u32(gs(&t, 0x2ad), tail);
+        t.set_u32(gs(&t, 0x398), (0.25 * k as f32).to_bits());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(719)) >= 3, "the start-ups");
 }

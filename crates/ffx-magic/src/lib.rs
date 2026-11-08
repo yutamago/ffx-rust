@@ -2996,6 +2996,7 @@ ports! {
     "r22 summon task 0482" => r22::SUMMON_TASK_0482, r22::summon_task_0482;
     "r22 step 0483" => r22::STEP_0483, r22::step_0483;
     "r22 flight step 0491" => r22::FLIGHT_STEP_0491, r22::flight_step_0491;
+    "r22 cue start 0610" => r22::CUE_START_0610, r22::cue_start_0610;
     // round 22 (magic-r22): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3600,6 +3601,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 22 (magic-r22)
     ("r22 summon set-up 0645", &r22::SUMMON_SETUP_0645),
     ("r22 flight start 0491", &r22::FLIGHT_START_0491),
+    ("r22 bone build 0601", &r22::BONE_BUILD_0601),
+    ("r22 node build 0601", &r22::NODE_BUILD_0601),
+    ("r22 start-up 0610", &r22::START_UP_0610),
     // round 22 (magic-r22): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
