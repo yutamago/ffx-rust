@@ -2921,6 +2921,10 @@ ports! {
     "r18 model start 0603" => r18::MODEL_START_0603, r18::model_start_0603;
     "r18 lights start 0610" => r18::LIGHTS_START_0610, r18::lights_start_0610;
     "r18 caster place 0610" => r18::CASTER_PLACE_0610, r18::caster_place_0588;
+    "r18 turned records 0612" => r18::TURNED_RECORDS_0612, r18::turned_records_0612;
+    "r18 load steps 0597" => r18::LOAD_STEPS_0597, r18::load_steps_0597;
+    "r18 motion task 0512" => r18::MOTION_TASK_0512, r18::motion_task_0512;
+    "r18 particle task 0512" => r18::PARTICLE_TASK_0512, r18::particle_task_0512;
     // round 18 (magic-r18): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

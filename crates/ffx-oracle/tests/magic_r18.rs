@@ -351,6 +351,12 @@ fn effect_end_0588() {
         ],
     );
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    // slot 779 logs the lock word around it
+    let lock_g = t.img.word(f + 0x19d);
+    rec(&mut t, 779, 4, move |m, _| {
+        m.w32(magic_owna::row(779) + 0x20, m.r32(m.r32(lock_g)));
+        0x0779
+    });
     rec(&mut t, 288, 2, |m, a| {
         m.w32(a[1], 0);
         0x288
@@ -778,6 +784,10 @@ fn start_up_0564() {
         t.set_u32(w(&t, 0x367), 0x0013_0000 + c);
         t.set_u32(w(&t, 0x513), 0x0051_3000 + c);
         t.write(w(&t, 0xbc) - 8, &[0x5d; 0x60]);
+        // the 1.0 words the placed objects set
+        for o in [0x1ebu32, 0x2c8, 0x3a1, 0x466] {
+            t.set_u32(w(&t, o), 0x5e5e_5e5e);
+        }
         magic_r11::ring(&mut t, free_count, free_head, free, SCRATCH + 0x1400);
         t.write(other, &[0x44; 0x20]);
         t.set_u32(first, if listed { other } else { 0 });
@@ -971,5 +981,215 @@ fn caster_place_0610() {
         t.set_u32(w(&t, 0x2f5), 0x5555_5555);
         t.set_u32(w(&t, 0x2ff), 0x6666_6666);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::turned_records_0612` (`magic_0612` 0x10008370): the angle above,
+/// below and inside its bounds; the task list empty and not.
+#[test]
+fn turned_records_0612() {
+    let Some(mut t) = twin(612) else { return };
+    let f = t.at(0x8370);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let e = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x4), e);
+    caster_slots(&mut t);
+    let kv = f32::from_bits(t.img.word(w(&t, 0x14)));
+    let (first, last) = (w(&t, 0x156), w(&t, 0x16b));
+    let other = SCRATCH + 0x680;
+    for (c, (ang, listed)) in [(-3.0f32, false), (3.0, true), (0.0, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let c = c as u32;
+        magic_r11::pools(&mut t, f, 401);
+        t.write(e + 0x2a00, &varied(0x1200, c as u8));
+        t.set_u32(e + 0x3ba4, (kv + ang * 7.0).to_bits());
+        t.write(other, &[0x44; 0x20]);
+        t.set_u32(first, if listed { other } else { 0 });
+        t.set_u32(last, other);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::load_steps_0597` (`magic_0597` 0x1000ad70): each step waiting
+/// and passing on (the slots answering by a counter), step 3 not ready
+/// and ready (to the end: the ring and the two walks), a step past the
+/// table and a negative one.
+#[test]
+fn load_steps_0597() {
+    let Some(mut t) = twin(597) else { return };
+    let f = t.at(0xad70);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x720;
+    for s in [225u32, 313, 549, 227] {
+        rec(&mut t, s, 1, move |m, _| {
+            let k = m.r32(answer);
+            m.w32(answer, k >> 4);
+            k & 0xf
+        });
+    }
+    recs(&mut t, &[(226, 2), (673, 0)]);
+    let ring = t.img.word(f + 0xfc);
+    let p = SCRATCH + 0x740;
+    t.set_u32(w(&t, 0xdc), p);
+    // (step, the slots' answers four bits each, last first)
+    for (c, (step, ans)) in [
+        (0u32, 0x1u32),
+        (0, 0x1_000),
+        (1, 0x10),
+        (2, 0x1),
+        (3, 0x0),
+        (3, 0x1),
+        (2, 0x10),
+        (5, 0),
+        (u32::MAX, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let c = c as u32;
+        t.set_u32(w(&t, 0x4), step);
+        t.set_u32(answer, ans);
+        t.set_u8(w(&t, 0xe2), 3 + c as u8);
+        // an empty ring and empty node groups
+        t.write(ring, &[0; 0x14]);
+        t.set_u32(ring + 4, ring + 4);
+        t.set_u32(ring + 8, ring + 4);
+        t.set_u32(ring + 0xc, ring + 4);
+        for o in [0x125u32, 0x13f] {
+            let grp = w(&t, o);
+            t.write(grp, &[0; 0x20]);
+            t.set_u32(grp + 0x10, grp);
+            t.set_u32(grp + 0xc, grp);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::motion_task_0512` (`magic_0512` 0x10007420): every step (1 and
+/// 10002 not ready and ready, 10001 still waiting and done) and steps
+/// outside the table.
+#[test]
+fn motion_task_0512() {
+    let Some(mut t) = twin(512) else { return };
+    let f = t.at(0x7420);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let ready = SCRATCH + 0x720;
+    rec(&mut t, 411, 1, move |m, _| m.r32(ready));
+    recs(&mut t, &[(228, 2), (213, 2), (262, 4), (719, 3)]);
+    let rec_f = t.img.rel32_target(f + 0x144);
+    let lists = [w(&t, 0x107), t.img.word(rec_f + 0x18)];
+    let b = SCRATCH + 0x8000;
+    let o = SCRATCH + 0x8400;
+    let task = SCRATCH + 0x5000;
+    let tnode = SCRATCH + 0x5100;
+    for (c, (step, wait, rd)) in [
+        (0u32, 3u32, 0u32),
+        (1, 3, 0),
+        (1, 0, 1),
+        (10000, 9, 0),
+        (10001, 2, 0),
+        (10001, 0, 0),
+        (10002, 1, 0),
+        (10002, 1, 1),
+        (5, 1, 0),
+        (10007, 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let c = c as u32;
+        t.write(b, &varied(0x100, c as u8));
+        t.write(o, &varied(0x60, c as u8 + 1));
+        t.set_u32(b + 0x18, step);
+        t.set_u32(b + 0x1c, wait);
+        t.set_u32(b + 0x20, o);
+        t.set_u32(ready, rd);
+        for &l in &lists {
+            t.write(l, &[0; 0x20]);
+            t.set_u32(l + 0x10, l);
+            t.set_u32(l + 0xc, l);
+        }
+        t.write(tnode, &[0x2a; 0x20]);
+        t.set_u32(tnode + 4, SCRATCH + 0x5200);
+        t.set_u32(tnode + 8, SCRATCH + 0x5300);
+        t.set_u32(task, tnode);
+        t.set_u32(task + 4, b);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `r18::particle_task_0512` (`magic_0512` 0x10007660): steps 0..3 (1
+/// and 2 waiting and not; 3 held by the flag and passing to the end), the
+/// end with `P` marked and not and its nodes parented and not, steps
+/// outside the table.
+#[test]
+fn particle_task_0512() {
+    let Some(mut t) = twin(512) else { return };
+    let f = t.at(0x7660);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(714, 5), (325, 2), (713, 1)]);
+    let pn = t.img.rel32_target(f + 0xb0);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    t.set_u32(t.img.word(wrapper + 0x04), SCRATCH + 0x7f00);
+    let table = SCRATCH + 0x7c00;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x9000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    let owner = SCRATCH + 0x7a00;
+    t.write(owner, &varied(0x100, 5));
+    t.set_u32(w(&t, 0x87), owner);
+    let fu = t.img.rel32_target(f + 0x130);
+    t.set_u32(t.img.word(fu + 0x01), SCRATCH + 0x7e00);
+    t.set_u32(w(&t, 0x13e), SCRATCH + 0x7e40);
+    let b = SCRATCH + 0x8000;
+    let task = SCRATCH + 0x5000;
+    let tnode = SCRATCH + 0x5100;
+    let list = w(&t, 0x9a);
+    for (c, (step, wait, mark, parented)) in [
+        (0u32, 0u32, 0u8, false),
+        (1, 2, 0, false),
+        (1, 0, 0, false),
+        (2, 1, 0, false),
+        (2, 0, 0, false),
+        (3, 0, 1, false),
+        (3, 0, 0, true),
+        (10000, 0, 4, false),
+        (10000, 0, 0, true),
+        (7, 0, 0, false),
+        (20000, 0, 0, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let c = c as u32;
+        t.write(b, &varied(0x400, c as u8));
+        t.set_u32(b + 0x18, step);
+        t.set_u32(b + 0x1c, wait);
+        t.set_u32(b + 0x20, 0x10 + c);
+        t.set_u8(b + 0x2e8, mark & 1);
+        let p = b + 0x200;
+        t.set_u8(p + 0xe8, mark);
+        // the nodes: a parent of their own or none
+        for (k, o) in (0u32..).zip([0x24u32, 0x19c, 0x170, 0x1c8, 0x200]) {
+            let n = b + o;
+            let par = SCRATCH + 0x9000 + 0x40 * k;
+            t.write(par, &[0x31; 0x20]);
+            t.set_u32(n + 4, par);
+            t.set_u32(n + 8, par);
+            t.set_u32(n + 0x14, if parented { par } else { 0 });
+        }
+        t.write(list, &[0; 0x20]);
+        t.set_u32(list + 0x10, list);
+        t.set_u32(list + 0xc, list);
+        t.write(tnode, &[0x2a; 0x20]);
+        t.set_u32(tnode + 4, SCRATCH + 0x5200);
+        t.set_u32(tnode + 8, SCRATCH + 0x5300);
+        t.set_u32(task, tnode);
+        t.set_u32(task + 4, b);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
