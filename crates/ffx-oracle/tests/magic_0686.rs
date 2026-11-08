@@ -67,7 +67,12 @@ fn start_up() {
     rec(&mut t, 0x670 / 4, 3, |_, a| 0x0670_0000 ^ a[1]);
     // slot 711 sees the flag word set to 1
     let flag = magic::SCRATCH + 0x5100;
-    rec(&mut t, 0xb1c / 4, 3, move |m, a| m.r32(flag) ^ a[0]);
+    rec(&mut t, 0xb1c / 4, 3, move |m, a| {
+        // (kept where the test compares)
+        let v = m.r32(flag);
+        m.w32(magic::SCRATCH + 0x5104, v);
+        v ^ a[0]
+    });
     recs(
         &mut t,
         &[

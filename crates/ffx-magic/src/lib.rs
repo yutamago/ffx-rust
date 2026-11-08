@@ -1573,6 +1573,13 @@ ports! {
     "r9 load step 0314" => r9_load::LOAD_0314, r9_load::load_0314;
     "r9 load step 0381" => r9_load::LOAD_0381, r9_load::load_0381;
     "r9 load step 0245" => r9_load::LOAD_0245, r9_load::load_0245;
+    "r9 load step 0074" => r9_load::LOAD_0074, r9_load::load_0074;
+    "r15 start-up 0371" => r15::START_UP_0371, r15::start_up_0371;
+    "r15 burst 0371" => r15::BURST_0371, r15::burst_0371;
+    "r15 spark below 0338" => r15::SPARK_BELOW_0338, r15::spark_below_0338;
+    "r9 load step 0338" => r9_load::LOAD_0338, r9_load::load_0338;
+    "r9 load step 0092" => r9_load::LOAD_0092, r9_load::load_0092;
+    "r15 frame 0206" => r15::FRAME_0206, r15::frame_0206;
     // round 15 (magic-r15): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
@@ -3440,6 +3447,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r15 start-up 0314", &r15::START_UP_0314),
     ("r15 start-up 0381", &r15::START_UP_0381),
     ("r15 start-up 0245", &r15::START_UP_0245),
+    ("r15 actor counts 0074", &r15::ACTOR_COUNTS_0074),
+    ("r15 start-up 0338", &r15::START_UP_0338),
+    ("r15 start-up 0092", &r15::START_UP_0092),
+    ("r15 spark record 0206", &r15::SPARK_RECORD_0206),
+    ("r15 spark record 0206 (full)", &r15::SPARK_RECORD_0206_FULL),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),

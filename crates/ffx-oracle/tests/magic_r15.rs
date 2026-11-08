@@ -1158,3 +1158,570 @@ fn load_0245() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// What `r15::actor_counts_0074` (at `f`) needs: the part set-up, the
+/// object start, the slots, `n` actors with their counts, the selection
+/// and pick tables, the free ring and the task list.
+fn actor_counts_0074_setup(t: &mut Twin, f: u32, counts: &[u32], free: u16, listed: bool) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    magic_r11::pools(t, f, 617);
+    magic_r11::object_slots(t);
+    let start = t.img.rel32_target(f + 0xb0);
+    magic_r11::object_start_auto(t, start);
+    rec(t, 262, 4, |m, a| {
+        let c = m.r32(magic_owna::row(262)) as f32;
+        for i in 1..4 {
+            m.w32(a[i], (0.5 * i as f32 + c).to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(a[2] + 4 * i, (1.25 - i as f32).to_bits());
+        }
+        0x268
+    });
+    let n = counts.len() as u32;
+    t.set_u32(op(t, f, 0x41), n);
+    t.set_u32(op(t, f, 0x19e), n);
+    for (i, &c) in (0u32..).zip(counts) {
+        t.set_u32(op(t, f, 0x7f) + 28 * i, c);
+        t.set_u32(op(t, f, 0x186) + 28 * i, c);
+    }
+    let sel = SCRATCH + 0x5000;
+    t.write(sel, &[2, 1, 0, 3, 1, 2]);
+    t.set_u32(op(t, f, 0xc5), sel);
+    for i in 0..4 {
+        t.set_u32(op(t, f, 0xd0) + 4 * i, 0x0c0c_0100 + i);
+    }
+    let pick = t.img.rel32_target(f + 0x114);
+    t.set_u32(op(t, pick, 0x06), 0x0def_a017);
+    t.set_u32(op(t, pick, 0x0c), sel);
+    let objs = op(t, f, 0x4b);
+    t.write(objs, &[0x4c; 0x130 * 4]);
+    t.write(op(t, f, 0x50), &[0x4d; 0x34 * 4]);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for i in 0..4 {
+        t.write(node(i), &[0x77; 0x20]);
+        t.set_u32(node(i), node((i + 3) % 4));
+        t.set_u32(node(i) + 4, node((i + 1) % 4));
+    }
+    t.set_u32(op(t, f, 0x1be), node(1));
+    t.set_u16(op(t, f, 0x1af), free);
+    let list = SCRATCH + 0x600;
+    t.write(list, &[0x44; 0x10]);
+    t.set_u32(op(t, f, 0x225), if listed { list } else { 0 });
+    t.set_u32(op(t, f, 0x236), list);
+}
+
+/// `magic_0074` 0x10001370 (`r15::actor_counts_0074`, round 5's draft):
+/// no actors, actors with no, one and two objects, the free ring's last
+/// node and more, the task list empty and not.
+#[test]
+fn actor_counts_0074() {
+    let Some(mut t) = twin(74) else { return };
+    let f = t.at(0x1370);
+    for (counts, free, listed) in [
+        (&[][..], 3u16, false),
+        (&[1, 2][..], 1, true),
+        (&[0, 1, 1][..], 2, false),
+        (&[2][..], 3, true),
+    ] {
+        actor_counts_0074_setup(&mut t, f, counts, free, listed);
+        scrub(&mut t);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r15::actor_counts_0074,
+        );
+    }
+}
+
+/// `magic_0074` 0x10001210 (`r9_load::load_0074`, the 119-byte shape).
+#[test]
+fn load_0074() {
+    let Some(mut t) = twin(74) else { return };
+    let f = t.at(0x1210);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    t.set_u32(w(&t, 0x27), 0x0000_5e5e);
+    let start = t.img.rel32_target(f + 0x5c);
+    for (b, asked, l) in [
+        (1u32, 0u32, 1u32),
+        (0, 0, 0),
+        (0, 1, 0xffff_ffff),
+        (0, 0, 1),
+        (0, 1, 2),
+    ] {
+        actor_counts_0074_setup(&mut t, start, &[1, 1], 2, asked == 1);
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), asked);
+        for o in [0x62u32, 0x6c] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0371` 0x10001720 (`r15::start_up_0371`): every slot answers
+/// per call, the flag word restored, the blocks cleared (non-zero
+/// before).
+#[test]
+fn start_up_0371() {
+    let Some(mut t) = twin(371) else { return };
+    let f = t.at(0x1720);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let rec_tab = SCRATCH + 0x5000;
+    for i in 0..16 {
+        t.set_u32(rec_tab + 4 * i, 0x0e00_0000 + i);
+    }
+    rec(&mut t, 0xc8c / 4, 2, |_, _| 0x2100_0000);
+    rec(&mut t, 0xb3c / 4, 3, move |_, a| rec_tab + 4 * (a[2] & 3));
+    rec(&mut t, 0xeb4 / 4, 1, |_, a| 0x0eb4_0000 ^ a[0]);
+    rec(&mut t, 0x410 / 4, 1, |_, a| 0x0410_0000 ^ a[0]);
+    let flag = SCRATCH + 0x5100;
+    // slot 711 sees the flag word set to 1 (kept where the test compares)
+    rec(&mut t, 0xb1c / 4, 3, move |m, a| {
+        let v = m.r32(flag);
+        m.w32(SCRATCH + 0x5104, v);
+        v ^ a[0]
+    });
+    recs(&mut t, &[(0xb38 / 4, 1), (0x378 / 4, 4), (0xb18 / 4, 4)]);
+    t.set_u32(w(&t, 0x9c), flag);
+    t.set_u32(flag, 0x5a5a_0007);
+    let reset = t.img.rel32_target(f + 0x141);
+    t.write(t.img.word(reset + 0x08), &[0x5a; 0x110]);
+    t.write(w(&t, 0x195), &[0x5a; 0x30]);
+    for op in [
+        0x07u32, 0x21, 0x2b, 0x35, 0x3f, 0x44, 0x5a, 0xa5, 0x105, 0x11f, 0x13c, 0x155, 0x169,
+        0x17d, 0x19a,
+    ] {
+        t.set_u32(w(&t, op), 0x0bad_0000 + op);
+    }
+    scrub(&mut t);
+    t.check_entry(f, Call::default(), &[0x0a37_0001], Eax::Checked);
+}
+
+/// `magic_0371` 0x10001160 (`r15::burst_0371`): a table with free and
+/// busy records (five, then none left for some rounds), slot 324's
+/// draws other per call.
+#[test]
+fn burst_0371() {
+    let Some(mut t) = twin(371) else { return };
+    let f = t.at(0x1160);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 0x3b4 / 4, 4, |m, a| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (1.5 * i as f32 - 2.0).to_bits());
+        }
+        0x3b4
+    });
+    rec(&mut t, 0x510 / 4, 0, |m, _| {
+        let k = m.r32(magic_owna::row(0x510 / 4));
+        k.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(&mut t, 0x64c / 4, 1, |_, a| a[0] ^ 0x64c);
+    t.stub_st0(0x64c / 4, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    // the sprite's resource: a handle and a header with its data
+    rec(&mut t, 942, 1, |_, a| 0x0942_0000 ^ a[0]);
+    let head = SCRATCH + 0x5300;
+    t.write(head, &[0x12; 0x40]);
+    rec(&mut t, 941, 1, move |_, _| head);
+    let res = SCRATCH + 0x5200;
+    t.write(res, &[0x11; 0x40]);
+    t.set_u32(w(&t, 0x67), res);
+    // the table slot 237's first word comes from (distinct around it)
+    for i in 0..8u32 {
+        t.set_u32(w(&t, 0x20).wrapping_sub(16) + 4 * i, 0x0237_0000 + i);
+    }
+    let table = SCRATCH + 0x6000;
+    for (n, busy) in [(8u32, 0b0101_0001u32), (3, 0b010), (0, 0)] {
+        t.write(table, &[0x4e; 0x94 * 8]);
+        for i in 0..8 {
+            t.set_u32(table + 0x94 * i, (busy >> i) & 1);
+        }
+        t.set_u32(w(&t, 0x42), table);
+        t.set_u32(w(&t, 0x33), n);
+        t.set_u32(w(&t, 0x2bb), n);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[n % 3], Eax::Checked);
+    }
+}
+
+/// What `r15::start_up_0338` (at `f`) needs: the object starts, the
+/// slots, the first actor (also the scale's), the free list and the task
+/// list.
+fn start_up_0338_setup(t: &mut Twin, f: u32, k: u32, listed: bool) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    magic_r11::pools(t, f, 868);
+    magic_r11::object_slots(t);
+    for at in [0x61u32, 0x1c3] {
+        let start = t.img.rel32_target(f + at);
+        magic_r11::object_start_setup(t, start, (0x84, 0x9c));
+    }
+    rec(t, 262, 4, |m, a| {
+        let c = m.r32(magic_owna::row(262)) as f32;
+        for i in 1..4 {
+            m.w32(a[i], (0.5 * i as f32 + c).to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        let c = m.r32(magic_owna::row(268)) as f32;
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, (1.25 - i as f32 + c).to_bits());
+        }
+        0x268
+    });
+    rec(t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |m, _| {
+        let c = m.r32(magic_owna::row(333));
+        [8.0, -8.0, 0.5, 2.0][(k + c) as usize % 4]
+    });
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| -1.75);
+    // (the scale's slots: 364 reads one word, 16 two)
+    for (s, n) in [(16u32, 2usize), (364, 1)] {
+        rec(t, s, n, move |_, _| s);
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xf) + f64::from(s) * 0.001);
+    }
+    let sel = SCRATCH + 0x5000;
+    t.write(sel, &[2, 1, 0, 3]);
+    for o in [0x66u32, 0xc2, 0x1c8, 0x224, 0x292] {
+        t.set_u32(op(t, f, o), sel);
+    }
+    for i in 0..4 {
+        t.set_u32(op(t, f, 0x7a) + 4 * i, 0x0c0c_0100 + i);
+    }
+    for at in [0x92u32, 0x1f4] {
+        let sp = t.img.rel32_target(f + at);
+        t.set_u32(op(t, sp, 0x7), sel);
+    }
+    t.write(op(t, f, 0x2f2), &[0x5b; 0x140 * 0x20]);
+    t.set_u32(op(t, f, 0x1b4), 0x5a5a_5a5a);
+    let list = SCRATCH + 0x600;
+    t.write(list, &[0x44; 0x10]);
+    t.set_u32(op(t, f, 0x326), if listed { list } else { 0 });
+    t.set_u32(op(t, f, 0x336), list);
+}
+
+/// `magic_0338` 0x10001370: the yaws on each side of their wraps and
+/// between, the task list empty and not.
+#[test]
+fn start_up_0338() {
+    let Some(mut t) = twin(338) else { return };
+    let f = t.at(0x1370);
+    for (k, listed) in [false, true, false, true].into_iter().enumerate() {
+        start_up_0338_setup(&mut t, f, k as u32, listed);
+        scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, r15::start_up_0338);
+    }
+}
+
+/// `magic_0338` 0x10001210 (`r9_load::load_0338`, the 119-byte shape).
+#[test]
+fn load_0338() {
+    let Some(mut t) = twin(338) else { return };
+    let f = t.at(0x1210);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    t.set_u32(w(&t, 0x27), 0x0000_5e5e);
+    let start = t.img.rel32_target(f + 0x5c);
+    for (b, asked, l) in [
+        (1u32, 0u32, 1u32),
+        (0, 0, 0),
+        (0, 1, 0xffff_ffff),
+        (0, 0, 1),
+        (0, 1, 2),
+    ] {
+        start_up_0338_setup(&mut t, start, l, asked == 1);
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), asked);
+        for o in [0x62u32, 0x6c] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0338` 0x100016e0 (`r15::spark_below_0338`): the point above and
+/// below the height (and NaN), a free record and none.
+#[test]
+fn spark_below_0338() {
+    let Some(mut t) = twin(338) else { return };
+    let f = t.at(0x16e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x108);
+    magic_r11::object_start_setup(&mut t, start, (0x84, 0x9c));
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, (0.25 * i as f32).to_bits());
+        }
+        0x235
+    });
+    rec(&mut t, 0x8a8 / 4, 3, |m, a| {
+        magic_owna::dump(m, 0x8a8 / 4, a[0], 16);
+        0x8a8
+    });
+    rec(&mut t, 0x8a0 / 4, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, (2.0 - i as f32).to_bits());
+        }
+        0x8a0
+    });
+    let dy = SCRATCH + 0x110;
+    rec(&mut t, 229, 3, move |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
+        let y = f32::from_bits(m.r32(a[2] + 4)) + f32::from_bits(m.r32(dy));
+        m.w32(a[0] + 4, y.to_bits());
+        0x229
+    });
+    rec(&mut t, 314, 1, |_, a| a[0] ^ 0x314);
+    t.stub_st0(314, |_, _| 0.625);
+    let pt = t.img.rel32_target(f + 0xeb);
+    let recs_at = SCRATCH + 0x8000;
+    let pw = |t: &Twin, o: u32| t.img.word(pt + o);
+    let obj = SCRATCH + 0x4000;
+    t.set_u32(w(&t, 0xe3), 1.0f32.to_bits());
+    for (d, free) in [(5.0f32, true), (-5.0, true), (5.0, false), (f32::NAN, true)] {
+        t.write(obj, &[0x4a; 0x110]);
+        for i in 0..0x10 {
+            t.set_u32(obj + 0xd0 + 4 * i, (0.5 * i as f32).to_bits());
+        }
+        t.set_u32(dy, d.to_bits());
+        t.write(recs_at, &[0x00; 0x140 * 4]);
+        for i in 0..4 {
+            t.set_u32(recs_at + 0x140 * i + 0x130, u32::from(!free || i != 2));
+            t.set_u16(recs_at + 0x140 * i + 0x124, 0x8000);
+        }
+        t.set_u32(pw(&t, 0x16), recs_at);
+        t.set_u32(pw(&t, 0x09), 4);
+        t.set_u32(pw(&t, 0x01), 1);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// What `r15::start_up_0092` (at `f`) needs: the pools, the object
+/// starts, the slots (390 picks the state), the first actor, the fades'
+/// records and the task list.
+fn start_up_0092_setup(t: &mut Twin, f: u32, k: u32, listed_state: bool, listed: bool) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    magic_r11::pools(t, f, 1056);
+    magic_r11::object_slots(t);
+    for at in [0x118u32, 0x1d2, 0x29c] {
+        let start = t.img.rel32_target(f + at);
+        magic_r11::object_start_setup(t, start, (0x84, 0x9c));
+    }
+    rec(t, 262, 4, |m, a| {
+        let c = m.r32(magic_owna::row(262)) as f32;
+        for i in 1..4 {
+            m.w32(a[i], (0.5 * i as f32 + c).to_bits());
+        }
+        0x262
+    });
+    rec(t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |_, _| [8.0, -8.0, 0.5, 2.0][k as usize % 4]);
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| 3.5);
+    // the state: listed when slot 390's answer is in the list
+    let sl = t.img.rel32_target(f + 0xf2);
+    let first = t.u32(op(t, sl, 0x20));
+    rec(
+        t,
+        390,
+        1,
+        move |_, _| if listed_state { first } else { 0x7777 },
+    );
+    rec(t, 534, 1, |_, _| 0);
+    rec(t, 271, 3, |_, a| a[0] ^ 0x271);
+    t.set_u32(op(t, f, 0x58), 0x0a00_0001);
+    let sel = SCRATCH + 0x5000;
+    t.write(sel, &[2, 1, 0, 3]);
+    for o in [0xaau32, 0x1dc] {
+        t.set_u32(op(t, f, o), sel);
+    }
+    t.set_u32(op(t, sl, 0x1), sel);
+    t.set_u32(op(t, sl, 0x40), sel);
+    for i in 0..4 {
+        t.set_u32(op(t, f, 0xb5) + 4 * i, 0x0c0c_0100 + i);
+    }
+    for o in [0x1c3u32, 0x338] {
+        t.set_u32(op(t, f, o), 0x5a5a_5a5a);
+    }
+    for o in [0x386u32, 0x3a7] {
+        t.write(op(t, f, o), &[0x5c; 0x40]);
+    }
+    let list = SCRATCH + 0x600;
+    t.write(list, &[0x44; 0x10]);
+    t.set_u32(op(t, f, 0x3e2), if listed { list } else { 0 });
+    t.set_u32(op(t, f, 0x3f2), list);
+}
+
+/// `magic_0092` 0x10001430: the actor's state listed and not, the yaw on
+/// each side of its wrap and between, the task list empty and not.
+#[test]
+fn start_up_0092() {
+    let Some(mut t) = twin(92) else { return };
+    let f = t.at(0x1430);
+    for (k, (state, listed)) in [(false, false), (true, true), (false, true), (true, false)]
+        .into_iter()
+        .enumerate()
+    {
+        start_up_0092_setup(&mut t, f, k as u32, state, listed);
+        scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, r15::start_up_0092);
+    }
+}
+
+/// `magic_0092` 0x10001300 (`r9_load::load_0092`, the 119-byte shape).
+#[test]
+fn load_0092() {
+    let Some(mut t) = twin(92) else { return };
+    let f = t.at(0x1300);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    t.set_u32(w(&t, 0x27), 0x0000_5e5e);
+    let start = t.img.rel32_target(f + 0x5c);
+    for (b, asked, l) in [
+        (1u32, 0u32, 1u32),
+        (0, 0, 0),
+        (0, 1, 0xffff_ffff),
+        (0, 0, 1),
+        (0, 1, 2),
+    ] {
+        start_up_0092_setup(&mut t, start, l, asked == 1, asked == 1);
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), asked);
+        for o in [0x62u32, 0x6c] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// What `magic_0206`'s spark records need: slot 324's draws, slot 403,
+/// the sprite resource, and the record table (`n` records, `busy` the
+/// taken ones) behind the take at `take`.
+fn spark_0206_setup(t: &mut Twin, take: u32, n: u32, busy: u32) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    rec(t, 0x510 / 4, 0, |m, _| {
+        let k = m.r32(magic_owna::row(0x510 / 4));
+        k.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    rec(t, 0x64c / 4, 1, |_, a| a[0] ^ 0x64c);
+    t.stub_st0(0x64c / 4, |_, a| f64::from(f32::from_bits(a[0])) * 0.5);
+    rec(t, 942, 1, |_, a| 0x0942_0000 ^ a[0]);
+    let head = SCRATCH + 0x5300;
+    t.write(head, &[0x12; 0x40]);
+    rec(t, 941, 1, move |_, _| head);
+    let table = SCRATCH + 0x6000;
+    t.write(table, &[0x4e; 0x94 * 8]);
+    for i in 0..8 {
+        t.set_u32(table + 0x94 * i, (busy >> i) & 1);
+    }
+    t.set_u32(op(t, take, 0x2), n);
+    t.set_u32(op(t, take, 0xb), table);
+}
+
+/// `magic_0206` 0x10001240 and 0x10001000 (`r15::spark_record_0206`,
+/// `_full`): a free record found after busy ones, and none.
+#[test]
+fn spark_records_0206() {
+    let Some(mut t) = twin(206) else { return };
+    let res = SCRATCH + 0x5200;
+    let point = SCRATCH + 0x5400;
+    for i in 0..4 {
+        t.set_u32(point + 4 * i, (1.5 * i as f32 - 0.5).to_bits());
+    }
+    for rva in [0x1240u32, 0x1000] {
+        let f = t.at(rva);
+        t.write(res, &[0x11; 0x40]);
+        t.set_u32(t.img.word(f + 0x06), res);
+        let take = t.img.rel32_target(f + 0x0c);
+        for (n, busy) in [(8u32, 0b0000_0111u32), (2, 0b11)] {
+            spark_0206_setup(&mut t, take, n, busy);
+            scrub(&mut t);
+            let full = rva == 0x1000;
+            t.check(
+                f,
+                Call::default(),
+                &[point],
+                Eax::Checked,
+                move |g, img, fr| {
+                    if full {
+                        r15::spark_record_0206_full(g, img, fr)
+                    } else {
+                        r15::spark_record_0206(g, img, fr)
+                    }
+                },
+            );
+        }
+    }
+}
+
+/// `magic_0206` 0x100014f0 (`r15::frame_0206`): the motion 0, 0x98 and
+/// another; the counter below 360 (every fifth with the big spark) and
+/// past it; live records and none.
+#[test]
+fn frame_0206() {
+    let Some(mut t) = twin(206) else { return };
+    let f = t.at(0x14f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let sr = t.img.rel32_target(f + 0x76);
+    let take = t.img.rel32_target(sr + 0x0c);
+    let res = SCRATCH + 0x5200;
+    t.write(res, &[0x11; 0x40]);
+    t.set_u32(t.img.word(sr + 0x06), res);
+    let big = t.img.rel32_target(f + 0xa8);
+    t.set_u32(t.img.word(big + 0x06), res);
+    let motion = SCRATCH + 0x110;
+    rec(&mut t, 0x650 / 4, 1, |_, a| a[0] ^ 0x650);
+    t.stub_st0(0x650 / 4, move |m, _| {
+        f64::from(f32::from_bits(m.r32(motion)))
+    });
+    rec(&mut t, 0x3b4 / 4, 4, |m, a| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (0.75 * i as f32 + 1.0).to_bits());
+        }
+        0x3b4
+    });
+    for (s, n) in [(325u32, 2usize), (229, 3), (382, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    // the sprite draw: slot 772's 64-bit handle (its edx too)
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
+    t.set_u32(w(&t, 0x56), 0x0a00_0001);
+    for (mo, count, busy) in [
+        (0.25f32, 10u32, 0b0000_0011u32),
+        (152.5, 3, 0b1),
+        (40.0, 400, 0),
+        (2.0, 25, 0b1111_1111),
+    ] {
+        t.set_u32(motion, mo.to_bits());
+        t.set_u32(w(&t, 0x67), count);
+        t.set_u32(w(&t, 0x85), count);
+        spark_0206_setup(&mut t, take, 8, busy);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
