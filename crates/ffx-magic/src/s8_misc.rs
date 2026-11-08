@@ -1091,8 +1091,10 @@ pub const SUMMON_FRAME_RIGS: Sig = Sig {
 /// 0x1a88` and ends with the scene's end
 /// ([`scene_end`](crate::o6_fam_pairs6::scene_end)); `magic_0588`'s
 /// (0x100016f0) is `0610`'s with its own end
-/// ([`effect_end_0588`](crate::r18::effect_end_0588)). Every displacement
-/// is read from the code.
+/// ([`effect_end_0588`](crate::r18::effect_end_0588)); `magic_0434`'s
+/// (0x10005730, [`SUMMON_FRAME_0434`](crate::r21::SUMMON_FRAME_0434)) is
+/// `0610`'s with `E + 0xc70`/`0xc90` to `0xc10`/`0xc50` and `E +
+/// 0x1a8c`. Every displacement is read from the code.
 pub fn summon_frame_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);

@@ -797,20 +797,44 @@ pub const LOAD_0680: Sig = Sig {
 /// b, NAME, c]` and a particle node
 /// ([`particle_node`](crate::sb_nodes::particle_node)) of `[obj + 0x1c0,
 /// LIST2, obj + 0x1c, *G_O, PART, 1]` (vtable `+0x177` first); `+0x18` 0.
-/// Returns the particle node's `eax`.
+/// Returns the particle node's `eax`. `magic_0388` 0x10006ba0
+/// ([`COLOUR_SETUP_0388`](crate::r21::COLOUR_SETUP_0388), 460 bytes)
+/// takes the alpha as `xmm2 K1 + K2` and passes 0 as the last word.
 pub fn colour_setup_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     use crate::h6_setup::{ring_join, static_child};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `magic_0388`'s copy keeps `xmm2` first (`movss [esp + 0xc], xmm2`)
+    // and computes the alpha from it: its operands at these shifts
+    let alpha_from_xmm2 = img.word(f + 0xe) & 0xff == 0xf3;
+    let m = |o: u32| {
+        if !alpha_from_xmm2 || o < 0xe {
+            o
+        } else if o < 0xfe {
+            o + 6
+        } else if o < 0x10a {
+            o + 0x14
+        } else if o < 0x149 {
+            o + 0x1c
+        } else {
+            o + 0x1a
+        }
+    };
+    let w = |o: u32| img.word(f + m(o));
     let obj = fr.ecx;
-    ring_join(g, img, f, obj, [0x16, 0x1d, 0x25, 0x2f, 0x34, 0x43, 0x4a]);
+    ring_join(
+        g,
+        img,
+        f,
+        obj,
+        [0x16, 0x1d, 0x25, 0x2f, 0x34, 0x43, 0x4a].map(m),
+    );
     let b = obj + 0x168;
     static_child(
         g,
         img,
         f,
         b,
-        [0x5d, 0x64, 0x69, 0x71, 0x76, 0x7e, 0x8a, 0x9d],
+        [0x5d, 0x64, 0x69, 0x71, 0x76, 0x7e, 0x8a, 0x9d].map(m),
     );
     g.write::<u32>(b, w(0xa3));
     // call width: 2
@@ -822,14 +846,22 @@ pub fn colour_setup_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         img,
         f,
         c,
-        [0xd1, 0xd8, 0xdd, 0xe5, 0xea, 0xf2, 0xfe, 0x104],
+        [0xd1, 0xd8, 0xdd, 0xe5, 0xea, 0xf2, 0xfe, 0x104].map(m),
     );
     g.write::<u32>(c, w(0x10a));
+    // the alpha: 0.2, or `xmm2 K1 + K2` (`magic_0388`)
+    let alpha = if alpha_from_xmm2 {
+        use crate::sb_sse::{add, mul};
+        let k = |o: u32| g.read::<f32>(img.word(f + o));
+        add(mul(fr.xmm_f32(2), k(0x10b)), k(0x120)).to_bits()
+    } else {
+        0x3e4c_cccd
+    };
     for (o, v) in [
         (0x1b0u32, 0x3f80_0000u32),
         (0x1b4, 0x3f80_0000),
         (0x1b8, 0x3f80_0000),
-        (0x1bc, 0x3e4c_cccd),
+        (0x1bc, alpha),
     ] {
         g.write::<u32>(obj + o, v);
     }
@@ -843,7 +875,7 @@ pub fn colour_setup_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         g,
         img,
         &Frame {
-            at: img.rel32_target(f + 0x162),
+            at: img.rel32_target(f + m(0x162)),
             esp: a.wrapping_sub(0x2c),
             ecx: rec,
             ..Frame::default()
@@ -853,10 +885,11 @@ pub fn colour_setup_0645<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let node = obj + 0x1c0;
     g.write::<u32>(rec, node);
     g.write::<u32>(node, w(0x177));
-    for (i, v) in (1u32..).zip([w(0x183), obj + 0x1c, o, w(0x193), 1]) {
+    // the last word an immediate: 1 (0 in `magic_0388`)
+    for (i, v) in (1u32..).zip([w(0x183), obj + 0x1c, o, w(0x193), w(0x19b)]) {
         g.write::<u32>(rec + 4 * i, v);
     }
-    let r = crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x1a0), rec);
+    let r = crate::sb_nodes::particle_node(g, img, img.rel32_target(f + m(0x1a0)), rec);
     g.write::<u32>(obj + 0x18, 0);
     r
 }
@@ -884,6 +917,9 @@ pub const COLOUR_SETUP_0645: Sig = Sig {
 /// and 17 of `A` (the slot's factor first, then the diagonal's, then
 /// it last again); slots 330, 328 and 329 `(M, M, a)` by `R + 0xc88`,
 /// `+0xc80`, `+0xc84`; slot 257 `(A, 1)`. Returns slot 257's `eax`.
+/// `magic_0434` 0x10006610 ([`SUMMON_MATRIX_0434`](crate::r21::SUMMON_MATRIX_0434))
+/// calls its colour show ([`colour_show`](crate::m0434::colour_show))
+/// before slot 257.
 pub fn summon_matrix_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
@@ -950,8 +986,20 @@ pub fn summon_matrix_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 3
         g.call(t(g, tab, n), 0, &[m, m, x]);
     }
-    let a4 = target(g, 0x23d, 0x249);
-    let ret = g.call(t(g, 0x24e, 257), 0, &[a4, 1, m]).eax;
+    // `magic_0434`'s copy calls the colour show here (`call rel32`), the
+    // rest 5 bytes later
+    let d = if w(0x23c) & 0xff == 0xe8 {
+        let show = Frame {
+            at: img.rel32_target(f + 0x23d),
+            ..*fr
+        };
+        crate::m0434::colour_show(g, img, &show);
+        5
+    } else {
+        0
+    };
+    let a4 = target(g, 0x23d + d, 0x249 + d);
+    let ret = g.call(t(g, 0x24e + d, 257), 0, &[a4, 1, m]).eax;
     Ret::eax(ret)
 }
 
@@ -2276,7 +2324,10 @@ pub const STEP_0708: Sig = Sig {
 /// 268), a random direction (three slot 307 numbers less `K'`, slot 232)
 /// added scaled by `K1` and kept scaled by `K2`, its words, and a group
 /// number one up every fourth. Returns the records' count (0 when the
-/// pool ran out).
+/// pool ran out). `magic_0347` 0x100041a0
+/// ([`BURST_0347`](crate::r21::BURST_0347)) passes `&d` a word earlier
+/// and has the indices swapped (2 for the near burst, else 1); the counts
+/// and indices are read from the code.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn burst_0491<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
@@ -2293,22 +2344,29 @@ pub fn burst_0491<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.call(t(g, 0x26, 262), 0, &[a, l, l + 4, l + 8]);
     // call width: 3
     g.call(t(g, 0x3a, 268), 0, &[a, 0x11, l]);
-    let b = rd(g, 0x58);
+    // `magic_0347`'s copy pushes `(*G_C, *G_B, &d, 0, 0)` (`push 0` at
+    // `+0x4b`), `0491`'s `(*G_C, *G_B, 0, &d, 0)`
+    let (table, args) = if img.word(f + 0x4b) & 0xff == 0x6a {
+        (0x58, [rd(g, 0x5e), rd(g, 0x53), dp, 0, 0])
+    } else {
+        (0x50, [rd(g, 0x65), rd(g, 0x58), 0, dp, 0])
+    };
     g.write::<u32>(l + 0xc, 0x3f80_0000);
     // call width: 5
-    g.call(t(g, 0x50, 618), 0, &[rd(g, 0x65), b, 0, dp, 0]);
+    g.call(t(g, table, 618), 0, &args);
     let d = g.read::<u32>(dp).cast_signed();
+    // the counts and indices are immediates: `mov eax, i1; lea edi, [eax
+    // + n1 - i1]`, `mov edi, 0x40`, `mov edi, 0x20; mov eax, i2`
+    let i1 = w(0x95);
+    let n1 = i1.wrapping_add(crate::r11_misc::imm8(img, f + 0x9b));
+    let (n3, n2, i2) = (w(0x9f), w(0xa6), w(0xab));
     let (n, index, word) = if d < 0 && d.wrapping_neg() >= 100 {
         let x = d.wrapping_neg();
-        (
-            if x >= 500 { 0x40u32 } else { 0x20 },
-            2u32,
-            x.cast_unsigned(),
-        )
+        (if x >= 500 { n3 } else { n2 }, i2, x.cast_unsigned())
     } else if d < 0 {
-        (0x18, 1, d.wrapping_neg().cast_unsigned())
+        (n1, i1, d.wrapping_neg().cast_unsigned())
     } else {
-        (0x18, 1, d.cast_unsigned())
+        (n1, i1, d.cast_unsigned())
     };
     // push CB; push 0; push ecx; push eax: the return address at E - 0x48
     let esp = e.wrapping_sub(0x48);

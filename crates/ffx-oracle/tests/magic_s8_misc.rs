@@ -898,11 +898,12 @@ fn summon_frames_with_rigs() {
         (610, 0xa6d0, true),
         (588, 0x16f0, true),
         (589, 0x13e0, true),
+        (434, 0x5730, true),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         // `magic_0610`: the operands 4 bytes earlier, no fade (11 more)
-        let short = dll == 610 || dll == 588;
+        let short = dll == 610 || dll == 588 || dll == 434;
         let dt = if short { 0xf } else { 0 };
         for (s, n) in [(284u32, 3usize), (285, 2), (286, 2), (332, 1), (411, 1)] {
             log_calls(&mut t, s, n, &[], move |_, a, k| {
@@ -1022,7 +1023,7 @@ fn summon_frames_with_rigs() {
                     m.w32(a[1], 0);
                     0x288
                 });
-            } else if dll == 610 {
+            } else if dll == 610 || dll == 434 {
                 // the scene's end: one actor, the ids, its done word
                 let end = t.img.rel32_target(f + 0xd3);
                 let ids = SCRATCH + 0x3000;

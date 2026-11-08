@@ -69,6 +69,7 @@ pub mod r17;
 pub mod r18;
 pub mod r19;
 pub mod r20;
+pub mod r21;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1635,6 +1636,16 @@ ports! {
     "r9 load step 0413" => r9_load::LOAD_0413, r9_load::load_0413;
     "r9 summon start (nodes) 0082" => r9_summon::NODES_0082, r9_summon::nodes_0082;
     // round 19 (magic-r19): end of ports
+    // round 21 (magic-r21)
+    "r21 caster start 0393" => r21::CASTER_START_0393, r16::caster_start_0450;
+    "r21 spark task 0347" => r21::SPARK_TASK_0347, r14::spark_task;
+    "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
+    "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
+    "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;
+    "r21 summon matrix 0434" => r21::SUMMON_MATRIX_0434, r20::summon_matrix_0610;
+    "r21 lights start 0434" => r21::LIGHTS_START_0434, r18::lights_start_0610;
+    "r21 caster object 0430" => r21::CASTER_OBJECT_0430, r18::caster_object_0588;
+    // round 21 (magic-r21): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -3617,6 +3628,15 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r17 start-up 0200", &r17::START_UP_0200),
     ("r17 start-up 0177", &r17::START_UP_0177),
     ("r17 start-up 0199", &r17::START_UP_0199),
+    // round 21 (magic-r21)
+    ("r21 place pair 0304", &r21::PLACE_PAIR_0304),
+    (
+        "r21 summon object between 0347",
+        &r21::SUMMON_OBJECT_BETWEEN_0347,
+    ),
+    ("r21 burst 0347", &r21::BURST_0347),
+    ("r21 colour set-up 0388", &r21::COLOUR_SETUP_0388),
+    // round 21 (magic-r21): end of INTERNAL
     // round 19 (magic-r19)
     ("r19 three nodes 0128", &r19::THREE_NODES_0128),
     ("r19 start-up 0285", &r19::START_UP_0285),

@@ -534,7 +534,10 @@ pub const SUMMON_FRAME_0588: Sig = Sig {
 /// ([`wave_table`](crate::s5_misc::wave_table) at that phase), and slot
 /// 862 `(h, table, &L, 0x1ae, 0)` registers it with `h` slot 772 `(0x1ae,
 /// 0)`'s 64-bit handle, `L` the local `(s, s, s, 1.0)` (`s` = level `K4`),
-/// `**G_LOCK` 1 around the call. Returns `*G_LOCK`.
+/// `**G_LOCK` 1 around the call. Returns `*G_LOCK`. `magic_0430`
+/// 0x10002580 ([`WAVE_TICK_0430`](crate::r21::WAVE_TICK_0430)) is the
+/// same code with the count and state at `E + 0xeb8`/`0xebc`, read from
+/// the code.
 pub fn wave_tick_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, div, mul, sub};
     let f = fr.at;
@@ -544,8 +547,10 @@ pub fn wave_tick_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // and esp, -8; sub esp, 0x1c: the locals from `frame`
     let frame = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x1c);
     let e = g.read::<u32>(w(0x19));
-    let count = e.wrapping_add(0xdf8);
-    let state = e.wrapping_add(0xdfc);
+    // `mov eax, [edi + 0xdf8]`, `mov eax, [edi + 0xdfc]` (`magic_0430`
+    // 0xeb8, 0xebc)
+    let count = e.wrapping_add(w(0x22));
+    let state = e.wrapping_add(w(0x3e));
     let c = g.read::<i32>(count);
     if c > 0 {
         g.write::<i32>(count, c - 1);
@@ -631,27 +636,47 @@ pub const WAVE_TICK_0588: Sig = Sig {
 /// 0); a pool node ([`take`](crate::sa_pool::take), owner `+0x9a`) gets
 /// `+0x14 = P` and is appended to the task list (first `+0xea`, last
 /// `+0xff`); slot 332 `(&L)` with the local colour `L = (0, 0, 0, 0x80)`
-/// at `ebp - 0x14`, whose `eax` it returns.
+/// at `ebp - 0x14`, whose `eax` it returns. `magic_0430` 0x10002900
+/// ([`CASTER_OBJECT_0430`](crate::r21::CASTER_OBJECT_0430)) starts the
+/// object animated
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), value 0)
+/// and has the point, yaw and record at `E + 0xcc4`, `0xeb4`, `0xce0`,
+/// read from the code.
 pub fn caster_object_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::sub;
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `magic_0430`'s copy pushes a value 0 before the index (`6a 00 6a
+    // 08`) for the animated start: the code from there 2 bytes later
+    let d = if img.word(f + 0x2b) & 0xff == 0x6a {
+        2
+    } else {
+        0
+    };
+    let w = |o: u32| img.word(f + if o >= 0x29 { o + d } else { o });
     let ebp = fr.esp.wrapping_sub(4);
     let e = g.read::<u32>(w(0x1c));
     let o = e.wrapping_add(0x980);
-    let at = img.rel32_target(f + 0x2e);
+    let at = img.rel32_target(f + 0x2e + d);
     let scale = g.read::<f32>(w(0x14));
-    crate::s4_misc::start_object_plain(g, img, at, o, scale, w(0x2a) & 0xff);
+    if d == 0 {
+        crate::s4_misc::start_object_plain(g, img, at, o, scale, w(0x2a) & 0xff);
+    } else {
+        let value = img.word(f + 0x2a) & 0xff;
+        crate::s4_misc::start_object_anim(g, img, at, o, scale, w(0x2a) & 0xff, value);
+    }
+    // the point, the yaw and the record at their instructions'
+    // displacements (`magic_0430`: 0xcc4, 0xeb4, 0xce0)
+    let (point, yaw_at, rec) = (w(0x34), w(0x7e), w(0x95));
     for i in 0..4 {
-        let v = g.read::<u32>(e.wrapping_add(0xc04 + 4 * i));
+        let v = g.read::<u32>(e.wrapping_add(point + 4 * i));
         g.write::<u32>(o.wrapping_add(0xd0 + 4 * i), v);
     }
     let y = sub(g.read::<f32>(o.wrapping_add(0xd4)), g.read::<f32>(w(0x6e)));
     g.write::<u32>(o.wrapping_add(0xc0), 0xbfc9_0fdb);
-    let yaw = g.read::<u32>(e.wrapping_add(0xdf4));
+    let yaw = g.read::<u32>(e.wrapping_add(yaw_at));
     g.write::<u32>(o.wrapping_add(0xc4), yaw);
     g.write::<f32>(o.wrapping_add(0xd4), y);
-    let p = e.wrapping_add(0xc20);
+    let p = e.wrapping_add(rec);
     g.write::<u32>(p.wrapping_add(0x80), 0);
     g.write::<u32>(p.wrapping_add(0x84), 0x4000_0000);
     g.write::<u32>(p.wrapping_add(0x88), 0x82);
@@ -659,7 +684,7 @@ pub fn caster_object_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(p.wrapping_add(0x90), 0x14);
     g.write::<u32>(p.wrapping_add(0x8c), 0x14);
     g.write::<u32>(p.wrapping_add(0x94), 0);
-    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xe4), w(0x9a));
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0xe4 + d), w(0x9a));
     let first = g.read::<u32>(w(0xea));
     g.write::<u32>(node.wrapping_add(0x14), p);
     g.write::<u32>(node.wrapping_add(4), 0);
@@ -1719,10 +1744,21 @@ pub const MODEL_START_0603: Sig = Sig {
 /// ([`take`](crate::sa_pool::take), owners `+0x62`, `+0x105`) with `+0x14
 /// = P`, the first appended to the task list (`P1 + 0x94` 1 after), the
 /// second after it (the list's last). Returns the second node.
+/// `magic_0434` 0x10007fc0 ([`LIGHTS_START_0434`](crate::r21::LIGHTS_START_0434))
+/// starts the object animated
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), value 0),
+/// the rest 2 bytes later.
 pub fn lights_start_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{div, mul};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `magic_0434`'s copy pushes a value 0 before the index (`6a 00 6a
+    // 06`) for the animated start: everything from there 2 bytes later
+    let d = if img.word(f + 0x3c) & 0xff == 0x6a {
+        2
+    } else {
+        0
+    };
+    let w = |o: u32| img.word(f + if o >= 0x3a { o + d } else { o });
     let ebp = fr.esp.wrapping_sub(4);
     let t = slot_target(g, w(0x7), 282);
     let s = g.read::<u32>(w(0xe));
@@ -1730,8 +1766,28 @@ pub fn lights_start_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(ebp.wrapping_sub(4), v);
     let scale = mul(div(g.read::<f32>(w(0x26)), v), g.read::<f32>(w(0x36)));
     // push 6 (`6a 06`); lea edx, [ebx + 0x720]
-    let at = img.rel32_target(f + 0x43);
-    crate::s4_misc::start_object_plain(g, img, at, s.wrapping_add(0x720), scale, w(0x3b) & 0xff);
+    let at = img.rel32_target(f + 0x43 + d);
+    if d == 0 {
+        crate::s4_misc::start_object_plain(
+            g,
+            img,
+            at,
+            s.wrapping_add(0x720),
+            scale,
+            w(0x3b) & 0xff,
+        );
+    } else {
+        let value = img.word(f + 0x3b) & 0xff;
+        crate::s4_misc::start_object_anim(
+            g,
+            img,
+            at,
+            s.wrapping_add(0x720),
+            scale,
+            w(0x3b) & 0xff,
+            value,
+        );
+    }
     g.write::<u32>(s.wrapping_add(0x824), w(0x53));
     g.write::<u8>(s.wrapping_add(0x846), 2);
     let p1 = s.wrapping_add(0x1450);
@@ -1744,7 +1800,7 @@ pub fn lights_start_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(p1.wrapping_add(0x90), 0x14);
     g.write::<u32>(p1.wrapping_add(0x8c), 0x14);
     g.write::<u32>(p1.wrapping_add(0x94), 0);
-    let n1 = crate::sa_pool::take(g, img, img.rel32_target(f + 0xb9), w(0x62));
+    let n1 = crate::sa_pool::take(g, img, img.rel32_target(f + 0xb9 + d), w(0x62));
     let mut first = g.read::<u32>(w(0xbf));
     g.write::<u32>(n1.wrapping_add(0x14), p1);
     g.write::<u32>(n1.wrapping_add(4), 0);
@@ -1769,7 +1825,7 @@ pub fn lights_start_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(p2.wrapping_add(0x90), 0x14);
     g.write::<u32>(p2.wrapping_add(0x8c), 0x14);
     g.write::<u32>(p2.wrapping_add(0x94), 0);
-    let n2 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x15c), w(0x105));
+    let n2 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x15c + d), w(0x105));
     g.write::<u32>(n2.wrapping_add(0x14), p2);
     g.write::<u32>(n2.wrapping_add(4), 0);
     g.write::<u32>(w(0x16b), n2);
@@ -2338,7 +2394,9 @@ pub const PARTICLE_TASK_0512: Sig = Sig {
 /// model's three passes ([`three_pass_model`](crate::o6_fam_pairs4::three_pass_model),
 /// `ecx` its handle, `edx` = `C`, the record `S + 0x9d0 + 0x600 i`). Each
 /// call sees the words the earlier ones left. Returns the last pass's
-/// `eax`.
+/// `eax`. `magic_0162` 0x100039e0 ([`PASSES_0162`](crate::r21::PASSES_0162))
+/// is the same code with those four displacements 0x60 higher, read from
+/// the code.
 pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::add;
     let f = fr.at;
@@ -2347,7 +2405,10 @@ pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let e = fr.esp;
     let ebp = e.wrapping_sub(4);
     let s = g.read::<u32>(w(0x16));
-    let ang = add(g.read::<f32>(s.wrapping_add(0x9b4)), g.read::<f32>(w(0x27)));
+    // the angle, the point, the translation and the records at the
+    // displacements of their instructions (`magic_0162`: each 0x60 higher)
+    let (angle, point, trans, recs) = (w(0x1f), w(0x96), w(0xcc), w(0x15d));
+    let ang = add(g.read::<f32>(s.wrapping_add(angle)), g.read::<f32>(w(0x27)));
     let ang = yaw_wrap(g, img, f, ang, (0x2e, 0x38, 0x42, 0x4f));
     let (a, b, d, c) = (
         ebp.wrapping_sub(0x104),
@@ -2357,7 +2418,7 @@ pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     );
     let mut st = Pushes::default();
     st.push(a);
-    g.write::<f32>(s.wrapping_add(0x9b4), ang);
+    g.write::<f32>(s.wrapping_add(angle), ang);
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x5b, 723), fr.ecx);
     st.push(b);
@@ -2366,14 +2427,14 @@ pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     st.push(c);
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x88, 235), fr.ecx);
-    st.push_all(&[s.wrapping_add(0x81d0), c, d]);
+    st.push_all(&[s.wrapping_add(point), c, d]);
     for o in [0x28u32, 0x14, 0] {
         g.write::<u32>(c.wrapping_add(o), 0x3b03_126f);
     }
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xa7, 554), fr.ecx);
     for i in 0..4 {
-        let v = g.read::<u32>(s.wrapping_add(0x81e0 + 4 * i));
+        let v = g.read::<u32>(s.wrapping_add(trans + 4 * i));
         g.write::<u32>(d.wrapping_add(0x30 + 4 * i), v);
     }
     st.push_all(&[d, b, c]);
@@ -2392,7 +2453,7 @@ pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         st.push_all(&[i, 4, w(0x14f)]);
         // call width: 12 (Pushes caps the words at 12)
         let h = st.call(g, t(g, 0x141, 719), fr.ecx).eax;
-        let rec = g.read::<u32>(w(0x157)).wrapping_add(0x9d0 + 0x600 * i);
+        let rec = g.read::<u32>(w(0x157)).wrapping_add(recs + 0x600 * i);
         for (k, v) in (1u32..).zip([i, 4, w(0x14f), rec]) {
             g.write::<u32>(base.wrapping_sub(4 * k), v);
         }

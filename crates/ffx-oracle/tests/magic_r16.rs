@@ -711,12 +711,19 @@ fn sprays_0489() {
     }
 }
 
-/// `r16::caster_start_0450` (`magic_0450` 0x10005b40): the block's
+/// `r16::caster_start_0450` (`magic_0450` 0x10005b40, and `magic_0393`
+/// 0x10001b50 with its object at `B+0xbe0`, index 10): the block's
 /// object, matrix and scale task over junk, two yaws.
 #[test]
 fn caster_start_0450() {
-    let Some(mut t) = twin(450) else { return };
-    let f = t.at(0x5b40);
+    for (dll, rva) in [(450u16, 0x5b40u32), (393, 0x1b50)] {
+        caster_start(dll, rva);
+    }
+}
+
+fn caster_start(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
     magic_r11::pools(&mut t, f, 689);
     magic_r11::object_slots(&mut t);

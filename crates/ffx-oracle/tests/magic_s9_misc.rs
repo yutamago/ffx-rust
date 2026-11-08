@@ -3498,6 +3498,8 @@ fn effect_groups_init() {
 /// `X`'s actor from the list and the none actor, the yaw and the turn
 /// past each end of the range and inside, the object's `y` above the
 /// actor's height and below, the pool with nodes and without.
+/// `magic_0347`'s copy (0x10003c60) starts the object animated, the code
+/// after its callback push 5 bytes later.
 #[test]
 fn summon_objects_between() {
     for (dll, rva) in [
@@ -3505,11 +3507,16 @@ fn summon_objects_between() {
         (135, 0x4330),
         (132, 0x1980),
         (133, 0x4230),
+        (347, 0x3c60),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let w = |t: &Twin, o: u32| op(t, f, o);
-        let start = t.img.rel32_target(f + 0xce);
+        let d = if dll == 347 { 5 } else { 0 };
+        let w = |t: &Twin, o: u32| op(t, f, if o > 0xc0 { o + d } else { o });
+        let start = t.img.rel32_target(f + 0xce + d);
+        // the pool's call in the start (`start_object_first`, or the
+        // animated start's)
+        let pool_call = if d == 0 { 0x9a } else { 0x98 };
         let ans = SCRATCH + 0x7d0;
         log_calls(&mut t, 262, 4, &[], |m, a, k| {
             for (i, x) in (1u32..).zip(&a[1..4]) {
@@ -3575,7 +3582,7 @@ fn summon_objects_between() {
             t.set_u32(LOG, 0);
             set_f(&mut t, ans, yaw);
             set_f(&mut t, ans + 4, height);
-            start_first_setup(&mut t, start, 0x9a, free, c);
+            start_first_setup(&mut t, start, pool_call, free, c);
             t.write(x, &floats(0x600 / 4, c));
             t.set_u32(x + 0x504, entry);
             scrub(&mut t);
@@ -3595,7 +3602,9 @@ fn summon_objects_between() {
 /// object between started), the pause, the curve held at its end and not,
 /// the burst count ending (the spark burst) and running (sparks from a
 /// pool with records and without), the fade halving and the task given
-/// back; the trail drawn with no sprites.
+/// back; the trail drawn with no sprites. `magic_0347`'s copy
+/// (0x100044f0): its object between starts animated, its burst is
+/// `r20::burst_0491`'s copy.
 #[test]
 #[allow(clippy::too_many_lines)] // one set-up per callee
 fn spark_tasks() {
@@ -3604,15 +3613,19 @@ fn spark_tasks() {
         (134, 0x2210),
         (133, 0x4ac0),
         (135, 0x4bc0),
+        (347, 0x44f0),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let d = if rva == 0x2210 { 0 } else { 3 };
+        let d = if rva == 0x4ac0 || rva == 0x4bc0 { 3 } else { 0 };
         let m = |o: u32| if o >= 0x171 { o + d } else { o };
         let between = t.img.rel32_target(f + 0x34);
         let burst = t.img.rel32_target(f + m(0x236));
         let take = t.img.rel32_target(f + m(0x242));
-        let start = t.img.rel32_target(between + 0xce);
+        // `magic_0347`'s object between: 5 bytes more after `+0xc0`
+        let bsh = if dll == 347 { 5 } else { 0 };
+        let start = t.img.rel32_target(between + 0xce + bsh);
+        let pool_call = if dll == 347 { 0x98 } else { 0x9a };
         let ans = SCRATCH + 0x7d0;
         // the slots of the object between, the burst, the sparks and the trail
         log_calls(&mut t, 262, 4, &[], |m, a, k| {
@@ -3669,9 +3682,9 @@ fn spark_tasks() {
             t.set_u32(actors + 4 * i, 0x0ac7_0000 + i);
         }
         t.set_u32(op(&t, between, 0x2b), 0x0ac7_00ff);
-        t.set_u32(op(&t, between, 0x177), 0x0177_0000);
+        t.set_u32(op(&t, between, 0x177 + bsh), 0x0177_0000);
         let gs = SCRATCH + 0x980;
-        t.set_u32(op(&t, between, 0x4f2), gs);
+        t.set_u32(op(&t, between, 0x4f2 + bsh), gs);
         t.set_u32(gs + 0x10, 0x00a5_0010);
         t.set_u32(gs + 0x20, 0x00a5_0020);
         // the burst's constants (`s8_misc`'s spark-burst test)
@@ -3687,9 +3700,21 @@ fn spark_tasks() {
             let a = op(&t, burst, bop(o));
             set_f(&mut t, a, x);
         }
-        t.set_u32(op(&t, burst, 0x4a), (-150i32).cast_unsigned());
-        t.set_u32(op(&t, burst, 0x50), 1);
-        t.set_u32(op(&t, burst, 0x14), 0x0a0a_0001);
+        if dll == 347 {
+            // `r20::burst_0491`'s copy: slot 618's distance (a middle one),
+            // the globals
+            log_calls(&mut t, 618, 5, &[], |m, a, _| {
+                m.w32(a[2], (-150i32).cast_unsigned());
+                0x618
+            });
+            for o in [0x14u32, 0x53, 0x5e, 0x111, 0x15d, 0x1cc] {
+                t.set_u32(op(&t, burst, o), 0x0a00_0000 + o);
+            }
+        } else {
+            t.set_u32(op(&t, burst, 0x4a), (-150i32).cast_unsigned());
+            t.set_u32(op(&t, burst, 0x50), 1);
+            t.set_u32(op(&t, burst, 0x14), 0x0a0a_0001);
+        }
         // the pool of 0x74-byte records
         let pw = |t: &Twin, o: u32| t.img.word(take + o);
         let (idx, n, table, page) = (pw(&t, 0x08), pw(&t, 0x0f), pw(&t, 0x37), pw(&t, 0x2b));
@@ -3718,7 +3743,12 @@ fn spark_tasks() {
             t.set_u32(LOG, 0);
             set_f(&mut t, ans, 0.5 + c as f32);
             set_f(&mut t, ans + 4, 1.0);
-            start_first_setup(&mut t, start, 0x9a, 8, c);
+            start_first_setup(&mut t, start, pool_call, 8, c);
+            if dll == 347 {
+                // the burst's own object start
+                let bstart = t.img.rel32_target(burst + 0xcc);
+                start_first_setup(&mut t, bstart, 0x98, 8, c);
+            }
             t.write(s, &floats(0x600 / 4, c));
             t.set_u32(s + 0x504, 1);
             t.set_u32(s + 0x50c, wait.cast_unsigned());

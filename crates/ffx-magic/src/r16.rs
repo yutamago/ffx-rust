@@ -1881,8 +1881,10 @@ pub const SPRAY2_0489: Sig = Sig {
 };
 
 /// `magic_0450`'s caster object start (0x10005b40, internal, no
-/// arguments used; a cookie frame, 689 bytes): with the block `B = *G_B`
-/// the object `O = B+0x260` started
+/// arguments used; a cookie frame, 689 bytes; also `magic_0393`
+/// 0x10001b50, [`CASTER_START_0393`](crate::r21::CASTER_START_0393),
+/// with `O = B+0xbe0` and index 10, both read from the code): with the
+/// block `B = *G_B` the object `O = B+0x260` started
 /// ([`start_object_at`](crate::s4_misc::start_object_at): scale `*K`,
 /// index 2, owners 0) at `B+0x1c10`, `O+0xd4 -= K1`, its yaw `O+0xc4` =
 /// `B+0x1ee0`; the angles `B+0x1b90..` `(0, yaw, 0, 0)`; the matrix `M =
@@ -1904,9 +1906,11 @@ pub fn caster_start_0450<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let st0 = |o: crate::Out| crate::m0018::st0_f32(o.st0);
     let e = fr.esp;
     let b = g.read::<u32>(w(0x1b));
-    let o = b.wrapping_add(0x260);
+    // lea esi, [ebx + d] (0x260; `magic_0393` 0xbe0); push i (2; 0393 10)
+    let o = b.wrapping_add(w(0x26));
+    let index = crate::r11_misc::imm8(img, f + 0x2d);
     let at = img.rel32_target(f + 0x31);
-    crate::s4_misc::start_object_at(g, img, at, o, k(g, 0x14), 2, 0, 0);
+    crate::s4_misc::start_object_at(g, img, at, o, k(g, 0x14), index, 0, 0);
     for c in [0u32, 4, 8, 0xc] {
         let v = g.read::<u32>(b.wrapping_add(0x1c10 + c));
         g.write::<u32>(o + 0xd0 + c, v);
@@ -1924,7 +1928,7 @@ pub fn caster_start_0450<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // the start's `(2, 0, ecx, 0)` stay under the calls (the `ecx` word
     // and below not passed on)
     let mut st = Pushes::default();
-    st.push_all(&[0, 2, m]);
+    st.push_all(&[0, index, m]);
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x3ac), fr.ecx);
     st.push(g.read::<u32>(w(0xce)));

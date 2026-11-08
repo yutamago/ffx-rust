@@ -5446,12 +5446,24 @@ fn fold_angle(g: &impl crate::Mem, img: &Image, f: u32, a: f32, ops: [u32; 4]) -
 /// ([`sprite_init_colour`](crate::sb_misc::sprite_init_colour), `X+0x260`,
 /// `(*G_S)+0x10`). Returns its `eax`.
 ///
-/// `magic_0134` 0x10001980 (1,331 bytes; 2 DLLs).
+/// `magic_0134` 0x10001980 (1,331 bytes; 2 DLLs). `magic_0347`
+/// 0x10003c60 ([`SUMMON_OBJECT_BETWEEN_0347`](crate::r21::SUMMON_OBJECT_BETWEEN_0347),
+/// 1,336 bytes) starts the object animated
+/// ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2), index
+/// 0, `(0x10, CB)` its reset's words, `CB` a callback immediate).
 #[allow(clippy::too_many_lines)] // the original's set-up, in order
 pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, div, mul, sub};
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `magic_0347`'s copy pushes a callback first (`push imm32` at
+    // `+0xc0`) for the animated start: the code after it 5 bytes later
+    let d = if img.word(f + 0xc0) & 0xff == 0x68 {
+        5
+    } else {
+        0
+    };
+    let at = |o: u32| if o > 0xc0 { o + d } else { o };
+    let w = |o: u32| op(img, f, at(o));
     let t = |g: &G, s: u32| slot_target(g, w(0x51), s);
     let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
     let x = fr.ecx;
@@ -5468,13 +5480,15 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     g.call(t(g, 268), 0, &[none, 0x11, v1]);
     g.write::<u32>(p + 0x3c, 0x3f80_0000);
     // the object start: `(I, w, 0x10, P+0x28)`, `w` taken as 0, `I` the
-    // immediate `+0xc4` (1 in `magic_0133`)
+    // immediate `+0xc4` (1 in `magic_0133`); `magic_0347`'s `(0, w, 0x10,
+    // CB)`, `CB` the callback pushed first
     let call = p.wrapping_sub(0x14);
-    let index = img.word(f + 0xc4) & 0xff;
-    for (k, word) in (1u32..).zip([index, 0, 0x10, p + 0x28]) {
+    let index = img.word(f + at(0xc4)) & 0xff;
+    let fourth = if d == 0 { p + 0x28 } else { img.word(f + 0xc1) };
+    for (k, word) in (1u32..).zip([index, 0, 0x10, fourth]) {
         g.write::<u32>(call + 4 * k, word);
     }
-    let start = img.rel32_target(f + 0xce);
+    let start = img.rel32_target(f + at(0xce));
     let scale = g.read::<u32>(w(0xb7));
     let sub_fr = Frame {
         at: start,
@@ -5484,14 +5498,18 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
         edx: x,
         xmm: [0, 0, 0, u128::from(scale)],
     };
-    crate::o6_fam_object::start_object_first(g, img, start, &sub_fr);
+    if d == 0 {
+        crate::o6_fam_object::start_object_first(g, img, start, &sub_fr);
+    } else {
+        crate::s6_misc::start_object_anim_2(g, img, &sub_fr);
+    }
     for k in 0..4 {
         let v = g.read::<u32>(v0 + 4 * k);
         g.write::<u32>(x + 0xd0 + 4 * k, v);
     }
-    let first = entry_actor(g, img, f, (0x2b, 0x10b, 0x115), 0);
+    let first = entry_actor(g, img, f, (0x2b, at(0x10b), at(0x115)), 0);
     let yaw = st0(g.call(t(g, 333), 0, &[first]));
-    let fold = [0x12e, 0x13c, 0x146, 0x156];
+    let fold = [0x12e, 0x13c, 0x146, 0x156].map(at);
     let yaw = fold_angle(g, img, f, yaw, fold);
     g.write::<f32>(x + 0xc4, yaw);
     let n = if i == u32::MAX {
@@ -5539,7 +5557,7 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     let dx = sub(lf(g, 0x30), lf(g, 0x20));
     #[allow(clippy::cast_possible_truncation)] // `cvtpd2ps`
     let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
-    let a = fold_angle(g, img, f, a, [0x2db, 0x2fa, 0x2ea, 0x304]);
+    let a = fold_angle(g, img, f, a, [0x2db, 0x2fa, 0x2ea, 0x304].map(at));
     let m = p + 0x50;
     g.call(t(g, 235), 0, &[m]);
     g.call(t(g, 329), 0, &[m, m, a.to_bits()]);
@@ -5550,7 +5568,7 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
         g.write::<f32>(x + 0x4cc + 4 * k, v);
     }
     let i = g.read::<u32>(x + 0x504);
-    let actor = entry_actor(g, img, f, (0x3ce, 0x3d5, 0x3e0), i);
+    let actor = entry_actor(g, img, f, (at(0x3ce), at(0x3d5), at(0x3e0)), i);
     let h = st0(g.call(t(g, 12), 0, &[actor]));
     if g.read::<f32>(x + 0x4d0) > h {
         g.write::<f32>(x + 0x4d0, sub(h, g.read::<f32>(w(0x40d))));
@@ -5573,7 +5591,7 @@ pub fn summon_object_between<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     g.write::<u32>(x + 0x508, 0xc);
     g.write::<u32>(x + 0x510, 0x10);
     // the owner's field: `+0x10`, `+0x20` in `magic_0132` and `0133`
-    let owner = g.read::<u32>(g.read::<u32>(w(0x4f2)) + (img.word(f + 0x4f8) & 0xff));
+    let owner = g.read::<u32>(g.read::<u32>(w(0x4f2)) + (img.word(f + at(0x4f8)) & 0xff));
     g.write::<u32>(p.wrapping_sub(4), v0);
     let eax = crate::sb_misc::sprite_init_colour(g, p.wrapping_sub(8), x + 0x260, owner);
     g.write::<u32>(x + 0x484, 0x80);
