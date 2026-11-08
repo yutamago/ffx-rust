@@ -2979,6 +2979,394 @@ pub const DEALT_NODES_START_0492: Sig = Sig {
     imports: &[],
 };
 
+/// `magic_0641`'s spark spawn (0x10001000, internal, cdecl `(pos)`; an
+/// `ebp` frame, 638 bytes): a free record `S`
+/// ([`record_take`](crate::s4_small::record_take), the resource `*G_R`;
+/// none: returns 0); `S+0x28`, `+0x24` 16 and `+0x2c` 12; with `u =
+/// ((slot 324 & 0x7fff) / K - K1) K2` (a fresh draw each): the position
+/// `pos + u` into `S+0x4..`, three more `u` into `S+0x14..`; `S+0x58` =
+/// slot 403 `((r / K) K3)` (ST0); `S+0x54` = `(r / K) K4`; seven colour
+/// words; `S+0x8c` = `(r / K) K4` and `S+0x90` that times `K5`. Returns
+/// the last draw `& 0x7fff`.
+pub fn spawn_0641<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let take = Frame {
+        at: img.rel32_target(f + 0xc),
+        esp: fr.esp.wrapping_sub(0x10),
+        edx: g.read::<u32>(w(0x06)),
+        ..*fr
+    };
+    let sp = crate::s4_small::record_take(g, img, &take).eax;
+    if sp == 0 {
+        return Ret::eax(0);
+    }
+    let draw = |g: &mut G, tab: u32| {
+        // call width: 0
+        g.call(slot_target(g, w(tab), 0x510 / 4), fr.ecx, &[]).eax & 0x7fff
+    };
+    for (at, v) in [(0x28u32, 0x10u32), (0x24, 0x10), (0x2c, 0xc)] {
+        g.write::<u32>(sp + at, v);
+    }
+    let pos = fr.arg(g, 0);
+    for (c, (tab, k1, k2, k3)) in [
+        (0x1cu32, 0x51u32, 0x5eu32, 0x66u32),
+        (0x56, 0x90, 0x98, 0xa0),
+        (0x88, 0xcb, 0xd3, 0xdb),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = draw(g, tab);
+        let u = mul(sub(div(cvt(r), k(g, k1)), k(g, k2)), k(g, k3));
+        let x = add(u, g.read::<f32>(pos + 4 * c as u32));
+        g.write::<f32>(sp + 4 + 4 * c as u32, x);
+    }
+    for (c, (tab, k1, k2, k3)) in [
+        (0xc3u32, 0x106u32, 0x10eu32, 0x116u32),
+        (0xfe, 0x13c, 0x144, 0x14c),
+        (0x134, 0x172, 0x17a, 0x182),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = draw(g, tab);
+        let u = mul(sub(div(cvt(r), k(g, k1)), k(g, k2)), k(g, k3));
+        g.write::<f32>(sp + 0x14 + 4 * c as u32, u);
+    }
+    let r = draw(g, 0x16a);
+    let a = mul(div(cvt(r), k(g, 0x1a8)), k(g, 0x1b6));
+    // push ecx; movss [esp], a; call
+    let t = g.call(slot_target(g, w(0x1a0), 0x64c / 4), fr.ecx, &[a.to_bits()]);
+    g.write::<f32>(sp + 0x58, crate::m0018::st0_f32(t.st0));
+    let r = draw(g, 0x1c3);
+    g.write::<f32>(sp + 0x54, mul(div(cvt(r), k(g, 0x1ea)), k(g, 0x1f2)));
+    let r = draw(g, 0x1e2);
+    let x = mul(div(cvt(r), k(g, 0x21a)), k(g, 0x229));
+    for (at, v) in [(0x6cu32, 0x62u32), (0x70, 0x74), (0x74, 0xba), (0x78, 0x10)] {
+        g.write::<u32>(sp + at, v);
+    }
+    g.write::<f32>(sp + 0x8c, x);
+    for (at, v) in [(0x7cu32, 0x2bu32), (0x80, 0x2a), (0x84, 0x6b), (0x88, 0)] {
+        g.write::<u32>(sp + at, v);
+    }
+    g.write::<f32>(sp + 0x90, mul(x, k(g, 0x247)));
+    Ret::eax(r)
+}
+
+/// [`spawn_0641`] (the `rel32`: the record take).
+pub const SPAWN_0641: Sig = Sig {
+    len: 638,
+    hash: 0xb494_5f63_e9db_be75,
+    calls: &[(0xc, Callee::Sig(&crate::s4_small::RECORD_TAKE))],
+    imports: &[],
+};
+
+/// `magic_0641`'s part aim (0x100016d0, internal: `ecx` = the part's
+/// index `i`, `edx` = the part `P`; a cookie frame, `L(o)` = `ebp - o`,
+/// 406 bytes): `P+0x60..+0x68` 0.024, `P+0x6c` 1.0; the camera's matrix
+/// (slot 724 into `L(0xd4)`, slot 327 into `L(0x114)`, slot 230 into
+/// `L(0x54)`); the point `T[i]` (16 bytes each from `+0x81`, its `z`
+/// first set to 20.0) moved (slot 229 into `L(0x14)`) and added to
+/// `L(0x24)` (slot 248); the matrix `L(0x54)` scaled by 0.024 (slot 235's
+/// identity `L(0x94)`, slot 231) and copied into `*G_M` (slot 230), slots
+/// 231 and 230 on the game's matrices; `*G_C = CB` and slot 712 `(P,
+/// 0x30)` with the game flag `*G_L` 1 (0 after). Returns the flag
+/// pointer.
+pub fn part_aim_0641<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let t = |g: &G, at: u32, slot: u32| slot_target(g, w(at), slot / 4);
+    let (i, p) = (fr.ecx, fr.edx);
+    let mut st = Pushes::default();
+    st.push(l(0xd4));
+    for at in [0x60u32, 0x64, 0x68] {
+        g.write::<u32>(p + at, 0x3cc4_9ba6);
+    }
+    g.write::<u32>(p + 0x6c, 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x1f, 0xb50), fr.ecx);
+    st.push_all(&[l(0xd4), l(0x114)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x58, 0x51c), fr.ecx);
+    st.push_all(&[l(0x114), l(0x54)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x70, 0x398), fr.ecx);
+    let pt = (i << 4).wrapping_add(w(0x81));
+    st.push_all(&[pt, l(0x54), l(0x14)]);
+    g.write::<u32>((i << 4).wrapping_add(w(0x95)), w(0x99));
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x8f, 0x394), fr.ecx);
+    st.push_all(&[l(0x14), l(0x24), l(0x24)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xaf, 0x3e0), fr.ecx);
+    st.push(l(0x94));
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xc3, 0x3ac), fr.ecx);
+    st.push_all(&[l(0x94), l(0x54), l(0x54)]);
+    for at in [0x6cu32, 0x80, 0x94] {
+        g.write::<u32>(l(at), 0x3cc4_9ba6);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xdc, 0x39c), fr.ecx);
+    st.push_all(&[l(0x54), g.read::<u32>(w(0x10b))]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x105, 0x398), fr.ecx);
+    let mut st = Pushes::default();
+    st.push_all(&[
+        g.read::<u32>(w(0x127)),
+        g.read::<u32>(w(0x12d)),
+        g.read::<u32>(w(0x133)),
+    ]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x118, 0x39c), fr.ecx);
+    st.push_all(&[g.read::<u32>(w(0x13b)), g.read::<u32>(w(0x146))]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x140, 0x398), fr.ecx);
+    let c = g.read::<u32>(w(0x153));
+    g.write::<u32>(c, w(0x159));
+    let flag = g.read::<u32>(w(0x15e));
+    g.write::<u32>(flag, 1);
+    st.push_all(&[0x30, p]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x16b, 0xb20), fr.ecx);
+    let flag = g.read::<u32>(w(0x179));
+    g.write::<u32>(flag, 0);
+    Ret::eax(flag)
+}
+
+/// [`part_aim_0641`] (the `rel32`: the cookie check).
+pub const PART_AIM_0641: Sig = Sig {
+    len: 406,
+    hash: 0x4adf_7e67_5e7e_0839,
+    calls: &[(0x18e, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0641`'s parts' set-up (0x10001920, cdecl `(P0)`, 70 bytes):
+/// for each of the 9 parts `i` (`P = P0 + 0x80 i`) whose word `A[i]`
+/// (`+0x13`) is set: when `B[i]` (`+0x1d`) is 0x17 its defaults
+/// ([`part_defaults`](crate::m0641::part_defaults)), then its aim
+/// ([`part_aim_0641`]). Returns 1.
+pub fn parts_0641<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let mut p = fr.arg(g, 0);
+    // push esi; push edi; call: the callees' return addresses
+    let esp = fr.esp.wrapping_sub(0x10);
+    for i in 0..9u32 {
+        if g.read::<u32>(w(0x13) + 4 * i) != 0 {
+            if g.read::<u32>(w(0x1d) + 4 * i) == 0x17 {
+                let defaults = Frame {
+                    at: img.rel32_target(f + 0x27),
+                    esp,
+                    ecx: p,
+                    ..*fr
+                };
+                crate::m0641::part_defaults(g, img, &defaults);
+            }
+            let aim = Frame {
+                at: img.rel32_target(f + 0x30),
+                esp,
+                ecx: i,
+                edx: p,
+                ..*fr
+            };
+            part_aim_0641(g, img, &aim);
+        }
+        p = p.wrapping_add(0x80);
+    }
+    Ret::eax(1)
+}
+
+/// [`parts_0641`] (the `rel32`s: the part defaults and the aim).
+pub const PARTS_0641: Sig = Sig {
+    len: 70,
+    hash: 0xf2c6_b5eb_1223_e2ea,
+    calls: &[
+        (0x27, Callee::Sig(&crate::m0641::PART_DEFAULTS)),
+        (0x30, Callee::Sig(&PART_AIM_0641)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0641`'s parts' scaled aim (0x10001a60, cdecl `(P0)`; a cookie
+/// frame, `L(o)` = `ebp - o`, 523 bytes): for each of the 9 parts `k`
+/// (`P = P0 + 0x80 k`) whose word `A[k]` (`+0x32`) is set: `P+0x60` the
+/// word `C[k]` (`+0x3f`), `P+0x64`, `+0x68` 0.05 and `+0x6c` 1.0; as
+/// [`part_aim_0641`] the camera's matrix, the point `T[k]` (16 bytes from
+/// `+0x1d`, `z` 20.0) moved and added, the matrix scaled by `(C[k], 0.05,
+/// 0.05)` and copied into `*G_M`, slots 231 and 230 on the game's
+/// matrices; the halfword `P+0x76` = `trunc(S[k] K)` (`S` at `+0x47`);
+/// `*G_C = CB` and slot 712 `(P, 0x30)` under the game flag (kept).
+/// Returns 1.
+#[allow(clippy::too_many_lines)] // the original's calls, in order
+pub fn parts_scaled_0641<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::mul;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let t = |g: &G, at: u32, slot: u32| slot_target(g, w(at), slot / 4);
+    let p0 = fr.arg(g, 0);
+    for k in 0..9u32 {
+        let p = p0.wrapping_add(0x80 * k);
+        let e = p.wrapping_add(0x64);
+        if g.read::<u32>(w(0x32) + 4 * k) == 0 {
+            continue;
+        }
+        let c = g.read::<u32>(w(0x3f) + 4 * k);
+        let sv = g.read::<f32>(w(0x47) + 4 * k);
+        g.write::<u32>(e.wrapping_sub(4), c);
+        let mut st = Pushes::default();
+        st.push(l(0xd4));
+        g.write::<u32>(e, 0x3d4c_cccd);
+        g.write::<u32>(e + 4, 0x3d4c_cccd);
+        g.write::<u32>(e + 8, 0x3f80_0000);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x56, 0xb50), fr.ecx);
+        st.push_all(&[l(0xd4), l(0x114)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x8d, 0x51c), fr.ecx);
+        st.push_all(&[l(0x114), l(0x54)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xa5, 0x398), fr.ecx);
+        let pt = w(0x1d).wrapping_add(0x10 * k);
+        st.push_all(&[pt, l(0x54), l(0x14)]);
+        g.write::<u32>(pt + 8, 0x41a0_0000);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xbb, 0x394), fr.ecx);
+        st.push_all(&[l(0x14), l(0x24), l(0x24)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xd8, 0x3e0), fr.ecx);
+        st.push(l(0x94));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xec, 0x3ac), fr.ecx);
+        let cx = g.read::<u32>(w(0xfc) + 4 * k);
+        st.push_all(&[l(0x94), l(0x54), l(0x54)]);
+        g.write::<u32>(l(0x6c), 0x3d4c_cccd);
+        g.write::<u32>(l(0x80), 0x3d4c_cccd);
+        g.write::<u32>(l(0x94), cx);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x10d, 0x39c), fr.ecx);
+        st.push_all(&[l(0x54), g.read::<u32>(w(0x13a))]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x134, 0x398), fr.ecx);
+        let mut st = Pushes::default();
+        st.push_all(&[
+            g.read::<u32>(w(0x156)),
+            g.read::<u32>(w(0x15c)),
+            g.read::<u32>(w(0x162)),
+        ]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x147, 0x39c), fr.ecx);
+        st.push_all(&[g.read::<u32>(w(0x16a)), g.read::<u32>(w(0x175))]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x16f, 0x398), fr.ecx);
+        let v = ffx_bridge::x87::cvttsd2si(f64::from(mul(sv, g.read::<f32>(w(0x18d)))));
+        g.write::<u16>(e + 0x12, v as u16);
+        let cb = g.read::<u32>(w(0x19a));
+        g.write::<u32>(cb, w(0x1a2));
+        let flag = g.read::<u32>(w(0x1a7));
+        let held = g.read::<u32>(flag);
+        g.write::<u32>(flag, 1);
+        st.push_all(&[0x30, p]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x1be, 0xb20), fr.ecx);
+        let flag = g.read::<u32>(w(0x1cb));
+        g.write::<u32>(flag, held);
+    }
+    Ret::eax(1)
+}
+
+/// [`parts_scaled_0641`] (the `rel32`: the cookie check).
+pub const PARTS_SCALED_0641: Sig = Sig {
+    len: 523,
+    hash: 0x0af9_9993_a4f0_cd4d,
+    calls: &[(0x203, Callee::Any)],
+    imports: &[],
+};
+
+/// [`effect_boot`](crate::o6_fam_boot::effect_boot) in `magic_0641`
+/// (0x10001c70, 496 bytes: a second table cleared, slots 377 and 381 in
+/// its tail).
+pub const EFFECT_BOOT_0641_1C70: Sig = Sig {
+    len: 496,
+    hash: 0x668b_ef66_ff8b_e501,
+    calls: &[
+        (0x14a, Callee::Import("memset")),
+        (0x18d, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
+
+/// `magic_0641`'s spark step (0x10001310, an overlay table entry, no
+/// arguments; a cookie frame, 121 bytes): slot 237 `(*G_A, 0, 0, L)`
+/// puts the point `L = ebp - 0x14`; two sparks spawned there
+/// ([`spawn_0641`], the earlier words left on the stack); the sprites
+/// stepped ([`sprites_step_global`](crate::s7_misc::sprites_step_global))
+/// and drawn ([`sprite_frames`](crate::s9_misc::sprite_frames), `dt` 0)
+/// into `*G_R`; slot 382 `(0, 0)`. Returns 1.
+pub fn sparks_0641<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = fr.esp;
+    let pt = e.wrapping_sub(0x18);
+    let a = g.read::<u32>(w(0x25));
+    // call width: 4
+    g.call(slot_target(g, w(0x15), 0x3b4 / 4), fr.ecx, &[a, 0, 0, pt]);
+    for (n, at) in [(1u32, 0x30u32), (2, 0x39)] {
+        // push L; call (the earlier words stay)
+        let esp = e.wrapping_sub(0x2c + 4 * n);
+        g.write::<u32>(esp + 4, pt);
+        let spawn = Frame {
+            at: img.rel32_target(f + at),
+            esp,
+            ..*fr
+        };
+        spawn_0641(g, img, &spawn);
+    }
+    let step = Frame {
+        at: img.rel32_target(f + 0x3e),
+        esp: e.wrapping_sub(0x34),
+        ..*fr
+    };
+    crate::s7_misc::sprites_step_global(g, img, &step);
+    // add esp, 0x14; xorps xmm3, xmm3; call
+    let frames = Frame {
+        at: img.rel32_target(f + 0x49),
+        esp: e.wrapping_sub(0x20),
+        xmm: [0, 0, 0, 0],
+        ..*fr
+    };
+    let r = crate::s9_misc::sprite_frames(g, img, &frames).eax;
+    g.write::<u32>(w(0x4e), r);
+    let mut st = Pushes::default();
+    st.push_all(&[pt, 0, 0]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, slot_target(g, w(0x53), 0x5f8 / 4), fr.ecx);
+    Ret::eax(1)
+}
+
+/// [`sparks_0641`] (the `rel32`s: two spawns, the sprites' step and
+/// frames, the cookie check).
+pub const SPARKS_0641: Sig = Sig {
+    len: 121,
+    hash: 0x34ad_a164_c3b7_8e18,
+    calls: &[
+        (0x30, Callee::Sig(&SPAWN_0641)),
+        (0x39, Callee::Sig(&SPAWN_0641)),
+        (0x3e, Callee::Sig(&crate::s7_misc::SPRITES_STEP_GLOBAL)),
+        (0x49, Callee::Sig(&crate::s9_misc::SPRITE_FRAMES)),
+        (0x71, Callee::Any),
+    ],
+    imports: &[],
+};
+
 /// The load steps ([`load_step`](crate::r9_load::load_step)) whose
 /// start-up is a round 16 port: `name => SIG, shape, start-up port, its
 /// Sig`.

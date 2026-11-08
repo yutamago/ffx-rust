@@ -2861,6 +2861,10 @@ ports! {
     "r16 thunk: mean visit 0613" => r16::JMP_MEAN_VISIT_0613, sl_wrap::ecx_jmp;
     "r16 load step 0675" => r16::LOAD_0675, r16::load_0675;
     "r16 load step 0492" => r16::LOAD_0492, r16::load_0492;
+    "r16 parts 0641" => r16::PARTS_0641, r16::parts_0641;
+    "r16 parts scaled 0641" => r16::PARTS_SCALED_0641, r16::parts_scaled_0641;
+    "o6 fam boot effect_boot 0641@1c70" => r16::EFFECT_BOOT_0641_1C70, o6_fam_boot::effect_boot;
+    "r16 sparks 0641" => r16::SPARKS_0641, r16::sparks_0641;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3439,6 +3443,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r16 dealt start 0494", &r16::DEALT_START_0494),
     ("r16 dealt kind start 0675", &r16::DEALT_KIND_START_0675),
     ("r16 dealt nodes start 0492", &r16::DEALT_NODES_START_0492),
+    ("r16 spawn 0641", &r16::SPAWN_0641),
+    ("r16 part aim 0641", &r16::PART_AIM_0641),
     ("r16 summon object 0683", &r16::SUMMON_OBJECT_0683),
     ("r16 texture 0661", &r16::TEXTURE_0661),
     ("r16 spawn 0489", &r16::SPAWN_0489),

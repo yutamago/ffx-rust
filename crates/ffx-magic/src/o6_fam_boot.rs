@@ -25,7 +25,8 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 ///    (`H` re-read from `G_H` each time);
 /// 6. `memset(M, 0, 0x110)`;
 /// 7. the copy's tail: flag stores (`mov [G], imm`) and slot 260 `(K)`
-///    calls whose result goes to a global.
+///    calls whose result goes to a global (`magic_0641`'s: a second
+///    `memset` and other slots).
 ///
 /// Each slot call sees the words the earlier ones left until the copy's
 /// `add esp`. Returns 1.
@@ -177,6 +178,14 @@ pub fn effect_boot<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 s.pop((n / 4) as usize);
             }
             0xa3 => g.write::<u32>(c.word(1, 5), out),
+            // `magic_0641`'s second table: `call memset` on the three
+            // words just pushed (`(M, 0, 0x110)`)
+            0xe8 => {
+                let ws = s.words();
+                let (m, fill, len) = (ws[0], ws[1], ws[2]);
+                g.write_bytes(m, &vec![fill as u8; len as usize]);
+                c.skip(5);
+            }
             _ => break,
         }
     }

@@ -1206,3 +1206,207 @@ fn dealt_nodes_start_0492() {
     let at = t.at(0x28f0);
     load_cases_d(&mut t, at, 0);
 }
+
+/// `r16::spawn_0641` (`magic_0641` 0x10001000): a free record and none.
+#[test]
+fn spawn_0641() {
+    let Some(mut t) = twin(641) else { return };
+    let f = t.at(0x1000);
+    let take = t.img.rel32_target(f + 0xc);
+    spawn_slots_0489(&mut t);
+    let recs = SCRATCH + 0x2100;
+    t.set_u32(t.img.word(take + 0x2), 3);
+    t.set_u32(t.img.word(take + 0xb), recs);
+    t.set_u32(t.img.word(f + 0x06), 0x00ae_0006);
+    let pos = SCRATCH + 0x600;
+    for (i, x) in [1.5f32, -2.25, 4.0].into_iter().enumerate() {
+        t.set_u32(pos + 4 * i as u32, x.to_bits());
+    }
+    for (k, live) in [1u32, 3].into_iter().enumerate() {
+        t.set_u32(SCRATCH + 0x710, 7 * k as u32);
+        t.write(recs, &[0x3c; 0x94 * 3]);
+        for i in 0..3 {
+            t.set_u32(recs + 0x94 * i, u32::from(i < live));
+        }
+        t.check(
+            f,
+            Call::default(),
+            &[pos],
+            Eax::Checked,
+            ffx_magic::r16::spawn_0641,
+        );
+    }
+}
+
+/// `r16::parts_0641` and `r16::part_aim_0641` (`magic_0641` 0x10001920,
+/// 0x100016d0): nine parts, some off, some of kind 0x17 (their
+/// defaults); the matrix slots log what they get.
+#[test]
+fn parts_0641() {
+    let Some(mut t) = twin(641) else { return };
+    let f = t.at(0x1920);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let aim = t.img.rel32_target(f + 0x30);
+    let wa = |t: &magic::Twin, o: u32| t.img.word(aim + o);
+    for (s, k) in [
+        (724u32, 1usize),
+        (327, 2),
+        (230, 2),
+        (229, 3),
+        (248, 3),
+        (235, 1),
+        (231, 3),
+        (712, 2),
+    ] {
+        rec(&mut t, s, k, move |m, a| {
+            let n = m.r32(SCRATCH + 0x7c00);
+            m.w32(SCRATCH + 0x7c00, n + 1);
+            let src = match (s, k) {
+                (229 | 248 | 231, _) => a[2],
+                (_, 1) => a[0],
+                _ => a[1],
+            };
+            for i in 0..4 {
+                let v = m.r32(src.wrapping_add(4 * i));
+                m.w32(SCRATCH + 0x7c04 + 0x10 * (n % 32) + 4 * i, v);
+                if s != 712 {
+                    let x = f32::from_bits(v) * 0.5 + i as f32;
+                    m.w32(a[0] + 4 * i, x.to_bits());
+                }
+            }
+            (s << 16) ^ a[0]
+        });
+    }
+    // the part defaults' part start (as `magic_0641.rs`' own test)
+    let table = SCRATCH + 0x200;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    magic_owna::recs(&mut t, &[(714, 5)]);
+    let defaults = t.img.rel32_target(f + 0x27);
+    let o = SCRATCH + 0x100;
+    t.set_u32(t.img.word(defaults + 0xd), o);
+    t.set_u32(o + 0x10, 0x00b0_0010);
+    t.set_u32(t.img.word(defaults + 0x1), SCRATCH + 0x24);
+    for o in [0x10bu32, 0x127, 0x12d, 0x133, 0x13b, 0x146] {
+        t.set_u32(wa(&t, o), SCRATCH + 0x9000 + 0x40 * o);
+    }
+    for o in [0x153u32, 0x15e, 0x179] {
+        t.set_u32(wa(&t, o), SCRATCH + 0x7f00);
+    }
+    for i in 0..9u32 {
+        t.set_u32(w(&t, 0x13) + 4 * i, u32::from(i % 3 != 2));
+        t.set_u32(w(&t, 0x1d) + 4 * i, if i % 2 == 0 { 0x17 } else { 3 });
+        for c in 0..4 {
+            t.set_u32(
+                wa(&t, 0x81) + 16 * i + 4 * c,
+                (i as f32 + c as f32 * 0.5).to_bits(),
+            );
+        }
+    }
+    let parts = SCRATCH + 0xa000;
+    t.write(parts, &[0x3e; 0x80 * 9]);
+    t.check_entry(f, Call::default(), &[parts], Eax::Checked);
+}
+
+/// `r16::parts_scaled_0641` (`magic_0641` 0x10001a60): nine parts, some
+/// off; the matrix slots log what they get; the scales' halfword.
+#[test]
+fn parts_scaled_0641() {
+    let Some(mut t) = twin(641) else { return };
+    let f = t.at(0x1a60);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    for (s, k) in [
+        (724u32, 1usize),
+        (327, 2),
+        (230, 2),
+        (229, 3),
+        (248, 3),
+        (235, 1),
+        (231, 3),
+        (712, 2),
+    ] {
+        rec(&mut t, s, k, move |m, a| {
+            let n = m.r32(SCRATCH + 0x7c00);
+            m.w32(SCRATCH + 0x7c00, n + 1);
+            let src = match (s, k) {
+                (229 | 248 | 231, _) => a[2],
+                (_, 1) => a[0],
+                _ => a[1],
+            };
+            for i in 0..4 {
+                let v = m.r32(src.wrapping_add(4 * i));
+                m.w32(SCRATCH + 0x7c04 + 0x10 * (n % 32) + 4 * i, v);
+                if s != 712 {
+                    let x = f32::from_bits(v) * 0.5 + i as f32;
+                    m.w32(a[0] + 4 * i, x.to_bits());
+                }
+            }
+            (s << 16) ^ a[0]
+        });
+    }
+    for o in [0x13au32, 0x156, 0x15c, 0x162, 0x16a, 0x175] {
+        t.set_u32(w(&t, o), SCRATCH + 0x9000 + 0x40 * o);
+    }
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(lock, 0x00a1_0000);
+    // slot 712 keeps the game flag it runs under
+    rec(&mut t, 712, 2, move |m, a| {
+        let v = m.r32(lock);
+        m.w32(SCRATCH + 0x7f40, v ^ a[0]);
+        0x712
+    });
+    for o in [0x19au32, 0x1a7, 0x1cb] {
+        t.set_u32(w(&t, o), if o == 0x19a { SCRATCH + 0x7f10 } else { lock });
+    }
+    for i in 0..9u32 {
+        t.set_u32(w(&t, 0x32) + 4 * i, u32::from(i % 3 != 2));
+        t.set_u32(w(&t, 0x3f) + 4 * i, (0.25 + i as f32).to_bits());
+        t.set_u32(w(&t, 0x47) + 4 * i, (1.5 * i as f32 - 3.0).to_bits());
+        for c in 0..4 {
+            t.set_u32(
+                w(&t, 0x1d) + 16 * i + 4 * c,
+                (i as f32 + c as f32 * 0.5).to_bits(),
+            );
+        }
+    }
+    let parts = SCRATCH + 0xa000;
+    t.write(parts, &[0x3e; 0x80 * 9]);
+    t.check_entry(f, Call::default(), &[parts], Eax::Checked);
+}
+
+/// `r16::sparks_0641` (`magic_0641` 0x10001310): the point, the two
+/// spawns, the step, the frames and slot 382 with the records' count 0
+/// (one global for the take, the step and the frames, so nothing spawns:
+/// the spawns themselves are `spawn_0641`'s test).
+#[test]
+fn sparks_0641() {
+    let Some(mut t) = twin(641) else { return };
+    let f = t.at(0x1310);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    spawn_slots_0489(&mut t);
+    rec(&mut t, 0x3b4 / 4, 4, |m, a| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (1.0f32 + i as f32).to_bits());
+        }
+        0x3b4
+    });
+    rec(&mut t, 382, 2, |_, a| a[0] ^ 0x382);
+    let spawn = t.img.rel32_target(f + 0x30);
+    let take = t.img.rel32_target(spawn + 0xc);
+    let recs = SCRATCH + 0x2100;
+    t.set_u32(t.img.word(take + 0xb), recs);
+    t.set_u32(t.img.word(spawn + 0x06), 0x00ae_0006);
+    t.set_u32(w(&t, 0x25), 0x00ab_0025);
+    // the records' count (the step's and the frames' too): 0
+    t.set_u32(t.img.word(take + 0x2), 0);
+    for (k, free) in [3u32, 1].into_iter().enumerate() {
+        t.set_u32(SCRATCH + 0x710, 5 * k as u32);
+        t.write(recs, &[0x3c; 0x94 * 3]);
+        for i in 0..3 {
+            t.set_u32(recs + 0x94 * i, u32::from(i >= free));
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
