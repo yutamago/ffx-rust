@@ -3702,7 +3702,9 @@ fn spark_tasks() {
             (2i32, 0i32, 0.25f32, 0.125f32, 0u32, 0i32, 0u32),
             (1, 0, 0.25, 0.125, 0, 0, 4),
             (0, 3, 0.25, 0.125, 0, 0, 4),
-            (0, 0, 0.5, 0.25, 0, 6, 4),
+            // fade 1: halved to 0, so the trail (which reads the same
+            // word as its count) draws nothing; a dropped halving shows
+            (0, 0, 0.5, 0.25, 0, 1, 4),
             (0, 0, 0.9, 0.25, 0, 0, 4),
             (-1, -2, 0.5, f32::NAN, 0, -3, 4),
             (0, 0, 0.75, 0.25, 1, 0, 4),
@@ -3725,12 +3727,12 @@ fn spark_tasks() {
             set_f(&mut t, s + 0x500, step);
             t.set_u32(s + 0x508, count);
             t.set_u32(s + 0x484, fade.cast_unsigned());
-            // the trail: no sprites, its animation stopped
+            // the trail: no sprites, its animation stopped (its count
+            // `+0x224` is the fade `S+0x484` set above: 0 after the task)
             let trail = s + 0x260;
             t.set_u32(trail, 0x0a00 + c);
             t.set_u32(trail + 4, 1);
             t.set_u32(trail + 0x220, c % 32);
-            t.set_u32(trail + 0x224, 0);
             t.write(task, &[0x5a; 0x20]);
             t.set_u32(task + 0x14, s);
             for i in 0..12 {
