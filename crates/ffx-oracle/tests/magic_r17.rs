@@ -1934,3 +1934,212 @@ fn frame_0172() {
     }
     assert!(t.u32(row(268)) >= 1, "no throw ran");
 }
+
+/// The flight task's needs (at `ft`): its slots, the global `+0x18`, the
+/// free ring (`free` nodes) and the task list.
+fn flight_setup(t: &mut Twin, ft: u32, free: u16, listed: bool, k: u32) {
+    let op = |t: &Twin, o: u32| t.img.word(ft + o);
+    for (s, n, out) in [(217u32, 2usize, 1usize), (233, 3, 0)] {
+        rec(t, s, n, move |m, a| {
+            for i in 0..4 {
+                wf(m, a[out] + 4 * i, 0.375 * i as f32 + s as f32 * 0.01);
+            }
+            s
+        });
+    }
+    t.set_u32(op(t, 0x18), 0x0cc0_0007);
+    let (count, head) = (op(t, 0x158), op(t, 0x1cf));
+    magic_r11::ring(t, count, head, free, SCRATCH + 0x1d000);
+    task_list(t, ft, (0x236, 0x24f), listed, k);
+}
+
+/// `magic_0200` 0x10001210 (`r9_load::load_0200`, the start-up
+/// `r17::start_up_0200`): busy, not loaded, the start-up with slot 413 or
+/// 215, the yaw wrapped or kept, the free rings of one or three, the task
+/// lists empty or not.
+#[test]
+fn load_0200() {
+    let Some(mut t) = twin(200) else { return };
+    let f = t.at(0x1210);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let start = t.img.rel32_target(f + 0x5b);
+    let op = |t: &Twin, o: u32| t.img.word(start + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    for (k, (b, l, flag, free, listed)) in [
+        (1u32, 1u32, 0u32, 3u16, false),
+        (0, 0, 0, 3, false),
+        (0, 1, 0, 3, false),
+        (0, 1, 1, 4, true),
+        (0, 2, 0, 5, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        slots_0172(&mut t, k);
+        rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+        rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+        rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), k & 1);
+        t.set_u32(w(&t, 0x26), 0x0000_5e5e);
+        for o in [0x61u32, 0x6b] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        magic_r11::pools(&mut t, start, 1274);
+        let so = t.img.rel32_target(start + 0xe4);
+        magic_r11::object_start_auto(&mut t, so);
+        let sel = SCRATCH + 0x5000;
+        t.write(sel, &[2 + k as u8, 1, 0, 3]);
+        t.set_u32(op(&t, 0x55), sel);
+        for i in 0..8 {
+            t.set_u32(op(&t, 0x5f) + 4 * i, 0x0c0c_0100 + i);
+        }
+        let pick = t.img.rel32_target(start + 0x1d9);
+        t.set_u32(t.img.word(pick + 0x06), 0x0909_0000 + k);
+        t.set_u32(t.img.word(pick + 0x0c), sel);
+        t.set_u32(op(&t, 0x1f2), 0x0a00_01f2 + k);
+        let recs = op(&t, 0xaf) - 0xd4;
+        junk(&mut t, recs, 4 * 0x130 + 0xd4, k);
+        t.set_u32(op(&t, 0x3b6), flag);
+        t.set_u32(op(&t, 0x3ad), 0x03ad_0000 + k);
+        junk_ops(&mut t, start, &[0x2a, 0x3d, 0x42a, 0x414]);
+        let ft = t.img.rel32_target(start + 0x387);
+        flight_setup(&mut t, ft, free, listed, k);
+        let (count, head) = (op(&t, 0x43a), op(&t, 0x449));
+        magic_r11::ring(&mut t, count, head, free, SCRATCH + 0x1c000);
+        let tl = SCRATCH + 0x760;
+        junk(&mut t, tl, 0x20, k + 9);
+        t.set_u32(op(&t, 0x4b0), if listed { tl } else { 0 });
+        t.set_u32(op(&t, 0x4c3), tl);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(229)) >= 3, "the start-up ran");
+}
+
+/// `magic_0200` 0x10001840 (`r17::frame_0200`): the flight set up (bit 15)
+/// or not, the second flight's bit, the motion script and the objects
+/// done or not.
+#[test]
+fn frame_0200() {
+    let Some(mut t) = twin(200) else { return };
+    let f = t.at(0x1840);
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    let ro = t.img.rel32_target(f + 0xb2);
+    for (k, (set, bit, third, done)) in [
+        (0u32, 0x8000u32, 0u32, 1u32),
+        (0, 0, 0, 1),
+        (1, 0, 0x8000, 1),
+        (1, 0, 0, 1),
+        (1, 0, 0x8000, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        slots_0172(&mut t, k);
+        rec(&mut t, 531, 2, |m, a| {
+            for i in 0..4 {
+                wf(m, a[1] + 4 * i, 1.5 - i as f32);
+            }
+            0x531
+        });
+        let ft = t.img.rel32_target(f + 0x6c);
+        flight_setup(&mut t, ft, 2, k & 1 == 1, k);
+        junk_ops(&mut t, f, &[0x75, 0x7f, 0x89]);
+        t.set_u32(op(&t, f, 0x1a), set);
+        t.set_u32(op(&t, f, 0x22), bit);
+        t.set_u32(op(&t, f, 0x95), third);
+        t.set_u32(op(&t, f, 0x37), 0x0a0a_0000 + k);
+        let fo = op(&t, f, 0x57);
+        junk(&mut t, fo, 0xc0, k);
+        let s = op(&t, f, 0xa6);
+        junk(&mut t, s, 0x40, k);
+        t.set_u32(s + 0x14, done);
+        t.set_u32(op(&t, ro, 0x1a), 0);
+        t.set_u32(op(&t, ro, 0x25), SCRATCH + 0x60);
+        t.write(op(&t, ro, 0x7c), &[0; 0x10]);
+        t.set_u32(op(&t, ro, 0x14), 0);
+        let task = SCRATCH + 0x700;
+        junk(&mut t, task, 0x20, k);
+        t.set_u32(task + 8, SCRATCH + 0x780);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(531)) >= 1, "the flight ran");
+}
+
+/// `magic_0177` 0x10002dc0 (`r9_load::load_0177`, the start-up
+/// `r17::start_up_0177`): busy, not loaded, then the start-up with none to
+/// three targets, the yaws wrapped down, up and kept, slot 413 or 215, the
+/// free ring of one or three, the task list empty or not.
+#[test]
+fn load_0177() {
+    let Some(mut t) = twin(177) else { return };
+    let f = t.at(0x2dc0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let start = t.img.rel32_target(f + 0x5b);
+    let op = |t: &Twin, o: u32| t.img.word(start + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    let rot = SCRATCH + 0x90;
+    for (k, (b, l, n, flag, free, listed, r)) in [
+        (1u32, 1u32, 0u32, 0u32, 1u16, false, 0.0f32),
+        (0, 0, 0, 0, 1, false, 0.0),
+        (0, 1, 0, 0, 1, false, -1.0),
+        (0, 1, 2, 1, 3, true, 6.0),
+        (0, 2, 3, 0, 2, true, 9.5),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        slots_0172(&mut t, k);
+        rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+        t.stub_st0(333, move |m, a| {
+            f64::from(rf(m, rot)) + f64::from(a[0] & 3) * 0.5
+        });
+        t.set_u32(rot, r.to_bits());
+        rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+        rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+        rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), k & 1);
+        t.set_u32(w(&t, 0x26), 0x0000_5e5e);
+        for o in [0x61u32, 0x6b] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        magic_r11::pools(&mut t, start, 1367);
+        let so = t.img.rel32_target(start + 0x66);
+        magic_r11::object_start_setup(&mut t, so, (0x84, 0x9d));
+        for o in [0x86u32, 0x93, 0xf8] {
+            t.set_u32(op(&t, o), 0x0a00_0000 + o);
+        }
+        t.set_u32(op(&t, 0x1d7), n);
+        let sel = SCRATCH + 0x5000;
+        t.write(sel, &[2, 1, 0, 3]);
+        t.set_u32(op(&t, 0x22e), sel);
+        for i in 0..4 {
+            t.set_u32(op(&t, 0x239) + 4 * i, 0x0c0c_0100 + i);
+        }
+        let recs = op(&t, 0x208);
+        junk(&mut t, recs, 3 * 0x260, k);
+        for i in 0..3 {
+            t.set_u32(recs + 0x260 * i + 0x130 + 0xe8, (1.5 + i as f32).to_bits());
+        }
+        for o in [0xeau32, 0x115] {
+            t.set_u32(op(&t, o), (2.25 + k as f32).to_bits());
+        }
+        t.set_u32(op(&t, 0x41f), flag);
+        t.set_u32(op(&t, 0x425), 0x0425_0000 + k);
+        junk_ops(&mut t, start, &[0x100, 0x48e, 0x142, 0x14c]);
+        let (count, head) = (op(&t, 0x49e), op(&t, 0x4ad));
+        magic_r11::ring(&mut t, count, head, free, SCRATCH + 0x1c000);
+        task_list(&mut t, start, (0x514, 0x523), listed, k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(12)) >= 5, "the target loop ran");
+}

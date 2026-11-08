@@ -3731,3 +3731,458 @@ pub const FRAME_0172: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0200`'s start-up (0x10001340, 1274 bytes; internal, no
+/// arguments; an 8-aligned /GS frame, `S = A - 0x90`, the point `X` at
+/// `S+0x18`, `Y` at `S+0x28`, `P` at `S+0x38`, the matrix `M` at
+/// `S+0x48`): slot 719 `(NAME, 8, 0)` into `G_P` (two words first), the part
+/// set up ([`part_init`](crate::l5_objhost::part_init)); `X` = the first
+/// actor's point (slot 262) at its bone 6 height (slot 268), `w` 1.0; four
+/// objects `R_i - 0xd4` (`R_i = REC + 0x130 i`;
+/// [`start_object_first`](crate::o6_fam_object::start_object_first) `(-,
+/// KIND[i], -, CB_i)`, the last with the other callback) at `X` with three
+/// random angles (slot 314 `(2 PI)`), random offsets (`4, 3, 4`) and the
+/// pick of 0 ([`pick`](crate::m0074::pick)); `Y` = the caster's point
+/// (slot 262; slot 12 asked, its answer dropped), `X.y` 0, the yaw `K -
+/// atan2(X.z - Y.z, X.x - Y.x)` (`_CIatan2`) wrapped once; `X` moved by
+/// `(0, 0, 30)` turned by it (slots 235, 328, 329, 229, 248), `w` 1.0; the
+/// flight to `X` ([`flight_task`](crate::s5_misc::flight_task) `(X, 0.7,
+/// 0.99, 30)`), two words, the task
+/// ([`task_start`](crate::s3_misc::task_start)); slot 413 or 215 (by `*G_F`)
+/// of `*G_N` into a record with its words and flag halfword; a node of the
+/// free ring ([`ring_take`](crate::r15::ring_take), kind 2; an empty ring
+/// writes through address 0 as the original does) last on the task list.
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0200<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let kf = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x90);
+    let (x, y, p, m) = (s + 0x18, s + 0x28, s + 0x38, s + 0x48);
+    let tab = w(0x1b);
+    stores(g, img, f, &[0x31, 0x3b]);
+    // call width: 3
+    let part = g
+        .call(slot_target(g, tab, 0xb3c / 4), 0, &[w(0x2d), 8, 0])
+        .eax;
+    g.write::<u32>(w(0x4b), part);
+    crate::l5_objhost::part_init(g, img, call(0x50));
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x55))));
+    let a = g.read::<u32>(w(0x5f).wrapping_add(4 * b));
+    // call width: 4
+    g.call(slot_target(g, w(0x73), 0x418 / 4), 0, &[a, x, x + 4, x + 8]);
+    // call width: 3
+    g.call(slot_target(g, w(0x86), 0x430 / 4), 0, &[a, 6, p]);
+    let py = g.read::<u32>(p + 4);
+    g.write::<u32>(x + 4, py);
+    g.write::<u32>(x + 0xc, 0x3f80_0000);
+    for i in 0..4u32 {
+        let rec = w(0xaf).wrapping_add(0x130 * i);
+        let cb = if i == 3 { w(0xb4) } else { w(0xc9) };
+        let kind = g.read::<u32>(w(0xd8).wrapping_add(4 * i));
+        // push cb, -, kind, -: the return address at S - 0x14
+        let esp = s.wrapping_sub(0x14);
+        for (k, v) in (1u32..).zip([0, kind, 0, cb]) {
+            g.write::<u32>(esp + 4 * k, v);
+        }
+        let so = Frame {
+            at: call(0xe4),
+            esp,
+            edx: rec.wrapping_sub(0xd4),
+            xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0xc4)))],
+            ..*fr
+        };
+        crate::o6_fam_object::start_object_first(g, img, so.at, &so);
+        for k in 0..4 {
+            let v = g.read::<u32>(x + 4 * k);
+            g.write::<u32>(rec.wrapping_sub(4) + 4 * k, v);
+        }
+        let tab = w(0xef);
+        for o in [0x14u32, 0x10, 0xc] {
+            let r = random(g, tab, f32::from_bits(0x40c9_0fdb));
+            g.write::<f32>(rec.wrapping_sub(o), r);
+        }
+        let r = random(g, tab, 4.0);
+        let v = add(g.read::<f32>(rec + 0xc), r);
+        g.write::<f32>(rec + 0xc, v);
+        let r = random(g, tab, 3.0);
+        let v = add(g.read::<f32>(rec + 0x10), r);
+        g.write::<f32>(rec + 0x10, v);
+        let r = random(g, tab, 4.0);
+        let v = add(r, g.read::<f32>(rec + 0x14));
+        g.write::<f32>(rec + 0x14, v);
+        let pick = crate::m0074::pick(g, img, call(0x1d9), 0);
+        g.write::<u32>(rec + 0x4c, pick);
+    }
+    let c = g.read::<u32>(w(0x1f2));
+    g.write::<u32>(x + 4, 0);
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x206), 0x418 / 4),
+        0,
+        &[c, y, y + 4, y + 8],
+    );
+    g.call(slot_target(g, w(0x218), 0x30 / 4), 0, &[c]);
+    let dz = sub(g.read::<f32>(x + 8), g.read::<f32>(y + 8));
+    let dx = sub(g.read::<f32>(x), g.read::<f32>(y));
+    #[allow(clippy::cast_possible_truncation)] // fstp qword; cvtpd2ps
+    let yaw0 = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let yaw = wrap_once(
+        g,
+        img,
+        f,
+        sub(kf(g, 0x26c), yaw0),
+        (0x27b, 0x28b, 0x295, 0x2a2),
+    );
+    for (k, v) in (0u32..).zip([0, 0, 0x41f0_0000, 0]) {
+        g.write::<u32>(y + 4 * k, v);
+    }
+    g.call(slot_target(g, w(0x2b2), 0x3ac / 4), 0, &[m]);
+    // call width: 3
+    g.call(slot_target(g, w(0x2ec), 0x520 / 4), 0, &[m, m, 0]);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x30d), 0x524 / 4),
+        0,
+        &[m, m, yaw.to_bits()],
+    );
+    g.write::<u32>(y + 0xc, 0x3f80_0000);
+    // call width: 3
+    g.call(slot_target(g, w(0x329), 0x394 / 4), 0, &[p, m, y]);
+    // call width: 3
+    g.call(slot_target(g, w(0x349), 0x3e0 / 4), 0, &[x, x, p]);
+    // push 0x1e; sub esp, 8; push X: the return address at S - 0x14
+    let esp = s.wrapping_sub(0x14);
+    for (k, v) in (1u32..).zip([x, 0x3f33_3333, 0x3f7d_70a4, 0x1e]) {
+        g.write::<u32>(esp + 4 * k, v);
+    }
+    g.write::<u32>(x + 0xc, 0x3f80_0000);
+    let fl = Frame {
+        at: call(0x387),
+        esp,
+        ecx: w(0x36a),
+        xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0x359)))],
+        ..*fr
+    };
+    crate::s5_misc::flight_task(g, img, &fl);
+    stores(g, img, f, &[0x38e]);
+    // add esp, 0xc; push FN: the return address at S - 0xc
+    let esp = s.wrapping_sub(0xc);
+    g.write::<u32>(esp + 4, w(0x399));
+    stores(g, img, f, &[0x39d]);
+    let ts = Frame {
+        at: call(0x3a8),
+        esp,
+        ..*fr
+    };
+    crate::s3_misc::task_start(g, img, &ts);
+    let n = g.read::<u32>(w(0x3ad));
+    let flag = g.read::<u32>(w(0x3b6));
+    g.write::<u32>(w(0x3bc), n);
+    stores(g, img, f, &[0x3c6, 0x3d0, 0x3da]);
+    let slot = if flag == 0 { 0x35c } else { 0x674 };
+    let v = g.call(slot_target(g, w(0x3c2), slot / 4), 0, &[n]).eax;
+    let flag = g.read::<u32>(w(0x3fb));
+    g.write::<u32>(w(0x406), v);
+    stores(g, img, f, &[0x40a, 0x414]);
+    g.write::<u32>(w(0x420), 1);
+    if flag == 0 {
+        g.write::<u16>(w(0x42a), 0);
+    } else {
+        g.write::<u16>(w(0x433), 1);
+    }
+    let count = g.read::<u16>(w(0x43a));
+    let node = if count == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(0x449));
+        crate::r15::ring_take(g, img, f, node, count, (0x466, 0x46e, 0x49f, 0x4aa));
+        node
+    };
+    let head = g.read::<u32>(w(0x4b0));
+    g.write::<u8>(node.wrapping_add(0x18), 2);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x4d6), node);
+    } else {
+        let tail = g.read::<u32>(w(0x4c3));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x4eb), node);
+    Ret::eax(0)
+}
+
+/// [`start_up_0200`] (1274 bytes, 1 overlay).
+pub const START_UP_0200: Sig = Sig {
+    len: 1274,
+    hash: 0xfa24_c321_3e08_d32d,
+    calls: &[
+        (0x50, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (
+            0xe4,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0200_2BE0),
+        ),
+        (0x1d9, Callee::Sig(&crate::m0074::PICK)),
+        (0x25a, Callee::Import("_CIatan2")),
+        (0x387, Callee::Sig(&crate::s5_misc::FLIGHT_TASK)),
+        (0x3a8, Callee::Sig(&crate::s3_misc::TASK_START)),
+        // __security_check_cookie
+        (0x4f2, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0200`'s frame (0x10001840, 229 bytes; cdecl `(task)`; a /GS
+/// frame, the point `L` at `ebp - 0x14`): until `*G_S` is set, when the
+/// flight object's flags have bit 15: slot 531 `(*G_N, L)` and the flight
+/// to `L` ([`flight_task`](crate::s5_misc::flight_task) `(L, 0.75, 0.99,
+/// 24)`), three words (`G_S` 1); once set, the second flight's bit 15 is
+/// the third condition. The motion script
+/// ([`motion_script`](crate::s4_misc::motion_script)) and the objects
+/// ([`run_objects`](crate::l5_objhost::run_objects)) run; when all three
+/// are done, the task's `+0x14` = 3 and its owner's step the next
+/// function. Returns the owner, or the objects' `eax`.
+pub fn frame_0200<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = ebp.wrapping_sub(0x14);
+    let mut third = 0u32;
+    if g.read::<u32>(w(0x1a)) == 0 {
+        if g.read::<u32>(w(0x22)) & 0x8000 != 0 {
+            let n = g.read::<u32>(w(0x37));
+            g.call(slot_target(g, w(0x31), 0x84c / 4), 0, &[n, l]);
+            // push 0x18; sub esp, 8; push L: the return address at ebp - 0x34
+            let esp = ebp.wrapping_sub(0x34);
+            for (k, v) in (1u32..).zip([l, 0x3f40_0000, 0x3f7d_70a4, 0x18]) {
+                g.write::<u32>(esp + 4 * k, v);
+            }
+            let fl = Frame {
+                at: img.rel32_target(f + 0x6c),
+                esp,
+                ecx: w(0x57),
+                xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0x47)))],
+                ..*fr
+            };
+            crate::s5_misc::flight_task(g, img, &fl);
+            stores(g, img, f, &[0x73, 0x7d, 0x87]);
+        }
+    } else if g.read::<u32>(w(0x95)) & 0x8000 != 0 {
+        third = 1;
+    }
+    let script = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0xab), w(0xa6));
+    // push ebx, esi, edi: the call's return address at ebp - 0x24
+    let objs =
+        crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0xb2), ebp.wrapping_sub(0x24));
+    if objs != 1 || script != 1 || third != 1 {
+        return Ret::eax(objs);
+    }
+    let task = fr.arg(g, 0);
+    let owner = g.read::<u32>(task + 8);
+    g.write::<u32>(task + 0x14, 3);
+    g.write::<u32>(owner + 0x10, w(0xd0));
+    Ret::eax(owner)
+}
+
+/// [`frame_0200`] (229 bytes, 1 overlay).
+pub const FRAME_0200: Sig = Sig {
+    len: 229,
+    hash: 0xfbfb_c1ed_6ba7_cc00,
+    calls: &[
+        (0x6c, Callee::Sig(&crate::s5_misc::FLIGHT_TASK)),
+        (0xab, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0xb2, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        // __security_check_cookie
+        (0xdd, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0177`'s start-up (0x10002f00, 1367 bytes; internal, no
+/// arguments; an 8-aligned /GS frame, `S = A - 0x68`, the caster's point
+/// `Q` at `S + 0x34`, the bone points at `S + 0x44` and `S + 0x54`): slot
+/// 719 `(NAME, 8, 0)` into `G_P` (two words first), the part set up
+/// ([`part_init`](crate::l5_objhost::part_init)); the object `O`
+/// ([`start_object_at`](crate::s4_misc::start_object_at) `(0, 0x14, -,
+/// 0)`) at the caster `*G_A` (slot 262 into globals, `w` 1.0) with the
+/// yaw `K - ` slot 333 wrapped once, its `y` raised by `K2`, a word
+/// lowered by `K3`; the record words; `Q` = the caster's point at its bone
+/// 6 height, `w` 1.0; for each target `i` two objects: `R_i = REC +
+/// 0x260 i` (`(1, 0x23, -, CB)`) at the target's point and bone 6 height
+/// with its yaw `K - ` slot 333 wrapped once, and `R_i + 0x130` (`(2,
+/// 0x23, -, 0)`) at the target's point on its ground (slot 12) facing `Q`
+/// (`K - atan2(Q.z - z, Q.x - x)`, `_CIatan2`, wrapped once) with its
+/// `+0xe8` lowered by `K4`; slot 413 or 215 (by `*G_F`) of `*G_N` into a
+/// record with its words and flag halfword; a node of the free ring
+/// ([`ring_take`](crate::r15::ring_take); an empty ring writes through
+/// address 0 as the original does) last on the task list. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0177<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::s4_misc::start_object_at;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let kf = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x68);
+    let (q, p, p2) = (s + 0x34, s + 0x44, s + 0x54);
+    let tab = w(0x15);
+    let rot = |g: &mut G, a: u32| st0_f32(g.call(slot_target(g, tab, 0x534 / 4), 0, &[a]).st0);
+    stores(g, img, f, &[0x2b, 0x35]);
+    // call width: 3
+    let part = g
+        .call(slot_target(g, tab, 0xb3c / 4), 0, &[w(0x27), 8, 0])
+        .eax;
+    g.write::<u32>(w(0x45), part);
+    crate::l5_objhost::part_init(g, img, call(0x4a));
+    start_object_at(g, img, call(0x66), w(0x5a), kf(g, 0x52), 0, 0x14, 0);
+    let a = g.read::<u32>(w(0x86));
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x6b), 0x418 / 4),
+        0,
+        &[a, w(0x80), w(0x7b), w(0x70)],
+    );
+    let a = g.read::<u32>(w(0x93));
+    stores(g, img, f, &[0x97]);
+    let r = rot(g, a);
+    let yaw = wrap_once(g, img, f, sub(kf(g, 0xb1), r), (0xc9, 0xbf, 0xd9, 0xbf));
+    let up = add(kf(g, 0xea), kf(g, 0xf2));
+    let a = g.read::<u32>(w(0xf8));
+    g.write::<u16>(w(0x100), 0);
+    g.write::<f32>(w(0x10d), up);
+    let low = sub(kf(g, 0x115), kf(g, 0x11d));
+    g.write::<f32>(w(0x134), yaw);
+    g.write::<f32>(w(0x13c), low);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            0x140, 0x14a, 0x154, 0x15e, 0x168, 0x172, 0x17c, 0x186, 0x190,
+        ],
+    );
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x12c), 0x418 / 4),
+        0,
+        &[a, q, q + 4, q + 8],
+    );
+    // call width: 3
+    g.call(slot_target(g, w(0x1a9), 0x430 / 4), 0, &[a, 6, p]);
+    let py = g.read::<u32>(p + 4);
+    g.write::<u32>(q + 4, py);
+    g.write::<u32>(q + 0xc, 0x3f80_0000);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(if i == 0 { 0x1d7 } else { 0x413 })) {
+        let r1 = i.wrapping_mul(0x260).wrapping_add(w(0x208));
+        start_object_at(g, img, call(0x213), r1, kf(g, 0x1f4), 1, 0x23, w(0x201));
+        let c = r1 + 0xd0;
+        let actor = actor_0172(g, img, f, i, (0x227, 0x22e, 0x239));
+        // call width: 4
+        g.call(
+            slot_target(g, w(0x242), 0x418 / 4),
+            0,
+            &[actor, c, c + 4, c + 8],
+        );
+        // call width: 3
+        g.call(slot_target(g, w(0x25e), 0x430 / 4), 0, &[actor, 6, p2]);
+        let y = g.read::<u32>(p2 + 4);
+        g.write::<u32>(c + 4, y);
+        g.write::<u32>(r1 + 0xdc, 0x3f80_0000);
+        let actor = actor_0172(g, img, f, i, (0x28d, 0x294, 0x29f));
+        let r = st0_f32(g.call(slot_target(g, w(0x2a5), 0x534 / 4), 0, &[actor]).st0);
+        let yaw = wrap_once(
+            g,
+            img,
+            f,
+            sub(kf(g, 0x2b9), r),
+            (0x2c9, 0x2d3, 0x2dd, 0x2ea),
+        );
+        g.write::<f32>(r1 + 0xc4, yaw);
+        let r2 = r1 + 0x130;
+        start_object_at(g, img, call(0x30e), r2, kf(g, 0x2f2), 2, 0x23, 0);
+        let c = r2 + 0xd0;
+        let actor = actor_0172(g, img, f, i, (0x321, 0x328, 0x333));
+        // call width: 4
+        g.call(
+            slot_target(g, w(0x346), 0x418 / 4),
+            0,
+            &[actor, c, c + 4, c + 8],
+        );
+        let ground = st0_f32(g.call(slot_target(g, w(0x353), 0x30 / 4), 0, &[actor]).st0);
+        g.write::<f32>(c + 4, ground);
+        g.write::<u32>(r2 + 0xdc, 0x3f80_0000);
+        let dz = sub(g.read::<f32>(q + 8), g.read::<f32>(c + 8));
+        let dx = sub(g.read::<f32>(q), g.read::<f32>(c));
+        #[allow(clippy::cast_possible_truncation)] // fstp qword; cvtpd2ps
+        let yaw0 = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let yaw = wrap_once(
+            g,
+            img,
+            f,
+            sub(kf(g, 0x3b4), yaw0),
+            (0x3c3, 0x3cd, 0x3d7, 0x3e4),
+        );
+        let e8 = sub(g.read::<f32>(r2 + 0xe8), kf(g, 0x3f4));
+        g.write::<f32>(r2 + 0xc4, yaw);
+        g.write::<f32>(r2 + 0xe8, e8);
+        i += 1;
+    }
+    let flag = g.read::<u32>(w(0x41f));
+    let n = g.read::<u32>(w(0x425));
+    g.write::<u32>(w(0x42a), n);
+    stores(g, img, f, &[0x434, 0x43e]);
+    let slot = if flag == 0 { 0x35c } else { 0x674 };
+    let v = g.call(slot_target(g, w(0x430), slot / 4), 0, &[n]).eax;
+    let flag = g.read::<u32>(w(0x45f));
+    g.write::<u32>(w(0x46a), v);
+    stores(g, img, f, &[0x46e, 0x478]);
+    g.write::<u32>(w(0x484), 1);
+    if flag == 0 {
+        g.write::<u16>(w(0x48e), 0);
+    } else {
+        g.write::<u16>(w(0x497), 1);
+    }
+    let count = g.read::<u16>(w(0x49e));
+    let node = if count == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(0x4ad));
+        crate::r15::ring_take(g, img, f, node, count, (0x4ca, 0x4d2, 0x503, 0x50e));
+        node
+    };
+    let head = g.read::<u32>(w(0x514));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x536), node);
+    } else {
+        let tail = g.read::<u32>(w(0x523));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x548), node);
+    Ret::eax(0)
+}
+
+/// [`start_up_0177`] (1367 bytes, 1 overlay).
+pub const START_UP_0177: Sig = Sig {
+    len: 1367,
+    hash: 0xc64f_ae0d_5cd0_24e8,
+    calls: &[
+        (0x4a, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x66, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x213, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x30e, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x3a2, Callee::Import("_CIatan2")),
+        // __security_check_cookie
+        (0x54f, Callee::Any),
+    ],
+    imports: &[],
+};
