@@ -2611,6 +2611,20 @@ pub const COLOUR_TASK_0645: Sig = Sig {
 /// rigs ([`camera_rigs_step`](crate::s8_misc::camera_rigs_step), a tail
 /// jump), whose answer it returns.
 pub fn step_0511<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    step_with(g, img, fr, |g, img, mf| {
+        crate::m0511::models_end(g, img, mf);
+    })
+}
+
+/// [`step_0511`] with the end call at `+0x1db` given (`end`, its frame):
+/// `magic_0602`'s copy stops the sounds there
+/// ([`step_0602`](crate::r22::step_0602)).
+pub(crate) fn step_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    end: impl FnOnce(&mut G, &Image, &Frame),
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let call = |o: u32| img.rel32_target(f + o);
@@ -2630,7 +2644,7 @@ pub fn step_0511<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             esp: fr.esp.wrapping_sub(0x10),
             ..*fr
         };
-        crate::m0511::models_end(g, img, &mf);
+        end(g, img, &mf);
         let node = fr.arg(g, 0);
         let eax = crate::sa_pool::give_back(g, img, call(0x1e6), node);
         return Ret::eax(eax);

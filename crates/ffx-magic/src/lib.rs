@@ -69,6 +69,7 @@ pub mod r17;
 pub mod r18;
 pub mod r19;
 pub mod r20;
+pub mod r22;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -2986,6 +2987,10 @@ ports! {
     "r20 colour task 0645" => r20::COLOUR_TASK_0645, r20::colour_task_0645;
     "r20 step 0511" => r20::STEP_0511, r20::step_0511;
     // round 20 (magic-r20): end
+    // round 22 (magic-r22)
+    "r22 task 0603" => r22::TASK_0603, r22::task_0603;
+    "r22 step 0602" => r22::STEP_0602, r22::step_0602;
+    // round 22 (magic-r22): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3586,6 +3591,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r20 burst 0491", &r20::BURST_0491),
     ("r20 effect set-up 0645", &r20::EFFECT_SETUP_0645),
     // round 20 (magic-r20): end of INTERNAL
+    // round 22 (magic-r22)
+    ("r22 summon set-up 0645", &r22::SUMMON_SETUP_0645),
+    // round 22 (magic-r22): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

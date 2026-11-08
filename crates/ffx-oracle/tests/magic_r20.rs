@@ -1507,12 +1507,14 @@ fn step_0708() {
         junk(&mut t, b2 - 0x200, 0x600, k);
         // the strips' factor (a global)
         t.set_u32(op(&t, 0x49d), (1.5f32 + k as f32).to_bits());
-        t.set_u32(op(&t, 0x4a8), b2);
         t.set_u32(op(&t, 0x27e), SCRATCH + 0x9800);
         let pa = op(&t, 0x674);
         junk(&mut t, pa - 0x20, 0x80, k + 3);
         let pp = op(&t, 0x4b3);
         junk(&mut t, pp - 0x40, 0x50, k + 4);
+        // B2 after the junk (it covers the global): the random pick reads
+        // varied words
+        t.set_u32(op(&t, 0x4a8), b2);
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
