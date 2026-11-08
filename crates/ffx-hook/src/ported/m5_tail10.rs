@@ -14,6 +14,7 @@ use ffx_glue_other::l10_vfx::bridge as heap;
 use ffx_pcui::l10_filter::bridge as filter;
 use ffx_pcui::l10_gdraw::bridge as gdraw;
 use ffx_pother_a::l10_print::bridge as print;
+use ffx_prender::l10_tweak::bridge as tweak;
 use ffx_system::l10_assets::bridge as assets;
 
 ported! {
@@ -41,6 +42,12 @@ ported! {
         let mut taps = StackFrame::<0x24>::new();
         let at = taps.at();
         filter::axis_setup(&mut mem(), at, [axis, api, target, obj, size, scale, rect, out, keep, c])
+    }
+    /// `(util; character)`: the lighting tweak tool's light gizmo; the vectors the callees see in a frame.
+    CharacterLightingTweakUtil_drawGizmo_006a7850 @ 0x006a_7850 => extern "thiscall" fn tweak_draw_gizmo(util: u32, character: u32) {
+        let mut frame = StackFrame::<0x69>::new();
+        let f = frame.at();
+        tweak::draw_gizmo(&mut mem(), util, character, f);
     }
     /// `(used, size, mode)`: the effects' debug heap meter.
     opd_heap_display @ 0x00a6_3ff0 => extern "C" fn opd_heap_display(used: u32, size: u32, mode: u32) -> u32 {
