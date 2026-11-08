@@ -2966,6 +2966,7 @@ ports! {
     "r20 step 0705" => r20::STEP_0705, r20::step_0705;
     "r20 task 0473" => r20::TASK_0473, r20::task_0473;
     "r20 set-up 0473" => r20::SET_UP_0473, r20::set_up_0473;
+    "r20 step 0708" => r20::STEP_0708, r20::step_0708;
     // round 20 (magic-r20): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3563,6 +3564,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r20 start-up 0680", &r20::START_UP_0680),
     ("r20 colour set-up 0645", &r20::COLOUR_SETUP_0645),
     ("r20 layers 0473", &r20::LAYERS_0473),
+    ("r20 strips 0708", &r20::STRIPS_0708),
+    ("r20 burst 0491", &r20::BURST_0491),
     // round 20 (magic-r20): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
