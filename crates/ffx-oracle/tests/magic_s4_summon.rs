@@ -365,6 +365,7 @@ fn summon_start() {
         (203, 0x8d20, 3),
         (388, 0x8020, 0),
         (389, 0x7560, 0),
+        (374, 0x7db0, 0),
     ] {
         summon_start_in(n, rva, d);
     }
@@ -373,7 +374,7 @@ fn summon_start() {
 fn summon_start_in(n: u16, rva: u32, d: u32) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
-    let e = if n == 388 || n == 389 { 5 } else { 0 };
+    let e = if matches!(n, 374 | 388 | 389) { 5 } else { 0 };
     let statics = if e == 0 {
         let targets = t.img.rel32_target(at + 0x08);
         t.img.rel32_target(targets + 0xe0)
@@ -411,7 +412,10 @@ fn summon_start_in(n: u16, rva: u32, d: u32) {
         t.set_u32(lock, old);
         t.write(root, &[0x5a; 0x150]);
         t.set_u32(root + 4, 0);
-        let flags = t.img.word(at + 0x197 + e - d);
+        // (`magic_0374`'s flags operand two bytes later still)
+        let flags = t
+            .img
+            .word(at + 0x197 + e - d + if n == 374 { 2 } else { 0 });
         t.set_u32(flags, 0x5555_5555 + k as u32);
         // the word the start clears, set before
         t.set_u32(t.img.word(at + 0x9d + e), 0x9d9d_0000 + k as u32);

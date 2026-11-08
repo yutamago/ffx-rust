@@ -1302,6 +1302,9 @@ fn task_0288() {
         t.set_u32(q + 0x24, cmds);
         t.set_u32(q + 0x2c, wait);
         t.set_u32(w(&t, 0x213), words);
+        // no objects from earlier cases: the run's list head and cursor 0
+        t.set_u32(t.img.word(run + 0x14), 0);
+        t.write(list, &[0; 0x10]);
         // the globals the step stores: other values first
         for o in [
             0x87u32, 0x93, 0x10e, 0x11a, 0x15c, 0x1c1, 0x1ce, 0x1ea, 0x1f0,

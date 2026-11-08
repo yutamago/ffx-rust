@@ -1746,6 +1746,7 @@ ports! {
     "summon start (targets, 0330)" => s4_summon::SUMMON_START_0330, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
     "summon start (targets, b) 0388" => s4_summon::SUMMON_START_B_0388, s4_summon::summon_start_b;
+    "summon start (targets, b) 0374" => s4_summon::SUMMON_START_B_0374, s4_summon::summon_start_b;
     "summon start (targets) 0389" => s4_summon::SUMMON_START_0389, s4_summon::summon_start;
     "summon start (targets, b) 0203" => s4_summon::SUMMON_START_B_0203, s4_summon::summon_start_b;
     "summon frame (0042)" => s4_summon::SUMMON_FRAME_B, s4_summon::summon_frame_b;
@@ -3406,6 +3407,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0479 start", &m0479::START),
     ("m0480 clear", &m0480::CLEAR),
     ("m0482 insert", &m0482::INSERT),
+    ("r14 insert 0387", &r14::INSERT_0387),
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
     ("m0493 init", &m0493::INIT),

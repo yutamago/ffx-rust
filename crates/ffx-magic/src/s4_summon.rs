@@ -768,6 +768,33 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     s.push_all(&[2, 1000, 0, v(0x153)]);
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, v(0x13f), 221), 0);
+    // `magic_0374`'s copy (447 bytes) orders its ring stores otherwise (a
+    // `mov dword` at `+0x163` where these pop the stack) and links its
+    // static node at the end
+    // ([`static_node_link_c`](crate::s4_small::static_node_link_c))
+    if e == 5 && img.word(f + 0x163) & 0xff == 0xc7 {
+        let w = |o: u32| img.word(f + o);
+        let tail = g.read::<u32>(w(0x15f));
+        for (dst, src) in [(0x165, 0x169), (0x16f, 0x173), (0x179, 0x17d)] {
+            g.write::<u32>(w(dst), w(src));
+        }
+        g.write::<u32>(w(0x182), tail);
+        g.write::<u32>(w(0x188), w(0x18c));
+        g.write::<u32>(tail.wrapping_add(4), w(0x193));
+        let flags = g.read::<u32>(w(0x199));
+        g.write::<u32>(w(0x199), flags & !1);
+        g.write::<u32>(w(0x1a3), w(0x1a7));
+        for &dst in cleared {
+            g.write::<u32>(w(dst + 5), 0);
+        }
+        let link = Frame {
+            at: img.rel32_target(f + 0x1b6),
+            esp: fr.esp.wrapping_sub(12),
+            ..*fr
+        };
+        crate::s4_small::static_node_link_c(g, img, &link);
+        return Ret::eax(0);
+    }
     let tail = g.read::<u32>(v(0x15a));
     g.write::<u32>(v(0x162), tail);
     for (dst, src) in [
@@ -807,6 +834,19 @@ pub const SUMMON_START_B: Sig = Sig {
     len: 437,
     hash: 0xe46b_13bb_4b92_a306,
     calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start_b`]'s copy in `magic_0374` (0x10007db0, 447 bytes: the
+/// actor kept, the statics reset, its ring stores in its own order and
+/// its static node linked last).
+pub const SUMMON_START_B_0374: Sig = Sig {
+    len: 447,
+    hash: 0x97c0_8c36_ab21_e58f,
+    calls: &[
+        (0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT)),
+        (0x1b6, Callee::Sig(&crate::s4_small::STATIC_NODE_LINK_C)),
+    ],
     imports: &[],
 };
 

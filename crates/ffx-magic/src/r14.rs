@@ -688,3 +688,71 @@ pub const SPARK_TASK_0133: Sig = Sig {
     ],
     ..SPARK_TASK_0135
 };
+
+/// `magic_0387`'s model node insert (0x10004b80, internal: `ecx` = a group
+/// of words `[node, parent, a, c]`; 279 bytes): as `magic_0482`'s
+/// [`insert`](crate::m0482::insert), with `+0x150` = `c` (group `+0xc`),
+/// `+0x140` the DLL's word at operand `+0x60` (not a group word), `+0x144`
+/// and `+0x128` the words at `+0x56` and `+0x6a`, and `+0x14c` 0. Returns
+/// slot 325's `eax`.
+pub fn insert_0387<G: Game>(g: &mut G, img: &Image, f: u32, group: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let parent = g.read::<u32>(group + 4);
+    let node = g.read::<u32>(group);
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, parent);
+    if parent != 0 {
+        g.write::<u32>(node + 4, parent);
+        let last = g.read::<u32>(parent + 0x10);
+        g.write::<u32>(node + 8, last);
+        let last = g.read::<u32>(parent + 0x10);
+        if last == parent {
+            g.write::<u32>(parent + 0xc, node);
+        } else {
+            g.write::<u32>(last + 4, node);
+        }
+        let n = g.read::<u16>(parent + 0x18);
+        g.write::<u16>(parent + 0x18, n.wrapping_add(1));
+        g.write::<u32>(parent + 0x10, node);
+    }
+    for (src, dst) in [(8u32, 0x13cu32), (0xc, 0x150)] {
+        let v = g.read::<u32>(group + src);
+        g.write::<u32>(node + dst, v);
+    }
+    g.write::<u32>(node + 0x144, w(0x56));
+    g.write::<u32>(node + 0x140, w(0x60));
+    g.write::<u32>(node + 0x128, w(0x6a));
+    g.write::<u8>(node + 0x148, 0);
+    g.write::<u32>(node + 0x14c, 0);
+    g.write::<u32>(node + 0xac, 0);
+    g.write::<u32>(node + 0xb0, 0x3f80_0000);
+    for off in [0xb4, 0xb8, 0x124, 0x120, 0x11c] {
+        g.write::<u32>(node + off, 0);
+    }
+    let m = node + 0x5c;
+    let t = slot_target(g, w(0x4c), 235);
+    // call width: 1
+    g.call(t, 0, &[m]);
+    let t = slot_target(g, w(0xda), 230);
+    let mut stack = vec![node + 0xdc, m, m];
+    // call width: 3
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0xec), 230);
+    stack.splice(0..0, [node + 0x1c, m]);
+    // call width: 5
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x105), 325);
+    stack.splice(0..0, [node + 0x12c, w(0xff)]);
+    // call width: 7
+    g.call(t, 0, &stack).eax
+}
+
+/// [`insert_0387`] (279 bytes, 1 overlay).
+pub const INSERT_0387: Sig = Sig {
+    len: 279,
+    hash: 0x3bae_ff66_4d82_89bc,
+    calls: &[],
+    imports: &[],
+};
