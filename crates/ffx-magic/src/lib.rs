@@ -69,6 +69,7 @@ pub mod r17;
 pub mod r18;
 pub mod r19;
 pub mod r20;
+pub mod r21;
 pub mod r22;
 pub mod r9_load;
 pub mod r9_misc;
@@ -1636,6 +1637,36 @@ ports! {
     "r9 load step 0413" => r9_load::LOAD_0413, r9_load::load_0413;
     "r9 summon start (nodes) 0082" => r9_summon::NODES_0082, r9_summon::nodes_0082;
     // round 19 (magic-r19): end of ports
+    // round 21 (magic-r21)
+    "r21 caster start 0393" => r21::CASTER_START_0393, r16::caster_start_0450;
+    "r21 spark task 0347" => r21::SPARK_TASK_0347, r14::spark_task;
+    "r21 load step 0431" => r21::LOAD_0431, r21::load_0431;
+    "r21 load step 0440" => r21::LOAD_0440, r21::load_0440;
+    "r21 motion from 0201" => r21::MOTION_FROM_0201, r21::motion_from_0201;
+    "r21 pair start 0304" => r21::PAIR_START_0304, m0568::pair_start;
+    "r21 step 0382" => r21::STEP_0382, r21::step_0382;
+    "r21 throw 0382" => r21::THROW_0382, r21::throw_0382;
+    "r21 throw start 0382" => r21::THROW_START_0382, r21::throw_start_0382;
+    "r21 set-up 0198" => r21::SET_UP_0198, r21::set_up_0198;
+    "r21 step 0198" => r21::STEP_0198, r21::step_0198;
+    "r21 end 0198" => r21::END_0198, r21::end_0198;
+    "r21 fade 0276" => r21::FADE_0276, r21::fade_0276;
+    "r21 load step 0276" => r21::LOAD_0276, r21::load_0276;
+    "r21 restart 0352" => r21::RESTART_0352, r21::restart_0352;
+    "r21 task 0435" => r21::TASK_0435, r21::task_0435;
+    "r21 height 0262" => r21::HEIGHT_0262, r21::height_0262;
+    "r21 spark 0246" => r21::SPARK_0246, r21::spark_0246;
+    "r21 part object 0375" => r21::PART_OBJECT_0375, r21::part_object_0375;
+    "r21 sparks 0419" => r21::SPARKS_0419, r21::sparks_0419;
+    "r21 lift 0301" => r21::LIFT_0301, r21::lift_0301;
+    "r21 burst 0305" => r21::BURST_0305, r21::burst_0305;
+    "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
+    "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
+    "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;
+    "r21 summon matrix 0434" => r21::SUMMON_MATRIX_0434, r20::summon_matrix_0610;
+    "r21 lights start 0434" => r21::LIGHTS_START_0434, r18::lights_start_0610;
+    "r21 caster object 0430" => r21::CASTER_OBJECT_0430, r18::caster_object_0588;
+    // round 21 (magic-r21): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -3636,6 +3667,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r17 start-up 0200", &r17::START_UP_0200),
     ("r17 start-up 0177", &r17::START_UP_0177),
     ("r17 start-up 0199", &r17::START_UP_0199),
+    // round 21 (magic-r21)
+    ("r21 place pair 0304", &r21::PLACE_PAIR_0304),
+    (
+        "r21 summon object between 0347",
+        &r21::SUMMON_OBJECT_BETWEEN_0347,
+    ),
+    ("r21 burst 0347", &r21::BURST_0347),
+    ("r21 colour set-up 0388", &r21::COLOUR_SETUP_0388),
+    ("r21 start-up 0431", &r21::START_0431),
+    ("r21 start-up 0440", &r21::START_UP_0440),
+    ("r21 start-up 0276", &r21::START_UP_0276),
+    // round 21 (magic-r21): end of INTERNAL
     // round 19 (magic-r19)
     ("r19 three nodes 0128", &r19::THREE_NODES_0128),
     ("r19 start-up 0285", &r19::START_UP_0285),

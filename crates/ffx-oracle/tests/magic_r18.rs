@@ -430,10 +430,18 @@ fn effect_end_0588() {
 /// `r18::wave_tick_0588` (`magic_0588` 0x10001ec0): the states 0, 1 and
 /// another, each with the count reaching 0 and not (and a count at 0
 /// already); the table from slot 562, slot 862's handle from slot 772.
+/// Also `magic_0430`'s copy (0x10002580, the count at `E + 0xeb8`).
 #[test]
 fn wave_tick_0588() {
-    let Some(mut t) = twin(588) else { return };
-    let f = t.at(0x1ec0);
+    for (dll, rva) in [(588u16, 0x1ec0u32), (430, 0x2580)] {
+        wave_tick(dll, rva);
+    }
+}
+
+fn wave_tick(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let cnt = t.img.word(f + 0x22);
     let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
     let e = SCRATCH + 0x8000;
     t.set_u32(w(&t, 0x19), e);
@@ -466,9 +474,9 @@ fn wave_tick_0588() {
     .enumerate()
     {
         let c = c as u32;
-        t.write(e + 0xdf0, &[0x3c; 0x20]);
-        t.set_u32(e + 0xdf8, count.cast_unsigned());
-        t.set_u32(e + 0xdfc, state);
+        t.write(e + cnt - 8, &[0x3c; 0x20]);
+        t.set_u32(e + cnt, count.cast_unsigned());
+        t.set_u32(e + cnt + 4, state);
         t.set_u32(w(&t, 0xb3), 0x00b3_0000 + c);
         t.set_u32(lock, 0x4c00 + c);
         t.write(out, &varied(33 * 33 * 8, c as u8));
@@ -480,10 +488,17 @@ fn wave_tick_0588() {
 /// free and empty, the task list empty and not.
 #[test]
 fn caster_object_0588() {
-    let Some(mut t) = twin(588) else { return };
-    let f = t.at(0x20d0);
-    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
-    let s = t.img.rel32_target(f + 0x2e);
+    // `magic_0430`'s copy: the animated object start, 2 bytes later
+    for (dll, rva, d) in [(588u16, 0x20d0u32, 0u32), (430, 0x2900, 2)] {
+        caster_object(dll, rva, d);
+    }
+}
+
+fn caster_object(dll: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + if o >= 0x29 { o + d } else { o });
+    let s = t.img.rel32_target(f + 0x2e + d);
     let e = SCRATCH + 0x1_0000;
     t.set_u32(w(&t, 0x1c), e);
     rec(&mut t, 332, 1, |m, a| {
@@ -494,8 +509,13 @@ fn caster_object_0588() {
         0x0332
     });
     for (k, (count, listed)) in [(3u16, false), (0, true)].into_iter().enumerate() {
-        plain_setup(&mut t, s, count);
-        magic_r11::pools(&mut t, f, 347);
+        if d == 0 {
+            plain_setup(&mut t, s, count);
+        } else {
+            magic_r11::object_slots(&mut t);
+            magic_r11::object_start_auto(&mut t, s);
+        }
+        magic_r11::pools(&mut t, f, 347 + d);
         t.write(e, &varied(0x1000, k as u8 + 9));
         t.write(SCRATCH + 0x600, &[0x44; 0x10]);
         t.set_u32(w(&t, 0xea), if listed { SCRATCH + 0x600 } else { 0 });
@@ -924,10 +944,17 @@ fn model_start_0603() {
 /// free and empty, the task list empty and not.
 #[test]
 fn lights_start_0610() {
-    let Some(mut t) = twin(610) else { return };
-    let f = t.at(0xbe90);
-    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
-    let s = t.img.rel32_target(f + 0x43);
+    // `magic_0434`'s copy: the animated object start, 2 bytes later
+    for (dll, rva, d) in [(610u16, 0xbe90u32, 0u32), (434, 0x7fc0, 2)] {
+        lights_start(dll, rva, d);
+    }
+}
+
+fn lights_start(dll: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + if o >= 0x3a { o + d } else { o });
+    let s = t.img.rel32_target(f + 0x43 + d);
     rec(&mut t, 282, 0, |_, _| 0x282);
     t.stub_st0(282, |m, _| f64::from(m.r32(SCRATCH + 0x20)) * 0.125 + 0.3);
     let blk = SCRATCH + 0x1_0000;
@@ -936,8 +963,13 @@ fn lights_start_0610() {
         .into_iter()
         .enumerate()
     {
-        plain_setup(&mut t, s, count);
-        magic_r11::pools(&mut t, f, 407);
+        if d == 0 {
+            plain_setup(&mut t, s, count);
+        } else {
+            magic_r11::object_slots(&mut t);
+            magic_r11::object_start_auto(&mut t, s);
+        }
+        magic_r11::pools(&mut t, f, 407 + d);
         t.set_u32(SCRATCH + 0x20, k as u32 + 3);
         t.write(blk, &varied(0x1600, 0x5a + k as u8));
         t.write(SCRATCH + 0x600, &[0x44; 0x10]);
@@ -1211,10 +1243,17 @@ fn particle_task_0512() {
 /// `r18::passes_0586` (`magic_0586` 0x100035f0): the angle above, below
 /// and inside its bounds; the matrix slots fill what they are handed,
 /// slot 828 logs the lock word, the passes' own data from the scene.
+/// Also `magic_0162`'s copy (0x100039e0, the scene's fields 0x60 higher).
 #[test]
 fn passes_0586() {
-    let Some(mut t) = twin(586) else { return };
-    let f = t.at(0x35f0);
+    for (dll, rva) in [(586u16, 0x35f0u32), (162, 0x39e0)] {
+        passes(dll, rva);
+    }
+}
+
+fn passes(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
     for s in [723u32, 724, 235, 230] {
         t.stub(s, move |m, a| {
@@ -1257,8 +1296,8 @@ fn passes_0586() {
     t.set_u32(w(&t, 0x16), s);
     let kv = f32::from_bits(t.img.word(w(&t, 0x27)));
     for (c, ang) in [(0u32, 7.0f32), (1, -7.0), (2, 0.0)] {
-        t.write(s, &varied(0x8200, c as u8));
-        t.set_u32(s + 0x9b4, (ang - kv).to_bits());
+        t.write(s, &varied(0x8300, c as u8));
+        t.set_u32(s + w(&t, 0x1f), (ang - kv).to_bits());
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

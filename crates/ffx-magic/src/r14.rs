@@ -451,7 +451,9 @@ pub const TASK_0288: Sig = Sig {
 ///   above 0 (then the trail), else the task is given back
 ///   ([`give_back`](crate::sa_pool::give_back), its `eax` returned);
 /// - else the count goes down, at 0 the spark burst
-///   ([`spark_burst`](crate::s8_misc::spark_burst), `ecx` = `S`); then up
+///   ([`spark_burst`](crate::s8_misc::spark_burst), `ecx` = `S`; in
+///   `magic_0347` 0x100044f0, [`SPARK_TASK_0347`](crate::r21::SPARK_TASK_0347),
+///   [`burst_0491`](crate::r20::burst_0491)'s copy); then up
 ///   to six sparks from the pool
 ///   ([`pool_take`](crate::sb_misc::pool_take)): entry slot 719 `(PART, 9,
 ///   1)` at `+0x30`, `+0x34` 1, u16 `+0x38` 0xffff and `+0x3a` 0x200,
@@ -546,7 +548,12 @@ pub fn spark_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 at: call(0x236),
                 ..inner
             };
-            crate::s8_misc::spark_burst(g, img, &burst);
+            // `magic_0347`'s burst is `magic_0491`'s
+            if img.matches(burst.at, &crate::r21::BURST_0347) {
+                crate::r20::burst_0491(g, img, &burst);
+            } else {
+                crate::s8_misc::spark_burst(g, img, &burst);
+            }
         }
         for _ in 0..6 {
             let n = crate::sb_misc::pool_take(g, img, call(0x242));

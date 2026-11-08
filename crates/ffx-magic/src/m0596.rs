@@ -299,7 +299,10 @@ fn place_model<G: Game>(
 /// turned by X 0 and Y `ang` (slots 235, 328, 329, 229 into the locals at
 /// `ebp - 0x74`, `- 0x34`, `- 0x24`; slot 248 adds it), `w` = 1;
 /// `+0x6e0` = 0 and two flags set. Returns slot 248's `eax`. (The
-/// frame's stack cookie is the CRT's; nothing else reads it.)
+/// frame's stack cookie is the CRT's; nothing else reads it.) `magic_0304`
+/// 0x100015d0 is the same code with every field of the state 0x1048
+/// higher ([`PLACE_PAIR_0304`](crate::r21::PLACE_PAIR_0304)), read from the
+/// first store's displacement.
 #[allow(clippy::too_many_lines)] // one straight sequence of calls
 pub fn place_pair<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
     let w = |off: u32| img.word(f + off);
@@ -311,7 +314,11 @@ pub fn place_pair<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         table: 0x30,
     };
     let chr = who(g, img, f, sel);
-    let state = g.read::<u32>(w(0x1d));
+    // `magic_0304`'s copy (0x100015d0) has every state field 0x1048
+    // higher: `S` moved by the first store's `[edi + 0x450]` less 0x450
+    let state = g
+        .read::<u32>(w(0x1d))
+        .wrapping_add(w(0x4a).wrapping_sub(0x450));
     let s262 = slot_target(g, w(0x35), 262);
     let mut stack = vec![chr, l(0x14), l(0x10), l(0x0c)];
     g.call(s262, 0, &stack);

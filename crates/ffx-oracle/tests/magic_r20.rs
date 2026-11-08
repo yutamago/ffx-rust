@@ -454,14 +454,31 @@ fn glow_task_0514() {
 /// two, three and five objects, dealt kinds whose actors check 0 (two
 /// objects) and not (one), bytes past the dealt ones -1 (the caster),
 /// the pool with enough nodes, the last one taken by the third node, the
-/// task list empty and not.
+/// task list empty and not. Also `magic_0440`'s load step (0x10002b70,
+/// the 118-byte shape) and start-up (0x10002ca0, `r21::sounds_0440` after
+/// the loop: the dealt count above 1 and not, `*G3` set and not).
 #[test]
 fn load_0680() {
-    let Some(mut t) = twin(680) else { return };
-    let f = t.at(0x12b0);
+    for (dll, rva, d) in [(680u16, 0x12b0u32, 1u32), (440, 0x2b70, 0)] {
+        load_dealt(dll, rva, d);
+    }
+}
+
+#[allow(clippy::too_many_lines)] // one set-up per callee
+fn load_dealt(dll: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    let start = t.img.rel32_target(f + 0x5c);
-    let op = |t: &Twin, o: u32| t.img.word(start + o);
+    let start = t.img.rel32_target(f + 0x5b + d);
+    // `magic_0440`: the start-up's code from `+0x3d0` 0x91 bytes later
+    let m = |o: u32| {
+        if dll == 440 && o >= 0x3d0 {
+            o + 0x91
+        } else {
+            o
+        }
+    };
+    let op = |t: &Twin, o: u32| t.img.word(start + m(o));
     let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
     let deal = t.img.rel32_target(start + 0x58);
     let kc = t.img.rel32_target(start + 0x155);
@@ -552,8 +569,24 @@ fn load_0680() {
                 0x29, 0x33, 0x3d, 0x4b, 0x82, 0x8c, 0x3d9, 0x3e3, 0x3ed, 0x3f7, 0x401, 0x40b,
                 0x415, 0x41f, 0x429, 0x433, 0x43d, 0x447, 0x451, 0x503, 0x50d, 0x517, 0x521, 0x52b,
                 0x535, 0x53f, 0x549, 0x553, 0x55d, 0x567, 0x570, 0x576, 0x580, 0x58a, 0x639,
-            ],
+            ]
+            .map(m),
         );
+        if dll == 440 {
+            // the sound block: its globals junk, `*G2` an id, `*G3` set
+            // every other case, slots 413 and 215 logged
+            junk_ops(
+                &mut t,
+                start,
+                &[
+                    0x3d6, 0x3f4, 0x400, 0x406, 0x430, 0x436, 0x440, 0x44a, 0x454,
+                ],
+            );
+            t.set_u32(t.img.word(start + 0x3db), 0x0005_0000 + k);
+            t.set_u32(t.img.word(start + 0x3ee), k & 1);
+            rec(&mut t, 413, 1, |_, a| a[0] ^ 0x413);
+            rec(&mut t, 215, 1, |_, a| a[0] ^ 0x215);
+        }
         // the pool: three takes (with three nodes the last takes the
         // last one)
         let (count, head) = (op(&t, 0x3d3), op(&t, 0x46a));
@@ -568,8 +601,8 @@ fn load_0680() {
         t.set_u32(busy, b);
         t.set_u32(loaded, l);
         t.set_u32(w(&t, 0x18), k & 1);
-        t.set_u32(w(&t, 0x27), 0x0000_5e5e);
-        for o in [0x62u32, 0x6c] {
+        t.set_u32(w(&t, 0x26 + d), 0x0000_5e5e);
+        for o in [0x61 + d, 0x6b + d] {
             t.set_u32(w(&t, o), 0x0bad_0000 + o);
         }
         scrub(&mut t);
@@ -586,17 +619,38 @@ fn load_0680() {
 /// empty and not; slot 325 copies the word's four floats.
 #[test]
 fn colour_setup_0645() {
-    let Some(mut t) = twin(645) else { return };
-    let at = t.at(0x77e0);
-    let list = t.img.word(at + 0x5d);
-    let ring_last = t.img.word(at + 0x25);
-    let ring_flags = t.img.word(at + 0x43);
+    for (dll, rva) in [(645u16, 0x77e0u32), (388, 0x6ba0)] {
+        colour_setup(dll, rva);
+    }
+}
+
+/// `magic_0388`'s copy (0x10006ba0): the alpha from `xmm2`, its operands
+/// shifted (`m`).
+fn colour_setup(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let at = t.at(rva);
+    let m = |o: u32| {
+        if dll != 388 || o < 0xe {
+            o
+        } else if o < 0xfe {
+            o + 6
+        } else if o < 0x10a {
+            o + 0x14
+        } else if o < 0x149 {
+            o + 0x1c
+        } else {
+            o + 0x1a
+        }
+    };
+    let list = t.img.word(at + m(0x5d));
+    let ring_last = t.img.word(at + m(0x25));
+    let ring_flags = t.img.word(at + m(0x43));
     let table = SCRATCH + 0x300;
     for i in 0..8 {
         t.set_u32(table + 4 * i, 0x0f00_0000 + i);
     }
     let o = SCRATCH + 0x400;
-    t.set_u32(t.img.word(at + 0x167), o);
+    t.set_u32(t.img.word(at + m(0x167)), o);
     t.set_u32(o + 0x10, 0x00b0_0010);
     rec(&mut t, 941, 1, move |_, _| table);
     rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
@@ -607,7 +661,7 @@ fn colour_setup_0645() {
         }
         0x325
     });
-    let list2 = t.img.word(at + 0x183);
+    let list2 = t.img.word(at + m(0x183));
     t.set_u32(list2 + 0x10, list2);
     let obj = SCRATCH + 0x1000;
     let src = SCRATCH + 0x600;
@@ -627,7 +681,13 @@ fn colour_setup_0645() {
             ecx: obj,
             edx: src,
             ..Call::default()
-        };
+        }
+        .with_xmm(&[
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(0.375 + k as f32),
+            ffx_magic::Xmm::f32(0.0),
+        ]);
         t.check(at, c, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::r20::colour_setup_0645(g, img, fr))
         });
@@ -639,8 +699,19 @@ fn colour_setup_0645() {
 /// function then reads at 0x40: not run.)
 #[test]
 fn summon_matrix_0610() {
-    let Some(mut t) = twin(610) else { return };
-    let f = t.at(0xb500);
+    // `magic_0434`'s copy: the colour show before slot 257 (5 bytes)
+    for (dll, rva, d) in [(610u16, 0xb500u32, 0u32), (434, 0x6610, 5)] {
+        summon_matrix(dll, rva, d);
+    }
+}
+
+fn summon_matrix(dll: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
+    // the colour show's slots log their words
+    for (s, n) in [(357u32, 3usize), (356, 3), (362, 4), (399, 2)] {
+        rec(&mut t, s, n, move |_, a| (0x0100_0000 + s) ^ a[0]);
+    }
     let op = |t: &Twin, o: u32| t.img.word(f + o);
     let r = SCRATCH + 0x8000;
     let buf = SCRATCH + 0xa000;
@@ -667,10 +738,10 @@ fn summon_matrix_0610() {
         junk(&mut t, r, 0x1000, k);
         t.set_u32(op(&t, 0x1a), r);
         t.write(sel, &[2 + k as u8, 1, 0, 3]);
-        for o in [0x57u32, 0x142, 0x17c, 0x23d] {
+        for o in [0x57u32, 0x142, 0x17c, 0x23d + d] {
             t.set_u32(op(&t, o), sel);
         }
-        for o in [0x6au32, 0x14c, 0x186, 0x249] {
+        for o in [0x6au32, 0x14c, 0x186, 0x249 + d] {
             for i in 0..8 {
                 t.set_u32(op(&t, o) + 4 * i, 0x00a0_0000 + 0x100 * o + i);
             }
@@ -1529,7 +1600,14 @@ fn step_0708() {
 /// and at once.
 #[test]
 fn burst_0491() {
-    let Some(mut t) = twin(491) else { return };
+    // `magic_0347`'s copy: `&d` slot 618's third word, the indices swapped
+    for (dll, arg) in [(491u16, 3usize), (347, 2)] {
+        burst(dll, arg);
+    }
+}
+
+fn burst(dll: u16, arg: usize) {
+    let Some(mut t) = twin(dll) else { return };
     let f = t.at(0x41a0);
     let op = |t: &Twin, o: u32| t.img.word(f + o);
     magic_r11::object_slots(&mut t);
@@ -1538,7 +1616,7 @@ fn burst_0491() {
     let (dist, yaw_in) = (SCRATCH + 0x710, SCRATCH + 0x714);
     rec(&mut t, 618, 5, move |m, a| {
         let d = m.r32(dist);
-        m.w32(a[3], d);
+        m.w32(a[arg], d);
         0x618
     });
     rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
@@ -1571,6 +1649,8 @@ fn burst_0491() {
         (-150, 0.5, 0x10),
         (-900, 0.25, 0x48),
         (-300, 1.0, 0),
+        // the far bound exactly
+        (-500, 0.25, 0x48),
     ]) {
         t.set_u32(dist, d.cast_unsigned());
         t.set_u32(yaw_in, (kv - yaw).to_bits());
@@ -1584,7 +1664,12 @@ fn burst_0491() {
         t.set_u32(w(&t, 0x08), 0);
         t.set_u32(w(&t, 0x2b), 0);
         junk(&mut t, owner, 0x300, k);
-        for o in [0x14u32, 0x58, 0x65, 0x111, 0x15d, 0x1cc] {
+        let globals: &[u32] = if dll == 347 {
+            &[0x14, 0x53, 0x5e, 0x111, 0x15d, 0x1cc]
+        } else {
+            &[0x14, 0x58, 0x65, 0x111, 0x15d, 0x1cc]
+        };
+        for &o in globals {
             t.set_u32(op(&t, o), 0x0a00_0000 + o);
         }
         scrub(&mut t);

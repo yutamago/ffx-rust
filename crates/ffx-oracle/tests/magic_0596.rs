@@ -215,8 +215,8 @@ fn place_stubs(t: &mut Twin) {
 
 /// One placement: the state block at `state`, `*G_OFF`, the summon's
 /// battle index and the caster's rotation.
-fn place(t: &mut Twin, state: u32, off: u32, index: u32, rot: f32) {
-    let f = t.at(0x6a20);
+fn place(t: &mut Twin, rva: u32, state: u32, off: u32, index: u32, rot: f32) {
+    let f = t.at(rva);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let sel = SCRATCH + 0x600;
     t.set_u32(w(t, 0x11), sel);
@@ -241,14 +241,22 @@ fn place(t: &mut Twin, state: u32, off: u32, index: u32, rot: f32) {
     });
 }
 
+/// `m0596::place_pair` (0x10006a20), and `magic_0304`'s copy
+/// (0x100015d0, the state's fields 0x1048 higher).
 #[test]
 fn place_pair() {
-    let Some(mut t) = magic_l3::twin(N) else {
+    for (dll, rva, delta) in [(N, 0x6a20u32, 0u32), (304, 0x15d0, 0x1048)] {
+        place_pair_in(dll, rva, delta);
+    }
+}
+
+fn place_pair_in(dll: u16, rva: u32, delta: u32) {
+    let Some(mut t) = magic_l3::twin(dll) else {
         return;
     };
     place_stubs(&mut t);
     let state = SCRATCH + 0xa000;
-    fill(&mut t, state + 0x380, 0x1c0, 5);
+    fill(&mut t, state + delta + 0x380, 0x1c0, 5);
     // the angle wrapped down, kept, wrapped up; the summon's index
     // inside the battle range or not, the battle off
     for (off, index, rot) in [
@@ -259,10 +267,10 @@ fn place_pair() {
         (0, 0x1f, f32::NAN),
         (0, 3, 5.0),
     ] {
-        place(&mut t, state, off, index, rot);
+        place(&mut t, rva, state, off, index, rot);
     }
     // a rotation whose angle lands exactly on the upper wrap limit
-    let f = t.at(0x6a20);
+    let f = t.at(rva);
     let k = |t: &Twin, op: u32| f32::from_bits(t.u32(t.img.word(f + op)));
     let (a, hi, lo) = (k(&t, 0x9c), k(&t, 0xab), k(&t, 0xc4));
     for limit in [hi, lo] {
@@ -272,7 +280,7 @@ fn place_pair() {
             .map(f32::from_bits)
             .find(|&r| (a - r).to_bits() == limit.to_bits())
         {
-            place(&mut t, state, 0, 2, r);
+            place(&mut t, rva, state, 0, 2, r);
         }
     }
     // (the null-matrix paths need a state block at 0xfffffc70 or

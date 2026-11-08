@@ -247,6 +247,44 @@ fn motions_towards() {
     }
 }
 
+/// `r21::motion_from_0201` (`magic_0201` 0x100026e0): as
+/// [`motions_towards`], the record's start frame `+0x10` varied (its
+/// halfword also what the stopped way returns in `ax`).
+#[test]
+fn motions_from_start() {
+    let Some(mut t) = twin(201) else { return };
+    let f = t.at(0x26e0);
+    let this = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x400;
+    rec_mem(&mut t, 217, 2, 4, Some(1));
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    rec_mem(&mut t, 233, 3, 4, Some(0));
+    rec_mem(&mut t, 248, 3, 4, Some(0));
+    for (flags, m, len, from) in [
+        (0x0009u16, 7u32, 0.5f32, 0x0003_0002u32),
+        (0xfffe, 0x8000_0005, 2.0, 9),
+        (0x0008, 0x0012_3456, -1.0, 0x0012_3457),
+        (0x0f0f, 3, 1.0e6, 0xffff_fff0),
+    ] {
+        t.stub(228, move |_, a| m ^ (a[0] & 0xf) ^ (a[1] & 0xf0));
+        t.write(obj, &varied(0x100, m));
+        t.set_u16(obj + 0x90, flags);
+        t.set_u32(this, obj);
+        t.set_u32(this + 4, 0x0228_0228);
+        t.set_u32(this + 8, SCRATCH + 0x500);
+        t.set_u32(this + 0xc, len.to_bits());
+        t.set_u32(this + 0x10, from);
+        let eax = if flags & 1 == 0 {
+            Eax::Checked
+        } else {
+            // the cookie word's high half: the original's DllMain set it
+            Eax::Junk
+        };
+        scrub(&mut t);
+        t.check_entry(f, Call::this(this), &[], eax);
+    }
+}
+
 #[test]
 fn chara_setups() {
     let Some(mut t) = twin(188) else { return };

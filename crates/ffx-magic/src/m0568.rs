@@ -153,11 +153,17 @@ fn copy_point<G: Game>(g: &mut G, fx: u32, from: u32, obj: u32) -> u32 {
 /// immediates `+0x2c`, `+0x93`; scale `*K` `+0x8`/`+0x49`; index 0) at
 /// the point `+0x1448` raised by `K` (`+0x8b`, `+0xf9`), its `+0xc4` the
 /// angle `+0x16bc`; `+0x16c4` = 0. Returns the point's `w`.
+/// `magic_0304` 0x10002270 ([`PAIR_START_0304`](crate::r21::PAIR_START_0304),
+/// 312 bytes) reads the angle and the point 0x60 higher and also moves
+/// `+0x146c` by `K` (into `+0x140c` too) before its `+0x1724` = 0; the
+/// displacements are read from the code.
 pub fn pair_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let fx = g.read::<u32>(w(0x10));
-    let a = g.read::<u32>(fx + 0x16bc);
+    // `movss xmm0, [edi + A]`, `mov eax, [edi + P]`
+    let (angle, point) = (w(0x1b), w(0x3c));
+    let a = g.read::<u32>(fx + angle);
     // push ebp, ecx, esi, edi; sub esp, 8; two words; the return address
     let esp = fr.esp.wrapping_sub(0x24);
     let mut last = 0;
@@ -167,12 +173,22 @@ pub fn pair_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     ] {
         let o = fx.wrapping_add(obj);
         host_object(g, img, fr, esp, ops, o, 0);
-        last = copy_point(g, fx, 0x1448, o);
+        last = copy_point(g, fx, point, o);
         g.write::<u32>(o + 0xc4, a);
         let y = add(g.read::<f32>(o + 0xd4), g.read::<f32>(w(k)));
         g.write::<f32>(o + 0xd4, y);
     }
-    g.write::<u32>(fx + 0x16c4, 0);
+    // `magic_0304`: `movss xmm0, [edi + Y]` (`f3`) where `0568` has the
+    // final `mov dword [edi + D], 0` (`c7`)
+    let d = if w(0x108) & 0xff == 0xf3 {
+        let y = add(g.read::<f32>(fx + w(0x10c)), g.read::<f32>(w(0x114)));
+        g.write::<f32>(fx + w(0x11c), y);
+        g.write::<f32>(fx + w(0x124), y);
+        0x20
+    } else {
+        0
+    };
+    g.write::<u32>(fx + w(0x10a + d), 0);
     Ret::eax(last)
 }
 
