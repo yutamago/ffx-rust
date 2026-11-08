@@ -1564,6 +1564,15 @@ ports! {
     "r15 summon task 0095" => r15::SUMMON_TASK_0095_SIG, r15::summon_task_0095;
     "r9 load step 0303" => r9_load::LOAD_0303, r9_load::load_0303;
     "r9 load step 0176" => r9_load::LOAD_0176, r9_load::load_0176;
+    "r15 motion sparks 0367" => r15::MOTION_SPARKS_0367, r15::motion_sparks_0367;
+    "r15 first set 0349" => r15::FIRST_SET_0349, r15::first_set_0349;
+    "r15 second set 0349" => r15::SECOND_SET_0349, r15::second_set_0349;
+    "r15 delayed start 0325" => r15::DELAYED_START_0325, r15::delayed_start_0325;
+    "r15 scatter 0195" => r15::SCATTER_0195, r15::scatter_0195;
+    "r15 aim 0195" => r15::AIM_0195, r15::aim_0195;
+    "r9 load step 0314" => r9_load::LOAD_0314, r9_load::load_0314;
+    "r9 load step 0381" => r9_load::LOAD_0381, r9_load::load_0381;
+    "r9 load step 0245" => r9_load::LOAD_0245, r9_load::load_0245;
     // round 15 (magic-r15): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
@@ -3427,6 +3436,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r15 colour start 0053", &r15::COLOUR_START_0053),
     ("r15 start-up 0303", &r15::START_UP_0303),
     ("r15 start-up 0176", &r15::START_UP_0176),
+    ("r15 sparks 0367", &r15::SPARKS_0367),
+    ("r15 start-up 0314", &r15::START_UP_0314),
+    ("r15 start-up 0381", &r15::START_UP_0381),
+    ("r15 start-up 0245", &r15::START_UP_0245),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
