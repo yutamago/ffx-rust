@@ -383,11 +383,12 @@ fn sparks_p034() {
 }
 
 /// Parameter family P048 (`r11_misc::launches_p048`, `magic_0421`
-/// 0x10001960 and `magic_0535` 0x10001940): the count 0 (the extra
-/// object), a multiple of 16, neither, and reaching 0x26 (slot 450).
+/// 0x10001960 and `magic_0535` 0x10001940; `magic_0384` 0x10001960, its
+/// bound above 0x19): the count 0 (the extra object), a multiple of 16,
+/// neither, and on each side of both bounds (slot 450).
 #[test]
 fn launches_p048() {
-    for (dll, rva) in [(421u16, 0x1960u32), (535, 0x1940)] {
+    for (dll, rva) in [(421u16, 0x1960u32), (535, 0x1940), (384, 0x1960)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
@@ -421,7 +422,7 @@ fn launches_p048() {
             SCRATCH + 0x1000 + 0x400 * (n % 3)
         });
         let arg = SCRATCH + 0x900;
-        for n in [0u32, 16, 5, 0x25] {
+        for n in [0u32, 16, 5, 0x25, 0x24, 0x18, 0x19] {
             t.set_u32(k, 0);
             for i in 0..3 {
                 let p = SCRATCH + 0x1000 + 0x400 * i;

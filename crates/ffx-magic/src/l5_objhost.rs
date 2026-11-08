@@ -312,7 +312,9 @@ pub const RUN_GROUP: Sig = Sig {
 /// 555, 331 of the DLL's blocks), 1.0 into three data words, slot 790's
 /// float into `G_SCALE`, the task ring ([`tasks_init`]), every pool-A
 /// node free, then slot 720 `(0x3400, 0x800)`, 718, 222 and 221 for the
-/// DLL's effect data. Returns 0.
+/// DLL's effect data. Returns 0. `magic_0610`'s copy (0x10006f60, 292
+/// bytes) checks its targets after slot 720
+/// ([`check_targets`](crate::m0610::check_targets)).
 pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
@@ -346,21 +348,36 @@ pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(w(0xab), 0);
     let s720 = slot_target(g, w(0xb0), 720);
     g.call(s720, 0, &[0x3400, 0x800]);
-    let data = w(0xcc);
-    let s718 = slot_target(g, w(0xc7), 718);
+    // `magic_0610`'s copy checks the targets here (a `call`, five bytes:
+    // the operands after it are five bytes later)
+    let d = if img.word(f + 0xc6) & 0xff == 0xe8 {
+        let check = Frame {
+            at: img.rel32_target(f + 0xc7),
+            // ebp and slot 720's two words pushed, then the return
+            esp: fr.esp.wrapping_sub(16),
+            ..Frame::default()
+        };
+        crate::m0610::check_targets(g, img, &check);
+        5
+    } else {
+        0
+    };
+    let v = |off: u32| img.word(f + off + d);
+    let data = v(0xcc);
+    let s718 = slot_target(g, v(0xc7), 718);
     g.call(s718, 0, &[data, 0x3400, 0x800]);
-    let s222 = slot_target(g, w(0xd9), 222);
-    g.call(s222, 0, &[w(0xed), 0, 0x3e8, 1, data, 0x3400, 0x800]);
-    let s221 = slot_target(g, w(0xf4), 221);
+    let s222 = slot_target(g, v(0xd9), 222);
+    g.call(s222, 0, &[v(0xed), 0, 0x3e8, 1, data, 0x3400, 0x800]);
+    let s221 = slot_target(g, v(0xf4), 221);
     g.call(
         s221,
         0,
         &[
-            w(0x108),
+            v(0x108),
             0,
             0x3e8,
             1,
-            w(0xed),
+            v(0xed),
             0,
             0x3e8,
             1,
@@ -369,7 +386,7 @@ pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             0x800,
         ],
     );
-    g.write::<u32>(w(0x113), 0);
+    g.write::<u32>(v(0x113), 0);
     Ret::eax(0)
 }
 
@@ -380,6 +397,19 @@ pub const START: Sig = Sig {
     calls: &[
         (0x0d, Callee::Sig(&OBJ_BLOCK_INIT)),
         (0x7c, Callee::Sig(&TASKS_INIT)),
+    ],
+    imports: &[],
+};
+
+/// `start`'s copy in `magic_0610` (0x10006f60, 292 bytes: the target
+/// check after slot 720).
+pub const START_0610: Sig = Sig {
+    len: 292,
+    hash: 0x8728_2a0b_a314_536e,
+    calls: &[
+        (0x0d, Callee::Sig(&OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&TASKS_INIT)),
+        (0xc7, Callee::Sig(&crate::m0610::CHECK_TARGETS)),
     ],
     imports: &[],
 };

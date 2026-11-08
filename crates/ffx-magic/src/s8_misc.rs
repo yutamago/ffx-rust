@@ -2388,10 +2388,19 @@ pub const LIGHT_SWING: Sig = Sig {
 /// sparks made, 0 when the pool ran out, or `*G_Q` for none.
 ///
 /// `magic_0134` 0x10001ec0 (837 bytes; 2 DLLs) and `magic_0132`
-/// 0x10001ec0.
+/// 0x10001ec0. `magic_0133`'s copy (0x10004770, 837 bytes) takes kind 0
+/// for `K1` (`xor eax, eax`, three bytes shorter than the `mov`, at
+/// `+0x8c`; `K2` 2), so its operands up to the loop are three bytes
+/// earlier (its loop's alignment `lea` three bytes longer).
 pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `xor eax, eax` (0x33) or `mov eax, imm32` (0xb8)
+    let sh: u32 = if img.word(f + 0x8c) & 0xff == 0x33 {
+        3
+    } else {
+        0
+    };
+    let w = |o: u32| op(img, f, if o > 0x8c && o < 0x170 { o - sh } else { o });
     let tab = |g: &G, o: u32, s: u32| slot_target(g, w(o), s);
     let r = |g: &G, o: u32| f32_at(g, w(o));
     let ebp = fr.esp.wrapping_sub(4);
@@ -2410,7 +2419,7 @@ pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let x = g.read::<i32>(w(0x4a));
     let d = g.read::<i32>(w(0x50));
     g.write::<u32>(at(8), 0x3f80_0000);
-    let (small, mid) = (img.word(f + 0x8d), img.word(f + 0xa3));
+    let (small, mid) = (if sh == 0 { w(0x8d) } else { 0 }, w(0xa3));
     let (count, kind, word) = if x <= 0 && d > 0 {
         let n = (x / d).wrapping_neg();
         let (count, kind) = if n < 100 {
@@ -2430,7 +2439,7 @@ pub fn spark_burst<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     }
     let obj = s.wrapping_add(0x130);
     let start = Frame {
-        at: img.rel32_target(f + 0xc0),
+        at: img.rel32_target(f + 0xc0 - sh),
         esp: esp.wrapping_sub(0x14),
         eax: kind,
         ecx: word,
@@ -2549,6 +2558,22 @@ pub const SPARK_BURST: Sig = Sig {
 pub const SPARK_BURST_0132: Sig = Sig {
     hash: 0xa09c_6150_845d_ed82,
     ..SPARK_BURST
+};
+
+/// [`spark_burst`] in `magic_0133` (0x10004770: kind 0 for `K1`, the
+/// operands up to the loop three bytes earlier).
+pub const SPARK_BURST_0133: Sig = Sig {
+    len: 837,
+    hash: 0x4eec_9d98_4568_bb6d,
+    calls: &[
+        (
+            0xbd,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0132_3CC0),
+        ),
+        (0x171, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x33d, Callee::Any),
+    ],
+    imports: &[],
 };
 
 /// A vertex of the mesh's i16 table `v` (6 bytes each) as three floats,

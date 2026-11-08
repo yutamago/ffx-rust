@@ -1105,10 +1105,17 @@ pub const LOOK_MATRIX: Sig = Sig {
 /// the smoke puff ([`smoke_puff`](crate::s6_misc::smoke_puff), `ecx` =
 /// `E`), whose `eax` it returns.
 ///
-/// `magic_0285` 0x10004cc0 (339 bytes; 2 DLLs).
+/// `magic_0285` 0x10004cc0 (339 bytes; 2 DLLs). `magic_0287`'s copy
+/// (0x10004ca0, 340 bytes) starts the object with three owners
+/// ([`start_object_owners`](crate::s4_misc::start_object_owners), all
+/// 0), pushing 0 (`push 0x0`, two bytes) for the word these push `ecx`
+/// for (one byte, at `+0xf7`; the two-owner start does not read it), so
+/// its operands from there on are one byte later.
 pub fn landing_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `push ecx` (0x51) or `push 0x0`
+    let d = u32::from(img.word(f + 0xf7) & 0xff != 0x51);
+    let w = |o: u32| op(img, f, if o >= 0xf7 { o + d } else { o });
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let e = fr.arg(g, 0);
     let x = g.read::<f32>(e + 0xc);
@@ -1145,15 +1152,19 @@ pub fn landing_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         .read::<u32>(e + 0x280)
         .wrapping_mul(0x130)
         .wrapping_add(w(0xfa));
-    let start = img.rel32_target(f + 0x105);
-    crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xc3), 2, 0, 0);
+    let start = img.rel32_target(f + 0x105 + d);
+    if d == 0 {
+        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xc3), 2, 0, 0);
+    } else {
+        crate::s4_misc::start_object_owners(g, img, start, obj, k(g, 0xc3), 2, 0, (0, 0));
+    }
     for off in [0u32, 4, 8, 0xc] {
         let p = g.read::<u32>(e + 0x24c + off);
         g.write::<u32>(obj + 0xd0 + off, p);
     }
     g.write::<u32>(e + 0x26c, 0);
     let puff = Frame {
-        at: img.rel32_target(f + 0x14c),
+        at: img.rel32_target(f + 0x14c + d),
         ecx: e,
         ..*fr
     };
@@ -1169,6 +1180,18 @@ pub const LANDING_PUFF: Sig = Sig {
     calls: &[
         (0x105, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
         (0x14c, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
+    ],
+    imports: &[],
+};
+
+/// [`landing_puff`]'s copy in `magic_0287` (0x10004ca0, 340 bytes: the
+/// three-owner object start).
+pub const LANDING_PUFF_0287: Sig = Sig {
+    len: 340,
+    hash: 0x13bd_d41d_e5ec_7d30,
+    calls: &[
+        (0x106, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x14d, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
     ],
     imports: &[],
 };

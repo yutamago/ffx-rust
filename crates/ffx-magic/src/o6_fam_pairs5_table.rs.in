@@ -27,6 +27,19 @@ pub const LOOK_MATRIX_CALLBACK_0045_1310: Sig = Sig {
     imports: &[],
 };
 
+/// [`look_matrix_callback`] in `magic_0665` (0x100016d0, 307 bytes: the
+/// matrix's stack word 3, operands 2 and 5 bytes later).
+pub const LOOK_MATRIX_CALLBACK_0665_16D0: Sig = Sig {
+    len: 307,
+    hash: 0x6631_b37b_e3fc_6d78,
+    calls: &[
+        (0x41, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX_0665)),
+        (0x118, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x12b, Callee::Any),
+    ],
+    imports: &[],
+};
+
 // family F0199_10002160
 
 /// [`record_node_start`] in `magic_0199` (0x10002160, 621 bytes; row own:1341).

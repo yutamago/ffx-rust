@@ -2961,7 +2961,14 @@ fn camera_tracks_set() {
 /// matrix out.
 #[test]
 fn level_look_matrices() {
-    let Some(mut t) = twin(45) else { return };
+    // `magic_0665`'s copy takes slot 236's second word from the stack
+    for n in [45u16, 665] {
+        level_look_matrices_in(n);
+    }
+}
+
+fn level_look_matrices_in(n: u16) {
+    let Some(mut t) = twin(n) else { return };
     let f = t.at(0x1000);
     let fv = |m: &dyn StubMem, a: u32| f32::from_bits(m.r32(a));
     rec(&mut t, 236, 3, |m, a| {
@@ -3016,7 +3023,9 @@ fn level_look_matrices() {
             Xmm::f32(0.25 * (k as f32 + 1.0)),
         ]);
         scrub(&mut t);
-        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+        let arg = [0x74 + k];
+        let args: &[u32] = if n == 665 { &arg } else { &[] };
+        t.check(f, c, args, Eax::Checked, |g, img, fr| {
             Ret::eax(s6_misc::level_look_matrix(g, img, fr))
         });
     }

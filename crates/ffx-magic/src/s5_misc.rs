@@ -1408,6 +1408,45 @@ pub const THICKNESS_MARGIN: Sig = Sig {
 pub fn ppp_effect_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
+    ppp_effect_head(g, img, fr);
+    let mut s = Pushes::default();
+    ppp_effect_programs(g, img, f, &mut s, (0xf7, 0x11d));
+    g.write_bytes(w(0x118), &[0u8; 0x110]);
+    g.write::<u32>(w(0x12b), w(0x12f));
+    for o in [0x135u32, 0x13f, 0x149] {
+        g.write::<u32>(w(o), 1);
+    }
+    Ret::eax(1)
+}
+
+/// The second and third programs of slot 941 (`D[6]`, `D[7]`) into the
+/// globals at operands `dst` (the first's, the second's), each call with
+/// the words the earlier left under it.
+pub(crate) fn ppp_effect_programs<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    s: &mut Pushes,
+    dst: (u32, u32),
+) {
+    let w = |o: u32| op(img, f, o);
+    for (k, (src, table, dst)) in [(0xdfu32, 0xeau32, dst.0), (0xfc, 0x104, dst.1)]
+        .into_iter()
+        .enumerate()
+    {
+        let x = g.read::<u32>(g.read::<u32>(w(src)).wrapping_add(0x18 + 4 * k as u32));
+        s.push(x);
+        // call width: 12 (the most `Pushes::words` holds)
+        let p = s.call(g, slot_target(g, w(table), 941), 0).eax;
+        g.write::<u32>(w(dst), p);
+    }
+}
+
+/// [`ppp_effect_setup`] up to its first program of slot 941 (the copies
+/// share it; the stack is back at the entry's after it).
+pub(crate) fn ppp_effect_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
     g.write::<u32>(w(0x7), fr.arg(g, 0));
     for (dst, v) in [(0x1eu32, 0x22u32), (0x28, 0x2c), (0x32, 0x36)] {
         g.write::<u32>(w(dst), w(v));
@@ -1443,23 +1482,6 @@ pub fn ppp_effect_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 12 (the most `Pushes::words` holds)
     let p = s.call(g, slot_target(g, w(0xcd), 941), 0).eax;
     g.write::<u32>(w(0xda), p);
-    let mut s = Pushes::default();
-    for (k, (src, table, dst)) in [(0xdfu32, 0xeau32, 0xf7u32), (0xfc, 0x104, 0x11d)]
-        .into_iter()
-        .enumerate()
-    {
-        let x = g.read::<u32>(g.read::<u32>(w(src)).wrapping_add(0x18 + 4 * k as u32));
-        s.push(x);
-        // call width: 12 (the most `Pushes::words` holds)
-        let p = s.call(g, slot_target(g, w(table), 941), 0).eax;
-        g.write::<u32>(w(dst), p);
-    }
-    g.write_bytes(w(0x118), &[0u8; 0x110]);
-    g.write::<u32>(w(0x12b), w(0x12f));
-    for o in [0x135u32, 0x13f, 0x149] {
-        g.write::<u32>(w(o), 1);
-    }
-    Ret::eax(1)
 }
 
 /// [`ppp_effect_setup`] (the `rel32`: `memset`).
@@ -2419,14 +2441,27 @@ pub const EFFECT_END_SHOW: Sig = Sig {
 /// 801 with six times `y / *G_Z`, `*G_Z = y` and slot 785 `(K * y)`.
 /// Returns 1.
 ///
-/// `magic_0188` 0x100023b0 (423 bytes; 2 DLLs).
+/// `magic_0188` 0x100023b0 (423 bytes; 2 DLLs). `magic_0686`'s copy
+/// (0x10001c10, 420 bytes) rises while `*G_T` is not 0 (`cmp dword,
+/// imm8` then `je`, three bytes shorter, at `+0x10`), so its operands
+/// after that are three bytes earlier.
 pub fn fade_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `cmp DWORD PTR ds:G_T, imm8` (0x83) or `imm32` (0x81)
+    let short = img.word(f + 0x10) & 0xff == 0x83;
+    let d = if short { 3 } else { 0 };
+    let w = |o: u32| op(img, f, if o > 0x12 { o - d } else { o });
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let lo = k(g, 0x26);
     let mut x = k(g, 0x1e);
-    if g.read::<i32>(w(0x12)) > 0xaf {
+    let t = g.read::<i32>(w(0x12));
+    // `je` past the rise (imm8 0) or `jle` (imm32 0xaf)
+    let rising = if short {
+        t != i32::from((img.word(f + 0x16) as u8).cast_signed())
+    } else {
+        t > w(0x16).cast_signed()
+    };
+    if rising {
         x = add(x, k(g, 0x30));
         g.write::<f32>(w(0x3b), x);
         if lo > x {
@@ -2465,17 +2500,17 @@ pub fn fade_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(colour + 4 * i, x);
         g.write::<u32>(offset + 4 * i, 0x80);
     }
-    slot_call(g, img, f, (0xb3, 353), &[colour]);
-    slot_call(g, img, f, (0xf4, 397), &[offset, colour]);
+    slot_call(g, img, f, (0xb3 - d, 353), &[colour]);
+    slot_call(g, img, f, (0xf4 - d, 397), &[offset, colour]);
     let y = k(g, 0x104);
     let m = k(g, 0x10c);
     // comiss m, y; jb: `y` kept when above `m` or unordered
     let y = if m >= y { m } else { y };
     let z = div(y, k(g, 0x12c));
-    slot_call(g, img, f, (0x131, 801), &[z.to_bits(); 6]);
+    slot_call(g, img, f, (0x131 - d, 801), &[z.to_bits(); 6]);
     let v = mul(k(g, 0x16c), y);
     g.write::<f32>(w(0x186), y);
-    slot_call(g, img, f, (0x171, 785), &[v.to_bits()]);
+    slot_call(g, img, f, (0x171 - d, 785), &[v.to_bits()]);
     Ret::eax(1)
 }
 
@@ -2487,6 +2522,19 @@ pub const FADE_STEP: Sig = Sig {
         (0x60, Callee::Any),
         (0x79, Callee::Any),
         (0x19f, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`fade_step`] in `magic_0686` (0x10001c10, 420 bytes: rising while
+/// `*G_T` is not 0).
+pub const FADE_STEP_0686: Sig = Sig {
+    len: 420,
+    hash: 0x603c_6ef7_99f7_def9,
+    calls: &[
+        (0x5d, Callee::Any),
+        (0x76, Callee::Any),
+        (0x19c, Callee::Any),
     ],
     imports: &[],
 };

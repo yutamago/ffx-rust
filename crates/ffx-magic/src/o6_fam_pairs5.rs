@@ -12,7 +12,8 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// An object callback on a level look matrix (`(obj)`; a /GS frame of
 /// 0x44 bytes, `ebp` = `esp - 4` at the entry; `magic_0664` 0x100016e0
-/// and `magic_0045` 0x10001310, 302 bytes; family `F0664_100016e0`):
+/// and `magic_0045` 0x10001310, 302 bytes; family `F0664_100016e0`;
+/// `magic_0665` 0x100016d0, 307 bytes, passes the matrix a stack word):
 /// - the level look matrix ([`crate::s6_misc::level_look_matrix`]) into
 ///   `M` (`ebp - 0x44`) from the source `*G_S` (`*G_T` when `obj` is not
 ///   within the 0x80 bytes from `BASE`), the height `K` and the scale
@@ -30,6 +31,14 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let obj = fr.arg(g, 0);
+    // `magic_0665`'s copy: `push 0x3` (the matrix's stack word) at
+    // `+0x2e`, operands after it 2 bytes later, and `add esp, 0x4` after
+    // the call, operands from there on 5 bytes later
+    let (arg, a, b) = if img.word(f + 0x2e) & 0xff == 0x6a {
+        (Some(img.word(f + 0x2f) & 0xff), 2, 5)
+    } else {
+        (None, 0, 0)
+    };
     let ebp = fr.esp.wrapping_sub(4);
     let m = ebp.wrapping_sub(0x44);
     let height = g.read::<u32>(w(0x14));
@@ -38,13 +47,18 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let src = if obj.wrapping_sub(w(0x2a)) & 0xffff_ff80 == 0 {
         g.read::<u32>(w(0x1a))
     } else {
-        g.read::<u32>(w(0x3a))
+        g.read::<u32>(w(0x3a + a))
     };
     // ebp, the 0x44-byte frame and edi pushed: the callee's return
     // address at `ebp - 0x4c`
+    let mut esp = ebp.wrapping_sub(0x4c);
+    if let Some(x) = arg {
+        g.write::<u32>(esp, x);
+        esp = esp.wrapping_sub(4);
+    }
     let callee = Frame {
-        at: img.rel32_target(f + 0x3f),
-        esp: ebp.wrapping_sub(0x4c),
+        at: img.rel32_target(f + 0x3f + a),
+        esp,
         ecx: m,
         edx: src,
         xmm: [0, 0, u128::from(height), u128::from(scale)],
@@ -56,57 +70,57 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let mut s = Pushes::default();
     let slot = |g: &G, t: u32, d: u32| slot_target(g, w(t), w(d) / 4);
     s.push(m);
-    let t = slot(g, 0x49, 0x55);
-    s.push(g.read::<u32>(w(0x4f)));
+    let t = slot(g, 0x49 + b, 0x55 + b);
+    s.push(g.read::<u32>(w(0x4f + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    s.push(g.read::<u32>(w(0x5d)));
-    let t = slot(g, 0x62, 0x6e);
-    s.push(g.read::<u32>(w(0x68)));
-    s.push(g.read::<u32>(w(0x74)));
+    s.push(g.read::<u32>(w(0x5d + b)));
+    let t = slot(g, 0x62 + b, 0x6e + b);
+    s.push(g.read::<u32>(w(0x68 + b)));
+    s.push(g.read::<u32>(w(0x74 + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    s.push(g.read::<u32>(w(0x7c)));
-    let t = slot(g, 0x81, 0x8d);
-    s.push(g.read::<u32>(w(0x87)));
+    s.push(g.read::<u32>(w(0x7c + b)));
+    let t = slot(g, 0x81 + b, 0x8d + b);
+    s.push(g.read::<u32>(w(0x87 + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    let p = g.read::<u32>(w(0x94));
-    s.push(disp8(img, f + 0x99));
-    g.write::<u32>(p, w(0x9c));
-    let lock = g.read::<u32>(w(0xa1));
+    let p = g.read::<u32>(w(0x94 + b));
+    s.push(disp8(img, f + 0x99 + b));
+    g.write::<u32>(p, w(0x9c + b));
+    let lock = g.read::<u32>(w(0xa1 + b));
     s.push(obj);
     let saved = g.read::<u32>(lock);
     g.write::<u32>(lock, 1);
-    let t = slot(g, 0xaf, 0xb5);
+    let t = slot(g, 0xaf + b, 0xb5 + b);
     // call width: 12 (Pushes caps the words at 12)
     let r = s.call(g, t, m).eax;
-    let lock = g.read::<u32>(w(0xbd));
+    let lock = g.read::<u32>(w(0xbd + b));
     g.write::<u32>(lock, saved);
     if r == 0 {
         return Ret::eax(1);
     }
-    let p = g.read::<u32>(w(0xcc));
-    g.write::<u32>(p, w(0xd3));
-    let t = slot(g, 0xd8, 0xde);
+    let p = g.read::<u32>(w(0xcc + b));
+    g.write::<u32>(p, w(0xd3 + b));
+    let t = slot(g, 0xd8 + b, 0xde + b);
     // call width: 1
     g.call(t, lock, &[obj]);
-    let p = g.read::<u32>(w(0xe5));
-    g.write::<u32>(p, w(0xeb));
-    let q = g.read::<u32>(w(0xf0));
-    let d = g.read::<u32>(q.wrapping_add(disp8(img, f + 0xf6)));
-    let t = slot(g, 0xf8, 0xfe);
+    let p = g.read::<u32>(w(0xe5 + b));
+    g.write::<u32>(p, w(0xeb + b));
+    let q = g.read::<u32>(w(0xf0 + b));
+    let d = g.read::<u32>(q.wrapping_add(disp8(img, f + 0xf6 + b)));
+    let t = slot(g, 0xf8 + b, 0xfe + b);
     // call width: 2 (slot 713's word under it)
     let list = g.call(t, lock, &[d, obj]).eax;
-    let entry = g.read::<u32>(list.wrapping_add(disp8(img, f + 0x10a)));
+    let entry = g.read::<u32>(list.wrapping_add(disp8(img, f + 0x10a + b)));
     start_part(
         g,
         img,
-        img.rel32_target(f + 0x113),
+        img.rel32_target(f + 0x113 + b),
         obj,
-        w(0x10c),
+        w(0x10c + b),
         entry,
-        disp8(img, f + 0x107),
+        disp8(img, f + 0x107 + b),
     );
     Ret::eax(1)
 }

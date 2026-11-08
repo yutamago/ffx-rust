@@ -1670,12 +1670,14 @@ fn stubs4(t: &mut Twin) {
     }
 }
 
-const LOOK_MATRIX_CALLBACK: &[(u16, u32)] = &[(664, 0x16e0), (45, 0x1310)];
+const LOOK_MATRIX_CALLBACK: &[(u16, u32)] = &[(664, 0x16e0), (45, 0x1310), (665, 0x16d0)];
 
 /// `o6_fam_pairs5::look_matrix_callback`: the object outside and inside
 /// the 0x80 bytes from `BASE` (the two sources), slot 712 answering 0
 /// (the part is not restarted) and non-zero; slot 941's list a scratch
-/// block of distinct words.
+/// block of distinct words. `magic_0665`'s copy passes the matrix a
+/// stack word: its operands are 2 bytes later around the matrix call
+/// and 5 after it.
 #[test]
 fn fam2_look_matrix_callback() {
     for (n, rva) in copies("o6 fam pairs5 look_matrix_callback", LOOK_MATRIX_CALLBACK) {
@@ -1683,18 +1685,19 @@ fn fam2_look_matrix_callback() {
             return;
         };
         stubs4(&mut t);
+        let (a, b) = if n == 665 { (2, 5) } else { (0, 0) };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         let base = w(&t, 0x2a);
         t.set_u32(w(&t, 0x1a), 0x0051_0000);
-        t.set_u32(w(&t, 0x3a), 0x0052_0000);
+        t.set_u32(w(&t, 0x3a + a), 0x0052_0000);
         for (k, o) in [0x4fu32, 0x68, 0x74, 0x87].into_iter().enumerate() {
-            t.set_u32(w(&t, o), 0x00a0_0000 + 0x100 * k as u32);
+            t.set_u32(w(&t, o + b), 0x00a0_0000 + 0x100 * k as u32);
         }
-        t.set_u32(w(&t, 0x94), SCRATCH + 0x3000);
-        t.set_u32(w(&t, 0xa1), SCRATCH + 0x3010);
+        t.set_u32(w(&t, 0x94 + b), SCRATCH + 0x3000);
+        t.set_u32(w(&t, 0xa1 + b), SCRATCH + 0x3010);
         t.set_u32(SCRATCH + 0x3010, 0x55);
-        t.set_u32(w(&t, 0xf0), SCRATCH + 0x3020);
+        t.set_u32(w(&t, 0xf0 + b), SCRATCH + 0x3020);
         fill(&mut t, SCRATCH + 0x3020, 0x10, 3);
         fill(&mut t, P, 0x10, 9);
         t.stub(941, |m, a| {

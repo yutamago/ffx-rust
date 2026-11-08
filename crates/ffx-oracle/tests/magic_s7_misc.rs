@@ -1127,7 +1127,12 @@ fn look_matrices() {
 /// the object started and the puff (its ring with a free record).
 #[test]
 fn landing_puffs() {
-    for (dll, rva) in [(285u16, 0x4cc0u32), (286, 0x1b70)] {
+    // `magic_0287`'s copy: the operands from `+0xf7` on one byte later
+    for (dll, rva, d) in [
+        (285u16, 0x4cc0u32, 0u32),
+        (286, 0x1b70, 0),
+        (287, 0x4ca0, 1),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
@@ -1138,14 +1143,16 @@ fn landing_puffs() {
         }
         rec(&mut t, 941, 1, move |_, _| table);
         rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
-        let soa = t.img.rel32_target(f + 0x105);
+        let soa = t.img.rel32_target(f + 0x105 + d);
         let start = t.img.rel32_target(soa + 0x84);
         t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
         t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x2f0);
         t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
-        let pa = t.img.rel32_target(soa + 0x9d);
+        // (`magic_0287`'s three-owner start: its pool and tail operands
+        // one byte earlier)
+        let pa = t.img.rel32_target(soa + 0x9d - d);
         let free = op(&t, pa, 0x04);
-        let tail = op(&t, soa, 0xa8);
+        let tail = op(&t, soa, 0xa8 - d);
         // the puff's (`s6_misc::smoke_puff`)
         rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
         let calls = SCRATCH + 0x7e0;
@@ -1155,7 +1162,7 @@ fn landing_puffs() {
             m.w32(calls, k + 1);
             f64::from(f32::from_bits(a[0])) * f64::from(k % 5 + 1)
         });
-        let puff = t.img.rel32_target(f + 0x14c);
+        let puff = t.img.rel32_target(f + 0x14c + d);
         let take = t.img.rel32_target(puff + 0x9);
         let ring = SCRATCH + 0x1000;
         t.set_u32(op(&t, take, 0x17), ring);

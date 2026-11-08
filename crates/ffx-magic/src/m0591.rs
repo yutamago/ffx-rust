@@ -7,15 +7,29 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The effect's start on its cue (0x100044e0, an overlay table entry, no
 /// arguments): nothing while slot 225 `(1)` answers non-zero, slot 5
-/// `(0x10af)` answers non-zero, or slot 28 `(0x10af, 1)` answers non-zero;
-/// else, once (the flag at operand `+0x50`), slot 226 `(*G_H, 1)`; then
-/// when slot 227 `(*G_H)` answers 1 or more, the targets and tasks are
-/// set up ([`targets_more_tasks`](crate::s5_misc::targets_more_tasks),
-/// the `rel32` at `+0x94`) and the DLL's two callback words set (operands
+/// `(ID)` answers non-zero, or slot 28 `(ID, 1)` answers non-zero (`ID`
+/// the immediates at `+0x20` and `+0x3b`: 0x10af here); else, once (the
+/// flag at operand `+0x50`), slot 226 `(*G_H, k)`; then when slot 227
+/// `(*G_H)` answers 1 or more, the targets and tasks are set up
+/// ([`targets_more_tasks`](crate::s5_misc::targets_more_tasks), the
+/// `rel32` at `+0x94`) and the DLL's two callback words set (operands
 /// `+0x9a`, `+0xa4`, to the immediates after them). Returns 0.
+///
+/// The copies in `magic_0205`, `0349`, `0598`, `0600` and `0610` (176
+/// bytes) push 0 for `k` (`push 0x0`, two bytes, after the table load at
+/// `+0x57`) where this one pushes `eax` (1: slot 28 answered 0; one byte,
+/// before the load), so their table operand is at `+0x58` and the later
+/// ones one byte after this one's.
 pub fn cue_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
+    // `push eax` (0x50) first, or the table load (`mov eax, ds:`) then `push 0x0`
+    let (k, d, tab) = if img.word(f + 0x57) & 0xff == 0x50 {
+        (1, 0, 0x59)
+    } else {
+        (0, 1, 0x58)
+    };
+    let id = w(0x20);
     let one = |g: &mut G, t: u32, slot: u32, words: &[u32]| {
         let mut p = Pushes::default();
         p.push_all(words);
@@ -23,22 +37,21 @@ pub fn cue_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 12 (Pushes caps the words at 12)
         p.call(g, t, 0).eax
     };
-    if one(g, 0x1, 225, &[1]) != 0 || one(g, 0x1b, 5, &[0x10af]) != 0 {
+    if one(g, 0x1, 225, &[1]) != 0 || one(g, 0x1b, 5, &[id]) != 0 {
         return Ret::eax(0);
     }
-    if one(g, 0x31, 28, &[1, 0x10af]) != 0 {
+    if one(g, 0x31, 28, &[1, w(0x3b)]) != 0 {
         return Ret::eax(0);
     }
     if g.read::<u32>(w(0x50)) == 0 {
-        // `push eax` (1: slot 28 answered 0)
-        let h = g.read::<u32>(w(0x5f));
-        one(g, 0x59, 226, &[1, h]);
-        g.write::<u32>(w(0x70), 1);
+        let h = g.read::<u32>(w(0x5f + d));
+        one(g, tab, 226, &[k, h]);
+        g.write::<u32>(w(0x70 + d), 1);
     }
-    let h = g.read::<u32>(w(0x7f));
-    if one(g, 0x79, 227, &[h]).cast_signed() >= 1 {
+    let h = g.read::<u32>(w(0x7f + d));
+    if one(g, 0x79 + d, 227, &[h]).cast_signed() >= 1 {
         let callee = Frame {
-            at: img.rel32_target(f + 0x94),
+            at: img.rel32_target(f + 0x94 + d),
             esp: fr.esp.wrapping_sub(4),
             eax: 0,
             ecx: 0,
@@ -46,17 +59,26 @@ pub fn cue_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             xmm: [0; 4],
         };
         crate::s5_misc::targets_more_tasks(g, img, &callee);
-        g.write::<u32>(w(0x9a), w(0x9e));
-        g.write::<u32>(w(0xa4), w(0xa8));
+        g.write::<u32>(w(0x9a + d), w(0x9e + d));
+        g.write::<u32>(w(0xa4 + d), w(0xa8 + d));
     }
     Ret::eax(0)
 }
 
-/// [`cue_start`] (175 bytes, 1 overlay).
+/// [`cue_start`] (175 bytes, `magic_0591`).
 pub const CUE_START: Sig = Sig {
     len: 175,
     hash: 0x5374_853b_674c_6690,
     calls: &[(0x94, Callee::Sig(&crate::s5_misc::TARGETS_MORE_TASKS))],
+    imports: &[],
+};
+
+/// [`cue_start`]'s copy in `magic_0349` (0x10004590, 176 bytes: the
+/// `push 0x0` layout; the same ID).
+pub const CUE_START_0349: Sig = Sig {
+    len: 176,
+    hash: 0x4cfb_15a0_b347_7c48,
+    calls: &[(0x95, Callee::Sig(&crate::s5_misc::TARGETS_MORE_TASKS))],
     imports: &[],
 };
 
