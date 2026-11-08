@@ -14,10 +14,11 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 9] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 10] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
         (&m0164::MEAN_VISIT, m0164::mean_visit::<G>),
+        (&m0164::MEAN_VISIT_0613, m0164::mean_visit::<G>),
         (&m0186::INT_MOTION, m0186::int_motion::<G>),
         (&m0201::MATRIX_VISIT, m0201::matrix_visit::<G>),
         (&m0203::MODEL_VISIT, m0203::model_visit::<G>),

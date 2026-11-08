@@ -2857,6 +2857,9 @@ ports! {
     "r16 caster start 0450" => r16::CASTER_START_0450, r16::caster_start_0450;
     "r16 glide 0450" => r16::GLIDE_0450, r16::glide_0450;
     "r16 rise 0450" => r16::RISE_0450, r16::rise_0450;
+    "r16 launch 0450" => r16::LAUNCH_0450, r16::launch_0450;
+    "r16 thunk: mean visit 0613" => r16::JMP_MEAN_VISIT_0613, sl_wrap::ecx_jmp;
+    "r16 load step 0675" => r16::LOAD_0675, r16::load_0675;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3433,6 +3436,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r16 start-up 0480", &r16::START_UP_0480),
     ("r16 start-up 0474", &r16::START_UP_0474),
     ("r16 dealt start 0494", &r16::DEALT_START_0494),
+    ("r16 dealt kind start 0675", &r16::DEALT_KIND_START_0675),
     ("r16 summon object 0683", &r16::SUMMON_OBJECT_0683),
     ("r16 texture 0661", &r16::TEXTURE_0661),
     ("r16 spawn 0489", &r16::SPAWN_0489),
