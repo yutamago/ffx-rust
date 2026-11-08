@@ -1627,6 +1627,8 @@ ports! {
     "r19 load step 0128" => r19::LOAD_0128, r19::load_0128;
     "r9 load step 0285" => r9_load::LOAD_0285, r9_load::load_0285;
     "r9 load step 0286" => r9_load::LOAD_0286, r9_load::load_0286;
+    "r9 load step 0287" => r9_load::LOAD_0287, r9_load::load_0287;
+    "r9 load step 0249" => r9_load::LOAD_0249, r9_load::load_0249;
     "r9 summon start (nodes) 0082" => r9_summon::NODES_0082, r9_summon::nodes_0082;
     // round 19 (magic-r19): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
@@ -3560,6 +3562,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r19 three nodes 0128", &r19::THREE_NODES_0128),
     ("r19 start-up 0285", &r19::START_UP_0285),
     ("r19 start-up 0286", &r19::START_UP_0286),
+    ("r19 start-up 0287", &r19::START_UP_0287),
+    ("r19 start-up 0249", &r19::START_UP_0249),
     ("r19 start 0082", &r19::START_0082),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
