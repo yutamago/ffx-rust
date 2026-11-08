@@ -1493,7 +1493,6 @@ pub fn summon_task_0207<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                         ..*fr
                     };
                     crate::sa_misc::insert_with(g, img, &iw);
-                    g.write::<u32>(esp4 + 0x10, 2);
                     byte_stores(g, img, f, &[0x7a1]);
                     pnw(g, (0x798, 0x7a9, 2, 0x7ae));
                     let h = gw(g, 0x7c3);

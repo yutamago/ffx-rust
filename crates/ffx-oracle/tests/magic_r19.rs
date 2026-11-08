@@ -28,7 +28,7 @@ fn scrub(t: &mut Twin) {
 fn junk_ops(t: &mut Twin, f: u32, ops: &[u32]) {
     for &o in ops {
         let at = t.img.word(f + o);
-        t.set_u32(at, 0x5a5a_5a5a ^ o);
+        t.set_u32(at, (0x5a5a_5a5a ^ o) | 1);
     }
 }
 
@@ -252,6 +252,9 @@ fn summon_0343_setup(
     t.set_u8(op(t, sfs, 0x02), 0x40 | (bits & 1));
     let vs = t.img.rel32_target(f + 0x35a);
     t.set_u8(op(t, vs, 0x06), 0x80 | (bits >> 1 & 1));
+    // the summon's model node (0x100 bytes, up to the camera block)
+    let node = op(t, f, 0x5a4);
+    t.write(node, &[0x22; 0x100]);
     // the camera blocks' sources: real floats; their outputs junk
     for o in [
         0x91u32, 0x9c, 0xca, 0x105, 0x140, 0x153, 0x166, 0x16e, 0x17e, 0x186, 0x393, 0x39e, 0x3c1,
@@ -269,8 +272,6 @@ fn summon_0343_setup(
             0x534, 0x550, 0x578, 0x582, 0x664, 0x67b, 0x699, 0x6db, 0x701, 0x708,
         ],
     );
-    let node = op(t, f, 0x5a4);
-    t.write(node, &[0x22; 0x100]);
     let lu = t.img.rel32_target(f + 0x5e4);
     let cur = op(t, lu, 0x02);
     if current {
@@ -442,7 +443,7 @@ fn summon_task_0202() {
         ((0u32, 5u32), (0u32, 0u8, 2u32, [0u32; 3], 0u32)),
         ((10, 5), (0, 0, 2, [0; 3], 0)),
         ((10, 5), (0, 1, 2, [0; 3], 0)),
-        ((11, 0x19), (0, 0, 2, [0; 3], 0)),
+        ((11, 0x19), (0, 0, 2, [0x77; 3], 0)),
         ((11, 0x1a), (0, 0, 3, [0x77; 3], 0)),
         ((11, 0x1a), (0, 1, 0, [0x77; 3], 0)),
         ((12, 9), (0, 0, 3, [1, 0, 1], 0)),
@@ -762,7 +763,7 @@ fn summon_task_0106() {
     let Some(mut t) = twin(106) else { return };
     let f = t.at(0x6c30);
     for (k, (st, more)) in [
-        ((0u32, 5u32), (0u32, 0u16, 0u32)),
+        ((0u32, 5u32), (1u32, 0u16, 0u32)),
         ((10, 5), (1, 0, 0)),
         ((20, 5), (0, 0, 0)),
         ((21, 0x79), (0, 0, 0)),
