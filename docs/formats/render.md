@@ -304,37 +304,39 @@ Write masks, swizzles and modifiers are not read here; the names come from
 each program's reflection. Over the scenery parts' effects (mostly
 `phyredefaultlitshader.fx#*` and `phyreuvanimationshader.fx#*`), 809
 pixel-shader containers read `COLOR0`: 350 in one `mul`, 459 in a `mul` and
-a `mad` (339 with the `mad` first); 15 (e.g. `phyrewatershader.fx#ccbc…`) declare
-it unread, 91 have none. With `MaterialColour` and `clrScaleFactor` at 1, a
-colour byte of 128 gives about the painted texture `t` (1.05 t - 0.04 up to
-t = 0.8, 0.91 at t = 1), as 0x80 does in the PS2 GS's MODULATE texture
-function (Rv = Rt × Rf >> 7, GS User's Manual, "Texture Function"). Where FFX.exe sets `MaterialColour` and
-`clrScaleFactor` for scenery is not known.
+a `mad` (339 with the `mad` first); 15 (e.g. `phyrewatershader.fx#ccbc…`)
+declare it unread, 91 have none. With `MaterialColour` and `clrScaleFactor`
+at 1, both `MySMSampler` terms 0 and no fog, a colour byte of 128 gives
+about the painted texture `t` (1.05 t - 0.04 up to t = 0.8, 0.91 at t = 1),
+as 0x80 does in the PS2 GS's MODULATE texture function (`Rv = Rt x Rf >> 7`,
+GS User's Manual, "Texture Function"). Where FFX.exe sets `MaterialColour`
+and `clrScaleFactor` for scenery is not known.
 
-The colours hold light **and** tint. Over the 20.8 million scenery
-vertices: all but 9 of 36,171 parts have a `Color` stream; the mean light
-(Rec. 709 luminance of (2c)^2.2, byte 128 = 1) is 0.38; 13 % of vertices are brighter than
-byte 128 and 0.8 % at 255; the mean saturation of that light (1 − min/max) is 0.41;
-6.5 % of vertices have alpha under 255. Four maps (bsvr0200, bsvr0300,
-znkd0500, dome0700) also draw a separate shading layer: one vertex-coloured
-instance over an 8×8 texture laid over the floor and walls (painted
-shadows and window light; for bsvr0200 `bsvr02.dae.phyre#FBXASC049_1`;
-found with ffx-remix's `scene` example over every map, its docs/models.md
-"Baked shading layers").
+The colours hold light **and** tint. Over the 20.8 million scenery vertices:
+all but 9 of 36,171 parts have a `Color` stream; the mean light (Rec. 709
+luminance of (2c)^2.2, byte 128 = 1) is 0.38; 13 % of vertices are brighter
+than byte 128 and 0.8 % at 255; the mean saturation of that light (1 −
+min/max) is 0.41; 6.5 % of vertices have alpha under 255. Four maps
+(bsvr0200, bsvr0300, znkd0500, dome0700) also draw a separate shading layer:
+one vertex-coloured instance over an 8×8 texture laid over the floor and
+walls (painted shadows and window light; for bsvr0200
+`bsvr02.dae.phyre#FBXASC049_1`; found with ffx-remix's `scene` example over
+every map, its docs/models.md "Baked shading layers").
 
 **Writing the colours back.** `Model::write` rewrites a segment's `Color`
-stream in place when the vertex count stays (`BYTE4`, or `FLOAT4` as bytes / 255)
-and keeps the file's length and every other stream: with every colour
-inverted, the models of all 324 maps it reads (the 4 `_a` maps, whose
-32-bit indices `Model::parse` rejects, excepted) wrote back with positions,
-normals, UVs and indices unchanged and the new colours read back. No
-segment is drawn by two instances, so each placed part has a stream of its
-own. The game draws a rebuilt model's colours without other changes
-(ffx-remix's runtime served one for bsvr0200, commit 35863d4, checked in
-game 2026-11-08 with its renderer off). 1,325 parts (123 maps) have a
-second `ST` stream and 4,834 (83 maps) a second `Color` stream (whether
-their shaders read them is not checked); 1,224 instances on 80 maps morph
-(the game rewrites their positions every frame; scene.md).
+stream in place when the vertex count stays (`BYTE4`, or `FLOAT4` as bytes /
+255) and keeps the file's length and every other stream: with every colour
+inverted, the models of all 324 maps it reads (the 4 `_a` maps, whose 32-bit
+indices `Model::parse` rejects, excepted) wrote back with positions,
+normals, UVs and indices unchanged and the new colours read back. No segment
+is drawn by two instances, so each placed part has a stream of its own. The
+game draws a rebuilt model's colours without other changes (ffx-remix's
+runtime served one for bsvr0200, commit 35863d4, checked in game 2026-11-08
+with its renderer off). 1,325 parts (123 maps) have a second `ST` stream and
+4,834 (83 maps) a second `Color` stream (whether their shaders read them is
+not checked); 1,224 instances (3,336 parts, scene.md) on 80 maps morph (the
+game rewrites their positions every frame; docs/scene-builder.md, "Morphing
+meshes").
 
 ## Samplers (ffx-demaster)
 
