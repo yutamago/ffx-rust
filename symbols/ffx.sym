@@ -28725,7 +28725,7 @@
 0x0112a980 label g_KernelKaizouSize        # u16 directory 0x2f file 5's size (MsBattleInit)
 0x0112a984 label g_BtlScriptRecords        # 2 x 0x20: +0 i8 the first record's work count (record 1's base), +0x10 script file (MsAtelGetHandler kind 2); copied from 0x0112a9a4 by 0x00782670
 0x0112a98c label g_BtlFirstScript          # u32 the first script MsBtlReadManage registers in manager 0 (MsAtelRegist), before g_BtlSceneScript
-0x0112a998 label g_BtlMessages # u16 offsets: the battle message table (MsShowBattleMessage_0079d090)
+0x0112a998 label g_BtlMessages # u16 offsets: the battle message table (MsShowBattleMessage_0079d090); script record 0's +0x14, so system_01's own text (new_<lang>pc/battle/btl/system_01/system_01.bin, 494 entries: MsBattleInit reads system_01 with MsBattleExe's mode set, MsBtlScriptRecordShift_00782670 moves its record to record 0); the battle's own table is record 1's +0x14 (0x0112a9b8)
 0x0112a9a4 label g_BtlScriptRecord1        # the second of g_BtlScriptRecords' two 0x20-byte records (MsBtlScriptRecordShift_00782670 moves it to the first)
 0x0112a9ac label g_BtlSceneScript          # u32 the formation file's section 0 (MsBtlReadSetScene); MsBtlReadManage's second MsAtelRegist in manager 0
 0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
