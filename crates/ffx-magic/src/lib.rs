@@ -2918,6 +2918,9 @@ ports! {
     "r18 four parts 0493" => r18::FOUR_PARTS_0493, r18::four_parts_0493;
     "r18 load step 0564" => r18::LOAD_0564, r18::load_0564;
     "r18 load step 0562" => r18::LOAD_0562, r18::load_0562;
+    "r18 model start 0603" => r18::MODEL_START_0603, r18::model_start_0603;
+    "r18 lights start 0610" => r18::LIGHTS_START_0610, r18::lights_start_0610;
+    "r18 caster place 0610" => r18::CASTER_PLACE_0610, r18::caster_place_0588;
     // round 18 (magic-r18): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

@@ -432,7 +432,17 @@ fn wave_tick_0588() {
     let e = SCRATCH + 0x8000;
     t.set_u32(w(&t, 0x19), e);
     let out = SCRATCH + 0x2000;
-    recs(&mut t, &[(311, 1), (772, 2), (862, 6)]);
+    recs(&mut t, &[(311, 1), (772, 2)]);
+    // slot 862 logs the colour it is handed and the lock word
+    let lock_g = t.img.word(f + 0x18c);
+    rec(&mut t, 862, 6, move |m, a| {
+        let row = magic_owna::row(862) + 0x20;
+        for i in 0..4 {
+            m.w32(row + 4 * i, m.r32(a[3] + 4 * i));
+        }
+        m.w32(row + 0x10, m.r32(m.r32(lock_g)));
+        0x0862
+    });
     rec(&mut t, 562, 0, move |_, _| out);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
     let lock = SCRATCH + 0x640;
@@ -470,7 +480,13 @@ fn caster_object_0588() {
     let s = t.img.rel32_target(f + 0x2e);
     let e = SCRATCH + 0x1_0000;
     t.set_u32(w(&t, 0x1c), e);
-    recs(&mut t, &[(332, 1)]);
+    rec(&mut t, 332, 1, |m, a| {
+        let row = magic_owna::row(332) + 0x20;
+        for i in 0..4 {
+            m.w32(row + 4 * i, m.r32(a[0] + 4 * i));
+        }
+        0x0332
+    });
     for (k, (count, listed)) in [(3u16, false), (0, true)].into_iter().enumerate() {
         plain_setup(&mut t, s, count);
         magic_r11::pools(&mut t, f, 347);
@@ -525,6 +541,14 @@ fn start_up_0588() {
     caster_slots(&mut t);
     recs(&mut t, &[(719, 3), (711, 3), (710, 4), (271, 1)]);
     for listed in [false, true] {
+        for o in [
+            0x16u32, 0x20, 0x2a, 0x42, 0x61, 0x6b, 0x76, 0x7e, 0x85, 0x8f, 0x9a, 0xa2,
+        ] {
+            t.set_u32(w(&t, o), 0x5a5a_5a5a);
+        }
+        for o in [0xb6u32, 0xc0, 0xe3, 0xee] {
+            t.set_u32(w(&t, o), 0x5a5a_5a5a);
+        }
         magic_r11::pools(&mut t, f, 387);
         t.write(w(&t, 0xc9), &[0x5c; 0x140 * 0x10]);
         t.write(SCRATCH + 0x600, &[0x44; 0x10]);
@@ -663,7 +687,11 @@ fn four_parts_0493() {
         let l = lists[0];
         t.write(l, &[0; 0x20]);
         t.write(SCRATCH + 0x7600, &[0x26; 0x20]);
-        let last = if c.is_multiple_of(2) { l } else { SCRATCH + 0x7600 };
+        let last = if c.is_multiple_of(2) {
+            l
+        } else {
+            SCRATCH + 0x7600
+        };
         t.set_u32(l + 0xc, last);
         t.set_u32(l + 0x10, last);
         // the particle nodes' list: empty
@@ -714,6 +742,9 @@ fn start_up_0564() {
     }
     let l = SCRATCH + 0x600;
     t.write(l, &[4, 6, 0x21, 9, 1, 2, 3, 5]);
+    for i in 0..0x40 {
+        t.set_u32(w(&t, 0x1bc) + 4 * i, 0x0b00_0000 + i);
+    }
     let kinds = w(&t, 0xc4);
     let free_head = w(&t, 0x5a2);
     let free_count = w(&t, 0x590);
@@ -843,5 +874,102 @@ fn start_up_0562() {
         t.set_u32(loaded, ld);
         t.set_u32(t.img.word(at + 0x18), asked);
         t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::model_start_0603` (`magic_0603` 0x1000cb10): the node list empty
+/// (its last the list itself) and not; the second node's object byte.
+#[test]
+fn model_start_0603() {
+    let Some(mut t) = twin(603) else { return };
+    let f = t.at(0xcb10);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(413, 1), (215, 1), (14, 2)]);
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    let prev = SCRATCH + 0x700;
+    let other = SCRATCH + 0x740;
+    let list = w(&t, 0x93);
+    for (c, (empty, flags)) in [(true, 0u8), (false, 1), (true, 7)].into_iter().enumerate() {
+        let c = c as u32;
+        t.write(prev, &[0x31; 0x20]);
+        t.set_u32(w(&t, 0x4), prev);
+        t.write(other, &[0x32; 0x20]);
+        t.set_u32(w(&t, 0x3d), if empty { list } else { other });
+        t.set_u32(w(&t, 0x43), 0x0000_0f0f + c);
+        t.set_u16(w(&t, 0xaf), 3 + c as u16);
+        t.set_u8(w(&t, 0x169), flags);
+        // the set-ups' parents and objects: the record's words
+        for o in [0x148u32, 0x17a] {
+            let p = w(&t, o);
+            t.write(p, &[0; 0x20]);
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::lights_start_0610` (`magic_0610` 0x1000be90): the object pool
+/// free and empty, the task list empty and not.
+#[test]
+fn lights_start_0610() {
+    let Some(mut t) = twin(610) else { return };
+    let f = t.at(0xbe90);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let s = t.img.rel32_target(f + 0x43);
+    rec(&mut t, 282, 0, |_, _| 0x282);
+    t.stub_st0(282, |m, _| f64::from(m.r32(SCRATCH + 0x20)) * 0.125 + 0.3);
+    let blk = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0xe), blk);
+    for (k, (count, listed)) in [(3u16, false), (0, true), (2, true)]
+        .into_iter()
+        .enumerate()
+    {
+        plain_setup(&mut t, s, count);
+        magic_r11::pools(&mut t, f, 407);
+        t.set_u32(SCRATCH + 0x20, k as u32 + 3);
+        t.write(blk, &varied(0x1600, 0x5a + k as u8));
+        t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+        t.set_u32(w(&t, 0xbf), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(&t, 0xd5), SCRATCH + 0x600);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::caster_place_0588` in `magic_0610` (0x1000a800): the yaw above,
+/// below and inside its bounds; the others shown (slot 293 says the DLL's
+/// actor has a group or not; slot 288's list of two).
+#[test]
+fn caster_place_0610() {
+    let Some(mut t) = twin(610) else { return };
+    let f = t.at(0xa800);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let e = SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x15), e);
+    caster_slots(&mut t);
+    let yaw_in = SCRATCH + 0x714;
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw_in))));
+    let group = SCRATCH + 0x718;
+    rec(&mut t, 293, 1, move |m, _| m.r32(group));
+    let list = SCRATCH + 0x760;
+    t.write(list, &[5, 0, 9, 0, 0x22, 0, 0, 0]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        list
+    });
+    let kv = f32::from_bits(t.img.word(w(&t, 0x8a)));
+    for (c, (yaw, grp)) in [(-3.0f32, 0u32), (3.0, 1), (0.0, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let c = c as u32;
+        t.write(e, &varied(0x1c00, c as u8));
+        t.set_u32(w(&t, 0x2c), 0x00a0_0000 + c);
+        t.set_u32(yaw_in, (kv - yaw * 7.0).to_bits());
+        t.set_u32(group, grp);
+        t.set_u32(w(&t, 0x2f5), 0x5555_5555);
+        t.set_u32(w(&t, 0x2ff), 0x6666_6666);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
