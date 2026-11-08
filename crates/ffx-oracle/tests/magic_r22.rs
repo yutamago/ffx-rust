@@ -911,3 +911,293 @@ fn summon_task_0478() {
         "the end's model set-up"
     );
 }
+
+/// `magic_0482` 0x10006e10 (`r22::summon_task_0482`): the start (state
+/// 0; slot 415 0x7a and not, the DLL's lists empty and not), 10, 11
+/// waiting, at 0 (the second nodes and the fades; on to 20000, not yet
+/// ended) and below with `O + 0xd38` 40000 (the end), 20000 waiting and
+/// ending, and three other states.
+#[test]
+fn summon_task_0482() {
+    let Some(mut t) = twin(482) else { return };
+    let f = t.at(0x6e10);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let kind = SCRATCH + 0x10;
+    for (s, x) in [(333u32, 0.375f64), (12, 0.8125)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            x + f64::from(a[0] & 3) + f64::from(m.r32(row(s)) & 1)
+        });
+    }
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |m, _| 0.0625 + f64::from(m.r32(row(790)) & 3));
+    rec(&mut t, 415, 1, move |m, _| m.r32(kind));
+    let models = SCRATCH + 0x20;
+    t.set_u32(models, 0x0000_0503);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        models
+    });
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x10 * i + 3);
+        }
+        0x558
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.25 * i as f32 + 0.125);
+        }
+        0x268
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16u32 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                if i % 5 == 0 { 1.0 } else { 0.0625 * i as f32 },
+            );
+        }
+        0x235
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16u32 {
+            let v = m.r32(a[1] + 4 * i).rotate_left(3) ^ i;
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x230
+    });
+    for (s, n) in [
+        (215u32, 1usize),
+        (413, 1),
+        (14, 4),
+        (211, 2),
+        (331, 1),
+        (353, 1),
+        (271, 1),
+        (719, 3),
+        (941, 1),
+        (325, 2),
+        (714, 5),
+        (239, 3),
+        (538, 2),
+        (213, 2),
+        (35, 5),
+        (34, 2),
+        (547, 1),
+        (276, 3),
+        (219, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    // the particle node's globals (as `magic_s3.rs`'s test)
+    let pn = t.img.rel32_target(f + 0x391);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(t.img.word(wrapper + 0x04), lock);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    for i in 0..0x40 {
+        t.set_u32(owner + 4 * i, 0x0a00_0000 + i);
+    }
+    let task = SCRATCH + 0x100;
+    let (tn, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let o = SCRATCH + 0x1_0000;
+    let list = op(&t, 0xa6);
+    let list2 = op(&t, 0x374);
+    let old = SCRATCH + 0x800;
+    let ring = SCRATCH + 0x3000;
+    // (state, count, slot 415's answer, `O + 0xd38`)
+    let cases: [(u32, u32, u32, u32); 11] = [
+        (0, 7, 0x7a, 0),
+        (0, 7, 0x7b, 0),
+        (0xa, 5, 0, 0),
+        (0xb, 5, 0, 0),
+        (0xb, 0, 0, 0),
+        (0xb, u32::MAX, 0, 0x4e20),
+        (0x2710, 9, 0, 0x4e20),
+        (0x2710, 9, 0, 0x4e21),
+        (3, 1, 0, 0),
+        (0xc, 0, 0, 0),
+        (0x30, 2, 0, 0),
+    ];
+    for (k, (state, count, kd, end)) in (0u32..).zip(cases) {
+        junk(&mut t, o, 0xe00, k);
+        for n in [0x24u32, 0x514] {
+            t.set_u32(o + n + 0x14, 0);
+        }
+        t.set_u32(o + 0x18, state);
+        t.set_u32(o + 0x20, count);
+        t.set_u32(o + 0xd38, end);
+        t.set_u32(o + 0x94, 0x00e5_0100 + k);
+        t.set_u32(kind, kd);
+        junk(&mut t, task, 0x40, k + 1);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, o);
+        t.set_u32(tn + 4, prev);
+        t.set_u32(tn + 8, next);
+        for (l, i) in [(list, 0u32), (list2, 1)] {
+            junk(&mut t, l, 0x20, k + 2 + i);
+            t.set_u32(l + 0x10, if (k + i) % 2 == 0 { l } else { old });
+            t.set_u16(l + 0x18, 0x0305);
+        }
+        t.write(old, &[0x6c; 0x40]);
+        t.write(ring, &[0x1b; 0x20]);
+        t.set_u32(op(&t, 0x573), ring);
+        t.set_u32(op(&t, 0x58b), 0xff);
+        for o2 in [0x35eu32, 0x63b] {
+            t.set_u32(op(&t, o2), owner);
+        }
+        t.set_u32(op(&t, 0x8a), 0x00ac_0000 + k);
+        t.set_u32(op(&t, 0x248), 0x00ad_0000 + k);
+        t.set_u8(op(&t, 0x675), (0x30 + k) as u8);
+        t.set_u32(lock, 0x77 + k);
+        for o2 in [
+            0x3c7u32, 0x3fb, 0x436, 0x467, 0x47a, 0x48d, 0x49d, 0x4a5, 0x4b8, 0x73f, 0x747,
+        ] {
+            t.set_u32(
+                op(&t, o2),
+                (0.0625 * (o2 % 13) as f32 + 0.1 * k as f32).to_bits(),
+            );
+        }
+        t.set_u32(op(&t, 0x730), 0x5a5a_5a5b ^ k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(719)) >= 4, "the starts and the second nodes");
+    assert!(t.u32(row(239)) >= 2, "the second nodes ran twice");
+    assert!(
+        t.u32(row(538)) + t.u32(row(213)) >= 1,
+        "the end's model set-up"
+    );
+}
+
+/// `magic_0483` 0x10001390 (`r22::step_0483`): off; the first frame and
+/// later ones; slot 261's three answers: (2) the parts' start and their
+/// run (the lock, slot 712 either way, the draws from 0x3a, the stop
+/// word), (1) the start, waiting, running from 10 and ending, (0) the
+/// start (slot 262's point and the double sums), the bone follow, the
+/// second part from 0x3c, past 0x50; none of them; the count 0x8c.
+#[test]
+fn step_0483() {
+    let Some(mut t) = twin(483) else { return };
+    let f = t.at(0x1390);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let cells = SCRATCH + 0x40;
+    // 261: an answer per argument (cells + 4 a); 253 and 712 from cells
+    rec(&mut t, 261, 1, move |m, a| m.r32(cells + 4 * (a[0] & 3)));
+    rec(&mut t, 253, 0, move |m, _| m.r32(cells + 0x10));
+    let lockw = SCRATCH + 0x60;
+    rec(&mut t, 712, 2, move |m, a| {
+        m.r32(cells + 0x14) ^ (m.r32(lockw) << 8) ^ a[1]
+    });
+    let table = SCRATCH + 0x80;
+    for i in 0..8u32 {
+        t.set_u32(table + 4 * i, 0x0941_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, move |m, a| {
+        0x0714_0000 ^ a[2] ^ m.r32(lockw)
+    });
+    rec(&mut t, 237, 4, |m, a| {
+        let c = m.r32(row(237)) as f32;
+        for i in 0..3u32 {
+            wf(
+                m,
+                a[3] + 4 * i,
+                0.5 * i as f32 + c * 0.25 - (a[1] % 7) as f32,
+            );
+        }
+        0x237
+    });
+    rec(&mut t, 262, 4, |m, a| {
+        let c = m.r32(row(262)) as f32;
+        for i in 1..4 {
+            wf(m, a[i], 0.75 * i as f32 - c * 0.125);
+        }
+        0x262
+    });
+    for (s, n) in [
+        (711u32, 3usize),
+        (710, 4),
+        (723, 1),
+        (724, 1),
+        (713, 1),
+        (258, 1),
+        (231, 3),
+        (230, 2),
+        (214, 1),
+    ] {
+        rec(&mut t, s, n, move |m, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0) ^ (m.r32(lockw) << 4)
+        });
+    }
+    // the pointer globals: the lock, the stop word, the part pointer, the
+    // base
+    let (stopw, pw, basew) = (SCRATCH + 0x64, SCRATCH + 0x68, SCRATCH + 0x6c);
+    for (o, cell) in [(0x28u32, lockw), (0x88, stopw), (0x101, pw), (0xc0, basew)] {
+        t.set_u32(op(&t, o), cell);
+    }
+    // (on, phase, 261 (0, 1, 2), 253, 712, counters: e8, f5, 3d1, 3df,
+    // 5b6, 5cd; halfwords 240, 521, 7d9, 898)
+    #[allow(clippy::type_complexity)]
+    let cases: Vec<(u32, u32, [u32; 3], u32, u32, [u32; 6], [u16; 4])> = vec![
+        (0, 0, [0, 0, 1], 0, 0, [0; 6], [0; 4]),
+        (1, 0, [0, 0, 1], 0, 0, [0, 0, 0, 0, 0, 0], [0; 4]),
+        (1, 3, [0, 0, 1], 1, 1, [0x40, 1, 0, 0, 0, 0], [1, 0, 0, 0]),
+        (1, 3, [0, 0, 1], 0, 0, [0x39, 1, 0, 0, 0, 0], [0, 0, 0, 0]),
+        (1, 3, [0, 1, 0], 0, 0, [0x8c, 0, 0, 0, 0, 0], [0; 4]),
+        (1, 3, [0, 1, 0], 0, 0, [0, 0, 0, 1, 0, 0], [0; 4]),
+        (1, 3, [0, 1, 0], 0, 1, [0, 0, 0xc, 1, 0, 0], [0, 1, 0, 0]),
+        (1, 3, [0, 1, 0], 1, 0, [0, 0, 0xc, 1, 0, 0], [0, 0, 0, 0]),
+        (1, 3, [0, 1, 0], 0, 0, [0, 0, 5, 1, 0, 0], [0, 1, 0, 0]),
+        (1, 3, [1, 0, 0], 0, 0, [0, 0, 0, 0, 0, 0], [0; 4]),
+        (1, 3, [1, 0, 0], 0, 1, [0, 0, 0, 0, 0x40, 1], [0, 0, 1, 1]),
+        (1, 3, [1, 0, 0], 1, 0, [0, 0, 0, 0, 0x3b, 1], [0, 0, 1, 1]),
+        (1, 3, [1, 0, 0], 0, 0, [0, 0, 0, 0, 0x51, 1], [0, 0, 1, 1]),
+        (1, 3, [0, 0, 0], 0, 0, [0x8c, 0, 0, 0, 0, 0], [0; 4]),
+    ];
+    for (k, (on, phase, ans, a253, a712, ctr, hw)) in (0u32..).zip(cases) {
+        t.set_u32(op(&t, 0x12), on);
+        t.set_u32(op(&t, 0x1f), phase);
+        for (i, a) in (0u32..).zip(ans) {
+            t.set_u32(cells + 4 * i, a);
+        }
+        t.set_u32(cells + 0x10, a253);
+        t.set_u32(cells + 0x14, a712);
+        for (o, v) in [0xe8u32, 0xf5, 0x3d1, 0x3df, 0x5b6, 0x5cd]
+            .into_iter()
+            .zip(ctr)
+        {
+            t.set_u32(op(&t, o), v);
+        }
+        for (o, v) in [0x240u32, 0x521, 0x7d9, 0x898].into_iter().zip(hw) {
+            t.set_u16(op(&t, o), v);
+        }
+        t.set_u32(lockw, 0x10c0 + k);
+        t.set_u32(stopw, 0x5a5a_5a5a ^ k);
+        junk(&mut t, pw, 4, k);
+        // the parts the draws run (halfword +0x1e set)
+        for o in [0x37cu32, 0x393] {
+            let p = op(&t, o);
+            t.set_u16(p + 0x1e, 1);
+        }
+        // the points the moves read, varied
+        for o in [
+            0x477u32, 0x4a3, 0x4b3, 0x6be, 0x763, 0x7a2, 0x7f8, 0x81a, 0x832, 0x8e, 0xad, 0xbb,
+            0x59,
+        ] {
+            t.set_u32(
+                op(&t, o),
+                (0.0625 * (o % 17) as f32 + 0.25 * k as f32).to_bits(),
+            );
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(714)) >= 6, "the part starts");
+    assert!(t.u32(row(712)) >= 4, "the parts' runs");
+    assert!(t.u32(row(214)) >= 1, "the count 0x8c");
+}

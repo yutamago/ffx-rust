@@ -1164,3 +1164,717 @@ pub const SUMMON_TASK_0478: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A part node of `magic_0482`'s summon task: joins the DLL's list
+/// (operands `list`), slot 719 `(PART, 6, n)` its part `+0x24`, `+0x1c` =
+/// the DLL word at operand `owner`, `+0x20` = `on`, `+0x34` 0x40, `+0x28`
+/// 0x100, the vtable (operand `vt`), flag bit 0 of `+0x2c`, `+0x30` 0.
+#[allow(clippy::too_many_arguments)] // the operands of one inlined block
+fn part_node_0482<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    list: [u32; 8],
+    (s719, part, n): (u32, u32, u32),
+    (owner, on, vt): (u32, u32, u32),
+) {
+    let w = |o: u32| img.word(f + o);
+    list_node_0645(g, img, f, node, list);
+    // call width: 3
+    let p = g
+        .call(slot_target(g, w(s719), 719), 0, &[w(part), 6, n])
+        .eax;
+    g.write::<u32>(node + 0x24, p);
+    g.write::<u32>(node + 0x1c, w(owner));
+    g.write::<u32>(node + 0x20, on);
+    g.write::<u32>(node + 0x34, 0x40);
+    g.write::<u32>(node + 0x28, 0x100);
+    g.write::<u32>(node + 0x2c, 0);
+    g.write::<u32>(node, w(vt));
+    let fl = g.read::<u32>(node + 0x2c) | 1;
+    g.write::<u32>(node + 0x2c, fl);
+    g.write::<u32>(node + 0x30, 0);
+}
+
+/// `magic_0482`'s summon task (0x10006e10, 2233 bytes; a task function
+/// (its address pushed at 0x10007846), cdecl `(task)`, the object `O = task[4]`; an 8-aligned frame: `B =
+/// ((E - 4) & !7) - 0x40`, records at `B + 0x18`, `B + 0x28`, `B +
+/// 0x10`). By the state `O + 0x18` (a change runs the new state at once),
+/// the count `O + 0x20`:
+/// - 0: the model node `O + 0x514`
+///   ([`model_node_init`](crate::sa_summon::model_node_init)) and the
+///   model nodes `O + 0x24`
+///   ([`model_nodes`](crate::s3_summon::model_nodes)) of `*G_A`; list
+///   nodes `O + 0x5ac` (slot 268's colour), `O + 0x6b4` (a bone over
+///   three DLL objects), `O + 0x630` (its scale by slot 415 being 0x7a
+///   or not), `O + 0x5d8`; the inserted node `O + 0x808`
+///   ([`insert`](crate::m0482::insert)), the particle node `O + 0xab0`
+///   ([`particle_node`](crate::sb_nodes::particle_node)), the colour node
+///   ([`colour_node`](crate::s3_misc::colour_node)), the fades at 0.5,
+///   the part node `O + 0xcb0`, the object `O + 0xd20` joining the DLL's
+///   ring ([`ring_join`](crate::h6_setup::ring_join)); state 10;
+/// - 10: state 11, the count 0x19;
+/// - 11: when the count runs out, the list node `O + 0x604`, the inserted
+///   node `O + 0x95c` and the particle node `O + 0xbb0`, slot 239, the
+///   part node `O + 0xce8`, the fades at their end; state 20000;
+/// - 20000: once `O + 0xd38` is 40000, both model nodes leave their
+///   parents ([`leave`](crate::sa_misc::leave)), the second's model set
+///   up ([`model_setup`](crate::sa_summon::model_setup), its cursor
+///   holding the `ecx` the leave leaves: it never writes it), the task
+///   node unlinked (returns its `+4`).
+///
+/// Every way ends with `O + 0x1c` up and the count down; returns what
+/// `eax` holds there (the state, 11 after a wait).
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn summon_task_0482<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use Fade::{Diff, Set, Sub};
+    const ONE: u32 = 0x3f80_0000;
+    const HALF: u32 = 0x3f00_0000;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task + 4);
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x40);
+    // a call without pushes: its return address at `B - 4`
+    let at = |c: u32, ecx: u32| Frame {
+        at: call(c),
+        esp: b.wrapping_sub(4),
+        ecx,
+        ..*fr
+    };
+    let exit = |g: &mut G, eax: u32| {
+        let n = g.read::<u32>(o + 0x1c);
+        g.write::<u32>(o + 0x1c, n.wrapping_add(1));
+        let c = g.read::<u32>(o + 0x20);
+        g.write::<u32>(o + 0x20, c.wrapping_sub(1));
+        Ret::eax(eax)
+    };
+    // an inserted node and its particle node (the records at `B + 0x28`)
+    let insert = |g: &mut G, (node, list, a, bb, c): (u32, u32, u32, u32, u32), ops: (u32, u32)| {
+        let r = b + 0x28;
+        for (j, x) in (0u32..).zip([node, w(list), a, bb, c]) {
+            g.write::<u32>(r + 4 * j, x);
+        }
+        crate::m0482::insert(g, img, call(ops.0), r);
+        let n = g.read::<u32>(r);
+        g.write::<u32>(n, w(ops.1));
+    };
+    let particle = |g: &mut G, pn: u32, src: u32, ops: [u32; 5], index: u32| {
+        let r = b + 0x28;
+        let owner = g.read::<u32>(w(ops[1]));
+        g.write::<u32>(r, pn);
+        g.write::<u32>(pn, w(ops[0]));
+        for (j, x) in (1u32..).zip([w(ops[2]), src, owner, w(ops[3]), index]) {
+            g.write::<u32>(r + 4 * j, x);
+        }
+        crate::sb_nodes::particle_node(g, img, call(ops[4]), r);
+    };
+    loop {
+        let state = g.read::<u32>(o + 0x18);
+        match state {
+            0 => {
+                let a = g.read::<u32>(w(0x8a));
+                let c1 = o + 0x514;
+                let r = b + 0x18;
+                g.write::<u32>(r, c1);
+                g.write::<u32>(c1, w(0x9a));
+                g.write::<u32>(r + 4, w(0xa6));
+                g.write::<u32>(r + 8, a);
+                g.write::<u8>(r + 0xc, 0);
+                crate::sa_summon::model_node_init(g, img, call(0xb4), r);
+                let a = g.read::<u32>(w(0xb9));
+                let c2 = o + 0x24;
+                let r = b + 0x28;
+                g.write::<u32>(r, c2);
+                g.write::<u32>(c2, w(0xc6));
+                g.write::<u32>(r + 4, w(0xd2));
+                g.write::<u32>(r + 8, a);
+                g.write::<u32>(r + 0xc, 0);
+                g.write::<u8>(r + 0x10, 0);
+                crate::s3_summon::model_nodes(g, img, &at(0xe8, r));
+                let n1 = o + 0x5ac;
+                list_node_0645(
+                    g,
+                    img,
+                    f,
+                    n1,
+                    [0x101, 0x108, 0x10d, 0x115, 0x11a, 0x122, 0x12e, 0x13f],
+                );
+                g.write::<u32>(n1, w(0x146));
+                let c = o + 0x5c8;
+                // call width: 3
+                g.call(t(g, 0x133, 268), 0, &[g.read::<u32>(o + 0x94), 0x11, c]);
+                g.write::<u32>(c + 0xc, ONE);
+                // the bone over three DLL objects
+                let n2 = o + 0x6b4;
+                list_node_0645(
+                    g,
+                    img,
+                    f,
+                    n2,
+                    [0x179, 0x180, 0x185, 0x18d, 0x192, 0x19a, 0x1a6, 0x1ac],
+                );
+                g.write::<u32>(n2 + 0x13c, w(0x1b6));
+                g.write::<u32>(n2 + 0x144, w(0x1c0));
+                g.write::<u32>(n2 + 0x140, w(0x1ca));
+                g.write::<u32>(n2 + 0x128, 0);
+                g.write::<u8>(n2 + 0x148, 0);
+                g.write::<u32>(n2, w(0x1e1));
+                let x = g.read::<u32>(o + 0x568);
+                g.write::<u32>(o + 0x800, x);
+                g.write::<u32>(o + 0x804, 0xc);
+                let n3 = o + 0x630;
+                list_node_0645(
+                    g,
+                    img,
+                    f,
+                    n3,
+                    [0x210, 0x217, 0x21c, 0x224, 0x229, 0x231, 0x23d, 0x24e],
+                );
+                let h = g.read::<u32>(w(0x248));
+                g.write::<u32>(n3 + 0x38, ONE);
+                g.write::<u32>(n3 + 0x3c, n2);
+                g.write::<u32>(n3, w(0x25e));
+                let kind = g.call(t(g, 0x242, 415), 0, &[h]).eax;
+                g.write::<u32>(o + 0x660, 0xbe4c_cccd);
+                let (s1, s2) = if kind == 0x7a {
+                    (ONE, ONE)
+                } else {
+                    (0x3fa0_0000, 0xbecc_cccd)
+                };
+                g.write::<u32>(o + 0x65c, s1);
+                g.write::<u32>(o + 0x664, s2);
+                let n4 = o + 0x5d8;
+                list_node_0645(
+                    g,
+                    img,
+                    f,
+                    n4,
+                    [0x2bb, 0x2c2, 0x2c7, 0x2cf, 0x2d4, 0x2dc, 0x2e8, 0x2ee],
+                );
+                g.write::<u32>(n4, w(0x2f4));
+                for off in [0x5f4u32, 0x5f8, 0x5fc] {
+                    g.write::<u32>(o + off, ONE);
+                }
+                g.write::<u32>(o + 0x600, 0x3e19_999a);
+                let ins = o + 0x808;
+                insert(g, (ins, 0x33c, n3, n4, n1), (0x349, 0x359));
+                particle(g, o + 0xab0, ins, [0x368, 0x35e, 0x374, 0x384, 0x391], 1);
+                let r = b + 0x10;
+                g.write::<u32>(r, w(0x39d));
+                g.write::<u32>(r + 4, w(0x3a5));
+                g.write::<u32>(w(0x3ab), w(0x3af));
+                crate::s3_misc::colour_node(g, img, &at(0x3b4, r));
+                let fl = g.read::<u32>(w(0x3cd)) & !1;
+                g.write::<u32>(w(0x3cd), fl);
+                fades_0478(
+                    g,
+                    img,
+                    f,
+                    0x3bc,
+                    &[
+                        Set(0x3da, HALF),
+                        Set(0x3e4, HALF),
+                        Sub(0x3f0, 0x3c7),
+                        Set(0x401, HALF),
+                        Set(0x40b, HALF),
+                        Set(0x415, HALF),
+                        Set(0x41f, HALF),
+                        Sub(0x42b, 0x3fb),
+                        Set(0x43c, HALF),
+                        Set(0x446, 0x3ccc_cccd),
+                        Set(0x450, 0),
+                        Sub(0x45c, 0x436),
+                        Sub(0x46f, 0x467),
+                        Sub(0x482, 0x47a),
+                        Sub(0x495, 0x48d),
+                        Diff(0x4ad, 0x49d, 0x4a5),
+                        Sub(0x4c0, 0x4b8),
+                    ],
+                );
+                part_node_0482(
+                    g,
+                    img,
+                    f,
+                    o + 0xcb0,
+                    [0x4d3, 0x4da, 0x4df, 0x4e7, 0x4ec, 0x4f4, 0x505, 0x50d],
+                    (0x4fe, 0x51a, 0),
+                    (0x526, n3, 0x544),
+                );
+                let ring = o + 0xd20;
+                crate::h6_setup::ring_join(
+                    g,
+                    img,
+                    f,
+                    ring,
+                    [0x55e, 0x56b, 0x573, 0x57d, 0x582, 0x58b, 0x592],
+                );
+                g.write::<u32>(ring + 0x3c, c1);
+                g.write::<u32>(ring + 0x30, 0);
+                g.write::<u32>(ring + 0x18, 0);
+                g.write::<u32>(o + 0x18, 0xa);
+            }
+            0xa | 0xb => {
+                if state == 0xa {
+                    g.write::<u32>(o + 0x20, 0x19);
+                    g.write::<u32>(o + 0x18, 0xb);
+                }
+                if g.read::<i32>(o + 0x20) > 0 {
+                    return exit(g, 0xb);
+                }
+                let n5 = o + 0x604;
+                list_node_0645(
+                    g,
+                    img,
+                    f,
+                    n5,
+                    [0x5b, 0x62, 0x67, 0x6f, 0x74, 0x80, 0x5bf, 0x5c5],
+                );
+                g.write::<u32>(n5, w(0x5cb));
+                for off in [0x620u32, 0x624, 0x628] {
+                    g.write::<u32>(o + off, ONE);
+                }
+                g.write::<u32>(o + 0x62c, 0x4002_8f5d);
+                let (n1, n3) = (o + 0x5ac, o + 0x630);
+                let ins = o + 0x95c;
+                insert(g, (ins, 0x619, n1, n5, n3), (0x626, 0x636));
+                particle(g, o + 0xbb0, ins, [0x645, 0x63b, 0x651, 0x661, 0x66e], 0);
+                let k = u32::from(g.read::<u8>(w(0x675)));
+                // call width: 3
+                g.call(t(g, 0x67d, 239), 0, &[g.read::<u32>(w(0x683)), k, 0]);
+                part_node_0482(
+                    g,
+                    img,
+                    f,
+                    o + 0xce8,
+                    [0x6a7, 0x6ae, 0x6b3, 0x6bb, 0x6c0, 0x6c8, 0x6d9, 0x6e1],
+                    (0x6d2, 0x6ee, 1),
+                    (0x702, n1, 0x720),
+                );
+                let fl = (g.read::<u32>(w(0x730)) & !1) | 4;
+                let x1 = sub(g.read::<f32>(w(0x6fb)), 0.0).to_bits();
+                let x0 = sub(g.read::<f32>(w(0x73f)), g.read::<f32>(w(0x747))).to_bits();
+                let mut steps = vec![
+                    Set(0x756, 0),
+                    Set(0x760, 0),
+                    Set(0x76a, 0),
+                    Set(0x774, 0),
+                    Set(0x77e, 0),
+                    Set(0x788, 0x3dcc_cccd),
+                    Set(0x792, 0x3dcc_cccd),
+                ];
+                for op in [0x79cu32, 0x7a6, 0x7b0, 0x7ba, 0x7c4, 0x7ce, 0x7d8] {
+                    steps.push(Set(op, ONE));
+                }
+                steps.extend([
+                    Set(0x7e2, 0x3c75_c28f),
+                    Set(0x7ec, 0),
+                    Set(0x7f8, x1),
+                    Set(0x800, x1),
+                    Set(0x808, x1),
+                    Set(0x810, x1),
+                    Set(0x816, 0x3f66_6666),
+                    Set(0x820, 0x3f66_6666),
+                    Set(0x82c, x0),
+                    Set(0x834, x1),
+                    Set(0x839, fl),
+                    Set(0x83f, ONE),
+                ]);
+                fades_0478(g, img, f, 0x6fb, &steps);
+                g.write::<u32>(o + 0x18, 0x2710);
+            }
+            0x2710 => {
+                if g.read::<u32>(o + 0xd38) != 0x4e20 {
+                    return exit(g, state);
+                }
+                let c2 = o + 0x24;
+                crate::sa_misc::leave(g, c2, 0);
+                let c1 = o + 0x514;
+                crate::sa_misc::leave(g, c1, 0);
+                let cursor = b + 0x10;
+                g.write::<u32>(cursor, c1);
+                crate::sa_summon::model_setup(g, img, &at(0x88e, cursor));
+                let node = g.read::<u32>(task);
+                let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+                g.write::<u32>(prev + 8, next);
+                let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+                g.write::<u32>(next + 4, prev);
+                g.write::<u32>(node + 8, node);
+                g.write::<u32>(node + 4, node);
+                return exit(g, prev);
+            }
+            s => return exit(g, s),
+        }
+    }
+}
+
+/// [`summon_task_0482`] (2233 bytes, 1 overlay).
+pub const SUMMON_TASK_0482: Sig = Sig {
+    len: 2233,
+    hash: 0x3fec_d3dd_edbc_7512,
+    calls: &[
+        (0xb4, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0xe8, Callee::Sig(&crate::s3_summon::MODEL_NODES)),
+        (0x349, Callee::Sig(&crate::m0482::INSERT)),
+        (0x391, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x3b4, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x626, Callee::Sig(&crate::m0482::INSERT)),
+        (0x66e, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x876, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x881, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x88e, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0483`'s step (0x10001390, 2362 bytes; a table entry, no
+/// arguments; a cookie frame, `ebp = E - 4`, the points `A` at `ebp -
+/// 0x14` and `B` at `ebp - 0x24`). Nothing while `*G_ON` is 0. On the
+/// first frame (`*G_PHASE` 0) slots 711 and 710 load the effect (the game
+/// lock held for the first). Then `*G_OFF` = slot 253 is 0, slots 723
+/// `(*G_H)` and 724 `(*G_I)`, `**G_BASE = *G_W + 0x80400`, and by slot
+/// 261's answers (2, 1, 0):
+/// - 2: once, three parts started from slot 941's programs (the colours
+///   and scales of the first two set); while the first part runs, its
+///   point the middle of two bones (slot 237, `K` times the sum), slots
+///   258, 231, 230 and 712 (the lock 1; its answer ends the part, the
+///   lock ends 0); from the count 0x3a the other two parts are drawn at
+///   bones 12 and 8 ([`draw`](crate::m0483::draw)); unless `**G_STOP`
+///   the count one up;
+/// - 1: once two programs freed (slot 713), a point (slot 237), a part
+///   started (slot 941's `+4`) at the point moved by constants; from the
+///   count 10, while it runs, slot 258, [`call_231`](crate::s4_small::call_231),
+///   [`slot_two_globals`](crate::o4_tiny::slot_two_globals) and
+///   [`locked_712`](crate::s4_small::locked_712) (its answer ends it);
+///   unless `**G_STOP` the second count one up;
+/// - 0: up to the third count 0x50: once the parts at slot 262's point
+///   (slot 941's `+8` and `+0xc` programs, the second's place in double
+///   sums); while the first runs, it follows bone 14
+///   ([`slot237_edx`](crate::o4_tiny::slot237_edx)) less constants and
+///   is drawn as above; from 0x3c the second; unless `**G_STOP` the third
+///   count one up.
+///
+/// At the count 0x8c slot 214 `(*G_E)`; the phase one up. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's branches, in order
+pub fn step_0483<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::add;
+    const ONE: u32 = 0x3f80_0000;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let set = |g: &mut G, ops: &[u32], v: u32| {
+        for &o in ops {
+            g.write::<u32>(w(o), v);
+        }
+    };
+    if rd(g, 0x12) == 0 {
+        return Ret::eax(0);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let (pa, pb) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x24));
+    // push esi: the body's stack
+    let body = fr.esp.wrapping_sub(0x2c);
+    let inner = |c: u32, ecx: u32, edx: u32, esp: u32| Frame {
+        at: call(c),
+        esp,
+        ecx,
+        edx,
+        ..*fr
+    };
+    // the part starts: `pppStartPart` with (program, 1)
+    let start = |g: &mut G, c: u32, buf: u32, program: u32| {
+        crate::opu_parts::start_part(g, img, call(c), w(buf), 0x1000, program, 1);
+    };
+    if rd(g, 0x1f) == 0 {
+        let lock = rd(g, 0x28);
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        // call width: 3
+        g.call(t(g, 0x37, 711), 0, &[w(0x47), w(0x3c), 0]);
+        g.write::<u32>(rd(g, 0x4e), saved);
+        // call width: 4
+        g.call(
+            t(g, 0x60, 710),
+            0,
+            &[w(0x70), w(0x65), rd(g, 0x59), 0x8_0000],
+        );
+    }
+    let on = g.call(t(g, 0x7a, 253), 0, &[]).eax;
+    g.write::<u32>(rd(g, 0x88), u32::from(on == 0));
+    g.call(t(g, 0x9a, 723), 0, &[rd(g, 0x8e)]);
+    g.call(t(g, 0xa7, 724), 0, &[rd(g, 0xad)]);
+    let base = rd(g, 0xbb).wrapping_add(0x8_0400);
+    g.write::<u32>(rd(g, 0xc0), base);
+    if g.call(t(g, 0xcd, 261), 0, &[2]).eax != 0 {
+        if rd(g, 0xe8) == 0 && rd(g, 0xf5) == 0 {
+            g.write::<u32>(rd(g, 0x101), w(0x10c));
+            g.call(t(g, 0x111, 713), 0, &[w(0x106)]);
+            g.write::<u32>(rd(g, 0x11e), w(0x124));
+            let tab = g.call(t(g, 0x129, 941), 0, &[rd(g, 0x12f)]).eax;
+            start(g, 0x14c, 0x147, g.read::<u32>(tab));
+            let p = rd(g, 0x151);
+            g.write::<u16>(w(0x15d), 1);
+            set(g, &[0x163, 0x16d, 0x177], 0);
+            set(g, &[0x181, 0x18b, 0x195], 0x3dcc_cccd);
+            set(g, &[0x19f, 0x1a9], ONE);
+            g.write::<u32>(p, w(0x1b3));
+            let tab = g.call(t(g, 0x1b8, 941), 0, &[rd(g, 0x1be)]).eax;
+            start(g, 0x1db, 0x1d6, g.read::<u32>(tab.wrapping_add(0x10)));
+            let p = rd(g, 0x1e0);
+            g.write::<u16>(w(0x1e7), 1);
+            g.write::<u32>(w(0x1ed), ONE);
+            g.write::<u32>(p, w(0x1f7));
+            let tab = g.call(t(g, 0x1fc, 941), 0, &[rd(g, 0x202)]).eax;
+            start(g, 0x21f, 0x21a, g.read::<u32>(tab.wrapping_add(0x10)));
+            g.write::<u16>(w(0x229), 1);
+            g.write::<u32>(w(0x22f), ONE);
+            g.write::<u32>(w(0x239), 1);
+        }
+        if g.read::<u16>(w(0x240)) != 0 {
+            // call width: 4
+            g.call(t(g, 0x250, 237), 0, &[rd(g, 0x260), 0x34, 0, pa]);
+            // call width: 4
+            g.call(t(g, 0x26b, 237), 0, &[rd(g, 0x27b), 0x3a, 0, pb]);
+            let c = k(g, 0x28f);
+            for (i, o) in (0u32..).zip([0x2a5u32, 0x2bb, 0x2d1]) {
+                let s = add(g.read::<f32>(pa + 4 * i), g.read::<f32>(pb + 4 * i));
+                g.write::<f32>(w(o), mul(s, c));
+            }
+            g.call(t(g, 0x294, 258), 0, &[w(0x299)]);
+            // call width: 3
+            g.call(
+                t(g, 0x2e4, 231),
+                0,
+                &[rd(g, 0x2f6), rd(g, 0x2ea), rd(g, 0x2df)],
+            );
+            // call width: 2
+            g.call(t(g, 0x303, 230), 0, &[rd(g, 0x309), rd(g, 0x2fe)]);
+            let lock = rd(g, 0x317);
+            let p = rd(g, 0x31c);
+            g.write::<u32>(lock, 1);
+            g.write::<u32>(p, w(0x328));
+            let saved = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            // call width: 2
+            let done = g.call(t(g, 0x32d, 712), 0, &[w(0x342), 0x30]).eax;
+            let lock = rd(g, 0x34a);
+            g.write::<u32>(lock, saved);
+            if done != 0 {
+                g.write::<u16>(w(0x35b), 0);
+            }
+            g.write::<u32>(lock, 0);
+        }
+        if rd(g, 0x367).cast_signed() >= 0x3a {
+            for (ecx, edx, x, c) in [
+                (0x37cu32, 0xcu32, 0x372u32, 0x381u32),
+                (0x393, 8, 0x389, 0x398),
+            ] {
+                let df = Frame {
+                    xmm: [0, 0, u128::from(rd(g, x)), 0],
+                    ..inner(c, w(ecx), edx, body.wrapping_sub(4))
+                };
+                crate::m0483::draw(g, img, &df);
+            }
+        }
+        if g.read::<u32>(rd(g, 0x39d)) == 0 {
+            let n = rd(g, 0x3ac);
+            g.write::<u32>(w(0x3ac), n.wrapping_add(1));
+        }
+    } else if g.call(t(g, 0x3b6, 261), 0, &[1]).eax != 0 {
+        let mut ecx = rd(g, 0x3d1);
+        let on = if ecx != 0 {
+            Some(g.read::<u16>(w(0x521)))
+        } else if rd(g, 0x3df) != 0 {
+            None
+        } else {
+            g.write::<u32>(rd(g, 0x3ea), w(0x3f5));
+            g.call(t(g, 0x3fa, 713), 0, &[w(0x3ef)]);
+            g.write::<u32>(rd(g, 0x407), w(0x412));
+            g.call(t(g, 0x417, 713), 0, &[w(0x40c)]);
+            // call width: 4
+            g.call(t(g, 0x424, 237), 0, &[rd(g, 0x439), 0x15, 0, w(0x429)]);
+            g.write::<u32>(rd(g, 0x440), w(0x446));
+            let tab = g.call(t(g, 0x44b, 941), 0, &[rd(g, 0x451)]).eax;
+            start(g, 0x46f, 0x46a, g.read::<u32>(tab.wrapping_add(4)));
+            ecx = rd(g, 0x485);
+            let n = rd(g, 0x493);
+            g.write::<u32>(w(0x493), n.wrapping_add(1));
+            let x = sub(k(g, 0x477), k(g, 0x47f));
+            g.write::<f32>(w(0x49b), x);
+            let y = rd(g, 0x4a3);
+            g.write::<u32>(w(0x4ab), y);
+            let z = sub(k(g, 0x4b3), k(g, 0x4bb));
+            g.write::<u16>(w(0x4c1), 1);
+            set(g, &[0x4c7, 0x4d1], 0);
+            g.write::<u32>(w(0x4db), 0xffff_e000);
+            set(g, &[0x4e5, 0x4ef, 0x4f9], 0x3e08_8889);
+            g.write::<u32>(w(0x503), ONE);
+            g.write::<f32>(w(0x50f), z);
+            g.write::<u32>(w(0x515), ONE);
+            Some(1)
+        };
+        if on.is_some_and(|on| on != 0) && ecx.cast_signed() >= 0xa {
+            // push G_P: its word under the three calls
+            g.call(t(g, 0x530, 258), 0, &[w(0x535)]);
+            let esp = body.wrapping_sub(8);
+            crate::s4_small::call_231(g, img, &inner(0x542, 0, 0, esp));
+            crate::o4_tiny::slot_two_globals(g, img, &inner(0x547, 0, 0, esp));
+            g.write::<u32>(rd(g, 0x54c), 1);
+            let done = crate::s4_small::locked_712(g, img, &inner(0x55c, 0, w(0x551), esp)).eax;
+            if done != 0 {
+                g.write::<u16>(w(0x56b), 0);
+            }
+            let lock = rd(g, 0x570);
+            ecx = rd(g, 0x576);
+            g.write::<u32>(lock, 0);
+        }
+        if g.read::<u32>(rd(g, 0x581)) == 0 {
+            g.write::<u32>(w(0x591), ecx.wrapping_add(1));
+        }
+    } else if g.call(t(g, 0x59b, 261), 0, &[0]).eax != 0 {
+        let mut ecx = rd(g, 0x5b6);
+        if ecx.cast_signed() <= 0x50 {
+            if ecx == 0 && rd(g, 0x5cd) == 0 {
+                // call width: 4
+                g.call(
+                    t(g, 0x5d8, 262),
+                    0,
+                    &[rd(g, 0x5f3), w(0x5ed), w(0x5e8), w(0x5dd)],
+                );
+                g.write::<u32>(rd(g, 0x5fa), w(0x603));
+                // push 0; push 1; push the key: the return address at
+                // body - 0x10
+                let esp = body.wrapping_sub(0x10);
+                g.write::<u32>(esp + 4, rd(g, 0x60d));
+                let tab = crate::s4_small::call_941(g, img, &inner(0x612, 0, 0, esp)).eax;
+                start(g, 0x628, 0x623, g.read::<u32>(tab.wrapping_add(8)));
+                let p = rd(g, 0x62d);
+                g.write::<u16>(w(0x63e), 1);
+                set(g, &[0x644, 0x64e, 0x658], 0);
+                set(g, &[0x662, 0x66c, 0x676], 0x3da3_d70b);
+                set(g, &[0x680, 0x68a], ONE);
+                g.write::<u32>(p, w(0x694));
+                g.write::<u32>(esp + 4, rd(g, 0x69b));
+                let tab = crate::s4_small::call_941(g, img, &inner(0x6a0, 0, 0, esp)).eax;
+                start(g, 0x6b6, 0x6b1, g.read::<u32>(tab.wrapping_add(0xc)));
+                let x = sub(k(g, 0x6be), k(g, 0x6c6));
+                ecx = rd(g, 0x6cc);
+                set(g, &[0x6d5, 0x6df], 0);
+                let x = sub(x, k(g, 0x6eb));
+                g.write::<u32>(w(0x6f1), 0x4000);
+                set(g, &[0x6fb, 0x705, 0x70f], 0x3d9f_be76);
+                g.write::<u32>(w(0x71c), ONE);
+                g.write::<u32>(w(0x72e), ONE);
+                g.write::<u16>(w(0x739), 1);
+                g.write::<u32>(w(0x73f), 1);
+                let d = |g: &G, o: u32| g.read::<f64>(w(o));
+                // cvtps2pd, three addsd, cvtpd2ps: rounded once
+                let xd = f64::from(x) + d(g, 0x728) + d(g, 0x747) + d(g, 0x74f);
+                g.write::<f32>(w(0x75b), xd as f32);
+                let y = add(add(sub(k(g, 0x763), k(g, 0x76b)), k(g, 0x773)), k(g, 0x77b));
+                let yd = f64::from(y) + d(g, 0x786) + d(g, 0x78e);
+                g.write::<f32>(w(0x79a), yd as f32);
+                let z = sub(k(g, 0x7a2), k(g, 0x7aa));
+                let z = add(add(sub(z, k(g, 0x7b2)), k(g, 0x7ba)), k(g, 0x7c2));
+                g.write::<f32>(w(0x7d2), sub(z, k(g, 0x7ca)));
+            }
+            if g.read::<u16>(w(0x7d9)) != 0 {
+                // push PT; push ecx: the return address at body - 0xc
+                let esp = body.wrapping_sub(0xc);
+                g.write::<u32>(esp + 4, ecx);
+                g.write::<u32>(esp + 8, w(0x7e5));
+                crate::o4_tiny::slot237_edx(g, img, &inner(0x7f0, 0, 0xe, esp));
+                for (src, kk, dst) in [
+                    (0x7f8u32, 0x800u32, 0x812u32),
+                    (0x81a, 0x822, 0x82a),
+                    (0x832, 0x83a, 0x842),
+                ] {
+                    let v = sub(k(g, src), k(g, kk));
+                    g.write::<f32>(w(dst), v);
+                }
+                g.call(t(g, 0x805, 258), 0, &[w(0x80a)]);
+                // the bone's word under the three calls
+                let esp = body.wrapping_sub(8);
+                crate::s4_small::call_231(g, img, &inner(0x852, 0, 0, esp));
+                crate::o4_tiny::slot_two_globals(g, img, &inner(0x857, 0, 0, esp));
+                g.write::<u32>(rd(g, 0x85c), 1);
+                let done = crate::s4_small::locked_712(g, img, &inner(0x86c, 0, w(0x861), esp)).eax;
+                if done != 0 {
+                    g.write::<u16>(w(0x87b), 0);
+                }
+                let lock = rd(g, 0x880);
+                ecx = rd(g, 0x886);
+                g.write::<u32>(lock, 0);
+            }
+            if ecx.cast_signed() >= 0x3c && g.read::<u16>(w(0x898)) != 0 {
+                g.call(t(g, 0x8a0, 258), 0, &[w(0x8a5)]);
+                let esp = body.wrapping_sub(8);
+                crate::s4_small::call_231(g, img, &inner(0x8b2, 0, 0, esp));
+                crate::o4_tiny::slot_two_globals(g, img, &inner(0x8b7, 0, 0, esp));
+                g.write::<u32>(rd(g, 0x8bc), 0);
+                let done = crate::s4_small::locked_712(g, img, &inner(0x8cc, 0, w(0x8c1), esp)).eax;
+                if done != 0 {
+                    g.write::<u16>(w(0x8db), 0);
+                }
+                let lock = rd(g, 0x8e0);
+                ecx = rd(g, 0x8e6);
+                g.write::<u32>(lock, 0);
+            }
+        }
+        if g.read::<u32>(rd(g, 0x8f1)) == 0 {
+            g.write::<u32>(w(0x8fd), ecx.wrapping_add(1));
+        }
+    }
+    if rd(g, 0x903) == 0x8c {
+        g.call(t(g, 0x90f, 214), 0, &[rd(g, 0x915)]);
+    }
+    let n = rd(g, 0x926);
+    g.write::<u32>(w(0x926), n.wrapping_add(1));
+    Ret::eax(0)
+}
+
+/// [`step_0483`] (2362 bytes, 1 overlay).
+pub const STEP_0483: Sig = Sig {
+    len: 2362,
+    hash: 0xbbdb_78e5_36c4_4a3c,
+    calls: &[
+        (0x14c, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x1db, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x21f, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x381, Callee::Sig(&crate::m0483::DRAW)),
+        (0x398, Callee::Sig(&crate::m0483::DRAW)),
+        (0x46f, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x542, Callee::Sig(&crate::s4_small::CALL_231)),
+        (
+            0x547,
+            Callee::Sig(&crate::o4_tiny::SLOT_TWO_GLOBALS_0483_2650),
+        ),
+        (0x55c, Callee::Sig(&crate::s4_small::LOCKED_712)),
+        (0x612, Callee::Sig(&crate::s4_small::CALL_941)),
+        (0x628, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x6a0, Callee::Sig(&crate::s4_small::CALL_941)),
+        (0x6b6, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x7f0, Callee::Sig(&crate::o4_tiny::SLOT237_EDX_0483_26A0)),
+        (0x852, Callee::Sig(&crate::s4_small::CALL_231)),
+        (
+            0x857,
+            Callee::Sig(&crate::o4_tiny::SLOT_TWO_GLOBALS_0483_2650),
+        ),
+        (0x86c, Callee::Sig(&crate::s4_small::LOCKED_712)),
+        (0x8b2, Callee::Sig(&crate::s4_small::CALL_231)),
+        (
+            0x8b7,
+            Callee::Sig(&crate::o4_tiny::SLOT_TWO_GLOBALS_0483_2650),
+        ),
+        (0x8cc, Callee::Sig(&crate::s4_small::LOCKED_712)),
+        // __security_check_cookie
+        (0x932, Callee::Any),
+    ],
+    imports: &[],
+};
