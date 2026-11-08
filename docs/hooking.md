@@ -217,10 +217,10 @@ The bridge hosts:
 | `ffx_bridge::Host::call` (cdecl) | 0-6 (`CALL_WORDS`); more is not called (0) | `eax` |
 | `ffx_script` `NativeHost::call_n` | 0-12 (`CALL_N_WORDS`) | `eax` |
 | `ffx_script` `NativeHost::call_float` | 0-6 | `ST0` as `f64` |
-| `ffx_graphic::host::Host::call` (`Conv`) | 12 for cdecl, 16 stack words after `this` for thiscall, 8 otherwise (`max_words`) | `eax` |
+| `ffx_graphic::host::Host::call` (`Conv`) | 12 for cdecl and stdcall, 16 stack words after `this` for thiscall, 8 otherwise (`max_words`) | `eax` |
 | `ffx_graphic` `call_st0` / `call_st0_f64` | 8 | `ST0` as `f32` / `f64` |
 | `ffx_graphic` `call_u64` / `call_sym_u64` | 8 | `edx:eax` |
-| `ffx_graphic` `call_wide` / `call_sym_wide` (cdecl) | 0-32 (`WIDE_WORDS`); more is not called (0) | `eax` |
+| `ffx_graphic` `call_wide` / `call_sym_wide` (cdecl) | 0-40 (`WIDE_WORDS`); more is not called (0) | `eax` |
 
 The `call_sym*` forms take the `ffx.sym` address and rebase it.
 `call_wide` is for callees past twelve words, such as
@@ -235,7 +235,7 @@ The shim-side helpers in `crates/ffx-hook/src/ported/mod.rs`:
 |---|---|---|
 | `call_cdecl(f, &[u32])` | 0-12 stack words (the rest zero; more are logged and cut) | `eax` |
 | `call_cdecl_f64` / `_f32` / `_u64` | as `call_cdecl` | `ST0` / `edx:eax` |
-| `call_cdecl_words(f, &[u32])` | 0-32 stack words; more is logged and not called (0) | `eax` |
+| `call_cdecl_words(f, &[u32])` | 0-40 stack words; more is logged and not called (0) | `eax` |
 | `call_thiscall(f, this, &[u32])` | `ecx` + exactly the callee's 0-8 words; more is logged and not called (0) | `eax` |
 
 The `ST0` forms are only for callees that always leave `ST0` set: popping

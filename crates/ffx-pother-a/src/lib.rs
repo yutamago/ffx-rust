@@ -33,6 +33,7 @@
 use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
+pub mod l10_print;
 pub mod m5p_scripting_bp2;
 pub mod m5p_scripting_bp3;
 pub mod m5p_scripting_df;

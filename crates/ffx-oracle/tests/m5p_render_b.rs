@@ -8489,3 +8489,223 @@ fn bp3_render_batch() {
         }
     }
 }
+
+// ---- tail10: the lighting tweak tool's gizmo (ffx_prender::l10_tweak) ----
+
+use ffx_prender::l10_tweak::{self as l10t, bridge as l10tb, frame as l10f};
+
+impl Twins {
+    /// A recording stub at `sym` (as [`Twins::stub`]) that first runs
+    /// `pre` (code keeping `esp`, `ecx` and the arguments).
+    #[allow(clippy::too_many_arguments)]
+    fn l10_stub_pre(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32, pre: &[u8]) {
+        let log = self.stub_code(sym, this, n, pops, ret);
+        let mut c = pre.to_vec();
+        c.push(0x68);
+        c.extend(log.to_le_bytes()); // push log
+        c.push(0xc3); // ret: on to the logging stub
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        self.patch(sym, &j);
+    }
+}
+
+/// `below` / `chance` for the tail10 test.
+trait L10Rng {
+    fn below(&mut self, n: u32) -> u32;
+    fn chance(&mut self, n: u32) -> bool;
+}
+
+impl L10Rng for Rng {
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+    fn chance(&mut self, n: u32) -> bool {
+        self.next().is_multiple_of(n)
+    }
+}
+
+/// Code copying `words` words from the pointer at `[esp + k]` (at the
+/// stub's entry) to `[cursor]`, advancing it; keeps every register.
+fn l10_copy(k: u8, words: u32, cursor: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+    c.extend([0x8b, 0x74, 0x24, k + 12]); // mov esi, [esp+k+12]
+    c.extend([0x8b, 0x3d]);
+    c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+    c.push(0xb9);
+    c.extend(words.to_le_bytes()); // mov ecx, words
+    c.extend([0xf3, 0xa5]); // rep movsd
+    c.extend([0x89, 0x3d]);
+    c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+    c
+}
+
+/// Code writing the words `v` through the pointer at `[esp + k]`.
+fn l10_write(k: u8, v: &[u32]) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, k]; // mov eax, [esp+k]
+    for (i, w) in v.iter().enumerate() {
+        c.extend([0xc7, 0x40, (4 * i) as u8]);
+        c.extend(w.to_le_bytes()); // mov dword [eax+4i], w
+    }
+    c
+}
+
+/// `CharacterLightingTweakUtil_drawGizmo_006a7850` (tail10): the tool off
+/// and on; the anchor near (kept) and far (moved); the light's colour lit
+/// or dark (the 27 arrows or none); a point light of the set-up or not
+/// (the set-up off, another light type: no line, range 0), dark or lit;
+/// the guard set or not. The lighting queries, the matrix helpers, the
+/// lock and the renderer are recording stubs: the queries write their
+/// vectors (and return their output), the transform and the draws copy
+/// the vectors they are handed into memory the diff sees; `_CIsqrt` is the
+/// CRT's. The frame lies at the original's `ebp - 0x1b4`; the words the
+/// callees see are compared after the call. Synthetic only.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn l10_tweak_gizmo() {
+    let f32w =
+        |rng: &mut Rng, span: u32| ((rng.below(2 * span) as f32 - span as f32) / 7.0).to_bits();
+    for (label, mut t) in Twins::all() {
+        t.trampoline();
+        let mut rng = Rng(0x006a_7850);
+        let mut seen = [0u32; 4];
+        for case in 0..60_u32 {
+            t.reset();
+            let ebp = t.a.stack_range().end - 0x100 - 4 - 8;
+            let f = ebp - 0x1b4;
+            let copies = t.zeros(0x4000);
+            let cursor = t.alloc(&copies.to_le_bytes());
+            // the lighting set-up
+            let n_lights = 4;
+            let i = rng.below(n_lights);
+            let lights: Vec<u32> = (0..n_lights).map(|_| t.zeros(0x40)).collect();
+            let vt = t.rebase(l10t::POINT_LIGHT_VTABLE);
+            for &l in &lights {
+                for o in (0..0x10).step_by(4) {
+                    let v = if case % 5 == 1 { 0 } else { f32w(&mut rng, 20) };
+                    t.w32(l + o, v);
+                }
+                t.w32(l + 0x2c, f32w(&mut rng, 400));
+                t.w32(l + 0x18, if rng.chance(3) { rng.next() } else { vt });
+            }
+            let list = t.alloc(
+                &lights
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let set = t.zeros(0x10);
+            t.w32(set + 4, list);
+            let lighting = t.zeros(0x200);
+            t.w32(lighting + 0xf0, set);
+            t.w8(lighting + 0x1cc, u8::from(!rng.chance(4)));
+            let gl = t.rebase(l10t::LIGHTING);
+            t.patch(l10t::LIGHTING, &lighting.to_le_bytes());
+            let _ = gl;
+            let guard = t.rebase(l10t::GUARD);
+            let g = t.r32(guard);
+            t.w32(guard, if rng.chance(2) { g | 1 } else { g & !1 });
+            // the tool and the character
+            let util = t.zeros(0x100);
+            t.w8(util + 0xc8, u8::from(case % 9 != 4));
+            t.w32(util + 0xc0, i);
+            for o in (0xe8..0xf8).step_by(4) {
+                let span = if rng.chance(2) { 200 } else { 4000 };
+                let v = f32w(&mut rng, span);
+                t.w32(util + o, v);
+            }
+            let src = t.zeros(0x40);
+            for o in (0x20..0x2c).step_by(4) {
+                let v = f32w(&mut rng, 300);
+                t.w32(src + o, v);
+            }
+            let character = t.zeros(0xc0);
+            t.w32(character + 0xb0, src);
+            // the queries write their vectors
+            let dir: Vec<u32> = (0..3).map(|_| f32w(&mut rng, 7)).collect();
+            let colour: Vec<u32> = (0..4)
+                .map(|_| if case % 4 == 2 { 0 } else { f32w(&mut rng, 7) })
+                .collect();
+            let pos: Vec<u32> = (0..4).map(|_| f32w(&mut rng, 300)).collect();
+            let axis: Vec<u32> = (0..4).map(|_| f32w(&mut rng, 7)).collect();
+            let matrix: Vec<u32> = (0..16).map(|k| k * 0x101).collect();
+            let mut pre = l10_write(4, &dir);
+            t.l10_stub_pre(l10t::LIGHT_DIRECTION, true, 2, 2, f + l10f::DIRECTION, &pre);
+            pre = l10_write(4, &colour);
+            t.l10_stub_pre(l10t::LIGHT_COLOUR, true, 2, 2, f + l10f::COLOUR, &pre);
+            pre = l10_write(4, &pos);
+            t.l10_stub_pre(l10t::LIGHT_POSITION, true, 2, 2, f + l10f::POSITION, &pre);
+            // FROM_3X4 writes the matrix through ecx
+            pre = vec![0x89, 0xc8]; // mov eax, ecx
+            for (k, w) in matrix.iter().enumerate() {
+                pre.extend([0xc7, 0x40, (4 * k) as u8]);
+                pre.extend(w.to_le_bytes());
+            }
+            t.l10_stub_pre(l10t::FROM_3X4, true, 1, 1, 0, &pre);
+            // the transform: its input copied, a fixed output written (the
+            // second word of the output pointer's target from the input)
+            pre = l10_copy(8, 4, cursor);
+            pre.extend(l10_write(4, &axis));
+            t.l10_stub_pre(l10t::TRANSFORM, true, 2, 2, f + l10f::AXIS, &pre);
+            // the draws: three points and the colour copied
+            // the n points (n at [esp+0x14]): copy 4n words
+            pre = l10_copy(8, 0, cursor);
+            // `mov ecx, 0` after the three pushes, `mov esi` and `mov edi`
+            let at = 13;
+            assert_eq!(pre[at], 0xb9);
+            pre.splice(
+                at..at + 5,
+                [0x8b, 0x4c, 0x24, 0x14 + 12, 0xc1, 0xe1, 0x02], // mov ecx, [esp+0x20]; shl ecx, 2
+            );
+            pre.extend(l10_copy(12, 4, cursor));
+            t.l10_stub_pre(l10t::DRAW_POINTS, true, 6, 6, 0, &pre);
+            t.stub(l10t::LOCK_ENTER, true, 0, 0, 0);
+            t.stub(l10t::LOCK_LEAVE, true, 0, 0, 0);
+            t.stub(l10t::INTERFACE_CTOR, true, 0, 0, 0);
+            t.stub(l10t::ATEXIT, false, 1, 0, 0);
+            let fill: Vec<u8> = (0..l10f::BYTES).map(|k| (k * 3) as u8).collect();
+            t.write(f, &fill);
+            t.b.set_call_top(Some(f - 0x100));
+            let what = format!("{label}: gizmo {case}");
+            t.check(
+                &what,
+                0x006a_7850,
+                Conv::Thiscall(util),
+                &[character],
+                |g| {
+                    l10tb::draw_gizmo(g, util, character, f);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            for (lo, hi) in [
+                (0, 0xe0),
+                (0xf4, 0x108),
+                (0x10c, 0x12c),
+                (0x174, l10f::BYTES),
+            ] {
+                for k in (lo..hi).step_by(4) {
+                    assert_eq!(
+                        Mem::read::<u32>(&t.a, f + k),
+                        Mem::read::<u32>(&t.b, f + k),
+                        "{what}: frame at ebp - {:#x}",
+                        0x1b4 - k
+                    );
+                }
+            }
+            // copied bytes: 16 per transform, 48 per line, 64 per arrow
+            let bytes = t.r32(cursor) - copies;
+            seen[match bytes {
+                0 => 0,
+                16 => 1,
+                208 => 2,
+                _ => 3,
+            }] += 1;
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{label}: {seen:?}");
+    }
+}

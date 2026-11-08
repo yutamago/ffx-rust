@@ -18,15 +18,16 @@ Limits (what each in-game host passes):
   ffx_bridge::Host::call(f, args)                  6  (refused: 0)
   NativeHost::call_float(f, args)                  6  (refused: NaN)
   NativeHost::call_n(f, args)                     12  (refused: 0)
-  ffx_graphic Host::call/call_sym(f, conv, args)  12 for Conv::Cdecl, 16 for
+  ffx_graphic Host::call/call_sym(f, conv, args)  12 for Conv::Cdecl and
+                                                   Conv::Stdcall, 16 for
                                                    Conv::Thiscall; 8 else
   ffx_graphic Host::call_st0/call_sym_st0          8
   ffx_graphic Host::call_st0_f64/call_sym_st0_f64  8
   ffx_graphic Host::call_u64/call_sym_u64          8
-  ffx_graphic Host::call_wide/call_sym_wide(f, a) 32  (cdecl; refused: 0)
+  ffx_graphic Host::call_wide/call_sym_wide(f, a) 40  (cdecl; refused: 0)
   ffx_graphic Host::call_virtual(obj, slot, args) 12
   ffx-hook call_cdecl / _f64 / _f32 / _u64        12  (logged, cut short)
-  ffx-hook call_cdecl_words                       32  (refused: 0)
+  ffx-hook call_cdecl_words                       40  (refused: 0)
   ffx-hook call_thiscall(f, this, args)            8  (refused: 0)
   ffx_magic Game::call(target, ecx, args)         32  (the hook's call_regs; more are dropped)
 
@@ -55,7 +56,7 @@ settles it. A REVIEWED entry that no longer matches is reported.
 Calls through closures the shims hand the bridges (`call: &mut impl
 FnMut(&mut M, u32, &[u32]) -> u32`) are checked against what the shims
 pass for that bridge: the forwarding closure's own limit (`|_, f, a|
-call_thiscall(f, this, a)`: 8; `call_cdecl_words`: 32), the narrowest when
+call_thiscall(f, this, a)`: 8; `call_cdecl_words`: 40), the narrowest when
 several shims call it, else 12. Inner helpers the bridge hands its closure
 on to get 12.
 
@@ -87,8 +88,8 @@ METHODS = {
     'call_sym_st0_f64': (2, 8, 'graphic Host::call_sym_st0_f64'),
     'call_u64': (2, 8, 'graphic Host::call_u64'),
     'call_sym_u64': (2, 8, 'graphic Host::call_sym_u64'),
-    'call_wide': (1, 32, 'graphic Host::call_wide'),
-    'call_sym_wide': (1, 32, 'graphic Host::call_sym_wide'),
+    'call_wide': (1, 40, 'graphic Host::call_wide'),
+    'call_sym_wide': (1, 40, 'graphic Host::call_sym_wide'),
     'call_virtual': (2, 12, 'graphic Host::call_virtual'),
     'call_float': (1, 6, 'NativeHost::call_float'),
     'call_n': (1, 12, 'NativeHost::call_n'),
@@ -99,7 +100,7 @@ FREE = {
     'call_cdecl_f64': (1, 12, 'call_cdecl_f64'),
     'call_cdecl_f32': (1, 12, 'call_cdecl_f32'),
     'call_cdecl_u64': (1, 12, 'call_cdecl_u64'),
-    'call_cdecl_words': (1, 32, 'call_cdecl_words'),
+    'call_cdecl_words': (1, 40, 'call_cdecl_words'),
     'call_thiscall': (2, 8, 'call_thiscall'),
 }
 # where the hosts themselves are defined: their bodies are the limits
@@ -750,10 +751,10 @@ def graphic_limit(conv):
     c = conv.replace(' ', '')
     if re.search(r'Conv::Thiscall', c):
         return 16, 'thiscall'
-    if re.search(r'Conv::Cdecl$', c):
-        return 12, 'cdecl'
-    if re.search(r'Conv::(Stdcall|Fastcall)$', c):
-        return 8, c.split('::')[-1].lower()
+    if re.search(r'Conv::(Cdecl|Stdcall)$', c):
+        return 12, c.split('::')[-1].lower()
+    if re.search(r'Conv::Fastcall$', c):
+        return 8, 'fastcall'
     return 12, f'conv `{conv}`'
 
 

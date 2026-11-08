@@ -63,6 +63,7 @@ mod m5_system_a;
 mod m5_system_a_df;
 mod m5_system_a_stubs;
 mod m5_system_b;
+mod m5_tail10;
 mod m5_tail9;
 mod m5_tail9_stubs;
 mod m5_vfx;
@@ -214,6 +215,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_system_a_df::hooks());
     all.extend(m5_system_a_stubs::hooks());
     all.extend(m5_system_b::hooks());
+    all.extend(m5_tail10::hooks());
     all.extend(m5_tail9::hooks());
     all.extend(m5_tail9_stubs::hooks());
     all.extend(m5_vfx::hooks());
@@ -660,7 +662,7 @@ fn cdecl12<R: route::Out>(helper: &str, f: u32, a: &[u32]) -> R {
 }
 
 /// The most stack words [`call_cdecl_words`] passes.
-pub(crate) const WIDE_WORDS: usize = 32;
+pub(crate) const WIDE_WORDS: usize = 40;
 
 /// Calls an original cdecl function by absolute address with up to
 /// [`WIDE_WORDS`] stack words, returning `eax`: for callees that take a

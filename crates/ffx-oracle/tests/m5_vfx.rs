@@ -6561,3 +6561,139 @@ fn l9_opus_colour() {
         }
     });
 }
+
+// ---- round 10 (tail10) (ffx_glue_other::l10_vfx) ----
+
+use ffx_glue_other::l10_vfx::{self as l10v, bridge as l10vb};
+
+#[test]
+#[allow(clippy::too_many_lines)] // the state, the stubs and every mode
+fn l10_opd_heap_display() {
+    // every corner and ramp half (mode & 3, & 0x800), the special modes
+    // (0x601, 0x800..0x802, 0x8603) and others, the numbers on and off;
+    // size 0 (no level), the level rising, falling, NaN; the lit quads from
+    // none to all 48; the state's floats random (no signalling NaNs). The
+    // transform stubs write four words through their output; op_num's
+    // calls are logged with their words. Synthetic only.
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a6_3ff0);
+        let mut seen = [0u32; 4];
+        for case in 0..96_u32 {
+            t.reset();
+            let st = t.rebase(l10v::STATE);
+            for off in (0..0x510).step_by(4) {
+                let v = float_word(&mut rng);
+                t.w32(st + off, v);
+            }
+            let q = case % 4;
+            let slot = st + 0x410 + 0x40 * q;
+            // the level and peak (0..1, NaN now and then)
+            for o in [0x10, 0x14] {
+                let v = match rng.below(6) {
+                    0 => 0x7fc0_0000,
+                    _ => (rng.below(1100) as f32 / 1000.0).to_bits(),
+                };
+                t.w32(slot + o, v);
+            }
+            let ramps = t.rebase(l10v::RAMPS);
+            for o in (0..0x100).step_by(4) {
+                let v = rng.next() & 0x0f0f_0f0f;
+                t.w32(ramps + o, v);
+            }
+            let closing = t.rebase(l10v::CLOSING);
+            for o in (0..0x20).step_by(4) {
+                let v = rng.next();
+                t.w32(closing + o, v);
+            }
+            let wide = t.rebase(l10v::WIDE);
+            t.w8(wide, u8::from(rng.chance(2)));
+            let show = t.rebase(l10v::SHOW_NUMBERS);
+            t.w8(show, u8::from(!rng.chance(4)));
+            let mode = match case / 4 % 8 {
+                0 => 0x601,
+                1 => 0x800,
+                2 => 0x801,
+                3 => 0x802,
+                4 => 0x8603,
+                5 => q | 0x800,
+                6 => q | (rng.next() & 0x7ff_fffc) | 0x1000,
+                _ => q,
+            };
+            let size = match rng.below(5) {
+                0 => 0,
+                1 => rng.next(),
+                _ => 1 + rng.below(0x10000),
+            };
+            let mut used = if rng.chance(3) {
+                rng.next()
+            } else {
+                rng.below(size.max(1) * 2)
+            };
+            let mut size = size;
+            if case % 7 == 2 {
+                // the level exactly at the ratio (and the peak at it)
+                size = 2 * (1 + rng.below(0x1000));
+                used = size / 2;
+                t.w32(slot + 0x10, 0.5f32.to_bits());
+                t.w32(slot + 0x14, 0.5f32.to_bits());
+            }
+            for (sym, tag, n) in [
+                (l10v::CAMERA_MATRIX, 1, 4),
+                (l10v::VIEW_SCREEN_MATRIX, 2, 10),
+                (l10v::UNIT_M_SCALE, 3, 2),
+                (l10v::ROT_M, 4, 3),
+                (l10v::APPLY_M_W1, 5, 3),
+                (l10v::MUL_M, 6, 3),
+                (l10v::GS_SYNC_PATH, 8, 2),
+                (l10v::FLUSH_CACHE, 9, 1),
+                (l10v::DMA_SEND, 10, 2),
+                (l10v::NUM_XY_SET, 11, 2),
+            ] {
+                t.stub_sym(sym, tag, false, n, 0, Ret::Val(0x100 + tag));
+            }
+            // op_num logs its format; its value, when the format takes one
+            // ("fprim" and "fpar" take none), goes to a list of its own
+            let values = t.zeros(0x40);
+            let cursor = t.words(&[values]);
+            let mut x = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            for (f, skip) in [(0x00b7_bf60_u32, 0x1a_u8), (0x00b7_bf54, 0x13)] {
+                x.push(0x3d);
+                x.extend(t.rebase(f).to_le_bytes()); // cmp eax, f
+                x.extend([0x74, skip]); // je end
+            }
+            x.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+            x.extend([0x8b, 0x0d]);
+            x.extend(cursor.to_le_bytes()); // mov ecx, [cursor]
+            x.extend([0x89, 0x01]); // mov [ecx], eax
+            x.extend([0x83, 0x05]);
+            x.extend(cursor.to_le_bytes());
+            x.push(0x04); // add dword [cursor], 4
+            t.stub_sym_x(l10v::NUM, 12, false, 1, 0, Ret::Val(0x10c), &x);
+            // RotTransPers writes four words through its output
+            let mut x = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            for (i, v) in [0x1111_u32, 0x2222, 0x3333, 0x4444].into_iter().enumerate() {
+                x.extend([0xc7, 0x40, (4 * i) as u8]);
+                x.extend(v.to_le_bytes()); // mov dword [eax+4i], v
+            }
+            t.stub_sym_x(l10v::ROT_TRANS_PERS, 7, false, 4, 0, Ret::Val(0x107), &x);
+            t.check(
+                &format!("opd_heap_display #{case} mode {mode:#x}"),
+                0x00a6_3ff0,
+                Conv::Cdecl,
+                &[used, size, mode],
+                |g| Out::U32(l10vb::heap_display(g, used, size, mode)),
+            );
+            // how many quads were lit
+            let lit = (0..48)
+                .filter(|i| t.r32(t.rebase(l10v::QUADS) + 0x90 * i) == 0x48)
+                .count();
+            seen[match lit {
+                0 => 0,
+                48 => 1,
+                _ => 2,
+            }] += 1;
+            seen[3] += u32::from(size == 0);
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
+    });
+}

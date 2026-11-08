@@ -9334,3 +9334,207 @@ fn l9_draw_model_scroll_matches_the_original() {
         }
     });
 }
+
+/// An asset list header for [`l10_read_asset_header_matches_the_original`]:
+/// the marker line or not, `#endif` or not, `PUInt32` symbols (with
+/// `vfxtex_start` / `vfxtex_end` or not), the ` = {` table or not, its
+/// quoted paths (repeats, `.dae.phyre` ones, `\r\n` and `",` endings).
+#[allow(clippy::format_push_string)] // a text built line by line
+fn l10_asset_header(rng: &mut Rng, case: u32) -> Vec<u8> {
+    let mut s = String::from("// asset list\n");
+    let marker = case % 11 != 3;
+    if marker {
+        s += "#ifdef PHYRE_RENDERING_PLATFORM_D3D11\n";
+    }
+    let mut syms = vec![
+        "first_tex",
+        "vfxtex_start",
+        "vfx_a",
+        "vfxtex_end",
+        "model_b",
+        "tail",
+    ];
+    match case % 5 {
+        0 => syms.retain(|n| !n.starts_with("vfxtex")),
+        1 => syms.retain(|&n| n != "vfxtex_end"),
+        2 => syms.retain(|&n| n != "vfxtex_start"),
+        _ => {}
+    }
+    let keep = rng.below(syms.len() as u32 + 1) as usize;
+    let range = 1 + rng.below(4);
+    for (i, n) in syms.iter().take(keep).enumerate() {
+        let v = match *n {
+            "vfxtex_start" => 1,
+            "vfxtex_end" => 1 + range,
+            _ => i as u32 * 2 + rng.below(3),
+        };
+        s += &format!("const Phyre::PUInt32 {n} = {v};\n");
+    }
+    if case % 13 != 7 {
+        s += "const char *const assets[] = {\n";
+        let names = [
+            "maps/a/aaaaaaaa.dae.phyre",
+            "maps/a/bbbbbbbb.dds.phyre",
+            "chr/c0000/c0000.dae.phyre",
+            "vfx/tex/ef_0001.dds.phyre",
+            "vfx/tex/ef_0002.dds.phyre",
+            "shaders/s.fx.phyre",
+            "x.dae.phyre",
+            "0123456789",
+        ];
+        for k in 0..rng.below(10) {
+            let n = names[rng.below(names.len() as u32) as usize];
+            let end = if k % 3 == 1 {
+                "\",\r\n"
+            } else if k % 4 == 2 {
+                "\"\r\n"
+            } else {
+                "\"\n"
+            };
+            s += &format!("\t\"{n}{end}");
+        }
+        s += "};\n";
+    }
+    if case % 7 != 5 {
+        s += "#endif\n";
+    }
+    // padding past one read now and then (the reads are 1023 bytes)
+    if case.is_multiple_of(3) {
+        s += &"// ".repeat(400);
+        s += "\n";
+    }
+    s.into_bytes()
+}
+
+/// `AssetListReader::readAssetHeader` (`0x006f4900`, tail10): the reader
+/// built by its constructor (`0x006904c0`: the D3D11 marker), each
+/// reader reading two headers (the second over the first one's assets
+/// and symbols: `count` > 0, repeats against them), 150 cases of
+/// [`l10_asset_header`]; the file reads are a stub that copies the text
+/// in chunks of at most the asked size (now and then a NUL inside a
+/// chunk, now and then -1 instead of 0 at the end); `fiosOpen`/`Close`
+/// recording stubs; the string, map and vector helpers, `atoi` and
+/// `getPlatformSpecificPath` the originals. The port's frame lies at the
+/// original's `ebp - 0x48c`; its strings and read buffer are compared
+/// after the call, the reader's heap through the diff. Synthetic only
+/// (no coverage run read a header).
+#[test]
+fn l10_read_asset_header_matches_the_original() {
+    use ffx_system::l10_assets::{self as la, bridge as lb, frame};
+    let mut seen = [0u32; 4];
+    Twins::each(|t| {
+        let mut rng = Rng(0x006f_4900);
+        for case in 0..150_u32 {
+            t.reset();
+            let src = t.zeros(0x1000);
+            let cur = t.words(&[src, 0, 0, 0, 0]);
+            // fiosRead(f, buf, n): copies min(n, left) bytes from the
+            // cursor, returns that, or [cur+8] (0 or -1) at the end;
+            // keeps the last buf and n at [cur+12] and [cur+16]
+            let mut c = vec![0x56, 0x57]; // push esi; push edi
+            c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10] (buf)
+            c.push(0xa3);
+            c.extend((cur + 12).to_le_bytes()); // mov [cur+12], eax
+            c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14] (n)
+            c.push(0xa3);
+            c.extend((cur + 16).to_le_bytes()); // mov [cur+16], eax
+            c.extend([0x8b, 0x0d]);
+            c.extend((cur + 4).to_le_bytes()); // mov ecx, [cur+4] (left)
+            c.extend([0x85, 0xc9]); // test ecx, ecx
+            c.extend([0x75, 0x08]); // jnz +8
+            c.push(0xa1);
+            c.extend((cur + 8).to_le_bytes()); // mov eax, [cur+8]
+            c.extend([0x5f, 0x5e, 0xc3]); // pop edi; pop esi; ret
+            c.extend([0x39, 0xc1]); // cmp ecx, eax
+            c.extend([0x76, 0x02]); // jbe +2
+            c.extend([0x89, 0xc1]); // mov ecx, eax
+            c.extend([0x29, 0x0d]);
+            c.extend((cur + 4).to_le_bytes()); // sub [cur+4], ecx
+            c.extend([0x89, 0xc8]); // mov eax, ecx
+            c.extend([0x8b, 0x35]);
+            c.extend(cur.to_le_bytes()); // mov esi, [cur]
+            c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10]
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x89, 0x35]);
+            c.extend(cur.to_le_bytes()); // mov [cur], esi
+            c.extend([0x5f, 0x5e, 0xc3]); // pop edi; pop esi; ret
+            let read = t.cave_code(&c);
+            t.jump(la::FIOS_READ, read);
+            t.stub(la::FIOS_OPEN, false, 2, 0, 0x0bad_f11e);
+            t.stub(la::FIOS_CLOSE, false, 1, 0, 0);
+            // the game's heap starts threads the oracle can't run:
+            // user_malloc as a bump allocator, a recording operator_delete
+            let block = t.zeros(0x2_0000);
+            let cursor = t.words(&[block]);
+            let mut c = vec![0xa1];
+            c.extend(cursor.to_le_bytes()); // mov eax, [cursor]
+            c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+            c.extend([0x83, 0xc1, 0x1f]); // add ecx, 0x1f
+            c.extend([0x83, 0xe1, 0xf0]); // and ecx, -16
+            c.extend([0x01, 0x0d]);
+            c.extend(cursor.to_le_bytes()); // add [cursor], ecx
+            c.push(0xc3);
+            let bump = t.cave_code(&c);
+            t.jump(0x0068_7020, bump);
+            t.stub(la::DELETE, false, 1, 0, 0);
+            // the reader
+            let reader = t.zeros(0x48);
+            let ctor = t.rebase(0x0069_04c0);
+            for o in [&mut t.a, &mut t.b] {
+                o.call(ctor, Conv::Thiscall(reader), &[]).unwrap();
+            }
+            t.diff(&format!("case {case}: the reader"));
+            let path = t.alloc(b"data/assets.h\0");
+            for pass in 0..2 {
+                let mut text = l10_asset_header(&mut rng, case * 2 + pass);
+                if case % 9 == 4 && text.len() > 40 {
+                    let at = 20 + rng.below(text.len() as u32 - 30) as usize;
+                    text[at] = 0;
+                }
+                t.write(src, &text);
+                t.write(cur, &[0; 20]);
+                t.w32(cur, src);
+                t.w32(cur + 4, text.len() as u32);
+                t.w32(cur + 8, if case % 4 == 1 { u32::MAX } else { 0 });
+                let ebp = t.frame_ebp(1);
+                let f = ebp - 0x48c;
+                let fill: Vec<u8> = (0..frame::BYTES).map(|i| (i * 7) as u8).collect();
+                t.write(f, &fill);
+                let arg = f - 0x80;
+                t.b.set_call_top(Some(arg - 0x100));
+                let what = format!("case {case} pass {pass}");
+                t.check(&what, 0x006f_4900, Conv::Thiscall(reader), &[path], |m| {
+                    lb::read_asset_header(m, reader, path, f, arg);
+                    Out::None
+                });
+                t.b.set_call_top(None);
+                // the index word, the strings and the buffer (the
+                // original's other locals lie between them)
+                for (lo, hi) in [(frame::INDEX, 4), (frame::T1, frame::BYTES)] {
+                    let n = (hi - lo) as usize;
+                    let mut x = vec![0; n];
+                    let mut y = vec![0; n];
+                    Mem::read_bytes(&t.a, f + lo, &mut x);
+                    Mem::read_bytes(&t.b, f + lo, &mut y);
+                    if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+                        panic!(
+                            "{what}: frame byte {:#x}: {} != {}",
+                            lo + i as u32,
+                            x[i],
+                            y[i]
+                        );
+                    }
+                }
+                let assets = (t.r32(reader + 0x18) - t.r32(reader + 0x14)) / 0x18;
+                let models = (t.r32(reader + 0xc) - t.r32(reader + 8)) / 4;
+                let symbols = t.r32(reader + 4);
+                seen[0] += u32::from(pass == 1 && assets > 0);
+                seen[1] += models;
+                seen[2] += u32::from(symbols > 0);
+                seen[3] += u32::from(pass == 1 && assets == 0);
+            }
+        }
+    });
+    // second passes over assets, models, symbols, nothing read
+    assert!(seen.iter().all(|&k| k > 0), "{seen:?}");
+}

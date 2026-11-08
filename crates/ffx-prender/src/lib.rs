@@ -159,6 +159,7 @@ pub mod h3e_render;
 pub mod h3e_scene;
 pub mod h3e_util;
 pub mod h3f_cascade;
+pub mod l10_tweak;
 pub mod l6_map;
 pub mod l6_map2;
 pub mod l6_map3;
