@@ -1607,6 +1607,10 @@ ports! {
     "r17 summon task 0399" => r17::SUMMON_TASK_0399, r17::summon_task_0399;
     "r17 summon step 0330" => r17::SUMMON_STEP_0330, r17::summon_step_0330;
     "r17 summon task 0330" => r17::SUMMON_TASK_0330, r17::summon_task_0330;
+    "r17 summon task 0159" => r17::SUMMON_TASK_0159, r17::summon_task_0159;
+    "r17 summon task 0379" => r17::SUMMON_TASK_0379, r17::summon_task_0379;
+    "r17 frame 0172" => r17::FRAME_0172, r17::frame_0172;
+    "r9 load step 0172" => r9_load::LOAD_0172, r9_load::load_0172;
     // round 17 (magic-r17): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
@@ -3487,6 +3491,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r17 start-up 0168", &r17::START_UP_0168),
     ("r17 trail 0168", &r17::TRAIL_0168),
     ("r17 summon object 0330", &r17::SUMMON_OBJECT_0330),
+    ("r17 start-up 0172", &r17::START_UP_0172),
+    ("r17 throws 0172", &r17::THROWS_0172),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
