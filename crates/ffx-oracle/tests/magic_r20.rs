@@ -105,7 +105,11 @@ fn vector_slots(t: &mut Twin) {
     }
     rec(t, 229, 3, |m, a| {
         for i in 0..4 {
-            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            // the input words themselves too (a tiny float would vanish
+            // in the sum)
+            let x = m.r32(a[2] + 4 * i);
+            fold(m, 229, 4 + i, x);
+            let v = rf(m, a[1] + 4 * i) * 0.5 + f32::from_bits(x);
             wf(m, a[0] + 4 * i, v);
             fold(m, 229, i, v.to_bits());
         }
@@ -784,4 +788,508 @@ fn frame_0705() {
     }
     assert!(t.u32(row(713)) >= 30, "the done way ran");
     assert!(t.u32(row(915)) >= 1, "the fade ran");
+}
+
+/// `magic_0705` 0x100017e0 (`r20::step_0705`): the load's steps (busy,
+/// asked, not loaded), off, the sound's start (id 0xff or not) and each
+/// state at its count and not (one out of range), the points every 7th
+/// time (and the 12th), the two parts running or not and the second's
+/// start, the motions' counter negative, at 0x50, even, odd, at 0x1e,
+/// past 0x20 and with 16 parts done, the stop word set.
+#[test]
+fn step_0705() {
+    let Some(mut t) = twin(705) else { return };
+    let f = t.at(0x17e0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let (p2, p3, lock) = (SCRATCH + 0x200, SCRATCH + 0x210, SCRATCH + 0x220);
+    let cell = SCRATCH + 0x240;
+    let table = SCRATCH + 0x300;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    for (s, n) in [
+        (226u32, 2usize),
+        (220, 3),
+        (228, 2),
+        (213, 2),
+        (714, 5),
+        (239, 3),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    rec(&mut t, 225, 1, move |m, _| m.r32(cell));
+    rec(&mut t, 227, 1, move |m, _| m.r32(cell + 4));
+    rec(&mut t, 253, 0, move |m, _| m.r32(cell + 8));
+    rec(&mut t, 237, 4, |m, a| {
+        let k = m.r32(row(237)) as f32;
+        for i in 0..4 {
+            wf(
+                m,
+                a[3] + 4 * i,
+                0.5 * i as f32 + k * 0.25 + (a[1] as f32) * 0.125,
+            );
+        }
+        0x237
+    });
+    magic_owna::filler(&mut t, 247, 2, 16);
+    vector_slots(&mut t);
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| f64::from(m.r32(row(307)) % 11) * 0.37 - 1.1);
+    let (pa, pb) = (op(&t, 0x1e8), op(&t, 0x4f9));
+    // defaults: loaded, on, time 5, no state, no parts, no motions
+    let defaults: [(u32, u32); 14] = [
+        (0x15, 1),
+        (0x42, 1),
+        (0x6d, 1),
+        (0xc7, 5),
+        (0x14d, 0xc5),
+        (0x16e, 0x33),
+        (0x298, 0),
+        (0x67b, 0xffff_ffff),
+        (0x68b, 0),
+        (0x23, 0x00ae_0000),
+        (0x3c1, 0x00ac_0000),
+        (0x6af, 0x0060_06af),
+        (0x2ed, 0x0050_3000),
+        (0x142, 0x0000_0077),
+    ];
+    // (overrides, 225 busy, 227 loaded, 253 on, stop, sound id, h, run halfwords)
+    #[allow(clippy::type_complexity)]
+    let cases: Vec<(
+        Vec<(u32, u32)>,
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        i16,
+        (u16, u16, u32),
+    )> = vec![
+        (vec![(0x15, 0)], 1, 1, 1, 0, 3, 0, (0, 0, 0)),
+        (
+            vec![(0x15, 0), (0x42, 0), (0x6d, 0)],
+            0,
+            0,
+            1,
+            0,
+            3,
+            0,
+            (0, 0, 0),
+        ),
+        (vec![(0x6d, 0)], 0, 2, 0, 0, 3, 0, (0, 0, 0)),
+        (vec![(0xc7, 0)], 0, 1, 1, 0, 0x22, 7, (0, 0, 0)),
+        (vec![(0xc7, 0)], 0, 1, 1, 1, 0xff, 7, (0, 0, 0)),
+        (
+            vec![(0x14d, 0xc0), (0x16e, 0x77)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc0), (0x16e, 0x78)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc1), (0x16e, 0x58)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            -9,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc2), (0x16e, 0x77)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc3), (0x16e, 0x2c)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc4), (0x16e, 0x77)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x14d, 0xc4), (0x16e, 0x76)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            7,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0xc7, 15), (0x298, 3)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            300,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0xc7, 15 + 7 * 12), (0x298, 11)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            -3,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0xc7, 22), (0x298, 12)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            0,
+            (0, 0, 0),
+        ),
+        (vec![(0xc7, 16)], 0, 1, 1, 0, 0x22, 0, (1, 0, 0x3c000)),
+        (vec![(0xc7, 103)], 0, 1, 1, 0, 0x22, 5, (1, 0, 0x3c001)),
+        (vec![], 0, 1, 1, 0, 0x22, 5, (0, 1, 0)),
+        (
+            vec![(0x67b, 0x50), (0x68b, 3)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x67b, 0x56), (0x68b, 15)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            -5,
+            (1, 1, 0),
+        ),
+        (
+            vec![(0x67b, 0x57), (0x68b, 4)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x67b, 0x6e), (0x68b, 1)],
+            0,
+            1,
+            1,
+            1,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x67b, 0x70), (0x68b, 2)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x67b, 0x10), (0x68b, 2)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+        (
+            vec![(0x67b, 0x52), (0x68b, 16)],
+            0,
+            1,
+            1,
+            0,
+            0x22,
+            5,
+            (0, 0, 0),
+        ),
+    ];
+    for (k, (over, busy, loaded, on, stop, id, h, (ra, rb, run))) in (0u32..).zip(cases) {
+        for &(o, v) in defaults.iter().chain(over.iter()) {
+            t.set_u32(op(&t, o), v);
+        }
+        for o in [0x2d9u32, 0x4cf] {
+            t.set_u32(op(&t, o), p2);
+        }
+        t.set_u32(op(&t, 0xa9), p3);
+        junk(&mut t, p2, 0x30, k);
+        t.set_u32(p3, stop);
+        let sp = t.img.rel32_target(f + 0x316);
+        for o in [0x04u32, 0x29] {
+            t.set_u32(t.img.word(sp + o), lock);
+        }
+        t.set_u32(lock, 0x5555 + k);
+        t.set_u32(cell, busy);
+        t.set_u32(cell + 4, loaded);
+        t.set_u32(cell + 8, on);
+        let snd = op(&t, 0x17e);
+        junk(&mut t, snd, 0x14, k);
+        t.set_u32(snd, id);
+        t.set_u16(op(&t, 0x19c), h.cast_unsigned());
+        // the parts and points
+        let p0 = op(&t, 0x2f9);
+        junk(&mut t, p0, 0x80 * 12, k);
+        junk(&mut t, pa - 0x20, 0x80, k + 1);
+        junk(&mut t, pb - 0x20, 0x80, k + 2);
+        t.set_u16(op(&t, 0x3a1), ra);
+        t.set_u16(op(&t, 0x565), rb);
+        t.set_u32(op(&t, 0x45d), run);
+        let q0 = op(&t, 0x82f);
+        junk(&mut t, q0, 0x80 * 16, k + 3);
+        let r0 = op(&t, 0x401);
+        junk(&mut t, r0, 0x10, k + 4);
+        let s0 = op(&t, 0x5c5);
+        junk(&mut t, s0, 0x30, k + 5);
+        // (the parts' junk covers the time and counter words: set again)
+        for &(o, v) in defaults.iter().chain(over.iter()) {
+            t.set_u32(op(&t, o), v);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(239)) >= 1, "the 0x1e motion");
+    assert!(t.u32(row(714)) >= 6, "parts started");
+    assert!(
+        t.u32(row(228)) >= 4 && t.u32(row(213)) >= 1,
+        "the sound states"
+    );
+}
+
+/// The slots of `magic_0473`'s layers: 885 (by the cell's bits: the
+/// first layer and/or the second), 776 and 905 (recording the colour and
+/// texture words).
+fn layer_slots_0473(t: &mut Twin, cell: u32) {
+    rec(t, 885, 7, move |m, a| {
+        let k = m.r32(row(885));
+        magic_owna::dump(m, 885, a[6], 4);
+        (m.r32(cell) >> ((k + 1) % 2)) & 1
+    });
+    rec(t, 776, 1, |_, a| a[0] ^ 0x0776_0000);
+    rec(t, 905, 9, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[7] + 4 * i);
+            fold(m, 905, i, v);
+        }
+        0x0905_0000 ^ a[2]
+    });
+}
+
+/// `magic_0473` 0x100013e0 (`r20::layers_0473`): both layers, either and
+/// none; colour words above 2^31 and keys using every field.
+#[test]
+fn layers_0473() {
+    let Some(mut t) = twin(473) else { return };
+    let f = t.at(0x13e0);
+    let cell = SCRATCH + 0x240;
+    layer_slots_0473(&mut t, cell);
+    let lock = SCRATCH + 0x250;
+    t.set_u32(t.img.word(f + 0xcd), lock);
+    let obj = SCRATCH + 0x1000;
+    let (c1, c2) = (SCRATCH + 0x300, SCRATCH + 0x320);
+    for (k, which) in (0u32..).zip([3u32, 1, 2, 0]) {
+        t.set_u32(cell, which);
+        t.set_u32(lock, 0x5555 + k);
+        junk(&mut t, obj + 0x800, 0x40, k);
+        for (i, v) in (0u32..).zip([0x8000_0001u32, 0xffff_ffff, 7, 0x1234_5678]) {
+            t.set_u32(c1 + 4 * i, v.rotate_left(k));
+            t.set_u32(c2 + 4 * i, v ^ (0x1111 * k));
+        }
+        let args = [
+            0x00a0_0000,
+            0x00a1_0000 + k,
+            0x00a2_0000 + k,
+            0x4abc_d123 ^ (k << 20),
+            0x0000_0003 + k,
+            0xffff_ffff,
+            0x8765_4321 ^ k,
+            0x3f00_0000,
+            0x3f40_0000,
+            0x4000_0000 + k,
+            0xbf80_0000,
+            c1,
+            c2,
+        ];
+        let c = Call {
+            ecx: obj,
+            ..Call::default()
+        };
+        t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+            ffx_magic::r20::layers_0473(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0473` 0x10001800 (`r20::task_0473`): waiting, living, done
+/// (the node given back); the angles past 0 and not; both cycles
+/// restarting (from `rand`) and running, their channels mirrored past
+/// their peaks and not.
+#[test]
+fn task_0473() {
+    let Some(mut t) = twin(473) else { return };
+    let f = t.at(0x1800);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let lf = t.img.rel32_target(f + 0x4ac);
+    let cell = SCRATCH + 0x240;
+    layer_slots_0473(&mut t, cell);
+    t.set_u32(cell, 3);
+    let lock = SCRATCH + 0x250;
+    t.set_u32(t.img.word(lf + 0xcd), lock);
+    let keys = SCRATCH + 0x280;
+    rec(&mut t, 719, 3, move |m, a| {
+        let k = m.r32(row(719));
+        m.w32(keys + 8 * (k % 4), 0x7b00_0000 ^ k ^ a[2]);
+        m.w32(keys + 8 * (k % 4) + 4, 0x0000_0e00 ^ (k << 28));
+        keys + 8 * (k % 4)
+    });
+    rec(&mut t, 210, 2, |_, a| a[0] ^ 0x210);
+    vector_slots(&mut t);
+    let s = 330u32;
+    rec(&mut t, s, 3, move |m, a| {
+        let k = m.r32(row(s)) % 16;
+        let v = rf(m, a[1] + 4 * k) - f32::from_bits(a[2]);
+        wf(m, a[0] + 4 * k, v);
+        fold(m, s, k, v.to_bits());
+        s
+    });
+    let r = SCRATCH + 0x8000;
+    let obj = SCRATCH + 0x9000;
+    t.set_u32(op(&t, 0x20), r);
+    t.set_u32(op(&t, 0x3b7), obj);
+    let gb = t.img.rel32_target(f + 0x48);
+    let (node, prev, next) = (SCRATCH + 0x600, SCRATCH + 0x640, SCRATCH + 0x680);
+    // (wait, life, angles, first counter, second counter, spans)
+    let cases: [(i32, i32, (f32, f32), (i32, i32), (i32, i32), i32); 6] = [
+        (3, 5, (0.5, 0.25), (4, 30), (2, 25), 40),
+        (0, 5, (0.0, 3.0), (0, 30), (0, 25), 60),
+        (0, 9, (-1.0, 0.0), (17, 20), (11, 20), 200),
+        (-2, 1, (2.0, -0.5), (1, 25), (30, 31), 90),
+        (0, 0, (1.0, 1.0), (5, 30), (5, 30), 40),
+        (1, 7, (0.125, 0.0), (29, 30), (1, 44), 300),
+    ];
+    for (k, (wait, life, (a1, a2), (c1, n1), (c2, n2), span)) in (0u32..).zip(cases) {
+        junk(&mut t, r + 0x500, 0x200, k);
+        junk(&mut t, obj + 0x800, 0x40, k);
+        let set = |t: &mut Twin, o: u32, v: i32| t.set_u32(r + o, v.cast_unsigned());
+        set(&mut t, 0x604, wait);
+        set(&mut t, 0x60c, life);
+        set(&mut t, 0x608, 3 + k.cast_signed());
+        t.set_u32(r + 0x5fc, a1.to_bits());
+        t.set_u32(r + 0x600, a2.to_bits());
+        set(&mut t, 0x5ac, c1);
+        set(&mut t, 0x5b0, n1);
+        set(&mut t, 0x5d4, c2);
+        set(&mut t, 0x5d8, n2);
+        for (i, o) in (0i32..).zip([0x5b4u32, 0x5b8, 0x5bc, 0x5c0, 0x5dc, 0x5e0, 0x5e4, 0x5e8]) {
+            set(&mut t, o, span + 7 * i);
+        }
+        for (i, o) in (0i32..).zip([0x5c4u32, 0x5c8, 0x5cc, 0x5d0, 0x5ec, 0x5f0, 0x5f4, 0x5f8]) {
+            set(&mut t, o, span / 3 + 5 * i - 10);
+        }
+        // the node given back: alone, its links junk
+        junk(&mut t, node, 0x20, k);
+        t.set_u32(node, prev);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, node);
+        t.set_u32(node + 0xc, 0);
+        junk(&mut t, prev, 0x20, k + 1);
+        junk(&mut t, next, 0x20, k + 2);
+        for o in [0x48u32, 0x55] {
+            t.set_u32(t.img.word(gb + o), 0x0bad_0000 + o);
+        }
+        magic_r11::pools(&mut t, f, 0x60);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+    assert!(t.u32(row(905)) >= 8, "the layers ran");
+}
+
+/// `magic_0473` 0x10001cd0 (`r20::set_up_0473`): the yaw past each bound
+/// and inside, the task list empty and not (the two frame words the
+/// original never writes pinned to 0).
+#[test]
+fn set_up_0473() {
+    let Some(mut t) = twin(473) else { return };
+    let f = t.at(0x1cd0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x26);
+    magic_r11::object_start_auto(&mut t, start);
+    let yaw_in = SCRATCH + 0x714;
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw_in))));
+    let r = SCRATCH + 0x8000;
+    t.set_u32(op(&t, 0x1c), r);
+    t.set_u32(op(&t, 0x40), 0x00ac_0040);
+    let kv = f32::from_bits(t.u32(op(&t, 0x6d)));
+    let other = SCRATCH + 0x680;
+    for (k, (yaw, listed)) in (0u32..).zip([(-7.0f32, false), (7.0, true), (0.5, true)]) {
+        junk(&mut t, r, 0x600, k);
+        t.set_u32(yaw_in, (kv - yaw).to_bits());
+        magic_r11::pools(&mut t, f, 827);
+        t.write(other, &[0x44; 0x20]);
+        t.set_u32(op(&t, 0x2fd), if listed { other } else { 0 });
+        t.set_u32(op(&t, 0x30f), other);
+        for o in [0x27u32, 0x2f] {
+            let sc = t.img.rel32_target(f + 0x2ea);
+            t.set_u32(t.img.word(sc + o), 0x5a5a_5a5a ^ o);
+        }
+        scrub(&mut t);
+        // junk read: [ebp-0x8] and [ebp-0xc] (never written) pinned to 0
+        for o in [0xcu32, 0x10] {
+            t.set_u32(magic::STACK_TOP - 0x100 - o, 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
 }
