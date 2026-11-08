@@ -53,6 +53,39 @@ fn main_object_0369() {
     }
 }
 
+/// `r14::main_object_0367` (`magic_0367` 0x100014d0): the yaw on each side
+/// of the wrap, between and NaN; the two words it sets after, old before.
+#[test]
+fn main_object_0367() {
+    let Some(mut t) = twin(367) else { return };
+    let f = t.at(0x14d0);
+    let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x18);
+    magic_r11::object_start_setup(&mut t, start, (0x84, 0x96));
+    t.set_u32(op(&t, 0x23), 0x00a5_0000);
+    t.stub_st0(12, |_, a| f64::from(a[0] >> 16) * 0.5);
+    let yaw = SCRATCH + 0x90;
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw))));
+    let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(op(t, o)));
+    let k3 = kf(&t, 0x8c);
+    for v in [
+        0.0f32,
+        8.0,
+        -8.0,
+        f32::NAN,
+        k3 - kf(&t, 0x9c),
+        k3 - kf(&t, 0xb0),
+    ] {
+        t.set_u32(yaw, v.to_bits());
+        for o in [0xc5u32, 0xcb, 0xd5] {
+            t.write(op(&t, o), &[0x5f; 4]);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
 /// `magic_0065` 0x10002fd0: the flag bit set and clear, the task list
 /// empty and not.
 #[test]

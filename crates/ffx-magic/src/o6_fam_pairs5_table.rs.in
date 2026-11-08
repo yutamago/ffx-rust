@@ -208,6 +208,28 @@ pub const TWO_PART_VISIT_THUNK_0295_1340: Sig = Sig {
     imports: &[],
 };
 
+/// [`two_part_visit`] in `magic_0153` (0x10001000, 810 bytes: a NaN
+/// lights, the speed against a constant, easing on any flag).
+pub const TWO_PART_VISIT_0153_1000: Sig = Sig {
+    len: 810,
+    hash: 0x9889_a3ee_e5ed_6c55,
+    calls: &[
+        (0x253, Callee::Any),
+        (0x322, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit_thunk`] in `magic_0153` (0x10001340, 12 bytes).
+pub const TWO_PART_VISIT_THUNK_0153_1340: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[
+        (0x8, Callee::Sig(&crate::o6_fam_pairs5::TWO_PART_VISIT_0153_1000)),
+    ],
+    imports: &[],
+};
+
 // family F0188_10001220
 
 /// [`scrolled_texture`] in `magic_0188` (0x10001220, 650 bytes; row shared:677).

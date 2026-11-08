@@ -1205,3 +1205,94 @@ fn script_steps() {
         }
     }
 }
+
+/// `r14::task_0288` (`magic_0288` 0x10001540): the two timers before,
+/// at and past their end (the objects started), the light's counter on
+/// each side of its range, the motion scripts done and waiting, the
+/// camera's script stopping or not, the scripts' done words set and not.
+#[test]
+fn task_0288() {
+    let Some(mut t) = twin(288) else { return };
+    let f = t.at(0x1540);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    // every slot answers a value of its own (the objects' run reaches
+    // many); the task's own slots record their words
+    for s in 0..1024u32 {
+        t.stub(s, move |_, _| s << 20 | 5);
+    }
+    for (s, n) in [(250u32, 2usize), (278, 3), (12, 1)] {
+        rec(&mut t, s, n, move |_, a| (s << 20) ^ a[0]);
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    // the points: slot 262 fills its three pointers
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4usize {
+            m.w32(a[i], (0.5 * i as f32 + (a[0] & 7) as f32).to_bits());
+        }
+        0x262
+    });
+    for (s, n) in [(941u32, 1usize), (714, 5)] {
+        let table = SCRATCH + 0x3400;
+        rec(&mut t, s, n, move |_, a| {
+            if s == 941 { table } else { 0x0714_0000 ^ a[2] }
+        });
+    }
+    for i in 0..0x10 {
+        t.set_u32(SCRATCH + 0x3400 + 4 * i, 0x1111 * (i + 1));
+    }
+    for start in [t.img.rel32_target(f + 0x3b), t.img.rel32_target(f + 0xb8)] {
+        magic_r11::object_start_setup(&mut t, start, (0x84, 0x96));
+    }
+    // the actor byte and the tables of character handles
+    let sel = SCRATCH + 0x50;
+    t.set_u8(sel, 2);
+    for o in [0x40u32, 0xbd, 0x22b, 0x249, 0x269] {
+        t.set_u32(w(&t, o), sel);
+    }
+    for o in [0x59u32, 0xd1, 0x237, 0x257, 0x277] {
+        for i in 0..4 {
+            t.set_u32(w(&t, o) + 4 * i, 0x0c0c_0000 + 0x100 * o + i);
+        }
+    }
+    // the camera script's commands: stop (op 5)
+    let cmds = SCRATCH + 0x4000;
+    t.write(cmds, &[0; 0x30]);
+    t.set_u32(cmds, 5);
+    let q = w(&t, 0x1db);
+    let task = SCRATCH + 0x5000;
+    let record = SCRATCH + 0x5100;
+    // (timer A, timer B, counter, scripts done, camera wait, done words)
+    for (k, (a, b, c, done, wait, words)) in [
+        (0i32, 0i32, 3i32, 1u32, 5u32, 1u32),
+        (1, 1, 0, 1, 1, 1),
+        (2, 7, -15, 0, 1, 0),
+        (1, 0, -16, 1, 1, 1),
+        (0, 1, -1, 1, 1, 2),
+        (-3, 2, 1, 1, 0, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x11), a.cast_unsigned());
+        t.set_u32(w(&t, 0x98), b.cast_unsigned());
+        t.set_u32(w(&t, 0x11f), c.cast_unsigned());
+        t.set_u32(w(&t, 0x14b), (0.25 + k as f32).to_bits());
+        let m0 = w(&t, 0x183);
+        for i in 0..2u32 {
+            let m = m0 + 0x20 * i;
+            t.write(m, &[0; 0x20]);
+            t.set_u32(m + 0x14, done);
+            t.set_u16(m + 0x18, 3);
+        }
+        t.write(q, &[0; 0x34]);
+        t.set_u32(q + 0x24, cmds);
+        t.set_u32(q + 0x2c, wait);
+        t.set_u32(w(&t, 0x213), words);
+        t.set_u32(w(&t, 0x21f), 1);
+        t.write(task, &[0x5a; 0x20]);
+        t.set_u32(task + 8, record);
+        t.write(record, &[0x6b; 0x20]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

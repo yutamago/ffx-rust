@@ -1544,6 +1544,9 @@ ports! {
     "m0535 frame step 0384" => m0535::FRAME_STEP_0384, m0535::frame_step;
     "r14 launches 0384" => r14::LAUNCHES_0384, r14::launches_0384;
     "r14 summon ppp start 0146" => r14::SUMMON_PPP_START_0146, r14::summon_ppp_start_0146;
+    "r14 main object 0367" => r14::MAIN_OBJECT_0367, r14::main_object_0367;
+    "r14 light restart 0430" => r14::LIGHT_RESTART_0430, r14::light_restart_0430;
+    "r14 task 0288" => r14::TASK_0288, r14::task_0288;
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -2787,6 +2790,7 @@ ports! {
     "summon frame (slot 673 first)" => s7_misc::SUMMON_FRAME_673, s7_misc::summon_frame_673;
     "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
     "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
+    "summon load frame 0603" => s7_misc::SUMMON_LOAD_FRAME_0603, s7_misc::summon_load_frame;
     "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;
     "landing puff 0287" => s7_misc::LANDING_PUFF_0287, s7_misc::landing_puff;
     "summon script frame" => s7_misc::SUMMON_SCRIPT_FRAME, s7_misc::summon_script_frame;
@@ -2922,6 +2926,7 @@ ports! {
     "o6 fam pairs5 level_particles 0563@35b0" => o6_fam_pairs5::LEVEL_PARTICLES_0563_35B0, o6_fam_pairs5::level_particles;
     "o6 fam pairs5 two_part_visit_thunk 0070@14a0" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0070_14A0, o6_fam_pairs5::two_part_visit_thunk;
     "o6 fam pairs5 two_part_visit_thunk 0295@1340" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0295_1340, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 two_part_visit_thunk 0153@1340" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0153_1340, o6_fam_pairs5::two_part_visit_thunk;
     "o6 fam pairs5 scrolled_texture 0188@1220" => o6_fam_pairs5::SCROLLED_TEXTURE_0188_1220, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 scrolled_texture 0351@1080" => o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 ribbon_visit_thunk 0070@8840" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0070_8840, o6_fam_pairs5::ribbon_visit_thunk;
@@ -4090,6 +4095,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("flagged object step", &s7_misc::FLAGGED_OBJECT_STEP),
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
+    (
+        "model object set-up 0621",
+        &s7_misc::MODEL_OBJECT_SETUP_0621,
+    ),
     ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
     // round 8, shared-8 (s8_misc)
     ("object node", &s8_misc::OBJECT_NODE),
@@ -4277,6 +4286,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o6 fam pairs5 two_part_visit 0295@1000",
         &o6_fam_pairs5::TWO_PART_VISIT_0295_1000,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0153@1000",
+        &o6_fam_pairs5::TWO_PART_VISIT_0153_1000,
     ),
     (
         "o6 fam pairs5 ribbon_visit 0070@86d0",

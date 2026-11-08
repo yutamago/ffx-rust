@@ -711,14 +711,27 @@ pub fn level_particles<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// bit 0 (only `S + 0x28` above 0; `movss xmm0, [esi+0x28]` at `+0x8e`,
 /// its `K` at `+0x97`) and eases with any bit of `S + 0x68` set (`cmp
 /// dword, 0`); its operands from the light on are ten bytes earlier.
+/// `magic_0153`'s copy (0x10001000, 810 bytes) lights when `S + 0x28` is
+/// not at most 0 (`comiss 0, [S + 0x28]; jae`: a NaN lights too), takes
+/// the slot block when `S + 0x5c` is above the f32 at `+0xe1` (`comiss
+/// xmm1, [K]`), and eases on any flag; its operands are 14 bytes earlier
+/// from `+0xb4`, 13 from `+0xf8`.
 #[allow(clippy::too_many_lines)] // the original's branches, one by one
 pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, div, mul, sub};
     let f = fr.at;
     // `movss xmm3, [K]` (`f3 0f 10 1d`) or `movss xmm0, [esi+0x28]` (`.. 46`)
     let plain = img.word(f + 0x8e) >> 24 == 0x46;
-    let d = if plain { 10 } else { 0 };
-    let w = |o: u32| img.word(f + if o >= 0xb4 { o - d } else { o });
+    // `xorps xmm0, xmm0` (0x0f) after that load, not `add esp, 8`
+    let nan_lights = !plain && img.word(f + 0x96) & 0xff == 0x0f;
+    let m = |o: u32| match o {
+        _ if o < 0xb4 => o,
+        _ if plain => o - 10,
+        _ if !nan_lights => o,
+        0xb4..0xf8 => o - 14,
+        _ => o - 13,
+    };
+    let w = |o: u32| img.word(f + m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let c = fr.ecx;
     let ebp = fr.esp.wrapping_sub(4);
@@ -763,8 +776,15 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let slot = |g: &G, t: u32, d: u32| slot_target(g, w(t), w(d) / 4);
     let mut one = k(g, if plain { 0x97 } else { 0x92 });
-    let bit0 = plain || g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0;
-    if bit0 && g.read::<f32>(s.wrapping_add(0x28)) > 0.0 {
+    let bit0 = plain || nan_lights || g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0;
+    let x28 = g.read::<f32>(s.wrapping_add(0x28));
+    // `comiss 0, x; jae` (skipped when 0 is not below: a NaN lights)
+    let lit = if nan_lights {
+        x28 > 0.0 || x28.is_nan()
+    } else {
+        x28 > 0.0
+    };
+    if bit0 && lit {
         let b = g.read::<u32>(s.wrapping_add(0x70)).wrapping_add(w(0xb8));
         let mut st = Pushes::default();
         st.push_all(&[b, w(0xc1), ebp.wrapping_sub(0x44)]);
@@ -776,7 +796,12 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 12 (Pushes caps the words at 12)
         eax = st.call(g, t, l).eax;
         let speed = g.read::<f32>(s.wrapping_add(0x5c));
-        if speed > 0.0 {
+        let floor = if nan_lights {
+            g.read::<f32>(img.word(f + 0xe1))
+        } else {
+            0.0
+        };
+        if speed > floor {
             let inv = div(k(g, 0xfc), speed);
             let mut st = Pushes::default();
             st.push(0);
@@ -811,7 +836,7 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         one = k(g, 0x1cc);
     }
     let f32_at = |g: &G, o: u32| g.read::<f32>(s.wrapping_add(o));
-    let ease = if plain {
+    let ease = if plain || nan_lights {
         g.read::<u32>(s.wrapping_add(0x68)) != 0
     } else {
         g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0

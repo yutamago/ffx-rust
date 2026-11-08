@@ -904,10 +904,13 @@ fn summon_load_frames() {
         (164, 0xc050),
         (533, 0xc1e0),
         (601, 0xa470),
+        // no slot 673: the operands from `+0x8b` on 13 bytes earlier
+        (603, 0xd910),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let d = if dll == 603 { 13 } else { 0 };
+        let w = |t: &Twin, o: u32| t.img.word(f + if o >= 0x8b { o - d } else { o });
         let log = SCRATCH + 0x6000;
         let busy = SCRATCH + 0x2f0;
         for s in [225u32, 313, 549] {
@@ -917,7 +920,8 @@ fn summon_load_frames() {
         }
         log_calls(&mut t, 226, log, 2, None, |_, _, k| 0x226 + k);
         log_calls(&mut t, 673, log, 0, None, |_, _, k| 0x673 + k);
-        t.set_u32(w(&t, 0x99), sa::node(21));
+        let gp = if dll == 603 { f + 0x8b } else { f + 0x99 };
+        t.set_u32(t.img.word(gp), sa::node(21));
         let vt = sa::node(22);
         t.set_u32(vt + 0x20, magic::TRAPS);
         let root = w(&t, 0xca);
@@ -4208,12 +4212,24 @@ fn aim_records() {
 
 /// Row 433: the model object set-up of the three DLLs: models in the
 /// table's direct way, its asking way, out of the range, with slot 534
-/// yes and no; the parent empty and not.
+/// yes and no; the parent empty and not. `magic_0621`'s copy (the
+/// particle's last word always 0) has its operands 8 or 16 bytes
+/// earlier from `+0x1c7` on (`m`).
 #[test]
 fn model_object_setups() {
-    for (dll, rva) in [(414u16, 0x6aa0u32), (500, 0x6680), (677, 0x6aa0)] {
+    for (dll, rva) in [
+        (414u16, 0x6aa0u32),
+        (500, 0x6680),
+        (677, 0x6aa0),
+        (621, 0x6aa0),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        let m = move |o: u32| match o {
+            _ if dll != 621 || o < 0x1c7 => o,
+            0x21f..0x263 => o - 16,
+            _ => o - 8,
+        };
         let log = SCRATCH + 0x6000;
         let model = SCRATCH + 0x7e0;
         let ask = SCRATCH + 0x7e4;
@@ -4235,10 +4251,10 @@ fn model_object_setups() {
         rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
         rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
         rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0]);
-        let pn = t.img.rel32_target(f + 0x264);
+        let pn = t.img.rel32_target(f + m(0x264));
         let start = t.img.rel32_target(pn + 0x88);
         t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
-        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let w = |t: &Twin, o: u32| t.img.word(f + m(o));
         t.set_u32(w(&t, 0x23d), SCRATCH + 0x900);
         let parent = w(&t, 0x85);
         let pl = w(&t, 0x253);
