@@ -63,6 +63,7 @@ pub mod r12h_volley;
 pub mod r13_misc;
 pub mod r13_start;
 pub mod r14;
+pub mod r15;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1553,6 +1554,41 @@ ports! {
     "r14 spark task 0133" => r14::SPARK_TASK_0133, r14::spark_task;
     "r14 spark task 0134" => r14::SPARK_TASK_0134, r14::spark_task;
     "r14 spark task 0135" => r14::SPARK_TASK_0135, r14::spark_task;
+    // round 15 (magic-r15)
+    "r15 start-up 0686" => r15::START_UP_0686, r15::start_up_0686;
+    "r15 camera targets 0253" => r15::CAMERA_TARGETS_0253, r15::camera_targets_0253;
+    "r15 objects 0253" => r15::OBJECTS_0253, r15::objects_0253;
+    "r9 load step 0104" => r9_load::LOAD_0104, r9_load::load_0104;
+    "r15 load 0053" => r15::LOAD_0053, r15::load_0053;
+    "r15 summon task 0094" => r15::SUMMON_TASK_0094_SIG, r15::summon_task_0094;
+    "r15 summon task 0095" => r15::SUMMON_TASK_0095_SIG, r15::summon_task_0095;
+    "r9 load step 0303" => r9_load::LOAD_0303, r9_load::load_0303;
+    "r9 load step 0176" => r9_load::LOAD_0176, r9_load::load_0176;
+    "r15 motion sparks 0367" => r15::MOTION_SPARKS_0367, r15::motion_sparks_0367;
+    "r15 first set 0349" => r15::FIRST_SET_0349, r15::first_set_0349;
+    "r15 second set 0349" => r15::SECOND_SET_0349, r15::second_set_0349;
+    "r15 delayed start 0325" => r15::DELAYED_START_0325, r15::delayed_start_0325;
+    "r15 scatter 0195" => r15::SCATTER_0195, r15::scatter_0195;
+    "r15 aim 0195" => r15::AIM_0195, r15::aim_0195;
+    "r9 load step 0314" => r9_load::LOAD_0314, r9_load::load_0314;
+    "r9 load step 0381" => r9_load::LOAD_0381, r9_load::load_0381;
+    "r9 load step 0245" => r9_load::LOAD_0245, r9_load::load_0245;
+    "r9 load step 0074" => r9_load::LOAD_0074, r9_load::load_0074;
+    "r15 start-up 0371" => r15::START_UP_0371, r15::start_up_0371;
+    "r15 burst 0371" => r15::BURST_0371, r15::burst_0371;
+    "r15 spark below 0338" => r15::SPARK_BELOW_0338, r15::spark_below_0338;
+    "r9 load step 0338" => r9_load::LOAD_0338, r9_load::load_0338;
+    "r9 load step 0092" => r9_load::LOAD_0092, r9_load::load_0092;
+    "r15 frame 0206" => r15::FRAME_0206, r15::frame_0206;
+    "r15 start-up 0443" => r15::START_UP_0443, r15::start_up_0686;
+    "r15 fade step 0443" => r15::FADE_STEP_0443, r15::fade_step_0443;
+    "r15 frame 0443" => r15::FRAME_0443, r15::frame_0443;
+    "r15 mean throw 0360" => r15::MEAN_THROW_0360, r15::mean_throw_0360;
+    "r15 volley set-up 0193" => r15::VOLLEY_SETUP_0193, r15::volley_setup_0193;
+    "r15 volley set-up 0416" => r15::VOLLEY_SETUP_0416, r15::volley_setup_0416;
+    "r9 load step 0182" => r9_load::LOAD_0182, r9_load::load_0182;
+    "r9 load step 0189" => r9_load::LOAD_0189, r9_load::load_0189;
+    // round 15 (magic-r15): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -3408,6 +3444,26 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0480 clear", &m0480::CLEAR),
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
+    // round 15 (magic-r15)
+    ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
+    ("r15 actor point 0104", &r15::ACTOR_POINT_0104),
+    ("r15 start-up 0104", &r15::START_UP_0104),
+    ("r15 colour start 0053", &r15::COLOUR_START_0053),
+    ("r15 start-up 0303", &r15::START_UP_0303),
+    ("r15 start-up 0176", &r15::START_UP_0176),
+    ("r15 sparks 0367", &r15::SPARKS_0367),
+    ("r15 start-up 0314", &r15::START_UP_0314),
+    ("r15 start-up 0381", &r15::START_UP_0381),
+    ("r15 start-up 0245", &r15::START_UP_0245),
+    ("r15 actor counts 0074", &r15::ACTOR_COUNTS_0074),
+    ("r15 start-up 0338", &r15::START_UP_0338),
+    ("r15 start-up 0092", &r15::START_UP_0092),
+    ("r15 spark record 0206", &r15::SPARK_RECORD_0206),
+    ("r15 spark record 0206 (full)", &r15::SPARK_RECORD_0206_FULL),
+    ("r15 light set-up 0443", &r15::LIGHT_SETUP_0443),
+    ("r15 start-up 0182", &r15::START_UP_0182),
+    ("r15 start-up 0189", &r15::START_UP_0189),
+    // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
     ("m0493 init", &m0493::INIT),

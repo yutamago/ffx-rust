@@ -439,3 +439,22 @@ fn load_0318() {
         magic_r13h::two_objects_0318(t, start, true);
     });
 }
+
+// round 15 (magic-r15)
+
+#[test]
+fn load_0104() {
+    copy(104, 0x1300, true, |t, start| {
+        magic_r11::object_slots(t);
+        let os = t.img.rel32_target(start + 0x97);
+        magic_r11::object_start_setup(t, os, (0x7d, 0x95));
+        rec(t, 0x618 / 4, 1, |_, _| 0x1158);
+        // the actor selection the start-up and its actor point read
+        let ap = t.img.rel32_target(start + 0xa2);
+        let sp = t.img.rel32_target(ap + 0x78);
+        for (f, o) in [(start, 0x3a), (ap, 0x11), (sp, 0x7)] {
+            let g = t.img.word(f + o);
+            t.set_u32(g, SCRATCH + 0x5000);
+        }
+    });
+}

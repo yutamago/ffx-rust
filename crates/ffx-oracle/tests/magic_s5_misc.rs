@@ -1645,6 +1645,8 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         // (the next instruction's bytes read as an address hold bits, so a
         // read that lands there shows)
         t.set_u32(op(&t, f, flags_op + 4), 0xffff_fff0 ^ count);
+        // (and the operand's bytes read one byte later as an address)
+        t.set_u32(op(&t, f, flags_op + 1), 0x0f0f_0f00 ^ count);
         if dll == 342 || dll == 146 {
             // the word the start clears: set before
             t.set_u32(op(&t, f, clear_op), 0x01a8_0000 + count);
