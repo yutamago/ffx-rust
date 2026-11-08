@@ -9628,6 +9628,7 @@ use ffx_pcui::l10_filter::{self as l10fl, bridge as l10flb};
 /// A blur size: under one, the box sizes (2..9 taps), past nine taps (the
 /// downsampling passes, odd and even remainders, past 18), fractions,
 /// NaN.
+#[allow(clippy::cast_precision_loss)] // small counts
 fn l10_blur_size(rng: &mut Rng) -> f32 {
     match rng.below(10) {
         0 => rng.below(100) as f32 / 100.0,
@@ -9650,7 +9651,11 @@ fn l10_blur_size(rng: &mut Rng) -> f32 {
 /// `MSVCR110`. The records' frame lies at the original's `ebp - 0x94` and
 /// is compared after the call. Synthetic only.
 #[test]
-#[allow(clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::similar_names
+)]
 fn l10_filter_axis_setup() {
     Twins::each(|t| {
         let mut rng = Rng(0x00a3_6590);

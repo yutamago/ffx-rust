@@ -10,6 +10,7 @@
 //! (the header's 0x47c bytes on the stack).
 
 use super::{StackFrame, mem, ported};
+use ffx_glue_other::l10_vfx::bridge as heap;
 use ffx_pcui::l10_filter::bridge as filter;
 use ffx_pcui::l10_gdraw::bridge as gdraw;
 use ffx_pother_a::l10_print::bridge as print;
@@ -40,5 +41,9 @@ ported! {
         let mut taps = StackFrame::<0x24>::new();
         let at = taps.at();
         filter::axis_setup(&mut mem(), at, [axis, api, target, obj, size, scale, rect, out, keep, c])
+    }
+    /// `(used, size, mode)`: the effects' debug heap meter.
+    opd_heap_display @ 0x00a6_3ff0 => extern "C" fn opd_heap_display(used: u32, size: u32, mode: u32) -> u32 {
+        heap::heap_display(&mut mem(), used, size, mode)
     }
 }
