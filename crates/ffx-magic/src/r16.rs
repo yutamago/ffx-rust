@@ -2680,6 +2680,305 @@ pub const DEALT_KIND_START_0675: Sig = Sig {
     imports: &[],
 };
 
+/// `magic_0492`'s start-up with dealt actors, their kinds and a node
+/// each (0x10002a30, 1,911 bytes; a cookie frame, `ebp` = `esp - 4`):
+/// as [`dealt_kind_start_0675`]'s head (two words set) and loop (no
+/// `O+0x108`; `O+0xdc` 1.0 on both ways), the owner 0x3c a step, and per
+/// object the record `R = R0 + 0x34 i` (`R+0x14` = owner + 12, sizes,
+/// the dealt number, three 1.0s) with a ring node (`+0x14 = R - 8`)
+/// appended to the task list, `*G_R = R - 8`. Then the actor block
+/// inlined as [`dealt_start_0494`]'s (last owner `n` = owner - 0x3c),
+/// the light words, two ring nodes (records `+0x53d`, `+0x671`; two light
+/// words overwritten after each), slot 271 `(4)` and a third node (byte
+/// `+0x18` 2). Returns 0.
+#[allow(clippy::too_many_lines)] // the original's stores, in order
+pub fn dealt_nodes_start_0492<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.esp;
+    let dealt = e.wrapping_sub(0x18);
+    let mut st = Pushes::default();
+    st.push_all(&[0, 8, w(0x20)]);
+    stores(g, img, f, &[0x24, 0x2e]);
+    // call width: 12 (Pushes caps the words at 12)
+    let h = st.call(g, slot_target(g, w(0x11), 0xb3c / 4), fr.ecx).eax;
+    st.pop(1);
+    g.write::<u32>(w(0x3e), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x43));
+    let at = img.rel32_target(f + 0x4b);
+    crate::sb_misc::deal(g, img, at, e.wrapping_sub(0x3c), dealt);
+    st.push(g.read::<u32>(w(0x56)));
+    // call width: 12 (Pushes caps the words at 12)
+    let t = st.call(g, slot_target(g, w(0x50), 0x534 / 4), fr.ecx);
+    let t = crate::m0018::st0_f32(t.st0);
+    let mut yaw = sub(k(g, 0x70), t);
+    // `comiss` + `jbe`: an unordered yaw stays
+    if yaw > k(g, 0x7f) {
+        yaw = sub(yaw, k(g, 0x8e));
+    } else if k(g, 0x98) > yaw {
+        yaw = add(yaw, k(g, 0xa5));
+    }
+    let actor = |g: &G, b: i32, none: u32, list: u32, table: u32| {
+        if b == -1 {
+            g.read::<u32>(w(none))
+        } else {
+            let l = g.read::<u32>(w(list));
+            let n = g.read::<u8>(l.wrapping_add(b.cast_unsigned()));
+            g.read::<u32>(u32::from(n).wrapping_mul(4).wrapping_add(w(table)))
+        }
+    };
+    let mut owner = 0u32;
+    let mut obj = w(0xcd);
+    let mut r = w(0xc8);
+    let mut rec = w(0xd4);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0xbd)) {
+        let b = i32::from(g.read::<i8>(dealt.wrapping_add(i)));
+        // push ecx; mov [esp], 0.2; call; add esp, 4
+        let mut s = Pushes::default();
+        s.push(w(0xf7));
+        // call width: 12 (Pushes caps the words at 12)
+        let rr = s.call(g, slot_target(g, w(0xe6), 0x650 / 4), fr.ecx);
+        let rr = crate::m0018::st0_f32(rr.st0);
+        let scale = mul(add(rr, k(g, 0x10c)), k(g, 0x116));
+        let kind = crate::sa_misc::actor_kind_check(
+            g,
+            img,
+            img.rel32_target(f + 0x120),
+            b.cast_unsigned(),
+        );
+        // sub esp, 8; push owner; push kind (0) or 1; call
+        let esp = e.wrapping_sub(0x50);
+        g.write::<u32>(esp + 4, u32::from(kind != 0));
+        g.write::<u32>(esp + 8, owner);
+        let o = obj.wrapping_sub(0xd4);
+        let p = obj.wrapping_sub(4);
+        let (start_at, ops) = if kind == 0 {
+            (0x13b, (0x149, 0x150, 0x15b, 0x164, 0x17a))
+        } else {
+            (0x1b4, (0x1c2, 0x1c9, 0x1d4, 0x1dd, 0x1f3))
+        };
+        let at = img.rel32_target(f + start_at);
+        let call = Frame {
+            at,
+            esp,
+            edx: o,
+            xmm: [0, 0, 0, u128::from(scale.to_bits())],
+            ..*fr
+        };
+        crate::o6_fam_object::start_object_first(g, img, at, &call);
+        let a = actor(g, b, ops.0, ops.1, ops.2);
+        let mut s = Pushes::default();
+        s.push_all(&[obj + 4, obj, p, a]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(ops.3), 0x418 / 4), fr.ecx);
+        s.push_all(&[p, 0x11, a]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(ops.4), 0x430 / 4), fr.ecx);
+        if kind == 0 {
+            s.push(a);
+            // call width: 12 (Pushes caps the words at 12)
+            let hgt =
+                crate::m0018::st0_f32(s.call(g, slot_target(g, w(0x18e), 0x30 / 4), fr.ecx).st0);
+            g.write::<f32>(obj, sub(hgt, k(g, 0x1a4)));
+        }
+        g.write::<u32>(obj + 8, 0x3f80_0000);
+        g.write::<f32>(obj.wrapping_sub(0x10), yaw);
+        let n = if b == -1 {
+            g.read::<u32>(w(0x222))
+        } else {
+            let l = g.read::<u32>(w(0x229));
+            u32::from(g.read::<u8>(l.wrapping_add(b.cast_unsigned())))
+        };
+        g.write::<u32>(obj + 0x4c, n);
+        for o in [4u32, 0, 0xffff_fffc, 8] {
+            g.write::<u32>(rec.wrapping_add(o), 0);
+        }
+        g.write::<u16>(rec + 0x1c, 0);
+        g.write::<u32>(rec + 0xc, w(0x25b));
+        g.write::<u32>(rec + 0x10, w(0x262));
+        g.write::<u32>(rec + 0x14, 0);
+        g.write::<u32>(rec + 0x18, 0);
+        g.write::<u32>(obj + 0x3c, rec.wrapping_sub(0x14));
+        // the object's record and its ring node
+        g.write::<u32>(r + 0x14, owner.wrapping_add(0xc));
+        for (o, v) in [
+            (0xffff_fff8u32, 0x3f00_0000u32),
+            (0xffff_fffc, 0x3fa6_6666),
+            (0, 0x3f00_0000),
+            (0x10, 0x20),
+            (0x18, 0x10),
+            (0x1c, 0x3a),
+            (0x20, b.cast_unsigned()),
+            (4, 0x3f80_0000),
+            (8, 0x3f80_0000),
+            (0xc, 0x3f80_0000),
+        ] {
+            g.write::<u32>(r.wrapping_add(o), v);
+        }
+        g.write::<u16>(r + 0x28, 0);
+        let node = if g.read::<u16>(w(0x2cd)) == 0 {
+            // none free: the original writes through 0 (not run)
+            0
+        } else {
+            let node = g.read::<u32>(w(0x2d9));
+            crate::r13_misc::pool_pop(g, img, f, node, (0x2cd, 0x2fd, 0x305, 0x336, 0x341));
+            node
+        };
+        let any = g.read::<u32>(w(0x347));
+        let rr8 = r.wrapping_sub(8);
+        g.write::<u32>(node.wrapping_add(0x14), rr8);
+        g.write::<u32>(node.wrapping_add(4), 0);
+        if any == 0 {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(w(0x36f), node);
+        } else {
+            let tail = g.read::<u32>(w(0x35c));
+            g.write::<u32>(node, tail);
+            g.write::<u32>(tail.wrapping_add(4), node);
+        }
+        g.write::<u32>(w(0x378), rr8);
+        g.write::<u32>(node.wrapping_add(8), node);
+        g.write::<u32>(w(0x394), node);
+        owner = owner.wrapping_add(0x3c);
+        obj = obj.wrapping_add(0x130);
+        r = r.wrapping_add(0x34);
+        rec = rec.wrapping_add(0x34);
+        i += 1;
+    }
+    // the actor block (`n` the last owner)
+    let n = owner.wrapping_sub(0x3c);
+    g.write::<u32>(w(0x3bc), n);
+    let x2 = g.read::<u32>(w(0x3c1));
+    let cb = if n.cast_signed() > 0 {
+        w(0x3c6)
+    } else {
+        w(0x3cb)
+    };
+    let battle = g.read::<u32>(w(0x3d4)) != 0;
+    g.write::<u32>(w(0x3da), x2);
+    g.write::<u32>(w(0x3e6), cb);
+    stores(g, img, f, &[0x3ea]);
+    let mut st = Pushes::default();
+    st.push(x2);
+    let slot = if battle { 0x674 / 4 } else { 0x35c / 4 };
+    // call width: 12 (Pushes caps the words at 12)
+    let m = st.call(g, slot_target(g, w(0x3e0), slot), fr.ecx).eax;
+    g.write::<u32>(w(0x416), m);
+    stores(g, img, f, &[0x41a, 0x424]);
+    g.write::<u32>(w(0x430), 1);
+    g.write::<u16>(w(0x43a), u16::from(battle));
+    // the light words
+    let count = g.read::<u16>(w(0x44a));
+    stores(
+        g,
+        img,
+        f,
+        &[0x44e, 0x458, 0x462, 0x46c, 0x476, 0x480, 0x48a],
+    );
+    stores(g, img, f, &[0x494, 0x49e, 0x4a8, 0x4b2, 0x4bc]);
+    let (n1, head) = if count == 0 {
+        (0, 0)
+    } else {
+        let node = g.read::<u32>(w(0x4d7));
+        let (_, head) =
+            crate::r13_misc::pool_pop(g, img, f, node, (0x44a, 0x4fc, 0x4fc, 0x521, 0x52c));
+        (node, head)
+    };
+    let mut first = g.read::<u32>(w(0x532));
+    g.write::<u8>(n1.wrapping_add(0x18), 1);
+    g.write::<u32>(n1.wrapping_add(0x14), w(0x53d));
+    g.write::<u32>(n1.wrapping_add(4), 0);
+    if first == 0 {
+        first = n1;
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x562), n1);
+    } else {
+        let tail = g.read::<u32>(w(0x54d));
+        g.write::<u32>(n1, tail);
+        g.write::<u32>(tail.wrapping_add(4), n1);
+    }
+    g.write::<u32>(n1.wrapping_add(8), n1);
+    stores(
+        g,
+        img,
+        f,
+        &[0x56f, 0x579, 0x583, 0x58d, 0x597, 0x5a1, 0x5ab],
+    );
+    stores(g, img, f, &[0x5b5, 0x5bf, 0x5c9, 0x5d3]);
+    g.write::<u32>(w(0x5de), owner.wrapping_add(0x14));
+    stores(g, img, f, &[0x5e2, 0x5ec, 0x5f6]);
+    let n2 = if g.read::<u16>(w(0x44a)) == 0 {
+        0
+    } else {
+        crate::r13_misc::pool_pop(g, img, f, head, (0x44a, 0x622, 0x62a, 0x65b, 0x666));
+        head
+    };
+    g.write::<u8>(n2.wrapping_add(0x18), 1);
+    g.write::<u32>(n2.wrapping_add(0x14), w(0x671));
+    g.write::<u32>(n2.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x68f), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1.wrapping_add(4), n2);
+    }
+    g.write::<u32>(n2.wrapping_add(8), n2);
+    stores(g, img, f, &[0x69b]);
+    g.write::<u32>(w(0x6af), n2);
+    let mut st = Pushes::default();
+    st.push(4);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, slot_target(g, w(0x694), 0x43c / 4), fr.ecx);
+    let n3 = if g.read::<u16>(w(0x6b8)) == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(0x6ca));
+        crate::r13_misc::pool_pop(g, img, f, node, (0x6b8, 0x6e7, 0x6ef, 0x720, 0x72b));
+        node
+    };
+    let any = g.read::<u32>(w(0x731));
+    g.write::<u8>(n3.wrapping_add(0x18), 2);
+    g.write::<u32>(n3.wrapping_add(4), 0);
+    if any == 0 {
+        g.write::<u32>(n3, 0);
+        g.write::<u32>(w(0x75a), n3);
+    } else {
+        let tail = g.read::<u32>(w(0x747));
+        g.write::<u32>(n3, tail);
+        g.write::<u32>(tail.wrapping_add(4), n3);
+    }
+    g.write::<u32>(n3.wrapping_add(8), n3);
+    g.write::<u32>(w(0x768), n3);
+    Ret::eax(0)
+}
+
+/// [`dealt_nodes_start_0492`] (the `rel32`s: the part's set-up, the deal,
+/// the kind check, the two object starts and the cookie check).
+pub const DEALT_NODES_START_0492: Sig = Sig {
+    len: 1911,
+    hash: 0x8737_7bb9_1456_66ac,
+    calls: &[
+        (0x43, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x4b, Callee::Sig(&crate::sb_misc::DEAL)),
+        (0x120, Callee::Sig(&crate::sa_misc::ACTOR_KIND_CHECK)),
+        (
+            0x13b,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0492_1E90),
+        ),
+        (
+            0x1b4,
+            Callee::Sig(&crate::o6_fam_object::START_OBJECT_FIRST_0492_1E90),
+        ),
+        (0x76f, Callee::Any),
+    ],
+    imports: &[],
+};
+
 /// The load steps ([`load_step`](crate::r9_load::load_step)) whose
 /// start-up is a round 16 port: `name => SIG, shape, start-up port, its
 /// Sig`.
@@ -2721,4 +3020,5 @@ loads! {
     load_0474 => LOAD_0474, Zero, start_up_0474, START_UP_0474;
     load_0494 => LOAD_0494, Zero, dealt_start_0494, DEALT_START_0494;
     load_0675 => LOAD_0675, One, dealt_kind_start_0675, DEALT_KIND_START_0675;
+    load_0492 => LOAD_0492, Zero, dealt_nodes_start_0492, DEALT_NODES_START_0492;
 }
