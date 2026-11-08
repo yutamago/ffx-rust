@@ -1606,6 +1606,10 @@ fn start_up_0610() {
     }
     let lock = SCRATCH + 0x7f0;
     t.set_u32(gs(&t, 0x84), lock);
+    // slot 711 sees the game lock held
+    rec(&mut t, 711, 3, move |m, a| {
+        0x0711_0000 ^ a[0] ^ (m.r32(lock) << 8)
+    });
     magic_r11::pools(&mut t, su, 943);
     let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
     // (225, 5, 28, once, 227, history n, free nodes, listed, 520)
@@ -1643,6 +1647,20 @@ fn start_up_0610() {
         t.set_u32(gs(&t, 0x29a), if listed { tail } else { 0 });
         t.set_u32(gs(&t, 0x2ad), tail);
         t.set_u32(gs(&t, 0x398), (0.25 * k as f32).to_bits());
+        // the words the start-up clears or sets, junk first
+        junk_ops(
+            &mut t,
+            su,
+            &[0x7, 0xd8, 0xe2, 0xec, 0xf6, 0x137, 0x1d8, 0x1fc],
+        );
+        for o in [0x151u32, 0x1e3, 0x1eb, 0x207, 0x20f] {
+            let at = gs(&t, o);
+            t.set_u32(at, 0x5a5a_5a5a ^ o);
+        }
+        let recs = gs(&t, 0x10e);
+        for r in 0..0x64u32 {
+            t.set_u32(recs + 0x140 * r, 0x7e7e_0000 + r);
+        }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
