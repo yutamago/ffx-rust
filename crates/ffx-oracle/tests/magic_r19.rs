@@ -1278,3 +1278,238 @@ fn start_up_0249() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// What `r19::start_up_0444` (`magic_0444`, at `f`) needs: the part
+/// set-up, the slots (324 the deal's draws, 404 and 333 floats, 390 the
+/// kinds), the hosted start's pool and lists, the actors (`n`; the map and
+/// characters), the ring (eight nodes), the task list (empty or not), the
+/// model's flags.
+fn start_up_0444_setup(t: &mut Twin, f: u32, k: u32, (n, listed, flags): (u32, bool, u32)) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    magic_r11::pools(t, f, 1514);
+    magic_r11::object_slots(t);
+    for (s, nw) in [(215u32, 1usize), (413, 1), (16, 1), (364, 1)] {
+        rec(t, s, nw, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    rec(t, 324, 1, move |m, a| {
+        m.r32(row(324)).wrapping_mul(7) ^ a[0] ^ k
+    });
+    for (s, v) in [
+        (404u32, 0.3f64),
+        (333, 0.9),
+        (12, 1.75),
+        (16, 1.25),
+        (364, 0.5),
+    ] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            v + f64::from(m.r32(row(s)) % 5) * 0.875 - f64::from(a[0] & 3) + f64::from(k)
+        });
+    }
+    // slot 390: kinds by actor, one listed in the table
+    let listed_kind = t.u32(op(t, f, 0x12f));
+    rec(
+        t,
+        390,
+        1,
+        move |_, a| if a[0] & 1 == 0 { listed_kind } else { 0x5555 },
+    );
+    let host = t.img.rel32_target(f + 0x173);
+    magic_r11::object_start_setup(t, host, (0x80, 0x9b));
+    t.write(SCRATCH + 0x640, &[0x55; 0x20]);
+    for o in [0xa6u32, 0xb9] {
+        t.set_u32(op(t, host, o), if listed { SCRATCH + 0x640 } else { 0 });
+    }
+    t.set_u32(op(t, host, 0xc8), 5);
+    // the actors: the map's bytes and the characters
+    let map = SCRATCH + 0x180;
+    t.set_u32(op(t, f, 0x117), map);
+    t.write(map, &[2, 4, 6, 1, 3, 5]);
+    let ap = t.img.rel32_target(f + 0x180);
+    t.set_u32(op(t, ap, 0x26), map);
+    for i in 0..0x10 {
+        t.set_u32(op(t, ap, 0x31) + 4 * i, 0x00c0_0000 + i + k);
+    }
+    for o in [0x59u32, 0x110] {
+        t.set_u32(op(t, f, o), 0x0a0a_0000 + o + k);
+    }
+    t.set_u32(op(t, ap, 0x1f), 0x0a0a_0110 + k);
+    t.set_u32(op(t, f, 0xb6), n);
+    t.set_u32(op(t, f, 0x240), flags & 1);
+    t.set_u32(op(t, f, 0x27d), flags >> 1);
+    magic_r11::ring(t, op(t, f, 0x2bc), op(t, f, 0x34e), 8, SCRATCH + 0x8000);
+    t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+    t.set_u32(op(t, f, 0x3a9), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(op(t, f, 0x3c4), SCRATCH + 0x600);
+    junk(t, op(t, f, 0xc1) - 0xd4, 0x130 * 3, k);
+    junk(t, op(t, f, 0xc6) - 0x14, 0x34 * 3, k + 1);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x29, 0x33, 0x41, 0x246, 0x251, 0x257, 0x261, 0x288, 0x28e, 0x298, 0x2a2, 0x2ac, 0x2b5,
+            0x2c2, 0x2cc, 0x312, 0x31c, 0x3e8, 0x3f2, 0x455, 0x45b, 0x514, 0x526,
+        ],
+    );
+}
+
+/// `magic_0444` 0x10002a10 (`r19::start_up_0444`, internal) and its load
+/// step 0x100028e0: no, one and three objects (kinds listed and not, the
+/// caster's byte among the dealt), the hosted list and the task list
+/// empty and not, the model's flags; the load step's waits and its start.
+#[test]
+fn start_up_0444() {
+    let Some(mut t) = twin(444) else { return };
+    let f = t.at(0x2a10);
+    for (k, more) in [
+        (0u32, false, 0u32),
+        (1, true, 3),
+        (3, false, 1),
+        (3, true, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        start_up_0444_setup(&mut t, f, k as u32, more);
+        scrub(&mut t);
+        eprintln!("case {k}");
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r19::start_up_0444,
+        );
+    }
+    let load = t.at(0x28e0);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        start_up_0444_setup(&mut t, f, 2, (2, true, 1));
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        scrub(&mut t);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(390)) >= 5, "slot 390: {} calls", t.u32(row(390)));
+}
+
+/// What `r19::start_up_0413` (`magic_0413`, at `f`) needs: as
+/// [`start_up_0444_setup`] with the kind check's actors and lists and the
+/// object start's pool.
+fn start_up_0413_setup(t: &mut Twin, f: u32, k: u32, (n, listed, flags): (u32, bool, u32)) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    magic_r11::pools(t, f, 1700);
+    magic_r11::object_slots(t);
+    for (s, nw) in [(215u32, 1usize), (413, 1), (534, 1)] {
+        rec(t, s, nw, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    rec(t, 324, 1, move |m, a| {
+        m.r32(row(324)).wrapping_mul(7) ^ a[0] ^ k
+    });
+    for (s, v) in [(404u32, 0.3f64), (333, 0.9), (12, 1.75)] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            v + f64::from(m.r32(row(s)) % 5) * 0.875 - f64::from(a[0] & 3) + f64::from(k)
+        });
+    }
+    // the kind check: the map, slot 390 a listed kind for every other actor
+    let kc = t.img.rel32_target(f + 0x130);
+    let map = SCRATCH + 0x180;
+    t.set_u32(op(t, kc, 0x10), map);
+    t.write(map, &[2, 4, 6, 1, 3, 5]);
+    let first = t.u32(op(t, kc, 0x30));
+    rec(
+        t,
+        390,
+        1,
+        move |_, a| if a[0] & 1 == 0 { first } else { 0x7777_7777 },
+    );
+    magic_r11::object_start_auto(t, t.img.rel32_target(f + 0x151));
+    for o in [0x166u32, 0x1ed, 0x257] {
+        t.set_u32(op(t, f, o), map);
+    }
+    for i in 0..0x10 {
+        t.set_u32(op(t, f, 0x171) + 4 * i, 0x00c0_0000 + 2 * i + k);
+    }
+    for o in [0x61u32, 0x244] {
+        t.set_u32(op(t, f, o), 0x0a0a_0000 + o + k);
+    }
+    t.set_u32(op(t, kc, 0x09), 0x0a0a_0061 + k);
+    t.set_u32(op(t, f, 0xd4), n);
+    t.set_u32(op(t, f, 0x2e6), flags & 1);
+    t.set_u32(op(t, f, 0x323), flags >> 1);
+    magic_r11::ring(t, op(t, f, 0x362), op(t, f, 0x41c), 8, SCRATCH + 0x8000);
+    t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+    t.set_u32(op(t, f, 0x477), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(op(t, f, 0x492), SCRATCH + 0x600);
+    junk(t, op(t, f, 0xdf) - 0xd4, 0x130 * 3, k);
+    junk(t, op(t, f, 0xe4) - 0x14, 0x34 * 3, k + 1);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x27, 0x31, 0x3b, 0x49, 0xbd, 0xc7, 0x2ec, 0x2f7, 0x2fd, 0x307, 0x32e, 0x334, 0x33e,
+            0x348, 0x352, 0x35b, 0x368, 0x372, 0x3e0, 0x3ea, 0x4b6, 0x4c0, 0x519, 0x51f,
+        ],
+    );
+}
+
+/// `magic_0413` 0x10002cb0 (`r19::start_up_0413`, internal) and its load
+/// step 0x10002b80: no, one and three objects (kinds listed and not, the
+/// caster among the dealt), the task list empty and not, the model's
+/// flags; the load step's waits and its start.
+#[test]
+fn start_up_0413() {
+    let Some(mut t) = twin(413) else { return };
+    let f = t.at(0x2cb0);
+    for (k, more) in [
+        (0u32, false, 0u32),
+        (1, true, 3),
+        (3, false, 1),
+        (3, true, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        start_up_0413_setup(&mut t, f, k as u32, more);
+        scrub(&mut t);
+        eprintln!("case {k}");
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r19::start_up_0413,
+        );
+    }
+    let load = t.at(0x2b80);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        start_up_0413_setup(&mut t, f, 2, (2, true, 1));
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        scrub(&mut t);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(row(390)) >= 5, "slot 390: {} calls", t.u32(row(390)));
+}
