@@ -2324,3 +2324,195 @@ pub const PARTICLE_TASK_0512: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0586`'s twenty model passes (0x100035f0, an overlay table entry,
+/// cdecl, no arguments; a cookie frame of 0x104 bytes, `ebp` = `esp -
+/// 4`; the scene `S = *G_S`, operand `+0x16`): the angle `S + 0x9b4`
+/// moves by `K` and is brought back once by `T` when above `H` or below
+/// `L` (`comiss` + `jbe`: an unordered angle stays); with the frame's
+/// matrices `A` (`ebp - 0x104`), `B` (`ebp - 0xc4`), `D` (`ebp - 0x84`)
+/// and `C` (`ebp - 0x44`): slots 723 `(A)`, 724 `(B)`, 235 `(C)`, `C`'s
+/// diagonal 0.002, slot 554 `(D, C, S + 0x81d0)`, `D`'s translation the
+/// point `S + 0x81e0..`, slot 231 `(C, B, D)`, slot 932 `()`, slot 945
+/// `(0, 1)`; then for `i` in 0..20 slot 719 `(PART, 4, i)` and the
+/// model's three passes ([`three_pass_model`](crate::o6_fam_pairs4::three_pass_model),
+/// `ecx` its handle, `edx` = `C`, the record `S + 0x9d0 + 0x600 i`). Each
+/// call sees the words the earlier ones left. Returns the last pass's
+/// `eax`.
+pub fn passes_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::add;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = fr.esp;
+    let ebp = e.wrapping_sub(4);
+    let s = g.read::<u32>(w(0x16));
+    let ang = add(g.read::<f32>(s.wrapping_add(0x9b4)), g.read::<f32>(w(0x27)));
+    let ang = yaw_wrap(g, img, f, ang, (0x2e, 0x38, 0x42, 0x4f));
+    let (a, b, d, c) = (
+        ebp.wrapping_sub(0x104),
+        ebp.wrapping_sub(0xc4),
+        ebp.wrapping_sub(0x84),
+        ebp.wrapping_sub(0x44),
+    );
+    let mut st = Pushes::default();
+    st.push(a);
+    g.write::<f32>(s.wrapping_add(0x9b4), ang);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x5b, 723), fr.ecx);
+    st.push(b);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x77, 724), fr.ecx);
+    st.push(c);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x88, 235), fr.ecx);
+    st.push_all(&[s.wrapping_add(0x81d0), c, d]);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(c.wrapping_add(o), 0x3b03_126f);
+    }
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xa7, 554), fr.ecx);
+    for i in 0..4 {
+        let v = g.read::<u32>(s.wrapping_add(0x81e0 + 4 * i));
+        g.write::<u32>(d.wrapping_add(0x30 + 4 * i), v);
+    }
+    st.push_all(&[d, b, c]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x10a, 231), fr.ecx);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x11c, 932), fr.ecx);
+    st.push_all(&[1, 0]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x129, 945), fr.ecx);
+    // the saved esi, edi below the locals; each pass's words under it
+    let base = ebp.wrapping_sub(0x104).wrapping_sub(8);
+    let mut eax = 0;
+    for i in 0..20u32 {
+        let mut st = Pushes::default();
+        st.push_all(&[i, 4, w(0x14f)]);
+        // call width: 12 (Pushes caps the words at 12)
+        let h = st.call(g, t(g, 0x141, 719), fr.ecx).eax;
+        let rec = g.read::<u32>(w(0x157)).wrapping_add(0x9d0 + 0x600 * i);
+        for (k, v) in (1u32..).zip([i, 4, w(0x14f), rec]) {
+            g.write::<u32>(base.wrapping_sub(4 * k), v);
+        }
+        let pass = Frame {
+            at: img.rel32_target(f + 0x16a),
+            esp: base.wrapping_sub(0x14),
+            ecx: h,
+            edx: c,
+            ..*fr
+        };
+        eax = crate::o6_fam_pairs4::three_pass_model(g, img, &pass).eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`passes_0586`] (400 bytes, 1 overlay; the passes and the cookie
+/// check).
+pub const PASSES_0586: Sig = Sig {
+    len: 400,
+    hash: 0x7602_3b73_041b_e8c9,
+    calls: &[
+        (
+            0x16a,
+            Callee::Sig(&crate::o6_fam_pairs4::THREE_PASS_MODEL_0586_1A20),
+        ),
+        (0x188, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `cvttss2si`: toward 0, 0x80000000 for a NaN or a value out of range.
+fn cvtt_0519(x: f32) -> i32 {
+    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
+        i32::MIN
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
+        let n = x as i32;
+        n
+    }
+}
+
+/// `magic_0519`'s camera start (0x10002b30, an overlay table entry, cdecl
+/// `(a)`; `ebp` = `esp - 4`): `*G_A = a`; the two record arrays (0xa0
+/// bytes each, from the operands `+0xc`/`+0x30` to `+0x29`/`+0x59`) get
+/// `-1` in their first two words and the halfword `+0x3a` 0; slot 336
+/// `(0x20ee)` into `G_H`, slot 333 `(that)` (ST0, stored as f32 over the
+/// argument) times `K1 / K2` truncated into the halfword `G_W`; slot 718
+/// `(P1)`, slot 222 `(P1, 0, 1000, 0x100)`, slot 718 `(P2)` with a word
+/// set; the camera blocks reset
+/// ([`camera_blocks_reset`](crate::s6_misc::camera_blocks_reset)); the
+/// word `G_B + 0x190 *G_C` 0, two words, slot 334
+/// `(0)`, and eleven globals set. Each call sees the words the earlier
+/// ones left. Returns 0.
+pub fn camera_start_0519<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    use crate::sb_sse::{div, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = fr.esp;
+    let a = fr.arg(g, 0);
+    g.write::<u32>(w(0x7), a);
+    for (from, to) in [(0xcu32, 0x29u32), (0x30, 0x59)] {
+        let mut r = w(from);
+        while r.cast_signed() < w(to).cast_signed() {
+            g.write::<u32>(r.wrapping_add(4), u32::MAX);
+            g.write::<u32>(r, u32::MAX);
+            g.write::<u16>(r.wrapping_add(0x3a), 0);
+            r = r.wrapping_add(0xa0);
+        }
+    }
+    let mut st = Pushes::default();
+    st.push(w(0x65));
+    // call width: 12 (Pushes caps the words at 12)
+    let h = st.call(g, t(g, 0x60, 336), fr.ecx).eax;
+    g.write::<u32>(w(0x72), h);
+    st.push(h);
+    // call width: 12 (Pushes caps the words at 12)
+    let v = crate::m0018::st0_f32(st.call(g, t(g, 0x78, 333), fr.ecx).st0);
+    g.write::<f32>(e.wrapping_add(4), v);
+    let x = div(mul(v, g.read::<f32>(w(0x90))), g.read::<f32>(w(0x9d)));
+    // mov [G], ax: the low halfword
+    g.write::<u16>(w(0xa7), cvtt_0519(x).cast_unsigned() as u16);
+    st.push(w(0x95));
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xac, 718), fr.ecx);
+    st.push_all(&[0x100, 0x3e8, 0, w(0xd0)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xb9, 222), fr.ecx);
+    st.push(w(0xdc));
+    stores(g, img, f, &[0xe6]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xd7, 718), fr.ecx);
+    let reset = Frame {
+        at: img.rel32_target(f + 0xf3),
+        esp: e.wrapping_sub(0x28),
+        ..*fr
+    };
+    crate::s6_misc::camera_blocks_reset(g, img, &reset);
+    let c = g.read::<u32>(w(0xf8)).wrapping_mul(0x190);
+    st.push(0);
+    g.write::<u32>(c.wrapping_add(w(0x106)), 0);
+    stores(g, img, f, &[0x113, 0x123]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x10f, 334), fr.ecx);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            0x132, 0x13c, 0x146, 0x150, 0x15a, 0x164, 0x16e, 0x178, 0x182, 0x18c, 0x196,
+        ],
+    );
+    Ret::eax(0)
+}
+
+/// [`camera_start_0519`] (420 bytes, 1 overlay; the blocks' reset).
+pub const CAMERA_START_0519: Sig = Sig {
+    len: 420,
+    hash: 0xbacc_b1f4_5384_2a33,
+    calls: &[(0xf3, Callee::Sig(&crate::s6_misc::CAMERA_BLOCKS_RESET))],
+    imports: &[],
+};

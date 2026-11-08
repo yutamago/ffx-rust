@@ -1037,6 +1037,7 @@ fn load_steps_0597() {
     for (c, (step, ans)) in [
         (0u32, 0x1u32),
         (0, 0x1_000),
+        (1, 0x1),
         (1, 0x10),
         (2, 0x1),
         (3, 0x0),
@@ -1052,6 +1053,11 @@ fn load_steps_0597() {
         t.set_u32(w(&t, 0x4), step);
         t.set_u32(answer, ans);
         t.set_u8(w(&t, 0xe2), 3 + c as u8);
+        // the words the end copies, distinct
+        t.set_u32(w(&t, 0xed), 0x00ed_0000 + c);
+        t.set_u32(w(&t, 0xf7), 0x00f7_0000 + c);
+        t.set_u32(w(&t, 0xf2), 0x5a5a_5a5a);
+        t.set_u32(w(&t, 0x10b), 0x5b5b_5b5b);
         // an empty ring and empty node groups
         t.write(ring, &[0; 0x14]);
         t.set_u32(ring + 4, ring + 4);
@@ -1129,7 +1135,15 @@ fn particle_task_0512() {
     let Some(mut t) = twin(512) else { return };
     let f = t.at(0x7660);
     let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
-    recs(&mut t, &[(714, 5), (325, 2), (713, 1)]);
+    recs(&mut t, &[(714, 5), (713, 1)]);
+    // slot 325 logs the vector it copies
+    rec(&mut t, 325, 2, |m, a| {
+        let row = magic_owna::row(325) + 0x20;
+        for i in 0..4 {
+            m.w32(row + 4 * i, m.r32(a[1] + 4 * i));
+        }
+        0x0325
+    });
     let pn = t.img.rel32_target(f + 0xb0);
     t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
     let wrapper = t.img.rel32_target(pn + 0x88);
@@ -1191,5 +1205,72 @@ fn particle_task_0512() {
         t.set_u32(task, tnode);
         t.set_u32(task + 4, b);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `r18::passes_0586` (`magic_0586` 0x100035f0): the angle above, below
+/// and inside its bounds; the matrix slots fill what they are handed,
+/// slot 828 logs the lock word, the passes' own data from the scene.
+#[test]
+fn passes_0586() {
+    let Some(mut t) = twin(586) else { return };
+    let f = t.at(0x35f0);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    for s in [723u32, 724, 235, 230] {
+        t.stub(s, move |m, a| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (s << 12) ^ i);
+            }
+            s
+        });
+    }
+    recs(&mut t, &[(554, 3), (231, 3), (932, 0), (945, 2), (719, 3)]);
+    let tp = t.img.rel32_target(f + 0x16a);
+    let lock = SCRATCH + 0x800;
+    t.set_u32(t.img.word(tp + 0xff), lock);
+    t.set_u32(lock, 0x5555);
+    t.stub(828, move |m, a| {
+        let v = m.r32(lock);
+        let k = m.r32(SCRATCH + 0x9c0);
+        m.w32(SCRATCH + 0x9c0, k + 1);
+        m.w32(
+            SCRATCH + 0xa00 + 4 * (k % 0x40),
+            v ^ a[0] ^ a[2] ^ a[6] ^ a[7],
+        );
+        0x828
+    });
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x16), s);
+    let kv = f32::from_bits(t.img.word(w(&t, 0x27)));
+    for (c, ang) in [(0u32, 7.0f32), (1, -7.0), (2, 0.0)] {
+        t.write(s, &varied(0x8200, c as u8));
+        t.set_u32(s + 0x9b4, (ang - kv).to_bits());
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r18::camera_start_0519` (`magic_0519` 0x10002b30): slot 333's value
+/// giving a halfword in range and one past it; the current block 0 and 2.
+#[test]
+fn camera_start_0519() {
+    let Some(mut t) = twin(519) else { return };
+    let f = t.at(0x2b30);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    recs(
+        &mut t,
+        &[(336, 1), (718, 1), (222, 4), (334, 1), (287, 3), (281, 1)],
+    );
+    rec(&mut t, 283, 2, |_, a| 0x0283_0000 ^ a[1]);
+    let v_in = SCRATCH + 0x714;
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(v_in))));
+    for (c, (v, cur)) in [(0u32, (1.5f32, 0u32)), (1, (3.0e9, 2)), (2, (-0.75, 1))] {
+        t.set_u32(v_in, v.to_bits());
+        t.set_u32(w(&t, 0xf8), cur);
+        for (from, to) in [(0xcu32, 0x29u32), (0x30, 0x59)] {
+            let a = w(&t, from);
+            t.write(a, &varied((w(&t, to) - a + 0xa0) as usize, c as u8));
+        }
+        t.check_entry(f, Call::default(), &[0x0a0a_0000 + c], Eax::Checked);
     }
 }
