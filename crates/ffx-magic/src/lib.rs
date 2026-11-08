@@ -2927,6 +2927,7 @@ ports! {
     "r18 particle task 0512" => r18::PARTICLE_TASK_0512, r18::particle_task_0512;
     "r18 passes 0586" => r18::PASSES_0586, r18::passes_0586;
     "r18 camera start 0519" => r18::CAMERA_START_0519, r18::camera_start_0519;
+    "r18 summon frame 0589" => r18::SUMMON_FRAME_0589, r18::summon_frame_0589;
     // round 18 (magic-r18): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

@@ -1224,7 +1224,21 @@ fn passes_0586() {
             s
         });
     }
-    recs(&mut t, &[(554, 3), (231, 3), (932, 0), (945, 2), (719, 3)]);
+    recs(&mut t, &[(932, 0), (945, 2), (719, 3)]);
+    // slots 554 and 231 log the matrices they are handed
+    for s in [554u32, 231] {
+        rec(&mut t, s, 3, move |m, a| {
+            let row = magic_owna::row(s) + 0x10;
+            let mut x = 0u32;
+            for &p in &a[..3] {
+                for i in 0..16 {
+                    x = x.rotate_left(5) ^ m.r32(p + 4 * i);
+                }
+            }
+            m.w32(row, x);
+            s
+        });
+    }
     let tp = t.img.rel32_target(f + 0x16a);
     let lock = SCRATCH + 0x800;
     t.set_u32(t.img.word(tp + 0xff), lock);
@@ -1267,6 +1281,8 @@ fn camera_start_0519() {
     for (c, (v, cur)) in [(0u32, (1.5f32, 0u32)), (1, (3.0e9, 2)), (2, (-0.75, 1))] {
         t.set_u32(v_in, v.to_bits());
         t.set_u32(w(&t, 0xf8), cur);
+        // the current block's word the start clears, filled first
+        t.set_u32(w(&t, 0x106) + 0x190 * cur, 0x5c5c_5c5c);
         for (from, to) in [(0xcu32, 0x29u32), (0x30, 0x59)] {
             let a = w(&t, from);
             t.write(a, &varied((w(&t, to) - a + 0xa0) as usize, c as u8));

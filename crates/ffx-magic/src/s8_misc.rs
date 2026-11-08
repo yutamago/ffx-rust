@@ -992,7 +992,7 @@ pub const STAGED_SCRIPT: Sig = Sig {
 /// ([`script_run`](crate::sb_misc::script_run), contexts the immediates
 /// at `+0x2e` and `+0x3d`). Returns the first script's answer (1: it
 /// ended) and the second's (the `eax` after the calls).
-fn summon_frame_scripts<G: Game>(g: &mut G, img: &Image, f: u32) -> (u32, u32) {
+pub(crate) fn summon_frame_scripts<G: Game>(g: &mut G, img: &Image, f: u32) -> (u32, u32) {
     let w = |o: u32| op(img, f, o);
     let a = w(0x10);
     g.write_bytes(a, &[0; 0x30]);

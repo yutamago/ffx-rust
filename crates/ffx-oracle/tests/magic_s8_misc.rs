@@ -897,6 +897,7 @@ fn summon_frames_with_rigs() {
         (599, 0x5ed0, true),
         (610, 0xa6d0, true),
         (588, 0x16f0, true),
+        (589, 0x13e0, true),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
@@ -918,8 +919,16 @@ fn summon_frames_with_rigs() {
         t.set_u32(op(&t, f, 0x7), e);
         let ctx = [op(&t, f, 0x2e), op(&t, f, 0x3d)];
         let runs = [t.img.rel32_target(f + 0x38), t.img.rel32_target(f + 0x44)];
-        let rigs = t.img.rel32_target(f + if fade { 0xd3 - dt } else { 0x85 });
-        let give = t.img.rel32_target(f + if fade { 0xed - dt } else { 0xb3 });
+        let rigs = if dll == 589 {
+            t.img.rel32_target(f + 0x19c)
+        } else {
+            t.img.rel32_target(f + if fade { 0xd3 - dt } else { 0x85 })
+        };
+        let give = if dll == 589 {
+            t.img.rel32_target(f + 0x1b6)
+        } else {
+            t.img.rel32_target(f + if fade { 0xed - dt } else { 0xb3 })
+        };
         for (k, (done, held, mstate)) in [
             (0u8, false, 1u32),
             (4, false, 1),
@@ -970,6 +979,32 @@ fn summon_frames_with_rigs() {
                     t.set_u32(s + 0x14, 1);
                 }
             }
+            if dll == 589 {
+                // `r18::summon_frame_0589`: four motion scripts; the
+                // models' end (`m0511::models_end`) with its byte table,
+                // the parts and no held node
+                for o in [0x16bu32, 0x17b, 0x185, 0x18f] {
+                    let s = op(&t, f, o);
+                    t.write(s, &varied(0x40, k));
+                    t.set_u32(s + 0x14, 1);
+                }
+                let end = t.img.rel32_target(f + 0x1ab);
+                t.set_u32(op(&t, end, 0x1), SCRATCH + 0x20);
+                t.set_u32(SCRATCH + 0x20, 0x0302_0100);
+                t.set_u32(SCRATCH + 0x24, 0x0706_0504);
+                let rp = t.img.rel32_target(end + 0xfa);
+                t.set_u32(op(&t, rp, 0x16), SCRATCH + 0x200);
+                t.set_u32(SCRATCH + 0x230, 0x0941_0001);
+                t.set_u32(op(&t, rp, 0x0e), 1);
+                t.set_u32(op(&t, rp, 0x76), 0);
+                let r3 = t.img.rel32_target(end + 0xf5);
+                t.set_u32(op(&t, rp, 0x43), SCRATCH + 0x300);
+                for o in [0x21u32, 0x3d] {
+                    t.set_u32(op(&t, r3, o), SCRATCH + 0x300);
+                }
+                t.set_u32(op(&t, end, 0xea), e);
+                t.set_u32(op(&t, end, 0xce), 0);
+            }
             if dll == 588 {
                 // the effect end: its key byte, the lock, no held node, no
                 // objects; slot 288's lists empty
@@ -997,7 +1032,7 @@ fn summon_frames_with_rigs() {
                 t.set_u32(op(&t, end, 0x59), 1);
                 t.set_u32(op(&t, end, 0x15d), SCRATCH + 0x3200);
                 t.set_u32(SCRATCH + 0x3200, 0x55 + k);
-            } else if fade {
+            } else if fade && dll != 589 {
                 for o in [0xabu32, 0xbb] {
                     let s = op(&t, f, o);
                     t.write(s, &varied(0x40, k));

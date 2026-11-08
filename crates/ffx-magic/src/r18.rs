@@ -2516,3 +2516,81 @@ pub const CAMERA_START_0519: Sig = Sig {
     calls: &[(0xf3, Callee::Sig(&crate::s6_misc::CAMERA_BLOCKS_RESET))],
     imports: &[],
 };
+
+/// `magic_0589`'s summon frame with six points and four motion scripts
+/// (0x100013e0, a pool task, cdecl `(N)`; `E = *G_E`, operand `+0x7`):
+/// the opening ([`summon_frame_scripts`](crate::s8_misc::summon_frame_scripts));
+/// while the first script runs, the points `E + 0x1950 + 0x20 k` become
+/// `E + 0x17f0 + 0x40 k` (`k` 0..6), the four motion scripts step
+/// ([`motion_script`](crate::s4_misc::motion_script), the immediates
+/// `+0x16b`, `+0x17b`, `+0x185`, `+0x18f`) and the frame ends in the
+/// camera rigs' step ([`camera_rigs_step`](crate::s8_misc::camera_rigs_step),
+/// a tail jump); once it ended `E + 0x2214 = 1`, the models end
+/// ([`models_end`](crate::m0511::models_end)) and the frame ends giving
+/// `N` back ([`give_back`](crate::sa_pool::give_back), a tail jump).
+pub fn summon_frame_0589<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = g.read::<u32>(w(0x7));
+    let (done, eax) = crate::s8_misc::summon_frame_scripts(g, img, f);
+    if done == 0 {
+        for k in 0..6u32 {
+            for i in 0..4u32 {
+                let v = g.read::<u32>(e.wrapping_add(0x1950 + 0x20 * k + 4 * i));
+                g.write::<u32>(e.wrapping_add(0x17f0 + 0x40 * k + 4 * i), v);
+            }
+        }
+        for (ecx, call) in [
+            (0x16bu32, 0x176u32),
+            (0x17b, 0x180),
+            (0x185, 0x18a),
+            (0x18f, 0x194),
+        ] {
+            crate::s4_misc::motion_script(g, img, img.rel32_target(f + call), w(ecx));
+        }
+        // pop edi; pop esi; pop ebp; jmp: the caller's stack as it came
+        let tail = Frame {
+            at: img.rel32_target(f + 0x19c),
+            eax,
+            ..*fr
+        };
+        return crate::s8_misc::camera_rigs_step(g, img, &tail);
+    }
+    g.write::<u32>(e.wrapping_add(0x2214), 1);
+    // push ebp, esi, edi; the call's return address
+    let end = Frame {
+        at: img.rel32_target(f + 0x1ab),
+        esp: fr.esp.wrapping_sub(0x10),
+        eax,
+        ..*fr
+    };
+    crate::m0511::models_end(g, img, &end);
+    let n = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x1b6),
+        n,
+    ))
+}
+
+/// [`summon_frame_0589`] (442 bytes, 1 overlay; the `rel32`s: `memset`,
+/// the scripts, the motion scripts, the rigs' step, the models' end and
+/// the give-back).
+pub const SUMMON_FRAME_0589: Sig = Sig {
+    len: 442,
+    hash: 0x8c42_924f_fadc_1d8f,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x38, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x44, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x176, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x180, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x18a, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x194, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x19c, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x1ab, Callee::Sig(&crate::m0511::MODELS_END_0589)),
+        (0x1b6, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
