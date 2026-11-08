@@ -21,6 +21,20 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// before the load), so their table operand is at `+0x58` and the later
 /// ones one byte after this one's.
 pub fn cue_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    cue_start_with(g, img, fr, |g, img, callee| {
+        crate::s5_misc::targets_more_tasks(g, img, callee);
+    })
+}
+
+/// [`cue_start`] with the call at `+0x94` (`+0x95` in the copies) given
+/// (`start`, its frame): `magic_0610`'s copy runs its start-up there
+/// ([`cue_start_0610`](crate::r22::cue_start_0610)).
+pub(crate) fn cue_start_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    start: impl FnOnce(&mut G, &Image, &Frame),
+) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     // `push eax` (0x50) first, or the table load (`mov eax, ds:`) then `push 0x0`
@@ -58,7 +72,7 @@ pub fn cue_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             edx: 0,
             xmm: [0; 4],
         };
-        crate::s5_misc::targets_more_tasks(g, img, &callee);
+        start(g, img, &callee);
         g.write::<u32>(w(0x9a + d), w(0x9e + d));
         g.write::<u32>(w(0xa4 + d), w(0xa8 + d));
     }
