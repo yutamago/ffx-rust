@@ -1651,6 +1651,9 @@ ports! {
     "r21 end 0198" => r21::END_0198, r21::end_0198;
     "r21 fade 0276" => r21::FADE_0276, r21::fade_0276;
     "r21 load step 0276" => r21::LOAD_0276, r21::load_0276;
+    "r21 restart 0352" => r21::RESTART_0352, r21::restart_0352;
+    "r21 task 0435" => r21::TASK_0435, r21::task_0435;
+    "r21 height 0262" => r21::HEIGHT_0262, r21::height_0262;
     "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
     "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
     "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;

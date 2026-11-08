@@ -476,8 +476,13 @@ fn fade_0276() {
     let Some(mut t) = twin(276) else { return };
     let f = t.at(0x3330);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    recs(&mut t, &[(860, 7)]);
     let lock = SCRATCH + 0x700;
+    // slot 860 logs the lock word it runs under
+    rec(&mut t, 860, 7, move |m, _| {
+        let l = m.r32(lock);
+        m.w32(SCRATCH + 0x720, l);
+        0x860
+    });
     t.set_u32(w(&t, 0x162), lock);
     t.set_u32(w(&t, 0x18d), lock);
     // (wait, state, step, D)
@@ -581,6 +586,8 @@ fn load_0276() {
             ],
         );
         let (count, head) = (op(&t, 0x340), op(&t, 0x35a));
+        // junk before the ring, where a stray store would land
+        t.write(SCRATCH + 0x13e0, &[0x5a; 0x20]);
         magic_r11::ring(&mut t, count, head, free, SCRATCH + 0x1400);
         let other = SCRATCH + 0x5f0;
         t.write(other, &[0x44; 0x20]);
@@ -600,4 +607,145 @@ fn load_0276() {
     }
     assert!(t.u32(magic_owna::row(268)) >= 7, "the actors' objects ran");
     assert!(t.u32(magic_owna::row(413)) >= 1, "the sound flag's way");
+}
+
+/// `r21::restart_0352` (`magic_0352` 0x10005410): the fifth object in
+/// the list and not (the restart), the task list empty and not; the four
+/// object starts and the fan's task on both sides.
+#[test]
+fn restart_0352() {
+    let Some(mut t) = twin(352) else { return };
+    let f = t.at(0x5410);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(904, 2), (713, 1)]);
+    rec(&mut t, 282, 0, |_, _| 0x282);
+    t.stub_st0(282, |m, _| f64::from(m.r32(SCRATCH + 0x7a0)) * 0.25 + 0.5);
+    magic_r11::object_slots(&mut t);
+    for at in [0x97u32, 0xd7, 0x117, 0x157] {
+        let so = t.img.rel32_target(f + at);
+        magic_r11::object_start_auto(&mut t, so);
+    }
+    magic_r11::pools(&mut t, f, 716);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x19), s);
+    let p = SCRATCH + 0x7c0;
+    t.set_u32(w(&t, 0x37), p);
+    // the list `list_remove` walks: one node holding `S + 0x5f0` or none
+    let list = w(&t, 0x29);
+    let node = SCRATCH + 0x7d0;
+    for (k, (listed, tasks)) in [(true, false), (false, true), (true, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        junk(&mut t, s, 0xc00, k);
+        t.set_u32(SCRATCH + 0x7a0, 3 + k);
+        t.set_u32(p, 0x5a5a_0000 + k);
+        t.write(node, &[0x33; 0x10]);
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
+        t.set_u32(node + 8, if listed { s + 0x5f0 } else { 0x0bad_0000 });
+        t.set_u32(list, node);
+        let other = SCRATCH + 0x5f0;
+        t.write(other, &[0x44; 0x10]);
+        t.set_u32(w(&t, 0x1ef), if tasks { other } else { 0 });
+        t.set_u32(w(&t, 0x202), other);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(magic_owna::row(713)) >= 2, "the restart ran");
+}
+
+/// `r21::task_0435` (`magic_0435` 0x10001570): the wait running, ending
+/// in and outside a battle (actor below 0x20 and not); the objects busy
+/// or done; the first script's flag unset; the scripts' halfwords set and
+/// clear.
+#[test]
+fn task_0435() {
+    let Some(mut t) = twin(435) else { return };
+    let f = t.at(0x1570);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(296, 2), (257, 2), (213, 2)]);
+    let ro = t.img.rel32_target(f + 0x66);
+    let list = t.img.word(ro + 0x7c);
+    let (node, obj) = (SCRATCH + 0x9f00, SCRATCH + 0xa000);
+    let (r1, r2) = (w(&t, 0x52), w(&t, 0x5c));
+    let task = SCRATCH + 0x600;
+    let rec = SCRATCH + 0x680;
+    // (wait, battle flag, actor, objects busy, R1 +0x24, halfwords)
+    for (k, (wait, battle, n, busy, ready, h)) in [
+        (2u32, 0u32, 3u32, true, 1u32, 0u16),
+        (1, 0, 5, false, 0, 0),
+        (1, 1, 5, false, 1, 0),
+        (0, 0, 0x20, false, 1, 5),
+        (1, 0, 0x20, false, 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x4), wait);
+        t.set_u32(w(&t, 0x18), battle);
+        t.set_u32(w(&t, 0x20), n);
+        t.set_u32(w(&t, 0x42), 0x00a0_0042 + k);
+        for r in [r1, r2] {
+            junk(&mut t, r, 0x28, k);
+            // the scripts done (`+0x14` 1: nothing to run)
+            t.set_u32(r + 0x14, 1);
+            t.set_u16(r + 0x1c, h);
+        }
+        t.set_u32(r1 + 0x24, ready);
+        t.set_u32(node + 8, obj);
+        t.set_u16(obj + 0x124, 0x8001);
+        t.set_u32(list + 8, if busy { node } else { 0 });
+        junk(&mut t, task, 0x20, k);
+        t.set_u32(task + 8, rec);
+        junk(&mut t, rec, 0x20, k + 1);
+        junk_ops(&mut t, f, &[0xa3, 0xca]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(magic_owna::row(213)) >= 2, "the scripts' slots");
+}
+
+/// `r21::height_0262` (`magic_0262` 0x100024d0): stopped (bit 0 set: the
+/// cookie word, junk) and running over three table angles; slot 217
+/// writes a point from its first word, slot 234 the difference.
+#[test]
+fn height_0262() {
+    let Some(mut t) = twin(262) else { return };
+    let f = t.at(0x24d0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 217, 2, |m, a| {
+        for i in 0..4 {
+            let v = (a[0] & 0xff) as f32 * 0.25 + i as f32 - 1.5;
+            m.w32(a[1] + 4 * i, v.to_bits());
+        }
+        0x217
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    let tab = SCRATCH + 0x1_0000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, (0.5 + 0.0007 * i as f32).to_bits());
+    }
+    t.set_u32(w(&t, 0x2c), tab);
+    let (rec_at, obj) = (SCRATCH + 0x600, SCRATCH + 0x800);
+    for (k, (flags, e)) in [(1u8, 0x100i32), (0, 0x100), (0, 0x7ff0), (0, -0x3000)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        junk(&mut t, obj, 0x100, k);
+        t.set_u8(obj + 0x90, flags | 0x10);
+        t.set_u32(obj + 0x50, 0x0000_0013 + k);
+        junk(&mut t, rec_at, 0x20, k);
+        t.set_u32(rec_at, obj);
+        t.set_u32(rec_at + 8, 0x0000_0042 + k);
+        t.set_u32(rec_at + 0xc, e.cast_unsigned());
+        t.check_entry(f, Call::this(rec_at), &[], Eax::Junk);
+    }
 }
