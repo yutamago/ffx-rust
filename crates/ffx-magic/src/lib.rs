@@ -1586,6 +1586,8 @@ ports! {
     "r15 mean throw 0360" => r15::MEAN_THROW_0360, r15::mean_throw_0360;
     "r15 volley set-up 0193" => r15::VOLLEY_SETUP_0193, r15::volley_setup_0193;
     "r15 volley set-up 0416" => r15::VOLLEY_SETUP_0416, r15::volley_setup_0416;
+    "r9 load step 0182" => r9_load::LOAD_0182, r9_load::load_0182;
+    "r9 load step 0189" => r9_load::LOAD_0189, r9_load::load_0189;
     // round 15 (magic-r15): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
@@ -3459,6 +3461,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r15 spark record 0206", &r15::SPARK_RECORD_0206),
     ("r15 spark record 0206 (full)", &r15::SPARK_RECORD_0206_FULL),
     ("r15 light set-up 0443", &r15::LIGHT_SETUP_0443),
+    ("r15 start-up 0182", &r15::START_UP_0182),
+    ("r15 start-up 0189", &r15::START_UP_0189),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
