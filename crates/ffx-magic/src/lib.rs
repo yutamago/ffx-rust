@@ -66,6 +66,7 @@ pub mod r14;
 pub mod r15;
 pub mod r16;
 pub mod r17;
+pub mod r19;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1617,6 +1618,13 @@ ports! {
     "r9 load step 0177" => r9_load::LOAD_0177, r9_load::load_0177;
     "r9 load step 0199" => r9_load::LOAD_0199, r9_load::load_0199;
     // round 17 (magic-r17): end of ports
+    // round 19 (magic-r19)
+    "r19 summon task 0343" => r19::SUMMON_TASK_0343, r19::summon_task_0343;
+    "r19 summon task 0202" => r19::SUMMON_TASK_0202, r19::summon_task_0202;
+    "r19 summon task 0144" => r19::SUMMON_TASK_0144, r19::summon_task_0144;
+    "r19 summon task 0207" => r19::SUMMON_TASK_0207, r19::summon_task_0207;
+    "r19 summon task 0106" => r19::SUMMON_TASK_0106, r19::summon_task_0106;
+    // round 19 (magic-r19): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;

@@ -1959,7 +1959,7 @@ pub const SUMMON_TASK_0333: Sig = Sig {
 /// `LIST + 0x10` read twice, `LIST` compared, its first child, its count,
 /// its last child stored, the vtable): the node's own child list empty,
 /// pass byte 0xff.
-fn summon_append<G: Game>(
+pub(crate) fn summon_append<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -2771,7 +2771,7 @@ pub const SUMMON_TASK_0330: Sig = Sig {
 /// immediate `link`), then the stores `post`. `last` is the old last as
 /// read, `list` the operand it is compared with.
 #[allow(clippy::too_many_arguments)] // the inlined steps' operands
-fn summon_append_abs<G: Game>(
+pub(crate) fn summon_append_abs<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
