@@ -694,8 +694,12 @@ fn task_0435() {
             t.set_u16(r + 0x1c, h);
         }
         t.set_u32(r1 + 0x24, ready);
+        // one object on its delay (it runs: the objects' answer is not 1)
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
-        t.set_u16(obj + 0x124, 0x8001);
+        t.set_u16(obj + 0x124, 0x8000);
+        t.set_u32(obj + 0x114, 5);
         t.set_u32(list + 8, if busy { node } else { 0 });
         junk(&mut t, task, 0x20, k);
         t.set_u32(task + 8, rec);
@@ -747,5 +751,142 @@ fn height_0262() {
         t.set_u32(rec_at + 8, 0x0000_0042 + k);
         t.set_u32(rec_at + 0xc, e.cast_unsigned());
         t.check_entry(f, Call::this(rec_at), &[], Eax::Junk);
+    }
+}
+
+/// `r21::spark_0246` (`magic_0246` 0x100019d0): the turned point above
+/// the ground (a free flag first and sixth, none free), below it and NaN.
+#[test]
+fn spark_0246() {
+    let Some(mut t) = twin(246) else { return };
+    let f = t.at(0x19d0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    recs(&mut t, &[(554, 4), (552, 6)]);
+    // slot 229 moves the point by the matrix's diagonal and a height
+    let lift = SCRATCH + 0x7a0;
+    rec(&mut t, 229, 9, move |m, a| {
+        let h = f32::from_bits(m.r32(lift));
+        for i in 0..3 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * f32::from_bits(m.r32(a[1] + 0x14 * i))
+                + if i == 1 { h } else { 0.0 };
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x229
+    });
+    magic_r11::object_slots(&mut t);
+    let so = t.img.rel32_target(f + 0x10d);
+    magic_r11::object_start_auto(&mut t, so);
+    magic_r11::pools(&mut t, f, 349);
+    let flags = w(&t, 0xd6);
+    let obj = SCRATCH + 0x800;
+    for (k, (h, free)) in [
+        (5.0f32, Some(0u32)),
+        (5.0, Some(5)),
+        (5.0, None),
+        (-50.0, Some(0)),
+        (f32::NAN, Some(0)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lift, h.to_bits());
+        for i in 0..0xc {
+            t.set_u8(flags + i, u8::from(free != Some(i)));
+        }
+        junk(&mut t, obj, 0x100, k);
+        for (i, o) in [0xe0u32, 0xe4, 0xe8].into_iter().enumerate() {
+            t.set_u32(obj + o, (1.5 * i as f32 - 0.25 + k as f32).to_bits());
+        }
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `r21::part_object_0375` (`magic_0375` 0x10001c80): the objects of
+/// index 0..=4, one past them and one below the base.
+#[test]
+fn part_object_0375() {
+    let Some(mut t) = twin(375) else { return };
+    let f = t.at(0x1c80);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let table = SCRATCH + 0x700;
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, 0x0941_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    let sp = t.img.rel32_target(f + 0x36);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    t.set_u32(t.img.word(sp + 0x29), SCRATCH + 0x7f8);
+    let d = SCRATCH + 0x780;
+    t.set_u32(w(&t, 0x10), d);
+    t.set_u32(d + 0x10, 0x00d0_0010);
+    let p = SCRATCH + 0x7c0;
+    t.set_u32(w(&t, 0x4), p);
+    let base = w(&t, 0x3d);
+    for (k, i) in [0u32, 1, 2, 3, 4, 5, 0xffff_ffff].into_iter().enumerate() {
+        let k = k as u32;
+        let obj = base.wrapping_add(i.wrapping_mul(0x80));
+        junk(&mut t, obj, 0x80, k);
+        t.set_u32(p, 0x5a5a_0000 + k);
+        t.set_u32(SCRATCH + 0x7f8, 0x77 + k);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `r21::sparks_0419` (`magic_0419` 0x10001b60): the count at 0 (the task
+/// given back), then two sparks from a pool with records, with one and
+/// with none.
+#[test]
+fn sparks_0419() {
+    let Some(mut t) = twin(419) else { return };
+    let f = t.at(0x1b60);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(719, 3), (237, 4)]);
+    for (s, x) in [(307u32, 0.375f64), (314, 1.25), (404, -0.5)] {
+        rec(&mut t, s, 1, move |m, a| {
+            let n = m.r32(magic_owna::row(s));
+            a.first().copied().unwrap_or(0) ^ (s << 16) ^ n
+        });
+        t.stub_st0(s, move |m, a| {
+            x + f64::from(m.r32(magic_owna::row(s)) % 5) * 0.125
+                + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    let take = t.img.rel32_target(f + 0x25);
+    let pw = |t: &Twin, o: u32| t.img.word(take + o);
+    let (idx, n, table, page) = (pw(&t, 0x08), pw(&t, 0x0f), pw(&t, 0x37), pw(&t, 0x2b));
+    let recs_at = SCRATCH + 0x8000;
+    t.set_u32(table, recs_at);
+    // the give-back's node: the task alone
+    let give = t.img.rel32_target(f + 0x11);
+    let task = SCRATCH + 0x600;
+    for (k, (count, records)) in [(0i32, 4u32), (3, 4), (1, 1), (2, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x6), count.cast_unsigned());
+        t.set_u32(w(&t, 0x82), 0x00a0_0000 + k);
+        for i in 0..4 {
+            t.write(recs_at + 0x74 * i, &[0x5a; 0x74]);
+            t.set_u32(recs_at + 0x74 * i + 0x6c, 0);
+        }
+        t.set_u32(n, records);
+        t.set_u32(idx, 0);
+        t.set_u32(page, 0);
+        t.write(task, &[0; 0x1c]);
+        t.set_u32(task + 8, task);
+        for op in [0x48u32, 0x55, 0x64, 0x74] {
+            t.set_u32(t.img.word(give + op), SCRATCH + 0x3000 + op);
+        }
+        t.set_u32(SCRATCH + 0x3074, SCRATCH + 0x3074);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
