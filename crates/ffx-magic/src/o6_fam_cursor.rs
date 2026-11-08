@@ -56,11 +56,14 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// `mov eax, [eax + disp32]` (`8b 80 id`) on the slot table: the
-    /// slot. (Every family member so far loads slots above 31, so the
-    /// `disp8` form never occurs.)
+    /// `mov eax, [eax + disp32]` (`8b 80 id`) on the slot table, or the
+    /// `disp8` form (`8b 40 ib`) for slots below 32: the slot.
     pub fn slot_load(&mut self) -> u32 {
-        self.word(2, 6) / 4
+        if self.byte(1) == 0x40 {
+            self.disp8(2, 3) / 4
+        } else {
+            self.word(2, 6) / 4
+        }
     }
 
     /// `mov dword [esi + disp32], imm32` (`c7 86 id id`) or with a `disp8`

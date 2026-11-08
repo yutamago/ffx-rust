@@ -4864,7 +4864,11 @@ pub const PART_DROP: Sig = Sig {
 /// leaves its parent (internal, `ecx` = the cursor). Returns the last
 /// step's `eax`.
 ///
-/// `magic_0201` 0x10002fe0 (135 bytes; 3 DLLs).
+/// `magic_0201` 0x10002fe0 (135 bytes; 3 DLLs); `magic_0577` 0x10004720
+/// ([`WALK_RESET_0577`](crate::r18::WALK_RESET_0577)) calls the summon
+/// model set-up ([`model_setup`](crate::sa_summon::model_setup)) instead
+/// of the nodes' reset and ends with its own unlink
+/// ([`unlink_end`](crate::m0577::unlink_end), a tail jump to slot 846).
 pub fn walk_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let cursor = fr.ecx;
@@ -4892,7 +4896,27 @@ pub fn walk_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ecx: local,
         ..*fr
     };
-    let eax = crate::s4_misc::nodes_reset(g, img, &callee).eax;
+    // `magic_0577`'s copy calls the summon model set-up here and its
+    // unlink-and-end (a tail jump to slot 846, no arguments) last
+    let eax = if img.matches(callee.at, &crate::sa_summon::MODEL_SETUP) {
+        crate::sa_summon::model_setup(g, img, &callee).eax
+    } else {
+        crate::s4_misc::nodes_reset(g, img, &callee).eax
+    };
+    let end = img.rel32_target(f + 0x7d);
+    if img.matches(end, &crate::m0577::UNLINK_END) {
+        let callee = Frame {
+            at: end,
+            ecx: owner,
+            eax,
+            ..callee
+        };
+        let r = crate::m0577::unlink_end(g, img, &callee);
+        return match r.jump {
+            Some(t) => through(g.call(t, owner, &[])),
+            None => r,
+        };
+    }
     Ret::eax(crate::sa_misc::leave(g, owner, eax))
 }
 

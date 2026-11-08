@@ -884,7 +884,10 @@ fn give_node(t: &mut Twin, give: u32, node: u32, k: u32) {
 
 /// The two summon frames with the camera rigs: the first script running
 /// (each rig idle, the motion steps done or waiting) and ended (with a
-/// held node and without), in both DLLs each.
+/// held node and without), in both DLLs each; and `magic_0610`'s and
+/// `magic_0588`'s copies of the fade's frame (no fade; `0610`'s scene end
+/// with its skip flag set, E's filler word there; `0588`'s effect end
+/// with empty actor and object lists).
 #[test]
 fn summon_frames_with_rigs() {
     for (dll, rva, fade) in [
@@ -892,9 +895,14 @@ fn summon_frames_with_rigs() {
         (612, 0x72d0, false),
         (168, 0x14e0, true),
         (599, 0x5ed0, true),
+        (610, 0xa6d0, true),
+        (588, 0x16f0, true),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        // `magic_0610`: the operands 4 bytes earlier, no fade (11 more)
+        let short = dll == 610 || dll == 588;
+        let dt = if short { 0xf } else { 0 };
         for (s, n) in [(284u32, 3usize), (285, 2), (286, 2), (332, 1), (411, 1)] {
             log_calls(&mut t, s, n, &[], move |_, a, k| {
                 a.first().copied().unwrap_or(0) ^ (s << 16) ^ k
@@ -910,8 +918,8 @@ fn summon_frames_with_rigs() {
         t.set_u32(op(&t, f, 0x7), e);
         let ctx = [op(&t, f, 0x2e), op(&t, f, 0x3d)];
         let runs = [t.img.rel32_target(f + 0x38), t.img.rel32_target(f + 0x44)];
-        let rigs = t.img.rel32_target(f + if fade { 0xd3 } else { 0x85 });
-        let give = t.img.rel32_target(f + if fade { 0xed } else { 0xb3 });
+        let rigs = t.img.rel32_target(f + if fade { 0xd3 - dt } else { 0x85 });
+        let give = t.img.rel32_target(f + if fade { 0xed - dt } else { 0xb3 });
         for (k, (done, held, mstate)) in [
             (0u8, false, 1u32),
             (4, false, 1),
@@ -955,7 +963,41 @@ fn summon_frames_with_rigs() {
             t.set_u32(r + 0x64, 1);
             t.set_u8(r + 0x6a, 0);
             t.set_u32(op(&t, f, 0x26), 0x0026_0000 + k);
-            if fade {
+            if short {
+                for o in [0xa7u32, 0xb7] {
+                    let s = op(&t, f, o);
+                    t.write(s, &varied(0x40, k));
+                    t.set_u32(s + 0x14, 1);
+                }
+            }
+            if dll == 588 {
+                // the effect end: its key byte, the lock, no held node, no
+                // objects; slot 288's lists empty
+                let end = t.img.rel32_target(f + 0xd3);
+                t.write(SCRATCH + 0x3000, &[3, 1, 4, 1]);
+                t.set_u32(op(&t, end, 0x15), SCRATCH + 0x3000);
+                t.set_u32(op(&t, end, 0x19d), SCRATCH + 0x3200);
+                t.set_u32(op(&t, end, 0x163), 0);
+                let freed = t.img.rel32_target(end + 0x17e);
+                t.set_u32(op(&t, freed, 0x8), 0);
+                // the parts' bank count (the rigs' fill reaches it): 1
+                let parts = t.img.rel32_target(end + 0x183);
+                t.set_u32(op(&t, parts, 0x76), 1);
+                log_calls(&mut t, 288, 2, &[], |m, a, _| {
+                    m.w32(a[1], 0);
+                    0x288
+                });
+            } else if dll == 610 {
+                // the scene's end: one actor, the ids, its done word
+                let end = t.img.rel32_target(f + 0xd3);
+                let ids = SCRATCH + 0x3000;
+                t.write(ids, &[3, 1, 4, 1, 5, 2, 6, 0]);
+                t.set_u32(op(&t, end, 0x11), ids);
+                t.set_u32(op(&t, end, 0x6d), ids);
+                t.set_u32(op(&t, end, 0x59), 1);
+                t.set_u32(op(&t, end, 0x15d), SCRATCH + 0x3200);
+                t.set_u32(SCRATCH + 0x3200, 0x55 + k);
+            } else if fade {
                 for o in [0xabu32, 0xbb] {
                     let s = op(&t, f, o);
                     t.write(s, &varied(0x40, k));

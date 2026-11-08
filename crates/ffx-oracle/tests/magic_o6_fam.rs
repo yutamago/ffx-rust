@@ -164,6 +164,8 @@ const HOST_START_PARTS: &[(u16, u32)] = &[
     (568, 0x10a0),
     (586, 0x10a0),
     (588, 0x10a0),
+    (598, 0x6740),
+    (600, 0x6140),
     (606, 0x6370),
 ];
 
@@ -196,7 +198,7 @@ fn host_start_parts_in_every_copy() {
         for o in [0xa3, 0xab] {
             t.set_u32(w(&t, o), 0x7777_7777);
         }
-        let done = (0x150..0x1c0u32)
+        let done = (0x150..0x1d0u32)
             .find(|&k| t.img.word(f + k) == 0xc35d_c033)
             .map(|k| t.img.word(f + k - 8))
             .expect("the G_DONE store");
