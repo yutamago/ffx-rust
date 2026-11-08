@@ -2915,6 +2915,9 @@ ports! {
     "r18 wave tick 0588" => r18::WAVE_TICK_0588, r18::wave_tick_0588;
     "r18 caster object 0588" => r18::CASTER_OBJECT_0588, r18::caster_object_0588;
     "r18 load step 0588" => r18::LOAD_0588, r18::load_0588;
+    "r18 four parts 0493" => r18::FOUR_PARTS_0493, r18::four_parts_0493;
+    "r18 load step 0564" => r18::LOAD_0564, r18::load_0564;
+    "r18 load step 0562" => r18::LOAD_0562, r18::load_0562;
     // round 18 (magic-r18): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3504,6 +3507,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 18 (magic-r18)
     ("r18 walk and reset 0577", &r18::WALK_RESET_0577),
     ("r18 start-up 0588", &r18::START_UP_0588),
+    ("r18 start-up 0564", &r18::START_UP_0564),
+    ("r18 start-up 0562", &r18::START_UP_0562),
     // round 18 (magic-r18): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
