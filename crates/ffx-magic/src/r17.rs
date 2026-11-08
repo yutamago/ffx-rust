@@ -4186,3 +4186,248 @@ pub const START_UP_0177: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0199`'s start-up (0x10001340, 1558 bytes; internal, no
+/// arguments; an 8-aligned /GS frame, `S = A - 0xc0`: the bone point `P`
+/// at `S+0x58`, the target `Z` at `S+0x38`, the caster `Y` at `S+0x48`,
+/// `V` at `S+0x68`, the matrix `M` at `S+0x78`): slot 719 `(NAME, 8, 0)`
+/// into `G_P` (two words first), the part set up
+/// ([`part_init`](crate::l5_objhost::part_init)); the yaw `K - ` slot 333
+/// of the first actor `C` wrapped once; two objects `O_j = OBJ + 0x130 j`
+/// ([`hosted_0199`](crate::sl_host::hosted_0199) `(.., 0)`) at `C`'s point
+/// and bone 6 height, moved by randoms (slot 314 `(2, 4, 2)`) with the
+/// yaw and `+0x114` plus `rand() % 8`; the third `O_2` (`(.., CB)`) at
+/// `C`'s point and bone height with the yaw; `Z` = `C`'s point, `Y` = the
+/// caster `*G_A`'s, the pitch `atan2(dy, hypot(dx, dz))` and the yaw `K -
+/// atan2(dz, dx)` (wrapped once) of `Z - Y` (`_libm_sse2_sqrt_precise`,
+/// `_CIatan2`); `Z` moved by `(0, 0, 4)` turned by them (slots 235, 328,
+/// 329, 229, 248), `w` 1.0; its record's start
+/// ([`record_node_start`](crate::o6_fam_pairs5::record_node_start) `(Z,
+/// 1.2, 0.99)`), a word, the task
+/// ([`task_start`](crate::s3_misc::task_start)); slot 413 or 215 (by `*G_F`)
+/// of `*G_N` into a record with its words and flag halfword; a node of the
+/// free ring ([`ring_take`](crate::r15::ring_take); an empty ring writes
+/// through address 0 as the original does) last on the task list. Returns
+/// 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0199<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let kf = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc0);
+    let (p, z, y, v, m) = (s + 0x58, s + 0x38, s + 0x48, s + 0x68, s + 0x78);
+    let tab = w(0x1b);
+    let first = |g: &G, sel: u32, chrs: u32| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+        g.read::<u32>(w(chrs).wrapping_add(4 * b))
+    };
+    let host = |g: &mut G, at: u32, obj: u32, word: u32, k: u32| {
+        // push word; sub esp, 0xc: the return address at S - 0x14
+        let esp = s.wrapping_sub(0x14);
+        g.write::<u32>(esp + 0x10, word);
+        let fr2 = Frame {
+            at: img.rel32_target(f + at),
+            esp,
+            edx: obj,
+            xmm: [0, 0, 0, u128::from(g.read::<u32>(w(k)))],
+            ..*fr
+        };
+        crate::sl_host::hosted_0199(g, img, &fr2);
+    };
+    stores(g, img, f, &[0x31, 0x3b]);
+    // call width: 3
+    let part = g
+        .call(slot_target(g, tab, 0xb3c / 4), 0, &[w(0x2d), 8, 0])
+        .eax;
+    g.write::<u32>(w(0x4b), part);
+    crate::l5_objhost::part_init(g, img, call(0x50));
+    let obj0 = w(0x5a);
+    let c = first(g, 0x55, 0x68);
+    let r = st0_f32(g.call(slot_target(g, w(0x6d), 0x534 / 4), 0, &[c]).st0);
+    let yaw = wrap_once(g, img, f, sub(kf(g, 0x81), r), (0x99, 0x8f, 0xaf, 0x8f));
+    let mut obj = obj0;
+    for _ in 0..2 {
+        host(g, 0xe3, obj, 0, 0xd7);
+        let c = first(g, 0xe8, 0xf6);
+        let at = obj + 0xd0;
+        // call width: 4
+        g.call(
+            slot_target(g, w(0xff), 0x418 / 4),
+            0,
+            &[c, at, at + 4, at + 8],
+        );
+        // call width: 3
+        g.call(slot_target(g, w(0x116), 0x430 / 4), 0, &[c, 6, p]);
+        let py = g.read::<u32>(p + 4);
+        g.write::<u32>(at + 4, py);
+        g.write::<u32>(at + 0xc, 0x3f80_0000);
+        let tab = w(0x13e);
+        for (k, by) in [(0u32, 2.0f32), (4, 4.0), (8, 2.0)] {
+            let r = random(g, tab, by);
+            let x = add(g.read::<f32>(at + k), r);
+            g.write::<f32>(at + k, x);
+        }
+        g.write::<f32>(obj + 0xc4, yaw);
+        // rand() % 8 (and eax, 0x80000007 with the sign fix-up)
+        let rnd = g.rand() & 0x8000_0007;
+        let rnd = if rnd.cast_signed() < 0 {
+            (rnd.wrapping_sub(1) | 0xffff_fff8).wrapping_add(1)
+        } else {
+            rnd
+        };
+        let x = g.read::<u32>(obj + 0x114).wrapping_add(rnd);
+        g.write::<u32>(obj + 0x114, x);
+        obj += 0x130;
+    }
+    host(g, 0x20e, obj, w(0x204), 0x1ff);
+    let c = first(g, 0x213, 0x226);
+    let at = obj + 0xd0;
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x22f), 0x418 / 4),
+        0,
+        &[c, at, at + 4, at + 8],
+    );
+    // call width: 3
+    g.call(slot_target(g, w(0x244), 0x430 / 4), 0, &[c, 6, p]);
+    let py = g.read::<u32>(p + 4);
+    g.write::<u32>(at + 4, py);
+    g.write::<u32>(at + 0xc, 0x3f80_0000);
+    g.write::<f32>(obj + 0xc4, yaw);
+    let a = g.read::<u32>(w(0x28f));
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x289), 0x418 / 4),
+        0,
+        &[a, y, y + 4, y + 8],
+    );
+    g.write::<u32>(y + 0xc, 0x3f80_0000);
+    let c = first(g, 0x29c, 0x2c0);
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x2c5), 0x418 / 4),
+        0,
+        &[c, z, z + 4, z + 8],
+    );
+    let d = |g: &G, i: u32| sub(g.read::<f32>(z + i), g.read::<f32>(y + i));
+    let (dy, dx, dz) = (d(g, 4), d(g, 0), d(g, 8));
+    g.write::<u32>(z + 0xc, 0x3f80_0000);
+    let sq = add(mul(dz, dz), mul(dx, dx));
+    let pitch = g.atan2(f64::from(dy), f64::from(sq).sqrt());
+    #[allow(clippy::cast_possible_truncation)] // fstp qword; cvtpd2ps
+    let yaw0 = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let yaw2 = wrap_once(
+        g,
+        img,
+        f,
+        sub(kf(g, 0x395), yaw0),
+        (0x3a4, 0x3b4, 0x3be, 0x3cb),
+    );
+    for (k, x) in (0u32..).zip([0, 0, 0x4080_0000]) {
+        g.write::<u32>(v + 4 * k, x);
+    }
+    g.call(slot_target(g, w(0x3db), 0x3ac / 4), 0, &[m]);
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let pitch32 = pitch as f32;
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x415), 0x520 / 4),
+        0,
+        &[m, m, pitch32.to_bits()],
+    );
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x436), 0x524 / 4),
+        0,
+        &[m, m, yaw2.to_bits()],
+    );
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 3
+    g.call(slot_target(g, w(0x455), 0x394 / 4), 0, &[p, m, v]);
+    // call width: 3
+    g.call(slot_target(g, w(0x478), 0x3e0 / 4), 0, &[z, z, p]);
+    // the record's start: (Z, 1.2, 0.99) over the yaw slot 329 left; the
+    // return address at S - 0x14
+    let esp = s.wrapping_sub(0x14);
+    for (k, x) in (1u32..).zip([z, 0x3f99_999a, 0x3f7d_70a4, yaw2.to_bits()]) {
+        g.write::<u32>(esp + 4 * k, x);
+    }
+    g.write::<u32>(z + 0xc, 0x3f80_0000);
+    let rs = Frame {
+        at: call(0x4b1),
+        esp,
+        ecx: w(0x4a4),
+        xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0x488)))],
+        ..*fr
+    };
+    crate::o6_fam_pairs5::record_node_start(g, img, &rs);
+    stores(g, img, f, &[0x4b8]);
+    // add esp, 0xc; push FN: the return address at S - 0xc
+    let esp = s.wrapping_sub(0xc);
+    g.write::<u32>(esp + 4, w(0x4c3));
+    let ts = Frame {
+        at: call(0x4c8),
+        esp,
+        ..*fr
+    };
+    crate::s3_misc::task_start(g, img, &ts);
+    let n = g.read::<u32>(w(0x4cd));
+    let flag = g.read::<u32>(w(0x4d6));
+    g.write::<u32>(w(0x4dc), n);
+    stores(g, img, f, &[0x4e6, 0x4f0, 0x4fa]);
+    let slot = if flag == 0 { 0x35c } else { 0x674 };
+    let r = g.call(slot_target(g, w(0x4e2), slot / 4), 0, &[n]).eax;
+    let flag = g.read::<u32>(w(0x51b));
+    g.write::<u32>(w(0x526), r);
+    stores(g, img, f, &[0x52a, 0x534]);
+    g.write::<u32>(w(0x540), 1);
+    if flag == 0 {
+        g.write::<u16>(w(0x54a), 0);
+    } else {
+        g.write::<u16>(w(0x553), 1);
+    }
+    let count = g.read::<u16>(w(0x55a));
+    let node = if count == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(0x569));
+        crate::r15::ring_take(g, img, f, node, count, (0x586, 0x58e, 0x5bf, 0x5ca));
+        node
+    };
+    let head = g.read::<u32>(w(0x5d0));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if head == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x5f2), node);
+    } else {
+        let tail = g.read::<u32>(w(0x5df));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x607), node);
+    Ret::eax(0)
+}
+
+/// [`start_up_0199`] (1558 bytes, 1 overlay).
+pub const START_UP_0199: Sig = Sig {
+    len: 1558,
+    hash: 0xa126_c6b7_58ba_7390,
+    calls: &[
+        (0x50, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0xe3, Callee::Sig(&crate::sl_host::HOSTED_0199)),
+        (0x20e, Callee::Sig(&crate::sl_host::HOSTED_0199)),
+        (0x341, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x354, Callee::Import("_CIatan2")),
+        (0x383, Callee::Import("_CIatan2")),
+        (
+            0x4b1,
+            Callee::Sig(&crate::o6_fam_pairs5::RECORD_NODE_START_0199_2160),
+        ),
+        (0x4c8, Callee::Sig(&crate::s3_misc::TASK_START)),
+        // __security_check_cookie
+        (0x60e, Callee::Any),
+    ],
+    imports: &[(0x1c6, "rand")],
+};
