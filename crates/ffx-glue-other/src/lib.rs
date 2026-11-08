@@ -228,6 +228,8 @@ pub mod h4y_shp;
 pub mod h4z_mdl;
 pub mod h4z_quad;
 pub mod l10_vfx;
+pub mod l11_btlpos;
+pub mod l11_shp;
 pub mod l6_vfx;
 pub mod l7_vfx;
 pub mod l8_vfx;

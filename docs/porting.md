@@ -293,6 +293,33 @@ Both are ported without new machinery in the bridges (M5 round
   that write through their arguments and copy into buffers, a second
   answer for a callee called twice).
 
+## The C++ runtime
+
+Some originals inline a `std::istringstream` or `std::ostringstream` and
+reach `MSVCP110.dll` through its imports (`basic_ios`, `basic_streambuf`,
+`operator<<(int)`, the locale and `ctype` facets). The oracle loads only
+`MSVCR110.dll` by default, so those imports are unbound there. Tests of
+such functions load the game's own C++ runtime as well:
+`Oracle::load_cpp_runtime(exe)` maps `MSVCP110.dll` from beside `FFX.exe`,
+binds its `MSVCR110` imports to the loaded C runtime and its `KERNEL32`
+imports to the `win32` stand-ins, runs its `DllMain`, and points
+`FFX.exe`'s `MSVCP110` import slots at its exports. Its image and the C
+runtime's heap are left out of the diff. This was chosen over fake stream
+objects in the tests: the streams' behaviour (word splitting, number
+formatting, the facets) then comes from the real library instead of a
+second implementation of it, and loading the DLL took one method and one
+`KERNEL32` stand-in (`DisableThreadLibraryCalls`).
+
+The ports use Rust strings (`ffx_system::l11_settings`: `Settings_Parse`,
+`Settings_Format`) with the same observable result. The test
+(`crates/ffx-oracle/tests/l11_settings.rs`) shows the pattern:
+- run the original once in both oracles before the cases, so the statics
+  the streams set on first use (locale ids, facets) are alike;
+- give `user_malloc` a bump allocator in memory left out of the diff
+  (`Oracle::add_private`) and make `operator delete` return: the original
+  allocates its strings and stream buffer, the port does not;
+- log what reaches the outside (here `printf`'s text, not its pointer).
+
 ## Choosing what to port
 
 `tools/worklist.py --module <m> --named` lists the functions of a module
