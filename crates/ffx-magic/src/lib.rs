@@ -2990,6 +2990,8 @@ ports! {
     // round 22 (magic-r22)
     "r22 task 0603" => r22::TASK_0603, r22::task_0603;
     "r22 step 0602" => r22::STEP_0602, r22::step_0602;
+    "r22 summon task 0645" => r22::SUMMON_TASK_0645, r22::summon_task_0645;
+    "r22 spark task 0645" => r22::SPARK_TASK_0645, r22::spark_task_0645;
     // round 22 (magic-r22): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

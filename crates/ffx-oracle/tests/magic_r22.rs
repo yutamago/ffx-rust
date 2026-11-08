@@ -118,6 +118,21 @@ fn vector_slots(t: &mut Twin) {
     });
 }
 
+/// Slot 248 (`a + b`) with only the first three lanes logged: the
+/// summon set-up's `w` lanes are frame junk (0 in the port).
+fn add_xyz(t: &mut Twin) {
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+            if i < 3 {
+                fold(m, 248, i, v.to_bits());
+            }
+        }
+        0x248
+    });
+}
+
 /// Float slots: 251, 19, 17 (by their first word) and 12 (the ground `g`
 /// plus the call count).
 fn float_slots(t: &mut Twin, g: f64) {
@@ -159,6 +174,7 @@ fn summon_setup_0645() {
     let vt = SCRATCH + 0x880;
     t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
     vector_slots(&mut t);
+    add_xyz(&mut t);
     rec(&mut t, 262, 4, |m, a| {
         let c = m.r32(row(262)) as f32;
         for i in 1..4 {
@@ -405,4 +421,300 @@ fn step_0602() {
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
     assert!(t.u32(row(384)) >= 6, "the sounds' stop ran twice");
+}
+
+/// `magic_0645` 0x10007c60 (`r22::summon_task_0645`): the start (state
+/// 0, through to 0x14), 0x14 waiting and at 0 (on to 10, waiting) and
+/// at -1, 10 waiting and at 0, 11 waiting and at 0, 12 waiting, at 0
+/// with the task's bit 2, the particle node's bit 2 and neither (on to
+/// 20000), 20000, and three other states.
+#[test]
+fn summon_task_0645() {
+    let Some(mut t) = twin(645) else { return };
+    let f = t.at(0x7c60);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    vector_slots(&mut t);
+    add_xyz(&mut t);
+    // the summon set-up's slots (as `summon_setup_0645`)
+    rec(&mut t, 262, 4, |m, a| {
+        let c = m.r32(row(262)) as f32;
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0 + c * 0.25);
+        }
+        0x262
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * f32::from_bits(a[2]);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x233
+    });
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x0100_0000);
+        }
+        0x327
+    });
+    for (s, x) in [
+        (15u32, 0.5f64),
+        (16, 0.75),
+        (17, 1.5),
+        (277, 2.0),
+        (333, -0.75),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 1.75);
+        0x601
+    });
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + 3.0);
+        }
+        0x290
+    });
+    // the handle's matrix
+    rec(&mut t, 210, 2, |m, a| {
+        let k = m.r32(row(210)) as f32;
+        for i in 0..16u32 {
+            wf(m, a[1] + 4 * i, 0.125 * i as f32 - k * 0.5);
+        }
+        0x210
+    });
+    for (s, n) in [
+        (7u32, 1usize),
+        (8, 2),
+        (639, 1),
+        (713, 1),
+        (719, 3),
+        (211, 2),
+        (941, 1),
+        (714, 5),
+        (215, 1),
+        (413, 1),
+        (14, 4),
+        (538, 2),
+        (213, 2),
+        (35, 5),
+        (34, 2),
+        (547, 1),
+        (276, 3),
+        (219, 2),
+        (257, 2),
+        (38, 3),
+        (296, 2),
+        (541, 3),
+        (30, 1),
+        (36, 2),
+        (228, 2),
+        (325, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    // the bone walk's DLL tables (as `summon_setup_0645`)
+    let ss = t.img.rel32_target(f + 0x184);
+    let bone = t.img.rel32_target(ss + 0x294);
+    let table = t.img.word(bone + 0xed);
+    rec(&mut t, 32, 2, |_, a| 0x0032_0000 ^ a[0]);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    t.set_u32(magic::TABLE + 4 * 1001, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 1001, 1, |m, a| 0x1001_0000 ^ m.r32(a[0]));
+    for o in [0xb0u32, 0x192] {
+        t.set_u32(t.img.word(ss + o) + 0x1c, magic::TRAPS + 16 * 1001);
+    }
+    let vt = SCRATCH + 0x880;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
+    // the particle node's globals (as `magic_s3.rs`'s test)
+    let pnw = t.img.rel32_target(f + 0x53c);
+    let pn = t.img.rel32_target(pnw + 0x35);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(t.img.word(wrapper + 0x04), lock);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    t.set_u32(t.img.word(pnw + 0x0d), owner);
+    for i in 0..0x40 {
+        t.set_u32(owner + 4 * i, 0x0a00_0000 + i);
+    }
+    let task = SCRATCH + 0x100;
+    let (tn, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let o = SCRATCH + 0x1_0000;
+    let list = op(&t, 0x5d);
+    let clist = op(&t, 0x1a3);
+    let ring_last = t.img.word(ss + 0x2e);
+    let ring_flags = t.img.word(ss + 0x49);
+    let old = SCRATCH + 0x800;
+    // (state, count, the task's bit 2, the particle node's bit 2)
+    let cases: [(u32, u32, u8, u8); 17] = [
+        (0, 7, 0, 0),
+        (0x14, 5, 0, 0),
+        (0x14, 0, 0, 0),
+        (0x14, u32::MAX, 0, 0),
+        (10, 3, 0, 0),
+        (10, 0, 0, 0),
+        (11, 2, 0, 0),
+        (11, 0, 0, 0),
+        (12, 1, 0, 0),
+        (12, 0, 4, 0),
+        (12, 0, 0, 4),
+        (12, 0, 0xfb, 0xfb),
+        (0x2710, 9, 0, 0),
+        (5, 1, 0, 0),
+        (0x13, 0, 0, 0),
+        (0x30, 2, 0, 0),
+        (9, 0, 0, 0),
+    ];
+    for (k, (state, count, bit, pbit)) in (0u32..).zip(cases) {
+        junk(&mut t, o, 0x6600, k);
+        // the model nodes' and the particle node's parents: none
+        for n in [0x5880u32, 0x5918, 0x62e0] {
+            t.set_u32(o + n + 0x14, 0);
+        }
+        t.set_u32(o + 0x18, state);
+        t.set_u32(o + 0x1c, count);
+        t.set_u8(o + 0x63c8, bit);
+        t.set_u8(o + 0x62e0 + 0xe8, pbit);
+        t.set_u32(o + 0x58d4, 0x00d4_0000 + k);
+        junk(&mut t, task, 0x100, k + 1);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, o);
+        t.set_u32(tn + 4, prev);
+        t.set_u32(tn + 8, next);
+        // the static lists: empty, or with a last node
+        for (l, i) in [(list, 0u32), (clist, 1)] {
+            junk(&mut t, l, 0x20, k + 2 + i);
+            t.set_u32(l + 0x10, if (k + i) % 2 == 0 { l } else { old });
+            t.set_u16(l + 0x18, 0x0305);
+        }
+        t.write(old, &[0x6c; 0x40]);
+        t.set_u32(ring_last, old);
+        t.set_u32(ring_flags, 0x8000_0007);
+        for o2 in [0x26fu32, 0x27c] {
+            t.set_u32(t.img.word(ss + o2), vt);
+        }
+        t.set_u8(t.img.word(ss + 0x286), 0x30 + k as u8);
+        t.set_u32(op(&t, 0x40b), SCRATCH + 0x7f20);
+        t.set_u32(lock, 0x77 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(32)) >= 1, "the summon set-up's bone walk");
+    assert!(t.u32(row(713)) >= 1, "the particle node's slot 713");
+}
+
+/// `magic_0645` 0x10006990 (`r22::spark_task_0645`): states 0, 1 waiting
+/// and done (on to 10: a spark born and drawn), 10 with the alpha up
+/// (sparks 5, 100, -7 and the last index: none born), at 0 and below (on
+/// to 20000), 11 (no sparks, three, past the cap of 96, a negative
+/// count; the alpha dropping or not), 20000 and three other states.
+#[test]
+fn spark_task_0645() {
+    let Some(mut t) = twin(645) else { return };
+    let f = t.at(0x6990);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    vector_slots(&mut t);
+    rec(&mut t, 210, 2, |m, a| {
+        let k = m.r32(row(210)) as f32;
+        for i in 0..16u32 {
+            wf(m, a[1] + 4 * i, 0.125 * i as f32 - k * 0.5);
+        }
+        0x210
+    });
+    // slot 230: the scale matrix's words folded into the output's
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16u32 {
+            let v = m.r32(a[1] + 4 * i).rotate_left(3) ^ i;
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x230
+    });
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| f64::from(m.r32(row(307)) % 13) * 0.07 + 0.02);
+    rec(&mut t, 324, 0, |m, _| 0x0324_0000 + m.r32(row(324)) * 0x111);
+    // the sequence step's slots (as `magic_s6_misc.rs`'s test)
+    let ss = t.img.rel32_target(f + 0x49f);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(t.img.word(ss + 0x24), lock);
+    let loaded = SCRATCH + 0x7e0;
+    rec(&mut t, 779, 2, move |m, _| 0x0779_0000 ^ m.r32(lock));
+    rec(&mut t, 773, 2, move |m, _| m.r32(loaded));
+    rec(&mut t, 774, 5, move |m, a| 0x0774_0000 ^ m.r32(a[2]));
+    rec(&mut t, 775, 2, |_, _| 0x775);
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 | (a[0] << 4));
+    rec(&mut t, 777, 1, |m, a| 0x0777_0001 ^ m.r32(a[0]));
+    rec(&mut t, 778, 6, |m, a| 0x0778_0000 ^ m.r32(a[2]));
+    let task = SCRATCH + 0x100;
+    let (tn, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let o = SCRATCH + 0x1_0000;
+    let (src, q) = (SCRATCH + 0x400, SCRATCH + 0x1000);
+    let zg = op(&t, 0x331);
+    // (state, wait, alpha, sparks, alpha drops, loaded)
+    let cases: [(u32, u32, u32, u32, u32, u32); 18] = [
+        (0, 7, 0x40, 5, 0, 0),
+        (1, 3, 0x40, 5, 0, 0),
+        (1, 0, 0, 5, 1, 1),
+        (10, 2, 0x40, 5, 0, 0),
+        (10, 2, 0x40, 100, 1, 1),
+        (10, 2, 0x40, (-7i32).cast_unsigned(), 0, 0),
+        (10, 2, 0x40, i32::MAX.cast_unsigned(), 0, 1),
+        (10, 2, 0, 5, 0, 0),
+        (10, 2, (-4i32).cast_unsigned(), 5, 0, 0),
+        (11, 2, 0x40, 0, 0, 0),
+        (11, 2, 0x30, 3, 1, 1),
+        (11, 2, 0x30, 0x70, 0, 0),
+        (11, 2, 0x30, (-2i32).cast_unsigned(), 1, 0),
+        (0x2710, 2, 0x30, 3, 0, 0),
+        (5, 2, 0x30, 3, 0, 0),
+        (0x4e20, 2, 0x30, 3, 0, 0),
+        (12, 0, 0x30, 3, 0, 0),
+        (9, 0, 0x30, 3, 0, 0),
+    ];
+    for (k, (state, wait, alpha, sparks, drops, is_loaded)) in (0u32..).zip(cases) {
+        junk(&mut t, o - 0x200, 0x1200, k);
+        t.set_u32(o + 0xe6c, state);
+        t.set_u32(o + 0xe70, wait);
+        t.set_u32(o + 0xe78, alpha);
+        t.set_u32(o + 0xe74, sparks);
+        t.set_u32(o + 0xe7c, drops);
+        t.set_u32(o + 0xe80, src);
+        junk(&mut t, src, 0x80, k + 1);
+        t.set_u32(src + 0x54, 0x00c0_0054 + k);
+        t.set_u32(o + 0xe50, q);
+        // the sparks' sequence: three steps, the records' steps and times
+        t.write(q, &[0x3c; 0x100]);
+        t.set_u16(q + 6, 3);
+        for i in 0..4u32 {
+            let r = q + 0x10 + 8 * i;
+            t.set_u16(r, (0x80 + 0x20 * i) as u16);
+            t.set_u16(r + 2, 0x180);
+            let strip = q + 0x80 + 0x20 * i;
+            t.set_u32(strip + 4, 0x10);
+            t.set_u8(strip + 0x14, (i * 9) as u8);
+        }
+        for i in 0..0x60u32 {
+            let rec_at = o + 0xcd0 + 4 * i;
+            t.set_u16(rec_at, (i % 4) as u16);
+            t.set_u16(rec_at + 2, (0x40 * i) as u16);
+        }
+        junk(&mut t, task, 0x40, k + 2);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, o);
+        t.set_u32(tn + 4, prev);
+        t.set_u32(tn + 8, next);
+        t.set_u32(zg, 0x00ab_0000 + k);
+        t.set_u32(loaded, is_loaded);
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(324)) >= 3, "the sparks born");
+    assert!(t.u32(row(776)) + t.u32(row(774)) >= 3, "the sequence steps");
 }
