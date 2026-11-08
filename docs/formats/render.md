@@ -334,8 +334,8 @@ game draws a rebuilt model's colours without other changes (ffx-remix's
 runtime served one for bsvr0200, commit 35863d4, checked in game 2026-11-08
 with its renderer off). 1,325 parts (123 maps) have a second `ST` stream and
 4,834 (83 maps) a second `Color` stream (whether their shaders read them is
-not checked); 1,224 instances (3,336 parts, scene.md) on 80 maps morph (the
-game rewrites their positions every frame; docs/scene-builder.md, "Morphing
+not checked); 1,224 instances (3,336 parts, `docs/formats/scene.md`, "Water") on 80 maps morph (the
+game rewrites their positions every frame; `docs/scene-builder.md`, "Morphing
 meshes").
 
 ## Samplers (ffx-demaster)
