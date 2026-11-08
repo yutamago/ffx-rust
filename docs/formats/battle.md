@@ -702,6 +702,33 @@ channel's target and, for the current request, the position now and
 targets of axes without a move. Floats are copied through the x87 there
 (a signalling NaN comes out quiet).
 
+### The party's battle lines (`system_01`)
+
+`system_01`'s party lines (worker 3, entry 2: a story range, the members
+present, a voice id and a line number per line) play through
+`Btl.AtelRequestSystem(8)`, which runs worker 2, entry 2:
+`Btl.StreamStandbyResult(voice)`, `Btl.StreamStart()`, then
+`Btl.MsgShow(0, line)` (`0x7120`) unless the line is a sigh. `0x7120`
+drops its first argument and calls `MsShowBattleMessage_0079d090(line)`.
+That reads `g_BtlMessages` (`0x0112a998`), which is script record 0's
+`+0x14`. `MsBattleInit` reads `system_01` first with `MsBattleExe`'s mode
+set, and `MsBtlScriptRecordShift_00782670` copies that record over record
+0. So the line number indexes `system_01`'s own message table
+(`new_<lang>pc/battle/btl/system_01/system_01.bin`, 494 entries, the event
+table layout; the kana flag picks the alternate). The current battle's
+table is record 1's `+0x14` (`0x0112a9b8`), the one `0x7042` reads.
+
+The window opens only when `MsGetBattleMessageFlag` is set: the language
+is not English (`MsGetCheckEnglish`, `TkGetLang() != 1`) and
+`g_BtlMessageOff` (`0x0112ca17`) is 0. The data agrees. The English table
+has text in 6 of its 494 entries and the Japanese in a few one-name
+entries, while de, fr, es, it, ko and zh fill every line. The voice id
+goes through `voiceidmapper.txt` (`sound.md`, "Voice") to an event of
+`voice/us|jp/ffx_us|jp_voice_btl.fev`. The Mi'ihen Highroad's lines 330
+to 337 are `0x4bb58504` `310104td` to `0x4bb5f5cb` `310111wk`, and each
+has a 48 kHz mono Vorbis sample of 0.8 to 4.4 s in both
+`_voice_btl_bank00.fsb` banks.
+
 ## Moving the actors: `MsMoveChr`
 
 `MsGetMoveTargetDist` (`0x007ab540`, `ffx_battle::predict`; cdecl, 11
