@@ -1293,9 +1293,8 @@ fn start_up_0444_setup(t: &mut Twin, f: u32, k: u32, (n, listed, flags): (u32, b
             (s << 16) ^ a.first().copied().unwrap_or(0)
         });
     }
-    rec(t, 324, 1, move |m, a| {
-        m.r32(row(324)).wrapping_mul(7) ^ a[0] ^ k
-    });
+    rec(t, 324, 0, move |m, _| m.r32(row(324)).wrapping_mul(7) ^ k);
+    deal_kinds(t, t.img.rel32_target(f + 0x4e));
     for (s, v) in [
         (404u32, 0.3f64),
         (333, 0.9),
@@ -1415,9 +1414,8 @@ fn start_up_0413_setup(t: &mut Twin, f: u32, k: u32, (n, listed, flags): (u32, b
             (s << 16) ^ a.first().copied().unwrap_or(0)
         });
     }
-    rec(t, 324, 1, move |m, a| {
-        m.r32(row(324)).wrapping_mul(7) ^ a[0] ^ k
-    });
+    rec(t, 324, 0, move |m, _| m.r32(row(324)).wrapping_mul(7) ^ k);
+    deal_kinds(t, t.img.rel32_target(f + 0x56));
     for (s, v) in [(404u32, 0.3f64), (333, 0.9), (12, 1.75)] {
         rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
         t.stub_st0(s, move |m, a| {
@@ -1512,4 +1510,14 @@ fn start_up_0413() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
     assert!(t.u32(row(390)) >= 5, "slot 390: {} calls", t.u32(row(390)));
+}
+
+/// The deal at `deal` with three kinds of two each (the DLL's own data
+/// has one kind, which clears the output: every dealt byte 0).
+fn deal_kinds(t: &mut Twin, deal: u32) {
+    let op = |t: &Twin, o: u32| t.img.word(deal + o);
+    t.set_u32(op(t, 0x17), 3);
+    for i in 0..3 {
+        t.set_u32(op(t, 0x46) + 0x1c * i, 2);
+    }
 }
