@@ -67,6 +67,7 @@ pub mod r15;
 pub mod r16;
 pub mod r17;
 pub mod r18;
+pub mod r19;
 pub mod r20;
 pub mod r9_load;
 pub mod r9_misc;
@@ -1619,6 +1620,21 @@ ports! {
     "r9 load step 0177" => r9_load::LOAD_0177, r9_load::load_0177;
     "r9 load step 0199" => r9_load::LOAD_0199, r9_load::load_0199;
     // round 17 (magic-r17): end of ports
+    // round 19 (magic-r19)
+    "r19 summon task 0343" => r19::SUMMON_TASK_0343, r19::summon_task_0343;
+    "r19 summon task 0202" => r19::SUMMON_TASK_0202, r19::summon_task_0202;
+    "r19 summon task 0144" => r19::SUMMON_TASK_0144, r19::summon_task_0144;
+    "r19 summon task 0207" => r19::SUMMON_TASK_0207, r19::summon_task_0207;
+    "r19 summon task 0106" => r19::SUMMON_TASK_0106, r19::summon_task_0106;
+    "r19 load step 0128" => r19::LOAD_0128, r19::load_0128;
+    "r9 load step 0285" => r9_load::LOAD_0285, r9_load::load_0285;
+    "r9 load step 0286" => r9_load::LOAD_0286, r9_load::load_0286;
+    "r9 load step 0287" => r9_load::LOAD_0287, r9_load::load_0287;
+    "r9 load step 0249" => r9_load::LOAD_0249, r9_load::load_0249;
+    "r9 load step 0444" => r9_load::LOAD_0444, r9_load::load_0444;
+    "r9 load step 0413" => r9_load::LOAD_0413, r9_load::load_0413;
+    "r9 summon start (nodes) 0082" => r9_summon::NODES_0082, r9_summon::nodes_0082;
+    // round 19 (magic-r19): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -3601,6 +3617,15 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r17 start-up 0200", &r17::START_UP_0200),
     ("r17 start-up 0177", &r17::START_UP_0177),
     ("r17 start-up 0199", &r17::START_UP_0199),
+    // round 19 (magic-r19)
+    ("r19 three nodes 0128", &r19::THREE_NODES_0128),
+    ("r19 start-up 0285", &r19::START_UP_0285),
+    ("r19 start-up 0286", &r19::START_UP_0286),
+    ("r19 start-up 0287", &r19::START_UP_0287),
+    ("r19 start-up 0249", &r19::START_UP_0249),
+    ("r19 start-up 0444", &r19::START_UP_0444),
+    ("r19 start-up 0413", &r19::START_UP_0413),
+    ("r19 start 0082", &r19::START_0082),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),

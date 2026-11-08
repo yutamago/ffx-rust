@@ -11,7 +11,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// `K - r` wrapped once (`comiss` + `jbe`: an unordered value stays):
 /// above `HI` less `T`, below `LO` plus `T'` (the floats at the operands
 /// `k`, `hi`, `t`, `lo`, `t2` of `f`).
-fn wrap_once<G: Game>(
+pub(crate) fn wrap_once<G: Game>(
     g: &G,
     img: &Image,
     f: u32,
@@ -1959,7 +1959,7 @@ pub const SUMMON_TASK_0333: Sig = Sig {
 /// `LIST + 0x10` read twice, `LIST` compared, its first child, its count,
 /// its last child stored, the vtable): the node's own child list empty,
 /// pass byte 0xff.
-fn summon_append<G: Game>(
+pub(crate) fn summon_append<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -2771,7 +2771,7 @@ pub const SUMMON_TASK_0330: Sig = Sig {
 /// immediate `link`), then the stores `post`. `last` is the old last as
 /// read, `list` the operand it is compared with.
 #[allow(clippy::too_many_arguments)] // the inlined steps' operands
-fn summon_append_abs<G: Game>(
+pub(crate) fn summon_append_abs<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,

@@ -374,7 +374,7 @@ pub fn buffer_setup(t: &mut magic::Twin, buf: u32) {
 /// at `sel` (operand `sel_at`), the characters (`chr_at`), slots 364 and
 /// 16 (floats from the character; one actor's scale below `LO`, one
 /// above `HI`) and 12 (a height).
-fn scaled_actors(t: &mut magic::Twin, f: u32, n: u32, (n_at, sel_at, chr_at): (u32, u32, u32)) {
+pub fn scaled_actors(t: &mut magic::Twin, f: u32, n: u32, (n_at, sel_at, chr_at): (u32, u32, u32)) {
     let op = |t: &magic::Twin, a: u32, o: u32| t.img.word(a + o);
     t.set_u32(op(t, f, n_at), n);
     let sel = SCRATCH + 0x180;

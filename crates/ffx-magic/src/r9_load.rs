@@ -123,6 +123,18 @@ copies! {
     load_0177 => LOAD_0177, Zero, crate::r17::start_up_0177, crate::r17::START_UP_0177;
     /// `magic_0199` 0x10001210.
     load_0199 => LOAD_0199, Zero, crate::r17::start_up_0199, crate::r17::START_UP_0199;
+    /// `magic_0285` 0x10004360.
+    load_0285 => LOAD_0285, Zero, crate::r19::start_up_0285, crate::r19::START_UP_0285;
+    /// `magic_0286` 0x10001210.
+    load_0286 => LOAD_0286, Zero, crate::r19::start_up_0285, crate::r19::START_UP_0286;
+    /// `magic_0287` 0x10004330.
+    load_0287 => LOAD_0287, Zero, crate::r19::start_up_0287, crate::r19::START_UP_0287;
+    /// `magic_0249` 0x100012b0.
+    load_0249 => LOAD_0249, Zero, crate::r19::start_up_0249, crate::r19::START_UP_0249;
+    /// `magic_0444` 0x100028e0.
+    load_0444 => LOAD_0444, Zero, crate::r19::start_up_0444, crate::r19::START_UP_0444;
+    /// `magic_0413` 0x10002b80.
+    load_0413 => LOAD_0413, Zero, crate::r19::start_up_0413, crate::r19::START_UP_0413;
     /// `magic_0046` 0x10001210.
     load_0046 => LOAD_0046, One, crate::m0046::start_up, crate::m0046::START_UP;
     /// `magic_0064` 0x100026d0.
