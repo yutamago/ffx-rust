@@ -9620,3 +9620,140 @@ fn l10_gdraw_rt_end() {
         assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
     });
 }
+
+// ---- tail10: the blur's one-axis set-up (ffx_pcui::l10_filter) ----
+
+use ffx_pcui::l10_filter::{self as l10fl, bridge as l10flb};
+
+/// A blur size: under one, the box sizes (2..9 taps), past nine taps (the
+/// downsampling passes, odd and even remainders, past 18), fractions,
+/// NaN.
+fn l10_blur_size(rng: &mut Rng) -> f32 {
+    match rng.below(10) {
+        0 => rng.below(100) as f32 / 100.0,
+        1..=3 => 1.0 + rng.below(1700) as f32 / 100.0,
+        4..=6 => 18.0 + rng.below(400) as f32 / 4.0,
+        7 => 100.0 + rng.below(3000) as f32,
+        8 => f32::from_bits(0x7fc0_0000),
+        _ => (2 + rng.below(40)) as f32,
+    }
+}
+
+/// `0x00a36590` (tail10): both axes (its only caller passes 0 and 1; any
+/// other value makes the original write over its own loop counter at
+/// `ebp - 0x98`), blur sizes of every branch, scales small, negative, 0;
+/// the object's texture 0 or not, the passes' results 0 (the second pass
+/// left out), the old texture, `keep` or new; rectangles near the target's
+/// edges. The two passes are recording stubs that also copy the tap
+/// records they are handed (0x90 bytes) into memory the diff sees; the
+/// API's `+0x48` a recording stdcall stub; `ceil` is the game's
+/// `MSVCR110`. The records' frame lies at the original's `ebp - 0x94` and
+/// is compared after the call. Synthetic only.
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn l10_filter_axis_setup() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a3_6590);
+        let mut seen = [0u32; 4];
+        for case in 0..600_u32 {
+            t.reset();
+            let copies = t.zeros(0x400);
+            let cursor = t.words(&[copies]);
+            // copy the 36 words at the fifth argument to [cursor]
+            let mut pre = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+            pre.extend([0x8b, 0x74, 0x24, 0x20]); // mov esi, [esp+0x20]
+            pre.extend([0x8b, 0x3d]);
+            pre.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+            pre.extend([0xb9, 36, 0, 0, 0]); // mov ecx, 36
+            pre.extend([0xf3, 0xa5]); // rep movsd
+            pre.extend([0x89, 0x3d]);
+            pre.extend(cursor.to_le_bytes()); // mov [cursor], edi
+            pre.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+            let old = 0x7700 + rng.below(4);
+            let keep = if rng.chance(3) { old } else { 0x7800 };
+            let ret = match rng.below(6) {
+                0 => 0,
+                1 => old,
+                2 => keep,
+                _ => 0x7900 + rng.below(16),
+            };
+            t.stub_pre(l10fl::BOX_PASS, false, 8, 0, ret, &pre);
+            t.stub_pre(l10fl::AXIS_PASS, false, 12, 0, ret, &pre);
+            let give_back = t.stub_code(0x48, false, 3, 3, rng.next());
+            let mut slots = vec![0u32; 0x20];
+            slots[0x48 / 4] = give_back;
+            let api = t.words(&slots);
+            let target = t.words(&[
+                1 + rng.below(0x200),
+                1 + rng.below(0x200),
+                rng.below(0x400),
+                rng.below(0x400),
+            ]);
+            let obj = t.words(&[0; 8]);
+            t.w32(obj + 0x1c, if case % 13 == 5 { 0 } else { old });
+            let edge = |rng: &mut Rng| match rng.below(4) {
+                0 => rng.below(4),
+                1 => 0x1f0 + rng.below(0x20),
+                _ => rng.below(0x200),
+            };
+            let rect = t.words(&[
+                edge(&mut rng),
+                edge(&mut rng),
+                edge(&mut rng),
+                edge(&mut rng),
+            ]);
+            let out = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let size = l10_blur_size(&mut rng);
+            let scale = match rng.below(5) {
+                0 => 0.0f32,
+                1 => -(rng.below(100) as f32) / 37.0,
+                _ => rng.below(400) as f32 / 113.0,
+            };
+            let axis = rng.below(2);
+            let args = [
+                axis,
+                api,
+                target,
+                obj,
+                size.to_bits(),
+                scale.to_bits(),
+                rect,
+                out,
+                keep,
+                rng.next(),
+            ];
+            let ebp = t.frame_ebp(10);
+            let taps = ebp - 0x94;
+            let fill: Vec<u8> = (0..l10fl::TAPS).map(|i| (i * 13) as u8).collect();
+            t.write(taps, &fill);
+            t.b.set_call_top(Some(taps - 0x200));
+            t.check("FUN_00a36590", 0x00a3_6590, Conv::Cdecl, &args, |m| {
+                Out::U32(l10flb::axis_setup(m, taps, args))
+            });
+            t.b.set_call_top(None);
+            for k in (0..l10fl::TAPS).step_by(4) {
+                assert_eq!(
+                    Mem::read::<u32>(&t.a, taps + k),
+                    Mem::read::<u32>(&t.b, taps + k),
+                    "case {case}: tap word {k:#x}"
+                );
+            }
+            let n = if size.is_nan() {
+                0.0
+            } else {
+                ((size - 1.0) * 0.5).ceil() + 1.0
+            };
+            let k = if n < 2.0 {
+                0
+            } else if n <= 9.0 {
+                1
+            } else if ret == 0 {
+                2
+            } else {
+                3
+            };
+            seen[k] += 1;
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
+    });
+}

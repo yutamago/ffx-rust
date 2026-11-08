@@ -33,6 +33,7 @@ pub mod dyngeo;
 pub mod iggy;
 pub mod input;
 pub mod item;
+pub mod l10_filter;
 pub mod l10_gdraw;
 pub mod l6_pcui;
 pub mod l6_pcui2;

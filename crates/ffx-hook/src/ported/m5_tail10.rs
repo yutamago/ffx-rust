@@ -10,6 +10,7 @@
 //! (the header's 0x47c bytes on the stack).
 
 use super::{StackFrame, mem, ported};
+use ffx_pcui::l10_filter::bridge as filter;
 use ffx_pcui::l10_gdraw::bridge as gdraw;
 use ffx_pother_a::l10_print::bridge as print;
 use ffx_system::l10_assets::bridge as assets;
@@ -33,5 +34,11 @@ ported! {
         let mut frame = StackFrame::<0x38>::new();
         let f = frame.at();
         gdraw::rt_end(&mut mem(), f, [r, x0, y0, x1, y1, stats])
+    }
+    /// `(axis, api, target, obj, size, scale, rect, out, keep, c)`: the blur's one-axis set-up; its tap records in a frame.
+    GDraw_filterAxisSetup_00a36590 @ 0x00a3_6590 => extern "C" fn gdraw_filter_axis_setup(axis: u32, api: u32, target: u32, obj: u32, size: u32, scale: u32, rect: u32, out: u32, keep: u32, c: u32) -> u32 {
+        let mut taps = StackFrame::<0x24>::new();
+        let at = taps.at();
+        filter::axis_setup(&mut mem(), at, [axis, api, target, obj, size, scale, rect, out, keep, c])
     }
 }
