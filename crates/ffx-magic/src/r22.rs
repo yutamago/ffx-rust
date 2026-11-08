@@ -1878,3 +1878,362 @@ pub const STEP_0483: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0491`'s flight start (0x10003c50, 1346 bytes; internal, `ecx`
+/// = the owner `W`; a 16-aligned frame through `ebx`: `ebp = (E - 0xc) &
+/// !0xf`, the points `A` at `ebp - 0x14` and `B` at `ebp - 0x24`, the
+/// offset `Q` at `ebp - 0x34`, the matrix `M` at `ebp - 0x80`). `A` =
+/// bone 0x11 of the actor `S` (`*G_S`, or `ACTORS[MAP[W[0x504]]]`; slots
+/// 262, 268; `w` 1.0), `B` = the same bone of `*G_T`. The object `W`
+/// starts ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2)
+/// `(0, -, 0x10, CB)`, scale `K`) and takes `A` at `+0xd0`; its yaw `+0xc4`
+/// = `K' - slot 333 (ACTORS[*MAP])` wrapped once, `+0x120` the actor's
+/// number; the record `W + 0x488` (cleared, its two DLL words) is `W +
+/// 0x110`. The flight is a cubic: `P0 = A` (`+0x4bc`), `P1` = `A + D +
+/// Q` (`+0x4cc`, its `y` at most slot 12's ground less `K2`; `D = (B - A)
+/// / K1`), `P2 = A + D K3 - Q` (`+0x4dc`), `P3 = B` (`+0x4ec`), where `Q`
+/// = slot 314 `(40)`, slot 404 `(20)`, 0 turned by the yaw `K4 -
+/// atan2(dz, dx)` (wrapped once; slots 235, 329, 229). `+0x4fc` 0, the
+/// rate `+0x500` 1/12, the counts `+0x508` 12, `+0x510` 16; the trail's
+/// sprites `W + 0x260` coloured by `A`
+/// ([`sprite_init_colour`](crate::sb_misc::sprite_init_colour)), `+0x484`
+/// 0x80, `+0x47c` 0.5, `+0x46c` 0x40404040. Returns the sprites' `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn flight_start_0491<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let o = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(0xc) & !0xf;
+    let (a, b, q, m) = (
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x34),
+        ebp.wrapping_sub(0x80),
+    );
+    let body = ebp.wrapping_sub(0xa0);
+    // the actor of `W[0x504]`: -1 the global at `sole`, else through
+    // the map (`map`) and the table (`table`)
+    let actor = |g: &G, sole: u32, map: u32, table: u32| {
+        let i = g.read::<u32>(o + 0x504);
+        if i == u32::MAX {
+            rd(g, sole)
+        } else {
+            let n = u32::from(g.read::<u8>(rd(g, map).wrapping_add(i)));
+            g.read::<u32>(w(table).wrapping_add(4 * n))
+        }
+    };
+    let s = actor(g, 0x37, 0x3e, 0x49);
+    // call width: 4
+    g.call(t(g, 0x5a, 262), 0, &[s, a, a + 4, a + 8]);
+    // call width: 3
+    g.call(t(g, 0x6c, 268), 0, &[s, 0x11, a]);
+    let s = rd(g, 0x7d);
+    g.write::<u32>(a + 0xc, 0x3f80_0000);
+    // call width: 4
+    g.call(t(g, 0x91, 262), 0, &[s, b, b + 4, b + 8]);
+    // call width: 3
+    g.call(t(g, 0xaa, 268), 0, &[s, 0x11, b]);
+    // push CB; push 0x10; push ecx; push 0: the return address at
+    // body - 0x14 (the third word is the `ecx` slot 268 leaves: the start
+    // does not read it)
+    let esp = body.wrapping_sub(0x14);
+    g.write::<u32>(esp + 4, 0);
+    g.write::<u32>(esp + 0xc, 0x10);
+    g.write::<u32>(esp + 0x10, w(0xc7));
+    g.write::<u32>(b + 0xc, 0x3f80_0000);
+    let sf = Frame {
+        at: img.rel32_target(f + 0xd8),
+        esp,
+        ecx: 0,
+        edx: o,
+        xmm: [0, 0, 0, u128::from(rd(g, 0xbd))],
+        ..*fr
+    };
+    crate::s6_misc::start_object_anim_2(g, img, &sf);
+    for i in 0..4u32 {
+        let x = g.read::<u32>(a + 4 * i);
+        g.write::<u32>(o + 0xd0 + 4 * i, x);
+    }
+    let n = u32::from(g.read::<u8>(rd(g, 0x111)));
+    let who = g.read::<u32>(w(0x11b).wrapping_add(4 * n));
+    let r = st0_f32(g.call(t(g, 0x120, 333), 0, &[who]).st0);
+    let yaw = sub(k(g, 0x136), r);
+    let yaw = crate::r20::wrap_once(g, img, f, yaw, (0x150, 0x146, 0x160, 0x146));
+    g.write::<f32>(o + 0xc4, yaw);
+    let i = g.read::<u32>(o + 0x504);
+    let num = if i == u32::MAX {
+        rd(g, 0x181)
+    } else {
+        u32::from(g.read::<u8>(rd(g, 0x188).wrapping_add(i)))
+    };
+    let at = |g: &G, p: u32, j: u32| g.read::<f32>(p + 4 * j);
+    let c = k(g, 0x19e);
+    let dx = div(sub(at(g, b, 0), at(g, a, 0)), c);
+    let dy = div(sub(at(g, b, 1), at(g, a, 1)), c);
+    let dz = div(sub(at(g, b, 2), at(g, a, 2)), c);
+    g.write::<u32>(o + 0x120, num);
+    let rec = o + 0x488;
+    for (off, x) in [
+        (0x18u32, 0u32),
+        (0x14, 0),
+        (0x10, 0),
+        (0x1c, 0),
+        (0x20, w(0x1f0)),
+        (0x24, w(0x1fb)),
+        (0x28, 0),
+        (0x2c, 0),
+    ] {
+        g.write::<u32>(rec + off, x);
+    }
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(o + 0x110, rec);
+    for (dst, j) in [(0x4c4u32, 2u32), (0x4bc, 0), (0x4c0, 1), (0x4c8, 3)] {
+        let x = g.read::<u32>(a + 4 * j);
+        g.write::<u32>(o + dst, x);
+    }
+    let q0 = st0_f32(g.call(t(g, 0x22f, 314), 0, &[0x4220_0000]).st0);
+    g.write::<f32>(q, q0);
+    let q1 = st0_f32(g.call(t(g, 0x271, 404), 0, &[0x41a0_0000]).st0);
+    g.write::<f32>(q + 4, q1);
+    g.write::<u32>(q + 8, 0);
+    g.write::<u32>(q + 0xc, 0x3f80_0000);
+    // `_CIatan2` on x87 (the two differences as doubles), rounded once
+    #[allow(clippy::cast_possible_truncation)] // fstp qword; cvtpd2ps
+    let ang = g.atan2(
+        f64::from(sub(at(g, b, 2), at(g, a, 2))),
+        f64::from(sub(at(g, b, 0), at(g, a, 0))),
+    ) as f32;
+    let yaw = sub(k(g, 0x2e8), ang);
+    let yaw = crate::r20::wrap_once(g, img, f, yaw, (0x2f7, 0x309, 0x313, 0x320));
+    g.call(t(g, 0x331, 235), 0, &[m]);
+    // call width: 3
+    g.call(t(g, 0x350, 329), 0, &[m, m, yaw.to_bits()]);
+    // call width: 3
+    g.call(t(g, 0x36c, 229), 0, &[q, m, q]);
+    g.write::<u32>(o + 0x4d8, 0x3f80_0000);
+    for (j, d, dst) in [(0u32, dx, 0x4ccu32), (1, dy, 0x4d0), (2, dz, 0x4d4)] {
+        let v = add(add(at(g, a, j), d), at(g, q, j));
+        g.write::<f32>(o + dst, v);
+    }
+    let h = actor(g, 0x3df, 0x3e6, 0x3f1);
+    let ground = st0_f32(g.call(t(g, 0x3f7, 12), 0, &[h]).st0);
+    // comiss; jbe: an unordered height stays
+    if g.read::<f32>(o + 0x4d0) > ground {
+        g.write::<f32>(o + 0x4d0, sub(ground, k(g, 0x422)));
+    }
+    let s3 = k(g, 0x432);
+    g.write::<u32>(o + 0x4e8, 0x3f80_0000);
+    for (j, d, dst) in [(0u32, dx, 0x4dcu32), (1, dy, 0x4e0), (2, dz, 0x4e4)] {
+        let v = sub(add(mul(d, s3), at(g, a, j)), at(g, q, j));
+        g.write::<f32>(o + dst, v);
+    }
+    for j in 0..4u32 {
+        let x = g.read::<u32>(b + 4 * j);
+        g.write::<u32>(o + 0x4ec + 4 * j, x);
+    }
+    g.write::<u32>(o + 0x4fc, 0);
+    g.write::<u32>(o + 0x500, 0x3daa_aaab);
+    g.write::<u32>(o + 0x508, 0xc);
+    g.write::<u32>(o + 0x510, 0x10);
+    let owner = g.read::<u32>(rd(g, 0x502).wrapping_add(0x10));
+    // push A: the return address at body - 8
+    let esp = body.wrapping_sub(8);
+    g.write::<u32>(esp + 4, a);
+    let eax = crate::sb_misc::sprite_init_colour(g, esp, o + 0x260, owner);
+    g.write::<u32>(o + 0x484, 0x80);
+    g.write::<u32>(o + 0x47c, 0x3f00_0000);
+    g.write::<u32>(o + 0x46c, 0x4040_4040);
+    Ret::eax(eax)
+}
+
+/// [`flight_start_0491`] (1346 bytes, 1 overlay).
+pub const FLIGHT_START_0491: Sig = Sig {
+    len: 1346,
+    hash: 0x78fe_02db_9b82_c640,
+    calls: &[
+        (0xd8, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+        (0x2d2, Callee::Import("_CIatan2")),
+        (0x50a, Callee::Sig(&crate::sb_misc::SPRITE_INIT_COLOUR)),
+        // __security_check_cookie
+        (0x537, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// One lane of [`flight_step_0491`]'s cubic: `(1 - t)^3 p0 + 3 (1 - t)^2
+/// t p1 + 3 (1 - t) t^2 p2 + t^3 p3` in the original's order (`one` and
+/// `three` its constants).
+fn cubic(t: f32, one: f32, three: f32, [p0, p1, p2, p3]: [f32; 4]) -> f32 {
+    use crate::sb_sse::add;
+    let u = sub(one, t);
+    let t2 = mul(t, t);
+    let mid = mul(mul(mul(mul(u, t), u), three), p1);
+    let first = mul(mul(mul(u, u), u), p0);
+    let s = add(mid, first);
+    let third = mul(mul(mul(t2, u), three), p2);
+    let last = mul(mul(t2, t), p3);
+    add(add(s, third), last)
+}
+
+/// `magic_0491`'s flight step (0x100044f0, 972 bytes; a task function
+/// (its address pushed at 0x100036f1), cdecl `(task)`, the owner `W =
+/// task[0x14]`; a 16-aligned frame: `B = ((E - 4) & !0xf) - 0x70`, the
+/// point `P` at `B + 0x10`, the matrix at `B + 0x20`). While the wait
+/// `W + 0x50c` runs it counts down (at 0 the flight starts:
+/// [`flight_start_0491`]); then the wait `+0x510`. Then the time `+0x4fc`
+/// steps by `+0x500` (at most 1.0) and `P` is the cubic of `+0x4bc..`
+/// (`w` 1.0). Without sparks left (`+0x508` 0) the trail fades (`+0x484`
+/// halved while above 0) or the task is given back
+/// ([`give_back`](crate::sa_pool::give_back)); else, counting them down
+/// (at 0 the burst, [`burst_0491`](crate::r20::burst_0491)), six pool
+/// records ([`pool_take`](crate::sb_misc::pool_take); none left ends it)
+/// get slot 719 `(PART, 9, 1)`, `P` (slot 325) and a random direction
+/// (three slot 307 numbers less `K`, scaled by `K'`). The trail drawn at
+/// `P` ([`trail_draw`](crate::s4_misc::trail_draw), the matrix slot 235's
+/// with 0.03 on its diagonal). Returns what the last step returns.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn flight_step_0491<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let task = fr.arg(g, 0);
+    let o = g.read::<u32>(task + 0x14);
+    let b = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x70);
+    let (p, m) = (b + 0x10, b + 0x20);
+    let c = g.read::<i32>(o + 0x50c);
+    if c > 0 {
+        let c = c - 1;
+        g.write::<u32>(o + 0x50c, c.cast_unsigned());
+        if c != 0 {
+            return Ret::eax(c.cast_unsigned());
+        }
+        let sf = Frame {
+            at: call(0x3a),
+            esp: b.wrapping_sub(4),
+            ecx: o,
+            ..*fr
+        };
+        return flight_start_0491(g, img, &sf);
+    }
+    let d = g.read::<i32>(o + 0x510);
+    if d > 0 {
+        let d = d - 1;
+        g.write::<u32>(o + 0x510, d.cast_unsigned());
+        return Ret::eax(d.cast_unsigned());
+    }
+    let one = k(g, 0x85);
+    let u = crate::sb_sse::add(g.read::<f32>(o + 0x500), g.read::<f32>(o + 0x4fc));
+    g.write::<f32>(o + 0x4fc, u);
+    // comiss; jbe: an unordered time stays
+    if u > one {
+        g.write::<u32>(o + 0x4fc, 0x3f80_0000);
+    }
+    let three = k(g, 0xac);
+    for j in 0..3u32 {
+        let tt = g.read::<f32>(o + 0x4fc);
+        let pts = [0x4bcu32, 0x4cc, 0x4dc, 0x4ec].map(|q| g.read::<f32>(o + q + 4 * j));
+        g.write::<f32>(p + 4 * j, cubic(tt, one, three, pts));
+    }
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let e = g.read::<u32>(o + 0x508);
+    if e == 0 {
+        let fade = g.read::<i32>(o + 0x484);
+        if fade <= 0 {
+            let eax = crate::sa_pool::give_back(g, img, call(0x225), task);
+            return Ret::eax(eax);
+        }
+        g.write::<u32>(o + 0x484, (fade / 2).cast_unsigned());
+    } else {
+        let e = e.wrapping_sub(1);
+        g.write::<u32>(o + 0x508, e);
+        if e == 0 {
+            let bf = Frame {
+                at: call(0x246),
+                esp: b.wrapping_sub(4),
+                ecx: o,
+                ..*fr
+            };
+            crate::r20::burst_0491(g, img, &bf);
+        }
+        let take = call(0x251);
+        let random = |g: &mut G, o: u32| st0_f32(g.call(t(g, o, 307), 0, &[]).st0);
+        for _ in 0..6 {
+            let r = crate::sb_misc::pool_take(g, img, take);
+            if r == 0 {
+                break;
+            }
+            // call width: 3
+            let part = g.call(t(g, 0x261, 719), 0, &[w(0x270), 9, 1]).eax;
+            g.write::<u32>(r + 0x30, part);
+            g.write::<u16>(r + 0x38, 0xffff);
+            g.write::<u16>(r + 0x3a, 0x200);
+            g.write::<u32>(r + 0x34, 1);
+            // call width: 2
+            g.call(t(g, 0x292, 325), 0, &[r, p]);
+            for (j, (ro, ko, so)) in [
+                (0x2a7u32, 0x2c4u32, 0x2d1u32),
+                (0x2c9, 0x2f0, 0x2fd),
+                (0x2f5, 0x31c, 0x33a),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let v = sub(random(g, ro), k(g, ko));
+                if j == 2 {
+                    for off in [0x1cu32, 0x20, 0x24, 0x28] {
+                        g.write::<u32>(r + off, 0);
+                    }
+                    let v = mul(v, k(g, so));
+                    g.write::<u32>(r + 0x2c, 0x3f80_0000);
+                    g.write::<f32>(r + 0x18, v);
+                } else {
+                    g.write::<f32>(r + 0x10 + 4 * j as u32, mul(v, k(g, so)));
+                }
+            }
+            g.write::<u32>(r + 0x3c, 0x3c75_c28f);
+            g.write::<u32>(r + 0x4c, 0x20);
+            g.write::<u32>(r + 0x50, 0x20);
+            g.write::<u8>(r + 0x6b, 0);
+        }
+    }
+    g.call(t(g, 0x37d, 235), 0, &[m]);
+    for off in [0x48u32, 0x34, 0x20] {
+        g.write::<u32>(b + off, 0x3cf5_c28f);
+    }
+    // push P: the return address at B - 8
+    let esp = b.wrapping_sub(8);
+    g.write::<u32>(esp + 4, p);
+    let tf = Frame {
+        at: call(0x3b4),
+        esp,
+        ecx: o + 0x260,
+        edx: m,
+        ..*fr
+    };
+    Ret::eax(crate::s4_misc::trail_draw(g, img, &tf))
+}
+
+/// [`flight_step_0491`] (972 bytes, 1 overlay).
+pub const FLIGHT_STEP_0491: Sig = Sig {
+    len: 972,
+    hash: 0xa2cd_e11d_a5b8_24b1,
+    calls: &[
+        (0x3a, Callee::Sig(&FLIGHT_START_0491)),
+        (0x225, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x246, Callee::Sig(&crate::r20::BURST_0491)),
+        (0x251, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x3b4, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        // __security_check_cookie
+        (0x47, Callee::Any),
+        (0x69, Callee::Any),
+        (0x232, Callee::Any),
+        (0x3c4, Callee::Any),
+    ],
+    imports: &[],
+};

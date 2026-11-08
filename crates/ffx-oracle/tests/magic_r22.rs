@@ -1150,12 +1150,14 @@ fn step_0483() {
         (1, 3, [0, 0, 1], 0, 0, [0x39, 1, 0, 0, 0, 0], [0, 0, 0, 0]),
         (1, 3, [0, 1, 0], 0, 0, [0x8c, 0, 0, 0, 0, 0], [0; 4]),
         (1, 3, [0, 1, 0], 0, 0, [0, 0, 0, 1, 0, 0], [0; 4]),
-        (1, 3, [0, 1, 0], 0, 1, [0, 0, 0xc, 1, 0, 0], [0, 1, 0, 0]),
+        (1, 3, [0, 1, 0], 0, 1, [0, 0, 0xa, 1, 0, 0], [0, 1, 0, 0]),
         (1, 3, [0, 1, 0], 1, 0, [0, 0, 0xc, 1, 0, 0], [0, 0, 0, 0]),
         (1, 3, [0, 1, 0], 0, 0, [0, 0, 5, 1, 0, 0], [0, 1, 0, 0]),
         (1, 3, [1, 0, 0], 0, 0, [0, 0, 0, 0, 0, 0], [0; 4]),
-        (1, 3, [1, 0, 0], 0, 1, [0, 0, 0, 0, 0x40, 1], [0, 0, 1, 1]),
+        (1, 3, [1, 0, 0], 0, 1, [0, 0, 0, 0, 0x50, 1], [0, 0, 1, 1]),
+        (1, 3, [1, 0, 0], 1, 0, [0, 0, 0, 0, 0x3c, 1], [0, 0, 1, 1]),
         (1, 3, [1, 0, 0], 1, 0, [0, 0, 0, 0, 0x3b, 1], [0, 0, 1, 1]),
+        (1, 3, [0, 1, 0], 0, 1, [0, 0, 9, 1, 0, 0], [0, 1, 0, 0]),
         (1, 3, [1, 0, 0], 0, 0, [0, 0, 0, 0, 0x51, 1], [0, 0, 1, 1]),
         (1, 3, [0, 0, 0], 0, 0, [0x8c, 0, 0, 0, 0, 0], [0; 4]),
     ];
@@ -1200,4 +1202,265 @@ fn step_0483() {
     assert!(t.u32(row(714)) >= 6, "the part starts");
     assert!(t.u32(row(712)) >= 4, "the parts' runs");
     assert!(t.u32(row(214)) >= 1, "the count 0x8c");
+}
+
+/// `magic_0491`'s flight: the slots and globals of the start
+/// (0x10003c50), the step (0x100044f0), the burst and the trail.
+fn flight_setup_0491(t: &mut Twin) {
+    magic_r11::object_slots(t);
+    let step = t.at(0x44f0);
+    let start = t.img.rel32_target(step + 0x3a);
+    let obj_start = t.img.rel32_target(start + 0xd8);
+    magic_r11::object_start_auto(t, obj_start);
+    rec(t, 262, 4, |m, a| {
+        let c = m.r32(row(262)) as f32;
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0 + c * 0.75 + (a[0] % 5) as f32);
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        let c = m.r32(row(268)) as f32;
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 1.25 - i as f32 + c * 0.5);
+        }
+        0x268
+    });
+    for (s, x) in [(333u32, 0.375f64), (314, 1.75), (404, -2.5), (12, 0.625)] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            x + f64::from(a[0] & 7) * 0.5 + f64::from(m.r32(row(s)) % 3)
+        });
+    }
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16u32 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                if i % 5 == 0 { 1.0 } else { 0.0625 * i as f32 },
+            );
+        }
+        0x235
+    });
+    rec(t, 329, 3, |m, a| {
+        for i in 0..16u32 {
+            let v = rf(m, a[1] + 4 * i) + f32::from_bits(a[2]) * 0.125;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[2] + 4 * i);
+            fold(m, 229, 4 + i, x);
+            let v = rf(m, a[1] + 4 * i) * 0.5 + f32::from_bits(x);
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 229, i, v.to_bits());
+        }
+        0x229
+    });
+    // the burst's (as `magic_r20.rs`'s test) and the sparks' slots
+    rec(t, 618, 5, |m, a| {
+        m.w32(a[3], (-150i32).cast_unsigned());
+        0x618
+    });
+    rec(t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| f64::from(m.r32(row(307)) % 13) * 0.07 + 0.02);
+    rec(t, 232, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, f32::from_bits(v) * 0.5);
+        }
+        0x232
+    });
+    rec(t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    // the trail's slots (as `magic_s4_misc.rs`'s test)
+    let lock = SCRATCH + 0x9000;
+    let td = t.img.rel32_target(step + 0x3b4);
+    t.set_u32(t.img.word(td + 0x463), lock);
+    t.set_u32(t.img.word(td + 0x520), 0x0cc0_0cc0);
+    for s in [723u32, 724] {
+        rec(t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, (i as f32 + 1.0) * 0.5);
+            }
+            s
+        });
+    }
+    rec(t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x234
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..3 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 248, i, v.to_bits());
+        }
+        0x248
+    });
+    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(t, 773, 4, |_, a| (a[3] >> 1) & 1);
+    for s in [774u32, 775, 778, 779] {
+        rec(t, s, 2, move |_, a| s ^ a[0]);
+    }
+    rec(t, 776, 1, |_, a| a[0] << 4);
+    rec(t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
+}
+
+/// The trail block of the owner `o` (`o + 0x260`): `n` sprites.
+fn trail_0491(t: &mut Twin, o: u32, n: u32, k: u32) {
+    let obj = o + 0x260;
+    t.set_u32(obj + 4, 1);
+    t.set_u16(obj + 8, (k % 3) as u16);
+    t.set_u16(obj + 0xa, 0x100);
+    for j in 0..32u32 {
+        let r = 1.0 + j as f32 * 0.3;
+        let a = j as f32 * 0.7;
+        for (i, x) in (0u32..).zip([r * a.cos(), j as f32 * 0.2, r * a.sin(), 1.0]) {
+            t.set_u32(obj + 0xc + 16 * j + 4 * i, x.to_bits());
+        }
+    }
+    t.write(obj + 0x20c, &[10, 200, 0, 0x80, 250, 3, 128, 0x40]);
+    for (off, x) in [(0x214u32, 1.5f32), (0x218, 0.25), (0x21c, 0.75)] {
+        t.set_u32(obj + off, x.to_bits());
+    }
+    t.set_u32(obj + 0x220, 3 + k);
+    t.set_u32(obj + 0x224, n);
+}
+
+/// `magic_0491` 0x10003c50 (`r22::flight_start_0491`) and 0x100044f0
+/// (`r22::flight_step_0491`): the start with the actor from the global
+/// and through the map, the yaws wrapped down, up and kept, the ground
+/// above and below the middle point; the step's two waits (counting and
+/// at their end: the start), the time capped and not, no sparks (the
+/// trail fading, gone: given back), sparks counting (six records, the
+/// pool running out) and at their end (the burst).
+#[test]
+fn flight_0491() {
+    let Some(mut t) = twin(491) else { return };
+    flight_setup_0491(&mut t);
+    let step = t.at(0x44f0);
+    let start = t.img.rel32_target(step + 0x3a);
+    let op = |t: &Twin, f: u32, o: u32| t.img.word(f + o);
+    let o = SCRATCH + 0x1_0000;
+    let map = SCRATCH + 0x600;
+    let take = t.img.rel32_target(step + 0x251);
+    let recs = SCRATCH + 0x2_0000;
+    let sprite_owner = SCRATCH + 0x700;
+    // (actor index, the table's yaw input, ground)
+    let starts: [(u32, f32, f32); 4] = [
+        (u32::MAX, 0.25, 10.0),
+        (1, 5.0, -10.0),
+        (2, -5.0, 0.0),
+        (u32::MAX, 0.0, f32::NAN),
+    ];
+    let globals = |t: &mut Twin, k: u32| {
+        t.write(map, &[2, 0, 1, 3, 1, 2, 0, 3]);
+        for (o2, v) in [
+            (0x37u32, 0x00a0_0037),
+            (0x7d, 0x00a0_007d),
+            (0x181, 0x0000_0181),
+            (0x3df, 0x00a0_03df),
+        ] {
+            t.set_u32(op(t, start, o2), v + k);
+        }
+        for o2 in [0x3eu32, 0x188, 0x3e6, 0x111] {
+            t.set_u32(op(t, start, o2), map);
+        }
+        for o2 in [0x49u32, 0x3f1, 0x11b] {
+            let tab = op(t, start, o2);
+            for i in 0..4 {
+                t.set_u32(tab + 4 * i, 0x00ac_0000 + 0x100 * i + k);
+            }
+        }
+        t.set_u32(op(t, start, 0x502), sprite_owner);
+        t.set_u32(sprite_owner + 0x10, 0x00b0_0010 + k);
+    };
+    for (k, (idx, _yaw, _g)) in (0u32..).zip(starts) {
+        junk(&mut t, o, 0x600, k);
+        t.set_u32(o + 0x504, idx);
+        globals(&mut t, k);
+        scrub(&mut t);
+        let c = Call {
+            ecx: o,
+            ..Call::default()
+        };
+        t.check(start, c, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r22::flight_start_0491(g, img, fr)
+        });
+    }
+    // the step: (wait 1, wait 2, time, rate, sparks left, trail count,
+    // records in the pool)
+    let task = SCRATCH + 0x100;
+    let cases: [(u32, u32, f32, f32, u32, u32, u32); 9] = [
+        (3, 0, 0.0, 0.1, 0, 2, 0x40),
+        (1, 0, 0.0, 0.1, 0, 2, 0x40),
+        (0, 4, 0.0, 0.1, 0, 2, 0x40),
+        (0, 0, 0.25, 0.1, 0, 3, 0x40),
+        (0, 0, 0.95, 0.1, 0, 0, 0x40),
+        (0, 0, 0.5, 0.0833, 5, 1, 0x40),
+        (0, 0, 0.5, 0.0833, 5, 1, 3),
+        (0, 0, 0.5, 0.0833, 1, 1, 0x40),
+        (
+            (-1i32).cast_unsigned(),
+            (-2i32).cast_unsigned(),
+            0.75,
+            0.5,
+            2,
+            1,
+            0,
+        ),
+    ];
+    for (k, (w1, w2, tm, rate, sparks, n, pool)) in (0u32..).zip(cases) {
+        junk(&mut t, o, 0x600, k + 7);
+        globals(&mut t, k);
+        t.set_u32(o + 0x504, u32::MAX);
+        t.set_u32(o + 0x50c, w1);
+        t.set_u32(o + 0x510, w2);
+        t.set_u32(o + 0x4fc, tm.to_bits());
+        t.set_u32(o + 0x500, rate.to_bits());
+        t.set_u32(o + 0x508, sparks);
+        for i in 0..16u32 {
+            t.set_u32(
+                o + 0x4bc + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+        }
+        trail_0491(&mut t, o, n, k);
+        junk(&mut t, task, 0x40, k);
+        t.set_u32(task + 0x14, o);
+        // a given-back task: its links to itself
+        t.set_u32(task, task);
+        t.set_u32(task + 4, task);
+        t.set_u32(task + 8, task);
+        t.set_u32(task + 0xc, 0);
+        let w = |t: &Twin, o2: u32| t.img.word(take + o2);
+        t.set_u32(w(&t, 0x37), recs);
+        for i in 0..0x48 {
+            junk(&mut t, recs + 0x74 * i, 0x74, k + i);
+            t.set_u32(recs + 0x74 * i + 0x6c, 0);
+        }
+        t.set_u32(w(&t, 0x0f), pool);
+        t.set_u32(w(&t, 0x08), 0);
+        t.set_u32(w(&t, 0x2b), 0);
+        let burst = t.img.rel32_target(step + 0x246);
+        for o2 in [0x14u32, 0x58, 0x65, 0x111, 0x15d, 0x1cc] {
+            t.set_u32(op(&t, burst, o2), 0x0a00_0000 + o2);
+        }
+        scrub(&mut t);
+        t.check_entry(step, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(325)) >= 6, "the sparks");
+    assert!(t.u32(row(618)) >= 1, "the burst");
 }
