@@ -11,6 +11,7 @@
 
 mod magic;
 mod magic_owna;
+mod magic_r11;
 
 use magic::{Call, Eax, SCRATCH, StubMem, Twin};
 use magic_owna::{rec, row, twin};
@@ -810,5 +811,319 @@ fn summon_task_0106() {
         (239, 1),
     ] {
         assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}
+
+/// What `r19::three_nodes_0128` (`magic_0128`, at `f`) needs: the part
+/// set-up, the object start, `n` scaled actors, slot 333's angle per
+/// actor (the yaw above `HI`, inside and below `LO`), the records, the
+/// free ring and the task list.
+fn three_nodes_0128_setup(t: &mut Twin, f: u32, n: u32, free: u16, listed: bool) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    let pi = t.img.rel32_target(f + 0x3c);
+    for (j, o) in (0u32..).zip([0x01u32, 0x07, 0x11]) {
+        t.set_u32(op(t, pi, o), SCRATCH + 0x4000 + 0x40 * j);
+    }
+    magic_r11::object_slots(t);
+    magic_r11::object_start_setup(t, t.img.rel32_target(f + 0xfa), (0x80, 0x9b));
+    magic_r11::scaled_actors(t, f, n, (0x41, 0x6f, 0x87));
+    let fl = |t: &Twin, o: u32| f64::from(f32::from_bits(t.u32(op(t, f, o))));
+    let (k, hi, lo) = (fl(t, 0x18c), fl(t, 0x19b), fl(t, 0x1af));
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |_, a| match a[0] % 3 {
+        0 => k - hi - 0.5,
+        1 => k - f64::midpoint(hi, lo),
+        _ => k - lo + 0.5,
+    });
+    t.write(op(t, f, 0x1f9), &[0x5c; 0x34 * 4]);
+    magic_r11::nodes_setup(t, f + 0xe4, free, listed);
+}
+
+/// `magic_0128` 0x10001460 (`r19::three_nodes_0128`, internal) and its
+/// load step 0x10001300 (`r19::load_0128`): no, one, two and three
+/// actors (scales below, inside and above the clamp; yaws wrapped down,
+/// kept and wrapped up), three and five free nodes, the task list empty
+/// and not; the load step's waits and its start.
+#[test]
+fn three_nodes_0128() {
+    let Some(mut t) = twin(128) else { return };
+    let f = t.at(0x1460);
+    for (n, free, listed) in [
+        (0u32, 3u16, false),
+        (1, 5, true),
+        (3, 3, true),
+        (2, 5, false),
+    ] {
+        three_nodes_0128_setup(&mut t, f, n, free, listed);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r19::three_nodes_0128,
+        );
+    }
+    let load = t.at(0x1300);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        three_nodes_0128_setup(&mut t, f, 2, 5, true);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x27u32, 0x47] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x62, 0x6c]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// The matrix and vector slots the start-ups' turns use: 235 (an
+/// identity varied by its call), 328/329 (one word plus the angle), 229
+/// (`M[i] * 0.5 + v[i]`), 248 (`a + b`, folded into a dump row).
+fn matrix_slots(t: &mut Twin) {
+    rec(t, 235, 1, |m, a| {
+        let k = m.r32(row(235)) as f32;
+        for i in 0..16u32 {
+            let v = if i % 5 == 0 {
+                1.0
+            } else {
+                0.125 * (i as f32) - k * 0.25
+            };
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(t, s, 3, move |m, a| {
+            let k = m.r32(row(s)) % 16;
+            let v = rf(m, a[1] + 4 * k) + f32::from_bits(a[2]);
+            wf(m, a[0] + 4 * k, v);
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 229, i, v.to_bits());
+        }
+        0x229
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 248, i, v.to_bits());
+        }
+        0x248
+    });
+}
+
+/// What `r19::start_up_0285` (`magic_0285`/`0286`, at `f`) needs: the
+/// part set-up, the slots (333's turn, 12's ground, 314/404's random
+/// floats, 268's bone), the object start, the free ring (eight nodes:
+/// three emitters, two task nodes and the live node take from it), the
+/// task list (empty or not), the actors, the model's two flags.
+fn start_up_0285_setup(t: &mut Twin, f: u32, k: u32, (flag_a, flag_b, listed): (u32, u32, bool)) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    let pi = t.img.rel32_target(f + 0x50);
+    for (j, o) in (0u32..).zip([0x01u32, 0x07, 0x11]) {
+        t.set_u32(op(t, pi, o), SCRATCH + 0x4000 + 0x40 * j);
+    }
+    magic_r11::object_slots(t);
+    matrix_slots(t);
+    for (s, n) in [(215u32, 1usize), (413, 1), (710, 4), (711, 3)] {
+        rec(t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    rec(t, 268, 3, move |m, a| {
+        for i in 0..4 {
+            wf(m, a[2] + 4 * i, 0.375 * i as f32 - 1.5 + k as f32);
+        }
+        0x268
+    });
+    for (s, v) in [(333u32, 0.4f64), (12, 2.25), (314, 0.75), (404, 3.5)] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            v + f64::from(m.r32(row(s)) % 5) * 1.75 - f64::from(a[0] & 3)
+        });
+    }
+    let start = t.img.rel32_target(f + 0x1a4);
+    magic_r11::object_start_setup(t, start, (0x84, 0x9d));
+    magic_r11::ring(t, op(t, f, 0x5c8), op(t, f, 0x5dc), 8, SCRATCH + 0x8000);
+    t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+    t.set_u32(op(t, f, 0x63e), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(op(t, f, 0x651), SCRATCH + 0x600);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(op(t, f, 0x218), sel);
+    t.write(sel, &[3, 5, 7, 9]);
+    for i in 0..0x10 {
+        t.set_u32(op(t, f, 0x2c4) + 4 * i, 0x00c0_0000 + i + k);
+    }
+    for o in [0x5bu32, 0xc2, 0x54f] {
+        t.set_u32(op(t, f, o), 0x0a0a_0000 + o + k);
+    }
+    t.set_u32(op(t, f, 0x549), flag_a);
+    t.set_u32(op(t, f, 0x589), flag_b);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x4b, 0x1b1, 0x1be, 0x1cb, 0x1d8, 0x1f3, 0x203, 0x213, 0x220, 0x22e, 0x238, 0x242,
+            0x24c, 0x26a, 0x274, 0x28a, 0x2b2, 0x2ba, 0x2fb, 0x30b, 0x329, 0x554, 0x594, 0x5a4,
+            0x5ae, 0x5b8, 0x5c1,
+        ],
+    );
+}
+
+/// `magic_0285` 0x10004490 and `magic_0286` 0x10001340
+/// (`r19::start_up_0285`, internal) and their load steps (0x10004360,
+/// 0x10001210): both model slots, the flag's halfword both ways, the
+/// task list empty and not; the load steps' waits and their start.
+#[test]
+fn start_up_0285() {
+    for (dll, rva, load) in [(285u16, 0x4490u32, 0x4360u32), (286, 0x1340, 0x1210)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        for (k, more) in [
+            (0u32, 0u32, false),
+            (1, 1, true),
+            (0, 1, true),
+            (1, 0, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            start_up_0285_setup(&mut t, f, k as u32, more);
+            scrub(&mut t);
+            t.check(
+                f,
+                Call::default(),
+                &[],
+                Eax::Checked,
+                ffx_magic::r19::start_up_0285,
+            );
+        }
+        let load = t.at(load);
+        for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+            start_up_0285_setup(&mut t, f, 3, (0, 1, true));
+            rec(&mut t, 225, 1, move |_, _| busy);
+            rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+            rec(&mut t, 227, 1, move |_, _| ready);
+            let op = |t: &Twin, o: u32| t.img.word(load + o);
+            let at = op(&t, 0x18);
+            t.set_u32(at, loaded);
+            for o in [0x26u32, 0x46] {
+                let at = op(&t, o);
+                t.set_u32(at, 0x0b0b_0000 + o);
+            }
+            junk_ops(&mut t, load, &[0x61, 0x6b]);
+            scrub(&mut t);
+            t.check_entry(load, Call::default(), &[], Eax::Checked);
+        }
+        assert!(t.u32(row(229)) >= 9, "slot 229: {} calls", t.u32(row(229)));
+    }
+}
+
+/// What `r19::start_0082` (`magic_0082` 0x10006bf0) needs: the slots
+/// (390 the kind, 534 the second answer), the summon list empty or not,
+/// the camera block's list, the particle part start, the kind byte.
+fn start_0082_setup(t: &mut Twin, f: u32, k: u32, (kind, second, filled): (u32, u32, bool)) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    summon_slots(t, k);
+    rec(t, 390, 1, move |_, a| kind ^ (a[0] & 0x1_0000));
+    rec(t, 534, 1, move |_, a| second ^ (a[0] & 0x1_0000));
+    let list = op(t, f, 0x1b);
+    empty_list(t, list);
+    empty_list(t, op(t, f, 0x41d));
+    if filled {
+        let other = SCRATCH + 0x640;
+        t.write(other, &[0x66; 0x20]);
+        t.set_u32(list + 0x10, other);
+    }
+    // the camera block's chain: its next's `+4` takes the block
+    let chain = SCRATCH + 0x680;
+    t.write(chain, &[0x31; 0x20]);
+    t.set_u32(op(t, f, 0x7f), chain);
+    part_start(t, t.img.rel32_target(f + 0x43d));
+    let owner = SCRATCH + 0x7b00;
+    t.set_u32(op(t, f, 0x40c), owner);
+    for j in 0..0x40 {
+        t.set_u32(owner + 4 * j, (0.25 * j as f32 - 1.0).to_bits());
+    }
+    for o in [0x9u32, 0x38] {
+        t.set_u8(op(t, f, o), 0x21 + k as u8);
+    }
+    t.set_u32(op(t, f, 0x144), 0x0a0a_0000 + k);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x84, 0xb9, 0xc2, 0xd7, 0x24d, 0x282, 0x28b, 0x2a0, 0x481, 0x488, 0x4cd, 0x4d4,
+        ],
+    );
+}
+
+/// `magic_0082` 0x10006bf0 (`r19::start_0082`, internal) and the node
+/// start 0x10007170 that runs it (`r9_summon::nodes_0082`): the kind in
+/// the table's 0 and 1 rows and past it, slot 534's two answers, the
+/// summon list empty and not.
+#[test]
+fn start_0082() {
+    let Some(mut t) = twin(82) else { return };
+    let f = t.at(0x6bf0);
+    for (k, more) in [
+        (0x1071u32, 0u32, false),
+        (0x1072, 0, true),
+        (0x1072, 1, false),
+        (0x2000, 0, true),
+        (0x2000, 1, true),
+        (0x1081, 0, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        start_0082_setup(&mut t, f, k as u32, more);
+        scrub(&mut t);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r19::start_0082,
+        );
+    }
+    assert!(t.u32(row(534)) >= 4, "slot 534: {} calls", t.u32(row(534)));
+    // the node start: two actors, the lock word clear and set
+    let at = t.at(0x7170);
+    let lock = SCRATCH + 0x1f0;
+    for (actor, lk) in [(3u32, 0u32), (0x21, 7)] {
+        start_0082_setup(&mut t, f, actor, (0x1072, 1, actor == 3));
+        for (slot, k) in [
+            (718u32, 1usize),
+            (710, 4),
+            (222, 4),
+            (221, 4),
+            (551, 3),
+            (168, 1),
+            (531, 2),
+        ] {
+            rec(&mut t, slot, k, move |_, a| (0x0700_0000 + slot) ^ a[0]);
+        }
+        rec(&mut t, 711, 3, move |m, a| {
+            m.w32(SCRATCH + 0x1f4, m.r32(lock));
+            0x0711_0000 ^ a[0]
+        });
+        t.stub_st0(289, |_, _| -1.25);
+        let lock_at = t.img.word(at + 0x2b2);
+        t.set_u32(lock_at, lock);
+        t.set_u32(lock, lk);
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        t.check_entry(at, Call::default(), &[actor], Eax::Checked);
     }
 }

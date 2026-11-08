@@ -38,7 +38,7 @@ fn stores<G: Game>(g: &mut G, img: &Image, f: u32, ats: impl IntoIterator<Item =
 /// (`+0x1f`, `+0x29`), slot 719 `(NAME, 8, 0)` into `G_PART` (`+0x37`),
 /// the part set up ([`part_init`](crate::l5_objhost::part_init), `rel32`
 /// `+0x3c`).
-fn head<G: Game>(g: &mut G, img: &Image, f: u32) {
+pub(crate) fn head<G: Game>(g: &mut G, img: &Image, f: u32) {
     head_with(g, img, f, None);
 }
 
@@ -65,7 +65,7 @@ fn head_with<G: Game>(g: &mut G, img: &Image, f: u32, buffer: Option<&Frame>) {
 /// [`three_nodes_scaled`]: `(slot 16 (chr) * slot 364 (chr)) / D`
 /// clamped to `[LO, HI]` (`comiss` + `ja`/`jbe`: a NaN stays), times `K`
 /// (operands `+d`, `+lo`, `+hi`, `+k`).
-fn actor_scale<G: Game>(
+pub(crate) fn actor_scale<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -414,7 +414,7 @@ pub const THREE_NODES_HEIGHT_0120: Sig = Sig {
 /// stores the last in each branch, `magic_0116`'s copy once after them
 /// (the operands' offsets in [`nodes_tail`]'s numbering).
 #[derive(Clone, Copy)]
-enum End {
+pub(crate) enum End {
     /// `+0x47a` the first, `+0x483` / `+0x468` the last.
     Split,
     /// The first and the last at these offsets.
@@ -424,7 +424,7 @@ enum End {
 /// The start-ups' three task nodes, from `mov di, [count]` (at `f +
 /// 0x162`; [`three_nodes`]' offsets).
 #[allow(clippy::too_many_lines)]
-fn nodes_tail<G: Game>(g: &mut G, img: &Image, f: u32, end: End) -> Ret {
+pub(crate) fn nodes_tail<G: Game>(g: &mut G, img: &Image, f: u32, end: End) -> Ret {
     let w = |o: u32| img.word(f + o);
     let mut free = g.read::<u16>(w(0x165));
     stores(g, img, f, (0..12).map(|k| 0x169 + 10 * k));

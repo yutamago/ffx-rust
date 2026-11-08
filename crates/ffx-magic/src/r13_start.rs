@@ -1509,7 +1509,14 @@ pub const SUMMON_START_0090: Sig = Sig {
 /// `kind`, linked after the last (or the first when empty; `empty` the
 /// operands storing the first and the last then, `last_w` the last's
 /// store otherwise).
-fn append_kind<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, kind: u8, ops: [u32; 5]) {
+pub(crate) fn append_kind<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    kind: u8,
+    ops: [u32; 5],
+) {
     let w = |o: u32| img.word(f + o);
     let [first, last, last_w, first_e, last_e] = ops;
     let head = g.read::<u32>(w(first));

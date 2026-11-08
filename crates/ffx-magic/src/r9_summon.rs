@@ -309,6 +309,8 @@ pub const NODES_0088: Sig = Sig {
 node_copies! {
     /// `magic_0083` 0x10006c50.
     nodes_0083 => NODES_0083, 0xe66d_7c19_aba9_bf35, crate::m0078::start_0083, crate::m0078::START_0083;
+    /// `magic_0082` 0x10007170.
+    nodes_0082 => NODES_0082, 0xe66d_7c19_aba9_bf35, crate::r19::start_0082, crate::r19::START_0082;
     /// `magic_0091` 0x10006c70.
     nodes_0091 => NODES_0091, 0x5c43_380b_a8f7_9702, crate::m0089::start_0091, crate::m0089::START_0091;
     /// `magic_0094` 0x10007030.

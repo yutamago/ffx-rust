@@ -11,7 +11,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// `K - r` wrapped once (`comiss` + `jbe`: an unordered value stays):
 /// above `HI` less `T`, below `LO` plus `T'` (the floats at the operands
 /// `k`, `hi`, `t`, `lo`, `t2` of `f`).
-fn wrap_once<G: Game>(
+pub(crate) fn wrap_once<G: Game>(
     g: &G,
     img: &Image,
     f: u32,
