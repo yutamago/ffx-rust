@@ -3878,6 +3878,7 @@ fn staged_volley_tasks() {
         (674, 0x7210),
         (618, 0x6db0),
         (685, 0x6d60),
+        (621, 0x6e30),
     ] {
         staged_volley_in(dll, rva);
     }
@@ -3995,19 +3996,23 @@ fn staged_volley_in(dll: u16, rva: u32) {
             t.write(ring, &[0; 0x10]);
             t.set_u32(ring + 8, ring);
         }
-        // the model object set-up (`model_object_setup`)
-        677 => {
+        // the model object set-up (`model_object_setup`; `magic_0621`'s
+        // 908-byte copy has its operands from +0x22d 0x10 bytes earlier)
+        677 | 621 => {
+            let d = if dll == 621 { 0x10 } else { 0 };
             rec(&mut t, 390, 1, |_, _| 0x2000);
             rec(&mut t, 534, 1, |_, _| 0);
             rec(&mut t, 12, 1, |_, a| a[0]);
             t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.5);
-            let pn = t.img.rel32_target(throw + 0x264);
+            let pn = t
+                .img
+                .rel32_target(throw + 0x264 - if dll == 621 { 8 } else { 0 });
             let start = t.img.rel32_target(pn + 0x88);
             t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
-            t.set_u32(op(&t, throw, 0x23d), SCRATCH + 0x900);
+            t.set_u32(op(&t, throw, 0x23d - d), SCRATCH + 0x900);
             t.set_u32(op(&t, throw, 0x28), SCRATCH + 0x500);
             t.write(SCRATCH + 0x500, &varied(0x20, 2));
-            let pl = op(&t, throw, 0x253);
+            let pl = op(&t, throw, 0x253 - d);
             t.write(pl, &varied(0x1c, 6));
             t.set_u32(pl + 0x10, pl);
             t.set_u32(op(&t, throw, 0x6c), op(&t, throw, 0x85));
@@ -4133,7 +4138,8 @@ fn staged_volley_in(dll: u16, rva: u32) {
     }
 }
 
-/// Row 334: the aim records of the four DLLs: points in each quarter
+/// Row 334: the aim records of the four DLLs (and `magic_0480`'s copy
+/// with its object in the DLL's data): points in each quarter
 /// (the yaw past both bounds, and exactly on each), the task list empty
 /// and not, one and several nodes free.
 #[test]
@@ -4143,9 +4149,24 @@ fn aim_records() {
         (350, 0x34b0),
         (353, 0x4f40),
         (473, 0x3e90),
+        (480, 0x23d0),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        // `magic_0480`'s copy: the object in its data, the operands
+        // elsewhere
+        let m = move |o: u32| match (dll, o) {
+            (480, 0x15a) => 0x13e,
+            (480, 0x169) => 0x14d,
+            (480, 0x173) => 0x157,
+            (480, 0x17d) => 0x161,
+            (480, 0x18a) => 0x16e,
+            (480, 0x28f) => 0x278,
+            (480, 0x2e6) => 0x2d7,
+            (480, 0x34d) => 0x33e,
+            (480, 0x363) => 0x358,
+            _ => o,
+        };
         let log = SCRATCH + 0x6000;
         // the points' way: 0 behind on both axes, 1 straight ahead on `x`
         // (yaw 0), 2 on `z` (yaw a quarter turn)
@@ -4167,10 +4188,14 @@ fn aim_records() {
             });
         }
         for (o, x) in [(0x15au32, 0.0f32), (0x173, 2.5), (0x18a, 2.5)] {
-            t.set_u32(op(&t, f, o), x.to_bits());
+            t.set_u32(op(&t, f, m(o)), x.to_bits());
         }
-        let w = |t: &Twin, o: u32| t.img.word(f + o);
-        let o = SCRATCH + 0x1000;
+        let w = |t: &Twin, o: u32| t.img.word(f + m(o));
+        let o = if dll == 480 {
+            t.img.word(f + 0x1a) - 0x1e8
+        } else {
+            SCRATCH + 0x1000
+        };
         let node = |i: u32| SCRATCH + 0x400 + 0x40 * i;
         // (free nodes, listed, the points' way, the yaw's bounds)
         for (k, (free, listed, at, (upper, lower))) in [
@@ -4188,8 +4213,8 @@ fn aim_records() {
             let k = k as u32;
             t.set_u32(log, 0);
             t.set_u32(way, at);
-            t.set_u32(op(&t, f, 0x169), upper.to_bits());
-            t.set_u32(op(&t, f, 0x17d), lower.to_bits());
+            t.set_u32(op(&t, f, m(0x169)), upper.to_bits());
+            t.set_u32(op(&t, f, m(0x17d)), lower.to_bits());
             t.write(o, &varied(0x240, k));
             t.write(node(0) - 0x40, &varied(0x140, k + 1));
             t.set_u32(node(0), node(2));

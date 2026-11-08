@@ -118,6 +118,12 @@ pub const START_UP: Sig = Sig {
 /// a byte 1; a node off the free list
 /// ([`pop_node`](crate::m0032::pop_node)) goes last on the task list
 /// (first `+0x7e`, last `+0x8e`). Returns 0.
+///
+/// `magic_0480`'s copy (0x10004630, 194 bytes; `mov ecx, imm32` at
+/// `+0x7c`) sets its aim records first
+/// ([`aim_records`](crate::s7_misc::aim_records), the global layout) and
+/// takes its node from the pool ([`take`](crate::sa_pool::take), the
+/// owner that immediate); its later operands are 10 bytes on.
 pub fn start_up_0369<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
@@ -132,13 +138,29 @@ pub fn start_up_0369<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0x5f), 0);
     g.write::<u16>(w(0x6a), 0);
     g.write::<u8>(w(0x72), 1);
-    let node = crate::m0032::pop_node(g, img, img.rel32_target(f + 0x78));
-    let last_w = if g.read::<u32>(w(0x7e)) == 0 {
+    let aim = img.word(f + 0x7c) & 0xff == 0xb9;
+    let (node, d) = if aim {
+        // call aim_records; mov ecx, OWNER; call take
+        let callee = Frame {
+            at: img.rel32_target(f + 0x78),
+            esp: fr.esp.wrapping_sub(4),
+            ..*fr
+        };
+        crate::s7_misc::aim_records(g, img, &callee);
+        let take = img.rel32_target(f + 0x82);
+        (crate::sa_pool::take(g, img, take, w(0x7d)), 10)
+    } else {
+        (
+            crate::m0032::pop_node(g, img, img.rel32_target(f + 0x78)),
+            0,
+        )
+    };
+    let last_w = if g.read::<u32>(w(0x7e + d)) == 0 {
         0xb1
     } else {
         0x9b
     };
-    append(g, img, f, node, (0x7e, 0x8e, 0xa9, last_w));
+    append(g, img, f, node, (0x7e + d, 0x8e + d, 0xa9 + d, last_w + d));
     Ret::eax(0)
 }
 

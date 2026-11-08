@@ -5019,7 +5019,9 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         crate::s9_misc::effect_group_one(g, img, &throw).eax
     } else if img.matches(throw.at, &crate::s9_misc::SUMMON_OBJECT_0685) {
         crate::s9_misc::summon_object_0685(g, img, &throw).eax
-    } else if img.matches(throw.at, &MODEL_OBJECT_SETUP) {
+    } else if img.matches(throw.at, &MODEL_OBJECT_SETUP)
+        || img.matches(throw.at, &MODEL_OBJECT_SETUP_0621)
+    {
         model_object_setup(g, img, &throw)
     } else if img.matches(throw.at, &crate::s5_misc::THROWN_EFFECT_FAR) {
         crate::s5_misc::thrown_effect_far(g, img, &throw)
@@ -5153,6 +5155,29 @@ pub const STAGED_VOLLEY_TASK_0682: Sig = Sig {
     imports: &[],
 };
 
+/// [`aim_records`]' operands in `magic_0348`'s layout and where
+/// `magic_0480`'s global copy has each.
+const AIM_OPS: [(u32, u32); 18] = [
+    (0x2a, 0x25),
+    (0x38, 0x33),
+    (0x60, 0x5c),
+    (0x15a, 0x13e),
+    (0x169, 0x14d),
+    (0x173, 0x157),
+    (0x17d, 0x161),
+    (0x18a, 0x16e),
+    (0x28f, 0x278),
+    (0x2e6, 0x2d7),
+    (0x303, 0x2f4),
+    (0x30b, 0x2fc),
+    (0x33c, 0x32d),
+    (0x347, 0x338),
+    (0x34d, 0x33e),
+    (0x376, 0x36b),
+    (0x363, 0x358),
+    (0x38e, 0x37d),
+];
+
 /// A summon's aim records set up (internal: `ecx` = the object `O`; a
 /// /GS frame aligned to 8). Slots 588 `(i, O+0x1b8 + 0x10 i)` and 544
 /// `(i, O+0x1e8 + 0x10 i)` for `i` in 0..3, then 544 `(3, O+0x218)`. For
@@ -5170,13 +5195,26 @@ pub const STAGED_VOLLEY_TASK_0682: Sig = Sig {
 /// address 0x14, not run); `O+0x228` = the node. Returns the old last
 /// node, or 0xffff on an empty list.
 ///
-/// `magic_0348` 0x10002e70 (923 bytes, `ecx`; 4 DLLs).
+/// `magic_0348` 0x10002e70 (923 bytes, `ecx`; 4 DLLs). `magic_0480`'s
+/// copy (0x100023d0, 912 bytes, no arguments; `mov esi, imm32` at
+/// `+0x19`) has its object in the DLL's data: `O` is the first point
+/// operand (`+0x1a`) less 0x1e8, every address an absolute operand of
+/// the same `O`, and the operands sit elsewhere (`AIM_OPS`).
 #[allow(clippy::too_many_lines)] // the original's records, one by one
 pub fn aim_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    let global = img.word(f + 0x19) & 0xff == 0xbe;
+    let at = |o: u32| match AIM_OPS.iter().find(|p| p.0 == o) {
+        Some(&(_, g)) if global => g,
+        _ => o,
+    };
+    let w = |o: u32| op(img, f, at(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
-    let o = fr.ecx;
+    let o = if global {
+        op(img, f, 0x1a).wrapping_sub(0x1e8)
+    } else {
+        fr.ecx
+    };
     let mut st = Pushes::default();
     for i in 0..3u32 {
         st.push_all(&[o + 0x1b8 + 0x10 * i, i]);
