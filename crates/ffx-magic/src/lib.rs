@@ -2968,6 +2968,7 @@ ports! {
     "r20 set-up 0473" => r20::SET_UP_0473, r20::set_up_0473;
     "r20 step 0708" => r20::STEP_0708, r20::step_0708;
     "r20 colour task 0645" => r20::COLOUR_TASK_0645, r20::colour_task_0645;
+    "r20 step 0511" => r20::STEP_0511, r20::step_0511;
     // round 20 (magic-r20): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

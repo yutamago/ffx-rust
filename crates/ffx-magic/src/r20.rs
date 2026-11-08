@@ -2597,3 +2597,80 @@ pub const COLOUR_TASK_0645: Sig = Sig {
     calls: &[(0x71, Callee::Sig(&COLOUR_SETUP_0645))],
     imports: &[],
 };
+
+/// `magic_0511`'s step (0x100013e0, 490 bytes; a table entry, cdecl
+/// `(node)`): with `E = *G_E`: the 0x30-byte block `B` cleared (`memset`)
+/// and bit 7 of its halfword `+2` set, `B[0x14]` = `*G_W`; the two
+/// scripts run ([`script_run`](crate::sb_misc::script_run)). With the
+/// first done: `E + 0x2274` 1, the models' end
+/// ([`models_end`](crate::m0511::models_end)) and the node given back to
+/// the pool ([`give_back`](crate::sa_pool::give_back), a tail jump),
+/// returning its `eax`. Else seven 16-byte blocks of `E` copied
+/// (`+0x1990 + 0x20 i` to `+0x17f0 + 0x40 i`), four motion scripts stepped
+/// ([`motion_script`](crate::s4_misc::motion_script)) and the camera
+/// rigs ([`camera_rigs_step`](crate::s8_misc::camera_rigs_step), a tail
+/// jump), whose answer it returns.
+pub fn step_0511<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let e = g.read::<u32>(w(0x7));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let fl = g.read::<u16>(w(0x21)) | 0x80;
+    g.write::<u16>(w(0x21), fl);
+    let x = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x33), x);
+    let done = crate::sb_misc::script_run(g, img, call(0x38), w(0x2e));
+    crate::sb_misc::script_run(g, img, call(0x44), w(0x3d));
+    if done != 0 {
+        g.write::<u32>(e.wrapping_add(0x2274), 1);
+        // esi, edi and ebp still pushed: the return address at E - 0x10
+        let mf = Frame {
+            at: call(0x1db),
+            esp: fr.esp.wrapping_sub(0x10),
+            ..*fr
+        };
+        crate::m0511::models_end(g, img, &mf);
+        let node = fr.arg(g, 0);
+        let eax = crate::sa_pool::give_back(g, img, call(0x1e6), node);
+        return Ret::eax(eax);
+    }
+    for i in 0..7u32 {
+        for j in 0..4u32 {
+            let v = g.read::<u32>(e.wrapping_add(0x1990 + 0x20 * i + 4 * j));
+            g.write::<u32>(e.wrapping_add(0x17f0 + 0x40 * i + 4 * j), v);
+        }
+    }
+    for (at, s) in [
+        (0x1a6u32, 0x19bu32),
+        (0x1b0, 0x1ab),
+        (0x1ba, 0x1b5),
+        (0x1c4, 0x1bf),
+    ] {
+        crate::s4_misc::motion_script(g, img, call(at), w(s));
+    }
+    let cf = Frame {
+        at: call(0x1cc),
+        ..*fr
+    };
+    crate::s8_misc::camera_rigs_step(g, img, &cf)
+}
+
+/// [`step_0511`] (490 bytes, 1 overlay).
+pub const STEP_0511: Sig = Sig {
+    len: 490,
+    hash: 0xff39_82b1_fc92_95f7,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x38, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x44, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x1a6, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1b0, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1ba, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1c4, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1cc, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x1db, Callee::Sig(&crate::m0511::MODELS_END)),
+        (0x1e6, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

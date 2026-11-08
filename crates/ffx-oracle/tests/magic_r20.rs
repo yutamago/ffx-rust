@@ -1742,3 +1742,106 @@ fn colour_task_0645() {
     }
     assert!(t.u32(row(325)) >= 3, "the set-ups ran");
 }
+
+/// `magic_0511` 0x100013e0 (`r20::step_0511`): the first script done
+/// (the models' end and the node given back) and running (the blocks,
+/// the motion scripts and the camera rigs), the second either way.
+#[test]
+fn step_0511() {
+    let Some(mut t) = twin(511) else { return };
+    let f = t.at(0x13e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, n) in [
+        (941u32, 1usize),
+        (772, 2),
+        (779, 4),
+        (326, 4),
+        (229, 3),
+        (284, 3),
+        (285, 2),
+        (286, 2),
+        (235, 1),
+        (330, 3),
+        (328, 3),
+        (329, 3),
+        (413, 1),
+        (215, 1),
+        (19, 1),
+        (21, 2),
+        (332, 1),
+        (6, 2),
+        (547, 1),
+        (295, 2),
+        (541, 3),
+        (38, 3),
+        (568, 1),
+        (566, 1),
+        (546, 1),
+        (271, 1),
+        (213, 2),
+        (219, 2),
+        (220, 3),
+        (711, 3),
+        (710, 4),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    for (s, n) in [(384u32, 3usize), (25, 3), (24, 3)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    // the models' end (as `magic_0511.rs`'s `models_end`)
+    let at = t.img.rel32_target(f + 0x1db);
+    let b = SCRATCH + 0x20;
+    t.set_u32(t.img.word(at + 0x1), b);
+    t.set_u32(b, 0x0302_0100);
+    t.set_u32(b + 4, 0x0706_0504);
+    let table = t.img.word(at + 0xc);
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0384_0000 + i);
+    }
+    t.set_u32(t.img.word(at + 0xea), SCRATCH + 0x8000);
+    let rp = t.img.rel32_target(at + 0xfa);
+    let parts = SCRATCH + 0x200;
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(parts + 0x30, 0x0941_0001);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    t.set_u32(t.img.word(rp + 0x76), 0);
+    let r3 = t.img.rel32_target(at + 0xf5);
+    let lock = SCRATCH + 0x300;
+    t.set_u32(t.img.word(rp + 0x43), lock);
+    for op in [0x21, 0x3d] {
+        t.set_u32(t.img.word(r3 + op), lock);
+    }
+    t.set_u32(t.img.word(at + 0xce), 0);
+    let r = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x26), 0x00c0_0026);
+    let node = SCRATCH + 0x5000;
+    let gb = t.img.rel32_target(f + 0x1e6);
+    for (k, (s1, s2)) in (0u32..).zip([(0u8, 0u8), (0, 2), (2, 0), (2, 2)]) {
+        t.write(r, &vec![0; 0x4000]);
+        junk(&mut t, r + 0x1990, 0xe0, k);
+        junk(&mut t, r + 0x17f0, 0x1c0, k + 1);
+        t.set_u32(r + 0x2274, 0x5a5a_5a5a);
+        t.write(w(&t, 0x10), &[0x5c; 0x30]);
+        for (ctx, st) in [(w(&t, 0x2e), s1), (w(&t, 0x3d), s2)] {
+            t.write(ctx, &[0; 0x58]);
+            t.set_u32(ctx, SCRATCH + 0x700);
+            t.set_u8(ctx + 0x56, st);
+            t.set_u16(ctx + 0x54, 0xffff);
+        }
+        t.set_u32(w(&t, 0x07), r);
+        for o in [0x48u32, 0x55] {
+            t.set_u32(t.img.word(gb + o), 0x0bad_0000 + o);
+        }
+        t.write(node, &[0x21; 0x20]);
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
+        t.set_u32(node + 8, SCRATCH + 0x5100);
+        t.set_u32(SCRATCH + 0x510c, 0);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+    assert!(t.u32(row(384)) >= 6, "the models' end ran twice");
+    assert!(t.u32(row(772)) >= 1, "the motion scripts ran");
+}
