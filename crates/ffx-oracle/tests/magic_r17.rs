@@ -944,3 +944,581 @@ fn summon_spin_0168() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Slot 534's answer (`model_direct`'s second way) for the summon tests.
+const DIRECT_CELL: u32 = SCRATCH + 0x98;
+
+/// What `r17::summon_task_0333` (at `f`) needs: the summon's nodes (slot
+/// 412 gives `targets` targets), the list `LIST` empty, the targets'
+/// handles and actors, the model's way (slots 390, 534), the particle
+/// node's part start and owner, the effect node's slot 719, the vector
+/// slots; `R` (`state`, counter `n`, target `i`) and the task's node in a
+/// ring of two.
+fn summon_0333_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (state, n, i): (u32, u32, u32),
+    targets: u32,
+) -> u32 {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    vector_slots(t);
+    float_slots(t, 0.5 + f64::from(k));
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 0, 1, 3]);
+    let count = SCRATCH + 0x9c;
+    t.set_u32(count, targets);
+    rec(t, 412, 3, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14] {
+        rec(t, s, 1, move |_, _| s);
+    }
+    rec(t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    rec(t, 390, 1, |_, a| 0x2000 + (a[0] & 0xf));
+    rec(t, 534, 1, |m, _| m.r32(DIRECT_CELL));
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.5 * i as f32 + (a[0] & 0xf) as f32);
+        }
+        0x268
+    });
+    rec(t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let table = SCRATCH + 0x3400;
+    for j in 0..0x10 {
+        t.set_u32(table + 4 * j, 0x1111 * (j + 1));
+    }
+    rec(t, 941, 1, move |_, _| table);
+    // the summon's nodes, the list, the targets
+    let (node, slist) = (op(t, f, 0x60), op(t, f, 0x68));
+    t.write(node, &vec![0x66; 0x2640]);
+    t.write(slist, &[0; 0x20]);
+    t.set_u32(slist + 0x10, slist);
+    t.set_u32(slist + 0xc, slist);
+    t.set_u32(op(t, f, 0x54), 0x0a0a_0000 + k);
+    for j in 0..4 {
+        t.set_u32(op(t, f, 0x157) + 0x98 * j, 0x0b0b_0000 + j);
+        t.set_u32(op(t, f, 0x172) + 0x98 * j + 0x54, 0x0c0c_0000 + j);
+        t.set_u32(op(t, f, 0x2a0) + 0x98 * j, 0x0d0d_0000 + j);
+    }
+    t.set_u32(op(t, f, 0x2ab), 0x0e0e_0000 + k);
+    t.set_u32(op(t, f, 0x2c2), targets);
+    for (a, len) in [(0xc3u32, 0x2c), (0xec, 0x2c), (0xcf, 0x14c), (0x223, 56)] {
+        junk(t, op(t, f, a), 4 * len, k + a);
+    }
+    // the particle node's part start and owner
+    let pnw = t.img.rel32_target(f + 0x205);
+    let pn = t.img.rel32_target(pnw + 0x35);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(op(t, wrapper, 0x04), lock);
+    t.set_u32(lock, 0x77);
+    t.set_u32(op(t, pn, 0x45), SCRATCH + 0x7f10);
+    let plist = op(t, pnw, 0x26);
+    t.write(plist, &[0; 0x20]);
+    t.set_u32(plist + 0x10, plist);
+    t.set_u32(plist + 0xc, plist);
+    let owner = SCRATCH + 0x7a00;
+    t.set_u32(op(t, pnw, 0x0d), owner);
+    for j in 0..0x40 {
+        t.set_u32(owner + 4 * j, (0.25 * j as f32).to_bits());
+    }
+    // the task and its record
+    let (task, r, tn) = (SCRATCH + 0x700, SCRATCH + 0x780, SCRATCH + 0x740);
+    let (a, b) = (SCRATCH + 0x7c0, SCRATCH + 0x7e0);
+    junk(t, r, 0x40, k);
+    t.set_u32(r + 0x18, state);
+    t.set_u32(r + 0x1c, 1.5f32.to_bits());
+    t.set_u32(r + 0x20, (-0.5f32).to_bits());
+    t.set_u32(r + 0x24, i);
+    t.set_u32(r + 0x28, n);
+    for (x, next, prev) in [(tn, a, b), (a, b, tn), (b, tn, a)] {
+        t.write(x, &[0x44; 0x10]);
+        t.set_u32(x + 4, next);
+        t.set_u32(x + 8, prev);
+    }
+    t.set_u32(task, tn);
+    t.set_u32(task + 4, r);
+    task
+}
+
+/// `magic_0333` 0x10006650 (`r17::summon_task_0333`): every state, the
+/// counters at and past their bounds, the model's two ways, the last
+/// target's unlink, a state no case takes.
+#[test]
+fn summon_task_0333() {
+    let Some(mut t) = twin(333) else { return };
+    let f = t.at(0x6650);
+    for (k, (st, direct, targets)) in [
+        ((0u32, 0x10u32, 0u32), 0u32, 2u32),
+        ((0, 0x10, 0), 0, 3),
+        ((10, 3, 0), 0, 2),
+        ((11, 0x19, 0), 0, 2),
+        ((11, 0x1a, 0), 1, 2),
+        ((11, 0x40, 1), 0, 2),
+        ((12, 0x14, 0), 0, 2),
+        ((12, 0x13, 0), 0, 2),
+        ((11, 0x18, 0), 0, 2),
+        ((12, 0x30, 1), 0, 2),
+        ((5, 7, 0), 0, 2),
+        ((13, 7, 0), 0, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let task = summon_0333_setup(&mut t, f, k, st, targets);
+        t.set_u32(DIRECT_CELL, direct);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    // the paths ran: the nodes twice, two targets' nodes, three state-12 calls
+    for (s, n) in [(412u32, 2u32), (268, 2), (12, 1), (534, 2), (239, 2)] {
+        assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}
+
+/// What `r17::summon_task_0332` (at `f`) needs: as
+/// [`summon_0333_setup`], with the particle node called directly (its
+/// owner a global's word, its list `LIST2`) and the targets' table of
+/// slot 239.
+fn summon_0332_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (state, n, i): (u32, u32, u32),
+    targets: u32,
+) -> u32 {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    vector_slots(t);
+    float_slots(t, 0.5 + f64::from(k));
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 0, 1, 3]);
+    let count = SCRATCH + 0x9c;
+    t.set_u32(count, targets);
+    rec(t, 412, 3, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14] {
+        rec(t, s, 1, move |_, _| s);
+    }
+    rec(t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.5 * i as f32 + (a[0] & 0xf) as f32);
+        }
+        0x268
+    });
+    rec(t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let table = SCRATCH + 0x3400;
+    for j in 0..0x10 {
+        t.set_u32(table + 4 * j, 0x1111 * (j + 1));
+    }
+    rec(t, 941, 1, move |_, _| table);
+    let (node, slist) = (op(t, f, 0x67), op(t, f, 0x6f));
+    t.write(node, &vec![0x66; 0x2640]);
+    for l in [slist, op(t, f, 0x249)] {
+        t.write(l, &[0; 0x20]);
+        t.set_u32(l + 0x10, l);
+        t.set_u32(l + 0xc, l);
+    }
+    t.set_u32(op(t, f, 0x5b), 0x0a0a_0000 + k);
+    for j in 0..4 {
+        t.set_u32(op(t, f, 0xe6) + 0x98 * j, 0x0b0b_0000 + j);
+        t.set_u32(op(t, f, 0x166) + 0x98 * j + 0x54, 0x0c0c_0000 + j);
+    }
+    t.set_u32(op(t, f, 0x2df), targets);
+    for (a, len) in [(0xd2u32, 0x2c), (0xd8, 0x2c), (0xc1, 0x14c), (0x289, 56)] {
+        junk(t, op(t, f, a), 4 * len, k + a);
+    }
+    let pn = t.img.rel32_target(f + 0x266);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(op(t, wrapper, 0x04), lock);
+    t.set_u32(lock, 0x77);
+    t.set_u32(op(t, pn, 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    t.set_u32(op(t, f, 0x22c), owner);
+    for j in 0..0x40 {
+        t.set_u32(owner + 4 * j, (0.25 * j as f32).to_bits());
+    }
+    let (task, r, tn) = (SCRATCH + 0x700, SCRATCH + 0x780, SCRATCH + 0x740);
+    let (a, b) = (SCRATCH + 0x7c0, SCRATCH + 0x7e0);
+    junk(t, r, 0x40, k);
+    t.set_u32(r + 0x18, state);
+    t.set_u32(r + 0x1c, 1.5f32.to_bits());
+    t.set_u32(r + 0x20, (-0.5f32).to_bits());
+    t.set_u32(r + 0x24, i);
+    t.set_u32(r + 0x28, n);
+    for (x, next, prev) in [(tn, a, b), (a, b, tn), (b, tn, a)] {
+        t.write(x, &[0x44; 0x10]);
+        t.set_u32(x + 4, next);
+        t.set_u32(x + 8, prev);
+    }
+    t.set_u32(task, tn);
+    t.set_u32(task + 4, r);
+    task
+}
+
+/// `magic_0332` 0x10006550 (`r17::summon_task_0332`): every state, the
+/// counter at and past its bound, a middle and the last target (the
+/// list's first child and a later one), the unlink state, states no case
+/// takes.
+#[test]
+fn summon_task_0332() {
+    let Some(mut t) = twin(332) else { return };
+    let f = t.at(0x6550);
+    let lst = t.img.word(f + 0x6f);
+    let kid = SCRATCH + 0x7880;
+    for (k, (st, targets, child)) in [
+        ((0u32, 0x10u32, 0u32), 2u32, false),
+        ((10, 3, 0), 2, false),
+        ((11, 0x19, 0), 2, false),
+        ((11, 0x18, 0), 2, false),
+        ((11, 0x1a, 0), 2, false),
+        ((11, 0x40, 1), 2, true),
+        ((11, 0x40, 0), 3, true),
+        ((0x2710, 7, 0), 2, false),
+        ((5, 7, 0), 2, false),
+        ((12, 7, 0), 2, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let task = summon_0332_setup(&mut t, f, k, st, targets);
+        if child {
+            t.write(kid, &[0x3c; 0x40]);
+            t.set_u32(lst + 0x10, kid);
+            t.set_u32(lst + 0xc, kid);
+            t.set_u16(lst + 0x18, 1);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    for (s, n) in [(412u32, 1u32), (268, 3), (239, 3), (719, 3)] {
+        assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}
+
+/// What `r17::summon_task_0399` (at `f`) needs: the model nodes (slot 218
+/// gives `targets` models), the colour node's slots, the lists, the
+/// targets' handles and actors, the model's way, the particle node's part
+/// start and owner, slot 239's targets; `R` and the task's node.
+fn summon_0399_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (state, n, i): (u32, u32, u32),
+    targets: u32,
+) -> u32 {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    vector_slots(t);
+    float_slots(t, 0.5 + f64::from(k));
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 0, 1, 3]);
+    let count = SCRATCH + 0x9c;
+    t.set_u32(count, targets);
+    rec(t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14, 331, 353, 271] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.625);
+    rec(t, 558, 2, |m, a| {
+        for j in 0..4 {
+            m.w32(a[1] + 4 * j, 0x20 + 3 * j);
+        }
+        0x558
+    });
+    rec(t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    rec(t, 390, 1, |_, a| 0x2000 + (a[0] & 0xf));
+    rec(t, 534, 1, |m, _| m.r32(DIRECT_CELL));
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.5 * i as f32 + (a[0] & 0xf) as f32);
+        }
+        0x268
+    });
+    rec(t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let table = SCRATCH + 0x3400;
+    for j in 0..0x10 {
+        t.set_u32(table + 4 * j, 0x1111 * (j + 1));
+    }
+    rec(t, 941, 1, move |_, _| table);
+    let node = op(t, f, 0x63);
+    t.write(node, &vec![0x66; 0x500]);
+    t.write(op(t, f, 0x97), &[0x55; 0xb0]);
+    for l in [op(t, f, 0x6b), op(t, f, 0x9f), op(t, f, 0x399)] {
+        t.write(l, &[0; 0x20]);
+        t.set_u32(l + 0x10, l);
+        t.set_u32(l + 0xc, l);
+    }
+    t.set_u32(op(t, f, 0x57), 0x0a0a_0000 + k);
+    t.set_u32(op(t, f, 0x1d3), 0x0e0e_0000 + k);
+    for j in 0..4 {
+        t.set_u32(op(t, f, 0x2c7) + 0x98 * j, 0x0b0b_0000 + j);
+        t.set_u32(op(t, f, 0x2de) + 0x98 * j + 0x54, 0x0c0c_0000 + j);
+        t.set_u32(op(t, f, 0x1c8) + 0x98 * j, 0x0d0d_0000 + j);
+    }
+    t.set_u32(op(t, f, 0x1ea), targets);
+    for (a, len) in [(0x133u32, 0x2c), (0x13f, 0x2c), (0x16f, 0x14c), (0x3cd, 56)] {
+        junk(t, op(t, f, a), 4 * len, k + a);
+    }
+    let pn = t.img.rel32_target(f + 0x3ae);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(op(t, wrapper, 0x04), lock);
+    t.set_u32(lock, 0x77);
+    t.set_u32(op(t, pn, 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    t.set_u32(op(t, f, 0x37f), owner);
+    for j in 0..0x40 {
+        t.set_u32(owner + 4 * j, (0.25 * j as f32).to_bits());
+    }
+    let (task, r, tn) = (SCRATCH + 0x700, SCRATCH + 0x780, SCRATCH + 0x740);
+    let (a, b) = (SCRATCH + 0x7c0, SCRATCH + 0x7e0);
+    junk(t, r, 0x40, k);
+    t.set_u32(r + 0x18, state);
+    t.set_u32(r + 0x1c, 1.5f32.to_bits());
+    t.set_u32(r + 0x20, (-0.5f32).to_bits());
+    t.set_u32(r + 0x24, i);
+    t.set_u32(r + 0x28, n);
+    for (x, next, prev) in [(tn, a, b), (a, b, tn), (b, tn, a)] {
+        t.write(x, &[0x44; 0x10]);
+        t.set_u32(x + 4, next);
+        t.set_u32(x + 8, prev);
+    }
+    t.set_u32(task, tn);
+    t.set_u32(task + 4, r);
+    task
+}
+
+/// `magic_0399` 0x100069d0 (`r17::summon_task_0399`): every state, the
+/// counters at and past their bounds, the model's two ways, the last
+/// target, states no case takes.
+#[test]
+fn summon_task_0399() {
+    let Some(mut t) = twin(399) else { return };
+    let f = t.at(0x69d0);
+    for (k, (st, direct, targets)) in [
+        ((0u32, 0x10u32, 0u32), 0u32, 2u32),
+        ((0, 0x10, 1), 1, 3),
+        ((10, 3, 1), 0, 2),
+        ((11, 0x19, 0), 0, 2),
+        ((11, 0x18, 0), 0, 2),
+        ((11, 0x40, 1), 1, 2),
+        ((12, 0x13, 0), 0, 2),
+        ((13, 0x4f, 0), 0, 2),
+        ((12, 0x14, 0), 0, 2),
+        ((12, 0x15, 0), 0, 2),
+        ((12, 0x30, 1), 0, 2),
+        ((13, 0x50, 0), 0, 2),
+        ((13, 0x51, 0), 0, 2),
+        ((0x2710, 7, 0), 0, 2),
+        ((5, 7, 0), 0, 2),
+        ((14, 7, 0), 0, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let task = summon_0399_setup(&mut t, f, k, st, targets);
+        t.set_u32(DIRECT_CELL, direct);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    for (s, n) in [
+        (218u32, 2u32),
+        (268, 3),
+        (12, 1),
+        (239, 2),
+        (719, 3),
+        (558, 2),
+    ] {
+        assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}
+
+/// The slots and globals `magic_0330`'s summon functions share: the model
+/// nodes (slot 412 gives `targets` models), slot 268, 239, 719, 714, 941,
+/// 325 (vector slots), 307 (a random in ST0), the list `LIST` empty, the
+/// object ring empty, the targets' actors, the particle node's part start
+/// and owner.
+fn summon_0330_common(t: &mut Twin, k: u32, targets: u32) {
+    let op = |t: &Twin, a: u32, o: u32| t.img.word(a + o);
+    vector_slots(t);
+    float_slots(t, 0.5 + f64::from(k));
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 0, 1, 3]);
+    let count = SCRATCH + 0x9c;
+    t.set_u32(count, targets);
+    rec(t, 412, 3, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14] {
+        rec(t, s, 1, move |_, _| s);
+    }
+    rec(t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    rec(t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.5 * i as f32 + (a[0] & 0xf) as f32);
+        }
+        0x268
+    });
+    rec(t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| f64::from(m.r32(row(307)) % 5) * 0.375 + 0.25);
+    let table = SCRATCH + 0x3400;
+    for j in 0..0x10 {
+        t.set_u32(table + 4 * j, 0x1111 * (j + 1));
+    }
+    rec(t, 941, 1, move |_, _| table);
+    let task = t.at(0x6a40);
+    let obj = t.at(0x68f0);
+    let step = t.at(0x6550);
+    for l in [op(t, task, 0x65), op(t, step, 0x340)] {
+        t.write(l, &[0; 0x20]);
+        t.set_u32(l + 0x10, l);
+        t.set_u32(l + 0xc, l);
+    }
+    let ring = op(t, obj, 0x2f);
+    t.write(ring, &[0; 0x10]);
+    t.set_u32(ring + 4, ring);
+    t.set_u32(ring + 8, ring);
+    for j in 0..4 {
+        t.set_u32(op(t, obj, 0x97) + 0x98 * j + 0x54, 0x0c0c_0000 + j);
+        t.set_u32(op(t, step, 0x52) + 0x98 * j, 0x0d0d_0000 + j);
+    }
+    junk(t, op(t, obj, 0xd9), 4 * 56, k);
+    t.set_u32(op(t, step, 0x5d), 0x0e0e_0000 + k);
+    let pn = t.img.rel32_target(step + 0x35f);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(op(t, wrapper, 0x04), lock);
+    t.set_u32(lock, 0x77);
+    t.set_u32(op(t, pn, 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    t.set_u32(op(t, step, 0x330), owner);
+    for j in 0..0x40 {
+        t.set_u32(owner + 4 * j, (0.25 * j as f32).to_bits());
+    }
+}
+
+/// A task at `SCRATCH + 0x700` for `obj` (its node in a ring of three).
+fn summon_task_at(t: &mut Twin, obj: u32) -> u32 {
+    let (task, tn, a, b) = (
+        SCRATCH + 0x700,
+        SCRATCH + 0x740,
+        SCRATCH + 0x7c0,
+        SCRATCH + 0x7e0,
+    );
+    for (x, next, prev) in [(tn, a, b), (a, b, tn), (b, tn, a)] {
+        t.write(x, &[0x44; 0x10]);
+        t.set_u32(x + 4, next);
+        t.set_u32(x + 8, prev);
+    }
+    t.set_u32(task, tn);
+    t.set_u32(task + 4, obj);
+    task
+}
+
+/// `magic_0330` 0x10006a40 (`r17::summon_task_0330`, with
+/// `r17::summon_object_0330`): every state, the counter at and past its
+/// bound, a middle and the last target.
+#[test]
+fn summon_task_0330() {
+    let Some(mut t) = twin(330) else { return };
+    let f = t.at(0x6a40);
+    let objs = t.img.word(f + 0xb8);
+    for (k, ((state, n, i, j), targets)) in [
+        ((0u32, 0x10u32, 1u32, 3u32), 2u32),
+        ((10, 3, 1, 3), 2),
+        ((11, 0x19, 0, 0), 2),
+        ((11, 0x18, 0, 0), 2),
+        ((11, 0x40, 0, 0), 2),
+        ((11, 0x40, 1, 1), 2),
+        ((0x2710, 7, 0, 0), 2),
+        ((5, 7, 0, 0), 2),
+        ((12, 7, 0, 0), 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        summon_0330_common(&mut t, k, targets);
+        t.write(t.img.word(f + 0x5e), &vec![0x66; 0x2640]);
+        t.set_u32(t.img.word(f + 0x54), 0x0a0a_0000 + k);
+        t.set_u32(t.img.word(f + 0xcc), targets);
+        junk(&mut t, objs, 2 * 0xaf0, k);
+        let r = SCRATCH + 0x780;
+        junk(&mut t, r, 0x40, k);
+        for (o, v) in [(0x18u32, state), (0x24, i), (0x28, n), (0x2c, j)] {
+            t.set_u32(r + o, v);
+        }
+        t.set_u32(r + 0x1c, 1.5f32.to_bits());
+        let task = summon_task_at(&mut t, r);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    for (s, n) in [(412u32, 1u32), (268, 2), (719, 2)] {
+        assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}
+
+/// `magic_0330` 0x10006550 (`r17::summon_step_0330`): before and at each
+/// stage's time, stage 2's slot 239, the last stage's unlink.
+#[test]
+fn summon_step_0330() {
+    let Some(mut t) = twin(330) else { return };
+    let f = t.at(0x6550);
+    let times = t.img.word(f + 0x33);
+    for (k, (stage, early)) in [
+        (0u32, true),
+        (0, false),
+        (1, false),
+        (2, false),
+        (3, false),
+        (2, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        summon_0330_common(&mut t, k, 2);
+        let o = SCRATCH + 0x10000;
+        junk(&mut t, o, 0xb00, k);
+        let tm = f32::from_bits(t.u32(times + 4 * stage));
+        let clock = if early { tm - 0.25 } else { tm + 0.5 };
+        t.set_u32(o + 0xadc, clock.to_bits());
+        t.set_u32(o + 0xae0, stage);
+        t.set_u32(o + 0xae4, 1);
+        for (i, x) in [1.5f32, -2.0, 0.25, 1.0].into_iter().enumerate() {
+            t.set_u32(o + 0x59c + 4 * i as u32, x.to_bits());
+        }
+        let task = summon_task_at(&mut t, o);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    for (s, n) in [(307u32, 8u32), (239, 1), (325, 3)] {
+        assert!(t.u32(row(s)) >= n, "slot {s}: {} calls", t.u32(row(s)));
+    }
+}

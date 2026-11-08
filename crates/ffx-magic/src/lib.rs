@@ -1602,6 +1602,11 @@ ports! {
     "r17 summon flight 0168" => r17::SUMMON_FLIGHT_0168, r17::summon_flight_0168;
     "r17 summon landing 0168" => r17::SUMMON_LANDING_0168, r17::summon_landing_0168;
     "r17 summon spin 0168" => r17::SUMMON_SPIN_0168, r17::summon_spin_0168;
+    "r17 summon task 0333" => r17::SUMMON_TASK_0333, r17::summon_task_0333;
+    "r17 summon task 0332" => r17::SUMMON_TASK_0332, r17::summon_task_0332;
+    "r17 summon task 0399" => r17::SUMMON_TASK_0399, r17::summon_task_0399;
+    "r17 summon step 0330" => r17::SUMMON_STEP_0330, r17::summon_step_0330;
+    "r17 summon task 0330" => r17::SUMMON_TASK_0330, r17::summon_task_0330;
     // round 17 (magic-r17): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
@@ -3481,6 +3486,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r17 matrices 0168", &r17::MATS_0168),
     ("r17 start-up 0168", &r17::START_UP_0168),
     ("r17 trail 0168", &r17::TRAIL_0168),
+    ("r17 summon object 0330", &r17::SUMMON_OBJECT_0330),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
