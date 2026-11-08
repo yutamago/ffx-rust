@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
+use ffx_glue_other::l11_btlpos::bridge as l11b;
+use ffx_glue_other::l11_shp::bridge as l11s;
 use ffx_glue_other::{h4_j2 as j2, h4_j4 as j4, h4x_shape as xs, h4x_video as xv};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -223,6 +225,8 @@ struct Twins {
     tramp: u32,
     cave: u32,
     cave_next: u32,
+    /// The cave's length ([`CAVE_LEN`], or more after [`Twins::big_cave`]).
+    cave_len: u32,
     /// The result cell of each stub, by tag.
     cells: HashMap<u32, u32>,
     /// The `ST0` cell (`f64`) of each float stub, by tag.
@@ -243,6 +247,7 @@ impl Twins {
             tramp: cave,
             cave,
             cave_next: cave,
+            cave_len: CAVE_LEN,
             cells: HashMap::new(),
             fcells: HashMap::new(),
             hi_cells: HashMap::new(),
@@ -448,10 +453,24 @@ impl Twins {
         self.code(&c)
     }
 
+    /// Moves the cave to 64 KiB of the oracles' own code memory (the
+    /// same address in both), for tests with many stubs.
+    fn big_cave(&mut self) {
+        let fill = vec![0xcc; 0x1_0000];
+        let at = self.a.alloc_code(&fill).unwrap();
+        assert_eq!(self.b.alloc_code(&fill).unwrap(), at);
+        self.cave = at;
+        self.cave_next = at;
+        self.cave_len = 0x1_0000;
+    }
+
     /// Machine code in the cave; its address.
     fn code(&mut self, c: &[u8]) -> u32 {
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        assert!(
+            addr + c.len() as u32 <= self.cave + self.cave_len,
+            "cave full"
+        );
         self.write(addr, c);
         self.cave_next = addr + c.len() as u32;
         addr
@@ -490,6 +509,22 @@ impl Twins {
 
     fn diff(&mut self, what: &str) {
         let d = self.a.diff(&mut self.b).unwrap();
+        if !d.is_empty() && std::env::var_os("H4X_LOG").is_some() {
+            let n: u32 = Mem::read(&self.a, self.log);
+            for k in 0..n.min(200) {
+                let at = self.log + 4 + 64 * k;
+                let x: Vec<u32> = (0..10).map(|j| Mem::read(&self.a, at + 4 * j)).collect();
+                let y: Vec<u32> = (0..10).map(|j| Mem::read(&self.b, at + 4 * j)).collect();
+                eprintln!(
+                    "{k} {at:#x} {x:x?}{}",
+                    if x == y {
+                        String::new()
+                    } else {
+                        format!("\n   port {y:x?}")
+                    }
+                );
+            }
+        }
         assert!(
             d.is_empty(),
             "{what}: memory differs at {} bytes, first {:x?}",
@@ -1238,6 +1273,800 @@ fn x2_update_shape_field() {
             seen[3] += u32::from(cleared == 0);
             seen[4] += u32::from(wide && room > 0);
             seen[5] += u32::from(!wide && room > 0);
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
+    }
+}
+
+// ---- M5 round 11 (ffx_glue_other::l11_shp)
+
+/// `updateVFXRenderDataShp_OShapeVu1`: kind 3 with both layouts (counts
+/// 0..3 and negative), drawn and clipped quads (the second matrix 0, the
+/// first or another), tints and alphas, the segment buffer refused; other
+/// kinds with and without a valid fill buffer (the request's fields, the
+/// second matrix copied or not); missing render data; random and real
+/// constants. Every branch is reached by synthetic data (the snapshots
+/// hold no shape the test could pick).
+#[test]
+fn l11_update_shp_oshape_vu1() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_1b11);
+        let (mul_out, clip_out) = (t.zeros(64), t.zeros(64));
+        transform_stub(&mut t, l11s::MUL_MATRIX, 3, 2, 16, mul_out);
+        transform_stub(&mut t, l11s::ZCLIP, 6, 0, 16, clip_out);
+        let stubs = [
+            (l11s::GEOMETRY, 2),
+            (l11s::RENDER_DATA, 1),
+            (l11s::FILL_VALID, 0),
+            (l11s::FILL_REQUEST, 1),
+            (l11s::SEGMENT_BUFFER, 4),
+            (l11s::SET_VISIBLE, 3),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([l11s::MUL_MATRIX, l11s::ZCLIP]);
+        let f32s = [l11s::ALPHA_SCALE, l11s::F_LOW, l11s::F_HIGH];
+        let f64s = [
+            l11s::FIFTEEN,
+            l11s::MINUS_FIFTEEN,
+            l11s::INV_256,
+            l11s::INV_128,
+            l11s::INV_4096,
+        ];
+        let mut seen = [0u32; 8];
+        for i in 0..1200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &f32s, &f64s);
+            if rng.below(2) == 0 {
+                for (c, v) in [
+                    (l11s::ALPHA_SCALE, 128.0f32),
+                    (l11s::F_LOW, -100_000.0),
+                    (l11s::F_HIGH, 100_000.0),
+                ] {
+                    if rng.below(4) != 0 {
+                        t.g32(c, v.to_bits());
+                    }
+                }
+                for (c, v) in [
+                    (l11s::FIFTEEN, 15.0f64),
+                    (l11s::MINUS_FIFTEEN, -15.0),
+                    (l11s::INV_256, 1.0 / 256.0),
+                    (l11s::INV_128, 1.0 / 128.0),
+                    (l11s::INV_4096, 1.0 / 4096.0),
+                ] {
+                    if rng.below(4) != 0 {
+                        let at = t.rebase(c);
+                        t.write(at, &v.to_le_bytes());
+                    }
+                }
+            }
+            if rng.below(6) == 0 {
+                // texture coordinates whose 1 - v is not an f32
+                let at = t.rebase(l11s::INV_4096);
+                t.write(at, &(1.0f64 / 3001.0).to_le_bytes());
+            }
+            for out in [mul_out, clip_out] {
+                for k in 0..16 {
+                    let v = rng.float();
+                    t.w32(out + 4 * k, v);
+                }
+            }
+            t.ret(l11s::ZCLIP, rng.pick(&[0, 0, 0, 1, 2]));
+            t.ret(l11s::FILL_VALID, rng.below(2));
+            for sym in [l11s::FILL_MATRIX, l11s::FILL_MATRIX2, l11s::FILL_MATRIX3] {
+                let at = t.rebase(sym);
+                for k in 0..16 {
+                    let v = rng.float();
+                    t.w32(at + 4 * k, v);
+                }
+            }
+            // the object
+            let obj = random_block(&mut t, &mut rng, 0x20);
+            let m = random_block(&mut t, &mut rng, 0x40);
+            t.w32(obj + 0x10, m);
+            let other = random_block(&mut t, &mut rng, 0x40);
+            t.w32(obj + 0x1c, rng.pick(&[0, m, other]));
+            // the record
+            let wide = rng.below(2) == 0;
+            let stride = if wide { 0x28 } else { 0x20 };
+            let count = rng.pick(&[0i16, 1, 2, 3, 3, -1]);
+            let room = u32::from(count.max(0).cast_unsigned());
+            let shape = t.zeros((0x18 + stride * room + 8) as usize);
+            let flags: u16 = rng.pick(&[0, 8, 0x88, 0x07, 0xff08, 0x8000]);
+            let flags = if wide { flags | 8 } else { flags & !8 };
+            t.w16(shape, flags);
+            t.w16(shape + 2, count.cast_unsigned());
+            let kind = rng.pick(&[3u8, 3, 3, 0, 1, 0x83]);
+            t.w8(shape + 0xf, kind);
+            for k in 0..stride * room / 2 {
+                let v = rng.small();
+                t.w16(shape + 0x18 + 2 * k, v as u16);
+            }
+            for q in 0..room {
+                for c in 0..4 {
+                    let v = if rng.below(3) == 0 {
+                        rng.pick(&[0u8, 0xff, 0x80])
+                    } else {
+                        rng.below(256) as u8
+                    };
+                    t.w8(shape + 0x18 + stride * q + c, v);
+                }
+            }
+            // the render data and its buffers
+            let rd = random_block(&mut t, &mut rng, 0xc4);
+            let seg = random_block(&mut t, &mut rng, 0x80);
+            let quads = room + 2;
+            for (off, size) in [(0xc, 0x30), (0x14, 0x40), (0x18, 0x20), (0x1c, 12)] {
+                let b = random_block(&mut t, &mut rng, size * quads);
+                t.w32(seg + off, b);
+            }
+            t.w32(rd + 0x94, seg);
+            let req = random_block(&mut t, &mut rng, 0x190);
+            t.ret(l11s::FILL_REQUEST, req);
+            let missing = rng.below(12) == 0;
+            t.ret(l11s::RENDER_DATA, if missing { 0 } else { rd });
+            let refused = rng.below(10) == 0;
+            t.ret(
+                l11s::SEGMENT_BUFFER,
+                if refused { 0 } else { rng.next() | 1 },
+            );
+            let (lo, hi) = (rng.next(), rng.pick(&[0, 3]));
+            let ebp = t.ebp_for(4);
+            let frame = ebp - 0x84;
+            let valid = t.cell(l11s::FILL_VALID) != 0;
+            let r = t.check_framed(
+                &format!("{w} wide {wide} kind {kind} count {count}"),
+                0x0071_c0b0,
+                &[lo, hi, shape, obj],
+                frame,
+                &[(0, 0x80)],
+                |g| u(l11s::update_shp_oshape_vu1(g, frame, lo, hi, shape, obj)),
+            );
+            let second: u32 = Mem::read(&t.b, obj + 0x1c);
+            seen[0] += u32::from(missing);
+            seen[1] += u32::from(r == 0 && !missing);
+            seen[2] += u32::from(r == 1 && kind == 3 && wide && room > 0);
+            seen[3] += u32::from(r == 1 && kind == 3 && !wide && room > 0);
+            seen[4] += u32::from(r == 1 && kind == 3 && room > 0 && second != 0 && second != m);
+            seen[5] += u32::from(!missing && kind != 3 && valid);
+            seen[6] += u32::from(!missing && kind != 3 && !valid);
+            seen[7] += u32::from(r == 1 && kind == 3 && room == 0);
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
+    }
+}
+
+/// `MsBtlPosWriteBin`: both table kinds, 0..4 records with 0..3 points in
+/// each array (and a negative count), 0..3 sub-records with 0..3 points,
+/// 0..3 extra words; into a buffer (the game's only call) and to a file
+/// (`sceWrite` copies what it is handed into a log, so the records it sees
+/// are compared), the file failing to open (with and without the parser's
+/// file and line), the focus message, both arguments 0. Random and
+/// non-signalling special floats.
+#[test]
+#[allow(clippy::similar_names)] // subs, sub records
+fn l11_btl_pos_write_bin() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_ca58);
+        // sceWrite: the bytes it is handed appended to a log, then recorded
+        let sink = t.zeros(0x4_0000);
+        t.w32(sink, sink + 4);
+        let rest = t.stub_code(l11b::SCE_WRITE, false, 3, 0, false, &[]);
+        let mut c = vec![0x56, 0x57, 0x8b, 0x3d]; // push esi; push edi; mov edi, [sink]
+        c.extend(sink.to_le_bytes());
+        c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10]
+        c.extend([0x8b, 0x4c, 0x24, 0x14]); // mov ecx, [esp+0x14]
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x89, 0x3d]);
+        c.extend(sink.to_le_bytes()); // mov [sink], edi
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        jmp_to(&t, &mut c, rest);
+        let f = t.code(&c);
+        t.jump(l11b::SCE_WRITE, f);
+        let stubs = [
+            (l11b::SCE_OPEN, 2),
+            (l11b::SCE_CLOSE, 1),
+            (l11b::DBG_PRINTF, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        stub_import(&mut t, l11b::MALLOC_IAT, 1);
+        stub_import(&mut t, l11b::FREE_IAT, 1);
+        let tags = [
+            l11b::SCE_OPEN,
+            l11b::SCE_CLOSE,
+            l11b::DBG_PRINTF,
+            l11b::SCE_WRITE,
+            l11b::MALLOC_IAT,
+            l11b::FREE_IAT,
+        ];
+        let file_name = string(&mut t, b"btl.bin");
+        let mut seen = [0u32; 5];
+        for i in 0..400 {
+            t.fresh(&mut rng, &tags);
+            t.w32(sink, sink + 4);
+            let full = rng.below(3) != 0;
+            let n = rng.pick(&[0i32, 1, 2, 3, 4, -1]);
+            let room = n.max(0).cast_unsigned();
+            let s = t.zeros(0x40);
+            for k in 1..7 {
+                let v = rng.float();
+                t.w32(s + 4 * k, v);
+            }
+            t.w32(s, if full { 0 } else { rng.pick(&[1, 0x100, 0xff]) });
+            t.w32(s + 0x1c, n.cast_unsigned());
+            let records = t.zeros((0x74 * room.max(1)) as usize);
+            t.w32(s + 0x30, records);
+            let extras = rng.pick(&[0i32, 0, 1, 3, -2]);
+            let words = random_block(&mut t, &mut rng, 16);
+            t.w32(s + 0x24, extras.cast_unsigned());
+            t.w32(s + 0x2c, words);
+            for r in 0..room {
+                let e = records + 0x74 * r;
+                for k in 0..0x74 / 4 {
+                    let v = rng.float();
+                    t.w32(e + 4 * k, v);
+                }
+                for (cnt, arrays) in [
+                    (0xc, [0x28, 0x2c]),
+                    (0x30, [0x4c, 0x50]),
+                    (0x54, [0x60, 0x64]),
+                ] {
+                    let m = rng.pick(&[0i32, 1, 2, 3, -1]);
+                    t.w32(e + cnt, m.cast_unsigned());
+                    for a in arrays {
+                        let p = t.zeros(36);
+                        for k in 0..9 {
+                            let v = rng.float();
+                            t.w32(p + 4 * k, v);
+                        }
+                        t.w32(e + a, p);
+                    }
+                }
+                let subs = rng.pick(&[0i32, 1, 2, 3, -1]);
+                t.w32(e + 0x68, subs.cast_unsigned());
+                let list = t.zeros(0x14 * 3);
+                for k in 0..subs.max(0).cast_unsigned() {
+                    let sr = list + 0x14 * k;
+                    let (x, y) = (rng.next(), rng.next());
+                    t.w32(sr, x);
+                    t.w32(sr + 4, y);
+                    let pts = rng.pick(&[0i32, 1, 2, 3, -1]);
+                    t.w32(sr + 8, pts.cast_unsigned());
+                    let p = t.zeros(36);
+                    for j in 0..9 {
+                        let v = rng.float();
+                        t.w32(p + 4 * j, v);
+                    }
+                    t.w32(sr + 0x10, p);
+                }
+                t.w32(e + 0x70, list);
+            }
+            t.g32(l11b::TABLE, s);
+            let focus = rng.pick(&[0, 0, 0xffff_ffff, 1]);
+            t.g32(l11b::FOCUS, focus);
+            let file = rng.pick(&[0, file_name]);
+            t.g32(l11b::FILE, file);
+            let line = rng.pick(&[0, 7]);
+            t.g32(l11b::LINE, line);
+            let mode = rng.below(10);
+            let (arg_name, out) = match mode {
+                0..=5 => (0, t.zeros(0x2000)),
+                6..=8 => (file_name, 0),
+                _ => (0, 0),
+            };
+            if arg_name != 0 {
+                let fd = rng.pick(&[3, 0, 0xffff_ffff, 5]);
+                t.ret(l11b::SCE_OPEN, fd);
+                let block = rng.pick(&[0, 0x1234_5678]);
+                t.ret(l11b::MALLOC_IAT, block);
+            }
+            let ebp = t.ebp_for(2);
+            let frame = ebp - l11b::FRAME;
+            t.check_framed(
+                &format!("{name} {i} full {full} n {n} mode {mode}"),
+                0x007c_a580,
+                &[arg_name, out],
+                frame,
+                &[(0, 0xa4)],
+                |g| {
+                    if arg_name == 0 && out == 0 {
+                        Out::None
+                    } else {
+                        u(l11b::write_bin(g, frame, arg_name, out))
+                    }
+                },
+            );
+            seen[0] += u32::from(full && room > 0 && out != 0);
+            seen[1] += u32::from(!full && room > 0 && out != 0);
+            seen[2] += u32::from(arg_name != 0);
+            seen[3] += u32::from(full && extras > 0 && out != 0);
+            seen[4] += u32::from(arg_name == 0 && out == 0);
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 5), "{name}: {seen:?}");
+    }
+}
+
+// ---- M5 round 11, batch 5 (ffx_menu::l11_refpos)
+
+/// `Ms_Gui_ReferencePos`: every message; the step messages with each
+/// button and the auto-repeat saying go or not, every slider mode; the
+/// refresh with the object's lists of each kind (or none), the camera
+/// picked (the pad in every direction, slow and fast, up and down, every
+/// polar step) under camera modes 2, 4 and others, the actor picked, the
+/// printers of every mode with the shorts at and past -1; the selector's
+/// pick found or not; kinds 5 and others. Callees are recording stubs
+/// (`MsVectorRect2Polar` writes its three outputs, the float callees
+/// return random doubles); `_CIcos` / `_CIsin` are the CRT's.
+#[test]
+fn l11_reference_pos() {
+    use ffx_menu::l11_refpos::bridge as rp;
+    use ffx_menu::m5m_n::bridge as mn;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9c20);
+        t.big_cave();
+        // MsDebugGetCameraMode: arg 0 and 1 answered by two stubs
+        let mode0 = t.stub_code(mn::MS_DEBUG_GET_CAMERA_MODE, false, 1, 0, false, &[]);
+        let mode1 = t.stub_code(mn::MS_DEBUG_GET_CAMERA_MODE + 1, false, 1, 0, false, &[]);
+        let mut c = vec![0x83, 0x7c, 0x24, 0x04, 0x00]; // cmp dword [esp+4], 0
+        c.extend([0x0f, 0x84]); // je mode0
+        let here = t.cave_next + c.len() as u32 + 4;
+        c.extend(mode0.wrapping_sub(here).to_le_bytes());
+        jmp_to(&t, &mut c, mode1);
+        let f = t.code(&c);
+        t.jump(mn::MS_DEBUG_GET_CAMERA_MODE, f);
+        // MsVectorRect2Polar writes yaw, pitch and distance
+        let polar = [t.zeros(4), t.zeros(4), t.zeros(4)];
+        let writes = [wr(2, polar[0]), wr(3, polar[1]), wr(4, polar[2])];
+        t.stub_at(mn::MS_VECTOR_RECT2_POLAR, false, 5, 0, &writes);
+        let plain = [
+            (rp::ATEL_CHANGE_CURRENT_CTRL, 1),
+            (mn::MS_CAMERA_GET_ID, 1),
+            (mn::MS_CAMERA_GET_NUM, 1),
+            (mn::MS_DEBUG_CAMERA_KEEP, 1),
+            (mn::ATEL_GET_NOW_CTRL_TOP_ID, 0),
+            (rp::MS_SAVE_UC_ID, 1),
+            (rp::ATEL_GET_TOTAL_ACTOR_NUMBER2, 0),
+            (mn::CP_WINDOW_GET_ARG, 1),
+            (mn::CP_USER_MALLOC, 1),
+            (mn::CP_MEMSET, 3),
+            (mn::CP_WINDOW_SET_ARG, 2),
+            (mn::GU_SELECTOR_ALLOCATE, 4),
+            (mn::GU_WINDOW_SET_TITLE, 2),
+            (mn::GU_WINDOW_ADD_BUTTON, 7),
+            (mn::MS_AUTO_REPEAT_INIT, 3),
+            (mn::MS_SET_TABLE_ENTRY, 2),
+            (mn::GU_SELECTOR_GET_ITEM_NAME, 1),
+            (mn::MS_DEBUG_FIND_NAME, 2),
+            (rp::REF_MODE_NEXT, 7),
+            (mn::MS_AUTO_REPEAT_CHECK, 2),
+            (rp::SLIDER_XYZ, 3),
+            (rp::SLIDER_ACTORS, 4),
+            (rp::SLIDER_REFERENCE, 4),
+            (mn::MS_DEBUG_OUT_CAMERA, 0),
+            (rp::REF_FROM_CAMERA, 1),
+            (rp::REF_DRAW, 1),
+            (rp::REF_ROUND, 0),
+            (mn::GU_SELECTOR_RESET_NB_ITEM, 2),
+            (mn::GU_SELECTOR_SET_ITEM, 4),
+            (mn::GU_SELECTOR_OPEN, 3),
+            (mn::MS_BATTLE_GET_STATUS, 0),
+            (rp::ATEL_SET_CTRL_CHAR, 1),
+            (mn::GU_WINDOW_SET_BUTTON_TEXT, 3),
+            (mn::MS_DEBUG_SET_CAMERA_MODE, 2),
+            (rp::SG_SET_PLAYER, 1),
+            (mn::TK_GET_CONTROLER_HIST, 3),
+            (rp::MS_VECTOR_POLAR2RECT, 5),
+            (rp::PRINT_XYZ, 3),
+            (rp::PRINT_ACTORS, 3),
+            (rp::PRINT_BTL, 5),
+            (mn::MS_DEBUG_SPLINE_PRINT, 4),
+            (rp::PRINT_DASHES, 1),
+            (mn::GU_PRINT_SET_X, 1),
+            (mn::GU_PRINT_SET_Y, 1),
+            (mn::GU_PRINTF, 2),
+            (mn::MS_DEBUG_CAMERA_APPLY, 1),
+        ];
+        for (sym, n) in plain {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        for (sym, n) in [
+            (rp::REF_ADD, 1),
+            (rp::REF_SET, 7),
+            (rp::MS_CAMERA_GET_YAW, 0),
+        ] {
+            t.stub(sym, n, true);
+        }
+        // sprintf: the words each format takes, by format
+        let wide = t.stub_code(mn::SPRINTF + 1, false, 4, 0, false, &[]);
+        let flst = t.stub_code(mn::SPRINTF + 2, false, 9, 0, false, &[]);
+        let short = t.stub_code(mn::SPRINTF, false, 2, 0, false, &[]);
+        let mut c = Vec::new();
+        for (fmt, to) in [(rp::S_ACTOR, wide), (rp::S_FLOAT, wide), (rp::S_FLST, flst)] {
+            c.extend([0x81, 0x7c, 0x24, 0x08]); // cmp dword [esp+8], fmt
+            c.extend(t.rebase(fmt).to_le_bytes());
+            c.extend([0x0f, 0x84]); // je to
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(to.wrapping_sub(here).to_le_bytes());
+        }
+        jmp_to(&t, &mut c, short);
+        let f = t.code(&c);
+        t.g32(mn::SPRINTF, f);
+        let mut tags: Vec<u32> = plain.iter().map(|p| p.0).collect();
+        tags.extend([
+            mn::MS_DEBUG_GET_CAMERA_MODE,
+            mn::MS_DEBUG_GET_CAMERA_MODE + 1,
+            mn::MS_VECTOR_RECT2_POLAR,
+            rp::REF_ADD,
+            rp::REF_SET,
+            rp::MS_CAMERA_GET_YAW,
+            mn::SPRINTF,
+            mn::SPRINTF + 1,
+            mn::SPRINTF + 2,
+        ]);
+        let f64s = [
+            rp::D_MINUS_MILLI,
+            rp::D_MILLI,
+            rp::D_QUARTER_PI,
+            rp::D_QUARTER,
+            rp::D_YAW_STEP,
+            rp::D_PITCH_STEP,
+            rp::D_TWO,
+        ];
+        let f32s = [
+            rp::F_UP_RIGHT,
+            rp::F_UP_LEFT,
+            rp::F_DOWN_RIGHT,
+            rp::F_DOWN_LEFT,
+            rp::F_DOWN,
+            rp::F_RIGHT,
+            rp::F_LEFT,
+        ];
+        // the camera blocks: random floats
+        let cams = t.rebase(rp::CAMERAS);
+        for k in 0..3 * 0xda0 / 4 {
+            let v = rng.float();
+            t.w32(cams + 4 * k, v);
+        }
+        let mut seen = [0u32; 6];
+        for i in 0..1500 {
+            t.fresh(&mut rng, &tags);
+            if rng.below(3) == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+            }
+            let screen = rng.below(2);
+            t.g32(rp::DEBUG_CAMERA_INDEX, screen);
+            let cam = rng.below(3);
+            let at = t.rebase(rp::DEBUG_CAMERA) + 0x1c0 * screen;
+            t.w8(at, cam as u8);
+            let kind = rng.pick(&[5u32, 5, 0, 3, 0xf, 0xd]);
+            t.g32(rp::OPEN, 1);
+            let id = rng.next() & 0xfff0_ffff | kind << 16;
+            t.ret(mn::MS_CAMERA_GET_ID, id);
+            let num = rng.below(4);
+            t.ret(mn::MS_CAMERA_GET_NUM, num);
+            t.ret(mn::MS_DEBUG_CAMERA_KEEP, rng.below(3));
+            let mode = rng.pick(&[1u32, 1, 3, 3, 0xb, 0xc, 0xd, 0xe, 2, 7, 0x20]);
+            t.ret(mn::MS_DEBUG_GET_CAMERA_MODE, mode);
+            let mode1 = rng.pick(&[2u32, 4, 0, 1]);
+            t.ret(mn::MS_DEBUG_GET_CAMERA_MODE + 1, mode1);
+            let actor = rng.pick(&[-3i32, -2, -1, -1, 0, 1, 5, 40]);
+            t.g32(rp::ACTOR, actor.cast_unsigned());
+            t.ret(
+                mn::ATEL_GET_NOW_CTRL_TOP_ID,
+                rng.pick(&[0, 3, 0x40, u32::MAX]),
+            );
+            t.ret(
+                rp::ATEL_GET_TOTAL_ACTOR_NUMBER2,
+                rng.pick(&[0, 1, 4, 0xffff_fffe]),
+            );
+            let arg = random_block(&mut t, &mut rng, 0x94);
+            t.ret(mn::CP_WINDOW_GET_ARG, arg);
+            let block = t.zeros(0x94);
+            t.ret(mn::CP_USER_MALLOC, block);
+            t.ret(mn::MS_AUTO_REPEAT_CHECK, u32::from(rng.below(5) != 0));
+            t.ret(mn::MS_BATTLE_GET_STATUS, rng.below(2));
+            t.ret(
+                mn::MS_DEBUG_FIND_NAME,
+                rng.pick(&[1, 3, 0xb, 0xc, 0xd, 2, 9]),
+            );
+            let pad = match rng.below(4) {
+                0 => rng.next(),
+                1 => 0,
+                _ => {
+                    rng.pick(&[
+                        0x1000u32, 0x9000, 0x3000, 0x4000, 0xc000, 0x6000, 0x8000, 0x2000,
+                    ]) | rng.below(0x100)
+                }
+            };
+            t.ret(mn::TK_GET_CONTROLER_HIST, pad);
+            for p in polar {
+                let v = rng.float();
+                t.w32(p, v);
+            }
+            for sym in [rp::REF_ADD, rp::REF_SET, rp::MS_CAMERA_GET_YAW] {
+                let v = rng.double();
+                t.ret_f64(sym, v);
+            }
+            // the reference object's flags, shorts and lists
+            let obj = cams + 0xda0 * cam + 0xc0 + 0x130 * num;
+            t.w8(obj + 4, rng.pick(&[0u8, 1, 0x80]));
+            for k in 0..4 {
+                let v = rng.pick(&[0xffffu16, 0xfffe, 0, 5, 0x8000]);
+                t.w16(obj + 0xc + 2 * k, v);
+            }
+            for k in 0..5 {
+                let ty = rng.pick(&[0u32, 0, 1, 2, 3, 4]);
+                t.w32(obj + 0x90 + 0x20 * k, ty);
+            }
+            let (msg, param) = match rng.below(12) {
+                0..=3 => (
+                    rng.pick(&[0x8005, 0x8009, 0x800d]),
+                    rng.pick(&[2u32, 5, 6, 8, 9, 0xa, 0xd, 0xe, 0x33, 0x36, 0x27, 7]),
+                ),
+                4..=7 => (0x8011, rng.next()),
+                8 => (0x8012, rng.pick(&[0x36, 0x36, 2])),
+                _ => (
+                    rng.pick(&[
+                        0x8001, 0x8003, 0x8006, 0x800a, 0x800e, 0x8002, 0x8013, 0x8000,
+                    ]),
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            let ebp = t.ebp_for(3);
+            let frame = ebp - rp::FRAME;
+            t.check_framed(
+                &format!("{name} {i} msg {msg:#x} param {param:#x} mode {mode} mode1 {mode1}"),
+                0x007d_9c20,
+                &[window, msg, param],
+                frame,
+                &[(0, 4), (8, 4), (0x10, 4), (0x20, 0x100)],
+                |g| u(rp::reference_pos(g, ebp, window, msg, param)),
+            );
+            let now: i32 = Mem::read(&t.b, t.rebase(rp::ACTOR));
+            seen[0] += u32::from(msg == 0x8011 && now < 0);
+            seen[1] += u32::from(msg == 0x8011 && now >= 0);
+            seen[2] += u32::from(msg & 0xfff3 == 0x8001 && msg != 0x8001);
+            seen[3] += u32::from(msg == 0x8012);
+            seen[4] += u32::from(msg == 0x8001);
+            seen[5] += u32::from(msg == 0x8011 && now < 0 && pad & 0x50 != 0);
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
+    }
+}
+
+// ---- M5 round 11, batch 6 (ffx_menu::l11_btlproc)
+
+/// `Ms_Gui_BattleProc`: every message; the step messages with each button
+/// (the auto-repeat saying go or not), in battle and out, every kind
+/// (0, 3, 4, 5, 0xb and others), the field index and distance at their
+/// bounds, the file found or not and loaded or not; the refresh with the
+/// pad in every direction (slow and fast), every pad edge calling the
+/// window again, the group record's count and the kind's count at and
+/// past 0. `MsBtlPosAccess` writes the position when it reads (`dir` <=
+/// 0); `MsDebugIsTextMode` stays the original (its callers keep `ecx` and
+/// `dl` across it); `_CIcos` / `_CIsin` are the CRT's.
+#[test]
+fn l11_battle_proc() {
+    use ffx_menu::l11_btlproc::bridge as bp;
+    use ffx_menu::m5m_n::bridge as mn;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_80a0);
+        t.big_cave();
+        // MsBtlPosAccess: copies three words from `src` to its argument 4
+        // when it reads, and appends the three words there to a log when it
+        // writes (what it would store into the table)
+        let src = t.zeros(12);
+        let written = t.zeros(0x1_0000);
+        t.w32(written, written + 4);
+        let rest = t.stub_code(bp::POS_ACCESS, false, 5, 0, false, &[]);
+        let mut c = vec![0x83, 0x7c, 0x24, 0x04, 0x00]; // cmp dword [esp+4], 0
+        c.extend([0x7f, 0x24]); // jg the write path (31 + 5 bytes on)
+        c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14]
+        for k in 0..3u8 {
+            c.push(0x8b);
+            c.push(0x0d);
+            c.extend((src + 4 * u32::from(k)).to_le_bytes()); // mov ecx, [src+4k]
+            c.extend([0x89, 0x48, 4 * k]); // mov [eax+4k], ecx
+        }
+        jmp_to(&t, &mut c, rest);
+        c.extend([0x56, 0x57, 0x8b, 0x74, 0x24, 0x1c]); // push esi; push edi; mov esi, [esp+0x1c]
+        c.extend([0x8b, 0x3d]);
+        c.extend(written.to_le_bytes()); // mov edi, [written]
+        c.extend([0xa5, 0xa5, 0xa5]); // movsd x3
+        c.extend([0x89, 0x3d]);
+        c.extend(written.to_le_bytes()); // mov [written], edi
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        jmp_to(&t, &mut c, rest);
+        let f = t.code(&c);
+        t.jump(bp::POS_ACCESS, f);
+        let plain = [
+            (mn::MS_AUTO_REPEAT_INIT, 3),
+            (mn::GU_WINDOW_ADD_BUTTON, 7),
+            (mn::MS_AUTO_REPEAT_CHECK, 2),
+            (bp::POS_GROUP, 0),
+            (bp::NEXT_KIND, 1),
+            (bp::SET_DIR_AT, 4),
+            (bp::POS_DISTANCES, 2),
+            (bp::WRITE_ALL, 1),
+            (bp::COPY_POINTS, 3),
+            (bp::PLACE_ALL, 0),
+            (bp::WINDOWS_ALL, 1),
+            (bp::EDIT_FREE, 0),
+            (bp::WRITE_SCR, 1),
+            (bp::POS_LOAD, 1),
+            (bp::BATTLE_POS_INIT, 3),
+            (bp::CHECK_FILE, 1),
+            (bp::STR_COPY, 3),
+            (bp::PATH_SET_EXT, 4),
+            (bp::SCRIPT_COMPILE, 2),
+            (bp::GET_BATTLE_NAME, 2),
+            (bp::DBG_PRINTF, 2),
+            (mn::TK_GET_CONTROLER_HIST, 3),
+            (mn::GU_WINDOW_SET_BUTTON_TEXT, 3),
+            (mn::GU_WINDOW_SET_TITLE, 2),
+            (mn::GU_PRINT_SET_X, 1),
+            (mn::GU_PRINT_SET_Y, 1),
+            (mn::GU_PRINTF, 1),
+        ];
+        for (sym, n) in plain {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        for (sym, n) in [(bp::DIR_AT, 3), (bp::CAMERA_GET_YAW, 0)] {
+            t.stub(sym, n, true);
+        }
+        // sprintf: the words each format takes
+        let three = t.stub_code(mn::SPRINTF + 1, false, 3, 0, false, &[]);
+        let four = t.stub_code(mn::SPRINTF + 2, false, 4, 0, false, &[]);
+        let two = t.stub_code(mn::SPRINTF, false, 2, 0, false, &[]);
+        let mut c = Vec::new();
+        for (fmt, to) in [
+            (bp::S_TITLE, three),
+            (bp::S_3D, three),
+            (bp::S_PAIR, four),
+            (bp::S_FLOAT, four),
+        ] {
+            c.extend([0x81, 0x7c, 0x24, 0x08]); // cmp dword [esp+8], fmt
+            c.extend(t.rebase(fmt).to_le_bytes());
+            c.extend([0x0f, 0x84]); // je to
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(to.wrapping_sub(here).to_le_bytes());
+        }
+        jmp_to(&t, &mut c, two);
+        let f = t.code(&c);
+        t.g32(mn::SPRINTF, f);
+        let mut tags: Vec<u32> = plain.iter().map(|p| p.0).collect();
+        tags.extend([
+            bp::POS_ACCESS,
+            bp::DIR_AT,
+            bp::CAMERA_GET_YAW,
+            mn::SPRINTF,
+            mn::SPRINTF + 1,
+            mn::SPRINTF + 2,
+        ]);
+        let f32s = [bp::F_FINE, bp::F_COARSE];
+        let f64s = [bp::D_QUARTER_PI, bp::D_QUARTER];
+        let mut seen = [0u32; 6];
+        for i in 0..1500 {
+            t.fresh(&mut rng, &tags);
+            if rng.below(3) == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+                for &d in &bp::F_DIRECTIONS {
+                    let v = rng.float();
+                    t.g32(d, v);
+                }
+            }
+            for k in 0..3 {
+                let v = rng.float();
+                t.w32(src + 4 * k, v);
+            }
+            let kind = rng.pick(&[0u32, 3, 4, 5, 0xb, 1, 2, 6, 0xa, 0xb, 3]);
+            t.g32(bp::KIND, kind);
+            for k in 0..12 {
+                let v = rng.pick(&[0u32, 1, 2, 5, u32::MAX]);
+                t.g32(bp::PICKS + 4 * k, v);
+            }
+            let group = rng.pick(&[0u8, 1, 3, 0xff, 0x7f, 0x80]);
+            t.w8(t.rebase(bp::GROUP), group);
+            let dist = rng.pick(&[0u8, 1, 2, 4, 0xff, 0x7f]);
+            t.w8(t.rebase(bp::DIST), dist);
+            let status = rng.pick(&[0u8, 1, 1, 0x80, 2]);
+            t.w8(t.rebase(bp::BTL_STATUS), status);
+            let field = rng.pick(&[0u16, 1, 1, 0xffff]);
+            t.w16(t.rebase(bp::FIELD_INDEX), field);
+            let points = t.zeros(8);
+            t.w8(points + 1, rng.pick(&[0u8, 1, 3, 0xff]));
+            t.g32(bp::FIELD_POINTS, points);
+            let count = rng.pick(&[0u32, 1, 3, u32::MAX]);
+            t.g32(bp::COUNT, count);
+            for sym in [bp::POS, bp::POS + 4, bp::POS + 8, bp::DIR] {
+                let v = rng.float();
+                t.g32(sym, v);
+            }
+            for sym in [
+                bp::BLINK,
+                bp::PAD_BEFORE,
+                bp::BUFFER,
+                bp::SELECTED,
+                bp::OPEN,
+            ] {
+                let v = rng.next();
+                t.g32(sym, v);
+            }
+            for state in [bp::REPEAT1, bp::REPEAT10, bp::REPEAT100] {
+                let v = rng.next();
+                t.g32(state, v);
+            }
+            for k in 0..0x60 {
+                let w = if rng.below(8) == 0 {
+                    random_block(&mut t, &mut rng, 0x24)
+                } else {
+                    0
+                };
+                t.g32(bp::WINDOWS + 4 * k, w);
+            }
+            let grp = t.zeros(8);
+            t.w8(grp + 1, rng.pick(&[0u8, 1, 4, 0x80]));
+            t.ret(bp::POS_GROUP, grp);
+            t.ret(mn::MS_AUTO_REPEAT_CHECK, u32::from(rng.below(5) != 0));
+            t.ret(bp::CHECK_FILE, rng.pick(&[0, 1, u32::MAX]));
+            t.ret(bp::POS_LOAD, rng.below(2));
+            let pad = match rng.below(4) {
+                0 => rng.next(),
+                1 => rng.below(0x100),
+                _ => {
+                    rng.pick(&[
+                        0x1000u32, 0x9000, 0x3000, 0x4000, 0xc000, 0x6000, 0x8000, 0x2000,
+                    ]) | rng.below(0x100)
+                }
+            };
+            t.ret(mn::TK_GET_CONTROLER_HIST, pad);
+            for sym in [bp::DIR_AT, bp::CAMERA_GET_YAW] {
+                let v = rng.double();
+                t.ret_f64(sym, v);
+            }
+            let (msg, param) = match rng.below(12) {
+                0..=4 => (
+                    rng.pick(&[0x8005, 0x8009, 0x800d]),
+                    rng.pick(&[
+                        0x15u32, 0x16, 0x1e, 0x1f, 0x3d, 0x3e, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45,
+                        0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x52, 0x8d, 0x17, 0x100,
+                    ]),
+                ),
+                5..=8 => (0x8011, rng.next()),
+                _ => (
+                    rng.pick(&[
+                        0x8001, 0x8003, 0x8006, 0x800a, 0x800e, 0x8002, 0x8012, 0x8000,
+                    ]),
+                    rng.next(),
+                ),
+            };
+            let window = rng.next();
+            let ebp = t.ebp_for(3);
+            let frame = ebp - bp::FRAME;
+            t.check_framed(
+                &format!("{name} {i} msg {msg:#x} param {param:#x} kind {kind}"),
+                0x007d_80a0,
+                &[window, msg, param],
+                frame,
+                &[(0, 0x300)],
+                |g| u(bp::battle_proc(g, ebp, window, msg, param)),
+            );
+            seen[0] += u32::from(msg == 0x8011 && pad & 0xf000 != 0);
+            seen[1] += u32::from(msg == 0x8011 && status != 0);
+            seen[2] += u32::from(msg & 0xfff3 == 0x8001 && msg != 0x8001 && status != 0);
+            seen[3] += u32::from(msg == 0x8003);
+            seen[4] += u32::from(msg == 0x8001);
+            seen[5] += u32::from(msg == 0x8011 && pad & 0xf != 0);
         }
         eprintln!("{name}: {seen:?}");
         assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");

@@ -177,7 +177,8 @@ pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
         | "FreeLibrary"
         | "IsValidCodePage"
         | "TlsFree"
-        | "FlushFileBuffers" => (One, 1),
+        | "FlushFileBuffers"
+        | "DisableThreadLibraryCalls" => (One, 1),
         "InitializeCriticalSectionAndSpinCount" | "HeapCompact" | "IsValidLocale" => (One, 2),
         "HeapFree" | "HeapValidate" => (One, 3),
         "GetProcessHeap" => (GetProcessHeap, 0),

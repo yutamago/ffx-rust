@@ -899,6 +899,140 @@ impl Oracle {
         Some(self.uc.get_data().dll_base).filter(|&b| b != 0)
     }
 
+    /// Loads the game's C++ runtime, `MSVCP110.dll` from beside `exe`
+    /// (the `FFX.exe` this oracle was made from), for tests of originals
+    /// that run the standard library's streams and locales (`docs/porting.md`,
+    /// "The C++ runtime"). Needs the C runtime loaded ([`Runtime::Dll`]).
+    ///
+    /// The DLL is mapped into a free range and relocated; its `MSVCR110`
+    /// imports are bound to the loaded runtime's exports (all of them,
+    /// `malloc` and `free` included: what it allocates lives on the C
+    /// runtime's heap and is freed there), its `KERNEL32` imports to the
+    /// `win32` stand-ins (or missing stubs that stop the emulation).
+    /// `DllMain(module, DLL_PROCESS_ATTACH, 0)` runs on the game thread's
+    /// x87 setting, then `FFX.exe`'s `MSVCP110` imports are bound to the
+    /// DLL's exports (functions, vtables and objects alike). The DLL's
+    /// image and the whole C runtime heap are left out of [`Oracle::diff`]:
+    /// locale reference counts and facets change in the original's run of a
+    /// pair only. Its x87 instructions run as the emulator has them (the
+    /// integer and string paths use none).
+    ///
+    /// # Errors
+    /// When the C runtime is not loaded, the DLL is missing or cannot be
+    /// parsed, there is no room for it, or its `DllMain` fails.
+    pub fn load_cpp_runtime(&mut self, exe: impl AsRef<Path>) -> Result<()> {
+        let exe = exe.as_ref();
+        if self.runtime_base().is_none() {
+            return Err(Error::RuntimeInit(
+                "MSVCP110.dll needs MSVCR110.dll loaded".into(),
+            ));
+        }
+        let dir = exe.parent().unwrap_or_else(|| Path::new("."));
+        let bytes = ["MSVCP110.dll", "msvcp110.dll"]
+            .iter()
+            .find_map(|n| std::fs::read(dir.join(n)).ok())
+            .ok_or_else(|| Error::RuntimeInit("no MSVCP110.dll beside FFX.exe".into()))?;
+        let pe = PE::parse(&bytes)?;
+        let mut image = lay_out(&bytes, &pe)?;
+        let mut taken: Vec<(u64, u64)> = self
+            .uc
+            .mem_regions()?
+            .iter()
+            .map(|r| (r.begin, r.end + 1))
+            .collect();
+        if let Some(p) = &self.uc.get_data().pages {
+            for r in &p.snapshot.regions {
+                taken.push((u64::from(r.base), u64::from(r.base) + u64::from(r.size)));
+            }
+        }
+        let base = gap(&mut taken, image.len() as u64)?;
+        let base32 = u32::try_from(base).expect("32-bit");
+        let preferred = u32::try_from(pe.image_base)
+            .map_err(|_| goblin::error::Error::Malformed("base".into()))?;
+        relocate(&mut image, &pe, base32.wrapping_sub(preferred));
+        self.uc.mem_map(base, image.len() as u64, Prot::ALL)?;
+        self.uc.mem_write(base, &image)?;
+        for import in &pe.imports {
+            let name = import.name.as_ref();
+            let export = import
+                .dll
+                .eq_ignore_ascii_case("msvcr110.dll")
+                .then(|| self.uc.get_data().exports.get(name).copied())
+                .flatten();
+            let bound = match export {
+                Some(at) => at,
+                None => {
+                    let (stub, code) = if let Some((api, n)) = win32::lookup(import.dll, name) {
+                        (Stub::Win32(api), win32::code(n))
+                    } else {
+                        let state = self.uc.get_data_mut();
+                        state
+                            .unstubbed
+                            .push(format!("{}!{name} (MSVCP110)", import.dll));
+                        (Stub::Missing(state.unstubbed.len() - 1), vec![0xc3])
+                    };
+                    let at = self.alloc_code(&code)?;
+                    self.uc.get_data_mut().stubs.insert(u64::from(at), stub);
+                    at
+                }
+            };
+            self.uc
+                .mem_write(base + import.offset as u64, &bound.to_le_bytes())?;
+        }
+        let exports: HashMap<&str, u32> = pe
+            .exports
+            .iter()
+            .filter(|e| e.reexport.is_none())
+            .filter_map(|e| Some((e.name?, base32 + u32::try_from(e.rva).ok()?)))
+            .collect();
+        let entry = base32
+            + pe.header
+                .optional_header
+                .map_or(0, |o| o.standard_fields.address_of_entry_point);
+        let cw = u32::try_from(self.uc.reg_read(RegisterX86::FPCW)?).unwrap_or(GAME_FPU_CONTROL);
+        self.set_fpu_control(GAME_FPU_CONTROL)?;
+        let ok = self
+            .call(entry, Conv::Stdcall, &[base32, 1, 0])
+            .map_err(|e| Error::RuntimeInit(format!("MSVCP110: {e}")))?;
+        if ok.eax == 0 {
+            return Err(Error::RuntimeInit("MSVCP110 DllMain returned FALSE".into()));
+        }
+        self.set_fpu_control(cw)?;
+        // FFX.exe's MSVCP110 imports to the DLL's exports
+        let ffx = std::fs::read(exe)?;
+        let fpe = PE::parse(&ffx)?;
+        let image_base = u64::from(self.image_base());
+        for import in &fpe.imports {
+            if !import.dll.eq_ignore_ascii_case("msvcp110.dll") {
+                continue;
+            }
+            let name = import.name.as_ref();
+            if let Some(&at) = exports.get(name) {
+                self.uc
+                    .mem_write(image_base + import.offset as u64, &at.to_le_bytes())?;
+                self.uc
+                    .get_data_mut()
+                    .imports
+                    .insert(name.to_string(), u64::from(at));
+            }
+        }
+        let s = self.uc.get_data_mut();
+        let crt_heap = s.crt_heap.1 - CRT_HEAP_SIZE..s.crt_heap.1;
+        s.private.push(base..base + image.len() as u64);
+        s.private.push(crt_heap);
+        self.clear_dirty();
+        Ok(())
+    }
+
+    /// Leaves `range` out of [`Oracle::diff`] (a test's own scratch: a bump
+    /// heap the original's allocations go to, say).
+    pub fn add_private(&mut self, range: std::ops::Range<u32>) {
+        self.uc
+            .get_data_mut()
+            .private
+            .push(u64::from(range.start)..u64::from(range.end));
+    }
+
     /// Rebinds an import's slot in `FFX.exe`'s import table to `target`
     /// (a test's own code), or to its native stub when `target` is `None`.
     /// Returns the previous binding.

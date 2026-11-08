@@ -387,7 +387,11 @@ sent in frame n + 1. The `AsyncControllerTaskManager` thread
 an object of 0x63c bytes at `*g_Settings` (`0x022fb504`). No
 `GetPrivateProfileString`: `Settings_Load` (`0x00401cb0`) reads the file
 with `_wfopen(L"rb")` and `Settings_Parse` (`0x00401e00`) splits it with an
-`istringstream` and `getline`, `key=value`, keys matched with `_stricmp`
+`istringstream` and `operator>>` into a `std::string` (`0x00405800`), not
+`getline`: words between spaces (`\t`, `\n`, `\v`, `\f`, `\r`, `' '`; so a
+CRLF file reads like an LF one, and `key = value` is three invalid words),
+one more empty word when the text ends in a space; each word `key=value`
+(the first `=`), keys matched with `_stricmp`
 (`g_SettingsKeyNames` `0x00c8a248`), values by `Settings_SetValue`
 (`0x00401930`: the enum names at `g_SettingsValueStrings` `0x00c89f48 + 0x20 key`,
 else `atoi`; `Resolution` `W*H` packed `W << 16 | H`; binding lists comma
@@ -769,10 +773,9 @@ PhyreEngine code: `PVideoPlaybackWin32`'s threads, `open`, `initialize`,
 
 ## Open questions
 
-1. GameSetting.ini line ends: does `getline` leave `\r` in the values of a
-   CRLF file (the user's is CRLF), so that every enum value fails and keeps
-   its default? Check with `tools/frida/peek.py 0x022fb504 0x60 --deref`
-   under the harness with a CRLF file.
+1. (Answered 2026-11-08, tail11: `Settings_Parse` reads words with
+   `operator>>`, which skips `\r` like any space, so CRLF files parse like
+   LF ones; the parity test runs the original over the game's MSVCP110.)
 2. Movies: does the update rate during a movie match 29.97 Hz, or does the
    video drift against the FMOD stream? Trace `updateTexture` `0x00a284a0`
    and the read callback in a movie replay. Also confirm libvpx's worker

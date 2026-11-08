@@ -24,6 +24,8 @@ pub mod ability_map;
 pub mod arms;
 pub mod gu;
 pub mod item;
+pub mod l11_btlproc;
+pub mod l11_refpos;
 pub mod l8_mbs;
 pub mod m5m_a;
 pub mod m5m_b;
