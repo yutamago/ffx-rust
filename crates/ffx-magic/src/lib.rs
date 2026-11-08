@@ -1649,6 +1649,8 @@ ports! {
     "r21 set-up 0198" => r21::SET_UP_0198, r21::set_up_0198;
     "r21 step 0198" => r21::STEP_0198, r21::step_0198;
     "r21 end 0198" => r21::END_0198, r21::end_0198;
+    "r21 fade 0276" => r21::FADE_0276, r21::fade_0276;
+    "r21 load step 0276" => r21::LOAD_0276, r21::load_0276;
     "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
     "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
     "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;
@@ -3648,6 +3650,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r21 colour set-up 0388", &r21::COLOUR_SETUP_0388),
     ("r21 start-up 0431", &r21::START_0431),
     ("r21 start-up 0440", &r21::START_UP_0440),
+    ("r21 start-up 0276", &r21::START_UP_0276),
     // round 21 (magic-r21): end of INTERNAL
     // round 19 (magic-r19)
     ("r19 three nodes 0128", &r19::THREE_NODES_0128),

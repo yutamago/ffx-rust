@@ -765,6 +765,315 @@ pub const END_0198: Sig = Sig {
     imports: &[],
 };
 
+/// `magic_0276`'s colour fade (0x10003330, no arguments; an `ebp` frame,
+/// the three colour bytes at `ebp - 0xc`, `- 8`, `- 4`; 411 bytes): while
+/// the wait `*W` is above 0 it counts down (returns the new wait). Else by
+/// the state `*S` with the step `c = *C - 1` (stored back):
+/// - 0: `(0x80, (c + 24) 64 / 24, (24 - c) 64 / 24)`; at `c` 0 or less
+///   the state 1 and `*C` 0x20;
+/// - 1: `((48 c + 0xa00) / 32, (0x8c0 - 6 c) / 32, 0x40)`; at 0 the
+///   state 2 and `*C` 0x20;
+/// - 2: `((0x1000 - 48 c) / 32, (0x1000 - 0x3a c) / 32, 64 c / 32)`; at
+///   0 the state 3;
+/// - any other: `*D` = 1 (returns the state less 2).
+///
+/// (Signed divisions toward 0, each byte the quotient's low byte.) Then,
+/// unless `*D` is set, slot 860 `(0xc, 2, 0x40, b0, b1, 0x80, b2)` with
+/// `**G_LOCK` 1 around it (returns the lock pointer); else the last
+/// quotient. The bytes are pushed as whole words whose upper three bytes
+/// the code never writes:
+// junk read: [ebp-0xc], [ebp-8], [ebp-4] bytes 1..3 never written; 0 (brief 2026-10-24)
+pub fn fade_0276<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let wait = rd(g, 0x4);
+    if wait.cast_signed() > 0 {
+        let left = wait.wrapping_sub(1);
+        g.write::<u32>(w(0x11), left);
+        return Ret::eax(left);
+    }
+    let state = rd(g, 0x1a);
+    let (b, last) = match state {
+        0 => {
+            let c = rd(g, 0xf6).wrapping_sub(1).cast_signed();
+            let b1 = c.wrapping_add(0x18).wrapping_shl(6) / 24;
+            let b2 = 0x18i32.wrapping_sub(c).wrapping_shl(6) / 24;
+            g.write::<i32>(w(0x132), c);
+            if c <= 0 {
+                g.write::<u32>(w(0x143), 1);
+                g.write::<u32>(w(0x14d), 0x20);
+            }
+            ([0x80, b1, b2], b2)
+        }
+        1 => {
+            let c = rd(g, 0xa6).wrapping_sub(1).cast_signed();
+            g.write::<i32>(w(0xad), c);
+            let b0 = c.wrapping_mul(48).wrapping_add(0xa00) / 32;
+            let b1 = 0x8c0i32.wrapping_sub(c.wrapping_mul(6)) / 32;
+            if c <= 0 {
+                g.write::<u32>(w(0xea), 2);
+                g.write::<u32>(w(0x14d), 0x20);
+            }
+            ([b0, b1, 0x40], b1)
+        }
+        2 => {
+            let c = rd(g, 0x40).wrapping_sub(1).cast_signed();
+            let b0 = 0x1000i32.wrapping_sub(c.wrapping_mul(48)) / 32;
+            let b1 = 0x1000i32.wrapping_sub(c.wrapping_mul(0x3a)) / 32;
+            let b2 = c.wrapping_shl(6) / 32;
+            g.write::<i32>(w(0x85), c);
+            if c <= 0 {
+                g.write::<u32>(w(0x97), 3);
+            }
+            ([b0, b1, b2], b2)
+        }
+        _ => {
+            g.write::<u32>(w(0x30), 1);
+            return Ret::eax(state.wrapping_sub(2));
+        }
+    };
+    if rd(g, 0x157) != 0 {
+        return Ret::eax(last.cast_unsigned());
+    }
+    let byte = |x: i32| x.cast_unsigned() & 0xff;
+    let lock = rd(g, 0x162);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 7
+    g.call(
+        slot_target(g, w(0x17a), 860),
+        0,
+        &[0xc, 2, 0x40, byte(b[0]), byte(b[1]), 0x80, byte(b[2])],
+    );
+    let lock = rd(g, 0x18d);
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`fade_0276`] (411 bytes, 1 overlay).
+pub const FADE_0276: Sig = Sig {
+    len: 411,
+    hash: 0xa7ae_4ef7_c074_f1a9,
+    calls: &[],
+    imports: &[],
+};
+
+/// A node taken off a free ring (`[node]` the previous, `[node + 4]` the
+/// next) and set up as a task node with the callback `cb`: the ring's
+/// head `*G_FREE` moves to the next one (0 when it was the last of
+/// `*G_COUNT`), the count goes down. The caller links it. Returns the
+/// node (the head the caller had; 0 when the count was 0: the original
+/// then writes through address 0, as the port does).
+#[allow(clippy::too_many_arguments)] // the operands of the inlined take
+fn ring_task_take<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    node: u32,
+    count: u16,
+    (free_next, free_none): (u32, u32),
+    (cb, count_out): (u32, u32),
+) -> u16 {
+    let w = |o: u32| img.word(f + o);
+    let prev = g.read::<u32>(node);
+    let next = g.read::<u32>(node + 4);
+    g.write::<u32>(prev.wrapping_add(4), next);
+    let next = g.read::<u32>(node + 4);
+    let prev = g.read::<u32>(node);
+    g.write::<u32>(next, prev);
+    if count > 1 {
+        let head = g.read::<u32>(node + 4);
+        g.write::<u32>(w(free_next), head);
+    } else {
+        g.write::<u32>(w(free_none), 0);
+    }
+    let left = count.wrapping_sub(1);
+    for o in [0u32, 4, 0xc, 0x14] {
+        g.write::<u32>(node + o, 0);
+    }
+    g.write::<u32>(node + 8, node);
+    g.write::<u32>(node + 0x10, w(cb));
+    g.write::<u8>(node + 0x18, 0);
+    g.write::<u16>(w(count_out), left);
+    left
+}
+
+/// `magic_0276`'s start-up (0x10002e20, 1158 bytes, run by its load
+/// step; no arguments; an 8-aligned cookie frame, the locals from `A`,
+/// the point `L2` at `A + 0x20`): two words set, slot 719 `(PART, 8, 0)` into `*H`, the
+/// part set up ([`part_init`](crate::l5_objhost::part_init)); the object
+/// `OBJ` started ([`start_object_at`](crate::s4_misc::start_object_at):
+/// `K`, index 1, owner 0x16); the point `P` from slot 262 of the actor,
+/// `w` 1.0; the yaw `K1 - slot 333` wrapped once; twelve words; for each
+/// of the `*N` actors (objects from `OBJS - 0xd4`, 0x130 apart) an object
+/// ([`start_object_at`](crate::s4_misc::start_object_at): `K5`, index 0,
+/// owner 0x2e, `owner_b` the callback), its point from slot 262 of the
+/// actor `T[B[i]]`, `y` from slot 268 `(a, 6, &L2)`, `w` 1.0 and the yaw
+/// `K1 - atan2(P.z - z, P.x - x)` wrapped once; the fade's words and the
+/// sound (slot 413 or 215 by `*G3`, as [`sounds_0440`]); two task nodes
+/// off the free ring ([`fade_0276`] and its pair) appended to the task
+/// list. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0276<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r20::wrap_once;
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; sub esp, 0x34: the locals from `a`
+    let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x34);
+    let l2 = a.wrapping_add(0x20);
+    stores(g, img, f, &[0x2b, 0x35]);
+    // call width: 3
+    let h = g.call(t(g, 0x15, 719), 0, &[w(0x27), 8, 0]).eax;
+    g.write::<u32>(w(0x45), h);
+    crate::l5_objhost::part_init(g, img, call(0x4a));
+    crate::s4_misc::start_object_at(g, img, call(0x66), w(0x5a), k(g, 0x52), 1, 0x16, 0);
+    let act = rd(g, 0x86);
+    let p = w(0x80);
+    // call width: 4 (the start's words under it are not read)
+    g.call(t(g, 0x6b, 262), 0, &[act, p, w(0x7b), w(0x70)]);
+    let act = rd(g, 0x93);
+    g.write::<u32>(w(0x99), 0x3f80_0000);
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x8d, 333), 0, &[act]).st0);
+    let yaw = wrap_once(g, img, f, sub(k(g, 0xb1), r), (0xc9, 0xbf, 0xd9, 0xbf));
+    g.write::<f32>(w(0xee), yaw);
+    stores(
+        g,
+        img,
+        f,
+        &[0xf2, 0xfc, 0x106, 0x110, 0x11a, 0x124, 0x12e, 0x138, 0x142],
+    );
+    g.write::<u16>(w(0x14e), 0);
+    stores(g, img, f, &[0x152]);
+    let mut i = 0u32;
+    let mut y = w(0x169);
+    // the count read at the loop's entry (`+0x15e`) and at its end (`+0x28d`)
+    let mut n_at = 0x15e;
+    while i.cast_signed() < rd(g, n_at).cast_signed() {
+        n_at = 0x28d;
+        let obj = y.wrapping_sub(0xd4);
+        crate::s4_misc::start_object_at(g, img, call(0x18a), obj, k(g, 0x175), 0, 0x2e, w(0x17a));
+        let b = u32::from(g.read::<u8>(rd(g, 0x19e).wrapping_add(i)));
+        let actor = g.read::<u32>(w(0x1a9).wrapping_add(4 * b));
+        let (x, z) = (y.wrapping_sub(4), y.wrapping_add(4));
+        // call width: 4
+        g.call(t(g, 0x1bf, 262), 0, &[actor, x, y, z]);
+        // call width: 3 (slot 262's words stay under it)
+        g.call(t(g, 0x1d1, 268), 0, &[actor, 6, l2, actor, x, y, z]);
+        let ly = g.read::<u32>(l2 + 4);
+        g.write::<u32>(y, ly);
+        g.write::<u32>(y.wrapping_add(8), 0x3f80_0000);
+        let dz = sub(k(g, 0x1fd), g.read::<f32>(z));
+        let dx = sub(k(g, 0x1f1), g.read::<f32>(x));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let yaw = wrap_once(
+            g,
+            img,
+            f,
+            sub(k(g, 0x240), ang),
+            (0x24f, 0x259, 0x263, 0x270),
+        );
+        g.write::<f32>(y.wrapping_sub(0x10), yaw);
+        i += 1;
+        y = y.wrapping_add(0x130);
+    }
+    // the fade's words and the sound (`magic_0440`'s block, other
+    // operands)
+    let on = rd(g, 0x299) != 0;
+    let id = rd(g, 0x29f);
+    g.write::<u32>(w(0x2a4), id);
+    stores(g, img, f, &[0x2ae, 0x2b8, 0x2c2, 0x2cc, 0x2d6, 0x2e0]);
+    let slot = if on { 0x674 / 4 } else { 0x35c / 4 };
+    // call width: 1
+    let r = g.call(t(g, 0x2aa, slot), 0, &[id]).eax;
+    let on = rd(g, 0x301) != 0;
+    g.write::<u32>(w(0x30c), r);
+    g.write::<u32>(w(0x312), u32::MAX);
+    g.write::<u32>(w(0x31c), 0);
+    g.write::<u32>(w(0x326), 1);
+    if on {
+        g.write::<u16>(w(0x339), 1);
+    } else {
+        g.write::<u16>(w(0x330), 0);
+    }
+    // two task nodes off the free ring
+    let count = g.read::<u16>(w(0x340));
+    let (first, left) = if count == 0 {
+        (0, 0)
+    } else {
+        let node = rd(g, 0x35a);
+        let left = ring_task_take(g, img, f, node, count, (0x37f, 0x37f), (0x3a4, 0x3af));
+        (node, left)
+    };
+    let head = rd(g, 0x3b5);
+    g.write::<u32>(first.wrapping_add(4), 0);
+    let list = if head == 0 {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x3da), first);
+        first
+    } else {
+        let last = rd(g, 0x3c5);
+        g.write::<u32>(first, last);
+        g.write::<u32>(last.wrapping_add(4), first);
+        head
+    };
+    g.write::<u32>(first.wrapping_add(8), first);
+    let second = if left == 0 {
+        0
+    } else {
+        let node = rd(g, 0x37f);
+        ring_task_take(g, img, f, node, left, (0x403, 0x40b), (0x43c, 0x447));
+        node
+    };
+    g.write::<u32>(second.wrapping_add(4), 0);
+    if list == 0 {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x465), second);
+    } else {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+    }
+    g.write::<u32>(second.wrapping_add(8), second);
+    g.write::<u32>(w(0x477), second);
+    Ret::eax(0)
+}
+
+/// [`start_up_0276`] (the `rel32`s: the part's set-up, the object start
+/// twice, `_CIatan2` and the cookie check).
+pub const START_UP_0276: Sig = Sig {
+    len: 1158,
+    hash: 0xec1d_e298_8c5d_a78d,
+    calls: &[
+        (0x4a, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x66, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x18a, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x22e, Callee::Any),
+        (0x47e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0276`'s load step (0x10002cf0, the 118-byte shape) running
+/// [`start_up_0276`].
+pub fn load_0276<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0276)
+}
+
+/// [`load_0276`].
+pub const LOAD_0276: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0276))],
+    imports: &[],
+};
+
 /// `magic_0440`'s sound block in its start-up (the code at `+0x3d0` of
 /// 0x10002ca0, inlined; `owner` the loop's last owner word): `*G1` =
 /// `owner - 0x2d`; `*G4 = *G2`, `*G5` = `C1` when that is above 0 (signed),

@@ -255,7 +255,6 @@ fn set_up_0198() {
             (215, 5),
             (217, 7),
             (232, 12),
-            (711, 7),
             (710, 11),
             (718, 1),
             (719, 3),
@@ -266,6 +265,12 @@ fn set_up_0198() {
         ],
     );
     rec(&mut t, 218, 2, move |_, _| byte);
+    // slot 711 logs the lock word it runs under
+    rec(&mut t, 711, 7, |m, _| {
+        let l = m.r32(SCRATCH + 0x7f0);
+        m.w32(SCRATCH + 0x624, l);
+        0x711
+    });
     rec(&mut t, 234, 3, |m, a| {
         for i in 0..4 {
             let v = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
@@ -298,6 +303,8 @@ fn set_up_0198() {
     for (k, a) in [0x0abc_0001u32, 0x0abc_0002].into_iter().enumerate() {
         let k = k as u32;
         t.set_u8(byte, 3 + k as u8);
+        // a non-zero byte above the read one
+        t.set_u8(byte + 1, 0x7f);
         t.set_u32(SCRATCH + 0x7f0, 0x55 + k);
         t.set_u32(SCRATCH + 0x7e0, 0x66 + k);
         for o in [0x114u32, 0x81] {
@@ -396,7 +403,13 @@ fn end_0198() {
     let f = t.at(0x1670);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let answer = SCRATCH + 0x600;
-    rec(&mut t, 712, 12, move |m, _| m.r32(answer));
+    let lock = SCRATCH + 0x708;
+    // slot 712 answers and logs the lock word it runs under
+    rec(&mut t, 712, 12, move |m, _| {
+        let l = m.r32(lock);
+        m.w32(SCRATCH + 0x620, l);
+        m.r32(answer)
+    });
     recs(
         &mut t,
         &[
@@ -414,12 +427,7 @@ fn end_0198() {
             (214, 8),
         ],
     );
-    let (g7, g12, lock, stop) = (
-        SCRATCH + 0x700,
-        SCRATCH + 0x704,
-        SCRATCH + 0x708,
-        SCRATCH + 0x70c,
-    );
+    let (g7, g12, stop) = (SCRATCH + 0x700, SCRATCH + 0x704, SCRATCH + 0x70c);
     t.set_u32(w(&t, 0x6b), g7);
     t.set_u32(w(&t, 0xed), g7);
     t.set_u32(w(&t, 0xe0), g12);
@@ -449,4 +457,147 @@ fn end_0198() {
         junk_ops(&mut t, f, &[0x36, 0x4e, 0x66]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+}
+
+/// `n` bytes of junk at `at` (varied by `k`).
+fn junk(t: &mut Twin, at: u32, n: u32, k: u32) {
+    let b: Vec<u8> = (0..n)
+        .map(|i| (i.wrapping_mul(0x3d) ^ (0x71 + k)).to_le_bytes()[0])
+        .collect();
+    t.write(at, &b);
+}
+
+/// `r21::fade_0276` (`magic_0276` 0x10003330): the wait running; each
+/// state with the step above 1 and at 1 (moving on); another state; the
+/// slot skipped with `*D` set. The colour bytes' upper bytes in the frame
+/// are 0 on both sides (junk-read rule).
+#[test]
+fn fade_0276() {
+    let Some(mut t) = twin(276) else { return };
+    let f = t.at(0x3330);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(860, 7)]);
+    let lock = SCRATCH + 0x700;
+    t.set_u32(w(&t, 0x162), lock);
+    t.set_u32(w(&t, 0x18d), lock);
+    // (wait, state, step, D)
+    for (k, (wait, state, step, d)) in [
+        (3u32, 0u32, 5u32, 0u32),
+        (0, 0, 9, 0),
+        (0, 0, 1, 0),
+        (0, 1, 0x1c, 0),
+        (0, 1, 1, 0),
+        (0, 2, 0x11, 0),
+        (0, 2, 1, 0),
+        (0, 3, 4, 0),
+        (0, 0xffff_fff0, 4, 0),
+        (0, 1, 7, 1),
+        (0, 2, 0x30, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x4), wait);
+        t.set_u32(w(&t, 0x1a), state);
+        t.set_u32(w(&t, 0x40), step);
+        t.set_u32(w(&t, 0x30), d);
+        t.set_u32(lock, 0x40 + k);
+        // the frame's three words (only their low bytes are written)
+        let entry = magic::STACK_TOP - 0x100;
+        t.write(entry - 0x10, &[0; 0xc]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r21::load_0276` (0x10002cf0) and `r21::start_up_0276` (0x10002e20):
+/// busy, not loaded, then the start-up with no, one and three actors,
+/// the sound flag both ways, the task list empty and not, the free ring
+/// with one node more than taken and exactly two (the second take empties
+/// it).
+#[test]
+fn load_0276() {
+    let Some(mut t) = twin(276) else { return };
+    let f = t.at(0x2cf0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let start = t.img.rel32_target(f + 0x5b);
+    let op = |t: &Twin, o: u32| t.img.word(start + o);
+    let (busy, loaded) = (SCRATCH + 0x100, SCRATCH + 0x108);
+    let list = SCRATCH + 0x180;
+    // (busy, loaded, actors, sound flag, free nodes, task list)
+    let cases: [(u32, u32, u32, u32, u16, bool); 6] = [
+        (1, 1, 1, 0, 3, false),
+        (0, 0, 1, 0, 3, false),
+        (0, 1, 0, 0, 3, false),
+        (0, 1, 1, 1, 2, true),
+        (0, 1, 3, 0, 5, false),
+        (0, 1, 3, 1, 4, true),
+    ];
+    for (k, (b, l, n, on, free, listed)) in (0u32..).zip(cases) {
+        magic_r11::object_slots(&mut t);
+        magic_r11::pools(&mut t, start, 0x60);
+        let so = t.img.rel32_target(start + 0x66);
+        magic_r11::object_start_auto(&mut t, so);
+        rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.5 - 7.0);
+        rec(&mut t, 262, 4, move |m, a| {
+            let c = m.r32(magic_owna::row(262)) as f32;
+            for (i, &p) in (1u32..).zip(&a[1..4]) {
+                m.w32(p, (0.5 * i as f32 + c * 0.75 - k as f32).to_bits());
+            }
+            0x262
+        });
+        rec(&mut t, 268, 3, |m, a| {
+            let c = m.r32(magic_owna::row(268)) as f32;
+            for i in 0..4 {
+                m.w32(a[2] + 4 * i, (1.25 - i as f32 + c * 0.5).to_bits());
+            }
+            0x268
+        });
+        recs(&mut t, &[(413, 1), (215, 1)]);
+        t.set_u32(op(&t, 0x19e), list);
+        for i in 0..8u8 {
+            t.set_u8(list + u32::from(i), 1 + 2 * i);
+        }
+        for i in 0..0x20 {
+            t.set_u32(op(&t, 0x1a9) + 4 * i, 0x00c0_0000 + i);
+        }
+        t.set_u32(op(&t, 0x86), 0x00ca_0086);
+        t.set_u32(op(&t, 0x93), 0x00ca_0093);
+        t.set_u32(op(&t, 0x15e), n);
+        t.set_u32(op(&t, 0x29f), 0x0005_0000 + k);
+        t.set_u32(op(&t, 0x299), on);
+        let objs = op(&t, 0x169) - 0xd4;
+        junk(&mut t, objs, 0x130 * 3, k);
+        let first = op(&t, 0x5a);
+        junk(&mut t, first, 0x130, k + 1);
+        junk_ops(
+            &mut t,
+            start,
+            &[
+                0x2d, 0x37, 0x45, 0x99, 0xee, 0xf4, 0xfe, 0x108, 0x112, 0x11c, 0x126, 0x130, 0x13a,
+                0x144, 0x14e, 0x154, 0x2a4, 0x2b0, 0x2ba, 0x2c4, 0x2ce, 0x2d8, 0x2e2, 0x30c, 0x312,
+                0x31c, 0x326, 0x330,
+            ],
+        );
+        let (count, head) = (op(&t, 0x340), op(&t, 0x35a));
+        magic_r11::ring(&mut t, count, head, free, SCRATCH + 0x1400);
+        let other = SCRATCH + 0x5f0;
+        t.write(other, &[0x44; 0x20]);
+        t.set_u32(op(&t, 0x3b5), if listed { other } else { 0 });
+        t.set_u32(op(&t, 0x3c5), other);
+        rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+        rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+        rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, 0x18), k & 1);
+        t.set_u32(w(&t, 0x26), 0x0000_5e5e);
+        for o in [0x61u32, 0x6b] {
+            t.set_u32(w(&t, o), 0x0bad_0000 + o);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(magic_owna::row(268)) >= 7, "the actors' objects ran");
+    assert!(t.u32(magic_owna::row(413)) >= 1, "the sound flag's way");
 }
