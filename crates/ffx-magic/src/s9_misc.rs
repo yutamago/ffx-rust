@@ -4992,7 +4992,7 @@ pub const HOST_OBJECTS_RUN: Sig = Sig {
 /// count `u16 *G_C` up by one) and given the vtable `vt`. `ops` are the
 /// operands of the original's inlined copy: `(R, R again, tail read,
 /// tail read again, R compared, first, count, tail written, vtable)`.
-fn list_node<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+pub(crate) fn list_node<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
     let w = |o: u32| op(img, f, o);
     let [r, r2, tail, tail2, root, first, count, tail_w, vt] = ops;
     g.write::<u16>(node + 0x1a, 0xff);

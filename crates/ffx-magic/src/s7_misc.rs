@@ -2934,7 +2934,11 @@ pub const SUMMON_FRAME_673: Sig = Sig {
 /// the original leaves in `eax` (slot 239's, the ring's `prev`, else
 /// the stage minus 1).
 ///
-/// `magic_0439` 0x10006a90 (556 bytes; 2 DLLs).
+/// `magic_0439` 0x10006a90 (556 bytes; 2 DLLs). `magic_0683`'s copy
+/// (0x10006a20, 525 bytes; `movss` at `+0x10c`) always steps by `K1`
+/// (no model check) and leaves slot 325's words on the stack until the
+/// end: slot 239 sees them, the record's operands sit 0x1f bytes
+/// earlier.
 pub fn summon_setup_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -2967,50 +2971,74 @@ pub fn summon_setup_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         return Ret::eax(0);
     }
     let (a, b) = (o + 0x24c, o + 0x2a4);
+    let plain = img.word(f + 0x10c) & 0xff == 0xf3;
     crate::sb_misc::node_append(g, img, call(0xed), a, w(0xe6), 0);
     slot(g, img, f, 0x100, 325, a, &[o + 0x268, o + 0x23c]);
-    let user = g.read::<u32>(g.read::<u32>(o + 0x578).wrapping_add(0x50));
-    let direct = Frame {
-        at: call(0x119),
-        ecx: user,
-        ..*fr
+    let step = if plain {
+        k(g, 0x118)
+    } else {
+        let user = g.read::<u32>(g.read::<u32>(o + 0x578).wrapping_add(0x50));
+        let direct = Frame {
+            at: call(0x119),
+            ecx: user,
+            ..*fr
+        };
+        let way = crate::s6_misc::model_direct(g, img, &direct).eax;
+        if way != 0 { k(g, 0x12d) } else { k(g, 0x137) }
     };
-    let way = crate::s6_misc::model_direct(g, img, &direct).eax;
-    let step = if way != 0 { k(g, 0x12d) } else { k(g, 0x137) };
     let v = add(g.read::<f32>(o + 0x26c), step);
     g.write::<f32>(o + 0x26c, v);
-    crate::sb_misc::node_append(g, img, call(0x14f), b, w(0x142), 0);
+    // the record's operands: 0x1f bytes earlier in `magic_0683`'s copy
+    let d = if plain { 0x1f } else { 0 };
+    let w2 = |at: u32| w(at - d);
+    crate::sb_misc::node_append(g, img, call(0x14f - d), b, w2(0x142), 0);
     for at in [0x2c0u32, 0x2c4, 0x2c8] {
         g.write::<u32>(o + at, 0x3f80_0000);
     }
-    let alpha = mul(mul(g.read::<f32>(o + 0x56c), k(g, 0x17d)), k(g, 0x18f));
+    let k2 = |g: &G, at: u32| g.read::<f32>(w2(at));
+    let alpha = mul(mul(g.read::<f32>(o + 0x56c), k2(g, 0x17d)), k2(g, 0x18f));
     let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x28);
+    // (slot 325's two words below `base` in `magic_0683`'s copy)
+    let low = if plain { 8 } else { 0 };
     let rec = base + 0x10;
     let n = o + 0x41c;
     g.write::<u32>(rec + 0x14, b);
     g.write::<u32>(rec, n);
     g.write::<f32>(o + 0x2cc, alpha);
-    for (i, v) in (1u32..).zip([w(0x142), w(0x1ab), a, w(0x1b7)]) {
+    for (i, v) in (1u32..).zip([w2(0x142), w2(0x1ab), a, w2(0x1b7)]) {
         g.write::<u32>(rec + 4 * i, v);
     }
     let insert = Frame {
-        at: call(0x1bc),
-        esp: base.wrapping_sub(4),
+        at: call(0x1bc - d),
+        esp: base.wrapping_sub(4 + low),
         ecx: rec,
         ..*fr
     };
     crate::nodes::node_insert(g, img, &insert);
-    let d = g.read::<u32>(w(0x1c1));
+    let dd = g.read::<u32>(w2(0x1c1));
     let p = o + 0x120;
     g.write::<u32>(rec, p);
-    g.write::<u32>(p, w(0x1d1));
-    for (i, v) in (1u32..).zip([w(0x1dd), n, d, w(0x1ed), 0]) {
+    g.write::<u32>(p, w2(0x1d1));
+    for (i, v) in (1u32..).zip([w2(0x1dd), n, dd, w2(0x1ed), 0]) {
         g.write::<u32>(rec + 4 * i, v);
     }
-    crate::sb_nodes::particle_node(g, img, call(0x1fa), rec);
+    crate::sb_nodes::particle_node(g, img, call(0x1fa - d), rec);
     let user = g.read::<u32>(g.read::<u32>(o + 0x578).wrapping_add(0x50));
-    let s = g.read::<u32>(w(0x210));
-    let eax = slot(g, img, f, 0x20a, 239, rec, &[s, user, 0x20]).eax;
+    let s = g.read::<u32>(w2(0x210));
+    let eax = if plain {
+        slot(
+            g,
+            img,
+            f,
+            0x20a - d,
+            239,
+            rec,
+            &[s, user, 0x20, o + 0x268, o + 0x23c],
+        )
+        .eax
+    } else {
+        slot(g, img, f, 0x20a, 239, rec, &[s, user, 0x20]).eax
+    };
     let st = g.read::<u32>(o + 0x574).wrapping_add(1);
     g.write::<u32>(o + 0x574, st);
     Ret::eax(eax)
@@ -5019,6 +5047,8 @@ pub fn staged_volley_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         crate::s9_misc::effect_group_one(g, img, &throw).eax
     } else if img.matches(throw.at, &crate::s9_misc::SUMMON_OBJECT_0685) {
         crate::s9_misc::summon_object_0685(g, img, &throw).eax
+    } else if img.matches(throw.at, &crate::r16::SUMMON_OBJECT_0683) {
+        crate::r16::summon_object_0683(g, img, &throw).eax
     } else if img.matches(throw.at, &MODEL_OBJECT_SETUP)
         || img.matches(throw.at, &MODEL_OBJECT_SETUP_0621)
     {

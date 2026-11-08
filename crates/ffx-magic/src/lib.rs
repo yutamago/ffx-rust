@@ -2847,6 +2847,16 @@ ports! {
     "r16 load step 0494" => r16::LOAD_0494, r16::load_0494;
     "r16 set-up 0666" => r16::SETUP_0666, r16::setup_0666;
     "r16 place 0666" => r16::PLACE_0666, r16::place_0666;
+    "r16 summon set-up task 0683" => r16::SUMMON_SETUP_TASK_0683, s7_misc::summon_setup_task;
+    "r16 staged volley task 0683" => r16::STAGED_VOLLEY_TASK_0683, s7_misc::staged_volley_task;
+    "r16 frame 0661" => r16::FRAME_0661, r16::frame_0661;
+    "r16 set-up 0661" => r16::SETUP_0661, r16::setup_0661;
+    "r16 texture entry 0661" => r16::TEXTURE_ENTRY_0661, r16::texture_entry_0661;
+    "r16 spray 0489" => r16::SPRAY_0489, r16::spray_0489;
+    "r16 spray 2 0489" => r16::SPRAY2_0489, r16::spray2_0489;
+    "r16 caster start 0450" => r16::CASTER_START_0450, r16::caster_start_0450;
+    "r16 glide 0450" => r16::GLIDE_0450, r16::glide_0450;
+    "r16 rise 0450" => r16::RISE_0450, r16::rise_0450;
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3423,6 +3433,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r16 start-up 0480", &r16::START_UP_0480),
     ("r16 start-up 0474", &r16::START_UP_0474),
     ("r16 dealt start 0494", &r16::DEALT_START_0494),
+    ("r16 summon object 0683", &r16::SUMMON_OBJECT_0683),
+    ("r16 texture 0661", &r16::TEXTURE_0661),
+    ("r16 spawn 0489", &r16::SPAWN_0489),
+    ("r16 spawn 2 0489", &r16::SPAWN2_0489),
     // round 16 (magic-r16): end
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

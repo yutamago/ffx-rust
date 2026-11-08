@@ -2529,11 +2529,20 @@ fn aimed_in(
 /// Row 798: the two-stage summon set-up task of both DLLs: stage 0 below
 /// and at its time (both model ways), stage 1 waiting on each flag and
 /// done (the nodes leave, with and without parents), other stages.
+/// `magic_0683`'s copy (no model check; operands 0x1f bytes earlier from
+/// `+0x123`) too.
 #[test]
 fn summon_setup_tasks() {
-    for dll in [439u16, 682] {
+    for dll in [439u16, 682, 683] {
         let Some(mut t) = twin(dll) else { return };
-        let f = t.at(0x6a90);
+        let f = t.at(if dll == 683 { 0x6a20 } else { 0x6a90 });
+        let m = |o: u32| {
+            if dll == 683 && o >= 0x123 {
+                o - 0x1f
+            } else {
+                o
+            }
+        };
         let log = SCRATCH + 0x6000;
         let model = SCRATCH + 0x7e0;
         log_calls(&mut t, 390, log, 1, None, move |m, _, _| m.r32(model));
@@ -2550,13 +2559,13 @@ fn summon_setup_tasks() {
         }
         rec(&mut t, 941, 1, move |_, _| table);
         rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
-        let pn = t.img.rel32_target(f + 0x1fa);
+        let pn = t.img.rel32_target(f + m(0x1fa));
         let start = t.img.rel32_target(pn + 0x88);
         t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
         t.set_u32(op(&t, f, 0x1e), 0.5f32.to_bits());
         t.set_u32(op(&t, f, 0xd5), 1.0f32.to_bits());
-        t.set_u32(op(&t, f, 0x1c1), SCRATCH + 0x900);
-        t.set_u32(op(&t, f, 0x210), 0x0210_0000);
+        t.set_u32(op(&t, f, m(0x1c1)), SCRATCH + 0x900);
+        t.set_u32(op(&t, f, m(0x210)), 0x0210_0000);
         let list = op(&t, f, 0xe6);
         let task = SCRATCH + 0x300;
         let node = SCRATCH + 0x380;
@@ -2615,7 +2624,7 @@ fn summon_setup_tasks() {
             t.write(SCRATCH + 0x5c0, &varied(0x20, k + 1));
             t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
             // the particle's parent node (a DLL node): its list empty
-            let pl = op(&t, f, 0x1dd);
+            let pl = op(&t, f, m(0x1dd));
             t.write(pl, &varied(0x1c, k + 6));
             t.set_u32(pl + 0x10, pl);
             scrub(&mut t);
@@ -3879,6 +3888,7 @@ fn staged_volley_tasks() {
         (618, 0x6db0),
         (685, 0x6d60),
         (621, 0x6e30),
+        (683, 0x6f40),
     ] {
         staged_volley_in(dll, rva);
     }
@@ -3977,15 +3987,22 @@ fn staged_volley_in(dll: u16, rva: u32) {
             t.write(ring, &[0; 0x10]);
             t.set_u32(ring + 8, ring);
         }
-        // `magic_0685`'s summon object (`s9_misc::summon_object_0685`)
-        685 => {
-            let pn = t.img.rel32_target(throw + 0x1b0);
+        // `magic_0685`'s summon object (`s9_misc::summon_object_0685`),
+        // and `magic_0683`'s larger one (`r16::summon_object_0683`)
+        685 | 683 => {
+            let big = dll == 683;
+            let pn = t.img.rel32_target(throw + if big { 0x202 } else { 0x1b0 });
             t.set_u32(op(&t, pn, 0x45), SCRATCH + 0x7f10);
             let wrapper = t.img.rel32_target(pn + 0x88);
             t.set_u32(op(&t, wrapper, 0x04), SCRATCH + 0x2f0);
-            t.set_u32(op(&t, throw, 0x170), SCRATCH + 0x7a00);
+            t.set_u32(
+                op(&t, throw, if big { 0x18e } else { 0x170 }),
+                SCRATCH + 0x7a00,
+            );
             t.set_u32(SCRATCH + 0x7a10, 0x7a10);
-            for o in [0x5cu32, 0x193] {
+            // the ring's flags: bit 0 set, so its clearing shows
+            t.set_u32(op(&t, throw, 0x42), 0x5555_5555);
+            for o in [0x5cu32, if big { 0x19d } else { 0x193 }] {
                 let r = op(&t, throw, o);
                 t.write(r, &[0; 0x20]);
                 t.set_u32(r + 0x10, r);
