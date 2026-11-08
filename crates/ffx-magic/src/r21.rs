@@ -1628,6 +1628,154 @@ pub const SPARKS_0419: Sig = Sig {
     imports: &[(0x1c, "rand")],
 };
 
+/// `magic_0301`'s pair of lifted parts (0x10001a80, cdecl `(obj)`; a
+/// cookie frame, `ebp = E - 4`, the vector `V` at `ebp - 0x14`, the point
+/// `O` at `ebp - 0x24`; 389 bytes): slot 444 `(0)`; twice a record `R`
+/// from slot 434 `(*G_A, CB)` with its current entry's kind (`R + 0x2c +
+/// 16 R[0xac]`) 2 and then 3, `V` = `(0, 23, 0, 0)` and `(0, -23, 0, 0)`,
+/// slot 474 `(A[0x198], 0x18 or 0x25, V, O)` and `R + 0xd0..` = `(O.xyz,
+/// 0)`; then slots 450 `(obj, CB2)` and 451 `(obj, 5)`. Each call sees the
+/// words the earlier ones left. Returns slot 451's `eax`.
+pub fn lift_0301<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::pushes::Pushes;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (v, o) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x24));
+    let bone = g.read::<u32>(g.read::<u32>(w(0x11)).wrapping_add(0x198));
+    let mut st = Pushes::default();
+    st.push(0);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x22, 444), 0);
+    for (ga, cb, table, kind, y, id, t474) in [
+        (
+            0x3cu32,
+            0x36u32,
+            0x31u32,
+            2u32,
+            0x41b8_0000u32,
+            0x18u32,
+            0x59u32,
+        ),
+        (0xb9, 0xb3, 0x94, 3, 0xc1b8_0000, 0x25, 0xe8),
+    ] {
+        st.push_all(&[w(cb), g.read::<u32>(w(ga))]);
+        // call width: 12 (Pushes caps the words at 12)
+        let r = st.call(g, t(g, table, 434), 0).eax;
+        let c = g.read::<u32>(r.wrapping_add(0xac));
+        st.push_all(&[o, v, id]);
+        g.write::<u32>(r.wrapping_add(c.wrapping_mul(16)).wrapping_add(0x2c), kind);
+        for (i, x) in [0u32, y, 0, 0].into_iter().enumerate() {
+            g.write::<u32>(v + 4 * i as u32, x);
+        }
+        st.push(bone);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, t474, 474), 0);
+        for i in 0..3u32 {
+            let x = g.read::<u32>(o + 4 * i);
+            g.write::<u32>(r.wrapping_add(0xd0 + 4 * i), x);
+        }
+        g.write::<u32>(r.wrapping_add(0xdc), 0);
+    }
+    st.push_all(&[w(0x15a), obj]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x123, 450), 0);
+    st.push_all(&[5, obj]);
+    // call width: 12 (Pushes caps the words at 12)
+    let eax = st.call(g, t(g, 0x162, 451), 0).eax;
+    Ret::eax(eax)
+}
+
+/// [`lift_0301`] (the cookie check).
+pub const LIFT_0301: Sig = Sig {
+    len: 389,
+    hash: 0x54a3_b8e3_b542_f6a5,
+    calls: &[(0x17d, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0305`'s burst of four sparks (0x10001cf0, cdecl `(obj)`, an
+/// `ebp` frame; 438 bytes): four pool records
+/// ([`pool_take`](crate::sb_misc::pool_take); none left ends it, 0), each
+/// with the part `(*G_P)[3]` at `+0x30`, `+0x34` 1, u16 `+0x38` -1 and
+/// `+0x3a` 0x200; its point the object's `+0xd0..` with each of `x, y, z`
+/// moved by a slot 314 `(4.0)` number; `+0x10..+0x18` slot 314 `(0.5)`
+/// numbers, `+0x1c` slot 314 `(pi)`; `+0x20..+0x2c` = `(0, -0.05, 0, 1)`;
+/// `+0x3c` = `(slot 314 (0.2) + K) K'`; the counts. Returns the last slot
+/// 314's `eax`.
+pub fn burst_0305<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32| slot_target(g, w(o), 314);
+    let obj = fr.arg(g, 0);
+    let mut eax = 0;
+    for _ in 0..4 {
+        let rec = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0x11));
+        if rec == 0 {
+            return Ret::eax(0);
+        }
+        let part = g.read::<u32>(g.read::<u32>(w(0x21)).wrapping_add(0xc));
+        g.write::<u16>(rec + 0x38, 0xffff);
+        g.write::<u32>(rec + 0x30, part);
+        g.write::<u32>(rec + 0x34, 1);
+        g.write::<u16>(rec + 0x3a, 0x200);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(obj.wrapping_add(0xd0 + 4 * i));
+            g.write::<u32>(rec + 4 * i, x);
+        }
+        // one word pushed, each call's argument written over it
+        let mut num = |g: &mut G, table: u32, x: u32| {
+            let out = g.call(t(g, table), 0, &[x]);
+            eax = out.eax;
+            st0_f32(out.st0)
+        };
+        for (i, table) in [0x66u32, 0x87, 0xac].into_iter().enumerate() {
+            let d = num(g, table, 0x4080_0000);
+            let at = rec + 4 * i as u32;
+            let v = add(g.read::<f32>(at), d);
+            g.write::<f32>(at, v);
+        }
+        for (table, to) in [(0xd2u32, 0x10u32), (0xee, 0x14), (0x105, 0x18)] {
+            let v = num(g, table, 0x3f00_0000);
+            g.write::<f32>(rec + to, v);
+        }
+        let a = num(g, 0x11c, 0x4049_0fdb);
+        g.write::<f32>(rec + 0x1c, a);
+        for (o, v) in [
+            (0x20u32, 0u32),
+            (0x24, 0xbd4c_cccd),
+            (0x28, 0),
+            (0x2c, 0x3f80_0000),
+        ] {
+            g.write::<u32>(rec + o, v);
+        }
+        let y = num(g, 0x133, 0x3e4c_cccd);
+        let y = mul(add(y, g.read::<f32>(w(0x16e))), g.read::<f32>(w(0x18e)));
+        for (o, v) in [
+            (0x40u32, 0u32),
+            (0x58, 0x10),
+            (0x5c, 0),
+            (0x4c, 0x10),
+            (0x50, 0),
+        ] {
+            g.write::<u32>(rec + o, v);
+        }
+        g.write::<f32>(rec + 0x3c, y);
+    }
+    Ret::eax(eax)
+}
+
+/// [`burst_0305`] (the `rel32`: the pool's take).
+pub const BURST_0305: Sig = Sig {
+    len: 438,
+    hash: 0xa3fa_adbc_61a3_b39b,
+    calls: &[(0x11, Callee::Sig(&crate::sb_misc::POOL_TAKE))],
+    imports: &[],
+};
+
 /// `magic_0440`'s sound block in its start-up (the code at `+0x3d0` of
 /// 0x10002ca0, inlined; `owner` the loop's last owner word): `*G1` =
 /// `owner - 0x2d`; `*G4 = *G2`, `*G5` = `C1` when that is above 0 (signed),

@@ -1657,6 +1657,8 @@ ports! {
     "r21 spark 0246" => r21::SPARK_0246, r21::spark_0246;
     "r21 part object 0375" => r21::PART_OBJECT_0375, r21::part_object_0375;
     "r21 sparks 0419" => r21::SPARKS_0419, r21::sparks_0419;
+    "r21 lift 0301" => r21::LIFT_0301, r21::lift_0301;
+    "r21 burst 0305" => r21::BURST_0305, r21::burst_0305;
     "r21 wave tick 0430" => r21::WAVE_TICK_0430, r18::wave_tick_0588;
     "r21 passes 0162" => r21::PASSES_0162, r18::passes_0586;
     "r21 summon frame 0434" => r21::SUMMON_FRAME_0434, s8_misc::summon_frame_fade;
