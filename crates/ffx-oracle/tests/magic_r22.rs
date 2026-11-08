@@ -1322,7 +1322,17 @@ fn flight_setup_0491(t: &mut Twin) {
         }
         0x248
     });
-    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    // the draw sees the sprite matrix through `*G_P` (its three scaled
+    // rows from the step's matrix: the diagonal the step sets, r23)
+    let gp = t.img.word(td + 0x63);
+    rec(t, 772, 2, move |m, a| {
+        let sm = m.r32(gp);
+        for j in 0..12 {
+            let v = m.r32(sm + 4 * j);
+            fold(m, 772, 3 + j, v);
+        }
+        0x7720_0000 ^ a[1]
+    });
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(t, 773, 4, |_, a| (a[3] >> 1) & 1);
     for s in [774u32, 775, 778, 779] {
@@ -1606,9 +1616,12 @@ fn start_up_0610() {
     }
     let lock = SCRATCH + 0x7f0;
     t.set_u32(gs(&t, 0x84), lock);
-    // slot 711 sees the game lock held
+    // slot 711 sees the game lock held (kept in its row: its answer is
+    // not, r23)
     rec(&mut t, 711, 3, move |m, a| {
-        0x0711_0000 ^ a[0] ^ (m.r32(lock) << 8)
+        let l = m.r32(lock);
+        fold(m, 711, 8, l);
+        0x0711_0000 ^ a[0] ^ (l << 8)
     });
     magic_r11::pools(&mut t, su, 943);
     let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;

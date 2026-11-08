@@ -70,6 +70,7 @@ pub mod r18;
 pub mod r19;
 pub mod r20;
 pub mod r22;
+pub mod r23;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -2998,6 +2999,13 @@ ports! {
     "r22 flight step 0491" => r22::FLIGHT_STEP_0491, r22::flight_step_0491;
     "r22 cue start 0610" => r22::CUE_START_0610, r22::cue_start_0610;
     // round 22 (magic-r22): end
+    // round 23 (magic-r23)
+    "r23 start 2 0598" => r23::START2_0598, r23::start2_0598;
+    "r23 cue start 0598" => r23::CUE_START_0598, r23::cue_start_0598;
+    "r23 host start end 0598" => r23::HOST_START_END_0598, r23::host_start_end_0598;
+    "r23 turn 0598" => r23::TURN_0598, r23::turn_0598;
+    "r23 objects start 0598" => r23::OBJECTS_START_0598, r23::objects_start_0598;
+    // round 23 (magic-r23): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3605,6 +3613,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r22 node build 0601", &r22::NODE_BUILD_0601),
     ("r22 start-up 0610", &r22::START_UP_0610),
     // round 22 (magic-r22): end of INTERNAL
+    // round 23 (magic-r23)
+    ("r23 place pair 0598", &r23::PLACE_PAIR_0598),
+    ("r23 effect end 0598", &r23::EFFECT_END_0598),
+    // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)
