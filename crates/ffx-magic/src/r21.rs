@@ -398,6 +398,373 @@ pub const THROW_START_0382: Sig = Sig {
     imports: &[(0x9, "rand")],
 };
 
+/// `magic_0198`'s effect set-up (0x100010e0, cdecl `(a)`; a cookie frame,
+/// `ebp = E - 4`, the locals `B` at `ebp - 0x2c`, `U` at `ebp - 0x24`,
+/// `V` at `ebp - 0x14`; 564 bytes): `*G0 = a`; `*G1` = slot 168 `(a)`;
+/// slot 218 `(*G0, &B)` gives a pointer whose byte goes to `*G2`; `*G3`
+/// and `*G4` = slot 215 of `*G1` and `*G2`; slot 217 `(*G2, P)` and
+/// `(*G1, Q)`; slot 234 `(&V, Q, P)`, slot 232 `(&V, &V)`; `x` = slot 251
+/// `(*G1)` (ST0 as f32, written over the first word left on the stack),
+/// slot 233 `(&U, &V, x)`; `P.x += U.x`; `y` = slot 216 `(*G2)` (ST0),
+/// `*G5` 0x10, `P.y += y K + U.y`, `P.z += U.z`; the load
+/// ([`load`](crate::m0198::load)); slot 711 `(S, N, 0)` with `**G6` 1
+/// around it; slot 710 `(T, S, R, 0x100000)`; `**G7 = T`; the part
+/// `(slot 941 (*G8))[0]` started on `BUF`
+/// ([`start_part`](crate::opu_parts::start_part), 0x1000, 1); two
+/// 16-byte copies. Each call sees the words the earlier ones left.
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn set_up_0198<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::pushes::Pushes;
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (b, u, v) = (
+        ebp.wrapping_sub(0x2c),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x14),
+    );
+    let a = fr.arg(g, 0);
+    g.write::<u32>(w(0x15), a);
+    let mut st = Pushes::default();
+    st.push(a);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, t(g, 0x1b, 168), 0).eax;
+    g.write::<u32>(w(0x28), r);
+    st.push_all(&[b, rd(g, 0x37)]);
+    // call width: 12 (Pushes caps the words at 12)
+    let p = st.call(g, t(g, 0x31, 218), 0).eax;
+    let byte = u32::from(g.read::<u8>(p));
+    st.push(rd(g, 0x48));
+    g.write::<u32>(w(0x4d), byte);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, t(g, 0x52, 215), 0).eax;
+    st.push(rd(g, 0x60));
+    g.write::<u32>(w(0x65), r);
+    // call width: 12 (Pushes caps the words at 12)
+    let r = st.call(g, t(g, 0x6a, 215), 0).eax;
+    g.write::<u32>(w(0x77), r);
+    st.push_all(&[w(0x81), rd(g, 0x87)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x7c, 217), 0);
+    st.push_all(&[w(0x99), rd(g, 0x9f)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x94, 217), 0);
+    st.push_all(&[w(0xac), w(0xb4), v]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xba, 234), 0);
+    st.push_all(&[v, v]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0xcc, 232), 0);
+    st.push(rd(g, 0xdf));
+    // call width: 12 (Pushes caps the words at 12)
+    let x = st0_f32(st.call(g, t(g, 0xd9, 251), 0).st0);
+    // add esp, 0x38: the first word stays, `x` written over it
+    st.pop(14);
+    st.set_top(x.to_bits());
+    st.push_all(&[v, u]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x104, 233), 0);
+    let px = add(g.read::<f32>(w(0x114)), g.read::<f32>(u));
+    st.push(rd(g, 0x124));
+    g.write::<f32>(w(0x12c), px);
+    // call width: 12 (Pushes caps the words at 12)
+    let y = st0_f32(st.call(g, t(g, 0x11e, 216), 0).st0);
+    let y = mul(y, g.read::<f32>(w(0x144)));
+    g.write::<u32>(w(0x14a), 0x10);
+    let py = add(add(y, g.read::<f32>(u + 4)), g.read::<f32>(w(0x15b)));
+    g.write::<f32>(w(0x163), py);
+    let pz = add(g.read::<f32>(w(0x16b)), g.read::<f32>(u + 8));
+    g.write::<f32>(w(0x178), pz);
+    // the load: slot 216's four words above its return address
+    let load = Frame {
+        at: img.rel32_target(f + 0x17d),
+        esp: ebp.wrapping_sub(0x30).wrapping_sub(0x14),
+        ..*fr
+    };
+    crate::m0198::load(g, img, &load);
+    let lock = rd(g, 0x182);
+    st.push(0);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    st.push_all(&[w(0x196), w(0x1a1)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x191, 711), 0);
+    let lock = rd(g, 0x1a8);
+    st.push(0x0010_0000);
+    g.write::<u32>(lock, saved);
+    st.push_all(&[w(0x1b9), w(0x1c4), w(0x1c9)]);
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x1b4, 710), 0);
+    let at = rd(g, 0x1d0);
+    g.write::<u32>(at, w(0x1d6));
+    st.push(rd(g, 0x1e1));
+    // call width: 12 (Pushes caps the words at 12)
+    let table = st.call(g, t(g, 0x1db, 941), 0).eax;
+    let part = g.read::<u32>(table);
+    crate::opu_parts::start_part(
+        g,
+        img,
+        img.rel32_target(f + 0x1fe),
+        w(0x1f9),
+        0x1000,
+        part,
+        1,
+    );
+    for (from, to) in [(0x206u32, 0x214u32), (0x21b, 0x224)] {
+        for i in 0..4u32 {
+            let x = g.read::<u32>(w(from) + 4 * i);
+            g.write::<u32>(w(to) + 4 * i, x);
+        }
+    }
+    Ret::eax(0)
+}
+
+/// [`set_up_0198`] (the `rel32`s: the load, the part start, the cookie
+/// check).
+pub const SET_UP_0198: Sig = Sig {
+    len: 564,
+    hash: 0xa0b7_e0b6_13d7_328d,
+    calls: &[
+        (0x17d, Callee::Sig(&crate::m0198::LOAD)),
+        (0x1fe, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x22c, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0198`'s frame step (0x10001360, no arguments; a cookie frame,
+/// `ebp = E - 4`, the colour `V` at `ebp - 0x14`; 773 bytes). Once (`*S0`
+/// 0) busy while slot 225 `(*G0)` answers, then `*S0` one up; once (`*S1`
+/// 0, set first) slot 226 `(*G0, 0)`; once (`*S2` 0) busy while slot 227
+/// `(*G0)` is below 1, then `*S2` one up. `**G9` = 1 when slot 253 `()`
+/// answers 0, else 0. With the count `n = *G5`: at 0x10 slot 228 `(*G1,
+/// 0xb0)` (`n` read again); `e = n - 0x1e`: at 0 slot 254 `(*G3, 0)`,
+/// `(*G4, 0)` and slot 228 `(*G1, 0xb1)`; for `e` in 0..=0x26 the blend
+/// `u` = `(T[i] + D1) D2` (doubles, `T = *G10`, `i = ((e << 15) / 38 +
+/// 0x4000) >> 4 & 0xfff`) mixes `V = P (K - u) + Q u` (four lanes), slot
+/// 255 `(*G1, &V)`, and at 0x26 slots 249 `(*G3, 0)`, 237 `(*G3, 0x24,
+/// 0, Z)` and 256 `(*G3, 1.0, 0.5, 0.5, 0xf)`; otherwise at `n` 0x55
+/// slots 220 `(*G11, 0x40, 0x100)`, 257 `(*G3, 1)` and 239 `(*G0, -5,
+/// 0)`. Each call sees the words the earlier ones left. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn step_0198<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::pushes::Pushes;
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    if rd(g, 0x12) == 0 {
+        // call width: 1
+        if g.call(t(g, 0x1a, 225), 0, &[rd(g, 0x20)]).eax != 0 {
+            return Ret::eax(0);
+        }
+        let n = rd(g, 0x39).wrapping_add(1);
+        g.write::<u32>(w(0x39), n);
+    }
+    if rd(g, 0x3f) == 0 {
+        let a = rd(g, 0x4f);
+        g.write::<u32>(w(0x5b), 1);
+        // call width: 2
+        g.call(t(g, 0x47, 226), 0, &[a, 0]);
+    }
+    if rd(g, 0x6a) == 0 {
+        // call width: 1
+        if g.call(t(g, 0x72, 227), 0, &[rd(g, 0x78)]).eax.cast_signed() < 1 {
+            return Ret::eax(0);
+        }
+        let n = rd(g, 0x92).wrapping_add(1);
+        g.write::<u32>(w(0x92), n);
+    }
+    // call width: 0
+    let r = g.call(t(g, 0x97, 253), 0, &[]).eax;
+    let flag = rd(g, 0xa5);
+    g.write::<u32>(flag, u32::from(r == 0));
+    let mut n = rd(g, 0xb1);
+    if n == 0x10 {
+        // call width: 2
+        g.call(t(g, 0xbb, 228), 0, &[rd(g, 0xc6), 0xb0]);
+        n = rd(g, 0xd3);
+    }
+    let e = n.wrapping_sub(0x1e).cast_signed();
+    if e == 0 {
+        let mut st = Pushes::default();
+        st.push_all(&[0, rd(g, 0xea)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xe3, 254), 0);
+        st.push_all(&[0, rd(g, 0xfe)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xf7, 254), 0);
+        st.push_all(&[0xb1, rd(g, 0x116)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x10b, 228), 0);
+    }
+    if (0..=0x26).contains(&e) {
+        // imul by 0x6bca1af3, sar 4: (e << 15) / 38, then + 0x4000, >> 4
+        let q = ((i64::from(e << 15) * 0x6bca_1af3) >> 36) as i32;
+        let i = (q.wrapping_add(0x4000) >> 4).cast_unsigned() & 0xfff;
+        let tab = rd(g, 0x143);
+        let c = f64::from(g.read::<f32>(tab.wrapping_add(4 * i)));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let u = ((c + g.read::<f64>(w(0x17f))) * g.read::<f64>(w(0x199))) as f32;
+        let rest = sub(g.read::<f32>(w(0x15e)), u);
+        for (k, (p, q)) in [
+            (0x16cu32, 0x1a5u32),
+            (0x1ce, 0x1bd),
+            (0x1ef, 0x1de),
+            (0x210, 0x1ff),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = add(mul(g.read::<f32>(w(p)), rest), mul(g.read::<f32>(w(q)), u));
+            g.write::<f32>(v + 4 * k as u32, x);
+        }
+        // call width: 2
+        g.call(t(g, 0x185, 255), 0, &[rd(g, 0x18b), v]);
+        if e == 0x26 {
+            let a = rd(g, 0x238);
+            // call width: 2
+            g.call(t(g, 0x230, 249), 0, &[a, 0]);
+            let a = rd(g, 0x25a);
+            // call width: 6 (slot 249's words stay)
+            g.call(t(g, 0x245, 237), 0, &[a, 0x24, 0, w(0x24a), a, 0]);
+            let a = rd(g, 0x28c);
+            // call width: 5
+            g.call(
+                t(g, 0x261, 256),
+                0,
+                &[a, 0x3f80_0000, 0x3f00_0000, 0x3f00_0000, 0xf],
+            );
+        }
+    } else if n == 0x55 {
+        let mut st = Pushes::default();
+        st.push_all(&[0x100, 0x40, rd(g, 0x2bf)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x2ac, 220), 0);
+        st.push_all(&[1, rd(g, 0x2ce)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x2c6, 257), 0);
+        st.push_all(&[0, 0xffff_fffb, rd(g, 0x2eb)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x2db, 239), 0);
+    }
+    Ret::eax(0)
+}
+
+/// [`step_0198`] (the cookie check twice).
+pub const STEP_0198: Sig = Sig {
+    len: 773,
+    hash: 0x7aaa_42f7_c6d5_0e5d,
+    calls: &[(0x29e, Callee::Any), (0x2fd, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0198`'s end step (0x10001670, no arguments, no frame; 476
+/// bytes): nothing while `*S2` is 0. From the count `*G5` 0x53 on: the
+/// three part tables (slot 941 of `*A1`, `*A2`, `*A3` into `*H1..*H3`),
+/// `**G7 = T`, slots 723 `(*B)`, 724 `(*C)`, 258 `(BUF)`, 231 `(*E, *C,
+/// *D)`, 230 `(*F, *E)`, `**G12 = W`, `**G7 = T` and slot 712 `(BUF,
+/// 0x30)` with `**G6` 1 around it; when that answers, slots 254 `(*G3,
+/// 1)`, `(*G4, 1)`, 249 `(*G3, 0x100)`, 256 `(*G3, 1.0, 1.0, 1.0, 0)`,
+/// 213 `(*G1, 1)` and 214 `(*G0)`. Then, unless `**G9` is set, the count
+/// one up. (The caller's `esi`, pushed under the calls, is no callee's
+/// argument and is left out of their words.) Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn end_0198<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::pushes::Pushes;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    if rd(g, 0xe).wrapping_sub(0x53).cast_signed() >= 0 {
+        let mut st = Pushes::default();
+        for (arg, table, out) in [
+            (0x23u32, 0x1cu32, 0x36u32),
+            (0x31, 0x3b, 0x4e),
+            (0x49, 0x53, 0x66),
+        ] {
+            st.push(rd(g, arg));
+            // call width: 12 (Pushes caps the words at 12)
+            let r = st.call(g, t(g, table, 941), 0).eax;
+            g.write::<u32>(w(out), r);
+        }
+        st.push(rd(g, 0x61));
+        let at = rd(g, 0x6b);
+        g.write::<u32>(at, w(0x71));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x76, 723), 0);
+        st.push(rd(g, 0x89));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x83, 724), 0);
+        st.push(w(0x9b));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x96, 258), 0);
+        st.push_all(&[rd(g, 0xa9), rd(g, 0xb4), rd(g, 0xc0)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xae, 231), 0);
+        st.push_all(&[rd(g, 0xc8), rd(g, 0xd3)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xcd, 230), 0);
+        let at = rd(g, 0xe0);
+        st.push(0x30);
+        g.write::<u32>(at, w(0xe8));
+        st.push(w(0xf2));
+        let at = rd(g, 0xed);
+        g.write::<u32>(at, w(0xf8));
+        let lock = rd(g, 0xfd);
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        // call width: 12 (Pushes caps the words at 12)
+        let r = st.call(g, t(g, 0x10a, 712), 0).eax;
+        let lock = rd(g, 0x118);
+        g.write::<u32>(lock, saved);
+        if r != 0 {
+            let mut st = Pushes::default();
+            st.push_all(&[1, rd(g, 0x133)]);
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x12b, 254), 0);
+            st.push_all(&[1, rd(g, 0x148)]);
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x140, 254), 0);
+            st.push_all(&[0x100, rd(g, 0x160)]);
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x155, 249), 0);
+            st.pop(6);
+            st.push_all(&[0, 0x3f80_0000, 0x3f80_0000, 0x3f80_0000, rd(g, 0x198)]);
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x16d, 256), 0);
+            st.push_all(&[1, rd(g, 0x1a7)]);
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x19f, 213), 0);
+            st.push(rd(g, 0x1ba));
+            // call width: 12 (Pushes caps the words at 12)
+            st.call(g, t(g, 0x1b4, 214), 0);
+        }
+    }
+    if g.read::<u32>(rd(g, 0x1ca)) == 0 {
+        let n = rd(g, 0x1d5).wrapping_add(1);
+        g.write::<u32>(w(0x1d5), n);
+    }
+    Ret::eax(0)
+}
+
+/// [`end_0198`] (476 bytes, 1 overlay).
+pub const END_0198: Sig = Sig {
+    len: 476,
+    hash: 0x3138_612d_7b58_8eac,
+    calls: &[],
+    imports: &[],
+};
+
 /// `magic_0440`'s sound block in its start-up (the code at `+0x3d0` of
 /// 0x10002ca0, inlined; `owner` the loop's last owner word): `*G1` =
 /// `owner - 0x2d`; `*G4 = *G2`, `*G5` = `C1` when that is above 0 (signed),

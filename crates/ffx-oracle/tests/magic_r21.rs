@@ -233,6 +233,220 @@ fn throw_start_0382() {
         );
         t.set_u32(w(&t, 0x14e), 0x00a0_0000 + k);
         t.write(obj, &[0x5d + k as u8; 0x200]);
+        // the flags word without bit 14 (the junk bytes have it set)
+        t.set_u32(obj + 0xbc, 0x1234_8000 + k);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `r21::set_up_0198` (`magic_0198` 0x100010e0): two arguments, the
+/// vector slots writing their outputs from their inputs, the load and
+/// the part start on both sides.
+#[test]
+fn set_up_0198() {
+    let Some(mut t) = twin(198) else { return };
+    let f = t.at(0x10e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let byte = SCRATCH + 0x600;
+    recs(
+        &mut t,
+        &[
+            (168, 1),
+            (215, 5),
+            (217, 7),
+            (232, 12),
+            (711, 7),
+            (710, 11),
+            (718, 1),
+            (719, 3),
+            (209, 5),
+            (208, 5),
+            (221, 4),
+            (714, 5),
+        ],
+    );
+    rec(&mut t, 218, 2, move |_, _| byte);
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x233
+    });
+    for (s, x) in [(251u32, 0.375f64), (216, -1.5)] {
+        rec(&mut t, s, 1, move |_, a| a[0] ^ (s << 16));
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 7));
+    }
+    let table = SCRATCH + 0x700;
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, 0x0941_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    let sp = t.img.rel32_target(f + 0x1fe);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    t.set_u32(t.img.word(sp + 0x29), SCRATCH + 0x7f8);
+    t.set_u32(w(&t, 0x182), SCRATCH + 0x7f0);
+    t.set_u32(w(&t, 0x1a8), SCRATCH + 0x7f0);
+    t.set_u32(w(&t, 0x1d0), SCRATCH + 0x7e0);
+    for (k, a) in [0x0abc_0001u32, 0x0abc_0002].into_iter().enumerate() {
+        let k = k as u32;
+        t.set_u8(byte, 3 + k as u8);
+        t.set_u32(SCRATCH + 0x7f0, 0x55 + k);
+        t.set_u32(SCRATCH + 0x7e0, 0x66 + k);
+        for o in [0x114u32, 0x81] {
+            let at = w(&t, o);
+            floats_at(&mut t, at, &[1.5 + k as f32, -0.25, 3.0, 1.0]);
+        }
+        let q = w(&t, 0x99);
+        floats_at(&mut t, q, &[0.5, 2.5 + k as f32, -4.0, 1.0]);
+        junk_ops(
+            &mut t,
+            f,
+            &[0x15, 0x28, 0x4d, 0x65, 0x77, 0x14a, 0x214, 0x224],
+        );
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// `r21::step_0198` (0x10001360): the first-time waits (busy, asking, not
+/// loaded), slot 253 answering 0 and not, the count at 0x10 (slot 228
+/// moving it to 0x1e), 0x1e, inside the blend, at its end 0x44, at 0x55
+/// and outside.
+#[test]
+fn step_0198() {
+    let Some(mut t) = twin(198) else { return };
+    let f = t.at(0x1360);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (busy, loaded, idle) = (SCRATCH + 0x600, SCRATCH + 0x604, SCRATCH + 0x608);
+    let count = w(&t, 0xb1);
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    rec(&mut t, 253, 0, move |m, _| m.r32(idle));
+    rec(&mut t, 228, 2, move |m, a| {
+        if a[1] == 0xb0 {
+            m.w32(count, 0x1e);
+        }
+        0x228
+    });
+    recs(
+        &mut t,
+        &[
+            (226, 2),
+            (254, 4),
+            (255, 2),
+            (249, 2),
+            (237, 6),
+            (256, 5),
+            (220, 3),
+            (257, 5),
+            (239, 8),
+        ],
+    );
+    let flag = SCRATCH + 0x700;
+    t.set_u32(w(&t, 0xa5), flag);
+    let tab = SCRATCH + 0x1_0000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, (0.001 * i as f32 - 1.5).to_bits());
+    }
+    t.set_u32(w(&t, 0x143), tab);
+    // (S0, S1, S2, busy, loaded, slot 253, count)
+    for (k, (s0, s1, s2, b, l, i, n)) in [
+        (0u32, 0u32, 0u32, 1u32, 1u32, 0u32, 0x1eu32),
+        (0, 0, 0, 0, 0, 0, 0x1e),
+        (0, 1, 0, 0, 1, 0, 0x10),
+        (1, 1, 1, 0, 1, 5, 0x1e),
+        (1, 1, 1, 0, 1, 0, 0x30),
+        (1, 1, 1, 0, 1, 0, 0x44),
+        (1, 1, 1, 0, 1, 0, 0x55),
+        (1, 1, 1, 0, 1, 0, 0x60),
+        (1, 1, 1, 0, 1, 0, 0x2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x12), s0);
+        t.set_u32(w(&t, 0x3f), s1);
+        t.set_u32(w(&t, 0x6a), s2);
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(idle, i);
+        t.set_u32(count, n);
+        t.set_u32(flag, 0x5a5a_5a5a);
+        for (o, base) in [(0x16cu32, 0.75f32), (0x1a5, -2.5)] {
+            let at = w(&t, o);
+            floats_at(&mut t, at, &[base + k as f32, base * 3.0, 1.25 - base, 0.5]);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `r21::end_0198` (0x10001670): not loaded; the count below 0x53 and
+/// from it, slot 712 answering 0 and not, the stop flag set and not.
+#[test]
+fn end_0198() {
+    let Some(mut t) = twin(198) else { return };
+    let f = t.at(0x1670);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x600;
+    rec(&mut t, 712, 12, move |m, _| m.r32(answer));
+    recs(
+        &mut t,
+        &[
+            // (the caller's `esi` lies under the first part table's word)
+            (941, 3),
+            (723, 4),
+            (724, 5),
+            (258, 5),
+            (231, 8),
+            (230, 11),
+            (254, 4),
+            (249, 6),
+            (256, 5),
+            (213, 7),
+            (214, 8),
+        ],
+    );
+    let (g7, g12, lock, stop) = (
+        SCRATCH + 0x700,
+        SCRATCH + 0x704,
+        SCRATCH + 0x708,
+        SCRATCH + 0x70c,
+    );
+    t.set_u32(w(&t, 0x6b), g7);
+    t.set_u32(w(&t, 0xed), g7);
+    t.set_u32(w(&t, 0xe0), g12);
+    t.set_u32(w(&t, 0xfd), lock);
+    t.set_u32(w(&t, 0x118), lock);
+    t.set_u32(w(&t, 0x1ca), stop);
+    // (loaded, count, slot 712, stop)
+    for (k, (s2, n, a, s)) in [
+        (0u32, 0x60u32, 1u32, 0u32),
+        (1, 0x52, 1, 0),
+        (1, 0x53, 0, 0),
+        (1, 0x60, 1, 0),
+        (1, 0x60, 1, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(w(&t, 0x2), s2);
+        t.set_u32(w(&t, 0xe), n);
+        t.set_u32(answer, a);
+        t.set_u32(stop, s);
+        for at in [g7, g12] {
+            t.set_u32(at, 0x5a5a_0000 + k);
+        }
+        t.set_u32(lock, 0x77 + k);
+        junk_ops(&mut t, f, &[0x36, 0x4e, 0x66]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
