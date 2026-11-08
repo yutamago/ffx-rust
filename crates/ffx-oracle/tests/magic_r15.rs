@@ -1725,3 +1725,277 @@ fn frame_0206() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0443` 0x10001e60 (`r15::frame_0443`): the light set-up (the
+/// scale first), the model placed, the motion script stepped, `G_DONE` 0
+/// and not.
+#[test]
+fn frame_0443() {
+    let Some(mut t) = twin(443) else { return };
+    let at = t.at(0x1e60);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, 0x3f80_0000 + i);
+        }
+        0x235
+    });
+    recs(&mut t, &[(211, 2), (0x514 / 4, 2)]);
+    // slot 231 reads the matrix (its diagonal set by the frame)
+    rec(&mut t, 231, 3, |m, a| {
+        magic_owna::dump(m, 231, a[2], 16);
+        0x231
+    });
+    rec(&mut t, 0x398 / 4, 2, |m, a| {
+        magic_owna::dump(m, 0x398 / 4, a[1], 16);
+        0x398
+    });
+    rec(&mut t, 0x348 / 4, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[1] + 4 * i, (0.5 + i as f32 * 0.375).to_bits());
+        }
+        0x348
+    });
+    rec(&mut t, 0x3a0 / 4, 2, |m, a| {
+        for i in 0..4 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i));
+            m.w32(a[0] + 4 * i, (x * 0.25 - 1.0).to_bits());
+        }
+        0x3a0
+    });
+    rec(&mut t, 0x4c / 4, 1, |_, a| a[0]);
+    t.stub_st0(0x4c / 4, |_, _| 2.75);
+    rec(&mut t, 0x3e0 / 4, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, (x + 1.5).to_bits());
+        }
+        m.w32(a[0] + 12, 1.0f32.to_bits());
+        0x3e0
+    });
+    let ls = t.img.rel32_target(at + 0x11);
+    t.set_u32(t.img.word(ls + 0x13), 0x0e0e_0001);
+    t.set_u32(t.img.word(at + 0x62), 0x0062_0001);
+    let step = t.img.rel32_target(at + 0x72);
+    let tab = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(step + 0xb), tab);
+    t.set_u32(t.img.word(step + 0x2), 1);
+    t.write(tab, &[0; 0x40]);
+    for done in [0u32, 1] {
+        t.set_u32(t.img.word(at + 0x7d), done);
+        scrub(&mut t);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0443` 0x10001ae0 (`r15::fade_step_0443`): up and down, below,
+/// inside, at and above the bounds, and NaN.
+#[test]
+fn fade_step_0443() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x1ae0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let k = |t: &Twin, o: u32| f32::from_bits(t.u32(w(t, o)));
+    rec(&mut t, 0x584 / 4, 1, |m, a| {
+        magic_owna::dump(m, 0x584 / 4, a[0], 4);
+        0x584
+    });
+    rec(&mut t, 0x634 / 4, 2, |m, a| {
+        magic_owna::dump(m, 0x634 / 4, a[0], 4);
+        0x634
+    });
+    let (lo, hi_up, hi_down, up_step, down_step) = (
+        k(&t, 0x23),
+        k(&t, 0x42),
+        k(&t, 0x97),
+        k(&t, 0x2d),
+        k(&t, 0x82),
+    );
+    for (up, x) in [
+        (1u32, lo - up_step - 1.0),
+        (1, f32::midpoint(lo, hi_up)),
+        (1, hits(hi_up, up_step)),
+        (1, hi_up + 1.0),
+        (1, f32::NAN),
+        (0, lo + down_step - 1.0),
+        (0, f32::midpoint(lo, hi_down) + down_step),
+        (0, hi_down + down_step + 1.0),
+        (0, f32::NAN),
+    ] {
+        t.set_u32(w(&t, 0x12), up);
+        t.set_u32(w(&t, 0x1b), x.to_bits());
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0360` 0x100015c0 (`r15::mean_throw_0360`): no targets, one and
+/// three, the points other per call.
+#[test]
+fn mean_throw_0360() {
+    let Some(mut t) = twin(360) else { return };
+    let f = t.at(0x15c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 0x724 / 4, 3, |m, a| {
+        let c = m.r32(magic_owna::row(0x724 / 4)) as f32;
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, (0.75 * i as f32 + c - 1.5).to_bits());
+        }
+        0x724
+    });
+    rec(&mut t, 0x73c / 4, 3, |m, a| {
+        for i in 0..16 {
+            m.w32(a[2] + 4 * i, (0.125 * i as f32 - 0.5).to_bits());
+        }
+        0x73c
+    });
+    recs(
+        &mut t,
+        &[
+            (0x6c8 / 4, 2),
+            (0x6e0 / 4, 4),
+            (0x708 / 4, 2),
+            (0x70c / 4, 2),
+        ],
+    );
+    let e = SCRATCH + 0x4000;
+    t.write(e, &[0x3a; 0x200]);
+    t.set_u32(e + 0x198, 0x0e00_0198);
+    for i in 0..4 {
+        t.set_u32(e + 0x1a0 + 4 * i, 0x0e00_01a0 + i);
+    }
+    for o in [0x11u32, 0x75, 0x17f, 0x281] {
+        t.set_u32(w(&t, o), e);
+    }
+    let obj = SCRATCH + 0x5000;
+    for n in [0u32, 1, 3] {
+        t.set_u32(e + 0x19c, n);
+        t.write(obj, &[0x4b; 0x140]);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `magic_0193` 0x100010f0 (`r15::volley_setup_0193`): no targets, one
+/// and three; slot 453's length below, inside and past the counts' range
+/// (the ratio below and above its floor).
+#[test]
+fn volley_setup_0193() {
+    let Some(mut t) = twin(193) else { return };
+    let f = t.at(0x10f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 0x724 / 4, 3, |m, a| {
+        let c = m.r32(magic_owna::row(0x724 / 4)) as f32;
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, (0.75 * i as f32 + c - 1.5).to_bits());
+        }
+        0x724
+    });
+    let len = SCRATCH + 0x110;
+    rec(&mut t, 0x714 / 4, 1, |m, a| {
+        magic_owna::dump(m, 0x714 / 4, a[0], 4);
+        0x714
+    });
+    t.stub_st0(0x714 / 4, move |m, _| f64::from(f32::from_bits(m.r32(len))));
+    recs(
+        &mut t,
+        &[
+            (0x720 / 4, 3),
+            (0x73c / 4, 3),
+            (0x6f4 / 4, 1),
+            (0x6c8 / 4, 2),
+            (0x708 / 4, 2),
+            (0x70c / 4, 2),
+        ],
+    );
+    let e = SCRATCH + 0x4000;
+    t.write(e, &[0x3a; 0x200]);
+    t.set_u32(e + 0x198, 0x0e00_0198);
+    for i in 0..4 {
+        t.set_u32(e + 0x1a0 + 4 * i, 0x0e00_01a0 + i);
+    }
+    for o in [0x11u32, 0x52, 0x114] {
+        t.set_u32(w(&t, o), e);
+    }
+    // T and Q: values to work with
+    for (i, o) in (0u32..).zip([0x130u32, 0x144, 0x15c, 0x169, 0x1a1, 0x1b1, 0x1c1, 0x1d1]) {
+        t.set_u32(w(&t, o), (0.5 * i as f32 - 1.25).to_bits());
+    }
+    // (slot 434's word `*G` at `+0x35e` is `E` itself)
+    let k2 = f32::from_bits(t.u32(w(&t, 0x208)));
+    let obj = SCRATCH + 0x5000;
+    for (n, l) in [
+        (0u32, 3.0f32),
+        (1, 0.0),
+        (3, 40.0 * k2),
+        (3, -40.0 * k2),
+        (1, f32::NAN),
+    ] {
+        t.set_u32(e + 0x19c, n);
+        t.set_u32(len, l.to_bits());
+        t.write(obj, &[0x4b; 0x40]);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+/// `magic_0416` 0x100010f0 (`r15::volley_setup_0416`): as
+/// [`volley_setup_0193`], its point moved by the matrix words first.
+#[test]
+fn volley_setup_0416() {
+    let Some(mut t) = twin(416) else { return };
+    let f = t.at(0x10f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 0x724 / 4, 3, |m, a| {
+        let c = m.r32(magic_owna::row(0x724 / 4)) as f32;
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, (0.75 * i as f32 + c - 1.5).to_bits());
+        }
+        0x724
+    });
+    let len = SCRATCH + 0x110;
+    rec(&mut t, 0x714 / 4, 1, |m, a| {
+        magic_owna::dump(m, 0x714 / 4, a[0], 4);
+        0x714
+    });
+    t.stub_st0(0x714 / 4, move |m, _| f64::from(f32::from_bits(m.r32(len))));
+    recs(
+        &mut t,
+        &[
+            (0x720 / 4, 3),
+            (0x73c / 4, 3),
+            (0x6f4 / 4, 1),
+            (0x6c8 / 4, 2),
+            (0x708 / 4, 2),
+            (0x70c / 4, 2),
+        ],
+    );
+    let e = SCRATCH + 0x4000;
+    t.write(e, &[0x3a; 0x200]);
+    t.set_u32(e + 0x198, 0x0e00_0198);
+    for i in 0..4 {
+        t.set_u32(e + 0x1a0 + 4 * i, 0x0e00_01a0 + i);
+    }
+    for o in [0x11u32, 0x87, 0x1a7] {
+        t.set_u32(w(&t, o), e);
+    }
+    // (slot 434's word `*G` at `+0x3f2` is `E` itself)
+    let k2 = f32::from_bits(t.u32(w(&t, 0x29c)));
+    let obj = SCRATCH + 0x5000;
+    for (n, l) in [
+        (0u32, 3.0f32),
+        (1, 0.0),
+        (3, 40.0 * k2),
+        (3, -40.0 * k2),
+        (1, f32::NAN),
+    ] {
+        // the matrix words and Q: values to work with
+        for (i, o) in (0u32..).zip([0x5au32, 0x62, 0x6a, 0x72, 0x7a, 0x82, 0x9f, 0xc3]) {
+            t.set_u32(w(&t, o), (0.5 * i as f32 - 1.25 + n as f32).to_bits());
+        }
+        t.set_u32(e + 0x19c, n);
+        t.set_u32(len, l.to_bits());
+        t.write(obj, &[0x4b; 0x40]);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}

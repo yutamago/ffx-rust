@@ -52,8 +52,15 @@ fn frame() {
 /// (non-zero before).
 #[test]
 fn start_up() {
-    let Some(mut t) = twin(N) else { return };
-    let at = t.at(0x20c0);
+    start_up_in(N, 0x20c0);
+    // `magic_0443`'s copy (0x10001f10): its own light set-up (the scale
+    // first) and nine more block words
+    start_up_in(443, 0x1f10);
+}
+
+fn start_up_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let w = |t: &magic::Twin, o: u32| t.img.word(at + o);
     let rec_tab = magic::SCRATCH + 0x5000;
     for i in 0..16 {
