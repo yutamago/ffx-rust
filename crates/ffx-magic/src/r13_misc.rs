@@ -263,10 +263,19 @@ pub const LISTS_TWO_DONE_0244: Sig = Sig {
 /// follows (a tail jump); once done, `R[+0x8b]` = 1, the actors are
 /// restored ([`actors_restored`](crate::s4_small::actors_restored)) and
 /// the task's node goes back ([`give_back`](crate::sa_pool::give_back), a
-/// tail jump).
+/// tail jump). `magic_0587`'s copy (0x100014e0, 174 bytes,
+/// [`SCRIPTS_STEP_MOTION_0587`](crate::r18::SCRIPTS_STEP_MOTION_0587))
+/// also steps the integer fade at `R + F` (`+0x83`;
+/// [`int_fade`](crate::s4_small::int_fade)) after the motion step, and
+/// ends its models ([`models_end`](crate::m0587::models_end)) in place of
+/// the actors' restore.
 pub fn scripts_step_motion<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
+    // `magic_0587`'s copy (`lea ecx` at +0x81): the fade's step after the
+    // motion step, its own models' end; the later operands 11 bytes on
+    let fade = img.word(f + 0x81) & 0xff == 0x8d;
+    let d = if fade { 0xb } else { 0 };
     let r = g.read::<u32>(w(0x07));
     g.write_bytes(w(0x10), &[0u8; 0x30]);
     let flags = g.read::<u16>(w(0x21)) | 0x80;
@@ -281,26 +290,40 @@ pub fn scripts_step_motion<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(r.wrapping_add(w(to)), v);
         }
         crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x7d));
+        if fade {
+            // lea ecx, [edi + F]; call: the integer fade's step
+            let callee = Frame {
+                at: img.rel32_target(f + 0x88),
+                esp: fr.esp.wrapping_sub(0x10),
+                ecx: r.wrapping_add(w(0x83)),
+                ..*fr
+            };
+            crate::s4_small::int_fade(g, img, &callee);
+        }
         // pop edi; pop esi; pop ebp; jmp: the caller's stack as it came
         let callee = Frame {
-            at: img.rel32_target(f + 0x85),
+            at: img.rel32_target(f + 0x85 + d),
             ..*fr
         };
         return crate::s8_misc::camera_rigs_step(g, img, &callee);
     }
-    g.write::<u32>(r.wrapping_add(w(0x8b)), 1);
+    g.write::<u32>(r.wrapping_add(w(0x8b + d)), 1);
     // push ebp; push esi; push edi; call
-    let restore = Frame {
-        at: img.rel32_target(f + 0x94),
+    let end = Frame {
+        at: img.rel32_target(f + 0x94 + d),
         esp: fr.esp.wrapping_sub(0x10),
         ..*fr
     };
-    crate::s4_small::actors_restored(g, img, &restore);
+    if fade {
+        crate::m0587::models_end(g, img, &end);
+    } else {
+        crate::s4_small::actors_restored(g, img, &end);
+    }
     let node = fr.arg(g, 0);
     Ret::eax(crate::sa_pool::give_back(
         g,
         img,
-        img.rel32_target(f + 0x9f),
+        img.rel32_target(f + 0x9f + d),
         node,
     ))
 }

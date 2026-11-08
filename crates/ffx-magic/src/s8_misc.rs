@@ -992,7 +992,7 @@ pub const STAGED_SCRIPT: Sig = Sig {
 /// ([`script_run`](crate::sb_misc::script_run), contexts the immediates
 /// at `+0x2e` and `+0x3d`). Returns the first script's answer (1: it
 /// ended) and the second's (the `eax` after the calls).
-fn summon_frame_scripts<G: Game>(g: &mut G, img: &Image, f: u32) -> (u32, u32) {
+pub(crate) fn summon_frame_scripts<G: Game>(g: &mut G, img: &Image, f: u32) -> (u32, u32) {
     let w = |o: u32| op(img, f, o);
     let a = w(0x10);
     g.write_bytes(a, &[0; 0x30]);
@@ -1085,11 +1085,23 @@ pub const SUMMON_FRAME_RIGS: Sig = Sig {
 /// ([`give_back`](crate::sa_pool::give_back), a tail jump). Returns the
 /// last call's `eax`.
 ///
-/// `magic_0168` 0x100014e0 (241 bytes; 2 DLLs).
+/// `magic_0168` 0x100014e0 (241 bytes; 2 DLLs). `magic_0610`'s copy
+/// (0x1000a6d0, 226 bytes, [`SUMMON_FRAME_0610`](crate::r18::SUMMON_FRAME_0610))
+/// copies `E + 0xc70`/`0xc90` to `0xc10`/`0xc50`, has no fade, sets `E +
+/// 0x1a88` and ends with the scene's end
+/// ([`scene_end`](crate::o6_fam_pairs6::scene_end)); `magic_0588`'s
+/// (0x100016f0) is `0610`'s with its own end
+/// ([`effect_end_0588`](crate::r18::effect_end_0588)). Every displacement
+/// is read from the code.
 pub fn summon_frame_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
     let e = g.read::<u32>(w(0x7));
+    // `magic_0610`'s copy: a short `jne` (the later operands 4 bytes
+    // earlier) and no fade (`lea ecx` after the motion scripts)
+    let d = if w(0x4a) & 0xff == 0x75 { 4 } else { 0 };
+    let fade = w(0xc4 - d) & 0xff == 0x8d;
+    let tail_at = if fade { 0xd3 - d } else { 0xc8 - d };
     let (done, eax) = summon_frame_scripts(g, img, f);
     // push ebp, esi, edi; the callees' return address
     let sub = |at: u32, ecx: u32, eax: u32| Frame {
@@ -1100,25 +1112,38 @@ pub fn summon_frame_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ..*fr
     };
     if done == 0 {
-        copy4(g, e, 0xa90, 0x9b0);
-        copy4(g, e, 0xab0, 0x9f0);
-        crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0xb6), w(0xab));
-        crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0xc0), w(0xbb));
-        let eax = crate::s4_small::int_fade(g, img, &sub(0xcb, e.wrapping_add(0xe70), eax)).eax;
+        copy4(g, e, w(0x52 - d), w(0x58 - d));
+        copy4(g, e, w(0x82 - d), w(0x88 - d));
+        let at = 0xb6 - d;
+        crate::s4_misc::motion_script(g, img, img.rel32_target(f + at), w(at - 0xb));
+        crate::s4_misc::motion_script(g, img, img.rel32_target(f + at + 0xa), w(at + 5));
+        let eax = if fade {
+            let r = sub(0xcb - d, e.wrapping_add(w(0xc6 - d)), eax);
+            crate::s4_small::int_fade(g, img, &r).eax
+        } else {
+            eax
+        };
         let tail = Frame {
-            at: img.rel32_target(f + 0xd3),
+            at: img.rel32_target(f + tail_at),
             eax,
             ..*fr
         };
         return camera_rigs_step(g, img, &tail);
     }
-    g.write::<u32>(e.wrapping_add(0x3160), 1);
-    crate::s5_misc::effect_end_show(g, img, &sub(0xe2, fr.ecx, eax));
+    g.write::<u32>(e.wrapping_add(w(tail_at + 6)), 1);
+    let end = sub(tail_at + 0xf, fr.ecx, eax);
+    if img.matches(end.at, &crate::s5_misc::EFFECT_END_SHOW) {
+        crate::s5_misc::effect_end_show(g, img, &end);
+    } else if img.matches(end.at, &crate::r18::EFFECT_END_0588) {
+        crate::r18::effect_end_0588(g, img, &end);
+    } else {
+        crate::o6_fam_pairs6::scene_end(g, img, &end);
+    }
     let n = fr.arg(g, 0);
     Ret::eax(crate::sa_pool::give_back(
         g,
         img,
-        img.rel32_target(f + 0xed),
+        img.rel32_target(f + tail_at + 0x1a),
         n,
     ))
 }

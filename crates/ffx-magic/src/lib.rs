@@ -66,6 +66,7 @@ pub mod r14;
 pub mod r15;
 pub mod r16;
 pub mod r17;
+pub mod r18;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -2928,6 +2929,33 @@ ports! {
     "r16 parts scaled 0641" => r16::PARTS_SCALED_0641, r16::parts_scaled_0641;
     "o6 fam boot effect_boot 0641@1c70" => r16::EFFECT_BOOT_0641_1C70, o6_fam_boot::effect_boot;
     "r16 sparks 0641" => r16::SPARKS_0641, r16::sparks_0641;
+    // round 18 (magic-r18)
+    "r18 scripts step (motion) 0587" => r18::SCRIPTS_STEP_MOTION_0587, r13_misc::scripts_step_motion;
+    "r18 thunk: walk and reset 0577" => r18::JMP_WALK_RESET_0577, r18::jmp_walk_reset_0577;
+    "o6 fam start host_start_parts 0598@6740" => r18::HOST_START_PARTS_0598, o6_fam_start::host_start_parts;
+    "o6 fam start host_start_parts 0600@6140" => r18::HOST_START_PARTS_0600, o6_fam_start::host_start_parts;
+    "r18 summon frame 0610" => r18::SUMMON_FRAME_0610, s8_misc::summon_frame_fade;
+    "r18 seventh start 0610" => r18::SEVENTH_START_0610, r18::seventh_start_0610;
+    "r18 caster place 0588" => r18::CASTER_PLACE_0588, r18::caster_place_0588;
+    "r18 effect end 0588" => r18::EFFECT_END_0588, r18::effect_end_0588;
+    "r18 summon frame 0588" => r18::SUMMON_FRAME_0588, s8_misc::summon_frame_fade;
+    "r18 wave tick 0588" => r18::WAVE_TICK_0588, r18::wave_tick_0588;
+    "r18 caster object 0588" => r18::CASTER_OBJECT_0588, r18::caster_object_0588;
+    "r18 load step 0588" => r18::LOAD_0588, r18::load_0588;
+    "r18 four parts 0493" => r18::FOUR_PARTS_0493, r18::four_parts_0493;
+    "r18 load step 0564" => r18::LOAD_0564, r18::load_0564;
+    "r18 load step 0562" => r18::LOAD_0562, r18::load_0562;
+    "r18 model start 0603" => r18::MODEL_START_0603, r18::model_start_0603;
+    "r18 lights start 0610" => r18::LIGHTS_START_0610, r18::lights_start_0610;
+    "r18 caster place 0610" => r18::CASTER_PLACE_0610, r18::caster_place_0588;
+    "r18 turned records 0612" => r18::TURNED_RECORDS_0612, r18::turned_records_0612;
+    "r18 load steps 0597" => r18::LOAD_STEPS_0597, r18::load_steps_0597;
+    "r18 motion task 0512" => r18::MOTION_TASK_0512, r18::motion_task_0512;
+    "r18 particle task 0512" => r18::PARTICLE_TASK_0512, r18::particle_task_0512;
+    "r18 passes 0586" => r18::PASSES_0586, r18::passes_0586;
+    "r18 camera start 0519" => r18::CAMERA_START_0519, r18::camera_start_0519;
+    "r18 summon frame 0589" => r18::SUMMON_FRAME_0589, r18::summon_frame_0589;
+    // round 18 (magic-r18): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3513,6 +3541,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r16 spawn 0489", &r16::SPAWN_0489),
     ("r16 spawn 2 0489", &r16::SPAWN2_0489),
     // round 16 (magic-r16): end
+    // round 18 (magic-r18)
+    ("r18 walk and reset 0577", &r18::WALK_RESET_0577),
+    ("r18 start-up 0588", &r18::START_UP_0588),
+    ("r18 start-up 0564", &r18::START_UP_0564),
+    ("r18 start-up 0562", &r18::START_UP_0562),
+    // round 18 (magic-r18): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

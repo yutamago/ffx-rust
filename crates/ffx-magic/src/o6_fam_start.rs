@@ -47,7 +47,9 @@ fn slot_step<G: Game>(
 /// 1)` on part `A`; slot 718 and 221 `(part, 0, 1000, 1)` on part `B`;
 /// slot 718 on `B` again; then once or twice slot 719 `(B, 6, M)` and
 /// slot 551 `(its eax, I, 1)`; `G_DONE` 0. Each call sees the words the
-/// earlier ones left (until the `add esp`). Returns 0.
+/// earlier ones left (until the `add esp`). Returns 0. `magic_0598`'s
+/// (0x10006740) and `magic_0600`'s (0x10006140) copies call slot 4
+/// `(id)` and slot 27 `(id, 1)` after slot 720.
 pub fn host_start_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ecx = fr.ecx;
     let arg = fr.arg(g, 0);
@@ -98,6 +100,12 @@ pub fn host_start_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(c.word(2, 6), 0);
     // slot 720 (one push before the load, one after)
     slot_step(g, &mut c, &mut s, t, 1, 1, ecx);
+    // `magic_0598`/`0600`: slot 4 `(id)` and slot 27 `(id, 1)` (`mov eax,
+    // [eax + 0x10]` behind the first push)
+    if img.word(c.at + 10) & 0x00ff_ffff == 0x0010_408b {
+        slot_step(g, &mut c, &mut s, t, 1, 0, ecx);
+        slot_step(g, &mut c, &mut s, t, 1, 1, ecx);
+    }
     // part A: 718 (1 push), 222 (1 + 3)
     slot_step(g, &mut c, &mut s, t, 1, 0, ecx);
     slot_step(g, &mut c, &mut s, t, 1, 3, ecx);
@@ -105,9 +113,10 @@ pub fn host_start_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // part B: 718, 221
     slot_step(g, &mut c, &mut s, t, 1, 0, ecx);
     slot_step(g, &mut c, &mut s, t, 1, 3, ecx);
-    // mov eax, [T]; add esp, 0x40; mov eax, [eax + S]; push B; call eax
+    // mov eax, [T]; add esp, n; mov eax, [eax + S]; push B; call eax
+    let n = img.word(c.at + 7) & 0xff;
     c.skip(5 + 3);
-    s.pop(16);
+    s.pop(n as usize / 4);
     let table = g.read::<u32>(t);
     let slot = c.slot_load();
     s.push(c.push_imm());
