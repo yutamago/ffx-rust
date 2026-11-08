@@ -2609,6 +2609,15 @@ pub const LIT_COLOUR_NODE_THUNK: Sig = Sig {
     imports: &[],
 };
 
+/// [`lit_colour_node_thunk`] in `magic_0601` (0x10001480, over its
+/// 791-byte node).
+pub const LIT_COLOUR_NODE_THUNK_0601: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&crate::s7_misc::LIT_COLOUR_NODE_0601))],
+    imports: &[],
+};
+
 /// The scrolled texture's fade (cdecl, no arguments; `V = *G_V`): while
 /// `*G_A` is set and the clock `*G_T` is below 0x99 nothing happens
 /// (returns 1). Else `V` drops by `K1` when slot 253 answers non-zero, and
@@ -2619,13 +2628,36 @@ pub const LIT_COLOUR_NODE_THUNK: Sig = Sig {
 ///
 /// `magic_0188` 0x10001db0 (173 bytes; 2 DLLs).
 pub fn texture_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    use crate::sb_sse::sub;
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
-    let t = |g: &G, s: u32| slot_target(g, w(0x1a), s);
     if g.read::<u32>(w(0x2)) != 0 && g.read::<i32>(w(0xb)) < 0x99 {
         return Ret::eax(1);
     }
+    texture_fade_from(g, img, fr, 0)
+}
+
+/// `magic_0351`'s texture fade (0x10001500, cdecl, no arguments; 186
+/// bytes): with `*G_X` (`+0x2`) at most 0x3c it waits (returns 1) while
+/// `*G_A` (`+0xb`) is 0 or the clock `*G_T` (`+0x18`) is at most 0xb9;
+/// then as [`texture_fade`] (its operands 0xd bytes later).
+pub fn texture_fade_0351<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    if g.read::<i32>(w(0x2)) <= 0x3c
+        && (g.read::<u32>(w(0xb)) == 0 || g.read::<i32>(w(0x18)) <= 0xb9)
+    {
+        return Ret::eax(1);
+    }
+    texture_fade_from(g, img, fr, 0xd)
+}
+
+/// [`texture_fade`] after its wait (operands `d` bytes later than
+/// `magic_0188`'s).
+fn texture_fade_from<G: Game>(g: &mut G, img: &Image, fr: &Frame, d: u32) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at + d;
+    let w = |o: u32| op(img, f, o);
+    let t = |g: &G, s: u32| slot_target(g, w(0x1a), s);
     let fade = w(0x2a);
     let down = g.call(t(g, 253), 0, &[]).eax;
     let mut v = g.read::<f32>(fade);
@@ -2651,6 +2683,17 @@ pub fn texture_fade<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     Ret::eax(1)
 }
+
+/// [`texture_fade_0351`] (the `rel32`: its scrolled texture).
+pub const TEXTURE_FADE_0351: Sig = Sig {
+    len: 186,
+    hash: 0xf5d2_b572_e991_2ac7,
+    calls: &[(
+        0x8e,
+        Callee::Sig(&crate::o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080),
+    )],
+    imports: &[],
+};
 
 /// [`texture_fade`] (the `rel32`: the scrolled texture).
 pub const TEXTURE_FADE: Sig = Sig {

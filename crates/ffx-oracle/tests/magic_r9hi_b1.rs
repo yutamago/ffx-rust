@@ -374,15 +374,22 @@ fn start_0689() {
 /// `m0591::cue_start` (0x100044e0): each of the three waits, the once
 /// flag clear and set, slot 227 below and at 1 (the targets and tasks set
 /// up: two target bytes moved, a free ring of four nodes, the list empty
-/// or not).
+/// or not). Also its copy in `magic_0349` (0x10004590: slot 226's second
+/// word 0, the operands from the once-flag's slot call on one byte later).
 #[test]
 fn cue_start_0591() {
-    let Some(mut t) = magic_l3::twin(591) else {
+    for (n, at, d) in [(591u16, 0x44e0u32, 0u32), (349, 0x4590, 1)] {
+        cue_start_case(n, at, d);
+    }
+}
+
+fn cue_start_case(n: u16, at: u32, d: u32) {
+    let Some(mut t) = magic_l3::twin(n) else {
         return;
     };
-    let f = t.at(0x44e0);
+    let f = t.at(at);
     let g = |t: &Twin, op: u32| t.img.word(f + op);
-    let s = t.img.rel32_target(f + 0x94);
+    let s = t.img.rel32_target(f + 0x94 + d);
     let gs = |t: &Twin, op: u32| t.img.word(s + op);
     rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
     rec(&mut t, 5, 1, |m, _| m.r32(SCRATCH + 0x14));
@@ -406,7 +413,7 @@ fn cue_start_0591() {
     t.set_u32(gs(&t, 0x66), lock);
     let face = t.img.rel32_target(s + 0xde);
     t.set_u32(t.img.word(face + 0xe), SCRATCH + 0x4000);
-    let h = g(&t, 0x5f);
+    let h = g(&t, 0x5f + d);
     t.set_u32(h, 0x00a5_005f);
     let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
     for (k, (w225, w5, w28, once, r227)) in [
@@ -438,7 +445,7 @@ fn cue_start_0591() {
         t.write(SCRATCH + 0x1400, &[0x66; 0x1c]);
         t.set_u32(gs(&t, 0x18f), last);
         t.set_u32(gs(&t, 0x1a4), last);
-        for op in [0x9au32, 0xa4] {
+        for op in [0x9au32 + d, 0xa4 + d] {
             t.set_u32(g(&t, op), 0x7777_0000 | op);
         }
         t.check_entry(f, Call::default(), &[], Eax::Checked);

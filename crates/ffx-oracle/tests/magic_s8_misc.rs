@@ -1655,13 +1655,20 @@ fn light_swings() {
 
 /// The spark burst in both DLLs: the three sizes and the plain one, the
 /// yaw wrapped both ways and kept, the pool running out mid-burst.
+/// `magic_0133`'s copy: the operands up to the loop 3 bytes earlier.
 #[test]
 fn spark_bursts() {
-    for (dll, rva) in [(134u16, 0x1ec0u32), (135, 0x4870), (132, 0x1ec0)] {
+    for (dll, rva, d) in [
+        (134u16, 0x1ec0u32, 0u32),
+        (135, 0x4870, 0),
+        (132, 0x1ec0, 0),
+        (133, 0x4770, 3),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        let op = |t: &Twin, f: u32, o: u32| op(t, f, if o > 0x8c && o < 0x170 { o - d } else { o });
         // the object start (`start_object_first_in_every_copy`'s set-up)
-        let at = t.img.rel32_target(f + 0xc0);
+        let at = t.img.rel32_target(f + 0xc0 - d);
         t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
         t.set_u32(t.img.word(at + 0x5e), SCRATCH + 0x300);
         t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);

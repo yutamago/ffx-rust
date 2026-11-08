@@ -688,19 +688,44 @@ pub const TARGETS_INIT_D: Sig = Sig {
 /// loads the part's data; slots 222 and 221 `(part, 0, 1000, 2)`; a task
 /// is appended to the list (its links and three words cleared, the
 /// list's flag bit 0 cleared). Returns 0. `cleared`: the operand
-/// offsets of the task's words cleared last.
+/// offsets of the task's words cleared last (as in the 3-byte-longer
+/// layout: `magic_0203`'s copy pushes slot 222's count, 16, as an imm8).
+/// The copies in `magic_0388` and `0389` (`mov eax, [ebp+8]` at `+0x3`)
+/// keep the actor in a global (operand `+0x8`) and reset the summon's
+/// statics instead of the targets
+/// ([`statics_init`](crate::sa_summon::statics_init), the `rel32` at
+/// `+0xd`); their operands are five bytes later. The environment's size
+/// is the immediate at `+0x100` (0x100000; 0x80000 in `magic_0388`).
 fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
     let actor = fr.arg(g, 0);
-    // push ebp; push esi; call
-    targets_init(
-        g,
-        img,
-        img.rel32_target(f + 0x08),
-        fr.esp.wrapping_sub(12),
-        actor,
-    );
+    // `mov eax, [ebp+8]` (8b 45 08) or `mov ecx, [ebp+8]` (8b 4d 08)
+    let e = if img.word(f + 0x3) >> 8 & 0xff == 0x45 {
+        g.write::<u32>(img.word(f + 0x8), actor);
+        // push ebp; push esi; call
+        crate::sa_summon::statics_init(g, img, img.rel32_target(f + 0xd), fr.esp.wrapping_sub(12));
+        5
+    } else {
+        // push ebp; push esi; call
+        targets_init(
+            g,
+            img,
+            img.rel32_target(f + 0x08),
+            fr.esp.wrapping_sub(12),
+            actor,
+        );
+        0
+    };
+    let w = |o: u32| img.word(f + o + e);
+    // slot 222's count: `push 0x3e8` at +0x130, or a `push imm8` (three
+    // bytes shorter: `magic_0203`'s 16), after which the operands are
+    // three bytes earlier
+    let (k222, d) = if w(0x130) & 0xff == 0x6a {
+        (w(0x131) & 0xff, 3)
+    } else {
+        (w(0x131), 0)
+    };
+    let v = |o: u32| img.word(f + o + e - d);
     for (dst, src) in [(0x13, 0x17), (0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35)] {
         g.write::<u32>(w(dst), w(src));
     }
@@ -721,7 +746,7 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x0d), 718), 0);
     // the kind: the `push imm8` at +0xc1 (0; 2 in `magic_0330`)
-    s.push_all(&[u32::from(img.word(f + 0xc2) as u8), 8, w(0xcc)]);
+    s.push_all(&[w(0xc2) & 0xff, 8, w(0xcc)]);
     // call width: 12 (Pushes caps the words at 12)
     let handle = s.call(g, slot_target(g, w(0xbd), 719), 0).eax;
     let lock = g.read::<u32>(w(0xd4));
@@ -734,31 +759,58 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let lock = g.read::<u32>(w(0xfb));
     g.write::<u32>(lock, saved);
     let handle = g.read::<u32>(w(0x112));
-    s.push_all(&[0x0010_0000, w(0x10c), handle, w(0x11d)]);
+    s.push_all(&[w(0x100), w(0x10c), handle, w(0x11d)]);
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x107), 710), 0);
-    s.push_all(&[2, 1000, 0, w(0x138)]);
+    s.push_all(&[2, k222, 0, v(0x138)]);
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x124), 222), 0);
-    s.push_all(&[2, 1000, 0, w(0x153)]);
+    s.push_all(&[2, 1000, 0, v(0x153)]);
     // call width: 12 (Pushes caps the words at 12)
-    s.call(g, slot_target(g, w(0x13f), 221), 0);
-    let tail = g.read::<u32>(w(0x15a));
-    g.write::<u32>(w(0x162), tail);
+    s.call(g, slot_target(g, v(0x13f), 221), 0);
+    // `magic_0374`'s copy (447 bytes) orders its ring stores otherwise (a
+    // `mov dword` at `+0x163` where these pop the stack) and links its
+    // static node at the end
+    // ([`static_node_link_c`](crate::s4_small::static_node_link_c))
+    if e == 5 && img.word(f + 0x163) & 0xff == 0xc7 {
+        let w = |o: u32| img.word(f + o);
+        let tail = g.read::<u32>(w(0x15f));
+        for (dst, src) in [(0x165, 0x169), (0x16f, 0x173), (0x179, 0x17d)] {
+            g.write::<u32>(w(dst), w(src));
+        }
+        g.write::<u32>(w(0x182), tail);
+        g.write::<u32>(w(0x188), w(0x18c));
+        g.write::<u32>(tail.wrapping_add(4), w(0x193));
+        let flags = g.read::<u32>(w(0x199));
+        g.write::<u32>(w(0x199), flags & !1);
+        g.write::<u32>(w(0x1a3), w(0x1a7));
+        for &dst in cleared {
+            g.write::<u32>(w(dst + 5), 0);
+        }
+        let link = Frame {
+            at: img.rel32_target(f + 0x1b6),
+            esp: fr.esp.wrapping_sub(12),
+            ..*fr
+        };
+        crate::s4_small::static_node_link_c(g, img, &link);
+        return Ret::eax(0);
+    }
+    let tail = g.read::<u32>(v(0x15a));
+    g.write::<u32>(v(0x162), tail);
     for (dst, src) in [
         (0x168, 0x16c),
         (0x172, 0x176),
         (0x17c, 0x180),
         (0x186, 0x18a),
     ] {
-        g.write::<u32>(w(dst), w(src));
+        g.write::<u32>(v(dst), v(src));
     }
-    g.write::<u32>(tail.wrapping_add(4), w(0x191));
-    let flags = g.read::<u32>(w(0x197));
-    g.write::<u32>(w(0x197), flags & !1);
-    g.write::<u32>(w(0x19e), w(0x1a2));
+    g.write::<u32>(tail.wrapping_add(4), v(0x191));
+    let flags = g.read::<u32>(v(0x197));
+    g.write::<u32>(v(0x197), flags & !1);
+    g.write::<u32>(v(0x19e), v(0x1a2));
     for &dst in cleared {
-        g.write::<u32>(w(dst), 0);
+        g.write::<u32>(v(dst), 0);
     }
     Ret::eax(0)
 }
@@ -781,6 +833,46 @@ pub fn summon_start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const SUMMON_START_B: Sig = Sig {
     len: 437,
     hash: 0xe46b_13bb_4b92_a306,
+    calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start_b`]'s copy in `magic_0374` (0x10007db0, 447 bytes: the
+/// actor kept, the statics reset, its ring stores in its own order and
+/// its static node linked last).
+pub const SUMMON_START_B_0374: Sig = Sig {
+    len: 447,
+    hash: 0x97c0_8c36_ab21_e58f,
+    calls: &[
+        (0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT)),
+        (0x1b6, Callee::Sig(&crate::s4_small::STATIC_NODE_LINK_C)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_start`]'s copy in `magic_0389` (0x10007560, 462 bytes: the
+/// actor kept, the statics reset).
+pub const SUMMON_START_0389: Sig = Sig {
+    len: 462,
+    hash: 0x5f38_9609_e917_99bd,
+    calls: &[(0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start_b`]'s copy in `magic_0388` (0x10008020, 442 bytes: the
+/// actor kept, the statics reset, an environment of 0x80000 bytes).
+pub const SUMMON_START_B_0388: Sig = Sig {
+    len: 442,
+    hash: 0x8433_0817_2701_dadd,
+    calls: &[(0xd, Callee::Sig(&crate::sa_summon::STATICS_INIT))],
+    imports: &[],
+};
+
+/// [`summon_start_b`]'s copy in `magic_0203` (0x10008d20, 434 bytes:
+/// slot 222's count 16 as an imm8).
+pub const SUMMON_START_B_0203: Sig = Sig {
+    len: 434,
+    hash: 0xa281_005a_41e9_ec09,
     calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
 };

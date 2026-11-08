@@ -1008,8 +1008,10 @@ sparks_p034_copies! {
 /// `L`); when `n % 16` is 0 a second object (`CB2` `+0x111`) with the
 /// first one's `+0xd0..+0xd8`, `+0xe0..+0xe8` (`+0xdc`, `+0xec` 0); a
 /// third (`CB1` again, `+0x194`) launched with `edx` 1; then `*N` + 1, and
-/// from 0x26 on `*N` = 0 and slot 450 `(arg, CB3)` (`+0x1d4`). Returns
-/// slot 450's `eax`, else the new count.
+/// from 0x26 on (`cmp eax, 0x26; jl`; `magic_0384`: above 0x19, `cmp eax,
+/// 0x19; jle`: the imm8 at `+0x1cb` and the `jcc` at `+0x1cc`) `*N` = 0
+/// and slot 450 `(arg, CB3)` (`+0x1d4`). Returns slot 450's `eax`, else
+/// the new count.
 pub fn launches_p048<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{cvt, div};
     let f = fr.at;
@@ -1070,7 +1072,14 @@ pub fn launches_p048<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     launch(g, third, 1, 0x1b7, w(0x194));
     let count = g.read::<u32>(w(0x1bc)).wrapping_add(1);
     g.write::<u32>(w(0x1c5), count);
-    if count.cast_signed() < 0x26 {
+    let bound = i32::from((img.word(f + 0x1cb) as u8).cast_signed());
+    // `jle` (0x7e) or `jl` (0x7c)
+    let stay = if img.word(f + 0x1cc) & 0xff == 0x7e {
+        count.cast_signed() <= bound
+    } else {
+        count.cast_signed() < bound
+    };
+    if stay {
         return Ret::eax(count);
     }
     let t450 = g.read::<u32>(w(0x1cf));
@@ -1102,6 +1111,7 @@ macro_rules! launches_p048_copies {
 launches_p048_copies! {
     LAUNCHES_P048_0421, 0x4a6c_8793_4c93_096b, crate::o6_fam_launch::RANDOM_LAUNCH_0421_15E0, "`magic_0421` 0x10001960";
     LAUNCHES_P048_0535, 0x4a6c_8793_4c93_096b, crate::o6_fam_launch::RANDOM_LAUNCH_0535_15C0, "`magic_0535` 0x10001940";
+    LAUNCHES_P048_0384, 0x4c6d_0c12_d670_f946, crate::o6_fam_launch::RANDOM_LAUNCH_0384_15E0, "`magic_0384` 0x10001960 (the bound 0x19, `jle`)";
 }
 
 /// Parameter family P063 (`magic_0393` 0x100041c0 and `magic_0450`

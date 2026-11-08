@@ -500,6 +500,54 @@ pub fn start_0096<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     tail(g, img, fr, index, fr.esp.wrapping_sub(0x28), &t)
 }
 
+/// `magic_0088` 0x10006860 (1,136 bytes): [`start_0096`] with one effect
+/// node (the colour node and the camera block 0x4c bytes earlier).
+/// Returns the colour node's `eax`.
+pub fn start_0088<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let index = kind_head(g, img, fr);
+    let t = Tail {
+        part: Part {
+            words: [0x2ab, 0x2b2, 0x2b9],
+            a: 0x2a1,
+            fifth: 0x2c3,
+            index: None,
+            vt: (0x2c9, 0x2cd),
+            call: 0x2d2,
+        },
+        fx: &[Fx {
+            words: [0x2dc, 0x2e3, 0x2ea, 0x2f1, 0x2f8],
+            index: 0x2ff,
+            call: 0x304,
+            vt: 0x310,
+            flags: Some((0x316, 0x31d)),
+        }],
+        colour: Colour {
+            words: [0x328, 0x32f],
+            vt: (0x335, 0x339),
+            call: 0x33e,
+        },
+        cam: Camera {
+            k: &[0x346],
+            flag: 0x357,
+            imms: &[
+                0x35e, 0x368, 0x372, 0x38f, 0x399, 0x3a3, 0x3ad, 0x3ca, 0x3d4,
+            ],
+            diffs: &[
+                (0x37e, D::K(0, 0x351)),
+                (0x3b9, D::K(0, 0x389)),
+                (0x3e1, D::K(0, 0x3c4)),
+                (0x3f4, D::K(0, 0x3ec)),
+                (0x407, D::K(0, 0x3ff)),
+                (0x422, D::K(0, 0x412)),
+                (0x43a, D::K(0, 0x41a)),
+                (0x442, D::M(0x42a, 0x432)),
+            ],
+        },
+    };
+    // `push esi` under the 0x1c-byte frame
+    tail(g, img, fr, index, fr.esp.wrapping_sub(0x28), &t)
+}
+
 /// `magic_0094` 0x10006b50 (a frame of 0x1c bytes and `esi`):
 /// `m0078::start_0080`'s head and static nodes (no immediate word after
 /// the three 1.0 words) and `node insert`, two effect nodes, then the
@@ -685,6 +733,14 @@ pub const START_0096: Sig = Sig {
     len: 1212,
     hash: 0x345f_683f_f25d_cc79,
     calls: calls!(0x8d, 0x1c8, 0x2d2, [0x304, 0x350], 0x38a),
+    imports: &[],
+};
+
+/// [`start_0088`] (1,136 bytes, 1 overlay).
+pub const START_0088: Sig = Sig {
+    len: 1136,
+    hash: 0xc559_1839_9380_7759,
+    calls: calls!(0x8d, 0x1c8, 0x2d2, [0x304], 0x33e),
     imports: &[],
 };
 

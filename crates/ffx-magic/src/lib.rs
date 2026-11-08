@@ -62,6 +62,7 @@ pub mod r12h_start;
 pub mod r12h_volley;
 pub mod r13_misc;
 pub mod r13_start;
+pub mod r14;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -994,6 +995,7 @@ ports! {
     "opu boot c" => l5_opu_boot::BOOT_C, l5_opu_boot::boot_c;
     "opu shutdown" => l5_opu_boot::SHUTDOWN, l5_opu_boot::shutdown;
     "objhost start" => l5_objhost::START, l5_objhost::start;
+    "objhost start 0610" => l5_objhost::START_0610, l5_objhost::start;
     "objhost end" => l5_objhost::END, l5_objhost::end;
     "objhost draw" => l5_objhost::DRAW, l5_objhost::draw;
     "objhost update" => l5_objhost::UPDATE, l5_objhost::update;
@@ -1094,6 +1096,8 @@ ports! {
     "r9 summon start 0080" => r9_summon::START_0080, r9_summon::start_0080;
     "r9 summon start 0081" => r9_summon::START_0081, r9_summon::start_0081;
     "r9 summon start (nodes) 0083" => r9_summon::NODES_0083, r9_summon::nodes_0083;
+    "r9 summon start (nodes) 0088" => r9_summon::NODES_0088, r9_summon::nodes_0088;
+    "r9 summon start (nodes) 0089" => r9_summon::NODES_0089, r9_summon::nodes_0089;
     "r9 summon start (nodes) 0091" => r9_summon::NODES_0091, r9_summon::nodes_0091;
     "r9 summon start (nodes) 0094" => r9_summon::NODES_0094, r9_summon::nodes_0094;
     "r9 summon start (nodes) 0095" => r9_summon::NODES_0095, r9_summon::nodes_0095;
@@ -1153,6 +1157,7 @@ ports! {
     "r11 sparks 0393" => r11_misc::SPARKS_0393, r11_misc::sparks_p034;
     "r11 sparks 0450" => r11_misc::SPARKS_0450, r11_misc::sparks_p034;
     "r11 launches (b) 0421" => r11_misc::LAUNCHES_P048_0421, r11_misc::launches_p048;
+    "r11 launches (b) 0384" => r11_misc::LAUNCHES_P048_0384, r11_misc::launches_p048;
     "r11 launches (b) 0535" => r11_misc::LAUNCHES_P048_0535, r11_misc::launches_p048;
     "r11 records start 0393" => r11_misc::RECORDS_START_0393, r11_misc::records_start_p063;
     "r11 records start 0450" => r11_misc::RECORDS_START_0450, r11_misc::records_start_p063;
@@ -1165,6 +1170,7 @@ ports! {
     "m0689 cue start" => m0638::CUE_START_0689, m0638::cue_start;
     "m0689 start" => m0689::START, m0689::start;
     "m0591 cue start" => m0591::CUE_START, m0591::cue_start;
+    "m0591 cue start 0349" => m0591::CUE_START_0349, m0591::cue_start;
     // round 12 (magic-r12-own-hi)
     "m0469 cue start" => m0638::CUE_START_0469, m0638::cue_start;
     "m0551 cue start" => m0638::CUE_START_0551, m0638::cue_start;
@@ -1221,6 +1227,7 @@ ports! {
     "m0505 spark record" => m0505::SPARK_RECORD, m0505::spark_record;
     "m0512 particles task" => m0512::PARTICLES_TASK, m0512::particles_task;
     "m0664 look draw" => m0664::LOOK_DRAW, m0664::look_draw;
+    "m0664 look draw 0665" => m0664::LOOK_DRAW_0665, m0664::look_draw;
     "m0664 look draw fade" => m0664::LOOK_DRAW_FADE, m0664::look_draw_fade;
     "m0672 cue start" => m0638::CUE_START_0672, m0638::cue_start;
     "m0672 start" => m0672::START, m0672::start;
@@ -1343,6 +1350,8 @@ ports! {
     "m0673 record pair" => m0673::RECORD_PAIR, m0673::record_pair;
     "m0610 spark" => m0610::SPARK, m0610::spark;
     "m0610 side object" => m0610::SIDE_OBJECT, m0610::side_object;
+    "m0610 spark 0434" => m0610::SPARK_0434, m0610::spark;
+    "m0610 side object 0434" => m0610::SIDE_OBJECT_0434, m0610::side_object;
     "m0598 task" => m0598::TASK, m0598::task;
     "m0600 fade start" => m0600::FADE_START, m0600::fade_start;
     "m0562 task" => m0562::TASK, m0562::task;
@@ -1511,6 +1520,7 @@ ports! {
     "m0709 start" => m0709::START, m0709::start;
     "m0673 start" => m0673::START, m0673::start;
     "m0665 frame" => m0665::FRAME, m0665::frame;
+    "m0665 ppp set-up" => m0665::PPP_SETUP, m0665::ppp_setup;
     "m0666 flare" => m0666::FLARE, m0666::flare;
     "m0669 draw restart" => m0669::DRAW_RESTART, m0669::draw_restart;
     "m0661 beam part" => m0661::BEAM_PART, m0661::beam_part;
@@ -1533,6 +1543,16 @@ ports! {
     "m0539 setup" => m0539::SETUP, m0539::setup;
     "m0540 setup" => m0540::SETUP, m0540::setup;
     "m0535 frame step" => m0535::FRAME_STEP, m0535::frame_step;
+    "m0535 frame step 0384" => m0535::FRAME_STEP_0384, m0535::frame_step;
+    "r14 launches 0384" => r14::LAUNCHES_0384, r14::launches_0384;
+    "r14 summon ppp start 0146" => r14::SUMMON_PPP_START_0146, r14::summon_ppp_start_0146;
+    "r14 main object 0367" => r14::MAIN_OBJECT_0367, r14::main_object_0367;
+    "r14 light restart 0430" => r14::LIGHT_RESTART_0430, r14::light_restart_0430;
+    "r14 task 0288" => r14::TASK_0288, r14::task_0288;
+    "r14 spark task 0132" => r14::SPARK_TASK_0132, r14::spark_task;
+    "r14 spark task 0133" => r14::SPARK_TASK_0133, r14::spark_task;
+    "r14 spark task 0134" => r14::SPARK_TASK_0134, r14::spark_task;
+    "r14 spark task 0135" => r14::SPARK_TASK_0135, r14::spark_task;
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -1725,6 +1745,10 @@ ports! {
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
     "summon start (targets, 0330)" => s4_summon::SUMMON_START_0330, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
+    "summon start (targets, b) 0388" => s4_summon::SUMMON_START_B_0388, s4_summon::summon_start_b;
+    "summon start (targets, b) 0374" => s4_summon::SUMMON_START_B_0374, s4_summon::summon_start_b;
+    "summon start (targets) 0389" => s4_summon::SUMMON_START_0389, s4_summon::summon_start;
+    "summon start (targets, b) 0203" => s4_summon::SUMMON_START_B_0203, s4_summon::summon_start_b;
     "summon frame (0042)" => s4_summon::SUMMON_FRAME_B, s4_summon::summon_frame_b;
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
@@ -2456,11 +2480,13 @@ ports! {
     "shade reset, colour task" => s5_misc::SHADE_RESET_COLOUR_TASK, s5_misc::shade_reset_colour_task;
     "effect end, character shown" => s5_misc::EFFECT_END_SHOW, s5_misc::effect_end_show;
     "screen fade step" => s5_misc::FADE_STEP, s5_misc::fade_step;
+    "screen fade step 0686" => s5_misc::FADE_STEP_0686, s5_misc::fade_step;
     "summon ppp start" => s5_misc::SUMMON_PPP_START, s5_misc::summon_ppp_start;
     "images store and load" => s5_misc::IMAGES_STORE_LOAD, s5_misc::images_store_load;
     "target measure (modes)" => s5_misc::TARGET_MEASURE_MODES, s5_misc::target_measure_modes;
     "root point part" => s5_misc::ROOT_POINT_PART, s5_misc::root_point_part;
     "summon ppp start (stream)" => s5_misc::SUMMON_PPP_START_STREAM, s5_misc::summon_ppp_start_stream;
+    "summon ppp start (stream) 0153" => s5_misc::SUMMON_PPP_START_STREAM_0153, s5_misc::summon_ppp_start_stream;
     "spark pairs" => s5_misc::SPARK_PAIRS, s5_misc::spark_pairs;
     "summon ppp start (stream 1)" => s5_misc::SUMMON_PPP_START_STREAM_1, s5_misc::summon_ppp_start_stream_1;
     "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
@@ -2503,6 +2529,7 @@ ports! {
     "sf elem point offset" => sf_hidden::ELEM_POINT_OFFSET, sf_hidden::elem_point_offset;
     "sf spin angles" => sf_hidden::SPIN_ANGLES, sf_hidden::spin_angles;
     "sf caster script task" => sf_hidden::CASTER_SCRIPT_TASK, sf_hidden::caster_script_task;
+    "sf caster script task 0446" => sf_hidden::CASTER_SCRIPT_TASK_0446, sf_hidden::caster_script_task;
     "sf summon frame 673 first" => sf_hidden::SUMMON_FRAME_673_FIRST, sf_hidden::summon_frame_673_first;
     "sf fly-in task" => sf_hidden::FLY_IN_TASK, sf_hidden::fly_in_task;
     "sf motion sequence task" => sf_hidden::MOTION_SEQUENCE_TASK, sf_hidden::motion_sequence_task;
@@ -2549,6 +2576,7 @@ ports! {
     "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
     "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
     "m0089 camera start 0089" => m0089::START_0089, m0089::start_0089;
+    "m0089 camera start 0088" => m0089::START_0088, m0089::start_0088;
     "m0089 camera start 0090" => m0089::START_0090, m0089::start_0090;
     "m0089 camera start 0091" => m0089::START_0091, m0089::start_0091;
     "m0089 camera start 0094" => m0089::START_0094, m0089::start_0094;
@@ -2770,7 +2798,9 @@ ports! {
     "summon frame (slot 673 first)" => s7_misc::SUMMON_FRAME_673, s7_misc::summon_frame_673;
     "camera settings" => s7_misc::CAMERA_SETTINGS, s7_misc::camera_settings;
     "summon load frame" => s7_misc::SUMMON_LOAD_FRAME, s7_misc::summon_load_frame;
+    "summon load frame 0603" => s7_misc::SUMMON_LOAD_FRAME_0603, s7_misc::summon_load_frame;
     "landing puff" => s7_misc::LANDING_PUFF, s7_misc::landing_puff;
+    "landing puff 0287" => s7_misc::LANDING_PUFF_0287, s7_misc::landing_puff;
     "summon script frame" => s7_misc::SUMMON_SCRIPT_FRAME, s7_misc::summon_script_frame;
     "summon script frame (selection groups)" => s7_misc::SUMMON_SCRIPT_FRAME_B, s7_misc::summon_script_frame;
     "thunk: moving light node" => s7_misc::JMP_MOVING_LIGHT_NODE, s7_misc::ecx_jmp;
@@ -2895,6 +2925,7 @@ ports! {
     // round 6, the shape families (o6_fam_*): end of ports
     "o6 fam pairs5 look_matrix_callback 0664@16e0" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0664_16E0, o6_fam_pairs5::look_matrix_callback;
     "o6 fam pairs5 look_matrix_callback 0045@1310" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0045_1310, o6_fam_pairs5::look_matrix_callback;
+    "o6 fam pairs5 look_matrix_callback 0665@16d0" => o6_fam_pairs5::LOOK_MATRIX_CALLBACK_0665_16D0, o6_fam_pairs5::look_matrix_callback;
     "o6 fam pairs5 record_unlist 0479@3c00" => o6_fam_pairs5::RECORD_UNLIST_0479_3C00, o6_fam_pairs5::record_unlist;
     "o6 fam pairs5 record_unlist 0673@15b0" => o6_fam_pairs5::RECORD_UNLIST_0673_15B0, o6_fam_pairs5::record_unlist;
     "o6 fam pairs5 two_particle_burst 0162@48a0" => o6_fam_pairs5::TWO_PARTICLE_BURST_0162_48A0, o6_fam_pairs5::two_particle_burst;
@@ -2902,6 +2933,8 @@ ports! {
     "o6 fam pairs5 level_particles 0307@5310" => o6_fam_pairs5::LEVEL_PARTICLES_0307_5310, o6_fam_pairs5::level_particles;
     "o6 fam pairs5 level_particles 0563@35b0" => o6_fam_pairs5::LEVEL_PARTICLES_0563_35B0, o6_fam_pairs5::level_particles;
     "o6 fam pairs5 two_part_visit_thunk 0070@14a0" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0070_14A0, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 two_part_visit_thunk 0295@1340" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0295_1340, o6_fam_pairs5::two_part_visit_thunk;
+    "o6 fam pairs5 two_part_visit_thunk 0153@1340" => o6_fam_pairs5::TWO_PART_VISIT_THUNK_0153_1340, o6_fam_pairs5::two_part_visit_thunk;
     "o6 fam pairs5 scrolled_texture 0188@1220" => o6_fam_pairs5::SCROLLED_TEXTURE_0188_1220, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 scrolled_texture 0351@1080" => o6_fam_pairs5::SCROLLED_TEXTURE_0351_1080, o6_fam_pairs5::scrolled_texture;
     "o6 fam pairs5 ribbon_visit_thunk 0070@8840" => o6_fam_pairs5::RIBBON_VISIT_THUNK_0070_8840, o6_fam_pairs5::ribbon_visit_thunk;
@@ -2972,7 +3005,9 @@ ports! {
     "light landing (0565)" => s9_misc::LIGHT_LAND_0565, s9_misc::light_land_0565;
     "light bounce" => s9_misc::LIGHT_BOUNCE, s9_misc::light_bounce;
     "thunk: lit colour node" => s9_misc::LIT_COLOUR_NODE_THUNK, s9_misc::lit_colour_node_thunk;
+    "thunk: lit colour node 0601" => s9_misc::LIT_COLOUR_NODE_THUNK_0601, s9_misc::lit_colour_node_thunk;
     "texture fade" => s9_misc::TEXTURE_FADE, s9_misc::texture_fade;
+    "texture fade 0351" => s9_misc::TEXTURE_FADE_0351, s9_misc::texture_fade_0351;
     "summon pair start" => s9_misc::SUMMON_PAIR_START, s9_misc::summon_pair_start;
     "summon start task (0242)" => s9_misc::SUMMON_START_TASK_0242, s9_misc::summon_start_task_0242;
     "summon actor pair start" => s9_misc::SUMMON_ACTOR_PAIR_START, s9_misc::summon_actor_pair_start;
@@ -3372,6 +3407,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0479 start", &m0479::START),
     ("m0480 clear", &m0480::CLEAR),
     ("m0482 insert", &m0482::INSERT),
+    ("r14 insert 0387", &r14::INSERT_0387),
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),
     ("m0493 init", &m0493::INIT),
@@ -4024,6 +4060,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model direct", &s6_misc::MODEL_DIRECT),
     ("spline point", &s6_misc::SPLINE_POINT),
     ("level look matrix", &s6_misc::LEVEL_LOOK_MATRIX),
+    ("level look matrix 0665", &s6_misc::LEVEL_LOOK_MATRIX_0665),
     ("sprite GS packet", &s6_misc::SPRITE_GS_PACKET),
     ("aimed node walk", &s6_misc::AIMED_NODE_WALK),
     ("ring take", &s6_misc::RING_TAKE),
@@ -4060,12 +4097,17 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("summon object set-up", &s7_misc::SUMMON_OBJECT_SETUP),
     ("flight step", &s7_misc::FLIGHT_STEP),
     ("lit colour node", &s7_misc::LIT_COLOUR_NODE),
+    ("lit colour node 0601", &s7_misc::LIT_COLOUR_NODE_0601),
     ("emitter set-up", &s7_misc::EMITTER_SETUP),
     ("reel step", &s7_misc::REEL_STEP),
     ("reel phases", &s7_misc::REEL_PHASES),
     ("flagged object step", &s7_misc::FLAGGED_OBJECT_STEP),
     ("aim records", &s7_misc::AIM_RECORDS),
     ("model object set-up", &s7_misc::MODEL_OBJECT_SETUP),
+    (
+        "model object set-up 0621",
+        &s7_misc::MODEL_OBJECT_SETUP_0621,
+    ),
     ("flagged two sparks", &s7_misc::FLAGGED_TWO_SPARKS),
     // round 8, shared-8 (s8_misc)
     ("object node", &s8_misc::OBJECT_NODE),
@@ -4073,6 +4115,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("bone node", &s8_misc::BONE_NODE),
     ("spark burst", &s8_misc::SPARK_BURST),
     ("spark burst (0132)", &s8_misc::SPARK_BURST_0132),
+    ("spark burst (0133)", &s8_misc::SPARK_BURST_0133),
     ("mesh bounds", &s8_misc::MESH_BOUNDS),
     // round 8, shared-8 (s8_misc): end of INTERNAL
     // round 6, the shape families (o6_fam_*)
@@ -4248,6 +4291,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o6 fam pairs5 two_part_visit 0070@1160",
         &o6_fam_pairs5::TWO_PART_VISIT_0070_1160,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0295@1000",
+        &o6_fam_pairs5::TWO_PART_VISIT_0295_1000,
+    ),
+    (
+        "o6 fam pairs5 two_part_visit 0153@1000",
+        &o6_fam_pairs5::TWO_PART_VISIT_0153_1000,
     ),
     (
         "o6 fam pairs5 ribbon_visit 0070@86d0",

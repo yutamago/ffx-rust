@@ -69,11 +69,102 @@ fn check_targets() {
     }
 }
 
-/// 0x1000bb00: an odd count (nothing), the pool empty, a spark.
+/// 0x10006f60, `l5_objhost::start`'s copy with the target check after
+/// slot 720: the object block's byte list empty and holding targets (a
+/// listed kind, one slot 580 rejects, all accepted).
+#[test]
+fn objhost_start() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x6f60);
+    let bytes = SCRATCH + 0x2000;
+    let count = SCRATCH + 0x20;
+    rec(&mut t, 168, 1, |_, _| SCRATCH + 0x1000);
+    rec(&mut t, 218, 2, move |m, a| {
+        let n = m.r32(count);
+        m.w32(a[1], n);
+        bytes
+    });
+    rec(&mut t, 215, 1, |_, a| 0x0215_0000 + a[0]);
+    rec(&mut t, 413, 1, |_, a| 0x0413_0000 + a[0]);
+    rec(&mut t, 291, 5, |_, a| 0x10 + a[1]);
+    rec(&mut t, 367, 8, |_, a| 0x0367_0000 + a[1]);
+    recs(
+        &mut t,
+        &[
+            (556, 1),
+            (555, 2),
+            (331, 3),
+            (720, 2),
+            (718, 3),
+            (222, 7),
+            (221, 11),
+            (4, 1),
+            (27, 3),
+            (523, 2),
+        ],
+    );
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.1);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 580, 1, move |m, a| u32::from(m.r32(cell) == a[0]));
+    let check = t.img.rel32_target(at + 0xc7);
+    let list = SCRATCH + 0x300;
+    t.set_u32(t.img.word(check + 0x54), list);
+    t.write(list, &[1, 2, 3, 4]);
+    let objs = t.img.word(check + 0x5f);
+    let listed = t.u32(t.img.word(check + 0x6a) + 8);
+    let payloads = t.img.word(at + 0x81);
+    for (k, (n, kind, reject)) in [
+        (0i32, None, 0u32),
+        (4, Some(3u32), 0),
+        (4, None, 2),
+        (4, None, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.write(payloads, &vec![0xa5; 12 * 0x3ff]);
+        t.set_u32(count, k as u32 * 2);
+        for (i, b) in [3u8, 1, 4, 1, 5, 9, 2, 6].iter().enumerate() {
+            t.set_u8(bytes + i as u32, *b);
+        }
+        t.set_u32(t.img.word(check + 0x3b), n.cast_unsigned());
+        for id in 1..5u32 {
+            let o = SCRATCH + 0x400 + 0x10 * (id - 1);
+            t.set_u32(objs + 4 * id, o);
+            t.set_u32(o, 0x5a5a_fff0 + id);
+            let kd = if kind == Some(id) {
+                listed
+            } else {
+                0xfff0 + id
+            };
+            t.set_u16(o, u16::try_from(kd & 0xffff).unwrap());
+        }
+        t.set_u32(cell, reject);
+        t.check_entry(
+            at,
+            Call {
+                ecx: 0x55,
+                ..Call::default()
+            },
+            &[0x00ab_c000 + k as u32],
+            Eax::Checked,
+        );
+    }
+}
+
+/// 0x1000bb00: an odd count (nothing), the pool empty, a spark. Also
+/// `magic_0434`'s copy (0x10007bd0, the animated object start).
 #[test]
 fn spark() {
-    let Some(mut t) = twin(N) else { return };
-    let at = t.at(0xbb00);
+    for (n, rva) in [(N, 0xbb00u32), (434, 0x7bd0)] {
+        spark_in(n, rva);
+    }
+}
+
+fn spark_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x16), fx);
     t.set_u32(fx + 0x1a68, 0x1a68_0001);
@@ -123,10 +214,17 @@ fn spark() {
 }
 
 /// 0x1000ba00: `k` above 1 (nothing), the pool empty, sides 0 and 1.
+/// Also `magic_0434`'s copy (0x10007ad0, the animated object start).
 #[test]
 fn side_object() {
-    let Some(mut t) = twin(N) else { return };
-    let at = t.at(0xba00);
+    for (n, rva) in [(N, 0xba00u32), (434, 0x7ad0)] {
+        side_object_in(n, rva);
+    }
+}
+
+fn side_object_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let fx = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(at + 0x12), fx);
     t.set_u32(fx + 0x1a68, 0x1a68_0001);

@@ -19,13 +19,22 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// words after `(0, 0, 1)`; slots 450 `(seq, NEXT)` and 449 `(seq,
 /// END)`. Locals: `B` `ebp - 0x24`, `V` `- 0x14`. Returns slot 449's
 /// `eax`.
+///
+/// `magic_0384`'s copy (0x10001000, 587 bytes) has its own kind (0x4a,
+/// the imm8s at `+0x29` and `+0x88`) and `V`'s first word (-4.0, the
+/// imm32 at `+0x6e`), and clears one more range word before the 1.0
+/// (`mov dword, 0` at `+0x1f7`, ten bytes: the operands after it ten
+/// bytes later).
 pub fn frame_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let k = |g: &G, op: u32| g.read::<f32>(w(op));
     let seq = fr.arg(g, 0);
+    let kind = w(0x29) & 0xff;
+    // the memset `call` (0xe8) at `+0x201`, or one more store first
+    let e = if w(0x201) & 0xff == 0xe8 { 0 } else { 10 };
     let t = slot_target(g, w(0x1a), 519);
-    let mut stack = vec![0x48, 0, 6, 1];
+    let mut stack = vec![kind, 0, 6, 1];
     g.call(t, 0, &stack);
     let s = g.read::<u32>(w(0x2d));
     let n = g.read::<u32>(s + 0x19c);
@@ -36,12 +45,13 @@ pub fn frame_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let (b, v) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
     let s = g.read::<u32>(w(0x67));
-    for i in 0..4 {
+    g.write::<u32>(v, w(0x6e));
+    for i in 1..4 {
         g.write::<u32>(v + 4 * i, 0);
     }
     let h = g.read::<u32>(s + 0x198);
     let t = slot_target(g, w(0x90), 474);
-    stack.splice(0..0, [h, 0x48, v, b]);
+    stack.splice(0..0, [h, w(0x88) & 0xff, v, b]);
     // call width: 8
     g.call(t, 0, &stack);
     let mut r = 0.0f32;
@@ -85,14 +95,17 @@ pub fn frame_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(w(0x1df), sub(c, r));
     g.write::<u32>(w(0x1e5), 0);
     g.write::<u32>(w(0x1ef), 0);
-    g.write::<u32>(w(0x1f9), 0x3f80_0000);
+    if e != 0 {
+        g.write::<u32>(w(0x1f9), 0);
+    }
+    g.write::<u32>(w(0x1f9 + e), 0x3f80_0000);
     g.write_bytes(w(0x1cf), &[0u8; 0x40]);
-    let t = slot_target(g, w(0x207), 450);
-    let mut stack = vec![seq, w(0x215), w(0x1cf), 0, 0x40];
+    let t = slot_target(g, w(0x207 + e), 450);
+    let mut stack = vec![seq, w(0x215 + e), w(0x1cf), 0, 0x40];
     // call width: 5
     g.call(t, 0, &stack);
-    let t = slot_target(g, w(0x21d), 449);
-    stack.splice(0..0, [seq, w(0x222)]);
+    let t = slot_target(g, w(0x21d + e), 449);
+    stack.splice(0..0, [seq, w(0x222 + e)]);
     // call width: 7
     Ret::eax(g.call(t, 0, &stack).eax)
 }
@@ -105,6 +118,19 @@ pub const FRAME_STEP: Sig = Sig {
         (0x202, Callee::Import("memset")),
         // __security_check_cookie
         (0x239, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`frame_step`] in `magic_0384` (0x10001000, 587 bytes: kind 0x4a,
+/// one more range word cleared).
+pub const FRAME_STEP_0384: Sig = Sig {
+    len: 587,
+    hash: 0x14cd_241e_e4c9_e8fe,
+    calls: &[
+        (0x20c, Callee::Import("memset")),
+        // __security_check_cookie
+        (0x243, Callee::Any),
     ],
     imports: &[],
 };

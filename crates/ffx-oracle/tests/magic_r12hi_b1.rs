@@ -912,6 +912,41 @@ fn look_draws_0664() {
     }
 }
 
+/// `m0664::look_draw`'s copy in `magic_0665` (0x100014f0: the matrix's
+/// stack word 0x74, the operands after it 2 bytes later, the part entry
+/// at `+0x14`; its matrix, 0x10001000, takes slot 236's word from the
+/// stack): slot 712 0 and not.
+#[test]
+fn look_draw_0665() {
+    let Some(mut t) = magic_l3::twin(665) else {
+        return;
+    };
+    look_stubs(&mut t);
+    for i in 0..16 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x0f00_0000 + i);
+    }
+    let f = t.at(0x14f0);
+    let lock = SCRATCH + 0x800;
+    for op in [0x8fu32, 0xab] {
+        t.set_u32(t.img.word(f + op), lock);
+    }
+    for op in [0x82u32, 0xb9, 0xd2] {
+        t.set_u32(t.img.word(f + op), SCRATCH + 0x810);
+    }
+    let q = SCRATCH + 0x820;
+    t.set_u32(t.img.word(f + 0xdd), q);
+    t.set_u32(q + 0x10, 0x0010_0010);
+    t.set_u32(t.img.word(f + 0x1a), 0x001a_0000);
+    let obj = SCRATCH + 0x7000;
+    for k in 0..3u32 {
+        t.set_u32(SCRATCH + 0x10, u32::from(k != 0));
+        t.set_u32(lock, 0x4444 + k);
+        t.write(obj, &[0x40 + k as u8; 0x80]);
+        t.set_u32(obj + 0x60, (1.5f32 + k as f32).to_bits());
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
 /// `m0672::start` (0x10001d50): the task list empty and not (the camera
 /// block's angle set from slot 333, slot 12's float).
 #[test]

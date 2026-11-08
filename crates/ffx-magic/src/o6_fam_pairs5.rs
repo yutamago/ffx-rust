@@ -12,7 +12,8 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// An object callback on a level look matrix (`(obj)`; a /GS frame of
 /// 0x44 bytes, `ebp` = `esp - 4` at the entry; `magic_0664` 0x100016e0
-/// and `magic_0045` 0x10001310, 302 bytes; family `F0664_100016e0`):
+/// and `magic_0045` 0x10001310, 302 bytes; family `F0664_100016e0`;
+/// `magic_0665` 0x100016d0, 307 bytes, passes the matrix a stack word):
 /// - the level look matrix ([`crate::s6_misc::level_look_matrix`]) into
 ///   `M` (`ebp - 0x44`) from the source `*G_S` (`*G_T` when `obj` is not
 ///   within the 0x80 bytes from `BASE`), the height `K` and the scale
@@ -30,6 +31,14 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let obj = fr.arg(g, 0);
+    // `magic_0665`'s copy: `push 0x3` (the matrix's stack word) at
+    // `+0x2e`, operands after it 2 bytes later, and `add esp, 0x4` after
+    // the call, operands from there on 5 bytes later
+    let (arg, a, b) = if img.word(f + 0x2e) & 0xff == 0x6a {
+        (Some(img.word(f + 0x2f) & 0xff), 2, 5)
+    } else {
+        (None, 0, 0)
+    };
     let ebp = fr.esp.wrapping_sub(4);
     let m = ebp.wrapping_sub(0x44);
     let height = g.read::<u32>(w(0x14));
@@ -38,13 +47,18 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let src = if obj.wrapping_sub(w(0x2a)) & 0xffff_ff80 == 0 {
         g.read::<u32>(w(0x1a))
     } else {
-        g.read::<u32>(w(0x3a))
+        g.read::<u32>(w(0x3a + a))
     };
     // ebp, the 0x44-byte frame and edi pushed: the callee's return
     // address at `ebp - 0x4c`
+    let mut esp = ebp.wrapping_sub(0x4c);
+    if let Some(x) = arg {
+        g.write::<u32>(esp, x);
+        esp = esp.wrapping_sub(4);
+    }
     let callee = Frame {
-        at: img.rel32_target(f + 0x3f),
-        esp: ebp.wrapping_sub(0x4c),
+        at: img.rel32_target(f + 0x3f + a),
+        esp,
         ecx: m,
         edx: src,
         xmm: [0, 0, u128::from(height), u128::from(scale)],
@@ -56,57 +70,57 @@ pub fn look_matrix_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret 
     let mut s = Pushes::default();
     let slot = |g: &G, t: u32, d: u32| slot_target(g, w(t), w(d) / 4);
     s.push(m);
-    let t = slot(g, 0x49, 0x55);
-    s.push(g.read::<u32>(w(0x4f)));
+    let t = slot(g, 0x49 + b, 0x55 + b);
+    s.push(g.read::<u32>(w(0x4f + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    s.push(g.read::<u32>(w(0x5d)));
-    let t = slot(g, 0x62, 0x6e);
-    s.push(g.read::<u32>(w(0x68)));
-    s.push(g.read::<u32>(w(0x74)));
+    s.push(g.read::<u32>(w(0x5d + b)));
+    let t = slot(g, 0x62 + b, 0x6e + b);
+    s.push(g.read::<u32>(w(0x68 + b)));
+    s.push(g.read::<u32>(w(0x74 + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    s.push(g.read::<u32>(w(0x7c)));
-    let t = slot(g, 0x81, 0x8d);
-    s.push(g.read::<u32>(w(0x87)));
+    s.push(g.read::<u32>(w(0x7c + b)));
+    let t = slot(g, 0x81 + b, 0x8d + b);
+    s.push(g.read::<u32>(w(0x87 + b)));
     // call width: 12 (Pushes caps the words at 12)
     s.call(g, t, m);
-    let p = g.read::<u32>(w(0x94));
-    s.push(disp8(img, f + 0x99));
-    g.write::<u32>(p, w(0x9c));
-    let lock = g.read::<u32>(w(0xa1));
+    let p = g.read::<u32>(w(0x94 + b));
+    s.push(disp8(img, f + 0x99 + b));
+    g.write::<u32>(p, w(0x9c + b));
+    let lock = g.read::<u32>(w(0xa1 + b));
     s.push(obj);
     let saved = g.read::<u32>(lock);
     g.write::<u32>(lock, 1);
-    let t = slot(g, 0xaf, 0xb5);
+    let t = slot(g, 0xaf + b, 0xb5 + b);
     // call width: 12 (Pushes caps the words at 12)
     let r = s.call(g, t, m).eax;
-    let lock = g.read::<u32>(w(0xbd));
+    let lock = g.read::<u32>(w(0xbd + b));
     g.write::<u32>(lock, saved);
     if r == 0 {
         return Ret::eax(1);
     }
-    let p = g.read::<u32>(w(0xcc));
-    g.write::<u32>(p, w(0xd3));
-    let t = slot(g, 0xd8, 0xde);
+    let p = g.read::<u32>(w(0xcc + b));
+    g.write::<u32>(p, w(0xd3 + b));
+    let t = slot(g, 0xd8 + b, 0xde + b);
     // call width: 1
     g.call(t, lock, &[obj]);
-    let p = g.read::<u32>(w(0xe5));
-    g.write::<u32>(p, w(0xeb));
-    let q = g.read::<u32>(w(0xf0));
-    let d = g.read::<u32>(q.wrapping_add(disp8(img, f + 0xf6)));
-    let t = slot(g, 0xf8, 0xfe);
+    let p = g.read::<u32>(w(0xe5 + b));
+    g.write::<u32>(p, w(0xeb + b));
+    let q = g.read::<u32>(w(0xf0 + b));
+    let d = g.read::<u32>(q.wrapping_add(disp8(img, f + 0xf6 + b)));
+    let t = slot(g, 0xf8 + b, 0xfe + b);
     // call width: 2 (slot 713's word under it)
     let list = g.call(t, lock, &[d, obj]).eax;
-    let entry = g.read::<u32>(list.wrapping_add(disp8(img, f + 0x10a)));
+    let entry = g.read::<u32>(list.wrapping_add(disp8(img, f + 0x10a + b)));
     start_part(
         g,
         img,
-        img.rel32_target(f + 0x113),
+        img.rel32_target(f + 0x113 + b),
         obj,
-        w(0x10c),
+        w(0x10c + b),
         entry,
-        disp8(img, f + 0x107),
+        disp8(img, f + 0x107 + b),
     );
     Ret::eax(1)
 }
@@ -692,11 +706,32 @@ pub fn level_particles<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// Returns `eax` as the original leaves it: the last call's, or the last
 /// word copied; on the first way (nothing to do) only its low byte is
 /// known (the byte compared; the rest is the /GS cookie's).
+///
+/// `magic_0295`'s copy (0x10001000, 813 bytes) lights without testing
+/// bit 0 (only `S + 0x28` above 0; `movss xmm0, [esi+0x28]` at `+0x8e`,
+/// its `K` at `+0x97`) and eases with any bit of `S + 0x68` set (`cmp
+/// dword, 0`); its operands from the light on are ten bytes earlier.
+/// `magic_0153`'s copy (0x10001000, 810 bytes) lights when `S + 0x28` is
+/// not at most 0 (`comiss 0, [S + 0x28]; jae`: a NaN lights too), takes
+/// the slot block when `S + 0x5c` is above the f32 at `+0xe1` (`comiss
+/// xmm1, [K]`), and eases on any flag; its operands are 14 bytes earlier
+/// from `+0xb4`, 13 from `+0xf8`.
 #[allow(clippy::too_many_lines)] // the original's branches, one by one
 pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, div, mul, sub};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // `movss xmm3, [K]` (`f3 0f 10 1d`) or `movss xmm0, [esi+0x28]` (`.. 46`)
+    let plain = img.word(f + 0x8e) >> 24 == 0x46;
+    // `xorps xmm0, xmm0` (0x0f) after that load, not `add esp, 8`
+    let nan_lights = !plain && img.word(f + 0x96) & 0xff == 0x0f;
+    let m = |o: u32| match o {
+        _ if o < 0xb4 => o,
+        _ if plain => o - 10,
+        _ if !nan_lights => o,
+        0xb4..0xf8 => o - 14,
+        _ => o - 13,
+    };
+    let w = |o: u32| img.word(f + m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let c = fr.ecx;
     let ebp = fr.esp.wrapping_sub(4);
@@ -740,8 +775,16 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         eax = words.call(g, visit, l).eax;
     }
     let slot = |g: &G, t: u32, d: u32| slot_target(g, w(t), w(d) / 4);
-    let mut one = k(g, 0x92);
-    if g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0 && g.read::<f32>(s.wrapping_add(0x28)) > 0.0 {
+    let mut one = k(g, if plain { 0x97 } else { 0x92 });
+    let bit0 = plain || nan_lights || g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0;
+    let x28 = g.read::<f32>(s.wrapping_add(0x28));
+    // `comiss 0, x; jae` (skipped when 0 is not below: a NaN lights)
+    let lit = if nan_lights {
+        x28 > 0.0 || x28.is_nan()
+    } else {
+        x28 > 0.0
+    };
+    if bit0 && lit {
         let b = g.read::<u32>(s.wrapping_add(0x70)).wrapping_add(w(0xb8));
         let mut st = Pushes::default();
         st.push_all(&[b, w(0xc1), ebp.wrapping_sub(0x44)]);
@@ -753,7 +796,12 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 12 (Pushes caps the words at 12)
         eax = st.call(g, t, l).eax;
         let speed = g.read::<f32>(s.wrapping_add(0x5c));
-        if speed > 0.0 {
+        let floor = if nan_lights {
+            g.read::<f32>(img.word(f + 0xe1))
+        } else {
+            0.0
+        };
+        if speed > floor {
             let inv = div(k(g, 0xfc), speed);
             let mut st = Pushes::default();
             st.push(0);
@@ -788,7 +836,12 @@ pub fn two_part_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         one = k(g, 0x1cc);
     }
     let f32_at = |g: &G, o: u32| g.read::<f32>(s.wrapping_add(o));
-    if g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0 {
+    let ease = if plain || nan_lights {
+        g.read::<u32>(s.wrapping_add(0x68)) != 0
+    } else {
+        g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0
+    };
+    if ease {
         let rate = |g: &G| f32_at(g, 0x4c);
         for (x, to) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
             let v = add(mul(sub(f32_at(g, to), f32_at(g, x)), rate(g)), f32_at(g, x));

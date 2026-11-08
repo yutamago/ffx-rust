@@ -904,10 +904,13 @@ fn summon_load_frames() {
         (164, 0xc050),
         (533, 0xc1e0),
         (601, 0xa470),
+        // no slot 673: the operands from `+0x8b` on 13 bytes earlier
+        (603, 0xd910),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
-        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let d = if dll == 603 { 13 } else { 0 };
+        let w = |t: &Twin, o: u32| t.img.word(f + if o >= 0x8b { o - d } else { o });
         let log = SCRATCH + 0x6000;
         let busy = SCRATCH + 0x2f0;
         for s in [225u32, 313, 549] {
@@ -917,7 +920,8 @@ fn summon_load_frames() {
         }
         log_calls(&mut t, 226, log, 2, None, |_, _, k| 0x226 + k);
         log_calls(&mut t, 673, log, 0, None, |_, _, k| 0x673 + k);
-        t.set_u32(w(&t, 0x99), sa::node(21));
+        let gp = if dll == 603 { f + 0x8b } else { f + 0x99 };
+        t.set_u32(t.img.word(gp), sa::node(21));
         let vt = sa::node(22);
         t.set_u32(vt + 0x20, magic::TRAPS);
         let root = w(&t, 0xca);
@@ -1127,7 +1131,12 @@ fn look_matrices() {
 /// the object started and the puff (its ring with a free record).
 #[test]
 fn landing_puffs() {
-    for (dll, rva) in [(285u16, 0x4cc0u32), (286, 0x1b70)] {
+    // `magic_0287`'s copy: the operands from `+0xf7` on one byte later
+    for (dll, rva, d) in [
+        (285u16, 0x4cc0u32, 0u32),
+        (286, 0x1b70, 0),
+        (287, 0x4ca0, 1),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
@@ -1138,14 +1147,16 @@ fn landing_puffs() {
         }
         rec(&mut t, 941, 1, move |_, _| table);
         rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
-        let soa = t.img.rel32_target(f + 0x105);
+        let soa = t.img.rel32_target(f + 0x105 + d);
         let start = t.img.rel32_target(soa + 0x84);
         t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
         t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x2f0);
         t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
-        let pa = t.img.rel32_target(soa + 0x9d);
+        // (`magic_0287`'s three-owner start: its pool and tail operands
+        // one byte earlier)
+        let pa = t.img.rel32_target(soa + 0x9d - d);
         let free = op(&t, pa, 0x04);
-        let tail = op(&t, soa, 0xa8);
+        let tail = op(&t, soa, 0xa8 - d);
         // the puff's (`s6_misc::smoke_puff`)
         rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
         let calls = SCRATCH + 0x7e0;
@@ -1155,7 +1166,7 @@ fn landing_puffs() {
             m.w32(calls, k + 1);
             f64::from(f32::from_bits(a[0])) * f64::from(k % 5 + 1)
         });
-        let puff = t.img.rel32_target(f + 0x14c);
+        let puff = t.img.rel32_target(f + 0x14c + d);
         let take = t.img.rel32_target(puff + 0x9);
         let ring = SCRATCH + 0x1000;
         t.set_u32(op(&t, take, 0x17), ring);
@@ -3526,7 +3537,8 @@ fn flight_steps() {
 /// again through the node's 12-byte thunk.
 #[test]
 fn lit_colour_nodes() {
-    for dll in [152u16, 533] {
+    // `magic_0601`'s node copies its colour back once more (791 bytes)
+    for (dll, thunk_at) in [(152u16, 0x1470u32), (533, 0x1470), (601, 0x1480)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(0x1160);
         let log = SCRATCH + 0x6000;
@@ -3617,7 +3629,7 @@ fn lit_colour_nodes() {
                 ecx: 0x0ecc_0000 + k,
                 ..call
             };
-            t.check_entry(t.at(0x1470), thunk, &[s], Eax::Checked);
+            t.check_entry(t.at(thunk_at), thunk, &[s], Eax::Checked);
         }
     }
 }
@@ -4200,12 +4212,24 @@ fn aim_records() {
 
 /// Row 433: the model object set-up of the three DLLs: models in the
 /// table's direct way, its asking way, out of the range, with slot 534
-/// yes and no; the parent empty and not.
+/// yes and no; the parent empty and not. `magic_0621`'s copy (the
+/// particle's last word always 0) has its operands 8 or 16 bytes
+/// earlier from `+0x1c7` on (`m`).
 #[test]
 fn model_object_setups() {
-    for (dll, rva) in [(414u16, 0x6aa0u32), (500, 0x6680), (677, 0x6aa0)] {
+    for (dll, rva) in [
+        (414u16, 0x6aa0u32),
+        (500, 0x6680),
+        (677, 0x6aa0),
+        (621, 0x6aa0),
+    ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        let m = move |o: u32| match o {
+            _ if dll != 621 || o < 0x1c7 => o,
+            0x21f..0x263 => o - 16,
+            _ => o - 8,
+        };
         let log = SCRATCH + 0x6000;
         let model = SCRATCH + 0x7e0;
         let ask = SCRATCH + 0x7e4;
@@ -4227,10 +4251,10 @@ fn model_object_setups() {
         rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
         rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
         rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0]);
-        let pn = t.img.rel32_target(f + 0x264);
+        let pn = t.img.rel32_target(f + m(0x264));
         let start = t.img.rel32_target(pn + 0x88);
         t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
-        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let w = |t: &Twin, o: u32| t.img.word(f + m(o));
         t.set_u32(w(&t, 0x23d), SCRATCH + 0x900);
         let parent = w(&t, 0x85);
         let pl = w(&t, 0x253);

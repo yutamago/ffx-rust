@@ -51,6 +51,34 @@ fn insert() {
     }
 }
 
+/// `r14::insert_0387` (`magic_0387` 0x10004b80): no parent, a parent with
+/// no children and one with some; the node's words old before.
+#[test]
+fn insert_0387() {
+    let Some(mut t) = twin(387) else { return };
+    let at = t.at(0x4b80);
+    recs(&mut t, &[(235, 1), (230, 3), (325, 2)]);
+    let (group, node, parent, last) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x2000,
+        SCRATCH + 0x2100,
+    );
+    for case in 0..3 {
+        t.write(node, &[0x47; 0x160]);
+        t.write(parent, &[0x48; 0x20]);
+        t.set_u32(parent + 0x10, if case == 1 { parent } else { last });
+        t.set_u16(parent + 0x18, 5);
+        t.write(last, &[0x49; 0x10]);
+        for (i, v) in (0u32..).zip([node, if case == 0 { 0 } else { parent }, 0xa, 0xb, 0xc]) {
+            t.set_u32(group + 4 * i, v);
+        }
+        t.check(at, Call::this(group), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(ffx_magic::r14::insert_0387(g, img, fr.at, fr.ecx))
+        });
+    }
+}
+
 /// 0x10006d00: every state, both answers of slots 415 and 411.
 #[test]
 fn task() {

@@ -53,6 +53,39 @@ fn main_object_0369() {
     }
 }
 
+/// `r14::main_object_0367` (`magic_0367` 0x100014d0): the yaw on each side
+/// of the wrap, between and NaN; the two words it sets after, old before.
+#[test]
+fn main_object_0367() {
+    let Some(mut t) = twin(367) else { return };
+    let f = t.at(0x14d0);
+    let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x18);
+    magic_r11::object_start_setup(&mut t, start, (0x84, 0x96));
+    t.set_u32(op(&t, 0x23), 0x00a5_0000);
+    t.stub_st0(12, |_, a| f64::from(a[0] >> 16) * 0.5);
+    let yaw = SCRATCH + 0x90;
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw))));
+    let kf = |t: &magic::Twin, o: u32| f32::from_bits(t.u32(op(t, o)));
+    let k3 = kf(&t, 0x8c);
+    for v in [
+        0.0f32,
+        8.0,
+        -8.0,
+        f32::NAN,
+        k3 - kf(&t, 0x9c),
+        k3 - kf(&t, 0xb0),
+    ] {
+        t.set_u32(yaw, v.to_bits());
+        for o in [0xc5u32, 0xcb, 0xd5] {
+            t.write(op(&t, o), &[0x5f; 4]);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
 /// `magic_0065` 0x10002fd0: the flag bit set and clear, the task list
 /// empty and not.
 #[test]
@@ -326,6 +359,61 @@ fn launches_p055() {
     }
 }
 
+/// `r14::launches_0384` (`magic_0384` 0x10001b60): the count below and
+/// at the first callback's bound 0x19, a multiple of 16 and not, and on
+/// both sides of 0x32.
+#[test]
+fn launches_0384() {
+    for (dll, rva) in [(384u16, 0x1b60u32)] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(rva);
+        let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
+        let launch = t.img.rel32_target(f + 0x90);
+        for o in [0x97, 0x193, 0x20d] {
+            t.set_u32(t.img.word(launch + o), 5);
+        }
+        t.set_u32(t.img.word(launch + 0x67), 1.5f32.to_bits());
+        t.set_u32(t.img.word(launch + 0xa2), 1.25f32.to_bits());
+        t.set_u32(t.img.word(launch + 0xc7), 0.75f32.to_bits());
+        let g_d = t.u32(t.img.word(launch + 0xd4));
+        if g_d != 0 {
+            t.set_u32(g_d + 0x198, 0x0198_0000);
+        }
+        t.stub(474, |m, a| {
+            for (i, step) in (0u32..).zip([0.5f32, 1.0, 1.5, 2.0]) {
+                let v = m.r32(a[2] + 4 * i);
+                m.w32(a[3] + 4 * i, (f32::from_bits(v) + step).to_bits());
+            }
+            0x474
+        });
+        rec(&mut t, 458, 3, |_, a| a[1] ^ 0x458);
+        t.stub_st0(482, |_, a| f64::from(a[3]) * 0.5 + 0.25);
+        rec(&mut t, 482, 4, |_, a| a[0] ^ 0x482);
+        // slot 434 hands out three objects in turn
+        let k = SCRATCH + 0x98;
+        rec(&mut t, 434, 2, move |m, _| {
+            let n = m.r32(k);
+            m.w32(k, n + 1);
+            SCRATCH + 0x1000 + 0x400 * (n % 3)
+        });
+        let arg = SCRATCH + 0x900;
+        for n in [16u32, 5, 0x18, 0x19, 0x31, 0x32, 0x20] {
+            t.set_u32(k, 0);
+            for i in 0..3 {
+                let p = SCRATCH + 0x1000 + 0x400 * i;
+                t.write(p, &[0x11; 0x200]);
+                t.set_u32(p + 0xac, 1);
+            }
+            t.set_u32(op(&t, 0x0d), n);
+            t.set_u32(op(&t, 0x45), 2.0f32.to_bits());
+            t.set_u32(op(&t, 0x37), 3.0f32.to_bits());
+            t.set_u32(op(&t, 0x79), 0x0079_0079);
+            t.set_u32(arg, 0x10);
+            t.check_entry(f, Call::default(), &[arg], Eax::Checked);
+        }
+    }
+}
+
 /// Parameter family P034 (`r11_misc::sparks_p034`, `magic_0393`
 /// 0x10003690 and `magic_0450` 0x10007670): the counter reaching 0 (an
 /// object record free and not) and not; three sprite records free, and
@@ -383,11 +471,12 @@ fn sparks_p034() {
 }
 
 /// Parameter family P048 (`r11_misc::launches_p048`, `magic_0421`
-/// 0x10001960 and `magic_0535` 0x10001940): the count 0 (the extra
-/// object), a multiple of 16, neither, and reaching 0x26 (slot 450).
+/// 0x10001960 and `magic_0535` 0x10001940; `magic_0384` 0x10001960, its
+/// bound above 0x19): the count 0 (the extra object), a multiple of 16,
+/// neither, and on each side of both bounds (slot 450).
 #[test]
 fn launches_p048() {
-    for (dll, rva) in [(421u16, 0x1960u32), (535, 0x1940)] {
+    for (dll, rva) in [(421u16, 0x1960u32), (535, 0x1940), (384, 0x1960)] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
         let op = |t: &magic::Twin, o: u32| t.img.word(f + o);
@@ -421,7 +510,7 @@ fn launches_p048() {
             SCRATCH + 0x1000 + 0x400 * (n % 3)
         });
         let arg = SCRATCH + 0x900;
-        for n in [0u32, 16, 5, 0x25] {
+        for n in [0u32, 16, 5, 0x25, 0x24, 0x18, 0x19] {
             t.set_u32(k, 0);
             for i in 0..3 {
                 let p = SCRATCH + 0x1000 + 0x400 * i;

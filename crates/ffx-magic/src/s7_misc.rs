@@ -872,7 +872,8 @@ pub const LIGHT_NODE: Sig = Sig {
 /// `C` visited ([`crate::nodes::visit_gated`]) with the pass (the walk's
 /// pass read again, else the new one). Returns 0.
 ///
-/// `magic_0152` 0x1000c7b0 (317 bytes; 5 DLLs).
+/// `magic_0152` 0x1000c7b0 (317 bytes; 5 DLLs); `magic_0603`'s copy
+/// (0x1000d910, 304 bytes) runs the frame without slot 673.
 pub fn summon_load_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -898,37 +899,45 @@ pub fn summon_load_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let v = g.read::<u32>(w(0x40)).wrapping_add(1);
         g.write::<u32>(w(0x46), v);
     }
-    slot(g, img, f, 0x8b, 673, fr.ecx, &[]);
-    let p = g.read::<u32>(w(0x99));
-    g.write::<u32>(p, w(0x9f));
-    let z = g.read::<u32>(w(0xa4));
-    let mut node = g.read::<u32>(w(0xaa));
-    g.write::<u32>(w(0xaf), z);
-    let mut pass = g.read::<u8>(w(0xb4)).wrapping_add(1);
-    let skip = g.read::<u32>(w(0xbc)) != 0;
-    g.write::<u8>(w(0xc2), pass);
+    // `magic_0603`'s copy has no slot 673 (`mov [eax], ITEM` at `+0x90`):
+    // its operands from there on are 13 bytes earlier
+    let d = if w(0x8e) >> 16 & 0xff == 0xc7 {
+        13
+    } else {
+        slot(g, img, f, 0x8b, 673, fr.ecx, &[]);
+        0
+    };
+    // (the copy loads `G_P` first, before its `push esi`)
+    let p = g.read::<u32>(if d == 0 { w(0x99) } else { w(0x8b) });
+    g.write::<u32>(p, w(0x9f - d));
+    let z = g.read::<u32>(w(0xa4 - d));
+    let mut node = g.read::<u32>(w(0xaa - d));
+    g.write::<u32>(w(0xaf - d), z);
+    let mut pass = g.read::<u8>(w(0xb4 - d)).wrapping_add(1);
+    let skip = g.read::<u32>(w(0xbc - d)) != 0;
+    g.write::<u8>(w(0xc2 - d), pass);
     let cursor = fr.esp.wrapping_sub(0xc);
-    if !skip && node != w(0xca) {
-        while node != w(0xe8) {
+    if !skip && node != w(0xca - d) {
+        while node != w(0xe8 - d) {
             g.write::<u32>(cursor, node);
             let method = g.read::<u32>(g.read::<u32>(node).wrapping_add(0x20));
             node = g.read::<u32>(node + 8);
             g.call(method, cursor, &[cursor]);
         }
-        pass = g.read::<u8>(w(0xef));
-        node = g.read::<u32>(w(0xf5));
+        pass = g.read::<u8>(w(0xef - d));
+        node = g.read::<u32>(w(0xf5 - d));
     }
     // the empty ring's test (an empty ring before the walk takes it too)
-    if node == w(0xfb) {
-        let v = g.read::<u32>(w(0x104)) | 1;
-        g.write::<u32>(w(0x104), v);
+    if node == w(0xfb - d) {
+        let v = g.read::<u32>(w(0x104 - d)) | 1;
+        g.write::<u32>(w(0x104 - d), v);
     }
-    for (k, (node, call)) in [(0x113u32, 0x118u32), (0x12b, 0x130)]
+    for (k, (node, call)) in [(0x113 - d, 0x118 - d), (0x12b - d, 0x130 - d)]
         .into_iter()
         .enumerate()
     {
         if k == 1 {
-            pass = g.read::<u8>(w(0x11d));
+            pass = g.read::<u8>(w(0x11d - d));
         }
         g.write::<u8>(cursor + 5, pass);
         let esp = fr.esp.wrapping_sub(0x14 + 4 * k as u32);
@@ -953,6 +962,18 @@ pub const SUMMON_LOAD_FRAME: Sig = Sig {
     calls: &[
         (0x118, Callee::Sig(&crate::nodes::GATED)),
         (0x130, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_load_frame`] in `magic_0603` (0x1000d910, 304 bytes: no slot
+/// 673).
+pub const SUMMON_LOAD_FRAME_0603: Sig = Sig {
+    len: 304,
+    hash: 0x0ae8_a8be_71a0_90d3,
+    calls: &[
+        (0x10b, Callee::Sig(&crate::nodes::GATED)),
+        (0x123, Callee::Sig(&crate::nodes::GATED)),
     ],
     imports: &[],
 };
@@ -1105,10 +1126,17 @@ pub const LOOK_MATRIX: Sig = Sig {
 /// the smoke puff ([`smoke_puff`](crate::s6_misc::smoke_puff), `ecx` =
 /// `E`), whose `eax` it returns.
 ///
-/// `magic_0285` 0x10004cc0 (339 bytes; 2 DLLs).
+/// `magic_0285` 0x10004cc0 (339 bytes; 2 DLLs). `magic_0287`'s copy
+/// (0x10004ca0, 340 bytes) starts the object with three owners
+/// ([`start_object_owners`](crate::s4_misc::start_object_owners), all
+/// 0), pushing 0 (`push 0x0`, two bytes) for the word these push `ecx`
+/// for (one byte, at `+0xf7`; the two-owner start does not read it), so
+/// its operands from there on are one byte later.
 pub fn landing_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `push ecx` (0x51) or `push 0x0`
+    let d = u32::from(img.word(f + 0xf7) & 0xff != 0x51);
+    let w = |o: u32| op(img, f, if o >= 0xf7 { o + d } else { o });
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let e = fr.arg(g, 0);
     let x = g.read::<f32>(e + 0xc);
@@ -1145,15 +1173,19 @@ pub fn landing_puff<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         .read::<u32>(e + 0x280)
         .wrapping_mul(0x130)
         .wrapping_add(w(0xfa));
-    let start = img.rel32_target(f + 0x105);
-    crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xc3), 2, 0, 0);
+    let start = img.rel32_target(f + 0x105 + d);
+    if d == 0 {
+        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xc3), 2, 0, 0);
+    } else {
+        crate::s4_misc::start_object_owners(g, img, start, obj, k(g, 0xc3), 2, 0, (0, 0));
+    }
     for off in [0u32, 4, 8, 0xc] {
         let p = g.read::<u32>(e + 0x24c + off);
         g.write::<u32>(obj + 0xd0 + off, p);
     }
     g.write::<u32>(e + 0x26c, 0);
     let puff = Frame {
-        at: img.rel32_target(f + 0x14c),
+        at: img.rel32_target(f + 0x14c + d),
         ecx: e,
         ..*fr
     };
@@ -1169,6 +1201,18 @@ pub const LANDING_PUFF: Sig = Sig {
     calls: &[
         (0x105, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
         (0x14c, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
+    ],
+    imports: &[],
+};
+
+/// [`landing_puff`]'s copy in `magic_0287` (0x10004ca0, 340 bytes: the
+/// three-owner object start).
+pub const LANDING_PUFF_0287: Sig = Sig {
+    len: 340,
+    hash: 0x13bd_d41d_e5ec_7d30,
+    calls: &[
+        (0x106, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x14d, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
     ],
     imports: &[],
 };
@@ -4428,6 +4472,17 @@ pub const LIT_COLOUR_NODE: Sig = Sig {
     imports: &[],
 };
 
+/// [`lit_colour_node`] in `magic_0601` (0x10001160, 791 bytes): once the
+/// colour reached `R+0x2c..` it also copies `R+0x1c..` back to `R+0x2c..`
+/// (two `movq`, `+0x2bb`), the same 16 bytes the step just stored, so
+/// memory and `eax` are as in the 771-byte copies.
+pub const LIT_COLOUR_NODE_0601: Sig = Sig {
+    len: 791,
+    hash: 0x94b9_284d_aad9_2f1d,
+    calls: &[(0x22d, Callee::Any), (0x30f, Callee::Any)],
+    imports: &[],
+};
+
 /// A summon's load wait, then its objects (cdecl, no arguments): busy
 /// while slot 225 `(1)` is not 0; once, `*G_A` 0, slot 226 `(*G_B, 1)`
 /// and `*G_A = 1`; busy while slot 227 `(*G_B)` is below 1; then the
@@ -5276,9 +5331,19 @@ pub const AIM_RECORDS: Sig = Sig {
 #[allow(clippy::too_many_lines)] // the original's nodes, one by one
 pub fn model_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `magic_0621`'s copy (908 bytes) leaves the particle's last word 0 on
+    // both ways: no `mov [esp+0x2c], imm` at `+0x1c7` (a `jmp` there) nor
+    // at `+0x21f`, one before the particle call instead; its operands are
+    // 8 bytes earlier from `+0x1c7`, 16 from `+0x21f`, 8 again after
+    let flags = img.word(f + 0x1c7) & 0xff == 0xc7;
+    let m = |o: u32| match o {
+        _ if flags || o < 0x1c7 => o,
+        0x21f..0x263 => o - 16,
+        _ => o - 8,
+    };
+    let w = |o: u32| op(img, f, m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
-    let call = |o: u32| img.rel32_target(f + o);
+    let call = |o: u32| img.rel32_target(f + m(o));
     let (o, r) = (fr.ecx, fr.edx);
     let s = fr.xmm_f32(2);
     let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
@@ -5330,25 +5395,25 @@ pub fn model_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     };
     crate::nodes::node_insert(g, img, &insert);
     let user = g.read::<u32>(r.wrapping_add(0x50));
-    let id = slot(g, img, f, 0x160, 390, rec, &[user])
+    let id = slot(g, img, f, m(0x160), 390, rec, &[user])
         .eax
         .wrapping_sub(0x1071);
     let direct = if id <= 0x1b {
-        let way = img.word(f + 0x378 + id) & 0xff;
-        img.word(f + 0x370 + 4 * way) == f + 0x1a0
+        let way = img.word(f + m(0x378) + id) & 0xff;
+        img.word(f + m(0x370) + 4 * way) == f + 0x1a0
     } else {
         false
-    } || slot(g, img, f, 0x18c, 534, rec, &[user]).eax != 0;
+    } || slot(g, img, f, m(0x18c), 534, rec, &[user]).eax != 0;
     let pt = o + 0x13c;
     let h = g.read::<u32>(r.wrapping_add(0x54));
     let table = if direct { 0x1b1 } else { 0x1e2 };
-    slot(g, img, f, table, 268, rec, &[h, 0x11, pt]);
+    slot(g, img, f, m(table), 268, rec, &[h, 0x11, pt]);
     g.write::<u32>(pt + 0xc, 0x3f80_0000);
     if direct {
-        g.write::<u32>(base + 0x2c, 1);
+        g.write::<u32>(base + 0x2c, u32::from(flags));
     } else {
         let h = g.read::<u32>(r.wrapping_add(0x54));
-        let y = slot(g, img, f, 0x200, 12, rec, &[h]);
+        let y = slot(g, img, f, m(0x200), 12, rec, &[h]);
         let y = sub(crate::m0018::st0_f32(y.st0), k(g, 0x218));
         g.write::<u32>(base + 0x2c, 0);
         g.write::<f32>(o + 0x140, y);
@@ -5378,7 +5443,7 @@ pub fn model_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         (0x2aau32, 0x2cfu32, 0x2dcu32, 0x2e4u32, 0x13cu32),
         (0x2d4, 0x30e, 0x334, 0x346, 0x144),
     ] {
-        let rnd = slot(g, img, f, t, 307, rec, &[]);
+        let rnd = slot(g, img, f, m(t), 307, rec, &[]);
         let v = crate::m0018::st0_f32(rnd.st0);
         g.write::<f32>(local, v);
         let v = sub(mul(sub(v, k(g, k2)), k(g, k3)), k(g, k4));
@@ -5392,6 +5457,19 @@ pub fn model_object_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     g.write::<f32>(o + 0x2c8, s);
     r
 }
+
+/// [`model_object_setup`] in `magic_0621` (0x10006aa0, 908 bytes: the
+/// particle's last word always 0).
+pub const MODEL_OBJECT_SETUP_0621: Sig = Sig {
+    len: 908,
+    hash: 0x37aa_85ea_64e2_993e,
+    calls: &[
+        (0x15b, Callee::Sig(&crate::nodes::INSERT)),
+        (0x25c, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x293, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};
 
 /// [`model_object_setup`] (the `rel32`s:
 /// [`node_insert`](crate::nodes::node_insert),

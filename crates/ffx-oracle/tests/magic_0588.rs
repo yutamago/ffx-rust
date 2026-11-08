@@ -253,3 +253,37 @@ fn objects_and_light() {
         t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
     }
 }
+
+/// `r14::light_restart_0430` (`magic_0430` 0x10002d80): the old object
+/// listed and not; the scale task's count from `edx`.
+#[test]
+fn light_restart_0430() {
+    let Some(mut t) = twin(430) else { return };
+    let fx = SCRATCH + 0x1_0000;
+    let at = t.at(0x2d80);
+    t.set_u32(t.img.word(at + 0x1c), fx);
+    let st = t.img.rel32_target(at + 0x30);
+    let take = t.img.rel32_target(st + 0x73);
+    pool(&mut t, take, SCRATCH + 0x6000, 3);
+    recs(&mut t, &[(713, 1), (332, 1)]);
+    let list = t.img.word(at + 0x40);
+    let n = SCRATCH + 0x7000;
+    t.set_u32(t.img.word(at + 0x62), SCRATCH + 0x7100);
+    for (k, op) in [0xbdu32, 0xca, 0xd7, 0xe7].into_iter().enumerate() {
+        t.set_u32(t.img.word(at + op), magic_hi::f(0.5 + k as f32));
+    }
+    t.write(fx, &[0x3c; 0xf00]);
+    for i in 0..4 {
+        t.set_u32(fx + 0xcc4 + 4 * i, magic_hi::f(1.5 + i as f32));
+    }
+    t.set_u32(fx + 0x924, magic_hi::f(0.75));
+    for listed in [false, true] {
+        t.write(n, &[0; 0x10]);
+        t.set_u32(n + 8, fx + 0x980);
+        t.set_u32(list, if listed { n } else { 0 });
+        t.set_u32(list + 4, if listed { n } else { 0 });
+        t.set_u16(fx + 0x980 + 0x124, 0x8123);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::this(0x00ec_0001), &[], Eax::Checked);
+    }
+}

@@ -352,21 +352,38 @@ fn motion_state_steps() {
 
 /// The summon's start (a table entry, `(actor)`): the targets, the lists,
 /// the part and its program, with the lock word as the game left it.
+/// `magic_0203`'s copy pushes slot 222's count as an imm8: its operands
+/// from there on are 3 bytes earlier (`d`). `magic_0388`'s and `0389`'s
+/// keep the actor and reset the statics themselves: their operands are 5
+/// bytes later.
 #[test]
 fn summon_start() {
-    for (n, rva) in [(3u16, 0x68d0u32), (202, 0x7760), (330, 0x6b60)] {
-        summon_start_in(n, rva);
+    for (n, rva, d) in [
+        (3u16, 0x68d0u32, 0u32),
+        (202, 0x7760, 0),
+        (330, 0x6b60, 0),
+        (203, 0x8d20, 3),
+        (388, 0x8020, 0),
+        (389, 0x7560, 0),
+        (374, 0x7db0, 0),
+    ] {
+        summon_start_in(n, rva, d);
     }
 }
 
-fn summon_start_in(n: u16, rva: u32) {
+fn summon_start_in(n: u16, rva: u32, d: u32) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
-    let targets = t.img.rel32_target(at + 0x08);
-    let statics = t.img.rel32_target(targets + 0xe0);
+    let e = if matches!(n, 374 | 388 | 389) { 5 } else { 0 };
+    let statics = if e == 0 {
+        let targets = t.img.rel32_target(at + 0x08);
+        t.img.rel32_target(targets + 0xe0)
+    } else {
+        t.img.rel32_target(at + 0xd)
+    };
     let root = t.img.word(statics + 0x10d);
     let lock = sa::node(21);
-    t.set_u32(t.img.word(at + 0xd4), lock);
+    t.set_u32(t.img.word(at + 0xd4 + e), lock);
     let list = sa::node(20);
     rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
     rec(&mut t, 218, 2, move |m, a| {
@@ -395,10 +412,21 @@ fn summon_start_in(n: u16, rva: u32) {
         t.set_u32(lock, old);
         t.write(root, &[0x5a; 0x150]);
         t.set_u32(root + 4, 0);
-        let flags = t.img.word(at + 0x197);
+        // (`magic_0374`'s flags operand: its own store order puts it at
+        // `+0x199`)
+        let flags = t.img.word(if n == 374 {
+            at + 0x199
+        } else {
+            at + 0x197 + e - d
+        });
         t.set_u32(flags, 0x5555_5555 + k as u32);
-        // the word the start clears, set before
-        t.set_u32(t.img.word(at + 0x9d), 0x9d9d_0000 + k as u32);
+        // the words the start clears, set before
+        t.set_u32(t.img.word(at + 0x9d + e), 0x9d9d_0000 + k as u32);
+        t.set_u32(t.img.word(at + 0x1a8 + e - d), 0x1a8a_0000 + k as u32);
+        if e != 0 {
+            // the actor's global: an old value
+            t.set_u32(t.img.word(at + 0x8), 0x0a0a_0000 + k as u32);
+        }
         t.check_entry(at, magic::Call::default(), &[0x30 + k as u32], Eax::Checked);
     }
 }

@@ -27,6 +27,19 @@ pub const LOOK_MATRIX_CALLBACK_0045_1310: Sig = Sig {
     imports: &[],
 };
 
+/// [`look_matrix_callback`] in `magic_0665` (0x100016d0, 307 bytes: the
+/// matrix's stack word 3, operands 2 and 5 bytes later).
+pub const LOOK_MATRIX_CALLBACK_0665_16D0: Sig = Sig {
+    len: 307,
+    hash: 0x6631_b37b_e3fc_6d78,
+    calls: &[
+        (0x41, Callee::Sig(&crate::s6_misc::LEVEL_LOOK_MATRIX_0665)),
+        (0x118, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x12b, Callee::Any),
+    ],
+    imports: &[],
+};
+
 // family F0199_10002160
 
 /// [`record_node_start`] in `magic_0199` (0x10002160, 621 bytes; row own:1341).
@@ -169,6 +182,50 @@ pub const TWO_PART_VISIT_THUNK_0070_14A0: Sig = Sig {
     hash: 0x896f_4fde_1224_a07f,
     calls: &[
         (0x8, Callee::Sig(&crate::o6_fam_pairs5::TWO_PART_VISIT_0070_1160)),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit`] in `magic_0295` (0x10001000, 813 bytes: no bit-0
+/// test, easing on any flag).
+pub const TWO_PART_VISIT_0295_1000: Sig = Sig {
+    len: 813,
+    hash: 0x19c7_d0b3_3783_8c67,
+    calls: &[
+        (0x256, Callee::Any),
+        (0x325, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit_thunk`] in `magic_0295` (0x10001340, 12 bytes).
+pub const TWO_PART_VISIT_THUNK_0295_1340: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[
+        (0x8, Callee::Sig(&crate::o6_fam_pairs5::TWO_PART_VISIT_0295_1000)),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit`] in `magic_0153` (0x10001000, 810 bytes: a NaN
+/// lights, the speed against a constant, easing on any flag).
+pub const TWO_PART_VISIT_0153_1000: Sig = Sig {
+    len: 810,
+    hash: 0x9889_a3ee_e5ed_6c55,
+    calls: &[
+        (0x253, Callee::Any),
+        (0x322, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`two_part_visit_thunk`] in `magic_0153` (0x10001340, 12 bytes).
+pub const TWO_PART_VISIT_THUNK_0153_1340: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[
+        (0x8, Callee::Sig(&crate::o6_fam_pairs5::TWO_PART_VISIT_0153_1000)),
     ],
     imports: &[],
 };

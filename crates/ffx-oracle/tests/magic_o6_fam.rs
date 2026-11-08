@@ -1670,12 +1670,14 @@ fn stubs4(t: &mut Twin) {
     }
 }
 
-const LOOK_MATRIX_CALLBACK: &[(u16, u32)] = &[(664, 0x16e0), (45, 0x1310)];
+const LOOK_MATRIX_CALLBACK: &[(u16, u32)] = &[(664, 0x16e0), (45, 0x1310), (665, 0x16d0)];
 
 /// `o6_fam_pairs5::look_matrix_callback`: the object outside and inside
 /// the 0x80 bytes from `BASE` (the two sources), slot 712 answering 0
 /// (the part is not restarted) and non-zero; slot 941's list a scratch
-/// block of distinct words.
+/// block of distinct words. `magic_0665`'s copy passes the matrix a
+/// stack word: its operands are 2 bytes later around the matrix call
+/// and 5 after it.
 #[test]
 fn fam2_look_matrix_callback() {
     for (n, rva) in copies("o6 fam pairs5 look_matrix_callback", LOOK_MATRIX_CALLBACK) {
@@ -1683,18 +1685,19 @@ fn fam2_look_matrix_callback() {
             return;
         };
         stubs4(&mut t);
+        let (a, b) = if n == 665 { (2, 5) } else { (0, 0) };
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
         let base = w(&t, 0x2a);
         t.set_u32(w(&t, 0x1a), 0x0051_0000);
-        t.set_u32(w(&t, 0x3a), 0x0052_0000);
+        t.set_u32(w(&t, 0x3a + a), 0x0052_0000);
         for (k, o) in [0x4fu32, 0x68, 0x74, 0x87].into_iter().enumerate() {
-            t.set_u32(w(&t, o), 0x00a0_0000 + 0x100 * k as u32);
+            t.set_u32(w(&t, o + b), 0x00a0_0000 + 0x100 * k as u32);
         }
-        t.set_u32(w(&t, 0x94), SCRATCH + 0x3000);
-        t.set_u32(w(&t, 0xa1), SCRATCH + 0x3010);
+        t.set_u32(w(&t, 0x94 + b), SCRATCH + 0x3000);
+        t.set_u32(w(&t, 0xa1 + b), SCRATCH + 0x3010);
         t.set_u32(SCRATCH + 0x3010, 0x55);
-        t.set_u32(w(&t, 0xf0), SCRATCH + 0x3020);
+        t.set_u32(w(&t, 0xf0 + b), SCRATCH + 0x3020);
         fill(&mut t, SCRATCH + 0x3020, 0x10, 3);
         fill(&mut t, P, 0x10, 9);
         t.stub(941, |m, a| {
@@ -2014,7 +2017,7 @@ fn fam2_level_particles() {
     }
 }
 
-const TWO_PART_VISIT: &[(u16, u32)] = &[(70, 0x1160), (577, 0x1000)];
+const TWO_PART_VISIT: &[(u16, u32)] = &[(70, 0x1160), (577, 0x1000), (295, 0x1000), (153, 0x1000)];
 
 /// A two-part node case: marked already, its children, the flags `+0x68`,
 /// `+0x28`, the speed `+0x5c`, the step `+0x50` and fade `+0x58` (1.0 is
@@ -2120,6 +2123,11 @@ fn fam2_two_part_visit() {
             case(false, 0, 0, 1.0, 2.0, 1.5, 0.25),
             case(false, 0, 1, 0.0, 2.0, 0.25, 0.5),
             case(false, 0, 1, 1.0, 0.0, 0.25, 0.5),
+            // bit 2 alone (`magic_0295` eases on any bit)
+            case(false, 0, 4, 1.0, 2.0, 0.25, 0.5),
+            // `+0x28` NaN (`magic_0153` lights), the speed tiny
+            case(false, 0, 1, f32::NAN, 2.0, 0.25, 0.5),
+            case(false, 0, 1, 1.0, 1e-30, 0.25, 0.5),
         ];
         for (k, p) in (0u32..).zip(cases) {
             let eax = if p.marked { Eax::Junk } else { Eax::Checked };
@@ -2128,10 +2136,15 @@ fn fam2_two_part_visit() {
             t.check(f, Call::this(c), &[], eax, |g, img, fr| {
                 o6_fam_pairs5::two_part_visit(g, img, fr)
             });
-            if n == 70 {
+            let thunk = match n {
+                70 => Some(0x14a0),
+                295 | 153 => Some(0x1340),
+                _ => None,
+            };
+            if let Some(th) = thunk {
                 t.restore(&saved);
                 two_part_setup(&mut t, k, p, class);
-                t.check_entry(t.at(0x14a0), regs(0x14a0, k), &[c], eax);
+                t.check_entry(t.at(th), regs(th, k), &[c], eax);
             }
         }
     }

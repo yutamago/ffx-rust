@@ -972,6 +972,37 @@ fn ppp_effect_setups() {
     }
 }
 
+/// `m0665::ppp_setup` (0x10001e10): the set-up's head and programs, the
+/// timeline block reset (its words old before) and slot 260's two answers.
+#[test]
+fn ppp_setup_0665() {
+    let Some(mut t) = twin(665) else { return };
+    let f = t.at(0x1e10);
+    recs(&mut t, &[(718, 1), (222, 5), (710, 12)]);
+    rec_lock(&mut t, 711, 11, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
+    let data = SCRATCH + 0x800;
+    rec(&mut t, 719, 8, move |_, _| data);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 260, 2, |_, a| {
+        0x0260_0000 ^ a[0] ^ a[1].rotate_left(8)
+    });
+    let reset = t.img.rel32_target(f + 0x119);
+    let block = op(&t, reset, 0x8);
+    let lock = SCRATCH + 0x7f0;
+    for k in 0..2u32 {
+        t.write(data, &varied(0x40, k));
+        t.write(block, &varied(0x120, k + 5));
+        for o in [0x114u32, 0x12d, 0x144] {
+            t.set_u32(op(&t, f, o), 0x0dd0_0000 + o + k);
+        }
+        t.set_u32(op(&t, f, 0x74), lock);
+        t.set_u32(lock, 0x0bad_0000 + k);
+        t.set_u32(op(&t, f, 0xa6), 0x0a6a_6a00 + k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[0x0665_0000 + k], Eax::Checked);
+    }
+}
+
 #[test]
 fn ppp_effect_setups_6() {
     let Some(mut t) = twin(662) else { return };
@@ -1444,10 +1475,19 @@ fn effect_ends_shown() {
     }
 }
 
+/// `magic_0686`'s copy rises while the timer is not 0: its operands
+/// after the compare are 3 bytes earlier (`d`).
 #[test]
 fn screen_fade_steps() {
-    let Some(mut t) = twin(188) else { return };
-    let f = t.at(0x23b0);
+    for (n, rva, d) in [(188u16, 0x23b0u32, 0u32), (686, 0x1c10, 3)] {
+        screen_fade_steps_in(n, rva, d);
+    }
+}
+
+fn screen_fade_steps_in(n: u16, rva: u32, d: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let f = t.at(rva);
+    let op = |t: &Twin, f: u32, o: u32| op(t, f, if o > 0x12 { o - d } else { o });
     recs(&mut t, &[(801, 6), (785, 1)]);
     // the colour and offset records, all four words of each
     rec_mem(&mut t, 353, 1, 4, None);
@@ -1464,6 +1504,8 @@ fn screen_fade_steps() {
         (0xaf, lo + dn * 0.5, 0.5),
         (0xaf, lo.midpoint(hi), 0.0),
         (0, f32::NAN, 1.0),
+        (0, lo + dn * 0.5, 0.5),
+        (1, hi + 1.0, 0.5),
     ]
     .into_iter()
     .enumerate()
@@ -1538,6 +1580,8 @@ fn summon_ppp_starts() {
         (272, 0x7130),
         (71, 0x91f0),
         (387, 0xd970),
+        // `r14::summon_ppp_start_0146`: the tail's operands moved, slot 575
+        (146, 0x7a10),
     ] {
         summon_ppp_in(dll, rva);
     }
@@ -1563,8 +1607,16 @@ fn summon_ppp_in(dll: u16, rva: u32) {
     });
     rec(&mut t, 289, 1, |_, _| 0x289);
     t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
-    recs(&mut t, &[(718, 1), (710, 11), (222, 12), (221, 12)]);
+    recs(
+        &mut t,
+        &[(718, 1), (710, 11), (222, 12), (221, 12), (575, 0)],
+    );
     rec_lock(&mut t, 711, 7, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
+    let (flags_op, clear_op) = if dll == 146 {
+        (0x199, 0x1aa)
+    } else {
+        (0x197, 0x1a8)
+    };
     let data = SCRATCH + 0x800;
     rec(&mut t, 719, 4, move |_, _| data);
     let lock = SCRATCH + 0x7f0;
@@ -1589,13 +1641,13 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         // the ring's tail before: a record of its own
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x15a), SCRATCH + 0x7a0);
-        t.set_u32(op(&t, f, 0x197), 0xffff_ff0f + count);
+        t.set_u32(op(&t, f, flags_op), 0xffff_ff0f + count);
         // (the next instruction's bytes read as an address hold bits, so a
         // read that lands there shows)
-        t.set_u32(op(&t, f, 0x19b), 0xffff_fff0 ^ count);
-        if dll == 342 {
+        t.set_u32(op(&t, f, flags_op + 4), 0xffff_fff0 ^ count);
+        if dll == 342 || dll == 146 {
             // the word the start clears: set before
-            t.set_u32(op(&t, f, 0x1a8), 0x01a8_0000 + count);
+            t.set_u32(op(&t, f, clear_op), 0x01a8_0000 + count);
         }
         if dll == 71 {
             t.set_u32(op(&t, f, 0x1b2), 0x1b2);
@@ -1763,7 +1815,8 @@ fn root_point_parts() {
 
 #[test]
 fn summon_ppp_starts_stream() {
-    for (dll, rva) in [(186u16, 0x8230u32), (173, 0x7170)] {
+    // `magic_0153`'s copy clears two more words at the end
+    for (dll, rva) in [(186u16, 0x8230u32), (173, 0x7170), (153, 0x8710)] {
         summon_ppp_stream_in(dll, rva);
     }
 }
@@ -1817,6 +1870,11 @@ fn summon_ppp_stream_in(dll: u16, rva: u32) {
         t.set_u32(op(&t, f, 0x1c6), 0xffff_fff0 ^ count);
         // the word the start clears: set before
         t.set_u32(op(&t, f, 0x1d3), 0x01d3_0000 + count);
+        if dll == 153 {
+            for o in [0x1ddu32, 0x1e7] {
+                t.set_u32(op(&t, f, o), 0x0153_0000 + o + count);
+            }
+        }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0186_0040 + count], Eax::Checked);
     }

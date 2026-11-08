@@ -3754,11 +3754,19 @@ pub const CAMERA_TRACKS: Sig = Sig {
 /// earlier ones left on the stack. Returns slot 231's `eax`.
 ///
 /// `magic_0045` 0x10001000 (579 bytes, `ecx`/`edx`/`xmm2`/`xmm3`; 3
-/// DLLs).
+/// DLLs). `magic_0665`'s copy (580 bytes) passes slot 236 its stack word
+/// (`push [ebp+8]`, three bytes, at `+0x20`) where these pass 3, so its
+/// operands after that are one byte later.
 #[allow(clippy::too_many_lines)] // the original's calls, one by one
 pub fn level_look_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `push 0x3` (0x6a 0x03) or `push DWORD PTR [ebp+0x8]` (0xff 0x75 0x08)
+    let (kind, d) = if img.word(f + 0x20) & 0xff == 0x6a {
+        (3, 0)
+    } else {
+        (fr.arg(g, 0), 1)
+    };
+    let w = |o: u32| op(img, f, if o > 0x20 { o + d } else { o });
     let out = fr.ecx;
     let (height, scale) = (fr.xmm[2] as u32, fr.xmm[3] as u32);
     let ebp = fr.esp.wrapping_sub(4);
@@ -3780,7 +3788,7 @@ pub fn level_look_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         // call width: 12 (the most `Pushes::words` holds)
         st.call(g, target(g, t, k), 0).eax
     };
-    call(g, &mut st, &[a, 3, fr.edx], 0x1c, 236);
+    call(g, &mut st, &[a, kind, fr.edx], 0x1c, 236);
     for (row, t) in [(0u32, 0x46u32), (0x10, 0x5b), (0x20, 0x70)] {
         call(g, &mut st, &[a + row, a + row], t, 232);
     }
@@ -3819,6 +3827,15 @@ pub const LEVEL_LOOK_MATRIX: Sig = Sig {
     len: 579,
     hash: 0x651a_167a_e72b_1b92,
     calls: &[(0x23b, Callee::Any)],
+    imports: &[],
+};
+
+/// [`level_look_matrix`]'s copy in `magic_0665` (0x10001000, 580 bytes:
+/// slot 236's word from the stack).
+pub const LEVEL_LOOK_MATRIX_0665: Sig = Sig {
+    len: 580,
+    hash: 0x77ba_6f8a_008a_ee0b,
+    calls: &[(0x23c, Callee::Any)],
     imports: &[],
 };
 

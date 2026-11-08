@@ -167,7 +167,9 @@ pub const SPIN_ANGLES: Sig = Sig {
 /// returned.
 ///
 /// `magic_0543` 0x10005770 (193 bytes, 9 DLLs; its address goes to the
-/// task set-up in `ecx`).
+/// task set-up in `ecx`). `magic_0446`'s copy (0x10004ad0) shows the
+/// caster through its own slot chain
+/// ([`slot_chain_jump`](crate::o4_more2::slot_chain_jump)).
 pub fn caster_script_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| op(img, f, o);
@@ -201,7 +203,11 @@ pub fn caster_script_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                         esp: fr.esp.wrapping_sub(0xc),
                         ..*fr
                     };
-                    crate::s4_fam446::show_caster(g, img, &shown);
+                    if img.matches(shown.at, &crate::o4_more2::SLOT_CHAIN_JUMP_0446_4D30) {
+                        crate::o4_more2::slot_chain_jump(g, img, &shown);
+                    } else {
+                        crate::s4_fam446::show_caster(g, img, &shown);
+                    }
                     crate::sa_pool::give_back(g, img, img.rel32_target(f + 0xa5), task);
                     0xac
                 } else {
@@ -228,6 +234,26 @@ pub const CASTER_SCRIPT_TASK: Sig = Sig {
         (0x42, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
         (0x85, Callee::Sig(&crate::sa_script::RUN)),
         (0x9d, Callee::Sig(&crate::s4_fam446::SHOW_CASTER)),
+        (0xa5, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xac, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xbd, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+    ],
+    imports: &[],
+};
+
+/// [`caster_script_task`] in `magic_0446` (0x10004ad0: the slot chain
+/// for the caster).
+pub const CASTER_SCRIPT_TASK_0446: Sig = Sig {
+    len: 193,
+    hash: 0x788b_4f5f_ecb4_854a,
+    calls: &[
+        (0x14, Callee::Import("memset")),
+        (0x42, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x85, Callee::Sig(&crate::sa_script::RUN)),
+        (
+            0x9d,
+            Callee::Sig(&crate::o4_more2::SLOT_CHAIN_JUMP_0446_4D30),
+        ),
         (0xa5, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
         (0xac, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
         (0xbd, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
