@@ -548,8 +548,8 @@ ids are not: `g_FMVUnskippableIds` `0x00b49b08`); `g_FMVSkipped`
 
 | Thread | Proc | Work |
 |---|---|---|
-| reading | `PVideoPlaybackWin32_initialize` `0x00a27880` | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
-| decoding | `PVideoPlaybackWin32_open` `0x00a27b90` | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
+| reading | `0x00a27880` (started by `PVideoPlaybackWin32_initialize`) | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
+| decoding | `0x00a27b90` (started by `PVideoPlaybackWin32_open`) | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
 | FMOD stream | `PVideoPlaybackWin32_FmodReadCallback_00a27ee0` | `PVideoPlaybackWin32_AudioRead_00a27170`: 0x1000 frames per call, `vorbis_synthesis_pcmout`, s16 = clamp(floor(f x 32767.0 + 0.5)) interleaved; silent while prebuffering |
 | main or render | `UpdateTexture` / `updateVideoCallback` `0x006dae00` | `updateTexture`: one decoded frame into the next of three Y, U, V texture sets (`Map`/`Unmap` or `UpdateSubresource`) |
 
@@ -573,13 +573,57 @@ Starting a preloaded movie early (replay-flakes7, `docs/harness.md`,
 resumes the preload only once its first frame is taken (`+0x6e4`, set
 by `UpdateTexture` `0x006d7680` when `updateTexture` returns a frame,
 after the 30-frame prebuffer); before that it opens the movie again
-(`0x006d8fc0` -> `PVideoPlaybackWin32__VideoDecodingThread` `0x00a27f20`,
+(`0x006d8fc0` -> `PVideoPlaybackWin32_open` `0x00a27f20`,
 which first closes the player, `0x00a28350`). The close ends the demux,
 which leaves the demux state (player `+0xe8`) at 2, and the reading
 thread (`0x00a27880`) runs the demux only while that state is not 2;
 only `PVideoPlaybackWin32_initialize` (`0x00a27cf0`) sets it back to 0.
 So the reopened movie gets no packets and never shows a frame. Whether
 the game's own scripts can start a movie that early is not checked.
+
+### The open and other files (measured, ffx-remix M10)
+
+Measured 2026-11-07 in harness games (ffx-remix's
+`tools/probe-movie.sh`; the open hook is ffx-remix's runtime): movie 2
+as `tools/replays/movie-fmv.txt` plays it (save `ffx_003`, `bsil0000`'s
+worker 24 entry 5, the preload held until its 30 frames are decoded).
+All runs were in lockstep. The test-file runs below used the real clock
+(the script's `--realtime`); the open hook's runs used the virtual clock
+(two) and the real one (one).
+
+- `PVideoPlaybackWin32_open` (`0x00a27f20`, thiscall(player, path,
+  loop)) got the path `/FFX_Data/GameData/PS3Data/Video/IWK_us.webm` and
+  loop 0; after it returns 0 the width is at `+0x14c` and the height at
+  `+0x150` (1280 and 720 for `IWK_us.webm`, as ffx-remix's open hook
+  logged them).
+- With Fahrenheit serving a test file in place of `IWK_us.webm` (a frame
+  number drawn as a barcode in each frame, 29.97 fps, a silent Vorbis
+  track): a 1920 x 1080 VP8 file played on to the last shot. In the
+  shots taken when `+0x6d8` was 64, 128, 192, 256 and 320 the barcode
+  read 63, 127, 191, 255 and 319: the frame shown is `+0x6d8` - 1. From
+  the code: `updateTexture` uploads frame b while the player's `+0x100`
+  is b and then adds one; for this movie the manager's `UpdateTexture`
+  (`0x006d7680`) then sets its `+0x6d8` from `getCurrentTime`'s b + 2
+  frames (`updateVideoCallback` `0x006dae00` does the same for the
+  render-command movies), and the truncation to ms and `ftol(f32(ms) x
+  29.97 x 0.001)` bring that down to b + 1 (computed for b = 0 to 400).
+- A 3840 x 2160 VP8 file crashed the game when `Native_b000_MovieStart`
+  loaded it (the preload, before any frame was decoded): an access
+  violation writing to address 0 in `MSVCR110.dll` (`+0x31323`, one
+  minidump). The main thread's stack (each function with the return
+  address into it): `memset` (the fill `0xcd`) <- `user_malloc`
+  (`0x006fb910`, through the jump at `0x00687020`; `0x006fb97d`) <-
+  `Phyre_PhyreMalloc` (`0x0042fb40`; `0x0042fb50`) <- the frame queue's
+  set-up (`0x00a3ddf0`; `0x00a3de52`) <- `PVideoPlaybackWin32_open` (its
+  second queue call, `0x00a28260`) <-
+  `PhyFMVPlayerManager_fmvPlayer_play` (`0x006d8fc0`; `0x006d902f`) <-
+  `PlayVideo` (`0x006d7430`; `0x006d754c`) <- `graphicPlayVideo(1)`
+  (`0x006427c0`; `0x006427da`) <- `Native_b000_MovieStart`
+  (`0x0076e910`; `0x0076e948`). The queue asked for 30 slots of (1.5 x
+  width x height + 4) bytes, 373,248,120 in all, and `user_malloc` for
+  385,689,751 (total plus one 1.5 x width x height frame plus `0x1f`);
+  the user heap could not give it, and `user_malloc` filled the null
+  block with `0xcd`. At 1080p the block would be about 96 MB (computed).
 
 ### Drawing
 

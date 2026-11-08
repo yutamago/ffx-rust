@@ -75,7 +75,7 @@ its only setter (`0x00871020`) has no callers. This is not a rate control.
 |---|---|
 | `WaitFrames`, the poll natives (motion, move, turn, camera, message waits) | Movies: `updateTexture` takes one decoded frame per update (or per render command for `0x20`, `0x2e`, `0x48` and loops). The sound is an FMOD stream in real time, with no A/V clock ([platform.md](platform.md)) |
 | Motions (`SG_UpdateMotion`, in `Ch_CalcMain`), moves and turns (`Atel_MoveUpdate`), `Sg_AnimValF` eases | FMOD: music, voices and sounds mix on FMOD's threads in real time. A sound starts in a tick but plays at its own rate |
-| The camera (`MsCameraProcess`), the effects' update half (`MsEffectProcess(0)`), the field (`Yn_FieldProc_0091a8c0`) | Voice-synced cut scenes: with `g_SyncOn` (`0x012fb8a0`, set by `Sg_SyncCutScene` `0x00821d60` from `iSyncGetData`, the remaster's `SyncData` tables), `Sg_FrameSync` steps ticks while the sync clock (`graphicGetTimeInMicroseconds`) is behind and spins while it is 0.1 s or more ahead, so the scene keeps pace with the voices in real time |
+| The camera (`MsCameraProcess`), the effects' update half (`MsEffectProcess(0)`), the field (`Yn_FieldProc_0091a8c0`) | Voice-synced cut scenes: with `g_SyncOn` (`0x012fb8a0`, set by `Sg_SyncCutScene` `0x00821d60` from `iSyncGetData`, the remaster's `SyncData` tables), `Sg_FrameSync` adds ticks while the scene is behind the sync clock (`graphicGetTimeInMicroseconds`) by more than the step's rate and spins while the scene is 0.1 ms or more ahead of it, so the scene keeps pace with the voices in real time |
 | Battle (`MsBattleProcess`): turn order, counters, the battle's waits | Loading: the asset loader thread reads in real time, and the world update stops (`Sg_IsSceneLoading` `0x0081fcd0`) until it is done |
 | Message windows (`TOControlMessageWindow`), the pad's press edges as scripts see them | Input: the pad word is built once per drawn frame (`Virtuos_InputManager_updateInput` `0x00632a30`); hold repeats after 0.2333 s, then every 0.1 s |
 | Once per `Sg_MainLoop`, not per tick: `Ch_CalcMiddle`, the field animation (`Yi`), the v-blank counters (+2), `Sg_MainCalcRate`'s rate | The Iggy (Flash) PC menus at their own 30 fps; the speed-up booster's icon |
@@ -149,6 +149,27 @@ in mind), or call `Sg_MainLoop`'s update part in a loop of its own. Some of it d
 - **Voice-synced cut scenes.** `g_SyncOn` paces the ticks to the sync clock (real time), so the
   booster does nothing there. Exec frames would run n ticks per synced step and leave the voices
   behind.
+
+  `Sg_SyncCutScene` (`0x00821d60`) calls `iSyncGetData` (`0x0067a930`) -> `SyncManager_syncGetData`
+  (`0x006fb160`), which returns 999 at once when the manager's `+8` (the cursor) or `+0x1c` is 0;
+  otherwise it waits (5 ms sleeps) while `+0x20` is 0, reads one step at the cursor (time `f32`,
+  rate `f32`, frame `i32`; the cursor moves 12 bytes), and at the end marker (1.0, 1.0, 999) clears
+  `+8` and returns 999. `Sg_FrameSync` asks for steps only in its `g_VoiceHold == 0` branch, before
+  any of the drawn frame's world ticks run: one step, then one more for each update its catch-up
+  loop adds to `g_VoiceHold` (one tick per update at exec frames 1). The steps' times and rates (ms
+  after the × 1000) set how many updates each drawn frame gets and when it spins: the sync clock is
+  compared with the time of the step read before, and an update is added while the clock is ahead of
+  it by more than the rate of the step just read. For each update, `Sg_MainCalcRate` (`0x008206c0`)
+  sets its rate (`0x023cbbec`) to that update's step frame (`frame << 7` from the frame table
+  `0x012fb828`, 30 words, read at index `0x012fb814` minus `g_VoiceHold`; 0x100 at exec frames other
+  than 1), which only keep-fps motions step by (`SG_UpdateMotion` `0x00838c90`, for actors with flag
+  `0x100000` at `+0x194` while `Sg_GetKeepFps()` is not 0; above). So the n-th update after the
+  start gets the n-th step's frame as that rate, whatever real time it runs at, as long as no update
+  of a drawn frame is dropped (`Sg_MainLoop` clearing `g_VoiceHold` early, the `0x01340844 == 1`
+  path) and the game is not paused (`g_PauseOn`: no `Sg_FrameSync`, the updates keep the last
+  index). When the end marker comes inside the catch-up loop, the sync is cleared there (the table
+  zeroed), so every update of that drawn frame, the added one included, runs with the sync off; the
+  steps already read for it are dropped.
 - **Input.** The pad word is read once per drawn frame, and the press edges once per `Sg_MainLoop`
   (`Sg_ControlMain`'s `0x023c44a8`). With exec frames, all n ticks see the same buttons. Whether a
   press then counts once or n times in each reader (menus, scripts' `Pad` natives) is not checked.
@@ -261,8 +282,10 @@ scripts and code (all of them written for 30), so it is not a mod-sized change.
 ## A frame-rate mod built on this
 
 Atel#'s `src/Ffx.Frames` (Fahrenheit mod `yuta.frames`, `docs/research/frame-timing.md` there,
-"What the Frames mod does") does (1) above as a mod. It has not run in the game yet. The engine
-facts it relies on, beyond the sections above:
+"What the Frames mod does") does (1) above as a mod. Its second in-game run (2026-11-07, about
+200 fps) kept the game's speed, but the effects ran too fast and slow character motions looked
+choppy, which the last four points below explain. The engine facts it relies on, beyond the
+sections above:
 
 - **The limiter's operands.** `Game_Main` computes the interval as `fild dword [g_FrameVsyncs]`
   (`0x0062f2fc`, `db 05`) times `fmul qword [0x00b412d8]` (`0x0062f318`, `dc 0d`, 1/59.94). A frame
@@ -287,6 +310,40 @@ facts it relies on, beyond the sections above:
   history and edges. A frame that does not tick has to skip all three, or it uses up a press.
 - **Not idempotent per update.** `Ch_CalcMiddle` (motion events through `Ch_MotEvent`), `yiAnimMain`,
   `Sg_DrawFilter` (the fade slots' i16 counters at `0x01300708 + 0x10 i`), `graphicVideoUpdate`,
-  the v-blank counters, and the Eternal Calm copyright count (`0x012fb7c0`).
+  the v-blank counters, the Eternal Calm copyright count (`0x012fb7c0`), the draw's effect loop
+  and the cloth (below).
+- **The effects step in the draw.** The draw's effect loop (`0x0082141d`..`0x008214ca`, `n = exec ?
+  exec : 1` passes) calls `op_loop_ffx_after` (`g_OpLoopCount`, the effects' pad and random
+  latches), `op_gs1_transfer`, `yiCallFieldParticle` (`pppFpLoop`: each map effect's countdown, then
+  its `ppp` program through `pppRunPartFp`, which moves the particles and writes their vertices in
+  the same pass), `MsEffectProcess(1)`, `pppPartLoop` (the parts' countdowns) and `op_ot_draw`. None
+  of them only draws, so a second draw of the same tick steps the effects again.
+- **Effect draws last one frame.** An effect is drawn in a frame only if something calls
+  `VfxGeometry_Register` (`0x006a52f0`, `VFXDynamicGeometry` vtable `+8`; under every
+  `graphicVFX*Update`) for it in that frame: `graphicClearSpecialRenderList` (the scene's VFX lists)
+  runs at the start of every `Sg_MainLoop`, and the dynamic-geometry memory (`g_DynGeoFillBuffer`,
+  two buffers) flips once per drawn frame (`graphicDynGeoMemManagerSwapBuffer(1)` from
+  `FFXApplication::afterGraphicSync`), resetting the new buffer, after which
+  `ClassVFXRenderDataTable_ClearVFXDrawData` clears each segment's array pointer for it
+  (`+0x34 + 0x1c n`). A segment keeps per buffer `n` its counts (`+0x2c`, `+0x30`) and five arrays
+  (`+0x34` positions 12 bytes a vertex, `+0x3c` colours 16, `+0x38` normals 12, `+0x40` uvs 8,
+  `+0x44` `u16` indices, each `+ 0x1c n`), as `graphicDynGeoMemManagerGetBufferForSegment` sets
+  them. The Esc menu's still picture works by stopping both: `animate` skips `updateFFX`, and
+  `afterGraphicSync` stops swapping once `graphicIsEscMenuActive()` (`+0x3ad`).
+- **How a character reaches the renderer.** `FFXVu0MulMatrix(out, a, b)` (`0x006ed5c0`, a jump to
+  `cdc_Mul4x4` `0x007059b0`, affine) computes `b × a` in row-vector form, so `Ch_DrawMain`'s world
+  matrix is `scale(1000) × +0x1d0`, and a part of an unskinned model `base element +0x88 × scale ×
+  +0x1d0`, handed to `graphicCharacterInstanceSetWorldMatrix(list, m)` / `…ByMdlID(list, m, model)`
+  for the lists `+0x830` and `+0x838`. The bones are set in `Ch_CalcMiddle`, not the draw:
+  `Ch_CalcElement` calls `graphicCharacterInstanceSetSkeletonMatrices(id, list, bones)` (`0x0063be60`)
+  for both lists; per instance (`[list] & 0x7fffffff` of them at `[list + 4]`) it copies
+  `[[instance] + 0x18] & 0x7fffffff` 64-byte matrices to `[instance + 0xc]`, the k-th from
+  `bones + 64 × remap[k]` (remap `[[list + 0x10] + 0x14][i]`; character `0x206a` skips bones from
+  `0x42`).
+- **The cloth steps per update, uploads per frame.** `Ch_DrawMain` runs `Ch_DrawClothClear` and
+  queues `Ch_Cloth_PerCharacter` (`Apply_Envelope`, `Sg_ClothStep`, `Sg_ClothPlaceAnchors`) for every
+  cloth character in each `Sg_MainLoop`. `FFXApplication_render` (its call at `0x0042f95e`) uploads the cloth's
+  CPU vertex records every drawn frame (`graphicCharacterInstanceSetClothVertexBuffers`), so
+  skipping the clear and the jobs keeps the last shape.
 - **Vsync.** `Renderer_PresentFlip` presents with sync interval 1 while the renderer's byte
   `+0x131c` is set and 0 otherwise. The 30 fps cap is the limiter's alone.
