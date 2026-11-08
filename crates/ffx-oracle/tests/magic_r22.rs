@@ -646,11 +646,26 @@ fn spark_task_0645() {
     let loaded = SCRATCH + 0x7e0;
     rec(&mut t, 779, 2, move |m, _| 0x0779_0000 ^ m.r32(lock));
     rec(&mut t, 773, 2, move |m, _| m.r32(loaded));
-    rec(&mut t, 774, 5, move |m, a| 0x0774_0000 ^ m.r32(a[2]));
+    // the render record and its second matrix logged (rows of their own)
+    let render = |m: &mut dyn StubMem, r: u32| {
+        magic_owna::dump(m, 0x3fe, r, 8);
+        let mx = m.r32(r + 0x1c);
+        magic_owna::dump(m, 0x3fd, mx, 16);
+    };
+    rec(&mut t, 774, 5, move |m, a| {
+        render(m, a[3]);
+        0x0774_0000 ^ m.r32(a[2])
+    });
     rec(&mut t, 775, 2, |_, _| 0x775);
     rec(&mut t, 776, 1, |_, a| 0x0776_0000 | (a[0] << 4));
-    rec(&mut t, 777, 1, |m, a| 0x0777_0001 ^ m.r32(a[0]));
-    rec(&mut t, 778, 6, |m, a| 0x0778_0000 ^ m.r32(a[2]));
+    rec(&mut t, 777, 1, |m, a| {
+        magic_owna::dump(m, 0x3fc, a[0], 16);
+        0x0777_0001 ^ m.r32(a[0])
+    });
+    rec(&mut t, 778, 6, move |m, a| {
+        render(m, a[3]);
+        0x0778_0000 ^ m.r32(a[2])
+    });
     let task = SCRATCH + 0x100;
     let (tn, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
     let o = SCRATCH + 0x1_0000;
@@ -713,8 +728,186 @@ fn spark_task_0645() {
         t.set_u32(loaded, is_loaded);
         t.set_u32(lock, 0x5a5a_0000 + k);
         scrub(&mut t);
+        // the render record's two words the original never writes: 0 on
+        // both sides (the port's junk-read value)
+        let rb = ((magic::STACK_TOP - 0x104) & !0xf) - 0x130 + 0x20;
+        t.set_u16(rb, 0);
+        t.set_u32(rb + 0xc, 0);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
     assert!(t.u32(row(324)) >= 3, "the sparks born");
     assert!(t.u32(row(776)) + t.u32(row(774)) >= 3, "the sequence steps");
+}
+
+/// `magic_0478` 0x10006c40 (`r22::summon_task_0478`): the start (state
+/// 0; the count by slot 333 and by slot 601, the scale above 1 and not,
+/// the DLL's lists empty and not), 20, 21 waiting, at 0 and below (the
+/// fades, on to 20000), 20000 and three other states.
+#[test]
+fn summon_task_0478() {
+    let Some(mut t) = twin(478) else { return };
+    let f = t.at(0x6c40);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 262, 4, |m, a| {
+        let c = m.r32(row(262)) as f32;
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0 + c * 0.25);
+        }
+        0x262
+    });
+    rec(&mut t, 601, 2, move |m, a| {
+        let v = m.r32(cell);
+        m.w32(a[1], v);
+        0x601
+    });
+    for (s, x) in [
+        (15u32, 1.5f64),
+        (16, -2.0),
+        (17, 0.25),
+        (277, 3.0),
+        (664, 0.625),
+        (333, 0.375),
+        (12, 0.8125),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            x + f64::from(a[0] & 3) + f64::from(m.r32(row(s)) & 1)
+        });
+    }
+    // slot 790 (no arguments: the unit block's float)
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |m, _| 0.0625 + f64::from(m.r32(row(790)) & 3));
+    let scale = SCRATCH + 0x14;
+    rec(&mut t, 251, 1, |_, a| 0x0251_0000 ^ a[0]);
+    t.stub_st0(251, move |m, _| f64::from(f32::from_bits(m.r32(scale))));
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, i as f32 - 0.5);
+        }
+        0x290
+    });
+    // the actor's models: two numbers
+    let models = SCRATCH + 0x20;
+    t.set_u32(models, 0x0000_0503);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        models
+    });
+    // slot 558: four integers
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x10 * i + 3);
+        }
+        0x558
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..3 {
+            wf(m, a[2] + 4 * i, 0.25 * i as f32 + 0.125);
+        }
+        0x268
+    });
+    for (s, n) in [
+        (215u32, 1usize),
+        (413, 1),
+        (14, 4),
+        (211, 2),
+        (331, 1),
+        (353, 1),
+        (271, 1),
+        (719, 3),
+        (941, 1),
+        (325, 2),
+        (714, 5),
+        (538, 2),
+        (213, 2),
+        (35, 5),
+        (34, 2),
+        (547, 1),
+        (276, 3),
+        (219, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    // the particle node's globals (as `magic_s3.rs`'s test)
+    let pn = t.img.rel32_target(f + 0x52e);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(t.img.word(wrapper + 0x04), lock);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
+    let owner = SCRATCH + 0x7a00;
+    for i in 0..0x40 {
+        t.set_u32(owner + 4 * i, 0x0a00_0000 + i);
+    }
+    // the blink object's task ring and its flags (as `magic_0478.rs`)
+    let init = t.img.rel32_target(f + 0x6fd);
+    let ring = SCRATCH + 0x3000;
+    let task = SCRATCH + 0x100;
+    let (tn, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let o = SCRATCH + 0x1_0000;
+    let list = op(&t, 0x1e6);
+    let list2 = op(&t, 0x542);
+    let old = SCRATCH + 0x800;
+    // (state, count, flag bit 0 of `O + 0xd0`, scale)
+    let cases: [(u32, u32, u8, f32); 10] = [
+        (0, 7, 1, 0.5),
+        (0, 7, 0, 4.0),
+        (0x14, 5, 0, 1.0),
+        (0x15, 5, 0, 1.0),
+        (0x15, 0, 0, 1.0),
+        (0x15, u32::MAX, 0, 1.0),
+        (0x2710, 9, 0, 1.0),
+        (3, 1, 0, 1.0),
+        (0x16, 0, 0, 1.0),
+        (0x30, 2, 0, 1.0),
+    ];
+    for (k, (state, count, flag, s)) in (0u32..).zip(cases) {
+        junk(&mut t, o, 0xc00, k);
+        // the model nodes' parents: none
+        for n in [0x24u32, 0x514] {
+            t.set_u32(o + n + 0x14, 0);
+        }
+        t.set_u32(o + 0x18, state);
+        t.set_u32(o + 0x20, count);
+        t.set_u8(o + 0xd0, flag);
+        t.set_u32(o + 0x90, 0x00e5_0000 + k);
+        t.set_u32(o + 0x94, 0x00e5_0100 + k);
+        t.set_u32(cell, (0.25 * k as f32).to_bits());
+        t.set_u32(scale, s.to_bits());
+        junk(&mut t, task, 0x40, k + 1);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, o);
+        t.set_u32(tn + 4, prev);
+        t.set_u32(tn + 8, next);
+        // the DLL's lists: empty, or with a last node
+        for (l, i) in [(list, 0u32), (list2, 1)] {
+            junk(&mut t, l, 0x20, k + 2 + i);
+            t.set_u32(l + 0x10, if (k + i) % 2 == 0 { l } else { old });
+            t.set_u16(l + 0x18, 0x0305);
+        }
+        t.write(old, &[0x6c; 0x40]);
+        t.write(ring, &[0x1b; 0x20]);
+        t.set_u32(t.img.word(init + 0x24), ring);
+        t.set_u32(t.img.word(init + 0x3f), 0xff);
+        t.set_u32(op(&t, 0x4e4), owner);
+        t.set_u32(op(&t, 0x1ca), 0x00ac_0000 + k);
+        t.set_u32(lock, 0x77 + k);
+        // the fades' globals varied
+        for o2 in [0x59u32, 0x81, 0xbc, 0xf7, 0x119, 0x12c, 0x13c, 0x144, 0x157] {
+            t.set_u32(
+                op(&t, o2),
+                (0.0625 * (o2 % 13) as f32 + 0.1 * k as f32).to_bits(),
+            );
+        }
+        t.set_u32(op(&t, 0x5e), 0x5a5a_5a5b ^ k);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(row(719)) >= 2, "the start ran twice");
+    assert!(
+        t.u32(row(538)) + t.u32(row(213)) >= 1,
+        "the end's model set-up"
+    );
 }
