@@ -64,6 +64,7 @@ pub mod r13_misc;
 pub mod r13_start;
 pub mod r14;
 pub mod r15;
+pub mod r17;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -1589,6 +1590,19 @@ ports! {
     "r9 load step 0182" => r9_load::LOAD_0182, r9_load::load_0182;
     "r9 load step 0189" => r9_load::LOAD_0189, r9_load::load_0189;
     // round 15 (magic-r15): end of ports
+    // round 17 (magic-r17)
+    "r17 debris burst 0018" => r17::DEBRIS_BURST_0018, r17::debris_burst_0018;
+    "r17 piece spark 0018" => r17::PIECE_SPARK_0018, r17::piece_spark_0018;
+    "r17 piece spark 0019" => r17::PIECE_SPARK_0019, r17::piece_spark_0019;
+    "r17 ribbons 0168" => r17::RIBBONS_0168, r17::ribbons_0168;
+    "r17 ribbons set-up 0168" => r17::RIBBONS_SETUP_0168, r17::ribbons_setup_0168;
+    "r9 load step 0168" => r9_load::LOAD_0168, r9_load::load_0168;
+    "r17 lights 0168" => r17::LIGHTS_0168, r17::lights_0168;
+    "r17 summon throw 0168" => r17::SUMMON_THROW_0168, r17::summon_throw_0168;
+    "r17 summon flight 0168" => r17::SUMMON_FLIGHT_0168, r17::summon_flight_0168;
+    "r17 summon landing 0168" => r17::SUMMON_LANDING_0168, r17::summon_landing_0168;
+    "r17 summon spin 0168" => r17::SUMMON_SPIN_0168, r17::summon_spin_0168;
+    // round 17 (magic-r17): end of ports
     "m0573 motion task" => m0573::MOTION_TASK, m0573::motion_task;
     "m0577 exit task" => m0577::EXIT_TASK, m0577::exit_task;
     "m0585 drift task" => m0585::DRIFT_TASK, m0585::drift_task;
@@ -3463,6 +3477,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r15 light set-up 0443", &r15::LIGHT_SETUP_0443),
     ("r15 start-up 0182", &r15::START_UP_0182),
     ("r15 start-up 0189", &r15::START_UP_0189),
+    // round 17 (magic-r17)
+    ("r17 matrices 0168", &r17::MATS_0168),
+    ("r17 start-up 0168", &r17::START_UP_0168),
+    ("r17 trail 0168", &r17::TRAIL_0168),
     // round 15 (magic-r15): end of INTERNAL
     ("m0483 draw", &m0483::DRAW),
     ("m0488 draw", &m0488::DRAW),

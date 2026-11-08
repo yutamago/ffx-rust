@@ -1685,7 +1685,7 @@ fn objects_0349<G: Game>(
 /// `zero_op` the stores), the count one less into `count_op`, its words
 /// cleared, `+8` itself, `+0x10` the callback immediate `cb_op`, byte
 /// `+0x18` 0. Returns the new head and the count.
-fn ring_take<G: Game>(
+pub(crate) fn ring_take<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
