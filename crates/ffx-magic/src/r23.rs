@@ -2868,8 +2868,22 @@ fn visit_with<G: Game>(
 /// 1.0, the parent `q` and the byte 0. Then the node's object shown
 /// ([`show`](crate::m0573::show) of `n + 0x1ac`). Returns its `eax`, or
 /// the walk's.
-#[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -> u32 {
+    bone_with(g, img, f, esp, this, true)
+}
+
+/// [`bone_0573`]'s steps, with the object shown at the end (`show`) or not
+/// (`magic_0577`'s copy, [`crate::r27::bone_0577`]: it returns the last
+/// slot call's `eax`, or the new parent).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub(crate) fn bone_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    this: u32,
+    show: bool,
+) -> u32 {
     use crate::sb_sse::{add, mul};
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -2923,6 +2937,7 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
     let mut st = vec![n + 0x4c, n + 0x190, n + 0x3c, n + 0x7c, x];
     g.call(t(g, 0x1c3, 325), 0, &st);
     let src = g.read::<u32>(n + 0x140).wrapping_add(0x1c);
+    let mut eax = 0;
     for (words, op, slot) in [
         ([n + 0x12c, p + 0x12c, src], 0x1f7u32, 668u32),
         ([n + 0xdc, p + 0xdc, n + 0x5c], 0x21e, 231),
@@ -2932,7 +2947,7 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
         st.splice(0..0, words);
         st.truncate(12);
         // call width: 12 (the earlier calls' words stay on the stack)
-        g.call(t(g, op, slot), 0, &st);
+        eax = g.call(t(g, op, slot), 0, &st).eax;
     }
     let c = n + 0xcc;
     // addss: the first operand's NaN wins, so the order is kept
@@ -2970,6 +2985,10 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
         let q = g.read::<u32>(n + 0x14c);
         g.write::<u32>(n + 0x128, q);
         g.write::<u8>(n + 0x149, 0);
+        eax = q;
+    }
+    if !show {
+        return eax;
     }
     let obj = g.read::<u32>(n + 0x1ac);
     crate::m0573::show(g, img, img.rel32_target(f + 0x3e3), obj)
@@ -3133,7 +3152,7 @@ pub const MOTION_TASK_0613: Sig = Sig {
 
 /// The `mov dword [G], imm32` stores (10 bytes each) at the instruction
 /// offsets `at`: `G` (`+2`) = the immediate (`+6`).
-fn stores_0613<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
+pub(crate) fn stores_0613<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
     for &o in at {
         g.write::<u32>(img.word(f + o + 2), img.word(f + o + 6));
     }
@@ -3153,6 +3172,36 @@ fn stores_0613<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
 /// 0x19a. Returns 0.
 #[allow(clippy::too_many_lines)] // one straight sequence of stores
 pub fn start_up_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    start_up_head_0613(g, img, fr);
+    // the first object joins the second's ring
+    let last = g.read::<u32>(w(0x1fe));
+    g.write::<u32>(w(0x203), last);
+    stores_0613(g, img, f, &[0x207, 0x211, 0x21b, 0x225]);
+    g.write::<u32>(last + 4, w(0x232));
+    let last = g.read::<u32>(w(0x237));
+    let fl = g.read::<u32>(w(0x23d));
+    g.write::<u32>(w(0x23d), fl & !1);
+    g.write::<u32>(w(0x243), last);
+    stores_0613(
+        g,
+        img,
+        f,
+        &[0x247, 0x251, 0x25b, 0x265, 0x26f, 0x279, 0x283],
+    );
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x290));
+    let fl = g.read::<u32>(w(0x296));
+    g.write::<u32>(w(0x296), fl & !1);
+    stores_0613(g, img, f, &[0x29b, 0x2a5, 0x2af]);
+    Ret::eax(0)
+}
+
+/// [`start_up_0613`]'s first 0x1fa bytes, which `magic_0609`'s start-up
+/// ([`crate::r27::start_up_0609`]) shares: everything up to slots 222 and
+/// 221.
+pub(crate) fn start_up_head_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -3198,27 +3247,6 @@ pub fn start_up_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 12 (the earlier calls' words stay on the stack)
         g.call(t(g, tab, slot), 0, &st);
     }
-    // the first object joins the second's ring
-    let last = g.read::<u32>(w(0x1fe));
-    g.write::<u32>(w(0x203), last);
-    stores_0613(g, img, f, &[0x207, 0x211, 0x21b, 0x225]);
-    g.write::<u32>(last + 4, w(0x232));
-    let last = g.read::<u32>(w(0x237));
-    let fl = g.read::<u32>(w(0x23d));
-    g.write::<u32>(w(0x23d), fl & !1);
-    g.write::<u32>(w(0x243), last);
-    stores_0613(
-        g,
-        img,
-        f,
-        &[0x247, 0x251, 0x25b, 0x265, 0x26f, 0x279, 0x283],
-    );
-    // and the second the first's
-    g.write::<u32>(last + 4, w(0x290));
-    let fl = g.read::<u32>(w(0x296));
-    g.write::<u32>(w(0x296), fl & !1);
-    stores_0613(g, img, f, &[0x29b, 0x2a5, 0x2af]);
-    Ret::eax(0)
 }
 
 /// [`start_up_0613`] (704 bytes, 1 overlay).

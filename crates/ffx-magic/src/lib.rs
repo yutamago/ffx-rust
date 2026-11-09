@@ -75,6 +75,7 @@ pub mod r23;
 pub mod r24;
 pub mod r25;
 pub mod r26;
+pub mod r27;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3009,6 +3010,41 @@ ports! {
     "r18 camera start 0519" => r18::CAMERA_START_0519, r18::camera_start_0519;
     "r18 summon frame 0589" => r18::SUMMON_FRAME_0589, r18::summon_frame_0589;
     // round 18 (magic-r18): end
+    // round 27 (magic-r27)
+    "r27 motion task 0609" => r27::MOTION_TASK_0609, r27::motion_task_0609;
+    "r27 load 0586" => r27::LOAD_0586, r27::load_0586;
+    "r27 trails task 0587" => r27::TRAILS_TASK_0587, r27::trails_task_0587;
+    "r27 light task 0649" => r27::LIGHT_TASK_0649, r27::light_task_0649;
+    "r27 point object 0586" => r27::POINT_OBJECT_0586, r27::point_object_0586;
+    "r27 point object 0162" => r27::POINT_OBJECT_0162, r27::point_object_0586;
+    "r27 glow effects 0586" => r27::GLOW_EFFECTS_0586, r27::glow_effects_0586;
+    "r27 glow effects 0162" => r27::GLOW_EFFECTS_0162, r27::glow_effects_0586;
+    "r27 models place 0586" => r27::MODELS_PLACE_0586, r27::models_place_0586;
+    "r27 models place 0162" => r27::MODELS_PLACE_0162, r27::models_place_0586;
+    "r27 point objects 0586" => r27::POINT_OBJECTS_0586, r27::point_objects_0586;
+    "r27 point objects 0162" => r27::POINT_OBJECTS_0162, r27::point_objects_0586;
+    "r27 spin step 0587" => r27::SPIN_STEP_0587, r27::spin_step_0587;
+    "r27 second start 0587" => r27::SECOND_START_0587, r27::second_start_0587;
+    "r27 trails start 0587" => r27::TRAILS_START_0587, r27::trails_start_0587;
+    "r27 third start 0587" => r27::THIRD_START_0587, r27::third_start_0587;
+    "r27 first start 0587" => r27::FIRST_START_0587, r27::first_start_0587;
+    "r27 spark step 0570" => r27::SPARK_STEP_0570, r27::spark_step_0570;
+    "r27 spark step 0597" => r27::SPARK_STEP_0597, r27::spark_step_0570;
+    "r27 spark step 0070" => r27::SPARK_STEP_0070, r27::spark_step_0570;
+    "r27 summon models 0589" => r27::SUMMON_MODELS_0589, r27::summon_models_0589;
+    "r27 summon models 0511" => r27::SUMMON_MODELS_0511, r27::summon_models_0589;
+    "r27 fade task 0578" => r27::FADE_TASK_0578, r27::fade_task_0578;
+    "r27 summon task 0578" => r27::SUMMON_TASK_0578, r27::summon_task_0578;
+    "r27 light task 0578" => r27::LIGHT_TASK_0578, r27::light_task_0578;
+    "r27 thunk bone 0577" => r27::THUNK_BONE_0577, r27::thunk_bone_0577;
+    "r27 start-up 0609" => r27::START_UP_0609, r27::start_up_0609;
+    "r27 load 0589" => r27::LOAD_0589, r27::load_0589;
+    "r27 three points 0589" => r27::THREE_POINTS_0589, r27::three_points_0589;
+    "r27 three objects 0589" => r27::THREE_OBJECTS_0589, r27::three_objects_0589;
+    "r27 fading summons 0589" => r27::FADING_SUMMONS_0589, r27::fading_summons_0589;
+    "r27 start-up 0597" => r27::START_UP_0597, r27::start_up_0597;
+    "r27 start-up 0570" => r27::START_UP_0570, r27::start_up_0570;
+    // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
     "r25 draw 0708" => r25::DRAW_0708, r25::draw_0708;
@@ -3716,6 +3752,15 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r18 start-up 0564", &r18::START_UP_0564),
     ("r18 start-up 0562", &r18::START_UP_0562),
     // round 18 (magic-r18): end of INTERNAL
+    // round 27 (magic-r27)
+    ("r27 caster frames 0586", &r27::CASTER_FRAMES_0586),
+    ("r27 start-up 0586", &r27::START_UP_0586),
+    ("r27 trail parts 0587", &r27::TRAIL_PARTS_0587),
+    ("r27 fade set-up 0578", &r27::FADE_SETUP_0578),
+    ("r27 bone 0577", &r27::BONE_0577),
+    ("r27 summon frames 0589", &r27::SUMMON_FRAMES_0589),
+    ("r27 start-up 0589", &r27::START_UP_0589),
+    // round 27 (magic-r27): end of INTERNAL
     // round 25 (magic-r25)
     ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
     ("r25 spin set-up 0563", &r25::SPIN_SETUP_0563),

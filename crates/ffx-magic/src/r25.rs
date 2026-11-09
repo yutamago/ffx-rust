@@ -1534,6 +1534,8 @@ pub fn summon_task_0514<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.write::<f32>(w(0x50d), x);
                 let x = sub(k4, g.read::<f32>(w(0x518)));
                 g.write::<f32>(w(0x520), x);
+                // an equal store: the colour node's set-up above writes 1.0
+                // to both terms and 0 to this word (mutants, r27)
                 let x = sub(g.read::<f32>(w(0x528)), g.read::<f32>(w(0x530)));
                 g.write::<f32>(w(0x538), x);
                 let x = sub(k4, g.read::<f32>(w(0x543)));
@@ -2469,7 +2471,7 @@ pub const SUMMON_TASK_0603: Sig = Sig {
 /// from` to `f + to`, read as the instructions hold them: `c7 05 [G]
 /// imm32`, `66 c7 05 [G] imm16` and `c6 05 [G] imm8`. Stops at any other
 /// instruction (the callers pass whole runs).
-fn abs_stores<G: Game>(g: &mut G, img: &Image, f: u32, from: u32, to: u32) {
+pub(crate) fn abs_stores<G: Game>(g: &mut G, img: &Image, f: u32, from: u32, to: u32) {
     let byte = |at: u32| img.word(at) & 0xff;
     let mut at = f + from;
     while at < f + to {

@@ -355,7 +355,9 @@ fn draw_0708() {
         for i in 0..16u32 {
             let p = parts + 0x80 * i;
             junk(&mut t, p, 0x80, k + i);
-            t.set_u16(p + 0x1e, u16::from((i + k) % 3 == 0));
+            // case 2 (time 0) refreshes no part: the parts' refresh
+            // stores the draw's pointer word again
+            t.set_u16(p + 0x1e, u16::from((i + k) % 3 == 0 && k != 2));
         }
         junk(&mut t, pb, 0x80, k + 20);
         t.set_u16(pb + 0x1e, (k & 1) as u16);
@@ -1352,6 +1354,10 @@ fn camera_task_0603() {
         (0x70, 0, 0, 0, 0, 0.0, 0),
     ];
     for (k, (state, aim, kind, id, ans, time, flag)) in (0u32..).zip(cases) {
+        // the camera block first: it spans the aim word, the model id and
+        // the moved point, which the case sets below
+        let cam = op(&t, 0x57);
+        junk(&mut t, cam, 0x300, k + 5);
         t.set_u32(op(&t, 0x26), state);
         t.set_u32(op(&t, 0xc9), aim);
         t.set_u32(cell, kind);
@@ -1363,7 +1369,7 @@ fn camera_task_0603() {
         // moderate floats in the camera words
         for o in [
             0x1b1u32, 0x1db, 0x1ef, 0x35c, 0x364, 0x388, 0x390, 0x3c4, 0x49d, 0x4a5, 0x4eb, 0x529,
-            0x546, 0x54e, 0x577,
+            0x546, 0x54e, 0x577, 0x79b, 0x7bd, 0x7cd, 0x874, 0x89a,
         ] {
             t.set_u32(
                 op(&t, o),
@@ -1379,8 +1385,6 @@ fn camera_task_0603() {
         t.set_u32(leave + 0x14, 0);
         junk_ops(&mut t, f, &[0x63c]);
         t.set_u32(op(&t, 0x63c), 0x0102_0305 + k);
-        let cam = op(&t, 0x57);
-        junk(&mut t, cam, 0x300, k + 5);
         // the camera tree's parent: an empty child ring
         let par = op(&t, 0x5f);
         t.set_u32(par + 0xc, par);
