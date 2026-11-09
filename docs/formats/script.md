@@ -311,7 +311,7 @@ the battle snapshot ctrl works 2 (75 workers) and 3 (6) are in use too.
 | `0x20` | `u32` | `&AtelGetBasicWork` (field snapshot) | |
 | `0x28` | `u32` | callback `(worker index, opcode)` for the ends `3c` and `3e`; null in the game | `Script_Run`; cleared by `AtelRequireCtrlWork`, set only by `AtelSetCtrlEndCallback` (`0x008727d0`, no callers) |
 | `0x2c`, `0x30` | `u32` | bases of variable storage 0 and 1 (storage 0 is in the save data in the field) | `AtelGetRealVarAdrs` (`0x0086c2e0`) |
-| `0x34`, `0x38` | `u32` | the event's message tables: `Msg_Text` (`0x0086bf30`) reads `+0x34` on every call (entry `i` at `+i*8`, no bounds check; offset 0 falls back to `g_EventEbpMessages`). The buffer is owned through `g_EventMessageBuffer` (`0x01327128`), which `AtelEventSetUp` frees, not through `+0x34`, so a table put into `+0x34` by a mod is never freed by the game | `AtelActorSetUp2`, `Msg_Text` |
+| `0x34`, `0x38` | `u32` | the event's message tables (0 in the battle's ctrl works: `AtelBattleSetUp` clears `+0x34`, so `Msg_Text` gives `g_MsgNone` there; battle text natives read `g_BtlFileText`): `Msg_Text` (`0x0086bf30`) reads `+0x34` on every call (entry `i` at `+i*8`, no bounds check; offset 0 falls back to `g_EventEbpMessages`). The buffer is owned through `g_EventMessageBuffer` (`0x01327128`), which `AtelEventSetUp` frees, not through `+0x34`, so a table put into `+0x34` by a mod is never freed by the game | `AtelActorSetUp2`, `Msg_Text` |
 | `0x44` | `u32` | `AtelSetVibrateStreamExt`'s value | `0x008715e0` |
 | `0x48` | `u32` | a map record; `+0x18` the map camera (ctrl work 0's) | `AtelGetEventMapCameraId` (`0x0086b5d0`) |
 | `0x4c` | `u32` | `AtelExecCtrlEvent` for the event | `AtelActorSetUp2` (`0x00875510`) |
@@ -591,6 +591,29 @@ through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
 u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
 then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
 (`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
+
+#### Requests to the worker's own entries
+
+Found while answering a question of Atel#'s Phase 0 (static, 2026-11-09).
+A worker's set-up queues entry 0 at level 7 and entry 1 at level 0 to
+itself (`AtelInitBasicWork`), so `Init` runs first and `Main` then runs at
+level 0, as a started request whose node stays queued (state 2) while it
+runs. `AtelDecodeSignal` starts the head only when its level is above the
+running one. `reqe0` (`Script_OpReqEw`, opcode `38`) registers "without
+the same level", so an awaited request to the worker's own entry:
+
+- above the running level (the shipped scripts' 77 `reqe0` at level 1 from
+  `Main`) starts at the next decode and returns to the caller when it ends:
+  a call;
+- at the running level is refused while that level runs a started request
+  (its node is queued): the opcode pushes 0 and nothing waits; only a level
+  without a node (back at entry 1 after `3e`/`3f`) registers it, and then
+  the request never starts and the caller waits for ever;
+- below the running level is registered (unless that level has a request
+  already) and never starts while the caller waits, so the worker stays at
+  the caller's level for ever (`Main` never resumes).
+
+A request for entry 0 registers nothing (the opcodes skip entry 0).
 
 #### Watching entries start and end
 
