@@ -1006,3 +1006,131 @@ fn emitter_step_0307() {
         t.check_entry(f, Call::default(), &[e], Eax::Checked);
     }
 }
+
+/// `magic_0307` 0x100055e0 (`r32::summon_start_0307`): the turn wrapped
+/// both ways and kept (and NaN), the task list empty and not, the object
+/// list empty and not.
+#[test]
+fn summon_start_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    let f = t.at(0x55e0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x1b7);
+    let take = t.img.rel32_target(f + 0x276);
+    let s = SCRATCH + 0x1_0000;
+    let last = SCRATCH + 0x3400;
+    for (k, (turn, listed, objs)) in (0u32..).zip([
+        (0.5f32, false, false),
+        (12.0, true, true),
+        (-12.0, true, false),
+        (f32::NAN, false, true),
+    ]) {
+        start_env_at(
+            &mut t,
+            so,
+            (0x9d, 0xa8),
+            6,
+            if objs { SCRATCH + 0x680 } else { 0 },
+        );
+        t.set_u32(op(&t, 0x9), s);
+        junk(&mut t, s + 0xb00, 0x1f00, k);
+        for i in 0..0x20u32 {
+            t.set_u32(
+                s + 0xbe0 + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+            t.set_u32(s + 0xc80 + 4 * i, (0.25 * i as f32 + 1.0).to_bits());
+        }
+        t.set_u32(s + 0x2868, turn.to_bits());
+        let obj = op(&t, 0x1b2);
+        junk(&mut t, obj, 0x140, k + 5);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 6);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0x27c), if listed { last } else { 0 });
+        t.set_u32(op(&t, 0x295), last);
+        junk_ops(&mut t, f, &[0x8d]);
+        ownb::dirty_stack(&mut t, 0x55e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x100040d0 (`r32::summon_turn_0307`): the places around
+/// each other (the replaced yaw wrapped both ways and kept), the turn
+/// varied.
+#[test]
+fn summon_turn_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    rec(&mut t, 543, 1, |_, a| 0x0543_0000 ^ a[0]);
+    let f = t.at(0x40d0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, 0x17), s);
+    for (k, (to, from, turn)) in (0u32..).zip([
+        ([1.0f32, 2.0, 3.0], [4.0f32, -1.0, -5.0], 0.5f32),
+        ([1.0, 2.0, 3.0], [-4.0, 1.0, 0.5], -2.5),
+        ([-2.0, 0.0, 1.0], [-6.0, 3.0, -0.5], 7.0),
+        ([0.5, 0.5, 0.5], [0.5, 7.0, 9.5], 0.0),
+    ]) {
+        junk(&mut t, s + 0xb00, 0x200, k);
+        for i in 0..0x20u32 {
+            t.set_u32(
+                s + 0xbe0 + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+        }
+        for (i, x) in (0u32..).zip(to.into_iter().chain([1.0])) {
+            t.set_u32(s + 0xc60 + 4 * i, x.to_bits());
+        }
+        for (i, x) in (0u32..).zip(from.into_iter().chain([0.75])) {
+            t.set_u32(s + 0xc70 + 4 * i, x.to_bits());
+        }
+        t.set_u32(s + 0x2868, turn.to_bits());
+        junk_ops(&mut t, f, &[0x163]);
+        ownb::dirty_stack(&mut t, 0x40d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x10004890 (`r32::burst_step_0307`): the object too old
+/// (cleared), old enough for the first kind only, young (both kinds); the
+/// pool running out in the first kind, in the second, and not at all.
+#[test]
+fn burst_step_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    let f = t.at(0x4890);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let take = t.img.rel32_target(f + 0x71);
+    let (gp1, gp2) = (w(&t, 0x81), w(&t, 0x2c6));
+    let o = SCRATCH + 0x2_0000;
+    let recs = SCRATCH + 0x2_2000;
+    // (age, pool size, taken records)
+    let cases: [(u32, u32, &[u32]); 7] = [
+        (0x15, 12, &[]),
+        (0x14, 12, &[1]),
+        (0xb, 12, &[]),
+        (0xa, 12, &[0, 5]),
+        (3, 6, &[2]),
+        (0xffff_fff0, 10, &[3]),
+        (7, 9, &[4]),
+    ];
+    for (k, (age, n, busy)) in (0u32..).zip(cases) {
+        floats(&mut t, o, 0x50, 0.5 + k as f32);
+        t.set_u32(o + 0x118, age);
+        junk(&mut t, o + 0x104, 4, k);
+        t.set_u32(gp1, SCRATCH + 0xb00 + 0x10 * k);
+        t.set_u32(gp2, SCRATCH + 0xb40 + 0x10 * k);
+        for i in 0..0x20 {
+            t.set_u32(SCRATCH + 0xb00 + 4 * i, 0x0a00_0000 + 0x101 * i + k);
+        }
+        pool_74(&mut t, take, recs, n, busy, 0, k);
+        t.set_u32(SCRATCH + 0xa00, k);
+        ownb::dirty_stack(&mut t, 0x4890 + k, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+}

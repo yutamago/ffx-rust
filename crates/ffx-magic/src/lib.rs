@@ -3239,6 +3239,9 @@ ports! {
     "r32 emitter start 0307" => r32::EMITTER_START_0307, r32::emitter_start_0307;
     "r32 scene start 0307" => r32::SCENE_START_0307, r32::scene_start_0307;
     "r32 emitter step 0307" => r32::EMITTER_STEP_0307, r32::emitter_step_0307;
+    "r32 summon start 0307" => r32::SUMMON_START_0307, r32::summon_start_0307;
+    "r32 summon turn 0307" => r32::SUMMON_TURN_0307, r32::summon_turn_0307;
+    "r32 burst step 0307" => r32::BURST_STEP_0307, r32::burst_step_0307;
     // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
