@@ -824,6 +824,8 @@ fn summon_task_0514() {
             t.set_u32(cn + 4 * i, (0.25 * i as f32 - 2.0 + k as f32).to_bits());
         }
         junk_ops(&mut t, f, &[0x75, 0xa7, 0x566, 0x5aa]);
+        // the ring's flag word with bit 0 set (the start clears it)
+        t.set_u32(op(&t, 0x5aa), 0x0101_0101 + k);
         junk(&mut t, task, 0x10, k + 3);
         t.set_u32(task, tn);
         t.set_u32(task + 4, r);
@@ -959,8 +961,8 @@ fn summon_task_0513() {
     // (state, count, flag bit of the model, R + 0x54 (the share), the
     // height against the target, the end word)
     let cases: [(u32, u32, u16, u32, (f32, f32), u32); 26] = [
-        (0, 3, 1, 0, (0.0, 0.0), 0),
-        (0, 3, 0, 0, (0.0, 0.0), 0),
+        (0, 3, 1, 0, (0.0, 0.0), 0x11),
+        (0, 3, 0, 0, (0.0, 0.0), 0x22),
         (10, 0, 0, 0, (0.0, 0.0), 0),
         (11, 4, 0, 0, (0.0, 0.0), 0),
         (11, 0, 0, 0, (0.0, 0.0), 0),
@@ -1036,7 +1038,9 @@ fn summon_task_0513() {
         for i in 0..0x30 {
             t.set_u32(cn + 4 * i, (0.25 * i as f32 - 2.0 + k as f32).to_bits());
         }
-        junk_ops(&mut t, f, &[0x5e, 0x8d, 0x7fe, 0x91f, 0x951]);
+        junk_ops(&mut t, f, &[0x5e, 0x8d, 0x7fe, 0x91f, 0x951, 0x910]);
+        // the ring's flag word with bit 0 set (the start clears it)
+        t.set_u32(op(&t, 0x7fe), 0x0101_0101 + k);
         junk(&mut t, task, 0x10, k + 3);
         t.set_u32(task, tn);
         t.set_u32(task + 4, r);
