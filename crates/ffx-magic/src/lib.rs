@@ -3136,6 +3136,7 @@ ports! {
     "r28 summon start 0667" => r28::SUMMON_START_0667, r28::summon_start_0667;
     "r28 summon task 0173" => r28::SUMMON_TASK_0173, r28::summon_task_0173;
     "r28 summon task 0272" => r28::SUMMON_TASK_0272, r28::summon_task_0272;
+    "r28 effect frame 0341" => r28::EFFECT_FRAME_0341, r28::effect_frame_0341;
     // round 28 (magic-r28): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

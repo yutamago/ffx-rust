@@ -1724,9 +1724,14 @@ fn summon_task_0272() {
     for i in 0..8u32 {
         t.write(models + 0x40 * i, &[0x11; 0x40]);
     }
-    // the summon's targets: none
-    rec(&mut t, 288, 2, |m, a| {
-        m.w32(a[1], 0);
+    // the summon's targets (the model nodes the records are): a count
+    // and target bytes from cells
+    // the model nodes' alpha (slot 333's ST0)
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125);
+    let ncell = SCRATCH + 0x3af0;
+    rec(&mut t, 288, 2, move |m, a| {
+        let n = m.r32(ncell);
+        m.w32(a[1], n);
         SCRATCH + 0x3b00
     });
     let pnw = t.img.rel32_target(f + 0x578);
@@ -1786,14 +1791,16 @@ fn summon_task_0272() {
             t.set_u32(n + 8, next);
         }
         t.set_u32(answer, yes);
-        // the actor records and the id
-        t.set_u32(op(&t, 0x87), nrec.cast_unsigned());
+        // the actor records (the summon's model nodes, made from the
+        // target bytes) and the id
+        t.set_u32(ncell, nrec.cast_unsigned());
         let id = 0x20 + k;
         t.set_u8(op(&t, 0x94), id as u8);
         for i in 0..4u32 {
+            let b = if found && i == 1 { id } else { 0x40 + i };
+            t.set_u8(SCRATCH + 0x3b00 + i, b as u8);
             let rec = op(&t, 0x99) + 0x98 * i;
             junk(&mut t, rec - 0x50, 0x98, k + i);
-            t.set_u32(rec, if found && i == 1 { id } else { 0x100 + i });
         }
         // the static lists: empty (their own address) or with a last node
         let parent = op(&t, 0x193);
@@ -1822,5 +1829,135 @@ fn summon_task_0272() {
             &[task],
             Eax::Checked,
         );
+        if found {
+            assert_eq!(t.u32(r + 0x30), op(&t, 0xb8) + 0x98, "the actor's record");
+        }
+    }
+}
+
+/// `magic_0341` 0x100014d0 (`r28::effect_frame_0341`): off, loading and
+/// loaded; each of slot 261's four phases (first runs and later ones),
+/// phase 2's counter below 20, past 20, 70 and 80, the done word set and
+/// clear, the end call at 50.
+#[test]
+fn effect_frame_0341() {
+    let Some(mut t) = twin(341) else { return };
+    let f = t.at(0x14d0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, move |m, a| {
+        let k = m.r32(SCRATCH + 0xa00);
+        m.w32(SCRATCH + 0xa00, k + 1);
+        m.w32(SCRATCH + 0xa10 + 4 * (k % 0x100), a[0]);
+        table
+    });
+    let (flag, done, cp) = (SCRATCH + 0x7e0, SCRATCH + 0x7e4, SCRATCH + 0x7e8);
+    let phase = SCRATCH + 0x7f0;
+    rec(&mut t, 261, 1, move |m, a| {
+        seen_flag(m, 261, flag);
+        u32::from(m.r32(phase) == a[0])
+    });
+    let loaded = SCRATCH + 0x7f4;
+    rec(&mut t, 253, 0, move |m, _| m.r32(loaded));
+    for (s, n) in [
+        (711u32, 3usize),
+        (710, 4),
+        (160, 3),
+        (214, 1),
+        (359, 3),
+        (247, 2),
+        (262, 4),
+        (723, 1),
+        (724, 1),
+    ] {
+        rec(&mut t, s, n, move |m, a| {
+            seen_flag(m, s, flag);
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    // 237 writes the point it is given
+    rec(&mut t, 237, 4, move |m, a| {
+        for i in 0..3u32 {
+            m.w32(
+                a[3] + 4 * i,
+                (1.5 * (i + 1) as f32 + (a[1] & 0xff) as f32 * 0.25).to_bits(),
+            );
+        }
+        seen_flag(m, 237, flag);
+        0x237
+    });
+    // the part motions' globals and the part starts' lock
+    for at in [0x2cdu32, 0x592, 0x603, 0x64f, 0x86b] {
+        let pm = t.img.rel32_target(f + at);
+        let (pp, pd) = (t.img.word(pm + 0x7), t.img.word(pm + 0x1a));
+        t.set_u32(pp, SCRATCH + 0x2f0);
+        t.set_u32(pd, 0x0dd0_0001);
+        let start = t.img.rel32_target(pm + 0x43);
+        let lock = t.img.word(start + 0x04);
+        t.set_u32(lock, SCRATCH + 0x7f8);
+    }
+    let start = t.img.rel32_target(f + 0x129);
+    let lock = t.img.word(start + 0x04);
+    t.set_u32(lock, SCRATCH + 0x7f8);
+    // (on, loaded already, slot 253, phase, its first-run flags, counter u, done, end counter)
+    let cases: [(u32, u32, u32, u32, (u32, u32), u32, u32, u32); 14] = [
+        (0, 0, 0, 4, (0, 0), 0, 0, 0),
+        (1, 0, 0, 4, (0, 0), 0, 0, 0x32),
+        (1, 1, 1, 4, (1, 0), 0, 1, 3),
+        (1, 1, 0, 3, (0, 0), 0, 0, 0),
+        (1, 1, 0, 3, (0, 1), 0, 1, 0x32),
+        (1, 1, 0, 2, (0, 0), 0, 0, 0),
+        (1, 1, 0, 2, (0, 1), 0, 0, 0),
+        (1, 1, 0, 2, (0, 0), 0x14, 0, 0),
+        (1, 1, 0, 2, (0, 0), 0x46, 1, 0),
+        (1, 1, 0, 2, (0, 0), 0x50, 0, 0),
+        (1, 1, 0, 2, (0, 0), 0x13, 0, 0),
+        (1, 1, 0, 1, (0, 0), 0, 0, 0),
+        (1, 1, 0, 1, (1, 0), 0, 1, 0),
+        (1, 1, 0, 0, (0, 0), 0, 0, 0x32),
+    ];
+    for (k, (on, ld, l253, ph, (fa, fb), u, dn, endc)) in (0u32..).zip(cases) {
+        t.set_u32(op(&t, 0x12), on);
+        t.set_u32(op(&t, 0x1f), ld);
+        t.set_u32(op(&t, 0x27), flag);
+        t.set_u32(flag, 0x0f0f_0000 + k);
+        t.set_u32(op(&t, 0x89), done);
+        t.set_u32(done, 0x0d0d_0000 + k);
+        t.set_u32(op(&t, 0xc1), cp);
+        t.set_u32(op(&t, 0xfa), SCRATCH + 0x7ec);
+        t.set_u32(loaded, l253 | dn);
+        t.set_u32(phase, ph);
+        for (a, b) in [(0xe9u32, 0xf2u32), (0x272, 0x27b), (0x809, 0x812)] {
+            t.set_u32(op(&t, a), fa * (3 + k));
+            t.set_u32(op(&t, b), fb);
+        }
+        t.set_u32(op(&t, 0x541), u);
+        t.set_u32(op(&t, 0x54f), fb);
+        t.set_u32(op(&t, 0x8ae), endc);
+        // the parts: refresh flags set, their records junk
+        for o in [
+            0x124u32, 0x1e9, 0x229, 0x2c1, 0x4e5, 0x4ef, 0x4f9, 0x58a, 0x5f7, 0x643, 0x670, 0x6cd,
+            0x762, 0x7ba, 0x85f,
+        ] {
+            let p = op(&t, o);
+            junk(&mut t, p, 0x80, k + o);
+            t.set_u16(p + 0x1e, 1);
+        }
+        for o in [
+            0x1dd, 0x1f9, 0x20d, 0x308, 0x334, 0x34c, 0x36c, 0x391, 0x3ae, 0x3d6, 0x42f, 0x480,
+            0x6b8, 0x6dd, 0x6f5,
+        ] {
+            let at = op(&t, o);
+            t.set_u32(at, (0.5 + 0.125 * (o % 7) as f32).to_bits());
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    for (s, n) in [(359u32, 6u32), (262, 1), (214, 2), (710, 1), (160, 2)] {
+        assert!(t.u32(magic_owna::row(s)) >= n, "slot {s}'s calls");
     }
 }

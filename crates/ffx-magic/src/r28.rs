@@ -3834,3 +3834,322 @@ pub const SUMMON_TASK_0272: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0341`'s per-frame effect (0x100014d0, 2283 bytes; no arguments,
+/// an `ebp` /GS frame with the points `L1` at `ebp - 0x14` and `L2` at
+/// `ebp - 0x24`). Off while `*G_ON` is 0. Every part refresh
+/// ([`part_refresh_b`](crate::sa_misc::part_refresh_b)) runs with the
+/// word at `*G_FLAG` 1, cleared after; a phase counter goes up only while
+/// the word at `*G_DONE` is 0.
+/// - Not loaded yet: slot 711 `(NAME, X, 0)` with the flag word 1 (put
+///   back after), slot 710 `(OUT, NAME, *G_BUF, 0x80000)`.
+/// - Then: `*G_DONE` = slot 253 is 0; slots 723 `(*G_A)`, 724 `(*G_B)`;
+///   `**G_C = *G_BUF + 0x80400`. By slot 261 `(4)`, `(3)`, `(2)`, `(1)`
+///   (the first true one):
+///   - 4: once, `**G_D = OUT`, the part `P0` started
+///     ([`start_part`](crate::opu_parts::start_part) with slot 941's
+///     program), three constant rows copied; `P0`'s point = the middle of
+///     slot 237's two bones (0x13, 0x23) times `K` plus `G_OFF`; `P0` and
+///     `P1` refreshed;
+///   - 3: once, `P2`'s motion ([`part_motion`](crate::s6_misc::part_motion),
+///     program 5); the actor's points (slot 237) plus their offsets, slot
+///     247 `(M, -*G_R)`, three slot 359 scales `K / G_S[i]` into the
+///     negated vector; slot 160 `(P2, G_X, 0)`; three parts refreshed;
+///   - 2: at 0, three motions (2, 3, 4) and slot 262; from 20, 70 and 80
+///     on, a part refreshed (two with the point moved by its offset); the
+///     last part refreshed;
+///   - 1: once, the last part's motion (program 0); refreshed.
+/// - At the end: slot 214 `(*G_E2)` when the first counter is 50; the
+///   load counter up.
+///
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's phases, in order
+pub fn effect_frame_0341<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let e = fr.esp;
+    let ebp = e.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    if g.read::<u32>(w(0x12)) == 0 {
+        return Ret::eax(0);
+    }
+    let set_flag = |g: &mut G, op: u32, v: u32| {
+        let p = g.read::<u32>(w(op));
+        g.write::<u32>(p, v);
+    };
+    let refresh = |g: &mut G, at: u32, part_op: u32| {
+        crate::sa_misc::part_refresh_b(g, img, call(at), w(part_op), 0);
+    };
+    let done_up = |g: &mut G, done_op: u32, counter_op: u32| {
+        let p = g.read::<u32>(w(done_op));
+        if g.read::<u32>(p) == 0 {
+            let c = g.read::<u32>(w(counter_op)).wrapping_add(1);
+            g.write::<u32>(w(counter_op), c);
+        }
+    };
+    // part_motion: `ecx` = the part, `edx` = the program, `xmm2`/`xmm3`,
+    // seven stack words (`sub esp, 0x1c` below the frame)
+    let motion =
+        |g: &mut G, at: u32, part: u32, index: u32, (x2, x3): (u32, u32), words: [u32; 7]| {
+            let esp = e.wrapping_sub(0x4c);
+            for (i, v) in (0u32..).zip(words) {
+                g.write::<u32>(esp + 4 + 4 * i, v);
+            }
+            let fr = Frame {
+                at: call(at),
+                esp,
+                eax: 0,
+                ecx: part,
+                edx: index,
+                xmm: [0, 0, u128::from(x2), u128::from(x3)],
+            };
+            crate::s6_misc::part_motion(g, img, &fr);
+        };
+    // a point of slot 237 `(*G, 0x23, 0, at)` moved by the offsets `by`
+    let point = |g: &mut G, (t, gop, at_op): (u32, u32, u32), adds: [(u32, u32, u32); 3]| {
+        let x = g.read::<u32>(w(gop));
+        // call width: 4
+        g.call(slot(g, t, 237), 0, &[x, 0x23, 0, w(at_op)]);
+        for (a, b, out) in adds {
+            let v = add(g.read::<f32>(w(a)), g.read::<f32>(w(b)));
+            g.write::<f32>(w(out), v);
+        }
+    };
+    if g.read::<u32>(w(0x1f)) == 0 {
+        let p = g.read::<u32>(w(0x27));
+        let saved = g.read::<u32>(p);
+        g.write::<u32>(p, 1);
+        // call width: 3
+        g.call(slot(g, 0x35, 711), 0, &[w(0x47), w(0x42), 0]);
+        let buf = g.read::<u32>(w(0x59));
+        let p = g.read::<u32>(w(0x4e));
+        g.write::<u32>(p, saved);
+        // call width: 4
+        g.call(slot(g, 0x60, 710), 0, &[w(0x70), w(0x65), buf, 0x8_0000]);
+    }
+    // call width: 0
+    let loaded = g.call(slot(g, 0x7b, 253), 0, &[]).eax;
+    let a = g.read::<u32>(w(0x8f));
+    let done = g.read::<u32>(w(0x89));
+    g.write::<u32>(done, u32::from(loaded == 0));
+    // call width: 1
+    g.call(slot(g, 0x9b, 723), 0, &[a]);
+    let b = g.read::<u32>(w(0xae));
+    // call width: 1
+    g.call(slot(g, 0xa8, 724), 0, &[b]);
+    let c = g.read::<u32>(w(0xbc)).wrapping_add(0x8_0400);
+    let cp = g.read::<u32>(w(0xc1));
+    g.write::<u32>(cp, c);
+    // call width: 1
+    if g.call(slot(g, 0xce, 261), 0, &[4]).eax != 0 {
+        if g.read::<u32>(w(0xe9)) == 0 && g.read::<u32>(w(0xf2)) == 0 {
+            let dp = g.read::<u32>(w(0xfa));
+            g.write::<u32>(dp, w(0x100));
+            let x = g.read::<u32>(w(0x10b));
+            // call width: 1
+            let table = g.call(slot(g, 0x105, 941), 0, &[x]).eax;
+            let program = g.read::<u32>(table + 4);
+            crate::opu_parts::start_part(g, img, call(0x129), w(0x124), 0x1000, program, 1);
+            for (src, dst) in [(0x130u32, 0x137u32), (0x13f, 0x14c)] {
+                let v: Vec<u8> = (0..16).map(|i| g.read::<u8>(w(src) + i)).collect();
+                g.write_bytes(w(dst), &v);
+            }
+            g.write::<u16>(w(0x15c), 1);
+            let v: Vec<u8> = (0..16).map(|i| g.read::<u8>(w(0x153) + i)).collect();
+            g.write_bytes(w(0x163), &v);
+            g.write::<u32>(w(0x168), 1);
+        }
+        let (l1, l2) = (l(0x14), l(0x24));
+        let x = g.read::<u32>(w(0x181));
+        // call width: 4
+        g.call(slot(g, 0x171, 237), 0, &[x, 0x13, 0, l1]);
+        let x = g.read::<u32>(w(0x19c));
+        // call width: 4
+        g.call(slot(g, 0x18c, 237), 0, &[x, 0x23, 0, l2]);
+        let kk = k(g, 0x1ba);
+        let mx = mul(add(g.read::<f32>(l2), g.read::<f32>(l1)), kk);
+        let my = mul(add(g.read::<f32>(l1 + 4), g.read::<f32>(l2 + 4)), kk);
+        let mz = mul(add(g.read::<f32>(l1 + 8), g.read::<f32>(l2 + 8)), kk);
+        g.write::<f32>(w(0x1f1), add(k(g, 0x1dd), mx));
+        g.write::<f32>(w(0x205), add(k(g, 0x1f9), my));
+        g.write::<f32>(w(0x219), add(k(g, 0x20d), mz));
+        set_flag(g, 0x1cd, 1);
+        refresh(g, 0x224, 0x1e9);
+        refresh(g, 0x22e, 0x229);
+        set_flag(g, 0x233, 0);
+        done_up(g, 0x23e, 0x24d);
+    // call width: 1
+    } else if g.call(slot(g, 0x257, 261), 0, &[3]).eax != 0 {
+        if g.read::<u32>(w(0x272)) == 0 && g.read::<u32>(w(0x27b)) == 0 {
+            let s = 0x3ee6_6666;
+            motion(g, 0x2cd, w(0x2c1), 5, (0, 0), [0, 0, 0, 0, s, s, s]);
+            g.write::<u32>(w(0x2d6), w(0x2da));
+            g.write::<u32>(w(0x2e0), 1);
+        }
+        point(
+            g,
+            (0x2e9, 0x2fe, 0x2ee),
+            [
+                (0x308, 0x310, 0x32c),
+                (0x334, 0x33c, 0x344),
+                (0x34c, 0x354, 0x35c),
+            ],
+        );
+        point(
+            g,
+            (0x315, 0x324, 0x31a),
+            [
+                (0x36c, 0x374, 0x389),
+                (0x391, 0x399, 0x3a6),
+                (0x3ae, 0x3b6, 0x3be),
+            ],
+        );
+        let r = g.read::<u32>(w(0x379)).wrapping_neg();
+        // call width: 2
+        g.call(slot(g, 0x381, 247), 0, &[w(0x39e), r]);
+        let q_at = l(0x28);
+        for (kop, dop, t, m1, m2, vop, mask, out) in [
+            (
+                0x3ceu32, 0x3d6u32, 0x3dbu32, 0x3f9u32, 0x3e9u32, 0x403u32, 0x417u32, 0x41fu32,
+            ),
+            (0x427, 0x42f, 0x40d, 0x44a, 0x43a, 0x454, 0x468, 0x470),
+            (0x478, 0x480, 0x45e, 0x49b, 0x48b, 0x4a5, 0x4b8, 0x4c0),
+        ] {
+            let q = div(k(g, kop), k(g, dop));
+            g.write::<f32>(q_at, q);
+            // call width: 3
+            g.call(slot(g, t, 359), 0, &[w(m1), q.to_bits(), w(m2)]);
+            let v = mul(k(g, vop), g.read::<f32>(q_at));
+            g.write::<u32>(w(out), v.to_bits() ^ g.read::<u32>(w(mask)));
+        }
+        set_flag(g, 0x4af, 1);
+        // call width: 3
+        g.call(slot(g, 0x4cb, 160), 0, &[w(0x4db), w(0x4d0), 0]);
+        refresh(g, 0x4ea, 0x4e5);
+        refresh(g, 0x4f4, 0x4ef);
+        refresh(g, 0x4fe, 0x4f9);
+        set_flag(g, 0x503, 0);
+        done_up(g, 0x50e, 0x51d);
+    // call width: 1
+    } else if g.call(slot(g, 0x527, 261), 0, &[2]).eax != 0 {
+        let mut u = g.read::<u32>(w(0x541));
+        let fresh = u == 0;
+        if fresh && g.read::<u32>(w(0x54f)) != 0 {
+            // straight to the last part
+        } else {
+            if fresh {
+                let s = 0x3cf5_c28f;
+                motion(g, 0x592, w(0x58a), 2, (0, 0), [0, 0, 0, 0, s, s, s]);
+                let x = g.read::<u32>(w(0x5b2));
+                // call width: 4
+                g.call(slot(g, 0x597, 262), 0, &[x, w(0x5ac), w(0x5a7), w(0x59c)]);
+                motion(g, 0x603, w(0x5f7), 3, (0, 0), [0, 0, 0, 0, s, s, s]);
+                let s = 0x3d1b_a5e3;
+                motion(g, 0x64f, w(0x643), 4, (0, 0), [0, 0, 0, 0, s, s, s]);
+                u = g.read::<u32>(w(0x654));
+                g.write::<u32>(w(0x65d), 1);
+            }
+            if u.cast_signed() >= 0x14 {
+                set_flag(g, 0x66b, 1);
+                refresh(g, 0x67b, 0x670);
+                set_flag(g, 0x680, 0);
+                u = g.read::<u32>(w(0x68b));
+            }
+            if u.cast_signed() >= 0x46 {
+                let x = g.read::<u32>(w(0x6ae));
+                // call width: 4
+                g.call(slot(g, 0x699, 237), 0, &[x, 0x23, 0, w(0x69e)]);
+                for (a, b, out) in [
+                    (0x6b8u32, 0x6c0u32, 0x6d5u32),
+                    (0x6dd, 0x6e5, 0x6ed),
+                    (0x6f5, 0x6fd, 0x705),
+                ] {
+                    let v = add(k(g, a), k(g, b));
+                    g.write::<f32>(w(out), v);
+                }
+                set_flag(g, 0x6c5, 1);
+                refresh(g, 0x710, 0x6cd);
+                set_flag(g, 0x715, 0);
+                u = g.read::<u32>(w(0x720));
+            }
+            if u.cast_signed() >= 0x50 {
+                let x = g.read::<u32>(w(0x743));
+                // call width: 4
+                g.call(slot(g, 0x72e, 237), 0, &[x, 0x23, 0, w(0x733)]);
+                for (a, b, out) in [
+                    (0x74du32, 0x755u32, 0x76au32),
+                    (0x772, 0x77a, 0x782),
+                    (0x78a, 0x792, 0x79a),
+                ] {
+                    let v = add(k(g, a), k(g, b));
+                    g.write::<f32>(w(out), v);
+                }
+                set_flag(g, 0x75a, 1);
+                refresh(g, 0x7a5, 0x762);
+                set_flag(g, 0x7aa, 0);
+            }
+        }
+        set_flag(g, 0x7b5, 1);
+        refresh(g, 0x7c5, 0x7ba);
+        set_flag(g, 0x7ca, 0);
+        done_up(g, 0x7d5, 0x7e4);
+    // call width: 1
+    } else if g.call(slot(g, 0x7ee, 261), 0, &[1]).eax != 0 {
+        if g.read::<u32>(w(0x809)) == 0 && g.read::<u32>(w(0x812)) == 0 {
+            let s = 0x3d95_8106;
+            let (x3, x2) = (g.read::<u32>(w(0x81d)), g.read::<u32>(w(0x825)));
+            motion(
+                g,
+                0x86b,
+                w(0x85f),
+                0,
+                (x2, x3),
+                [0xc261_e0ee, 0, 0, 0, s, s, s],
+            );
+            g.write::<u32>(w(0x874), 1);
+        }
+        set_flag(g, 0x87d, 1);
+        refresh(g, 0x88d, 0x882);
+        set_flag(g, 0x892, 0);
+        done_up(g, 0x89d, 0x8a8);
+    }
+    if g.read::<u32>(w(0x8ae)) == 0x32 {
+        let x = g.read::<u32>(w(0x8bc));
+        // call width: 1
+        g.call(slot(g, 0x8b6, 214), 0, &[x]);
+    }
+    done_up(g, 0x8cc, 0x8d7);
+    Ret::eax(0)
+}
+
+/// [`effect_frame_0341`] (the `rel32`s: the part start, five part motions,
+/// ten part refreshes, `__security_check_cookie`; the three jumps to the
+/// tail stay inside).
+pub const EFFECT_FRAME_0341: Sig = Sig {
+    len: 2283,
+    hash: 0xb692_3047_a530_b5c7,
+    calls: &[
+        (0x129, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x224, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x22e, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x2cd, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x4ea, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x4f4, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x4fe, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x592, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x603, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x64f, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x67b, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x710, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x7a5, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x7c5, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x86b, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x88d, Callee::Sig(&crate::sa_misc::PART_REFRESH_B)),
+        (0x8e3, Callee::Any),
+    ],
+    imports: &[],
+};
