@@ -2185,7 +2185,14 @@ fn throws_aimed() {
 #[test]
 fn weapon_swings_drop() {
     // `magic_0544`'s copy calls the part matrix instead of the weapon's
-    for (dll, rva) in [(555u16, 0x4240u32), (544, 0x4210)] {
+    // `magic_0446`'s and `magic_0543`'s copies push 0x80 for their light
+    // set-up (`r24::light_setup_0446`), their operands 4 bytes later
+    for (dll, rva) in [
+        (555u16, 0x4240u32),
+        (544, 0x4210),
+        (446, 0x4270),
+        (543, 0x4240),
+    ] {
         weapon_swings_drop_in(dll, rva);
     }
 }
@@ -2193,6 +2200,11 @@ fn weapon_swings_drop() {
 fn weapon_swings_drop_in(dll: u16, rva: u32) {
     let Some(mut t) = twin(dll) else { return };
     let f = t.at(rva);
+    let sh = if t.img.word(f + 0x65) as u8 == 0x68 {
+        4
+    } else {
+        0
+    };
     // the part matrix's last slot (`sa_misc::part_matrix`)
     rec_mem(&mut t, 843, 2, 16, None);
     rec_mem(&mut t, 562, 0, 0, None);
@@ -2208,7 +2220,7 @@ fn weapon_swings_drop_in(dll: u16, rva: u32) {
     rec_mem(&mut t, 825, 1, 0, None);
     rec_mem(&mut t, 913, 3, 16, None);
     rec_mem(&mut t, 713, 1, 0, None);
-    let soa = t.img.rel32_target(f + 0x14e);
+    let soa = t.img.rel32_target(f + 0x14e + sh);
     t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
     t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
     for i in 0..0x30 {
@@ -2218,12 +2230,12 @@ fn weapon_swings_drop_in(dll: u16, rva: u32) {
     rec_mem(&mut t, 714, 5, 0, None);
     let pa = t.img.rel32_target(soa + 0x9d);
     let free = op(&t, pa, 0x04);
-    let list = op(&t, f, 0x19e);
+    let list = op(&t, f, 0x19e + sh);
     let task = SCRATCH + 0x300;
     let obj = SCRATCH + 0x1000;
     let s = SCRATCH + 0x8000;
     t.set_u32(op(&t, f, 0x16), s);
-    t.set_u32(op(&t, f, 0x1ba), SCRATCH + 0x2f0);
+    t.set_u32(op(&t, f, 0x1ba + sh), SCRATCH + 0x2f0);
     for (count, total, kind, listed) in [
         (5u32, 10u32, 0u32, false),
         (1, 10, 0, false),

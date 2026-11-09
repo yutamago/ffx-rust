@@ -1377,6 +1377,10 @@ fn lights_flown_in() {
         (691, 0x4750),
         (644, 0x8770),
         (698, 0x8770),
+        // `r24::LIGHT_FLY_IN_0446`: `r24::light_setup_0446` and the child
+        // start without the sound
+        (446, 0x2a90),
+        (543, 0x2a90),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
@@ -1479,7 +1483,14 @@ fn light_slots(t: &mut Twin, light: u32) {
         }
         0x230
     });
-    t.set_u32(op(t, light, 0x36), 0x0021_9000);
+    // `G_H`: `push [G_H]` at +0x34 (0644/0565) or +0x51 (`r24::light_setup_0446`,
+    // the 16-aligned frame)
+    let gh = if t.img.word(light + 5) as u8 == 0xf0 {
+        0x53
+    } else {
+        0x36
+    };
+    t.set_u32(op(t, light, gh), 0x0021_9000);
 }
 
 /// Rows 47/48: the light flown along its arc in four DLLs (both copies):
@@ -1705,9 +1716,15 @@ fn lights_landing() {
 /// above 20, below it and run out.
 #[test]
 fn lights_bouncing() {
-    for dll in [565u16, 697] {
+    // `magic_0446`'s and `magic_0543`'s copies call `r24::light_setup_0446`
+    for (dll, rva) in [
+        (565u16, 0x4f00u32),
+        (697, 0x4f00),
+        (446, 0x3180),
+        (543, 0x3180),
+    ] {
         let Some(mut t) = twin(dll) else { return };
-        let f = t.at(0x4f00);
+        let f = t.at(rva);
         let w = |t: &Twin, o: u32| op(t, f, o);
         let light = t.img.rel32_target(f + 0x2f1);
         light_slots(&mut t, light);
@@ -2116,10 +2133,21 @@ fn summon_actor_pairs_started() {
 /// and off, the busy list empty and not).
 #[test]
 fn launches_after_carry() {
-    for dll in [544u16, 557, 555] {
+    // `magic_0446`'s and `magic_0543`'s copies (0x100034a0) push 0x80 for
+    // their light set-up (`r24::light_setup_0446`), their operands 4 bytes
+    // later from +0x73 on
+    for (dll, rva) in [
+        (544u16, 0x3470u32),
+        (557, 0x3470),
+        (555, 0x3470),
+        (446, 0x34a0),
+        (543, 0x34a0),
+    ] {
         let Some(mut t) = twin(dll) else { return };
-        let f = t.at(0x3470);
-        let w = |t: &Twin, o: u32| op(t, f, o);
+        let f = t.at(rva);
+        let lit = t.img.word(f + 0x73) as u8 == 0x68;
+        let sh = move |o: u32| if lit && o > 0x73 { o + 4 } else { o };
+        let w = |t: &Twin, o: u32| op(t, f, sh(o));
         // the matrix's slots (`sa_misc::part_matrix`, `s5_misc::weapon_matrix`)
         let h = SCRATCH + 0x3000;
         log_calls(&mut t, 219, 2, &[], move |_, a, _| h ^ (a[1] & 0x10));
@@ -2158,13 +2186,13 @@ fn launches_after_carry() {
             });
         }
         // the child start's (`s4_fam446::start_child_c`)
-        let child = t.img.rel32_target(f + 0xf8);
+        let child = t.img.rel32_target(f + sh(0xf8));
         let soa = t.img.rel32_target(child + 0x3e);
         log_calls(&mut t, 641, 1, &[], |_, a, _| a[0] ^ 0x0641_0000);
         log_calls(&mut t, 719, 3, &[], |_, a, _| 0x7190_0000 ^ a[2]);
         log_calls(&mut t, 393, 3, &[1], |_, _, _| 0x393);
         log_calls(&mut t, 306, 3, &[], |_, a, _| 0x0306_0000 ^ a[2]);
-        let take = t.img.rel32_target(f + 0x5ca);
+        let take = t.img.rel32_target(f + sh(0x5ca));
         let b = SCRATCH + 0x10000;
         t.set_u32(w(&t, 0x1f), b);
         for (o, x) in [
@@ -2221,7 +2249,7 @@ fn launches_after_carry() {
             t.write(SCRATCH + 0x1800, &varied(0x80, k));
             scrub(&mut t);
             let call = Call {
-                eax: 0x3470 + k,
+                eax: rva + k,
                 ecx: 0x0ecc_0000 + k,
                 ..Call::default()
             };

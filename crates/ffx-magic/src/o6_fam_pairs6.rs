@@ -1277,13 +1277,18 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // `magic_0565`'s copy places a light (`push 0x80` at +0x117), starts
     // the child with its sound and takes the object off its list before
     // asking the mode
-    let flat = img.word(f + 0x117) as u8 == 0x68;
+    // `magic_0446`'s and `magic_0543`'s copies (`r24::TRAIL_TASK_0446`)
+    // place the light too (`push 0x80`, `r24::light_setup_0446`) but go on
+    // as `magic_0544`'s, 4 bytes later (`cmp` at +0x17b, not `mov edx`)
+    let light = img.word(f + 0x117) as u8 == 0x68;
+    let flat = light && img.word(f + 0x17b) as u8 != 0x83;
     // (list, its call, `G_P`, the word, slot 713's table, the give-back,
     // slot 235's table, the trail draw)
     let ops = if flat {
         [0x17e, 0x183, 0x18c, 0x193, 0x198, 0x26c, 0x21f, 0x24b]
     } else {
-        [0x183, 0x188, 0x191, 0x198, 0x19d, 0x1c1, 0x231, 0x25d]
+        let lit = if light { 4 } else { 0 };
+        [0x183, 0x188, 0x191, 0x198, 0x19d, 0x1c1, 0x231, 0x25d].map(|o| o + lit)
     };
     let task = fr.arg(g, 0);
     let o = g.read::<u32>(task.wrapping_add(0x14));
@@ -1351,9 +1356,9 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             // the `0446` family's sparks, or `0565`'s
             crate::s9_misc::sparks_move(g, img, img.rel32_target(f + call), at(0x7c), v);
         }
-        let mat_at = img.rel32_target(f + if flat { 0x120 } else { 0x11c });
+        let mat_at = img.rel32_target(f + if light { 0x120 } else { 0x11c });
         let ang = o.wrapping_add(0x280);
-        let eax = if flat {
+        let eax = if light {
             g.write::<u32>(at(0x80), 0x80);
             let fr = Frame {
                 at: mat_at,
@@ -1362,7 +1367,7 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 edx: v,
                 ..Frame::default()
             };
-            crate::o6_fam_pairs5::light_setup(g, img, &fr).eax
+            crate::r24::light_setup_any(g, img, &fr).eax
         } else if img.matches(mat_at, &crate::s5_misc::WEAPON_MATRIX) {
             crate::s5_misc::weapon_matrix(g, img, mat_at, at(0x84), ang, v)
         } else {
@@ -1387,7 +1392,7 @@ pub fn trail_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         } else {
             let child = crate::o6_fam_pairs5::stack_args(
                 g,
-                img.rel32_target(f + if flat { 0x174 } else { 0x170 }),
+                img.rel32_target(f + if light { 0x174 } else { 0x170 }),
                 at(0x84),
                 o,
                 ang,

@@ -701,11 +701,18 @@ fn task_0435() {
         t.set_u16(obj + 0x124, 0x8000);
         t.set_u32(obj + 0x114, 5);
         t.set_u32(list + 8, if busy { node } else { 0 });
+        // run_objects starts the list from its head global: without it
+        // the object never runs and the answer is always 1
+        t.set_u32(t.img.word(ro + 0x14), if busy { node } else { 0 });
         junk(&mut t, task, 0x20, k);
         t.set_u32(task + 8, rec);
         junk(&mut t, rec, 0x20, k + 1);
         junk_ops(&mut t, f, &[0xa3, 0xca]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        if busy {
+            // the object's delay counted: run_objects answered 0 (`return r`)
+            assert_eq!(t.u32(obj + 0x114), 4, "the object ran");
+        }
     }
     assert!(t.u32(magic_owna::row(213)) >= 2, "the scripts' slots");
 }

@@ -31,12 +31,29 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 ///    `(0x3800)`;
 /// 7. `m + 0x18` = 0.
 ///
-/// Returns slot 859's `eax` (the cookie check leaves it).
+/// Returns slot 859's `eax` (the cookie check leaves it). `magic_0272`'s
+/// copy reads `arg` and `src` from two globals instead
+/// (`r24::BONE_NODE_SETUP_0272`).
 pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
-    let (m, src) = (fr.ecx, fr.edx);
-    let arg = fr.arg(g, 0);
+    // `magic_0272`'s copy (0x100067a0) takes `arg` and `src` from globals
+    // (`mov eax, [G_A]` at +0x13, `mov esi, [G_S]` at +0x1a, no `mov esi,
+    // edx`): its operands sit 8 bytes later up to that `mov` and 6 after
+    let globals = img.word(f + 0x13) as u8 == 0xa1;
+    let sh = |o: u32| match (globals, o < 0x30) {
+        (false, _) => o,
+        (true, true) => o + 8,
+        (true, false) => o + 6,
+    };
+    let w = |o: u32| img.word(f + sh(o));
+    let d8 = |o: u32| disp8(img, f + sh(o));
+    let (m, src, arg) = if globals {
+        let a = g.read::<u32>(img.word(f + 0x14));
+        let s = g.read::<u32>(img.word(f + 0x1c));
+        (fr.ecx, s, a)
+    } else {
+        (fr.ecx, fr.edx, fr.arg(g, 0))
+    };
     let ebp = fr.esp.wrapping_sub(4);
     // the frame: 0x90 bytes and three saved registers
     let esp = ebp.wrapping_sub(0x90 + 12);
@@ -45,13 +62,9 @@ pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let t = w(0x1d);
     let s = slot_target(g, t, w(0x25) / 4);
     // call width: 3
-    g.call(
-        s,
-        fr.ecx,
-        &[w(0x2c), disp8(img, f + 0x2a), disp8(img, f + 0x22)],
-    );
+    g.call(s, fr.ecx, &[w(0x2c), d8(0x2a), d8(0x22)]);
     // the model's fields: `lea`/`mov` displacements from the code
-    let n = m.wrapping_add(disp8(img, f + 0x38));
+    let n = m.wrapping_add(d8(0x38));
     let root = w(0x4b);
     g.write::<u16>(n.wrapping_add(0x1a), 0xff);
     g.write::<u32>(n.wrapping_add(0x10), n);
@@ -72,15 +85,15 @@ pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(n, w(0x99));
     let s = slot_target(g, w(0x8d), w(0x9f) / 4);
     let words = [
-        m.wrapping_add(disp8(img, f + 0x8a)),
-        src.wrapping_add(disp8(img, f + 0x7f)),
+        m.wrapping_add(d8(0x8a)),
+        src.wrapping_add(d8(0x7f)),
         w(0x83),
     ];
     // call width: 3
     g.call(s, fr.ecx, &words);
     let group = local(0x8c);
     let bone_node = m.wrapping_add(w(0xaa));
-    g.write::<u32>(m.wrapping_add(disp8(img, f + 0xb9)), w(0xba));
+    g.write::<u32>(m.wrapping_add(d8(0xb9)), w(0xba));
     g.write::<u32>(group, bone_node);
     g.write::<u32>(group.wrapping_add(4), w(0xca));
     g.write::<u32>(group.wrapping_add(8), w(0xd4));
@@ -88,7 +101,7 @@ pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(group.wrapping_add(0x10), arg);
     g.write::<u32>(group.wrapping_add(0x14), w(0xe1));
     let insert = Frame {
-        at: img.rel32_target(f + 0xe6),
+        at: img.rel32_target(f + sh(0xe6)),
         esp: esp.wrapping_sub(4),
         ecx: group,
         ..*fr
@@ -99,7 +112,7 @@ pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(cursor, bone_node);
     g.write::<u8>(cursor.wrapping_add(5), pass);
     let bone = Frame {
-        at: img.rel32_target(f + 0xf9),
+        at: img.rel32_target(f + sh(0xf9)),
         esp: esp.wrapping_sub(4),
         ecx: cursor,
         ..*fr
@@ -128,7 +141,7 @@ pub fn bone_node_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let s = slot_target(g, w(0x17d), w(0x186) / 4);
     // call width: 1
     let eax = g.call(s, fr.ecx, &[w(0x18b)]).eax;
-    g.write::<u32>(m.wrapping_add(disp8(img, f + 0x199)), w(0x19a));
+    g.write::<u32>(m.wrapping_add(d8(0x199)), w(0x19a));
     Ret::eax(eax)
 }
 

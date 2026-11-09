@@ -2008,7 +2008,7 @@ pub fn light_fly_in<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     g.write::<u32>(p + 0xc, 0x3f80_0000);
     let light = (img.rel32_target(f + 0xde), esp, s + 0x280, p);
-    let mut eax = sub_call(g, crate::o6_fam_pairs5::light_setup, img, light, &[0x80]).eax;
+    let mut eax = sub_call(g, crate::r24::light_setup_any, img, light, &[0x80]).eax;
     for (i, x) in (0u32..).zip(at) {
         g.write::<f32>(s + 0xd0 + 4 * i, x);
     }
@@ -2017,13 +2017,14 @@ pub fn light_fly_in<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // `push [edi + K]`, `inc [edi + N]`: the displacements differ per DLL
         let kind = g.read::<u32>(b.wrapping_add(w(0x121)));
         let child = (img.rel32_target(f + 0x12e), esp, s, s + 0x280);
-        sub_call(
-            g,
-            crate::s4_fam446::start_child_sound_b,
-            img,
-            child,
-            &[kind],
-        );
+        // `magic_0446`'s and `magic_0543`'s copies start the child without
+        // the sound (`r24::LIGHT_FLY_IN_0446`)
+        let start: Port<G> = if img.matches(child.0, &crate::s4_fam446::START_CHILD_B) {
+            crate::s4_fam446::start_child_b
+        } else {
+            crate::s4_fam446::start_child_sound_b
+        };
+        sub_call(g, start, img, child, &[kind]);
         unlist_object(g, img, f, s, (0x138, 0x13d, 0x146, 0x14d, 0x152));
         let n = g.read::<u32>(b.wrapping_add(w(0x16f))).wrapping_add(1);
         g.write::<u32>(b.wrapping_add(w(0x16f)), n);
@@ -2559,7 +2560,7 @@ pub fn light_bounce<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let light = (img.rel32_target(f + 0x2f1), esp, s + 0x280, s + 0x260);
     let eax = sub_call(
         g,
-        crate::o6_fam_pairs5::light_setup,
+        crate::r24::light_setup_any,
         img,
         light,
         &[n.cast_unsigned()],
@@ -3146,7 +3147,12 @@ pub const SUMMON_START_TASK_0241: Sig = Sig {
 pub fn launch_after_carry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::sb_sse::{add, cvt, div, mul, sub};
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `magic_0446`'s and `magic_0543`'s copies push 0x80 for their light
+    // set-up (`r24::light_setup_0446`) where the others push `ecx`: the
+    // operands after +0x73 sit 4 bytes later
+    let lit = img.word(f + 0x73) as u8 == 0x68;
+    let sh = |o: u32| if lit && o > 0x73 { o + 4 } else { o };
+    let w = |o: u32| op(img, f, sh(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, s: u32| slot_target(g, w(0x103), s);
     let st0 = |o: Out| crate::m0018::st0_f32(o.st0);
@@ -3172,12 +3178,12 @@ pub fn launch_after_carry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // the part's matrix (`magic_0544`) or the weapon's (`magic_0555`),
     // `B` on the stack
     g.write::<u32>(s.wrapping_sub(4), b);
-    let place = img.rel32_target(f + 0xdb);
+    let place = img.rel32_target(f + sh(0xdb));
     let eax = crate::s5_misc::swing_matrix(g, img, place, s.wrapping_sub(8), x + 0x280, p);
     if g.read::<i32>(x + 0x50c) > 0 {
         return Ret::eax(eax);
     }
-    let child = (img.rel32_target(f + 0xf8), s, x, x + 0x280);
+    let child = (img.rel32_target(f + sh(0xf8)), s, x, x + 0x280);
     sub_call(g, crate::s4_fam446::start_child_c, img, child, &[]);
     for i in 0..4 {
         let c = g.read::<u32>(p + 4 * i);
@@ -3269,7 +3275,7 @@ pub fn launch_after_carry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         for (o, c) in [(0x90u32, 0x14u32), (0x8c, 0x14), (0x94, 0)] {
             g.write::<u32>(rec + o, c);
         }
-        let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x5ca), w(0x580));
+        let node = crate::sa_pool::take(g, img, img.rel32_target(f + sh(0x5ca)), w(0x580));
         g.write::<u32>(node.wrapping_add(0x14), rec);
         g.write::<u32>(node.wrapping_add(4), 0);
         if g.read::<u32>(w(0x5d0)) == 0 {

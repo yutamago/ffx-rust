@@ -71,6 +71,7 @@ pub mod r19;
 pub mod r20;
 pub mod r21;
 pub mod r22;
+pub mod r24;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3029,6 +3030,23 @@ ports! {
     "r22 flight step 0491" => r22::FLIGHT_STEP_0491, r22::flight_step_0491;
     "r22 cue start 0610" => r22::CUE_START_0610, r22::cue_start_0610;
     // round 22 (magic-r22): end
+    // round 24 (magic-r24)
+    "r24 light fly-in 0446" => r24::LIGHT_FLY_IN_0446, s9_misc::light_fly_in;
+    "r24 light fly-in 0543" => r24::LIGHT_FLY_IN_0543, s9_misc::light_fly_in;
+    "r24 light bounce 0446" => r24::LIGHT_BOUNCE_0446, s9_misc::light_bounce;
+    "r24 light bounce 0543" => r24::LIGHT_BOUNCE_0543, s9_misc::light_bounce;
+    "r24 caster place 0434" => r24::CASTER_PLACE_0434, r18::caster_place_0588;
+    "r24 curve step 0435" => r24::CURVE_STEP_0435, r24::curve_step_0435;
+    "r24 curve step 0055" => r24::CURVE_STEP_0055, r24::curve_step_0435;
+    "r24 curve step 0067" => r24::CURVE_STEP_0067, r24::curve_step_0435;
+    "r24 trail task 0446" => r24::TRAIL_TASK_0446, o6_fam_pairs6::trail_task;
+    "r24 launch after carry 0446" => r24::LAUNCH_AFTER_CARRY_0446, s9_misc::launch_after_carry;
+    "r24 launch after carry 0543" => r24::LAUNCH_AFTER_CARRY_0543, s9_misc::launch_after_carry;
+    "r24 weapon swing drop 0446" => r24::WEAPON_SWING_DROP_0446, s5_misc::weapon_swing_drop;
+    "r24 weapon swing drop 0543" => r24::WEAPON_SWING_DROP_0543, s5_misc::weapon_swing_drop;
+    "r24 task 0150" => r24::TASK_0150, r22::task_0603;
+    "r24 render 0352" => r24::RENDER_0352, r24::render_0352;
+    // round 24 (magic-r24): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3636,6 +3654,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r22 node build 0601", &r22::NODE_BUILD_0601),
     ("r22 start-up 0610", &r22::START_UP_0610),
     // round 22 (magic-r22): end of INTERNAL
+    // round 24 (magic-r24)
+    ("r24 light set-up 0446", &r24::LIGHT_SETUP_0446),
+    ("r24 light set-up 0543", &r24::LIGHT_SETUP_0543),
+    ("r24 bone node set-up 0272", &r24::BONE_NODE_SETUP_0272),
+    // round 24 (magic-r24): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)
