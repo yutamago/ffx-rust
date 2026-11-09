@@ -3187,6 +3187,8 @@ ports! {
     "r30 objects start 0304" => r30::OBJECTS_START_0304, r30::objects_start_0304;
     "r30 summon objects 0304" => r30::SUMMON_OBJECTS_0304, r30::summon_objects_0304;
     "r9 load step 0304" => r9_load::LOAD_0304, r9_load::load_0304;
+    "r30 sparks 0171" => r30::SPARKS_0171, r30::sparks_0171;
+    "r30 sequence 0171" => r30::SEQUENCE_0171, r30::sequence_0171;
     // round 30 (magic-r30): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
