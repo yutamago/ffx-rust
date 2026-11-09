@@ -3085,6 +3085,9 @@ ports! {
     "r9 load step 0305" => r9_load::LOAD_0305, r9_load::load_0305;
     "r26 trail head 0543" => r26::TRAIL_HEAD_0543, s9_misc::trail_head;
     "r26 trail task 0543" => r26::TRAIL_TASK_0543, o6_fam_pairs6::trail_task;
+    "r26 lift 0301@1810" => r26::LIFT_0301_1810, r21::lift_0301;
+    "r26 stage 0395 a" => r26::STAGE_0395_A, r26::stage_0395_a;
+    "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
     // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

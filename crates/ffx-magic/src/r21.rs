@@ -1636,9 +1636,17 @@ pub const SPARKS_0419: Sig = Sig {
 /// slot 474 `(A[0x198], 0x18 or 0x25, V, O)` and `R + 0xd0..` = `(O.xyz,
 /// 0)`; then slots 450 `(obj, CB2)` and 451 `(obj, 5)`. Each call sees the
 /// words the earlier ones left. Returns slot 451's `eax`.
+///
+/// `magic_0301` 0x10001810 (431 bytes, `r26::LIFT_0301_1810`; `push imm32`
+/// at `+0x141`) has the kinds 0 and 1 (the immediates `+0x65`, `+0xf4`)
+/// and its own tail: a third record from slot 434 `(*G_A, CB3)`, slot 450
+/// `(obj, CB4)`, then (the stack cleared) slot 449 `(obj, CB5)` and the
+/// object's current entry `obj + 0x2c + 16 obj[0xac]` set to `A[0x198]`.
+/// It returns `2 obj[0xac]` (the index doubled for the store).
 pub fn lift_0301<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::pushes::Pushes;
     let f = fr.at;
+    let v1810 = img.word(f + 0x141) as u8 == 0x68;
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let obj = fr.arg(g, 0);
@@ -1654,12 +1662,12 @@ pub fn lift_0301<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             0x3cu32,
             0x36u32,
             0x31u32,
-            2u32,
+            w(0x65),
             0x41b8_0000u32,
             0x18u32,
             0x59u32,
         ),
-        (0xb9, 0xb3, 0x94, 3, 0xc1b8_0000, 0x25, 0xe8),
+        (0xb9, 0xb3, 0x94, w(0xf4), 0xc1b8_0000, 0x25, 0xe8),
     ] {
         st.push_all(&[w(cb), g.read::<u32>(w(ga))]);
         // call width: 12 (Pushes caps the words at 12)
@@ -1678,6 +1686,24 @@ pub fn lift_0301<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(r.wrapping_add(0xd0 + 4 * i), x);
         }
         g.write::<u32>(r.wrapping_add(0xdc), 0);
+    }
+    if v1810 {
+        st.push_all(&[w(0x142), g.read::<u32>(w(0x148))]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x123, 434), 0);
+        st.push_all(&[w(0x16c), obj]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x167, 450), 0);
+        // `add esp, 0x44`: the words so far popped
+        let mut st = Pushes::default();
+        st.push_all(&[w(0x17d), obj]);
+        // call width: 2
+        st.call(g, t(g, 0x183, 449), 0);
+        let i = g
+            .read::<u32>(obj.wrapping_add(0xac))
+            .wrapping_add(g.read::<u32>(obj.wrapping_add(0xac)));
+        g.write::<u32>(obj.wrapping_add(0x2c).wrapping_add(i.wrapping_mul(8)), bone);
+        return Ret::eax(i);
     }
     st.push_all(&[w(0x15a), obj]);
     // call width: 12 (Pushes caps the words at 12)

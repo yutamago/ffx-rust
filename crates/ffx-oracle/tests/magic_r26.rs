@@ -983,3 +983,207 @@ fn actor_matrix_0430() {
         });
     }
 }
+
+/// What `magic_0395`'s stages (at `f`, `len` bytes, `B`'s operand `b_op`)
+/// need: the effect block `B` (junk, a point and an angle), the pools,
+/// the object and point slots, the actor block's slots, the task list.
+fn stage_0395_common(t: &mut Twin, f: u32, len: u32, b_op: u32) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, len);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, move |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + a[1] as f32;
+            m.w32(a[2] + 4 * i, v.to_bits());
+        }
+        0x268
+    });
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.375 - 1.5);
+    recs(t, &[(413, 1), (215, 1)]);
+    let b = SCRATCH + 0x1_0000;
+    t.write(b, &[0x5d; 0x1600]);
+    for i in 0..4u32 {
+        t.set_u32(b + 0x10a0 + 4 * i, (1.5 * i as f32 - 2.0).to_bits());
+    }
+    t.set_u32(b + 0x1524, 0.75f32.to_bits());
+    t.set_u32(w(t, b_op), b);
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+}
+
+/// `magic_0395` 0x10004950 (`r26::stage_0395`, a table entry): the fade
+/// on and off, in and out of a battle, the task list empty and not.
+#[test]
+fn stage_0395() {
+    let Some(mut t) = twin(395) else { return };
+    let f = t.at(0x4950);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (k, (faded, battle, listed)) in [
+        (1u32, 0u32, false),
+        (1, 1, true),
+        (0, 0, true),
+        (0, 1, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        stage_0395_common(&mut t, f, 621, 0xc);
+        let start = t.img.rel32_target(f + 0x20);
+        magic_r11::object_start_auto(&mut t, start);
+        t.set_u32(w(&t, 0x157), faded);
+        for o in [0x186u32, 0x1b1, 0x212, 0x23d] {
+            t.set_u32(w(&t, o), battle);
+        }
+        t.set_u32(w(&t, 0x165), 0x0000_0050 + k);
+        junk_ops(
+            &mut t,
+            f,
+            &[
+                0x16a, 0x176, 0x18d, 0x1a8, 0x1bd, 0x1c7, 0x1d0, 0x219, 0x234, 0x249, 0x253, 0x25c,
+            ],
+        );
+        for o in [0x1f7u32, 0x267] {
+            t.set_u32(w(&t, o), 0x5a5a_5a5a);
+        }
+        t.set_u32(w(&t, 0x12c), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(&t, 0x13f), SCRATCH + 0x600);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0395` 0x10004380 (`r26::stage_0395_a`, a table entry): 0 to 4
+/// actors dealt from two kinds (slot 324 picks), each kind listed or not
+/// by the actor's parity (slot 390), the effect's flag (the callbacks,
+/// the indices, the spark sizes and the battle block) on and off, the
+/// task list empty and not.
+#[test]
+#[allow(clippy::too_many_lines)] // the deal, the kinds, the ring and the cases
+fn stage_0395_a() {
+    let Some(mut t) = twin(395) else { return };
+    let f = t.at(0x4380);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let deal = t.img.rel32_target(f + 0x20);
+    let kc = t.img.rel32_target(f + 0x7c);
+    // the kind check's list: its last entry is "listed"
+    let mut l = t.img.word(kc + 0x30);
+    while t.u32(l + 4) != u32::MAX {
+        l += 4;
+    }
+    let listed_kind = t.u32(l);
+    rec(&mut t, 390, 1, move |_, a| {
+        if a[0] & 1 == 0 {
+            listed_kind
+        } else {
+            0x7777_0001
+        }
+    });
+    // an unlisted kind's answer: slot 534's, 0 for some characters
+    rec(&mut t, 534, 1, |_, a| (a[0] >> 1) & 1);
+    let cnt = SCRATCH + 0x7a0;
+    rec(&mut t, 324, 0, move |m: &mut dyn StubMem, _: &[u32]| {
+        let k = m.r32(cnt).wrapping_add(1);
+        m.w32(cnt, k);
+        k.wrapping_mul(0x9e37_79b9) >> 7
+    });
+    for (k, (n, flag, listed)) in [
+        (0u32, (2u32, 1u32, false)),
+        (1, (4, 0, true)),
+        (2, (0, 1, true)),
+        (3, (3, 1, true)),
+        (4, (1, 0, false)),
+    ] {
+        t.set_u32(cnt, 0x10 * k);
+        stage_0395_common(&mut t, f, 1426, 0x13);
+        for call in [0xbau32, 0x157] {
+            let start = t.img.rel32_target(f + call);
+            magic_r11::object_start_auto(&mut t, start);
+        }
+        // the deal: two kinds, four of each, `n` actors (the count global
+        // the stage reads too)
+        t.set_u32(t.img.word(deal + 0x17), 2);
+        t.set_u32(t.img.word(deal + 0x1e), n);
+        for i in 0..2u32 {
+            t.set_u32(t.img.word(deal + 0x46) + 0x1c * i, 4);
+        }
+        t.set_u32(w(&t, 0x58), n);
+        // the actors' characters and bytes
+        let bytes = SCRATCH + 0x1e0;
+        for i in 0..8u8 {
+            t.set_u8(bytes + u32::from(i), 3 + 2 * i);
+        }
+        for (sel, tab) in [(0xcfu32, 0xdau32), (0x16c, 0x177)] {
+            t.set_u32(w(&t, sel), bytes);
+            for i in 0..0x20 {
+                t.set_u32(w(&t, tab) + 4 * i, 0x0000_0080 + 3 * i);
+            }
+        }
+        t.set_u32(w(&t, 0x1d1), bytes);
+        for o in [0x10u32, 0x74] {
+            t.set_u32(t.img.word(kc + o), bytes);
+        }
+        for o in [0x25u32, 0x8a, 0x145, 0x254, 0x450] {
+            t.set_u32(w(&t, o), flag);
+        }
+        // the free ring (16 nodes) and the task list
+        let (count, head) = (w(&t, 0x1e6), w(&t, 0x277));
+        magic_r11::ring(&mut t, count, head, 16, SCRATCH + 0xb00);
+        junk_ops(&mut t, f, &[0x46e, 0x478]);
+        t.set_u32(w(&t, 0x2de), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(&t, 0x2f4), SCRATCH + 0x600);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    // both ways ran: the height (slot 12) only for a check answering 0
+    assert!(t.u32(magic_owna::row(390)) >= 8, "the kinds were asked");
+    assert!(t.u32(magic_owna::row(12)) >= 2, "a check answered 0");
+}
+
+/// `r21::lift_0301` in `magic_0301` 0x10001810 (`r26::LIFT_0301_1810`):
+/// two records from slot 434 (their current entries' kinds 0 and 1), the
+/// third record, slots 450 and 449 and the object's current entry; the
+/// records' and the object's entry indices varied.
+#[test]
+fn lift_0301_1810() {
+    let Some(mut t) = twin(301) else { return };
+    let f = t.at(0x1810);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    recs(&mut t, &[(444, 1), (450, 12), (449, 2)]);
+    let (r1, r2, r3) = (SCRATCH + 0x1000, SCRATCH + 0x1400, SCRATCH + 0x1800);
+    rec(&mut t, 434, 3, move |m, _| {
+        match m.r32(magic_owna::row(434)) % 3 {
+            1 => r1,
+            2 => r2,
+            _ => r3,
+        }
+    });
+    rec(&mut t, 474, 7, |m, a| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * 0.5 + (a[1] as f32);
+            m.w32(a[3] + 4 * i, v.to_bits());
+        }
+        0x474
+    });
+    let a = SCRATCH + 0x800;
+    t.set_u32(w(&t, 0x11), a);
+    t.set_u32(a + 0x198, 0x0198_0001);
+    let obj = SCRATCH + 0x1c00;
+    for (k, (c1, c2, c3)) in [(0u32, 3u32, 1u32), (2, 0, 4)].into_iter().enumerate() {
+        let k = k as u32;
+        for (r, c) in [(r1, c1), (r2, c2), (obj, c3)] {
+            t.write(r, &[0x3c + k as u8; 0x200]);
+            t.set_u32(r + 0xac, c);
+        }
+        t.set_u32(magic_owna::row(434), 0);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
