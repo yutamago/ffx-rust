@@ -3093,6 +3093,9 @@ ports! {
     "r9 load step 0243" => r9_load::LOAD_0243, r9_load::load_0243;
     "r9 load step 0163" => r9_load::LOAD_0163, r9_load::load_0163;
     "r9 load step 0299" => r9_load::LOAD_0299, r9_load::load_0299;
+    "r9 load step 0377" => r9_load::LOAD_0377, r9_load::load_0377;
+    "r26 burst 0377" => r26::BURST_0377, r26::burst_0377;
+    "r26 task 0377" => r26::TASK_0377, r26::task_0377;
     "r26 stage 0395 a" => r26::STAGE_0395_A, r26::stage_0395_a;
     "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
     // round 26 (magic-r26): end
@@ -3746,6 +3749,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 start-up 0243", &r26::START_UP_0243),
     ("r26 start-up 0163", &r26::START_UP_0163),
     ("r26 start-up 0299", &r26::START_UP_0299),
+    ("r26 start-up 0377", &r26::START_UP_0377),
     // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
