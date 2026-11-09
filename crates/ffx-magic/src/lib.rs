@@ -80,6 +80,7 @@ pub mod r28;
 pub mod r29;
 pub mod r30;
 pub mod r31;
+pub mod r33;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3234,6 +3235,11 @@ ports! {
     "r31 start-up 0601" => r31::START_UP_0601, r31::start_up_0601;
     "r31 summon task 0613" => r31::SUMMON_TASK_0613, r31::summon_task_0613;
     // round 31 (magic-r31): end
+    // round 33 (magic-r33)
+    "r33 summon task 0609" => r33::SUMMON_TASK_0609, r33::summon_task_0609;
+    "r33 load 0606" => r33::LOAD_0606, r33::load_0606;
+    "r33 clips 0610" => r33::CLIPS_0610, r33::clips_0610;
+    // round 33 (magic-r33): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3955,6 +3961,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r31 summon set-up 0613", &r31::SUMMON_SETUP_0613),
     ("r31 summon set-up 0609", &r31::SUMMON_SETUP_0609),
     // round 31 (magic-r31): end of INTERNAL
+    // round 33 (magic-r33)
+    ("r33 place 0606", &r33::PLACE_0606),
+    ("r33 start-up 0606", &r33::START_UP_0606),
+    // round 33 (magic-r33): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

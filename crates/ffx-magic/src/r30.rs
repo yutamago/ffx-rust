@@ -3656,6 +3656,18 @@ pub const PLACE_0165: Sig = Sig {
 /// set up after the first ([`records_init`](crate::sa_misc::records_init)).
 /// Returns 0.
 pub fn start_up_0165<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_0165_with(g, img, fr, place_0165)
+}
+
+/// [`start_up_0165`]'s body with the placement (the `rel32` at `+0x5b`)
+/// passed: `magic_0606`'s copy calls its own
+/// ([`place_0606`](crate::r33::place_0606)).
+pub(crate) fn start_up_0165_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    place: fn(&mut G, &Image, &Frame) -> u32,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -3675,7 +3687,7 @@ pub fn start_up_0165<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp,
         ..Frame::default()
     };
-    place_0165(g, img, &pf);
+    place(g, img, &pf);
     let rs = Frame {
         at: call(0x60),
         esp,
