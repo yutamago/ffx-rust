@@ -3432,8 +3432,10 @@ pub const STATE_RESET: Sig = Sig {
 pub fn static_node_link_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let last = static_link_head(g, img, f);
+    // `mov dword [G], imm32`: 0 in `magic_0152`, an address in other
+    // copies (the immediate is a relocated word, which the `Sig` masks)
     for o in [0x4c, 0x56, 0x60] {
-        g.write::<u32>(op(img, f, o), 0);
+        g.write::<u32>(op(img, f, o), op(img, f, o + 4));
     }
     Ret::eax(last)
 }
@@ -3804,8 +3806,10 @@ pub const COLOUR_ONE: Sig = Sig {
 pub fn static_node_link_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let last = static_link_head(g, img, f);
+    // the immediates read too: `magic_0577`'s copy stores two addresses
+    // (relocated words, masked in the `Sig`) where `magic_0374`'s stores 0
     for o in [0x4c, 0x56, 0x60, 0x6a] {
-        g.write::<u32>(op(img, f, o), 0);
+        g.write::<u32>(op(img, f, o), op(img, f, o + 4));
     }
     Ret::eax(last)
 }
