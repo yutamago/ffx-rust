@@ -2021,3 +2021,151 @@ fn light_task_0578() {
     }
     assert!(t.u32(ownb::LOG) > 0x200, "the task's calls");
 }
+
+/// `magic_0577` 0x10005660 (`r27::thunk_bone_0577`, with 0x10005270
+/// `r27::bone_0577`; `magic_r23.rs`'s `bone_0573` set-up): the walk stopping at once and moving (children and
+/// none), the new-parent byte set and not. The DLL's function table and
+/// the objects' `+0x1c` methods answer from logging stubs on both sides
+/// (as `magic_0342`'s test does).
+#[test]
+fn bone_0577() {
+    let Some(mut t) = twin(577) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x5660);
+    let b = t.img.rel32_target(f + 8);
+    let table = t.img.word(b + 0x103);
+    rec(&mut t, 32, 2, |m, a| {
+        for i in 0..16 {
+            let x = 0.25 * i as f32 + rf(m, a[1]);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x0032_0000 ^ a[1]
+    });
+    // each entry its own trap (slots 32..35)
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * (32 + i));
+    }
+    for i in 33..36u32 {
+        rec(&mut t, i, 2, move |m, a| {
+            for j in 0..16 {
+                let x = 0.125 * j as f32 - rf(m, a[1]) + i as f32;
+                wf(m, a[0] + 4 * j, x);
+            }
+            (i << 16) ^ a[1]
+        });
+    }
+    t.set_u32(magic::TABLE + 4 * 1001, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 1001, 1, |m, a| {
+        let x = m.r32(a[0]) ^ (m.r32(a[0] + 4) & 0xff00);
+        fold(m, 1001, 0, x);
+        0x1001_0000 ^ x
+    });
+    let vt = SCRATCH + 0x880;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * f32::from_bits(a[2]) + 0.5;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x233
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + 0.25 * i as f32;
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 229, i, v.to_bits());
+        }
+        0x229
+    });
+    for (s, n) in [(231u32, 3usize), (668, 3)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(3) ^ s;
+                m.w32(a[0] + 4 * i, v);
+                fold(m, s, i, v);
+            }
+            s
+        });
+    }
+    for (s, n) in [(325u32, 2usize), (327, 2), (232, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i) ^ (s << 4);
+                m.w32(a[0] + 4 * i, v);
+                fold(m, s, i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 1, 1, |_, a| 0x0001_0000 ^ a[0]);
+    rec(&mut t, 219, 2, |_, a| a[1] * 0x40);
+    let cursor = SCRATCH + 0x100;
+    let n = SCRATCH + 0x2000;
+    let (parent, q, show) = (SCRATCH + 0x3000, SCRATCH + 0x3400, SCRATCH + 0x3800);
+    let objs = [
+        SCRATCH + 0x4000,
+        SCRATCH + 0x4100,
+        SCRATCH + 0x4200,
+        SCRATCH + 0x4300,
+    ];
+    // (stop, children, new parent, function index)
+    let cases: [(bool, bool, u8, u8); 5] = [
+        (true, true, 0, 0),
+        (false, true, 0, 1),
+        (false, false, 1, 2),
+        (false, true, 1, 3),
+        (false, false, 0, 0),
+    ];
+    for (k, (stop, kids, newp, which)) in (0u32..).zip(cases) {
+        junk(&mut t, n, 0x1c0, k);
+        for (i, o) in (0u32..).zip(objs) {
+            junk(&mut t, o, 0x40, k + i);
+            t.set_u32(o, vt);
+            t.set_u32(o + 0x28, (0.25 + 0.125 * i as f32).to_bits());
+        }
+        for o in [parent, q] {
+            junk(&mut t, o, 0x200, k + 7);
+            t.set_u32(o, vt);
+            // moderate floats where the node adds the parent's
+            for i in 0..3 {
+                t.set_u32(
+                    o + 0xcc + 4 * i,
+                    (0.75 * i as f32 - 1.5 + k as f32).to_bits(),
+                );
+            }
+            // and slot 229's source (the parent's `+0xdc` matrix)
+            for i in 0..16 {
+                t.set_u32(o + 0xdc + 4 * i, (0.5 * i as f32 - 3.0).to_bits());
+            }
+        }
+        junk(&mut t, show, 0x100, k + 9);
+        t.set_u16(show + 0x90, (k & 1) as u16);
+        t.set_u32(cursor, n);
+        t.set_u8(cursor + 4, 0x77);
+        t.set_u8(cursor + 5, 0x30 + k as u8);
+        t.set_u8(n + 0x1a, if stop { 0x30 + k as u8 } else { 0x11 });
+        if kids {
+            t.set_u32(n + 0x10, objs[0]);
+            t.set_u32(objs[0] + 8, objs[1]);
+            t.set_u32(objs[1] + 8, n);
+        } else {
+            t.set_u32(n + 0x10, n);
+        }
+        t.set_u32(n + 0x128, parent);
+        t.set_u32(n + 0x140, objs[2]);
+        t.set_u32(n + 0x144, objs[3]);
+        t.set_u8(n + 0x148, which);
+        t.set_u8(n + 0x149, newp);
+        t.set_u32(n + 0x14c, q);
+        t.set_u32(n + 0x1a4, (1.5 + k as f32).to_bits());
+        t.set_u32(n + 0x1a8, (0.75 * k as f32).to_bits());
+        t.set_u32(n + 0x1ac, show);
+        ownb::dirty_stack(&mut t, 0x5270 + k, &[]);
+        let c = Call {
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[cursor], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the bones' calls");
+}

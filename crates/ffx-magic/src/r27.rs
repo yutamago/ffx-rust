@@ -4222,3 +4222,40 @@ pub const LIGHT_TASK_0578: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0577`'s bone update (0x10005270, 1005 bytes; internal, `ecx` =
+/// the cursor): [`bone_0573`](crate::r23::bone_0573) without the final
+/// show. Returns the new parent after a re-parent, else the last slot
+/// call's `eax` (or the walk's).
+pub fn bone_0577<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -> u32 {
+    crate::r23::bone_with(g, img, f, esp, this, false)
+}
+
+/// [`bone_0577`] (1005 bytes, 1 overlay).
+pub const BONE_0577: Sig = Sig {
+    len: 1005,
+    hash: 0x6087_b706_3597_6340,
+    calls: &[
+        // __security_check_cookie
+        (0x3e5, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The thunk over [`bone_0577`] (0x10005660, 15 bytes; as
+/// [`thunk_bone_0573`](crate::r23::thunk_bone_0573)).
+pub fn thunk_bone_0577<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let cursor = fr.arg(g, 0);
+    let esp = fr.esp.wrapping_sub(0xc);
+    // push ebp; push ecx: the entry's `ecx` in the thunk's frame
+    g.write::<u32>(fr.esp.wrapping_sub(8), fr.ecx);
+    Ret::eax(bone_0577(g, img, img.rel32_target(fr.at + 8), esp, cursor))
+}
+
+/// [`thunk_bone_0577`] (15 bytes, 1 overlay).
+pub const THUNK_BONE_0577: Sig = Sig {
+    len: 15,
+    hash: 0xd192_63e1_ae73_f895,
+    calls: &[(8, Callee::Sig(&BONE_0577))],
+    imports: &[],
+};

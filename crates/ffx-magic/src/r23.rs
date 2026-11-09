@@ -2868,8 +2868,22 @@ fn visit_with<G: Game>(
 /// 1.0, the parent `q` and the byte 0. Then the node's object shown
 /// ([`show`](crate::m0573::show) of `n + 0x1ac`). Returns its `eax`, or
 /// the walk's.
-#[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -> u32 {
+    bone_with(g, img, f, esp, this, true)
+}
+
+/// [`bone_0573`]'s steps, with the object shown at the end (`show`) or not
+/// (`magic_0577`'s copy, [`crate::r27::bone_0577`]: it returns the last
+/// slot call's `eax`, or the new parent).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub(crate) fn bone_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    this: u32,
+    show: bool,
+) -> u32 {
     use crate::sb_sse::{add, mul};
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -2923,6 +2937,7 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
     let mut st = vec![n + 0x4c, n + 0x190, n + 0x3c, n + 0x7c, x];
     g.call(t(g, 0x1c3, 325), 0, &st);
     let src = g.read::<u32>(n + 0x140).wrapping_add(0x1c);
+    let mut eax = 0;
     for (words, op, slot) in [
         ([n + 0x12c, p + 0x12c, src], 0x1f7u32, 668u32),
         ([n + 0xdc, p + 0xdc, n + 0x5c], 0x21e, 231),
@@ -2932,7 +2947,7 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
         st.splice(0..0, words);
         st.truncate(12);
         // call width: 12 (the earlier calls' words stay on the stack)
-        g.call(t(g, op, slot), 0, &st);
+        eax = g.call(t(g, op, slot), 0, &st).eax;
     }
     let c = n + 0xcc;
     // addss: the first operand's NaN wins, so the order is kept
@@ -2970,6 +2985,10 @@ pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -
         let q = g.read::<u32>(n + 0x14c);
         g.write::<u32>(n + 0x128, q);
         g.write::<u8>(n + 0x149, 0);
+        eax = q;
+    }
+    if !show {
+        return eax;
     }
     let obj = g.read::<u32>(n + 0x1ac);
     crate::m0573::show(g, img, img.rel32_target(f + 0x3e3), obj)
