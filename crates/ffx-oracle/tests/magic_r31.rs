@@ -1262,3 +1262,107 @@ fn summon_setup_0613() {
         });
     }
 }
+
+/// `magic_0609` 0x10007660 (`r31::summon_setup_0609`): two models (one
+/// with the flag: slot 366 skipped, the old vector added again), one and
+/// none; with a parent and without.
+#[test]
+fn summon_setup_0609() {
+    let Some(mut t) = twin(609) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    let f = t.at(0x7660);
+    rec(&mut t, 218, 2, |_, a| SCRATCH + 0x700 + (a[0] & 1));
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    rec(&mut t, 262, 4, |m, a| {
+        let k = (a[0] & 0xff) as f32;
+        wf(m, a[1], 2.0 * (k - 2.0));
+        wf(m, a[2], 0.5 * k);
+        wf(m, a[3], 3.0 - k);
+        0x262
+    });
+    rec(&mut t, 366, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.75 * i as f32 - (a[0] & 7) as f32);
+        }
+        0x366
+    });
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.25 * i as f32);
+        }
+        0x14
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 1.5 - i as f32);
+        }
+        0x290
+    });
+    for s in [333u32, 211, 413, 215, 12] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                if i % 5 == 0 { 1.0 } else { 0.125 * i as f32 },
+            );
+        }
+        0x327
+    });
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let fourth = t.img.word(f + 0x3d7);
+    for op in [
+        0xdeu32, 0x1a6, 0x2bc, 0x2f6, 0x366, 0x4a9, 0x521, 0x566, 0x62d,
+    ] {
+        let vt = t.img.word(f + op);
+        t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    }
+    let bt = t.img.rel32_target(f + 0x3ed);
+    let table = t.img.word(bt + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    rec(&mut t, 32, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 - 1.0);
+        }
+        0x32
+    });
+    let (g, s, p) = (SCRATCH + 0x100, SCRATCH + 0x1_0000, SCRATCH + 0x7000);
+    // (models, parent, flags byte)
+    let cases: [(u32, bool, u8); 4] = [(2, true, 1), (1, false, 0), (0, true, 4), (2, false, 0x11)];
+    for (k, (n, with_parent, fl)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x1700, k);
+        floats(&mut t, s + 0x1508, 16, 0.5 + k as f32);
+        t.set_u32(s + 0x163c, n);
+        for i in 0..n {
+            let o = s + 0xac + 0x278 * i;
+            t.set_u8(o + 0x90, u8::from((i + k) % 2 == 1));
+        }
+        junk(&mut t, p, 0x40, k + 1);
+        t.set_u32(p + 0x10, p);
+        t.set_u32(p + 0xc, p);
+        t.set_u32(g, s);
+        t.set_u32(g + 4, if with_parent { p } else { 0 });
+        t.set_u32(g + 8, 0x0008_0001 + k);
+        t.set_u32(g + 0xc, 0x000c_0002 + k);
+        t.set_u8(g + 0x10, fl);
+        t.set_u32(g + 0x14, (0.75f32 - k as f32).to_bits());
+        t.set_u32(fourth, class);
+        ownb::dirty_stack(&mut t, 0x7660 + k, &[]);
+        t.check(f, Call::this(g), &[], Eax::Checked, |gm, img, fr| {
+            ffx_magic::r31::summon_setup_0609(gm, img, fr)
+        });
+    }
+}

@@ -2235,6 +2235,8 @@ pub fn summon_setup_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         child_of(g, nc, p);
         g.write::<u32>(nc + 0x24, 0);
         g.write::<u32>(nc + 0x1c, 0);
+        // the model's flag is 0 here (its node set-up copied the group's
+        // byte 0); the slot 333 branch is kept as the original has it
         let h = if g.read::<u8>(ob(0x90)) & 1 != 0 {
             let m = g.read::<u32>(ob(0x54));
             // call width: 1
@@ -2278,6 +2280,239 @@ pub const SUMMON_SETUP_0613: Sig = Sig {
         (0xd7, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
         (0x365, Callee::Sig(&crate::sa_summon::BONE)),
         (0x61c, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0609`'s summon set-up (0x10007660, 1787 bytes; internal, `ecx`
+/// = the group `G` (`[S, P, a, b, flags byte, h]`); a /GS frame): as
+/// [`summon_setup_0613`] with the block's words 0x10 further on and models
+/// 0x278 apart, and these differences:
+/// - each model node also gets slot 262 `(O[0x54])` twice (into `ebp -
+///   0x24..` and `ebp - 0x14..`) and `O + 0x274` = the first's height less
+///   slot 12 `(O[0x54])` (ST0);
+/// - the mean place sums slot 366 `(O[0x50], &v)` of the models without
+///   the flag `O + 0x90` bit 0; a model with it adds the vector left in the
+///   frame again;
+/// - after slot 327, `S + 0x15d8 += G.h` and the bone is set up a second
+///   time with the mark byte 1;
+/// - each model's last node `D` is set up as a bone too ([`bone_plain`](crate::sa_summon::bone_plain),
+///   mark 0) before slot 211.
+///
+/// Returns `S + 0x163c` (the second bone's `eax` with no models).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn summon_setup_0609<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0xa)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let grp = fr.ecx;
+    let s = g.read::<u32>(grp);
+    let parent = |g: &G| g.read::<u32>(grp.wrapping_add(4));
+    let p = parent(g);
+    child_of(g, s, p);
+    let s = g.read::<u32>(grp);
+    let at = |o: u32| s.wrapping_add(o);
+    let x = g.read::<u32>(grp.wrapping_add(0xc));
+    g.write::<u32>(at(0x1648), x);
+    let x = g.read::<u32>(grp.wrapping_add(8));
+    g.write::<u32>(at(0x164c), x);
+    let fl = g.read::<u8>(grp.wrapping_add(0x10)) | 2;
+    g.write::<u8>(at(0x1650), fl);
+    let a = g.read::<u32>(at(0x164c));
+    // call width: 2
+    let objs = g.call(t(g, 0x84, 218), 0, &[a, at(0x163c)]).eax;
+    g.write::<u32>(at(0x1644), objs);
+    let count = |g: &G| g.read::<u32>(at(0x163c)).cast_signed();
+    let model = |i: u32| at(0xac + 0x278 * i);
+    // the model nodes
+    let args = ebp.wrapping_sub(0x94);
+    let init = img.rel32_target(f + 0xe3);
+    let (v1, v2) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
+    let mut i = 0u32;
+    while i.cast_signed() < count(g) {
+        let node = model(i);
+        let p = parent(g);
+        let byte = g.read::<u8>(g.read::<u32>(at(0x1644)).wrapping_add(i));
+        g.write::<u32>(args, node);
+        g.write::<u32>(args + 4, p);
+        g.write::<u32>(args + 8, u32::from(byte));
+        g.write::<u8>(args + 0xc, 0);
+        g.write::<u32>(node, w(0xde));
+        crate::sa_summon::model_node_init(g, img, init, args);
+        for (v, op) in [(v1, 0xf4u32), (v2, 0x110)] {
+            let m = g.read::<u32>(node + 0x54);
+            // call width: 4
+            g.call(t(g, op, 262), 0, &[m, v, v + 4, v + 8]);
+        }
+        let m = g.read::<u32>(node + 0x54);
+        // call width: 1
+        let h = st0_f32(g.call(t(g, 0x120, 12), 0, &[m]).st0);
+        g.write::<f32>(v2 + 4, h);
+        let d = sub(rf(g, v1 + 4), h);
+        g.write::<u16>(node + 0x26e, 0);
+        g.write::<f32>(node + 0x274, d);
+        i += 1;
+    }
+    // the mean place
+    let mean = at(0x15b8);
+    let p = parent(g);
+    child_of(g, mean, p);
+    g.write::<u32>(mean, w(0x1a6));
+    for o in [0u32, 4, 8] {
+        g.write::<u32>(v2 + o, 0);
+    }
+    let mut i = 0u32;
+    while i.cast_signed() < count(g) {
+        let o = model(i);
+        if g.read::<u8>(o + 0x90) & 1 == 0 {
+            let m = g.read::<u32>(o + 0x50);
+            // call width: 2
+            g.call(t(g, 0x1df, 366), 0, &[m, v1]);
+        }
+        for j in 0..3u32 {
+            let x = add(rf(g, v2 + 4 * j), rf(g, v1 + 4 * j));
+            g.write::<f32>(v2 + 4 * j, x);
+        }
+        i += 1;
+    }
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+    let q = div(k(g, 0x23c), count(g) as f32);
+    for j in 0..3u32 {
+        g.write::<f32>(at(0x15d4 + 4 * j), mul(rf(g, v2 + 4 * j), q));
+    }
+    g.write::<u32>(at(0x15e0), ONE);
+    let scale = at(0x15e4);
+    let p = parent(g);
+    child_of(g, scale, p);
+    g.write::<u32>(scale, w(0x2bc));
+    for o in [0x1600u32, 0x1604, 0x1608, 0x160c] {
+        g.write::<u32>(at(o), ONE);
+    }
+    let turn = at(0x1610);
+    let p = parent(g);
+    g.write::<u32>(turn, w(0x2f6));
+    child_of(g, turn, p);
+    for o in [0x162cu32, 0x1630, 0x1634] {
+        g.write::<u32>(at(o), 0);
+    }
+    let bone = at(0x146c);
+    let p = parent(g);
+    g.write::<u32>(bone, w(0x366));
+    child_of(g, bone, p);
+    g.write::<u32>(bone + 0x144, turn);
+    g.write::<u32>(bone + 0x13c, mean);
+    g.write::<u32>(bone + 0x140, scale);
+    g.write::<u32>(bone + 0x128, w(0x3d7));
+    g.write::<u8>(bone + 0x148, 0);
+    let bone_at = img.rel32_target(f + 0x3ed);
+    let set_bone = |g: &mut G, holder: u32, node: u32, mark: u8| {
+        g.write::<u32>(holder, node);
+        g.write::<u8>(holder + 5, mark);
+        let bf = Frame {
+            at: bone_at,
+            esp: ebp.wrapping_sub(0xb4),
+            ecx: holder,
+            ..*fr
+        };
+        crate::sa_summon::bone_plain(g, img, &bf).eax
+    };
+    set_bone(g, ebp.wrapping_sub(0x84), bone, 0);
+    let m = ebp.wrapping_sub(0x68);
+    // call width: 2
+    g.call(t(g, 0x3fd, 327), 0, &[m, at(0x1508)]);
+    let y = add(rf(g, grp + 0x14), rf(g, at(0x15d8)));
+    g.write::<f32>(at(0x15d8), y);
+    let mut eax = set_bone(g, ebp.wrapping_sub(0xa0), bone, 1);
+    let mut i = 0u32;
+    while i.cast_signed() < count(g) {
+        let o = model(i);
+        let ob = |off: u32| o.wrapping_add(off);
+        let (na, nb, nc, nd) = (ob(0x210), ob(0x23c), ob(0x1e4), ob(0x98));
+        let p = parent(g);
+        child_of(g, na, p);
+        let m54 = g.read::<u32>(ob(0x54));
+        let pos = na + 0x1c;
+        g.write::<u32>(na, w(0x4a9));
+        let mut st = Pushes::default();
+        st.push_all(&[pos + 8, pos + 4, pos, m54]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, t(g, 0x4a0, 262), 0);
+        let out = at(0x2c + 0x10 * i);
+        g.write::<u32>(na + 0x28, ONE);
+        st.push_all(&[pos, m, out]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, t(g, 0x4c2, 229), 0);
+        let p = parent(g);
+        child_of(g, nb, p);
+        let m50 = g.read::<u32>(ob(0x50));
+        let mut st = Pushes::default();
+        st.push_all(&[nb + 0x1c, m50]);
+        g.write::<u32>(nb, w(0x521));
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, t(g, 0x51b, 290), 0);
+        st.push(g.read::<u32>(ob(0x54)));
+        // call width: 12 (the most `Pushes::words` holds)
+        let v = st0_f32(st.call(g, t(g, 0x534, 277), 0).st0);
+        g.write::<f32>(nb + 0x28, mul(v, k(g, 0x552)));
+        let p = parent(g);
+        g.write::<u32>(nc, w(0x566));
+        child_of(g, nc, p);
+        g.write::<u32>(nc + 0x24, 0);
+        g.write::<u32>(nc + 0x1c, 0);
+        // the model's flag is 0 here (its node set-up copied the group's
+        // byte 0); the slot 333 branch is kept as the original has it
+        let h = if g.read::<u8>(ob(0x90)) & 1 != 0 {
+            let m = g.read::<u32>(ob(0x54));
+            // call width: 1
+            let h = st0_f32(g.call(t(g, 0x5b4, 333), 0, &[m]).st0);
+            sub(k(g, 0x5cd), h)
+        } else {
+            let m = g.read::<u32>(ob(0x50));
+            let hp = ebp.wrapping_sub(0x80);
+            // call width: 2
+            g.call(t(g, 0x5e0, 601), 0, &[m, hp]);
+            sub(k(g, 0x5f6), g.read::<f32>(hp))
+        };
+        let tilt = div(mul(h, k(g, 0x606)), k(g, 0x60e));
+        g.write::<u32>(nc + 0x20, crate::sb_sse::cvtt(tilt).cast_unsigned());
+        let p = parent(g);
+        g.write::<u32>(nd, w(0x62d));
+        child_of(g, nd, p);
+        g.write::<u32>(ob(0x1dc), nc);
+        g.write::<u32>(ob(0x1d8), nb);
+        g.write::<u32>(ob(0x1d4), na);
+        g.write::<u32>(ob(0x1c0), bone);
+        g.write::<u8>(ob(0x1e0), 0);
+        set_bone(g, ebp.wrapping_sub(0x8c), nd, 0);
+        let m54 = g.read::<u32>(ob(0x54));
+        // call width: 2
+        g.call(t(g, 0x6a8, 211), 0, &[m54, ob(0x134)]);
+        let fl = g.read::<u16>(ob(0x90));
+        g.write::<u16>(ob(0x90), fl | 0x10);
+        g.write::<u32>(ob(0x4c), nd);
+        eax = at(0x163c);
+        i += 1;
+    }
+    Ret::eax(eax)
+}
+
+/// [`summon_setup_0609`] (the `rel32`s: the model node set-up, the bone
+/// three times, `__security_check_cookie`).
+pub const SUMMON_SETUP_0609: Sig = Sig {
+    len: 1787,
+    hash: 0xde8f_79fc_2040_fac0,
+    calls: &[
+        (0xe3, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x3ed, Callee::Sig(&crate::sa_summon::BONE)),
+        (0x43b, Callee::Sig(&crate::sa_summon::BONE)),
+        (0x69c, Callee::Sig(&crate::sa_summon::BONE)),
+        (0x6f3, Callee::Any),
     ],
     imports: &[],
 };

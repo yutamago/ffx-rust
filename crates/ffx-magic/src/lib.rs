@@ -3915,6 +3915,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r31 object set-up 0512", &r31::OBJECT_SETUP_0512),
     ("r31 screen set-up 0601", &r31::SCREEN_SETUP_0601),
     ("r31 summon set-up 0613", &r31::SUMMON_SETUP_0613),
+    ("r31 summon set-up 0609", &r31::SUMMON_SETUP_0609),
     // round 31 (magic-r31): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
