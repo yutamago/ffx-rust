@@ -1149,3 +1149,104 @@ fn summon_start_0563() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0605` 0x10008ca0 (`r29::second_stage_0605`): the turn wrapped
+/// both ways and kept, the task list empty and not.
+#[test]
+fn second_stage_0605() {
+    let Some(mut t) = twin(605) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    let f = t.at(0x8ca0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let take = t.img.rel32_target(f + 0x1d1);
+    let s = SCRATCH + 0x1_0000;
+    let last = SCRATCH + 0x3400;
+    for (k, (turn, listed)) in (0u32..).zip([
+        (0.5f32, false),
+        (9.0, true),
+        (-9.0, true),
+        (f32::NAN, false),
+    ]) {
+        t.set_u32(op(&t, 0x7), s);
+        junk(&mut t, s + 0x1400, 0x1d00, k);
+        for i in 0..0x30u32 {
+            t.set_u32(
+                s + 0x1430 + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(s + 0x30b8, turn.to_bits());
+        t.set_u32(op(&t, 0x88), 0x00ac_0000 + k);
+        t.set_u32(op(&t, 0xb9), 0x00ad_0000 + k);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0x1d7), if listed { last } else { 0 });
+        t.set_u32(op(&t, 0x1f0), last);
+        ownb::dirty_stack(&mut t, 0x8ca0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0577` 0x1000a870 (`r29::burst_setup_0577`, internal: `ecx` the
+/// object, `edx` a word, one stack word): the parent with children and
+/// without, the flags word junk.
+#[test]
+fn burst_setup_0577() {
+    let Some(mut t) = twin(577) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xa870);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let obj = SCRATCH + 0x8000;
+    let arg = SCRATCH + 0x7000;
+    for k in 0..3u32 {
+        junk(&mut t, obj, 0x400, k);
+        junk_ops(
+            &mut t,
+            f,
+            &[0x3c, 0x164, 0x16c, 0x179, 0x190, 0x198, 0x1be, 0x1c6],
+        );
+        // the parent's children: none (its last child the parent) or one
+        let parent = op(&t, 0x56);
+        let kid = SCRATCH + 0x6000;
+        t.write(kid, &[0x22; 0x20]);
+        t.set_u32(op(&t, 0x62), if k == 1 { parent } else { kid });
+        t.set_u16(op(&t, 0x83), 3 + k as u16);
+        // the program table's owner and its table (slot 941)
+        let owner = SCRATCH + 0x6200;
+        junk(&mut t, owner, 0x100, k);
+        t.set_u32(op(&t, 0x114), owner);
+        for i in 0..8 {
+            t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+        }
+        t.stub(941, |m, a| {
+            m.w32(SCRATCH + 0x900, a[0]);
+            SCRATCH + 0x400
+        });
+        // the particle node's list: a static node with no children
+        let l2 = op(&t, 0x13e);
+        t.write(l2, &[0; 0x20]);
+        t.set_u32(l2 + 0xc, l2);
+        t.set_u32(l2 + 0x10, l2);
+        // the static list's last node
+        let last = SCRATCH + 0x6100;
+        t.write(last, &[0x23; 0x20]);
+        t.set_u32(op(&t, 0x21), last);
+        ownb::dirty_stack(&mut t, 0xa870 + k, &[]);
+        t.check(
+            f,
+            Call {
+                ecx: obj,
+                edx: 0x00ed_0000 + k,
+                ..Call::default()
+            },
+            &[arg],
+            Eax::Checked,
+            |g, img, fr| {
+                ffx_magic::Ret::eax(ffx_magic::r29::burst_setup_0577(
+                    g, img, fr.at, fr.esp, fr.ecx, fr.edx,
+                ))
+            },
+        );
+    }
+}

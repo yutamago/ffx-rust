@@ -1894,3 +1894,268 @@ pub const SUMMON_START_0563: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0605`'s summon's second stage (0x10008ca0, 752 bytes; cdecl, no
+/// arguments; `S = *G_S`): the record `S + 0x1470` = `(0, T, 0)` with `T =
+/// S + 0x30b8` less `K` wrapped once; the model matrix `M = S + 0x1430` a
+/// unit one (slot 235), its diagonal the actor's scale (slot 277) times
+/// `K1`, then times slots 15, 16, 17 of `*G_A`, turned by the record (slots
+/// 330, 328, 329); `S + 0x1460` = `S + 0x14e0`; the light `S + 0x2bf4`
+/// (`(1.5, 0, 1)` twice, 0x3c2237c3 and 0x65, 0x28, flags `| 3`) and the
+/// sprite fan record `S + 0x2de8`, each with a pool node
+/// ([`take`](crate::sa_pool::take); the light's kind 1) on the task list,
+/// the second made its tail. Returns the second node.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn second_stage_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x7));
+    let turn = g.read::<u32>(s + 0x30b8);
+    g.write::<u32>(s + 0x1470, 0);
+    g.write::<u32>(s + 0x1474, turn);
+    g.write::<u32>(s + 0x1478, 0);
+    let mut a = sub(g.read::<f32>(s + 0x1474), k(g, 0x38));
+    // comiss; jbe: unordered keeps the value
+    if a > k(g, 0x40) {
+        a = sub(a, k(g, 0x4a));
+    } else if k(g, 0x54) > a {
+        a = add(a, k(g, 0x61));
+    }
+    let m = s + 0x1430;
+    g.write::<f32>(s + 0x1474, a);
+    g.call(t(g, 0x66, 235), 0, &[m]);
+    let actor = g.read::<u32>(w(0x88));
+    let x = st0_f32(g.call(t(g, 0x82, 277), 0, &[actor]).st0);
+    let x = mul(x, k(g, 0xa0));
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + o, x);
+    }
+    let a3 = g.read::<u32>(w(0xb9));
+    let r = st0_f32(g.call(t(g, 0xa5, 15), 0, &[a3]).st0);
+    g.write::<f32>(m, mul(r, g.read::<f32>(m)));
+    let r = st0_f32(g.call(t(g, 0xd0, 16), 0, &[a3]).st0);
+    g.write::<f32>(m + 0x14, mul(g.read::<f32>(m + 0x14), r));
+    let r = st0_f32(g.call(t(g, 0xec, 17), 0, &[a3]).st0);
+    g.write::<f32>(m + 0x28, mul(r, g.read::<f32>(m + 0x28)));
+    for (op, (n, d)) in
+        [0xfcu32, 0x135, 0x154]
+            .into_iter()
+            .zip([(330u32, 0x1478u32), (328, 0x1470), (329, 0x1474)])
+    {
+        let ang = g.read::<u32>(s + d);
+        // call width: 3
+        g.call(t(g, op, n), 0, &[m, m, ang]);
+    }
+    for i in 0..4 {
+        let x = g.read::<u32>(s + 0x14e0 + 4 * i);
+        g.write::<u32>(s + 0x1460 + 4 * i, x);
+    }
+    // the light and its node
+    let l = s + 0x2bf4;
+    for (o, v) in [
+        (0u32, 0u32),
+        (0x1c, 0),
+        (0x20, 0x3c22_37c3),
+        (0x24, 0),
+        (0x28, 0x65),
+    ] {
+        g.write::<u32>(l + o, v);
+    }
+    g.write::<u16>(l + 0x2c, 0);
+    let n1 = crate::sa_pool::take(g, img, call(0x1d1), w(0x1c8));
+    let listed = g.read::<u32>(w(0x1d7)) != 0;
+    g.write::<u8>(n1 + 0x18, 1);
+    g.write::<u32>(n1 + 0x14, l);
+    g.write::<u32>(n1 + 4, 0);
+    if listed {
+        let last = g.read::<u32>(w(0x1f0));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    } else {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x203), n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    for (o, v) in [
+        (4u32, 0x3fc0_0000u32),
+        (8, 0),
+        (0xc, ONE),
+        (0x10, 0x3fc0_0000),
+        (0x14, 0),
+        (0x18, ONE),
+    ] {
+        g.write::<u32>(l + o, v);
+    }
+    let fl = g.read::<u16>(l + 0x2c) | 3;
+    g.write::<u16>(l + 0x2c, fl);
+    g.write::<u32>(l + 0x24, 0x28);
+    // the sprite fan record and its node
+    let e = s + 0x2de8;
+    for (o, v) in [
+        (0xf0u32, 0x4080_8080u32),
+        (0x124, 4),
+        (0x120, 0),
+        (0x110, 0x28),
+        (0xf8, 0),
+        (0xfc, 0x3d4c_cccd),
+        (0x100, 0),
+        (0x108, 0x50),
+        (0x104, 0x50),
+        (0x10c, 8),
+    ] {
+        g.write::<u32>(e + o, v);
+    }
+    let n2 = crate::sa_pool::take(g, img, call(0x2b0), w(0x247));
+    let listed = g.read::<u32>(w(0x2b6)) != 0;
+    g.write::<u32>(n2 + 0x14, e);
+    g.write::<u32>(n2 + 4, 0);
+    g.write::<u32>(w(0x2c6), n2);
+    if listed {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    } else {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x2e4), n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    Ret::eax(n2)
+}
+
+/// [`second_stage_0605`] (the `rel32`s: the pool take twice).
+pub const SECOND_STAGE_0605: Sig = Sig {
+    len: 752,
+    hash: 0x5e40_10f7_29c7_b228,
+    calls: &[
+        (0x1d1, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x2b0, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0577`'s burst object set up (0x1000a870, 582 bytes; internal:
+/// `ecx` = the object `O`, `edx` a word for its sprite node, the stack word
+/// `A`; an `ebp` frame with a particle set-up record at `ebp - 0x1c`): `O`
+/// a node (vtable, callback, links to itself) appended to the static list
+/// `L` (its flag bit 0 cleared); the static node `O + 0x20` and the sprite
+/// node `S = O + 0x78` children of the parent `P` (vtables, pass 0xff,
+/// `P`'s count up); `O + 0x3c..` = `(1, 1, 1, 10.5)`; `S + 0x13c` = `A`,
+/// `+0x140` = `O + 0x20`, `+0x144` the DLL's block, `+0x128` = `edx`,
+/// byte `+0x148` 0; the particle node `O + 0x310`
+/// ([`particle_node`](crate::sb_nodes::particle_node): list `L2`, part
+/// `S`, the program table's owner, vector block, index 5); the flash off
+/// ([`flash_off`](crate::m0577::flash_off)); the camera globals: three
+/// spans `G_a - G_b`, the sprite node, the flags word with bit 1 cleared
+/// and bit 0 set and the store runs. Returns the flags word.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn burst_setup_0577<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    obj: u32,
+    edx: u32,
+) -> u32 {
+    use crate::r25::abs_stores;
+    use crate::sb_sse::sub;
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, o: u32| g.read::<f32>(w(o));
+    let arg = g.read::<u32>(esp + 4);
+    let ebp = esp.wrapping_sub(4);
+    // the object on the static list
+    g.write::<u32>(obj + 8, obj);
+    g.write::<u32>(obj + 4, obj);
+    g.write::<u32>(obj, w(0x12));
+    g.write::<u32>(obj + 0x10, w(0x19));
+    g.write::<u32>(obj + 0x14, obj);
+    let last = g.read::<u32>(w(0x21));
+    g.write::<u32>(obj + 8, last);
+    g.write::<u32>(obj + 4, w(0x2b));
+    let last = g.read::<u32>(w(0x30));
+    g.write::<u32>(last + 4, obj);
+    let fl = g.read::<u32>(w(0x3c)) & !1;
+    g.write::<u32>(w(0x3c), fl);
+    g.write::<u32>(w(0x43), obj);
+    // two children of the parent `P`: (the node, its operands: vtable,
+    // the parent, the last child, the parent again, the first child's
+    // store, the count, the last child's store)
+    let child = |g: &mut G, c: u32, [p1, p2, l1, l2, cmp, first, count, lw]: [u32; 8]| {
+        g.write::<u16>(c + 0x1a, 0xff);
+        g.write::<u32>(c + 0x10, c);
+        g.write::<u32>(c + 0xc, c);
+        g.write::<u32>(c + 0x14, w(p1));
+        g.write::<u32>(c + 4, w(p2));
+        let l = g.read::<u32>(w(l1));
+        g.write::<u32>(c + 8, l);
+        let l = g.read::<u32>(w(l2));
+        if l == w(cmp) {
+            g.write::<u32>(w(first), c);
+        } else {
+            g.write::<u32>(l + 4, c);
+        }
+        let n = g.read::<u16>(w(count)).wrapping_add(1);
+        g.write::<u16>(w(count), n);
+        g.write::<u32>(w(lw), c);
+    };
+    let c = obj + 0x20;
+    child(g, c, [0x56, 0x5d, 0x62, 0x6a, 0x6f, 0x77, 0x83, 0x89]);
+    g.write::<u32>(c, w(0x8f));
+    for (o, v) in [
+        (0x3cu32, ONE),
+        (0x40, ONE),
+        (0x44, ONE),
+        (0x48, 0x4128_0000),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    let s = obj + 0x78;
+    g.write::<u32>(s, w(0xb4));
+    child(g, s, [0xc7, 0xce, 0xd3, 0xdb, 0xe0, 0xe8, 0xf4, 0xfd]);
+    g.write::<u32>(s + 0x140, c);
+    g.write::<u32>(s + 0x13c, arg);
+    let owner = g.read::<u32>(w(0x114));
+    g.write::<u32>(s + 0x144, w(0x11e));
+    g.write::<u32>(s + 0x128, edx);
+    g.write::<u8>(s + 0x148, 0);
+    // the particle node's set-up record
+    let rec = ebp.wrapping_sub(0x1c);
+    let node = obj + 0x310;
+    g.write::<u32>(rec, node);
+    g.write::<u32>(node, w(0x134));
+    for (i, v) in (1u32..).zip([w(0x13e), s, owner, w(0x14b), 5]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x157), rec);
+    crate::m0577::flash_off(g, img, img.rel32_target(f + 0x15c));
+    // the camera globals
+    let x = sub(rf(g, 0x164), rf(g, 0x16c));
+    let one = sub(rf(g, 0x174), 0.0);
+    let flags = (g.read::<u32>(w(0x179)) & !2) | 1;
+    g.write::<f32>(w(0x188), x);
+    let y = sub(rf(g, 0x190), rf(g, 0x198));
+    g.write::<u32>(w(0x1a4), s);
+    abs_stores(g, img, f, 0x1a8, 0x1b2);
+    g.write::<f32>(w(0x1b6), y);
+    let z = sub(rf(g, 0x1be), rf(g, 0x1c6));
+    abs_stores(g, img, f, 0x1ca, 0x206);
+    g.write::<f32>(w(0x20a), z);
+    g.write::<f32>(w(0x212), one);
+    abs_stores(g, img, f, 0x216, 0x234);
+    g.write::<u32>(w(0x235), flags);
+    g.write::<u32>(obj + 0x1c, 0);
+    flags
+}
+
+/// [`burst_setup_0577`] (the `rel32`s: the particle node, the flash off).
+pub const BURST_SETUP_0577: Sig = Sig {
+    len: 582,
+    hash: 0xf1a7_1c4e_422a_ab1c,
+    calls: &[
+        (0x157, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x15c, Callee::Sig(&crate::m0577::FLASH_OFF)),
+    ],
+    imports: &[],
+};
