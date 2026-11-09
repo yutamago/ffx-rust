@@ -1487,6 +1487,8 @@ fn facing_places_0605() {
                 t.set_u32(table + 0x20 * j + w(&t, mc, 0x38), mm);
                 mesh(&mut t, mm, j + k);
             }
+            // the actor globals junk, so a misread operand shows
+            junk_ops(&mut t, f, &[0x39, 0xf0, 0x1ab, 0x1de, 0x4a6, 0x118, 0x121]);
             ownb::dirty_stack(&mut t, rva + k, &[0xa4]);
             t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
                 ffx_magic::Ret::eax(ffx_magic::r29::facing_places_0605(g, img, fr.at, fr.esp))
@@ -1602,5 +1604,75 @@ fn load_start_up_0605() {
         ownb::dirty_stack(&mut t, 0x6c40 + k, &[0xa4 + 0x10]);
         ownb::reset_counters(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0577` 0x1000c320 (`r29::body_setup_0577`, internal: `ecx` the
+/// object, `edx` a word, `(A, b)` on the stack): the parent with children
+/// and without, the static list's last node, the actor block varied.
+#[test]
+fn body_setup_0577() {
+    let Some(mut t) = twin(577) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 0, 1, |_, a| 0x00a0_0000 ^ a[0]);
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25);
+    rec(&mut t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+        for i in 0..4 {
+            let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    let f = t.at(0xc320);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let obj = SCRATCH + 0x8000;
+    let a = SCRATCH + 0x6800;
+    let pa = SCRATCH + 0x6a00;
+    for k in 0..3u32 {
+        junk(&mut t, obj, 0xd40, k);
+        junk(&mut t, a, 0x200, k + 1);
+        t.set_u32(a + 0x144, pa);
+        junk(&mut t, pa, 0x40, k + 2);
+        for i in 0..0x10u32 {
+            t.set_u32(
+                a + 0x9c + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+        }
+        junk_ops(&mut t, f, &[0x62]);
+        // the parent's children: none (its last child the parent) or one
+        let parent = op(&t, 0xdd);
+        let kid = SCRATCH + 0x6000;
+        t.write(kid, &[0x22; 0x20]);
+        t.set_u32(op(&t, 0xe9), if k == 1 { parent } else { kid });
+        t.set_u16(op(&t, 0x10a), 3 + k as u16);
+        let last = SCRATCH + 0x6100;
+        t.write(last, &[0x23; 0x20]);
+        t.set_u32(op(&t, 0x40), last);
+        ownb::dirty_stack(&mut t, 0xc320 + k, &[]);
+        t.check(
+            f,
+            Call {
+                ecx: obj,
+                edx: 0x00ed_0000 + k,
+                ..Call::default()
+            },
+            &[a, 0x00b0_0000 + k],
+            Eax::Checked,
+            |g, img, fr| {
+                ffx_magic::Ret::eax(ffx_magic::r29::body_setup_0577(
+                    g, img, fr.at, fr.esp, fr.ecx, fr.edx,
+                ))
+            },
+        );
     }
 }

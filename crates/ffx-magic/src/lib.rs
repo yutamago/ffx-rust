@@ -3892,6 +3892,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r29 facing places 0605", &r29::FACING_PLACES_0605),
     ("r29 facing places 0307", &r29::FACING_PLACES_0307),
     ("r29 start-up 0605", &r29::START_UP_0605),
+    ("r29 body set-up 0577", &r29::BODY_SETUP_0577),
     // round 29 (magic-r29): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

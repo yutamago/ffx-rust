@@ -2734,3 +2734,195 @@ pub const LOAD_0605: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0605))],
     imports: &[],
 };
+
+/// `magic_0577`'s summoned body set up (0x1000c320, 882 bytes; internal:
+/// `ecx` = the object `O`, `edx` = `X`, the stack words `(A, b)`; a /GS
+/// `ebp` frame: the points `V1` at `ebp - 0x14`, `V2` at `ebp - 0x24`, the
+/// fade record at `ebp - 0x3c`, the node set-up record at `ebp - 0x48`):
+/// - `O + 0x90` a node (vtable, callback) on the static list `L` (its flag
+///   bit 0 cleared), `O + 0xa4` = `O`; slot 26 `(0x301e, 1)`; the model
+///   node `M = O + 0xa8` ([`model_node_tail`](crate::o4_single3::model_node_tail)
+///   with slot 0 `(0x301e)`'s handle), slot 10 `(M[0x54], 0)`, its fade
+///   ([`chr_fade`](crate::l3_common::chr_fade) `(M, 0, 0)`);
+/// - the static node `C = O + 0x288` under the parent `P`, `O + 0x2a4..` =
+///   `A[0x144]`'s `+0x1c` less 0x2000, `+0x20` plus 0x4000, `+0x24`; the
+///   node `O + 0x2e0` under `C` (`+0x2fc..` = `(0, 0, -0x800)`); the sprite
+///   node `E = O + 0x180` under `P` (scales 1.0, 0.004); the particle node
+///   `O + 0x30c` ([`node_setup`](crate::s5_misc::node_setup) `(.., P, G,
+///   C, E, M)`); byte `O + 0x454` 4;
+/// - `O + 0x50` = slot 229 `(A + 0x9c, (0, -75000, -25000, 1))`, `O +
+///   0x40` = slot 229 `(A + 0x9c, (0, -600000, -450000, 1))`; slot 325
+///   copies `O + 0x40` to `O + 0x49c` and to `G2`; slot 234 `(G3, V2,
+///   V1)`; slot 211 `(O[0xfc], O + 0x3a8)`;
+/// - flag 0x10 of `O + 0x138`, `O + 0xf4` the particle node, `+0xd28` =
+///   `b`, `+0x8c` = `A`, `+0x88` = `X`, `+0x60` 0. Returns `X`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+#[allow(clippy::too_many_arguments)] // the original's registers and stack
+pub fn body_setup_0577<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, obj: u32, x: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let a = g.read::<u32>(esp + 4);
+    let b = g.read::<u32>(esp + 8);
+    let ebp = esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    // `O + 0x90` on the static list
+    g.write::<u32>(obj + 0xa4, obj);
+    let s1 = obj + 0x90;
+    g.write::<u32>(s1, w(0x2e));
+    g.write::<u32>(s1 + 8, s1);
+    g.write::<u32>(s1 + 4, s1);
+    g.write::<u32>(s1 + 0x10, w(0x3b));
+    let last = g.read::<u32>(w(0x40));
+    g.write::<u32>(s1 + 8, last);
+    g.write::<u32>(s1 + 4, w(0x4a));
+    let last = g.read::<u32>(w(0x4f));
+    g.write::<u32>(last + 4, s1);
+    let fl = g.read::<u32>(w(0x62)) & !1;
+    g.write::<u32>(w(0x62), fl);
+    g.write::<u32>(w(0x69), s1);
+    // call width: 2
+    g.call(t(g, 0x5c, 26), 0, &[0x301e, 1]);
+    // call width: 2 (slot 26's second word under it)
+    let h = g.call(t(g, 0x76, 0), 0, &[0x301e, 1]).eax;
+    // the model node: `push h` over slot 26's word, the return address at
+    // `E - 0x68`
+    let m = obj + 0xa8;
+    let call_esp = esp.wrapping_sub(0x64);
+    g.write::<u32>(call_esp + 4, h);
+    g.write::<u32>(call_esp + 8, 1);
+    let mt = Frame {
+        at: img.rel32_target(f + 0x93),
+        esp: call_esp,
+        ecx: m,
+        ..Frame::default()
+    };
+    crate::o4_single3::model_node_tail(g, img, &mt);
+    let model = g.read::<u32>(m + 0x54);
+    // call width: 4 (the model node's words under it)
+    g.call(t(g, 0x98, 10), 0, &[model, 0, h, 1]);
+    let fade = l(0x3c);
+    for (i, v) in (0u32..).zip([m, 0, 0]) {
+        g.write::<u32>(fade + 4 * i, v);
+    }
+    crate::l3_common::chr_fade(g, img, img.rel32_target(f + 0xbe), fade);
+    // the static node `C` under the parent
+    let c = obj + 0x288;
+    g.write::<u32>(c, w(0xca));
+    child_of_0512(
+        g,
+        img,
+        f,
+        c,
+        [0xdd, 0xe4, 0xe9, 0xf1, 0xf6, 0xfe, 0x10a, 0x110],
+    );
+    let pa = g.read::<u32>(a + 0x144);
+    let v = g.read::<u32>(pa + 0x1c).wrapping_sub(0x2000);
+    g.write::<u32>(obj + 0x2a4, v);
+    let v = g
+        .read::<u32>(g.read::<u32>(a + 0x144) + 0x20)
+        .wrapping_add(0x4000);
+    g.write::<u32>(obj + 0x2a8, v);
+    let v = g.read::<u32>(g.read::<u32>(a + 0x144) + 0x24);
+    g.write::<u32>(obj + 0x2ac, v);
+    // the node `D` under `C`
+    let d = obj + 0x2e0;
+    g.write::<u16>(d + 0x1a, 0xff);
+    g.write::<u32>(d + 0x10, d);
+    g.write::<u32>(d + 0xc, d);
+    g.write::<u32>(d + 0x14, c);
+    g.write::<u32>(d + 4, c);
+    let lc = g.read::<u32>(c + 0x10);
+    g.write::<u32>(d + 8, lc);
+    let lc = g.read::<u32>(c + 0x10);
+    if lc == c {
+        g.write::<u32>(c + 0xc, d);
+    } else {
+        g.write::<u32>(lc + 4, d);
+    }
+    let n = g.read::<u16>(c + 0x18).wrapping_add(1);
+    g.write::<u16>(c + 0x18, n);
+    g.write::<u32>(c + 0x10, d);
+    g.write::<u32>(d, w(0x185));
+    for (o, v) in [(0x2fcu32, 0u32), (0x300, 0), (0x304, 0xffff_f800)] {
+        g.write::<u32>(obj + o, v);
+    }
+    // the sprite node `E` under the parent
+    let e = obj + 0x180;
+    child_of_0512(
+        g,
+        img,
+        f,
+        e,
+        [0x1bc, 0x1c3, 0x1c8, 0x1d0, 0x1d5, 0x1dd, 0x1e9, 0x1ef],
+    );
+    g.write::<u32>(e, w(0x1f5));
+    let pn = obj + 0x30c;
+    for (o, v) in [
+        (0x19cu32, ONE),
+        (0x1a0, ONE),
+        (0x1a4, ONE),
+        (0x1a8, 0x3b83_126f),
+    ] {
+        g.write::<u32>(obj + o, v);
+    }
+    let rec = l(0x48);
+    for (i, v) in (0u32..).zip([pn, w(0x233), w(0x23a), c, e, m]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    g.write::<u32>(pn, w(0x246));
+    let ns = Frame {
+        at: img.rel32_target(f + 0x24b),
+        esp: esp.wrapping_sub(0x60),
+        ecx: rec,
+        ..Frame::default()
+    };
+    crate::s5_misc::node_setup(g, img, &ns);
+    g.write::<u8>(obj + 0x454, 4);
+    // the two points
+    let (v1, v2) = (l(0x14), l(0x24));
+    let src = a + 0x9c;
+    for (i, x) in (0u32..).zip([0, 0xc792_7c00, 0xc6c3_5000, ONE]) {
+        g.write::<u32>(v1 + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x26c, 229), 0, &[obj + 0x50, src, v1]);
+    for (i, x) in (0u32..).zip([0, 0xc912_7c00, 0xc8db_ba00, ONE]) {
+        g.write::<u32>(v2 + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x29c, 229), 0, &[obj + 0x40, src, v2]);
+    // call width: 2
+    g.call(t(g, 0x2d8, 325), 0, &[obj + 0x49c, obj + 0x40]);
+    // call width: 2
+    g.call(t(g, 0x2e5, 325), 0, &[w(0x2f1), obj + 0x40]);
+    // call width: 3
+    g.call(t(g, 0x300, 234), 0, &[w(0x305), v2, v1]);
+    let h2 = g.read::<u32>(obj + 0xfc);
+    // call width: 2
+    g.call(t(g, 0x31c, 211), 0, &[h2, pn + 0x9c]);
+    let fl = g.read::<u16>(obj + 0x138) | 0x10;
+    g.write::<u16>(obj + 0x138, fl);
+    g.write::<u32>(obj + 0xf4, pn);
+    g.write::<u32>(obj + 0xd28, b);
+    g.write::<u32>(obj + 0x8c, a);
+    g.write::<u32>(obj + 0x88, x);
+    g.write::<u32>(obj + 0x60, 0);
+    x
+}
+
+/// [`body_setup_0577`] (the `rel32`s: the model node, the fade, the node
+/// set-up, `__security_check_cookie`).
+pub const BODY_SETUP_0577: Sig = Sig {
+    len: 882,
+    hash: 0x0a9c_39c7_3124_2939,
+    calls: &[
+        (
+            0x93,
+            Callee::Sig(&crate::o4_single3::MODEL_NODE_TAIL_0577_8D70),
+        ),
+        (0xbe, Callee::Sig(&crate::l3_common::CHR_FADE)),
+        (0x24b, Callee::Sig(&crate::s5_misc::NODE_SETUP)),
+        (0x36a, Callee::Any),
+    ],
+    imports: &[],
+};
