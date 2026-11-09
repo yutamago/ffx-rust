@@ -3011,6 +3011,9 @@ ports! {
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
     "r25 draw 0708" => r25::DRAW_0708, r25::draw_0708;
     "r25 main task 0573" => r25::MAIN_TASK_0573, r25::main_task_0573;
+    "r25 summon task 0514" => r25::SUMMON_TASK_0514, r25::summon_task_0514;
+    "r25 summon task 0513" => r25::SUMMON_TASK_0513, r25::summon_task_0513;
+    "r25 summon task 0603" => r25::SUMMON_TASK_0603, r25::summon_task_0603;
     // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
