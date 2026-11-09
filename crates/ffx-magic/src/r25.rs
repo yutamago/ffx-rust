@@ -4877,3 +4877,119 @@ pub const LOAD_0587: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0587))],
     imports: &[],
 };
+
+/// `magic_0586`'s effect end (0x100027e0, 519 bytes; internal, no
+/// arguments, `esp` the entry stack pointer; a cookie frame, `ebp = E -
+/// 4`, the position at `ebp - 0x14`). Slot 384 of the second and third
+/// selected characters (`CHRS[(*G_SEL)[1]]`, `[2]`); slots 25 and 24
+/// `(0x3011, 1/0)`, `(0x3013, 1/0)`; unless `*G_OFF` the caster index
+/// `*G_I` below 0x20 put back where it stands (slots 217 and 255 with the
+/// position); slot 211 `(*G_A, 0)`; slot 213 `(*G_B, 0)` while the u16
+/// `*G_W` is 0; `*G_F` 1; the caster shown (slot 296 `(I, 1)` for an
+/// index below 32 and the battle on, else slot 257 `(*G_A, 0)`); slots
+/// 399 `(*G_A, 0)` and 8 `(*G_A, 1)`; the others shown
+/// ([`show_others`](crate::sb_vm::show_others), 1) and the party's list
+/// run ([`each_actor`](crate::sa_script::each_actor), 1); slots 371 `(0,
+/// 0)`, `(1, 0)`, 543 `(0)`; the objects freed
+/// ([`objects_freed`](crate::s6_misc::objects_freed)), the node `*G_N`
+/// back to the pool ([`give_back`](crate::sa_pool::give_back)) and
+/// cleared; slot 334 `(0)`; the parts registered
+/// ([`register_parts`](crate::sa_misc::register_parts),
+/// [`register_resource_parts`](crate::s4_small::register_resource_parts)).
+/// Returns the last one's `eax`.
+#[allow(clippy::too_many_lines)] // one straight sequence
+pub fn effect_end_0586<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = esp.wrapping_sub(4);
+    for (sel_op, idx, tbl, op) in [(0x11u32, 1u32, 0x1du32, 0x22u32), (0x2f, 2, 0x3a, 0x3f)] {
+        let b = u32::from(g.read::<u8>(rd(g, sel_op) + idx));
+        let chr = g.read::<u32>(w(tbl).wrapping_add(4 * b));
+        g.call(t(g, op, 384), 0, &[chr]);
+    }
+    for (op, slot, id, on) in [
+        (0x4cu32, 25u32, 0x3011u32, 1u32),
+        (0x5d, 24, 0x3011, 0),
+        (0x6e, 25, 0x3013, 1),
+        (0x7f, 24, 0x3013, 0),
+    ] {
+        // call width: 2
+        g.call(t(g, op, slot), 0, &[id, on]);
+    }
+    let a = rd(g, 0x91);
+    if rd(g, 0x9a) == 0 {
+        let i = rd(g, 0xa4);
+        if i.cast_signed() < 0x20 {
+            let pos = ebp.wrapping_sub(0x14);
+            // call width: 2
+            g.call(t(g, 0xb2, 217), 0, &[i, pos]);
+            // call width: 2
+            g.call(t(g, 0xc4, 255), 0, &[i, pos]);
+        }
+    }
+    // call width: 2
+    g.call(t(g, 0xd6, 211), 0, &[a, 0]);
+    if g.read::<u16>(w(0xeb)) == 0 {
+        // call width: 2
+        g.call(t(g, 0xf4, 213), 0, &[rd(g, 0xfc), 0]);
+    }
+    g.write::<u32>(w(0x114), 1);
+    let i = rd(g, 0x11f);
+    if rd(g, 0x10d) == 0 && i.cast_signed() < 0x20 {
+        // call width: 2
+        g.call(t(g, 0x12c, 296), 0, &[i, 1]);
+    } else {
+        // call width: 2
+        g.call(t(g, 0x139, 257), 0, &[rd(g, 0x141), 0]);
+    }
+    // call width: 2
+    g.call(t(g, 0x14e, 399), 0, &[rd(g, 0x15f), 0]);
+    // call width: 2
+    g.call(t(g, 0x166, 8), 0, &[rd(g, 0x16e), 1]);
+    // slots 399 and 8's words under the calls: the return address at
+    // `ebp - 0x28`
+    let inner = ebp.wrapping_sub(0x28);
+    crate::sb_vm::show_others(g, img, call(0x17d), inner, 1);
+    crate::sa_script::each_actor(g, img, call(0x187), 1, inner);
+    // call width: 2
+    g.call(t(g, 0x18c, 371), 0, &[0, 0]);
+    // call width: 2
+    g.call(t(g, 0x19d, 371), 0, &[1, 0]);
+    g.call(t(g, 0x1ae, 543), 0, &[0]);
+    let at = |c: u32| Frame {
+        at: call(c),
+        esp: ebp.wrapping_sub(0x18),
+        ..Frame::default()
+    };
+    crate::s6_misc::objects_freed(g, img, &at(0x1c0));
+    let node = rd(g, 0x1c6);
+    if node != 0 {
+        crate::sa_pool::give_back(g, img, call(0x1cf), node);
+        g.write::<u32>(w(0x1d5), 0);
+    }
+    let eax = g.call(t(g, 0x1de, 334), 0, &[0]).eax;
+    crate::sa_misc::register_parts(g, img, call(0x1f0), eax);
+    crate::s4_small::register_resource_parts(g, img, &at(0x1f5)).eax
+}
+
+/// [`effect_end_0586`] (519 bytes, 1 overlay).
+pub const EFFECT_END_0586: Sig = Sig {
+    len: 519,
+    hash: 0x8587_9db2_b060_d5ea,
+    calls: &[
+        (0x17d, Callee::Sig(&crate::sb_vm::SHOW_OTHERS)),
+        (0x187, Callee::Sig(&crate::sa_script::EACH_ACTOR)),
+        (0x1c0, Callee::Sig(&crate::s6_misc::OBJECTS_FREED)),
+        (0x1cf, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x1f0, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (
+            0x1f5,
+            Callee::Sig(&crate::s4_small::REGISTER_RESOURCE_PARTS),
+        ),
+        // __security_check_cookie
+        (0x1ff, Callee::Any),
+    ],
+    imports: &[],
+};
