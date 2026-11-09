@@ -972,3 +972,319 @@ pub const LOAD_0307: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0307))],
     imports: &[],
 };
+
+/// `magic_0307`'s bone point pushed out by a turned offset (0x100044c0,
+/// 240 bytes; internal: `ecx` = the point `P`; a /GS `ebp` frame, the
+/// matrix `M` at `ebp - 0x64`, the offset `V` at `ebp - 0x14`, the result
+/// at `ebp - 0x24`): slot 237 `(*G_O, 0x5c, 0, P)` gives the bone point,
+/// `P.w` 1.0; `M` the identity (slot 235) turned by `S + 0xc20` (slot 328)
+/// and `S + 0xc24` (slot 329); `V = (0, -2, -2, 1)` through `M` (slot 229)
+/// added to `P` (slot 248), `P.w` 1.0 again. Each call sees the words the
+/// earlier ones left. Returns slot 248's `eax`. `esp` is the entry's (the
+/// return address).
+pub fn bone_offset_0307<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, p: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let (m, v, out) = (
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x24),
+    );
+    let s = g.read::<u32>(w(0x1e));
+    let actor = g.read::<u32>(w(0x2c));
+    let mut st = Pushes::default();
+    st.push_all(&[p, 0, 0x5c, actor]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x11, 237), 0);
+    g.write::<u32>(p.wrapping_add(0xc), 0x3f80_0000);
+    for (i, x) in (0u32..).zip([0, 0xc000_0000, 0xc000_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    st.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x37, 235), 0);
+    // `add esp, 0x10`: `P` is left on top for the turns' angles
+    st.pop(4);
+    st.set_top(g.read::<u32>(s.wrapping_add(0xc20)));
+    st.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x75, 328), 0);
+    st.pop(2);
+    st.set_top(g.read::<u32>(s.wrapping_add(0xc24)));
+    st.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x97, 329), 0);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    st.push_all(&[v, m, out]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0xb0, 229), 0);
+    st.push_all(&[out, p, p]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let eax = st.call(g, t(g, 0xc8, 248), 0).eax;
+    g.write::<u32>(p.wrapping_add(0xc), 0x3f80_0000);
+    eax
+}
+
+/// [`bone_offset_0307`] (`__security_check_cookie`).
+pub const BONE_OFFSET_0307: Sig = Sig {
+    len: 240,
+    hash: 0x3eb5_4881_7e78_0f1c,
+    calls: &[(0xe8, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0307`'s bone offset for a late object (0x100045b0, 39 bytes;
+/// cdecl `(O)`): an object whose `+0x118` is above 0x3a gets `+0x104` 0
+/// (`eax` as it came); else its point `O + 0xd0` goes through
+/// [`bone_offset_0307`] (a tail jump on the same stack), whose `eax` it
+/// returns.
+pub fn late_bone_offset_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = fr.arg(g, 0);
+    if g.read::<u32>(o.wrapping_add(0x118)).cast_signed() > 0x3a {
+        g.write::<u32>(o.wrapping_add(0x104), 0);
+        return Ret::eax(fr.eax);
+    }
+    let f = img.rel32_target(fr.at + 0x23);
+    Ret::eax(bone_offset_0307(g, img, f, fr.esp, o.wrapping_add(0xd0)))
+}
+
+/// [`late_bone_offset_0307`].
+pub const LATE_BONE_OFFSET_0307: Sig = Sig {
+    len: 39,
+    hash: 0x8256_666b_c9e3_e3f5,
+    calls: &[(0x23, Callee::Sig(&BONE_OFFSET_0307))],
+    imports: &[],
+};
+
+/// `magic_0307`'s object steered by the swing record (0x100045e0, 320
+/// bytes; cdecl `(O)`; `S = *G_S`, the record `R = S + 0x16a0`): while the
+/// count `n = R[0x20]` is above 0, the blend `t = n / D` gives the scale
+/// `x = (C - t) K + t K'` (kept in the argument's slot), the count drops,
+/// and when it reaches 0 slot 233 `(R, R, 10.0)` runs and the fader `S +
+/// 0x236c` restarts (`(0, 60, 0, 0)`, its node by
+/// [`object_node_edx`](crate::o4_more2::object_node_edx) with 0x14); the
+/// point `O + 0xd0` goes through [`bone_offset_0307`]. With no count the
+/// scale is `K`. `O + 0x60..0x6c` = the scale; `R + 0x10..` += `R`'s
+/// first three words, and `O + 0xd0..` += those. Returns the count it
+/// read (none left) or the bone offset's `eax`.
+pub fn swing_object_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x6));
+    let r = s.wrapping_add(0x16a0);
+    let o = fr.arg(g, 0);
+    let n = g.read::<u32>(r + 0x20);
+    let (scale, eax) = if n.cast_signed() > 0 {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let t = div(n.cast_signed() as f32, c(g, 0x36));
+        let left = n.wrapping_sub(1);
+        let a = mul(t, c(g, 0x43));
+        g.write::<u32>(r + 0x20, left);
+        let x = add(mul(sub(c(g, 0x2e), t), c(g, 0x4e)), a);
+        // `movss [ebp + 8], xmm1`: the argument's slot keeps it
+        g.write::<f32>(fr.esp.wrapping_add(4), x);
+        if left == 0 {
+            // call width: 3 (`push ecx` then `mov [esp], 10.0`)
+            g.call(slot_target(g, w(0x5e), 233), 0, &[r, r, 0x4120_0000]);
+            let c = s.wrapping_add(0x236c);
+            for (k, v) in [(0u32, 0u32), (4, 0x3c), (8, 0), (0xc, 0)] {
+                g.write::<u32>(c + k, v);
+            }
+            let node = img.rel32_target(f + 0x9e);
+            crate::o4_more2::object_node_edx(g, img, node, c, 0x14);
+        }
+        let bo = img.rel32_target(f + 0xa9);
+        // the return address: `esp` after four pushes (`ebp`, three registers)
+        let esp = fr.esp.wrapping_sub(0x14);
+        let eax = bone_offset_0307(g, img, bo, esp, o.wrapping_add(0xd0));
+        (g.read::<f32>(fr.esp.wrapping_add(4)), eax)
+    } else {
+        (c(g, 0xb8), n)
+    };
+    for k in [0x6cu32, 0x68, 0x64, 0x60] {
+        g.write::<f32>(o.wrapping_add(k), scale);
+    }
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    g.write::<f32>(r + 0x10, add(rf(g, r), rf(g, r + 0x10)));
+    g.write::<f32>(r + 0x14, add(rf(g, r + 0x14), rf(g, r + 4)));
+    g.write::<f32>(r + 0x18, add(rf(g, r + 8), rf(g, r + 0x18)));
+    let p = o.wrapping_add(0xd0);
+    g.write::<f32>(p, add(rf(g, r + 0x10), rf(g, p)));
+    g.write::<f32>(p + 4, add(rf(g, p + 4), rf(g, r + 0x14)));
+    g.write::<f32>(p + 8, add(rf(g, r + 0x18), rf(g, p + 8)));
+    Ret::eax(eax)
+}
+
+/// [`swing_object_0307`] (the `rel32`s: the node, the bone offset).
+pub const SWING_OBJECT_0307: Sig = Sig {
+    len: 320,
+    hash: 0x24a2_d247_3dbd_0106,
+    calls: &[
+        (
+            0x9e,
+            Callee::Sig(&crate::o4_more2::OBJECT_NODE_EDX_0307_B480),
+        ),
+        (0xa9, Callee::Sig(&BONE_OFFSET_0307)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0307`'s two late objects started (0x10004720, 361 bytes; no
+/// arguments; `S = *G_S`): the objects `A` (operand `+0x18`) and `B`
+/// (`+0x47`) started ([`start_object_at`](crate::s4_misc::start_object_at):
+/// part 8, scale `K`; part 9, owner 0xf, scale 0), each given the turn
+/// `S + 0xc20`, `S + 0xc24` at `+0xc0`/`+0xc4` and its step callback at
+/// `+0x104` ([`late_bone_offset_0307`], [`swing_object_0307`]); the swing
+/// record `R = S + 0x16a0`: `(0, 0, -125, 0)` through slot 229 `(R, S +
+/// 0xbe0, R)`, `+0x10..0x1c` 0, count 0x2b; the fader `F = S + 0x2350`
+/// reset (`(0, 40, 60, 0)`, `+0x10`/`+0x14` 0x2b, u16 `+0x18` 0) with a
+/// pool node ([`take`](crate::sa_pool::take), kind 1) last on the task
+/// list. Returns the node.
+pub fn late_objects_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0xc));
+    let k = g.read::<f32>(w(0x4));
+    let so = call(0x1d);
+    crate::s4_misc::start_object_at(g, img, so, w(0x18), k, 8, 0, 0);
+    let turn = |g: &mut G, (x, y): (u32, u32)| {
+        let a = g.read::<u32>(s.wrapping_add(0xc20));
+        g.write::<u32>(w(x), a);
+        let b = g.read::<u32>(s.wrapping_add(0xc24));
+        g.write::<u32>(w(y), b);
+    };
+    turn(g, (0x30, 0x4f));
+    g.write::<u32>(w(0x55), w(0x59));
+    crate::s4_misc::start_object_at(g, img, call(0x5e), w(0x47), 0.0, 9, 0xf, 0);
+    turn(g, (0x74, 0x84));
+    g.write::<u32>(w(0x8a), w(0x8e));
+    let r = s.wrapping_add(0x16a0);
+    for (i, x) in (0u32..).zip([0, 0, 0xc2fa_0000, 0]) {
+        g.write::<u32>(r + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x9b, 229), 0, &[r, s.wrapping_add(0xbe0), r]);
+    for o in [0x10u32, 0x14, 0x18, 0x1c] {
+        g.write::<u32>(r + o, 0);
+    }
+    g.write::<u32>(r + 0x20, 0x2b);
+    let c = s.wrapping_add(0x2350);
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x28),
+        (8, 0x3c),
+        (0xc, 0),
+        (0x14, 0x2b),
+        (0x10, 0x2b),
+    ] {
+        g.write::<u32>(c + o, v);
+    }
+    g.write::<u16>(c + 0x18, 0);
+    let node = crate::sa_pool::take(g, img, call(0x124), w(0xf2));
+    let listed = g.read::<u32>(w(0x12a)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), c);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let last = g.read::<u32>(w(0x143));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last.wrapping_add(4), node);
+        g.write::<u32>(w(0x14d), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x15c), node);
+        g.write::<u32>(w(0x161), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`late_objects_0307`] (the `rel32`s: the object start twice, the pool
+/// take).
+pub const LATE_OBJECTS_0307: Sig = Sig {
+    len: 361,
+    hash: 0xbe52_9a7f_bbc2_7562,
+    calls: &[
+        (0x1d, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x5e, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x124, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0307`'s aimed emitter start (0x100050f0, 294 bytes; no
+/// arguments; `S = *G_S`): the emitter `E = S + 0x1e70` started
+/// ([`start_object_at`](crate::s4_misc::start_object_at), part 9, scale
+/// `K`), placed at `S + 0xc80`, turned by `S + 0xc20`/`S + 0xc24`, its
+/// target `S + 0xc60`, the record words `+0x378` (operand `+0xb1`), `+0x380`
+/// (the step callback) and zeros; aimed
+/// ([`aimed_emitter_angles`](crate::s7_misc::aimed_emitter_angles), speed
+/// `K2`); then each actor record's three scales (`S + 0x10a0 + 0xd4 k`)
+/// 0.75. Returns the emitter's node with no records, else the record
+/// pointer past the last.
+pub fn emitter_start_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0xc));
+    let e = s.wrapping_add(0x1e70);
+    let k = g.read::<f32>(w(0x4));
+    crate::s4_misc::start_object_at(g, img, call(0x20), e, k, 9, 0, 0);
+    let copy = |g: &mut G, from: u32, to: u32| {
+        let x = g.read::<u32>(s.wrapping_add(from));
+        g.write::<u32>(e.wrapping_add(to), x);
+    };
+    for i in 0..4u32 {
+        copy(g, 0xc80 + 4 * i, 0xd0 + 4 * i);
+    }
+    copy(g, 0xc20, 0xc0);
+    copy(g, 0xc24, 0xc4);
+    for i in 0..4u32 {
+        copy(g, 0xc60 + 4 * i, 0x358 + 4 * i);
+    }
+    g.write::<u32>(e + 0x378, w(0xb1));
+    g.write::<u32>(e + 0x37c, 0);
+    g.write::<u32>(e + 0x380, w(0xc5));
+    g.write::<u32>(e + 0x38c, 0);
+    g.write::<u32>(e + 0x390, 0);
+    g.write::<u16>(e + 0x394, 0);
+    // ecx = E, xmm1 = the speed; the call's return address after two pushes
+    let aim = Frame {
+        at: call(0xe5),
+        esp: fr.esp.wrapping_sub(0xc),
+        eax: 0,
+        ecx: e,
+        edx: 0,
+        xmm: [0, u128::from(g.read::<u32>(w(0x6a))), 0, 0],
+    };
+    let mut eax = crate::s7_misc::aimed_emitter_angles(g, img, &aim);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0xed)).cast_signed() {
+        let at = s.wrapping_add(0x10a4 + 0xd4 * i);
+        g.write::<u32>(at + 4, 0x3f40_0000);
+        g.write::<u32>(at, 0x3f40_0000);
+        g.write::<u32>(at - 4, 0x3f40_0000);
+        i += 1;
+        eax = at + 0xd4;
+    }
+    Ret::eax(eax)
+}
+
+/// [`emitter_start_0307`] (the `rel32`s: the object start, the aimed
+/// emitter).
+pub const EMITTER_START_0307: Sig = Sig {
+    len: 294,
+    hash: 0x1dd9_a093_cb35_fde2,
+    calls: &[
+        (0x20, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0xe5, Callee::Sig(&crate::s7_misc::AIMED_EMITTER_ANGLES)),
+    ],
+    imports: &[],
+};

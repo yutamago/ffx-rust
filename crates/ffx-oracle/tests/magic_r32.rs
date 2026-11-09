@@ -219,7 +219,9 @@ fn spin_actors_0307() {
         w(&t, 0x40a),
         w(&t, 0x420),
     );
-    let me = t.img.word(show + 0x14);
+    // show_others' operand `+0x14` is the caster word `gb` itself (0307's
+    // `*G_B`), so the caster set below is also what it passes
+    assert_eq!(t.img.word(show + 0x14), gb);
     // (count, task list tail, battle, caster, *G_C, slot 293's answer)
     let cases: [(i32, u32, u32, u32, u16, u32); 5] = [
         (2, SCRATCH + 0x9800, 0, 3, 0, 0),
@@ -250,7 +252,6 @@ fn spin_actors_0307() {
         t.set_u16(gc, cflag);
         t.set_u32(gd, 0x0dd0_0000 + k);
         t.set_u32(ge, 0x0bad_0000 + k);
-        t.set_u32(me, 0x0000_0e00 + k);
         rec(&mut t, 293, 1, move |_, _| any);
         t.stub(288, move |m, a| {
             m.w32(a[1], 2 + k);
@@ -689,5 +690,214 @@ fn load_start_up_0307() {
         ownb::dirty_stack(&mut t, 0x12f0 + k, &[0xa4 + 0x10]);
         ownb::reset_counters(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// Finite float stubs for the bone offset (`r32::bone_offset_0307`):
+/// slot 237 a bone point from its bone number, 235 a unit matrix,
+/// 328/329 rows mixed with the angle, 229 rows and the vector, 248 a sum.
+fn bone_stubs(t: &mut Twin) {
+    rec(t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(m, a[3] + 4 * i, (a[1] & 0x7f) as f32 * 0.25 - i as f32);
+        }
+        0x237
+    });
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v =
+                    rf(m, a[1] + 4 * i) * 0.75 + f32::from_bits(a[2]) * 0.125 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+        for i in 0..4 {
+            let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x0248_0000 ^ a[0]
+    });
+}
+
+/// `magic_0307` 0x100045b0 (`r32::late_bone_offset_0307`) and through it
+/// 0x100044c0 (`r32::bone_offset_0307`): the object's `+0x118` above,
+/// at and below 0x3a; the turn angles varied.
+#[test]
+fn late_bone_offset_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    bone_stubs(&mut t);
+    let f = t.at(0x45b0);
+    let bo = t.img.rel32_target(f + 0x23);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(bo + 0x1e), s);
+    let o = SCRATCH + 0x2_0000;
+    for (k, n) in (0u32..).zip([0x3bu32, 0x3a, 0xffff_ff00, 0x7fff_ffff]) {
+        floats(&mut t, s + 0xc00, 0x20, 0.5 - k as f32);
+        floats(&mut t, o, 0x50, 1.0 + k as f32);
+        t.set_u32(o + 0x118, n);
+        t.set_u32(t.img.word(bo + 0x2c), 0x00ac_0000 + k);
+        ownb::dirty_stack(&mut t, 0x45b0 + k, &[]);
+        let regs = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, regs, &[o], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x100045e0 (`r32::swing_object_0307`): the count 0 and
+/// below (the plain scale), 1 (the last blend step: slot 233 and the
+/// fader's node, the list empty and not) and above.
+#[test]
+fn swing_object_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    bone_stubs(&mut t);
+    rec(&mut t, 233, 3, |_, a| 0x0233_0000 ^ a[0] ^ a[2]);
+    let f = t.at(0x45e0);
+    let bo = t.img.rel32_target(f + 0xa9);
+    let nd = t.img.rel32_target(f + 0x9e);
+    let take = t.img.rel32_target(nd + 0x15);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x6), s);
+    let o = SCRATCH + 0x2_0000;
+    // (count, listed)
+    for (k, (n, listed)) in (0u32..).zip([
+        (0u32, false),
+        (0xffff_fffe, false),
+        (1, false),
+        (1, true),
+        (7, true),
+        (0x40, false),
+    ]) {
+        floats(&mut t, s + 0xc00, 0x20, 0.5 - k as f32);
+        floats(&mut t, s + 0x16a0, 0x10, -2.0 + k as f32);
+        t.set_u32(s + 0x16c0, n);
+        junk(&mut t, s + 0x2360, 0x40, k);
+        floats(&mut t, o, 0x50, 1.0 + k as f32);
+        t.set_u32(t.img.word(bo + 0x2c), 0x00ac_0000 + k);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(t.img.word(nd + 0x1b), if listed { last } else { 0 });
+        t.set_u32(t.img.word(nd + 0x33), last);
+        ownb::dirty_stack(&mut t, 0x45e0 + k, &[]);
+        let regs = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, regs, &[o], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x10004720 (`r32::late_objects_0307`): the object list
+/// empty and not, the task list empty and not.
+#[test]
+fn late_objects_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(i + 3);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    let f = t.at(0x4720);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x1d);
+    let take = t.img.rel32_target(f + 0x124);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0xc), s);
+    for (k, (objs, listed)) in (0u32..).zip([(false, false), (true, true), (false, true)]) {
+        start_env_at(
+            &mut t,
+            so,
+            (0x9d, 0xa8),
+            6,
+            if objs { SCRATCH + 0x680 } else { 0 },
+        );
+        junk(&mut t, s + 0xb00, 0x1900, k);
+        let objs_at = w(&t, 0x18);
+        junk(&mut t, objs_at, 0x260, k + 3);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, 0x12a), if listed { last } else { 0 });
+        t.set_u32(w(&t, 0x143), last);
+        ownb::dirty_stack(&mut t, 0x4720 + k, &[]);
+        let regs = Call {
+            ecx: 0x00ec_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, regs, &[], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x100050f0 (`r32::emitter_start_0307`): no, one and three
+/// actor records; the object list and the task list empty and not; the
+/// target around the emitter.
+#[test]
+fn emitter_start_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    bone_stubs(&mut t);
+    let f = t.at(0x50f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x20);
+    let aim = t.img.rel32_target(f + 0xe5);
+    let take = t.img.rel32_target(aim + 0x1e7);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0xc), s);
+    // (records, objects listed, task list listed, target)
+    let cases: [(i32, bool, bool, [f32; 3]); 4] = [
+        (0, false, false, [3.0, 1.0, -2.0]),
+        (1, true, true, [-3.0, 0.5, 2.0]),
+        (3, false, true, [0.25, -4.0, 0.75]),
+        (-2, true, false, [-1.0, 2.0, -6.0]),
+    ];
+    for (k, (n, objs, listed, tg)) in (0u32..).zip(cases) {
+        start_env_at(
+            &mut t,
+            so,
+            (0x9d, 0xa8),
+            6,
+            if objs { SCRATCH + 0x680 } else { 0 },
+        );
+        junk(&mut t, s + 0x1000, 0x1300, k);
+        floats(&mut t, s + 0xc00, 0x40, -1.5 + k as f32);
+        for (i, x) in (0u32..).zip(tg) {
+            t.set_u32(s + 0xc60 + 4 * i, x.to_bits());
+        }
+        t.set_u32(w(&t, 0xed), n.cast_unsigned());
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(t.img.word(aim + 0x1ed), if listed { last } else { 0 });
+        t.set_u32(t.img.word(aim + 0x200), last);
+        ownb::dirty_stack(&mut t, 0x50f0 + k, &[]);
+        let regs = Call {
+            ecx: 0x00ec_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, regs, &[], Eax::Checked);
     }
 }

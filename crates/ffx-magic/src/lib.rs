@@ -3233,6 +3233,10 @@ ports! {
     "r32 spin start 0307" => r32::SPIN_START_0307, r32::spin_start_0307;
     "r32 aim objects 0307" => r32::AIM_OBJECTS_0307, r32::aim_objects_0307;
     "r32 load step 0307" => r32::LOAD_0307, r32::load_0307;
+    "r32 late bone offset 0307" => r32::LATE_BONE_OFFSET_0307, r32::late_bone_offset_0307;
+    "r32 swing object 0307" => r32::SWING_OBJECT_0307, r32::swing_object_0307;
+    "r32 late objects 0307" => r32::LATE_OBJECTS_0307, r32::late_objects_0307;
+    "r32 emitter start 0307" => r32::EMITTER_START_0307, r32::emitter_start_0307;
     // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3950,6 +3954,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 32 (magic-r32)
     ("r32 aim object 0307", &r32::AIM_OBJECT_0307),
     ("r32 start-up 0307", &r32::START_UP_0307),
+    ("r32 bone offset 0307", &r32::BONE_OFFSET_0307),
     // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
