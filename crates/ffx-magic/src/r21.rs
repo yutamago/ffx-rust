@@ -88,17 +88,6 @@ pub const PAIR_START_0304: Sig = Sig {
     imports: &[],
 };
 
-/// `cvttss2si`: toward 0, `0x8000_0000` for a NaN or a value out of range.
-fn cvtt(x: f32) -> u32 {
-    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
-        0x8000_0000
-    } else {
-        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
-        let n = x as i32;
-        n.cast_unsigned()
-    }
-}
-
 /// `magic_0382`'s object step (0x10001270, cdecl `(obj)`, an `ebp` frame,
 /// the scale `s` at `ebp - 4`; 624 bytes): with `A = *G_A`, slot 474
 /// `(A[0x198], 0x29, P2, P1)` after `P2` = `(2.5, 2.5, 0, 0)`; the
@@ -160,7 +149,7 @@ pub fn step_0382<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // call width: 4 (slot 457's words stay under it)
         let x = st0_f32(g.call(t(g, 0xf4, 453), 0, &[q, cam_b, 2, p3]).st0);
         g.write::<f32>(fr.esp.wrapping_add(4), x);
-        let m = cvtt(mul(x, k(g, 0x161)));
+        let m = crate::sb_sse::cvtt(mul(x, k(g, 0x161))).cast_unsigned();
         #[allow(clippy::cast_precision_loss)] // cvtdq2ps
         let r = div(k(g, 0x169), m.cast_signed() as f32);
         g.write::<u32>(w(0x184), m);

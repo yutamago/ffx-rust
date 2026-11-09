@@ -32,7 +32,13 @@ pub const ONE: u32 = 0x3f80_0000;
 /// address (the original's stack, which the port uses as the original
 /// would). Runs the port bound there; code without a port (or game code)
 /// goes to the host. Returns `eax`.
-fn call_code<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32, args: &[u32]) -> u32 {
+pub(crate) fn call_code<G: Game>(
+    g: &mut G,
+    img: &Image,
+    target: u32,
+    esp: u32,
+    args: &[u32],
+) -> u32 {
     let port = crate::bind(img, target).and_then(crate::entry::<G>);
     let Some(f) = port else {
         return g.call(target, 0, args).eax;

@@ -513,17 +513,21 @@ pub const PIECE_SPARK_0019: Sig = Sig {
 };
 
 /// Who a block of [`mats_0168`] reads an actor from: `CHRS[*SEL]`
-/// (operands of the selector pointer and the table) or a global.
+/// (operands of the selector pointer and the table), `CHRS[SEL[n]]`, or
+/// a global.
 #[derive(Clone, Copy)]
-enum Who {
+pub(crate) enum Who {
     Chr(u32, u32),
+    ChrAt(u32, u32, u32),
     Global(u32),
 }
 
-fn who<G: Game>(g: &G, img: &Image, f: u32, w: Who) -> u32 {
+pub(crate) fn who<G: Game>(g: &G, img: &Image, f: u32, w: Who) -> u32 {
     match w {
-        Who::Chr(sel, chrs) => {
-            let b = u32::from(g.read::<u8>(g.read::<u32>(img.word(f + sel))));
+        Who::Chr(sel, chrs) => who(g, img, f, Who::ChrAt(sel, chrs, 0)),
+        Who::ChrAt(sel, chrs, n) => {
+            let at = g.read::<u32>(img.word(f + sel)).wrapping_add(n);
+            let b = u32::from(g.read::<u8>(at));
             g.read::<u32>(img.word(f + chrs).wrapping_add(4 * b))
         }
         Who::Global(op) => g.read::<u32>(img.word(f + op)),
@@ -533,18 +537,18 @@ fn who<G: Game>(g: &G, img: &Image, f: u32, w: Who) -> u32 {
 /// One matrix of [`mats_0168`]: `M` (`!= 0`: slot 210 `(A, M)`; else
 /// slots 217 and 255 `(i, L)` for the actor index `i` the caller gives)
 /// set by slot 211 `(A, M)` then 235 `(M)`, the diagonal slot 277's ST0
-/// times `K` (`k_op`) times slots 15, 16, 17 of `E` (`m16_first`: slot
-/// 16's factor on the left), turned by slot 330 `(0)`, 328 `(0)`, 329
-/// `(yaw)`.
+/// times `K` (`k_op`) times slots 15, 16, 17 of `E` (`order` bits 0, 1,
+/// 2: the slot's factor on the left of `M + 0`, `+0x14`, `+0x28`), turned
+/// by slot 330 `(0)`, 328 `(0)`, 329 `(yaw)`.
 #[allow(clippy::too_many_arguments)] // the block's actors and operands
-fn mats_block<G: Game>(
+pub(crate) fn mats_block<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
     tab: u32,
     m: u32,
     (a, null, l): (u32, Option<u32>, u32),
-    (scale_of, e_of, k_op, m16_first): (Who, Who, u32, bool),
+    (scale_of, e_of, k_op, order): (Who, Who, u32, u8),
     yaw: f32,
 ) {
     let s = |g: &G, n: u32| slot_target(g, tab, n);
@@ -563,15 +567,19 @@ fn mats_block<G: Game>(
         g.write::<f32>(m + o, d);
     }
     let e = who(g, img, f, e_of);
-    let r = st0_f32(g.call(s(g, 0x3c / 4), 0, &[e]).st0);
-    let v = mul(r, g.read::<f32>(m));
-    g.write::<f32>(m, v);
-    let r = st0_f32(g.call(s(g, 0x40 / 4), 0, &[e]).st0);
-    let x = g.read::<f32>(m + 0x14);
-    g.write::<f32>(m + 0x14, if m16_first { mul(r, x) } else { mul(x, r) });
-    let r = st0_f32(g.call(s(g, 0x44 / 4), 0, &[e]).st0);
-    let v = mul(g.read::<f32>(m + 0x28), r);
-    g.write::<f32>(m + 0x28, v);
+    for (i, (n, o)) in [(0x3cu32, 0u32), (0x40, 0x14), (0x44, 0x28)]
+        .into_iter()
+        .enumerate()
+    {
+        let r = st0_f32(g.call(s(g, n / 4), 0, &[e]).st0);
+        let x = g.read::<f32>(m + o);
+        let v = if order & (1 << i) != 0 {
+            mul(r, x)
+        } else {
+            mul(x, r)
+        };
+        g.write::<f32>(m + o, v);
+    }
     // call width: 3
     g.call(s(g, 0x528 / 4), 0, &[m, m, 0]);
     // call width: 3
@@ -639,7 +647,7 @@ pub fn mats_0168<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         tab,
         m,
         (c, null, l),
-        (Who::Chr(0x1be, 0x1c8), Who::Chr(0x1f8, 0x202), 0x1e5, false),
+        (Who::Chr(0x1be, 0x1c8), Who::Chr(0x1f8, 0x202), 0x1e5, 0b001),
         yaw,
     );
     for i in 0..4 {
@@ -662,7 +670,7 @@ pub fn mats_0168<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         tab,
         m,
         (a2, null, l),
-        (Who::Global(0x3c3), Who::Global(0x3f4), 0x3db, true),
+        (Who::Global(0x3c3), Who::Global(0x3f4), 0x3db, 0b011),
         yaw,
     );
     for i in 0..4 {

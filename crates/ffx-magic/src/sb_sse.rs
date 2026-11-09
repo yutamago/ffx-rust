@@ -55,6 +55,19 @@ pub fn cvt(x: u32) -> f32 {
     x.cast_signed() as f32
 }
 
+/// `cvttss2si`: toward 0, `0x8000_0000` for a NaN or a value out of
+/// range.
+#[must_use]
+pub fn cvtt(x: f32) -> i32 {
+    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
+        i32::MIN
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
+        let n = x as i32;
+        n
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{add, div, mul, sub};

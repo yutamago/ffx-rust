@@ -76,6 +76,7 @@ pub mod r24;
 pub mod r25;
 pub mod r26;
 pub mod r27;
+pub mod r28;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3161,6 +3162,18 @@ ports! {
     "r26 sub-node visit 0173" => m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit;
     "r26 thunk: sub-node visit 0173" => sl_wrap::JMP_SUB_NODE_VISIT_0173, sl_wrap::ecx_jmp;
     // round 26 (magic-r26): end
+    // round 28 (magic-r28)
+    "r28 sparks 0563" => r28::SPARKS_0563, r28::sparks_0563;
+    "r28 actor draw 0434" => r28::ACTOR_DRAW_0434, r28::actor_draw_0434;
+    "r28 thunk: strip task 0150" => sl_wrap::JMP_STRIP_TASK_0150, sl_wrap::ecx_jmp;
+    "r28 strip draw 0150" => r28::STRIP_DRAW_0150, r28::strip_draw_0150;
+    "r28 thunk: strip frame 0150" => sl_wrap::JMP_STRIP_FRAME_0150, sl_wrap::ecx_jmp;
+    "r28 tail draw 0150" => r28::TAIL_DRAW_0150, r28::tail_draw_0150;
+    "r28 summon start 0667" => r28::SUMMON_START_0667, r28::summon_start_0667;
+    "r28 summon task 0173" => r28::SUMMON_TASK_0173, r28::summon_task_0173;
+    "r28 summon task 0272" => r28::SUMMON_TASK_0272, r28::summon_task_0272;
+    "r28 effect frame 0341" => r28::EFFECT_FRAME_0341, r28::effect_frame_0341;
+    // round 28 (magic-r28): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3835,6 +3848,15 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 spark 0375 a", &r26::SPARK_0375_A),
     ("r26 spark 0375 b", &r26::SPARK_0375_B),
     // round 26 (magic-r26): end of INTERNAL
+    // round 28 (magic-r28)
+    ("r28 spin step 0563", &r28::SPIN_STEP_0563),
+    ("r28 matrices 0511", &r28::MATS_0511),
+    ("r28 ray hit 0150", &r28::RAY_HIT_0150),
+    ("r28 strip task 0150", &r28::STRIP_TASK_0150),
+    ("r28 strip mesh 0150", &r28::STRIP_MESH_0150),
+    ("r28 ribbon draw 0150", &r28::RIBBON_DRAW_0150),
+    ("r28 strip frame 0150", &r28::STRIP_FRAME_0150),
+    // round 28 (magic-r28): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

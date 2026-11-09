@@ -1487,17 +1487,6 @@ pub const START_UP_0260: Sig = Sig {
     imports: &[],
 };
 
-/// `cvttss2si`: toward 0, 0x80000000 for a NaN or a value out of range.
-fn cvtt(x: f32) -> i32 {
-    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
-        i32::MIN
-    } else {
-        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
-        let n = x as i32;
-        n
-    }
-}
-
 /// `magic_0305`'s start-up (0x100013e0, 2001 bytes; internal, no
 /// arguments, run by its load step `r9_load::load_0305`; an 8-aligned /GS
 /// frame, the locals from `S` = `(ebp & !7) - 0xa8` (after two pushes);
@@ -1664,7 +1653,7 @@ pub fn start_up_0305<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let l2 = add(add(mul(ey, ey), mul(ex, ex)), mul(ez, ez));
     #[allow(clippy::cast_possible_truncation)]
     let l = f64::from(l2).sqrt() as f32;
-    let n = cvtt(div(l, k(g, 0x51e)));
+    let n = crate::sb_sse::cvtt(div(l, k(g, 0x51e)));
     let esi = (-1i32).wrapping_sub(n).cast_unsigned();
     let owner1 = esi.wrapping_add(0x2d);
     start(g, 0x53d, 0x538, 0x516, (1, owner1, w(0x52a)));
@@ -2409,7 +2398,7 @@ pub fn start_up_0354<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let l2 = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
     #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
     let l = f64::from(l2).sqrt() as f32;
-    let n = cvtt(div(l, k(g, 0xf2)));
+    let n = crate::sb_sse::cvtt(div(l, k(g, 0xf2)));
     // the path task's `(Q, 1.1, 1.0, n)`, `xmm3` = 0.2
     for (j, x) in (0u32..).zip([q, 0x3f8c_cccd, one, n.cast_unsigned()]) {
         g.write::<u32>(s0.wrapping_sub(0x10) + 4 * j, x);
@@ -3493,7 +3482,7 @@ pub fn start_up_0299<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let l2 = add(add(mul(ey, ey), mul(ex, ex)), mul(ez, ez));
         #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
         let l = f64::from(l2).sqrt() as f32;
-        let owner = cvtt(mul(l, k(g, 0x2f7))).cast_unsigned();
+        let owner = crate::sb_sse::cvtt(mul(l, k(g, 0x2f7))).cast_unsigned();
         let s = img.rel32_target(f + 0x303);
         crate::s4_misc::start_object_at(
             g,

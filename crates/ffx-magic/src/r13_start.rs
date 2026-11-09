@@ -277,17 +277,6 @@ pub const SET_UP_0505: Sig = Sig {
     imports: &[],
 };
 
-/// `cvttss2si`: toward 0, 0x80000000 for a NaN or a value out of range.
-fn cvtt(x: f32) -> i32 {
-    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
-        i32::MIN
-    } else {
-        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
-        let n = x as i32;
-        n
-    }
-}
-
 /// The effect's set-up's second half (`magic_0669` 0x10001640, 138
 /// bytes, a table entry, no arguments): slot 719 `(*G_P, 4, 0)` into
 /// `+0x18` and `(*G_P, 4, 1)` into `+0x3d`; 0x30 bytes cleared at `+0x38`
@@ -385,20 +374,20 @@ pub fn sparks_frame_0669<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp: esp.wrapping_sub(4),
         ..*fr
     };
-    let mut n = cvtt(a);
+    let mut n = crate::sb_sse::cvtt(a);
     let mut i = 0i32;
     while i < n {
         g.write::<u32>(esp, v);
         crate::m0669::spark_record(g, img, &callee(0x95));
-        n = cvtt(g.read::<f32>(w(0x9d)));
+        n = crate::sb_sse::cvtt(g.read::<f32>(w(0x9d)));
         i += 1;
     }
-    let mut n = cvtt(g.read::<f32>(w(0xad)));
+    let mut n = crate::sb_sse::cvtt(g.read::<f32>(w(0xad)));
     let mut i = 0i32;
     while i < n {
         g.write::<u32>(esp, v);
         crate::m0669::spark_record_short(g, img, &callee(0xc5));
-        n = cvtt(g.read::<f32>(w(0xcd)));
+        n = crate::sb_sse::cvtt(g.read::<f32>(w(0xcd)));
         i += 1;
     }
     let step = Frame {
@@ -2431,7 +2420,7 @@ pub fn send_0415<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let out = g.call(slot(g, 0x714 / 4), fr.ecx, &[v]);
     let d = crate::ob_model::st0_f32(out.st0);
     let x = if battle { mul(d, k(g, 0xcb)) } else { d };
-    let n = cvtt(div(x, k(g, 0x12f)));
+    let n = crate::sb_sse::cvtt(div(x, k(g, 0x12f)));
     let s = div(k(g, 0x137), cvt(n.cast_unsigned()));
     let step: [f32; 4] =
         core::array::from_fn(|j| mul(g.read::<f32>(v.wrapping_add(4 * j as u32)), s));
@@ -2534,7 +2523,10 @@ pub fn targets_0421<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             );
             if x > g.read::<f32>(w(0xf8)) {
                 g.write::<f32>(w(0x102), x);
-                g.write::<u32>(w(0x114), cvtt(div(x, k(g, 0x10a))).cast_unsigned());
+                g.write::<u32>(
+                    w(0x114),
+                    crate::sb_sse::cvtt(div(x, k(g, 0x10a))).cast_unsigned(),
+                );
                 // call width: 1
                 let y = st0_f32(g.call(slot(g, 0x810 / 4), fr.ecx, &[i]).st0);
                 g.write::<f32>(w(0x127), y);

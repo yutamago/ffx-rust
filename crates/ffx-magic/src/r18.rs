@@ -2515,17 +2515,6 @@ pub const PASSES_0586: Sig = Sig {
     imports: &[],
 };
 
-/// `cvttss2si`: toward 0, 0x80000000 for a NaN or a value out of range.
-fn cvtt_0519(x: f32) -> i32 {
-    if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
-        i32::MIN
-    } else {
-        #[allow(clippy::cast_possible_truncation)] // in range: toward 0
-        let n = x as i32;
-        n
-    }
-}
-
 /// `magic_0519`'s camera start (0x10002b30, an overlay table entry, cdecl
 /// `(a)`; `ebp` = `esp - 4`): `*G_A = a`; the two record arrays (0xa0
 /// bytes each, from the operands `+0xc`/`+0x30` to `+0x29`/`+0x59`) get
@@ -2567,7 +2556,7 @@ pub fn camera_start_0519<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(e.wrapping_add(4), v);
     let x = div(mul(v, g.read::<f32>(w(0x90))), g.read::<f32>(w(0x9d)));
     // mov [G], ax: the low halfword
-    g.write::<u16>(w(0xa7), cvtt_0519(x).cast_unsigned() as u16);
+    g.write::<u16>(w(0xa7), crate::sb_sse::cvtt(x).cast_unsigned() as u16);
     st.push(w(0x95));
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xac, 718), fr.ecx);
