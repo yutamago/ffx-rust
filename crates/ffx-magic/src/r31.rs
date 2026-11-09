@@ -3262,3 +3262,350 @@ pub const SUMMON_TASK_0601: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A static node appended under the parent as `magic_0601`'s start-up
+/// inlines it, the last child already read (`old`): the node's `+8` =
+/// `old` (the store at operand `n8`); an empty list (`old` is the parent,
+/// operand `cmp`) gets it as its first (the store run at `eq`), else
+/// `old + 4` is it (the immediate `ne`); the count up (operand `count`).
+fn append_0601<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    old: u32,
+    [n8, cmp, eq, ne, count]: [u32; 5],
+) {
+    let w = |o: u32| img.word(f + o);
+    g.write::<u32>(w(n8), old);
+    if old == w(cmp) {
+        crate::r25::abs_stores(g, img, f, eq, eq + 10);
+    } else {
+        g.write::<u32>(old.wrapping_add(4), w(ne));
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    g.write::<u16>(w(count), n);
+}
+
+/// Two static nodes appended one after the other as the start-up inlines
+/// them (the second's old last known to be the first): the first as
+/// [`append_0601`] without its count, the store run `run` (the first's
+/// words, the second's own words with its `+8` the first), the first
+/// compared with the parent (`cmp2`: the parent's first `eq2`, else the
+/// store run at `ne2`), the count up by two (read at `count`, stored at
+/// `count_w`).
+fn append_pair_0601<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    old: u32,
+    [n8, cmp, eq, ne, count]: [u32; 5],
+    (first, run, (cmp2, eq2, ne2), count_w): (u32, (u32, u32), (u32, u32, u32), u32),
+) {
+    use crate::r25::abs_stores;
+    let w = |o: u32| img.word(f + o);
+    g.write::<u32>(w(n8), old);
+    if old == w(cmp) {
+        abs_stores(g, img, f, eq, eq + 10);
+    } else {
+        g.write::<u32>(old.wrapping_add(4), w(ne));
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(2);
+    abs_stores(g, img, f, run.0, run.1);
+    if w(first) == w(cmp2) {
+        abs_stores(g, img, f, eq2, eq2 + 10);
+    } else {
+        abs_stores(g, img, f, ne2, ne2 + 10);
+    }
+    g.write::<u16>(w(count_w), n);
+}
+
+/// `magic_0601`'s start-up (0x100096e0, 3266 bytes; a table entry, cdecl
+/// `(actor)`; an aligned frame `E` below `push esi`). The targets
+/// ([`targets_init_b`](crate::s4_summon::targets_init_b)); the DLL's parts
+/// and buffers (slots 718, 719, 711 with `*G_P` set to 1 around it, 710,
+/// 222, 221, 551); the statics' words and the nodes of its scene, each
+/// appended to the static parent with its words ([`append_0601`],
+/// [`append_pair_0601`]) between slots 531, 325, 215, 290, 601 (a tilt,
+/// `(K - v) K' / K''` truncated), 27, 4, 281 and 694, node inserts
+/// ([`node_insert`](crate::nodes::node_insert)), a node init
+/// ([`node_init`](crate::m0042::node_init)), the static node
+/// ([`static_node`](crate::m0601::static_node)) and a model node
+/// ([`model_node_init`](crate::sa_summon::model_node_init)); the two task
+/// nodes (the summon and screen tasks) put on the static list, the state
+/// 0x3c. Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0601<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    use crate::sb_sse::{div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let runs = |g: &mut G, rs: &[(u32, u32)]| {
+        for &(a, b) in rs {
+            abs_stores(g, img, f, a, b);
+        }
+    };
+    let actor = fr.arg(g, 0);
+    // push ebp; and esp, -8; sub esp, 0x1c; push esi
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x20);
+    crate::s4_summon::targets_init_b(g, img, call(0xe), e.wrapping_sub(4), actor);
+    abs_stores(g, img, f, 0x22, 0x2c);
+    // call width: 1
+    g.call(t(g, 0x13, 718), 0, &[w(0x18)]);
+    // call width: 1
+    g.call(t(g, 0x2f, 718), 0, &[w(0x3d)]);
+    // call width: 3
+    let part = g.call(t(g, 0x44, 719), 0, &[w(0x56), 8, 0]).eax;
+    let gp = w(0x5e);
+    let pp = g.read::<u32>(gp);
+    let saved = g.read::<u32>(pp);
+    g.write::<u32>(w(0x6a), part);
+    g.write::<u32>(pp, 1);
+    // call width: 3
+    g.call(t(g, 0x75, 711), 0, &[part, w(0x6f), 0]);
+    let pp = g.read::<u32>(w(0x88));
+    g.write::<u32>(pp, saved);
+    let x = gw(g, 0xa8);
+    let mut st = Pushes::default();
+    st.push_all(&[0x10_0000, w(0xa2), x, w(0xad)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x92, 710), 0);
+    st.push_all(&[2, 0xb, 0, w(0xc5)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0xb4, 222), 0);
+    st.push_all(&[2, 0x3e8, 0, w(0xe0)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0xcc, 221), 0);
+    st.push_all(&[1, 6, w(0xf6)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let r2 = st.call(g, t(g, 0xe7, 719), 0).eax;
+    // call width: 3
+    g.call(t(g, 0x105, 551), 0, &[r2, 0, 2]);
+    // call width: 3
+    let r3 = g.call(t(g, 0x112, 719), 0, &[w(0x124), 6, 2]).eax;
+    // call width: 3
+    g.call(t(g, 0x133, 551), 0, &[r3, 1, 2]);
+    // the statics' words, slot 531
+    abs_stores(g, img, f, 0x147, 0x151);
+    let x = gw(g, 0x158);
+    abs_stores(g, img, f, 0x15c, 0x27a);
+    // call width: 2
+    g.call(t(g, 0x140, 531), 0, &[x, w(0x152)]);
+    // the scene's nodes
+    let old = gw(g, 0x283);
+    runs(g, &[(0x28a, 0x294), (0x294, 0x2c5)]);
+    append_0601(g, img, f, old, [0x2c6, 0x2cb, 0x2d1, 0x2e0, 0x2ec]);
+    abs_stores(g, img, f, 0x2f0, 0x304);
+    // call width: 2
+    g.call(t(g, 0x2e5, 325), 0, &[w(0x310), w(0x30b)]);
+    let y = sub(g.read::<f32>(w(0x31a)), k(g, 0x322));
+    let old = gw(g, 0x327);
+    abs_stores(g, img, f, 0x32e, 0x341);
+    g.write::<f32>(w(0x345), y);
+    abs_stores(g, img, f, 0x349, 0x367);
+    append_0601(g, img, f, old, [0x368, 0x36d, 0x373, 0x382, 0x38e]);
+    abs_stores(g, img, f, 0x392, 0x3a6);
+    let mut st = Pushes::default();
+    st.push_all(&[w(0x3ad), w(0x3b2)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x387, 325), 0);
+    let insert = |g: &mut G, grp: u32, ops: [u32; 6], at: u32| {
+        for (i, o) in (0u32..).zip(ops) {
+            g.write::<u32>(grp + 4 * i, w(o));
+        }
+        let ins = Frame {
+            at: call(at),
+            ecx: grp,
+            ..*fr
+        };
+        crate::nodes::node_insert(g, img, &ins);
+    };
+    insert(g, e + 8, [0x3c0, 0x3c8, 0x3d0, 0x3d8, 0x3e0, 0x3e8], 0x3ed);
+    let x = gw(g, 0x3f8);
+    st.push(x);
+    // call width: 12 (the most `Pushes::words` holds)
+    let r = st.call(g, t(g, 0x3f2, 215), 0).eax;
+    g.write::<u32>(w(0x405), r);
+    let old = gw(g, 0x40a);
+    abs_stores(g, img, f, 0x411, 0x442);
+    g.write::<u32>(w(0x443), old);
+    if old == w(0x448) {
+        abs_stores(g, img, f, 0x44e, 0x458);
+    } else {
+        g.write::<u32>(old.wrapping_add(4), w(0x45d));
+    }
+    let q0 = g.read::<u64>(w(0x465));
+    let n = g.read::<u16>(w(0x46b)).wrapping_add(2);
+    g.write::<u64>(w(0x473), q0);
+    let q1 = g.read::<u64>(w(0x47b));
+    abs_stores(g, img, f, 0x486, 0x490);
+    g.write::<u64>(w(0x494), q1);
+    abs_stores(g, img, f, 0x498, 0x4d3);
+    if w(0x480) == w(0x4d5) {
+        abs_stores(g, img, f, 0x4db, 0x4e5);
+    } else {
+        abs_stores(g, img, f, 0x4e7, 0x4f1);
+    }
+    g.write::<u16>(w(0x4f5), n);
+    let x = gw(g, 0x505);
+    abs_stores(g, img, f, 0x509, 0x51d);
+    // call width: 2
+    g.call(t(g, 0x4fa, 290), 0, &[x, w(0x4ff)]);
+    let old = gw(g, 0x526);
+    runs(g, &[(0x52d, 0x537), (0x537, 0x572)]);
+    append_0601(g, img, f, old, [0x573, 0x578, 0x57e, 0x58d, 0x594]);
+    let x = gw(g, 0x5a4);
+    abs_stores(g, img, f, 0x5a8, 0x5bc);
+    let hv = e + 4;
+    // call width: 2
+    g.call(t(g, 0x59e, 601), 0, &[x, hv]);
+    let h = sub(k(g, 0x5c8), g.read::<f32>(hv));
+    abs_stores(g, img, f, 0x5d9, 0x5e3);
+    let tilt = div(mul(h, k(g, 0x5ef)), k(g, 0x607));
+    g.write::<u32>(w(0x620), crate::sb_sse::cvtt(tilt).cast_unsigned());
+    insert(g, e + 8, [0x5e7, 0x5f7, 0x5ff, 0x60f, 0x61b, 0x628], 0x62d);
+    let x = gw(g, 0x632);
+    abs_stores(g, img, f, 0x63a, 0x641);
+    for (i, v) in (0u32..).zip([w(0x645), w(0x64d), x, 0x6b]) {
+        g.write::<u32>(e + 8 + 4 * i, v);
+    }
+    crate::m0042::node_init(g, img, call(0x65e), e + 8);
+    let old = gw(g, 0x663);
+    abs_stores(g, img, f, 0x667, 0x6a2);
+    append_0601(g, img, f, old, [0x6a3, 0x6a8, 0x6ae, 0x6bd, 0x6c9]);
+    for (src, dst) in [(0x6c2u32, 0x6ceu32), (0x6d3, 0x6d8)] {
+        let x = gw(g, src);
+        g.write::<u32>(w(dst), x);
+    }
+    let x = gw(g, 0x6dd);
+    abs_stores(g, img, f, 0x6e5, 0x6ef);
+    g.write::<u32>(w(0x6f0), x);
+    insert(g, e + 8, [0x6f8, 0x700, 0x708, 0x710, 0x718, 0x720], 0x725);
+    let b = u32::from(g.read::<u8>(w(0x72c)));
+    // call width: 1
+    let r = g.call(t(g, 0x732, 215), 0, &[b]).eax;
+    g.write::<u32>(w(0x73f), r);
+    let old = gw(g, 0x744);
+    abs_stores(g, img, f, 0x74b, 0x77c);
+    append_pair_0601(
+        g,
+        img,
+        f,
+        old,
+        [0x77d, 0x782, 0x788, 0x797, 0x79d],
+        (0x7a2, (0x7a8, 0x815), (0x817, 0x81d, 0x829), 0x837),
+    );
+    let b = u32::from(g.read::<u8>(w(0x83e)));
+    abs_stores(g, img, f, 0x84d, 0x861);
+    // call width: 2
+    g.call(t(g, 0x849, 290), 0, &[b, w(0x843)]);
+    let old = gw(g, 0x86a);
+    runs(g, &[(0x871, 0x87b), (0x87b, 0x8b6)]);
+    append_0601(g, img, f, old, [0x8b7, 0x8bc, 0x8c2, 0x8d1, 0x8d8]);
+    abs_stores(g, img, f, 0x8e0, 0x908);
+    insert(g, e + 8, [0x90c, 0x914, 0x91c, 0x924, 0x92c, 0x934], 0x939);
+    abs_stores(g, img, f, 0x942, 0x949);
+    let mut st = Pushes::default();
+    st.push_all(&[1, 0x300f]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x93e, 27), 0);
+    st.push(0x300f);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x956, 4), 0);
+    let old = gw(g, 0x965);
+    abs_stores(g, img, f, 0x96c, 0x9a7);
+    append_pair_0601(
+        g,
+        img,
+        f,
+        old,
+        [0x9a8, 0x9ad, 0x9b3, 0x9c2, 0x9c8],
+        (0x9cd, (0x9d3, 0xa2c), (0xa2e, 0xa34, 0xa40), 0xa4e),
+    );
+    abs_stores(g, img, f, 0xa57, 0xa6b);
+    let mut st = Pushes::default();
+    st.push_all(&[w(0xa72), w(0xa77)]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0xa53, 325), 0);
+    let y = mul(g.read::<f32>(w(0xa81)), k(g, 0xa89));
+    let old = gw(g, 0xa8e);
+    g.write::<f32>(w(0xa99), y);
+    abs_stores(g, img, f, 0xa9d, 0xace);
+    append_0601(g, img, f, old, [0xacf, 0xad4, 0xada, 0xae9, 0xb00]);
+    let z = mul(g.read::<f32>(w(0xaf1)), k(g, 0xaf9));
+    abs_stores(g, img, f, 0xb13, 0xb31);
+    g.write::<f32>(w(0xb35), z);
+    abs_stores(g, img, f, 0xb39, 0xb4d);
+    let parent = w(0xb0f);
+    // push imm; push imm; call (cdecl `(a, b)`, `edx` the parent)
+    g.write::<u32>(e.wrapping_sub(4), w(0xb05));
+    g.write::<u32>(e.wrapping_sub(8), w(0xb0a));
+    let sn = Frame {
+        at: call(0xb4e),
+        esp: e.wrapping_sub(0xc),
+        edx: parent,
+        ..*fr
+    };
+    crate::m0601::static_node(g, img, &sn);
+    // the group at `esp + 0x10` with the two words still pushed
+    let grp = e + 8;
+    for (i, v) in (0u32..).zip([w(0xb5a), parent, w(0xb66), w(0xb6e), w(0xb76), w(0xb7e)]) {
+        g.write::<u32>(grp + 4 * i, v);
+    }
+    let ins = Frame {
+        at: call(0xb83),
+        ecx: grp,
+        ..*fr
+    };
+    crate::nodes::node_insert(g, img, &ins);
+    abs_stores(g, img, f, 0xb8c, 0xb93);
+    let mut st = Pushes::default();
+    st.push_all(&[w(0xb05), w(0xb0a), 1]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0xb88, 281), 0);
+    // call width: 4
+    g.call(t(g, 0xb9e, 694), 0, &[1, 0, 0, 0]);
+    let b = u32::from(g.read::<u8>(w(0xbb8)));
+    for (i, v) in (0u32..).zip([w(0xbc7), w(0xbcf), b]) {
+        g.write::<u32>(e + 8 + 4 * i, v);
+    }
+    g.write::<u8>(e + 0x14, 0);
+    abs_stores(g, img, f, 0xbdc, 0xbe6);
+    crate::sa_summon::model_node_init(g, img, call(0xbe7), e + 8);
+    // the two task nodes on the static list
+    let tail = gw(g, 0xbec);
+    g.write::<u32>(w(0xbf1), tail);
+    abs_stores(g, img, f, 0xbf5, 0xc1d);
+    g.write::<u32>(tail.wrapping_add(4), w(0xc20));
+    let tail = gw(g, 0xc25);
+    let fl = gw(g, 0xc2b) & !1;
+    g.write::<u32>(w(0xc2b), fl);
+    g.write::<u32>(w(0xc31), tail);
+    abs_stores(g, img, f, 0xc35, 0xc85);
+    g.write::<u32>(tail.wrapping_add(4), w(0xc88));
+    let fl = gw(g, 0xc8e) & !1;
+    g.write::<u32>(w(0xc8e), fl);
+    abs_stores(g, img, f, 0xc93, 0xcbb);
+    Ret::eax(0)
+}
+
+/// [`start_up_0601`] (the `rel32`s: its targets, node and set-up helpers).
+pub const START_UP_0601: Sig = Sig {
+    len: 3266,
+    hash: 0x5698_ee22_824b_5053,
+    calls: &[
+        (0xe, Callee::Sig(&crate::s4_summon::TARGETS_INIT_B)),
+        (0x3ed, Callee::Sig(&crate::nodes::INSERT)),
+        (0x62d, Callee::Sig(&crate::nodes::INSERT)),
+        (0x65e, Callee::Sig(&crate::m0042::NODE_INIT)),
+        (0x725, Callee::Sig(&crate::nodes::INSERT)),
+        (0x939, Callee::Sig(&crate::nodes::INSERT)),
+        (0xb4e, Callee::Sig(&crate::m0601::STATIC_NODE)),
+        (0xb83, Callee::Sig(&crate::nodes::INSERT)),
+        (0xbe7, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+    ],
+    imports: &[],
+};

@@ -1443,7 +1443,8 @@ fn screen_task_0601() {
         (111, 0.0, 0, 0),
         (112, 0.0, 10, 0),
         (112, 0.0, 80, 0),
-        (112, 0.0, 0x4b, 0),
+        // the count goes up first: 0x4a meets the bound
+        (112, 0.0, 0x4a, 0),
         (65, 0.0, 0, 0),
         (20, 0.0, 0, 0),
         (0x2711, 0.0, 0, 0),
@@ -1528,14 +1529,18 @@ fn summon_task_0601() {
     ];
     let ms = call(&t, 0x754);
     // (state, frame count, timer)
-    let cases: [(u32, u32, f32); 16] = [
-        (0, 0, 0.0),
-        (0x36, 0, 100.0),
-        (0x37, 0, 0.0),
-        (0x38, 0, 100.0),
+    let cases: [(u32, u32, f32); 20] = [
+        (0, 5, 0.0),
+        (0x36, 5, 100.0),
+        (0x37, 5, 0.0),
+        (0x38, 5, 100.0),
         (0x39, 0, 0.0),
+        (0x39, 0, 2.0),
         (0x39, 0, 100.0),
         (0x3a, 0, 100.0),
+        (0x3a, 0, 0.0),
+        (0x50, 0x7d, 0.0),
+        (0x50, 0x7e, 0.0),
         (0x3b, 0, 0.0),
         (0x46, 0, 0.0),
         (0x47, 10, 0.0),
@@ -1565,10 +1570,19 @@ fn summon_task_0601() {
             t.set_u32(p + 0xc, p);
             t.set_u16(p + 0x18, 0);
         }
-        // the model the end sets up
+        // the model the end sets up (the DLL's node at the immediate)
         let model = w(&t, 0x74f);
-        junk(&mut t, SCRATCH + 0x7800, 0x100, k);
-        t.set_u32(model, SCRATCH + 0x7800);
+        junk(&mut t, model, 0x100, k);
+        t.set_u32(model + 0x90, 0x0800 + (k & 1));
+        // the globals scaled and the flag words cleared: values first
+        for op in [0x23au32, 0x461, 0x486, 0x4a8] {
+            let at = w(&t, op);
+            t.set_u32(at, (1.5f32 + op as f32 / 256.0).to_bits());
+        }
+        for op in [0x53cu32, 0x59f, 0x700, 0x444, 0x44e, 0x494] {
+            let at = w(&t, op);
+            t.set_u32(at, 0x5a5a_0000 ^ op);
+        }
         let _ = ms;
         // the particle node's owner (the program table and the vectors)
         let owner = w(&t, 0x3c1);
@@ -1576,5 +1590,74 @@ fn summon_task_0601() {
         t.set_u32(owner, SCRATCH + 0x7a00);
         ownb::dirty_stack(&mut t, 0x8f50 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0601` 0x100096e0 (`r31::start_up_0601`): the start-up twice
+/// (the actors, the model's flag, slot 601's tilt and slot 215's answers
+/// varied).
+#[test]
+fn start_up_0601() {
+    let Some(mut t) = twin(601) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    let f = t.at(0x96e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, n) in [
+        (718u32, 1usize),
+        (711, 3),
+        (710, 4),
+        (222, 4),
+        (221, 4),
+        (551, 3),
+        (531, 2),
+        (215, 1),
+        (290, 2),
+        (27, 2),
+        (4, 1),
+        (281, 1),
+        (694, 4),
+        (413, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let second = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ second.rotate_left(9)
+        });
+    }
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.25 * i as f32);
+        }
+        0x14
+    });
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    // slot 289: the targets' distance (ST0)
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * 0.5);
+    let gp = w(&t, 0x5e);
+    for k in 0..2u32 {
+        t.set_u32(gp, SCRATCH + 0x800);
+        t.set_u32(SCRATCH + 0x800, 0x0800_0000 + k);
+        // the byte-sized actor words read
+        for op in [0x72cu32, 0x83e, 0xbb8] {
+            let at = w(&t, op);
+            t.set_u32(at, 3 + k);
+        }
+        for op in [0x31au32, 0xa81, 0xaf1, 0x465, 0x47b] {
+            let at = w(&t, op);
+            t.set_u32(at, (1.25f32 + k as f32).to_bits());
+            t.set_u32(at + 4, (-0.5f32).to_bits());
+        }
+        let actor = SCRATCH + 0x600 + k;
+        ownb::dirty_stack(&mut t, 0x96e0 + k, &[]);
+        t.check_entry(f, Call::this(actor), &[actor], Eax::Checked);
     }
 }
