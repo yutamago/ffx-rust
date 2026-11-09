@@ -3010,6 +3010,7 @@ ports! {
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
     "r25 draw 0708" => r25::DRAW_0708, r25::draw_0708;
+    "r25 main task 0573" => r25::MAIN_TASK_0573, r25::main_task_0573;
     // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
@@ -3644,6 +3645,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r18 start-up 0564", &r18::START_UP_0564),
     ("r18 start-up 0562", &r18::START_UP_0562),
     // round 18 (magic-r18): end of INTERNAL
+    // round 25 (magic-r25)
+    ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
+    ("r25 spin set-up 0563", &r25::SPIN_SETUP_0563),
+    // round 25 (magic-r25): end of INTERNAL
     // round 20 (magic-r20)
     ("r20 start-up 0508", &r20::START_UP_0508),
     ("r20 start-up 0680", &r20::START_UP_0680),
