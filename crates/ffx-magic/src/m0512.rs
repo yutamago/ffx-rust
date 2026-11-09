@@ -422,7 +422,15 @@ pub const GROUND: Sig = Sig {
 /// [`crate::s3_nodes::particle_node_with`] called at `f + call` with `ecx`
 /// = `node`, the stack words `(a, _, _, index)` (the two in the middle
 /// never written); its `esp` is `m - 0x1c` (`m` the aligned frame).
-fn node_with<G: Game>(g: &mut G, img: &Image, call: u32, m: u32, node: u32, a: u32, index: u32) {
+pub(crate) fn node_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    call: u32,
+    m: u32,
+    node: u32,
+    a: u32,
+    index: u32,
+) {
     let sp = m.wrapping_sub(0x1c);
     g.write::<u32>(sp + 4, a);
     g.write::<u32>(sp + 0x10, index);

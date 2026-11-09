@@ -3239,6 +3239,10 @@ ports! {
     "r33 summon task 0609" => r33::SUMMON_TASK_0609, r33::summon_task_0609;
     "r33 load 0606" => r33::LOAD_0606, r33::load_0606;
     "r33 clips 0610" => r33::CLIPS_0610, r33::clips_0610;
+    "r33 records task 0165" => r33::RECORDS_TASK_0165, r33::records_task_0165;
+    "r33 records task 0606" => r33::RECORDS_TASK_0606, r33::records_task_0165;
+    "r33 effect task 0512" => r33::EFFECT_TASK_0512, r33::effect_task_0512;
+    "r33 summon task 0512" => r33::SUMMON_TASK_0512, r33::summon_task_0512;
     // round 33 (magic-r33): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
