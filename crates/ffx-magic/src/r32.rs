@@ -2809,3 +2809,180 @@ pub const STEPS_0067: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0162`'s effect end (0x10002a80, 734 bytes; internal, no
+/// arguments, called by [`host_start_end_0162`]; a cookie frame, `ebp =
+/// E - 4`, the positions at `ebp - 0x14` and `ebp - 0x24`):
+/// `r23::effect_end_0598`'s steps (its operands from `+0x34` on 0x3f bytes
+/// later) after slot 384 of the third selected character too and slots 25
+/// `(0x3011, 1)`, 24 `(0x3011, 0)`, and the resource parts registered at
+/// the end ([`register_resource_parts`](crate::s4_small::register_resource_parts)),
+/// whose `eax` it returns.
+#[allow(clippy::too_many_lines)] // one straight sequence of calls
+pub fn effect_end_0162<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    use crate::ob_model::{Who, who};
+    let at = |o: u32| if o < 0x34 { o } else { o + 0x3f };
+    let w = |o: u32| img.word(f + at(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    for (sel, n, table, slot) in [(0x11u32, 1u32, 0x1eu32, 0x23u32), (0x30, 2, 0x3b, 0x40)] {
+        let c = who(g, img, f, Who::Sel { sel, at: n, table });
+        // call width: 1
+        g.call(slot_target(g, img.word(f + slot), 384), 0, &[c]);
+    }
+    for (o, slot, id, on) in [
+        (0x4du32, 25u32, 0x3011u32, 1u32),
+        (0x5e, 24, 0x3011, 0),
+        (0x6f, 25, 0x3013, 1),
+        (0x80, 24, 0x3013, 0),
+    ] {
+        // call width: 2
+        g.call(slot_target(g, img.word(f + o), slot), 0, &[id, on]);
+    }
+    let selp = g.read::<u32>(w(0x53));
+    let k = u32::from(g.read::<u8>(selp));
+    let caster = g.read::<u32>(w(0x67).wrapping_add(4 * k));
+    crate::r23::reset_one(
+        g,
+        img,
+        f,
+        (at(0x5c), at(0x7a), at(0x8c), at(0x9d)),
+        caster,
+        |g| u32::from(g.read::<u8>(selp)),
+        ebp.wrapping_sub(0x14),
+    );
+    let summon = g.read::<u32>(w(0xae));
+    crate::r23::reset_one(
+        g,
+        img,
+        f,
+        (at(0xb7), at(0xce), at(0xe0), at(0xf1)),
+        summon,
+        |g| g.read::<u32>(w(0xc0)),
+        ebp.wrapping_sub(0x24),
+    );
+    if g.read::<u16>(w(0x106)) == 0 {
+        let a = g.read::<u32>(w(0x118));
+        // call width: 2
+        g.call(t(g, 0x110, 213), 0, &[a, 0]);
+    }
+    let wait_b = g.read::<u16>(w(0x12a));
+    g.write::<u32>(w(0x131), 1);
+    if wait_b == 0 {
+        let b = g.read::<u32>(w(0x144));
+        // call width: 2
+        g.call(t(g, 0x13c, 213), 0, &[b, 0]);
+    }
+    let off = g.read::<u32>(w(0x155));
+    let selp = g.read::<u32>(w(0x15b));
+    g.write::<u32>(w(0x161), 1);
+    let c = u32::from(g.read::<u8>(selp));
+    if off == 0 && c < 0x20 {
+        // call width: 2
+        g.call(t(g, 0x174, 296), 0, &[c, 1]);
+    } else {
+        let chr = g.read::<u32>(w(0x18b).wrapping_add(4 * c));
+        // call width: 2
+        g.call(t(g, 0x190, 257), 0, &[chr, 0]);
+    }
+    let off = g.read::<u32>(w(0x1a1)) != 0;
+    let i = if off { 0 } else { g.read::<u32>(w(0x1a9)) };
+    if !off && i.cast_signed() < 0x20 {
+        // call width: 2
+        g.call(t(g, 0x1b6, 296), 0, &[i, 1]);
+    } else {
+        let summon = g.read::<u32>(w(0x1cb));
+        // call width: 2
+        g.call(t(g, 0x1c3, 257), 0, &[summon, 0]);
+    }
+    let summon = g.read::<u32>(w(0x1e9));
+    // call width: 2
+    g.call(t(g, 0x1d8, 399), 0, &[summon, 0]);
+    let summon = g.read::<u32>(w(0x1f8));
+    // call width: 4
+    g.call(t(g, 0x1f0, 8), 0, &[summon, 1, summon, 0]);
+    // the slot 399 and slot 8 words under the call: the return address at
+    // `E - 0x3c`
+    crate::sa_script::each_actor(
+        g,
+        img,
+        img.rel32_target(f + at(0x207)),
+        1,
+        esp.wrapping_sub(0x3c),
+    );
+    // call width: 2
+    g.call(t(g, 0x20c, 371), 0, &[0, 0]);
+    // call width: 2
+    g.call(t(g, 0x21d, 371), 0, &[1, 0]);
+    // call width: 1
+    g.call(t(g, 0x22e, 543), 0, &[0]);
+    let selp = g.read::<u32>(w(0x23d));
+    let c = u32::from(g.read::<u8>(selp));
+    // call width: 2
+    let mut eax = g.call(t(g, 0x248, 219), 0, &[c, 1]).eax;
+    if eax != 0 {
+        // call width: 2
+        eax = g.call(t(g, 0x25f, 257), 0, &[eax, 0]).eax;
+    }
+    let node = g.read::<u32>(w(0x270));
+    if node != 0 {
+        eax = crate::sa_pool::give_back(g, img, img.rel32_target(f + at(0x279)), node);
+        g.write::<u32>(w(0x27f), 0);
+    }
+    crate::sa_misc::register_parts(g, img, img.rel32_target(f + at(0x288)), eax);
+    // its return address after `sub esp, 0x24` and two pushes
+    let res = Frame {
+        at: img.rel32_target(f + 0x2cc),
+        esp: esp.wrapping_sub(0x34),
+        eax: 0,
+        ecx: 0,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    crate::s4_small::register_resource_parts(g, img, &res).eax
+}
+
+/// [`effect_end_0162`] (the `rel32`s as `r23::EFFECT_END_0598`'s and the
+/// resource parts).
+pub const EFFECT_END_0162: Sig = Sig {
+    len: 734,
+    hash: 0x7908_6998_a20b_d25c,
+    calls: &[
+        (0x246, Callee::Sig(&crate::sa_script::EACH_ACTOR)),
+        (0x2b8, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x2c7, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (
+            0x2cc,
+            Callee::Sig(&crate::s4_small::REGISTER_RESOURCE_PARTS),
+        ),
+        (0x2d6, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0162` 0x10001260 (309 bytes; a table entry, no arguments):
+/// `r23::host_start_end_0598`'s code running [`effect_end_0162`].
+pub fn host_start_end_0162<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    crate::sa_misc::host_start_calls(g, img, f);
+    let t = slot_target(g, img.word(f + 0x106), 549);
+    // call width: 1
+    if g.call(t, 0, &[1]).eax != 0 {
+        let t = slot_target(g, img.word(f + 0x11c), 550);
+        // call width: 1
+        g.call(t, 0, &[1]);
+    }
+    // the return address at `E - 4`
+    effect_end_0162(g, img, img.rel32_target(f + 0x12e), fr.esp.wrapping_sub(4));
+    Ret::eax(0)
+}
+
+/// [`host_start_end_0162`].
+pub const HOST_START_END_0162: Sig = Sig {
+    len: 309,
+    hash: 0x7322_6dfb_363d_5347,
+    calls: &[(0x12e, Callee::Sig(&EFFECT_END_0162))],
+    imports: &[],
+};

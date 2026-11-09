@@ -1543,3 +1543,143 @@ fn place_0165_scene_index() {
         });
     }
 }
+
+/// What `magic_0162`'s effect end (0x10002a80, `r32::effect_end_0162`)
+/// needs (as `magic_r23.rs`' `end_setup_0598`/`end_globals_0598`, the
+/// operands 0x3f bytes later): the two-word slots logged, slot 219
+/// answering a character or 0, the party's list, the parts, the node at
+/// rest or none, the selection and characters, the resource parts' slots
+/// and lock.
+#[allow(clippy::too_many_arguments)]
+fn end_setup_0162(
+    t: &mut Twin,
+    k: u32,
+    (hide, node, banks): (bool, bool, u32),
+    off: u32,
+    c: u8,
+    i: u32,
+    waits: (u16, u16),
+) {
+    let f = t.at(0x2a80);
+    let at = |o: u32| if o < 0x34 { o } else { o + 0x3f };
+    let w = |t: &Twin, base: u32, o: u32| t.img.word(base + o);
+    let wo = |t: &Twin, o: u32| t.img.word(f + at(o));
+    for s in [25u32, 24, 217, 255, 211, 213, 296, 257, 399, 8, 371] {
+        rec(t, s, 2, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+    }
+    rec(t, 384, 1, |_, a| 0x0384_0000 ^ a[0]);
+    rec(
+        t,
+        219,
+        2,
+        move |_, a| if hide { 0x0219_0000 ^ a[0] } else { 0 },
+    );
+    t.stub(288, |m, a| {
+        m.w32(a[1], 2);
+        SCRATCH + 0x4000
+    });
+    t.write(SCRATCH + 0x4000, &[3, 5]);
+    t.stub(293, |_, a| a[0] & 1);
+    let rp = t.img.rel32_target(f + at(0x288));
+    let recs = SCRATCH + 0x6000;
+    t.set_u32(w(t, rp, 0x16), recs);
+    t.set_u32(recs + 0x30, 0x00c0_0030 + k);
+    t.set_u32(recs + 0xa4, 0x00c0_00a4 + k);
+    t.set_u32(w(t, rp, 0x0e), 2);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(t, rp, 0x43), lock);
+    t.set_u32(lock, 0x10 + k);
+    t.set_u32(w(t, rp, 0x76), banks);
+    let n = SCRATCH + 0x3400;
+    if node {
+        t.write(n, &[0x5a; 0x1c]);
+        t.set_u32(n, n);
+        t.set_u32(n + 4, n);
+        t.set_u32(n + 8, n);
+        t.set_u32(n + 0xc, 0);
+    }
+    t.set_u32(wo(t, 0x270), if node { n } else { 0 });
+    for o in [0x131u32, 0x161] {
+        t.set_u32(wo(t, o), 0x5a5a_0000 + o);
+    }
+    // the selection, the characters, the flags and the waits
+    let chrs = SCRATCH + 0x800;
+    let sel = SCRATCH + 0x600;
+    for o in [0x11u32, 0x30] {
+        t.set_u32(w(t, f, o), sel);
+    }
+    for o in [0x53u32, 0x15b, 0x23d] {
+        t.set_u32(wo(t, o), sel);
+    }
+    t.write(sel, &[c, 5, 9]);
+    for o in [0x1eu32, 0x3b] {
+        for j in 0..0x40 {
+            t.set_u32(w(t, f, o) + 4 * j, chrs + 0x10 * j);
+        }
+    }
+    for o in [0x67u32, 0x18b] {
+        for j in 0..0x40 {
+            t.set_u32(wo(t, o) + 4 * j, chrs + 0x10 * j);
+        }
+    }
+    for o in [0x5cu32, 0xb7, 0x155, 0x1a1] {
+        t.set_u32(wo(t, o), off);
+    }
+    for o in [0xc0u32, 0x1a9] {
+        t.set_u32(wo(t, o), i);
+    }
+    for o in [0xaeu32, 0x1cb, 0x1e9, 0x1f8] {
+        t.set_u32(wo(t, o), chrs + 0x99);
+    }
+    t.set_u32(wo(t, 0x118), 0x00a0_0118);
+    t.set_u32(wo(t, 0x144), 0x00a0_0144);
+    t.set_u16(wo(t, 0x106), waits.0);
+    t.set_u16(wo(t, 0x12a), waits.1);
+    // the resource parts
+    let parts = t.img.rel32_target(f + 0x2cc);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[2]);
+    rec(t, 772, 2, |_, a| 0x0772_0000 ^ a[1] ^ (a[0] << 4));
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(t, 773, 4, move |_, a| (a[3] ^ a[2] ^ k) & 1);
+    rec(t, 779, 2, |_, a| 0x0779_0000 ^ a[0]);
+    let rlock = SCRATCH + 0x80;
+    t.set_u32(w(t, parts, 0x59), rlock);
+    t.set_u32(rlock, 7 + k);
+}
+
+/// `magic_0162` 0x10002a80 (`r32::effect_end_0162`) and 0x10001260
+/// (`r32::host_start_end_0162`): the battle on and off, the caster's and
+/// the summon's indices below 32 and not, the waits 0 and not, slot 219
+/// answering a character or 0, the node at rest or none, no banks and
+/// one; the host start with slot 549 answering 0 and not.
+#[test]
+fn effect_end_0162() {
+    let Some(mut t) = twin(162) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x2a80);
+    // (off, caster, summon index, waits, hide, node, banks)
+    let cases: [(u32, u8, u32, (u16, u16), bool, bool, u32); 6] = [
+        (0, 3, 2, (0, 0), true, true, 0),
+        (0, 0x20, 0x20, (1, 0), false, false, 0),
+        (1, 3, 2, (0, 1), true, false, 1),
+        (0, 0x1f, 0xffff_ffff, (1, 1), false, true, 0),
+        (0, 0x40, 0x1f, (0, 0), true, true, 0),
+        (1, 0x20, 0x40, (0, 0), false, true, 0),
+    ];
+    for (k, (off, c, i, waits, hide, node, banks)) in (0u32..).zip(cases) {
+        end_setup_0162(&mut t, k, (hide, node, banks), off, c, i, waits);
+        ownb::dirty_stack(&mut t, 0x2a80 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r32::effect_end_0162(g, img, fr.at, fr.esp))
+        });
+    }
+    let host = t.at(0x1260);
+    for (k, r549) in [0u32, 1].into_iter().enumerate() {
+        t.stub(549, move |_, _| r549);
+        let k = k as u32;
+        end_setup_0162(&mut t, k, (k == 1, k == 0, 0), 0, 3, 2, (0, 0));
+        t.set_u32(t.img.word(host + 0x89), 0x5a5a_5a5a);
+        ownb::dirty_stack(&mut t, 0x1260 + k, &[]);
+        t.check_entry(host, Call::default(), &[], Eax::Checked);
+    }
+}
