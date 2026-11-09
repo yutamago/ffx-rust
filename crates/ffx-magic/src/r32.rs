@@ -2124,3 +2124,240 @@ pub const BURST_STEP_0307: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0055`'s start-up (0x10001340, 989 bytes; internal, no arguments,
+/// run by its load step [`load_0055`]; an 8-aligned /GS frame, `B` = the
+/// aligned `esp` after `sub esp, 0x90` and two pushes: `Q` at `B + 0x10`,
+/// the turned offset `O` at `B + 0x20`, `P` at `B + 0x30`, `V` at `B +
+/// 0x40`, `M` at `B + 0x50`; `A = *G_A`, `T = TAB[*I]`):
+/// - two globals, `*G_C` = slot 719 `(NAME, 8, 0)`, the part set-up
+///   ([`part_init`](crate::l5_objhost::part_init));
+/// - `P` = slot 262 `(A, ..)`, `Q` = slot 262 `(T, ..)` with `Q.y = P.y`
+///   (`magic_0067`'s copy keeps `Q.y`); the yaw
+///   `K - atan2(Q.z - P.z, Q.x - P.x)` (`_CIatan2`, x87) wrapped once; the height `h` = slot 251
+///   `(*I)` outside a battle with `*I` below 0x20, else slot 17 `(T)`
+///   times slot 19 `(T)` (ST0 each);
+/// - `M` from slot 235 turned by slots 328 `(M, M, 0)` and 329 `(M, M,
+///   yaw)`; `Q += M (0, 0, h + C, 1)` (slots 229, 248); `n = trunc(|P - Q|
+///   K2)` (the root in double);
+/// - the camera path task ([`camera_path_task`](crate::s7_misc::camera_path_task),
+///   `(Q, 1.1, 1.0, n)`, scale `K3`);
+/// - the actor block (`TAB2[i] - 7 + n` at least 1, slot 413 or 215
+///   `(*G_X)` by `*G_B`, -1, 0, 1, the u16 flag by `*G_B`);
+/// - a task node ([`take`](crate::sa_pool::take), owner `CB`) last on the
+///   task list.
+///
+/// Returns 0.
+pub fn start_up_0055<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_55(g, img, fr, true)
+}
+
+/// [`start_up_0055`] in `magic_0067` (0x10003a60, 977 bytes): `Q.y` kept
+/// (the two moves gone, every later operand 12 bytes earlier).
+pub fn start_up_0067<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_55(g, img, fr, false)
+}
+
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn start_up_55<G: Game>(g: &mut G, img: &Image, fr: &Frame, level: bool) -> Ret {
+    use crate::sb_sse::{add, cvtt, mul, sub};
+    let f = fr.at;
+    let at = |o: u32| if level || o < 0xa8 { o } else { o - 0xc };
+    let w = |o: u32| img.word(f + at(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + at(o));
+    let rd = |g: &G, a: u32| g.read::<f32>(a);
+    let one = 0x3f80_0000u32;
+    // push ebp; and esp, -8; sub esp, 0x90; two pushes
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x90);
+    let cookie = g.read::<u32>(w(0xd)) ^ e;
+    g.write::<u32>(e + 0x8c, cookie);
+    let b = e.wrapping_sub(8);
+    let (q, o, p, v, m) = (b + 0x10, b + 0x20, b + 0x30, b + 0x40, b + 0x50);
+    let s719 = t(g, 0x1b, 719);
+    g.write::<u32>(w(0x32), w(0x36));
+    g.write::<u32>(w(0x3c), w(0x40));
+    // call width: 3
+    let c = g.call(s719, 0, &[w(0x2c), 8, 0]).eax;
+    g.write::<u32>(w(0x4a), c);
+    crate::l5_objhost::part_init(g, img, call(0x4f));
+    let a = g.read::<u32>(w(0x69));
+    // call width: 4
+    g.call(t(g, 0x63, 262), 0, &[a, p, p + 4, p + 8]);
+    let i = u32::from(g.read::<u8>(g.read::<u32>(w(0x76))));
+    g.write::<u32>(p + 0xc, one);
+    let tt = g.read::<u32>(w(0x97).wrapping_add(4 * i));
+    // call width: 4
+    g.call(t(g, 0x9c, 262), 0, &[tt, q, q + 4, q + 8]);
+    if level {
+        let py = g.read::<u32>(p + 4);
+        g.write::<u32>(q + 4, py);
+    }
+    let dz = sub(rd(g, q + 8), rd(g, p + 8));
+    g.write::<u32>(q + 0xc, one);
+    let dx = sub(rd(g, q), rd(g, p));
+    // `_CIatan2(dz, dx)`, one rounding (`cvtpd2ps`)
+    #[allow(clippy::cast_possible_truncation)]
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let yaw = crate::ob_model::wrap_once(
+        g,
+        img,
+        f,
+        sub(k(g, 0x104), ang),
+        [0x113, 0x123, 0x12d, 0x13a].map(at),
+    );
+    g.write::<f32>(b + 8, yaw);
+    let battle = g.read::<u32>(w(0x146)) != 0;
+    let i = u32::from(g.read::<u8>(g.read::<u32>(w(0x14d))));
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    let h = if !battle && i < 0x20 {
+        // call width: 1
+        let x = st0_f32(g.call(t(g, 0x16d, 251), 0, &[i]).st0);
+        g.write::<f32>(b + 0xc, x);
+        x
+    } else {
+        let tt = g.read::<u32>(w(0x18e).wrapping_add(4 * i));
+        // call width: 1
+        let a19 = st0_f32(g.call(t(g, 0x193, 19), 0, &[tt]).st0);
+        g.write::<f32>(o, a19);
+        // call width: 1
+        let a17 = st0_f32(g.call(t(g, 0x1a2, 17), 0, &[tt]).st0);
+        g.write::<f32>(b + 0xc, a17);
+        mul(a17, a19)
+    };
+    g.write::<f32>(v + 8, add(h, k(g, 0x1c3)));
+    // call width: 1
+    g.call(t(g, 0x1cd, 235), 0, &[m]);
+    // call width: 3
+    g.call(t(g, 0x1ed, 328), 0, &[m, m, 0]);
+    // call width: 3
+    g.call(t(g, 0x20e, 329), 0, &[m, m, yaw.to_bits()]);
+    g.write::<u32>(v + 0xc, one);
+    // call width: 3
+    g.call(t(g, 0x22a, 229), 0, &[o, m, v]);
+    // call width: 3
+    g.call(t(g, 0x24a, 248), 0, &[q, q, o]);
+    g.write::<u32>(q + 0xc, one);
+    // `subps` P - Q lane by lane, y first in the sum
+    let d = [0u32, 4, 8].map(|j| sub(rd(g, p + j), rd(g, q + j)));
+    let sum = add(add(mul(d[1], d[1]), mul(d[0], d[0])), mul(d[2], d[2]));
+    #[allow(clippy::cast_possible_truncation)] // `cvtsd2ss`
+    let root = f64::from(sum).sqrt() as f32;
+    let base = g.read::<u32>(w(0x2ac).wrapping_add(4 * g.read::<u32>(w(0x29d))));
+    let n = cvtt(mul(root, k(g, 0x2bc))).cast_unsigned();
+    // the path task's `(Q, 1.1, 1.0, n)`, `xmm3` = `K3`
+    for (j, x) in (0u32..).zip([q, 0x3f8c_cccd, one, n]) {
+        g.write::<u32>(b.wrapping_sub(0x10) + 4 * j, x);
+    }
+    let path = Frame {
+        at: call(0x2d9),
+        esp: b.wrapping_sub(0x14),
+        eax: q,
+        ecx: 0,
+        edx: 0,
+        xmm: [0, 0, 0, crate::Xmm::f32(k(g, 0x2a5)).reg()],
+    };
+    crate::s7_misc::camera_path_task(g, img, &path);
+    let count = base.wrapping_sub(7).wrapping_add(n);
+    g.write::<u32>(w(0x2e7), base);
+    let count = if count.cast_signed() <= 0 { 1 } else { count };
+    g.write::<u32>(w(0x2f7), 1);
+    g.write::<u32>(w(0x300), count);
+    g.write::<u32>(w(0x306), 0);
+    let battle = g.read::<u32>(w(0x310)) != 0;
+    let x = g.read::<u32>(w(0x316));
+    g.write::<u32>(w(0x31b), x);
+    g.write::<u32>(w(0x327), 1);
+    g.write::<u32>(w(0x32d), w(0x331));
+    g.write::<u32>(w(0x337), u32::MAX);
+    // call width: 1
+    let r = g
+        .call(t(g, 0x321, if battle { 413 } else { 215 }), 0, &[x])
+        .eax;
+    let battle = g.read::<u32>(w(0x356)) != 0;
+    g.write::<u32>(w(0x35c), r);
+    g.write::<u32>(w(0x362), u32::MAX);
+    g.write::<u32>(w(0x36c), 0);
+    g.write::<u32>(w(0x376), 1);
+    if battle {
+        g.write::<u16>(w(0x389), 1);
+    } else {
+        g.write::<u16>(w(0x380), 0);
+    }
+    let node = crate::sa_pool::take(g, img, call(0x393), w(0x38e));
+    let listed = g.read::<u32>(w(0x399)) != 0;
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let last = g.read::<u32>(w(0x3a9));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x3bb), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x3cc), node);
+    Ret::eax(0)
+}
+
+/// [`start_up_0055`] (the `rel32`s: the part set-up, `_CIatan2`, the
+/// square root, the camera path task, the pool take,
+/// `__security_check_cookie`).
+pub const START_UP_0055: Sig = Sig {
+    len: 989,
+    hash: 0xe24e_f1e6_6f86_aa46,
+    calls: &[
+        (0x4f, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0xf2, Callee::Import("_CIatan2")),
+        (0x298, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2d9, Callee::Sig(&crate::s7_misc::CAMERA_PATH_TASK)),
+        (0x393, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x3d5, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`start_up_0067`].
+pub const START_UP_0067: Sig = Sig {
+    len: 977,
+    hash: 0x3129_3e76_20fe_6b65,
+    calls: &[
+        (0x4f, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0xe6, Callee::Import("_CIatan2")),
+        (0x28c, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2cd, Callee::Sig(&crate::s7_misc::CAMERA_PATH_TASK)),
+        (0x387, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x3c9, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0055`'s load step (0x10001210, the 118-byte shape) running
+/// [`start_up_0055`].
+pub fn load_0055<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0055)
+}
+
+/// [`load_0055`].
+pub const LOAD_0055: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0055))],
+    imports: &[],
+};
+
+/// `magic_0067`'s load step (0x10003930, the 118-byte shape) running
+/// [`start_up_0067`].
+pub fn load_0067<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0067)
+}
+
+/// [`load_0067`].
+pub const LOAD_0067: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0067))],
+    imports: &[],
+};
