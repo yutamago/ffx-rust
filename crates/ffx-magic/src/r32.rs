@@ -2986,3 +2986,191 @@ pub const HOST_START_END_0162: Sig = Sig {
     calls: &[(0x12e, Callee::Sig(&EFFECT_END_0162))],
     imports: &[],
 };
+
+/// `magic_0263`'s height from a distance (0x100024d0, 241 bytes; `ecx` =
+/// the record `R = [obj, out, B, e]`, an 8-aligned /GS frame, the locals
+/// from `L` after `sub esp, 0x30`): `r21::height_0262` with the second
+/// point given straight to slot 234 (no second slot 217). Nothing when
+/// bit 0 of the object's `+0x90` is set (the cookie word left). Else with
+/// the table `T = *G_T`: `c = T[(e + 0x4000) >> 4 & 0xfff]`, `q = T[e >>
+/// 4 & 0xfff] / c`; slot 217 `(obj[0x50], A)` (`A = L + 0x1c`), slot 234
+/// `(D, A, B)` (`D = L + 0xc`); `R + 4` = `|D| / c * q - D.y`.
+pub fn height_0263<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rec = fr.ecx;
+    let l = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x30);
+    let obj = g.read::<u32>(rec);
+    if g.read::<u8>(obj + 0x90) & 1 != 0 {
+        return Ret::eax(g.read::<u32>(w(0xa)) ^ l);
+    }
+    let e = g.read::<i32>(rec + 0xc);
+    let tab = g.read::<u32>(w(0x2c));
+    let at = |i: i32| tab.wrapping_add(4 * (i.cast_unsigned() & 0xfff));
+    let c = g.read::<f32>(at(e.wrapping_add(0x4000) >> 4));
+    let q = div(g.read::<f32>(at(e >> 4)), c);
+    let (a, d) = (l + 0x1c, l + 0xc);
+    let model = g.read::<u32>(obj + 0x50);
+    // call width: 2
+    g.call(t(g, 0x5b, 217), 0, &[model, a]);
+    let b = g.read::<u32>(rec + 8);
+    // call width: 5 (slot 217's words stay)
+    g.call(t(g, 0x84, 234), 0, &[d, a, b, model, a]);
+    let [x, y, z] = [0u32, 4, 8].map(|o| g.read::<f32>(d + o));
+    let s = add(add(mul(y, y), mul(x, x)), mul(z, z));
+    #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
+    let r = f64::from(s).sqrt() as f32;
+    let h = sub(mul(div(r, c), q), y);
+    g.write::<f32>(rec + 4, h);
+    Ret::eax(0)
+}
+
+/// [`height_0263`] (the `rel32`s: the square root and the cookie check).
+pub const HEIGHT_0263: Sig = Sig {
+    len: 241,
+    hash: 0x0d1a_ae79_308b_80de,
+    calls: &[
+        (0xc1, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xe9, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0263`'s centre of its objects (0x100061c0, 338 bytes; internal:
+/// `ecx` = the record `R = [S, out, X]`; a cookie frame, `ebp = E - 4`, the
+/// point `P` at `ebp - 0x24`, `Q` at `ebp - 0x14`): `P` = slot 325 `(P,
+/// X)`; for each of the `n = S[0x4dc]` objects (their words from `S +
+/// 0x6c`, 0x98 apart) `Q` = slot 531 `(word, Q)` less `P` (kept in `Q`),
+/// summed; `out = P + sum (C / n)` (lane by lane; with no objects `0 x (C
+/// / n)`, NaN for `n = 0`), `w` 1.0. Returns `out`.
+pub fn centre_0263<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rd = |g: &G, a: u32| g.read::<f32>(a);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let r = fr.ecx;
+    let (p, q) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
+    g.write::<u32>(ebp.wrapping_sub(0x34), r);
+    let x = g.read::<u32>(r + 8);
+    let s = g.read::<u32>(r);
+    // call width: 2
+    g.call(t(g, 0x21, 325), 0, &[p, x]);
+    let mut sum = [0.0f32; 3];
+    let n = g.read::<u32>(s + 0x4dc).cast_signed();
+    let mut obj = s + 0x6c;
+    for _ in 0..n.max(0) {
+        let word = g.read::<u32>(obj);
+        // call width: 2
+        g.call(t(g, 0x65, 531), 0, &[word, q]);
+        let dy = sub(rd(g, q + 4), rd(g, p + 4));
+        let dz = sub(rd(g, q + 8), rd(g, p + 8));
+        let dx = sub(rd(g, q), rd(g, p));
+        g.write::<f32>(q + 4, dy);
+        g.write::<f32>(q + 8, dz);
+        g.write::<f32>(q, dx);
+        sum = [add(dx, sum[0]), add(dy, sum[1]), add(dz, sum[2])];
+        obj = obj.wrapping_add(0x98);
+    }
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+    let k = div(g.read::<f32>(w(0xee)), n as f32);
+    let [ax, ay, az] = sum.map(|v| mul(v, k));
+    g.write::<f32>(q + 4, ay);
+    g.write::<f32>(q + 8, az);
+    let out = g.read::<u32>(r + 4);
+    g.write::<f32>(out, add(rd(g, p), ax));
+    g.write::<f32>(out + 4, add(rd(g, p + 4), ay));
+    g.write::<f32>(out + 8, add(rd(g, p + 8), az));
+    g.write::<u32>(out + 0xc, 0x3f80_0000);
+    Ret::eax(out)
+}
+
+/// [`centre_0263`] (the `rel32`: the cookie check).
+pub const CENTRE_0263: Sig = Sig {
+    len: 338,
+    hash: 0x68bf_fcc6_bc50_e75a,
+    calls: &[(0x14a, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0284`'s landing check and puff (0x10001d90, 332 bytes; cdecl
+/// `(E)`): `s7_misc::landing_puff`'s checks and move, with the object
+/// taken from the 0x140-byte pool ([`pool_take_140`](crate::sb_misc::pool_take_140);
+/// none: no start) and started ([`start_object_at`](crate::s4_misc::start_object_at),
+/// part 0, scale `K5`) at the point; `E + 0x26c` = 0 and the smoke puff
+/// ([`smoke_puff`](crate::s6_misc::smoke_puff), a tail jump with `ecx` =
+/// `E`), whose `eax` it returns. Outside the box nothing (the entry's
+/// `eax`).
+#[allow(clippy::neg_cmp_op_on_partial_ord)] // `comiss`/`jbe`: unordered fails the test
+pub fn landing_take_0284<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let e = fr.arg(g, 0);
+    let x = g.read::<f32>(e + 0xc);
+    // `comiss`; `jbe`: unordered fails each test
+    if !(x > k(g, 0xf) && k(g, 0x1d) > x) {
+        return Ret::eax(fr.eax);
+    }
+    if !(g.read::<f32>(e + 0x14) > k(g, 0x32)) {
+        return Ret::eax(fr.eax);
+    }
+    let y = g.read::<f32>(e + 0x10);
+    if !(y >= 0.0) {
+        return Ret::eax(fr.eax);
+    }
+    let fl = g.read::<u16>(e + 0x284) | 2;
+    g.write::<u16>(e + 0x284, fl);
+    let v = g.read::<f32>(e + 0x260);
+    // `ucomiss`/`lahf`/`jnp`: only an ordered 0 skips the move
+    if v != 0.0 {
+        let neg = f32::from_bits(div(sub(y, v), v).to_bits() ^ g.read::<u32>(w(0x81)));
+        let back = sub(k(g, 0x7a), neg);
+        let dx = mul(g.read::<f32>(e + 0x25c), back);
+        let nx = sub(g.read::<f32>(e + 0xc), dx);
+        g.write::<f32>(e + 0xc, nx);
+        let dz = mul(g.read::<f32>(e + 0x264), back);
+        let nz = sub(g.read::<f32>(e + 0x14), dz);
+        g.write::<f32>(e + 0x14, nz);
+    }
+    g.write::<u32>(e + 0x10, 0);
+    for off in [0u32, 4, 8, 0xc] {
+        let p = g.read::<u32>(e + 0xc + off);
+        g.write::<u32>(e + 0x24c + off, p);
+    }
+    let obj = crate::sb_misc::pool_take_140(g, img, img.rel32_target(f + 0xe2));
+    if obj != 0 {
+        let start = img.rel32_target(f + 0xfe);
+        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0xf0), 0, 0, 0);
+        for off in [0u32, 4, 8, 0xc] {
+            let p = g.read::<u32>(e + 0x24c + off);
+            g.write::<u32>(obj + 0xd0 + off, p);
+        }
+    }
+    g.write::<u32>(e + 0x26c, 0);
+    let puff = Frame {
+        at: img.rel32_target(f + 0x145),
+        ecx: e,
+        ..*fr
+    };
+    Ret::eax(crate::s6_misc::smoke_puff(g, img, &puff))
+}
+
+/// [`landing_take_0284`] (the `rel32`s: the pool take, the object start,
+/// the smoke puff).
+pub const LANDING_TAKE_0284: Sig = Sig {
+    len: 332,
+    hash: 0xd6d9_331c_f476_9ed2,
+    calls: &[
+        (0xe2, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0xfe, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x145, Callee::Sig(&crate::s6_misc::SMOKE_PUFF)),
+    ],
+    imports: &[],
+};

@@ -3247,6 +3247,8 @@ ports! {
     "r32 steps 0055" => r32::STEPS_0055, r32::steps_0055;
     "r32 steps 0067" => r32::STEPS_0067, r32::steps_0067;
     "r32 host start end 0162" => r32::HOST_START_END_0162, r32::host_start_end_0162;
+    "r32 height 0263" => r32::HEIGHT_0263, r32::height_0263;
+    "r32 landing take 0284" => r32::LANDING_TAKE_0284, r32::landing_take_0284;
     // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3970,6 +3972,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r32 path points 0055", &r32::PATH_POINTS_0055),
     ("r32 path points 0067", &r32::PATH_POINTS_0067),
     ("r32 effect end 0162", &r32::EFFECT_END_0162),
+    ("r32 centre 0263", &r32::CENTRE_0263),
     // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

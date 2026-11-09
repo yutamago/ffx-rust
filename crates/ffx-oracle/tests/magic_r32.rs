@@ -1370,7 +1370,7 @@ fn steps_0055_0067() {
         t.set_u32(t.img.word(objs + 0x37), p + 4);
         // (c1, c2, flag word, 390's answer in the search table (0055), R1
         // done, objects, *G_D, listed)
-        let cases: [(i32, i32, u32, u32, u32, bool, u32, bool); 9] = [
+        let cases: [(i32, i32, u32, u32, u32, bool, u32, bool); 10] = [
             (5, 0, 0, 0, 1, false, 1, false),
             (1, 0, 0, 0, 1, false, 1, true),
             (0, 4, 0, 0, 0, true, 1, false),
@@ -1380,6 +1380,7 @@ fn steps_0055_0067() {
             (0, 0, 0, 0, 1, true, 1, false),
             (0, -2, 0, 0, 1, true, 0, true),
             (2, 1, 0x100, 1, 0, true, 1, true),
+            (1, 0, 0, 0, 1, true, 1, true),
         ];
         for (k, (c1, c2, flag, ans, r1, empty, gd, listed)) in (0u32..).zip(cases) {
             magic_r11::pools(&mut t, f, 547);
@@ -1403,6 +1404,10 @@ fn steps_0055_0067() {
                 let at = pw(&t, o55, o67);
                 t.set_u32(at, 0x5a5a_5a5a ^ k);
             }
+            // the actor slot 333 turns by: the yaw wrapped down (case 1) and
+            // up (case 9)
+            let actor = w(&t, 0xc6);
+            t.set_u32(actor, if k == 1 { 0xd } else { 0x1 });
             t.set_u32(w(&t, 0x5), c1.cast_unsigned());
             t.set_u32(w(&t, 0x197), c2.cast_unsigned());
             t.set_u32(w(&t, 0x1a9), flag);
@@ -1683,5 +1688,209 @@ fn effect_end_0162() {
         t.set_u32(t.img.word(host + 0x89), 0x5a5a_5a5a);
         ownb::dirty_stack(&mut t, 0x1260 + k, &[]);
         t.check_entry(host, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0263` 0x100024d0 (`r32::height_0263`): stopped (bit 0 set: the
+/// cookie word, junk) and running over three table angles; slot 217
+/// writes a point from its first word, slot 234 the difference of its
+/// second and third.
+#[test]
+fn height_0263() {
+    let Some(mut t) = twin(263) else { return };
+    let f = t.at(0x24d0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 217, 2, |m, a| {
+        for i in 0..4 {
+            let v = (a[0] & 0xff) as f32 * 0.25 + i as f32 - 1.5;
+            m.w32(a[1] + 4 * i, v.to_bits());
+        }
+        0x217
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    let tab = SCRATCH + 0x1_0000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, (0.5 + 0.0007 * i as f32).to_bits());
+    }
+    t.set_u32(w(&t, 0x2c), tab);
+    let (rec_at, obj, b) = (SCRATCH + 0x600, SCRATCH + 0x800, SCRATCH + 0x900);
+    for (k, (flags, e)) in [(1u8, 0x100i32), (0, 0x100), (0, 0x7ff0), (0, -0x3000)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        junk(&mut t, obj, 0x100, k);
+        t.set_u8(obj + 0x90, flags | 0x10);
+        t.set_u32(obj + 0x50, 0x0000_0013 + k);
+        junk(&mut t, rec_at, 0x20, k);
+        t.set_u32(rec_at, obj);
+        floats(&mut t, b, 4, 0.75 * k as f32 - 2.0);
+        t.set_u32(rec_at + 8, b);
+        t.set_u32(rec_at + 0xc, e.cast_unsigned());
+        ownb::dirty_stack(&mut t, 0x24d0 + k, &[]);
+        t.check_entry(f, Call::this(rec_at), &[], Eax::Junk);
+    }
+}
+
+/// `magic_0263` 0x100061c0 (`r32::centre_0263`, internal): three objects,
+/// one, none (NaN from `0 x (C / 0)`) and a negative count.
+#[test]
+fn centre_0263() {
+    let Some(mut t) = twin(263) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x61c0);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..3 {
+            let v = (a[0] & 0xff) as f32 * 0.375 - i as f32 * 1.25;
+            m.w32(a[1] + 4 * i, v.to_bits());
+        }
+        0x531
+    });
+    let (r, s, x, out) = (
+        SCRATCH + 0x600,
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x700,
+        SCRATCH + 0x780,
+    );
+    for (k, n) in [3i32, 1, 0, -2].into_iter().enumerate() {
+        let k = k as u32;
+        junk(&mut t, s, 0x600, k);
+        t.set_u32(s + 0x4dc, n.cast_unsigned());
+        for i in 0..4 {
+            t.set_u32(s + 0x6c + 0x98 * i, 0x0000_0020 + 7 * i + k);
+        }
+        floats(&mut t, x, 4, 1.5 - k as f32);
+        junk(&mut t, out, 0x10, k);
+        t.set_u32(r, s);
+        t.set_u32(r + 4, out);
+        t.set_u32(r + 8, x);
+        ownb::dirty_stack(&mut t, 0x61c0 + k, &[]);
+        t.check(f, Call::this(r), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r32::centre_0263(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0284` 0x10001d90 (`r32::landing_take_0284`): points outside the
+/// box on each side (and NaN), inside with a rate (0, -0, NaN and
+/// others), the pool with a free record and full (no start), the puff
+/// (its ring with a free record).
+#[test]
+fn landing_take_0284() {
+    let Some(mut t) = twin(284) else { return };
+    let f = t.at(0x1d90);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the object start's slots (`s4_misc::start_object_at`)
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let soa = t.img.rel32_target(f + 0xfe);
+    let start = t.img.rel32_target(soa + 0x84);
+    t.set_u32(t.img.word(start + 0x04), SCRATCH + 0x7f8);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x2f0);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x280);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let tail = t.img.word(soa + 0xa8);
+    // the 0x140-byte pool
+    let take = t.img.rel32_target(f + 0xe2);
+    let recs = SCRATCH + 0x2_0000;
+    t.set_u32(t.img.word(take + 0x16), recs);
+    t.set_u32(t.img.word(take + 0x09), 3);
+    // the puff's (`s6_misc::smoke_puff`)
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    let calls = SCRATCH + 0x7e0;
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ (a[0] & 0xff));
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * f64::from(k % 5 + 1)
+    });
+    let puff = t.img.rel32_target(f + 0x145);
+    let ptake = t.img.rel32_target(puff + 0x9);
+    let ring = SCRATCH + 0x1000;
+    t.set_u32(t.img.word(ptake + 0x17), ring);
+    t.set_u32(t.img.word(ptake + 0x0a), 4);
+    for (o, x) in [
+        (0xfu32, -10.0f32),
+        (0x1d, 10.0),
+        (0x32, -4.0),
+        (0x7a, 1.0),
+        (0xf0, 0.5),
+    ] {
+        t.set_u32(w(&t, o), x.to_bits());
+    }
+    let e = SCRATCH + 0x300;
+    // (x, y, z, the rate, the pool full)
+    for (k, (x, y, z, v, full)) in [
+        (-11.0f32, 1.0f32, 0.0f32, 1.0f32, false),
+        (11.0, 1.0, 0.0, 1.0, false),
+        (f32::NAN, 1.0, 0.0, 1.0, false),
+        (0.0, 1.0, -5.0, 1.0, false),
+        (0.0, -0.5, 0.0, 1.0, false),
+        (0.0, f32::NAN, 0.0, 1.0, false),
+        (1.5, 2.0, 3.0, 0.0, false),
+        (1.5, 2.0, 3.0, -0.0, true),
+        (1.5, 2.0, 3.0, 0.75, false),
+        (-2.5, 0.0, 7.0, -3.0, true),
+        (2.0, 4.0, 1.0, f32::NAN, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(e, &magic_h6::varied(0x290, k as u8));
+        t.set_u32(e + 0xc, x.to_bits());
+        t.set_u32(e + 0x10, y.to_bits());
+        t.set_u32(e + 0x14, z.to_bits());
+        t.set_u32(e + 0x25c, 1.5f32.to_bits());
+        t.set_u32(e + 0x264, (-0.75f32).to_bits());
+        t.set_u32(e + 0x260, v.to_bits());
+        t.set_u32(e + 0x250, (k as f32 - 4.0).to_bits());
+        for j in 0..3u32 {
+            let r = recs + 0x140 * j;
+            t.write(r, &magic_h6::varied(0x140, (k + j) as u8));
+            t.set_u32(r + 0x130, u32::from(full || j == 0));
+            t.set_u16(r + 0x124, 0x8000);
+        }
+        t.set_u32(t.img.word(take + 0x01), k % 3);
+        t.set_u16(free, 3);
+        t.write(SCRATCH + 0x1400, &magic_h6::varied(0x10, k as u8));
+        t.set_u32(
+            tail,
+            if k.is_multiple_of(2) {
+                SCRATCH + 0x1400
+            } else {
+                0
+            },
+        );
+        t.write(ring, &magic_h6::varied(0x68 * 4, k as u8));
+        for j in 0..4u32 {
+            t.set_u32(ring + 0x68 * j + 0x60, u32::from(j != 2));
+        }
+        t.set_u32(t.img.word(ptake + 0x02), 1);
+        magic_h6::scrub(&mut t);
+        let c = Call {
+            eax: 0x0eaa_0000 + k,
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[e], Eax::Checked);
     }
 }
