@@ -607,10 +607,27 @@ pub const DRAW_0708: Sig = Sig {
 /// `S + 0x2b40` (its `y` less `K9`) over `K10`, scaled by `K11` and `K12`,
 /// count 0x1e, `S + 0x3664` 1. Returns what `eax` holds (the last slot
 /// 314's, or 0 after a failed take).
-#[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    spin_setup_with(g, img, f, esp, false)
+}
+
+/// [`spin_setup_0612`] with the record displacements read from the code
+/// (the point `+0xc4`, the matrix `+0xef`, its angles `+0xfa`, `+0x119`,
+/// `+0x138`, the far word `+0x155`, the turn `+0x161`, the texture's
+/// displacement `+0x272`, the count `+0x544`) and, for `late` (the copies
+/// of `magic_0605` and `magic_0307`, [`spin_setup_0605`](crate::r29::spin_setup_0605)),
+/// the other operand orders of three adds and their own closing steps.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub(crate) fn spin_setup_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    late: bool,
+) -> u32 {
     use crate::sb_sse::{add, div, mul, sub};
     let w = |o: u32| img.word(f + o);
+    let (pt, m0d, far, turn) = (w(0xc4), w(0xef), w(0x155), w(0x161));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let ebp = esp.wrapping_sub(4);
@@ -640,24 +657,24 @@ pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
     g.write::<f32>(l(0x24), dx);
     g.write::<f32>(l(0x20), dy);
     let my = sub(my, k(g, 0xbc));
-    g.write::<f32>(s + 0x3620, mx);
-    g.write::<f32>(s + 0x3628, mz);
-    g.write::<u32>(s + 0x362c, ONE);
+    g.write::<f32>(s + pt, mx);
+    g.write::<f32>(s + pt + 8, mz);
+    g.write::<u32>(s + pt + 0xc, ONE);
     g.write::<f32>(l(0x1c), dz);
-    g.write::<f32>(s + 0x3624, my);
-    let m0 = s + 0x35a0;
+    g.write::<f32>(s + pt + 4, my);
+    let m0 = s + m0d;
     g.call(t(g, 0x82, 235), 0, &[m0]);
     for (op, slot, off) in [
-        (0xffu32, 330u32, 0x3638u32),
-        (0x11e, 328, 0x3630),
-        (0x13d, 329, 0x3634),
+        (0xffu32, 330u32, w(0xfa)),
+        (0x11e, 328, w(0x119)),
+        (0x13d, 329, w(0x138)),
     ] {
         let a = g.read::<u32>(s + off);
         // call width: 3
         g.call(t(g, op, slot), 0, &[m0, m0, a]);
     }
-    g.write::<u32>(s + 0x35d8, 0xc2c8_0000);
-    let mut x = add(rf(g, s + 0x3640), k(g, 0x169));
+    g.write::<u32>(s + far, 0xc2c8_0000);
+    let mut x = add(rf(g, s + turn), k(g, 0x169));
     // comiss; jbe: unordered keeps the value
     if x > k(g, 0x173) {
         x = sub(x, k(g, 0x17d));
@@ -665,28 +682,33 @@ pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         x = add(x, k(g, 0x194));
     }
     let m = l(0xa4);
-    g.write::<f32>(s + 0x3640, x);
+    g.write::<f32>(s + turn, x);
     // (the saved `ebx` under it: not passed)
     g.call(t(g, 0x1a1, 235), 0, &[m]);
-    let a = g.read::<u32>(s + 0x3640);
+    let a = g.read::<u32>(s + turn);
     // call width: 3
     g.call(t(g, 0x1cb, 328), 0, &[m, m, a]);
     // call width: 3
     g.call(t(g, 0x1df, 231), 0, &[m0, m0, m]);
     let v = l(0x14);
-    g.write::<u32>(s + 0x35d8, 0);
+    g.write::<u32>(s + far, 0);
     for (i, x) in (0u32..).zip([0u32, 0, 0xc220_0000, ONE]) {
         g.write::<u32>(v + 4 * i, x);
     }
     // call width: 3
     g.call(t(g, 0x1f4, 229), 0, &[v, m0, v]);
-    let x = add(rf(g, s + 0x3620), rf(g, v));
-    g.write::<f32>(s + 0x3620, x);
-    let y = add(rf(g, v + 4), rf(g, s + 0x3624));
-    g.write::<f32>(s + 0x3624, y);
-    let z = add(rf(g, s + 0x3628), rf(g, v + 8));
-    g.write::<f32>(s + 0x3628, z);
-    let tag = g.read::<u32>(g.read::<u32>(w(0x266)) + 0x24);
+    let x = add(rf(g, s + pt), rf(g, v));
+    g.write::<f32>(s + pt, x);
+    let y = if late {
+        add(rf(g, s + pt + 4), rf(g, v + 4))
+    } else {
+        add(rf(g, v + 4), rf(g, s + pt + 4))
+    };
+    g.write::<f32>(s + pt + 4, y);
+    let z = add(rf(g, s + pt + 8), rf(g, v + 8));
+    g.write::<f32>(s + pt + 8, z);
+    // (`mov eax, [eax + d8]`: 0x24, `magic_0605`'s 0x14)
+    let tag = g.read::<u32>(g.read::<u32>(w(0x266)) + (w(0x272) & 0xff));
     g.write::<u32>(l(0xac), tag);
     let obj = g.read::<u32>(w(0x26c));
     let r = crate::ob_model::st0_f32(g.call(t(g, 0x27a, 12), 0, &[obj]).st0);
@@ -739,9 +761,17 @@ pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         g.write::<f32>(rec, x);
         let (r1, _) = random(g, 0x3dd, ONE);
         g.write::<f32>(l(0xa8), r1);
-        let y = add(r1, rf(g, rec + 4));
+        let y = if late {
+            add(rf(g, rec + 4), r1)
+        } else {
+            add(r1, rf(g, rec + 4))
+        };
         g.write::<f32>(rec + 4, y);
-        let z = add(rf(g, l(0x1c)), rf(g, rec + 8));
+        let z = if late {
+            add(rf(g, rec + 8), rf(g, l(0x1c)))
+        } else {
+            add(rf(g, l(0x1c)), rf(g, rec + 8))
+        };
         g.write::<f32>(rec + 8, z);
         let (r2, _) = random(g, 0x40b, 0x3e4c_cccd);
         g.write::<f32>(rec + 0x10, r2);
@@ -775,16 +805,21 @@ pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
             g.write::<f32>(rec + 4, sub(top, k6));
         }
     }
-    let n = g.read::<u32>(s + 0x3660).wrapping_sub(1);
-    g.write::<u32>(s + 0x3660, n);
+    let count = w(0x544);
+    let n = g.read::<u32>(s + count).wrapping_sub(1);
+    g.write::<u32>(s + count, n);
     if n != 0 {
         return eax;
     }
+    if late {
+        spin_setup_tail_0605(g, img, f, s);
+        return eax;
+    }
     let k10 = k(g, 0x572);
-    let x4 = div(sub(rf(g, s + 0x2b40), rf(g, s + 0x3620)), k10);
+    let x4 = div(sub(rf(g, s + 0x2b40), rf(g, s + pt)), k10);
     let x5 = sub(rf(g, s + 0x2b44), k(g, 0x57a));
-    let x3 = div(sub(rf(g, s + 0x2b48), rf(g, s + 0x3628)), k10);
-    let x5 = div(sub(x5, rf(g, s + 0x3624)), k10);
+    let x3 = div(sub(rf(g, s + 0x2b48), rf(g, s + pt + 8)), k10);
+    let x5 = div(sub(x5, rf(g, s + pt + 4)), k10);
     let (k11, k12) = (k(g, 0x596), k(g, 0x5a6));
     g.write::<f32>(s + 0x3580, mul(x4, k11));
     g.write::<f32>(s + 0x3588, mul(x3, k11));
@@ -801,6 +836,32 @@ pub fn spin_setup_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
     g.write::<f32>(s + 0x3584, x0);
     g.write::<u32>(s + 0x3664, 1);
     eax
+}
+
+/// The closing steps of [`spin_setup_with`] in `magic_0605`/`0307` (the
+/// count run out): `d = (Q - P) / K10` for the place `Q` and the point
+/// `P`; the speed `d K11`, the step `d K12 / K10`, two words 0, the count
+/// 0x1e, the state 1 (every displacement read from the code).
+fn spin_setup_tail_0605<G: Game>(g: &mut G, img: &Image, f: u32, s: u32) {
+    use crate::sb_sse::{div, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let k10 = k(g, 0x56a);
+    let d = [(0x552u32, 0x562u32), (0x55a, 0x57a), (0x572, 0x582)]
+        .map(|(q, p)| div(sub(rf(g, s + w(q)), rf(g, s + w(p))), k10));
+    let k11 = k(g, 0x58e);
+    g.write::<u32>(s + w(0x5a3), 0);
+    g.write::<u32>(s + w(0x5ad), 0);
+    for (i, o) in [0x5b9u32, 0x5dc, 0x5eb].into_iter().enumerate() {
+        g.write::<f32>(s + w(o), mul(d[i], k11));
+    }
+    g.write::<u32>(s + w(0x5c6), 0x1e);
+    g.write::<u32>(s + w(0x5d0), 1);
+    let k12 = k(g, 0x5f3);
+    for (i, o) in [0x613u32, 0x61b, 0x623].into_iter().enumerate() {
+        g.write::<f32>(s + w(o), div(mul(d[i], k12), k10));
+    }
 }
 
 /// [`spin_setup_0612`] in `magic_0612` (1615 bytes, 1 overlay).

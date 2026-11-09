@@ -69,10 +69,19 @@ fn floats(t: &mut Twin, at: u32, n: u32, (a, b): (f32, f32)) {
 /// bytes (and a negative count).
 #[test]
 fn spin_step_0563() {
-    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20)] {
+    // `magic_0605` 0x10009990 too (`r29::SPIN_STEP_0605`: its own record
+    // layout, read from the code, and start_object_at)
+    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20), (605, 0x9990)] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let (speed, point, p, place, cnt_at) = (
+            op(&t, 0x26),
+            op(&t, 0x7e),
+            op(&t, 0xe0),
+            op(&t, 0x283),
+            op(&t, 0xf3),
+        );
         filler(&mut t, 235, 1, 16);
         for s in [328u32, 231] {
             rec(&mut t, s, 3, move |m, a| {
@@ -124,11 +133,11 @@ fn spin_step_0563() {
         ];
         for (k, (count, listed, free, nb)) in (0u32..).zip(cases) {
             junk(&mut t, s + 0x900, 0x3300, k);
-            floats(&mut t, s + 0x3580, 12, (0.5 + k as f32, -0.75));
-            floats(&mut t, s + 0x3620, 4, (2.0, 1.5 - k as f32));
-            floats(&mut t, s + 0x35a0, 4, (-1.0, 0.625));
-            floats(&mut t, s + 0x2b40, 4, (7.0, -2.5));
-            t.set_u32(s + 0x3660, count);
+            floats(&mut t, s + speed, 12, (0.5 + k as f32, -0.75));
+            floats(&mut t, s + point, 4, (2.0, 1.5 - k as f32));
+            floats(&mut t, s + p, 4, (-1.0, 0.625));
+            floats(&mut t, s + place, 4, (7.0, -2.5));
+            t.set_u32(s + cnt_at, count);
             t.set_u32(op(&t, 0x13), s);
             let (cnt, head) = (op(&t, 0x26c), op(&t, 0x32c));
             magic_r11::ring(&mut t, cnt, head, free, ring);
@@ -260,13 +269,21 @@ fn pool74(t: &mut Twin, take: u32, recs: u32, count: u32, busy: u32) {
 /// (`r28::sparks_0563`, cdecl `(node)`): the tick off and on the mask
 /// (below and above 90), the pool with room for every spark, a few and
 /// none, the floor below and above the sparks, the count reaching 96 (the
-/// node given back).
+/// node given back). Also `magic_0605` 0x10008f90 (`r29::SPARKS_0605`:
+/// the texture's displacement and the records' offset from the code) and
+/// `magic_0307` 0x10005a50 (`r30::SPARKS_0307`).
 #[test]
 fn sparks_0563() {
-    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510), (307, 0x5a50)] {
+    for (n, addr) in [
+        (563u16, 0x3be0u32),
+        (612, 0x8510),
+        (605, 0x8f90),
+        (307, 0x5a50),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let (tex_d, recs_at) = (op(&t, 0x44) & 0xff, op(&t, 0x5f));
         rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
         let floor = SCRATCH + 0x7f0;
         t.stub_st0(12, move |m, _| f64::from(rf(m, floor)));
@@ -305,20 +322,17 @@ fn sparks_0563() {
             (0x3f, 0x5f, 0, 5.0),
             (0x10, 0x60, 0, -5.0),
         ];
-        // the records' and the texture word's offsets (0x2ec0 and 0x24 in
-        // 0563; 0307 has others)
-        let (recs0, tex_at) = (op(&t, 0x5f), op(&t, 0x44) & 0xff);
         for (k, (tick, count, busy, fl)) in (0u32..).zip(cases) {
-            junk(&mut t, s + recs0 - 0xc0, 0xc00, k);
+            junk(&mut t, s + recs_at - 0xc0, 0xc00, k);
             for i in 0..0x20 {
                 t.set_u32(
-                    s + recs0 + 0x60 * (i % 18) + 4 * (i / 18),
+                    s + recs_at + 0x60 * (i % 18) + 4 * (i / 18),
                     (0.5 * i as f32 - 3.0 + k as f32).to_bits(),
                 );
             }
             t.set_u32(op(&t, 0x47), s);
             t.set_u32(op(&t, 0x3d), tex);
-            t.set_u32(tex + tex_at, 0x7e00_0000 + k);
+            t.set_u32(tex + tex_d, 0x7e00_0000 + k);
             t.set_u32(op(&t, 0x56), 0x00cb_0000 + k);
             t.set_u32(floor, fl.to_bits());
             pool74(&mut t, take, recs, 24, busy);
