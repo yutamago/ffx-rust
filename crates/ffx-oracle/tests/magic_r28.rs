@@ -70,16 +70,36 @@ fn floats(t: &mut Twin, at: u32, n: u32, (a, b): (f32, f32)) {
 #[test]
 fn spin_step_0563() {
     // `magic_0605` 0x10009990 too (`r29::SPIN_STEP_0605`: its own record
-    // layout, read from the code, and start_object_at)
-    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20), (605, 0x9990)] {
+    // layout, read from the code, and start_object_at) and `magic_0307`
+    // 0x10006450 (`r30::SPIN_STEP_0307`: a static object, its later code
+    // 10 and then 3 bytes on)
+    for (n, addr) in [
+        (563u16, 0x45f0u32),
+        (612, 0x8f20),
+        (605, 0x9990),
+        (307, 0x6450),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
-        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let st = n == 307;
+        let op = move |t: &Twin, o: u32| {
+            let d = match o {
+                _ if !st || o < 0x24a => 0,
+                0x24a..0x4d0 => 0xa,
+                _ => 3,
+            };
+            t.img.word(f + o + d)
+        };
+        let (start_at, place_at, free_at) = if st {
+            (0x25c, 0x27f, 0x266)
+        } else {
+            (0x265, 0x283, 0x26c)
+        };
         let (speed, point, p, place, cnt_at) = (
             op(&t, 0x26),
             op(&t, 0x7e),
             op(&t, 0xe0),
-            op(&t, 0x283),
+            t.img.word(f + place_at),
             op(&t, 0xf3),
         );
         filler(&mut t, 235, 1, 16);
@@ -116,7 +136,7 @@ fn spin_step_0563() {
         });
         rec(&mut t, 388, 3, |_, a| 0x0388_0000 ^ a[0]);
         magic_r11::object_slots(&mut t);
-        let start = t.img.rel32_target(f + 0x265);
+        let start = t.img.rel32_target(f + start_at);
         magic_r11::object_start_auto(&mut t, start);
         let s = SCRATCH + 0x1_0000;
         let ring = SCRATCH + 0x8000;
@@ -139,7 +159,7 @@ fn spin_step_0563() {
             floats(&mut t, s + place, 4, (7.0, -2.5));
             t.set_u32(s + cnt_at, count);
             t.set_u32(op(&t, 0x13), s);
-            let (cnt, head) = (op(&t, 0x26c), op(&t, 0x32c));
+            let (cnt, head) = (t.img.word(f + free_at), op(&t, 0x32c));
             magic_r11::ring(&mut t, cnt, head, free, ring);
             junk(&mut t, list, 0x40, k + 3);
             t.set_u32(op(&t, 0x38e), if listed { list } else { 0 });

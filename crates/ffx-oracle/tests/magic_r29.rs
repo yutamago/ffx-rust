@@ -806,6 +806,47 @@ fn spin_states_0605() {
     }
 }
 
+/// `magic_0307` 0x10006b80 (`r30::spin_states_0307`): as
+/// [`spin_states_0605`] with 0307's layout (the state at `+0x1e68`, its
+/// records' move and models' draw; the hand-over's lock at `+0x97`).
+#[test]
+fn spin_states_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f0;
+    around_stubs(&mut t, lock);
+    let f = t.at(0x6b80);
+    let s = SCRATCH + 0x1_0000;
+    let setup = t.img.rel32_target(f + 0x2b);
+    let around = t.img.rel32_target(f + 0x30);
+    let moves = t.img.rel32_target(f + 0x17);
+    let table = SCRATCH + 0x400;
+    t.set_u32(t.img.word(t.img.rel32_target(around + 0x251) + 0x97), lock);
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| -10.0);
+    let state = t.img.word(f + 7);
+    for st in [3u32, 2, 1, 0, 0xffff_ffff, 7] {
+        t.write(s + 0x800, &vec![0; 0x2000]);
+        for i in 0..0x500u32 {
+            t.set_u32(s + 0xc00 + 4 * i, ((i % 7) as f32 * 0.5 - 1.0).to_bits());
+        }
+        t.set_u32(s + state, st);
+        t.set_u32(s + state - 4, 3);
+        for at in [f + 1, around + 0x1e, setup + 0x16, moves + 1] {
+            t.set_u32(t.img.word(at), s);
+        }
+        t.set_u32(t.img.word(around + 0x36), table);
+        t.write(table, &[0x22; 0x600]);
+        let x = SCRATCH + 0x900;
+        junk(&mut t, x, 0x40, st);
+        t.set_u32(t.img.word(setup + 0x266), x);
+        let take = t.img.rel32_target(setup + 0x309);
+        pool74(&mut t, take, SCRATCH + 0x4000, 0, 0);
+        ownb::dirty_stack(&mut t, 0x6b80 + st, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
 /// One case of [`two_part_visit_0609`]'s test.
 #[derive(Clone, Copy)]
 struct TwoPart {

@@ -3732,3 +3732,50 @@ pub const START_UP_0165: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`spin_step_0563`](crate::r28::spin_step_0563) in `magic_0307`
+/// (0x10006450, 1584 bytes): its object static (`edx` an immediate,
+/// started by [`start_object_at`](crate::s4_misc::start_object_at) with
+/// part 0) and its later code moved; the port reads its layout from the
+/// code.
+pub const SPIN_STEP_0307: Sig = Sig {
+    len: 1584,
+    hash: 0xbe48_1baa_e672_7314,
+    calls: &[
+        (0x25c, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x628, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`spin_states_0605`](crate::r29::spin_states_0605) in `magic_0307`
+/// (0x10006b80; the state at `*G_S + 0x1e68`): its spin set-up
+/// ([`spin_setup_0605`](crate::r29::spin_setup_0605)), spin step
+/// ([`SPIN_STEP_0307`]), records' move
+/// ([`spin_records_move`](crate::s4_small::spin_records_move)) and models'
+/// draw ([`models_around_0307`](crate::s5_misc::models_around_0307)).
+pub fn spin_states_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r29::spin_states_with(
+        g,
+        img,
+        fr,
+        crate::r29::spin_setup_0605,
+        |g, img, fr| crate::s4_small::spin_records_move(g, img, fr).eax,
+        crate::s5_misc::models_around_0307,
+    )
+}
+
+/// [`spin_states_0307`].
+pub const SPIN_STATES_0307: Sig = Sig {
+    len: 52,
+    hash: 0xafa7_14ae_6b2d_53e0,
+    calls: &[
+        (0x17, Callee::Sig(&crate::s4_small::SPIN_RECORDS_MOVE_0307)),
+        (0x1c, Callee::Sig(&crate::s5_misc::MODELS_AROUND_0307)),
+        (0x21, Callee::Sig(&SPIN_STEP_0307)),
+        (0x26, Callee::Sig(&crate::s5_misc::MODELS_AROUND_0307)),
+        (0x2b, Callee::Sig(&crate::r29::SPIN_SETUP_0307)),
+        (0x30, Callee::Sig(&crate::s5_misc::MODELS_AROUND_0307)),
+    ],
+    imports: &[],
+};

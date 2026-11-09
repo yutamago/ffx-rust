@@ -585,7 +585,7 @@ pub fn spin_states_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 
 /// The state step's body: the state's displacement read from the code
 /// (`+0x07`), the three states' callees and the models' draw given.
-fn spin_states_with<G: Game>(
+pub(crate) fn spin_states_with<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,
