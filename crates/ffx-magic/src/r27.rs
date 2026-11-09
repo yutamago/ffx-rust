@@ -5046,11 +5046,40 @@ pub const FADING_SUMMONS_0589: Sig = Sig {
 /// `**G_LOCK` 1 around it, slot 710 `(OUT, *G_H, DST, 0x100000)`; 29
 /// groups of three entries: the bytes `REC + 0x60/0x30/0` 0 and the step
 /// table `STEPS[ids]` = `STEP`; slots 222 `(P, 0, 9, 2)`, 221 `(P, 0, 1000,
-/// 2)`, 551 `(slot 719 (P, 6, 2), 0, 2)`, 238 `(*G_A, 1)`, 296 `(*G_A,
+/// 2)`, 551 `(slot 719 (P, 6, 2), 0, 2)` (the part shared with
+/// [`start_up_0570`]), 238 `(*G_A, 1)`, 296 `(*G_A,
 /// 0)`; the two objects each joining the other's ring (their words, the
 /// flag bit 0 cleared). Returns 0.
-#[allow(clippy::too_many_lines)] // one straight sequence of stores
 pub fn start_up_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    start_up_head_0597(g, img, fr);
+    // the first object joins the second's ring
+    let last = g.read::<u32>(w(0x2ab));
+    g.write::<u32>(w(0x2b0), last);
+    abs_stores(g, img, f, 0x2b4, 0x2dc);
+    g.write::<u32>(last + 4, w(0x2df));
+    let last = g.read::<u32>(w(0x2e4));
+    let fl = g.read::<u32>(w(0x2ea));
+    g.write::<u32>(w(0x2ea), fl & !1);
+    g.write::<u32>(w(0x2f4), 0);
+    g.write::<u32>(w(0x2fa), 0);
+    g.write::<u32>(w(0x2ff), last);
+    abs_stores(g, img, f, 0x303, 0x335);
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x338));
+    let fl = g.read::<u32>(w(0x33e));
+    g.write::<u32>(w(0x33e), fl & !1);
+    g.write::<u32>(w(0x345), 0);
+    abs_stores(g, img, f, 0x349, 0x35d);
+    Ret::eax(0)
+}
+
+/// The part [`start_up_0597`] and [`start_up_0570`] share, up to slot 296
+/// (the same code at the same offsets; slot 719's last argument read from
+/// its `push imm8`).
+fn start_up_head_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
     use crate::r25::abs_stores;
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
@@ -5095,38 +5124,68 @@ pub fn start_up_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 4
     g.call(t(g, 0x23b, 221), 0, &[w(0x24e), 0, 0x3e8, 2]);
     // call width: 3
-    let r = g.call(t(g, 0x255, 719), 0, &[w(0x264), 6, 2]).eax;
+    let r = g
+        .call(t(g, 0x255, 719), 0, &[w(0x264), 6, w(0x25a) & 0xff])
+        .eax;
     // call width: 3
     g.call(t(g, 0x272, 551), 0, &[r, 0, 2]);
     // call width: 2
     g.call(t(g, 0x27f, 238), 0, &[g.read::<u32>(w(0x290)), 1]);
     // call width: 2
     g.call(t(g, 0x297, 296), 0, &[g.read::<u32>(w(0x29e)), 0]);
-    // the first object joins the second's ring
-    let last = g.read::<u32>(w(0x2ab));
-    g.write::<u32>(w(0x2b0), last);
-    abs_stores(g, img, f, 0x2b4, 0x2dc);
-    g.write::<u32>(last + 4, w(0x2df));
-    let last = g.read::<u32>(w(0x2e4));
-    let fl = g.read::<u32>(w(0x2ea));
-    g.write::<u32>(w(0x2ea), fl & !1);
-    g.write::<u32>(w(0x2f4), 0);
-    g.write::<u32>(w(0x2fa), 0);
-    g.write::<u32>(w(0x2ff), last);
-    abs_stores(g, img, f, 0x303, 0x335);
-    // and the second the first's
-    g.write::<u32>(last + 4, w(0x338));
-    let fl = g.read::<u32>(w(0x33e));
-    g.write::<u32>(w(0x33e), fl & !1);
-    g.write::<u32>(w(0x345), 0);
-    abs_stores(g, img, f, 0x349, 0x35d);
-    Ret::eax(0)
 }
 
 /// [`start_up_0597`] (868 bytes, 1 overlay).
 pub const START_UP_0597: Sig = Sig {
     len: 868,
     hash: 0x903d_736b_5a47_832b,
+    calls: &[(0xc, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};
+
+/// `magic_0570`'s start-up (0x1000c740, 909 bytes; cdecl `(actor)`):
+/// [`start_up_0597`] with slot 719 `(P, 6, 5)` and a longer end: the two
+/// objects joining each other's rings in another store order (word `0x96`
+/// for 0597's `0x384`), then slot 276 `(slot 215 (*G_A), 0xff)` (the actor
+/// read before the rings). Returns 0.
+pub fn start_up_0570<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    start_up_head_0597(g, img, fr);
+    let last = g.read::<u32>(w(0x2ab));
+    let actor = g.read::<u32>(w(0x2b1));
+    // the first object joins the second's ring
+    g.write::<u32>(w(0x2b6), last);
+    abs_stores(g, img, f, 0x2ba, 0x2e2);
+    g.write::<u32>(last + 4, w(0x2e5));
+    let last = g.read::<u32>(w(0x2ea));
+    let fl = g.read::<u32>(w(0x2f0));
+    g.write::<u32>(w(0x2f0), fl & !1);
+    g.write::<u32>(w(0x2f6), last);
+    abs_stores(g, img, f, 0x2fa, 0x304);
+    g.write::<u32>(w(0x306), 0);
+    g.write::<u32>(w(0x30c), 0);
+    abs_stores(g, img, f, 0x310, 0x338);
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x33b));
+    let s215 = t(g, 0x340, 215);
+    let fl = g.read::<u32>(w(0x346));
+    g.write::<u32>(w(0x346), fl & !1);
+    abs_stores(g, img, f, 0x34b, 0x355);
+    g.write::<u32>(w(0x357), 0);
+    abs_stores(g, img, f, 0x35b, 0x365);
+    let r = g.call(s215, 0, &[actor]).eax;
+    // call width: 2
+    g.call(t(g, 0x377, 276), 0, &[r, 0xff]);
+    Ret::eax(0)
+}
+
+/// [`start_up_0570`] (909 bytes, 1 overlay).
+pub const START_UP_0570: Sig = Sig {
+    len: 909,
+    hash: 0xb5fa_4f01_3b29_6d26,
     calls: &[(0xc, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
     imports: &[],
 };

@@ -2443,9 +2443,32 @@ fn fading_summons_0589() {
 /// and without a child; the lock word and the rings' last words varied.
 #[test]
 fn start_up_0597() {
-    let Some(mut t) = twin(597) else { return };
+    start_up_0597_kind(
+        597,
+        0xa9c0,
+        (0x2ab, 0x2e4),
+        &[0x2f4, 0x2fa, 0x345, 0x185, 0x2ea, 0x33e, 0x2b0, 0x2ff],
+    );
+}
+
+/// `magic_0570` 0x1000c740 (`r27::start_up_0570`): as [`start_up_0597`],
+/// with slots 215 and 276.
+#[test]
+fn start_up_0570() {
+    start_up_0597_kind(
+        570,
+        0xc740,
+        (0x2ab, 0x2ea),
+        &[0x306, 0x30c, 0x357, 0x185, 0x2f0, 0x346, 0x2b6, 0x2f6],
+    );
+}
+
+/// The set-up of [`start_up_0597`] and [`start_up_0570`]: the rings' last
+/// words' operands and the words the start clears or sets (junk first).
+fn start_up_0597_kind(dll: u16, at: u32, rings: (u32, u32), cleared: &[u32]) {
+    let Some(mut t) = twin(dll) else { return };
     all_stubs(&mut t);
-    let f = t.at(0xa9c0);
+    let f = t.at(at);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let ti = t.img.rel32_target(f + 0xc);
     let statics = t.img.rel32_target(ti + 0xe0);
@@ -2471,7 +2494,9 @@ fn start_up_0597() {
         fold(m, 711, 0, l);
         0x0711_0000 ^ a[0]
     });
-    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ a[1]);
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ a[1] ^ (a[2] << 8)
+    });
     rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
     for (s, n) in [
         (718u32, 1usize),
@@ -2480,6 +2505,8 @@ fn start_up_0597() {
         (551, 3),
         (238, 2),
         (296, 2),
+        (215, 1),
+        (276, 2),
     ] {
         rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
     }
@@ -2493,17 +2520,25 @@ fn start_up_0597() {
         t.write(child, &[0x33; 0x40]);
         t.set_u32(child + 0x10, child);
         t.set_u32(lock, 0x40 + k);
-        // the step table and the records the loop clears: junk first
-        // only the bytes and entries the loop writes (globals lie between)
+        // the step table and the records the loop clears, junk first: only
+        // the bytes and entries the loop writes (globals lie between)
         let (ids, steps, recs) = (w(&t, 0x1d2), w(&t, 0x1eb), w(&t, 0x1d7));
         for j in 0..0x57u32 {
             let id = t.img.word(ids + 1 - j).to_le_bytes()[0];
             t.set_u32(steps + 4 * u32::from(id), 0x5eed_0000 + j + k);
             let r = recs + 0x60 - 0x30 * j;
-            t.write(r, &[0xa5 ^ (j as u8)]);
+            t.write(r, &[0xa5 ^ (j as u8), 0x5a ^ (j as u8)]);
         }
-        junk_ops(&mut t, f, &[0x2f4, 0x2fa, 0x345, 0x185, 0x2ea, 0x33e]);
-        ownb::dirty_stack(&mut t, 0xa9c0 + k, &[]);
+        let (r1, r2) = (SCRATCH + 0x6900 + 0x20 * k, SCRATCH + 0x6a00 + 0x20 * k);
+        t.write(r1, &[0x44; 0x10]);
+        t.write(r2, &[0x55; 0x10]);
+        // the data's own sentinels first (the objects themselves)
+        if k > 0 {
+            t.set_u32(w(&t, rings.0), r1);
+            t.set_u32(w(&t, rings.1), r2);
+        }
+        junk_ops(&mut t, f, cleared);
+        ownb::dirty_stack(&mut t, at + k, &[]);
         t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
     }
 }
