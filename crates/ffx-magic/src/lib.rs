@@ -3228,6 +3228,11 @@ ports! {
     "r31 sparks 0605" => r31::SPARKS_0605, r31::sparks_0605;
     // round 31 (magic-r31): end
     // round 32 (magic-r32)
+    "r32 spin actors 0307" => r32::SPIN_ACTORS_0307, r32::spin_actors_0307;
+    "r32 sparks 0307" => r32::SPARKS_0307, r32::sparks_0307;
+    "r32 spin start 0307" => r32::SPIN_START_0307, r32::spin_start_0307;
+    "r32 aim objects 0307" => r32::AIM_OBJECTS_0307, r32::aim_objects_0307;
+    "r32 load step 0307" => r32::LOAD_0307, r32::load_0307;
     // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3943,6 +3948,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 31 (magic-r31)
     // round 31 (magic-r31): end of INTERNAL
     // round 32 (magic-r32)
+    ("r32 aim object 0307", &r32::AIM_OBJECT_0307),
+    ("r32 start-up 0307", &r32::START_UP_0307),
     // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
