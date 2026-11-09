@@ -1159,7 +1159,9 @@ fn camera_tracks_0519() {
     let f = t.at(0x2320);
     let kk = kf(&t, f, 0x211);
     let r = SCRATCH + 0x1000;
-    let ends: [(f32, f32); 7] = [
+    let ends: [(f32, f32); 9] = [
+        (0.0, kk + 0.5),
+        (-kk - 1.0, 0.0),
         (-1.0, kk),
         (-0.5, 0.25),
         (1.0, -kk),
