@@ -178,7 +178,10 @@ pub const SEVENTH_START_0610: Sig = Sig {
 /// `+0xc10`, `E + 0x1a68` = yaw, the others shown
 /// ([`show_others`](crate::sb_vm::show_others) with 0), `E + 0x1a60`,
 /// `+0x1a64`, `+0x1a84`, `+0x1a88` 0 and `*G_X`, `*G_Y` 1, returning the
-/// show's `eax`.
+/// show's `eax`. `magic_0434`'s copy of `magic_0610`'s (0x10005860, 804
+/// bytes, [`CASTER_PLACE_0434`](crate::r24::CASTER_PLACE_0434)) first
+/// calls slot 946 `(*G_W)`, multiplies `M[5]` and `M[10]` the other way
+/// round and clears `+0x1a8c` instead of `+0x1a84`.
 #[allow(clippy::too_many_lines)] // the original's calls and stores, in order
 pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::m0018::st0_f32;
@@ -189,21 +192,35 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let rd = |g: &G, o: u32| g.read::<u32>(w(o));
     let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let ebp = fr.esp.wrapping_sub(4);
-    // `magic_0610`: `push ebx` (0x53) at `+0x10`
-    let c0610 = w(0x10) & 0xff == 0x53;
-    let (d, d1) = if c0610 { (2, 1) } else { (0, 0) };
+    // `magic_0610`: `push ebx` (0x53) at `+0x10`; `magic_0434`'s copy of
+    // it (`r24::CASTER_PLACE_0434`) starts with slot 946 `(*G_W)` (`mov
+    // eax, [G]`, 0xa1, at `+0x10`): its operands 0x13 bytes later
+    let c0434 = w(0x10) & 0xff == 0xa1;
+    let c0610 = w(0x10) & 0xff == 0x53 || c0434;
+    let (d, d1, dd) = if c0434 {
+        (0x15, 0x14, 0x13)
+    } else if c0610 {
+        (2, 1, 0)
+    } else {
+        (0, 0, 0)
+    };
     let (point, block, mat) = if c0610 {
         (0xca0u32, 0xc60u32, 0xbe0u32)
     } else {
         (0xc04, 0xbc4, 0xac4)
     };
-    let e = rd(g, 0x13 + d);
+    let e = rd(g, if c0434 { 0x26 } else { 0x13 + d });
     let (px, py, pz) = (
         ebp.wrapping_sub(0x14),
         ebp.wrapping_sub(0x10),
         ebp.wrapping_sub(0xc),
     );
     let mut st = Pushes::default();
+    if c0434 {
+        st.push(rd(g, 0x20));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, slot(g, 0x11, 946), fr.ecx);
+    }
     st.push_all(&[pz, py, px, rd(g, 0x2a + d)]);
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot(g, 0x24 + d, 262), fr.ecx);
@@ -216,7 +233,8 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(ebp.wrapping_sub(8), 0x3f80_0000);
     // call width: 12 (Pushes caps the words at 12)
     let t = st0_f32(st.call(g, slot(g, 0x3c + d, 333), fr.ecx).st0);
-    st.pop(5);
+    // `add esp, 0x14` (0x18 with slot 946's word)
+    st.pop(if c0434 { 6 } else { 5 });
     let mut yaw = sub(k(g, 0x88 + d), t);
     if yaw > k(g, 0x97 + d) {
         yaw = sub(yaw, k(g, 0xa6 + d));
@@ -257,26 +275,26 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     } else {
         st.push_all(&[m, a]);
         // call width: 12 (Pushes caps the words at 12)
-        st.call(g, slot(g, 0x137, 210), fr.ecx);
+        st.call(g, slot(g, 0x137 + dd, 210), fr.ecx);
         st.pop(2);
     }
     st.push_all(&[m, a]);
     // call width: 12 (Pushes caps the words at 12)
-    st.call(g, slot(g, 0x189, 211), fr.ecx);
+    st.call(g, slot(g, 0x189 + dd, 211), fr.ecx);
     st.push(m);
     // call width: 12 (Pushes caps the words at 12)
-    st.call(g, slot(g, 0x196, 235), fr.ecx);
-    st.push(rd(g, 0x1aa));
+    st.call(g, slot(g, 0x196 + dd, 235), fr.ecx);
+    st.push(rd(g, 0x1aa + dd));
     // call width: 12 (Pushes caps the words at 12)
-    let v = st0_f32(st.call(g, slot(g, 0x1a4, 277), fr.ecx).st0);
-    let d = mul(v, k(g, 0x1c2));
+    let v = st0_f32(st.call(g, slot(g, 0x1a4 + dd, 277), fr.ecx).st0);
+    let d = mul(v, k(g, 0x1c2 + dd));
     for o in [0x28u32, 0x14, 0] {
         g.write::<f32>(m.wrapping_add(o), d);
     }
-    let a2 = rd(g, 0x1db);
+    let a2 = rd(g, 0x1db + dd);
     st.push(a2);
     // call width: 12 (Pushes caps the words at 12)
-    let v = st0_f32(st.call(g, slot(g, 0x1c7, 15), fr.ecx).st0);
+    let v = st0_f32(st.call(g, slot(g, 0x1c7 + dd, 15), fr.ecx).st0);
     let d0 = if c0610 {
         mul(g.read::<f32>(m), v)
     } else {
@@ -285,13 +303,25 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     st.push(a2);
     g.write::<f32>(m, d0);
     // call width: 12 (Pushes caps the words at 12)
-    let v = st0_f32(st.call(g, slot(g, 0x1f2, 16), fr.ecx).st0);
-    let d1 = mul(g.read::<f32>(m.wrapping_add(0x14)), v);
+    let v = st0_f32(st.call(g, slot(g, 0x1f2 + dd, 16), fr.ecx).st0);
+    // `magic_0434` multiplies `M[5]` and `M[10]` the other way round
+    let d1 = if c0434 {
+        mul(v, g.read::<f32>(m.wrapping_add(0x14)))
+    } else {
+        mul(g.read::<f32>(m.wrapping_add(0x14)), v)
+    };
     st.push(a2);
     g.write::<f32>(m.wrapping_add(0x14), d1);
     // call width: 12 (Pushes caps the words at 12)
-    let v = st0_f32(st.call(g, slot(g, 0x20e, 17), fr.ecx).st0);
-    let d2 = mul(v, g.read::<f32>(m.wrapping_add(0x28)));
+    let v = st0_f32(
+        st.call(g, slot(g, if c0434 { 0x214 } else { 0x20e }, 17), fr.ecx)
+            .st0,
+    );
+    let d2 = if c0434 {
+        mul(g.read::<f32>(m.wrapping_add(0x28)), v)
+    } else {
+        mul(v, g.read::<f32>(m.wrapping_add(0x28)))
+    };
     st.pop(6);
     st.set_top(0);
     g.write::<f32>(m.wrapping_add(0x28), d2);
@@ -303,7 +333,7 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         st.set_top(top);
         st.push_all(&[m, m]);
         // call width: 12 (Pushes caps the words at 12)
-        st.call(g, slot(g, o, n), fr.ecx);
+        st.call(g, slot(g, o + dd, n), fr.ecx);
         st.pop(2);
     }
     if c0610 {
@@ -313,13 +343,14 @@ pub fn caster_place_0588<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         }
         g.write::<f32>(e.wrapping_add(0x1a68), yaw);
         // the call's return address below the saved registers
-        let at = img.rel32_target(f + 0x2c0);
+        let at = img.rel32_target(f + 0x2c0 + dd);
         let eax = crate::sb_vm::show_others(g, img, at, fr.esp.wrapping_sub(0x40), 0);
-        for o in [0x1a60u32, 0x1a64, 0x1a84, 0x1a88] {
+        let last = if c0434 { 0x1a8c } else { 0x1a84 };
+        for o in [0x1a60u32, 0x1a64, last, 0x1a88] {
             g.write::<u32>(e.wrapping_add(o), 0);
         }
-        g.write::<u32>(w(0x2f5), 1);
-        g.write::<u32>(w(0x2ff), 1);
+        g.write::<u32>(w(0x2f5 + dd), 1);
+        g.write::<u32>(w(0x2ff + dd), 1);
         return Ret::eax(eax);
     }
     for i in 0..4 {

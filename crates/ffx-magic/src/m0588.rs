@@ -328,15 +328,29 @@ pub fn spawn_pair<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         return Ret::eax(fr.eax);
     }
     g.write::<u32>(count, 100);
-    let (point, angle) = (fx.wrapping_add(w(0x4a)), fx.wrapping_add(w(0x7a)));
+    // `magic_0430`'s copy (`r24::SPAWN_PAIR_0430`) starts animated
+    // objects (`push 0` at +0x41 before the index,
+    // [`start_object_anim`](crate::s4_misc::start_object_anim) with 0):
+    // its operands 2 bytes later per block
+    let anim = img.word(f + 0x41) & 0xffff == 0x006a;
+    let d = if anim { 2 } else { 0 };
+    let (point, angle) = (fx.wrapping_add(w(0x4a + d)), fx.wrapping_add(w(0x7a + d)));
     let mut a = 0;
-    for (take, start, k, index) in [(0x26, 0x44, 0x38, 1), (0x88, 0xa2, 0x96, 0)] {
+    for (take, start, k, index) in [
+        (0x26, 0x44 + d, 0x38, 1),
+        (0x88 + d, 0xa2 + 2 * d, 0x96 + d, 0),
+    ] {
         let obj = crate::sb_misc::pool_take_140(g, img, img.rel32_target(f + take));
         if obj == 0 {
             return Ret::eax(0);
         }
         let scale = g.read::<f32>(w(k));
-        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + start), obj, scale, index);
+        let at = img.rel32_target(f + start);
+        if anim {
+            crate::s4_misc::start_object_anim(g, img, at, obj, scale, index, 0);
+        } else {
+            crate::s4_misc::start_object_plain(g, img, at, obj, scale, index);
+        }
         for i in 0..4 {
             let v = g.read::<u32>(point + 4 * i);
             g.write::<u32>(obj + 0xd0 + 4 * i, v);

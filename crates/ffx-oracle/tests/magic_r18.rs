@@ -979,40 +979,48 @@ fn lights_start(dll: u16, rva: u32, d: u32) {
     }
 }
 
-/// `r18::caster_place_0588` in `magic_0610` (0x1000a800): the yaw above,
-/// below and inside its bounds; the others shown (slot 293 says the DLL's
-/// actor has a group or not; slot 288's list of two).
+/// `r18::caster_place_0588` in `magic_0610` (0x1000a800) and its copy
+/// in `magic_0434` (0x10005860, `r24::CASTER_PLACE_0434`: slot 946
+/// first, the operands 0x13 bytes later): the yaw above, below and
+/// inside its bounds; the others shown (slot 293 says the DLL's actor
+/// has a group or not; slot 288's list of two).
 #[test]
 fn caster_place_0610() {
-    let Some(mut t) = twin(610) else { return };
-    let f = t.at(0xa800);
-    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
-    let e = SCRATCH + 0x8000;
-    t.set_u32(w(&t, 0x15), e);
-    caster_slots(&mut t);
-    let yaw_in = SCRATCH + 0x714;
-    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw_in))));
-    let group = SCRATCH + 0x718;
-    rec(&mut t, 293, 1, move |m, _| m.r32(group));
-    let list = SCRATCH + 0x760;
-    t.write(list, &[5, 0, 9, 0, 0x22, 0, 0, 0]);
-    rec(&mut t, 288, 2, move |m, a| {
-        m.w32(a[1], 3);
-        list
-    });
-    let kv = f32::from_bits(t.img.word(w(&t, 0x8a)));
-    for (c, (yaw, grp)) in [(-3.0f32, 0u32), (3.0, 1), (0.0, 0)]
-        .into_iter()
-        .enumerate()
-    {
-        let c = c as u32;
-        t.write(e, &varied(0x1c00, c as u8));
-        t.set_u32(w(&t, 0x2c), 0x00a0_0000 + c);
-        t.set_u32(yaw_in, (kv - yaw * 7.0).to_bits());
-        t.set_u32(group, grp);
-        t.set_u32(w(&t, 0x2f5), 0x5555_5555);
-        t.set_u32(w(&t, 0x2ff), 0x6666_6666);
-        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    for (n, rva, dd) in [(610u16, 0xa800u32, 0u32), (434, 0x5860, 0x13)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+        let e = SCRATCH + 0x8000;
+        t.set_u32(w(&t, if dd == 0 { 0x15 } else { 0x26 }), e);
+        caster_slots(&mut t);
+        rec(&mut t, 946, 1, |_, a| a[0] ^ 0x0946_0000);
+        let yaw_in = SCRATCH + 0x714;
+        t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(yaw_in))));
+        let group = SCRATCH + 0x718;
+        rec(&mut t, 293, 1, move |m, _| m.r32(group));
+        let list = SCRATCH + 0x760;
+        t.write(list, &[5, 0, 9, 0, 0x22, 0, 0, 0]);
+        rec(&mut t, 288, 2, move |m, a| {
+            m.w32(a[1], 3);
+            list
+        });
+        let kv = f32::from_bits(t.img.word(w(&t, 0x8a + dd)));
+        for (c, (yaw, grp)) in [(-3.0f32, 0u32), (3.0, 1), (0.0, 0)]
+            .into_iter()
+            .enumerate()
+        {
+            let c = c as u32;
+            t.write(e, &varied(0x1c00, c as u8));
+            t.set_u32(w(&t, 0x2c + dd), 0x00a0_0000 + c);
+            if dd != 0 {
+                t.set_u32(w(&t, 0x20), 0x00b0_0000 + c);
+            }
+            t.set_u32(yaw_in, (kv - yaw * 7.0).to_bits());
+            t.set_u32(group, grp);
+            t.set_u32(w(&t, 0x2f5 + dd), 0x5555_5555);
+            t.set_u32(w(&t, 0x2ff + dd), 0x6666_6666);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
     }
 }
 

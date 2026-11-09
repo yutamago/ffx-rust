@@ -270,8 +270,16 @@ fn summon_setup_0645() {
 /// bound, the timer ending below 0, at -0.0 and above; another state.
 #[test]
 fn task_0603() {
-    let Some(mut t) = twin(603) else { return };
-    let f = t.at(0xb4d0);
+    // `magic_0150`'s copy (`r24::TASK_0150`): the step block 0x14c higher
+    for (n, rva) in [(603u16, 0xb4d0u32), (150, 0xb5a0)] {
+        task_0603_in(n, rva);
+    }
+}
+
+fn task_0603_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let f = t.at(rva);
+    let shift = t.img.word(f + 0x26) - 0x2a8c;
     let op = |t: &Twin, o: u32| t.img.word(f + o);
     vector_slots(&mut t);
     rec(&mut t, 233, 3, |m, a| {
@@ -312,8 +320,8 @@ fn task_0603() {
         junk(&mut t, parent, 0x400, k + 1);
         t.set_u32(task + 4, o);
         t.set_u32(op(&t, 0x12), hold);
-        t.set_u32(o + 0x2a9c, state);
-        t.set_u32(o + 0x2aac, count.to_bits());
+        t.set_u32(o + shift + 0x2a9c, state);
+        t.set_u32(o + shift + 0x2aac, count.to_bits());
         t.set_u32(o + 0x514, x.to_bits());
         t.set_u32(o + 0xe60, timer.to_bits());
         let node = o + 0x530;

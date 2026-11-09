@@ -168,13 +168,19 @@ fn actor_matrix() {
 /// second record missing.
 #[test]
 fn spawn_pair() {
-    for (n, rva) in [(588u16, 0x2420u32), (600, 0x7250)] {
+    // `magic_0430`'s copy (`r24::SPAWN_PAIR_0430`): animated objects, the
+    // operands 2 bytes later
+    for (n, rva, d) in [
+        (588u16, 0x2420u32, 0u32),
+        (600, 0x7250, 0),
+        (430, 0x31c0, 2),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let at = t.at(rva);
         let w = |t: &magic::Twin, op: u32| t.img.word(at + op);
         let fx = SCRATCH + 0x1_0000;
         t.set_u32(w(&t, 0x3), fx);
-        let so = t.img.rel32_target(at + 0x44);
+        let so = t.img.rel32_target(at + 0x44 + d);
         let table = SCRATCH + 0x3400;
         for i in 0..0x10 {
             t.set_u32(table + 4 * i, 0x1111 * (i + 1));
@@ -188,7 +194,7 @@ fn spawn_pair() {
         let take = t.img.rel32_target(at + 0x26);
         let recs_at = SCRATCH + 0x2_0000;
         t.set_u32(t.img.word(take + 0x16), recs_at);
-        let (count, point, angle) = (w(&t, 0x9), w(&t, 0x4a), w(&t, 0x7a));
+        let (count, point, angle) = (w(&t, 0x9), w(&t, 0x4a + d), w(&t, 0x7a + d));
         for (c, records) in [(5u32, 2u32), (1, 0), (1, 2), (0, 1)] {
             t.set_u32(fx + count, c);
             t.set_u32(t.img.word(take + 0x09), records);

@@ -72,6 +72,7 @@ pub mod r20;
 pub mod r21;
 pub mod r22;
 pub mod r23;
+pub mod r24;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3048,6 +3049,29 @@ ports! {
     "r23 motion task 0613" => r23::MOTION_TASK_0613, r23::motion_task_0613;
     "r23 start-up 0613" => r23::START_UP_0613, r23::start_up_0613;
     // round 23 (magic-r23): end
+    // round 24 (magic-r24)
+    "r24 light fly-in 0446" => r24::LIGHT_FLY_IN_0446, s9_misc::light_fly_in;
+    "r24 light fly-in 0543" => r24::LIGHT_FLY_IN_0543, s9_misc::light_fly_in;
+    "r24 light bounce 0446" => r24::LIGHT_BOUNCE_0446, s9_misc::light_bounce;
+    "r24 light bounce 0543" => r24::LIGHT_BOUNCE_0543, s9_misc::light_bounce;
+    "r24 caster place 0434" => r24::CASTER_PLACE_0434, r18::caster_place_0588;
+    "r24 curve step 0435" => r24::CURVE_STEP_0435, r24::curve_step_0435;
+    "r24 curve step 0055" => r24::CURVE_STEP_0055, r24::curve_step_0435;
+    "r24 curve step 0067" => r24::CURVE_STEP_0067, r24::curve_step_0435;
+    "r24 trail task 0446" => r24::TRAIL_TASK_0446, o6_fam_pairs6::trail_task;
+    "r24 launch after carry 0446" => r24::LAUNCH_AFTER_CARRY_0446, s9_misc::launch_after_carry;
+    "r24 launch after carry 0543" => r24::LAUNCH_AFTER_CARRY_0543, s9_misc::launch_after_carry;
+    "r24 weapon swing drop 0446" => r24::WEAPON_SWING_DROP_0446, s5_misc::weapon_swing_drop;
+    "r24 weapon swing drop 0543" => r24::WEAPON_SWING_DROP_0543, s5_misc::weapon_swing_drop;
+    "r24 task 0150" => r24::TASK_0150, r22::task_0603;
+    "r24 render 0352" => r24::RENDER_0352, r24::render_0352;
+    "r24 spawn pair 0430" => r24::SPAWN_PAIR_0430, m0588::spawn_pair;
+    "r9 load step 0311" => r9_load::LOAD_0311, r9_load::load_0311;
+    "r9 load step 0149" => r9_load::LOAD_0149, r9_load::load_0149;
+    "r9 load step 0435" => r9_load::LOAD_0435, r9_load::load_0435;
+    "r24 visit thunk 0342" => r24::VISIT_0342_THUNK, r24::visit_0342_thunk;
+    "r9 load step 0419" => r9_load::LOAD_0419, r9_load::load_0419;
+    // round 24 (magic-r24): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3673,6 +3697,17 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r23 summon set-up 0573", &r23::SUMMON_SETUP_0573),
     ("r23 bone 0573", &r23::BONE_0573),
     // round 23 (magic-r23): end of INTERNAL
+    // round 24 (magic-r24)
+    ("r24 light set-up 0446", &r24::LIGHT_SETUP_0446),
+    ("r24 light set-up 0543", &r24::LIGHT_SETUP_0543),
+    ("r24 bone node set-up 0272", &r24::BONE_NODE_SETUP_0272),
+    ("r24 start-up 0311", &r24::START_UP_0311),
+    ("r24 start-up 0149", &r24::START_UP_0149),
+    ("r24 key curves 0435", &r24::CURVE_KEYS_0435),
+    ("r24 start-up 0435", &r24::START_UP_0435),
+    ("r24 visit 0342", &r24::VISIT_0342),
+    ("r24 start-up 0419", &r24::START_UP_0419),
+    // round 24 (magic-r24): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

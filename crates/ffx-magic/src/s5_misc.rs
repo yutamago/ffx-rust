@@ -2121,7 +2121,8 @@ pub const WEAPON_MATRIX: Sig = Sig {
 
 /// [`weapon_matrix`] at `f`, or [`part_matrix`] where the DLL's callee
 /// is that one (`magic_0544`'s copies of the swing functions call it:
-/// the same registers, `esp` and result).
+/// the same registers, `esp` and result), or `magic_0446`'s light
+/// set-up ([`light_setup_0446`](crate::r24::light_setup_0446), `n` 0x80).
 pub(crate) fn swing_matrix<G: Game>(
     g: &mut G,
     img: &Image,
@@ -2130,7 +2131,20 @@ pub(crate) fn swing_matrix<G: Game>(
     ang: u32,
     pos: u32,
 ) -> u32 {
-    if img.matches(f, &PART_MATRIX) {
+    if img.word(f + 5) as u8 == 0xf0 {
+        // `magic_0446`'s and `magic_0543`'s light set-up (`and esp, -0x10`):
+        // its stack word is the 0x80 they push
+        g.write::<u32>(esp.wrapping_add(4), 0x80);
+        let fr = Frame {
+            at: f,
+            esp,
+            eax: 0,
+            ecx: ang,
+            edx: pos,
+            xmm: [0; 4],
+        };
+        crate::r24::light_setup_0446(g, img, &fr).eax
+    } else if img.matches(f, &PART_MATRIX) {
         let fr = Frame {
             at: f,
             esp,
@@ -3765,7 +3779,12 @@ pub const THROW_AIM: Sig = Sig {
 /// `magic_0555` 0x10004240 (512 bytes; 2 DLLs).
 pub fn weapon_swing_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let w = |o: u32| op(img, f, o);
+    // `magic_0446`'s and `magic_0543`'s copies push 0x80 for their light
+    // set-up (`r24::light_setup_0446`) where the others push `ecx`: the
+    // operands after +0x65 sit 4 bytes later
+    let lit = img.word(f + 0x65) as u8 == 0x68;
+    let sh = |o: u32| if lit && o > 0x65 { o + 4 } else { o };
+    let w = |o: u32| op(img, f, sh(o));
     let task = fr.arg(g, 0);
     let s = g.read::<u32>(w(0x16));
     let obj = g.read::<u32>(task + 0x14);
@@ -3793,7 +3812,7 @@ pub fn weapon_swing_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let eax = swing_matrix(
         g,
         img,
-        img.rel32_target(f + 0xd7),
+        img.rel32_target(f + sh(0xd7)),
         fr.esp.wrapping_sub(0x40),
         obj.wrapping_add(0x280),
         p,
@@ -3815,7 +3834,7 @@ pub fn weapon_swing_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     start_object_at(
         g,
         img,
-        img.rel32_target(f + 0x14e),
+        img.rel32_target(f + sh(0x14e)),
         left,
         scale,
         part,
@@ -3830,15 +3849,15 @@ pub fn weapon_swing_drop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let v = g.read::<u32>(s.wrapping_add(0xebf0));
     g.write::<u32>(left + 0xc4, v);
     g.write::<f32>(left + 0xd4, y);
-    if list_remove(g, img, img.rel32_target(f + 0x1b1), w(0x19e), obj) != 0 {
+    if list_remove(g, img, img.rel32_target(f + sh(0x1b1)), w(0x19e), obj) != 0 {
         let p = g.read::<u32>(w(0x1ba));
         g.write::<u32>(p, w(0x1c1));
-        slot_call(g, img, f, (0x1c6, 713), &[obj]);
+        slot_call(g, img, f, (sh(0x1c6), 713), &[obj]);
         let v = g.read::<u16>(obj + 0x124) & 0x7fff;
         g.write::<u16>(obj + 0x124, v);
     }
     bump(g, s.wrapping_add(0xebe4));
-    Ret::eax(give_back(g, img, img.rel32_target(f + 0x1eb), task))
+    Ret::eax(give_back(g, img, img.rel32_target(f + sh(0x1eb)), task))
 }
 
 /// [`weapon_swing_drop`] (the `rel32`s: [`weapon_matrix`],

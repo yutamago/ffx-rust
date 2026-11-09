@@ -185,11 +185,14 @@ pub fn task_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let task = fr.arg(g, 0);
     let o = g.read::<u32>(task + 4);
+    // `magic_0150`'s copy (`r24::TASK_0150`) keeps the step block 0x14c
+    // higher: `mov eax, [esi + 0x2a8c]`'s displacement at +0x26
+    let blk = o.wrapping_add(img.word(f + 0x26)).wrapping_sub(0x2a8c);
     if g.read::<u32>(w(0x12)) != 0 {
         return Ret::eax(task);
     }
     for i in 0..3u32 {
-        let d = g.read::<u32>(o + 0x2a8c + 4 * i);
+        let d = g.read::<u32>(blk + 0x2a8c + 4 * i);
         let at = o + 0x2930 + 4 * i;
         let v = g.read::<u32>(at).wrapping_add(d);
         g.write::<u32>(at, v);
@@ -202,11 +205,11 @@ pub fn task_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(v + 0xc, 0);
     // call width: 3
     g.call(t(g, 0x7a, 248), 0, &[w(0x91), w(0x8c), v]);
-    let state = g.read::<u32>(o + 0x2a9c);
+    let state = g.read::<u32>(blk + 0x2a9c);
     match state {
         2 => {
-            let n = add(g.read::<f32>(o + 0x2aac), k(g, 0xba));
-            g.write::<f32>(o + 0x2aac, n);
+            let n = add(g.read::<f32>(blk + 0x2aac), k(g, 0xba));
+            g.write::<f32>(blk + 0x2aac, n);
             // comiss; jb: below or unordered waits
             if n.partial_cmp(&k(g, 0xc1))
                 .is_none_or(std::cmp::Ordering::is_lt)
@@ -244,8 +247,8 @@ pub fn task_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             if 0.0 > g.read::<f32>(o + 0xe60) {
                 g.write::<u16>(o + 0x51e, 0);
                 g.write::<u32>(o + 0xe60, 0);
-                g.write::<u32>(o + 0x2aac, 0);
-                g.write::<u32>(o + 0x2a9c, 2);
+                g.write::<u32>(blk + 0x2aac, 0);
+                g.write::<u32>(blk + 0x2a9c, 2);
             }
             Ret::eax(0)
         }

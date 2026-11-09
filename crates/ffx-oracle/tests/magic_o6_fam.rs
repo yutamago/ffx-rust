@@ -293,7 +293,14 @@ fn start_object_first_in_every_copy() {
     }
 }
 
-const BONE_NODE_SETUP: &[(u16, u32)] = &[(201, 0x6f20), (203, 0x7710), (273, 0x7770)];
+const BONE_NODE_SETUP: &[(u16, u32)] = &[
+    (201, 0x6f20),
+    (203, 0x7710),
+    (273, 0x7770),
+    // `r24::BONE_NODE_SETUP_0272`: `arg` and `src` from globals, the
+    // operands 6 bytes later from +0x30 on
+    (272, 0x67a0),
+];
 
 /// `o6_fam_bone::bone_node_setup`: the root's ring empty or holding a
 /// node, with the pass byte the node's own 0xff, so the bone update
@@ -307,7 +314,17 @@ fn bone_node_setup_in_every_copy() {
         let Some(mut t) = magic_l3::twin(n) else {
             return;
         };
-        registered(&t, rva, "o6 fam bone bone_node_setup");
+        let globals = n == 272;
+        let sh = if globals { 6 } else { 0 };
+        registered(
+            &t,
+            rva,
+            if globals {
+                "r24 bone node set-up 0272"
+            } else {
+                "o6 fam bone bone_node_setup"
+            },
+        );
         stubs(&mut t);
         t.stub(233, |m, a| {
             m.w32(a[0], a[2] ^ 0x8000_0000);
@@ -329,14 +346,14 @@ fn bone_node_setup_in_every_copy() {
         let f = t.at(rva);
         // the bone's table entries: a function slot no overlay uses
         // (`Ch_SetPos`, slot 32)
-        let bone = t.img.rel32_target(f + 0xf9);
+        let bone = t.img.rel32_target(f + 0xf9 + sh);
         let table = t.img.word(bone + 0xed);
         for i in 0..4 {
             t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
         }
         t.stub(32, |_, a| 0x0032_0000 ^ a[0]);
-        let root = t.img.word(f + 0x4b);
-        let pass_at = t.img.word(f + 0xeb);
+        let root = t.img.word(f + 0x4b + sh);
+        let pass_at = t.img.word(f + 0xeb + sh);
         let (model, src, other) = (OBJ, SCRATCH + 0x3000, SCRATCH + 0x3800);
         for c in 0..2u32 {
             t.write(model, &[0x5a; 0x200]);
@@ -345,15 +362,27 @@ fn bone_node_setup_in_every_copy() {
             t.set_u32(root + 0x10, if c & 1 == 0 { root } else { other });
             t.set_u16(root + 0x18, 3);
             t.set_u8(pass_at, 0xff);
-            let call = Call {
-                ecx: model,
-                edx: src,
-                ..Call::default()
-            };
             // the stack word becomes the node's `+0x144` node
             let arg = SCRATCH + 0x3c00;
             t.write(arg, &[0x44; 0x200]);
-            t.check(f, call, &[arg + 4 * c], Eax::Checked, |g, img, fr| {
+            let call = if globals {
+                // `G_A`, `G_S`; the registers and the stack word unread
+                t.set_u32(t.img.word(f + 0x14), arg + 4 * c);
+                t.set_u32(t.img.word(f + 0x1c), src);
+                Call {
+                    ecx: model,
+                    edx: 0x0bad_0000,
+                    ..Call::default()
+                }
+            } else {
+                Call {
+                    ecx: model,
+                    edx: src,
+                    ..Call::default()
+                }
+            };
+            let word = if globals { 0x0bad_0004 } else { arg + 4 * c };
+            t.check(f, call, &[word], Eax::Checked, |g, img, fr| {
                 o6_fam_bone::bone_node_setup(g, img, fr)
             });
         }
@@ -3969,7 +3998,14 @@ const TRAIL_TASK: &[(u16, u32)] = &[(544, 0x2250), (555, 0x2250), (556, 0x2250)]
 #[test]
 #[allow(clippy::too_many_lines)] // the stubs, the pools and eleven cases
 fn fam2_trail_task() {
-    for (d, (n, rva)) in (0u32..).zip(copies("o6 fam pairs6 trail_task", TRAIL_TASK)) {
+    // `r24::TRAIL_TASK_0446`: the light set-up (`push 0x80`) and the
+    // operands 4 bytes later from +0x117 on
+    let mut list = copies("o6 fam pairs6 trail_task", TRAIL_TASK);
+    if !list.is_empty() {
+        list.push((446, 0x2280));
+    }
+    for (d, (n, rva)) in (0u32..).zip(list) {
+        let sh = if n == 446 { 4 } else { 0 };
         let Some(mut t) = magic_l3::twin(n) else {
             return;
         };
@@ -4003,7 +4039,7 @@ fn fam2_trail_task() {
         }
         let f = t.at(rva);
         let w = |t: &Twin, o: u32| t.img.word(f + o);
-        let trail_at = t.img.rel32_target(f + 0x25d);
+        let trail_at = t.img.rel32_target(f + 0x25d + sh);
         // the trail's draw slots hash the matrices and the colour
         let (gm3, gm4, gc) = (
             t.img.word(trail_at + 0x57),
@@ -4063,12 +4099,14 @@ fn fam2_trail_task() {
         t.set_u8(gf, 0);
         let ww = 0x6800_0000 + 0x0100_0000 * d;
         t.set_u32(w(&t, 0x21), ww);
-        t.set_u32(w(&t, 0x191), SCRATCH + 0x3480);
+        t.set_u32(w(&t, 0x191 + sh), SCRATCH + 0x3480);
         let (task, o, node) = (SCRATCH + 0x3000, SCRATCH + 0x4000, SCRATCH + 0x3400);
         let trail = o + 0x2c0;
-        let list = w(&t, 0x183);
+        let list = w(&t, 0x183 + sh);
         // the child's object start (as in `actor_object_start_in_every_copy`)
-        let soa = t.img.rel32_target(t.img.rel32_target(f + 0x170) + 0x2d);
+        let soa = t
+            .img
+            .rel32_target(t.img.rel32_target(f + 0x170 + sh) + 0x2d);
         t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
         t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
         t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
