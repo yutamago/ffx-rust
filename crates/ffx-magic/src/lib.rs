@@ -77,6 +77,7 @@ pub mod r25;
 pub mod r26;
 pub mod r27;
 pub mod r28;
+pub mod r29;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3174,6 +3175,16 @@ ports! {
     "r28 summon task 0272" => r28::SUMMON_TASK_0272, r28::summon_task_0272;
     "r28 effect frame 0341" => r28::EFFECT_FRAME_0341, r28::effect_frame_0341;
     // round 28 (magic-r28): end
+    // round 29 (magic-r29)
+    "r29 three objects 0511" => r29::THREE_OBJECTS_0511, r29::three_objects_0511;
+    "r29 fading summons 0511" => r29::FADING_SUMMONS_0511, r29::fading_summons_0511;
+    "r29 spray 0511" => r29::SPRAY_0511, r29::spray_0511;
+    "r29 load 0511" => r29::LOAD_0511, r29::load_0511;
+    "r29 load 0602" => r29::LOAD_0602, r29::load_0602;
+    "r29 spin states 0612" => r29::SPIN_STATES_0612, r29::spin_states_0612;
+    "r29 spin states 0563" => r29::SPIN_STATES_0563, r29::spin_states_0612;
+    "r29 sparks 0605" => r29::SPARKS_0605, r28::sparks_0563;
+    // round 29 (magic-r29): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3857,6 +3868,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r28 ribbon draw 0150", &r28::RIBBON_DRAW_0150),
     ("r28 strip frame 0150", &r28::STRIP_FRAME_0150),
     // round 28 (magic-r28): end of INTERNAL
+    // round 29 (magic-r29)
+    ("r29 start-up 0511", &r29::START_UP_0511),
+    ("r29 start-up 0602", &r29::START_UP_0602),
+    // round 29 (magic-r29): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

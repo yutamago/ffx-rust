@@ -4727,6 +4727,42 @@ pub const THREE_POINTS_0589: Sig = Sig {
     imports: &[],
 };
 
+/// One object of [`three_objects_with`]: the object's offset in `S`, its
+/// part, the scale's and the call's operands, the offset `(x, 0, z)`, the
+/// slots 235/328/329/229/248's table operands, the turn, `y`'s constant
+/// operand and the height global's operand (`magic_0511`'s copy adds it).
+pub(crate) struct ThreeObj {
+    pub o: u32,
+    pub part: u32,
+    pub sc: u32,
+    pub c: u32,
+    pub x: u32,
+    pub z: u32,
+    pub ops: [u32; 5],
+    pub turn: Turn,
+    pub ky: u32,
+    pub h: Option<u32>,
+}
+
+/// How [`three_objects_with`] turns an object: the yaw kept, or the yaw
+/// less (`add` false) or plus a constant, wrapped into `-pi..pi`
+/// (operands: the constant, the upper bound, its step, the lower bound,
+/// its step).
+pub(crate) enum Turn {
+    Kept,
+    Wrap { add: bool, ops: [u32; 5] },
+}
+
+/// The record layout of a three-objects copy: `G_S`'s operand, the yaw,
+/// the place copied and where each place is kept (`+ 0x20 i`).
+pub(crate) struct ThreeObjects {
+    pub s: u32,
+    pub yaw: u32,
+    pub src: u32,
+    pub keep: u32,
+    pub objs: [ThreeObj; 3],
+}
+
 /// `magic_0589`'s three objects (0x10002e30, 1109 bytes; a table
 /// callback, no arguments; a cookie frame, `ebp = E - 4`: the matrix at
 /// `ebp - 0x64`, the turned offset at `ebp - 0x24`, the offset at `ebp -
@@ -4738,8 +4774,68 @@ pub const THREE_POINTS_0589: Sig = Sig {
 /// 328 with 0, 329, 229, 248; `w` 1.0), each place kept at `S + 0x1950 +
 /// 0x20 i`; turned by the yaw less `K4`, the yaw, the yaw plus `K5` (into
 /// `-pi..pi`), `y` less `K6`. Returns the last place's `w`.
-#[allow(clippy::too_many_lines)] // one straight sequence
 pub fn three_objects_0589<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let l = ThreeObjects {
+        s: 0x1b,
+        yaw: 0x21f8,
+        src: 0x1a00,
+        keep: 0x1950,
+        objs: [
+            ThreeObj {
+                o: 0x980,
+                part: 8,
+                sc: 0x14,
+                c: 0x4c,
+                x: 0xc184_0000,
+                z: 0xbf4c_cccd,
+                ops: [0x8b, 0xb5, 0xd4, 0xed, 0x105],
+                turn: Turn::Wrap {
+                    add: false,
+                    ops: [0x15a, 0x164, 0x117, 0x174, 0x117],
+                },
+                ky: 0x19d,
+                h: None,
+            },
+            ThreeObj {
+                o: 0x850,
+                part: 7,
+                sc: 0x185,
+                c: 0x1b9,
+                x: 0,
+                z: 0x4178_0000,
+                ops: [0x1f8, 0x222, 0x241, 0x25a, 0x272],
+                turn: Turn::Kept,
+                ky: 0x2c7,
+                h: None,
+            },
+            ThreeObj {
+                o: 0x720,
+                part: 6,
+                sc: 0x28d,
+                c: 0x2ef,
+                x: 0x4184_0000,
+                z: 0xbf4c_cccd,
+                ops: [0x32e, 0x358, 0x377, 0x390, 0x3a8],
+                turn: Turn::Wrap {
+                    add: true,
+                    ops: [0x3f5, 0x3ff, 0x409, 0x413, 0x420],
+                },
+                ky: 0x43b,
+                h: None,
+            },
+        ],
+    };
+    three_objects_with(g, img, fr, &l)
+}
+
+/// The body of [`three_objects_0589`] and its copies, from the copy's
+/// layout `l`.
+pub(crate) fn three_objects_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    l: &ThreeObjects,
+) -> Ret {
     use crate::sb_sse::{add, sub};
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
@@ -4747,87 +4843,60 @@ pub fn three_objects_0589<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let call = |o: u32| img.rel32_target(f + o);
     let ebp = fr.esp.wrapping_sub(4);
-    let l = |off: u32| ebp.wrapping_sub(off);
-    let (m, lv, lo) = (l(0x64), l(0x24), l(0x14));
-    let s = g.read::<u32>(w(0x1b));
-    let yaw = g.read::<u32>(s + 0x21f8);
+    let lc = |off: u32| ebp.wrapping_sub(off);
+    let (m, lv, lo) = (lc(0x64), lc(0x24), lc(0x14));
+    let s = g.read::<u32>(w(l.s));
+    let yaw = g.read::<u32>(s + l.yaw);
     g.write::<u32>(lo + 4, 0);
     let mut eax = 0;
-    // (the object, part, scale's operand, call, the offset, the slots'
-    // table operands)
-    for (i, (o, part, sc, c, (x, z), ops)) in (0u32..).zip([
-        (
-            0x980u32,
-            8u32,
-            0x14u32,
-            0x4cu32,
-            (0xc184_0000u32, 0xbf4c_cccdu32),
-            [0x8bu32, 0xb5, 0xd4, 0xed, 0x105],
-        ),
-        (
-            0x850,
-            7,
-            0x185,
-            0x1b9,
-            (0, 0x4178_0000),
-            [0x1f8, 0x222, 0x241, 0x25a, 0x272],
-        ),
-        (
-            0x720,
-            6,
-            0x28d,
-            0x2ef,
-            (0x4184_0000, 0xbf4c_cccd),
-            [0x32e, 0x358, 0x377, 0x390, 0x3a8],
-        ),
-    ]) {
-        let obj = s + o;
-        let scale = k(g, sc);
-        crate::s4_misc::start_object_anim(g, img, call(c), obj, scale, part, 0);
+    for (i, ob) in (0u32..).zip(&l.objs) {
+        let obj = s + ob.o;
+        let scale = k(g, ob.sc);
+        crate::s4_misc::start_object_anim(g, img, call(ob.c), obj, scale, ob.part, 0);
         let q = obj + 0xd0;
         for j in 0..4 {
-            let v = g.read::<u32>(s + 0x1a00 + 4 * j);
+            let v = g.read::<u32>(s + l.src + 4 * j);
             g.write::<u32>(q + 4 * j, v);
         }
-        g.write::<u32>(lo, x);
-        g.write::<u32>(lo + 8, z);
-        g.call(t(g, ops[0], 235), 0, &[m]);
+        g.write::<u32>(lo, ob.x);
+        g.write::<u32>(lo + 8, ob.z);
+        g.call(t(g, ob.ops[0], 235), 0, &[m]);
         // call width: 3
-        g.call(t(g, ops[1], 328), 0, &[m, m, 0]);
+        g.call(t(g, ob.ops[1], 328), 0, &[m, m, 0]);
         // call width: 3
-        g.call(t(g, ops[2], 329), 0, &[m, m, yaw]);
+        g.call(t(g, ob.ops[2], 329), 0, &[m, m, yaw]);
         g.write::<u32>(lo + 0xc, ONE);
         // call width: 3
-        g.call(t(g, ops[3], 229), 0, &[lv, m, lo]);
+        g.call(t(g, ob.ops[3], 229), 0, &[lv, m, lo]);
         // call width: 3
-        g.call(t(g, ops[4], 248), 0, &[q, q, lv]);
+        g.call(t(g, ob.ops[4], 248), 0, &[q, q, lv]);
         g.write::<u32>(q + 0xc, ONE);
         for j in 0..4 {
             eax = g.read::<u32>(q + 4 * j);
-            g.write::<u32>(s + 0x1950 + 0x20 * i + 4 * j, eax);
+            g.write::<u32>(s + l.keep + 0x20 * i + 4 * j, eax);
         }
-        let wrap = |g: &G, a: f32, (hi, st, lo_, st2): (u32, u32, u32, u32)| {
-            if a > k(g, hi) {
-                sub(a, k(g, st))
-            } else if k(g, lo_) > a {
-                add(a, k(g, st2))
-            } else {
-                a
+        let yf = g.read::<f32>(s + l.yaw);
+        let turn = match ob.turn {
+            Turn::Kept => yf,
+            Turn::Wrap { add: up, ops } => {
+                let a = if up {
+                    add(yf, k(g, ops[0]))
+                } else {
+                    sub(yf, k(g, ops[0]))
+                };
+                if a > k(g, ops[1]) {
+                    sub(a, k(g, ops[2]))
+                } else if k(g, ops[3]) > a {
+                    add(a, k(g, ops[4]))
+                } else {
+                    a
+                }
             }
         };
-        let yf = g.read::<f32>(s + 0x21f8);
-        let (turn, ky) = match i {
-            0 => (
-                wrap(g, sub(yf, k(g, 0x15a)), (0x164, 0x117, 0x174, 0x117)),
-                0x19d,
-            ),
-            1 => (yf, 0x2c7),
-            _ => (
-                wrap(g, add(yf, k(g, 0x3f5)), (0x3ff, 0x409, 0x413, 0x420)),
-                0x43b,
-            ),
-        };
-        let y = sub(g.read::<f32>(obj + 0xd4), k(g, ky));
+        let mut y = sub(g.read::<f32>(obj + 0xd4), k(g, ob.ky));
+        if let Some(h) = ob.h {
+            y = add(y, k(g, h));
+        }
         g.write::<f32>(obj + 0xc4, turn);
         g.write::<f32>(obj + 0xd4, y);
     }

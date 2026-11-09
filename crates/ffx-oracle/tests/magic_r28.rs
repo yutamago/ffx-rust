@@ -260,13 +260,15 @@ fn pool74(t: &mut Twin, take: u32, recs: u32, count: u32, busy: u32) {
 /// (`r28::sparks_0563`, cdecl `(node)`): the tick off and on the mask
 /// (below and above 90), the pool with room for every spark, a few and
 /// none, the floor below and above the sparks, the count reaching 96 (the
-/// node given back).
+/// node given back). Also `magic_0605` 0x10008f90 (`r29::SPARKS_0605`:
+/// the texture's displacement and the records' offset from the code).
 #[test]
 fn sparks_0563() {
-    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510)] {
+    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510), (605, 0x8f90)] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let (tex_d, recs_at) = (op(&t, 0x44) & 0xff, op(&t, 0x5f));
         rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
         let floor = SCRATCH + 0x7f0;
         t.stub_st0(12, move |m, _| f64::from(rf(m, floor)));
@@ -309,13 +311,13 @@ fn sparks_0563() {
             junk(&mut t, s + 0x2e00, 0xc00, k);
             for i in 0..0x20 {
                 t.set_u32(
-                    s + 0x2ec0 + 0x60 * (i % 18) + 4 * (i / 18),
+                    s + recs_at + 0x60 * (i % 18) + 4 * (i / 18),
                     (0.5 * i as f32 - 3.0 + k as f32).to_bits(),
                 );
             }
             t.set_u32(op(&t, 0x47), s);
             t.set_u32(op(&t, 0x3d), tex);
-            t.set_u32(tex + 0x24, 0x7e00_0000 + k);
+            t.set_u32(tex + tex_d, 0x7e00_0000 + k);
             t.set_u32(op(&t, 0x56), 0x00cb_0000 + k);
             t.set_u32(floor, fl.to_bits());
             pool74(&mut t, take, recs, 24, busy);

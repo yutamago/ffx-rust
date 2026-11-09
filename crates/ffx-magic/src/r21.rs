@@ -1932,6 +1932,24 @@ pub const START_0431: Sig = Sig {
 /// slot 227 `(*G_B)` is below 1; then [`start_0431`] and the two
 /// callbacks set (`+0x6b`, `+0x75`). Returns 0.
 pub fn load_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    load_with_0431(
+        g,
+        img,
+        fr,
+        |g, img, fr| crate::m0431::sounds_ready(g, img, fr).eax,
+        start_0431,
+    )
+}
+
+/// [`load_0431`] with the DLL's own sounds' check (`ready`, the `rel32`
+/// at `+0x17`) and start-up (`start`, `+0x67`): `magic_0602`'s copy.
+pub(crate) fn load_with_0431<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    ready: fn(&mut G, &Image, &Frame) -> u32,
+    start: fn(&mut G, &Image, &Frame) -> Ret,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     // call width: 1
@@ -1943,7 +1961,7 @@ pub fn load_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp: fr.esp.wrapping_sub(4),
         ..*fr
     };
-    if crate::m0431::sounds_ready(g, img, &sub(0x17)).eax != 1 {
+    if ready(g, img, &sub(0x17)) != 1 {
         return Ret::eax(0);
     }
     if g.read::<u32>(w(0x22)) == 0 {
@@ -1962,7 +1980,7 @@ pub fn load_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     {
         return Ret::eax(0);
     }
-    start_0431(g, img, &sub(0x67));
+    start(g, img, &sub(0x67));
     stores(g, img, f, &[0x6b, 0x75]);
     Ret::eax(0)
 }

@@ -441,9 +441,12 @@ pub fn sparks_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(l(0x54), node);
     let mut eax = mask;
     if u32::from(tick) & mask == 0 {
-        let tex = g.read::<u32>(g.read::<u32>(w(0x3d)) + 0x24);
+        // the texture's displacement (`mov eax, [eax + d8]`) and the
+        // records' offset (`add ebx, imm32`) are the code's: `magic_0605`'s
+        // copy has 0x14 and 0x1f14
+        let tex = g.read::<u32>(g.read::<u32>(w(0x3d)) + (w(0x44) & 0xff));
         g.write::<u32>(l(0x58), tex);
-        let mut r = g.read::<u32>(w(0x47)) + 0x2ec0;
+        let mut r = g.read::<u32>(w(0x47)) + w(0x5f);
         let x = g.read::<u32>(w(0x56));
         // call width: 1
         let y = st0_f32(g.call(slot(g, 0x4f, 12), 0, &[x]).st0);
