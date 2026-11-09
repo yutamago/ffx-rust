@@ -1288,3 +1288,293 @@ pub const EMITTER_START_0307: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Where a copy of `magic_0307`'s three-node start keeps its operands:
+/// the takes' `rel32`s and owners, the "listed" tests, the list's tail
+/// read, the head stores, the last tail store; the fader and shake blocks
+/// in `S`.
+struct Chain {
+    takes: [u32; 3],
+    owners: [u32; 3],
+    listed: [u32; 3],
+    tail: u32,
+    heads: [u32; 3],
+    last: u32,
+    fader: u32,
+    shake: u32,
+}
+
+/// [`scene_start_0307`]'s operands.
+const CHAIN_34C0: Chain = Chain {
+    takes: [0x6e, 0xde, 0x148],
+    owners: [0xe, 0xac, 0x11d],
+    listed: [0x74, 0xe4, 0x14e],
+    tail: 0x89,
+    heads: [0x9c, 0x10a, 0x171],
+    last: 0x1bc,
+    fader: 0x2350,
+    shake: 0x23a4,
+};
+
+/// `magic_0307`'s three task nodes as its starts inline them (the code at
+/// `f`, `S` and the record `a`; operands in `ch`): a pool node
+/// ([`take`](crate::sa_pool::take)) for `a` after the list's tail; the
+/// fader `F = S + ch.fader` (`(0, 100, 0, 3)`, 100, 100) with a kind-1
+/// node after it; the shake block `H = S + ch.shake` (`+0x20` 1/48,
+/// `+0x28` 0x30) with a kind-1 node after that, `H + 4..` = `(4, 2, 0,
+/// 4, 2, 0)`, flags `| 3`. The list's tail word is written only for the
+/// last node. Returns the last node.
+fn record_chain<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, a: u32, ch: &Chain) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    // a node after `prev` (or the list's head when the list is empty)
+    let chain = |g: &mut G, node: u32, listed: bool, prev: u32, head_w: u32| {
+        g.write::<u32>(node.wrapping_add(4), 0);
+        if listed {
+            g.write::<u32>(node, prev);
+            g.write::<u32>(prev.wrapping_add(4), node);
+        } else {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(w(head_w), node);
+        }
+        g.write::<u32>(node.wrapping_add(8), node);
+    };
+    let n1 = crate::sa_pool::take(g, img, call(ch.takes[0]), w(ch.owners[0]));
+    let listed = g.read::<u32>(w(ch.listed[0])) != 0;
+    g.write::<u32>(n1.wrapping_add(0x14), a);
+    let tail = if listed { g.read::<u32>(w(ch.tail)) } else { 0 };
+    chain(g, n1, listed, tail, ch.heads[0]);
+    let c = s.wrapping_add(ch.fader);
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x64),
+        (8, 0),
+        (0xc, 3),
+        (0x14, 0x64),
+        (0x10, 0x64),
+    ] {
+        g.write::<u32>(c + o, v);
+    }
+    g.write::<u16>(c + 0x18, 0);
+    let n2 = crate::sa_pool::take(g, img, call(ch.takes[1]), w(ch.owners[1]));
+    let listed = g.read::<u32>(w(ch.listed[1])) != 0;
+    g.write::<u8>(n2.wrapping_add(0x18), 1);
+    g.write::<u32>(n2.wrapping_add(0x14), c);
+    chain(g, n2, listed, n1, ch.heads[1]);
+    let h = s.wrapping_add(ch.shake);
+    g.write::<u32>(h, 0);
+    g.write::<u32>(h + 0x1c, 0);
+    g.write::<u32>(h + 0x20, 0x3caa_aaab);
+    g.write::<u32>(h + 0x24, 0);
+    g.write::<u32>(h + 0x28, 0x30);
+    g.write::<u16>(h + 0x2c, 0);
+    let n3 = crate::sa_pool::take(g, img, call(ch.takes[2]), w(ch.owners[2]));
+    let listed = g.read::<u32>(w(ch.listed[2])) != 0;
+    g.write::<u8>(n3.wrapping_add(0x18), 1);
+    g.write::<u32>(n3.wrapping_add(0x14), h);
+    chain(g, n3, listed, n2, ch.heads[2]);
+    for (o, v) in [
+        (4u32, 0x4080_0000u32),
+        (8, 0x4000_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4000_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(h + o, v);
+    }
+    let fl = g.read::<u16>(h + 0x2c);
+    g.write::<u16>(h + 0x2c, fl | 3);
+    g.write::<u32>(w(ch.last), n3);
+    n3
+}
+
+/// `magic_0307`'s scene start (0x100034c0, 683 bytes; no arguments; `S =
+/// *G_S`): the record `A = S + 0x2210` (colour bytes and words, `+0x8c`
+/// / `+0x90` 0x18, `+0x98` 0x48), the fader `F = S + 0x2350` (`(0, 100,
+/// 0, 3)`, 100, 100) and the shake block `H = S + 0x23a4` (`+0x20` 1/48,
+/// `+0x28` 0x30), each with a pool node ([`take`](crate::sa_pool::take);
+/// `F`'s and `H`'s kind 1) chained after the one before (the list's tail
+/// word is written only for the last); `H + 4..` = `(4, 2, 0, 4, 2, 0)`,
+/// flags `| 3`. Then the objects `O1` (operand `+0x1b7`; part 6, scale
+/// `K1`) and `O2` (`+0x228`; part 12, owner 1, scale `K2`) started
+/// ([`start_object_at`](crate::s4_misc::start_object_at)), each placed at
+/// `S + 0xc50` with its `y` less `C1` / `C2` and `+0xc4` = `S + 0x2868`.
+/// Returns `O2` (the start's `eax`).
+pub fn scene_start_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x9));
+    let a = s.wrapping_add(0x2210);
+    g.write::<u32>(a + 0x81, 0xff80_ffff);
+    g.write::<u8>(a + 0x80, 0xff);
+    g.write::<u16>(a + 0x85, 0xffff);
+    g.write::<u8>(a + 0x87, 0);
+    g.write::<u32>(a + 0x88, 0);
+    g.write::<u16>(a + 0x98, 0x48);
+    g.write::<u32>(a + 0x90, 0x18);
+    g.write::<u32>(a + 0x8c, 0x18);
+    g.write::<u32>(a + 0x94, 0);
+    record_chain(g, img, f, s, a, &CHAIN_34C0);
+    // (object, start, part, owner, scale; the place's operands, `y`'s
+    // constant, `+0xc4`'s)
+    let objs = [
+        (
+            0x1b7u32,
+            0x1c1u32,
+            6u32,
+            0u32,
+            0x179u32,
+            [0x1d9u32, 0x1e9, 0x204, 0x217],
+            0x1f9u32,
+            0x230u32,
+        ),
+        (
+            0x228,
+            0x23d,
+            0xc,
+            1,
+            0x1d1,
+            [0x24d, 0x25d, 0x278, 0x289],
+            0x26d,
+            0x29a,
+        ),
+    ];
+    let mut eax = 0;
+    for (o, st, part, owner, k, place, cy, turn) in objs {
+        let scale = g.read::<f32>(w(k));
+        eax = crate::s4_misc::start_object_at(g, img, call(st), w(o), scale, part, owner, 0);
+        for (i, &op) in (0u32..).zip(&place) {
+            let x = g.read::<u32>(s.wrapping_add(0xc50 + 4 * i));
+            g.write::<u32>(w(op), x);
+        }
+        let y = sub(g.read::<f32>(s.wrapping_add(0xc54)), g.read::<f32>(w(cy)));
+        let t = g.read::<u32>(s.wrapping_add(0x2868));
+        g.write::<u32>(w(turn), t);
+        g.write::<f32>(w(place[1]), y);
+    }
+    Ret::eax(eax)
+}
+
+/// [`scene_start_0307`] (the `rel32`s: the pool take three times, the
+/// object start twice).
+pub const SCENE_START_0307: Sig = Sig {
+    len: 683,
+    hash: 0x3eb8_4fe3_c794_6cdc,
+    calls: &[
+        (0x6e, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xde, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x148, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1c1, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x23d, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
+
+/// [`emitter_step_0307`]'s operands.
+const CHAIN_4DE0: Chain = Chain {
+    takes: [0x61, 0xd1, 0x13b],
+    owners: [0xe, 0x9f, 0x110],
+    listed: [0x67, 0xd7, 0x141],
+    tail: 0x7c,
+    heads: [0x8f, 0xfd, 0x164],
+    last: 0x1a5,
+    fader: 0x2388,
+    shake: 0x23d4,
+};
+
+/// `magic_0307`'s emitter arrival (0x10004de0, 782 bytes; cdecl `(E)`, the
+/// emitter's step callback set by [`emitter_start_0307`]; `S = *G_S`): the
+/// record `A = S + 0x22b0` (colour words, `+0x8c`/`+0x90` 0x14, `+0x98`
+/// 0x48) and the three task nodes ([`record_chain`]: fader `S + 0x2388`,
+/// shake `S + 0x23d4`); the emitter `O` (operand `+0x19b`) taken off the
+/// host's list ([`list_remove`](crate::l5_objhost::list_remove)) and, when
+/// it was there, `**G_P = W`, slot 713 `(O)` and bit 15 of its `+0x124`
+/// cleared; the objects `O1` (`+0x1ee`, part 5, scale `K1`) and `O2`
+/// (`+0x255`, part 3, scale `K2`) started
+/// ([`start_object_at`](crate::s4_misc::start_object_at)) at `E + 0x358`,
+/// `+0xc4` = `S + 0x2868`, their step callbacks at `+0x104`; `O2 + 0x70`
+/// a code word and `+0x74` 0x1000; each actor record's `S + 0x10c8 + 0xd4
+/// k` 1. Returns 0x1000 with no records, else the record pointer past the
+/// last.
+pub fn emitter_step_0307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x9));
+    let a = s.wrapping_add(0x22b0);
+    g.write::<u32>(a + 0x80, 0x80ff_ffff);
+    g.write::<u32>(a + 0x84, 0x0020_20ff);
+    g.write::<u32>(a + 0x88, 0);
+    g.write::<u16>(a + 0x98, 0x48);
+    g.write::<u32>(a + 0x90, 0x14);
+    g.write::<u32>(a + 0x8c, 0x14);
+    g.write::<u32>(a + 0x94, 0);
+    record_chain(g, img, f, s, a, &CHAIN_4DE0);
+    let o = w(0x19b);
+    if crate::l5_objhost::list_remove(g, img, call(0x1aa), w(0x1a0), o) != 0 {
+        let p = g.read::<u32>(w(0x1b3));
+        g.write::<u32>(p, w(0x1be));
+        // call width: 1
+        g.call(t(g, 0x1c3, 713), 0, &[w(0x1b8)]);
+        let fl = g.read::<u16>(w(0x1da));
+        g.write::<u16>(w(0x1da), fl & 0x7fff);
+    }
+    let e = fr.arg(g, 0);
+    // (object, start, part, scale; the place's operands, `+0xc4`'s)
+    let objs = [
+        (
+            0x1eeu32,
+            0x1f3u32,
+            5u32,
+            0x1e2u32,
+            [0x20eu32, 0x221, 0x233, 0x244],
+            0x25du32,
+        ),
+        (0x255, 0x26c, 3, 0x1fe, [0x27c, 0x28c, 0x29c, 0x2ac], 0x2c6),
+    ];
+    for (i, (ob, st, part, k, place, turn)) in objs.into_iter().enumerate() {
+        let scale = g.read::<f32>(w(k));
+        crate::s4_misc::start_object_at(g, img, call(st), w(ob), scale, part, 0, 0);
+        for (j, &op) in (0u32..).zip(&place) {
+            let x = g.read::<u32>(e.wrapping_add(0x358 + 4 * j));
+            g.write::<u32>(w(op), x);
+        }
+        let x = g.read::<u32>(s.wrapping_add(0x2868));
+        g.write::<u32>(w(turn), x);
+        if i == 0 {
+            g.write::<u32>(w(0x263), w(0x267));
+        }
+    }
+    g.write::<u32>(w(0x2cc), w(0x2d0));
+    g.write::<u32>(w(0x2d6), w(0x2da));
+    g.write::<u16>(w(0x2e0), 0x1000);
+    let mut eax = 0x1000;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0x2e6)).cast_signed() {
+        let at = s.wrapping_add(0x10c8 + 0xd4 * i);
+        g.write::<u32>(at, 1);
+        i += 1;
+        eax = at + 0xd4;
+    }
+    Ret::eax(eax)
+}
+
+/// [`emitter_step_0307`] (the `rel32`s: the pool take three times, the
+/// list removal, the object start twice).
+pub const EMITTER_STEP_0307: Sig = Sig {
+    len: 782,
+    hash: 0x05c8_ce28_f608_d1a8,
+    calls: &[
+        (0x61, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xd1, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x13b, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1aa, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x1f3, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x26c, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+    ],
+    imports: &[],
+};

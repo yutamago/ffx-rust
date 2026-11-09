@@ -901,3 +901,108 @@ fn emitter_start_0307() {
         t.check_entry(f, regs, &[], Eax::Checked);
     }
 }
+
+/// `magic_0307` 0x100034c0 (`r32::scene_start_0307`): the task list empty
+/// and not, the object list empty and not.
+#[test]
+fn scene_start_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x34c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x1c1);
+    let take = t.img.rel32_target(f + 0x6e);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x9), s);
+    for (k, (objs, listed)) in (0u32..).zip([(false, false), (true, true), (false, true)]) {
+        start_env_at(
+            &mut t,
+            so,
+            (0x9d, 0xa8),
+            6,
+            if objs { SCRATCH + 0x680 } else { 0 },
+        );
+        junk(&mut t, s + 0x2200, 0x200, k);
+        floats(&mut t, s + 0xc40, 0x10, 2.5 - k as f32);
+        floats(&mut t, s + 0x2860, 4, -0.5 + k as f32);
+        for o in [0x1b7u32, 0x228] {
+            let at = w(&t, o);
+            junk(&mut t, at, 0x140, k + o);
+        }
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, 0x74), if listed { last } else { 0 });
+        t.set_u32(w(&t, 0x89), last);
+        junk_ops(&mut t, f, &[0x1bc]);
+        ownb::dirty_stack(&mut t, 0x34c0 + k, &[]);
+        let regs = Call {
+            ecx: 0x00ec_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, regs, &[], Eax::Checked);
+    }
+}
+
+/// `magic_0307` 0x10004de0 (`r32::emitter_step_0307`): the emitter on the
+/// host's list and not; no, one and three actor records; the task list
+/// empty and not.
+#[test]
+fn emitter_step_0307() {
+    let Some(mut t) = twin(307) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 713, 1, |_, a| 0x0713_0000 ^ a[0]);
+    let f = t.at(0x4de0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x1f3);
+    let take = t.img.rel32_target(f + 0x61);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x9), s);
+    let e = SCRATCH + 0x2_0000;
+    let host = w(&t, 0x1a0);
+    let item = w(&t, 0x19b);
+    // (on the host's list, records, task list listed)
+    let cases: [(bool, i32, bool); 4] = [
+        (true, 0, false),
+        (false, 1, true),
+        (true, 3, true),
+        (false, -1, false),
+    ];
+    for (k, (on, n, listed)) in (0u32..).zip(cases) {
+        start_env_at(&mut t, so, (0x9d, 0xa8), 6, 0);
+        junk(&mut t, s + 0x1000, 0x1500, k);
+        floats(&mut t, s + 0x2860, 4, -0.5 + k as f32);
+        floats(&mut t, e + 0x340, 0x10, 1.25 + k as f32);
+        for o in [0x1eeu32, 0x255] {
+            let at = w(&t, o);
+            junk(&mut t, at, 0x140, k + o);
+        }
+        junk(&mut t, item, 0x140, k + 7);
+        // the host's list: two nodes, the second holding the emitter
+        let (n1, n2) = (SCRATCH + 0x6000, SCRATCH + 0x6040);
+        t.write(n1, &[0x21; 0x10]);
+        t.write(n2, &[0x22; 0x10]);
+        // node: +0 the previous, +4 the next, +8 the item
+        t.set_u32(n1, 0);
+        t.set_u32(n1 + 4, n2);
+        t.set_u32(n1 + 8, 0x0bad_0001);
+        t.set_u32(n2, n1);
+        t.set_u32(n2 + 4, 0);
+        t.set_u32(n2 + 8, if on { item } else { 0x0bad_0002 });
+        junk(&mut t, host, 0x10, k);
+        t.set_u32(host, n1);
+        t.set_u32(host + 4, n2);
+        let p = SCRATCH + 0x6100;
+        t.set_u32(w(&t, 0x1b3), p);
+        t.set_u32(p, 0x5a5a_0000 + k);
+        t.set_u32(w(&t, 0x2e6), n.cast_unsigned());
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, 0x67), if listed { last } else { 0 });
+        t.set_u32(w(&t, 0x7c), last);
+        junk_ops(&mut t, f, &[0x1a5]);
+        ownb::dirty_stack(&mut t, 0x4de0 + k, &[]);
+        t.check_entry(f, Call::default(), &[e], Eax::Checked);
+    }
+}
