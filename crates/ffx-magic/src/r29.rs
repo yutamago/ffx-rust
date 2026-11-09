@@ -2926,3 +2926,216 @@ pub const BODY_SETUP_0577: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0609`'s throw task (0x10009650, 936 bytes; a task callback,
+/// cdecl `(task)`, the record `R = task[1]`, `S = R + 0x1c`'s word; an
+/// 8-aligned frame, `B` = `esp` after the three pushes, the set-up
+/// records at `B + 0x28`). By the state `R + 0x18`:
+/// - 10: `S + 0x162c` and `+0x1630` less 0x200;
+/// - 20: the particles thrown again
+///   ([`particles_rethrow`](crate::s5_misc::particles_rethrow) `(S, 0,
+///   0.5)`), the state 21 and the target mask `R + 0x34` 7; then as 21;
+/// - 21: for each of the `S + 0x163c` targets `i` whose mask bit is set
+///   and whose `S + 0x100 + 0x278 i + 0x218` (u16) is not 0: the static
+///   node `N_i` (0x2c bytes from `D`) under the parent `P` at the target's
+///   point (slot 262 of its handle; `y` the ground of slot 12 less `K`, `w`
+///   1.0), the sprite node `N_i + 0x160` under `P` (scales 1.0, slot 251
+///   times `K2`), the owned node `A_i` (0x14c bytes from `G_A`;
+///   [`node_append_owned`](crate::sa_misc::node_append_owned)), the
+///   particle node `Q_i` (0x100 bytes from `G_Q`, its word for `+0x4c`
+///   `A_i`; [`particle_node`](crate::sb_nodes::particle_node),
+///   slot 719's handle to slot 306 `(7, 2, h)`), the effect node `R + 0x38 +
+///   0x38 i` ([`effect_node`](crate::sb_nodes::effect_node)), its flag set,
+///   the bit cleared; with the mask empty the state steps on;
+/// - 30: the state 31 and `R + 0x30` 0; 10000: the task node unlinked.
+///
+/// Every way ends with `R + 0x2c` and `R + 0x30` up. Returns the last
+/// `eax`: the state, the rethrow's, the last target's mask word (shifted
+/// or with its bit's complement), the node's old `+4`.
+#[allow(clippy::too_many_lines)] // the original's states, one by one
+pub fn throw_task_0609<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let st = g.read::<u32>(r + 0x18);
+    let s = g.read::<u32>(r + 0x1c);
+    // push ebp; and esp, -8; sub esp, 0x34; three pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x40);
+    let bump = |g: &mut G, o: u32| {
+        let v = g.read::<u32>(r + o).wrapping_add(1);
+        g.write::<u32>(r + o, v);
+    };
+    let end = |g: &mut G, eax: u32| {
+        bump(g, 0x2c);
+        bump(g, 0x30);
+        Ret::eax(eax)
+    };
+    let mut eax = st;
+    match st {
+        10 => {
+            for o in [0x162cu32, 0x1630] {
+                let v = g.read::<u32>(s + o).wrapping_sub(0x200);
+                g.write::<u32>(s + o, v);
+            }
+            return end(g, eax);
+        }
+        30 => {
+            g.write::<u32>(r + 0x30, 0);
+            g.write::<u32>(r + 0x18, 31);
+            return end(g, 31);
+        }
+        10000 => {
+            let node = g.read::<u32>(task);
+            let next = g.read::<u32>(node + 4);
+            let prev = g.read::<u32>(node + 8);
+            g.write::<u32>(next + 8, prev);
+            let prev = g.read::<u32>(node + 8);
+            let next = g.read::<u32>(node + 4);
+            g.write::<u32>(prev + 4, next);
+            g.write::<u32>(node + 8, node);
+            g.write::<u32>(node + 4, node);
+            return end(g, next);
+        }
+        20 | 21 => {}
+        _ => return end(g, eax),
+    }
+    if st == 20 {
+        let rec = b0 + 0x28;
+        for (i, v) in (0u32..).zip([s, 0, 0x3f00_0000]) {
+            g.write::<u32>(rec + 4 * i, v);
+        }
+        let rt = Frame {
+            at: call(0x52),
+            esp: b0.wrapping_sub(4),
+            ecx: rec,
+            ..*fr
+        };
+        eax = crate::s5_misc::particles_rethrow(g, img, &rt).eax;
+        bump(g, 0x18);
+        g.write::<u32>(r + 0x34, 7);
+    }
+    let parent = w(0xcd);
+    // a node under the parent (the operands of the inlined append: the
+    // last child, its comparison, the first child's store, the count, the
+    // last child's store, the vtable)
+    let child = |g: &mut G, n: u32, [l1, l2, cmp, first, count, lw]: [u32; 6]| {
+        g.write::<u16>(n + 0x1a, 0xff);
+        g.write::<u32>(n + 0x10, n);
+        g.write::<u32>(n + 0xc, n);
+        g.write::<u32>(n + 0x14, parent);
+        g.write::<u32>(n + 4, parent);
+        let l = g.read::<u32>(w(l1));
+        g.write::<u32>(n + 8, l);
+        let l = g.read::<u32>(w(l2));
+        if l == w(cmp) {
+            g.write::<u32>(w(first), n);
+        } else {
+            g.write::<u32>(l + 4, n);
+        }
+        let c = g.read::<u16>(w(count)).wrapping_add(1);
+        g.write::<u16>(w(count), c);
+        g.write::<u32>(w(lw), n);
+    };
+    let mut i = 0u32;
+    let (mut qa, mut qb, mut qc, mut d, mut e) = (w(0x73), w(0x88), r + 0x64, w(0x91), s + 0x100);
+    while i.cast_signed() < g.read::<i32>(s + 0x163c) {
+        let mask = g.read::<u32>(r + 0x34);
+        eax = (mask.cast_signed() >> (i & 31)).cast_unsigned();
+        if eax & 1 != 0 && g.read::<u16>(e + 0x218) != 0 {
+            // the static node at the target's point
+            let n = d - 0x20;
+            child(g, n, [0xd9, 0xe1, 0xe6, 0xee, 0x11b, 0x12f]);
+            g.write::<u32>(n, w(0x135));
+            let h = g.read::<u32>(e);
+            // call width: 4
+            g.call(t(g, 0x129, 262), 0, &[h, d - 4, d, d + 4]);
+            let y = st0_f32(g.call(t(g, 0x14a, 12), 0, &[h]).st0);
+            g.write::<f32>(d, y);
+            g.write::<f32>(d, sub(g.read::<f32>(d), k(g, 0x15d)));
+            g.write::<u32>(d + 8, ONE);
+            // the sprite node
+            let c = d + 0x140;
+            child(g, c, [0x19f, 0x1aa, 0x1af, 0x1b7, 0x1c3, 0x1cd]);
+            g.write::<u32>(c, w(0x1d3));
+            for o in [0x15cu32, 0x160, 0x164] {
+                g.write::<u32>(d + o, ONE);
+            }
+            let x = g.read::<u32>(e.wrapping_sub(4));
+            let rr = st0_f32(g.call(t(g, 0x1f9, 251), 0, &[x]).st0);
+            g.write::<f32>(d + 0x168, mul(rr, k(g, 0x213)));
+            // the model node, owned
+            let call_esp = b0.wrapping_sub(0x14);
+            for (j, v) in (1u32..).zip([w(0x22c), n, w(0x226), c]) {
+                g.write::<u32>(call_esp + 4 * j, v);
+            }
+            let na = Frame {
+                at: call(0x23e),
+                esp: call_esp,
+                ecx: qa,
+                edx: w(0x231),
+                ..*fr
+            };
+            crate::sa_misc::node_append_owned(g, img, &na);
+            // its particle part (`ecx` the node, as node_append_owned
+            // leaves it)
+            let rec = b0 + 0x28;
+            let owner = g.read::<u32>(w(0x247));
+            for (j, v) in (0u32..).zip([qb, w(0x25b), qa, owner, w(0x267), 1]) {
+                g.write::<u32>(rec + 4 * j, v);
+            }
+            g.write::<u32>(qb, w(0x275));
+            crate::sb_nodes::particle_node(g, img, call(0x27a), rec);
+            // call width: 7 (the model node's four words under it)
+            let hh = g
+                .call(
+                    t(g, 0x27f, 719),
+                    0,
+                    &[w(0x28e), 5, 0, w(0x22c), n, w(0x226), c],
+                )
+                .eax;
+            // call width: 3
+            g.call(t(g, 0x299, 306), 0, &[7, 2, hh]);
+            // the effect node
+            for (j, v) in (0u32..).zip([qc - 0x2c, parent, qa, w(0x2cf), w(0x2d7), 4]) {
+                g.write::<u32>(rec + 4 * j, v);
+            }
+            crate::sb_nodes::effect_node(g, img, call(0x2e4), rec);
+            let node = g.read::<u32>(rec);
+            g.write::<u32>(node, w(0x2f6));
+            let fl = g.read::<u32>(qc) | 1;
+            g.write::<u32>(qc, fl);
+            g.write::<u32>(qc + 4, 0);
+            eax = !(1u32 << (i & 31));
+            g.write::<u32>(r + 0x34, g.read::<u32>(r + 0x34) & eax);
+        }
+        qa += 0x14c;
+        qb += 0x100;
+        qc += 0x38;
+        i += 1;
+        e += 0x278;
+        d += 0x2c;
+    }
+    if g.read::<u32>(r + 0x34) == 0 {
+        bump(g, 0x18);
+    }
+    end(g, eax)
+}
+
+/// [`throw_task_0609`] (the `rel32`s: the rethrow, the owned append, the
+/// particle node, the effect node).
+pub const THROW_TASK_0609: Sig = Sig {
+    len: 936,
+    hash: 0xae3b_b508_b36a_f573,
+    calls: &[
+        (0x52, Callee::Sig(&crate::s5_misc::PARTICLES_RETHROW)),
+        (0x23e, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x27a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x2e4, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};

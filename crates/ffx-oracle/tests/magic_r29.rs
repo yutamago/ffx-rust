@@ -1676,3 +1676,102 @@ fn body_setup_0577() {
         );
     }
 }
+
+/// `magic_0609` 0x10009650 (`r29::throw_task_0609`, cdecl `(task)`): every
+/// state (10, 20 with the rethrow, 21 with targets masked, shown and
+/// hidden, none, 30, 10000, others); the parent with children and without.
+#[test]
+fn throw_task_0609() {
+    let Some(mut t) = twin(609) else { return };
+    all_stubs(&mut t);
+    let bones = SCRATCH + 0x7a0;
+    rec(&mut t, 262, 4, move |m, a| {
+        for i in 0..3 {
+            let v = rf(m, bones + 4 * i as u32) + (a[0] & 7) as f32;
+            wf(m, a[1 + i], v);
+        }
+        0x262
+    });
+    for (s, x) in [(12u32, -1.5f64), (251, 0.75)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| f64::from(m.r32(SCRATCH + 0x7f8) & 0xff) * 0.01);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ a[1]);
+    rec(&mut t, 306, 3, |_, a| 0x0306_0000 ^ a[2]);
+    rec(&mut t, 324, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0x7f8);
+        m.w32(
+            SCRATCH + 0x7f8,
+            k.wrapping_mul(0x0101_0101).wrapping_add(0x3779),
+        );
+        k
+    });
+    let f = t.at(0x9650);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let task = SCRATCH + 0x100;
+    let node = SCRATCH + 0x180;
+    let r = SCRATCH + 0x200;
+    let s = SCRATCH + 0x1_0000;
+    // the particle node's program table owner and table (slot 941)
+    let owner = SCRATCH + 0x6200;
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        SCRATCH + 0x400
+    });
+    // (state, target count, mask, shown words)
+    let cases: [(u32, i32, u32, [u16; 3]); 8] = [
+        (10, 2, 7, [1, 1, 1]),
+        (20, 3, 0, [1, 0, 1]),
+        (21, 3, 5, [1, 1, 1]),
+        (21, 2, 2, [0, 1, 1]),
+        (21, 0, 3, [1, 1, 1]),
+        (30, 2, 7, [1, 1, 1]),
+        (10000, 2, 7, [1, 1, 1]),
+        (25, 2, 7, [1, 1, 1]),
+    ];
+    for (k, (st, n, mask, shown)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x200, k);
+        t.set_u32(task + 4, r);
+        t.set_u32(task, node);
+        let (nx, pv) = (SCRATCH + 0x1c0, SCRATCH + 0x1e0);
+        t.write(node, &[0x44; 0x20]);
+        t.set_u32(node + 4, nx);
+        t.set_u32(node + 8, pv);
+        t.write(nx, &[0x45; 0x10]);
+        t.write(pv, &[0x46; 0x10]);
+        t.set_u32(r + 0x18, st);
+        t.set_u32(r + 0x1c, s);
+        t.set_u32(r + 0x34, mask);
+        junk(&mut t, s, 0x1700, k + 1);
+        t.set_u32(s + 0x163c, n.cast_unsigned());
+        for i in 0..3u32 {
+            let e = s + 0x100 + 0x278 * i;
+            t.set_u16(e + 0x218, shown[i as usize]);
+            t.set_u32(e, 0x00ac_0000 + i);
+            t.set_u32(e.wrapping_sub(4), 0x00ad_0000 + i);
+        }
+        for i in 0..4u32 {
+            t.set_u32(bones + 4 * i, (0.5 * i as f32 + k as f32).to_bits());
+        }
+        // the parent's children: none (its last child the parent) or one
+        let parent = op(&t, 0xcd);
+        let kid = SCRATCH + 0x6000;
+        t.write(kid, &[0x22; 0x20]);
+        t.set_u32(op(&t, 0xd9), if k % 2 == 1 { parent } else { kid });
+        t.set_u16(op(&t, 0x11b), 3 + k as u16);
+        // the particle node's list: a static node with no children
+        let l2 = op(&t, 0x25b);
+        t.write(l2, &[0; 0x20]);
+        t.set_u32(l2 + 0xc, l2);
+        t.set_u32(l2 + 0x10, l2);
+        junk(&mut t, owner, 0x100, k);
+        t.set_u32(op(&t, 0x247), owner);
+        ownb::dirty_stack(&mut t, 0x9650 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
