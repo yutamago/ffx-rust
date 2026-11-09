@@ -1389,3 +1389,250 @@ fn camera_task_0603() {
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the task's calls");
 }
+
+/// `magic_0585` 0x10008bc0 (`r25::start_up_0585`): no targets and two,
+/// the ring's old last varied, the lock word varied.
+#[test]
+fn start_up_0585() {
+    let Some(mut t) = twin(585) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x8bc0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = SCRATCH + 0x6000;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    let lock = SCRATCH + 0x7f0;
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    for (s, n) in [(718u32, 1usize), (710, 4), (222, 4), (221, 4), (708, 1)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let old = SCRATCH + 0x6800;
+    for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, count);
+        t.set_u32(w(&t, 0xd4), lock);
+        t.set_u32(lock, 0x40 + k);
+        t.write(old, &[0x33; 0x40]);
+        t.set_u32(w(&t, 0x1f3), if k == 1 { w(&t, 0x21f) } else { old });
+        junk_ops(&mut t, f, &[0x230, 0xdd, 0x1fb]);
+        ownb::dirty_stack(&mut t, 0x8bc0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0585` 0x10007e30 (`r25::glow_task_0585`): every state, the
+/// levels below, at and past their bounds (NaN once), the count's two
+/// ways, the wait running and out, and states past the table.
+#[test]
+fn glow_task_0585() {
+    let Some(mut t) = twin(585) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x7e30);
+    for (s, n) in [(233u32, 3usize), (248, 3), (232, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + 0.25 * i as f32 + (s & 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+                fold(m, s, i, v.to_bits());
+            }
+            s
+        });
+    }
+    for (s, n) in [(589u32, 2usize), (590, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            let x = m.r32(a[1]) ^ m.r32(a[1] + 8);
+            fold(m, s, a[0] & 3, x);
+            (s << 16) ^ a[0]
+        });
+    }
+    let task = SCRATCH + 0x100;
+    let (tn, tprev, tnext) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let r = SCRATCH + 0x1000;
+    let nan = f32::NAN;
+    // (state, level b0, level b4, count d8, wait d4)
+    let cases: [(u32, f32, f32, u32, u32); 20] = [
+        (0, 0.1, 0.0, 5, 3),
+        (1, 0.5, 0.0, 1, 3),
+        (1, 0.99, 0.0, 1, 3),
+        (1, nan, 0.0, 1, 3),
+        (2, 0.5, 0.0, 1, 3),
+        (2, 0.01, 0.0, 1, 3),
+        (2, 0.01, 0.0, 0, 3),
+        (0x32, 0.2, 0.2, 0, 3),
+        (0x33, 0.9, 0.99, 0, 3),
+        (0x33, 0.5, 0.5, 0, 3),
+        (10, 0.5, 0.5, 0, 0),
+        (11, 0.5, 0.5, 0, 2),
+        (11, 1.0, 1.0, 0, 0),
+        (0x2710, 0.5, 0.5, 0, 0),
+        (0x2710, 0.01, 0.01, 0, 0),
+        (0x2710, 0.5, nan, 0, 0),
+        (5, 0.5, 0.25, 0, 7),
+        (0x40, 0.5, 0.25, 0, 7),
+        (0x4e20, 0.5, 0.25, 0, 7),
+        (0x3000, 0.5, 0.25, 0, 7),
+    ];
+    for (k, (state, b0, b4, n, wait)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x100, k);
+        for i in 0..0x24 {
+            t.set_u32(r + 4 * i, (0.25 * i as f32 - 2.0 + k as f32).to_bits());
+        }
+        t.set_u32(r + 0xd0, state);
+        t.set_u32(r + 0xb0, b0.to_bits());
+        t.set_u32(r + 0xb4, b4.to_bits());
+        t.set_u32(r + 0xd8, n);
+        t.set_u32(r + 0xd4, wait);
+        junk(&mut t, task, 0x10, k + 3);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, r);
+        t.write(tn, &[0x3c; 0x20]);
+        t.set_u32(tn + 4, tprev);
+        t.set_u32(tn + 8, tnext);
+        t.write(tprev, &[0x4d; 0x20]);
+        t.write(tnext, &[0x5e; 0x20]);
+        ownb::dirty_stack(&mut t, 0x7e30 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0585` 0x10008450 (`r25::summon_task_0585`): every state, each
+/// count way, the party lists empty and with members, slot 411 answering
+/// and not, the static list empty and not, states past the table.
+#[test]
+fn summon_task_0585() {
+    let Some(mut t) = twin(585) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x8450);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, x) in [
+        (15u32, 0.5f64),
+        (16, 0.75),
+        (17, 1.5),
+        (277, 2.0),
+        (333, -0.75),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0);
+        }
+        0x262
+    });
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + 3.0);
+        }
+        0x290
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 1.75);
+        0x601
+    });
+    let cell = SCRATCH + 0x7c0;
+    let members = SCRATCH + 0x7d0;
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], m.r32(cell));
+        members + (a[0] & 1)
+    });
+    rec(&mut t, 411, 1, move |m, a| m.r32(cell + 4) ^ (a[0] & 0x100));
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    for (s, n) in [
+        (215u32, 1usize),
+        (399, 2),
+        (296, 2),
+        (228, 2),
+        (709, 1),
+        (219, 2),
+        (276, 2),
+        (548, 1),
+        (413, 1),
+        (14, 2),
+        (325, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    let list = op(&t, 0x55);
+    let old = SCRATCH + 0x800;
+    let task = SCRATCH + 0x100;
+    let (tn, tprev, tnext) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let r = SCRATCH + 0x1_0000;
+    let model = SCRATCH + 0x3000;
+    // (state, count, party size, slot 411)
+    let cases: [(u32, u32, u32, u32); 22] = [
+        (0, 3, 2, 0),
+        (0, 3, 0, 0),
+        (0x28, 5, 0, 0),
+        (0x29, 2, 0, 0),
+        (0x29, 0, 0, 0),
+        (0x2c, 0, 0, 0),
+        (0x2f, 0, 0, 0),
+        (0x30, 1, 0, 0),
+        (0x30, 0, 0, 0),
+        (10, 2, 0, 0),
+        (10, 0, 3, 0),
+        (11, 1, 0, 0),
+        (11, 0, 0, 0),
+        (12, 4, 0, 0),
+        (12, 0, 2, 1),
+        (12, 0, 0, 0),
+        (0x2710, 0, 2, 1),
+        (0x2710, 0, 0, 0),
+        (5, 0, 0, 0),
+        (0x31, 0, 0, 0),
+        (0x2711, 0, 0, 0),
+        (0x4e20, 0, 0, 0),
+    ];
+    for (k, (state, count, size, ans)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x1900, k);
+        junk(&mut t, model, 0x100, k + 1);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x20, count);
+        t.set_u16(model + 0x90, (k & 1) as u16);
+        t.set_u32(r + 0x24 + 0x54, model);
+        t.set_u32(r + 0x24 + 0x50, model);
+        t.set_u32(r + 0x24 + 0x14, if k % 3 == 0 { 0 } else { old });
+        t.set_u32(cell, size);
+        t.set_u32(cell + 4, ans);
+        t.write(members, &[0x01, 0x02, 0x03, 0x04]);
+        junk(&mut t, list, 0x20, k + 2);
+        t.set_u32(list + 0x10, if k % 2 == 0 { list } else { old });
+        t.set_u16(list + 0x18, 0x0305);
+        t.write(old, &[0x6c; 0x40]);
+        junk_ops(&mut t, f, &[0x42, 0x4ec, 0x567]);
+        // the DLL's task ring: its last a block of its own
+        let ss = t.img.rel32_target(f + 0x2f8);
+        let ring_end = SCRATCH + 0x880;
+        t.write(ring_end, &[0x5d; 0x40]);
+        t.set_u32(t.img.word(ss + 0x1d), ring_end);
+        // the light's node list: empty
+        let lo = t.img.rel32_target(f + 0x488);
+        let ll = t.img.word(lo + 0x6a);
+        t.set_u32(ll + 0x10, ll);
+        junk(&mut t, task, 0x10, k + 3);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, r);
+        t.write(tn, &[0x3c; 0x20]);
+        t.set_u32(tn + 4, tprev);
+        t.set_u32(tn + 8, tnext);
+        t.write(tprev, &[0x4d; 0x20]);
+        t.write(tnext, &[0x5e; 0x20]);
+        ownb::dirty_stack(&mut t, 0x8450 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the task's calls");
+}
