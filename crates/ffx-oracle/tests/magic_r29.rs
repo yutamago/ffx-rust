@@ -950,9 +950,12 @@ fn sparks_eight_0563() {
         }
         0x329
     });
+    // (every word of the vector reaches every lane, as the translation
+    // row's `w` does)
     rec(&mut t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
         for i in 0..4 {
-            let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.5 + i as f32;
+            let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.125 * sum + i as f32;
             wf(m, a[0] + 4 * i, v);
         }
         0x229
@@ -1034,6 +1037,115 @@ fn light_start_0563() {
             t.set_u8(bytes + u32::from(i), 0x31 + 7 * i + k as u8);
         }
         ownb::dirty_stack(&mut t, 0x3000 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0563` 0x10002e50 (`r29::aim_objects_0563`) and through it
+/// 0x10002af0 (`r29::aim_object_0563`): the bone points around the target
+/// (the yaw wrapped both ways and kept), the task list empty and not, the
+/// object pool with nodes and empty.
+#[test]
+fn aim_objects_0563() {
+    let Some(mut t) = twin(563) else { return };
+    all_stubs(&mut t);
+    let bones = SCRATCH + 0x7a0;
+    rec(&mut t, 237, 4, move |m, a| {
+        for i in 0..4 {
+            let v = rf(m, bones + 4 * i) + (a[1] & 0x3f) as f32 * 0.25 * (i as f32 - 1.0);
+            wf(m, a[3] + 4 * i, v);
+        }
+        0x237
+    });
+    magic_owna::filler(&mut t, 235, 1, 16);
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v =
+                    rf(m, a[1] + 4 * i) * 0.75 + f32::from_bits(a[2]) * 0.125 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+        for i in 0..4 {
+            let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    let f = t.at(0x2e50);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let aim = t.img.rel32_target(f + 0x8d);
+    let so = t.img.rel32_target(aim + 0x312);
+    let take = t.img.rel32_target(f + 0xd6);
+    let s = SCRATCH + 0x1_0000;
+    let last = SCRATCH + 0x3400;
+    // (the bone point, the target, listed, object pool count)
+    let cases: [([f32; 3], [f32; 3], bool, u16); 4] = [
+        ([1.0, 2.0, 3.0], [4.0, -1.0, -5.0], false, 3),
+        ([1.0, 2.0, 3.0], [-4.0, 1.0, 0.5], true, 3),
+        ([-2.0, 0.0, 1.0], [-6.0, 3.0, -0.5], true, 0),
+        ([0.5, 0.5, 0.5], [0.5, 7.0, 9.5], false, 1),
+    ];
+    for (k, (b, q, listed, count)) in (0u32..).zip(cases) {
+        start_env(&mut t, so, count, if k == 1 { SCRATCH + 0x680 } else { 0 });
+        t.set_u32(op(&t, 0x14), s);
+        junk(&mut t, s + 0x2b00, 0xe00, k);
+        for (i, x) in (0u32..).zip(b.into_iter().chain([1.0])) {
+            t.set_u32(bones + 4 * i, x.to_bits());
+        }
+        for (i, x) in (0u32..).zip(q.into_iter().chain([1.0])) {
+            t.set_u32(s + 0x2b30 + 4 * i, x.to_bits());
+        }
+        t.set_u32(op(&t, 0x60), 0x00ac_0000 + k);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0xdc), if listed { last } else { 0 });
+        t.set_u32(op(&t, 0xef), last);
+        ownb::dirty_stack(&mut t, 0x2e50 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0563` 0x10003880 (`r29::summon_start_0563`): the turn wrapped
+/// both ways and kept, the task list empty and not, the object pool with
+/// nodes and empty.
+#[test]
+fn summon_start_0563() {
+    let Some(mut t) = twin(563) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    let f = t.at(0x3880);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0xb8);
+    let take = t.img.rel32_target(f + 0x15b);
+    let s = SCRATCH + 0x1_0000;
+    let last = SCRATCH + 0x3400;
+    for (k, (turn, listed, count)) in (0u32..).zip([
+        (0.5f32, false, 3u16),
+        (9.0, true, 3),
+        (-9.0, true, 0),
+        (f32::NAN, false, 1),
+    ]) {
+        start_env(&mut t, so, count, if k == 1 { SCRATCH + 0x680 } else { 0 });
+        t.set_u32(op(&t, 0x7), s);
+        junk(&mut t, s + 0x600, 0x3400, k);
+        for i in 0..0x20u32 {
+            t.set_u32(
+                s + 0x2ac0 + 4 * i,
+                (0.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+            t.set_u32(s + 0x2b40 + 4 * i, (0.25 * i as f32 + 1.0).to_bits());
+        }
+        t.set_u32(s + 0x3ba4, turn.to_bits());
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 6);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0x161), if listed { last } else { 0 });
+        t.set_u32(op(&t, 0x17a), last);
+        ownb::dirty_stack(&mut t, 0x3880 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

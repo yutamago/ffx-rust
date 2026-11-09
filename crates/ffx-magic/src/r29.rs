@@ -1508,3 +1508,389 @@ pub const LIGHT_START_0563: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0563`'s object aimed from `P` to `Q` (0x10002af0, 849 bytes;
+/// internal: `ecx` = the object `O`, `edx` = `P`, `xmm3` the offset's
+/// length `L`, the stack word `Q`; an 8-aligned /GS frame, `B` = `esp`
+/// after the three pushes: the matrix `M` at `B + 0x38`, the vector `V`
+/// at `B + 0x28`). With `d = Q - P`: the pitch `atan2(d.y, sqrt(d.z^2 +
+/// d.x^2))` (`_libm_sse2_sqrt_precise`, `_CIatan2`, in double) and the yaw
+/// `K - atan2(d.z, d.x)` wrapped once; `V = (L, 0, 0, 1)` through `M`
+/// (slots 235, 328 with the pitch, 329 with the yaw, 229); `O + 0x130` =
+/// `P`, `+0x140` = `P + d / K1 + V`, `+0x150` = `d / K1 K2 + P - V` (`w`
+/// 1.0 each), `+0x160` = `Q`, `+0x170` = `P`, `+0x180..` = `(0, 1/30,
+/// 0x1e)`; `O` started ([`start_object_anim`](crate::s4_misc::start_object_anim),
+/// part 2, value 0, scale `K3`) at `P`. Returns `P.w`'s word.
+#[allow(clippy::too_many_arguments)] // the original's registers and stack
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn aim_object_0563<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    obj: u32,
+    p: u32,
+    len: f32,
+) -> u32 {
+    use crate::sb_sse::{add, div, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let q = g.read::<u32>(esp + 4);
+    // push ebp; and esp, -8; sub esp, 0x74; three pushes
+    let b0 = (esp.wrapping_sub(4) & !7).wrapping_sub(0x80);
+    let (m, v) = (b0 + 0x38, b0 + 0x28);
+    let dy = sub(rf(g, q + 4), rf(g, p + 4));
+    let dx = sub(rf(g, q), rf(g, p));
+    let dz = sub(rf(g, q + 8), rf(g, p + 8));
+    let flat = add(mul(dz, dz), mul(dx, dx));
+    // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+    let root = f64::from(flat).sqrt();
+    // `_CIatan2` on x87 (`ST1` = y), each result rounded once
+    #[allow(clippy::cast_possible_truncation)]
+    let pitch = g.atan2(f64::from(dy), root) as f32;
+    #[allow(clippy::cast_possible_truncation)]
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut yaw = sub(k(g, 0xc3), ang);
+    // comiss; jbe: unordered keeps the value
+    if yaw > k(g, 0xd2) {
+        yaw = sub(yaw, k(g, 0xe2));
+    } else if k(g, 0xec) > yaw {
+        yaw = add(yaw, k(g, 0xf9));
+    }
+    let mut st = Pushes::default();
+    st.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x109, 235), 0);
+    st.set_top(pitch.to_bits());
+    st.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x12b, 328), 0);
+    st.pop(2);
+    st.set_top(yaw.to_bits());
+    st.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x14c, 329), 0);
+    for (i, x) in (0u32..).zip([len.to_bits(), 0, 0, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    st.push_all(&[v, m, v]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x16e, 229), 0);
+    let k1 = k(g, 0x1a4);
+    let (px, py, pz) = (rf(g, p), rf(g, p + 4), rf(g, p + 8));
+    let qz = rf(g, q + 8);
+    let sy = div(sub(rf(g, q + 4), py), k1);
+    let sx = div(sub(rf(g, q), px), k1);
+    let sz = div(sub(qz, pz), k1);
+    for i in 0..4 {
+        let x = g.read::<u32>(p + 4 * i);
+        g.write::<u32>(obj + 0x130 + 4 * i, x);
+    }
+    let (vx, vy, vz) = (rf(g, v), rf(g, v + 4), rf(g, v + 8));
+    g.write::<f32>(obj + 0x140, add(add(rf(g, p), sx), vx));
+    g.write::<f32>(obj + 0x144, add(add(rf(g, p + 4), sy), vy));
+    g.write::<u32>(obj + 0x14c, ONE);
+    g.write::<f32>(obj + 0x148, add(add(sz, rf(g, p + 8)), vz));
+    let k2 = k(g, 0x243);
+    g.write::<f32>(obj + 0x150, sub(add(mul(sx, k2), rf(g, p)), vx));
+    g.write::<f32>(obj + 0x154, sub(add(mul(sy, k2), rf(g, p + 4)), vy));
+    let z2 = sub(add(mul(sz, k2), rf(g, p + 8)), vz);
+    let qw = g.read::<u32>(q + 0xc);
+    let scale = k(g, 0x28e);
+    g.write::<f32>(obj + 0x158, z2);
+    g.write::<u32>(obj + 0x15c, ONE);
+    let (qx, qy) = (g.read::<u32>(q), g.read::<u32>(q + 4));
+    g.write::<u32>(obj + 0x160, qx);
+    g.write::<u32>(obj + 0x164, qy);
+    g.write::<f32>(obj + 0x168, qz);
+    g.write::<u32>(obj + 0x16c, qw);
+    g.write::<u32>(obj + 0x180, 0);
+    g.write::<u32>(obj + 0x184, 0x3d08_8889);
+    g.write::<u32>(obj + 0x188, 0x1e);
+    for i in 0..4 {
+        let x = g.read::<u32>(p + 4 * i);
+        g.write::<u32>(obj + 0x170 + 4 * i, x);
+    }
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x312), obj, scale, 2, 0);
+    let mut eax = 0;
+    for i in 0..4 {
+        eax = g.read::<u32>(p + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, eax);
+    }
+    eax
+}
+
+/// [`aim_object_0563`] (the `rel32`s: the square root, `_CIatan2` twice,
+/// the object start, `__security_check_cookie`).
+pub const AIM_OBJECT_0563: Sig = Sig {
+    len: 849,
+    hash: 0x44f5_15d9_cf13_504f,
+    calls: &[
+        (0x6f, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x82, Callee::Import("_CIatan2")),
+        (0xb1, Callee::Import("_CIatan2")),
+        (0x312, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x349, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0563`'s two aimed objects (0x10002e50, 409 bytes; cdecl, no
+/// arguments; the point `P` at `ebp - 0x24`, the target `Q` at `ebp -
+/// 0x14`; `S = *G_S`): `Q` = `S + 0x2b30` (its `y` less `K`); for the bone
+/// points 0x11 and 0x37 of `*G_O` (slot 237 into `P`, `w` 1.0) the objects
+/// `S + 0x2ba0` and `S + 0x2d30` aimed from `P` to `Q`
+/// ([`aim_object_0563`], lengths `K1`, `K2`); then two pool nodes
+/// ([`take`](crate::sa_pool::take), owners `CB1`, `CB2`) on the task
+/// list, the second (kind 1) with the fader `S + 0x37cc` reset (`(0, 60,
+/// 0, 2, 14, 14)`, u16 `+0x18` 0) and made the list's tail. Returns the
+/// second node.
+pub fn aim_objects_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (p, q) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
+    let s = g.read::<u32>(w(0x14));
+    let y = sub(g.read::<f32>(s + 0x2b34), k(g, 0x2d));
+    let x = g.read::<u32>(s + 0x2b30);
+    g.write::<u32>(q, x);
+    let z = g.read::<u32>(s + 0x2b38);
+    g.write::<u32>(q + 8, z);
+    let qw = g.read::<u32>(s + 0x2b3c);
+    g.write::<u32>(q + 0xc, qw);
+    g.write::<f32>(q + 4, y);
+    // (bone, slot table operand, actor operand, object, length operand,
+    // call, the callee's return address below the entry)
+    for (bone, ts, ta, o, kl, c, ret) in [
+        (
+            0x11u32, 0x36u32, 0x60u32, 0x2ba0u32, 0x74u32, 0x8du32, 0x4cu32,
+        ),
+        (0x37, 0x96, 0xa6, 0x2d30, 0xb0, 0xc9, 0x60),
+    ] {
+        let actor = g.read::<u32>(w(ta));
+        // call width: 4
+        g.call(t(g, ts, 237), 0, &[actor, bone, 0, p]);
+        g.write::<u32>(p + 0xc, ONE);
+        // the words under the call: Q, then slot 237's four
+        let esp = fr.esp.wrapping_sub(ret);
+        for (i, x) in (1u32..).zip([q, actor, bone, 0, p]) {
+            g.write::<u32>(esp + 4 * i, x);
+        }
+        aim_object_0563(g, img, call(c), esp, s + o, p, k(g, kl));
+    }
+    let n1 = crate::sa_pool::take(g, img, call(0xd6), w(0xd1));
+    let mut head = g.read::<u32>(w(0xdc));
+    g.write::<u32>(n1 + 4, 0);
+    if head == 0 {
+        head = n1;
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x104), n1);
+    } else {
+        let last = g.read::<u32>(w(0xef));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    let c = s + 0x37cc;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x3c),
+        (8, 0),
+        (0xc, 2),
+        (0x14, 0xe),
+        (0x10, 0xe),
+    ] {
+        g.write::<u32>(c + o, v);
+    }
+    g.write::<u16>(c + 0x18, 0);
+    let n2 = crate::sa_pool::take(g, img, call(0x146), w(0x114));
+    g.write::<u8>(n2 + 0x18, 1);
+    g.write::<u32>(n2 + 0x14, c);
+    g.write::<u32>(n2 + 4, 0);
+    g.write::<u32>(w(0x159), n2);
+    if head == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x188), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    Ret::eax(n2)
+}
+
+/// [`aim_objects_0563`] (the `rel32`s: the aims, the pool take twice,
+/// `__security_check_cookie` twice).
+pub const AIM_OBJECTS_0563: Sig = Sig {
+    len: 409,
+    hash: 0x9c96_e3ac_af5c_0b50,
+    calls: &[
+        (0x8d, Callee::Sig(&AIM_OBJECT_0563)),
+        (0xc9, Callee::Sig(&AIM_OBJECT_0563)),
+        (0xd6, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x146, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x172, Callee::Any),
+        (0x191, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0563`'s summon start (0x10003880, 850 bytes; cdecl, no
+/// arguments; `S = *G_S`): the turn `S + 0x3ba4 - K` wrapped once into
+/// `S + 0x2b04` (`S + 0x2b00`, `+0x2b08` 0), the model matrix `S + 0x2ac0`
+/// scaled and turned by it ([`scale_rotate`](crate::sa_misc::scale_rotate));
+/// `S + 0x2b10` = `S + 0x2b50`; the object `S + 0x720` started
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), part 6, value
+/// 0x11, scale `K1`) at `S + 0x2b50`, its `y` less `K2`, turned by the
+/// turn, `+0xe0` 10 and `+0xe8` 30; two lights (`S + 0x3804`: `(2, 1,
+/// 0)` twice, the times 1/16 and 0x10, 15; `S + 0x3834`: `(1.5, 0, 1)`
+/// twice, 0x3c2237c3 and 0x65, 0x7c; flags `| 3`) and the sprite fan
+/// record `S + 0x38d8`, each with a pool node
+/// ([`take`](crate::sa_pool::take), the lights' kind 1) on the task list;
+/// a fourth node with the word 0x2e000a made the list's tail. Returns the
+/// fourth node.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn summon_start_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x7));
+    let mut a = sub(g.read::<f32>(s + 0x3ba4), k(g, 0x18));
+    g.write::<u32>(s + 0x2b00, 0);
+    // comiss; jbe: unordered keeps the value
+    if a > k(g, 0x2e) {
+        a = sub(a, k(g, 0x38));
+    } else if k(g, 0x42) > a {
+        a = add(a, k(g, 0x4f));
+    }
+    g.write::<f32>(s + 0x2b04, a);
+    g.write::<u32>(s + 0x2b08, 0);
+    crate::sa_misc::scale_rotate(g, img, call(0x6e), s + 0x2ac0, s + 0x2b00);
+    for i in 0..4 {
+        let x = g.read::<u32>(s + 0x2b50 + 4 * i);
+        g.write::<u32>(s + 0x2b10 + 4 * i, x);
+    }
+    let obj = s + 0x720;
+    crate::s4_misc::start_object_anim(g, img, call(0xb8), obj, k(g, 0x7c), 6, 0x11);
+    for i in 0..4 {
+        let x = g.read::<u32>(s + 0x2b50 + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, x);
+    }
+    let y = sub(g.read::<f32>(obj + 0xd4), k(g, 0xfe));
+    let turn = g.read::<u32>(s + 0x2b04);
+    g.write::<u32>(obj + 0xc4, turn);
+    g.write::<u32>(obj + 0xe0, 0x4120_0000);
+    g.write::<u32>(obj + 0xe8, 0x41f0_0000);
+    g.write::<f32>(obj + 0xd4, y);
+    // a pool node on the task list after `prev` (the head's operand, the
+    // store of an empty list's head)
+    let append = |g: &mut G, prev: u32, node: u32, (head, first): (u32, u32)| {
+        if g.read::<u32>(w(head)) == 0 {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(w(first), node);
+        } else {
+            g.write::<u32>(node, prev);
+            g.write::<u32>(prev + 4, node);
+        }
+        g.write::<u32>(node + 8, node);
+    };
+    // the two lights
+    let mut prev = 0;
+    for (l, (step, time, count, flag), (c, owner, head, last, first)) in [
+        (
+            0x3804u32,
+            (
+                (0x4000_0000u32, 0x3f80_0000u32, 0u32),
+                0x3d80_0000u32,
+                0x10u32,
+                0xfu32,
+            ),
+            (0x15bu32, 0x130u32, 0x161u32, 0x17au32, 0x18du32),
+        ),
+        (
+            0x3834,
+            ((0x3fc0_0000, 0, 0x3f80_0000), 0x3c22_37c3, 0x65, 0x7c),
+            (0x1fe, 0x1d3, 0x204, 0, 0x22a),
+        ),
+    ] {
+        let r = s + l;
+        for (o, v) in [
+            (0u32, 0u32),
+            (0x1c, 0),
+            (0x20, time),
+            (0x24, 0),
+            (0x28, count),
+        ] {
+            g.write::<u32>(r + o, v);
+        }
+        g.write::<u16>(r + 0x2c, 0);
+        let node = crate::sa_pool::take(g, img, call(c), w(owner));
+        let listed = g.read::<u32>(w(head)) != 0;
+        g.write::<u8>(node + 0x18, 1);
+        g.write::<u32>(node + 0x14, r);
+        g.write::<u32>(node + 4, 0);
+        if last != 0 && listed {
+            // the first appends after the list's tail
+            prev = g.read::<u32>(w(last));
+        }
+        append(g, prev, node, (head, first));
+        let (x, y, z) = step;
+        for (o, v) in [(4u32, x), (8, y), (0xc, z), (0x10, x), (0x14, y), (0x18, z)] {
+            g.write::<u32>(r + o, v);
+        }
+        let fl = g.read::<u16>(r + 0x2c) | 3;
+        g.write::<u16>(r + 0x2c, fl);
+        g.write::<u32>(r + 0x24, flag);
+        prev = node;
+    }
+    // the sprite fan record
+    let e = s + 0x38d8;
+    for (o, v) in [
+        (0xf0u32, 0x4080_8080u32),
+        (0x124, 4),
+        (0x120, 0),
+        (0x110, 0x7c),
+        (0xf8, 0),
+        (0xfc, 0x3d4c_cccd),
+        (0x100, 0),
+        (0x108, 0x50),
+        (0x104, 0x50),
+        (0x10c, 8),
+    ] {
+        g.write::<u32>(e + o, v);
+    }
+    let n3 = crate::sa_pool::take(g, img, call(0x2da), w(0x271));
+    g.write::<u32>(n3 + 0x14, e);
+    g.write::<u32>(n3 + 4, 0);
+    append(g, prev, n3, (0x2e0, 0x303));
+    let n4 = crate::sa_pool::take(g, img, call(0x310), w(0x308));
+    g.write::<u32>(n4 + 0x14, 0x002e_000a);
+    g.write::<u32>(n4 + 4, 0);
+    g.write::<u32>(w(0x32a), n4);
+    append(g, n3, n4, (0x316, 0x346));
+    Ret::eax(n4)
+}
+
+/// [`summon_start_0563`] (the `rel32`s: the scale and turn, the object
+/// start, the pool take four times).
+pub const SUMMON_START_0563: Sig = Sig {
+    len: 850,
+    hash: 0x3d36_de8b_e714_ac42,
+    calls: &[
+        (0x6e, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0xb8, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x15b, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1fe, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x2da, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x310, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
