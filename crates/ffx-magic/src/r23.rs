@@ -2585,3 +2585,216 @@ pub const LOAD_0612: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0612))],
     imports: &[],
 };
+
+/// `magic_0603`'s summon object set-up (0x1000c5c0, 514 bytes; internal,
+/// no arguments; an `ebp` frame with a two-word group at `ebp - 8`): the
+/// DLL's object `O` joins the DLL's ring at its end (vtable, step, `+0x14`
+/// 0, the ring's flag bit 0 cleared, `O + 0x50` 0); the node `N` joins
+/// the static list (pass byte 0xff, an empty child list, after the list's
+/// last: the list's first when it was empty, the count up), `N + 0x1c` 1,
+/// a flag 1; the colour node `C` (vtable set) over the group `(C, P)`
+/// ([`colour_node`](crate::s3_misc::colour_node)); then its fades at 0.5
+/// (`C + 0xac` bit 0 cleared, `K - x` steps and the halves). Returns the
+/// colour node's `eax`.
+#[allow(clippy::too_many_lines)] // one straight sequence of stores
+pub fn summon_setup_0603<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    const HALF: u32 = 0x3f00_0000;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let set = |g: &mut G, dst: u32, src: u32| g.write::<u32>(w(dst), w(src));
+    // the ring: the old last, the object's words
+    let last = g.read::<u32>(w(0x4));
+    g.write::<u32>(w(0x9), last);
+    set(g, 0xf, 0x13);
+    set(g, 0x19, 0x1d);
+    g.write::<u32>(w(0x23), 0);
+    set(g, 0x2d, 0x31);
+    g.write::<u32>(last + 4, w(0x38));
+    let list_last = g.read::<u32>(w(0x3d));
+    let fl = g.read::<u32>(w(0x43));
+    g.write::<u32>(w(0x43), fl & !1);
+    set(g, 0x4d, 0x51);
+    g.write::<u32>(w(0x57), 0);
+    // the static node
+    set(g, 0x61, 0x65);
+    g.write::<u16>(w(0x6c), 0xff);
+    set(g, 0x74, 0x78);
+    set(g, 0x7e, 0x82);
+    set(g, 0x88, 0x8c);
+    set(g, 0x92, 0x96);
+    g.write::<u32>(w(0x9b), list_last);
+    if list_last == w(0xa0) {
+        set(g, 0xa8, 0xac);
+    } else {
+        g.write::<u32>(list_last + 4, w(0xb5));
+    }
+    let n = g.read::<u16>(w(0xbc)).wrapping_add(1);
+    g.write::<u16>(w(0xbc), n);
+    set(g, 0xc5, 0xc9);
+    g.write::<u8>(w(0xcf), 1);
+    g.write::<u32>(w(0xd6), 1);
+    let ebp = esp.wrapping_sub(4);
+    let group = ebp.wrapping_sub(8);
+    g.write::<u32>(group, w(0xe1));
+    g.write::<u32>(group + 4, w(0xe8));
+    set(g, 0xee, 0xf2);
+    let cf = Frame {
+        at: img.rel32_target(f + 0xf7),
+        esp: ebp.wrapping_sub(0xc),
+        ecx: group,
+        ..Frame::default()
+    };
+    let eax = crate::s3_misc::colour_node(g, img, &cf);
+    // `and [C + 0xac], ~1`: the colour node has just set that word to 1
+    let fl = g.read::<u32>(w(0x110));
+    g.write::<u32>(w(0x110), fl & !1);
+    let c = k(g, 0xff);
+    for dst in [0x117u32, 0x121, 0x12b, 0x148, 0x152, 0x15c, 0x166] {
+        g.write::<u32>(w(dst), HALF);
+    }
+    g.write::<u32>(w(0x183), ONE);
+    g.write::<u32>(w(0x18d), 0);
+    for (dst, src) in [
+        (0x137u32, 0x10au32),
+        (0x172, 0x142),
+        (0x199, 0x17d),
+        (0x1ac, 0x1a4),
+        (0x1bf, 0x1b7),
+        (0x1da, 0x1ca),
+        (0x1f2, 0x1d2),
+    ] {
+        let v = sub(c, k(g, src));
+        g.write::<f32>(w(dst), v);
+    }
+    let v = sub(k(g, 0x1e2), k(g, 0x1ea));
+    g.write::<f32>(w(0x1fa), v);
+    eax
+}
+
+/// [`summon_setup_0603`] (514 bytes, 1 overlay).
+pub const SUMMON_SETUP_0603: Sig = Sig {
+    len: 514,
+    hash: 0x9381_4dfc_f5f5_fe8c,
+    calls: &[(0xf7, Callee::Sig(&crate::s3_misc::COLOUR_NODE))],
+    imports: &[],
+};
+
+/// `magic_0573`'s summon object set-up (0x10007b70, 654 bytes; internal:
+/// `ecx` = the object `O`, `edx` = the summon `S`, the stack `(A, B)`; a
+/// cookie frame, `ebp = E - 4`). The object joins the DLL's ring
+/// ([`ring_join`](crate::h6_setup::ring_join)); its node `O + 0x5c` and
+/// the bone `O + 0xe0` join the static list
+/// ([`static_child`](crate::h6_setup::static_child)); `S`'s model state
+/// into `O + 0x78` ([`model_state`](crate::m0070::model_state)); `O +
+/// 0x104`, `+0xfc` 0, `O + 0x100` = `(K - y) K1 / K2` truncated (`y` slot
+/// 333 of `S[0x54]` with bit 0 of `S + 0x90`, else slot 601 `(S[0x50],
+/// &y)`); the particle node `O + 0x10c`
+/// ([`node_setup`](crate::s5_misc::node_setup), the group `(node, LIST,
+/// G, O + 0xe0, O + 0x5c, S)`); `O + 0x254` 1; slot 210 `(A[0x54], M)`
+/// into a local matrix, slot 229 `(O + 0x29c, M, (500, -2000, -16200,
+/// 1))`, `O + 0x2a0` += `K3`; slot 211 `(S[0x54], O + 0x1a8)`; `S + 0x90`
+/// bit 4 set, `S + 0x4c` = the node; `O + 0x38` = `B`, `+0x30` = `S`,
+/// `+0x34` = `A`, `+0x28`, `+0x1c`, `+0x18` 0. Returns `A`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn summon_setup_0573<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    use crate::h6_setup::{ring_join, static_child};
+    use crate::sb_sse::{add, div, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let (obj, s) = (fr.ecx, fr.edx);
+    let (a, b) = (fr.arg(g, 0), fr.arg(g, 1));
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |off: u32| ebp.wrapping_sub(off);
+    g.write::<u32>(l(0x64), a);
+    ring_join(g, img, f, obj, [0x26, 0x2d, 0x35, 0x3f, 0x44, 0x50, 0x57]);
+    let c = obj + 0x5c;
+    static_child(
+        g,
+        img,
+        f,
+        c,
+        [0x6a, 0x71, 0x76, 0x7e, 0x88, 0x90, 0x9c, 0xa2],
+    );
+    g.write::<u32>(c, w(0xa8));
+    g.write::<u32>(l(0x68), s);
+    let me = l(0x60);
+    g.write::<u32>(me, s);
+    g.write::<u32>(me + 4, obj + 0x78);
+    crate::m0070::model_state(g, img, img.rel32_target(f + 0xb9), me);
+    let bone = obj + 0xe0;
+    g.write::<u32>(bone, w(0xc5));
+    static_child(
+        g,
+        img,
+        f,
+        bone,
+        [0xd8, 0xdf, 0xe4, 0xec, 0xf1, 0xf9, 0x105, 0x10b],
+    );
+    g.write::<u32>(obj + 0x104, 0);
+    g.write::<u32>(obj + 0xfc, 0);
+    let y = l(0x5c);
+    let v = if g.read::<u8>(s + 0x90) & 1 != 0 {
+        let r = st0_f32(g.call(t(g, 0x12d, 333), 0, &[g.read::<u32>(s + 0x54)]).st0);
+        g.write::<f32>(y, r);
+        sub(k(g, 0x143), r)
+    } else {
+        // call width: 2
+        g.call(t(g, 0x156, 601), 0, &[g.read::<u32>(s + 0x50), y]);
+        sub(k(g, 0x169), g.read::<f32>(y))
+    };
+    let v = div(mul(v, k(g, 0x179)), k(g, 0x18a));
+    g.write::<u32>(obj + 0x100, crate::s4_summon::trunc(v));
+    let node = obj + 0x10c;
+    g.write::<u32>(l(0x74), bone);
+    let group = l(0x80);
+    for (i, x) in (0u32..).zip([node, w(0x1a7), w(0x1ae), bone, c, s]) {
+        g.write::<u32>(group + 4 * i, x);
+    }
+    g.write::<u32>(node, w(0x1ba));
+    let nf = Frame {
+        at: img.rel32_target(f + 0x1bf),
+        esp: fr.esp.wrapping_sub(0x98),
+        ecx: group,
+        ..Frame::default()
+    };
+    crate::s5_misc::node_setup(g, img, &nf);
+    g.write::<u8>(obj + 0x254, 1);
+    let m = l(0x58);
+    // call width: 2
+    g.call(t(g, 0x1d5, 210), 0, &[g.read::<u32>(a + 0x54), m]);
+    let p = l(0x14);
+    for (i, x) in (0u32..).zip([0x43fa_0000u32, 0xc4fa_0000, 0xc67d_2001, ONE]) {
+        g.write::<u32>(p + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x1f1, 229), 0, &[obj + 0x29c, m, p]);
+    let x = add(g.read::<f32>(obj + 0x2a0), k(g, 0x225));
+    g.write::<f32>(obj + 0x2a0, x);
+    // call width: 2
+    g.call(t(g, 0x234, 211), 0, &[g.read::<u32>(s + 0x54), node + 0x9c]);
+    let fl = g.read::<u16>(s + 0x90);
+    g.write::<u16>(s + 0x90, fl | 0x10);
+    g.write::<u32>(s + 0x4c, node);
+    g.write::<u32>(obj + 0x38, b);
+    g.write::<u32>(obj + 0x30, s);
+    g.write::<u32>(obj + 0x28, 0);
+    g.write::<u32>(obj + 0x34, a);
+    g.write::<u32>(obj + 0x1c, 0);
+    g.write::<u32>(obj + 0x18, 0);
+    a
+}
+
+/// [`summon_setup_0573`] (654 bytes, 1 overlay).
+pub const SUMMON_SETUP_0573: Sig = Sig {
+    len: 654,
+    hash: 0xb849_94a8_d0e9_dc89,
+    calls: &[
+        (0xb9, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x1bf, Callee::Sig(&crate::s5_misc::NODE_SETUP)),
+        // __security_check_cookie
+        (0x286, Callee::Any),
+    ],
+    imports: &[],
+};

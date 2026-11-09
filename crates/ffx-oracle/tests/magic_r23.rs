@@ -1529,3 +1529,125 @@ fn load_0612() {
     }
     assert!(t.u32(ownb::LOG) > 0x200, "the start-ups' calls");
 }
+
+/// `magic_0603` 0x1000c5c0 (`r23::summon_setup_0603`): the static list
+/// empty and holding a node; the colour node's floats varied.
+#[test]
+fn summon_setup_0603() {
+    use ownb::rec;
+    let Some(mut t) = twin(603) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xc5c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.0625);
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x10 * i + 3 + m.r32(SCRATCH + 0x30));
+        }
+        0x558
+    });
+    rec(&mut t, 331, 1, |_, a| 0x0331_0000 ^ a[0]);
+    rec(&mut t, 353, 1, |_, a| 0x0353_0000 ^ a[0]);
+    rec(&mut t, 271, 1, |_, a| 0x0271_0000 ^ a[0]);
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (k, empty) in [true, false, true].into_iter().enumerate() {
+        let k = k as u32;
+        t.set_u32(SCRATCH + 0x30, k);
+        let list = w(&t, 0x8c);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(w(&t, 0x3d), if empty { list } else { prev });
+        t.write(prev, &[0x7d; 0x40]);
+        t.write(old, &[0x6c; 0x40]);
+        t.set_u32(w(&t, 0x4), old);
+        t.set_u32(w(&t, 0x43), 0x8000_0007);
+        t.set_u16(w(&t, 0xbc), 0x0305 + k as u16);
+        // the colour node's parent: its list empty (its last itself) or
+        // holding a node
+        let parent = w(&t, 0xe8);
+        t.write(parent, &[0x5c; 0x20]);
+        t.set_u32(parent + 0x10, if empty { parent } else { prev });
+        // the fades' sources: the colour node's words, varied
+        let c = w(&t, 0xe1);
+        junk(&mut t, c, 0xc0, k);
+        junk_ops(&mut t, f, &[0x57, 0xcf, 0xd6]);
+        ownb::dirty_stack(&mut t, 0xc5c0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r23::summon_setup_0603(g, img, fr.at, fr.esp))
+        });
+    }
+}
+
+/// `magic_0573` 0x10007b70 (`r23::summon_setup_0573`): the static list
+/// empty and not, the yaw by slot 333 (flag bit 0) or slot 601, the
+/// model state by slots 15..17 or 290.
+#[test]
+fn summon_setup_0573() {
+    use ownb::rec;
+    let Some(mut t) = twin(573) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x7b70);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, x) in [
+        (15u32, 0.5f64),
+        (16, 0.75),
+        (17, 1.5),
+        (277, 2.0),
+        (333, -0.75),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 1.75);
+        0x601
+    });
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + 3.0);
+        }
+        0x290
+    });
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 - 2.0);
+        }
+        0x210
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 211, 2, |_, a| 0x0211_0000 ^ a[1]);
+    let obj = SCRATCH + 0x8000;
+    let (s, a) = (SCRATCH + 0x2000, SCRATCH + 0x2400);
+    let (old, prev) = (SCRATCH + 0x800, SCRATCH + 0x900);
+    for (k, (empty, flag)) in (0u32..).zip([(true, 0u16), (false, 1), (true, 0x8001), (false, 0)]) {
+        junk(&mut t, obj, 0x300, k);
+        junk(&mut t, s, 0x100, k + 1);
+        t.set_u32(s + 0x54, 0x00c0_0054 + k);
+        t.set_u32(s + 0x50, 0x00c0_0050 + k);
+        t.set_u16(s + 0x90, flag);
+        t.set_u32(a + 0x54, 0x00a0_0054 + k);
+        t.write(old, &[0x6c; 0x40]);
+        t.write(prev, &[0x7d; 0x40]);
+        t.set_u32(w(&t, 0x35), old);
+        t.set_u32(w(&t, 0x50), 0x8000_0007);
+        let list = w(&t, 0x6a);
+        t.write(list, &[0x4e; 0x20]);
+        t.set_u32(w(&t, 0x76), if empty { list } else { prev });
+        t.set_u16(w(&t, 0x9c), 0x0305);
+        ownb::dirty_stack(&mut t, 0x7b70 + k, &[]);
+        let c = Call {
+            ecx: obj,
+            edx: s,
+            ..Call::default()
+        };
+        t.check(f, c, &[a, 0x0b0b_0000 + k], Eax::Checked, |g, img, fr| {
+            Ret::eax(r23::summon_setup_0573(g, img, fr))
+        });
+    }
+}

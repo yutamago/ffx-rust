@@ -3635,6 +3635,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r23 parts step 0519", &r23::PARTS_STEP_0519),
     ("r23 place 0612", &r23::PLACE_0612),
     ("r23 start-up 0612", &r23::START_UP_0612),
+    ("r23 summon set-up 0603", &r23::SUMMON_SETUP_0603),
+    ("r23 summon set-up 0573", &r23::SUMMON_SETUP_0573),
     // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
