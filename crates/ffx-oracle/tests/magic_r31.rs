@@ -614,12 +614,17 @@ struct Visit {
 fn visit_0577() {
     let Some(mut t) = twin(577) else { return };
     all_stubs(&mut t);
+    // the vectors' words folded into a word per slot (the stubs' answers
+    // alone do not reach memory)
     for (s, n) in [(353u32, 1usize), (332, 1), (669, 1), (267, 1), (271, 1)] {
         rec(&mut t, s, n, move |m, a| {
             let mut x = (s << 16) ^ a[0];
             for i in 0..4 {
                 x = x.rotate_left(3) ^ m.r32(a[0] + 4 * i);
             }
+            let at = SCRATCH + 0xb00 + 4 * (s % 0x40);
+            let y = m.r32(at).rotate_left(5) ^ x;
+            m.w32(at, y);
             x
         });
     }
@@ -652,6 +657,9 @@ fn visit_0577() {
         v(false, 0, 5, 0.25, 0.5, 0.5, 0.0, 0.0, 0.0),
         v(false, 0, 4, 0.25, 0.5, 2.0, 0.0, 0.0, 0.0),
         v(false, 0, 0, 0.25, f32::NAN, 2.0, 0.0, 0.0, 0.0),
+        // the top equal to the highest axis (bit 1) and to the lowest
+        v(false, 0, 2, 0.25, 0.5, 2.0, 100.0, 0.0, 0.0),
+        v(false, 0, 0, 0.25, 0.5, 2.0, -100.0, 0.0, 0.0),
     ];
     let list = SCRATCH + 0x3600;
     for (k, p) in (0u32..).zip(cases) {
@@ -664,11 +672,17 @@ fn visit_0577() {
             for (i, n) in [3i32, -2, 5, 7].into_iter().enumerate() {
                 t.set_u32(node + 0xbc + 4 * i as u32, (n + k as i32).cast_unsigned());
             }
+            // 100 / -100: the top on the third / first axis exactly
+            let top = match p.top {
+                100.0 => f32::from_bits(t.u32(node + 0x24)),
+                -100.0 => f32::from_bits(t.u32(node + 0x1c)),
+                x => x,
+            };
             for (o, x) in [
                 (0xccu32, p.rate),
                 (0xd0, p.fade),
                 (0xd4, p.end),
-                (0xd8, p.top),
+                (0xd8, top),
                 (0xdc, p.scale),
                 (0xe0, p.step),
             ] {
@@ -741,7 +755,7 @@ fn light_visit_0577() {
     t.set_u32(sines, table);
     let (c, node) = (SCRATCH + 0x3000, SCRATCH + 0x5000);
     let parts = [SCRATCH + 0x3400, SCRATCH + 0x3480];
-    let cases: [LightCase; 9] = [
+    let cases: [LightCase; 10] = [
         (true, 0, 0, 0, 0.0, 0, 0, 0, 1.0, 0),
         (false, 1, 2, 0, 0.0, 0, 0, 0, 1.0, 9),
         (false, 0, 1, 1, 0.5, 1, 1, 1, 1.0, 8),
@@ -751,6 +765,7 @@ fn light_visit_0577() {
         (false, 0, 0, 1, 0.75, 0, 0, 1, -1.0, 9),
         (false, 0, 1, 3, 0.0, 0, 2, 0, 1.0, 1),
         (false, 0, 0, 0, 0.0, 0, 0, 1, f32::NAN, 9),
+        (false, 0, 0, 0, 0.0, 0, 0, 1, 0.0, 9),
     ];
     for (k, (marked, children, nparts, place, time, coff, hw, spin, sign, flags)) in
         (0u32..).zip(cases)
@@ -842,7 +857,7 @@ fn motion_task_0577() {
     );
     let (pts, body, node) = (SCRATCH + 0x3400, SCRATCH + 0x3500, SCRATCH + 0x3600);
     // (state, timer, slot 411's answer, the model's flag, shake, step)
-    let cases: [(u32, i32, u32, u8, i32, i32); 30] = [
+    let cases: [(u32, i32, u32, u8, i32, i32); 31] = [
         (0, 5, 0, 0, 0, 0),
         (1, 3, 0, 0, 0, 0),
         (1, 0, 0, 0, 0, 0),
@@ -861,6 +876,7 @@ fn motion_task_0577() {
         (12, 2, 0, 0, 0x100, 0x40),
         (12, 0, 0, 0, 0x100, -0x200),
         (12, 0, 0, 0, -0x300, 0x80),
+        (12, 0, 0, 0, 0x100, 0x40),
         (13, 3, 0, 0, 0x50, 0x28),
         (13, 0, 0, 0, 0x50, -0x30),
         (14, 0, 0, 0, 0, 0),
@@ -907,5 +923,204 @@ fn motion_task_0577() {
         t.set_u32(SCRATCH + 0xa10, answer);
         ownb::dirty_stack(&mut t, 0xac90 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// The vector slots of `magic_0512`'s visits as float stubs: 232
+/// `out = in / 2`, 233 `out = in s`, 234 `out = a - b`, 266 `out = a x b`
+/// (cross), 230 `out = m[0..4] + v`.
+fn vector_stubs(t: &mut Twin) {
+    rec(t, 232, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    rec(t, 233, 3, |m, a| {
+        let s = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * s;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    rec(t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x234
+    });
+    rec(t, 266, 3, |m, a| {
+        let u = [0, 1, 2].map(|i| rf(m, a[1] + 4 * i));
+        let v = [0, 1, 2].map(|i| rf(m, a[2] + 4 * i));
+        let c = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        for (i, x) in (0u32..).zip(c) {
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x266
+    });
+    rec(t, 230, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[0] + 4 * i) + rf(m, a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x230
+    });
+}
+
+/// `magic_0512` 0x100037a0 (`r31::aim_visit_0512`) directly and through
+/// its thunk 0x10003b50: marked; children; the flat part on and off; the
+/// blend `t` 0, between and 1.
+#[test]
+fn aim_visit_0512() {
+    let Some(mut t) = twin(512) else { return };
+    all_stubs(&mut t);
+    vector_stubs(&mut t);
+    rec(&mut t, 325, 2, |_, a| {
+        0x0325_0000 ^ a[0] ^ a[1].rotate_left(5)
+    });
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let f = t.at(0x37a0);
+    let (c, node) = (SCRATCH + 0x3000, SCRATCH + 0x5000);
+    let parts = [SCRATCH + 0x5400, SCRATCH + 0x5480, SCRATCH + 0x5500];
+    // (marked, children, flat, t)
+    let cases: [(bool, usize, u32, f32); 6] = [
+        (true, 0, 0, 0.5),
+        (false, 2, 0, 0.5),
+        (false, 0, 1, 0.25),
+        (false, 1, 1, 0.0),
+        (false, 0, 0, 1.0),
+        (false, 0, 7, 0.75),
+    ];
+    for (k, (marked, children, flat, tw)) in (0u32..).zip(cases) {
+        for thunk in [false, true] {
+            t.write(node, &[0x44; 0x160]);
+            floats(&mut t, node + 0x1c, 0x48, 0.5 - k as f32);
+            for (i, &p) in (0u32..).zip(&parts) {
+                t.write(p, &[0x11; 0x40]);
+                t.set_u32(p, class);
+                for j in 0..4u32 {
+                    let x = 1.5 * j as f32 - (k + i) as f32 + 0.25 * (i * j) as f32;
+                    t.set_u32(p + 0x1c + 4 * j, x.to_bits());
+                }
+            }
+            t.set_u32(node + 0x13c, parts[0]);
+            t.set_u32(node + 0x154, parts[1]);
+            t.set_u32(node + 0x140, parts[2]);
+            t.set_u32(node + 0x150, flat);
+            t.set_u32(node + 0x14c, tw.to_bits());
+            t.set_u32(node + 0x138, (2.0f32 - k as f32).to_bits());
+            visit_cursor(&mut t, k, (c, node, class), children, marked);
+            ownb::dirty_stack(&mut t, 0x37a0 + k, &[]);
+            if thunk {
+                t.check_entry(t.at(0x3b50), Call::default(), &[c], Eax::Checked);
+            } else {
+                t.check(f, Call::this(c), &[], Eax::Checked, |g, img, fr| {
+                    ffx_magic::r31::aim_visit_0512(g, img, fr)
+                });
+            }
+        }
+    }
+}
+
+/// `magic_0512` 0x10006aa0 (`r31::matrix_product_0512`): the product
+/// into another block and into its own source, a NaN and infinities in
+/// the source.
+#[test]
+fn matrix_product_0512() {
+    let Some(mut t) = twin(512) else { return };
+    let f = t.at(0x6aa0);
+    let m = t.img.word(f + 0x2b);
+    let (a, out) = (SCRATCH + 0x100, SCRATCH + 0x200);
+    for k in 0..4u32 {
+        for i in 0..16u32 {
+            let x = 0.375 * (i as f32) - 2.0 + 0.125 * k as f32;
+            t.set_u32(m + 4 * i, x.to_bits());
+            let y = 1.25 - 0.5 * ((i * 7 + k) % 9) as f32;
+            t.set_u32(a + 4 * i, y.to_bits());
+        }
+        if k == 2 {
+            t.set_u32(a + 4 * 5, f32::NAN.to_bits());
+            t.set_u32(a + 4 * 15, f32::INFINITY.to_bits());
+            t.set_u32(m + 4 * 15, f32::NEG_INFINITY.to_bits());
+        }
+        t.write(out, &[0x5a; 0x40]);
+        let dst = if k == 3 { a } else { out };
+        t.check(f, Call::this(dst), &[a], Eax::Checked, |g, img, fr| {
+            ffx_magic::r31::matrix_product_0512(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0512` 0x10009150 (`r31::object_setup_0512`): `b` 0 and 1; the
+/// model's flag set (slot 333) and not (slot 601); the sizes below 10,
+/// between and above 18; the parent's child list empty and not.
+#[test]
+fn object_setup_0512() {
+    let Some(mut t) = twin(512) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x9150);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(m, a[2] + 4 * i, 0.5 * i as f32 + (a[0] & 7) as f32);
+        }
+        0x268
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    for s in [12u32, 333, 251] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.5);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    // slot 251: the size from a counter (5, 12, 25, ...)
+    t.stub_st0(251, |m, _| {
+        let k = m.r32(SCRATCH + 0xa00);
+        m.w32(SCRATCH + 0xa00, k + 1);
+        [5.0, 12.0, 25.0, 18.0, 10.0][(k % 5) as usize]
+    });
+    let (obj, x, a) = (SCRATCH + 0x6000, SCRATCH + 0x7000, SCRATCH + 0x7200);
+    let parent = w(&t, 0x5c);
+    let tail = w(&t, 0x24);
+    // (b, the model's flag, the parent's list empty)
+    let cases: [(u32, u8, bool); 4] = [(0, 0, true), (1, 1, false), (0, 1, false), (1, 0, true)];
+    for (k, (b, flag, empty)) in (0u32..).zip(cases) {
+        junk(&mut t, obj, 0x400, k);
+        junk(&mut t, x, 0x100, k + 1);
+        junk(&mut t, a, 0x100, k + 2);
+        t.set_u32(x + 0x50, 0x0050_0000 + k);
+        t.set_u32(x + 0x54, 0x0054_0003 + k);
+        t.set_u8(a + 0x90, flag);
+        t.set_u32(a + 0x50, 0x0a50_0005 + k);
+        t.set_u32(a + 0x54, 0x0a54_0006 + k);
+        junk(&mut t, SCRATCH + 0x7400, 0x20, k);
+        t.set_u32(tail, SCRATCH + 0x7400);
+        t.set_u32(w(&t, 0x42), 0xffff_0003 + k);
+        // the parent: empty, or with one child
+        let kid = SCRATCH + 0x7500;
+        junk(&mut t, kid, 0x20, k + 3);
+        t.set_u32(parent + 0x10, if empty { parent } else { kid });
+        t.set_u32(parent + 0xc, if empty { parent } else { kid });
+        t.set_u16(parent + 0x18, 2 + k as u16);
+        t.set_u32(SCRATCH + 0xa00, k);
+        ownb::dirty_stack(&mut t, 0x9150 + k, &[]);
+        let c = Call {
+            ecx: obj,
+            edx: x,
+            ..Call::default()
+        };
+        t.check(f, c, &[a, b], Eax::Checked, |g, img, fr| {
+            ffx_magic::r31::object_setup_0512(g, img, fr)
+        });
     }
 }
