@@ -2471,7 +2471,7 @@ pub const SUMMON_TASK_0603: Sig = Sig {
 /// from` to `f + to`, read as the instructions hold them: `c7 05 [G]
 /// imm32`, `66 c7 05 [G] imm16` and `c6 05 [G] imm8`. Stops at any other
 /// instruction (the callers pass whole runs).
-fn abs_stores<G: Game>(g: &mut G, img: &Image, f: u32, from: u32, to: u32) {
+pub(crate) fn abs_stores<G: Game>(g: &mut G, img: &Image, f: u32, from: u32, to: u32) {
     let byte = |at: u32| img.word(at) & 0xff;
     let mut at = f + from;
     while at < f + to {
