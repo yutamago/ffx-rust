@@ -3034,6 +3034,7 @@ ports! {
     "r27 summon models 0511" => r27::SUMMON_MODELS_0511, r27::summon_models_0589;
     "r27 fade task 0578" => r27::FADE_TASK_0578, r27::fade_task_0578;
     "r27 summon task 0578" => r27::SUMMON_TASK_0578, r27::summon_task_0578;
+    "r27 light task 0578" => r27::LIGHT_TASK_0578, r27::light_task_0578;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
@@ -3716,6 +3717,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r27 caster frames 0586", &r27::CASTER_FRAMES_0586),
     ("r27 start-up 0586", &r27::START_UP_0586),
     ("r27 trail parts 0587", &r27::TRAIL_PARTS_0587),
+    ("r27 fade set-up 0578", &r27::FADE_SETUP_0578),
     // round 27 (magic-r27): end of INTERNAL
     // round 25 (magic-r25)
     ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
