@@ -799,7 +799,14 @@ fn records_task_0165() {
         t.stub_edx(772, |_, a| 0x0773_0000 ^ a[1]);
         filler(&mut t, 723, 1, 16);
         filler(&mut t, 724, 1, 16);
-        filler(&mut t, 231, 3, 16);
+        // slot 231 reads both matrices (the drawn model's `N` among them)
+        rec(&mut t, 231, 3, |m, a| {
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * (15 - i));
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x231
+        });
         rec(&mut t, 867, 17, |_, a| 0x0867_0000 ^ a[16] ^ (a[4] << 8));
         rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
         let s = SCRATCH + 0x1_0000;
@@ -847,7 +854,7 @@ fn records_task_0165() {
                 t.set_u32(r + 0xa8, [0u32, 0, 2][(v % 3) as usize]);
                 t.set_u32(r + 0xac, [0u32, 0, 0, 1, 0, 3][(v % 6) as usize]);
                 t.set_u32(r + 0xb0, [16u32, 30, 64][(v % 3) as usize]);
-                t.set_u32(r + 0xb4, [0u32, 5, 11, 40, 51, 60][(v % 6) as usize]);
+                t.set_u32(r + 0xb4, [0u32, 5, 61, 40, 51, 60][(v % 6) as usize]);
                 t.set_u32(r + 0xb8, 0x40 + v);
                 t.set_u32(r + 0xbc, (v * 3).wrapping_sub(20));
                 t.set_u32(r + 0xc0, v % 4);
@@ -894,6 +901,7 @@ fn effect_task_0512() {
     );
     for (state, wait, two, flags, d) in [
         (0u32, 0u32, 0u32, 0u8, 0.0f32),
+        (0, 0, 1, 0, 0.0),
         (1, 3, 0, 0, 0.0),
         (1, 0, 0, 0, 0.0),
         (1, 0xffff_ffff, 1, 0, 0.5),
@@ -1022,9 +1030,9 @@ fn summon_task_0512() {
     let (prev, next) = (SCRATCH + 0x240, SCRATCH + 0x280);
     // (state, the wait, the end flags `R + 0xc50`, the direct way)
     let cases: [(u32, i32, u32, u32); 16] = [
-        (0, 0, 0, 0),
-        (0, 0, 0, 1),
-        (10, 0, 0, 0),
+        (0, 0, 0x77, 0),
+        (0, 0, 0x77, 1),
+        (10, 0, 0x77, 0),
         (11, 3, 0, 0),
         (11, 0, 0, 0),
         (11, -2, 0, 1),

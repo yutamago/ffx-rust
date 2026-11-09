@@ -458,8 +458,11 @@ fn spin_actors_0605() {
         junk(&mut t, SCRATCH + 0x9800, 0x10, k);
         t.set_u32(last_w, SCRATCH + 0x9800);
         t.set_u32(ga, battle);
-        t.set_u32(gb, caster);
+        // `gself` may be the caster word itself (show_others' operand
+        // `+0x14`): set it first, so the caster stays and actors below 0x20
+        // reach slots 217/255
         t.set_u32(gself, 0x05e1_f000 + k);
+        t.set_u32(gb, caster);
         t.set_u16(gc, cflag);
         t.set_u32(gd, 0x0dd0_0000 + k);
         t.set_u32(ge, 0x0bad_0000 + k);
