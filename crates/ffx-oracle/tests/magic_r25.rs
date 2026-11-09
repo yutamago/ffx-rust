@@ -2232,9 +2232,8 @@ fn load_0587() {
     let pi = t.img.rel32_target(su + 0x6a);
     t.set_u32(w(&t, pi, 0x04), lock);
     let take = t.img.rel32_target(su + 0xfb);
-    let s = SCRATCH + 0x1_0000;
     // (225, once, 227, task list, yaw source, actor index, flag)
-    let cases: [(u32, u32, u32, bool, f32, u32, u32); 7] = [
+    let cases: [(u32, u32, u32, bool, f32, u32, u32); 8] = [
         (1, 0, 1, false, 0.0, 0, 0),
         (0, 0, 0, false, 0.0, 0, 0),
         (0, 0, 1, false, -10.0, 3, 0),
@@ -2242,6 +2241,7 @@ fn load_0587() {
         (0, 0, 1, true, 0.5, 2, 1),
         (0, 0, 1, false, f32::NAN, 5, 0),
         (0, 0, 1, true, 3.0, 0x40, 1),
+        (0, 0, 1, false, 1.0, 0x20, 0),
     ];
     for (k, (w225, once, r227, busy, yaw, idx, flag)) in (0u32..).zip(cases) {
         t.set_u32(SCRATCH + 0x10, w225);
@@ -2249,8 +2249,9 @@ fn load_0587() {
         t.set_u32(SCRATCH + 0x24, yaw.to_bits());
         t.set_u32(w(&t, f, 0x18), once);
         t.set_u32(lock, 0x77 + k);
-        junk(&mut t, s, 0x3200, k);
-        t.set_u32(w(&t, su, 0x52), s);
+        // the state block the start-up names (its store run): junk first
+        let sb = w(&t, su, 0x56);
+        junk(&mut t, sb, 0x3200, k);
         t.set_u32(w(&t, pl, 0x18e), idx);
         t.set_u32(w(&t, pl, 0x19f), flag);
         junk_ops(&mut t, su, &[0x2a, 0x60, 0x8e, 0xb2]);
