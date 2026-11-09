@@ -1614,3 +1614,159 @@ pub const LOAD_0568: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0568))],
     imports: &[],
 };
+
+/// `magic_0519`'s camera tracks (0x10002320, 644 bytes; internal, `ecx`
+/// = the script record `R`): [`camera_tracks`](crate::s6_misc::camera_tracks)
+/// with the record in `ecx` and its frame count at `R + 0x28` (`d = R +
+/// 0x28 - (i16) *G_T`, `K1` the constant at `+0x04`), the stores in
+/// another order. Track 1: `R[0]`, the rate `K1 / (d / R[4])`, 0, `d`,
+/// `R[4]`, kind 3 (without `R + 0x10`) or `R[0]`, `R + 0x10`, `K1 / d`,
+/// `d`, 0, `R[4]`, kind 4; track 2 likewise from `R[8]`, `R[0xc]`; track
+/// 3 from `R + 0x14` by `(R + 0x18 - R + 0x14) / d`, 0, kind 1, or the
+/// record `R + 0x14`, `R + 0x10`, 0, `K1 / d`, kinds 2 and 3 and `2d`.
+/// Then the angle track from `a = R + 0x1c` to `b = R + 0x20` (the end
+/// the short way round), `d` twice and on. Returns `d`.
+#[allow(clippy::too_many_lines)] // the original's tracks, word by word
+pub fn camera_tracks_0519<G: Game>(g: &mut G, img: &Image, f: u32, r: u32) -> u32 {
+    use crate::sb_sse::{add, div};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let one = k(g, 0x4);
+    let base = i32::from(g.read::<i16>(w(0xc)));
+    let rd = |g: &G, o: u32| g.read::<u32>(r.wrapping_add(o));
+    let left = |g: &G| rd(g, 0x28).wrapping_sub(base.cast_unsigned());
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let fl = |x: u32| x.cast_signed() as f32;
+    let set = |g: &mut G, o: u32, v: u32| g.write::<u32>(w(o), v);
+    let flag = rd(g, 0x10);
+    let r0 = rd(g, 0);
+    let eax = if flag == 0 {
+        let d = left(g);
+        let n = rd(g, 4);
+        set(g, 0x3b, r0);
+        let rate = div(one, div(fl(d), fl(n)));
+        set(g, 0x4c, n);
+        g.write::<f32>(w(0x54), rate);
+        set(g, 0x5a, 0);
+        set(g, 0x64, d);
+        set(g, 0x6a, 3);
+        let d = left(g);
+        let c = rd(g, 0xc);
+        let x = div(fl(d), fl(c));
+        set(g, 0x90, rd(g, 8));
+        set(g, 0x9a, 0);
+        g.write::<f32>(w(0xa6), div(one, x));
+        set(g, 0xac, d);
+        set(g, 0xb2, c);
+        set(g, 0xb8, 3);
+        let a = g.read::<f32>(r.wrapping_add(0x14));
+        let d = left(g);
+        let b = g.read::<f32>(r.wrapping_add(0x18));
+        g.write::<f32>(w(0xd7), a);
+        set(g, 0xe4, 0);
+        set(g, 0xf2, 1);
+        g.write::<f32>(w(0xfe), div(sub(b, a), fl(d)));
+        d
+    } else {
+        let d = left(g);
+        let n = rd(g, 4);
+        set(g, 0x11e, r0);
+        g.write::<f32>(w(0x126), div(one, fl(d)));
+        set(g, 0x12c, flag);
+        set(g, 0x132, d);
+        set(g, 0x138, 0);
+        set(g, 0x142, n);
+        set(g, 0x148, 4);
+        let d = left(g);
+        let (c, fl10, e8) = (rd(g, 0xc), rd(g, 0x10), rd(g, 8));
+        set(g, 0x16d, e8);
+        set(g, 0x173, c);
+        set(g, 0x179, fl10);
+        set(g, 0x17f, 0);
+        g.write::<f32>(w(0x18b), div(one, fl(d)));
+        set(g, 0x191, d);
+        set(g, 0x197, 4);
+        let d = left(g);
+        let fl10 = rd(g, 0x10);
+        set(g, 0x1b6, r.wrapping_add(0x14));
+        set(g, 0x1bc, fl10);
+        set(g, 0x1c2, 0);
+        g.write::<f32>(w(0x1ce), div(one, fl(d)));
+        set(g, 0x1d7, 2);
+        set(g, 0x1e1, 3);
+        d.wrapping_mul(2)
+    };
+    set(g, 0x1ea, eax);
+    let (a, b) = (
+        g.read::<f32>(r.wrapping_add(0x1c)),
+        g.read::<f32>(r.wrapping_add(0x20)),
+    );
+    let d = left(g);
+    // comiss: each test false when unordered
+    let end = if 0.0 > a {
+        let kk = k(g, 0x211);
+        if b > 0.0 && sub(b, a) > kk {
+            sub(k(g, 0x225), sub(kk, b))
+        } else {
+            b
+        }
+    } else {
+        let kk = k(g, 0x23c);
+        if 0.0 > b && sub(a, b) > kk {
+            add(add(b, kk), kk)
+        } else {
+            b
+        }
+    };
+    g.write::<f32>(w(0x25b), end);
+    g.write::<f32>(w(0x263), a);
+    g.write::<f32>(w(0x26b), b);
+    set(g, 0x270, d);
+    set(g, 0x275, d);
+    set(g, 0x27b, 1);
+    d
+}
+
+/// [`camera_tracks_0519`] (644 bytes, 1 overlay).
+pub const CAMERA_TRACKS_0519: Sig = Sig {
+    len: 644,
+    hash: 0xb1b0_e40d_6d39_d463,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0519`'s camera step (0x100025b0, 69 bytes; internal, no
+/// arguments): the u16 frame `*G_T` steps on; with a record `R = *G_R`,
+/// the count `G_N` steps, and at the record's last frame (`R + 0x24` =
+/// the old frame) the record count `G_C` steps, `*G_R = R + 0x2c`, `G_N`
+/// 0 and the next record's tracks start ([`camera_tracks_0519`], a tail
+/// jump). Returns that `d`, else `eax` with its low half the old frame.
+pub fn camera_step_0519<G: Game>(g: &mut G, img: &Image, f: u32, eax: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = g.read::<u16>(w(0x2));
+    let r = g.read::<u32>(w(0x8));
+    g.write::<u16>(w(0x13), t.wrapping_add(1));
+    let eax = (eax & !0xffff) | u32::from(t.wrapping_add(1));
+    if r == 0 {
+        return eax;
+    }
+    let n = g.read::<u32>(w(0x1d)).wrapping_add(1);
+    g.write::<u32>(w(0x1d), n);
+    if i32::from(t.cast_signed()).cast_unsigned() != g.read::<u32>(r + 0x24) {
+        return eax;
+    }
+    let c = g.read::<u32>(w(0x28)).wrapping_add(1);
+    g.write::<u32>(w(0x28), c);
+    let next = r + 0x2c;
+    g.write::<u32>(w(0x31), next);
+    g.write::<u32>(w(0x37), 0);
+    camera_tracks_0519(g, img, img.rel32_target(f + 0x40), next)
+}
+
+/// [`camera_step_0519`] (69 bytes, 1 overlay).
+pub const CAMERA_STEP_0519: Sig = Sig {
+    len: 69,
+    hash: 0x1071_4f60_b028_2ab9,
+    calls: &[(0x40, Callee::Sig(&CAMERA_TRACKS_0519))],
+    imports: &[],
+};

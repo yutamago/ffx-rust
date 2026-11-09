@@ -3626,6 +3626,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r23 effect end 0600", &r23::EFFECT_END_0600),
     ("r23 place 0568", &r23::PLACE_0568),
     ("r23 start-up 0568", &r23::START_UP_0568),
+    ("r23 camera tracks 0519", &r23::CAMERA_TRACKS_0519),
+    ("r23 camera step 0519", &r23::CAMERA_STEP_0519),
     // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

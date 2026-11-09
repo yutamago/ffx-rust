@@ -706,6 +706,8 @@ fn visit_draw_0514() {
         t.set_u32(o + 0x68, blk);
         t.set_u32(o + 0x78, 0x00a0_0078 + k);
         t.set_u32(o + 0x7c, 0x00a0_007c + k);
+        // (after the word below it)
+        t.set_u8(o + 0x7f, draw);
         if has_parent {
             junk(&mut t, parent, 0x40, k + 3);
             junk(&mut t, sib, 0x40, k + 4);
@@ -725,7 +727,7 @@ fn visit_draw_0514() {
         };
         t.check_entry(f, c, &[cursor], Eax::Checked);
     }
-    assert!(t.u32(ownb::LOG) >= 0x40, "the draws");
+    assert!(t.u32(ownb::LOG) > 0x100, "the draws");
 }
 
 /// The placement's globals in `magic_0600` (operands of 0x10006870), as
@@ -1130,4 +1132,89 @@ fn load_0568() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
     assert!(t.u32(ownb::LOG) > 0x200, "the start-ups' calls");
+}
+
+/// A camera script record at `r` (0x2c bytes): the four words, the flag
+/// `+0x10`, the floats `+0x14..+0x20`, the end frame `+0x24` and the frame
+/// count `+0x28`.
+fn track_record_0519(t: &mut Twin, r: u32, flag: u32, (a, b): (f32, f32), k: u32) {
+    for (i, v) in (0u32..).zip([0x10u32 + k, 7, 0x20 + k, 3]) {
+        t.set_u32(r + 4 * i, v);
+    }
+    t.set_u32(r + 0x10, flag);
+    t.set_u32(r + 0x14, (1.5 + k as f32).to_bits());
+    t.set_u32(r + 0x18, (-2.25 * k as f32).to_bits());
+    t.set_u32(r + 0x1c, a.to_bits());
+    t.set_u32(r + 0x20, b.to_bits());
+    t.set_u32(r + 0x24, 5 + k);
+    t.set_u32(r + 0x28, 40 + 3 * k);
+}
+
+/// `magic_0519` 0x10002320 (`r23::camera_tracks_0519`): with and without
+/// `R + 0x10`; the angle ends taken the short way round both ways, and
+/// kept (near, equal, unordered).
+#[test]
+fn camera_tracks_0519() {
+    let Some(mut t) = twin(519) else { return };
+    let f = t.at(0x2320);
+    let kk = kf(&t, f, 0x211);
+    let r = SCRATCH + 0x1000;
+    let ends: [(f32, f32); 7] = [
+        (-1.0, kk),
+        (-0.5, 0.25),
+        (1.0, -kk),
+        (0.25, -0.5),
+        (0.0, 0.0),
+        (f32::NAN, 1.0),
+        (1.0, f32::NAN),
+    ];
+    for (k, ab) in (0u32..).zip(ends) {
+        for flag in [0u32, 0x99] {
+            track_record_0519(&mut t, r, flag, ab, k);
+            t.set_u16(t.img.word(f + 0xc), (k as u16).wrapping_sub(3));
+            let c = Call {
+                ecx: r,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(r23::camera_tracks_0519(g, img, fr.at, fr.ecx))
+            });
+        }
+    }
+}
+
+/// `magic_0519` 0x100025b0 (`r23::camera_step_0519`): no record, a
+/// record not at its end, and at its end (the next record's tracks).
+#[test]
+fn camera_step_0519() {
+    let Some(mut t) = twin(519) else { return };
+    let f = t.at(0x25b0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let r = SCRATCH + 0x1000;
+    for (k, (has, at_end)) in
+        (0u32..).zip([(false, false), (true, false), (true, true), (true, true)])
+    {
+        track_record_0519(&mut t, r, 0, (0.5, 1.0), k);
+        track_record_0519(&mut t, r + 0x2c, k & 1, (-1.0, 3.0), k + 1);
+        let frame = 0x7ffe + k as u16;
+        t.set_u16(w(&t, 0x2), frame);
+        t.set_u32(
+            r + 0x24,
+            if at_end {
+                i32::from(frame as i16) as u32
+            } else {
+                9
+            },
+        );
+        t.set_u32(w(&t, 0x8), if has { r } else { 0 });
+        t.set_u32(w(&t, 0x1d), 0x40 + k);
+        t.set_u32(w(&t, 0x28), 0x50 + k);
+        let c = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r23::camera_step_0519(g, img, fr.at, fr.eax))
+        });
+    }
 }
