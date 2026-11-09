@@ -1062,3 +1062,449 @@ pub const MODELS_AROUND_0605: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0609`'s two-part visit (0x10001000, 856 bytes; `ecx` = the
+/// cursor `C`, reached by its 12-byte thunk 0x10001370; a /GS frame, the
+/// part cursor `L` at `ebp - 0x50`):
+/// [`two_part_visit`](crate::o6_fam_pairs5::two_part_visit)'s steps, with
+/// the light block of `magic_0609`. Unless the node `N = *C` is marked
+/// already (`N + 0x1a` = `C + 5`: `C + 4` cleared), the children are
+/// visited, `N` marked and both parts `N + 0x6c`, `N + 0x70` visited
+/// through `L`. When bit 0 of `N + 0x68` is set and `N + 0x28` is above
+/// `K`: slot 231 `(ebp - 0x44, M, N[0x70] + 0x9c)`, slot 245 `(ebp -
+/// 0x4c)`, slot 563 `(*G_C, 0, 0, 0)` with `*G_C` then 8 further on, slot
+/// 821 `(0)`, 822 with `N + 0x1c..0x28` times `K2`, 823 `(1 / N + 0x5c, 1 /
+/// N + 0x5c)`, 824 `(A + 0x1c, A + 0x20, A + 0x24, 1.0)` (`A = N[0x6c]`).
+/// Then the moves of `N + 0x1c..` and `N + 0x5c` as the family's.
+///
+/// Returns `eax` as the original leaves it: the last call's or the last
+/// word copied; when marked only its low byte is known (the /GS cookie's
+/// bits above).
+#[allow(clippy::too_many_lines)] // the original's branches, one by one
+pub fn two_part_visit_0609<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let c = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let node = g.read::<u32>(c);
+    let mark = g.read::<u8>(node.wrapping_add(0x1a));
+    if mark == g.read::<u8>(c.wrapping_add(5)) {
+        g.write::<u8>(c.wrapping_add(4), 0);
+        return Ret::eax(u32::from(mark));
+    }
+    let mut eax = 0;
+    let mut child = g.read::<u32>(node.wrapping_add(0x10));
+    if child != node {
+        loop {
+            g.write::<u32>(c, child);
+            let cur = g.read::<u32>(c);
+            child = g.read::<u32>(child.wrapping_add(8));
+            let visit = g.read::<u32>(g.read::<u32>(cur).wrapping_add(0x1c));
+            // call width: 1
+            g.call(visit, c, &[c]);
+            if child == node {
+                break;
+            }
+        }
+    }
+    let byte5 = g.read::<u8>(c.wrapping_add(5));
+    g.write::<u32>(c, node);
+    g.write::<u8>(node.wrapping_add(0x1a), byte5);
+    g.write::<u8>(c.wrapping_add(4), 1);
+    // test byte [esi + 4], 1: just set
+    let s = g.read::<u32>(c);
+    let l = ebp.wrapping_sub(0x50);
+    let mut words = Pushes::default();
+    for part in [0x6cu32, 0x70] {
+        let byte5 = g.read::<u8>(c.wrapping_add(5));
+        let p = g.read::<u32>(s.wrapping_add(part));
+        g.write::<u32>(l, p);
+        g.write::<u8>(l.wrapping_add(5), byte5);
+        let visit = g.read::<u32>(g.read::<u32>(p).wrapping_add(0x1c));
+        words.push(l);
+        // call width: 12 (Pushes caps the words at 12)
+        eax = words.call(g, visit, l).eax;
+    }
+    let f32_at = |g: &G, o: u32| g.read::<f32>(s.wrapping_add(o));
+    let mut one = k(g, 0x92);
+    if g.read::<u8>(s.wrapping_add(0x68)) & 1 != 0 && f32_at(g, 0x28) > k(g, 0xab) {
+        let b = g.read::<u32>(s.wrapping_add(0x70)).wrapping_add(0x9c);
+        let mut st = Pushes::default();
+        st.push_all(&[b, w(0xc2), ebp.wrapping_sub(0x44)]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xc8, 231), 0);
+        st.push(ebp.wrapping_sub(0x4c));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xd9, 245), 0);
+        let cur = g.read::<u32>(w(0xe7));
+        let next = cur.wrapping_add(8);
+        let speed = f32_at(g, 0x5c);
+        // (`(next - cur) >> 4`: 0)
+        st.push_all(&[0, 0, next.wrapping_sub(cur) >> 4, cur]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x100, 563), 0);
+        let inv = div(k(g, 0x116), speed);
+        g.write::<u32>(w(0x126), next);
+        st.push(0);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x120, 821), 0);
+        // add esp, 0x14: the four words of slot 245 and 231 rewritten
+        st.pop(5);
+        let k2 = k(g, 0x13d);
+        let scaled = |g: &G, o: u32| mul(f32_at(g, o), k2).to_bits();
+        st.pop(4);
+        st.push_all(&[
+            scaled(g, 0x28),
+            scaled(g, 0x24),
+            scaled(g, 0x20),
+            scaled(g, 0x1c),
+        ]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x147, 822), 0);
+        // add esp, 8: both words left written over with 1 / speed
+        st.pop(4);
+        st.push_all(&[inv.to_bits(), inv.to_bits()]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x192, 823), 0);
+        let a = g.read::<u32>(s.wrapping_add(0x6c));
+        // the two words rewritten, two more below them
+        st.pop(2);
+        st.push_all(&[
+            ONE,
+            g.read::<u32>(a.wrapping_add(0x24)),
+            g.read::<u32>(a.wrapping_add(0x20)),
+            g.read::<u32>(a.wrapping_add(0x1c)),
+        ]);
+        // call width: 12 (Pushes caps the words at 12)
+        eax = st.call(g, t(g, 0x1d5, 824), 0).eax;
+        one = k(g, 0x1ea);
+    }
+    if g.read::<u8>(s.wrapping_add(0x68)) & 2 != 0 {
+        let rate = |g: &G| f32_at(g, 0x4c);
+        for (x, to) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
+            let v = add(mul(sub(f32_at(g, to), f32_at(g, x)), rate(g)), f32_at(g, x));
+            g.write::<f32>(s.wrapping_add(x), v);
+        }
+        let v = add(
+            mul(sub(f32_at(g, 0x60), f32_at(g, 0x5c)), f32_at(g, 0x54)),
+            f32_at(g, 0x5c),
+        );
+        g.write::<f32>(s.wrapping_add(0x5c), v);
+        return Ret::eax(eax);
+    }
+    // comiss, jae: taken when not below (ordered); jb: below or unordered
+    let at_end = |x: f32| !(x < one || x.is_nan());
+    let copy = |g: &mut G, from: u32, to: u32| {
+        let v = g.read::<u32>(s.wrapping_add(from));
+        g.write::<u32>(s.wrapping_add(to), v);
+        v
+    };
+    let mut done = at_end(f32_at(g, 0x50));
+    if !done {
+        for (x, v) in [(0x1cu32, 0x3cu32), (0x20, 0x40), (0x24, 0x44), (0x28, 0x48)] {
+            let y = add(mul(f32_at(g, v), f32_at(g, 0x4c)), f32_at(g, x));
+            g.write::<f32>(s.wrapping_add(x), y);
+        }
+        let step = add(f32_at(g, 0x50), f32_at(g, 0x4c));
+        g.write::<f32>(s.wrapping_add(0x50), step);
+        done = at_end(step);
+    }
+    if done {
+        for (to, from) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
+            eax = copy(g, from, to);
+        }
+    }
+    let fade = f32_at(g, 0x58);
+    if !at_end(fade) {
+        let y = mul(f32_at(g, 0x64), f32_at(g, 0x54));
+        let fade = add(fade, f32_at(g, 0x54));
+        let y = add(y, f32_at(g, 0x5c));
+        g.write::<f32>(s.wrapping_add(0x58), fade);
+        g.write::<f32>(s.wrapping_add(0x5c), y);
+        if !at_end(f32_at(g, 0x50)) {
+            return Ret::eax(eax);
+        }
+    }
+    eax = copy(g, 0x60, 0x5c);
+    Ret::eax(eax)
+}
+
+/// [`two_part_visit_0609`] (the `rel32`s: `__security_check_cookie`
+/// twice).
+pub const TWO_PART_VISIT_0609: Sig = Sig {
+    len: 856,
+    hash: 0x0d16_9998_5ab2_a8fa,
+    calls: &[(0x281, Callee::Any), (0x350, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0563`'s eight sparks (0x10003310, 660 bytes; cdecl, no
+/// arguments; a /GS frame: the offset `V` at `ebp - 0x14`, the matrix `M`
+/// at `ebp - 0x64`, the turned offset `O` at `ebp - 0x24`, the count at
+/// `ebp - 0x6c`): [`sparks_thrown`](crate::s5_misc::sparks_thrown)'s kind.
+/// For each of eight, a record from the pool
+/// ([`pool_take`](crate::sb_misc::pool_take); none: returns 0): u16 `+0x38
+/// = 0xffff`, `+0x3a = 0x200`, `+0x30` the effect's `*(*G_A + 0x14)`,
+/// `+0x34 = 1`, the position `*G_S + 0x2b40..` moved by `(0, 0, frnd(80),
+/// 1)` turned by a unit matrix rotated by `frnd(pi)` about y (slots 235,
+/// 314, 329, 229) in `x` and `z` and by `frnd(40)` in `y`; the speeds
+/// `+0x10 = (frnd_p(0.01) + K) O.x`, `+0x14 = -frnd_p(5)`, `+0x18 =
+/// (frnd_p(0.01) + K) O.z` (slot 404), the turn `+0x1c = frnd(pi)`,
+/// `+0x20..+0x2c = (+0x10 K2, 0.1, +0x18 K2, 1)`, the size `+0x3c =
+/// (frnd(0.2) + K3) K4`, `+0x40 = 0.5`, `+0x4c`, `+0x50`, `+0x58` 0x40,
+/// `+0x5c`, `+0x60` 0, byte `+0x6b` 0. Each call sees the words the earlier
+/// ones of its spark left on the stack. Returns 8.
+pub fn sparks_eight_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x14));
+    let ebp = fr.esp.wrapping_sub(4);
+    let [v, m, out, count] = [0x14u32, 0x64, 0x24, 0x6c].map(|o| ebp.wrapping_sub(o));
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 0xc, ONE);
+    g.write::<u32>(count, 0);
+    let (pi, hundredth) = (0x4049_0fdb, 0x3c23_d70a);
+    let mut n = 0u32;
+    while n < 8 {
+        let p = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0x35));
+        if p == 0 {
+            return Ret::eax(0);
+        }
+        let e = g.read::<u32>(g.read::<u32>(w(0x45)).wrapping_add(0x14));
+        g.write::<u16>(p + 0x38, 0xffff);
+        g.write::<u32>(p + 0x30, e);
+        g.write::<u32>(p + 0x34, 1);
+        g.write::<u16>(p + 0x3a, 0x200);
+        for i in 0..4 {
+            let x = g.read::<u32>(s.wrapping_add(0x2b40 + 4 * i));
+            g.write::<u32>(p + 4 * i, x);
+        }
+        let mut st = Pushes::default();
+        st.push(m);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0x8e), 235), 0);
+        let rnd = |g: &mut G, st: &mut Pushes, table: u32, slot: u32, x: u32| {
+            st.set_top(x);
+            // call width: 12 (the most `Pushes::words` holds)
+            st0_f32(st.call(g, slot_target(g, w(table), slot), 0).st0)
+        };
+        let a = rnd(g, &mut st, 0x9b, 314, pi);
+        st.set_top(a.to_bits());
+        st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0xc1), 329), 0);
+        st.pop(2);
+        let z = rnd(g, &mut st, 0xce, 314, 0x42a0_0000);
+        g.write::<f32>(v + 8, z);
+        st.push_all(&[v, m, out]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(0xf4), 229), 0);
+        st.pop(3);
+        let o = |g: &G, d: u32| g.read::<f32>(out + d);
+        let pf = |g: &G, d: u32| g.read::<f32>(p + d);
+        g.write::<f32>(p, add(pf(g, 0), o(g, 0)));
+        let r = rnd(g, &mut st, 0x10a, 314, 0x4220_0000);
+        g.write::<f32>(p + 4, add(pf(g, 4), r));
+        g.write::<f32>(p + 8, add(pf(g, 8), o(g, 8)));
+        let q = rnd(g, &mut st, 0x132, 404, hundredth);
+        g.write::<f32>(p + 0x10, mul(add(q, k(g, 0x165)), o(g, 0)));
+        let q = rnd(g, &mut st, 0x16a, 404, 0x40a0_0000);
+        let mask = g.read::<u32>(w(0x192));
+        g.write::<u32>(p + 0x14, q.to_bits() ^ mask);
+        let q = rnd(g, &mut st, 0x19c, 404, hundredth);
+        g.write::<f32>(p + 0x18, mul(add(q, k(g, 0x1bb)), o(g, 8)));
+        let t = rnd(g, &mut st, 0x1c0, 314, pi);
+        g.write::<f32>(p + 0x1c, t);
+        g.write::<u32>(p + 0x24, 0x3dcc_cccd);
+        g.write::<f32>(p + 0x20, mul(pf(g, 0x10), k(g, 0x1e9)));
+        g.write::<u32>(p + 0x2c, ONE);
+        g.write::<f32>(p + 0x28, mul(pf(g, 0x18), k(g, 0x207)));
+        let r = rnd(g, &mut st, 0x1ee, 314, 0x3e4c_cccd);
+        n = g.read::<u32>(count).wrapping_add(1);
+        g.write::<u32>(p + 0x40, 0x3f00_0000);
+        g.write::<u32>(p + 0x58, 0x40);
+        g.write::<f32>(p + 0x3c, mul(add(r, k(g, 0x235)), k(g, 0x24f)));
+        g.write::<u32>(p + 0x5c, 0);
+        g.write::<u32>(p + 0x4c, 0x40);
+        g.write::<u32>(p + 0x50, 0x40);
+        g.write::<u8>(p + 0x6b, 0);
+        g.write::<u32>(p + 0x60, 0);
+        g.write::<u32>(count, n);
+    }
+    Ret::eax(n)
+}
+
+/// [`sparks_eight_0563`] (the `rel32`s: the pool take,
+/// `__security_check_cookie`).
+pub const SPARKS_EIGHT_0563: Sig = Sig {
+    len: 660,
+    hash: 0xf10a_54cd_7d6c_4cf0,
+    calls: &[
+        (0x35, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x28c, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0563`'s light start (0x10003000, 778 bytes; cdecl, no
+/// arguments; `S = *G_S`): the colour record `C1 = S + 0x3670` filled
+/// (colour 0xff80ffff, times 0x10), the fader `C2 = S + 0x37b0` reset
+/// (`(0, 100, 0, 3, 100, 100)`, u16 `+0x18` 0), the light `C3 = S + 0x3804`
+/// reset (`+0x20` 1/48, `+0x28` 0x30), each with a pool node
+/// ([`take`](crate::sa_pool::take), owners `CB1..CB3`, `+0x14` the record;
+/// the second and third kind 1) appended to the task list (the first
+/// after the old tail, the others after it); then `C3`'s steps `(4, 2,
+/// 0)` twice and its flags `| 3`, the list's tail the third node. The
+/// objects `S + 0x5f0` (part 5) and `S + 0x4c0` (part 4) started
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), value 0,
+/// scales `K1`, `K2`) at `S + 0x2b30`, their `y` less `K3`/`K4`, turned by
+/// `S + 0x3ba4`; the first's place kept at `S + 0x2b40`. Then slot 388 `(B[i],
+/// 6, 1)` for each of the `*G_N` target bytes (`*G_X` for an index -1).
+/// Returns the last slot 388's `eax`, else the turn word.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn light_start_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x9));
+    let (head, tail) = (w(0x74), w(0x89));
+    // the colour record
+    let c1 = s + 0x3670;
+    g.write::<u32>(c1 + 0x81, 0xff80_ffff);
+    g.write::<u8>(c1 + 0x80, 0xff);
+    g.write::<u16>(c1 + 0x85, 0xffff);
+    g.write::<u8>(c1 + 0x87, 0);
+    g.write::<u32>(c1 + 0x88, 0);
+    g.write::<u16>(c1 + 0x98, 0x48);
+    g.write::<u32>(c1 + 0x90, 0x10);
+    g.write::<u32>(c1 + 0x8c, 0x10);
+    g.write::<u32>(c1 + 0x94, 0);
+    let n1 = crate::sa_pool::take(g, img, call(0x6e), w(0xe));
+    let listed = g.read::<u32>(head) != 0;
+    g.write::<u32>(n1 + 0x14, c1);
+    g.write::<u32>(n1 + 4, 0);
+    if listed {
+        let last = g.read::<u32>(tail);
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    } else {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(head, n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    // the fader and the light, each after the node before
+    let c2 = s + 0x37b0;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 100),
+        (8, 0),
+        (0xc, 3),
+        (0x14, 100),
+        (0x10, 100),
+    ] {
+        g.write::<u32>(c2 + o, v);
+    }
+    g.write::<u16>(c2 + 0x18, 0);
+    let c3 = s + 0x3804;
+    let append = |g: &mut G, prev: u32, node: u32, rec: u32| {
+        let listed = g.read::<u32>(head) != 0;
+        g.write::<u8>(node + 0x18, 1);
+        g.write::<u32>(node + 0x14, rec);
+        g.write::<u32>(node + 4, 0);
+        if listed {
+            g.write::<u32>(node, prev);
+            g.write::<u32>(prev + 4, node);
+        } else {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(head, node);
+        }
+        g.write::<u32>(node + 8, node);
+    };
+    let n2 = crate::sa_pool::take(g, img, call(0xde), w(0xac));
+    append(g, n1, n2, c2);
+    for (o, v) in [
+        (0u32, 0u32),
+        (0x1c, 0),
+        (0x20, 0x3caa_aaab),
+        (0x24, 0),
+        (0x28, 0x30),
+    ] {
+        g.write::<u32>(c3 + o, v);
+    }
+    g.write::<u16>(c3 + 0x2c, 0);
+    let n3 = crate::sa_pool::take(g, img, call(0x148), w(0x11d));
+    append(g, n2, n3, c3);
+    for (o, v) in [
+        (4u32, 0x4080_0000u32),
+        (8, 0x4000_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4000_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(c3 + o, v);
+    }
+    let fl = g.read::<u16>(c3 + 0x2c) | 3;
+    g.write::<u16>(c3 + 0x2c, fl);
+    g.write::<u32>(w(0x1bf), n3);
+    // the two objects
+    let mut eax = 0;
+    for (o, sc, part, c, ky) in [
+        (0x5f0u32, 0x179u32, 5u32, 0x1c4u32, 0x20au32),
+        (0x4c0, 0x212, 4, 0x264, 0x2a4),
+    ] {
+        let obj = s + o;
+        let scale = k(g, sc);
+        crate::s4_misc::start_object_anim(g, img, call(c), obj, scale, part, 0);
+        for i in 0..4 {
+            let x = g.read::<u32>(s + 0x2b30 + 4 * i);
+            g.write::<u32>(obj + 0xd0 + 4 * i, x);
+        }
+        let y = sub(g.read::<f32>(obj + 0xd4), k(g, ky));
+        eax = g.read::<u32>(s + 0x3ba4);
+        g.write::<u32>(obj + 0xc4, eax);
+        g.write::<f32>(obj + 0xd4, y);
+        if part == 5 {
+            for i in 0..4 {
+                let x = g.read::<u32>(obj + 0xd0 + 4 * i);
+                g.write::<u32>(s + 0x2b40 + 4 * i, x);
+            }
+        }
+    }
+    // the target bytes
+    let mut i = 0i32;
+    while i < g.read::<i32>(w(0x2c3)) {
+        let b = if i == -1 {
+            g.read::<u32>(w(0x2d6))
+        } else {
+            u32::from(g.read::<u8>(g.read::<u32>(w(0x2dd)).wrapping_add(i.cast_unsigned())))
+        };
+        // call width: 3
+        eax = g.call(slot_target(g, w(0x2eb), 388), 0, &[b, 6, 1]).eax;
+        i += 1;
+    }
+    Ret::eax(eax)
+}
+
+/// [`light_start_0563`] (the `rel32`s: the pool take three times, the
+/// object start twice).
+pub const LIGHT_START_0563: Sig = Sig {
+    len: 778,
+    hash: 0xa780_f41e_9758_68c4,
+    calls: &[
+        (0x6e, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xde, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x148, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x1c4, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x264, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+    ],
+    imports: &[],
+};

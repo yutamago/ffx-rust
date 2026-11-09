@@ -805,3 +805,235 @@ fn spin_states_0605() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// One case of [`two_part_visit_0609`]'s test.
+#[derive(Clone, Copy)]
+struct TwoPart {
+    marked: bool,
+    children: usize,
+    flags: u8,
+    x28: f32,
+    speed: f32,
+    step: f32,
+    fade: f32,
+}
+
+/// Lays out case `k` (as `magic_o6_fam.rs`'s `two_part_setup`: the
+/// cursor, the node, two children, the parts whose class's visit is the
+/// trap `class`; the light's object at the second part's `+0x9c`).
+fn two_part_setup(t: &mut Twin, k: u32, p: TwoPart, class: u32) {
+    let (c, node) = (SCRATCH + 0x3000, SCRATCH + 0x3100);
+    let kids = [SCRATCH + 0x3200, SCRATCH + 0x3240];
+    let (pa, pb) = (SCRATCH + 0x3300, SCRATCH + 0x3400);
+    t.write(node, &[0x44; 0x80]);
+    for i in 0..19u32 {
+        let x = 0.25 * (k + i) as f32 - 1.5;
+        t.set_u32(node + 0x1c + 4 * i, x.to_bits());
+    }
+    t.set_u32(node + 0x4c, 0.375f32.to_bits());
+    t.set_u32(node + 0x54, 0.125f32.to_bits());
+    t.set_u32(node + 0x50, p.step.to_bits());
+    t.set_u32(node + 0x58, p.fade.to_bits());
+    t.set_u32(node + 0x28, p.x28.to_bits());
+    t.set_u32(node + 0x5c, p.speed.to_bits());
+    t.set_u8(node + 0x68, p.flags);
+    t.set_u8(node + 0x1a, 0xf0);
+    t.set_u32(c, node);
+    t.set_u8(c + 4, 0x55);
+    t.set_u8(c + 5, if p.marked { 0xf0 } else { 3 + k as u8 });
+    let mut prev = node;
+    for &kid in kids.iter().take(p.children).rev() {
+        t.write(kid, &[0x22; 0x10]);
+        t.set_u32(kid, class);
+        t.set_u32(kid + 8, prev);
+        prev = kid;
+    }
+    t.set_u32(node + 0x10, prev);
+    for part in [pa, pb] {
+        t.write(part, &[0x11; 0xc0]);
+        t.set_u32(part, class);
+        for i in 0..3u32 {
+            t.set_u32(part + 0x1c + 4 * i, (0.5 * (i + k) as f32).to_bits());
+        }
+    }
+    t.set_u32(node + 0x6c, pa);
+    t.set_u32(node + 0x70, pb);
+}
+
+/// `magic_0609` 0x10001000 (`r29::two_part_visit_0609`) and its thunk
+/// 0x10001370: the node already marked (`eax` junk there: the /GS
+/// cookie's bits); no children, one or two; the flags 0..3 with `+0x28`
+/// above and below the light's bound (NaN once); the step and fade before,
+/// across and at their end; the light counter `*G_C` varied.
+#[test]
+fn two_part_visit_0609() {
+    let Some(mut t) = twin(609) else { return };
+    all_stubs(&mut t);
+    for (s, n) in [
+        (231u32, 3usize),
+        (245, 1),
+        (563, 4),
+        (821, 1),
+        (822, 4),
+        (823, 2),
+        (824, 4),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let visit = 1000u32;
+    t.stub(visit, move |m, a| {
+        let k = m.r32(SCRATCH + 0x3800);
+        m.w32(SCRATCH + 0x3800, k + 1);
+        let cur = m.r32(a[0]);
+        m.w32(SCRATCH + 0x3810 + 8 * (k % 8), cur);
+        m.w32(SCRATCH + 0x3814 + 8 * (k % 8), m.r32(a[0] + 4));
+        0x1000 + k
+    });
+    let class = SCRATCH + 0x3700;
+    t.set_u32(class + 0x1c, magic::TRAPS + 16 * visit);
+    let f = t.at(0x1000);
+    let c = SCRATCH + 0x3000;
+    let bound = f32::from_bits(t.u32(t.img.word(f + 0xab)));
+    let case = |marked, children, flags, x28, speed, step, fade| TwoPart {
+        marked,
+        children,
+        flags,
+        x28,
+        speed,
+        step,
+        fade,
+    };
+    let cases = [
+        case(true, 0, 0, 1.0, 1.0, 0.0, 0.0),
+        case(false, 0, 0, 1.0, 1.0, 0.25, 0.5),
+        case(false, 2, 1, bound + 1.0, 2.0, 0.25, 0.5),
+        case(false, 2, 3, bound + 1.0, 2.0, 0.25, 0.5),
+        case(false, 1, 1, bound + 1.0, -2.0, 1.0, 1.0),
+        case(false, 0, 1, bound - 1.0, 2.0, 0.75, 0.5),
+        case(false, 0, 1, bound, 2.0, 0.75, 0.5),
+        case(false, 0, 2, 1.0, 2.0, 0.75, 0.5),
+        case(false, 0, 0, 1.0, 2.0, 0.75, 0.95),
+        case(false, 0, 0, 1.0, 2.0, 1.5, 0.25),
+        case(false, 0, 1, f32::NAN, 2.0, 0.25, 0.5),
+        case(false, 0, 1, bound + 2.0, 0.0, 0.25, 0.5),
+    ];
+    let counter = t.img.word(f + 0xe7);
+    for (k, p) in (0u32..).zip(cases) {
+        let eax = if p.marked { Eax::Junk } else { Eax::Checked };
+        for thunk in [false, true] {
+            two_part_setup(&mut t, k, p, class);
+            t.set_u32(counter, SCRATCH + 0x5000 + 0x40 * k);
+            junk_ops(&mut t, f, &[0xc2]);
+            ownb::dirty_stack(&mut t, 0x1000 + k, &[]);
+            if thunk {
+                t.check_entry(t.at(0x1370), Call::default(), &[c], eax);
+            } else {
+                t.check(f, Call::this(c), &[], eax, |g, img, fr| {
+                    ffx_magic::r29::two_part_visit_0609(g, img, fr)
+                });
+            }
+        }
+    }
+}
+
+/// `magic_0563` 0x10003310 (`r29::sparks_eight_0563`): the pool with room
+/// for all eight, for three and for none.
+#[test]
+fn sparks_eight_0563() {
+    let Some(mut t) = twin(563) else { return };
+    all_stubs(&mut t);
+    magic_owna::filler(&mut t, 235, 1, 16);
+    rec(&mut t, 329, 3, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i) ^ (a[2].rotate_left(i) & 0x00ff_0000);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.5 + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    for s in [314u32, 404] {
+        rec(&mut t, s, 1, move |m, a| {
+            let k = m.r32(magic_owna::row(s));
+            m.w32(magic_owna::row(s), k + 1);
+            (s << 16) ^ k ^ a[0]
+        });
+        t.stub_st0(s, move |m, a| {
+            let k = m.r32(magic_owna::row(s));
+            f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) * 0.15 + 0.1) - 0.03
+        });
+    }
+    let f = t.at(0x3310);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let take = t.img.rel32_target(f + 0x35);
+    let s = SCRATCH + 0x1_0000;
+    let fx = SCRATCH + 0x900;
+    for (k, n) in (0u32..).zip([12u32, 3, 0]) {
+        junk(&mut t, s + 0x2b00, 0x100, k);
+        for i in 0..4u32 {
+            t.set_u32(
+                s + 0x2b40 + 4 * i,
+                (1.5 * i as f32 - 2.0 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(op(&t, 0x14), s);
+        t.set_u32(op(&t, 0x45), fx);
+        t.set_u32(fx + 0x14, 0x7e00_0000 + k);
+        pool74(&mut t, take, SCRATCH + 0x4000, n, 0);
+        ownb::dirty_stack(&mut t, 0x3310 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0563` 0x10003000 (`r29::light_start_0563`): the task list empty
+/// and not, the object pool with nodes and empty, no target bytes, two
+/// and a negative count.
+#[test]
+fn light_start_0563() {
+    let Some(mut t) = twin(563) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 388, 3, |_, a| {
+        0x0388_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    let f = t.at(0x3000);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x1c4);
+    let take = t.img.rel32_target(f + 0x6e);
+    let s = SCRATCH + 0x1_0000;
+    let bytes = SCRATCH + 0x7e00;
+    let last = SCRATCH + 0x3400;
+    // (listed, object pool count, target count)
+    for (k, (listed, count, nb)) in (0u32..).zip([
+        (false, 3u16, 0i32),
+        (true, 3, 2),
+        (true, 0, -1),
+        (false, 1, 3),
+    ]) {
+        start_env(&mut t, so, count, if k == 1 { SCRATCH + 0x680 } else { 0 });
+        t.set_u32(op(&t, 0x9), s);
+        junk(&mut t, s + 0x400, 0x3800, k);
+        for i in 0..8u32 {
+            t.set_u32(
+                s + 0x2b30 + 4 * i,
+                (0.75 * i as f32 - 1.0 + k as f32).to_bits(),
+            );
+        }
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0x74), if listed { last } else { 0 });
+        t.set_u32(op(&t, 0x89), last);
+        t.set_u32(op(&t, 0x2c3), nb.cast_unsigned());
+        t.set_u32(op(&t, 0x2dd), bytes);
+        t.set_u32(op(&t, 0x2d6), 0x0bad_0000 + k);
+        for i in 0..8u8 {
+            t.set_u8(bytes + u32::from(i), 0x31 + 7 * i + k as u8);
+        }
+        ownb::dirty_stack(&mut t, 0x3000 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

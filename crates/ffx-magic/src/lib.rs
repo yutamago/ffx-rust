@@ -3187,6 +3187,9 @@ ports! {
     "r29 summon frames 0602" => r29::SUMMON_FRAMES_0602, r29::summon_frames_0602;
     "r29 models around 0605" => r29::MODELS_AROUND_0605, r29::models_around_0605;
     "r29 spin states 0605" => r29::SPIN_STATES_0605, r29::spin_states_0605;
+    "r29 thunk: two-part visit 0609" => sl_wrap::JMP_TWO_PART_VISIT_0609, sl_wrap::ecx_jmp;
+    "r29 sparks eight 0563" => r29::SPARKS_EIGHT_0563, r29::sparks_eight_0563;
+    "r29 light start 0563" => r29::LIGHT_START_0563, r29::light_start_0563;
     // round 29 (magic-r29): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3877,6 +3880,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r29 spin step 0605", &r29::SPIN_STEP_0605),
     ("r29 spin set-up 0605", &r29::SPIN_SETUP_0605),
     ("r29 spin set-up 0307", &r29::SPIN_SETUP_0307),
+    ("r29 two-part visit 0609", &r29::TWO_PART_VISIT_0609),
     // round 29 (magic-r29): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
