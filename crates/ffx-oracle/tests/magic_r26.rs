@@ -1615,3 +1615,97 @@ fn start_up_0163() {
         start_up_0163_setup(t, f, 2, (0x108c, true));
     });
 }
+
+/// What `r26::start_up_0299` (`magic_0299` 0x100013e0) needs: the pools
+/// (the task start and the inlined takes share the ring), the object
+/// starts, the actor and the actors (`n`), the slots, the task list.
+fn start_up_0299_setup(t: &mut Twin, f: u32, k: u32, (n, battle, listed): (u32, u32, bool)) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, 2467);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, move |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - 3.0 * k as f32;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + a[1] as f32;
+            m.w32(a[2] + 4 * i, v.to_bits());
+        }
+        0x268
+    });
+    let yaw = [0.25f64, 3.0, 9.5, 2.0][k as usize % 4];
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |_, _| yaw);
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.375 - 1.5);
+    recs(t, &[(413, 1), (215, 1), (711, 3), (710, 4), (271, 1)]);
+    for call in [0x65u32, 0x303] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(t, start);
+    }
+    t.set_u32(w(t, 0x70), 0x0000_0040 + k);
+    t.set_u32(w(t, 0xb1), 0x0000_0040 + k);
+    // the actors: their bytes and characters
+    let bytes = SCRATCH + 0x1f0;
+    for i in 0..8u8 {
+        t.set_u8(bytes + u32::from(i), 3 + 2 * i);
+    }
+    for o in [0x1c6u32, 0x318, 0x362] {
+        t.set_u32(w(t, o), bytes);
+    }
+    for tab in [0x1e3u32, 0x323] {
+        for i in 0..0x20 {
+            t.set_u32(w(t, tab) + 4 * i, 0x0000_0090 + 5 * i);
+        }
+    }
+    t.set_u32(w(t, 0x1ba), n);
+    t.set_u32(w(t, 0x867), battle);
+    t.set_u32(w(t, 0x8ac), battle);
+    t.set_u32(w(t, 0x85e), 0x0000_0050 + k);
+    t.write(w(t, 0x1cb) - 0xd4, &[0x5e; 0x130 * 4]);
+    t.write(w(t, 0x3a1), &[0x5f; 0x34 * 4]);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x2c, 0x36, 0xa7, 0xfe, 0x118, 0x122, 0x12e, 0x164, 0x16e, 0x178, 0x182, 0x18c, 0x196,
+            0x1a6, 0x3fb, 0x44b, 0x45f, 0x518, 0x590, 0x59a, 0x658, 0x688, 0x69c, 0x6b0, 0x771,
+            0x77b, 0x78f, 0x86d, 0x879, 0x883, 0x8b7, 0x8c7, 0x8d1,
+        ],
+    );
+    for o in [0x1a0u32, 0x6c4, 0x7ad, 0x8db, 0x8e4] {
+        t.set_u32(w(t, o), 0x5a5a_5a5a);
+    }
+    // the task list
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(w(t, 0x4e2), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x4fc), SCRATCH + 0x600);
+}
+
+/// `magic_0299` 0x100013e0 (`r26::start_up_0299`, internal) and its load
+/// step 0x100012b0 (`r9_load::load_0299`): 0 to 3 actors, in and out of a
+/// battle, the task list empty and not, the yaw on both sides of its
+/// wrap.
+#[test]
+fn start_up_0299() {
+    let Some(mut t) = twin(299) else { return };
+    let f = t.at(0x13e0);
+    for (k, n, battle, listed) in [
+        (0u32, 2u32, 0u32, false),
+        (1, 3, 1, true),
+        (2, 0, 0, true),
+        (3, 1, 1, false),
+    ] {
+        start_up_0299_setup(&mut t, f, k, (n, battle, listed));
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, r26::start_up_0299);
+    }
+    let load = t.at(0x12b0);
+    load_cases(&mut t, load, &|t| {
+        start_up_0299_setup(t, f, 2, (2, 1, true));
+    });
+}
