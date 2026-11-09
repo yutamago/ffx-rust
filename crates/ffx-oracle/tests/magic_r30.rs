@@ -1558,3 +1558,153 @@ fn summon_task_0262_b() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0165` 0x100017a0 (`r30::place_0165`, internal): slot 520's
+/// scene in the DLL's list and not (0x18b0046 among them: the caster's
+/// height), the yaw wrapped down, up and not, actors to show.
+#[test]
+fn place_0165() {
+    let Some(mut t) = twin(165) else { return };
+    all_slots(&mut t);
+    let f = t.at(0x17a0);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x20), s);
+    let sparks = t.img.rel32_target(f + 0x214);
+    t.set_u32(t.img.word(sparks + 0x1b), s);
+    let sel = SCRATCH + 0x180;
+    for i in 0..8u8 {
+        t.set_u8(sel + u32::from(i), i);
+    }
+    for op in [0x1dcu32, 0x22f] {
+        t.set_u32(w(&t, op), sel);
+    }
+    let scene = SCRATCH + 0x7e0;
+    let rot = SCRATCH + 0x7e4;
+    rec(&mut t, 520, 0, move |m, _| m.r32(scene));
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            wf(
+                m,
+                a[1 + i as usize],
+                (a[0] & 0xff) as f32 * 0.5 + i as f32 - 1.0,
+            );
+        }
+        0x262
+    });
+    t.stub_st0(333, move |m, _| f64::from(rf(m, rot)));
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.25 - 1.0);
+    // the others shown: no group (slot 293 0), so one slot 296 call
+    rec(&mut t, 293, 1, |_, _| 0);
+    // the scale and the matrices' float slots
+    for (sl, v) in [(277u32, 40.0f64), (15, 1.5), (16, -0.75), (17, 3.0)] {
+        t.stub_st0(sl, move |_, a| v + f64::from(a[0] & 3));
+    }
+    let listed = t.u32(w(&t, 0x28));
+    // (scene, the caster's turn, actors)
+    for (k, (sc, r, n)) in [
+        (listed, 0.5f32, 3u32),
+        (0x018b_0046, -2.0, 0),
+        (0x0123_4567, 9.0, 2),
+        (0x018b_0046, 3.0, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &magic_h6::varied(0x6000, k as u8));
+        t.set_u32(scene, sc);
+        t.set_u32(rot, r.to_bits());
+        t.set_u32(w(&t, 0x21c), n);
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r30::place_0165(g, img, fr))
+        });
+    }
+}
+
+/// `magic_0165` 0x10001390 (`r9_load::load_0165`) with its start-up
+/// 0x10004c90 (`r30::start_up_0165`, which runs the placement and the
+/// sparks): slot 225 busy, the first and a later request, the data not
+/// loaded and loaded (the task list empty and not).
+#[test]
+fn load_0165() {
+    let Some(mut t) = twin(165) else { return };
+    all_slots(&mut t);
+    let at = t.at(0x1390);
+    let w = |t: &magic::Twin, a: u32, o: u32| t.img.word(a + o);
+    let busy = SCRATCH + 0x100;
+    let loaded = SCRATCH + 0x104;
+    rec(&mut t, 225, 1, move |m, _| m.r32(busy));
+    rec(&mut t, 226, 2, |_, a| a[0] ^ 0x226);
+    rec(&mut t, 227, 1, move |m, _| m.r32(loaded));
+    let su = t.img.rel32_target(at + 0x5b);
+    let lock = SCRATCH + 0x7f0;
+    let ps = t.img.rel32_target(su + 0x56);
+    for o in [0x04u32, 0x2d] {
+        t.set_u32(w(&t, ps, o), lock);
+    }
+    let place = t.img.rel32_target(su + 0x5b);
+    let sel = SCRATCH + 0x180;
+    for i in 0..8u8 {
+        t.set_u8(sel + u32::from(i), i);
+    }
+    for op in [0x1dcu32, 0x22f] {
+        t.set_u32(w(&t, place, op), sel);
+    }
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            wf(
+                m,
+                a[1 + i as usize],
+                (a[0] & 0xff) as f32 * 0.5 + i as f32 - 1.0,
+            );
+        }
+        0x262
+    });
+    t.stub_st0(333, |_, _| 0.5);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.25 - 1.0);
+    rec(&mut t, 293, 1, |_, _| 0);
+    for (sl, v) in [(277u32, 40.0f64), (15, 1.5), (16, -0.75), (17, 3.0)] {
+        t.stub_st0(sl, move |_, a| v + f64::from(a[0] & 3));
+    }
+    // slot 520 takes no words (the scene)
+    rec(&mut t, 520, 0, |_, _| 0x0123_4567);
+    magic_r11::pools(&mut t, su, 336);
+    let ri = t.img.rel32_target(su + 0x102);
+    let (head, last) = (w(&t, su, 0xca), w(&t, su, 0xde));
+    let old = SCRATCH + 0x3400;
+    for (k, (b, asked, l, listed)) in [
+        (1u32, 0u32, 1u32, false),
+        (0, 0, 0, false),
+        (0, 1, 0xffff_ffff, false),
+        (0, 0, 1, false),
+        (0, 1, 2, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(busy, b);
+        t.set_u32(loaded, l);
+        t.set_u32(w(&t, at, 0x18), asked);
+        for o in [0x61u32, 0x6b] {
+            t.set_u32(w(&t, at, o), 0x0bad_0000 + o);
+        }
+        t.set_u32(lock, 0x77 + k);
+        let node = |i: u32| SCRATCH + 0x5000 + 0x40 * i;
+        for i in 0..3u32 {
+            t.write(node(i), &[0x33; 0x40]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(w(&t, ri, 0x3e), node(0));
+        t.set_u16(w(&t, ri, 0x20), 3);
+        t.set_u32(w(&t, ri, 0xa6), 0);
+        t.write(old, &[0x34; 0x20]);
+        t.set_u32(head, if listed { old } else { 0 });
+        t.set_u32(last, old);
+        magic_h6::scrub(&mut t);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+}
