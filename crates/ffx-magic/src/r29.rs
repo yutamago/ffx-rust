@@ -3,6 +3,7 @@
 //! `Sig`.
 
 use crate::ob_model::st0_f32;
+use crate::pushes::Pushes;
 use crate::r27::{ThreeObj, ThreeObjects, Turn};
 use crate::runtime::slot_target;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -557,12 +558,47 @@ pub const LOAD_0602: Sig = Sig {
 /// ([`models_around`](crate::s5_misc::models_around)), whose answer it
 /// returns.
 pub fn spin_states_0612<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spin_states_with(
+        g,
+        img,
+        fr,
+        crate::r25::spin_setup_0612,
+        |g, img, fr| crate::s4_small::spin_records_move(g, img, fr).eax,
+        crate::s5_misc::models_around,
+    )
+}
+
+/// [`spin_states_0612`] in `magic_0605` (0x1000a0c0; the state at `*G_S +
+/// 0x26b8`): its own set-up ([`spin_setup_0605`]), records' move
+/// ([`move_pieces`](crate::m0605::move_pieces)) and models' draw
+/// ([`models_around_0605`]).
+pub fn spin_states_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    spin_states_with(
+        g,
+        img,
+        fr,
+        spin_setup_0605,
+        crate::m0605::move_pieces,
+        models_around_0605,
+    )
+}
+
+/// The state step's body: the state's displacement read from the code
+/// (`+0x07`), the three states' callees and the models' draw given.
+fn spin_states_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    setup: fn(&mut G, &Image, u32, u32) -> u32,
+    moves: fn(&mut G, &Image, &Frame) -> u32,
+    around: fn(&mut G, &Image, &Frame) -> Ret,
+) -> Ret {
     let f = fr.at;
     let call = |o: u32| img.rel32_target(f + o);
     let s = g.read::<u32>(img.word(f + 1));
     let esp = fr.esp.wrapping_sub(4);
-    let eax = match g.read::<u32>(s + 0x3664) {
-        0 => crate::r25::spin_setup_0612(g, img, call(0x2b), esp),
+    let eax = match g.read::<u32>(s + img.word(f + 7)) {
+        0 => setup(g, img, call(0x2b), esp),
         1 => crate::r28::spin_step_0563(g, img, call(0x21), esp),
         2 => {
             let rm = Frame {
@@ -570,7 +606,7 @@ pub fn spin_states_0612<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 esp,
                 ..*fr
             };
-            crate::s4_small::spin_records_move(g, img, &rm).eax
+            moves(g, img, &rm)
         }
         st => st.wrapping_sub(2),
     };
@@ -579,8 +615,23 @@ pub fn spin_states_0612<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         eax,
         ..*fr
     };
-    crate::s5_misc::models_around(g, img, &ma)
+    around(g, img, &ma)
 }
+
+/// [`spin_states_0605`].
+pub const SPIN_STATES_0605: Sig = Sig {
+    len: 52,
+    hash: 0xf90a_c4ad_dc27_1098,
+    calls: &[
+        (0x17, Callee::Sig(&crate::m0605::MOVE_PIECES)),
+        (0x1c, Callee::Sig(&MODELS_AROUND_0605)),
+        (0x21, Callee::Sig(&SPIN_STEP_0605)),
+        (0x26, Callee::Sig(&MODELS_AROUND_0605)),
+        (0x2b, Callee::Sig(&SPIN_SETUP_0605)),
+        (0x30, Callee::Sig(&MODELS_AROUND_0605)),
+    ],
+    imports: &[],
+};
 
 /// [`spin_states_0612`] in `magic_0612`.
 pub const SPIN_STATES_0612: Sig = Sig {
@@ -619,5 +670,395 @@ pub const SPARKS_0605: Sig = Sig {
     len: 847,
     hash: 0x00cc_ce96_da47_ec1a,
     calls: crate::r28::SPARKS_0563.calls,
+    imports: &[],
+};
+
+/// The operands of one model block of [`summon_frames_0602`]: the
+/// selection byte, its (selector, actor table) for the first actor, the
+/// battle word, the (selector, table) for slot 277's, for 15/16/17's and
+/// for 31's actor, the constants (`y`'s, 277's factor, the scale), slot
+/// 31's immediate, the slot table operands of 210, 217, 255, 211, 235,
+/// 277, 15, 16, 17, 330, 328, 329, 31, and which products have the slot's
+/// answer first (16, 17).
+struct ModelBlock0602 {
+    byte: u32,
+    actor: (u32, u32),
+    battle: u32,
+    a277: (u32, u32),
+    a15: (u32, u32),
+    a31: (u32, u32),
+    k: [u32; 3],
+    imm31: u32,
+    slots: [u32; 13],
+    r_first: [bool; 2],
+}
+
+const MODEL_BLOCKS_0602: [ModelBlock0602; 3] = [
+    ModelBlock0602 {
+        byte: 3,
+        actor: (0x369, 0x37d),
+        battle: 0x3a1,
+        a277: (0x464, 0x46f),
+        a15: (0x4a5, 0x4b0),
+        a31: (0x607, 0x612),
+        k: [0x42b, 0x492, 0x580],
+        imm31: 0x59b,
+        slots: [
+            0x38e, 0x3b2, 0x3c4, 0x3dd, 0x44e, 0x474, 0x4b5, 0x4d2, 0x4f4, 0x517, 0x543, 0x562,
+            0x617,
+        ],
+        r_first: [false, false],
+    },
+    ModelBlock0602 {
+        byte: 4,
+        actor: (0x621, 0x635),
+        battle: 0x659,
+        a277: (0x71c, 0x727),
+        a15: (0x75d, 0x768),
+        a31: (0x8bf, 0x8ca),
+        k: [0x6e3, 0x74a, 0x838],
+        imm31: 0x853,
+        slots: [
+            0x646, 0x66a, 0x67c, 0x695, 0x706, 0x72c, 0x76d, 0x78a, 0x799, 0x7cf, 0x7fb, 0x81a,
+            0x8cf,
+        ],
+        r_first: [true, true],
+    },
+    ModelBlock0602 {
+        byte: 5,
+        actor: (0x8d9, 0x8ed),
+        battle: 0x911,
+        a277: (0x9d4, 0x9df),
+        a15: (0xa15, 0xa20),
+        a31: (0xb77, 0xb82),
+        k: [0x99b, 0xa02, 0xaf0],
+        imm31: 0xb0b,
+        slots: [
+            0x8fe, 0x922, 0x934, 0x94d, 0x9be, 0x9e4, 0xa25, 0xa42, 0xa51, 0xa87, 0xab3, 0xad2,
+            0xb87,
+        ],
+        r_first: [true, false],
+    },
+];
+
+/// `magic_0602`'s summon frames (0x100078b0, 2980 bytes; a table
+/// callback, no arguments; a /GS `ebp` frame: the matrices at `ebp - 0x74`
+/// and `ebp - 0xb4`, the turned offset at `ebp - 0x24`, the offset at
+/// `ebp - 0x14`, slot 217's buffer at `ebp - 0x34`). With `S = *G_S`:
+/// - the sounds 0x301a..0x301c: each `h` = slot 0 `(id)`, slot 26 `(id,
+///   1)`, its byte `0x20 + k` and `h` into the DLL's words, slot 10 `(h,
+///   0)`; `*G_K` up by 3;
+/// - three points `P_i = S + 0x19b0 + 0x20 i`: `S + 0x1a60` moved by
+///   `(-16.5, 0, -0.8)`, `(0, 0, 15.5)`, `(16.5, 0, -0.8)` turned by the
+///   yaw `S + 0x2258` (slots 235, 328 with 0, 329, 229, 248; `w` 1.0);
+/// - for the third, fourth and fifth selected actors the model matrices
+///   `M = S + 0x18c0 + 0x40 i` ([`ModelBlock0602`]): slots 210 (or 217/255
+///   for a null `M`, which no `S` gives) and 211; the record `S + 0x1a00 +
+///   0x20 i` = `S + 0x19a0 + 0x20 i` (its `y` less `K`); a unit `M`, its
+///   diagonal slot 277 times `K'`, times slots 15/16/17, turned by the
+///   record's angles (slots 330, 328, 329), every term times `K''`; slot
+///   31 `(actor, c)`.
+///
+/// Returns the last slot 31's `eax`.
+#[allow(clippy::too_many_lines)] // one straight sequence
+pub fn summon_frames_0602<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |off: u32| ebp.wrapping_sub(off);
+    let s = rd(g, 0x1f);
+    // the three sounds: (slot 0, 26, 10's table operands; the id; the
+    // byte's store; the handle's store)
+    for (s0, s26, s10, id, byte, keep) in [
+        (0x14u32, 0x2cu32, 0x3fu32, 0x24u32, 0x45u32, 0x4cu32),
+        (0x59, 0x68, 0x7b, 0x5e, 0x81, 0x88),
+        (0x95, 0xa4, 0xb7, 0x9a, 0xbd, 0xc4),
+    ] {
+        // call width: 1
+        let h = g.call(t(g, s0, 0), 0, &[w(id)]).eax;
+        // call width: 2
+        g.call(t(g, s26, 26), 0, &[w(id), 1]);
+        g.write::<u8>(w(byte), w(byte + 4) as u8);
+        g.write::<u32>(w(keep), h);
+        // call width: 2
+        g.call(t(g, s10, 10), 0, &[h, 0]);
+    }
+    let n = rd(g, 0xd2).wrapping_add(w(0xd6) & 0xff);
+    g.write::<u32>(w(0xd2), n);
+    // the three points
+    let yaw = g.read::<u32>(s + 0x2258);
+    let (lv, lo) = (l(0x24), l(0x14));
+    g.write::<u32>(lo + 4, 0);
+    g.write::<u32>(lo + 0xc, ONE);
+    for (i, (x, z, m, ops)) in (0u32..).zip([
+        (
+            0xc184_0000u32,
+            0xbf4c_cccdu32,
+            l(0x74),
+            [0x11au32, 0x15a, 0x17c, 0x195, 0x1ad],
+        ),
+        (0, 0x4178_0000, l(0xb4), [0x200, 0x22d, 0x252, 0x26e, 0x286]),
+        (
+            0x4184_0000,
+            0xbf4c_cccd,
+            l(0x74),
+            [0x2d6, 0x300, 0x322, 0x33b, 0x353],
+        ),
+    ]) {
+        let p = s + 0x19b0 + 0x20 * i;
+        for j in 0..4 {
+            let v = g.read::<u32>(s + 0x1a60 + 4 * j);
+            g.write::<u32>(p + 4 * j, v);
+        }
+        g.write::<u32>(lo, x);
+        g.write::<u32>(lo + 8, z);
+        g.call(t(g, ops[0], 235), 0, &[m]);
+        // call width: 3
+        g.call(t(g, ops[1], 328), 0, &[m, m, 0]);
+        // call width: 3
+        g.call(t(g, ops[2], 329), 0, &[m, m, yaw]);
+        g.write::<u32>(lo + 0xc, ONE);
+        // call width: 3
+        g.call(t(g, ops[3], 229), 0, &[lv, m, lo]);
+        // call width: 3
+        g.call(t(g, ops[4], 248), 0, &[p, p, lv]);
+        g.write::<u32>(p + 0xc, ONE);
+    }
+    // the three model blocks
+    let mut eax = 0;
+    for (i, b) in (0u32..).zip(&MODEL_BLOCKS_0602) {
+        let sl = b.slots;
+        let pick = |g: &G, (sel, tbl): (u32, u32)| {
+            let idx = u32::from(g.read::<u8>(rd(g, sel) + b.byte));
+            (idx, g.read::<u32>(w(tbl).wrapping_add(4 * idx)))
+        };
+        let m = s + 0x18c0 + 0x40 * i;
+        let (idx, act) = pick(g, b.actor);
+        if m == 0 {
+            // `S + 0x18c0` null: no caller's `S` gets here
+            if rd(g, b.battle) == 0 && idx.cast_signed() < 0x20 {
+                let buf = l(0x34);
+                // call width: 2
+                g.call(t(g, sl[1], 217), 0, &[idx, buf]);
+                // call width: 2
+                g.call(t(g, sl[2], 255), 0, &[idx, buf]);
+            }
+        } else {
+            // call width: 2
+            g.call(t(g, sl[0], 210), 0, &[act, m]);
+        }
+        // call width: 2
+        g.call(t(g, sl[3], 211), 0, &[act, m]);
+        let r = s + 0x1a00 + 0x20 * i;
+        for j in 0..8 {
+            let v = g.read::<u32>(s + 0x19a0 + 0x20 * i + 4 * j);
+            g.write::<u32>(r + 4 * j, v);
+        }
+        let y = sub(g.read::<f32>(s + 0x19b4 + 0x20 * i), k(g, b.k[0]));
+        g.write::<f32>(r + 0x14, y);
+        g.call(t(g, sl[4], 235), 0, &[m]);
+        let (_, a2) = pick(g, b.a277);
+        let x = st0_f32(g.call(t(g, sl[5], 277), 0, &[a2]).st0);
+        let x = mul(x, k(g, b.k[1]));
+        for o in [0x28u32, 0x14, 0] {
+            g.write::<f32>(m + o, x);
+        }
+        let (_, a3) = pick(g, b.a15);
+        let x = st0_f32(g.call(t(g, sl[6], 15), 0, &[a3]).st0);
+        g.write::<f32>(m, mul(x, g.read::<f32>(m)));
+        for ((tb, n), (o, first)) in [(sl[7], 16u32), (sl[8], 17)]
+            .into_iter()
+            .zip([0x14u32, 0x28].into_iter().zip(b.r_first))
+        {
+            let x = st0_f32(g.call(t(g, tb, n), 0, &[a3]).st0);
+            let y = g.read::<f32>(m + o);
+            g.write::<f32>(m + o, if first { mul(x, y) } else { mul(y, x) });
+        }
+        for (tb, (n, d)) in
+            [sl[9], sl[10], sl[11]]
+                .into_iter()
+                .zip([(330u32, 8u32), (328, 0), (329, 4)])
+        {
+            let ang = g.read::<u32>(r + d);
+            // call width: 3
+            g.call(t(g, tb, n), 0, &[m, m, ang]);
+        }
+        let c = k(g, b.k[2]);
+        for o in [0u32, 4, 8, 0x10, 0x14, 0x18, 0x20, 0x24, 0x28] {
+            let x = mul(g.read::<f32>(m + o), c);
+            g.write::<f32>(m + o, x);
+        }
+        let (_, a4) = pick(g, b.a31);
+        // call width: 2
+        eax = g.call(t(g, sl[12], 31), 0, &[a4, w(b.imm31)]).eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`summon_frames_0602`] (the `rel32`: `__security_check_cookie`).
+pub const SUMMON_FRAMES_0602: Sig = Sig {
+    len: 2980,
+    hash: 0xa8d0_947f_86ec_5295,
+    calls: &[(0xb9c, Callee::Any)],
+    imports: &[],
+};
+
+/// [`spin_step_0563`](crate::r28::spin_step_0563) in `magic_0605`
+/// (0x10009990, 1581 bytes): its own record layout (read from the code)
+/// and its object started by
+/// [`start_object_at`](crate::s4_misc::start_object_at).
+pub const SPIN_STEP_0605: Sig = Sig {
+    len: 1581,
+    hash: 0x08ce_a074_f43d_2713,
+    calls: &[
+        (0x265, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x625, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The spin set-up of `magic_0605` (0x100092e0) and `magic_0307`
+/// (0x10005da0), 1591 bytes (family P011; internal, no arguments, run by
+/// the state step): [`spin_setup_0612`](crate::r25::spin_setup_0612)'s
+/// steps on each copy's record layout (read from the code), with three
+/// adds in the other operand order and its own closing steps
+/// ([`spin_setup_with`](crate::r25::spin_setup_with) `late`).
+pub fn spin_setup_0605<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    crate::r25::spin_setup_with(g, img, f, esp, true)
+}
+
+/// [`spin_setup_0605`] in `magic_0605`.
+pub const SPIN_SETUP_0605: Sig = Sig {
+    len: 1591,
+    hash: 0xd7a9_ca43_c9c9_a33c,
+    calls: &[
+        (0x309, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        // __security_check_cookie
+        (0x62f, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`spin_setup_0605`] in `magic_0307`.
+pub const SPIN_SETUP_0307: Sig = Sig {
+    len: 1591,
+    hash: 0x066d_82d6_e030_39a2,
+    calls: SPIN_SETUP_0605.calls,
+    imports: &[],
+};
+
+/// `magic_0605`'s models drawn around the spin (0x10008030, 608 bytes; a
+/// table callback, no arguments; an 8-aligned /GS frame, `B` = `esp`
+/// after the three pushes: the matrix `M` at `B + 0x18`, the points `V1`
+/// at `B + 0x48` and `V2` at `B + 0x5c`):
+/// [`models_around_0307`](crate::s5_misc::models_around_0307)'s steps with
+/// `magic_0605`'s layout and operand orders. The sound record
+/// ([`effect_record`](crate::o4_fam4::effect_record)); with `S = *G_S` and
+/// the model table `T = *G_T` (read once): for the records `R` (0x60 apart
+/// from `S + 0x1f28`) and the models `i` = 0x1a0 .. 0x3e0 (0x20 apart): a
+/// unit `M` (slot 235) turned by `R + 4`, `R - 4`, `R` (slots 330, 328,
+/// 329), slot 231 `(M, P, M)` with `P = S + 0x25f4`; `V2` = slot 229 `(V2,
+/// M, R - 0x14)`, `V1` = slot 229 `(V1, P, R - 0x14)`; `V1 = R + 0x1c +
+/// (Q + (V1 - V2) K)` per axis (`Q = S + 0x2674`), `M`'s three rows times
+/// `K`, and the model `T[i + 0x1c]` drawn with it
+/// ([`part_matrix_handover`](crate::o6_fam_pairs3::part_matrix_handover)).
+/// Returns 0x3e0 (the models' end).
+pub fn models_around_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    // push ebp; and esp, -8; sub esp, 0x64; three pushes
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let b0 = top.wrapping_sub(0x70);
+    let call_esp = b0.wrapping_sub(4);
+    let sound = Frame {
+        at: img.rel32_target(f + 0x1e),
+        esp: call_esp,
+        ..*fr
+    };
+    crate::o4_fam4::effect_record(g, img, &sound);
+    let s = g.read::<u32>(w(0x17));
+    let (m, v1, v2) = (b0 + 0x18, b0 + 0x48, b0 + 0x5c);
+    let p = s.wrapping_add(w(0xb2));
+    let q = s.wrapping_add(w(0x11c));
+    let mut r = s.wrapping_add(w(0x24));
+    let mut i = w(0x30);
+    let models = g.read::<u32>(w(0x36));
+    let k = g.read::<f32>(w(0x114));
+    loop {
+        g.write::<u32>(b0 + 0x14, r);
+        g.write::<u32>(b0 + 0x10, i);
+        let mut st = Pushes::default();
+        st.push(m);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, t(g, 0x40, 235), 0);
+        for (table, slot, a) in [
+            (0x5du32, 330u32, 4u32),
+            (0x7d, 328, 0xffff_fffc),
+            (0x9c, 329, 0),
+        ] {
+            st.set_top(g.read::<u32>(r.wrapping_add(a)));
+            st.push_all(&[m, m]);
+            // call width: 12 (the most `Pushes::words` holds)
+            st.call(g, t(g, table, slot), 0);
+            st.pop(2);
+        }
+        // call width: 3
+        g.call(t(g, 0xbd, 231), 0, &[m, p, m]);
+        let src = r.wrapping_sub(0x14);
+        // call width: 3
+        g.call(t(g, 0xdb, 229), 0, &[v2, m, src]);
+        // call width: 3
+        g.call(t(g, 0xf8, 229), 0, &[v1, p, src]);
+        let d = [0u32, 4, 8].map(|o| mul(sub(rf(g, v1 + o), rf(g, v2 + o)), k));
+        let x = add(rf(g, r + 0x1c), add(rf(g, q), d[0]));
+        let y = add(rf(g, r + 0x20), add(rf(g, q + 4), d[1]));
+        let z = add(rf(g, r + 0x24), add(d[2], rf(g, q + 8)));
+        g.write::<f32>(v1, x);
+        g.write::<f32>(v1 + 4, y);
+        g.write::<f32>(v1 + 8, z);
+        for o in [0u32, 4, 8, 0x10, 0x14, 0x18, 0x20, 0x24, 0x28] {
+            let x = mul(rf(g, m + o), k);
+            g.write::<f32>(m + o, x);
+        }
+        let model = g.read::<u32>(models.wrapping_add(i).wrapping_add(0x1c));
+        let draw = Frame {
+            at: img.rel32_target(f + 0x22d),
+            esp: call_esp,
+            ecx: model,
+            edx: m,
+            ..*fr
+        };
+        crate::o6_fam_pairs3::part_matrix_handover(g, img, &draw);
+        i += 0x20;
+        r = r.wrapping_add(0x60);
+        g.write::<u32>(b0 + 0x14, r);
+        g.write::<u32>(b0 + 0x10, i);
+        if i.cast_signed() >= w(0x244).cast_signed() {
+            break;
+        }
+    }
+    Ret::eax(i)
+}
+
+/// [`models_around_0605`] (the `rel32`s: the sound record, the draw,
+/// `__security_check_cookie`).
+pub const MODELS_AROUND_0605: Sig = Sig {
+    len: 608,
+    hash: 0x0abc_cfde_e798_19df,
+    calls: &[
+        (0x1e, Callee::Sig(&crate::o4_fam4::EFFECT_RECORD_0605_7E40)),
+        (
+            0x22d,
+            Callee::Sig(&crate::o6_fam_pairs3::PART_MATRIX_HANDOVER_0605_7ED0),
+        ),
+        (0x258, Callee::Any),
+    ],
     imports: &[],
 };

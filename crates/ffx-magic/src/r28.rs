@@ -37,33 +37,38 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
     let ebp = esp.wrapping_sub(4);
     let l = |o: u32| ebp.wrapping_sub(o);
     let s = g.read::<u32>(w(0x13));
+    // the record's displacements are the code's (`magic_0605`'s copy has
+    // its own layout): the step, the speed, the point, the turned point,
+    // the count, the records, the object, its place, the colour records,
+    // the state and the sprite fan
+    let (step, speed, point) = (w(0x1e), w(0x26), w(0x7e));
     let (m, v) = (l(0x54), l(0x14));
     g.write::<u32>(l(0x5c), s);
     for i in 0..3u32 {
         let o = 4 * i;
-        let x = add(rf(g, s + 0x3590 + o), rf(g, s + 0x3580 + o));
-        g.write::<f32>(s + 0x3580 + o, x);
+        let x = add(rf(g, s + step + o), rf(g, s + speed + o));
+        g.write::<f32>(s + speed + o, x);
     }
     for i in 0..3u32 {
         let o = 4 * i;
-        let x = add(rf(g, s + 0x3580 + o), rf(g, s + 0x3620 + o));
-        g.write::<f32>(s + 0x3620 + o, x);
+        let x = add(rf(g, s + speed + o), rf(g, s + point + o));
+        g.write::<f32>(s + point + o, x);
     }
     // call width: 1
     g.call(slot(g, 235), 0, &[m]);
     // call width: 3
-    g.call(slot(g, 328), 0, &[m, m, 0xbdb2_b8c3]);
-    let p = s + 0x35a0;
+    g.call(slot(g, 328), 0, &[m, m, w(0xc2)]);
+    let p = s + w(0xe0);
     // call width: 3
     let eax = g.call(slot(g, 231), 0, &[p, p, m]).eax;
-    let n = g.read::<u32>(s + 0x3660).wrapping_sub(1);
-    g.write::<u32>(s + 0x3660, n);
+    let n = g.read::<u32>(s + w(0xf3)).wrapping_sub(1);
+    g.write::<u32>(s + w(0xf3), n);
     if n != 0 {
         return eax;
     }
     // the 18 records
     for i in 0..18u32 {
-        let r = s + 0x2ef4 + 0x60 * i;
+        let r = s + w(0x100) + 0x60 * i;
         // call width: 3
         g.call(slot(g, 229), 0, &[v, p, r - 0x34]);
         let k0 = k(g, 0x12a);
@@ -80,7 +85,7 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
         g.write::<f32>(r + 4, mul(z, k1));
         g.write::<f32>(r + 0xc, x2);
         // call width: 1
-        let one = st0_f32(g.call(slot(g, 314), 0, &[0x3f80_0000]).st0);
+        let one = st0_f32(g.call(slot(g, 314), 0, &[w(0x19b)]).st0);
         g.write::<f32>(l(0x58), one);
         let z = rf(g, v + 8);
         g.write::<f32>(r + 0x10, sub(one, k(g, 0x1b7)));
@@ -97,17 +102,24 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
         }
     }
     // the object
-    let obj = s + 0x980;
+    let obj = s + w(0x25a);
     let start = img.rel32_target(f + 0x265);
-    crate::s4_misc::start_object_anim(g, img, start, obj, k(g, 0x251), 8, 0);
+    let part = w(0x261) & 0xff;
+    if w(0x255) & 0xff == 0x6a {
+        // `push 0; push ecx; push 0; push part`: `magic_0605`'s
+        // start_object_at with both owners 0 (the `ecx` word not read)
+        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0x251), part, 0, 0);
+    } else {
+        crate::s4_misc::start_object_anim(g, img, start, obj, k(g, 0x251), part, 0);
+    }
     let free = g.read::<u16>(w(0x26c));
     g.write::<u32>(obj + 0x104, w(0x276));
     g.write::<u8>(obj + 0x126, 2);
     for i in 0..4u32 {
-        let q = g.read::<u32>(s + 0x2b40 + 4 * i);
+        let q = g.read::<u32>(s + w(0x283) + 4 * i);
         g.write::<u32>(obj + 0xd0 + 4 * i, q);
     }
-    g.write::<u32>(s + 0x3664, 2);
+    g.write::<u32>(s + w(0x2b9), 2);
     // the two colour records, each with a node
     let ops =
         |head, callback, free_w, last_cmp, last, last_w, first_w| crate::o6_fam_pairs5::NodeOps {
@@ -129,7 +141,7 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
     let take = |g: &mut G, free: u16, ops: &crate::o6_fam_pairs5::NodeOps, r: u32| {
         crate::o6_fam_pairs5::take_busy_node(g, img, f, free, ops, r, false);
     };
-    let c1 = s + 0x3670;
+    let c1 = s + w(0x2b3);
     colour_record(g, c1, (0xff00_0000, 0, 0xffff, 0x80), (0x1d, 10));
     // (the first node's append leaves the tail global alone; the second's
     // sets it, so writing it twice ends the same)
@@ -160,7 +172,7 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
     }
     // the sprite fan record
     let free = g.read::<u16>(w(0x515));
-    let e = s + 0x3a00;
+    let e = s + w(0x51b);
     for (o, v) in [
         (0xf0u32, 0x4080_8080u32),
         (0x124, 4),

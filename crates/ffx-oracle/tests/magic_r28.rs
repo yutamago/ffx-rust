@@ -69,10 +69,19 @@ fn floats(t: &mut Twin, at: u32, n: u32, (a, b): (f32, f32)) {
 /// bytes (and a negative count).
 #[test]
 fn spin_step_0563() {
-    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20)] {
+    // `magic_0605` 0x10009990 too (`r29::SPIN_STEP_0605`: its own record
+    // layout, read from the code, and start_object_at)
+    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20), (605, 0x9990)] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let (speed, point, p, place, cnt_at) = (
+            op(&t, 0x26),
+            op(&t, 0x7e),
+            op(&t, 0xe0),
+            op(&t, 0x283),
+            op(&t, 0xf3),
+        );
         filler(&mut t, 235, 1, 16);
         for s in [328u32, 231] {
             rec(&mut t, s, 3, move |m, a| {
@@ -124,11 +133,11 @@ fn spin_step_0563() {
         ];
         for (k, (count, listed, free, nb)) in (0u32..).zip(cases) {
             junk(&mut t, s + 0x900, 0x3300, k);
-            floats(&mut t, s + 0x3580, 12, (0.5 + k as f32, -0.75));
-            floats(&mut t, s + 0x3620, 4, (2.0, 1.5 - k as f32));
-            floats(&mut t, s + 0x35a0, 4, (-1.0, 0.625));
-            floats(&mut t, s + 0x2b40, 4, (7.0, -2.5));
-            t.set_u32(s + 0x3660, count);
+            floats(&mut t, s + speed, 12, (0.5 + k as f32, -0.75));
+            floats(&mut t, s + point, 4, (2.0, 1.5 - k as f32));
+            floats(&mut t, s + p, 4, (-1.0, 0.625));
+            floats(&mut t, s + place, 4, (7.0, -2.5));
+            t.set_u32(s + cnt_at, count);
             t.set_u32(op(&t, 0x13), s);
             let (cnt, head) = (op(&t, 0x26c), op(&t, 0x32c));
             magic_r11::ring(&mut t, cnt, head, free, ring);

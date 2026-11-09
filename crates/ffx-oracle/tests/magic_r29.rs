@@ -365,13 +365,15 @@ fn spray_0511() {
     ];
     for (k, (count, fade, parts, n, busy)) in (0u32..).zip(cases) {
         junk(&mut t, s + 0x2000, 0x300, k);
+        trail_block(&mut t, s + 0x2030, 2 + k % 3, k);
+        // the fade `S + 0x2254` is the trail's sprite count (`+0x224`)
         t.set_u32(s + 0x2260, count.cast_unsigned());
         t.set_u32(s + 0x2254, fade.cast_unsigned());
         t.set_u32(s + 0x2264, parts.cast_unsigned());
-        trail_block(&mut t, s + 0x2030, 2 + k % 3, k);
         t.set_u32(op(&t, 0x16), s);
         t.set_u32(op(&t, 0x5e), actor);
-        t.set_u8(actor, 0x41 + k as u8);
+        // (the byte after it junk: the actor is a byte)
+        t.write(actor, &[0x41 + k as u8, 0x77]);
         t.set_u32(op(&t, 0xe1), tex);
         t.set_u32(tex + 8, 0x7e00_0000 + k);
         pool74(&mut t, take, recs, n, busy);
@@ -558,5 +560,248 @@ fn spin_states_0612() {
             ownb::dirty_stack(&mut t, rva + st, &[]);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
         }
+    }
+}
+
+/// `magic_0602` 0x100078b0 (`r29::summon_frames_0602`): the sounds'
+/// handles, the yaw and places varied, the selected actors varied.
+#[test]
+fn summon_frames_0602() {
+    let Some(mut t) = twin(602) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    rec(&mut t, 0, 1, |_, a| 0x00a0_0000 ^ a[0]);
+    for (s_, n_) in [(26u32, 2usize), (10, 2), (31, 2), (210, 2), (211, 2)] {
+        rec(&mut t, s_, n_, move |_, a| (s_ << 16) ^ a[0] ^ a[1]);
+    }
+    let f = t.at(0x78b0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    let sel = SCRATCH + 0x600;
+    for (k, yaw) in (0u32..).zip([0.5f32, -2.0, 3.5]) {
+        t.set_u32(op(&t, 0x1f), s);
+        junk(&mut t, s + 0x1800, 0x300, k);
+        for i in 0..0x70u32 {
+            t.set_u32(
+                s + 0x1880 + 4 * i,
+                (0.25 * i as f32 - 3.0 + k as f32).to_bits(),
+            );
+        }
+        for i in 0..4u32 {
+            t.set_u32(s + 0x1a60 + 4 * i, (1.5 * i as f32 + k as f32).to_bits());
+        }
+        t.set_u32(s + 0x2258, yaw.to_bits());
+        t.set_u32(op(&t, 0x369), sel);
+        t.write(sel, &[7, 9, 9, (k % 3) as u8, ((k + 1) % 3) as u8, 2, 9, 9]);
+        for i in 0..4u32 {
+            t.set_u32(op(&t, 0x37d) + 4 * i, 0x00ac_0000 + 0x10 * i + k);
+        }
+        junk_ops(&mut t, f, &[0x45, 0x4c, 0x81, 0x88, 0xbd, 0xc4, 0xd2]);
+        ownb::dirty_stack(&mut t, 0x78b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0605` 0x100092e0 and `magic_0307` 0x10005da0
+/// (`r29::spin_setup_0605`, family P011; `magic_r25.rs`'s `spin_setup_0612`
+/// cases on each copy's layout, read from the code): the angle wrapped
+/// up, down and not, the count running out and not, the pool full at
+/// once, a record's point above the ground and below it.
+#[test]
+fn spin_setup_0605() {
+    for (n, addr) in [(605u16, 0x92e0u32), (307, 0x5da0)] {
+        let Some(mut t) = twin(n) else { return };
+        all_stubs(&mut t);
+        let f = t.at(addr);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        rec(&mut t, 237, 4, |m, a| {
+            for i in 0..4 {
+                let v = 0.5 * a[1] as f32 - 0.75 * i as f32 + (a[0] & 0xf) as f32;
+                wf(m, a[3] + 4 * i, v);
+            }
+            0x237
+        });
+        rec(&mut t, 235, 1, |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+            }
+            0x235
+        });
+        for s in [330u32, 328, 329, 231] {
+            rec(&mut t, s, 3, move |m, a| {
+                for i in 0..16 {
+                    let v = m.r32(a[1] + 4 * i) ^ (a[2].rotate_left(i) & 0x0000_ff00);
+                    m.w32(a[0] + 4 * i, v);
+                    fold(m, s, i % 4, v);
+                }
+                s
+            });
+        }
+        rec(&mut t, 229, 3, |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.5 + i as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x229
+        });
+        rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+        let ground = SCRATCH + 0x7f0;
+        t.stub_st0(12, move |m, _| f64::from(rf(m, ground)));
+        rec(&mut t, 314, 1, |m, a| {
+            let k = m.r32(magic_owna::row(314));
+            m.w32(magic_owna::row(314), k + 1);
+            fold(m, 314, 0, a[0]);
+            0x0314_0000 ^ k
+        });
+        t.stub_st0(314, |m, a| {
+            let k = m.r32(magic_owna::row(314));
+            f64::from(f32::from_bits(a[0])) * (f64::from(k % 5) * 0.2 + 0.1)
+        });
+        let take = t.img.rel32_target(f + 0x309);
+        let recs = SCRATCH + 0x4000;
+        let s = SCRATCH + 0x1_0000;
+        let x = SCRATCH + 0x900;
+        let (pt, turn, count, place) = (op(&t, 0xc4), op(&t, 0x161), op(&t, 0x544), op(&t, 0x552));
+        // (angle, count, free records (busy mask), the ground)
+        let cases: [(f32, u32, u32, f32); 6] = [
+            (0.5, 3, 0, -10.0),
+            (3.2, 1, 0b10, 50.0),
+            (-3.3, 2, 0b1, -10.0),
+            (0.0, 1, 0xff, 0.0),
+            (f32::NAN, 5, 0, 5.0),
+            (6.0, 1, 0b100, -100.0),
+        ];
+        for (k, (angle, cnt, busy, gr)) in (0u32..).zip(cases) {
+            junk(&mut t, s + 0xb00, 0x2000, k);
+            for i in 0..12 {
+                t.set_u32(
+                    s + place + 4 * i,
+                    (2.5 * i as f32 - 7.0 + k as f32).to_bits(),
+                );
+                t.set_u32(s + pt + 4 * i, (0.125 * i as f32 + 0.5).to_bits());
+            }
+            t.set_u32(s + turn, angle.to_bits());
+            t.set_u32(s + count, cnt);
+            t.set_u32(op(&t, 0x16), s);
+            t.set_u32(op(&t, 0x30), 0x00cb_0000 + k);
+            junk(&mut t, x, 0x40, k + 1);
+            t.set_u32(op(&t, 0x266), x);
+            t.set_u32(ground, gr.to_bits());
+            pool74(&mut t, take, recs, 3, busy);
+            ownb::dirty_stack(&mut t, addr + k, &[]);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                ffx_magic::Ret::eax(ffx_magic::r29::spin_setup_0605(g, img, fr.at, fr.esp))
+            });
+        }
+        assert!(t.u32(ownb::LOG) > 0x100, "the set-up's calls");
+    }
+}
+
+/// The slots of the models' draw (`magic_s5_misc.rs`'s
+/// `models_drawn_around`): the matrices filled, the handle's `edx`, the
+/// lock word logged.
+fn around_stubs(t: &mut Twin, lock: u32) {
+    magic_owna::filler(t, 235, 1, 16);
+    for s in [330u32, 328, 329, 231] {
+        rec(t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) * 0.75 + (a[2] & 0xff) as f32 * 0.01 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.5 + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    for s in [723u32, 724] {
+        rec(t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, 0.5 * i as f32 + 0.5);
+            }
+            s
+        });
+    }
+    rec(t, 562, 0, |_, _| 0x562);
+    rec(t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    rec(t, 773, 2, move |m, a| (a[0] & 1) ^ (m.r32(lock) & 0x10));
+    for (s, n) in [(819u32, 4usize), (870, 6), (871, 5)] {
+        rec(t, s, n, move |m, _| (s << 16) ^ m.r32(lock));
+    }
+}
+
+/// `magic_0605` 0x10008030 (`r29::models_around_0605`): the records and
+/// the models varied.
+#[test]
+fn models_around_0605() {
+    let Some(mut t) = twin(605) else { return };
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f0;
+    around_stubs(&mut t, lock);
+    let f = t.at(0x8030);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    let table = SCRATCH + 0x400;
+    let draw = t.img.rel32_target(f + 0x22d);
+    t.set_u32(t.img.word(draw + 0x97), lock);
+    for k in 0..2u32 {
+        t.set_u32(op(&t, 0x17), s);
+        t.set_u32(op(&t, 0x36), table);
+        junk(&mut t, s + 0x1e00, 0x900, k);
+        for i in 0..0x120u32 {
+            t.set_u32(
+                s + 0x1f00 + 4 * i,
+                ((i % 7) as f32 * 0.5 - 1.0 + k as f32).to_bits(),
+            );
+        }
+        junk(&mut t, table + 0x180, 0x300, k + 1);
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        ownb::dirty_stack(&mut t, 0x8030 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0605` 0x1000a0c0 (`r29::spin_states_0605`): every state before
+/// the models' draw (the set-up with an empty pool, the step counting,
+/// the pieces' move, others).
+#[test]
+fn spin_states_0605() {
+    let Some(mut t) = twin(605) else { return };
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f0;
+    around_stubs(&mut t, lock);
+    let f = t.at(0xa0c0);
+    let s = SCRATCH + 0x1_0000;
+    let setup = t.img.rel32_target(f + 0x2b);
+    let around = t.img.rel32_target(f + 0x30);
+    let moves = t.img.rel32_target(f + 0x17);
+    let table = SCRATCH + 0x400;
+    t.set_u32(t.img.word(t.img.rel32_target(around + 0x22d) + 0x97), lock);
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, _| -10.0);
+    for st in [3u32, 2, 1, 0, 0xffff_ffff, 7] {
+        t.write(s + 0x1000, &vec![0; 0x1c00]);
+        for i in 0..0x400u32 {
+            t.set_u32(s + 0x1e00 + 4 * i, ((i % 7) as f32 * 0.5 - 1.0).to_bits());
+        }
+        t.set_u32(s + t.img.word(f + 7), st);
+        t.set_u32(s + 0x26b4, 3);
+        for at in [f + 1, around + 0x17, setup + 0x16, moves + 1] {
+            t.set_u32(t.img.word(at), s);
+        }
+        t.set_u32(t.img.word(around + 0x36), table);
+        t.write(table, &[0x22; 0x400]);
+        let x = SCRATCH + 0x900;
+        junk(&mut t, x, 0x40, st);
+        t.set_u32(t.img.word(setup + 0x266), x);
+        let take = t.img.rel32_target(setup + 0x309);
+        pool74(&mut t, take, SCRATCH + 0x4000, 0, 0);
+        ownb::dirty_stack(&mut t, 0xa0c0 + st, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
