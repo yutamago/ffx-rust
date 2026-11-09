@@ -222,7 +222,8 @@ fn curve_step_0435() {
             }
             // the place: by model index (mode 0) or by handle
             t.set_u32(t.img.word(place + 0x02), mode);
-            t.set_u8(t.img.word(place + 0x09), (2 + k) as u8);
+            // (the place's index pointer is the actor byte's: no write
+            // over it)
             // the object given back: no siblings, no children
             t.write(obj, &[0x11; 0x20]);
             t.set_u32(obj, 0);
@@ -572,7 +573,12 @@ fn start_up_0435_setup(t: &mut Twin, f: u32, k: u32, (battle, listed): (u32, boo
         0x262
     });
     rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
-    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.625 - 3.5);
+    // the angle from the case: the yaws above, inside and below their wraps
+    let ang = SCRATCH + 0x7a0;
+    t.stub_st0(333, move |m, a| {
+        f64::from(f32::from_bits(m.r32(ang))) + f64::from(a[0] & 0xf) * 0.01
+    });
+    t.set_u32(ang, ([-9.0f32, 0.3, 9.0, 2.0][(k % 4) as usize]).to_bits());
     filler(t, 235, 1, 16);
     rec(t, 329, 3, |m: &mut dyn StubMem, a: &[u32]| {
         for i in 0..16 {
@@ -684,4 +690,178 @@ fn start_up_0435() {
         junk_ops(&mut t, load, &[0x61, 0x6b]);
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
+}
+
+/// `r24::visit_0342` (`magic_0342` 0x10001990, `ecx` = the cursor) and
+/// its thunk 0x10001e80: the pass already done (the cookie word); the
+/// children visited, then past `K` with no records (the leave, with and
+/// without a parent) or with some (the draw); below `K` counting down
+/// (the draw) or out (new records from the ring, one piece and two); the
+/// methods logged through slot 1001, slot 324 a counter, the records'
+/// motion steps past their last step or loaded.
+#[test]
+#[allow(clippy::too_many_lines)] // the stubs, the ring and the cases
+fn visit_0342() {
+    let Some(mut t) = twin(342) else { return };
+    let f = t.at(0x1990);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the methods +0x1c: slot 1001, logging its cursor and the node in it
+    let vt = SCRATCH + 0x880;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 1001, 1, |m: &mut dyn StubMem, a: &[u32]| {
+        let at = SCRATCH + 0x7b0;
+        let v = m.r32(at).rotate_left(5) ^ m.r32(a[0]) ^ a[0];
+        m.w32(at, v);
+        0x1001
+    });
+    let cnt = SCRATCH + 0x7a0;
+    rec(&mut t, 324, 0, move |m: &mut dyn StubMem, _: &[u32]| {
+        let k = m.r32(cnt).wrapping_add(1);
+        m.w32(cnt, k);
+        k.wrapping_mul(0x9e37_79b9) ^ (k << 3)
+    });
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| f64::from(m.r32(cnt) & 0xf) * 0.25 + 0.5);
+    filler(&mut t, 235, 1, 16);
+    rec(&mut t, 237, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            m.w32(a[3] + 4 * i, (0.5 * i as f32 + (a[0] & 7) as f32).to_bits());
+        }
+        0x237
+    });
+    rec(&mut t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * 0.5 + (m.r32(a[1] + 4 * i) & 3) as f32;
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x229
+    });
+    rec(&mut t, 248, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) + f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x248
+    });
+    rec(&mut t, 231, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(1);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    // the motion steps' slots (the lock word logged)
+    let step_at = t.img.rel32_target(f + 0x44f);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(t.img.word(step_at + 0x24), lock);
+    for s in [773u32, 774, 775, 778, 779] {
+        rec(&mut t, s, 2, move |m: &mut dyn StubMem, a: &[u32]| {
+            let at = SCRATCH + 0x7c0 + 4 * (s % 8);
+            let v = m.r32(at).rotate_left(3) ^ m.r32(lock) ^ a[0];
+            m.w32(at, v);
+            if s == 773 { a[0] & 1 } else { s }
+        });
+    }
+    recs(&mut t, &[(776, 1), (777, 1)]);
+    // the rotation's sine table
+    let rot = t.img.rel32_target(f + 0x255);
+    let table = SCRATCH + 0x2_0000;
+    for i in 0..0x1000u32 {
+        t.set_u32(table + 4 * i, (i as f32 / 4096.0 - 0.5).to_bits());
+    }
+    t.set_u32(t.img.word(rot + 0x17), table);
+    let c = SCRATCH + 0x100;
+    let n0 = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x1400;
+    let recs_at = SCRATCH + 0x4000;
+    let k_lim = f32::from_bits(t.u32(w(&t, 0x98)));
+    // (pass done, children, n0[0x54] below K, count, records, parent,
+    // ring head, ring used)
+    for (k, (done, kids, below, count, live, par, head, used)) in [
+        (true, 0u32, false, 0u32, 0u32, false, 0u16, 0u16),
+        (false, 2, false, 0, 0, true, 0, 0),
+        (false, 1, false, 0, 0, false, 0, 0),
+        (false, 0, false, 0, 3, false, 0, 3),
+        (false, 2, true, 3, 2, false, 1, 4),
+        (false, 0, true, 0, 0, false, 2, 1),
+        (false, 1, true, 0, 1, false, 6, 8),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(cnt, 0x10 * k);
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.write(n0, &[0x5c; 0x100]);
+        t.write(c, &[0x11; 0x10]);
+        t.set_u32(c, n0);
+        t.set_u8(c + 5, 7);
+        t.set_u8(n0 + 0x1a, if done { 7 } else { 3 });
+        // the children's ring (`+0x10`, linked by `+8`)
+        let kid = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
+        t.set_u32(n0 + 0x10, if kids == 0 { n0 } else { kid(0) });
+        for i in 0..kids {
+            t.write(kid(i), &[0x22; 0x40]);
+            t.set_u32(kid(i), vt);
+            t.set_u32(kid(i) + 8, if i + 1 == kids { n0 } else { kid(i + 1) });
+        }
+        // the child the cursor visits
+        let ch = SCRATCH + 0x1c00;
+        t.write(ch, &[0x33; 0x60]);
+        t.set_u32(ch, vt);
+        t.set_u32(ch + 0x54, 0x0000_0054 + k);
+        t.set_u32(n0 + 0x48, ch);
+        let x = if below { k_lim - 1.0 } else { k_lim + 0.5 };
+        t.set_u32(n0 + 0x54, x.to_bits());
+        t.set_u32(n0 + 0x5c, count);
+        t.set_u32(n0 + 0x58, live);
+        // the leave's parent (none: `+0x14` 0)
+        t.write(parent, &[0x44; 0x20]);
+        t.set_u32(n0 + 0x14, if par { parent } else { 0 });
+        t.set_u32(n0 + 4, SCRATCH + 0x1480);
+        t.set_u32(n0 + 8, SCRATCH + 0x1490);
+        // the ring of 8 records of 0x40 bytes and its span
+        t.set_u16(n0 + 0x1c, 8);
+        t.set_u16(n0 + 0x1e, 0x40);
+        t.set_u32(n0 + 0x20, recs_at);
+        t.set_u16(n0 + 0x30, head);
+        t.set_u16(n0 + 0x32, used);
+        t.set_u16(n0 + 0x34, 0);
+        t.set_u32(n0 + 0x24, recs_at);
+        t.set_u16(n0 + 0x2c, used.min(5));
+        t.set_u16(n0 + 0x2e, used.saturating_sub(5));
+        t.set_u32(n0 + 0x28, recs_at + 0x140);
+        // two motion sequences: kind 0 past its last step, kind 1 two steps
+        let (q0, q1) = (SCRATCH + 0x5000, SCRATCH + 0x5100);
+        for (q, n) in [(q0, 0i16), (q1, 2)] {
+            t.write(q, &[0x18; 0x100]);
+            t.set_u16(q + 6, n.cast_unsigned());
+            for i in 0..4u32 {
+                t.set_u16(q + 0x10 + 8 * i, 0x80);
+                t.set_u16(q + 0x12 + 8 * i, 0x200);
+            }
+            t.set_u32(q + 0x84, 0x10);
+        }
+        t.set_u32(n0 + 0x4c, q0);
+        t.set_u32(n0 + 0x50, q1);
+        for i in 0..8u32 {
+            let r = recs_at + 0x40 * i;
+            t.write(r, &[0x26; 0x40]);
+            t.set_u8(r + 0x34, u8::from(i % 3 != 2));
+            t.set_u32(r + 0x24, i & 1);
+            t.set_u16(r + 0x10, 0);
+            t.set_u16(r + 0x12, (0x40 * i) as u16);
+            t.set_u32(r + 0x20, (1.0 + i as f32).to_bits());
+            t.set_u32(r + 0x2c, (0.2 * i as f32).to_bits());
+        }
+        junk_ops(&mut t, f, &[0x2e0, 0x4a1]);
+        let call = Call::this(c);
+        t.check(f, call, &[], Eax::Checked, r24::visit_0342);
+        if k == 2 {
+            // the thunk: `ecx` from its stack word
+            t.set_u8(c + 5, 9);
+            t.check_entry(t.at(0x1e80), Call::default(), &[c], Eax::Checked);
+        }
+    }
+    assert!(t.u32(magic_owna::row(1001)) >= 4, "the methods ran");
 }

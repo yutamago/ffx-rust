@@ -3050,6 +3050,7 @@ ports! {
     "r9 load step 0311" => r9_load::LOAD_0311, r9_load::load_0311;
     "r9 load step 0149" => r9_load::LOAD_0149, r9_load::load_0149;
     "r9 load step 0435" => r9_load::LOAD_0435, r9_load::load_0435;
+    "r24 visit thunk 0342" => r24::VISIT_0342_THUNK, r24::visit_0342_thunk;
     // round 24 (magic-r24): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3666,6 +3667,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r24 start-up 0149", &r24::START_UP_0149),
     ("r24 key curves 0435", &r24::CURVE_KEYS_0435),
     ("r24 start-up 0435", &r24::START_UP_0435),
+    ("r24 visit 0342", &r24::VISIT_0342),
     // round 24 (magic-r24): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
