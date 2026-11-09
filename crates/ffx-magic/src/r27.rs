@@ -2245,7 +2245,7 @@ fn trails_reset_0587<G: Game>(g: &mut G, s: u32, key: u32, step: u32) {
 /// first node unlinked and reset (`+0x8` itself, `+0x10` the step). Gives
 /// the node and `eax` after it (0xffff; with the pool empty no node, 0,
 /// and `empty`).
-fn pool_take_0587<G: Game>(
+pub(crate) fn pool_take_0587<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,

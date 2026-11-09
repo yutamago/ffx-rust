@@ -79,6 +79,8 @@ pub mod r27;
 pub mod r28;
 pub mod r29;
 pub mod r30;
+pub mod r31;
+pub mod r32;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3218,6 +3220,15 @@ ports! {
     "r30 spin states 0307" => r30::SPIN_STATES_0307, r30::spin_states_0307;
     "r30 model node 0424" => r30::MODEL_NODE_0424, r30::model_node_0424;
     // round 30 (magic-r30): end
+    // round 31 (magic-r31)
+    "r31 spin pieces 0605" => r31::SPIN_PIECES_0605, r31::spin_pieces_0605;
+    "r31 spin pieces 0307" => r31::SPIN_PIECES_0307, r31::spin_pieces_0605;
+    "r31 spin start 0605" => r31::SPIN_START_0605, r31::spin_start_0605;
+    "r31 spin actors 0605" => r31::SPIN_ACTORS_0605, r31::spin_actors_0605;
+    "r31 sparks 0605" => r31::SPARKS_0605, r31::sparks_0605;
+    // round 31 (magic-r31): end
+    // round 32 (magic-r32)
+    // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3929,6 +3940,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r30 start-up 0165", &r30::START_UP_0165),
     ("r30 spin step 0307", &r30::SPIN_STEP_0307),
     // round 30 (magic-r30): end of INTERNAL
+    // round 31 (magic-r31)
+    // round 31 (magic-r31): end of INTERNAL
+    // round 32 (magic-r32)
+    // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)
