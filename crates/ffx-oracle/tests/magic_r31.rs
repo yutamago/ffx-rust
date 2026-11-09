@@ -1366,3 +1366,113 @@ fn summon_setup_0609() {
         });
     }
 }
+
+/// `magic_0601` 0x100087b0 (`r31::screen_task_0601`): every state of the
+/// table (each waiting state both ways), states the table leaves alone,
+/// above it and 10000.
+#[test]
+fn screen_task_0601() {
+    let Some(mut t) = twin(601) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    let f = t.at(0x87b0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, n) in [
+        (687u32, 3usize),
+        (692, 3),
+        (691, 7),
+        (690, 5),
+        (693, 2),
+        (530, 2),
+        (306, 3),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ a[1].rotate_left(9)
+        });
+    }
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 520, 0, |m, _| m.r32(SCRATCH + 0xa10));
+    // slot 790: the unit block's float (ST0)
+    t.stub_st0(790, |_, _| 0.375);
+    // slot 558: the colour node's four integers
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + (a[1] & 0xf));
+        }
+        0x558
+    });
+    rec(&mut t, 288, 2, |m, a| {
+        m.w32(a[1], 3);
+        SCRATCH + 0x700
+    });
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    let (a, s) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let gstate = w(&t, 0x8);
+    // the DLL's parents and lists the nodes go under: empty, linked to
+    // themselves
+    let parents = [
+        w(&t, 0x104),
+        w(&t, 0x14d),
+        w(&t, 0x114),
+        w(&t, 0x119),
+        w(&t, 0x10e),
+        w(&t, 0x1cb),
+        w(&t, 0x240),
+        w(&t, 0x248),
+        // the linked node's and the static node's list
+        t.img.word(t.img.rel32_target(f + 0x34d) + 0x15),
+        // the screen set-up's parent
+        t.img.word(t.img.rel32_target(f + 0x4e0) + 0x13b),
+    ];
+    let setup_tail = t.img.word(t.img.rel32_target(f + 0x4e0) + 0x22);
+    // (state, S + 0x1c, S + 0x20, slot 520's answer)
+    let cases: [(u32, f32, u32, u32); 20] = [
+        (60, 0.0, 0, 0x0205_0000),
+        (60, 0.0, 0, 7),
+        (61, 0.0, 0, 0),
+        (62, 0.0, 0, 0),
+        (63, 0.0, 0, 0),
+        (64, 0.0, 0, 0),
+        (70, 0.0, 0, 0),
+        (71, -50.0, 0, 0),
+        (71, 500.0, 0, 0),
+        (80, 0.0, 0, 0),
+        (81, 0.0, 0, 0),
+        (110, 0.0, 0, 0),
+        (111, 0.0, 0, 0),
+        (112, 0.0, 10, 0),
+        (112, 0.0, 80, 0),
+        (65, 0.0, 0, 0),
+        (20, 0.0, 0, 0),
+        (0x2711, 0.0, 0, 0),
+        (0x2710, 0.0, 0, 0),
+        (0x7fff_ffff, 0.0, 0, 0),
+    ];
+    for (k, (state, x1c, n20, kind)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x800, k);
+        floats(&mut t, s + 0x330, 0x30, 1.0 - k as f32);
+        t.set_u32(s + 0x1c, x1c.to_bits());
+        t.set_u32(s + 0x18, (0.5f32).to_bits());
+        t.set_u32(s + 0x20, n20);
+        t.set_u32(a + 4, s);
+        // the task's node in a ring of three
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3700, SCRATCH + 0x3740);
+        t.set_u32(a, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for &p in &parents {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+            t.set_u16(p + 0x18, 0);
+        }
+        t.set_u32(SCRATCH + 0xa10, kind);
+        junk(&mut t, SCRATCH + 0x7400, 0x20, k);
+        t.set_u32(setup_tail, SCRATCH + 0x7400);
+        t.set_u32(gstate, state);
+        ownb::dirty_stack(&mut t, 0x87b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}

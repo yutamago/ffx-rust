@@ -2516,3 +2516,381 @@ pub const SUMMON_SETUP_0609: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0601`'s screen task (0x100087b0, 1941 bytes; a task callback
+/// `(A)`, cdecl; an aligned frame `E`). `S = A[1]`; each run moves `S +
+/// 0x18`, `S + 0x1c` by `K`, counts `S + 0x20` up, then runs the state
+/// `*G_STATE` (byte and jump tables after the code):
+/// - 60: the screen's slots (530, 719, 306, 238, 296, 295), the flag call
+///   ([`call_211_flag`](crate::s4_small::call_211_flag)), its nodes
+///   (appended and inserted: [`node_append`](crate::sa_misc::node_append),
+///   [`insert_with`](crate::sa_misc::insert_with), [`node_append`](crate::sb_misc::node_append)
+///   twice, [`node_build_0601`](crate::r22::node_build_0601), the colour
+///   node, the camera move ([`move_start`](crate::sb_misc::move_start)),
+///   a node insert), the camera words by slot 520's answer, every actor of
+///   group 0xb hidden (slot 296), on;
+/// - 61: a linked node and the static node, on; 62: `S + 0x368` down by
+///   `K`, on; 63: the globals' flags and colours, `S + 0x368` down twice,
+///   on; 64: `S + 0x368` down; 70: two blocks and the camera words, on;
+///   71: once `S + 0x1c` reaches `K`, the model flag slot, slot 228 and
+///   the screen set-up ([`screen_setup_0601`]), on; 80, 81, 111, 112 (after
+///   75 frames): flag and colour words, on; 110: slots 286 and 250, the
+///   second camera move ([`move_start_2`](crate::sb_misc::move_start_2)),
+///   on;
+/// - 10000: the current list node unlinked, `S + 0x374` leaves its parent
+///   and the task's node `*A` leaves its ring.
+///
+/// Returns `eax` as the original leaves it (a call's answer, the state's
+/// table byte or a word read).
+#[allow(clippy::too_many_lines)] // the original's states, one by one
+pub fn screen_task_0601<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    // `mov dword [G], imm32` at each listed offset (the address, the
+    // immediate four bytes on)
+    let abs = |g: &mut G, ops: &[u32]| {
+        for &o in ops {
+            g.write::<u32>(w(o), w(o + 4));
+        }
+    };
+    let gstate = w(0x8);
+    let state = g.read::<u32>(gstate);
+    let a = fr.arg(g, 0);
+    let s = g.read::<u32>(a.wrapping_add(4));
+    let at = |o: u32| s.wrapping_add(o);
+    let x18 = add(rf(g, at(0x18)), k(g, 0x22));
+    let n20 = g.read::<u32>(at(0x20)).wrapping_add(1);
+    g.write::<u32>(at(0x20), n20);
+    g.write::<f32>(at(0x18), x18);
+    let x1c = add(rf(g, at(0x1c)), k(g, 0x37));
+    g.write::<f32>(at(0x1c), x1c);
+    let next = |g: &mut G| g.write::<u32>(gstate, state.wrapping_add(1));
+    let flags3 = |g: &mut G, op: u32| {
+        let x = g.read::<u32>(w(op)) | 3;
+        g.write::<u32>(w(op), x);
+    };
+    // push ebp; and esp, -8; sub esp, 0x20; two pushes
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x28);
+    if state == 0x2710 {
+        let unlink = img.rel32_target(f + 0x6fb);
+        let eax = crate::l3_common::list_unlink_current(g, img, unlink, state);
+        crate::sa_misc::leave(g, at(0x374), eax);
+        let node = g.read::<u32>(a);
+        let (nx, pv) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+        g.write::<u32>(nx + 8, pv);
+        let (pv, nx) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+        g.write::<u32>(pv + 4, nx);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 4, node);
+        return Ret::eax(nx);
+    }
+    let idx = state.wrapping_sub(0x3c);
+    if state.cast_signed() > 0x2710 || idx > 0x34 {
+        return Ret::eax(if state.cast_signed() > 0x2710 {
+            state
+        } else {
+            idx
+        });
+    }
+    // the byte table after the code (read from the image)
+    let byte = img.word(w(0x60).wrapping_add(idx)) & 0xff;
+    let step = k(g, 0x68);
+    let eax = match state {
+        60 => {
+            let ga = g.read::<u32>(w(0x7f));
+            // call width: 2
+            g.call(t(g, 0x74, 530), 0, &[ga, 0x100]);
+            // call width: 3
+            let name = g.call(t(g, 0x8c, 719), 0, &[w(0x9b), 5, 0]).eax;
+            // call width: 3
+            g.call(t(g, 0xa6, 306), 0, &[7, 2, name]);
+            let mut st = Pushes::default();
+            for (op, slot, x, ga_op) in [
+                (0xb7u32, 238u32, 1u32, 0xc8u32),
+                (0xcf, 296, 0, 0xd7),
+                (0xe4, 295, 0, 0xec),
+            ] {
+                let ga = g.read::<u32>(w(ga_op));
+                st.push_all(&[x, ga]);
+                // call width: 12 (the most `Pushes::words` holds)
+                st.call(g, t(g, op, slot), 0);
+            }
+            let flag = Frame {
+                at: img.rel32_target(f + 0xf9),
+                esp: e.wrapping_sub(0x1c),
+                ..*fr
+            };
+            let eax = crate::s4_small::call_211_flag(g, img, &flag).eax;
+            let p1 = w(0x104);
+            let n1 = at(0x2c4);
+            crate::sa_misc::node_append(g, img, img.rel32_target(f + 0x109), n1, p1, eax);
+            for o in [0x2e0u32, 0x2e4, 0x2e8] {
+                g.write::<u32>(at(o), 0);
+            }
+            for (o, v) in [
+                (0x1cu32, w(0x10e)),
+                (0x20, n1),
+                (0x24, w(0x114)),
+                (0x28, w(0x119)),
+            ] {
+                g.write::<u32>(e.wrapping_sub(o), v);
+            }
+            let ins = Frame {
+                at: img.rel32_target(f + 0x142),
+                esp: e.wrapping_sub(0x2c),
+                ecx: at(0x178),
+                edx: p1,
+                ..*fr
+            };
+            crate::sa_misc::insert_with(g, img, &ins);
+            let p2 = w(0x14d);
+            let (n2, n3) = (at(0x31c), at(0x348));
+            g.write::<u8>(at(0x2c0), 1);
+            crate::sb_misc::node_append(g, img, img.rel32_target(f + 0x15b), n2, p2, 0);
+            g.write::<u32>(at(0x344), ONE);
+            crate::sb_misc::node_append(g, img, img.rel32_target(f + 0x170), n3, p2, 0);
+            g.write::<u32>(at(0x370), ONE);
+            // push esi; push ecx; push ecx; sub esp, 0x10
+            for (o, v) in [(8u32, n2), (0xc, n3), (0x10, n3)] {
+                g.write::<u32>(e.wrapping_sub(o), v);
+            }
+            let build = Frame {
+                at: img.rel32_target(f + 0x18d),
+                esp: e.wrapping_sub(0x24),
+                ecx: w(0x188),
+                ..*fr
+            };
+            crate::r22::node_build_0601(g, img, &build);
+            abs(g, &[0x19b]);
+            let gb = g.read::<u32>(w(0x1b2));
+            // call width: 2
+            g.call(t(g, 0x192, 286), 0, &[gb, w(0x1ac)]);
+            let grp = e + 8;
+            g.write::<u32>(grp, w(0x1c3));
+            g.write::<u32>(grp + 4, w(0x1cb));
+            abs(g, &[0x1d1]);
+            let colour = Frame {
+                at: img.rel32_target(f + 0x1da),
+                esp: e.wrapping_sub(4),
+                ecx: grp,
+                ..*fr
+            };
+            let eax = crate::s3_misc::colour_node(g, img, &colour);
+            abs(g, &[0x1e0, 0x1ea, 0x1f4, 0x1fe, 0x208, 0x21a, 0x224]);
+            crate::sb_misc::move_start(g, img, img.rel32_target(f + 0x22d), k(g, 0x214), eax);
+            let node = at(0x2c);
+            let grp = e + 0x10;
+            for (i, v) in (0u32..).zip([node, w(0x240), w(0x248), w(0x250), w(0x258), w(0x260)]) {
+                g.write::<u32>(grp + 4 * i, v);
+            }
+            let ins = Frame {
+                at: img.rel32_target(f + 0x265),
+                ecx: grp,
+                ..*fr
+            };
+            crate::nodes::node_insert(g, img, &ins);
+            g.write::<u32>(w(0x270), node);
+            g.write::<u32>(at(0x364), 0);
+            g.write::<u32>(at(0x368), 0x41f0_0000);
+            g.write::<u32>(at(0x36c), 0);
+            g.write::<u32>(at(0x2bc), w(0x298));
+            abs(g, &[0x29e]);
+            // call width: 0
+            let kind = g.call(t(g, 0x26a, 520), 0, &[]).eax;
+            g.write::<u32>(at(0x338), 0x41f0_0000);
+            let (y, z) = if kind == 0x0205_0000 {
+                (0xc2b4_0000, 0xc28c_0000)
+            } else {
+                (0xc28c_0000, 0xc348_0000)
+            };
+            g.write::<u32>(at(0x33c), y);
+            g.write::<u32>(at(0x340), z);
+            let count = e + 8;
+            // call width: 2
+            let mut eax = g.call(t(g, 0x2ef, 288), 0, &[0xb, count]).eax;
+            let list = eax;
+            let mut i = 0u32;
+            while i.cast_signed() < g.read::<u32>(count).cast_signed() {
+                let b = u32::from(g.read::<u8>(list.wrapping_add(i)));
+                // call width: 2
+                eax = g.call(t(g, 0x314, 296), 0, &[b, 0]).eax;
+                i += 1;
+            }
+            abs(g, &[0x332]);
+            let x = g.read::<u32>(w(0x33c)).wrapping_add(1);
+            g.write::<u32>(w(0x33c), x);
+            eax
+        }
+        61 => {
+            let link = Frame {
+                at: img.rel32_target(f + 0x34d),
+                ecx: at(0x374),
+                ..*fr
+            };
+            crate::s4_small::link_node(g, img, &link);
+            g.write::<u32>(at(0x394), ONE);
+            g.write::<u8>(at(0x390), 0x30);
+            let eax = crate::sa_misc::static_node(g, img, img.rel32_target(f + 0x366));
+            next(g);
+            eax
+        }
+        62 => {
+            let x = sub(rf(g, at(0x368)), k(g, 0x386));
+            next(g);
+            g.write::<f32>(at(0x368), x);
+            byte
+        }
+        63 | 64 => {
+            if state == 63 {
+                flags3(g, 0x3a1);
+                g.write::<u8>(w(0x3a8), 0);
+                abs(
+                    g,
+                    &[
+                        0x3af, 0x3b9, 0x3c3, 0x3cd, 0x3d7, 0x3e1, 0x3eb, 0x3f5, 0x3ff, 0x409,
+                        0x413, 0x41d,
+                    ],
+                );
+                let x = sub(rf(g, at(0x368)), step);
+                next(g);
+                g.write::<f32>(at(0x368), x);
+            }
+            let x = sub(rf(g, at(0x368)), step);
+            g.write::<f32>(at(0x368), x);
+            byte
+        }
+        70 => {
+            g.write::<u32>(at(0x154), w(0x460));
+            g.write::<u32>(at(0x168), w(0x46a));
+            for (o, v) in [
+                (0x368u32, 0u32),
+                (0x338, 0x41f0_0000),
+                (0x33c, 0xc1a0_0000),
+                (0x340, 0xc2a0_0000),
+                (0x1c, 0),
+            ] {
+                g.write::<u32>(at(o), v);
+            }
+            next(g);
+            byte
+        }
+        71 => {
+            // comiss; jb: below or unordered waits
+            if x1c
+                .partial_cmp(&k(g, 0x4ad))
+                .is_none_or(core::cmp::Ordering::is_lt)
+            {
+                return Ret::eax(byte);
+            }
+            let pick = Frame {
+                at: img.rel32_target(f + 0x4b8),
+                ..*fr
+            };
+            crate::o4_single::flag_pick_slot(g, img, &pick);
+            let who = u32::from(g.read::<u8>(w(0x4bf)));
+            // call width: 2
+            g.call(t(g, 0x4ca, 228), 0, &[who, 0xb8]);
+            let setup = Frame {
+                at: img.rel32_target(f + 0x4e0),
+                esp: e.wrapping_sub(4),
+                ecx: at(0x39c),
+                ..*fr
+            };
+            let eax = screen_setup_0601(g, img, &setup).eax;
+            let x = g.read::<u32>(w(0x4e6)).wrapping_add(1);
+            g.write::<u32>(w(0x4e6), x);
+            eax
+        }
+        80 => {
+            flags3(g, 0x4f2);
+            abs(g, &[0x4fa, 0x504, 0x50e, 0x518, 0x522, 0x52c]);
+            next(g);
+            byte
+        }
+        81 => {
+            next(g);
+            byte
+        }
+        110 => {
+            let gb = g.read::<u32>(w(0x555));
+            // call width: 2
+            g.call(t(g, 0x541, 286), 0, &[gb, 0x4480_0000]);
+            // call width: 2
+            g.call(t(g, 0x55c, 250), 0, &[0, 0]);
+            let (x3, x2) = (k(g, 0x57b), k(g, 0x583));
+            abs(g, &[0x589]);
+            for (o, v) in [(0x364u32, 0u32), (0x368, 0xc28c_0000), (0x36c, 0)] {
+                g.write::<u32>(at(o), v);
+            }
+            abs(g, &[0x5b1]);
+            for (o, v) in [
+                (0x338u32, 0x4248_0000u32),
+                (0x33c, 0xc316_0000),
+                (0x340, 0xc2c8_0000),
+            ] {
+                g.write::<u32>(at(o), v);
+            }
+            abs(g, &[0x5dc, 0x5e6, 0x5f0, 0x5fa, 0x604, 0x60e, 0x618, 0x622]);
+            let eax = crate::sb_misc::move_start_2(g, img, img.rel32_target(f + 0x62b), x2, x3);
+            let x = g.read::<u32>(w(0x631)).wrapping_add(1);
+            g.write::<u32>(w(0x631), x);
+            eax
+        }
+        111 | 112 => {
+            if state == 111 {
+                flags3(g, 0x63d);
+                abs(
+                    g,
+                    &[
+                        0x644, 0x64e, 0x658, 0x662, 0x66c, 0x676, 0x680, 0x68a, 0x694,
+                    ],
+                );
+                g.write::<u8>(at(0x390), 0);
+                g.write::<u32>(at(0x20), 0);
+                next(g);
+            }
+            if g.read::<u32>(at(0x20)) < 0x4b {
+                return Ret::eax(byte);
+            }
+            flags3(g, 0x6b9);
+            abs(g, &[0x6c1, 0x6cb, 0x6d5, 0x6df]);
+            g.write::<u32>(at(0x20), 0);
+            next(g);
+            byte
+        }
+        _ => byte,
+    };
+    Ret::eax(eax)
+}
+
+/// [`screen_task_0601`] (the `rel32`s: its many node and slot helpers).
+pub const SCREEN_TASK_0601: Sig = Sig {
+    len: 1941,
+    hash: 0xb41e_11b4_e28c_b2bd,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s4_small::CALL_211_FLAG)),
+        (0x109, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0x142, Callee::Sig(&crate::sa_misc::INSERT_WITH)),
+        (0x15b, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x170, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x18d, Callee::Sig(&crate::r22::NODE_BUILD_0601)),
+        (0x1da, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x22d, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x265, Callee::Sig(&crate::nodes::INSERT)),
+        (0x34d, Callee::Sig(&crate::s4_small::LINK_NODE)),
+        (0x366, Callee::Sig(&crate::sa_misc::STATIC_NODE)),
+        (
+            0x4b8,
+            Callee::Sig(&crate::o4_single::FLAG_PICK_SLOT_0601_8070),
+        ),
+        (0x4e0, Callee::Sig(&SCREEN_SETUP_0601)),
+        (0x62b, Callee::Sig(&crate::sb_misc::MOVE_START_2)),
+        (0x6fb, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x706, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};

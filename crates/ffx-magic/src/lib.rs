@@ -3208,6 +3208,7 @@ ports! {
     "r31 thunk: light visit 0577" => sl_wrap::JMP_LIGHT_VISIT_0577, sl_wrap::ecx_jmp;
     "r31 motion task 0577" => r31::MOTION_TASK_0577, r31::motion_task_0577;
     "r31 thunk: aim visit 0512" => sl_wrap::JMP_AIM_VISIT_0512, sl_wrap::ecx_jmp;
+    "r31 screen task 0601" => r31::SCREEN_TASK_0601, r31::screen_task_0601;
     // round 31 (magic-r31): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
