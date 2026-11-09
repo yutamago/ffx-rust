@@ -2110,3 +2110,415 @@ pub const START_UP_0432: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0304`'s start-up (0x10003810, 720 bytes; called by its load
+/// step): [`start_up_0568`](crate::r23::start_up_0568)'s code with its own
+/// placement ([`place_pair`](crate::m0596::place_pair), the fields 0x1048
+/// higher) and turned matrix.
+pub fn start_up_0304<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r23::start_up_0568_with(g, img, fr, crate::m0596::place_pair)
+}
+
+/// [`start_up_0304`] (the hash of [`START_UP_0568`](crate::r23::START_UP_0568),
+/// other callees).
+pub const START_UP_0304: Sig = Sig {
+    len: 720,
+    hash: 0x25d3_b276_2a87_a118,
+    calls: &[
+        (0x1da, Callee::Sig(&crate::r21::PLACE_PAIR_0304)),
+        (
+            0x1df,
+            Callee::Sig(&crate::o4_effect::START_TURNED_0304_1C10),
+        ),
+        (0x243, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x282, Callee::Sig(&crate::sa_misc::RECORDS_INIT_400)),
+        (0x28c, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0304`'s objects started (0x10003540, 584 bytes; a table entry,
+/// no arguments): [`objects_start_0568`](crate::r23::objects_start_0568)
+/// with the state's fields 0x60 higher (the position `S + 0x1498`, the
+/// yaw `S + 0x171c`, the timer block `S + 0x14d4`, the record `S +
+/// 0x1520`, the object `S + 0x15c0`, the fade `S + 0x1550`), and instead
+/// of copying `S + 0x149c` to `S + 0x148c` it stores that `y` there and
+/// `y - K` at `S + 0x146c` and `S + 0x140c`. Returns the fade's node.
+#[allow(clippy::too_many_lines)] // one straight sequence of steps
+pub fn objects_start_0304<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let s = g.read::<u32>(w(0xb));
+    let obj = s + 0x850;
+    // push ebx, esi, edi; sub esp, 8; push 0x15; push 2: the return
+    // address at E - 0x20
+    let esp = fr.esp.wrapping_sub(0x20);
+    g.write::<u32>(esp + 4, 2);
+    g.write::<u32>(esp + 8, 0x15);
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x4)));
+    let hf = Frame {
+        at: img.rel32_target(f + 0x26),
+        esp,
+        ecx: w(0x21),
+        edx: obj,
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::start_host_object(g, img, &hf);
+    for o in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(s + 0x1498 + o);
+        g.write::<u32>(obj + 0xd0 + o, v);
+    }
+    let y = sub(g.read::<f32>(obj + 0xd4), k(g, 0x6c));
+    let yaw = g.read::<u32>(s + 0x171c);
+    g.write::<u32>(obj + 0xc4, yaw);
+    g.write::<f32>(obj + 0xd4, y);
+    let y = g.read::<f32>(s + 0x149c);
+    let low = sub(y, k(g, 0x97));
+    g.write::<f32>(s + 0x148c, y);
+    g.write::<f32>(s + 0x146c, low);
+    g.write::<f32>(s + 0x140c, low);
+    let timer = s + 0x14d4;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x28),
+        (8, 0),
+        (0xc, 0x32),
+        (0x14, 1),
+        (0x10, 1),
+    ] {
+        g.write::<u32>(timer + o, v);
+    }
+    g.write::<u16>(timer + 0x18, 0);
+    let n1 = crate::sa_pool::take(g, img, img.rel32_target(f + 0xe7), w(0x7c));
+    let first = g.read::<u32>(w(0xed));
+    g.write::<u8>(n1 + 0x18, 1);
+    g.write::<u32>(n1 + 0x14, timer);
+    g.write::<u32>(n1 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x119), n1);
+    } else {
+        let last = g.read::<u32>(w(0x106));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    let r = s + 0x1520;
+    for (o, v) in [
+        (0u32, 0u32),
+        (0x1c, 0),
+        (0x20, 0x3d23_d70a),
+        (0x24, 0),
+        (0x28, 0x19),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    g.write::<u16>(r + 0x2c, 0);
+    let n2 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x154), w(0x129));
+    let first = g.read::<u32>(w(0x15a));
+    g.write::<u8>(n2 + 0x18, 1);
+    g.write::<u32>(n2 + 0x14, r);
+    g.write::<u32>(n2 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x17d), n2);
+    } else {
+        // the list's last is the first node (its last word not stored yet)
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    for (o, v) in [
+        (4u32, 0x3f80_0000u32),
+        (8, 0x3f80_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4080_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    let fl = g.read::<u16>(r + 0x2c);
+    g.write::<u16>(r + 0x2c, fl | 3);
+    g.write::<u32>(r + 0x24, 0x16);
+    g.write::<u32>(w(0x1c1), n2);
+    let o2 = s + 0x15c0;
+    g.write::<u32>(o2 + 0xf0, 0x4080_8080);
+    g.write::<u16>(o2 + 0x124, 2);
+    for (o, v) in [
+        (0x11cu32, u32::MAX),
+        (0x120, 0x5c),
+        (0x110, 0x76),
+        (0xf8, 0),
+        (0xfc, 0x3d4c_cccd),
+        (0x100, 0),
+    ] {
+        g.write::<u32>(o2 + o, v);
+    }
+    // the pushes undone: the return address at E - 0x10
+    let of = Frame {
+        at: img.rel32_target(f + 0x218),
+        esp: fr.esp.wrapping_sub(0x10),
+        ecx: o2,
+        ..Frame::default()
+    };
+    crate::s8_misc::object_node(g, img, &of);
+    // push 0xb4 under the return address
+    let esp = fr.esp.wrapping_sub(0x14);
+    g.write::<u32>(esp + 4, 0xb4);
+    let ff = Frame {
+        at: img.rel32_target(f + 0x23d),
+        esp,
+        ecx: s + 0x1550,
+        edx: 0x10,
+        xmm: [
+            0,
+            u128::from(g.read::<u32>(w(0x228))),
+            u128::from(g.read::<u32>(w(0x220))),
+            0,
+        ],
+        ..Frame::default()
+    };
+    Ret::eax(crate::s3_misc::fade_task(g, img, &ff))
+}
+
+/// [`objects_start_0304`].
+pub const OBJECTS_START_0304: Sig = Sig {
+    len: 584,
+    hash: 0xdf11_af45_9d4a_a438,
+    calls: &[
+        (0x26, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+        (0xe7, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x154, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x218, Callee::Sig(&crate::s8_misc::OBJECT_NODE)),
+        (0x23d, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0304`'s summon objects (0x10001d40, 1030 bytes; a table entry,
+/// no arguments; `ebp = E - 4`): `S = *G_STATE`, `S + 0x1720` = 0; the
+/// height `y0 = S + 0x14ac` less `K1` when slot 520's kind is in the DLL's
+/// list (words up to -1) and less `K2` when its high half is 0x1ae; three
+/// host objects ([`start_host_object`](crate::s4_small::start_host_object):
+/// `S` `(0, 0)` scale `K3`, `S + 0x260` `(2, 0x98)` scale `K4`, `S + 0x130`
+/// `(1, 0x66)` scale `K5`) at the summon's position `S + 0x14a8` with its
+/// yaw `S + 0x171c` and their heights (`y - K6`, `y0 - K7`, `y0 - K8`),
+/// the first with the draw `DRAW` and `+0xe0` -0.5, the third with the
+/// record `S + 0x16e8` (cleared, two code words) and `+0xe0` -0.7; the
+/// fade of `S + 0x1550` ([`fade_task`](crate::s3_misc::fade_task), 0x1e
+/// frames); two timer blocks (`S + 0x14b8`, `S + 0x14d4`) and the record
+/// `S + 0x14f0` each on a task node from the pool
+/// ([`take`](crate::sa_pool::take)) appended to the task list. Returns the
+/// last node.
+#[allow(clippy::too_many_lines)] // one straight sequence of steps
+pub fn summon_objects_0304<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let k = |g: &G, op: u32| g.read::<f32>(w(op));
+    let e = fr.esp;
+    let s = g.read::<u32>(w(0x15));
+    g.write::<u32>(s + 0x1720, 0);
+    // call width: 0
+    let kind = g.call(slot_target(g, w(0x7), 520), 0, &[]).eax;
+    let mut y0 = g.read::<f32>(s + 0x14ac);
+    let mut at = w(0x31);
+    let mut v = g.read::<u32>(w(0x2a));
+    while v != u32::MAX {
+        if v == kind {
+            y0 = sub(y0, k(g, 0x2d7));
+            break;
+        }
+        at = at.wrapping_add(4);
+        v = g.read::<u32>(at);
+    }
+    if kind & 0xffff_0000 == 0x01ae_0000 {
+        y0 = sub(y0, k(g, 0x71));
+    }
+    let pos = |g: &mut G, o: u32| {
+        for j in [0u32, 4, 8, 0xc] {
+            let v = g.read::<u32>(s + 0x14a8 + j);
+            g.write::<u32>(o + 0xd0 + j, v);
+        }
+    };
+    // a host object: `edx` = the object, `xmm3` its scale, the two words
+    // pushed under the return address at `E - 0x2c`
+    let host = |g: &mut G, call: u32, ecx_op: u32, obj: u32, scale_op: u32, a: [u32; 2]| {
+        let esp = e.wrapping_sub(0x2c);
+        g.write::<u32>(esp + 4, a[0]);
+        g.write::<u32>(esp + 8, a[1]);
+        let hf = Frame {
+            at: img.rel32_target(f + call),
+            esp,
+            eax: 0,
+            ecx: w(ecx_op),
+            edx: obj,
+            xmm: [0, 0, 0, u128::from(g.read::<u32>(w(scale_op)))],
+        };
+        crate::s4_small::start_host_object(g, img, &hf);
+    };
+    host(g, 0x92, 0x8d, s, 0x7e, [0, 0]);
+    pos(g, s);
+    let y = sub(g.read::<f32>(s + 0xd4), k(g, 0xda));
+    let yaw = g.read::<u32>(s + 0x171c);
+    g.write::<u32>(s + 0xc4, yaw);
+    g.write::<f32>(s + 0xd4, y);
+    g.write::<u32>(s + 0xe0, 0xbf00_0000);
+    g.write::<u32>(s + 0x104, w(0x119));
+    let o2 = s + 0x260;
+    host(g, 0x11e, 0xf7, o2, 0xa0, [2, 0x98]);
+    pos(g, o2);
+    let yaw = g.read::<u32>(s + 0x171c);
+    g.write::<u32>(o2 + 0xc4, yaw);
+    g.write::<f32>(o2 + 0xd4, sub(y0, k(g, 0x131)));
+    let o3 = s + 0x130;
+    host(g, 0x190, 0x18b, o3, 0x139, [1, 0x66]);
+    pos(g, o3);
+    let rec = s + 0x16e8;
+    for (o, v) in [
+        (0x18u32, 0u32),
+        (0x14, 0),
+        (0x10, 0),
+        (0x1c, 0),
+        (0x20, w(0x1fc)),
+        (0x24, w(0x203)),
+        (0x28, 0),
+        (0x2c, 0),
+    ] {
+        g.write::<u32>(rec + o, v);
+    }
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(o3 + 0x110, rec);
+    let yaw = g.read::<u32>(s + 0x171c);
+    g.write::<u32>(o3 + 0xc4, yaw);
+    g.write::<f32>(o3 + 0xd4, sub(y0, k(g, 0x1a3)));
+    g.write::<u32>(o3 + 0xe0, 0xbf33_3333);
+    // push ecx (0): the fade's word under its return address at E - 0x30
+    let esp = e.wrapping_sub(0x30);
+    g.write::<u32>(esp + 4, 0);
+    let ff = Frame {
+        at: img.rel32_target(f + 0x256),
+        esp,
+        eax: 0,
+        ecx: s + 0x1550,
+        edx: 0x1e,
+        xmm: [
+            0,
+            u128::from(g.read::<u32>(w(0x251))),
+            u128::from(g.read::<u32>(w(0x249))),
+            0,
+        ],
+    };
+    crate::s3_misc::fade_task(g, img, &ff);
+    // the three task nodes: (block, its words, take's rel32, owner, first,
+    // last, empty-list head)
+    let t1 = s + 0x14b8;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x50),
+        (8, 0),
+        (0xc, 0x89),
+        (0x14, 0x1c),
+        (0x10, 0x1c),
+    ] {
+        g.write::<u32>(t1 + o, v);
+    }
+    g.write::<u16>(t1 + 0x18, 0);
+    let n1 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x298), w(0x266));
+    let first = g.read::<u32>(w(0x29e));
+    g.write::<u8>(n1 + 0x18, 1);
+    g.write::<u32>(n1 + 0x14, t1);
+    g.write::<u32>(n1 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x2e8), n1);
+    } else {
+        let last = g.read::<u32>(w(0x2b7));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    let t2 = s + 0x14d4;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 0x50),
+        (8, 0x28),
+        (0xc, 0xcc),
+        (0x14, 0x4c),
+        (0x10, 0x4c),
+    ] {
+        g.write::<u32>(t2 + o, v);
+    }
+    g.write::<u16>(t2 + 0x18, 0);
+    let n2 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x32a), w(0x2f8));
+    let first = g.read::<u32>(w(0x330));
+    g.write::<u8>(n2 + 0x18, 1);
+    g.write::<u32>(n2 + 0x14, t2);
+    g.write::<u32>(n2 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x356), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    let r = s + 0x14f0;
+    for (o, v) in [
+        (0u32, 0u32),
+        (0x1c, 0),
+        (0x20, 0x3c57_9436),
+        (0x24, 0),
+        (0x28, 0x4c),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    g.write::<u16>(r + 0x2c, 0);
+    let n3 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x394), w(0x369));
+    let first = g.read::<u32>(w(0x39a));
+    g.write::<u8>(n3 + 0x18, 1);
+    g.write::<u32>(n3 + 0x14, r);
+    g.write::<u32>(n3 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n3, 0);
+        g.write::<u32>(w(0x3be), n3);
+    } else {
+        g.write::<u32>(n3, n2);
+        g.write::<u32>(n2 + 4, n3);
+    }
+    g.write::<u32>(n3 + 8, n3);
+    for (o, v) in [
+        (4u32, 0x3f80_0000u32),
+        (8, 0x3f80_0000),
+        (0xc, 0),
+        (0x10, 0x4080_0000),
+        (0x14, 0x4080_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    let fl = g.read::<u16>(r + 0x2c);
+    g.write::<u16>(r + 0x2c, fl | 3);
+    g.write::<u32>(r + 0x24, 0xcc);
+    g.write::<u32>(w(0x3fd), n3);
+    Ret::eax(n3)
+}
+
+/// [`summon_objects_0304`].
+pub const SUMMON_OBJECTS_0304: Sig = Sig {
+    len: 1030,
+    hash: 0x11c1_ca2a_7222_f1ca,
+    calls: &[
+        (0x92, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+        (0x11e, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+        (0x190, Callee::Sig(&crate::s4_small::START_HOST_OBJECT)),
+        (0x256, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+        (0x298, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x32a, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x394, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};

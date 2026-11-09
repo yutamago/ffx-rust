@@ -1929,3 +1929,120 @@ fn start_up_0613() {
         t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
     }
 }
+
+/// `magic_0304` 0x10003540 (`r30::objects_start_0304`): the task list
+/// empty and not, the pools with free nodes.
+#[test]
+fn objects_start_0304() {
+    let Some(mut t) = twin(304) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x3540);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0xb), s);
+    let so = t.img.rel32_target(f + 0x26);
+    let host = w(&t, 0x21);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    magic_owna::rec(&mut t, 941, 1, move |_, _| table);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    t.set_u32(t.img.word(so + 0x4), SCRATCH + 0x2f0);
+    let sp = t.img.rel32_target(so + 0x81);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    let d = SCRATCH + 0x2e00;
+    t.set_u32(host + 0x2c, d);
+    t.set_u32(d + 0x10, 0x00d0_0010);
+    let take = t.img.rel32_target(f + 0xe7);
+    let fade = t.img.rel32_target(f + 0x23d);
+    for (k, busy) in [false, true, false].into_iter().enumerate() {
+        let k = k as u32;
+        junk(&mut t, s + 0x800, 0x1000, k);
+        for i in 0..4 {
+            t.set_u32(s + 0x1498 + 4 * i, (1.5 + i as f32 - k as f32).to_bits());
+        }
+        t.set_u32(s + 0x171c, (0.75 * k as f32).to_bits());
+        magic_hi::pool(&mut t, take, SCRATCH + 0x5000, 5);
+        let ft = t.img.rel32_target(fade + 0x75);
+        if ft != take {
+            magic_hi::pool(&mut t, ft, SCRATCH + 0x5400, 3);
+        }
+        let last = SCRATCH + 0x5800;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, 0xed), if busy { last } else { 0 });
+        t.set_u32(w(&t, 0x106), last);
+        let (fh, ftl) = (t.img.word(fade + 0x7b), t.img.word(fade + 0x93));
+        magic_hi::list(&mut t, fh, ftl, SCRATCH + 0x5900, busy);
+        ownb::dirty_stack(&mut t, 0x3540 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0304` 0x10001d40 (`r30::summon_objects_0304`): slot 520's kind
+/// in the DLL's list or not, its high half 0x1ae or not; the task list
+/// empty and not.
+#[test]
+fn summon_objects_0304() {
+    let Some(mut t) = twin(304) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x1d40);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x15), s);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    magic_owna::rec(&mut t, 941, 1, move |_, _| table);
+    magic_owna::rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    for call in [0x92u32, 0x11e, 0x190] {
+        let so = t.img.rel32_target(f + call);
+        t.set_u32(t.img.word(so + 0x4), SCRATCH + 0x2f0);
+        let sp = t.img.rel32_target(so + 0x81);
+        t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x7f8);
+    }
+    for op in [0x8du32, 0xf7, 0x18b] {
+        let host = w(&t, op);
+        let d = SCRATCH + 0x2e00;
+        t.set_u32(host + 0x2c, d);
+        t.set_u32(d + 0x10, 0x00d0_0010);
+    }
+    let kinds = w(&t, 0x2a);
+    let kind = SCRATCH + 0x7e0;
+    magic_owna::rec(&mut t, 520, 0, move |m, _| m.r32(kind));
+    let take = t.img.rel32_target(f + 0x298);
+    let fade = t.img.rel32_target(f + 0x256);
+    let listed_kind = t.u32(kinds);
+    // (slot 520's kind, the list busy)
+    for (k, (kd, busy)) in [
+        (listed_kind, false),
+        (0x01ae_0005, true),
+        (0x0123_0000, false),
+        (listed_kind | 0x01ae_0000, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        junk(&mut t, s, 0x1800, k);
+        for i in 0..4 {
+            t.set_u32(s + 0x14a8 + 4 * i, (1.5 + i as f32 - k as f32).to_bits());
+        }
+        t.set_u32(s + 0x171c, (0.75 * k as f32).to_bits());
+        t.set_u32(kind, kd);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x5000, 6);
+        let ft = t.img.rel32_target(fade + 0x75);
+        if ft != take {
+            magic_hi::pool(&mut t, ft, SCRATCH + 0x5400, 3);
+        }
+        let last = SCRATCH + 0x5800;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, 0x29e), if busy { last } else { 0 });
+        t.set_u32(w(&t, 0x2b7), last);
+        let (fh, ftl) = (t.img.word(fade + 0x7b), t.img.word(fade + 0x93));
+        magic_hi::list(&mut t, fh, ftl, SCRATCH + 0x5900, busy);
+        ownb::dirty_stack(&mut t, 0x1d40 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -1512,6 +1512,18 @@ fn part_load_0568<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 16], k: u3
 /// up ([`records_init_400`](crate::sa_misc::records_init_400)) between
 /// them. Returns 0.
 pub fn start_up_0568<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_0568_with(g, img, fr, place_0568)
+}
+
+/// [`start_up_0568`] with the placement its `rel32` at `+0x1da` reaches:
+/// [`place_0568`], or [`place_pair`](crate::m0596::place_pair) in
+/// `magic_0304`'s copy (`r30::START_UP_0304`).
+pub(crate) fn start_up_0568_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    place: fn(&mut G, &Image, u32, u32) -> u32,
+) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -1547,7 +1559,7 @@ pub fn start_up_0568<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     // push esi and the loads' last words: the return address at E - 0x40
     let esp = fr.esp.wrapping_sub(0x40);
-    place_0568(g, img, img.rel32_target(f + 0x1da), esp);
+    place(g, img, img.rel32_target(f + 0x1da), esp);
     let tf = Frame {
         at: img.rel32_target(f + 0x1df),
         esp,

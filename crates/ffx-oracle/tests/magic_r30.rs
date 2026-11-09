@@ -943,6 +943,9 @@ fn trail_start_0432() {
         let case = case as u32;
         t.write(e, &magic_h6::varied(0x3300, case as u8));
         t.set_u32(e + 0x32c0, a.to_bits());
+        for (i, x) in [1.5f32, -0.75, 3.0, 1.0].into_iter().enumerate() {
+            t.set_u32(e + 0xf70 + 4 * i as u32, (x - case as f32).to_bits());
+        }
         t.write(old, &[0x6c; 0x20]);
         t.set_u32(head, if listed { old } else { 0 });
         t.set_u32(tail, if listed { old } else { 0x0bad_0000 });
@@ -981,6 +984,10 @@ fn spark_start_0432() {
         t.set_u32(t.img.word(take + 0x09), n);
         t.set_u32(t.img.word(take + 0x01), 1);
         t.write(src, &magic_h6::varied(0x100, case as u8 + 2));
+        // a point of plain numbers (`y - 1` must differ from `y`)
+        for (i, x) in [0.5f32, 2.25, -1.5, 1.0].into_iter().enumerate() {
+            t.set_u32(src + 0xd0 + 4 * i as u32, (x + case as f32).to_bits());
+        }
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[src], Eax::Checked);
     }

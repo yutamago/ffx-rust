@@ -161,6 +161,8 @@ copies! {
     load_0163 => LOAD_0163, One, crate::r26::start_up_0163, crate::r26::START_UP_0163;
     /// `magic_0432` 0x10001210.
     load_0432 => LOAD_0432, Zero, crate::r30::start_up_0432, crate::r30::START_UP_0432;
+    /// `magic_0304` 0x10001390.
+    load_0304 => LOAD_0304, Zero, crate::r30::start_up_0304, crate::r30::START_UP_0304;
     /// `magic_0299` 0x100012b0.
     load_0299 => LOAD_0299, Zero, crate::r26::start_up_0299, crate::r26::START_UP_0299;
     /// `magic_0377` 0x100035a0.
