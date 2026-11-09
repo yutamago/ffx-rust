@@ -3037,6 +3037,10 @@ ports! {
     "r27 light task 0578" => r27::LIGHT_TASK_0578, r27::light_task_0578;
     "r27 thunk bone 0577" => r27::THUNK_BONE_0577, r27::thunk_bone_0577;
     "r27 start-up 0609" => r27::START_UP_0609, r27::start_up_0609;
+    "r27 load 0589" => r27::LOAD_0589, r27::load_0589;
+    "r27 three points 0589" => r27::THREE_POINTS_0589, r27::three_points_0589;
+    "r27 three objects 0589" => r27::THREE_OBJECTS_0589, r27::three_objects_0589;
+    "r27 fading summons 0589" => r27::FADING_SUMMONS_0589, r27::fading_summons_0589;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
@@ -3721,6 +3725,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r27 trail parts 0587", &r27::TRAIL_PARTS_0587),
     ("r27 fade set-up 0578", &r27::FADE_SETUP_0578),
     ("r27 bone 0577", &r27::BONE_0577),
+    ("r27 summon frames 0589", &r27::SUMMON_FRAMES_0589),
+    ("r27 start-up 0589", &r27::START_UP_0589),
     // round 27 (magic-r27): end of INTERNAL
     // round 25 (magic-r25)
     ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
