@@ -409,6 +409,16 @@ fn start_up_0311_setup(t: &mut Twin, f: u32, k: u32, (battle, listed): (u32, boo
     t.set_u32(w(t, 0x35b), battle);
     t.set_u32(w(t, 0x396), battle);
     t.set_u32(w(t, 0x352), 0x0035_0000 + k);
+    // junk in the globals it stores constants to (the DLL's data may
+    // already hold them)
+    junk_ops(
+        t,
+        f,
+        &[
+            0xa8, 0xf9, 0x139, 0x143, 0x14d, 0x157, 0x175, 0x17f, 0x377, 0x3a7, 0x3b1, 0x3d4,
+            0x3e6, 0x3ee, 0x3f5, 0x400,
+        ],
+    );
     // the task list
     t.write(SCRATCH + 0x600, &[0x44; 0x10]);
     t.set_u32(w(t, 0x475), if listed { SCRATCH + 0x600 } else { 0 });
@@ -433,6 +443,234 @@ fn start_up_0311() {
     let load = t.at(0x12b0);
     for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
         start_up_0311_setup(&mut t, f, 3, (1, true));
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// What `r24::start_up_0149` (`magic_0149`, at `f`) needs: the pools,
+/// the part set-up's buffers, the four object starts', the target byte
+/// and its table, the task start's and the task list (empty or not);
+/// slot 262 writes a point from its first word, 268 a vector, 12 a float.
+fn start_up_0149_setup(t: &mut Twin, f: u32, k: u32, (battle, listed): (u32, bool)) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, 1278);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + 0.5;
+            m.w32(a[2] + 4 * i, v.to_bits());
+        }
+        0x268
+    });
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.375 - 1.5);
+    recs(t, &[(326, 5), (413, 1), (215, 1), (711, 3), (710, 4)]);
+    for call in [0x62u32, 0x24a, 0x379, 0x447] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(t, start);
+    }
+    // the actor, the target byte and its table
+    t.set_u32(w(t, 0x6d), 0x0000_0040 + k);
+    let idx = SCRATCH + 0x1e0;
+    t.set_u8(idx, (2 + k) as u8);
+    t.set_u8(idx + 1, 0x77);
+    t.set_u32(w(t, 0xa5), idx);
+    for i in 0..0x20 {
+        t.set_u32(w(t, 0xc1) + 4 * i, 0x0000_0080 + 3 * i);
+    }
+    // the actor block's battle flag
+    let me = t.img.rel32_target(f + 0x4ab);
+    t.set_u32(t.img.word(me + 0x05), battle);
+    // junk in the globals it stores constants to
+    junk_ops(
+        t,
+        f,
+        &[
+            0xb3, 0x21a, 0x241, 0x2b4, 0x310, 0x31a, 0x324, 0x32e, 0x338, 0x356, 0x360, 0x36a,
+            0x3cd, 0x3d7, 0x43e, 0x498, 0x4a2,
+        ],
+    );
+    // the task list
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(w(t, 0x4be), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x4ce), SCRATCH + 0x600);
+    // the task start's list
+    let ts = t.img.rel32_target(f + 0x223);
+    t.write(SCRATCH + 0x680, &[0x46; 0x10]);
+    t.set_u32(
+        t.img.word(ts + 0x75),
+        if listed { 0 } else { SCRATCH + 0x680 },
+    );
+    t.set_u32(t.img.word(ts + 0x8c), SCRATCH + 0x680);
+}
+
+/// `magic_0149` 0x10003450 (`r24::start_up_0149`, internal) and its load
+/// step 0x10003320 (`r9_load::load_0149`): in and out of a battle, the
+/// lists empty and not; the pitch and the turns through the point slots;
+/// the load step's waits and its start.
+#[test]
+fn start_up_0149() {
+    let Some(mut t) = twin(149) else { return };
+    let f = t.at(0x3450);
+    for (k, more) in [(0u32, false), (1, true), (0, true), (1, false)]
+        .into_iter()
+        .enumerate()
+    {
+        start_up_0149_setup(&mut t, f, k as u32, more);
+        t.check(f, Call::default(), &[], Eax::Checked, r24::start_up_0149);
+    }
+    let load = t.at(0x3320);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        start_up_0149_setup(&mut t, f, 3, (1, true));
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// What `r24::start_up_0435` (`magic_0435`, at `f`) needs: the pools,
+/// the part set-up's buffers, the object start's, the key curves' free
+/// ring (`free` nodes) and busy list, the task list (empty or not); slot
+/// 262 writes a point from its first word, 229 a vector from its last
+/// two, 333 an angle.
+fn start_up_0435_setup(t: &mut Twin, f: u32, k: u32, (battle, listed): (u32, bool)) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, 550);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.625 - 3.5);
+    filler(t, 235, 1, 16);
+    rec(t, 329, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i).rotate_left(3) ^ a[2];
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    rec(t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * 1.5 + (m.r32(a[1] + 4 * i) & 7) as f32;
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x229
+    });
+    recs(
+        t,
+        &[(219, 2), (220, 3), (413, 1), (215, 1), (711, 3), (710, 4)],
+    );
+    let start = t.img.rel32_target(f + 0x77);
+    magic_r11::object_start_auto(t, start);
+    let keys = t.img.rel32_target(f + 0x116);
+    let kw = |t: &Twin, o: u32| t.img.word(keys + o);
+    // the vectors at `V`
+    for i in 0..12u32 {
+        t.set_u32(kw(t, 0x180) + 4 * i, (0.5 * i as f32 - 1.75).to_bits());
+    }
+    // the target byte (its neighbour junk) and its table
+    let idx = SCRATCH + 0x1e0;
+    t.set_u8(idx, (2 + k) as u8);
+    t.set_u8(idx + 1, 0x77);
+    t.set_u32(kw(t, 0x1b), idx);
+    for i in 0..0x20 {
+        t.set_u32(kw(t, 0x37) + 4 * i, 0x0000_0080 + 3 * i);
+    }
+    // the key curves' free ring and busy list
+    magic_r11::ring(t, kw(t, 0x2f2), kw(t, 0x346), 4, SCRATCH + 0x9000);
+    t.write(SCRATCH + 0x640, &[0x46; 0x20]);
+    t.set_u32(kw(t, 0x3ad), if listed { SCRATCH + 0x640 } else { 0 });
+    t.set_u32(kw(t, 0x3c0), SCRATCH + 0x640);
+    t.set_u32(kw(t, 0x2a0), battle);
+    t.set_u32(w(t, 0x163), battle);
+    t.set_u32(w(t, 0x19e), battle);
+    t.set_u32(w(t, 0xd), 0x0000_0040 + k);
+    t.set_u32(w(t, 0x97), 0x0000_0050 + k);
+    // junk in the globals it stores constants to
+    junk_ops(
+        t,
+        f,
+        &[
+            0x3b, 0x42, 0xba, 0x130, 0x13a, 0x17f, 0x1af, 0x1b9, 0x1c3, 0x1cd, 0x1d6,
+        ],
+    );
+    junk_ops(
+        t,
+        keys,
+        &[0x2b7, 0x2c1, 0x2d5, 0x302, 0x30d, 0x317, 0x321, 0x116],
+    );
+    // the task list
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(w(t, 0x1e6), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x1f6), SCRATCH + 0x600);
+}
+
+/// `magic_0435` 0x10001340 (`r24::start_up_0435`, internal, with
+/// `r24::curve_keys_0435` 0x10001660) and its load step 0x10001210
+/// (`r9_load::load_0435`): in and out of a battle, the lists empty and
+/// not, the angles across the wraps; the key curves on their own; the
+/// load step's waits and its start.
+#[test]
+fn start_up_0435() {
+    let Some(mut t) = twin(435) else { return };
+    let f = t.at(0x1340);
+    // (case, in a battle, the lists busy)
+    for (k, battle, listed) in [
+        (0u32, 0u32, false),
+        (1, 1, true),
+        (2, 0, true),
+        (3, 1, false),
+        (6, 0, true),
+    ] {
+        start_up_0435_setup(&mut t, f, k, (battle, listed));
+        t.check(f, Call::default(), &[], Eax::Checked, r24::start_up_0435);
+    }
+    let keys = t.at(0x1660);
+    for k in [3u32, 9] {
+        start_up_0435_setup(&mut t, f, k, (k & 1, true));
+        t.check(
+            keys,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            r24::curve_keys_0435,
+        );
+    }
+    let load = t.at(0x1210);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        start_up_0435_setup(&mut t, f, 3, (1, true));
         rec(&mut t, 225, 1, move |_, _| busy);
         rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
         rec(&mut t, 227, 1, move |_, _| ready);
