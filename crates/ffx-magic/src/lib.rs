@@ -3134,6 +3134,7 @@ ports! {
     "r28 thunk: strip frame 0150" => sl_wrap::JMP_STRIP_FRAME_0150, sl_wrap::ecx_jmp;
     "r28 tail draw 0150" => r28::TAIL_DRAW_0150, r28::tail_draw_0150;
     "r28 summon start 0667" => r28::SUMMON_START_0667, r28::summon_start_0667;
+    "r28 summon task 0173" => r28::SUMMON_TASK_0173, r28::summon_task_0173;
     // round 28 (magic-r28): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
