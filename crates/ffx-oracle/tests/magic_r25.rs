@@ -2167,3 +2167,107 @@ fn load_0563() {
     }
     assert!(t.u32(ownb::LOG) > 0x200, "the start-ups' calls");
 }
+
+/// `magic_0587` 0x10001360 (`r25::load_0587`, with 0x10003db0
+/// `r25::start_up_0587` and 0x100015d0 `r25::place_0587`): the waits,
+/// the start-up with the task list empty and not, the yaw wrapped both
+/// ways and kept, the actor's index below 0x20 and not, the flag set.
+#[test]
+fn load_0587() {
+    let Some(mut t) = twin(587) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x1360);
+    let su = t.at(0x3db0);
+    let pl = t.at(0x15d0);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32 - 1.0 + (a[0] & 3) as f32);
+        }
+        0x262
+    });
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |m, _| f64::from(f32::from_bits(m.r32(SCRATCH + 0x24))));
+    for (s, x) in [(15u32, 1.5f64), (16, -0.75), (17, 3.0), (277, 40.0)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, v ^ (a[2] & 0x00ff_0000) ^ (s << 8));
+            }
+            s
+        });
+    }
+    for (s, n) in [
+        (718u32, 1usize),
+        (719, 3),
+        (711, 3),
+        (710, 4),
+        (238, 2),
+        (296, 2),
+        (257, 2),
+        (271, 1),
+        (568, 1),
+        (566, 1),
+        (211, 2),
+        (210, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    let lock = SCRATCH + 0x7f0;
+    let pi = t.img.rel32_target(su + 0x6a);
+    t.set_u32(w(&t, pi, 0x04), lock);
+    let take = t.img.rel32_target(su + 0xfb);
+    let s = SCRATCH + 0x1_0000;
+    // (225, once, 227, task list, yaw source, actor index, flag)
+    let cases: [(u32, u32, u32, bool, f32, u32, u32); 7] = [
+        (1, 0, 1, false, 0.0, 0, 0),
+        (0, 0, 0, false, 0.0, 0, 0),
+        (0, 0, 1, false, -10.0, 3, 0),
+        (0, 1, 2, true, 10.0, 0x21, 0),
+        (0, 0, 1, true, 0.5, 2, 1),
+        (0, 0, 1, false, f32::NAN, 5, 0),
+        (0, 0, 1, true, 3.0, 0x40, 1),
+    ];
+    for (k, (w225, once, r227, busy, yaw, idx, flag)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(SCRATCH + 0x24, yaw.to_bits());
+        t.set_u32(w(&t, f, 0x18), once);
+        t.set_u32(lock, 0x77 + k);
+        junk(&mut t, s, 0x3200, k);
+        t.set_u32(w(&t, su, 0x52), s);
+        t.set_u32(w(&t, pl, 0x18e), idx);
+        t.set_u32(w(&t, pl, 0x19f), flag);
+        junk_ops(&mut t, su, &[0x2a, 0x60, 0x8e, 0xb2]);
+        let node = |i: u32| SCRATCH + 0x5000 + 0x40 * i;
+        for i in 0..3u32 {
+            t.write(node(i), &[0x33; 0x40]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, su, 0x101), if busy { last } else { 0 });
+        t.set_u32(w(&t, su, 0x118), last);
+        ownb::dirty_stack(&mut t, 0x1360 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the start-up's calls");
+}
