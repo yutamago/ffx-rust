@@ -4993,3 +4993,90 @@ pub const EFFECT_END_0586: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0586`'s script task (0x10001fe0, 324 bytes; cdecl `(node)`, an
+/// `ebp` frame, `esi`/`edi` pushed). With `S = *G_S`: the 0x30-byte block
+/// `B` (`memset`) cleared, its halfword `B + 2` given 0x80 and `B + 0x14`
+/// the word `*G_V`; the effect's script runs, then the camera's
+/// ([`script_run`](crate::sb_misc::script_run), contexts the immediates
+/// `+0x2e` and `+0x3d`). While the effect's script runs on, `S + 0x920`,
+/// `+0x940` and `+0x960` (4 words each) go to `S + 0x880`, `+0x8c0` and
+/// `+0x900`, three motion scripts step
+/// ([`motion_script`](crate::s4_misc::motion_script)) and the camera rigs
+/// step ([`camera_rigs_step`](crate::s8_misc::camera_rigs_step), a tail
+/// jump), whose `eax` it returns. Once it is done: the scale task of `S +
+/// 0x8400` ([`scale_task_edx`](crate::s4_small::scale_task_edx): `edx` 1,
+/// `xmm2`/`xmm1` the constants `+0x10a`/`+0x112`; the word pushed under it
+/// is the `ecx` the camera's script leaves, which its callbacks may
+/// clobber, so 0 here: the task never reads it), `S + 0x858c` 1, the
+/// effect's end ([`effect_end_0586`]) and the node back to the pool
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump), whose `eax` it
+/// returns.
+pub fn script_task_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = g.read::<u32>(w(0x7));
+    g.write_bytes(w(0x10), &[0u8; 0x30]);
+    let h = g.read::<u16>(w(0x21));
+    g.write::<u16>(w(0x21), h | 0x80);
+    let v = g.read::<u32>(w(0x26));
+    g.write::<u32>(w(0x33), v);
+    let done = crate::sb_misc::script_run(g, img, call(0x38), w(0x2e));
+    crate::sb_misc::script_run(g, img, call(0x44), w(0x3d));
+    if done == 0 {
+        for (from, to) in [(0x920u32, 0x880u32), (0x940, 0x8c0), (0x960, 0x900)] {
+            for i in 0..4u32 {
+                let x = g.read::<u32>(s + from + 4 * i);
+                g.write::<u32>(s + to + 4 * i, x);
+            }
+        }
+        for (op, c) in [(0xdbu32, 0xe6u32), (0xeb, 0xf0), (0xf5, 0xfa)] {
+            crate::s4_misc::motion_script(g, img, call(c), w(op));
+        }
+        let rigs = Frame {
+            at: call(0x102),
+            esp: fr.esp,
+            ..Frame::default()
+        };
+        return crate::s8_misc::camera_rigs_step(g, img, &rigs);
+    }
+    // push ebp, esi, edi, ecx; the return address at `E - 0x14`
+    let esp = fr.esp.wrapping_sub(0x14);
+    g.write::<u32>(esp + 4, 0);
+    let mut xmm = [0u128; 4];
+    xmm[2] = u128::from(g.read::<u32>(w(0x10a)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x112)));
+    let task = Frame {
+        at: call(0x123),
+        esp,
+        ecx: s.wrapping_add(0x8400),
+        edx: 1,
+        xmm,
+        ..Frame::default()
+    };
+    crate::s4_small::scale_task_edx(g, img, &task);
+    g.write::<u32>(s + 0x858c, 1);
+    effect_end_0586(g, img, call(0x135), fr.esp.wrapping_sub(0x10));
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(g, img, call(0x140), node))
+}
+
+/// [`script_task_0586`] (324 bytes, 1 overlay).
+pub const SCRIPT_TASK_0586: Sig = Sig {
+    len: 324,
+    hash: 0x54a2_4490_91e7_b891,
+    calls: &[
+        (0x15, Callee::Import("memset")),
+        (0x38, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x44, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0xe6, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0xf0, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0xfa, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x102, Callee::Sig(&crate::s8_misc::CAMERA_RIGS_STEP)),
+        (0x123, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX)),
+        (0x135, Callee::Sig(&EFFECT_END_0586)),
+        (0x140, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};

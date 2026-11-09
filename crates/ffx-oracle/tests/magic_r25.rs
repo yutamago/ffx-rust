@@ -2273,20 +2273,14 @@ fn load_0587() {
     assert!(t.u32(ownb::LOG) > 0x100, "the start-up's calls");
 }
 
-/// `magic_0586` 0x100027e0 (`r25::effect_end_0586`): the battle on and
-/// off, the caster's index below 32 and not, the wait 0 and not, the node
-/// at rest or none, the objects list empty.
-#[test]
-fn effect_end_0586() {
-    let Some(mut t) = twin(586) else { return };
-    all_stubs(&mut t);
-    let f = t.at(0x27e0);
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+/// The stubs [`r25::effect_end_0586`] needs.
+fn end_stubs_0586(t: &mut Twin) {
+    all_stubs(t);
     for s in [25u32, 24, 217, 255, 211, 213, 296, 257, 399, 8, 371] {
-        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+        rec(t, s, 2, move |_, a| (s << 16) ^ a[0] ^ a[1]);
     }
     for (s, n) in [(384u32, 1usize), (543, 1), (334, 1), (713, 1)] {
-        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+        rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
     }
     t.stub(288, |m, a| {
         m.w32(a[1], 2);
@@ -2295,25 +2289,23 @@ fn effect_end_0586() {
     t.write(SCRATCH + 0x4000, &[3, 5]);
     t.stub(293, |_, a| a[0] & 1);
     // slot 772's 64-bit ids (the register functions pass `edx:eax` on)
-    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ a[1]);
+    rec(t, 772, 2, |_, a| 0x0772_0000 ^ a[0] ^ a[1]);
     t.stub_edx(772, |_, a| 0x00ed_0000 ^ a[1]);
+}
+
+/// One case of [`r25::effect_end_0586`] (at `f`, case `k`): the battle
+/// off flag, the caster, the wait, its node at rest or none; the objects'
+/// list empty.
+fn end_case_0586(t: &mut Twin, f: u32, k: u32, (off, c, wait, node): (u32, u32, u16, bool)) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
     let rp = t.img.rel32_target(f + 0x1f0);
     let recs = SCRATCH + 0x6000;
     let lock = SCRATCH + 0x7f0;
     let sel = SCRATCH + 0x600;
     let n = SCRATCH + 0x3400;
-    // the objects' list: empty
     let of = t.img.rel32_target(f + 0x1c0);
-    // (off, caster, wait, node)
-    let cases: [(u32, u32, u16, bool); 6] = [
-        (0, 3, 0, true),
-        (0, 0x20, 1, false),
-        (1, 3, 0, false),
-        (0, 0x1f, 1, true),
-        (0, 0x40, 0, true),
-        (1, 0x20, 0, true),
-    ];
-    for (k, (off, c, wait, node)) in (0u32..).zip(cases) {
+    {
+        let t = &mut *t;
         t.set_u32(t.img.word(rp + 0x16), recs);
         t.set_u32(recs + 0x30, 0x00c0_0030 + k);
         t.set_u32(recs + 0xa4, 0x00c0_00a4 + k);
@@ -2328,36 +2320,129 @@ fn effect_end_0586() {
             t.set_u32(n + 8, n);
             t.set_u32(n + 0xc, 0);
         }
-        t.set_u32(w(&t, 0x1c6), if node { n } else { 0 });
+        t.set_u32(w(t, 0x1c6), if node { n } else { 0 });
         for o in [0x11u32, 0x2f] {
-            t.set_u32(w(&t, o), sel);
+            t.set_u32(w(t, o), sel);
         }
         t.write(sel, &[c as u8, 5, 7]);
         for o in [0x1du32, 0x3a] {
             for j in 0..0x40 {
-                t.set_u32(w(&t, o) + 4 * j, CHRS + 0x10 * j);
+                t.set_u32(w(t, o) + 4 * j, CHRS + 0x10 * j);
             }
         }
         for o in [0x9au32, 0x10d] {
-            t.set_u32(w(&t, o), off);
+            t.set_u32(w(t, o), off);
         }
         for o in [0xa4u32, 0x11f] {
-            t.set_u32(w(&t, o), c);
+            t.set_u32(w(t, o), c);
         }
         for o in [0x91u32, 0x141, 0x15f, 0x16e] {
-            t.set_u32(w(&t, o), CHRS + 0x99);
+            t.set_u32(w(t, o), CHRS + 0x99);
         }
-        t.set_u32(w(&t, 0xfc), 0x00a0_00fc);
-        t.set_u16(w(&t, 0xeb), wait);
-        junk_ops(&mut t, f, &[0x114]);
+        t.set_u32(w(t, 0xfc), 0x00a0_00fc);
+        t.set_u16(w(t, 0xeb), wait);
+        junk_ops(t, f, &[0x114]);
         let list = t.img.word(of + 0x1);
         for i in 0..4 {
             t.set_u32(list + 4 * i, 0);
         }
+    }
+}
+
+/// `magic_0586` 0x100027e0 (`r25::effect_end_0586`): the battle on and
+/// off, the caster's index below 32 and not, the wait 0 and not, the node
+/// at rest or none, the objects list empty.
+#[test]
+fn effect_end_0586() {
+    let Some(mut t) = twin(586) else { return };
+    end_stubs_0586(&mut t);
+    let f = t.at(0x27e0);
+    // (off, caster, wait, node)
+    let cases: [(u32, u32, u16, bool); 6] = [
+        (0, 3, 0, true),
+        (0, 0x20, 1, false),
+        (1, 3, 0, false),
+        (0, 0x1f, 1, true),
+        (0, 0x40, 0, true),
+        (1, 0x20, 0, true),
+    ];
+    for (k, case) in (0u32..).zip(cases) {
+        end_case_0586(&mut t, f, k, case);
         ownb::dirty_stack(&mut t, 0x27e0 + k, &[]);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(r25::effect_end_0586(g, img, fr.at, fr.esp))
         });
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the end's calls");
+}
+
+/// `magic_0586` 0x10001fe0 (`r25::script_task_0586`): the effect's script
+/// running on (the camera's script done and waiting; the motion scripts
+/// done, waiting and asking the model; the camera rigs at rest) and done
+/// (the scale task, the effect's end in two of its cases, the node back to
+/// the pool).
+#[test]
+fn script_task_0586() {
+    let Some(mut t) = twin(586) else { return };
+    end_stubs_0586(&mut t);
+    // slot 411: the motion not ended
+    rec(&mut t, 411, 1, |_, _| 0);
+    let f = t.at(0x1fe0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    let end = call(&t, 0x135);
+    let scale = call(&t, 0x123);
+    let rigs = call(&t, 0x102);
+    let s = SCRATCH + 0x2_0000;
+    let node = SCRATCH + 0x2000;
+    // (effect script's state, camera script's state, the end's case)
+    let cases: [(u8, u8, (u32, u32, u16, bool)); 4] = [
+        (2, 0, (0, 3, 0, true)),
+        (2, 2, (0, 3, 0, true)),
+        (0, 2, (0, 3, 0, true)),
+        (0, 0, (1, 0x20, 1, false)),
+    ];
+    for (k, (effect, camera, case)) in (0u32..).zip(cases) {
+        t.set_u32(w(&t, 0x7), s);
+        junk(&mut t, s + 0x880, 0x100, k);
+        t.write(s + 0x8400, &[0x5c; 0x40]);
+        t.set_u32(s + 0x858c, 0x0858_c000 + k);
+        t.write(w(&t, 0x10), &[0x61; 0x30]);
+        t.set_u32(w(&t, 0x26), 0x0026_0000 + k);
+        for (op, state) in [(0x2eu32, effect), (0x3d, camera)] {
+            let ctx = w(&t, op);
+            t.set_u32(ctx, SCRATCH + 0x8000);
+            t.set_u16(ctx + 0x54, 0xffff);
+            t.set_u8(ctx + 0x56, state);
+            t.set_u32(ctx + 0x24, 0);
+            t.set_u32(ctx + 0x28, 0);
+        }
+        // the motion scripts: done; waiting 3; the model asked
+        for (op, done, wait) in [(0xdbu32, 1u32, 0u16), (0xeb, 0, 3), (0xf5, 0, 0)] {
+            let m = w(&t, op);
+            t.set_u32(m + 0x14, done);
+            t.set_u16(m + 0x18, wait);
+            t.set_u16(m + 0x1a, 7);
+            t.set_u16(m + 0x1c, 0);
+            t.set_u32(m + 8, 0x0008_0000 + op);
+        }
+        // the camera rigs at rest
+        let r = t.img.word(rigs + 0x14);
+        t.write(r - 0xe0, &[0; 0x148 * 3 + 0x180]);
+        // the scale task's node and the task list
+        let take = t.img.rel32_target(scale + 0x73);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x9000, 4);
+        t.set_u32(t.img.word(scale + 0x79), 0);
+        end_case_0586(&mut t, end, k, case);
+        // the task's node alone for the pool
+        t.write(node, &[0; 0x1c]);
+        t.set_u32(node + 8, node);
+        let give = call(&t, 0x140);
+        for op in [0x48, 0x55, 0x64] {
+            t.set_u32(t.img.word(give + op), SCRATCH + 0x3f00);
+        }
+        ownb::dirty_stack(&mut t, 0x1fe0 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x40, "the task's calls");
 }
