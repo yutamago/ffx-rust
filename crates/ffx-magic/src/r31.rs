@@ -785,3 +785,706 @@ pub const SPARKS_0605: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The cursor visit's opening as `magic_0577`'s visits inline it (`ecx` =
+/// the cursor `C`): when the node `N = *C` is marked already (`N + 0x1a`
+/// = `C + 5`) `C + 4` is cleared and `None` comes back (the low byte of
+/// `eax` the mark); else each child (from `N + 0x10`, along `+8`) is
+/// visited (`C = child`, its `[[C] + 0x1c](C)`), then `C = N`, `N` marked
+/// and `C + 4` set. Gives `N`.
+fn visit_children<G: Game>(g: &mut G, c: u32) -> Result<u32, u8> {
+    let node = g.read::<u32>(c);
+    let mark = g.read::<u8>(node.wrapping_add(0x1a));
+    if mark == g.read::<u8>(c.wrapping_add(5)) {
+        g.write::<u8>(c.wrapping_add(4), 0);
+        return Err(mark);
+    }
+    let mut child = g.read::<u32>(node.wrapping_add(0x10));
+    while child != node {
+        g.write::<u32>(c, child);
+        let cur = g.read::<u32>(c);
+        child = g.read::<u32>(child.wrapping_add(8));
+        let visit = g.read::<u32>(g.read::<u32>(cur).wrapping_add(0x1c));
+        // call width: 1 (the visits read their cursor from the stack)
+        g.call(visit, c, &[c]);
+    }
+    let byte5 = g.read::<u8>(c.wrapping_add(5));
+    g.write::<u32>(c, node);
+    g.write::<u8>(node.wrapping_add(0x1a), byte5);
+    g.write::<u8>(c.wrapping_add(4), 1);
+    Ok(g.read::<u32>(c))
+}
+
+/// `magic_0577`'s node visit (0x10001fc0, 1202 bytes; internal, `ecx` =
+/// the cursor, reached by its 12-byte thunk 0x100025e0; a /GS frame).
+/// After the children ([`visit_children`]), with the node `N` and its rate
+/// `r = N + 0xcc`:
+/// - flag bit 0 of `N + 0xe4`: the place `N + 0x1c..0x28` and the colour
+///   `N + 0x4c..0x58` ease towards `N + 0x2c..`, `N + 0x5c..` by `r`
+///   (`x + (to - x) r`, interleaved), the fade `N + 0xd0` towards `K`;
+/// - else the fade `N + 0xd0` grows by `r`: at `K` or above it is 1.0 and
+///   the place and colour are copied from their targets, below it they
+///   move by their speeds `N + 0x3c..`, `N + 0x6c..` times `r`;
+/// - slot 353 `(N + 0x1c)`, slot 332 with the integer place `(N + 0xbc..
+///   as float) x place` (truncated), slot 669 with the colour times `N +
+///   0x7c..` (truncated);
+/// - bit 3: the scale `N + 0xdc + N + 0xe0` up to `K` (bit 4: then bit 3
+///   off) into `N + 0xdc`, slot 332 with `N + 0x8c.. + N + 0x9c.. s`;
+/// - bit 1: when `N + 0xd8` is above the place's three axes slot 267 `(1)`
+///   and bit 1 off; without it, when no axis is below `N + 0xd8` slot 271
+///   `(1)` and bit 1 on;
+/// - bit 2 and the fade at `N + 0xd4` or above: the node detached and
+///   drawn ([`draw_detached`](crate::m0577::draw_detached)).
+///
+/// Returns the last call's `eax` (the flags word after slot 669 when
+/// nothing follows; the mark in the low byte with the cookie's bits above
+/// when the node was marked).
+#[allow(clippy::too_many_lines)] // the original's branches, one by one
+pub fn visit_0577<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let n = match visit_children(g, fr.ecx) {
+        Ok(n) => n,
+        Err(mark) => return Ret::eax((cookie & !0xff) | u32::from(mark)),
+    };
+    let at = |o: u32| n.wrapping_add(o);
+    let rf = |g: &G, o: u32| g.read::<f32>(at(o));
+    let flags = |g: &G| g.read::<u32>(at(0xe4));
+    // (place or colour word, its target, its speed)
+    let axes = [
+        (0x1cu32, 0x2cu32, 0x3cu32),
+        (0x4c, 0x5c, 0x6c),
+        (0x20, 0x30, 0x40),
+        (0x50, 0x60, 0x70),
+        (0x24, 0x34, 0x44),
+        (0x54, 0x64, 0x74),
+        (0x28, 0x38, 0x48),
+        (0x58, 0x68, 0x78),
+    ];
+    if flags(g) & 1 != 0 {
+        for (x, to, _) in axes {
+            let v = add(mul(sub(rf(g, to), rf(g, x)), rf(g, 0xcc)), rf(g, x));
+            g.write::<f32>(at(x), v);
+        }
+        let fade = rf(g, 0xd0);
+        let v = add(mul(sub(k(g, 0x157), fade), rf(g, 0xcc)), fade);
+        g.write::<f32>(at(0xd0), v);
+    } else {
+        let r = rf(g, 0xcc);
+        let fade = add(r, rf(g, 0xd0));
+        g.write::<f32>(at(0xd0), fade);
+        // comiss; jb: below or unordered keeps moving
+        if fade
+            .partial_cmp(&k(g, 0x18e))
+            .is_none_or(core::cmp::Ordering::is_lt)
+        {
+            for (x, _, v) in axes {
+                let y = add(mul(rf(g, v), r), rf(g, x));
+                g.write::<f32>(at(x), y);
+            }
+        } else {
+            g.write::<u32>(at(0xd0), w(0x1a2));
+            for (x, to, _) in axes {
+                let v = g.read::<u32>(at(to));
+                g.write::<u32>(at(x), v);
+            }
+        }
+    }
+    let (v, place) = (ebp.wrapping_sub(0x14), at(0x1c));
+    let mut st = Pushes::default();
+    st.push(place);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x28a, 353), 0);
+    for i in 0..4u32 {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let n_i = g.read::<u32>(at(0xbc + 4 * i)).cast_signed() as f32;
+        let x = crate::sb_sse::cvtt(mul(n_i, rf(g, 0x1c + 4 * i)));
+        g.write::<u32>(v + 4 * i, x.cast_unsigned());
+    }
+    st.push(v);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x2f7, 332), 0);
+    for i in 0..4u32 {
+        let x = crate::sb_sse::cvtt(mul(rf(g, 0x7c + 4 * i), rf(g, 0x4c + 4 * i)));
+        g.write::<u32>(v + 4 * i, x.cast_unsigned());
+    }
+    // call width: 1
+    g.call(t(g, 0x32f, 669), 0, &[v]);
+    let mut eax = flags(g);
+    if eax & 8 != 0 {
+        let mut s = add(rf(g, 0xe0), rf(g, 0xdc));
+        let top = k(g, 0x360);
+        // comiss; jb: below or unordered keeps the sum
+        if !s.partial_cmp(&top).is_none_or(core::cmp::Ordering::is_lt) {
+            s = top;
+            if eax & 0x10 != 0 {
+                g.write::<u32>(at(0xe4), eax & !8);
+            }
+        }
+        g.write::<f32>(at(0xdc), s);
+        for i in 0..4u32 {
+            let x = add(mul(rf(g, 0x9c + 4 * i), s), rf(g, 0x8c + 4 * i));
+            g.write::<u32>(v + 4 * i, crate::sb_sse::cvtt(x).cast_unsigned());
+        }
+        // call width: 1
+        eax = g.call(t(g, 0x3f2, 332), 0, &[v]).eax;
+    }
+    let top = rf(g, 0xd8);
+    let axes3 = |g: &G| [rf(g, 0x1c), rf(g, 0x20), rf(g, 0x24)];
+    if flags(g) & 2 != 0 {
+        // comiss top, axis; jbe: not above (or unordered) stops
+        if axes3(g).iter().all(|&a| top > a) {
+            // call width: 1
+            eax = g.call(t(g, 0x424, 267), 0, &[1]).eax;
+            let fl = flags(g);
+            g.write::<u32>(at(0xe4), fl & !2);
+        }
+    } else if axes3(g).iter().all(|&a| a >= top) {
+        // comiss axis, top; jb: below (or unordered) stops
+        // call width: 1
+        eax = g.call(t(g, 0x464, 271), 0, &[1]).eax;
+        let fl = flags(g);
+        g.write::<u32>(at(0xe4), fl | 2);
+    }
+    if flags(g) & 4 != 0 && rf(g, 0xd0) >= rf(g, 0xd4) {
+        let holder = ebp.wrapping_sub(0x18);
+        g.write::<u32>(holder, n);
+        let draw = Frame {
+            at: img.rel32_target(f + 0x49d),
+            esp: ebp.wrapping_sub(0x28),
+            ecx: holder,
+            ..*fr
+        };
+        eax = crate::m0577::draw_detached(g, img, &draw);
+    }
+    Ret::eax(eax)
+}
+
+/// [`visit_0577`] (the `rel32`s: the detached draw,
+/// `__security_check_cookie`).
+pub const VISIT_0577: Sig = Sig {
+    len: 1202,
+    hash: 0xf509_8da9_1876_0a67,
+    calls: &[
+        (0x49d, Callee::Sig(&crate::m0577::DRAW_DETACHED)),
+        (0x4aa, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0577`'s light visit (0x100038d0, 1292 bytes; internal, `ecx` =
+/// the cursor, reached by its 12-byte thunk 0x10003de0; a /GS frame).
+/// After the children ([`visit_children`]), with the node `N`:
+/// - the parts `N + 0x124` and `N + 0x128` (when set) are visited through
+///   local cursors (`ebp - 0x5c`, `ebp - 0xc`, the cursor's mark byte) and
+///   the nodes they end on give `N + 0x2c..` and `N + 0x4c..` (four words
+///   from `+0x1c`);
+/// - mode byte `N + 0x136`: 0 eases `N + 0x1c..0x24` towards `N + 0x2c..`
+///   (`(x - to) N[0x5c] + to`), `+0x28` copied; 1 counts the time `N +
+///   0x11c` down by `K` (to 0), slot 233 `(M, N + 0x10c, t / N[0x120])`,
+///   slot 234 `(N + 0x1c, N + 0xfc, M)` and `N + 0x28` 1.0;
+/// - unless byte `N + 0x135`: `N + 0x3c..0x44` eased the same way towards
+///   `N + 0x4c..` by `N + 0x60`, `+0x48` copied;
+/// - without the halfword `N + 0x98`: `N + 0xe8 *= N + 0xf8`, `N + 0x64 =
+///   N[0xd8] N[0xe8] + N[0xc8]`;
+/// - mode byte `N + 0x134`: 0 scales the spins `N + 0x6c..0x74` by `N +
+///   0x7c..`; 1 takes `N + 0x7c..` off them and stops each at 0 when it
+///   crosses it;
+/// - the angles `(+-d - (d x) as int)` (`d` the i16 `N + 0x8c..`, the sign
+///   by the spin's), `N + 0x78 = a2 K K' + N[0x88]` (the third angle then
+///   0), the rotation `M` ([`rotation_4250`](crate::s3_matrix::rotation_4250));
+/// - flags `N + 0x12c` bits 3 and 0: `N + 0x4c..0x54 = N + 0x1c.. - M`'s
+///   columns times `N + 0x9c..0xa4`, `+0x58` from `+0xa8`;
+/// - slot 284 `(L, 1, N + 0x3c)`, `(L, 0, N + 0x1c)`, 285 `(L, N + 0x78)`,
+///   286 `(L, N + 0x64)` (`L = N + 0x130`).
+///
+/// Returns slot 286's `eax` (the mark in the low byte with the cookie's
+/// bits above when the node was marked).
+#[allow(clippy::too_many_lines)] // the original's branches, one by one
+pub fn light_visit_0577<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let c = fr.ecx;
+    let n = match visit_children(g, c) {
+        Ok(n) => n,
+        Err(mark) => return Ret::eax((cookie & !0xff) | u32::from(mark)),
+    };
+    let at = |o: u32| n.wrapping_add(o);
+    let rf = |g: &G, o: u32| g.read::<f32>(at(o));
+    for (part, cur, to) in [
+        (0x124u32, ebp.wrapping_sub(0x5c), 0x2cu32),
+        (0x128, ebp.wrapping_sub(0xc), 0x4c),
+    ] {
+        let p = g.read::<u32>(at(part));
+        if p == 0 {
+            continue;
+        }
+        let mark = g.read::<u8>(c.wrapping_add(5));
+        g.write::<u32>(cur, p);
+        g.write::<u8>(cur + 5, mark);
+        let visit = g.read::<u32>(g.read::<u32>(p).wrapping_add(0x1c));
+        // call width: 1 (the visits read their cursor from the stack)
+        g.call(visit, cur, &[cur]);
+        let end = g.read::<u32>(cur);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(end.wrapping_add(0x1c + 4 * i));
+            g.write::<u32>(at(to + 4 * i), x);
+        }
+    }
+    let m = ebp.wrapping_sub(0x54);
+    match g.read::<u8>(at(0x136)) {
+        0 => {
+            for (x, to) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34)] {
+                let v = add(mul(sub(rf(g, x), rf(g, to)), rf(g, 0x5c)), rf(g, to));
+                g.write::<f32>(at(x), v);
+            }
+            let x = g.read::<u32>(at(0x38));
+            g.write::<u32>(at(0x28), x);
+        }
+        1 => {
+            let left = sub(rf(g, 0x11c), k(g, 0xf9));
+            g.write::<f32>(at(0x11c), left);
+            // comiss 0, t; jbe: not above (or unordered) keeps it
+            if 0.0 > left {
+                g.write::<u32>(at(0x11c), 0);
+            }
+            let q = div(rf(g, 0x11c), rf(g, 0x120));
+            // call width: 3
+            g.call(t(g, 0x135, 233), 0, &[m, at(0x10c), q.to_bits()]);
+            // call width: 3 (slot 233's words stay on the stack)
+            g.call(t(g, 0x151, 234), 0, &[at(0x1c), at(0xfc), m]);
+            g.write::<u32>(at(0x28), w(0x163));
+        }
+        _ => {}
+    }
+    if g.read::<u8>(at(0x135)) == 0 {
+        for (x, to) in [(0x3cu32, 0x4cu32), (0x40, 0x50), (0x44, 0x54)] {
+            let v = add(mul(sub(rf(g, x), rf(g, to)), rf(g, 0x60)), rf(g, to));
+            g.write::<f32>(at(x), v);
+        }
+        let x = g.read::<u32>(at(0x58));
+        g.write::<u32>(at(0x48), x);
+    }
+    if g.read::<u16>(at(0x98)) == 0 {
+        let e8 = mul(rf(g, 0xf8), rf(g, 0xe8));
+        let x = mul(rf(g, 0xd8), e8);
+        g.write::<f32>(at(0xe8), e8);
+        g.write::<f32>(at(0x64), add(x, rf(g, 0xc8)));
+    }
+    let spins = [(0x6cu32, 0x7cu32), (0x70, 0x80), (0x74, 0x84)];
+    match g.read::<u8>(at(0x134)) {
+        0 => {
+            for (x, by) in spins {
+                let v = mul(rf(g, by), rf(g, x));
+                g.write::<f32>(at(x), v);
+            }
+        }
+        1 => {
+            for (x, by) in spins {
+                let d = rf(g, by);
+                let v = sub(rf(g, x), d);
+                g.write::<f32>(at(x), v);
+                // falling (d > 0) stops at 0 from above, rising from below
+                let crossed = if d > 0.0 { 0.0 >= v } else { v > 0.0 };
+                if crossed {
+                    g.write::<u32>(at(x), 0);
+                }
+            }
+        }
+        _ => {}
+    }
+    let a = ebp.wrapping_sub(0x14);
+    for i in 0..3u32 {
+        let x = rf(g, 0x6c + 4 * i);
+        let d = i32::from(g.read::<u16>(at(0x8c + 2 * i)).cast_signed());
+        // comiss 0, x; jbe: not above (or unordered) keeps the sign
+        let base = if 0.0 > x { d.wrapping_neg() } else { d };
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let part = crate::sb_sse::cvtt(mul(d as f32, x));
+        g.write::<u32>(a + 4 * i, base.wrapping_sub(part).cast_unsigned());
+    }
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+    let z = g.read::<u32>(a + 8).cast_signed() as f32;
+    let z = add(mul(mul(z, k(g, 0x388)), k(g, 0x39a)), rf(g, 0x88));
+    g.write::<u32>(a + 8, 0);
+    g.write::<f32>(at(0x78), z);
+    crate::s3_matrix::rotation_4250(g, img, img.rel32_target(f + 0x3ac), m, a);
+    let fl = g.read::<u32>(at(0x12c));
+    if fl & 8 != 0 && fl & 1 != 0 {
+        let mf = |g: &G, o: u32| g.read::<f32>(m + o);
+        for (i, x) in (0u32..).step_by(4).zip([0x1cu32, 0x20, 0x24]) {
+            let v = sub(rf(g, x), mul(mf(g, i), rf(g, 0x9c)));
+            let v = sub(v, mul(mf(g, 0x10 + i), rf(g, 0xa0)));
+            let v = sub(v, mul(mf(g, 0x20 + i), rf(g, 0xa4)));
+            g.write::<f32>(at(0x4c + i), v);
+        }
+        let x = g.read::<u32>(at(0xa8));
+        g.write::<u32>(at(0x58), x);
+    }
+    let l = g.read::<u32>(at(0x130));
+    let mut st = Pushes::default();
+    st.push_all(&[at(0x3c), 1, l]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x48b, 284), 0);
+    let l = g.read::<u32>(at(0x130));
+    st.push_all(&[at(0x1c), 0, l]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x4a4, 284), 0);
+    st.pop(5);
+    st.set_top(rf(g, 0x78).to_bits());
+    st.push(g.read::<u32>(at(0x130)));
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, t(g, 0x4be, 285), 0);
+    st.pop(1);
+    st.set_top(rf(g, 0x64).to_bits());
+    st.push(g.read::<u32>(at(0x130)));
+    // call width: 12 (the most `Pushes::words` holds)
+    let eax = st.call(g, t(g, 0x4de, 286), 0).eax;
+    Ret::eax(eax)
+}
+
+/// [`light_visit_0577`] (the `rel32`s: the rotation,
+/// `__security_check_cookie`).
+pub const LIGHT_VISIT_0577: Sig = Sig {
+    len: 1292,
+    hash: 0xd99f_b967_90fc_5e81,
+    calls: &[
+        (0x3ac, Callee::Sig(&crate::s9_misc::ROTATION_3650)),
+        (0x504, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0577`'s motion task (0x1000ac90, 1173 bytes; a task callback
+/// `(A)`, cdecl; an aligned /GS frame). `S = A[1]`, the state `S + 0x28`,
+/// the timer `S + 0x2c`, the object `O = S[0x48]` (motion owner `O[0x50]`,
+/// model `O[0x54]`, bit 0 of `O + 0x90` the model's flag), the summon `B =
+/// S[0x4c]` (its points `B[0x13c] + 0x1c`, its body `B[0x144]`). Each run
+/// dispatches the state (some states go on to the next at once):
+/// - 0: slot 325 `(S, P)`, then state 1 with the timer 30; 1: at the timer's
+///   end slot 228 `(O[0x50], 0xe2)`, on to 2;
+/// - 2: once slot 411 `(O[0x50])` says the motion ended, state 30 at once;
+///   30: slot 228 `(.., 0xe3)`, timer 130, on; 31: at the end slot 228
+///   `(.., 0xe4)`, on; 32: when the motion ended, the model shown (slot
+///   257 `(O[0x54], 1)` or 296 `(O[0x50], 0)`), state 10 at once;
+/// - 10: on to 11 with the timer 75; 11: at the end the point's height
+///   `+ K`, the model hidden (257 `(.., 0)` or 296 `(.., 1)`), slot 228 `(..,
+///   0xe5)`, the shake `(0x10000, -0xe00)`, the body's height kept, the
+///   push `(2000, 1000)`, timer 40, on;
+/// - 12: at the end the shake steps (`S + 0x30 += d`, `d = d K`), slot 229
+///   pushes the vector `(0, S[0x44], S[0x40], 0)` through `B + 0x9c`, slot
+///   248 adds it to the points; the push decays by `K'`; when the shake is
+///   at 0 or below: `d` 40, timer 40, the body's height back, on;
+/// - 13: the shake `+= 0x30000 / d` raises the body; on at the timer's end;
+/// - 14: when the motion ended, the model shown, state 10000 at once;
+/// - 10000: slot 325 `(P, S)`, timer 260, on; 10001: at the end slot 228
+///   `(.., 0xe6)`, on; 10002: once the object's motion slot says so
+///   ([`slot_ecx`](crate::o4_tiny::slot_ecx)), the object back on its node
+///   ([`object_to_node`](crate::sa_misc::object_to_node)), slot 213
+///   `(O[0x50], 0)`, the task's node `*A` taken off its ring, the timer
+///   down and state 20000.
+///
+/// Every other state, and every wait, only counts the timer down. "On"
+/// moves the state up and counts the timer down. Returns `eax` as the
+/// original leaves it (the state's table byte, a call's answer or the
+/// word last read).
+#[allow(clippy::too_many_lines)] // the original's states, one by one
+pub fn motion_task_0577<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let a = fr.arg(g, 0);
+    let s = g.read::<u32>(a.wrapping_add(4));
+    let at = |o: u32| s.wrapping_add(o);
+    let rd = |g: &G, o: u32| g.read::<u32>(at(o));
+    // push ebp; and esp, -8; sub esp, 0x18; push esi; push edi
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x20);
+    let cookie = g.read::<u32>(w(0xa)) ^ e.wrapping_add(8);
+    g.write::<u32>(e + 0x1c, cookie);
+    let obj = |g: &G| rd(g, 0x48);
+    let owner = |g: &G| g.read::<u32>(obj(g).wrapping_add(0x50));
+    let points = |g: &G| {
+        g.read::<u32>(rd(g, 0x4c).wrapping_add(0x13c))
+            .wrapping_add(0x1c)
+    };
+    let table = w(0x42);
+    // slot 228 `(O[0x50], m)` through the operand at `op`
+    let motion = |g: &mut G, op: u32, m: u32| {
+        let o = owner(g);
+        // call width: 2
+        g.call(t(g, op, 228), 0, &[o, m]).eax
+    };
+    // the model shown or hidden: slot 257 `(O[0x54], on)` with the model's
+    // flag, else slot 296 `(O[0x50], off)`
+    let show = |g: &mut G, (t257, t296): (u32, u32), on: u32| {
+        let o = obj(g);
+        if g.read::<u8>(o.wrapping_add(0x90)) & 1 != 0 {
+            let m = g.read::<u32>(o.wrapping_add(0x54));
+            // call width: 2
+            g.call(t(g, t257, 257), 0, &[m, on]).eax
+        } else {
+            let x = g.read::<u32>(o.wrapping_add(0x50));
+            // call width: 2
+            g.call(t(g, t296, 296), 0, &[x, on ^ 1]).eax
+        }
+    };
+    let ended = |g: &mut G, op: u32| {
+        let o = owner(g);
+        // call width: 1
+        g.call(t(g, op, 411), 0, &[o]).eax
+    };
+    // "on": the state up, the timer down
+    let on = |g: &mut G| {
+        let x = rd(g, 0x28).wrapping_add(1);
+        g.write::<u32>(at(0x28), x);
+    };
+    let tick = |g: &mut G| {
+        let x = rd(g, 0x2c).wrapping_sub(1);
+        g.write::<u32>(at(0x2c), x);
+    };
+    let waiting = |g: &G| rd(g, 0x2c).cast_signed() > 0;
+    let eax = loop {
+        let state = rd(g, 0x28);
+        if state > 0x2710 {
+            match state - 0x2711 {
+                0 => {
+                    if waiting(g) {
+                        tick(g);
+                        break 0;
+                    }
+                    let eax = motion(g, 0x41e, 0xe6);
+                    on(g);
+                    tick(g);
+                    break eax;
+                }
+                1 => {
+                    let ecx = owner(g);
+                    let poll = Frame {
+                        at: img.rel32_target(f + 0x156),
+                        ecx,
+                        ..*fr
+                    };
+                    let r = crate::o4_tiny::slot_ecx(g, img, &poll).eax;
+                    if r == 0 {
+                        tick(g);
+                        break 0;
+                    }
+                    let o = obj(g);
+                    crate::sa_misc::object_to_node(g, img, img.rel32_target(f + 0x166), o, r);
+                    let x = owner(g);
+                    // call width: 2
+                    g.call(t(g, 0x173, 213), 0, &[x, 0]);
+                    let node = g.read::<u32>(a);
+                    let (next, prev) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+                    g.write::<u32>(next + 8, prev);
+                    let (prev, next) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+                    g.write::<u32>(prev + 4, next);
+                    g.write::<u32>(node + 8, node);
+                    g.write::<u32>(node + 4, node);
+                    tick(g);
+                    g.write::<u32>(at(0x28), 0x4e20);
+                    break next;
+                }
+                d => {
+                    tick(g);
+                    break d - 1;
+                }
+            }
+        }
+        if state == 0x2710 {
+            let p = points(g);
+            // call width: 2
+            let eax = g.call(t(g, 0x3f7, 325), 0, &[p, s]).eax;
+            g.write::<u32>(at(0x2c), 0x104);
+            on(g);
+            tick(g);
+            break eax;
+        }
+        if state > 0x20 {
+            tick(g);
+            break state;
+        }
+        // the byte table after the code (read from the image: the code
+        // section is not in game memory)
+        let byte = img.word(table.wrapping_add(state)) & 0xff;
+        match state {
+            0 | 1 => {
+                if state == 0 {
+                    let p = points(g);
+                    // call width: 2
+                    let eax = g.call(t(g, 0x1c5, 325), 0, &[s, p]).eax;
+                    on(g);
+                    g.write::<u32>(at(0x2c), 0x1e);
+                    tick(g);
+                    break eax;
+                }
+                if waiting(g) {
+                    tick(g);
+                    break byte;
+                }
+                let eax = motion(g, 0x41e, 0xe2);
+                on(g);
+                tick(g);
+                break eax;
+            }
+            2 => {
+                if ended(g, 0x54) == 0 {
+                    tick(g);
+                    break 0;
+                }
+                g.write::<u32>(at(0x28), 0x1e);
+            }
+            32 => {
+                if ended(g, 0x7e) == 0 {
+                    tick(g);
+                    break 0;
+                }
+                show(g, (0xa7, 0xc2), 1);
+                g.write::<u32>(at(0x28), 0xa);
+            }
+            14 => {
+                if ended(g, 0xde) == 0 {
+                    tick(g);
+                    break 0;
+                }
+                show(g, (0x107, 0x119), 1);
+                g.write::<u32>(at(0x28), 0x2710);
+            }
+            30 => {
+                let eax = motion(g, 0x1ff, 0xe3);
+                g.write::<u32>(at(0x2c), 0x82);
+                on(g);
+                tick(g);
+                break eax;
+            }
+            31 => {
+                if waiting(g) {
+                    tick(g);
+                    break byte;
+                }
+                let eax = motion(g, 0x41e, 0xe4);
+                on(g);
+                tick(g);
+                break eax;
+            }
+            10 | 11 => {
+                if state == 10 {
+                    on(g);
+                    g.write::<u32>(at(0x2c), 0x4b);
+                    tick(g);
+                    break byte;
+                }
+                if waiting(g) {
+                    tick(g);
+                    break byte;
+                }
+                let p = g.read::<u32>(rd(g, 0x4c).wrapping_add(0x13c));
+                let y = add(g.read::<f32>(p + 0x20), k(g, 0x251));
+                g.write::<f32>(p + 0x20, y);
+                show(g, (0x26c, 0x27e), 0);
+                motion(g, 0x299, 0xe5);
+                g.write::<u32>(at(0x30), 0x1_0000);
+                g.write::<u32>(at(0x34), 0xffff_f200);
+                let body = g.read::<u32>(rd(g, 0x4c).wrapping_add(0x144));
+                let h = g.read::<u32>(body.wrapping_add(0x20));
+                g.write::<u32>(at(0x38), h);
+                g.write::<u32>(at(0x40), w(0x2c5));
+                g.write::<u32>(at(0x44), w(0x2cc));
+                g.write::<u32>(at(0x2c), 0x28);
+                on(g);
+                tick(g);
+                break h;
+            }
+            12 => {
+                if waiting(g) {
+                    tick(g);
+                    break byte;
+                }
+                let d = rd(g, 0x34);
+                let sh = rd(g, 0x30).wrapping_add(d);
+                g.write::<u32>(at(0x30), sh);
+                #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+                let d = crate::sb_sse::cvtt(mul(d.cast_signed() as f32, k(g, 0x2f7)));
+                g.write::<u32>(at(0x34), d.cast_unsigned());
+                let v = e + 0xc;
+                g.write::<u32>(v, 0);
+                g.write::<u32>(v + 4, rd(g, 0x44));
+                g.write::<u32>(v + 8, rd(g, 0x40));
+                g.write::<u32>(v + 0xc, 0);
+                let m = rd(g, 0x4c).wrapping_add(0x9c);
+                // call width: 3
+                g.call(t(g, 0x33c, 229), 0, &[v, m, v]);
+                let p = points(g);
+                // call width: 3
+                let eax = g.call(t(g, 0x35f, 248), 0, &[p, p, v]).eax;
+                let x40 = mul(g.read::<f32>(at(0x40)), k(g, 0x374));
+                let still = rd(g, 0x30).cast_signed() > 0;
+                g.write::<f32>(at(0x40), x40);
+                let x44 = mul(g.read::<f32>(at(0x44)), k(g, 0x38d));
+                g.write::<f32>(at(0x44), x44);
+                if still {
+                    tick(g);
+                    break eax;
+                }
+                g.write::<u32>(at(0x34), 0x28);
+                g.write::<u32>(at(0x2c), 0x28);
+                g.write::<u32>(at(0x30), 0);
+                let body = g.read::<u32>(rd(g, 0x4c).wrapping_add(0x144));
+                let h = rd(g, 0x38);
+                g.write::<u32>(body.wrapping_add(0x20), h);
+                on(g);
+                tick(g);
+                break h;
+            }
+            13 => {
+                // idiv: a zero step faults in the original (the port takes 0)
+                let q = 0x3_0000i32
+                    .checked_div(rd(g, 0x34).cast_signed())
+                    .unwrap_or(0);
+                let sh = rd(g, 0x30).wrapping_add(q.cast_unsigned());
+                g.write::<u32>(at(0x30), sh);
+                let body = g.read::<u32>(rd(g, 0x4c).wrapping_add(0x144));
+                let h = rd(g, 0x38).wrapping_add(rd(g, 0x30));
+                g.write::<u32>(body.wrapping_add(0x20), h);
+                if !waiting(g) {
+                    on(g);
+                }
+                tick(g);
+                break body;
+            }
+            _ => {
+                tick(g);
+                break byte;
+            }
+        }
+    };
+    Ret::eax(eax)
+}
+
+/// [`motion_task_0577`] (the `rel32`s: the motion slot, the object back
+/// on its node, `__security_check_cookie`).
+pub const MOTION_TASK_0577: Sig = Sig {
+    len: 1173,
+    hash: 0xbc4c_4bdb_482e_8f42,
+    calls: &[
+        (0x156, Callee::Sig(&crate::o4_tiny::SLOT_ECX_0577_ECA0)),
+        (0x166, Callee::Sig(&crate::sa_misc::OBJECT_TO_NODE)),
+        (0x1af, Callee::Any),
+        (0x43c, Callee::Any),
+    ],
+    imports: &[],
+};

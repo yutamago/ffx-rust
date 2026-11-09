@@ -3204,6 +3204,9 @@ ports! {
     "r31 spin start 0605" => r31::SPIN_START_0605, r31::spin_start_0605;
     "r31 spin actors 0605" => r31::SPIN_ACTORS_0605, r31::spin_actors_0605;
     "r31 sparks 0605" => r31::SPARKS_0605, r31::sparks_0605;
+    "r31 thunk: visit 0577" => sl_wrap::JMP_VISIT_0577, sl_wrap::ecx_jmp;
+    "r31 thunk: light visit 0577" => sl_wrap::JMP_LIGHT_VISIT_0577, sl_wrap::ecx_jmp;
+    "r31 motion task 0577" => r31::MOTION_TASK_0577, r31::motion_task_0577;
     // round 31 (magic-r31): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3904,6 +3907,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r29 body set-up 0577", &r29::BODY_SETUP_0577),
     // round 29 (magic-r29): end of INTERNAL
     // round 31 (magic-r31)
+    ("r31 visit 0577", &r31::VISIT_0577),
+    ("r31 light visit 0577", &r31::LIGHT_VISIT_0577),
     // round 31 (magic-r31): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
