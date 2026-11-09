@@ -5105,7 +5105,8 @@ pub fn flat_coords_0586<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u3
     let ebp = esp.wrapping_sub(4);
     let l = |off: u32| ebp.wrapping_sub(off);
     let (lo, hi, sum) = (l(0x34), l(0x44), l(0x14));
-    let mut base = g.read::<u32>(w(0x11)).wrapping_add(0x9d0);
+    // the output's offset (imm32 `+0x19`: 0x9d0 here, 0xa30 in `magic_0162`)
+    let mut base = g.read::<u32>(w(0x11)).wrapping_add(w(0x19));
     g.write::<u32>(l(0x24), 0);
     g.write::<u32>(l(0x18), base);
     for i in 0..=0x13u32 {

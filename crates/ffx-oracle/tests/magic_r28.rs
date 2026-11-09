@@ -263,7 +263,7 @@ fn pool74(t: &mut Twin, take: u32, recs: u32, count: u32, busy: u32) {
 /// node given back).
 #[test]
 fn sparks_0563() {
-    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510)] {
+    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510), (307, 0x5a50)] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
@@ -305,17 +305,20 @@ fn sparks_0563() {
             (0x3f, 0x5f, 0, 5.0),
             (0x10, 0x60, 0, -5.0),
         ];
+        // the records' and the texture word's offsets (0x2ec0 and 0x24 in
+        // 0563; 0307 has others)
+        let (recs0, tex_at) = (op(&t, 0x5f), op(&t, 0x44) & 0xff);
         for (k, (tick, count, busy, fl)) in (0u32..).zip(cases) {
-            junk(&mut t, s + 0x2e00, 0xc00, k);
+            junk(&mut t, s + recs0 - 0xc0, 0xc00, k);
             for i in 0..0x20 {
                 t.set_u32(
-                    s + 0x2ec0 + 0x60 * (i % 18) + 4 * (i / 18),
+                    s + recs0 + 0x60 * (i % 18) + 4 * (i / 18),
                     (0.5 * i as f32 - 3.0 + k as f32).to_bits(),
                 );
             }
             t.set_u32(op(&t, 0x47), s);
             t.set_u32(op(&t, 0x3d), tex);
-            t.set_u32(tex + 0x24, 0x7e00_0000 + k);
+            t.set_u32(tex + tex_at, 0x7e00_0000 + k);
             t.set_u32(op(&t, 0x56), 0x00cb_0000 + k);
             t.set_u32(floor, fl.to_bits());
             pool74(&mut t, take, recs, 24, busy);

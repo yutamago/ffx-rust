@@ -3178,6 +3178,12 @@ ports! {
     // round 30 (magic-r30)
     "r30 start-up 0152" => r30::START_UP_0152, r30::start_up_0152;
     "r30 trail task 0434" => r30::TRAIL_TASK_0434, r30::trail_task_0434;
+    "r30 sparks 0307" => r30::SPARKS_0307, r28::sparks_0563;
+    "r30 trail task 0432" => r30::TRAIL_TASK_0432, r30::trail_task_0432;
+    "r30 trail start 0432" => r30::TRAIL_START_0432, r30::trail_start_0432;
+    "r30 spark start 0432" => r30::SPARK_START_0432, r30::spark_start_0432;
+    "r30 targets start 0432" => r30::TARGETS_START_0432, r30::targets_start_0432;
+    "r9 load step 0432" => r9_load::LOAD_0432, r9_load::load_0432;
     // round 30 (magic-r30): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3866,6 +3872,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r30 clip 0434", &r30::CLIP_0434),
     ("r30 sparks 0165", &r30::SPARKS_0165),
     ("r30 trail 0432", &r30::TRAIL_0432),
+    ("r30 flat coordinates 0162", &r30::FLAT_COORDS_0162),
+    ("r30 aim 0432", &r30::AIM_0432),
+    ("r30 mesh packets 0297", &r30::MESH_PACKETS_0297),
+    ("r30 start-up 0432", &r30::START_UP_0432),
     // round 30 (magic-r30): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
