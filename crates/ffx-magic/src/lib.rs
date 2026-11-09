@@ -3022,6 +3022,7 @@ ports! {
     "r25 spark task 0585" => r25::SPARK_TASK_0585, r25::spark_task_0585;
     "r25 summon task 0649" => r25::SUMMON_TASK_0649, r25::summon_task_0649;
     "r25 fade task 0649" => r25::FADE_TASK_0649, r25::fade_task_0649;
+    "r25 load 0563" => r25::LOAD_0563, r25::load_0563;
     // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
@@ -3660,6 +3661,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
     ("r25 spin set-up 0563", &r25::SPIN_SETUP_0563),
     ("r25 fade set-up 0649", &r25::FADE_SETUP_0649),
+    ("r25 placement 0563", &r25::PLACE_0563),
+    ("r25 start-up 0563", &r25::START_UP_0563),
     // round 25 (magic-r25): end of INTERNAL
     // round 20 (magic-r20)
     ("r20 start-up 0508", &r20::START_UP_0508),

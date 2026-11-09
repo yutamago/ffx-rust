@@ -1970,3 +1970,196 @@ fn fade_setup_0649() {
         );
     }
 }
+
+const CFG: u32 = SCRATCH + 0x700;
+const CHRS: u32 = SCRATCH + 0x800;
+
+/// The placement's slots (as `magic_r23.rs`'s).
+fn place_stubs_0598(t: &mut Twin) {
+    model_stubs(t, 2);
+}
+
+/// [`place_stubs_0598`] with `base` words under the model matrix's first
+/// call (`scale_model`'s `base`).
+fn model_stubs(t: &mut Twin, base: usize) {
+    use ownb::rec_all;
+    rec(t, 262, 4, |m, a| {
+        for i in 0..3 {
+            let v = 1.5 * f32::from(i as u8) + f32::from((a[0] & 0xff) as u8);
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0
+    });
+    rec(t, 333, 5, |_, _| 0);
+    t.stub_st0(333, |m, _| f64::from(f32::from_bits(m.r32(CFG))));
+    rec_all(
+        t,
+        &[(210, 2), (211, 2), (238, 5), (296, 2), (257, 2), (8, 2)],
+    );
+    rec(t, 217, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, 0x4100_0000 + 0x1_0000 * i + a[0]);
+        }
+        0
+    });
+    rec(t, 255, 4, |m, a| m.r32(a[1] + 0xc));
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0
+    });
+    rec(t, 277, 2 + base, |_, _| 0);
+    t.stub_st0(277, |_, a| 40.0 + f64::from(a[0] & 0xf));
+    for (s, n, v) in [(15u32, 3usize, 1.5f64), (16, 4, -0.75), (17, 5, 3.0)] {
+        rec(t, s, n + base, |_, _| 0);
+        t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0x3));
+    }
+    for s in [330u32, 328, 329] {
+        rec(t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, v ^ (a[2] & 0x00ff_0000) ^ (s << 8));
+            }
+            0
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i).rotate_left(3);
+            m.w32(a[0] + 4 * i, v);
+            // (kept where the comparison sees it: the vector is a local)
+            fold(m, 229, i, v);
+        }
+        0
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(7);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x248 ^ a[0]
+    });
+}
+
+/// `magic_0568`'s slots for the placement and the start-up.
+fn stubs_0568(t: &mut Twin) {
+    place_stubs_0598(t);
+    // scale_rotate's slots pass only their own words (and the earlier
+    // calls' words under them, which the port leaves out)
+    rec(t, 277, 1, |_, _| 0);
+    t.stub_st0(277, |_, a| 40.0 + f64::from(a[0] & 0xf));
+    for (s, v) in [(15u32, 1.5f64), (16, -0.75), (17, 3.0)] {
+        rec(t, s, 1, |_, _| 0);
+        t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0x3));
+    }
+    rec(t, 238, 3, |_, a| 0x0238_0000 ^ a[0]);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ a[2]);
+    let lock = SCRATCH + 0x7f0;
+    rec(t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(t, 710, 4, |_, a| a[2] ^ 0x710);
+    rec(t, 271, 1, |_, a| 0x0271_0000 ^ a[0]);
+}
+
+/// `magic_0563` 0x100012e0 (`r25::load_0563`, with 0x100057f0
+/// `r25::start_up_0563` and 0x100014f0 `r25::place_0563`; as
+/// `magic_r23.rs`'s `load_0612` without the part centres): the waits,
+/// the start-up with the task list empty and not, slot 520 answering
+/// 0x24a0000 and not, the caster's angles wrapped both ways.
+#[test]
+fn load_0563() {
+    let Some(mut t) = twin(563) else { return };
+    all_stubs(&mut t);
+    stubs_0568(&mut t);
+    let f = t.at(0x12e0);
+    let su = t.at(0x57f0);
+    let pl = t.at(0x14f0);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    rec(&mut t, 520, 0, |m, _| m.r32(SCRATCH + 0x20));
+    rec(&mut t, 718, 1, |_, a| 0x0718_0000 ^ a[0]);
+    rec(&mut t, 12, 1, |_, a| a[0] ^ 0x12);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    let pi = t.img.rel32_target(su + 0x68);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, pi, 0x04), lock);
+    let take = t.img.rel32_target(su + 0xd6);
+    let ri = t.img.rel32_target(su + 0x114);
+    let s = w(&t, su, 0x54);
+    // the part centres' models: 18 records naming models without polygons
+    let pc = t.img.rel32_target(pl + 0x2ee);
+    let (table, model) = (SCRATCH + 0x6000, SCRATCH + 0x6800);
+    // (the part set-up clears that table's global; the load, slot 710,
+    // fills it in the game)
+    let tg = w(&t, pc, 0x31);
+    rec(&mut t, 710, 4, move |m, a| {
+        m.w32(tg, table);
+        a[2] ^ 0x710
+    });
+    for c in 0..18u32 {
+        t.set_u32(table + 0x23c + 0x20 * c, model);
+    }
+    t.write(model, &[0; 0x20]);
+    t.set_u32(model + 4, 0x10);
+    t.set_u32(model + 8, 0x18);
+    let sel = SCRATCH + 0x600;
+    t.set_u32(w(&t, pl, 0x9a), sel);
+    t.write(sel, &[3, 1, 2, 0]);
+    for j in 0..8 {
+        t.set_u32(w(&t, pl, 0xa5) + 4 * j, CHRS + 0x10 * j);
+    }
+    // (225, once, 227, task list, 520, caster x)
+    let cases: [(u32, u32, u32, bool, u32, f32); 6] = [
+        (1, 0, 1, false, 0, 0.0),
+        (0, 0, 0, false, 0, 0.0),
+        (0, 0, 1, false, 0x024a_0000, 3.0),
+        (0, 1, 2, true, 0, -3.0),
+        (0, 0, 1, true, 0x024a_0001, 0.5),
+        (0, 0, 1, false, 0, 40.0),
+    ];
+    for (k, (w225, once, r227, busy, r520, cx)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(SCRATCH + 0x20, r520);
+        t.set_u32(w(&t, f, 0x18), once);
+        t.set_u32(lock, 0x77 + k);
+        junk(&mut t, s + 0x2a00, 0x1200, k);
+        t.set_u32(w(&t, pl, 0x35), (cx as i32).cast_unsigned() & 0xff);
+        t.set_u32(s + 0x2b30, (1.0 + k as f32).to_bits());
+        t.set_u32(s + 0x2b38, (2.0 - k as f32).to_bits());
+        let node = |i: u32| SCRATCH + 0x5000 + 0x40 * i;
+        for i in 0..3u32 {
+            t.write(node(i), &[0x33; 0x40]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(w(&t, ri, 0x3e), node(0));
+        t.set_u16(w(&t, ri, 0x20), 3);
+        t.set_u32(w(&t, ri, 0xa6), 0);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, su, 0xdc), if busy { last } else { 0 });
+        t.set_u32(w(&t, su, 0xf0), last);
+        for op in [
+            0x28u32, 0x32, 0x3c, 0x46, 0x5e, 0x8f, 0x99, 0xa4, 0xac, 0xb3, 0xbd, 0xc8, 0xd0, 0x17e,
+            0x186,
+        ] {
+            t.set_u32(w(&t, su, op), 0x5a5a_5a5a ^ op);
+        }
+        t.set_u32(w(&t, su, 0x16e), (1.5 + k as f32).to_bits());
+        // the placement's stale word (`P + 0x2c` of its 8-aligned frame)
+        let e = magic::STACK_TOP - 0x100 - 0x10;
+        let p = (e.wrapping_sub(4) & !7).wrapping_sub(0x88);
+        ownb::dirty_stack(&mut t, 0x12e0 + k, &[magic::STACK_TOP - 0x100 - (p + 0x2c)]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x200, "the start-ups' calls");
+}

@@ -2375,8 +2375,20 @@ pub const OBJECTS_START2_0568: Sig = Sig {
 /// ([`scene_light`](crate::s5_misc::scene_light)) and the part centres
 /// ([`part_centres`](crate::s6_misc::part_centres)). Returns the last
 /// call's `eax`.
-#[allow(clippy::too_many_lines)] // one straight sequence of calls
 pub fn place_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    place_with_0612(g, img, f, esp, true)
+}
+
+/// [`place_0612`] with the scene light or without it (`magic_0563`'s
+/// copy, 0x100014f0, calls only the part centres).
+#[allow(clippy::too_many_lines)] // one straight sequence of calls
+pub(crate) fn place_with_0612<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    light: bool,
+) -> u32 {
     let w = |off: u32| img.word(f + off);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let k = |g: &G, op: u32| g.read::<f32>(w(op));
@@ -2462,6 +2474,10 @@ pub fn place_0612<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
         esp: p.wrapping_sub(4),
         ..Frame::default()
     };
+    if !light {
+        // (the part centres where the scene light is)
+        return crate::s6_misc::part_centres(g, img, &lf).eax;
+    }
     crate::s5_misc::scene_light(g, img, &lf);
     let cf = Frame {
         at: img.rel32_target(f + 0x2f3),
@@ -2498,6 +2514,17 @@ pub const PLACE_0612: Sig = Sig {
 /// set up ([`records_init`](crate::sa_misc::records_init)) between them;
 /// when slot 520 answers 0x24a0000, `G_X` = `G_Y` = `G_X - K`. Returns 0.
 pub fn start_up_0612<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_with_0612(g, img, fr, place_0612)
+}
+
+/// [`start_up_0612`] with the DLL's own placement given (`magic_0563`'s
+/// copy places without the part centres).
+pub(crate) fn start_up_with_0612<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    place: fn(&mut G, &Image, u32, u32) -> u32,
+) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -2514,7 +2541,7 @@ pub fn start_up_0612<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(esp + 8, w(0x6));
     g.write::<u32>(esp + 4, w(0x63));
     crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x68), esp);
-    place_0612(g, img, img.rel32_target(f + 0x6d), esp);
+    place(g, img, img.rel32_target(f + 0x6d), esp);
     let rf = Frame {
         at: img.rel32_target(f + 0x72),
         esp,

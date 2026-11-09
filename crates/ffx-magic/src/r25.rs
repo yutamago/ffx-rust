@@ -4598,3 +4598,63 @@ pub const FADE_SETUP_0649: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0563`'s placement (0x100014f0, 774 bytes; internal, `esp` the
+/// entry stack pointer): [`place_0612`](crate::r23::place_0612) without
+/// the scene light (the part centres at its place).
+pub fn place_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    crate::r23::place_with_0612(g, img, f, esp, false)
+}
+
+/// [`place_0563`] (774 bytes, 1 overlay).
+pub const PLACE_0563: Sig = Sig {
+    len: 774,
+    hash: 0xb8a8_6c26_9638_9b2b,
+    calls: &[
+        (0x87, Callee::Sig(&crate::s6_misc::SCENE_POINT)),
+        (0xf4, Callee::Import("_CIatan2")),
+        (0x1c5, Callee::Sig(&crate::s4_misc::PART_TOGGLE)),
+        (0x1d5, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0x2ee, Callee::Sig(&crate::s6_misc::PART_CENTRES)),
+        // __security_check_cookie
+        (0x2fe, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0563`'s start-up (0x100057f0, 397 bytes; no arguments, called
+/// by its load step): [`start_up_0612`](crate::r23::start_up_0612) with
+/// [`place_0563`].
+pub fn start_up_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r23::start_up_with_0612(g, img, fr, place_0563)
+}
+
+/// [`start_up_0563`] (397 bytes, 1 overlay; `START_UP_0612`'s bytes with
+/// its own placement).
+pub const START_UP_0563: Sig = Sig {
+    len: 397,
+    hash: 0x9ec0_3b7e_8844_b09c,
+    calls: &[
+        (0x68, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x6d, Callee::Sig(&PLACE_0563)),
+        (0x72, Callee::Sig(&crate::s4_small::RESET_AND_SCALE_563)),
+        (0xd6, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x114, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+        (0x11e, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0563`'s load step (0x100012e0, the 118-byte shape) running
+/// [`start_up_0563`].
+pub fn load_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0563)
+}
+
+/// [`load_0563`].
+pub const LOAD_0563: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0563))],
+    imports: &[],
+};
