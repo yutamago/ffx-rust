@@ -3103,3 +3103,101 @@ pub const MOTION_TASK_0613: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The `mov dword [G], imm32` stores (10 bytes each) at the instruction
+/// offsets `at`: `G` (`+2`) = the immediate (`+6`).
+fn stores_0613<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
+    for &o in at {
+        g.write::<u32>(img.word(f + o + 2), img.word(f + o + 6));
+    }
+}
+
+/// `magic_0613`'s start-up (0x1000b860, 704 bytes; cdecl `(actor)`; an
+/// 8-aligned frame): the targets of the actor
+/// ([`targets_init_c`](crate::s4_summon::targets_init_c)); the DLL's two
+/// objects and four static nodes initialised (vtables, links to
+/// themselves, the pass halfwords 0x1ff/0xff); slot 718 `(P)`, slot 719
+/// `(P, 8, 0)` into `G_H`, `pppInitData(h, BUF, 0)` (slot 711, the game
+/// lock `**G_LOCK` 1 around it), slot 710 `(OUT, *G_H, DST, 0x100000)`,
+/// slots 222 and 221 `(P, 0, 1000, 2)` (the earlier calls' words under
+/// them); the first object joins the second's ring and the second the
+/// first's (vtable, step, `+0x14` itself, the ring's last and sentinel,
+/// the flag bit 0 cleared), their `+0x28`/`+0x18`, `+0x34` 0 and `+0x18`
+/// 0x19a. Returns 0.
+#[allow(clippy::too_many_lines)] // one straight sequence of stores
+pub fn start_up_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let actor = fr.arg(g, 0);
+    // push ebp; and esp, -8; push ecx; push esi: the return address 4
+    // below
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc);
+    crate::s4_summon::targets_init_c(g, img, img.rel32_target(f + 0xc), esp, actor);
+    stores_0613(
+        g,
+        img,
+        f,
+        &[0x15, 0x1f, 0x29, 0x33, 0x3d, 0x47, 0x51, 0x5b, 0x65, 0x6f],
+    );
+    // the static nodes: vtable, pass halfword, links to themselves, no
+    // parent (the halfword stores `66 c7 05 [G] imm16`)
+    for (dw, hw, rest) in [
+        (0x79u32, 0x83u32, [0x8cu32, 0x96, 0xa0]),
+        (0xaa, 0xb4, [0xbd, 0xc7, 0xd1]),
+        (0xdb, 0xe5, [0xee, 0xf8, 0x102]),
+        (0x10c, 0x116, [0x11f, 0x129, 0x133]),
+    ] {
+        stores_0613(g, img, f, &[dw]);
+        g.write::<u16>(w(hw + 3), w(hw + 7) as u16);
+        stores_0613(g, img, f, &rest);
+    }
+    stores_0613(g, img, f, &[0x148]);
+    g.call(t(g, 0x11, 718), 0, &[w(0x144)]);
+    let h = g.call(t(g, 0x155, 719), 0, &[w(0x167), 8, 0]).eax;
+    let lock = g.read::<u32>(w(0x16f));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x17b), h);
+    g.write::<u32>(lock, 1);
+    g.call(t(g, 0x186, 711), 0, &[h, w(0x180), 0]);
+    let lock = g.read::<u32>(w(0x199));
+    g.write::<u32>(lock, saved);
+    let hh = g.read::<u32>(w(0x1b9));
+    let mut st = vec![w(0x1be), hh, w(0x1b3), 0x10_0000];
+    // call width: 4
+    g.call(t(g, 0x1a3, 710), 0, &st);
+    for (tab, slot, p) in [(0x1c5u32, 222u32, 0x1d9u32), (0x1e0, 221, 0x1f4)] {
+        st.splice(0..0, [w(p), 0, 0x3e8, 2]);
+        // call width: 12 (the earlier calls' words stay on the stack)
+        g.call(t(g, tab, slot), 0, &st);
+    }
+    // the first object joins the second's ring
+    let last = g.read::<u32>(w(0x1fe));
+    g.write::<u32>(w(0x203), last);
+    stores_0613(g, img, f, &[0x207, 0x211, 0x21b, 0x225]);
+    g.write::<u32>(last + 4, w(0x232));
+    let last = g.read::<u32>(w(0x237));
+    let fl = g.read::<u32>(w(0x23d));
+    g.write::<u32>(w(0x23d), fl & !1);
+    g.write::<u32>(w(0x243), last);
+    stores_0613(
+        g,
+        img,
+        f,
+        &[0x247, 0x251, 0x25b, 0x265, 0x26f, 0x279, 0x283],
+    );
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x290));
+    let fl = g.read::<u32>(w(0x296));
+    g.write::<u32>(w(0x296), fl & !1);
+    stores_0613(g, img, f, &[0x29b, 0x2a5, 0x2af]);
+    Ret::eax(0)
+}
+
+/// [`start_up_0613`] (704 bytes, 1 overlay).
+pub const START_UP_0613: Sig = Sig {
+    len: 704,
+    hash: 0x207b_4495_c3a2_31fb,
+    calls: &[(0xc, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};

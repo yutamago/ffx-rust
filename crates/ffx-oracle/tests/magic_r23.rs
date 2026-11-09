@@ -1567,7 +1567,9 @@ fn summon_setup_0603() {
         // holding a node
         let parent = w(&t, 0xe8);
         t.write(parent, &[0x5c; 0x20]);
-        t.set_u32(parent + 0x10, if empty { parent } else { prev });
+        let plast = SCRATCH + 0xa00;
+        t.write(plast, &[0x2f; 0x40]);
+        t.set_u32(parent + 0x10, if empty { parent } else { plast });
         // the fades' sources: the colour node's words, varied
         let c = w(&t, 0xe1);
         junk(&mut t, c, 0xc0, k);
@@ -1676,8 +1678,18 @@ fn bone_0573() {
         }
         0x0032_0000 ^ a[1]
     });
+    // each entry its own trap (slots 32..35)
     for i in 0..4 {
-        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * (32 + i));
+    }
+    for i in 33..36u32 {
+        rec(&mut t, i, 2, move |m, a| {
+            for j in 0..16 {
+                let x = 0.125 * j as f32 - rf(m, a[1]) + i as f32;
+                wf(m, a[0] + 4 * j, x);
+            }
+            (i << 16) ^ a[1]
+        });
     }
     t.set_u32(magic::TABLE + 4 * 1001, magic::TRAPS + 16 * 1001);
     rec(&mut t, 1001, 1, |m, a| {
@@ -1694,7 +1706,15 @@ fn bone_0573() {
         }
         0x233
     });
-    for (s, n) in [(231u32, 3usize), (229, 3), (668, 3)] {
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + 0.25 * i as f32;
+            wf(m, a[0] + 4 * i, v);
+            fold(m, 229, i, v.to_bits());
+        }
+        0x229
+    });
+    for (s, n) in [(231u32, 3usize), (668, 3)] {
         rec(&mut t, s, n, move |m, a| {
             for i in 0..4 {
                 let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(3) ^ s;
@@ -1743,6 +1763,17 @@ fn bone_0573() {
         for o in [parent, q] {
             junk(&mut t, o, 0x200, k + 7);
             t.set_u32(o, vt);
+            // moderate floats where the node adds the parent's
+            for i in 0..3 {
+                t.set_u32(
+                    o + 0xcc + 4 * i,
+                    (0.75 * i as f32 - 1.5 + k as f32).to_bits(),
+                );
+            }
+            // and slot 229's source (the parent's `+0xdc` matrix)
+            for i in 0..16 {
+                t.set_u32(o + 0xdc + 4 * i, (0.5 * i as f32 - 3.0).to_bits());
+            }
         }
         junk(&mut t, show, 0x100, k + 9);
         t.set_u16(show + 0x90, (k & 1) as u16);
@@ -1839,5 +1870,62 @@ fn motion_task_0613() {
         t.write(next, &[0x5e; 0x20]);
         ownb::dirty_stack(&mut t, 0x9310 + k, &[]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0613` 0x1000b860 (`r23::start_up_0613`): no targets and two;
+/// the statics' root with and without a child; the rings' old last
+/// words varied.
+#[test]
+fn start_up_0613() {
+    use ownb::rec;
+    let Some(mut t) = twin(613) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xb860);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let ti = t.img.rel32_target(f + 0xc);
+    let statics = t.img.rel32_target(ti + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = SCRATCH + 0x6000;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x16f), lock);
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
+    for (s, n) in [(718u32, 1usize), (222, 4), (221, 4)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let child = SCRATCH + 0x6800;
+    for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, count);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, if k.is_multiple_of(2) { 0 } else { child });
+        t.write(child, &[0x33; 0x40]);
+        t.set_u32(child + 0x10, child);
+        t.set_u32(lock, 0x40 + k);
+        // the words the start clears or sets, junk first (the rings'
+        // last words are the stores' own: the sentinels)
+        junk_ops(&mut t, f, &[0x2b1, 0x2a7, 0x253, 0x25d, 0x17b]);
+        ownb::dirty_stack(&mut t, 0xb860 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
     }
 }

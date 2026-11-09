@@ -3015,6 +3015,7 @@ ports! {
     "r23 load 0612" => r23::LOAD_0612, r23::load_0612;
     "r23 thunk bone 0573" => r23::THUNK_BONE_0573, r23::thunk_bone_0573;
     "r23 motion task 0613" => r23::MOTION_TASK_0613, r23::motion_task_0613;
+    "r23 start-up 0613" => r23::START_UP_0613, r23::start_up_0613;
     // round 23 (magic-r23): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
