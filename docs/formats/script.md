@@ -147,7 +147,7 @@ are relative to the code start.
 
 | Offset | Type | Meaning |
 |---|---|---|
-| `0x00` | `u32` | Code length |
+| `0x00` | `u32` | Code length; nothing in the game reads it (see "Code past the code length") |
 | `0x04` | `u32` | Map entrances, `0x20` bytes each, up to the author string; 0 in every monster and battle block and in 7 event blocks |
 | `0x08` | `u32` | Author string (`"keisuke"`, …) |
 | `0x0c` | `u32` | Name string (`"001"`, …) |
@@ -186,6 +186,28 @@ are one set per block, shared by all workers, in every shipped script.
 Every worker's entries and labels lie inside its own contiguous code range,
 and the ranges follow worker order. This holds for all 1621 shipped scripts,
 which is what lets the disassembler name jump targets per worker.
+
+### Code past the code length
+
+Entries and labels may point past the code length at `+0x00`; the game
+bounds code by nothing but the block it was loaded in. Every place that turns
+an entry or a label into a program counter computes `block + [block + 0x30]
++ offset`, with the block from the work's `+0x04`, and compares the offset
+with neither `+0x00` nor `+0x10`: `Script_Run` (`0x008641e0`: jumps,
+`call`), `Script_Jump` (`0x008726f0`), `AtelStartSignal` (`0x008690a0`),
+`AtelExecReturn` (`0x008691d0`) and its twin `0x00869370`, `AtelResetLevel`
+(`0x008639e0`), `AtelSetPC` (`0x00870910`) and `0x0086c930`. A block is used
+where it was loaded: `AtelEventSetUp` (`0x00872ef0`) reads the whole `.ebp`
+into one buffer and passes `file + [file + 4]` on, and `MsAtelRegist`
+(`0x00797a40`) keeps the pointer to a monster's or battle's block; nothing
+copies a block. The header readers (`AtelInitBasicWork`,
+`AtelGetActorNumber`, `AtelGetNamespaceNumber`, `AtelGetIndexWork`,
+`AtelGetActorBufferSize`, `AtelGetBinHdrExpandAddChr` and the `+0x14`,
+`+0x16`, `+0x1c` getters of `AtelBattleSetUp`) read `+0x14`–`+0x1c`,
+`+0x2c`, `+0x34`, `+0x36` and `+0x38`; no read of `+0x00` was found.
+Fahrenheit names `+0x00` `code_length` and does not use it either. Atel#'s
+linker relies on this: it keeps vanilla workers' code in place and puts new
+code after the block's end, from the same `+0x30`.
 
 ### Layout
 
