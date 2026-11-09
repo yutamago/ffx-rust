@@ -1534,6 +1534,8 @@ pub fn summon_task_0514<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.write::<f32>(w(0x50d), x);
                 let x = sub(k4, g.read::<f32>(w(0x518)));
                 g.write::<f32>(w(0x520), x);
+                // an equal store: the colour node's set-up above writes 1.0
+                // to both terms and 0 to this word (mutants, r27)
                 let x = sub(g.read::<f32>(w(0x528)), g.read::<f32>(w(0x530)));
                 g.write::<f32>(w(0x538), x);
                 let x = sub(k4, g.read::<f32>(w(0x543)));
