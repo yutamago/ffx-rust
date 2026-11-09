@@ -147,6 +147,10 @@ copies! {
     load_0246 => LOAD_0246, Zero, crate::r26::start_up_0246, crate::r26::START_UP_0246;
     /// `magic_0180` 0x100041c0.
     load_0180 => LOAD_0180, Zero, crate::r26::start_up_0180, crate::r26::START_UP_0180;
+    /// `magic_0442` 0x100026c0.
+    load_0442 => LOAD_0442, Zero, crate::r26::start_up_0442, crate::r26::START_UP_0442;
+    /// `magic_0260` 0x10003a90.
+    load_0260 => LOAD_0260, Zero, crate::r26::start_up_0260, crate::r26::START_UP_0260;
     /// `magic_0046` 0x10001210.
     load_0046 => LOAD_0046, One, crate::m0046::start_up, crate::m0046::START_UP;
     /// `magic_0064` 0x100026d0.

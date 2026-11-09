@@ -3078,6 +3078,10 @@ ports! {
     "r9 load step 0246" => r9_load::LOAD_0246, r9_load::load_0246;
     "r26 sparks 0180" => r26::SPARKS_0180, r26::sparks_0180;
     "r9 load step 0180" => r9_load::LOAD_0180, r9_load::load_0180;
+    "r26 draw 0426" => r26::DRAW_0426, r26::draw_0426;
+    "r26 draw thunk 0426" => r26::DRAW_0426_THUNK, r26::draw_0426_thunk;
+    "r9 load step 0442" => r9_load::LOAD_0442, r9_load::load_0442;
+    "r9 load step 0260" => r9_load::LOAD_0260, r9_load::load_0260;
     // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3719,6 +3723,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 start-up 0246", &r26::START_UP_0246),
     ("r26 range check failure 0246", &r26::RANGE_CHECK_FAILURE),
     ("r26 start-up 0180", &r26::START_UP_0180),
+    ("r26 mesh packets 0426", &r26::MESH_PACKETS_0426),
+    ("r26 start-up 0442", &r26::START_UP_0442),
+    ("r26 start-up 0260", &r26::START_UP_0260),
     // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

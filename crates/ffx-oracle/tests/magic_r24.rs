@@ -720,7 +720,8 @@ fn visit_0342() {
         let k = m.r32(cnt).wrapping_add(1);
         m.w32(cnt, k);
         if k.is_multiple_of(2) {
-            k << 3
+            // multiples of 4, some of them odd multiples (both record kinds)
+            (k >> 1) << 2
         } else {
             k.wrapping_mul(0x9e37_79b9) ^ (k << 3)
         }
