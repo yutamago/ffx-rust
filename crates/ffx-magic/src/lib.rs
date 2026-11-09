@@ -3020,6 +3020,12 @@ ports! {
     "r27 glow effects 0162" => r27::GLOW_EFFECTS_0162, r27::glow_effects_0586;
     "r27 models place 0586" => r27::MODELS_PLACE_0586, r27::models_place_0586;
     "r27 models place 0162" => r27::MODELS_PLACE_0162, r27::models_place_0586;
+    "r27 point objects 0586" => r27::POINT_OBJECTS_0586, r27::point_objects_0586;
+    "r27 point objects 0162" => r27::POINT_OBJECTS_0162, r27::point_objects_0586;
+    "r27 spin step 0587" => r27::SPIN_STEP_0587, r27::spin_step_0587;
+    "r27 second start 0587" => r27::SECOND_START_0587, r27::second_start_0587;
+    "r27 trails start 0587" => r27::TRAILS_START_0587, r27::trails_start_0587;
+    "r27 third start 0587" => r27::THIRD_START_0587, r27::third_start_0587;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
