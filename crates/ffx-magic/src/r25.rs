@@ -5185,3 +5185,109 @@ pub const FLAT_COORDS_0586: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0587`'s glow draw (0x10001b20, 537 bytes; a table entry, no
+/// arguments; a 16-aligned cookie frame, `A = ((E - 4) & !0xf) - 0x148`,
+/// `esi`/`edi` pushed below it: `P = A - 8`, the draw record `D = P +
+/// 0x10`, the matrices `P + 0x88` and `P + 0xc8`, the block `P + 0x108`).
+/// With `S = *G_S` and the object `O = *G_O`: slots 357 `(O, -1,
+/// 0x3c00)`, 356 `(O, -1, 0x2ee0)`, 355 and 354 `(O, -1)`; `D` = (0x5c,
+/// slot 562's answer, u16 0x8044, byte 0, ..., colour 0x80808080, the
+/// bytes `+0x4c`/`+0x4d` = `((100 - c) << 6) / 100` and `((c + 100) << 6)
+/// / 100` for the count `c = S[0x30f8]`, the matrix pointers `+0x20..+0x2c`
+/// = `P + 0xc8`, `S + 0x9c0`, `S + 0xa00`, `S + 0x980`, the rest 0); slots
+/// 723 `(P + 0x108)`, 724 `(P + 0x88)`, 231 `(P + 0xc8, P + 0x88, S +
+/// 0x980)`, 567 `(*G_X, D, S + 0x980, P + 0x88, P + 0x108)`, 382 `(0, 0)`,
+/// 357 and 356 `(O, -1, -1)`, 380 `(-1)`, whose `eax` it returns. Every
+/// call's words stay on the stack until the add after slot 567.
+#[allow(clippy::too_many_lines)] // one straight sequence
+pub fn glow_draw_0587<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let a = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x148);
+    let p = a.wrapping_sub(8);
+    let d = p + 0x10;
+    let o = g.read::<u32>(w(0x22));
+    let s = g.read::<u32>(w(0x2f));
+    // call width: 3
+    g.call(t(g, 0x1b, 357), 0, &[o, u32::MAX, 0x3c00]);
+    // call width: 3
+    g.call(t(g, 0x3e, 356), 0, &[o, u32::MAX, 0x2ee0]);
+    let o = g.read::<u32>(w(0x59));
+    // call width: 2
+    g.call(t(g, 0x53, 355), 0, &[o, u32::MAX]);
+    // call width: 2
+    g.call(t(g, 0x69, 354), 0, &[o, u32::MAX]);
+    g.write::<u32>(d, 0x5c);
+    let id = g.call(t(g, 0x79, 562), 0, &[]).eax;
+    let c = g.read::<i32>(s + 0x30f8);
+    g.write::<u32>(d + 4, id);
+    for off in [0xcu32, 0x10, 0x14, 0x1c, 0x34, 0x38, 0x3c, 0x40, 0x44, 0x48] {
+        g.write::<u32>(d + off, 0);
+    }
+    let pct = |x: i32| x.wrapping_shl(6) / 100;
+    g.write::<u8>(d + 0x4c, pct(0x64i32.wrapping_sub(c)).to_le_bytes()[0]);
+    g.write::<u8>(d + 0x4d, pct(c.wrapping_add(0x64)).to_le_bytes()[0]);
+    let blk = p + 0x108;
+    g.write::<u16>(d + 8, 0x8044);
+    g.write::<u8>(d + 0xa, 0);
+    g.write::<u32>(d + 0x18, 0x8080_8080);
+    g.call(t(g, 0x10d, 723), 0, &[blk]);
+    let m1 = p + 0x88;
+    g.call(t(g, 0x136, 724), 0, &[m1]);
+    let part = s + 0x980;
+    let m2 = p + 0xc8;
+    // call width: 3
+    g.call(t(g, 0x15a, 231), 0, &[m2, m1, part]);
+    g.write::<u32>(d + 0x20, m2);
+    g.write::<u32>(d + 0x24, s + 0x9c0);
+    g.write::<u32>(d + 0x28, s + 0xa00);
+    let x = g.read::<u32>(w(0x1a2));
+    g.write::<u32>(d + 0x2c, part);
+    // call width: 5
+    g.call(t(g, 0x19c, 567), 0, &[x, d, part, m1, blk]);
+    // call width: 2
+    g.call(t(g, 0x1b6, 382), 0, &[0, 0]);
+    let o = g.read::<u32>(w(0x1d0));
+    // call width: 3
+    g.call(t(g, 0x1ca, 357), 0, &[o, u32::MAX, u32::MAX]);
+    // call width: 3
+    g.call(t(g, 0x1e2, 356), 0, &[o, u32::MAX, u32::MAX]);
+    Ret::eax(g.call(t(g, 0x1f4, 380), 0, &[u32::MAX]).eax)
+}
+
+/// [`glow_draw_0587`] (537 bytes, 1 overlay).
+pub const GLOW_DRAW_0587: Sig = Sig {
+    len: 537,
+    hash: 0x3067_ef0e_8053_5b94,
+    // __security_check_cookie
+    calls: &[(0x211, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0587`'s counted glow draw (0x100032d0, 28 bytes; a table entry,
+/// no arguments): the count `S[0x30f8]` (`S = *G_S`) one down while
+/// positive, then [`glow_draw_0587`] (a tail jump).
+pub fn glow_count_0587<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = g.read::<u32>(img.word(f + 0x2));
+    let c = g.read::<i32>(s + 0x30f8);
+    if c > 0 {
+        g.write::<i32>(s + 0x30f8, c - 1);
+    }
+    let draw = Frame {
+        at: img.rel32_target(f + 0x18),
+        ecx: s,
+        ..*fr
+    };
+    glow_draw_0587(g, img, &draw)
+}
+
+/// [`glow_count_0587`] (28 bytes, 1 overlay).
+pub const GLOW_COUNT_0587: Sig = Sig {
+    len: 28,
+    hash: 0x11bf_2fc7_342f_c69e,
+    calls: &[(0x18, Callee::Sig(&GLOW_DRAW_0587))],
+    imports: &[],
+};

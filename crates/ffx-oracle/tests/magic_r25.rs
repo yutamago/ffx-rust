@@ -2521,10 +2521,77 @@ fn flat_coords_0586() {
                     }
                 }
             }
+            // past the count: a kind-3 group with a triangle, never read
+            t.write(at, &[0x3c; 0x38]);
+            t.set_u8(at + 1, 3);
+            t.set_u16(at + 2, 1);
         }
         ownb::dirty_stack(&mut t, 0x1440 + k, &[]);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(r25::flat_coords_0586(g, img, fr.at, fr.esp))
         });
     }
+}
+
+/// `magic_0587` 0x10001b20 (`r25::glow_draw_0587`) and 0x100032d0
+/// (`r25::glow_count_0587`): counts 0, positive, negative and past the
+/// shift's range; the record handed to slot 567 copied out to compare.
+#[test]
+fn glow_draw_0587() {
+    let Some(mut t) = twin(587) else { return };
+    all_stubs(&mut t);
+    for (s, n) in [
+        (357u32, 3usize),
+        (356, 3),
+        (355, 2),
+        (354, 2),
+        (382, 2),
+        (380, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ a[n - 1]);
+    }
+    rec(&mut t, 562, 0, |m, _| m.r32(SCRATCH + 0x20) ^ 0x562);
+    for s in [723u32, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                m.w32(a[0] + 4 * i, (s << 8) ^ i);
+            }
+            s
+        });
+    }
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(3);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    // the record (0x50 bytes) and the matrices it points at, copied out
+    rec(&mut t, 567, 5, |m, a| {
+        let out = SCRATCH + 0x7000;
+        for i in 0..0x14 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(out + 4 * i, v);
+        }
+        for i in 0..16 {
+            let v = m.r32(m.r32(a[1] + 0x20) + 4 * i);
+            m.w32(out + 0x50 + 4 * i, v);
+        }
+        0x567
+    });
+    let f = t.at(0x1b20);
+    let fc = t.at(0x32d0);
+    let s = SCRATCH + 0x1_0000;
+    for (k, c) in (0u32..).zip([0i32, 5, -3, 150, 0x0400_0001, 1]) {
+        let at = if k % 2 == 0 { f } else { fc };
+        t.set_u32(SCRATCH + 0x20, k);
+        t.set_u32(t.img.word(f + 0x2f), s);
+        t.set_u32(t.img.word(fc + 0x2), s);
+        junk(&mut t, s + 0x980, 0xc0, k);
+        t.set_u32(s + 0x30f8, c.cast_unsigned());
+        junk_ops(&mut t, f, &[0x22, 0x59, 0x1a2, 0x1d0]);
+        ownb::dirty_stack(&mut t, 0x1b20 + k, &[]);
+        t.check_entry(at, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the draw's calls");
 }

@@ -3025,6 +3025,8 @@ ports! {
     "r25 load 0563" => r25::LOAD_0563, r25::load_0563;
     "r25 load 0587" => r25::LOAD_0587, r25::load_0587;
     "r25 script task 0586" => r25::SCRIPT_TASK_0586, r25::script_task_0586;
+    "r25 glow draw 0587" => r25::GLOW_DRAW_0587, r25::glow_draw_0587;
+    "r25 glow count 0587" => r25::GLOW_COUNT_0587, r25::glow_count_0587;
     // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
