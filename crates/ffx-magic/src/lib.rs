@@ -3026,6 +3026,10 @@ ports! {
     "r27 second start 0587" => r27::SECOND_START_0587, r27::second_start_0587;
     "r27 trails start 0587" => r27::TRAILS_START_0587, r27::trails_start_0587;
     "r27 third start 0587" => r27::THIRD_START_0587, r27::third_start_0587;
+    "r27 first start 0587" => r27::FIRST_START_0587, r27::first_start_0587;
+    "r27 spark step 0570" => r27::SPARK_STEP_0570, r27::spark_step_0570;
+    "r27 spark step 0597" => r27::SPARK_STEP_0597, r27::spark_step_0570;
+    "r27 spark step 0070" => r27::SPARK_STEP_0070, r27::spark_step_0570;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;

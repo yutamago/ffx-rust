@@ -270,7 +270,7 @@ fn caster_frames_0586() {
         (-20.0, 0x20, 0),
         (1.570_796_4, 0x1f, 0),
         // `K - f` exactly pi: the upper bound itself
-        (f32::from_bits(0x3fc9_0fdb), 3, 0),
+        (f32::from_bits(0x3fc9_0fda), 3, 0),
     ];
     for (k, (turn, idx, war)) in (0u32..).zip(cases) {
         t.set_u32(SCRATCH + 0x24, turn.to_bits());
@@ -449,9 +449,9 @@ fn trail_0587(
     t.set_u16(o + 0xa, 0x100 + 0x80 * c as u16);
     for i in 0..0x80u32 {
         let k = if i + 1 == zero { zero } else { i } as f32;
-        // a step of 2.0 walks a straight trail of 2.0-long segments: the
+        // a step of 4.0 walks a straight trail of 2.0-long segments: the
         // distance meets a segment's length exactly
-        let xyz = if step.to_bits() == 2.0f32.to_bits() {
+        let xyz = if step.to_bits() == 4.0f32.to_bits() {
             [k * 2.0, 1.0, -3.0, 1.0]
         } else {
             [
@@ -491,7 +491,7 @@ fn trail_parts_0587() {
     let table = SCRATCH + 0x3e00;
     let block = SCRATCH + 0x8000;
     let (basis, point) = (SCRATCH + 0x4400, SCRATCH + 0x4480);
-    let cases: [(i32, u32, u32, u32, u8, f32); 12] = [
+    let cases: [(i32, u32, u32, u32, u8, f32); 13] = [
         (0, 5, 99, 99, 0x80, 0.6),
         (-3, 0x7f, 99, 99, 0x80, 0.6),
         (6, 5, 99, 99, 0x80, 0.6),
@@ -503,7 +503,9 @@ fn trail_parts_0587() {
         (7, 0, 99, 99, 0x81, 0.9),
         (4, 0x40, 99, 99, 0x80, 0.0),
         (6, 9, 99, 99, 0x80, f32::NAN),
-        (8, 20, 99, 99, 0x80, 2.0),
+        (8, 20, 99, 99, 0x80, 4.0),
+        // more parts than the walk's 0x80 segments
+        (0x90, 2, 99, 99, 0x80, 5.0),
     ];
     for (c, case) in (0u32..).zip(cases) {
         // trails at the block's slots 0..2, and one below it
@@ -761,7 +763,8 @@ fn light_task_0649() {
         let parent = ops(&t, lo, 0x6a);
         t.set_u32(parent + 0x10, parent);
         t.set_u32(parent + 0xc, parent);
-        junk_ops(&mut t, f, &[0x18c, 0x1ea]);
+        // (`+0x18c` names the id source again: it stays 0)
+        junk_ops(&mut t, f, &[0x1ea]);
         junk(&mut t, task, 0x10, k + 3);
         t.set_u32(task, tn);
         t.set_u32(task + 4, r);
@@ -1358,5 +1361,122 @@ fn third_start_0587() {
         t.set_u32(op(&t, 0x445), last);
         ownb::dirty_stack(&mut t, 0x32f0 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0587` 0x10002520 (`r27::first_start_0587`): the turns wrapped
+/// both ways and kept, a task node already there and not, the pool's last
+/// node and one of several, the task list empty and not.
+#[test]
+fn first_start_0587() {
+    let Some(mut t) = twin(587) else { return };
+    stubs_0586(&mut t);
+    rec(&mut t, 256, 5, |_, a| 0x0256_0000 ^ a[0]);
+    let f = t.at(0x2520);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let so = t.img.rel32_target(f + 0x33);
+    let s = SCRATCH + 0x8000;
+    let last = SCRATCH + 0x3400;
+    let pool = SCRATCH + 0x4000;
+    // (turn x, turn z, node there, the pool's count, the task list busy)
+    let cases: [(f32, f32, bool, u16, bool); 5] = [
+        (0.0, 0.0, false, 3, false),
+        (-3.0, 3.1, false, 1, true),
+        (3.1, -3.5, true, 2, false),
+        (1.0, 1.0, false, 2, true),
+        (f32::NAN, 2.0, false, 1, false),
+    ];
+    for (k, (ax, az, have, count, busy)) in (0u32..).zip(cases) {
+        start_env_at(&mut t, so, (0x99, 0xa4), 2, 0);
+        t.set_u32(op(&t, 0x1b), s);
+        junk(&mut t, s, 0x3100, k);
+        for i in 0..0xc0u32 {
+            t.set_u32(
+                s + 0x7c0 + 4 * i,
+                (0.25 * i as f32 - 3.0 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(s + 0xa40, ax.to_bits());
+        t.set_u32(s + 0xa48, az.to_bits());
+        t.set_u32(s + 0x30e8, if have { SCRATCH + 0x6200 } else { 0 });
+        let a = SCRATCH + 0x5fc0;
+        t.set_u32(op(&t, 0x308), a);
+        t.set_u32(a + 0x20, 0x00a2_0000 + k);
+        t.write(pool, &[0x6d; 0x1c * 4]);
+        for i in 0..u32::from(count) {
+            let node = pool + 0x1c * i;
+            let n = u32::from(count);
+            t.set_u32(node, pool + 0x1c * ((i + n - 1) % n));
+            t.set_u32(node + 4, pool + 0x1c * ((i + 1) % n));
+        }
+        t.set_u16(op(&t, 0x3ce), count);
+        t.set_u32(op(&t, 0x3dd), pool);
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(op(&t, 0x444), if busy { last } else { 0 });
+        t.set_u32(op(&t, 0x453), last);
+        ownb::dirty_stack(&mut t, 0x2520 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0570` 0x10009830, `magic_0597` 0x10009060 and `magic_0070`
+/// 0x10009b40 (`r27::spark_step_0570`): every state, the wait below and at
+/// its bound, a state past the table, the random words varied (the top
+/// bits' shift of the colour steps too).
+#[test]
+fn spark_step_0570() {
+    for (n, rva) in [(570u16, 0x9830u32), (597, 0x9060), (70, 0x9b40)] {
+        let Some(mut t) = twin(n) else { return };
+        all_stubs(&mut t);
+        let f = t.at(rva);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        rec(&mut t, 325, 2, |m, a| {
+            for i in 0..4 {
+                let v = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, v);
+            }
+            0x325
+        });
+        let rnd = SCRATCH + 0x5f00;
+        rec(&mut t, 324, 0, move |m, _| {
+            let k = m.r32(rnd);
+            m.w32(rnd, k + 1);
+            k.wrapping_mul(0x9e37_79b9) ^ m.r32(rnd + 4)
+        });
+        let wait = t.img.word(f + 0x40) >> 24;
+        let sparks = op(&t, 0x27);
+        let obj = SCRATCH + 0x1000;
+        // (index, state, age, random seed)
+        let cases: [(u32, u8, u16, u32); 8] = [
+            (0, 0, 5, 0),
+            (1, 1, 0, 0x1234_5678),
+            (2, 1, 3, 0xc000_0000),
+            (3, 2, (wait - 1) as u16, 0),
+            (4, 2, wait as u16, 0),
+            (5, 3, 9, 0),
+            (6, 7, 1, 0),
+            (7, 1, 0, 0x4000_0000),
+        ];
+        for (k, (idx, state, age, seed)) in (0u32..).zip(cases) {
+            let r = sparks + 0x30 * idx;
+            for i in 0..0xcu32 {
+                t.set_u32(r + 4 * i, (0.5 * i as f32 - 1.0 + k as f32).to_bits());
+            }
+            t.set_u16(r + 0x20, age);
+            t.set_u8(r + 0x22, state);
+            t.set_u8(r + 0x23, 0x5a);
+            t.set_u32(op(&t, 0x16), idx);
+            junk(&mut t, obj, 0x150, k);
+            for (i, v) in (0u32..).zip([1.5f32, -2.0, 0.75 + k as f32]) {
+                t.set_u32(obj + 0xb0 + 4 * i, v.to_bits());
+            }
+            for i in 0..4u32 {
+                t.set_u32(obj + 0xa0 + 4 * i, (2.0 * i as f32 + 0.5).to_bits());
+            }
+            t.set_u32(rnd, k);
+            t.set_u32(rnd + 4, seed);
+            ownb::dirty_stack(&mut t, rva + k, &[]);
+            t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+        }
     }
 }
