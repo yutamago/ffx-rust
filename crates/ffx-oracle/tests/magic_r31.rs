@@ -1427,7 +1427,7 @@ fn screen_task_0601() {
     ];
     let setup_tail = t.img.word(t.img.rel32_target(f + 0x4e0) + 0x22);
     // (state, S + 0x1c, S + 0x20, slot 520's answer)
-    let cases: [(u32, f32, u32, u32); 20] = [
+    let cases: [(u32, f32, u32, u32); 21] = [
         (60, 0.0, 0, 0x0205_0000),
         (60, 0.0, 0, 7),
         (61, 0.0, 0, 0),
@@ -1443,6 +1443,7 @@ fn screen_task_0601() {
         (111, 0.0, 0, 0),
         (112, 0.0, 10, 0),
         (112, 0.0, 80, 0),
+        (112, 0.0, 0x4b, 0),
         (65, 0.0, 0, 0),
         (20, 0.0, 0, 0),
         (0x2711, 0.0, 0, 0),
@@ -1469,10 +1470,111 @@ fn screen_task_0601() {
             t.set_u16(p + 0x18, 0);
         }
         t.set_u32(SCRATCH + 0xa10, kind);
+        // the globals read or cleared: junk first
+        for op in [0x7fu32, 0x3a8, 0x4bf] {
+            let at = w(&t, op);
+            t.set_u32(at, 0x5a00_0071 ^ (op << 8) ^ k);
+        }
         junk(&mut t, SCRATCH + 0x7400, 0x20, k);
         t.set_u32(setup_tail, SCRATCH + 0x7400);
         t.set_u32(gstate, state);
         ownb::dirty_stack(&mut t, 0x87b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0601` 0x10008f50 (`r31::summon_task_0601`): every state (0 and
+/// 0x36 running on to 0x39, the waits both ways), the frame counts both
+/// sides of 178 and 125, 0x2710 and 0x2711, states nothing handles.
+#[test]
+fn summon_task_0601() {
+    let Some(mut t) = twin(601) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    let f = t.at(0x8f50);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    for (s, n) in [
+        (26u32, 2usize),
+        (0, 1),
+        (212, 2),
+        (30, 1),
+        (10, 2),
+        (257, 2),
+        (211, 2),
+        (37, 3),
+        (670, 2),
+        (296, 2),
+        (222, 4),
+        (546, 1),
+        (719, 3),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let second = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ second.rotate_left(9)
+        });
+    }
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    let (a, s) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    // the lists the nodes go under: empty, linked to themselves
+    let parents = [
+        w(&t, 0x181),
+        w(&t, 0x280),
+        w(&t, 0x328),
+        w(&t, 0x3a3),
+        w(&t, 0x414),
+        w(&t, 0x3dd),
+    ];
+    let ms = call(&t, 0x754);
+    // (state, frame count, timer)
+    let cases: [(u32, u32, f32); 16] = [
+        (0, 0, 0.0),
+        (0x36, 0, 100.0),
+        (0x37, 0, 0.0),
+        (0x38, 0, 100.0),
+        (0x39, 0, 0.0),
+        (0x39, 0, 100.0),
+        (0x3a, 0, 100.0),
+        (0x3b, 0, 0.0),
+        (0x46, 0, 0.0),
+        (0x47, 10, 0.0),
+        (0x47, 0xb2, 0.0),
+        (0x50, 0x7c, 0.0),
+        (0x50, 0x90, 0.0),
+        (0x2710, 0, 0.0),
+        (0x2711, 0, 0.0),
+        (0x30, 0, 0.0),
+    ];
+    for (k, (state, count, timer)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x2900, k);
+        floats(&mut t, s + 0xd1c, 0x20, 0.5 + k as f32);
+        t.set_u32(s + 0x28e8, state);
+        t.set_u32(s + 0x28f8, count.wrapping_sub(1));
+        t.set_u32(s + 0x28f0, timer.to_bits());
+        t.set_u32(s + 0x28ec, 0.25f32.to_bits());
+        t.set_u32(a + 4, s);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3700, SCRATCH + 0x3740);
+        t.set_u32(a, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for &p in &parents {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+            t.set_u16(p + 0x18, 0);
+        }
+        // the model the end sets up
+        let model = w(&t, 0x74f);
+        junk(&mut t, SCRATCH + 0x7800, 0x100, k);
+        t.set_u32(model, SCRATCH + 0x7800);
+        let _ = ms;
+        // the particle node's owner (the program table and the vectors)
+        let owner = w(&t, 0x3c1);
+        floats(&mut t, SCRATCH + 0x7a00, 0x40, -2.0 + k as f32);
+        t.set_u32(owner, SCRATCH + 0x7a00);
+        ownb::dirty_stack(&mut t, 0x8f50 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
