@@ -3098,6 +3098,8 @@ ports! {
     "r26 task 0377" => r26::TASK_0377, r26::task_0377;
     "r26 stage 0395 a" => r26::STAGE_0395_A, r26::stage_0395_a;
     "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
+    "r26 sparks step 0375" => r26::SPARKS_STEP_0375, r26::sparks_step_0375;
+    "r26 set-up 0375" => r26::SETUP_0375, r26::setup_0375;
     // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3750,6 +3752,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 start-up 0163", &r26::START_UP_0163),
     ("r26 start-up 0299", &r26::START_UP_0299),
     ("r26 start-up 0377", &r26::START_UP_0377),
+    ("r26 spark 0375 a", &r26::SPARK_0375_A),
+    ("r26 spark 0375 b", &r26::SPARK_0375_B),
     // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

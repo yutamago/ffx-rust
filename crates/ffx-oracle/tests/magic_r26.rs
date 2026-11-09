@@ -14,7 +14,7 @@ mod magic_hi;
 mod magic_owna;
 mod magic_r11;
 
-use ffx_magic::r26;
+use ffx_magic::{Ret, r26};
 use magic::{Call, Eax, SCRATCH, StubMem, Twin};
 use magic_owna::{filler, rec, recs, twin};
 
@@ -1794,8 +1794,13 @@ fn start_up_0377() {
         (1, 3, 1, true),
         (2, 0, 0, true),
         (3, 1, 1, false),
+        (0, 0, 1, false),
     ] {
         start_up_0377_setup(&mut t, f, k, (n, battle, listed));
+        if n == 0 && !listed {
+            // no actor and an empty list: the first later node starts it
+            t.set_u32(t.img.word(f + 0x46c), 0);
+        }
         magic_h6::scrub(&mut t);
         t.check(f, Call::default(), &[], Eax::Checked, r26::start_up_0377);
     }
@@ -1835,6 +1840,7 @@ fn sparks_0377() {
         (2, 0x10, 2, 1),
         (0, 0x30, 0, 2),
         (6, 0x19, 0, 5),
+        (6, 0x40, 0, 1),
     ]
     .into_iter()
     .enumerate()
@@ -1878,10 +1884,190 @@ fn sparks_0377() {
         let (c, h) = (t.img.word(back + 0x8e), t.img.word(back + 0x74));
         magic_r11::ring(&mut t, c, h, 3, SCRATCH + 0x1500);
         for i in 0..6 {
+            t.write(recs_at + 0x74 * i, &[0x5b; 0x74]);
             t.set_u32(recs_at + 0x74 * i + 0x6c, 0);
         }
         t.set_u32(idx, 0);
         magic_h6::scrub(&mut t);
         t.check_entry(ft, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// The slots `magic_0375`'s sprites need: 324 a counter's hash, 403 a
+/// float from its word, 941/942 tables, 772 a handle, 773..779 logged,
+/// 229/248 vectors; the sprite-frame callee's lock and constant.
+fn sprites_0375_stubs(t: &mut Twin) -> u32 {
+    let cnt = SCRATCH + 0x7a0;
+    rec(t, 324, 0, move |m: &mut dyn StubMem, _: &[u32]| {
+        let k = m.r32(cnt).wrapping_add(1);
+        m.w32(cnt, k);
+        k.wrapping_mul(0x9e37_79b9) >> 9
+    });
+    rec(t, 403, 1, |_, a| 0x0403_0000 ^ a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 0.25 + 1.0);
+    let tbl = SCRATCH + 0x3200;
+    t.write(tbl, &[0x31; 0x100]);
+    t.set_u16(tbl + 4, 3);
+    for i in 0..3u32 {
+        t.set_u16(tbl + 8 * i + 0x10, (0x80 + 8 * i) as u16);
+        t.set_u16(tbl + 8 * i + 0x12, (0x100 * (i + 1)) as u16);
+    }
+    for s in [941u32, 942] {
+        rec(t, s, 1, move |_, _| tbl);
+    }
+    rec(t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    for (s, n) in [
+        (773u32, 4usize),
+        (774, 5),
+        (775, 2),
+        (776, 1),
+        (777, 1),
+        (778, 6),
+        (779, 2),
+        (325, 2),
+    ] {
+        rec(t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    rec(t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3 {
+            m.w32(a[0] + 4 * i, (0.5 * i as f32 + 1.0).to_bits());
+        }
+        0x229
+    });
+    cnt
+}
+
+/// A sprite pool of `n` sprites (0x94 bytes) at `sprites`, `busy` of them
+/// live (and held, so the step keeps them).
+fn sprite_pool(t: &mut Twin, pool: u32, sprites: u32, (n, busy): (u32, u32)) {
+    t.write(sprites, &[0x5a; 0x94 * 4]);
+    for i in 0..4u32 {
+        let p = sprites + 0x94 * i;
+        t.set_u32(p, u32::from(i < busy));
+        t.set_u32(p + 0x2c, 1);
+        t.set_u32(p + 0x28, 1 + i);
+        t.set_u32(p + 0x30, 0x0300_0000 + i);
+    }
+    t.write(pool, &[0u8; 0x20]);
+    t.set_u32(pool, n);
+    t.set_u32(pool + 4, sprites);
+}
+
+/// `r26::spark_0375` at `magic_0375` 0x10001180 and 0x10001390 (`ecx` =
+/// the pool, the stack `(P)`): a free sprite and none.
+#[test]
+fn sparks_0375() {
+    let Some(mut t) = twin(375) else { return };
+    let cnt = sprites_0375_stubs(&mut t);
+    let (pool, sprites, p) = (SCRATCH + 0x300, SCRATCH + 0x1000, SCRATCH + 0x200);
+    for (k, rva) in [0x1180u32, 0x1390].into_iter().enumerate() {
+        let f = t.at(rva);
+        for (n, busy) in [(3u32, 1u32), (2, 2)] {
+            t.set_u32(cnt, 0x10 * k as u32 + n);
+            sprite_pool(&mut t, pool, sprites, (n, busy));
+            for i in 0..4u32 {
+                t.set_u32(p + 4 * i, (1.5 * i as f32 - 2.0 + n as f32).to_bits());
+            }
+            magic_h6::scrub(&mut t);
+            t.check(f, Call::this(pool), &[p], Eax::Checked, |g, img, fr| {
+                Ret::eax(r26::spark_0375(g, img, fr.at, fr.esp, fr.ecx))
+            });
+        }
+    }
+}
+
+/// `magic_0375` 0x100016c0 (`r26::sparks_step_0375`, cdecl `(pool)`): the
+/// sprite count below and past 0x50, slot 261 answering or not, the
+/// second count below and past 0x19; the pool full of live sprites (the
+/// frame words, the step and the draw) or empty.
+#[test]
+fn sparks_step_0375() {
+    let Some(mut t) = twin(375) else { return };
+    let f = t.at(0x16c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let cnt = sprites_0375_stubs(&mut t);
+    rec(&mut t, 237, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4u32 {
+            m.w32(a[3] + 4 * i, (0.75 * i as f32 - 1.0).to_bits());
+        }
+        0x237
+    });
+    let answer = SCRATCH + 0x7a8;
+    rec(&mut t, 261, 1, move |m: &mut dyn StubMem, a: &[u32]| {
+        m.r32(answer) & a[0]
+    });
+    // the step's lock, the draw's `x` and its frame's lock and constant
+    let step = t.img.rel32_target(f + 0xc5);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(t.img.word(step + 0x58), lock);
+    let draw = t.img.rel32_target(f + 0xd5);
+    t.set_u32(t.img.word(draw + 0x11), 0x00ab_0001);
+    let sf = t.img.rel32_target(draw + 0x79);
+    t.set_u32(t.img.word(sf + 0x290), lock);
+    t.set_u32(t.img.word(sf + 0x179), 2.5f32.to_bits());
+    let (pool, sprites) = (SCRATCH + 0x300, SCRATCH + 0x1000);
+    for (k, (n1, ans, n2, live)) in [
+        (0u32, (0x10u32, 3u32, 0x10u32, 0u32)),
+        (1, (0x60, 0, 0x10, 3)),
+        (2, (0x10, 3, 0x30, 2)),
+        (3, (0x60, 1, 0x30, 3)),
+    ] {
+        t.set_u32(cnt, 0x10 * k);
+        t.set_u32(answer, ans);
+        t.set_u32(w(&t, 0x3a), n1);
+        t.set_u32(w(&t, 0x70), n2);
+        sprite_pool(&mut t, pool, sprites, (live, live));
+        for i in 0..4u32 {
+            let p = sprites + 0x94 * i;
+            t.set_u32(p + 0x30 + 0xc, SCRATCH + 0x3280);
+            t.set_u16(p + 0x30 + 8, (i % 3) as u16);
+            t.set_u16(p + 0x30 + 0x10, 0x200);
+        }
+        junk_ops(&mut t, f, &[0xda]);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[pool], Eax::Checked);
+    }
+}
+
+/// `magic_0375` 0x10001fc0 (`r26::setup_0375`, cdecl `(a)`): the block
+/// handed out, the slots logged, the five blocks junked first.
+#[test]
+fn setup_0375() {
+    let Some(mut t) = twin(375) else { return };
+    let f = t.at(0x1fc0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let block = SCRATCH + 0x1_0000;
+    rec(&mut t, 803, 2, move |_, _| block);
+    let c = SCRATCH + 0x900;
+    t.write(c, &[0x2c; 0x40]);
+    rec(&mut t, 719, 3, move |_, _| c);
+    recs(
+        &mut t,
+        &[(718, 1), (222, 4), (711, 3), (710, 4), (941, 1), (260, 1)],
+    );
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x9c), lock);
+    t.set_u32(lock, 0x55);
+    for (o, n) in [
+        (0x13du32, 0x30usize),
+        (0x15e, 0x110),
+        (0x16f, 0x110),
+        (0x1bc, 0x110),
+        (0x1ff, 0x110),
+    ] {
+        t.write(w(&t, o), &vec![0x5c; n]);
+    }
+    for k in 0..2u32 {
+        junk_ops(
+            &mut t,
+            f,
+            &[
+                0x19, 0x23, 0x2d, 0x37, 0x3c, 0x44, 0x5a, 0xa5, 0x105, 0x11f, 0x142, 0x2c8,
+            ],
+        );
+        t.check_entry(f, Call::default(), &[0x0a00 + k], Eax::Checked);
     }
 }
