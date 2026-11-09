@@ -4259,3 +4259,49 @@ pub const THUNK_BONE_0577: Sig = Sig {
     calls: &[(8, Callee::Sig(&BONE_0577))],
     imports: &[],
 };
+
+/// `magic_0609`'s start-up (0x1000bcd0, 734 bytes; cdecl `(actor)`; a
+/// table entry): [`start_up_0613`](crate::r23::start_up_0613)'s first
+/// part ([`start_up_head_0613`](crate::r23::start_up_head_0613)), then the
+/// same two rings with the first object's stores in another order, and
+/// slot 560 `(slot 557 () & !4)`. Returns 0.
+pub fn start_up_0609<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r23::stores_0613;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    crate::r23::start_up_head_0613(g, img, fr);
+    stores_0613(g, img, f, &[0x1fa]);
+    // the first object joins the second's ring
+    let last = g.read::<u32>(w(0x205));
+    g.write::<u32>(w(0x20a), last);
+    stores_0613(g, img, f, &[0x20e, 0x218, 0x222]);
+    g.write::<u32>(last + 4, w(0x22f));
+    let last = g.read::<u32>(w(0x234));
+    let fl = g.read::<u32>(w(0x23a));
+    g.write::<u32>(w(0x23a), fl & !1);
+    g.write::<u32>(w(0x240), last);
+    stores_0613(
+        g,
+        img,
+        f,
+        &[0x244, 0x24e, 0x258, 0x262, 0x26c, 0x276, 0x280],
+    );
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x28d));
+    let s557 = t(g, 0x292, 557);
+    let fl = g.read::<u32>(w(0x298));
+    g.write::<u32>(w(0x298), fl & !1);
+    stores_0613(g, img, f, &[0x29d, 0x2a7, 0x2b1]);
+    let r = g.call(s557, 0, &[]).eax & !4;
+    g.call(t(g, 0x2c8, 560), 0, &[r]);
+    Ret::eax(0)
+}
+
+/// [`start_up_0609`] (734 bytes, 1 overlay).
+pub const START_UP_0609: Sig = Sig {
+    len: 734,
+    hash: 0xe45f_7f41_fd62_aa03,
+    calls: &[(0xc, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};

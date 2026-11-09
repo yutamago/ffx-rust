@@ -3036,6 +3036,7 @@ ports! {
     "r27 summon task 0578" => r27::SUMMON_TASK_0578, r27::summon_task_0578;
     "r27 light task 0578" => r27::LIGHT_TASK_0578, r27::light_task_0578;
     "r27 thunk bone 0577" => r27::THUNK_BONE_0577, r27::thunk_bone_0577;
+    "r27 start-up 0609" => r27::START_UP_0609, r27::start_up_0609;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;

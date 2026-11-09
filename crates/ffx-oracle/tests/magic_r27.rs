@@ -2169,3 +2169,67 @@ fn bone_0577() {
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the bones' calls");
 }
+
+/// `magic_0609` 0x1000bcd0 (`r27::start_up_0609`; `magic_r23.rs`'s
+/// `start_up_0613` set-up): no targets and two;
+/// the statics' root with and without a child; the rings' old last
+/// words varied.
+#[test]
+fn start_up_0609() {
+    let Some(mut t) = twin(609) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xbcd0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let ti = t.img.rel32_target(f + 0xc);
+    let statics = t.img.rel32_target(ti + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = SCRATCH + 0x6000;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x16f), lock);
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
+    for (s, n) in [(718u32, 1usize), (222, 4), (221, 4), (560, 1)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let r557 = SCRATCH + 0x7f4;
+    rec(&mut t, 557, 0, move |m, _| m.r32(r557));
+    let child = SCRATCH + 0x6800;
+    for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, count);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, if k.is_multiple_of(2) { 0 } else { child });
+        t.write(child, &[0x33; 0x40]);
+        t.set_u32(child + 0x10, child);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(r557, 0x0557_00ff ^ (k << 2));
+        // the words the start clears or sets, junk first (the rings'
+        // last words are the stores' own: the sentinels)
+        junk_ops(
+            &mut t,
+            f,
+            &[0x2b3, 0x2a9, 0x250, 0x25a, 0x17b, 0x298, 0x23a],
+        );
+        ownb::dirty_stack(&mut t, 0xbcd0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
