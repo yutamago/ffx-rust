@@ -305,7 +305,7 @@ pub const STEP_0602: Sig = Sig {
 /// `+0x14` and `+0x4` (operands `ops[0]`, `ops[1]`), then
 /// [`attach`](crate::l3_common::attach)'s last/first/count words
 /// (operands `ops[2..8]`).
-fn list_node_0645<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 8]) {
+pub(crate) fn list_node_0645<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 8]) {
     use crate::l3_common::{ListAt, attach};
     let w = |o: u32| img.word(f + o);
     g.write::<u16>(node + 0x1a, 0xff);

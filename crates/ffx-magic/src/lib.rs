@@ -73,6 +73,7 @@ pub mod r21;
 pub mod r22;
 pub mod r23;
 pub mod r24;
+pub mod r25;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3007,6 +3008,27 @@ ports! {
     "r18 camera start 0519" => r18::CAMERA_START_0519, r18::camera_start_0519;
     "r18 summon frame 0589" => r18::SUMMON_FRAME_0589, r18::summon_frame_0589;
     // round 18 (magic-r18): end
+    // round 25 (magic-r25)
+    "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
+    "r25 draw 0708" => r25::DRAW_0708, r25::draw_0708;
+    "r25 main task 0573" => r25::MAIN_TASK_0573, r25::main_task_0573;
+    "r25 summon task 0514" => r25::SUMMON_TASK_0514, r25::summon_task_0514;
+    "r25 summon task 0513" => r25::SUMMON_TASK_0513, r25::summon_task_0513;
+    "r25 summon task 0603" => r25::SUMMON_TASK_0603, r25::summon_task_0603;
+    "r25 start-up 0603" => r25::START_UP_0603, r25::start_up_0603;
+    "r25 camera task 0603" => r25::CAMERA_TASK_0603, r25::camera_task_0603;
+    "r25 start-up 0585" => r25::START_UP_0585, r25::start_up_0585;
+    "r25 glow task 0585" => r25::GLOW_TASK_0585, r25::glow_task_0585;
+    "r25 summon task 0585" => r25::SUMMON_TASK_0585, r25::summon_task_0585;
+    "r25 spark task 0585" => r25::SPARK_TASK_0585, r25::spark_task_0585;
+    "r25 summon task 0649" => r25::SUMMON_TASK_0649, r25::summon_task_0649;
+    "r25 fade task 0649" => r25::FADE_TASK_0649, r25::fade_task_0649;
+    "r25 load 0563" => r25::LOAD_0563, r25::load_0563;
+    "r25 load 0587" => r25::LOAD_0587, r25::load_0587;
+    "r25 script task 0586" => r25::SCRIPT_TASK_0586, r25::script_task_0586;
+    "r25 glow draw 0587" => r25::GLOW_DRAW_0587, r25::glow_draw_0587;
+    "r25 glow count 0587" => r25::GLOW_COUNT_0587, r25::glow_count_0587;
+    // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
     "r20 glow task 0514" => r20::GLOW_TASK_0514, r20::glow_task_0514;
@@ -3663,6 +3685,17 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r18 start-up 0564", &r18::START_UP_0564),
     ("r18 start-up 0562", &r18::START_UP_0562),
     // round 18 (magic-r18): end of INTERNAL
+    // round 25 (magic-r25)
+    ("r25 spin set-up 0612", &r25::SPIN_SETUP_0612),
+    ("r25 spin set-up 0563", &r25::SPIN_SETUP_0563),
+    ("r25 fade set-up 0649", &r25::FADE_SETUP_0649),
+    ("r25 placement 0563", &r25::PLACE_0563),
+    ("r25 start-up 0563", &r25::START_UP_0563),
+    ("r25 placement 0587", &r25::PLACE_0587),
+    ("r25 start-up 0587", &r25::START_UP_0587),
+    ("r25 effect end 0586", &r25::EFFECT_END_0586),
+    ("r25 flat coordinates 0586", &r25::FLAT_COORDS_0586),
+    // round 25 (magic-r25): end of INTERNAL
     // round 20 (magic-r20)
     ("r20 start-up 0508", &r20::START_UP_0508),
     ("r20 start-up 0680", &r20::START_UP_0680),
