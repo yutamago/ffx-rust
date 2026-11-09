@@ -1250,3 +1250,125 @@ fn burst_setup_0577() {
         );
     }
 }
+
+/// `magic_0577` 0x1000d8f0 (`r29::start_up_0577`, cdecl `(actor)`;
+/// `magic_r27.rs`'s `start_up_0609` set-up for the targets): no targets
+/// and two; the statics' root with and without a child; the lock word
+/// varied.
+#[test]
+fn start_up_0577() {
+    let Some(mut t) = twin(577) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xd8f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let ti = t.img.rel32_target(f + 0xe);
+    let statics = t.img.rel32_target(ti + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = SCRATCH + 0x6000;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x201), lock);
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
+    for (s, n) in [(718u32, 1usize), (222, 4), (221, 4), (27, 2), (4, 1)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let child = SCRATCH + 0x6800;
+    for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, count);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, if k.is_multiple_of(2) { 0 } else { child });
+        t.write(child, &[0x33; 0x40]);
+        t.set_u32(child + 0x10, child);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(w(&t, 0x13), 0x00ab_0000 + k);
+        junk_ops(&mut t, f, &[0x20d]);
+        ownb::dirty_stack(&mut t, 0xd8f0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0512` 0x10008cc0 (`r29::between_setup_0512`, internal: `ecx`
+/// the object, `edx` the actor's object, `(A, b, c)` on the stack): `b`
+/// 0 and 1 (its two callers), the parent with children and without.
+#[test]
+fn between_setup_0512() {
+    let Some(mut t) = twin(512) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+        for i in 0..4 {
+            let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    let f = t.at(0x8cc0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    let obj = SCRATCH + 0x8000;
+    let x = SCRATCH + 0x7000;
+    let a = SCRATCH + 0x6800;
+    for (k, b) in (0u32..).zip([0u32, 1, 1]) {
+        junk(&mut t, obj, 0x400, k);
+        for i in 0..0x20u32 {
+            t.set_u32(x + 0x90 + 4 * i, (0.5 * i as f32 - 3.0).to_bits());
+            t.set_u32(a + 4 * i, (0.25 * i as f32 + k as f32).to_bits());
+        }
+        for i in 0..4u32 {
+            t.set_u32(obj + 0x2f8 + 4 * i, (1.5 * i as f32 - 1.0).to_bits());
+        }
+        let parent = op(&t, 0x6a);
+        let kid = SCRATCH + 0x6000;
+        t.write(kid, &[0x22; 0x20]);
+        t.set_u32(op(&t, 0x76), if k == 1 { parent } else { kid });
+        t.set_u16(op(&t, 0x9d), 3 + k as u16);
+        let last = SCRATCH + 0x6100;
+        t.write(last, &[0x23; 0x20]);
+        t.set_u32(op(&t, 0x31), last);
+        junk_ops(&mut t, f, &[0x4a]);
+        ownb::dirty_stack(&mut t, 0x8cc0 + k, &[]);
+        t.check(
+            f,
+            Call {
+                ecx: obj,
+                edx: x,
+                ..Call::default()
+            },
+            &[a, b, 0x30 + k],
+            Eax::Checked,
+            |g, img, fr| {
+                ffx_magic::Ret::eax(ffx_magic::r29::between_setup_0512(
+                    g, img, fr.at, fr.esp, fr.ecx, fr.edx,
+                ))
+            },
+        );
+    }
+}

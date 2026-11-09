@@ -2159,3 +2159,273 @@ pub const BURST_SETUP_0577: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0577`'s start-up (0x1000d8f0, 704 bytes; cdecl `(actor)`; an
+/// 8-aligned frame, `B` = `esp` after `push esi`, the model node's set-up
+/// record at `B + 8`): the actor's targets
+/// ([`targets_init_c`](crate::s4_summon::targets_init_c)); the statics'
+/// store run (the static list, the parent node and its children); the
+/// model node `N` (vtable set, under the parent, the object `*G_O`;
+/// [`model_node_init`](crate::sa_summon::model_node_init)); the DLL's
+/// static node under the parent ([`static_child`](crate::s4_small::static_child));
+/// the node with its blocks ([`link_node_blocks`](crate::s4_small::link_node_blocks));
+/// the camera store run; slot 718 `(P0)`, `(P1)`; slot 719 `(P0, 8, 0)`
+/// into `G_H`; slot 711 `(h, BUF, 0)` with the game lock `**G_LOCK` 1
+/// around it; slot 710 `(OUT, *G_H, DST, 0x100000)`; slots 222 `(P1, 0,
+/// 10, 2)`, 221 `(P1, 0, 1000, 2)`, 27 `(0x301e, 1)`, 4 `(0x301e)`; two
+/// static nodes linked ([`static_node_link_b`](crate::s4_small::static_node_link_b),
+/// [`static_node_link_c`](crate::s4_small::static_node_link_c)). Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0577<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let actor = fr.arg(g, 0);
+    // push ebp; and esp, -8; sub esp, 0x14; push esi
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x18);
+    let sub = |esp: u32, at: u32| Frame {
+        at: call(at),
+        esp,
+        ..*fr
+    };
+    crate::s4_summon::targets_init_c(g, img, call(0xe), b0.wrapping_sub(4), actor);
+    let object = g.read::<u32>(w(0x13));
+    abs_stores(g, img, f, 0x1b, 0x11c);
+    // the model node's record: (node, parent, object, flags byte)
+    let rec = b0 + 8;
+    g.write::<u32>(rec, w(0x120));
+    g.write::<u32>(rec + 4, w(0x128));
+    g.write::<u32>(rec + 8, object);
+    g.write::<u8>(rec + 0xc, 0);
+    abs_stores(g, img, f, 0x135, 0x13f);
+    let eax = crate::sa_summon::model_node_init(g, img, call(0x140), rec);
+    let sc = Frame {
+        edx: w(0x145),
+        eax,
+        ..sub(b0.wrapping_sub(4), 0x14a)
+    };
+    crate::s4_small::static_child(g, img, &sc);
+    // sub esp, 8
+    let lb = Frame {
+        ecx: w(0x152),
+        ..sub(b0.wrapping_sub(0xc), 0x157)
+    };
+    crate::s4_small::link_node_blocks(g, img, &lb);
+    let s718 = t(g, 0x15c, 718);
+    abs_stores(g, img, f, 0x160, 0x1c4);
+    // call width: 1 (the two words of `sub esp, 8` under it)
+    g.call(s718, 0, &[w(0x1cb)]);
+    g.call(t(g, 0x1d2, 718), 0, &[w(0x1e0)]);
+    // call width: 3
+    let h = g.call(t(g, 0x1e7, 719), 0, &[w(0x1f9), 8, 0]).eax;
+    let lock = g.read::<u32>(w(0x201));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x20d), h);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x218, 711), 0, &[h, w(0x212), 0]);
+    let lock = g.read::<u32>(w(0x22b));
+    g.write::<u32>(lock, saved);
+    let hh = g.read::<u32>(w(0x245));
+    let mut st = vec![w(0x250), hh, w(0x23f), 0x10_0000];
+    // call width: 4
+    g.call(t(g, 0x23a, 710), 0, &st);
+    for (tab, slot, p, n) in [
+        (0x257u32, 222u32, 0x268u32, 10u32),
+        (0x26f, 221, 0x283, 1000),
+    ] {
+        st.splice(0..0, [w(p), 0, n, 2]);
+        // call width: 12 (the earlier calls' words stay on the stack)
+        g.call(t(g, tab, slot), 0, &st);
+    }
+    st.splice(0..0, [0x301e, 1]);
+    // call width: 12 (the earlier calls' words stay on the stack)
+    g.call(t(g, 0x28a, 27), 0, &st);
+    st.insert(0, 0x301e);
+    // call width: 12 (the earlier calls' words stay on the stack)
+    g.call(t(g, 0x29b, 4), 0, &st);
+    crate::s4_small::static_node_link_b(g, img, &sub(b0.wrapping_sub(8), 0x2ad));
+    crate::s4_small::static_node_link_c(g, img, &sub(b0.wrapping_sub(8), 0x2b2));
+    Ret::eax(0)
+}
+
+/// [`start_up_0577`] (the `rel32`s: the targets, the model node, the
+/// static child, the node with its blocks, the two static links).
+pub const START_UP_0577: Sig = Sig {
+    len: 704,
+    hash: 0xbb70_3af4_353a_ec38,
+    calls: &[
+        (0xe, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C)),
+        (0x140, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x14a, Callee::Sig(&crate::s4_small::STATIC_CHILD)),
+        (0x157, Callee::Sig(&crate::s4_small::LINK_NODE_BLOCKS)),
+        (0x2ad, Callee::Sig(&crate::s4_small::STATIC_NODE_LINK_B)),
+        (0x2b2, Callee::Sig(&crate::s4_small::STATIC_NODE_LINK_C)),
+    ],
+    imports: &[],
+};
+
+/// A node of `magic_0512`'s object put as a child of the parent `P`: the
+/// pass halfword 0xff, its own child list, `P` as parent and list (the
+/// operands `p1`, `p2`), after `P`'s last child (read through `l1`, `l2`;
+/// `P` itself (`cmp`) makes it the first (`first`)), the count `count` up,
+/// the last child's store `lw`.
+fn child_of_0512<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    c: u32,
+    [p1, p2, l1, l2, cmp, first, count, lw]: [u32; 8],
+) {
+    let w = |o: u32| img.word(f + o);
+    g.write::<u16>(c + 0x1a, 0xff);
+    g.write::<u32>(c + 0x10, c);
+    g.write::<u32>(c + 0xc, c);
+    g.write::<u32>(c + 0x14, w(p1));
+    g.write::<u32>(c + 4, w(p2));
+    let l = g.read::<u32>(w(l1));
+    g.write::<u32>(c + 8, l);
+    let l = g.read::<u32>(w(l2));
+    if l == w(cmp) {
+        g.write::<u32>(w(first), c);
+    } else {
+        g.write::<u32>(l + 4, c);
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    g.write::<u16>(w(count), n);
+    g.write::<u32>(w(lw), c);
+}
+
+/// `magic_0512`'s "between" object set up (0x10008cc0, 768 bytes;
+/// internal: `ecx` = the object `O`, `edx` = the actor's object `X`, the
+/// stack words `(A, b, c)`; a /GS frame: the vector `V` at `ebp - 0x18`,
+/// the insert group at `ebp - 0x34`): `O` a node on the static list `L`
+/// (vtable, callback; the list's flag bit 0 cleared); the children `O +
+/// 0x334`, `O + 0x2dc`, `O + 0x308` of the parent `P`
+/// ([`child_of_0512`]); `O + 0x350` = slot 229 `(X + 0x9c, ((1 - 2b) K,
+/// 0, -1500, 1))`; `O + 0x2fc` less `K1` then less `c K2`; slot 325 `(O +
+/// 0x2f8, O + 0x350)`; `O + 0x324..` = `((K3 - b K4) K5, 0.4, -0.5, 1)`;
+/// two model nodes inserted ([`insert`](crate::m0512::insert): `O +
+/// 0x2c` with `O + 0x2dc`, kind 0; `O + 0x184` with `O + 0x334`, kind 1;
+/// each with `O + 0x308` and `A`, then given their vtables); `O + 0x1c` =
+/// `c`, `+0x24` = `10 - 10 b`, `+0x20` = `21 - 11 b`, `+0x28` = `A.z -
+/// X.z` (`+0x20`, `+0xd0`), `+0x18` 0. Returns `21 - 11 b`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn between_setup_0512<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    obj: u32,
+    x: u32,
+) -> u32 {
+    use crate::sb_sse::{cvt, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let a = g.read::<u32>(esp + 4);
+    let b = g.read::<u32>(esp + 8);
+    let c = g.read::<u32>(esp + 0xc);
+    let ebp = esp.wrapping_sub(4);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    // the object on the static list
+    g.write::<u32>(obj + 8, obj);
+    g.write::<u32>(obj + 4, obj);
+    g.write::<u32>(obj, w(0x22));
+    g.write::<u32>(obj + 0x10, w(0x29));
+    g.write::<u32>(obj + 0x14, obj);
+    let last = g.read::<u32>(w(0x31));
+    g.write::<u32>(obj + 8, last);
+    g.write::<u32>(obj + 4, w(0x3b));
+    let last = g.read::<u32>(w(0x40));
+    g.write::<u32>(last + 4, obj);
+    let fl = g.read::<u32>(w(0x4a)) & !1;
+    g.write::<u32>(w(0x4a), fl);
+    g.write::<u32>(w(0x57), obj);
+    // the first child and the turned point
+    let c1 = obj + 0x334;
+    child_of_0512(
+        g,
+        img,
+        f,
+        c1,
+        [0x6a, 0x71, 0x76, 0x7e, 0x86, 0x8e, 0x9d, 0xcb],
+    );
+    g.write::<u32>(c1, w(0xd1));
+    let s = cvt(1u32.wrapping_sub(b.wrapping_add(b)));
+    let v = ebp.wrapping_sub(0x18);
+    g.write::<f32>(v, mul(s, k(g, 0xb8)));
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 8, 0xc4bb_8000);
+    g.write::<u32>(v + 0xc, ONE);
+    let p = obj + 0x350;
+    // call width: 3
+    g.call(t(g, 0xc5, 229), 0, &[p, x + 0x9c, v]);
+    g.write::<f32>(obj + 0x2fc, sub(rf(g, obj + 0x2fc), k(g, 0x10a)));
+    // the second child, slot 325
+    let c2 = obj + 0x2dc;
+    child_of_0512(
+        g,
+        img,
+        f,
+        c2,
+        [0x12e, 0x135, 0x13a, 0x142, 0x147, 0x14f, 0x15b, 0x16e],
+    );
+    g.write::<u32>(c2, w(0x174));
+    // call width: 2
+    g.call(t(g, 0x168, 325), 0, &[obj + 0x2f8, p]);
+    let d = mul(cvt(c), k(g, 0x19a));
+    g.write::<f32>(obj + 0x2fc, sub(rf(g, obj + 0x2fc), d));
+    // the third child and its record
+    let c3 = obj + 0x308;
+    child_of_0512(
+        g,
+        img,
+        f,
+        c3,
+        [0x1bc, 0x1c3, 0x1c8, 0x1d0, 0x1d5, 0x1dd, 0x1f6, 0x20d],
+    );
+    g.write::<u32>(c3, w(0x21d));
+    let y = mul(sub(k(g, 0x1ef), mul(cvt(b), k(g, 0x204))), k(g, 0x22b));
+    g.write::<u32>(obj + 0x328, 0x3ecc_cccd);
+    g.write::<f32>(obj + 0x324, y);
+    g.write::<u32>(obj + 0x32c, 0xbf00_0000);
+    g.write::<u32>(obj + 0x330, ONE);
+    // the two model nodes
+    let grp = ebp.wrapping_sub(0x34);
+    for (i, v) in (0u32..).zip([obj + 0x2c, w(0x25b), c2, c3, a, 0]) {
+        g.write::<u32>(grp + 4 * i, v);
+    }
+    crate::m0512::insert(g, img, img.rel32_target(f + 0x26d), grp);
+    let n = g.read::<u32>(grp);
+    g.write::<u32>(n, w(0x27c));
+    for (i, v) in (0u32..).zip([obj + 0x184, w(0x28f), c1, c3, a, 1]) {
+        g.write::<u32>(grp + 4 * i, v);
+    }
+    crate::m0512::insert(g, img, img.rel32_target(f + 0x2a1), grp);
+    let n = g.read::<u32>(grp);
+    g.write::<u32>(n, w(0x2ad));
+    let dz = sub(rf(g, a + 0x20), rf(g, x + 0xd0));
+    g.write::<u32>(obj + 0x1c, c);
+    g.write::<u32>(obj + 0x24, 10u32.wrapping_sub(b.wrapping_mul(10)));
+    g.write::<f32>(obj + 0x28, dz);
+    let eax = 0x15u32.wrapping_sub(b.wrapping_mul(11));
+    g.write::<u32>(obj + 0x20, eax);
+    g.write::<u32>(obj + 0x18, 0);
+    eax
+}
+
+/// [`between_setup_0512`] (the `rel32`s: the insert twice,
+/// `__security_check_cookie`).
+pub const BETWEEN_SETUP_0512: Sig = Sig {
+    len: 768,
+    hash: 0x4b3a_9b94_8114_93a1,
+    calls: &[
+        (0x26d, Callee::Sig(&crate::m0512::INSERT)),
+        (0x2a1, Callee::Sig(&crate::m0512::INSERT)),
+        (0x2f8, Callee::Any),
+    ],
+    imports: &[],
+};
