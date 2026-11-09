@@ -3100,6 +3100,8 @@ ports! {
     "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
     "r26 sparks step 0375" => r26::SPARKS_STEP_0375, r26::sparks_step_0375;
     "r26 set-up 0375" => r26::SETUP_0375, r26::setup_0375;
+    "r26 sub-node visit 0173" => m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit;
+    "r26 thunk: sub-node visit 0173" => sl_wrap::JMP_SUB_NODE_VISIT_0173, sl_wrap::ecx_jmp;
     // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

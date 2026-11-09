@@ -125,6 +125,9 @@ pub const MOVE_START: Sig = Sig {
 /// (`esp + 0x10`; `A`, `B` the immediates `+0x1c0`, `+0x1ae`). Returns
 /// slot 680's `eax`, else the walk's (the low byte the pass, the rest
 /// what the frame's cookie or the last method left).
+///
+/// `magic_0173` 0x10006000 ([`SUB_NODE_VISIT_0173`]): `v` = `(0, 0, -1,
+/// 1)`, and the copy and slot 229 come after the slot 677 block.
 #[allow(clippy::too_many_lines)]
 pub fn sub_node_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret {
     let f = fr.at;
@@ -135,9 +138,13 @@ pub fn sub_node_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret
     let e = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x98);
     let mut eax = g.read::<u32>(w(0x0d)) ^ e;
     let (v, s, d, rec, wv) = (e + 0x40, e + 0x10, e + 8, e + 0x18, e + 0x50);
-    for (i, x) in (0u32..).zip([0, 0x3f80_0000, 0, 0x3f80_0000]) {
-        g.write::<u32>(v + 4 * i, x);
+    // `v`'s immediates (`magic_0173`: `(0, 0, -1, 1)`)
+    for (i, op) in (0u32..).zip([0x21, 0x2b, 0x33, 0x3b]) {
+        g.write::<u32>(v + 4 * i, w(op));
     }
+    // `magic_0173` 0x10006000: the copy and slot 229 after the slot 677
+    // block (`call [copy]` at `+0x135`)
+    let late = w(0x135) as u16 == 0x15ff;
     g.write::<u32>(s, 0x3f80_0000);
     g.write::<u32>(s + 4, 0x3f8a_aaab);
     let node = g.read::<u32>(cur);
@@ -173,18 +180,27 @@ pub fn sub_node_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret
         let m = g.read::<u32>(g.read::<u32>(sub) + 0x1c);
         g.call(m, d, &[d]);
     }
-    let src = g.read::<u32>(node + 0x48).wrapping_add(0x1c);
-    let copy = g.read::<u32>(w(0x10a));
-    g.call(copy, d, &[wv, src]);
-    let s229 = slot_target(g, w(0x11e), 229);
-    g.call(s229, 0, &[v, wv, v, wv, src]);
+    let copy_229 = |g: &mut G, (c, t): (u32, u32)| {
+        let src = g.read::<u32>(node + 0x48).wrapping_add(0x1c);
+        let copy = g.read::<u32>(w(c));
+        g.call(copy, d, &[wv, src]);
+        let s229 = slot_target(g, w(t), 229);
+        g.call(s229, 0, &[v, wv, v, wv, src]);
+    };
+    if !late {
+        copy_229(g, (0x10a, 0x11e));
+    }
     if g.read::<u8>(node + 0x54) & 1 != 0 {
         let a44 = g.read::<u32>(node + 0x44).wrapping_add(0x1c);
         let x50 = g.read::<u32>(node + 0x50);
-        let s677 = slot_target(g, w(0x147), 677);
+        let s677 = slot_target(g, w(if late { 0x116 } else { 0x147 }), 677);
+        // call width: 4
         g.call(s677, 0, &[node + 0x30, x50, a44, v]);
         let b = g.read::<u8>(node + 0x54);
         g.write::<u8>(node + 0x54, b & !1);
+    }
+    if late {
+        copy_229(g, (0x137, 0x14b));
     }
     let r = [
         node + 0x30,
@@ -231,6 +247,15 @@ pub fn sub_node_visit<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> crate::Ret
 pub const SUB_NODE_VISIT: Sig = Sig {
     len: 484,
     hash: 0xe3ce_1e70_bf1e_1c7f,
+    calls: &[(0x1dc, Callee::Any)],
+    imports: &[],
+};
+
+/// [`sub_node_visit`] at `magic_0173` 0x10006000 (agent magic-r26): `v`
+/// `(0, 0, -1, 1)`, the copy and slot 229 after the slot 677 block.
+pub const SUB_NODE_VISIT_0173: Sig = Sig {
+    len: 484,
+    hash: 0xe665_0567_ae20_0abb,
     calls: &[(0x1dc, Callee::Any)],
     imports: &[],
 };

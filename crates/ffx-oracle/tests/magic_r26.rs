@@ -1965,6 +1965,9 @@ fn sparks_0375() {
     let (pool, sprites, p) = (SCRATCH + 0x300, SCRATCH + 0x1000, SCRATCH + 0x200);
     for (k, rva) in [0x1180u32, 0x1390].into_iter().enumerate() {
         let f = t.at(rva);
+        // the resource the sprite block gets (slot 942's first word)
+        let r = t.img.word(f + 5);
+        t.set_u32(r, 0x0375_0000 + k as u32);
         for (n, busy) in [(3u32, 1u32), (2, 2)] {
             t.set_u32(cnt, 0x10 * k as u32 + n);
             sprite_pool(&mut t, pool, sprites, (n, busy));
@@ -2009,17 +2012,26 @@ fn sparks_step_0375() {
     t.set_u32(t.img.word(sf + 0x290), lock);
     t.set_u32(t.img.word(sf + 0x179), 2.5f32.to_bits());
     let (pool, sprites) = (SCRATCH + 0x300, SCRATCH + 0x1000);
+    // `*G_A` (slot 237's first word) and the sparks' resource
+    t.set_u32(w(&t, 0x2f), 0x0237_0375);
+    let res = t.img.word(t.img.rel32_target(f + 0x4e) + 5);
+    t.set_u32(res, 0x0375_0003);
     for (k, (n1, ans, n2, live)) in [
         (0u32, (0x10u32, 3u32, 0x10u32, 0u32)),
         (1, (0x60, 0, 0x10, 3)),
         (2, (0x10, 3, 0x30, 2)),
         (3, (0x60, 1, 0x30, 3)),
+        (4, (0x4f, 2, 0x18, 1)),
+        (5, (0x50, 3, 0x19, 1)),
+        // only the second kind, with sprites free for it
+        (6, (0x60, 1, 0x10, 1)),
     ] {
         t.set_u32(cnt, 0x10 * k);
         t.set_u32(answer, ans);
         t.set_u32(w(&t, 0x3a), n1);
         t.set_u32(w(&t, 0x70), n2);
-        sprite_pool(&mut t, pool, sprites, (live, live));
+        // four sprites, `live` of them held: the sparks take the rest
+        sprite_pool(&mut t, pool, sprites, (4, live));
         for i in 0..4u32 {
             let p = sprites + 0x94 * i;
             t.set_u32(p + 0x30 + 0xc, SCRATCH + 0x3280);
@@ -2069,5 +2081,111 @@ fn setup_0375() {
             ],
         );
         t.check_entry(f, Call::default(), &[0x0a00 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0173` 0x10006000 (`m0146::sub_node_visit`, `ecx` = the cursor)
+/// and its `ecx` thunk 0x100061f0: a node already visited, one with no
+/// children, two and one, with the flag bit set or clear.
+#[test]
+fn sub_node_visit_0173() {
+    let Some(mut t) = twin(173) else { return };
+    let at = t.at(0x6000);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    // the methods (+0x1c of every vtable) and the copy behind the
+    // pointer global: slots 1000 and 1001
+    for s in [1000u32, 1001] {
+        t.set_u32(magic::TABLE + 4 * s, magic::TRAPS + 16 * s);
+    }
+    rec(&mut t, 1000, 1, |m: &mut dyn StubMem, a: &[u32]| {
+        let c = m.r32(SCRATCH + 0x37fc).wrapping_add(1);
+        m.w32(SCRATCH + 0x37fc, c);
+        let pass = (m.r32(a[0] + 4) >> 8) & 0xff;
+        m.w32(SCRATCH + 0x3780 + 4 * (c % 16), m.r32(a[0]) ^ (pass << 24));
+        0x1000 + c
+    });
+    rec(&mut t, 1001, 2, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x0101);
+        }
+        0x1001
+    });
+    t.set_u32(w(&t, 0x137), magic::TRAPS + 16 * 1001);
+    // slot 229 after slot 677: it reads what 677 left
+    rec(&mut t, 229, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i) ^ m.r32(SCRATCH + 0x3860);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 677, 4, |m: &mut dyn StubMem, a: &[u32]| {
+        let v = m.r32(a[3] + 8);
+        m.w32(SCRATCH + 0x3860, v ^ 0x677);
+        m.w32(a[3] + 4, 0x0677_0677);
+        a[0] ^ 0x677
+    });
+    rec(&mut t, 679, 1, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..6 {
+            let v = m.r32(a[0] + 4 * i);
+            m.w32(SCRATCH + 0x3800 + 4 * i, v);
+        }
+        0x679
+    });
+    rec(&mut t, 680, 11, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..2 {
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x3840 + 4 * i, v);
+        }
+        0x680
+    });
+    let vt = SCRATCH + 0x900;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1000);
+    let (cur, node) = (SCRATCH + 0x100, SCRATCH + 0x1000);
+    let kid = |i: u32| SCRATCH + 0x1200 + 0x100 * i;
+    let sub = |i: u32| SCRATCH + 0x1800 + 0x100 * i;
+    let thunk = t.at(0x61f0);
+    for (k, (kids, same, flag)) in [
+        (0u32, true, 0u8),
+        (0, false, 1),
+        (2, false, 0),
+        (1, false, 3),
+        (0, false, 1),
+        (1, true, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.write(node, &[0x22; 0x60]);
+        t.set_u32(node, vt);
+        t.set_u8(node + 0x1a, 5);
+        t.set_u8(node + 0x54, flag);
+        for i in 0..3 {
+            t.write(sub(i), &[0x33; 0x40]);
+            t.set_u32(sub(i), vt);
+            t.set_u32(node + 0x44 + 4 * i, sub(i));
+        }
+        for i in 0..kids {
+            t.write(kid(i), &[0x44; 0x20]);
+            t.set_u32(kid(i), vt);
+            t.set_u32(kid(i) + 8, if i + 1 == kids { node } else { kid(i + 1) });
+        }
+        t.set_u32(node + 0x10, if kids == 0 { node } else { kid(0) });
+        t.set_u32(cur, node);
+        t.set_u8(cur + 4, 0x7f);
+        t.set_u8(cur + 5, if same { 5 } else { 6 });
+        // junk under the entry: the frame's locals must be written
+        t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
+        if k < 4 {
+            t.check_entry(at, Call::this(cur), &[cur], Eax::Checked);
+        } else {
+            let c = Call {
+                eax: 0x1234_5678,
+                ecx: 0x0bad_0ecc,
+                ..Call::default()
+            };
+            t.check_entry(thunk, c, &[cur, 0x0a0a_0a0a], Eax::Checked);
+        }
     }
 }
