@@ -3041,6 +3041,7 @@ ports! {
     "r27 three points 0589" => r27::THREE_POINTS_0589, r27::three_points_0589;
     "r27 three objects 0589" => r27::THREE_OBJECTS_0589, r27::three_objects_0589;
     "r27 fading summons 0589" => r27::FADING_SUMMONS_0589, r27::fading_summons_0589;
+    "r27 start-up 0597" => r27::START_UP_0597, r27::start_up_0597;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;

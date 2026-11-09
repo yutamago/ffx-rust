@@ -5036,3 +5036,97 @@ pub const FADING_SUMMONS_0589: Sig = Sig {
     calls: &[(0x4b, Callee::Sig(&crate::s3_misc::FADE_TASK))],
     imports: &[],
 };
+
+/// `magic_0597`'s start-up (0x1000a9c0, 868 bytes; cdecl `(actor)`; a
+/// table entry; an 8-aligned frame; [`start_up_0613`](crate::r23::start_up_0613)'s
+/// kind): the targets of the actor
+/// ([`targets_init_c`](crate::s4_summon::targets_init_c)); the statics'
+/// store run (two objects, four static nodes); slot 718 `(P)`, slot 719
+/// `(P, 8, 0)` into `G_H`, slot 711 `(h, BUF, 0)` with the game lock
+/// `**G_LOCK` 1 around it, slot 710 `(OUT, *G_H, DST, 0x100000)`; 29
+/// groups of three entries: the bytes `REC + 0x60/0x30/0` 0 and the step
+/// table `STEPS[ids]` = `STEP`; slots 222 `(P, 0, 9, 2)`, 221 `(P, 0, 1000,
+/// 2)`, 551 `(slot 719 (P, 6, 2), 0, 2)`, 238 `(*G_A, 1)`, 296 `(*G_A,
+/// 0)`; the two objects each joining the other's ring (their words, the
+/// flag bit 0 cleared). Returns 0.
+#[allow(clippy::too_many_lines)] // one straight sequence of stores
+pub fn start_up_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let actor = fr.arg(g, 0);
+    // push ebp; and esp, -8; push ecx; push esi: the return address 4
+    // below
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc);
+    crate::s4_summon::targets_init_c(g, img, img.rel32_target(f + 0xc), esp, actor);
+    let s718 = t(g, 0x11, 718);
+    abs_stores(g, img, f, 0x15, 0x13d);
+    abs_stores(g, img, f, 0x148, 0x15c);
+    g.call(s718, 0, &[w(0x144)]);
+    // call width: 3
+    let h = g.call(t(g, 0x15f, 719), 0, &[w(0x171), 8, 0]).eax;
+    let lock = g.read::<u32>(w(0x179));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x185), h);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x190, 711), 0, &[h, w(0x18a), 0]);
+    let lock = g.read::<u32>(w(0x1a3));
+    g.write::<u32>(lock, saved);
+    let hh = g.read::<u32>(w(0x1c3));
+    // call width: 4
+    g.call(t(g, 0x1ad, 710), 0, &[w(0x1c8), hh, w(0x1bd), 0x10_0000]);
+    let (mut ids, mut rec) = (w(0x1d2), w(0x1d7));
+    for _ in 0..0x1d {
+        for (b, r, tbl, imm) in [(1u32, 0x60u32, 0x1ebu32, 0x1efu32), (0, 0x30, 0x1fd, 0x201)] {
+            let c = u32::from(g.read::<u8>(ids + b));
+            g.write::<u8>(rec + r, 0);
+            g.write::<u32>(w(tbl).wrapping_add(4 * c), w(imm));
+        }
+        let c = u32::from(g.read::<u8>(ids.wrapping_sub(1)));
+        g.write::<u8>(rec, 0);
+        g.write::<u32>(w(0x20f).wrapping_add(4 * c), w(0x213));
+        ids = ids.wrapping_sub(3);
+        rec = rec.wrapping_sub(0x90);
+    }
+    // call width: 4
+    g.call(t(g, 0x224, 222), 0, &[w(0x234), 0, 9, 2]);
+    // call width: 4
+    g.call(t(g, 0x23b, 221), 0, &[w(0x24e), 0, 0x3e8, 2]);
+    // call width: 3
+    let r = g.call(t(g, 0x255, 719), 0, &[w(0x264), 6, 2]).eax;
+    // call width: 3
+    g.call(t(g, 0x272, 551), 0, &[r, 0, 2]);
+    // call width: 2
+    g.call(t(g, 0x27f, 238), 0, &[g.read::<u32>(w(0x290)), 1]);
+    // call width: 2
+    g.call(t(g, 0x297, 296), 0, &[g.read::<u32>(w(0x29e)), 0]);
+    // the first object joins the second's ring
+    let last = g.read::<u32>(w(0x2ab));
+    g.write::<u32>(w(0x2b0), last);
+    abs_stores(g, img, f, 0x2b4, 0x2dc);
+    g.write::<u32>(last + 4, w(0x2df));
+    let last = g.read::<u32>(w(0x2e4));
+    let fl = g.read::<u32>(w(0x2ea));
+    g.write::<u32>(w(0x2ea), fl & !1);
+    g.write::<u32>(w(0x2f4), 0);
+    g.write::<u32>(w(0x2fa), 0);
+    g.write::<u32>(w(0x2ff), last);
+    abs_stores(g, img, f, 0x303, 0x335);
+    // and the second the first's
+    g.write::<u32>(last + 4, w(0x338));
+    let fl = g.read::<u32>(w(0x33e));
+    g.write::<u32>(w(0x33e), fl & !1);
+    g.write::<u32>(w(0x345), 0);
+    abs_stores(g, img, f, 0x349, 0x35d);
+    Ret::eax(0)
+}
+
+/// [`start_up_0597`] (868 bytes, 1 overlay).
+pub const START_UP_0597: Sig = Sig {
+    len: 868,
+    hash: 0x903d_736b_5a47_832b,
+    calls: &[(0xc, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};

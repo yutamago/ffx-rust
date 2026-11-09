@@ -2437,3 +2437,73 @@ fn fading_summons_0589() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0597` 0x1000a9c0 (`r27::start_up_0597`; `magic_r23.rs`'s
+/// `start_up_0613` set-up): no targets and two; the statics' root with
+/// and without a child; the lock word and the rings' last words varied.
+#[test]
+fn start_up_0597() {
+    let Some(mut t) = twin(597) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xa9c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let ti = t.img.rel32_target(f + 0xc);
+    let statics = t.img.rel32_target(ti + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = SCRATCH + 0x6000;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x179), lock);
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ a[1]);
+    rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
+    for (s, n) in [
+        (718u32, 1usize),
+        (222, 4),
+        (221, 4),
+        (551, 3),
+        (238, 2),
+        (296, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let child = SCRATCH + 0x6800;
+    for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, count);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, if k.is_multiple_of(2) { 0 } else { child });
+        t.write(child, &[0x33; 0x40]);
+        t.set_u32(child + 0x10, child);
+        t.set_u32(lock, 0x40 + k);
+        // the step table and the records the loop clears: junk first
+        // only the bytes and entries the loop writes (globals lie between)
+        let (ids, steps, recs) = (w(&t, 0x1d2), w(&t, 0x1eb), w(&t, 0x1d7));
+        for j in 0..0x57u32 {
+            let id = t.img.word(ids + 1 - j).to_le_bytes()[0];
+            t.set_u32(steps + 4 * u32::from(id), 0x5eed_0000 + j + k);
+            let r = recs + 0x60 - 0x30 * j;
+            t.write(r, &[0xa5 ^ (j as u8)]);
+        }
+        junk_ops(&mut t, f, &[0x2f4, 0x2fa, 0x345, 0x185, 0x2ea, 0x33e]);
+        ownb::dirty_stack(&mut t, 0xa9c0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
