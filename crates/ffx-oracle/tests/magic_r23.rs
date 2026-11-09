@@ -650,7 +650,7 @@ fn visit_draw_0514() {
             let x = m.r32(r + 4 * i);
             fold(m, 567, i % 16, x);
         }
-        for (k, n) in [(0x20u32, 16u32), (0x24, 4), (0x28, 4)] {
+        for (k, n) in [(0x20u32, 16u32), (0x24, 16), (0x28, 4)] {
             let p = m.r32(r + k);
             for i in 0..n {
                 let x = m.r32(p + 4 * i);
@@ -1201,7 +1201,7 @@ fn camera_step_0519() {
         t.set_u32(
             r + 0x24,
             if at_end {
-                i32::from(frame as i16) as u32
+                i32::from(frame.cast_signed()).cast_unsigned()
             } else {
                 9
             },
@@ -1217,4 +1217,113 @@ fn camera_step_0519() {
             Ret::eax(r23::camera_step_0519(g, img, fr.at, fr.eax))
         });
     }
+}
+
+/// One part block of `magic_0519` at `b` (12 parts 0xa0 bytes apart):
+/// part `i` active by `active[i]`, its mode `modes[i]`, bones, offsets
+/// and the scale word.
+fn parts_0519(t: &mut Twin, b: u32, modes: &[u8; 12], active: u16, k: u32) {
+    junk(t, b, 0x780, k);
+    t.set_u32(b, 0x00b0_0000 + k);
+    for i in 0..12u32 {
+        let p = b + 0x70 + 0xa0 * i;
+        t.set_u16(p - 0x22, (active >> i) & 1);
+        t.set_u8(p - 0x60, modes[i as usize]);
+        let bone = |n: u32| match (i + n + k) % 3 {
+            0 => 0xffff_ffff,
+            x => x + 0x10,
+        };
+        t.set_u32(p - 0x5c, bone(0));
+        t.set_u32(p - 0x58, bone(1));
+        for c in 0..3 {
+            t.set_u32(
+                p - 0x54 + 4 * c,
+                (0.5 * c as f32 - 1.0 + i as f32).to_bits(),
+            );
+        }
+        t.set_u32(p + 0x20, (1.25 + 0.5 * i as f32).to_bits());
+        // the part's refresh flag (`+0x1e` of `P + 0x30`)
+        t.set_u16(p - 0x22, (active >> i) & 1);
+    }
+}
+
+/// `magic_0519` 0x10004020 (`r23::frame_0519`, with 0x100027a0
+/// `r23::parts_step_0519`): off; the parts in every mode (bones present
+/// or not, slot 712 answering 0 and not, an unknown mode); the timer in
+/// the fade range, the filter's rising and falling ranges and outside;
+/// slot 253 answering 0 and not.
+#[test]
+fn frame_0519() {
+    use ownb::rec;
+    let Some(mut t) = twin(519) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x4020);
+    let ps = t.img.rel32_target(f + 0x6a);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    rec(&mut t, 237, 4, |m, a| {
+        for c in 0..3 {
+            wf(m, a[3] + 4 * c, 0.25 * c as f32 + (a[1] & 0xf) as f32);
+        }
+        0x0237_0000 ^ a[1]
+    });
+    rec(&mut t, 236, 3, |m, a| {
+        for c in 0..16 {
+            wf(m, a[2] + 4 * c, 0.125 * c as f32 - (a[1] & 0xf) as f32);
+        }
+        0x236
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        for c in 0..4 {
+            let v = rf(m, a[1] + 4 * c) * f32::from_bits(a[2]);
+            wf(m, a[0] + 4 * c, v);
+        }
+        0x233
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for c in 0..4 {
+            let v = rf(m, a[1] + 4 * c) + rf(m, a[2] + 4 * c);
+            wf(m, a[0] + 4 * c, v);
+        }
+        0x229
+    });
+    let lock = SCRATCH + 0x7f0;
+    rec(&mut t, 712, 2, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 712, 0, l);
+        (a[0] >> 5) & 1
+    });
+    let gm = SCRATCH + 0x3000;
+    for o in [0x9du32, 0xc0, 0xe7, 0xfe, 0x12c] {
+        t.set_u32(w(&t, ps, o), gm);
+    }
+    for o in [0x178u32, 0x197] {
+        t.set_u32(w(&t, ps, o), lock);
+    }
+    t.set_u32(w(&t, ps, 0x16b), SCRATCH + 0x7e0);
+    let (b1, b2) = (w(&t, f, 0x5f), w(&t, f, 0x6f));
+    // (on, 253, modes, timer, effect timer)
+    let m1 = [0u8, 1, 2, 0, 1, 2, 3, 0, 0, 1, 2, 0];
+    let m2 = [2u8, 2, 1, 1, 0, 0, 0, 5, 1, 0, 2, 1];
+    let cases: [(u32, u32, u32, i32); 7] = [
+        (0, 0, 0, 0),
+        (1, 0, 0x120, 0),
+        (1, 1, 0x11e, 0xb0),
+        (1, 0, 0x13b, 0xa0 + 0x30),
+        (1, 1, 0x140, 0xa0 + 0x60),
+        (1, 0, 0x10, 0x10),
+        (1, 1, 0x13c, 0xa0 + 0x27),
+    ];
+    for (k, (on, r253, timer, eff)) in (0u32..).zip(cases) {
+        t.set_u32(w(&t, f, 0x8), on);
+        rec(&mut t, 253, 0, move |_, _| r253);
+        parts_0519(&mut t, b1, &m1, 0x0fff ^ (1 << k), k);
+        parts_0519(&mut t, b2, &m2, 0x0ff7, k + 3);
+        t.set_u32(w(&t, f, 0x7a), timer);
+        t.set_u32(w(&t, f, 0x9c), eff.cast_unsigned());
+        t.set_u32(w(&t, f, 0xf2), 0x40 + k);
+        t.set_u32(lock, 0x10 + k);
+        ownb::dirty_stack(&mut t, 0x4020 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x400, "the parts");
 }

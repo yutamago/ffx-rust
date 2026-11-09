@@ -3009,6 +3009,7 @@ ports! {
     "r23 cue start 0600" => r23::CUE_START_0600, r23::cue_start_0600;
     "r23 task 0600" => r23::TASK_0600, r23::task_0600;
     "r23 load 0568" => r23::LOAD_0568, r23::load_0568;
+    "r23 frame 0519" => r23::FRAME_0519, r23::frame_0519;
     // round 23 (magic-r23): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3628,6 +3629,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r23 start-up 0568", &r23::START_UP_0568),
     ("r23 camera tracks 0519", &r23::CAMERA_TRACKS_0519),
     ("r23 camera step 0519", &r23::CAMERA_STEP_0519),
+    ("r23 parts step 0519", &r23::PARTS_STEP_0519),
     // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
