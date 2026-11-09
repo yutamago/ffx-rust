@@ -3030,6 +3030,10 @@ ports! {
     "r27 spark step 0570" => r27::SPARK_STEP_0570, r27::spark_step_0570;
     "r27 spark step 0597" => r27::SPARK_STEP_0597, r27::spark_step_0570;
     "r27 spark step 0070" => r27::SPARK_STEP_0070, r27::spark_step_0570;
+    "r27 summon models 0589" => r27::SUMMON_MODELS_0589, r27::summon_models_0589;
+    "r27 summon models 0511" => r27::SUMMON_MODELS_0511, r27::summon_models_0589;
+    "r27 fade task 0578" => r27::FADE_TASK_0578, r27::fade_task_0578;
+    "r27 summon task 0578" => r27::SUMMON_TASK_0578, r27::summon_task_0578;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
