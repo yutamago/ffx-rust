@@ -1388,11 +1388,23 @@ camera side has three at `+0x5e0` (one per axis: `MsCameraShake`'s
 same with 0.1 (the sum at 53 bits, passed to `_CIcos` as a double), times
 the amplitude, `(32 + jitter)` and 1/32, the jitter `range/2 -
 brnd(9) % range`; odd kinds 1-5 fade by frames left / length, even ones
-by (length - frames left) / length; 5 and 6 hold half the last value on
+by (length - frames left) / length: the frames left count down from the
+length, so odd kinds fade out (full at the start) and even ones fade in;
+5 and 6 hold half the last value on
 odd frames or when another `brnd(9)` has a zero low nibble; kind 9 steps
 the spring `+0x20` times (`pos += speed`, `speed ± pull`, against the
 position's sign). Below 0 frames left the shake stops and writes 0;
 kinds 7-9 only with a positive length.
+
+The script natives (`MsAtelCameraShake` `0x007bb8c0`, `MsAtelScreenShake`
+`0x007bb840`, one native per side and kind) pop, in script order, `which`,
+a float, then length, amplitude and range (the screen's take the screen
+first). For the camera the float goes to side `+0xe0` + 4 k, which the
+camera's `process_positions` adds to the shake's angle (side `+0xd0` + 4 k,
+zeroed at the start) every frame (its `+0xa0` stepped by `+0xb0`, from
+`+0x30`): it is the wave's angle step per frame. The screens' float goes
+to `+0x164` + 4 k the same way (`+0x15c` zeroed); its use there is not
+traced here.
 
 ### Screen moves and the camera's setters
 
