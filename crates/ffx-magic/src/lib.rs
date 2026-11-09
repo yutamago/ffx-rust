@@ -74,6 +74,7 @@ pub mod r22;
 pub mod r23;
 pub mod r24;
 pub mod r25;
+pub mod r26;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3094,6 +3095,36 @@ ports! {
     "r24 visit thunk 0342" => r24::VISIT_0342_THUNK, r24::visit_0342_thunk;
     "r9 load step 0419" => r9_load::LOAD_0419, r9_load::load_0419;
     // round 24 (magic-r24): end
+    // round 26 (magic-r26)
+    "r26 task 0246" => r26::TASK_0246, r26::task_0246;
+    "r9 load step 0246" => r9_load::LOAD_0246, r9_load::load_0246;
+    "r26 sparks 0180" => r26::SPARKS_0180, r26::sparks_0180;
+    "r9 load step 0180" => r9_load::LOAD_0180, r9_load::load_0180;
+    "r26 draw 0426" => r26::DRAW_0426, r26::draw_0426;
+    "r26 draw thunk 0426" => r26::DRAW_0426_THUNK, r26::draw_0426_thunk;
+    "r9 load step 0442" => r9_load::LOAD_0442, r9_load::load_0442;
+    "r9 load step 0260" => r9_load::LOAD_0260, r9_load::load_0260;
+    "r9 load step 0305" => r9_load::LOAD_0305, r9_load::load_0305;
+    "r26 trail head 0543" => r26::TRAIL_HEAD_0543, s9_misc::trail_head;
+    "r26 trail task 0543" => r26::TRAIL_TASK_0543, o6_fam_pairs6::trail_task;
+    "r26 lift 0301@1810" => r26::LIFT_0301_1810, r21::lift_0301;
+    "r26 boxes 0301" => r26::BOXES_0301, r26::boxes_0301;
+    "r26 sparks 0354" => r26::SPARKS_0354, r26::sparks_0354;
+    "r9 load step 0354" => r9_load::LOAD_0354, r9_load::load_0354;
+    "r26 sparks 0243" => r26::SPARKS_0243, r26::sparks_0243;
+    "r9 load step 0243" => r9_load::LOAD_0243, r9_load::load_0243;
+    "r9 load step 0163" => r9_load::LOAD_0163, r9_load::load_0163;
+    "r9 load step 0299" => r9_load::LOAD_0299, r9_load::load_0299;
+    "r9 load step 0377" => r9_load::LOAD_0377, r9_load::load_0377;
+    "r26 burst 0377" => r26::BURST_0377, r26::burst_0377;
+    "r26 task 0377" => r26::TASK_0377, r26::task_0377;
+    "r26 stage 0395 a" => r26::STAGE_0395_A, r26::stage_0395_a;
+    "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
+    "r26 sparks step 0375" => r26::SPARKS_STEP_0375, r26::sparks_step_0375;
+    "r26 set-up 0375" => r26::SETUP_0375, r26::setup_0375;
+    "r26 sub-node visit 0173" => m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit;
+    "r26 thunk: sub-node visit 0173" => sl_wrap::JMP_SUB_NODE_VISIT_0173, sl_wrap::ecx_jmp;
+    // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3741,6 +3772,24 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r24 visit 0342", &r24::VISIT_0342),
     ("r24 start-up 0419", &r24::START_UP_0419),
     // round 24 (magic-r24): end of INTERNAL
+    // round 26 (magic-r26)
+    ("r26 start-up 0246", &r26::START_UP_0246),
+    ("r26 range check failure 0246", &r26::RANGE_CHECK_FAILURE),
+    ("r26 start-up 0180", &r26::START_UP_0180),
+    ("r26 mesh packets 0426", &r26::MESH_PACKETS_0426),
+    ("r26 start-up 0442", &r26::START_UP_0442),
+    ("r26 start-up 0260", &r26::START_UP_0260),
+    ("r26 start-up 0305", &r26::START_UP_0305),
+    ("r26 actor matrix 0430", &r26::ACTOR_MATRIX_0430),
+    ("r26 trail draw 0543", &r26::TRAIL_DRAW_0543),
+    ("r26 start-up 0354", &r26::START_UP_0354),
+    ("r26 start-up 0243", &r26::START_UP_0243),
+    ("r26 start-up 0163", &r26::START_UP_0163),
+    ("r26 start-up 0299", &r26::START_UP_0299),
+    ("r26 start-up 0377", &r26::START_UP_0377),
+    ("r26 spark 0375 a", &r26::SPARK_0375_A),
+    ("r26 spark 0375 b", &r26::SPARK_0375_B),
+    // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

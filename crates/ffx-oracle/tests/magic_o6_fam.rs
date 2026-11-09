@@ -3795,6 +3795,7 @@ const TRAIL_DRAW: &[(u16, u32)] = &[
     (697, 0x6ea0),
     (644, 0xacd0),
     (698, 0xacd0),
+    (543, 0x4d20),
 ];
 
 /// `o6_fam_pairs6::trail_draw`: no sprites; a short trail; an unmarked
@@ -3816,12 +3817,17 @@ fn fam2_trail_draw() {
         // `magic_0565`'s copy (shared-9's `trail draw (0565)`) has no `M4`;
         // `magic_0644`'s (`trail draw (0644)`) its own frame and `eax`
         let flat = rva == 0x6ea0;
-        let own = rva == 0xacd0;
+        // `magic_0543`'s (`r26::TRAIL_DRAW_0543`): 0644's code with its own
+        // frame offsets, linking the sprites as parts
+        let v0543 = n == 543;
+        let own = rva == 0xacd0 || v0543;
         registered(
             &t,
             rva,
             if flat {
                 "trail draw (0565)"
+            } else if v0543 {
+                "r26 trail draw 0543"
             } else if own {
                 "trail draw (0644)"
             } else {
@@ -3903,6 +3909,8 @@ fn fam2_trail_draw() {
         // lock global points at a scratch word
         let (call, lock_offs): (u32, &[u32]) = if n == 446 {
             (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+        } else if v0543 {
+            (0x5b6, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
         } else if own {
             (0x59f, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
         } else if flat {
@@ -4003,9 +4011,12 @@ fn fam2_trail_task() {
     let mut list = copies("o6 fam pairs6 trail_task", TRAIL_TASK);
     if !list.is_empty() {
         list.push((446, 0x2280));
+        // `r26::TRAIL_TASK_0543`: the same, with 0543's light set-up and
+        // trail draw
+        list.push((543, 0x2250));
     }
     for (d, (n, rva)) in (0u32..).zip(list) {
-        let sh = if n == 446 { 4 } else { 0 };
+        let sh = if n == 446 || n == 543 { 4 } else { 0 };
         let Some(mut t) = magic_l3::twin(n) else {
             return;
         };
@@ -4044,7 +4055,7 @@ fn fam2_trail_task() {
         let (gm3, gm4, gc) = (
             t.img.word(trail_at + 0x57),
             t.img.word(trail_at + 0x63),
-            t.img.word(trail_at + 0x236),
+            t.img.word(trail_at + if n == 543 { 0x248 } else { 0x236 }),
         );
         for s in [774u32, 778] {
             t.stub(s, move |m, a| {
@@ -4066,6 +4077,8 @@ fn fam2_trail_task() {
         // at +0x344) or `link_part`, whose lock global points at a word
         let (call, lock_offs): (u32, &[u32]) = if t.img.word(trail_at + 0x344) as u8 == 0x40 {
             (0x546, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
+        } else if n == 543 {
+            (0x5b6, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
         } else {
             (0x55d, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
         };

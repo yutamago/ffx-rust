@@ -1148,7 +1148,12 @@ fn trail_stubs(t: &mut Twin, trail_at: u32, flat: bool) {
     });
     // `magic_0644`'s copy: `movss [esp + 0x14], xmm1` at +0x344
     let own = op(t, trail_at, 0x344) as u8 == 0xf3;
-    let (call, lock_offs): (u32, &[u32]) = if own {
+    // `magic_0543`'s (`r26::TRAIL_DRAW_0543`): 0644's with its own frame,
+    // linking the sprites (`movss [esp + 0x18], xmm1` at +0x344)
+    let v0543 = own && op(t, trail_at, 0x349) as u8 == 0x18;
+    let (call, lock_offs): (u32, &[u32]) = if v0543 {
+        (0x5b6, &[0x4f, 0x7a, 0xa9, 0xc6, 0x115, 0x13b])
+    } else if own {
         (0x59f, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
     } else if flat {
         (0x531, &[0x4e, 0x79, 0xa8, 0xc5, 0x114, 0x13a])
@@ -1219,6 +1224,7 @@ fn trail_heads() {
         (697, 0x3a20),
         (644, 0x7a40),
         (692, 0x7a40),
+        (543, 0x1e80),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);

@@ -14,9 +14,10 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 10] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 11] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
+        (&m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit::<G>),
         (&m0164::MEAN_VISIT, m0164::mean_visit::<G>),
         (&m0164::MEAN_VISIT_0613, m0164::mean_visit::<G>),
         (&m0186::INT_MOTION, m0186::int_motion::<G>),
@@ -70,6 +71,9 @@ macro_rules! thunks {
 thunks! {
     /// `magic_0146` 0x10006380 over [`m0146::sub_node_visit`].
     JMP_SUB_NODE_VISIT => m0146::SUB_NODE_VISIT;
+    /// `magic_0173` 0x100061f0 over [`m0146::sub_node_visit`] (agent
+    /// magic-r26).
+    JMP_SUB_NODE_VISIT_0173 => m0146::SUB_NODE_VISIT_0173;
     /// `magic_0164` 0x100049a0 over [`m0164::mean_visit`].
     JMP_MEAN_VISIT => m0164::MEAN_VISIT;
     /// `magic_0186` 0x100057f0 over [`m0186::int_motion`].
