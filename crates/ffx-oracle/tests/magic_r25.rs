@@ -1268,7 +1268,9 @@ fn start_up_0603() {
         // halfword to 0xff)
         t.set_u8(pass, 0xff);
         t.set_u8(bone + 0x1a, 0x30 + k as u8);
-        junk_ops(&mut t, f, &[0x5b, 0x781, 0x8c7, 0x75a, 0x97f, 0x8fc]);
+        junk_ops(&mut t, f, &[0x5b, 0x781, 0x8c7, 0x75a, 0x97f, 0x8fc, 0xa56]);
+        // the model id's byte non-zero
+        t.set_u32(op(&t, 0x75a), 0x1234_5677 + k);
         t.set_u32(op(&t, 0x781), (2.5 + k as f32).to_bits());
         for o in [0x97fu32, 0x8fc] {
             t.set_u32(op(&t, o), (1.5 * k as f32).to_bits());
@@ -1375,6 +1377,8 @@ fn camera_task_0603() {
         let leave = op(&t, 0xb1d);
         junk(&mut t, leave, 0x20, k + 4);
         t.set_u32(leave + 0x14, 0);
+        junk_ops(&mut t, f, &[0x63c]);
+        t.set_u32(op(&t, 0x63c), 0x0102_0305 + k);
         let cam = op(&t, 0x57);
         junk(&mut t, cam, 0x300, k + 5);
         // the camera tree's parent: an empty child ring
@@ -1687,17 +1691,15 @@ fn spark_task_0585() {
         0x325
     });
     rec(&mut t, 773, 1, move |m, _| m.r32(cell + 4));
-    for (s, n) in [
-        (774u32, 4usize),
-        (775, 1),
-        (776, 1),
-        (777, 1),
-        (778, 5),
-        (779, 2),
-    ] {
+    for (s, n) in [(774u32, 4usize), (775, 1), (776, 1), (777, 1), (778, 5)] {
         rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
     }
     let lock = SCRATCH + 0x7d0;
+    rec(&mut t, 779, 2, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 779, 0, l);
+        0x0779_0000 ^ a[0]
+    });
     let sin = SCRATCH + 0x8000;
     for i in 0..0x1000u32 {
         t.set_u32(sin + 4 * i, ((i as f32) / 4096.0 - 0.5).to_bits());
@@ -1955,6 +1957,8 @@ fn fade_setup_0649() {
         junk(&mut t, ob, 0x40, k + 6);
         t.set_u32(ob + 0x10, ob);
         junk_ops(&mut t, f, &[0x40]);
+        // the ring's flag word with bit 0 set (the set-up clears it)
+        t.set_u32(op(&t, 0x40), 0x0101_0101 + k);
         ownb::dirty_stack(&mut t, 0x7710 + k, &[]);
         let c = Call {
             ecx: o,
