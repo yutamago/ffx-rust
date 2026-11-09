@@ -2534,7 +2534,7 @@ fn flat_coords_0586() {
 }
 
 /// `magic_0587` 0x10001b20 (`r25::glow_draw_0587`) and 0x100032d0
-/// (`r25::glow_count_0587`): counts 0, positive, negative and past the
+/// (`r25::glow_count_0587`): counts 0, positive, negative (each for both entries) and past the
 /// shift's range; the record handed to slot 567 copied out to compare.
 #[test]
 fn glow_draw_0587() {
@@ -2582,7 +2582,7 @@ fn glow_draw_0587() {
     let f = t.at(0x1b20);
     let fc = t.at(0x32d0);
     let s = SCRATCH + 0x1_0000;
-    for (k, c) in (0u32..).zip([0i32, 5, -3, 150, 0x0400_0001, 1]) {
+    for (k, c) in (0u32..).zip([0i32, 0, -3, 150, 0x0400_0001, 1, 5, -2]) {
         let at = if k % 2 == 0 { f } else { fc };
         t.set_u32(SCRATCH + 0x20, k);
         t.set_u32(t.img.word(f + 0x2f), s);
