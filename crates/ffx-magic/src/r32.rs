@@ -2361,3 +2361,451 @@ pub const LOAD_0067: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0067))],
     imports: &[],
 };
+
+/// `magic_0067` 0x100040c0's operands against `magic_0055` 0x100019a0's
+/// (the search's operands have none).
+const PATH_0067: Shift = Shift {
+    runs: &[],
+    moved: &[
+        (0x6e, 0x2c),
+        (0x74, 0x32),
+        (0x87, 0x3f),
+        (0xa8, 0x60),
+        (0xad, 0x65),
+        (0xf7, 0xaf),
+        (0x109, 0xc1),
+        (0x119, 0xd1),
+        (0x120, 0xd8),
+        (0x136, 0xee),
+        (0x1b9, 0x107),
+        (0x1d7, 0x125),
+        (0x1f0, 0x13e),
+        (0x1f8, 0x146),
+        (0x20c, 0x15a),
+        (0x21a, 0x168),
+        (0x222, 0x170),
+        (0x232, 0x180),
+        (0x237, 0x185),
+        (0x24b, 0x199),
+        (0x25b, 0x1a9),
+        (0x265, 0x1b3),
+        (0x26f, 0x1bd),
+        (0x27c, 0x1ca),
+        (0x283, 0x1dc),
+        (0x290, 0x1d2),
+        (0x298, 0x1d7),
+        (0x2ad, 0x1ec),
+        (0x32c, 0x26b),
+        (0x33e, 0x27d),
+        (0x34d, 0x28c),
+        (0x357, 0x296),
+        (0x361, 0x2a0),
+        (0x36e, 0x2ad),
+        (0x3b1, 0x2f5),
+        (0x3b7, 0x2fb),
+        (0x3bd, 0x301),
+        (0x3c1, 0x305),
+        (0x3c7, 0x30b),
+        (0x3d3, 0x317),
+        (0x3d9, 0x31d),
+        (0x3df, 0x323),
+        (0x3e9, 0x32d),
+        (0x408, 0x34c),
+        (0x413, 0x357),
+        (0x419, 0x35d),
+        (0x423, 0x367),
+        (0x42d, 0x371),
+        (0x437, 0x37b),
+        (0x440, 0x384),
+        (0x446, 0x38a),
+        (0x44b, 0x38f),
+        (0x452, 0x396),
+        (0x45b, 0x39f),
+        (0x46e, 0x3b2),
+        (0x48b, 0x3cf),
+        (0x493, 0x3d7),
+        (0x4c4, 0x408),
+        (0x4cf, 0x413),
+        (0x4d5, 0x419),
+        (0x4e8, 0x42c),
+        (0x4fb, 0x43f),
+        (0x50d, 0x450),
+    ],
+};
+
+/// `magic_0055`'s camera path points (0x100019a0, 1309 bytes; internal,
+/// no arguments, called by [`steps_0055`]; an 8-aligned /GS frame, `B` =
+/// the aligned `esp` after `sub esp, 0xa4` and three pushes: `Q` at `B +
+/// 0x28`, `P` at `B + 0x38`, `U` at `B + 0x48`, `M` at `B + 0x68`; `A =
+/// *G_A`, `T = TAB[*I]`):
+/// - slot 390 `(*I)` searched in the table `L` (to its -1): `found`, kept
+///   in `*G_F`;
+/// - `P` = slot 262 `(A, ..)`, `Q` = slot 262 `(T, ..)`; the yaw `K -
+///   atan2(P.z - Q.z, P.x - Q.x)` wrapped once, replaced (when found) by
+///   `K - slot 333 (T)` wrapped;
+/// - `M` from slot 235 turned by slot 329 `(M, M, yaw)`; `Q` copied to the
+///   first record `R0`, its `w` = `K - slot 333 (T)` wrapped;
+/// - five records `R1..R5` (16 bytes from `R0 + 0x10`): `U` = slot 229
+///   `(U, M, V_k)` (`V` the table `V1`, or `V2` when found), the record
+///   `Q + U` with its `w` the yaw `K - atan2(dz, dx)` from the record
+///   before (wrapped);
+/// - the actor block (slot 413 or 215 `(*I)` by `*G_B`, -1, 0, 1, the u16
+///   flag by `*G_B`, 60 and 0 at two more globals);
+/// - [`task_start`](crate::s3_misc::task_start) `(R, 1)`; a node off the
+///   free ring ([`pool_take_0587`](crate::r27::pool_take_0587), the step
+///   `CB`, kind 1) last on the task list.
+///
+/// Returns the list's old tail (0xffff when it was empty).
+/// `magic_0067` 0x100040c0 is the same code without the search
+/// ([`path_points_0067`]).
+pub fn path_points_0055<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    path_points_with(g, img, f, esp, None)
+}
+
+/// [`path_points_0055`] in `magic_0067` (0x100040c0, 1120 bytes): no
+/// search (never found), the operands at [`PATH_0067`]'s places.
+pub fn path_points_0067<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    path_points_with(g, img, f, esp, Some(&PATH_0067))
+}
+
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn path_points_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    copy: Option<&Shift>,
+) -> u32 {
+    use crate::sb_sse::{add, sub};
+    let at = |o: u32| copy.map_or(o, |c| c.at(o));
+    let w = |o: u32| img.word(f + at(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rd = |g: &G, a: u32| g.read::<f32>(a);
+    let one = 0x3f80_0000u32;
+    let wrap = |g: &G, x: f32, [hi, turn, lo, turn2]: [u32; 4]| {
+        // comiss; jbe: unordered keeps the value
+        if x > k(g, hi) {
+            sub(x, k(g, turn))
+        } else if k(g, lo) > x {
+            add(x, k(g, turn2))
+        } else {
+            x
+        }
+    };
+    // push ebp; and esp, -8; sub esp, 0xa4 and three pushes (0067: 0xa8
+    // and two): the cookie at `B + 0xac` either way, xored with the `esp`
+    // after the `sub`
+    let b = (esp.wrapping_sub(4) & !7).wrapping_sub(0xb0);
+    let e = if copy.is_none() { b + 0xc } else { b + 8 };
+    let cookie = g.read::<u32>(w(0xd)) ^ e;
+    g.write::<u32>(b + 0xac, cookie);
+    let (q, p, u, m) = (b + 0x28, b + 0x38, b + 0x48, b + 0x68);
+    let idx = |g: &G, op: u32| u32::from(g.read::<u8>(g.read::<u32>(w(op))));
+    let mut found = false;
+    if copy.is_none() {
+        let i = idx(g, 0x1b);
+        // call width: 1
+        let r = g.call(t(g, 0x27, 390), 0, &[i]).eax;
+        let mut at = w(0x3f);
+        loop {
+            let x = g.read::<u32>(at);
+            if x == u32::MAX {
+                break;
+            }
+            if x == r {
+                found = true;
+                break;
+            }
+            at = at.wrapping_add(4);
+        }
+        g.write::<u32>(w(0x80), u32::from(found));
+    }
+    let a = g.read::<u32>(w(0x74));
+    // call width: 4
+    g.call(t(g, 0x6e, 262), 0, &[a, p, p + 4, p + 8]);
+    let i = idx(g, 0x87);
+    g.write::<u32>(p + 0xc, one);
+    let tt = g.read::<u32>(w(0xa8).wrapping_add(4 * i));
+    // call width: 4
+    g.call(t(g, 0xad, 262), 0, &[tt, q, q + 4, q + 8]);
+    let dz = sub(rd(g, p + 8), rd(g, q + 8));
+    g.write::<u32>(q + 0xc, one);
+    let dx = sub(rd(g, p), rd(g, q));
+    // `_CIatan2(dz, dx)`, one rounding (`cvtpd2ps`)
+    #[allow(clippy::cast_possible_truncation)]
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut yaw = wrap(g, sub(k(g, 0x109), ang), [0x120, 0x119, 0x136, 0x119]);
+    g.write::<f32>(b + 0xc, yaw);
+    if found {
+        let tt = g.read::<u32>(w(0x159).wrapping_add(4 * idx(g, 0x14f)));
+        // call width: 1
+        let v = st0_f32(g.call(t(g, 0x15e, 333), 0, &[tt]).st0);
+        yaw = wrap(g, sub(k(g, 0x172), v), [0x182, 0x192, 0x19c, 0x1a9]);
+        g.write::<f32>(b + 0xc, yaw);
+    }
+    // call width: 1
+    g.call(t(g, 0x1b9, 235), 0, &[m]);
+    // call width: 3
+    g.call(t(g, 0x1d7, 329), 0, &[m, m, yaw.to_bits()]);
+    let (qx, qy, qz, qw) = (
+        g.read::<u32>(q),
+        g.read::<u32>(q + 4),
+        g.read::<u32>(q + 8),
+        g.read::<u32>(q + 0xc),
+    );
+    g.write::<u32>(w(0x1f8), qx);
+    g.write::<u32>(w(0x20c), qy);
+    g.write::<u32>(w(0x21a), qz);
+    g.write::<u32>(w(0x222), qw);
+    let mut prev = (f32::from_bits(qx), f32::from_bits(qz));
+    let tt = g.read::<u32>(w(0x232).wrapping_add(4 * idx(g, 0x1f0)));
+    // call width: 1
+    let v = st0_f32(g.call(t(g, 0x237, 333), 0, &[tt]).st0);
+    let yaw3 = wrap(g, sub(k(g, 0x24b), v), [0x25b, 0x265, 0x26f, 0x27c]);
+    g.write::<f32>(w(0x290), yaw3);
+    let mut vk = if found { w(0x288) } else { w(0x283) };
+    let mut r = w(0x298);
+    for _ in 0..5 {
+        r = r.wrapping_add(0x10);
+        // call width: 3
+        g.call(t(g, 0x2ad, 229), 0, &[u, m, vk]);
+        let x = add(rd(g, u), rd(g, q));
+        g.write::<f32>(r - 8, x);
+        let y = add(rd(g, u + 4), rd(g, q + 4));
+        g.write::<f32>(r - 4, y);
+        let z = add(rd(g, u + 8), rd(g, q + 8));
+        g.write::<f32>(r, z);
+        g.write::<u32>(r + 4, qw);
+        let dz = sub(z, prev.1);
+        let dx = sub(x, prev.0);
+        // `_CIatan2(dz, dx)`, one rounding
+        #[allow(clippy::cast_possible_truncation)]
+        let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let yaw = wrap(g, sub(k(g, 0x33e), ang), [0x34d, 0x357, 0x361, 0x36e]);
+        g.write::<f32>(r + 4, yaw);
+        vk = vk.wrapping_add(0x10);
+        prev = (x, z);
+    }
+    // the actor block
+    let battle = g.read::<u32>(w(0x3b1)) != 0;
+    g.write::<u32>(w(0x3bd), w(0x3c1));
+    g.write::<u32>(w(0x3c7), 0);
+    let i = idx(g, 0x3b7);
+    g.write::<u32>(w(0x3d3), i);
+    g.write::<u32>(w(0x3df), 0x3c);
+    g.write::<u32>(w(0x3e9), 0);
+    // call width: 1
+    let r = g
+        .call(t(g, 0x3d9, if battle { 413 } else { 215 }), 0, &[i])
+        .eax;
+    let battle = g.read::<u32>(w(0x408)) != 0;
+    g.write::<u32>(w(0x413), r);
+    g.write::<u32>(w(0x419), u32::MAX);
+    g.write::<u32>(w(0x423), 0);
+    g.write::<u32>(w(0x42d), 1);
+    if battle {
+        g.write::<u16>(w(0x440), 1);
+    } else {
+        g.write::<u16>(w(0x437), 0);
+    }
+    // `task_start(R, 1)`: its return address below the two words
+    let ts = b.wrapping_sub(0xc);
+    g.write::<u32>(ts + 4, w(0x446));
+    g.write::<u32>(ts + 8, 1);
+    let start = Frame {
+        at: img.rel32_target(f + at(0x44b)),
+        esp: ts,
+        eax: 0,
+        ecx: 1,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    crate::s3_misc::task_start(g, img, &start);
+    g.write::<u32>(w(0x45b), 0);
+    let ops = [0x452, 0x46e, 0x48b, 0x493, 0x4c4, 0x4cf].map(at);
+    let (node, eax) = crate::r27::pool_take_0587(g, img, f, ops, 0);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    append_last(g, img, f, node, [0x4d5, 0x4e8, 0x4fb, 0x50d].map(at), eax)
+}
+
+/// [`path_points_0055`] (the `rel32`s: `_CIatan2` twice, the task start,
+/// `__security_check_cookie`).
+pub const PATH_POINTS_0055: Sig = Sig {
+    len: 1309,
+    hash: 0xbd02_0621_d0a4_0901,
+    calls: &[
+        (0xf7, Callee::Import("_CIatan2")),
+        (0x32c, Callee::Import("_CIatan2")),
+        (0x44b, Callee::Sig(&crate::s3_misc::TASK_START)),
+        (0x515, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`path_points_0067`].
+pub const PATH_POINTS_0067: Sig = Sig {
+    len: 1120,
+    hash: 0x242c_2f9e_5d49_5afb,
+    calls: &[
+        (0xaf, Callee::Import("_CIatan2")),
+        (0x26b, Callee::Import("_CIatan2")),
+        (0x38f, Callee::Sig(&crate::s3_misc::TASK_START)),
+        (0x458, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0055`'s camera path step (0x10001720, 547 bytes; cdecl `(N)`,
+/// the start-up's task node; `ebp - 4` a local): while the first count
+/// `*G_C1` is above 0 it counts down, and on reaching 0 the actor block
+/// (`*G_X`, slot 413 or 215 by `*G_B`, -1, 0, 1, the u16 flag), the
+/// object `O` started ([`start_object_anim_first`](crate::s4_misc::start_object_anim_first),
+/// the first part, value `TAB[*G_X]`, scale `K`) and turned by `K' - slot 333
+/// (*G_A)` wrapped, its record words set and the second count `*G_C2` =
+/// `TAB2[*G_X] + TAB[*G_X]`. Else the second count counts down, and on
+/// reaching 0 the path points run ([`path_points_0055`]) when bit 8 of
+/// `*G_F` is set, else slot 239 `(*G_X, -5, 0)` and `*G_D = 1`. Then the
+/// two motion scripts (`R1`, `R2`,
+/// [`motion_script`](crate::s4_misc::motion_script)) and the objects
+/// ([`run_objects`](crate::l5_objhost::run_objects)) run; when the
+/// objects answer 1, `*G_D` is 1 and `R1`'s script 1, the node's `+0x14`
+/// = 3 and its owner's step `+0x10` = `CB`. Returns the objects' answer
+/// (1 past the first test), or the owner.
+pub fn steps_0055<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    steps_with(g, img, fr, path_points_0055)
+}
+
+/// [`steps_0055`] in `magic_0067` (0x10003e40, the same code calling
+/// [`path_points_0067`]).
+pub fn steps_0067<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    steps_with(g, img, fr, path_points_0067)
+}
+
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn steps_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    path: fn(&mut G, &Image, u32, u32) -> u32,
+) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let c1 = g.read::<u32>(w(0x5));
+    if c1.cast_signed() > 0 {
+        let c1 = c1.wrapping_sub(1);
+        g.write::<u32>(w(0x14), c1);
+        if c1 == 0 {
+            let battle = g.read::<u32>(w(0x20)) != 0;
+            let x = g.read::<u32>(w(0x26));
+            g.write::<u32>(w(0x2b), x);
+            g.write::<u32>(w(0x37), w(0x3b));
+            g.write::<u32>(w(0x41), u32::MAX);
+            // call width: 1
+            let r = g
+                .call(t(g, 0x31, if battle { 413 } else { 215 }), 0, &[x])
+                .eax;
+            let battle = g.read::<u32>(w(0x60)) != 0;
+            g.write::<u32>(w(0x6b), r);
+            g.write::<u32>(w(0x71), u32::MAX);
+            g.write::<u32>(w(0x7b), 0);
+            g.write::<u32>(w(0x85), 1);
+            if battle {
+                g.write::<u16>(w(0x98), 1);
+            } else {
+                g.write::<u16>(w(0x8f), 0);
+            }
+            let i = g.read::<u32>(w(0x9d));
+            let v = g.read::<u32>(w(0xac).wrapping_add(4 * i));
+            crate::s4_misc::start_object_anim_first(g, img, call(0xbb), w(0xb4), k(g, 0xa5), v);
+            let a = g.read::<u32>(w(0xc6));
+            // call width: 1
+            let r = st0_f32(g.call(t(g, 0xc0, 333), 0, &[a]).st0);
+            g.write::<f32>(ebp.wrapping_sub(4), r);
+            let mut yaw = sub(k(g, 0xd9), r);
+            // comiss; jbe: unordered keeps the value
+            if yaw > k(g, 0xe8) {
+                yaw = sub(yaw, k(g, 0xf2));
+            } else if k(g, 0xfc) > yaw {
+                yaw = add(yaw, k(g, 0x109));
+            }
+            g.write::<u16>(w(0x111), 0);
+            g.write::<f32>(w(0x11e), yaw);
+            let i = g.read::<u32>(w(0x116));
+            let c2 = g.read::<u32>(w(0x125).wrapping_add(4 * i)).wrapping_add(v);
+            g.write::<u32>(w(0x12d), w(0x131));
+            for o in [0x137u32, 0x141, 0x14b, 0x155] {
+                g.write::<u32>(w(o), 0);
+            }
+            g.write::<u32>(w(0x15f), w(0x163));
+            g.write::<u32>(w(0x169), w(0x16d));
+            g.write::<u32>(w(0x173), 0);
+            g.write::<u32>(w(0x17d), 0);
+            g.write::<u32>(w(0x187), w(0x18b));
+            g.write::<u32>(w(0x190), c2);
+        }
+    } else {
+        let c2 = g.read::<u32>(w(0x197));
+        if c2.cast_signed() > 0 {
+            let c2 = c2.wrapping_sub(1);
+            g.write::<u32>(w(0x1a1), c2);
+            if c2 == 0 {
+                if g.read::<u32>(w(0x1a9)) & 0x100 != 0 {
+                    // the call's return address after three pushes
+                    path(g, img, call(0x1b4), fr.esp.wrapping_sub(0x10));
+                } else {
+                    let x = g.read::<u32>(w(0x1cb));
+                    // call width: 3
+                    g.call(t(g, 0x1bb, 239), 0, &[x, 0xffff_fffb, 0]);
+                    g.write::<u32>(w(0x1d6), 1);
+                }
+            }
+        }
+    }
+    let r1 = crate::s4_misc::motion_script(g, img, call(0x1e4), w(0x1df));
+    crate::s4_misc::motion_script(g, img, call(0x1f0), w(0x1e9));
+    // the call's return address after three pushes
+    let objs = crate::l5_objhost::run_objects(g, img, call(0x1f5), fr.esp.wrapping_sub(0x10));
+    if objs != 1 || g.read::<u32>(w(0x200)) != 1 || r1 != 1 {
+        return Ret::eax(objs);
+    }
+    let n = fr.arg(g, 0);
+    g.write::<u32>(n.wrapping_add(0x14), 3);
+    let owner = g.read::<u32>(n.wrapping_add(8));
+    g.write::<u32>(owner.wrapping_add(0x10), w(0x21a));
+    Ret::eax(owner)
+}
+
+/// [`steps_0055`] (the `rel32`s: the object start, the path points, the
+/// motion script twice, the objects).
+pub const STEPS_0055: Sig = Sig {
+    len: 547,
+    hash: 0x1a50_d9c6_c5fe_8c19,
+    calls: &[
+        (0xbb, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM_FIRST)),
+        (0x1b4, Callee::Sig(&PATH_POINTS_0055)),
+        (0x1e4, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1f0, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1f5, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+    ],
+    imports: &[],
+};
+
+/// [`steps_0067`].
+pub const STEPS_0067: Sig = Sig {
+    len: 547,
+    hash: 0x1a50_d9c6_c5fe_8c19,
+    calls: &[
+        (0xbb, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM_FIRST)),
+        (0x1b4, Callee::Sig(&PATH_POINTS_0067)),
+        (0x1e4, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1f0, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x1f5, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+    ],
+    imports: &[],
+};

@@ -1282,3 +1282,143 @@ fn start_up_0055_0067() {
         }
     }
 }
+
+/// `magic_0055` 0x10001720 / `magic_0067` 0x10003e40
+/// (`r32::steps_0055`/`_0067`) and through them the path points
+/// 0x100019a0 / 0x100040c0: the first count running and ending (the
+/// actor block, the object start), the second count running, ending with
+/// the path points (0055: slot 390's answer in its table and not) and
+/// without (slot 239), and done; the scripts and the objects answering 1
+/// or not, `*G_D` 1 or not.
+#[test]
+fn steps_0055_0067() {
+    for (n, rva) in [(55u16, 0x1720u32), (67, 0x3e40)] {
+        let Some(mut t) = twin(n) else { return };
+        all_stubs(&mut t);
+        float_matrix_stubs(&mut t);
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let path = t.img.rel32_target(f + 0x1b4);
+        let len = if n == 55 { 1309 } else { 1120 };
+        let pw = |t: &Twin, o55: u32, o67: u32| t.img.word(path + if n == 55 { o55 } else { o67 });
+        let ts = t
+            .img
+            .rel32_target(path + if n == 55 { 0x44b } else { 0x38f });
+        let objs = t.img.rel32_target(f + 0x1f5);
+        let start = t.img.rel32_target(f + 0xbb);
+        magic_r11::object_start_auto(&mut t, start);
+        rec(&mut t, 262, 4, |m, a| {
+            let k = (a[0] & 0xff) as f32;
+            wf(m, a[1], 2.0 * (k - 2.0));
+            wf(m, a[2], 0.5 * k);
+            wf(m, a[3], 3.0 - k);
+            0x262
+        });
+        rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.75 - 4.0);
+        rec(&mut t, 390, 1, |m, _| m.r32(SCRATCH + 0xa04));
+        for (s, k) in [(413u32, 1usize), (215, 1), (239, 3), (723, 1), (724, 2)] {
+            rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+        }
+        let idx = SCRATCH + 0x1e0;
+        t.set_u8(idx, 3);
+        t.set_u8(idx + 1, 0x77);
+        let tabs = SCRATCH + 0x5000;
+        for i in 0..0x40 {
+            t.set_u32(tabs + 4 * i, 0x0000_0080 + 3 * i);
+        }
+        for (o55, o67) in [
+            (0x1b, 0),
+            (0x87, 0x3f),
+            (0x14f, 0),
+            (0x1f0, 0x13e),
+            (0x3b7, 0x2fb),
+        ] {
+            if n == 55 || o67 != 0 {
+                let at = pw(&t, o55, o67);
+                t.set_u32(at, idx);
+            }
+        }
+        let p = SCRATCH + 0x7e0;
+        t.set_u32(t.img.word(objs + 0x25), p);
+        t.set_u32(t.img.word(objs + 0x37), p + 4);
+        // (c1, c2, flag word, 390's answer in the search table (0055), R1
+        // done, objects, *G_D, listed)
+        let cases: [(i32, i32, u32, u32, u32, bool, u32, bool); 9] = [
+            (5, 0, 0, 0, 1, false, 1, false),
+            (1, 0, 0, 0, 1, false, 1, true),
+            (0, 4, 0, 0, 0, true, 1, false),
+            (0, 1, 0x100, 1, 1, true, 1, true),
+            (-3, 1, 0x1100, 0, 1, true, 0, false),
+            (0, 1, 0x200, 0, 1, false, 1, false),
+            (0, 0, 0, 0, 1, true, 1, false),
+            (0, -2, 0, 0, 1, true, 0, true),
+            (2, 1, 0x100, 1, 0, true, 1, true),
+        ];
+        for (k, (c1, c2, flag, ans, r1, empty, gd, listed)) in (0u32..).zip(cases) {
+            magic_r11::pools(&mut t, f, 547);
+            magic_r11::pools(&mut t, path, len);
+            magic_r11::pools(&mut t, ts, 180);
+            t.set_u32(w(&t, 0x5), c1.cast_unsigned());
+            t.set_u32(w(&t, 0x197), c2.cast_unsigned());
+            t.set_u32(w(&t, 0x1a9), flag);
+            t.set_u32(w(&t, 0x200), gd);
+            let answer = if n == 55 && ans == 1 {
+                let table = pw(&t, 0x3f, 0);
+                t.u32(table + 4)
+            } else {
+                0x7fff_fff0
+            };
+            t.set_u32(SCRATCH + 0xa04, answer);
+            for o in [0x9du32, 0x116] {
+                let at = w(&t, o);
+                t.set_u32(at, k % 3);
+            }
+            for o in [0xacu32, 0x125] {
+                let at = w(&t, o);
+                for i in 0..4 {
+                    t.set_u32(at + 4 * i, 3 + 2 * i);
+                }
+            }
+            junk_ops(
+                &mut t,
+                f,
+                &[0x2b, 0x37, 0x6b, 0x11e, 0x12d, 0x137, 0x190, 0x1d6],
+            );
+            // the two scripts: done or waiting
+            for (o, done) in [(0x1dfu32, r1), (0x1e9, 1)] {
+                let s = w(&t, o);
+                junk(&mut t, s, 0x20, k + o);
+                t.set_u32(s + 0x14, done);
+                t.set_u16(s + 0x18, 5);
+            }
+            // the objects: none, or one that is counted but not run
+            let head = t.img.word(objs + 0x14);
+            let (node, obj) = (SCRATCH + 0x6200, SCRATCH + 0x6300);
+            junk(&mut t, obj, 0x140, k);
+            t.set_u16(obj + 0x124, 0x8001);
+            t.set_u32(node, 0);
+            t.set_u32(node + 4, 0);
+            t.set_u32(node + 8, obj);
+            t.set_u32(head, if empty { 0 } else { node });
+            // the path task's free ring and the task list
+            let ring = (pw(&t, 0x452, 0x396), pw(&t, 0x46e, 0x3b2));
+            free_ring(&mut t, SCRATCH + 0x9000, ring, 3, k);
+            let last = SCRATCH + 0x3400;
+            t.write(last, &[0x34; 0x20]);
+            let (head_op, tail_op) = (pw(&t, 0x4d5, 0x419), pw(&t, 0x4e8, 0x42c));
+            t.set_u32(head_op, if listed { last } else { 0 });
+            t.set_u32(tail_op, last);
+            let th = t.img.word(ts + 0x75);
+            t.set_u32(th, if listed { last } else { 0 });
+            t.set_u32(t.img.word(ts + 0x8c), last);
+            // the node's owner word
+            let nd = SCRATCH + 0x6400;
+            junk(&mut t, nd, 0x20, k + 9);
+            t.set_u32(nd + 8, SCRATCH + 0x6500);
+            junk(&mut t, SCRATCH + 0x6500, 0x20, k + 10);
+            ownb::dirty_stack(&mut t, rva + k, &[]);
+            t.check_entry(f, Call::default(), &[nd], Eax::Checked);
+        }
+    }
+}

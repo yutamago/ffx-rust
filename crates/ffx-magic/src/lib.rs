@@ -3244,6 +3244,8 @@ ports! {
     "r32 burst step 0307" => r32::BURST_STEP_0307, r32::burst_step_0307;
     "r32 load step 0055" => r32::LOAD_0055, r32::load_0055;
     "r32 load step 0067" => r32::LOAD_0067, r32::load_0067;
+    "r32 steps 0055" => r32::STEPS_0055, r32::steps_0055;
+    "r32 steps 0067" => r32::STEPS_0067, r32::steps_0067;
     // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3964,6 +3966,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r32 bone offset 0307", &r32::BONE_OFFSET_0307),
     ("r32 start-up 0055", &r32::START_UP_0055),
     ("r32 start-up 0067", &r32::START_UP_0067),
+    ("r32 path points 0055", &r32::PATH_POINTS_0055),
+    ("r32 path points 0067", &r32::PATH_POINTS_0067),
     // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
