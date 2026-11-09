@@ -1907,7 +1907,10 @@ fn effect_frame_0341() {
     let lock = t.img.word(start + 0x04);
     t.set_u32(lock, SCRATCH + 0x7f8);
     // (on, loaded already, slot 253, phase, its first-run flags, counter u, done, end counter)
-    let cases: [(u32, u32, u32, u32, (u32, u32), u32, u32, u32); 14] = [
+    let cases: [(u32, u32, u32, u32, (u32, u32), u32, u32, u32); 15] = [
+        // phase 4 loaded with both first-run flags clear: the program start
+        // (its store through `*G_D`; r28 b7's two survivors)
+        (1, 1, 0, 4, (0, 0), 0, 0, 0),
         (0, 0, 0, 4, (0, 0), 0, 0, 0),
         (1, 0, 0, 4, (0, 0), 0, 0, 0x32),
         (1, 1, 1, 4, (1, 0), 0, 1, 3),
@@ -1932,6 +1935,8 @@ fn effect_frame_0341() {
         t.set_u32(done, 0x0d0d_0000 + k);
         t.set_u32(op(&t, 0xc1), cp);
         t.set_u32(op(&t, 0xfa), SCRATCH + 0x7ec);
+        // the word the effect counter adds 0x80400 to: junk, not 0
+        t.set_u32(op(&t, 0xbc), 0x00c0_0300 + k);
         t.set_u32(loaded, l253 | dn);
         t.set_u32(phase, ph);
         for (a, b) in [(0xe9u32, 0xf2u32), (0x272, 0x27b), (0x809, 0x812)] {

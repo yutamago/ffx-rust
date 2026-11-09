@@ -1310,9 +1310,14 @@ fn sequence_0171() {
         }
         0x234
     });
-    for (s, v) in [(364u32, 2.5f64), (16, 0.75), (333, 1.25), (12, -0.5)] {
+    for (s, v) in [(364u32, 2.5f64), (16, 0.75), (12, -0.5)] {
         t.stub_st0(s, move |_, a| v + f64::from(a[0] & 3) * 0.125);
     }
+    // the caster's turn (a word per case: 9.0 wraps the yaw upward)
+    let rot = SCRATCH + 0x7e4;
+    t.stub_st0(333, move |m, a| {
+        f64::from(rf(m, rot)) + f64::from(a[0] & 3) * 0.125
+    });
     rec(&mut t, 235, 1, |m, a| {
         for i in 0..16u32 {
             wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
@@ -1345,6 +1350,7 @@ fn sequence_0171() {
         t.set_u32(w(&t, 0x4d), n);
         t.set_u32(w(&t, 0x90), 0x9090);
         t.set_u32(far, scale.to_bits());
+        t.set_u32(rot, if scale > 2.0 { 9.0f32 } else { 1.25 }.to_bits());
         let objs = w(&t, 0x11a);
         t.write(objs, &magic_h6::varied(0x130 * 3, k as u8));
         let ems = w(&t, 0x27a);
@@ -1364,5 +1370,191 @@ fn sequence_0171() {
         }
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0262` 0x10007010 (`r30::summon_task_0262`, an entry): every
+/// state below and at its frame count (the static nodes, the node
+/// append and insert, the flag steps, the static link, the random signs,
+/// the fade word below and at its top, the object to its node, the end
+/// with the task unlinked), and states the dispatch passes by.
+#[test]
+fn summon_task_0262() {
+    let Some(mut t) = twin(262) else { return };
+    all_slots(&mut t);
+    let f = t.at(0x7010);
+    // the static nodes' root lists empty (their last is the sentinel)
+    for (call, sent) in [(0x6fu32, 0x49u32), (0x235, 0x49)] {
+        let sn = t.img.rel32_target(f + call);
+        let s = t.img.word(sn + sent);
+        t.set_u32(t.img.word(sn + 0x04), s);
+    }
+    let rnd = SCRATCH + 0x7e0;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(rnd);
+        m.w32(rnd, k.wrapping_mul(5).wrapping_add(3));
+        k
+    });
+    let task = SCRATCH + 0x900;
+    let r = SCRATCH + 0x980;
+    let node = SCRATCH + 0xa00;
+    let (prev, next) = (SCRATCH + 0xa40, SCRATCH + 0xa80);
+    // (state, frame count, the fade word)
+    let cases: [(u32, u32, f32); 21] = [
+        (0, 7, 0.5),
+        (1, 3, 0.5),
+        (1, 30, 0.5),
+        (5, 3, 0.5),
+        (10, 3, 0.5),
+        (10, 45, 0.5),
+        (11, 50, 0.5),
+        (11, 2, 0.5),
+        (12, 3, 0.5),
+        (12, 90, 0.5),
+        (13, 3, 0.5),
+        (13, 30, 0.5),
+        (16, 3, 0.5),
+        (20, 3, 0.5),
+        (21, 3, 0.25),
+        (21, 10, 0.995),
+        (22, 3, 0.5),
+        (22, 50, 0.5),
+        (0x2710, 3, 0.5),
+        (30, 3, 0.5),
+        (0x2711, 3, 0.5),
+    ];
+    for (k, (s, n, fade)) in (0u32..).zip(cases) {
+        t.write(r, &magic_h6::varied(0x40, k as u8));
+        t.set_u32(r + 0x18, s);
+        t.set_u32(r + 0x2c, n);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.write(node, &[0x4e; 0x10]);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.write(prev, &[0x50; 0x10]);
+        t.write(next, &[0x4f; 0x10]);
+        t.set_u32(t.img.word(f + 0x1bd), fade.to_bits());
+        t.set_u32(t.img.word(f + 0x3e8), fade.to_bits());
+        t.set_u32(rnd, k);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0262` 0x100074e0 (`r30::summon_task_0262_b`, an entry): the
+/// set-up (state 0, running on into 10 and 11), state 10 alone, 11 below
+/// and at its count, 12, 60 (the flag bit set and clear), 61 (slot 411
+/// saying 0 and not), the end, and states the dispatch passes by.
+#[test]
+fn summon_task_0262_b() {
+    let Some(mut t) = twin(262) else { return };
+    all_slots(&mut t);
+    let f = t.at(0x74e0);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let sn = t.img.rel32_target(f + 0xdf);
+    let s = t.img.word(sn + 0x3f);
+    t.set_u32(t.img.word(sn + 0x04), s);
+    let hz = t.img.rel32_target(f + 0x19f);
+    let tab = SCRATCH + 0x1_0000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, (0.5 + 0.0007 * i as f32).to_bits());
+    }
+    t.set_u32(t.img.word(hz + 0x2c), tab);
+    rec(&mut t, 217, 2, |m, a| {
+        for i in 0..4 {
+            wf(
+                m,
+                a[1] + 4 * i,
+                (a[0] & 0xff) as f32 * 0.25 + i as f32 - 1.5,
+            );
+        }
+        0x217
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x234
+    });
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.0625 + 0.25);
+    let say = SCRATCH + 0x7e8;
+    rec(&mut t, 411, 1, move |m, _| m.r32(say));
+    // the model start's ring tail, model list (slot 218) and root
+    let ms = t.img.rel32_target(f + 0x15b);
+    let models = SCRATCH + 0x700;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        models
+    });
+    t.write(models, &[3, 0, 5, 0, 0, 0, 0, 0]);
+    let tail = SCRATCH + 0x500;
+    t.write(tail, &[0x55; 0x10]);
+    t.set_u32(t.img.word(ms + 0x07), tail);
+    let root = t.img.word(ms + 0x62);
+    t.set_u32(root + 0x10, root);
+    // the DLL's node list (the start-up's work): empty, its last itself
+    let list = w(&t, 0x6a);
+    t.set_u32(list + 0x10, list);
+    let pf = t.img.rel32_target(f + 0x26d);
+    let plist = t.img.word(pf + 0x20);
+    if t.u32(plist + 0x10) == 0 {
+        t.set_u32(plist + 0x10, plist);
+    }
+    // the particle node's owner record and its programs (slot 941)
+    let owner = SCRATCH + 0xb00;
+    t.write(owner, &[0; 0x40]);
+    t.set_u32(owner + 0x10, 0x0941);
+    t.set_u32(t.img.word(pf + 0xd), owner);
+    let programs = SCRATCH + 0xc00;
+    for i in 0..8u32 {
+        t.set_u32(programs + 4 * i, SCRATCH + 0xd00 + 0x40 * i);
+    }
+    rec(&mut t, 941, 1, move |_, _| programs);
+    magic_r11::object_slots(&mut t);
+    let task = SCRATCH + 0x900;
+    let r = SCRATCH + 0x980;
+    let node = SCRATCH + 0xa00;
+    let (prev, next) = (SCRATCH + 0xa40, SCRATCH + 0xa80);
+    let obj = w(&t, 0x18e);
+    let flag = w(&t, 0x396);
+    // (state, frame count, the object's bit 0, the flag byte, slot 411)
+    let cases: [(u32, u32, u8, u8, u32); 15] = [
+        (0, 3, 0, 0, 1),
+        (10, 3, 0, 0, 1),
+        (10, 3, 1, 0, 1),
+        (11, 3, 0, 0, 1),
+        (11, 25, 0, 0, 1),
+        (12, 3, 0, 0, 1),
+        (12, 5, 0, 0, 1),
+        (60, 3, 0, 0, 1),
+        (60, 135, 0, 1, 1),
+        (60, 140, 0, 0, 1),
+        (61, 3, 0, 0, 0),
+        (61, 3, 0, 0, 7),
+        (0x2710, 3, 0, 0, 1),
+        (5, 3, 0, 0, 1),
+        (70, 3, 0, 0, 1),
+    ];
+    for (k, (st, n, bit, fl, s411)) in (0u32..).zip(cases) {
+        t.write(r, &magic_h6::varied(0x40, k as u8));
+        t.set_u32(r + 0x18, st);
+        t.set_u32(r + 0x2c, n);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.write(node, &[0x4e; 0x10]);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.write(prev, &[0x50; 0x10]);
+        t.write(next, &[0x4f; 0x10]);
+        let o = t.u32(obj + 0x90) & !1;
+        t.set_u32(obj + 0x90, o | u32::from(bit));
+        t.set_u8(flag, fl);
+        t.set_u32(say, s411);
+        magic_h6::scrub(&mut t);
+        // the frame word state 10 reads unwritten ([B + 8]): 0 on both sides
+        t.set_u32(STACK_TOP - 0x100 - 0x30, 0);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
