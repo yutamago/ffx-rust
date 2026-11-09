@@ -80,6 +80,7 @@ pub mod r28;
 pub mod r29;
 pub mod r30;
 pub mod r31;
+pub mod r32;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3234,6 +3235,30 @@ ports! {
     "r31 start-up 0601" => r31::START_UP_0601, r31::start_up_0601;
     "r31 summon task 0613" => r31::SUMMON_TASK_0613, r31::summon_task_0613;
     // round 31 (magic-r31): end
+    // round 31 (magic-r31): end
+    // round 32 (magic-r32)
+    "r32 spin actors 0307" => r32::SPIN_ACTORS_0307, r32::spin_actors_0307;
+    "r32 sparks 0307" => r32::SPARKS_0307, r32::sparks_0307;
+    "r32 spin start 0307" => r32::SPIN_START_0307, r32::spin_start_0307;
+    "r32 aim objects 0307" => r32::AIM_OBJECTS_0307, r32::aim_objects_0307;
+    "r32 load step 0307" => r32::LOAD_0307, r32::load_0307;
+    "r32 late bone offset 0307" => r32::LATE_BONE_OFFSET_0307, r32::late_bone_offset_0307;
+    "r32 swing object 0307" => r32::SWING_OBJECT_0307, r32::swing_object_0307;
+    "r32 late objects 0307" => r32::LATE_OBJECTS_0307, r32::late_objects_0307;
+    "r32 emitter start 0307" => r32::EMITTER_START_0307, r32::emitter_start_0307;
+    "r32 scene start 0307" => r32::SCENE_START_0307, r32::scene_start_0307;
+    "r32 emitter step 0307" => r32::EMITTER_STEP_0307, r32::emitter_step_0307;
+    "r32 summon start 0307" => r32::SUMMON_START_0307, r32::summon_start_0307;
+    "r32 summon turn 0307" => r32::SUMMON_TURN_0307, r32::summon_turn_0307;
+    "r32 burst step 0307" => r32::BURST_STEP_0307, r32::burst_step_0307;
+    "r32 load step 0055" => r32::LOAD_0055, r32::load_0055;
+    "r32 load step 0067" => r32::LOAD_0067, r32::load_0067;
+    "r32 steps 0055" => r32::STEPS_0055, r32::steps_0055;
+    "r32 steps 0067" => r32::STEPS_0067, r32::steps_0067;
+    "r32 host start end 0162" => r32::HOST_START_END_0162, r32::host_start_end_0162;
+    "r32 height 0263" => r32::HEIGHT_0263, r32::height_0263;
+    "r32 landing take 0284" => r32::LANDING_TAKE_0284, r32::landing_take_0284;
+    // round 32 (magic-r32): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3955,6 +3980,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r31 summon set-up 0613", &r31::SUMMON_SETUP_0613),
     ("r31 summon set-up 0609", &r31::SUMMON_SETUP_0609),
     // round 31 (magic-r31): end of INTERNAL
+    // round 31 (magic-r31): end of INTERNAL
+    // round 32 (magic-r32)
+    ("r32 aim object 0307", &r32::AIM_OBJECT_0307),
+    ("r32 start-up 0307", &r32::START_UP_0307),
+    ("r32 bone offset 0307", &r32::BONE_OFFSET_0307),
+    ("r32 start-up 0055", &r32::START_UP_0055),
+    ("r32 start-up 0067", &r32::START_UP_0067),
+    ("r32 path points 0055", &r32::PATH_POINTS_0055),
+    ("r32 path points 0067", &r32::PATH_POINTS_0067),
+    ("r32 effect end 0162", &r32::EFFECT_END_0162),
+    ("r32 centre 0263", &r32::CENTRE_0263),
+    // round 32 (magic-r32): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

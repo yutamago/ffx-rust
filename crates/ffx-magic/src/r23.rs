@@ -270,7 +270,7 @@ pub const CUE_START_0598: Sig = Sig {
 /// unless `*G_OFF` (operand `off`) is set, the battle index `i` below 32
 /// gets slot 217 `(i, pos)` and slot 255 `(i, pos)`; then slot 211 `(chr,
 /// 0)`.
-fn reset_one<G: Game>(
+pub(crate) fn reset_one<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
