@@ -1207,7 +1207,7 @@ fn strip_frame_0150() {
             (false, 1, 1, 5, 0, 0, 1, 3, 0, 1.0),
             (false, 1, 0, 6, 1, 1, 3, 70, 0, 0.5),
             (false, 0, 1, 5, 2, 0, 1, 2, 0, 1.0),
-            (false, 1, 0, 1, 0, 1, 2, 0, 0, 1.0),
+            (false, 1, 0, 1, 3, 1, 2, 0, 0, 1.0),
             (false, 1, 1, 4, 3, 1, 0x80, 5, 1, 0.0),
             (false, 1, 0, 5, 5, 0, 1, 0x3e, 0, 2.0),
             (false, 1, 1, 7, 1, 0, 9, 1, 0, 1.0),
@@ -1239,7 +1239,8 @@ fn strip_frame_0150() {
             for i in 0..0x40u32 {
                 let w = (0.1 * (i % 9) as f32) * ascale;
                 t.set_u32(n + 0x428 + 16 * i, w.to_bits());
-                t.set_u32(n + 0x81c + 4 * i, 0);
+                // the spark states (u16 block, u16 bytes), junk but small
+                t.set_u32(n + 0x81c + 4 * i, (i % 3) << 16 | (i % 2));
             }
             // the bones and the strip stop at once (their pass seen)
             for b in [b0, b1] {
@@ -1411,5 +1412,120 @@ fn tail_draw_0150() {
             t.u32(magic_owna::row(820)) >= 1 && t.u32(magic_owna::row(819)) >= 1,
             "both packets"
         );
+    }
+}
+
+/// `magic_0667` 0x100040e0 and `magic_0668` 0x10004100
+/// (`r28::summon_start_0667`, cdecl `(a)`): the summoner's side either
+/// way, no targets and some, the last record's id from slot 294 or 0xff,
+/// listed ids new and already among the records, none listed.
+#[test]
+fn summon_start_0667() {
+    for (n, addr) in [(667u16, 0x40e0u32), (668, 0x4100)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(addr);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        // the target measure's slots
+        for s in [215u32, 169, 251, 216, 277] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        for (s, x) in [(169u32, 1.5f64), (251, 2.0), (216, 1.0), (277, 2.5)] {
+            t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3) * 0.25);
+        }
+        for (s, nw) in [(217u32, 4u32), (210, 16), (290, 4)] {
+            rec(&mut t, s, 2, move |m, a| {
+                for i in 0..nw {
+                    wf(
+                        m,
+                        a[1] + 4 * i,
+                        (a[0] & 0xff) as f32 * 0.5 + i as f32 + s as f32 * 0.01,
+                    );
+                }
+                s
+            });
+        }
+        mixer(&mut t, 230, 2, 0, 16);
+        // the camera blocks reset's
+        rec(&mut t, 287, 3, |_, a| 0x0287_0000 ^ a[0]);
+        rec(&mut t, 281, 1, |_, a| 0x0281_0000 ^ a[0]);
+        rec(&mut t, 283, 2, |_, a| 0x0283_0000 ^ a[1]);
+        // the start's own
+        let side = SCRATCH + 0x7f0;
+        rec(&mut t, 168, 1, |_, a| 0x40 + (a[0] & 7));
+        rec(&mut t, 293, 1, move |m, _| m.r32(side));
+        rec(&mut t, 294, 1, |_, a| a[0] ^ 0x21);
+        rec(&mut t, 289, 1, |_, a| 0x0289_0000 ^ a[0]);
+        t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * 0.125);
+        rec(&mut t, 325, 2, |m, a| {
+            for i in 0..4 {
+                let x = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, x);
+            }
+            0x325
+        });
+        let (targets, ids) = (SCRATCH + 0x700, SCRATCH + 0x740);
+        let counts = SCRATCH + 0x7f8;
+        rec(&mut t, 218, 2, move |m, a| {
+            let n = m.r32(counts);
+            m.w32(a[1], n);
+            targets
+        });
+        rec(&mut t, 288, 2, move |m, a| {
+            let n = m.r32(counts + 4);
+            m.w32(a[1], n);
+            ids
+        });
+        for (s, k) in [
+            (718u32, 1usize),
+            (222, 4),
+            (221, 4),
+            (719, 3),
+            (291, 5),
+            (312, 4),
+        ] {
+            rec(&mut t, s, k, move |m, a| {
+                let c = m.r32(magic_owna::row(s));
+                (s << 16) ^ a[0] ^ c
+            });
+        }
+        // (side, targets, slot 293's second answer, listed ids)
+        let cases: [(u32, u32, &[u8]); 5] = [
+            (0, 2, &[]),
+            (1, 0, &[0x41, 0x50, 0x51]),
+            (0, 3, &[0x60, 0x42, 0x61, 0x60]),
+            (1, 1, &[0x70]),
+            (0, 0, &[0x41, 0x72]),
+        ];
+        for (k, (sd, nt, listed)) in (0u32..).zip(cases) {
+            t.set_u32(side, sd);
+            t.set_u32(counts, nt);
+            t.set_u32(counts + 4, listed.len() as u32);
+            for i in 0..8u32 {
+                t.set_u8(targets + i, (0x50 + i + k) as u8);
+            }
+            t.write(ids, listed);
+            // the records, junk first
+            let first = op(&t, 0x65) - 0x44;
+            junk(&mut t, first - 0x100, 0x200 + 0xcc * 3, k);
+            for o in [0x131u32, 0x193, 0x239] {
+                let at = op(&t, o);
+                junk(&mut t, at, 0xcc * 4, k + o);
+            }
+            for o in [0x85u32, 0x8d] {
+                let at = op(&t, o);
+                t.set_u32(at, (1.0 + k as f32).to_bits());
+            }
+            // the cleared lists and block table: junk to see the stores
+            let l1 = op(&t, 0x622);
+            junk(&mut t, l1, 0x4c * 0x100, k);
+            let l2 = op(&t, 0x63d) - 0x24;
+            let l2e = op(&t, 0x654);
+            junk(&mut t, l2, l2e - l2, k + 1);
+            let l3 = op(&t, 0x660) - 0x18;
+            junk(&mut t, l3, 0x3c * 0x200, k + 2);
+            t.set_u32(op(&t, 0x5f2), k % 3);
+            magic_h6::scrub(&mut t);
+            t.check_entry(f, Call::default(), &[0x30 + k], Eax::Checked);
+        }
     }
 }
