@@ -1636,3 +1636,118 @@ fn summon_task_0585() {
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the task's calls");
 }
+
+/// `magic_0585` 0x10007170 (`r25::spark_task_0585`): the states 0, 1
+/// (waiting and not), 10 with room for more sparks and without, 11 with
+/// sparks and none, 10000 with sparks and none, others; the motion
+/// sequence's handle loaded and not.
+#[test]
+fn spark_task_0585() {
+    let Some(mut t) = twin(585) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x7170);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| {
+        f64::from(m.r32(magic_owna::row(307)) % 7) * 0.13 + 0.02
+    });
+    let cell = SCRATCH + 0x7c0;
+    rec(&mut t, 324, 0, move |m, _| {
+        let n = m.r32(cell);
+        m.w32(cell, n + 1);
+        0x1234 + 97 * n
+    });
+    for (s, n) in [
+        (236u32, 3usize),
+        (229, 3),
+        (234, 3),
+        (233, 3),
+        (248, 3),
+        (230, 2),
+    ] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = 0.25 * i as f32 + (s & 7) as f32 - 2.0 + rf(m, a[1] + 4 * i) * 0.5;
+                wf(m, a[0] + 4 * i, v);
+                fold(m, s, i, v.to_bits());
+            }
+            s
+        });
+    }
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            fold(m, 325, i, x);
+        }
+        0x325
+    });
+    rec(&mut t, 773, 1, move |m, _| m.r32(cell + 4));
+    for (s, n) in [
+        (774u32, 4usize),
+        (775, 1),
+        (776, 1),
+        (777, 1),
+        (778, 5),
+        (779, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let lock = SCRATCH + 0x7d0;
+    let sin = SCRATCH + 0x8000;
+    for i in 0..0x1000u32 {
+        t.set_u32(sin + 4 * i, ((i as f32) / 4096.0 - 0.5).to_bits());
+    }
+    let task = SCRATCH + 0x100;
+    let (tn, tprev, tnext) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let r = SCRATCH + 0x1_0000;
+    let src = SCRATCH + 0x3000;
+    // (state, wait, sparks, loaded)
+    let cases: [(u32, u32, u32, u32); 12] = [
+        (0, 0, 0, 0),
+        (1, 3, 0, 0),
+        (1, 0, 2, 1),
+        (10, 0, 0, 0),
+        (10, 0, 7, 1),
+        (10, 0, 0x5d, 0),
+        (11, 0, 3, 1),
+        (11, 0, 0, 0),
+        (0x2710, 0, 3, 0),
+        (0x2710, 0, 0, 0),
+        (5, 0, 2, 0),
+        (0x4e20, 0, 1, 0),
+    ];
+    for (k, (state, wait, sparks, loaded)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x1000, k);
+        for i in 0..0x60u32 {
+            for c in 0..4u32 {
+                let x = (0.125 * c as f32 + 0.0625 * i as f32 - 1.0 + k as f32).to_bits();
+                t.set_u32(r + 0x10 + 0x10 * i + 4 * c, x);
+                t.set_u32(r + 0x610 + 0x10 * i + 4 * c, x ^ 0x0040_0000);
+            }
+            t.set_u32(r + 0xcd0 + 4 * i, 0x0010_0000 * (i & 3) + i);
+        }
+        t.set_u32(r + 0xe6c, state);
+        t.set_u32(r + 0xe70, wait);
+        t.set_u32(r + 0xe74, sparks);
+        t.set_u32(r + 0xe78, src);
+        t.set_u32(src + 0x54, 0x00ab_0054 + k);
+        t.set_u32(r + 0xe50, SCRATCH + 0x4000);
+        junk(&mut t, SCRATCH + 0x4000, 0x200, k + 1);
+        t.set_u32(cell + 4, loaded);
+        t.set_u32(op(&t, 0x46b), sin);
+        t.set_u32(op(&t, 0x6b5), lock);
+        t.set_u32(lock, 0x40 + k);
+        junk_ops(&mut t, f, &[0x3a2]);
+        junk(&mut t, task, 0x10, k + 3);
+        t.set_u32(task, tn);
+        t.set_u32(task + 4, r);
+        t.write(tn, &[0x3c; 0x20]);
+        t.set_u32(tn + 4, tprev);
+        t.set_u32(tn + 8, tnext);
+        t.write(tprev, &[0x4d; 0x20]);
+        t.write(tnext, &[0x5e; 0x20]);
+        ownb::dirty_stack(&mut t, 0x7170 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the task's calls");
+}

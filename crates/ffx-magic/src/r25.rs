@@ -3792,3 +3792,267 @@ pub const SUMMON_TASK_0585: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0585`'s spark task (0x10007170, 1840 bytes; a task function,
+/// cdecl `(task)`, the record `R = task[1]`; a 16-aligned cookie frame:
+/// `A = ((E - 4) & !0xf) - 0x128`, the task at `A`, the counts and
+/// cursors at `A + 4..+0x14`, the draw record `D = A + 0x18`, the vector
+/// `V` at `A + 0x50`, the matrix `M` at `A + 0x60`, the point `P` at `A +
+/// 0xa0`, the matrices `A + 0xb0`, `+0xc0`, `+0xd0`, `+0xe0`). `M` is
+/// slot 236 `(src[0x54], 0xfa)` of the source `R[0xe78]`, `P` = `M (0,
+/// 10, 0, 1)` (slot 229). By the state `R + 0xe6c` with the wait `R +
+/// 0xe70`:
+/// - 0: state 1, the wait 0xf2, and on; 1: when the wait runs out state
+///   10, and on;
+/// - 10: `n = 5 + rand & 3` more sparks (up to 0x60): `M` = slot 234 `(M,
+///   R, P)` scaled by `K1 / n`; each spark `i` gets its angle (a random
+///   halfword), its speed (`V` scaled by a random share, three random
+///   spreads), its matrix row `R + 0x10 + 0x10 i` (slot 248 of `M`
+///   scaled by the count left) with `w` 1.0, its angle copied into `R +
+///   0xc10 + 2 i`; then as 11;
+/// - 11: every spark drawn: its rotation from the sine table `*G_SIN` by
+///   its angle (slots 229, 233, 248, 234, 325, 230), its motion sequence
+///   ([`motion_sequence_step`](crate::s6_misc::motion_sequence_step) of
+///   the record `D`, `*G_D` kept in `D + 0x14` and written back), its
+///   point moved by its speed and the speed's `y` by `K10`;
+/// - 10000: each spark's handle freed (slot 779 under the lock), the
+///   task's node unlinked, state 20000.
+///
+/// Every way ends with slot 325 `(R, P)` and the wait one down. Returns
+/// slot 325's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn spark_task_0585<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let a = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x128);
+    let s = a.wrapping_sub(8);
+    g.write::<u32>(a, task);
+    g.write::<u32>(a + 0x14, r);
+    let (v, m, p) = (a + 0x50, a + 0x60, a + 0xa0);
+    let src = g.read::<u32>(r + 0xe78);
+    // call width: 3
+    g.call(t(g, 0x3a, 236), 0, &[g.read::<u32>(src + 0x54), 0xfa, m]);
+    for (i, x) in (0u32..).zip([0u32, 0x4120_0000, 0, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x60, 229), 0, &[p, m, v]);
+    let rnd = |g: &mut G, o: u32| {
+        let x = crate::ob_model::st0_f32(g.call(t(g, o, 307), 0, &[]).st0);
+        g.write::<f32>(a, x);
+        x
+    };
+    let mut state = g.read::<u32>(r + 0xe6c);
+    let mut draw = false;
+    let mut end = false;
+    if state == 0 {
+        g.write::<u32>(r + 0xe6c, 1);
+        g.write::<u32>(r + 0xe70, 0xf2);
+        state = 1;
+    }
+    if state == 1 && g.read::<i32>(r + 0xe70) <= 0 {
+        g.write::<u32>(r + 0xe6c, 10);
+        state = 10;
+    }
+    match state {
+        10 => {
+            let n = (g.call(t(g, 0xe2, 324), 0, &[]).eax & 3) + 5;
+            let old = g.read::<u32>(r + 0xe74);
+            g.write::<u32>(a + 4, old);
+            let new = old.wrapping_add(n);
+            g.write::<u32>(a + 0x10, new);
+            if new.cast_signed() <= 0x60 {
+                // call width: 3
+                g.call(t(g, 0x11e, 234), 0, &[m, r, p]);
+                let share = div(k(g, 0x12e), cvt(n));
+                // call width: 3
+                g.call(t(g, 0x14c, 233), 0, &[m, m, share.to_bits()]);
+                g.write::<u32>(r + 0xe74, old.wrapping_add(n));
+                let mut left = n;
+                for j in 0..n {
+                    let i = old.wrapping_add(j);
+                    let ang = r + 0xcd2 + 4 * i;
+                    let vel = r + 0x610 + 0x10 * i;
+                    g.write::<u32>(ang - 2, 0);
+                    let r1 = rnd(g, 0x1a6);
+                    let x = sub(r1, k(g, 0x1c0));
+                    g.write::<f32>(a + 4, x);
+                    let h = g.call(t(g, 0x1c5, 324), 0, &[]).eax;
+                    g.write::<u16>(ang, h as u16);
+                    let spread = |g: &mut G, ops: [u32; 6], vi: u32| {
+                        let rr = rnd(g, ops[0]);
+                        let q = sub(rr, k(g, ops[1]));
+                        let base = mul(g.read::<f32>(v + vi), x);
+                        let q = mul(add(mul(q, k(g, ops[2])), k(g, ops[3])), base);
+                        mul(mul(q, k(g, ops[4])), k(g, ops[5]))
+                    };
+                    let vx = spread(g, [0x1df, 0x1f9, 0x212, 0x21a, 0x226, 0x22e], 0);
+                    g.write::<f32>(vel, vx);
+                    let vy = spread(g, [0x20a, 0x24d, 0x266, 0x26e, 0x27a, 0x282], 4);
+                    g.write::<f32>(vel + 4, vy);
+                    let vz = spread(g, [0x25e, 0x2a0, 0x2b8, 0x2c8, 0x2e9, 0x2f9], 8);
+                    let rise = mul(add(mul(x, k(g, 0x2c0)), k(g, 0x2d1)), k(g, 0x2e1));
+                    let rise = mul(rise, k(g, 0x2f1));
+                    g.write::<f32>(vel + 8, vz);
+                    g.write::<f32>(vel + 0xc, rise);
+                    let row = a + 0x70;
+                    // call width: 3
+                    g.call(t(g, 0x318, 233), 0, &[row, m, cvt(left).to_bits()]);
+                    let pt = r + 0x10 + 0x10 * i;
+                    // call width: 3
+                    g.call(t(g, 0x341, 248), 0, &[pt, p, row]);
+                    g.write::<u32>(pt + 0xc, ONE);
+                    let h = g.read::<u16>(ang);
+                    g.write::<u16>(r + 0xc10 + 2 * i, h);
+                    left = left.wrapping_sub(1);
+                    g.write::<u32>(a + 0x10, n - 1 - j);
+                    g.write::<u32>(a + 0xc, r + 0xc10 + 2 * (i + 1));
+                    g.write::<u32>(a + 8, ang + 4);
+                }
+            }
+            draw = true;
+        }
+        0xb => draw = true,
+        0x2710 => end = true,
+        _ => {}
+    }
+    if draw {
+        let d = a + 0x18;
+        let e0 = a + 0xe0;
+        g.write::<u32>(a + 0x34, e0);
+        g.write::<u32>(a + 0x28, e0);
+        g.write::<u16>(a + 0x1a, 0x80);
+        let gd = g.read::<u32>(w(0x3a2));
+        for o in [
+            0x64u32, 0x68, 0x6c, 0x70, 0x78, 0x7c, 0x80, 0x84, 0x8c, 0x20,
+        ] {
+            g.write::<u32>(a + o, 0);
+        }
+        g.write::<u8>(a + 0x30, 0);
+        g.write::<u32>(a + 0x2c, gd);
+        g.write::<u32>(a + 0x1c, 0x8080_8000);
+        g.write::<u32>(a + 0x10, 0);
+        let count = g.read::<i32>(r + 0xe74);
+        if count > 0 {
+            g.write::<u32>(a + 4, r + 0xcd0);
+            g.write::<u32>(a + 8, r + 0xc10);
+            let sin = g.read::<u32>(w(0x46b));
+            for i in 0..count.cast_unsigned() {
+                let pt = r + 0x10 + 0x10 * i;
+                let tr = a + 0x90;
+                // call width: 3
+                g.call(t(g, 0x451, 229), 0, &[tr, w(0x44b), pt]);
+                let sc = g.read::<u32>(pt + 0x60c);
+                for o in [0x88u32, 0x74, 0x60] {
+                    g.write::<u32>(a + o, sc);
+                }
+                let ang = u32::from(g.read::<u16>(r + 0xc10 + 2 * i));
+                let sn = g.read::<u32>(sin + 4 * (ang >> 4));
+                g.write::<u32>(a + 0xc, sn);
+                let cs = g.read::<u32>(sin + 4 * (((ang + 0x4000) >> 4) & 0xfff));
+                g.write::<u32>(a + 0x14, cs);
+                let (b0, c0, d0) = (a + 0xb0, a + 0xc0, a + 0xd0);
+                // call width: 3
+                g.call(t(g, 0x4c3, 233), 0, &[b0, m, cs]);
+                // call width: 3
+                g.call(t(g, 0x4f1, 233), 0, &[c0, a + 0x70, sn]);
+                // call width: 3
+                g.call(t(g, 0x519, 248), 0, &[d0, b0, c0]);
+                // call width: 3
+                g.call(t(g, 0x541, 233), 0, &[b0, a + 0x70, cs]);
+                // call width: 3
+                g.call(t(g, 0x569, 233), 0, &[c0, m, sn]);
+                // call width: 3
+                g.call(t(g, 0x591, 234), 0, &[a + 0x70, b0, c0]);
+                // call width: 2
+                g.call(t(g, 0x5ae, 325), 0, &[m, d0]);
+                // call width: 2
+                g.call(t(g, 0x5c8, 230), 0, &[e0, m]);
+                // push D: the return address at `S - 0x10`
+                let esp = s.wrapping_sub(0x10);
+                g.write::<u32>(esp + 4, d);
+                let ms = Frame {
+                    at: img.rel32_target(f + 0x5e7),
+                    esp,
+                    ecx: r + 0xcd0 + 4 * i,
+                    edx: g.read::<u32>(r + 0xe50),
+                    ..*fr
+                };
+                crate::s6_misc::motion_sequence_step(g, img, &ms);
+                let vel = pt + 0x600;
+                let x = add(g.read::<f32>(vel), g.read::<f32>(pt));
+                g.write::<f32>(pt, x);
+                let vy = g.read::<f32>(vel + 4);
+                g.write::<u32>(a + 8, r + 0xc10 + 2 * (i + 1));
+                g.write::<u32>(a + 4, r + 0xcd0 + 4 * (i + 1));
+                let y = add(vy, g.read::<f32>(pt + 4));
+                let vy2 = add(vy, k(g, 0x61d));
+                g.write::<f32>(pt + 4, y);
+                let z = add(g.read::<f32>(vel + 8), g.read::<f32>(pt + 8));
+                g.write::<f32>(vel + 4, vy2);
+                g.write::<u32>(a + 0x10, i + 1);
+                g.write::<f32>(pt + 8, z);
+                if (i + 1).cast_signed() >= g.read::<i32>(r + 0xe74) {
+                    break;
+                }
+            }
+        }
+        let x = g.read::<u32>(a + 0x2c);
+        g.write::<u32>(w(0x65c), x);
+    }
+    if end {
+        let count = g.read::<i32>(r + 0xe74);
+        g.write::<u32>(a + 0xc, 0);
+        if count > 0 {
+            let lockp = g.read::<u32>(w(0x6b5));
+            g.write::<u32>(a + 8, r + 0xcd0);
+            let mut j = 0u32;
+            let mut lock = lockp;
+            loop {
+                let old = g.read::<u32>(lock);
+                g.write::<u32>(lock, 1);
+                let h = r + 0xcd0 + 4 * j;
+                // call width: 2 (the handle's cdq high word)
+                g.call(t(g, 0x6d1, 779), 0, &[h, 0]);
+                lock = g.read::<u32>(w(0x6e2));
+                j += 1;
+                g.write::<u32>(lock, old);
+                g.write::<u32>(a + 0xc, j);
+                g.write::<u32>(a + 8, h + 4);
+                if j.cast_signed() >= g.read::<i32>(r + 0xe74) {
+                    break;
+                }
+            }
+        }
+        let node = g.read::<u32>(task);
+        let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+        g.write::<u32>(prev + 8, next);
+        let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+        g.write::<u32>(next + 4, prev);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 4, node);
+        g.write::<u32>(r + 0xe6c, 0x4e20);
+    }
+    // call width: 2
+    let eax = g.call(t(g, 0x669, 325), 0, &[r, p]).eax;
+    let n = g.read::<u32>(r + 0xe70).wrapping_sub(1);
+    g.write::<u32>(r + 0xe70, n);
+    Ret::eax(eax)
+}
+
+/// [`spark_task_0585`] (1840 bytes, 1 overlay).
+pub const SPARK_TASK_0585: Sig = Sig {
+    len: 1840,
+    hash: 0x1435_8f3a_a645_02dc,
+    calls: &[
+        (0x5e7, Callee::Sig(&crate::s6_misc::MOTION_SEQUENCE_STEP)),
+        // __security_check_cookie
+        (0x68b, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -3019,6 +3019,7 @@ ports! {
     "r25 start-up 0585" => r25::START_UP_0585, r25::start_up_0585;
     "r25 glow task 0585" => r25::GLOW_TASK_0585, r25::glow_task_0585;
     "r25 summon task 0585" => r25::SUMMON_TASK_0585, r25::summon_task_0585;
+    "r25 spark task 0585" => r25::SPARK_TASK_0585, r25::spark_task_0585;
     // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
