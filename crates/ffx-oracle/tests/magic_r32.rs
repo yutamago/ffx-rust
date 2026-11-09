@@ -1339,6 +1339,32 @@ fn steps_0055_0067() {
                 t.set_u32(at, idx);
             }
         }
+        // the path points' actor, tables and stored globals: varied
+        let a_at = pw(&t, 0x74, 0x32);
+        t.set_u32(a_at, 0x0000_0061);
+        for (o55, o67) in [(0xa8u32, 0x60u32), (0x159, 0), (0x232, 0x180)] {
+            if n == 55 || o67 != 0 {
+                let at = pw(&t, o55, o67);
+                for i in 0..0x20 {
+                    t.set_u32(at + 4 * i, 0x0000_0011 + 5 * i);
+                }
+            }
+        }
+        let path_globals: Vec<u32> = [
+            (0x3bdu32, 0x301u32),
+            (0x3c7, 0x30b),
+            (0x3d3, 0x317),
+            (0x3df, 0x323),
+            (0x3e9, 0x32d),
+            (0x413, 0x357),
+            (0x419, 0x35d),
+            (0x423, 0x367),
+            (0x42d, 0x371),
+            (0x45b, 0x39f),
+        ]
+        .iter()
+        .map(|&(a, b)| if n == 55 { a } else { b })
+        .collect();
         let p = SCRATCH + 0x7e0;
         t.set_u32(t.img.word(objs + 0x25), p);
         t.set_u32(t.img.word(objs + 0x37), p + 4);
@@ -1366,6 +1392,15 @@ fn steps_0055_0067() {
                 f,
                 &[0x2b, 0x37, 0x6b, 0x11e, 0x12d, 0x137, 0x190, 0x1d6],
             );
+            junk_ops(&mut t, path, &path_globals);
+            for (o55, o67) in [(0x3b1u32, 0x2f5u32), (0x408, 0x34c)] {
+                let at = pw(&t, o55, o67);
+                t.set_u32(at, k & 1);
+            }
+            for (o55, o67) in [(0x437u32, 0x37bu32), (0x440, 0x384)] {
+                let at = pw(&t, o55, o67);
+                t.set_u32(at, 0x5a5a_5a5a ^ k);
+            }
             t.set_u32(w(&t, 0x5), c1.cast_unsigned());
             t.set_u32(w(&t, 0x197), c2.cast_unsigned());
             t.set_u32(w(&t, 0x1a9), flag);
