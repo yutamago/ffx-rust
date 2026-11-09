@@ -1708,3 +1708,98 @@ fn load_0165() {
         t.check_entry(at, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0424` 0x10006720 (`r30::model_node_0424`, cdecl `(node)`): bit
+/// 1 set; the delay running (paused and not); the delay out with the
+/// pause flag (set by slot 315's stub) clear and set, bit 0 with `+0xe4`
+/// at 0 and not, slot 712 answering and not (the node released, with no
+/// parent), the pause after it (slot 712's stub) and `+0xe0` 0 and not.
+#[test]
+fn model_node_0424() {
+    let Some(mut t) = twin(424) else { return };
+    all_slots(&mut t);
+    let f = t.at(0x6720);
+    let w = |t: &magic::Twin, o: u32| t.img.word(f + o);
+    let o = SCRATCH + 0x2000;
+    let mdl = SCRATCH + 0x3000;
+    let pause = SCRATCH + 0x7f0;
+    let (p1, p2, got) = (SCRATCH + 0x7f4, SCRATCH + 0x7f8, SCRATCH + 0x7fc);
+    t.stub(941, move |_, _| o);
+    t.stub(315, move |m, _| {
+        m.w32(pause, m.r32(p1));
+        0x315
+    });
+    t.stub(712, move |m, a| {
+        m.w32(pause, m.r32(p2));
+        // the saved word's cell changed (restored after)
+        m.w32(SCRATCH + 0x710, 0x0712_0000 ^ a[0]);
+        m.r32(got) ^ (a[1] & 0x100)
+    });
+    // the vector `V` seen: slot 668 changes it, slot 325 copies it
+    t.stub(668, |m, a| {
+        for i in 0..3 {
+            let v = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5 + f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x668
+    });
+    t.stub(325, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    // the DLL's pointer words: the pause flag, the colour, the matrices,
+    // the saved word, the owner cell and the lock
+    let cells = [
+        (&[0x43u32, 0x79, 0x2bb][..], pause),
+        (&[0xdc], SCRATCH + 0x700),
+        (&[0x121, 0x12e, 0x14f, 0x173, 0x207], SCRATCH + 0x800),
+        (&[0x212], SCRATCH + 0x880),
+        (&[0x218, 0x226], SCRATCH + 0x8c0),
+        (&[0x231], SCRATCH + 0x900),
+        (&[0x23f, 0x2af], SCRATCH + 0x710),
+        (&[0x24b, 0x282], SCRATCH + 0x714),
+        (&[0x255, 0x273], SCRATCH + 0x718),
+    ];
+    for (ops, at) in cells {
+        for &op in ops {
+            t.set_u32(w(&t, op), at);
+        }
+    }
+    // (flags, delay, pause, +0xe4, after 315, slot 712, after 712, +0xe0)
+    let cases: [(u32, i32, u32, u16, u32, u32, u32, u32); 8] = [
+        (2, 0, 0, 0, 0, 0, 0, 0),
+        (0, 3, 1, 0, 0, 0, 0, 0),
+        (0, 3, 0, 0, 0, 0, 0, 0),
+        (1, 0, 0, 5, 0, 1, 0, 0x0e0e_0000),
+        (1, 0, 0, 0, 0, 0, 1, 0x0e0e_0000),
+        (1, -2, 0, 4, 1, 1, 0, 0),
+        (0, 0, 0, 0, 0, 0, 0, 0x0e0f_0000),
+        (0x11, 0, 0, 0xffff, 0, 1, 0, 0x0e10_0000),
+    ];
+    for (k, (fl, delay, p0, e4, a315, g712, a712, e0)) in (0u32..).zip(cases) {
+        t.write(o, &magic_h6::varied(0x100, k as u8));
+        t.set_u32(o + 0x14, 0);
+        t.set_u32(o + 0x4c, mdl);
+        t.set_u32(o + 0xe8, fl);
+        t.set_u32(o + 0xec, delay.cast_unsigned());
+        t.set_u16(o + 0xe4, e4);
+        t.set_u32(o + 0xe0, e0);
+        t.write(mdl, &[0; 0x200]);
+        for i in 0..0x50u32 {
+            t.set_u32(mdl + 4 * i, (0.25 * i as f32 - 2.0 + k as f32).to_bits());
+        }
+        t.set_u32(pause, p0);
+        t.set_u32(p1, a315);
+        t.set_u32(p2, a712);
+        t.set_u32(got, g712);
+        t.set_u32(t.img.word(f + 0x244), 0x5a5a_0000 + k);
+        magic_h6::scrub(&mut t);
+        // the two halfwords of `V` read before they are written ([ebp -
+        // 0xc], [ebp - 8]): 0 on both sides
+        t.write(STACK_TOP - 0x110, &[0; 8]);
+        t.check_entry(f, Call::default(), &[o + 0x40], Eax::Checked);
+    }
+}

@@ -3779,3 +3779,157 @@ pub const SPIN_STATES_0307: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0424`'s model node callback (cdecl `(node)`, registered by its
+/// set-up; a /GS frame, the vector `V` at `ebp - 0x14`): `O` = slot 941
+/// `(node)`. Nothing while `O + 0xe8` has bit 1; while the delay `O +
+/// 0xec` runs it counts down (unless `**G_PAUSE`). Then slot 315 `(0)`;
+/// unless paused, with bit 0: `O + 0xd0..` = the two i16 `O + 0xe4/0xe6`
+/// and two halfwords of `V` (read before they are written: junk, 0 here),
+/// `O + 0xe4` one less (bit 0 cleared at 0). The colour `*G_COL` white;
+/// `V = O + 0x1c` (slot 325); `*G_M = O[0x4c] + 0x9c` (slot 230), its three
+/// rows scaled by `V` (slot 233); `V` times `O[0x4c] + 0x138`, slot 668 `(V,
+/// V, O[0x4c] + 0x12c)`, `O + 0xc0 = V` (`w` 1.0); slots 231 and 230 on the
+/// DLL's matrices; two words saved; slot 712 `(O + 0x60, 0x30)` under the
+/// lock; when it answers, slot 713 `(O + 0x60)` and the node released
+/// ([`release`](crate::m0424::release)) and bit 2 set; the word restored;
+/// unless paused, slot 160 `(O + 0x60, O[0xe0], O[0xf8])` when `O + 0xe0`
+/// is set. Returns the last value the code leaves in `eax`.
+///
+/// `magic_0424` 0x10006720 (758 bytes).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn model_node_0424<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0x17), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    let node = fr.arg(g, 0);
+    // call width: 1
+    let o = g.call(slot(g, 941), 0, &[node]).eax;
+    let paused = |g: &G, op: u32| g.read::<u32>(g.read::<u32>(w(op))) != 0;
+    if g.read::<u8>(o + 0xe8) & 2 != 0 {
+        return Ret::eax(o);
+    }
+    let c = g.read::<i32>(o + 0xec);
+    if c > 0 {
+        if paused(g, 0x43) {
+            return Ret::eax(g.read::<u32>(w(0x43)));
+        }
+        g.write::<i32>(o + 0xec, c - 1);
+        return Ret::eax((c - 1).cast_unsigned());
+    }
+    // call width: 1
+    g.call(slot(g, 315), 0, &[0]);
+    if !paused(g, 0x79) && g.read::<u8>(o + 0xe8) & 1 != 0 {
+        let a = g.read::<u16>(o + 0xe4);
+        let b = g.read::<u16>(o + 0xe6);
+        g.write::<u16>(o + 0xd0, a);
+        g.write::<u16>(o + 0xd2, b);
+        // junk read: [ebp-0xc] and [ebp-0x8] (V's z and w halves) never
+        // written yet; 0 (brief 2026-10-24)
+        g.write::<u16>(o + 0xd4, 0);
+        g.write::<u16>(o + 0xd6, 0);
+        let e4 = g.read::<u16>(o + 0xe4);
+        if e4 == 0 {
+            let fl = g.read::<u32>(o + 0xe8) & !1;
+            g.write::<u32>(o + 0xe8, fl);
+        }
+        g.write::<u16>(o + 0xe4, e4.wrapping_sub(1));
+    }
+    let col = g.read::<u32>(w(0xdc));
+    for i in 0..4u32 {
+        g.write::<u32>(col + 4 * i, 0x3f80_0000);
+    }
+    // call width: 2
+    g.call(slot(g, 325), 0, &[v, o + 0x1c]);
+    let mdl = g.read::<u32>(o + 0x4c);
+    let mx = g.read::<u32>(w(0x121));
+    // call width: 2
+    g.call(slot(g, 230), 0, &[mx, mdl.wrapping_add(0x9c)]);
+    for (i, op) in [0x12eu32, 0x14f, 0x173].into_iter().enumerate() {
+        let m = g.read::<u32>(w(op)).wrapping_add(0x10 * i as u32);
+        let s = g.read::<u32>(v + 4 * i as u32);
+        // call width: 3
+        g.call(slot(g, 233), 0, &[m, m, s]);
+    }
+    let mdl = g.read::<u32>(o + 0x4c);
+    let k = rf(g, mdl.wrapping_add(0x138));
+    for i in 0..3u32 {
+        let x = mul(rf(g, v + 4 * i), k);
+        g.write::<f32>(v + 4 * i, x);
+    }
+    let mdl = g.read::<u32>(o + 0x4c);
+    // call width: 3
+    g.call(slot(g, 668), 0, &[v, v, mdl.wrapping_add(0x12c)]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 2
+    g.call(slot(g, 325), 0, &[o + 0xc0, v]);
+    let (a, b, c3) = (
+        g.read::<u32>(w(0x218)),
+        g.read::<u32>(w(0x212)),
+        g.read::<u32>(w(0x207)),
+    );
+    // call width: 3
+    g.call(slot(g, 231), 0, &[a, b, c3]);
+    let (a, b) = (g.read::<u32>(w(0x231)), g.read::<u32>(w(0x226)));
+    // call width: 2
+    g.call(slot(g, 230), 0, &[a, b]);
+    let saved = g.read::<u32>(w(0x244));
+    let at = g.read::<u32>(w(0x23f));
+    g.write::<u32>(at, saved);
+    let at = g.read::<u32>(w(0x24b));
+    let x = g.read::<u32>(o + 0x50);
+    g.write::<u32>(at, x);
+    let lock = g.read::<u32>(w(0x255));
+    let old = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let got = g.call(slot(g, 712), 0, &[o + 0x60, 0x30]).eax;
+    let lock = g.read::<u32>(w(0x273));
+    g.write::<u32>(lock, old);
+    if got != 0 {
+        let at = g.read::<u32>(w(0x282));
+        let x = g.read::<u32>(o + 0x50);
+        g.write::<u32>(at, x);
+        // call width: 1
+        g.call(slot(g, 713), 0, &[o + 0x60]);
+        let cell = ebp.wrapping_sub(0x18);
+        g.write::<u32>(cell, o);
+        let rel = Frame {
+            at: img.rel32_target(f + 0x2a3),
+            esp: ebp.wrapping_sub(0x24),
+            ecx: cell,
+            ..Frame::default()
+        };
+        crate::m0424::release(g, img, &rel);
+        let fl = g.read::<u32>(o + 0xe8) | 4;
+        g.write::<u32>(o + 0xe8, fl);
+    }
+    let back = g.read::<u32>(g.read::<u32>(w(0x2af)));
+    g.write::<u32>(w(0x2b6), back);
+    let p = g.read::<u32>(w(0x2bb));
+    if g.read::<u32>(p) != 0 {
+        return Ret::eax(p);
+    }
+    let e0 = g.read::<u32>(o + 0xe0);
+    if e0 == 0 {
+        return Ret::eax(0);
+    }
+    let x = g.read::<u32>(o + 0xf8);
+    // call width: 3
+    Ret::eax(g.call(slot(g, 160), 0, &[o + 0x60, e0, x]).eax)
+}
+
+/// [`model_node_0424`].
+pub const MODEL_NODE_0424: Sig = Sig {
+    len: 758,
+    hash: 0x3b3e_0291_b009_00a8,
+    calls: &[
+        (0x61, Callee::Any),
+        (0x2a3, Callee::Sig(&crate::m0424::RELEASE)),
+        (0x2ee, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -3216,6 +3216,7 @@ ports! {
     "r30 summon task 0262 b" => r30::SUMMON_TASK_0262_B, r30::summon_task_0262_b;
     "r9 load step 0165" => r9_load::LOAD_0165, r9_load::load_0165;
     "r30 spin states 0307" => r30::SPIN_STATES_0307, r30::spin_states_0307;
+    "r30 model node 0424" => r30::MODEL_NODE_0424, r30::model_node_0424;
     // round 30 (magic-r30): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
