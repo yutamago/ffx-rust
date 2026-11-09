@@ -30,8 +30,49 @@ const ONE: u32 = 0x3f80_0000;
 /// (slots 235, 328, 329 into the matrices at `ebp - 0xb4` and `ebp -
 /// 0x74`, slot 229 into `ebp - 0x34`, slot 248 adds it), `w` 1.0; `S +
 /// 0xd3c` 0 and three flags set. Returns the second slot 248's `eax`.
-#[allow(clippy::too_many_lines)] // one straight sequence of calls
 pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let (eax, s) = place_pair_with(g, img, f, esp, &PAIR_0598);
+    g.write::<u32>(s + 0xd3c, 0);
+    for o in [0x759u32, 0x763, 0x76d] {
+        g.write::<u32>(img.word(f + o), 1);
+    }
+    eax
+}
+
+/// Where a copy of [`place_pair_0598`] keeps its state words (offsets in
+/// `S`) and the one slot operand that moved (the summon's slot 17).
+pub(crate) struct PairLayout {
+    /// The caster's place (`x, y, z, 1.0`).
+    pub caster: u32,
+    /// The caster's and the summon's frames (angle, then position).
+    pub frames: [u32; 2],
+    /// The angle kept.
+    pub ang: u32,
+    /// The two camera points.
+    pub cams: [u32; 2],
+    /// The summon's slot 17 operand.
+    pub summon_s17: u32,
+}
+
+/// `magic_0598`'s layout.
+const PAIR_0598: PairLayout = PairLayout {
+    caster: 0x970,
+    frames: [0x910, 0x930],
+    ang: 0xd18,
+    cams: [0x980, 0x990],
+    summon_s17: 0x45f,
+};
+
+/// [`place_pair_0598`]'s steps up to the second camera point on the
+/// layout `lay`: the second slot 248's `eax` and `S`.
+#[allow(clippy::too_many_lines)] // one straight sequence of calls
+pub(crate) fn place_pair_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    lay: &PairLayout,
+) -> (u32, u32) {
     let w = |off: u32| img.word(f + off);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let ebp = esp.wrapping_sub(4);
@@ -50,11 +91,11 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
     let (px, py, pz) = (l(0x14), l(0x10), l(0xc));
     let mut stack = vec![chr, px, py, pz];
     g.call(t(g, 0x38, 262), 0, &stack);
-    for (off, src) in [(0x970u32, px), (0x974, py), (0x978, pz)] {
+    for (off, src) in [(0u32, px), (4, py), (8, pz)] {
         let v = g.read::<u32>(src);
-        g.write::<u32>(s + off, v);
+        g.write::<u32>(s + lay.caster + off, v);
     }
-    g.write::<u32>(s + 0x97c, ONE);
+    g.write::<u32>(s + lay.caster + 0xc, ONE);
     g.write::<u32>(l(8), ONE);
     let chr2 = crate::ob_model::who(
         g,
@@ -89,7 +130,7 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         }
     };
     let turns = [Angle::Bits(0), Angle::Bits(0), Angle::Bits(ang.to_bits())];
-    frame(g, s + 0x910);
+    frame(g, s + lay.frames[0]);
     let selp = g.read::<u32>(w(0x145));
     let k = u32::from(g.read::<u8>(selp));
     let chr = g.read::<u32>(w(0x155).wrapping_add(4 * k));
@@ -127,8 +168,8 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         s329: 0x2c3,
     };
     scale_model(g, img, f, &model, m, &[chr, m], turns);
-    copy(g, s + 0x880, s + 0x920);
-    frame(g, s + 0x930);
+    copy(g, s + 0x880, s + lay.frames[0] + 0x10);
+    frame(g, s + lay.frames[1]);
     let summon = g.read::<u32>(w(0x36f));
     let m = s.wrapping_add(0x890);
     let root_ops = RootOps {
@@ -149,13 +190,13 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         c: Who::Word(0x433),
         s15: 0x41f,
         s16: 0x450,
-        s17: 0x45f,
+        s17: lay.summon_s17,
         s330: 0x495,
         s328: 0x4b3,
         s329: 0x4d4,
     };
     scale_model(g, img, f, &model, m, &[summon, m], turns);
-    copy(g, s + 0x8c0, s + 0x940);
+    copy(g, s + 0x8c0, s + lay.frames[1] + 0x10);
     let i = g.read::<u32>(w(0x523));
     // the second turn's three words stay on the stack
     g.call(t(g, 0x51b, 238), 0, &[i, 1, m, m, ang.to_bits()]);
@@ -169,26 +210,26 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
     }
     let summon = g.read::<u32>(w(0x579));
     g.call(t(g, 0x56b, 8), 0, &[summon, 0]);
-    g.write::<f32>(s + 0xd18, ang);
+    g.write::<f32>(s + lay.ang, ang);
     // the camera points: (cam, matrix, z, slot operands 235/328/329/229/248)
     let v = l(0x24);
     let mut eax = 0;
     for (cam, mat, z, ops) in [
         (
-            0x980u32,
+            lay.cams[0],
             l(0xb4),
             0x4170_0000u32,
             [0x5cdu32, 0x601, 0x626, 0x642, 0x65a],
         ),
         (
-            0x990,
+            lay.cams[1],
             l(0x74),
             0x41c0_0000,
             [0x6aa, 0x6db, 0x6fd, 0x716, 0x72e],
         ),
     ] {
         let cam = s + cam;
-        copy(g, cam, s + 0x920);
+        copy(g, cam, s + lay.frames[0] + 0x10);
         g.write::<u32>(v, 0);
         g.write::<u32>(v + 4, 0);
         g.write::<u32>(v + 8, z);
@@ -200,11 +241,7 @@ pub fn place_pair_0598<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         eax = g.call(t(g, ops[4], 248), 0, &[cam, cam, pos]).eax;
         g.write::<u32>(cam + 0xc, ONE);
     }
-    g.write::<u32>(s + 0xd3c, 0);
-    for o in [0x759u32, 0x763, 0x76d] {
-        g.write::<u32>(w(o), 1);
-    }
-    eax
+    (eax, s)
 }
 
 /// [`place_pair_0598`] (1,919 bytes, 1 overlay).
@@ -459,8 +496,58 @@ pub const HOST_START_END_0598: Sig = Sig {
 /// ([`fade_task`](crate::s3_misc::fade_task) of `S + 0xbb0`, 0x1e frames,
 /// the stack word 0x55, `xmm2`/`xmm1` the DLL's constants). Returns the
 /// task's node.
-#[allow(clippy::too_many_lines)] // one straight sequence of calls
 pub fn turn_0598<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (s, esp) = turn_with(g, img, fr, &TURN_0598_LAYOUT);
+    let w = |o: u32| img.word(fr.at + o);
+    let mut xmm = fr.xmm;
+    xmm[2] = u128::from(g.read::<u32>(w(0x394)));
+    xmm[1] = u128::from(g.read::<u32>(w(0x39c)));
+    let fade = Frame {
+        at: img.rel32_target(fr.at + 0x3ae),
+        esp,
+        ecx: s + 0xbb0,
+        edx: 0x1e,
+        xmm,
+        ..*fr
+    };
+    Ret::eax(crate::s3_misc::fade_task(g, img, &fade))
+}
+
+/// Where a copy of [`turn_0598`] keeps its state words (offsets in `S`)
+/// and which selected character its second model is.
+pub(crate) struct TurnLayout {
+    /// The caster's turns (`x`, the stepped yaw `+4`, `z` `+8`).
+    pub turns: u32,
+    /// The camera's angle.
+    pub ang: u32,
+    /// The camera point.
+    pub cam: u32,
+    /// The copy of the eight words at `turns`: the second model's turns.
+    pub copy: u32,
+    /// The second model's matrix.
+    pub m2: u32,
+    /// The second model's index into the selection bytes.
+    pub sel2: u32,
+}
+
+const TURN_0598_LAYOUT: TurnLayout = TurnLayout {
+    turns: 0x910,
+    ang: 0xd18,
+    cam: 0x920,
+    copy: 0x950,
+    m2: 0x8d0,
+    sel2: 1,
+};
+
+/// [`turn_0598`]'s steps on the layout `lay` up to the closing call: `S`
+/// and the closing call's `esp` (its stack words written).
+#[allow(clippy::too_many_lines)] // one straight sequence of calls
+pub(crate) fn turn_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    lay: &TurnLayout,
+) -> (u32, u32) {
     use crate::sb_sse::add;
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
@@ -469,15 +556,15 @@ pub fn turn_0598<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let l = |off: u32| ebp.wrapping_sub(off);
     let s = g.read::<u32>(w(0x14));
-    let yaw = add(g.read::<f32>(s + 0x914), k(g, 0x25));
+    let yaw = add(g.read::<f32>(s + lay.turns + 4), k(g, 0x25));
     let yaw = wrap_once(g, img, f, yaw, [0x2f, 0x39, 0x43, 0x50]);
-    g.write::<f32>(s + 0x914, yaw);
-    let a = g.read::<u32>(s + 0xd18);
+    g.write::<f32>(s + lay.turns + 4, yaw);
+    let a = g.read::<u32>(s + lay.ang);
     let (m, v, out) = (l(0x64), l(0x14), l(0x24));
     for (i, x) in (0u32..).zip([0x41c8_0000u32, 0, 0x4170_0000, ONE]) {
         g.write::<u32>(v + 4 * i, x);
     }
-    let cam = s + 0x920;
+    let cam = s + lay.cam;
     g.call(t(g, 0x59, 235), 0, &[m]);
     g.call(t(g, 0xa9, 328), 0, &[m, m, 0]);
     g.call(t(g, 0xc8, 329), 0, &[m, m, a]);
@@ -507,23 +594,23 @@ pub fn turn_0598<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         s329: 0x20a,
     };
     let turns = |o: u32| [Angle::At(s + o + 8), Angle::At(s + o), Angle::At(s + o + 4)];
-    scale_model(g, img, f, &caster, s + 0x850, &[], turns(0x910));
+    scale_model(g, img, f, &caster, s + 0x850, &[], turns(lay.turns));
     for i in 0..8 {
-        let x = g.read::<u32>(s + 0x910 + 4 * i);
-        g.write::<u32>(s + 0x950 + 4 * i, x);
+        let x = g.read::<u32>(s + lay.turns + 4 * i);
+        g.write::<u32>(s + lay.copy + 4 * i, x);
     }
     let second = ModelOps {
         s235: 0x27d,
         c277: Who::Sel {
             sel: 0x291,
-            at: 1,
+            at: lay.sel2,
             table: 0x29c,
         },
         s277: 0x2a1,
         k: 0x2b9,
         c: Who::Sel {
             sel: 0x2cc,
-            at: 1,
+            at: lay.sel2,
             table: 0x2d7,
         },
         s15: 0x2dc,
@@ -533,26 +620,15 @@ pub fn turn_0598<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         s328: 0x35b,
         s329: 0x37a,
     };
-    let m2 = s + 0x8d0;
-    scale_model(g, img, f, &second, m2, &[], turns(0x950));
+    let m2 = s + lay.m2;
+    scale_model(g, img, f, &second, m2, &[], turns(lay.copy));
     // push 0x55 over slot 329's three words: the return address at E - 0x90
     let esp = fr.esp.wrapping_sub(0x90);
-    let a = g.read::<u32>(s + 0x954);
+    let a = g.read::<u32>(s + lay.copy + 4);
     for (i, x) in (1u32..).zip([0x55, m2, m2, a]) {
         g.write::<u32>(esp + 4 * i, x);
     }
-    let mut xmm = fr.xmm;
-    xmm[2] = u128::from(g.read::<u32>(w(0x394)));
-    xmm[1] = u128::from(g.read::<u32>(w(0x39c)));
-    let fade = Frame {
-        at: img.rel32_target(f + 0x3ae),
-        esp,
-        ecx: s + 0xbb0,
-        edx: 0x1e,
-        xmm,
-        ..*fr
-    };
-    Ret::eax(crate::s3_misc::fade_task(g, img, &fade))
+    (s, esp)
 }
 
 /// [`turn_0598`] (966 bytes, 1 overlay).

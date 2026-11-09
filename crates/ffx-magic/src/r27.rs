@@ -320,6 +320,18 @@ pub const CASTER_FRAMES_0586: Sig = Sig {
 /// `G_FIRST`, its last `G_LAST`), the records block set up after the first
 /// ([`records_init_400`](crate::sa_misc::records_init_400)). Returns 0.
 pub fn start_up_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_with_0586(g, img, fr, caster_frames_0586)
+}
+
+/// [`start_up_0586`] with `frames` for the caster frames (the `rel32`
+/// callee at `+0x65`, called with its address and the return address'
+/// place).
+pub(crate) fn start_up_with_0586<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    frames: fn(&mut G, &Image, u32, u32) -> u32,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -334,7 +346,7 @@ pub fn start_up_0586<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(esp + 8, 0);
     g.write::<u32>(esp + 4, w(0x5b));
     crate::sb_misc::part_setup(g, img, call(0x60), esp);
-    caster_frames_0586(g, img, call(0x65), esp);
+    frames(g, img, call(0x65), esp);
     let at = Frame {
         at: call(0x6a),
         esp,
