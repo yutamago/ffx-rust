@@ -2978,3 +2978,128 @@ pub const THUNK_BONE_0573: Sig = Sig {
     calls: &[(8, Callee::Sig(&BONE_0573))],
     imports: &[],
 };
+
+/// `magic_0613`'s motion task (0x10009310, 482 bytes; a task function,
+/// cdecl `(task)`, the record `R = task[1]`; an 8-aligned frame with the
+/// model-id pair at `A = ((E - 4) & !7) - 8`). By the state `R + 0x18`
+/// (a state set here runs at once): 10 and 0x32 step on; 11 and 31 wait
+/// for the object `O = R + 0x1c`'s motion (slot 20 of `O[0x54]` with bit
+/// 0 of `O + 0x90`, else slot 411 of `O[0x50]`) and go to 20 and 40; 20,
+/// 30, 40 and 60 give `O` the values 0xb9, 0xba, 0xbb, 0xbd
+/// ([`set_value`](crate::m0042::set_value)) and step on; 61 waits for
+/// `O`'s model id ([`model_id`](crate::sa_misc::model_id)), gives it 0xbc
+/// and steps on with `R + 0x30` 1; 10000 unlinks the task node. Every way
+/// ends with `R + 0x2c` and `R + 0x30` up (a step also the state).
+/// Returns the last `eax`.
+pub fn motion_task_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let bump = |g: &mut G, o: u32| {
+        let v = g.read::<u32>(r + o).wrapping_add(1);
+        g.write::<u32>(r + o, v);
+    };
+    // the end of every way: the counts up (a step: the state too)
+    let end = |g: &mut G, step: bool, eax: u32| {
+        if step {
+            bump(g, 0x18);
+        }
+        bump(g, 0x2c);
+        bump(g, 0x30);
+        Ret::eax(eax)
+    };
+    let set = |g: &mut G, call: u32, v: u32| {
+        let obj = g.read::<u32>(r + 0x1c);
+        crate::m0042::set_value(g, img, img.rel32_target(f + call), obj, v)
+    };
+    // waits for the object's motion: its answer
+    let motion = |g: &mut G, o20: u32, o411: u32| {
+        let obj = g.read::<u32>(r + 0x1c);
+        if g.read::<u8>(obj + 0x90) & 1 != 0 {
+            g.call(t(g, o20, 20), 0, &[g.read::<u32>(obj + 0x54)]).eax
+        } else {
+            g.call(t(g, o411, 411), 0, &[g.read::<u32>(obj + 0x50)]).eax
+        }
+    };
+    loop {
+        let state = g.read::<u32>(r + 0x18);
+        match state {
+            10 => return end(g, true, 0),
+            0x32 => return end(g, true, 0x32),
+            11 | 31 => {
+                let (o20, o411, next) = if state == 11 {
+                    (0x50u32, 0x5du32, 0x14u32)
+                } else {
+                    (0x8d, 0x9a, 0x28)
+                };
+                let eax = motion(g, o20, o411);
+                if eax == 0 {
+                    return end(g, false, 0);
+                }
+                g.write::<u32>(r + 0x18, next);
+            }
+            20 => {
+                let eax = set(g, 0x102, 0xb9);
+                return end(g, true, eax);
+            }
+            30 => {
+                let eax = set(g, 0x11e, 0xba);
+                return end(g, true, eax);
+            }
+            0x28 => {
+                let eax = set(g, 0x13a, 0xbb);
+                return end(g, true, eax);
+            }
+            0x3c => {
+                let eax = set(g, 0xe6, 0xbd);
+                return end(g, true, eax);
+            }
+            0x3d => {
+                let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(8);
+                let obj = g.read::<u32>(r + 0x1c);
+                g.write::<u32>(a, obj);
+                let id = crate::sa_misc::model_id(g, img, img.rel32_target(f + 0x159), a);
+                if id == 0 {
+                    return end(g, false, 0);
+                }
+                let eax = set(g, 0x16d, 0xbc);
+                bump(g, 0x18);
+                bump(g, 0x2c);
+                g.write::<u32>(r + 0x30, 1);
+                return Ret::eax(eax);
+            }
+            0x2710 => {
+                let node = g.read::<u32>(task);
+                let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+                g.write::<u32>(prev + 8, next);
+                let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+                g.write::<u32>(next + 4, prev);
+                g.write::<u32>(node + 8, node);
+                g.write::<u32>(node + 4, node);
+                return end(g, false, prev);
+            }
+            // `sub eax, 10` and the byte table: another state below 0x28
+            // leaves its table index (5) or the state less 10
+            s if (10..0x20).contains(&s) => return end(g, false, 5),
+            s if s < 0x28 => return end(g, false, s.wrapping_sub(10)),
+            s => return end(g, false, s),
+        }
+    }
+}
+
+/// [`motion_task_0613`] (482 bytes, 1 overlay).
+pub const MOTION_TASK_0613: Sig = Sig {
+    len: 482,
+    hash: 0x47bc_946b_6d14_6b91,
+    calls: &[
+        (0xe6, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0x102, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0x11e, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0x13a, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0x159, Callee::Sig(&crate::sa_misc::MODEL_ID)),
+        (0x16d, Callee::Sig(&crate::m0042::SET_VALUE)),
+    ],
+    imports: &[],
+};

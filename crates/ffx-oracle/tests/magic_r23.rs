@@ -1515,7 +1515,8 @@ fn load_0612() {
         t.set_u32(w(&t, su, 0xdc), if busy { last } else { 0 });
         t.set_u32(w(&t, su, 0xf0), last);
         for op in [
-            0x28u32, 0x32, 0x3c, 0x46, 0x5e, 0x8f, 0x99, 0xb3, 0xbd, 0x17e, 0x186,
+            0x28u32, 0x32, 0x3c, 0x46, 0x5e, 0x8f, 0x99, 0xa4, 0xac, 0xb3, 0xbd, 0xc8, 0xd0, 0x17e,
+            0x186,
         ] {
             t.set_u32(w(&t, su, op), 0x5a5a_5a5a ^ op);
         }
@@ -1571,6 +1572,9 @@ fn summon_setup_0603() {
         let c = w(&t, 0xe1);
         junk(&mut t, c, 0xc0, k);
         junk_ops(&mut t, f, &[0x57, 0xcf, 0xd6]);
+        // the object's words (its `+0x14` cleared)
+        let o = w(&t, 0xf);
+        junk(&mut t, o, 0x60, k + 3);
         ownb::dirty_stack(&mut t, 0xc5c0 + k, &[]);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(r23::summon_setup_0603(g, img, fr.at, fr.esp))
@@ -1770,4 +1774,70 @@ fn bone_0573() {
         t.check_entry(f, c, &[cursor], Eax::Checked);
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the bones' calls");
+}
+
+/// `magic_0613` 0x10009310 (`r23::motion_task_0613`): every state (the
+/// waits answering 0 and not, with the model flag set and not), the
+/// unlink, and states the tables send to the end.
+#[test]
+fn motion_task_0613() {
+    use ownb::rec;
+    let Some(mut t) = twin(613) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x9310);
+    rec(&mut t, 20, 1, |m, a| {
+        m.r32(SCRATCH + 0x10) ^ (a[0] & 0xff00)
+    });
+    rec(&mut t, 411, 1, |m, a| {
+        m.r32(SCRATCH + 0x10) ^ (a[0] & 0xff00)
+    });
+    for (s, n) in [(30u32, 1usize), (36, 3), (228, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let task = SCRATCH + 0x100;
+    let r = SCRATCH + 0x1000;
+    let obj = SCRATCH + 0x2000;
+    let (node, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    // (state, wait answer, model flag)
+    let cases: [(u32, u32, u16); 22] = [
+        (10, 0, 0),
+        (11, 0, 0),
+        (11, 0, 1),
+        (11, 1, 1),
+        (11, 0x100, 0),
+        (12, 0, 0),
+        (20, 0, 1),
+        (30, 0, 0),
+        (31, 0, 1),
+        (31, 1, 0),
+        (0x20, 0, 0),
+        (0x28, 0, 1),
+        (0x29, 0, 0),
+        (0x32, 0, 0),
+        (0x3c, 0, 1),
+        (0x3d, 0, 0),
+        (0x3d, 0x77, 1),
+        (0x3d, 0x77, 0),
+        (0x3e, 0, 0),
+        (0x2710, 0, 0),
+        (5, 0, 0),
+        (0x2711, 0, 0),
+    ];
+    for (k, (state, wait, flag)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x40, k);
+        junk(&mut t, obj, 0x100, k + 1);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x1c, obj);
+        t.set_u16(obj + 0x90, flag);
+        t.set_u32(SCRATCH + 0x10, wait);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.write(node, &[0x3c; 0x20]);
+        t.set_u32(node + 4, prev);
+        t.set_u32(node + 8, next);
+        t.write(prev, &[0x4d; 0x20]);
+        t.write(next, &[0x5e; 0x20]);
+        ownb::dirty_stack(&mut t, 0x9310 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
 }
