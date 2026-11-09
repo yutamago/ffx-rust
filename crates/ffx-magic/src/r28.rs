@@ -1193,3 +1193,822 @@ pub const STRIP_TASK_0150: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A strip's draw packet (`magic_0150` 0x10006210 and `magic_0603`, 1935
+/// bytes; internal, `ecx` = the request `C`: `+0` the write cursor, `+0xc`
+/// a matrix, `+0x14`, `+0x18`, `+0x1c` three colours (four floats each),
+/// `+0x20` the width, `+0x24` and `+0x30` the two ends; a /GS frame). At
+/// `D = *C`: a header (`u16 +0x10` 1, `+0x12` 10, `+0x14` 0x480000, the
+/// vertices `V = (D + 0x2f) & !0xf` and indices `I = (V + 0xa3) & !3` as
+/// offsets from `D`), `M` = slot 230 `(C[0xc])` (`ebp - 0x148`), the ends
+/// `A`, `B` through it (229, `w` 1.0), `B -= A` (234) and normalised
+/// (232) into `U`; with `w = C[0x20]`: `Q = (U.y w, -U.x w) w K`, `U =
+/// (U.y w, -U.x w, 0, 0)`. The colours as bytes (`cvttss2si` of each
+/// float times `K2`, packed little-endian). Two rows of five vertices
+/// along `T = A + B t` (233, 248): `T + Q`, `T + U`, `T`, `T - U`, `T -
+/// Q` (`w` 1.0) at `t` = 0 and the first row of `t = K3` repeated five
+/// times (the loop's count is the constant 1, so the forward copy after
+/// it never runs); the index records (`0x40400`, then 0x60 bytes: the
+/// colour words and the u16 vertex numbers 0..9). The cursor moves past
+/// them, 16-aligned, with the byte before it 0xff. Returns the new
+/// cursor.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn strip_mesh_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvtt, mul};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let c = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let one = 0x3f80_0000u32;
+    g.write::<u32>(l(0x190), c);
+    let d = g.read::<u32>(c);
+    let v = d.wrapping_add(0x2f) & !0xf;
+    let idx = v.wrapping_add(0xa3) & !3;
+    g.write::<u16>(d + 0x12, 10);
+    g.write::<u32>(d, 0);
+    let base = g.read::<u32>(c);
+    g.write::<u32>(d + 4, idx.wrapping_sub(base));
+    g.write::<u32>(l(0x17c), v);
+    g.write::<u32>(l(0x184), idx);
+    let base = g.read::<u32>(c);
+    g.write::<u32>(d + 0xc, 0);
+    g.write::<u32>(d + 8, v.wrapping_sub(base));
+    g.write::<u16>(d + 0x10, 1);
+    g.write::<u32>(d + 0x14, 0x48_0000);
+    g.write::<u32>(d + 0x1c, 0);
+    let rec = idx + 0x10;
+    g.write::<u32>(l(0x1a4), rec);
+    let (m, p, a, b, u) = (l(0x148), l(0x34), l(0xb8), l(0x54), l(0x24));
+    let (q, t) = (l(0x44), l(0x14));
+    let mtx = g.read::<u32>(c + 0xc);
+    // call width: 2
+    g.call(slot(g, 0x80, 230), 0, &[m, mtx]);
+    for (dst, src, op) in [(a, 0x24u32, 0xc1u32), (b, 0x30, 0x102)] {
+        for i in 0..3 {
+            let x = g.read::<u32>(c + src + 4 * i);
+            g.write::<u32>(p + 4 * i, x);
+        }
+        g.write::<u32>(p + 0xc, one);
+        // call width: 3
+        g.call(slot(g, op, 229), 0, &[dst, m, p]);
+    }
+    // call width: 3
+    g.call(slot(g, 0x127, 234), 0, &[b, b, a]);
+    // call width: 2
+    g.call(slot(g, 0x13c, 232), 0, &[u, b]);
+    let wd = rf(g, c + 0x20);
+    let ux = mul(rf(g, u), wd);
+    let uy = mul(rf(g, u + 4), wd);
+    let ww = mul(wd, k(g, 0x169));
+    let nx = f32::from_bits(ux.to_bits() ^ g.read::<u32>(w(0x170)));
+    g.write::<f32>(u + 4, nx);
+    g.write::<f32>(u, uy);
+    g.write::<f32>(q + 4, mul(nx, ww));
+    g.write::<f32>(q, mul(uy, ww));
+    g.write::<u32>(l(0x1a0), 0);
+    for o in [0x18u32, 0x1c, 0x38, 0x3c] {
+        g.write::<u32>(l(o), 0);
+    }
+    // the colours as bytes
+    let k2 = k(g, 0x1a5);
+    let byte = |g: &G, col: u32, i: u32| {
+        let at = g.read::<u32>(c + col).wrapping_add(4 * i);
+        cvtt(mul(rf(g, at), k2)).cast_unsigned().to_le_bytes()[0]
+    };
+    for i in 0..4u32 {
+        let x = byte(g, 0x1c, i);
+        g.write::<u8>(l(0x158 - 4 * i), x);
+        let x = byte(g, 0x18, i);
+        g.write::<u8>(l(0x178 - 4 * i), x);
+        let x = byte(g, 0x14, i);
+        g.write::<u8>(l(0x168 - 4 * i), x);
+    }
+    let word = |g: &G, at: u32| u32::from_le_bytes([0, 4, 8, 12].map(|o| g.read::<u8>(l(at - o))));
+    // call width: 3
+    g.call(slot(g, 0x242, 233), 0, &[t, b, 0]);
+    // call width: 3
+    g.call(slot(g, 0x25b, 248), 0, &[t, t, a]);
+    g.write::<u32>(idx, 0x4_0400);
+    g.write::<u32>(idx + 8, 0);
+    g.write::<u32>(idx + 0xc, 0);
+    let c0 = word(g, 0x158);
+    g.write::<u32>(l(0x194), c0);
+    let c1 = word(g, 0x178);
+    g.write::<u32>(l(0x19c), c1);
+    let c2 = word(g, 0x168);
+    g.write::<u32>(l(0x198), c2);
+    // the five points of a row at `row` (`l(row)`, 16 bytes apart)
+    let five = |g: &mut G, row: u32, ops: [u32; 5]| {
+        let r = |i: u32| l(row - 0x10 * i);
+        // call width: 3
+        g.call(slot(g, ops[0], 248), 0, &[r(0), t, q]);
+        g.write::<u32>(r(0) + 0xc, one);
+        // call width: 3
+        g.call(slot(g, ops[1], 248), 0, &[r(1), t, u]);
+        g.write::<u32>(r(1) + 0xc, one);
+        // call width: 2
+        g.call(slot(g, ops[2], 325), 0, &[r(2), t]);
+        g.write::<u32>(r(2) + 0xc, one);
+        // call width: 3
+        g.call(slot(g, ops[3], 234), 0, &[r(3), t, u]);
+        g.write::<u32>(r(3) + 0xc, one);
+        // call width: 3
+        g.call(slot(g, ops[4], 234), 0, &[r(4), t, q]);
+        g.write::<u32>(r(4) + 0xc, one);
+    };
+    five(g, 0xa8, [0x31e, 0x340, 0x362, 0x385, 0x3a8]);
+    let v0 = g.read::<u32>(l(0x17c));
+    for i in 0..20 {
+        let x = g.read::<u32>(l(0xa8) + 4 * i);
+        g.write::<u32>(v0 + 4 * i, x);
+    }
+    let v1 = v0 + 0x50;
+    g.write::<u32>(l(0x17c), v1);
+    g.write::<u32>(l(0x18c), 5);
+    g.write::<u32>(l(0x184), 0);
+    g.write::<u32>(l(0x188), v1 + 0x20);
+    g.write::<u32>(l(0x180), l(0x108));
+    // the loop (once)
+    let s = add(rf(g, l(0x1a0)), k(g, 0x48c));
+    g.write::<f32>(l(0x1a0), s);
+    // call width: 3
+    g.call(slot(g, 0x49f, 233), 0, &[t, b, s.to_bits()]);
+    // call width: 3
+    g.call(slot(g, 0x4c0, 248), 0, &[t, t, a]);
+    five(g, 0x108, [0x4dc, 0x4f8, 0x51a, 0x540, 0x569]);
+    let src = l(0x108);
+    for i in 0..5 {
+        for j in 0..4 {
+            let x = g.read::<u32>(src + 4 * j);
+            g.write::<u32>(v1 + 0x10 * i + 4 * j, x);
+        }
+    }
+    // the index records
+    let n = 5u16;
+    for (o, x) in [
+        (4u32, c1),
+        (0xc, c1),
+        (0x1c, c2),
+        (0x24, c2),
+        (0x30, c2),
+        (0x38, c2),
+    ] {
+        g.write::<u32>(rec + o, x);
+    }
+    for (o, x) in [
+        (0x4cu32, c0),
+        (0x18, c1),
+        (0x20, c1),
+        (0x34, c1),
+        (0x3c, c1),
+        (0x48, c1),
+    ] {
+        g.write::<u32>(rec + o, x);
+    }
+    for (o, x) in [(0x50u32, c1), (0, c0), (8, c0), (0x54, c0)] {
+        g.write::<u32>(rec + o, x);
+    }
+    for (o, d) in [
+        (0x10u32, -5i16),
+        (0x12, -4),
+        (0x28, -4),
+        (0x2a, -3),
+        (0x40, -3),
+        (0x42, -2),
+        (0x58, -2),
+        (0x5a, -1),
+        (0x16, 1),
+        (0x2c, 1),
+        (0x5e, 4),
+        (0x2e, 2),
+        (0x44, 2),
+        (0x14, 0),
+        (0x46, 3),
+        (0x5c, 3),
+    ] {
+        g.write::<u16>(rec + o, n.wrapping_add_signed(d));
+    }
+    g.write::<u32>(l(0x184), 1);
+    g.write::<u32>(l(0x180), l(0x108) + 0x10);
+    let end = rec + 0x60;
+    let cur = (end.wrapping_add(3) & !3).wrapping_add(0x1f);
+    g.write::<u8>(cur.wrapping_sub(0x1e), 0xff);
+    let cur = cur & !0xf;
+    let c = g.read::<u32>(l(0x190));
+    g.write::<u32>(c, cur);
+    Ret::eax(cur)
+}
+
+/// [`strip_mesh_0150`] (the `rel32`: `__security_check_cookie`; the
+/// loop's back jump stays inside).
+pub const STRIP_MESH_0150: Sig = Sig {
+    len: 1935,
+    hash: 0x547d_a943_eae5_037e,
+    calls: &[(0x787, Callee::Any)],
+    imports: &[],
+};
+
+/// The summon strip's draw (`magic_0150` 0x100069a0 and `magic_0603`, 1215
+/// bytes; a draw callback, cdecl `(obj)`; a 16-aligned /GS frame `Z`, the
+/// `esp` after the pushes, the request `C` at `Z + 0x20` and the packet
+/// record `R` at `Z + 0x60`). Every call to the game runs with the word
+/// at `*G_F` set to 1 and restored after.
+/// - `obj[0x930]` at most 0 (not NaN): slot 311 `(obj[0x93c])`, slot 772 `(obj,
+///   0x54c55f)` and slot 779 with its 64-bit result.
+/// - Else the strip's window (`obj[0x920]`,
+///   [`strip_window`](crate::s4_small::strip_window)): `P1` = its second
+///   piece's last point, `P2` = the bone point `obj[0x924] + 0xcc` (325);
+///   `M` = slot 231 `(G_M, obj[0x91c] + 0x9c)`, `M2` = 230 `(M)`, `M3` =
+///   235; the buffer `G_BUF` cleared (`memset`, 0x4000 bytes); the
+///   colours `(0.9375, 0.5, 0.5, s)`, `(0.5, 0.125, 0, s K1)`, `(0, 0.125,
+///   0.5, s K2)` (`s = obj[0x930]`), the width `(slot 307 - K3) K4 + K5`
+///   and the ends `P2`, `P1` into `C`; the packet
+///   ([`strip_mesh_0150`]); `R` from the buffer's header, `M2`, the
+///   texture words; slot 772 `(obj, 0x54c55f)` gives a 64-bit handle `h`;
+///   slot 773 `(h)` true: slots 819 `(h, C, R)` and 865 `(h,
+///   0x80000000)`; else slot 820 `(h, C, R, 776 (R byte 8) | 777 (M2))`.
+///
+/// Returns the pointer `*G_F` (as read last). `C + 0x10`, `C + 0x3c`,
+/// `R + 0xa` (u16) and `R + 0x14` are never written by the original
+/// (junk reads by the game's packet calls): 0 here (brief 2026-10-24).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn strip_draw_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let obj = fr.arg(g, 0);
+    let z = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x1f0);
+    let at = |o: u32| z.wrapping_add(o);
+    // a call with the flag word at `*G_F` 1, restored after
+    let flagged = |g: &mut G, (op, table): (u32, u32), n: u32, args: &[u32]| {
+        let p = g.read::<u32>(w(op));
+        let saved = g.read::<u32>(p);
+        g.write::<u32>(p, 1);
+        let out = g.call(slot(g, table, n), 0, args);
+        (out, saved)
+    };
+    let s = g.read::<f32>(obj + 0x930);
+    // `comiss 0, s; jb`: a NaN size takes the long way
+    if s <= 0.0 {
+        let x = g.read::<u32>(obj + 0x93c);
+        // call width: 1
+        g.call(slot(g, 0x2c, 311), 0, &[x]);
+        // call width: 2
+        let h = g.call(slot(g, 0x3f, 772), 0, &[obj, 0x54_c55f]);
+        // call width: 2
+        let (_, saved) = flagged(g, (0x56, 0x5f), 779, &[h.eax, h.edx]);
+        let p = g.read::<u32>(w(0x72));
+        g.write::<u32>(p, saved);
+        return Ret::eax(p);
+    }
+    let cursor = g.read::<u32>(obj + 0x920);
+    g.write::<u32>(at(0x20), cursor);
+    let win = Frame {
+        at: img.rel32_target(f + 0x9e),
+        esp: z.wrapping_sub(4),
+        ecx: at(0x20),
+        ..*fr
+    };
+    crate::s4_small::strip_window(g, img, &win);
+    let (p1, p2, m, m2, m3) = (at(0xd8), at(0x118), at(0x1a8), at(0x128), at(0x168));
+    let n = u32::from(g.read::<u16>(at(0x26)));
+    let last = g
+        .read::<u32>(at(0x2c))
+        .wrapping_sub(0x10)
+        .wrapping_add(n << 4);
+    // call width: 2
+    g.call(slot(g, 0xbd, 325), 0, &[p1, last]);
+    let bone = g.read::<u32>(obj + 0x924).wrapping_add(0xcc);
+    g.write::<u32>(p1 + 0xc, 0x3f80_0000);
+    // call width: 2
+    g.call(slot(g, 0xde, 325), 0, &[p2, bone]);
+    let b = g.read::<u32>(obj + 0x91c).wrapping_add(0x9c);
+    // call width: 3
+    g.call(slot(g, 0x10f, 231), 0, &[m, w(0x109), b]);
+    // call width: 2
+    g.call(slot(g, 0x12f, 230), 0, &[m2, m]);
+    // call width: 1
+    g.call(slot(g, 0x144, 235), 0, &[m3]);
+    let s = g.read::<f32>(obj + 0x930);
+    g.write::<f32>(at(0x104), s);
+    let s1 = mul(s, k(g, 0x162));
+    let s2 = mul(s, k(g, 0x173));
+    for (o, v) in [
+        (0xe8u32, 0x3f00_0000u32),
+        (0xec, 0x3e00_0000),
+        (0xf0, 0),
+        (0xf4, s1.to_bits()),
+        (0xf8, 0x3f70_0000),
+        (0xfc, 0x3f00_0000),
+        (0x100, 0x3f00_0000),
+        (0x108, 0),
+        (0x10c, 0x3e00_0000),
+        (0x110, 0x3f00_0000),
+        (0x114, s2.to_bits()),
+    ] {
+        g.write::<u32>(at(o), v);
+    }
+    let buf = w(0x17f);
+    g.write_bytes(buf, &[0u8; 0x4000]);
+    let c = at(0x20);
+    g.write::<u32>(c + 0x14, at(0xf8));
+    g.write::<u32>(c + 0x18, at(0xe8));
+    g.write::<u32>(c + 0x1c, at(0x108));
+    g.write::<u32>(c + 0xc, m3);
+    g.write::<u32>(c, w(0x23b));
+    // junk read: C + 0x10 and C + 0x3c never written; 0 (brief 2026-10-24)
+    g.write::<u32>(c + 0x10, 0);
+    g.write::<u32>(c + 0x3c, 0);
+    // call width: 0
+    let r = st0_f32(g.call(slot(g, 0x22a, 307), 0, &[]).st0);
+    g.write::<f32>(at(0x14), r);
+    let width = add(mul(sub(r, k(g, 0x24f)), k(g, 0x25b)), k(g, 0x263));
+    g.write::<f32>(c + 0x20, width);
+    for i in 0..3 {
+        let x = g.read::<u32>(p2 + 4 * i);
+        g.write::<u32>(c + 0x24 + 4 * i, x);
+    }
+    for i in 0..3 {
+        let x = g.read::<u32>(p1 + 4 * i);
+        g.write::<u32>(c + 0x30 + 4 * i, x);
+    }
+    let mesh = Frame {
+        at: img.rel32_target(f + 0x2c8),
+        esp: z.wrapping_sub(4),
+        ecx: c,
+        ..*fr
+    };
+    strip_mesh_0150(g, img, &mesh);
+    let r = at(0x60);
+    let h8 = g.read::<u16>(w(0x2ce));
+    g.write::<u16>(r + 8, h8);
+    let v = g.read::<u32>(w(0x2d8));
+    g.write::<u32>(r, 0x2404);
+    g.write::<u32>(r + 0x38, v.wrapping_add(w(0x2e6)));
+    let i = g.read::<u32>(w(0x2f2));
+    g.write::<u32>(r + 0x1c, 0);
+    g.write::<u32>(r + 0x3c, i.wrapping_add(w(0x300)));
+    let x = g.read::<u32>(g.read::<u32>(w(0x30c)));
+    g.write::<u32>(r + 4, x);
+    g.write::<u32>(r + 0x20, m2);
+    g.write::<u32>(r + 0x44, m2);
+    let y = g.read::<u32>(w(0x331));
+    g.write::<u32>(r + 0x34, y);
+    for (o, v) in [(0xcu32, 0u32), (0x10, 0), (0x18, 0x8080_8080), (0x40, 0)] {
+        g.write::<u32>(r + o, v);
+    }
+    for (o, op) in [
+        (0x24u32, 0x36bu32),
+        (0x28, 0x376),
+        (0x30, 0x381),
+        (0x2c, 0x38c),
+    ] {
+        g.write::<u32>(r + o, w(op));
+    }
+    // junk read: R + 0xa (u16) and R + 0x14 never written; 0 (brief 2026-10-24)
+    g.write::<u16>(r + 0xa, 0);
+    g.write::<u32>(r + 0x14, 0);
+    // call width: 2
+    let h = g.call(slot(g, 0x33d, 772), 0, &[obj, 0x54_c55f]);
+    let (lo, hi) = (h.eax, h.edx);
+    g.write::<u32>(c + 0x1c, w(0x3a5));
+    // call width: 2
+    let (ok, saved) = flagged(g, (0x39b, 0x3b2), 773, &[lo, hi]);
+    g.write::<u32>(at(0x14), saved);
+    g.write::<u32>(at(0x18), lo);
+    g.write::<u32>(at(0x1c), hi);
+    let p = g.read::<u32>(w(0x3d0));
+    g.write::<u32>(p, saved);
+    if ok.eax != 0 {
+        g.write::<u32>(p, 1);
+        // call width: 4
+        g.call(slot(g, 0x3ec, 819), 0, &[lo, hi, c, r]);
+        let p = g.read::<u32>(w(0x401));
+        g.write::<u32>(p, 1);
+        // call width: 3
+        g.call(slot(g, 0x411, 865), 0, &[lo, hi, 0x8000_0000]);
+        let p = g.read::<u32>(w(0x420));
+        g.write::<u32>(p, saved);
+        return Ret::eax(p);
+    }
+    let b8 = u32::from(g.read::<u8>(r + 8));
+    // call width: 1
+    let a = g.call(slot(g, 0x448, 776), 0, &[b8]).eax;
+    let m2w = g.read::<u32>(r + 0x44);
+    // call width: 1
+    let bits = a | g.call(slot(g, 0x456, 777), 0, &[m2w]).eax;
+    let p = g.read::<u32>(w(0x470));
+    let saved = g.read::<u32>(p);
+    g.write::<u32>(p, 1);
+    // call width: 5
+    g.call(slot(g, 0x48b, 820), 0, &[lo, hi, c, r, bits]);
+    let p = g.read::<u32>(w(0x4a2));
+    g.write::<u32>(p, saved);
+    Ret::eax(p)
+}
+
+/// [`strip_draw_0150`] (the `rel32`s: three `__security_check_cookie`,
+/// the window, `memset`, the packet).
+pub const STRIP_DRAW_0150: Sig = Sig {
+    len: 1215,
+    hash: 0xc30c_65c1_b01c_4a26,
+    calls: &[
+        (0x87, Callee::Any),
+        (0x9e, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0x1f9, Callee::Import("memset")),
+        (0x2c8, Callee::Sig(&STRIP_MESH_0150)),
+        (0x439, Callee::Any),
+        (0x4b7, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The vertices of one ribbon segment of [`ribbon_draw_0150`]: three at
+/// `v` around the point `q` (`q.y - K` first, then `+-` the segment's
+/// normal `n` (`n = (nx, nz)`, scaled by `K3` into the frame temporaries)
+/// times `K1 - q.w`), through slot 325 from the frame's `R` and `S`.
+fn ribbon_vertices<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    z: u32,
+    (v, q): (u32, u32),
+    ops: &[u32; 8],
+) {
+    use crate::sb_sse::{add, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let slot = |g: &G, o: u32| slot_target(g, w(o), 325);
+    let at = |o: u32| z.wrapping_add(o);
+    let (r, s) = (at(0xe8), at(0xf8));
+    let [k_y, t1, t2, t3, k3a, k3b, k1a, k1b] = *ops;
+    for o in [0u32, 8, 0xc] {
+        let x = g.read::<u32>(q + o);
+        g.write::<u32>(r + o, x);
+    }
+    let y = sub(rf(g, q + 4), k(g, k_y));
+    g.write::<f32>(r + 4, y);
+    // call width: 2
+    g.call(slot(g, t1), 0, &[v, r]);
+    let ry = g.read::<u32>(r + 4);
+    let back = sub(k(g, k1a), rf(g, q + 0xc));
+    g.write::<u32>(s + 4, ry);
+    let nz = mul(rf(g, at(0xc)), k(g, k3a));
+    g.write::<f32>(at(0xc), nz);
+    g.write::<f32>(s, add(mul(nz, back), rf(g, r)));
+    let nx = mul(rf(g, at(0x10)), k(g, k3b));
+    g.write::<f32>(at(0x10), nx);
+    g.write::<f32>(s + 8, add(mul(nx, back), rf(g, r + 8)));
+    // call width: 2
+    g.call(slot(g, t2), 0, &[v + 0x10, s]);
+    let back = sub(k(g, k1b), rf(g, q + 0xc));
+    let nz = mul(rf(g, at(0xc)), back);
+    g.write::<f32>(s, sub(rf(g, r), nz));
+    let nx = mul(rf(g, at(0x10)), back);
+    g.write::<f32>(s + 8, sub(rf(g, r + 8), nx));
+    // call width: 2
+    g.call(slot(g, t3), 0, &[v + 0x20, s]);
+}
+
+/// The segment's direction of [`ribbon_draw_0150`]: `C` = the point at
+/// `p` (slot 325), `d = C - Q` (x and z), its length (`sqrt` of `dz^2 +
+/// dx^2` in `f64`, rounded) dividing each, scaled by `Kz` and `Kx` into
+/// the frame temporaries (`nz` at `Z + 0xc`, `nx` at `Z + 0x10`).
+fn ribbon_dir<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    z: u32,
+    p: u32,
+    (t, kx, kz): (u32, u32, u32),
+) {
+    use crate::sb_sse::{add, div, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let at = |o: u32| z.wrapping_add(o);
+    let (c, q) = (at(0x108), at(0xd8));
+    // call width: 2
+    g.call(slot_target(g, w(t), 325), 0, &[c, p]);
+    let dx = sub(rf(g, c), rf(g, q));
+    let dz = sub(rf(g, c + 8), rf(g, q + 8));
+    #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
+    let len = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt() as f32;
+    let nx = mul(div(dx, len), g.read::<f32>(w(kx)));
+    let nz = mul(div(dz, len), g.read::<f32>(w(kz)));
+    g.write::<f32>(at(0xc), nz);
+    g.write::<f32>(at(0x10), nx);
+}
+
+/// A ribbon's index record (`magic_0150`'s [`ribbon_draw_0150`]): when
+/// neither the saved point's `w` nor `Q`'s passes `TOP`, six words of the
+/// two colours and the u16 vertex numbers `k - 3 .. k + 2` at `rec`, the
+/// record count `u16 I + 2` two more. Returns the next record.
+fn ribbon_record<G: Game>(g: &mut G, img: &Image, f: u32, z: u32, rec: u32, top_op: u32) -> u32 {
+    let at = |o: u32| z.wrapping_add(o);
+    let top = g.read::<f32>(img.word(f + top_op));
+    if !(top >= g.read::<f32>(at(0x124)) && top >= g.read::<f32>(at(0xe4))) {
+        return rec;
+    }
+    let (a, b) = (g.read::<u32>(at(0x1c)), g.read::<u32>(at(0x18)));
+    let k = g.read::<u16>(at(0x20));
+    for o in [0x20u32, 0x18, 8, 0] {
+        g.write::<u32>(rec + o, a);
+    }
+    for o in [0x24u32, 0x1c, 0xc, 4] {
+        g.write::<u32>(rec + o, b);
+    }
+    for (o, d) in [
+        (0x12u32, -2i16),
+        (0x16, 1),
+        (0x2a, -1),
+        (0x2e, 2),
+        (0x10, -3),
+        (0x14, 0),
+        (0x28, -3),
+        (0x2c, 0),
+    ] {
+        g.write::<u16>(rec + o, k.wrapping_add_signed(d));
+    }
+    let i = g.read::<u32>(at(0x28));
+    let n = g.read::<u16>(i + 2).wrapping_add(2);
+    g.write::<u16>(i + 2, n);
+    rec + 0x30
+}
+
+/// The summon strip's ribbon (`magic_0150` 0x10004c90 and `magic_0603`,
+/// 3087 bytes; internal, `ecx` = the object `O`, `edx` = the strip; a
+/// 16-aligned /GS frame `Z`, the `esp` after the pushes: the strip's
+/// window request `C` at `Z + 0x40`, the packet record `R` at `Z + 0x60`).
+/// The window ([`strip_window`](crate::s4_small::strip_window)); `P` = the
+/// bone point `O[0x924] + 0xcc` (325); `M1`, `M2` = slot 231 `(G_M,
+/// O[0x91c] + 0x9c)`, `M3` = 230 `(M1)`; the buffer `G_BUF` cleared
+/// (`memset`) and its header (vertices at `V0`, the index records `I` for
+/// three vertices per window point); the colours `cvtt(O[0x934] K) << 24
+/// | O[0x948]` and `O[0x94c]`. Along the window's two pieces: each
+/// segment from `Q` to the next point (its direction,
+/// [`ribbon_dir`]) gives three vertices around `Q` ([`ribbon_vertices`])
+/// and, from the second on, an index record ([`ribbon_record`]); the
+/// records end with a byte 0xff. A first piece of one point loops for
+/// ever, as the original does (`jmp $`). Then `R` (0x404, the buffer, the
+/// matrices; `O[0x944]` set: `M4` = 230 `(M2)` with `M4[14] -= K`), and
+/// unless there are no records: slot 772 `(O, 0x12d644)` gives the
+/// handle `h`, slot 773 `(h)` true: 819 `(h, C, R)` and 865 `(h,
+/// 0x80000000)`; else 820 `(h, C, R, 776 (0x44) | 777 (M4))` with the
+/// record counts 0x80. Each game call after the handle runs with `*G_F`'s
+/// word at 1, restored after.
+///
+/// Returns `*G_F` as read last, or `*G_Y` with no records. `C + 0x10..0x18`,
+/// `R + 9..0xb` and `R + 0x14` are never written by the original (junk
+/// reads by the packet calls): 0 here (brief 2026-10-24).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn ribbon_draw_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{cvtt, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let (obj, strip) = (fr.ecx, fr.edx);
+    let z = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x240);
+    let at = |o: u32| z.wrapping_add(o);
+    let (c, r) = (at(0x40), at(0x60));
+    let (p, m1, m2, m3, m4) = (at(0x1a8), at(0x128), at(0x1b8), at(0x1f8), at(0x168));
+    g.write::<u32>(at(0x2c), obj);
+    g.write::<u32>(c, strip);
+    let win = Frame {
+        at: img.rel32_target(f + 0x2d),
+        esp: z.wrapping_sub(4),
+        ecx: c,
+        ..*fr
+    };
+    crate::s4_small::strip_window(g, img, &win);
+    let bone = g.read::<u32>(obj + 0x924).wrapping_add(0xcc);
+    // call width: 2
+    g.call(slot(g, 0x46, 325), 0, &[p, bone]);
+    for (dst, gm, t) in [(m1, 0x66u32, 0x6cu32), (m2, 0x8f, 0x95)] {
+        let b = g.read::<u32>(obj + 0x91c).wrapping_add(0x9c);
+        // call width: 3
+        g.call(slot(g, t, 231), 0, &[dst, w(gm), b]);
+    }
+    // call width: 2
+    g.call(slot(g, 0xb5, 230), 0, &[m3, m1]);
+    g.write_bytes(w(0xc9), &[0u8; 0x4000]);
+    // the header
+    let n3 = g.read::<u16>(strip + 0x26).wrapping_mul(3);
+    g.write::<u16>(w(0xe2), n3);
+    let vbase = w(0xea) & !0xf;
+    let span = (i32::from(n3.cast_signed()) << 4).cast_unsigned();
+    let idx = vbase.wrapping_add(3).wrapping_add(span) & !3;
+    g.write::<u32>(w(0x104), idx.wrapping_sub(w(0xff)));
+    g.write::<u32>(w(0x113), vbase.wrapping_sub(w(0x10e)));
+    for (op, v) in [(0x119u32, 0u32), (0x123, 0), (0x12d, 0x44_0000), (0x137, 0)] {
+        g.write::<u32>(w(op), v);
+    }
+    g.write::<u16>(w(0x146), 1);
+    g.write::<u32>(idx, 0x400);
+    g.write::<u32>(idx + 8, 0);
+    g.write::<u32>(idx + 0xc, 0);
+    g.write::<u32>(at(0x14), vbase);
+    g.write::<u32>(at(0x34), vbase);
+    g.write::<u32>(at(0x28), idx);
+    let mut rec = idx + 0x10;
+    g.write::<u32>(at(0x104), 0x3f80_0000);
+    let alpha = mul(g.read::<f32>(obj + 0x934), g.read::<f32>(w(0x184)));
+    let col_a = (cvtt(alpha).cast_unsigned() << 24) | g.read::<u32>(obj + 0x948);
+    g.write::<u32>(at(0x1c), col_a);
+    let col_b = g.read::<u32>(obj + 0x94c);
+    g.write::<u32>(at(0x18), col_b);
+    let n0 = i32::from(g.read::<u16>(at(0x44))) - 1;
+    let n1 = u32::from(g.read::<u16>(at(0x46)));
+    g.write::<u32>(at(0x3c), n1);
+    let first = g.read::<u32>(at(0x48));
+    let q = at(0xd8);
+    for i in 0..4 {
+        let x = g.read::<u32>(first + 4 * i);
+        g.write::<u32>(q + 4 * i, x);
+    }
+    g.write::<i32>(at(0x30), n0);
+    g.write::<i32>(at(0x38), n0);
+    let mut ptr = first + 0x10;
+    g.write::<u32>(at(0x24), ptr);
+    g.write::<u32>(at(0x20), 0);
+    if n0 <= 0 {
+        // `jmp $` in the original
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+    ribbon_dir(g, img, f, z, ptr, (0x21c, 0x2aa, 0x2a2));
+    let v = g.read::<u32>(at(0x14));
+    ribbon_vertices(
+        g,
+        img,
+        f,
+        z,
+        (v, q),
+        &[0x2e8, 0x2ee, 0x368, 0x409, 0x340, 0x37f, 0x320, 0x3ab],
+    );
+    let mut piece = 0u32;
+    loop {
+        // the step to the next point
+        let c_pt = at(0x108);
+        // call width: 2
+        g.call(slot(g, 0x431, 325), 0, &[at(0x118), q]);
+        // call width: 2
+        g.call(slot(g, 0x44e, 325), 0, &[q, c_pt]);
+        let n = g.read::<i32>(at(0x30)) - 1;
+        let v = g.read::<u32>(at(0x14)) + 0x30;
+        g.write::<u32>(at(0x14), v);
+        let k = g.read::<u32>(at(0x20)) + 3;
+        g.write::<u32>(at(0x20), k);
+        ptr = g.read::<u32>(at(0x24)) + 0x10;
+        g.write::<u32>(at(0x24), ptr);
+        g.write::<i32>(at(0x30), n);
+        let mut more = n > 0;
+        while !more {
+            piece += 1;
+            if piece >= 2 {
+                break;
+            }
+            let n = g.read::<i32>(at(0x38 + 4 * piece));
+            ptr = g.read::<u32>(at(0x4c));
+            g.write::<i32>(at(0x30), n);
+            g.write::<u32>(at(0x24), ptr);
+            more = n > 0;
+        }
+        if !more {
+            break;
+        }
+        ribbon_dir(g, img, f, z, ptr, (0x4a8, 0x521, 0x529));
+        rec = ribbon_record(g, img, f, z, rec, 0x531);
+        let v = g.read::<u32>(at(0x14));
+        ribbon_vertices(
+            g,
+            img,
+            f,
+            z,
+            (v, q),
+            &[0x5f9, 0x606, 0x674, 0x6e8, 0x64c, 0x68b, 0x62c, 0x6b7],
+        );
+    }
+    // the last point
+    ribbon_dir(g, img, f, z, ptr, (0x733, 0x7ac, 0x7b4));
+    rec = ribbon_record(g, img, f, z, rec, 0x7bc);
+    let v = g.read::<u32>(at(0x14));
+    ribbon_vertices(
+        g,
+        img,
+        f,
+        z,
+        (v, q),
+        &[0x885, 0x892, 0x8f9, 0x969, 0x8d5, 0x910, 0x8b5, 0x93c],
+    );
+    let v0 = g.read::<u32>(at(0x34));
+    g.write::<u8>(rec + 1, 0xff);
+    // the record `R`
+    g.write::<u32>(r + 0x38, v0);
+    g.write::<u32>(r, 0x404);
+    g.write::<u8>(r + 8, 0x44);
+    g.write::<u32>(r + 0x1c, 0);
+    g.write::<u32>(r + 0x3c, 0);
+    let x = g.read::<u32>(g.read::<u32>(w(0x9b6)));
+    g.write::<u32>(r + 4, x);
+    for (o, v) in [
+        (0xcu32, 0u32),
+        (0x10, 0),
+        (0x18, 0x8080_8080),
+        (0x40, 0),
+        (0x20, m3),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    // junk read: R + 9..0xb, R + 0x14, C + 0x10..0x18 never written; 0 (brief 2026-10-24)
+    g.write_bytes(r + 9, &[0u8; 3]);
+    g.write::<u32>(r + 0x14, 0);
+    for o in [0x10u32, 0x14, 0x18] {
+        g.write::<u32>(c + o, 0);
+    }
+    if g.read::<u32>(obj + 0x944) != 0 {
+        // call width: 2
+        g.call(slot(g, 0xa34, 230), 0, &[m4, m2]);
+        let y = sub(g.read::<f32>(m4 + 0x38), g.read::<f32>(w(0xa4d)));
+        g.write::<u32>(r + 0x44, m4);
+        g.write::<f32>(m4 + 0x38, y);
+    } else {
+        g.write::<u32>(r + 0x44, 0);
+    }
+    let idx = g.read::<u32>(at(0x28));
+    for (o, v) in [(0x24u32, m1), (0x28, m1), (0x30, m2), (0x2c, m1)] {
+        g.write::<u32>(r + o, v);
+    }
+    let gy = g.read::<u32>(w(0xaae));
+    g.write::<u32>(r + 0x34, gy);
+    if g.read::<i16>(idx + 2) <= 0 {
+        return Ret::eax(gy);
+    }
+    // call width: 2
+    let h = g.call(slot(g, 0xac5, 772), 0, &[obj, 0x12_d644]);
+    let (lo, hi) = (h.eax, h.edx);
+    let pf = g.read::<u32>(w(0xad9));
+    g.write::<u32>(at(0x1c), hi);
+    g.write::<u32>(c + 0x1c, w(0xaef));
+    let saved = g.read::<u32>(pf);
+    g.write::<u32>(pf, 1);
+    g.write::<u32>(at(0x2c), lo);
+    g.write::<u32>(at(0x18), saved);
+    // call width: 2
+    let ok = g.call(slot(g, 0xae7, 773), 0, &[lo, hi]).eax;
+    let pf = g.read::<u32>(w(0xb0e));
+    g.write::<u32>(pf, saved);
+    if ok != 0 {
+        g.write::<u32>(pf, 1);
+        // call width: 4
+        g.call(slot(g, 0xb2e, 819), 0, &[lo, hi, c, r]);
+        let pf = g.read::<u32>(w(0xb43));
+        g.write::<u32>(pf, 1);
+        // call width: 3
+        g.call(slot(g, 0xb53, 865), 0, &[lo, hi, 0x8000_0000]);
+        let pf = g.read::<u32>(w(0xb62));
+        g.write::<u32>(pf, saved);
+        return Ret::eax(pf);
+    }
+    let b = u32::from(g.read::<u8>(r + 8));
+    // call width: 1
+    let a = g.call(slot(g, 0xb8a, 776), 0, &[b]).eax;
+    let m = g.read::<u32>(r + 0x44);
+    // call width: 1
+    let bits = a | g.call(slot(g, 0xb98, 777), 0, &[m]).eax;
+    g.write::<u16>(idx + 2, 0x80);
+    g.write::<u16>(w(0xbbd), 0x80);
+    let pf = g.read::<u32>(w(0xbc2));
+    let saved = g.read::<u32>(pf);
+    g.write::<u32>(pf, 1);
+    // call width: 5
+    g.call(slot(g, 0xbe1, 820), 0, &[lo, hi, c, r, bits]);
+    let pf = g.read::<u32>(w(0xbf2));
+    g.write::<u32>(pf, saved);
+    Ret::eax(pf)
+}
+
+/// [`ribbon_draw_0150`] (the `rel32`s: the window, `memset`, three
+/// `_libm_sse2_sqrt_precise`, two `__security_check_cookie`; the loop's
+/// jump stays inside).
+pub const RIBBON_DRAW_0150: Sig = Sig {
+    len: 3087,
+    hash: 0xb876_f4e5_9460_eeb8,
+    calls: &[
+        (0x2d, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0xce, Callee::Import("memset")),
+        (0x272, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x501, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x78c, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xb7b, Callee::Any),
+        (0xc07, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -78,7 +78,13 @@ fn spin_step_0563() {
         }
         rec(&mut t, 229, 3, |m, a| {
             for i in 0..4 {
-                let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) * 0.25 + 0.5 + i as f32;
+                let v = rf(m, a[2] + 4 * i) * 0.5
+                    + (rf(m, a[1] + 4 * i)
+                        + rf(m, a[1] + 0x10 + 4 * i)
+                        + rf(m, a[1] + 0x20 + 4 * i))
+                        * 0.25
+                    + 0.5
+                    + i as f32;
                 wf(m, a[0] + 4 * i, v);
             }
             0x229
@@ -193,10 +199,11 @@ fn mats_0511() {
         let e = SCRATCH + 0x8000;
         let sel = SCRATCH + 0x5000;
         // (yaw, flag, global index, selector bytes)
-        let cases: [(f32, u32, u32, [u8; 3]); 5] = [
+        let cases: [(f32, u32, u32, [u8; 3]); 6] = [
             (-1.0, 0, 3, [2, 1, 0x21]),
             (6.0, 1, 3, [5, 0x20, 4]),
             (9.0, 0, 0x40, [7, 0x1f, 0x3f]),
+            (1.0, 0, 0x20, [3, 0x20, 0x20]),
             (2.0, 0, 0xffff_fff0, [1, 6, 3]),
             (f32::NAN, 0, 0x1f, [0, 0, 0]),
         ];
@@ -221,7 +228,7 @@ fn mats_0511() {
         }
         assert_eq!(
             t.u32(magic_owna::row(257)) + t.u32(magic_owna::row(296)),
-            15
+            18
         );
     }
 }
@@ -490,6 +497,7 @@ fn vector_slots(t: &mut Twin) {
         f64::from(p[0] * q[0] + p[1] * q[1] + p[2] * q[2])
     });
     rec(t, 229, 3, move |m, a| {
+        magic_owna::dump(m, 229, a[2], 4);
         let p = v(m, a[2]);
         for i in 0..4u32 {
             let mut s = 0.0f32;
@@ -676,7 +684,7 @@ fn strip_task_0150() {
         });
         let (k1, k2) = (k(&t, 0x182), k(&t, 0x1b6));
         rec(&mut t, 277, 1, |_, a| 0x0277_0000 ^ a[0]);
-        t.stub_st0(277, move |_, _| f64::from(k1));
+        t.stub_st0(277, move |_, _| f64::from(k1) * 2.0);
         rec(&mut t, 15, 1, |_, a| 0x0015_0000 ^ a[0]);
         t.stub_st0(15, move |_, _| f64::from(1.0 / k2));
         rec(&mut t, 210, 2, |m, a| {
@@ -809,5 +817,287 @@ fn strip_task_0150() {
         }
         assert!(hits >= 2, "hits: {hits}");
         assert!(t.u32(magic_owna::row(1001)) >= 8, "the children");
+    }
+}
+
+/// `magic_0150` 0x10006210 and `magic_0603` (`r28::strip_mesh_0150`,
+/// `ecx` = the request): cursors at several alignments, colours in range,
+/// above it (wrapping bytes) and NaN, widths of either sign.
+#[test]
+fn strip_mesh_0150() {
+    for n in [150u16, 603] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(0x6210);
+        vector_slots(&mut t);
+        rec(&mut t, 248, 3, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x248
+        });
+        rec(&mut t, 232, 2, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) * 0.5;
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x232
+        });
+        let c = SCRATCH + 0x100;
+        let (mtx, cols, buf) = (SCRATCH + 0x200, SCRATCH + 0x300, SCRATCH + 0x1000);
+        for (k, (off, wd, col)) in [
+            (0u32, 1.5f32, 0.5f32),
+            (3, -2.0, 0.99),
+            (0x11, 0.25, 1.5),
+            (0x2c, 4.0, f32::NAN),
+            (7, 0.0, -0.25),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            junk(&mut t, buf, 0x300, k);
+            junk(&mut t, c, 0x40, k + 1);
+            t.set_u32(c, buf + off);
+            for i in 0..16u32 {
+                let x = if i % 5 == 0 { 1.0f32 } else { 0.125 * i as f32 };
+                t.set_u32(mtx + 4 * i, x.to_bits());
+            }
+            t.set_u32(c + 0xc, mtx);
+            for (j, o) in [0x14u32, 0x18, 0x1c].into_iter().enumerate() {
+                let at = cols + 0x10 * j as u32;
+                t.set_u32(c + o, at);
+                for i in 0..4u32 {
+                    let x = if i == 1 {
+                        col
+                    } else {
+                        0.2 * (i + j as u32 + k) as f32
+                    };
+                    t.set_u32(at + 4 * i, x.to_bits());
+                }
+            }
+            t.set_u32(c + 0x20, wd.to_bits());
+            for (i, x) in [1.0f32, 2.0, -3.0, 4.5, -1.0, 0.5].into_iter().enumerate() {
+                t.set_u32(c + 0x24 + 4 * i as u32, (x + k as f32).to_bits());
+            }
+            magic_h6::scrub(&mut t);
+            t.check(f, Call::this(c), &[], Eax::Checked, r28::strip_mesh_0150);
+        }
+    }
+}
+
+/// `magic_0150` 0x100069a0 and `magic_0603` (`r28::strip_draw_0150`, cdecl
+/// `(obj)`): the size at 0, negative and NaN (the short way), positive
+/// with slot 773 true and false; the flag word restored each time.
+#[test]
+fn strip_draw_0150() {
+    for n in [150u16, 603] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(0x69a0);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        vector_slots(&mut t);
+        rec(&mut t, 248, 3, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x248
+        });
+        rec(&mut t, 232, 2, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) * 0.5;
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x232
+        });
+        mixer(&mut t, 231, 3, 0, 16);
+        filler(&mut t, 235, 1, 16);
+        let cell = SCRATCH + 0x7f0;
+        // each game call logs the flag word it sees
+        for (s, k) in [(311u32, 1usize), (779, 2), (865, 3), (776, 1), (777, 1)] {
+            rec(&mut t, s, k, move |m, a| {
+                (0x5a5a_0000 + s) ^ a[0] ^ m.r32(cell).rotate_left(8)
+            });
+        }
+        rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+        t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
+        let answer = SCRATCH + 0x7f4;
+        rec(&mut t, 773, 2, move |m, _| m.r32(answer));
+        // the packet calls dump the request and the record
+        for (s, k) in [(819u32, 4usize), (820, 5)] {
+            rec(&mut t, s, k, move |m, a| {
+                magic_owna::dump(m, s, a[2], 16);
+                magic_owna::dump(m, s + 0x100, a[3], 16);
+                (s << 16) ^ m.r32(cell)
+            });
+        }
+        rec(&mut t, 307, 0, |_, _| 0x307);
+        t.stub_st0(307, |m, _| f64::from(m.r32(SCRATCH + 0x7f8) & 0xff) * 0.01);
+        let (obj, strip, data) = (SCRATCH + 0x2000, SCRATCH + 0x2c00, SCRATCH + 0x3000);
+        let (b0, b1) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
+        let (gx, gy) = (SCRATCH + 0x7e0, op(&t, 0x331));
+        for (k, (s, yes)) in [
+            (0.0f32, 0u32),
+            (-1.0, 0),
+            (f32::NAN, 1),
+            (0.75, 1),
+            (1.5, 0),
+            (0.25, 7),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let k = k as u32;
+            junk(&mut t, obj + 0x900, 0x40, k);
+            t.set_u32(obj + 0x930, s.to_bits());
+            t.set_u32(obj + 0x920, strip);
+            t.set_u32(obj + 0x924, b1);
+            t.set_u32(obj + 0x91c, b0);
+            junk(&mut t, b0, 0x100, k + 1);
+            junk(&mut t, b1, 0x100, k + 2);
+            for (i, x) in [0.5f32, -1.0, 2.0, 1.0].into_iter().enumerate() {
+                t.set_u32(b1 + 0xcc + 4 * i as u32, (x + k as f32).to_bits());
+            }
+            // the strip: 8 points of 16 bytes, a window of 5 from `k`
+            junk(&mut t, strip, 0x40, k + 3);
+            t.set_u32(strip + 0x1c, data);
+            t.set_u16(strip + 0x20, 8);
+            t.set_u16(strip + 0x22, 0x10);
+            t.set_u16(strip + 0x26, 5);
+            t.set_u16(strip + 0x28, (k * 3 % 8) as u16);
+            for i in 0..32u32 {
+                t.set_u32(data + 4 * i, (0.25 * i as f32 - 3.0).to_bits());
+            }
+            let p = op(&t, 0x56);
+            t.set_u32(p, cell);
+            t.set_u32(cell, 0x0c0c_0000 + k);
+            t.set_u32(answer, yes);
+            t.set_u32(SCRATCH + 0x7f8, 0x40 + 7 * k);
+            t.set_u32(op(&t, 0x30c), gx);
+            t.set_u32(gx, 0x0e0e_0000 + k);
+            t.set_u32(gy, 0x0f0f_0000 + k);
+            magic_h6::scrub(&mut t);
+            // the request's and the record's never-written words: 0
+            let z = ((magic::STACK_TOP - 0x100 - 4) & !0xf) - 0x1f0;
+            for o in [0x30u32, 0x5c, 0x74] {
+                t.set_u32(z + o, 0);
+            }
+            t.set_u16(z + 0x6a, 0);
+            t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+        }
+        assert!(
+            t.u32(magic_owna::row(820)) >= 1 && t.u32(magic_owna::row(819)) >= 1,
+            "both packets"
+        );
+    }
+}
+
+/// `magic_0150` 0x10004c90 and `magic_0603` (`r28::ribbon_draw_0150`,
+/// `ecx` = the object, `edx` = the strip): windows in one piece and
+/// wrapped into two (the second empty or not), points whose `w` passes the
+/// record limit or not, the `+0x944` matrix or none, slot 773 true and
+/// false, and a buffer whose records stay empty.
+#[test]
+fn ribbon_draw_0150() {
+    for n in [150u16, 603] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(0x4c90);
+        let k = |t: &Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        rec(&mut t, 325, 2, |m, a| {
+            for i in 0..4 {
+                let x = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, x);
+            }
+            0x325
+        });
+        mixer(&mut t, 231, 3, 0, 16);
+        mixer(&mut t, 230, 2, 0, 16);
+        let cell = SCRATCH + 0x7f0;
+        for (s, k) in [(865u32, 3usize), (776, 1), (777, 1)] {
+            rec(&mut t, s, k, move |m, a| {
+                (0x5a5a_0000 + s) ^ a[0] ^ m.r32(cell).rotate_left(8)
+            });
+        }
+        rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+        t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
+        let answer = SCRATCH + 0x7f4;
+        rec(&mut t, 773, 2, move |m, _| m.r32(answer));
+        for (s, k) in [(819u32, 4usize), (820, 5)] {
+            rec(&mut t, s, k, move |m, a| {
+                magic_owna::dump(m, s, a[2], 16);
+                magic_owna::dump(m, s + 0x100, a[3], 16);
+                (s << 16) ^ m.r32(cell)
+            });
+        }
+        let top = k(&t, 0x531);
+        let (obj, strip, data) = (SCRATCH + 0x2000, SCRATCH + 0x2c00, SCRATCH + 0x3000);
+        let (b0, b1) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
+        // (window, start, matrix flag, 773, the `w`s pass the limit (bits))
+        let cases: [(u16, u16, u32, u32, u32); 6] = [
+            (5, 0, 0, 1, 0),
+            (5, 6, 1, 0, 0b0101_0101),
+            (8, 3, 1, 1, 0b1000_0001),
+            (6, 2, 0, 0, 0),
+            (3, 6, 0, 1, 0xff),
+            (4, 5, 1, 0, 0b10),
+        ];
+        for (kk, (window, start, mflag, yes, high)) in (0u32..).zip(cases) {
+            junk(&mut t, obj + 0x900, 0x60, kk);
+            t.set_u32(obj + 0x920, strip);
+            t.set_u32(obj + 0x924, b1);
+            t.set_u32(obj + 0x91c, b0);
+            t.set_u32(obj + 0x934, (0.5 + 0.25 * kk as f32).to_bits());
+            t.set_u32(obj + 0x944, mflag);
+            junk(&mut t, b0, 0x100, kk + 1);
+            junk(&mut t, b1, 0x100, kk + 2);
+            junk(&mut t, strip, 0x40, kk + 3);
+            t.set_u32(strip + 0x1c, data);
+            t.set_u16(strip + 0x20, 8);
+            t.set_u16(strip + 0x22, 0x10);
+            t.set_u16(strip + 0x26, window);
+            t.set_u16(strip + 0x28, start);
+            for i in 0..8u32 {
+                let p = data + 0x10 * i;
+                let x = (i * i) as f32 * 0.5 - kk as f32;
+                for (j, v) in [x, 1.0 + 0.25 * i as f32, 2.0 - 0.75 * i as f32]
+                    .into_iter()
+                    .enumerate()
+                {
+                    t.set_u32(p + 4 * j as u32, v.to_bits());
+                }
+                let w = if (high >> i) & 1 != 0 {
+                    top + 1.0
+                } else {
+                    top - 0.5 * i as f32
+                };
+                t.set_u32(p + 0xc, w.to_bits());
+            }
+            let pf = op(&t, 0xad9);
+            t.set_u32(pf, cell);
+            t.set_u32(cell, 0x0c0c_0000 + kk);
+            t.set_u32(answer, yes);
+            let gx = SCRATCH + 0x7e0;
+            t.set_u32(op(&t, 0x9b6), gx);
+            t.set_u32(gx, 0x0e0e_0000 + kk);
+            let gy = op(&t, 0xaae);
+            t.set_u32(gy, 0x0f0f_0000 + kk);
+            magic_h6::scrub(&mut t);
+            let z = ((magic::STACK_TOP - 0x100 - 4) & !0xf) - 0x240;
+            for o in [0x50u32, 0x54, 0x58, 0x74] {
+                t.set_u32(z + o, 0);
+            }
+            t.write(z + 0x69, &[0; 3]);
+            let c = Call {
+                ecx: obj,
+                edx: strip,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, r28::ribbon_draw_0150);
+        }
+        assert!(
+            t.u32(magic_owna::row(820)) >= 1 && t.u32(magic_owna::row(819)) >= 1,
+            "both packets"
+        );
     }
 }
