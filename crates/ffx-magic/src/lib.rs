@@ -3005,6 +3005,10 @@ ports! {
     "r23 host start end 0598" => r23::HOST_START_END_0598, r23::host_start_end_0598;
     "r23 turn 0598" => r23::TURN_0598, r23::turn_0598;
     "r23 objects start 0598" => r23::OBJECTS_START_0598, r23::objects_start_0598;
+    "r23 thunk visit draw 0514" => r23::THUNK_VISIT_DRAW_0514, r23::thunk_visit_draw_0514;
+    "r23 cue start 0600" => r23::CUE_START_0600, r23::cue_start_0600;
+    "r23 task 0600" => r23::TASK_0600, r23::task_0600;
+    "r23 load 0568" => r23::LOAD_0568, r23::load_0568;
     // round 23 (magic-r23): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3616,6 +3620,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 23 (magic-r23)
     ("r23 place pair 0598", &r23::PLACE_PAIR_0598),
     ("r23 effect end 0598", &r23::EFFECT_END_0598),
+    ("r23 visit draw 0514", &r23::VISIT_DRAW_0514),
+    ("r23 place pair 0600", &r23::PLACE_PAIR_0600),
+    ("r23 start 0600", &r23::START_0600),
+    ("r23 effect end 0600", &r23::EFFECT_END_0600),
+    ("r23 place 0568", &r23::PLACE_0568),
+    ("r23 start-up 0568", &r23::START_UP_0568),
     // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
