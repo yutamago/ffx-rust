@@ -1036,6 +1036,9 @@ pub fn summon_task_0478<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.write::<u32>(r + 4, w(0x542));
                 g.write::<u32>(w(0x548), w(0x54c));
                 crate::s3_misc::colour_node(g, img, &at(0x551, r, fr.edx));
+                // `and [G_N + 0xac], ~1`: the colour node has just set that
+                // word to 1, so it is always 0 here (r23: why a mutant of
+                // this read survives)
                 let fl = g.read::<u32>(w(0x56a)) & !1;
                 g.write::<u32>(w(0x56a), fl);
                 fades_0478(

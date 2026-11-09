@@ -596,6 +596,32 @@ fn stores<G: Game>(g: &mut G, img: &Image, f: u32, at: &[u32]) {
 /// two task nodes (kinds 1 and 2) appended to the task list, the records
 /// set up ([`crate::sa_misc::records_init_400`]) between them. Returns 0.
 pub fn start2<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start2_with(
+        g,
+        img,
+        fr,
+        |g, img, at, esp| {
+            let buf = g.read::<u32>(esp + 4);
+            part_init(g, img, at, buf);
+        },
+        |g, img, at, esp| {
+            place_pair(g, img, at, esp);
+        },
+    )
+}
+
+/// [`start2`] with the part set-up (`+0x4c`) and the placement (`+0x51`)
+/// given (each gets its address and the `esp` at its call, the return
+/// address there): `magic_0598`'s copy calls
+/// [`part_setup`](crate::sb_misc::part_setup) and its own placement
+/// ([`place_pair_0598`](crate::r23::place_pair_0598)).
+pub(crate) fn start2_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    part: impl FnOnce(&mut G, &Image, u32, u32),
+    place: impl FnOnce(&mut G, &Image, u32, u32),
+) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     stores(g, img, f, &[0x14, 0x1e, 0x28, 0x32]);
@@ -607,11 +633,11 @@ pub fn start2<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let esp = fr.esp.wrapping_sub(0xc);
     g.write::<u32>(esp + 8, 0);
     g.write::<u32>(esp + 4, w(0x47));
-    part_init(g, img, img.rel32_target(f + 0x4c), w(0x47));
+    part(g, img, img.rel32_target(f + 0x4c), esp);
     // the part set-up's frame leaves `BUF` in the word the placement
     // reads without writing (its `ebp - 0x18`)
     g.write::<u32>(esp.wrapping_sub(0x1c), w(0x47));
-    place_pair(g, img, img.rel32_target(f + 0x51), esp);
+    place(g, img, img.rel32_target(f + 0x51), esp);
     let callee = Frame {
         at: img.rel32_target(f + 0x56),
         esp,

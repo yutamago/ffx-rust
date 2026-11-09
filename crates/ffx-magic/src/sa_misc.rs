@@ -477,7 +477,7 @@ pub fn host_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 
 /// The calls of [`host_start`] (`f` its address); whether slot 549
 /// answered non-zero (slot 550 then ran).
-fn host_start_calls<G: Game>(g: &mut G, img: &Image, f: u32) -> bool {
+pub(crate) fn host_start_calls<G: Game>(g: &mut G, img: &Image, f: u32) -> bool {
     let w = |off: u32| img.word(f + off);
     let one = 0x3f80_0000;
     let (a, b, c) = (w(0x06), w(0x18), w(0x2a));
