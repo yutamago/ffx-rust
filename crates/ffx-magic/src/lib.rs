@@ -3013,6 +3013,13 @@ ports! {
     "r27 motion task 0609" => r27::MOTION_TASK_0609, r27::motion_task_0609;
     "r27 load 0586" => r27::LOAD_0586, r27::load_0586;
     "r27 trails task 0587" => r27::TRAILS_TASK_0587, r27::trails_task_0587;
+    "r27 light task 0649" => r27::LIGHT_TASK_0649, r27::light_task_0649;
+    "r27 point object 0586" => r27::POINT_OBJECT_0586, r27::point_object_0586;
+    "r27 point object 0162" => r27::POINT_OBJECT_0162, r27::point_object_0586;
+    "r27 glow effects 0586" => r27::GLOW_EFFECTS_0586, r27::glow_effects_0586;
+    "r27 glow effects 0162" => r27::GLOW_EFFECTS_0162, r27::glow_effects_0586;
+    "r27 models place 0586" => r27::MODELS_PLACE_0586, r27::models_place_0586;
+    "r27 models place 0162" => r27::MODELS_PLACE_0162, r27::models_place_0586;
     // round 27 (magic-r27): end
     // round 25 (magic-r25)
     "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
