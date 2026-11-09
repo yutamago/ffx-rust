@@ -914,6 +914,41 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             zero_k: 0x1e4,
             m1_both: false,
         }
+    } else if img.word(f + 0x344) as u8 == 0xf3 && disp8(img, f + 0x349) == 0x18 {
+        // `magic_0543` 0x10004d20 (1520 bytes, `r26::TRAIL_DRAW_0543`):
+        // `0644`'s code with its locals elsewhere (`movss [esp + 0x18],
+        // xmm1` at +0x344) and the sprites linked as parts; its `eax` is
+        // the last call's, as in `0644`
+        TrailOps {
+            acc: 0x18,
+            seg: 0x1c,
+            idx: 0x20,
+            seed: 0x24,
+            left: 0x28,
+            p: 0x50,
+            d: 0x40,
+            scale: 0x14,
+            k1: 0x367,
+            k2: 0x461,
+            k3: 0x469,
+            k4: 0x4d0,
+            alpha: 0x529,
+            rec: 0x5af,
+            call: 0x5b6,
+            link: true,
+            frame: 0x170,
+            m1: 0xe8,
+            m2: 0x128,
+            m4: Some(0xa8),
+            globals: (0x57, 0x63),
+            ring: 0xb2,
+            left_init: 0xc8,
+            anim: 0xd9,
+            seed_ops: (0x21a, 0x220, 0x223),
+            colour: [0x248, 0x274, 0x2a0, 0x2cf],
+            zero_k: 0x1f9,
+            m1_both: true,
+        }
     } else if img.word(f + 0x344) as u8 == 0xf3 {
         // `magic_0644` 0x1000acd0: `movss [esp + 0x14], xmm1` at +0x344
         TrailOps {
@@ -1227,7 +1262,10 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                         entry,
                         &[w(ops.rec), g.read::<u32>(at(0x10))],
                     );
-                    crate::sa_misc::link_part(g, img, &callee);
+                    let r = crate::sa_misc::link_part(g, img, &callee);
+                    if ops.m1_both {
+                        eax = r;
+                    }
                 } else {
                     g.write::<u32>(esp.wrapping_add(4), w(ops.rec));
                     eax = crate::sb_misc::draw_frame(g, img, callee_at, esp, o, entry);

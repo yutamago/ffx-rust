@@ -1788,3 +1788,58 @@ pub const ACTOR_MATRIX_0430: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`trail_draw`](crate::o6_fam_pairs6::trail_draw) in `magic_0543`
+/// (0x10004d20, 1520 bytes: `magic_0644`'s code with its own frame
+/// layout, linking each sprite as a part; the `rel32`s: the animation
+/// step, the root, the part link, `__security_check_cookie`).
+pub const TRAIL_DRAW_0543: Sig = Sig {
+    len: 1520,
+    hash: 0x1377_1308_0dbd_6dec,
+    calls: &[
+        (0xd9, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x1c2, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x5b6, Callee::Sig(&crate::sa_misc::LINK_PART)),
+        (0x5e8, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_head`](crate::s9_misc::trail_head) in `magic_0543`
+/// (0x10001e80, 395 bytes: `magic_0446`'s code, its trail draw
+/// [`TRAIL_DRAW_0543`]).
+pub const TRAIL_HEAD_0543: Sig = Sig {
+    len: 395,
+    hash: 0x7ccd_415a_28c9_5e5d,
+    calls: &[
+        (0xbe, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xcb, Callee::Any),
+        (0xea, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0xf4, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0xfe, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (0x173, Callee::Sig(&TRAIL_DRAW_0543)),
+        (0x183, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`trail_task`](crate::o6_fam_pairs6::trail_task) in `magic_0543`
+/// (0x10002250, 633 bytes: `r24::TRAIL_TASK_0446`'s code with 0543's
+/// light set-up and trail draw).
+pub const TRAIL_TASK_0543: Sig = Sig {
+    len: 633,
+    hash: 0xb4fb_fde7_2d07_d968,
+    calls: &[
+        (0xf9, Callee::Sig(&crate::s4_fam446::SPARKS_D)),
+        (0x103, Callee::Sig(&crate::s4_fam446::SPARKS_C)),
+        (0x10d, Callee::Sig(&crate::s4_fam446::SPARKS_A)),
+        (0x120, Callee::Sig(&crate::r24::LIGHT_SETUP_0543)),
+        (0x174, Callee::Sig(&crate::s4_fam446::START_CHILD_A)),
+        (0x18c, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x1c5, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x1d2, Callee::Any),
+        (0x261, Callee::Sig(&TRAIL_DRAW_0543)),
+        (0x271, Callee::Any),
+    ],
+    imports: &[],
+};
