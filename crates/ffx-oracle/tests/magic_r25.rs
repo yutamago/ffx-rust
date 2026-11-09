@@ -1151,3 +1151,126 @@ fn summon_task_0603() {
     }
     assert!(t.u32(ownb::LOG) > 0x40, "the task's calls");
 }
+
+/// `magic_0603` 0x1000ccf0 (`r25::start_up_0603`): every model id way
+/// (4203, 4209 with slot 535 answering 0, 2 and 1, 4232, 4233, 4236 and
+/// another), the static list empty and not, the bone node stopping at
+/// once.
+#[test]
+fn start_up_0603() {
+    let Some(mut t) = twin(603) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xccf0);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    for (s, x) in [
+        (15u32, 0.5f64),
+        (16, 0.75),
+        (17, 1.5),
+        (277, 2.0),
+        (289, -0.5),
+        (333, -0.75),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.375);
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 + 0x11 * i);
+        }
+        0x558
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 1.75);
+        0x601
+    });
+    for (s, n) in [(232u32, 2usize), (531, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                wf(m, a[0] + 4 * i, 0.5 * i as f32 - 1.25 + (s & 3) as f32);
+            }
+            s
+        });
+    }
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[2] + 4 * i);
+            fold(m, 248, i, x);
+        }
+        0x248
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+            fold(m, 234, i, x);
+        }
+        0x234
+    });
+    let ids = SCRATCH + 0x7c0;
+    rec(&mut t, 390, 1, move |m, _| m.r32(ids));
+    rec(&mut t, 535, 1, move |m, _| m.r32(ids + 4));
+    let lock = SCRATCH + 0x7d0;
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        fold(m, 711, 0, l);
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
+    for (s, n) in [
+        (803u32, 2usize),
+        (217, 2),
+        (215, 1),
+        (262, 4),
+        (718, 1),
+        (710, 4),
+        (222, 4),
+        (221, 4),
+        (551, 3),
+        (10, 2),
+        (325, 2),
+        (684, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    let list = op(&t, 0x1c0);
+    let old = SCRATCH + 0x800;
+    let bone = op(&t, 0x5b3);
+    let pass = op(&t, 0x55d);
+    // (model id, slot 535's answer)
+    let cases: [(u32, u32); 9] = [
+        (4203, 0),
+        (4209, 0),
+        (4209, 2),
+        (4209, 1),
+        (4232, 0),
+        (4233, 0),
+        (4236, 0),
+        (4300, 0),
+        (4100, 0),
+    ];
+    for (k, (id, ans)) in (0u32..).zip(cases) {
+        t.set_u32(ids, id);
+        t.set_u32(ids + 4, ans);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(op(&t, 0xa86), lock);
+        junk(&mut t, list, 0x20, k + 2);
+        t.set_u32(list + 0x10, if k % 2 == 0 { list } else { old });
+        t.set_u16(list + 0x18, 0x0305);
+        t.write(old, &[0x6c; 0x40]);
+        // the bone node's walk stops at once (the start-up sets its pass
+        // halfword to 0xff)
+        t.set_u8(pass, 0xff);
+        t.set_u8(bone + 0x1a, 0x30 + k as u8);
+        junk_ops(&mut t, f, &[0x5b, 0x781, 0x8c7, 0x75a, 0x97f, 0x8fc]);
+        t.set_u32(op(&t, 0x781), (2.5 + k as f32).to_bits());
+        for o in [0x97fu32, 0x8fc] {
+            t.set_u32(op(&t, o), (1.5 * k as f32).to_bits());
+        }
+        ownb::dirty_stack(&mut t, 0xccf0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the start-up's calls");
+}
