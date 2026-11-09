@@ -79,6 +79,7 @@ pub mod r27;
 pub mod r28;
 pub mod r29;
 pub mod r30;
+pub mod r31;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3218,6 +3219,21 @@ ports! {
     "r30 spin states 0307" => r30::SPIN_STATES_0307, r30::spin_states_0307;
     "r30 model node 0424" => r30::MODEL_NODE_0424, r30::model_node_0424;
     // round 30 (magic-r30): end
+    // round 31 (magic-r31)
+    "r31 spin pieces 0605" => r31::SPIN_PIECES_0605, r31::spin_pieces_0605;
+    "r31 spin pieces 0307" => r31::SPIN_PIECES_0307, r31::spin_pieces_0605;
+    "r31 spin start 0605" => r31::SPIN_START_0605, r31::spin_start_0605;
+    "r31 spin actors 0605" => r31::SPIN_ACTORS_0605, r31::spin_actors_0605;
+    "r31 sparks 0605" => r31::SPARKS_0605, r31::sparks_0605;
+    "r31 thunk: visit 0577" => sl_wrap::JMP_VISIT_0577, sl_wrap::ecx_jmp;
+    "r31 thunk: light visit 0577" => sl_wrap::JMP_LIGHT_VISIT_0577, sl_wrap::ecx_jmp;
+    "r31 motion task 0577" => r31::MOTION_TASK_0577, r31::motion_task_0577;
+    "r31 thunk: aim visit 0512" => sl_wrap::JMP_AIM_VISIT_0512, sl_wrap::ecx_jmp;
+    "r31 screen task 0601" => r31::SCREEN_TASK_0601, r31::screen_task_0601;
+    "r31 summon task 0601" => r31::SUMMON_TASK_0601, r31::summon_task_0601;
+    "r31 start-up 0601" => r31::START_UP_0601, r31::start_up_0601;
+    "r31 summon task 0613" => r31::SUMMON_TASK_0613, r31::summon_task_0613;
+    // round 31 (magic-r31): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3929,6 +3945,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r30 start-up 0165", &r30::START_UP_0165),
     ("r30 spin step 0307", &r30::SPIN_STEP_0307),
     // round 30 (magic-r30): end of INTERNAL
+    // round 31 (magic-r31)
+    ("r31 visit 0577", &r31::VISIT_0577),
+    ("r31 light visit 0577", &r31::LIGHT_VISIT_0577),
+    ("r31 aim visit 0512", &r31::AIM_VISIT_0512),
+    ("r31 matrix product 0512", &r31::MATRIX_PRODUCT_0512),
+    ("r31 object set-up 0512", &r31::OBJECT_SETUP_0512),
+    ("r31 screen set-up 0601", &r31::SCREEN_SETUP_0601),
+    ("r31 summon set-up 0613", &r31::SUMMON_SETUP_0613),
+    ("r31 summon set-up 0609", &r31::SUMMON_SETUP_0609),
+    // round 31 (magic-r31): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

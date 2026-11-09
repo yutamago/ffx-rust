@@ -14,7 +14,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 14] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 17] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
         (&m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit::<G>),
@@ -44,6 +44,12 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 14] {
             &crate::r29::TWO_PART_VISIT_0609,
             crate::r29::two_part_visit_0609::<G>,
         ),
+        (&crate::r31::VISIT_0577, crate::r31::visit_0577::<G>),
+        (
+            &crate::r31::LIGHT_VISIT_0577,
+            crate::r31::light_visit_0577::<G>,
+        ),
+        (&crate::r31::AIM_VISIT_0512, crate::r31::aim_visit_0512::<G>),
     ]
 }
 
@@ -109,4 +115,13 @@ thunks! {
     /// `magic_0609` 0x10001370 over [`crate::r29::two_part_visit_0609`]
     /// (agent magic-r29).
     JMP_TWO_PART_VISIT_0609 => crate::r29::TWO_PART_VISIT_0609;
+    /// `magic_0577` 0x100025e0 over [`crate::r31::visit_0577`] (agent
+    /// magic-r31).
+    JMP_VISIT_0577 => crate::r31::VISIT_0577;
+    /// `magic_0577` 0x10003de0 over [`crate::r31::light_visit_0577`]
+    /// (agent magic-r31).
+    JMP_LIGHT_VISIT_0577 => crate::r31::LIGHT_VISIT_0577;
+    /// `magic_0512` 0x10003b50 over [`crate::r31::aim_visit_0512`] (agent
+    /// magic-r31).
+    JMP_AIM_VISIT_0512 => crate::r31::AIM_VISIT_0512;
 }

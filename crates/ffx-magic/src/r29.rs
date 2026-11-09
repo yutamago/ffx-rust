@@ -6,6 +6,7 @@ use crate::ob_model::st0_f32;
 use crate::pushes::Pushes;
 use crate::r27::{ThreeObj, ThreeObjects, Turn};
 use crate::runtime::slot_target;
+use crate::sa_misc::child_of_0512;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 const ONE: u32 = 0x3f80_0000;
@@ -2266,37 +2267,6 @@ pub const START_UP_0577: Sig = Sig {
     ],
     imports: &[],
 };
-
-/// A node of `magic_0512`'s object put as a child of the parent `P`: the
-/// pass halfword 0xff, its own child list, `P` as parent and list (the
-/// operands `p1`, `p2`), after `P`'s last child (read through `l1`, `l2`;
-/// `P` itself (`cmp`) makes it the first (`first`)), the count `count` up,
-/// the last child's store `lw`.
-fn child_of_0512<G: Game>(
-    g: &mut G,
-    img: &Image,
-    f: u32,
-    c: u32,
-    [p1, p2, l1, l2, cmp, first, count, lw]: [u32; 8],
-) {
-    let w = |o: u32| img.word(f + o);
-    g.write::<u16>(c + 0x1a, 0xff);
-    g.write::<u32>(c + 0x10, c);
-    g.write::<u32>(c + 0xc, c);
-    g.write::<u32>(c + 0x14, w(p1));
-    g.write::<u32>(c + 4, w(p2));
-    let l = g.read::<u32>(w(l1));
-    g.write::<u32>(c + 8, l);
-    let l = g.read::<u32>(w(l2));
-    if l == w(cmp) {
-        g.write::<u32>(w(first), c);
-    } else {
-        g.write::<u32>(l + 4, c);
-    }
-    let n = g.read::<u16>(w(count)).wrapping_add(1);
-    g.write::<u16>(w(count), n);
-    g.write::<u32>(w(lw), c);
-}
 
 /// `magic_0512`'s "between" object set up (0x10008cc0, 768 bytes;
 /// internal: `ecx` = the object `O`, `edx` = the actor's object `X`, the
