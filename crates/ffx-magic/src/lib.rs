@@ -3013,6 +3013,7 @@ ports! {
     "r23 objects start 0568" => r23::OBJECTS_START_0568, r23::objects_start_0568;
     "r23 objects start 2 0568" => r23::OBJECTS_START2_0568, r23::objects_start2_0568;
     "r23 load 0612" => r23::LOAD_0612, r23::load_0612;
+    "r23 thunk bone 0573" => r23::THUNK_BONE_0573, r23::thunk_bone_0573;
     // round 23 (magic-r23): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3637,6 +3638,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r23 start-up 0612", &r23::START_UP_0612),
     ("r23 summon set-up 0603", &r23::SUMMON_SETUP_0603),
     ("r23 summon set-up 0573", &r23::SUMMON_SETUP_0573),
+    ("r23 bone 0573", &r23::BONE_0573),
     // round 23 (magic-r23): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

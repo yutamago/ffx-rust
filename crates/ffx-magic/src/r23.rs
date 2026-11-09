@@ -2798,3 +2798,183 @@ pub const SUMMON_SETUP_0573: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A ring walked with a cursor in the caller's frame (`cursor`: the
+/// object, byte `+5` the pass): the object's handler `[[obj] + 0x1c]`,
+/// cdecl `(cursor)`, `ecx` the cursor, with `under` the words the
+/// original's frame already holds above it. Returns those words with the
+/// cursor pushed.
+fn visit_with<G: Game>(
+    g: &mut G,
+    cursor: u32,
+    obj: u32,
+    pass: u8,
+    mut under: Vec<u32>,
+) -> Vec<u32> {
+    g.write::<u32>(cursor, obj);
+    g.write::<u8>(cursor + 5, pass);
+    let handler = g.read::<u32>(g.read::<u32>(obj) + 0x1c);
+    under.insert(0, cursor);
+    // call width: 3 (the earlier calls' words stay on the stack)
+    g.call(handler, cursor, &under);
+    under
+}
+
+/// `magic_0573`'s bone update (0x100037a0, 1016 bytes; internal, `ecx` =
+/// the cursor, called by [`thunk_bone_0573`] and the DLL's own code; a
+/// cookie frame, `ebp = E - 4`: cursors at `ebp - 0xb4`, `- 0xbc`, `-
+/// 0xa4`, the matrix `M` at `ebp - 0x98`, the vector `V` at `ebp - 0x14`,
+/// the matrix `L` at `ebp - 0x58`). The node `n`, its parent `p = n +
+/// 0x128` (read first). The walk (its `eax` the cookie `__security_cookie
+/// ^ ebp`); when the cursor moved: the rings of `n + 0x140`, `+0x144` and
+/// the parent (when there is one) visited; the DLL's function table (by
+/// `n + 0x148`, `ecx` the index) turns `M` towards the target `n[0x144] +
+/// 0x1c`; slot 231 `(n + 0x5c, n + 0x150, M)`; slot 233 interpolates `V`
+/// towards the `+0x140` object by its rate times `n + 0x1a4`, and the
+/// node's three vectors by `V`; slot 325 `(n + 0x4c, n + 0x190)`; slots
+/// 668, 231, 231, 229 compose the node's matrices with the parent's; `n +
+/// 0xcc..` += the parent's. With the byte `n + 0x149` set: `n + 0x1a4` =
+/// `n + 0x1a8`, the new parent `q = n + 0x14c` visited, slot 327 `(M, q +
+/// 0x9c)`, `L` = slot 231 `(L, p + 0xdc, n + 0x150)` then `(L, L, M)`, its
+/// rows normalised into `n + 0x150..` (slot 232), slot 229 `(n + 0x190, M,
+/// n + 0xcc)`, slot 233 `(n + 0x190, n + 0x190, n + 0x1a4)`, `n + 0x19c`
+/// 1.0, the parent `q` and the byte 0. Then the node's object shown
+/// ([`show`](crate::m0573::show) of `n + 0x1ac`). Returns its `eax`, or
+/// the walk's.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn bone_0573<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -> u32 {
+    use crate::sb_sse::{add, mul};
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = esp.wrapping_sub(4);
+    let l = |off: u32| ebp.wrapping_sub(off);
+    let n = g.read::<u32>(this);
+    let p = g.read::<u32>(n + 0x128);
+    g.write::<u32>(l(0xac), this);
+    g.write::<u32>(l(0xa8), n);
+    g.write::<u32>(l(0x9c), p);
+    let cookie = g.read::<u32>(w(0xa)) ^ ebp;
+    let (eax, moved) = crate::nodes::walk(g, this, this, cookie);
+    if moved.is_none() {
+        return eax;
+    }
+    let pass = |g: &G| g.read::<u8>(this + 5);
+    let mut under = Vec::new();
+    for (cur, off) in [(l(0xb4), 0x140u32), (l(0xbc), 0x144)] {
+        let obj = g.read::<u32>(n + off);
+        let ps = pass(g);
+        under = visit_with(g, cur, obj, ps, under);
+    }
+    if p != 0 {
+        let ps = pass(g);
+        visit_with(g, l(0xa4), p, ps, Vec::new());
+    }
+    let m = l(0x98);
+    let target = g.read::<u32>(n + 0x144).wrapping_add(0x1c);
+    let which = g.read::<u8>(n + 0x148);
+    let func = g.read::<u32>(w(0x103).wrapping_add(4 * u32::from(which)));
+    g.call(func, u32::from(which), &[m, target]);
+    // call width: 5 (the table call's words stay on the stack)
+    g.call(t(g, 0x118, 231), 0, &[n + 0x5c, n + 0x150, m, m, target]);
+    let src = g.read::<u32>(n + 0x140);
+    let rate = mul(g.read::<f32>(src + 0x28), g.read::<f32>(n + 0x1a4));
+    let v = l(0x14);
+    g.call(t(g, 0x14c, 233), 0, &[v, src + 0x1c, rate.to_bits()]);
+    for (i, (a, b, op)) in [
+        (0x1cu32, 0x5cu32, 0x15eu32),
+        (0x2c, 0x6c, 0x18d),
+        (0x3c, 0x7c, 0x1af),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = g.read::<u32>(v + 4 * i as u32);
+        g.call(t(g, op, 233), 0, &[n + a, n + b, x]);
+    }
+    let x = g.read::<u32>(v + 8);
+    // (the last slot 233's words stay under it)
+    let mut st = vec![n + 0x4c, n + 0x190, n + 0x3c, n + 0x7c, x];
+    g.call(t(g, 0x1c3, 325), 0, &st);
+    let src = g.read::<u32>(n + 0x140).wrapping_add(0x1c);
+    for (words, op, slot) in [
+        ([n + 0x12c, p + 0x12c, src], 0x1f7u32, 668u32),
+        ([n + 0xdc, p + 0xdc, n + 0x5c], 0x21e, 231),
+        ([n + 0x9c, p + 0x9c, n + 0x1c], 0x240, 231),
+        ([n + 0xcc, p + 0xdc, n + 0x4c], 0x255, 229),
+    ] {
+        st.splice(0..0, words);
+        st.truncate(12);
+        // call width: 12 (the earlier calls' words stay on the stack)
+        g.call(t(g, op, slot), 0, &st);
+    }
+    let c = n + 0xcc;
+    // addss: the first operand's NaN wins, so the order is kept
+    let x0 = add(g.read::<f32>(c), g.read::<f32>(p + 0xcc));
+    g.write::<f32>(c, x0);
+    for i in [4u32, 8] {
+        let x = add(g.read::<f32>(p + 0xcc + i), g.read::<f32>(c + i));
+        g.write::<f32>(c + i, x);
+    }
+    if g.read::<u8>(n + 0x149) != 0 {
+        let s = g.read::<u32>(n + 0x1a8);
+        g.write::<u32>(n + 0x1a4, s);
+        let q = g.read::<u32>(n + 0x14c);
+        let ps = g.read::<u8>(g.read::<u32>(l(0xac)) + 5);
+        let mut st = visit_with(g, l(0xa4), q, ps, Vec::new());
+        let lm = l(0x58);
+        let q = g.read::<u32>(n + 0x14c);
+        for (words, op, slot) in [
+            (vec![m, q + 0x9c], 0x2f5u32, 327u32),
+            (vec![lm, p + 0xdc, n + 0x150], 0x314, 231),
+            (vec![lm, lm, m], 0x32d, 231),
+            (vec![n + 0x150, lm], 0x33e, 232),
+            (vec![n + 0x160, l(0x48)], 0x357, 232),
+            (vec![n + 0x170, l(0x38)], 0x36f, 232),
+            (vec![n + 0x190, m, n + 0xcc], 0x38a, 229),
+        ] {
+            st.splice(0..0, words);
+            st.truncate(12);
+            // call width: 12 (the earlier calls' words stay on the stack)
+            g.call(t(g, op, slot), 0, &st);
+        }
+        let s = g.read::<u32>(n + 0x1a4);
+        g.call(t(g, 0x3a6, 233), 0, &[n + 0x190, n + 0x190, s]);
+        g.write::<u32>(n + 0x19c, ONE);
+        let q = g.read::<u32>(n + 0x14c);
+        g.write::<u32>(n + 0x128, q);
+        g.write::<u8>(n + 0x149, 0);
+    }
+    let obj = g.read::<u32>(n + 0x1ac);
+    crate::m0573::show(g, img, img.rel32_target(f + 0x3e3), obj)
+}
+
+/// [`bone_0573`] (1,016 bytes, 1 overlay).
+pub const BONE_0573: Sig = Sig {
+    len: 1016,
+    hash: 0xdcf7_d8a7_6df0_eaba,
+    calls: &[
+        (0x3e3, Callee::Sig(&crate::m0573::SHOW)),
+        // __security_check_cookie
+        (0x3f0, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The thunk over [`bone_0573`] (0x10003ba0, 15 bytes; a vtable's `+0x1c`
+/// method, cdecl `(cursor)`; `push ecx` then the call: the target's
+/// return address at `E - 0xc`).
+pub fn thunk_bone_0573<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let cursor = fr.arg(g, 0);
+    let esp = fr.esp.wrapping_sub(0xc);
+    // push ebp; push ecx: the entry's `ecx` in the thunk's frame
+    g.write::<u32>(fr.esp.wrapping_sub(8), fr.ecx);
+    Ret::eax(bone_0573(g, img, img.rel32_target(fr.at + 8), esp, cursor))
+}
+
+/// [`thunk_bone_0573`] (15 bytes, 1 overlay).
+pub const THUNK_BONE_0573: Sig = Sig {
+    len: 15,
+    hash: 0xd192_63e1_ae73_f895,
+    calls: &[(8, Callee::Sig(&BONE_0573))],
+    imports: &[],
+};
