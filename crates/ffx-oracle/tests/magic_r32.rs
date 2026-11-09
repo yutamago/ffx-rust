@@ -1359,6 +1359,13 @@ fn steps_0055_0067() {
             magic_r11::pools(&mut t, f, 547);
             magic_r11::pools(&mut t, path, len);
             magic_r11::pools(&mut t, ts, 180);
+            // junk in the globals the steps store to (the second count and
+            // `*G_D` among them: set after)
+            junk_ops(
+                &mut t,
+                f,
+                &[0x2b, 0x37, 0x6b, 0x11e, 0x12d, 0x137, 0x190, 0x1d6],
+            );
             t.set_u32(w(&t, 0x5), c1.cast_unsigned());
             t.set_u32(w(&t, 0x197), c2.cast_unsigned());
             t.set_u32(w(&t, 0x1a9), flag);
@@ -1380,11 +1387,6 @@ fn steps_0055_0067() {
                     t.set_u32(at + 4 * i, 3 + 2 * i);
                 }
             }
-            junk_ops(
-                &mut t,
-                f,
-                &[0x2b, 0x37, 0x6b, 0x11e, 0x12d, 0x137, 0x190, 0x1d6],
-            );
             // the two scripts: done or waiting
             for (o, done) in [(0x1dfu32, r1), (0x1e9, 1)] {
                 let s = w(&t, o);
@@ -1420,5 +1422,89 @@ fn steps_0055_0067() {
             ownb::dirty_stack(&mut t, rva + k, &[]);
             t.check_entry(f, Call::default(), &[nd], Eax::Checked);
         }
+    }
+}
+
+/// `magic_0165` 0x100017a0 (`r30::place_0165`) with the scene point's
+/// index above 0 (r30's two open test gaps on the selection byte at that
+/// index): the scene first in the scene point's list and not 0x18b0046, three
+/// selected actors, slot 390 answering 0x1084 for the second or third
+/// one only, the selection bytes no identity and their neighbours varied.
+#[test]
+fn place_0165_scene_index() {
+    let Some(mut t) = twin(165) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x17a0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x20), s);
+    let sparks = t.img.rel32_target(f + 0x214);
+    t.set_u32(t.img.word(sparks + 0x1b), s);
+    let sp = t.img.rel32_target(f + 0x1b3);
+    let sel = SCRATCH + 0x180;
+    t.write(sel - 8, &[0x21, 0x13, 0x35, 0x07, 0x2c, 0x19, 0x0e, 0x31]);
+    t.write(sel, &[6, 3, 1, 7, 2, 5, 4, 0]);
+    for op in [0x1dcu32, 0x22f] {
+        t.set_u32(w(&t, op), sel);
+    }
+    for op in [0x5du32, 0x87, 0xdb] {
+        let at = t.img.word(sp + op);
+        t.set_u32(at, sel);
+    }
+    let n_at = t.img.word(sp + 0x4a);
+    t.set_u32(n_at, 3);
+    let scene = SCRATCH + 0x7e0;
+    let rot = SCRATCH + 0x7e4;
+    let hit = SCRATCH + 0x7e8;
+    rec(&mut t, 520, 0, move |m, _| m.r32(scene));
+    rec(&mut t, 390, 1, move |m, a| {
+        if a[0] == m.r32(hit) {
+            0x1084
+        } else {
+            0x0390_0000 ^ a[0]
+        }
+    });
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            wf(
+                m,
+                a[1 + i as usize],
+                (a[0] & 0xff) as f32 * 0.5 + i as f32 - 1.0,
+            );
+        }
+        0x262
+    });
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(333, move |m, _| f64::from(rf(m, rot)));
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25 - 1.0);
+    rec(&mut t, 293, 1, |_, _| 0);
+    for (sl, v) in [(277u32, 40.0f64), (15, 1.5), (16, -0.75), (17, 3.0)] {
+        t.stub_st0(sl, move |_, a| v + f64::from(a[0] & 3));
+    }
+    // the actors' words: distinct per selection byte
+    for op in [0x1e7u32] {
+        let at = w(&t, op);
+        for i in 0..0x40 {
+            t.set_u32(at + 4 * i, 0x0000_00a0 + 7 * i);
+        }
+    }
+    // the scene point's first scene (its index search runs only for it)
+    let first = t.u32(t.img.word(sp + 0x1a));
+    assert_ne!(first, 0x018b_0046);
+    // (the selected actor slot 390 picks: its byte, the turn, actors shown)
+    for (k, (id, r, n)) in [(1u32, 0.5f32, 3u32), (7, -2.0, 2), (3, 9.0, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(s, &magic_h6::varied(0x6000, k as u8 + 9));
+        t.set_u32(scene, first);
+        t.set_u32(rot, r.to_bits());
+        t.set_u32(hit, id);
+        t.set_u32(w(&t, 0x21c), n);
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r30::place_0165(g, img, fr))
+        });
     }
 }
