@@ -3194,6 +3194,7 @@ ports! {
     "r29 summon start 0563" => r29::SUMMON_START_0563, r29::summon_start_0563;
     "r29 second stage 0605" => r29::SECOND_STAGE_0605, r29::second_stage_0605;
     "r29 start-up 0577" => r29::START_UP_0577, r29::start_up_0577;
+    "r29 load 0605" => r29::LOAD_0605, r29::load_0605;
     // round 29 (magic-r29): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3888,6 +3889,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r29 aim object 0563", &r29::AIM_OBJECT_0563),
     ("r29 burst set-up 0577", &r29::BURST_SETUP_0577),
     ("r29 between set-up 0512", &r29::BETWEEN_SETUP_0512),
+    ("r29 facing places 0605", &r29::FACING_PLACES_0605),
+    ("r29 facing places 0307", &r29::FACING_PLACES_0307),
+    ("r29 start-up 0605", &r29::START_UP_0605),
     // round 29 (magic-r29): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),

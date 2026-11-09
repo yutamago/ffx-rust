@@ -1372,3 +1372,235 @@ fn between_setup_0512() {
         );
     }
 }
+
+/// A mesh for the mesh centres (as `magic_o6_fam.rs`'s `mesh`): 32
+/// vertices, packets of quads, triangles and others by `k`.
+fn mesh(t: &mut Twin, m: u32, k: u32) {
+    t.write(m, &[0x5a; 0x400]);
+    t.set_u32(m + 4, 0x40);
+    t.set_u32(m + 8, 0x300);
+    for i in 0..32u32 {
+        for c in 0..3u32 {
+            let x = ((i * 37 + c * 11 + k * 5) % 200) as i16 - 100;
+            t.set_u16(m + 0x300 + 6 * i + 2 * c, x.cast_unsigned());
+        }
+    }
+    // (type, count, face size, index offset, corners)
+    let packets: &[(u8, u16, u32, u32, u32)] = match k % 3 {
+        0 => &[(6, 2, 0x28, 0x10, 4), (2, 3, 0x20, 0xc, 3)],
+        1 => &[(2, 1, 0x20, 0xc, 3), (5, 1, 0, 0, 0), (6, 1, 0x28, 0x10, 4)],
+        _ => &[(6, 3, 0x28, 0x10, 4)],
+    };
+    let mut p = m + 0x40;
+    let mut total = 0u16;
+    for (j, &(kind, n, size, first, corners)) in (0u32..).zip(packets) {
+        t.set_u8(p + 1, kind);
+        t.set_u16(p + 2, n);
+        total += n;
+        let mut face = p + 0x10;
+        for q in 0..u32::from(n) {
+            for corner in 0..corners {
+                let index = (q * 7 + corner * 3 + j + k) % 32;
+                t.set_u16(face + first + 2 * corner, index as u16);
+            }
+            face += size;
+        }
+        p = face;
+    }
+    t.set_u16(m + 0x10, total);
+}
+
+/// `magic_0605` 0x10006f60 and `magic_0307` 0x100015e0
+/// (`r29::facing_places_0605`, family P007, internal): the turn wrapped
+/// both ways and kept; the junk word `[B + 0x44]` 0 on the original's side.
+#[test]
+fn facing_places_0605() {
+    for (n, rva) in [(605u16, 0x6f60u32), (307, 0x15e0)] {
+        let Some(mut t) = twin(n) else { return };
+        all_stubs(&mut t);
+        matrix_stubs(&mut t);
+        let (cx, qx) = (SCRATCH + 0x7a0, SCRATCH + 0x7c0);
+        rec(&mut t, 262, 4, move |m, a| {
+            for i in 0..3 {
+                m.w32(a[1 + i], m.r32(cx + 4 * i as u32));
+            }
+            0x262
+        });
+        rec(&mut t, 292, 1, move |m, a| {
+            for i in 0..3 {
+                m.w32(a[0] + 4 * i, m.r32(qx + 4 * i));
+            }
+            0x292
+        });
+        rec(&mut t, 229, 3, |m, a| {
+            let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+            for i in 0..4 {
+                let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x229
+        });
+        t.stub(248, |m, a| {
+            for i in 0..4 {
+                let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, x);
+            }
+            0x248
+        });
+        t.stub(564, |m, a| {
+            let k = f32::from_bits(a[2]);
+            for i in 0..4 {
+                let x = rf(m, a[1] + 4 * i) / k;
+                wf(m, a[0] + 4 * i, x);
+            }
+            0x564
+        });
+        rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+        t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * -0.5);
+        let f = t.at(rva);
+        let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+        let s = SCRATCH + 0x1_0000;
+        let tb = t.img.rel32_target(f + 0x715);
+        let mc = t.img.rel32_target(f + 0x71a);
+        let (table, meshes) = (SCRATCH + 0xc000, SCRATCH + 0x1_8000);
+        for (k, (c, q)) in (0u32..).zip([
+            ([1.0f32, 0.0, 2.0], [4.0f32, 1.0, 5.0]),
+            ([1.0, 0.0, 2.0], [-4.0, 1.0, -5.0]),
+            ([1.0, 0.0, 2.0], [1.0, 1.0, -5.0]),
+        ]) {
+            t.set_u32(w(&t, f, 0x1d), s);
+            junk(&mut t, s + 0x400, 0x2e00, k);
+            for i in 0..3u32 {
+                t.set_u32(cx + 4 * i, c[i as usize].to_bits());
+                t.set_u32(qx + 4 * i, q[i as usize].to_bits());
+            }
+            // the turned box's object and the mesh centres' table
+            if w(&t, tb, 0x1e) != w(&t, f, 0x1d) {
+                t.set_u32(w(&t, tb, 0x1e), s);
+            }
+            if w(&t, mc, 0x14) != w(&t, f, 0x1d) {
+                t.set_u32(w(&t, mc, 0x14), s);
+            }
+            t.set_u32(w(&t, mc, 0x31), table);
+            for j in 0..18u32 {
+                let mm = meshes + 0x400 * j;
+                t.set_u32(table + 0x20 * j + w(&t, mc, 0x38), mm);
+                mesh(&mut t, mm, j + k);
+            }
+            ownb::dirty_stack(&mut t, rva + k, &[0xa4]);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                ffx_magic::Ret::eax(ffx_magic::r29::facing_places_0605(g, img, fr.at, fr.esp))
+            });
+        }
+    }
+}
+
+/// `magic_0605` 0x10006c40 (`r29::load_0605`, the 118-byte shape) running
+/// `r29::start_up_0605`: slot 225 busy, the data not loaded yet, the
+/// start-up with the task list empty and not (the facing set-up of
+/// `facing_places_0605`).
+#[test]
+fn load_start_up_0605() {
+    let Some(mut t) = twin(605) else { return };
+    all_stubs(&mut t);
+    matrix_stubs(&mut t);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    for (s, n) in [(718u32, 1usize), (719, 3), (711, 3), (710, 4), (271, 3)] {
+        rec(&mut t, s, n, move |_, a| (0x5a5a_0000 + s) ^ a[0]);
+    }
+    let (cx, qx) = (SCRATCH + 0x7a0, SCRATCH + 0x7c0);
+    rec(&mut t, 262, 4, move |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], m.r32(cx + 4 * i as u32));
+        }
+        0x262
+    });
+    rec(&mut t, 292, 1, move |m, a| {
+        for i in 0..3 {
+            m.w32(a[0] + 4 * i, m.r32(qx + 4 * i));
+        }
+        0x292
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        let sum: f32 = (0..4).map(|i| rf(m, a[2] + 4 * i) * (i as f32 + 1.0)).sum();
+        for i in 0..4 {
+            let v = rf(m, a[1] + 0x10 * i) * 0.25 + 0.125 * sum + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    t.stub(248, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x248
+    });
+    t.stub(564, |m, a| {
+        let k = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) / k;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x564
+    });
+    rec(&mut t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * -0.5);
+    let f = t.at(0x6c40);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    let su = t.img.rel32_target(f + 0x5b);
+    let fp = t.img.rel32_target(su + 0x6d);
+    let mc = t.img.rel32_target(fp + 0x71a);
+    let lock = SCRATCH + 0x7f0;
+    let pi = t.img.rel32_target(su + 0x68);
+    t.set_u32(w(&t, pi, 0x04), lock);
+    let take = t.img.rel32_target(su + 0xb2);
+    let ri = t.img.rel32_target(su + 0xf0);
+    let (table, meshes) = (SCRATCH + 0xc000, SCRATCH + 0x1_8000);
+    let s = SCRATCH + 0x1_0000;
+    // (225, asked, 227, task list)
+    let cases: [(u32, u32, u32, bool); 4] = [
+        (1, 0, 1, false),
+        (0, 0, 0, false),
+        (0, 1, 1, false),
+        (0, 0, 2, true),
+    ];
+    for (k, (w225, asked, r227, busy)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(w(&t, f, 0x18), asked);
+        t.set_u32(lock, 0x77 + k);
+        junk(&mut t, s + 0x400, 0x2e00, k);
+        for i in 0..3u32 {
+            t.set_u32(cx + 4 * i, (1.0 + i as f32).to_bits());
+            t.set_u32(qx + 4 * i, (4.0 - 3.0 * i as f32 + k as f32).to_bits());
+        }
+        // the statics' store run sets `*G_S`; the turned box and the mesh
+        // centres name it too
+        t.set_u32(w(&t, mc, 0x31), table);
+        for j in 0..18u32 {
+            let mm = meshes + 0x400 * j;
+            t.set_u32(table + 0x20 * j + w(&t, mc, 0x38), mm);
+            mesh(&mut t, mm, j + k);
+        }
+        let node = |i: u32| SCRATCH + 0x5000 + 0x40 * i;
+        for i in 0..3u32 {
+            t.write(node(i), &[0x33; 0x40]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(w(&t, ri, 0x3e), node(0));
+        t.set_u16(w(&t, ri, 0x20), 3);
+        t.set_u32(w(&t, ri, 0xa6), 0);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, su, 0xb8), if busy { last } else { 0 });
+        t.set_u32(w(&t, su, 0xcc), last);
+        ownb::dirty_stack(&mut t, 0x6c40 + k, &[0xa4 + 0x10]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

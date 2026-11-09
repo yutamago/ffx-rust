@@ -2429,3 +2429,308 @@ pub const BETWEEN_SETUP_0512: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The summon's facing and its four places (`magic_0605` 0x10006f60 and
+/// `magic_0307` 0x100015e0, 1843 bytes, family P007; internal, no
+/// arguments; an 8-aligned /GS frame, `B` = `esp` after the three pushes:
+/// the caster's point `C` at `B + 0x48`, the map centre `Q` at `B + 0x18`,
+/// the turn at `B + 0xc`, the offset `V` at `B + 0x28`, its turned copy `O`
+/// at `B + 0x38`, the matrices `M2` at `B + 0x58` and `M3` at `B + 0x98`;
+/// `S = *G_S`, every record displacement read from the code):
+/// - `C` = slot 262 `(*G_A)`'s point, `Q` = slot 292's (the map centre);
+///   the turn `a = K - atan2(Q.z - C.z, Q.x - C.x)` (`_CIatan2`) wrapped
+///   once;
+/// - the model matrix `M = S + 0x1430` (slot 210, or 217/255 for a null
+///   `M`, which no `S` gives; 211; 235), its diagonal slot 277 times `K1`,
+///   times slots 15, 16, 17, turned by `(0, 0, a)` (330, 328, 329); the
+///   record `S + 0x1470` = `(0, a, 0, junk)`;
+/// - four places from `Q` moved by `(0, 0, z)` turned by `a` (slots 235,
+///   328 with 0, 329, 229, 248; `w` 1.0): `S + 0x1480` (`z` 47.6, copied to
+///   `S + 0x1460`), `S + 0x14a0` (-30, its `y` the ground of slot 12, kept
+///   at `S + 0x1490` and, `y` less `K2`, at `S + 0x14b0`), `S + 0x14c0`
+///   (10, `y` less `K3`), `S + 0x14e0` (-20); `S + 0x30b8` = `a`, `S +
+///   0x30b0`, `+0x30b4`, `+0x30bc`, `+0x30c0` 0, `*G_F` 1;
+/// - the turned box ([`turn_box`](crate::o6_fam_pairs5::turn_box)) and the
+///   mesh centres ([`mesh_centres`](crate::o6_fam_pairs5::mesh_centres)).
+///
+/// Returns the mesh centres' `eax`.
+///
+/// Junk read: `[B + 0x44]` (`ebp`-free frame word, never written) goes to
+/// the record's fourth word; 0 (brief 2026-10-24).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn facing_places_0605<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    use crate::sb_sse::{add, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    // push ebp; and esp, -8; sub esp, 0xd4; three pushes
+    let b0 = (esp.wrapping_sub(4) & !7).wrapping_sub(0xe0);
+    let (c, q, v, o) = (b0 + 0x48, b0 + 0x18, b0 + 0x28, b0 + 0x38);
+    let (m2, m3) = (b0 + 0x58, b0 + 0x98);
+    let s = g.read::<u32>(w(0x1d));
+    let actor = g.read::<u32>(w(0x39));
+    // call width: 4
+    g.call(t(g, 0x33, 262), 0, &[actor, c, c + 4, c + 8]);
+    g.write::<u32>(c + 0xc, ONE);
+    g.call(t(g, 0x4b, 292), 0, &[q]);
+    let dz = sub(rf(g, q + 8), rf(g, c + 8));
+    g.write::<u32>(q + 0xc, ONE);
+    let dx = sub(rf(g, q), rf(g, c));
+    // `_CIatan2(dz, dx)` on x87, the result rounded once (`cvtpd2ps`)
+    #[allow(clippy::cast_possible_truncation)]
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut a = sub(k(g, 0xaf), ang);
+    // comiss; jbe: unordered keeps the value
+    if a > k(g, 0xbe) {
+        a = sub(a, k(g, 0xce));
+    } else if k(g, 0xd8) > a {
+        a = add(a, k(g, 0xe5));
+    }
+    g.write::<f32>(b0 + 0xc, a);
+    // the model matrix
+    let actor = g.read::<u32>(w(0xf0));
+    let m = s.wrapping_add(w(0xf6));
+    if m == 0 {
+        // `S + d` null: no caller's `S` gets here
+        let idx = g.read::<u32>(w(0x121));
+        if g.read::<u32>(w(0x118)) == 0 && idx.cast_signed() < 0x20 {
+            let buf = b0 + 0x38;
+            // call width: 2
+            g.call(t(g, 0x130, 217), 0, &[idx, buf]);
+            // call width: 2
+            g.call(t(g, 0x143, 255), 0, &[idx, buf]);
+        }
+    } else {
+        // call width: 2
+        g.call(t(g, 0x105, 210), 0, &[actor, m]);
+    }
+    // call width: 2
+    g.call(t(g, 0x15a, 211), 0, &[actor, m]);
+    let r = s.wrapping_add(w(0x188));
+    g.write::<f32>(r + 4, a);
+    g.write::<u32>(r, 0);
+    g.write::<u32>(r + 8, 0);
+    // junk read: [B + 0x44] never written; 0 (brief 2026-10-24)
+    g.write::<u32>(r + 0xc, 0);
+    g.call(t(g, 0x16d, 235), 0, &[m]);
+    let x = st0_f32(g.call(t(g, 0x1a5, 277), 0, &[g.read::<u32>(w(0x1ab))]).st0);
+    let x = mul(x, k(g, 0x1c5));
+    for off in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + off, x);
+    }
+    let a3 = g.read::<u32>(w(0x1de));
+    let r15 = st0_f32(g.call(t(g, 0x1ca, 15), 0, &[a3]).st0);
+    g.write::<f32>(m, mul(rf(g, m), r15));
+    let r16 = st0_f32(g.call(t(g, 0x1f7, 16), 0, &[a3]).st0);
+    g.write::<f32>(m + 0x14, mul(r16, rf(g, m + 0x14)));
+    let r17 = st0_f32(g.call(t(g, 0x206, 17), 0, &[a3]).st0);
+    g.write::<f32>(m + 0x28, mul(rf(g, m + 0x28), r17));
+    for (op, n, ang) in [
+        (0x234u32, 330u32, 0u32),
+        (0x252, 328, 0),
+        (0x271, 329, a.to_bits()),
+    ] {
+        // call width: 3
+        g.call(t(g, op, n), 0, &[m, m, ang]);
+    }
+    // a place: `Q` moved by `V` turned by `a` through `M` (the slots'
+    // table operands: 235, 328, 329, 229, 248)
+    let place = |g: &mut G, p: u32, mm: u32, ops: [u32; 5]| {
+        g.call(t(g, ops[0], 235), 0, &[mm]);
+        // call width: 3
+        g.call(t(g, ops[1], 328), 0, &[mm, mm, 0]);
+        // call width: 3
+        g.call(t(g, ops[2], 329), 0, &[mm, mm, a.to_bits()]);
+        g.write::<u32>(v + 0xc, ONE);
+        // call width: 3
+        g.call(t(g, ops[3], 229), 0, &[o, mm, v]);
+        // call width: 3
+        g.call(t(g, ops[4], 248), 0, &[p, p, o]);
+        g.write::<u32>(p + 0xc, ONE);
+    };
+    let copy = |g: &mut G, from: u32, to: u32| {
+        for i in 0..4 {
+            let x = g.read::<u32>(from + 4 * i);
+            g.write::<u32>(to + 4 * i, x);
+        }
+    };
+    let set_v = |g: &mut G, z: u32| {
+        for (i, x) in (0u32..).zip([0, 0, z, ONE]) {
+            g.write::<u32>(v + 4 * i, x);
+        }
+    };
+    // the first place
+    let p2 = s.wrapping_add(w(0x28f));
+    copy(g, q, p2);
+    set_v(g, 0x423e_955c);
+    place(g, p2, m2, [0x2d1, 0x304, 0x325, 0x341, 0x35b]);
+    copy(g, p2, s.wrapping_add(w(0x37a)));
+    g.write::<f32>(s.wrapping_add(w(0x3a6)), a);
+    // the second, on the ground
+    let p3 = s.wrapping_add(w(0x3b2));
+    copy(g, q, p3);
+    set_v(g, 0xc1f0_0000);
+    place(g, p3, m3, [0x3d7, 0x42d, 0x451, 0x470, 0x48a]);
+    let y = st0_f32(g.call(t(g, 0x499, 12), 0, &[g.read::<u32>(w(0x4a6))]).st0);
+    g.write::<f32>(p3 + 4, y);
+    copy(g, p3, s.wrapping_add(w(0x4b9)));
+    let p3b = s.wrapping_add(w(0x4f5));
+    copy(g, p3, p3b);
+    g.write::<f32>(p3b + 4, sub(rf(g, p3 + 4), k(g, 0x4ef)));
+    // the third
+    let p4 = s.wrapping_add(w(0x521));
+    copy(g, q, p4);
+    g.write::<u32>(v + 8, 0x4120_0000);
+    place(g, p4, m3, [0x546, 0x584, 0x5a8, 0x5cf, 0x5e1]);
+    g.write::<f32>(p4 + 4, sub(rf(g, p4 + 4), k(g, 0x602)));
+    // the fourth
+    let p5 = s.wrapping_add(w(0x608));
+    copy(g, q, p5);
+    g.write::<u32>(v + 8, 0xc1a0_0000);
+    place(g, p5, m2, [0x612, 0x673, 0x694, 0x6b0, 0x6ca]);
+    for off in [0x6e1u32, 0x6eb, 0x6f5, 0x6ff] {
+        g.write::<u32>(s.wrapping_add(w(off)), 0);
+    }
+    g.write::<u32>(w(0x70c), 1);
+    let call_esp = b0.wrapping_sub(4);
+    let tb = Frame {
+        at: img.rel32_target(f + 0x715),
+        esp: call_esp,
+        ..Frame::default()
+    };
+    crate::o6_fam_pairs5::turn_box(g, img, &tb);
+    let mc = Frame {
+        at: img.rel32_target(f + 0x71a),
+        esp: call_esp,
+        ..Frame::default()
+    };
+    crate::o6_fam_pairs5::mesh_centres(g, img, &mc).eax
+}
+
+/// [`facing_places_0605`] in `magic_0605`.
+pub const FACING_PLACES_0605: Sig = Sig {
+    len: 1843,
+    hash: 0x2095_2c4f_c8f4_2cda,
+    calls: &[
+        (0x9d, Callee::Import("_CIatan2")),
+        (
+            0x715,
+            Callee::Sig(&crate::o6_fam_pairs5::TURN_BOX_0605_76A0),
+        ),
+        (
+            0x71a,
+            Callee::Sig(&crate::o6_fam_pairs5::MESH_CENTRES_0605_7990),
+        ),
+        (0x72b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`facing_places_0605`] in `magic_0307`.
+pub const FACING_PLACES_0307: Sig = Sig {
+    len: 1843,
+    hash: 0x197b_af51_7d53_5599,
+    calls: &[
+        (0x9d, Callee::Import("_CIatan2")),
+        (
+            0x715,
+            Callee::Sig(&crate::o6_fam_pairs5::TURN_BOX_0307_1D20),
+        ),
+        (
+            0x71a,
+            Callee::Sig(&crate::o6_fam_pairs5::MESH_CENTRES_0307_2010),
+        ),
+        (0x72b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0605`'s start-up (0x1000afb0, 318 bytes; no arguments, run by
+/// its load step [`load_0605`]; no frame): slot 718 `(P0)`; slot 719
+/// `(P, 8, 0)` into `G_H` (the statics' store run between); the part set
+/// up ([`part_setup`](crate::sb_misc::part_setup) `(BUF)`, slot 718's word
+/// under it), the summon's facing and places ([`facing_places_0605`]),
+/// the turned start ([`start_turned`](crate::o4_effect::start_turned));
+/// slot 271 `(4)`; the script block's words; two task nodes (kinds 1 and
+/// 2, [`take`](crate::sa_pool::take)) on the task list, the records block
+/// after the first ([`records_init`](crate::sa_misc::records_init)).
+/// Returns 0.
+pub fn start_up_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r13_start::append_kind;
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    g.call(t(g, 0x1, 718), 0, &[w(0x6)]);
+    let s719 = t(g, 0x13, 719);
+    abs_stores(g, img, f, 0x26, 0x58);
+    // call width: 3
+    let h = g.call(s719, 0, &[w(0x22), 8, 0]).eax;
+    g.write::<u32>(w(0x5e), h);
+    // slot 718's word stays; push BUF: the return address at `E - 0xc`
+    let esp = fr.esp.wrapping_sub(0xc);
+    g.write::<u32>(esp + 8, w(0x6));
+    g.write::<u32>(esp + 4, w(0x63));
+    crate::sb_misc::part_setup(g, img, call(0x68), esp);
+    facing_places_0605(g, img, call(0x6d), esp);
+    let st = Frame {
+        at: call(0x72),
+        esp,
+        ..Frame::default()
+    };
+    crate::o4_effect::start_turned(g, img, &st);
+    // call width: 3 (BUF and slot 718's word under it)
+    g.call(t(g, 0x77, 271), 0, &[4, w(0x63), w(0x6)]);
+    abs_stores(g, img, f, 0x8d, 0xb1);
+    let n1 = crate::sa_pool::take(g, img, call(0xb2), w(0x89));
+    append_kind(g, img, f, n1, 1, [0xb8, 0xcc, 0xeb, 0xde, 0xeb]);
+    crate::sa_misc::records_init(g, img, call(0xf0), w(0xe3));
+    let n2 = crate::sa_pool::take(g, img, call(0xfa), w(0xf5));
+    let listed = g.read::<u32>(w(0x100)) != 0;
+    g.write::<u8>(n2 + 0x18, 2);
+    g.write::<u32>(n2 + 4, 0);
+    if listed {
+        let last = g.read::<u32>(w(0x114));
+        g.write::<u32>(n2, last);
+        g.write::<u32>(last + 4, n2);
+        g.write::<u32>(n2 + 8, n2);
+        g.write::<u32>(w(0x121), n2);
+    } else {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x12f), n2);
+        g.write::<u32>(n2 + 8, n2);
+        g.write::<u32>(w(0x137), n2);
+    }
+    Ret::eax(0)
+}
+
+/// [`start_up_0605`].
+pub const START_UP_0605: Sig = Sig {
+    len: 318,
+    hash: 0xde4a_59f6_89f5_b32e,
+    calls: &[
+        (0x68, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x6d, Callee::Sig(&FACING_PLACES_0605)),
+        (0x72, Callee::Sig(&crate::o4_effect::START_TURNED_0605_7DB0)),
+        (0xb2, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xf0, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+        (0xfa, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0605`'s load step (0x10006c40, the 118-byte shape) running
+/// [`start_up_0605`].
+pub fn load_0605<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0605)
+}
+
+/// [`load_0605`].
+pub const LOAD_0605: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0605))],
+    imports: &[],
+};
