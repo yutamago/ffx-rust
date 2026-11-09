@@ -73,6 +73,7 @@ pub mod r21;
 pub mod r22;
 pub mod r23;
 pub mod r24;
+pub mod r26;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3072,6 +3073,12 @@ ports! {
     "r24 visit thunk 0342" => r24::VISIT_0342_THUNK, r24::visit_0342_thunk;
     "r9 load step 0419" => r9_load::LOAD_0419, r9_load::load_0419;
     // round 24 (magic-r24): end
+    // round 26 (magic-r26)
+    "r26 task 0246" => r26::TASK_0246, r26::task_0246;
+    "r9 load step 0246" => r9_load::LOAD_0246, r9_load::load_0246;
+    "r26 sparks 0180" => r26::SPARKS_0180, r26::sparks_0180;
+    "r9 load step 0180" => r9_load::LOAD_0180, r9_load::load_0180;
+    // round 26 (magic-r26): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3708,6 +3715,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r24 visit 0342", &r24::VISIT_0342),
     ("r24 start-up 0419", &r24::START_UP_0419),
     // round 24 (magic-r24): end of INTERNAL
+    // round 26 (magic-r26)
+    ("r26 start-up 0246", &r26::START_UP_0246),
+    ("r26 range check failure 0246", &r26::RANGE_CHECK_FAILURE),
+    ("r26 start-up 0180", &r26::START_UP_0180),
+    // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)

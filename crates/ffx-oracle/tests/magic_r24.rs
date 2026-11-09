@@ -698,7 +698,8 @@ fn start_up_0435() {
 /// without a parent) or with some (the draw); below `K` counting down
 /// (the draw) or out (new records from the ring, one piece and two); the
 /// methods logged through slot 1001, slot 324 a counter, the records'
-/// motion steps past their last step or loaded.
+/// motion steps past their last step or loaded; from the fourth case on
+/// the fade's bound is 1.5, so the 0.7 cap is reached.
 #[test]
 #[allow(clippy::too_many_lines)] // the stubs, the ring and the cases
 fn visit_0342() {
@@ -785,7 +786,7 @@ fn visit_0342() {
         (true, 0u32, false, 0u32, 0u32, false, 0u16, 0u16),
         (false, 2, false, 0, 0, true, 0, 0),
         (false, 1, false, 0, 0, false, 0, 0),
-        (false, 0, false, 0, 3, false, 0, 3),
+        (false, 0, false, 0, 3, false, 0, 8),
         (false, 2, true, 3, 2, false, 1, 4),
         (false, 0, true, 0, 0, false, 2, 1),
         (false, 1, true, 0, 1, false, 6, 8),
@@ -859,6 +860,11 @@ fn visit_0342() {
             t.set_u32(r + 0x2c, (0.2 * i as f32).to_bits());
         }
         junk_ops(&mut t, f, &[0x2e0, 0x4a1]);
+        if k == 3 {
+            // the fade's bound raised from 0.7 to 1.5: records past 1.0
+            // after the step reach the cap (unreachable with the DLL's 0.7)
+            t.set_u32(w(&t, 0x408), 1.5f32.to_bits());
+        }
         let call = Call::this(c);
         t.check(f, call, &[], Eax::Checked, r24::visit_0342);
         if k == 2 {
