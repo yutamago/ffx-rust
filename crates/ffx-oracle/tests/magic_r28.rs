@@ -1956,6 +1956,9 @@ fn effect_frame_0341() {
         }
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+        if k == 1 {
+            assert_eq!(t.u32(SCRATCH + 0x7ec), op(&t, 0x100), "phase 4's first run");
+        }
     }
     for (s, n) in [(359u32, 6u32), (262, 1), (214, 2), (710, 1), (160, 2)] {
         assert!(t.u32(magic_owna::row(s)) >= n, "slot {s}'s calls");
