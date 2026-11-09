@@ -510,6 +510,8 @@ pub struct Twin {
     /// The original's registers after the last [`Twin::check`] (for
     /// results outside `eax`/ST0, such as an internal function's `xmm0`).
     pub last: Regs,
+    /// The seed of the stack junk below the entry ([`Twin::junk_frames`]).
+    junk_seed: u32,
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -644,6 +646,7 @@ impl Twin {
             ignore: Vec::new(),
             orig_pages: BTreeSet::new(),
             last: Regs::default(),
+            junk_seed: 0,
         };
         // this thread's Unicorn engine (its thread block comes from the
         // heap) before any snapshot: GetEffectOverlayTable(1)
@@ -762,6 +765,24 @@ impl Twin {
             ArenaMem.read_bytes(p << 12, &mut b);
             self.port.write_bytes(p << 12, &b);
         }
+        self.junk_frames();
+    }
+
+    /// Fills the stack below the entry `esp` (the callees' frames) with
+    /// the same fresh junk on both sides. Left as the original's last run
+    /// left it, a local the port fails to write would read the value the
+    /// original stored there the time before (often 0, the same value it
+    /// stores again), and the missing store would pass. A test with
+    /// junk reads writes its own words after this (`ownb::dirty_stack`).
+    fn junk_frames(&mut self) {
+        self.junk_seed = self.junk_seed.wrapping_add(0x9e37_79b9);
+        let seed = self.junk_seed;
+        let base = STACK_TOP - STACK_LEN;
+        let words: Vec<u8> = (0..(ENTRY_ESP - base) / 4)
+            .flat_map(|i| (seed ^ i.wrapping_mul(0x0100_0193) ^ 0x6b6b_0000).to_le_bytes())
+            .collect();
+        ArenaMem.write_bytes(base, &words);
+        self.port.write_bytes(base, &words);
     }
 
     fn regions(&self) -> Vec<(u32, u32)> {
