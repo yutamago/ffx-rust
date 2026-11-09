@@ -2012,3 +2012,745 @@ pub const RIBBON_DRAW_0150: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The summon strip's frame (`magic_0150` 0x100041e0 and `magic_0603`,
+/// 2451 bytes; internal, `ecx` = the handle `H` (`+0` its node `N`, byte
+/// `+5` the pass), reached through its `ecx` thunk; a 16-aligned /GS frame
+/// `Z`, the `esp` after the pushes).
+/// - The walk over `N`'s children (their callbacks get `ecx` = `N`); a
+///   pass already seen stops (`eax` junk).
+/// - The bone `N[0x91c]` stepped ([`bone_plain`](crate::sa_summon::bone_plain)),
+///   the strip `T = N[0x920]` ([`strip_task_0150`]), the bone `N[0x924]`;
+///   the window's last point `P` (325), the bone point, `M` = 231 `(G_M,
+///   N[0x91c] + 0x9c)`.
+/// - `T` hit (`T[0xf8]`): a mark at the hit: the matrix `M5` turned by two
+///   slot 324 numbers (the rotation behind the pointer `*G_ROT`, run as
+///   the overlay runs it), times `M`'s, its rows scaled by 1e-4, `P` its
+///   row 3, `M5 = 231 (G_M, M5)`; the packet record `R` (`Z + 0x80`) for
+///   `N[0x92c]`'s model, alpha `cvtt(N[0x930] K)`; slot 772 `(N,
+///   0x5d40043)` gives `h`, then 773 `(h)` true: 819 `(h, C, R)` and 775
+///   `(h)`; else 820 `(h, C, R, 776 | 777)` (each with `*G_F`'s word 1).
+/// - A window of two or more: the ribbon ([`ribbon_draw_0150`]).
+/// - `T` hit: unless `*G_C`, the spark timer `N[0x938]` counts down; at 0,
+///   `(324 & 3) + 1` sparks into the ring of 64 (`N[0x939]`): the point
+///   `P`, a speed (with `N[0x944]`: 233 of `T + 0xcc` and three slot 307
+///   jitters; else three slot 307 terms), `w` the size. Then up to 64 live
+///   sparks (more than `*G_MAX` raises it) are drawn: alpha `cvtt(w K)`;
+///   not 0: `M8` = the scale `(K1 - w) K2 + K3` on its diagonal and row 3
+///   = 229 `(M, point)`, `M7` = 230 `(M8)`, the stream block
+///   ([`stream_block`](crate::s7_misc::stream_block)); unless `*G_C` the
+///   point moves by the speed, the speed's `y` scales by `K4` (with
+///   `N[0x944]`: `z` by `K4'` and `x` = 0.72) and `w` by `K5`. `*G_Y` is
+///   put back.
+///
+/// Returns `eax` as the original leaves it (the last speed pointer, the
+/// new `*G_MAX`, the ribbon's or slot 231's).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn strip_frame_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvtt, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let h = fr.ecx;
+    let z = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x230);
+    let at = |o: u32| z.wrapping_add(o);
+    let n0 = g.read::<u32>(h);
+    g.write::<u32>(at(0x18), n0);
+    let (eax, moved) = crate::nodes::walk(g, h, n0, fr.eax);
+    if moved.is_none() {
+        // the cookie's upper bytes are not the port's (`eax` junk)
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(h);
+    // the two bones and the strip, each with the cursor at `Z + 0x1c`
+    let cur = at(0x1c);
+    let step = |g: &mut G, o: u32, call: u32, bone: bool| {
+        let x = g.read::<u32>(n + o);
+        g.write::<u32>(cur, x);
+        if o == 0x91c {
+            let s = g.read::<u32>(n + 0x930);
+            g.write::<u32>(at(0x2c), s);
+        }
+        let pass = g.read::<u8>(h + 5);
+        g.write::<u8>(cur + 5, pass);
+        let fr = Frame {
+            at: img.rel32_target(f + call),
+            esp: z.wrapping_sub(4),
+            ecx: cur,
+            eax: u32::from(pass),
+            ..*fr
+        };
+        if bone {
+            crate::sa_summon::bone_plain(g, img, &fr);
+        } else {
+            strip_task_0150(g, img, &fr);
+        }
+    };
+    step(g, 0x91c, 0x97, true);
+    step(g, 0x920, 0xb2, false);
+    step(g, 0x924, 0xcd, true);
+    let n = g.read::<u32>(h);
+    let t = g.read::<u32>(n + 0x920);
+    g.write::<u32>(at(8), n);
+    g.write::<u32>(at(0x10), t);
+    g.write::<u32>(cur, t);
+    let win = Frame {
+        at: img.rel32_target(f + 0xea),
+        esp: z.wrapping_sub(4),
+        ecx: cur,
+        ..*fr
+    };
+    crate::s4_small::strip_window(g, img, &win);
+    let (p, p2, m, m5) = (at(0x138), at(0x198), at(0x1e8), at(0xf8));
+    let c2 = u32::from(g.read::<u16>(at(0x22)));
+    let last = g
+        .read::<u32>(at(0x28))
+        .wrapping_sub(0x10)
+        .wrapping_add(c2 << 4);
+    // call width: 2
+    g.call(slot(g, 0x109, 325), 0, &[p, last]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let b1 = g.read::<u32>(n + 0x924).wrapping_add(0xcc);
+    // call width: 2
+    g.call(slot(g, 0x135, 325), 0, &[p2, b1]);
+    let b0 = g.read::<u32>(n + 0x91c).wrapping_add(0x9c);
+    // call width: 3
+    let mut eax = g.call(slot(g, 0x15b, 231), 0, &[m, w(0x155), b0]).eax;
+    let flag = |g: &mut G, op: u32| {
+        let pf = g.read::<u32>(w(op));
+        g.write::<u32>(pf, 1);
+    };
+    if g.read::<u32>(t + 0xf8) != 0 {
+        // the mark at the hit
+        // call width: 0
+        let r1 = g.call(slot(g, 0x178, 324), 0, &[]).eax;
+        g.write::<u32>(at(0x188), r1);
+        // call width: 0
+        let r2 = g.call(slot(g, 0x18c, 324), 0, &[]).eax;
+        g.write::<u32>(at(0x18c), r2);
+        // junk read: the third angle `Z + 0x190` never written; 0 (brief 2026-10-24)
+        g.write::<u32>(at(0x190), 0);
+        let rot = g.read::<u32>(w(0x1b1));
+        crate::l5_objhost::call_code(g, img, rot, z.wrapping_sub(0xc), &[m5, at(0x188)]);
+        let b0 = g.read::<u32>(n + 0x91c).wrapping_add(0x9c);
+        // call width: 3
+        g.call(slot(g, 0x1cb, 231), 0, &[m5, m5, b0]);
+        for (row, op) in [(0u32, 0x1ebu32), (0x10, 0x20b), (0x20, 0x22b)] {
+            // call width: 3
+            g.call(slot(g, op, 233), 0, &[m5 + row, m5 + row, 0x39d1_b717]);
+        }
+        // call width: 2
+        g.call(slot(g, 0x24b, 325), 0, &[m5 + 0x30, p]);
+        // call width: 3
+        g.call(slot(g, 0x266, 231), 0, &[m5, w(0x260), m5]);
+        let model = g.read::<u32>(n + 0x92c);
+        let (r, c) = (at(0x80), at(0x30));
+        let b = i32::from(g.read::<i8>(model));
+        let mut bits = ((b & 1) << 7).cast_unsigned();
+        g.write::<u32>(r, bits);
+        if g.read::<u8>(model) & 2 == 0 {
+            bits |= 0x10;
+            g.write::<u32>(r, bits);
+        }
+        let h16 = g.read::<u16>(model + 0x16);
+        let alpha = mul(rf(g, at(0x2c)), k(g, 0x2a8));
+        g.write::<u16>(r + 8, h16);
+        g.write::<u32>(r + 0x1c, 0);
+        let e8 = model.wrapping_add(g.read::<u32>(model + 8));
+        g.write::<u32>(r + 0x38, e8);
+        let ec = model.wrapping_add(g.read::<u32>(model + 0xc));
+        g.write::<u32>(r + 0x3c, ec);
+        let x = g.read::<u32>(g.read::<u32>(w(0x2d8)));
+        g.write::<u32>(r + 4, x);
+        g.write::<u32>(r + 0x18, 0x8080_8080);
+        g.write::<u8>(r + 0x1b, cvtt(alpha).cast_unsigned().to_le_bytes()[0]);
+        for o in [0x20u32, 0x44, 0x24, 0x28, 0x2c] {
+            g.write::<u32>(r + o, m5);
+        }
+        let gy = g.read::<u32>(w(0x32b));
+        g.write::<u32>(r + 0x34, gy);
+        for o in [0xcu32, 0x10, 0x40] {
+            g.write::<u32>(r + o, 0);
+        }
+        g.write::<u32>(c + 0x1c, model);
+        // junk read: R + 0xa (u16), R + 0x14, R + 0x30 and the request's
+        // words before `+0x1c` never written; 0 (brief 2026-10-24)
+        g.write::<u16>(r + 0xa, 0);
+        for o in [0x14u32, 0x30] {
+            g.write::<u32>(r + o, 0);
+        }
+        for o in (0..0x1c).step_by(4) {
+            g.write::<u32>(c + o, 0);
+        }
+        // call width: 2
+        let hd = g.call(slot(g, 0x337, 772), 0, &[n, 0x5d4_0043]);
+        let (lo, hi) = (hd.eax, hd.edx);
+        let pf = g.read::<u32>(w(0x36b));
+        let saved = g.read::<u32>(pf);
+        g.write::<u32>(pf, 1);
+        g.write::<u32>(at(0xc), hi);
+        g.write::<u32>(at(0x18), lo);
+        g.write::<u32>(at(0x14), saved);
+        // call width: 2
+        let ok = g.call(slot(g, 0x37d, 773), 0, &[lo, hi]).eax;
+        let pf = g.read::<u32>(w(0x399));
+        g.write::<u32>(pf, saved);
+        if ok != 0 {
+            g.write::<u32>(pf, 1);
+            // call width: 4
+            g.call(slot(g, 0x3b8, 819), 0, &[lo, hi, c, r]);
+            flag(g, 0x3d0);
+            // call width: 2
+            g.call(slot(g, 0x3df, 775), 0, &[lo, hi]);
+            let pf = g.read::<u32>(w(0x3ed));
+            g.write::<u32>(pf, saved);
+            eax = pf;
+        } else {
+            let b = u32::from(g.read::<u8>(r + 8));
+            // call width: 1
+            let a = g.call(slot(g, 0x406, 776), 0, &[b]).eax;
+            let m = g.read::<u32>(r + 0x44);
+            // call width: 1
+            let bits = a | g.call(slot(g, 0x414, 777), 0, &[m]).eax;
+            let pf = g.read::<u32>(w(0x42e));
+            let saved = g.read::<u32>(pf);
+            g.write::<u32>(pf, 1);
+            // call width: 5
+            g.call(slot(g, 0x44c, 820), 0, &[lo, hi, c, r, bits]);
+            let pf = g.read::<u32>(w(0x463));
+            g.write::<u32>(pf, saved);
+            eax = pf;
+        }
+    }
+    let n = g.read::<u32>(at(8));
+    let t = g.read::<u32>(at(0x10));
+    let strip = g.read::<u32>(n + 0x920);
+    if g.read::<u16>(strip + 0x26) >= 2 {
+        let ribbon = Frame {
+            at: img.rel32_target(f + 0x484),
+            esp: z.wrapping_sub(4),
+            ecx: n,
+            edx: strip,
+            ..*fr
+        };
+        eax = ribbon_draw_0150(g, img, &ribbon).eax;
+    }
+    if g.read::<u32>(t + 0xf8) == 0 {
+        return Ret::eax(eax);
+    }
+    // the sparks
+    let busy = g.read::<u32>(w(0x497)) != 0;
+    g.write::<u32>(at(0xc), n + 0x41c);
+    let ring = g.read::<u32>(n + 0x928);
+    g.write::<u32>(at(0x1c), ring);
+    g.write::<u32>(at(0x14), n + 0x81c);
+    if !busy {
+        let timer = g.read::<u8>(n + 0x938).wrapping_sub(1);
+        g.write::<u8>(n + 0x938, timer);
+    }
+    if g.read::<i8>(n + 0x938) <= 0 {
+        // call width: 0
+        let count = (g.call(slot(g, 0x4d0, 324), 0, &[]).eax & 3) + 1;
+        g.write::<u32>(at(0x18), count);
+        let mut left = count;
+        while left > 0 {
+            let i = u32::from(g.read::<u8>(n + 0x939) & 0x3f);
+            g.write::<u32>(n + 0x81c + 4 * i, 0);
+            // call width: 2
+            g.call(slot(g, 0x515, 325), 0, &[n + 0x1c + (i << 4), p]);
+            let v = n + 0x41c + (i << 4);
+            let rnd = |g: &mut G, op: u32| {
+                // call width: 0
+                let r = st0_f32(g.call(slot(g, op, 307), 0, &[]).st0);
+                g.write::<f32>(at(8), r);
+                r
+            };
+            if g.read::<u32>(n + 0x944) != 0 {
+                let r = rnd(g, 0x522);
+                let x = add(mul(sub(r, k(g, 0x54c)), k(g, 0x564)), k(g, 0x56e));
+                let x = x.to_bits() ^ g.read::<u32>(w(0x575));
+                let tc = g.read::<u32>(at(0x10)).wrapping_add(0xcc);
+                // call width: 3
+                g.call(slot(g, 0x580, 233), 0, &[v, tc, x]);
+                for (o, (t1, k1, k2)) in [
+                    (0u32, (0x58eu32, 0x5abu32, 0x5b8u32)),
+                    (4, (0x5b0, 0x5da, 0x5e7)),
+                    (8, (0x5df, 0x60b, 0x613)),
+                ] {
+                    let r = rnd(g, t1);
+                    let d = mul(sub(r, k(g, k1)), k(g, k2));
+                    g.write::<f32>(v + o, add(d, rf(g, v + o)));
+                }
+            } else {
+                let r = rnd(g, 0x522);
+                let x = mul(
+                    sub(k(g, 0x646), mul(sub(r, k(g, 0x63e)), k(g, 0x653))),
+                    k(g, 0x65f),
+                );
+                g.write::<f32>(v, x);
+                let r = rnd(g, 0x64b);
+                let z2 = mul(
+                    sub(k(g, 0x685), mul(sub(r, k(g, 0x67d)), k(g, 0x692))),
+                    k(g, 0x69e),
+                );
+                g.write::<f32>(v + 8, z2);
+                let r = rnd(g, 0x68a);
+                let y = add(mul(sub(r, k(g, 0x6bd)), k(g, 0x6c5)), k(g, 0x6cd));
+                g.write::<u32>(v + 4, y.to_bits() ^ g.read::<u32>(w(0x6d4)));
+            }
+            let s = g.read::<u32>(at(0x2c));
+            g.write::<u32>(v + 0xc, s);
+            let next = g.read::<u8>(n + 0x939).wrapping_add(1);
+            g.write::<u8>(n + 0x939, next);
+            left -= 1;
+            g.write::<u32>(at(0x18), left);
+            g.write::<u8>(n + 0x938, 1);
+        }
+    }
+    // the draws
+    let b0 = g.read::<u32>(n + 0x91c).wrapping_add(0x9c);
+    // call width: 3
+    g.call(slot(g, 0x71f, 231), 0, &[m, w(0x719), b0]);
+    let (m7, m8, r2) = (at(0x1a8), at(0x148), at(0x50));
+    let live = i32::from(g.read::<u8>(n + 0x939)).min(0x40);
+    let gy = g.read::<u32>(w(0x734));
+    g.write::<u32>(at(0x60), m7);
+    g.write::<u32>(at(0x54 + 0x18), m7);
+    g.write::<u16>(r2 + 2, 0x80);
+    let most = g.read::<i32>(w(0x75f)).max(live);
+    for o in [
+        0x14cu32, 0x150, 0x154, 0x158, 0x160, 0x164, 0x168, 0x16c, 0x174,
+    ] {
+        g.write::<u32>(at(o), 0);
+    }
+    g.write::<u32>(r2 + 8, 0);
+    g.write::<u32>(r2 + 4, 0x8080_8080);
+    g.write::<u8>(r2 + 0x18, 0);
+    g.write::<u32>(r2 + 0x14, gy);
+    g.write::<i32>(at(0x10), live);
+    g.write::<i32>(w(0x7e9), most);
+    if live <= 0 {
+        let gy = g.read::<u32>(at(0x64));
+        g.write::<u32>(w(0x975), gy);
+        return Ret::eax(most.cast_unsigned());
+    }
+    let mut sp = n + 0x24;
+    let mut cursor = n + 0x81c;
+    let mut v = g.read::<u32>(at(0xc));
+    let mut left = live;
+    while left > 0 {
+        let wv = rf(g, sp + 0x404);
+        let a = cvtt(mul(wv, k(g, 0x810))).cast_unsigned().to_le_bytes()[0];
+        g.write::<u8>(r2 + 7, a);
+        if a != 0 {
+            let sc = add(mul(sub(k(g, 0x828), wv), k(g, 0x840)), k(g, 0x850));
+            g.write::<f32>(m8 + 0x28, sc);
+            g.write::<f32>(m8 + 0x14, sc);
+            g.write::<f32>(m8, sc);
+            // call width: 3
+            g.call(slot(g, 0x855, 229), 0, &[m8 + 0x30, m, sp - 8]);
+            // call width: 2
+            g.call(slot(g, 0x890, 230), 0, &[m7, m8]);
+            let ring = g.read::<u32>(at(0x1c));
+            let cur = g.read::<u32>(at(0x14));
+            g.write::<u32>(z.wrapping_sub(0xc), r2);
+            let blk = Frame {
+                at: img.rel32_target(f + 0x8aa),
+                esp: z.wrapping_sub(0x10),
+                ecx: cur,
+                edx: ring,
+                ..*fr
+            };
+            crate::s7_misc::stream_block(g, img, &blk);
+            v = g.read::<u32>(at(0xc));
+            if g.read::<u32>(w(0x8b7)) == 0 {
+                for (o, d) in [(0u32, v), (4, sp + 0x3fc), (8, sp + 0x400)] {
+                    let x = add(rf(g, sp - 8 + o), rf(g, d));
+                    g.write::<f32>(sp - 8 + o, x);
+                }
+                let y = mul(rf(g, sp + 0x3fc), k(g, 0x8fe));
+                g.write::<f32>(sp + 0x3fc, y);
+                if g.read::<u32>(n + 0x944) != 0 {
+                    let z3 = mul(rf(g, sp + 0x400), k(g, 0x91f));
+                    g.write::<u32>(v, 0x3f38_f5c3);
+                    g.write::<f32>(sp + 0x400, z3);
+                }
+                let wv = mul(rf(g, sp + 0x404), k(g, 0x93d));
+                g.write::<f32>(sp + 0x404, wv);
+            }
+        } else {
+            v = g.read::<u32>(at(0xc));
+        }
+        cursor = cursor.wrapping_add(4);
+        v = v.wrapping_add(0x10);
+        sp = sp.wrapping_add(0x10);
+        left -= 1;
+        g.write::<u32>(at(0x14), cursor);
+        g.write::<u32>(at(0xc), v);
+        g.write::<i32>(at(0x10), left);
+    }
+    let gy = g.read::<u32>(at(0x64));
+    g.write::<u32>(w(0x975), gy);
+    Ret::eax(v)
+}
+
+/// [`strip_frame_0150`] (the `rel32`s: two bones, the strip task, the
+/// window, the ribbon, the stream block, `__security_check_cookie`; the
+/// loop's jump stays inside).
+pub const STRIP_FRAME_0150: Sig = Sig {
+    len: 2451,
+    hash: 0xce83_1859_4466_dae2,
+    calls: &[
+        (0x97, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xb2, Callee::Sig(&STRIP_TASK_0150)),
+        (0xcd, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xea, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0x484, Callee::Sig(&RIBBON_DRAW_0150)),
+        (0x8aa, Callee::Sig(&crate::s7_misc::STREAM_BLOCK)),
+        (0x985, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `fistp qword` of an `f32` with the rounding set toward zero (the
+/// original's `fnstcw`/`fldcw` pairs): the low word of the 64-bit
+/// truncation, 0 for a NaN or a value out of range.
+fn fistp_trunc(x: f32) -> u32 {
+    ffx_bridge::x87::ftol2(f64::from(x))
+}
+
+/// The summon strip's tail draw (`magic_0150` 0x100058a0 and `magic_0603`,
+/// 2415 bytes; a draw callback, cdecl `(obj)`; a 16-aligned /GS frame `Z`,
+/// the `esp` after the pushes: the request `C` at `Z + 0xb0` (its window
+/// cursor at `C + 0x20`), the record `R` at `Z + 0xe0`). Every game call
+/// after the handle runs with `*G_F`'s word 1, restored after.
+/// - `obj[0x930]` at most 0 (not NaN): slot 311 `(obj[0x940])`, slot 772
+///   `(obj, 0x7dea)`, slot 779 `(h)`.
+/// - Else the window ([`strip_window`](crate::s4_small::strip_window)) of
+///   `n` points (at most 16; fewer than 2: nothing more); `P1` = the bone
+///   point (325); `M1` = 230 `(B)`, `M2` = 231 `(G_M, B)`, `M3` = 230
+///   `(M2)` (`B = obj[0x91c] + 0x9c`); `G_BUF2` cleared (`memset`) with
+///   its header (vertices `V`, the index block `I`: u16 `+0` 0x400, `+2`
+///   `n - 1`); `V[0] = P1`; then the window's points newest first (the
+///   second piece's last point down), each a vertex (`w` 1.0) and, after
+///   the first, a 24-byte index record: the two colour words before and
+///   after, the u16 numbers `(0, k, 0, k + 1)`. The colours run from the
+///   frame's constant terms by `t` (the points left, as a float, less
+///   `K1` each step) through `fistp` toward zero; the first pair uses
+///   `t * 0`. The records end with 0xff; `G_BUF2[0x12]` = the vertex count.
+/// - `R` (0x2404, the buffer, the matrices); slot 772 `(obj, 0x7dea)`
+///   gives `h`; 773 `(h)` true: 819 `(h, C, R)` and 865 `(h,
+///   0x80000000)`; else `I[2]` 0xf, `G_BUF2[0x12]` 0x11 and 820 `(h, C, R,
+///   776 (0x48) | 777 (M3))`.
+///
+/// Returns `*G_F` as read last, or the window's `eax` for fewer than two
+/// points. `C + 0..0x18`, `R + 9..0xb` and `R + 0x14` are never written by
+/// the original (junk reads by the packet calls): 0 here (brief
+/// 2026-10-24).
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // the original's steps; u16 counts
+pub fn tail_draw_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let obj = fr.arg(g, 0);
+    let z = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x230);
+    let at = |o: u32| z.wrapping_add(o);
+    let s = rf(g, obj + 0x930);
+    g.write::<u32>(at(0x44), obj);
+    g.write::<f32>(at(0x4c), s);
+    if s <= 0.0 {
+        let x = g.read::<u32>(obj + 0x940);
+        // call width: 1
+        g.call(slot(g, 0x3a, 311), 0, &[x]);
+        // call width: 2
+        let h = g.call(slot(g, 0x4d, 772), 0, &[obj, 0x7dea]);
+        let pf = g.read::<u32>(w(0x64));
+        let saved = g.read::<u32>(pf);
+        g.write::<u32>(pf, 1);
+        // call width: 2
+        g.call(slot(g, 0x6d, 779), 0, &[h.eax, h.edx]);
+        let pf = g.read::<u32>(w(0x80));
+        g.write::<u32>(pf, saved);
+        return Ret::eax(pf);
+    }
+    let (c, r) = (at(0xb0), at(0xe0));
+    let cur = c + 0x20;
+    let strip = g.read::<u32>(obj + 0x920);
+    g.write::<u32>(cur, strip);
+    let win = Frame {
+        at: img.rel32_target(f + 0xb2),
+        esp: z.wrapping_sub(4),
+        ecx: cur,
+        ..*fr
+    };
+    let wax = crate::s4_small::strip_window(g, img, &win).eax;
+    let mut n = u32::from(g.read::<u16>(strip + 0x26));
+    g.write::<u32>(at(0x38), n);
+    if n >= 0x10 {
+        n = 0x10;
+        g.write::<u32>(at(0x38), n);
+    } else if n < 2 {
+        return Ret::eax(wax);
+    }
+    let (p1, m1, m2, m3) = (at(0x158), at(0x168), at(0x1e8), at(0x1a8));
+    let bone = g.read::<u32>(obj + 0x924).wrapping_add(0xcc);
+    // call width: 2
+    g.call(slot(g, 0xec, 325), 0, &[p1, bone]);
+    let b = g.read::<u32>(obj + 0x91c).wrapping_add(0x9c);
+    // call width: 2
+    g.call(slot(g, 0x10d, 230), 0, &[m1, b]);
+    let b = g.read::<u32>(obj + 0x91c).wrapping_add(0x9c);
+    // call width: 3
+    g.call(slot(g, 0x133, 231), 0, &[m2, w(0x12d), b]);
+    // call width: 2
+    g.call(slot(g, 0x153, 230), 0, &[m3, m2]);
+    let buf = w(0x167);
+    g.write_bytes(buf, &[0u8; 0x4000]);
+    // the header
+    let v0 = w(0x171) & !0xf;
+    let idx = v0.wrapping_add(0x113) & !3;
+    let tw = cvt(n);
+    let mut rec = idx + 0x10;
+    g.write::<u32>(at(0x28), rec);
+    g.write::<u32>(w(0x197), idx.wrapping_sub(w(0x192)));
+    g.write::<u32>(w(0x1a6), v0.wrapping_sub(w(0x1a1)));
+    for (op, v) in [
+        (0x1acu32, 0x11_0001u32),
+        (0x1b6, 0),
+        (0x1c0, 0),
+        (0x1ca, 0x48_0000),
+        (0x1d4, 0),
+    ] {
+        g.write::<u32>(w(op), v);
+    }
+    g.write::<u32>(at(0x40), v0);
+    g.write::<u32>(at(0x48), v0);
+    g.write::<u32>(at(0x9c), idx);
+    g.write::<u16>(idx, 0x400);
+    g.write::<u16>(idx + 2, (n - 1) as u16);
+    g.write::<u32>(idx + 8, 0);
+    g.write::<u32>(idx + 0xc, 0);
+    g.write::<f32>(at(0x3c), tw);
+    // the colour terms (`(a, b)` of each byte: `a t + b`; the frame's)
+    for (o, v) in [
+        (0x64u32, 0u32),
+        (0x68, 0),
+        (0x6c, 0x437f_0000),
+        (0x70, 0),
+        (0x8c, 0),
+        (0x90, 0),
+        (0x94, 0),
+        (0x98, 0),
+        (0x78, 0),
+        (0x7c, 0),
+        (0x80, 0x437f_0000),
+        (0x84, 0),
+        (0x50, 0),
+        (0x54, 0),
+        (0x58, 0),
+    ] {
+        g.write::<u32>(at(o), v);
+    }
+    let d = div(k(g, 0x299), tw);
+    g.write::<f32>(at(0x5c), d);
+    // call width: 2
+    g.call(slot(g, 0x2aa, 325), 0, &[v0, p1]);
+    // the newest piece with points
+    let count = |g: &G, piece: u32| u32::from(g.read::<u16>(at(0xd4 + 2 * piece)));
+    let last = |g: &G, piece: u32, cnt: u32| {
+        (cnt << 4)
+            .wrapping_sub(0x10)
+            .wrapping_add(g.read::<u32>(at(0xd8 + 4 * piece)))
+    };
+    let mut piece = 1i32;
+    let mut k_out = 0u32;
+    let mut start = None;
+    while piece >= 0 {
+        let cnt = count(g, piece.cast_unsigned());
+        if cnt > 0 {
+            start = Some(cnt);
+            break;
+        }
+        piece -= 1;
+    }
+    if let Some(mut left) = start {
+        let fz = |g: &G, o: u32| rf(g, at(o));
+        // the first colour pair, from `t * 0`
+        let p = mul(fz(g, 0x3c), 0.0);
+        let e = fistp_trunc(add(p, k(g, 0x306)));
+        let cc = fistp_trunc(add(p, 0.0));
+        let ps = add(mul(p, s), 0.0);
+        let dd = add(mul(mul(fz(g, 0x5c), fz(g, 0x3c)), fz(g, 0x4c)), 0.0);
+        let col1 = (((fistp_trunc(ps) << 8 | e) << 8 | cc) << 8) | cc;
+        g.write::<u32>(at(0x20), col1);
+        let col2 = (((fistp_trunc(dd) << 8 | e) << 8 | cc) << 8) | cc;
+        let mut pt = last(g, piece.cast_unsigned(), left);
+        g.write::<u32>(at(0x24), col2);
+        g.write::<u32>(at(0x2c), pt);
+        let mut kk = 0u32;
+        loop {
+            // the next vertex
+            let v = g.read::<u32>(at(0x40)) + 0x10;
+            g.write::<u32>(at(0x40), v);
+            kk += 1;
+            g.write::<u32>(at(0x14), kk);
+            // call width: 2
+            g.call(slot(g, 0x422, 325), 0, &[v, pt]);
+            let t = sub(fz(g, 0x3c), k(g, 0x43d));
+            let remaining = g.read::<i32>(at(0x38)) - 1;
+            let p = g.read::<u32>(at(0x2c)).wrapping_sub(0x10);
+            g.write::<u32>(at(0x2c), p);
+            left -= 1;
+            g.write::<u32>(v + 0xc, 0x3f80_0000);
+            g.write::<f32>(at(0x3c), t);
+            g.write::<i32>(at(0x38), remaining);
+            // the next piece when this one runs out
+            let mut go = left.cast_signed() > 0 && remaining > 0;
+            while !go {
+                piece -= 1;
+                if piece < 0 {
+                    break;
+                }
+                left = count(g, piece.cast_unsigned());
+                let pl = last(g, piece.cast_unsigned(), left);
+                g.write::<u32>(at(0x2c), pl);
+                go = left.cast_signed() > 0 && remaining > 0;
+            }
+            if !go {
+                k_out = kk;
+                break;
+            }
+            // the index record and the new colours
+            let rec_at = g.read::<u32>(at(0x28));
+            let col1 = g.read::<u32>(at(0x20));
+            g.write::<u32>(rec_at, col1);
+            let col2 = g.read::<u32>(at(0x24));
+            g.write::<u32>(rec_at + 4, col2);
+            let lin = |g: &G, a: u32, b: u32| add(mul(fz(g, a), t), fz(g, b));
+            let v1 = add(mul(mul(fz(g, 0x98), t), s), fz(g, 0x70));
+            g.write::<f32>(at(0x74), v1);
+            let v2 = lin(g, 0x94, 0x6c);
+            g.write::<f32>(at(0xa4), v2);
+            let v3 = lin(g, 0x90, 0x68);
+            g.write::<f32>(at(0x88), v3);
+            let v4 = lin(g, 0x8c, 0x64);
+            g.write::<f32>(at(0xac), v4);
+            let v5 = add(mul(mul(fz(g, 0x5c), t), s), fz(g, 0x84));
+            g.write::<f32>(at(0xa0), v5);
+            let v6 = lin(g, 0x58, 0x80);
+            let c1 = (((fistp_trunc(v1) << 8 | fistp_trunc(v2)) << 8 | fistp_trunc(v3)) << 8)
+                | fistp_trunc(v4);
+            g.write::<u32>(at(0x20), c1);
+            g.write::<f32>(at(0xa8), v6);
+            let v7 = lin(g, 0x54, 0x7c);
+            g.write::<u32>(rec_at + 8, c1);
+            g.write::<f32>(at(0x60), v7);
+            let v8 = lin(g, 0x50, 0x78);
+            g.write::<f32>(at(0x30), v8);
+            let c2 = (((fistp_trunc(v5) << 8 | fistp_trunc(v6)) << 8 | fistp_trunc(v7)) << 8)
+                | fistp_trunc(v8);
+            g.write::<u32>(rec_at + 0xc, c2);
+            g.write::<u32>(at(0x24), c2);
+            g.write::<u16>(rec_at + 0x14, 0);
+            g.write::<u16>(rec_at + 0x10, 0);
+            g.write::<u32>(at(0x28), rec_at + 0x18);
+            g.write::<u16>(rec_at + 0x12, kk as u16);
+            g.write::<u16>(rec_at + 0x16, (kk + 1) as u16);
+            pt = g.read::<u32>(at(0x2c));
+        }
+    }
+    rec = g.read::<u32>(at(0x28));
+    g.write::<u8>(rec + 1, 0xff);
+    g.write::<u16>(w(0x744) + 0x12, k_out as u16);
+    // the record `R`
+    g.write::<u32>(r, 0x2404);
+    let vb = g.read::<u32>(at(0x48));
+    g.write::<u32>(r + 0x38, vb);
+    let x = g.read::<u32>(g.read::<u32>(w(0x763)));
+    g.write::<u8>(r + 8, 0x48);
+    g.write::<u32>(r + 0x1c, 0);
+    g.write::<u32>(r + 0x3c, 0);
+    g.write::<u32>(r + 4, x);
+    for (o, v) in [
+        (0x20u32, m3),
+        (0x44, m3),
+        (0x24, m1),
+        (0x28, m1),
+        (0x30, m2),
+        (0x2c, m1),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    let gy = g.read::<u32>(w(0x7d5));
+    g.write::<u32>(r + 0x34, gy);
+    for (o, v) in [(0xcu32, 0u32), (0x10, 0), (0x18, 0x8080_8080), (0x40, 0)] {
+        g.write::<u32>(r + o, v);
+    }
+    // junk read: C + 0..0x18, R + 9..0xb and R + 0x14 never written; 0 (brief 2026-10-24)
+    g.write_bytes(c, &[0u8; 0x1c]);
+    g.write_bytes(r + 9, &[0u8; 3]);
+    g.write::<u32>(r + 0x14, 0);
+    // call width: 2
+    let h = g.call(slot(g, 0x7e1, 772), 0, &[obj, 0x7dea]);
+    let (lo, hi) = (h.eax, h.edx);
+    let pf = g.read::<u32>(w(0x81b));
+    g.write::<u32>(c + 0x1c, w(0x822));
+    let saved = g.read::<u32>(pf);
+    g.write::<u32>(at(0x14), saved);
+    g.write::<u32>(pf, 1);
+    g.write::<u32>(at(0x48), lo);
+    g.write::<u32>(at(0x44), hi);
+    // call width: 2
+    let ok = g.call(slot(g, 0x836, 773), 0, &[lo, hi]).eax;
+    let pf = g.read::<u32>(w(0x854));
+    g.write::<u32>(pf, saved);
+    if ok != 0 {
+        g.write::<u32>(pf, 1);
+        // call width: 4
+        g.call(slot(g, 0x876, 819), 0, &[lo, hi, c, r]);
+        let pf = g.read::<u32>(w(0x88b));
+        g.write::<u32>(pf, 1);
+        // call width: 3
+        g.call(slot(g, 0x89b, 865), 0, &[lo, hi, 0x8000_0000]);
+        let pf = g.read::<u32>(w(0x8aa));
+        g.write::<u32>(pf, saved);
+        return Ret::eax(pf);
+    }
+    let b8 = u32::from(g.read::<u8>(r + 8));
+    // call width: 1
+    let a = g.call(slot(g, 0x8d5, 776), 0, &[b8]).eax;
+    let m = g.read::<u32>(r + 0x44);
+    // call width: 1
+    let bits = a | g.call(slot(g, 0x8e3, 777), 0, &[m]).eax;
+    let idx = g.read::<u32>(at(0x9c));
+    g.write::<u16>(idx + 2, 0xf);
+    g.write::<u16>(w(0x90e) + 0x12, 0x11);
+    let pf = g.read::<u32>(w(0x91c));
+    let saved = g.read::<u32>(pf);
+    g.write::<u32>(pf, 1);
+    // call width: 5
+    g.call(slot(g, 0x941, 820), 0, &[lo, hi, c, r, bits]);
+    let pf = g.read::<u32>(w(0x952));
+    g.write::<u32>(pf, saved);
+    Ret::eax(pf)
+}
+
+/// [`tail_draw_0150`] (the `rel32`s: three `__security_check_cookie`, the
+/// window, `memset`; the loops' jumps stay inside).
+pub const TAIL_DRAW_0150: Sig = Sig {
+    len: 2415,
+    hash: 0x6e8a_ed7c_a88c_3c83,
+    calls: &[
+        (0x95, Callee::Any),
+        (0xb2, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0x16c, Callee::Import("memset")),
+        (0x8c3, Callee::Any),
+        (0x967, Callee::Any),
+    ],
+    imports: &[],
+};

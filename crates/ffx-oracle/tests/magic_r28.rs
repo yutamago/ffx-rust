@@ -47,6 +47,14 @@ fn wf(m: &mut dyn StubMem, at: u32, v: f32) {
     m.w32(at, v.to_bits());
 }
 
+/// Folds the flag word at `cell` into `slot`'s own log word (the calls
+/// that run with the word set; their `eax` alone would not show it).
+fn seen_flag(m: &mut dyn StubMem, slot: u32, cell: u32) {
+    let at = SCRATCH + 0x2_1000 + 4 * (slot % 0x400);
+    let v = m.r32(at).rotate_left(1) ^ m.r32(cell);
+    m.w32(at, v);
+}
+
 /// `n` floats at `at`: `a + b i`.
 fn floats(t: &mut Twin, at: u32, n: u32, (a, b): (f32, f32)) {
     for i in 0..n {
@@ -916,19 +924,26 @@ fn strip_draw_0150() {
         // each game call logs the flag word it sees
         for (s, k) in [(311u32, 1usize), (779, 2), (865, 3), (776, 1), (777, 1)] {
             rec(&mut t, s, k, move |m, a| {
-                (0x5a5a_0000 + s) ^ a[0] ^ m.r32(cell).rotate_left(8)
+                seen_flag(m, s, cell);
+                (0x5a5a_0000 + s) ^ a[0]
             });
         }
         rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
         t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
         let answer = SCRATCH + 0x7f4;
-        rec(&mut t, 773, 2, move |m, _| m.r32(answer));
+        rec(&mut t, 773, 2, move |m, _| {
+            seen_flag(m, 773, cell);
+            m.r32(answer)
+        });
         // the packet calls dump the request and the record
         for (s, k) in [(819u32, 4usize), (820, 5)] {
             rec(&mut t, s, k, move |m, a| {
                 magic_owna::dump(m, s, a[2], 16);
                 magic_owna::dump(m, s + 0x100, a[3], 16);
-                (s << 16) ^ m.r32(cell)
+                {
+                    seen_flag(m, s, cell);
+                    s << 16
+                }
             });
         }
         rec(&mut t, 307, 0, |_, _| 0x307);
@@ -1016,18 +1031,25 @@ fn ribbon_draw_0150() {
         let cell = SCRATCH + 0x7f0;
         for (s, k) in [(865u32, 3usize), (776, 1), (777, 1)] {
             rec(&mut t, s, k, move |m, a| {
-                (0x5a5a_0000 + s) ^ a[0] ^ m.r32(cell).rotate_left(8)
+                seen_flag(m, s, cell);
+                (0x5a5a_0000 + s) ^ a[0]
             });
         }
         rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
         t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
         let answer = SCRATCH + 0x7f4;
-        rec(&mut t, 773, 2, move |m, _| m.r32(answer));
+        rec(&mut t, 773, 2, move |m, _| {
+            seen_flag(m, 773, cell);
+            m.r32(answer)
+        });
         for (s, k) in [(819u32, 4usize), (820, 5)] {
             rec(&mut t, s, k, move |m, a| {
                 magic_owna::dump(m, s, a[2], 16);
                 magic_owna::dump(m, s + 0x100, a[3], 16);
-                (s << 16) ^ m.r32(cell)
+                {
+                    seen_flag(m, s, cell);
+                    s << 16
+                }
             });
         }
         let top = k(&t, 0x531);
@@ -1094,6 +1116,296 @@ fn ribbon_draw_0150() {
                 ..Call::default()
             };
             t.check(f, c, &[], Eax::Checked, r28::ribbon_draw_0150);
+        }
+        assert!(
+            t.u32(magic_owna::row(820)) >= 1 && t.u32(magic_owna::row(819)) >= 1,
+            "both packets"
+        );
+    }
+}
+
+/// `magic_0150` 0x100041e0 and its thunk 0x10006e70, `magic_0603`'s
+/// copies (`r28::strip_frame_0150`, `ecx` = the handle): the pass seen
+/// (junk `eax`) and new, the strip hit or not (the mark with slot 773
+/// true and false), the ribbon drawn or not, the spark timer running and
+/// out (with and without `+0x944`, `*G_C` set), the live sparks (none, a
+/// few, more than 64; alphas 0 and not).
+#[test]
+fn strip_frame_0150() {
+    for dll in [150u16, 603] {
+        let Some(mut t) = twin(dll) else { return };
+        let f = t.at(0x41e0);
+        let thunk = t.at(0x6e70);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        vector_slots(&mut t);
+        rec(&mut t, 248, 3, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x248
+        });
+        rec(&mut t, 232, 2, |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) * 0.5;
+                wf(m, a[0] + 4 * i, v);
+            }
+            0x232
+        });
+        mixer(&mut t, 231, 3, 0, 16);
+        let cell = SCRATCH + 0x7f0;
+        let answer = SCRATCH + 0x7f4;
+        rec(&mut t, 324, 0, |m, _| {
+            let k = m.r32(magic_owna::row(324));
+            0x3f00_0000 + 0x0012_3456 * (k % 7)
+        });
+        rec(&mut t, 307, 0, |_, _| 0x307);
+        t.stub_st0(307, |m, _| {
+            f64::from(m.r32(magic_owna::row(307)) % 11) * 0.1
+        });
+        for (s, k) in [
+            (865u32, 3usize),
+            (776, 1),
+            (777, 1),
+            (775, 2),
+            (779, 2),
+            (774, 5),
+            (778, 6),
+        ] {
+            rec(&mut t, s, k, move |m, a| {
+                seen_flag(m, s, cell);
+                (0x5a5a_0000 + s) ^ a[0]
+            });
+        }
+        rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+        t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
+        rec(&mut t, 773, 2, move |m, _| {
+            seen_flag(m, 773, cell);
+            m.r32(answer)
+        });
+        for (s, k) in [(819u32, 4usize), (820, 5)] {
+            rec(&mut t, s, k, move |m, a| {
+                magic_owna::dump(m, s, a[2], 16);
+                magic_owna::dump(m, s + 0x100, a[3], 16);
+                {
+                    seen_flag(m, s, cell);
+                    s << 16
+                }
+            });
+        }
+        let (h, n) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+        let (b0, b1, strip, data) = (
+            SCRATCH + 0x2400,
+            SCRATCH + 0x2600,
+            SCRATCH + 0x2c00,
+            SCRATCH + 0x3000,
+        );
+        let (model, table) = (SCRATCH + 0x3400, SCRATCH + 0x3600);
+        // (pass seen, hit, 773, window, start, 0x944, timer, sparks, *G_C, alpha scale)
+        let cases: [(bool, u32, u32, u16, u16, u32, u8, u8, u32, f32); 8] = [
+            (true, 1, 1, 5, 0, 0, 1, 3, 0, 1.0),
+            (false, 1, 1, 5, 0, 0, 1, 3, 0, 1.0),
+            (false, 1, 0, 6, 1, 1, 3, 70, 0, 0.5),
+            (false, 0, 1, 5, 2, 0, 1, 2, 0, 1.0),
+            (false, 1, 0, 1, 0, 1, 2, 0, 0, 1.0),
+            (false, 1, 1, 4, 3, 1, 0x80, 5, 1, 0.0),
+            (false, 1, 0, 5, 5, 0, 1, 0x3e, 0, 2.0),
+            (false, 1, 1, 7, 1, 0, 9, 1, 0, 1.0),
+        ];
+        for (k, (seen, hit, yes, window, start, flag944, timer, sparks, busy, ascale)) in
+            (0u32..).zip(cases)
+        {
+            let pass = 3 + k as u8;
+            t.set_u32(h, n);
+            t.set_u8(h + 4, 0x7e);
+            t.set_u8(h + 5, pass);
+            junk(&mut t, n, 0x980, k);
+            t.set_u32(n + 0x10, n);
+            t.set_u8(n + 0x1a, if seen { pass } else { 1 });
+            for (o, x) in [
+                (0x91cu32, b0),
+                (0x920, strip),
+                (0x924, b1),
+                (0x928, table),
+                (0x92c, model),
+            ] {
+                t.set_u32(n + o, x);
+            }
+            t.set_u32(n + 0x930, (0.75 + 0.125 * k as f32).to_bits());
+            t.set_u32(n + 0x934, 0.5f32.to_bits());
+            t.set_u8(n + 0x938, timer);
+            t.set_u8(n + 0x939, sparks);
+            t.set_u32(n + 0x944, flag944);
+            for i in 0..0x40u32 {
+                let w = (0.1 * (i % 9) as f32) * ascale;
+                t.set_u32(n + 0x428 + 16 * i, w.to_bits());
+                t.set_u32(n + 0x81c + 4 * i, 0);
+            }
+            // the bones and the strip stop at once (their pass seen)
+            for b in [b0, b1] {
+                junk(&mut t, b, 0x100, k + 1);
+                t.set_u8(b + 0x1a, pass);
+            }
+            for i in 0..16u32 {
+                t.set_u32(
+                    b0 + 0x9c + 4 * i,
+                    if i % 5 == 0 { 1.0f32 } else { 0.0 }.to_bits(),
+                );
+            }
+            junk(&mut t, strip, 0x100, k + 2);
+            t.set_u8(strip + 0x1a, pass);
+            t.set_u32(strip + 0x1c, data);
+            t.set_u16(strip + 0x20, 8);
+            t.set_u16(strip + 0x22, 0x10);
+            t.set_u16(strip + 0x26, window);
+            t.set_u16(strip + 0x28, start);
+            t.set_u32(strip + 0xf8, hit);
+            for i in 0..32u32 {
+                t.set_u32(data + 4 * i, (0.25 * i as f32 - 3.0 + k as f32).to_bits());
+            }
+            junk(&mut t, model, 0x40, k + 3);
+            t.set_u8(model, (k % 4) as u8);
+            // the stream table: two blocks
+            junk(&mut t, table, 0x80, k + 4);
+            t.set_u16(table + 6, 2);
+            for i in 0..2u32 {
+                t.set_u16(table + 8 * (i + 2), 0x40 + 0x10 * i as u16);
+                t.set_u16(table + 8 * (i + 2) + 2, 0x300);
+            }
+            let pf = op(&t, 0x36b);
+            t.set_u32(pf, cell);
+            t.set_u32(cell, 0x0c0c_0000 + k);
+            t.set_u32(answer, yes);
+            let gx = SCRATCH + 0x7e0;
+            t.set_u32(op(&t, 0x2d8), gx);
+            t.set_u32(gx, 0x0e0e_0000 + k);
+            t.set_u32(op(&t, 0x32b), 0x0f0f_0000 + k);
+            t.set_u32(op(&t, 0x497), busy);
+            t.set_u32(op(&t, 0x75f), 2 + k);
+            magic_h6::scrub(&mut t);
+            // the never-written words the callees read: 0 on both sides
+            let z = ((magic::STACK_TOP - 0x100 - 4) & !0xf) - 0x230;
+            for o in [0x190u32, 0x94, 0xb0] {
+                t.set_u32(z + o, 0);
+            }
+            t.write(z + 0x30, &[0; 0x1c]);
+            t.write(z + 0x8a, &[0; 2]);
+            // and the ribbon's (its `esp` 4 below this frame)
+            let rz = ((z - 4 - 4) & !0xf) - 0x240;
+            for o in [0x50u32, 0x54, 0x58, 0x74] {
+                t.set_u32(rz + o, 0);
+            }
+            t.write(rz + 0x69, &[0; 3]);
+            let eax = if seen { Eax::Junk } else { Eax::Checked };
+            if k % 2 == 0 {
+                t.check(f, Call::this(h), &[], eax, r28::strip_frame_0150);
+            } else {
+                t.check_entry(thunk, Call::default(), &[h], eax);
+            }
+        }
+        assert!(
+            t.u32(magic_owna::row(778)) + t.u32(magic_owna::row(774)) >= 1,
+            "the sparks"
+        );
+        assert!(t.u32(magic_owna::row(775)) >= 1, "the mark (773 true)");
+        assert!(
+            t.u32(magic_owna::row(820)) >= 2,
+            "the mark (773 false) and the ribbon"
+        );
+        assert!(
+            t.u32(magic_owna::row(307)) >= 9,
+            "the spark speeds: {}",
+            t.u32(magic_owna::row(307))
+        );
+    }
+}
+
+/// `magic_0150` 0x100058a0 and `magic_0603` (`r28::tail_draw_0150`, cdecl
+/// `(obj)`): the size at 0, below and NaN; windows of one point, in one
+/// piece, wrapped (the newest piece first), longer than 16 points (the
+/// count runs out first); colours out of `fistp`'s range; slot 773 true
+/// and false.
+#[test]
+fn tail_draw_0150() {
+    for n in [150u16, 603] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(0x58a0);
+        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        rec(&mut t, 325, 2, |m, a| {
+            for i in 0..4 {
+                let x = m.r32(a[1] + 4 * i);
+                m.w32(a[0] + 4 * i, x);
+            }
+            0x325
+        });
+        mixer(&mut t, 231, 3, 0, 16);
+        mixer(&mut t, 230, 2, 0, 16);
+        let cell = SCRATCH + 0x7f0;
+        for (s, k) in [(311u32, 1usize), (779, 2), (865, 3), (776, 1), (777, 1)] {
+            rec(&mut t, s, k, move |m, a| {
+                seen_flag(m, s, cell);
+                (0x5a5a_0000 + s) ^ a[0]
+            });
+        }
+        rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+        t.stub_edx(772, |_, a| 0x0077_2000 ^ a[1]);
+        let answer = SCRATCH + 0x7f4;
+        rec(&mut t, 773, 2, move |m, _| {
+            seen_flag(m, 773, cell);
+            m.r32(answer)
+        });
+        for (s, k) in [(819u32, 4usize), (820, 5)] {
+            rec(&mut t, s, k, move |m, a| {
+                magic_owna::dump(m, s, a[2], 16);
+                magic_owna::dump(m, s + 0x100, a[3], 16);
+                seen_flag(m, s, cell);
+                s << 16
+            });
+        }
+        let (obj, strip, data) = (SCRATCH + 0x2000, SCRATCH + 0x2c00, SCRATCH + 0x3000);
+        let (b0, b1) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
+        // (size, window, start, 773)
+        let cases: [(f32, u16, u16, u32); 8] = [
+            (0.0, 5, 0, 1),
+            (-2.0, 5, 0, 0),
+            (f32::NAN, 5, 0, 1),
+            (0.75, 1, 3, 1),
+            (1.5, 5, 0, 0),
+            (0.5, 5, 22, 1),
+            (2.0, 20, 10, 0),
+            (1.0e20, 6, 21, 1),
+        ];
+        for (k, (s, window, start, yes)) in (0u32..).zip(cases) {
+            junk(&mut t, obj + 0x900, 0x60, k);
+            t.set_u32(obj + 0x930, s.to_bits());
+            t.set_u32(obj + 0x920, strip);
+            t.set_u32(obj + 0x924, b1);
+            t.set_u32(obj + 0x91c, b0);
+            junk(&mut t, b0, 0x100, k + 1);
+            junk(&mut t, b1, 0x100, k + 2);
+            junk(&mut t, strip, 0x40, k + 3);
+            t.set_u32(strip + 0x1c, data);
+            t.set_u16(strip + 0x20, 24);
+            t.set_u16(strip + 0x22, 0x10);
+            t.set_u16(strip + 0x26, window);
+            t.set_u16(strip + 0x28, start);
+            for i in 0..96u32 {
+                t.set_u32(data + 4 * i, (0.25 * i as f32 - 3.0 + k as f32).to_bits());
+            }
+            let pf = op(&t, 0x64);
+            t.set_u32(pf, cell);
+            t.set_u32(cell, 0x0c0c_0000 + k);
+            t.set_u32(answer, yes);
+            let gx = SCRATCH + 0x7e0;
+            t.set_u32(op(&t, 0x763), gx);
+            t.set_u32(gx, 0x0e0e_0000 + k);
+            t.set_u32(op(&t, 0x7d5), 0x0f0f_0000 + k);
+            magic_h6::scrub(&mut t);
+            let z = ((magic::STACK_TOP - 0x100 - 4) & !0xf) - 0x230;
+            t.write(z + 0xb0, &[0; 0x1c]);
+            t.write(z + 0xe9, &[0; 3]);
+            t.set_u32(z + 0xf4, 0);
+            t.check_entry(f, Call::default(), &[obj], Eax::Checked);
         }
         assert!(
             t.u32(magic_owna::row(820)) >= 1 && t.u32(magic_owna::row(819)) >= 1,

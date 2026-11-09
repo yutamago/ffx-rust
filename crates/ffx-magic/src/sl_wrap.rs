@@ -14,7 +14,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the loaded word, `esp`
 /// at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 12] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 13] {
     [
         (&m0146::SUB_NODE_VISIT, m0146::sub_node_visit::<G>),
         (&m0146::SUB_NODE_VISIT_0173, m0146::sub_node_visit::<G>),
@@ -35,6 +35,10 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 12] {
         (
             &crate::r28::STRIP_TASK_0150,
             crate::r28::strip_task_0150::<G>,
+        ),
+        (
+            &crate::r28::STRIP_FRAME_0150,
+            crate::r28::strip_frame_0150::<G>,
         ),
     ]
 }
@@ -95,4 +99,7 @@ thunks! {
     /// `magic_0150` 0x10007bf0 over [`crate::r28::strip_task_0150`] (agent
     /// magic-r28).
     JMP_STRIP_TASK_0150 => crate::r28::STRIP_TASK_0150;
+    /// `magic_0150` 0x10006e70 over [`crate::r28::strip_frame_0150`] (agent
+    /// magic-r28).
+    JMP_STRIP_FRAME_0150 => crate::r28::STRIP_FRAME_0150;
 }
