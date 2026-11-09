@@ -1850,6 +1850,9 @@ fn landing_take_0284() {
         (1.5, 2.0, 3.0, 0.75, false),
         (-2.5, 0.0, 7.0, -3.0, true),
         (2.0, 4.0, 1.0, f32::NAN, false),
+        // on the box's edges: `x` at its low bound, `z` at its bound
+        (-10.0, 1.0, 3.0, 0.5, false),
+        (1.0, 1.0, -4.0, 0.5, false),
     ]
     .into_iter()
     .enumerate()
