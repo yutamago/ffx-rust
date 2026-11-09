@@ -1315,7 +1315,7 @@ fn steps_0055_0067() {
             0x262
         });
         rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
-        t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.75 - 4.0);
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 1.5 - 4.0);
         rec(&mut t, 390, 1, |m, _| m.r32(SCRATCH + 0xa04));
         for (s, k) in [(413u32, 1usize), (215, 1), (239, 3), (723, 1), (724, 2)] {
             rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
@@ -1376,7 +1376,7 @@ fn steps_0055_0067() {
             (0, 4, 0, 0, 0, true, 1, false),
             (0, 1, 0x100, 1, 1, true, 1, true),
             (-3, 1, 0x1100, 0, 1, true, 0, false),
-            (0, 1, 0x200, 0, 1, false, 1, false),
+            (0, 1, 0x200, 0, 1, false, 0, false),
             (0, 0, 0, 0, 1, true, 1, false),
             (0, -2, 0, 0, 1, true, 0, true),
             (2, 1, 0x100, 1, 0, true, 1, true),
@@ -1390,7 +1390,9 @@ fn steps_0055_0067() {
             junk_ops(
                 &mut t,
                 f,
-                &[0x2b, 0x37, 0x6b, 0x11e, 0x12d, 0x137, 0x190, 0x1d6],
+                &[
+                    0x2b, 0x37, 0x6b, 0x111, 0x11e, 0x12d, 0x137, 0x173, 0x17d, 0x190, 0x1d6,
+                ],
             );
             junk_ops(&mut t, path, &path_globals);
             for (o55, o67) in [(0x3b1u32, 0x2f5u32), (0x408, 0x34c)] {
