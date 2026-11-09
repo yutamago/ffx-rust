@@ -5080,3 +5080,108 @@ pub const SCRIPT_TASK_0586: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0586`'s flat mesh coordinates (0x10001440, 499 bytes; internal,
+/// no arguments, `esp` the entry stack pointer; a cookie frame, `ebp = E -
+/// 4`, the low bound at `ebp - 0x34`, the high one at `ebp - 0x44`, the
+/// sum at `ebp - 0x14`). For each of the 20 meshes `i` (slot 719 `(P, 4,
+/// i)`, `ecx` = `i`): its bounds ([`mesh_bounds`](crate::s8_misc::mesh_bounds));
+/// the shorter of the x and y spans is centred on the longer (`comiss`/
+/// `jbe`: with x's span not above y's, unordered too, x moves by `K` times
+/// the difference, else y) and the longer one times `K2` is the scale `m`.
+/// Every triangle of the mesh's kind-3 groups (as in the bounds: 0x28
+/// bytes from the group's `+0x10`, the vertex indices `+0xc..+0x10` into
+/// the i16 table) writes its three vertices' `((x - x0) / m, (y - y0) /
+/// m)` to the next 0x30 bytes of `S + 0x9d0 + 0x600 i` (`S = *G_S`; the
+/// pairs at `+0`, `+0x10`, `+0x20`, y first). Returns the last mesh's
+/// output address plus 0x600.
+#[allow(clippy::too_many_lines)] // one loop nest
+pub fn flat_coords_0586<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    use crate::sb_sse::{cvt, div, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ebp = esp.wrapping_sub(4);
+    let l = |off: u32| ebp.wrapping_sub(off);
+    let (lo, hi, sum) = (l(0x34), l(0x44), l(0x14));
+    let mut base = g.read::<u32>(w(0x11)).wrapping_add(0x9d0);
+    g.write::<u32>(l(0x24), 0);
+    g.write::<u32>(l(0x18), base);
+    for i in 0..=0x13u32 {
+        let mut out = base;
+        // call width: 3
+        let mesh = g
+            .call(slot_target(g, w(0x28), 719), i, &[w(0x36), 4, i])
+            .eax;
+        // ebx, esi, edi, `i`'s word, hi, sum: the return address at `E -
+        // 0x64`
+        let bf = Frame {
+            at: img.rel32_target(f + 0x4f),
+            esp: ebp.wrapping_sub(0x60),
+            ecx: mesh,
+            edx: lo,
+            ..Frame::default()
+        };
+        g.write::<u32>(bf.esp + 4, hi);
+        g.write::<u32>(bf.esp + 8, sum);
+        g.write::<u32>(bf.esp + 0xc, i);
+        crate::s8_misc::mesh_bounds(g, img, &bf);
+        let dx = sub(g.read::<f32>(hi), g.read::<f32>(lo));
+        let dy = sub(g.read::<f32>(hi + 4), g.read::<f32>(lo + 4));
+        let (mut x0, mut y0) = (g.read::<f32>(lo), g.read::<f32>(lo + 4));
+        let span = if dx > dy {
+            y0 = sub(y0, mul(sub(dx, dy), k(g, 0x82)));
+            g.write::<f32>(lo + 4, y0);
+            dx
+        } else {
+            x0 = sub(x0, mul(sub(dy, dx), k(g, 0x9c)));
+            g.write::<f32>(lo, x0);
+            dy
+        };
+        let m = mul(span, k(g, 0xb7));
+        let mut n = i32::from(g.read::<i16>(mesh + 0x10));
+        let mut grp = mesh.wrapping_add(g.read::<u32>(mesh + 4));
+        let verts = mesh.wrapping_add(g.read::<u32>(mesh + 8));
+        g.write::<i32>(l(0x20), n);
+        while n > 0 {
+            let cnt = i32::from(g.read::<i16>(grp + 2));
+            let mut tri = grp + 0x10;
+            if g.read::<u8>(grp + 1) == 3 {
+                let mut j = 0i32;
+                g.write::<i32>(l(0x1c), 0);
+                while j < cnt {
+                    for v in 0..3u32 {
+                        let idx = u32::from(g.read::<u16>(tri + 0xc + 2 * v));
+                        let p = verts.wrapping_add(idx * 6);
+                        let y = cvt(i32::from(g.read::<i16>(p + 2)).cast_unsigned());
+                        let x = cvt(i32::from(g.read::<i16>(p)).cast_unsigned());
+                        g.write::<f32>(out + 0x10 * v + 4, div(sub(y, y0), m));
+                        g.write::<f32>(out + 0x10 * v, div(sub(x, x0), m));
+                    }
+                    out += 0x30;
+                    tri += 0x28;
+                    j += 1;
+                    g.write::<i32>(l(0x1c), j);
+                }
+            }
+            n -= cnt;
+            g.write::<i32>(l(0x20), n);
+            grp = tri;
+        }
+        base = base.wrapping_add(0x600);
+        g.write::<u32>(l(0x24), i + 1);
+        g.write::<u32>(l(0x18), base);
+    }
+    base
+}
+
+/// [`flat_coords_0586`] (499 bytes, 1 overlay).
+pub const FLAT_COORDS_0586: Sig = Sig {
+    len: 499,
+    hash: 0x9b2b_aa2f_f626_59da,
+    calls: &[
+        (0x4f, Callee::Sig(&crate::s8_misc::MESH_BOUNDS)),
+        // __security_check_cookie
+        (0x1eb, Callee::Any),
+    ],
+    imports: &[],
+};

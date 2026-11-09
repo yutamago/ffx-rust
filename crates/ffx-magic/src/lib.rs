@@ -3668,6 +3668,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r25 placement 0587", &r25::PLACE_0587),
     ("r25 start-up 0587", &r25::START_UP_0587),
     ("r25 effect end 0586", &r25::EFFECT_END_0586),
+    ("r25 flat coordinates 0586", &r25::FLAT_COORDS_0586),
     // round 25 (magic-r25): end of INTERNAL
     // round 20 (magic-r20)
     ("r20 start-up 0508", &r20::START_UP_0508),

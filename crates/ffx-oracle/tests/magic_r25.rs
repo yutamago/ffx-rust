@@ -2451,3 +2451,80 @@ fn script_task_0586() {
     }
     assert!(t.u32(ownb::LOG) > 0x40, "the task's calls");
 }
+
+/// `magic_0586` 0x10001440 (`r25::flat_coords_0586`): 20 meshes from
+/// three (wider than tall, taller than wide, empty), kind-3 groups with
+/// and without triangles, a skipped group.
+#[test]
+fn flat_coords_0586() {
+    let Some(mut t) = twin(586) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..3u32 {
+            let x = f32::from_bits(m.r32(a[0] + 4 * i)) * 0.125;
+            m.w32(a[1] + 4 * i, x.to_bits());
+        }
+        0x232
+    });
+    rec(&mut t, 564, 3, |_, a| a[2] ^ 0x564);
+    let meshes = [SCRATCH + 0x1000, SCRATCH + 0x2000, SCRATCH + 0x3000];
+    rec(&mut t, 719, 3, move |m, a| {
+        let k = m.r32(SCRATCH + 0x10);
+        meshes[((a[2] + k) % 3) as usize]
+    });
+    let f = t.at(0x1440);
+    let s = SCRATCH + 0x1_0000;
+    // (the groups: kind, triangles), the x and y spread
+    let shapes: [(&[(u8, i16)], i32, i32); 3] = [
+        (&[(3, 2), (1, 1), (3, 3)], 61, 23),
+        (&[(3, 0), (3, 4)], 13, 47),
+        (&[], 1, 1),
+    ];
+    for k in 0..2u32 {
+        t.set_u32(SCRATCH + 0x10, k);
+        t.set_u32(t.img.word(f + 0x11), s);
+        junk(&mut t, s + 0x9d0, 0x600 * 20, k);
+        for (mi, (groups, sx, sy)) in shapes.iter().enumerate() {
+            let m = meshes[mi];
+            let verts = m + 0x800;
+            let grps = m + 0x40;
+            for i in 0..32i32 {
+                let x = (i * 37 + k.cast_signed() * 5) % sx - sx / 2;
+                let y = (i * 11 + 3) % sy - sy / 3;
+                let z = (i * 5 % 17) * -3;
+                for (o, v) in [(0u32, x), (2, y), (4, z)] {
+                    t.set_u16(verts + 6 * i as u32 + o, (v as i16).cast_unsigned());
+                }
+            }
+            t.write(m, &[0x4d; 0x40]);
+            t.set_u32(m + 4, grps - m);
+            t.set_u32(m + 8, verts - m);
+            let total: i16 = groups.iter().map(|g| g.1).sum();
+            t.set_u16(m + 0x10, total.cast_unsigned());
+            let mut at = grps;
+            for (gi, &(kind, n)) in groups.iter().enumerate() {
+                t.write(at, &[0x47 + gi as u8; 0x10]);
+                t.set_u8(at + 1, kind);
+                t.set_u16(at + 2, n.cast_unsigned());
+                at += 0x10;
+                if kind == 3 {
+                    for j in 0..n as u32 {
+                        t.write(at, &[0x52; 0x28]);
+                        for (o, v) in [0xcu32, 0xe, 0x10].into_iter().zip([
+                            j * 3 + k,
+                            j * 5 + 1,
+                            (j * 7 + k * 3) % 32,
+                        ]) {
+                            t.set_u16(at + o, (v % 32) as u16);
+                        }
+                        at += 0x28;
+                    }
+                }
+            }
+        }
+        ownb::dirty_stack(&mut t, 0x1440 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r25::flat_coords_0586(g, img, fr.at, fr.esp))
+        });
+    }
+}
