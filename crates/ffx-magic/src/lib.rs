@@ -3211,6 +3211,7 @@ ports! {
     "r31 screen task 0601" => r31::SCREEN_TASK_0601, r31::screen_task_0601;
     "r31 summon task 0601" => r31::SUMMON_TASK_0601, r31::summon_task_0601;
     "r31 start-up 0601" => r31::START_UP_0601, r31::start_up_0601;
+    "r31 summon task 0613" => r31::SUMMON_TASK_0613, r31::summon_task_0613;
     // round 31 (magic-r31): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

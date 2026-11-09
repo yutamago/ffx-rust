@@ -1649,7 +1649,12 @@ fn start_up_0601() {
         // the byte-sized actor words read
         for op in [0x72cu32, 0x83e, 0xbb8] {
             let at = w(&t, op);
-            t.set_u32(at, 3 + k);
+            t.set_u32(at, 0x0507_0603 + k);
+        }
+        // the words copied from global to global
+        for op in [0x6c2u32, 0x6d3, 0x6dd] {
+            let at = w(&t, op);
+            t.set_u32(at, 0x0c0d_0000 ^ (op << 4) ^ k);
         }
         for op in [0x31au32, 0xa81, 0xaf1, 0x465, 0x47b] {
             let at = w(&t, op);
@@ -1659,5 +1664,160 @@ fn start_up_0601() {
         let actor = SCRATCH + 0x600 + k;
         ownb::dirty_stack(&mut t, 0x96e0 + k, &[]);
         t.check_entry(f, Call::this(actor), &[actor], Eax::Checked);
+    }
+}
+
+/// `magic_0613` 0x10009780 (`r31::summon_task_0613`): every state (both
+/// camera answers, the flag on and off, the summon's start with its actor
+/// loop, the 40-run wait both ways, the end) and states nothing handles.
+#[test]
+fn summon_task_0613() {
+    let Some(mut t) = twin(613) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    let f = t.at(0x9780);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    for (s, n) in [
+        (718u32, 1usize),
+        (12, 1),
+        (282, 1),
+        (281, 1),
+        (283, 2),
+        (287, 1),
+        (211, 2),
+        (413, 1),
+        (215, 1),
+        (327, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let second = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ second.rotate_left(9)
+        });
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
+    t.stub_st0(282, |_, a| f64::from(a[0] & 0x7) * 0.25);
+    t.stub_st0(790, |_, _| 0.375);
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    rec(&mut t, 520, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0xa14);
+        m.w32(SCRATCH + 0xa14, k + 1);
+        m.r32(SCRATCH + 0xa10 + 8 * (k & 1))
+    });
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + (a[1] & 0xf));
+        }
+        0x558
+    });
+    rec(&mut t, 288, 2, |m, a| {
+        m.w32(a[1], 5);
+        SCRATCH + 0x700
+    });
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    rec(&mut t, 390, 1, |_, a| {
+        [0x106a, 0x10f8, 0x10fa, 7, 9, 11, 3][(a[0] % 7) as usize]
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.25 * i as f32);
+        }
+        0x14
+    });
+    // the summon set-up's bone: its objects visit through a stub, its
+    // function table through slot 32 (as `summon_setup_0613`'s test)
+    let setup = call(&t, 0x428);
+    let (visit, class) = (1000u32, SCRATCH + 0x3780);
+    visit_stub(&mut t, visit, class);
+    let fourth = t.img.word(setup + 0x34f);
+    for op in [0x138u32, 0x24c, 0x283] {
+        let vt = t.img.word(setup + op);
+        t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    }
+    let bt = t.img.rel32_target(setup + 0x365);
+    let table = t.img.word(bt + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    rec(&mut t, 32, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 - 1.0);
+        }
+        0x32
+    });
+    let (a, s) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    // the static parents and lists the start appends to
+    let parents = [
+        w(&t, 0x240),
+        w(&t, 0x45b),
+        w(&t, 0x5e7),
+        w(&t, 0x38d),
+        w(&t, 0x782),
+        w(&t, 0x1f6),
+        w(&t, 0x408),
+    ];
+    let ts = call(&t, 0x218);
+    let task_last = t.img.word(ts + 0x04);
+    let sl = call(&t, 0x430);
+    let sl_last = t.img.word(sl + 0x1);
+    // (state, the counter `S + 0x38`, slot 520's two answers, the flag)
+    let cases: [(u32, u32, u32, u32, u8); 18] = [
+        (0, 0, 0, 0, 0),
+        (0x190, 0, 0x024b_0005, 0, 0),
+        (0x190, 0, 7, 0, 0),
+        (0x191, 0, 0, 0, 1),
+        (0x192, 0, 0, 0, 0),
+        (0x192, 0, 0, 0, 1),
+        (0x19a, 0, 0, 0, 0),
+        (0x19b, 0, 0, 0, 0),
+        (0x19c, 5, 0, 0, 0),
+        (0x19c, 0x30, 0, 0, 0),
+        (0x2bc, 0, 0x0237_0000, 0x0238_0000, 0),
+        (0x2bc, 0, 0x0238_0000, 1, 0),
+        (0x2bc, 0, 0x024f_000a, 1, 0),
+        (0x2bc, 0, 3, 1, 0),
+        (0x2710, 0, 0, 0, 0),
+        (0x1a0, 0, 0, 0, 0),
+        (0x150, 0, 0, 0, 0),
+        (0x3000, 0, 0, 0, 0),
+    ];
+    for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x60, k);
+        t.set_u32(s + 0x18, state);
+        t.set_u32(s + 0x38, n38);
+        t.set_u32(a + 4, s);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3700, SCRATCH + 0x3740);
+        t.set_u32(a, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for &p in &parents {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+            t.set_u16(p + 0x18, 1);
+        }
+        for (last, blk) in [(task_last, SCRATCH + 0x7400), (sl_last, SCRATCH + 0x7480)] {
+            junk(&mut t, blk, 0x20, k);
+            t.set_u32(last, blk);
+        }
+        t.set_u32(SCRATCH + 0xa10, r1);
+        t.set_u32(SCRATCH + 0xa18, r2);
+        t.set_u32(SCRATCH + 0xa14, 0);
+        let fl = w(&t, 0x188);
+        t.set_u8(fl, flag);
+        t.set_u32(fourth, class);
+        for op in [0x96u32, 0xbc, 0x191, 0x8fb] {
+            let at = w(&t, op);
+            t.set_u32(at, (1.5f32 + op as f32 / 256.0).to_bits());
+        }
+        ownb::dirty_stack(&mut t, 0x9780 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
