@@ -198,8 +198,15 @@ fn disp8(img: &Image, at: u32) -> u32 {
 /// slots 330, 328, 329 `(M, M, angle)` turn it by three of the copied
 /// floats; one of them down by `K2`; slot 257 `(h, 0)`. Each call sees the
 /// words the earlier ones left on the stack. Returns slot 257's `eax`.
+///
+/// `magic_0430` 0x10003630 (559 bytes, `r26::ACTOR_MATRIX_0430`) is the
+/// same code without the step down by `K2` and with slot 17's product
+/// taken the other way round (`movss` at `+0x18d` where the others load
+/// the slot table there); its last operands sit 0x18 bytes earlier (the
+/// `push 0` before the actor's, 0x1a).
 pub fn actor_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
+    let v0430 = img.word(f + 0x18d) as u8 == 0xf3;
     let w = |off: u32| img.word(f + off);
     let k = |g: &G, op: u32| g.read::<f32>(w(op));
     let fl = |g: &G, a: u32| g.read::<f32>(a);
@@ -263,11 +270,15 @@ pub fn actor_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     stack.insert(0, h3);
     // call width: 7
     let r = st(g.call(t, 0, &stack));
-    let v = mul(r, fl(g, m + 0x28));
+    let v = if v0430 {
+        mul(fl(g, m + 0x28), r)
+    } else {
+        mul(r, fl(g, m + 0x28))
+    };
     g.write::<f32>(m + 0x28, v);
     let mut stack = Vec::new();
     for (tab, slot, a) in [
-        (0x18eu32, 330u32, 0x1abu32),
+        (if v0430 { 0x19bu32 } else { 0x18e }, 330u32, 0x1abu32),
         (0x1c7, 328, 0x1c2),
         (0x1e9, 329, 0x1e4),
     ] {
@@ -276,10 +287,15 @@ pub fn actor_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         stack = vec![m, m, ang];
         g.call(t, 0, &stack);
     }
-    let y = sub(fl(g, s.wrapping_add(w(0x200))), k(g, 0x208));
-    g.write::<f32>(s.wrapping_add(w(0x212)), y);
-    let (_, h4) = actor(g, 0x217, 0x21e, 0x222);
-    let t = slot_target(g, w(0x227), 257);
+    let (ptr, d, tab, imp) = if v0430 {
+        (0x1fd, 0x206, 0x20a, 0x20f)
+    } else {
+        let y = sub(fl(g, s.wrapping_add(w(0x200))), k(g, 0x208));
+        g.write::<f32>(s.wrapping_add(w(0x212)), y);
+        (0x217, 0x21e, 0x222, 0x227)
+    };
+    let (_, h4) = actor(g, ptr, d, tab);
+    let t = slot_target(g, w(imp), 257);
     stack.splice(0..0, [h4, 0]);
     Ret::eax(g.call(t, 0, &stack).eax)
 }
