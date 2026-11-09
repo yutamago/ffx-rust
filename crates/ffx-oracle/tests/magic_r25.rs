@@ -2409,10 +2409,15 @@ fn script_task_0586() {
         t.set_u32(s + 0x858c, 0x0858_c000 + k);
         t.write(w(&t, 0x10), &[0x61; 0x30]);
         t.set_u32(w(&t, 0x26), 0x0026_0000 + k);
-        for (op, state) in [(0x2eu32, effect), (0x3d, camera)] {
+        // the frame step 2; the effect's script waits for ever, the
+        // camera's counts its wait down (5 to 3)
+        let run = call(&t, 0x44);
+        t.set_u32(t.img.word(run + 0x56), SCRATCH + 0x8100);
+        t.set_u32(SCRATCH + 0x8100, 2);
+        for (op, state, wait) in [(0x2eu32, effect, 0xffffu16), (0x3d, camera, 5)] {
             let ctx = w(&t, op);
             t.set_u32(ctx, SCRATCH + 0x8000);
-            t.set_u16(ctx + 0x54, 0xffff);
+            t.set_u16(ctx + 0x54, wait);
             t.set_u8(ctx + 0x56, state);
             t.set_u32(ctx + 0x24, 0);
             t.set_u32(ctx + 0x28, 0);
