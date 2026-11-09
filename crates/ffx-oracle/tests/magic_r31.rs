@@ -584,7 +584,11 @@ fn visit_stub(t: &mut Twin, visit: u32, class: u32) {
         m.w32(SCRATCH + 0x3800, k + 1);
         let cur = m.r32(a[0]);
         m.w32(SCRATCH + 0x3810 + 8 * (k % 8), cur);
-        m.w32(SCRATCH + 0x3814 + 8 * (k % 8), m.r32(a[0] + 4));
+        // the mark byte `+5` (a frame cursor's byte `+4` is never written)
+        m.w32(
+            SCRATCH + 0x3814 + 8 * (k % 8),
+            (m.r32(a[0] + 4) >> 8) & 0xff,
+        );
         0x1000 + k
     });
     t.set_u32(class + 0x1c, magic::TRAPS + 16 * visit);
@@ -657,9 +661,10 @@ fn visit_0577() {
         v(false, 0, 5, 0.25, 0.5, 0.5, 0.0, 0.0, 0.0),
         v(false, 0, 4, 0.25, 0.5, 2.0, 0.0, 0.0, 0.0),
         v(false, 0, 0, 0.25, f32::NAN, 2.0, 0.0, 0.0, 0.0),
-        // the top equal to the highest axis (bit 1) and to the lowest
-        v(false, 0, 2, 0.25, 0.5, 2.0, 100.0, 0.0, 0.0),
-        v(false, 0, 0, 0.25, 0.5, 2.0, -100.0, 0.0, 0.0),
+        // the top equal to the highest axis (bit 1) and to the lowest (rate
+        // 0: the axes stay where they are)
+        v(false, 0, 2, 0.0, 0.5, 2.0, 100.0, 0.0, 0.0),
+        v(false, 0, 0, 0.0, 0.5, 2.0, -100.0, 0.0, 0.0),
     ];
     let list = SCRATCH + 0x3600;
     for (k, p) in (0u32..).zip(cases) {
@@ -1121,6 +1126,139 @@ fn object_setup_0512() {
         };
         t.check(f, c, &[a, b], Eax::Checked, |g, img, fr| {
             ffx_magic::r31::object_setup_0512(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0601` 0x100083f0 (`r31::screen_setup_0601`): the parent's child
+/// list empty and not; slot 687's answer varied.
+#[test]
+fn screen_setup_0601() {
+    let Some(mut t) = twin(601) else { return };
+    all_stubs(&mut t);
+    for (s, n) in [(687u32, 3usize), (692, 3), (691, 7), (690, 5), (693, 2)] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ a[1].rotate_left(9)
+        });
+    }
+    let f = t.at(0x83f0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let obj = SCRATCH + 0x6000;
+    let parent = w(&t, 0x13b);
+    let tail = w(&t, 0x22);
+    for (k, empty) in (0u32..).zip([true, false, true]) {
+        junk(&mut t, obj, 0x180, k);
+        junk(&mut t, SCRATCH + 0x7400, 0x20, k);
+        t.set_u32(tail, SCRATCH + 0x7400);
+        let fl = w(&t, 0x41);
+        t.set_u32(fl, 0xffff_0003 + k);
+        let kid = SCRATCH + 0x7500;
+        junk(&mut t, kid, 0x20, k + 3);
+        t.set_u32(parent + 0x10, if empty { parent } else { kid });
+        t.set_u32(parent + 0xc, if empty { parent } else { kid });
+        t.set_u16(parent + 0x18, 2 + k as u16);
+        ownb::dirty_stack(&mut t, 0x83f0 + k, &[]);
+        t.check(f, Call::this(obj), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r31::screen_setup_0601(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0613` 0x10007640 (`r31::summon_setup_0613`): two models, one and
+/// none; with a parent and without; the model's flag set (slot 333) and
+/// not (slot 601).
+#[test]
+fn summon_setup_0613() {
+    let Some(mut t) = twin(613) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    // slot 233 fills the bone's local vector (its words are read back)
+    vector_stubs(&mut t);
+    let f = t.at(0x7640);
+    rec(&mut t, 218, 2, |_, a| SCRATCH + 0x700 + (a[0] & 1));
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    rec(&mut t, 262, 4, |m, a| {
+        let k = (a[0] & 0xff) as f32;
+        wf(m, a[1], 2.0 * (k - 2.0));
+        wf(m, a[2], 0.5 * k);
+        wf(m, a[3], 3.0 - k);
+        0x262
+    });
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.25 * i as f32);
+        }
+        0x14
+    });
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 1.5 - i as f32);
+        }
+        0x290
+    });
+    for s in [333u32, 211, 413, 215] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                if i % 5 == 0 { 1.0 } else { 0.125 * i as f32 },
+            );
+        }
+        0x327
+    });
+    // the bone's fourth object (the DLL's, operand `+0x34f`): a visit stub
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let fourth = t.img.word(f + 0x34f);
+    // the three objects' vtables (the DLL's) visit through the stub too:
+    // calls into overlay code are call-outs on the port's side
+    for op in [0x138u32, 0x24c, 0x283] {
+        let vt = t.img.word(f + op);
+        t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    }
+    // the bone's function table (by its byte `+0x148`): slot 32's stub
+    let bt = t.img.rel32_target(f + 0x365);
+    let table = t.img.word(bt + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    rec(&mut t, 32, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 - 1.0);
+        }
+        0x32
+    });
+    let (g, s, p) = (SCRATCH + 0x100, SCRATCH + 0x1_0000, SCRATCH + 0x7000);
+    // (models, parent, flags byte)
+    let cases: [(u32, bool, u8); 4] = [(2, true, 1), (1, false, 0), (0, true, 4), (2, false, 0x11)];
+    for (k, (n, with_parent, fl)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x1700, k);
+        floats(&mut t, s + 0x14f8, 16, 0.5 + k as f32);
+        t.set_u32(s + 0x162c, n);
+        for i in 0..n {
+            let o = s + 0xbc + 0x274 * i;
+            t.set_u8(o + 0x90, u8::from((i + k) % 2 == 1));
+        }
+        junk(&mut t, p, 0x40, k + 1);
+        t.set_u32(p + 0x10, p);
+        t.set_u32(p + 0xc, p);
+        t.set_u32(g, s);
+        t.set_u32(g + 4, if with_parent { p } else { 0 });
+        t.set_u32(g + 8, 0x0008_0001 + k);
+        t.set_u32(g + 0xc, 0x000c_0002 + k);
+        t.set_u8(g + 0x10, fl);
+        t.set_u32(fourth, class);
+        ownb::dirty_stack(&mut t, 0x7640 + k, &[]);
+        t.check(f, Call::this(g), &[], Eax::Checked, |gm, img, fr| {
+            ffx_magic::r31::summon_setup_0613(gm, img, fr)
         });
     }
 }
