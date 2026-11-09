@@ -3089,6 +3089,8 @@ ports! {
     "r26 boxes 0301" => r26::BOXES_0301, r26::boxes_0301;
     "r26 sparks 0354" => r26::SPARKS_0354, r26::sparks_0354;
     "r9 load step 0354" => r9_load::LOAD_0354, r9_load::load_0354;
+    "r26 sparks 0243" => r26::SPARKS_0243, r26::sparks_0243;
+    "r9 load step 0243" => r9_load::LOAD_0243, r9_load::load_0243;
     "r26 stage 0395 a" => r26::STAGE_0395_A, r26::stage_0395_a;
     "r26 stage 0395" => r26::STAGE_0395, r26::stage_0395;
     // round 26 (magic-r26): end
@@ -3739,6 +3741,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 actor matrix 0430", &r26::ACTOR_MATRIX_0430),
     ("r26 trail draw 0543", &r26::TRAIL_DRAW_0543),
     ("r26 start-up 0354", &r26::START_UP_0354),
+    ("r26 start-up 0243", &r26::START_UP_0243),
     // round 26 (magic-r26): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
