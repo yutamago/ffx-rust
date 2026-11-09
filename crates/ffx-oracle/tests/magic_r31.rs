@@ -1699,6 +1699,17 @@ fn summon_task_0613() {
     t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
     t.stub_st0(282, |_, a| f64::from(a[0] & 0x7) * 0.25);
     t.stub_st0(790, |_, _| 0.375);
+    // slot 327: a matrix written (its words are read back)
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                if i % 5 == 0 { 1.0 } else { 0.125 * i as f32 },
+            );
+        }
+        0x327
+    });
     rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
     t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
     rec(&mut t, 520, 0, |m, _| {
@@ -1713,7 +1724,7 @@ fn summon_task_0613() {
         0x558
     });
     rec(&mut t, 288, 2, |m, a| {
-        m.w32(a[1], 5);
+        m.w32(a[1], 7);
         SCRATCH + 0x700
     });
     t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
@@ -1767,7 +1778,7 @@ fn summon_task_0613() {
     let sl = call(&t, 0x430);
     let sl_last = t.img.word(sl + 0x1);
     // (state, the counter `S + 0x38`, slot 520's two answers, the flag)
-    let cases: [(u32, u32, u32, u32, u8); 18] = [
+    let cases: [(u32, u32, u32, u32, u8); 21] = [
         (0, 0, 0, 0, 0),
         (0x190, 0, 0x024b_0005, 0, 0),
         (0x190, 0, 7, 0, 0),
@@ -1778,6 +1789,9 @@ fn summon_task_0613() {
         (0x19b, 0, 0, 0, 0),
         (0x19c, 5, 0, 0, 0),
         (0x19c, 0x30, 0, 0, 0),
+        (0x19c, 0x28, 0, 0, 0),
+        (0x19a, 7, 0, 0, 0),
+        (0x19b, 9, 0, 0, 0),
         (0x2bc, 0, 0x0237_0000, 0x0238_0000, 0),
         (0x2bc, 0, 0x0238_0000, 1, 0),
         (0x2bc, 0, 0x024f_000a, 1, 0),
@@ -1811,8 +1825,27 @@ fn summon_task_0613() {
         t.set_u32(SCRATCH + 0xa18, r2);
         t.set_u32(SCRATCH + 0xa14, 0);
         let fl = w(&t, 0x188);
-        t.set_u8(fl, flag);
+        t.set_u32(fl, u32::from(flag) | 0x0300);
         t.set_u32(fourth, class);
+        // the globals the states clear or copy: junk first
+        for op in [
+            0xe2u32, 0xef, 0xfe, 0x103, 0x108, 0x117, 0x128, 0x12d, 0x132, 0x137, 0x13c, 0x141,
+            0x650, 0x674, 0x68a, 0x69a, 0x682, 0x692, 0x6c7, 0xb0f, 0xaeb,
+        ] {
+            let at = w(&t, op);
+            t.set_u32(at, (2.5f32 + op as f32 / 512.0).to_bits());
+        }
+        // the effect whose time is left, the models the actors are
+        // compared with (three, 0x274 apart)
+        let fx = w(&t, 0x349);
+        junk(&mut t, fx, 0x100, k);
+        t.set_u8(fx + 0x90, (k & 1) as u8);
+        let models = w(&t, 0x885);
+        for (j, who) in (0u32..).zip([9u32, 4, 8]) {
+            t.set_u32(models + 0x274 * j, who);
+        }
+        let nm = w(&t, 0x86d);
+        t.set_u32(nm, 3);
         for op in [0x96u32, 0xbc, 0x191, 0x8fb] {
             let at = w(&t, op);
             t.set_u32(at, (1.5f32 + op as f32 / 256.0).to_bits());
