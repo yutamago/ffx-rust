@@ -72,6 +72,7 @@ pub mod r20;
 pub mod r21;
 pub mod r22;
 pub mod r23;
+pub mod r25;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3006,6 +3007,10 @@ ports! {
     "r18 camera start 0519" => r18::CAMERA_START_0519, r18::camera_start_0519;
     "r18 summon frame 0589" => r18::SUMMON_FRAME_0589, r18::summon_frame_0589;
     // round 18 (magic-r18): end
+    // round 25 (magic-r25)
+    "r25 summon task 0573" => r25::SUMMON_TASK_0573, r25::summon_task_0573;
+    "r25 draw 0708" => r25::DRAW_0708, r25::draw_0708;
+    // round 25 (magic-r25): end
     // round 20 (magic-r20)
     "r20 load step 0508" => r20::LOAD_0508, r20::load_0508;
     "r20 glow task 0514" => r20::GLOW_TASK_0514, r20::glow_task_0514;
