@@ -1681,6 +1681,137 @@ fn summon_task_0173() {
         for i in 0..8u32 {
             t.set_u32(SCRATCH + 0x3e00 + 0x20 * i + 0x50, 0x0e00_0000 + i);
         }
+        // the flag words the effect nodes set bit 0 of, and the target
+        // flag bytes: junk first
+        for o in [0x1a2u32, 0x1a9, 0x301, 0x308] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x5a5a_5a5a ^ (o << 4) ^ k);
+        }
+        for i in 0..4u32 {
+            let at = op(&t, 0x217) + 0x60 * i - 0x20;
+            t.set_u8(at, (0x21 * i) as u8);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(
+            f,
+            Call {
+                eax: 0x0eaa_0000 + k,
+                ..Call::default()
+            },
+            &[task],
+            Eax::Checked,
+        );
+    }
+}
+
+/// `magic_0272` 0x10006960 (`r28::summon_task_0272`): every state (the
+/// set ones that run at once included), slot 411 true and false, the
+/// count below and at 5, the actor's record found and not, the static
+/// lists empty and not, the end flag set and clear, states past the
+/// table.
+#[test]
+fn summon_task_0272() {
+    let Some(mut t) = twin(272) else { return };
+    let f = t.at(0x6960);
+    let op = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    let models = SCRATCH + 0x3c00;
+    t.stub(941, move |m, a| {
+        let k = m.r32(SCRATCH + 0xa00);
+        m.w32(SCRATCH + 0xa00, k + 1);
+        models + 0x40 * (a[0] & 7)
+    });
+    for i in 0..8u32 {
+        t.write(models + 0x40 * i, &[0x11; 0x40]);
+    }
+    // the summon's targets: none
+    rec(&mut t, 288, 2, |m, a| {
+        m.w32(a[1], 0);
+        SCRATCH + 0x3b00
+    });
+    let pnw = t.img.rel32_target(f + 0x578);
+    let owner_op = t.img.word(pnw + 0x0d);
+    let (pn1, pn2) = (
+        t.img.rel32_target(pnw + 0x35),
+        t.img.rel32_target(t.img.rel32_target(f + 0x644) + 0x35),
+    );
+    particle_node_globals(&mut t, pn1, Some(owner_op));
+    particle_node_globals(&mut t, pn2, None);
+    let answer = SCRATCH + 0x7f4;
+    rec(&mut t, 411, 1, move |m, _| m.r32(answer));
+    // the bone set-up: its source and arg globals, and the pass byte its
+    // bone sees as done (0xff, as the inserted node's)
+    let bone = t.img.rel32_target(f + 0x37e);
+    let src_at = t.img.word(bone + 0x1c);
+    t.set_u32(src_at, SCRATCH + 0x3900);
+    let pass_at = t.img.word(bone + 0xf1);
+    t.set_u8(pass_at, 0xff);
+    let task = SCRATCH + 0x100;
+    let r = SCRATCH + 0x200;
+    let node = SCRATCH + 0x300;
+    let actor = SCRATCH + 0x3a00;
+    // (state, count, 411, records, the actor id found, lists empty, end flag)
+    let cases: [(u32, u32, u32, i32, bool, bool, u8); 18] = [
+        (0, 0, 0, 3, true, true, 0),
+        (0, 2, 0, 2, false, false, 0),
+        (0, 0, 0, 0, false, true, 0),
+        (10, 0, 0, 0, false, false, 0),
+        (11, 0, 0, 0, false, false, 0),
+        (11, 1, 1, 0, false, false, 0),
+        (12, 0, 0, 0, false, false, 0),
+        (12, 0, 1, 0, false, false, 0),
+        (21, 4, 1, 0, false, false, 0),
+        (21, 5, 1, 0, false, false, 0),
+        (22, 0, 0, 0, false, false, 0),
+        (22, 0, 1, 0, false, false, 0),
+        (31, 0, 0, 0, false, false, 0),
+        (31, 0, 1, 0, false, false, 0),
+        (32, 0, 1, 0, false, false, 4),
+        (32, 0, 1, 0, false, false, 0),
+        (0x2710, 0, 0, 0, false, false, 4),
+        (0x3000, 0, 0, 0, false, false, 0),
+    ];
+    for (k, (state, count, yes, nrec, found, empty, endf)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x40, k);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x2c, count);
+        t.set_u32(r + 0x30, actor);
+        t.set_u32(actor + 0x50, 0x0a0a_0000 + k);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        let (a, b) = (SCRATCH + 0x340, SCRATCH + 0x380);
+        for (n, prev, next) in [(node, a, b), (a, b, node), (b, node, a)] {
+            junk(&mut t, n, 0x20, k + 1);
+            t.set_u32(n + 4, prev);
+            t.set_u32(n + 8, next);
+        }
+        t.set_u32(answer, yes);
+        // the actor records and the id
+        t.set_u32(op(&t, 0x87), nrec.cast_unsigned());
+        let id = 0x20 + k;
+        t.set_u8(op(&t, 0x94), id as u8);
+        for i in 0..4u32 {
+            let rec = op(&t, 0x99) + 0x98 * i;
+            junk(&mut t, rec - 0x50, 0x98, k + i);
+            t.set_u32(rec, if found && i == 1 { id } else { 0x100 + i });
+        }
+        // the static lists: empty (their own address) or with a last node
+        let parent = op(&t, 0x193);
+        let tail = SCRATCH + 0x3800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(op(&t, 0x19f), if empty { parent } else { tail });
+        let parent2 = op(&t, 0x137);
+        t.set_u32(op(&t, 0xf2), if empty { parent2 } else { tail + 0x10 });
+        t.set_u8(op(&t, 0x724), endf);
+        // the nodes the set-up fills: junk first
+        for o in [0x4cu32, 0x56, 0x5e, 0x7c] {
+            let at = op(&t, o);
+            junk(&mut t, at, 0x60, k + o);
+        }
+        for o in [0x48u32, 0x52] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0bad_0000 + o);
+        }
         magic_h6::scrub(&mut t);
         t.check_entry(
             f,
