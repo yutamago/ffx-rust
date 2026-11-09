@@ -30,7 +30,16 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
     use crate::sb_sse::{add, mul, sub};
-    let w = |o: u32| img.word(f + o);
+    // `magic_0307`'s copy (`movss` at `+0x24a`, not `mov ebx`) starts a
+    // static object and moves its later code: the offsets past the object
+    // start 10 bytes on, those past 0563's alignment `lea` (`+0x4c9`) 3
+    let st = img.word(f + 0x24a) & 0xff == 0xf3;
+    let d = move |o: u32| match o {
+        _ if !st || o < 0x24a => 0,
+        0x24a..0x4d0 => 0xa,
+        _ => 3,
+    };
+    let w = |o: u32| img.word(f + o + d(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let slot = |g: &G, n: u32| slot_target(g, w(0x2d), n);
     let rf = |g: &G, at: u32| g.read::<f32>(at);
@@ -102,21 +111,31 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
         }
     }
     // the object
-    let obj = s + w(0x25a);
-    let start = img.rel32_target(f + 0x265);
-    let part = w(0x261) & 0xff;
-    if w(0x255) & 0xff == 0x6a {
-        // `push 0; push ecx; push 0; push part`: `magic_0605`'s
-        // start_object_at with both owners 0 (the `ecx` word not read)
-        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0x251), part, 0, 0);
+    let wo = |o: u32| img.word(f + o);
+    let (obj, free, view, from) = if st {
+        // `push ebx` x2, `push ecx`, `push ebx` (`ebx` 0 after the loop),
+        // `edx` the static object: start_object_at, part 0, owners 0
+        let obj = wo(0x257);
+        let start = img.rel32_target(f + 0x25c);
+        crate::s4_misc::start_object_at(g, img, start, obj, rf(g, wo(0x24e)), 0, 0, 0);
+        (obj, g.read::<u16>(wo(0x266)), wo(0x270), wo(0x27f))
     } else {
-        crate::s4_misc::start_object_anim(g, img, start, obj, k(g, 0x251), part, 0);
-    }
-    let free = g.read::<u16>(w(0x26c));
-    g.write::<u32>(obj + 0x104, w(0x276));
+        let obj = s + w(0x25a);
+        let start = img.rel32_target(f + 0x265);
+        let part = w(0x261) & 0xff;
+        if w(0x255) & 0xff == 0x6a {
+            // `push 0; push ecx; push 0; push part`: `magic_0605`'s
+            // start_object_at with both owners 0 (the `ecx` word not read)
+            crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0x251), part, 0, 0);
+        } else {
+            crate::s4_misc::start_object_anim(g, img, start, obj, k(g, 0x251), part, 0);
+        }
+        (obj, g.read::<u16>(w(0x26c)), w(0x276), w(0x283))
+    };
+    g.write::<u32>(obj + 0x104, view);
     g.write::<u8>(obj + 0x126, 2);
     for i in 0..4u32 {
-        let q = g.read::<u32>(s + w(0x283) + 4 * i);
+        let q = g.read::<u32>(s + from + 4 * i);
         g.write::<u32>(obj + 0xd0 + 4 * i, q);
     }
     g.write::<u32>(s + w(0x2b9), 2);
@@ -138,10 +157,12 @@ pub fn spin_step_0563<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 
             last_w,
             first_w,
         };
+    // (each node's operands lie on one side of the alignment `lea`)
     let take = |g: &mut G, free: u16, ops: &crate::o6_fam_pairs5::NodeOps, r: u32| {
-        crate::o6_fam_pairs5::take_busy_node(g, img, f, free, ops, r, false);
+        crate::o6_fam_pairs5::take_busy_node(g, img, f + d(ops.head), free, ops, r, false);
     };
-    let c1 = s + w(0x2b3);
+    // (0307's `lea` comes before its state store: 2 bytes on, not 10)
+    let c1 = s + if st { wo(0x2b5) } else { w(0x2b3) };
     colour_record(g, c1, (0xff00_0000, 0, 0xffff, 0x80), (0x1d, 10));
     // (the first node's append leaves the tail global alone; the second's
     // sets it, so writing it twice ends the same)
@@ -456,6 +477,7 @@ pub fn sparks_0563<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         // the texture's displacement (`mov eax, [eax + d8]`) and the
         // records' offset (`add ebx, imm32`) are the code's: `magic_0605`'s
         // copy has 0x14 and 0x1f14
+        // (`magic_0307` has a third pair)
         let tex = g.read::<u32>(g.read::<u32>(w(0x3d)) + (w(0x44) & 0xff));
         g.write::<u32>(l(0x58), tex);
         let mut r = g.read::<u32>(w(0x47)) + w(0x5f);

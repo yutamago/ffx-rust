@@ -616,11 +616,13 @@ pub const SPARKS_0180: Sig = Sig {
 /// slot 265 `(0x39b8)` gives the block back.
 ///
 /// Returns slot 265's `eax`.
+#[allow(clippy::too_many_lines)] // the original's loops, in order
 pub fn mesh_packets_0426<G: Game>(g: &mut G, img: &Image, f: u32, rec: u32) -> u32 {
     let w = |o: u32| img.word(f + o);
     let slot = |g: &G, n: u32| slot_target(g, w(0x1), n);
+    let size = w(0xe); // imm32 `+0xe`: 0x39b8 here, 0x39c0 in `magic_0297`
     // call width: 1
-    let b = g.call(slot(g, 264), 0, &[0x39b8]).eax;
+    let b = g.call(slot(g, 264), 0, &[size]).eax;
     let at = |o: u32| b.wrapping_add(o);
     let x8 = g.read::<u32>(rec + 8);
     let buf = at(0x1a8);
@@ -719,7 +721,7 @@ pub fn mesh_packets_0426<G: Game>(g: &mut G, img: &Image, f: u32, rec: u32) -> u
         g.write::<u32>(cur + 4, 0);
     }
     // call width: 1
-    g.call(slot(g, 265), 0, &[0x39b8]).eax
+    g.call(slot(g, 265), 0, &[size]).eax
 }
 
 /// [`mesh_packets_0426`].

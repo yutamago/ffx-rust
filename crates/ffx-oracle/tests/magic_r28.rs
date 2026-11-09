@@ -70,16 +70,36 @@ fn floats(t: &mut Twin, at: u32, n: u32, (a, b): (f32, f32)) {
 #[test]
 fn spin_step_0563() {
     // `magic_0605` 0x10009990 too (`r29::SPIN_STEP_0605`: its own record
-    // layout, read from the code, and start_object_at)
-    for (n, addr) in [(563u16, 0x45f0u32), (612, 0x8f20), (605, 0x9990)] {
+    // layout, read from the code, and start_object_at) and `magic_0307`
+    // 0x10006450 (`r30::SPIN_STEP_0307`: a static object, its later code
+    // 10 and then 3 bytes on)
+    for (n, addr) in [
+        (563u16, 0x45f0u32),
+        (612, 0x8f20),
+        (605, 0x9990),
+        (307, 0x6450),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
-        let op = |t: &Twin, o: u32| t.img.word(f + o);
+        let st = n == 307;
+        let op = move |t: &Twin, o: u32| {
+            let d = match o {
+                _ if !st || o < 0x24a => 0,
+                0x24a..0x4d0 => 0xa,
+                _ => 3,
+            };
+            t.img.word(f + o + d)
+        };
+        let (start_at, place_at, free_at) = if st {
+            (0x25c, 0x27f, 0x266)
+        } else {
+            (0x265, 0x283, 0x26c)
+        };
         let (speed, point, p, place, cnt_at) = (
             op(&t, 0x26),
             op(&t, 0x7e),
             op(&t, 0xe0),
-            op(&t, 0x283),
+            t.img.word(f + place_at),
             op(&t, 0xf3),
         );
         filler(&mut t, 235, 1, 16);
@@ -116,7 +136,7 @@ fn spin_step_0563() {
         });
         rec(&mut t, 388, 3, |_, a| 0x0388_0000 ^ a[0]);
         magic_r11::object_slots(&mut t);
-        let start = t.img.rel32_target(f + 0x265);
+        let start = t.img.rel32_target(f + start_at);
         magic_r11::object_start_auto(&mut t, start);
         let s = SCRATCH + 0x1_0000;
         let ring = SCRATCH + 0x8000;
@@ -139,7 +159,7 @@ fn spin_step_0563() {
             floats(&mut t, s + place, 4, (7.0, -2.5));
             t.set_u32(s + cnt_at, count);
             t.set_u32(op(&t, 0x13), s);
-            let (cnt, head) = (op(&t, 0x26c), op(&t, 0x32c));
+            let (cnt, head) = (t.img.word(f + free_at), op(&t, 0x32c));
             magic_r11::ring(&mut t, cnt, head, free, ring);
             junk(&mut t, list, 0x40, k + 3);
             t.set_u32(op(&t, 0x38e), if listed { list } else { 0 });
@@ -270,10 +290,16 @@ fn pool74(t: &mut Twin, take: u32, recs: u32, count: u32, busy: u32) {
 /// (below and above 90), the pool with room for every spark, a few and
 /// none, the floor below and above the sparks, the count reaching 96 (the
 /// node given back). Also `magic_0605` 0x10008f90 (`r29::SPARKS_0605`:
-/// the texture's displacement and the records' offset from the code).
+/// the texture's displacement and the records' offset from the code) and
+/// `magic_0307` 0x10005a50 (`r30::SPARKS_0307`).
 #[test]
 fn sparks_0563() {
-    for (n, addr) in [(563u16, 0x3be0u32), (612, 0x8510), (605, 0x8f90)] {
+    for (n, addr) in [
+        (563u16, 0x3be0u32),
+        (612, 0x8510),
+        (605, 0x8f90),
+        (307, 0x5a50),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(addr);
         let op = |t: &Twin, o: u32| t.img.word(f + o);
@@ -317,7 +343,7 @@ fn sparks_0563() {
             (0x10, 0x60, 0, -5.0),
         ];
         for (k, (tick, count, busy, fl)) in (0u32..).zip(cases) {
-            junk(&mut t, s + 0x2e00, 0xc00, k);
+            junk(&mut t, s + recs_at - 0xc0, 0xc00, k);
             for i in 0..0x20 {
                 t.set_u32(
                     s + recs_at + 0x60 * (i % 18) + 4 * (i / 18),
@@ -1915,7 +1941,10 @@ fn effect_frame_0341() {
     let lock = t.img.word(start + 0x04);
     t.set_u32(lock, SCRATCH + 0x7f8);
     // (on, loaded already, slot 253, phase, its first-run flags, counter u, done, end counter)
-    let cases: [(u32, u32, u32, u32, (u32, u32), u32, u32, u32); 14] = [
+    let cases: [(u32, u32, u32, u32, (u32, u32), u32, u32, u32); 15] = [
+        // phase 4 loaded with both first-run flags clear: the program start
+        // (its store through `*G_D`; r28 b7's two survivors)
+        (1, 1, 0, 4, (0, 0), 0, 0, 0),
         (0, 0, 0, 4, (0, 0), 0, 0, 0),
         (1, 0, 0, 4, (0, 0), 0, 0, 0x32),
         (1, 1, 1, 4, (1, 0), 0, 1, 3),
@@ -1940,6 +1969,8 @@ fn effect_frame_0341() {
         t.set_u32(done, 0x0d0d_0000 + k);
         t.set_u32(op(&t, 0xc1), cp);
         t.set_u32(op(&t, 0xfa), SCRATCH + 0x7ec);
+        // the word the effect counter adds 0x80400 to: junk, not 0
+        t.set_u32(op(&t, 0xbc), 0x00c0_0300 + k);
         t.set_u32(loaded, l253 | dn);
         t.set_u32(phase, ph);
         for (a, b) in [(0xe9u32, 0xf2u32), (0x272, 0x27b), (0x809, 0x812)] {

@@ -78,6 +78,7 @@ pub mod r26;
 pub mod r27;
 pub mod r28;
 pub mod r29;
+pub mod r30;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3197,6 +3198,26 @@ ports! {
     "r29 load 0605" => r29::LOAD_0605, r29::load_0605;
     "r29 throw task 0609" => r29::THROW_TASK_0609, r29::throw_task_0609;
     // round 29 (magic-r29): end
+    // round 30 (magic-r30)
+    "r30 start-up 0152" => r30::START_UP_0152, r30::start_up_0152;
+    "r30 trail task 0434" => r30::TRAIL_TASK_0434, r30::trail_task_0434;
+    "r30 sparks 0307" => r30::SPARKS_0307, r28::sparks_0563;
+    "r30 trail task 0432" => r30::TRAIL_TASK_0432, r30::trail_task_0432;
+    "r30 trail start 0432" => r30::TRAIL_START_0432, r30::trail_start_0432;
+    "r30 spark start 0432" => r30::SPARK_START_0432, r30::spark_start_0432;
+    "r30 targets start 0432" => r30::TARGETS_START_0432, r30::targets_start_0432;
+    "r9 load step 0432" => r9_load::LOAD_0432, r9_load::load_0432;
+    "r30 objects start 0304" => r30::OBJECTS_START_0304, r30::objects_start_0304;
+    "r30 summon objects 0304" => r30::SUMMON_OBJECTS_0304, r30::summon_objects_0304;
+    "r9 load step 0304" => r9_load::LOAD_0304, r9_load::load_0304;
+    "r30 sparks 0171" => r30::SPARKS_0171, r30::sparks_0171;
+    "r30 sequence 0171" => r30::SEQUENCE_0171, r30::sequence_0171;
+    "r30 summon task 0262" => r30::SUMMON_TASK_0262, r30::summon_task_0262;
+    "r30 summon task 0262 b" => r30::SUMMON_TASK_0262_B, r30::summon_task_0262_b;
+    "r9 load step 0165" => r9_load::LOAD_0165, r9_load::load_0165;
+    "r30 spin states 0307" => r30::SPIN_STATES_0307, r30::spin_states_0307;
+    "r30 model node 0424" => r30::MODEL_NODE_0424, r30::model_node_0424;
+    // round 30 (magic-r30): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
@@ -3895,6 +3916,19 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r29 start-up 0605", &r29::START_UP_0605),
     ("r29 body set-up 0577", &r29::BODY_SETUP_0577),
     // round 29 (magic-r29): end of INTERNAL
+    // round 30 (magic-r30)
+    ("r30 clip 0434", &r30::CLIP_0434),
+    ("r30 sparks 0165", &r30::SPARKS_0165),
+    ("r30 trail 0432", &r30::TRAIL_0432),
+    ("r30 flat coordinates 0162", &r30::FLAT_COORDS_0162),
+    ("r30 aim 0432", &r30::AIM_0432),
+    ("r30 mesh packets 0297", &r30::MESH_PACKETS_0297),
+    ("r30 start-up 0432", &r30::START_UP_0432),
+    ("r30 start-up 0304", &r30::START_UP_0304),
+    ("r30 place 0165", &r30::PLACE_0165),
+    ("r30 start-up 0165", &r30::START_UP_0165),
+    ("r30 spin step 0307", &r30::SPIN_STEP_0307),
+    // round 30 (magic-r30): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
     // round 15 (magic-r15)
