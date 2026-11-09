@@ -29,6 +29,12 @@ fn junk_ops(t: &mut Twin, f: u32, ops: &[u32]) {
 /// The load step of a start-up (at `load`): busy, asked or not, the data
 /// loaded or not; `setup` prepares the start-up before each case.
 fn load_cases(t: &mut Twin, load: u32, setup: &dyn Fn(&mut Twin)) {
+    load_cases_d(t, load, 0, setup);
+}
+
+/// [`load_cases`] for either form of the step (`d` = 1: the 119-byte
+/// one, its operands from `+0x1e` on a byte later).
+fn load_cases_d(t: &mut Twin, load: u32, d: u32, setup: &dyn Fn(&mut Twin)) {
     for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
         setup(t);
         rec(t, 225, 1, move |_, _| busy);
@@ -37,11 +43,11 @@ fn load_cases(t: &mut Twin, load: u32, setup: &dyn Fn(&mut Twin)) {
         let op = |t: &Twin, o: u32| t.img.word(load + o);
         let at = op(t, 0x18);
         t.set_u32(at, loaded);
-        for o in [0x26u32, 0x46] {
+        for o in [0x26u32 + d, 0x46 + d] {
             let at = op(t, o);
             t.set_u32(at, 0x0b0b_0000 + o);
         }
-        junk_ops(t, load, &[0x61, 0x6b]);
+        junk_ops(t, load, &[0x61 + d, 0x6b + d]);
         magic_h6::scrub(t);
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
@@ -1520,4 +1526,92 @@ fn sparks_0243() {
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
+}
+
+/// What `r26::start_up_0163` (`magic_0163` 0x10001430) needs: the pools
+/// (the static record node, the task start and the inlined takes share
+/// the ring), the object starts, the target and its kind (slot 390), the
+/// state check's list (slot 390's answer for it too), the task list.
+fn start_up_0163_setup(t: &mut Twin, f: u32, k: u32, (kind, listed): (u32, bool)) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, 2172);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, move |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + a[1] as f32;
+            m.w32(a[2] + 4 * i, v.to_bits());
+        }
+        0x268
+    });
+    let yaw = [0.25f64, 3.0, 9.5, 2.0][k as usize % 4];
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |_, _| yaw);
+    rec(t, 390, 1, move |_, _| kind);
+    // an unlisted state's answer: 0 (the two extra objects)
+    rec(t, 534, 1, |_, _| 0);
+    recs(t, &[(711, 3), (710, 4), (271, 1)]);
+    for call in [0x14cu32, 0x1e2, 0x2b5, 0x31a, 0x3b5] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(t, start);
+    }
+    for (sel, tab) in [(0x48u32, 0x52u32), (0xca, 0xd6), (0xca, 0x11c)] {
+        target(t, f, (sel, tab), (2 + k) as u8);
+    }
+    t.write(w(t, 0x37d) - 0xd0, &[0x5e; 0x130 * 3]);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x26, 0x30, 0x166, 0x178, 0x18a, 0x197, 0x1ba, 0x1cc, 0x1dd, 0x1ef, 0x1fc, 0x209,
+            0x216, 0x22e, 0x238, 0x244, 0x24a, 0x254, 0x25e, 0x268, 0x272, 0x27c, 0x28c, 0x2ca,
+            0x2d7, 0x2e4, 0x2f4, 0x315, 0x327, 0x334, 0x341, 0x34e, 0x366, 0x3f8, 0x416, 0x41c,
+            0x422, 0x428, 0x42e, 0x456, 0x4b0, 0x56c, 0x5d0, 0x5da, 0x5e4, 0x6ce, 0x6e1, 0x6f5,
+            0x7c1,
+        ],
+    );
+    t.set_u32(w(t, 0x286), 0x5a5a_5a5a);
+    t.write(w(t, 0x6b7), &[0x5c; 0x1c]);
+    // the task list
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    t.set_u32(w(t, 0x533), if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x54e), SCRATCH + 0x600);
+}
+
+/// `magic_0163` 0x10001430 (`r26::start_up_0163`, internal) and its load
+/// step 0x10001300 (`r9_load::load_0163`, the 119-byte form): the target's
+/// kind 0x108c or another, the state listed (slot 390's answer in the
+/// DLL's list) or not, the task list empty and not, the yaw on both sides
+/// of its wrap.
+#[test]
+fn start_up_0163() {
+    let Some(mut t) = twin(163) else { return };
+    let f = t.at(0x1430);
+    // the state check's list: its last entry is "listed"
+    let sl = t.img.rel32_target(f + 0x295);
+    let mut l = t.img.word(sl + 0x20);
+    while t.u32(l + 4) != u32::MAX {
+        l += 4;
+    }
+    let listed_kind = t.u32(l);
+    for (k, kind, listed) in [
+        (0u32, 0x108cu32, false),
+        (1, listed_kind, true),
+        (2, 0x7777_0001, true),
+        (3, 0x108c, false),
+    ] {
+        start_up_0163_setup(&mut t, f, k, (kind, listed));
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, r26::start_up_0163);
+    }
+    let load = t.at(0x1300);
+    load_cases_d(&mut t, load, 1, &|t| {
+        start_up_0163_setup(t, f, 2, (0x108c, true));
+    });
 }

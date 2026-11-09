@@ -3042,3 +3042,337 @@ pub const SPARKS_0243: Sig = Sig {
     ],
     imports: &[(0x94, "rand"), (0x480, "rand")],
 };
+
+/// `magic_0163`'s start-up (0x10001430, 2172 bytes; internal, no
+/// arguments, run by its load step `r9_load::load_0163` (the 119-byte
+/// form); an `ebp` /GS frame, `P` at `ebp - 0x14`; `T = TAB[*I]` the
+/// target):
+/// - two globals set, `*G_C` = slot 719 `(D, 8, 0)`; the part set up
+///   ([`part_init`](crate::l5_objhost::part_init)); the yaw `K1 - slot
+///   333 (T)` wrapped once;
+/// - slot 390 `(*I)` the target's kind: 0x108c puts `P` at slot 262 `(T,
+///   ..)` with slot 268 `(T, 0x11, P)`, any other at slot 262 alone; `P.w`
+///   1;
+/// - the objects ([`start_object_at`](crate::s4_misc::start_object_at),
+///   their third stack word a leftover `ecx` no start reads), each at `P`
+///   with the yaw: 1 `(1, 0)` with `y` less 14 and then 150, 0 `(0, 0x10,
+///   -, CB)` with `y` less 14 and a record of globals; unless the state is
+///   listed ([`state_listed`](crate::s4_misc::state_listed)) 3 `(3, 0x10)`
+///   and 4 `(4, 0xe)` with `y` less 0.5 and 14; three more of index 2
+///   (owners 10, 12, 14) climbing from object 1's `y` plus 75 by 18.75;
+/// - the static record node
+///   ([`static_record_node`](crate::o4_small::static_record_node)), the
+///   records of two colour blocks, two nodes off the free ring holding them
+///   (inlined takes, marked 1), slot 271 `(4)`, a sprite record, a third
+///   node for it, the task started ([`task_start`](crate::s3_misc::task_start)),
+///   a fourth node (marked 2); each appended to the task list.
+///
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0163<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let slot = |g: &G, n: u32| slot_target(g, w(0x11), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let p = at(0x14);
+    let rd = |g: &G, a: u32| g.read::<f32>(a);
+    let one = 0x3f80_0000u32;
+    g.write::<u32>(w(0x26), w(0x2a));
+    g.write::<u32>(w(0x30), w(0x34));
+    // call width: 3
+    let c = g.call(slot(g, 719), 0, &[w(0x20), 8, 0]).eax;
+    g.write::<u32>(w(0x3e), c);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x43));
+    let target = |g: &G, sel: u32, tab: u32| {
+        let i = u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+        g.read::<u32>(w(tab).wrapping_add(4 * i))
+    };
+    let t = target(g, 0x48, 0x52);
+    // call width: 1
+    let a = st0_f32(g.call(slot(g, 333), 0, &[t]).st0);
+    g.write::<f32>(at(0x1c), a);
+    let yaw = crate::r20::wrap_once(g, img, f, sub(k(g, 0x6a), a), (0x79, 0x88, 0x92, 0x9f));
+    g.write::<f32>(at(0x18), yaw);
+    let i = u32::from(g.read::<u8>(g.read::<u32>(w(0xa9))));
+    // call width: 1
+    let kind = g.call(slot(g, 390), 0, &[i]).eax;
+    if kind == 0x108c {
+        let who = target(g, 0xca, 0xd6);
+        // call width: 4
+        g.call(slot(g, 262), 0, &[who, p, p + 4, p + 8]);
+        // call width: 3
+        g.call(slot(g, 268), 0, &[who, 0x11, p]);
+    } else {
+        let who = target(g, 0xca, 0x11c);
+        // call width: 4
+        g.call(slot(g, 262), 0, &[who, p, p + 4, p + 8]);
+    }
+    let start =
+        |g: &mut G, (call, obj, scale): (u32, u32, u32), (index, owner, b): (u32, u32, u32)| {
+            let at = img.rel32_target(f + call);
+            crate::s4_misc::start_object_at(g, img, at, w(obj), k(g, scale), index, owner, b);
+        };
+    g.write::<u32>(p + 0xc, one);
+    start(g, (0x14c, 0x140, 0x134), (1, 0, 0));
+    let (px, pz, pw) = (
+        g.read::<u32>(p),
+        g.read::<u32>(p + 8),
+        g.read::<u32>(p + 0xc),
+    );
+    g.write::<u32>(at(0x20), px);
+    g.write::<u32>(at(0x28), pz);
+    g.write::<u32>(at(0x24), pw);
+    // object 1's point and angle, its `y` 14 and then 150 lower
+    let place = |g: &mut G, [x, z, wo, a]: [u32; 4]| {
+        g.write::<u32>(w(x), px);
+        g.write::<u32>(w(z), pz);
+        g.write::<u32>(w(wo), pw);
+        g.write::<f32>(w(a), yaw);
+    };
+    place(g, [0x166, 0x178, 0x18a, 0x197]);
+    let y = sub(rd(g, p + 4), k(g, 0x1a4));
+    g.write::<f32>(w(0x1ba), y);
+    let y2 = sub(y, k(g, 0x1c2));
+    g.write::<u32>(w(0x1cc), w(0x1d0));
+    g.write::<f32>(at(0x1c), y2);
+    g.write::<f32>(w(0x1dd), y2);
+    start(g, (0x1e2, 0x1ac, 0x159), (0, 0x10, w(0x1b1)));
+    place(g, [0x1ef, 0x1fc, 0x209, 0x216]);
+    let y = sub(rd(g, p + 4), k(g, 0x223));
+    for o in [0x22eu32, 0x238] {
+        g.write::<u32>(w(o), 0);
+    }
+    g.write::<f32>(w(0x244), y);
+    for o in [0x24au32, 0x254] {
+        g.write::<u32>(w(o), 0);
+    }
+    g.write::<u32>(w(0x25e), w(0x262));
+    g.write::<u32>(w(0x268), w(0x26c));
+    for o in [0x272u32, 0x27c] {
+        g.write::<u32>(w(o), 0);
+    }
+    g.write::<u16>(w(0x286), 0);
+    g.write::<u32>(w(0x28c), w(0x290));
+    let sl = Frame {
+        at: img.rel32_target(f + 0x295),
+        esp: at(0x38),
+        ..Frame::default()
+    };
+    if crate::s4_misc::state_listed(g, img, &sl).eax == 0 {
+        start(g, (0x2b5, 0x2b0, 0x2a5), (3, 0x10, 0));
+        place(g, [0x2ca, 0x2d7, 0x2e4, 0x2f4]);
+        let y = sub(rd(g, p + 4), k(g, 0x301));
+        g.write::<f32>(w(0x315), y);
+        start(g, (0x31a, 0x30d, 0x2c2), (4, 0xe, 0));
+        place(g, [0x327, 0x334, 0x341, 0x34e]);
+        let y = sub(rd(g, p + 4), k(g, 0x35b));
+        g.write::<f32>(w(0x366), y);
+    }
+    // three more climbing from object 1's `y`
+    let mut y = add(y2, k(g, 0x373));
+    let mut obj = w(0x37d);
+    for n in 0..3u32 {
+        y = add(y, k(g, 0x394));
+        g.write::<f32>(at(0x1c), y);
+        let s = img.rel32_target(f + 0x3b5);
+        crate::s4_misc::start_object_at(
+            g,
+            img,
+            s,
+            obj.wrapping_sub(0xd0),
+            k(g, 0x39c),
+            2,
+            10 + 2 * n,
+            0,
+        );
+        g.write::<f32>(obj.wrapping_sub(0xc), yaw);
+        g.write::<u32>(obj, px);
+        g.write::<u32>(obj + 8, pz);
+        g.write::<f32>(obj + 4, y);
+        g.write::<u32>(obj + 0xc, pw);
+        obj = obj.wrapping_add(0x130);
+    }
+    g.write::<u32>(w(0x3f8), 0xe);
+    let srn = Frame {
+        at: img.rel32_target(f + 0x401),
+        esp: at(0x38),
+        ..Frame::default()
+    };
+    crate::o4_small::static_record_node(g, img, &srn);
+    let mut free = g.read::<u16>(w(0x408));
+    let fl = g.read::<u16>(w(0x40f)) | 3;
+    g.write::<u16>(w(0x40f), fl);
+    for o in [0x416u32, 0x41c, 0x422, 0x428] {
+        g.write::<u32>(w(o), 0);
+    }
+    for (o, v) in [
+        (0x42eu32, one),
+        (0x438, one),
+        (0x442, 0x4080_0000),
+        (0x44c, 0x4080_0000),
+        (0x456, 0x10),
+        (0x460, one),
+        (0x46a, one),
+        (0x474, one),
+        (0x47e, one),
+        (0x488, 0x3f00_0000),
+        (0x492, 0x3f00_0000),
+        (0x49c, 0x3f00_0000),
+        (0x4a6, one),
+        (0x4b0, 8),
+        (0x4ba, 8),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    // the inlined takes off the free ring
+    let take =
+        |g: &mut G, free: &mut u16, head: u32, (to_next, to_0): (u32, u32), cb: u32, count: u32| {
+            if *free == 0 {
+                return 0;
+            }
+            let node = g.read::<u32>(w(head));
+            let prev = g.read::<u32>(node);
+            let next = g.read::<u32>(node + 4);
+            g.write::<u32>(prev + 4, next);
+            let next = g.read::<u32>(node + 4);
+            let prev = g.read::<u32>(node);
+            g.write::<u32>(next, prev);
+            if *free > 1 {
+                let next = g.read::<u32>(node + 4);
+                g.write::<u32>(w(to_next), next);
+            } else {
+                g.write::<u32>(w(to_0), 0);
+            }
+            *free -= 1;
+            for o in [0u32, 4, 0xc, 0x14] {
+                g.write::<u32>(node + o, 0);
+            }
+            g.write::<u32>(node + 8, node);
+            g.write::<u32>(node + 0x10, w(cb));
+            g.write::<u8>(node + 0x18, 0);
+            g.write::<u16>(w(count), *free);
+            node
+        };
+    let n1 = take(g, &mut free, 0x4d8, (0x4fd, 0x4fd), 0x522, 0x52d);
+    let first = g.read::<u32>(w(0x533));
+    g.write::<u8>(n1 + 0x18, 1);
+    g.write::<u32>(n1 + 0x14, w(0x53e));
+    g.write::<u32>(n1 + 4, 0);
+    let first = if first == 0 {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x563), n1);
+        n1
+    } else {
+        let last = g.read::<u32>(w(0x54e));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+        first
+    };
+    g.write::<u32>(n1 + 8, n1);
+    for (o, v) in [
+        (0x56cu32, 0x3f00_0000u32),
+        (0x576, one),
+        (0x580, 0x3f00_0000),
+        (0x58a, 0x3f00_0000),
+        (0x594, 0x3f00_0000),
+        (0x59e, one),
+        (0x5a8, one),
+        (0x5b2, one),
+        (0x5bc, one),
+        (0x5c6, one),
+        (0x5d0, 0x37),
+        (0x5da, 0),
+        (0x5e4, 0x10),
+        (0x5ee, 0x10),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    // (the second take starts from the head the first one left: the
+    // original keeps it in `edx`)
+    let n2 = take(g, &mut free, 0x4fd, (0x618, 0x620), 0x651, 0x65c);
+    g.write::<u8>(n2 + 0x18, 1);
+    g.write::<u32>(n2 + 0x14, w(0x667));
+    g.write::<u32>(n2 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x685), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    g.write::<u32>(w(0x69b), n2);
+    // call width: 1
+    g.call(slot(g, 271), 0, &[4]);
+    // the sprite record (an unaligned word over the first byte's neighbours)
+    let mut free = g.read::<u16>(w(0x6a4));
+    g.write::<u32>(w(0x6ad), 0x8060_8080);
+    g.write::<u8>(w(0x6b7), 0x80);
+    g.write::<u16>(w(0x6bf), 0x8080);
+    g.write::<u8>(w(0x6c7), 0);
+    g.write::<u32>(w(0x6ce), 0x10);
+    g.write::<u16>(w(0x6d9), 0x48);
+    g.write::<u32>(w(0x6e1), 0x20);
+    g.write::<u32>(w(0x6eb), 0x20);
+    g.write::<u32>(w(0x6f5), 0);
+    let append = |g: &mut G, node: u32, [first, last, set_first]: [u32; 3]| {
+        let listed = g.read::<u32>(w(first)) != 0;
+        g.write::<u32>(node + 4, 0);
+        if listed {
+            let tail = g.read::<u32>(w(last));
+            g.write::<u32>(node, tail);
+            g.write::<u32>(tail + 4, node);
+        } else {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(w(set_first), node);
+        }
+        g.write::<u32>(node + 8, node);
+    };
+    let n3 = take(g, &mut free, 0x70d, (0x72a, 0x732), 0x763, 0x76e);
+    g.write::<u32>(n3 + 0x14, w(0x77c));
+    append(g, n3, [0x774, 0x78a, 0x79d]);
+    g.write::<u32>(w(0x7ac), n3);
+    // the task start's word over a leftover one
+    let sp = at(0x3c);
+    g.write::<u32>(sp, w(0x7a3));
+    let ts = Frame {
+        at: img.rel32_target(f + 0x7b1),
+        esp: sp.wrapping_sub(4),
+        ..Frame::default()
+    };
+    crate::s3_misc::task_start(g, img, &ts);
+    let mut free = g.read::<u16>(w(0x7b8));
+    g.write::<u32>(w(0x7c1), 0);
+    let n4 = take(g, &mut free, 0x7d4, (0x7f1, 0x7f9), 0x825, 0x830);
+    g.write::<u8>(n4 + 0x18, 2);
+    append(g, n4, [0x836, 0x84c, 0x85f]);
+    g.write::<u32>(w(0x86d), n4);
+    Ret::eax(0)
+}
+
+/// [`start_up_0163`] (the `rel32`s: the part set-up, the object starts
+/// (seven calls), the state check, the static record node, the task
+/// start, `__security_check_cookie`).
+pub const START_UP_0163: Sig = Sig {
+    len: 2172,
+    hash: 0xe984_4131_1d15_d708,
+    calls: &[
+        (0x43, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x14c, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x1e2, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x295, Callee::Sig(&crate::s4_misc::STATE_LISTED)),
+        (0x2b5, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x31a, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x3b5, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (
+            0x401,
+            Callee::Sig(&crate::o4_small::STATIC_RECORD_NODE_0163_2410),
+        ),
+        (0x7b1, Callee::Sig(&crate::s3_misc::TASK_START)),
+        (0x874, Callee::Any),
+    ],
+    imports: &[],
+};
