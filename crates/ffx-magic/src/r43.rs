@@ -3209,3 +3209,286 @@ pub const CASTER_RECORD_0250: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`spawn_0250`]'s placement of one spark (the operands of each phase:
+/// the two randoms' slot tables, the second's offset `K` (none in the
+/// first phase), the first random's range, the matrix slots' tables, slot
+/// 719's table, part operand and kind).
+struct Place0250 {
+    rnd: (u32, u32),
+    adj: Option<u32>,
+    c1: u32,
+    tables: [u32; 5],
+    part: (u32, u32, u32),
+}
+
+/// One spark placed: from the frame, the actor's place `P` (`ebp -
+/// 0x44`), the turn `(0, yaw, 0)` (`ebp - 0x34`), the matrix `M` (`ebp -
+/// 0x94`), the offset `r = (rnd(c1), 0, rnd(5) - K, 1)` (`ebp - 0x24`)
+/// rotated into `ebp - 0x54`; `v = P + M r` (`ebp - 0x14`, `w` 1.0).
+/// Returns slot 719's handle.
+fn place_0250<G: Game>(g: &mut G, img: &Image, f: u32, ebp: u32, p: &Place0250) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let local = |o: u32| ebp.wrapping_sub(o);
+    let rnd = |g: &mut G, table: u32, x: u32| {
+        // call width: 1
+        let out = g.call(slot_target(g, w(table), 314), 0, &[x]);
+        crate::m0018::st0_f32(out.st0)
+    };
+    let r1 = rnd(g, p.rnd.0, p.c1);
+    g.write::<f32>(local(0x24), r1);
+    g.write::<u32>(local(0x20), 0);
+    let r2 = rnd(g, p.rnd.1, 0x40a0_0000);
+    let r2 = p.adj.map_or(r2, |o| sub(r2, k(g, o)));
+    g.write::<f32>(local(0x1c), r2);
+    for i in 0..4u32 {
+        let x = g.read::<u32>(local(0x44) + 4 * i);
+        g.write::<u32>(local(0x14) + 4 * i, x);
+    }
+    let (m, out, r, v) = (local(0x94), local(0x54), local(0x24), local(0x14));
+    let [t235, t328, t329, t229, t248] = p.tables;
+    // call width: 2 (the second random's word under it)
+    g.call(slot_target(g, w(t235), 235), 0, &[m, 0x40a0_0000]);
+    let xr = g.read::<u32>(local(0x34));
+    // call width: 3
+    g.call(slot_target(g, w(t328), 328), 0, &[m, m, xr]);
+    let yr = g.read::<u32>(local(0x30));
+    // call width: 3
+    g.call(slot_target(g, w(t329), 329), 0, &[m, m, yr]);
+    g.write::<u32>(local(0x18), 0x3f80_0000);
+    // call width: 6 (slot 329's words stay under these)
+    g.call(slot_target(g, w(t229), 229), 0, &[out, m, r, m, m, yr]);
+    // call width: 9 (the earlier words stay)
+    g.call(
+        slot_target(g, w(t248), 248),
+        0,
+        &[v, v, out, out, m, r, m, m, yr],
+    );
+    g.write::<u32>(local(0x8), 0x3f80_0000);
+    let (table, part, kind) = p.part;
+    let words = [w(part), 9, kind, v, v, out, out, m, r, m, m, yr];
+    // call width: 12 (the earlier words stay)
+    g.call(slot_target(g, w(table), 719), 0, &words).eax
+}
+
+/// The next free record of a round-robin pool (`G_N` records, the next
+/// index `G_I`, the base `*G_B`, `stride` apart, free when `flag` is 0;
+/// the operands `(count, index, base)`): `Ok((record, next index))`, or
+/// `Err(eax)` when none is free (the index as the search left it).
+fn free_record<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    ebp: u32,
+    ops: (u32, u32, u32),
+    (stride, flag): (u32, u32),
+) -> Result<(u32, u32), u32> {
+    let w = |o: u32| img.word(f + o);
+    let n = g.read::<i32>(w(ops.0));
+    let mut idx = g.read::<u32>(w(ops.1));
+    if n <= 0 {
+        return Err(idx);
+    }
+    let base = g.read::<u32>(w(ops.2));
+    let mut tried = 0;
+    loop {
+        let rec = base.wrapping_add(idx.wrapping_mul(stride));
+        idx = idx.wrapping_add(1);
+        g.write::<u32>(ebp.wrapping_sub(0x98), 0);
+        if idx.cast_signed() >= n {
+            idx = 0;
+        }
+        if g.read::<u32>(rec.wrapping_add(flag)) == 0 {
+            return Ok((rec, idx));
+        }
+        tried += 1;
+        if tried >= n {
+            return Err(idx);
+        }
+    }
+}
+
+/// `magic_0250`'s sparks (0x10004af0, 1986 bytes; a callback, cdecl `(R)`,
+/// the actor's record; a /GS `ebp` frame). Unless `R + 0xa4` is above 18
+/// (then the original returns its cookie word, `cookie ^ ebp`): slot 217
+/// `(R[0xa0], &P)`, slot 601 `(R[0xa0], &a)`, the yaw `K - a` wrapped
+/// ([`wrap_0250`]). Then three sparks from the DLL's ring
+/// ([`ring_take`](crate::sa_misc::ring_take); none left ends it with 0),
+/// four from the round-robin pool `A` (0x68 apart, free at `+0x60`) and
+/// three from `B` (0x50, `+0x48`) ([`free_record`]; none free ends it
+/// with the index): each placed ([`place_0250`]) and its record filled
+/// (the handle, `(1, -1, 0x200)`, the place `(v.x, P.y - K, v.z, 1)`, the
+/// pool's speeds and spins from slot 314 and slot 404). Returns the last
+/// slot 404's `eax`.
+#[allow(clippy::too_many_lines)] // three phases, as the original
+pub fn spawn_0250<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let ebp = fr.esp.wrapping_sub(4);
+    let local = |o: u32| ebp.wrapping_sub(o);
+    let s = fr.arg(g, 0);
+    if g.read::<i32>(s.wrapping_add(0xa4)) > 0x12 {
+        return Ret::eax(g.read::<u32>(w(0xa)) ^ ebp);
+    }
+    let h = g.read::<u32>(s.wrapping_add(0xa0));
+    // call width: 2
+    g.call(slot_target(g, w(0x29), 217), 0, &[h, local(0x44)]);
+    let h2 = g.read::<u32>(s.wrapping_add(0xa0));
+    g.write::<u32>(local(0x34), 0);
+    g.write::<u32>(local(0x2c), 0);
+    // call width: 4 (slot 217's words stay under these)
+    g.call(
+        slot_target(g, w(0x40), 601),
+        0,
+        &[h2, local(0x30), h, local(0x44)],
+    );
+    let a = sub(k(g, 0x64), g.read::<f32>(local(0x30)));
+    let a = wrap_0250(g, img, f, a, [0x73, 0x7d, 0x87, 0x94]);
+    g.write::<f32>(local(0x30), a);
+    let rnd = |g: &mut G, table: u32, x: u32| {
+        // call width: 1
+        g.call(slot_target(g, w(table), 314), 0, &[x])
+    };
+    let spin = |g: &mut G, table: u32| {
+        // call width: 1
+        g.call(slot_target(g, w(table), 404), 0, &[0x3ecc_cccd])
+    };
+    let head = |g: &mut G, o: u32, h: u32, ky: u32| {
+        g.write::<u32>(o, h);
+        g.write::<u32>(o + 4, 1);
+        g.write::<u16>(o + 8, 0xffff);
+        g.write::<u16>(o + 0xa, 0x200);
+        let x = g.read::<u32>(local(0x14));
+        g.write::<u32>(o + 0xc, x);
+        let y = sub(g.read::<f32>(local(0x40)), k(g, ky));
+        g.write::<f32>(o + 0x10, y);
+        let z = g.read::<u32>(local(0xc));
+        g.write::<u32>(o + 0x14, z);
+        g.write::<u32>(o + 0x18, 0x3f80_0000);
+    };
+    let st0 = |o: crate::Out| crate::m0018::st0_f32(o.st0);
+    for _ in 0..3 {
+        let o = crate::sa_misc::ring_take(g, img, img.rel32_target(f + 0xa5));
+        if o == 0 {
+            return Ret::eax(0);
+        }
+        let p = Place0250 {
+            rnd: (0xb6, 0xcd),
+            adj: None,
+            c1: 0x41c8_0000,
+            tables: [0x101, 0x128, 0x14a, 0x166, 0x183],
+            part: (0x190, 0x1a6, 0),
+        };
+        let hd = place_0250(g, img, f, ebp, &p);
+        head(g, o, hd, 0x1d5);
+        g.write::<u32>(o + 0x1c, 0);
+        g.write::<u32>(o + 0x20, 0xbe4c_cccd);
+        g.write::<u32>(o + 0x24, 0);
+        let x = st0(rnd(g, 0x208, 0x4049_0fdb));
+        g.write::<f32>(o + 0x28, x);
+        let t = st0(spin(g, 0x21f));
+        g.write::<u32>(o + 0x34, 0xc);
+        g.write::<u32>(o + 0x38, 8);
+        let x = mul(add(t, k(g, 0x244)), k(g, 0x25e));
+        g.write::<u32>(o + 0x3c, 0xffff_fffc);
+        g.write::<u8>(o + 0x43, 0x40);
+        g.write::<f32>(o + 0x2c, x);
+        g.write::<u8>(o + 0x47, 0);
+    }
+    for _ in 0..4 {
+        let (o, idx) = match free_record(g, img, f, ebp, (0x283, 0x288, 0x298), (0x68, 0x60)) {
+            Ok(x) => x,
+            Err(eax) => return Ret::eax(eax),
+        };
+        g.write::<u32>(w(0x2d8), idx);
+        g.write::<u32>(o + 0x58, 0x8080_8080);
+        g.write::<u32>(o + 0x5c, 0x8080_8080);
+        g.write::<u32>(o + 0x38, 0x3f80_0000);
+        g.write::<u32>(o + 0x54, 0);
+        g.write::<u32>(o + 0x60, 1);
+        let p = Place0250 {
+            rnd: (0x2dd, 0x318),
+            adj: Some(0x344),
+            c1: 0x41a0_0000,
+            tables: [0x350, 0x38b, 0x3ad, 0x3c9, 0x3e6],
+            part: (0x3f3, 0x409, 1),
+        };
+        let hd = place_0250(g, img, f, ebp, &p);
+        head(g, o, hd, 0x43b);
+        g.write::<u32>(o + 0x1c, 0);
+        let x = st0(rnd(g, 0x440, 0x4000_0000));
+        g.write::<f32>(o + 0x20, x);
+        g.write::<u32>(o + 0x24, 0xc0a0_0000);
+        let x = st0(rnd(g, 0x477, 0x4000_0000));
+        g.write::<f32>(o + 0x28, x);
+        g.write::<u32>(o + 0x2c, 0);
+        g.write::<u32>(o + 0x30, 0x3f80_0000);
+        g.write::<u32>(o + 0x34, 0x3f80_0000);
+        let y = g.read::<u32>(local(0x40));
+        g.write::<u32>(o + 0x3c, y);
+        let x = st0(rnd(g, 0x495, 0x4049_0fdb));
+        g.write::<f32>(o + 0x40, x);
+        g.write::<u32>(o + 0x44, 0);
+        let t = st0(spin(g, 0x4cb));
+        g.write::<u32>(o + 0x4c, 6);
+        g.write::<u32>(o + 0x50, 6);
+        let x = mul(add(t, k(g, 0x4f7)), k(g, 0x511));
+        g.write::<u32>(o + 0x54, 0);
+        g.write::<u8>(o + 0x5f, 0);
+        g.write::<f32>(o + 0x48, x);
+    }
+    let mut eax = 0;
+    for _ in 0..3 {
+        let (o, idx) = match free_record(g, img, f, ebp, (0x532, 0x537, 0x547), (0x50, 0x48)) {
+            Ok(x) => x,
+            Err(eax) => return Ret::eax(eax),
+        };
+        g.write::<u32>(w(0x58b), idx);
+        g.write::<u32>(o + 0x40, 0x8080_8080);
+        g.write::<u32>(o + 0x44, 0x8080_8080);
+        g.write::<u32>(o + 0x3c, 0);
+        g.write::<u16>(o + 0x4c, 0);
+        g.write::<u32>(o + 0x48, 1);
+        let p = Place0250 {
+            rnd: (0x590, 0x5c8),
+            adj: Some(0x5f4),
+            c1: 0x41a0_0000,
+            tables: [0x600, 0x63b, 0x65d, 0x679, 0x696],
+            part: (0x6a3, 0x6b9, 2),
+        };
+        let hd = place_0250(g, img, f, ebp, &p);
+        head(g, o, hd, 0x6f0);
+        let x = st0(rnd(g, 0x6de, 0x4000_0000));
+        g.write::<f32>(o + 0x1c, x);
+        g.write::<u32>(o + 0x20, 0xc000_0000);
+        let x = st0(rnd(g, 0x720, 0x4000_0000));
+        g.write::<f32>(o + 0x24, x);
+        let x = st0(rnd(g, 0x73e, 0x4049_0fdb));
+        g.write::<f32>(o + 0x28, x);
+        let out = spin(g, 0x755);
+        eax = out.eax;
+        let t = st0(out);
+        g.write::<u32>(o + 0x34, 6);
+        g.write::<u32>(o + 0x38, 6);
+        let x = mul(add(t, k(g, 0x77a)), k(g, 0x794));
+        g.write::<u32>(o + 0x3c, 0);
+        g.write::<u8>(o + 0x47, 0);
+        g.write::<f32>(o + 0x2c, x);
+    }
+    Ret::eax(eax)
+}
+
+/// [`spawn_0250`] (the `rel32`s: the ring take, the cookie checks).
+pub const SPAWN_0250: Sig = Sig {
+    len: 1986,
+    hash: 0xe51d_307a_e098_dff6,
+    calls: &[
+        (0xa5, Callee::Sig(&crate::sa_misc::RING_TAKE)),
+        (0x2cf, Callee::Any),
+        (0x580, Callee::Any),
+        (0x7ba, Callee::Any),
+    ],
+    imports: &[],
+};
