@@ -1335,7 +1335,12 @@ fn start_up_0284() {
     rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
     t.stub_st0(333, move |m, _| f64::from(rf(m, facing)));
     rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
-    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 0.5 - 0.25);
+    // the angles: by call, either sign (the yaw wrapped both ways)
+    t.stub_st0(404, |m, a| {
+        let k = m.r32(SCRATCH + 0x2_7608);
+        m.w32(SCRATCH + 0x2_7608, k + 1);
+        f64::from(f32::from_bits(a[0])) * 0.25 + [0.6, -3.0, 3.0, -0.2][(k % 4) as usize]
+    });
     rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
     t.stub_st0(314, |m, a| {
         let k = m.r32(SCRATCH + 0x2_7600);
@@ -1403,7 +1408,7 @@ fn start_up_0284() {
     rec(&mut t, 227, 1, move |m, _| m.r32(r227));
     // the start-up itself (4 cases), then through the load step: waiting,
     // asked and not loaded, loaded (the start-up runs)
-    for k in 0..9u32 {
+    for k in 0..11u32 {
         let (count, f_val) = [
             (18u32, 0.5f32),
             (9, 4.0),
@@ -1411,7 +1416,9 @@ fn start_up_0284() {
             (14, 1.25),
             (15, 6.0),
             (17, -6.0),
-        ][(k % 6) as usize];
+            (16, 7.5),
+            (16, 9.0),
+        ][(k % 8) as usize];
         // the globals and records it writes, junk first
         for op in [
             0x29u32, 0x33, 0x3d, 0x4b, 0x59, 0xab, 0xb1, 0x619, 0x61e, 0x623, 0x62f, 0x639, 0x643,
@@ -1434,7 +1441,7 @@ fn start_up_0284() {
             t.set_u16(r + 0x124, 0x7fff);
         }
         // the targets: the count, their dealt order lives in the frame
-        t.set_u32(w(&t, 0x440), [3u32, 0, 2, 1, 3, 2][(k % 6) as usize]);
+        t.set_u32(w(&t, 0x440), [3u32, 0, 2, 1, 3, 2, 1, 2][(k % 8) as usize]);
         t.set_u32(w(&t, 0x4bc), 0x0abc_0000 + k);
         t.set_u32(w(&t, 0x612), k & 1);
         t.set_u32(w(&t, 0x6a8), (k >> 1) & 1);
@@ -1453,12 +1460,12 @@ fn start_up_0284() {
         t.set_u32(first, if k % 2 == 0 { old } else { 0 });
         t.set_u32(last, if k % 2 == 0 { old } else { 0 });
         ownb::dirty_stack(&mut t, 0x1340 + k, &[]);
-        if k < 6 {
+        if k < 8 {
             t.check_entry(f, Call::default(), &[0x0dd0_0000 + k], Eax::Checked);
         } else {
-            t.set_u32(w225, u32::from(k == 6));
-            t.set_u32(r227, u32::from(k == 8) * 2);
-            t.set_u32(t.img.word(load + 0x18), u32::from(k == 7));
+            t.set_u32(w225, u32::from(k == 8));
+            t.set_u32(r227, u32::from(k == 10) * 2);
+            t.set_u32(t.img.word(load + 0x18), u32::from(k == 9));
             t.check_entry(load, Call::default(), &[0x0dd0_0000 + k], Eax::Checked);
         }
     }
@@ -1534,7 +1541,12 @@ fn summon_task_0146() {
         t.set_u32(o + 0x18, state);
         t.set_u32(o + 0x2c, 0x10 + k);
         t.set_u32(o + 0x1c40, 0x0bad_0000 + (k & 1));
-        t.write(model, &[0x22; 0x200]);
+        floats(&mut t, model, 0x80, k + 3);
+        // the sound bytes and words the step reads: junk
+        for op in [0x243u32, 0x25a, 0x268, 0x2a8] {
+            let at = w(&t, op);
+            t.set_u32(at, 0x5a5a_5a03 ^ (op << 8) ^ k);
+        }
         t.set_u32(flag, fl);
         t.set_u32(task + 4, o);
         // the task's node in a ring of three
@@ -1652,11 +1664,11 @@ fn scene_task_0146() {
     let cases: [(u32, u32, u32, u32, u16, u32, u32, u32); 24] = [
         (0, 0, 0, 0, 0, 0, 0x0161_000f, 0),
         (0, 3, 0, 0, 0, 1, 0x0160_000f, 0),
-        (0xa, 0, 0, 0, 0, 0, 0, 0),
+        (0xa, 0, 0, 0, 5, 0, 0, 0),
         (0x14, 7, 0, 0, 0, 1, 0, 0),
         (0x15, 14, 0, 0, 0, 0, 0, 0),
         (0x15, 15, 0, 0, 0, 0, 0, 0),
-        (0x1e, 0, 0, 0, 0, 0, 0, 0),
+        (0x1e, 0, 0, 4, 0, 0, 0, 0),
         (0x1f, 0, 2, 0, 0, 0, 0, 0),
         (0x1f, 0, 0, 3, 0, 0, 0, 0),
         (0x1f, 0, 0, 7, 0, 1, 0, 0),
@@ -1676,7 +1688,12 @@ fn scene_task_0146() {
         (0x40, 0, 0, 0, 0, 1, 0, 0),
     ];
     for (k, (state, count, cd, objs, nid, flag, sc, kd)) in (0u32..).zip(cases) {
-        floats(&mut t, o, 0x100 / 4, k);
+        floats(&mut t, o, 0x200 / 4, k);
+        // the bytes and words it reads or writes: junk first
+        for op in [0x219u32, 0x3ee, 0x4dc, 0x5eb, 0x699, 0x6f0] {
+            let at = w(&t, op);
+            t.set_u32(at, 0x5a5a_5a02 ^ (op << 8) ^ k);
+        }
         t.set_u32(o + 0x18, state);
         t.set_u32(o + 0x2c, count);
         t.set_u32(o + 0x28, cd);
@@ -1798,5 +1815,116 @@ fn start_up_0155_0164() {
             ownb::dirty_stack(&mut t, at + k, &[]);
             t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
         }
+    }
+}
+
+/// `magic_0353` 0x10001900 (`r36::script_task_0353`, an entry) with its
+/// close (0x10001a70, `r36::close_0353`): the script ended (the close and
+/// the give-back) or waiting.
+#[test]
+fn script_task_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x1900);
+    all_stubs(&mut t);
+    let run = t.img.rel32_target(f + 0xc);
+    let mode = t.img.word(run + 0x01);
+    let wait = t.img.word(run + 0x59);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x7), s);
+    let close = t.img.rel32_target(f + 0x23);
+    t.set_u32(t.img.word(close + 0x2), s);
+    let ms = t.img.rel32_target(f + 0x13);
+    let (done, mwait) = (t.img.word(ms + 0x02), t.img.word(ms + 0x11));
+    for (k, m) in [(0u32, 0u8), (1, 2), (2, 0)] {
+        // the motion: done, or waiting
+        t.set_u32(done, u32::from(k != 1));
+        t.set_u16(mwait, 3);
+        floats(&mut t, s, 0x1500 / 4, k);
+        t.set_u8(mode, m);
+        t.set_u16(wait, 0xffff);
+        // the effect's task node (none in case 2)
+        t.set_u32(
+            s + 0x1180 + 0x228,
+            if k == 2 { 0 } else { SCRATCH + 0x1800 },
+        );
+        t.write(SCRATCH + 0x1800, &[0; 0x20]);
+        t.set_u32(SCRATCH + 0x1808, SCRATCH + 0x1800);
+        let task = SCRATCH + 0x1000;
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, task);
+        for op in [0x19u32, 0x2e, 0x41] {
+            let at = t.img.word(close + op);
+            t.set_u32(at, 0x0e0e_0000 + op + k);
+        }
+        ownb::dirty_stack(&mut t, 0x1900 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0353` 0x10001b70 (`r36::fade_task_0353`, an entry): fading in,
+/// fading out, the fade over (the give-back); the angle wrapped or not.
+#[test]
+fn fade_task_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x1b70);
+    all_stubs(&mut t);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x19), s);
+    let desc = SCRATCH + 0x2000;
+    rec(&mut t, 719, 3, move |_, _| desc);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    rec(&mut t, 329, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + (a[2] & 0xff) as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[1] + 4 * i, (a[0] & 0xf) as f32 + i as f32 * 0.25);
+        }
+        0x210
+    });
+    let answer = SCRATCH + 0x718;
+    rec(&mut t, 885, 7, move |m, a| {
+        for i in 0..8 {
+            m.w32(a[6] + 4 * i, 0x0885_0000 + i);
+        }
+        m.r32(answer)
+    });
+    logp(&mut t, 905, 9, Some((7, 4)), 0x0905_0000);
+    let lock = SCRATCH + 0x7f0;
+    // (fade-in count, its total, fade-out count, its total, angle)
+    let cases: [(i32, i32, i32, i32, f32); 4] = [
+        (3, 8, 5, 10, 0.5),
+        (0, 8, 5, 10, 0.01),
+        (0, 8, 1, 10, -0.5),
+        (1, 4, 0, 6, 2.0),
+    ];
+    for (k, (c_in, n_in, c_out, n_out, a)) in (0u32..).zip(cases) {
+        floats(&mut t, s + 0x1000, 0x400 / 4, k);
+        t.set_u32(s + 0x13ec, c_in.cast_unsigned());
+        t.set_u32(s + 0x13f0, n_in.cast_unsigned());
+        t.set_u32(s + 0x13f4, c_out.cast_unsigned());
+        t.set_u32(s + 0x13f8, n_out.cast_unsigned());
+        setf(&mut t, s + 0x13e8, a);
+        t.set_u32(desc, 0x1234_5678 ^ k);
+        t.set_u32(desc + 4, 0x0000_0003 + k);
+        t.set_u32(answer, k & 1);
+        t.set_u32(lock, 0x40 + k);
+        let v = SCRATCH + 0x3000;
+        t.write(v, &[0x44; 0x900]);
+        t.set_u32(t.img.word(f + 0xa7), v);
+        let task = SCRATCH + 0x1000;
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, task);
+        ownb::dirty_stack(&mut t, 0x1b70 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }

@@ -3204,3 +3204,222 @@ pub const START_UP_0164: Sig = Sig {
     calls: &[(0x19, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
     imports: &[],
 };
+
+/// `magic_0353`'s summon close (internal, cdecl, no arguments): the
+/// effect's lights and task node
+/// ([`lights_and_give_back`](crate::s6_misc::lights_and_give_back) on
+/// `*G_S + 0x1180`), slots 346 `(*G_M)`, 399 `(*G_M, 0)`, 6 `(*G_M, 0)`,
+/// 547 `(*G_M)`, then a tail jump to slot 856. Returns slot 856's `eax`.
+///
+/// `magic_0353` 0x10001a70 (108 bytes).
+pub fn close_0353<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let e = g.read::<u32>(w(0x2)) + 0x1180;
+    // push esi: the callee's return address below
+    let lights = Frame {
+        at: img.rel32_target(f + 0xe),
+        esp: esp.wrapping_sub(8),
+        eax: 0,
+        ecx: e,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    let node = g.read::<u32>(e + 0x228);
+    crate::s6_misc::lights_and_give_back(g, img, &lights);
+    // the `ecx` the lights leave (slot 346 reads it as `this`): the free
+    // cursor they store after a give-back, else the effect (their slot
+    // calls' `ecx`, as the game's slots leave it)
+    let e = if node == 0 {
+        e
+    } else {
+        g.read::<u32>(img.word(lights.at + 0x110))
+    };
+    let m = g.read::<u32>(w(0x19));
+    // call width: 1
+    g.call(slot(g, 0x13, 346), e, &[m]);
+    let m = g.read::<u32>(w(0x2e));
+    // call width: 2
+    g.call(slot(g, 0x26, 399), e, &[m, 0]);
+    let m = g.read::<u32>(w(0x41));
+    // call width: 2
+    g.call(slot(g, 0x3b, 6), e, &[m, 0]);
+    // call width: 1
+    g.call(slot(g, 0x4e, 547), e, &[m]);
+    // jmp eax: slot 856 with the caller's stack
+    // call width: 0
+    g.call(slot(g, 0x5c, 856), e, &[]).eax
+}
+
+/// [`close_0353`] (the `rel32`: the lights).
+pub const CLOSE_0353: Sig = Sig {
+    len: 108,
+    hash: 0xeaaa_7e9f_67ff_845e,
+    calls: &[(0xe, Callee::Sig(&crate::s6_misc::LIGHTS_AND_GIVE_BACK))],
+    imports: &[],
+};
+
+/// `magic_0353`'s script task (cdecl `(task)`, a task callback): the
+/// DLL's script runs ([`run`](crate::sa_script::run)) and the motion
+/// steps ([`motion_step`](crate::s3_motion::motion_step)); once the script
+/// has ended, `*G_S + 0x13fc` = 1, the summon closes ([`close_0353`]) and
+/// the task goes back to the pool (a tail jump to
+/// [`give_back`](crate::sa_pool::give_back)). Returns the give-back's
+/// `eax`, or the motion step's.
+///
+/// `magic_0353` 0x10001900 (54 bytes).
+pub fn script_task_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = g.read::<u32>(img.word(f + 0x7));
+    let ended = crate::sa_script::run(g, img, img.rel32_target(f + 0xc));
+    let eax = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x13));
+    if ended != 1 {
+        return Ret::eax(eax);
+    }
+    g.write::<u32>(s + 0x13fc, ended);
+    // push ebp, esi, edi: the call's return address below
+    close_0353(
+        g,
+        img,
+        img.rel32_target(f + 0x23),
+        fr.esp.wrapping_sub(0x10),
+    );
+    let task = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x2e),
+        task,
+    ))
+}
+
+/// [`script_task_0353`] (the `rel32`s: the script, the motion step, the
+/// close, the give-back).
+pub const SCRIPT_TASK_0353: Sig = Sig {
+    len: 54,
+    hash: 0x1f6d_5c64_e9f4_4437,
+    calls: &[
+        (0xc, Callee::Sig(&crate::sa_script::RUN)),
+        (0x13, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x23, Callee::Sig(&CLOSE_0353)),
+        (0x2e, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0353`'s sprite fade task (cdecl `(task)`, a task callback; a
+/// cookie frame, `L(o)` = `ebp - o`; `S = *G_S`): the alpha `80 (n - c) /
+/// n` while the fade-in count `S + 0x13ec` lasts (counting down, `n` =
+/// `S + 0x13f0`), then `80 c / n` of the fade-out `S + 0x13f4` (counting
+/// down, `n` = `S + 0x13f8`) (`idiv`); the angle `S + 0x13e8` turns by
+/// the constant at operand `+0x76` (a turn added below 0); the sprite
+/// (slot 719 `(at +0xb6, 2, 12)`'s descriptor) drawn by
+/// [`packed_sprite`](crate::o6_fam_pairs6::packed_sprite) on the view
+/// `*G_V` with the matrix `L(0x44)` (slot 235, slot 329 by a quarter turn)
+/// and slot 210's `L(0x84)`. With the fade-out over the task goes back to
+/// the pool ([`give_back`](crate::sa_pool::give_back)). Returns `S`, or
+/// the give-back's `eax`.
+///
+/// `magic_0353` 0x10001b70 (363 bytes).
+pub fn fade_task_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(w(0x19));
+    let c = g.read::<i32>(s + 0x13ec);
+    g.write::<u32>(l(0x90), task);
+    g.write::<u32>(l(0x88), s);
+    let (alpha, junk) = if c > 0 {
+        let n = g.read::<i32>(s + 0x13f0);
+        let c = c - 1;
+        g.write::<i32>(s + 0x13ec, c);
+        // idiv: a zero count faults in the original
+        (
+            n.wrapping_sub(c)
+                .wrapping_mul(80)
+                .checked_div(n)
+                .unwrap_or(0),
+            c,
+        )
+    } else {
+        let c = g.read::<i32>(s + 0x13f4).wrapping_sub(1);
+        g.write::<i32>(s + 0x13f4, c);
+        let n = g.read::<i32>(s + 0x13f8);
+        (
+            c.wrapping_mul(80).checked_div(n).unwrap_or(0),
+            g.read::<i32>(s + 0x13ec),
+        )
+    };
+    let mut a = sub(f32_at(g, s + 0x13e8), f32_at(g, w(0x76)));
+    g.write::<i32>(l(0x8c), alpha);
+    put(g, s + 0x13e8, a);
+    if 0.0 > a {
+        a = add(a, f32_at(g, w(0x94)));
+        put(g, s + 0x13e8, a);
+    }
+    let v = g.read::<u32>(w(0xa7));
+    // call width: 3
+    let d = g.call(slot(g, 0xa1, 719), 0, &[w(0xb6), 2, 0xc]).eax;
+    let (lo, hi) = (g.read::<u32>(d), g.read::<u32>(d + 4));
+    // call width: 1
+    g.call(slot(g, 0xc6, 235), 0, &[l(0x44)]);
+    // call width: 3
+    g.call(slot(g, 0xe2, 329), 0, &[l(0x44), l(0x44), 0x3fc9_0fdb]);
+    let m = g.read::<u32>(w(0xfc));
+    // call width: 2
+    g.call(slot(g, 0xf6, 210), 0, &[m, l(0x84)]);
+    let angle = g.read::<u32>(s + 0x13e8);
+    // sub esp, 0x90; push ebx, esi, edi: the sprite's seven words below
+    let b = ebp.wrapping_sub(0x90 + 12);
+    let words = [
+        junk.cast_unsigned(),
+        l(0x44),
+        lo,
+        hi,
+        angle,
+        0,
+        alpha.cast_unsigned(),
+    ];
+    for (i, x) in (0u32..).zip(words) {
+        g.write::<u32>(b - 0x1c + 4 * i, x);
+    }
+    let sprite = Frame {
+        at: img.rel32_target(f + 0x139),
+        esp: b - 0x20,
+        eax: l(0x44),
+        ecx: v,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    crate::o6_fam_pairs6::packed_sprite(g, img, &sprite);
+    let s = g.read::<u32>(l(0x88));
+    if g.read::<i32>(s + 0x13f4) > 0 {
+        return Ret::eax(s);
+    }
+    let task = g.read::<u32>(l(0x90));
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x159),
+        task,
+    ))
+}
+
+/// [`fade_task_0353`] (the `rel32`s: the packed sprite, the give-back,
+/// the cookie check).
+pub const FADE_TASK_0353: Sig = Sig {
+    len: 363,
+    hash: 0x676e_2687_5961_7793,
+    calls: &[
+        (
+            0x139,
+            Callee::Sig(&crate::o6_fam_pairs6::PACKED_SPRITE_0353_13B0),
+        ),
+        (0x159, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x163, Callee::Any),
+    ],
+    imports: &[],
+};
