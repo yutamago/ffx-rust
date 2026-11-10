@@ -93,6 +93,7 @@ pub mod r39b;
 pub mod r40;
 pub mod r41;
 pub mod r42;
+pub mod r43;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3408,6 +3409,29 @@ ports! {
     "r42 light visit thunk 0042" => r42::JMP_LIGHT_VISIT_0042, r42::jmp_light_visit_0042;
     "r42 start-up 0184" => r42::START_UP_0184, r42::start_up_0184;
     // round 42 (magic-r42): end
+    // round 43 (magic-r43)
+    "r43 summon start 0445" => r43::SUMMON_START_0445, r43::summon_start_0445;
+    "r43 task 0445" => r43::TASK_0445, r43::task_0445;
+    "r43 strike start 0273" => r43::STRIKE_START_0273, r43::strike_start_0273;
+    "r43 summon task 0273" => r43::SUMMON_TASK_0273, r43::summon_task_0273;
+    "r43 start task 0273" => r43::START_TASK_0273, r43::start_task_0273;
+    "r43 drift task 0388" => r43::DRIFT_TASK_0388, r43::drift_task_0388;
+    "r43 colour task 0388" => r43::COLOUR_TASK_0388, r43::colour_task_0388;
+    "r43 summon task 0388" => r43::SUMMON_TASK_0388, r43::summon_task_0388;
+    "r43 load step 0250" => r43::LOAD_0250, r43::load_0250;
+    "r43 caster record 0250" => r43::CASTER_RECORD_0250, r43::caster_record_0250;
+    "r43 spawn 0250" => r43::SPAWN_0250, r43::spawn_0250;
+    "r43 task 0420" => r43::TASK_0420, r43::task_0420;
+    "r43 object task 0420" => r43::OBJECT_TASK_0420, r43::object_task_0420;
+    "r43 start 0420" => r43::START_0420, r43::start_0420;
+    "r43 landing 0394" => r43::LANDING_0394, r43::landing_0394;
+    "r43 turn step 0394" => r43::TURN_STEP_0394, r43::turn_step_0394;
+    "r43 flight 0394" => r43::FLIGHT_0394, r43::flight_0394;
+    "r43 object step 0251" => r43::OBJECT_STEP_0251, r43::object_step_0251;
+    "r43 weapon frame 0385" => r43::WEAPON_FRAME_0385, r43::weapon_frame_0385;
+    "r43 curve task 0251" => r43::CURVE_TASK_0251, r43::curve_task_0251;
+    "r43 end task 0348" => r43::END_TASK_0348, r43::end_task_0348;
+    // round 43 (magic-r43): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5350,6 +5374,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 shard draw 0269", &r41::SHARD_DRAW_0269),
     ("r41 record start 0250", &r41::RECORD_START_0250),
     // round 41 (magic-r41): end of INTERNAL
+    // round 43 (magic-r43)
+    ("r43 object set-up 0445", &r43::OBJECT_SETUP_0445),
+    ("r43 start-up 0250", &r43::START_UP_0250),
+    ("r43 set-up 0420", &r43::SETUP_0420),
+    ("r43 sparks 0394", &r43::SPARKS_0394),
+    // round 43 (magic-r43): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

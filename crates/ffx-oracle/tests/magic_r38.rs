@@ -680,9 +680,12 @@ fn packed_0350() {
         t.set_u32(desc, 0x1234_5678 ^ k);
         t.set_u32(desc + 4, 0x9abc_def0 ^ k);
         t.set_u32(answer, filled);
-        t.set_u32(t.img.word(f + 0xba), SCRATCH + 0x3000);
+        // *G_O (+0xba and +0xf3 name the same global): the model the
+        // draw reads `[ecx + 0x830]` from, and slot 210's first word
+        assert_eq!(t.img.word(f + 0xba), t.img.word(f + 0xf3));
+        t.set_u32(t.img.word(f + 0xba), SCRATCH + 0x3000 + 0x10 * k);
         junk(&mut t, SCRATCH + 0x3000, 0x900, k);
-        t.set_u32(t.img.word(f + 0xf3), 0x00f3_0000 + k);
+        t.set_u32(SCRATCH + 0x3830 + 0x10 * k, 0x0830_0000 + k);
         let node = SCRATCH + 0x900;
         magic_hi::lone_node(&mut t, give, node);
         ownb::dirty_stack(&mut t, 0x5c60 + k, &[]);

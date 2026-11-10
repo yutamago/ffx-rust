@@ -3648,7 +3648,7 @@ pub const TWO_SPARKS_B: Sig = Sig {
 /// the first set when `P` was empty (else the old last's `+4`), and the
 /// vtable `VT`. The operands: `(+0x14's P, +4's P, last, last, P, first,
 /// count, last, VT)`.
-fn parent_append<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+pub(crate) fn parent_append<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
     let w = |o: u32| op(img, f, o);
     let [p14, p4, l1, l2, p, first, count, l3, vt] = ops;
     g.write::<u16>(node + 0x1a, 0xff);
