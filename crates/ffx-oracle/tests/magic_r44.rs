@@ -1263,3 +1263,192 @@ fn start_up_0009() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// What `r44::trail_task_0009` (`magic_0009` 0x10001c70) needs: the
+/// effect block `R` (matrix, ends, offset, four records with their trails
+/// of `n` points, animation and spin; the count), the frame table of
+/// slot 941 (as the trail draw's test has it), the lock globals of the
+/// part link and the trail draw, the object (waiting, flag bit 15 per
+/// case); the vector and matrix slots as data flow.
+fn trail_task_0009_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (count, n, anim): (u32, [u32; 4], [(u32, u16, u16); 4]),
+) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let r = SCRATCH + 0x2_0000;
+    let at = w(t, 0x20);
+    t.set_u32(at, r);
+    for i in 0..0x280u32 {
+        let x = ((i * 29 + k * 7) % 97) as f32 * 0.0625 - 3.0;
+        t.set_u32(r + 4 * i, x.to_bits());
+    }
+    t.set_u32(r + 0x9b8, count);
+    for i in 0..4u32 {
+        let rec = r + 0x70 + 0x250 * i;
+        let (on, frame, timer) = anim[i as usize];
+        t.set_u32(rec, 0x0a00 + i);
+        t.set_u32(rec + 4, on);
+        t.set_u16(rec + 8, frame);
+        t.set_u16(rec + 0xa, timer);
+        t.set_u32(rec + 0x1c, 0x0c0c_0000 + i);
+        // the trail: colours, sizes, spacing, newest, the points
+        t.write(rec + 0x24 + 0x20c, &[10, 200, 0, 0x80, 250, 3, 128, 0x40]);
+        t.set_u32(rec + 0x24 + 0x214, 1.5f32.to_bits());
+        t.set_u32(rec + 0x24 + 0x218, 0.25f32.to_bits());
+        t.set_u32(rec + 0x24 + 0x21c, 0.75f32.to_bits());
+        t.set_u32(rec + 0x24 + 0x220, 2 + i);
+        t.set_u32(rec + 0x248, n[i as usize]);
+    }
+    // slot 941's table (frames, the entries the link and the draw read)
+    let table = SCRATCH + 0x8000;
+    rec(t, 941, 1, move |_, _| table);
+    t.write(table, &[0; 0x100]);
+    t.set_u16(table + 6, 3);
+    for j in 0..3u32 {
+        let e = table + 0x10 + 8 * j;
+        t.set_u16(e, (0x80 + 0x10 * j) as u16);
+        t.set_u16(e + 2, 0x300 + 0x40 * j as u16);
+        t.set_u8(e + 4, if j == 2 && k % 2 == 1 { 0x80 } else { 0 });
+        let rr = table + 0x80 + 0x10 * j;
+        t.set_u32(rr + 4, 4 * j);
+        t.set_u8(rr + 4 * j + 4, 0x31 + j as u8);
+    }
+    // the lock globals (the part link's and the trail draw's)
+    let lock = SCRATCH + 0x9000;
+    let link = t.img.rel32_target(f + 0x700);
+    for o in [0x4fu32, 0x7a, 0xa9, 0xc6, 0x115, 0x13b] {
+        let at = t.img.word(link + o);
+        t.set_u32(at, lock);
+    }
+    let draw = t.img.rel32_target(f + 0x713);
+    let at = t.img.word(draw + 0x463);
+    t.set_u32(at, lock);
+    let at = t.img.word(draw + 0x520);
+    t.set_u32(at, 0x0cc0_0cc0);
+    t.set_u32(lock, 0x40 + k);
+    // the object: waiting, its list empty, flag bit 15 by the case
+    let obj = w(t, 0x75f);
+    // (its block ends where the effect block's pointer `+0x34` sits)
+    t.write(obj, &[0; 0x2c]);
+    t.set_u32(obj + 0x2c, 5);
+    t.set_u16(obj + 0x30, if k % 2 == 1 { 0x8001 } else { 0x0001 });
+    // the task node for the give-back
+    let give = t.img.rel32_target(f + 0x7dd);
+    magic_hi::lone_node(t, give, SCRATCH + 0x7c00);
+}
+
+/// The stubs `r44::trail_task_0009` reaches, as data flow and logged.
+fn trail_task_0009_stubs(t: &mut Twin) {
+    all_stubs(t);
+    let lock = SCRATCH + 0x9000;
+    rec(t, 326, 4, |m, a| {
+        let u = f32::from_bits(a[3]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + (rf(m, a[2] + 4 * i) - rf(m, a[1] + 4 * i)) * u;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x326
+    });
+    for s in [723u32, 724, 235] {
+        rec(t, s, 1, move |m, a| {
+            for i in 0..16 {
+                let v = (i as f32 + 1.0) * if s == 235 { 1.0 } else { 0.5 };
+                m.w32(a[0] + 4 * i, v.to_bits());
+            }
+            s
+        });
+    }
+    for s in [330u32, 328, 329] {
+        rec(t, s, 3, move |m, a| {
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + ang * (i + 1) as f32 / 8.0 + s as f32 / 1024.0;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let raw = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x7e60 + 4 * i, raw);
+            let x = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    for s in [234u32, 248] {
+        rec(t, s, 3, move |m, a| {
+            for i in 0..3 {
+                let v = if s == 234 {
+                    rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i)
+                } else {
+                    rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i)
+                };
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(t, 773, 4, move |m, a| {
+        m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
+        (a[3] >> 1) & 1
+    });
+    for s in [774u32, 775, 778] {
+        rec(t, s, if s == 775 { 2 } else { 5 }, move |m, _| {
+            m.w32(SCRATCH + 0x9300 + 4 * (s - 774), m.r32(lock));
+            s
+        });
+    }
+    rec(t, 776, 1, |_, a| a[0] << 4);
+    rec(t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
+}
+
+/// `magic_0009` 0x10001c70 (`r44::trail_task_0009`, a task callback): the
+/// count running (the records' frames: timers above and at 0, the last
+/// frame looping and holding, records off) and ended (the trails halved;
+/// the give-back).
+#[test]
+fn trail_task_0009() {
+    let Some(mut t) = twin(9) else { return };
+    trail_task_0009_stubs(&mut t);
+    let f = t.at(0x1c70);
+    let task = SCRATCH + 0x7c00;
+    // (count, trail points, (on, frame, timer) per record)
+    let cases: [(u32, [u32; 4], [(u32, u16, u16); 4]); 6] = [
+        (
+            5,
+            [2, 0, 3, 1],
+            [(1, 0, 0x300), (1, 1, 0x100), (0, 0, 0x100), (1, 2, 0x200)],
+        ),
+        (
+            1,
+            [1, 2, 0, 0],
+            [(1, 2, 0x150), (1, 2, 0x150), (1, 0, 0x50), (0, 1, 0)],
+        ),
+        (0, [3, 2, 1, 4], [(1, 0, 0x300); 4]),
+        (0, [0, 2, 1, 4], [(1, 0, 0x300); 4]),
+        (
+            9,
+            [1, 1, 1, 1],
+            [(1, 2, 0x10), (1, 1, 0x210), (1, 0, 0x200), (1, 2, 0x200)],
+        ),
+        (2, [0, 0, 0, 0], [(0, 1, 0x10); 4]),
+    ];
+    for (k, case) in (0u32..).zip(cases) {
+        trail_task_0009_setup(&mut t, f, k, case);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

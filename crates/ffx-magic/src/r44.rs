@@ -2217,3 +2217,309 @@ pub const LOAD_0009: Sig = Sig {
     calls: &[(0x5c, Callee::Sig(&START_UP_0009))],
     imports: &[],
 };
+
+/// `magic_0009`'s trail task (0x10001c70, 2038 bytes; a task callback,
+/// cdecl `(task)`; an 8-aligned /GS frame, `S` = `esp` after the three
+/// pushes; `R = *G_FX`, the effect block). The count `R + 0x9b8` steps
+/// down; `u = n / K` and `u' = (n + 1) / K` place two points between
+/// `R + 0x40` and `R + 0x50` (slot 326) lowered by the arc `(1 - u) u K1
+/// K2` (the other terms times 0); their difference gives the pitch
+/// `atan2(dy, sqrt(dx^2 + dz^2))` and the yaw `K - atan2(dz, dx)`
+/// (`_CIatan2`, wrapped once) of the matrix `M1` (slots 235, 330 by 0,
+/// 328, 329); the height of the arc's next step `Q = (0, h, 0, 1)`; the
+/// screen and camera matrices (723, 724) and a small scale matrix `M4`
+/// (235, 0.05).
+/// - With the count still running: for each of the four 0x250-byte
+///   records `T` from `R + 0x70`: its spin `T + 0x24c` plus `K` wrapped
+///   once (slots 235, 330), `M5 = M5 M1` (231), the point `M5 Q` plus the
+///   first point through `R`'s matrix (229 twice) plus `R + 0x60`, into
+///   `T + 0xc` (and `w`) and the frame; `*G_W = T[0x1c]`; the sprite
+///   matrix `M6` scaled by `T + 0x20` placed at the camera's point
+///   (229) and turned into the screen (231); the record's animation frame
+///   (slot 941's table, the timer `T + 0xa` down by 0x200, the frame
+///   `T + 8` on, looping on the entry's flag 0x80 or holding at the last);
+///   the part linked ([`link_part`](crate::sa_misc::link_part)) and the
+///   trail drawn ([`trail_draw`](crate::s4_misc::trail_draw)). Then the
+///   last point into the object's four words and its script
+///   ([`obj_script`](crate::l5_objhost::obj_script)). Returns the
+///   script's flag bit 15.
+/// - Done: while the first record's `+0x248` is positive, each record's
+///   is halved and its trail drawn (returns the last draw's `eax`); else
+///   the task goes back to the pool ([`give_back`](crate::sa_pool::give_back)).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn trail_task_0009<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; sub esp, 0x1e4; three pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x1e4);
+    let cookie = gw(g, 0xd) ^ b0;
+    g.write::<u32>(b0 + 0x1e0, cookie);
+    let s = b0.wrapping_sub(0xc);
+    let at = |o: u32| s.wrapping_add(o);
+    let rf = |g: &G, o: u32| g.read::<f32>(s.wrapping_add(o));
+    let wf = |g: &mut G, o: u32, x: f32| g.write::<f32>(s.wrapping_add(o), x);
+    let task = fr.arg(g, 0);
+    let r = gw(g, 0x20);
+    g.write::<u32>(at(0x20), task);
+    g.write::<u32>(at(0x1c), r);
+    let count = r + 0x9b8;
+    let c = g.read::<i32>(count);
+    if c > 0 {
+        g.write::<i32>(count, c - 1);
+    }
+    let c = g.read::<u32>(count);
+    let u = if c == 0 { 0.0 } else { div(cvt(c), k(g, 0x54)) };
+    wf(g, 0x18, u);
+    let (a0, a1) = (r + 0x40, r + 0x50);
+    // call width: 4
+    g.call(t(g, 0x71, 326), 0, &[at(0x58), a0, a1, u.to_bits()]);
+    let one_u = sub(k(g, 0x8d), u);
+    let uu = mul(u, u);
+    let h1 = add(
+        add(
+            mul(mul(mul(one_u, u), k(g, 0xb1)), k(g, 0xc0)),
+            mul(mul(one_u, one_u), 0.0),
+        ),
+        mul(uu, 0.0),
+    );
+    wf(g, 0x34, one_u);
+    wf(g, 0x24, uu);
+    let y1 = sub(rf(g, 0x5c), h1);
+    wf(g, 0x5c, y1);
+    // (the count read again after the call)
+    let u2 = div(cvt(g.read::<u32>(count).wrapping_add(1)), k(g, 0x105));
+    wf(g, 0xc, u2);
+    // call width: 4
+    g.call(t(g, 0x112, 326), 0, &[at(0x48), a0, a1, u2.to_bits()]);
+    let one_u2 = sub(k(g, 0x12e), u2);
+    let h2 = add(
+        add(
+            mul(mul(mul(one_u2, u2), k(g, 0x14b)), k(g, 0x157)),
+            mul(mul(one_u2, one_u2), 0.0),
+        ),
+        mul(mul(u2, u2), 0.0),
+    );
+    let dz = sub(rf(g, 0x60), rf(g, 0x50));
+    let dx = sub(rf(g, 0x58), rf(g, 0x48));
+    let y2 = sub(rf(g, 0x4c), h2);
+    wf(g, 0xc, dz);
+    wf(g, 0x30, dx);
+    let dy = sub(rf(g, 0x5c), y2);
+    wf(g, 0x4c, y2);
+    let flat = add(mul(dz, dz), mul(dx, dx));
+    // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+    let rr = f64::from(flat).sqrt();
+    g.write::<f64>(at(0x10), f64::from(dy));
+    let pitch = g.atan2(f64::from(dy), rr);
+    g.write::<f64>(at(0x28), pitch);
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut yaw = sub(k(g, 0x21c), ang);
+    let tw = k(g, 0x22c);
+    if yaw > k(g, 0x233) {
+        yaw = sub(yaw, tw);
+    } else if k(g, 0x249) > yaw {
+        yaw = add(yaw, tw);
+    }
+    wf(g, 0xc, yaw);
+    let m1 = at(0xa8);
+    // call width: 1
+    g.call(t(g, 0x265, 235), 0, &[m1]);
+    // call width: 3
+    g.call(t(g, 0x282, 330), 0, &[m1, m1, 0]);
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let p32 = pitch as f32;
+    // call width: 3
+    g.call(t(g, 0x2aa, 328), 0, &[m1, m1, p32.to_bits()]);
+    // call width: 3
+    g.call(t(g, 0x2ce, 329), 0, &[m1, m1, yaw.to_bits()]);
+    // the arc's next height
+    let kk = k(g, 0x2e4);
+    let x2 = mul(one_u, one_u);
+    let x5 = mul(one_u, u);
+    let h3 = mul(mul(x5, x2), kk);
+    let h3 = add(mul(h3, k(g, 0x322)), mul(mul(x2, x2), 0.0));
+    let h3 = add(h3, mul(mul(mul(uu, x2), kk), k(g, 0x357)));
+    let h3 = add(h3, mul(mul(mul(uu, x5), kk), k(g, 0x376)));
+    let h3 = add(h3, mul(mul(uu, uu), 0.0));
+    let q = at(0x48);
+    for (o, x) in [(0u32, 0u32), (8, 0), (0xc, ONE)] {
+        g.write::<u32>(q + o, x);
+    }
+    g.write::<f32>(q + 4, h3);
+    let (m2, m3, m4) = (at(0x1a8), at(0x168), at(0xe8));
+    // call width: 1
+    g.call(t(g, 0x328, 723), 0, &[m2]);
+    // call width: 1
+    g.call(t(g, 0x39c, 724), 0, &[m3]);
+    // call width: 1
+    g.call(t(g, 0x3b4, 235), 0, &[m4]);
+    let ended = g.read::<u32>(count) == 0;
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<u32>(m4 + o, 0x3d4c_cccd);
+    }
+    if ended {
+        let mut half = r + 0x70 + 0x248;
+        if g.read::<i32>(half) <= 0 {
+            let node = g.read::<u32>(at(0x20));
+            let eax = crate::sa_pool::give_back(g, img, call(0x7dd), node);
+            return Ret::eax(eax);
+        }
+        let mut eax = 0;
+        for _ in 0..4 {
+            let v = g.read::<i32>(half) / 2;
+            g.write::<i32>(half, v);
+            g.write::<u32>(at(0) - 4, half - 0x23c);
+            let tf = Frame {
+                at: call(0x7b3),
+                esp: at(0) - 8,
+                ecx: half - 0x224,
+                edx: m4,
+                ..*fr
+            };
+            eax = crate::s4_misc::trail_draw(g, img, &tf);
+            half += 0x250;
+        }
+        return Ret::eax(eax);
+    }
+    let (m5, m6, p) = (at(0x128), at(0x68), at(0x38));
+    g.write::<u32>(w(0x3fb), m6);
+    g.write::<u32>(w(0x401), 0);
+    for i in 0..4u32 {
+        let rec = r + 0x70 + 0x250 * i;
+        let mut spin = add(g.read::<f32>(rec + 0x24c), k(g, 0x415));
+        if spin > k(g, 0x41c) {
+            spin = sub(spin, k(g, 0x426));
+        } else if k(g, 0x430) > spin {
+            spin = add(spin, k(g, 0x43d));
+        }
+        g.write::<f32>(rec + 0x24c, spin);
+        // call width: 1
+        g.call(t(g, 0x44a, 235), 0, &[m5]);
+        let spin = g.read::<u32>(rec + 0x24c);
+        // call width: 3
+        g.call(t(g, 0x475, 330), 0, &[m5, m5, spin]);
+        // call width: 3
+        g.call(t(g, 0x49d, 231), 0, &[m5, m1, m5]);
+        // call width: 3
+        g.call(t(g, 0x4bf, 229), 0, &[p, m5, q]);
+        for o in [0u32, 4, 8] {
+            let x = add(g.read::<f32>(p + o), rf(g, 0x58 + o));
+            g.write::<f32>(p + o, x);
+        }
+        // call width: 3
+        g.call(t(g, 0x4f4, 229), 0, &[p, r, p]);
+        let pw = g.read::<u32>(r + 0x6c);
+        let pos = [0u32, 4, 8].map(|o| add(g.read::<f32>(p + o), g.read::<f32>(r + 0x60 + o)));
+        g.write::<u32>(rec + 0x18, pw);
+        for (o, x) in (0u32..).zip(pos) {
+            g.write::<f32>(rec + 0xc + 4 * o, x);
+        }
+        let x = g.read::<u32>(rec + 0x1c);
+        g.write::<u32>(w(0x558), x);
+        for (o, x) in (0u32..).zip(pos) {
+            g.write::<f32>(p + 4 * o, x);
+        }
+        g.write::<u32>(p + 0xc, pw);
+        // call width: 1
+        g.call(t(g, 0x565, 235), 0, &[m6]);
+        let sc = g.read::<f32>(rec + 0x20);
+        for j in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
+            let x = mul(g.read::<f32>(m6 + 4 * j), sc);
+            g.write::<f32>(m6 + 4 * j, x);
+        }
+        // call width: 3
+        g.call(t(g, 0x5e0, 229), 0, &[m6 + 0x30, m3, rec + 0xc]);
+        // call width: 3
+        g.call(t(g, 0x679, 231), 0, &[m6, m2, m6]);
+        let x = g.read::<u32>(rec);
+        // call width: 1
+        let tbl = g.call(t(g, 0x686, 941), 0, &[x]).eax;
+        let fi = g.read::<u16>(rec + 8);
+        let entry_of = |fi: u16| {
+            tbl.wrapping_add(
+                (i32::from(fi.cast_signed()) + 2)
+                    .cast_unsigned()
+                    .wrapping_mul(8),
+            )
+        };
+        let mut entry = entry_of(fi);
+        if g.read::<u32>(rec + 4) != 0 {
+            let timer = g.read::<u16>(rec + 0xa).wrapping_sub(0x200);
+            g.write::<u16>(rec + 0xa, timer);
+            if timer.cast_signed() <= 0 {
+                let next = fi.wrapping_add(1);
+                g.write::<u16>(rec + 8, next);
+                let reload = if next.cast_signed() < g.read::<i16>(tbl + 6) {
+                    true
+                } else if g.read::<u8>(entry + 4) & 0x80 != 0 {
+                    g.write::<u16>(rec + 8, 0);
+                    true
+                } else {
+                    g.write::<u16>(rec + 8, fi);
+                    g.write::<u32>(rec + 4, 0);
+                    false
+                };
+                if reload {
+                    entry = entry_of(g.read::<u16>(rec + 8));
+                    let x = g.read::<u16>(entry + 2);
+                    g.write::<u16>(rec + 0xa, x);
+                }
+            }
+        }
+        // the part linked: `edx` the entry, stack `(owner, i)`
+        g.write::<u32>(at(0) - 8, w(0x6f9));
+        g.write::<u32>(at(0) - 4, i);
+        let lf = Frame {
+            at: call(0x700),
+            esp: at(0) - 0xc,
+            ecx: rec,
+            edx: entry,
+            ..*fr
+        };
+        crate::sa_misc::link_part(g, img, &lf);
+        g.write::<u32>(at(0) - 0xc, rec + 0xc);
+        let tf = Frame {
+            at: call(0x713),
+            esp: at(0) - 0x10,
+            ecx: rec + 0x24,
+            edx: m4,
+            ..*fr
+        };
+        crate::s4_misc::trail_draw(g, img, &tf);
+    }
+    for (o, to) in [(0u32, 0x738u32), (4, 0x746), (8, 0x754), (0xc, 0x767)] {
+        let x = g.read::<u32>(p + o);
+        g.write::<u32>(w(to), x);
+    }
+    let obj = w(0x75f);
+    crate::l5_objhost::obj_script(g, img, call(0x76c), obj);
+    // (its `eax`: bit 15 of the object's flags)
+    Ret::eax(u32::from(g.read::<u16>(obj + 0x30) >> 15))
+}
+
+/// [`trail_task_0009`] (the `rel32`s: `sqrt`, `_CIatan2` twice, the part
+/// link, the trail draw twice, the script, the give-back,
+/// `__security_check_cookie` three times).
+pub const TRAIL_TASK_0009: Sig = Sig {
+    len: 2038,
+    hash: 0x24cb_5289_965f_41fc,
+    calls: &[
+        (0x1c8, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x1db, Callee::Import("_CIatan2")),
+        (0x20a, Callee::Import("_CIatan2")),
+        (0x700, Callee::Sig(&crate::sa_misc::LINK_PART)),
+        (0x713, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x76c, Callee::Sig(&crate::l5_objhost::OBJ_SCRIPT)),
+        (0x77d, Callee::Any),
+        (0x7b3, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x7d0, Callee::Any),
+        (0x7dd, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x7ee, Callee::Any),
+    ],
+    imports: &[],
+};
