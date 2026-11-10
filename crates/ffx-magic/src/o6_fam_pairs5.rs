@@ -2610,9 +2610,40 @@ pub fn target_objects<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// `id`.
 #[allow(clippy::too_many_lines)] // the original's calls, one by one
 pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    const MODEL: FrameLayout = FrameLayout {
+        shift: crate::r32::Shift {
+            runs: &[],
+            moved: &[],
+        },
+        desc: None,
+    };
+    sprite_frame_with(g, img, fr, &MODEL)
+}
+
+/// How a copy of [`sprite_frame`] differs: its operands (the model's
+/// offsets, [`Shift`](crate::r32::Shift)) and, with `desc` (the copy's
+/// operand offsets of the matrix and the light words it stores), the
+/// draw record in `edx` (`D`) instead of the DLL's globals: `D + 0x10` =
+/// the matrix, `D + 0x1c` = the light word, the colour bytes `D + 4..8`,
+/// the id `D + 0x14`, `D` handed to slots 774/778 and `D + 0x1c` to slot
+/// 777 (`magic_0370` 0x10002810).
+pub(crate) struct FrameLayout {
+    pub(crate) shift: crate::r32::Shift,
+    pub(crate) desc: Option<(u32, u32)>,
+}
+
+/// [`sprite_frame`] for a copy laid out as `lay` says.
+#[allow(clippy::too_many_lines)] // the original's calls, one by one
+pub(crate) fn sprite_frame_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    lay: &FrameLayout,
+) -> Ret {
     use crate::sb_sse::{mul, sub};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let w = |o: u32| img.word(f + lay.shift.at(o));
+    let rd = fr.edx;
     let slot = |g: &G, n: u32| slot_target(g, w(0x29), n);
     let r = fr.ecx;
     let dt = fr.xmm_f32(3);
@@ -2627,7 +2658,7 @@ pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     if r == 0 || tbl_of(g) == 0 {
         // the 28-byte wrapper: `vprintf(fmt, &args)` through slot 726,
         // `&args` above its pushed string (`ebp - 0xa8` here)
-        let wrapper = img.rel32_target(f + 0x3cb);
+        let wrapper = img.rel32_target(f + lay.shift.at(0x3cb));
         let t = slot_target(g, img.word(wrapper + 8), 726);
         // call width: 2
         g.call(t, r, &[w(0x3c6), ebp.wrapping_sub(0xa8)]);
@@ -2677,9 +2708,15 @@ pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 12 (Pushes caps the words at 12)
     st.call(g, t, r);
     let time = sub(g.read::<f32>(w(0x179)), dt);
-    g.write::<u32>(w(0x18a), w(0x18e));
-    g.write::<u32>(w(0x194), w(0x198));
-    g.write::<f32>(w(0x1a5), time);
+    if let Some((m, e)) = lay.desc {
+        g.write::<f32>(w(0x1a5), time);
+        g.write::<u32>(rd.wrapping_add(0x10), img.word(f + m));
+        g.write::<u32>(rd.wrapping_add(0x1c), img.word(f + e));
+    } else {
+        g.write::<u32>(w(0x18a), w(0x18e));
+        g.write::<u32>(w(0x194), w(0x198));
+        g.write::<f32>(w(0x1a5), time);
+    }
     let timer = g
         .read::<u16>(r.wrapping_add(0x10))
         .wrapping_add(w(0x19d) as u16);
@@ -2707,16 +2744,28 @@ pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let timer = g.read::<u16>(r.wrapping_add(0x10)).wrapping_add(step);
         g.write::<u16>(r.wrapping_add(0x10), timer);
     }
-    for (o, at) in [(0x2cu32, 0x23bu32), (0x30, 0x244), (0x34, 0x250)] {
+    // the colour bytes, alpha and id: the globals, or `D + 4..8`, `D + 0x14`
+    let field = |at: u32, k: u32| {
+        if lay.desc.is_some() {
+            rd.wrapping_add(k)
+        } else {
+            w(at)
+        }
+    };
+    for (o, at, k) in [
+        (0x2cu32, 0x23bu32, 4u32),
+        (0x30, 0x244, 5),
+        (0x34, 0x250, 6),
+    ] {
         let v = g.read::<u8>(r.wrapping_add(o));
-        g.write::<u8>(w(at), v);
+        g.write::<u8>(field(at, k), v);
     }
     let alpha = crate::s4_summon::trunc(mul(
         g.read::<f32>(r.wrapping_add(0x38)),
         g.read::<f32>(w(0x25d)),
     ));
-    g.write::<u8>(w(0x26c), alpha as u8);
-    g.write::<u32>(w(0x274), id);
+    g.write::<u8>(field(0x26c, 7), alpha as u8);
+    g.write::<u32>(field(0x274, 0x14), id);
     let anim = g.read::<u32>(r.wrapping_add(0xc));
     let mut st = Pushes::default();
     st.push_all(&[part, tbl]);
@@ -2733,7 +2782,7 @@ pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let drawn = st.call(g, t, r).eax;
     let lock = g.read::<u32>(w(0x290));
     g.write::<u32>(lock, saved);
-    let colours = w(0x2e2);
+    let colours = if lay.desc.is_some() { rd } else { w(0x2e2) };
     if drawn != 0 {
         let frame = u32::from(g.read::<u16>(r.wrapping_add(8)));
         g.write::<u32>(lock, 1);
@@ -2758,7 +2807,7 @@ pub fn sprite_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let t = slot(g, 776);
     // call width: 1
     let x = g.call(t, r, &[u32::from(byte)]).eax;
-    let ge = g.read::<u32>(w(0x365));
+    let ge = g.read::<u32>(field(0x365, 0x1c));
     let t = slot(g, 777);
     // call width: 1
     let y = g.call(t, r, &[ge]).eax;

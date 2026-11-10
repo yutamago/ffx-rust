@@ -3347,6 +3347,10 @@ ports! {
     "r41 summon task 0374" => r41::SUMMON_TASK_0374, r41::summon_task_0374;
     "r41 load step 0271" => r41::LOAD_0271, r41::load_0271;
     "r41 curve task 0271" => r41::CURVE_TASK_0271, r41::curve_task_0271;
+    "r41 sprite reset 0370" => r41::SPRITE_RESET_0370, r41::sprite_reset_0370;
+    "r41 sprite update 0370" => r41::SPRITE_UPDATE_0370, r41::sprite_update_0370;
+    "r41 draw 0370" => r41::DRAW_0370, r41::draw_0370;
+    "r41 start 0370" => r41::START_0370, r41::start_0370;
     // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5260,6 +5264,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 glow 0374", &r41::GLOW_0374),
     ("r41 start-up 0271", &r41::START_UP_0271),
     ("r41 trail 0271", &r41::TRAIL_0271),
+    ("r41 sprite frame 0370", &r41::SPRITE_FRAME_0370),
+    ("r41 block frames 0370", &r41::BLOCK_FRAMES_0370),
+    ("r41 spark 0370", &r41::SPARK_0370),
     // round 41 (magic-r41): end of INTERNAL
 ];
 

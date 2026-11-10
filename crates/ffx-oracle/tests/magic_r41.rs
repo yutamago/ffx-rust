@@ -261,6 +261,12 @@ fn summon_task_0374() {
             empty_list(&mut t, w(o));
         }
         empty_list(&mut t, w(0x178));
+        if flags == 0x55 {
+            // the light list not empty: a last node of its own
+            let last = SCRATCH + 0x6100;
+            t.write(last, &[0x6c; 0x20]);
+            t.set_u32(w(0x2e7) + 0x10, last);
+        }
         owner_at(&mut t, w(0x113), SCRATCH + 0x5000);
         owner_at(&mut t, w(0x43e), SCRATCH + 0x5400);
         owner_at(&mut t, w(0x482), SCRATCH + 0x5800);
@@ -569,7 +575,7 @@ fn start_up_0271_setup(t: &mut Twin, f: u32, k: u32, listed: bool, yaw: f64, tz:
     t.set_u32(w(0x135), sel);
     t.set_u32(w(0x156) + 12, 0x0000_0099);
     // the state block (the fade's record inside it)
-    let s = SCRATCH + 0x1_0000;
+    let s = SCRATCH + 0x2_0000;
     junk(t, s + 0x1e00, 0x200, k);
     t.set_u32(w(0xfc), s);
     junk_ops(t, f, &[0x2d, 0x37, 0x41, 0x4b, 0x59, 0x11e, 0x124, 0xad]);
@@ -612,7 +618,7 @@ fn start_up_0271() {
 /// matrices that mix what they read, slot 941's frame table (`count`
 /// frames at `+0x10`, the last frame's loop byte `looped`), handles,
 /// slot 245's pad word, slot 773's answer `known`.
-fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32) {
+fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32, pkt: u32) {
     all_stubs(t);
     filler_16(t, 235);
     for (s, n) in [(229u32, 3usize), (230, 2), (330, 3)] {
@@ -620,7 +626,13 @@ fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32) {
             let k = (s & 0xf) as f32;
             let turn = if s == 330 { f32::from_bits(a[2]) } else { 0.0 };
             for i in 0..16 {
-                let v = rf(m, a[1] + 4 * i) * 0.5 + i as f32 * 0.25 - k + turn;
+                // slot 229's point (its third word) read too
+                let p = if s == 229 {
+                    rf(m, a[2] + 4 * (i % 4))
+                } else {
+                    0.0
+                };
+                let v = rf(m, a[1] + 4 * i) * 0.5 + i as f32 * 0.25 - k + turn + p;
                 wf(m, a[0] + 4 * i, v);
             }
             s
@@ -651,8 +663,14 @@ fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32) {
             let at = SCRATCH + 0xa20;
             let mut v = m.r32(at).rotate_left(5) ^ s;
             if s == 603 || s == 604 {
-                for i in 0..8 {
+                // the sprite record on the frame and the matrix the
+                // packet global points at
+                for i in 0..0x20 {
                     v = v.rotate_left(3) ^ m.r32(a[0] + 4 * i);
+                }
+                let mx = m.r32(pkt);
+                for i in 0..16 {
+                    v = v.rotate_left(3) ^ m.r32(mx + 4 * i);
                 }
             }
             m.w32(at, v);
@@ -667,7 +685,8 @@ fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32) {
     }
     rec(t, 942, 1, |_, a| 0x0942_0000 ^ a[0]);
     let table = SCRATCH + 0x3400;
-    t.write(table, &[0; 0x200]);
+    let bytes: Vec<u8> = (0..0x200u32).map(|i| (i * 7 + 3) as u8).collect();
+    t.write(table, &bytes);
     t.set_u16(table + 6, count as u16);
     for i in 0..0x20u32 {
         let e = table + 0x10 + 8 * i;
@@ -719,7 +738,7 @@ fn curve_task_0271() {
     let tw = |o: u32| img.word(trail + o);
     let give = img.rel32_target(f + 0x22b);
     let start = img.rel32_target(f + 0x1b1);
-    let s = SCRATCH + 0x1_0000;
+    let s = SCRATCH + 0x2_0000;
     // (count, time, segments, spacing, alpha, flags unset from, equal
     // pair, frame count, known)
     let cases: [(i32, i32, i32, f32, u8, u32, bool, i16, u32); 9] = [
@@ -738,7 +757,7 @@ fn curve_task_0271() {
         magic_r11::pools(&mut t, f, 576);
         magic_r11::object_slots(&mut t);
         magic_r11::object_start_auto(&mut t, start);
-        trail_stubs(&mut t, frames, k % 2 == 0, known);
+        trail_stubs(&mut t, frames, k % 2 == 0, known, tw(0x17e));
         let node = SCRATCH + 0x900;
         magic_hi::lone_node(&mut t, give, node);
         let idx = k % 3;
@@ -766,7 +785,8 @@ fn curve_task_0271() {
             setf(&mut t, p + 8, 1.0 - back as f32 * 0.125);
             setf(&mut t, p + 12, 1.0);
             let set = back < unset || back == 0;
-            t.set_u8(tr + 0x22c + i, u8::from(set));
+            let first = i == (cur + 31) % 32;
+            t.set_u8(tr + 0x22c + i, if first { 7 } else { u8::from(set) });
         }
         if equal {
             // the second-newest point the same as the third
@@ -803,5 +823,265 @@ fn curve_task_0271() {
         }
         ownb::dirty_stack(&mut t, 0x1e80 + k, &[]);
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// The slots of `magic_0370`'s sprite frame: 941 the frame table `tbl`
+/// (3 frames), 772/773 a handle and whether it is drawn (by the part's
+/// low bit), 774/778 hashing the draw record `D` they are given, the
+/// matrix slots logging their words. Returns the lock word's address.
+fn sprite_stubs_0370(t: &mut Twin, sf: u32, tbl: u32) -> u32 {
+    all_stubs(t);
+    let lock = SCRATCH + 0x3100;
+    t.set_u32(t.img.word(sf + 0x28e), lock);
+    floats(t, t.img.word(sf + 0x181), 1, 3);
+    rec(t, 941, 1, move |_, _| tbl);
+    rec(t, 772, 2, |_, a| a[0] ^ a[1]);
+    t.stub_edx(772, |_, _| 0x0772_0002);
+    rec(t, 773, 4, |_, a| u32::from(a[3] & 1 == 0));
+    for (s, n) in [(774u32, 5usize), (778, 6)] {
+        rec(t, s, n, move |m, a| {
+            let mut v = s;
+            for i in 0..8 {
+                v = v.rotate_left(5) ^ m.r32(a[3] + 4 * i);
+            }
+            m.w32(SCRATCH + 0xa40, v ^ m.r32(SCRATCH + 0xa40));
+            s
+        });
+    }
+    for (s, n) in [
+        (775u32, 2usize),
+        (776, 1),
+        (777, 1),
+        (723, 1),
+        (724, 1),
+        (235, 1),
+        (383, 2),
+        (231, 3),
+        (330, 3),
+        (230, 2),
+        (325, 2),
+        (726, 2),
+    ] {
+        rec(t, s, n, move |m, a| (s << 16) ^ a[0] ^ m.r32(lock));
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..3 {
+            let v = 0.5 * i as f32 + rf(m, a[2]);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    t.write(tbl, &[0x37; 0x100]);
+    t.set_u16(tbl + 4, 3);
+    for i in 0..3u32 {
+        t.set_u16(tbl + 8 * i + 0x10, (0x80 + 8 * i) as u16);
+        t.set_u16(tbl + 8 * i + 0x12, (0x100 * (i + 1)) as u16);
+    }
+    for i in 0..4u32 {
+        t.set_u32(tbl + 0x80 + 8 * i + 4, 0x10 + i);
+    }
+    lock
+}
+
+/// `magic_0370` 0x10002f80 (`r41::block_frames_0370`) with its sprite
+/// frame 0x10002810 (`r41::sprite_frame_0370`): no records, three (one
+/// empty), with and without slot 229's point, timers running out, drawn
+/// and not; the sprite frame alone without a record (the printf path).
+#[test]
+fn block_frames_0370() {
+    use ffx_magic::Xmm;
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x2f80);
+    let sf = t.at(0x2810);
+    let tbl = SCRATCH + 0x3200;
+    let lock = sprite_stubs_0370(&mut t, sf, tbl);
+    t.set_u32(t.img.word(f + 0x11), 0x00ab_0001);
+    let (b, base, d) = (SCRATCH + 0x3f00, SCRATCH + 0x4000, SCRATCH + 0x3e00);
+    for (c, (n, flag)) in (0u32..).zip([(0u32, 0u32), (3, 1), (3, 0), (2, 1)]) {
+        floats(&mut t, b, 0x10, c + 7);
+        t.set_u32(b, n);
+        t.set_u32(b + 4, base);
+        t.set_u32(b + 0x18, flag);
+        t.set_u32(lock, 0x55 + c);
+        junk(&mut t, d, 0x40, c);
+        for i in 0..3u32 {
+            let rec_ = base + 0x94 * i;
+            floats(&mut t, rec_, 0x94 / 4, c + i);
+            t.set_u32(rec_, u32::from(i != 1 || c == 3));
+            let r = rec_ + 0x30;
+            t.set_u32(r, 0x0941_0000 + i);
+            t.set_u16(r + 8, ((i + c) % 3) as u16);
+            t.set_u16(r + 0x10, if (i + c) % 2 == 0 { 0x200 } else { 0x300 });
+            t.set_u32(r + 0xc, tbl + 0x80);
+        }
+        ownb::dirty_stack(&mut t, 0x2f80 + c, &[]);
+        let call = Call {
+            ecx: b,
+            edx: d,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            Xmm::f32(9.0),
+            Xmm::f32(8.0),
+            Xmm::f32(7.0),
+            Xmm::f32(0.25 + c as f32),
+        ]);
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r41::block_frames_0370(g, img, fr)
+        });
+    }
+    // no record: the printf wrapper
+    let call = Call {
+        ecx: 0,
+        edx: d,
+        ..Call::default()
+    };
+    ownb::dirty_stack(&mut t, 0x2810, &[]);
+    t.check(sf, call, &[5, 6], Eax::Checked, |g, img, fr| {
+        ffx_magic::r41::sprite_frame_0370(g, img, fr)
+    });
+}
+
+/// `magic_0370` 0x10001320 (`r41::sprite_reset_0370`): the draw records
+/// and both sprite systems with their 500 sprites, all junk before.
+#[test]
+fn sprite_reset_0370() {
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x1320);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[2] << 8));
+    for k in 0..2u32 {
+        t.set_u32(w(0x26), 0x0000_0026 + k);
+        junk(&mut t, w(0x41), 0x60, k);
+        junk(&mut t, w(0x4b), 8, k);
+        let (b0, end) = (w(0x72) - 8, w(0xe5) - 8);
+        junk(&mut t, b0, end - b0, k + 1);
+        let n = (end - b0) / 0x5c;
+        for i in 0..n {
+            let sp = SCRATCH + 0x4_0000 + 0x1_3000 * i;
+            t.set_u32(w(0x6a) + 4 * i, sp);
+            junk(&mut t, sp, 0x94 * 500, k + i);
+        }
+        ownb::dirty_stack(&mut t, 0x1320 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0370` 0x100015c0 (`r41::draw_0370`): slot 712 answering 0 and
+/// not, slot 261 answering 0 and not.
+#[test]
+fn draw_0370() {
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x15c0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f40;
+    t.set_u32(w(0x8a), lock);
+    let tbl = SCRATCH + 0x3400;
+    junk(&mut t, tbl, 0x40, 3);
+    rec(&mut t, 941, 1, move |_, _| tbl);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let wrapper = t.img.rel32_target(f + 0x120);
+    t.set_u32(t.img.word(wrapper + 4), lock);
+    let answers = SCRATCH + 0x7f50;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answers));
+    rec(&mut t, 261, 1, move |m, _| m.r32(answers + 4));
+    for (k, (ok, busy)) in (0u32..).zip([(0u32, 0u32), (1, 1), (1, 0), (5, 0)]) {
+        t.set_u32(answers, ok);
+        t.set_u32(answers + 4, busy);
+        t.set_u32(lock, 0x40 + k);
+        for o in [0x1u32, 0x7d, 0xd2, 0xef] {
+            t.set_u32(w(o), SCRATCH + 0x7f60 + 4 * k);
+        }
+        junk_ops(&mut t, f, &[0x8, 0x26, 0x46, 0x51, 0x5d, 0x65, 0x70]);
+        let d = SCRATCH + 0x7f80;
+        junk(&mut t, d, 0x20, k);
+        t.set_u32(w(0xfa), d);
+        ownb::dirty_stack(&mut t, 0x15c0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0370` 0x10001a70 (`r41::start_0370`, cdecl `(a)`): the start-up
+/// on junk globals.
+#[test]
+fn start_0370() {
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x1a70);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f40;
+    t.set_u32(w(0xa6), lock);
+    let parts = SCRATCH + 0x7f80;
+    for k in 0..2u32 {
+        junk(&mut t, parts, 0x40, k);
+        rec(&mut t, 719, 3, move |_, _| parts);
+        rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+        rec(&mut t, 803, 2, move |_, _| 0x0800_0000 + k);
+        for o in [0x14au32, 0x17e, 0x199] {
+            junk(&mut t, w(o), 0x110, k);
+        }
+        junk_ops(&mut t, f, &[0x87, 0x9e, 0x220, 0x237, 0x10f, 0x129, 0x14f]);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x1a70 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0370` 0x10001420 (`r41::sprite_update_0370`) with its sparks
+/// 0x100011a0 (`r41::spark_0370`): both sparks, one, none (the random
+/// draws), the pools with a free sprite and full; the systems' steps and
+/// frames over what the sparks left.
+#[test]
+fn sprite_update_0370() {
+    let Some(mut t) = twin(370) else { return };
+    let f = t.at(0x1420);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let sf = t.at(0x2810);
+    let tbl = SCRATCH + 0x3200;
+    let lock = sprite_stubs_0370(&mut t, sf, tbl);
+    t.set_u32(img.word(sf + 0x28e), lock);
+    let rnd = SCRATCH + 0x14c;
+    rec(&mut t, 324, 0, move |m, _| {
+        let s = m.r32(rnd).wrapping_mul(1_103_515_245).wrapping_add(12345);
+        m.w32(rnd, s);
+        s >> 8
+    });
+    rec(&mut t, 403, 1, |_, a| 0x0403_0000 ^ a[0]);
+    t.stub_st0(403, |_, a| f64::from(f32::from_bits(a[0])) * 2.0);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(m, a[3] + 4 * i, i as f32 + 0.5);
+        }
+        0x237
+    });
+    for k in 0..6u32 {
+        t.set_u32(rnd, 0x1234 + 0x9e37 * k);
+        // the two systems (0x5c bytes): 2 sprites each, free or taken
+        for j in 0..2u32 {
+            let sys = w(0xd1) + 0x5c * j;
+            junk(&mut t, sys, 0x5c, k + j);
+            let sp = SCRATCH + 0x9000 + 0x200 * j;
+            junk(&mut t, sp, 0x128, k);
+            t.set_u32(sys, 2);
+            t.set_u32(sys + 4, sp);
+            for o in [8u32, 0x10, 0x18] {
+                t.set_u32(sys + o, 0);
+            }
+            for i in 0..2 {
+                t.set_u32(sp + 0x94 * i, u32::from(k % 3 == 2));
+            }
+        }
+        junk(&mut t, w(0xd6), 0x60, k);
+        t.set_u32(lock, 0x40 + k);
+        junk_ops(&mut t, f, &[0x2c, 0x70, 0xb8, 0xfe]);
+        ownb::dirty_stack(&mut t, 0x1420 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

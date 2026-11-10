@@ -1280,3 +1280,490 @@ pub const CURVE_TASK_0271: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0370`'s sprite frame (0x10002810, 996 bytes; internal: `ecx` =
+/// the record, `edx` = the draw record `D`, `xmm3` = the time step, the
+/// stack `(id, part)`): [`sprite_frame`](crate::o6_fam_pairs5::sprite_frame)
+/// with `D` in place of the DLL's draw globals (`D + 0x10` the matrix,
+/// `D + 0x1c` the light word, the colour bytes, the id) and its operands
+/// moved.
+pub fn sprite_frame_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    const LAYOUT: crate::o6_fam_pairs5::FrameLayout = crate::o6_fam_pairs5::FrameLayout {
+        shift: Shift {
+            runs: &[
+                (0xa, 0),
+                (0x29, 8),
+                (0x1a5, -12),
+                (0x1b4, 2),
+                (0x282, -2),
+                (0x2f8, 0),
+                (0x373, -3),
+                (0x394, -9),
+                (0x3a8, -1),
+            ],
+            moved: &[(0x19d, 0x191)],
+        },
+        desc: Some((0x1a0, 0x1a7)),
+    };
+    crate::o6_fam_pairs5::sprite_frame_with(g, img, fr, &LAYOUT)
+}
+
+/// [`sprite_frame_0370`] (the `rel32`s: the cookie checks, the printf
+/// wrapper).
+pub const SPRITE_FRAME_0370: Sig = Sig {
+    len: 996,
+    hash: 0xe808_061e_8a4d_d7b7,
+    calls: &[
+        (0x330, Callee::Any),
+        (0x3bc, Callee::Any),
+        (0x3ca, Callee::Sig(&crate::opu::DEBUG_PRINTF)),
+        (0x3dc, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0370`'s block frames (0x10002f80, 173 bytes; internal: `ecx` =
+/// the block `B`, `edx` = the draw record `D`, `xmm3` = the time step `dt`;
+/// an `ebp` /GS frame: `dt` at `ebp - 0x28`, `D` at `-0x20`, `B` at
+/// `-0x24`, `x` at `-0x1c`, `L` at `-0x18`): as
+/// [`block_sprite_frames`](crate::s9_misc::block_sprite_frames), each live
+/// record's frame drawn by [`sprite_frame_0370`] with `D` and `dt` handed
+/// on. Returns `x`.
+pub fn block_frames_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let s = |o: u32| ebp.wrapping_sub(o);
+    let (dt_at, rec_at, b_at, x_at, l) = (s(0x28), s(0x20), s(0x24), s(0x1c), s(0x18));
+    let call = s(0x40);
+    let b = fr.ecx;
+    let dt = fr.xmm_f32(3).to_bits();
+    let mut x = g.read::<u32>(w(0x11));
+    let base = g.read::<u32>(b.wrapping_add(4));
+    g.write::<u32>(dt_at, dt);
+    g.write::<u32>(rec_at, fr.edx);
+    g.write::<u32>(b_at, b);
+    g.write::<u32>(x_at, x);
+    let frame_at = img.rel32_target(f + 0x7e);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(b) {
+        let rec = base.wrapping_add(i.wrapping_mul(0x94));
+        if g.read::<u32>(rec) != 0 {
+            let p = if g.read::<u32>(b.wrapping_add(0x18)) == 0 {
+                rec.wrapping_add(4)
+            } else {
+                // call width: 3
+                let t = slot_target(g, w(0x4a), 229);
+                g.call(t, 0, &[l, b.wrapping_add(0x1c), rec.wrapping_add(4)]);
+                l
+            };
+            // call width: 2
+            let t = slot_target(g, w(0x5e), 325);
+            g.call(t, 0, &[rec.wrapping_add(0x44), p]);
+            g.write::<u32>(call + 4, x);
+            g.write::<u32>(call + 8, i);
+            let sub = Frame {
+                at: frame_at,
+                esp: call,
+                eax: 0,
+                ecx: rec.wrapping_add(0x30),
+                edx: g.read::<u32>(rec_at),
+                xmm: [0, 0, 0, u128::from(dt)],
+            };
+            x = sprite_frame_0370(g, img, &sub).eax;
+            g.write::<u32>(x_at, x);
+        }
+        i += 1;
+    }
+    Ret::eax(x)
+}
+
+/// [`block_frames_0370`] (the `rel32`s: the sprite frame, the cookie
+/// check).
+pub const BLOCK_FRAMES_0370: Sig = Sig {
+    len: 173,
+    hash: 0xda2f_71e0_ae10_512e,
+    calls: &[(0x7e, Callee::Sig(&SPRITE_FRAME_0370)), (0xa5, Callee::Any)],
+    imports: &[],
+};
+
+/// `slot 324 & 0x7fff` as a float (`cvtdq2ps`), through the table global
+/// at operand `op` of `f`.
+fn rnd15<G: Game>(g: &mut G, img: &Image, f: u32, op: u32) -> f32 {
+    let t = slot_target(g, img.word(f + op), 324);
+    // call width: 0
+    let r = g.call(t, 0, &[]).eax & 0x7fff;
+    #[allow(clippy::cast_precision_loss)] // below 2^15: exact
+    let x = r as f32;
+    x
+}
+
+/// `magic_0370`'s spark (0x100011a0, 373 bytes; internal: `ecx` = a
+/// sprite pool, `edx` = its resource, the stack `(p, kind)`): a sprite
+/// taken ([`sprite_take`](crate::s4_misc::sprite_take); none: 0), its
+/// times `+0x28`/`+0x24` 0x10, its place `p`'s three words, the speeds
+/// `+0x14..+0x1c` = `((r / K - K') K'' K''')` of three randoms, `+0x58` =
+/// slot 403 `(r / K * K4)` (ST0), `+0x54` 0.1875, `+0x68` 1.0, and the
+/// colour steps `+0x5c..+0x64` (0x18, 7, 6; with `kind` 0x3c, 0x6e,
+/// 0x5a). Returns slot 403's `eax`.
+pub fn spark_0370<G: Game>(g: &mut G, img: &Image, f: u32, fr: &Frame) -> u32 {
+    let k = |g: &G, o: u32| f32_at(g, img.word(f + o));
+    let take = Frame {
+        at: img.rel32_target(f + 5),
+        esp: fr.esp.wrapping_sub(8),
+        ecx: fr.ecx,
+        edx: fr.edx,
+        ..Frame::default()
+    };
+    let s = crate::s4_misc::sprite_take(g, img, &take).eax;
+    if s == 0 {
+        return 0;
+    }
+    let (p, kind) = (fr.arg(g, 0), fr.arg(g, 1));
+    g.write::<u32>(s + 0x28, 0x10);
+    g.write::<u32>(s + 0x24, 0x10);
+    for i in 0..3 {
+        let v = g.read::<u32>(p + 4 * i);
+        g.write::<u32>(s + 4 + 4 * i, v);
+    }
+    for (i, (t, a, b, c, d)) in (0u32..).zip([
+        (0x36u32, 0x57u32, 0x5fu32, 0x67u32, 0x6fu32),
+        (0x4f, 0x95, 0x9d, 0xa5, 0xad),
+        (0x8d, 0xd3, 0xdb, 0xe3, 0xeb),
+    ]) {
+        let r = rnd15(g, img, f, t);
+        let v = mul(mul(sub(div(r, k(g, a)), k(g, b)), k(g, c)), k(g, d));
+        put(g, s + 0x14 + 4 * i, v);
+    }
+    let r = rnd15(g, img, f, 0xcb);
+    let x = mul(div(r, k(g, 0x111)), k(g, 0x11f));
+    let t = slot_target(g, img.word(f + 0x109), 403);
+    // call width: 1
+    let out = g.call(t, 0, &[x.to_bits()]);
+    put(g, s + 0x58, crate::m0018::st0_f32(out.st0));
+    g.write::<u32>(s + 0x54, 0x3e40_0000);
+    g.write::<u32>(s + 0x68, 0x3f80_0000);
+    let steps = if kind == 0 {
+        [0x18, 7, 6]
+    } else {
+        [0x3c, 0x6e, 0x5a]
+    };
+    for (i, v) in (0u32..).zip(steps) {
+        g.write::<u32>(s + 0x5c + 4 * i, v);
+    }
+    out.eax
+}
+
+/// [`spark_0370`] (the `rel32`: the sprite take).
+pub const SPARK_0370: Sig = Sig {
+    len: 373,
+    hash: 0xc660_2291_a0fa_6480,
+    calls: &[(0x5, Callee::Sig(&crate::s4_misc::SPRITE_TAKE))],
+    imports: &[],
+};
+
+/// `magic_0370`'s sprite reset (0x10001320, 242 bytes; no arguments; an
+/// `ebp` frame): for the two draw records (0x30 bytes at `G_D`), the
+/// handle `G_H[i]` = slot 719 `(*G_R, 4, i)`, the record cleared
+/// (`memset`) with its `u16 +2` 0x80; then for each sprite system (0x5c
+/// bytes from `G_S - 8` to `G_END`): cleared, its count 500, its sprites
+/// the next pointer of the table `G_T`, `+8`/`+0x10`/`+0x18` 0, and its
+/// 500 sprites (0x94 bytes) cleared. Returns the table's pointer past the
+/// last.
+pub fn sprite_reset_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    for i in 0..2u32 {
+        let slot = slot_target(g, w(0x1e), 719);
+        let who = g.read::<u32>(w(0x26));
+        // call width: 3
+        let h = g.call(slot, 0, &[who, 4, i]).eax;
+        let rec = w(0x41).wrapping_add(i * 0x30);
+        g.write::<u32>(w(0x4b).wrapping_add(4 * i), h);
+        g.write_bytes(rec, &[0; 0x30]); // memset(rec, 0, 0x30)
+        g.write::<u16>(w(0x60).wrapping_add(i * 0x30), 0x80);
+    }
+    let mut tp = w(0x6a);
+    let mut b = w(0x72);
+    loop {
+        let mut sp = g.read::<u32>(tp);
+        let head = b.wrapping_sub(8);
+        g.write_bytes(head, &[0; 0x5c]); // memset(head, 0, 0x5c)
+        g.write::<u32>(head, 0x1f4);
+        g.write::<u32>(b.wrapping_sub(4), sp);
+        for o in [0u32, 8, 0x10] {
+            g.write::<u32>(b + o, 0);
+        }
+        for _ in 0..0x1f4 {
+            g.write_bytes(sp, &[0; 0x94]); // memset(sp, 0, 0x94)
+            g.write::<u32>(sp, 0);
+            sp = sp.wrapping_add(0x94);
+        }
+        for o in [0u32, 8, 0x10] {
+            g.write::<u32>(b + o, 0);
+        }
+        tp = tp.wrapping_add(4);
+        b = b.wrapping_add(0x5c);
+        if b.cast_signed() >= w(0xe5).cast_signed() {
+            return Ret::eax(tp);
+        }
+    }
+}
+
+/// [`sprite_reset_0370`] (the `rel32`s: `memset`).
+pub const SPRITE_RESET_0370: Sig = Sig {
+    len: 242,
+    hash: 0x0ace_e80a_59a4_8eb6,
+    calls: &[
+        (0x50, Callee::Import("memset")),
+        (0x81, Callee::Import("memset")),
+        (0xb9, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
+
+/// `magic_0370`'s sprite update (0x10001420, 288 bytes; no arguments; a
+/// /GS frame aligned to 8, `P` at its `esp + 4`): `P` = slot 237 `(*G_C,
+/// 0x3c, 0, P)`; with `(r / K - K') K''` above 0 a spark of kind 0 from
+/// the first pool ([`spark_0370`], resource `*G_R0`), with `r' / K` below
+/// `K'''` one of kind 1 from the second (`*G_R1`); then each of the 2 sprite
+/// systems (0x5c bytes) steps ([`sprites_step`](crate::s6_misc::sprites_step))
+/// and draws its frames with its draw record ([`block_frames_0370`],
+/// `dt` 0), `*G_X` its answer. Returns 1.
+pub fn sprite_update_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32_at(g, w(o));
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x18);
+    let p = e + 4;
+    let who = g.read::<u32>(w(0x2c));
+    // call width: 4
+    g.call(slot_target(g, w(0x1c), 237), 0, &[who, 0x3c, 0, p]);
+    let spark = |g: &mut G, (pool, res, kind): (u32, u32, u32)| {
+        let sp = e.wrapping_sub(0x10);
+        g.write::<u32>(sp, p);
+        g.write::<u32>(sp + 4, kind);
+        let fr2 = Frame {
+            at: 0,
+            esp: sp.wrapping_sub(4),
+            ecx: w(pool),
+            edx: g.read::<u32>(w(res)),
+            ..Frame::default()
+        };
+        let at = img.rel32_target(f + if kind == 0 { 0x81 } else { 0xc9 });
+        spark_0370(g, img, at, &fr2);
+    };
+    let x = mul(
+        sub(div(rnd15(g, img, f, 0x33), k(g, 0x55)), k(g, 0x5d)),
+        k(g, 0x65),
+    );
+    // comiss x, 0; jbe: only above 0 (ordered)
+    if x > 0.0 {
+        spark(g, (0x7c, 0x70, 0));
+    }
+    let y = div(rnd15(g, img, f, 0x89), k(g, 0xad));
+    // comiss K, y; jbe: only when K is above
+    if k(g, 0xa5) > y {
+        spark(g, (0xc4, 0xb8, 1));
+    }
+    let (mut sys, mut rec) = (w(0xd1), w(0xd6));
+    let step = img.rel32_target(f + 0xe3);
+    let frames = img.rel32_target(f + 0xf0);
+    loop {
+        let st = Frame {
+            at: step,
+            esp: e.wrapping_sub(0xc),
+            ecx: sys,
+            ..Frame::default()
+        };
+        crate::s6_misc::sprites_step(g, img, &st);
+        let bf = Frame {
+            at: frames,
+            esp: e.wrapping_sub(0x10),
+            ecx: sys,
+            edx: rec,
+            ..Frame::default()
+        };
+        let x = block_frames_0370(g, img, &bf).eax;
+        rec = rec.wrapping_add(0x30);
+        sys = sys.wrapping_add(0x5c);
+        g.write::<u32>(w(0xfe), x);
+        if rec.cast_signed() >= w(0x104).cast_signed() {
+            return Ret::eax(1);
+        }
+    }
+}
+
+/// [`sprite_update_0370`] (the `rel32`s: the sparks, the step, the
+/// frames, the cookie check).
+pub const SPRITE_UPDATE_0370: Sig = Sig {
+    len: 288,
+    hash: 0x7963_f43c_40ac_8cba,
+    calls: &[
+        (0x81, Callee::Sig(&SPARK_0370)),
+        (0xc9, Callee::Sig(&SPARK_0370)),
+        (0xe3, Callee::Sig(&crate::s6_misc::SPRITES_STEP)),
+        (0xf0, Callee::Sig(&BLOCK_FRAMES_0370)),
+        (0x118, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0370`'s draw (0x100015c0, 301 bytes; no arguments, no frame):
+/// `**G_W` = the scene word; slots 723 `(*G_A)`, 724 `(*G_B)`, 258
+/// `(M)`, 231 `(*G_M1, *G_B, *G_M2)`, 230 `(*G_V, *G_M1)`; the part's
+/// data `(M, 0x30)` checked by slot 712 with the game lock 1 (the scene
+/// word set again): 0 ends with 1; then slot 261 `(1)` non-zero ends with
+/// 0; else slot 713 `(M)` and the part restarted ([`start_part`](crate::opu_parts::start_part)
+/// with `M`, 0x1000, the program of `*G_P`'s table, 1). Returns 1.
+pub fn draw_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let r = |g: &G, o: u32| g.read::<u32>(w(o));
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let scene = |g: &mut G, op: u32, v: u32| {
+        let p = g.read::<u32>(w(op));
+        g.write::<u32>(p, w(v));
+    };
+    let a = r(g, 0x8);
+    scene(g, 0x1, 0xe);
+    // call width: 1
+    g.call(slot(g, 0x13, 723), 0, &[a]);
+    let b = r(g, 0x26);
+    // call width: 1
+    g.call(slot(g, 0x20, 724), 0, &[b]);
+    // call width: 1
+    g.call(slot(g, 0x33, 258), 0, &[w(0x38)]);
+    let (m2, b, m1) = (r(g, 0x46), r(g, 0x51), r(g, 0x5d));
+    // call width: 3
+    g.call(slot(g, 0x4b, 231), 0, &[m1, b, m2]);
+    let (m1, v) = (r(g, 0x65), r(g, 0x70));
+    // call width: 2
+    g.call(slot(g, 0x6a, 230), 0, &[v, m1]);
+    scene(g, 0x7d, 0x85);
+    let lock = r(g, 0x8a);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let ok = g.call(slot(g, 0x9c, 712), 0, &[w(0x8f), 0x30]).eax;
+    let lock = r(g, 0xaa);
+    g.write::<u32>(lock, saved);
+    if ok == 0 {
+        return Ret::eax(1);
+    }
+    // call width: 1
+    if g.call(slot(g, 0xb9, 261), 0, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    scene(g, 0xd2, 0xdd);
+    // call width: 1
+    g.call(slot(g, 0xe2, 713), 0, &[w(0xd7)]);
+    scene(g, 0xef, 0xf5);
+    let d = r(g, 0xfa);
+    let key = g.read::<u32>(d + 0x10);
+    // call width: 1
+    let tb = g.call(slot(g, 0x102, 941), 0, &[key]).eax;
+    let program = g.read::<u32>(tb + 8);
+    let at = img.rel32_target(f + 0x120);
+    crate::opu_parts::start_part(g, img, at, w(0x11b), 0x1000, program, 1);
+    Ret::eax(1)
+}
+
+/// [`draw_0370`] (the `rel32`: the part start).
+pub const DRAW_0370: Sig = Sig {
+    len: 301,
+    hash: 0xa697_d2a0_2c66_3051,
+    calls: &[(0x120, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// `magic_0370`'s start (0x10001a70, 579 bytes; cdecl `(a)`): `G_A = a`;
+/// a 16 MiB buffer (slot 803 `(0x1000000, 0x10)`) cut into four globals
+/// (0x80000 apart, the last twice and `+0x12110`); the resource name set
+/// and loaded (slots 718, 222 `(*G_N, 0, 1000, 0x2000)`); the part `*G_P`
+/// = slot 719 `(*G_N, 8, 0)`, set up by slot 711 `(P, D, 0)` with the
+/// game lock 1 and slot 710 `(env, P, buf, 0x80000)`; three tables of
+/// slot 941 (the part's `+0x14`, `+0x18`, `+0x1c`); three 0x110-byte
+/// draw blocks cleared (`memset`) and given their vtable and flag words;
+/// `G_X` = slot 260 `(0x17)`, `G_Y` = slot 260 `(0x14)`. Returns 1.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_0370<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    g.write::<u32>(w(0x7), fr.arg(g, 0));
+    // call width: 2
+    let buf = g.call(slot(g, 0xc, 803), 0, &[0x0100_0000, 0x10]).eax;
+    g.write::<u32>(w(0x21), buf);
+    let mut x = buf;
+    for o in [0x2bu32, 0x35, 0x3f] {
+        x = x.wrapping_add(0x80000);
+        g.write::<u32>(w(o), x);
+    }
+    g.write::<u32>(w(0x44), x);
+    g.write::<u32>(w(0x4e), x.wrapping_add(0x12110));
+    stores(g, img, f, &[(0x64, 0x68)]);
+    // call width: 1
+    g.call(slot(g, 0x53, 718), 0, &[w(0x58)]);
+    let n = g.read::<u32>(w(0x87));
+    // call width: 4
+    g.call(slot(g, 0x6f, 222), 0, &[n, 0, 0x3e8, 0x2000]);
+    let n = g.read::<u32>(w(0x9e));
+    // call width: 3
+    let h = g.call(slot(g, 0x8e, 719), 0, &[n, 8, 0]).eax;
+    let lock = g.read::<u32>(w(0xa6));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0xaf), h);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(slot(g, 0xba, 711), 0, &[h, w(0xb4), 0]);
+    let lock = g.read::<u32>(w(0xcd));
+    g.write::<u32>(lock, saved);
+    let (p, b) = (g.read::<u32>(w(0xe0)), g.read::<u32>(w(0xd8)));
+    // call width: 4
+    g.call(slot(g, 0xe5, 710), 0, &[w(0xea), p, b, 0x80000]);
+    for (src, off, tb, dst) in [
+        (0xf7u32, 0x14u32, 0x102u32, 0x10fu32),
+        (0x114, 0x18, 0x11c, 0x129),
+        (0x12e, 0x1c, 0x136, 0x14f),
+    ] {
+        let part = g.read::<u32>(w(src));
+        let key = g.read::<u32>(part + off);
+        // call width: 1
+        let t = g.call(slot(g, tb, 941), 0, &[key]).eax;
+        g.write::<u32>(w(dst), t);
+    }
+    g.write_bytes(w(0x14a), &[0; 0x110]); // memset(G_D0, 0, 0x110)
+    stores(g, img, f, &[(0x15a, 0x15e)]);
+    sets(g, img, f, &[(0x164, 1), (0x16e, 1), (0x184, 1)]);
+    g.write_bytes(w(0x17e), &[0; 0x110]); // memset(G_D1, 0, 0x110)
+    stores(g, img, f, &[(0x19f, 0x1a3)]);
+    sets(
+        g,
+        img,
+        f,
+        &[(0x1a9, 3), (0x1b3, 3), (0x1bd, 1), (0x1c7, 1), (0x1d1, 1)],
+    );
+    g.write_bytes(w(0x199), &[0; 0x110]); // memset(G_D2, 0, 0x110)
+    stores(g, img, f, &[(0x1e5, 0x1e9)]);
+    sets(g, img, f, &[(0x1ef, 2), (0x1f9, 2), (0x203, 1), (0x20d, 1)]);
+    // call width: 1
+    let x = g.call(slot(g, 0x1df, 260), 0, &[0x17]).eax;
+    g.write::<u32>(w(0x220), x);
+    // call width: 1
+    let y = g.call(slot(g, 0x225, 260), 0, &[0x14]).eax;
+    g.write::<u32>(w(0x237), y);
+    Ret::eax(1)
+}
+
+/// [`start_0370`] (the `rel32`s: `memset`).
+pub const START_0370: Sig = Sig {
+    len: 579,
+    hash: 0xebb7_e0a5_baef_313e,
+    calls: &[
+        (0x154, Callee::Import("memset")),
+        (0x18d, Callee::Import("memset")),
+        (0x1da, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
