@@ -759,8 +759,9 @@ fn start_task_0273() {
     t.write(la, &[4, 5, 6, 0]);
     t.write(lb, &[4, 9, 6, 0]);
     let nb = SCRATCH + 0x7eb0;
+    let na = SCRATCH + 0x7eb4;
     rec(&mut t, 288, 2, move |m, a| {
-        m.w32(a[1], 3);
+        m.w32(a[1], m.r32(na));
         la
     });
     rec(&mut t, 218, 2, move |m, a| {
@@ -836,6 +837,8 @@ fn start_task_0273() {
         }
         t.set_u32(ok, answer);
         t.set_u32(nb, nt);
+        // the summon nodes' count: none in the last case
+        t.set_u32(na, if k == 22 { 0 } else { 3 });
         t.set_u8(w(0x4f), bit | 0x40);
         let task = task_at(&mut t, tb);
         // case 7's vector, never written with the flag set: 0 on the
@@ -857,6 +860,197 @@ fn start_task_0273() {
         (36, 1),
         (228, 1),
     ] {
+        let c = t.u32(SCRATCH + 0x2_0000 + 0x80 * s);
+        assert!(c >= n, "slot {s}: {c} calls");
+    }
+}
+
+/// `magic_0388` 0x100068b0 (`r43::drift_task_0388`): every state in a
+/// run's order with the timer above 0 and at 0 (0 dispatched to 0x14,
+/// 0x15 to 0xa and on), 0xb below 0x80 and at it, 0xd above 0 and at
+/// it, 0x2710; states between the cases, past the table and past 0x2710.
+#[test]
+fn drift_task_0388() {
+    let Some(mut t) = sa::twin(388) else { return };
+    let f = t.at(0x68b0);
+    all_stubs(&mut t);
+    let tb = SCRATCH + 0x1000;
+    let m = SCRATCH + 0x1100;
+    let (a, b) = (SCRATCH + 0x1200, SCRATCH + 0x1300);
+    // (state, timer, T+0x20)
+    let cases: [(u32, u32, u32); 16] = [
+        (0, 3, 0),
+        (0x15, 2, 0),
+        (0x15, 0, 0),
+        (0xb, 5, 0x10),
+        (0xb, 5, 0x7e),
+        (0xc, 4, 0x20),
+        (0xc, 0, 0x20),
+        (0xd, 4, 0x20),
+        (0xd, 4, 3),
+        (0xe, 4, 3),
+        (0x2710, 4, 3),
+        (5, 4, 3),
+        (0x11, 4, 3),
+        (0x40, 4, 3),
+        (0x2711, 4, 3),
+        (0x14, 0, 3),
+    ];
+    for (k, (state, timer, n)) in (0u32..).zip(cases) {
+        junk(&mut t, tb, 0x40, k);
+        floats(&mut t, tb + 0x24, 2, k);
+        t.set_u32(tb + 0x18, state);
+        t.set_u32(tb + 0x1c, timer);
+        t.set_u32(tb + 0x20, n);
+        t.set_u32(tb + 0x2c, m);
+        t.set_u32(m + 0x13c, a);
+        t.set_u32(m + 0x144, b);
+        floats(&mut t, a + 0x1c, 3, k + 1);
+        t.set_u32(b + 0x20, 0x100 + k);
+        let task = task_at(&mut t, tb);
+        ownb::dirty_stack(&mut t, 0x68b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0388` 0x10006dd0 (`r43::colour_task_0388`), the globals primed:
+/// 0 (the four colour objects), 1 and 2 before their timer and at it, 0xa
+/// before its timer, with its object not free (and a negative index) and
+/// free, 0x2710, states no case takes. Slot 237 writes the vector, 307
+/// steps its ST0, 324 answers numbers of both signs.
+#[test]
+fn colour_task_0388() {
+    let Some(mut t) = sa::twin(388) else { return };
+    let f = t.at(0x6dd0);
+    all_stubs(&mut t);
+    let cs = t.img.rel32_target(f + 0x127);
+    let pn = t.img.rel32_target(cs + 0x1ba);
+    node_slots(&mut t, pn);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..3 {
+            wf(m, a[3] + 4 * i, (a[0] & 0xf) as f32 * 0.5 + i as f32 - 2.0);
+        }
+        0x237
+    });
+    let k307 = SCRATCH + 0x7e40;
+    rec(&mut t, 307, 0, move |m, _| {
+        let c = m.r32(k307);
+        m.w32(k307, c + 1);
+        0x307 + c
+    });
+    t.stub_st0(307, move |m, _| 0.375 + f64::from(m.r32(k307) % 5) * 0.25);
+    let r324 = SCRATCH + 0x7e50;
+    rec(&mut t, 324, 0, move |m, _| m.r32(r324));
+    rec(&mut t, 234, 3, |_, a| 0x0234_0000 ^ a[0]);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let tb = SCRATCH + 0x8000;
+    junk(&mut t, tb, 0x2400, 2);
+    let m = SCRATCH + 0x1100;
+    t.set_u32(tb + 0x24, m);
+    t.set_u32(m + 0x54, 0x0054_0001);
+    // (state, timer, index, 324's answer)
+    let cases: [(u32, u32, u32, u32); 14] = [
+        (0, 3, 0, 0),
+        (1, 3, 4, 0),
+        (1, 0, 4, 0),
+        (2, 2, 5, 0),
+        (2, 0, 5, 0xffff_fff3),
+        (0xa, 2, 6, 0),
+        (0xa, 0, 6, 0),
+        (0xa, 0, 0xffff_ffff, 0),
+        (0xa, 0, 13, 0x1d),
+        (0xa, 0, 13, 0x8000_0005),
+        (0x2710, 0, 13, 0),
+        (5, 4, 13, 0),
+        (0x2711, 4, 13, 0),
+        (2, 0, 3, 0x41),
+    ];
+    for (k, (state, timer, index, r)) in (0u32..).zip(cases) {
+        t.set_u32(tb + 0x18, state);
+        t.set_u32(tb + 0x1c, timer);
+        t.set_u32(tb + 0x20, index);
+        t.set_u32(r324, r);
+        // object 1 (index 13) free
+        t.set_u32(tb + 0xc0 + 0x2c0 + 0x18, if k == 9 { 7 } else { 0x4e20 });
+        let task = task_at(&mut t, tb);
+        ownb::dirty_stack(&mut t, 0x6dd0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    // each slot reached (the original's calls)
+    for (s, n) in [(324u32, 3u32), (237, 5), (234, 2)] {
+        let c = t.u32(SCRATCH + 0x2_0000 + 0x80 * s);
+        assert!(c >= n, "slot {s}: {c} calls");
+    }
+}
+
+/// `magic_0388` 0x10007770 (`r43::summon_task_0388`), the globals primed:
+/// every state in a run's order, before its timer and at it (0 set up and
+/// dispatched to 0x14; 0x14 to 0xa; 0xc to 0x1e; 0x20 to 0x2710 not
+/// ready), 0x2710 ready, states no case takes (the byte table's, between
+/// the cases, past them).
+#[test]
+fn summon_task_0388() {
+    let Some(mut t) = sa::twin(388) else { return };
+    let f = t.at(0x7770);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let pn = t.img.rel32_target(f + 0x54f);
+    node_slots(&mut t, pn);
+    summon_slots(&mut t);
+    for s in [15u32, 16, 17, 277] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 7) * 0.25 + f64::from(s & 3));
+    }
+    rec(&mut t, 7, 1, |_, a| 0x0f37 ^ a[0]);
+    for (s, n) in [(8u32, 2usize), (211, 2), (290, 2), (234, 3), (325, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    for o in [0x88u32, 0x5f3, 0x692, 0x6c2, 0x4f8] {
+        empty_list(&mut t, w(o));
+    }
+    let tb = SCRATCH + 0x8000;
+    junk(&mut t, tb, 0x2d00, 3);
+    t.set_u32(tb + 0x2288, 0x0228_8001);
+    // (state, timer)
+    let cases: [(u32, u32); 21] = [
+        (0, 0),
+        (0x14, 3),
+        (0x14, 0),
+        (0xa, 2),
+        (0xa, 0),
+        (0xb, 1),
+        (0xb, 0),
+        (0xc, 1),
+        (0xc, 0),
+        (0x1f, 0),
+        (0x20, 2),
+        (0x20, 0),
+        (0x2710, 0),
+        (0x2710, 0),
+        (5, 3),
+        (0x10, 3),
+        (0x17, 3),
+        (0x1e, 3),
+        (0x30, 3),
+        (0x2711, 3),
+        (0xb, 0xffff_ffff),
+    ];
+    for (k, (state, timer)) in (0u32..).zip(cases) {
+        t.set_u32(tb + 0x18, state);
+        t.set_u32(tb + 0x1c, timer);
+        if k == 13 {
+            // the three sub-tasks done
+            for o in [0x21f8u32, 0x38, 0x221c] {
+                t.set_u32(tb + o, 0x4e20);
+            }
+        }
+        let task = task_at(&mut t, tb);
+        ownb::dirty_stack(&mut t, 0x7770 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    for (s, n) in [(8u32, 2u32), (325, 2), (211, 1), (7, 1)] {
         let c = t.u32(SCRATCH + 0x2_0000 + 0x80 * s);
         assert!(c >= n, "slot {s}: {c} calls");
     }
