@@ -9,7 +9,8 @@
     clippy::cast_possible_wrap,
     clippy::many_single_char_names,
     clippy::needless_range_loop,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::type_complexity
 )]
 
 mod magic;
@@ -599,6 +600,170 @@ fn frame_0184() {
         }
         t.set_u32(slock, 0x50 + k);
         ownb::dirty_stack(&mut t, 0x2300 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// The matrix and vector slots of `motion_0184` as data flow: 237 a bone's
+/// place, 233 `a = b * s`, 243/244 a rotation by the angle, 231 `a = b +
+/// c` (sixteen), 230 a copy, 234 `a = b - c`, 232 `a = 2 b`, 229 `a = b
+/// row 0 + 2 c`, 235 a unit matrix, 241 a "random" float.
+fn motion_stubs(t: &mut Twin) {
+    rec(t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(
+                m,
+                a[3] + 4 * i,
+                (a[1] & 0xff) as f32 * 0.125 + i as f32 - (a[0] & 3) as f32,
+            );
+        }
+        0x237
+    });
+    rec(t, 233, 3, |m, a| {
+        let s = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * s + i as f32;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    for s in [243u32, 244] {
+        rec(t, s, 2, move |m, a| {
+            let ang = (a[1] as i32) as f32 / 65536.0;
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, ang * (i + 1) as f32 + s as f32 / 1024.0);
+            }
+            s
+        });
+    }
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x234
+    });
+    rec(t, 232, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 2.0;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    rec(t, 241, 1, |m, a| {
+        let k = m.r32(SCRATCH + 0x7f70).wrapping_add(1);
+        m.w32(SCRATCH + 0x7f70, k);
+        wf(m, a[0], (k % 5) as f32 * 0.375 - 0.5);
+        0x241
+    });
+    // the waits: 225 and 227 answer the words at `SCRATCH + 0x7e30`/`+0x7e34`
+    rec(t, 225, 1, |m, a| m.r32(SCRATCH + 0x7e30) ^ (a[0] & 0x100));
+    rec(t, 227, 1, |m, _| m.r32(SCRATCH + 0x7e34));
+}
+
+/// `magic_0184` 0x10001990 (`r44::motion_0184`): the waits (slot 225 not
+/// done, slot 227 below 1, each gate open and closed), the motions at 0x47
+/// and 0x10e, nothing below 0x83, the centre (both parts' flags on and
+/// off), the start at 0xdd, the way 0xde..0xf0 (the motion at 0xf0), the
+/// fall 0xf1..0x104 (the damage at 0xfb; table words of both signs), the
+/// end at 0x105 and past it.
+#[test]
+fn motion_0184() {
+    let Some(mut t) = twin(184) else { return };
+    all_stubs(&mut t);
+    motion_stubs(&mut t);
+    let f = t.at(0x1990);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the table `*G_T`: 4096 floats of both signs
+    let table = SCRATCH + 0x2_0000;
+    for i in 0..0x1000u32 {
+        let x = ((i * 37) % 101) as f32 / 50.0 - 1.0;
+        t.set_u32(table + 4 * i, x.to_bits());
+    }
+    let at = w(&t, 0x750);
+    t.set_u32(at, table);
+    // the scatter's records: free (its own test covers the rest)
+    // (gate +0x15, slot 225, gate +0x42, gate +0x6d, slot 227, F, flags)
+    let cases: [(u32, u32, u32, u32, u32, u32, [u16; 2]); 22] = [
+        (0, 1, 1, 1, 1, 0x90, [1, 1]),
+        (0, 0, 0, 0, 0, 0x90, [1, 1]),
+        (0, 0, 1, 0, 1, 0x90, [1, 1]),
+        (1, 1, 1, 1, 0, 0x47, [1, 1]),
+        (1, 1, 1, 1, 0, 0x10e, [1, 1]),
+        (1, 1, 1, 1, 0, 0x50, [1, 1]),
+        (1, 1, 1, 1, 0, 0x83, [1, 1]),
+        (1, 1, 1, 1, 0, 0x84, [0, 1]),
+        (1, 1, 1, 1, 0, 0x85, [1, 0]),
+        (1, 1, 1, 1, 0, 0x86, [0, 0]),
+        (1, 1, 1, 1, 0, 0xdd, [1, 1]),
+        (1, 1, 1, 1, 0, 0xde, [1, 0]),
+        (1, 1, 1, 1, 0, 0xe8, [0, 1]),
+        (1, 1, 1, 1, 0, 0xf0, [1, 1]),
+        (1, 1, 1, 1, 0, 0xf1, [1, 1]),
+        (1, 1, 1, 1, 0, 0xf6, [1, 1]),
+        (1, 1, 1, 1, 0, 0xfb, [0, 0]),
+        (1, 1, 1, 1, 0, 0x100, [1, 1]),
+        (1, 1, 1, 1, 0, 0x104, [1, 1]),
+        (1, 1, 1, 1, 0, 0x105, [1, 1]),
+        (1, 1, 1, 1, 0, 0x106, [1, 1]),
+        (1, 1, 1, 1, 0, 0x130, [1, 1]),
+    ];
+    for (k, (g15, a225, g42, g6d, a227, fc, flags)) in (0u32..).zip(cases) {
+        for (o, v) in [(0x15u32, g15), (0x42, g42), (0x6d, g6d), (0x9b, fc)] {
+            let at = w(&t, o);
+            t.set_u32(at, v);
+        }
+        t.set_u32(SCRATCH + 0x7e30, a225);
+        t.set_u32(SCRATCH + 0x7e34, a227);
+        for (i, o) in [0x231u32, 0x327].into_iter().enumerate() {
+            let at = w(&t, o);
+            t.set_u16(at, flags[i] * (2 + k as u16));
+        }
+        // the globals it reads and writes: floats (no NaNs), the angle
+        for o in [
+            0x172u32, 0x182, 0x19f, 0x1bc, 0x2ed, 0x2fd, 0x30d, 0x320, 0x371, 0x381, 0x391, 0x3a4,
+            0x3f1, 0x3f9, 0x40d, 0x419, 0x429, 0x43a, 0x442, 0x460, 0x468, 0x478, 0x480, 0x488,
+            0x4f0, 0x500, 0x51e, 0x52a, 0x5aa, 0x5ce, 0x5ee, 0x612, 0x671, 0x6e1, 0x71c, 0x728,
+            0x730, 0x857, 0x85f, 0x86b, 0x877, 0x884, 0x899,
+        ] {
+            let at = w(&t, o);
+            t.set_u32(
+                at,
+                (0.25 * (o % 13) as f32 + k as f32 * 0.5 - 1.0).to_bits(),
+            );
+        }
+        let at = w(&t, 0x636);
+        t.set_u16(at, 0x1234 + 0x1111 * k as u16);
+        let at = w(&t, 0x94d);
+        t.set_u16(at, 0x0ab0 + k as u16);
+        ownb::dirty_stack(&mut t, 0x1990 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

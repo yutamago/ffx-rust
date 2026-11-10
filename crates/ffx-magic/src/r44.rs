@@ -5,7 +5,7 @@ use crate::ob_model::st0_f32;
 use crate::pushes::Pushes;
 use crate::r31::child_of;
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, cvtt, div, mul, sub};
+use crate::sb_sse::{add, cvt, cvtt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 const ONE: u32 = 0x3f80_0000;
@@ -944,5 +944,331 @@ pub const FRAME_0184: Sig = Sig {
     len: 1897,
     hash: 0x87ec_454d_2184_e5cd,
     calls: &[(0x6ee, Callee::Sig(&crate::r40::SPRITES_0184))],
+    imports: &[],
+};
+
+/// `magic_0184`'s motion step (0x10001990, 2403 bytes; a table entry,
+/// cdecl, no arguments; a /GS frame, `ebp` = `E - 4`). Returns 0. Waits
+/// for the effect (slot 225 answering 0, then the gate `+0x15` counted
+/// up), sets it ready once (slot 226 `(m, 0)` and the word at `+0x5e`),
+/// waits for its motion level (slot 227 at least 1, then `+0x6d` counted
+/// up); at frame count `F` 0x47 the motion 0xb8 (slot 228), at 0x10e the
+/// motion end (slot 213 `(m, 0)`). With `a = F - 0x83`, `b = F - 0xdd`,
+/// `c = F - 0xf1`:
+/// - `a >= 0`: the centre of two bones (slot 237 into `ebp - 0x44` and
+///   `ebp - 0x24`, the sum times a double, `w` 1.0), slot 236, three rows
+///   scaled by 100 (slot 233); the first part's rotation (slots 244, 243,
+///   244 and 231 on `ebp - 0x84`) and the centre copied, then the
+///   second's (slot 244, 231), each while its u16 flag is set;
+/// - `b == 0`: slot 238 `(m, 1)`, the start `P0` = the centre, the end
+///   `P1 = Q K2 + P0 K1` (`Q` four globals), the direction (slots 234 and
+///   232 with its `y` 0, 233 by 20 into `*G_D`), slot 235, the target
+///   `P1` less `K` in `y`, slot 228 `(m, 0x22)`;
+/// - `0 <= b < 20`: `t = b / K + K'`, the place `P0 (1 - t) + P1 t` with
+///   `y = (P1.y - P0.y) t^2 + P0.y` (slot 235 first, the motion 0x49 at `b`
+///   = 19), the offset `(0, h K, 0, 1)` turned by slot 243's matrix (the
+///   angle the i16 global, slot 231) through slot 229, the model's matrix
+///   place `(P + v)` with `y` raised by `(1 - t^2) h` (slot 211);
+/// - `c` in `0..=19`: `u = c / K`, `s = |T[(u^2 K'') >> 4 & 0xfff]|` (the
+///   table at `*G_T`), slot 230, `x = (1 - u)^2`: the place `P1 x + Q (1 -
+///   x)` (w too), the scatter ([`scatter`](crate::m0184::scatter)) at the
+///   place plus `G_O`, spread `K`, scale `((1 - u) + D) D'`, then `y`
+///   less `x s K'''`; the damage at `c` = 10 (slot 239 `(m, -5, 6)`);
+/// - `c` = 20: slot 211 `(m', 0)` and the motion 0x4a (slot 228).
+///
+/// Every way past the waits adds 0xf000 to the u16 angle.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn motion_0184<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let copy = |g: &mut G, from: u32, to: u32| {
+        let x = gw(g, from);
+        g.write::<u32>(w(to), x);
+    };
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let rf = |g: &G, o: u32| g.read::<f32>(lf(o));
+    let cookie = gw(g, 0xa) ^ ebp;
+    g.write::<u32>(lf(4), cookie);
+    if gw(g, 0x15) == 0 {
+        let m = gw(g, 0x23);
+        // call width: 1
+        if g.call(t(g, 0x1d, 225), 0, &[m]).eax != 0 {
+            return Ret::eax(0);
+        }
+        let n = gw(g, 0x3c).wrapping_add(1);
+        g.write::<u32>(w(0x3c), n);
+    }
+    if gw(g, 0x42) == 0 {
+        let m = gw(g, 0x52);
+        g.write::<u32>(w(0x5e), 1);
+        // call width: 2
+        g.call(t(g, 0x4a, 226), 0, &[m, 0]);
+    }
+    if gw(g, 0x6d) == 0 {
+        let m = gw(g, 0x7b);
+        // call width: 1
+        if g.call(t(g, 0x75, 227), 0, &[m]).eax.cast_signed() < 1 {
+            return Ret::eax(0);
+        }
+        let n = gw(g, 0x95).wrapping_add(1);
+        g.write::<u32>(w(0x95), n);
+    }
+    let mut fc = gw(g, 0x9b);
+    if fc == 0x47 || fc == 0x10e {
+        let m = gw(g, 0xcd);
+        if fc == 0x47 {
+            // call width: 2
+            g.call(t(g, 0xa5, 228), 0, &[m, 0xb8]);
+        } else {
+            // call width: 2
+            g.call(t(g, 0xbf, 213), 0, &[m, 0]);
+        }
+        fc = gw(g, 0xd5);
+    }
+    let fc = fc.cast_signed();
+    let (a, b, c) = (
+        fc.wrapping_sub(0x83),
+        fc.wrapping_sub(0xdd),
+        fc.wrapping_sub(0xf1),
+    );
+    if a < 0 && b < 0 && c < 0 {
+        return end_0184(g, img, f);
+    }
+    let r = lf(0x84);
+    if a >= 0 {
+        let (v1, v2) = (lf(0x44), lf(0x24));
+        let m = gw(g, 0x121);
+        // call width: 4
+        g.call(t(g, 0x10e, 237), 0, &[m, 0xa8, 0, v1]);
+        let m = gw(g, 0x13f);
+        // call width: 4
+        g.call(t(g, 0x12c, 237), 0, &[m, 0xeb, 0, v2]);
+        let d = g.read::<f64>(w(0x153));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let centre = |g: &G, i: u32| {
+            let x = add(g.read::<f32>(v1 + 4 * i), g.read::<f32>(v2 + 4 * i));
+            (f64::from(x) * d) as f32
+        };
+        g.write::<u32>(w(0x172), ONE);
+        let x = centre(g, 0);
+        put(g, 0x182, x);
+        let x = centre(g, 1);
+        put(g, 0x19f, x);
+        let x = centre(g, 2);
+        put(g, 0x1bc, x);
+        let m = gw(g, 0x168);
+        // call width: 3
+        g.call(t(g, 0x158, 236), 0, &[m, 0x2d, w(0x15d)]);
+        for (slot, row, v) in [
+            (0x1c9u32, 0x1e3u32, 0x1deu32),
+            (0x1ea, 0x204, 0x1ff),
+            (0x20b, 0x225, 0x220),
+        ] {
+            // call width: 3
+            g.call(t(g, slot, 233), 0, &[w(row), w(v), 0x42c8_0000]);
+        }
+        if g.read::<u16>(w(0x231)) != 0 {
+            // call width: 2
+            g.call(t(g, 0x249, 244), 0, &[r, 0x4000]);
+            // call width: 3
+            g.call(t(g, 0x25d, 231), 0, &[w(0x26d), w(0x262), r]);
+            // call width: 2
+            g.call(t(g, 0x280, 243), 0, &[r, 0xffff_c000]);
+            // call width: 3
+            g.call(t(g, 0x294, 231), 0, &[w(0x2a4), w(0x299), r]);
+            // call width: 2
+            g.call(t(g, 0x2b7, 244), 0, &[r, 0x8000]);
+            // call width: 3
+            g.call(t(g, 0x2cb, 231), 0, &[w(0x2db), w(0x2d0), r]);
+            for (from, to) in [
+                (0x2e5u32, 0x2edu32),
+                (0x2f5, 0x2fd),
+                (0x305, 0x30d),
+                (0x315, 0x320),
+            ] {
+                copy(g, from, to);
+            }
+        }
+        if g.read::<u16>(w(0x327)) != 0 {
+            // call width: 2
+            g.call(t(g, 0x33b, 244), 0, &[r, 0x4000]);
+            // call width: 3
+            g.call(t(g, 0x34f, 231), 0, &[w(0x35f), w(0x354), r]);
+            for (from, to) in [
+                (0x369u32, 0x371u32),
+                (0x379, 0x381),
+                (0x389, 0x391),
+                (0x399, 0x3a4),
+            ] {
+                copy(g, from, to);
+            }
+        }
+    }
+    if b == 0 {
+        let m = gw(g, 0x3b9);
+        // call width: 2
+        g.call(t(g, 0x3b1, 238), 0, &[m, 1]);
+        let (k2, k1) = (k(g, 0x3d9), k(g, 0x3e1));
+        let (p0x, p0y, p0z, p0w) = (k(g, 0x3d1), k(g, 0x3c9), k(g, 0x3e9), k(g, 0x401));
+        put(g, 0x3f1, p0y);
+        let x = mul(k(g, 0x3f9), k2);
+        put(g, 0x40d, p0x);
+        put(g, 0x419, p0z);
+        let x = add(x, mul(p0x, k1));
+        put(g, 0x429, p0w);
+        put(g, 0x43a, x);
+        let x = add(mul(k(g, 0x442), k2), mul(p0z, k1));
+        put(g, 0x460, x);
+        let x = add(mul(k(g, 0x468), k2), mul(p0w, k1));
+        put(g, 0x478, x);
+        copy(g, 0x480, 0x488);
+        let v = lf(0x34);
+        // call width: 3
+        g.call(t(g, 0x458, 234), 0, &[v, w(0x44e), w(0x432)]);
+        g.write::<u32>(lf(0x30), 0);
+        // call width: 2
+        g.call(t(g, 0x49a, 232), 0, &[v, v]);
+        // call width: 3
+        g.call(t(g, 0x4bc, 233), 0, &[w(0x4c1), v, 0x41a0_0000]);
+        // call width: 1
+        g.call(t(g, 0x4ce, 235), 0, &[w(0x4d3)]);
+        copy(g, 0x4e3, 0x4f0);
+        copy(g, 0x4f8, 0x500);
+        let y = sub(k(g, 0x508), k(g, 0x510));
+        let m = gw(g, 0x518);
+        g.write::<u32>(w(0x51e), ONE);
+        put(g, 0x52a, y);
+        // call width: 2
+        g.call(t(g, 0x4e8, 228), 0, &[m, 0x22]);
+    }
+    if (0..0x14).contains(&b) {
+        let tt = add(div(cvt(b.cast_unsigned()), k(g, 0x55c)), k(g, 0x56a));
+        // call width: 1
+        g.call(t(g, 0x554, 235), 0, &[w(0x56f)]);
+        let one_t = sub(k(g, 0x589), tt);
+        g.write::<u32>(w(0x5aa), ONE);
+        let x = add(mul(k(g, 0x591), one_t), mul(k(g, 0x599), tt));
+        let t2 = mul(tt, tt);
+        put(g, 0x5ce, x);
+        let z = add(mul(k(g, 0x5d6), one_t), mul(k(g, 0x5be), tt));
+        put(g, 0x5ee, z);
+        let y = add(mul(sub(k(g, 0x5f6), k(g, 0x5fe)), t2), k(g, 0x60a));
+        put(g, 0x612, y);
+        if b == 0x13 {
+            let m = gw(g, 0x624);
+            // call width: 2
+            g.call(t(g, 0x61c, 228), 0, &[m, 0x49]);
+        }
+        let h = i32::from(g.read::<i16>(w(0x636))).cast_unsigned();
+        let r2 = lf(0xc4);
+        // call width: 2
+        g.call(t(g, 0x643, 243), 0, &[r2, h]);
+        // call width: 3
+        g.call(t(g, 0x657, 231), 0, &[w(0x667), w(0x65c), r2]);
+        let up = mul(k(g, 0x671), k(g, 0x679));
+        let v = lf(0x14);
+        g.write::<u32>(lf(0xc), 0);
+        g.write::<u32>(v, 0);
+        g.write::<f32>(lf(0x10), up);
+        g.write::<u32>(lf(8), ONE);
+        // call width: 3
+        g.call(t(g, 0x688, 229), 0, &[v, w(0x682), v]);
+        let x = add(k(g, 0x6b2), rf(g, 0x14));
+        let vy = sub(rf(g, 0x10), k(g, 0x6c4));
+        let lift = sub(k(g, 0x6cc), t2);
+        put(g, 0x6e1, x);
+        let y = add(mul(lift, k(g, 0x6f5)), add(k(g, 0x6e9), vy));
+        let z = add(k(g, 0x70c), rf(g, 0xc));
+        g.write::<f32>(lf(0x10), vy);
+        g.write::<u32>(w(0x71c), ONE);
+        put(g, 0x728, y);
+        put(g, 0x730, z);
+        let m = gw(g, 0x700);
+        // call width: 2
+        g.call(t(g, 0x6d9, 211), 0, &[m, w(0x6fa)]);
+    }
+    if c.cast_unsigned() <= 0x13 {
+        let u = div(cvt(c.cast_unsigned()), k(g, 0x758));
+        let table = gw(g, 0x750);
+        let i = (cvtt(mul(mul(u, u), k(g, 0x772))) >> 4) & 0xfff;
+        let s = g.read::<f32>(table.wrapping_add(4 * i.cast_unsigned()));
+        // `comiss 0, s; jbe`: negated when below 0 (the sign mask's word)
+        let s = if 0.0 > s {
+            f32::from_bits(s.to_bits() ^ gw(g, 0x798))
+        } else {
+            s
+        };
+        // call width: 2
+        g.call(t(g, 0x7a5, 230), 0, &[w(0x7b5), w(0x7aa)]);
+        let k7 = k(g, 0x7bf);
+        let v = sub(k7, u);
+        let x2 = mul(v, v);
+        let rest = sub(k7, x2);
+        let px = add(mul(k(g, 0x7cf), rest), mul(k(g, 0x7c7), x2));
+        let py = add(mul(k(g, 0x7d7), rest), mul(k(g, 0x823), x2));
+        let pz = add(mul(k(g, 0x7ea), rest), mul(k(g, 0x837), x2));
+        let pw = add(mul(k(g, 0x7f2), rest), mul(k(g, 0x84b), x2));
+        put(g, 0x857, px);
+        put(g, 0x85f, pz);
+        let base = lf(0x24);
+        put(g, 0x877, py);
+        g.write::<f32>(base + 4, py);
+        put(g, 0x884, pw);
+        let spread = k(g, 0x88c);
+        g.write::<f32>(base, add(k(g, 0x86b), px));
+        g.write::<f32>(base + 8, add(k(g, 0x899), pz));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let scale = ((f64::from(v) + g.read::<f64>(w(0x8b1))) * g.read::<f64>(w(0x8b9))) as f32;
+        let mut xmm = fr.xmm;
+        xmm[1] = u128::from(spread.to_bits());
+        xmm[2] = u128::from(scale.to_bits());
+        let sf = Frame {
+            at: img.rel32_target(f + 0x8c2),
+            esp: lf(0xd8),
+            ecx: base,
+            xmm,
+            ..*fr
+        };
+        crate::m0184::scatter(g, img, &sf);
+        let y = sub(k(g, 0x8da), mul(mul(x2, s), k(g, 0x8e2)));
+        put(g, 0x8ee, y);
+        if c == 0xa {
+            let m = gw(g, 0x908);
+            // call width: 3
+            g.call(t(g, 0x8f8, 239), 0, &[m, 0xffff_fffb, 6]);
+        }
+    } else if c == 0x14 {
+        let m = gw(g, 0x921);
+        // call width: 2
+        g.call(t(g, 0x919, 211), 0, &[m, 0]);
+        let m = gw(g, 0x936);
+        // call width: 2
+        g.call(t(g, 0x92e, 228), 0, &[m, 0x4a]);
+    }
+    end_0184(g, img, f)
+}
+
+/// [`motion_0184`]'s end: the u16 angle (the word at `+0x94d`) plus
+/// 0xf000. Returns 0.
+fn end_0184<G: Game>(g: &mut G, img: &Image, f: u32) -> Ret {
+    let at = img.word(f + 0x94d);
+    let x = g.read::<u16>(at).wrapping_add(0xf000);
+    g.write::<u16>(at, x);
+    Ret::eax(0)
+}
+
+/// [`motion_0184`] (the `rel32`s: the scatter, `__security_check_cookie`).
+pub const MOTION_0184: Sig = Sig {
+    len: 2403,
+    hash: 0x5b5a_9adb_a123_d5e4,
+    calls: &[
+        (0x8c2, Callee::Sig(&crate::m0184::SCATTER)),
+        (0x95b, Callee::Any),
+    ],
     imports: &[],
 };
