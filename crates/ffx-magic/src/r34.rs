@@ -3375,3 +3375,164 @@ pub const LOAD_0430: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_0430))],
     imports: &[],
 };
+
+/// `magic_0431`'s object host start (0x10001000, a table entry, cdecl
+/// `(arg)`; no frame): [`host_start_c`](crate::sa_misc::host_start_c)'s
+/// steps up to slot 720 `(0x3400, 0x800)` (the same operands), then slots
+/// 4 `(0x3019)`, 27 `(0x3019, 1)`, 4 `(0x301f)`, 27 `(0x301f, 1)`, slot 718
+/// `(P)`, 222 `(P, 0, 1000, 1)` and 221 `(P, 0, 1000, 1)` on the part `P`,
+/// every call's words left below until the end; `G_DONE` 0. Returns 0.
+pub fn host_start_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let one = 0x3f80_0000;
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x08), arg);
+    crate::l5_objhost::obj_block_init(g, img, img.rel32_target(f + 0x0d), arg);
+    let (a, b, c) = (w(0x17), w(0x29), w(0x3b));
+    g.call(t(g, 0x12, 556), 0, &[a]);
+    g.call(t(g, 0x24, 555), 0, &[b, a]);
+    g.call(t(g, 0x36, 331), 0, &[c, b, a]);
+    let s790 = t(g, 0x48, 790);
+    for off in [0x57, 0x61, 0x6b] {
+        g.write::<u32>(w(off), one);
+    }
+    let out = g.call(s790, 0, &[]);
+    g.write::<u32>(w(0x77), crate::sa_summon::st0_f32(out));
+    crate::l5_objhost::tasks_init(g, img, img.rel32_target(f + 0x7c));
+    for k in 0..0x3ff {
+        g.write::<u32>(w(0x81) + 12 * k, 0);
+    }
+    g.write::<u16>(w(0xa3), 0x3ff);
+    g.write::<u16>(w(0xab), 0);
+    let mut stack = vec![0x3400, 0x800];
+    // call width: 2
+    g.call(t(g, 0xb0, 720), 0, &stack);
+    for (code, (t4, t27)) in [(0x3019u32, (0xc7u32, 0xd6u32)), (0x301f, (0xe7, 0xf6))] {
+        stack.insert(0, code);
+        // call width: 6 at most (the earlier calls' words stay on the stack)
+        g.call(t(g, t4, 4), 0, &stack);
+        stack.splice(0..0, [code, 1]);
+        // call width: 8 at most (the earlier calls' words stay on the stack)
+        g.call(t(g, t27, 27), 0, &stack);
+    }
+    stack.insert(0, w(0x10c));
+    // call width: 9 (the earlier calls' words stay on the stack)
+    g.call(t(g, 0x107, 718), 0, &stack);
+    for (tab, slot, p) in [(0x119u32, 222u32, 0x12du32), (0x134, 221, 0x148)] {
+        stack.splice(0..0, [w(p), 0, 1000, 1]);
+        // call width: 17 at most (the earlier calls' words stay on the stack)
+        g.call(t(g, tab, slot), 0, &stack);
+    }
+    g.write::<u32>(w(0x153), 0);
+    Ret::eax(0)
+}
+
+/// [`host_start_0431`] (351 bytes, 1 overlay).
+pub const HOST_START_0431: Sig = Sig {
+    len: 351,
+    hash: 0x84c9_8417_2adb_c83a,
+    calls: &[
+        (0x0d, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0205`'s start-up (0x10001430, 350 bytes; no arguments, called by
+/// its cue start; no frame): the store run; slot 719 `(P, 8, 0)` into
+/// `G_H`; the part set up ([`part_init`](crate::l5_objhost::part_init),
+/// slot 719's two last words under it); the block `*G_B`'s `+0x50c`,
+/// `+0x520`, `+0x524` cleared, a flag set, slot 271 `(4)`; three task
+/// nodes ([`take`](crate::sa_pool::take)): the first (kind 1) put last on
+/// the task list without moving `G_LAST`, the second (kind 1) linked after
+/// the first and kept as `G_LAST`, the pool records reset
+/// ([`pool_reset_take`](crate::o6_fam_pool::pool_reset_take)), the third
+/// (kind 2) put last. Returns 0.
+pub fn start_up_0205<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let s719 = t(g, 0x1, 719);
+    crate::r25::abs_stores(g, img, f, 0x16, 0x48);
+    let h = g.call(s719, 0, &[w(0x12), 8, 0]).eax;
+    g.write::<u32>(w(0x4e), h);
+    crate::l5_objhost::part_init(g, img, call(0x53));
+    let b = g.read::<u32>(w(0x58));
+    let s271 = t(g, 0x7d, 271);
+    for o in [0x50cu32, 0x520, 0x524] {
+        g.write::<u32>(b.wrapping_add(o), 0);
+    }
+    crate::r25::abs_stores(g, img, f, 0x81, 0x8b);
+    // call width: 3 (slot 719's two last words under it)
+    g.call(s271, 0, &[4, 8, 0]);
+    let n1 = crate::sa_pool::take(g, img, call(0x9c), w(0x97));
+    let first = g.read::<u32>(w(0xa2));
+    g.write::<u8>(n1.wrapping_add(0x18), 1);
+    g.write::<u32>(n1.wrapping_add(4), 0);
+    let first = if first == 0 {
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0xce), n1);
+        n1
+    } else {
+        let last = g.read::<u32>(w(0xb9));
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last.wrapping_add(4), n1);
+        first
+    };
+    g.write::<u32>(n1.wrapping_add(8), n1);
+    let n2 = crate::sa_pool::take(g, img, call(0xdb), w(0xd3));
+    g.write::<u8>(n2.wrapping_add(0x18), 1);
+    g.write::<u32>(n2.wrapping_add(4), 0);
+    if first == 0 {
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0xfc), n2);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1.wrapping_add(4), n2);
+    }
+    g.write::<u32>(n2.wrapping_add(8), n2);
+    g.write::<u32>(w(0x109), n2);
+    crate::o6_fam_pool::pool_reset_take(g, img, call(0x10e), w(0x101));
+    let n3 = crate::sa_pool::take(g, img, call(0x118), w(0x113));
+    g.write::<u8>(n3.wrapping_add(0x18), 2);
+    g.write::<u32>(n3.wrapping_add(4), 0);
+    crate::r12h_start::append(g, img, f, n3, [0x11e, 0x134, 0x141, 0x14f, 0x157]);
+    Ret::eax(0)
+}
+
+/// [`start_up_0205`] (350 bytes, 1 overlay).
+pub const START_UP_0205: Sig = Sig {
+    len: 350,
+    hash: 0x70ef_65fa_ee16_d381,
+    calls: &[
+        (0x53, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x9c, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xdb, Callee::Sig(&crate::sa_pool::TAKE)),
+        (
+            0x10e,
+            Callee::Sig(&crate::o6_fam_pool::POOL_RESET_TAKE_0205_2A60),
+        ),
+        (0x118, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0205`'s cue start (0x100012d0, 176 bytes): `m0591`'s
+/// [`cue_start`](crate::m0591::cue_start) shape with the ID 0x10af and
+/// [`start_up_0205`] at the call.
+pub fn cue_start_0205<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::m0591::cue_start_with(g, img, fr, |g, img, callee| {
+        start_up_0205(g, img, callee);
+    })
+}
+
+/// [`cue_start_0205`] (176 bytes, 1 overlay).
+pub const CUE_START_0205: Sig = Sig {
+    len: 176,
+    hash: 0xd486_620e_54ba_09ce,
+    calls: &[(0x95, Callee::Sig(&START_UP_0205))],
+    imports: &[],
+};

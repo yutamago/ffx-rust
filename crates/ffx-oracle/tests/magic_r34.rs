@@ -1773,13 +1773,6 @@ fn effect_task_0424() {
         }
         // the node 0x51 appends: its parent's last child (the parent itself
         // when empty)
-        let last = if k % 2 == 0 {
-            w(&t, 0x1d2)
-        } else {
-            SCRATCH + 0xb300
-        };
-        t.set_u32(w(&t, 0x1c5), last);
-        t.write(SCRATCH + 0xb300, &[0x4e; 0x10]);
         // the light block's words
         let lb = w(&t, 0x5a);
         for i in 0..0x40u32 {
@@ -1790,8 +1783,15 @@ fn effect_task_0424() {
             let p = w(&t, op);
             t.set_u32(p + 0xc, p);
             t.set_u32(p + 0x10, p);
-            t.set_u16(p + 0x18, 0);
+            t.set_u16(p + 0x18, 5);
         }
+        let last = if k % 2 == 0 {
+            w(&t, 0x1d2)
+        } else {
+            SCRATCH + 0xb300
+        };
+        t.set_u32(w(&t, 0x1c5), last);
+        t.write(SCRATCH + 0xb300, &[0x4e; 0x10]);
         junk_ops(&mut t, f, &[0x26e, 0x5ec]);
         let centre = t.img.rel32_target(f + 0x2c3);
         t.set_u32(t.img.word(centre + 0x55), k % 3);
@@ -1906,5 +1906,96 @@ fn place_pair_0430() {
         ownb::dirty_stack(&mut t, 0x1380 + k, &[]);
         ownb::reset_counters(&mut t);
         t.check_entry(ld, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0431` 0x10001000 (`r34::host_start_0431`): the start with two
+/// arguments and the pool words junked first.
+#[test]
+fn host_start_0431() {
+    let Some(mut t) = twin(431) else { return };
+    all_stubs(&mut t);
+    for (s, n) in [
+        (556u32, 1usize),
+        (555, 2),
+        (331, 3),
+        (720, 2),
+        (4, 3),
+        (27, 5),
+        (718, 9),
+        (222, 13),
+        (221, 17),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.375);
+    let f = t.at(0x1000);
+    for (k, arg) in (0u32..).zip([0x00ab_c000u32, 0x55]) {
+        junk_ops(&mut t, f, &[0x08, 0x57, 0x61, 0x6b, 0x77, 0x153]);
+        let pool = t.img.word(f + 0x81);
+        t.write(pool, &vec![0xa5; 12 * 0x3ff]);
+        ownb::dirty_stack(&mut t, 0x1000 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[arg], Eax::Checked);
+    }
+}
+
+/// `magic_0205` 0x100012d0 (`r34::cue_start_0205`, with 0x10001430
+/// `r34::start_up_0205`): the waits and the once flag; the start-up with
+/// the task list empty and holding a node, the free ring with spare
+/// nodes.
+#[test]
+fn cue_start_0205() {
+    let Some(mut t) = twin(205) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 5, 1, |m, _| m.r32(SCRATCH + 0x14));
+    rec(&mut t, 28, 2, |m, _| m.r32(SCRATCH + 0x18));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    for (s, n) in [(719u32, 3usize), (711, 3), (710, 7), (271, 3)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let f = t.at(0x12d0);
+    let su = t.at(0x1430);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    let pi = t.img.rel32_target(su + 0x53);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, pi, 0x01), lock);
+    t.set_u32(w(&t, pi, 0x31), lock);
+    let take = t.img.rel32_target(su + 0x9c);
+    let pr = t.img.rel32_target(su + 0x10e);
+    // (225, 5, 28, once, 227, task list)
+    let cases: [(u32, u32, u32, u32, u32, bool); 7] = [
+        (1, 0, 0, 0, 1, false),
+        (0, 1, 0, 0, 1, false),
+        (0, 0, 2, 0, 1, false),
+        (0, 0, 0, 0, 0, false),
+        (0, 0, 0, 0, 1, false),
+        (0, 0, 0, 1, 3, true),
+        (0, 0, 0, 0, 2, true),
+    ];
+    for (k, (w225, w5, w28, once, r227, busy)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x14, w5);
+        t.set_u32(SCRATCH + 0x18, w28);
+        t.set_u32(t.img.word(f + 0x50), once);
+        t.set_u32(lock, 0x77 + k);
+        // the task nodes' free ring (the records' reset takes from it too)
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 6);
+        t.set_u32(w(&t, pr, 0xa6), 0);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        let head = w(&t, su, 0xa2);
+        t.set_u32(head, if busy { last } else { 0 });
+        t.set_u32(w(&t, su, 0xb9), last);
+        let blk = SCRATCH + 0x6000;
+        junk(&mut t, blk, 0x600, k);
+        junk_ops(&mut t, su, &[0x4e, 0x83]);
+        ownb::dirty_stack(&mut t, 0x12d0 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
