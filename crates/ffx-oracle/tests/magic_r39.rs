@@ -1013,6 +1013,10 @@ fn scene_state_15(dll: u16, at: u32, map: &[(u32, u32)]) {
         cs.mem.push((SCRATCH + 0x7f3c, ans));
         cases.push(cs);
     }
+    // the next actor's index
+    for cs in &mut cases {
+        cs.set.push((0x309d, 2));
+    }
     rec(&mut t, 279, 0, |m, _| m.r32(SCRATCH + 0x7f3c));
     rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
     rec(&mut t, 325, 2, |m, a| {
@@ -1274,10 +1278,15 @@ fn scene_0611_state_15() {
         cs.mem.push((SCRATCH + 0x7f3c, ans));
         cases.push(cs);
     }
-    // the placed parts' sizes: two records
+    // the placed parts' sizes: two records with sizes; the next actor
     let sizes = t.img.word(f + 0x2c2d);
+    let recs = t.img.word(f + 0x2c3c);
+    let next = t.img.word(f + 0x2fb4);
     for cs in &mut cases {
         cs.mem.push((sizes, 2));
+        cs.mem.push((recs + 0x24, 0x3fc0_0000));
+        cs.mem.push((recs + 0xcc + 0x24, 0x4020_0000));
+        cs.mem.push((next, 2));
     }
     rec(&mut t, 279, 0, |m, _| m.r32(SCRATCH + 0x7f3c));
     rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
