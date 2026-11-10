@@ -1285,8 +1285,35 @@ fn trail_task_0009_setup(
         t.set_u32(r + 4 * i, x.to_bits());
     }
     t.set_u32(r + 0x9b8, count);
+    // the ends: the second in one of six directions from the first
+    let dirs = [
+        (1.0f32, 0.0f32),
+        (-1.0, 0.1),
+        (-1.0, -0.1),
+        (0.0, 1.0),
+        (0.0, -1.0),
+        (0.7, -0.7),
+    ];
+    let (dx, dz) = dirs[k as usize % 6];
+    for (o, x) in [(0x40u32, 0.0f32), (0x44, 0.5), (0x48, 0.0), (0x4c, 1.0)] {
+        t.set_u32(r + o, x.to_bits());
+    }
+    for (o, x) in [
+        (0x50u32, 4.0 * dx),
+        (0x54, 0.5),
+        (0x58, 4.0 * dz),
+        (0x5c, 1.0),
+    ] {
+        t.set_u32(r + o, x.to_bits());
+    }
+    // the screen pointer global, junk before each case
+    let at = w(t, 0x3fb);
+    t.set_u32(at, 0x5a5a_5a5a ^ k);
     for i in 0..4u32 {
         let rec = r + 0x70 + 0x250 * i;
+        // the spins: both wraps
+        let spin = [3.13f32, -3.2, 0.5, -0.5][((i + k) % 4) as usize];
+        t.set_u32(rec + 0x24c, spin.to_bits());
         let (on, frame, timer) = anim[i as usize];
         t.set_u32(rec, 0x0a00 + i);
         t.set_u32(rec + 4, on);
@@ -1311,6 +1338,7 @@ fn trail_task_0009_setup(
         t.set_u16(e, (0x80 + 0x10 * j) as u16);
         t.set_u16(e + 2, 0x300 + 0x40 * j as u16);
         t.set_u8(e + 4, if j == 2 && k % 2 == 1 { 0x80 } else { 0 });
+        t.set_u8(e + 5, 0x80);
         let rr = table + 0x80 + 0x10 * j;
         t.set_u32(rr + 4, 4 * j);
         t.set_u8(rr + 4 * j + 4, 0x31 + j as u8);
@@ -1370,11 +1398,16 @@ fn trail_task_0009_stubs(t: &mut Twin) {
             s
         });
     }
+    // 231 folds what it writes into a log word (the sprite matrix is only
+    // seen here)
     rec(t, 231, 3, |m, a| {
+        let mut h = m.r32(SCRATCH + 0x7e80);
         for i in 0..16 {
             let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
             wf(m, a[0] + 4 * i, x);
+            h = h.rotate_left(5) ^ x.to_bits();
         }
+        m.w32(SCRATCH + 0x7e80, h);
         0x231
     });
     rec(t, 229, 3, |m, a| {
@@ -1433,7 +1466,7 @@ fn trail_task_0009() {
             [(1, 0, 0x300), (1, 1, 0x100), (0, 0, 0x100), (1, 2, 0x200)],
         ),
         (
-            1,
+            3,
             [1, 2, 0, 0],
             [(1, 2, 0x150), (1, 2, 0x150), (1, 0, 0x50), (0, 1, 0)],
         ),
