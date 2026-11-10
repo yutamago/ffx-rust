@@ -2788,3 +2788,80 @@ pub const MAIN_TASK_0284: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0434`'s target check (0x100097f0, 266 bytes; internal, no
+/// arguments; `ebp = E - 4`, the code at `ebp - 4`), called by its
+/// object host start ([`start`](crate::l5_objhost::start)): the code `c`
+/// = 0x3018 when slot 390 `(*G_A)` answers 0x3008, else 0x110d; slots 4
+/// `(c)` and 27 `(c, 1)` (the first call's word under the second's);
+/// `*G_P` kept (its default the immediate when 0) and `*G_Q` = it plus
+/// 0x22e500. A target (of `*G_N`, signed; the list `*G_L`, the objects
+/// `TAB`) whose object's kind halfword is one of the seven words of the
+/// DLL's table, or which slot 580 `(id)` rejects (non-zero), stops the
+/// scan: `Q + 0x1a84` = 0 and slot 523 `(0, 1)`; else `Q + 0x1a84` = 1 and
+/// slot 523 `(0, 0)`. `Q + 0x1a80` = `c`, which it returns.
+/// (`magic_0610`'s check, [`check_targets`](crate::m0610::check_targets),
+/// is the same scan without the code and the block.)
+pub fn check_targets_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let who = g.read::<u32>(w(0x14));
+    let r = g.call(t(g, 0x5, 390), 0, &[who]).eax;
+    let code = if r == 0x3008 { 0x3018 } else { 0x110d };
+    g.call(t(g, 0x20, 4), 0, &[code, who]);
+    g.call(t(g, 0x3b, 27), 0, &[code, 1, code, who]);
+    let p = g.read::<u32>(w(0x48));
+    let p = if p != 0 { p } else { w(0x52) };
+    let q = p.wrapping_add(0x0022_e500);
+    g.write::<u32>(w(0x65), p);
+    g.write::<u32>(w(0x6b), q);
+    let mut found = false;
+    if g.read::<i32>(w(0x76)) > 0 {
+        let mut i = 0u32;
+        loop {
+            // (the index counts up from 0: the code's -1 case cannot come up)
+            let list = g.read::<u32>(w(0x93));
+            let id = u32::from(g.read::<u8>(list.wrapping_add(i)));
+            let o = g.read::<u32>(w(0x9e).wrapping_add(4 * id));
+            let kind = u32::from(g.read::<u16>(o));
+            if (0..7).any(|k| kind == g.read::<u32>(w(0xa9) + 4 * k)) {
+                found = true;
+                break;
+            }
+            if g.call(t(g, 0xb8, 580), 0, &[id]).eax != 0 {
+                found = true;
+                break;
+            }
+            i = i.wrapping_add(1);
+            if i.cast_signed() >= g.read::<i32>(w(0xd2)) {
+                break;
+            }
+        }
+    }
+    g.write::<u32>(q + 0x1a84, u32::from(!found));
+    g.call(t(g, 0xdc, 523), 0, &[0, u32::from(found)]);
+    g.write::<u32>(q + 0x1a80, code);
+    code
+}
+
+/// [`check_targets_0434`] (266 bytes, 1 overlay).
+pub const CHECK_TARGETS_0434: Sig = Sig {
+    len: 266,
+    hash: 0x3270_c7bc_9376_0f0b,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0434`'s object host start (0x100010a0, 292 bytes):
+/// [`start`](crate::l5_objhost::start)'s `magic_0610` shape calling
+/// [`check_targets_0434`].
+pub const START_0434: Sig = Sig {
+    len: 292,
+    hash: 0x8728_2a0b_a314_536e,
+    calls: &[
+        (0x0d, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+        (0xc7, Callee::Sig(&CHECK_TARGETS_0434)),
+    ],
+    imports: &[],
+};

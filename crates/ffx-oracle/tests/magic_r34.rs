@@ -1568,3 +1568,103 @@ fn main_task_0284() {
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// `magic_0434` 0x100097f0 (`r34::check_targets_0434`) and its object
+/// host start 0x100010a0 (`l5_objhost::start`): slot 390 answering
+/// 0x3008 and not, `*G_P` set and 0; no targets, a target with a listed
+/// kind, one slot 580 rejects, all accepted.
+#[test]
+fn check_targets_0434() {
+    let Some(mut t) = twin(434) else { return };
+    let at = t.at(0x97f0);
+    let st = t.at(0x10a0);
+    for (s, n) in [
+        (4u32, 1usize),
+        (27, 3),
+        (523, 2),
+        (556, 1),
+        (555, 2),
+        (331, 3),
+        (720, 2),
+        (718, 3),
+        (222, 7),
+        (221, 11),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let cell = SCRATCH + 0x10;
+    rec(&mut t, 580, 1, move |m, a| u32::from(m.r32(cell) == a[0]));
+    rec(&mut t, 390, 1, |m, a| m.r32(SCRATCH + 0x14) ^ a[0]);
+    let bytes = SCRATCH + 0x2000;
+    let count = SCRATCH + 0x20;
+    rec(&mut t, 168, 1, |_, _| SCRATCH + 0x1000);
+    rec(&mut t, 218, 2, move |m, a| {
+        let n = m.r32(count);
+        m.w32(a[1], n);
+        bytes
+    });
+    rec(&mut t, 215, 1, |_, a| 0x0215_0000 + a[0]);
+    rec(&mut t, 413, 1, |_, a| 0x0413_0000 + a[0]);
+    rec(&mut t, 291, 5, |_, a| 0x10 + a[1]);
+    rec(&mut t, 367, 8, |_, a| 0x0367_0000 + a[1]);
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.1);
+    let list = SCRATCH + 0x300;
+    t.set_u32(t.img.word(at + 0x93), list);
+    t.write(list, &[1, 2, 3, 4]);
+    let objs = t.img.word(at + 0x9e);
+    let listed = t.u32(t.img.word(at + 0xa9) + 8);
+    let who = t.img.word(at + 0x14);
+    let payloads = t.img.word(st + 0x81);
+    let blk = SCRATCH + 0x4_0000;
+    // (targets, listed kind, rejected id, slot 390's code, *G_P set)
+    let cases: [(i32, Option<u32>, u32, bool, bool); 6] = [
+        (0, None, 0, true, false),
+        (4, Some(3), 0, false, true),
+        (4, None, 2, true, true),
+        (4, None, 0, false, false),
+        (1, None, 0, true, true),
+        (-2, None, 0, false, true),
+    ];
+    for (k, (n, kind, reject, code, p_set)) in (0u32..).zip(cases) {
+        for whole in [false, true] {
+            t.set_u32(who, 0x0abc_0000 + k);
+            t.set_u32(
+                SCRATCH + 0x14,
+                if code { 0x3008 ^ (0x0abc_0000 + k) } else { 7 },
+            );
+            t.set_u32(t.img.word(at + 0x48), if p_set { blk } else { 0 });
+            t.set_u32(t.img.word(at + 0x76), n.cast_unsigned());
+            // (every id the start's byte list can name has an object)
+            for id in 0..16u32 {
+                let o = SCRATCH + 0x400 + 0x10 * id;
+                t.set_u32(objs + 4 * id, o);
+                t.set_u32(o, 0x5a5a_fff0 + id);
+                let kd = if kind == Some(id) {
+                    listed
+                } else {
+                    0xfff0 + id
+                };
+                t.set_u16(o, u16::try_from(kd & 0xffff).unwrap_or(0));
+            }
+            t.set_u32(t.img.word(at + 0x93), list);
+            t.set_u32(cell, reject);
+            if whole {
+                t.write(payloads, &vec![0xa5; 12 * 0x3ff]);
+                t.set_u32(count, k * 2);
+                for (i, b) in [3u8, 1, 4, 1, 5, 9, 2, 6].iter().enumerate() {
+                    t.set_u8(bytes + i as u32, *b);
+                }
+                let c = Call {
+                    ecx: 0x55,
+                    ..Call::default()
+                };
+                t.check_entry(st, c, &[0x00ab_c000 + k], Eax::Checked);
+            } else {
+                t.check(at, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                    Ret::eax(r34::check_targets_0434(g, img, fr))
+                });
+            }
+        }
+    }
+}

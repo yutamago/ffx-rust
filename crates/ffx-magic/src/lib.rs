@@ -3271,6 +3271,7 @@ ports! {
     "r34 walk task 0391" => r34::WALK_TASK_0391, r34::walk_task_0391;
     "r34 walk task 0448" => r34::WALK_TASK_0448, r34::walk_task_0448;
     "r34 main task 0284" => r34::MAIN_TASK_0284, r34::main_task_0284;
+    "r34 objhost start 0434" => r34::START_0434, l5_objhost::start;
     // round 34 (magic-r34): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4030,6 +4031,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 spark start 0448", &r34::SPARK_START_0448),
     ("r34 walk reset 0391", &r34::WALK_RESET_0391),
     ("r34 walk reset 0448", &r34::WALK_RESET_0448),
+    ("r34 check targets 0434", &r34::CHECK_TARGETS_0434),
     // round 34 (magic-r34): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
