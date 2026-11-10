@@ -3414,6 +3414,7 @@ ports! {
     "r44 frame 0184" => r44::FRAME_0184, r44::frame_0184;
     "r44 motion 0184" => r44::MOTION_0184, r44::motion_0184;
     "r44 load step 0072" => r44::LOAD_0072, r44::load_0072;
+    "r44 frame 0072" => r44::FRAME_0072, r44::frame_0072;
     // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3818,6 +3819,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r44 summon start 0155", &r44::SUMMON_START_0155),
     ("r44 summon start 0164", &r44::SUMMON_START_0164),
     ("r44 start-up 0072", &r44::START_UP_0072),
+    ("r44 flames 0072", &r44::FLAMES_0072),
     // round 44 (magic-r44): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),

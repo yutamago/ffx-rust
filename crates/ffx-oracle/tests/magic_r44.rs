@@ -849,6 +849,9 @@ fn start_up_0072_setup(
     t.set_u32(at, n);
     let at = w(t, 0x81);
     t.set_u32(at, 0x0000_00a0 + k);
+    // the u16 the start-up clears, its neighbour junk
+    let at = w(t, 0xc2);
+    t.set_u32(at, 0x5a5a_5a5a ^ k);
     // the objects' vectors and records
     let at = w(t, 0x298);
     t.write(at - 0xd4, &[0x5e; 0x130 * 4]);
@@ -914,5 +917,183 @@ fn start_up_0072() {
         }
         magic_h6::scrub(&mut t);
         t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// What `r44::flames_0072` (`magic_0072` 0x10001e80) needs: its waits
+/// and counts, the summon's handle, the count word, the handle words
+/// `G_H`, the sprite pool (`n` records, `busy` of them taken), the float
+/// slots (314, 404, 277 in ST0) and the matrix slots as data flow.
+fn flames_0072_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (wait, count, wait2): (i32, u32, i32),
+    (n, busy): (u32, u32),
+) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (o, v) in [
+        (0x14u32, wait.cast_unsigned()),
+        (0x31, count),
+        (0x3a, wait2.cast_unsigned()),
+    ] {
+        let at = w(t, o);
+        t.set_u32(at, v);
+    }
+    let at = w(t, 0x182);
+    t.set_u32(at, 0x00a0_0000 + k);
+    let at = w(t, 0x2bc);
+    t.set_u32(at, 5 + 3 * k);
+    // the handle words
+    let h = SCRATCH + 0x5f0;
+    for i in 0..3 {
+        t.set_u32(h + 4 * i, 0x0070_0000 + 0x10 * i + k);
+    }
+    for o in [0x4abu32, 0x622] {
+        let at = w(t, o);
+        t.set_u32(at, h);
+    }
+    // the pool: `n` records of 0x6c bytes, `busy` taken
+    let take = t.img.rel32_target(f + 0x312);
+    let buf = SCRATCH + 0x1_8000;
+    for i in 0..n.max(1) {
+        t.write(buf + 0x6c * i, &[0x3c; 0x6c]);
+        t.set_u32(buf + 0x6c * i + 0x68, u32::from(i < busy));
+    }
+    for (o, v) in [(0x02u32, k % 2), (0x0a, n), (0x17, buf)] {
+        let at = t.img.word(take + o);
+        t.set_u32(at, v);
+    }
+    for s in [314u32, 404, 277] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(314, move |_, a| {
+        f64::from(f32::from_bits(a[0])) * 0.75 + 0.125 * f64::from(k)
+    });
+    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 1.5 - 0.25);
+    t.stub_st0(277, |_, a| f64::from(a[0] & 0xf) * 0.5 + 1.0);
+    rec(t, 236, 3, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[2] + 4 * i,
+                (a[0] & 0xff) as f32 * 0.03125 + i as f32 * 0.5 - 2.0,
+            );
+        }
+        0x236
+    });
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(t, s, 3, move |m, a| {
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + ang * (i + 1) as f32 / 8.0 + s as f32 / 1024.0;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let raw = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x7e60 + 4 * i, raw);
+            let x = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[1] << 8));
+}
+
+/// `magic_0072` 0x10001e80 (`r44::flames_0072`, internal): the first wait
+/// running, the second running, done and at 0, a burst with the pool
+/// full, running out after the first, second and fourth record and with
+/// a record left; then its frame step 0x10001d30 (`r44::frame_0072`):
+/// the motion and the objects running or not, the flag, 0..2 sounds.
+#[test]
+fn flames_0072() {
+    let Some(mut t) = twin(72) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x1e80);
+    // ((wait, count, wait2), (records, busy))
+    let cases: [((i32, u32, i32), (u32, u32)); 9] = [
+        ((3, 1, 0), (8, 0)),
+        ((0, 0, 4), (8, 0)),
+        ((0, 0, 0), (8, 0)),
+        ((-2, 0, -3), (8, 0)),
+        ((0, 2, 0), (8, 0)),
+        ((-1, 1, 0), (1, 0)),
+        ((0, 1, 0), (3, 1)),
+        ((0, 1, 0), (5, 1)),
+        ((0, 3, 0), (6, 1)),
+    ];
+    for (k, (waits, pool)) in (0u32..).zip(cases) {
+        flames_0072_setup(&mut t, f, k, waits, pool);
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r44::flames_0072(g, img, fr)
+        });
+    }
+    let step = t.at(0x1d30);
+    let ro = t.img.rel32_target(step + 0xe);
+    let ms = t.img.rel32_target(step + 0x15);
+    rec(&mut t, 772, 2, |m, a| {
+        let k = m.r32(SCRATCH + 0x7f74).wrapping_add(1);
+        m.w32(SCRATCH + 0x7f74, k);
+        a[0] ^ (a[1] << 12) ^ k
+    });
+    t.stub_edx(772, |m, a| m.r32(SCRATCH + 0x7f74) ^ a[1]);
+    // 779 logs the lock word it sees
+    let lock = SCRATCH + 0x7e10;
+    rec(&mut t, 779, 2, move |m, a| {
+        let k = m.r32(SCRATCH + 0x7e00);
+        m.w32(SCRATCH + 0x7e00, k + 1);
+        m.w32(SCRATCH + 0x7e40 + 4 * (k % 8), m.r32(lock));
+        0x0779_0000 ^ a[0] ^ a[1]
+    });
+    // (motion done, objects running, the flag, sounds)
+    for (k, (done, running, flag, n)) in (0u32..).zip([
+        (false, false, 0u32, 2u32),
+        (true, true, 0, 2),
+        (true, false, 1, 2),
+        (true, false, 0, 0),
+        (true, false, 0, 1),
+        (true, false, 0, 2),
+    ]) {
+        flames_0072_setup(&mut t, f, k, (1 + k as i32, 1, 0), (8, 0));
+        magic_hi::objects(&mut t, ro, running);
+        magic_hi::motion(&mut t, ms, done);
+        let w = |t: &Twin, o: u32| t.img.word(step + o);
+        for (o, v) in [(0x2cu32, flag), (0x3b, n), (0x7a, lock)] {
+            let at = w(&t, o);
+            t.set_u32(at, v);
+        }
+        t.set_u32(lock, 0x40 + k);
+        let task = SCRATCH + 0x7c00;
+        let rec_at = SCRATCH + 0x7c40;
+        t.write(task, &[0x31; 0x20]);
+        t.write(rec_at, &[0x32; 0x20]);
+        t.set_u32(task + 8, rec_at);
+        magic_h6::scrub(&mut t);
+        t.check_entry(step, Call::default(), &[task], Eax::Checked);
     }
 }

@@ -1646,3 +1646,334 @@ pub const LOAD_0072: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0072))],
     imports: &[],
 };
+
+/// One of [`flames_0072`]'s sprite records `R` (taken by
+/// [`pool_take`](crate::m0072::pool_take); none ends the burst): the
+/// point and `w` at `+0xc..+0x18` (the frame's four words), the handle
+/// `h` at `+0` (slot 719 `(D, 9, 0)` for the first kind, else the given
+/// word), `+4` 1, the offset `(0, 0, r + K, 0)` at `+0x1c` (`r` slot 314
+/// `(lift)`) turned by the matrix `N` (slot 229), `+0x28` slot 314
+/// `(pi)`, the colour `(0, g, 0, 1)` at `+0x2c`, `+0x44` the count as a
+/// float, the u16s `+0x8` 0xffff and `+0xa` 0x200; for the first kind
+/// byte `+0x3e` 0x60 and byte `+0x3f` `rand() % 65 + 32`; byte `+0x43`
+/// 0, `+0x5c` 8, the size `+0x4c = (slot 404 (s) + K') K''` and the
+/// speed `+0x50..+0x58`. `ops` = the operands `[314's load, K, 229's
+/// load, the second 314's load, 404's load, K', K'']`. Returns the record
+/// and slot 404's `eax`, or `None` when no record was free.
+#[allow(clippy::too_many_arguments)] // the record's inputs
+fn flame_record<G: Game>(
+    g: &mut G,
+    img: &Image,
+    (f, ebp): (u32, u32),
+    handle: Option<u32>,
+    (lift, green, size): (u32, u32, u32),
+    ops: [u32; 7],
+    speed: [u32; 3],
+    take: u32,
+) -> Option<(u32, u32)> {
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let rec = crate::m0072::pool_take(g, img, take);
+    if rec == 0 {
+        return None;
+    }
+    let h = match handle {
+        Some(h) => h,
+        // call width: 3
+        None => g.call(t(g, 0x322, 719), 0, &[w(0x331), 9, 0]).eax,
+    };
+    for (o, from) in [(0xcu32, 0xa8u32), (0x10, 0xb0), (0x14, 0xac), (0x18, 0xa4)] {
+        let x = g.read::<u32>(lf(from));
+        g.write::<u32>(rec + o, x);
+    }
+    let v = rec + 0x1c;
+    g.write::<u32>(v, 0);
+    g.write::<u32>(rec + 0x20, 0);
+    // call width: 1
+    let r = st0_f32(g.call(t(g, ops[0], 314), 0, &[lift]).st0);
+    g.write::<f32>(rec + 0x24, add(r, k(g, ops[1])));
+    g.write::<u32>(rec + 0x28, 0);
+    // call width: 3
+    g.call(t(g, ops[2], 229), 0, &[v, lf(0x54), v]);
+    // call width: 1
+    let a = st0_f32(g.call(t(g, ops[3], 314), 0, &[0x4049_0fdb]).st0);
+    g.write::<f32>(rec + 0x28, a);
+    let n = cvt(g.read::<u32>(lf(0xa0)));
+    for (o, x) in [(0x2cu32, 0u32), (0x30, green), (0x34, 0), (0x38, ONE)] {
+        g.write::<u32>(rec + o, x);
+    }
+    g.write::<f32>(rec + 0x44, n);
+    g.write::<u16>(rec + 8, 0xffff);
+    g.write::<u32>(rec, h);
+    g.write::<u32>(rec + 4, 1);
+    g.write::<u16>(rec + 0xa, 0x200);
+    if handle.is_none() {
+        g.write::<u8>(rec + 0x3e, 0x60);
+        let b = (g.rand().cast_signed() % 0x41).to_le_bytes()[0];
+        g.write::<u8>(rec + 0x3f, b.wrapping_add(0x20));
+    }
+    g.write::<u8>(rec + 0x43, 0);
+    g.write::<u32>(rec + 0x5c, 8);
+    // call width: 1
+    let out = g.call(t(g, ops[4], 404), 0, &[size]);
+    let s = mul(add(st0_f32(out.st0), k(g, ops[5])), k(g, ops[6]));
+    for (o, x) in [(0x50u32, speed[0]), (0x54, speed[1]), (0x58, speed[2])] {
+        g.write::<u32>(rec + o, x);
+    }
+    g.write::<f32>(rec + 0x4c, s);
+    Some((rec, out.eax))
+}
+
+/// `magic_0072`'s flame burst (0x10001e80, 1928 bytes; internal, no
+/// arguments; a /GS frame, `ebp` = `E - 4`). While the wait `*G_W` is
+/// positive it counts down (returns it); then, when the burst count
+/// `*G_N` is 0, the second wait `*G_V` counts down the same way (returns
+/// it, or its value when not positive). Otherwise `*G_N` counts down and
+/// a burst starts: the matrix `M` (`ebp - 0x94`, slot 235) turned by two
+/// random angles (slot 314 less `K`, wrapped once; slots 328 and 329),
+/// the summon's matrix `N` (slot 236 `(*G_A, 0x10)`) scaled by `K / s`
+/// (`s` slot 277) in its three rows, `N = M N` (231), `M = N` (230), the
+/// offset `(0, 0, 7, 1)` through `M` (229) plus `N`'s row 3 the point;
+/// then twice the pair of sprite records ([`flame_record`]: the first
+/// kind with slot 719's handle and the random byte, the second with the
+/// handle `G_H[1]`), and a last record (the handle `G_H[2]`, green 0.2,
+/// `+0x64` 1). Returns the last slot 404's `eax`, or 0 when the pool ran
+/// out.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn flames_0072<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let cookie = gw(g, 0xa) ^ ebp;
+    g.write::<u32>(lf(4), cookie);
+    let wait = gw(g, 0x14).cast_signed();
+    if wait > 0 {
+        let x = wait.wrapping_sub(1).cast_unsigned();
+        g.write::<u32>(w(0x1e), x);
+        return Ret::eax(x);
+    }
+    let n = gw(g, 0x31);
+    if n == 0 {
+        let v = gw(g, 0x3a);
+        if v.cast_signed() <= 0 {
+            return Ret::eax(v);
+        }
+        let x = v.wrapping_sub(1);
+        g.write::<u32>(w(0x48), x);
+        return Ret::eax(x);
+    }
+    g.write::<u32>(w(0x5c), n.wrapping_sub(1));
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x61, 314), 0, &[0x3e20_d97c]).st0);
+    let mut a = sub(r, k(g, 0x87));
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x8c, 314), 0, &[0x3fc9_0fdb]).st0);
+    let mut b = sub(r, k(g, 0xb9));
+    let m = lf(0x94);
+    // call width: 1
+    g.call(t(g, 0xc5, 235), 0, &[m]);
+    let tw = k(g, 0xe5);
+    if a > k(g, 0xef) {
+        a = sub(a, tw);
+    } else if k(g, 0xff) > a {
+        a = add(a, tw);
+    }
+    // call width: 3
+    g.call(t(g, 0x11b, 328), 0, &[m, m, a.to_bits()]);
+    if b > k(g, 0x135) {
+        b = sub(b, k(g, 0x13f));
+    } else if k(g, 0x149) > b {
+        b = add(b, k(g, 0x156));
+    }
+    // call width: 3
+    g.call(t(g, 0x169, 329), 0, &[m, m, b.to_bits()]);
+    let nm = lf(0x54);
+    let a_h = gw(g, 0x182);
+    // call width: 3
+    g.call(t(g, 0x17a, 236), 0, &[a_h, 0x10, nm]);
+    let a_h = gw(g, 0x195);
+    // call width: 1
+    let s = st0_f32(g.call(t(g, 0x18f, 277), 0, &[a_h]).st0);
+    let q = div(k(g, 0x1ab), s);
+    for i in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
+        let x = mul(g.read::<f32>(nm + 4 * i), q);
+        g.write::<f32>(nm + 4 * i, x);
+    }
+    // call width: 3
+    g.call(t(g, 0x1e9, 231), 0, &[nm, nm, m]);
+    let v = lf(0x14);
+    for (i, x) in (0u32..).zip([0u32, 0, 0x40e0_0000, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 2
+    g.call(t(g, 0x25a, 230), 0, &[m, nm]);
+    for o in [0x5cu32, 0x60, 0x64] {
+        g.write::<u32>(lf(o), 0);
+    }
+    // call width: 3
+    g.call(t(g, 0x292, 229), 0, &[v, m, v]);
+    let y0 = g.read::<u32>(lf(0x18));
+    g.write::<u32>(lf(0xa4), y0);
+    let d = gw(g, 0x2bc);
+    g.write::<u32>(lf(0xa0), d);
+    g.write::<u32>(lf(0x9c), 0);
+    for (to, a, b) in [
+        (0xa8u32, 0x24u32, 0x14u32),
+        (0xb0, 0x20, 0x10),
+        (0xac, 0x1c, 0xc),
+    ] {
+        let x = add(g.read::<f32>(lf(a)), g.read::<f32>(lf(b)));
+        g.write::<f32>(lf(to), x);
+    }
+    let take = |o: u32| img.rel32_target(f + o);
+    let fe = (f, ebp);
+    let words = |g: &G, o: u32, i: u32| g.read::<u32>(gw(g, o) + 4 * i);
+    for turn in 0..2u32 {
+        if flame_record(
+            g,
+            img,
+            fe,
+            None,
+            (0x3fc0_0000, 0, ONE),
+            [0x369, 0x3a6, 0x3b0, 0x3ca, 0x43b, 0x471, 0x491],
+            [0xc1a0_0000, 0xc0c0_0000, 0],
+            take(0x312),
+        )
+        .is_none()
+        {
+            return Ret::eax(0);
+        }
+        let h = words(g, 0x4ab, 1);
+        if flame_record(
+            g,
+            img,
+            fe,
+            Some(h),
+            (ONE, 0, ONE),
+            [0x4bb, 0x51d, 0x527, 0x541, 0x599, 0x5d8, 0x5f2],
+            [0xc1a0_0000, 0xc0c0_0000, 0],
+            take(0x49b),
+        )
+        .is_none()
+        {
+            return Ret::eax(0);
+        }
+        g.write::<u32>(lf(0x9c), turn + 1);
+    }
+    let h = words(g, 0x622, 2);
+    let Some((rec, eax)) = flame_record(
+        g,
+        img,
+        fe,
+        Some(h),
+        (ONE, 0x3e4c_cccd, 0x3f00_0000),
+        [0x632, 0x694, 0x69e, 0x6b8, 0x70e, 0x74a, 0x76e],
+        [0, 0x447a_0000, 0],
+        take(0x612),
+    ) else {
+        return Ret::eax(0);
+    };
+    g.write::<u32>(rec + 0x64, 1);
+    Ret::eax(eax)
+}
+
+/// [`flames_0072`] (the `rel32`s: `__security_check_cookie` three times,
+/// the pool take three times; `rand` through the IAT).
+pub const FLAMES_0072: Sig = Sig {
+    len: 1928,
+    hash: 0x94f7_b61b_8192_69cf,
+    calls: &[
+        (0x28, Callee::Any),
+        (0x52, Callee::Any),
+        (0x312, Callee::Sig(&crate::m0072::POOL_TAKE)),
+        (0x49b, Callee::Sig(&crate::m0072::POOL_TAKE)),
+        (0x612, Callee::Sig(&crate::m0072::POOL_TAKE)),
+        (0x780, Callee::Any),
+    ],
+    imports: &[(0x42e, "rand")],
+};
+
+/// `magic_0072`'s frame step (0x10001d30, 314 bytes; a task step, cdecl
+/// `(task)`; an 8-aligned frame): the flame burst ([`flames_0072`]), the
+/// objects ([`run_objects`](crate::l5_objhost::run_objects)) and the
+/// motion script ([`motion_step`](crate::s3_motion::motion_step)); when
+/// both give 1 and `*G_F` is 0: for each of `*G_N` handles `i`, three
+/// sounds (slot 772 `(h, i)` of slot 719 `(D, 9, 0)`'s handle, then of
+/// `G_H[1]` and `G_H[2]`, each played by slot 779 `(lo, hi)` with the
+/// lock word set to 1 and put back), the task's state 3 and its record's
+/// `+0x10` the next step. Returns the record, else the motion's result.
+pub fn frame_0072<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; push esi; push edi; the calls
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc);
+    let ff = Frame {
+        at: call(0x9),
+        esp,
+        ..*fr
+    };
+    flames_0072(g, img, &ff);
+    let objs = crate::l5_objhost::run_objects(g, img, call(0xe), esp);
+    let mv = crate::s3_motion::motion_step(g, img, call(0x15));
+    if mv != 1 || objs != 1 || gw(g, 0x2c) != 0 {
+        return Ret::eax(mv);
+    }
+    if gw(g, 0x3b).cast_signed() > 0 {
+        let mut i = 0u32;
+        loop {
+            // call width: 3
+            let h0 = g.call(t(g, 0x51, 719), 0, &[w(0x60), 9, 0]).eax;
+            // (the handle's source, slot 772's load, the lock's global
+            // before and after, slot 779's load)
+            for (src, s772, lock_at, s779, back) in [
+                (None, 0x6cu32, 0x7au32, 0x83u32, 0x96u32),
+                (Some((0x9e, 4)), 0xa6, 0xb4, 0xbd, 0xd0),
+                (Some((0xd8, 8)), 0xe0, 0xee, 0xf7, 0x10a),
+            ] {
+                let h = match src {
+                    None => h0,
+                    Some((o, d)) => g.read::<u32>(gw(g, o) + d),
+                };
+                // call width: 2
+                let out = g.call(t(g, s772, 772), 0, &[h, i]);
+                let lock = gw(g, lock_at);
+                let old = g.read::<u32>(lock);
+                g.write::<u32>(lock, 1);
+                // call width: 2
+                g.call(t(g, s779, 779), 0, &[out.eax, out.edx]);
+                let lock = gw(g, back);
+                g.write::<u32>(lock, old);
+            }
+            i += 1;
+            if i.cast_signed() >= gw(g, 0x116).cast_signed() {
+                break;
+            }
+        }
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let rec = g.read::<u32>(task + 8);
+    g.write::<u32>(rec + 0x10, w(0x130));
+    Ret::eax(rec)
+}
+
+/// [`frame_0072`] (the `rel32`s: the flames, the objects, the motion).
+pub const FRAME_0072: Sig = Sig {
+    len: 314,
+    hash: 0x56a2_4e0a_75d9_5d4c,
+    calls: &[
+        (0x9, Callee::Sig(&FLAMES_0072)),
+        (0xe, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x15, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+    ],
+    imports: &[],
+};
