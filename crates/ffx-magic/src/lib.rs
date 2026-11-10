@@ -3397,6 +3397,8 @@ ports! {
     "r43 summon start 0445" => r43::SUMMON_START_0445, r43::summon_start_0445;
     "r43 task 0445" => r43::TASK_0445, r43::task_0445;
     "r43 strike start 0273" => r43::STRIKE_START_0273, r43::strike_start_0273;
+    "r43 summon task 0273" => r43::SUMMON_TASK_0273, r43::summon_task_0273;
+    "r43 start task 0273" => r43::START_TASK_0273, r43::start_task_0273;
     // round 43 (magic-r43): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
