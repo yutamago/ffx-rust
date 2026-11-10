@@ -3243,6 +3243,7 @@ ports! {
     "r33 records task 0606" => r33::RECORDS_TASK_0606, r33::records_task_0165;
     "r33 effect task 0512" => r33::EFFECT_TASK_0512, r33::effect_task_0512;
     "r33 summon task 0512" => r33::SUMMON_TASK_0512, r33::summon_task_0512;
+    "r33 summon task 0597" => r33::SUMMON_TASK_0597, r33::summon_task_0597;
     // round 33 (magic-r33): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

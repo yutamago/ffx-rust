@@ -807,7 +807,17 @@ fn records_task_0165() {
             }
             0x231
         });
-        rec(&mut t, 867, 17, |_, a| 0x0867_0000 ^ a[16] ^ (a[4] << 8));
+        // slot 867 logs the drawn matrix (`out`, a frame local of the
+        // draw) so that the model's matrices are compared
+        rec(&mut t, 867, 17, |m, a| {
+            let k = m.r32(SCRATCH + 0xd00);
+            m.w32(SCRATCH + 0xd00, k + 1);
+            for i in 0..16 {
+                let v = m.r32(a[4] + 4 * i);
+                m.w32(SCRATCH + 0xd04 + 4 * ((k * 16 + i) % 0x100), v);
+            }
+            0x0867_0000 ^ a[16]
+        });
         rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
         let s = SCRATCH + 0x1_0000;
         let take = t.img.rel32_target(f + 0x6e4);
@@ -854,7 +864,7 @@ fn records_task_0165() {
                 t.set_u32(r + 0xa8, [0u32, 0, 2][(v % 3) as usize]);
                 t.set_u32(r + 0xac, [0u32, 0, 0, 1, 0, 3][(v % 6) as usize]);
                 t.set_u32(r + 0xb0, [16u32, 30, 64][(v % 3) as usize]);
-                t.set_u32(r + 0xb4, [0u32, 5, 61, 40, 51, 60][(v % 6) as usize]);
+                t.set_u32(r + 0xb4, [61u32, 5, 61, 40, 61, 60][(v % 6) as usize]);
                 t.set_u32(r + 0xb8, 0x40 + v);
                 t.set_u32(r + 0xbc, (v * 3).wrapping_sub(20));
                 t.set_u32(r + 0xc0, v % 4);
@@ -1076,6 +1086,96 @@ fn summon_task_0512() {
             t.set_u16(p + 0x18, 2 + i as u16);
         }
         ownb::dirty_stack(&mut t, 0x9620 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0597` 0x1000a0a0 (`r33::summon_task_0597`): every state of the
+/// table waiting and going on (0, 1, 0x5a..0x61), 10000 and 0x2711 (on
+/// into 0x2712 in the next call), 0x2712 with the flag byte's bit 2 clear
+/// and set, a state between the table's and 10000, one above 0x2712, and
+/// a table state without code.
+#[test]
+fn summon_task_0597() {
+    let Some(mut t) = twin(597) else { return };
+    all_stubs(&mut t);
+    float_matrix_stubs(&mut t);
+    vector_stubs(&mut t);
+    summon_stubs(&mut t);
+    let f = t.at(0xa0a0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let table = SCRATCH + 0x300;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x0f00_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    for (s, x) in [(333u32, 0.75f64), (12, -1.5)] {
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    t.stub_st0(790, |_, _| 0.375);
+    rec(&mut t, 218, 2, |m, a| {
+        m.w32(a[1], 2);
+        SCRATCH + 0x700
+    });
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let (a, r, node) = (SCRATCH + 0x100, SCRATCH + 0x1_0000, SCRATCH + 0x200);
+    let (prev, next) = (SCRATCH + 0x240, SCRATCH + 0x280);
+    let flag = w(&t, 0x7d5);
+    // (state, the frame count `R + 0x2c`, the flag byte)
+    let cases: [(u32, i32, u8); 25] = [
+        (0, 0, 0),
+        (1, 1, 0),
+        (1, 2, 0),
+        (0x5a, 0, 0),
+        (0x5b, 0, 0),
+        (0x5c, 0x1f, 0),
+        (0x5c, 0x20, 0),
+        (0x5d, 0x31, 0),
+        (0x5d, 0x32, 0),
+        (0x5e, 0x34, 0),
+        (0x5e, 0x35, 0),
+        (0x5f, 0x3b, 0),
+        (0x5f, 0x3c, 0),
+        (0x60, 0x63, 0),
+        (0x60, 0x64, 0),
+        (0x61, 0x7c, 0),
+        (0x61, 0x7d, 0),
+        (0x2710, 0, 0),
+        (0x2711, 0, 0),
+        (0x2712, 0, 0),
+        (0x2712, 0, 4),
+        (0x2713, 0, 0),
+        (0x62, 0, 0),
+        (0x1000, 0, 0),
+        (7, 0, 0),
+    ];
+    for (k, (state, count, fl)) in (0u32..).zip(cases) {
+        for i in 0..0x40u32 {
+            let x = ((i * 7 + k * 3) % 37) as f32 * 0.25 - 4.0;
+            t.set_u32(r + 4 * i, x.to_bits());
+        }
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x28, 0x40 + k);
+        t.set_u32(r + 0x2c, count.cast_unsigned());
+        t.set_u8(flag, fl | 0xa0);
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        t.set_u32(node + 4, next);
+        t.set_u32(node + 8, prev);
+        t.write(prev, &[0x50; 0x10]);
+        t.write(next, &[0x4f; 0x10]);
+        // the DLL's static parent (its child list empty or with a child)
+        let p = w(&t, 0x70);
+        let kid = SCRATCH + 0x3000;
+        t.write(kid, &[0x21; 0x40]);
+        t.set_u32(p + 0x10, if k % 3 == 1 { kid } else { p });
+        t.set_u32(p + 0xc, p);
+        t.set_u16(p + 0x18, 2);
+        ownb::dirty_stack(&mut t, 0xa0a0 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
