@@ -3313,6 +3313,14 @@ ports! {
     "r36 lit start 0353" => r36::LIT_START_0353, r36::lit_start_0353;
     "r36 light reset 0353" => r36::LIGHT_RESET_0353, r36::light_reset_0353;
     "r36 load step 0353" => r36::LOAD_0353, r36::load_0353;
+    "r36 spark step 0351" => r36::SPARK_STEP_0351, r36::spark_step_0351;
+    "r36 glow start 0351" => r36::GLOW_START_0351, r36::glow_start_0351;
+    "r36 glow step 0351" => r36::GLOW_STEP_0351, r36::glow_step_0351;
+    "r36 scene start 0351" => r36::SCENE_START_0351, r36::scene_start_0351;
+    "r36 camera 0351" => r36::CAMERA_0351, r36::camera_0351;
+    "r36 glow draw 0351" => r36::GLOW_DRAW_0351, r36::glow_draw_0351;
+    "r36 fade 0351" => r36::FADE_0351, r36::fade_0351;
+    "r36 start up 0351" => r36::START_UP_0351, r36::start_up_0351;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4093,6 +4101,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r36 lit draw 0353", &r36::LIT_DRAW_0353),
     ("r36 flicker 0353", &r36::FLICKER_0353),
     ("r36 start-up 0353", &r36::START_UP_0353),
+    ("r36 glow points 0351", &r36::GLOW_POINTS_0351),
     // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
