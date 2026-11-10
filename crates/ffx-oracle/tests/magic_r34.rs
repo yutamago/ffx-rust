@@ -1223,10 +1223,15 @@ fn walk_turn_starts() {
                     &mut t,
                     f,
                     if spark {
-                        &[0x98, 0xab, 0xb0, 0xb5, 0xe1, 0xe7, 0xf1, 0xfb]
+                        &[0x98, 0xab, 0xb0, 0xb5, 0xe1, 0xe7, 0xf1, 0xfb, 0x105, 0x10e]
                     } else {
-                        &[0x85, 0x8a, 0x8f, 0x9b, 0xc5, 0xcb, 0xd5, 0xdf]
+                        &[0x85, 0x8a, 0x8f, 0x9b, 0xc5, 0xcb, 0xd5, 0xdf, 0xe9, 0xf2]
                     },
+                );
+                // the caster's facing all around (both unwrap ways)
+                t.set_u32(
+                    ROT,
+                    [-3.0f32, 3.0, 2.5, -2.5, 1.0, -1.0][k as usize].to_bits(),
                 );
                 let battle = if spark { [0xa5u32, 0xd6] } else { [0x7f, 0xba] };
                 for o in battle {
@@ -1468,5 +1473,98 @@ fn walk_tasks() {
             ownb::reset_counters(&mut t);
             t.check_entry(f, Call::default(), &[node], Eax::Checked);
         }
+    }
+}
+
+/// `magic_0284` 0x10001bd0 (`r34::main_task_0284`): the motion, the
+/// script and the objects each not done (the objects' answer returned),
+/// and all done: the node moved on, the grid and the state tables
+/// registered, slot 713 over 0, 1 and 3 records.
+#[test]
+fn main_task_0284() {
+    let Some(mut t) = twin(284) else { return };
+    model_stubs(&mut t);
+    rec(&mut t, 713, 1, |m, a| 0x0713_0000 ^ a[0] ^ m.r32(a[0]));
+    rec(&mut t, 325, 2, |_, a| 0x0325_0000 ^ a[0] ^ a[1]);
+    let f = t.at(0x1bd0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let ms = t.img.rel32_target(f + 0x1b);
+    let ro = t.img.rel32_target(f + 0x90);
+    let list = t.img.word(ro + 0x7c);
+    let obj_p = w(&t, 0x6a);
+    let (node, nblock, objn, obj) = (
+        SCRATCH + 0x9f00,
+        SCRATCH + 0x9f80,
+        SCRATCH + 0xa800,
+        SCRATCH + 0xa000,
+    );
+    let recs = SCRATCH + 0xb000;
+    let xp = SCRATCH + 0xc000;
+    // the grid's and the handles' registration (as `magic_sa_misc.rs`)
+    let grid = t.img.rel32_target(f + 0xbf);
+    let r8 = t.img.rel32_target(f + 0xd5);
+    let lock = SCRATCH + 0x800;
+    t.set_u32(t.img.word(grid + 0x53), lock);
+    t.set_u32(t.img.word(r8 + 0x21), lock);
+    t.set_u32(t.img.word(grid + 0x05), 2);
+    let grecs = SCRATCH + 0xd000;
+    t.set_u32(t.img.word(grid + 0x0c), grecs);
+    for k in 0..4 {
+        t.set_u32(grecs + 0x68 * k, 0x0300_0000 + k);
+    }
+    rec(&mut t, 941, 1, |_, a| 0x9410_0000 ^ a[0]);
+    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    rec(&mut t, 779, 4, |m, a| {
+        m.w32(SCRATCH + 0x804, m.r32(SCRATCH + 0x800));
+        a[0]
+    });
+    // the two state tables' blocks
+    let mut blk = SCRATCH + 0xe000;
+    for (a, b) in [(0xc4u32, 0xde), (0xe5, 0x15f)] {
+        let mut at = w(&t, a);
+        while at < w(&t, b) {
+            t.set_u32(at, blk);
+            junk(&mut t, blk, 0x290, at);
+            blk += 0x300;
+            at += 4;
+        }
+    }
+    // (motion done, script flag 0x8000, objects busy, records)
+    let cases: [(u32, u16, bool, i32); 6] = [
+        (0, 0x8000, false, 1),
+        (1, 0, false, 1),
+        (1, 0x8000, true, 1),
+        (1, 0x8000, false, 0),
+        (1, 0x8000, false, 1),
+        (1, 0xc000, false, 3),
+    ];
+    for (k, (done, flag, busy, nrec)) in (0u32..).zip(cases) {
+        t.set_u32(t.img.word(ms + 0x02), done);
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        junk(&mut t, obj_p + 0x10, 0x24, k);
+        t.set_u32(obj_p + 0x10, 0);
+        t.set_u32(obj_p + 0x2c, 3);
+        t.set_u16(obj_p + 0x30, flag);
+        t.set_u32(objn, 0);
+        t.set_u32(objn + 4, 0);
+        t.set_u32(objn + 8, obj);
+        t.set_u16(obj + 0x124, 0x8000);
+        t.set_u32(obj + 0x114, 5);
+        t.set_u32(list + 8, if busy { objn } else { 0 });
+        t.set_u32(t.img.word(ro + 0x14), if busy { objn } else { 0 });
+        junk(&mut t, node, 0x20, k);
+        t.set_u32(node + 8, nblock);
+        junk(&mut t, nblock, 0x20, k + 1);
+        t.set_u32(w(&t, 0x167), recs);
+        junk(&mut t, recs, 0x140 * 3, k + 2);
+        t.set_u32(w(&t, 0x16f), nrec as u32);
+        t.set_u32(w(&t, 0x181), xp);
+        t.set_u32(xp, 0x5a5a_0000 + k);
+        junk_ops(&mut t, f, &[0x4e, 0x5c, 0x7a, 0x80]);
+        t.set_u32(lock, 0x5555 + k);
+        ownb::dirty_stack(&mut t, 0x1bd0 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }

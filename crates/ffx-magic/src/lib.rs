@@ -3270,6 +3270,7 @@ ports! {
     "r34 load step 0448" => r34::LOAD_0448, r34::load_0448;
     "r34 walk task 0391" => r34::WALK_TASK_0391, r34::walk_task_0391;
     "r34 walk task 0448" => r34::WALK_TASK_0448, r34::walk_task_0448;
+    "r34 main task 0284" => r34::MAIN_TASK_0284, r34::main_task_0284;
     // round 34 (magic-r34): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;

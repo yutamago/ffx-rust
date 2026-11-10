@@ -2665,3 +2665,126 @@ pub const WALK_TASK_0448: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0284`'s main task (0x10001bd0, 445 bytes; cdecl `(node)`, a task
+/// callback; an 8-aligned /GS frame, `E1` the aligned `esp` after `sub
+/// esp, 0x14` and three pushes): the motion step
+/// ([`motion_step`](crate::s3_motion::motion_step)); the caster's place
+/// (slot 262 into `E1 + 0xc`) copied to the object point `G_P` (`w` 1.0)
+/// and its script run ([`obj_script`](crate::l5_objhost::obj_script),
+/// `ecx` = `G_P`; it leaves the object's flag bit 15 in `eax`); the
+/// objects ([`run_objects`](crate::l5_objhost::run_objects)). When all
+/// three say 1: the node's `+0x14` = 3 and its block's `+0x10` the next
+/// function, the grid registered
+/// ([`register_grid`](crate::sa_misc::register_grid)), each state of the
+/// table `T1` reset ([`state_reset`](crate::s4_small::state_reset)) and
+/// its parts registered ([`register_8`](crate::sa_misc::register_8) of
+/// `+0x24`), each state of `T2` reset as `state_reset` does (inlined) and
+/// registered, and slot 713 for each of the `*G_N` records (0x140 bytes
+/// from `*G_R`) with `**G_X` = the immediate. Returns the last call's
+/// `eax` (the objects' when they did not all finish).
+pub fn main_task_0284<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let node = fr.arg(g, 0);
+    let e1 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x14 + 0xc);
+    let motion = crate::s3_motion::motion_step(g, img, call(0x1b));
+    let p = e1 + 0xc;
+    let chr = g.read::<u32>(w(0x38));
+    g.call(t(g, 0x21, 262), 0, &[chr, p, p + 4, p + 8]);
+    for (k4, op) in (0u32..).zip([0x4e, 0x5c, 0x7a]) {
+        let x = g.read::<u32>(p + 4 * k4);
+        g.write::<u32>(w(op), x);
+    }
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(w(0x80), 0x3f80_0000);
+    let obj = w(0x6a);
+    crate::l5_objhost::obj_script(g, img, call(0x89), obj);
+    // the script's `eax`: the object's flag bit 15 (`+0x30 >> 15`)
+    let script = u32::from(g.read::<u16>(obj + 0x30) >> 15);
+    let mut eax = crate::l5_objhost::run_objects(g, img, call(0x90), e1.wrapping_sub(4));
+    if eax != 1 || motion != 1 || script != 1 {
+        return Ret::eax(eax);
+    }
+    let block = g.read::<u32>(node + 8);
+    g.write::<u32>(node + 0x14, 3);
+    g.write::<u32>(block + 0x10, w(0xba));
+    crate::sa_misc::register_grid(g, img, call(0xbf));
+    let (t1, t1_end) = (w(0xc4), w(0xde));
+    let mut at = t1;
+    loop {
+        let st = g.read::<u32>(at);
+        let fr = Frame {
+            at: call(0xcb),
+            ecx: st,
+            ..Frame::default()
+        };
+        crate::s4_small::state_reset(g, img, &fr);
+        let st = g.read::<u32>(at);
+        // (its `eax` is replaced by the second table's, which always runs)
+        crate::sa_misc::register_8(g, img, call(0xd5), st.wrapping_add(0x24));
+        at = at.wrapping_add(4);
+        if at.cast_signed() >= t1_end.cast_signed() {
+            break;
+        }
+    }
+    let (t2, t2_end) = (w(0xe5), w(0x15f));
+    let mut at = t2;
+    loop {
+        let st = g.read::<u32>(at);
+        for off in [0x25cu32, 0x260, 0x264, 0x268] {
+            g.write::<u32>(st.wrapping_add(off), 0);
+        }
+        // call width: 2
+        g.call(
+            t(g, 0xfe, 325),
+            0,
+            &[st.wrapping_add(0xc), st.wrapping_add(0x24c)],
+        );
+        let h = g.read::<u16>(st.wrapping_add(0x284));
+        g.write::<u16>(st.wrapping_add(0x284), h & 0xfffe);
+        g.write::<u32>(st.wrapping_add(0x26c), 0);
+        g.write::<u32>(st.wrapping_add(0x270), 0);
+        let st = g.read::<u32>(at);
+        eax = crate::sa_misc::register_8(g, img, call(0x156), st.wrapping_add(0x24));
+        at = at.wrapping_add(4);
+        if at.cast_signed() >= t2_end.cast_signed() {
+            break;
+        }
+    }
+    let mut rec = g.read::<u32>(w(0x167));
+    if g.read::<i32>(w(0x16f)) > 0 {
+        let mut i = 0i32;
+        loop {
+            let x = g.read::<u32>(w(0x181));
+            g.write::<u32>(x, w(0x188));
+            eax = g.call(t(g, 0x18d, 713), 0, &[rec]).eax;
+            i += 1;
+            rec = rec.wrapping_add(0x140);
+            if i >= g.read::<i32>(w(0x1a5)) {
+                break;
+            }
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`main_task_0284`] (445 bytes, 1 overlay).
+pub const MAIN_TASK_0284: Sig = Sig {
+    len: 445,
+    hash: 0x7b0a_a3e6_8199_f03f,
+    calls: &[
+        (0x1b, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x89, Callee::Sig(&crate::l5_objhost::OBJ_SCRIPT)),
+        (0x90, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0xbf, Callee::Sig(&crate::sa_misc::REGISTER_GRID)),
+        (0xcb, Callee::Sig(&crate::s4_small::STATE_RESET)),
+        (0xd5, Callee::Sig(&crate::sa_misc::REGISTER_8)),
+        (0x156, Callee::Sig(&crate::sa_misc::REGISTER_8)),
+        // __security_check_cookie
+        (0x1b5, Callee::Any),
+    ],
+    imports: &[],
+};
