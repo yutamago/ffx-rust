@@ -242,6 +242,46 @@ fn scene_task_0519() {
     }
 }
 
+/// `magic_0515`'s offset `o` in a copy (`(start, here)` sorted: from each
+/// start on, `o - start + here`).
+fn mp(map: &[(u32, u32)], o: u32) -> u32 {
+    let mut r = o;
+    for &(start, here) in map {
+        if o >= start {
+            r = o - start + here;
+        }
+    }
+    r
+}
+
+/// `magic_0611`'s scene task against `magic_0515`'s (the states they
+/// share; 0 and 0x15 are its own).
+const M611: [(u32, u32); 24] = [
+    (0x48d, 0x2e3),
+    (0x4c3, 0x319),
+    (0x564, 0x3af),
+    (0x577, 0x3c2),
+    (0x57a, 0x3c5),
+    (0x62d, 0x480),
+    (0x632, 0x478),
+    (0x63a, 0x485),
+    (0x760, 0x5a6),
+    (0x9c1, 0x810),
+    (0xb80, 0x9d0),
+    (0xc27, 0xa77),
+    (0xe8a, 0xcda),
+    (0x130c, 0x115c),
+    (0x1835, 0x1685),
+    (0x1a52, 0x18a2),
+    (0x3202, 0x3119),
+    (0x33a0, 0x32b0),
+    (0x3961, 0x3871),
+    (0x3daf, 0x3cbf),
+    (0x3e44, 0x3d49),
+    (0x3e5f, 0x3d64),
+    (0x3e72, 0x3d80),
+    (0x4000, 0x4000),
+];
 /// The 0515 scene task's control words: slot 253's and 313's answers (253
 /// answering 0 makes the game busy).
 const A253: u32 = SCRATCH + 0x7f20;
@@ -274,7 +314,7 @@ fn scene(state: u32, set: &[(u32, u32)]) -> Scene {
 
 /// A scene task's twin (`magic_N`, the task at `at`) with its stubs and
 /// the game's pointers set.
-fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
+fn scene_twin(n: u16, at: u32, map: &[(u32, u32)]) -> Option<(Twin, u32)> {
     let mut t = twin(n)?;
     all_stubs(&mut t);
     let f = t.at(at);
@@ -305,7 +345,7 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
     }
     // a sine table of 0x1000 floats (the game's pointer, set by
     // InitMagicPRX to a zeroed data page, points at it)
-    let sin_at = t.img.word(f + 0x10f8);
+    let sin_at = t.img.word(f + mp(map, 0x10f8));
     t.set_u32(sin_at, SINES);
     let sines: Vec<u8> = (0..0x1000u32)
         .flat_map(|i| {
@@ -329,8 +369,8 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
 }
 
 /// Runs the cases through the original and `r39b::scene_0515`.
-fn run_scene(t: &mut Twin, f: u32, cases: Vec<Scene>) {
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+fn run_scene(t: &mut Twin, f: u32, map: &[(u32, u32)], cases: Vec<Scene>) {
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let only = std::env::var("R39_CASE")
         .ok()
         .and_then(|v| v.parse::<u32>().ok());
@@ -374,9 +414,8 @@ fn run_scene(t: &mut Twin, f: u32, cases: Vec<Scene>) {
 /// slots), the busy word both ways, state 1 (its limit both ways), state
 /// 0x64, states between and past the table, and the end (the record
 /// counters, a camera record at and off its last frame).
-#[test]
-fn scene_0515_states() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_states(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
     // a camera record, its last frame 0x41
@@ -408,7 +447,7 @@ fn scene_0515_states() {
         scene(0x40, &[(0x3e83, 2)]),
         scene(0x40, &[(0x3ebf, r), (t_at, 0x0005_0040)]),
         scene(0x40, &[(0x3ebf, r), (t_at, 0x0005_0041)]),
-        scene(0x64, &[(0x3e21, 2), (0x3e38, 0x77)]),
+        scene(0x64, &[(0x3e21, 2)]),
         Scene {
             a253: 0,
             ..scene(1, &[])
@@ -422,18 +461,17 @@ fn scene_0515_states() {
     ] {
         cases.push(scene(1, &[(0x49f, b), (0x4aa, a)]));
     }
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` states 6 and 8 (`r39b`): once and again, busy, every
 /// count that does something and one past, the three sound records' kinds
 /// at and off their frames and limits.
-#[test]
-fn scene_0515_states_6_8() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_states_6_8(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let mut cases = vec![
         scene(6, &[(0xc2a, 0), (0xd34, 0)]),
         scene(6, &[(0xc2a, 1), (0xd34, 0)]),
@@ -476,19 +514,18 @@ fn scene_0515_states_6_8() {
     for i in 0..3u32 {
         t.set_u32(w(&t, 0xdf4) - 0x40 + 0xcc * i, 0x10 + i);
     }
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` states 9 and 0xd (`r39b`): once and again, busy, the
 /// sound record's kinds at and off their frames, the curve once and not
 /// again, part P3 before the curve, after 0x32 frames and before, the
 /// counts that do something, the timer below 0.
-#[test]
-fn scene_0515_states_9_d() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_states_9_d(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     // the sound record's kind, limit and frame; P3's halfword; the flag;
     // P3's frames; the count
     let (kind, lim, frame) = (0x1403u32, 0x1414u32, 0x141du32);
@@ -541,7 +578,7 @@ fn scene_0515_states_9_d() {
             (0.75 * i as f32 - 2.0).to_bits(),
         );
     }
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 0x10 (`r39b`): the set-up, busy, slot 220 at 0,
@@ -549,12 +586,11 @@ fn scene_0515_states_9_d() {
 /// past them, the ring's ageing and colours, the copies at 0x96, the
 /// shrinking ring with and without the halfwords, the fade, the clear at
 /// 0xfa, parts at 0xb8, 0xc2, 0x112, and the step into state 0x15.
-#[test]
-fn scene_0515_state_10() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_10(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let n10 = 0x1cc0u32;
     let mut cases = vec![
         scene(0x10, &[(0x1a55, 0), (n10, 0)]),
@@ -571,7 +607,7 @@ fn scene_0515_state_10() {
     }
     // parts P6 and P4 and the records the clear at 0xc2 zeroes: junk
     let parts = [0x1035_3310u32, 0x1035_1410];
-    let recs0 = t.img.word(f + 0x2bd7);
+    let recs0 = t.img.word(f + mp(map, 0x2bd7));
     for cs in &mut cases {
         for p in parts {
             for o in (0x40..0x80).step_by(4) {
@@ -644,19 +680,18 @@ fn scene_0515_state_10() {
         }
         0x247
     });
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 0x18 (`r39b`): once (the actor there and not),
 /// busy, slot 220 at 0, the actors and sounds at 0x28, the third model's
 /// part at frame 0x54, the first's at 0x11, each at its limit and not,
 /// the flash below and at 0xf, the step into state 0x64.
-#[test]
-fn scene_0515_state_18() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_18(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let (once, n18, flash, id) = (0x3964u32, 0x3acbu32, 0x3c70u32, 0x3a56u32);
     let mut cases = vec![
         scene(0x18, &[(once, 0), (n18, 0), (id, 0x21)]),
@@ -729,15 +764,14 @@ fn scene_0515_state_18() {
         }
         0x325
     });
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 0 (`r39b`): once with either flag or none, busy,
 /// the camera's second record or not, the counts 0x3e and 0x19, the
 /// spread's range and past it, the count reaching 0.
-#[test]
-fn scene_0515_state_0() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_0(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
     let (once, fa, fb, n0) = (0x15fu32, 0x16cu32, 0x180u32, 0x2c6u32);
@@ -760,14 +794,14 @@ fn scene_0515_state_0() {
         scene(0, &[(once, 1), (n0, 0x8001)]),
     ];
     // the records slot 296 goes over (with 0): two
-    let with = t.img.rel32_target(f + 0x22d);
+    let with = t.img.rel32_target(f + mp(map, 0x22d));
     let n_with = t.img.word(with + 7);
     for cs in &mut cases {
         cs.mem.push((n_with, 2));
     }
     for (k, cs) in (0u32..).zip(&mut cases) {
         // the first model's sound record and centre
-        let m = t.img.word(f + 0x259);
+        let m = t.img.word(f + mp(map, 0x259));
         cs.mem.extend([(m, 0x20 + k), (m + 0x16, 0x1234_0000 + k)]);
     }
     rec(&mut t, 289, 1, |_, a| a[0] ^ 0x289);
@@ -779,19 +813,18 @@ fn scene_0515_state_0() {
         }
         0x237
     });
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 3 (`r39b`): once, busy, the fade's three ranges,
 /// slot 220 at 0, the counts that do something, the sounds at 0x104 and
 /// after with every kind at and off its frames, the colour from 0xcd, the
 /// placed parts' sizes, the step into state 6.
-#[test]
-fn scene_0515_state_3() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_3(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let (once, n3) = (0x4c6u32, 0x6afu32);
     let mut cases = vec![
         scene(3, &[(once, 0), (n3, 0)]),
@@ -871,16 +904,15 @@ fn scene_0515_state_3() {
         }
         0x229
     });
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 0x15 (`r39b`): once, busy, the count's 0 (and
 /// still 0), the spread's fall, the flash off, the spread from 0x37 with
 /// slot 279 busy and not, the wait running, at 0 with actors and without,
 /// the parts at 0xf, 0x37 and 0x3d, the step into state 0x17.
-#[test]
-fn scene_0515_state_15() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_15(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
     let (once, n15, wait, left, count) = (0x2d6cu32, 0x2edau32, 0x304fu32, 0x305bu32, 0x3070u32);
@@ -920,19 +952,18 @@ fn scene_0515_state_15() {
         }
         0x325
     });
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
 }
 
 /// `magic_0515` state 0x17 (`r39b`): once with each camera flag and none
 /// (actors widening the box both ways, one without an actor id), busy,
 /// the sparks below 0x3c (records free and none), the actor's byte at
 /// 0x1e (slot 926 both ways), the step into state 0x18.
-#[test]
-fn scene_0515_state_17() {
-    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+fn scene_state_17(dll: u16, at: u32, map: &[(u32, u32)]) {
+    let Some((mut t, f)) = scene_twin(dll, at, map) else {
         return;
     };
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let w = |t: &Twin, o: u32| t.img.word(f + mp(map, o));
     let (once, n17, count) = (0x3205u32, 0x3681u32, 0x3486u32);
     let flags = [0x34fcu32, 0x3593, 0x3627, 0x3641, 0x365b];
     let mut cases = Vec::new();
@@ -954,7 +985,7 @@ fn scene_0515_state_17() {
     cs.mem.push((SCRATCH + 0x7f40, 1));
     cases.push(cs);
     // no free record
-    let pool = t.img.word(t.img.rel32_target(f + 0x3696) + 6);
+    let pool = t.img.word(t.img.rel32_target(f + mp(map, 0x3696)) + 6);
     let mut cs = scene(0x17, &[(once, 1), (n17, 0x10)]);
     for i in 0..0x100u32 {
         cs.mem.push((pool + 0x4c * i + 0x28, 1));
@@ -991,5 +1022,192 @@ fn scene_0515_state_17() {
     rec(&mut t, 926, 1, |m, _| m.r32(SCRATCH + 0x7f40));
     rec(&mut t, 925, 1, |_, _| SCRATCH + 0x7000);
     rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
-    run_scene(&mut t, f, cases);
+    run_scene(&mut t, f, map, cases);
+}
+
+#[test]
+fn scene_0515_states() {
+    scene_states(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_states`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_states() {
+    scene_states(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_states_6_8() {
+    scene_states_6_8(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_states_6_8`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_states_6_8() {
+    scene_states_6_8(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_states_9_d() {
+    scene_states_9_d(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_states_9_d`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_states_9_d() {
+    scene_states_9_d(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_state_10() {
+    scene_state_10(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_state_10`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_state_10() {
+    scene_state_10(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_state_18() {
+    scene_state_18(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_state_18`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_state_18() {
+    scene_state_18(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_state_0() {
+    scene_state_0(515, 0x4ce0, &[]);
+}
+
+#[test]
+fn scene_0515_state_3() {
+    scene_state_3(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_state_3`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_state_3() {
+    scene_state_3(611, 0x4d10, &M611);
+}
+
+#[test]
+fn scene_0515_state_15() {
+    scene_state_15(515, 0x4ce0, &[]);
+}
+
+#[test]
+fn scene_0515_state_17() {
+    scene_state_17(515, 0x4ce0, &[]);
+}
+
+/// `magic_0611` 0x10004d10 (`r39b::scene_task_0611`): [`scene_0515_state_17`]'s cases on
+/// the copy.
+#[test]
+fn scene_0611_state_17() {
+    scene_state_17(611, 0x4d10, &M611);
+}
+
+/// `magic_0611` state 0 (its own; `r39b::state_0_0611`): once with
+/// either flag or none, busy, the count below and at 0x14.
+#[test]
+fn scene_0611_state_0() {
+    let Some((mut t, f)) = scene_twin(611, 0x4d10, &M611) else {
+        return;
+    };
+    let (once, fa, fb, n0) = (0x15fu32, 0x1a7u32, 0x1b0u32, 0x22fu32);
+    let nat = |t: &Twin, state: u32, set: &[(u32, u32)]| native(t, f, state, set);
+    let cases = vec![
+        nat(&t, 0, &[(once, 0), (fa, 1), (fb, 0), (n0, 2)]),
+        nat(&t, 0, &[(once, 0), (fa, 0), (fb, 1), (n0, 2)]),
+        nat(&t, 0, &[(once, 0), (fa, 0), (fb, 0), (n0, 2)]),
+        Scene {
+            a253: 0,
+            ..nat(&t, 0, &[(once, 0)])
+        },
+        nat(&t, 0, &[(once, 1), (n0, 0x12)]),
+        nat(&t, 0, &[(once, 1), (n0, 0x13)]),
+        nat(&t, 0, &[(once, 1), (n0, 0x40)]),
+    ];
+    // the records slot 296 goes over (with 0): two
+    let with = t.img.rel32_target(f + 0x2a9);
+    let n_with = t.img.word(with + 7);
+    t.set_u32(n_with, 2);
+    run_scene(&mut t, f, &M611, cases);
+}
+
+/// `magic_0611` state 0x15 (its own head, `r39b::state_15_0611`, and the
+/// shared tail with this copy's thresholds): once, busy, the count's 0,
+/// 5 and 0x1e, the spread's fall from 0x2d, the flash off, the spread from
+/// 0x55 with slot 279 busy and not and the waits, the parts at 0x2d,
+/// 0x55 and 0x5b, the step into state 0x17.
+#[test]
+fn scene_0611_state_15() {
+    let Some((mut t, f)) = scene_twin(611, 0x4d10, &M611) else {
+        return;
+    };
+    let (once, n15, wait, left, count) = (0x2bbcu32, 0x2de4u32, 0x2f66u32, 0x2f72u32, 0x2f87u32);
+    let nat = |t: &Twin, state: u32, set: &[(u32, u32)]| native(t, f, state, set);
+    let mut cases = vec![
+        nat(&t, 0x15, &[(once, 0), (n15, 0)]),
+        Scene {
+            a253: 0,
+            ..nat(&t, 0x15, &[(once, 0)])
+        },
+    ];
+    for n in [
+        0u32, 4, 5, 0x1e, 0x2c, 0x2d, 0x2e, 0x3b, 0x3c, 0x54, 0x5b, 0xcc, 0xcb,
+    ] {
+        cases.push(nat(&t, 0x15, &[(once, 1), (n15, n), (count, 3)]));
+    }
+    for (n, w, l, ans) in [
+        (0x55u32, 0u32, 2u32, 0u32),
+        (0x60, 0, 2, 1),
+        (0x60, 5, 2, 0),
+        (0x60, 0, 0, 0),
+        (0x80, 0, 7, 0),
+    ] {
+        let mut cs = nat(
+            &t,
+            0x15,
+            &[(once, 1), (n15, n), (wait, w), (left, l), (count, 3)],
+        );
+        cs.mem.push((SCRATCH + 0x7f3c, ans));
+        cases.push(cs);
+    }
+    // the placed parts' sizes: two records
+    let sizes = t.img.word(f + 0x2c2d);
+    for cs in &mut cases {
+        cs.mem.push((sizes, 2));
+    }
+    rec(&mut t, 279, 0, |m, _| m.r32(SCRATCH + 0x7f3c));
+    rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(
+                a[0] + 4 * i,
+                (1.25 * i as f32 + (a[1] & 3) as f32).to_bits(),
+            );
+        }
+        0x325
+    });
+    run_scene(&mut t, f, &M611, cases);
+}
+
+/// A case whose globals are given by this copy's own operand offsets.
+fn native(t: &Twin, f: u32, state: u32, set: &[(u32, u32)]) -> Scene {
+    let mut cs = scene(state, &[]);
+    cs.mem = set.iter().map(|&(op, v)| (t.img.word(f + op), v)).collect();
+    cs
 }

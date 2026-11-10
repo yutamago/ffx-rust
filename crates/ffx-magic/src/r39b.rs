@@ -5,7 +5,7 @@
 //! 0x15, 0x17, 0x18, 0x64) and the same end; states 1, 6, 8, 9, 0xd and
 //! 0x10 are the same code in all four up to their exit jumps, so each
 //! state's port takes the shift `d` of its block against `magic_0515`'s
-//! and reads every operand at `0515's offset + d` (the comments give
+//! and reads every operand at `0515's offset` (the comments give
 //! `magic_0515`'s offsets).
 //!
 //! `magic_0515`'s is bound ([`scene_task_0515`]); the other three need
@@ -20,11 +20,44 @@ pub struct Scene {
     f: u32,
     /// `esp` with `esi` and `edi` pushed (`S`: `[esp + x]` is `S + x`).
     s: u32,
+    /// `magic_0515`'s offsets to this copy's: from each `(start, here)`
+    /// on (sorted by `start`), `o - start + here`; empty for `magic_0515`.
+    map: &'static [(u32, u32)],
+    /// This copy calls slot 276 through `call_276` (`magic_0611`) where
+    /// `magic_0515` calls the slot itself.
+    alt: bool,
 }
 
 impl Scene {
+    /// `magic_0515`'s offset `o` in this copy.
+    fn m(&self, o: u32) -> u32 {
+        let mut r = o;
+        for &(start, here) in self.map {
+            if o >= start {
+                r = o - start + here;
+            }
+        }
+        r
+    }
+
+    /// This scene with another map.
+    fn with(&self, map: &'static [(u32, u32)]) -> Scene {
+        Scene {
+            f: self.f,
+            s: self.s,
+            map,
+            alt: self.alt,
+        }
+    }
+
     fn w(&self, img: &Image, o: u32) -> u32 {
-        img.word(self.f + o)
+        img.word(self.f + self.m(o))
+    }
+
+    /// The run of constant stores from `from` to `to` (one block).
+    fn stores<G: Game>(&self, g: &mut G, img: &Image, from: u32, to: u32) {
+        let a = self.m(from);
+        crate::r25::abs_stores(g, img, self.f, a, a + (to - from));
     }
 
     /// The global at operand `o`.
@@ -44,7 +77,7 @@ impl Scene {
     }
 
     fn target(&self, img: &Image, o: u32) -> u32 {
-        img.rel32_target(self.f + o)
+        img.rel32_target(self.f + self.m(o))
     }
 
     /// Slot `n` through the imports pointer operand `op` names.
@@ -89,26 +122,28 @@ pub fn scene_task_0515<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let c = Scene {
         f: fr.at,
         s: a.wrapping_sub(8),
+        map: &[],
+        alt: false,
     };
     if let Exit::Out = prologue(g, img, &c) {
         return Ret::eax(0);
     }
     match c.gw(g, img, 0x141) {
         0 => state_0_0515(g, img, &c),
-        1 => state_1(g, img, &c, 0),
+        1 => state_1(g, img, &c),
         3 => state_3_0515(g, img, &c),
-        6 => state_6(g, img, &c, 0),
-        8 => state_8(g, img, &c, 0),
-        9 => state_9(g, img, &c, 0),
-        0xd => state_d(g, img, &c, 0),
-        0x10 => state_10(g, img, &c, 0),
+        6 => state_6(g, img, &c),
+        8 => state_8(g, img, &c),
+        9 => state_9(g, img, &c),
+        0xd => state_d(g, img, &c),
+        0x10 => state_10(g, img, &c),
         0x15 => state_15_0515(g, img, &c),
         0x17 => state_17_0515(g, img, &c),
-        0x18 => state_18(g, img, &c, 0),
-        0x64 => state_64(g, img, &c, 0),
+        0x18 => state_18(g, img, &c),
+        0x64 => state_64(g, img, &c),
         _ => {}
     }
-    end(g, img, &c, 0);
+    end(g, img, &c);
     Ret::eax(0)
 }
 
@@ -169,50 +204,57 @@ fn prologue<G: Game>(g: &mut G, img: &Image, c: &Scene) -> Exit {
 
 /// State 1 (`+0x48d`): while not busy the halfword `G_T1` steps; on to
 /// state 3 once `G_B - 0x2d000 <= G_A` (signed).
-fn state_1<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    if !c.busy(g, img, 0x48e + d) {
-        let at = c.w(img, 0x49a + d);
+fn state_1<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    if !c.busy(g, img, 0x48e) {
+        let at = c.w(img, 0x49a);
         let t = g.read::<u16>(at).wrapping_add(1);
         g.write::<u16>(at, t);
     }
-    let lim = c.gw(g, img, 0x49f + d).wrapping_add(0xfffd_3000);
-    if c.gw(g, img, 0x4aa + d).cast_signed() >= lim.cast_signed() {
-        crate::r25::abs_stores(g, img, c.f, 0x4b4 + d, 0x4be + d);
+    let lim = c.gw(g, img, 0x49f).wrapping_add(0xfffd_3000);
+    if c.gw(g, img, 0x4aa).cast_signed() >= lim.cast_signed() {
+        c.stores(g, img, 0x4b4, 0x4be);
     }
 }
 
 /// State 0x64 (`+0x3daf`): slot 311 `(*G_X)`, slot 271 with 1, 4 and
 /// 0x10, slot 332 `(L)`, the two record groups placed, slot 276 `(*G_M,
 /// 0)`, the models' slot 276 and slot 214 `(*G_H)`.
-fn state_64<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    let x = c.gw(g, img, 0x3db6 + d);
+fn state_64<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    let x = c.gw(g, img, 0x3db6);
     // call width: 1
-    g.call(c.slot(g, img, 0x3db0 + d, 311), 0, &[x]);
+    g.call(c.slot(g, img, 0x3db0, 311), 0, &[x]);
     for (op, v) in [(0x3dc3u32, 1u32), (0x3dd5, 4), (0x3de7, 0x10)] {
         // call width: 1
-        g.call(c.slot(g, img, op + d, 271), 0, &[v]);
+        g.call(c.slot(g, img, op, 271), 0, &[v]);
     }
     // call width: 1
     let eax = g
-        .call(c.slot(g, img, 0x3df9 + d, 332), 0, &[c.w(img, 0x3e07 + d)])
+        .call(c.slot(g, img, 0x3df9, 332), 0, &[c.w(img, 0x3e07)])
         .eax;
     let place = |g: &mut G, call: u32, recs: u32, n: u32, eax: u32| {
         crate::sa_misc::place_records(g, img, c.target(img, call), recs, n, eax)
     };
-    let eax = place(g, 0x3e1b + d, c.w(img, 0x3e16 + d), 3, eax);
-    let n = c.gw(g, img, 0x3e21 + d);
-    place(g, 0x3e2b + d, c.w(img, 0x3e26 + d), n, eax);
-    let m = c.gw(g, img, 0x3e38 + d);
-    // call width: 2
-    let eax = g.call(c.slot(g, img, 0x3e30 + d, 276), 0, &[m, 0]).eax;
+    let eax = place(g, 0x3e1b, c.w(img, 0x3e16), 3, eax);
+    let n = c.gw(g, img, 0x3e21);
+    place(g, 0x3e2b, c.w(img, 0x3e26), n, eax);
+    let eax = if c.alt {
+        // mov ecx, M; call call_276
+        let mut fr = c.frame(img, 0x3e35, 0);
+        fr.ecx = c.w(img, 0x3e30);
+        crate::s4_small::call_276(g, img, &fr).eax
+    } else {
+        let m = c.gw(g, img, 0x3e38);
+        // call width: 2
+        g.call(c.slot(g, img, 0x3e30, 276), 0, &[m, 0]).eax
+    };
     let mf = Frame {
         eax,
-        ..c.frame(img, 0x3e45 + d, 2)
+        ..c.frame(img, 0x3e45, if c.alt { 0 } else { 2 })
     };
     crate::s4_misc::models_276(g, img, &mf);
-    let h = c.gw(g, img, 0x3e50 + d);
+    let h = c.gw(g, img, 0x3e50);
     // call width: 1
-    g.call(c.slot(g, img, 0x3e4a + d, 214), 0, &[h]);
+    g.call(c.slot(g, img, 0x3e4a, 214), 0, &[h]);
 }
 
 /// The common end (`+0x3e5f`): while not busy, the halfwords of the 32
@@ -222,9 +264,9 @@ fn state_64<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// (`R + 0x24` = the old frame) the record count steps, `G_R = R + 0x28`
 /// and the next record's tracks start. Then both part groups' axes, and
 /// with a record the cameras.
-fn end<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    if !c.busy(g, img, 0x3e60 + d) {
-        let (mut p, stop) = (c.w(img, 0x3e6e + d), c.w(img, 0x3e7b + d));
+fn end<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    if !c.busy(g, img, 0x3e60) {
+        let (mut p, stop) = (c.w(img, 0x3e6e), c.w(img, 0x3e7b));
         loop {
             let t = g.read::<u16>(p).wrapping_add(1);
             g.write::<u16>(p, t);
@@ -233,29 +275,29 @@ fn end<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
                 break;
             }
         }
-        let n = c.gw(g, img, 0x3e83 + d);
+        let n = c.gw(g, img, 0x3e83);
         for op in [0x3e89u32, 0x3e8f, 0x3e95] {
-            c.inc(g, img, op + d);
+            c.inc(g, img, op);
         }
         if n.cast_signed() > 0 {
-            let mut p = c.w(img, 0x3e9e + d);
+            let mut p = c.w(img, 0x3e9e);
             for _ in 0..n {
                 let v = g.read::<u32>(p).wrapping_add(1);
                 g.write::<u32>(p, v);
                 p = p.wrapping_add(0xcc);
             }
         }
-        let at = c.w(img, 0x3eaf + d);
+        let at = c.w(img, 0x3eaf);
         let t = g.read::<i16>(at);
-        g.write::<u16>(c.w(img, 0x3eba + d), t.cast_unsigned().wrapping_add(1));
-        let r = c.gw(g, img, 0x3ebf + d);
+        g.write::<u16>(c.w(img, 0x3eba), t.cast_unsigned().wrapping_add(1));
+        let r = c.gw(g, img, 0x3ebf);
         if r != 0 {
-            c.inc(g, img, 0x3ec9 + d);
+            c.inc(g, img, 0x3ec9);
             if i32::from(t).cast_unsigned() == g.read::<u32>(r.wrapping_add(0x24)) {
-                c.inc(g, img, 0x3ed4 + d);
-                c.set(g, img, 0x3edc + d, r.wrapping_add(0x28));
-                crate::r25::abs_stores(g, img, c.f, 0x3ee0 + d, 0x3eea + d);
-                crate::s6_misc::camera_tracks(g, img, &c.frame(img, 0x3eeb + d, 0));
+                c.inc(g, img, 0x3ed4);
+                c.set(g, img, 0x3edc, r.wrapping_add(0x28));
+                c.stores(g, img, 0x3ee0, 0x3eea);
+                crate::s6_misc::camera_tracks(g, img, &c.frame(img, 0x3eeb, 0));
             }
         }
     }
@@ -267,11 +309,11 @@ fn end<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         };
         crate::s6_misc::parts_axes(g, img, &fr);
     };
-    axes(g, 0x3efa + d, c.w(img, 0x3ef5 + d), 3);
-    let n = c.gw(g, img, 0x3f00 + d);
-    axes(g, 0x3f0a + d, c.w(img, 0x3f05 + d), n);
-    if c.gw(g, img, 0x3f10 + d) != 0 {
-        crate::r36::cameras_0515(g, img, &c.frame(img, 0x3f18 + d, 0));
+    axes(g, 0x3efa, c.w(img, 0x3ef5), 3);
+    let n = c.gw(g, img, 0x3f00);
+    axes(g, 0x3f0a, c.w(img, 0x3f05), n);
+    if c.gw(g, img, 0x3f10) != 0 {
+        crate::r36::cameras_0515(g, img, &c.frame(img, 0x3f18, 0));
     }
 }
 
@@ -375,60 +417,60 @@ fn div_magic(x: i32, magic: u32, plus: bool, sh: u32) -> i32 {
 /// While not busy: slot 220 on `*G_A` at the count's 0; at 0x2d the
 /// records again and the places; sparks on the three models, each
 /// model's height lowered; on to state 8 at 0x69.
-fn state_6<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    if half(g, img, c, 0xc2a + d) == 0 {
-        slot_222(g, img, c, (0xc36 + d, 0xc4b + d), 5, 9);
-        set_half(g, img, c, 0xc5d + d, 1);
-        crate::r25::abs_stores(g, img, c.f, 0xc61 + d, 0xc6b + d);
-        crate::sa_misc::turn_matrix(g, img, c.target(img, 0xc6c + d), 0);
-        let mut fr = c.frame(img, 0xc76 + d, 0);
-        fr.ecx = c.w(img, 0xc71 + d);
+fn state_6<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    if half(g, img, c, 0xc2a) == 0 {
+        slot_222(g, img, c, (0xc36, 0xc4b), 5, 9);
+        set_half(g, img, c, 0xc5d, 1);
+        c.stores(g, img, 0xc61, 0xc6b);
+        crate::sa_misc::turn_matrix(g, img, c.target(img, 0xc6c), 0);
+        let mut fr = c.frame(img, 0xc76, 0);
+        fr.ecx = c.w(img, 0xc71);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
-        crate::sa_misc::register_records(g, img, c.target(img, 0xc7b + d));
-        crate::sa_misc::records_clear(g, img, c.target(img, 0xc80 + d));
-        crate::s4_misc::actors_296(g, img, &c.frame(img, 0xc87 + d, 0));
-        set_half(g, img, c, 0xc92 + d, 0x5400);
-        set_half(g, img, c, 0xc9d + d, 0x6800);
-        crate::r25::abs_stores(g, img, c.f, 0xca6 + d, 0xd1e + d);
-        set_half(g, img, c, 0xd20 + d, 0xfc00);
+        crate::sa_misc::register_records(g, img, c.target(img, 0xc7b));
+        crate::sa_misc::records_clear(g, img, c.target(img, 0xc80));
+        crate::s4_misc::actors_296(g, img, &c.frame(img, 0xc87, 0));
+        set_half(g, img, c, 0xc92, 0x5400);
+        set_half(g, img, c, 0xc9d, 0x6800);
+        c.stores(g, img, 0xca6, 0xd1e);
+        set_half(g, img, c, 0xd20, 0xfc00);
     }
-    if c.busy(g, img, 0xd25 + d) {
+    if c.busy(g, img, 0xd25) {
         return;
     }
-    let mut n = half(g, img, c, 0xd34 + d);
+    let mut n = half(g, img, c, 0xd34);
     if n == 0 {
-        let mut fr = c.frame(img, 0xd45 + d, 1);
-        fr.ecx = c.gw(g, img, 0xd40 + d);
+        let mut fr = c.frame(img, 0xd45, 1);
+        fr.ecx = c.gw(g, img, 0xd40);
         crate::s4_misc::call_220(g, img, &fr);
-        n = half(g, img, c, 0xd4b + d);
+        n = half(g, img, c, 0xd4b);
     }
     if n == 0x2d {
-        crate::sa_misc::register_records(g, img, c.target(img, 0xd5d + d));
-        crate::sa_misc::records_clear(g, img, c.target(img, 0xd62 + d));
-        crate::r25::abs_stores(g, img, c.f, 0xd6b + d, 0xd93 + d);
-        set_half(g, img, c, 0xd95 + d, 0x4000);
-        crate::r25::abs_stores(g, img, c.f, 0xd99 + d, 0xde9 + d);
+        crate::sa_misc::register_records(g, img, c.target(img, 0xd5d));
+        crate::sa_misc::records_clear(g, img, c.target(img, 0xd62));
+        c.stores(g, img, 0xd6b, 0xd93);
+        set_half(g, img, c, 0xd95, 0x4000);
+        c.stores(g, img, 0xd99, 0xde9);
     }
     // the three models (0xcc bytes apart): the last two with the word at
     // `+0xe25`/`+0xe06` lowered by `K1`, the first with `+0xe33` by `K2`
-    let speed = kf(g, img, c, 0xded + d);
-    let mut m = c.w(img, 0xdf4 + d);
+    let speed = kf(g, img, c, 0xded);
+    let mut m = c.w(img, 0xdf4);
     for i in 0..3u32 {
         let (call, word, k) = match i {
             0 => (0xe38, 0xe33, 0xe44),
             1 => (0xe12, 0xe25, 0xe1e),
             _ => (0xe12, 0xe06, 0xe1e),
         };
-        let word = c.w(img, word + d);
-        sparks(g, img, c, call + d, (m.wrapping_sub(0x40), word), speed);
-        let y = crate::sb_sse::sub(g.read::<f32>(m), kf(g, img, c, k + d));
+        let word = c.w(img, word);
+        sparks(g, img, c, call, (m.wrapping_sub(0x40), word), speed);
+        let y = crate::sb_sse::sub(g.read::<f32>(m), kf(g, img, c, k));
         g.write::<f32>(m, y);
         m = m.wrapping_add(0xcc);
     }
-    let n = half(g, img, c, 0xe65 + d).wrapping_add(1);
-    set_half(g, img, c, 0xe6d + d, n);
+    let n = half(g, img, c, 0xe65).wrapping_add(1);
+    set_half(g, img, c, 0xe6d, n);
     if n.cast_signed() >= 0x69 {
-        crate::r25::abs_stores(g, img, c.f, 0xe7b + d, 0xe85 + d);
+        c.stores(g, img, 0xe7b, 0xe85);
     }
 }
 
@@ -438,101 +480,79 @@ fn state_6<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// sound records stepped ([`sound_step_8`]); then by the count: 0x69 slot
 /// 306 and a sound, 0x7d a part's motion, 0xa5 three parts' motions, 0xe1
 /// slot 222; on to state 9 at 0x109.
-fn state_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    if half(g, img, c, 0xe8d + d) == 0 {
-        set_half(g, img, c, 0xea0 + d, 1);
-        let mut fr = c.frame(img, 0xea5 + d, 0);
-        fr.ecx = c.w(img, 0xe9a + d);
+fn state_8<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    if half(g, img, c, 0xe8d) == 0 {
+        set_half(g, img, c, 0xea0, 1);
+        let mut fr = c.frame(img, 0xea5, 0);
+        fr.ecx = c.w(img, 0xe9a);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
-        crate::sa_misc::register_records(g, img, c.target(img, 0xeaa + d));
-        crate::sa_misc::records_clear(g, img, c.target(img, 0xeaf + d));
+        crate::sa_misc::register_records(g, img, c.target(img, 0xeaa));
+        crate::sa_misc::records_clear(g, img, c.target(img, 0xeaf));
         for op in [0xecdu32, 0xed2, 0xed7] {
-            c.set(g, img, op + d, 0);
+            c.set(g, img, op, 0);
         }
-        let r = kf(g, img, c, 0xeb7 + d);
-        ring(
-            g,
-            img,
-            c,
-            0xedc + d,
-            (c.w(img, 0xec8 + d), 3),
-            r,
-            (0, 0x8000),
-        );
-        crate::r25::abs_stores(g, img, c.f, 0xee3 + d, 0xeed + d);
+        let r = kf(g, img, c, 0xeb7);
+        ring(g, img, c, 0xedc, (c.w(img, 0xec8), 3), r, (0, 0x8000));
+        c.stores(g, img, 0xee3, 0xeed);
     }
-    if c.busy(g, img, 0xeee + d) {
+    if c.busy(g, img, 0xeee) {
         return;
     }
-    if half(g, img, c, 0xefe + d) == 0x55 {
-        let mut fr = c.frame(img, 0xf0d + d, 1);
-        fr.ecx = c.gw(g, img, 0xf08 + d);
+    if half(g, img, c, 0xefe) == 0x55 {
+        let mut fr = c.frame(img, 0xf0d, 1);
+        fr.ecx = c.gw(g, img, 0xf08);
         crate::s4_misc::call_220(g, img, &fr);
     }
-    let mut p = c.w(img, 0xf23 + d);
+    let mut p = c.w(img, 0xf23);
     for i in 0..3u32 {
-        sound_step_8(g, img, c, d, p, i);
+        sound_step_8(g, img, c, p, i);
         let at = p.wrapping_add(0x12);
         let t = g.read::<u16>(at).wrapping_add(1);
         g.write::<u16>(at, t);
         p = p.wrapping_add(0xcc);
     }
-    let n = half(g, img, c, 0x1181 + d);
+    let n = half(g, img, c, 0x1181);
     let n = match n {
         0x69 => {
-            let x = c.gw(g, img, 0x118d + d);
+            let x = c.gw(g, img, 0x118d);
             // call width: 3
-            g.call(c.slot(g, img, 0x1192 + d, 306), 0, &[7, 1, x]);
-            crate::sa_misc::sound_start(
-                g,
-                img,
-                c.target(img, 0x11b0 + d),
-                c.w(img, 0x11ab + d),
-                0xc5,
-            );
-            half(g, img, c, 0x12e3 + d)
+            g.call(c.slot(g, img, 0x1192, 306), 0, &[7, 1, x]);
+            crate::sa_misc::sound_start(g, img, c.target(img, 0x11b0), c.w(img, 0x11ab), 0xc5);
+            half(g, img, c, 0x12e3)
         }
         0x7d => {
-            let x3 = crate::sb_sse::add(kf(g, img, c, 0x11c3 + d), kf(g, img, c, 0x11cb + d));
-            let a = c.gw(g, img, 0x11d3 + d);
-            let x2 = kf(g, img, c, 0x11db + d);
-            let part = (c.w(img, 0x1218 + d), 0xd);
-            motion(g, img, c, 0x1222 + d, part, (x2, x3), (a, 0x3d4c_cccd));
-            half(g, img, c, 0x12e3 + d)
+            let x3 = crate::sb_sse::add(kf(g, img, c, 0x11c3), kf(g, img, c, 0x11cb));
+            let a = c.gw(g, img, 0x11d3);
+            let x2 = kf(g, img, c, 0x11db);
+            let part = (c.w(img, 0x1218), 0xd);
+            motion(g, img, c, 0x1222, part, (x2, x3), (a, 0x3d4c_cccd));
+            half(g, img, c, 0x12e3)
         }
         0xa5 => {
-            let (mut m, mut part) = (c.w(img, 0x123d + d), c.w(img, 0x1242 + d));
+            let (mut m, mut part) = (c.w(img, 0x123d), c.w(img, 0x1242));
             loop {
                 let a = g.read::<u32>(m.wrapping_add(4));
                 let x3 = g.read::<f32>(m);
                 let x2 = g.read::<f32>(m.wrapping_sub(4));
-                motion(
-                    g,
-                    img,
-                    c,
-                    0x129e + d,
-                    (part, 0x12),
-                    (x2, x3),
-                    (a, 0x3dac_0831),
-                );
+                motion(g, img, c, 0x129e, (part, 0x12), (x2, x3), (a, 0x3dac_0831));
                 part = part.wrapping_add(0x80);
                 m = m.wrapping_add(0xcc);
-                if part.cast_signed() >= c.w(img, 0x12b0 + d).cast_signed() {
+                if part.cast_signed() >= c.w(img, 0x12b0).cast_signed() {
                     break;
                 }
             }
-            half(g, img, c, 0x12e3 + d)
+            half(g, img, c, 0x12e3)
         }
         0xe1 => {
-            slot_222(g, img, c, (0x12c3 + d, 0x12d8 + d), 0xa, 0xe);
-            half(g, img, c, 0x12e3 + d)
+            slot_222(g, img, c, (0x12c3, 0x12d8), 0xa, 0xe);
+            half(g, img, c, 0x12e3)
         }
         _ => n,
     };
     let n = n.wrapping_add(1);
-    set_half(g, img, c, 0x12f0 + d, n);
+    set_half(g, img, c, 0x12f0, n);
     if n.cast_signed() >= 0x109 {
-        crate::r25::abs_stores(g, img, c.f, 0x12fd + d, 0x1307 + d);
+        c.stores(g, img, 0x12fd, 0x1307);
     }
 }
 
@@ -541,7 +561,7 @@ fn state_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// moves on at a frame `u16 p[0x12]` or once `p[8] >= p[4]`; between, the
 /// sparks run and the record's height `p[0x38]` follows two sines of the
 /// frame.
-fn sound_step_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u32) {
+fn sound_step_8<G: Game>(g: &mut G, img: &Image, c: &Scene, p: u32, i: u32) {
     use crate::sb_sse::{add, mul, sub};
     let rec = p.wrapping_sub(8);
     let kind = g.read::<u32>(p);
@@ -549,7 +569,7 @@ fn sound_step_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u
     let done = g.read::<u32>(p.wrapping_add(8)).cast_signed()
         >= g.read::<u32>(p.wrapping_add(4)).cast_signed();
     let start = |g: &mut G, call: u32, x: u32| {
-        crate::sa_misc::sound_start(g, img, c.target(img, call + d), rec, x);
+        crate::sa_misc::sound_start(g, img, c.target(img, call), rec, x);
     };
     // (the `edi` angle, the `edx` word, the sparks' call, the second
     // sine's divide)
@@ -594,8 +614,8 @@ fn sound_step_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u
         }
         _ => return,
     };
-    let speed = kf(g, img, c, 0xf18 + d);
-    sparks(g, img, c, call + d, (rec, c.w(img, word + d)), speed);
+    let speed = kf(g, img, c, 0xf18);
+    sparks(g, img, c, call, (rec, c.w(img, word)), speed);
     let x = frame(g) << 14;
     let a = if first {
         let hi = ((i64::from(x) * i64::from(0xae4c_415du32.cast_signed())) >> 32) as i32;
@@ -604,17 +624,14 @@ fn sound_step_8<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u
         ((i64::from(x) * i64::from(0x51eb_851fu32.cast_signed())) >> 32) as i32 >> 4
     };
     let a = a.wrapping_add((a.cast_unsigned() >> 31).cast_signed());
-    let tab = c.gw(g, img, 0x10f8 + d);
+    let tab = c.gw(g, img, 0x10f8);
     let sin =
         |g: &G, k: i32| g.read::<f32>(tab.wrapping_add(4 * ((k >> 4).cast_unsigned() & 0xfff)));
-    let s1 = mul(
-        sub(kf(g, img, c, 0x1100 + d), sin(g, a)),
-        kf(g, img, c, 0x1135 + d),
-    );
-    let y = sub(kf(g, img, c, 0x1108 + d), s1);
+    let s1 = mul(sub(kf(g, img, c, 0x1100), sin(g, a)), kf(g, img, c, 0x1135));
+    let y = sub(kf(g, img, c, 0x1108), s1);
     let s2 = mul(
-        add(sin(g, edi.wrapping_add(0x4000)), kf(g, img, c, 0x1146 + d)),
-        kf(g, img, c, 0x114e + d),
+        add(sin(g, edi.wrapping_add(0x4000)), kf(g, img, c, 0x1146)),
+        kf(g, img, c, 0x114e),
     );
     g.write::<f32>(p.wrapping_add(0x38), sub(y, s2));
 }
@@ -658,106 +675,84 @@ fn spline<G: Game>(
 /// three motions and their spline objects; the sound timer steps; on to
 /// state 0xd at 0xbe.
 #[allow(clippy::too_many_lines)] // the original's state, in order
-fn state_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
+fn state_9<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     use crate::sb_sse::div;
-    if half(g, img, c, 0x130f + d) == 0 {
-        set_half(g, img, c, 0x1321 + d, 1);
-        stop_part(
-            g,
-            img,
-            c,
-            (0x1326 + d, 0x1331 + d),
-            (0x1336 + d, 0x132b + d),
-        );
-        set_half(g, img, c, 0x134e + d, 0);
-        let mut fr = c.frame(img, 0x1353 + d, 0);
-        fr.ecx = c.w(img, 0x1348 + d);
+    if half(g, img, c, 0x130f) == 0 {
+        set_half(g, img, c, 0x1321, 1);
+        stop_part(g, img, c, (0x1326, 0x1331), (0x1336, 0x132b));
+        set_half(g, img, c, 0x134e, 0);
+        let mut fr = c.frame(img, 0x1353, 0);
+        fr.ecx = c.w(img, 0x1348);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
-        let x3 = kf(g, img, c, 0x135b + d);
-        let part = (c.w(img, 0x139b + d), 5);
-        motion(g, img, c, 0x13a7 + d, part, (0.0, x3), (0, 0x3e48_b3b3));
-        crate::sa_misc::sound_start(
-            g,
-            img,
-            c.target(img, 0x13b9 + d),
-            c.w(img, 0x13b4 + d),
-            0xc5,
-        );
-        crate::r25::abs_stores(g, img, c.f, 0x13bd + d, 0x13db + d);
+        let x3 = kf(g, img, c, 0x135b);
+        let part = (c.w(img, 0x139b), 5);
+        motion(g, img, c, 0x13a7, part, (0.0, x3), (0, 0x3e48_b3b3));
+        crate::sa_misc::sound_start(g, img, c.target(img, 0x13b9), c.w(img, 0x13b4), 0xc5);
+        c.stores(g, img, 0x13bd, 0x13db);
     }
-    if c.busy(g, img, 0x13dc + d) {
+    if c.busy(g, img, 0x13dc) {
         return;
     }
-    if half(g, img, c, 0x13ec + d) == 0 {
-        let mut fr = c.frame(img, 0x13fb + d, 1);
-        fr.ecx = c.gw(g, img, 0x13f6 + d);
+    if half(g, img, c, 0x13ec) == 0 {
+        let mut fr = c.frame(img, 0x13fb, 1);
+        fr.ecx = c.gw(g, img, 0x13f6);
         crate::s4_misc::call_220(g, img, &fr);
     }
-    let rec = |o: u32| c.w(img, o + d);
-    let frame = |g: &G| c.gw(g, img, 0x141d + d).cast_signed();
-    match c.gw(g, img, 0x1403 + d) {
+    let rec = |o: u32| c.w(img, o);
+    let frame = |g: &G| c.gw(g, img, 0x141d).cast_signed();
+    match c.gw(g, img, 0x1403) {
         0xc5 => {
-            let lim = c.gw(g, img, 0x1414 + d);
+            let lim = c.gw(g, img, 0x1414);
             if frame(g) == lim.wrapping_sub(0xa).cast_signed() {
                 let part = (rec(0x1462), 7);
-                motion(g, img, c, 0x146e + d, part, (0.0, 0.0), (0, 0x3d4c_cccd));
+                motion(g, img, c, 0x146e, part, (0.0, 0.0), (0, 0x3d4c_cccd));
             } else if frame(g) >= lim.cast_signed() {
-                crate::sa_misc::sound_start(g, img, c.target(img, 0x148e + d), rec(0x1489), 0xc6);
+                crate::sa_misc::sound_start(g, img, c.target(img, 0x148e), rec(0x1489), 0xc6);
             }
         }
         0xc6 if frame(g) >= 0x1c => {
-            crate::sa_misc::sound_start(g, img, c.target(img, 0x14b4 + d), rec(0x14af), 0xc7);
+            crate::sa_misc::sound_start(g, img, c.target(img, 0x14b4), rec(0x14af), 0xc7);
         }
-        0xc7 if frame(g) >= 0x17 && c.gw(g, img, 0x14d7 + d) == 0 => {
-            curve_9(g, img, c, d);
+        0xc7 if frame(g) >= 0x17 && c.gw(g, img, 0x14d7) == 0 => {
+            curve_9(g, img, c);
         }
         _ => {}
     }
-    if half(g, img, c, 0x15ea + d) != 0 {
-        if c.gw(g, img, 0x15f7 + d) == 0 {
-            let x = c.gw(g, img, 0x1614 + d);
+    if half(g, img, c, 0x15ea) != 0 {
+        if c.gw(g, img, 0x15f7) == 0 {
+            let x = c.gw(g, img, 0x1614);
             // call width: 4
-            g.call(
-                c.slot(g, img, 0x15ff + d, 237),
-                0,
-                &[x, 0x7b, 0, rec(0x1604)],
-            );
-        } else if c.gw(g, img, 0x1621 + d).cast_signed() > 0x32 {
-            stop_part(
-                g,
-                img,
-                c,
-                (0x1629 + d, 0x1634 + d),
-                (0x1639 + d, 0x162e + d),
-            );
-            set_half(g, img, c, 0x164c + d, 0);
+            g.call(c.slot(g, img, 0x15ff, 237), 0, &[x, 0x7b, 0, rec(0x1604)]);
+        } else if c.gw(g, img, 0x1621).cast_signed() > 0x32 {
+            stop_part(g, img, c, (0x1629, 0x1634), (0x1639, 0x162e));
+            set_half(g, img, c, 0x164c, 0);
         } else {
-            let n = c.gw(g, img, 0x1656 + d);
+            let n = c.gw(g, img, 0x1656);
             #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-            let share = div(n.cast_signed() as f32, kf(g, img, c, 0x1666 + d));
-            let s = c.slot(g, img, 0x165e + d, 270);
-            c.inc(g, img, 0x1672 + d);
+            let share = div(n.cast_signed() as f32, kf(g, img, c, 0x1666));
+            let s = c.slot(g, img, 0x165e, 270);
+            c.inc(g, img, 0x1672);
             let args = [rec(0x1689), share.to_bits(), rec(0x167e), rec(0x1679), 3];
             // call width: 5
             g.call(s, 0, &args);
         }
-        crate::r25::abs_stores(g, img, c.f, 0x1692 + d, 0x169c + d);
+        c.stores(g, img, 0x1692, 0x169c);
     }
-    if half(g, img, c, 0x16a4 + d) == 0x83 {
-        let mut fr = c.frame(img, 0x16b2 + d, 1);
-        fr.ecx = c.gw(g, img, 0x16ad + d);
+    if half(g, img, c, 0x16a4) == 0x83 {
+        let mut fr = c.frame(img, 0x16b2, 1);
+        fr.ecx = c.gw(g, img, 0x16ad);
         crate::s4_misc::call_220(g, img, &fr);
-        let x3 = kf(g, img, c, 0x16ba + d);
+        let x3 = kf(g, img, c, 0x16ba);
         let part = (rec(0x16f9), 4);
-        motion(g, img, c, 0x1705 + d, part, (0.0, x3), (0, 0x3f8c_cccd));
-    } else if half(g, img, c, 0x1719 + d) == 0x97 {
+        motion(g, img, c, 0x1705, part, (0.0, x3), (0, 0x3f8c_cccd));
+    } else if half(g, img, c, 0x1719) == 0x97 {
         let (mut o, mut pts, mut part) = (rec(0x1727), rec(0x172c), rec(0x1731));
         let mut i = 0u32;
         loop {
             let a = g.read::<u32>(pts.wrapping_add(8));
             let x3 = g.read::<f32>(pts.wrapping_add(4));
             let x2 = g.read::<f32>(pts);
-            motion(g, img, c, 0x178e + d, (part, 3), (x2, x3), (a, 0x3f99_999a));
+            motion(g, img, c, 0x178e, (part, 3), (x2, x3), (a, 0x3f99_999a));
             let b = g.read::<u32>(rec(0x17a9).wrapping_add(i));
             let a = g.read::<u32>(rec(0x17a1).wrapping_add(i));
             let words = [
@@ -773,7 +768,7 @@ fn state_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
                 a,
                 4,
             ];
-            spline(g, img, c, 0x17d5 + d, (o, pts), words);
+            spline(g, img, c, 0x17d5, (o, pts), words);
             i += 4;
             o = o.wrapping_add(0xa8);
             part = part.wrapping_add(0x80);
@@ -783,13 +778,13 @@ fn state_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
             }
         }
     }
-    if c.gw(g, img, 0x17fd + d).cast_signed() >= 0 {
-        c.inc(g, img, 0x1806 + d);
+    if c.gw(g, img, 0x17fd).cast_signed() >= 0 {
+        c.inc(g, img, 0x1806);
     }
-    let n = half(g, img, c, 0x180c + d).wrapping_add(1);
-    set_half(g, img, c, 0x1819 + d, n);
+    let n = half(g, img, c, 0x180c).wrapping_add(1);
+    set_half(g, img, c, 0x1819, n);
     if n.cast_signed() >= 0xbe {
-        crate::r25::abs_stores(g, img, c.f, 0x1826 + d, 0x1830 + d);
+        c.stores(g, img, 0x1826, 0x1830);
     }
 }
 
@@ -798,30 +793,30 @@ fn state_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// = P.x K1 + K2 K3`, `Q.y = P.y K4 - K5`, `Q.z = P.z K1 + K2 K3` (in
 /// doubles, rounded to f32), the constant words; slot 269 `(Q, P, 3)`;
 /// the flag on, the timer 0.
-fn curve_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    let rec = |o: u32| c.w(img, o + d);
-    let k64 = |g: &G, o: u32| g.read::<f64>(c.w(img, o + d));
+fn curve_9<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    let rec = |o: u32| c.w(img, o);
+    let k64 = |g: &G, o: u32| g.read::<f64>(c.w(img, o));
     let p = rec(0x14e8);
-    let x = c.gw(g, img, 0x14f8 + d);
+    let x = c.gw(g, img, 0x14f8);
     // call width: 4
-    g.call(c.slot(g, img, 0x14e3 + d, 237), 0, &[x, 0x7b, 0, p]);
-    let px = f64::from(kf(g, img, c, 0x1502 + d));
+    g.call(c.slot(g, img, 0x14e3, 237), 0, &[x, 0x7b, 0, p]);
+    let px = f64::from(kf(g, img, c, 0x1502));
     let lift = k64(g, 0x150a) * k64(g, 0x1512);
     #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
     let q0 = (px * k64(g, 0x1522) + lift) as f32;
-    let s = c.slot(g, img, 0x151a + d, 269);
-    crate::r25::abs_stores(g, img, c.f, 0x1528 + d, 0x153c + d);
-    crate::r25::abs_stores(g, img, c.f, 0x1540 + d, 0x1568 + d);
+    let s = c.slot(g, img, 0x151a, 269);
+    c.stores(g, img, 0x1528, 0x153c);
+    c.stores(g, img, 0x1540, 0x1568);
     g.write::<f32>(rec(0x1575), q0);
     #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
-    let q1 = (f64::from(kf(g, img, c, 0x157d + d)) * k64(g, 0x158d) - k64(g, 0x1595)) as f32;
+    let q1 = (f64::from(kf(g, img, c, 0x157d)) * k64(g, 0x158d) - k64(g, 0x1595)) as f32;
     g.write::<f32>(rec(0x15a1), q1);
     #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
-    let q2 = (f64::from(kf(g, img, c, 0x15a9 + d)) * k64(g, 0x15b4) + lift) as f32;
+    let q2 = (f64::from(kf(g, img, c, 0x15a9)) * k64(g, 0x15b4) + lift) as f32;
     g.write::<f32>(rec(0x15c4), q2);
     // call width: 3
     g.call(s, 0, &[rec(0x1585), rec(0x156d), 3]);
-    crate::r25::abs_stores(g, img, c.f, 0x15d0 + d, 0x15e4 + d);
+    c.stores(g, img, 0x15d0, 0x15e4);
 }
 
 /// State 0xd (`+0x1835`): once (the halfword `G_O`), the matrix turned,
@@ -830,33 +825,27 @@ fn curve_9<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// started, each model's place copied to its points and its spline object
 /// made, part P4's motion. While not busy the count steps; on to state
 /// 0x10 at 0x3c.
-fn state_d<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    let rec = |o: u32| c.w(img, o + d);
-    if half(g, img, c, 0x1838 + d) == 0 {
-        crate::r25::abs_stores(g, img, c.f, 0x1845 + d, 0x184f + d);
-        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x1850 + d), 0);
-        slot_222(g, img, c, (0x1855 + d, 0x186a + d), 0xf, 0xf);
+fn state_d<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    let rec = |o: u32| c.w(img, o);
+    if half(g, img, c, 0x1838) == 0 {
+        c.stores(g, img, 0x1845, 0x184f);
+        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x1850), 0);
+        slot_222(g, img, c, (0x1855, 0x186a), 0xf, 0xf);
         for (call, r, x) in [
             (0x187eu32, 0x1879u32, 0xc6u32),
             (0x188d, 0x1888, 0xc4),
             (0x189c, 0x1897, 0xc4),
         ] {
-            crate::sa_misc::sound_start(g, img, c.target(img, call + d), rec(r), x);
+            crate::sa_misc::sound_start(g, img, c.target(img, call), rec(r), x);
         }
-        set_half(g, img, c, 0x18a7 + d, 1);
-        crate::sa_misc::register_counted(g, img, c.target(img, 0x18ac + d), 1);
-        crate::s4_misc::records_clear(g, img, &c.frame(img, 0x18b1 + d, 0));
-        let r = kf(g, img, c, 0x18b9 + d);
-        ring(g, img, c, 0x18d0 + d, (rec(0x18cb), 3), r, (0, 0x8000));
-        stop_part(
-            g,
-            img,
-            c,
-            (0x18d5 + d, 0x18de + d),
-            (0x18e3 + d, 0x18e8 + d),
-        );
-        set_half(g, img, c, 0x1900 + d, 0);
-        let mut fr = c.frame(img, 0x1905 + d, 0);
+        set_half(g, img, c, 0x18a7, 1);
+        crate::sa_misc::register_counted(g, img, c.target(img, 0x18ac), 1);
+        crate::s4_misc::records_clear(g, img, &c.frame(img, 0x18b1, 0));
+        let r = kf(g, img, c, 0x18b9);
+        ring(g, img, c, 0x18d0, (rec(0x18cb), 3), r, (0, 0x8000));
+        stop_part(g, img, c, (0x18d5, 0x18de), (0x18e3, 0x18e8));
+        set_half(g, img, c, 0x1900, 0);
+        let mut fr = c.frame(img, 0x1905, 0);
         fr.ecx = rec(0x18fa);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
         let (mut o, mut pts, mut m, mut p) = (rec(0x1914), rec(0x1919), rec(0x1922), rec(0x190a));
@@ -882,7 +871,7 @@ fn state_d<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
                 a,
                 2,
             ];
-            spline(g, img, c, 0x1991 + d, (o, pts), words);
+            spline(g, img, c, 0x1991, (o, pts), words);
             p = p.wrapping_add(0x80);
             i += 4;
             o = o.wrapping_add(0xa8);
@@ -896,19 +885,19 @@ fn state_d<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
             g,
             img,
             c,
-            0x1a16 + d,
+            0x1a16,
             (rec(0x1a0a), 0x15),
             (0.0, 0.0),
             (0, 0x3f00_0000),
         );
     }
-    if c.busy(g, img, 0x1a1e + d) {
+    if c.busy(g, img, 0x1a1e) {
         return;
     }
-    let n = half(g, img, c, 0x1a2d + d).wrapping_add(1);
-    set_half(g, img, c, 0x1a35 + d, n);
+    let n = half(g, img, c, 0x1a2d).wrapping_add(1);
+    set_half(g, img, c, 0x1a35, n);
     if n.cast_signed() >= 0x3c {
-        crate::r25::abs_stores(g, img, c.f, 0x1a43 + d, 0x1a4d + d);
+        c.stores(g, img, 0x1a43, 0x1a4d);
     }
 }
 
@@ -970,36 +959,36 @@ fn part_10<G: Game>(
 /// beams launched at 0x14 ([`launch_10`]), the bursts from 0x14 to 0x77
 /// ([`burst_10`]), then the rings, colours and parts by the count
 /// ([`late_10`]); on to state 0x15 at 0x130.
-fn state_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
-    if half(g, img, c, 0x1a55 + d) == 0 {
-        setup_10(g, img, c, d);
+fn state_10<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    if half(g, img, c, 0x1a55) == 0 {
+        setup_10(g, img, c);
     }
-    if c.busy(g, img, 0x1cb0 + d) {
+    if c.busy(g, img, 0x1cb0) {
         return;
     }
-    let mut n = half(g, img, c, 0x1cc0 + d);
+    let mut n = half(g, img, c, 0x1cc0);
     if n == 0 {
-        let x = c.gw(g, img, 0x1cdd + d);
-        call_slot(g, img, c, (0x1cca + d, 220), &[x, 0x40, 0x100]);
-        n = half(g, img, c, 0x1ce6 + d);
+        let x = c.gw(g, img, 0x1cdd);
+        call_slot(g, img, c, (0x1cca, 220), &[x, 0x40, 0x100]);
+        n = half(g, img, c, 0x1ce6);
     }
     if n == 0x14 {
-        launch_10(g, img, c, d);
-        n = half(g, img, c, 0x209a + d);
-        crate::r25::abs_stores(g, img, c.f, 0x209e + d, 0x20a8 + d);
+        launch_10(g, img, c);
+        n = half(g, img, c, 0x209a);
+        c.stores(g, img, 0x209e, 0x20a8);
     }
     let since = i32::from(n.cast_signed()) - 0x14;
     if since >= 0 {
         if since < 0x64 {
-            burst_10(g, img, c, d, since);
-            n = half(g, img, c, 0x2694 + d);
+            burst_10(g, img, c, since);
+            n = half(g, img, c, 0x2694);
         }
-        n = late_10(g, img, c, d, (n, since));
+        n = late_10(g, img, c, (n, since));
     }
     let n = n.wrapping_add(1);
-    set_half(g, img, c, 0x2d4d + d, n);
+    set_half(g, img, c, 0x2d4d, n);
     if n.cast_signed() >= 0x130 {
-        crate::r25::abs_stores(g, img, c.f, 0x2d5a + d, 0x2d64 + d);
+        c.stores(g, img, 0x2d5a, 0x2d64);
     }
 }
 
@@ -1010,33 +999,21 @@ fn state_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// `Q` (`M.x K1`, `M.y`, `M.z K1`; `M.x K2`, `M.y`, `M.z K2`; `V.x K3 +
 /// M.x`, `M.y`, `V.z K3 + M.z`), its place copied and its spline object;
 /// the three parts P5 stopped.
-fn setup_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
+fn setup_10<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     use crate::sb_sse::{add, mul};
-    let rec = |o: u32| c.w(img, o + d);
-    set_half(g, img, c, 0x1a67 + d, 1);
-    crate::sa_misc::register_counted(g, img, c.target(img, 0x1a6c + d), 1);
-    crate::s4_misc::records_clear(g, img, &c.frame(img, 0x1a71 + d, 0));
-    crate::r25::abs_stores(g, img, c.f, 0x1a77 + d, 0x1a81 + d);
-    crate::sa_misc::turn_matrix(g, img, c.target(img, 0x1a82 + d), 0);
-    let r = kf(g, img, c, 0x1a8a + d);
-    ring(g, img, c, 0x1aa1 + d, (rec(0x1a9c), 3), r, (0, 0x8000));
-    stop_part(
-        g,
-        img,
-        c,
-        (0x1aa6 + d, 0x1aaf + d),
-        (0x1ab4 + d, 0x1ab9 + d),
-    );
-    set_half(g, img, c, 0x1ac9 + d, 0);
-    stop_part(
-        g,
-        img,
-        c,
-        (0x1ace + d, 0x1ad7 + d),
-        (0x1adc + d, 0x1ae1 + d),
-    );
-    set_half(g, img, c, 0x1af9 + d, 0);
-    let mut fr = c.frame(img, 0x1afe + d, 0);
+    let rec = |o: u32| c.w(img, o);
+    set_half(g, img, c, 0x1a67, 1);
+    crate::sa_misc::register_counted(g, img, c.target(img, 0x1a6c), 1);
+    crate::s4_misc::records_clear(g, img, &c.frame(img, 0x1a71, 0));
+    c.stores(g, img, 0x1a77, 0x1a81);
+    crate::sa_misc::turn_matrix(g, img, c.target(img, 0x1a82), 0);
+    let r = kf(g, img, c, 0x1a8a);
+    ring(g, img, c, 0x1aa1, (rec(0x1a9c), 3), r, (0, 0x8000));
+    stop_part(g, img, c, (0x1aa6, 0x1aaf), (0x1ab4, 0x1ab9));
+    set_half(g, img, c, 0x1ac9, 0);
+    stop_part(g, img, c, (0x1ace, 0x1ad7), (0x1adc, 0x1ae1));
+    set_half(g, img, c, 0x1af9, 0);
+    let mut fr = c.frame(img, 0x1afe, 0);
     fr.ecx = rec(0x1af3);
     crate::s6_misc::camera_tracks_from(g, img, &fr);
     let (mut m, mut o, mut p) = (rec(0x1b03), rec(0x1b0b), rec(0x1b13));
@@ -1049,26 +1026,26 @@ fn setup_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         g.write::<u32>(v + 8, z);
         g.write::<u32>(v + 0xc, 0);
         g.write::<u32>(v + 4, 0);
-        call_slot(g, img, c, (0x1b3b + d, 232), &[v, v]);
+        call_slot(g, img, c, (0x1b3b, 232), &[v, v]);
         let mx = g.read::<f32>(m.wrapping_sub(8));
         let mz = g.read::<f32>(m);
         let my = g.read::<u32>(m.wrapping_sub(4));
         let (k1, k2, k3) = (
-            kf(g, img, c, 0x1b6e + d),
-            kf(g, img, c, 0x1b9d + d),
-            kf(g, img, c, 0x1bca + d),
+            kf(g, img, c, 0x1b6e),
+            kf(g, img, c, 0x1b9d),
+            kf(g, img, c, 0x1bca),
         );
         g.write::<f32>(q.wrapping_sub(8), mul(mx, k1));
         g.write::<u32>(q.wrapping_sub(4), my);
-        g.write::<f32>(q, mul(mz, kf(g, img, c, 0x1b86 + d)));
+        g.write::<f32>(q, mul(mz, kf(g, img, c, 0x1b86)));
         g.write::<u32>(q + 0xc, my);
         g.write::<f32>(q + 8, mul(mx, k2));
-        g.write::<f32>(q + 0x10, mul(mz, kf(g, img, c, 0x1bb4 + d)));
+        g.write::<f32>(q + 0x10, mul(mz, kf(g, img, c, 0x1bb4)));
         g.write::<u32>(q + 0x1c, my);
         let vx = g.read::<f32>(v);
         g.write::<f32>(q + 0x18, add(mul(vx, k3), mx));
         let vz = g.read::<f32>(v + 8);
-        g.write::<f32>(q + 0x20, add(mul(vz, kf(g, img, c, 0x1be0 + d)), mz));
+        g.write::<f32>(q + 0x20, add(mul(vz, kf(g, img, c, 0x1be0)), mz));
         for j in 0..4 {
             let w = g.read::<u32>(m.wrapping_sub(8) + 4 * j);
             g.write::<u32>(p + 4 * j, w);
@@ -1088,7 +1065,7 @@ fn setup_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
             a,
             8,
         ];
-        spline(g, img, c, 0x1c3b + d, (o, q.wrapping_sub(8)), words);
+        spline(g, img, c, 0x1c3b, (o, q.wrapping_sub(8)), words);
         p = p.wrapping_add(0x80);
         i += 4;
         o = o.wrapping_add(0xa8);
@@ -1101,9 +1078,9 @@ fn setup_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
     }
     let mut h = rec(0x1c75);
     loop {
-        let holder = c.gw(g, img, 0x1c81 + d);
+        let holder = c.gw(g, img, 0x1c81);
         g.write::<u32>(holder, rec(0x1c87));
-        call_slot(g, img, c, (0x1c90 + d, 713), &[h.wrapping_sub(0x1e)]);
+        call_slot(g, img, c, (0x1c90, 713), &[h.wrapping_sub(0x1e)]);
         g.write::<u16>(h, 0);
         h = h.wrapping_add(0x80);
         if h.cast_signed() >= rec(0x1ca9).cast_signed() {
@@ -1127,27 +1104,27 @@ fn local(c: &Scene, o: u32) -> u32 {
 /// ring entry (the index `G_I`, wrapping to `G_W` at 0x200) gets `M`, the
 /// other model's place and its constants.
 #[allow(clippy::too_many_lines)] // the original's beams, in order
-fn launch_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
+fn launch_10<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     use crate::sb_sse::{add, div, mul};
-    let rec = |o: u32| c.w(img, o + d);
+    let rec = |o: u32| c.w(img, o);
     let (mut m, mut v, mut r) = (rec(0x1cf8), rec(0x1cfd), rec(0x1d16));
     let (mut t, mut p) = (rec(0x1d1f), rec(0x1d02));
     let mut i = 0u32;
     loop {
         let a = g.read::<f32>(v.wrapping_sub(8));
-        let x0 = add(mul(a, kf(g, img, c, 0x1d3f + d)), g.read::<f32>(m));
+        let x0 = add(mul(a, kf(g, img, c, 0x1d3f)), g.read::<f32>(m));
         let y = g.read::<u32>(m + 4);
         let b = g.read::<f32>(v);
-        let x2 = add(mul(b, kf(g, img, c, 0x1d66 + d)), g.read::<f32>(m + 8));
-        let holder = c.gw(g, img, 0x1d70 + d);
+        let x2 = add(mul(b, kf(g, img, c, 0x1d66)), g.read::<f32>(m + 8));
+        let holder = c.gw(g, img, 0x1d70);
         g.write::<u32>(holder, rec(0x1d76));
-        let dv = c.gw(g, img, 0x1d81 + d);
-        let table = call_slot(g, img, c, (0x1d7b + d, 941), &[dv]);
+        let dv = c.gw(g, img, 0x1d81);
+        let table = call_slot(g, img, c, (0x1d7b, 941), &[dv]);
         let word = g.read::<u32>(table.wrapping_add(0x50));
         crate::opu_parts::start_part(
             g,
             img,
-            c.target(img, 0x1da6 + d),
+            c.target(img, 0x1da6),
             p.wrapping_sub(0x40),
             0x1000,
             word,
@@ -1162,8 +1139,8 @@ fn launch_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         g.write::<u32>(p + 0x10, 0);
         #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
         let ang = div(
-            mul(ang as f32, kf(g, img, c, 0x1e2a + d)),
-            kf(g, img, c, 0x1e40 + d),
+            mul(ang as f32, kf(g, img, c, 0x1e2a)),
+            kf(g, img, c, 0x1e40),
         );
         g.write::<u32>(p + 0x18, 0);
         g.write::<u32>(p + 0x1c, 1);
@@ -1174,19 +1151,19 @@ fn launch_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         g.write::<u32>(p + 0x2c, 0x3f80_0000);
         let from = if i < 2 { r } else { rec(0x1e6b) }.wrapping_add(0x3c);
         let (dir, n) = (local(c, 0xfc), local(c, 0x68));
-        call_slot(g, img, c, (0x1e81 + d, 234), &[dir, from, m]);
-        call_slot(g, img, c, (0x1e9e + d, 232), &[n, dir]);
+        call_slot(g, img, c, (0x1e81, 234), &[dir, from, m]);
+        call_slot(g, img, c, (0x1e9e, 232), &[n, dir]);
         let side = local(c, 0x58);
         let nz = g.read::<u32>(local(c, 0x70));
         g.write::<u32>(side, nz);
         g.write::<u32>(side + 4, 0);
         let nx = g.read::<u32>(n) ^ 0x8000_0000;
         g.write::<u32>(side + 8, nx);
-        call_slot(g, img, c, (0x1ed2 + d, 232), &[side, side]);
+        call_slot(g, img, c, (0x1ed2, 232), &[side, side]);
         let up = local(c, 0xa8);
-        call_slot(g, img, c, (0x1ef7 + d, 266), &[up, n, side]);
-        call_slot(g, img, c, (0x1f10 + d, 232), &[up, up]);
-        let idx = c.gw(g, img, 0x1f23 + d);
+        call_slot(g, img, c, (0x1ef7, 266), &[up, n, side]);
+        call_slot(g, img, c, (0x1f10, 232), &[up, up]);
+        let idx = c.gw(g, img, 0x1f23);
         let copy = |g: &mut G, to: u32, from: u32| {
             let x = g.read::<u32>(from);
             g.write::<u32>(to, x);
@@ -1199,12 +1176,12 @@ fn launch_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         let e = idx.wrapping_mul(15).wrapping_mul(4);
         let next = idx.wrapping_add(1);
         let next = if next.cast_signed() >= 0x200 {
-            c.gw(g, img, 0x1f79 + d)
+            c.gw(g, img, 0x1f79)
         } else {
             next
         };
         copy(g, t + 0x10, up + 8);
-        c.set(g, img, 0x1f8d + d, next);
+        c.set(g, img, 0x1f8d, next);
         copy(g, t + 0x18, n);
         copy(g, t + 0x1c, n + 4);
         let kind = i32::from(g.read::<i16>(rec(0x1f94)))
@@ -1273,21 +1250,18 @@ fn next_index<G: Game>(g: &G, img: &Image, c: &Scene, idx: u32, wrap: u32) -> u3
 ///
 /// [`record_free`]: crate::sa_misc::record_free
 #[allow(clippy::too_many_lines)] // the original's loops, in order
-fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
+fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, since: i32) {
     use crate::sb_sse::{add, div, mul, sub};
-    let rec = |o: u32| c.w(img, o + d);
-    let k64 = |g: &G, o: u32| g.read::<f64>(c.w(img, o + d));
+    let rec = |o: u32| c.w(img, o);
+    let k64 = |g: &G, o: u32| g.read::<f64>(c.w(img, o));
     #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-    let fr = div(since as f32, kf(g, img, c, 0x20d4 + d));
+    let fr = div(since as f32, kf(g, img, c, 0x20d4));
     let rounds = if since == 0 { 0x20 } else { (since >> 3) + 2 };
     #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
-    let size = (f64::from(add(fr, kf(g, img, c, 0x20e2 + d))) * k64(g, 0x2100)) as f32;
+    let size = (f64::from(add(fr, kf(g, img, c, 0x20e2))) * k64(g, 0x2100)) as f32;
     let life = mul(
-        sub(
-            kf(g, img, c, 0x211e + d),
-            mul(fr, kf(g, img, c, 0x20ea + d)),
-        ),
-        kf(g, img, c, 0x212a + d),
+        sub(kf(g, img, c, 0x211e), mul(fr, kf(g, img, c, 0x20ea))),
+        kf(g, img, c, 0x212a),
     );
     let (a, b, cc) = (local(c, 0x78), local(c, 0x98), local(c, 0x88));
     let (d1, d2, d3) = (local(c, 0xb8), local(c, 0xd8), local(c, 0xc8));
@@ -1297,17 +1271,16 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
         let mut j = 0u32;
         loop {
             for k in 0..2u32 {
-                let rnd = |g: &mut G, op: u32, kop: u32| {
-                    sub(frand(g, img, c, op + d), kf(g, img, c, kop + d))
-                };
+                let rnd =
+                    |g: &mut G, op: u32, kop: u32| sub(frand(g, img, c, op), kf(g, img, c, kop));
                 let r1 = rnd(g, 0x2163, 0x217d);
                 #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
                 let mut x = ((f64::from(r1) - k64(g, 0x218d)) * k64(g, 0x2195)) as f32;
                 let r2 = rnd(g, 0x2182, 0x21b9);
                 #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
                 let mut y = ((f64::from(r2) - k64(g, 0x21c9)) * k64(g, 0x21d1)) as f32;
-                let k1 = kf(g, img, c, 0x21f5 + d);
-                let r3 = sub(frand(g, img, c, 0x21be + d), k1);
+                let k1 = kf(g, img, c, 0x21f5);
+                let r3 = sub(frand(g, img, c, 0x21be), k1);
                 #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
                 let z = (f64::from(r3) + k64(g, 0x2204)) as f32;
                 let push = (since - 1).cast_unsigned() <= 0x44 && count.trailing_zeros() >= 5;
@@ -1319,8 +1292,8 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
                 g.write::<f32>(a + 4, y);
                 g.write::<f32>(a + 8, z);
                 g.write::<u32>(a + 0xc, 0);
-                call_slot(g, img, c, (0x2278 + d, 232), &[a, a]);
-                call_slot(g, img, c, (0x22a0 + d, 233), &[a, a, 0x41a0_0000]);
+                call_slot(g, img, c, (0x2278, 232), &[a, a]);
+                call_slot(g, img, c, (0x22a0, 233), &[a, a, 0x41a0_0000]);
                 let (x, y) = (g.read::<f32>(a), g.read::<f32>(a + 4));
                 let z = g.read::<u32>(a + 8) ^ 0x8000_0000;
                 g.write::<u32>(a + 0xc, 0x3f80_0000);
@@ -1329,20 +1302,20 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
                 g.write::<u32>(b + 8, z);
                 g.write::<u32>(b + 0xc, 0x3f80_0000);
                 if push {
-                    g.write::<f32>(cc, mul(x, kf(g, img, c, 0x230a + d)));
+                    g.write::<f32>(cc, mul(x, kf(g, img, c, 0x230a)));
                     g.write::<u32>(cc + 8, 0);
-                    g.write::<f32>(cc + 4, mul(y, kf(g, img, c, 0x2312 + d)));
+                    g.write::<f32>(cc + 4, mul(y, kf(g, img, c, 0x2312)));
                     g.write::<u32>(cc + 0xc, 0x3f80_0000);
                 }
-                call_slot(g, img, c, (0x2349 + d, 229), &[a, t, a]);
-                call_slot(g, img, c, (0x2366 + d, 229), &[b, t, b]);
+                call_slot(g, img, c, (0x2349, 229), &[a, t, a]);
+                call_slot(g, img, c, (0x2366, 229), &[b, t, b]);
                 if push {
-                    call_slot(g, img, c, (0x2387 + d, 229), &[cc, t, cc]);
+                    call_slot(g, img, c, (0x2387, 229), &[cc, t, cc]);
                 }
                 let q = if j < 2 { r } else { rec(0x23b2) }.wrapping_add(0x3c);
-                call_slot(g, img, c, (0x23ad + d, 248), &[d1, m, a]);
+                call_slot(g, img, c, (0x23ad, 248), &[d1, m, a]);
                 g.write::<u32>(d1 + 0xc, 0x3f80_0000);
-                call_slot(g, img, c, (0x23df + d, 248), &[d2, q, b]);
+                call_slot(g, img, c, (0x23df, 248), &[d2, q, b]);
                 g.write::<u32>(d2 + 0xc, 0x3f80_0000);
                 let r4 = rnd(g, 0x23f7, 0x241f);
                 #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
@@ -1350,11 +1323,11 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
                 let r5 = rnd(g, 0x2424, 0x2465);
                 let n = trunc(f64::from(r5) * k64(g, 0x2476) * f64::from(life));
                 if push {
-                    call_slot(g, img, c, (0x249c + d, 248), &[d3, m, q]);
-                    call_slot(g, img, c, (0x24bc + d, 233), &[d3, d3, 0x3f00_0000]);
-                    call_slot(g, img, c, (0x24dd + d, 248), &[d3, d3, cc]);
+                    call_slot(g, img, c, (0x249c, 248), &[d3, m, q]);
+                    call_slot(g, img, c, (0x24bc, 233), &[d3, d3, 0x3f00_0000]);
+                    call_slot(g, img, c, (0x24dd, 248), &[d3, d3, cc]);
                     g.write::<u32>(d3 + 0xc, 0x3f80_0000);
-                    let p = crate::sa_misc::record_free(g, img, c.target(img, 0x24f8 + d));
+                    let p = crate::sa_misc::record_free(g, img, c.target(img, 0x24f8));
                     if p != 0 {
                         let len = (n.cast_signed() >> 2).wrapping_add(5).cast_unsigned();
                         let words = [
@@ -1370,11 +1343,11 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
                             0x0404_0404,
                             1,
                         ];
-                        spline(g, img, c, 0x254a + d, (p, d1), words);
+                        spline(g, img, c, 0x254a, (p, d1), words);
                     }
                 } else {
-                    let idx = c.gw(g, img, 0x2557 + d);
-                    let e = |op: u32| entry(c, img, op + d, idx);
+                    let idx = c.gw(g, img, 0x2557);
+                    let e = |op: u32| entry(c, img, op, idx);
                     g.write::<u32>(e(0x2566), 1);
                     g.write::<u32>(e(0x2571), n);
                     g.write::<u32>(e(0x2578), 0);
@@ -1389,8 +1362,8 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
                         let v = g.read::<u64>(from);
                         g.write::<u64>(e(op), v);
                     }
-                    let next = next_index(g, img, c, idx, 0x2617 + d);
-                    c.set(g, img, 0x261c + d, next);
+                    let next = next_index(g, img, c, idx, 0x2617);
+                    c.set(g, img, 0x261c, next);
                     let kind = i32::from(g.read::<i16>(rec(0x2623)))
                         .cast_unsigned()
                         .wrapping_add(rec(0x2637));
@@ -1423,9 +1396,9 @@ fn burst_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, since: i32) {
 /// cleared, at 0x112 the closing curve and part P4. Returns the count to
 /// step.
 #[allow(clippy::too_many_lines)] // the original's blocks, in order
-fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16, i32)) -> u16 {
+fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, (n, since): (u16, i32)) -> u16 {
     use crate::sb_sse::{add, div, mul, sub};
-    let rec = |o: u32| c.w(img, o + d);
+    let rec = |o: u32| c.w(img, o);
     let mut n = n;
     if n.cast_signed() < 0xb8 {
         let mut p = rec(0x26b0);
@@ -1480,31 +1453,28 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
             let v = g.read::<u32>(rec(from));
             g.write::<u32>(rec(to), v);
         }
-        slot_222(g, img, c, (0x27bf + d, 0x281e + d), 0x14, 0x18);
+        slot_222(g, img, c, (0x27bf, 0x281e), 0x14, 0x18);
         let mut p = rec(0x2836);
         for _ in 0..3 {
             let actor = g.read::<u32>(p);
             if actor != 0xff {
-                call_slot(g, img, c, (0x284d + d, 296), &[actor, 0]);
+                call_slot(g, img, c, (0x284d, 296), &[actor, 0]);
             }
             p = p.wrapping_add(0xcc);
         }
-        n = half(g, img, c, 0x2868 + d);
+        n = half(g, img, c, 0x2868);
     }
     let s = i32::from(n.cast_signed()) - 0x96;
     if s.cast_unsigned() <= 0x46 {
         #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-        let x = mul(
-            div(s as f32, kf(g, img, c, 0x288e + d)),
-            kf(g, img, c, 0x289b + d),
-        );
+        let x = mul(div(s as f32, kf(g, img, c, 0x288e)), kf(g, img, c, 0x289b));
         let ang = (0x4000u32.wrapping_sub(trunc(f64::from(x))).cast_signed() >> 4).cast_unsigned()
             & 0xfff;
-        let tab = c.gw(g, img, 0x28ad + d);
+        let tab = c.gw(g, img, 0x28ad);
         let sn = g.read::<f32>(tab.wrapping_add(4 * ang));
         #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
         let r = (f64::from(sn) * g.read::<f64>(rec(0x28cc))) as f32;
-        ring(g, img, c, 0x28d5 + d, (rec(0x28c4), 3), r, (0, 0x8000));
+        ring(g, img, c, 0x28d5, (rec(0x28c4), 3), r, (0, 0x8000));
         // the models' places (A, B, C, two words each) into the ring
         // entries and the parts' points
         let place: Vec<u64> = [0x28ddu32, 0x28e5, 0x28ed, 0x28f5, 0x28fd, 0x2905]
@@ -1517,8 +1487,8 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
         if s < 0x1e {
             #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
             let t = sub(
-                kf(g, img, c, 0x29af + d),
-                div((s << 12) as f32, kf(g, img, c, 0x29b7 + d)),
+                kf(g, img, c, 0x29af),
+                div((s << 12) as f32, kf(g, img, c, 0x29b7)),
             );
             let h = (trunc(f64::from(t)) & 0xffff) as u16;
             for k in 0..12 {
@@ -1533,7 +1503,7 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
         let colour = shade.wrapping_mul(0x0101_0101);
         let life = div_magic(s * 20, 0x8888_8889, true, 5).cast_unsigned();
         #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-        let f = div(s as f32, kf(g, img, c, 0x2a77 + d));
+        let f = div(s as f32, kf(g, img, c, 0x2a77));
         let mut p = rec(0x2a81);
         for _ in 0..3 {
             if g.read::<u32>(p.wrapping_sub(0x10)) != 0 {
@@ -1546,7 +1516,7 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
     } else if e == 0x3c {
         let fr = Frame {
             eax: 0x3c,
-            ..c.frame(img, 0x2aae + d, 0)
+            ..c.frame(img, 0x2aae, 0)
         };
         crate::s4_misc::register_parts_b(g, img, &fr);
         let mut p = rec(0x2ab8);
@@ -1555,33 +1525,27 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
             g.write::<u32>(p, 0);
             p = p.wrapping_add(0x3c);
         }
-        n = half(g, img, c, 0x2ad6 + d);
-        c.set(g, img, 0x2adc + d, 0);
-        c.set(g, img, 0x2ae2 + d, 0);
+        n = half(g, img, c, 0x2ad6);
+        c.set(g, img, 0x2adc, 0);
+        c.set(g, img, 0x2ae2, 0);
     }
     match n {
         0xb8 => {
-            let y = kf(g, img, c, 0x2afd + d);
-            let ops = [0x2af5, 0x2b03, 0x2b08, 0x2b0e, 0x2b35, 0x2b30].map(|o| o + d);
-            part_10(g, img, c, ops, 0x3c, y, [0x2b4b + d, 0x2b5a + d]);
+            let y = kf(g, img, c, 0x2afd);
+            let ops = [0x2af5, 0x2b03, 0x2b08, 0x2b0e, 0x2b35, 0x2b30];
+            part_10(g, img, c, ops, 0x3c, y, [0x2b4b, 0x2b5a]);
         }
         0xc2 => {
             let mut h = rec(0x2b9e);
             loop {
-                stop_part_at(
-                    g,
-                    img,
-                    c,
-                    (0x2ba3 + d, 0x2ba9 + d, 0x2bb2 + d),
-                    h.wrapping_sub(0x1e),
-                );
+                stop_part_at(g, img, c, (0x2ba3, 0x2ba9, 0x2bb2), h.wrapping_sub(0x1e));
                 g.write::<u16>(h, 0);
                 h = h.wrapping_add(0x80);
                 if h.cast_signed() >= rec(0x2bcb).cast_signed() {
                     break;
                 }
             }
-            crate::sa_misc::register_counted(g, img, c.target(img, 0x2bd2 + d), 0);
+            crate::sa_misc::register_counted(g, img, c.target(img, 0x2bd2), 0);
             let mut p = rec(0x2bd7);
             loop {
                 g.write::<u32>(p.wrapping_sub(0x24), 0);
@@ -1593,9 +1557,9 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
             }
         }
         0x112 => {
-            call_slot(g, img, c, (0x2c0d + d, 325), &[rec(0x2c1d), rec(0x2c12)]);
-            call_slot(g, img, c, (0x2c24 + d, 325), &[rec(0x2c34), rec(0x2c29)]);
-            let v = add(kf(g, img, c, 0x2c3e + d), kf(g, img, c, 0x2c46 + d));
+            call_slot(g, img, c, (0x2c0d, 325), &[rec(0x2c1d), rec(0x2c12)]);
+            call_slot(g, img, c, (0x2c24, 325), &[rec(0x2c34), rec(0x2c29)]);
+            let v = add(kf(g, img, c, 0x2c3e), kf(g, img, c, 0x2c46));
             g.write::<f32>(rec(0x2c8b), v);
             let words = [
                 2,
@@ -1610,14 +1574,14 @@ fn late_10<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, (n, since): (u16,
                 0,
                 8,
             ];
-            spline(g, img, c, 0x2c90 + d, (rec(0x2c5f), rec(0x2c4e)), words);
-            let y = add(kf(g, img, c, 0x2c98 + d), kf(g, img, c, 0x2ca5 + d));
-            let ops = [0x2c9d, 0x2cab, 0x2cb0, 0x2cbf, 0x2ce0, 0x2cdb].map(|o| o + d);
-            part_10(g, img, c, ops, 0x38, y, [0x2cf6 + d, 0x2d05 + d]);
+            spline(g, img, c, 0x2c90, (rec(0x2c5f), rec(0x2c4e)), words);
+            let y = add(kf(g, img, c, 0x2c98), kf(g, img, c, 0x2ca5));
+            let ops = [0x2c9d, 0x2cab, 0x2cb0, 0x2cbf, 0x2ce0, 0x2cdb];
+            part_10(g, img, c, ops, 0x38, y, [0x2cf6, 0x2d05]);
         }
         _ => return n,
     }
-    half(g, img, c, 0x2d3f + d)
+    half(g, img, c, 0x2d3f)
 }
 
 /// Slot 713 on the part `p` with `*G_H = L` first (operands `(G_H, L,
@@ -1636,17 +1600,17 @@ fn stop_part_at<G: Game>(g: &mut G, img: &Image, c: &Scene, (h, l, op): (u32, u3
 /// started. While not busy: slot 220 and slot 306 `(3)` at the count's 0;
 /// the three models' sounds ([`sound_step_18`]); the flash `G_F` while
 /// its frame is below 0xf; on to state 0x64 at 0xa0.
-fn state_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
+fn state_18<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     use crate::sb_sse::{add, div, sub};
-    let rec = |o: u32| c.w(img, o + d);
-    if half(g, img, c, 0x3964 + d) == 0 {
-        set_half(g, img, c, 0x3978 + d, 1);
-        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x397d + d, 0));
-        call_slot(g, img, c, (0x3982 + d, 325), &[rec(0x3992), rec(0x3987)]);
-        let ang = half(g, img, c, 0x399a + d);
+    let rec = |o: u32| c.w(img, o);
+    if half(g, img, c, 0x3964) == 0 {
+        set_half(g, img, c, 0x3978, 1);
+        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x397d, 0));
+        call_slot(g, img, c, (0x3982, 325), &[rec(0x3992), rec(0x3987)]);
+        let ang = half(g, img, c, 0x399a);
         let (c0, c1) = (g.read::<u64>(rec(0x39a2)), g.read::<u64>(rec(0x39aa)));
-        set_half(g, img, c, 0x39b0 + d, ang);
-        set_half(g, img, c, 0x39b6 + d, ang);
+        set_half(g, img, c, 0x39b0, ang);
+        set_half(g, img, c, 0x39b6, ang);
         let turn = 0x4000u32.wrapping_sub(i32::from(ang.cast_signed()).cast_unsigned());
         let (m, v) = (local(c, 0xb8), local(c, 0x58));
         for (k, op) in (0usize..).zip([0x39d4u32, 0x39dc, 0x39e4, 0x39ec, 0x39f4, 0x39fc]) {
@@ -1655,55 +1619,55 @@ fn state_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
         for (i, x) in (0u32..).zip([0x4118_0000u32, 0, 0x4128_0000, 0x3f80_0000]) {
             g.write::<u32>(v + 4 * i, x);
         }
-        call_slot(g, img, c, (0x39cc + d, 247), &[m, turn]);
-        call_slot(g, img, c, (0x3a3b + d, 229), &[v, m, v]);
-        let id = c.gw(g, img, 0x3a56 + d);
-        let x = add(kf(g, img, c, 0x3a4b + d), g.read::<f32>(v));
+        call_slot(g, img, c, (0x39cc, 247), &[m, turn]);
+        call_slot(g, img, c, (0x3a3b, 229), &[v, m, v]);
+        let id = c.gw(g, img, 0x3a56);
+        let x = add(kf(g, img, c, 0x3a4b), g.read::<f32>(v));
         g.write::<f32>(rec(0x3a61), x);
-        let z = add(kf(g, img, c, 0x3a69 + d), g.read::<f32>(v + 8));
+        let z = add(kf(g, img, c, 0x3a69), g.read::<f32>(v + 8));
         g.write::<f32>(rec(0x3a77), z);
         if id != 0xff {
-            call_slot(g, img, c, (0x3a86 + d, 296), &[id, 1]);
+            call_slot(g, img, c, (0x3a86, 296), &[id, 1]);
         }
-        crate::sa_misc::sound_start(g, img, c.target(img, 0x3aa0 + d), rec(0x3a9b), 0xc8);
+        crate::sa_misc::sound_start(g, img, c.target(img, 0x3aa0), rec(0x3a9b), 0xc8);
         let a = i32::from(g.read::<i16>(rec(0x3aa7))).cast_unsigned();
-        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x3aac + d), a);
-        let mut fr = c.frame(img, 0x3ab6 + d, 0);
+        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x3aac), a);
+        let mut fr = c.frame(img, 0x3ab6, 0);
         fr.ecx = rec(0x3ab1);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
     }
-    if c.busy(g, img, 0x3abb + d) {
+    if c.busy(g, img, 0x3abb) {
         return;
     }
-    if half(g, img, c, 0x3acb + d) == 0 {
-        let mut fr = c.frame(img, 0x3ada + d, 1);
-        fr.ecx = c.gw(g, img, 0x3ad5 + d);
+    if half(g, img, c, 0x3acb) == 0 {
+        let mut fr = c.frame(img, 0x3ada, 1);
+        fr.ecx = c.gw(g, img, 0x3ad5);
         crate::s4_misc::call_220(g, img, &fr);
-        crate::sa_misc::slot306(g, img, c.target(img, 0x3ae4 + d), 3);
+        crate::sa_misc::slot306(g, img, c.target(img, 0x3ae4), 3);
     }
     let mut p = rec(0x3af2);
     for i in 0..3u32 {
-        sound_step_18(g, img, c, d, p, i);
+        sound_step_18(g, img, c, p, i);
         p = p.wrapping_add(0xcc);
     }
-    let t = half(g, img, c, 0x3c70 + d);
+    let t = half(g, img, c, 0x3c70);
     if t.cast_signed() >= 0xf {
-        crate::r25::abs_stores(g, img, c.f, 0x3d7d + d, 0x3d84 + d);
+        c.stores(g, img, 0x3d7d, 0x3d84);
     } else {
         #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-        let f = div(f32::from(t.cast_signed()), kf(g, img, c, 0x3c92 + d));
+        let f = div(f32::from(t.cast_signed()), kf(g, img, c, 0x3c92));
         let at = rec(0x3c99);
         let n = g.read::<u16>(at).wrapping_add(1);
         g.write::<u16>(at, n);
-        let v = sub(kf(g, img, c, 0x3c8a + d), f);
-        crate::r25::abs_stores(g, img, c.f, 0x3ca1 + d, 0x3cbc + d);
+        let v = sub(kf(g, img, c, 0x3c8a), f);
+        c.stores(g, img, 0x3ca1, 0x3cbc);
         g.write::<f32>(rec(0x3cc0), v);
         g.write::<f32>(rec(0x3cc8), v);
     }
-    let n = half(g, img, c, 0x3d86 + d).wrapping_add(1);
-    set_half(g, img, c, 0x3d93 + d, n);
+    let n = half(g, img, c, 0x3d86).wrapping_add(1);
+    set_half(g, img, c, 0x3d93, n);
     if n.cast_signed() >= 0xa0 {
-        crate::r25::abs_stores(g, img, c.f, 0x3da0 + d, 0x3daa + d);
+        c.stores(g, img, 0x3da0, 0x3daa);
     }
 }
 
@@ -1713,19 +1677,19 @@ fn state_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
 /// part P7 to the middle of its points 0x1c and 0x11 (slot 237), the
 /// first at frame 0x11 part P8 (the model's place, lowered); any at its
 /// limit moves on to 0xc9.
-fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u32) {
+fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, p: u32, i: u32) {
     use crate::sb_sse::{add, mul, sub};
-    let rec = |o: u32| c.w(img, o + d);
+    let rec = |o: u32| c.w(img, o);
     let r = p.wrapping_sub(8);
-    let count = |g: &G, o: u32| half(g, img, c, o + d);
+    let count = |g: &G, o: u32| half(g, img, c, o);
     let (start_at, hit) = match i {
         2 => ((0x3b1c, 0x3b2a, 0x3b37), 0x54),
         0 => ((0x3cd4, 0x3ce4, 0x3cf1), 0x11),
         _ => ((0, 0, 0), 0),
     };
     if i != 1 && count(g, start_at.0) == 0x28 {
-        crate::sa_misc::record_296(g, img, c.target(img, start_at.1 + d), r, 1);
-        crate::sa_misc::sound_start(g, img, c.target(img, start_at.2 + d), r, 0xc8);
+        crate::sa_misc::record_296(g, img, c.target(img, start_at.1), r, 1);
+        crate::sa_misc::sound_start(g, img, c.target(img, start_at.2), r, 0xc8);
     }
     if g.read::<u32>(p) != 0xc8 {
         return;
@@ -1733,16 +1697,16 @@ fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: 
     let frame = g.read::<u32>(p + 8);
     if i == 1 || frame != hit {
         if frame == g.read::<u32>(p + 4) {
-            crate::sa_misc::sound_start(g, img, c.target(img, 0x3c56 + d), r, 0xc9);
+            crate::sa_misc::sound_start(g, img, c.target(img, 0x3c56), r, 0xc9);
         }
         return;
     }
     if i == 2 {
         let (a, b) = (local(c, 0x68), local(c, 0xa8));
         let m = g.read::<u32>(p.wrapping_sub(4));
-        call_slot(g, img, c, (0x3b5d + d, 237), &[m, 0x1c, 0, a]);
-        call_slot(g, img, c, (0x3b79 + d, 237), &[m, 0x11, 0, b]);
-        let k = kf(g, img, c, 0x3bc6 + d);
+        call_slot(g, img, c, (0x3b5d, 237), &[m, 0x1c, 0, a]);
+        call_slot(g, img, c, (0x3b79, 237), &[m, 0x11, 0, b]);
+        let k = kf(g, img, c, 0x3bc6);
         let mid = |g: &G, o: u32| mul(add(g.read::<f32>(b + o), g.read::<f32>(a + o)), k);
         let (x, y, z) = (mid(g, 0), mid(g, 4), mid(g, 8));
         g.write::<f32>(a, x);
@@ -1752,25 +1716,25 @@ fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: 
             g,
             img,
             c,
-            0x3c34 + d,
+            0x3c34,
             (rec(0x3c0f), 0x13),
             (x, y),
             (z.to_bits(), 0x3dcc_cccd),
         );
     } else {
-        let y = sub(g.read::<f32>(p + 0x38), kf(g, img, c, 0x3d1a + d));
+        let y = sub(g.read::<f32>(p + 0x38), kf(g, img, c, 0x3d1a));
         let a = g.read::<u32>(p + 0x3c);
         let x = g.read::<f32>(p + 0x34);
         motion(
             g,
             img,
             c,
-            0x3d69 + d,
+            0x3d69,
             (rec(0x3d5f), frame - 6),
             (x, y),
             (a, 0x3e2e_147b),
         );
-        set_half(g, img, c, 0x3d74 + d, 0);
+        set_half(g, img, c, 0x3d74, 0);
     }
 }
 
@@ -1927,7 +1891,7 @@ fn state_0_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         fr.xmm[2] = u128::from(s.to_bits());
         crate::sa_misc::spread_set(g, &fr);
     } else {
-        crate::r25::abs_stores(g, img, c.f, 0x44c, 0x453);
+        c.stores(g, img, 0x44c, 0x453);
     }
     let at = rec(0x456);
     let t = g.read::<u16>(at).wrapping_add(1);
@@ -1937,7 +1901,7 @@ fn state_0_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     if n == 0 {
         let s = crate::sa_misc::sound_start(g, img, c.target(img, 0x474), rec(0x46f), 0xc1);
         g.write::<u16>(rec(0x47a), s as u16);
-        crate::r25::abs_stores(g, img, c.f, 0x47e, 0x488);
+        c.stores(g, img, 0x47e, 0x488);
     }
 }
 
@@ -1984,13 +1948,20 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         call_slot(g, img, c, (0x4e2, 713), &[rec(0x4e7)]);
         set_half(g, img, c, 0x50f, 0);
         slot_222(g, img, c, (0x514, 0x509), 0, 3);
-        crate::r25::abs_stores(g, img, c.f, 0x522, 0x540);
+        c.stores(g, img, 0x522, 0x540);
         crate::sa_misc::turn_matrix(g, img, c.target(img, 0x541), 0);
         let mut fr = c.frame(img, 0x54b, 0);
         fr.ecx = rec(0x546);
         crate::s6_misc::camera_tracks_from(g, img, &fr);
-        let m = c.gw(g, img, 0x558);
-        call_slot(g, img, c, (0x550, 276), &[m, 0]);
+        if c.alt {
+            // mov ecx, M; call call_276
+            let mut fr = c.frame(img, 0x555, 0);
+            fr.ecx = c.w(img, 0x550);
+            crate::s4_small::call_276(g, img, &fr);
+        } else {
+            let m = c.gw(g, img, 0x558);
+            call_slot(g, img, c, (0x550, 276), &[m, 0]);
+        }
         for (op, v) in [(0x565u32, 1u32), (0x573, 4), (0x585, 0x10)] {
             call_slot(g, img, c, (op, 267), &[v]);
         }
@@ -2172,7 +2143,7 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         p = p.wrapping_add(0xcc);
     }
     if n.cast_signed() >= 0x140 {
-        crate::r25::abs_stores(g, img, c.f, 0xc18, 0xc22);
+        c.stores(g, img, 0xc18, 0xc22);
     }
 }
 
@@ -2236,7 +2207,7 @@ fn spread<G: Game>(g: &mut G, img: &Image, c: &Scene, call: u32, o: u32, s: f32)
 /// stopped and the actors' slot 296; on to state 0x17 at 0xcd.
 #[allow(clippy::too_many_lines)] // the original's state, in order
 fn state_15_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
-    use crate::sb_sse::{add, div, mul, sub};
+    use crate::sb_sse::sub;
     let rec = |o: u32| c.w(img, o);
     if half(g, img, c, 0x2d6c) == 0 {
         let v = c.gw(g, img, 0x2d92);
@@ -2244,7 +2215,7 @@ fn state_15_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         let eax = call_slot(g, img, c, (0x2d7d, 222), &[v, 0x1e, 0x20, 0x100]);
         crate::sa_misc::register_counted(g, img, c.target(img, 0x2da0), eax);
         crate::s4_misc::records_clear(g, img, &c.frame(img, 0x2da5, 0));
-        crate::r25::abs_stores(g, img, c.f, 0x2dab, 0x2dd3);
+        c.stores(g, img, 0x2dab, 0x2dd3);
         crate::sa_misc::turn_matrix(g, img, c.target(img, 0x2dd4), 0);
         stop_part(g, img, c, (0x2dd9, 0x2de4), (0x2de9, 0x2dde));
         set_half(g, img, c, 0x2df9, 0);
@@ -2304,108 +2275,7 @@ fn state_15_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
             n = half(g, img, c, 0x2f9c);
         }
     }
-    let d = i32::from(n.cast_signed());
-    let e = d - 0xf;
-    if e.cast_unsigned() < 0xf {
-        // cvtdq2pd and the unsigned fix-up word (0 for these)
-        let fix = g.read::<f64>(rec(0x2fc6).wrapping_add(8 * (e.cast_unsigned() >> 31)));
-        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
-        let x = (f64::from(e) + fix) as f32;
-        let s = mul(
-            sub(kf(g, img, c, 0x2fbd), div(x, kf(g, img, c, 0x2fd8))),
-            kf(g, img, c, 0x2fe4),
-        );
-        spread(g, img, c, 0x2fec, 0x2fcc, s);
-    } else if n.cast_signed() < 0x37 {
-        crate::r25::abs_stores(g, img, c.f, 0x30d5, 0x30dc);
-    } else {
-        let q = div_magic(d, 0x1b4e_81b5, false, 4);
-        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-        let s = sub(kf(g, img, c, 0x3006), q as f32);
-        spread(g, img, c, 0x3030, 0x3028, s);
-        let busy = call_slot(g, img, c, (0x3035, 279), &[]);
-        if busy != 1 {
-            let wait = half(g, img, c, 0x304f);
-            if wait == 0 && half(g, img, c, 0x305b).cast_signed() > 0 {
-                let r = crate::s4_misc::float_307(g, img, &c.frame(img, 0x3062, 0));
-                let x = match r.xmm0 {
-                    Some(crate::Xmm::F32(b)) => f32::from_bits(b),
-                    _ => 0.0,
-                };
-                let count = c.gw(g, img, 0x3070).cast_signed();
-                let x = add(
-                    mul(sub(x, kf(g, img, c, 0x306a)), kf(g, img, c, 0x307f)),
-                    kf(g, img, c, 0x3088),
-                );
-                #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
-                let t = div(x, count as f32);
-                set_half(g, img, c, 0x3096, trunc(f64::from(t)) as u16);
-                let k = i32::from(g.read::<i16>(rec(0x309d)));
-                let actor = g.read::<u32>(
-                    rec(0x30ac)
-                        .wrapping_add(k.wrapping_rem(count).wrapping_mul(0xcc).cast_unsigned()),
-                );
-                let mut fr = c.frame(img, 0x30b1, 1);
-                fr.edx = actor;
-                crate::s4_misc::call_239(g, img, &fr);
-                let w = half(g, img, c, 0x30b7);
-                let at = rec(0x30c1);
-                let v = g.read::<u16>(at).wrapping_sub(1);
-                g.write::<u16>(at, v);
-                set_half(g, img, c, 0x30c9, w.wrapping_sub(1));
-            } else {
-                set_half(g, img, c, 0x30c9, wait.wrapping_sub(1));
-            }
-        }
-        n = half(g, img, c, 0x30cf);
-    }
-    let two = 0x4000_0000;
-    if n == 0xf {
-        let x3 = kf(g, img, c, 0x30e6);
-        motion_words(
-            g,
-            img,
-            c,
-            0x3132,
-            (rec(0x3126), 8),
-            (0.0, x3),
-            [0, 0, 0, 0, two, two, two],
-        );
-        let x3 = kf(g, img, c, 0x3156);
-        motion_words(
-            g,
-            img,
-            c,
-            0x3195,
-            (rec(0x313c), 0x17),
-            (0.0, x3),
-            [0, 0, 0, 0, two, two, two],
-        );
-        n = half(g, img, c, 0x319b);
-    } else if n == 0x37 {
-        let x3 = kf(g, img, c, 0x3156);
-        motion_words(
-            g,
-            img,
-            c,
-            0x3195,
-            (rec(0x314e), 1),
-            (0.0, x3),
-            [0, 0, 0, 0, two, two, two],
-        );
-        n = half(g, img, c, 0x319b);
-    }
-    if n == 0x3d {
-        stop_part(g, img, c, (0x31a9, 0x31b4), (0x31b9, 0x31ae));
-        set_half(g, img, c, 0x31ce, 0);
-        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x31d3, 0));
-        n = half(g, img, c, 0x31d9);
-    }
-    let n = n.wrapping_add(1);
-    set_half(g, img, c, 0x31e6, n);
-    if n.cast_signed() >= 0xcd {
-        crate::r25::abs_stores(g, img, c.f, 0x31f3, 0x31fd);
-    }
+    tail_15(g, img, c, n);
 }
 
 /// Slot 307's random through operand `op` as state 0x17's sparks take it:
@@ -2470,7 +2340,7 @@ fn state_17_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         let eax = call_slot(g, img, c, (0x3324, 332), &[rec(0x3332)]);
         let (k1, k2) = (kf(g, img, c, 0x333c), kf(g, img, c, 0x3350));
         let (mut min_x, mut max_x, mut min_z, mut max_z) = (k1, k2, k1, k2);
-        crate::r25::abs_stores(g, img, c.f, 0x3363, 0x3381);
+        c.stores(g, img, 0x3363, 0x3381);
         let fr = Frame {
             eax,
             ..c.frame(img, 0x3382, 0)
@@ -2523,7 +2393,7 @@ fn state_17_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         g.write::<f32>(rec(0x34c1), h);
         let z = mul(add(max_z, min_z), kf(g, img, c, 0x34df));
         let a = i32::from(g.read::<i16>(rec(0x34d4))).cast_unsigned();
-        crate::r25::abs_stores(g, img, c.f, 0x34e3, 0x34ed);
+        c.stores(g, img, 0x34e3, 0x34ed);
         g.write::<f32>(rec(0x34f1), z);
         crate::sa_misc::turn_matrix(g, img, c.target(img, 0x34f6), a);
         let flag = |g: &mut G, ops: [(u32, u32); 4], last: (u32, u32)| {
@@ -2635,7 +2505,7 @@ fn state_17_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     let n = n.wrapping_add(1);
     set_half(g, img, c, 0x3944, n);
     if n.cast_signed() >= 0x5a {
-        crate::r25::abs_stores(g, img, c.f, 0x3952, 0x395c);
+        c.stores(g, img, 0x3952, 0x395c);
     }
 }
 
@@ -2804,6 +2674,543 @@ pub const SCENE_TASK_0515: Sig = Sig {
         (0x3f0a, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
         (0x3f18, Callee::Sig(&crate::r36::CAMERAS_0515)),
         (0x3f2a, Callee::Any), // __security_check_cookie (CRT)
+    ],
+    imports: &[],
+};
+
+/// State 0x15 from the count's reading (`+0x2fa3` in `magic_0515`): the
+/// spread falls over 0xf frames from `lo`, below `mid` the flash is off,
+/// from `mid` the spread by `n / 150` and (unless slot 279 says 1) the
+/// next actor's slot 239 once its wait `G_W` ran out (a random wait); at
+/// `burst` parts P14 and P4 move, at `part` part P6, at `stop` part P3
+/// stops and the actors' slot 296; on to state 0x17 at `next`. The
+/// thresholds are the copy's immediates.
+#[allow(clippy::too_many_lines)] // the original's state, in order
+fn tail_15<G: Game>(g: &mut G, img: &Image, c: &Scene, n: u16) {
+    use crate::sb_sse::{add, div, mul, sub};
+    let rec = |o: u32| c.w(img, o);
+    // the imm8 of `cmp ax, imm8` (66 83 f8 ib), sign-extended
+    let imm8 = |o: u32| i32::from(((c.w(img, o) & 0xff) as u8).cast_signed());
+    // lea ecx, [edx - lo]; cmp ax, mid; .. cmp ax, burst; cmp ax, part;
+    // cmp ax, stop; mov ecx, next
+    let lo = -imm8(0x2fa8);
+    let mid = imm8(0x2ffb);
+    // (cmp ax, imm8 compares the halfword sign-extended)
+    let half_of = |x: i32| x.cast_unsigned() as u16;
+    let (burst, part, stop) = (
+        half_of(imm8(0x30df)),
+        half_of(imm8(0x3145)),
+        half_of(imm8(0x31a5)),
+    );
+    let next = c.w(img, 0x31e0).cast_signed();
+    let mut n = n;
+    let d = i32::from(n.cast_signed());
+    let e = d - lo;
+    if e.cast_unsigned() < 0xf {
+        // cvtdq2pd and the unsigned fix-up word (0 for these)
+        let fix = g.read::<f64>(rec(0x2fc6).wrapping_add(8 * (e.cast_unsigned() >> 31)));
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let x = (f64::from(e) + fix) as f32;
+        let s = mul(
+            sub(kf(g, img, c, 0x2fbd), div(x, kf(g, img, c, 0x2fd8))),
+            kf(g, img, c, 0x2fe4),
+        );
+        spread(g, img, c, 0x2fec, 0x2fcc, s);
+    } else if i32::from(n.cast_signed()) < mid {
+        c.stores(g, img, 0x30d5, 0x30dc);
+    } else {
+        let q = div_magic(d, 0x1b4e_81b5, false, 4);
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+        let s = sub(kf(g, img, c, 0x3006), q as f32);
+        spread(g, img, c, 0x3030, 0x3028, s);
+        let busy = call_slot(g, img, c, (0x3035, 279), &[]);
+        if busy != 1 {
+            let wait = half(g, img, c, 0x304f);
+            if wait == 0 && half(g, img, c, 0x305b).cast_signed() > 0 {
+                let r = crate::s4_misc::float_307(g, img, &c.frame(img, 0x3062, 0));
+                let x = match r.xmm0 {
+                    Some(crate::Xmm::F32(b)) => f32::from_bits(b),
+                    _ => 0.0,
+                };
+                let count = c.gw(g, img, 0x3070).cast_signed();
+                let x = add(
+                    mul(sub(x, kf(g, img, c, 0x306a)), kf(g, img, c, 0x307f)),
+                    kf(g, img, c, 0x3088),
+                );
+                #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+                let t = div(x, count as f32);
+                set_half(g, img, c, 0x3096, trunc(f64::from(t)) as u16);
+                let k = i32::from(g.read::<i16>(rec(0x309d)));
+                let actor = g.read::<u32>(
+                    rec(0x30ac)
+                        .wrapping_add(k.wrapping_rem(count).wrapping_mul(0xcc).cast_unsigned()),
+                );
+                let mut fr = c.frame(img, 0x30b1, 1);
+                fr.edx = actor;
+                crate::s4_misc::call_239(g, img, &fr);
+                let w = half(g, img, c, 0x30b7);
+                let at = rec(0x30c1);
+                let v = g.read::<u16>(at).wrapping_sub(1);
+                g.write::<u16>(at, v);
+                set_half(g, img, c, 0x30c9, w.wrapping_sub(1));
+            } else {
+                set_half(g, img, c, 0x30c9, wait.wrapping_sub(1));
+            }
+        }
+        n = half(g, img, c, 0x30cf);
+    }
+    let two = 0x4000_0000;
+    if n == burst {
+        let x3 = kf(g, img, c, 0x30e6);
+        motion_words(
+            g,
+            img,
+            c,
+            0x3132,
+            (rec(0x3126), 8),
+            (0.0, x3),
+            [0, 0, 0, 0, two, two, two],
+        );
+        let x3 = kf(g, img, c, 0x3156);
+        motion_words(
+            g,
+            img,
+            c,
+            0x3195,
+            (rec(0x313c), 0x17),
+            (0.0, x3),
+            [0, 0, 0, 0, two, two, two],
+        );
+        n = half(g, img, c, 0x319b);
+    } else if n == part {
+        let x3 = kf(g, img, c, 0x3156);
+        motion_words(
+            g,
+            img,
+            c,
+            0x3195,
+            (rec(0x314e), 1),
+            (0.0, x3),
+            [0, 0, 0, 0, two, two, two],
+        );
+        n = half(g, img, c, 0x319b);
+    }
+    if n == stop {
+        stop_part(g, img, c, (0x31a9, 0x31b4), (0x31b9, 0x31ae));
+        set_half(g, img, c, 0x31ce, 0);
+        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x31d3, 0));
+        n = half(g, img, c, 0x31d9);
+    }
+    let n = n.wrapping_add(1);
+    set_half(g, img, c, 0x31e6, n);
+    if i32::from(n.cast_signed()) >= next {
+        c.stores(g, img, 0x31f3, 0x31fd);
+    }
+}
+
+/// State 0 of `magic_0611` (`+0x15c`): once (the halfword `G_O`), the
+/// camera record cleared, the actors' slot 296, slot 222 `(.., 0, 0x1d)`,
+/// with either flag `G_A`/`G_B` slot 278 `(*G_M, 4..=7, 1)`. While not
+/// busy the count steps; at 0x14 slot 267 (1, 4, 0x10), the block's slot
+/// 331, slot 332, slot 309 on the sounds, the records' slot 296 with 0 and
+/// state 0x15 starts.
+fn state_0_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    let rec = |o: u32| c.w(img, o);
+    if half(g, img, c, 0x15f) == 0 {
+        set_half(g, img, c, 0x173, 1);
+        c.stores(g, img, 0x177, 0x181);
+        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x182, 0));
+        slot_222(g, img, c, (0x187, 0x19c), 0, 0x1d);
+        if c.gw(g, img, 0x1a7) != 0 || c.gw(g, img, 0x1b0) != 0 {
+            for (op, m, k) in [
+                (0x1b8u32, 0x1c8u32, 4u32),
+                (0x1cf, 0x1e2, 5),
+                (0x1e9, 0x1fc, 6),
+                (0x203, 0x216, 7),
+            ] {
+                let x = c.gw(g, img, m);
+                call_slot(g, img, c, (op, 278), &[x, k, 1]);
+            }
+        }
+    }
+    if c.busy(g, img, 0x220) {
+        return;
+    }
+    let n = half(g, img, c, 0x22f).wrapping_add(1);
+    set_half(g, img, c, 0x237, n);
+    if n.cast_signed() < 0x14 {
+        return;
+    }
+    for (op, v) in [(0x246u32, 1u32), (0x255, 4), (0x267, 0x10)] {
+        call_slot(g, img, c, (op, 267), &[v]);
+    }
+    crate::sa_misc::block_331(g, img, c.target(img, 0x27c));
+    let eax = call_slot(g, img, c, (0x281, 332), &[rec(0x286)]);
+    crate::sa_misc::repeat_309(g, img, c.target(img, 0x296), eax);
+    crate::sa_misc::record_296(g, img, c.target(img, 0x2a2), rec(0x29d), 0);
+    g.write::<u32>(c.s.wrapping_sub(4), 0);
+    crate::s4_small::records_296_with(g, img, &c.frame(img, 0x2a9, 1));
+    for (call, r) in [(0x2b8u32, 0x2b3u32), (0x2c4, 0x2bf), (0x2d0, 0x2cb)] {
+        crate::sa_misc::record_296(g, img, c.target(img, call), rec(r), 0);
+    }
+    c.stores(g, img, 0x2d4, 0x2de);
+}
+
+/// The records' sizes: each of the `G_N` records (0xcc bytes apart from
+/// the immediate at `base`) `+0x28 = +0x24 * s`.
+fn sizes<G: Game>(g: &mut G, img: &Image, c: &Scene, (count, base): (u32, u32), s: f32) {
+    let n = c.gw(g, img, count).cast_signed();
+    let mut p = c.w(img, base);
+    for _ in 0..n.max(0) {
+        let v = crate::sb_sse::mul(g.read::<f32>(p + 0x24), s);
+        g.write::<f32>(p + 0x28, v);
+        p = p.wrapping_add(0xcc);
+    }
+}
+
+/// State 0x15's once-block in `magic_0611` (`+0x2bb9`): slot 222 `(..,
+/// 0x1e, 0x20)`, the counted records registered and the records cleared,
+/// the centre `(0, 0, 0, 1)`, the matrix turned, the records' sizes by
+/// `K`, both part groups' live axes, part P11's motion, the camera record
+/// started, part P1's motion, the actors' slot 296, the parts placed.
+fn once_15_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    let rec = |o: u32| c.w(img, o);
+    let v = c.gw(g, img, 0x2be2);
+    set_half(g, img, c, 0x2be9, 1);
+    let eax = call_slot(g, img, c, (0x2bcd, 222), &[v, 0x1e, 0x20, 0x100]);
+    crate::sa_misc::register_counted(g, img, c.target(img, 0x2bf3), eax);
+    crate::s4_misc::records_clear(g, img, &c.frame(img, 0x2bf8, 0));
+    c.stores(g, img, 0x2bfe, 0x2c26);
+    crate::sa_misc::turn_matrix(g, img, c.target(img, 0x2c27), 0);
+    let s = kf(g, img, c, 0x2c35);
+    sizes(g, img, c, (0x2c2d, 0x2c3c), s);
+    let axes = |g: &mut G, call: u32, ecx: u32, edx: u32| {
+        let fr = Frame {
+            ecx,
+            edx,
+            ..c.frame(img, call, 0)
+        };
+        crate::s6_misc::live_parts_axes(g, img, &fr);
+    };
+    axes(g, 0x2ce5, rec(0x2ce0), 3);
+    let n = c.gw(g, img, 0x2ceb);
+    axes(g, 0x2cf5, rec(0x2cf0), n);
+    let a = c.gw(g, img, 0x2cfd);
+    let (x3, x2) = (kf(g, img, c, 0x2d05), kf(g, img, c, 0x2d0d));
+    let k = 0x3d50_e560;
+    motion_words(
+        g,
+        img,
+        c,
+        0x2d51,
+        (rec(0x2d47), 0),
+        (x2, x3),
+        [a, 0, 0x45aa_a800, 0, k, k, k],
+    );
+    let mut fr = c.frame(img, 0x2d5e, 0);
+    fr.ecx = rec(0x2d59);
+    crate::s6_misc::camera_tracks_from(g, img, &fr);
+    let x3 = kf(g, img, c, 0x2d66);
+    let h = 0x3f00_0000;
+    motion_words(
+        g,
+        img,
+        c,
+        0x2db2,
+        (rec(0x2da6), 0x15),
+        (0.0, x3),
+        [0, 0, 0, 0, h, h, h],
+    );
+    let mut fr = c.frame(img, 0x2dbc, 0);
+    fr.ecx = 1;
+    crate::s4_misc::actors_296(g, img, &fr);
+    let r = kf(g, img, c, 0x2dc4);
+    placed(g, img, c, 0x2dcd, r, (0, 0));
+}
+
+/// State 0x15 of `magic_0611` (`+0x2bb9`): once, [`once_15_0611`]; while
+/// not busy slot 306 `(2)` at the count's 0, slot 220 at 5, the closing
+/// curve at 0x1e; then [`tail_15`] with this copy's thresholds.
+fn state_15_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    use crate::sb_sse::sub;
+    let rec = |o: u32| c.w(img, o);
+    if half(g, img, c, 0x2bbc) == 0 {
+        once_15_0611(g, img, c);
+    }
+    if c.busy(g, img, 0x2dd5) {
+        return;
+    }
+    let mut n = half(g, img, c, 0x2de4);
+    if n == 0 {
+        crate::sa_misc::slot306(g, img, c.target(img, 0x2df4), 2);
+        n = half(g, img, c, 0x2dfa);
+    }
+    if n == 5 {
+        let mut fr = c.frame(img, 0x2e0f, 1);
+        fr.ecx = c.gw(g, img, 0x2e0a);
+        crate::s4_misc::call_220(g, img, &fr);
+        n = half(g, img, c, 0x2e15);
+    }
+    if n == 0x1e {
+        call_slot(g, img, c, (0x2e27, 325), &[rec(0x2e37), rec(0x2e2c)]);
+        call_slot(g, img, c, (0x2e3e, 325), &[rec(0x2e4e), rec(0x2e43)]);
+        let v = sub(kf(g, img, c, 0x2e58), kf(g, img, c, 0x2e60));
+        g.write::<f32>(rec(0x2ea8), v);
+        let words = [
+            2,
+            0xf,
+            0,
+            0,
+            rec(0x2e98),
+            0x40b3_3333,
+            0xbecc_cccd,
+            0x3da3_d70a,
+            0x4080_8ca0,
+            0x0200_0000,
+            4,
+        ];
+        spline(g, img, c, 0x2ead, (rec(0x2e7c), rec(0x2e68)), words);
+        n = half(g, img, c, 0x2eb3);
+    }
+    let tail = c.with(&MAP_15_0611_TAIL);
+    tail_15(g, img, &tail, n);
+}
+
+/// `magic_0611`'s state 3 against `magic_0515`'s.
+static MAP_3_0611: [(u32, u32); 10] = [
+    (0x4c3, 0x319),
+    (0x564, 0x3af),
+    (0x577, 0x3c2),
+    (0x57a, 0x3c5),
+    (0x62d, 0x480),
+    (0x632, 0x478),
+    (0x63a, 0x485),
+    (0x760, 0x5a6),
+    (0x9c1, 0x810),
+    (0xb80, 0x9d0),
+];
+/// `magic_0611`'s state 0x15 from the count's reading.
+static MAP_15_0611_TAIL: [(u32, u32); 1] = [(0x2fa3, 0x2eba)];
+/// `magic_0611`'s state 0x17.
+static MAP_17_0611: [(u32, u32); 2] = [(0x3202, 0x3119), (0x33a0, 0x32b0)];
+/// `magic_0611`'s state 0x64.
+static MAP_64_0611: [(u32, u32); 2] = [(0x3daf, 0x3cbf), (0x3e44, 0x3d49)];
+/// `magic_0611`'s end.
+static MAP_END_0611: [(u32, u32); 2] = [(0x3e5f, 0x3d64), (0x3e72, 0x3d80)];
+/// `magic_0611`'s shared states (one shift each): 1, 6, 8, 9, 0xd, 0x10,
+/// 0x18.
+static SHIFT_0611: [(u32, [(u32, u32); 1]); 7] = [
+    (1, [(0x48d, 0x2e3)]),
+    (6, [(0xc27, 0xa77)]),
+    (8, [(0xe8a, 0xcda)]),
+    (9, [(0x130c, 0x115c)]),
+    (0xd, [(0x1835, 0x1685)]),
+    (0x10, [(0x1a52, 0x18a2)]),
+    (0x18, [(0x3961, 0x3871)]),
+];
+
+/// The scene task of `magic_0611` (0x10004d10, 16089 bytes): the same
+/// prologue as [`scene_task_0515`]; its own states 0 ([`state_0_0611`])
+/// and 0x15 ([`state_15_0611`]); `magic_0515`'s states 1, 6, 8, 9, 0xd,
+/// 0x10 and 0x18 shifted, 3 and 0x64 through [`call_276`] instead of the
+/// slot, 0x17 and the end with their operands moved
+/// ([`MAP_3_0611`] ..).
+///
+/// [`call_276`]: crate::s4_small::call_276
+pub fn scene_task_0611<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x108);
+    let c = Scene {
+        f: fr.at,
+        s: a.wrapping_sub(8),
+        map: &[],
+        alt: true,
+    };
+    if let Exit::Out = prologue(g, img, &c) {
+        return Ret::eax(0);
+    }
+    let state = c.gw(g, img, 0x141);
+    let shifted = SHIFT_0611
+        .iter()
+        .find(|(s, _)| *s == state)
+        .map(|(_, m)| c.with(m));
+    match (state, shifted) {
+        (0, _) => state_0_0611(g, img, &c),
+        (1, Some(s)) => state_1(g, img, &s),
+        (3, _) => state_3_0515(g, img, &c.with(&MAP_3_0611)),
+        (6, Some(s)) => state_6(g, img, &s),
+        (8, Some(s)) => state_8(g, img, &s),
+        (9, Some(s)) => state_9(g, img, &s),
+        (0xd, Some(s)) => state_d(g, img, &s),
+        (0x10, Some(s)) => state_10(g, img, &s),
+        (0x15, _) => state_15_0611(g, img, &c),
+        (0x17, _) => state_17_0515(g, img, &c.with(&MAP_17_0611)),
+        (0x18, Some(s)) => state_18(g, img, &s),
+        (0x64, _) => state_64(g, img, &c.with(&MAP_64_0611)),
+        _ => {}
+    }
+    end(g, img, &c.with(&MAP_END_0611));
+    Ret::eax(0)
+}
+
+/// [`scene_task_0611`] (16089 bytes, 1 overlay).
+pub const SCENE_TASK_0611: Sig = Sig {
+    len: 16089,
+    hash: 0x0738_5daa_0974_d642,
+    calls: &[
+        (0x182, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x27c, Callee::Sig(&crate::sa_misc::BLOCK_331)),
+        (0x296, Callee::Sig(&crate::sa_misc::REPEAT_309)),
+        (0x2a2, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x2a9, Callee::Sig(&crate::s4_small::RECORDS_296_WITH)),
+        (0x2b8, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x2c4, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x2d0, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x397, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x3a1, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x3ab, Callee::Sig(&crate::s4_small::CALL_276)),
+        (0x3e5, Callee::Sig(&crate::sa_misc::BLOCK_331)),
+        (0x3ff, Callee::Sig(&crate::sa_misc::RECORDS_295)),
+        (0x40b, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x417, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x423, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x42a, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x439, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x448, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x457, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x474, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x487, Callee::Sig(&crate::s8_misc::PARTS_PLACED)),
+        (0x4e2, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x54d, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x6a3, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x71a, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x77b, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x7d6, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x7e5, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x7f4, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x848, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x86e, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0x8a7, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x8e7, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x909, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0x9a1, Callee::Sig(&crate::s8_misc::PARTS_PLACED)),
+        (0xabc, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0xac6, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0xacb, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xad0, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xad7, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0xb95, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0xbad, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xbb2, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xc62, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xc88, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xcf5, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0xcfa, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xcff, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xd2c, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0xd5d, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0xda5, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xdcd, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe00, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xe3a, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe5a, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe8b, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xed2, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xefe, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xf2f, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0x1000, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x1072, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x10ee, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x11a3, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x11f7, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x1209, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x124b, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x12be, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x12de, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x1304, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x1502, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x1555, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x15de, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x1625, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x16a0, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x16ce, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x16dd, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x16ec, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x16fc, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x1701, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x1720, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x1755, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x17e1, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x1866, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x18bc, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x18c1, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x18d2, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x18f1, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x194e, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x1a8b, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x1bf6, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x1c5b, Callee::Import("_CIatan2")),
+        (0x2348, Callee::Sig(&crate::sa_misc::RECORD_FREE)),
+        (0x239a, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x2725, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x28fe, Callee::Sig(&crate::s4_misc::REGISTER_PARTS_B)),
+        (0x2985, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x2a22, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x2ae0, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x2b30, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x2bf3, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x2bf8, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x2c27, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x2ce5, Callee::Sig(&crate::s6_misc::LIVE_PARTS_AXES)),
+        (0x2cf5, Callee::Sig(&crate::s6_misc::LIVE_PARTS_AXES)),
+        (0x2d51, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x2d5e, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x2db2, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x2dbc, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x2dcd, Callee::Sig(&crate::s8_misc::PARTS_PLACED)),
+        (0x2df4, Callee::Sig(&crate::sa_misc::SLOT306)),
+        (0x2e0f, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x2ead, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x2f03, Callee::Sig(&crate::sa_misc::SPREAD_SET)),
+        (0x2f47, Callee::Sig(&crate::sa_misc::SPREAD_SET)),
+        (0x2f79, Callee::Sig(&crate::s4_misc::FLOAT_307)),
+        (0x2fc8, Callee::Sig(&crate::s4_misc::CALL_239)),
+        (0x3049, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x30ac, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x30ea, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x3133, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x3138, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x313d, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0x3142, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0x3147, Callee::Sig(&crate::s4_misc::MODELS_295)),
+        (0x3299, Callee::Sig(&crate::s4_misc::REPEAT_310)),
+        (0x3406, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x3541, Callee::Sig(&crate::s4_small::RECORDS_296_WITH)),
+        (0x355b, Callee::Sig(&crate::s4_small::RECORDS_296_WITH)),
+        (0x357d, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x35a6, Callee::Sig(&crate::s4_misc::FREE_RECORD)),
+        (0x3843, Callee::Sig(&crate::s4_misc::CALL_239)),
+        (0x388d, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x39b0, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x39bc, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x39c6, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x39ea, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x39f4, Callee::Sig(&crate::sa_misc::SLOT306)),
+        (0x3a3a, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3a47, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3b44, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x3b66, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3bf4, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3c01, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3c79, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x3d2b, Callee::Sig(&crate::sa_misc::PLACE_RECORDS)),
+        (0x3d3b, Callee::Sig(&crate::sa_misc::PLACE_RECORDS)),
+        (0x3d45, Callee::Sig(&crate::s4_small::CALL_276)),
+        (0x3d4a, Callee::Sig(&crate::s4_misc::MODELS_276)),
+        (0x3df9, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS)),
+        (0x3e08, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
+        (0x3e18, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
+        (0x3e26, Callee::Sig(&crate::r36::CAMERAS_0515)),
+        (0x3e38, Callee::Any), // __security_check_cookie (CRT)
     ],
     imports: &[],
 };
