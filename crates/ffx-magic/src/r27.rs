@@ -5161,18 +5161,42 @@ pub fn start_up_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// (the same code at the same offsets; slot 719's last argument read from
 /// its `push imm8`).
 fn start_up_head_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
+    start_up_head_0597_with(g, img, fr, |o| o, false);
+}
+
+/// [`start_up_head_0597`] on a copy: `m` maps `magic_0570`'s operand
+/// offsets to the copy's; with `s381` the copy calls slot 381 `(1)` first
+/// (the imports at `+0x11`, slot 718's at `+0x34`), after the two stores
+/// `0570` makes before slot 718 (here at `+0x1d..+0x31`). Returns the two
+/// words slots 238 and 296 got (`*G`, still on the stack after).
+pub(crate) fn start_up_head_0597_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    m: fn(u32) -> u32,
+    s381: bool,
+) -> [u32; 2] {
     use crate::r25::abs_stores;
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let w = |o: u32| img.word(f + m(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let actor = fr.arg(g, 0);
     // push ebp; and esp, -8; push ecx; push esi: the return address 4
     // below
     let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc);
     crate::s4_summon::targets_init_c(g, img, img.rel32_target(f + 0xc), esp, actor);
-    let s718 = t(g, 0x11, 718);
-    abs_stores(g, img, f, 0x15, 0x13d);
-    abs_stores(g, img, f, 0x148, 0x15c);
+    let s718 = if s381 {
+        let s = slot_target(g, img.word(f + 0x11), 381);
+        abs_stores(g, img, f, 0x1d, 0x31);
+        g.call(s, 0, &[1]);
+        slot_target(g, img.word(f + 0x34), 718)
+    } else {
+        t(g, 0x11, 718)
+    };
+    abs_stores(g, img, f, m(0x15), m(0x13d));
+    if !s381 {
+        abs_stores(g, img, f, 0x148, 0x15c);
+    }
     g.call(s718, 0, &[w(0x144)]);
     // call width: 3
     let h = g.call(t(g, 0x15f, 719), 0, &[w(0x171), 8, 0]).eax;
@@ -5210,10 +5234,13 @@ fn start_up_head_0597<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
         .eax;
     // call width: 3
     g.call(t(g, 0x272, 551), 0, &[r, 0, 2]);
+    let v238 = g.read::<u32>(w(0x290));
     // call width: 2
-    g.call(t(g, 0x27f, 238), 0, &[g.read::<u32>(w(0x290)), 1]);
+    g.call(t(g, 0x27f, 238), 0, &[v238, 1]);
+    let v296 = g.read::<u32>(w(0x29e));
     // call width: 2
-    g.call(t(g, 0x297, 296), 0, &[g.read::<u32>(w(0x29e)), 0]);
+    g.call(t(g, 0x297, 296), 0, &[v296, 0]);
+    [v238, v296]
 }
 
 /// [`start_up_0597`] (868 bytes, 1 overlay).

@@ -89,6 +89,7 @@ pub mod r37;
 pub mod r37b;
 pub mod r39;
 pub mod r39b;
+pub mod r40;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3300,6 +3301,13 @@ ports! {
     "r39 scene task 0668" => r39b::SCENE_TASK_0668, r39b::scene_task_0668;
     "r39 node ease thunk 0070" => r39::CALL_NODE_EASE_0070, r39::call_node_ease_0070;
     // round 39 (magic-r39): end
+    // round 40 (magic-r40)
+    "r40 start-up 0150" => r40::START_UP_0150, r40::start_up_0150;
+    "r40 walk ring (junk) thunk 0150" => r40::JMP_WALK_RING_JUNK_0150, r40::jmp_walk_ring_junk_0150;
+    "r40 start-up 0070" => r40::START_UP_0070, r40::start_up_0070;
+    "r40 motion task 0155" => r40::MOTION_TASK_0155, r40::motion_task_0155;
+    "r40 motion task 0164" => r40::MOTION_TASK_0164, r40::motion_task_0164;
+    // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -3675,6 +3683,9 @@ ports! {
 /// custom register conventions, or reached only from ported code), for
 /// the work list's coverage (`magic-sig --covered`).
 pub const INTERNAL: &[(&str, &Sig)] = &[
+    // round 40 (magic-r40)
+    ("r40 walk ring (junk) 0150", &r40::WALK_RING_JUNK_0150),
+    // round 40 (magic-r40): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
     ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),

@@ -2611,13 +2611,64 @@ fn static_append_0603<G: Game>(
 /// `(*G_O, 0)`. Returns 0.
 #[allow(clippy::too_many_lines)] // one straight sequence
 pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_0603_with(
+        g,
+        img,
+        fr,
+        &StartUp0603 {
+            shift_from: u32::MAX,
+            early_215: false,
+            model: crate::r18::model_start_0603,
+            setup: |g, img, at, esp| {
+                crate::r23::summon_setup_0603(g, img, at, esp);
+            },
+        },
+    )
+}
+
+/// The layout of a [`start_up_0603`] copy: the code from `shift_from` on
+/// (`magic_0603`'s offsets) sits 3 bytes earlier, slot 215 is called right
+/// after slot 325 (with its two words still on the stack, before the
+/// second static append and the mean offset), and the model start and the
+/// summon set-up (`(at, esp)`) are the copy's own.
+pub(crate) struct StartUp0603<G: Game> {
+    pub shift_from: u32,
+    pub early_215: bool,
+    pub model: fn(&mut G, &Image, &Frame) -> Ret,
+    pub setup: fn(&mut G, &Image, u32, u32),
+}
+
+/// [`start_up_0603`] on the layout `l`.
+#[allow(clippy::too_many_lines)] // one straight sequence
+pub(crate) fn start_up_0603_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    l: &StartUp0603<G>,
+) -> Ret {
     use crate::sb_sse::{div, mul, sub};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    // magic_0603's offset `o` in the copy
+    let m = |o: u32| if o >= l.shift_from { o - 3 } else { o };
+    let w = |o: u32| img.word(f + m(o));
+    let st = |g: &mut G, from: u32, to: u32| abs_stores(g, img, f, m(from), m(to));
+    let app = |g: &mut G,
+               (last, n8, cmp, eq, ne, count): (u32, u32, u32, u32, u32, u32),
+               pre: (u32, u32),
+               post: (u32, u32)| {
+        static_append_0603(
+            g,
+            img,
+            f,
+            (m(last), m(n8), m(cmp), m(eq), m(ne), m(count)),
+            (m(pre.0), m(pre.1)),
+            (m(post.0), m(post.1)),
+        );
+    };
     let rd = |g: &G, o: u32| g.read::<u32>(w(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
-    let call = |o: u32| img.rel32_target(f + o);
+    let call = |o: u32| img.rel32_target(f + m(o));
     let actor = fr.arg(g, 0);
     let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x44);
     // after `push esi`
@@ -2635,37 +2686,50 @@ pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 2
     let b = g.call(t(g, 0x37, 803), 0, &[0x48000, 0x10]).eax;
     g.write::<u32>(w(0x4b), b);
-    abs_stores(g, img, f, 0x5f, 0x187);
+    st(g, 0x5f, 0x187);
     // call width: 2
     g.call(t(g, 0x50, 217), 0, &[rd(g, 0x5b), w(0x55)]);
-    abs_stores(g, img, f, 0x197, 0x1a1);
-    static_append_0603(
+    st(g, 0x197, 0x1a1);
+    app(
         g,
-        img,
-        f,
         (0x190, 0x1d3, 0x1d8, 0x1de, 0x1ed, 0x1f9),
         (0x1a1, 0x1d2),
         (0x1fd, 0x211),
     );
     // call width: 2
     g.call(t(g, 0x1f2, 325), 0, &[w(0x21d), w(0x218)]);
-    let x = rd(g, 0x22c);
-    g.write::<u32>(w(0x237), x);
-    static_append_0603(
+    if l.early_215 {
+        // the copy's own order (its offsets): the word, slot 215 over slot
+        // 325's two words still on the stack, the static append, the
+        // mean offset
+        let x = rd(g, 0x227);
+        let o = rd(g, 0x232);
+        g.write::<u32>(w(0x23a), x);
+        // call width: 3
+        let obj = g.call(t(g, 0x22c, 215), 0, &[o, w(0x21d), w(0x218)]).eax;
+        g.write::<u32>(w(0x247), obj);
+        app(
+            g,
+            (0x24c, 0x285, 0x28a, 0x290, 0x29f, 0x2a6),
+            (0x253, 0x284),
+            (0x2af, 0x2c3),
+        );
+        crate::s5_misc::targets_mean_offset(g, img, &at(0x2c4, w(0x2ab)));
+    } else {
+        let x = rd(g, 0x22c);
+        g.write::<u32>(w(0x237), x);
+        app(
+            g,
+            (0x224, 0x26d, 0x272, 0x278, 0x287, 0x28e),
+            (0x23b, 0x26c),
+            (0x297, 0x2ab),
+        );
+        crate::s5_misc::targets_mean_offset(g, img, &at(0x2ac, w(0x293)));
+        let obj = g.call(t(g, 0x2b1, 215), 0, &[rd(g, 0x2b7)]).eax;
+        g.write::<u32>(w(0x2c4), obj);
+    }
+    app(
         g,
-        img,
-        f,
-        (0x224, 0x26d, 0x272, 0x278, 0x287, 0x28e),
-        (0x23b, 0x26c),
-        (0x297, 0x2ab),
-    );
-    crate::s5_misc::targets_mean_offset(g, img, &at(0x2ac, w(0x293)));
-    let obj = g.call(t(g, 0x2b1, 215), 0, &[rd(g, 0x2b7)]).eax;
-    g.write::<u32>(w(0x2c4), obj);
-    static_append_0603(
-        g,
-        img,
-        f,
         (0x2c9, 0x30c, 0x311, 0x317, 0x326, 0x32d),
         (0x2d0, 0x30b),
         (0x341, 0x355),
@@ -2674,27 +2738,23 @@ pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // call width: 2
     g.call(t(g, 0x337, 601), 0, &[rd(g, 0x33d), v]);
     let x = sub(k(g, 0x361), g.read::<f32>(v));
-    abs_stores(g, img, f, 0x36e, 0x38b);
+    st(g, 0x36e, 0x38b);
     let x = mul(x, k(g, 0x38f));
-    abs_stores(g, img, f, 0x393, 0x3a7);
+    st(g, 0x393, 0x3a7);
     let x = div(x, k(g, 0x3ab));
-    abs_stores(g, img, f, 0x3af, 0x3b9);
+    st(g, 0x3af, 0x3b9);
     g.write::<u32>(w(0x3be), crate::s4_summon::trunc(x));
     let q = [w(0x3fd), w(0x3f8), w(0x3f3)];
-    static_append_0603(
+    app(
         g,
-        img,
-        f,
         (0x3c3, 0x3c8, 0x3cd, 0x3d3, 0x3e2, 0x3ee),
         (0x3c2, 0x3c2),
         (0x407, 0x41b),
     );
     // call width: 4
     g.call(t(g, 0x3e7, 262), 0, &[rd(g, 0x403), q[0], q[1], q[2]]);
-    static_append_0603(
+    app(
         g,
-        img,
-        f,
         (0x424, 0x467, 0x46c, 0x472, 0x481, 0x48d),
         (0x42b, 0x466),
         (0x497, 0x4ab),
@@ -2709,17 +2769,17 @@ pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(w(out), crate::ob_model::st0_f32(o.st0));
     }
     let old = rd(g, 0x505);
-    abs_stores(g, img, f, 0x50c, 0x53d);
+    st(g, 0x50c, 0x53d);
     g.write::<u32>(w(0x53e), old);
     if old == w(0x543) {
-        abs_stores(g, img, f, 0x549, 0x553);
+        st(g, 0x549, 0x553);
     } else {
         g.write::<u32>(old.wrapping_add(4), w(0x558));
     }
     let pass = g.read::<u8>(w(0x55d));
     let n = g.read::<u16>(w(0x564)).wrapping_add(1);
     g.write::<u16>(w(0x564), n);
-    abs_stores(g, img, f, 0x56c, 0x5b7);
+    st(g, 0x56c, 0x5b7);
     let cur = a + 4;
     g.write::<u32>(cur, w(0x5b3));
     g.write::<u8>(cur + 5, pass);
@@ -2731,20 +2791,16 @@ pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     crate::m0070::node_init_big(g, rec);
     let x = rd(g, 0x5f2);
     g.write::<u32>(w(0x5f7), x);
-    static_append_0603(
+    app(
         g,
-        img,
-        f,
         (0x5fc, 0x646, 0x64b, 0x651, 0x660, 0x66c),
         (0x600, 0x645),
         (0x675, 0x6bb),
     );
     // call width: 3
     g.call(t(g, 0x665, 234), 0, &[w(0x6c7), w(0x6c2), w(0x671)]);
-    static_append_0603(
+    app(
         g,
-        img,
-        f,
         (0x6ce, 0x707, 0x70c, 0x712, 0x721, 0x728),
         (0x6d5, 0x706),
         (0x73b, 0x74f),
@@ -2853,8 +2909,8 @@ pub fn start_up_0603<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let part = g.call(t(g, 0xb12, 719), 0, &[w(0xb21), 6, 4]).eax;
     // call width: 3
     g.call(t(g, 0xb30, 551), 0, &[part, 0, 2]);
-    crate::r18::model_start_0603(g, img, &at(0xb40, 0));
-    crate::r23::summon_setup_0603(g, img, call(0xb45), s.wrapping_sub(4));
+    (l.model)(g, img, &at(0xb40, 0));
+    (l.setup)(g, img, call(0xb45), s.wrapping_sub(4));
     // call width: 2
     g.call(t(g, 0xb4a, 10), 0, &[rd(g, 0xb52), 0]);
     Ret::eax(0)
