@@ -745,7 +745,7 @@ fn scene_0515_state_0() {
     let (once, fa, fb, n0) = (0x15fu32, 0x16cu32, 0x180u32, 0x2c6u32);
     let (cam, left) = (0x2aeu32, 0x2b7u32);
     let mut cases = vec![
-        scene(0, &[(once, 0), (fa, 1), (fb, 0), (n0, 0x30)]),
+        scene(0, &[(once, 0), (fa, 1), (fb, 0), (n0, 0x30), (0x245, 2)]),
         scene(0, &[(once, 0), (fa, 0), (fb, 1), (n0, 0x30)]),
         scene(0, &[(once, 0), (fa, 0), (fb, 0), (n0, 0x30)]),
         Scene {
@@ -823,6 +823,19 @@ fn scene_0515_state_3() {
         }
         cases.push(cs);
     }
+    // the models' radii, heights and angles (the parts at 0x5a)
+    let m = w(&t, 0x74a);
+    for cs in &mut cases {
+        for i in 0..3u32 {
+            let p = m + 0xcc * i;
+            cs.mem.extend([
+                (p - 0x20, (2.5 + i as f32).to_bits()),
+                (p + 0x20, (7.5 + i as f32).to_bits()),
+                (p - 0x1c, (0.75 * i as f32 + 0.5).to_bits()),
+                (p - 0x28, (0x1234 * (i + 1)) << 16),
+            ]);
+        }
+    }
     // the placed parts' count (two) and sizes
     let parts = w(&t, 0xb68);
     for cs in &mut cases {
@@ -853,6 +866,55 @@ fn scene_0515_state_3() {
             m.w32(a[0] + 4 * i, v.to_bits());
         }
         0x229
+    });
+    run_scene(&mut t, f, cases);
+}
+
+/// `magic_0515` state 0x15 (`r39b`): once, busy, the count's 0 (and
+/// still 0), the spread's fall, the flash off, the spread from 0x37 with
+/// slot 279 busy and not, the wait running, at 0 with actors and without,
+/// the parts at 0xf, 0x37 and 0x3d, the step into state 0x17.
+#[test]
+fn scene_0515_state_15() {
+    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+        return;
+    };
+    let (once, n15, wait, left, count) = (0x2d6cu32, 0x2edau32, 0x304fu32, 0x305bu32, 0x3070u32);
+    let mut cases = vec![
+        scene(0x15, &[(once, 0), (n15, 0)]),
+        Scene {
+            a253: 0,
+            ..scene(0x15, &[(once, 0)])
+        },
+    ];
+    for n in [0u32, 0xe, 0xf, 0x10, 0x1d, 0x1e, 0x36, 0x3d, 0xcc, 0xcb] {
+        cases.push(scene(0x15, &[(once, 1), (n15, n), (count, 3)]));
+    }
+    for (n, w, l, ans) in [
+        (0x37u32, 0u32, 2u32, 0u32),
+        (0x40, 0, 2, 1),
+        (0x40, 5, 2, 0),
+        (0x40, 0, 0, 0),
+        (0x40, 0, 0xffff, 0),
+        (0x60, 0, 7, 0),
+    ] {
+        let mut cs = scene(
+            0x15,
+            &[(once, 1), (n15, n), (wait, w), (left, l), (count, 3)],
+        );
+        cs.mem.push((SCRATCH + 0x7f3c, ans));
+        cases.push(cs);
+    }
+    rec(&mut t, 279, 0, |m, _| m.r32(SCRATCH + 0x7f3c));
+    rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(
+                a[0] + 4 * i,
+                (1.25 * i as f32 + (a[1] & 3) as f32).to_bits(),
+            );
+        }
+        0x325
     });
     run_scene(&mut t, f, cases);
 }
