@@ -1462,6 +1462,8 @@ fn task_0420() {
     for (k, (state, answer, timer)) in (0u32..).zip(cases) {
         setup_0420_state(&mut t, setup, k, k & 1 == 1);
         t.set_u16(w(0x5), state);
+        // the halfword after the u16 state
+        t.set_u16(w(0x5) + 2, 0x5a5a);
         t.set_u32(ok, answer);
         setf(&mut t, w(0xa8), timer);
         t.set_u32(w(0x30), 0x0030_0000 + k);
@@ -1541,5 +1543,73 @@ fn object_task_0420() {
         let task = task_at(&mut t, tb);
         ownb::dirty_stack(&mut t, 0x66e0 + k, &[]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0420` 0x100071a0 (`r43::start_0420`): the start with the target
+/// placed so that the yaw takes each of its nine paths (both products'
+/// signs and quadrants, the zero cases). Slot 217 places a handle at
+/// `(lo nibble - 7, 1, hi nibble - 7)`, slot 234 subtracts.
+#[test]
+fn start_0420() {
+    let Some(mut t) = sa::twin(420) else { return };
+    let f = t.at(0x71a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    let list = SCRATCH + 0x7e00;
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        m.w32(a[1], a[0]);
+        0x531
+    });
+    t.stub_st0(289, |_, _| 2.5);
+    for s in [413u32, 215, 14, 333] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(333, |_, _| 0.75);
+    rec(&mut t, 217, 2, |m, a| {
+        let x = (a[0] & 0xf) as f32 - 7.0;
+        let z = ((a[0] >> 4) & 0xf) as f32 - 7.0;
+        for (i, v) in (0u32..).zip([x, 1.0, z, 1.0]) {
+            wf(m, a[1] + 4 * i, v);
+        }
+        0x217
+    });
+    for (s, n) in [
+        (268u32, 3usize),
+        (666, 2),
+        (718, 1),
+        (719, 3),
+        (711, 3),
+        (710, 4),
+        (222, 4),
+        (221, 4),
+        (551, 3),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let lock = SCRATCH + 0x7f80;
+    t.set_u32(w(0x731), lock);
+    for (k, target) in (0u32..).zip([0x99u8, 0x55, 0x95, 0x59, 0x7a, 0x74, 0x97, 0x57, 0x77]) {
+        t.write(list, &[target, 0x81]);
+        t.set_u32(lock, 3 + k);
+        // the task ring's last node
+        let tail = SCRATCH + 0x6200;
+        t.write(tail, &[0x6d; 0x20]);
+        t.set_u32(w(0x7e8), tail);
+        t.set_u32(w(0x829), 0x5a5a_5a5b + k);
+        ownb::dirty_stack(&mut t, 0x71a0 + k, &[]);
+        let call = Call {
+            eax: 0x5a5a_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[0x77], Eax::Checked);
     }
 }
