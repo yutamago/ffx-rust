@@ -2052,6 +2052,7 @@ fn drop_0393() {
     t.set_u32(w(&t, 0x13), b);
     for (k, (n, yaw, battle, a)) in [
         (0i32, 0.5f32, 0u32, 3u32),
+        (1, 0.5, 0, 0x25d0),
         (-2, 0.5, 0, 3),
         (5, 3.0, 0, 3),
         (3, -3.5, 0, 3),
@@ -2079,13 +2080,61 @@ fn drop_0393() {
         t.set_u32(w(&t, 0x20d), battle);
         t.set_u32(w(&t, 0x2a1), battle);
         t.set_u32(w(&t, 0x266), battle);
+        // `+0x21c` and `+0x25d` read the same actor global
         t.set_u32(w(&t, 0x21c), a);
-        t.set_u32(w(&t, 0x25d), 0x25d0 + k as u32);
+        t.set_u32(w(&t, 0x2d0), 0xa5a5_a5a5);
         t.set_u32(w(&t, 0x214), 0x2140 + k as u32);
         for o in [0x119u32, 0x14a] {
             t.set_u32(w(&t, o), 0x00ab_0000 + o + k as u32);
         }
         ownb::dirty_stack(&mut t, 0x3e40 + k as u32, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0393` 0x10001e10 (`r38::place_0393`): outside a battle with
+/// the actor below, at and above 0x20, and in one.
+#[test]
+fn place_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x1e10);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for (k, (battle, a)) in [(0u32, 3u8), (0, 0x20), (0, 0x1f), (1, 5)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        stubs_0270(&mut t, k);
+        magic_r11::object_slots(&mut t);
+        stubs_0270(&mut t, k);
+        for c in [0x1ecu32, 0x274, 0x306] {
+            let start = t.img.rel32_target(f + c);
+            magic_r11::object_start_auto(&mut t, start);
+        }
+        for (s, v) in [(251u32, 1.5f64), (19, 0.75), (17, -2.5)] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+            t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0xf));
+        }
+        let sel = SCRATCH + 0x180;
+        t.write(sel, &[a, 9, 4]);
+        t.set_u32(w(&t, 0x19), sel);
+        t.set_u32(w(&t, 0xa5), sel);
+        for i in 0..0x40u32 {
+            t.set_u32(w(&t, 0x6f) + 4 * i, SCRATCH + 0x2_0000 + 0x40 * i);
+            t.set_u32(w(&t, 0xbd) + 4 * i, SCRATCH + 0x2_0000 + 0x40 * i);
+        }
+        t.set_u32(w(&t, 0x12), battle);
+        let s = SCRATCH + 0x1_0000;
+        junk(&mut t, s, 0x2000, k);
+        for c in 0..8u32 {
+            t.set_u32(
+                s + 0x1c10 + 4 * c,
+                (0.5 * c as f32 - 1.0 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(s + 0x1ee0, (0.75 + k as f32).to_bits());
+        t.set_u32(w(&t, 0x20), s);
+        ownb::dirty_stack(&mut t, 0x1e10 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
