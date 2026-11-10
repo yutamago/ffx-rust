@@ -4039,6 +4039,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 place pair 0430", &r34::PLACE_PAIR_0430),
     ("r34 start 0430", &r34::START_0430),
     ("r34 start-up 0205", &r34::START_UP_0205),
+    ("r34 spark 0205", &r34::SPARK_0205),
     // round 34 (magic-r34): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),

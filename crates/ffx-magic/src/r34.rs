@@ -3536,3 +3536,80 @@ pub const CUE_START_0205: Sig = Sig {
     calls: &[(0x95, Callee::Sig(&START_UP_0205))],
     imports: &[],
 };
+
+/// `magic_0205`'s spark (0x10001d10, 478 bytes; internal, no arguments;
+/// `ebp = E - 4`): one record of the DLL's pool
+/// ([`pool_take`](crate::sb_misc::pool_take); none: returns 0): `+0x30`
+/// the handle slot 719 `(P, 9, 0)`, the halfwords `+0x38` -1 and `+0x3a`
+/// 0x200, `+0x34` 1; the place the block `*G_B`'s `+0x3e0` point moved by
+/// random floats (slot 314, ST0: `x + rnd 4`, `rnd 4 + y`, `rnd 4 + z`),
+/// `+0x10` rnd 0.001, `+0x14` `-slot 404 (0.001)`, `+0x18` rnd 0.001,
+/// `+0x1c` 0, `+0x20` 0, `+0x24` rnd 0.005 - `K`, `+0x28` 0, `+0x2c` 1.0,
+/// `+0x3c` `(rnd 0.3 + K1) * K`, `+0x40` 0.5, `+0x4c`, `+0x50`, `+0x58`
+/// 0x18, `+0x5c` 0, the byte `+0x6b` 0. Returns the last slot 314's
+/// `eax`.
+pub fn spark_0205<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    use crate::sb_sse::{add, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let b = g.read::<u32>(w(0x8));
+    let rec = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0xd));
+    if rec == 0 {
+        return 0;
+    }
+    let h = g.call(t(g, 0x1d, 719), 0, &[w(0x2c), 9, 0]).eax;
+    g.write::<u32>(rec + 0x30, h);
+    g.write::<u16>(rec + 0x38, 0xffff);
+    g.write::<u32>(rec + 0x34, 1);
+    g.write::<u16>(rec + 0x3a, 0x200);
+    for k4 in 0..4 {
+        let x = g.read::<u32>(b.wrapping_add(0x3e0 + 4 * k4));
+        g.write::<u32>(rec + 4 * k4, x);
+    }
+    let mut eax = 0;
+    let mut rnd = |g: &mut G, op: u32, slot: u32, x: u32| {
+        let out = g.call(t(g, op, slot), 0, &[x]);
+        eax = out.eax;
+        crate::ob_model::st0_f32(out.st0)
+    };
+    let r = rnd(g, 0x70, 314, 0x4080_0000);
+    let v = add(g.read::<f32>(rec), r);
+    g.write::<f32>(rec, v);
+    let r = rnd(g, 0x93, 314, 0x4080_0000);
+    let v = add(r, g.read::<f32>(rec + 4));
+    g.write::<f32>(rec + 4, v);
+    let r = rnd(g, 0xb8, 314, 0x4080_0000);
+    let v = add(r, g.read::<f32>(rec + 8));
+    g.write::<f32>(rec + 8, v);
+    let r = rnd(g, 0xde, 314, 0x3a83_126f);
+    g.write::<f32>(rec + 0x10, r);
+    let r = rnd(g, 0xfa, 404, 0x3a83_126f);
+    g.write::<u32>(rec + 0x14, r.to_bits() ^ g.read::<u32>(w(0x118)));
+    let r = rnd(g, 0x11d, 314, 0x3a83_126f);
+    g.write::<f32>(rec + 0x18, r);
+    g.write::<u32>(rec + 0x1c, 0);
+    g.write::<u32>(rec + 0x20, 0);
+    let r = rnd(g, 0x139, 314, 0x3ba3_d70a);
+    let v = sub(r, g.read::<f32>(w(0x166)));
+    g.write::<u32>(rec + 0x28, 0);
+    g.write::<u32>(rec + 0x2c, 0x3f80_0000);
+    g.write::<f32>(rec + 0x24, v);
+    let r = rnd(g, 0x16b, 314, 0x3e99_999a);
+    let v = mul(add(r, g.read::<f32>(w(0x1a0))), g.read::<f32>(w(0x1c1)));
+    g.write::<u32>(rec + 0x4c, 0x18);
+    g.write::<u32>(rec + 0x50, 0x18);
+    g.write::<u8>(rec + 0x6b, 0);
+    g.write::<u32>(rec + 0x40, 0x3f00_0000);
+    g.write::<u32>(rec + 0x58, 0x18);
+    g.write::<u32>(rec + 0x5c, 0);
+    g.write::<f32>(rec + 0x3c, v);
+    eax
+}
+
+/// [`spark_0205`] (478 bytes, 1 overlay).
+pub const SPARK_0205: Sig = Sig {
+    len: 478,
+    hash: 0xef43_4d92_8a37_6f50,
+    calls: &[(0xd, Callee::Sig(&crate::sb_misc::POOL_TAKE))],
+    imports: &[],
+};

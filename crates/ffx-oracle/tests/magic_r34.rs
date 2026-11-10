@@ -1991,11 +1991,38 @@ fn cue_start_0205() {
         let head = w(&t, su, 0xa2);
         t.set_u32(head, if busy { last } else { 0 });
         t.set_u32(w(&t, su, 0xb9), last);
-        let blk = SCRATCH + 0x6000;
-        junk(&mut t, blk, 0x600, k);
+        // the block the store run names (`*G_B`): its cleared words junk
+        let blk = w(&t, su, 0x44);
+        junk(&mut t, blk + 0x500, 0x30, k);
         junk_ops(&mut t, su, &[0x4e, 0x83]);
         ownb::dirty_stack(&mut t, 0x12d0 + k, &[]);
         ownb::reset_counters(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0205` 0x10001d10 (`r34::spark_0205`): the pool with a free
+/// record (at the first place and later) and none.
+#[test]
+fn spark_0205() {
+    let Some(mut t) = twin(205) else { return };
+    drop_stubs(&mut t);
+    let f = t.at(0x1d10);
+    let take = t.img.rel32_target(f + 0xd);
+    let b = SCRATCH + 0x9000;
+    t.set_u32(t.img.word(f + 0x8), b);
+    let recs = SCRATCH + 0x8000;
+    for (k, busy) in (0u32..).zip([&[][..], &[0, 1, 2][..], &[0][..]]) {
+        junk(&mut t, b + 0x3e0, 0x10, k);
+        for i in 0..4u32 {
+            t.set_u32(b + 0x3e0 + 4 * i, (0.5 * (i + k) as f32 - 1.0).to_bits());
+        }
+        pool_74(&mut t, take, recs, 3, busy, k % 3, k);
+        t.set_u32(SCRATCH + 0xa00, k);
+        ownb::dirty_stack(&mut t, 0x1d10 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r34::spark_0205(g, img, fr.at))
+        });
     }
 }
