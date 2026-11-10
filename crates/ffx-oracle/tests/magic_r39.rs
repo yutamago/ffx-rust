@@ -97,13 +97,6 @@ fn scene_task_0519() {
         u32::from(a[0] == m.r32(KEY)) * (0x100 | a[0])
     });
     rec(&mut t, 941, 1, |_, a| TABLE + (a[0] & 0xf0));
-    rec(&mut t, 222, 4, |m, a| {
-        if m.r32(MODE) == 2 {
-            let b = m.r32(BUSY);
-            m.w32(b, 1);
-        }
-        a[1] ^ 0x222
-    });
     // the list slot: three entries
     rec(&mut t, 335, 1, |m, a| {
         for i in 0..3 {
@@ -121,6 +114,13 @@ fn scene_task_0519() {
         }
     }
     let busy = t.u32(w(&t, 0x108));
+    // slot 222 sets the busy word in mode 2
+    rec(&mut t, 222, 4, move |m, a| {
+        if m.r32(MODE) == 2 {
+            m.w32(busy, 1);
+        }
+        a[1] ^ 0x222
+    });
     let record = w(&t, 0x90c);
     let mut cases = vec![
         // the start-up checks
@@ -174,6 +174,8 @@ fn scene_task_0519() {
         c519(&[(C3, 0x64), (C8, 0x290)]),
         c519(&[(C8, 0x2e1)]),
         c519(&[(C8, 0x2e1), (C3, 0x8a)]),
+        // P8 not running (its neighbour halfword set)
+        c519(&[(C8, 0x2e1), (0x705, 0x5a5a_0000)]),
         // the halfword by G_C8
         c519(&[(C8, 0x106)]),
         c519(&[(C8, 0x14d)]),
