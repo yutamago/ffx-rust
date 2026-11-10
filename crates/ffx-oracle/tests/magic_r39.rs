@@ -297,13 +297,16 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
         m.w32(SCRATCH + 0x7f30, k.wrapping_add(1));
         f64::from(k % 7) * 0.375 - 0.5
     });
-    for (op, at) in [(0xb1u32, BUSY), (0xe3, LOCK), (0x10f8, SINES)] {
+    for (op, at) in [(0xb1u32, BUSY), (0xe3, LOCK)] {
         let g = t.img.word(f + op);
         if t.u32(g) == 0 {
             t.set_u32(g, at);
         }
     }
-    // a sine table of 0x1000 floats
+    // a sine table of 0x1000 floats (the game's pointer, set by
+    // InitMagicPRX to a zeroed data page, points at it)
+    let sin_at = t.img.word(f + 0x10f8);
+    t.set_u32(sin_at, SINES);
     let sines: Vec<u8> = (0..0x1000u32)
         .flat_map(|i| {
             ((i as f32 * 0.001_533_98).sin() + i as f32 * 1.0e-5)
@@ -312,6 +315,8 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
         })
         .collect();
     t.write(SINES, &sines);
+    // the actors' and records' slot 296 (id, value) logged
+    rec(&mut t, 296, 2, |_, a| a[1] ^ 0x0296_0000);
     // the cameras' jitter (slot 314's float)
     t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.375 - 0.0625);
     // slot 711 sees the lock word set
@@ -769,6 +774,85 @@ fn scene_0515_state_0() {
             m.w32(a[3] + 4 * i, v.to_bits());
         }
         0x237
+    });
+    run_scene(&mut t, f, cases);
+}
+
+/// `magic_0515` state 3 (`r39b`): once, busy, the fade's three ranges,
+/// slot 220 at 0, the counts that do something, the sounds at 0x104 and
+/// after with every kind at and off its frames, the colour from 0xcd, the
+/// placed parts' sizes, the step into state 6.
+#[test]
+fn scene_0515_state_3() {
+    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+        return;
+    };
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (once, n3) = (0x4c6u32, 0x6afu32);
+    let mut cases = vec![
+        scene(3, &[(once, 0), (n3, 0)]),
+        Scene {
+            a253: 0,
+            ..scene(3, &[(once, 0)])
+        },
+    ];
+    for n in [
+        0u32, 0x59, 0x6d, 0xcc, 0xcd, 0xd6, 0x103, 0x108, 0x109, 0x115, 0x120, 0x13f, 0x13e,
+    ] {
+        cases.push(scene(3, &[(once, 1), (n3, n)]));
+    }
+    // the sound records' (kind, frame, limit) per model, from 0x104 on
+    let p0 = w(&t, 0x9bd);
+    let recs: [[(u32, u32, u32); 3]; 5] = [
+        [(0xc3, 0x17, 0x17), (0xc1, 0x14, 0x14), (0xc1, 0x1c, 0x1c)],
+        [(0xc3, 0x16, 0x17), (0xc1, 0x13, 0x14), (0xc1, 0x1b, 0x1c)],
+        [(0xc3, 0x18, 0x20), (0xc1, 0x15, 0x20), (0xc1, 0x1d, 0x20)],
+        [(0xc4, 0x18, 0x20), (0xc2, 0x15, 0x20), (0xc2, 0x1d, 0x20)],
+        [(0xc2, 0x18, 0x20), (0xc3, 0x15, 0x20), (0xc4, 0x1d, 0x20)],
+    ];
+    for rs in recs {
+        let mut cs = scene(3, &[(once, 1), (n3, 0x110)]);
+        for (i, (kind, fr, lim)) in (0u32..).zip(rs) {
+            let p = p0 + 0xcc * i;
+            cs.mem.extend([
+                (p - 8, kind),
+                (p, fr),
+                (p - 4, lim),
+                (p + 0x30, (1.5 * i as f32).to_bits()),
+            ]);
+        }
+        cases.push(cs);
+    }
+    // the placed parts' count (two) and sizes
+    let parts = w(&t, 0xb68);
+    for cs in &mut cases {
+        cs.set.push((0xb58, 2));
+        for i in 0..2u32 {
+            cs.mem
+                .push((parts + 0xcc * i + 0x24, (0.5 + i as f32).to_bits()));
+        }
+    }
+    // slot 300 answers the fade it is given, halved, in its second word
+    rec(&mut t, 300, 2, |m, a| {
+        let x = f32::from_bits(m.r32(a[0])) * 0.5 + 0.125;
+        m.w32(a[1], x.to_bits());
+        0x300
+    });
+    rec(&mut t, 247, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(
+                a[0] + 4 * i,
+                (0.125 * i as f32 - (a[1] & 7) as f32).to_bits(),
+            );
+        }
+        0x247
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * 0.5 + f32::from_bits(m.r32(a[1] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x229
     });
     run_scene(&mut t, f, cases);
 }
