@@ -3879,3 +3879,212 @@ pub const JMP_LIGHT_VISIT_0042: Sig = Sig {
     calls: &[(8, Callee::Sig(&LIGHT_VISIT_0042))],
     imports: &[],
 };
+
+/// The 13-byte thunk of slot 224 (`mov eax, [G]; mov eax, [eax + 0x380];
+/// jmp eax`).
+pub const THUNK_224: Sig = Sig {
+    len: 13,
+    hash: 0xc936_1024_5e14_2ded,
+    calls: &[],
+    imports: &[],
+};
+
+/// `f32` of `x` widened, times the double at `at`, narrowed (`cvtps2pd;
+/// mulsd; cvtpd2ps`).
+fn scale_f64<G: Game>(g: &G, x: f32, at: u32) -> f32 {
+    (f64::from(x) * g.read::<f64>(at)) as f32
+}
+
+/// `magic_0184`'s start-up (0x10001460, 1172 bytes; a table entry, cdecl
+/// `(actor)`; a /GS frame, `ebp` = `E - 4`, `S = E - 0x84` the frame
+/// below `esi`): the actor's words through slots 168, 218, 215 (twice),
+/// 217 and 216 (its float times a double into `*G_H`), slot 210; the two
+/// bones' places (slot 237 into `ebp - 0x34` and `ebp - 0x24`) whose sum
+/// times a double is the centre (three globals, `w` 1.0), slot 235; the
+/// matrix (slots 243 and 231 on `ebp - 0x74`) turning the offset `(0,
+/// h K, 0, 1)` (slot 229 on `ebp - 0x14`) into the place; slot 211; the
+/// parts ([`part_setup`](crate::m0184::part_setup)), slot 224, slot 711
+/// with the lock word 1 (put back), slot 710, four programs started
+/// ([`start_part`](crate::opu_parts::start_part)) from slot 941's list;
+/// the halfword flags, the table's words 0xffff, the debug line. Returns
+/// 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0184<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let abs = |g: &mut G, a: u32, b: u32| crate::r25::abs_stores(g, img, f, a, b);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let s = fr.esp.wrapping_sub(0x84);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let actor = fr.arg(g, 0);
+    g.write::<u32>(w(0x15), actor);
+    let mut p = crate::pushes::Pushes::default();
+    p.push(actor);
+    // call width: 12 (Pushes caps the words at 12)
+    let x = p.call(g, t(g, 0x1b, 168), 0).eax;
+    g.write::<u32>(w(0x28), x);
+    p.push_all(&[lf(0x7c), gw(g, 0x37)]);
+    // call width: 12 (Pushes caps the words at 12)
+    let list = p.call(g, t(g, 0x31, 218), 0).eax;
+    let b = u32::from(g.read::<u8>(list));
+    p.push(gw(g, 0x48));
+    g.write::<u32>(w(0x4d), b);
+    // call width: 12 (Pushes caps the words at 12)
+    let y = p.call(g, t(g, 0x52, 215), 0).eax;
+    p.push(gw(g, 0x60));
+    g.write::<u32>(w(0x65), y);
+    // call width: 12 (Pushes caps the words at 12)
+    let z = p.call(g, t(g, 0x6a, 215), 0).eax;
+    g.write::<u32>(w(0x77), z);
+    p.push_all(&[w(0x81), gw(g, 0x87)]);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x7c, 217), 0);
+    p.push(gw(g, 0x9a));
+    // call width: 12 (Pushes caps the words at 12)
+    let h = crate::ob_model::st0_f32(p.call(g, t(g, 0x94, 216), 0).st0);
+    g.write::<f32>(lf(0x78), h);
+    let d = scale_f64(g, h, w(0xb7));
+    g.write::<u16>(w(0xbd), 0);
+    p.push_all(&[w(0xc7), gw(g, 0xcd)]);
+    abs(g, 0xdb, 0xe5);
+    g.write::<f32>(w(0xe9), d);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0xc2, 210), 0);
+    // the two bones' places
+    p.push_all(&[lf(0x34), 0, 0xa8, gw(g, 0x101)]);
+    abs(g, 0x105, 0x12d);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0xf4, 237), 0);
+    p.push_all(&[lf(0x24), 0, 0xeb, gw(g, 0x14d)]);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x13a, 237), 0);
+    let rf = |g: &G, o: u32| g.read::<f32>(lf(o));
+    let c = w(0x161);
+    let v0 = scale_f64(g, add(rf(g, 0x24), rf(g, 0x34)), c);
+    g.write::<f32>(w(0x177), v0);
+    let v1 = scale_f64(g, add(rf(g, 0x20), rf(g, 0x30)), c);
+    g.write::<f32>(w(0x199), v1);
+    abs(g, 0x1a7, 0x1b1);
+    let v2 = scale_f64(g, add(rf(g, 0x1c), rf(g, 0x2c)), c);
+    g.write::<f32>(w(0x1c5), v2);
+    // add esp, 0x48: all eighteen words popped
+    let mut p = crate::pushes::Pushes::default();
+    p.push(w(0x1b2));
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x191, 235), 0);
+    for (from, to) in [(0x1d5u32, 0x1ddu32), (0x1e5, 0x1f0), (0x1f8, 0x208)] {
+        let v = gw(g, from);
+        g.write::<u32>(w(to), v);
+    }
+    abs(g, 0x20c, 0x216);
+    let m = lf(0x74);
+    p.push_all(&[0, m]);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x200, 243), 0);
+    p.push_all(&[m, w(0x228), w(0x233)]);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x223, 231), 0);
+    let x = mul(k(g, 0x23d), k(g, 0x245));
+    let v = lf(0x14);
+    p.push_all(&[v, w(0x24e), v]);
+    g.write::<u32>(lf(0xc), 0);
+    g.write::<u32>(v, 0);
+    g.write::<f32>(lf(0x10), x);
+    g.write::<u32>(lf(0x8), ONE);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x254, 229), 0);
+    let y = sub(rf(g, 0x10), k(g, 0x283));
+    let x = add(rf(g, 0x14), k(g, 0x290));
+    p.push_all(&[w(0x29a), gw(g, 0x2a0)]);
+    g.write::<f32>(lf(0x10), y);
+    let y = add(y, k(g, 0x2ad));
+    g.write::<f32>(w(0x2b5), x);
+    let zz = add(rf(g, 0xc), k(g, 0x2c2));
+    abs(g, 0x2c6, 0x2d0);
+    let y = add(y, k(g, 0x2d4));
+    g.write::<f32>(w(0x2dc), zz);
+    g.write::<f32>(w(0x2e4), y);
+    // call width: 12 (Pushes caps the words at 12)
+    p.call(g, t(g, 0x295, 211), 0);
+    abs(g, 0x2f0, 0x304);
+    // eleven words still pushed: the set-up's entry at `S - 0x30`
+    let pf = Frame {
+        at: call(0x305),
+        esp: s - 0x30,
+        ..Frame::default()
+    };
+    crate::m0184::part_setup(g, img, &pf);
+    let th = call(0x310);
+    // call width: 3
+    g.call(slot_target(g, img.word(th + 1), 224), 0, &[0, 0, u32::MAX]);
+    // slot 711 with the lock word 1, then put back
+    let lock = gw(g, 0x315);
+    let old = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x324, 711), 0, &[w(0x334), w(0x329), 0]);
+    let lock = gw(g, 0x33e);
+    g.write::<u32>(lock, old);
+    // call width: 4
+    g.call(
+        t(g, 0x34a, 710),
+        0,
+        &[w(0x35f), w(0x35a), w(0x34f), 0x0010_0000],
+    );
+    // four programs started from slot 941's list
+    for (i, (env, envv, table, list_op, sp_at, rec)) in [
+        (0x366u32, 0x36cu32, 0x371u32, 0x377u32, 0x394u32, 0x38fu32),
+        (0x399, 0x39f, 0x3a4, 0x3aa, 0x3c8, 0x3c3),
+        (0x3cd, 0x3d3, 0x3d8, 0x3de, 0x3fc, 0x3f7),
+        (0x401, 0x40a, 0x40f, 0x415, 0x433, 0x42e),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let e = gw(g, env);
+        g.write::<u32>(e, w(envv));
+        let x = gw(g, list_op);
+        // call width: 1
+        let list = g.call(t(g, table, 941), 0, &[x]).eax;
+        let prog = g.read::<u32>(list.wrapping_add(4 * i as u32));
+        crate::opu_parts::start_part(g, img, call(sp_at), w(rec), 0x1000, prog, 1);
+    }
+    for op in [0x441u32, 0x447, 0x44d, 0x453] {
+        g.write::<u16>(w(op), 1);
+    }
+    let mut q = w(0x458);
+    loop {
+        g.write::<u16>(q, 0xffff);
+        q = q.wrapping_add(0x18);
+        if q.cast_signed() >= w(0x467).cast_signed() {
+            break;
+        }
+    }
+    // the debug line: printf(fmt, A, 0x17b) through the 28-byte wrapper
+    // (`esi` popped first: the words from `S + 4` down)
+    let pw = call(0x47d);
+    put_words(g, s - 8, &[w(0x478), w(0x473), 0x17b]);
+    crate::opu::debug_printf(g, img.word(pw + 8), w(0x478), s - 4);
+    Ret::eax(0)
+}
+
+/// [`start_up_0184`] (the `rel32`s: its callees, `__security_check_cookie`).
+pub const START_UP_0184: Sig = Sig {
+    len: 1172,
+    hash: 0x1004_0f2e_e84f_dbc1,
+    calls: &[
+        (0x305, Callee::Sig(&crate::m0184::PART_SETUP)),
+        (0x310, Callee::Sig(&THUNK_224)),
+        (0x394, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x3c8, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x3fc, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x433, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x47d, Callee::Sig(&crate::opu::DEBUG_PRINTF)),
+        (0x48c, Callee::Any),
+    ],
+    imports: &[],
+};

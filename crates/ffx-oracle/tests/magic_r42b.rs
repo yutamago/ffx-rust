@@ -22,7 +22,7 @@ mod summon_stubs;
 use ffx_magic::{Ret, r42};
 use magic::{Call, Eax, SCRATCH, Twin};
 use ownb::rec;
-use summon_stubs::{all_stubs, prime};
+use summon_stubs::{all_stubs, prime, wf};
 
 fn twin(n: u16) -> Option<Twin> {
     let mut t = Twin::load(n)?;
@@ -1272,5 +1272,71 @@ fn summon_task_0150() {
             ..Call::default()
         };
         t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0184` 0x10001460 (`r42::start_up_0184`): three actors (the
+/// target bytes, the bones' places and the heights varied), the lock
+/// word varied.
+#[test]
+fn start_up_0184() {
+    let Some(mut t) = twin(184) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let list = SCRATCH + 0x7e80;
+    rec(&mut t, 218, 2, move |_, _| list);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(m, a[3] + 4 * i, 0.5 * i as f32 + (a[1] & 0xf) as f32 - 3.0);
+        }
+        0x237
+    });
+    rec(&mut t, 243, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, 0.125 * i as f32 - 0.75);
+        }
+        0x243
+    });
+    let progs = SCRATCH + 0x7ec0;
+    for i in 0..4u32 {
+        t.set_u32(progs + 4 * i, 0x0900_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| progs);
+    rec(&mut t, 726, 2, |m, a| m.r32(a[1]) ^ m.r32(a[1] + 4) ^ a[0]);
+    for (s, n) in [
+        (168u32, 1usize),
+        (215, 1),
+        (217, 2),
+        (210, 2),
+        (211, 2),
+        (224, 3),
+        (711, 3),
+        (710, 4),
+        (714, 5),
+        (718, 1),
+        (719, 3),
+        (222, 4),
+        (221, 4),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let b = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ b.rotate_left(7)
+        });
+    }
+    rec(&mut t, 216, 1, |_, a| 0x216 ^ a[0]);
+    t.stub_st0(216, |_, a| f64::from(a[0] & 0xff) * 0.25 + 1.5);
+    let f = t.at(0x1460);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let lock = SCRATCH + 0x7f50;
+    t.set_u32(w(&t, 0x315), lock);
+    for k in 0..3u32 {
+        t.write(list, &[1 + k as u8, 2, 3, 0]);
+        t.set_u32(lock, 0x40 + k);
+        t.write(w(&t, 0x458), &[0x5a; 0x600]);
+        ownb::dirty_stack(&mut t, 0x1460 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
     }
 }

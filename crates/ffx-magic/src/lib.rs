@@ -3377,6 +3377,7 @@ ports! {
     "r42 summon task 0201" => r42::SUMMON_TASK_0201, r42::summon_task_0201;
     "r42 summon task 0150" => r42::SUMMON_TASK_0150, r42::summon_task_0150;
     "r42 light visit thunk 0042" => r42::JMP_LIGHT_VISIT_0042, r42::jmp_light_visit_0042;
+    "r42 start-up 0184" => r42::START_UP_0184, r42::start_up_0184;
     // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
