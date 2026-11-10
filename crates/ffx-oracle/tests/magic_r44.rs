@@ -20,6 +20,8 @@ mod magic_owna;
 mod magic_r11;
 #[path = "magic/ownb.rs"]
 mod ownb;
+#[path = "magic/sa.rs"]
+mod sa;
 
 use magic::{Call, Eax, SCRATCH, StubMem, TRAPS, Twin};
 use ownb::rec;
@@ -1575,6 +1577,7 @@ fn stage_task_0150() {
         for i in 0..4 {
             h = h.rotate_left(7) ^ m.r32(a[1] + 4 * i);
         }
+        m.w32(SCRATCH + 0x7e90, h);
         h
     });
     rec(&mut t, 289, 1, |_, a| 0x0289_0000 ^ a[0]);
@@ -1756,7 +1759,8 @@ fn stage_task_0150() {
     for (k, c) in (0u32..).zip(cases) {
         // the DLL's block: floats, then the words the steps read
         for i in 0..0x400u32 {
-            let x = ((i * 37 + k * 11) % 89) as f32 * 0.0625 - 2.5;
+            // (odd low mantissa bits: byte and bit stores show)
+            let x = ((i * 37 + k * 11) % 89) as f32 * 0.0625 - 2.5 + (i % 7 + 1) as f32 * 1.0e-4;
             t.set_u32(block + 4 * i, x.to_bits());
         }
         let set = |t: &mut Twin, o: u32, v: u32| {
@@ -1787,8 +1791,17 @@ fn stage_task_0150() {
         t.set_u32(list + 0xc, list);
         t.set_u16(list + 0x18, 1);
         // the leaving node without a parent
+        // the leaving node: without a parent, or the list's only child
         let leaving = w(&t, 0xfda);
-        t.set_u32(leaving + 0x14, 0);
+        if k % 2 == 1 {
+            t.set_u32(leaving + 0x14, list);
+            t.set_u32(leaving + 4, list);
+            t.set_u32(leaving + 8, list);
+            t.set_u32(list + 0x10, leaving);
+            t.set_u32(list + 0xc, leaving);
+        } else {
+            t.set_u32(leaving + 0x14, 0);
+        }
         t.set_u32(SCRATCH + 0x7e30, c.r520);
         t.set_u32(SCRATCH + 0x7e34, c.r294);
         t.set_u32(SCRATCH + 0x7e38, c.r535);
@@ -1802,5 +1815,186 @@ fn stage_task_0150() {
         t.write(pv, &[0x46; 0x10]);
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// The call log of [`node_sparks_0071`]'s test: a count at `SPLOG`, then
+/// rows of 0x40 bytes.
+const SPLOG: u32 = SCRATCH + 0x6000;
+
+/// Logs each call of `slot` into the shared log (in call order): the
+/// slot, its first `n` words, and 4 words at each argument `ptrs` names.
+/// Answers `ret(m, args, k)`, `k` the call's number.
+fn sp_log(
+    t: &mut Twin,
+    slot: u32,
+    n: usize,
+    ptrs: &'static [usize],
+    ret: impl Fn(&mut dyn StubMem, &[u32], u32) -> u32 + 'static,
+) {
+    t.stub(slot, move |m, a| {
+        let k = m.r32(SPLOG);
+        m.w32(SPLOG, k + 1);
+        let row = SPLOG + 4 + 0x40 * (k % 128);
+        m.w32(row, slot);
+        for (i, w) in (1u32..).zip(&a[..n.min(a.len())]) {
+            m.w32(row + 4 * i, *w);
+        }
+        for (j, &p) in (0u32..).zip(ptrs) {
+            for i in 0..4 {
+                m.w32(row + 0x20 + 0x10 * j + 4 * i, m.r32(a[p] + 4 * i));
+            }
+        }
+        ret(m, a, k)
+    });
+}
+
+/// `magic_0071` 0x10001430 (`r44::node_sparks_0071`) directly and through
+/// its thunk 0x10001b40 (`r44::jmp_node_sparks_0071`), as the
+/// `node_sparks` test runs `magic_0070`'s: the ring's cases, the timer
+/// against `K0` (the wait running, at 0 the spawn), sparks counted or not
+/// (the release), records live, dead, faded and near the cap.
+#[test]
+fn node_sparks_0071() {
+    use sa::{RINGS, check_this_thunk, handler_stubs, node, ring};
+    let Some(mut t) = sa::twin(71) else { return };
+    handler_stubs(&mut t);
+    let f = t.at(0x1430);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the sine table (two odd entries)
+    let sines = SCRATCH + 0x1_0000;
+    let at = w(&t, 0x38f);
+    t.set_u32(at, sines);
+    let b: Vec<u8> = (0..4096u32)
+        .flat_map(|i| {
+            let x = match i {
+                7 => -0.0,
+                9 => 1.0e30,
+                _ => (f64::from(i) * std::f64::consts::TAU / 4096.0).sin() as f32,
+            };
+            x.to_bits().to_le_bytes()
+        })
+        .collect();
+    t.write(sines, &b);
+    let lock = SCRATCH + 0x7f0;
+    let step = t.img.rel32_target(f + 0x535);
+    let at = t.img.word(step + 0x24);
+    t.set_u32(at, lock);
+    let release = t.img.rel32_target(f + 0x619);
+    for o in [0x6bu32, 0x90] {
+        let at = t.img.word(release + o);
+        t.set_u32(at, lock);
+    }
+    let loaded = SCRATCH + 0x7e0;
+    sp_log(&mut t, 324, 0, &[], |_, _, k| {
+        0x1235u32.wrapping_mul(k + 3) ^ 0x51
+    });
+    sp_log(&mut t, 307, 0, &[], |_, _, k| k);
+    t.stub_st0(307, |m, _| f64::from(m.r32(SPLOG) % 7) * 0.375 - 0.75);
+    sp_log(&mut t, 325, 2, &[1], |_, a, k| a[0] ^ k);
+    sp_log(&mut t, 229, 3, &[], |m, a, k| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, (k as f32 * 0.25 + i as f32).to_bits());
+        }
+        0x229
+    });
+    sp_log(&mut t, 230, 2, &[], |m, a, k| {
+        let mut x = k;
+        for i in 0..16 {
+            x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x7e90 + 4 * (k % 8), x);
+        x
+    });
+    sp_log(&mut t, 773, 2, &[], move |m, _, k| m.r32(loaded) ^ (k & 1));
+    for (s, n, ptrs) in [
+        (774u32, 5usize, &[3usize][..]),
+        (775, 2, &[]),
+        (776, 1, &[]),
+        (777, 1, &[]),
+        (778, 6, &[3]),
+        (779, 2, &[]),
+    ] {
+        sp_log(&mut t, s, n, ptrs, move |m, a, k| {
+            (s << 16) ^ a[0] ^ k ^ m.r32(lock)
+        });
+    }
+    let k0 = f32::from_bits(t.u32(w(&t, 0x76)));
+    let k7 = f32::from_bits(t.u32(w(&t, 0x4f2)));
+    let recs = SCRATCH + 0x9000;
+    let q = SCRATCH + 0x8800;
+    // (the timer against K0, the wait, sparks counted, the ring's head)
+    let cases = [
+        (-1.0f32, 0u32, 0u32, 0x18u16),
+        (-1.0, 3, 0, 0x18),
+        (0.5, 0, 3, 0),
+        (0.5, 0, 0, 0),
+        (-1.0, 0, 2, 2),
+        (0.0, 1, 1, 0),
+    ];
+    for (k, &(c, p, cp)) in RINGS.iter().enumerate() {
+        for (case, &(dt, wait, counted, head)) in cases.iter().enumerate() {
+            let case = case as u32;
+            ring(&mut t, c, p, cp, 0x30 + k as u8);
+            let n = node(0);
+            for j in 0..0x10u32 {
+                let v = (j as f32 - 3.5) * 0.25 + case as f32;
+                t.set_u32(n + 0x38 + 4 * j, v.to_bits());
+            }
+            t.set_u16(n + 0x1c, 0x20);
+            t.set_u16(n + 0x1e, 0x40);
+            t.set_u32(n + 0x20, recs);
+            t.set_u32(n + 0x24, recs + 0x40 * 3);
+            t.set_u32(n + 0x28, recs);
+            t.set_u16(n + 0x2c, 4);
+            t.set_u16(n + 0x2e, 2);
+            t.set_u16(n + 0x30, head);
+            t.set_u16(n + 0x32, 0x1e);
+            t.set_u16(n + 0x34, 1);
+            t.set_u32(n + 0x48, q);
+            t.set_u32(n + 0x4c, q + 0x100);
+            t.set_u32(n + 0x50, (k0 + dt).to_bits());
+            t.set_u32(n + 0x54, counted);
+            t.set_u32(n + 0x58, wait);
+            // the sequences (both kinds)
+            for (qq, len) in [(q, 0x100i16), (q + 0x100, 0x180)] {
+                let v: Vec<u8> = (0..0x100u32)
+                    .map(|i| (i * 7 + (case + 1) * 13 + 1) as u8)
+                    .collect();
+                t.write(qq, &v);
+                t.set_u16(qq + 6, 3);
+                for i in 0..4u32 {
+                    let r = qq + 0x10 + 8 * i;
+                    t.set_u16(r, (0x80 + 0x20 * i) as u16);
+                    t.set_u16(r + 2, len.cast_unsigned());
+                    t.set_u32(qq + 0x80 + 0x20 * i + 4, 0x10);
+                }
+            }
+            // the records: live or not, the fade below and near its cap
+            for i in 0..0x20u32 {
+                let r = recs + 0x40 * i;
+                for j in 0..0x10u32 {
+                    let x = ((j * 37 + (i + case) * 11) % 41) as f32 - 20.0;
+                    t.set_u32(r + 4 * j, (x * 0.125).to_bits());
+                }
+                t.set_u8(r + 0x34, u8::from(i % 5 != 1));
+                t.set_u8(r + 0x2b, if i % 7 == 3 { 0 } else { 0x40 });
+                t.set_u32(r + 0x24, i % 2);
+                t.set_u32(r + 0x30, 0x1234 * i);
+                t.set_u32(r + 0x2c, [0.5f32, 3.9, 4.5, k7][(i % 4) as usize].to_bits());
+                t.set_u16(r + 0x10, (i % 4) as u16);
+                t.set_u16(r + 0x12, 0x80);
+            }
+            t.set_u32(loaded, case % 2);
+            t.set_u32(lock, 0x5a5a_0000 + case);
+            t.set_u32(SPLOG, 0);
+            check_this_thunk(
+                &mut t,
+                f,
+                0x1b40,
+                ffx_magic::r44::node_sparks_0071,
+                Eax::Checked,
+            );
+        }
     }
 }

@@ -3184,3 +3184,259 @@ pub const STAGE_TASK_0150: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0071`'s node sparks (0x10001430, 1585 bytes; thiscall, `ecx` =
+/// the group `C`, through its thunk 0x10001b40; a /GS frame aligned to
+/// 16, `S` = `esp` after the two pushes): as
+/// [`node_sparks`](crate::s9_misc::node_sparks) with its own spawn and
+/// counters. The walk ([`walk`](crate::nodes::walk), `ecx` the owner);
+/// nothing more when it stops. With the owner `N`:
+/// - while `K0 > N+0x50`: the wait `N+0x58` counts down; at 0 slot 324's
+///   answer `r` sets the next wait `(r & 3) + 1` and a request of `(r >> 2
+///   & 0x1f) + 0x10` sparks off `N`'s ring
+///   ([`ring_take`](crate::m0070::ring_take)); each record `R`: `f` = slot
+///   307 less `K`, the kind `R+0x24` (slot 324's low two bits 0: colour
+///   0x80808080 and `R+0x30` 0, else 0x40808080 and the answer), the size
+///   `R+0x20 = ((f K1 + K2) K3) K4 + K5` (by kind), alive, the speed from
+///   three more slot 307 draws, slot 325 `(R, N+0x38)` and `y` less `K6`;
+/// - else with no sparks counted (`N+0x54`) the node is released
+///   ([`node_release`](crate::s6_misc::node_release)).
+///
+/// Then the draw as `node_sparks`' (the render state at `S+0x30`, its
+/// matrix `S+0xa8`; the local matrix `S+0x68` turned in place by the
+/// record's angle, slot 230 into the render matrix), the counter `N+0x54`
+/// and `N+0x50` up by `K`. Returns the render state's `+0x14`, the
+/// release's `eax` or the walk's.
+#[allow(clippy::too_many_lines)] // the original's three phases, in order
+pub fn node_sparks_0071<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let s0 = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0xe8);
+    let p = s0.wrapping_sub(8);
+    let cookie = g.read::<u32>(w(0xd)) ^ s0;
+    g.write::<u32>(s0 + 0xe4, cookie);
+    let (eax, owner) = crate::nodes::walk(g, fr.ecx, g.read::<u32>(fr.ecx), cookie);
+    let Some(n) = owner else {
+        return Ret::eax(eax);
+    };
+    let rf = |g: &G, o: u32| g.read::<f32>(n.wrapping_add(o));
+    let draw = if k(g, 0x76) > rf(g, 0x50) {
+        let wait = g.read::<u32>(n + 0x58);
+        g.write::<u32>(n + 0x58, wait.wrapping_sub(1));
+        if wait == 0 {
+            // call width: 0
+            let r = g.call(t(g, 0x9a, 324), 0, &[]).eax;
+            g.write::<u32>(n + 0x58, (r & 3) + 1);
+            let count = ((r.cast_signed() >> 2) & 0x1f) + 0x10;
+            g.write::<u32>(p + 0x1c, n);
+            g.write::<u16>(p + 0x20, count.cast_unsigned() as u16);
+            crate::m0070::ring_take(g, p + 0x1c);
+            g.write::<u32>(p + 0x18, n + 0x38);
+            for j in 0..2u32 {
+                let mut rec = g.read::<u32>(p + 0x28 + 4 * j);
+                let cnt = g.read::<u16>(p + 0x22 + 2 * j);
+                for _ in 0..cnt {
+                    g.write::<u32>(rec + 0x10, 0);
+                    // call width: 0
+                    let fv = sub(st0_f32(g.call(t(g, 0x106, 307), 0, &[]).st0), k(g, 0x120));
+                    // call width: 0
+                    let r = g.call(t(g, 0x125, 324), 0, &[]).eax;
+                    // `test al, 3; sete`: the low two bits clear
+                    let kind = u32::from(r.trailing_zeros() >= 2);
+                    g.write::<u16>(rec + 0x12, r as u16);
+                    g.write::<u32>(rec + 0x24, kind);
+                    let x = if kind != 0 {
+                        g.write::<u32>(rec + 0x28, 0x8080_8080);
+                        g.write::<u32>(rec + 0x30, 0);
+                        add(mul(fv, k(g, 0x156)), k(g, 0x16c))
+                    } else {
+                        let x = add(mul(fv, k(g, 0x176)), k(g, 0x181));
+                        g.write::<u32>(rec + 0x28, 0x4080_8080);
+                        g.write::<u32>(rec + 0x30, r & 0xffff);
+                        x
+                    };
+                    let x = mul(x, k(g, 0x193));
+                    g.write::<u8>(rec + 0x34, 1);
+                    let x = mul(x, k(g, 0x1a4));
+                    g.write::<u32>(rec + 0x2c, 0);
+                    g.write::<f32>(rec + 0x20, add(x, k(g, 0x1b3)));
+                    // call width: 0
+                    let v = sub(st0_f32(g.call(t(g, 0x198, 307), 0, &[]).st0), k(g, 0x1d2));
+                    g.write::<f32>(rec + 0x14, sub(k(g, 0x1da), mul(v, k(g, 0x1e7))));
+                    // call width: 0
+                    let v = sub(st0_f32(g.call(t(g, 0x1df, 307), 0, &[]).st0), k(g, 0x20a));
+                    g.write::<f32>(rec + 0x18, mul(v, k(g, 0x217)));
+                    // call width: 0
+                    let v = sub(st0_f32(g.call(t(g, 0x20f, 307), 0, &[]).st0), k(g, 0x236));
+                    g.write::<f32>(rec + 0x1c, sub(k(g, 0x23e), mul(v, k(g, 0x24f))));
+                    // call width: 2
+                    g.call(t(g, 0x243, 325), 0, &[rec, n + 0x38]);
+                    let y = sub(g.read::<f32>(rec + 4), k(g, 0x26e));
+                    g.write::<f32>(rec + 4, y);
+                    rec = rec.wrapping_add(0x40);
+                }
+            }
+        }
+        true
+    } else {
+        g.read::<u32>(n + 0x54) != 0
+    };
+    if !draw {
+        g.write::<u32>(p + 8, n);
+        let release = Frame {
+            at: img.rel32_target(f + 0x619),
+            esp: p.wrapping_sub(4),
+            eax: 0,
+            ecx: p + 8,
+            edx: 0,
+            xmm: [0; 4],
+        };
+        return Ret::eax(crate::s6_misc::node_release(g, img, &release));
+    }
+    // the draw
+    let l = |g: &G, o: u32| g.read::<f32>(p + o);
+    let m = p + 0xa8;
+    g.write::<u32>(p + 0x4c, m);
+    g.write::<u32>(p + 0x40, m);
+    g.write::<u16>(p + 0x32, 0x80);
+    let z = g.read::<u32>(w(0x2b8));
+    g.write::<u32>(p + 0x44, z);
+    for o in [
+        0x6cu32, 0x70, 0x74, 0x78, 0x80, 0x84, 0x88, 0x8c, 0x94, 0x38,
+    ] {
+        g.write::<u32>(p + o, 0);
+    }
+    g.write::<u8>(p + 0x48, 0);
+    g.write::<u32>(n + 0x54, 0);
+    g.write::<u32>(p + 0xc, n);
+    let step_at = img.rel32_target(f + 0x535);
+    for j in 0..2u32 {
+        let mut rec = g.read::<u32>(n + 0x24 + 4 * j);
+        let counts = n + 0x2c + 2 * j;
+        let mut i = 0u32;
+        while i < u32::from(g.read::<u16>(counts)) {
+            if g.read::<u8>(rec + 0x34) != 0 && g.read::<u8>(rec + 0x2b) != 0 {
+                // call width: 3
+                g.call(t(g, 0x377, 229), 0, &[p + 0x98, w(0x371), rec]);
+                let x3 = mul(g.read::<f32>(rec + 0x20), g.read::<f32>(rec + 0x2c));
+                let tb = g.read::<u32>(w(0x38f));
+                let (m1, m2, m3, m4, m6, m7) = (
+                    l(g, 0x6c),
+                    l(g, 0x70),
+                    l(g, 0x74),
+                    l(g, 0x78),
+                    l(g, 0x80),
+                    l(g, 0x84),
+                );
+                for o in [0x7cu32, 0x68, 0x90] {
+                    g.write::<f32>(p + o, x3);
+                }
+                let a = g.read::<u32>(rec + 0x30);
+                let sine = |g: &G, a: u32| g.read::<f32>(tb.wrapping_add(4 * ((a >> 4) & 0xfff)));
+                let (sn, cs) = (sine(g, a), sine(g, a.wrapping_add(0x4000)));
+                g.write::<f32>(p + 0x14, sn);
+                let row = [
+                    (0x68u32, add(mul(cs, x3), mul(sn, m4))),
+                    (0x6c, add(mul(sn, x3), mul(cs, m1))),
+                    (0x78, sub(mul(cs, m4), mul(x3, sn))),
+                    (0x7c, sub(mul(cs, x3), mul(m1, sn))),
+                    (0x70, add(mul(sn, m6), mul(cs, m2))),
+                    (0x80, sub(mul(cs, m6), mul(m2, sn))),
+                    (0x74, add(mul(sn, m7), mul(cs, m3))),
+                    (0x84, sub(mul(cs, m7), mul(m3, sn))),
+                ];
+                for (o, v) in row {
+                    g.write::<f32>(p + o, v);
+                }
+                // call width: 2
+                g.call(t(g, 0x43b, 230), 0, &[p + 0xa8, p + 0x68]);
+                let fade = g.read::<f32>(rec + 0x2c);
+                let top = k(g, 0x4f2);
+                if top > fade {
+                    let v = add(fade, k(g, 0x502));
+                    g.write::<f32>(rec + 0x2c, v);
+                    if v > top {
+                        g.write::<u32>(rec + 0x2c, 0x4080_0000);
+                    }
+                }
+                let colour = g.read::<u32>(rec + 0x28);
+                g.write::<u32>(p + 0x34, colour);
+                let kind = g.read::<u32>(rec + 0x24);
+                let q = g.read::<u32>(kind.wrapping_mul(4).wrapping_add(n + 0x48));
+                g.write::<u32>(p.wrapping_sub(0xc), p + 0x30);
+                let step = Frame {
+                    at: step_at,
+                    esp: p.wrapping_sub(0x10),
+                    eax: 0,
+                    ecx: rec + 0x10,
+                    edx: q,
+                    xmm: [0; 4],
+                };
+                let live = crate::s6_misc::motion_sequence_step(g, img, &step);
+                g.write::<u8>(rec + 0x34, live as u8);
+                let (vx, x0, vy, vz) = (
+                    g.read::<f32>(rec + 0x14),
+                    g.read::<f32>(rec),
+                    g.read::<f32>(rec + 0x18),
+                    g.read::<f32>(rec + 0x1c),
+                );
+                let b = g.read::<u8>(rec + 0x2b).wrapping_add(0xfc);
+                g.write::<u8>(rec + 0x2b, b);
+                g.write::<f32>(rec, add(x0, vx));
+                let y = add(g.read::<f32>(rec + 4), vy);
+                g.write::<f32>(rec + 0x14, mul(vx, k(g, 0x563)));
+                g.write::<f32>(rec + 4, y);
+                let zz = add(g.read::<f32>(rec + 8), vz);
+                g.write::<f32>(rec + 0x18, sub(vy, k(g, 0x57b)));
+                g.write::<f32>(rec + 8, zz);
+                g.write::<f32>(rec + 0x1c, mul(vz, k(g, 0x596)));
+                let c = g.read::<u32>(n + 0x54).wrapping_add(1);
+                g.write::<u32>(n + 0x54, c);
+            }
+            i += 1;
+            rec = rec.wrapping_add(0x40);
+        }
+    }
+    let x = add(rf(g, 0x50), k(g, 0x5e0));
+    let z = g.read::<u32>(p + 0x44);
+    g.write::<u32>(w(0x5e9), z);
+    g.write::<f32>(n + 0x50, x);
+    Ret::eax(z)
+}
+
+/// [`node_sparks_0071`] (the `rel32`s: the ring take, the sequence step,
+/// `__security_check_cookie` twice, the release).
+pub const NODE_SPARKS_0071: Sig = Sig {
+    len: 1585,
+    hash: 0xfd77_4dae_5fce_76f7,
+    calls: &[
+        (0xca, Callee::Sig(&crate::m0070::RING_TAKE)),
+        (0x535, Callee::Sig(&crate::s6_misc::MOTION_SEQUENCE_STEP)),
+        (0x5fe, Callee::Any),
+        (0x619, Callee::Sig(&crate::s6_misc::NODE_RELEASE)),
+        (0x629, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0071`'s 12-byte thunk over [`node_sparks_0071`] (0x10001b40:
+/// `ecx` = the first stack word, then a jump with the caller's stack).
+pub fn jmp_node_sparks_0071<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    let sf = Frame {
+        at: img.rel32_target(fr.at + 8),
+        ecx,
+        ..*fr
+    };
+    node_sparks_0071(g, img, &sf)
+}
+
+/// [`jmp_node_sparks_0071`].
+pub const JMP_NODE_SPARKS_0071: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&NODE_SPARKS_0071))],
+    imports: &[],
+};

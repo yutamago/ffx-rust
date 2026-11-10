@@ -3418,6 +3418,7 @@ ports! {
     "r44 load step 0009" => r44::LOAD_0009, r44::load_0009;
     "r44 trail task 0009" => r44::TRAIL_TASK_0009, r44::trail_task_0009;
     "r44 stage task 0150" => r44::STAGE_TASK_0150, r44::stage_task_0150;
+    "r44 node sparks thunk 0071" => r44::JMP_NODE_SPARKS_0071, r44::jmp_node_sparks_0071;
     // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3824,6 +3825,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r44 start-up 0072", &r44::START_UP_0072),
     ("r44 flames 0072", &r44::FLAMES_0072),
     ("r44 start-up 0009", &r44::START_UP_0009),
+    ("r44 node sparks 0071", &r44::NODE_SPARKS_0071),
     // round 44 (magic-r44): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
