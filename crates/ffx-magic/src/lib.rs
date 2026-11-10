@@ -3326,6 +3326,8 @@ ports! {
     "r36 sparks 0295" => r36::SPARKS_0295, r36::sparks_0295;
     "r36 summon task 0263" => r36::SUMMON_TASK_0263, r36::summon_task_0263;
     "r36 summon start 0263" => r36::SUMMON_START_0263, r36::summon_start_0263;
+    "r36 sparks 0153" => r36::SPARKS_0153, r36::sparks_0153;
+    "r36 summon task 0153" => r36::SUMMON_TASK_0153, r36::summon_task_0153;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
