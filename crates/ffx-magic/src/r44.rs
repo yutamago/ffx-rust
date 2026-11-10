@@ -1977,3 +1977,243 @@ pub const FRAME_0072: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0009`'s start-up (0x10001340, 1464 bytes; internal, no
+/// arguments, run by its load step; an 8-aligned /GS frame, `S` = `esp`
+/// after the three pushes):
+/// - four globals, `*G_C` = slot 719 `(D, 8, 0)`; the part set-up
+///   ([`part_init`](crate::l5_objhost::part_init));
+/// - the target `T` (`TAB[*sel]`): `A` = slot 268 `(T, 0x11)` at `S +
+///   0x30` (after slot 262 there) with `y` less `K`, `w` 1; the summon
+///   `B` (slot 262 then 268 of `*G_B` at `S + 0x40`, `y` less `K`, `w`
+///   1);
+/// - `d = A - B`: the pitch `atan2(dy, sqrt(dx^2 + dz^2))` (doubles, the
+///   `x87` `_CIatan2`), the yaw `K - atan2(dz, dx)` wrapped once;
+/// - `A` moved by the matrix of slot 235 turned by the pitch and the yaw
+///   (slots 328, 329) applied to `(0, 0, 6, 1)` (slots 229, 248), the
+///   first part object ([`part_object`](crate::m0009::part_object) `(1,
+///   0)`), `A` into four globals; the yaw plus `K'` wrapped into a
+///   global, the target's byte, the second part object `(0, 0x12)`, `B`
+///   into four globals, a handle word and a block of globals; `B` moved
+///   by the same turn applied to `(0, 0, 3, 1)`;
+/// - the effect block set up ([`setup`](crate::m0009::setup) `(A, B,
+///   (pitch, yaw, 0))`), three nodes off the pool
+///   ([`take`](crate::sa_pool::take): the frame task, marked 1; the
+///   trail task; the objects' frame, marked 2) at the task list's end.
+///
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0009<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; sub esp, 0xac; three pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xac);
+    let cookie = gw(g, 0xd) ^ b0;
+    g.write::<u32>(b0 + 0xa8, cookie);
+    let s = b0.wrapping_sub(0xc);
+    let rf = |g: &G, o: u32| g.read::<f32>(s + o);
+    let wf = |g: &mut G, o: u32, x: f32| g.write::<f32>(s + o, x);
+    for (to, v) in [(0x33u32, 0x37u32), (0x3d, 0x41), (0x47, 0x4b), (0x51, 0x55)] {
+        g.write::<u32>(w(to), w(v));
+    }
+    // call width: 3
+    let c = g.call(t(g, 0x1b, 719), 0, &[w(0x2d), 8, 0]).eax;
+    g.write::<u32>(w(0x5f), c);
+    crate::l5_objhost::part_init(g, img, call(0x64));
+    // the target A at S + 0x30
+    let b = g.read::<u8>(gw(g, 0x69));
+    let tt = g.read::<u32>(w(0x73).wrapping_add(4 * u32::from(b)));
+    let a = s + 0x30;
+    // call width: 4
+    g.call(t(g, 0x87, 262), 0, &[tt, a, a + 4, a + 8]);
+    // call width: 3
+    g.call(t(g, 0x9a, 268), 0, &[tt, 0x11, a]);
+    let ya = sub(rf(g, 0x34), k(g, 0xb3));
+    // the summon B at S + 0x40
+    let bh = gw(g, 0xb9);
+    let bv = s + 0x40;
+    g.write::<u32>(a + 0xc, ONE);
+    wf(g, 0x34, ya);
+    // call width: 4
+    g.call(t(g, 0xcd, 262), 0, &[bh, bv, bv + 4, bv + 8]);
+    // call width: 3
+    g.call(t(g, 0xee, 268), 0, &[bh, 0x11, bv]);
+    let yb = sub(rf(g, 0x44), k(g, 0x10a));
+    let dz = sub(rf(g, 0x38), rf(g, 0x48));
+    let dx = sub(rf(g, 0x30), rf(g, 0x40));
+    let dy = sub(ya, yb);
+    wf(g, 0x44, yb);
+    g.write::<u32>(bv + 0xc, ONE);
+    wf(g, 0x1c, dx);
+    let flat = add(mul(dz, dz), mul(dx, dx));
+    // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+    let r = f64::from(flat).sqrt();
+    let pitch64 = g.atan2(f64::from(dy), r);
+    g.write::<f64>(s + 0x10, pitch64);
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let pitch = pitch64 as f32;
+    wf(g, 0x20, pitch);
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let mut yaw = sub(k(g, 0x1d9), ang);
+    let tw = k(g, 0x1e9);
+    if yaw > k(g, 0x1f0) {
+        yaw = sub(yaw, tw);
+    } else if k(g, 0x206) > yaw {
+        yaw = add(yaw, tw);
+    }
+    wf(g, 0xc, yaw);
+    // the turn applied to (0, 0, z, 1), the point moved (slot 248)
+    let m = s + 0x70;
+    let v = s + 0x60;
+    let out = s + 0x50;
+    let turned = |g: &mut G, p: u32, z: u32, ops: [u32; 5]| {
+        // call width: 1
+        g.call(t(g, ops[0], 235), 0, &[m]);
+        #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+        let pitch = g.read::<f64>(s + 0x10) as f32;
+        // call width: 3
+        g.call(t(g, ops[1], 328), 0, &[m, m, pitch.to_bits()]);
+        let yaw = rf(g, 0xc);
+        // call width: 3
+        g.call(t(g, ops[2], 329), 0, &[m, m, yaw.to_bits()]);
+        g.write::<u32>(v + 8, z);
+        g.write::<u32>(v + 0xc, ONE);
+        // call width: 3
+        g.call(t(g, ops[3], 229), 0, &[out, m, v]);
+        // call width: 3
+        g.call(t(g, ops[4], 248), 0, &[p, p, out]);
+    };
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 8, 0x40c0_0000);
+    wf(g, 0x24, yaw);
+    g.write::<u32>(s + 0x28, 0);
+    turned(g, a, 0x40c0_0000, [0x21f, 0x267, 0x288, 0x2a7, 0x2ca]);
+    g.write::<u32>(a + 0xc, ONE);
+    let obj = |g: &mut G, at: u32, (o, scale): (u32, u32), (index, owner): (u32, u32)| {
+        let sc = gw(g, scale);
+        crate::m0009::part_object(g, img, call(at), w(o), sc, index, owner);
+    };
+    obj(g, 0x2f3, (0x2e2, 0x2da), (1, 0));
+    for (i, to) in (0u32..).zip([0x301u32, 0x30f, 0x31d, 0x32b]) {
+        let x = g.read::<u32>(a + 4 * i);
+        g.write::<u32>(w(to), x);
+    }
+    let mut yaw2 = add(rf(g, 0xc), k(g, 0x339));
+    if yaw2 > k(g, 0x343) {
+        yaw2 = sub(yaw2, k(g, 0x34d));
+    } else if k(g, 0x357) > yaw2 {
+        yaw2 = add(yaw2, k(g, 0x364));
+    }
+    let byte = g.read::<u8>(gw(g, 0x369));
+    g.write::<f32>(w(0x37c), yaw2);
+    g.write::<u32>(w(0x38d), u32::from(byte));
+    obj(g, 0x392, (0x388, 0x371), (0, 0x12));
+    let hw = gw(g, 0x39d);
+    for (i, to) in (0u32..).zip([0x3a5u32, 0x3b3, 0x3c8, 0x3e3]) {
+        let x = g.read::<u32>(bv + 4 * i);
+        g.write::<u32>(w(to), x);
+    }
+    g.write::<u32>(w(0x3be), hw);
+    g.write::<u16>(w(0x3d4), 0);
+    let x = rf(g, 0xc);
+    g.write::<f32>(w(0x3f7), x);
+    for (to, x) in [
+        (0x3fdu32, 0u32),
+        (0x407, 0),
+        (0x411, 0),
+        (0x41b, 0),
+        (0x425, w(0x429)),
+        (0x42f, w(0x433)),
+        (0x439, 0),
+        (0x443, 0),
+    ] {
+        g.write::<u32>(w(to), x);
+    }
+    turned(g, bv, 0x4040_0000, [0x3ef, 0x474, 0x495, 0x4b4, 0x4d7]);
+    g.write::<u32>(bv + 0xc, ONE);
+    crate::m0009::setup(g, img, call(0x4f9), a, bv, s + 0x20);
+    // three nodes off the pool at the task list's end
+    let take = |g: &mut G, o: u32, owner: u32| crate::sa_pool::take(g, img, call(o), w(owner));
+    let n1 = take(g, 0x506, 0x501);
+    let mut first = gw(g, 0x50c);
+    g.write::<u8>(n1 + 0x18, 1);
+    g.write::<u32>(n1 + 4, 0);
+    if first == 0 {
+        first = n1;
+        g.write::<u32>(n1, 0);
+        g.write::<u32>(w(0x538), first);
+    } else {
+        let last = gw(g, 0x523);
+        g.write::<u32>(n1, last);
+        g.write::<u32>(last + 4, n1);
+    }
+    g.write::<u32>(n1 + 8, n1);
+    let n2 = take(g, 0x545, 0x53d);
+    g.write::<u32>(n2 + 4, 0);
+    if first == 0 {
+        first = n2;
+        g.write::<u32>(n2, 0);
+        g.write::<u32>(w(0x567), first);
+    } else {
+        g.write::<u32>(n2, n1);
+        g.write::<u32>(n1 + 4, n2);
+    }
+    g.write::<u32>(n2 + 8, n2);
+    let n3 = take(g, 0x574, 0x56c);
+    g.write::<u8>(n3 + 0x18, 2);
+    g.write::<u32>(n3 + 4, 0);
+    if first == 0 {
+        g.write::<u32>(n3, 0);
+        g.write::<u32>(w(0x595), n3);
+    } else {
+        g.write::<u32>(n3, n2);
+        g.write::<u32>(n2 + 4, n3);
+    }
+    g.write::<u32>(n3 + 8, n3);
+    g.write::<u32>(w(0x5a7), n3);
+    Ret::eax(0)
+}
+
+/// [`start_up_0009`] (the `rel32`s: the part set-up, `sqrt`, `_CIatan2`
+/// twice, the part objects, the effect set-up, the pool takes,
+/// `__security_check_cookie`).
+pub const START_UP_0009: Sig = Sig {
+    len: 1464,
+    hash: 0xda80_412b_36f2_4009,
+    calls: &[
+        (0x64, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x175, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x188, Callee::Import("_CIatan2")),
+        (0x1c7, Callee::Import("_CIatan2")),
+        (0x2f3, Callee::Sig(&crate::m0009::PART_OBJECT)),
+        (0x392, Callee::Sig(&crate::m0009::PART_OBJECT)),
+        (0x4f9, Callee::Sig(&crate::m0009::SETUP)),
+        (0x506, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x545, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x574, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x5b0, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0009`'s load step (0x10001210, 119 bytes; a table entry): the
+/// object hosts' load step ([`load_step`](crate::r9_load::load_step), the
+/// 119-byte form) running [`start_up_0009`].
+pub fn load_0009<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::One, start_up_0009)
+}
+
+/// [`load_0009`] (the 119-byte load step's `Sig`, the `rel32` the
+/// start-up).
+pub const LOAD_0009: Sig = Sig {
+    len: 119,
+    hash: 0x2da6_1889_6875_2369,
+    calls: &[(0x5c, Callee::Sig(&START_UP_0009))],
+    imports: &[],
+};
