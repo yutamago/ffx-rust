@@ -857,7 +857,15 @@ fn drop_stubs(t: &mut Twin) {
     rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
     t.stub_st0(12, |_, a| 1.25 + f64::from(a[0] & 7));
     rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
-    for s in [255u32, 11, 32, 33] {
+    // slot 255 reads the point it gets
+    rec(t, 255, 2, |m, a| {
+        0x0255_0000
+            ^ a[0]
+            ^ m.r32(a[1])
+            ^ m.r32(a[1] + 4).rotate_left(7)
+            ^ m.r32(a[1] + 8).rotate_left(13)
+    });
+    for s in [11u32, 32, 33] {
         rec(t, s, 2, move |m, a| {
             (s << 16) ^ a[0] ^ m.r32(SCRATCH + 0x60)
         });
@@ -916,12 +924,21 @@ fn drops_and_curves() {
             (0x914, 0x918, 0xbac)
         };
         let reach = if n == 391 {
-            30.0
+            30.0 - f32::from_bits(t.u32(t.img.word(cf + 0x2e7)))
         } else {
             f32::from_bits(t.u32(t.img.word(cf + 0x2da)))
         };
-        // (count, total, flag, battle point x, battle word, me, grounded)
-        let cases: [(i32, i32, u32, f32, u32, u32, u32); 9] = [
+        // the battle point's x for a flat distance `reach + e` from the
+        // still curve's point (0, 1): see `flat` below
+        let edge = |e: f32| ((reach + e) * (reach + e) - 0.25).sqrt();
+        // (count, total, flag, battle point x, battle word, me, grounded);
+        // count 50 and up: a still curve at (0, y, 0.5)
+        let cases: [(i32, i32, u32, f32, u32, u32, u32); 14] = [
+            (50, 60, 1, edge(0.01), 0, 1, 0),
+            (51, 60, 1, edge(-0.01), 0, 1, 0),
+            (52, 60, 1, edge(0.2), 0, 0x20, 0),
+            (53, 60, 1, edge(-0.2), 0, 0x1f, 0),
+            (54, 60, 0, 1.0, 0, 0x20, 1),
             (30, 40, 0, 0.0, 0, 1, 0),
             (21, 40, 1, 0.5, 0, 1, 0),
             (20, 40, 1, reach + 60.0, 0, 1, 0),
@@ -940,7 +957,11 @@ fn drops_and_curves() {
             t.set_u32(ws + flag, fl);
             t.set_u32(ws + 0xb88, 30.0f32.to_bits());
             for i in 0..8u32 {
-                let v = 1.5 * i as f32 - 3.0 + 0.25 * k as f32;
+                let v = if c >= 50 {
+                    [0.0f32, 0.75, 0.5, 1.0][i as usize % 4]
+                } else {
+                    1.5 * i as f32 - 3.0 + 0.25 * k as f32
+                };
                 t.set_u32(s + 0x7b0 + 4 * i, v.to_bits());
             }
             for (i, v) in [vx, 0.5, 1.0, 2.0].into_iter().enumerate() {
