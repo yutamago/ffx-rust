@@ -2523,3 +2523,664 @@ pub const TRAIL_TASK_0009: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`stage_task_0150`]'s ending (shared by states 6 and 101), three
+/// independent steps by the timer `t`: past `K1` the glow `*G_G` drops
+/// by the step `*G_S` (which shrinks by `m`); past `K2` the flash `*G_F`
+/// shrinks; past `K3` the node leaves its parent
+/// ([`leave`](crate::sa_misc::leave)) and the task node is unlinked
+/// (returns its old next). `ks` the three bounds' operands, `ops` =
+/// `[the step's load, the glow's load, its store, the step's store, the
+/// flash's load, its factor, its store]`. Returns `eax` as the original
+/// leaves it.
+#[allow(clippy::too_many_arguments)] // the shared tail's operands
+fn stage_end_0150<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (t, m): (f32, f32),
+    ks: [u32; 3],
+    ops: [u32; 7],
+    task: u32,
+    eax: u32,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    // `comiss t, K; jb`: below or unordered skips the step
+    let past = |g: &G, o: u32| !(t < k(g, o) || t.is_nan());
+    if past(g, ks[0]) {
+        let step = k(g, ops[0]);
+        let glow = sub(k(g, ops[1]), step);
+        g.write::<f32>(w(ops[2]), glow);
+        g.write::<f32>(w(ops[3]), mul(step, m));
+    }
+    if past(g, ks[1]) {
+        let x = mul(k(g, ops[4]), k(g, ops[5]));
+        g.write::<f32>(w(ops[6]), x);
+    }
+    if !past(g, ks[2]) {
+        return eax;
+    }
+    crate::sa_misc::leave(g, w(0xfda), eax);
+    // `task` is the frame word holding the task: its node is `[[task]]`
+    let node = g.read::<u32>(g.read::<u32>(task));
+    let next = g.read::<u32>(node + 4);
+    let prev = g.read::<u32>(node + 8);
+    g.write::<u32>(next + 8, prev);
+    let prev = g.read::<u32>(node + 8);
+    let next = g.read::<u32>(node + 4);
+    g.write::<u32>(prev + 4, next);
+    g.write::<u32>(node + 4, node);
+    g.write::<u32>(node + 8, node);
+    next
+}
+
+/// The flash of [`stage_task_0150`] (states 6 and 101, operands `d`
+/// bytes apart): when the timer reached `K` and the move is armed
+/// (`*G_M`), seven colour words 1.0 and the move started
+/// ([`move_start`](crate::sa_misc::move_start) `(N, 0, 0.02, 1)` on the
+/// frame), the flag cleared; the glow byte `(A + B) K'` truncated; slot
+/// 250 `(0, (slot 307 - K'') *G_R)`; `*G_R` and `B` shrink by `m`. Returns
+/// slot 250's `eax`.
+fn stage_flash_0150<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, d: u32) -> u32 {
+    let w = |o: u32| img.word(f + o.wrapping_add(d));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    if g.read::<u32>(w(0x8d6)) != 0 {
+        for o in [0x8e3u32, 0x8ed, 0x8f7, 0x901, 0x90b, 0x915, 0x91f] {
+            g.write::<u32>(w(o), ONE);
+        }
+        let rec = s + 0x34;
+        for (i, x) in (0u32..).zip([w(0x92b), 0, 0x3ca3_d70a, ONE]) {
+            g.write::<u32>(rec + 4 * i, x);
+        }
+        crate::sa_misc::move_start(g, rec);
+        g.write::<u32>(w(0x94e), 0);
+    }
+    let x = mul(add(k(g, 0x95a), k(g, 0x962)), k(g, 0x96a));
+    g.write::<u8>(w(0x973), cvtt(x).to_le_bytes()[0]);
+    // call width: 0
+    let r = st0_f32(g.call(t(g, 0x978, 307), 0, &[]).st0);
+    let v = mul(sub(r, k(g, 0x992)), k(g, 0x9a8));
+    // call width: 2
+    let eax = g.call(t(g, 0x997, 250), 0, &[0, v.to_bits()]).eax;
+    let m = k(g, 0x9c7);
+    let x = mul(k(g, 0x9bf), m);
+    g.write::<f32>(w(0x9de), x);
+    let x = mul(k(g, 0x9e6), m);
+    g.write::<f32>(w(0x9f2), x);
+    eax
+}
+
+/// `magic_0150`'s stage task (0x1000bac0, 4258 bytes with its tables; a
+/// task callback `(task)`, cdecl; an 8-aligned /GS frame, `S` = `esp`
+/// after the two pushes). The timer `T` grows by `K` each run; by the
+/// state (a byte table up to 0x65, the rest the end):
+/// - 5: the counter `C` steps the light words (`A`, `B` less 100) and the
+///   fade `C K + K0`; from 12 on, with `*G_Q` = 1 the state turns 100
+///   and runs as 100; else the summon's direction (slot 232), the node
+///   joins its list ([`node_append`](crate::sb_misc::node_append)), the
+///   place (slot 325) moved back along it by `K`, its height, a sound
+///   (286), the camera's mode (slot 520: two offsets by kind; `*G_Q` 2
+///   lowers it), the second direction (232) times 20 (233), the state on
+///   and five words;
+/// - 0: the camera tree ([`camera_tree`](crate::s5_misc::camera_tree)),
+///   a sound, slot 211, the motion 0xb9 (228), on; then as 1;
+/// - 1: the place (229 from `d = K / *G_D`), the height from slot 289,
+///   the mode 0xd4 lowering it, the offset (229), slot 289 of 294's
+///   answer (1 for 0xff), slot 255 unless the flag, slot 3, on;
+/// - 2: `x` up by `K`; on once `T` reaches `K'`;
+/// - 3: the light set-up (eight colour words, the scales, the flags, `A`
+///   0x1c78, `B` 0x400, `C` 0), slots 531 and 255 unless the flag; then
+///   as 4;
+/// - 4: the fade and the light words down, `B` less 130, `A` less 100;
+///   on (glow byte 0x40, 0.9) once `T` reaches `K`;
+/// - 6: the place moved by the step (233 by 0.75), a sound by `1 - g`,
+///   `g` shrinks; the flash and the end ([`stage_flash_0150`],
+///   [`stage_end_0150`]);
+/// - 100: the direction (232), the node joins its list, the place
+///   (325), a sound, five factors by the summon's kind (`*G_K`
+///   0x1088/0x1089/0x108c, else by slot 535) moving the place, its
+///   height, the side vector (232, 233, 248), the step (232, 233), a
+///   sound; on, four words; then as 101;
+/// - 101: the place back by the step (233 by 0.95); the flash and the
+///   end.
+///
+/// Returns `eax` as the original leaves it (the byte table's index, the
+/// state, the last call's).
+#[allow(clippy::too_many_lines)] // the original's dispatch, in order
+pub fn stage_task_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    // push ebp; and esp, -8; sub esp, 0x40; two pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x40);
+    let cookie = gw(g, 0xa) ^ b0;
+    g.write::<u32>(b0 + 0x3c, cookie);
+    let s = b0.wrapping_sub(8);
+    let at = |o: u32| s.wrapping_add(o);
+    let task = fr.arg(g, 0);
+    g.write::<u32>(at(0x1c), task);
+    let tm = add(k(g, 0x18), k(g, 0x23));
+    let mut state = gw(g, 0x29);
+    put(g, 0x39, tm);
+    let up = |g: &mut G, o: u32| {
+        let x = gw(g, o).wrapping_add(1);
+        g.write::<u32>(w(o), x);
+    };
+    if state > 0x65 {
+        return Ret::eax(state);
+    }
+    let k4 = k(g, 0x4a);
+    let idx = img.word(w(0x63).wrapping_add(state)) & 0xff;
+    let mut target = img.word(w(0x6a).wrapping_add(4 * idx)).wrapping_sub(f);
+    let eax = loop {
+        match target {
+            // state 5
+            0x6e => {
+                let c = gw(g, 0x5c);
+                let x = add(mul(cvt(c), k(g, 0x7b)), k4);
+                let (b, a) = (
+                    gw(g, 0x56).wrapping_sub(0x64),
+                    gw(g, 0x50).wrapping_sub(0x64),
+                );
+                g.write::<u32>(w(0x8c), b);
+                g.write::<u32>(w(0x92), a);
+                g.write::<u32>(w(0x98), c.wrapping_add(1));
+                put(g, 0xa0, x);
+                if c.cast_signed() < 0xc {
+                    break c;
+                }
+                if gw(g, 0xae) == 1 {
+                    g.write::<u32>(w(0xbc), 0x64);
+                    state = 0x64;
+                    let idx = img.word(w(0x63).wrapping_add(state)) & 0xff;
+                    target = img.word(w(0x6a).wrapping_add(4 * idx)).wrapping_sub(f);
+                    continue;
+                }
+                break stage_dir_0150(g, img, f, s);
+            }
+            // state 0
+            0x33d => {
+                let args = at(0x1c);
+                g.write::<u32>(args, w(0x345));
+                g.write::<u32>(args + 4, w(0x34d));
+                let cf = Frame {
+                    at: img.rel32_target(f + 0x352),
+                    esp: s.wrapping_sub(4),
+                    ecx: args,
+                    ..*fr
+                };
+                crate::s5_misc::camera_tree(g, img, &cf);
+                let node = g.read::<u32>(args);
+                g.write::<u32>(node, w(0x35d));
+                let h = gw(g, 0x36f);
+                // call width: 2
+                g.call(t(g, 0x362, 286), 0, &[h, 0x4416_0000]);
+                let x = gw(g, 0x387);
+                // call width: 2
+                g.call(t(g, 0x37c, 211), 0, &[x, w(0x381)]);
+                let x = gw(g, 0x39f);
+                // call width: 2
+                g.call(t(g, 0x394, 228), 0, &[x, 0xb9]);
+                up(g, 0x3b0);
+                // (then as state 1)
+                target = 0x3b4;
+            }
+            // state 1
+            0x3b4 => break stage_place_0150(g, img, f, s),
+            // state 2
+            0x572 => {
+                let x = add(k(g, 0x57d), k(g, 0x585));
+                put(g, 0x58d, x);
+                if !(tm < k(g, 0x575) || tm.is_nan()) {
+                    g.write::<u32>(w(0x59a), state + 1);
+                }
+                break idx;
+            }
+            // state 3 (then as 4)
+            0x5af => {
+                let eax = stage_light_0150(g, img, f, s, state);
+                break stage_fade_0150(g, img, f, eax);
+            }
+            // state 4
+            0x79a => break stage_fade_0150(g, img, f, idx),
+            // state 6
+            0x815 => {
+                let x = add(k(g, 0x819), k(g, 0x821));
+                g.write::<u8>(w(0x82d), 0);
+                put(g, 0x83d, x);
+                let z = add(k(g, 0x845), k(g, 0x84d));
+                g.write::<u32>(w(0x853), ONE);
+                put(g, 0x869, z);
+                // call width: 3
+                g.call(t(g, 0x826, 233), 0, &[w(0x861), w(0x85c), 0x3f40_0000]);
+                let x = sub(k(g, 0x879), k(g, 0x881));
+                let h = gw(g, 0x89a);
+                // call width: 2
+                let mut eax = g.call(t(g, 0x886, 285), 0, &[h, x.to_bits()]).eax;
+                let m = k(g, 0x8ac);
+                let gl = mul(k(g, 0x8a4), m);
+                let tm2 = k(g, 0x8b4);
+                put(g, 0x8ca, gl);
+                let (mut tt, mut mm) = (tm2, m);
+                if !(tm2 < k(g, 0x8c2) || tm2.is_nan()) {
+                    eax = stage_flash_0150(g, img, f, s, 0);
+                    tt = k(g, 0x9cf);
+                    mm = k(g, 0x9c7);
+                }
+                let end = stage_end_0150(
+                    g,
+                    img,
+                    f,
+                    (tt, mm),
+                    [0x9f9, 0xa2a, 0xa4b],
+                    [0xa03, 0xa0b, 0xa1b, 0xa23, 0xa34, 0xa3c, 0xa44],
+                    at(0x1c),
+                    eax,
+                );
+                break end;
+            }
+            // state 100 (then as 101)
+            0xa54 => {
+                // (its `eax` is the next state's first call's)
+                stage_kind_0150(g, img, f, s);
+                target = 0xddc;
+            }
+            // state 101
+            0xddc => {
+                let x = sub(k(g, 0xde0), k(g, 0xde8));
+                g.write::<u8>(w(0xdf4), 0);
+                put(g, 0xe04, x);
+                let z = sub(k(g, 0xe0c), k(g, 0xe14));
+                g.write::<u32>(w(0xe1a), ONE);
+                put(g, 0xe30, z);
+                // call width: 3
+                let mut eax = g
+                    .call(t(g, 0xded, 233), 0, &[w(0xe28), w(0xe23), 0x3f73_3333])
+                    .eax;
+                let (mut tt, mut mm) = (k(g, 0xe40), k(g, 0xe48));
+                if !(tt < k(g, 0xe52) || tt.is_nan()) {
+                    eax = stage_flash_0150(g, img, f, s, 0x588);
+                    tt = k(g, 0xf57);
+                    mm = k(g, 0xf4f);
+                }
+                let end = stage_end_0150(
+                    g,
+                    img,
+                    f,
+                    (tt, mm),
+                    [0xf81, 0xfb2, 0xfd3],
+                    [0xf8b, 0xf93, 0xfa3, 0xfab, 0xfbc, 0xfc4, 0xfcc],
+                    at(0x1c),
+                    eax,
+                );
+                break end;
+            }
+            _ => break idx,
+        }
+    };
+    Ret::eax(eax)
+}
+
+/// [`stage_task_0150`]'s state 5 past its count (`*G_Q` not 1): the
+/// summon's direction `D` (slot 232 into `S + 0x24`), the node joins its
+/// list ([`node_append`](crate::sb_misc::node_append)), the place copied
+/// (slot 325), a word, a sound (slot 286 `(h, 600)`), flags and words,
+/// the place again (325) moved back along `D` by `K` and its height
+/// lowered; slot 520's mode moves it once more (0x24a0000 and 0x2470000
+/// by their factors), `*G_Q` 2 lowers the height again; the step (232)
+/// times 20 (233); the state on and five words. Returns slot 233's
+/// `eax`.
+fn stage_dir_0150<G: Game>(g: &mut G, img: &Image, f: u32, s: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let d = s + 0x24;
+    // call width: 2
+    let eax = g.call(t(g, 0xcf, 232), 0, &[d, w(0xc9)]).eax;
+    crate::sb_misc::node_append(g, img, img.rel32_target(f + 0xe6), w(0xe1), w(0xdc), eax);
+    // call width: 2
+    g.call(t(g, 0xeb, 325), 0, &[w(0xfb), w(0xf0)]);
+    let x = gw(g, 0x105);
+    g.write::<u32>(w(0x115), x);
+    let h = gw(g, 0x128);
+    // call width: 2
+    g.call(t(g, 0x10a, 286), 0, &[h, 0x4416_0000]);
+    let b = g.read::<u8>(w(0x135)) | 1;
+    g.write::<u8>(w(0x135), b);
+    g.write::<u32>(w(0x13c), w(0x140));
+    g.write::<u32>(w(0x146), ONE);
+    g.write::<u32>(w(0x150), w(0x154));
+    // call width: 2
+    g.call(t(g, 0x12f, 325), 0, &[w(0x164), w(0x15f)]);
+    let (nx, nz) = (g.read::<f32>(d), g.read::<f32>(d + 8));
+    let x = sub(k(g, 0x17c), mul(nx, k(g, 0x174)));
+    put(g, 0x19e, x);
+    let z = sub(k(g, 0x1a6), mul(nz, k(g, 0x193)));
+    put(g, 0x1b2, z);
+    let y = sub(k(g, 0x1ba), k(g, 0x1c2));
+    put(g, 0x1ca, y);
+    // call width: 0
+    let mode = g.call(t(g, 0x181, 520), 0, &[]).eax;
+    let y = if mode == 0x24a_0000 {
+        let k2 = k(g, 0x1da);
+        let x = sub(k(g, 0x1f6), mul(nx, k2));
+        put(g, 0x210, x);
+        let z = sub(k(g, 0x218), mul(nz, k2));
+        put(g, 0x224, z);
+        let y = sub(k(g, 0x22c), k(g, 0x234));
+        put(g, 0x29c, y);
+        y
+    } else if mode == 0x247_0000 {
+        let x = sub(k(g, 0x256), mul(nx, k(g, 0x24e)));
+        put(g, 0x270, x);
+        let z = sub(k(g, 0x278), mul(nz, k(g, 0x268)));
+        put(g, 0x284, z);
+        let y = sub(k(g, 0x28c), k(g, 0x294));
+        put(g, 0x29c, y);
+        y
+    } else {
+        k(g, 0x23e)
+    };
+    if gw(g, 0x2a2) == 2 {
+        put(g, 0x2b5, sub(y, k(g, 0x2ad)));
+    }
+    // call width: 2
+    g.call(t(g, 0x2ba, 232), 0, &[w(0x2ca), w(0x2bf)]);
+    // call width: 3
+    let eax = g
+        .call(t(g, 0x2d1, 233), 0, &[w(0x2eb), w(0x2e6), 0x41a0_0000])
+        .eax;
+    let st = gw(g, 0x2f6).wrapping_add(1);
+    g.write::<u32>(w(0x2f6), st);
+    for (o, x) in [
+        (0x2fcu32, 0x3ea0_d97cu32),
+        (0x306, ONE),
+        (0x310, 0x41f0_0000),
+        (0x31a, 0x3f00_0000),
+        (0x324, 0x3f00_0000),
+    ] {
+        g.write::<u32>(w(o), x);
+    }
+    eax
+}
+
+/// [`stage_task_0150`]'s state 1: `d = K / *G_D`, the place (slot 229
+/// of `(d K1, 0, d K2, 1)` through the matrix into the summon's place),
+/// its height from slot 289 `(h)` less `K` (mode 0xd4 lowers it), the
+/// offset `(d K3, 289's, d K4, 1)` at `S + 0x24` (slot 229 in place; the
+/// second slot 289 of slot 294's answer, 1 for 0xff, its `y`), slot 255
+/// unless the flag, slot 3; the state on. Returns slot 3's `eax`.
+fn stage_place_0150<G: Game>(g: &mut G, img: &Image, f: u32, s: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let d = div(k(g, 0x3b8), k(g, 0x3c0));
+    let b = g.read::<u8>(w(0x3c6)) | 1;
+    g.write::<u8>(w(0x3c6), b);
+    let v1 = s + 0x34;
+    g.write::<f32>(v1, mul(d, k(g, 0x3d2)));
+    g.write::<u32>(w(0x3f3), w(0x3f7));
+    g.write::<f32>(s + 8, d);
+    g.write::<u32>(v1 + 4, 0);
+    g.write::<f32>(v1 + 8, mul(d, k(g, 0x3ed)));
+    g.write::<u32>(v1 + 0xc, ONE);
+    // call width: 3
+    g.call(t(g, 0x3dc, 229), 0, &[w(0x407), w(0x402), v1]);
+    let h = gw(g, 0x439);
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x42a, 289), 0, &[h]).st0);
+    g.write::<f32>(s + 0x1c, r);
+    put(g, 0x45d, sub(r, k(g, 0x44d)));
+    // call width: 0
+    if g.call(t(g, 0x452, 520), 0, &[]).eax == 0xd4_0000 {
+        put(g, 0x484, sub(k(g, 0x474), k(g, 0x47c)));
+    }
+    let d = g.read::<f32>(s + 8);
+    let v2 = s + 0x24;
+    g.write::<f32>(v2, mul(d, k(g, 0x49a)));
+    g.write::<u32>(v2 + 4, 0);
+    g.write::<f32>(v2 + 8, mul(d, k(g, 0x4a2)));
+    g.write::<u32>(v2 + 0xc, ONE);
+    // call width: 3
+    g.call(t(g, 0x4ad, 229), 0, &[v2, w(0x4a7), v2]);
+    let h = gw(g, 0x4e5);
+    // call width: 1
+    let r = g.call(t(g, 0x4d6, 294), 0, &[h]).eax;
+    let out = if r == 0xff {
+        // call width: 1
+        g.call(t(g, 0x4f4, 289), 0, &[1])
+    } else {
+        let h = gw(g, 0x500);
+        // call width: 1
+        let r = g.call(t(g, 0x4f4, 294), 0, &[h]).eax;
+        // call width: 1
+        g.call(t(g, 0x511, 289), 0, &[r])
+    };
+    g.write::<f32>(v2 + 4, st0_f32(out.st0));
+    if g.read::<u8>(w(0x526)) & 1 == 0 {
+        let x = gw(g, 0x539);
+        // call width: 2
+        g.call(t(g, 0x533, 255), 0, &[x, v2]);
+    }
+    let x = gw(g, 0x54f);
+    // call width: 1
+    let eax = g.call(t(g, 0x549, 3), 0, &[x]).eax;
+    let st = gw(g, 0x55d).wrapping_add(1);
+    g.write::<u32>(w(0x55d), st);
+    eax
+}
+
+/// [`stage_task_0150`]'s state 3: the light set up (the colour terms `K -
+/// c` of eight words, four and three halves, the scale `K' / *G_D K''`,
+/// the flags cleared, `A` 0x1c78, `B` 0x400, the fade `K4`, `C` 0, the
+/// state on), slot 531 and slot 255 `(h, S + 0x34)` each unless its flag
+/// word's bit 0. Returns `eax` as the original leaves it (the flag word
+/// in its low half over the last call's).
+fn stage_light_0150<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, state: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let k1 = k(g, 0x5b3);
+    let scale = mul(div(k(g, 0x5bb), k(g, 0x5c3)), k(g, 0x5d6));
+    let x = sub(k1, k(g, 0x5ce));
+    let flag = g.read::<u16>(w(0x5dc));
+    let fl = gw(g, 0x5e2) & !1;
+    g.write::<u32>(w(0x5e2), fl);
+    put(g, 0x5eb, x);
+    let x = sub(k1, k(g, 0x5f6));
+    let b = g.read::<u8>(w(0x5fc)) & 0xfc;
+    g.write::<u8>(w(0x5fc), b);
+    put(g, 0x610, x);
+    let x = sub(k1, k(g, 0x61b));
+    for o in [0x621u32, 0x62b, 0x635, 0x63f] {
+        g.write::<u32>(w(o), 0x3f00_0000);
+    }
+    put(g, 0x64b, x);
+    let x = sub(k1, k(g, 0x656));
+    for o in [0x65cu32, 0x666, 0x670] {
+        g.write::<u32>(w(o), 0x3f00_0000);
+    }
+    g.write::<u32>(w(0x67a), 0x3ca3_d70a);
+    put(g, 0x686, x);
+    let x = sub(k1, k(g, 0x691));
+    g.write::<u32>(w(0x697), 0);
+    g.write::<u32>(w(0x6a1), w(0x6a5));
+    g.write::<u32>(w(0x6ab), 0xc140_0000);
+    put(g, 0x6b7, scale);
+    put(g, 0x6bf, x);
+    let x = sub(k1, k(g, 0x6ca));
+    let x2 = sub(k1, k(g, 0x6d2));
+    g.write::<u32>(w(0x6d8), 0x1c78);
+    g.write::<u32>(w(0x6de), 0x400);
+    put(g, 0x6e6, k(g, 0x4a));
+    put(g, 0x6ee, x);
+    let x = sub(k(g, 0x6f6), k(g, 0x6fe));
+    put(g, 0x706, x2);
+    g.write::<u32>(w(0x70c), 0);
+    g.write::<u32>(w(0x716), state.wrapping_add(1));
+    put(g, 0x71e, x);
+    // `mov ax, [flags]`: the word over the index left in `eax`
+    let mut eax = u32::from(flag);
+    if flag & 1 == 0 {
+        let h = gw(g, 0x732);
+        // call width: 2
+        let r = g.call(t(g, 0x72c, 531), 0, &[h, s + 0x34]).eax;
+        let flag = g.read::<u16>(w(0x740));
+        eax = (r & 0xffff_0000) | u32::from(flag);
+        if flag & 1 == 0 {
+            let h = gw(g, 0x771);
+            // call width: 2
+            eax = g.call(t(g, 0x76b, 255), 0, &[h, s + 0x34]).eax;
+        }
+    }
+    eax
+}
+
+/// [`stage_task_0150`]'s state 4 (and 3's end): the fade less `K`, `B`
+/// less 130, `A` less 100, the light's height less `K'`; once the timer
+/// reaches `K''` the state on, the glow byte 0x40 and 0.9. Returns `eax`
+/// as given.
+fn stage_fade_0150<G: Game>(g: &mut G, img: &Image, f: u32, eax: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let tm = k(g, 0x39);
+    let (b, a) = (
+        gw(g, 0x56).wrapping_sub(0x82),
+        gw(g, 0x50).wrapping_sub(0x64),
+    );
+    put(g, 0x7be, sub(k(g, 0x79e), k(g, 0x7a6)));
+    put(g, 0x7e2, sub(k(g, 0x7c6), k(g, 0x7ce)));
+    g.write::<u32>(w(0x7d4), b);
+    g.write::<u32>(w(0x7da), a);
+    if tm < k(g, 0x7b6) || tm.is_nan() {
+        return eax;
+    }
+    let st = gw(g, 0x29).wrapping_add(1);
+    g.write::<u8>(w(0x7ef), 0x40);
+    g.write::<u32>(w(0x7f6), 0x3f66_6666);
+    g.write::<u32>(w(0x800), st);
+    eax
+}
+
+/// [`stage_task_0150`]'s state 100: the summon's direction `D` (232),
+/// the node joins its list, the place copied (325), a sound (286 `(h,
+/// 800)`), flags and words; five factors `p8, p14, p10, pc, p18` by the
+/// summon's kind (`*G_K` 0x1088, 0x1089, 0x108c; else by slot 535 of the
+/// byte: 0, 2 or another); the place copied again (325), moved along `D`
+/// by `p14`, its height less `p10`; the side `(D.z, 0, -D.x, 0)` of the
+/// direction again (232) by `p18` (233) added (248); the step (232)
+/// scaled by `pc` into the move and by `p8` (233); a sound (285); the
+/// state on and four words. Returns slot 285's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn stage_kind_0150<G: Game>(g: &mut G, img: &Image, f: u32, s: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let put = |g: &mut G, o: u32, x: f32| g.write::<f32>(w(o), x);
+    let d = s + 0x24;
+    // call width: 2
+    let eax = g.call(t(g, 0xa5f, 232), 0, &[d, w(0xa59)]).eax;
+    crate::sb_misc::node_append(g, img, img.rel32_target(f + 0xa76), w(0xa71), w(0xa6c), eax);
+    // call width: 2
+    g.call(t(g, 0xa7b, 325), 0, &[w(0xa8b), w(0xa80)]);
+    let h = gw(g, 0xaa8);
+    // call width: 2
+    g.call(t(g, 0xa92, 286), 0, &[h, 0x4448_0000]);
+    let kind = gw(g, 0xaaf);
+    let b = g.read::<u8>(w(0xab5)) | 1;
+    g.write::<u8>(w(0xab5), b);
+    g.write::<u32>(w(0xabf), w(0xac3));
+    g.write::<u32>(w(0xac9), ONE);
+    g.write::<u32>(w(0xad3), w(0xad7));
+    let ks = |g: &G, ops: [u32; 5]| ops.map(|o| k(g, o));
+    let [p8, p14, p10, pc, p18] = match kind {
+        0x1088 => ks(g, [0xbe6, 0xbf4, 0xc02, 0xc10, 0xc1e]),
+        0x1089 => ks(g, [0xba4, 0xbb2, 0xbc0, 0xbce, 0xbdc]),
+        0x108c => ks(g, [0xb8c, 0xb9a, 0xc02, 0xc10, 0xc1e]),
+        _ => {
+            let byte = u32::from(g.read::<u8>(w(0xaf9)));
+            // call width: 1
+            let r = g.call(t(g, 0xaff, 535), 0, &[byte]).eax;
+            match r {
+                0 => ks(g, [0xb0f, 0xb1d, 0xb82, 0xb67, 0xb75]),
+                2 => ks(g, [0xb0f, 0xb1d, 0xb59, 0xb67, 0xb75]),
+                _ => ks(g, [0xb0f, 0xb1d, 0xb38, 0xb38, 0xb4c]),
+            }
+        }
+    };
+    for (o, x) in [(8u32, p8), (0xc, pc), (0x10, p10), (0x14, p14), (0x18, p18)] {
+        g.write::<f32>(s + o, x);
+    }
+    // call width: 2
+    g.call(t(g, 0xc23, 325), 0, &[w(0xc33), w(0xc28)]);
+    let (nx, nz) = (g.read::<f32>(d), g.read::<f32>(d + 8));
+    put(g, 0xc66, add(mul(nx, p14), k(g, 0xc58)));
+    put(g, 0xc82, add(mul(nz, p14), k(g, 0xc7a)));
+    put(g, 0xc98, sub(k(g, 0xc8a), p10));
+    // call width: 2
+    g.call(t(g, 0xc5e, 232), 0, &[d, w(0xc50)]);
+    let (nx, nz) = (g.read::<u32>(d), g.read::<f32>(d + 8));
+    g.write::<f32>(d, nz);
+    g.write::<u32>(d + 8, nx ^ gw(g, 0xcb3));
+    g.write::<u32>(d + 4, 0);
+    g.write::<u32>(d + 0xc, 0);
+    // call width: 3
+    g.call(t(g, 0xcd2, 233), 0, &[d, d, p18.to_bits()]);
+    // call width: 3
+    g.call(t(g, 0xcfd, 248), 0, &[w(0xd0d), w(0xd02), d]);
+    // call width: 2
+    g.call(t(g, 0xd14, 232), 0, &[w(0xd27), w(0xd22)]);
+    put(g, 0xd4f, add(mul(k(g, 0xd31), pc), k(g, 0xd47)));
+    put(g, 0xd6d, add(mul(k(g, 0xd57), pc), k(g, 0xd65)));
+    // call width: 3
+    g.call(t(g, 0xd3c, 233), 0, &[w(0xd88), w(0xd83), p8.to_bits()]);
+    let h = gw(g, 0xda5);
+    // call width: 2
+    let eax = g.call(t(g, 0xd8f, 285), 0, &[h, 0x3e71_463b]).eax;
+    let st = gw(g, 0xdb0).wrapping_add(1);
+    g.write::<u32>(w(0xdb0), st);
+    for (o, x) in [
+        (0xdb6u32, ONE),
+        (0xdc0, 0x4270_0000),
+        (0xdca, 0x3f00_0000),
+        (0xdd4, 0x3f00_0000),
+    ] {
+        g.write::<u32>(w(o), x);
+    }
+    eax
+}
+
+/// [`stage_task_0150`] (the `rel32`s: the node appends, the camera tree,
+/// the move starts, the leave, `__security_check_cookie` five times).
+pub const STAGE_TASK_0150: Sig = Sig {
+    len: 4258,
+    hash: 0x5b24_011f_10d3_bc4f,
+    calls: &[
+        (0xe6, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x335, Callee::Any),
+        (0x352, Callee::Sig(&crate::s5_misc::CAMERA_TREE)),
+        (0x56a, Callee::Any),
+        (0x5a7, Callee::Any),
+        (0x80d, Callee::Any),
+        (0x948, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0xa76, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xed0, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0xfdf, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x100a, Callee::Any),
+    ],
+    imports: &[],
+};

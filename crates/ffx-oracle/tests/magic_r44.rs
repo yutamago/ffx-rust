@@ -1312,7 +1312,7 @@ fn trail_task_0009_setup(
     for i in 0..4u32 {
         let rec = r + 0x70 + 0x250 * i;
         // the spins: both wraps
-        let spin = [3.13f32, -3.2, 0.5, -0.5][((i + k) % 4) as usize];
+        let spin = [3.13f32, -3.6, 0.5, -0.5][((i + k) % 4) as usize];
         t.set_u32(rec + 0x24c, spin.to_bits());
         let (on, frame, timer) = anim[i as usize];
         t.set_u32(rec, 0x0a00 + i);
@@ -1481,6 +1481,325 @@ fn trail_task_0009() {
     ];
     for (k, case) in (0u32..).zip(cases) {
         trail_task_0009_setup(&mut t, f, k, case);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// One case of `stage_task_0150`: the state, the timer before its step,
+/// the counter `C`, `*G_Q`, the summon's kind, slot 535's / 520's / 294's
+/// answers, the flag words, the move armed.
+#[derive(Clone, Copy)]
+struct Stage {
+    state: u32,
+    timer: f32,
+    count: u32,
+    q: u32,
+    kind: u32,
+    r535: u32,
+    r520: u32,
+    r294: u32,
+    flags: [u16; 3],
+    armed: u32,
+}
+
+const STAGE: Stage = Stage {
+    state: 0,
+    timer: 0.5,
+    count: 3,
+    q: 0,
+    kind: 0x1000,
+    r535: 0,
+    r520: 0,
+    r294: 5,
+    flags: [0, 0, 0],
+    armed: 0,
+};
+
+/// `magic_0150` 0x1000bac0 (`r44::stage_task_0150`, a task callback):
+/// every state of the byte table and past it, each way through its
+/// branches (the counter, `*G_Q`, the camera modes, slot 294's 0xff, the
+/// flags, the summon's kinds and slot 535's answers, the timer below,
+/// between and past the ending's bounds, the move armed or not).
+#[test]
+fn stage_task_0150() {
+    let Some(mut t) = twin(150) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xbac0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the vector slots as data flow
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + 0.25;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x325
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        let s = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * s + i as f32;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x248
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, (a[0] & 0xf) as f32 + i as f32 * 0.5);
+        }
+        0x5310_0531
+    });
+    rec(&mut t, 255, 2, |m, a| {
+        let mut h = 0x255u32;
+        for i in 0..4 {
+            h = h.rotate_left(7) ^ m.r32(a[1] + 4 * i);
+        }
+        h
+    });
+    rec(&mut t, 289, 1, |_, a| 0x0289_0000 ^ a[0]);
+    t.stub_st0(289, |_, a| 0.75 + f64::from(a[0] & 7));
+    rec(&mut t, 307, 0, |_, _| 0x0307);
+    t.stub_st0(307, |m, _| {
+        f64::from(m.r32(SCRATCH + 0x7e3c) & 0xff) * 0.01 - 0.25
+    });
+    rec(&mut t, 520, 0, |m, _| m.r32(SCRATCH + 0x7e30));
+    rec(&mut t, 294, 1, |m, a| {
+        m.r32(SCRATCH + 0x7e34) ^ (a[0] & 0x100)
+    });
+    rec(&mut t, 535, 1, |m, _| m.r32(SCRATCH + 0x7e38));
+    // the camera tree's slots
+    rec(&mut t, 287, 3, |_, a| 0x0287_0000 ^ a[2]);
+    let cases = [
+        Stage {
+            state: 0x70,
+            ..STAGE
+        },
+        Stage { state: 7, ..STAGE },
+        Stage {
+            state: 5,
+            count: 3,
+            ..STAGE
+        },
+        Stage {
+            state: 5,
+            count: 12,
+            q: 2,
+            r520: 0x24a_0000,
+            ..STAGE
+        },
+        Stage {
+            state: 5,
+            count: 13,
+            q: 0,
+            r520: 0x247_0000,
+            ..STAGE
+        },
+        Stage {
+            state: 5,
+            count: 14,
+            q: 2,
+            r520: 7,
+            ..STAGE
+        },
+        Stage {
+            state: 5,
+            count: 20,
+            q: 1,
+            kind: 0x1088,
+            timer: 9.0,
+            armed: 1,
+            ..STAGE
+        },
+        Stage { state: 0, ..STAGE },
+        Stage {
+            state: 1,
+            r294: 0xff,
+            r520: 0xd4_0000,
+            ..STAGE
+        },
+        Stage {
+            state: 1,
+            r294: 5,
+            flags: [0, 0, 1],
+            ..STAGE
+        },
+        Stage {
+            state: 2,
+            timer: 0.5,
+            ..STAGE
+        },
+        Stage {
+            state: 2,
+            timer: 1.5,
+            ..STAGE
+        },
+        Stage {
+            state: 3,
+            timer: 5.0,
+            ..STAGE
+        },
+        Stage {
+            state: 3,
+            timer: 1.0,
+            flags: [1, 0, 0],
+            ..STAGE
+        },
+        Stage {
+            state: 3,
+            timer: 1.0,
+            flags: [0, 1, 0],
+            ..STAGE
+        },
+        Stage {
+            state: 4,
+            timer: 5.0,
+            ..STAGE
+        },
+        Stage {
+            state: 4,
+            timer: 1.0,
+            ..STAGE
+        },
+        Stage {
+            state: 6,
+            timer: 9.0,
+            armed: 1,
+            ..STAGE
+        },
+        Stage {
+            state: 6,
+            timer: 6.8,
+            armed: 0,
+            ..STAGE
+        },
+        Stage {
+            state: 6,
+            timer: 7.2,
+            armed: 1,
+            ..STAGE
+        },
+        Stage {
+            state: 6,
+            timer: 1.0,
+            ..STAGE
+        },
+        Stage {
+            state: 100,
+            kind: 0x1089,
+            timer: 6.8,
+            ..STAGE
+        },
+        Stage {
+            state: 100,
+            kind: 0x108c,
+            timer: 1.0,
+            ..STAGE
+        },
+        Stage {
+            state: 100,
+            kind: 0x1000,
+            r535: 0,
+            timer: 7.2,
+            ..STAGE
+        },
+        Stage {
+            state: 100,
+            kind: 0x1000,
+            r535: 2,
+            ..STAGE
+        },
+        Stage {
+            state: 100,
+            kind: 0x1000,
+            r535: 5,
+            timer: 9.0,
+            armed: 1,
+            ..STAGE
+        },
+        Stage {
+            state: 101,
+            timer: 6.8,
+            armed: 1,
+            ..STAGE
+        },
+        Stage {
+            state: 101,
+            timer: 1.0,
+            ..STAGE
+        },
+    ];
+    // the DLL's globals (its block at the preferred base)
+    let block = w(&t, 0x18) & !0xfff;
+    let task = SCRATCH + 0x7c00;
+    let node = SCRATCH + 0x7c40;
+    for (k, c) in (0u32..).zip(cases) {
+        // the DLL's block: floats, then the words the steps read
+        for i in 0..0x400u32 {
+            let x = ((i * 37 + k * 11) % 89) as f32 * 0.0625 - 2.5;
+            t.set_u32(block + 4 * i, x.to_bits());
+        }
+        let set = |t: &mut Twin, o: u32, v: u32| {
+            let at = t.img.word(f + o);
+            t.set_u32(at, v);
+        };
+        set(&mut t, 0x18, (c.timer - 1.0 / 30.0).to_bits());
+        set(&mut t, 0x29, c.state);
+        set(&mut t, 0x50, 0x0400 + k);
+        set(&mut t, 0x56, 0x1c78 - k);
+        set(&mut t, 0x5c, c.count);
+        set(&mut t, 0xae, c.q);
+        set(&mut t, 0x3c0, 2.0f32.to_bits());
+        set(&mut t, 0xaaf, c.kind);
+        set(&mut t, 0x8d6, c.armed);
+        set(&mut t, 0xe5e, c.armed);
+        for (i, o) in [0x5dcu32, 0x740].into_iter().enumerate() {
+            let at = w(&t, o);
+            t.set_u16(at, c.flags[i] | 0x5a00);
+        }
+        let at = w(&t, 0x526);
+        t.set_u8(at, (c.flags[2] as u8) | 0x40);
+        let at = w(&t, 0xaf9);
+        t.set_u8(at, 0x30 + k as u8);
+        // the lists: the camera tree's parent and the node's list empty
+        let list = w(&t, 0xdc);
+        t.set_u32(list + 0x10, list);
+        t.set_u32(list + 0xc, list);
+        t.set_u16(list + 0x18, 1);
+        // the leaving node without a parent
+        let leaving = w(&t, 0xfda);
+        t.set_u32(leaving + 0x14, 0);
+        t.set_u32(SCRATCH + 0x7e30, c.r520);
+        t.set_u32(SCRATCH + 0x7e34, c.r294);
+        t.set_u32(SCRATCH + 0x7e38, c.r535);
+        // the task node in a ring of its own neighbours
+        let (nx, pv) = (SCRATCH + 0x7c80, SCRATCH + 0x7cc0);
+        t.write(node, &[0x44; 0x20]);
+        t.set_u32(task, node);
+        t.set_u32(node + 4, nx);
+        t.set_u32(node + 8, pv);
+        t.write(nx, &[0x45; 0x10]);
+        t.write(pv, &[0x46; 0x10]);
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }

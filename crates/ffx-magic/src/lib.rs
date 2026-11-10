@@ -3417,6 +3417,7 @@ ports! {
     "r44 frame 0072" => r44::FRAME_0072, r44::frame_0072;
     "r44 load step 0009" => r44::LOAD_0009, r44::load_0009;
     "r44 trail task 0009" => r44::TRAIL_TASK_0009, r44::trail_task_0009;
+    "r44 stage task 0150" => r44::STAGE_TASK_0150, r44::stage_task_0150;
     // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
