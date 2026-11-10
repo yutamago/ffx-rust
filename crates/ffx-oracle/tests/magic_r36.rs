@@ -1566,3 +1566,157 @@ fn summon_task_0146() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// An empty child list on the node `p` (its first and last child itself,
+/// no children).
+fn empty_kids(t: &mut Twin, p: u32) {
+    t.set_u32(p + 0xc, p);
+    t.set_u32(p + 0x10, p);
+    t.set_u16(p + 0x18, 0);
+}
+
+/// `magic_0146` 0x100071c0 (`r36::scene_task_0146`, an entry): every state
+/// of the byte table (and the ones past it), each waiting and moving on:
+/// the scene flag set or not, ids held or not, the kinds' sizes, the
+/// object countdown, the end.
+#[test]
+fn scene_task_0146() {
+    let Some(mut t) = twin(146) else { return };
+    let f = t.at(0x71c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let pick = SCRATCH + 0x280;
+    let ids = SCRATCH + 0x200;
+    t.write(ids, &[4, 0x81, 7, 0xff]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 0x5a5a_5a5a);
+        pick
+    });
+    rec(&mut t, 368, 2, move |m, a| {
+        m.w32(a[1], 2);
+        ids
+    });
+    t.stub_st0(333, |_, _| 0.625);
+    // the unit block's float, the colour node's four integers
+    t.stub_st0(790, |_, _| 0.375);
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 + 0x11 * i);
+        }
+        0x558
+    });
+    let scene = SCRATCH + 0x134;
+    rec(&mut t, 520, 0, move |m, _| m.r32(scene));
+    let kind = SCRATCH + 0x138;
+    rec(&mut t, 390, 1, move |m, _| m.r32(kind));
+    let party = SCRATCH + 0x240;
+    t.write(party, &[0x11, 0x22, 0x33]);
+    let n_party = SCRATCH + 0x13c;
+    rec(&mut t, 288, 2, move |m, a| {
+        let n = m.r32(n_party);
+        m.w32(a[1], n);
+        party
+    });
+    rec(&mut t, 324, 0, |m, _| {
+        let s = m
+            .r32(SCRATCH + 0x2_7604)
+            .wrapping_mul(1_103_515_245)
+            .wrapping_add(12345);
+        m.w32(SCRATCH + 0x2_7604, s);
+        s >> 8
+    });
+    // the DLL's own records the party's ids are checked against (count, ids)
+    let (rn, rec0) = (w(&t, 0x25e), w(&t, 0x26c));
+    // the particle nodes' globals
+    for call in [0x350u32, 0x53b, 0x692] {
+        let pnw = t.img.rel32_target(f + call);
+        let pn = t.img.rel32_target(pnw + 0x35);
+        let ps = t.img.rel32_target(pn + 0x88);
+        let (pg, sg) = (t.img.word(pn + 0x45), t.img.word(ps + 0x04));
+        t.set_u32(pg, SCRATCH + 0x7f0);
+        t.set_u32(sg, SCRATCH + 0x7f8);
+        let owner = SCRATCH + 0x3800;
+        t.write(owner, &[0x31; 0x80]);
+        t.set_u32(t.img.word(pnw + 0x0d), owner);
+    }
+    // the push task's list head
+    let pt = t.img.rel32_target(f + 0x3bb);
+    let head = SCRATCH + 0x3900;
+    let o = SCRATCH + 0x1_0000;
+    let task = SCRATCH + 0x1000;
+    let lock = SCRATCH + 0x7e0;
+    t.set_u32(w(&t, 0x552), lock);
+    t.set_u32(w(&t, 0x799), lock);
+    // (state, count, countdown, objects, ids, flag, scene, kind)
+    let cases: [(u32, u32, u32, u32, u16, u32, u32, u32); 24] = [
+        (0, 0, 0, 0, 0, 0, 0x0161_000f, 0),
+        (0, 3, 0, 0, 0, 1, 0x0160_000f, 0),
+        (0xa, 0, 0, 0, 0, 0, 0, 0),
+        (0x14, 7, 0, 0, 0, 1, 0, 0),
+        (0x15, 14, 0, 0, 0, 0, 0, 0),
+        (0x15, 15, 0, 0, 0, 0, 0, 0),
+        (0x1e, 0, 0, 0, 0, 0, 0, 0),
+        (0x1f, 0, 2, 0, 0, 0, 0, 0),
+        (0x1f, 0, 0, 3, 0, 0, 0, 0),
+        (0x1f, 0, 0, 7, 0, 1, 0, 0),
+        (0x29, 29, 0, 0, 0, 0, 0, 0),
+        (0x29, 30, 0, 0, 0, 0, 0, 0),
+        (0x2a, 4, 0, 0, 0, 0, 0, 0),
+        (0x2a, 5, 0, 0, 0, 0, 0, 0x1088),
+        (0x2a, 6, 0, 0, 0, 0, 0, 0x108c),
+        (0x2a, 7, 0, 0, 0, 1, 0, 0x108a),
+        (0x2b, 10, 0, 0, 0, 0, 0x0161_000f, 0),
+        (0x2b, 50, 0, 0, 0, 0, 0x0161_0000, 0),
+        (0x33, 24, 0, 0, 2, 0, 0, 0),
+        (0x33, 25, 0, 0, 2, 0, 0, 0),
+        (0x33, 25, 0, 0, 0, 0, 0, 0),
+        (0x34, 15, 0, 0, 0, 1, 0, 0),
+        (0x2710, 0, 0, 0, 0, 0, 0, 0),
+        (0x40, 0, 0, 0, 0, 1, 0, 0),
+    ];
+    for (k, (state, count, cd, objs, nid, flag, sc, kd)) in (0u32..).zip(cases) {
+        floats(&mut t, o, 0x100 / 4, k);
+        t.set_u32(o + 0x18, state);
+        t.set_u32(o + 0x2c, count);
+        t.set_u32(o + 0x28, cd);
+        t.set_u32(o + 0x30, objs);
+        t.set_u16(o + 0x74, nid);
+        t.set_u32(o + 0x78, flag);
+        t.set_u32(scene, sc);
+        t.set_u32(kind, kd);
+        t.set_u32(n_party, [0u32, 2, 3][(k % 3) as usize]);
+        // the DLL's records: hold 0x22 in the odd cases
+        t.set_u32(rn, 2);
+        t.set_u32(rec0, 0x44);
+        t.set_u32(rec0 + 0x98, if k % 2 == 1 { 0x22 } else { 0x45 });
+        t.set_u32(task + 4, o);
+        let node = |i: u32| SCRATCH + 0x1100 + 0x20 * i;
+        for i in 0..3 {
+            t.write(node(i), &[0x5a; 0x20]);
+            t.set_u32(node(i) + 4, node((i + 2) % 3));
+            t.set_u32(node(i) + 8, node((i + 1) % 3));
+        }
+        t.set_u32(task, node(0));
+        t.write(head, &[0x48; 0x20]);
+        t.set_u32(t.img.word(pt + 0x17), head);
+        // the parents: empty child lists
+        for op in [0x62u32, 0x87, 0xf3, 0x2d9, 0x5da, 0x659] {
+            let p = w(&t, op);
+            empty_kids(&mut t, p);
+        }
+        for call in [0x350u32, 0x53b, 0x692] {
+            let pnw = t.img.rel32_target(f + call);
+            let p = t.img.word(pnw + 0x26);
+            empty_kids(&mut t, p);
+        }
+        for call in [0xcbu32, 0x6ea] {
+            let ena = t.img.rel32_target(f + call);
+            let p = t.img.word(ena + 0x18);
+            empty_kids(&mut t, p);
+        }
+        t.set_u32(lock, 0x1c0c_0000 + k);
+        ownb::dirty_stack(&mut t, 0x71c0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
