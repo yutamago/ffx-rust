@@ -632,7 +632,15 @@ fn scene_states(dll: u16, at: u32, map: &[(u32, u32)]) {
         scene(0x40, &[(0x3e83, 2)]),
         scene(0x40, &[(0x3ebf, r), (t_at, 0x0005_0040)]),
         scene(0x40, &[(0x3ebf, r), (t_at, 0x0005_0041)]),
-        scene(0x64, &[(0x3e21, 2)]),
+        // (slot 311's word; slot 276's model word is 0515's and 0667's own)
+        scene(
+            0x64,
+            &if dll == 515 || dll == 667 {
+                vec![(0x3e21, 2), (0x3db6, 0x31), (0x3e38, 0x77)]
+            } else {
+                vec![(0x3e21, 2), (0x3db6, 0x31)]
+            },
+        ),
         Scene {
             a253: 0,
             ..scene(1, &[])
@@ -834,6 +842,13 @@ fn scene_state_10(dll: u16, at: u32, map: &[(u32, u32)]) {
         for i in 0..6u32 {
             let p = ring + 0x3c * i;
             cs.mem.extend([(p - 8, i & 1), (p, 5 + i), (p + 4, 7)]);
+        }
+    }
+    // the actors' ids slot 296 sees at 0x96
+    let ids = w(&t, 0x2836);
+    for cs in &mut cases {
+        for i in 0..3u32 {
+            cs.mem.push((ids + 0xcc * i, 0x21 + i));
         }
     }
     // the models' places and directions, again each case (the set-up's
