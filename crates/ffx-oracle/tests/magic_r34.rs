@@ -985,3 +985,277 @@ fn drops_and_curves() {
         }
     }
 }
+
+/// `magic_0391` 0x10002050 and `magic_0448` 0x10005800
+/// (`r34::walk_plan_0391`, `walk_plan_0448`): an aim set (the aim runs);
+/// the step before the last and at the end; a next character (both
+/// yaw orders, close and far apart) and none (at the first step: slot
+/// 324); the reach off, tiny (every test beyond), huge (none) and in
+/// between, so each turn of the move and the circle crossing run.
+#[test]
+fn walk_plans() {
+    for (n, rva) in [(391u16, 0x2050u32), (448, 0x5800)] {
+        let Some(mut t) = twin(n) else { return };
+        aim_stubs(&mut t);
+        for (s, x) in [(251u32, 0.75f64), (19, 1.25)] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+            t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+        }
+        let f = t.at(rva);
+        let s = SCRATCH + 0x1_0000;
+        let st = |o: u32| s + if n == 448 { o - 4 } else { o };
+        let at = |o: u32| -> u32 {
+            if n == 391 {
+                return o;
+            }
+            let runs = [
+                (0x5f1u32, 7u32),
+                (0x60e, 0xa),
+                (0x68d, 0xe),
+                (0x852, 0x15),
+                (0x86b, 0x18),
+                (0x89c, 0x1c),
+            ];
+            let d = runs
+                .iter()
+                .rev()
+                .find(|&&(b, _)| b <= o)
+                .map_or(0, |&(_, d)| d);
+            o - d
+        };
+        // the selection table and the characters
+        let sel = SCRATCH + 0x600;
+        t.write(sel, &[3, 5, 7, 9, 11, 13, 15, 17]);
+        for o in [0xb1u32, 0x1b5] {
+            t.set_u32(t.img.word(f + at(o)), sel);
+        }
+        for o in [0xbcu32, 0x1c0] {
+            for j in 0..0x20 {
+                t.set_u32(t.img.word(f + at(o)) + 4 * j, CHRS + 0x10 * j);
+            }
+        }
+        junk_ops(&mut t, f, &[at(0x913)]);
+        let rs: [f32; 6] = [0.01, 1.0e6, 3.0, 8.0, 20.0, 0.5];
+        // (aim index, i, n, bytes, enable, R index, flag, slot 324, V x)
+        let cases: [(u32, i32, i32, [u8; 3], u32, usize, u32, u32, f32); 16] = [
+            (0, 0, 3, [1, 2, 3], 0, 0, 0, 0, 0.0),
+            (u32::MAX, 0, 3, [1, 2, 3], 0, 0, 0, 0, 0.0),
+            (u32::MAX, 1, 3, [1, 2, 3], 1, 0, 1, 0, 5.0),
+            (u32::MAX, 0, 3, [1, 1, 3], 1, 1, 0, 1, 5.0),
+            (u32::MAX, 0, 1, [4, 2, 3], 1, 2, 1, 0xfe, -3.0),
+            (u32::MAX, 2, 3, [1, 2, 6], 1, 3, 0, 0, 12.0),
+            (u32::MAX, 3, 3, [1, 2, 6], 1, 4, 1, 0, 30.0),
+            (u32::MAX, 0, 2, [6, 1, 0], 1, 0, 1, 0, 40.0),
+            (u32::MAX, 0, 2, [1, 6, 0], 1, 2, 0, 0, 2.0),
+            (u32::MAX, 1, 4, [0, 2, 7], 1, 3, 0, 0, -9.0),
+            (u32::MAX, 1, 4, [0, 7, 2], 1, 4, 1, 0, 9.0),
+            (u32::MAX, 0, 4, [5, 3, 0], 1, 5, 0, 0, 1.0),
+            (u32::MAX, 0, 4, [3, 5, 0], 1, 5, 1, 0, 25.0),
+            (u32::MAX, 2, 4, [0, 0, 2], 0, 2, 0, 0, 1.0),
+            (u32::MAX, 0, 4, [2, 2, 2], 1, 3, 1, 2, 6.0),
+            (u32::MAX, 0, 4, [7, 0, 1], 1, 2, 0, 3, 3.5),
+        ];
+        for (k, (aim, i, cnt, bytes, en, ri, fl, s324, vx)) in (0u32..).zip(cases) {
+            junk(&mut t, s + 0x700, 0x260, k);
+            t.set_u32(st(0x928), aim);
+            t.set_u32(st(0x910), i as u32);
+            t.set_u32(st(0x914), cnt as u32);
+            let off = u32::try_from(i.max(0)).unwrap_or(0);
+            t.write(st(0x93c) + off, &bytes);
+            t.set_u32(st(0x930), en);
+            t.set_u32(st(0x90c), fl);
+            t.set_u32(s + 0x908, rs[ri].to_bits());
+            for (j, v) in [0.5f32, 0.25, -1.5, 1.0].into_iter().enumerate() {
+                t.set_u32(s + 0x7a0 + 4 * j as u32, (v + 0.125 * k as f32).to_bits());
+            }
+            for (j, v) in [vx, 0.5, 1.0 - 0.5 * k as f32, 2.0].into_iter().enumerate() {
+                t.set_u32(SCRATCH + 0x40 + 4 * j as u32, v.to_bits());
+            }
+            for (j, v) in [2.0f32 + 0.5 * k as f32, 0.75, -3.0 + k as f32]
+                .into_iter()
+                .enumerate()
+            {
+                t.set_u32(SCRATCH + 0x50 + 4 * j as u32, v.to_bits());
+            }
+            t.stub(324, move |_, _| s324);
+            let e = ownb::ENTRY_ESP;
+            let e1 = ((e - 4) & !7) - 0xe8;
+            let q_w = e - (e1 + 0x5c);
+            // the aim's own never-written frame word (`walk_aim_*`)
+            let ea = e1 - 4;
+            let aim_w = if n == 391 {
+                e - (ea - 4 - 0x8c)
+            } else {
+                e - ((((ea - 4) & !7) - 0xc8) + 0x7c)
+            };
+            ownb::dirty_stack(&mut t, rva + k, &[q_w, aim_w]);
+            ownb::reset_counters(&mut t);
+            t.check(f, Call::this(s), &[], Eax::Checked, move |g, img, fr| {
+                Ret::eax(if n == 391 {
+                    r34::walk_plan_0391(g, img, fr.at, fr.esp, fr.ecx)
+                } else {
+                    r34::walk_plan_0448(g, img, fr.at, fr.esp, fr.ecx)
+                })
+            });
+        }
+    }
+}
+
+/// The walk plan's set-up for a start's case `k` (`plan` = the plan's
+/// code): no aim, the step `i` of 3 with a next character, the reach and
+/// the battle point by `k`.
+fn plan_env(t: &mut Twin, n: u16, plan: u32, s: u32, i: i32, k: u32) {
+    let st = |o: u32| s + if n == 448 { o - 4 } else { o };
+    let at = |o: u32| -> u32 {
+        if n == 391 {
+            return o;
+        }
+        let runs = [
+            (0x5f1u32, 7u32),
+            (0x60e, 0xa),
+            (0x68d, 0xe),
+            (0x852, 0x15),
+            (0x86b, 0x18),
+            (0x89c, 0x1c),
+        ];
+        let d = runs
+            .iter()
+            .rev()
+            .find(|&&(b, _)| b <= o)
+            .map_or(0, |&(_, d)| d);
+        o - d
+    };
+    let sel = SCRATCH + 0x600;
+    t.write(sel, &[3, 5, 7, 9, 11, 13, 15, 17]);
+    for o in [0xb1u32, 0x1b5] {
+        t.set_u32(t.img.word(plan + at(o)), sel);
+    }
+    for o in [0xbcu32, 0x1c0] {
+        for j in 0..0x20 {
+            t.set_u32(t.img.word(plan + at(o)) + 4 * j, CHRS + 0x10 * j);
+        }
+    }
+    junk(t, s + 0x700, 0x260, k);
+    t.set_u32(st(0x928), u32::MAX);
+    t.set_u32(st(0x910), i as u32);
+    t.set_u32(st(0x914), 3);
+    t.write(st(0x93c), &[1, 4, 2, 6]);
+    t.set_u32(st(0x930), k % 2);
+    t.set_u32(st(0x90c), k / 2 % 2);
+    t.set_u32(s + 0x908, [0.5f32, 30.0, 4.0][k as usize % 3].to_bits());
+    for (j, v) in [0.5f32, 0.25, -1.5, 1.0].into_iter().enumerate() {
+        t.set_u32(s + 0x7a0 + 4 * j as u32, (v + 0.375 * k as f32).to_bits());
+    }
+    for (j, v) in [3.0f32 - k as f32, 0.5, 1.0, 2.0].into_iter().enumerate() {
+        t.set_u32(SCRATCH + 0x40 + 4 * j as u32, v.to_bits());
+    }
+    for (j, v) in [2.0f32 + 0.5 * k as f32, 0.75, -3.0 + k as f32]
+        .into_iter()
+        .enumerate()
+    {
+        t.set_u32(SCRATCH + 0x50 + 4 * j as u32, v.to_bits());
+    }
+}
+
+/// `magic_0391` 0x100034c0 / 0x100031d0 and `magic_0448` 0x10006f90 /
+/// 0x10006c80 (`r34::turn_start_*`, `spark_start_*`): the plan's cases
+/// (the target yaw below the facing and not, both unwrap ways), in a
+/// battle and not, the old flag set and not; the spark object's pool with
+/// a free node.
+#[test]
+fn walk_turn_starts() {
+    use ffx_magic::sl_host;
+    for (n, plan_rva, turn_rva, spark_rva) in [
+        (391u16, 0x2050u32, 0x34c0u32, 0x31d0u32),
+        (448, 0x5800, 0x6f90, 0x6c80),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        aim_stubs(&mut t);
+        for (s, x) in [(251u32, 0.75f64), (19, 1.25), (314, 0.0625)] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+            t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+        }
+        rec(&mut t, 268, 3, |_, a| 0x0268_0000 ^ a[1]);
+        rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[2]);
+        rec(&mut t, 306, 3, |_, a| 0x0306_0000 ^ a[2]);
+        for s in [215u32, 413] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        let plan = t.at(plan_rva);
+        let s = SCRATCH + 0x1_0000;
+        let (tf, sf) = (t.at(turn_rva), t.at(spark_rva));
+        // the hosted object's environment (as `magic_sl_b6.rs`)
+        let ho = t.img.rel32_target(sf + 0x15a);
+        let l = if n == 391 {
+            &sl_host::L0391
+        } else {
+            &sl_host::L0448
+        };
+        let hw = |t: &Twin, o: u32| t.img.word(ho + o);
+        let sp = t.img.rel32_target(ho + l.calls.0);
+        t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(sp + 0x29), SCRATCH + 0x200);
+        t.set_u32(SCRATCH + 0x200, 0x0000_0077);
+        rec(&mut t, 714, 5, |_, a| a[2] ^ 0x714);
+        let table = SCRATCH + 0x400;
+        for i in 0..4 {
+            t.set_u32(table + 4 * i, 0x0900_0000 + i);
+        }
+        rec(&mut t, 941, 1, move |_, _| table);
+        t.set_u32(hw(&t, l.host.0), SCRATCH + 0x300);
+        let host = SCRATCH + 0x340;
+        t.set_u32(hw(&t, l.host.1), host);
+        t.set_u32(host + 0x10, 0x00d0_0010);
+        let pa = t.img.rel32_target(ho + l.calls.2);
+        let nodes = t.img.word(pa + 0x27) - 8;
+        for k in 0..6u32 {
+            for (f, spark) in [(tf, false), (sf, true)] {
+                plan_env(&mut t, n, plan, s, 1 + (k % 2) as i32, k);
+                junk_ops(
+                    &mut t,
+                    f,
+                    if spark {
+                        &[0x98, 0xab, 0xb0, 0xb5, 0xe1, 0xe7, 0xf1, 0xfb]
+                    } else {
+                        &[0x85, 0x8a, 0x8f, 0x9b, 0xc5, 0xcb, 0xd5, 0xdf]
+                    },
+                );
+                let battle = if spark { [0xa5u32, 0xd6] } else { [0x7f, 0xba] };
+                for o in battle {
+                    t.set_u32(t.img.word(f + o), k / 3);
+                }
+                if spark {
+                    for i in 0..8 {
+                        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+                        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+                        t.set_u32(nodes + 12 * i + 8, 0);
+                    }
+                    t.set_u16(t.img.word(pa + 0x04), 3);
+                    t.set_u32(hw(&t, l.list.0), 0);
+                    t.set_u32(hw(&t, l.list.1), 0);
+                    t.set_u32(hw(&t, l.list.2), 5);
+                    t.write(SCRATCH + 0x600, &[3, 5, 7, 9, 11, 13, 15, 17]);
+                    for j in 0..0x20 {
+                        t.set_u32(t.img.word(f + 0x18b) + 4 * j, CHRS + 0x10 * j);
+                    }
+                    t.set_u32(t.img.word(f + 0x180), SCRATCH + 0x600);
+                    t.set_u32(t.img.word(f + 0x1eb), SCRATCH + 0x600);
+                }
+                let e = ownb::ENTRY_ESP;
+                // the plan's Q.w (its frame below the start's)
+                let pe = if spark { e - 0x18 } else { e - 0xc };
+                let q_w = e - ((((pe - 4) & !7) - 0xe8) + 0x5c);
+                ownb::dirty_stack(&mut t, f + k, &[q_w]);
+                ownb::reset_counters(&mut t);
+                t.check(f, Call::this(s), &[], Eax::Checked, move |g, img, fr| {
+                    Ret::eax(match (n, spark) {
+                        (391, false) => r34::turn_start_0391(g, img, fr.at, fr.esp, fr.ecx),
+                        (391, true) => r34::spark_start_0391(g, img, fr.at, fr.esp, fr.ecx),
+                        (_, false) => r34::turn_start_0448(g, img, fr.at, fr.esp, fr.ecx),
+                        _ => r34::spark_start_0448(g, img, fr.at, fr.esp, fr.ecx),
+                    })
+                });
+            }
+        }
+    }
+}

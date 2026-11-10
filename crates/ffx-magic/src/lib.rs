@@ -4019,6 +4019,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 spark drop 0448", &r34::DROP_0448_SIG),
     ("r34 curve step 0391", &r34::CURVE_STEP_0391),
     ("r34 curve step 0448", &r34::CURVE_STEP_0448),
+    ("r34 walk plan 0391", &r34::WALK_PLAN_0391),
+    ("r34 walk plan 0448", &r34::WALK_PLAN_0448),
+    ("r34 turn start 0391", &r34::TURN_START_0391),
+    ("r34 turn start 0448", &r34::TURN_START_0448),
+    ("r34 spark start 0391", &r34::SPARK_START_0391),
+    ("r34 spark start 0448", &r34::SPARK_START_0448),
     // round 34 (magic-r34): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),

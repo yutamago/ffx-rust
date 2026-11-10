@@ -2,6 +2,7 @@
 //! overlays below `magic_0450`.
 
 use crate::r23::{PairLayout, TurnLayout};
+use crate::r32::Shift;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `magic_0162`'s state words against `magic_0598`'s.
@@ -1507,6 +1508,688 @@ pub const CURVE_STEP_0448: Sig = Sig {
         (0x38a, Callee::Sig(&DROP_0448_SIG)),
         // __security_check_cookie
         (0x3a2, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The flat distance `sqrt((v.z - c.z)^2 + (v.x - c.x)^2)` of two points
+/// as the walk code computes it (`subps`, the lanes `z` then `x`, the
+/// root of the double).
+fn flat_dist<G: Game>(g: &G, v: u32, c: u32) -> f32 {
+    use crate::sb_sse::{add, mul, sub};
+    let dx = sub(g.read::<f32>(v), g.read::<f32>(c));
+    let dz = sub(g.read::<f32>(v + 8), g.read::<f32>(c + 8));
+    f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt() as f32
+}
+
+/// `magic_0448` 0x10005800's operands against `magic_0391` 0x10002050's.
+const PLAN_0448: Shift = Shift {
+    runs: &[
+        (0x5f1, -7),
+        (0x60e, -0xa),
+        (0x68d, -0xe),
+        (0x852, -0x15),
+        (0x86b, -0x18),
+        (0x89c, -0x1c),
+    ],
+    moved: &[],
+};
+
+/// `magic_0391`'s walk plan (0x10002050, 2500 bytes; internal, `ecx` = the
+/// walk state `S`; an 8-aligned /GS frame, `E1` the aligned `esp` after
+/// `sub esp, 0xe0` and two pushes). With an aim set (`S + 0x928` not -1)
+/// it is the aim ([`walk_aim_0391`]). Else, with the walker `A = S +
+/// 0x7a0` (copied to `E1 + 0x70`), the step `i = S + 0x910` of `n = S +
+/// 0x914` and the battle character `b` the selection byte `S + 0x93c + i`
+/// (`+0x93b + i` once `i` reached `n`):
+/// - its place `P` (slot 262 of `TAB[(*G_SEL)[b]]`) and the yaw `a1 = K -
+///   atan2` from `A` to it (wrapped); `Q = (0, a1, 0)`;
+/// - the next character (when `i + 1 < n` and its byte differs) gives the
+///   flag `S + 0x90c`: its yaw `a2` unwrapped towards `a1`
+///   ([`unwrap_to`]), then `a2 < a1` when `|a2 - a1|` is below the double
+///   `K64`, else `a2 >= a1`; at the first step with no next character,
+///   the flag is `!slot 324 () & 1`;
+/// - `C` = `P` moved by `(r, 0, 0)` turned by Y `a1` (slots 235, 328,
+///   329, 229, 248) with `r = actor scale (b) + K` (negated when the flag
+///   is set); the battle point `V` (slot 292).
+///
+/// When `S + 0x930` is 1 and `V` is beyond the reach `R = S + 0x908` from
+/// `C`: `C` from `P` again by `(r, 0, 0)` turned by `Q` (the other sign);
+/// still beyond, by `(0, 0, r)`; still beyond, the circle's crossing with
+/// the line `A`..`C` ([`circle_hit_0391`]) moved by `(0, 0, 10)` turned
+/// by `Q`; within `R` but beyond `R - K`, moved by `(0, 0, 10)` turned by
+/// `Q`; any of these: `S + 0x750 = C`. Within the reach at the second
+/// test the flag flips. Otherwise (no move): `S + 0x750` = `C` moved by
+/// `(0, 0, -32)` turned by the yaw `a3` from `A` to `C`, then, when `S +
+/// 0x930` is 1, the circle's crossing (beyond `R`) moved by `(0, 0, 10)`
+/// turned by `(0, a3, 0)`, or just moved (beyond `R - K2`). `S + 0x760` =
+/// `C`, `S + 0x720` = `(0, the caster's facing, 0, 0)`, `S + 0x730` =
+/// `Q` (its `w` a frame word never written: 0, brief 2026-10-24). Returns
+/// slot 333's `eax`.
+pub fn walk_plan_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    walk_plan(g, img, f, esp, s, false)
+}
+
+/// [`walk_plan_0391`] in `magic_0448` (0x10005800, 2472 bytes): the state
+/// words 4 bytes lower (`S + 0x924`, `+0x90c`, `+0x910`, `+0x937`,
+/// `+0x908`, `+0x92c`), the reach and its inner edge the DLL's constants,
+/// [`walk_aim_0448`] and [`circle_hit_0448`] (the operands at
+/// [`PLAN_0448`]'s places).
+pub fn walk_plan_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    walk_plan(g, img, f, esp, s, true)
+}
+
+#[allow(clippy::too_many_lines)] // the original's branches, in order
+fn walk_plan<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32, copy: bool) -> u32 {
+    use crate::ob_model::{st0_f32, wrap_once};
+    use crate::sb_sse::{add, sub};
+    const ONE: u32 = 0x3f80_0000;
+    let at = |o: u32| if copy { PLAN_0448.at(o) } else { o };
+    let w = |o: u32| img.word(f + at(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + at(o));
+    // the state words that sit 4 bytes lower in the copy
+    let st = |o: u32| s + if copy { o - 4 } else { o };
+    let e1 = (esp.wrapping_sub(4) & !7).wrapping_sub(0xe0 + 8);
+    if g.read::<u32>(st(0x928)) != u32::MAX {
+        // ecx = S: the return address at E1 - 4
+        let aim = if copy { walk_aim_0448 } else { walk_aim_0391 };
+        return aim(g, img, call(0x28), e1.wrapping_sub(4), s);
+    }
+    let (o, c, p, q, u, a, m, wv, v) = (
+        e1 + 0x10,
+        e1 + 0x30,
+        e1 + 0x40,
+        e1 + 0x50,
+        e1 + 0x20,
+        e1 + 0x70,
+        e1 + 0xa0,
+        e1 + 0x60,
+        e1 + 0x80,
+    );
+    let rf = |g: &G, x: u32| g.read::<f32>(x);
+    let i = g.read::<i32>(st(0x910));
+    let n = g.read::<i32>(st(0x914));
+    let byte = |g: &G, o: u32, i: i32| u32::from(g.read::<u8>(st(o).wrapping_add_signed(i)));
+    let b = if i < n {
+        byte(g, 0x93c, i)
+    } else {
+        byte(g, 0x93b, i)
+    };
+    for k4 in 0..4 {
+        let x = g.read::<u32>(s + 0x7a0 + 4 * k4);
+        g.write::<u32>(a + 4 * k4, x);
+    }
+    let (ax, az) = (rf(g, a), rf(g, a + 8));
+    // the battle character `TAB[(*G_SEL)[x]]` (the index is a byte: the
+    // code's -1 case, `*G_SELF`, cannot come up)
+    let chr = |g: &G, x: u32, sel: u32, tab: u32| {
+        let k = u32::from(g.read::<u8>(g.read::<u32>(w(sel)).wrapping_add(x)));
+        g.read::<u32>(w(tab).wrapping_add(4 * k))
+    };
+    let who = chr(g, b, 0xb1, 0xbc);
+    g.call(t(g, 0xd1, 262), 0, &[who, p, p + 4, p + 8]);
+    g.write::<u32>(p + 0xc, ONE);
+    let yaw = |g: &mut G, img: &Image, x: u32, kk: u32, wr: [u32; 4]| {
+        let at2 = |o: u32| if copy { PLAN_0448.at(o) } else { o };
+        let wr = wr.map(at2);
+        yaw_to(
+            g,
+            img,
+            f,
+            sub(rf(g, x + 8), az),
+            sub(rf(g, x), ax),
+            at2(kk),
+            wr,
+        )
+    };
+    let a1 = yaw(g, img, p, 0x12d, [0x144, 0x13d, 0x15a, 0x13d]);
+    g.write::<f32>(o, a1);
+    g.write::<u32>(q, 0);
+    g.write::<f32>(q + 4, a1);
+    g.write::<u32>(q + 8, 0);
+    let flag = st(0x90c);
+    let j = i.wrapping_add(1);
+    let next = if j < n { Some(byte(g, 0x93c, j)) } else { None };
+    match next {
+        Some(c2) if c2 != b => {
+            let who2 = chr(g, c2, 0x1b5, 0x1c0);
+            let p2 = e1 + 0x90;
+            g.call(t(g, 0x1de, 262), 0, &[who2, p2, p2 + 4, p2 + 8]);
+            g.write::<u32>(p2 + 0xc, ONE);
+            let a2 = yaw(g, img, p2, 0x243, [0x24b, 0x268, 0x253, 0x277]);
+            let a2 = unwrap_to(a1, a2, k(g, 0x24b), k(g, 0x253));
+            let diff = f64::from(sub(a2, a1)).abs();
+            let below = if g.read::<f64>(w(0x2d3)) > diff {
+                a2.partial_cmp(&a1).is_none_or(std::cmp::Ordering::is_lt)
+            } else {
+                a2 >= a1
+            };
+            g.write::<u32>(flag, u32::from(below));
+        }
+        _ => {
+            if i == 0 {
+                let r = g.call(t(g, 0x2fa, 324), 0, &[]).eax;
+                g.write::<u32>(flag, u32::from(!(r as u8)) & 1);
+            }
+        }
+    }
+    let copy_p = |g: &mut G| {
+        for k4 in 0..4 {
+            let x = g.read::<u32>(p + 4 * k4);
+            g.write::<u32>(c + 4 * k4, x);
+        }
+    };
+    // the actor's scale plus `K` (ecx = b), negated as `neg` says
+    let scale = |g: &mut G, img: &Image, call_op: u32, k_op: u32, neg_op: u32, neg: bool| {
+        let fr = Frame {
+            at: call(call_op),
+            ecx: b,
+            ..Frame::default()
+        };
+        let r = crate::s4_small::actor_scale_by(g, img, &fr);
+        let r = r.xmm0.map_or(0.0, |x| f32::from_bits(x.reg() as u32));
+        let r = add(r, k(g, k_op));
+        if neg {
+            f32::from_bits(r.to_bits() ^ g.read::<u32>(w(neg_op)))
+        } else {
+            r
+        }
+    };
+    let put_u = |g: &mut G, words: [u32; 4]| {
+        for (k4, x) in (0u32..).zip(words) {
+            g.write::<u32>(u + 4 * k4, x);
+        }
+    };
+    let turn = |g: &mut G, img: &Image, call_op: u32, out: u32| {
+        // push U: the return address at E1 - 8
+        g.write::<u32>(e1.wrapping_sub(4), u);
+        let fr = Frame {
+            at: call(call_op),
+            esp: e1.wrapping_sub(8),
+            ecx: q,
+            edx: out,
+            ..Frame::default()
+        };
+        crate::s4_small::turn_point(g, img, &fr);
+    };
+    let hit = |g: &mut G, img: &Image, call_op: u32, r: f32| {
+        g.write::<u32>(e1.wrapping_sub(4), c);
+        let fr = Frame {
+            at: call(call_op),
+            esp: e1.wrapping_sub(8),
+            ecx: o,
+            edx: a,
+            xmm: [0, 0, 0, u128::from(r.to_bits())],
+            ..Frame::default()
+        };
+        if copy {
+            circle_hit_0448(g, img, &fr)
+        } else {
+            circle_hit_0391(g, img, &fr)
+        };
+    };
+    let reach = |g: &G, op: u32| {
+        if copy {
+            g.read::<f32>(img.word(f + op))
+        } else {
+            rf(g, s + 0x908)
+        }
+    };
+    let inner = |g: &G, op391: u32, op448: u32| {
+        if copy {
+            g.read::<f32>(img.word(f + op448))
+        } else {
+            sub(rf(g, s + 0x908), g.read::<f32>(img.word(f + op391)))
+        }
+    };
+    copy_p(g);
+    let set = g.read::<u32>(flag) != 0;
+    let r = scale(g, img, 0x347, 0x356, 0x35f, set);
+    put_u(g, [r.to_bits(), 0, 0, ONE]);
+    g.call(t(g, 0x36c, 235), 0, &[m]);
+    g.call(t(g, 0x3a7, 328), 0, &[m, m, 0]);
+    g.call(t(g, 0x3cb, 329), 0, &[m, m, a1.to_bits()]);
+    g.call(t(g, 0x3ed, 229), 0, &[wv, m, u]);
+    g.call(t(g, 0x410, 248), 0, &[c, c, wv]);
+    g.write::<u32>(c + 0xc, ONE);
+    g.call(t(g, 0x428, 292), 0, &[v]);
+    g.write::<u32>(v + 0xc, ONE);
+    let mut moved = false;
+    if g.read::<u32>(st(0x930)) == 1 && flat_dist(g, v, c) > reach(g, 0x48a) {
+        copy_p(g);
+        let set = g.read::<u32>(flag) != 0;
+        let r = scale(g, img, 0x4c7, 0x4d6, 0x4df, !set);
+        put_u(g, [r.to_bits(), 0, 0, ONE]);
+        turn(g, img, 0x50f, c);
+        if flat_dist(g, v, c) > reach(g, 0x549) {
+            copy_p(g);
+            let r = scale(g, img, 0x596, 0x59e, 0, false);
+            put_u(g, [0, 0, r.to_bits(), ONE]);
+            turn(g, img, 0x5be, c);
+            let d = flat_dist(g, v, c);
+            let rr = reach(g, 0x5f8);
+            if d > rr {
+                hit(g, img, 0x61a, rr);
+                let (ox, oz) = (g.read::<u32>(o), g.read::<u32>(o + 8));
+                g.write::<u32>(c, ox);
+                g.write::<u32>(c + 8, oz);
+                put_u(g, [0, 0, 0x4120_0000, ONE]);
+                turn(g, img, 0x667, c);
+            } else if d > inner(g, 0x691, 0x686) {
+                put_u(g, [0, 0, 0x4120_0000, ONE]);
+                turn(g, img, 0x6c8, c);
+            }
+            moved = true;
+        } else {
+            let x = u32::from(g.read::<u32>(flag) == 0);
+            g.write::<u32>(flag, x);
+        }
+    }
+    for k4 in 0..4 {
+        let x = g.read::<u32>(c + 4 * k4);
+        g.write::<u32>(s + 0x760 + 4 * k4, x);
+    }
+    if moved {
+        for k4 in 0..4 {
+            let x = g.read::<u32>(c + 4 * k4);
+            g.write::<u32>(s + 0x750 + 4 * k4, x);
+        }
+    } else {
+        let a3 = yaw(g, img, c, 0x762, [0x771, 0x77b, 0x785, 0x792]);
+        g.write::<u32>(q, 0);
+        g.write::<f32>(q + 4, a3);
+        g.write::<u32>(q + 8, 0);
+        put_u(g, [0, 0, 0xc200_0000, ONE]);
+        turn(g, img, 0x7da, c);
+        for k4 in 0..4 {
+            let x = g.read::<u32>(c + 4 * k4);
+            g.write::<u32>(s + 0x750 + 4 * k4, x);
+        }
+        if g.read::<u32>(st(0x930)) == 1 {
+            let d = flat_dist(g, v, c);
+            let rr = reach(g, 0x84b);
+            let go = if d > rr {
+                hit(g, img, 0x877, rr);
+                let (ox, oz) = (g.read::<u32>(o), g.read::<u32>(o + 8));
+                g.write::<u32>(s + 0x750, ox);
+                g.write::<u32>(s + 0x758, oz);
+                true
+            } else {
+                d > inner(g, 0x8a0, 0x887)
+            };
+            if go {
+                put_u(g, [0, 0, 0x4120_0000, ONE]);
+                turn(g, img, 0x8d9, s + 0x750);
+            }
+        }
+    }
+    g.write::<u32>(s + 0x720, 0);
+    let caster = g.read::<u32>(w(0x913));
+    let out = g.call(t(g, 0x903, 333), 0, &[caster]);
+    let rot = sub(k(g, 0x927), st0_f32(out.st0));
+    let rot = wrap_once(g, img, f, rot, [0x937, 0x941, 0x94b, 0x958].map(at));
+    g.write::<f32>(s + 0x724, rot);
+    g.write::<u32>(s + 0x728, 0);
+    g.write::<u32>(s + 0x72c, 0);
+    for k4 in 0..3 {
+        let x = g.read::<u32>(q + 4 * k4);
+        g.write::<u32>(s + 0x730 + 4 * k4, x);
+    }
+    // junk read: [esp+0x5c] (E1 + 0x5c, Q's `w`) never written; 0 (brief 2026-10-24)
+    g.write::<u32>(s + 0x73c, 0);
+    out.eax
+}
+
+/// [`walk_plan_0391`] (2500 bytes, 1 overlay).
+pub const WALK_PLAN_0391: Sig = Sig {
+    len: 2500,
+    hash: 0x6fcd_5a8d_9fe5_e5ed,
+    calls: &[
+        (0x28, Callee::Sig(&WALK_AIM_0391)),
+        (0x11b, Callee::Import("_CIatan2")),
+        (0x231, Callee::Import("_CIatan2")),
+        (0x347, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x47f, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x4c7, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x50f, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x53e, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x596, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x5be, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x5ed, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x61a, Callee::Sig(&CIRCLE_HIT_0391)),
+        (0x667, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x6c8, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x750, Callee::Import("_CIatan2")),
+        (0x7da, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x84e, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x877, Callee::Sig(&CIRCLE_HIT_0391)),
+        (0x8d9, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        // __security_check_cookie
+        (0x38, Callee::Any),
+        (0x9bc, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`walk_plan_0448`] (2472 bytes, 1 overlay).
+pub const WALK_PLAN_0448: Sig = Sig {
+    len: 2472,
+    hash: 0x7f90_1719_7338_9ea9,
+    calls: &[
+        (0x28, Callee::Sig(&WALK_AIM_0448)),
+        (0x11b, Callee::Import("_CIatan2")),
+        (0x231, Callee::Import("_CIatan2")),
+        (0x347, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x47f, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x4c7, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x50f, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x53e, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x596, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x5be, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x5ed, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x610, Callee::Sig(&CIRCLE_HIT_0448)),
+        (0x65d, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x6ba, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x742, Callee::Import("_CIatan2")),
+        (0x7cc, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0x840, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x85f, Callee::Sig(&CIRCLE_HIT_0448)),
+        (0x8bd, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        // __security_check_cookie
+        (0x38, Callee::Any),
+        (0x9a0, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The motion block `magic_0391`'s / `magic_0448`'s turn starts fill
+/// (operands from `f + base`): `G_ANIM` = `T1` when the target yaw `c`
+/// (`S + 0x734`, unwrapped towards the facing `a = S + 0x724`) is below
+/// `a` (or unordered), else `T0` (`tables`: the two immediates); the
+/// caster `*G_ME` kept, -1 words, slot 215 `(me)` (outside a battle) or
+/// 413 `(me)` (in one) into the block, then -1, 0, 1 and the battle word
+/// (u16 0 or 1). `ops`: hi, lo, hi again, then the block's operand
+/// offsets in order (`G_BATTLE`, `G_ANIM`, `G_ME`, its copy, the slot
+/// table, the -1 word, `G_BATTLE` again, the answer, -1, 0, 1, the u16
+/// for 0 and for 1).
+fn turn_block<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, tables: [u32; 2], ops: &[u32; 16]) {
+    use crate::sb_sse::{add, sub};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let a = g.read::<f32>(s + 0x724);
+    let mut c = g.read::<f32>(s + 0x734);
+    if 0.0 > a {
+        if c > 0.0 && sub(c, a) > k(g, ops[0]) {
+            c = sub(k(g, ops[1]), sub(k(g, ops[0]), c));
+        }
+    } else if 0.0 > c && sub(a, c) > k(g, ops[2]) {
+        let hi = k(g, ops[2]);
+        c = add(add(c, hi), hi);
+    }
+    let below = c.partial_cmp(&a).is_none_or(std::cmp::Ordering::is_lt);
+    let [
+        b1,
+        anim,
+        me_op,
+        me_copy,
+        slots,
+        m1,
+        b2,
+        ans,
+        m1b,
+        z,
+        one,
+        h0,
+        h1,
+    ] = [
+        ops[3], ops[4], ops[5], ops[6], ops[7], ops[8], ops[9], ops[10], ops[11], ops[12], ops[13],
+        ops[14], ops[15],
+    ];
+    g.write::<u32>(w(m1), u32::MAX);
+    g.write::<u32>(w(anim), if below { tables[1] } else { tables[0] });
+    let me = g.read::<u32>(w(me_op));
+    g.write::<u32>(w(me_copy), me);
+    let slot = if g.read::<u32>(w(b1)) == 0 { 215 } else { 413 };
+    let r = g
+        .call(crate::runtime::slot_target(g, w(slots), slot), 0, &[me])
+        .eax;
+    g.write::<u32>(w(ans), r);
+    g.write::<u32>(w(m1b), u32::MAX);
+    g.write::<u32>(w(z), 0);
+    g.write::<u32>(w(one), 1);
+    if g.read::<u32>(w(b2)) == 0 {
+        g.write::<u16>(w(h0), 0);
+    } else {
+        g.write::<u16>(w(h1), 1);
+    }
+}
+
+/// The walker's start point as the turn starts end: the caster's place
+/// (slot 262 `(*G_A, ..)`, operands `s262`/`caster`) into `S + 0x7b0`
+/// (`w` 1.0), `S + 0x7c0` = `S + 0x7a0`, the steps `S + 0x91c` and `+0x918`
+/// (`magic_0448`: `+0x918`, `+0x914`; `low`) = `steps`. Returns `S +
+/// 0x7ac` (the last word moved).
+fn walker_start<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    s: u32,
+    [s262, caster]: [u32; 2],
+    steps: u32,
+    low: bool,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let p = s + 0x7b0;
+    let chr = g.read::<u32>(w(caster));
+    g.call(
+        crate::runtime::slot_target(g, w(s262), 262),
+        0,
+        &[chr, p, p + 4, p + 8],
+    );
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let mut last = 0;
+    for k4 in 0..4 {
+        last = g.read::<u32>(s + 0x7a0 + 4 * k4);
+        g.write::<u32>(s + 0x7c0 + 4 * k4, last);
+    }
+    let d = if low { 4 } else { 0 };
+    g.write::<u32>(s + 0x91c - d, steps);
+    g.write::<u32>(s + 0x918 - d, steps);
+    last
+}
+
+/// `magic_0391`'s turn start (0x100034c0, 361 bytes; internal, `ecx` = the
+/// walk state `S`): the walk plan ([`walk_plan_0391`]), the motion block
+/// ([`turn_block`], tables `0x1000a6f4` / `0x1000a230`), the walker's
+/// start ([`walker_start`], 26 steps). Returns `S + 0x7ac`.
+/// `magic_0448` 0x10006f90 is the same code ([`turn_start_0448`]).
+pub fn turn_start_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    turn_start(g, img, f, esp, s, false)
+}
+
+/// [`turn_start_0391`] in `magic_0448` (0x10006f90).
+pub fn turn_start_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    turn_start(g, img, f, esp, s, true)
+}
+
+fn turn_start<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32, copy: bool) -> u32 {
+    let plan = if copy { walk_plan_0448 } else { walk_plan_0391 };
+    // push esi, edi: the return address at E - 0xc
+    plan(g, img, img.rel32_target(f + 0x5), esp.wrapping_sub(0xc), s);
+    let tables = [img.word(f + 0x71), img.word(f + 0x76)];
+    turn_block(
+        g,
+        img,
+        f,
+        s,
+        tables,
+        &[
+            0x2a, 0x42, 0x55, 0x7f, 0x85, 0x8a, 0x8f, 0x95, 0x9b, 0xba, 0xc5, 0xcb, 0xd5, 0xdf,
+            0xe9, 0xf2,
+        ],
+    );
+    walker_start(g, img, f, s, [0x105, 0x10c], 0x1a, copy)
+}
+
+/// [`turn_start_0391`] (361 bytes).
+pub const TURN_START_0391: Sig = Sig {
+    len: 361,
+    hash: 0x4dd5_bf48_5d90_0021,
+    calls: &[(0x5, Callee::Sig(&WALK_PLAN_0391))],
+    imports: &[],
+};
+
+/// [`turn_start_0448`] (361 bytes).
+pub const TURN_START_0448: Sig = Sig {
+    len: 361,
+    hash: 0xda7c_bd22_30ed_6119,
+    calls: &[(0x5, Callee::Sig(&WALK_PLAN_0448))],
+    imports: &[],
+};
+
+/// `magic_0391`'s walk start with sparks (0x100031d0, 742 bytes; internal,
+/// `ecx` = the walk state `S`; `ebp = E - 4`): the old flag `S + 0x90c`
+/// kept, the walk plan ([`walk_plan_0391`]), the motion block
+/// ([`turn_block`]: the tables by the old flag, `0x1000a218`/`0x1000a200`
+/// when it was 0, else `0x1000a074`/`0x1000a05c`); then for the step
+/// `i = S + 0x910 - 1` the object `O = S + 0x130 i` started
+/// ([`hosted_0391`](crate::sl_host::hosted_0391), `edx` = `O`, `xmm3` =
+/// `(rnd 0.2 + K1) * K2`, slot 314), the battle character
+/// `TAB[(*G_SEL)[S + 0x93c + i]]` placed at `O + 0xd0` (slot 262, `w`
+/// 1.0) and told 0x10 (slot 268 `(chr, 0x10, O + 0xd0)`), `O + 0xc4` =
+/// the facing, `O + 0x120` = its selection byte, the record
+/// `R = S + 0x7d0 + 0x34 i` set up (`+0x10..0x2c`, `+0x20` P and `+0x24`
+/// the DLL's table, the u16 `+0x30` 0) and kept at `O + 0x110`; slot 306
+/// `(7, 0, h)` with `h` = slot 719 `(P, 9, 1)`; the walker's start ([`walker_start`], 36 steps). Returns
+/// `S + 0x7ac`. `magic_0448` 0x10006c80 is the same code
+/// ([`spark_start_0448`]).
+pub fn spark_start_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    spark_start(g, img, f, esp, s, false)
+}
+
+/// [`spark_start_0391`] in `magic_0448` (0x10006c80).
+pub fn spark_start_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    spark_start(g, img, f, esp, s, true)
+}
+
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn spark_start<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32, copy: bool) -> u32 {
+    use crate::sb_sse::{add, mul};
+    let plan = if copy { walk_plan_0448 } else { walk_plan_0391 };
+    let hosted = if copy {
+        crate::sl_host::hosted_0448
+    } else {
+        crate::sl_host::hosted_0391
+    };
+    // the state words 4 bytes lower in `magic_0448`
+    let st = |o: u32| s + if copy { o - 4 } else { o };
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let old = g.read::<u32>(st(0x90c));
+    // push ebp; sub esp, 8; push esi, edi: the return address at E - 0x18
+    plan(
+        g,
+        img,
+        img.rel32_target(f + 0x11),
+        esp.wrapping_sub(0x18),
+        s,
+    );
+    let tables = if old == 0 {
+        [img.word(f + 0x7e), img.word(f + 0x83)]
+    } else {
+        [img.word(f + 0x8a), img.word(f + 0x8f)]
+    };
+    turn_block(
+        g,
+        img,
+        f,
+        s,
+        tables,
+        &[
+            0x36, 0x4e, 0x61, 0xa5, 0xab, 0xb0, 0xb5, 0xbb, 0x98, 0xd6, 0xe1, 0xe7, 0xf1, 0xfb,
+            0x105, 0x10e,
+        ],
+    );
+    let out = g.call(t(g, 0x113, 314), 0, &[0x3e4c_cccd]);
+    let r = crate::ob_model::st0_f32(out.st0);
+    let i = g.read::<u32>(st(0x910)).wrapping_sub(1);
+    let scale = mul(add(r, g.read::<f32>(w(0x13a))), g.read::<f32>(w(0x14b)));
+    let o = s.wrapping_add(i.wrapping_mul(0x130));
+    // push ebx; push (0.2); sub esp, 0xc: the return address at E - 0x2c
+    let at = esp.wrapping_sub(0x2c);
+    g.write::<u32>(at + 0x10, 0x3e4c_cccd);
+    let mut xmm = [0u128; 4];
+    xmm[3] = u128::from(scale.to_bits());
+    let fr = Frame {
+        at: img.rel32_target(f + 0x15a),
+        esp: at,
+        edx: o,
+        xmm,
+        ..Frame::default()
+    };
+    hosted(g, img, &fr);
+    let p2 = o.wrapping_add(0xd0);
+    let byte = |g: &G| u32::from(g.read::<u8>(st(0x93c).wrapping_add(i)));
+    let sel = |g: &G, sel_op: u32, x: u32| {
+        u32::from(g.read::<u8>(g.read::<u32>(w(sel_op)).wrapping_add(x)))
+    };
+    // (a byte: the code's -1 cases, `*G_SELF` and `*G_ME`, cannot come up)
+    let c = byte(g);
+    let chr = g.read::<u32>(w(0x18b).wrapping_add(4 * sel(g, 0x180, c)));
+    g.call(t(g, 0x198, 262), 0, &[chr, p2, p2 + 4, p2 + 8]);
+    // call width: 7 (slot 262's words stay under it)
+    g.call(
+        t(g, 0x1aa, 268),
+        0,
+        &[chr, 0x10, p2, chr, p2, p2 + 4, p2 + 8],
+    );
+    g.write::<u32>(p2 + 0xc, 0x3f80_0000);
+    let face = g.read::<u32>(s + 0x724);
+    g.write::<u32>(o + 0xc4, face);
+    let d = byte(g);
+    let x = sel(g, 0x1eb, d);
+    g.write::<u32>(o + 0x120, x);
+    let rec = s.wrapping_add(0x7d0).wrapping_add(i.wrapping_mul(0x34));
+    for (off, v) in [
+        (0x18u32, 0),
+        (0x14, 0),
+        (0x10, 0),
+        (0x1c, 0),
+        (0x20, img.word(f + 0x225)),
+        (0x24, img.word(f + 0x22c)),
+        (0x28, 0),
+        (0x2c, 0),
+    ] {
+        g.write::<u32>(rec + off, v);
+    }
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(o + 0x110, rec);
+    let h = g.call(t(g, 0x249, 719), 0, &[w(0x258), 9, 1]).eax;
+    // call width: 6 (slot 719's words stay under it)
+    g.call(t(g, 0x260, 306), 0, &[7, 0, h, w(0x258), 9, 1]);
+    walker_start(g, img, f, s, [0x27f, 0x286], 0x24, copy)
+}
+
+/// [`spark_start_0391`] (742 bytes).
+pub const SPARK_START_0391: Sig = Sig {
+    len: 742,
+    hash: 0x13dc_2f0c_b489_9484,
+    calls: &[
+        (0x11, Callee::Sig(&WALK_PLAN_0391)),
+        (0x15a, Callee::Sig(&crate::sl_host::HOSTED_0391)),
+    ],
+    imports: &[],
+};
+
+/// [`spark_start_0448`] (742 bytes).
+pub const SPARK_START_0448: Sig = Sig {
+    len: 742,
+    hash: 0xb24f_4743_f94e_8b04,
+    calls: &[
+        (0x11, Callee::Sig(&WALK_PLAN_0448)),
+        (0x15a, Callee::Sig(&crate::sl_host::HOSTED_0448)),
     ],
     imports: &[],
 };
