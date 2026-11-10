@@ -676,7 +676,15 @@ fn walk_aims() {
         aim_stubs(&mut t);
         let f = t.at(rva);
         let s = SCRATCH + 0x1_0000;
-        chars(&mut t, f, &[], &[], &[2]);
+        // the characters' tables and the caster (a second selection byte
+        // that must not count)
+        let (tables, caster): (&[u32], u32) = if n == 391 {
+            (&[0x54, 0xd3, 0x1d4, 0x52a], 0x47c)
+        } else {
+            (&[0x6a, 0xde, 0x1b5, 0x4ce], 0x41f)
+        };
+        chars(&mut t, f, &[], tables, &[2, 7]);
+        junk_ops(&mut t, f, &[caster]);
         let sel = SCRATCH + 0x600;
         let ops: &[u32] = if n == 391 {
             &[0x41, 0xbd, 0x1af, 0x514]
@@ -755,13 +763,16 @@ fn walk_steps() {
             30.0 - f32::from_bits(t.u32(t.img.word(f + 0xfd)))
         };
         // (on, count, W flag, battle point x, place_me's battle word, me)
-        let cases: [(u32, i32, u32, f32, u32, u32); 9] = [
+        let cases: [(u32, i32, u32, f32, u32, u32); 12] = [
             (0, 3, 1, 0.0, 0, 1),
             (1, 0, 1, 0.0, 0, 1),
             (1, -2, 1, 0.0, 0, 1),
             (1, 3, 0, 0.0, 0, 1),
             (1, 3, 1, 0.5, 0, 1),
             (1, 1, 1, lim + 50.0, 0, 1),
+            (1, 2, 1, lim * 0.6, 0, 1),
+            (1, 2, 1, lim * 0.85, 0, 1),
+            (1, 2, 1, lim * 1.1, 0, 1),
             (1, 2, 1, 0.25, 1, 0x40),
             (1, 1, 0, 0.0, 0, 0x40),
             (1, 2, 1, f32::NAN, 1, 1),
@@ -797,6 +808,157 @@ fn walk_steps() {
                     r34::walk_step_0391(g, img, fr.at, fr.esp, fr.ecx)
                 } else {
                     r34::walk_step_0448(g, img, fr.at, fr.esp, fr.ecx)
+                })
+            });
+        }
+    }
+}
+
+/// The 0x74-byte record pool `take` searches (`sb_misc::pool_take`): `n`
+/// records at `recs`, those in `busy` taken, the search from `from` (as
+/// `magic_r32.rs`).
+fn pool_74(t: &mut Twin, take: u32, recs: u32, n: u32, busy: &[u32], from: u32, k: u32) {
+    let w = |t: &Twin, o: u32| t.img.word(take + o);
+    let (p37, p61, n0f, n97, i08, pg) = (
+        w(t, 0x37),
+        w(t, 0x61),
+        w(t, 0x0f),
+        w(t, 0x97),
+        w(t, 0x08),
+        w(t, 0x2b),
+    );
+    t.set_u32(p37, recs);
+    t.set_u32(p61, recs);
+    for i in 0..n {
+        junk(t, recs + 0x74 * i, 0x74, k + i);
+        let taken = u32::from(busy.contains(&i));
+        t.set_u32(recs + 0x74 * i + 0x6c, taken);
+    }
+    t.set_u32(n0f, n);
+    t.set_u32(n97, n);
+    t.set_u32(i08, from);
+    t.set_u32(pg, 0);
+}
+
+/// The drops' slots: 314 / 404 random floats from their argument (ST0),
+/// 12 a height, 719 a handle.
+fn drop_stubs(t: &mut Twin) {
+    aim_stubs(t);
+    for (s, x) in [(314u32, 0.375f64), (404, -0.625)] {
+        rec(t, s, 1, move |m, a| {
+            let k = m.r32(SCRATCH + 0xa00);
+            m.w32(SCRATCH + 0xa00, k + 1);
+            (s << 16) ^ a[0] ^ k
+        });
+        t.stub_st0(s, move |m, a| {
+            x * f64::from(m.r32(SCRATCH + 0xa00) % 5) + f64::from(f32::from_bits(a[0]))
+        });
+    }
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| 1.25 + f64::from(a[0] & 7));
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
+    for s in [255u32, 11, 32, 33] {
+        rec(t, s, 2, move |m, a| {
+            (s << 16) ^ a[0] ^ m.r32(SCRATCH + 0x60)
+        });
+    }
+}
+
+/// `magic_0391` 0x10002bf0 / `magic_0448` 0x10006700 (`r34::drop_0391`,
+/// `drop_0448`) and the curve steps 0x10002de0 / 0x100068d0
+/// (`r34::curve_step_0391`, `curve_step_0448`): the pool with a free
+/// record and none; the count above 0, at 0 and below, below 20 (a drop)
+/// and not; the battle point's flag off and on, near and far; the caster
+/// placed by party slot, standing or grounded.
+#[test]
+fn drops_and_curves() {
+    for (n, drop_rva, curve_rva) in [(391u16, 0x2bf0u32, 0x2de0u32), (448, 0x6700, 0x68d0)] {
+        let Some(mut t) = twin(n) else { return };
+        drop_stubs(&mut t);
+        let df = t.at(drop_rva);
+        let cf = t.at(curve_rva);
+        let take = t.img.rel32_target(df + if n == 391 { 0x79 } else { 0x49 });
+        let recs = SCRATCH + 0x8000;
+        if n == 448 {
+            // the block whose `+0xc` is the handle
+            t.set_u32(t.img.word(df + 0x11), SCRATCH + 0x9000);
+            junk(&mut t, SCRATCH + 0x9000, 0x20, 9);
+        }
+        for (k, busy) in (0u32..).zip([&[][..], &[0, 1, 2][..], &[1][..]]) {
+            pool_74(&mut t, take, recs, 3, busy, k % 3, k);
+            t.set_u32(SCRATCH + 0xa00, k);
+            ownb::dirty_stack(&mut t, drop_rva + k, &[]);
+            ownb::reset_counters(&mut t);
+            t.check(df, Call::default(), &[], Eax::Checked, move |g, img, fr| {
+                Ret::eax(if n == 391 {
+                    r34::drop_0391(g, img, fr.at, fr.esp)
+                } else {
+                    r34::drop_0448(g, img, fr.at, fr.esp)
+                })
+            });
+        }
+        let s = SCRATCH + 0x1_0000;
+        let ws = SCRATCH + 0x1_2000;
+        let at = |o: u32| {
+            if n == 391 || o < 0x1c4 {
+                o
+            } else if o < 0x2f0 {
+                o - 1
+            } else {
+                o - 0x10
+            }
+        };
+        let w = |t: &Twin, o: u32| t.img.word(cf + at(o));
+        t.set_u32(w(&t, 0x1c5), ws);
+        let (count, total, flag) = if n == 391 {
+            (0x918, 0x91c, 0xbb0)
+        } else {
+            (0x914, 0x918, 0xbac)
+        };
+        let reach = if n == 391 {
+            30.0
+        } else {
+            f32::from_bits(t.u32(t.img.word(cf + 0x2da)))
+        };
+        // (count, total, flag, battle point x, battle word, me, grounded)
+        let cases: [(i32, i32, u32, f32, u32, u32, u32); 9] = [
+            (30, 40, 0, 0.0, 0, 1, 0),
+            (21, 40, 1, 0.5, 0, 1, 0),
+            (20, 40, 1, reach + 60.0, 0, 1, 0),
+            (5, 40, 1, 2.0, 1, 1, 0),
+            (1, 8, 0, 0.0, 0, 0x40, 1),
+            (0, 8, 0, 0.0, 0, 3, 0),
+            (-3, 8, 1, 1.0, 1, 0x40, 1),
+            (12, 7, 1, f32::NAN, 0, 0xffff_ffff, 0),
+            (40, 40, 0, 0.0, 1, 2, 1),
+        ];
+        for (k, (c, tot, fl, vx, battle, me, ground)) in (0u32..).zip(cases) {
+            junk(&mut t, s + 0x700, 0x240, k);
+            junk(&mut t, ws + 0xb80, 0x40, k + 3);
+            t.set_u32(s + count, c as u32);
+            t.set_u32(s + total, tot as u32);
+            t.set_u32(ws + flag, fl);
+            t.set_u32(ws + 0xb88, 30.0f32.to_bits());
+            for i in 0..8u32 {
+                let v = 1.5 * i as f32 - 3.0 + 0.25 * k as f32;
+                t.set_u32(s + 0x7b0 + 4 * i, v.to_bits());
+            }
+            for (i, v) in [vx, 0.5, 1.0, 2.0].into_iter().enumerate() {
+                t.set_u32(SCRATCH + 0x40 + 4 * i as u32, v.to_bits());
+            }
+            t.set_u32(w(&t, 0x2f6), battle);
+            t.set_u32(w(&t, 0x2fe), me);
+            t.set_u32(w(&t, 0x326), 0x0bb0_0000 + k);
+            t.set_u32(SCRATCH + 0x60, 0);
+            t.stub(11, move |_, _| ground);
+            pool_74(&mut t, take, recs, 3, &[], 0, k);
+            ownb::dirty_stack(&mut t, curve_rva + k, &[]);
+            ownb::reset_counters(&mut t);
+            t.check(cf, Call::this(s), &[], Eax::Checked, move |g, img, fr| {
+                Ret::eax(if n == 391 {
+                    r34::curve_step_0391(g, img, fr.at, fr.esp, fr.ecx)
+                } else {
+                    r34::curve_step_0448(g, img, fr.at, fr.esp, fr.ecx)
                 })
             });
         }

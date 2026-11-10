@@ -1185,3 +1185,328 @@ pub const WALK_STEP_0448: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The parts of a [`drop_0391`] copy that differ: the record's `+0x14`
+/// (`-slot 404 (0.25)`, or `-(slot 314 (0.5) + K)`), its `+0x4c`/`+0x50`,
+/// whether `+0x6b` is cleared, and the operand offsets (slot 314's after
+/// the first record word, the record's `+0x24` immediate, `K1`/`K2` of
+/// `+0x3c`, the sign mask, `+0x14`'s slot and constant).
+struct DropOps {
+    take: u32,
+    s314: [u32; 6],
+    s14: u32,
+    k14: Option<u32>,
+    neg: u32,
+    imm24: u32,
+    k3c: [u32; 2],
+    w4c: [u32; 2],
+    clear_6b: bool,
+}
+
+const DROP_0391: DropOps = DropOps {
+    take: 0x79,
+    s314: [0x9e, 0xc7, 0xf6, 0x13c, 0x158, 0x16f],
+    s14: 0x119,
+    k14: None,
+    neg: 0x137,
+    imm24: 0x17d,
+    k3c: [0x1aa, 0x1c4],
+    w4c: [0x20, 0],
+    clear_6b: false,
+};
+
+const DROP_0448: DropOps = DropOps {
+    take: 0x49,
+    s314: [0x6e, 0x97, 0xc6, 0x10d, 0x130, 0x147],
+    s14: 0xe9,
+    k14: Some(0x108),
+    neg: 0x11b,
+    imm24: 0x155,
+    k3c: [0x182, 0x19c],
+    w4c: [0x18, 0x18],
+    clear_6b: true,
+};
+
+/// `magic_0391`'s spark drop (0x10002bf0, 486 bytes; internal, no
+/// arguments; a /GS frame, `ebp = E - 4`): the handle `H` = slot 719 `(P,
+/// 9, 0)`; the caster's place (slot 262 `(*G_A, ..)`) and its height
+/// (slot 12, ST0) less `K`; one record of the DLL's pool
+/// ([`pool_take`](crate::sb_misc::pool_take); none: returns 0): `+0x30`
+/// `H`, `+0x34` 1, the halfwords `+0x38` -1 and `+0x3a` 0x200, the place
+/// `(x + rnd 5, height, z + rnd 5, 1)` (slot 314 random floats, ST0),
+/// `+0x10` rnd 0.25, `+0x14` `-slot 404 (0.25)`, `+0x18` rnd 0.25,
+/// `+0x1c` rnd pi, `+0x20` `(0, 0.01, 0, 1)`, `+0x3c` `(rnd 0.2 + K1) *
+/// K2`, `+0x4c` 0x20, `+0x50` 0. Returns the last slot 314's `eax`.
+pub fn drop_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let h = g.call(t(g, 0x11, 719), 0, &[w(0x22), 9, 0]).eax;
+    let p = esp.wrapping_sub(4 + 0x14);
+    let chr = g.read::<u32>(w(0x30));
+    // call width: 7 (slot 719's words stay under it)
+    g.call(t(g, 0x2a, 262), 0, &[chr, p, p + 4, p + 8, w(0x22), 9, 0]);
+    // call width: 8
+    let out = g.call(
+        t(g, 0x4d, 12),
+        0,
+        &[chr, chr, p, p + 4, p + 8, w(0x22), 9, 0],
+    );
+    let y = crate::sb_sse::sub(crate::ob_model::st0_f32(out.st0), g.read::<f32>(w(0x63)));
+    drop_record(g, img, f, h, p, y, &DROP_0391)
+}
+
+/// [`drop_0391`] in `magic_0448` (0x10006700, 450 bytes): `H` the word
+/// `+0xc` of the block `*G_P` (read, no slot 719); no height (the
+/// place's own `y`); `+0x14` = `-(rnd 0.5 + K)`, `+0x24` -0.02, `+0x4c`
+/// and `+0x50` 0x18, the byte `+0x6b` cleared.
+pub fn drop_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let h = g.read::<u32>(g.read::<u32>(w(0x11)) + 0xc);
+    let p = esp.wrapping_sub(4 + 0x14);
+    let chr = g.read::<u32>(w(0x30));
+    g.call(
+        crate::runtime::slot_target(g, w(0x2a), 262),
+        0,
+        &[chr, p, p + 4, p + 8],
+    );
+    let y = g.read::<f32>(p + 4);
+    drop_record(g, img, f, h, p, y, &DROP_0448)
+}
+
+fn drop_record<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    h: u32,
+    p: u32,
+    y: f32,
+    o: &DropOps,
+) -> u32 {
+    use crate::sb_sse::{add, mul};
+    let w = |op: u32| img.word(f + op);
+    let rec = crate::sb_misc::pool_take(g, img, img.rel32_target(f + o.take));
+    if rec == 0 {
+        return 0;
+    }
+    let mut eax = 0;
+    let mut rnd = |g: &mut G, op: u32, slot: u32, x: f32| {
+        let out = g.call(
+            crate::runtime::slot_target(g, w(op), slot),
+            0,
+            &[x.to_bits()],
+        );
+        eax = out.eax;
+        crate::ob_model::st0_f32(out.st0)
+    };
+    g.write::<u32>(rec + 0x30, h);
+    g.write::<u16>(rec + 0x38, 0xffff);
+    g.write::<u16>(rec + 0x3a, 0x200);
+    g.write::<u32>(rec + 0x34, 1);
+    let r = rnd(g, o.s314[0], 314, 5.0);
+    let x = add(g.read::<f32>(p), r);
+    g.write::<f32>(rec, x);
+    g.write::<f32>(rec + 4, y);
+    let r = rnd(g, o.s314[1], 314, 5.0);
+    let z = add(g.read::<f32>(p + 8), r);
+    g.write::<u32>(rec + 0xc, 0x3f80_0000);
+    g.write::<f32>(rec + 8, z);
+    let r = rnd(g, o.s314[2], 314, 0.25);
+    g.write::<f32>(rec + 0x10, r);
+    let v = match o.k14 {
+        None => rnd(g, o.s14, 404, 0.25),
+        Some(k) => {
+            let r = rnd(g, o.s14, 314, 0.5);
+            add(r, g.read::<f32>(w(k)))
+        }
+    };
+    g.write::<u32>(rec + 0x14, v.to_bits() ^ g.read::<u32>(w(o.neg)));
+    let r = rnd(g, o.s314[3], 314, 0.25);
+    g.write::<f32>(rec + 0x18, r);
+    let r = rnd(g, o.s314[4], 314, std::f32::consts::PI);
+    g.write::<f32>(rec + 0x1c, r);
+    g.write::<u32>(rec + 0x20, 0);
+    g.write::<u32>(rec + 0x24, img.word(f + o.imm24));
+    g.write::<u32>(rec + 0x28, 0);
+    g.write::<u32>(rec + 0x2c, 0x3f80_0000);
+    let r = rnd(g, o.s314[5], 314, 0.2);
+    g.write::<u32>(rec + 0x4c, o.w4c[0]);
+    g.write::<u32>(rec + 0x50, o.w4c[1]);
+    let v = mul(
+        add(r, g.read::<f32>(w(o.k3c[0]))),
+        g.read::<f32>(w(o.k3c[1])),
+    );
+    if o.clear_6b {
+        g.write::<u8>(rec + 0x6b, 0);
+    }
+    g.write::<f32>(rec + 0x3c, v);
+    eax
+}
+
+/// [`drop_0391`] (486 bytes, 1 overlay).
+pub const DROP_0391_SIG: Sig = Sig {
+    len: 486,
+    hash: 0x20a2_1bfe_1605_5ac5,
+    calls: &[
+        (0x79, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        // __security_check_cookie
+        (0x1de, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`drop_0448`] (450 bytes, 1 overlay).
+pub const DROP_0448_SIG: Sig = Sig {
+    len: 450,
+    hash: 0xa33b_ebf8_7924_0dd8,
+    calls: &[
+        (0x49, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        // __security_check_cookie
+        (0x1ba, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0391`'s curve step (0x10002de0, 954 bytes; internal, `ecx` = the
+/// walk state `S`; an 8-aligned /GS frame, `E1` the aligned `esp` after
+/// `sub esp, 0x30` and two pushes). The count `S + 0x918` steps down
+/// (when above 0); with `u = count / S + 0x91c` (as floats) and `v = K1 -
+/// u` the point `C` (`E1 + 0x14`) on the curve from `P0 = S + 0x7b0`
+/// towards `P1 = S + 0x7c0`, per coordinate with `d = P1 - P0`: `((v u
+/// v v) K3 (d Ka) + v v v v d + (u u v v) K3 (d Kb) + (u u v u) K3 (d Kc) +
+/// u u u u 0) + P0`, f32 at every step in that order. With the state `W =
+/// *G_W`'s flag `W + 0xbb0` set and the battle point (slot 292, `E1 +
+/// 0x24`) at least `W + 0xb88 - K` from `C` (flat), the caster stays;
+/// else it goes to `C` (inlined [`place_me`](crate::sa_misc::place_me):
+/// slot 255, or slots 11 and 33 / 32). Below 20 steps left a spark drops
+/// ([`drop_0391`]). Returns whether the count is 0 (or below).
+pub fn curve_step_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    curve_step(g, img, f, esp, s, false, drop_0391)
+}
+
+/// [`curve_step_0391`] in `magic_0448` (0x100068d0, 938 bytes): the count
+/// `S + 0x914` of `S + 0x918`, the flag `W + 0xbac`, the reach the
+/// constant `K` (operand `+0x2da`), the drop [`drop_0448`].
+pub fn curve_step_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    curve_step(g, img, f, esp, s, true, drop_0448)
+}
+
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)] // the three coordinates; `cvtdq2ps`
+fn curve_step<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    s: u32,
+    copy: bool,
+    drop: fn(&mut G, &Image, u32, u32) -> u32,
+) -> u32 {
+    use crate::sb_sse::{add, div, mul, sub};
+    let at = |o: u32| match (copy, o) {
+        (false, _) => o,
+        (true, o) if o < 0x1c4 => o,
+        (true, o) if o < 0x2f0 => o - 1,
+        (true, o) => o - 0x10,
+    };
+    let w = |o: u32| img.word(f + at(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let (count, total, flag) = if copy {
+        (0x914, 0x918, 0xbac)
+    } else {
+        (0x918, 0x91c, 0xbb0)
+    };
+    let e1 = (esp.wrapping_sub(4) & !7).wrapping_sub(0x30 + 8);
+    let n = g.read::<i32>(s + count);
+    if n > 0 {
+        g.write::<i32>(s + count, n - 1);
+    }
+    let u = div(
+        g.read::<i32>(s + count) as f32,
+        g.read::<i32>(s + total) as f32,
+    );
+    let v = sub(k(g, 0x4f), u);
+    let (vu, vv, uu) = (mul(v, u), mul(v, v), mul(u, u));
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    // one coordinate: the operands of K3 (three uses), Ka, Kb, Kc
+    let coord = |g: &G, o: u32, [k3a, k3b, k3c]: [u32; 3], [ka, kb, kc]: [u32; 3]| {
+        let p0 = rf(g, s + 0x7b0 + o);
+        let d = sub(rf(g, s + 0x7c0 + o), p0);
+        let mut x = mul(mul(mul(vu, vv), k(g, k3a)), mul(d, k(g, ka)));
+        x = add(x, mul(mul(vv, vv), d));
+        x = add(x, mul(mul(mul(uu, vv), k(g, k3b)), mul(d, k(g, kb))));
+        x = add(x, mul(mul(mul(uu, vu), k(g, k3c)), mul(d, k(g, kc))));
+        x = add(x, mul(mul(uu, uu), 0.0));
+        add(x, p0)
+    };
+    let cx = coord(g, 0, [0x63, 0x63, 0x63], [0xaa, 0xd0, 0xd8]);
+    let cy = coord(g, 4, [0x152, 0x15a, 0x1a8], [0x165, 0x183, 0x18b]);
+    let cz = coord(g, 8, [0x1f3, 0x1f3, 0x1f3], [0x229, 0x247, 0x24f]);
+    let c = e1 + 0x14;
+    g.write::<f32>(c, cx);
+    g.write::<f32>(c + 4, cy);
+    g.write::<f32>(c + 8, cz);
+    let ww = g.read::<u32>(w(0x1c5));
+    let mut place = true;
+    if g.read::<u32>(ww + flag) == 1 {
+        let vp = e1 + 0x24;
+        g.call(t(g, 0x294, 292), 0, &[vp]);
+        g.write::<u32>(vp + 0xc, 0x3f80_0000);
+        let dx = sub(rf(g, vp), cx);
+        let dz = sub(rf(g, vp + 8), cz);
+        let dist = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt() as f32;
+        let reach = if copy {
+            g.read::<f32>(img.word(f + 0x2da))
+        } else {
+            sub(rf(g, ww + 0xb88), g.read::<f32>(img.word(f + 0x2e7)))
+        };
+        // `comiss`/`jae`: stays only when ordered and not below
+        place = dist
+            .partial_cmp(&reach)
+            .is_none_or(std::cmp::Ordering::is_lt);
+    }
+    if place {
+        let me = g.read::<u32>(w(0x2fe));
+        if g.read::<u32>(w(0x2f6)) == 0 && me.cast_signed() < 0x20 {
+            g.call(t(g, 0x30e, 255), 0, &[me, c]);
+        } else {
+            let obj = g.read::<u32>(w(0x326));
+            let grounded = g.call(t(g, 0x320, 11), 0, &[obj]).eax != 0;
+            if grounded {
+                g.call(t(g, 0x33c, 32), 0, &[obj, cx.to_bits(), cz.to_bits()]);
+            } else {
+                let xyz = [obj, cx.to_bits(), cy.to_bits(), cz.to_bits()];
+                g.call(t(g, 0x33c, 33), 0, &xyz);
+            }
+        }
+    }
+    if g.read::<i32>(s + count) < 0x14 {
+        drop(g, img, img.rel32_target(f + at(0x39a)), e1.wrapping_sub(4));
+    }
+    u32::from(g.read::<i32>(s + count) <= 0)
+}
+
+/// [`curve_step_0391`] (954 bytes, 1 overlay).
+pub const CURVE_STEP_0391: Sig = Sig {
+    len: 954,
+    hash: 0x89bb_31ae_2fdb_3245,
+    calls: &[
+        (0x2d0, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x39a, Callee::Sig(&DROP_0391_SIG)),
+        // __security_check_cookie
+        (0x3b2, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`curve_step_0448`] (938 bytes, 1 overlay).
+pub const CURVE_STEP_0448: Sig = Sig {
+    len: 938,
+    hash: 0xb791_463e_bdc1_6faf,
+    calls: &[
+        (0x2cf, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x38a, Callee::Sig(&DROP_0448_SIG)),
+        // __security_check_cookie
+        (0x3a2, Callee::Any),
+    ],
+    imports: &[],
+};
