@@ -2138,3 +2138,123 @@ fn place_0393() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0393` 0x100030e0 (`r38::launch_0393`, as `r16::launch_0450`'s
+/// test): the object listed and not; the actor's state listed (slot
+/// 390's answer in the table), not with slot 534 non-zero and zero; the
+/// launch way of two lengths, the third far behind (the yaw wraps).
+#[test]
+fn launch_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x30e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let sl = t.img.rel32_target(f + 0x62);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x451);
+    magic_r11::object_start_auto(&mut t, start);
+    let point = SCRATCH + 0x7d00;
+    rec(&mut t, 268, 3, move |m, a| {
+        for i in 0..4 {
+            m.w32(a[2] + 4 * i, m.r32(point + 4 * i));
+        }
+        0x268
+    });
+    for (s, v) in [
+        (277u32, 0.75f64),
+        (15, 0.5),
+        (16, -0.25),
+        (17, 2.0),
+        (12, 1.75),
+    ] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0xf));
+    }
+    for (s, k) in [
+        (235u32, 1usize),
+        (328, 3),
+        (329, 3),
+        (330, 3),
+        (229, 3),
+        (248, 3),
+        (210, 2),
+        (211, 2),
+        (713, 1),
+        (262, 4),
+    ] {
+        rec(&mut t, s, k, move |m, a| {
+            let n = m.r32(SCRATCH + 0x7c00);
+            m.w32(SCRATCH + 0x7c00, n + 1);
+            // (229 and 248: their vector, the last word)
+            let src = match (s, k) {
+                (229 | 248, _) => a[2],
+                (_, 1) => a[0],
+                _ => a[1],
+            };
+            for i in 0..4 {
+                let v = m.r32(src.wrapping_add(4 * i));
+                m.w32(SCRATCH + 0x7c04 + 0x10 * (n % 16) + 4 * i, v);
+                if matches!(s, 229 | 248) {
+                    let x = f32::from_bits(v) * 0.5 + i as f32;
+                    m.w32(a[0] + 4 * i, x.to_bits());
+                }
+            }
+            (s << 16) ^ a[0]
+        });
+    }
+    let table: Vec<u32> = (0..8)
+        .map(|i| t.img.word(t.img.word(sl + 0x20) + 4 * i))
+        .take_while(|&v| v != u32::MAX)
+        .collect();
+    let hit = table.first().copied().unwrap_or(0);
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x1f), b);
+    let list = w(&t, 0x24);
+    let sel = SCRATCH + 0x5a00;
+    for o in [0x69u32, 0x263, 0x2a0, 0x3c0] {
+        t.set_u32(w(&t, o), sel);
+    }
+    t.set_u32(t.img.word(sl + 1), sel);
+    t.set_u8(sel, 3);
+    t.set_u8(sel + 1, 5);
+    // (the byte after the second actor's is not 0, so a wider read shows)
+    t.set_u8(sel + 2, 0x77);
+    for o in [0x73u32, 0x26e, 0x2ab, 0x3ce] {
+        for i in 0..0x10 {
+            t.set_u32(w(&t, o) + 4 * i, 0x00c0_0000 + 0x100 * o + i);
+        }
+    }
+    // (the third point far behind on both axes: the yaw wraps)
+    for (k, (listed, (r390, r534), p)) in [
+        (true, (hit, 0u32), [1.5f32, 2.0, -3.0, 1.0]),
+        (false, (0x390, 0), [0.25, -4.0, 6.5, 1.0]),
+        (true, (0x390, 1), [-50.0, 3.0, -60.0, 1.0]),
+        (false, (0x390, 0), [-50.0, 3.0, -60.0, 1.0]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rec(&mut t, 390, 1, move |_, _| r390);
+        rec(&mut t, 534, 1, move |_, a| r534 * a[0].max(1));
+        t.set_u32(SCRATCH + 0x7c00, 0);
+        t.write(b, &vec![0x3b + k as u8; 0x2000]);
+        t.set_u32(b + 0x1ee0, (0.5f32 + k as f32).to_bits());
+        t.set_u32(b + 0x1ba4, (2.5f32 - k as f32).to_bits());
+        for (i, x) in (0u32..).zip(p) {
+            t.set_u32(point + 4 * i, x.to_bits());
+        }
+        t.set_u32(SCRATCH + 0x5900, 0x5900 + k as u32);
+        t.set_u32(w(&t, 0x3a), SCRATCH + 0x5900);
+        let node = SCRATCH + 0x5880;
+        t.write(list, &[0; 0x10]);
+        t.write(node, &[0; 0xc]);
+        if listed {
+            t.set_u32(list, node);
+            t.set_u32(list + 4, node);
+            t.set_u32(list + 0xc, 1);
+            t.set_u32(node + 8, b + 0x5f0);
+            t.set_u16(b + 0x5f0 + 0x124, 0x8123 + k as u16);
+        }
+        ownb::dirty_stack(&mut t, 0x30e0 + k as u32, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Junk);
+    }
+}
