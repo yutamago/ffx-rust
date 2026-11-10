@@ -216,15 +216,30 @@ pub(crate) struct NodeOps {
 }
 
 /// The body of [`record_node_start`] for the record `r`.
-#[allow(clippy::too_many_lines)] // the original's stores, one by one
 fn node_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, r: u32, ops: &NodeOps) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let a = g.read::<u32>(w(ops.a));
+    node_start_with(g, img, fr, r, ops, a, |_| (w(ops.k_a4), w(ops.k_9c)))
+}
+
+/// [`node_start`] with the character `a` given and the words `+0xa4`
+/// and `+0x9c` from `tail` (called where the copy computes them).
+#[allow(clippy::too_many_lines)] // the original's stores, one by one
+pub(crate) fn node_start_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    r: u32,
+    ops: &NodeOps,
+    a: u32,
+    tail: impl FnOnce(&G) -> (u32, u32),
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let slot = |g: &G, (t, d): (u32, u32)| slot_target(g, w(t), w(d) / 4);
     let pos = fr.arg(g, 0);
     let ebp = fr.esp.wrapping_sub(4);
     let (l, d) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
-    let a = g.read::<u32>(w(ops.a));
     let mut s = Pushes::default();
     s.push_all(&[l, a]);
     let t = slot(g, ops.t217);
@@ -274,10 +289,11 @@ fn node_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, r: u32, ops: &NodeOps
     for o in [0x6cu32, 0x7c, 0x8c] {
         g.write::<u32>(r.wrapping_add(o), 0x3f80_0000);
     }
+    let (a4, k9c) = tail(g);
     g.write::<u32>(r.wrapping_add(0xa0), a);
-    g.write::<u32>(r.wrapping_add(0xa4), w(ops.k_a4));
+    g.write::<u32>(r.wrapping_add(0xa4), a4);
     g.write::<u32>(r.wrapping_add(0x98), 0);
-    g.write::<u32>(r.wrapping_add(0x9c), w(ops.k_9c));
+    g.write::<u32>(r.wrapping_add(0x9c), k9c);
     for o in [0x90u32, 0x94, 0xa8] {
         g.write::<u32>(r.wrapping_add(o), 0);
     }

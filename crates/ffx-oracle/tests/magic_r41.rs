@@ -1755,6 +1755,10 @@ fn shards_step_0269() {
         for i in 0..16u32 {
             m.w32(a[0] + 4 * i, v ^ i);
         }
+        // the shard's matrix as the draw sees it (its output is a frame
+        // local)
+        let log = SCRATCH + 0xa50;
+        m.w32(log, m.r32(log).rotate_left(1) ^ v);
         0x231
     });
     rec(&mut t, 772, 2, |_, a| a[0] ^ (a[1] << 4));
@@ -1762,7 +1766,12 @@ fn shards_step_0269() {
     rec(&mut t, 773, 2, |_, a| a[1] & 1);
     let lock = SCRATCH + 0x7f40;
     for (s, n) in [(775u32, 2usize), (776, 1), (777, 1), (819, 4), (820, 5)] {
-        rec(&mut t, s, n, move |m, a| (s << 16) ^ a[0] ^ m.r32(lock));
+        rec(&mut t, s, n, move |m, a| {
+            // the game lock as each call sees it
+            let log = SCRATCH + 0xa54;
+            m.w32(log, m.r32(log).rotate_left(3) ^ m.r32(lock) ^ s);
+            (s << 16) ^ a[0] ^ m.r32(lock)
+        });
     }
     for o in [0xb9u32, 0xe1, 0x110, 0x15e, 0x194] {
         t.set_u32(dw(o), lock);
@@ -1804,5 +1813,82 @@ fn shards_step_0269() {
         }
         ownb::dirty_stack(&mut t, 0x2050 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0250` 0x100023a0 (`r41::record_start_0250`): the caster (-1)
+/// and a selected actor; a free ring of three nodes with the count 3 or 1
+/// (the head moves on or becomes 0); the busy list empty or holding a
+/// node; the divisor `n` positive and negative.
+#[test]
+fn record_start_0250() {
+    use ffx_magic::Xmm;
+    let Some(mut t) = twin(250) else { return };
+    let f = t.at(0x23a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    for s in [217u32, 234] {
+        rec(&mut t, s, if s == 217 { 2 } else { 3 }, move |m, a| {
+            let (dst, src) = if s == 217 {
+                (a[1], a[0])
+            } else {
+                (a[0], a[1] ^ a[2])
+            };
+            for i in 0..4 {
+                m.w32(dst + 4 * i, src.rotate_left(i + s) | 1);
+            }
+            s
+        });
+    }
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..4u32 {
+            let v = rf(m, a[1] + 4 * i) * f32::from_bits(a[2]) + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x233
+    });
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[4, 9, 0x13, 2]);
+    t.set_u32(w(0x2b), sel);
+    t.set_u32(w(0x24), 0x00a1_0000);
+    let (rec_, pos) = (SCRATCH + 0x2000, SCRATCH + 0x2200);
+    for c in 0..6u32 {
+        t.write(rec_, &[0x5a; 0xc0]);
+        floats(&mut t, pos, 4, c + 1);
+        let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+        for i in 0..3 {
+            t.write(node(i), &[0x77; 0x20]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(w(0x1df), node(1));
+        t.set_u16(w(0x193), if c & 1 == 0 { 3 } else { 1 });
+        let busy = SCRATCH + 0x1400;
+        t.write(busy, &[0x66; 0x20]);
+        t.set_u32(w(0x246), if c & 2 == 0 { 0 } else { busy });
+        t.set_u32(w(0x25f), busy);
+        let n: i32 = if c == 4 { -3 } else { 7 + c.cast_signed() };
+        let args = [
+            pos,
+            2.5f32.to_bits(),
+            (-0.75f32).to_bits(),
+            n.cast_unsigned(),
+        ];
+        let call = Call {
+            ecx: rec_,
+            edx: if c % 3 == 0 { u32::MAX } else { c % 4 },
+            ..Call::default()
+        }
+        .with_xmm(&[
+            Xmm::f32(9.0),
+            Xmm::f32(8.0),
+            Xmm::f32(7.0),
+            Xmm::f32(0.125 + c as f32),
+        ]);
+        ownb::dirty_stack(&mut t, 0x23a0 + c, &[]);
+        t.check(f, call, &args, Eax::Checked, |g, img, fr| {
+            ffx_magic::r41::record_start_0250(g, img, fr)
+        });
     }
 }

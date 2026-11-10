@@ -3627,3 +3627,50 @@ pub const SHARDS_STEP_0269: Sig = Sig {
     calls: &[(0x3b6, Callee::Sig(&SHARD_DRAW_0269)), (0x3f4, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0250`'s record start (0x100023a0, 653 bytes; internal: `ecx` =
+/// the record, `edx` = the actor's index, `xmm3` = a scale, the stack
+/// `(pos, s1, s2, n)`): [`record_node_start`](crate::o6_fam_pairs5::record_node_start)
+/// with the character `A` the actor's (`G_SELF` for -1, else the
+/// selection's byte), `+0xa4` = `n` and `+0x9c` = `K / n` instead of the
+/// copy's immediates, its operands moved.
+pub fn record_start_0250<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ops = crate::o6_fam_pairs5::NodeOps {
+        a: 0x24,
+        t217: (0x38, 0x3f),
+        t234: (0x8e, 0x94),
+        t233: [(0xf9, 0xff), (0x11b, 0x121), (0x13d, 0x143)],
+        free: 0x193,
+        k_a4: 0,
+        k_9c: 0,
+        head: 0x1df,
+        callback: 0x235,
+        free_w: 0x240,
+        last_cmp: 0x246,
+        last: 0x25f,
+        last_w: 0x272,
+        first_w: 0x27d,
+    };
+    let a = if fr.edx == u32::MAX {
+        g.read::<u32>(w(0x24))
+    } else {
+        u32::from(g.read::<u8>(g.read::<u32>(w(0x2b)).wrapping_add(fr.edx)))
+    };
+    let n = fr.arg(g, 3);
+    let tail = |g: &G| {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps, rounded as the original
+        let k = div(f32_at(g, w(0x150)), n.cast_signed() as f32);
+        (n, k.to_bits())
+    };
+    crate::o6_fam_pairs5::node_start_with(g, img, fr, fr.ecx, &ops, a, tail)
+}
+
+/// [`record_start_0250`] (the `rel32`: the cookie check).
+pub const RECORD_START_0250: Sig = Sig {
+    len: 653,
+    hash: 0x2a8e_e80d_7afe_e955,
+    calls: &[(0x285, Callee::Any)],
+    imports: &[],
+};

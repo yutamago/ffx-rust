@@ -5286,6 +5286,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 spark 0376", &r41::SPARK_0376),
     ("r41 start-up 0269", &r41::START_UP_0269),
     ("r41 shard draw 0269", &r41::SHARD_DRAW_0269),
+    ("r41 record start 0250", &r41::RECORD_START_0250),
     // round 41 (magic-r41): end of INTERNAL
 ];
 
