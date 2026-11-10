@@ -91,6 +91,7 @@ pub fn scene_0515<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Option<Ret> {
     let state = c.gw(g, img, 0x141);
     if state <= 0x64 {
         match state {
+            0 => state_0_0515(g, img, &c),
             1 => state_1(g, img, &c, 0),
             6 => state_6(g, img, &c, 0),
             8 => state_8(g, img, &c, 0),
@@ -1766,5 +1767,172 @@ fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: 
             (a, 0x3e2e_147b),
         );
         set_half(g, img, c, 0x3d74 + d, 0);
+    }
+}
+
+/// [`part_motion`](crate::s6_misc::part_motion) with all seven stack
+/// words given.
+fn motion_words<G: Game>(
+    g: &mut G,
+    img: &Image,
+    c: &Scene,
+    call: u32,
+    (part, index): (u32, u32),
+    (x2, x3): (f32, f32),
+    words: [u32; 7],
+) {
+    let sp = c.s.wrapping_sub(0x1c);
+    for (i, v) in (0u32..).zip(words) {
+        g.write::<u32>(sp + 4 * i, v);
+    }
+    let mut fr = c.frame(img, call, 7);
+    fr.ecx = part;
+    fr.edx = index;
+    fr.xmm[2] = u128::from(x2.to_bits());
+    fr.xmm[3] = u128::from(x3.to_bits());
+    crate::s6_misc::part_motion(g, img, &fr);
+}
+
+/// State 0 of `magic_0515` (`+0x15c`): once (the halfword `G_O`): with
+/// either flag `G_A`/`G_B`, slot 278 `(*G_M, 4..=7, 1)`; slot 306 `(0)`,
+/// the actors' slot 296, slot 309 on the sounds, the three records' slot
+/// 296, the records' with 0, both part groups' live axes, the first
+/// model's sound (its answer the count `G_N`), the first model on the
+/// centre, the matrix turned by its angle, the camera record started.
+/// While not busy: at the camera's second record (just begun) slot 295 on
+/// the records; by the count: 0x3e slot 220 and part P9's motion, 0x19
+/// the centre from the first model's point 5 (slot 237) lowered by its
+/// height (slot 289), part P10's motion and slot 276; between 6 and 0x15
+/// the spread `(n - 6) / K`, else the flash off; the count steps down,
+/// and at 0 the model's sound gives the count and state 1 starts.
+#[allow(clippy::too_many_lines)] // the original's state, in order
+fn state_0_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
+    use crate::sb_sse::{div, sub};
+    let rec = |o: u32| c.w(img, o);
+    if half(g, img, c, 0x15f) == 0 {
+        set_half(g, img, c, 0x178, 1);
+        if c.gw(g, img, 0x16c) != 0 || c.gw(g, img, 0x180) != 0 {
+            for (op, m, k) in [
+                (0x188u32, 0x198u32, 4u32),
+                (0x19f, 0x1b2, 5),
+                (0x1b9, 0x1cc, 6),
+                (0x1d3, 0x1e6, 7),
+            ] {
+                let x = c.gw(g, img, m);
+                call_slot(g, img, c, (op, 278), &[x, k, 1]);
+            }
+        }
+        let eax = crate::sa_misc::slot306(g, img, c.target(img, 0x1f3), 0);
+        let fr = Frame {
+            eax,
+            ..c.frame(img, 0x1fd, 0)
+        };
+        let eax = crate::s4_misc::actors_296(g, img, &fr).eax;
+        crate::sa_misc::repeat_309(g, img, c.target(img, 0x202), eax);
+        for (call, r) in [(0x20eu32, 0x209u32), (0x21a, 0x215), (0x226, 0x221)] {
+            crate::sa_misc::record_296(g, img, c.target(img, call), rec(r), 0);
+        }
+        g.write::<u32>(c.s.wrapping_sub(4), 0);
+        crate::s4_small::records_296_with(g, img, &c.frame(img, 0x22d, 1));
+        let axes = |g: &mut G, call: u32, ecx: u32, edx: u32| {
+            let fr = Frame {
+                ecx,
+                edx,
+                ..c.frame(img, call, 0)
+            };
+            crate::s6_misc::live_parts_axes(g, img, &fr);
+        };
+        axes(g, 0x23f, rec(0x23a), 3);
+        let n = c.gw(g, img, 0x245);
+        axes(g, 0x24f, rec(0x24a), n);
+        let s = crate::sa_misc::sound_start(g, img, c.target(img, 0x25e), rec(0x259), 0xc0);
+        let p0 = g.read::<u64>(rec(0x266));
+        let a = i32::from(g.read::<i16>(rec(0x26d))).cast_unsigned();
+        g.write::<u64>(rec(0x275), p0);
+        let p1 = g.read::<u64>(rec(0x27d));
+        g.write::<u16>(rec(0x283), s as u16);
+        g.write::<u64>(rec(0x28b), p1);
+        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x290), a);
+        let mut fr = c.frame(img, 0x29a, 0);
+        fr.ecx = rec(0x295);
+        crate::s6_misc::camera_tracks_from(g, img, &fr);
+    }
+    if c.busy(g, img, 0x29f) {
+        return;
+    }
+    if c.gw(g, img, 0x2ae) == 2 && c.gw(g, img, 0x2b7) == 0 {
+        crate::sa_misc::records_295(g, img, c.target(img, 0x2bf));
+    }
+    let n = half(g, img, c, 0x2c6);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let angle = |g: &G, o: u32| f32::from(g.read::<i16>(rec(o))).to_bits();
+    let n = if n == 0x3e {
+        let mut fr = c.frame(img, 0x2d8, 1);
+        fr.ecx = c.gw(g, img, 0x2d3);
+        crate::s4_misc::call_220(g, img, &fr);
+        let ang = angle(g, 0x2df);
+        let (x3, x2) = (kf(g, img, c, 0x2e7), kf(g, img, c, 0x2ef));
+        let a = c.gw(g, img, 0x326);
+        let k = 0x3e4c_cccd;
+        motion_words(
+            g,
+            img,
+            c,
+            0x342,
+            (rec(0x338), 0xa),
+            (x2, x3),
+            [a, 0, ang, 0, k, k, k],
+        );
+        half(g, img, c, 0x412)
+    } else if n == 0x19 {
+        let x = c.gw(g, img, 0x36e);
+        call_slot(g, img, c, (0x359, 237), &[x, 5, 0, rec(0x35e)]);
+        let id = c.gw(g, img, 0x376);
+        let (h, _) = crate::sb_nodes::float_289(g, img, c.target(img, 0x37b), id);
+        let ang = angle(g, 0x382);
+        let x2 = kf(g, img, c, 0x38a);
+        let x3 = sub(h, kf(g, img, c, 0x395));
+        let a = c.gw(g, img, 0x3d1);
+        g.write::<f32>(rec(0x3e6), x3);
+        let k = 0x3db8_51ec;
+        motion_words(
+            g,
+            img,
+            c,
+            0x3f0,
+            (rec(0x3de), 0xc),
+            (x2, x3),
+            [a, 0, ang, 0, k, k, k],
+        );
+        let m = c.gw(g, img, 0x406);
+        call_slot(g, img, c, (0x3f5, 276), &[m, 1]);
+        half(g, img, c, 0x412)
+    } else {
+        n
+    };
+    let w = c.gw(g, img, 0x417).wrapping_sub(6);
+    if (w as u16) <= 0xf {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+        let s = div(
+            (i32::from(n.cast_signed()) - 6) as f32,
+            kf(g, img, c, 0x436),
+        );
+        let mut fr = c.frame(img, 0x443, 1);
+        fr.ecx = rec(0x43b);
+        fr.xmm[1] = u128::from(s.to_bits());
+        fr.xmm[2] = u128::from(s.to_bits());
+        crate::sa_misc::spread_set(g, &fr);
+    } else {
+        crate::r25::abs_stores(g, img, c.f, 0x44c, 0x453);
+    }
+    let at = rec(0x456);
+    let t = g.read::<u16>(at).wrapping_add(1);
+    g.write::<u16>(at, t);
+    let n = n.wrapping_sub(1);
+    set_half(g, img, c, 0x45f, n);
+    if n == 0 {
+        let s = crate::sa_misc::sound_start(g, img, c.target(img, 0x474), rec(0x46f), 0xc1);
+        g.write::<u16>(rec(0x47a), s as u16);
+        crate::r25::abs_stores(g, img, c.f, 0x47e, 0x488);
     }
 }
