@@ -3425,7 +3425,8 @@ pub fn spawn_0250<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(o + 0x28, x);
         g.write::<u32>(o + 0x2c, 0);
         g.write::<u32>(o + 0x30, 0x3f80_0000);
-        g.write::<u32>(o + 0x34, 0x3f80_0000);
+        // the immediate: 1.0 in `magic_0250`, 2.0 in `magic_0251`
+        g.write::<u32>(o + 0x34, w(0x4aa));
         let y = g.read::<u32>(local(0x40));
         g.write::<u32>(o + 0x3c, y);
         let x = st0(rnd(g, 0x495, 0x4049_0fdb));

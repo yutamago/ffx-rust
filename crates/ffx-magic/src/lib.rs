@@ -94,6 +94,7 @@ pub mod r40;
 pub mod r41;
 pub mod r42;
 pub mod r43;
+pub mod r45;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3432,6 +3433,12 @@ ports! {
     "r43 curve task 0251" => r43::CURVE_TASK_0251, r43::curve_task_0251;
     "r43 end task 0348" => r43::END_TASK_0348, r43::end_task_0348;
     // round 43 (magic-r43): end
+    // round 45 (magic-r45)
+    "r45 summon start 0394" => r45::SUMMON_START_0394, r45::summon_start_0394;
+    "r45 object start 0348" => r45::OBJECT_START_0348, r45::object_start_0348;
+    "r45 spawn 0251" => r45::SPAWN_0251, r43::spawn_0250;
+    "r45 task step 0392" => r45::TASK_STEP_PASS_0392, m0449::task_step_pass;
+    // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5380,6 +5387,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r43 set-up 0420", &r43::SETUP_0420),
     ("r43 sparks 0394", &r43::SPARKS_0394),
     // round 43 (magic-r43): end of INTERNAL
+    // round 45 (magic-r45)
+    ("r45 actors pass 0392", &r45::ACTORS_PASS_0392),
+    // round 45 (magic-r45): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
