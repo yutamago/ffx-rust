@@ -3369,6 +3369,8 @@ ports! {
     "r42 records task 0072" => r42::RECORDS_TASK_0072, r42::records_task_0072;
     "r42 summon task 0152" => r42::SUMMON_TASK_0152, r42::summon_task_0152;
     "r42 scene task 0186" => r42::SCENE_TASK_0186, r42::scene_task_0186;
+    "r42 summon task 0178" => r42::SUMMON_TASK_0178, r42::summon_task_0178;
+    "r42 start-up 0178" => r42::START_UP_0178, r42::start_up_0178;
     // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3762,6 +3764,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 42 (magic-r42)
     ("r42 matrix visit 0186", &r42::MATRIX_VISIT_0186),
     ("r42 screen set-up 0152", &r42::SCREEN_SETUP_0152),
+    ("r42 scene 0178", &r42::SCENE_0178),
     // round 42 (magic-r42): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),

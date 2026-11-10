@@ -725,7 +725,14 @@ pub const JMP_PATH_RUN_0186: Sig = Sig {
 /// < 0`: the base less `atan(x / z)`; otherwise by the signs (`x > 0`: 0).
 /// `atan` is MSVCR110's `_libm_sse2_atan_precise` on the `f64` quotient,
 /// rounded to `f32`.
-fn flat_angle<G: Game>(g: &mut G, img: &Image, f: u32, x: f32, z: f32, k: [u32; 7]) -> f32 {
+pub(crate) fn flat_angle<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    x: f32,
+    z: f32,
+    k: [u32; 7],
+) -> f32 {
     use crate::sb_sse::{add, div, mul, sub};
     let c = |g: &G, i: usize| g.read::<f32>(img.word(f + k[i]));
     let p = mul(x, z);

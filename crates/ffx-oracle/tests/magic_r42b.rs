@@ -19,6 +19,7 @@ mod ownb;
 #[path = "magic/summon_stubs.rs"]
 mod summon_stubs;
 
+use ffx_magic::{Ret, r42};
 use magic::{Call, Eax, SCRATCH, Twin};
 use ownb::rec;
 use summon_stubs::{all_stubs, prime};
@@ -285,7 +286,11 @@ fn scene_task_0186() {
     let saved: Vec<u32> = [leaving, lp, ln].iter().map(|&x| t.u32(x)).collect();
     // (state, count, slot 411's answer, flag byte, fade, the leaving
     // node's parent: 0 none, 1 primed, 2 the neighbours are the parent)
-    let cases: [(u32, u32, u32, u8, f32, u32); 22] = [
+    // the parent list's last word (the end scene's first append)
+    let plast = w(&t, 0xd6);
+    let plast0 = t.u32(plast);
+    let other = SCRATCH + 0x3700;
+    let cases: [(u32, u32, u32, u8, f32, u32); 25] = [
         (0, 0, 0, 0, 0.0, 1),
         (0xa, 0, 0, 0, 0.0, 1),
         (0xb, 0x17, 0, 0, 0.0, 1),
@@ -303,6 +308,9 @@ fn scene_task_0186() {
         (0x20, 0x3c, 0, 0, 0.0, 1),
         (0x20, 0, 0, 4, -1.0, 0),
         (0x20, 0x50, 0, 0, -1.0, 2),
+        (0x20, 0x51, 0, 0, -1.0, 3),
+        (0x20, 0x52, 0, 0, -1.0, 4),
+        (0xa, 0, 0, 0, 0.0, 5),
         (0x2710, 0x3b, 0, 0, 0.0, 1),
         (0x2710, 0x3c, 0, 0, 0.0, 1),
         (5, 0, 0, 0, 0.0, 1),
@@ -321,13 +329,27 @@ fn scene_task_0186() {
         for (&g, &v) in [leaving, lp, ln].iter().zip(&saved) {
             t.set_u32(g, v);
         }
+        t.set_u32(plast, plast0);
+        t.write(other, &[0x6e; 0x20]);
+        // the flag globals the states set bits in
+        for op in [0x53au32, 0x712] {
+            let g = w(&t, op);
+            t.set_u32(g, 0x5d5d_5d50 + k);
+        }
+        // 0: no parent; 2, 3: one neighbour the parent, the other a node;
+        // 4: the parent list empty (its last the parent)
+        let p = t.u32(leaving);
         match lv {
             0 => t.set_u32(leaving, 0),
             2 => {
-                let p = t.u32(leaving);
                 t.set_u32(lp, p);
+                t.set_u32(ln, other);
+            }
+            3 => {
+                t.set_u32(lp, other);
                 t.set_u32(ln, p);
             }
+            4 => t.set_u32(plast, w(&t, 0x114)),
             _ => {}
         }
         t.set_u32(a, node);
@@ -343,4 +365,208 @@ fn scene_task_0186() {
         };
         t.check_entry(f, call, &[a], Eax::Checked);
     }
+}
+
+/// The actors' positions slot 217 gives in `magic_0178`'s tests (four
+/// floats each, by the actor word's low two bits).
+const POS_0178: u32 = SCRATCH + 0x7a00;
+
+/// The stubs of `magic_0178`'s tests: the summon stubs; 217 an actor's
+/// position ([`POS_0178`]), 218 a target list, 531 four words, 289 a
+/// float, the scene's slots logged with answers from the words they read,
+/// 12 a float in ST0.
+fn stubs_0178(t: &mut Twin) {
+    all_stubs(t);
+    summon_stubs::float_matrix_stubs(t);
+    summon_stubs::vector_stubs(t);
+    summon_stubs::summon_stubs(t);
+    rec(t, 217, 2, |m, a| {
+        let at = POS_0178 + 0x10 * (a[0] & 3);
+        for i in 0..4 {
+            let x = m.r32(at + 4 * i);
+            m.w32(a[1] + 4 * i, x);
+        }
+        0x217
+    });
+    let list = SCRATCH + 0x6000;
+    rec(t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        0x531
+    });
+    rec(t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    for (s, n) in [
+        (215u32, 1usize),
+        (240, 1),
+        (213, 2),
+        (696, 2),
+        (268, 3),
+        (666, 2),
+        (718, 1),
+        (719, 3),
+        (711, 3),
+        (710, 4),
+        (222, 4),
+        (221, 4),
+        (551, 3),
+    ] {
+        // the answer from the words the slot reads only
+        rec(t, s, n, move |_, a| {
+            let b = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ b.rotate_left(7)
+        });
+    }
+    rec(t, 12, 1, |_, a| 0x12 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25 + 1.0);
+    // the other float slots the summon code reads ST0 of
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(333u32, 0.75f64), (282, 2.25), (307, 0.625)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    rec(t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+}
+
+/// `magic_0178` 0x100069a0 (`r42::scene_0178`): the parent's list empty
+/// and not, the lists' and flags' words junk.
+#[test]
+fn scene_0178() {
+    let Some(mut t) = twin(178) else { return };
+    stubs_0178(&mut t);
+    let f = t.at(0x69a0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let parent = w(&t, 0x50);
+    let plast = w(&t, 0x15);
+    let list2 = w(&t, 0x51a);
+    let l2last = w(&t, 0x4da);
+    let slast = w(&t, 0x540);
+    let other = SCRATCH + 0x3700;
+    for k in 0..3u32 {
+        t.write(other, &[0x6e ^ k as u8; 0x40]);
+        t.set_u32(plast, if k == 1 { other } else { parent });
+        t.set_u32(l2last, if k == 2 { other } else { list2 });
+        t.set_u32(slast, other + 0x20);
+        for op in [0x5a2u32, 0x5fe, 0x652] {
+            let g = w(&t, op);
+            t.set_u32(g, 0x5d5d_5d50 + k);
+        }
+        t.set_u8(w(&t, 0x43c), 0x30 + k as u8);
+        ownb::dirty_stack(&mut t, 0x69a0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r42::scene_0178(g, img, fr.at, fr.esp))
+        });
+    }
+    assert!(t.u32(ownb::LOG) > 0x40, "the scene's calls");
+}
+
+/// `magic_0178` 0x10007020 (`r42::summon_task_0178`): the states 0, 2
+/// (the timer below, at and past its end, NaN), 3 (slot 240's answer 0
+/// and not), 1 and 7.
+#[test]
+fn summon_task_0178() {
+    let Some(mut t) = twin(178) else { return };
+    stubs_0178(&mut t);
+    let f = t.at(0x7020);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 240, 1, move |m, _| m.r32(answer));
+    let st = w(&t, 0x6);
+    let timer = w(&t, 0x78);
+    let end = f32::from_bits(t.u32(w(&t, 0x87)));
+    let step = f32::from_bits(t.u32(w(&t, 0x80)));
+    let (a, node, n0, n1) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x3600,
+        SCRATCH + 0x3680,
+        SCRATCH + 0x36c0,
+    );
+    let cases: [(u16, f32, u32); 9] = [
+        (0, 3.0, 0),
+        (2, 0.0, 0),
+        (2, end - step, 0),
+        (2, end + 1.0, 0),
+        (2, f32::NAN, 0),
+        (3, 0.0, 0),
+        (3, 0.0, 9),
+        (1, 0.0, 0),
+        (7, 0.0, 0),
+    ];
+    for (k, (state, x, ans)) in (0u32..).zip(cases) {
+        t.set_u16(st, state);
+        t.set_u32(timer, x.to_bits());
+        t.set_u32(answer, ans);
+        t.set_u32(a, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0x7020 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0178` 0x10007100 (`r42::start_up_0178`): the actors in every
+/// quadrant of the flat angle (and on the axes, at the same place), the
+/// static list empty and not, the lock word varied.
+#[test]
+fn start_up_0178() {
+    let Some(mut t) = twin(178) else { return };
+    stubs_0178(&mut t);
+    let f = t.at(0x7100);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let list = SCRATCH + 0x6000;
+    let lock = SCRATCH + 0x7f50;
+    t.set_u32(w(&t, 0x731), lock);
+    let slast = w(&t, 0x7e8);
+    let other = SCRATCH + 0x3700;
+    // (x, z) of `Q - P` (the actor `*G_A` at 0, the caster byte at 1)
+    let quads: [(f32, f32); 10] = [
+        (2.0, 3.0),
+        (-2.0, -3.0),
+        (2.0, -3.0),
+        (-2.0, 3.0),
+        (0.0, 3.0),
+        (0.0, -3.0),
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (-2.0, 0.0),
+        (f32::NAN, 1.0),
+    ];
+    for (k, (x, z)) in (0u32..).zip(quads) {
+        // P at actor 0 (the word *G_A with low bits 0), Q at actor 1
+        let pa = w(&t, 0x534);
+        t.set_u32(pa, 0x0abc_0000 + 4 * k);
+        t.set_u8(w(&t, 0x548), 1);
+        for (i, v) in [1.0f32, 0.5, -1.0, 1.0].into_iter().enumerate() {
+            t.set_u32(POS_0178 + 4 * i as u32, v.to_bits());
+        }
+        for (i, v) in [1.0 + x, 0.25, -1.0 + z, 1.0].into_iter().enumerate() {
+            t.set_u32(POS_0178 + 0x10 + 4 * i as u32, v.to_bits());
+        }
+        t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+        t.set_u32(list + 0x7c, k % 2 + 1);
+        t.set_u32(lock, 0x40 + k);
+        t.write(other, &[0x6e ^ k as u8; 0x40]);
+        t.set_u32(slast, other + 0x20);
+        t.set_u32(w(&t, 0x829), 0x5d5d_5d50 + k);
+        t.set_u8(w(&t, 0xef), 0x30 + k as u8);
+        ownb::dirty_stack(&mut t, 0x7100 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+    assert!(t.u32(ownb::LOG) > 0x100, "the start-up's calls");
 }
