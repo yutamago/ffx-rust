@@ -1944,3 +1944,56 @@ fn object_step_0251() {
         assert!(c >= n, "slot {sl}: {c} calls");
     }
 }
+
+/// `magic_0385` 0x10004e50 (`r43::weapon_frame_0385`): the matrix slots
+/// write (and read back) what they get, slot 277's height in ST0; two
+/// characters and heights.
+#[test]
+fn weapon_frame_0385() {
+    let Some(mut t) = sa::twin(385) else { return };
+    let f = t.at(0x4e50);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 236, 3, |m, a| {
+        for i in 0..16 {
+            wf(m, a[2] + 4 * i, (a[1] & 0xf) as f32 * 0.5 + i as f32 - 4.0);
+        }
+        0x236
+    });
+    rec(&mut t, 277, 1, |_, a| 0x0277_0000 ^ a[0]);
+    t.stub_st0(277, |_, a| 0.5 + f64::from(a[0] & 3));
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    rec(&mut t, 330, 3, |m, a| {
+        let x = f32::from_bits(a[2]);
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) + x * (i % 3) as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x330
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    for i in 0..8 {
+        t.set_u32(w(0x24) + 4 * i, 0x0c00 + i);
+    }
+    let s = SCRATCH + 0x1000;
+    for (k, (who, c)) in (0u32..).zip([(3u32, 0x41u32), (6, 0x42)]) {
+        junk(&mut t, s, 0x140, k);
+        t.set_u32(s + 0x120, who);
+        t.set_u32(w(0x2f), c);
+        t.set_u32(w(0x42), c + 1);
+        ownb::dirty_stack(&mut t, 0x4e50 + k, &[]);
+        t.check_entry(f, Call::default(), &[s], Eax::Checked);
+    }
+}

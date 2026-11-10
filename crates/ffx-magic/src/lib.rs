@@ -3412,6 +3412,7 @@ ports! {
     "r43 turn step 0394" => r43::TURN_STEP_0394, r43::turn_step_0394;
     "r43 flight 0394" => r43::FLIGHT_0394, r43::flight_0394;
     "r43 object step 0251" => r43::OBJECT_STEP_0251, r43::object_step_0251;
+    "r43 weapon frame 0385" => r43::WEAPON_FRAME_0385, r43::weapon_frame_0385;
     // round 43 (magic-r43): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

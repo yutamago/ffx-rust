@@ -4991,3 +4991,60 @@ pub const OBJECT_STEP_0251: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0385`'s weapon frame (0x10004e50, 378 bytes; a callback, cdecl
+/// `(S)`; a /GS `ebp` frame, the matrix `M` at `ebp - 0x44`, `W` at `ebp -
+/// 0x84`): slot 236 `(*G_C, chr, &M)` with `chr` the character table's
+/// entry `S[0x120]`, its three rows' first three terms scaled by `K /
+/// h` (`h` slot 277's ST0 of `*G_C`), a unit matrix `W` (slot 235) turned
+/// a quarter (slot 330 `(W, W, pi/2)`), slot 231 `(S + 0x80, &M, &W)`;
+/// `S + 0xd0..` = `M`'s last row. Returns slot 231's `eax`.
+pub fn weapon_frame_0385<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, wm) = (ebp.wrapping_sub(0x44), ebp.wrapping_sub(0x84));
+    let s = fr.arg(g, 0);
+    let i = g.read::<u32>(s.wrapping_add(0x120));
+    let chr = g.read::<u32>(w(0x24).wrapping_add(i.wrapping_mul(4)));
+    let c = g.read::<u32>(w(0x2f));
+    // call width: 3
+    g.call(slot_target(g, w(0x29), 236), 0, &[c, chr, m]);
+    let c2 = g.read::<u32>(w(0x42));
+    // call width: 4 (slot 236's words under it)
+    let out = g.call(slot_target(g, w(0x3c), 277), 0, &[c2, c, chr, m]);
+    let h = crate::m0018::st0_f32(out.st0);
+    let k = div(f32::from_bits(g.read::<u32>(w(0x58))), h);
+    for row in 0..3u32 {
+        for col in 0..3u32 {
+            let at = m + 0x10 * row + 4 * col;
+            let v = mul(g.read::<f32>(at), k);
+            g.write::<f32>(at, v);
+        }
+    }
+    // call width: 5 (the earlier words stay)
+    g.call(slot_target(g, w(0x83), 235), 0, &[wm, c2, c, chr, m]);
+    // call width: 3
+    g.call(slot_target(g, w(0x109), 330), 0, &[wm, wm, 0x3fc9_0fdb]);
+    // call width: 6 (slot 330's words stay under these)
+    let eax = g
+        .call(
+            slot_target(g, w(0x128), 231),
+            0,
+            &[s.wrapping_add(0x80), m, wm, wm, wm, 0x3fc9_0fdb],
+        )
+        .eax;
+    for i in 0..4u32 {
+        let v = g.read::<u32>(m + 0x30 + 4 * i);
+        g.write::<u32>(s.wrapping_add(0xd0 + 4 * i), v);
+    }
+    Ret::eax(eax)
+}
+
+/// [`weapon_frame_0385`] (the `rel32`: the cookie check).
+pub const WEAPON_FRAME_0385: Sig = Sig {
+    len: 378,
+    hash: 0x8688_e867_4045_d902,
+    calls: &[(0x172, Callee::Any)],
+    imports: &[],
+};
