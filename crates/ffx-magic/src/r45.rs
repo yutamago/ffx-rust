@@ -2157,3 +2157,329 @@ pub const LOAD_0266: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0266))],
     imports: &[],
 };
+
+/// `magic_0434`'s projected points (0x10004770, 207 bytes; internal:
+/// `ecx` = the source points `A`, `edx` = the outputs `D` (16 bytes
+/// each), stack `(n, M)`; a /GS frame, the point `T` at `ebp - 0x14`):
+/// for each of `n` points, `T` = `A[i]` (slot 325), `T.x *= K1`, `D[i]` =
+/// slot 229 `(D[i], M, T)`, then divided by its `w`: `x`, `y`, `z` over
+/// `w` and `w` = `K2 / w`. Returns `A` past the last point (`A` when `n`
+/// is not positive).
+pub fn project_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let n = fr.arg(g, 0);
+    let m = fr.arg(g, 1);
+    let tmp = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let (mut a, mut d) = (fr.ecx, fr.edx);
+    if n.cast_signed() <= 0 {
+        return Ret::eax(a);
+    }
+    for _ in 0..n {
+        g.call(slot_target(g, w(0x36), 325), 0, &[tmp, a]);
+        let x = mul(g.read::<f32>(tmp), k(g, 0x4b));
+        g.write::<f32>(tmp, x);
+        // call width: 5 (slot 325's words under it)
+        g.call(slot_target(g, w(0x54), 229), 0, &[d, m, tmp, tmp, a]);
+        let ww = g.read::<f32>(d + 0xc);
+        for o in [0u32, 4, 8] {
+            let v = div(g.read::<f32>(d + o), ww);
+            g.write::<f32>(d + o, v);
+        }
+        g.write::<f32>(d + 0xc, div(k(g, 0xa5), ww));
+        a = a.wrapping_add(0x10);
+        d = d.wrapping_add(0x10);
+    }
+    Ret::eax(a)
+}
+
+/// [`project_0434`] (the `rel32`: the cookie check).
+pub const PROJECT_0434: Sig = Sig {
+    len: 207,
+    hash: 0x30d9_f6ac_caa4_2569,
+    calls: &[(0xc7, Callee::Any)],
+    imports: &[],
+};
+
+/// A sprite fan record `F` (`magic_0434`'s object starts): colour
+/// 0x30808080 (`+0xf0`), `+0x124` 4, `+0x120`, `+0x110` 0, the rates
+/// `+0xf8..+0x100` 0.025, the sizes `+0x108`, `+0x104` = `n`, `+0x10c` 8;
+/// then a task node (`ops`: the owner immediate and the pool take's
+/// `rel32`, the list's first (read), last (read), last (store), first
+/// and last (stores when empty)) holding it, appended to the list.
+/// Returns the node.
+fn fan_node_0434<G: Game>(g: &mut G, img: &Image, f: u32, fan: u32, n: u32, ops: [u32; 7]) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let [owner, take, first, last, last_w, first_e, last_e] = ops;
+    g.write::<u32>(fan + 0xf0, 0x3080_8080);
+    g.write::<u32>(fan + 0x124, 4);
+    g.write::<u32>(fan + 0x120, 0);
+    g.write::<u32>(fan + 0x110, 0);
+    for o in [0xf8u32, 0xfc, 0x100] {
+        g.write::<u32>(fan + o, 0x3ccc_cccd);
+    }
+    g.write::<u32>(fan + 0x108, n);
+    g.write::<u32>(fan + 0x104, n);
+    g.write::<u32>(fan + 0x10c, 8);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + take), w(owner));
+    let listed = g.read::<u32>(w(first)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), fan);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(last));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(w(last_w), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(first_e), node);
+        g.write::<u32>(w(last_e), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    node
+}
+
+/// The scale `K1 / slot 282 () * K2` of `magic_0434`'s object starts
+/// (slot 282's float stored as `f32` first).
+fn fan_scale_0434<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 3]) -> f32 {
+    let w = |o: u32| img.word(f + o);
+    let v = st0_f32(g.call(slot_target(g, w(ops[0]), 282), 0, &[]).st0);
+    mul(div(g.read::<f32>(w(ops[1])), v), g.read::<f32>(w(ops[2])))
+}
+
+/// `magic_0434`'s glow start (0x10007d80, 270 bytes; a table entry, no
+/// arguments): with `S = *G_S`, the object `S + 0x850` starts
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), index 7,
+/// value 0) at the scale `K1 / slot 282 () * K2`, its callback `S +
+/// 0x954` = `CB` and byte `S + 0x976` 2; the fan `S + 0x1938`
+/// ([`fan_node_0434`], 60). Returns the node.
+pub fn glow_start_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x13));
+    let scale = fan_scale_0434(g, img, f, [0x5, 0x20, 0x30]);
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x3f), s + 0x850, scale, 7, 0);
+    g.write::<u32>(s + 0x954, w(0x4f));
+    g.write::<u8>(s + 0x976, 2);
+    Ret::eax(fan_node_0434(
+        g,
+        img,
+        f,
+        s + 0x1938,
+        0x3c,
+        [0xa4, 0xc7, 0xcd, 0xe2, 0xec, 0xfe, 0x103],
+    ))
+}
+
+/// [`glow_start_0434`] (the `rel32`s: the object start, the pool take).
+pub const GLOW_START_0434: Sig = Sig {
+    len: 270,
+    hash: 0x6935_a280_1563_c9b5,
+    calls: &[
+        (0x3f, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0xc7, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0434`'s glow and summon start (0x100069a0, 347 bytes; a table
+/// entry, no arguments): as [`glow_start_0434`] with the object `S +
+/// 0x980` (index 8; its callback `S + 0xa84`, byte `S + 0xaa6` 2), then
+/// the object `O = S + 0x130` (scale `K3`, index 1, value 0) with the yaw
+/// `+0xc4` = `S + 0x1a68`, placed by slot 237 `(*G_C, 0x73, 0, O +
+/// 0xd0)` (the start's words under it), `w` 1.0; the fan `S + 0x1810`
+/// (80). Returns the node.
+pub fn summon_glow_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x13));
+    let scale = fan_scale_0434(g, img, f, [0x5, 0x20, 0x30]);
+    let start = img.rel32_target(f + 0x3f);
+    crate::s4_misc::start_object_anim(g, img, start, s + 0x980, scale, 8, 0);
+    let k3 = g.read::<f32>(w(0x47));
+    g.write::<u32>(s + 0xa84, w(0x60));
+    g.write::<u8>(s + 0xaa6, 2);
+    let o = s + 0x130;
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x6c), o, k3, 1, 0);
+    let yaw = g.read::<u32>(s + 0x1a68);
+    g.write::<u32>(o + 0xc4, yaw);
+    let p = o + 0xd0;
+    let c = g.read::<u32>(w(0x94));
+    // call width: 6 (the start's index and value under it)
+    g.call(slot_target(g, w(0x7d), 237), 0, &[c, 0x73, 0, p, 1, 0]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    Ret::eax(fan_node_0434(
+        g,
+        img,
+        f,
+        s + 0x1810,
+        0x50,
+        [0xf1, 0x114, 0x11a, 0x12f, 0x139, 0x14b, 0x150],
+    ))
+}
+
+/// [`summon_glow_0434`] (the `rel32`s: the two object starts, the pool
+/// take).
+pub const SUMMON_GLOW_0434: Sig = Sig {
+    len: 347,
+    hash: 0x78a1_4e4b_ff3d_e66a,
+    calls: &[
+        (0x3f, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x6c, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x114, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0434`'s bone matrix (0x10005600, 303 bytes; internal: `ecx` =
+/// the model `O`, `edx` = a bone `j`, stack `(B)`; a /GS frame: the
+/// matrices `M` at `ebp - 0x44`, `M2` at `ebp - 0x84`, `M3` at `ebp -
+/// 0xc4`). Without a model handle (`O + 0x830` 0) it returns the frame's
+/// cookie word (`cookie ^ ebp`); else `M` = slot 235 scaled by `K` on its
+/// diagonal (`M[0]`, `M[5]`, `M[10]`), `M2` = slot 231 `(M2, B, M)`; bone
+/// 0 gets slot 842 `(O[0x830], M2, 0)`; another bone `j` gets `M3` =
+/// slot 231 `(M3, M2, X)` with `X` = `O[0x328] + 0x88 + 0x160 n` (`n` the
+/// halfword at the bone's record `(O[0x1bc])[0x38 j]`), then slot 842
+/// `(O[0x830], M3, j)`. Returns slot 842's `eax`.
+pub fn bone_matrix_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (o, j) = (fr.ecx, fr.edx);
+    let b = fr.arg(g, 0);
+    if g.read::<u32>(o.wrapping_add(0x830)) == 0 {
+        return Ret::eax(g.read::<u32>(w(0xa)) ^ ebp);
+    }
+    let (m, m2, m3) = (
+        ebp.wrapping_sub(0x44),
+        ebp.wrapping_sub(0x84),
+        ebp.wrapping_sub(0xc4),
+    );
+    g.call(t(g, 0x2f, 235), 0, &[m]);
+    let k = g.read::<f32>(w(0x44));
+    for d in [0u32, 0x14, 0x28] {
+        let x = mul(g.read::<f32>(m + d), k);
+        g.write::<f32>(m + d, x);
+    }
+    // call width: 4 (slot 235's word under it)
+    g.call(t(g, 0x75, 231), 0, &[m2, b, m, m]);
+    let h = g.read::<u32>(o.wrapping_add(0x830));
+    if j == 0 {
+        return Ret::eax(g.call(t(g, 0x96, 842), 0, &[h, m2, 0]).eax);
+    }
+    let rec = g.read::<u32>(
+        g.read::<u32>(o.wrapping_add(0x1bc))
+            .wrapping_add(j.wrapping_mul(0x38)),
+    );
+    let n = u32::from(g.read::<u16>(rec));
+    let x = g
+        .read::<u32>(o.wrapping_add(0x328))
+        .wrapping_add(0x88)
+        .wrapping_add(n.wrapping_mul(0x160));
+    g.call(t(g, 0xf4, 231), 0, &[m3, m2, x]);
+    let h = g.read::<u32>(o.wrapping_add(0x830));
+    // call width: 6 (slot 231's words under it)
+    Ret::eax(g.call(t(g, 0x109, 842), 0, &[h, m3, j, m3, m2, x]).eax)
+}
+
+/// [`bone_matrix_0434`] (the `rel32`s: the cookie checks).
+pub const BONE_MATRIX_0434: Sig = Sig {
+    len: 303,
+    hash: 0x5b23_b6a8_3780_952e,
+    calls: &[(0xb4, Callee::Any), (0x127, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0434`'s objects start (0x10006de0, 372 bytes; a table entry, no
+/// arguments): the parts registered
+/// ([`register_parts`](crate::sa_misc::register_parts)); with `S = *G_S`
+/// the object `O = S + 0x5f0` starts
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), scale `K1`,
+/// index 5, value 0) with the yaw `S + 0x1a68`, placed by slot 237
+/// `(*G_C, 0x4c, 0, O + 0xd0)` (`w` 1.0); `S + 0xab0` starts (scale `K2`,
+/// index 9, value 60) at `S + 0xca0..` with `y` less `K3` and the yaw;
+/// the light record `S + 0x1450` (colour words, sizes 0x14, u16 `+0x98`
+/// 0x48) on a task node appended to the list; a scale task over `S +
+/// 0x17a0` ([`scale_task`](crate::s4_misc::scale_task), scales `K4` and
+/// `K3`, count 0). Returns the scale task's node.
+pub fn objects_start_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x4));
+    crate::sa_misc::register_parts(g, img, img.rel32_target(f + 0x9), fr.eax);
+    let start = img.rel32_target(f + 0x25);
+    let o = s + 0x5f0;
+    crate::s4_misc::start_object_anim(g, img, start, o, k(g, 0x11), 5, 0);
+    let yaw = g.read::<u32>(s + 0x1a68);
+    g.write::<u32>(o + 0xc4, yaw);
+    let p = o + 0xd0;
+    let c = g.read::<u32>(w(0x4d));
+    // call width: 6 (the start's index and value under it)
+    g.call(slot_target(g, w(0x36), 237), 0, &[c, 0x4c, 0, p, 5, 0]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let o2 = s + 0xab0;
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x72), o2, k(g, 0x57), 9, 0x3c);
+    let k3 = k(g, 0x80);
+    for i in 0..4u32 {
+        let x = g.read::<u32>(s + 0xca0 + 4 * i);
+        g.write::<u32>(o2 + 0xd0 + 4 * i, x);
+    }
+    let y = sub(g.read::<f32>(o2 + 0xd4), k3);
+    g.write::<f32>(o2 + 0xd4, y);
+    let yaw = g.read::<u32>(s + 0x1a68);
+    g.write::<u32>(o2 + 0xc4, yaw);
+    let r = s + 0x1450;
+    g.write::<u32>(r + 0x80, 0x8080_8080);
+    g.write::<u32>(r + 0x84, 0x0080_8080);
+    g.write::<u32>(r + 0x88, 0);
+    g.write::<u16>(r + 0x98, 0x48);
+    g.write::<u32>(r + 0x90, 0x14);
+    g.write::<u32>(r + 0x8c, 0x14);
+    g.write::<u32>(r + 0x94, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x122), w(0xbe));
+    let listed = g.read::<u32>(w(0x128)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), r);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(0x13b));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x14d), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x165), node);
+    let mut xmm = fr.xmm;
+    xmm[1] = u128::from(g.read::<u32>(w(0x155)));
+    xmm[2] = u128::from(k3.to_bits());
+    // push esi, edi; push 0; the return address
+    let esp = fr.esp.wrapping_sub(0x10);
+    g.write::<u32>(esp + 4, 0);
+    let st = Frame {
+        at: img.rel32_target(f + 0x16a),
+        esp,
+        ecx: s + 0x17a0,
+        xmm,
+        ..*fr
+    };
+    crate::s4_misc::scale_task(g, img, &st)
+}
+
+/// [`objects_start_0434`] (the `rel32`s: the parts, two object starts,
+/// the pool take, the scale task).
+pub const OBJECTS_START_0434: Sig = Sig {
+    len: 372,
+    hash: 0x887e_b3c5_9f6a_c510,
+    calls: &[
+        (0x9, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+        (0x25, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x72, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x122, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x16a, Callee::Sig(&crate::s4_misc::SCALE_TASK)),
+    ],
+    imports: &[],
+};

@@ -3450,6 +3450,9 @@ ports! {
     "r45 object place 0431" => r45::OBJECT_PLACE_0431, r45::object_place_0431;
     "r45 frame 0266" => r45::FRAME_0266, r45::frame_0266;
     "r45 load step 0266" => r45::LOAD_0266, r45::load_0266;
+    "r45 glow start 0434" => r45::GLOW_START_0434, r45::glow_start_0434;
+    "r45 summon glow 0434" => r45::SUMMON_GLOW_0434, r45::summon_glow_0434;
+    "r45 objects start 0434" => r45::OBJECTS_START_0434, r45::objects_start_0434;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5408,6 +5411,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 actors step 0266", &r45::ACTORS_STEP_0266),
     ("r45 sparks 0266", &r45::SPARKS_0266),
     ("r45 start-up 0266", &r45::START_UP_0266),
+    ("r45 project 0434", &r45::PROJECT_0434),
+    ("r45 bone matrix 0434", &r45::BONE_MATRIX_0434),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
