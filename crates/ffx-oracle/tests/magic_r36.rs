@@ -3017,9 +3017,9 @@ fn summon_task_0263() {
     for (g, op) in [(rt(&t, 0x262), 0x08u32), (rt(&t, 0x3e1), 0x03)] {
         t.set_u32(t.img.word(g + op), model);
     }
-    let list = SCRATCH + 0x5400;
-    t.write(list, &[0; 0x20]);
-    t.set_u32(t.img.word(rt(&t, 0x45e) + 0x02), list);
+    // the dropped list's global is the model's (no current node at +0x14)
+    t.set_u32(model + 0x58, 0x0abc_0058);
+    t.set_u32(t.img.word(rt(&t, 0x45e) + 0x02), model);
     let task = SCRATCH + 0x1000;
     let r = SCRATCH + 0x1100;
     let node = SCRATCH + 0x1200;
@@ -3234,6 +3234,14 @@ fn sparks_0153() {
     for (g, op) in [(sb, 0x27u32), (sb, 0x42), (lv, 0x6b), (lv, 0x90)] {
         t.set_u32(t.img.word(g + op), lock);
     }
+    // slot 325 copies four words
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
     let grp = SCRATCH + 0x1000;
     let n = SCRATCH + 0x2000;
     let (c1, c2) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
@@ -3350,7 +3358,7 @@ fn summon_task_0153() {
     let r = SCRATCH + 0x1100;
     let node = SCRATCH + 0x1200;
     // (state, timer, answer)
-    let cases: [(u32, f32, u32); 14] = [
+    let cases: [(u32, f32, u32); 18] = [
         (0, 0.0, 0),
         (3, 0.0, 0),
         (0xa, 0.0, 0),
@@ -3360,6 +3368,10 @@ fn summon_task_0153() {
         (0x1e, 5.0, 0),
         (0x28, 0.0, 0),
         (0x28, 5.0, 0),
+        (0x28, 5.5, 0),
+        (0x28, 5.5, 1),
+        (0x1e, 5.5, 1),
+        (0xa, 2.5, 0),
         (0x29, 0.0, 0),
         (0x29, 0.0, 1),
         (0x2710, 0.0, 0),
@@ -3376,6 +3388,8 @@ fn summon_task_0153() {
         setf(&mut t, r + 0x20, timer);
         setf(&mut t, r + 0x1c, 0.25 * k as f32);
         t.set_u32(answer, ans);
+        // the flag bytes' neighbours
+        t.set_u32(w(&t, 0x1fc), 0x5a5a_5a00);
         ownb::dirty_stack(&mut t, 0x7bf0 + k, &[]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
