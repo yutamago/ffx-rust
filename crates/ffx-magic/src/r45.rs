@@ -5,7 +5,7 @@ use crate::m0018::st0_f32;
 use crate::ob_model::wrap_once;
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, mul, sub};
+use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `magic_0394`'s summon start (0x10005640, 1159 bytes; a table entry, no
@@ -1089,5 +1089,189 @@ pub const SPRITE_FRAME_0431: Sig = Sig {
         (0x15b, Callee::Sig(&crate::o4_fam4::PACKET_0431_1430)),
         (0x169, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// `magic_0431`'s actors' motion set-up (0x100018f0, 276 bytes; internal,
+/// no arguments): for the selection's actors 1 and 2 (`c = T[b]`, the
+/// first read again before slot 399): slot 357 `(c, -1, 0x3c00)`, slot
+/// 356 `(c, -1, 0x2ee0)`, slot 362 `(*G_M, c, 1, 0)` (`G_M` one global per
+/// actor), slots 357 and 356 `(c, -1, -1)`; between them slot 399 `(c,
+/// 1)` for the first. Each call passes the words the original leaves on
+/// the stack. Returns the last slot's `eax`.
+pub fn actor_motions_0431<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let chr = |g: &G, sel: u32, nth: u32, table: u32| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel)) + nth));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    };
+    let mut st = Pushes::default();
+    let mut eax = 0;
+    // (the selection, the byte, the table, the slots' operands, `G_M`)
+    for (sel, nth, table, ops, gm) in [
+        (0x1, 1, 0x12, [0x17, 0x27, 0x3c, 0x54, 0x66], 0x4d),
+        (0x9a, 2, 0xac, [0xb1, 0xbf, 0xd4, 0xec, 0xfe], 0xe5),
+    ] {
+        let c = chr(g, sel, nth, table);
+        st.push_all(&[0x3c00, u32::MAX, c]);
+        st.call(g, t(g, ops[0], 357), 0);
+        st.push_all(&[0x2ee0, u32::MAX, c]);
+        st.call(g, t(g, ops[1], 356), 0);
+        let m = g.read::<u32>(w(gm));
+        st.push_all(&[0, 1, c, m]);
+        st.call(g, t(g, ops[2], 362), 0);
+        st.push_all(&[u32::MAX, u32::MAX, c]);
+        st.call(g, t(g, ops[3], 357), 0);
+        st.push_all(&[u32::MAX, u32::MAX, c]);
+        eax = st.call(g, t(g, ops[4], 356), 0).eax;
+        if nth == 1 {
+            st.pop(16);
+            let c = chr(g, 0x78, 1, 0x88);
+            st.push_all(&[1, c]);
+            st.call(g, t(g, 0x8d, 399), 0);
+        }
+    }
+    eax
+}
+
+/// [`actor_motions_0431`].
+pub const ACTOR_MOTIONS_0431: Sig = Sig {
+    len: 276,
+    hash: 0x8372_6bd3_442f_66d8,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0431`'s objects start (0x10004220, 318 bytes; a table entry, no
+/// arguments; a /GS frame, the offset `V` at `ebp - 0x14`): with the
+/// state block `S = *G_S`, the object `O = S + 0x130` starts
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), scale `K1`,
+/// index 1, value 0) with the yaw `+0xc4` = `S + 0xd00`, placed by slot
+/// 237 `(*G_C, 0x73, &V, O + 0xd0)` (`V` = `(-30, 0, 0, 1)`; the start's
+/// two words under it), `O + 0xdc` 1.0; then `S` itself starts (scale
+/// `K2`, index 0, value 0) with the yaw `S + 0xd00 - K3` wrapped once, its
+/// place `S + 0x820..` with `y` less `K4`, and `+0xe0` -20. Returns the
+/// place's last word.
+pub fn objects_start_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x1c));
+    let o = s + 0x130;
+    let start = img.rel32_target(f + 0x30);
+    crate::s4_misc::start_object_anim(g, img, start, o, k(g, 0x14), 1, 0);
+    let yaw = g.read::<u32>(s + 0xd00);
+    g.write::<u32>(o + 0xc4, yaw);
+    let p = o + 0xd0;
+    let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    for (i, x) in (0u32..).zip([0xc1f0_0000, 0, 0, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    let c = g.read::<u32>(w(0x54));
+    // call width: 6 (the start's index and value under it)
+    g.call(slot_target(g, w(0x4c), 237), 0, &[c, 0x73, v, p, 1, 0]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x95), s, k(g, 0x80), 0, 0);
+    let yaw = sub(g.read::<f32>(s + 0xd00), k(g, 0xa5));
+    let yaw = wrap_once(g, img, f, yaw, [0xaf, 0xb9, 0xc3, 0xd0]);
+    g.write::<f32>(s + 0xc4, yaw);
+    let mut last = 0;
+    for i in 0..4u32 {
+        last = g.read::<u32>(s + 0x820 + 4 * i);
+        g.write::<u32>(s + 0xd0 + 4 * i, last);
+    }
+    let y = sub(g.read::<f32>(s + 0xd4), k(g, 0x109));
+    g.write::<f32>(s + 0xd4, y);
+    g.write::<u32>(s + 0xe0, 0xc1a0_0000);
+    Ret::eax(last)
+}
+
+/// [`objects_start_0431`] (the `rel32`s: the two object starts, the
+/// cookie check).
+pub const OBJECTS_START_0431: Sig = Sig {
+    len: 318,
+    hash: 0x49e2_966e_75e3_5d46,
+    calls: &[
+        (0x30, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x95, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x136, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0431`'s object place (0x10003d30, 434 bytes; a callback, cdecl
+/// `(O)`; a /GS frame: the matrices `M1` at `ebp - 0x94`, `M2` at `ebp -
+/// 0x54`, `M3` at `ebp - 0xd4`, the point `V` at `ebp - 0x14`). With the
+/// state block `S = *G_S` and the record `R = S + 0xc8c + 0x30 i` (`i` =
+/// `O + 0x120`): slot 210 `(T[b], M1)` (`b` the selection's first byte),
+/// slot 230 `(M2, R[0])`, `M2`'s last row's `x`, `y`, `z` times `K1`,
+/// slot 231 `(M3, M1, M2)`; `V` = `(a + b + c) / K2` per axis (the three
+/// points `R[1]`, `R[2]`, `R[3]`, summed in the original's order; `w` =
+/// `a.w`); slot 229 `(O + 0xd0, M3, V)`, `O + 0xdc` 1.0; slot 719 `(P, 9,
+/// 0)` and slot 306 `(7, 1, that)`; `O + 0x104` 0. Each call passes the
+/// words the original leaves on the stack. Returns slot 306's `eax`.
+pub fn object_place_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m1, m2, m3, v) = (
+        ebp.wrapping_sub(0x94),
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0xd4),
+        ebp.wrapping_sub(0x14),
+    );
+    let o = fr.arg(g, 0);
+    let i = g.read::<u32>(o.wrapping_add(0x120));
+    let s = g.read::<u32>(w(0x20));
+    let r = s.wrapping_add(0xc8c).wrapping_add(i.wrapping_mul(0x30));
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x30))));
+    let chr = g.read::<u32>(w(0x3c).wrapping_add(4 * b));
+    let mut st = Pushes::default();
+    st.push_all(&[m1, chr]);
+    st.call(g, t(g, 0x41, 210), 0);
+    st.push_all(&[g.read::<u32>(r), m2]);
+    st.call(g, t(g, 0x59, 230), 0);
+    let k1 = k(g, 0x6e);
+    for d in [0x30u32, 0x34, 0x38] {
+        let x = mul(g.read::<f32>(m2 + d), k1);
+        g.write::<f32>(m2 + d, x);
+    }
+    st.push_all(&[m2, m1, m3]);
+    st.call(g, t(g, 0xa5, 231), 0);
+    let (pa, pb) = (g.read::<u32>(r + 4), g.read::<u32>(r + 8));
+    let f32_at = |g: &G, p: u32| g.read::<f32>(p);
+    let x = add(f32_at(g, pa), f32_at(g, pb));
+    let y = add(f32_at(g, pa + 4), f32_at(g, pb + 4));
+    let z = add(f32_at(g, pa + 8), f32_at(g, pb + 8));
+    let wv = g.read::<u32>(pa + 0xc);
+    g.write::<u32>(v + 0xc, wv);
+    let pc = g.read::<u32>(r + 0xc);
+    let k2 = k(g, 0x104);
+    let x = div(add(x, f32_at(g, pc)), k2);
+    let y = div(add(f32_at(g, pc + 4), y), k2);
+    let z = div(add(f32_at(g, pc + 8), z), k2);
+    for (d, c) in [(0u32, x), (4, y), (8, z)] {
+        g.write::<f32>(v + d, c);
+    }
+    st.push_all(&[v, m3, o.wrapping_add(0xd0)]);
+    st.call(g, t(g, 0x147, 229), 0);
+    g.write::<u32>(o.wrapping_add(0xdc), 0x3f80_0000);
+    let p = w(0x176);
+    st.push_all(&[0, 9, p]);
+    let h = st.call(g, t(g, 0x171, 719), 0).eax;
+    st.push_all(&[h, 1, 7]);
+    let eax = st.call(g, t(g, 0x184, 306), 0).eax;
+    g.write::<u32>(o.wrapping_add(0x104), 0);
+    Ret::eax(eax)
+}
+
+/// [`object_place_0431`] (the `rel32`: the cookie check).
+pub const OBJECT_PLACE_0431: Sig = Sig {
+    len: 434,
+    hash: 0xe1ad_5431_e9e9_3551,
+    calls: &[(0x1aa, Callee::Any)],
     imports: &[],
 };
