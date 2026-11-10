@@ -370,7 +370,7 @@ pub const SPIN_START_0605: Sig = Sig {
 /// in `f`'s code: the head `head` tested, the tail `tail` read, the head's
 /// store `head_w` when the list was empty, the tail's store `tail_w`).
 /// Returns `eax` after it: the old tail, or `eax` as it was.
-fn append_last<G: Game>(
+pub(crate) fn append_last<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -794,7 +794,7 @@ pub const SPARKS_0605: Sig = Sig {
 /// `eax` the mark); else each child (from `N + 0x10`, along `+8`) is
 /// visited (`C = child`, its `[[C] + 0x1c](C)`), then `C = N`, `N` marked
 /// and `C + 4` set. Gives `N`.
-fn visit_children<G: Game>(g: &mut G, c: u32) -> Result<u32, u8> {
+pub(crate) fn visit_children<G: Game>(g: &mut G, c: u32) -> Result<u32, u8> {
     let node = g.read::<u32>(c);
     let mark = g.read::<u8>(node.wrapping_add(0x1a));
     if mark == g.read::<u8>(c.wrapping_add(5)) {
@@ -2043,7 +2043,7 @@ pub const SCREEN_SETUP_0601: Sig = Sig {
 /// 0xff, its own empty child list, `+0x14` the parent; with a parent, its
 /// `+4`, `+8` the parent and its last child, after which it goes (first
 /// when the parent's list is empty), the parent's count up.
-fn child_of<G: Game>(g: &mut G, node: u32, parent: u32) {
+pub(crate) fn child_of<G: Game>(g: &mut G, node: u32, parent: u32) {
     g.write::<u16>(node.wrapping_add(0x1a), 0xff);
     g.write::<u32>(node.wrapping_add(0x10), node);
     g.write::<u32>(node.wrapping_add(0xc), node);
@@ -3268,7 +3268,7 @@ pub const SUMMON_TASK_0601: Sig = Sig {
 /// `old` (the store at operand `n8`); an empty list (`old` is the parent,
 /// operand `cmp`) gets it as its first (the store run at `eq`), else
 /// `old + 4` is it (the immediate `ne`); the count up (operand `count`).
-fn append_0601<G: Game>(
+pub(crate) fn append_0601<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -3293,7 +3293,7 @@ fn append_0601<G: Game>(
 /// compared with the parent (`cmp2`: the parent's first `eq2`, else the
 /// store run at `ne2`), the count up by two (read at `count`, stored at
 /// `count_w`).
-fn append_pair_0601<G: Game>(
+pub(crate) fn append_pair_0601<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,

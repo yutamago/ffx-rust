@@ -866,11 +866,22 @@ fn visit_0342() {
             // after the step reach the cap (unreachable with the DLL's 0.7)
             t.set_u32(w(&t, 0x408), 1.5f32.to_bits());
         }
+        // the two frame words the original reads unwritten (the junk-read
+        // rule: the port uses 0), 0 on both sides: the cursor's byte `+4`
+        // (`E + 0x20`) and the third angle (`E + 0x2c`), `E` = `(ebp &
+        // !0xf) - 0x128` (the thunk jumps: the same frame)
+        let e = ((magic::STACK_TOP - 0x100 - 4) & !0xf) - 0x128;
+        let zero_junk = |t: &mut Twin| {
+            t.set_u8(e + 0x20, 0);
+            t.set_u32(e + 0x2c, 0);
+        };
+        zero_junk(&mut t);
         let call = Call::this(c);
         t.check(f, call, &[], Eax::Checked, r24::visit_0342);
         if k == 2 {
             // the thunk: `ecx` from its stack word
             t.set_u8(c + 5, 9);
+            zero_junk(&mut t);
             t.check_entry(t.at(0x1e80), Call::default(), &[c], Eax::Checked);
         }
     }
