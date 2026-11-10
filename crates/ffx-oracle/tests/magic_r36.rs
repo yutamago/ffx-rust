@@ -1607,6 +1607,7 @@ fn scene_task_0146() {
         ids
     });
     t.stub_st0(333, |_, _| 0.625);
+    t.stub_st0(790, |_, _| 0.375);
     // the unit block's float, the colour node's four integers
     t.stub_st0(790, |_, _| 0.375);
     rec(&mut t, 558, 2, |m, a| {
@@ -2215,6 +2216,7 @@ fn load_0353() {
     rec(&mut t, 227, 1, move |m, _| m.r32(r227));
     rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
     t.stub_st0(333, |_, _| 0.625);
+    t.stub_st0(790, |_, _| 0.375);
     rec(&mut t, 12, 1, |_, a| 0x12 ^ a[0]);
     t.stub_st0(12, |_, _| 1.75);
     rec(&mut t, 262, 4, |m, a| {
@@ -2308,13 +2310,14 @@ fn particles_0351() {
     t.set_u32(w(&t, f, 0x125), lock);
     t.set_u32(w(&t, f, 0x118), SCRATCH + 0x7f0);
     // (off, n, flags, lights, counter, glow, 712)
-    let cases: [(u32, u32, [u32; 3], [f32; 3], i32, i32, u32); 6] = [
+    let cases: [(u32, u32, [u32; 3], [f32; 3], i32, i32, u32); 7] = [
         (1, 3, [1, 1, 1], [1.0; 3], 0, 0, 0),
         (0, 3, [0, 1, 1], [0.0, 0.0, 1.0], 0, 0, 0),
         (0, 2, [1, 0, 1], [1.0, 0.0, 0.0], 0, 5, 1),
         (0, 3, [1, 1, 1], [1.0, 1.0, 1.0], 40, 20, 0),
         (0, 3, [0, 0, 0], [0.0; 3], 41, 200, 1),
         (0, 1, [1, 1, 1], [1.0, 0.0, 0.0], 45, 3, 0),
+        (0, 4, [0, 0, 0], [0.0; 3], 0, 0, 0),
     ];
     for (k, (off, n, fl, li, c, glow, r)) in (0u32..).zip(cases) {
         t.set_u32(w(&t, f, 0x5), off);
@@ -2327,6 +2330,10 @@ fn particles_0351() {
             }
         }
         t.set_u32(w(&t, f, 0x5f), c.cast_unsigned());
+        // a fourth flag (set) and light (low) past the three
+        t.set_u32(w(&t, f, 0x47) + 12, 1);
+        t.set_u32(w(&t, f, 0x52) + 12, 0);
+        t.set_u32(w(&t, f, 0x7b), 0x1357_9bdf);
         t.set_u32(w(&t, f, 0x95), glow.cast_unsigned());
         t.set_u32(r712, r);
         floats(&mut t, o, 0x20, k);
@@ -2343,6 +2350,13 @@ fn particles_0351() {
         t.write(pw, &[0x31; 0x40]);
         let ids = SCRATCH + 0x3900;
         t.write(ids, &[3, 5, 7, 9]);
+        // the glow points' source vectors
+        if !steps {
+            let a = t.img.word(t.img.rel32_target(f + 0x10d) + 0x1d);
+            floats(&mut t, a, 8, 1);
+            let a = w(&t, f, 0xe8);
+            floats(&mut t, a, 16, 2);
+        }
         if steps {
             t.set_u32(w(&t, f, 0x194), pw);
             for op in [0x138u32, 0x170, 0x189] {
@@ -2361,7 +2375,7 @@ fn particles_0351() {
             (2, 3, 0, 0.5, 0, 0, [1.0; 3]),
             (3, 3, 1, 0.5, 0, 0, [1.0; 3]),
             (2, 3, 1, 2.0, 1, 1, [1.0, 1.0, f32::NAN]),
-            (0, 1, 1, 0.5, 0, 1, [1.0, 0.0, 0.0]),
+            (0, 1, 1, 0.875, 0, 1, [1.0, 0.0, 0.0]),
         ];
         for (k, (idx, n, fl, lv, dim, r, lights)) in (0u32..).zip(cases) {
             let o = base + 0x80 * idx;
@@ -2373,9 +2387,6 @@ fn particles_0351() {
                 (0x7, 0x33)
             };
             t.set_u32(w(&t, f, n_op), n);
-            for i in 0..4u32 {
-                t.set_u32(w(&t, f, fl_op) + 4 * i, if i == idx { fl } else { 1 });
-            }
             if steps {
                 {
                     let a = w(&t, f, 0x34);
@@ -2395,6 +2406,10 @@ fn particles_0351() {
                     }
                 }
             }
+            for i in 0..4u32 {
+                let v = if i == idx { fl } else { 0x0101_0101 };
+                t.set_u32(w(&t, f, fl_op) + 4 * i, v);
+            }
             t.set_u32(r712, r);
             ownb::dirty_stack(&mut t, rva + k, &[]);
             t.check_entry(f, Call::default(), &[o], Eax::Checked);
@@ -2404,6 +2419,8 @@ fn particles_0351() {
     let f = t.at(0x1e60);
     for k in 0..2u32 {
         t.set_u32(w(&t, f, 0x2), k * 0x0abc_0000);
+        let a = w(&t, f, 0xe9);
+        t.write(a, &[0x5a; 0x10]);
         {
             let a = w(&t, f, 0x11f);
             floats(&mut t, a - 8, 8, k);
@@ -2481,6 +2498,12 @@ fn draws_0351() {
     }
     let f = t.at(0x2310);
     let lock = SCRATCH + 0x7e0;
+    // slot 712 sees the lock held
+    rec(&mut t, 712, 2, move |m, _| {
+        let v = m.r32(lock);
+        m.w32(SCRATCH + 0x140, v);
+        m.r32(SCRATCH + 0x128)
+    });
     t.set_u32(w(&t, f, 0xfa), lock);
     if w(&t, f, 0x116) != w(&t, f, 0xfa) {
         t.set_u32(w(&t, f, 0x116), lock);
@@ -2576,6 +2599,12 @@ fn start_up_0351() {
         0x367
     });
     let lock = SCRATCH + 0x7e0;
+    // slot 711 sees the lock held
+    rec(&mut t, 711, 3, move |m, _| {
+        let v = m.r32(lock);
+        m.w32(SCRATCH + 0x140, v);
+        0x711
+    });
     t.set_u32(w(&t, 0x121), lock);
     if w(&t, 0x148) != w(&t, 0x121) {
         t.set_u32(w(&t, 0x148), lock);
@@ -2590,5 +2619,111 @@ fn start_up_0351() {
         }
         ownb::dirty_stack(&mut t, 0x27d0 + k, &[]);
         t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0317` 0x10006bc0 (`r36::summon_task_0317`, an entry): each
+/// state, the counts below and at their limits; case 14 with no lights
+/// and with two (flag set and clear, aim above and at or below -0.9,
+/// every flag clear and not, the count below and at 30); case 15 by the
+/// flag, the slot answering 0 and not; 10000 unlinking.
+#[test]
+fn summon_task_0317() {
+    let Some(mut t) = twin(317) else { return };
+    let f = t.at(0x6bc0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    // vectors and matrices
+    for (s, n) in [(234u32, 3usize), (232, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + 0.125 * (s % 7) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.25);
+    t.stub_st0(333, |_, _| 0.625);
+    t.stub_st0(790, |_, _| 0.375);
+    let aim = SCRATCH + 0x144;
+    rec(&mut t, 394, 2, move |m, a| m.r32(aim) ^ a[0]);
+    t.stub_st0(394, move |m, _| f64::from(f32::from_bits(m.r32(aim))));
+    let answer = SCRATCH + 0x148;
+    for s in [20u32, 411] {
+        rec(&mut t, s, 1, move |m, _| m.r32(answer));
+    }
+    // the model numbers (none) and the colour words
+    rec(&mut t, 218, 2, |m, a| {
+        m.w32(a[1], 0);
+        SCRATCH + 0x3000
+    });
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 + i);
+        }
+        0x558
+    });
+    // the particle nodes' program owner
+    let owner = SCRATCH + 0x3800;
+    floats(&mut t, owner, 0x20, 0);
+    t.set_u32(owner + 0x10, 3);
+    for op in [0x2e5u32, 0x71a] {
+        t.set_u32(w(&t, op), owner);
+    }
+    let task = SCRATCH + 0x1000;
+    let r = SCRATCH + 0x1100;
+    let node = SCRATCH + 0x1200;
+    let lights = w(&t, 0x52e);
+    // (state, count, lights, flags, aim, answer, flag byte)
+    let cases: [(u32, u32, u32, [u32; 2], f32, u32, u8); 22] = [
+        (0, 0, 0, [0; 2], 0.0, 0, 0),
+        (3, 5, 0, [0; 2], 0.0, 0, 0),
+        (0xa, 7, 0, [0; 2], 0.0, 0, 0),
+        (11, 0xbd, 0, [0; 2], 0.0, 0, 0),
+        (11, 0xbe, 0, [0; 2], 0.0, 0, 0),
+        (12, 0xc7, 0, [0; 2], 0.0, 0, 0),
+        (12, 0xc8, 0, [0; 2], 0.0, 0, 0),
+        (12, 0xc8, 2, [0; 2], 0.0, 0, 0),
+        (13, 9, 0, [0; 2], 0.0, 0, 0),
+        (13, 10, 0, [0; 2], 0.0, 0, 0),
+        (14, 3, 0, [0; 2], 0.0, 0, 0),
+        (14, 3, 2, [0; 2], 0.0, 0, 0),
+        (14, 3, 2, [1, 0], -0.5, 0, 0),
+        (14, 0x1e, 2, [1, 1], -0.5, 0, 0),
+        (14, 3, 2, [1, 1], -0.9, 0, 0),
+        (14, 3, 2, [0, 1], -2.0, 0, 0),
+        (15, 3, 0, [0; 2], 0.0, 0, 0),
+        (15, 3, 0, [0; 2], 0.0, 4, 1),
+        (15, 3, 0, [0; 2], 0.0, 4, 0),
+        (0x2710, 3, 0, [0; 2], 0.0, 0, 0),
+        (0x2711, 3, 0, [0; 2], 0.0, 0, 0),
+        (16, 3, 0, [0; 2], 0.0, 0, 0),
+    ];
+    for (k, (state, count, n, flags, a, ans, bit)) in (0u32..).zip(cases) {
+        t.write(r, &[0; 0x40]);
+        // the DLL's lists, empty (first and last themselves)
+        for op in [0x140u32, 0xa5, 0xaa, 0x2cf, 0xa2e, 0x9d0, 0x9bc] {
+            let l = w(&t, op);
+            t.set_u32(l + 0xc, l);
+            t.set_u32(l + 0x10, l);
+            t.set_u16(l + 0x18, 0);
+        }
+        t.set_u32(task + 4, r);
+        t.set_u32(task, node);
+        let (p, q) = (SCRATCH + 0x1300, SCRATCH + 0x1340);
+        t.set_u32(node + 4, p);
+        t.set_u32(node + 8, q);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x2c, count);
+        t.set_u32(r + 0x30, flags[0]);
+        t.set_u32(r + 0x34, flags[1]);
+        t.set_u32(lights, n);
+        setf(&mut t, aim, a);
+        t.set_u32(answer, ans);
+        t.set_u8(w(&t, 0x56), bit);
+        ownb::dirty_stack(&mut t, 0x6bc0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }

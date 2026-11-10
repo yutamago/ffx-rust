@@ -3321,6 +3321,7 @@ ports! {
     "r36 glow draw 0351" => r36::GLOW_DRAW_0351, r36::glow_draw_0351;
     "r36 fade 0351" => r36::FADE_0351, r36::fade_0351;
     "r36 start up 0351" => r36::START_UP_0351, r36::start_up_0351;
+    "r36 summon task 0317" => r36::SUMMON_TASK_0317, r36::summon_task_0317;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
