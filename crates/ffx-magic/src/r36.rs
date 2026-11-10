@@ -1716,3 +1716,264 @@ pub const FADE_STEP_0098: Sig = Sig {
     calls: &[(0x8a, Callee::Sig(&TEXTURE_0098))],
     imports: &[],
 };
+
+/// `magic_0098`'s start-up (an overlay table entry, cdecl `(actor)`; a
+/// cookie frame, `L(o)` = `ebp - o`). Slot 803 `(0x1000000, 0x10)`
+/// gives the work buffer, cut into four 0x80000-byte parts (the operands
+/// `+0x26`..`+0x44`); `*G_ACT = actor`. The bank: slots 718, 222 and 221
+/// `(bank, 0, 1000, 0x2000)`, its parts 0..3 (slot 719 `(bank, 6, k)`)
+/// and `T` (slot 719 `(bank, 8, 0)`); slot 711 `(T, ..., 0)` under the
+/// lock, slot 710 `(at +0x180, T, buffer, 0x80000)`, three slot 941 of
+/// `T`'s words; slots 27 `(0x3015, 1)` and 4 `(0x3015)`. The summon (slot
+/// 168 `(actor)`), the party's first id (slot 218 `(actor, L(0x48))`'s
+/// list), its model (slot 215) and matrix (slot 210 `(m, L(0x44))`), the
+/// two scene points (slot 325, the first through slot 232 and scaled by
+/// the constant at `+0x28c`), the distances of slots 19 and 364 (ST0).
+/// Then the follow: [`height_follow`](crate::m0098::height_follow) when
+/// the summon and the party's id are in the same of the two id lists
+/// ([`id_list`](crate::s4_small::id_list)), else
+/// [`pair_follow`](crate::m0098::pair_follow); slot 268 `(m, 0x10, P)`,
+/// four 1.0 words, the camera matrix
+/// ([`camera_matrix`](crate::m0098::camera_matrix) with the scales
+/// `L(0x58)` = 0.001 three times), the tilt
+/// ([`tilt`](crate::m0098::tilt)), fifteen slot 389 `(k, value)` and slot
+/// 367 `(actor, id, L(0x48), 0, 0, 0, 0, 0)`. The flag `*L(0x48) & 1`
+/// picks which of two 0x110-byte blocks is cleared (`memset`) and set.
+/// Returns 1.
+///
+/// `magic_0098` 0x10002ba0 (1722 bytes).
+#[allow(clippy::too_many_lines)] // the original's set-up, in order
+pub fn start_up_0098<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, at: u32, n: u32| slot_target(g, w(at), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    // sub esp, 0x58; push esi
+    let sp = ebp.wrapping_sub(0x5c);
+    let actor = fr.arg(g, 0);
+    // call width: 2
+    let buf = g.call(t(g, 0x11, 803), 0, &[0x0100_0000, 0x10]).eax;
+    for (k, op) in (0u32..).zip([0x26u32, 0x30, 0x3a, 0x44]) {
+        g.write::<u32>(w(op), buf.wrapping_add(0x8_0000 * k));
+    }
+    g.write::<u32>(w(0x4c), actor);
+    stores(g, img, f, &[0x60]);
+    // call width: 1
+    g.call(t(g, 0x51, 718), 0, &[w(0x56)]);
+    for (gi, bank, n) in [(0x6du32, 0x85u32, 222u32), (0x8c, 0xa4, 221)] {
+        let b = g.read::<u32>(w(bank));
+        // call width: 4
+        g.call(t(g, gi, n), 0, &[b, 0, 0x3e8, 0x2000]);
+    }
+    for (k, (gi, bank, store)) in (0u32..).zip([
+        (0xabu32, 0xbbu32, 0xc2u32),
+        (0xc7, 0xd7, 0xe1),
+        (0xe6, 0xf6, 0xfd),
+        (0x102, 0x112, 0x119),
+    ]) {
+        let b = g.read::<u32>(w(bank));
+        // call width: 3
+        let p = g.call(t(g, gi, 719), 0, &[b, 6, k]).eax;
+        g.write::<u32>(w(store), p);
+    }
+    let b = g.read::<u32>(w(0x12e));
+    // call width: 3
+    let tex = g.call(t(g, 0x11e, 719), 0, &[b, 8, 0]).eax;
+    let lock = g.read::<u32>(w(0x136));
+    let held = g.read::<u32>(lock);
+    g.write::<u32>(w(0x13f), tex);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x14a, 711), 0, &[tex, w(0x144), 0]);
+    let lock = g.read::<u32>(w(0x15d));
+    g.write::<u32>(lock, held);
+    let (part, tex) = (g.read::<u32>(w(0x16f)), g.read::<u32>(w(0x17b)));
+    // call width: 4
+    g.call(t(g, 0x164, 710), 0, &[w(0x180), tex, part, 0x8_0000]);
+    for (word, (tex_op, gi, store)) in (0x14u32..).step_by(4).zip([
+        (0x187u32, 0x192u32, 0x19fu32),
+        (0x1a4, 0x1ac, 0x1b9),
+        (0x1be, 0x1c6, 0x1d3),
+    ]) {
+        let tex = g.read::<u32>(w(tex_op));
+        let x = g.read::<u32>(tex + word);
+        // call width: 1
+        let p = g.call(t(g, gi, 941), 0, &[x]).eax;
+        g.write::<u32>(w(store), p);
+    }
+    // call width: 2
+    g.call(t(g, 0x1d8, 27), 0, &[0x3015, 1]);
+    // call width: 1
+    g.call(t(g, 0x1e9, 4), 0, &[0x3015]);
+    let actor = g.read::<u32>(w(0x1fe));
+    // call width: 1
+    let summon = g.call(t(g, 0x1f8, 168), 0, &[actor]).eax;
+    g.write::<u32>(w(0x20b), summon);
+    let actor = g.read::<u32>(w(0x21a));
+    // call width: 2
+    let party = g.call(t(g, 0x214, 218), 0, &[actor, l(0x48)]).eax;
+    let id = u32::from(g.read::<u8>(party));
+    g.write::<u32>(w(0x22a), id);
+    // call width: 1
+    let model = g.call(t(g, 0x230, 215), 0, &[id]).eax;
+    g.write::<u32>(w(0x241), model);
+    // call width: 2
+    g.call(t(g, 0x247, 210), 0, &[model, l(0x44)]);
+    // call width: 2
+    g.call(t(g, 0x258, 325), 0, &[w(0x25d), l(0x24)]);
+    // call width: 2
+    g.call(t(g, 0x26a, 232), 0, &[w(0x27a), w(0x26f)]);
+    let k = f32_at(g, w(0x28c));
+    for (from, to) in [(0x284u32, 0x29bu32), (0x2a3, 0x2af), (0x2b7, 0x2c3)] {
+        let x = mul(f32_at(g, w(from)), k);
+        put(g, w(to), x);
+    }
+    // call width: 2
+    g.call(t(g, 0x2cc, 325), 0, &[w(0x2d1), l(0x14)]);
+    for (m_op, gi, store, n) in [
+        (0x2e4u32, 0x2deu32, 0x2efu32, 19u32),
+        (0x2fa, 0x2f4, 0x308, 364),
+    ] {
+        let m = g.read::<u32>(w(m_op));
+        // call width: 1
+        let d = crate::m0018::st0_f32(g.call(t(g, gi, n), 0, &[m]).st0);
+        put(g, w(store), d);
+    }
+    let lists = |g: &mut G, ecx: u32| {
+        let fr = Frame {
+            at: img.rel32_target(f + 0x316),
+            esp: sp - 4,
+            eax: 0,
+            ecx,
+            edx: 0,
+            xmm: [0; 4],
+        };
+        crate::s4_small::id_list(g, img, &fr).eax
+    };
+    let summon = g.read::<u32>(w(0x30e));
+    let a = lists(g, summon);
+    let id = g.read::<u32>(w(0x31c));
+    let b = lists(g, id);
+    let same = (a == 1 && b == 1) || (a == 0 && b == 0);
+    let follow = Frame {
+        at: img.rel32_target(f + if same { 0x331 } else { 0x347 }),
+        esp: sp - 4,
+        eax: b,
+        ecx: id,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    if same {
+        crate::m0098::height_follow(g, img, &follow);
+    } else {
+        crate::m0098::pair_follow(g, img, &follow);
+    }
+    let m = g.read::<u32>(w(0x359));
+    // push P, 0x10, m: the camera matrix and the tilt see these words
+    for (i, x) in (1u32..).zip([w(0x351), 0x10, m]) {
+        g.write::<u32>(sp - 4 * i, x);
+    }
+    stores(g, img, f, &[0x35d, 0x367, 0x371, 0x37b]);
+    for (o, x) in [
+        (0x58u32, 0x3a83_126fu32),
+        (0x54, 0x3a83_126f),
+        (0x50, 0x3a83_126f),
+        (0x4c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(l(o), x);
+    }
+    // call width: 3
+    g.call(t(g, 0x34c, 268), 0, &[m, 0x10, w(0x351)]);
+    let csp = sp - 0x10;
+    crate::m0098::camera_matrix(g, img, img.rel32_target(f + 0x3ad), l(0x58), csp);
+    let tilt = Frame {
+        at: img.rel32_target(f + 0x3b2),
+        esp: csp,
+        eax: 0,
+        ecx: 0,
+        edx: l(0x58),
+        xmm: [0; 4],
+    };
+    crate::m0098::tilt(g, img, &tilt);
+    // slot 389 `(k, value)`: the value over the earlier call's last word
+    let values = [
+        (0x3bau32, 0x3bfu32),
+        (0x3d9, 0x3de),
+        (0x3f8, 0x3fd),
+        (0x417, 0x41c),
+        (0x436, 0x43b),
+        (0x455, 0x45a),
+        (0x474, 0x479),
+        (0x493, 0x498),
+        (0x4b2, 0x4b7),
+        (0x4d4, 0x4d9),
+        (0x4f0, 0x4f5),
+        (0x50f, 0x514),
+        (0x52e, 0x533),
+        (0x54d, 0x552),
+        (0x56c, 0x571),
+    ];
+    let mut last = (0, 0);
+    for (k, (v_op, gi)) in (0u32..).zip(values) {
+        let v = g.read::<u32>(w(v_op));
+        g.write::<u32>(sp - 4, v);
+        g.write::<u32>(sp - 8, k);
+        // call width: 2
+        g.call(t(g, gi, 389), 0, &[k, v]);
+        last = (k, v);
+    }
+    let (id, actor) = (g.read::<u32>(w(0x597)), g.read::<u32>(w(0x5a2)));
+    // call width: 10 (the last slot 389 call's words still pushed)
+    g.call(
+        t(g, 0x59c, 367),
+        0,
+        &[actor, id, l(0x48), 0, 0, 0, 0, 0, last.0, last.1],
+    );
+    let flag = g.read::<u32>(l(0x48)) & 1;
+    g.write::<u32>(w(0x5be), flag);
+    if flag != 0 {
+        g.write_bytes(w(0x5c7), &[0u8; 0x110]);
+        stores(
+            g,
+            img,
+            f,
+            &[
+                0x5d0, 0x5da, 0x5e4, 0x5ee, 0x5f8, 0x602, 0x60c, 0x616, 0x620, 0x62a, 0x634,
+            ],
+        );
+    } else {
+        g.write_bytes(w(0x641), &[0u8; 0x110]);
+        stores(
+            g,
+            img,
+            f,
+            &[
+                0x64a, 0x654, 0x65e, 0x668, 0x672, 0x67c, 0x686, 0x690, 0x69a,
+            ],
+        );
+    }
+    Ret::eax(1)
+}
+
+/// [`start_up_0098`] (the `rel32`s: the id lists twice, the height
+/// follow twice, the pair follow, the camera matrix, the tilt, `memset`
+/// twice, the cookie check).
+pub const START_UP_0098: Sig = Sig {
+    len: 1722,
+    hash: 0xb528_1059_ccff_cebe,
+    calls: &[
+        (0x316, Callee::Sig(&crate::s4_small::ID_LIST)),
+        (0x323, Callee::Sig(&crate::s4_small::ID_LIST)),
+        (0x331, Callee::Sig(&crate::m0098::HEIGHT_FOLLOW)),
+        (0x340, Callee::Sig(&crate::m0098::HEIGHT_FOLLOW)),
+        (0x347, Callee::Sig(&crate::m0098::PAIR_FOLLOW)),
+        (0x3ad, Callee::Sig(&crate::m0098::CAMERA_MATRIX)),
+        (0x3b2, Callee::Sig(&crate::m0098::TILT)),
+        (0x5cc, Callee::Import("memset")),
+        (0x646, Callee::Import("memset")),
+        (0x6b2, Callee::Any),
+    ],
+    imports: &[],
+};

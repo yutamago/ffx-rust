@@ -1090,3 +1090,175 @@ fn fade_step_0098() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0098` 0x10002ba0 (`r36::start_up_0098`, an entry): the summon
+/// and the party's id in the same list (either) or not (the two follows),
+/// slot 367's flag set or not (the two blocks).
+#[test]
+fn start_up_0098() {
+    let Some(mut t) = twin(98) else { return };
+    let f = t.at(0x2ba0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 803, 2, |_, a| 0x0400_0000 ^ a[1]);
+    let tex = SCRATCH + 0x7000;
+    rec(&mut t, 719, 3, move |_, a| tex + 0x40 * (a[2] & 7) + a[1]);
+    let party = SCRATCH + 0x7400;
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        party
+    });
+    // the id lists: 3 bytes each
+    let (l9, l11) = (SCRATCH + 0x7500, SCRATCH + 0x7540);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        if a[0] == 9 { l9 } else { l11 }
+    });
+    let id = SCRATCH + 0x100;
+    rec(&mut t, 390, 1, move |m, _| m.r32(id));
+    rec(&mut t, 215, 1, |_, a| a[0] ^ 0x0215_0000);
+    for s in [19u32, 364, 394] {
+        rec(&mut t, s, 1, move |_, a| a[0] ^ (s << 16));
+        t.stub_st0(s, move |_, a| {
+            f64::from(a[0] & 0xff) * 0.37 + f64::from(s) * 0.001
+        });
+    }
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[1] + 4 * i, 1.0 + i as f32 * 0.75);
+        }
+        0x210
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x232
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(SCRATCH + 0x700 + 4 * i);
+            m.w32(a[2] + 4 * i, v);
+        }
+        0x268
+    });
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..3 {
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x3800 + 4 * i, v);
+        }
+        0x248
+    });
+    rec(&mut t, 217, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0] ^ (0x0300_0000 + i));
+        }
+        0x217
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v & 0x3fff_ffff);
+        }
+        0x234
+    });
+    rec(&mut t, 266, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i) ^ 0x0100;
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x266
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        let v: Vec<u32> = (0..16)
+            .map(|i| m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i).rotate_left(7))
+            .collect();
+        for (i, x) in (0u32..).zip(v) {
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 389, 2, |_, a| a[1] ^ a[0]);
+    let flag = SCRATCH + 0x104;
+    rec(&mut t, 367, 8, move |m, a| {
+        let v = m.r32(flag);
+        m.w32(a[2], v);
+        0x367
+    });
+    let lock = SCRATCH + 0x200;
+    t.set_u32(w(&t, 0x136), lock);
+    t.set_u32(lock, 0x1c0c_0001);
+    let fl = t.img.rel32_target(f + 0x331);
+    t.set_u32(t.img.word(fl + 0x16), 0x00e0_0000);
+    t.set_u32(t.img.word(t.at(0x11a0) + 0x0c), 0x44);
+    let pf = t.img.rel32_target(f + 0x347);
+    t.set_u32(t.img.word(pf + 0x16), 0x00e0_0000);
+    t.set_u32(t.img.word(pf + 0x4f), 0x0044_0000);
+    t.set_u32(t.img.word(pf + 0x66), 0x0066_0000);
+    t.set_u32(t.img.word(pf + 0xa6), 1.25f32.to_bits());
+    // (summon in list 9, id in list 9, flag)
+    for (k, (s9, i9, fl_v)) in (0u32..).zip([
+        (true, true, 1u32),
+        (false, false, 0),
+        (true, false, 3),
+        (false, true, 0x10),
+    ]) {
+        let summon = 0x31 + k;
+        rec(&mut t, 168, 1, move |_, _| summon);
+        let pid = 0x51 + k as u8;
+        t.write(party, &[pid, 0x22]);
+        let mut a = [0x70u8, 0x71, 0x72];
+        let mut b = [0x73u8, 0x74, 0x75];
+        if s9 {
+            a[1] = summon as u8;
+        } else {
+            b[0] = summon as u8;
+        }
+        if i9 {
+            a[2] = pid;
+        } else {
+            b[2] = pid;
+        }
+        t.write(l9, &a);
+        t.write(l11, &b);
+        t.set_u32(flag, fl_v);
+        t.set_u32(id, [0x1015u32, 0x1077, 0x1000, 0x1127][k as usize]);
+        t.set_u32(SCRATCH + 0x704, (10.75f32 + k as f32).to_bits());
+        t.set_u32(SCRATCH + 0x700, 0x4000_0000);
+        for op in [
+            0x284u32, 0x2a3, 0x2b7, 0x3ba, 0x3d9, 0x3f8, 0x417, 0x436, 0x455, 0x474, 0x493, 0x4b2,
+            0x4d4, 0x4f0, 0x50f, 0x52e, 0x54d, 0x56c,
+        ] {
+            let at = w(&t, op);
+            setf(&mut t, at, (op & 0xff) as f32 * 0.125 - 7.0 + k as f32);
+        }
+        // the blocks the flag picks, junk first
+        for op in [0x5c7u32, 0x641] {
+            let at = w(&t, op);
+            t.write(at, &[0x3d; 0x110]);
+        }
+        ownb::dirty_stack(&mut t, 0x2ba0 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
+    }
+}
