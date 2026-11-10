@@ -450,6 +450,8 @@ fn throw_task_0155() {
         t.set_u32(r + 0x34, mask);
         junk(&mut t, s, 0x1700, k + 1);
         floats(&mut t, s + 0x15d8, 1, 2.5 + k as f32);
+        // the flag byte with bit 1 clear (the junk may have it set)
+        t.set_u8(s + 0x1650, 0x41 ^ (k as u8 & 0xf0));
         t.set_u32(s + 0x163c, n.cast_unsigned());
         for i in 0..3u32 {
             let e = s + 0x100 + 0x278 * i;
@@ -574,13 +576,16 @@ fn frame_0184() {
         t.set_u32(fc_at, fc);
         for (i, o) in [0x14fu32, 0x2b3, 0x416, 0x579].into_iter().enumerate() {
             let at = w(&t, o);
-            t.set_u16(at, flags[i] * (3 + k as u16));
+            // the u16 flag and a non-zero word after it
+            t.set_u32(at, u32::from(flags[i] * (3 + k as u16)) | 0x5a5a_0000);
         }
         for o in [0xd7u32, 0xef, 0x107] {
             let at = w(&t, o);
             t.set_u32(at, 0x5a5a_0000 ^ o ^ k);
         }
         junk(&mut t, SCRATCH + 0x7c00, 0x40, k);
+        // the screen words the pointer globals name
+        junk(&mut t, SCRATCH + 0x7d00, 0x20, k + 7);
         floats(&mut t, SCRATCH + 0x7c00, 4, 0.5 * k as f32);
         t.set_u32(lock, 0x40 + k);
         t.set_u32(SCRATCH + 0x7e20, ans);
