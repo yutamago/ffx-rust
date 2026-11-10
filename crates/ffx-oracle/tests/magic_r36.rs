@@ -3380,3 +3380,220 @@ fn summon_task_0153() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0389` 0x10001f50 (`r36::sparks_thunk_0389`, an entry) and its
+/// sparks (0x10001a10): the walk stopped and run; the countdown running
+/// and at 0 (sparks spawned in both rings, one wrapping), the node
+/// leaving with no sparks out, the draw alone; sparks alive and not,
+/// fading in below and to the cap, their motion steps.
+#[test]
+fn sparks_0389() {
+    let Some(mut t) = twin(389) else { return };
+    let f = t.at(0x1f50);
+    all_stubs(&mut t);
+    let vt = SCRATCH + 0x880;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 1001, 1, |m, a| {
+        let at = SCRATCH + 0x7b0;
+        let v = m.r32(at).rotate_left(5)
+            ^ m.r32(a[0])
+            ^ m.r32(a[0] + 4)
+            ^ m.r32(a[0] + 8).rotate_left(9)
+            ^ a[0];
+        m.w32(at, v);
+        0x1001
+    });
+    let rnd = SCRATCH + 0x14c;
+    rec(&mut t, 324, 0, move |m, _| {
+        let s = m.r32(rnd).wrapping_mul(1_103_515_245).wrapping_add(12345);
+        m.w32(rnd, s);
+        s >> 8
+    });
+    t.stub_st0(307, move |m, _| f64::from(m.r32(rnd) & 0xff) / 256.0);
+    for (s, n) in [(229u32, 3usize), (234, 3), (230, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            // the matrix read, summed into a log word
+            let at = SCRATCH + 0x7c0;
+            for i in 0..16 {
+                let v = m.r32(at).rotate_left(3) ^ m.r32(a[1] + 4 * i);
+                m.w32(at, v);
+            }
+            for i in 0..4 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + 0.125 * (s % 5) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    // the streams open; slot 774 logs the sprite record it is given
+    rec(&mut t, 773, 2, |_, _| 1);
+    rec(&mut t, 774, 5, |m, a| {
+        let at = SCRATCH + 0x7c4;
+        let mut v = m.r32(at).rotate_left(7) ^ (m.r32(a[3]) >> 16);
+        for i in 1..8 {
+            v = v.rotate_left(3) ^ m.r32(a[3] + 4 * i);
+        }
+        m.w32(at, v);
+        0x774
+    });
+    // the locks of the stream and the leave
+    let lock = SCRATCH + 0x7e0;
+    let sp = t.img.rel32_target(f + 8);
+    let ms = t.img.rel32_target(sp + 0x492);
+    for op in [0x24u32, 0x3f, 0x62, 0x86, 0xba, 0xd7, 0x124, 0x154] {
+        t.set_u32(t.img.word(ms + op), lock);
+    }
+    let grp = SCRATCH + 0x1000;
+    let n = SCRATCH + 0x2000;
+    let (c1, c2) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
+    let base = SCRATCH + 0x8000;
+    let table = SCRATCH + 0x2800;
+    for s in [237u32, 248, 330] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + 0.125 * (s % 5) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    // (modes equal, countdown, dead flag, sparks out, ring head, used)
+    let cases: [(bool, u32, u32, u32, u16, u16); 6] = [
+        (true, 0, 0, 0, 0, 0),
+        (false, 0, 0, 0, 0, 0),
+        (false, 0, 0, 3, 6, 8),
+        (false, 2, 0, 0, 0, 0),
+        (false, 0, 1, 0, 0, 0),
+        (false, 0, 1, 2, 2, 5),
+    ];
+    for (k, (same, clock, dead, out, head, used)) in (0u32..).zip(cases) {
+        t.write(n, &[0; 0x60]);
+        t.set_u32(grp, n);
+        t.set_u8(grp + 4, 0x40);
+        t.set_u8(grp + 5, 3);
+        t.set_u8(n + 0x1a, if same { 3 } else { 1 });
+        t.set_u32(n + 0x10, n);
+        t.set_u32(n + 0xc, n);
+        for c in [c1, c2] {
+            t.set_u32(c, vt);
+            floats(&mut t, c + 0x9c, 0x14, k);
+            t.set_u32(c + 0x54, 0x0abc_0054);
+        }
+        t.set_u32(n + 0x48, c1);
+        t.set_u32(n + 0x4c, c2);
+        t.set_u32(n + 0x58, clock);
+        t.set_u32(n + 0x5c, dead);
+        t.set_u32(n + 0x54, out);
+        floats(&mut t, n + 0x38, 4, k);
+        // the ring: 8 sparks of 0x34 bytes
+        t.set_u16(n + 0x1c, 8);
+        t.set_u16(n + 0x1e, 0x40);
+        t.set_u32(n + 0x20, base);
+        t.set_u16(n + 0x30, head);
+        t.set_u16(n + 0x32, used);
+        t.set_u16(n + 0x34, 1);
+        t.set_u32(n + 0x24, base + 0x40);
+        t.set_u32(n + 0x28, base);
+        t.set_u16(n + 0x2c, 3);
+        t.set_u16(n + 0x2e, 2);
+        // two stream tables: one block of 0x200 bytes each
+        for (j, tb) in [table, table + 0x100].into_iter().enumerate() {
+            t.write(tb, &[0; 0x40]);
+            t.set_u16(tb + 6, 1);
+            t.set_u16(tb + 0x10, 0x20);
+            t.set_u16(tb + 0x12, 0x200);
+            t.write(tb + 0x20, &[0x11 * (j as u8 + 1); 0x20]);
+            t.set_u32(n + 0x4c + 4 * j as u32, tb);
+        }
+        for i in 0..8u32 {
+            let e = base + 0x40 * i;
+            floats(&mut t, e, 16, i + k);
+            t.set_u32(e + 0x30, 0x1234 * (i + 1) + 0x777 * k);
+            t.set_u8(e + 0x34, [0u8, 1, 4, 0x80][(i % 4) as usize]);
+            t.set_u32(e + 0x10, if i & 1 == 0 { 0x0000_ffff } else { 0 });
+            t.set_u32(e + 0x24, i & 1);
+            t.set_u8(e + 0x2b, [0u8, 1, 4, 0x80][(i % 4) as usize]);
+            setf(
+                &mut t,
+                e + 0x2c,
+                [0.5f32, 0.95, 1.0, 0.1][((i + k) % 4) as usize],
+            );
+        }
+        t.set_u32(rnd, 0x1234 + 77 * k);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x1900 + k, &[]);
+        t.check_entry(f, Call::default(), &[grp], Eax::Checked);
+    }
+}
+
+/// `magic_0389` 0x10006f10 (`r36::summon_task_0389`, an entry): every
+/// state, the counts below and at their marks (0 running on through 10,
+/// 11 on into 0x14), the model's id with a model and without, past the
+/// cases.
+#[test]
+fn summon_task_0389() {
+    let Some(mut t) = twin(389) else { return };
+    let f = t.at(0x6f10);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    for s in [228u32, 36] {
+        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[1]);
+    }
+    rec(&mut t, 30, 1, |_, a| 0x30_0000 ^ a[0]);
+    t.stub_st0(790, |_, _| 0.375);
+    t.stub_st0(333, |_, _| 0.625);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.25);
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 + i);
+        }
+        0x558
+    });
+    // the model id: slot 413/215's answer by the word at SCRATCH + 0x148
+    let answer = SCRATCH + 0x148;
+    for s in [413u32, 215] {
+        rec(&mut t, s, 1, move |m, _| m.r32(answer));
+    }
+    empty_lists(&mut t, f, &[0x95, 0x2bd]);
+    let owner = SCRATCH + 0x3800;
+    floats(&mut t, owner, 0x20, 0);
+    t.set_u32(owner + 0x10, 3);
+    t.set_u32(w(&t, 0x221), owner);
+    let task = SCRATCH + 0x1000;
+    let r = SCRATCH + 0x1100;
+    let node = SCRATCH + 0x1200;
+    // (state, count, answer)
+    let cases: [(u32, u32, u32); 16] = [
+        (0, 0, 0),
+        (0xa, 5, 0),
+        (0xb, 0x1d, 0),
+        (0xb, 0x1e, 0),
+        (0x14, 0x95, 0),
+        (0x14, 0x96, 0),
+        (0x15, 0x59, 0),
+        (0x15, 0x5a, 0),
+        (0x16, 3, 0),
+        (0x16, 3, 0x0abc_0000),
+        (0x2710, 3, 0),
+        (0x2711, 3, 0),
+        (5, 3, 0),
+        (0xc, 3, 0),
+        (0x17, 3, 0),
+        (0x13, 3, 0),
+    ];
+    for (k, (state, count, ans)) in (0u32..).zip(cases) {
+        t.write(r, &[0; 0x40]);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(node + 4, SCRATCH + 0x1300);
+        t.set_u32(node + 8, SCRATCH + 0x1340);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x28, count);
+        t.set_u32(answer, ans);
+        // the flag bytes' neighbours
+        t.set_u32(w(&t, 0x25d), 0x5a5a_5a00);
+        ownb::dirty_stack(&mut t, 0x6f10 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

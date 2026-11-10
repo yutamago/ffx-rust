@@ -3328,6 +3328,8 @@ ports! {
     "r36 summon start 0263" => r36::SUMMON_START_0263, r36::summon_start_0263;
     "r36 sparks 0153" => r36::SPARKS_0153, r36::sparks_0153;
     "r36 summon task 0153" => r36::SUMMON_TASK_0153, r36::summon_task_0153;
+    "r36 sparks thunk 0389" => r36::SPARKS_THUNK_0389, r36::sparks_thunk_0389;
+    "r36 summon task 0389" => r36::SUMMON_TASK_0389, r36::summon_task_0389;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4109,6 +4111,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r36 flicker 0353", &r36::FLICKER_0353),
     ("r36 start-up 0353", &r36::START_UP_0353),
     ("r36 glow points 0351", &r36::GLOW_POINTS_0351),
+    ("r36 sparks 0389", &r36::SPARKS_0389),
     // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
