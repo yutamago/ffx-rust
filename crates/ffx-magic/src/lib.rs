@@ -3304,6 +3304,8 @@ ports! {
     "r38 set-up 0350" => r38::SET_UP_0350, r38::set_up_0350;
     "r38 sparks 0350" => r38::SPARKS_0350, r38::sparks_0350;
     "r38 keys 0350" => r38::KEYS_0350_SIG, r38::keys_0350;
+    "r38 load step 0275" => r38::LOAD_0275, r38::load_0275;
+    "r38 task 0275" => r38::TASK_0275, r38::task_0275;
     // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5147,6 +5149,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // magic small-lo: end of INTERNAL
     // round 38 (magic-r38)
     ("r38 start-up 0316", &r38::START_UP_0316),
+    ("r38 show 0275", &r38::SHOW_0275),
+    ("r38 matrix 0275", &r38::MATRIX_0275),
+    ("r38 start-up 0275", &r38::START_UP_0275),
     // round 38 (magic-r38): end of INTERNAL
 ];
 

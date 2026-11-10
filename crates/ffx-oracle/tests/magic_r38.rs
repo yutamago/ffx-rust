@@ -652,6 +652,10 @@ fn packed_0350() {
     rec(&mut t, 885, 7, move |m, _| m.r32(answer));
     rec(&mut t, 905, 9, |_, a| 0x0905_0000 ^ a[0]);
     rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    // the draw's lock word (so a filled texture reaches slot 905)
+    let draw = t.img.rel32_target(f + 0x130);
+    t.set_u32(t.img.word(draw + 0x3c), SCRATCH + 0x7f0);
+    t.set_u32(SCRATCH + 0x7f0, 0x5a5a_0001);
     // (out, count, total, angle, filled)
     for (k, (out, c, total, angle, filled)) in (0u32..).zip([
         (0i32, 3i32, 9i32, 1.0f32, 0u32),
@@ -772,5 +776,220 @@ fn keys_0350() {
         t.set_u32(tail, SCRATCH + 0x600);
         ownb::dirty_stack(&mut t, 0x6830 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0275`'s selection (two bytes) and character table (every
+/// entry a junk character of its own).
+fn sel_0275(t: &mut Twin, b0: u8, b1: u8, k: u32) {
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[b0, b1, 0x77, 0x66]);
+    t.set_u32(0x1022_8568, sel);
+    for i in 0..0x20u32 {
+        let c = SCRATCH + 0x2_0000 + 0x900 * i;
+        t.set_u32(0x1022_85a4 + 4 * i, c);
+    }
+    for b in [b0, b1] {
+        let c = SCRATCH + 0x2_0000 + 0x900 * u32::from(b);
+        junk(t, c + 0x800, 0x40, k + u32::from(b));
+    }
+}
+
+/// `magic_0275`'s slots: points, vectors and matrices written from their
+/// words, floats in ST0, no node with the same id.
+fn stubs_0275(t: &mut Twin, k: u32) {
+    all_stubs(t);
+    rec(t, 262, 4, move |m, a| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
+            wf(m, a[1 + i as usize], v);
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + a[1] as f32;
+            wf(m, a[2] + 4 * i, v);
+        }
+        0x268
+    });
+    filler(t, 235, 1, 16);
+    for s in [210u32, 723, 724] {
+        let at = usize::from(s == 210);
+        rec(t, s, at + 1, move |m, a| {
+            for i in 0..16u32 {
+                wf(m, a[at] + 4 * i, (s & 0xf) as f32 + i as f32 * 0.375 - 2.0);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[2] + 4 * i) * 0.5 + rf(m, a[1] + 4 * i) + i as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * (15 - i));
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(t, 329, 3, |m, a| {
+        let ang = rf(m, a[2]);
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) + ang * (i + 1) as f32 / 8.0;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    let yaw = [0.25f64, 3.0, 9.5, -7.0][k as usize % 4];
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |_, _| yaw);
+    rec(t, 12, 1, |_, a| 0x0012_0000 ^ a[0]);
+    t.stub_st0(12, |_, a| 1.25 + f64::from(a[0] & 7));
+    for s in [852u32, 853] {
+        rec(t, s, 0, |_, _| 0);
+    }
+}
+
+/// `magic_0275` 0x10003f90 (`r38::show_0275`, internal): `sel[0]` 13, 8
+/// and other.
+#[test]
+fn show_0275() {
+    let Some(mut t) = twin(275) else { return };
+    let f = t.at(0x3f90);
+    for (k, b0) in (0u32..).zip([13u8, 8, 3]) {
+        stubs_0275(&mut t, k);
+        sel_0275(&mut t, b0, 5, k);
+        junk_ops(&mut t, f, &[0x44, 0x4a, 0xb9, 0x170]);
+        t.set_u32(t.img.word(f + 0x3d), 0x5a5a_5a5a);
+        ownb::dirty_stack(&mut t, 0x3f90 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r38::show_0275(g, img, fr.at))
+        });
+    }
+}
+
+/// `magic_0275` 0x10004190 (`r38::matrix_0275`, internal, `ecx` = the
+/// matrix): `sel[0]` 13 and not.
+#[test]
+fn matrix_0275() {
+    let Some(mut t) = twin(275) else { return };
+    let f = t.at(0x4190);
+    let x = SCRATCH + 0x3000;
+    for (k, b0) in (0u32..).zip([13u8, 2]) {
+        stubs_0275(&mut t, k);
+        sel_0275(&mut t, b0, 6, k);
+        junk(&mut t, x, 0x40, k);
+        junk_ops(&mut t, f, &[0x2f]);
+        ownb::dirty_stack(&mut t, 0x4190 + k, &[]);
+        t.check(f, Call::this(x), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r38::matrix_0275(g, img, fr.at, fr.esp, fr.ecx))
+        });
+    }
+}
+
+/// What `r38::start_up_0275` (`magic_0275` 0x100036a0) needs: the pools,
+/// the part set-up's and the object start's buffers, the caster, the
+/// selection, the task list (empty or not).
+fn start_up_0275_setup(t: &mut Twin, f: u32, k: u32, listed: bool) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    stubs_0275(t, k);
+    magic_r11::pools(t, f, 849);
+    magic_r11::object_slots(t);
+    stubs_0275(t, k);
+    let start = t.img.rel32_target(f + 0xda);
+    magic_r11::object_start_auto(t, start);
+    sel_0275(t, [13u8, 8, 4, 13][k as usize % 4], 7, k);
+    t.set_u32(w(t, 0x6e), 0x0000_0040 + k);
+    t.set_u32(w(t, 0xe5), 0x0000_0041 + k);
+    // the state block: the global the start-up sets to its immediate
+    junk(t, w(t, 0x54), 0x100, k);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x28, 0x32, 0x3c, 0x46, 0x5e, 0x10e, 0x122, 0x12e, 0x134, 0x210, 0x33f,
+        ],
+    );
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    let head = w(t, 0x2d3);
+    t.set_u32(head, if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x2e6), SCRATCH + 0x600);
+}
+
+/// `magic_0275` 0x100036a0 (`r38::start_up_0275`, internal) and its load
+/// step 0x10003570 (`r38::load_0275`): the task list empty and not, the
+/// yaws above, inside and below their wraps.
+#[test]
+fn start_up_0275() {
+    let Some(mut t) = twin(275) else { return };
+    let f = t.at(0x36a0);
+    for (k, listed) in [(0u32, false), (1, true), (2, true), (3, false)] {
+        start_up_0275_setup(&mut t, f, k, listed);
+        ownb::dirty_stack(&mut t, 0x36a0 + k, &[]);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r38::start_up_0275,
+        );
+    }
+    let load = t.at(0x3570);
+    load_cases(&mut t, load, &|t| start_up_0275_setup(t, f, 2, true));
+}
+
+/// `magic_0275` 0x10003a40 (`r38::task_0275`, cdecl `(node)`): every
+/// state with its count running and at its end, a state past the table,
+/// `sel[0]` 13 and not.
+#[test]
+fn task_0275() {
+    let Some(mut t) = twin(275) else { return };
+    let f = t.at(0x3a40);
+    let give = t.img.rel32_target(f + 0x341);
+    let s = SCRATCH + 0x1_0000;
+    // (state, count, sel[0])
+    for (k, (state, n, b0)) in (0u32..).zip([
+        (0u32, 5u32, 13u8),
+        (0, 1, 2),
+        (1, 7, 2),
+        (1, 1, 13),
+        (2, 9, 2),
+        (2, 1, 2),
+        (3, 6, 13),
+        (3, 1, 2),
+        (7, 3, 2),
+        (1, 0, 2),
+    ]) {
+        stubs_0275(&mut t, k);
+        magic_r11::object_slots(&mut t);
+        stubs_0275(&mut t, k);
+        for call in [0xccu32, 0x13c, 0x282] {
+            let start = t.img.rel32_target(f + call);
+            magic_r11::object_start_auto(&mut t, start);
+        }
+        sel_0275(&mut t, b0, 9, k);
+        junk(&mut t, s, 0x100, k);
+        t.set_u32(t.img.word(f + 0x1f), s);
+        t.set_u32(s + 0xdc, (1.5 + k as f32 * 0.25).to_bits());
+        t.set_u32(s + 0xe0, state);
+        t.set_u32(s + 0xe4, n);
+        t.set_u32(t.img.word(f + 0x3cb), 0x03cb_0000 + k);
+        junk_ops(
+            &mut t,
+            f,
+            &[
+                0xe1, 0xee, 0x106, 0x119, 0x137, 0x18e, 0x194, 0x1fa, 0x205, 0x28f, 0x2b1, 0x2be,
+                0x2cb,
+            ],
+        );
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x3a40 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }
