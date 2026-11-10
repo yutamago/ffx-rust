@@ -284,7 +284,7 @@ fn summon_frame_0174() {
             t.set_u32(r + 0x84, u32::from(hit));
             t.set_u32(
                 r + 0x80,
-                [3u32, 1, 0, 0xffff_fffd, 0xffff_fff8][((i + 2 * k) % 5) as usize],
+                [3u32, 1, 0, 0xffff_fffd, 0xffff_fff8][((i + k) % 5) as usize],
             );
             t.set_u32(
                 r + 0x7c,

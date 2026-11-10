@@ -1149,6 +1149,8 @@ fn stubs_0183(t: &mut Twin) {
     }
     rec(t, 941, 1, move |_, _| table);
     rec(t, 714, 5, |_, _| 0x714);
+    // 711 sees the game lock
+    rec(t, 711, 3, |m, a| m.r32(SCRATCH + 0x7f00) ^ a[0]);
 }
 
 /// `magic_0183` 0x10001090 (`r40::setup_0183`).
@@ -1187,7 +1189,11 @@ fn camera_task_0183() {
             k += 1;
             // junk first: the gates' flags share their globals with the
             // counts (+0x12/+0x39, +0x3f/+0x5b, +0x6a/+0x92)
-            junk_ops(t, f, &[0x39, 0x92, 0x5b, 0x427, 0x48d, 0x47b, 0x493]);
+            junk_ops(
+                t,
+                f,
+                &[0x39, 0x92, 0x5b, 0x427, 0x48d, 0x47b, 0x493, 0x3e5, 0x417],
+            );
             t.set_u32(w(t, 0x12), flags[0]);
             t.set_u32(w(t, 0x3f), flags[1]);
             t.set_u32(w(t, 0x6a), flags[2]);
@@ -1285,7 +1291,13 @@ fn draw_0183() {
         }
         0x232
     });
-    rec(&mut t, 712, 2, |m, _| m.r32(SCRATCH + 0x7f68));
+    // pppRunPart: the done answer, and the lock it sees logged
+    rec(&mut t, 712, 2, |m, _| {
+        let l = m.r32(SCRATCH + 0x7f00);
+        let n = m.r32(SCRATCH + 0x7f6c);
+        m.w32(SCRATCH + 0x7f6c, n.rotate_left(3) ^ l);
+        m.r32(SCRATCH + 0x7f68)
+    });
     let mat = SCRATCH + 0x7a00;
     let holder = SCRATCH + 0x7a80;
     let lock = SCRATCH + 0x7f00;
@@ -1299,9 +1311,17 @@ fn draw_0183() {
     let mut k = 0u32;
     let mut case = |t: &mut Twin, kind: u32, halves: [u16; 2], done: u32| {
         k += 1;
+        // junk first: the frame count's increment (+0x843) names the
+        // frame's own global, and the halfwords sit under the counts
+        // (+0x68a, +0x7f4)
+        junk_ops(
+            t,
+            f,
+            &[0x1ff, 0x151, 0x45e, 0x470, 0x491, 0x68a, 0x7f4, 0x843],
+        );
         t.set_u32(w(t, 0x1b), kind);
-        t.set_u16(w(t, 0x4d1), halves[0]);
-        t.set_u16(w(t, 0x691), halves[1]);
+        t.set_u32(w(t, 0x4d1), 0x5a5a_0000 | u32::from(halves[0]));
+        t.set_u32(w(t, 0x691), 0xa5a5_0000 | u32::from(halves[1]));
         t.set_u32(SCRATCH + 0x7f68, done);
         t.set_u32(lock, 0x40 + k);
         t.write(mat, &[0x3c; 0x40]);
@@ -1311,11 +1331,6 @@ fn draw_0183() {
                 (0.5 * (o % 11) as f32 + k as f32 * 0.25 - 2.0).to_bits(),
             );
         }
-        junk_ops(
-            t,
-            f,
-            &[0x1ff, 0x151, 0x45e, 0x470, 0x491, 0x68a, 0x7f4, 0x843],
-        );
         ownb::dirty_stack(t, 0x1800 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     };
@@ -1361,9 +1376,30 @@ fn stubs_0185(t: &mut Twin) {
     rec(t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f78));
     rec(t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
     rec(t, 777, 1, |_, a| 0x0777_0000 ^ a[0]);
-    for s in [875u32, 873, 775] {
-        rec(t, s, 2, move |_, a| (s << 16) ^ a[0]);
+    // 875/873 log the sprite record they get (its 0x20 bytes) and the
+    // lock; 775 the lock
+    for s in [875u32, 873] {
+        rec(t, s, 4, move |m, a| {
+            let l = m.r32(SCRATCH + 0x7f00);
+            let mut x = l;
+            for i in 0..8 {
+                x = x.rotate_left(5) ^ m.r32(a[3] + 4 * i);
+            }
+            let n = m.r32(SCRATCH + 0x7f90);
+            m.w32(SCRATCH + 0x7f90, n.rotate_left(7) ^ x);
+            (s << 16) ^ a[0]
+        });
     }
+    rec(t, 775, 2, |m, a| m.r32(SCRATCH + 0x7f00) ^ a[0]);
+    // 248 logs the vector it adds
+    rec(t, 248, 3, |m, a| {
+        let mut x = 0u32;
+        for i in 0..4 {
+            x = x.rotate_left(5) ^ m.r32(a[2] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x7f94, m.r32(SCRATCH + 0x7f94).rotate_left(3) ^ x);
+        0x248
+    });
 }
 
 /// `magic_0185`'s spark records (operands of the sprite loop at
@@ -1384,12 +1420,14 @@ fn records_0185(t: &mut Twin, k: u32) {
             rec + 0x14,
             [0x1f0u16, 0x100, 0x7f00, 0xffff][((i + k) % 4) as usize],
         );
+        // free, frame 0, 1, or the last one (the record freed after it)
+        let last = t.u32(t.img.word(sp + 0x22e)) as u16;
         t.set_u16(
             at,
-            if (i + k) % 3 == 2 {
-                0xffff
-            } else {
-                ((i + k) % 3) as u16
+            match (i + k) % 4 {
+                3 => 0xffff,
+                2 => last.wrapping_sub(1),
+                n => n as u16,
             },
         );
         i += 1;
@@ -1518,4 +1556,101 @@ fn setup_0185() {
         ownb::dirty_stack(&mut t, 0x1090 + k, &[]);
         t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
     }
+}
+
+/// `magic_0185` 0x10001b20 (`r40::frame_0185`, with `sprites_0185`): not
+/// loaded; frame 0; the sprite frames; every `n2` way (0, below 10,
+/// 10..0x13, 0x14, between, 0x32, past) and below `n1`; the three parts'
+/// halfwords set and not, `pppRunPart` done and not; slot 240's answers;
+/// frame 0xde.
+#[test]
+fn frame_0185() {
+    let Some(mut t) = twin(185) else { return };
+    stubs_0185(&mut t);
+    let f = t.at(0x1b20);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let lock = SCRATCH + 0x7f00;
+    rec(&mut t, 712, 2, |m, _| {
+        let l = m.r32(SCRATCH + 0x7f00);
+        let n = m.r32(SCRATCH + 0x7f6c);
+        m.w32(SCRATCH + 0x7f6c, n.rotate_left(3) ^ l);
+        m.r32(SCRATCH + 0x7f68)
+    });
+    rec(&mut t, 240, 1, |m, a| m.r32(SCRATCH + 0x7f40) ^ (a[0] & 1));
+    let mat = SCRATCH + 0x7a00;
+    let holder = SCRATCH + 0x7a80;
+    for o in [
+        0x156u32, 0x189, 0x1b4, 0x1d7, 0x29f, 0x2d2, 0x2fd, 0x320, 0x3e8, 0x41b, 0x446, 0x469,
+    ] {
+        t.set_u32(w(&t, o), mat);
+    }
+    for o in [0x78u32, 0x115, 0x229, 0x372, 0x4bb] {
+        t.set_u32(w(&t, o), holder);
+    }
+    for o in [0x236u32, 0x37f, 0x4c8] {
+        t.set_u32(w(&t, o), lock);
+    }
+    // the sprites' globals (all records free)
+    let sp = t.img.rel32_target(f + 0xaf);
+    for o in [0xfcu32, 0x12b, 0x15e, 0x17b, 0x1bd, 0x1ee] {
+        t.set_u32(t.img.word(sp + o), lock);
+    }
+    t.set_u32(t.img.word(sp + 0xdd), SCRATCH + 0x7f80);
+    let (first, end) = (t.img.word(sp + 0x1d), t.img.word(sp + 0x243));
+    let mut at = first;
+    while at < end {
+        t.set_u16(at, 0xffff);
+        at += 0x18;
+    }
+    // a real sine table (the game's pointer is to a zeroed page here)
+    let sine = SCRATCH + 0x4_0000;
+    let tbl: Vec<u8> = (0..0x1000u32)
+        .flat_map(|i| {
+            ((i as f32) * std::f32::consts::TAU / 4096.0)
+                .sin()
+                .to_le_bytes()
+        })
+        .collect();
+    t.write(sine, &tbl);
+    t.set_u32(w(&t, 0x62d), sine);
+    // the targets: three records with their actors and points
+    let recs = w(&t, 0x517);
+    for i in 0..3u32 {
+        let r = recs + 0x88 * i;
+        t.write(r, &[0x40 + i as u8; 0x88]);
+        t.set_u32(r, 0x00ac_0010 + i);
+        t.set_u32(r + 4, 0x00ac_0020 + i);
+        t.set_u32(r + 0x7c - 0x40, (2.5 + i as f32).to_bits());
+    }
+    let mut k = 0u32;
+    let mut case = |t: &mut Twin, frame: u32, loaded: u32, halves: [u16; 3], done: u32| {
+        k += 1;
+        junk_ops(t, f, &[0x7f6, 0xe6, 0xfe, 0x110, 0x267, 0x3b0, 0x4f9]);
+        t.set_u32(w(t, 0x6), loaded);
+        t.set_u32(w(t, 0x13), frame);
+        t.set_u32(w(t, 0x125), 0x5a5a_0000 | u32::from(halves[0]));
+        t.set_u32(w(t, 0x26e), 0xa5a5_0000 | u32::from(halves[1]));
+        t.set_u32(w(t, 0x3b7), 0x3c3c_0000 | u32::from(halves[2]));
+        t.set_u32(w(t, 0x50c), 3);
+        t.set_u32(SCRATCH + 0x7f68, done);
+        t.set_u32(SCRATCH + 0x7f40, k & 1);
+        t.set_u32(lock, 0x40 + k);
+        t.write(mat, &[0x3c; 0x40]);
+        for o in [0x184u32, 0x1af, 0x2cd, 0x2f8, 0x416, 0x441] {
+            t.set_u32(w(t, o), (0.5 * (o % 11) as f32 + 1.25).to_bits());
+        }
+        ownb::dirty_stack(t, 0x1b20 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    };
+    case(&mut t, 0x80, 0, [1, 1, 1], 1);
+    case(&mut t, 0, 1, [1, 1, 1], 1);
+    for frame in [0x27u32, 0x28, 0x60, 0x65, 0x6a, 0x6b] {
+        case(&mut t, frame, 1, [1, 1, 1], 0);
+    }
+    for n2 in [0u32, 3, 9, 10, 0x13, 0x14, 0x15, 0x31, 0x32, 0x33] {
+        for (halves, done) in [([1u16, 1, 1], 1u32), ([0, 1, 0], 0), ([1, 0, 1], 1)] {
+            case(&mut t, 0x6f + n2, 1, halves, done);
+        }
+    }
+    case(&mut t, 0xde, 1, [0, 0, 0], 0);
 }

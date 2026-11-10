@@ -3321,6 +3321,7 @@ ports! {
     "r40 draw 0183" => r40::DRAW_0183, r40::draw_0183;
     "r40 spark task 0185" => r40::SPARK_TASK_0185, r40::spark_task_0185;
     "r40 set-up 0185" => r40::SETUP_0185, r40::setup_0185;
+    "r40 frame 0185" => r40::FRAME_0185, r40::frame_0185;
     // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
