@@ -418,3 +418,100 @@ fn screen_setup_0152() {
         });
     }
 }
+
+/// `magic_0042` 0x10001350 (`r42::light_visit_0042`) and its thunk
+/// 0x100016b0: the node already marked; no children and two; the flags
+/// 0..3 with `+0x28` above, at and below the light's bound (NaN once); the
+/// step and fade before, across and at their end.
+#[test]
+fn light_visit_0042() {
+    let Some(mut t) = twin(42) else { return };
+    all_stubs(&mut t);
+    for (s, n) in [
+        (231u32, 3usize),
+        (245, 1),
+        (563, 4),
+        (821, 1),
+        (822, 4),
+        (823, 2),
+        (824, 4),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let visit = 1000u32;
+    rec(&mut t, visit, 1, |m, a| 0x1000 ^ m.r32(a[0]));
+    let class = SCRATCH + 0x3700;
+    t.set_u32(class + 0x1c, magic::TRAPS + 16 * visit);
+    let f = t.at(0x1350);
+    let c = SCRATCH + 0x3000;
+    let (node, pa, pb) = (SCRATCH + 0x3100, SCRATCH + 0x3300, SCRATCH + 0x3400);
+    let kids = [SCRATCH + 0x3200, SCRATCH + 0x3240];
+    let bound = f32::from_bits(t.u32(t.img.word(f + 0x7b)));
+    let counter = t.img.word(f + 0xb7);
+    // (marked, children, flags, +0x28, speed, step, fade)
+    let cases: [(bool, usize, u8, f32, f32, f32, f32); 11] = [
+        (true, 0, 0, 1.0, 1.0, 0.0, 0.0),
+        (false, 0, 0, 1.0, 1.0, 0.25, 0.5),
+        (false, 2, 1, bound + 1.0, 2.0, 0.25, 0.5),
+        (false, 2, 3, bound + 1.0, 2.0, 0.25, 0.5),
+        (false, 0, 1, bound - 1.0, 2.0, 0.75, 0.5),
+        (false, 0, 1, bound, 2.0, 0.75, 0.5),
+        (false, 0, 2, 1.0, 2.0, 0.75, 0.5),
+        (false, 0, 0, 1.0, 2.0, 0.75, 0.95),
+        (false, 0, 0, 1.0, 2.0, 1.5, 0.25),
+        (false, 0, 1, f32::NAN, 2.0, 0.25, 0.5),
+        (false, 1, 1, bound + 2.0, 0.5, 0.25, 0.5),
+    ];
+    for (k, (marked, children, flags, x28, speed, step, fade)) in (0u32..).zip(cases) {
+        let eax = if marked { Eax::Junk } else { Eax::Checked };
+        for thunk in [false, true] {
+            t.write(node, &[0x44; 0x80]);
+            for i in 0..19u32 {
+                let x = 0.25 * (k + i) as f32 - 1.5;
+                t.set_u32(node + 0x1c + 4 * i, x.to_bits());
+            }
+            t.set_u32(node + 0x4c, 0.375f32.to_bits());
+            t.set_u32(node + 0x54, 0.125f32.to_bits());
+            t.set_u32(node + 0x50, step.to_bits());
+            t.set_u32(node + 0x58, fade.to_bits());
+            t.set_u32(node + 0x28, x28.to_bits());
+            t.set_u32(node + 0x5c, speed.to_bits());
+            t.set_u8(node + 0x68, flags);
+            t.set_u8(node + 0x1a, 0xf0);
+            t.set_u32(c, node);
+            t.set_u8(c + 4, 0x55);
+            t.set_u8(c + 5, if marked { 0xf0 } else { 3 + k as u8 });
+            let mut prev = node;
+            for &kid in kids.iter().take(children).rev() {
+                t.write(kid, &[0x22; 0x10]);
+                t.set_u32(kid, class);
+                t.set_u32(kid + 8, prev);
+                prev = kid;
+            }
+            t.set_u32(node + 0x10, prev);
+            for part in [pa, pb] {
+                t.write(part, &[0x11; 0xc0]);
+                t.set_u32(part, class);
+                for i in 0..3u32 {
+                    t.set_u32(part + 0x1c + 4 * i, (0.5 * (i + k) as f32).to_bits());
+                }
+            }
+            t.set_u32(node + 0x6c, pa);
+            t.set_u32(node + 0x70, pb);
+            t.write(SCRATCH + 0x5000, &[0x0c; 0x400]);
+            t.set_u32(counter, SCRATCH + 0x5000 + 0x40 * k);
+            // the sprite packet's frame words `[ebp - 0x10]`/`[ebp - 0xc]`
+            // (its junk read: 0 on both sides), 0xb8/0xb4 below the entry
+            ownb::dirty_stack(&mut t, 0x1350 + k, &[0xb8, 0xb4]);
+            if thunk {
+                t.check_entry(t.at(0x16b0), Call::default(), &[c], eax);
+            } else {
+                t.check(f, Call::this(c), &[], eax, |g, img, fr| {
+                    ffx_magic::Ret::eax(ffx_magic::r42::light_visit_0042(
+                        g, img, fr.at, fr.esp, fr.ecx,
+                    ))
+                });
+            }
+        }
+    }
+}

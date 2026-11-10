@@ -3376,6 +3376,7 @@ ports! {
     "r42 end task 0201" => r42::END_TASK_0201, r42::end_task_0201;
     "r42 summon task 0201" => r42::SUMMON_TASK_0201, r42::summon_task_0201;
     "r42 summon task 0150" => r42::SUMMON_TASK_0150, r42::summon_task_0150;
+    "r42 light visit thunk 0042" => r42::JMP_LIGHT_VISIT_0042, r42::jmp_light_visit_0042;
     // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3772,6 +3773,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r42 scene 0178", &r42::SCENE_0178),
     ("r42 summon set-up 0203", &r42::SUMMON_SETUP_0203),
     ("r42 summon set-up 0201", &r42::SUMMON_SETUP_0201),
+    ("r42 light visit 0042", &r42::LIGHT_VISIT_0042),
     // round 42 (magic-r42): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),

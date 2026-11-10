@@ -3715,3 +3715,167 @@ pub const SUMMON_TASK_0150: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0042`'s light visit (0x10001350, 858 bytes; internal, `ecx` =
+/// the cursor `C`, reached by its 12-byte thunk 0x100016b0; a /GS frame,
+/// `ebp` = `E - 4`): the node walk ([`walk`](crate::nodes::walk)); when
+/// it ran and bit 0 of `N + 0x68` is set with `N + 0x28` above `K`
+/// (the operand at `+0x7b`): slot 231 `(ebp - 0x44, M, N[0x70] + 0x9c)`,
+/// slot 245 `(ebp - 0x4c)`, the sprite packet
+/// ([`sprite_packet`](crate::s5_misc::sprite_packet)) of the record at
+/// `ebp - 0x80` (the matrix, `N[0x6c] + 0x1c`, `N + 0x1c`, the size
+/// `N + 0x5c`, the packet cursor `*G_C + 8`, 0x44, 0x100), slot 563 on
+/// the packet's words (`*G_C` the new cursor), slots 821 `(0)`, 822 with
+/// `N + 0x1c..0x28` times `K2`, 823 `(s, s)` with `s = N[0x4c] + K3`, 824
+/// `(A + 0x1c, A + 0x20, A + 0x24, 1.0)` (`A` = `N[0x6c]`). Then the moves
+/// of `N + 0x1c..` and `N + 0x5c` as
+/// [`two_part_visit_0609`](crate::r29::two_part_visit_0609)'s. Returns
+/// `eax` as the original leaves it.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn light_visit_0042<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, this: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = esp.wrapping_sub(4);
+    let eax = g.read::<u32>(w(0x0a)) ^ ebp;
+    let (mut eax, tail) = crate::nodes::walk(g, this, this, eax);
+    let Some(n) = tail else {
+        return eax;
+    };
+    let rf = |g: &G, o: u32| g.read::<f32>(n.wrapping_add(o));
+    let mut one = k(g, 0x62);
+    if g.read::<u8>(n + 0x68) & 1 != 0 && rf(g, 0x28) > k(g, 0x7b) {
+        let m = ebp.wrapping_sub(0x44);
+        let b = g.read::<u32>(n + 0x70).wrapping_add(0x9c);
+        let mut st = crate::pushes::Pushes::default();
+        st.push_all(&[b, w(0x92), m]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x98, 231), 0);
+        st.push(ebp.wrapping_sub(0x4c));
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0xa9, 245), 0);
+        let cur = g.read::<u32>(w(0xb7));
+        let rec = ebp.wrapping_sub(0x80);
+        let x = g.read::<u32>(n + 0x5c);
+        g.write::<u32>(rec, m);
+        g.write::<u32>(rec + 4, g.read::<u32>(n + 0x6c).wrapping_add(0x1c));
+        g.write::<u32>(ebp.wrapping_sub(0x60), 0x44);
+        g.write::<u32>(ebp.wrapping_sub(0x54), cur.wrapping_add(8));
+        g.write::<u16>(ebp.wrapping_sub(0x50), 0x100);
+        g.write::<u32>(rec + 8, n + 0x1c);
+        g.write::<u32>(ebp.wrapping_sub(0x58), x);
+        crate::s5_misc::sprite_packet(g, img, img.rel32_target(f + 0xf1), rec);
+        let next = g.read::<u32>(ebp.wrapping_sub(0x54));
+        st.push_all(&[0, 0, next.wrapping_sub(cur) >> 4, cur]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x105, 563), 0);
+        g.write::<u32>(w(0x119), next);
+        let s = add(rf(g, 0x4c), k(g, 0x12f));
+        g.write::<f32>(ebp.wrapping_sub(0x48), s);
+        st.push(0);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x113, 821), 0);
+        // add esp, 0x14: the words of slots 245 and 231 written over
+        st.pop(5);
+        let k2 = k(g, 0x140);
+        let scaled = |g: &G, o: u32| mul(rf(g, o), k2).to_bits();
+        st.pop(4);
+        st.push_all(&[
+            scaled(g, 0x28),
+            scaled(g, 0x24),
+            scaled(g, 0x20),
+            scaled(g, 0x1c),
+        ]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x14a, 822), 0);
+        // add esp, 8: both words left written over with s
+        st.pop(4);
+        st.push_all(&[s.to_bits(), s.to_bits()]);
+        // call width: 12 (Pushes caps the words at 12)
+        st.call(g, t(g, 0x194, 823), 0);
+        let a = g.read::<u32>(n + 0x6c);
+        st.pop(2);
+        st.push_all(&[
+            ONE,
+            g.read::<u32>(a.wrapping_add(0x24)),
+            g.read::<u32>(a.wrapping_add(0x20)),
+            g.read::<u32>(a.wrapping_add(0x1c)),
+        ]);
+        // call width: 12 (Pushes caps the words at 12)
+        eax = st.call(g, t(g, 0x1d7, 824), 0).eax;
+        one = k(g, 0x1ec);
+    }
+    if g.read::<u8>(n + 0x68) & 2 != 0 {
+        let rate = |g: &G| rf(g, 0x4c);
+        for (x, to) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
+            let v = add(mul(sub(rf(g, to), rf(g, x)), rate(g)), rf(g, x));
+            g.write::<f32>(n + x, v);
+        }
+        let v = add(mul(sub(rf(g, 0x60), rf(g, 0x5c)), rf(g, 0x54)), rf(g, 0x5c));
+        g.write::<f32>(n + 0x5c, v);
+        return eax;
+    }
+    // comiss, jae: taken when not below (ordered); jb: below or unordered
+    let at_end = |x: f32| !(x < one || x.is_nan());
+    let copy = |g: &mut G, from: u32, to: u32| {
+        let v = g.read::<u32>(n + from);
+        g.write::<u32>(n + to, v);
+        v
+    };
+    let mut done = at_end(rf(g, 0x50));
+    if !done {
+        for (x, v) in [(0x1cu32, 0x3cu32), (0x20, 0x40), (0x24, 0x44), (0x28, 0x48)] {
+            let y = add(mul(rf(g, v), rf(g, 0x4c)), rf(g, x));
+            g.write::<f32>(n + x, y);
+        }
+        let step = add(rf(g, 0x50), rf(g, 0x4c));
+        g.write::<f32>(n + 0x50, step);
+        done = at_end(step);
+    }
+    if done {
+        for (to, from) in [(0x1cu32, 0x2cu32), (0x20, 0x30), (0x24, 0x34), (0x28, 0x38)] {
+            eax = copy(g, from, to);
+        }
+    }
+    let fade = rf(g, 0x58);
+    if !at_end(fade) {
+        let y = mul(rf(g, 0x64), rf(g, 0x54));
+        let fade = add(fade, rf(g, 0x54));
+        let y = add(y, rf(g, 0x5c));
+        g.write::<f32>(n + 0x58, fade);
+        g.write::<f32>(n + 0x5c, y);
+        if !at_end(rf(g, 0x50)) {
+            return eax;
+        }
+    }
+    copy(g, 0x60, 0x5c)
+}
+
+/// [`light_visit_0042`] (the `rel32`s: the sprite packet,
+/// `__security_check_cookie` twice).
+pub const LIGHT_VISIT_0042: Sig = Sig {
+    len: 858,
+    hash: 0xd8c0_d1a9_cc1e_1961,
+    calls: &[
+        (0xf1, Callee::Sig(&crate::s5_misc::SPRITE_PACKET)),
+        (0x283, Callee::Any),
+        (0x352, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0042`'s 12-byte thunk over [`light_visit_0042`] (0x100016b0:
+/// `ecx` = the first stack word, then a jump with the caller's stack).
+pub fn jmp_light_visit_0042<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let this = fr.arg(g, 0);
+    let f = img.rel32_target(fr.at + 8);
+    Ret::eax(light_visit_0042(g, img, f, fr.esp, this))
+}
+
+/// [`jmp_light_visit_0042`].
+pub const JMP_LIGHT_VISIT_0042: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&LIGHT_VISIT_0042))],
+    imports: &[],
+};
