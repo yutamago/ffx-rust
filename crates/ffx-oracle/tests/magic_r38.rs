@@ -578,3 +578,199 @@ fn throw_0361() {
         t.check_entry(f, Call::default(), &[ev], Eax::Checked);
     }
 }
+
+/// `magic_0350`'s state block `S` (at the operand `op` of `f`), junk.
+fn state_0350(t: &mut Twin, f: u32, op: u32, k: u32) -> u32 {
+    let s = SCRATCH + 0x1_0000;
+    junk(t, s + 0x100, 0xe00, k);
+    t.set_u32(t.img.word(f + op), s);
+    s
+}
+
+/// `magic_0350` 0x100059a0 (`r38::task_0350`, cdecl `(node)`): the script
+/// running or ended, the motion waiting or done; both done (the lights,
+/// models and parts, the node given back).
+#[test]
+fn task_0350() {
+    let Some(mut t) = twin(350) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x59a0);
+    let run = t.img.rel32_target(f + 0x33);
+    let ms = t.img.rel32_target(f + 0x3a);
+    let lm = t.img.rel32_target(f + 0x4e);
+    let give = t.img.rel32_target(f + 0x59);
+    recs(
+        &mut t,
+        &[(590, 2), (589, 2), (296, 2), (941, 1), (772, 2), (779, 2)],
+    );
+    let bytes = SCRATCH + 0x600;
+    t.write(bytes, &[3, 5, 7, 9]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 2);
+        bytes
+    });
+    // (script mode, motion done)
+    for (k, (mode, done)) in (0u32..).zip([(4u8, false), (0, false), (4, true), (0, true)]) {
+        // the lights' block is `S + 0xc18` (the same state global)
+        let s = state_0350(&mut t, f, 0x07, k);
+        assert_eq!(t.img.word(lm + 0x6), t.img.word(f + 0x07));
+        let e = s + t.img.word(lm + 0xe);
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u32(t.img.word(run + 0x07), 0x0bad_0007);
+        magic_hi::motion(&mut t, ms, done);
+        let blk = t.img.word(f + 0x10);
+        junk(&mut t, blk, 0x30, k);
+        t.set_u32(t.img.word(f + 0x26), 0x0026_0000 + k);
+        t.write(e, &[0x5a; 0x240]);
+        t.set_u32(e + 0x228, 0);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x59a0 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0350` 0x10005c60 (`r38::packed_0350`, cdecl `(node)`): the
+/// fade-out over (the node given back); the count above 0 and not; the
+/// angle wrapping and not; the texture filled and not.
+#[test]
+fn packed_0350() {
+    let Some(mut t) = twin(350) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x5c60);
+    let give = t.img.rel32_target(f + 0x2e);
+    let desc = SCRATCH + 0x700;
+    rec(&mut t, 719, 3, move |_, _| desc);
+    filler(&mut t, 235, 1, 16);
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[1] + 4 * i, a[0] ^ i);
+        }
+        0x210
+    });
+    let answer = SCRATCH + 0x7e0;
+    rec(&mut t, 885, 7, move |m, _| m.r32(answer));
+    rec(&mut t, 905, 9, |_, a| 0x0905_0000 ^ a[0]);
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    // (out, count, total, angle, filled)
+    for (k, (out, c, total, angle, filled)) in (0u32..).zip([
+        (0i32, 3i32, 9i32, 1.0f32, 0u32),
+        (-2, 3, 9, 1.0, 1),
+        (5, 3, 9, 1.0, 1),
+        (5, 1, 9, -0.25, 0),
+        (5, 0, 9, 0.0, 1),
+        (2, -4, 9, 3.0, 1),
+        (9, 0, -3, -5.0, 7),
+    ]) {
+        let s = state_0350(&mut t, f, 0x19, k);
+        t.set_u32(s + 0xe50, out.cast_unsigned());
+        t.set_u32(s + 0xe48, c.cast_unsigned());
+        t.set_u32(s + 0xe4c, total.cast_unsigned());
+        t.set_u32(s + 0xe54, (7 + k).cast_signed().cast_unsigned());
+        t.set_u32(s + 0xe44, angle.to_bits());
+        t.set_u32(desc, 0x1234_5678 ^ k);
+        t.set_u32(desc + 4, 0x9abc_def0 ^ k);
+        t.set_u32(answer, filled);
+        t.set_u32(t.img.word(f + 0xba), SCRATCH + 0x3000);
+        junk(&mut t, SCRATCH + 0x3000, 0x900, k);
+        t.set_u32(t.img.word(f + 0xf3), 0x00f3_0000 + k);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x5c60 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0350` 0x10005db0 (`r38::set_up_0350`): the task list empty and
+/// not. Its two never-written frame words read 0 on both sides.
+#[test]
+fn set_up_0350() {
+    let Some(mut t) = twin(350) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x5db0);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x2f);
+    magic_r11::object_start_auto(&mut t, start);
+    for listed in [false, true] {
+        let k = u32::from(listed);
+        let s = state_0350(&mut t, f, 0x1d, k);
+        let _ = s;
+        magic_r11::pools(&mut t, f, 1232);
+        t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+        t.set_u32(
+            t.img.word(f + 0xe1),
+            if listed { SCRATCH + 0x600 } else { 0 },
+        );
+        t.set_u32(t.img.word(f + 0xfb), SCRATCH + 0x600);
+        ownb::dirty_stack(&mut t, 0x5db0 + k, &[0x10, 0xc]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0350` 0x10006320 (`r38::sparks_0350`): the count out, and in
+/// with two, one and no records per bone; the pool running out.
+#[test]
+fn sparks_0350() {
+    let Some(mut t) = twin(350) else { return };
+    spark_stubs(&mut t);
+    let f = t.at(0x6320);
+    let take = t.img.rel32_target(f + 0x87);
+    let recs_at = SCRATCH + 0x8000;
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4u32 {
+            wf(
+                m,
+                a[3] + 4 * i,
+                (a[1] & 0xff) as f32 * 0.5 + i as f32 - 1.25,
+            );
+        }
+        0x0237_0000 ^ a[1]
+    });
+    let h = SCRATCH + 0x7c0;
+    junk(&mut t, h, 0x20, 1);
+    t.set_u32(t.img.word(f + 0x97), h);
+    t.set_u32(t.img.word(f + 0x67), 0x0067_0000);
+    // (count, total, free records)
+    for (k, (c, total, free)) in (0u32..).zip([
+        (0i32, 4i32, 40u32),
+        (1, 4, 40),
+        (3, 4, 40),
+        (4, 2, 40),
+        (6, 3, 40),
+        (8, 3, 5),
+        (2, -1, 40),
+    ]) {
+        let s = state_0350(&mut t, f, 0x13, k);
+        t.set_u32(s + 0xe58, c.cast_unsigned());
+        t.set_u32(s + 0xe5c, total.cast_unsigned());
+        let busy: Vec<u32> = (free..40).collect();
+        pool_74(&mut t, take, recs_at, 40, &busy, 0, k);
+        t.set_u32(SCRATCH + 0xa00, k);
+        ownb::dirty_stack(&mut t, 0x6320 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0350` 0x10006830 (`r38::keys_0350`): the copies and the scale
+/// task's node appended to an empty and a non-empty list.
+#[test]
+fn keys_0350() {
+    let Some(mut t) = twin(350) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6830);
+    let task = t.img.rel32_target(f + 0x349);
+    for listed in [false, true] {
+        let k = u32::from(listed);
+        state_0350(&mut t, f, 0x02, k);
+        magic_r11::pools(&mut t, task, 191);
+        let w = |t: &Twin, o: u32| t.img.word(task + o);
+        t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+        let head = w(&t, 0x81);
+        t.set_u32(head, if listed { SCRATCH + 0x600 } else { 0 });
+        let tail = w(&t, 0x99);
+        t.set_u32(tail, SCRATCH + 0x600);
+        ownb::dirty_stack(&mut t, 0x6830 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
