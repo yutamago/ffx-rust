@@ -1767,3 +1767,826 @@ pub const START_0370: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `**G_SCENE` = the scene word, both operands of `f` (the pointer global
+/// at `ptr`, the immediate at `imm`).
+fn scene<G: Game>(g: &mut G, img: &Image, f: u32, ptr: u32, imm: u32) {
+    let p = g.read::<u32>(img.word(f + ptr));
+    g.write::<u32>(p, img.word(f + imm));
+}
+
+/// The view slots `magic_0376`'s part callbacks share: slot 258 `(p)`,
+/// slot 231 `(*G_M1, *G_B, *G_M2)`, slot 230 `(*G_V, *G_M1)` (the
+/// operands `(t258, t231, m2, b, m1, t230, m1', v)`).
+fn view_0376<G: Game>(g: &mut G, img: &Image, f: u32, p: u32, ops: [u32; 8]) {
+    let w = |o: u32| img.word(f + o);
+    let [t258, t231, m2, b, m1, t230, m1b, v] = ops;
+    // call width: 1
+    g.call(slot_target(g, w(t258), 258), 0, &[p]);
+    let (m2, b, m1) = (
+        g.read::<u32>(w(m2)),
+        g.read::<u32>(w(b)),
+        g.read::<u32>(w(m1)),
+    );
+    // call width: 3
+    g.call(slot_target(g, w(t231), 231), 0, &[m1, b, m2]);
+    let (m1, v) = (g.read::<u32>(w(m1b)), g.read::<u32>(w(v)));
+    // call width: 2
+    g.call(slot_target(g, w(t230), 230), 0, &[v, m1]);
+}
+
+/// The part's data checked by slot 712 `(p, 0x30)` (table operand `t`)
+/// with the game lock `**G_LOCK` (operand `lock`) set to 1, the scene word
+/// stored (`ptr`, `imm`) after the first 1, the lock read back and put
+/// back after the call (operand `lock2`). Returns slot 712's `eax` and the
+/// lock's address after it.
+fn check_712<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    p: u32,
+    (lock, ptr, imm, t, lock2): (u32, u32, u32, u32, u32),
+) -> (u32, u32) {
+    let w = |o: u32| img.word(f + o);
+    let l = g.read::<u32>(w(lock));
+    let sp = g.read::<u32>(w(ptr));
+    g.write::<u32>(l, 1);
+    g.write::<u32>(sp, w(imm));
+    let saved = g.read::<u32>(l);
+    g.write::<u32>(l, 1);
+    // call width: 2
+    let ok = g.call(slot_target(g, w(t), 712), 0, &[p, 0x30]).eax;
+    let l2 = g.read::<u32>(w(lock2));
+    g.write::<u32>(l2, saved);
+    (ok, l2)
+}
+
+/// A part restarted from the program table of `*G_PART` (slot 941 of its
+/// `+0x10`, the program at `+off`; [`start_part`](crate::opu_parts::start_part)
+/// `(p, 0x1000, program, 1)`), after the scene word. Operands: the scene
+/// pointer and immediate, the part global, the slot table, the `rel32`.
+/// Returns the part start's `eax`.
+fn restart_0376<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    p: u32,
+    (ptr, imm, part, t, call): (u32, u32, u32, u32, u32),
+    off: u32,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    scene(g, img, f, ptr, imm);
+    let d = g.read::<u32>(w(part));
+    let key = g.read::<u32>(d + 0x10);
+    // call width: 1
+    let tb = g.call(slot_target(g, w(t), 941), 0, &[key]).eax;
+    let program = g.read::<u32>(tb.wrapping_add(off));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + call), p, 0x1000, program, 1)
+}
+
+/// `magic_0376`'s glow part callback (0x10001260, 378 bytes; cdecl `(p)`;
+/// an `ebp` /GS frame, `V` at `ebp - 0x14`, `U` at `ebp - 0x24`): `s =
+/// (*G_T - 0x10a) / K`; `V` = slot 234 of the two points of the first or
+/// the second pair (by whether `p` lies in the first 0x80 bytes of the
+/// part table), `U = V s`, slot 248 `(p + 0x40, A, U)`; the view slots;
+/// the part's data checked (slot 712) with the lock cleared after.
+/// Returns 0 when slot 712 answers, else 1.
+pub fn glow_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (v, u) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x24));
+    let p = fr.arg(g, 0);
+    let t = g.read::<u32>(w(0x11)).wrapping_add(0xffff_fef6);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps, rounded as the original
+    let s = div(t.cast_signed() as f32, f32_at(g, w(0x26)));
+    let first = p.wrapping_sub(w(0x31)) & 0xffff_ff80 == 0;
+    let (a, b, c, tb) = if first {
+        (w(0x45), w(0x4a), w(0x61), 0x50)
+    } else {
+        (w(0x68), w(0x6d), w(0x84), 0x73)
+    };
+    // call width: 3
+    g.call(slot_target(g, w(tb), 234), 0, &[v, b, a]);
+    for i in 0..3 {
+        put(g, u + 4 * i, mul(f32_at(g, v + 4 * i), s));
+    }
+    // call width: 3
+    g.call(slot_target(g, w(0x9b), 248), 0, &[p + 0x40, c, u]);
+    view_0376(
+        g,
+        img,
+        f,
+        p,
+        [0xc9, 0xe0, 0xdb, 0xe6, 0xf2, 0xff, 0xfa, 0x105],
+    );
+    let (ok, l2) = check_712(g, img, f, p, (0x113, 0x118, 0x124, 0x129, 0x142));
+    g.write::<u32>(l2, 0);
+    Ret::eax(u32::from(ok == 0))
+}
+
+/// [`glow_0376`] (the `rel32`s: the cookie checks).
+pub const GLOW_0376: Sig = Sig {
+    len: 378,
+    hash: 0x28a1_9738_353f_f016,
+    calls: &[(0x15f, Callee::Any), (0x172, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0376`'s ring part callback (0x10001480, 301 bytes; cdecl
+/// `(p)`): slot 237 `(*G_C, 11, 0, p + 0x40)`; the view slots; with the
+/// clock `*G_T` in 0xa8..0xb1 the result is 1 at once; at 0xb2 the part
+/// restarts (program `+0x38`) with its scale `+0x60..+0x68` 0.12 and
+/// `+0x6c` 1.0; then the part's data is checked (slot 712) and the lock
+/// cleared. Returns 0 when slot 712 answers, else 1.
+pub fn ring_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = fr.arg(g, 0);
+    let c = g.read::<u32>(w(0x1c));
+    // call width: 4
+    g.call(slot_target(g, w(0xc), 237), 0, &[c, 0xb, 0, p + 0x40]);
+    view_0376(
+        g,
+        img,
+        f,
+        p,
+        [0x23, 0x37, 0x32, 0x3d, 0x49, 0x56, 0x51, 0x5c],
+    );
+    let clock = g.read::<u32>(w(0x6a));
+    if clock.wrapping_sub(0xa8) <= 9 {
+        return Ret::eax(1);
+    }
+    if clock == 0xb2 {
+        restart_0376(g, img, f, p, (0x89, 0x8f, 0x94, 0x9c, 0xb7), 0x38);
+        for o in [0x60u32, 0x64, 0x68] {
+            g.write::<u32>(p + o, 0x3dfc_80ef);
+        }
+        g.write::<u32>(p + 0x6c, 0x3f80_0000);
+    }
+    let (ok, l2) = check_712(g, img, f, p, (0xdc, 0xe1, 0xed, 0xf2, 0x10c));
+    g.write::<u32>(l2, 0);
+    Ret::eax(u32::from(ok == 0))
+}
+
+/// [`ring_0376`] (the `rel32`: the part start).
+pub const RING_0376: Sig = Sig {
+    len: 301,
+    hash: 0x57b8_d886_d564_05b5,
+    calls: &[(0xb7, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// `magic_0376`'s pillar set-up (0x100015b0, 462 bytes; cdecl `(p)`, `i`
+/// = `(p - G_TABLE) >> 7`): parts 0..3 restart with their programs
+/// (`+0x1c`, `+0x20`, `+0x24`, `+0x1c`; counters `G_N0..3` cleared) at
+/// their places `(x, -122, z)` with `+0x4c` 1.0; every part gets `+0x50..
+/// +0x58` 0, `+0x5c` 1, `+0x6c` 1.0 and the scale `r / K * K' + K''`
+/// (`+0x60..+0x68`). Returns the random's 15 bits.
+pub fn pillar_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = fr.arg(g, 0);
+    let i = p.wrapping_sub(w(0xa)).cast_signed() >> 7;
+    // (the counter cleared, the scene operands, part, table, rel32,
+    // program offset, x, z)
+    let case = match i {
+        0 => Some((
+            0x16,
+            (0x1b, 0x21, 0x26, 0x2e, 0x49),
+            0x1c,
+            0xc214_39ae,
+            0x425d_ac50,
+        )),
+        1 => Some((
+            0x6c,
+            (0x66, 0x76, 0x7b, 0x83, 0x9e),
+            0x20,
+            0x4253_c651,
+            0x42d8_d628,
+        )),
+        2 => Some((
+            0xc1,
+            (0xbb, 0xcb, 0xd0, 0xd8, 0xf3),
+            0x24,
+            0x4233_c651,
+            0x4255_ac50,
+        )),
+        3 => Some((
+            0x113,
+            (0x10d, 0x11d, 0x122, 0x12a, 0x145),
+            0x1c,
+            0x421f_c651,
+            0x42fa_d628,
+        )),
+        _ => None,
+    };
+    if let Some((n, ops, off, x, z)) = case {
+        if i == 0 {
+            g.write::<u32>(w(n), 0);
+            restart_0376(g, img, f, p, ops, off);
+        } else {
+            let sp = g.read::<u32>(w(ops.0));
+            g.write::<u32>(w(n), 0);
+            g.write::<u32>(sp, w(ops.1));
+            let d = g.read::<u32>(w(ops.2));
+            let key = g.read::<u32>(d + 0x10);
+            // call width: 1
+            let tb = g.call(slot_target(g, w(ops.3), 941), 0, &[key]).eax;
+            let program = g.read::<u32>(tb.wrapping_add(off));
+            let at = img.rel32_target(f + ops.4);
+            crate::opu_parts::start_part(g, img, at, p, 0x1000, program, 1);
+        }
+        g.write::<u32>(p + 0x40, x);
+        g.write::<u32>(p + 0x48, z);
+        g.write::<u32>(p + 0x4c, 0x3f80_0000);
+        g.write::<u32>(p + 0x44, 0xc2f4_0000);
+    }
+    for o in [0x50u32, 0x54, 0x58] {
+        g.write::<u32>(p + o, 0);
+    }
+    g.write::<u32>(p + 0x5c, 1);
+    let t = slot_target(g, w(0x169), 324);
+    // call width: 0
+    let r = g.call(t, 0, &[]).eax & 0x7fff;
+    g.write::<u32>(p + 0x6c, 0x3f80_0000);
+    #[allow(clippy::cast_precision_loss)] // below 2^15: exact
+    let v = add(
+        mul(div(r as f32, f32_at(g, w(0x1a8))), f32_at(g, w(0x1b0))),
+        f32_at(g, w(0x1b8)),
+    );
+    for o in [0x60u32, 0x64, 0x68] {
+        put(g, p + o, v);
+    }
+    Ret::eax(r)
+}
+
+/// [`pillar_0376`] (the `rel32`s: the part starts).
+pub const PILLAR_0376: Sig = Sig {
+    len: 462,
+    hash: 0x1fd5_80d1_c3c6_7d1f,
+    calls: &[
+        (0x49, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x9e, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xf3, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x145, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0376`'s pillar step (0x10001780, 348 bytes; cdecl `(p)`, `i` =
+/// `(p - G_TABLE) >> 7`): parts 0..3 count their frames (`G_Ni`, `c` =
+/// 0x20 - the count before); the fade `max(c * 10, -60)` for a negative
+/// `c` (or `p`'s word outside the four), else 0; the view slots, slot 918
+/// `(fade)`, the part's data checked (slot 712); then slot 918 `(0)` and
+/// the lock cleared. Returns 0 when slot 712 answers, else 1.
+pub fn pillar_step_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = fr.arg(g, 0);
+    let i = p.wrapping_sub(w(0xb)).cast_signed() >> 7;
+    // the counter's two operands (read, write)
+    let counter = match i {
+        0 => Some((0x17u32, 0x24u32)),
+        1 => Some((0x30, 0x3d)),
+        2 => Some((0x49, 0x56)),
+        3 => Some((0x62, 0x6f)),
+        _ => None,
+    };
+    let c = if let Some((rd, wr)) = counter {
+        let n = g.read::<u32>(w(rd));
+        g.write::<u32>(w(wr), n.wrapping_add(1));
+        0x20u32.wrapping_sub(n)
+    } else {
+        p
+    };
+    let fade = if c.cast_signed() < 0 {
+        c.cast_signed().wrapping_mul(10).max(-0x3c).cast_unsigned()
+    } else {
+        0
+    };
+    view_0376(
+        g,
+        img,
+        f,
+        p,
+        [0x90, 0xa4, 0x9f, 0xaa, 0xb6, 0xc3, 0xbe, 0xc9],
+    );
+    // call width: 1
+    g.call(slot_target(g, w(0xd6), 918), 0, &[fade]);
+    let (ok, l2) = check_712(g, img, f, p, (0xe5, 0xea, 0xf6, 0xfb, 0x114));
+    let t = slot_target(g, w(0x122), 918);
+    if ok != 0 {
+        // call width: 1
+        g.call(t, 0, &[0]);
+        let l = g.read::<u32>(w(0x133));
+        g.write::<u32>(l, 0);
+        return Ret::eax(0);
+    }
+    g.write::<u32>(l2, 0);
+    // call width: 1
+    g.call(t, 0, &[0]);
+    Ret::eax(1)
+}
+
+/// [`pillar_step_0376`].
+pub const PILLAR_STEP_0376: Sig = Sig {
+    len: 348,
+    hash: 0x06fe_134a_69cd_6ace,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0376`'s orb set-up (0x100018e0, 278 bytes; cdecl `(p)`, `i` =
+/// `(p - G_TABLE) >> 7`): parts 0 and 1 restart (programs `+0x18`,
+/// `+0x28`) with their places, `+0x54` and scales, then `+0x6c` 1.0,
+/// `+0x5c` 1, `+0x58`/`+0x50` 0, `+0x4c` 1.0. Returns 1.
+pub fn orb_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = fr.arg(g, 0);
+    let i = p.wrapping_sub(w(0xa)).cast_signed() >> 7;
+    let set = |g: &mut G, words: &[(u32, u32)]| {
+        for &(o, v) in words {
+            g.write::<u32>(p + o, v);
+        }
+    };
+    match i {
+        0 => {
+            restart_0376(g, img, f, p, (0x16, 0x1c, 0x21, 0x29, 0x44), 0x18);
+            set(
+                g,
+                &[
+                    (0x40, 0xc1ed_c318),
+                    (0x44, 0xc324_0000),
+                    (0x48, 0x41a1_884c),
+                    (0x54, 0),
+                    (0x60, 0x3e20_403a),
+                    (0x64, 0x3e20_403a),
+                    (0x68, 0x3e20_403a),
+                ],
+            );
+        }
+        1 => {
+            restart_0376(g, img, f, p, (0x85, 0x8b, 0x90, 0x98, 0xb3), 0x28);
+            set(
+                g,
+                &[
+                    (0x40, 0xbfdc_3183),
+                    (0x44, 0xc2f4_0000),
+                    (0x48, 0x4230_c426),
+                    (0x54, 0x5000),
+                    (0x60, 0x3dcf_dc16),
+                    (0x64, 0x3dcf_dc16),
+                    (0x68, 0x3dcf_dc16),
+                ],
+            );
+        }
+        _ => return Ret::eax(1),
+    }
+    set(
+        g,
+        &[
+            (0x6c, 0x3f80_0000),
+            (0x5c, 1),
+            (0x58, 0),
+            (0x50, 0),
+            (0x4c, 0x3f80_0000),
+        ],
+    );
+    Ret::eax(1)
+}
+
+/// [`orb_0376`] (the `rel32`s: the part starts).
+pub const ORB_0376: Sig = Sig {
+    len: 278,
+    hash: 0x01c9_16aa_b4bc_950a,
+    calls: &[
+        (0x44, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xb3, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0376`'s beam set-up (0x10002090, 348 bytes; cdecl `(p)`, `i` =
+/// `(p - G_TABLE) >> 7`): parts 0..2 restart (programs `+0x8`, `+0xc`,
+/// `+0x10`) at their places, part 0 with the scale 0.2955 and the others
+/// 0.5805 (`+0x60..+0x68`); then `+0x4c` 1.0, `+0x50..+0x58` 0, `+0x5c`
+/// 1, `+0x6c` 1.0. Returns the part start's `eax`, or `i`.
+pub fn beam_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = fr.arg(g, 0);
+    let i = p.wrapping_sub(w(0xa)).cast_signed() >> 7;
+    let set = |g: &mut G, words: &[(u32, u32)]| {
+        for &(o, v) in words {
+            g.write::<u32>(p + o, v);
+        }
+    };
+    let eax = match i {
+        0 => {
+            let eax = restart_0376(g, img, f, p, (0x16, 0x1c, 0x21, 0x29, 0x44), 0x8);
+            set(
+                g,
+                &[
+                    (0x40, 0xc33d_b863),
+                    (0x44, 0xc284_0000),
+                    (0x48, 0xc1b6_77b4),
+                    (0x60, 0x3e97_4ba5),
+                    (0x64, 0x3e97_4ba5),
+                    (0x68, 0x3e97_4ba5),
+                ],
+            );
+            eax
+        }
+        1 | 2 => {
+            let (ops, off, place) = if i == 1 {
+                (
+                    (0x7d, 0x83, 0x88, 0x90, 0xab),
+                    0xc,
+                    [0xc2ef_70c6, 0xc228_0000, 0x41d1_884c],
+                )
+            } else {
+                (
+                    (0xd0, 0xd6, 0xdb, 0xe3, 0xfe),
+                    0x10,
+                    [0xc32f_b863, 0xc286_0000, 0x4240_c426],
+                )
+            };
+            let eax = restart_0376(g, img, f, p, ops, off);
+            set(g, &[(0x40, place[0]), (0x44, place[1]), (0x48, place[2])]);
+            set(
+                g,
+                &[
+                    (0x68, 0x3f14_9b95),
+                    (0x64, 0x3f14_9b95),
+                    (0x60, 0x3f14_9b95),
+                ],
+            );
+            eax
+        }
+        _ => return Ret::eax(i.cast_unsigned()),
+    };
+    set(
+        g,
+        &[
+            (0x4c, 0x3f80_0000),
+            (0x50, 0),
+            (0x54, 0),
+            (0x58, 0),
+            (0x5c, 1),
+            (0x6c, 0x3f80_0000),
+        ],
+    );
+    Ret::eax(eax)
+}
+
+/// [`beam_0376`] (the `rel32`s: the part starts).
+pub const BEAM_0376: Sig = Sig {
+    len: 348,
+    hash: 0xfe7e_2d33_86c2_40fb,
+    calls: &[
+        (0x44, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xab, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xfe, Callee::Sig(&crate::opu_parts::START_PART)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0376`'s spark (0x10001aa0, 507 bytes; internal: `ecx` = a
+/// sprite system, the stack `(P)`): a sprite of it taken
+/// ([`sprite_take`](crate::s4_misc::sprite_take) with the resource
+/// `*G_R`; none: 0), its time `+0x28` 0x20, its place `P` plus
+/// `(r / K - K1) K2 K3` per axis, its speeds `(r / K - K1) K2 K4`,
+/// `+0x54` = `r / K * K1 + K5`, `+0x5c..+0x64` 0x12, 0x13, 0x10.
+/// Returns the sprite.
+pub fn spark_0376<G: Game>(g: &mut G, img: &Image, f: u32, fr: &Frame) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32_at(g, w(o));
+    let take = Frame {
+        at: img.rel32_target(f + 0xc),
+        esp: fr.esp.wrapping_sub(0xc),
+        ecx: fr.ecx,
+        edx: g.read::<u32>(w(0x6)),
+        ..Frame::default()
+    };
+    let s = crate::s4_misc::sprite_take(g, img, &take).eax;
+    if s == 0 {
+        return 0;
+    }
+    g.write::<u32>(s + 0x28, 0x20);
+    let p = fr.arg(g, 0);
+    for (i, (t, a, b, c, d)) in (0u32..).zip([
+        (0x1cu32, 0x43u32, 0x50u32, 0x58u32, 0x60u32),
+        (0x48, 0x8a, 0x92, 0x9a, 0xa2),
+        (0x82, 0xcd, 0xd5, 0xdd, 0xe5),
+    ]) {
+        let r = rnd15(g, img, f, t);
+        let v = mul(mul(sub(div(r, k(g, a)), k(g, b)), k(g, c)), k(g, d));
+        put(g, s + 4 + 4 * i, add(v, f32_at(g, p + 4 * i)));
+    }
+    for (i, (t, a, b, c, d)) in (0u32..).zip([
+        (0xc5u32, 0x110u32, 0x118u32, 0x120u32, 0x128u32),
+        (0x108, 0x14e, 0x156, 0x15e, 0x166),
+        (0x146, 0x18c, 0x194, 0x19c, 0x1a4),
+    ]) {
+        let r = rnd15(g, img, f, t);
+        let v = mul(mul(sub(div(r, k(g, a)), k(g, b)), k(g, c)), k(g, d));
+        put(g, s + 0x14 + 4 * i, v);
+    }
+    let r = rnd15(g, img, f, 0x184);
+    let v = add(mul(div(r, k(g, 0x1c5)), k(g, 0x1cd)), k(g, 0x1d5));
+    put(g, s + 0x54, v);
+    for (i, v) in (0u32..).zip([0x12u32, 0x13, 0x10]) {
+        g.write::<u32>(s + 0x5c + 4 * i, v);
+    }
+    s
+}
+
+/// [`spark_0376`] (the `rel32`: the sprite take).
+pub const SPARK_0376: Sig = Sig {
+    len: 507,
+    hash: 0xeeee_1782_639c_eccb,
+    calls: &[(0xc, Callee::Sig(&crate::s4_misc::SPRITE_TAKE))],
+    imports: &[],
+};
+
+/// The sprites' colour words from the table below `G_C` (`+0x68` =
+/// `G_C[-sp[0x28]]`, through `conv`) for the live sprites of `sys`.
+fn sprite_colours<G: Game>(g: &mut G, sys: u32, table: u32, conv: impl Fn(u32) -> u32) {
+    let mut sp = g.read::<u32>(sys + 4);
+    let mut i = 0i32;
+    while i < g.read::<i32>(sys) {
+        if g.read::<u32>(sp) != 0 {
+            let at = table.wrapping_sub(g.read::<u32>(sp + 0x28) << 2);
+            let v = conv(g.read::<u32>(at));
+            g.write::<u32>(sp + 0x68, v);
+        }
+        i += 1;
+        sp = sp.wrapping_add(0x94);
+    }
+}
+
+/// The sprites stepped ([`sprites_step`](crate::s6_misc::sprites_step))
+/// and drawn ([`block_sprite_frames`](crate::s9_misc::block_sprite_frames),
+/// `dt` in `xmm3`), the draw's answer into `*G_X` (operand `x`).
+#[allow(clippy::too_many_arguments)] // the original's operands
+fn sprites_draw<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    sys: u32,
+    esp: u32,
+    (step, frames, x): (u32, u32, u32),
+    dt: f32,
+) {
+    let st = Frame {
+        at: img.rel32_target(f + step),
+        esp: esp.wrapping_sub(4),
+        ecx: sys,
+        ..Frame::default()
+    };
+    crate::s6_misc::sprites_step(g, img, &st);
+    let bf = Frame {
+        at: img.rel32_target(f + frames),
+        esp: esp.wrapping_sub(8),
+        ecx: sys,
+        xmm: [0, 0, 0, crate::Xmm::f32(dt).reg()],
+        ..Frame::default()
+    };
+    let r = crate::s9_misc::block_sprite_frames(g, img, &bf).eax;
+    g.write::<u32>(img.word(f + x), r);
+}
+
+/// `magic_0376`'s embers (0x10001f20, 198 bytes; cdecl `(sys)`; an `ebp`
+/// /GS frame, `P` at `ebp - 0x14`): `P` = slot 237 `(*G_C, 10, 0, P)`;
+/// every fifth clock tick below 0x235 a spark ([`spark_0376`]); the live
+/// sprites' colours from the table; the sprites stepped and drawn (`dt`
+/// `K`). Returns 1.
+pub fn embers_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let pt = ebp.wrapping_sub(0x14);
+    let sys = fr.arg(g, 0);
+    let c = g.read::<u32>(w(0x2a));
+    // call width: 4
+    g.call(slot_target(g, w(0x1a), 237), 0, &[c, 0xa, 0, pt]);
+    let clock = g.read::<i32>(w(0x32));
+    let regs = ebp.wrapping_sub(0x14 + 8);
+    if clock < 0x235 && clock % 5 == 0 {
+        g.write::<u32>(regs.wrapping_sub(4), pt);
+        let sp = Frame {
+            esp: regs.wrapping_sub(8),
+            ecx: sys,
+            ..Frame::default()
+        };
+        spark_0376(g, img, img.rel32_target(f + 0x5f), &sp);
+    }
+    sprite_colours(g, sys, w(0x7c), |v| v);
+    let dt = f32_at(g, w(0x9d));
+    sprites_draw(g, img, f, sys, regs, (0x95, 0xa5, 0xb0), dt);
+    Ret::eax(1)
+}
+
+/// [`embers_0376`] (the `rel32`s: the spark, the step, the frames, the
+/// cookie check).
+pub const EMBERS_0376: Sig = Sig {
+    len: 198,
+    hash: 0xa3a1_7c52_1020_6acb,
+    calls: &[
+        (0x5f, Callee::Sig(&SPARK_0376)),
+        (0x95, Callee::Sig(&crate::s6_misc::SPRITES_STEP)),
+        (0xa5, Callee::Sig(&crate::s9_misc::BLOCK_SPRITE_FRAMES_B)),
+        (0xbe, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0376`'s burst (0x10001d00, 437 bytes; cdecl `(sys)`; an `ebp`
+/// /GS frame, `P` at `ebp - 0x14`): `P` = slot 237 `(*G_C, 0x85, 0, P)`;
+/// while the clock is below 100 a spark ([`spark_0376`]) with its `+0x54`
+/// times `K`, its place `P + (r / K1 - K) K2 K2` per axis and its colour
+/// steps 0x46, 0x50, 0x5a; the live sprites' colours from the table times
+/// a double; the sprites stepped and drawn (`dt` 0). Returns 1.
+pub fn burst_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32_at(g, w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let pt = ebp.wrapping_sub(0x14);
+    let sys = fr.arg(g, 0);
+    let c = g.read::<u32>(w(0x2d));
+    // call width: 4
+    g.call(slot_target(g, w(0x1a), 237), 0, &[c, 0x85, 0, pt]);
+    let regs = ebp.wrapping_sub(0x14 + 8);
+    if g.read::<i32>(w(0x38)) < 0x64 {
+        g.write::<u32>(regs.wrapping_sub(4), pt);
+        let sp = Frame {
+            esp: regs.wrapping_sub(8),
+            ecx: sys,
+            ..Frame::default()
+        };
+        let s = spark_0376(g, img, img.rel32_target(f + 0x4a), &sp);
+        put(g, s + 0x54, mul(f32_at(g, s + 0x54), k(g, 0x62)));
+        for (i, (t, a, b, c, d)) in (0u32..).zip([
+            (0x50u32, 0x88u32, 0x90u32, 0x98u32, 0xa0u32),
+            (0x80, 0xcb, 0xd3, 0xdb, 0xe3),
+            (0xc3, 0x109, 0x111, 0x119, 0x121),
+        ]) {
+            let r = rnd15(g, img, f, t);
+            let v = mul(mul(sub(div(r, k(g, a)), k(g, b)), k(g, c)), k(g, d));
+            put(g, s + 4 + 4 * i, add(v, f32_at(g, pt + 4 * i)));
+        }
+        for (i, v) in (0u32..).zip([0x46u32, 0x50, 0x5a]) {
+            g.write::<u32>(s + 0x5c + 4 * i, v);
+        }
+    }
+    let scale = g.read::<f64>(w(0x151));
+    #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+    sprite_colours(g, sys, w(0x161), |v| {
+        ((f64::from(f32::from_bits(v)) * scale) as f32).to_bits()
+    });
+    sprites_draw(g, img, f, sys, regs, (0x189, 0x194, 0x19f), 0.0);
+    Ret::eax(1)
+}
+
+/// [`burst_0376`] (the `rel32`s: the spark, the step, the frames, the
+/// cookie check).
+pub const BURST_0376: Sig = Sig {
+    len: 437,
+    hash: 0xf566_1f67_2dc5_2882,
+    calls: &[
+        (0x4a, Callee::Sig(&SPARK_0376)),
+        (0x189, Callee::Sig(&crate::s6_misc::SPRITES_STEP)),
+        (0x194, Callee::Sig(&crate::s9_misc::BLOCK_SPRITE_FRAMES_B)),
+        (0x1ad, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0376`'s start (0x10002330, 774 bytes; cdecl `(a)`): a 16 MiB
+/// buffer (slot 803) cut into globals (0x100000, 0x100000, 0x80000 apart,
+/// the last twice and `+0x39d0`); `G_A = a`; the resource set and loaded
+/// (slots 718, 222); the part `*G_P` = slot 719 `(*G_N, 8, 0)` set up by
+/// slot 711 with the game lock 1 and slot 710; three tables of slot 941;
+/// the draw record (0x30 bytes, `u16 +2` 0x80) and four 0x110-byte
+/// blocks cleared (`memset`) and given their vtables and flag words;
+/// `G_X` = slot 260 `(0)`, `G_Y` = slot 260 `(0x17)`. Returns 1.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_0376<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    // call width: 2
+    let buf = g.call(slot(g, 0x4, 803), 0, &[0x0100_0000, 0x10]).eax;
+    g.write::<u32>(w(0x19), buf);
+    let x = buf.wrapping_add(0x10_0000);
+    g.write::<u32>(w(0x23), x);
+    let x = x.wrapping_add(0x10_0000);
+    g.write::<u32>(w(0x2d), x);
+    let x = x.wrapping_add(0x8_0000);
+    g.write::<u32>(w(0x37), x);
+    g.write::<u32>(w(0x3c), x);
+    g.write::<u32>(w(0x46), x.wrapping_add(0x39d0));
+    g.write::<u32>(w(0x4e), fr.arg(g, 0));
+    stores(g, img, f, &[(0x64, 0x68)]);
+    // call width: 1
+    g.call(slot(g, 0x53, 718), 0, &[w(0x58)]);
+    let n = g.read::<u32>(w(0x87));
+    // call width: 4
+    g.call(slot(g, 0x6f, 222), 0, &[n, 0, 0x3e8, 0x2000]);
+    let n = g.read::<u32>(w(0x9e));
+    // call width: 3
+    let h = g.call(slot(g, 0x8e, 719), 0, &[n, 8, 0]).eax;
+    let lock = g.read::<u32>(w(0xa6));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0xaf), h);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(slot(g, 0xba, 711), 0, &[h, w(0xb4), 0]);
+    let lock = g.read::<u32>(w(0xcd));
+    let b = g.read::<u32>(w(0xd8));
+    g.write::<u32>(lock, saved);
+    let p = g.read::<u32>(w(0xe0));
+    // call width: 4
+    g.call(slot(g, 0xe5, 710), 0, &[w(0xea), p, b, 0x10_0000]);
+    for (src, off, tb, dst) in [
+        (0xf7u32, 0x14u32, 0x102u32, 0x10fu32),
+        (0x114, 0x18, 0x11c, 0x129),
+        (0x12e, 0x1c, 0x136, 0x14c),
+    ] {
+        let part = g.read::<u32>(w(src));
+        let key = g.read::<u32>(part + off);
+        // call width: 1
+        let t = g.call(slot(g, tb, 941), 0, &[key]).eax;
+        g.write::<u32>(w(dst), t);
+    }
+    g.write_bytes(w(0x147), &[0; 0x30]); // memset(G_D, 0, 0x30)
+    g.write::<u16>(w(0x15c), 0x80);
+    g.write_bytes(w(0x168), &[0; 0x110]); // memset(G_B0, 0, 0x110)
+    stores(g, img, f, &[(0x17f, 0x183)]);
+    sets(
+        g,
+        img,
+        f,
+        &[
+            (0x189, 8),
+            (0x193, 8),
+            (0x19d, 1),
+            (0x1a7, 1),
+            (0x1b1, 1),
+            (0x1bb, 1),
+            (0x1c5, 1),
+            (0x1cf, 1),
+            (0x1d9, 1),
+            (0x1e3, 1),
+        ],
+    );
+    g.write_bytes(w(0x179), &[0; 0x110]); // memset(G_B1, 0, 0x110)
+    stores(g, img, f, &[(0x1fe, 0x202)]);
+    sets(g, img, f, &[(0x208, 1), (0x212, 1), (0x21c, 1)]);
+    g.write_bytes(w(0x1f8), &[0; 0x110]); // memset(G_B2, 0, 0x110)
+    stores(g, img, f, &[(0x237, 0x23b)]);
+    sets(g, img, f, &[(0x241, 1), (0x24b, 1), (0x255, 1)]);
+    g.write_bytes(w(0x231), &[0; 0x110]); // memset(G_B3, 0, 0x110)
+    stores(g, img, f, &[(0x26c, 0x270)]);
+    sets(
+        g,
+        img,
+        f,
+        &[
+            (0x276, 8),
+            (0x280, 8),
+            (0x28a, 1),
+            (0x294, 1),
+            (0x29e, 1),
+            (0x2a8, 1),
+            (0x2b2, 1),
+            (0x2bc, 1),
+            (0x2c6, 1),
+            (0x2d0, 1),
+        ],
+    );
+    // call width: 1
+    let x = g.call(slot(g, 0x263, 260), 0, &[0]).eax;
+    g.write::<u32>(w(0x2e3), x);
+    // call width: 1
+    let y = g.call(slot(g, 0x2e8, 260), 0, &[0x17]).eax;
+    g.write::<u32>(w(0x2fa), y);
+    Ret::eax(1)
+}
+
+/// [`start_0376`] (the `rel32`s: `memset`).
+pub const START_0376: Sig = Sig {
+    len: 774,
+    hash: 0x25b9_7b71_5090_1ee6,
+    calls: &[
+        (0x151, Callee::Import("memset")),
+        (0x16d, Callee::Import("memset")),
+        (0x1ec, Callee::Import("memset")),
+        (0x225, Callee::Import("memset")),
+        (0x25e, Callee::Import("memset")),
+    ],
+    imports: &[],
+};

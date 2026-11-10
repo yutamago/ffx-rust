@@ -3351,6 +3351,15 @@ ports! {
     "r41 sprite update 0370" => r41::SPRITE_UPDATE_0370, r41::sprite_update_0370;
     "r41 draw 0370" => r41::DRAW_0370, r41::draw_0370;
     "r41 start 0370" => r41::START_0370, r41::start_0370;
+    "r41 glow 0376" => r41::GLOW_0376, r41::glow_0376;
+    "r41 ring 0376" => r41::RING_0376, r41::ring_0376;
+    "r41 pillar 0376" => r41::PILLAR_0376, r41::pillar_0376;
+    "r41 pillar step 0376" => r41::PILLAR_STEP_0376, r41::pillar_step_0376;
+    "r41 orb 0376" => r41::ORB_0376, r41::orb_0376;
+    "r41 beam 0376" => r41::BEAM_0376, r41::beam_0376;
+    "r41 embers 0376" => r41::EMBERS_0376, r41::embers_0376;
+    "r41 burst 0376" => r41::BURST_0376, r41::burst_0376;
+    "r41 start 0376" => r41::START_0376, r41::start_0376;
     // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5267,6 +5276,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 sprite frame 0370", &r41::SPRITE_FRAME_0370),
     ("r41 block frames 0370", &r41::BLOCK_FRAMES_0370),
     ("r41 spark 0370", &r41::SPARK_0370),
+    ("r41 spark 0376", &r41::SPARK_0376),
     // round 41 (magic-r41): end of INTERNAL
 ];
 

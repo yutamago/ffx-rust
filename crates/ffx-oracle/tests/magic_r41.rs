@@ -277,9 +277,10 @@ fn summon_task_0374() {
         floats(&mut t, r + 0xcc, 1, k);
         // the 8 particle records (0x100 bytes apart): parents cleared
         // (one kept), flag bytes from `flags`
+        empty_list(&mut t, SCRATCH + 0x6200);
         for i in 0..8u32 {
             let rec_ = w(0x23e) + 0x100 * i;
-            let parent = if i == 3 { w(0x2e7) } else { 0 };
+            let parent = if i == 3 { SCRATCH + 0x6200 } else { 0 };
             t.set_u32(rec_ + 0x14, parent);
             if parent != 0 {
                 t.set_u32(rec_ + 4, parent);
@@ -690,7 +691,7 @@ fn trail_stubs(t: &mut Twin, count: i16, looped: bool, known: u32, pkt: u32) {
     t.set_u16(table + 6, count as u16);
     for i in 0..0x20u32 {
         let e = table + 0x10 + 8 * i;
-        t.set_u16(e, 0x10);
+        t.set_u16(e, 0x10 + 8 * i as u16);
         t.set_u16(e + 2, 0x300 + 0x40 * i as u16);
         t.set_u32(e + 4, 0x40);
     }
@@ -830,18 +831,19 @@ fn curve_task_0271() {
 /// (3 frames), 772/773 a handle and whether it is drawn (by the part's
 /// low bit), 774/778 hashing the draw record `D` they are given, the
 /// matrix slots logging their words. Returns the lock word's address.
-fn sprite_stubs_0370(t: &mut Twin, sf: u32, tbl: u32) -> u32 {
+fn sprite_stubs_0370(t: &mut Twin, sf: u32, tbl: u32, (lock_op, k_op): (u32, u32)) -> u32 {
     all_stubs(t);
     let lock = SCRATCH + 0x3100;
-    t.set_u32(t.img.word(sf + 0x28e), lock);
-    floats(t, t.img.word(sf + 0x181), 1, 3);
+    t.set_u32(t.img.word(sf + lock_op), lock);
+    floats(t, t.img.word(sf + k_op), 1, 3);
     rec(t, 941, 1, move |_, _| tbl);
     rec(t, 772, 2, |_, a| a[0] ^ a[1]);
     t.stub_edx(772, |_, _| 0x0772_0002);
     rec(t, 773, 4, |_, a| u32::from(a[3] & 1 == 0));
     for (s, n) in [(774u32, 5usize), (778, 6)] {
         rec(t, s, n, move |m, a| {
-            let mut v = s;
+            // the draw record and the game lock as the call sees it
+            let mut v = s ^ m.r32(lock);
             for i in 0..8 {
                 v = v.rotate_left(5) ^ m.r32(a[3] + 4 * i);
             }
@@ -895,7 +897,7 @@ fn block_frames_0370() {
     let f = t.at(0x2f80);
     let sf = t.at(0x2810);
     let tbl = SCRATCH + 0x3200;
-    let lock = sprite_stubs_0370(&mut t, sf, tbl);
+    let lock = sprite_stubs_0370(&mut t, sf, tbl, (0x28e, 0x181));
     t.set_u32(t.img.word(f + 0x11), 0x00ab_0001);
     let (b, base, d) = (SCRATCH + 0x3f00, SCRATCH + 0x4000, SCRATCH + 0x3e00);
     for (c, (n, flag)) in (0u32..).zip([(0u32, 0u32), (3, 1), (3, 0), (2, 1)]) {
@@ -1023,6 +1025,7 @@ fn start_0370() {
         rec(&mut t, 719, 3, move |_, _| parts);
         rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
         rec(&mut t, 803, 2, move |_, _| 0x0800_0000 + k);
+        rec(&mut t, 711, 3, move |m, a| m.r32(lock) ^ a[0]);
         for o in [0x14au32, 0x17e, 0x199] {
             junk(&mut t, w(o), 0x110, k);
         }
@@ -1045,7 +1048,7 @@ fn sprite_update_0370() {
     let w = |o: u32| img.word(f + o);
     let sf = t.at(0x2810);
     let tbl = SCRATCH + 0x3200;
-    let lock = sprite_stubs_0370(&mut t, sf, tbl);
+    let lock = sprite_stubs_0370(&mut t, sf, tbl, (0x28e, 0x181));
     t.set_u32(img.word(sf + 0x28e), lock);
     let rnd = SCRATCH + 0x14c;
     rec(&mut t, 324, 0, move |m, _| {
@@ -1083,5 +1086,210 @@ fn sprite_update_0370() {
         junk_ops(&mut t, f, &[0x2c, 0x70, 0xb8, 0xfe]);
         ownb::dirty_stack(&mut t, 0x1420 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// Points each pointer global named by the operands `ops` of `f` at a
+/// cell of its own (`SCRATCH + 0x7c00 + 0x10 i`, junk inside).
+fn cells(t: &mut Twin, f: u32, ops: &[u32]) {
+    for (i, &o) in (0u32..).zip(ops) {
+        let cell = SCRATCH + 0x7c00 + 0x10 * i;
+        t.set_u32(cell, 0x00c0_0000 + i);
+        let at = t.img.word(f + o);
+        t.set_u32(at, cell);
+    }
+}
+
+/// The slots of `magic_0376`'s part callbacks: 941 a program table, 714
+/// the part start, 712/261/918 logged with answers from `ANSWERS`, the
+/// view slots, 237/234/248 writing vectors; each part start's lock (the
+/// wrappers at the `rel32`s `calls` of `f`) at `SCRATCH + 0x7f00`; the
+/// part global `*G_PART` (operand `part`) a record with its key.
+const ANSWERS: u32 = SCRATCH + 0x7f50;
+
+fn part_stubs_0376(t: &mut Twin, f: u32, calls: &[u32], parts: &[u32]) {
+    all_stubs(t);
+    let table = SCRATCH + 0x3400;
+    junk(t, table, 0x80, 9);
+    rec(t, 941, 1, move |_, _| table);
+    rec(t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(t, 712, 2, |m, _| m.r32(ANSWERS));
+    rec(t, 261, 1, |m, _| m.r32(ANSWERS + 4));
+    rec(t, 918, 1, |_, a| 0x0918_0000 ^ a[0]);
+    rec(t, 258, 1, |_, a| 0x0258_0000 ^ a[0]);
+    rec(t, 231, 3, |_, a| a[0] ^ a[1] ^ a[2]);
+    rec(t, 230, 2, |_, a| a[0] ^ a[1]);
+    for s in [237u32, 234, 248] {
+        let n = if s == 237 { 4 } else { 3 };
+        rec(t, s, n, move |m, a| {
+            let (dst, src) = if s == 237 { (a[3], a[0]) } else { (a[0], a[1]) };
+            for i in 0..4u32 {
+                let x = if s == 237 {
+                    (src & 0xff) as f32 + i as f32
+                } else {
+                    rf(m, src + 4 * i) * 0.5 + rf(m, a[2] + 4 * i)
+                };
+                wf(m, dst + 4 * i, x);
+            }
+            s
+        });
+    }
+    let lock = SCRATCH + 0x7f00;
+    for &c in calls {
+        let wrapper = t.img.rel32_target(f + c);
+        let at = t.img.word(wrapper + 4);
+        t.set_u32(at, lock);
+        let at = t.img.word(wrapper + 0x29);
+        t.set_u32(at, lock);
+    }
+    t.set_u32(lock, 0x77);
+    let rec_ = SCRATCH + 0x7e00;
+    junk(t, rec_, 0x20, 4);
+    for &o in parts {
+        let at = t.img.word(f + o);
+        t.set_u32(at, rec_);
+    }
+}
+
+/// `magic_0376`'s part callbacks 0x10001260 (`r41::glow_0376`),
+/// 0x10001480 (`ring_0376`), 0x100015b0 (`pillar_0376`), 0x10001780
+/// (`pillar_step_0376`), 0x100018e0 (`orb_0376`), 0x10002090
+/// (`beam_0376`): parts before, in and past their table's cases, the
+/// clock's three ways, slots 712/261 answering 0 and not.
+#[test]
+fn part_callbacks_0376() {
+    let Some(mut t) = twin(376) else { return };
+    let img = t.img.clone();
+    // (address, the table operand, the part starts, the part globals,
+    // the scene/lock pointer globals)
+    let funcs: [(u32, u32, &[u32], &[u32], &[u32]); 6] = [
+        (0x1260, 0x31, &[], &[], &[0x113, 0x118]),
+        (0x1480, 0x0, &[0xb7], &[0x94], &[0x89, 0xdc, 0xe1]),
+        (
+            0x15b0,
+            0xa,
+            &[0x49, 0x9e, 0xf3, 0x145],
+            &[0x26, 0x7b, 0xd0, 0x122],
+            &[0x1b, 0x66, 0xbb, 0x10d],
+        ),
+        (0x1780, 0xb, &[], &[], &[0xe5, 0xea, 0x133]),
+        (0x18e0, 0xa, &[0x44, 0xb3], &[0x21, 0x90], &[0x16, 0x85]),
+        (
+            0x2090,
+            0xa,
+            &[0x44, 0xab, 0xfe],
+            &[0x21, 0x88, 0xdb],
+            &[0x16, 0x7d, 0xd0],
+        ),
+    ];
+    for (rva, tb, calls, parts, ptrs) in funcs {
+        let f = t.at(rva);
+        part_stubs_0376(&mut t, f, calls, parts);
+        let base = if tb == 0 {
+            SCRATCH + 0x6000
+        } else {
+            img.word(f + tb)
+        };
+        let clock = t.img.word(t.at(0x1480) + 0x6a);
+        for k in 0..6u32 {
+            cells(&mut t, f, ptrs);
+            // the counters 0x1780 steps (some past 0x20)
+            for o in [0x17u32, 0x30, 0x49, 0x62] {
+                let at = t.img.word(t.at(0x1780) + o);
+                t.set_u32(at, [3u32, 0x20, 0x25, 0x40][(k % 4) as usize] + (o & 3));
+            }
+            t.set_u32(clock, [0xa8u32, 0xb1, 0xb2, 0xb3, 0x10, 0xa7][k as usize]);
+            t.set_u32(ANSWERS, k & 1);
+            t.set_u32(ANSWERS + 4, (k >> 1) & 1);
+            t.set_u32(t.img.word(t.at(0x1260) + 0x11), 0x100 + 7 * k);
+            let p = if k == 5 {
+                SCRATCH + 0x6800
+            } else {
+                base + 0x80 * k
+            };
+            junk(&mut t, p, 0x80, k);
+            floats(&mut t, p + 0x40, 4, k);
+            ownb::dirty_stack(&mut t, rva + k, &[]);
+            t.check_entry(f, Call::default(), &[p], Eax::Checked);
+        }
+    }
+}
+
+/// `magic_0376` 0x10001f20 (`r41::embers_0376`) and 0x10001d00
+/// (`burst_0376`) with their spark 0x10001aa0 (`spark_0376`): the clock
+/// on and off its ticks, the system with a free sprite and full, live
+/// sprites coloured, stepped and drawn.
+#[test]
+fn sparks_0376() {
+    let Some(mut t) = twin(376) else { return };
+    let img = t.img.clone();
+    for (rva, clock_op) in [(0x1f20u32, 0x32u32), (0x1d00, 0x38)] {
+        let f = t.at(rva);
+        let rnd = SCRATCH + 0x14c;
+        let tbl = SCRATCH + 0x3200;
+        let sf =
+            img.rel32_target(img.rel32_target(f + if rva == 0x1f20 { 0xa5 } else { 0x194 }) + 0x83);
+        sprite_stubs_0370(&mut t, sf, tbl, (0x290, 0x179));
+        rec(&mut t, 324, 0, move |m, _| {
+            let s = m.r32(rnd).wrapping_mul(1_103_515_245).wrapping_add(12345);
+            m.w32(rnd, s);
+            s >> 8
+        });
+        rec(&mut t, 237, 4, |m, a| {
+            for i in 0..4 {
+                wf(m, a[3] + 4 * i, i as f32 + 0.5);
+            }
+            0x237
+        });
+        let clock = img.word(f + clock_op);
+        for k in 0..6u32 {
+            t.set_u32(rnd, 0x1234 + 0x9e37 * k);
+            t.set_u32(clock, [0u32, 5, 7, 0x235, 0x63, 0x64][k as usize]);
+            let sys = SCRATCH + 0x8800;
+            let sp = SCRATCH + 0x9000;
+            junk(&mut t, sys, 0x40, k);
+            junk(&mut t, sp, 0x128, k);
+            t.set_u32(sys, 2);
+            t.set_u32(sys + 4, sp);
+            for o in [8u32, 0x10, 0x18] {
+                t.set_u32(sys + o, 0);
+            }
+            t.set_u32(sp, u32::from(k % 3 == 2));
+            t.set_u32(sp + 0x94, u32::from(k % 2 == 1));
+            for i in 0..2u32 {
+                t.set_u32(sp + 0x94 * i + 0x28, i + k % 3);
+            }
+            ownb::dirty_stack(&mut t, rva + k, &[]);
+            t.check_entry(f, Call::default(), &[sys], Eax::Checked);
+        }
+    }
+}
+
+/// `magic_0376` 0x10002330 (`r41::start_0376`, cdecl `(a)`): the
+/// start-up on junk globals.
+#[test]
+fn start_0376() {
+    let Some(mut t) = twin(376) else { return };
+    let f = t.at(0x2330);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x7f40;
+    t.set_u32(w(0xa6), lock);
+    let parts = SCRATCH + 0x7f80;
+    for k in 0..2u32 {
+        junk(&mut t, parts, 0x40, k);
+        rec(&mut t, 719, 3, move |_, _| parts);
+        rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+        rec(&mut t, 803, 2, move |_, _| 0x0800_0000 + k);
+        rec(&mut t, 711, 3, move |m, a| m.r32(lock) ^ a[0]);
+        junk(&mut t, w(0x147), 0x30, k);
+        for o in [0x168u32, 0x179, 0x1f8, 0x231] {
+            junk(&mut t, w(o), 0x110, k);
+        }
+        junk_ops(&mut t, f, &[0x87, 0x9e, 0x2e3, 0x2fa, 0x10f, 0x129, 0x14c]);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x2330 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
     }
 }
