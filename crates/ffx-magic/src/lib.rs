@@ -86,6 +86,7 @@ pub mod r34;
 pub mod r35;
 pub mod r37;
 pub mod r37b;
+pub mod r38;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3289,6 +3290,12 @@ ports! {
     "r37 camera task 0570" => r37::CAMERA_TASK_0570, r37::camera_task_0570;
     "r37 main task 0533" => r37b::MAIN_TASK_0533, r37b::main_task_0533;
     // round 37 (magic-r37): end
+    // round 38 (magic-r38)
+    "r38 clips 0434" => r33::CLIPS_0434, r33::clips_0610;
+    "r38 spark tick 0316" => r38::SPARK_TICK_0316, r38::spark_tick_0316;
+    "r38 spark ring 0316" => r38::SPARK_RING_0316, r38::spark_ring_0316;
+    "r38 load step 0316" => r38::LOAD_0316, r38::load_0316;
+    // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5129,6 +5136,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sl_host 0444", &sl_host::HOSTED_0444),
     ("sl_host 0199", &sl_host::HOSTED_0199),
     // magic small-lo: end of INTERNAL
+    // round 38 (magic-r38)
+    ("r38 start-up 0316", &r38::START_UP_0316),
+    // round 38 (magic-r38): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

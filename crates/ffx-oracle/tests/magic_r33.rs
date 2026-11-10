@@ -382,9 +382,20 @@ fn load_0606() {
 /// empty and not.
 #[test]
 fn clips_0610() {
-    let Some(mut t) = twin(610) else { return };
+    clips(610, 0xc7b0);
+}
+
+/// `magic_0434` 0x100088e0: [`clips_0610`]'s copy with the mode word at
+/// `S + 0x1a84` (read from the code at `+0x7e` and `+0x142`).
+#[test]
+fn clips_0434() {
+    clips(434, 0x88e0);
+}
+
+fn clips(dll: u16, at: u32) {
+    let Some(mut t) = twin(dll) else { return };
     all_stubs(&mut t);
-    let f = t.at(0xc7b0);
+    let f = t.at(at);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let clip = t.img.rel32_target(f + 0x361);
     let a = SCRATCH + 0x1_0000 * 0x10;
@@ -512,7 +523,8 @@ fn clips_0610() {
     ];
     for (k, (mode, n, all, free_n, listed)) in (0u32..).zip(cases) {
         t.write(s, &magic_h6::varied(0x1b00, k as u8));
-        t.set_u32(s + 0x1a80, mode);
+        assert_eq!(w(&t, 0x7e), w(&t, 0x142));
+        t.set_u32(s + w(&t, 0x7e), mode);
         t.set_u32(w(&t, 0x2e), s);
         t.set_u32(w(&t, 0x75), n);
         t.set_u32(w(&t, 0xe2), all);
