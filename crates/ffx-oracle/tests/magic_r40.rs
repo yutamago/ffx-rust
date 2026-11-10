@@ -734,14 +734,8 @@ fn stubs_0179(t: &mut Twin) {
     }
     rec(t, 941, 1, move |_, _| table);
     rec(t, 714, 5, |_, _| 0x714);
-    for (s, n) in [
-        (325u32, 2usize),
-        (696, 2),
-        (213, 2),
-        (239, 3),
-        (388, 3),
-        (324, 0),
-    ] {
+    rec(t, 324, 0, |m, _| m.r32(SCRATCH + 0x7f40) ^ 0x3240);
+    for (s, n) in [(325u32, 2usize), (696, 2), (213, 2), (239, 3), (388, 3)] {
         rec(t, s, n, move |_, a| {
             (s << 16) ^ a.first().copied().unwrap_or(0x3240)
         });
@@ -804,6 +798,9 @@ fn lists_0179(t: &mut Twin) {
         t.set_u16(l + 0x18, 0);
     }
     // the parts' owner block the particle nodes read
+    // the ring's flag word (bit 0 cleared) junk
+    let flag = t.img.word(t.at(0x6b60) + 0x45);
+    t.set_u32(flag, 0x5a5a_5a5b);
     // the ring's last (the object start's operand)
     let ring = t.img.word(t.at(0x6b60) + 0x29);
     t.set_u32(ring, SCRATCH + 0x7d00);
@@ -925,6 +922,14 @@ fn throw_task_0179() {
         (8, 9.0),
     ]) {
         junk(&mut t, r, 0x3000, k);
+        // the objects' static nodes at real points (the throws aim from
+        // them)
+        for o in 0..8u32 {
+            let sn = r + 0x9f0 + 0x480 * o + 0x48;
+            for (j, x) in [0.5f32, -0.25, 1.5, 1.0].into_iter().enumerate() {
+                t.set_u32(sn + 0x1c + 4 * j as u32, (x + o as f32).to_bits());
+            }
+        }
         t.set_u32(r + 0x18, timer.to_bits());
         t.set_u32(r + 0x1c, 2.0f32.to_bits());
         t.set_u16(r + 0x20, i);
@@ -972,6 +977,7 @@ fn object_step_0179() {
                 t.set_u16(o + 0x1c, state);
                 t.set_u16(o + 0x1e, kind);
                 t.set_u32(SCRATCH + 0x7f40, k);
+                junk_ops(&mut t, f, &[0x73, 0x106]);
                 t.set_u32(task, node);
                 t.set_u32(task + 4, o);
                 t.write(node, &[0x3c; 0x20]);
@@ -1004,6 +1010,15 @@ fn summon_task_0179() {
         for timer in [0.0f32, 1.0e4] {
             for done in [0u32, 1] {
                 k += 1;
+                junk_ops(&mut t, f, &[0x26, 0x8c, 0x115, 0x131, 0x3f]);
+                junk_ops(
+                    &mut t,
+                    start,
+                    &[0x58, 0x5d, 0x62, 0xc8, 0x246, 0x23f, 0x25f, 0x26f],
+                );
+                for o in [0x25fu32, 0x26f] {
+                    t.set_u32(t.img.word(start + o), (1.5f32 + k as f32).to_bits());
+                }
                 t.set_u16(w(&t, 0x6), state);
                 t.set_u32(w(&t, 0x50), timer.to_bits());
                 t.set_u32(SCRATCH + 0x7f40, done);

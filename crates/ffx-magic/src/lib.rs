@@ -3313,6 +3313,9 @@ ports! {
     "r40 summon task 0179" => r40::SUMMON_TASK_0179, r40::summon_task_0179;
     "r40 throw task 0179" => r40::THROW_TASK_0179, r40::throw_task_0179;
     "r40 object step 0179" => r40::OBJECT_STEP_0179, r40::object_step_0179;
+    "r40 summon frame 0174" => r40::SUMMON_FRAME_0174, r40::summon_frame_0174;
+    "r40 object turn 0174" => r40::OBJECT_TURN_0174, r40::object_turn_0174;
+    "r40 load step 0174" => r40::LOAD_0174, r40::load_0174;
     // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3697,6 +3700,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r40 throw set-up 0179", &r40::THROW_SETUP_0179),
     ("r40 object start 0179", &r40::OBJECT_START_0179),
     ("r40 throw start 0179", &r40::THROW_START_0179),
+    ("r40 hits 0174", &r40::HITS_0174),
+    ("r40 start-up 0174", &r40::START_UP_0174),
     // round 40 (magic-r40): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
