@@ -606,6 +606,14 @@ fn stubs_0203(t: &mut Twin) {
     for (s, n) in [(713u32, 1usize), (388, 3)] {
         rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
     }
+    // 325 copies four words (its output is read back: the centre's base)
+    rec(t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x325
+    });
 }
 
 /// A node at `node` under `parent` (0: none) with the neighbours `prev`
@@ -637,12 +645,13 @@ fn end_task_0203() {
     // (state, timer, count of parts, mask, flags byte +0x448, part flag
     // +0xe8, parents: 0 none, 1 the parent with it its neighbours, 2 the
     // parent with another node as neighbours)
-    let cases: [(u32, f32, u32, u32, u8, u8, u32); 12] = [
+    let cases: [(u32, f32, u32, u32, u8, u8, u32); 13] = [
         (0, 0.0, 0, 0, 0, 0, 1),
         (0, f32::NAN, 0, 0, 0, 0, 1),
         (0, end, 0, 0, 0, 0, 1),
         (0, end + 1.0, 2, 0b11, 4, 0, 1),
         (0, end + 1.0, 3, 0b101, 0, 4, 2),
+        (0, end + 1.0, 1, 1, 0, 0, 2),
         (0, end + 1.0, 0, 7, 4, 4, 0),
         (0, end + 1.0, 0xffff_fffe, 7, 0, 0, 1),
         (0x2710, 0.0, 0, 0, 0, 0, 1),
@@ -678,7 +687,8 @@ fn end_task_0203() {
             }
         }
         t.set_u16(parent + 0x18, 9);
-        t.set_u8(r + 0x360 + 0xe8, pfl);
+        // the part's flag byte `P + 0xe8` is `R + 0x448`: both bits in one
+        t.set_u8(r + 0x448, fl | pfl);
         t.set_u32(a, node);
         t.set_u32(a + 4, r);
         for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
@@ -732,5 +742,162 @@ fn summon_setup_0203() {
             Eax::Checked,
             |g, img, fr| Ret::eax(r42::summon_setup_0203(g, img, fr)),
         );
+    }
+}
+
+/// `magic_0203` 0x10008190 (`r42::summon_task_0203`): every state, waiting
+/// and going on: 0 (targets matched against the caster and the target
+/// bytes), 1, 0xa, 0xb (waiting, a free record found with more to come
+/// and as the last, none free), 0x14, 0x15/0x16 (no models and two, slot
+/// 698 both ways), 0x17 into 0x18, 0x18, 0x19, 10000 with bit 2 clear and
+/// set, 10001 before and at 3 calls, the states past the table.
+#[test]
+fn summon_task_0203() {
+    let Some(mut t) = twin(203) else { return };
+    stubs_0203(&mut t);
+    for (s, n) in [
+        (239u32, 3usize),
+        (222, 4),
+        (228, 2),
+        (288, 2),
+        (684, 1),
+        (858, 5),
+        (859, 1),
+        (719, 3),
+        (713, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let b = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ b.rotate_left(7)
+        });
+    }
+    rec(&mut t, 698, 1, |_, a| a[0] & 1);
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, (0.5 * i as f32 + (a[0] & 7) as f32).to_bits());
+        }
+        0x531
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(333u32, 0.75f64), (282, 2.25)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    let f = t.at(0x8190);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the lists the nodes go under: empty rings where 0
+    rings_0203(&mut t, f, &[0x145, 0x18c, 0x480, 0x4cd, 0x727, 0x53, 0x87]);
+    for (callee, op) in [
+        (0x530u32, 0x26u32),
+        (0x1c5, 0x1e),
+        (0x343, 0x1e),
+        (0x5b8, 0x18),
+    ] {
+        let c = t.img.rel32_target(f + callee);
+        rings_0203(&mut t, c, &[op]);
+    }
+    for op in [0x7b7u32, 0x80d] {
+        let p = w(&t, op);
+        if t.u32(p + 0x10) == 0 {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+        }
+    }
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let models = SCRATCH + 0x5000;
+    // the targets: three parts with bytes 1..3, the caster 2, targets 3 and 1
+    let parts = w(&t, 0xd7);
+    for i in 0..3u32 {
+        t.set_u32(parts + 0x98 * i, i + 1);
+    }
+    t.set_u32(w(&t, 0xbc), 3);
+    t.set_u32(w(&t, 0xe4), 2);
+    t.set_u32(w(&t, 0xcd), 2);
+    t.write(w(&t, 0xf3), &[3, 1]);
+    t.set_u32(w(&t, 0x55f), 2);
+    let recs = w(&t, 0x36d);
+    // the bone update's function table: a slot no overlay uses (slot 32)
+    let bonefn = t.img.rel32_target(f + 0x7a0);
+    let bone = t.img.rel32_target(bonefn + 0xf9);
+    let table = t.img.word(bone + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    rec(&mut t, 32, 2, |_, a| 0x0032_0000 ^ a[0]);
+    // the bone's pass byte its node's own 0xff: the update returns at once
+    // (the node's methods are the DLL's vtable code; `bone_plain` has its
+    // own tests)
+    t.set_u8(t.img.word(bonefn + 0xeb), 0xff);
+    // (state, count, R+0x28, R+0x34, the free record (16: none), models,
+    // flags byte R+0x158)
+    let cases: [(u32, u32, u32, u32, u32, u32, u8); 25] = [
+        (0, 0, 0, 0, 16, 0, 0),
+        (1, 0x13, 0, 0, 16, 0, 0),
+        (1, 0x14, 0, 0, 16, 0, 0),
+        (0xa, 0, 0, 0, 16, 0, 0),
+        (0xb, 0, 3, 2, 5, 0, 0),
+        (0xb, 0, 3, 0, 5, 0, 0),
+        (0xb, 0, 1, 0, 0, 0, 0),
+        (0xb, 0, 1, 0, 15, 0, 0),
+        (0xb, 0, 1, 0xffff_fff0, 16, 0, 0),
+        (0x14, 0, 0, 0, 16, 0, 0),
+        (0x15, 0x27, 0, 0, 16, 0, 0),
+        (0x15, 0x28, 0, 0, 16, 0, 0),
+        (0x16, 0x28, 0, 0, 16, 2, 0),
+        (0x17, 6, 0, 0, 16, 0, 0),
+        (0x17, 0x24, 0, 0, 16, 0, 0),
+        (0x18, 0x23, 0, 0, 16, 0, 0),
+        (0x18, 0x24, 0, 0, 16, 0, 0),
+        (0x19, 0x27, 0, 0, 16, 0, 0),
+        (0x19, 0x28, 0, 0, 16, 0, 0),
+        (0x2710, 0, 0, 0, 16, 0, 0),
+        (0x2710, 0, 0, 0, 16, 0, 4),
+        (0x2711, 2, 0, 0, 16, 0, 0),
+        (0x2711, 3, 0, 0, 16, 0, 0),
+        (0x2712, 0, 0, 0, 16, 0, 0),
+        (0x1a, 0, 0, 0, 16, 0, 0),
+    ];
+    for (k, (state, count, left, wait, free, nm, fl)) in (0u32..).zip(cases) {
+        t.write(r, &[0x3c ^ k as u8; 0x400]);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x2c, count);
+        t.set_u32(r + 0x28, left);
+        t.set_u32(r + 0x34, wait);
+        t.set_u8(r + 0x158, fl);
+        t.set_u32(r + 0x190, 0x0001_9000 + k);
+        t.set_u32(r + 0x54, nm);
+        for i in 0..nm {
+            let m = models + 0x200 * i;
+            t.write(m, &[0x11 ^ (k + i) as u8; 0x100]);
+            t.set_u32(m + 0x50, 0x0050_0000 + i + k);
+            t.set_u8(m + 0x90, (i & 1) as u8);
+            t.set_u32(r + 0x48 + 4 * i, m);
+        }
+        for i in 0..16u32 {
+            t.set_u32(recs + 0x490 * i, if i == free { 0x4e20 } else { i });
+        }
+        t.set_u32(MASK_0203, 0x1234_5678 + k);
+        t.set_u32(MASK_0203 + 4, 0);
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0x8190 + k, &[]);
+        let call = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[a], Eax::Checked);
     }
 }

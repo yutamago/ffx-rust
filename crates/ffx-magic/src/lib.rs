@@ -3372,6 +3372,7 @@ ports! {
     "r42 summon task 0178" => r42::SUMMON_TASK_0178, r42::summon_task_0178;
     "r42 start-up 0178" => r42::START_UP_0178, r42::start_up_0178;
     "r42 end task 0203" => r42::END_TASK_0203, r42::end_task_0203;
+    "r42 summon task 0203" => r42::SUMMON_TASK_0203, r42::summon_task_0203;
     // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
