@@ -1332,8 +1332,12 @@ fn start_up_0184() {
     prime(&mut t, f, SCRATCH + 0x3_8000);
     let lock = SCRATCH + 0x7f50;
     t.set_u32(w(&t, 0x315), lock);
-    // slot 711 answers with the lock word it sees (set to 1 around it)
-    rec(&mut t, 711, 3, move |m, a| 0x0711_0000 ^ a[0] ^ m.r32(lock));
+    // slot 711 logs the lock word it sees (set to 1 around it)
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        m.w32(lock + 0x10, l);
+        0x0711_0000 ^ a[0]
+    });
     for k in 0..3u32 {
         t.write(list, &[1 + k as u8, 2, 3, 0]);
         t.set_u32(lock, 0x40 + k);
