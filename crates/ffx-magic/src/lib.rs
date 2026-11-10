@@ -92,6 +92,7 @@ pub mod r39;
 pub mod r39b;
 pub mod r40;
 pub mod r41;
+pub mod r43;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3392,6 +3393,11 @@ ports! {
     "r41 shard 0269" => r41::SHARD_0269, r41::shard_0269;
     "r41 shards step 0269" => r41::SHARDS_STEP_0269, r41::shards_step_0269;
     // round 41 (magic-r41): end
+    // round 43 (magic-r43)
+    "r43 summon start 0445" => r43::SUMMON_START_0445, r43::summon_start_0445;
+    "r43 task 0445" => r43::TASK_0445, r43::task_0445;
+    "r43 strike start 0273" => r43::STRIKE_START_0273, r43::strike_start_0273;
+    // round 43 (magic-r43): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5326,6 +5332,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 shard draw 0269", &r41::SHARD_DRAW_0269),
     ("r41 record start 0250", &r41::RECORD_START_0250),
     // round 41 (magic-r41): end of INTERNAL
+    // round 43 (magic-r43)
+    ("r43 object set-up 0445", &r43::OBJECT_SETUP_0445),
+    // round 43 (magic-r43): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
