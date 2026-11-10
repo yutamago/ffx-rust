@@ -308,6 +308,8 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
         .flat_map(|i| ((i as f32 * 0.001_533_98).sin()).to_bits().to_le_bytes())
         .collect();
     t.write(SINES, &sines);
+    // the cameras' jitter (slot 314's float)
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.375 - 0.0625);
     // slot 711 sees the lock word set
     rec(&mut t, 711, 3, |m, _| {
         let l = m.r32(LOCK);
@@ -560,6 +562,12 @@ fn scene_0515_state_10() {
     ] {
         cases.push(scene(0x10, &[(0x1a55, 1), (n10, n)]));
     }
+    // the ring index at its wrap; more pushed bursts (other randoms)
+    cases.push(scene(0x10, &[(0x1a55, 1), (n10, 0x14), (0x1f23, 0x1ff)]));
+    cases.push(scene(0x10, &[(0x1a55, 1), (n10, 0x16), (0x1f23, 0x1ff)]));
+    for n in [0x34u32, 0x35, 0x54, 0x55] {
+        cases.push(scene(0x10, &[(0x1a55, 1), (n10, n)]));
+    }
     // ring entries alive (ageing past and before their life)
     let ring = w(&t, 0x26b0);
     for cs in &mut cases {
@@ -568,13 +576,15 @@ fn scene_0515_state_10() {
             cs.mem.extend([(p - 8, i & 1), (p, 5 + i), (p + 4, 7)]);
         }
     }
-    // the models' places and records
-    let m = w(&t, 0x1cf8);
-    for i in 0..12u32 {
-        t.set_u32(
-            m + 0xcc * (i / 4) + 4 * (i % 4),
-            (0.75 * i as f32 - 2.0).to_bits(),
-        );
+    // the models' places and directions, again each case (the set-up's
+    // ring moves the places)
+    let (m, v) = (w(&t, 0x1cf8), w(&t, 0x1cfd) - 8);
+    for (k, cs) in (0u32..).zip(&mut cases) {
+        for i in 0..12u32 {
+            let x = 0.75 * i as f32 - 2.0 + 0.125 * k as f32;
+            cs.mem.push((m + 0xcc * (i / 4) + 4 * (i % 4), x.to_bits()));
+            cs.mem.push((v + 4 * i, (1.5 - 0.375 * i as f32).to_bits()));
+        }
     }
     for (s, k) in [
         (232u32, 0.5f32),
@@ -601,6 +611,91 @@ fn scene_0515_state_10() {
             );
         }
         0x247
+    });
+    run_scene(&mut t, f, cases);
+}
+
+/// `magic_0515` state 0x18 (`r39b`): once (the actor there and not),
+/// busy, slot 220 at 0, the actors and sounds at 0x28, the third model's
+/// part at frame 0x54, the first's at 0x11, each at its limit and not,
+/// the flash below and at 0xf, the step into state 0x64.
+#[test]
+fn scene_0515_state_18() {
+    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+        return;
+    };
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (once, n18, flash, id) = (0x3964u32, 0x3acbu32, 0x3c70u32, 0x3a56u32);
+    let mut cases = vec![
+        scene(0x18, &[(once, 0), (n18, 0), (id, 0x21)]),
+        scene(0x18, &[(once, 0), (n18, 5), (id, 0xff)]),
+        Scene {
+            a253: 0,
+            ..scene(0x18, &[(once, 0)])
+        },
+        scene(0x18, &[(once, 1), (n18, 0x28), (flash, 0xe)]),
+        scene(0x18, &[(once, 1), (n18, 0x9f), (flash, 0xf)]),
+        scene(0x18, &[(once, 1), (n18, 0x9e), (flash, 0xffff)]),
+    ];
+    let p0 = w(&t, 0x3af2);
+    // (kind, limit, frame) per model
+    let recs: [[(u32, u32, u32); 3]; 4] = [
+        [(0xc8, 0x40, 0x11), (0xc8, 0x30, 0x30), (0xc8, 0x60, 0x54)],
+        [(0xc8, 0x11, 0x12), (0xc8, 0x30, 0x2f), (0xc8, 0x55, 0x55)],
+        [(0xc7, 0x11, 0x11), (0xc9, 0x30, 0x30), (0xc7, 0x54, 0x54)],
+        [(0xc8, 0x12, 0x12), (0xc8, 0x54, 0x54), (0xc8, 0x11, 0x11)],
+    ];
+    for rs in recs {
+        let mut cs = scene(0x18, &[(once, 1), (n18, 0x30), (flash, 3)]);
+        for (i, (kind, lim, fr)) in (0u32..).zip(rs) {
+            let p = p0 + 0xcc * i;
+            cs.mem.extend([
+                (p, kind),
+                (p + 4, lim),
+                (p + 8, fr),
+                (p - 8, 0x30 + i),
+                (p - 4, 0x40 + i),
+            ]);
+            for j in 0..3u32 {
+                cs.mem
+                    .push((p + 0x34 + 4 * j, (0.5 * (i + j) as f32 - 1.0).to_bits()));
+            }
+        }
+        cases.push(cs);
+    }
+    let pt = SCRATCH + 0x7c00;
+    rec(&mut t, 237, 4, move |m, a| {
+        for i in 0..4 {
+            let v = 0.25 * (a[1] + i) as f32 - 2.0;
+            m.w32(a[3] + 4 * i, v.to_bits());
+        }
+        m.w32(pt, a[1]);
+        0x237
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = f32::from_bits(m.r32(a[2] + 4 * i)) * 0.5 + f32::from_bits(m.r32(a[1] + 4 * i));
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x229
+    });
+    rec(&mut t, 247, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(
+                a[0] + 4 * i,
+                (0.125 * i as f32 - (a[1] & 7) as f32).to_bits(),
+            );
+        }
+        0x247
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(
+                a[0] + 4 * i,
+                (1.25 * i as f32 + (a[1] & 3) as f32).to_bits(),
+            );
+        }
+        0x325
     });
     run_scene(&mut t, f, cases);
 }

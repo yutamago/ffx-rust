@@ -97,6 +97,7 @@ pub fn scene_0515<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Option<Ret> {
             9 => state_9(g, img, &c, 0),
             0xd => state_d(g, img, &c, 0),
             0x10 => state_10(g, img, &c, 0),
+            0x18 => state_18(g, img, &c, 0),
             0x64 => state_64(g, img, &c, 0),
             2 | 4 | 5 | 7 | 0xa..=0xc | 0xe | 0xf | 0x11..=0x14 | 0x16 | 0x19..=0x63 => {}
             _ => return None,
@@ -1620,4 +1621,150 @@ fn stop_part_at<G: Game>(g: &mut G, img: &Image, c: &Scene, (h, l, op): (u32, u3
     let holder = c.gw(g, img, h);
     g.write::<u32>(holder, c.w(img, l));
     call_slot(g, img, c, (op, 713), &[p]);
+}
+
+/// State 0x18 (`+0x3961`): once (the halfword `G_O`), the actors' slot
+/// 296, slot 325 `(C, X)` gives the centre `C` that all three models take,
+/// the models' angle copied, the second model moved by `(9.5, 0, 10.5)`
+/// turned by the first's angle (slots 247, 229), its actor's slot 296
+/// `(id, 1)`, its sound, the matrix turned by the angle, the camera record
+/// started. While not busy: slot 220 and slot 306 `(3)` at the count's 0;
+/// the three models' sounds ([`sound_step_18`]); the flash `G_F` while
+/// its frame is below 0xf; on to state 0x64 at 0xa0.
+fn state_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32) {
+    use crate::sb_sse::{add, div, sub};
+    let rec = |o: u32| c.w(img, o + d);
+    if half(g, img, c, 0x3964 + d) == 0 {
+        set_half(g, img, c, 0x3978 + d, 1);
+        crate::s4_misc::actors_296(g, img, &c.frame(img, 0x397d + d, 0));
+        call_slot(g, img, c, (0x3982 + d, 325), &[rec(0x3992), rec(0x3987)]);
+        let ang = half(g, img, c, 0x399a + d);
+        let (c0, c1) = (g.read::<u64>(rec(0x39a2)), g.read::<u64>(rec(0x39aa)));
+        set_half(g, img, c, 0x39b0 + d, ang);
+        set_half(g, img, c, 0x39b6 + d, ang);
+        let turn = 0x4000u32.wrapping_sub(i32::from(ang.cast_signed()).cast_unsigned());
+        let (m, v) = (local(c, 0xb8), local(c, 0x58));
+        for (k, op) in (0usize..).zip([0x39d4u32, 0x39dc, 0x39e4, 0x39ec, 0x39f4, 0x39fc]) {
+            g.write::<u64>(rec(op), if k % 2 == 0 { c0 } else { c1 });
+        }
+        for (i, x) in (0u32..).zip([0x4118_0000u32, 0, 0x4128_0000, 0x3f80_0000]) {
+            g.write::<u32>(v + 4 * i, x);
+        }
+        call_slot(g, img, c, (0x39cc + d, 247), &[m, turn]);
+        call_slot(g, img, c, (0x3a3b + d, 229), &[v, m, v]);
+        let id = c.gw(g, img, 0x3a56 + d);
+        let x = add(kf(g, img, c, 0x3a4b + d), g.read::<f32>(v));
+        g.write::<f32>(rec(0x3a61), x);
+        let z = add(kf(g, img, c, 0x3a69 + d), g.read::<f32>(v + 8));
+        g.write::<f32>(rec(0x3a77), z);
+        if id != 0xff {
+            call_slot(g, img, c, (0x3a86 + d, 296), &[id, 1]);
+        }
+        crate::sa_misc::sound_start(g, img, c.target(img, 0x3aa0 + d), rec(0x3a9b), 0xc8);
+        let a = i32::from(g.read::<i16>(rec(0x3aa7))).cast_unsigned();
+        crate::sa_misc::turn_matrix(g, img, c.target(img, 0x3aac + d), a);
+        let mut fr = c.frame(img, 0x3ab6 + d, 0);
+        fr.ecx = rec(0x3ab1);
+        crate::s6_misc::camera_tracks_from(g, img, &fr);
+    }
+    if c.busy(g, img, 0x3abb + d) {
+        return;
+    }
+    if half(g, img, c, 0x3acb + d) == 0 {
+        let mut fr = c.frame(img, 0x3ada + d, 1);
+        fr.ecx = c.gw(g, img, 0x3ad5 + d);
+        crate::s4_misc::call_220(g, img, &fr);
+        crate::sa_misc::slot306(g, img, c.target(img, 0x3ae4 + d), 3);
+    }
+    let mut p = rec(0x3af2);
+    for i in 0..3u32 {
+        sound_step_18(g, img, c, d, p, i);
+        p = p.wrapping_add(0xcc);
+    }
+    let t = half(g, img, c, 0x3c70 + d);
+    if t.cast_signed() >= 0xf {
+        crate::r25::abs_stores(g, img, c.f, 0x3d7d + d, 0x3d84 + d);
+    } else {
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+        let f = div(f32::from(t.cast_signed()), kf(g, img, c, 0x3c92 + d));
+        let at = rec(0x3c99);
+        let n = g.read::<u16>(at).wrapping_add(1);
+        g.write::<u16>(at, n);
+        let v = sub(kf(g, img, c, 0x3c8a + d), f);
+        crate::r25::abs_stores(g, img, c.f, 0x3ca1 + d, 0x3cbc + d);
+        g.write::<f32>(rec(0x3cc0), v);
+        g.write::<f32>(rec(0x3cc8), v);
+    }
+    let n = half(g, img, c, 0x3d86 + d).wrapping_add(1);
+    set_half(g, img, c, 0x3d93 + d, n);
+    if n.cast_signed() >= 0xa0 {
+        crate::r25::abs_stores(g, img, c.f, 0x3da0 + d, 0x3daa + d);
+    }
+}
+
+/// One of state 0x18's model sounds (`p` the record's `+8`, `i` 0..3): at
+/// the count's 0x28 the third and first models' actors take slot 296 `(id,
+/// 1)` and kind 0xc8; with kind 0xc8, the third model at frame 0x54 sends
+/// part P7 to the middle of its points 0x1c and 0x11 (slot 237), the
+/// first at frame 0x11 part P8 (the model's place, lowered); any at its
+/// limit moves on to 0xc9.
+fn sound_step_18<G: Game>(g: &mut G, img: &Image, c: &Scene, d: u32, p: u32, i: u32) {
+    use crate::sb_sse::{add, mul, sub};
+    let rec = |o: u32| c.w(img, o + d);
+    let r = p.wrapping_sub(8);
+    let count = |g: &G, o: u32| half(g, img, c, o + d);
+    let (start_at, hit) = match i {
+        2 => ((0x3b1c, 0x3b2a, 0x3b37), 0x54),
+        0 => ((0x3cd4, 0x3ce4, 0x3cf1), 0x11),
+        _ => ((0, 0, 0), 0),
+    };
+    if i != 1 && count(g, start_at.0) == 0x28 {
+        crate::sa_misc::record_296(g, img, c.target(img, start_at.1 + d), r, 1);
+        crate::sa_misc::sound_start(g, img, c.target(img, start_at.2 + d), r, 0xc8);
+    }
+    if g.read::<u32>(p) != 0xc8 {
+        return;
+    }
+    let frame = g.read::<u32>(p + 8);
+    if i == 1 || frame != hit {
+        if frame == g.read::<u32>(p + 4) {
+            crate::sa_misc::sound_start(g, img, c.target(img, 0x3c56 + d), r, 0xc9);
+        }
+        return;
+    }
+    if i == 2 {
+        let (a, b) = (local(c, 0x68), local(c, 0xa8));
+        let m = g.read::<u32>(p.wrapping_sub(4));
+        call_slot(g, img, c, (0x3b5d + d, 237), &[m, 0x1c, 0, a]);
+        call_slot(g, img, c, (0x3b79 + d, 237), &[m, 0x11, 0, b]);
+        let k = kf(g, img, c, 0x3bc6 + d);
+        let mid = |g: &G, o: u32| mul(add(g.read::<f32>(b + o), g.read::<f32>(a + o)), k);
+        let (x, y, z) = (mid(g, 0), mid(g, 4), mid(g, 8));
+        g.write::<f32>(a, x);
+        g.write::<f32>(a + 4, y);
+        g.write::<f32>(a + 8, z);
+        motion(
+            g,
+            img,
+            c,
+            0x3c34 + d,
+            (rec(0x3c0f), 0x13),
+            (x, y),
+            (z.to_bits(), 0x3dcc_cccd),
+        );
+    } else {
+        let y = sub(g.read::<f32>(p + 0x38), kf(g, img, c, 0x3d1a + d));
+        let a = g.read::<u32>(p + 0x3c);
+        let x = g.read::<f32>(p + 0x34);
+        motion(
+            g,
+            img,
+            c,
+            0x3d69 + d,
+            (rec(0x3d5f), frame - 6),
+            (x, y),
+            (a, 0x3e2e_147b),
+        );
+        set_half(g, img, c, 0x3d74 + d, 0);
+    }
 }
