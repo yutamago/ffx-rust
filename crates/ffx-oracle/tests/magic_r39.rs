@@ -365,9 +365,7 @@ fn run_scene(t: &mut Twin, f: u32, cases: Vec<Scene>) {
             t.set_u32(TABLE + 4 * i, 0x0941_0000 + i + (k << 8));
         }
         ownb::dirty_stack(t, 0x4ce0 + k, &[]);
-        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
-            ffx_magic::r39b::scene_0515(g, img, fr).unwrap_or_else(|| ffx_magic::Ret::eax(0xdead))
-        });
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
 
@@ -761,6 +759,12 @@ fn scene_0515_state_0() {
         scene(0, &[(once, 1), (n0, 0x1)]),
         scene(0, &[(once, 1), (n0, 0x8001)]),
     ];
+    // the records slot 296 goes over (with 0): two
+    let with = t.img.rel32_target(f + 0x22d);
+    let n_with = t.img.word(with + 7);
+    for cs in &mut cases {
+        cs.mem.push((n_with, 2));
+    }
     for (k, cs) in (0u32..).zip(&mut cases) {
         // the first model's sound record and centre
         let m = t.img.word(f + 0x259);
@@ -916,5 +920,76 @@ fn scene_0515_state_15() {
         }
         0x325
     });
+    run_scene(&mut t, f, cases);
+}
+
+/// `magic_0515` state 0x17 (`r39b`): once with each camera flag and none
+/// (actors widening the box both ways, one without an actor id), busy,
+/// the sparks below 0x3c (records free and none), the actor's byte at
+/// 0x1e (slot 926 both ways), the step into state 0x18.
+#[test]
+fn scene_0515_state_17() {
+    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+        return;
+    };
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let (once, n17, count) = (0x3205u32, 0x3681u32, 0x3486u32);
+    let flags = [0x34fcu32, 0x3593, 0x3627, 0x3641, 0x365b];
+    let mut cases = Vec::new();
+    for k in 0..6usize {
+        let mut set = vec![(once, 0), (n17, 0x40), (count, 3)];
+        for (j, fl) in flags.iter().enumerate() {
+            set.push((*fl, u32::from(j == k)));
+        }
+        cases.push(scene(0x17, &set));
+    }
+    cases.push(Scene {
+        a253: 0,
+        ..scene(0x17, &[(once, 0), (count, 0)])
+    });
+    for n in [0u32, 0x3b, 0x1e, 0x59, 0x58] {
+        cases.push(scene(0x17, &[(once, 1), (n17, n)]));
+    }
+    let mut cs = scene(0x17, &[(once, 1), (n17, 0x1e)]);
+    cs.mem.push((SCRATCH + 0x7f40, 1));
+    cases.push(cs);
+    // no free record
+    let pool = t.img.word(t.img.rel32_target(f + 0x3696) + 6);
+    let mut cs = scene(0x17, &[(once, 1), (n17, 0x10)]);
+    for i in 0..0x100u32 {
+        cs.mem.push((pool + 0x4c * i + 0x28, 1));
+    }
+    cases.push(cs);
+    // the actors' places, ids, models, angles
+    let p0 = w(&t, 0x3395);
+    for cs in &mut cases {
+        for i in 0..3u32 {
+            let p = p0 + 0xcc * i;
+            let x = [3.0f32, -2.5, 0.75][i as usize];
+            let z = [-1.0f32, 4.5, 0.25][i as usize];
+            cs.mem.extend([
+                (p, x.to_bits()),
+                (p + 4, (0.5 * i as f32).to_bits()),
+                (p + 8, z.to_bits()),
+                (p - 0x2c, if i == 1 { 0xff } else { 0x30 + i }),
+                (p - 0x28, 0x40 + i),
+                (p - 0x18, 0x1100 * (i + 1)),
+            ]);
+        }
+    }
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(
+                a[1] + 4 * i,
+                (0.5 + 0.25 * i as f32 + (a[0] & 3) as f32).to_bits(),
+            );
+        }
+        0x290
+    });
+    t.stub_st0(277, |_, a| 1.25 + f64::from(a[0] & 3));
+    t.stub_st0(289, |_, a| 0.5 + f64::from(a[0] & 3));
+    rec(&mut t, 926, 1, |m, _| m.r32(SCRATCH + 0x7f40));
+    rec(&mut t, 925, 1, |_, _| SCRATCH + 0x7000);
+    rec(&mut t, 239, 3, |_, a| a[1] ^ 0x239);
     run_scene(&mut t, f, cases);
 }

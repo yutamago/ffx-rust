@@ -3294,6 +3294,7 @@ ports! {
     // round 37 (magic-r37): end
     // round 39 (magic-r39)
     "r39 scene task 0519" => r39::SCENE_TASK_0519, r39::scene_task_0519;
+    "r39 scene task 0515" => r39b::SCENE_TASK_0515, r39b::scene_task_0515;
     // round 39 (magic-r39): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
