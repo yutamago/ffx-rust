@@ -1800,3 +1800,111 @@ fn effect_task_0424() {
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// `magic_0430`'s placement globals (operands of 0x100018d0, the places of
+/// `magic_0600`'s).
+fn place_globals_0430(t: &mut Twin, f: u32, state: u32, off: u32, index: u32, k: u32) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    chars(
+        t,
+        f,
+        &[0x11, 0x71, 0x134, 0x1be, 0x1f8],
+        &[0x2e, 0x82, 0x145, 0x1c8, 0x202],
+        &[3 + k as u8, 4],
+    );
+    t.set_u32(w(t, 0x1b), state);
+    for o in [0x167u32, 0x363, 0x4e1] {
+        t.set_u32(w(t, o), off);
+    }
+    for o in [0x36cu32, 0x4cf, 0x4ea] {
+        t.set_u32(w(t, o), index);
+    }
+    for o in [0x33cu32, 0x3c3, 0x3f4, 0x50c] {
+        t.set_u32(w(t, o), CHRS + 0x99);
+    }
+    junk_ops(t, f, &[0x55a, 0x564, 0x56e, 0x578]);
+}
+
+/// `magic_0430` 0x100018d0 (`r34::place_pair_0430`) and its load step
+/// 0x10001380 (`r34::load_0430`, with 0x10003de0 `r34::start_0430`): the
+/// angle wrapped down, kept, up, on either limit and NaN; the summon's
+/// index in the battle range or not, the battle off; the load's waits and
+/// the start with the task list empty and not.
+#[test]
+fn place_pair_0430() {
+    let Some(mut t) = twin(430) else { return };
+    model_stubs(&mut t);
+    rec(&mut t, 575, 0, |_, _| 0x0575);
+    let f = t.at(0x18d0);
+    let state = SCRATCH + 0x1_0000;
+    let rots = ownb::rotations(&t, f, 0x9a, 0xa9, 0xc2);
+    let mut cases = vec![(0u32, 2u32), (0, 0x20), (1, 2), (0, 0xffff_ffff), (0, 0x1f)];
+    while cases.len() < rots.len() {
+        cases.push((0, 3));
+    }
+    for (k, ((off, index), rot)) in (0u32..).zip(cases.into_iter().zip(rots)) {
+        junk(&mut t, state + 0xac0, 0x220, 5 + k);
+        junk(&mut t, state + 0xea0, 0x30, 9 + k);
+        place_globals_0430(&mut t, f, state, off, index, k);
+        t.set_u32(ROT, rot.to_bits());
+        ownb::dirty_stack(&mut t, rot.to_bits(), &[]);
+        ownb::reset_counters(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(r34::place_pair_0430(g, img, fr.at, fr.esp))
+        });
+    }
+    // the load step and the start
+    let ld = t.at(0x1380);
+    let st = t.at(0x3de0);
+    let w = |t: &Twin, at: u32, o: u32| t.img.word(at + o);
+    let pi = t.img.rel32_target(st + 0x7b);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, pi, 0x04), lock);
+    let take = t.img.rel32_target(st + 0x126);
+    let ri = t.img.rel32_target(st + 0x164);
+    // (225, once, 227, task list)
+    let loads: [(u32, u32, u32, bool); 5] = [
+        (1, 0, 1, false),
+        (0, 0, 0, false),
+        (0, 0, 1, false),
+        (0, 1, 2, true),
+        (0, 0, 1, true),
+    ];
+    for (k, (w225, once, r227, busy)) in (0u32..).zip(loads) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(w(&t, ld, 0x18), once);
+        t.set_u32(lock, 0x77 + k);
+        let sb = w(&t, st, 0x42);
+        junk(&mut t, sb + 0xac0, 0x220, k);
+        junk(&mut t, sb + 0xea0, 0x40, k + 1);
+        place_globals_0430(&mut t, f, sb, 0, 2, k);
+        t.set_u32(ROT, (0.5 * k as f32 - 1.0).to_bits());
+        junk_ops(
+            &mut t,
+            st,
+            &[0x16, 0x49, 0x71, 0x90, 0x9a, 0xe5, 0x112, 0x11d],
+        );
+        let node = |i: u32| SCRATCH + 0x5000 + 0x40 * i;
+        for i in 0..3u32 {
+            t.write(node(i), &[0x33; 0x40]);
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(w(&t, ri, 0x3e), node(0));
+        t.set_u16(w(&t, ri, 0x20), 3);
+        t.set_u32(w(&t, ri, 0xa6), 0);
+        magic_hi::pool(&mut t, take, SCRATCH + 0x4000, 4);
+        let last = SCRATCH + 0x3400;
+        t.write(last, &[0x34; 0x20]);
+        t.set_u32(w(&t, st, 0x12c), if busy { last } else { 0 });
+        t.set_u32(w(&t, st, 0x140), last);
+        let recs = w(&t, st, 0xf8);
+        for i in 0..16 {
+            t.set_u32(recs + 0x140 * i, 0x7e7e_0000 + i);
+        }
+        ownb::dirty_stack(&mut t, 0x1380 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(ld, Call::default(), &[], Eax::Checked);
+    }
+}

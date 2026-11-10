@@ -3244,3 +3244,134 @@ pub const EFFECT_TASK_0424: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0430`'s placement of the caster and the summon (0x100018d0, 1418
+/// bytes; internal, no arguments, called by [`start_0430`]; a cookie
+/// frame): [`place_pair_0600`](crate::r23::place_pair_0600)'s steps
+/// (the same operands; some `mulss` in the other operand order, the same
+/// product), then slot 575 `()`, `S + 0xeb4` the angle, `+0xeac`,
+/// `+0xeb0`, `+0xec8` 0 and four flags set. Returns slot 575's `eax`.
+pub fn place_pair_0430<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let (_, s, ang) = crate::r23::place_pair_0600_head(g, img, f, esp, 0x22d);
+    let eax = g
+        .call(crate::runtime::slot_target(g, w(0x519), 575), 0, &[])
+        .eax;
+    g.write::<f32>(s + 0xeb4, ang);
+    for o in [0xeacu32, 0xeb0, 0xec8] {
+        g.write::<u32>(s + o, 0);
+    }
+    for o in [0x55a, 0x564, 0x56e, 0x578] {
+        g.write::<u32>(w(o), 1);
+    }
+    eax
+}
+
+/// [`place_pair_0430`] (1418 bytes, 1 overlay).
+pub const PLACE_PAIR_0430: Sig = Sig {
+    len: 1418,
+    hash: 0x2e0f_97dd_ba0a_a885,
+    // __security_check_cookie
+    calls: &[(0x582, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0430`'s start (0x10003de0, 434 bytes; no arguments, called by
+/// its load step): [`start_0600`](crate::r23::start_0600)'s steps with
+/// five globals from immediates, slot 215 `(0x1e)` into `G_A`, `G_N` 2,
+/// slot 719 `(P, 8, 0)` into `G_H`; the part set up
+/// ([`part_setup`](crate::sb_misc::part_setup) `(BUF)`), the pair placed
+/// ([`place_pair_0430`]), the effect reset and scaled
+/// ([`reset_and_scale`](crate::s4_small::reset_and_scale)); the script
+/// blocks' words (a store run); slot 271 `(4)`; two more words; the 16
+/// records `0x140` bytes apart cleared at their first word (`G_C` 0,
+/// `G_D` 16); two task nodes (kinds 1 and 2) appended to the task list,
+/// the records set up
+/// ([`records_init_400`](crate::sa_misc::records_init_400)) between them.
+/// Returns 0.
+pub fn start_0430<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    g.write::<u8>(w(0x7), 0x1e);
+    let s215 = t(g, 0x1, 215);
+    crate::r25::abs_stores(g, img, f, 0x14, 0x46);
+    let a = g.call(s215, 0, &[0x1e]).eax;
+    g.write::<u32>(w(0x49), a);
+    let s719 = t(g, 0x4e, 719);
+    crate::r25::abs_stores(g, img, f, 0x54, 0x5e);
+    // call width: 4 (slot 215's word under it)
+    let h = g.call(s719, 0, &[w(0x67), 8, 0, 0x1e]).eax;
+    g.write::<u32>(w(0x71), h);
+    // push BUF over slot 215's word: the return address at E - 0xc
+    let esp = fr.esp.wrapping_sub(0xc);
+    g.write::<u32>(esp + 8, 0x1e);
+    g.write::<u32>(esp + 4, w(0x76));
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x7b), esp);
+    place_pair_0430(g, img, img.rel32_target(f + 0x80), esp);
+    let rf = Frame {
+        at: img.rel32_target(f + 0x85),
+        esp,
+        ..Frame::default()
+    };
+    crate::s4_small::reset_and_scale(g, img, &rf);
+    let s271 = t(g, 0x8a, 271);
+    crate::r25::abs_stores(g, img, f, 0x8e, 0xd6);
+    // call width: 3 (BUF and slot 215's word under it)
+    g.call(s271, 0, &[4, w(0x76), 0x1e]);
+    crate::r25::abs_stores(g, img, f, 0xe3, 0xf7);
+    let recs = w(0xf8);
+    for i in 0..16 {
+        g.write::<u32>(recs + 0x140 * i, 0);
+    }
+    g.write::<u32>(w(0x112), 0);
+    g.write::<u32>(w(0x11d), 0x10);
+    for (call, cb, kind, ops, then) in [
+        (
+            0x126u32,
+            0x117u32,
+            1u8,
+            [0x12cu32, 0x140, 0x15f, 0x152, 0x15f],
+            true,
+        ),
+        (0x16e, 0x169, 2, [0x174, 0x188, 0x195, 0x1a3, 0x1ab], false),
+    ] {
+        let node = crate::sa_pool::take(g, img, img.rel32_target(f + call), w(cb));
+        g.write::<u8>(node.wrapping_add(0x18), kind);
+        g.write::<u32>(node.wrapping_add(4), 0);
+        crate::r12h_start::append(g, img, f, node, ops);
+        if then {
+            crate::sa_misc::records_init_400(g, img, img.rel32_target(f + 0x164), w(0x157));
+        }
+    }
+    Ret::eax(0)
+}
+
+/// [`start_0430`] (434 bytes, 1 overlay).
+pub const START_0430: Sig = Sig {
+    len: 434,
+    hash: 0xc8d3_57b8_528c_4a3d,
+    calls: &[
+        (0x7b, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x80, Callee::Sig(&PLACE_PAIR_0430)),
+        (0x85, Callee::Sig(&crate::s4_small::RESET_AND_SCALE_430)),
+        (0x126, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x164, Callee::Sig(&crate::sa_misc::RECORDS_INIT_400)),
+        (0x16e, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0430`'s load step (0x10001380, the 118-byte shape) running
+/// [`start_0430`].
+pub fn load_0430<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_0430)
+}
+
+/// [`load_0430`].
+pub const LOAD_0430: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_0430))],
+    imports: &[],
+};

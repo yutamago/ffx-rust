@@ -3273,6 +3273,7 @@ ports! {
     "r34 main task 0284" => r34::MAIN_TASK_0284, r34::main_task_0284;
     "r34 objhost start 0434" => r34::START_0434, l5_objhost::start;
     "r34 effect task 0424" => r34::EFFECT_TASK_0424, r34::effect_task_0424;
+    "r34 load step 0430" => r34::LOAD_0430, r34::load_0430;
     // round 34 (magic-r34): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4033,6 +4034,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 walk reset 0391", &r34::WALK_RESET_0391),
     ("r34 walk reset 0448", &r34::WALK_RESET_0448),
     ("r34 check targets 0434", &r34::CHECK_TARGETS_0434),
+    ("r34 place pair 0430", &r34::PLACE_PAIR_0430),
+    ("r34 start 0430", &r34::START_0430),
     // round 34 (magic-r34): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),

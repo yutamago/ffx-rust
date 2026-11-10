@@ -1015,8 +1015,30 @@ fn copy4<G: Game>(g: &mut G, dst: u32, src: u32) {
 /// (`*G_OFF` 0, index below 32) or slot 257 `(summon, 1)`; `S + 0xeb4` =
 /// `ang`, `+0xeac`, `+0xeb0`, `+0xec8` 0 and two flags set. Returns slot
 /// 296's or 257's `eax`.
-#[allow(clippy::too_many_lines)] // one straight sequence of calls
 pub fn place_pair_0600<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let (eax, s, ang) = place_pair_0600_head(g, img, f, esp, 0x23a);
+    g.write::<f32>(s + 0xeb4, ang);
+    for o in [0xeacu32, 0xeb0, 0xec8] {
+        g.write::<u32>(s + o, 0);
+    }
+    for o in [0x54du32, 0x557] {
+        g.write::<u32>(img.word(f + o), 1);
+    }
+    eax
+}
+
+/// [`place_pair_0600`] up to the show/hide call (`s17`: the caster's slot
+/// 17 operand, which `magic_0430`'s copy,
+/// [`place_pair_0430`](crate::r34::place_pair_0430), has earlier): its
+/// `eax`, `S` and the angle.
+#[allow(clippy::too_many_lines)] // one straight sequence of calls
+pub(crate) fn place_pair_0600_head<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    s17: u32,
+) -> (u32, u32, f32) {
     let w = |off: u32| img.word(f + off);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let ebp = esp.wrapping_sub(4);
@@ -1065,7 +1087,7 @@ pub fn place_pair_0600<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         c: sel(0x1f8, 0x202),
         s15: 0x207,
         s16: 0x21e,
-        s17: 0x23a,
+        s17,
         s330: 0x257,
         s328: 0x275,
         s329: 0x293,
@@ -1111,14 +1133,7 @@ pub fn place_pair_0600<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32
         let summon = g.read::<u32>(w(0x50c));
         g.call(t(g, 0x504, 257), 0, &[summon, 1]).eax
     };
-    g.write::<f32>(s + 0xeb4, ang);
-    for o in [0xeacu32, 0xeb0, 0xec8] {
-        g.write::<u32>(s + o, 0);
-    }
-    for o in [0x54du32, 0x557] {
-        g.write::<u32>(w(o), 1);
-    }
-    eax
+    (eax, s, ang)
 }
 
 /// [`place_pair_0600`] (1,385 bytes, 1 overlay).
