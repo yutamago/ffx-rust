@@ -1484,14 +1484,11 @@ fn summon_task_0146() {
     magic_r11::object_slots(&mut t);
     let model = SCRATCH + 0x7000;
     let flag = SCRATCH + 0x130;
-    rec(&mut t, 941, 1, move |m, a| {
+    // the model (its flag word set first), for every id
+    rec(&mut t, 941, 1, move |m, _| {
         let v = m.r32(flag);
         m.w32(model + 0x3e, v);
-        if a[0] == 0x0bad_0001 {
-            SCRATCH + 0x3400
-        } else {
-            model
-        }
+        model
     });
     rec(&mut t, 307, 0, |_, _| 0x307);
     t.stub_st0(307, |m, _| {
@@ -1916,7 +1913,7 @@ fn fade_task_0353() {
         setf(&mut t, s + 0x13e8, a);
         t.set_u32(desc, 0x1234_5678 ^ k);
         t.set_u32(desc + 4, 0x0000_0003 + k);
-        t.set_u32(answer, k & 1);
+        t.set_u32(answer, u32::from(k != 2));
         t.set_u32(lock, 0x40 + k);
         let v = SCRATCH + 0x3000;
         t.write(v, &[0x44; 0x900]);
@@ -2176,6 +2173,72 @@ fn lit_start_0353() {
         t.set_u32(first, if k == 1 { 0 } else { old });
         t.set_u32(last, if k == 1 { 0 } else { old });
         ownb::dirty_stack(&mut t, 0x2950 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0353` 0x10002aa0 (`r36::light_reset_0353`, an entry): the
+/// records copied back, the scale task's pool full and not.
+#[test]
+fn light_reset_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x2aa0);
+    all_stubs(&mut t);
+    magic_r11::pools(&mut t, f, 862);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x3), s);
+    for k in 0..2u32 {
+        floats(&mut t, s + 0x1100, 0x300 / 4, k);
+        ownb::dirty_stack(&mut t, 0x2aa0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0353` 0x100012b0 (`r36::load_0353`, an entry) running the
+/// start-up (0x10002e60, `r36::start_up_0353`): waiting, asked, loaded
+/// (the start-up with the busy list empty and not).
+#[test]
+fn load_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x12b0);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let su = t.img.rel32_target(f + 0x5b);
+    magic_r11::pools(&mut t, su, 424);
+    let (w225, r227) = (SCRATCH + 0x120, SCRATCH + 0x124);
+    rec(&mut t, 225, 1, move |m, _| m.r32(w225));
+    rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[1]);
+    rec(&mut t, 227, 1, move |m, _| m.r32(r227));
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, _| 0.625);
+    rec(&mut t, 12, 1, |_, a| 0x12 ^ a[0]);
+    t.stub_st0(12, |_, _| 1.75);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], 0.5 * i as f32);
+        }
+        0x262
+    });
+    // the part set-up's lock
+    let ps = t.img.rel32_target(su + 0x70);
+    let lock = SCRATCH + 0x7e0;
+    t.set_u32(t.img.word(ps + 0x04), lock);
+    let lk = t.img.word(ps + 0x2d);
+    if lk != t.img.word(ps + 0x04) {
+        t.set_u32(lk, lock);
+    }
+    for k in 0..4u32 {
+        t.set_u32(w225, u32::from(k == 0));
+        t.set_u32(r227, u32::from(k >= 2) * 2);
+        t.set_u32(t.img.word(f + 0x18), u32::from(k == 1));
+        // the busy list: empty or one node
+        let (first, last) = (t.img.word(su + 0x11b), t.img.word(su + 0x12f));
+        let old = SCRATCH + 0x9400;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(first, if k == 3 { 0 } else { old });
+        t.set_u32(last, if k == 3 { 0 } else { old });
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x12b0 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

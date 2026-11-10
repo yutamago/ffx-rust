@@ -4199,3 +4199,195 @@ pub const LIT_START_0353: Sig = Sig {
     calls: &[(0x13a, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0353`'s light reset (a table entry, no arguments; `S = *G_S`):
+/// the seven light records get their start colours back (four words from
+/// `S + 0x1180`.. into the record, four from `S + 0x1308`.. after them) and
+/// the step counts 0x1e; then the scale task of `S + 0x1148`
+/// ([`scale_task_fixed`](crate::s4_small::scale_task_fixed), `xmm1`/`xmm2`
+/// the constants at operands `+0x2dd`/`+0x2d5`) and its scale 0.65.
+/// Returns the scale task's `eax`.
+///
+/// `magic_0353` 0x10002aa0 (862 bytes).
+pub fn light_reset_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x3));
+    for (dst, src, ext) in [
+        (0x1190u32, 0x1180u32, 0x1308u32),
+        (0x11c8, 0x11b8, 0x1318),
+        (0x1200, 0x11f0, 0x1328),
+        (0x1238, 0x1228, 0x1368),
+        (0x1270, 0x1260, 0x1378),
+        (0x12a8, 0x1298, 0x1388),
+        (0x12e0, 0x12d0, 0x1398),
+    ] {
+        copy_words(g, s + src, s + dst, 4);
+        copy_words(g, s + ext, s + dst + 0x10, 4);
+        g.write::<u32>(s + dst + 0x24, 0x1e);
+        g.write::<u32>(s + dst + 0x20, 0x1e);
+    }
+    let (k2, k1) = (g.read::<u32>(w(0x2d5)), g.read::<u32>(w(0x2dd)));
+    // push esi, push ecx: the call's return address below
+    let task = Frame {
+        at: img.rel32_target(f + 0x34b),
+        esp: fr.esp.wrapping_sub(0xc),
+        eax: 0,
+        ecx: s + 0x1148,
+        edx: 0,
+        xmm: [0, u128::from(k1), u128::from(k2), 0],
+    };
+    let r = crate::s4_small::scale_task_fixed(g, img, &task).eax;
+    g.write::<u32>(s + 0x1148, 0x3f26_6666);
+    Ret::eax(r)
+}
+
+/// [`light_reset_0353`] (the `rel32`: the scale task).
+pub const LIGHT_RESET_0353: Sig = Sig {
+    len: 862,
+    hash: 0xc41d_a0ea_dbe4_1663,
+    calls: &[(0x34b, Callee::Sig(&crate::s4_small::SCALE_TASK_30))],
+    imports: &[],
+};
+
+/// `magic_0353`'s start-up (internal, cdecl, no arguments; called by its
+/// load step): the DLL's buffers and words set, the actors looked up
+/// ([`lookup_actors`](crate::sb_misc::lookup_actors)), the part (slot 719
+/// `(table, 8, 0)`, [`part_setup`](crate::sb_misc::part_setup)), the
+/// camera block's angles ([`angle_reset`](crate::o6_fam_pairs::angle_reset)),
+/// the model's motion ([`motion_reset`](crate::m0353::motion_reset)),
+/// slots 345 `(*G_M)` and 349 `(*G_M, *G_T)`, the 0x20 sparks cleared,
+/// the script's words and slot 271 `(4)`; two tasks taken
+/// ([`take`](crate::sa_pool::take), the script task and the light task's
+/// callbacks) and appended to the busy list (kinds 1 and 2), the aim
+/// records ([`aim_records`](crate::s7_misc::aim_records)) between them.
+/// Returns 0.
+///
+/// `magic_0353` 0x10002e60 (424 bytes).
+pub fn start_up_0353<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    use crate::r11_fades::stores;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    stores(g, img, f, &[0x1, 0xb, 0x15, 0x1f, 0x29, 0x33, 0x3d]);
+    crate::sb_misc::lookup_actors(g, img, img.rel32_target(f + 0x48));
+    // call width: 3
+    let p = g.call(slot(g, 0x4d, 719), 0, &[w(0x5c), 8, 0]).eax;
+    g.write::<u32>(w(0x66), p);
+    // push esi; push 0 (left by the slot's add esp, 8); push the buffer
+    let sp = esp.wrapping_sub(4);
+    g.write::<u32>(sp - 4, 0);
+    g.write::<u32>(sp - 8, w(0x6b));
+    let csp = sp - 0xc;
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x70), csp);
+    let at = |o: u32| Frame {
+        at: img.rel32_target(f + o),
+        esp: csp,
+        eax: 0,
+        ecx: 0,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    crate::o6_fam_pairs::angle_reset(g, img, &at(0x75));
+    crate::m0353::motion_reset(g, img, &at(0x7a));
+    // `ecx` is the part handle the part set-up loaded (`mov ecx, [G]` at
+    // its `+0x8`; nothing after it writes `ecx`): slot 345 reads it
+    let ps = img.rel32_target(f + 0x70);
+    let ecx = g.read::<u32>(img.word(ps + 0xa));
+    let m = g.read::<u32>(w(0x85));
+    // call width: 3 (the part's two words still pushed)
+    g.call(slot(g, 0x7f, 345), ecx, &[m, w(0x6b), 0]);
+    let tw = g.read::<u32>(w(0x94));
+    // call width: 6 (the earlier words still pushed)
+    g.call(slot(g, 0x99, 349), ecx, &[m, tw, m, w(0x6b), 0]);
+    stores(g, img, f, &[0xa9]);
+    for i in 0..0x20u32 {
+        g.write::<u32>(w(0xb4) + 0x140 * i, 0);
+    }
+    stores(g, img, f, &[0xd4]);
+    g.write::<u32>(w(0xe0), 0);
+    g.write::<u16>(w(0xe7), 0);
+    g.write::<u8>(w(0xed), 1);
+    g.write::<u32>(w(0xfc), 0);
+    stores(g, img, f, &[0x100]);
+    // call width: 1
+    g.call(slot(g, 0xd0, 271), 0, &[4]);
+    let t1 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x115), w(0x110));
+    let listed = g.read::<u32>(w(0x11b)) != 0;
+    g.write::<u8>(t1 + 0x18, 1);
+    g.write::<u32>(t1 + 4, 0);
+    if listed {
+        let last = g.read::<u32>(w(0x12f));
+        g.write::<u32>(t1, last);
+        g.write::<u32>(last + 4, t1);
+    } else {
+        g.write::<u32>(t1, 0);
+        g.write::<u32>(w(0x141), t1);
+    }
+    let s = g.read::<u32>(w(0x147));
+    g.write::<u32>(t1 + 8, t1);
+    g.write::<u32>(w(0x155), t1);
+    let aim = Frame {
+        at: img.rel32_target(f + 0x15a),
+        esp: sp - 4,
+        eax: t1,
+        ecx: s + 0x1180,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    crate::s7_misc::aim_records(g, img, &aim);
+    let t2 = crate::sa_pool::take(g, img, img.rel32_target(f + 0x164), w(0x15f));
+    let listed = g.read::<u32>(w(0x16a)) != 0;
+    g.write::<u8>(t2 + 0x18, 2);
+    g.write::<u32>(t2 + 4, 0);
+    if listed {
+        let last = g.read::<u32>(w(0x17e));
+        g.write::<u32>(t2, last);
+        g.write::<u32>(last + 4, t2);
+        g.write::<u32>(t2 + 8, t2);
+        g.write::<u32>(w(0x18b), t2);
+    } else {
+        g.write::<u32>(t2, 0);
+        g.write::<u32>(w(0x199), t2);
+        g.write::<u32>(t2 + 8, t2);
+        g.write::<u32>(w(0x1a1), t2);
+    }
+    0
+}
+
+/// [`start_up_0353`] (the `rel32`s: the actors, the part, the angles, the
+/// motion, the two takes and the aim records).
+pub const START_UP_0353: Sig = Sig {
+    len: 424,
+    hash: 0x6e9a_4e3b_d075_63c4,
+    calls: &[
+        (0x48, Callee::Sig(&crate::sb_misc::LOOKUP_ACTORS)),
+        (0x70, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (
+            0x75,
+            Callee::Sig(&crate::o6_fam_pairs::ANGLE_RESET_0353_1980),
+        ),
+        (0x7a, Callee::Sig(&crate::m0353::MOTION_RESET)),
+        (0x115, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x15a, Callee::Sig(&crate::s7_misc::AIM_RECORDS)),
+        (0x164, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+fn start_up_0353_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    Ret::eax(start_up_0353(g, img, fr.at, fr.esp))
+}
+
+/// `magic_0353`'s load step (0x100012b0, 118 bytes): the shared step
+/// ([`load_step`](crate::r9_load::load_step)) with [`start_up_0353`].
+pub fn load_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0353_entry)
+}
+
+/// [`load_0353`].
+pub const LOAD_0353: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0353))],
+    imports: &[],
+};
