@@ -91,6 +91,7 @@ pub mod r38;
 pub mod r39;
 pub mod r39b;
 pub mod r40;
+pub mod r41;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3363,6 +3364,34 @@ ports! {
     "r40 frame 0185" => r40::FRAME_0185, r40::frame_0185;
     "r40 group task 0178" => r40::GROUP_TASK_0178, r40::group_task_0178;
     // round 40 (magic-r40): end
+    // round 41 (magic-r41)
+    "r41 glow thunk 0374" => r41::GLOW_THUNK_0374, r41::glow_thunk_0374;
+    "r41 sparks 0374" => r41::SPARKS_0374, r41::sparks_0374;
+    "r41 effect task 0374" => r41::EFFECT_TASK_0374, r41::effect_task_0374;
+    "r41 summon task 0374" => r41::SUMMON_TASK_0374, r41::summon_task_0374;
+    "r41 load step 0271" => r41::LOAD_0271, r41::load_0271;
+    "r41 curve task 0271" => r41::CURVE_TASK_0271, r41::curve_task_0271;
+    "r41 sprite reset 0370" => r41::SPRITE_RESET_0370, r41::sprite_reset_0370;
+    "r41 sprite update 0370" => r41::SPRITE_UPDATE_0370, r41::sprite_update_0370;
+    "r41 draw 0370" => r41::DRAW_0370, r41::draw_0370;
+    "r41 start 0370" => r41::START_0370, r41::start_0370;
+    "r41 glow 0376" => r41::GLOW_0376, r41::glow_0376;
+    "r41 ring 0376" => r41::RING_0376, r41::ring_0376;
+    "r41 pillar 0376" => r41::PILLAR_0376, r41::pillar_0376;
+    "r41 pillar step 0376" => r41::PILLAR_STEP_0376, r41::pillar_step_0376;
+    "r41 orb 0376" => r41::ORB_0376, r41::orb_0376;
+    "r41 beam 0376" => r41::BEAM_0376, r41::beam_0376;
+    "r41 embers 0376" => r41::EMBERS_0376, r41::embers_0376;
+    "r41 burst 0376" => r41::BURST_0376, r41::burst_0376;
+    "r41 start 0376" => r41::START_0376, r41::start_0376;
+    "r41 release 0269" => r41::RELEASE_0269, r41::release_0269;
+    "r41 task 0269" => r41::TASK_0269, r41::task_0269;
+    "r41 strike 0269" => r41::STRIKE_0269, r41::strike_0269;
+    "r41 load step 0269" => r41::LOAD_0269, r41::load_0269;
+    "r41 launch 0269" => r41::LAUNCH_0269, r41::launch_0269;
+    "r41 shard 0269" => r41::SHARD_0269, r41::shard_0269;
+    "r41 shards step 0269" => r41::SHARDS_STEP_0269, r41::shards_step_0269;
+    // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5285,6 +5314,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r38 start-up 0298", &r38::START_UP_0298),
     ("r38 effect end 0430", &r38::EFFECT_END_0430),
     // round 38 (magic-r38): end of INTERNAL
+    // round 41 (magic-r41)
+    ("r41 glow 0374", &r41::GLOW_0374),
+    ("r41 start-up 0271", &r41::START_UP_0271),
+    ("r41 trail 0271", &r41::TRAIL_0271),
+    ("r41 sprite frame 0370", &r41::SPRITE_FRAME_0370),
+    ("r41 block frames 0370", &r41::BLOCK_FRAMES_0370),
+    ("r41 spark 0370", &r41::SPARK_0370),
+    ("r41 spark 0376", &r41::SPARK_0376),
+    ("r41 start-up 0269", &r41::START_UP_0269),
+    ("r41 shard draw 0269", &r41::SHARD_DRAW_0269),
+    ("r41 record start 0250", &r41::RECORD_START_0250),
+    // round 41 (magic-r41): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
