@@ -1720,3 +1720,83 @@ fn scene_task_0146() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0155` 0x1000bf70 and `magic_0164` 0x1000bcf0
+/// (`r36::start_up_0155`, `r36::start_up_0164`; `magic_r27.rs`'s
+/// `start_up_0609` set-up): no targets and two; the statics' root with and
+/// without a child; the rings' words junked first.
+#[test]
+fn start_up_0155_0164() {
+    for (n, at, junked) in [
+        (
+            155u16,
+            0xbf70u32,
+            [
+                0x188u32, 0x20d, 0x247, 0x24d, 0x25d, 0x267, 0x2a5, 0x2b6, 0x2c0,
+            ],
+        ),
+        (
+            164,
+            0xbcf0,
+            [
+                0x188, 0x20d, 0x247, 0x250, 0x260, 0x26a, 0x2a3, 0x2b4, 0x2be,
+            ],
+        ),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        all_stubs(&mut t);
+        let f = t.at(at);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let ti = t.img.rel32_target(f + 0x19);
+        let statics = t.img.rel32_target(ti + 0xe0);
+        let root = t.img.word(statics + 0x10d);
+        rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+        let list = SCRATCH + 0x6000;
+        rec(&mut t, 218, 2, move |m, a| {
+            m.w32(a[1], m.r32(list + 0x7c));
+            list
+        });
+        rec(&mut t, 531, 2, |m, a| {
+            for i in 0..4 {
+                m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+            }
+            0x531
+        });
+        rec(&mut t, 289, 1, |_, _| 0x289);
+        t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+        let lock = SCRATCH + 0x7f0;
+        t.set_u32(w(&t, 0x17c), lock);
+        rec(&mut t, 711, 3, move |m, a| {
+            let l = m.r32(lock);
+            m.w32(SCRATCH + 0x7e0, l);
+            0x0711_0000 ^ a[0]
+        });
+        rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+        rec(&mut t, 710, 4, |_, a| a[2] ^ 0x710);
+        for (s, k) in [(718u32, 1usize), (222, 4), (221, 4), (560, 1), (673, 0)] {
+            rec(&mut t, s, k, move |_, a| {
+                (s << 16) ^ a.first().copied().unwrap_or(0)
+            });
+        }
+        let r557 = SCRATCH + 0x7f4;
+        rec(&mut t, 557, 0, move |m, _| m.r32(r557));
+        let child = SCRATCH + 0x6800;
+        for (k, count) in [0u32, 2, 1].into_iter().enumerate() {
+            let k = k as u32;
+            t.write(list, &[0x80, 0x81, 0x83, 0x84]);
+            t.set_u32(list + 0x7c, count);
+            t.write(root, &[0x5a; 0x150]);
+            t.set_u32(root + 4, if k.is_multiple_of(2) { 0 } else { child });
+            t.write(child, &[0x33; 0x40]);
+            t.set_u32(child + 0x10, child);
+            t.set_u32(lock, 0x40 + k);
+            t.set_u32(r557, 0x0557_00ff ^ (k << 2));
+            for o in junked {
+                let at = w(&t, o);
+                t.set_u32(at, 0x5a5a_5a5a ^ o ^ k);
+            }
+            ownb::dirty_stack(&mut t, at + k, &[]);
+            t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+        }
+    }
+}

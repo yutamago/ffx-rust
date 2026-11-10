@@ -3302,6 +3302,8 @@ ports! {
     "r36 load step 0284" => r36::LOAD_0284, r36::load_0284;
     "r36 summon task 0146" => r36::SUMMON_TASK_0146, r36::summon_task_0146;
     "r36 scene task 0146" => r36::SCENE_TASK_0146, r36::scene_task_0146;
+    "r36 start-up 0155" => r36::START_UP_0155, r36::start_up_0155;
+    "r36 start-up 0164" => r36::START_UP_0164, r36::start_up_0164;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;

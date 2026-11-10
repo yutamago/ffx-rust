@@ -3079,3 +3079,128 @@ pub const SCENE_TASK_0146: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The operands of the ring links at the end of a 0613-style start-up
+/// ([`start_up_0155`], [`start_up_0164`]): the first object's ring last
+/// (read, stored), its four stores, the old last's link; the second's
+/// ring last (read), its flag, its store, seven stores, the link; the
+/// first's flag, three stores; and slots 557/560 (their tables'
+/// operands) when the copy has them.
+struct RingTail {
+    last: [u32; 2],
+    first: [u32; 4],
+    link: u32,
+    last2: u32,
+    flag: u32,
+    last2_to: u32,
+    second: [u32; 7],
+    link2: u32,
+    flag2: u32,
+    third: [u32; 3],
+    slots: Option<(u32, u32)>,
+}
+
+fn ring_tail<G: Game>(g: &mut G, img: &Image, f: u32, r: &RingTail) {
+    use crate::r23::stores_0613;
+    let w = |o: u32| img.word(f + o);
+    let last = g.read::<u32>(w(r.last[0]));
+    g.write::<u32>(w(r.last[1]), last);
+    stores_0613(g, img, f, &r.first);
+    g.write::<u32>(last.wrapping_add(4), w(r.link));
+    let last = g.read::<u32>(w(r.last2));
+    let fl = g.read::<u32>(w(r.flag));
+    g.write::<u32>(w(r.flag), fl & !1);
+    g.write::<u32>(w(r.last2_to), last);
+    stores_0613(g, img, f, &r.second);
+    g.write::<u32>(last.wrapping_add(4), w(r.link2));
+    let fl = g.read::<u32>(w(r.flag2));
+    g.write::<u32>(w(r.flag2), fl & !1);
+    stores_0613(g, img, f, &r.third);
+    if let Some((t557, t560)) = r.slots {
+        // call width: 0
+        let x = g.call(slot_target(g, w(t557), 557), 0, &[]).eax & !4;
+        // call width: 1
+        g.call(slot_target(g, w(t560), 560), 0, &[x]);
+    }
+}
+
+/// A 0613-style start-up with slot 673 `()` first (cdecl `(actor)`; an
+/// 8-aligned frame): slot 673, then
+/// [`start_up_head_with`](crate::r23::start_up_head_with) on the code 0xd
+/// bytes on (slot 221's bank word at `+0x1fb`), then the rings
+/// ([`ring_tail`]). Returns 0.
+fn start_up_673<G: Game>(g: &mut G, img: &Image, fr: &Frame, tail: &RingTail) -> Ret {
+    let f = fr.at;
+    // call width: 0
+    g.call(slot_target(g, img.word(f + 0x8), 673), 0, &[]);
+    let shifted = Frame { at: f + 0xd, ..*fr };
+    crate::r23::start_up_head_with(g, img, &shifted, 0x1fb - 0xd);
+    ring_tail(g, img, f, tail);
+    Ret::eax(0)
+}
+
+/// `magic_0155`'s start-up (cdecl `(actor)`): [`start_up_0609`](crate::r27::start_up_0609)
+/// with slot 673 first and its operands 0xd bytes on ([`start_up_673`]).
+///
+/// `magic_0155` 0x1000bf70 (747 bytes).
+pub fn start_up_0155<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_673(
+        g,
+        img,
+        fr,
+        &RingTail {
+            last: [0x208, 0x20d],
+            first: [0x211, 0x21b, 0x225, 0x22f],
+            link: 0x23c,
+            last2: 0x241,
+            flag: 0x247,
+            last2_to: 0x24d,
+            second: [0x251, 0x25b, 0x265, 0x26f, 0x279, 0x283, 0x28d],
+            link2: 0x29a,
+            flag2: 0x2a5,
+            third: [0x2aa, 0x2b4, 0x2be],
+            slots: Some((0x29f, 0x2d5)),
+        },
+    )
+}
+
+/// [`start_up_0155`] (the `rel32`: the targets' set-up).
+pub const START_UP_0155: Sig = Sig {
+    len: 747,
+    hash: 0xf9e9_24c3_4949_875d,
+    calls: &[(0x19, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};
+
+/// `magic_0164`'s start-up (cdecl `(actor)`): [`start_up_0613`](crate::r23::start_up_0613)
+/// with slot 673 first and its operands 0xd bytes on ([`start_up_673`]).
+///
+/// `magic_0164` 0x1000bcf0 (717 bytes).
+pub fn start_up_0164<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_up_673(
+        g,
+        img,
+        fr,
+        &RingTail {
+            last: [0x208, 0x20d],
+            first: [0x211, 0x21b, 0x225, 0x22f],
+            link: 0x23c,
+            last2: 0x241,
+            flag: 0x247,
+            last2_to: 0x250,
+            second: [0x254, 0x25e, 0x268, 0x272, 0x27c, 0x286, 0x290],
+            link2: 0x29d,
+            flag2: 0x2a3,
+            third: [0x2a8, 0x2b2, 0x2bc],
+            slots: None,
+        },
+    )
+}
+
+/// [`start_up_0164`] (the `rel32`: the targets' set-up).
+pub const START_UP_0164: Sig = Sig {
+    len: 717,
+    hash: 0x4a4e_e0aa_c680_5197,
+    calls: &[(0x19, Callee::Sig(&crate::s4_summon::TARGETS_INIT_C))],
+    imports: &[],
+};
