@@ -821,8 +821,10 @@ fn summon_task_0203() {
     }
     t.set_u32(w(&t, 0xbc), 3);
     t.set_u32(w(&t, 0xe4), 2);
-    t.set_u32(w(&t, 0xcd), 2);
-    t.write(w(&t, 0xf3), &[3, 1]);
+    t.set_u32(w(&t, 0xcd), 3);
+    t.write(w(&t, 0xf3), &[3, 2, 1, 2]);
+    // the colour block (`*G` words the states read and write)
+    let block = w(&t, 0x20c) & !0xff;
     t.set_u32(w(&t, 0x55f), 2);
     let recs = w(&t, 0x36d);
     // the bone update's function table: a slot no overlay uses (slot 32)
@@ -893,11 +895,151 @@ fn summon_task_0203() {
             t.set_u32(x + 4, next);
             t.set_u32(x + 8, prev);
         }
+        for i in 0..0x40u32 {
+            t.set_u32(block + 4 * i, (0.25 * i as f32 - 3.0 + k as f32).to_bits());
+        }
+        // the flag words the states set bits in
+        for op in [0x1cbu32, 0x349, 0x7f2, 0xaf3, 0x9e9] {
+            let g = w(&t, op);
+            t.set_u32(g, 0x5d5d_5d50 + k);
+        }
+        t.set_u8(w(&t, 0x647), 0x50 + k as u8);
+        t.set_u16(w(&t, 0x998), 0x5d50 + k as u16);
         ownb::dirty_stack(&mut t, 0x8190 + k, &[]);
         let call = Call {
             eax: 0x00ea_0000 + k,
             ..Call::default()
         };
         t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0201` 0x100070d0 (`r42::end_task_0201`): state 0 (the swing
+/// above and below 0, NaN), 1 before and at 10 calls (on into 2), 2 above
+/// and at the floor (NaN), 10000 before and at 40 calls, 10001 before
+/// and at 24 calls, other states; the parent's list empty and not.
+#[test]
+fn end_task_0201() {
+    let Some(mut t) = twin(201) else { return };
+    stubs_0203(&mut t);
+    for (s, n) in [(530u32, 2usize), (228, 2), (239, 3), (719, 3)] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ a[1].rotate_left(7)
+        });
+    }
+    let f = t.at(0x70d0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    rings_0203(&mut t, f, &[0x215, 0x29f]);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let model = SCRATCH + 0x3900;
+    let parent = w(&t, 0x7c);
+    let plast = w(&t, 0x41);
+    let other = SCRATCH + 0x3a00;
+    let height = w(&t, 0x24b);
+    // (state, count, swing, height, floor, the parent's list empty)
+    let cases: [(u32, u32, f32, f32, f32, bool); 17] = [
+        (0, 0, 2.0, 0.0, 0.0, true),
+        (0, 0, 0.25, 0.0, 0.0, true),
+        (0, 0, 0.1, 0.0, 0.0, true),
+        (0, 0, f32::NAN, 0.0, 0.0, true),
+        (1, 9, 0.0, 5.0, 0.0, true),
+        (1, 0xa, 0.0, 5.0, 0.0, true),
+        (1, 0xa, 0.0, -5.0, 0.0, false),
+        (2, 0, 0.0, 5.0, 0.0, true),
+        (2, 0, 0.0, -5.0, 0.0, true),
+        (2, 0, 0.0, -5.0, 0.0, false),
+        (2, 0, 0.0, f32::NAN, 0.0, true),
+        (0x2710, 0x27, 0.0, 0.0, 0.0, true),
+        (0x2710, 0x28, 0.0, 0.0, 0.0, true),
+        (0x2711, 0x17, 0.0, 0.0, 0.0, true),
+        (0x2711, 0x18, 0.0, 0.0, 0.0, true),
+        (3, 0, 0.0, 0.0, 0.0, true),
+        (0x2712, 0, 0.0, 0.0, 0.0, true),
+    ];
+    for (k, (state, count, swing, h, floor, empty)) in (0u32..).zip(cases) {
+        t.write(r, &[0x3c ^ k as u8; 0x80]);
+        t.write(other, &[0x6e; 0x40]);
+        t.write(model, &[0x22; 0x80]);
+        t.set_u32(model + 0x50, 0x0050_0000 + k);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x44, count);
+        t.set_u32(r + 0x1c, model);
+        ownb::floats(&mut t, r + 0x28, &[0.5, floor, 0.25, swing, -7.5]);
+        t.set_u32(height, h.to_bits());
+        t.set_u32(plast, if empty { parent } else { other });
+        for op in [0x278u32, 0x39e, 0x549] {
+            let g = w(&t, op);
+            t.set_u32(g, 0x5d5d_5d50 + k);
+        }
+        t.set_u8(w(&t, 0x2f2), 0x50 + k as u8);
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0x70d0 + k, &[]);
+        let call = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0201` 0x100076e0 (`r42::summon_setup_0201`): the model's flag
+/// bit 0 both ways (slots 36/228, 333/601, 15-17/290), no parts and two,
+/// the parent's list empty and not.
+#[test]
+fn summon_setup_0201() {
+    let Some(mut t) = twin(201) else { return };
+    stubs_0203(&mut t);
+    for (s, n) in [(36u32, 2usize), (228, 2), (262, 4), (290, 2), (211, 2)] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ a[1].rotate_left(7)
+        });
+    }
+    rec(&mut t, 601, 2, |m, a| {
+        m.w32(a[1], (0.25 * (a[0] & 0xf) as f32 - 1.0).to_bits());
+        0x601
+    });
+    for s in [333u32, 15, 16, 17, 277, 664, 216] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xff) * 0.125 + f64::from(s));
+    }
+    let f = t.at(0x76e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let parent = w(&t, 0x1b0);
+    let plast = w(&t, 0x154);
+    let slast = w(&t, 0x7);
+    let other = SCRATCH + 0x3a00;
+    let model = SCRATCH + 0x3900;
+    let a = SCRATCH + 0x4000;
+    for k in 0..4u32 {
+        t.write(other, &[0x6e; 0x40]);
+        t.write(model, &[0x22 ^ k as u8; 0x100]);
+        t.set_u8(model + 0x90, (k & 1) as u8);
+        t.set_u32(model + 0x50, 0x0050_0000 + k);
+        t.set_u32(model + 0x54, 0x0054_0000 + k);
+        t.write(a, &[0x33; 0x500]);
+        t.set_u32(a + 0x4dc, if k < 2 { 0 } else { 2 });
+        t.set_u32(plast, if k % 3 == 1 { other } else { parent });
+        t.set_u32(slast, other + 0x20);
+        t.set_u32(w(&t, 0x49), 0x5d5d_5d50 + k);
+        ownb::dirty_stack(&mut t, 0x76e0 + k, &[]);
+        let call = Call {
+            edx: model,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            call,
+            &[a, SCRATCH + 0x4800 + k],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(r42::summon_setup_0201(g, img, fr)),
+        );
     }
 }
