@@ -257,13 +257,16 @@ pub mod bridge {
     /// - 3, 4: `w = (sin(angle) + cos(angle + 0.3)) · 0.5`;
     /// - 5, 6, 8: the same with `+ 0.1`.
     ///
-    /// Kinds 1-6 fade it in (odd: × frames left / length) or out (even:
-    /// × (length − frames left) / length); 5 and 6 draw `brnd(9)` first
-    /// and hold half the last value instead on odd frames or when its low
-    /// nibble is 0, keeping the new value at `+8`; 7 and 8 do not fade.
+    /// Kinds 1-6 scale it by frames left / length (odd) or by
+    /// (length − frames left) / length (even). The frames left count down
+    /// from the length, so the odd kinds fade out (full at the start, 0 at
+    /// the end) and the even ones fade in; `fade_in` and `fade_out` below
+    /// name the two factors, not the direction. 5 and 6 draw `brnd(9)`
+    /// first and hold half the last value instead on odd frames or when its
+    /// low nibble is 0, keeping the new value at `+8`; 7 and 8 do not fade.
     /// Kind 9 is a spring: `steps` times `pos += speed`, `speed += pull`
     /// (`-pull` while `pos` is above 0), its position faded by the mode
-    /// (1 in, 2 out, else as is). Then a frame is counted down; below 0
+    /// (1 by frames left, so out; 2 by the rest, so in; else as is). Then a frame is counted down; below 0
     /// the shake ends (kind 0, `*out` 0), for kinds 7-9 only with a
     /// positive length. `trig` is `_CIcos`/`_CIsin` on a double, the
     /// result stored as `f32`.
