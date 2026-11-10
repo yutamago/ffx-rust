@@ -93,6 +93,7 @@ pub mod r39b;
 pub mod r40;
 pub mod r41;
 pub mod r42;
+pub mod r44;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3805,6 +3806,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r42 summon set-up 0201", &r42::SUMMON_SETUP_0201),
     ("r42 light visit 0042", &r42::LIGHT_VISIT_0042),
     // round 42 (magic-r42): end of INTERNAL
+    // round 44 (magic-r44)
+    ("r44 summon set-up 0155", &r44::SUMMON_SETUP_0155),
+    ("r44 summon set-up 0164", &r44::SUMMON_SETUP_0164),
+    ("r44 summon start 0155", &r44::SUMMON_START_0155),
+    ("r44 summon start 0164", &r44::SUMMON_START_0164),
+    // round 44 (magic-r44): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
     ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),
