@@ -1299,6 +1299,26 @@ fn waits_0380() {
         stubs_0380(&mut t, k);
         sel_0380(&mut t, k);
         t.set_u32(t.img.word(f + 0xc), n);
+        // the second actor (byte 9) stands where the bone's aim points:
+        // its facing test answers 1
+        let aimed = SCRATCH + 0x2_0000 + 0x900 * 9;
+        rec(&mut t, 229, 3, |m, a| {
+            for i in 0..4u32 {
+                wf(m, a[0] + 4 * i, 3.0 + i as f32);
+            }
+            0x229
+        });
+        rec(&mut t, 262, 4, move |m, a| {
+            for i in 0..3u32 {
+                let v = if a[0] == aimed {
+                    3.0 + i as f32
+                } else {
+                    -2.0 - i as f32
+                };
+                wf(m, a[1 + i as usize], v);
+            }
+            0x262
+        });
         for (i, (d, c, fl)) in (0u32..).zip(rs) {
             t.set_u32(recs + 0xc * i, d.cast_unsigned());
             t.set_u32(recs + 0xc * i + 4, c.cast_unsigned());
@@ -1416,4 +1436,150 @@ fn start_up_0380() {
     }
     let load = t.at(0x1210);
     load_cases(&mut t, load, &|t| start_up_0380_setup(t, f, 2, true));
+}
+
+/// `magic_0298`'s selection (bytes at `*G_SEL`), character table, caster
+/// and actor count.
+fn sel_0298(t: &mut Twin, n: u32, k: u32) {
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[4, 9, 0x13, 2, 6]);
+    t.set_u32(0x1030_7608, sel);
+    for i in 0..0x20u32 {
+        t.set_u32(0x1030_7644 + 4 * i, SCRATCH + 0x2_0000 + 0x900 * i);
+    }
+    t.set_u32(0x1030_7610, 0x0000_0047 + k);
+    t.set_u32(0x1030_7600, 0x0000_0051 + k);
+    t.set_u32(0x1030_7604, n);
+}
+
+/// `magic_0298` 0x10001b90 (`r38::pose_0298`, internal).
+#[test]
+fn pose_0298() {
+    let Some(mut t) = twin(298) else { return };
+    let f = t.at(0x1b90);
+    for k in 0..2u32 {
+        stubs_0380(&mut t, k);
+        sel_0298(&mut t, 2, k);
+        for (o, v) in [
+            (0x45u32, 1.5f32),
+            (0x5d, 2.5),
+            (0x6a, -3.5),
+            (0x77, 1.0),
+            (0xbc, 0.75),
+            (0xe1, -1.25),
+        ] {
+            t.set_u32(t.img.word(f + o), (v + k as f32).to_bits());
+        }
+        ownb::dirty_stack(&mut t, 0x1b90 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r38::pose_0298(g, img, fr.at, fr.esp))
+        });
+    }
+}
+
+/// `magic_0298` 0x10001e60 (`r38::actor_step_0298`, cdecl `(node)`): the
+/// delay running; the motion script waiting, ending (slot 239) and done;
+/// the actor the caster or a selected one; the count running, at its end
+/// with the record done or not.
+#[test]
+fn actor_step_0298() {
+    let Some(mut t) = twin(298) else { return };
+    let f = t.at(0x1e60);
+    let give = t.img.rel32_target(f + 0x166);
+    let s = SCRATCH + 0x1_0000;
+    let cmds = SCRATCH + 0x5000;
+    // (delay, done, wait, actor, count)
+    for (k, (delay, done, wait, actor, count)) in (0u32..).zip([
+        (2i32, 0u32, 0u16, 1u32, 5i32),
+        (0, 0, 3, 1, 5),
+        (0, 0, 0, u32::MAX, 2),
+        (0, 1, 0, 0, 1),
+        (0, 1, 0, 2, 0),
+        (0, 2, 1, 1, -3),
+        (0, 0, 0, 1, 1),
+    ]) {
+        stubs_0380(&mut t, k);
+        sel_0298(&mut t, 2, k);
+        rec(&mut t, 411, 1, |_, a| 0x0411_0000 ^ a[0]);
+        junk(&mut t, s, 0x60, k);
+        t.write(cmds, &[0x5a; 8]);
+        t.set_u32(cmds + 8, u32::MAX);
+        t.set_u32(cmds + 12, u32::MAX);
+        t.set_u32(s, cmds);
+        t.set_u32(s + 0x10, 0);
+        t.set_u32(s + 0x14, done);
+        t.set_u16(s + 0x18, wait);
+        t.set_u16(s + 0x1c, 0);
+        for (i, v) in (0u32..).zip([0.5f32, -1.5, 2.25, 0.0, 0.0, 0.0, 0.125, 0.75, -0.5]) {
+            t.set_u32(s + 0x20 + 4 * i, (v + k as f32 * 0.25).to_bits());
+        }
+        t.set_u32(s + 0x40, delay.cast_unsigned());
+        t.set_u32(s + 0x44, count.cast_unsigned());
+        t.set_u32(s + 0x48, actor);
+        t.set_u32(s + 0x4c, 0x004c_0000 + k);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        t.set_u32(node + 0x14, s);
+        ownb::dirty_stack(&mut t, 0x1e60 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// What `r38::start_up_0298` (`magic_0298` 0x10001390) needs: the ring
+/// (16 nodes), the pools, the part set-up's and the object start's
+/// buffers, the actors, the task list (empty or not).
+fn start_up_0298_setup(t: &mut Twin, f: u32, k: u32, listed: bool) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    stubs_0380(t, k);
+    magic_r11::pools(t, f, 2033);
+    magic_r11::object_slots(t);
+    stubs_0380(t, k);
+    let start = t.img.rel32_target(f + 0x6f);
+    magic_r11::object_start_auto(t, start);
+    let rn = t.img.rel32_target(f + 0x51b);
+    magic_r11::pools(t, rn, 0x88);
+    magic_r11::ring(t, w(t, 0x419), w(t, 0x469), 16, SCRATCH + 0x5000);
+    sel_0298(t, [2u32, 0, 3, 1][k as usize % 4], k);
+    let bytes = SCRATCH + 0x1a0;
+    t.write(bytes, &[3, 5, 7]);
+    rec(t, 288, 2, move |m, a| {
+        m.w32(a[1], 2);
+        bytes
+    });
+    t.set_u32(0x1030_760c, k & 1);
+    junk(t, w(t, 0x1d0) - 4, 0x54 * 4, k);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x33, 0x3d, 0x47, 0x55, 0x108, 0x122, 0x12c, 0x154, 0x15e, 0x168, 0x172, 0x17c, 0x186,
+            0x196,
+        ],
+    );
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    let first = w(t, 0x4d0);
+    t.set_u32(first, if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x4e5), SCRATCH + 0x600);
+}
+
+/// `magic_0298` 0x10001390 (`r38::start_up_0298`, internal) and its load
+/// step 0x10001260 (`r38::load_0298`): the task list empty and not, no
+/// actors and up to three, both slots and sides.
+#[test]
+fn start_up_0298() {
+    let Some(mut t) = twin(298) else { return };
+    let f = t.at(0x1390);
+    for (k, listed) in [(0u32, false), (1, true), (2, true), (3, false)] {
+        start_up_0298_setup(&mut t, f, k, listed);
+        ownb::dirty_stack(&mut t, 0x1390 + k, &[]);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r38::start_up_0298,
+        );
+    }
+    let load = t.at(0x1260);
+    load_cases(&mut t, load, &|t| start_up_0298_setup(t, f, 2, true));
 }

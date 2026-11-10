@@ -3313,6 +3313,8 @@ ports! {
     "r38 waits 0380" => r38::WAITS_0380, r38::waits_0380;
     "r38 throw 0380" => r38::THROW_0380, r38::throw_0380;
     "r38 load step 0380" => r38::LOAD_0380, r38::load_0380;
+    "r38 actor step 0298" => r38::ACTOR_STEP_0298, r38::actor_step_0298;
+    "r38 load step 0298" => r38::LOAD_0298, r38::load_0298;
     // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5164,6 +5166,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r38 bone matrix 0380", &r38::BONE_MATRIX_0380),
     ("r38 facing 0380", &r38::FACING_0380),
     ("r38 start-up 0380", &r38::START_UP_0380),
+    ("r38 pose 0298", &r38::POSE_0298),
+    ("r38 start-up 0298", &r38::START_UP_0298),
     // round 38 (magic-r38): end of INTERNAL
 ];
 
