@@ -964,11 +964,20 @@ fn flames_0072_setup(
         let at = t.img.word(take + o);
         t.set_u32(at, v);
     }
-    for s in [314u32, 404, 277] {
+    for s in [404u32, 277] {
         rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
     }
-    t.stub_st0(314, move |_, a| {
-        f64::from(f32::from_bits(a[0])) * 0.75 + 0.125 * f64::from(k)
+    // 314 counts its calls: the answers cycle through -9, 0.5 and 9 (both
+    // wraps of the two angles)
+    t.set_u32(SCRATCH + 0x7e70, k);
+    rec(t, 314, 1, |m, a| {
+        let c = m.r32(SCRATCH + 0x7e70) + 1;
+        m.w32(SCRATCH + 0x7e70, c);
+        (314 << 16) ^ a[0]
+    });
+    t.stub_st0(314, |m, a| {
+        let c = m.r32(SCRATCH + 0x7e70);
+        [-9.0, 0.5, 9.0][(c % 3) as usize] + f64::from(f32::from_bits(a[0])) * 0.75
     });
     t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 1.5 - 0.25);
     t.stub_st0(277, |_, a| f64::from(a[0] & 0xf) * 0.5 + 1.0);
