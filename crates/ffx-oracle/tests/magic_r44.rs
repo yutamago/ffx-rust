@@ -14,6 +14,10 @@
 )]
 
 mod magic;
+mod magic_h6;
+mod magic_hi;
+mod magic_owna;
+mod magic_r11;
 #[path = "magic/ownb.rs"]
 mod ownb;
 
@@ -783,5 +787,132 @@ fn motion_0184() {
         }
         ownb::dirty_stack(&mut t, 0x1990 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// What `r44::start_up_0072` (`magic_0072` 0x10001460) needs: the part
+/// set-up's buffers, the object starts, the free ring of the inlined
+/// takes and the sprite pool (`free` nodes), the targets (`n`, their
+/// bytes and handles), the task list (empty or not), the camera flags;
+/// slot 262 writes a point from its first word, 268 a vector from its
+/// first two, 215/413 answer their word.
+fn start_up_0072_setup(
+    t: &mut Twin,
+    f: u32,
+    k: u32,
+    (n, free, listed, cam): (u32, u16, bool, u32),
+) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(t, f, 2201);
+    magic_r11::object_slots(t);
+    rec(t, 262, 4, move |m, a| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        for i in 0..4u32 {
+            let v = (a[0] & 0xff) as f32 * -0.25 + i as f32 * 0.75 + a[1] as f32;
+            m.w32(a[2] + 4 * i, v.to_bits());
+        }
+        0x268
+    });
+    for s in [215u32, 413] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(t, 711, 3, |_, a| 0x0711_0000 ^ a[0]);
+    rec(t, 710, 4, |_, a| 0x0710_0000 ^ a[0]);
+    for call in [0x76u32, 0x2c5] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(t, start);
+    }
+    // the free ring (the takes and the pool's)
+    magic_r11::ring(t, w(t, 0x426), w(t, 0x4b8), free, SCRATCH + 0xd800);
+    // the targets: bytes and handles
+    let bytes = SCRATCH + 0x1e0;
+    for i in 0..8u8 {
+        t.set_u8(bytes + u32::from(i), 2 + 3 * i);
+    }
+    for o in [0x1b6u32, 0x2da, 0x33c] {
+        let at = w(t, o);
+        t.set_u32(at, bytes);
+    }
+    for o in [0x1c1u32, 0x2e5] {
+        let tab = w(t, o);
+        for i in 0..0x20 {
+            t.set_u32(tab + 4 * i, 0x0000_0080 + 7 * i + k);
+        }
+    }
+    let at = w(t, 0x17c);
+    t.set_u32(at, n);
+    let at = w(t, 0x81);
+    t.set_u32(at, 0x0000_00a0 + k);
+    // the objects' vectors and records
+    let at = w(t, 0x298);
+    t.write(at - 0xd4, &[0x5e; 0x130 * 4]);
+    let at = w(t, 0x3ca);
+    t.write(at, &[0x5f; 0x34 * 4]);
+    // the camera flags
+    for (o, v) in [(0x68bu32, cam & 1), (0x6e4, cam & 2)] {
+        let at = w(t, o);
+        t.set_u32(at, v);
+    }
+    for o in [0x713u32, 0x71c] {
+        let at = w(t, o);
+        t.set_u32(at, 0x5a5a_5a5a);
+    }
+    // the task list
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    for o in [0x513u32, 0x79e, 0x84f] {
+        let at = w(t, o);
+        t.set_u32(at, if listed { SCRATCH + 0x600 } else { 0 });
+    }
+    let at = w(t, 0x52e);
+    t.set_u32(at, SCRATCH + 0x600);
+}
+
+/// `magic_0072` 0x10001460 (`r44::start_up_0072`, internal) and its load
+/// step 0x100012b0 (`r44::load_0072`): targets 0..3 (the farthest
+/// first, last, in the middle), the ring with 5 and 7 free nodes, the
+/// task list empty and not, the camera flags both ways; the load step's
+/// waits.
+#[test]
+fn start_up_0072() {
+    let Some(mut t) = twin(72) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x1460);
+    for (k, case) in (0u32..).zip([
+        (3u32, 5u16, false, 0u32),
+        (2, 7, true, 1),
+        (0, 5, true, 2),
+        (1, 6, false, 3),
+    ]) {
+        start_up_0072_setup(&mut t, f, k, case);
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r44::start_up_0072(g, img, fr)
+        });
+    }
+    let load = t.at(0x12b0);
+    for (busy, asked, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        start_up_0072_setup(&mut t, f, 1, (2, 6, true, 1));
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, asked);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        for o in [0x61u32, 0x6b] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x5a5a_0000 ^ o);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
