@@ -801,7 +801,7 @@ fn stubs_0275(t: &mut Twin, k: u32) {
     all_stubs(t);
     rec(t, 262, 4, move |m, a| {
         for i in 0..3u32 {
-            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
+            let v = ((a[0] ^ (a[0] >> 11)) & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
             wf(m, a[1 + i as usize], v);
         }
         0x262
@@ -831,6 +831,13 @@ fn stubs_0275(t: &mut Twin, k: u32) {
         0x229
     });
     rec(t, 231, 3, |m, a| {
+        // what it reads, folded into a word the comparison sees (its
+        // output is a frame local)
+        let mut h = m.r32(SCRATCH + 0xb10);
+        for i in 0..16 {
+            h = h.rotate_left(3) ^ m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(11);
+        }
+        m.w32(SCRATCH + 0xb10, h);
         for i in 0..16 {
             let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * (15 - i));
             wf(m, a[0] + 4 * i, v);
@@ -976,6 +983,16 @@ fn task_0275() {
         junk(&mut t, s, 0x100, k);
         t.set_u32(t.img.word(f + 0x1f), s);
         t.set_u32(s + 0xdc, (1.5 + k as f32 * 0.25).to_bits());
+        // the summon's facing and place (`S + 0x4`, `+0x10`..`+0x1c`)
+        for (o, v) in [
+            (4u32, 0.75f32),
+            (0x10, 2.5),
+            (0x14, -1.25),
+            (0x18, 3.75),
+            (0x1c, 1.0),
+        ] {
+            t.set_u32(s + o, (v + k as f32 * 0.5).to_bits());
+        }
         t.set_u32(s + 0xe0, state);
         t.set_u32(s + 0xe4, n);
         t.set_u32(t.img.word(f + 0x3cb), 0x03cb_0000 + k);
@@ -992,4 +1009,205 @@ fn task_0275() {
         ownb::dirty_stack(&mut t, 0x3a40 + k, &[]);
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
+}
+
+/// `magic_0270`'s selection (two bytes at `*G_SEL`) and character
+/// table (`G_T`), each entry its own junk character.
+fn sel_0270(t: &mut Twin, b0: u8, b1: u8, k: u32) {
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[b0, b1, 0x77, 0x66]);
+    t.set_u32(0x1026_3508, sel);
+    for i in 0..0x20u32 {
+        t.set_u32(0x1026_3544 + 4 * i, SCRATCH + 0x2_0000 + 0x900 * i);
+    }
+    for b in [b0, b1] {
+        let c = SCRATCH + 0x2_0000 + 0x900 * u32::from(b);
+        junk(t, c + 0x800, 0x40, k + u32::from(b));
+    }
+}
+
+/// The 0x50-byte record ring `take` searches (`sa_misc::ring_take`): `n`
+/// records at `recs`, those in `busy` taken, the search from `from`.
+fn ring_50(t: &mut Twin, take: u32, recs: u32, n: u32, busy: &[u32], from: u32, k: u32) {
+    let w = |t: &Twin, o: u32| t.img.word(take + o);
+    let (next, count, base) = (w(t, 0x01), w(t, 0x09), w(t, 0x16));
+    for i in 0..n {
+        junk(t, recs + 0x50 * i, 0x50, k + i);
+        t.set_u32(recs + 0x50 * i + 0x48, u32::from(busy.contains(&i)));
+    }
+    t.set_u32(next, from);
+    t.set_u32(count, n);
+    t.set_u32(base, recs);
+}
+
+/// `magic_0270`'s slots: as [`stubs_0275`] plus the random floats and
+/// the handles of the sparks.
+fn stubs_0270(t: &mut Twin, k: u32) {
+    stubs_0275(t, k);
+    for (s, x) in [(314u32, 0.375f64), (404, -0.625)] {
+        rec(t, s, 1, move |m, a| {
+            let c = m.r32(SCRATCH + 0xa00);
+            m.w32(SCRATCH + 0xa00, c + 1);
+            (s << 16) ^ a[0] ^ c
+        });
+        t.stub_st0(s, move |m, a| {
+            x * f64::from(m.r32(SCRATCH + 0xa00) % 5) + f64::from(f32::from_bits(a[0]))
+        });
+    }
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[2] << 8));
+    rec(t, 328, 3, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i).rotate_left(3) ^ a[2] ^ 0x328;
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x328
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x248
+    });
+}
+
+/// `magic_0270` 0x100018a0 (`r38::burst_0270`, cdecl `(node)`) and
+/// 0x10001460 (`r38::drop_0270`): the count running and out (the node
+/// given back), the ring free, full and running out part way; the drop's
+/// actor the caster and a selected one.
+#[test]
+fn bursts_0270() {
+    let Some(mut t) = twin(270) else { return };
+    let burst = t.at(0x18a0);
+    let drop = t.at(0x1460);
+    let recs = SCRATCH + 0x8000;
+    // (count, free records, the drop's actor index)
+    for (k, (count, free, idx)) in (0u32..).zip([
+        (5i32, 8u32, u32::MAX),
+        (1, 8, 1),
+        (0, 8, 0),
+        (3, 0, 2),
+        (2, 3, u32::MAX),
+        (-4, 8, 1),
+    ]) {
+        stubs_0270(&mut t, k);
+        sel_0270(&mut t, 4, 9, k);
+        t.set_u32(0x1026_3510, 0x0000_0047);
+        for (f, take_at, back_at) in [(burst, 0xa1u32, 0x20u32), (drop, 0x27d, 0x23)] {
+            let take = t.img.rel32_target(f + take_at);
+            let busy: Vec<u32> = (free..8).collect();
+            ring_50(&mut t, take, recs, 8, &busy, k % 8, k);
+            t.set_u32(SCRATCH + 0xa00, k);
+            let node = SCRATCH + 0x900;
+            let give = t.img.rel32_target(f + back_at);
+            magic_hi::lone_node(&mut t, give, node);
+            let r = SCRATCH + 0x980;
+            junk(&mut t, r, 0x10, k);
+            t.set_u32(r, idx);
+            t.set_u32(r + 4, count.cast_unsigned());
+            t.set_u32(
+                node + 0x14,
+                if f == burst { count.cast_unsigned() } else { r },
+            );
+            ownb::dirty_stack(&mut t, f + k, &[]);
+            ownb::reset_counters(&mut t);
+            t.check_entry(f, Call::default(), &[node], Eax::Checked);
+        }
+    }
+}
+
+/// `magic_0270` 0x10001cc0 (`r38::aim_0270`, internal): modes 0..4; in
+/// mode 2 the two targets near and far apart in angle (both folds).
+#[test]
+fn aim_0270() {
+    let Some(mut t) = twin(270) else { return };
+    let f = t.at(0x1cc0);
+    // (mode, second target's byte)
+    for (k, (mode, b1)) in (0u32..).zip([
+        (1u32, 9u8),
+        (3, 9),
+        (0, 9),
+        (4, 9),
+        (2, 9),
+        (2, 0x13),
+        (2, 4),
+        (2, 0x1c),
+    ]) {
+        stubs_0270(&mut t, k);
+        sel_0270(&mut t, 4, b1, k);
+        t.set_u32(0x1026_3510, 0x0000_0047);
+        t.set_u32(0x1026_3504, mode);
+        junk_ops(&mut t, f, &[0x24b, 0x251]);
+        t.set_u32(t.img.word(f + 0x25c), 0x5a5a_5a5a);
+        ownb::dirty_stack(&mut t, 0x1cc0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::r38::aim_0270(g, img, fr.at, fr.esp))
+        });
+    }
+}
+
+/// What `r38::start_up_0270` (`magic_0270` 0x10001f40) needs: the pools,
+/// the part set-up's and the objects' buffers, the block's bytes, the
+/// caster and the selection, the actor flags, the task list.
+fn start_up_0270_setup(t: &mut Twin, f: u32, k: u32, listed: bool) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    stubs_0270(t, k);
+    magic_r11::pools(t, f, 1058);
+    magic_r11::object_slots(t);
+    stubs_0270(t, k);
+    for call in [0x7cu32, 0x15d, 0x1dc] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(t, start);
+    }
+    let reset = t.img.rel32_target(f + 0x3d4);
+    magic_r11::pools(t, reset, 0xd0);
+    sel_0270(t, 4, 9, k);
+    t.set_u32(0x1026_3510, 0x0000_0047 + k);
+    t.set_u32(w(t, 0x08), 0x0000_0049);
+    t.set_u32(0x1026_3504, [1u32, 2, 3, 0][k as usize % 4]);
+    // the block's entry bytes (its count is the mode word `+0x4`)
+    t.write(SCRATCH + 0x1a0, &[3, 5, 7, 9]);
+    rec(t, 407, 3, |_, _| SCRATCH + 0x1a0);
+    t.set_u32(w(t, 0x30a), 0x030a_0000 + k);
+    t.set_u32(w(t, 0x313), k & 1);
+    t.set_u32(w(t, 0x34f), (k >> 1) & 1);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x1c, 0x26, 0x30, 0x61, 0xe2, 0xec, 0xfe, 0x108, 0x112, 0x11c, 0x126, 0x130, 0x13a,
+            0x144, 0x154, 0x1a0, 0x1c4, 0x226, 0x230, 0x273, 0x31a, 0x326, 0x330, 0x35a, 0x360,
+            0x36a, 0x374,
+        ],
+    );
+    for o in [0x2a9u32, 0x2cd] {
+        let at = w(t, o);
+        t.write(at, &[0x5c; 0x38]);
+    }
+    t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+    let head = w(t, 0x39c);
+    t.set_u32(head, if listed { SCRATCH + 0x600 } else { 0 });
+    t.set_u32(w(t, 0x3b0), SCRATCH + 0x600);
+}
+
+/// `magic_0270` 0x10001f40 (`r38::start_up_0270`, internal) and its load
+/// step 0x100012b0 (`r38::load_0270`): the task list empty and not, both
+/// actor slots and sides, the aim's modes.
+#[test]
+fn start_up_0270() {
+    let Some(mut t) = twin(270) else { return };
+    let f = t.at(0x1f40);
+    for (k, listed) in [(0u32, false), (1, true), (2, true), (3, false)] {
+        start_up_0270_setup(&mut t, f, k, listed);
+        ownb::dirty_stack(&mut t, 0x1f40 + k, &[]);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r38::start_up_0270,
+        );
+    }
+    let load = t.at(0x12b0);
+    load_cases(&mut t, load, &|t| start_up_0270_setup(t, f, 2, true));
 }
