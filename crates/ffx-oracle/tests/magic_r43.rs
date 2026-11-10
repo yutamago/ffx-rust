@@ -1586,7 +1586,6 @@ fn start_0420() {
         (666, 2),
         (718, 1),
         (719, 3),
-        (711, 3),
         (710, 4),
         (222, 4),
         (221, 4),
@@ -1597,6 +1596,11 @@ fn start_0420() {
     summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
     let lock = SCRATCH + 0x7f80;
     t.set_u32(w(0x731), lock);
+    // the lock word while the program starts
+    rec(&mut t, 711, 3, move |m, a| {
+        m.w32(SCRATCH + 0x7f84, m.r32(lock));
+        a[0] ^ 0x711
+    });
     for (k, target) in (0u32..).zip([0x99u8, 0x55, 0x95, 0x59, 0x7a, 0x74, 0x97, 0x57, 0x77]) {
         t.write(list, &[target, 0x81]);
         t.set_u32(lock, 3 + k);
@@ -1605,6 +1609,8 @@ fn start_0420() {
         t.write(tail, &[0x6d; 0x20]);
         t.set_u32(w(0x7e8), tail);
         t.set_u32(w(0x829), 0x5a5a_5a5b + k);
+        // a byte the start clears
+        t.set_u8(w(0x18d), 0x5a);
         ownb::dirty_stack(&mut t, 0x71a0 + k, &[]);
         let call = Call {
             eax: 0x5a5a_0000 + k,
@@ -1612,4 +1618,227 @@ fn start_0420() {
         };
         t.check_entry(f, call, &[0x77], Eax::Checked);
     }
+}
+
+/// `magic_0394`'s slots: 262 a position from its first word, 12 and 333
+/// floats in ST0, 314/404 randoms in ST0 that step, the matrix slots
+/// writing what they read.
+fn stubs_0394(t: &mut Twin) {
+    all_stubs(t);
+    rec(t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+        }
+        0x262
+    });
+    rec(t, 12, 1, |_, a| 0x12 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 7) * 0.5 + 0.25);
+    // the scaled matrix's scales
+    for s in [277u32, 15, 16, 17] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    let k = SCRATCH + 0x7e10;
+    for s in [314u32, 404] {
+        rec(t, s, 1, move |m, a| {
+            let c = m.r32(k);
+            m.w32(k, c + 1);
+            (s << 16) ^ a[0] ^ c
+        });
+        t.stub_st0(s, move |m, a| {
+            f64::from(f32::from_bits(a[0])) * 0.25 * f64::from(m.r32(k) % 5) - 0.5
+        });
+    }
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329, 330] {
+        rec(t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * (i % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * rf(m, a[2] + 4 * i) + 0.25;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x248
+    });
+    for (s, n) in [
+        (255u32, 2usize),
+        (33, 4),
+        (32, 3),
+        (11, 1),
+        (238, 2),
+        (541, 3),
+        (38, 3),
+        (719, 3),
+    ] {
+        rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+}
+
+/// The state block `S = *G_S` of `magic_0394` at `SCRATCH + 0x8000`.
+fn block_0394(t: &mut Twin, g: u32, k: u32) -> u32 {
+    let s = SCRATCH + 0x8000;
+    junk(t, s, 0xd00, k);
+    floats(t, s + 0xaf0, 0x20, k);
+    floats(t, s + 0xb40, 0x10, k + 3);
+    t.set_u32(g, s);
+    s
+}
+
+/// `magic_0394` 0x10004b80 (`r43::landing_0394`): near the mark and far
+/// from it.
+#[test]
+fn landing_0394() {
+    let Some(mut t) = sa::twin(394) else { return };
+    let f = t.at(0x4b80);
+    stubs_0394(&mut t);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    // the state task's pool
+    let st = t.img.rel32_target(f + 0x1ad);
+    magic_r11::pools(&mut t, st, 150);
+    let o = SCRATCH + 0x1000;
+    for (k, near) in [true, false, true].into_iter().enumerate() {
+        let k = k as u32;
+        let gs = t.img.word(f + 0x1a);
+        let s = block_0394(&mut t, gs, k);
+        // a plain yaw
+        setf(&mut t, s + 0xc84, 0.5 + k as f32);
+        if near {
+            // the caster placed where the place lands
+            for (i, v) in [-1.75f32, 0.0, 0.25].into_iter().enumerate() {
+                setf(&mut t, s + 0xb40 + 4 * i as u32, v);
+            }
+        } else {
+            setf(&mut t, s + 0xb40, 900.0);
+        }
+        junk(&mut t, o, 0x60, k);
+        t.set_u32(t.img.word(f + 0x38), 0x0000_0040 + k);
+        ownb::dirty_stack(&mut t, 0x4b80 + k, &[]);
+        let eax = if near { Eax::Checked } else { Eax::Junk };
+        t.check_entry(f, Call::default(), &[o], eax);
+    }
+}
+
+/// `magic_0394` 0x100053e0 (`r43::turn_step_0394`): the angles wrapping
+/// both ways and not, the counter above 10, at 10 (party member, not, a
+/// monster flag) and running out (the node given back).
+#[test]
+fn turn_step_0394() {
+    let Some(mut t) = sa::twin(394) else { return };
+    let f = t.at(0x53e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    stubs_0394(&mut t);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let give = t.img.rel32_target(f + 0x251);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x1dd), sel);
+    t.set_u32(w(0x232), sel);
+    for i in 0..0x30 {
+        t.set_u32(w(0x213) + 4 * i, 0x0c00 + i);
+    }
+    let (hi, lo) = (
+        f32::from_bits(t.u32(w(0x7))),
+        f32::from_bits(t.u32(w(0x17))),
+    );
+    // (angle, counter, target byte, monster flag)
+    let cases: [(f32, u32, u8, u32); 6] = [
+        (hi + 1.0, 20, 3, 0),
+        (lo - 1.0, 11, 3, 0),
+        (0.0, 11, 0x25, 0),
+        (0.0, 11, 3, 1),
+        (0.0, 1, 3, 0),
+        (0.0, 0, 3, 0),
+    ];
+    for (k, (a, n, b, mon)) in (0u32..).zip(cases) {
+        let s = block_0394(&mut t, w(0x1e), k);
+        setf(&mut t, s + 0xaf0, a);
+        setf(&mut t, s + 0xaf4, -a);
+        t.set_u32(s + 0xc90, n);
+        t.write(sel, &[b]);
+        t.set_u32(w(0x1d7), mon);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x53e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0394` 0x10004d60 (`r43::sparks_0394`, internal) and 0x100050d0
+/// (`r43::flight_0394`): the pool with room and full after the first or
+/// second spark; the flight's counter from 30 down to 0 (the curve, the
+/// sparks below 15, the end), placed for a party member and an object
+/// (grounded and not).
+#[test]
+fn flight_0394() {
+    let Some(mut t) = sa::twin(394) else { return };
+    let f = t.at(0x50d0);
+    let sp = t.at(0x4d60);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    stubs_0394(&mut t);
+    summon_stubs::prime(&mut t, sp, SCRATCH + 0x4_0000);
+    let take = t.img.rel32_target(sp + 0x71);
+    let tw = |o: u32| img.word(take + o);
+    let (count, base, index, page) = (tw(0x0f), tw(0x37), tw(0x08), tw(0x2b));
+    let pool = SCRATCH + 0x5000;
+    let grounded = SCRATCH + 0x7e60;
+    rec(&mut t, 11, 1, move |m, _| m.r32(grounded));
+    // (counter, records free, battle flag, me, grounded)
+    let cases: [(i32, u32, u32, i32, u32); 8] = [
+        (30, 8, 0, 3, 0),
+        (16, 8, 1, 3, 0),
+        (15, 8, 0, 0x30, 1),
+        (14, 1, 0, 3, 0),
+        (10, 2, 1, 3, 1),
+        (5, 3, 0, 3, 0),
+        (1, 8, 0, 3, 0),
+        (0, 8, 1, 3, 0),
+    ];
+    for (k, (n, free, battle, me, gr)) in (0u32..).zip(cases) {
+        let s = block_0394(&mut t, w(0x17), k);
+        t.set_u32(s + 0xc88, n.cast_unsigned());
+        t.set_u32(w(0x1a6), battle);
+        t.set_u32(w(0x24f), me.cast_unsigned());
+        t.set_u32(grounded, gr);
+        junk(&mut t, pool, 0x74 * 8, k);
+        for i in 0..8 {
+            t.set_u32(pool + 0x74 * i + 0x6c, u32::from(i >= free));
+        }
+        t.set_u32(count, 8);
+        t.set_u32(base, pool);
+        t.set_u32(index, 0);
+        t.set_u32(page, 0);
+        let o = SCRATCH + 0x1000;
+        junk(&mut t, o, 0x60, k);
+        ownb::dirty_stack(&mut t, 0x50d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+    // the sparks alone, the pool full at once
+    t.set_u32(count, 8);
+    for i in 0..8 {
+        t.set_u32(pool + 0x74 * i + 0x6c, 1);
+    }
+    ownb::dirty_stack(&mut t, 0x4d60, &[]);
+    t.check(sp, Call::default(), &[], Eax::Checked, |g, img, fr| {
+        ffx_magic::r43::sparks_0394(g, img, fr)
+    });
 }

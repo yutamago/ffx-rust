@@ -4448,3 +4448,462 @@ pub const START_0420: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0394`'s landing check (0x10004b80, 470 bytes; a callback, cdecl
+/// `(O)`; an aligned /GS frame, `E` its base after the pushes): with the
+/// state block `S = *G_S`, the caster's place `P` (slot 262 into
+/// `E + 0x10..`, `w` 1.0) moved by `(0, 0, -3)` turned by the yaw
+/// `S + 0xc84` (slots 235, 328 `(M, M, 0)`, 329 `(M, M, yaw)`, 229, 248;
+/// the matrix `M` at `E + 0x40`), then placed
+/// ([`place_me`](crate::sa_misc::place_me)); when its distance in `x`/`z`
+/// from `S + 0xb40` (`_libm_sse2_sqrt_precise` on the `f64`) is below
+/// `K`, `S + 0xb50..` = `P`, the state `S + 0xc00` starts its task `(V)`
+/// ([`state_task`](crate::s4_misc::state_task), its second word a
+/// register never read: 0) with `S + 0xc88` = 0x15 and `S + 0xc48` = -1,
+/// and `O + 0x56` = 1. Returns the state task's `eax`; otherwise the
+/// original's is the `sqrt` import's leftover (junk; 0 here).
+pub fn landing_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x88);
+    let s = g.read::<u32>(w(0x1a));
+    let o = fr.arg(g, 0);
+    let (p, r, out, m) = (e + 0x10, e + 0x20, e + 0x30, e + 0x40);
+    let c = g.read::<u32>(w(0x38));
+    // call width: 4
+    g.call(slot_target(g, w(0x32), 262), 0, &[c, p, p + 4, p + 8]);
+    let yaw = g.read::<u32>(s.wrapping_add(0xc84));
+    for (i, v) in (0u32..).zip([0x3f80_0000u32, 0, 0, 0xc040_0000, 0x3f80_0000]) {
+        g.write::<u32>(p + 0xc + 4 * i, v);
+    }
+    g.write::<u32>(e + 0xc, yaw);
+    // call width: 5 (slot 262's words under it)
+    g.call(slot_target(g, w(0x52), 235), 0, &[m, c, p, p + 4, p + 8]);
+    // call width: 3
+    g.call(slot_target(g, w(0x9d), 328), 0, &[m, m, 0]);
+    let yaw = g.read::<u32>(e + 0xc);
+    // call width: 3
+    g.call(slot_target(g, w(0xbe), 329), 0, &[m, m, yaw]);
+    g.write::<u32>(r + 0xc, 0x3f80_0000);
+    // call width: 6 (slot 329's words stay under these)
+    g.call(slot_target(g, w(0xda), 229), 0, &[out, m, r, m, m, yaw]);
+    // call width: 9 (the earlier words stay)
+    g.call(
+        slot_target(g, w(0xfa), 248),
+        0,
+        &[p, p, out, out, m, r, m, m, yaw],
+    );
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    crate::sa_misc::place_me(g, img, img.rel32_target(f + 0x116), p);
+    let dz = sub(g.read::<f32>(p + 8), g.read::<f32>(s.wrapping_add(0xb48)));
+    let dx = sub(g.read::<f32>(p), g.read::<f32>(s.wrapping_add(0xb40)));
+    let sum = add(mul(dz, dz), mul(dx, dx));
+    // _libm_sse2_sqrt_precise of the double, rounded back to f32
+    #[allow(clippy::cast_possible_truncation)]
+    let d = f64::from(sum).sqrt() as f32;
+    let mut eax = 0;
+    // comiss K, d; jbe: only below K (ordered)
+    if f32::from_bits(g.read::<u32>(w(0x155))) > d {
+        for i in 0..4u32 {
+            let v = g.read::<u32>(p + 4 * i);
+            g.write::<u32>(s.wrapping_add(0xb50 + 4 * i), v);
+        }
+        g.write::<u32>(s.wrapping_add(0xc88), 0x15);
+        // push ecx (a register never read: 0); push V
+        let esp = e.wrapping_sub(0xc);
+        g.write::<u32>(esp + 4, w(0x198));
+        g.write::<u32>(esp + 8, 0);
+        let st = Frame {
+            at: img.rel32_target(f + 0x1ad),
+            esp,
+            ecx: s.wrapping_add(0xc00),
+            ..Frame::default()
+        };
+        eax = crate::s4_misc::state_task(g, img, &st).eax;
+        g.write::<u32>(s.wrapping_add(0xc48), u32::MAX);
+        g.write::<u8>(o.wrapping_add(0x56), 1);
+    }
+    Ret::eax(eax)
+}
+
+/// [`landing_0394`] (the `rel32`s: the place, `sqrt`, the state task,
+/// the cookie check).
+pub const LANDING_0394: Sig = Sig {
+    len: 470,
+    hash: 0xa43c_d0e5_21c9_afcd,
+    calls: &[
+        (0x116, Callee::Sig(&crate::sa_misc::PLACE_ME)),
+        (0x146, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x1ad, Callee::Sig(&crate::s4_misc::STATE_TASK)),
+        (0x1ce, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0394`'s turning step (0x100053e0, 599 bytes; a task callback,
+/// cdecl `(N)`, a pool node; no frame). With `B = *G_S`: the two angles
+/// `B + 0xaf0` and `+0xaf4` step by `K1`, `K2` and wrap (above `hi` less
+/// `step`, below `lo` plus it); the speed `B + 0xb20..` adds into `B +
+/// 0xb10..`, that into the place `B + 0xb00..` (the fourth words stored
+/// back as they are); the matrix `M = B + 0xab0` scaled twice
+/// ([`scaled`](crate::m0394::scaled)) and turned (slots 330, 328, 329 by
+/// `B + 0xaf8`, `+0xaf0`, `+0xaf4`); `B + 0xae0..` = the place. The
+/// counter `B + 0xc90` down: at 10 the selected target's transparency
+/// (slot 541 `(t, 0.0, 10)` for a party member, `t < 0x20` and `*G_M`
+/// 0; else slot 38 `(chr, 0.0, 10)` of the character table); at 0 or
+/// below slot 238 `(t, 0)` and the node goes back to the pool (a tail
+/// jump into [`give_back`](crate::sa_pool::give_back)). Returns that or
+/// the last `eax`.
+pub fn turn_step_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let b = g.read::<u32>(w(0x1e));
+    let at = |o: u32| b.wrapping_add(o);
+    let (hi, step, lo) = (k(g, 0x7), k(g, 0xf), k(g, 0x17));
+    for (o, kd) in [(0xaf0u32, 0x2eu32), (0xaf4, 0x5a)] {
+        let x = add(g.read::<f32>(at(o)), k(g, kd));
+        // comiss x, hi; jbe: above only (ordered)
+        let x = if x > hi {
+            sub(x, step)
+        } else if lo > x {
+            add(x, step)
+        } else {
+            x
+        };
+        g.write::<f32>(at(o), x);
+    }
+    for (dst, src) in [(0xb10u32, 0xb20u32), (0xb14, 0xb24), (0xb18, 0xb28)] {
+        let v = add(g.read::<f32>(at(src)), g.read::<f32>(at(dst)));
+        g.write::<f32>(at(dst), v);
+    }
+    let v = g.read::<u32>(at(0xb1c));
+    g.write::<u32>(at(0xb1c), v);
+    let v = add(g.read::<f32>(at(0xb00)), g.read::<f32>(at(0xb10)));
+    g.write::<f32>(at(0xb00), v);
+    for (dst, src) in [(0xb04u32, 0xb14u32), (0xb08, 0xb18)] {
+        let v = add(g.read::<f32>(at(src)), g.read::<f32>(at(dst)));
+        g.write::<f32>(at(dst), v);
+    }
+    let v = g.read::<u32>(at(0xb0c));
+    g.write::<u32>(at(0xb0c), v);
+    let m = at(0xab0);
+    crate::m0394::scaled(g, img, img.rel32_target(f + 0x12c), m);
+    crate::m0394::scaled(g, img, img.rel32_target(f + 0x133), m);
+    for (table, slot, o) in [
+        (0x140u32, 330u32, 0xaf8u32),
+        (0x15d, 328, 0xaf0),
+        (0x17c, 329, 0xaf4),
+    ] {
+        let a = g.read::<u32>(at(o));
+        // call width: 3
+        g.call(slot_target(g, w(table), slot), 0, &[m, m, a]);
+    }
+    let mut eax = 0;
+    for i in 0..4u32 {
+        eax = g.read::<u32>(at(0xb00 + 4 * i));
+        g.write::<u32>(at(0xae0 + 4 * i), eax);
+    }
+    let n = g.read::<u32>(at(0xc90)).wrapping_sub(1);
+    g.write::<u32>(at(0xc90), n);
+    if n == 0xa {
+        let sel = g.read::<u32>(w(0x1dd));
+        let t = u32::from(g.read::<u8>(sel));
+        eax = if g.read::<u32>(w(0x1d7)) == 0 && t < 0x20 {
+            // call width: 3
+            g.call(slot_target(g, w(0x1ec), 541), 0, &[t, 0, 0xa]).eax
+        } else {
+            let chr = g.read::<u32>(w(0x213).wrapping_add(4 * t));
+            // call width: 3
+            g.call(slot_target(g, w(0x218), 38), 0, &[chr, 0, 0xa]).eax
+        };
+    }
+    if g.read::<i32>(at(0xc90)) > 0 {
+        return Ret::eax(eax);
+    }
+    let sel = g.read::<u32>(w(0x232));
+    let t = u32::from(g.read::<u8>(sel));
+    // call width: 2
+    g.call(slot_target(g, w(0x23d), 238), 0, &[t, 0]);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x251),
+        node,
+    ))
+}
+
+/// [`turn_step_0394`] (the `rel32`s: the scaled matrix twice, the
+/// give-back's tail jump).
+pub const TURN_STEP_0394: Sig = Sig {
+    len: 599,
+    hash: 0x3b89_d75c_6f9c_1947,
+    calls: &[
+        (0x12c, Callee::Sig(&crate::m0394::SCALED)),
+        (0x133, Callee::Sig(&crate::m0394::SCALED)),
+        (0x251, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0394`'s sparks (0x10004d60, 865 bytes; internal, no arguments; a
+/// /GS `ebp` frame, the place `P` at `ebp - 0x14`): the caster's place
+/// (slot 262) with its height from slot 12 less `K`; two sparks from the
+/// DLL's pool ([`pool_take`](crate::sb_misc::pool_take); none ends it with
+/// 0) with the part handle `*(*G_H + 0x10)`, then one with a fresh slot
+/// 719 `(PART, 9, 0)` handle: each `(1, -1, 0x200)`, its place `P` plus
+/// two randoms (slot 314) in `x` and `z`, its speeds and spins from slots
+/// 314 and 404 (one negated by the sign mask `*G_M`), its rates. Returns
+/// the last slot 404's `eax` (0 when the pool runs out).
+#[allow(clippy::too_many_lines)] // two spark kinds, as the original
+pub fn sparks_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let ebp = fr.esp.wrapping_sub(4);
+    let p = ebp.wrapping_sub(0x14);
+    let c = g.read::<u32>(w(0x13));
+    // call width: 4
+    g.call(slot_target(g, w(0x25), 262), 0, &[c, p, p + 4, p + 8]);
+    // call width: 5 (slot 262's words under it)
+    let out = g.call(slot_target(g, w(0x33), 12), 0, &[c, c, p, p + 4, p + 8]);
+    let y = sub(crate::m0018::st0_f32(out.st0), k(g, 0x49));
+    let h = g.read::<u32>(g.read::<u32>(w(0x4e)).wrapping_add(0x10));
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<f32>(p + 4, y);
+    let rnd = |g: &mut G, table: u32, x: u32| {
+        // call width: 1
+        let out = g.call(slot_target(g, w(table), 314), 0, &[x]);
+        crate::m0018::st0_f32(out.st0)
+    };
+    let spin = |g: &mut G, table: u32, x: u32| {
+        // call width: 1
+        g.call(slot_target(g, w(table), 404), 0, &[x])
+    };
+    let neg = |g: &G, x: f32, o: u32| f32::from_bits(x.to_bits() ^ g.read::<u32>(w(o)));
+    let place = |g: &mut G, node: u32, t1: u32, t2: u32| {
+        let r = rnd(g, t1, 0x40a0_0000);
+        let x = add(g.read::<f32>(p), r);
+        g.write::<f32>(node, x);
+        let y = g.read::<u32>(p + 4);
+        g.write::<u32>(node + 4, y);
+        let r = rnd(g, t2, 0x40a0_0000);
+        let z = add(g.read::<f32>(p + 8), r);
+        g.write::<u32>(node + 0xc, 0x3f80_0000);
+        g.write::<f32>(node + 8, z);
+    };
+    let take = img.rel32_target(f + 0x71);
+    for _ in 0..2 {
+        let o = crate::sb_misc::pool_take(g, img, take);
+        if o == 0 {
+            return Ret::eax(0);
+        }
+        g.write::<u32>(o + 0x30, h);
+        g.write::<u16>(o + 0x38, 0xffff);
+        g.write::<u16>(o + 0x3a, 0x200);
+        g.write::<u32>(o + 0x34, 1);
+        place(g, o, 0x96, 0xbf);
+        let x = rnd(g, 0xee, 0x3e80_0000);
+        g.write::<f32>(o + 0x10, x);
+        let t = crate::m0018::st0_f32(spin(g, 0x111, 0x3e80_0000).st0);
+        g.write::<f32>(o + 0x14, neg(g, t, 0x12f));
+        let x = rnd(g, 0x134, 0x3e80_0000);
+        g.write::<f32>(o + 0x18, x);
+        let x = rnd(g, 0x150, 0x4049_0fdb);
+        g.write::<f32>(o + 0x1c, x);
+        for (at, v) in [
+            (0x20u32, 0u32),
+            (0x24, 0x3c23_d70a),
+            (0x28, 0),
+            (0x2c, 0x3f80_0000),
+        ] {
+            g.write::<u32>(o + at, v);
+        }
+        let t = rnd(g, 0x167, 0x3e4c_cccd);
+        let x = mul(add(t, k(g, 0x1a2)), k(g, 0x1bc));
+        g.write::<u32>(o + 0x4c, 0x20);
+        g.write::<u32>(o + 0x50, 0x10);
+        g.write::<u32>(o + 0x54, 0xffff_fff0);
+        g.write::<u8>(o + 0x6b, 0);
+        g.write::<f32>(o + 0x3c, x);
+    }
+    // call width: 3
+    let h2 = g
+        .call(slot_target(g, w(0x1da), 719), 0, &[w(0x1e9), 9, 0])
+        .eax;
+    let o = crate::sb_misc::pool_take(g, img, img.rel32_target(f + 0x1f5));
+    if o == 0 {
+        return Ret::eax(0);
+    }
+    g.write::<u16>(o + 0x38, 0xffff);
+    g.write::<u16>(o + 0x3a, 0x200);
+    g.write::<u32>(o + 0x30, h2);
+    g.write::<u32>(o + 0x34, 1);
+    place(g, o, 0x214, 0x240);
+    let x = rnd(g, 0x26f, 0x3f80_0000);
+    g.write::<f32>(o + 0x10, x);
+    let t = crate::m0018::st0_f32(spin(g, 0x292, 0x3f00_0000).st0);
+    let x = neg(g, add(t, k(g, 0x2b1)), 0x2c4);
+    g.write::<f32>(o + 0x14, x);
+    let x = rnd(g, 0x2b6, 0x3f80_0000);
+    g.write::<f32>(o + 0x18, x);
+    let x = rnd(g, 0x2d9, 0x4049_0fdb);
+    g.write::<f32>(o + 0x1c, x);
+    for (at, v) in [
+        (0x20u32, 0u32),
+        (0x24, 0x3dcc_cccd),
+        (0x28, 0),
+        (0x2c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(o + at, v);
+    }
+    let out = spin(g, 0x2f0, 0x3e4c_cccd);
+    let t = crate::m0018::st0_f32(out.st0);
+    let x = mul(add(t, k(g, 0x32b)), k(g, 0x348));
+    g.write::<u32>(o + 0x4c, 0x14);
+    g.write::<u32>(o + 0x50, 0x14);
+    g.write::<u8>(o + 0x6b, 0);
+    g.write::<f32>(o + 0x3c, x);
+    Ret::eax(out.eax)
+}
+
+/// [`sparks_0394`] (the `rel32`s: the pool takes, the cookie check).
+pub const SPARKS_0394: Sig = Sig {
+    len: 865,
+    hash: 0x4faa_223b_6734_2ff7,
+    calls: &[
+        (0x71, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x1f5, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x359, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// One coordinate of [`flight_0394`]'s curve: with `ut = u t`, `uu = u
+/// u`, `tt = t t` and `d` the coordinate's distance, `((((ut uu) k1 d +
+/// (uu uu) d) + (tt uu) k3 (d kA)) + (tt ut) k4 (d kB)) + (tt tt) 0 +
+/// base`, each step one `f32` rounding in this order.
+#[allow(clippy::too_many_arguments)] // the curve's terms, as the original keeps them
+fn curve_0394(ut: f32, uu: f32, tt: f32, d: f32, k: [f32; 3], ka: f32, kb: f32, base: f32) -> f32 {
+    let [k1, k3, k4] = k;
+    let a1 = mul(mul(mul(ut, uu), k1), d);
+    let a2 = mul(mul(uu, uu), d);
+    let s = add(a1, a2);
+    let a3 = mul(mul(mul(tt, uu), k3), mul(d, ka));
+    let s = add(s, a3);
+    let a4 = mul(mul(mul(tt, ut), k4), mul(d, kb));
+    let s = add(s, a4);
+    let s = add(s, mul(mul(tt, tt), 0.0));
+    add(s, base)
+}
+
+/// `magic_0394`'s flight down (0x100050d0, 777 bytes; a callback, cdecl
+/// `(O)`; a /GS `ebp` frame, the place `v` at `ebp - 0x14`): with `S =
+/// *G_S`, the counter `S + 0xc88` down while above 0, `t = n / K` and `u =
+/// K' - t`; the place `v` on the curve from `S + 0xb50..` towards `S +
+/// 0xb40..` ([`curve_0394`], each coordinate with its own constants);
+/// then placed as [`place_me`](crate::sa_misc::place_me) does it inline
+/// (slot 255 `(me, &v)` for a party member outside a battle, else slot
+/// 33 `(obj, x, y, z)` or slot 32 `(obj, x, z)` when slot 11 says it is
+/// grounded); below 15 the sparks ([`sparks_0394`]); at 0 `O + 0x56` = 1.
+/// Returns the last call's `eax`.
+pub fn flight_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let s = g.read::<u32>(w(0x17));
+    let at = |o: u32| s.wrapping_add(o);
+    let n = g.read::<i32>(at(0xc88));
+    if n > 0 {
+        g.write::<i32>(at(0xc88), n - 1);
+    }
+    let n = g.read::<i32>(at(0xc88));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let t = div(n as f32, k(g, 0x43));
+    let u = sub(k(g, 0x3b), t);
+    let (ut, uu, tt) = (mul(u, t), mul(u, u), mul(t, t));
+    let p = |g: &G, o: u32| g.read::<f32>(at(o));
+    let k7 = k(g, 0x5f);
+    let x = curve_0394(
+        ut,
+        uu,
+        tt,
+        sub(p(g, 0xb40), p(g, 0xb50)),
+        [k7, k7, k7],
+        k(g, 0xb4),
+        k(g, 0xbc),
+        p(g, 0xb50),
+    );
+    let y = curve_0394(
+        ut,
+        uu,
+        tt,
+        sub(p(g, 0xb44), p(g, 0xb54)),
+        [k(g, 0x135), k(g, 0x15c), k(g, 0x180)],
+        k(g, 0x154),
+        k(g, 0x164),
+        p(g, 0xb54),
+    );
+    let k6 = k(g, 0x1c4);
+    let z = curve_0394(
+        ut,
+        uu,
+        tt,
+        sub(p(g, 0xb48), p(g, 0xb58)),
+        [k6, k6, k6],
+        k(g, 0x20a),
+        k(g, 0x212),
+        p(g, 0xb58),
+    );
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    for (i, c) in (0u32..).zip([x, y, z]) {
+        g.write::<f32>(v + 4 * i, c);
+    }
+    let me = g.read::<i32>(w(0x24f));
+    let mut eax = if g.read::<u32>(w(0x1a6)) == 0 && me < 0x20 {
+        // call width: 2
+        g.call(slot_target(g, w(0x25e), 255), 0, &[me.cast_unsigned(), v])
+            .eax
+    } else {
+        let c = g.read::<u32>(w(0x277));
+        // call width: 1
+        let grounded = g.call(slot_target(g, w(0x270), 11), 0, &[c]).eax;
+        let table = w(0x28c);
+        if grounded == 0 {
+            // call width: 4
+            g.call(
+                slot_target(g, table, 33),
+                0,
+                &[c, x.to_bits(), y.to_bits(), z.to_bits()],
+            )
+            .eax
+        } else {
+            // call width: 3
+            g.call(slot_target(g, table, 32), 0, &[c, x.to_bits(), z.to_bits()])
+                .eax
+        }
+    };
+    if g.read::<i32>(at(0xc88)) < 0xf {
+        let sp = Frame {
+            at: img.rel32_target(f + 0x2e8),
+            esp: ebp.wrapping_sub(0x2c),
+            ..Frame::default()
+        };
+        eax = sparks_0394(g, img, &sp).eax;
+    }
+    if g.read::<i32>(at(0xc88)) <= 0 {
+        let o = fr.arg(g, 0);
+        g.write::<u8>(o.wrapping_add(0x56), 1);
+    }
+    Ret::eax(eax)
+}
+
+/// [`flight_0394`] (the `rel32`s: the sparks, the cookie check).
+pub const FLIGHT_0394: Sig = Sig {
+    len: 777,
+    hash: 0xd3ea_9ee3_5a4d_6590,
+    calls: &[(0x2e8, Callee::Sig(&SPARKS_0394)), (0x301, Callee::Any)],
+    imports: &[],
+};
