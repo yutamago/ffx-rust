@@ -343,3 +343,208 @@ fn task_step_0392() {
         t.check_entry(at, Call::default(), &[node], Eax::Checked);
     }
 }
+
+/// Matrix and vector slots of the 0385 burst: 235 an identity, 329 adding
+/// its angle, 231 a product of the first rows, 229 `M V` per row; 12 and
+/// 314 floats in ST0 (314's steps per call), 262 a position.
+fn stubs_0385(t: &mut Twin) {
+    all_stubs(t);
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    rec(t, 329, 3, |m, a| {
+        let x = f32::from_bits(a[2]);
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) + x * (i % 3) as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 1.25 + i as f32 * 0.5 - 4.0);
+        }
+        0x262
+    });
+    rec(t, 12, 1, |_, a| 0x12 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 7) * 0.5 + 0.25);
+    let k = SCRATCH + 0x7e10;
+    rec(t, 314, 1, move |m, a| {
+        let c = m.r32(k);
+        m.w32(k, c + 1);
+        0x0314_0000 ^ a[0] ^ c
+    });
+    t.stub_st0(314, move |m, a| {
+        f64::from(f32::from_bits(a[0])) * 0.125 * f64::from(m.r32(k) % 7)
+    });
+}
+
+/// `magic_0385` 0x10004b00 (`r45::shard_burst_0385`): the wait counting
+/// down, no count left, the tick below 4, and bursts (the pool with room,
+/// running out after one shard, empty) with the yaw wrapping both ways and
+/// not (the caster around the actors).
+#[test]
+fn shard_burst_0385() {
+    let Some(mut t) = sa::twin(385) else { return };
+    let f = t.at(0x4b00);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    stubs_0385(&mut t);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    let mp = t.img.rel32_target(f + 0x75);
+    let mw = |o: u32| img.word(mp + o);
+    t.set_u32(mw(0x11), 3);
+    t.set_u32(mw(0x46), 0x0c0c);
+    t.set_u32(mw(0x4d), SCRATCH + 0x100);
+    t.write(SCRATCH + 0x100, &[3, 1, 0, 2, 7]);
+    for i in 0..8u32 {
+        t.set_u32(mw(0x58) + 4 * i, 0xc400 + i);
+    }
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x7a), sel);
+    for i in 0..0x30 {
+        t.set_u32(w(0x84) + 4 * i, 0x0c00 + 3 * i);
+    }
+    let take = t.img.rel32_target(f + 0x1d1);
+    let tw = |o: u32| img.word(take + o);
+    let recs = SCRATCH + 0x1_0000;
+    t.set_u32(tw(0x16), recs);
+    // (wait, count, tick, the caster, records free)
+    let cases: [(i32, i32, u32, u32, u32); 9] = [
+        (3, 5, 0, 0, 6),
+        (0, 0, 0, 0, 6),
+        (-1, -2, 0, 0, 6),
+        (0, 5, 1, 0, 6),
+        (0, 5, 3, 0x00, 6),
+        (0, 1, 3, 0x0f, 6),
+        (0, 2, 7, 0x09, 1),
+        (0, 2, 3, 0x05, 0),
+        (0, 9, 3, 0x0c, 2),
+    ];
+    for (k, (wait, n, tick, caster, free)) in (0u32..).zip(cases) {
+        t.set_u32(w(0x1b), wait.cast_unsigned());
+        t.set_u32(w(0x40), n.cast_unsigned());
+        t.set_u32(w(0x53), tick);
+        t.set_u32(w(0xba), 0x0ca0 + caster);
+        t.write(sel, &[(k as u8) % 5, 0x5a]);
+        junk(&mut t, recs, 0x140 * 6, k);
+        for i in 0..6 {
+            let r = recs + 0x140 * i;
+            t.set_u32(r + 0x130, u32::from(i >= free));
+            t.set_u16(r + 0x124, 0x8000);
+        }
+        t.set_u32(tw(0x09), 6);
+        t.set_u32(tw(0x01), 0);
+        magic_r11::pools(&mut t, f, 835);
+        ownb::dirty_stack(&mut t, 0x4b00 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0297` 0x10007e30 (`r45::summon_start_0297`): as
+/// `magic_s4_summon.rs`'s start test, with slot 803 handing out the
+/// environment and the lock word as the game left it.
+#[test]
+fn summon_start_0297() {
+    let Some(mut t) = sa::twin(297) else { return };
+    let at = t.at(0x7e30);
+    all_stubs(&mut t);
+    let statics = t.img.rel32_target(at + 0xd);
+    let root = t.img.word(statics + 0x10d);
+    let lock = sa::node(21);
+    t.set_u32(t.img.word(at + 0xf2), lock);
+    t.set_u32(t.img.word(at + 0x119), lock);
+    let list = sa::node(20);
+    rec(&mut t, 803, 2, |_, a| 0x0080_0000 ^ a[1]);
+    rec(&mut t, 718, 1, |_, _| 0x718);
+    for s in [222u32, 221] {
+        rec(&mut t, s, 4, move |_, _| s);
+    }
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    rec(&mut t, 711, 3, move |m, a| {
+        // the lock word while the program starts
+        m.w32(list + 0x40, m.r32(lock));
+        a[0] ^ 0x711
+    });
+    rec(&mut t, 710, 4, |_, _| 0x710);
+    for (k, old) in [0u32, 7].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(list, &[0x80, 0x81]);
+        t.set_u32(lock, old);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, 0);
+        t.set_u32(t.img.word(at + 0x1b8), 0x5555_5555 + k);
+        // the words the start clears or sets, junk before
+        junk_ops(
+            &mut t,
+            at,
+            &[0x8, 0x26, 0x30, 0x63, 0x78, 0x94, 0xa9, 0xc5, 0xfb],
+        );
+        junk_ops(&mut t, at, &[0x19e, 0x1c9, 0x1d3, 0x1dd, 0x17b]);
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(t.img.word(at + 0x17b), tail);
+        t.check_entry(at, Call::default(), &[0x30 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0348` 0x100070b0 (`r45::light_setup_0348`): the scale task's
+/// list empty and not, the state block junk with varied light words.
+#[test]
+fn light_setup_0348() {
+    let Some(mut t) = sa::twin(348) else { return };
+    let f = t.at(0x70b0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 8, 2, |_, a| 0x0008_0000 ^ a[0]);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let st = t.img.rel32_target(f + 0x3bf);
+    let head = t.img.word(st + 0x79);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0xc), s);
+    t.set_u32(w(0x3cc), 0x0d0d_0000);
+    for k in 0..3u32 {
+        junk(&mut t, s, 0xd200, k);
+        floats(&mut t, s + 0xd10, 0x8, k);
+        floats(&mut t, s + 0xd20, 0x4, k + 2);
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(head, if k == 1 { 0 } else { tail });
+        t.set_u32(t.img.word(st + 0x91), tail);
+        magic_r11::pools(&mut t, f, 987);
+        ownb::dirty_stack(&mut t, 0x70b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

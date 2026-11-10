@@ -3438,6 +3438,9 @@ ports! {
     "r45 object start 0348" => r45::OBJECT_START_0348, r45::object_start_0348;
     "r45 spawn 0251" => r45::SPAWN_0251, r43::spawn_0250;
     "r45 task step 0392" => r45::TASK_STEP_PASS_0392, m0449::task_step_pass;
+    "r45 shard burst 0385" => r45::SHARD_BURST_0385, r45::shard_burst_0385;
+    "r45 summon start 0297" => r45::SUMMON_START_0297, r45::summon_start_0297;
+    "r45 light set-up 0348" => r45::LIGHT_SETUP_0348, r45::light_setup_0348;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
