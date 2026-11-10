@@ -482,3 +482,72 @@ pub const SCREEN_SETUP_0152: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `magic_0533`'s summon task offsets in `magic_0152`'s copy.
+const MAP_0152_8980: &[(u32, u32)] = &[
+    (0x0, 0x0),
+    (0x2e1, 0x2e8),
+    (0x2e4, 0x301),
+    (0x3c9, 0x3e0),
+    (0x3f1, 0x40e),
+    (0x6a4, 0x6a4),
+    (0xa38, 0xa39),
+    (0xa57, 0xa57),
+    (0xa9f, 0xa99),
+    (0xaa3, 0xaa2),
+    (0xac4, 0xac8),
+    (0xafc, 0xb06),
+    (0xaff, 0xb0b),
+    (0xb09, 0xb1c),
+    (0xb1d, 0xb49),
+    (0xc69, 0xced),
+];
+
+/// `magic_0152`'s summon task (0x10008980, 4133 bytes; a task callback
+/// `(A)`): [`summon_task_0533`](crate::r35::summon_task_0533) on its
+/// layout (the model set-up its own copy,
+/// [`build_node`](crate::m0152::build_node)), with slot 228 `(*G_B, 0xb9)`
+/// after state 0's slot 3, slot 520
+/// choosing state 0x3d's camera end (instead of state 0x64's test), and
+/// in state 0x47 the model's slot (257 or 296 by a flag), slot 228 `(*G_B,
+/// 0xb8)` and the screen object ([`screen_setup_0152`] on `R + 0x39c`).
+pub fn summon_task_0152<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r35::summon_task_0533_with(
+        g,
+        img,
+        fr,
+        &crate::r35::Layout0533 {
+            map: MAP_0152_8980,
+            kind: 152,
+        },
+    )
+}
+
+/// [`summon_task_0152`] (the `rel32`s: the 0533 task's callees, the
+/// copy's own model set-up and the screen set-up).
+pub const SUMMON_TASK_0152: Sig = Sig {
+    len: 4133,
+    hash: 0x014a_1aae_e8ab_f382,
+    calls: &[
+        (0x9c, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0xd5, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xe9, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xfe, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x11b, Callee::Sig(&crate::m0152::BUILD_NODE)),
+        (0x14d, Callee::Sig(&crate::s4_small::LINK_NODE)),
+        (0x163, Callee::Sig(&crate::sa_misc::STATIC_NODE)),
+        (0x1a7, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x256, Callee::Sig(&crate::s7_misc::GLOBAL_DIFFERENCES)),
+        (0x2c8, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x2cd, Callee::Sig(&crate::s4_small::CALL_211_FLAG)),
+        (0x60f, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x70f, Callee::Sig(&crate::s4_misc::FLOAT_307)),
+        (0x724, Callee::Sig(&crate::s4_small::CALL_250)),
+        (0xabf, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xce3, Callee::Sig(&SCREEN_SETUP_0152)),
+        (0xe44, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0xf0f, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0xf1a, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};

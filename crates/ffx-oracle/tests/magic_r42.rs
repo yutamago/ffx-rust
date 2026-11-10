@@ -207,8 +207,8 @@ fn junk_ops(t: &mut Twin, f: u32, ops: &[u32]) {
 /// 235 the identity, 330 `(out, scale, angle)` and 230 `(out, in)` mix
 /// what they read, 229 `(out, matrix, vector)`, 404 a float in ST0 from
 /// its word, 941 a frame table, 772 a 64-bit handle; the part link's
-/// 774/778 hash the colour and both frame matrices the part record
-/// points at; the link's lock global at a scratch word.
+/// 774/778 hash the colour and both frame matrices the owner record
+/// (`G_REC`) points at; the link's lock global at a scratch word.
 fn stubs_0072(t: &mut Twin, f: u32) {
     all_stubs(t);
     let table = SCRATCH + 0x3e00;
@@ -266,8 +266,9 @@ fn stubs_0072(t: &mut Twin, f: u32) {
     });
     for s in [774u32, 778] {
         t.stub(s, move |m, a| {
-            let rec = a[2];
-            let mut x = s ^ rec ^ m.r32(rec + 4);
+            // (handle lo, handle hi, part, owner, ..): the owner record
+            let rec = a[3];
+            let mut x = s ^ a[2] ^ m.r32(rec + 4);
             for off in [0x10u32, 0x1c] {
                 let mat = m.r32(rec + off);
                 for i in 0..16 {

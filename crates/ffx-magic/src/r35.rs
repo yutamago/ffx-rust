@@ -4507,13 +4507,49 @@ pub const SCENE_TASK_0577: Sig = Sig {
 /// table's byte, the caller's `eax` past the table, the last call's).
 #[allow(clippy::too_many_lines)] // the original's states, in order
 pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_task_0533_with(g, img, fr, &Layout0533::OWN)
+}
+
+/// Where a copy of [`summon_task_0533`] differs: `magic_0533`'s operand
+/// offsets onto the copy's (from each `(start, here)` on, sorted, `o -
+/// start + here`; empty for `magic_0533`) and the copy's DLL number for
+/// the code it has besides (`magic_0152`'s: slot 228 after state 0, the
+/// slot 520 test in state 0x3d instead of 0x64, state 0x47's model work).
+pub struct Layout0533 {
+    pub map: &'static [(u32, u32)],
+    pub kind: u16,
+}
+
+impl Layout0533 {
+    /// `magic_0533`'s own.
+    pub const OWN: Layout0533 = Layout0533 {
+        map: &[],
+        kind: 533,
+    };
+
+    /// `magic_0533`'s offset `o` in this copy.
+    #[must_use]
+    pub fn m(&self, o: u32) -> u32 {
+        let mut r = o;
+        for &(start, here) in self.map {
+            if o >= start {
+                r = o - start + here;
+            }
+        }
+        r
+    }
+}
+
+/// [`summon_task_0533`] on a copy's layout ([`Layout0533`]).
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn summon_task_0533_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, lay: &Layout0533) -> Ret {
     use crate::r25::abs_stores;
     use crate::sb_sse::{add, cvt, cvtt, mul, sub};
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let w = |o: u32| img.word(f + lay.m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let slot = |g: &G, n: u32| slot_target(g, w(0x79), n);
-    let abs = |g: &mut G, a: u32, b: u32| abs_stores(g, img, f, a, b);
+    let abs = |g: &mut G, a: u32, b: u32| abs_stores(g, img, f, lay.m(a), lay.m(b));
     // push ebp; and esp, -8; sub esp, 0x14; three pushes
     let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x20);
     let task = fr.arg(g, 0);
@@ -4543,7 +4579,7 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         return Ret::eax(fr.eax);
     }
     if esi == 0x2710 {
-        crate::l3_common::list_unlink_current(g, img, img.rel32_target(f + 0xe8b), fr.eax);
+        crate::l3_common::list_unlink_current(g, img, img.rel32_target(f + lay.m(0xe8b)), fr.eax);
         crate::sa_misc::leave(g, at(0x374), 0);
         return Ret::eax(crate::h6_setup::unlink_task(g, task));
     }
@@ -4551,7 +4587,7 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // the dispatch's two floats
     let (x1, x2) = (k(g, 0x65), k(g, 0x6d));
     let eax = match esi {
-        0 => start_0533(g, img, f, base, r),
+        0 => start_0533(g, img, f, lay, base, r),
         1 => {
             let x = add(rf(g, 0x368), k(g, 0x304));
             g.write::<f32>(at(0x368), x);
@@ -4625,13 +4661,13 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         0xa | 0xb => {
             let mut s = esi;
             if esi == 0xa {
-                camera_0533(g, img, f, r);
+                camera_0533(g, img, f, lay, r);
                 s = g.read::<u32>(gs).wrapping_add(1);
             }
             crate::sb_misc::node_append(
                 g,
                 img,
-                img.rel32_target(f + 0x5f2),
+                img.rel32_target(f + lay.m(0x5f2)),
                 at(0x2f0),
                 at(0x2c4),
                 0,
@@ -4641,12 +4677,15 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             g.write::<u32>(w(0x626), at(0x178));
             g.write::<u32>(gs, s.wrapping_add(1));
-            fades_0533(g, img, f, r, (0x5fa, 0x63a, 0x653, 0x65b, 0x670), x2);
+            fades_0533(g, img, f, lay, r, (0x5fa, 0x63a, 0x653, 0x65b, 0x670), x2);
             at(0x178)
         }
         0x64..=0x66 => {
             let mut eax = idx;
-            if esi == 0x64 {
+            if esi == 0x64 && lay.kind == 152 {
+                // `magic_0152` tests slot 520 in state 0x3d instead
+                step(g, 1);
+            } else if esi == 0x64 {
                 // call width: 0
                 if g.call(slot(g, 520), 0, &[]).eax == 0x024b_0005 {
                     g.write::<u32>(at(0x2e4), 0);
@@ -4659,6 +4698,7 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                     g,
                     img,
                     f,
+                    lay,
                     r,
                     (0x6b0, 0x6c0, 0x6d9, 0x6e1, 0x6f6),
                     k(g, 0x6a8),
@@ -4667,7 +4707,7 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.write::<u32>(at(0x310), c);
                 if g.read::<u8>(at(0x390)) > 2 {
                     let ff = Frame {
-                        at: img.rel32_target(f + 0x70f),
+                        at: img.rel32_target(f + lay.m(0x70f)),
                         esp: base.wrapping_sub(4),
                         ..Frame::default()
                     };
@@ -4677,7 +4717,7 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                     };
                     let x = mul(sub(v, k(g, 0x717)), rf(g, 0x24));
                     let cf = Frame {
-                        at: img.rel32_target(f + 0x724),
+                        at: img.rel32_target(f + lay.m(0x724)),
                         esp: base.wrapping_sub(4),
                         xmm: [u128::from(x.to_bits()), u128::from(x.to_bits()), 0, 0],
                         ..Frame::default()
@@ -4817,19 +4857,23 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 // call width: 3
                 g.call(slot(g, 306), 0, &[7, 2, h]);
                 s = g.read::<u32>(gs).wrapping_add(1);
+                if lay.kind == 152 {
+                    // inc dword [G_S]
+                    g.write::<u32>(gs, s);
+                }
             }
             let sp = base.wrapping_sub(0x10);
             for (i, v) in (0u32..).zip([w(0xab6), w(0xaae), w(0xaa9), w(0xaa4)]) {
                 g.write::<u32>(sp + 4 * i, v);
             }
             let of = Frame {
-                at: img.rel32_target(f + 0xac0),
+                at: img.rel32_target(f + lay.m(0xac0)),
                 esp: sp.wrapping_sub(4),
                 ecx: at(0x2c),
                 edx: w(0xabb),
                 ..Frame::default()
             };
-            let eax = crate::sa_misc::node_append_owned(g, img, &of);
+            let mut eax = crate::sa_misc::node_append_owned(g, img, &of);
             g.write::<u32>(w(0xac6), at(0x2c));
             words(
                 g,
@@ -4843,6 +4887,23 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 ],
             );
             abs(g, 0xaf2, 0xafc);
+            if lay.kind == 152 {
+                // slot 520 (the operand at `+0xac4`) picks the camera's end
+                // call width: 0
+                eax = g.call(slot_target(g, img.word(f + 0xac4), 520), 0, &[]).eax;
+                let (y, z) = if eax == 0x0205_0000 {
+                    (0xc2b4_0000, 0xc28c_0000)
+                } else {
+                    (0xc28c_0000, 0xc348_0000)
+                };
+                g.write::<u32>(at(0x33c), y);
+                g.write::<u32>(at(0x340), z);
+                // the tail at `+0x3fe`: state 0x5a's store, `inc [G_S]`
+                abs(g, 0xa57, 0xa61);
+                let s = g.read::<u32>(gs).wrapping_add(1);
+                g.write::<u32>(gs, s);
+                return Ret::eax(eax);
+            }
             g.write::<u32>(at(0x340), 0xc316_0000);
             abs(g, 0xa57, 0xa61);
             g.write::<u32>(gs, s.wrapping_add(1));
@@ -4886,10 +4947,38 @@ pub fn summon_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         }
         0x47 => {
             // comiss R[0x1c], K; jb: below or unordered waits
-            if y >= k(g, 0xc58) {
-                step(g, 1);
+            let on = y >= k(g, 0xc58);
+            if on && lay.kind == 152 {
+                // the model's slot by the flag byte, slot 228, the screen
+                // object set-up on `R + 0x39c`, `inc [G_S]`
+                let st = |g: &G, n: u32| slot_target(g, img.word(f + 0xc96), n);
+                if g.read::<u8>(img.word(f + 0xc90)) & 1 == 0 {
+                    let m = g.read::<u32>(img.word(f + 0xcb6));
+                    // call width: 2
+                    g.call(st(g, 296), 0, &[m, 1]);
+                } else {
+                    let m = g.read::<u32>(img.word(f + 0xca6));
+                    // call width: 2
+                    g.call(st(g, 257), 0, &[m, 0]);
+                }
+                let b = u32::from(g.read::<u8>(img.word(f + 0xcbf)));
+                // call width: 2
+                g.call(slot_target(g, img.word(f + 0xccd), 228), 0, &[b, 0xb8]);
+                let sf = Frame {
+                    at: img.rel32_target(f + 0xce3),
+                    ecx: at(0x39c),
+                    ..*fr
+                };
+                let eax = crate::r42::screen_setup_0152(g, img, &sf).eax;
+                let s = g.read::<u32>(gs).wrapping_add(1);
+                g.write::<u32>(gs, s);
+                eax
+            } else {
+                if on {
+                    step(g, 1);
+                }
+                idx
             }
-            idx
         }
         0x50 => {
             let fl = g.read::<u32>(w(0xc72)) | 3;
@@ -4958,12 +5047,13 @@ fn fades_0533<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
+    lay: &Layout0533,
     r: u32,
     ops: (u32, u32, u32, u32, u32),
     x2: f32,
 ) {
     use crate::sb_sse::{add, mul, sub};
-    let k = |g: &G, o: u32| g.read::<f32>(img.word(f + o));
+    let k = |g: &G, o: u32| g.read::<f32>(img.word(f + lay.m(o)));
     let at = |o: u32| r.wrapping_add(o);
     let x0 = k(g, ops.0);
     let x1 = mul(sub(x2, g.read::<f32>(at(0x28))), k(g, ops.1));
@@ -4979,8 +5069,8 @@ fn fades_0533<G: Game>(
 
 /// [`summon_task_0533`]'s state 0xa: slots 557/560 and 286, the camera
 /// words, slot 285, the move's words; on into 0xb.
-fn camera_0533<G: Game>(g: &mut G, img: &Image, f: u32, r: u32) {
-    let w = |o: u32| img.word(f + o);
+fn camera_0533<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Layout0533, r: u32) {
+    let w = |o: u32| img.word(f + lay.m(o));
     let at = |o: u32| r.wrapping_add(o);
     let slot = |g: &G, n: u32| slot_target(g, w(0x502), n);
     // call width: 0
@@ -4993,13 +5083,13 @@ fn camera_0533<G: Game>(g: &mut G, img: &Image, f: u32, r: u32) {
     let x = g.read::<u32>(at(0x2e4)).wrapping_add(0xffff_c000);
     g.write::<u32>(at(0x2e4), x);
     g.write::<u8>(at(0x390), 0);
-    crate::r25::abs_stores(g, img, f, 0x54f, 0x559);
+    crate::r25::abs_stores(g, img, f, lay.m(0x54f), lay.m(0x559));
     for (o, v) in [(0x364u32, 0u32), (0x368, 0xc0a0_0000), (0x36c, 0)] {
         g.write::<u32>(at(o), v);
     }
-    crate::r25::abs_stores(g, img, f, 0x57a, 0x584);
+    crate::r25::abs_stores(g, img, f, lay.m(0x57a), lay.m(0x584));
     g.write::<u32>(at(0x338), 0);
-    crate::r25::abs_stores(g, img, f, 0x58e, 0x598);
+    crate::r25::abs_stores(g, img, f, lay.m(0x58e), lay.m(0x598));
     let m = g.read::<u32>(w(0x5a7));
     // call width: 2
     g.call(slot(g, 285), 0, &[m, 0]);
@@ -5011,10 +5101,10 @@ fn camera_0533<G: Game>(g: &mut G, img: &Image, f: u32, r: u32) {
 
 /// [`summon_task_0533`]'s state 0. Returns slot 3's `eax`.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
-fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32 {
+fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Layout0533, base: u32, r: u32) -> u32 {
     use crate::r25::abs_stores;
-    let w = |o: u32| img.word(f + o);
-    let call = |o: u32| img.rel32_target(f + o);
+    let w = |o: u32| img.word(f + lay.m(o));
+    let call = |o: u32| img.rel32_target(f + lay.m(o));
     let at = |o: u32| r.wrapping_add(o);
     let slot = |g: &G, n: u32| slot_target(g, w(0x79), n);
     let m = g.read::<u32>(w(0x84));
@@ -5053,8 +5143,13 @@ fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32
         ecx: w(0x116),
         ..Frame::default()
     };
-    crate::m0533::model_setup_args(g, img, &mf);
-    abs_stores(g, img, f, 0x127, 0x131);
+    if lay.kind == 152 {
+        // `magic_0152`'s copy of the set-up, the same words
+        crate::m0152::build_node(g, img, mf.at, mf.ecx, mf.esp);
+    } else {
+        crate::m0533::model_setup_args(g, img, &mf);
+    }
+    abs_stores(g, img, f, lay.m(0x127), lay.m(0x131));
     let m = g.read::<u32>(w(0x140));
     // call width: 2
     g.call(slot(g, 286), 0, &[m, 0x4461_0000]);
@@ -5075,7 +5170,7 @@ fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32
     let grp = base + 0x10;
     g.write::<u32>(grp, w(0x190));
     g.write::<u32>(grp + 4, w(0x198));
-    abs_stores(g, img, f, 0x19c, 0x1a6);
+    abs_stores(g, img, f, lay.m(0x19c), lay.m(0x1a6));
     let cf = Frame {
         at: call(0x1a7),
         esp: base.wrapping_sub(4),
@@ -5084,19 +5179,22 @@ fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32
     };
     crate::s3_misc::colour_node(g, img, &cf);
     let x2 = g.read::<u32>(w(0x1af));
-    abs_stores(g, img, f, 0x1b3, 0x1bd);
-    for (o, v) in [(0x364u32, 0u32), (0x368, 0xc66a_6000), (0x36c, 0)] {
+    abs_stores(g, img, f, lay.m(0x1b3), lay.m(0x1bd));
+    // the immediates of `mov [edi + 0x368], imm` and `mov [edi + 0x33c],
+    // imm` (the copies' camera start)
+    let (z0, y1) = (w(0x1cd), w(0x1f5));
+    for (o, v) in [(0x364u32, 0u32), (0x368, z0), (0x36c, 0)] {
         g.write::<u32>(at(o), v);
     }
-    abs_stores(g, img, f, 0x1db, 0x1e5);
+    abs_stores(g, img, f, lay.m(0x1db), lay.m(0x1e5));
     for (o, v) in [
         (0x338u32, 0x457a_0000u32),
-        (0x33c, 0xc5da_c000),
+        (0x33c, y1),
         (0x340, 0xc61c_4000),
     ] {
         g.write::<u32>(at(o), v);
     }
-    abs_stores(g, img, f, 0x205, 0x255);
+    abs_stores(g, img, f, lay.m(0x205), lay.m(0x255));
     let df = Frame {
         at: call(0x256),
         esp: base.wrapping_sub(4),
@@ -5119,7 +5217,7 @@ fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32
         g.write::<u32>(grp + 4 * i, v);
     }
     g.write::<u8>(grp + 0xc, 0);
-    abs_stores(g, img, f, 0x2bd, 0x2c7);
+    abs_stores(g, img, f, lay.m(0x2bd), lay.m(0x2c7));
     crate::sa_summon::model_node_init(g, img, call(0x2c8), grp);
     let sf = Frame {
         at: call(0x2cd),
@@ -5129,7 +5227,14 @@ fn start_0533<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, r: u32) -> u32
     crate::s4_small::call_211_flag(g, img, &sf);
     let m = g.read::<u32>(w(0x2d8));
     // call width: 1
-    let eax = g.call(slot(g, 3), 0, &[m]).eax;
+    let mut eax = g.call(slot(g, 3), 0, &[m]).eax;
+    if lay.kind == 152 {
+        // movzx eax, byte [G]; push 0xb9; push eax: slot 228
+        let b = u32::from(g.read::<u8>(img.word(f + 0x2e4)));
+        let t = slot_target(g, img.word(f + 0x2f2), 228);
+        // call width: 2
+        eax = g.call(t, 0, &[b, 0xb9]).eax;
+    }
     let s = g.read::<u32>(w(0x2e6)).wrapping_add(1);
     g.write::<u32>(w(0x2e6), s);
     g.write::<u32>(at(0x20), 0);
