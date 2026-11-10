@@ -235,7 +235,8 @@ fn start_up_0150() {
 /// with the never-written frame word `[ebp - 4]` set to an owner on both
 /// sides (the port's own entry passes 0), and its thunk 0x1000a5d0 on the
 /// rings whose walk stops at once (the only way that never reads the
-/// word).
+/// word). Both are unreachable in the game (no object carries the
+/// `EgoTailSpr` vtable 0x100115ac; `r40::walk_ring_junk_0150`).
 #[test]
 fn walk_ring_junk_0150() {
     let Some(mut t) = twin(150) else { return };

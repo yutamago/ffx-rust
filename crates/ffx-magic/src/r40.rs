@@ -53,9 +53,18 @@ pub const START_UP_0150: Sig = Sig {
 /// ([`walk`](crate::nodes::walk)); when it ran (the cursor's flag bit 0),
 /// the ring `[O + 0x2ec]` gets its handler (`+0x1c` of its table, `ecx`
 /// and the one argument a cursor on the frame: the ring, the walk's pass
-/// byte at `+5`). `O` is `[ebp - 4]`, a frame word the function never
-/// writes: `owner` (the port passes 0, the junk-read rule). Returns the
-/// handler's `eax`, or the walk's.
+/// byte at `+5`). `O` is `[ebp - 4]`, the upper half of the function's own
+/// 8-byte cursor (`[ebp - 8]`), read before anything writes it: `owner`.
+/// Returns the handler's `eax`, or the walk's.
+///
+/// Unreachable in the game: the function's only way in is the thunk
+/// 0x1000a5d0, stored only at `+0x1c` of the class record `EgoTailSpr`
+/// (0x100115ac, a class's vtable is the address of its name). None of the
+/// DLL's 2442 relocated words points at that record or at the thunk's slot
+/// 0x100115c8 (the one pointer into 0x10011580..0x100115e0 is `EgoTask`'s
+/// 0x100115cc), and no export or RVA names them, so no object ever carries
+/// that vtable. The undefined pointer is therefore never dereferenced; the
+/// port's entry passes 0 for it (r42, 2026-11-10).
 pub fn walk_ring_junk_0150<G: Game>(g: &mut G, fr: &Frame, owner: u32) -> Ret {
     let cursor = fr.ecx;
     let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
@@ -89,7 +98,8 @@ pub fn jmp_walk_ring_junk_0150<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> R
         ecx: fr.arg(g, 0),
         ..*fr
     };
-    // junk read: [ebp-4] never written; 0 (brief 2026-10-24)
+    // [ebp-4] is never written (an uninitialised local used as a pointer);
+    // the thunk is unreachable (see walk_ring_junk_0150), 0 stands in for it
     walk_ring_junk_0150(g, &callee, 0)
 }
 
@@ -715,7 +725,14 @@ pub const JMP_PATH_RUN_0186: Sig = Sig {
 /// < 0`: the base less `atan(x / z)`; otherwise by the signs (`x > 0`: 0).
 /// `atan` is MSVCR110's `_libm_sse2_atan_precise` on the `f64` quotient,
 /// rounded to `f32`.
-fn flat_angle<G: Game>(g: &mut G, img: &Image, f: u32, x: f32, z: f32, k: [u32; 7]) -> f32 {
+pub(crate) fn flat_angle<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    x: f32,
+    z: f32,
+    k: [u32; 7],
+) -> f32 {
     use crate::sb_sse::{add, div, mul, sub};
     let c = |g: &G, i: usize| g.read::<f32>(img.word(f + k[i]));
     let p = mul(x, z);

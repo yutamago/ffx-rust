@@ -74,7 +74,7 @@ pub const SETUP: Sig = Sig {
 /// `vprintf(fmt, &args)` through slot 726 (the 28-byte varargs wrapper,
 /// `magic_0604` 0x10002270): `va` is the address of the caller's first
 /// variadic word.
-fn debug_printf<G: Game>(g: &mut G, table: u32, fmt: u32, va: u32) {
+pub(crate) fn debug_printf<G: Game>(g: &mut G, table: u32, fmt: u32, va: u32) {
     let slot726 = slot_target(g, table, 726);
     g.call(slot726, 0, &[fmt, va]);
 }
