@@ -87,6 +87,7 @@ pub mod r35;
 pub mod r36;
 pub mod r37;
 pub mod r37b;
+pub mod r38;
 pub mod r39;
 pub mod r39b;
 pub mod r9_load;
@@ -3300,6 +3301,44 @@ ports! {
     "r39 scene task 0668" => r39b::SCENE_TASK_0668, r39b::scene_task_0668;
     "r39 node ease thunk 0070" => r39::CALL_NODE_EASE_0070, r39::call_node_ease_0070;
     // round 39 (magic-r39): end
+    // round 38 (magic-r38)
+    "r38 clips 0434" => r33::CLIPS_0434, r33::clips_0610;
+    "r38 spark tick 0316" => r38::SPARK_TICK_0316, r38::spark_tick_0316;
+    "r38 spark ring 0316" => r38::SPARK_RING_0316, r38::spark_ring_0316;
+    "r38 load step 0316" => r38::LOAD_0316, r38::load_0316;
+    "r38 aim 0361" => r38::AIM_0361, r38::aim_0361;
+    "r38 fade-in 0361" => r38::FADE_IN_0361, r38::fade_in_0361;
+    "r38 flight 0361" => r38::FLIGHT_0361, r38::flight_0361;
+    "r38 throw 0361" => r38::THROW_0361, r38::throw_0361;
+    "r38 task 0350" => r38::TASK_0350, r38::task_0350;
+    "r38 packed 0350" => r38::PACKED_0350, r38::packed_0350;
+    "r38 set-up 0350" => r38::SET_UP_0350, r38::set_up_0350;
+    "r38 sparks 0350" => r38::SPARKS_0350, r38::sparks_0350;
+    "r38 keys 0350" => r38::KEYS_0350_SIG, r38::keys_0350;
+    "r38 load step 0275" => r38::LOAD_0275, r38::load_0275;
+    "r38 task 0275" => r38::TASK_0275, r38::task_0275;
+    "r38 burst 0270" => r38::BURST_0270, r38::burst_0270;
+    "r38 drop 0270" => r38::DROP_0270, r38::drop_0270;
+    "r38 load step 0270" => r38::LOAD_0270, r38::load_0270;
+    "r38 at bone 0380" => r38::AT_BONE_0380, r38::at_bone_0380;
+    "r38 waits 0380" => r38::WAITS_0380, r38::waits_0380;
+    "r38 throw 0380" => r38::THROW_0380, r38::throw_0380;
+    "r38 load step 0380" => r38::LOAD_0380, r38::load_0380;
+    "r38 actor step 0298" => r38::ACTOR_STEP_0298, r38::actor_step_0298;
+    "r38 load step 0298" => r38::LOAD_0298, r38::load_0298;
+    "r38 task 0430" => r38::TASK_0430, r38::task_0430;
+    "r38 spark 0430" => r38::SPARK_0430, r38::spark_0430;
+    "r38 ring object 0430" => r38::RING_OBJECT_0430, r38::ring_object_0430;
+    "r38 part matrix 0430" => r38::PART_MATRIX_0430, r38::part_matrix_0430;
+    "r38 objects 0430" => r38::OBJECTS_0430, r38::objects_0430;
+    "r38 summon matrix 0430" => r38::SUMMON_MATRIX_0430, r38::summon_matrix_0430;
+    "r38 glow draw 0430" => r38::GLOW_DRAW_0430, r38::glow_draw_0430;
+    "r38 rise start 0393" => r38::RISE_START_0393, r38::rise_start_0393;
+    "r38 rise 0393" => r38::RISE_0393, r38::rise_0393;
+    "r38 drop 0393" => r38::DROP_0393, r38::drop_0393;
+    "r38 place 0393" => r38::PLACE_0393, r38::place_0393;
+    "r38 launch 0393" => r38::LAUNCH_0393, r38::launch_0393;
+    // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5194,6 +5233,20 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sl_host 0444", &sl_host::HOSTED_0444),
     ("sl_host 0199", &sl_host::HOSTED_0199),
     // magic small-lo: end of INTERNAL
+    // round 38 (magic-r38)
+    ("r38 start-up 0316", &r38::START_UP_0316),
+    ("r38 show 0275", &r38::SHOW_0275),
+    ("r38 matrix 0275", &r38::MATRIX_0275),
+    ("r38 start-up 0275", &r38::START_UP_0275),
+    ("r38 aim 0270", &r38::AIM_0270),
+    ("r38 start-up 0270", &r38::START_UP_0270),
+    ("r38 bone matrix 0380", &r38::BONE_MATRIX_0380),
+    ("r38 facing 0380", &r38::FACING_0380),
+    ("r38 start-up 0380", &r38::START_UP_0380),
+    ("r38 pose 0298", &r38::POSE_0298),
+    ("r38 start-up 0298", &r38::START_UP_0298),
+    ("r38 effect end 0430", &r38::EFFECT_END_0430),
+    // round 38 (magic-r38): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -623,7 +623,9 @@ pub fn clips_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.read::<u32>(w(table).wrapping_add(4 * b))
     };
     let n = |g: &G| gw(g, 0x75).cast_signed();
-    if g.read::<u32>(s + 0x1a80) != 0 {
+    // the mode word: `S + 0x1a80` (0610) or `S + 0x1a84` (0434), the
+    // displacements at `+0x7e` (`cmp [edi + d], 0`) and `+0x142`
+    if g.read::<u32>(s.wrapping_add(w(0x7e))) != 0 {
         let list = gw(g, 0x8f);
         g.write::<i32>(list, n(g) - 1);
         let mut i = 1u32;
@@ -661,7 +663,7 @@ pub fn clips_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             // call width: 2
             g.call(slot(g, 249), 0, &[a, 0]);
         }
-        let mode = g.read::<u32>(s + 0x1a80);
+        let mode = g.read::<u32>(s.wrapping_add(w(0x142)));
         g.write::<u32>(r + 0x1c, mode);
         if mode == 1 {
             let a = actor(g, i, (0x15f, 0x16a));
@@ -804,6 +806,13 @@ pub fn clips_0610<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(node.wrapping_add(8), node);
     Ret::eax(eax)
 }
+
+/// [`clips_0610`]: `magic_0434`'s copy (0x100088e0), the mode word at `S +
+/// 0x1a84`.
+pub const CLIPS_0434: Sig = Sig {
+    hash: 0x6b45_8868_7a5e_22ac,
+    ..CLIPS_0610
+};
 
 /// [`clips_0610`].
 pub const CLIPS_0610: Sig = Sig {
