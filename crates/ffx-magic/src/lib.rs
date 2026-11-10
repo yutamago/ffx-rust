@@ -3444,6 +3444,8 @@ ports! {
     "r45 packed 0348" => r45::PACKED_0348, r45::packed_0348;
     "r45 glow start 0348" => r45::GLOW_START_0348, r45::glow_start_0348;
     "r45 orbs start 0348" => r45::ORBS_START_0348, r45::orbs_start_0348;
+    "r45 script end 0431" => r45::SCRIPT_END_0431, r45::script_end_0431;
+    "r45 sprite frame 0431" => r45::SPRITE_FRAME_0431, r45::sprite_frame_0431;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5395,6 +5397,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 43 (magic-r43): end of INTERNAL
     // round 45 (magic-r45)
     ("r45 actors pass 0392", &r45::ACTORS_PASS_0392),
+    ("r45 packed sprite 0431", &r45::PACKED_SPRITE_0431),
+    ("r45 packet 0431", &r45::PACKET_0431),
     // round 45 (magic-r45): end of INTERNAL
 ];
 

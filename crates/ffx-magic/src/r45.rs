@@ -851,3 +851,243 @@ pub const ORBS_START_0348: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0431`'s script end (0x10001690, 135 bytes; a task callback,
+/// cdecl `(node)`): the block `BLK` (0x30 bytes) cleared (`memset`), bit 7
+/// of its halfword `+0x2` set and `*G_SRC` copied into `+0x14`; two
+/// scripts run ([`script_run`](crate::sb_misc::script_run), `ecx` the
+/// contexts `C1`, `C2`) and two motions
+/// ([`motion_script`](crate::s4_misc::motion_script), `M1`, `M2`). Unless
+/// the first of each reports done, the second motion's `eax` is returned;
+/// then `S + 0xd10` = 1 (`S` = `*G_S`, read first), the actors' show and
+/// sounds ([`show_and_sounds`](crate::m0431::show_and_sounds)) and the
+/// node given back to its pool
+/// ([`give_back`](crate::sa_pool::give_back), a tail jump with `ecx` =
+/// `node`), whose result is returned.
+pub fn script_end_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x6));
+    // memset(BLK, 0, 0x30)
+    g.write_bytes(w(0x11), &[0; 0x30]);
+    let h = g.read::<u16>(w(0x22));
+    g.write::<u16>(w(0x22), h | 0x80);
+    let v = g.read::<u32>(w(0x27));
+    g.write::<u32>(w(0x34), v);
+    let run = img.rel32_target(f + 0x39);
+    let a = crate::sb_misc::script_run(g, img, run, w(0x2f));
+    crate::sb_misc::script_run(g, img, img.rel32_target(f + 0x45), w(0x3e));
+    let m = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x4f), w(0x4a));
+    let last = crate::s4_misc::motion_script(g, img, img.rel32_target(f + 0x5b), w(0x54));
+    if a == 0 || m == 0 {
+        return Ret::eax(last);
+    }
+    g.write::<u32>(s + 0xd10, 1);
+    // push ebp; push ebx; push esi; push edi; call
+    let show = Frame {
+        at: img.rel32_target(f + 0x72),
+        esp: fr.esp.wrapping_sub(0x14),
+        ..*fr
+    };
+    crate::m0431::show_and_sounds(g, img, &show);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x7e),
+        node,
+    ))
+}
+
+/// [`script_end_0431`] (the `rel32`s: `memset`, the scripts, the motions,
+/// the show, the give-back).
+pub const SCRIPT_END_0431: Sig = Sig {
+    len: 135,
+    hash: 0x866e_75fe_485c_a01d,
+    calls: &[
+        (0x16, Callee::Import("memset")),
+        (0x39, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x45, Callee::Sig(&crate::sb_misc::SCRIPT_RUN)),
+        (0x4f, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x5b, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x72, Callee::Sig(&crate::m0431::SHOW_AND_SOUNDS)),
+        (0x7e, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0431`'s packed sprite (0x100014d0, 326 bytes; internal: `ecx` =
+/// the owner, stack `(-, buffer, lo, hi)`; a /GS frame, `ebp` = the entry
+/// `esp - 4`): [`packed_sprite`](crate::o6_fam_pairs6::packed_sprite)
+/// with a white colour and no placement: with the lock `**G_L` 1, slot
+/// 885 `(lo & 0x3fff, (d >> 20) & 0x3f, 0, 0, 1 << ((d >> 26) & 15), 1 <<
+/// ((d >> 30) & 15), &B)` (`d` the descriptor, the shifts 16-bit, `B`
+/// 0x100 bytes at `ebp - 0x104`) and the lock put back; then, if slot 885
+/// answered, slot 905 `(owner + 0x830, &B, buffer, 0, 0, 0, 0, &S, slot
+/// 776 (0x48))` with `S` = `(1, 1, 1, 1)` at `ebp - 0x114`. Returns slot
+/// 905's `eax`, or 0.
+pub fn packed_sprite_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (b, s) = (ebp.wrapping_sub(0x104), ebp.wrapping_sub(0x114));
+    let buffer = fr.arg(g, 1);
+    let owner = g.read::<u32>(fr.ecx.wrapping_add(0x830));
+    let lock = g.read::<u32>(w(0x29));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let (lo, hi) = (fr.arg(g, 2), fr.arg(g, 3));
+    let d = (u64::from(hi) << 32) | u64::from(lo);
+    let bit = |sh: u32| u32::from(1u16 << ((d >> sh) & 0xf));
+    for off in [0x10c, 0x110, 0x114, 0x108] {
+        g.write::<u32>(ebp.wrapping_sub(off), 0x3f80_0000);
+    }
+    #[allow(clippy::cast_possible_truncation)] // six bits
+    let size = ((d >> 20) & 0x3f) as u32;
+    // call width: 7
+    let made = g
+        .call(
+            slot_target(g, w(0xb1), 885),
+            0,
+            &[lo & 0x3fff, size, 0, 0, bit(26), bit(30), b],
+        )
+        .eax;
+    let lock = g.read::<u32>(w(0xc9));
+    g.write::<u32>(lock, saved);
+    if made == 0 {
+        return Ret::eax(0);
+    }
+    let kind = g.call(slot_target(g, w(0xda), 776), 0, &[0x48]).eax;
+    // call width: 9
+    let args = [owner, b, buffer, 0, 0, 0, 0, s, kind];
+    Ret::eax(g.call(slot_target(g, w(0x123), 905), 0, &args).eax)
+}
+
+/// [`packed_sprite_0431`] (the `rel32`: the cookie check).
+pub const PACKED_SPRITE_0431: Sig = Sig {
+    len: 326,
+    hash: 0x6909_1c74_e212_0b59,
+    calls: &[(0x13e, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0431`'s fixed packet (0x10001360, 202 bytes; internal, no
+/// arguments): the DLL's packet buffer `P` (0x60 bytes) cleared in 8-byte
+/// steps (`movlpd`) and filled with its header 0x70000005 and the words
+/// 0xe, 0x47, 0x21, 0x14, 0x4e, 8 (each at its operand, in the original's
+/// order); slot 382 `(0, 0)`. Returns its `eax`.
+pub fn packet_0431<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let zero8 = |g: &mut G, o: u32| {
+        g.write::<u32>(w(o), 0);
+        g.write::<u32>(w(o) + 4, 0);
+    };
+    zero8(g, 0xc);
+    zero8(g, 0x14);
+    g.write::<u32>(w(0x1a), 0x7000_0005);
+    zero8(g, 0x26);
+    g.write::<u32>(w(0x2c), 0xe);
+    g.write::<u32>(w(0x36), 0);
+    zero8(g, 0x42);
+    for (o, v) in [
+        (0x48, 0x47),
+        (0x52, 0),
+        (0x5c, 0x21),
+        (0x66, 0),
+        (0x70, 0x14),
+        (0x7a, 0),
+    ] {
+        g.write::<u32>(w(o), v);
+    }
+    zero8(g, 0x86);
+    g.write::<u32>(w(0x8c), 0x4e);
+    g.write::<u32>(w(0x96), 0);
+    zero8(g, 0xa2);
+    g.write::<u32>(w(0xa8), 8);
+    g.write::<u32>(w(0xb2), 0);
+    g.call(slot_target(g, w(0x1), 382), 0, &[0, 0]).eax
+}
+
+/// [`packet_0431`].
+pub const PACKET_0431: Sig = Sig {
+    len: 202,
+    hash: 0x2dfe_d904_5c56_1b5c,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0431`'s sprite frame (0x10003030, 369 bytes; a callback, no
+/// arguments; an aligned /GS frame, `E` its base after the pushes): the
+/// fixed packet ([`packet_0431`]); slot 719 `(P, 2, 5)` gives the
+/// descriptor `(lo, hi)`, `lo` with its bits `0xade` cleared and
+/// `0x3521` set; with `S = *G_S` the angle `S + 0xd04` steps by `K1` and
+/// wraps once; the matrix `M` (`E + 0x18`, slot 235) turned (slot 329) by
+/// `K2 - slot 333 (*G_C)` wrapped once, plus `K2` and the angle, wrapped
+/// once; the owner `T[b]` (`b` the selection's second byte) draws the
+/// sprite ([`packed_sprite_0431`], buffer `M`; its first word the `ecx`
+/// slot 329 leaves, never read: 0 here); then the DLL's packet
+/// ([`packet`](crate::o4_fam4::packet)). Returns the packet's `eax`.
+pub fn sprite_frame_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x60);
+    let m = e + 0x18;
+    let s = g.read::<u32>(w(0x19));
+    packet_0431(g, img, img.rel32_target(f + 0x1e));
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x23)) + 1));
+    let owner = g.read::<u32>(w(0x32).wrapping_add(4 * b));
+    let d = g.call(t(g, 0x37, 719), 0, &[w(0x3c), 2, 5]).eax;
+    let lo = g.read::<u32>(d) & 0xffff_f521 | 0x3521;
+    let hi = g.read::<u32>(d + 4);
+    let a = add(g.read::<f32>(s + 0xd04), k(g, 0x56));
+    let a = wrap_once(g, img, f, a, [0x77, 0x61, 0x8b, 0x61]);
+    g.write::<f32>(s + 0xd04, a);
+    let mut st = Pushes::default();
+    st.push(m);
+    st.call(g, t(g, 0x9e, 235), 0);
+    st.push(g.read::<u32>(w(0xb9)));
+    let v = st0_f32(st.call(g, t(g, 0xb3, 333), 0).st0);
+    st.pop(2);
+    let k2 = k(g, 0xcd);
+    let y = sub(k2, v);
+    let y = wrap_once(g, img, f, y, [0xd5, 0xe5, 0xdd, 0xe5]);
+    let y = add(add(y, k2), g.read::<f32>(s + 0xd04));
+    let y = wrap_once(g, img, f, y, [0xd5, 0xe5, 0xdd, 0xe5]);
+    st.push_all(&[y.to_bits(), m, m]);
+    st.call(g, t(g, 0x136, 329), 0);
+    // the frame, ebx/esi/edi, slot 329's yaw word, four pushes, the
+    // return address
+    let esp = e.wrapping_sub(0x18);
+    for (i, x) in (1u32..).zip([0, m, lo, hi]) {
+        g.write::<u32>(esp + 4 * i, x);
+    }
+    let sprite = Frame {
+        at: img.rel32_target(f + 0x153),
+        esp,
+        ecx: owner,
+        ..Frame::default()
+    };
+    packed_sprite_0431(g, img, &sprite);
+    let packet = Frame {
+        at: img.rel32_target(f + 0x15b),
+        esp: e.wrapping_sub(8),
+        ..*fr
+    };
+    crate::o4_fam4::packet(g, img, &packet)
+}
+
+/// [`sprite_frame_0431`] (the `rel32`s: the two packets, the sprite, the
+/// cookie check).
+pub const SPRITE_FRAME_0431: Sig = Sig {
+    len: 369,
+    hash: 0x3bc2_16e3_6871_bf3f,
+    calls: &[
+        (0x1e, Callee::Sig(&PACKET_0431)),
+        (0x153, Callee::Sig(&PACKED_SPRITE_0431)),
+        (0x15b, Callee::Sig(&crate::o4_fam4::PACKET_0431_1430)),
+        (0x169, Callee::Any),
+    ],
+    imports: &[],
+};

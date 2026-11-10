@@ -656,3 +656,235 @@ fn glow_orbs_start_0348() {
         }
     }
 }
+
+/// `magic_0431` 0x10001690 (`r45::script_end_0431`): each script and
+/// motion done or waiting; when the first of each is done, the show and
+/// sounds (as `magic_0431.rs`'s test) and the node given back.
+#[test]
+fn script_end_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x1690);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    // the show and sounds
+    let show = t.img.rel32_target(f + 0x72);
+    let sw = |o: u32| img.word(show + o);
+    rec(&mut t, 384, 1, |_, a| 0x0384_0000 ^ a[0]);
+    for s in [25u32, 24] {
+        rec(&mut t, s, 2, move |_, a| {
+            (0x0100_0000 + s) ^ a[0] ^ (a[1] << 4)
+        });
+    }
+    rec(&mut t, 941, 1, |_, a| a[0] ^ 0x0941_0000);
+    rec(&mut t, 772, 2, |_, a| a[0] ^ 0x0772_0000);
+    t.stub_edx(772, |_, a| a[1] ^ 0x0edd_0000);
+    rec(&mut t, 779, 4, |_, a| a[3] ^ 0x779);
+    let b = SCRATCH + 0x700;
+    t.set_u32(sw(0x01), b);
+    t.write(b, &[0u8, 1, 2, 3, 4]);
+    for i in 0..8 {
+        t.set_u32(sw(0x0c) + 4 * i, 0x0a00_0000 + i);
+    }
+    let rp = t.img.rel32_target(show + 0xbc);
+    let parts = SCRATCH + 0xc000;
+    t.set_u32(t.img.word(rp + 0x16), parts);
+    t.set_u32(parts + 0x30, 0x0a30);
+    let lock = SCRATCH + 0x5e0;
+    t.set_u32(t.img.word(rp + 0x43), lock);
+    t.set_u32(t.img.word(rp + 0x5f), lock);
+    t.set_u32(t.img.word(rp + 0x76), 0);
+    t.set_u32(t.img.word(rp + 0x0e), 1);
+    // the scripts' and motions' slots
+    rec(&mut t, 411, 1, |_, a| a[0] & 1);
+    rec(&mut t, 20, 1, |_, a| a[0] & 1);
+    let give = t.img.rel32_target(f + 0x7e);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x6), s);
+    // (script 1 done, script 2 done, motion 1 done, motion 2 done)
+    for (k, (a1, a2, m1, m2)) in (0u32..).zip([
+        (true, true, true, true),
+        (true, false, true, false),
+        (false, true, true, true),
+        (true, true, false, true),
+        (false, false, false, false),
+    ]) {
+        t.write(w(0x11), &[0x3b; 0x30]);
+        t.set_u32(w(0x27), 0x0027_0000 + k);
+        for (ctx, done) in [(w(0x2f), a1), (w(0x3e), a2)] {
+            t.set_u8(ctx + 0x56, if done { 0 } else { 2 });
+            t.set_u16(ctx + 0x54, 0xffff);
+        }
+        for (m, done) in [(w(0x4a), m1), (w(0x54), m2)] {
+            t.set_u32(m + 0x14, u32::from(done));
+            t.set_u16(m + 0x18, 5);
+        }
+        junk(&mut t, s + 0xd00, 0x20, k);
+        t.set_u32(lock, 0x77);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x1690 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0431` 0x100014d0 (`r45::packed_sprite_0431`, internal): as
+/// `magic_o6_fam.rs`'s packed sprite test: descriptors with their fields
+/// spread, slot 885 answering 0 or not; 885 fills its buffer from its
+/// words and the lock, 905 hashes the buffer and the colour words.
+#[test]
+fn packed_sprite_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x14d0);
+    all_stubs(&mut t);
+    let lock = SCRATCH + 0x3f00;
+    t.set_u32(t.img.word(f + 0x29), lock);
+    t.stub(885, move |m, a| {
+        let mut x = 0x885 ^ m.r32(lock).rotate_left(13);
+        for (i, w) in (0u32..).zip(&a[..6]) {
+            x = x.rotate_left(7) ^ *w;
+            m.w32(a[6] + 4 * i, x);
+        }
+        m.w32(SCRATCH + 0x3f10, x);
+        if m.r32(SCRATCH + 0x3f20) == 0 {
+            0
+        } else {
+            x | 1
+        }
+    });
+    t.stub(905, |m, a| {
+        let mut x = 0x905u32;
+        for (i, w) in (0u32..).zip(&a[..9]) {
+            x = x.rotate_left(5) ^ *w ^ i;
+        }
+        for i in 0..6 {
+            x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+        }
+        for i in 0..4 {
+            x = x.rotate_left(3) ^ m.r32(a[7] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x3f14, x);
+        x
+    });
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    let (owner, buffer) = (SCRATCH + 0x4000, SCRATCH + 0x5000);
+    let cases = [
+        (0x1234_5678u32, 0x0000_0002u32, 1u32),
+        (0xfedc_ba98, 0xffff_fff1, 1),
+        (0x4c00_3fff, 0x0000_0003, 1),
+        (0x0000_0000, 0x0000_0000, 1),
+        (0x8765_4321, 0x0000_000c, 0),
+    ];
+    for (c, (lo, hi, answers)) in (0u32..).zip(cases) {
+        t.write(owner, &[0x2d; 0x840]);
+        t.set_u32(owner + 0x830, 0x0083_0000 + c);
+        t.write(buffer, &[0x5c; 0x20]);
+        t.set_u32(lock, 0x55 + c);
+        t.set_u32(SCRATCH + 0x3f20, answers);
+        ownb::dirty_stack(&mut t, 0x14d0 + c, &[]);
+        let call = Call {
+            ecx: owner,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            call,
+            &[0x00a0_0000 + c, buffer, lo, hi],
+            Eax::Checked,
+            ffx_magic::r45::packed_sprite_0431,
+        );
+    }
+}
+
+/// `magic_0431` 0x10003030 (`r45::sprite_frame_0431`, with the fixed
+/// packet `r45::packet_0431` and the sprite): the angle and the turn
+/// wrapping up, down and not; slot 885 answering 0 or not.
+#[test]
+fn sprite_frame_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x3030);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let sp = t.img.rel32_target(f + 0x153);
+    let lock = SCRATCH + 0x3f00;
+    t.set_u32(t.img.word(sp + 0x29), lock);
+    t.stub(885, move |m, a| {
+        let mut x = 0x885 ^ m.r32(lock).rotate_left(13);
+        for (i, w) in (0u32..).zip(&a[..6]) {
+            x = x.rotate_left(7) ^ *w;
+            m.w32(a[6] + 4 * i, x);
+        }
+        if m.r32(SCRATCH + 0x3f20) == 0 {
+            0
+        } else {
+            x | 1
+        }
+    });
+    t.stub(905, |m, a| {
+        let mut x = 0x905u32;
+        for (i, w) in (0u32..).zip(&a[..9]) {
+            x = x.rotate_left(5) ^ *w ^ i;
+        }
+        for i in 0..16 {
+            x = x.rotate_left(3) ^ m.r32(a[2] + 4 * i);
+        }
+        for i in 0..4 {
+            x = x.rotate_left(3) ^ m.r32(a[7] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x3f14, x);
+        x
+    });
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    let desc = SCRATCH + 0x700;
+    rec(&mut t, 719, 3, move |_, _| desc);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    rec(&mut t, 329, 3, |m, a| {
+        let x = f32::from_bits(a[2]);
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) + x * (i % 3) as f32;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x329
+    });
+    let spin = SCRATCH + 0x7e20;
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |m, _| f64::from(m.r32(spin)) * 1.75 - 7.0);
+    rec(&mut t, 382, 2, |_, a| 0x0382_0000 ^ a[0]);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x23), sel);
+    for i in 0..0x30 {
+        t.set_u32(w(0x32) + 4 * i, SCRATCH + 0x4000 + 0x10 * i);
+    }
+    junk(&mut t, SCRATCH + 0x4000, 0x1000, 0);
+    t.set_u32(w(0xb9), 0x0c0c_0000);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x19), s);
+    let hi = f32::from_bits(t.u32(w(0x77)));
+    // (the angle, slot 333's step, 885 answers)
+    for (k, (a, spin_k, answers)) in (0u32..).zip([
+        (0.5f32, 0u32, 1u32),
+        (hi + 0.5, 1, 1),
+        (-hi - 0.5, 2, 0),
+        (2.0, 3, 1),
+        (-2.5, 6, 1),
+        (1.0, 8, 1),
+    ]) {
+        junk(&mut t, s + 0xd00, 0x20, k);
+        setf(&mut t, s + 0xd04, a);
+        t.set_u32(spin, spin_k);
+        t.write(sel, &[0x5a, (k as u8) % 4]);
+        t.set_u32(desc, 0x1234_5678 ^ (k << 9));
+        t.set_u32(desc + 4, 0x0000_0003 ^ k);
+        t.set_u32(lock, 0x55 + k);
+        t.set_u32(SCRATCH + 0x3f20, answers);
+        junk_ops(&mut t, f, &[0xc]);
+        ownb::dirty_stack(&mut t, 0x3030 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
