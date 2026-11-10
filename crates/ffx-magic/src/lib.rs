@@ -3307,6 +3307,12 @@ ports! {
     "r40 start-up 0070" => r40::START_UP_0070, r40::start_up_0070;
     "r40 motion task 0155" => r40::MOTION_TASK_0155, r40::motion_task_0155;
     "r40 motion task 0164" => r40::MOTION_TASK_0164, r40::motion_task_0164;
+    "r40 particle node run thunk 0203" => r40::JMP_RUN_PART_0203, r40::jmp_run_part_0203;
+    "r40 path run thunk 0186" => r40::JMP_PATH_RUN_0186, r40::jmp_path_run_0186;
+    "r40 start-up 0179" => r40::START_UP_0179, r40::start_up_0179;
+    "r40 summon task 0179" => r40::SUMMON_TASK_0179, r40::summon_task_0179;
+    "r40 throw task 0179" => r40::THROW_TASK_0179, r40::throw_task_0179;
+    "r40 object step 0179" => r40::OBJECT_STEP_0179, r40::object_step_0179;
     // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3685,6 +3691,12 @@ ports! {
 pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 40 (magic-r40)
     ("r40 walk ring (junk) 0150", &r40::WALK_RING_JUNK_0150),
+    ("r40 particle node run 0203", &r40::RUN_PART_0203),
+    ("r40 path run 0186", &r40::PATH_RUN_0186),
+    ("r40 yaw 0179", &r40::YAW_0179),
+    ("r40 throw set-up 0179", &r40::THROW_SETUP_0179),
+    ("r40 object start 0179", &r40::OBJECT_START_0179),
+    ("r40 throw start 0179", &r40::THROW_START_0179),
     // round 40 (magic-r40): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
