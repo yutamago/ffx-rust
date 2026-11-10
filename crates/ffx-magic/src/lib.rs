@@ -3368,6 +3368,7 @@ ports! {
     "r42 matrix visit thunk 0186" => r42::JMP_MATRIX_VISIT_0186, r42::jmp_matrix_visit_0186;
     "r42 records task 0072" => r42::RECORDS_TASK_0072, r42::records_task_0072;
     "r42 summon task 0152" => r42::SUMMON_TASK_0152, r42::summon_task_0152;
+    "r42 scene task 0186" => r42::SCENE_TASK_0186, r42::scene_task_0186;
     // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

@@ -220,3 +220,127 @@ fn summon_task_0152() {
         t.check_entry(f, call, &[a], Eax::Checked);
     }
 }
+
+/// `magic_0186` 0x100077c0 (`r42::scene_task_0186`): every state (0 on
+/// into 0xa, 0xb before and at 0x18 calls, 0x14 with its byte clear and
+/// set, 0x15 with slot 411's answer 0 and not (on into 0x1e and 0x1f),
+/// 0x1e with bit 2 of its flag clear and set, 0x1f, 0x20 with the fade
+/// above 0, NaN and at or below 0 (the end scene: the flag bit, the
+/// leaving node with and without a parent, its neighbours the parent or
+/// not), 10000 before and at 60 calls), the states past the table and
+/// between 0x16 and 0x1d, a big one.
+#[test]
+fn scene_task_0186() {
+    let Some(mut t) = twin(186) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0x77c0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 411, 1, move |m, _| m.r32(answer));
+    for (s, n) in [
+        (228u32, 2usize),
+        (215, 1),
+        (239, 3),
+        (21, 3),
+        (213, 2),
+        (1, 1),
+        (713, 1),
+        (719, 3),
+    ] {
+        // the answer from the words the slot reads only
+        rec(&mut t, s, n, move |_, a| {
+            let b = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ b.rotate_left(7)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the parents and lists the nodes go under: empty rings where 0
+    let pnw = t.img.rel32_target(f + 0x51d);
+    let enb = t.img.rel32_target(f + 0x534);
+    let mut parents: Vec<u32> = [
+        0x428u32, 0x661, 0x6c2, 0x79c, 0x7d7, 0x947, 0x3fc, 0x595, 0x5de, 0x75c, 0x78a,
+    ]
+    .iter()
+    .map(|&o| w(&t, o))
+    .collect();
+    parents.push(t.img.word(pnw + 0x26));
+    parents.push(t.img.word(enb + 0x18));
+    for p in parents {
+        if t.u32(p + 0x10) == 0 {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+        }
+    }
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let fade = w(&t, 0x5f);
+    let parts_byte = w(&t, 0x734);
+    let end_flag = w(&t, 0x8d7);
+    let last_flag = w(&t, 0x1ce);
+    let leaving = w(&t, 0x27c);
+    let (lp, ln) = (w(&t, 0x28f), w(&t, 0x294));
+    let saved: Vec<u32> = [leaving, lp, ln].iter().map(|&x| t.u32(x)).collect();
+    // (state, count, slot 411's answer, flag byte, fade, the leaving
+    // node's parent: 0 none, 1 primed, 2 the neighbours are the parent)
+    let cases: [(u32, u32, u32, u8, f32, u32); 22] = [
+        (0, 0, 0, 0, 0.0, 1),
+        (0xa, 0, 0, 0, 0.0, 1),
+        (0xb, 0x17, 0, 0, 0.0, 1),
+        (0xb, 0x18, 0, 0, 0.0, 1),
+        (0x14, 0, 0, 0, 0.0, 1),
+        (0x14, 0, 0, 1, 0.0, 1),
+        (0x15, 0, 0, 0, 0.0, 1),
+        (0x15, 0, 7, 0, 0.0, 1),
+        (0x15, 0, 7, 4, 0.0, 1),
+        (0x1e, 0, 0, 0, 0.0, 1),
+        (0x1e, 0, 0, 4, 0.0, 1),
+        (0x1f, 0, 0, 0, 0.0, 1),
+        (0x20, 0, 0, 0, 0.5, 1),
+        (0x20, 0, 0, 0, f32::NAN, 1),
+        (0x20, 0x3c, 0, 0, 0.0, 1),
+        (0x20, 0, 0, 4, -1.0, 0),
+        (0x20, 0x50, 0, 0, -1.0, 2),
+        (0x2710, 0x3b, 0, 0, 0.0, 1),
+        (0x2710, 0x3c, 0, 0, 0.0, 1),
+        (5, 0, 0, 0, 0.0, 1),
+        (0x18, 0, 0, 0, 0.0, 1),
+        (0x3000, 0, 0, 0, 0.0, 1),
+    ];
+    for (k, (state, count, ans, fl, fd, lv)) in (0u32..).zip(cases) {
+        t.write(r, &[0x5c ^ k as u8; 0x40]);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x2c, count);
+        t.set_u32(answer, ans);
+        t.set_u8(parts_byte, fl & 1);
+        t.set_u8(end_flag, fl | 0x10);
+        t.set_u8(last_flag, fl | 0x20);
+        t.set_u32(fade, fd.to_bits());
+        for (&g, &v) in [leaving, lp, ln].iter().zip(&saved) {
+            t.set_u32(g, v);
+        }
+        match lv {
+            0 => t.set_u32(leaving, 0),
+            2 => {
+                let p = t.u32(leaving);
+                t.set_u32(lp, p);
+                t.set_u32(ln, p);
+            }
+            _ => {}
+        }
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0x77c0 + k, &[]);
+        let call = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
