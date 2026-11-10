@@ -2894,9 +2894,34 @@ pub const SPARK_TASK_0185: Sig = Sig {
 /// steps to the next frame and wraps, and after the last frame the record
 /// is free again. `eax` is the last value it held (its caller overwrites
 /// it).
-#[allow(clippy::too_many_lines)] // one loop
 pub fn sprites_0185<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) {
-    let w = |o: u32| img.word(f + o);
+    sprites_with(
+        g,
+        img,
+        f,
+        esp,
+        &Sprites {
+            map: |o| o,
+            transform: true,
+            cdq: true,
+        },
+    );
+}
+
+/// The layout of a [`sprites_0185`] copy: `map` takes `magic_0185`'s
+/// operand offsets to the copy's; without `transform` the copy has no
+/// slot 231 after placing the matrix; without `cdq` slot 772's `edx` is
+/// the handle's high word instead of its sign.
+pub(crate) struct Sprites {
+    pub map: fn(u32) -> u32,
+    pub transform: bool,
+    pub cdq: bool,
+}
+
+/// [`sprites_0185`] on the layout `l`.
+#[allow(clippy::too_many_lines)] // one loop
+pub(crate) fn sprites_with<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, l: &Sprites) {
+    let w = |o: u32| img.word(f + (l.map)(o));
     let rd = |g: &G, o: u32| g.read::<u32>(w(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let b = ((esp.wrapping_sub(4) & !0xf).wrapping_sub(0x98)).wrapping_sub(8);
@@ -2915,9 +2940,11 @@ pub fn sprites_0185<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) {
             let v = rd(g, 0x4f);
             // call width: 3
             g.call(t(g, 0x5c, 229), 0, &[b + 0x88, v, rec]);
-            let x = rd(g, 0x87);
-            // call width: 3
-            g.call(t(g, 0x8d, 231), 0, &[m, x, m]);
+            if l.transform {
+                let x = rd(g, 0x87);
+                // call width: 3
+                g.call(t(g, 0x8d, 231), 0, &[m, x, m]);
+            }
             g.write::<u32>(b + 0x3c, m);
             g.write::<u32>(b + 0x30, m);
             g.write::<u16>(b + 0x22, 0x80);
@@ -2925,16 +2952,24 @@ pub fn sprites_0185<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) {
             g.write::<u32>(b + 0x18, idx);
             g.write::<u32>(b + 0x28, 0);
             g.write::<u8>(b + 0x38, 0);
-            g.write::<u32>(b + 0x24, 0x7060_8080);
+            // mov dword [esp + 0x30], imm32: the colour
+            g.write::<u32>(b + 0x24, w(0xc7));
             let off = i32::from(g.read::<i16>(w(0xcf).wrapping_add(idx.wrapping_mul(8))));
             let sprite = off.cast_unsigned().wrapping_add(w(0xd4));
             g.write::<u32>(b + 8, sprite);
             let z = g.read::<u32>(rd(g, 0xdd));
             g.write::<u32>(b + 0x34, z);
             // call width: 2
-            let h = g.call(t(g, 0xeb, 772), 0, &[rec, 0]).eax;
-            // cdq
-            let hi = if h.cast_signed() < 0 { u32::MAX } else { 0 };
+            let o = g.call(t(g, 0xeb, 772), 0, &[rec, 0]);
+            let h = o.eax;
+            // cdq, or the 64-bit answer's edx
+            let hi = if !l.cdq {
+                o.edx
+            } else if h.cast_signed() < 0 {
+                u32::MAX
+            } else {
+                0
+            };
             let lock = rd(g, 0xfc);
             let saved = g.read::<u32>(lock);
             g.write::<u32>(lock, 1);
@@ -2986,6 +3021,44 @@ pub fn sprites_0185<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) {
     }
     g.write::<u32>(b + 0x10, idx_at);
 }
+
+/// `magic_0185`'s sprite loop offset in `magic_0184`'s copy (no slot 231
+/// block, no `cdq`).
+fn map_sprites_0184(o: u32) -> u32 {
+    match o {
+        0..0x7d => o,
+        0x7d..0x101 => o - 0x1c,
+        _ => o - 0x1d,
+    }
+}
+
+/// `magic_0184`'s spark sprites (0x10001030, 580 bytes; internal):
+/// [`sprites_0185`] without slot 231 on the matrix, slot 772's handle a
+/// 64-bit answer (`edx` its high word), the colour 0x70808080.
+pub fn sprites_0184<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) {
+    sprites_with(
+        g,
+        img,
+        f,
+        esp,
+        &Sprites {
+            map: map_sprites_0184,
+            transform: false,
+            cdq: false,
+        },
+    );
+}
+
+/// [`sprites_0184`] (580 bytes, 1 overlay).
+pub const SPRITES_0184: Sig = Sig {
+    len: 580,
+    hash: 0xdd67_b82d_59a3_d126,
+    calls: &[
+        // __security_check_cookie
+        (0x23c, Callee::Any),
+    ],
+    imports: &[],
+};
 
 /// [`sprites_0185`] (609 bytes, 1 overlay).
 pub const SPRITES_0185: Sig = Sig {

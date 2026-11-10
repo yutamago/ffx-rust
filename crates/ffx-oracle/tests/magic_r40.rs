@@ -1749,3 +1749,57 @@ fn group_task_0178() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0184` 0x10001030 (`r40::sprites_0184`, `sprites_0185`'s loop
+/// on 0184's layout): the records free and used, ready and not, the
+/// timers below and past the frame's length, the last frame; slot 772's
+/// `edx` as the handle's high word.
+#[test]
+fn sprites_0184() {
+    let Some(mut t) = twin(184) else { return };
+    stubs_0185(&mut t);
+    t.stub_edx(772, |m, _| {
+        m.r32(SCRATCH + 0x7f74).wrapping_mul(0x0101_0101)
+    });
+    let f = t.at(0x1030);
+    let lock = SCRATCH + 0x7f00;
+    for o in [0xe0u32, 0x10e, 0x141, 0x15e, 0x1a0, 0x1d1] {
+        t.set_u32(t.img.word(f + o), lock);
+    }
+    t.set_u32(t.img.word(f + 0xc1), SCRATCH + 0x7f80);
+    let (first, end) = (t.img.word(f + 0x1d), t.img.word(f + 0x226));
+    let last = t.u32(t.img.word(f + 0x211)) as u16;
+    for k in 0..4u32 {
+        let mut i = 0u32;
+        let mut at = first;
+        while at < end {
+            let rec = at - 0x16;
+            for j in 0..4u32 {
+                t.set_u32(rec + 4 * j, (0.5 * j as f32 + i as f32).to_bits());
+            }
+            t.set_u32(rec + 0x10, (1.0 + 0.25 * i as f32).to_bits());
+            t.set_u16(
+                rec + 0x14,
+                [0x1f0u16, 0x100, 0x7f00, 0xffff][((i + k) % 4) as usize],
+            );
+            t.set_u16(
+                at,
+                match (i + k) % 4 {
+                    3 => 0xffff,
+                    2 => last.wrapping_sub(1),
+                    n => n as u16,
+                },
+            );
+            i += 1;
+            at += 0x18;
+        }
+        t.set_u32(SCRATCH + 0x7f78, k & 1);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x1030 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Junk, |g, img, fr| {
+            r40::sprites_0184(g, img, fr.at, fr.esp);
+            Ret::eax(0)
+        });
+    }
+    assert!(t.u32(SCRATCH + 0x7f74) != 0, "no handle asked");
+}

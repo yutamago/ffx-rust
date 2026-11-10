@@ -3711,6 +3711,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r40 start-up 0174", &r40::START_UP_0174),
     ("r40 spark burst 0185", &r40::SPARK_BURST_0185),
     ("r40 spark sprites 0185", &r40::SPRITES_0185),
+    ("r40 spark sprites 0184", &r40::SPRITES_0184),
     // round 40 (magic-r40): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
