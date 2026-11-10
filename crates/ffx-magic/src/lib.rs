@@ -88,6 +88,7 @@ pub mod r36;
 pub mod r37;
 pub mod r37b;
 pub mod r39;
+pub mod r39b;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
