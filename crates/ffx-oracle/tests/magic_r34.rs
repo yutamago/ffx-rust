@@ -1561,7 +1561,7 @@ fn main_task_0284() {
         t.set_u32(w(&t, 0x16f), nrec as u32);
         t.set_u32(w(&t, 0x181), xp);
         t.set_u32(xp, 0x5a5a_0000 + k);
-        junk_ops(&mut t, f, &[0x4e, 0x5c, 0x7a, 0x80]);
+        junk_ops(&mut t, f, &[0x38, 0x4e, 0x5c, 0x7a, 0x80]);
         t.set_u32(lock, 0x5555 + k);
         ownb::dirty_stack(&mut t, 0x1bd0 + k, &[]);
         ownb::reset_counters(&mut t);
