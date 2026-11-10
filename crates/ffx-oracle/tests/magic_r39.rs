@@ -776,7 +776,8 @@ fn scene_state_10(dll: u16, at: u32, map: &[(u32, u32)]) {
                 cs.mem.push((p + o, 0x5a5a_0000 + o));
             }
         }
-        for i in 0..0x20u32 {
+        // (the twelfth left free: the pushed sparks take it)
+        for i in (0..0x20u32).filter(|&i| i != 11) {
             cs.mem.push((recs0 + 0xa8 * i, 0x77 + i));
             cs.mem.push((recs0 + 0xa8 * i - 0x24, 0x88 + i));
         }

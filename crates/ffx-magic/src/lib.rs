@@ -3298,6 +3298,7 @@ ports! {
     "r39 scene task 0611" => r39b::SCENE_TASK_0611, r39b::scene_task_0611;
     "r39 scene task 0667" => r39b::SCENE_TASK_0667, r39b::scene_task_0667;
     "r39 scene task 0668" => r39b::SCENE_TASK_0668, r39b::scene_task_0668;
+    "r39 node ease thunk 0070" => r39::CALL_NODE_EASE_0070, r39::call_node_ease_0070;
     // round 39 (magic-r39): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

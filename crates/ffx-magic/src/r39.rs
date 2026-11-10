@@ -494,3 +494,28 @@ pub const SCENE_TASK_0519: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0070`'s calling thunk over its node ease (0x100046d0, 15 bytes;
+/// cdecl `(node)`): `push ebp; mov ebp, esp; push ecx` (the caller's
+/// `ecx`, never read), `ecx` = the node, a call to
+/// [`node_ease`](crate::s9_misc::node_ease) (the copy at 0x100040e0).
+/// Returns its `eax`, nothing popped.
+pub fn call_node_ease_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    // ebp, the pushed ecx, the call's return address
+    let ease = Frame {
+        at: img.rel32_target(fr.at + 8),
+        esp: fr.esp.wrapping_sub(12),
+        ecx,
+        ..*fr
+    };
+    Ret::eax(crate::s9_misc::node_ease(g, img, &ease).eax)
+}
+
+/// [`call_node_ease_0070`] (15 bytes, 1 overlay).
+pub const CALL_NODE_EASE_0070: Sig = Sig {
+    len: 15,
+    hash: crate::s3_wrap::ECX_CALL_HASH,
+    calls: &[(8, Callee::Sig(&crate::s9_misc::NODE_EASE_0070))],
+    imports: &[],
+};

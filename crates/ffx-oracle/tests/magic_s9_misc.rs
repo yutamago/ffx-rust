@@ -2909,8 +2909,8 @@ fn nodes_eased() {
         (613, 0x3240, 0x3830),
         (570, 0x40e0, 0x46d0),
         (597, 0x3e00, 0x43f0),
-        // (its thunk calls instead of jumping: not ported)
-        (70, 0x40e0, 0),
+        // (its thunk calls instead of jumping: r39::call_node_ease_0070)
+        (70, 0x40e0, 0x46d0),
     ] {
         let Some(mut t) = sa::twin(dll) else { return };
         handler_stubs(&mut t);
