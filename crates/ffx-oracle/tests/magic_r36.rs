@@ -2763,8 +2763,13 @@ fn summon_task_0295() {
     let f = t.at(0x75d0);
     all_stubs(&mut t);
     magic_r11::object_slots(&mut t);
+    // slot 411 answers its word, which counts down to 0
     let answer = SCRATCH + 0x148;
-    rec(&mut t, 411, 1, move |m, _| m.r32(answer));
+    rec(&mut t, 411, 1, move |m, _| {
+        let v = m.r32(answer);
+        m.w32(answer, v.saturating_sub(1));
+        v
+    });
     for s in [228u32, 239, 325] {
         rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[1]);
     }
@@ -2788,7 +2793,7 @@ fn summon_task_0295() {
     let r = SCRATCH + 0x1100;
     let node = SCRATCH + 0x1200;
     // (state, timer, answer)
-    let cases: [(u32, f32, u32); 24] = [
+    let cases: [(u32, f32, u32); 26] = [
         (0, 0.0, 0),
         (1, 0.0, 0),
         (0xa, 0.0, 1),
@@ -2808,6 +2813,8 @@ fn summon_task_0295() {
         (0x33, 1.5, 0),
         (0x33, 1.5, 1),
         (0x3c, 0.0, 0),
+        (0x3c, 0.0, 1),
+        (0x3c, 0.0, 2),
         (0x3d, 0.0, 1),
         (0x3e, 0.0, 1),
         (0x2710, 0.0, 0),
@@ -2824,6 +2831,14 @@ fn summon_task_0295() {
         setf(&mut t, r + 0x20, timer);
         setf(&mut t, r + 0x1c, 0.25 * k as f32);
         t.set_u32(answer, ans);
+        // the flag bytes' neighbours
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        t.set_u32(w(&t, 0x6b), 0x1122_3344);
+        t.set_u32(w(&t, 0x71), 0x5566_7700);
+        for op in [0xbbu32, 0x103, 0x3c5] {
+            t.set_u32(w(&t, op), 0x0102_0304 * (k % 3 + 1));
+        }
+        t.set_u32(w(&t, 0x1e7), 0x5a5a_5a00);
         ownb::dirty_stack(&mut t, 0x75d0 + k, &[]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -2842,7 +2857,11 @@ fn sparks_0295() {
     t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
     rec(&mut t, 1001, 1, |m, a| {
         let at = SCRATCH + 0x7b0;
-        let v = m.r32(at).rotate_left(5) ^ m.r32(a[0]) ^ m.r32(a[0] + 4) ^ a[0];
+        let v = m.r32(at).rotate_left(5)
+            ^ m.r32(a[0])
+            ^ m.r32(a[0] + 4)
+            ^ m.r32(a[0] + 8).rotate_left(9)
+            ^ a[0];
         m.w32(at, v);
         0x1001
     });
@@ -2855,6 +2874,12 @@ fn sparks_0295() {
     t.stub_st0(307, move |m, _| f64::from(m.r32(rnd) & 0xff) / 256.0);
     for (s, n) in [(229u32, 3usize), (234, 3), (230, 2)] {
         rec(&mut t, s, n, move |m, a| {
+            // the matrix read, summed into a log word
+            let at = SCRATCH + 0x7c0;
+            for i in 0..16 {
+                let v = m.r32(at).rotate_left(3) ^ m.r32(a[1] + 4 * i);
+                m.w32(at, v);
+            }
             for i in 0..4 {
                 let v = rf(m, a[1] + 4 * i) * 0.5 + 0.125 * (s % 5) as f32;
                 wf(m, a[0] + 4 * i, v);
@@ -2862,6 +2887,17 @@ fn sparks_0295() {
             s
         });
     }
+    // the streams open; slot 774 logs the sprite record it is given
+    rec(&mut t, 773, 2, |_, _| 1);
+    rec(&mut t, 774, 5, |m, a| {
+        let at = SCRATCH + 0x7c4;
+        let mut v = m.r32(at).rotate_left(7) ^ (m.r32(a[3]) >> 16);
+        for i in 1..8 {
+            v = v.rotate_left(3) ^ m.r32(a[3] + 4 * i);
+        }
+        m.w32(at, v);
+        0x774
+    });
     // the locks of the stream and the leave
     let lock = SCRATCH + 0x7e0;
     let sb = t.img.rel32_target(f + 0x499);
@@ -2911,13 +2947,19 @@ fn sparks_0295() {
         t.set_u32(n + 0x28, base);
         t.set_u16(n + 0x2c, 3);
         t.set_u16(n + 0x2e, 2);
-        t.set_u32(n + 0x50, table);
-        t.set_u32(n + 0x54, table);
-        t.write(table, &[0; 0x10]);
+        // two stream tables: one block of 0x200 bytes each
+        for (j, tb) in [table, table + 0x100].into_iter().enumerate() {
+            t.write(tb, &[0; 0x40]);
+            t.set_u16(tb + 6, 1);
+            t.set_u16(tb + 0x10, 0x20);
+            t.set_u16(tb + 0x12, 0x200);
+            t.write(tb + 0x20, &[0x11 * (j as u8 + 1); 0x20]);
+            t.set_u32(n + 0x50 + 4 * j as u32, tb);
+        }
         for i in 0..8u32 {
             let e = base + 0x30 * i;
             floats(&mut t, e, 12, i + k);
-            t.set_u32(e + 0x10, 0x0000_ffff);
+            t.set_u32(e + 0x10, if i & 1 == 0 { 0x0000_ffff } else { 0 });
             t.set_u32(e + 0x24, i & 1);
             t.set_u8(e + 0x2b, [0u8, 1, 4, 0x80][(i % 4) as usize]);
             setf(

@@ -4558,7 +4558,15 @@ pub fn spark_step_0351<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<i32>(w(0x8b), c);
     if c > 0x28 {
         let glow = g.read::<i32>(w(0x95)).wrapping_sub(0xc);
-        let glow = if glow < 0 { 0 } else { glow.min(0x80) };
+        // the explicit chain (docs/porting.md, "Compiler bug")
+        #[allow(clippy::manual_clamp)]
+        let glow = if glow < 0 {
+            0
+        } else if glow > 0x80 {
+            0x80
+        } else {
+            glow
+        };
         g.write::<i32>(w(0xb6), glow);
         // call width: 4
         g.call(
