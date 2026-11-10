@@ -1928,3 +1928,107 @@ fn fade_task_0353() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0353` 0x10001ce0 (`r36::effect_setup_0353`, an entry): the
+/// busy list empty and not, the free ring with many nodes and few (the
+/// count's last-node branch); the never-written frame words 0.
+#[test]
+fn effect_setup_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x1ce0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    let s = SCRATCH + 0x1_0000;
+    for k in 0..3u32 {
+        floats(&mut t, s + 0xe00, 0x600 / 4, k);
+        t.set_u32(w(&t, 0x20), s);
+        t.set_u32(w(&t, 0x141), s);
+        t.set_u32(w(&t, 0x1ed), s);
+        // the free ring (5 nodes, or exactly 5: the last take finds 1)
+        let (count, head) = (w(&t, 0x19), w(&t, 0x2f));
+        magic_r11::ring(
+            &mut t,
+            count,
+            head,
+            [8u16, 5, 6][k as usize],
+            SCRATCH + 0x9000,
+        );
+        let (first, last) = (w(&t, 0xfd), w(&t, 0x11));
+        let old = SCRATCH + 0x9400;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(first, if k == 1 { 0 } else { old });
+        t.set_u32(last, if k == 1 { 0 } else { old });
+        ownb::dirty_stack(&mut t, 0x1ce0 + k, &[0xc, 0x10]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0353` 0x10002200 (`r36::spark_task_0353`, an entry) and
+/// 0x10002460 (`r36::summon_start_0353`): the spark waiting, taken and
+/// the pool empty; the summon start with the busy list empty and not.
+#[test]
+fn sparks_and_start_0353() {
+    let Some(mut t) = twin(353) else { return };
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, |m, a| {
+        let k = m.r32(SCRATCH + 0x2_7600);
+        m.w32(SCRATCH + 0x2_7600, k + 1);
+        f64::from(f32::from_bits(a[0])) * 0.375 + f64::from(k % 5) * 0.125
+    });
+    let s = SCRATCH + 0x1_0000;
+    // the spark task
+    let f = t.at(0x2200);
+    let start = t.img.rel32_target(f + 0x50);
+    magic_r11::object_start_auto(&mut t, start);
+    let take = t.img.rel32_target(f + 0x30);
+    let tw = |t: &Twin, o: u32| t.img.word(take + o);
+    let recs = SCRATCH + 0x2_0000;
+    t.set_u32(tw(&t, 0x16), recs);
+    t.set_u32(t.img.word(f + 0x11), s);
+    let task = SCRATCH + 0x1000;
+    for (k, (wait, n)) in [(5i32, 4u32), (1, 4), (0, 0), (1, 3)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        floats(&mut t, s + 0xe00, 0x80 / 4, k);
+        t.write(task, &[0x33; 0x40]);
+        t.set_u32(task + 0x2c, wait.cast_unsigned());
+        t.set_u32(tw(&t, 0x09), n);
+        t.set_u32(tw(&t, 0x01), 0);
+        for i in 0..n {
+            let r = recs + 0x140 * i;
+            t.write(r, &[0x2a; 0x140]);
+            t.set_u32(r + 0x130, 0);
+            t.set_u16(r + 0x124, 0x7fff);
+        }
+        ownb::dirty_stack(&mut t, 0x2200 + k, &[]);
+        t.check_entry(
+            f,
+            Call {
+                eax: 0x0eaa_0000 + k,
+                ..Call::default()
+            },
+            &[task],
+            Eax::Checked,
+        );
+    }
+    // the summon start
+    let f = t.at(0x2460);
+    let start = t.img.rel32_target(f + 0x1f);
+    magic_r11::object_start_auto(&mut t, start);
+    magic_r11::pools(&mut t, f, 277);
+    t.set_u32(t.img.word(f + 0xb), s);
+    for k in 0..2u32 {
+        floats(&mut t, s, 0x1000 / 4, k + 7);
+        let (first, last) = (t.img.word(f + 0xdb), t.img.word(f + 0xef));
+        let old = SCRATCH + 0x9400;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(first, if k == 1 { 0 } else { old });
+        t.set_u32(last, if k == 1 { 0 } else { old });
+        ownb::dirty_stack(&mut t, 0x2460 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
