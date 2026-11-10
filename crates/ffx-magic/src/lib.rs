@@ -82,6 +82,7 @@ pub mod r30;
 pub mod r31;
 pub mod r32;
 pub mod r33;
+pub mod r35;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3270,6 +3271,12 @@ ports! {
     "r33 summon task 0512" => r33::SUMMON_TASK_0512, r33::summon_task_0512;
     "r33 summon task 0597" => r33::SUMMON_TASK_0597, r33::summon_task_0597;
     // round 33 (magic-r33): end
+    // round 35 (magic-r35)
+    "r35 trail task 0512" => r35::TRAIL_TASK_0512, r35::trail_task_0512;
+    "r35 scene task 0597" => r35::SCENE_TASK_0597, r35::scene_task_0597;
+    "r35 summon main 0613" => r35::SUMMON_MAIN_0613, r35::summon_main_0613;
+    "r35 summon main 0609" => r35::SUMMON_MAIN_0609, r35::summon_main_0609;
+    // round 35 (magic-r35): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 8, shared-8 (s8_misc)
