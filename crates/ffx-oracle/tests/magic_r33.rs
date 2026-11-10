@@ -1022,7 +1022,8 @@ fn summon_task_0512() {
         }
         0x268
     });
-    for (s, x) in [(251u32, 14.5f64), (333, 0.75), (12, -1.5)] {
+    // (slot 12's heights never equal the floats slot 268 writes first)
+    for (s, x) in [(251u32, 14.5f64), (333, 0.75), (12, -1.25)] {
         t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
     }
     // slot 790 takes no words
@@ -1160,6 +1161,8 @@ fn summon_task_0597() {
         }
         t.set_u32(r + 0x18, state);
         t.set_u32(r + 0x28, 0x40 + k);
+        // (the states that reset the count from a count other than 0)
+        let count = if count == 0 { 9 } else { count };
         t.set_u32(r + 0x2c, count.cast_unsigned());
         t.set_u8(flag, fl | 0xa0);
         t.set_u32(a, node);
@@ -1175,6 +1178,28 @@ fn summon_task_0597() {
         t.set_u32(p + 0x10, if k % 3 == 1 { kid } else { p });
         t.set_u32(p + 0xc, p);
         t.set_u16(p + 0x18, 2);
+        // the words the states store or copy: junk first (the camera
+        // block, its flags, the end's words)
+        junk_floats(
+            &mut t,
+            f,
+            &[
+                0x551, 0x559, 0x575, 0x57d, 0x585, 0x5a7, 0x5af, 0x5b7, 0x5f1, 0x5f9, 0x566, 0x61c,
+                0x1dc, 0x7e3, 0x78b,
+            ],
+            k,
+        );
+        // the two models the end sets up (their parts, models, motions and
+        // flags; no parent)
+        for (i, op) in (0u32..).zip([0x803u32, 0x836]) {
+            let n = w(&t, op);
+            for j in 0..0x28u32 {
+                t.set_u32(n + 0x1c + 4 * j, 0x0a00_0000 + 0x100 * i + 4 * j + k);
+            }
+            t.set_u32(n + 0x14, 0);
+            t.set_u32(n + 0x64, if k % 2 == 0 { u32::MAX } else { 3 });
+            t.set_u32(n + 0x90, [0u32, 1, 0x10, 0x800][((k + i) % 4) as usize]);
+        }
         ownb::dirty_stack(&mut t, 0xa0a0 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
