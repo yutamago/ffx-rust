@@ -3305,6 +3305,13 @@ pub fn start_up_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// ([`crate::r27::start_up_0609`]) shares: everything up to slots 222 and
 /// 221.
 pub(crate) fn start_up_head_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
+    start_up_head_with(g, img, fr, 0x1f4);
+}
+
+/// [`start_up_head_0613`] with the operand of slot 221's bank word at
+/// `p221` (the copies whose code starts later read every operand from
+/// their shifted start, `fr.at`, but schedule that push 6 bytes earlier).
+pub(crate) fn start_up_head_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, p221: u32) {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
@@ -3345,7 +3352,7 @@ pub(crate) fn start_up_head_0613<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
     let mut st = vec![w(0x1be), hh, w(0x1b3), 0x10_0000];
     // call width: 4
     g.call(t(g, 0x1a3, 710), 0, &st);
-    for (tab, slot, p) in [(0x1c5u32, 222u32, 0x1d9u32), (0x1e0, 221, 0x1f4)] {
+    for (tab, slot, p) in [(0x1c5u32, 222u32, 0x1d9u32), (0x1e0, 221, p221)] {
         st.splice(0..0, [w(p), 0, 0x3e8, 2]);
         // call width: 12 (the earlier calls' words stay on the stack)
         g.call(t(g, tab, slot), 0, &st);

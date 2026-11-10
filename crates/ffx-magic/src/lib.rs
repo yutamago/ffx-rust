@@ -84,6 +84,7 @@ pub mod r32;
 pub mod r33;
 pub mod r34;
 pub mod r35;
+pub mod r36;
 pub mod r37;
 pub mod r37b;
 pub mod r9_load;
@@ -3307,6 +3308,47 @@ ports! {
     "r34 cue start 0205" => r34::CUE_START_0205, r34::cue_start_0205;
     "r34 effect task 0205" => r34::EFFECT_TASK_0205, r34::effect_task_0205;
     // round 34 (magic-r34): end
+    // round 36 (magic-r36)
+    "r36 draw 0515" => r36::DRAW_0515, r36::draw_0515;
+    "r36 start-up 0515" => r36::START_UP_0515, r36::start_up_0515;
+    "r36 glow 0165" => r36::GLOW_0165, r36::glow_0165;
+    "r36 spark task 0165" => r36::SPARK_TASK_0165, r36::spark_task_0165;
+    "r36 objects 0165" => r36::OBJECTS_0165, r36::objects_0165;
+    "r36 fade step 0098" => r36::FADE_STEP_0098, r36::fade_step_0098;
+    "r36 start-up 0098" => r36::START_UP_0098, r36::start_up_0098;
+    "r36 start-up 0284" => r36::START_UP_0284, r36::start_up_0284;
+    "r36 load step 0284" => r36::LOAD_0284, r36::load_0284;
+    "r36 summon task 0146" => r36::SUMMON_TASK_0146, r36::summon_task_0146;
+    "r36 scene task 0146" => r36::SCENE_TASK_0146, r36::scene_task_0146;
+    "r36 start-up 0155" => r36::START_UP_0155, r36::start_up_0155;
+    "r36 start-up 0164" => r36::START_UP_0164, r36::start_up_0164;
+    "r36 script task 0353" => r36::SCRIPT_TASK_0353, r36::script_task_0353;
+    "r36 fade task 0353" => r36::FADE_TASK_0353, r36::fade_task_0353;
+    "r36 effect set-up 0353" => r36::EFFECT_SETUP_0353, r36::effect_setup_0353;
+    "r36 spark task 0353" => r36::SPARK_TASK_0353, r36::spark_task_0353;
+    "r36 summon start 0353" => r36::SUMMON_START_0353, r36::summon_start_0353;
+    "r36 lit task 0353" => r36::LIT_TASK_0353, r36::lit_task_0353;
+    "r36 lit start 0353" => r36::LIT_START_0353, r36::lit_start_0353;
+    "r36 light reset 0353" => r36::LIGHT_RESET_0353, r36::light_reset_0353;
+    "r36 load step 0353" => r36::LOAD_0353, r36::load_0353;
+    "r36 spark step 0351" => r36::SPARK_STEP_0351, r36::spark_step_0351;
+    "r36 glow start 0351" => r36::GLOW_START_0351, r36::glow_start_0351;
+    "r36 glow step 0351" => r36::GLOW_STEP_0351, r36::glow_step_0351;
+    "r36 scene start 0351" => r36::SCENE_START_0351, r36::scene_start_0351;
+    "r36 camera 0351" => r36::CAMERA_0351, r36::camera_0351;
+    "r36 glow draw 0351" => r36::GLOW_DRAW_0351, r36::glow_draw_0351;
+    "r36 fade 0351" => r36::FADE_0351, r36::fade_0351;
+    "r36 start up 0351" => r36::START_UP_0351, r36::start_up_0351;
+    "r36 summon task 0317" => r36::SUMMON_TASK_0317, r36::summon_task_0317;
+    "r36 summon task 0295" => r36::SUMMON_TASK_0295, r36::summon_task_0295;
+    "r36 sparks 0295" => r36::SPARKS_0295, r36::sparks_0295;
+    "r36 summon task 0263" => r36::SUMMON_TASK_0263, r36::summon_task_0263;
+    "r36 summon start 0263" => r36::SUMMON_START_0263, r36::summon_start_0263;
+    "r36 sparks 0153" => r36::SPARKS_0153, r36::sparks_0153;
+    "r36 summon task 0153" => r36::SUMMON_TASK_0153, r36::summon_task_0153;
+    "r36 sparks thunk 0389" => r36::SPARKS_THUNK_0389, r36::sparks_thunk_0389;
+    "r36 summon task 0389" => r36::SUMMON_TASK_0389, r36::summon_task_0389;
+    // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
     "reel game phases" => s8_misc::REEL_GAME_PHASES, s8_misc::reel_game_phases;
@@ -4076,6 +4118,19 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 spark 0205", &r34::SPARK_0205),
     ("r34 target set-up 0205", &r34::TARGET_SETUP_0205),
     // round 34 (magic-r34): end of INTERNAL
+    // round 36 (magic-r36)
+    ("r36 cameras 0515", &r36::CAMERAS_0515),
+    ("r36 trails 0515", &r36::TRAILS_0515),
+    ("r36 streaks 0515", &r36::STREAKS_0515),
+    ("r36 texture 0098", &r36::TEXTURE_0098),
+    ("r36 close 0353", &r36::CLOSE_0353),
+    ("r36 falloff 0353", &r36::FALLOFF_0353),
+    ("r36 lit draw 0353", &r36::LIT_DRAW_0353),
+    ("r36 flicker 0353", &r36::FLICKER_0353),
+    ("r36 start-up 0353", &r36::START_UP_0353),
+    ("r36 glow points 0351", &r36::GLOW_POINTS_0351),
+    ("r36 sparks 0389", &r36::SPARKS_0389),
+    // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
     ("r15 actor point 0104", &r15::ACTOR_POINT_0104),

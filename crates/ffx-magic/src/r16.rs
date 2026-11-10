@@ -1355,7 +1355,7 @@ pub const SETUP_0661: Sig = Sig {
 /// 825 `(*G_X)` (`E`). With `T`'s 64-bit word `v`: the widths `wx = 1 <<
 /// ((v >> 26) & 15)`, `wy = 1 << ((v >> 30) & 15)` (16 bits); under the
 /// game flag slot 885 `(v & 0x3fff, (v >> 20) & 0x3f, 0, 0, wx, wy,
-/// L(0x104))`. When it answers: the offsets `((x % (wx << 16)) >> 4) /
+/// L(0x104))` (`ecx` the original's at the two slot calls). When it answers: the offsets `((x % (wx << 16)) >> 4) /
 /// wx` and the same for `y` (signed, `*G_X`/`*G_Y`), times `K`; the four
 /// colour sums (a signed and an unsigned byte each) clamped to `0..Kmax`
 /// (`comiss` + `jbe`: unordered stays) times `K2` into `L(0x114)`..; under
@@ -1364,13 +1364,10 @@ pub const SETUP_0661: Sig = Sig {
 #[allow(clippy::too_many_lines)] // the original's record, in order
 pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     use crate::r11_fades::stores;
-    use crate::sb_sse::{add, cvt, mul};
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
-    let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, at: u32, slot: u32| slot_target(g, w(at), slot / 4);
     let ebp = fr.esp.wrapping_sub(4);
-    let l = |o: u32| ebp.wrapping_sub(o);
     let rec = fr.ecx;
     let mut st = Pushes::default();
     st.push_all(&[8, 2, g.read::<u32>(w(0x27))]);
@@ -1401,10 +1398,79 @@ pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0x120), edx);
     // call width: 12 (Pushes caps the words at 12)
     let e = st.call(g, t(g, 0xb2, 0xce4), fr.ecx).eax;
+    texture_tail(g, img, f, ebp, (tex, e), [fr.ecx; 2], &TAIL_0661)
+}
+
+/// Where the code of a screen texture's draw ([`texture_tail`]) differs:
+/// the operands of the lock (taken for slot 885, put back), slot 885's
+/// table, the lock again, the offsets' words `x`/`y`, their scales, the
+/// four colour sums' signed and unsigned bytes, the clamp and the colour
+/// scale, the lock for slot 879, its two words (`D` and 1.0), slot 879's
+/// table and the lock put back.
+pub(crate) struct TexTail {
+    pub lock: [u32; 2],
+    pub slot885: u32,
+    pub xy: [u32; 2],
+    pub scale: [u32; 2],
+    pub bytes: [(u32, u32); 4],
+    pub hi: u32,
+    pub k2: u32,
+    pub lock879: u32,
+    pub d: u32,
+    pub one: u32,
+    pub slot879: u32,
+    pub unlock879: u32,
+}
+
+/// [`texture_0661`]'s operands.
+const TAIL_0661: TexTail = TexTail {
+    lock: [0x15d, 0x1b2],
+    slot885: 0x19a,
+    xy: [0x1ca, 0x1f1],
+    scale: [0x204, 0x231],
+    bytes: [
+        (0x217, 0x222),
+        (0x238, 0x251),
+        (0x260, 0x274),
+        (0x283, 0x294),
+    ],
+    hi: 0x2ae,
+    k2: 0x2c8,
+    lock879: 0x324,
+    d: 0x35b,
+    one: 0x369,
+    slot879: 0x384,
+    unlock879: 0x3a3,
+};
+
+/// The draw of a screen texture `tex` (its 64-bit word `v`) for the
+/// handle `e` (slot 825's), `L(o)` = `ebp - o`: the widths `wx = 1 <<
+/// ((v >> 26) & 15)`, `wy = 1 << ((v >> 30) & 15)` (16 bits); under the
+/// game flag slot 885 `(v & 0x3fff, (v >> 20) & 0x3f, 0, 0, wx, wy,
+/// L(0x104))` (`ecx` the original's at the two slot calls). When it answers: the offsets `((x % (wx << 16)) >> 4) /
+/// wx` and the same for `y` (signed), times their scales; the four
+/// colour sums (a signed and an unsigned byte each) clamped to `0..Kmax`
+/// (`comiss` + `jbe`: unordered stays) times `K2` into `L(0x114)`..;
+/// under the game flag slot 879 `(e, L(0x104), x, y, L(0x114), 1.0, D,
+/// wx, wy, 0)`. Returns the flag pointer (0 when slot 885 does not
+/// answer).
+pub(crate) fn texture_tail<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    ebp: u32,
+    (tex, e): (u32, u32),
+    ecx: [u32; 2],
+    ops: &TexTail,
+) -> Ret {
+    use crate::sb_sse::{add, cvt, mul};
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let l = |o: u32| ebp.wrapping_sub(o);
     let v = u64::from(g.read::<u32>(tex)) | (u64::from(g.read::<u32>(tex + 4)) << 32);
     let wx = u32::from(1u16 << ((v >> 26) & 15));
     let wy = u32::from(1u16 << ((v >> 30) & 15));
-    let flag = g.read::<u32>(w(0x15d));
+    let flag = g.read::<u32>(w(ops.lock[0]));
     let held = g.read::<u32>(flag);
     g.write::<u32>(flag, 1);
     let mut st = Pushes::default();
@@ -1418,8 +1484,8 @@ pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         (v & 0x3fff) as u32,
     ]);
     // call width: 12 (Pushes caps the words at 12)
-    let r = st.call(g, t(g, 0x19a, 0xdd4), fr.ecx).eax;
-    let flag = g.read::<u32>(w(0x1b2));
+    let r = st.call(g, slot_target(g, w(ops.slot885), 885), ecx[0]).eax;
+    let flag = g.read::<u32>(w(ops.lock[1]));
     g.write::<u32>(flag, held);
     if r == 0 {
         return Ret::eax(0);
@@ -1429,21 +1495,22 @@ pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let m = n.cast_signed().wrapping_rem((d << 16).cast_signed()) >> 4;
         m.wrapping_div(d.cast_signed()).cast_unsigned()
     };
-    let x = mul(cvt(offset(g.read::<u32>(w(0x1ca)), wx)), k(g, 0x204));
-    let y = mul(cvt(offset(g.read::<u32>(w(0x1f1)), wy)), k(g, 0x231));
+    let x = mul(
+        cvt(offset(g.read::<u32>(w(ops.xy[0])), wx)),
+        k(g, ops.scale[0]),
+    );
+    let y = mul(
+        cvt(offset(g.read::<u32>(w(ops.xy[1])), wy)),
+        k(g, ops.scale[1]),
+    );
     let byte_sum = |g: &G, sb: u32, ub: u32| {
         let s8 = i32::from(g.read::<i8>(w(sb))).cast_unsigned();
         let u8v = u32::from(g.read::<u8>(w(ub)));
         add(cvt(s8), cvt(u8v))
     };
-    let hi = k(g, 0x2ae);
-    let k2 = k(g, 0x2c8);
-    for (n, (sb, ub)) in (0u32..).zip([
-        (0x217u32, 0x222u32),
-        (0x238, 0x251),
-        (0x260, 0x274),
-        (0x283, 0x294),
-    ]) {
+    let hi = k(g, ops.hi);
+    let k2 = k(g, ops.k2);
+    for (n, (sb, ub)) in (0u32..).zip(ops.bytes) {
         let c = byte_sum(g, sb, ub);
         // `comiss` + `jbe`: an unordered sum stays
         let c = if 0.0 > c {
@@ -1455,15 +1522,15 @@ pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         };
         g.write::<f32>(l(0x114 - 4 * n), mul(c, k2));
     }
-    let flag = g.read::<u32>(w(0x324));
+    let flag = g.read::<u32>(w(ops.lock879));
     g.write::<u32>(flag, 1);
     let mut st = Pushes::default();
     st.push_all(&[
         0,
         cvt(wy).to_bits(),
         cvt(wx).to_bits(),
-        w(0x35b),
-        w(0x369),
+        w(ops.d),
+        w(ops.one),
         l(0x114),
         y.to_bits(),
         x.to_bits(),
@@ -1471,8 +1538,8 @@ pub fn texture_0661<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         e,
     ]);
     // call width: 12 (Pushes caps the words at 12)
-    st.call(g, t(g, 0x384, 0xdbc), fr.ecx);
-    let flag = g.read::<u32>(w(0x3a3));
+    st.call(g, slot_target(g, w(ops.slot879), 879), ecx[1]);
+    let flag = g.read::<u32>(w(ops.unlock879));
     g.write::<u32>(flag, held);
     Ret::eax(flag)
 }
