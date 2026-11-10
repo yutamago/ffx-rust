@@ -90,6 +90,7 @@ pub mod r37b;
 pub mod r38;
 pub mod r39;
 pub mod r39b;
+pub mod r41;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3339,6 +3340,14 @@ ports! {
     "r38 place 0393" => r38::PLACE_0393, r38::place_0393;
     "r38 launch 0393" => r38::LAUNCH_0393, r38::launch_0393;
     // round 38 (magic-r38): end
+    // round 41 (magic-r41)
+    "r41 glow thunk 0374" => r41::GLOW_THUNK_0374, r41::glow_thunk_0374;
+    "r41 sparks 0374" => r41::SPARKS_0374, r41::sparks_0374;
+    "r41 effect task 0374" => r41::EFFECT_TASK_0374, r41::effect_task_0374;
+    "r41 summon task 0374" => r41::SUMMON_TASK_0374, r41::summon_task_0374;
+    "r41 load step 0271" => r41::LOAD_0271, r41::load_0271;
+    "r41 curve task 0271" => r41::CURVE_TASK_0271, r41::curve_task_0271;
+    // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5247,6 +5256,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r38 start-up 0298", &r38::START_UP_0298),
     ("r38 effect end 0430", &r38::EFFECT_END_0430),
     // round 38 (magic-r38): end of INTERNAL
+    // round 41 (magic-r41)
+    ("r41 glow 0374", &r41::GLOW_0374),
+    ("r41 start-up 0271", &r41::START_UP_0271),
+    ("r41 trail 0271", &r41::TRAIL_0271),
+    // round 41 (magic-r41): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

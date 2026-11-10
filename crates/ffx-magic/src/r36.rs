@@ -6229,10 +6229,39 @@ pub const SUMMON_TASK_0295: Sig = Sig {
 /// last value in `eax`.
 ///
 /// `magic_0295` 0x10001900 (1400 bytes).
-#[allow(clippy::too_many_lines)] // the original's steps, in order
 pub fn sparks_0295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    sparks_with(g, img, fr, &SPARKS_0295_LAYOUT)
+}
+
+/// How a copy of [`sparks_0295`] differs: its operands from `0x426` on
+/// (the model's offsets, [`Shift`](crate::r32::Shift)), the draw's slot
+/// (230, or 231 with a global pushed between its two pointers, operand
+/// `extra`), and the way out with no sparks left (`plain`: the node
+/// leaves through [`leave`](crate::sa_misc::leave) with `ecx` = the node
+/// and the second child's `eax`, instead of
+/// [`leave_and_register`](crate::m0295::leave_and_register)).
+pub(crate) struct SparksLayout {
+    pub(crate) shift: crate::r32::Shift,
+    pub(crate) draw: u32,
+    pub(crate) extra: Option<u32>,
+    pub(crate) plain: bool,
+}
+
+const SPARKS_0295_LAYOUT: SparksLayout = SparksLayout {
+    shift: crate::r32::Shift {
+        runs: &[],
+        moved: &[],
+    },
+    draw: 230,
+    extra: None,
+    plain: false,
+};
+
+/// [`sparks_0295`] for a copy laid out as `lay` says.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub(crate) fn sparks_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, lay: &SparksLayout) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let w = |o: u32| img.word(f + lay.shift.at(o));
     let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
     // push ebp; and esp, -16; sub esp, 0x108; push esi, edi
     let esp0 = (fr.esp.wrapping_sub(4) & !0xf)
@@ -6261,7 +6290,7 @@ pub fn sparks_0295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(l(0x24), c2);
     g.write::<u8>(l(0x29), mode);
     let m = g.read::<u32>(g.read::<u32>(c2) + 0x1c);
-    g.call(m, l(0x24), &[l(0x24)]);
+    let eax = g.call(m, l(0x24), &[l(0x24)]).eax;
     let k = f32_at(g, w(0xb3));
     let spawn = k > f32_at(g, n + 0x58);
     if spawn {
@@ -6348,8 +6377,12 @@ pub fn sparks_0295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
         }
     } else if g.read::<u32>(n + 0x5c) == 0 {
+        if lay.plain {
+            return Ret::eax(crate::sa_misc::leave(g, n, eax));
+        }
         g.write::<u32>(l(0x18), n);
-        let r = crate::m0295::leave_and_register(g, img, img.rel32_target(f + 0x560), l(0x18));
+        let at = img.rel32_target(f + lay.shift.at(0x560));
+        let r = crate::m0295::leave_and_register(g, img, at, l(0x18));
         return Ret::eax(r);
     }
     // the draw: both rings' live sparks
@@ -6381,8 +6414,14 @@ pub fn sparks_0295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 for o in [0xb0u32, 0x9c, 0x88] {
                     put(g, l(o), v);
                 }
-                // call width: 2
-                g.call(slot(g, 0x426, 230), 0, &[l(0xc8), l(0x88)]);
+                if let Some(op) = lay.extra {
+                    // call width: 3
+                    let x = img.word(f + op);
+                    g.call(slot(g, 0x426, lay.draw), 0, &[l(0xc8), x, l(0x88)]);
+                } else {
+                    // call width: 2
+                    g.call(slot(g, 0x426, lay.draw), 0, &[l(0xc8), l(0x88)]);
+                }
                 let a = f32_at(g, e + 0x2c);
                 let one = f32_at(g, w(0x456));
                 if one > a {
@@ -6399,7 +6438,7 @@ pub fn sparks_0295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 g.write::<u32>(esp0.wrapping_sub(0xc), l(0x40));
                 let table = g.read::<u32>(n + 0x50 + 4 * which);
                 let sb = Frame {
-                    at: img.rel32_target(f + 0x499),
+                    at: img.rel32_target(f + lay.shift.at(0x499)),
                     esp: esp0.wrapping_sub(0x10),
                     eax: n,
                     ecx: e + 0x10,
