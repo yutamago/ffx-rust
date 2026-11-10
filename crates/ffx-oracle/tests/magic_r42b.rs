@@ -1145,11 +1145,11 @@ fn summon_task_0201() {
         (0x1e, 0, 0, 0, 0),
         (0x1e, 0, 0, 0, 1),
         (0x1f, 0, 0, 0, 0),
-        (0x1f, 0, 7, 1, 0),
+        (0x1f, 5, 7, 1, 0),
         (0x20, 0, 0, 0, 0),
         (0x20, 0, 9, 0, 1),
         (0x32, 0, 0, 0, 0),
-        (0x32, 0, 7, 0, 0),
+        (0x32, 5, 7, 0, 0),
         (0x33, 1, 0, 0, 0),
         (0x33, 2, 0, 0, 0),
         (0x33, 2, 0, 1, 0),
@@ -1170,9 +1170,10 @@ fn summon_task_0201() {
         t.set_u8(wait_flag, gfl);
         t.set_u8(w(&t, 0x8a), gfl);
         t.set_u8(motion_flag, gfl);
+        // the flag words: bit 0 clear, so its `or` shows
         for op in [0x589u32, 0x6c0] {
             let g = w(&t, op);
-            t.set_u32(g, 0x5d5d_5d50 + k);
+            t.set_u32(g, 0x5d5d_5d50 + 2 * k);
         }
         t.set_u32(MASK_0203, 0x1234_5678 + k);
         t.set_u32(MASK_0203 + 4, 0);
@@ -1183,6 +1184,89 @@ fn summon_task_0201() {
             t.set_u32(x + 8, prev);
         }
         ownb::dirty_stack(&mut t, 0x7d90 + k, &[]);
+        let call = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0150` 0x1000ccf0 (`r42::summon_task_0150`): every state, waiting
+/// and running on into the next (0 with each slot 719 kind, 1-2 below and
+/// past their times, 3 with the swing below and above 0, 4, 5, 6 with
+/// slot 411 0 and not), and a state past the table.
+#[test]
+fn summon_task_0150() {
+    let Some(mut t) = twin(150) else { return };
+    stubs_0203(&mut t);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 411, 1, move |m, _| m.r32(answer));
+    for (s, n) in [
+        (719u32, 3usize),
+        (306, 3),
+        (213, 2),
+        (248, 3),
+        (35, 5),
+        (34, 2),
+        (547, 1),
+        (276, 2),
+        (219, 2),
+        (211, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let b = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ b.rotate_left(7)
+        });
+    }
+    let f = t.at(0xccf0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    rings_0203(&mut t, f, &[0xae, 0x1a7]);
+    for (callee, op) in [(0x10cu32, 0x26u32), (0x126, 0x1e), (0x215, 0x26)] {
+        let c = t.img.rel32_target(f + callee);
+        rings_0203(&mut t, c, &[op]);
+    }
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let g1 = w(&t, 0x37);
+    let g2 = w(&t, 0x44);
+    // (state, timer, swing, the kind globals, slot 411's answer)
+    let cases: [(u8, f32, f32, (u32, u32), u32); 14] = [
+        (0, 0.0, 0.0, (0, 0), 0),
+        (0, 0.0, 0.0, (1, 0x1071), 0),
+        (0, 100.0, 0.0, (1, 5), 0),
+        (1, 0.0, 0.0, (0, 0), 0),
+        (1, 100.0, -50.0, (0, 0), 0),
+        (2, 100.0, 50.0, (0, 0), 0),
+        (2, 0.0, -50.0, (0, 0), 0),
+        (3, 0.0, -100.0, (0, 0), 0),
+        (3, 0.0, 100.0, (0, 0), 0),
+        (4, 1000.0, 0.0, (0, 0), 0),
+        (5, 1000.0, 0.0, (0, 0), 0),
+        (6, 0.0, 0.0, (0, 0), 0),
+        (6, 0.0, 0.0, (0, 0), 3),
+        (7, 0.0, 0.0, (0, 0), 0),
+    ];
+    for (k, (state, timer, swing, (k1, k2), ans)) in (0u32..).zip(cases) {
+        t.write(r, &[0x3c ^ k as u8; 0x800]);
+        t.set_u8(r + 0x1c, state);
+        t.set_u32(r + 0x18, timer.to_bits());
+        t.set_u32(r + 0x5f4, swing.to_bits());
+        t.set_u32(g1, k1);
+        t.set_u32(g2, k2);
+        t.set_u32(answer, ans);
+        for op in [0x12fu32, 0x265, 0x2b8] {
+            let g = w(&t, op);
+            t.set_u32(g, 0x5d5d_5d50 + 2 * k);
+        }
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0xccf0 + k, &[]);
         let call = Call {
             eax: 0x00ea_0000 + k,
             ..Call::default()
