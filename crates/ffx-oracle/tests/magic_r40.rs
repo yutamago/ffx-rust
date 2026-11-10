@@ -1230,3 +1230,100 @@ fn camera_task_0183() {
         }
     }
 }
+
+/// `magic_0183` 0x10001800 (`r40::draw_0183`): the frames before 0xa1,
+/// 0xa1, between, 0xbf (the distance), 0xc0, the last with the cross
+/// (0x118) and past it, 0x183; the two parts' halfwords set and not,
+/// `pppRunPart` done and not.
+#[test]
+fn draw_0183() {
+    let Some(mut t) = twin(183) else { return };
+    stubs_0183(&mut t);
+    let f = t.at(0x1800);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(
+                m,
+                a[3] + 4 * i,
+                0.75 * i as f32 + (a[1] & 0xff) as f32 * 0.01,
+            );
+        }
+        0x237
+    });
+    for s in [236u32, 243, 231] {
+        let at = if s == 236 { 2usize } else { 0 };
+        rec(&mut t, s, at + 1, move |m, a| {
+            for i in 0..16u32 {
+                wf(m, a[at] + 4 * i, 0.125 * i as f32 - (s & 7) as f32);
+            }
+            s
+        });
+    }
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x234
+    });
+    rec(&mut t, 266, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * ((i + 1) % 3)))
+                * f32::from_bits(m.r32(a[2] + 4 * ((i + 2) % 3)));
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x266
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    rec(&mut t, 712, 2, |m, _| m.r32(SCRATCH + 0x7f68));
+    let mat = SCRATCH + 0x7a00;
+    let holder = SCRATCH + 0x7a80;
+    let lock = SCRATCH + 0x7f00;
+    for o in [0x4f8u32, 0x6b8] {
+        t.set_u32(w(&t, o), mat);
+    }
+    for o in [0x496u32, 0x4c1, 0x64c, 0x7b6] {
+        t.set_u32(w(&t, o), holder);
+    }
+    t.set_u32(w(&t, 0x659), lock);
+    let mut k = 0u32;
+    let mut case = |t: &mut Twin, kind: u32, halves: [u16; 2], done: u32| {
+        k += 1;
+        t.set_u32(w(t, 0x1b), kind);
+        t.set_u16(w(t, 0x4d1), halves[0]);
+        t.set_u16(w(t, 0x691), halves[1]);
+        t.set_u32(SCRATCH + 0x7f68, done);
+        t.set_u32(lock, 0x40 + k);
+        t.write(mat, &[0x3c; 0x40]);
+        for o in [0x1c7u32, 0x1cf, 0x1d7, 0x1df, 0x530, 0x55b, 0x6f0, 0x71b] {
+            t.set_u32(
+                w(t, o),
+                (0.5 * (o % 11) as f32 + k as f32 * 0.25 - 2.0).to_bits(),
+            );
+        }
+        junk_ops(
+            t,
+            f,
+            &[0x1ff, 0x151, 0x45e, 0x470, 0x491, 0x68a, 0x7f4, 0x843],
+        );
+        ownb::dirty_stack(t, 0x1800 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    };
+    case(&mut t, 0xa0, [1, 1], 1);
+    case(&mut t, 0xa1, [1, 1], 1);
+    case(&mut t, 0xb0, [1, 0], 0);
+    case(&mut t, 0xbf, [1, 1], 1);
+    case(&mut t, 0xbf, [0, 1], 0);
+    case(&mut t, 0xc0, [1, 1], 0);
+    case(&mut t, 0xbf + 0x59, [1, 1], 1);
+    case(&mut t, 0xbf + 0x5a, [1, 0], 1);
+    case(&mut t, 0x183, [0, 0], 1);
+    case(&mut t, 0x183, [1, 1], 1);
+}

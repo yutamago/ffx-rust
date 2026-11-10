@@ -2394,3 +2394,312 @@ pub const CAMERA_TASK_0183: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// One of `magic_0183`'s two part draws in [`draw_0183`]: slot 233
+/// `(*G_M, B + 0x68, 0.4)` with the colour words 0.4, `(*G_M + 0x10, B +
+/// 0x78, c1)`, `(*G_M + 0x20, B + 0x88, c2)`, the matrix's translation the
+/// middle point `B + 0x98`; with `lift` slot 233 `(B + 0x18, G_UP, 5.0)`
+/// moves it by `B + 0x18`; slots 231 `(*G_A, *G_B, M)` and 230, then
+/// `pppRunPart(P, 0x30)` (slot 712) under the game lock; done clears the
+/// part's halfword. The operands: `[colour stores x4, 233 x3 (imports,
+/// matrix, colour), M, (lift: imports, up), M again, 231's two, 230's
+/// imports and two, holder, value, lock, part, 712's imports, lock again,
+/// the halfword]`.
+#[allow(clippy::too_many_lines)] // one straight sequence
+fn part_draw_0183<G: Game>(g: &mut G, img: &Image, f: u32, b: u32, ops: &PartDraw0183) {
+    use crate::r25::abs_stores;
+    use crate::sb_sse::add;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let m = rd(g, ops.m233[0].1);
+    abs_stores(g, img, f, ops.colour.0, ops.colour.1);
+    // call width: 3
+    g.call(t(g, ops.m233[0].0, 233), 0, &[m, b + 0x68, 0x3ecc_cccd]);
+    for (k, (imp, mat, col)) in [(1u32, ops.m233[1]), (2, ops.m233[2])] {
+        let c = rd(g, col);
+        let m = rd(g, mat).wrapping_add(0x10 * k);
+        // call width: 3
+        g.call(t(g, imp, 233), 0, &[m, b + 0x68 + 0x10 * k, c]);
+    }
+    let m = rd(g, ops.mat);
+    for j in 0..4 {
+        let x = g.read::<u32>(b + 0x98 + 4 * j);
+        g.write::<u32>(m + 0x30 + 4 * j, x);
+    }
+    if let Some((imp, up)) = ops.lift {
+        // call width: 3
+        g.call(t(g, imp, 233), 0, &[b + 0x18, w(up), 0x40a0_0000]);
+        let m = rd(g, ops.mat2);
+        for j in 0..3 {
+            let (mv, uv) = (
+                g.read::<f32>(m + 0x30 + 4 * j),
+                g.read::<f32>(b + 0x18 + 4 * j),
+            );
+            // the y sum's operands the other way round
+            let x = if j == 1 { add(uv, mv) } else { add(mv, uv) };
+            g.write::<f32>(m + 0x30 + 4 * j, x);
+        }
+    }
+    let m = rd(g, ops.mat2);
+    let (x, y) = (rd(g, ops.m231.1), rd(g, ops.m231.2));
+    // call width: 3
+    g.call(t(g, ops.m231.0, 231), 0, &[y, x, m]);
+    let (x, y) = (rd(g, ops.m230.1), rd(g, ops.m230.2));
+    // call width: 2
+    g.call(t(g, ops.m230.0, 230), 0, &[y, x]);
+    g.write::<u32>(rd(g, ops.holder.0), w(ops.holder.1));
+    let lock = rd(g, ops.lock.0);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let done = g.call(t(g, ops.run.0, 712), 0, &[w(ops.run.1), 0x30]).eax;
+    g.write::<u32>(rd(g, ops.lock.1), saved);
+    if done != 0 {
+        g.write::<u16>(w(ops.half), 0);
+    }
+}
+
+/// The operands of a [`part_draw_0183`].
+struct PartDraw0183 {
+    colour: (u32, u32),
+    m233: [(u32, u32, u32); 3],
+    mat: u32,
+    lift: Option<(u32, u32)>,
+    mat2: u32,
+    m231: (u32, u32, u32),
+    m230: (u32, u32, u32),
+    holder: (u32, u32),
+    lock: (u32, u32),
+    run: (u32, u32),
+    half: u32,
+}
+
+/// `magic_0183`'s draw (0x10001800, 2172 bytes; no arguments; an 8-aligned
+/// cookie frame, `B = ((E - 4) & !7) - 0x150` after `push esi; push
+/// edi`). By the frame `K = *G_K`: at 0xa1 slot 220 `(H, 0x40, 0x100)` of
+/// two handles; nothing more before 0xa1. Four bone points (slot 237 of
+/// the target: 0x65, 0x135, 0xa8, 0xeb) and bone 0x2d into `G_P`; slot 236
+/// `(T, 0x2d, B + 0xa8)`; the height and the middle point the halved
+/// sums (times the double `K2`); at `K = 0xbf` the flat distance from the
+/// start (`_libm_sse2_sqrt_precise`) into `*G_D`; below `K = 0xbf + 0x5a`
+/// the two spans' cross into `G_X` (slots 234, 266, 232); the side and
+/// up vectors (slots 232, 266), the basis into a matrix with the middle
+/// point, slot 243 `(R, -0x4000)`, slot 231 `(B + 0x68, basis, R)`; three
+/// part tables (slot 941), slots 723 and 724, the holder; the two parts
+/// drawn while their halfwords are set ([`part_draw_0183`], from `K =
+/// 0xbf` and `0xa1`); at `K = 0x183` slots 211 `(*G_C, 0)`, 213 `(*G_T,
+/// 0)`, 214 `(*G_A)`; `K` up by one. Returns 0.
+#[allow(clippy::too_many_lines)] // one straight sequence
+pub fn draw_0183<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, mul, sub};
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let b = ((fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x148)).wrapping_sub(8);
+    let kind = rd(g, 0x1b);
+    let esi = kind.wrapping_sub(0xbf);
+    let edi = kind.wrapping_sub(0xa1);
+    let mut kind = kind;
+    if kind == 0xa1 {
+        let h = rd(g, 0x48);
+        // call width: 3
+        g.call(t(g, 0x35, 220), 0, &[h, 0x40, 0x100]);
+        let h = rd(g, 0x62);
+        // call width: 3
+        g.call(t(g, 0x4f, 220), 0, &[h, 0x40, 0x100]);
+        kind = rd(g, 0x69);
+    }
+    if esi.cast_signed() >= 0 || edi.cast_signed() >= 0 {
+        for (imp, src, bone, out) in [
+            (0x85u32, 0x95u32, 0x65u32, b + 0xe8),
+            (0xa4, 0xb7, 0x135, b + 0xf8),
+            (0xc3, 0xd6, 0xa8, b + 0x38),
+            (0xe5, 0xf8, 0xeb, b + 0x58),
+        ] {
+            let s = rd(g, src);
+            // call width: 4
+            g.call(t(g, imp, 237), 0, &[s, bone, 0, out]);
+        }
+        let s = rd(g, 0x117);
+        // call width: 4
+        g.call(t(g, 0xff, 237), 0, &[s, 0x2d, 0, w(0x10d)]);
+        let half = g.read::<f64>(w(0x145));
+        let scaled = |x: f32| (f64::from(x) * half) as f32;
+        let hy = add(rf(g, b + 0x3c), rf(g, b + 0x5c));
+        let s = rd(g, 0x13a);
+        g.write::<f32>(w(0x151), scaled(hy));
+        // call width: 3
+        g.call(t(g, 0x132, 236), 0, &[s, 0x2d, b + 0xa8]);
+        let half = g.read::<f64>(w(0x16d));
+        let scaled = |x: f32| (f64::from(x) * half) as f32;
+        let mx = scaled(add(rf(g, b + 0x38), rf(g, b + 0x58)));
+        g.write::<f32>(b + 0x14, mx);
+        let my = scaled(add(rf(g, b + 0x3c), rf(g, b + 0x5c)));
+        g.write::<f32>(b + 0xc, my);
+        let mz = scaled(add(rf(g, b + 0x40), rf(g, b + 0x60)));
+        g.write::<f32>(b + 0x10, mz);
+        let cross = if esi == 0 {
+            let dz = sub(rf(g, w(0x1cf)), rf(g, w(0x1d7)));
+            let dx = sub(rf(g, w(0x1c7)), rf(g, w(0x1df)));
+            let sq = add(mul(dz, dz), mul(dx, dx));
+            // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+            g.write::<f32>(w(0x1ff), f64::from(sq).sqrt() as f32);
+            true
+        } else {
+            esi.cast_signed() < 0x5a
+        };
+        if cross {
+            let (p1, p2, p3, p4) = (b + 0xe8, b + 0xf8, b + 0x38, b + 0x58);
+            // call width: 3
+            g.call(t(g, 0x21c, 234), 0, &[p1, p1, p2]);
+            // call width: 3
+            g.call(t(g, 0x234, 234), 0, &[p3, p3, p4]);
+            // call width: 3
+            g.call(t(g, 0x24e, 266), 0, &[w(0x253), p1, p3]);
+            // call width: 2
+            g.call(t(g, 0x260, 232), 0, &[w(0x270), w(0x265)]);
+        }
+        let side = b + 0x48;
+        // call width: 2
+        g.call(t(g, 0x284, 232), 0, &[side, w(0x27e)]);
+        let fwd = b + 0x28;
+        let x = g.read::<u32>(b + 0x50);
+        let z = g.read::<u32>(side) ^ g.read::<u32>(w(0x2a9));
+        g.write::<u32>(fwd, x);
+        g.write::<u32>(fwd + 4, 0);
+        g.write::<u32>(fwd + 8, z);
+        // call width: 2
+        g.call(t(g, 0x2b0, 232), 0, &[fwd, fwd]);
+        let up = b + 0x18;
+        // call width: 3
+        g.call(t(g, 0x2da, 266), 0, &[up, side, fwd]);
+        // call width: 2
+        g.call(t(g, 0x2ed, 232), 0, &[up, up]);
+        let basis = b + 0xa8;
+        for (dst, src) in [(0u32, fwd), (0x10, up), (0x20, side)] {
+            for j in 0..3 {
+                let v = g.read::<u32>(src + 4 * j);
+                g.write::<u32>(basis + dst + 4 * j, v);
+            }
+        }
+        let rot = b + 0x108;
+        for (o, v) in [
+            (0xb4u32, 0u32),
+            (0xc4, 0),
+            (0xd4, 0),
+            (0xd8, 0),
+            (0xdc, 0),
+            (0xe0, 0),
+            (0xe4, 0x3f80_0000),
+        ] {
+            g.write::<u32>(b + o, v);
+        }
+        // call width: 2
+        g.call(t(g, 0x385, 243), 0, &[rot, 0xffff_c000]);
+        // call width: 3
+        g.call(t(g, 0x400, 231), 0, &[b + 0x68, basis, rot]);
+        let mid = b + 0x98;
+        for (j, v) in [b + 0x14, b + 0xc, b + 0x10].into_iter().enumerate() {
+            let x = g.read::<u32>(v);
+            g.write::<u32>(mid + 4 * j as u32, x);
+        }
+        g.write::<u32>(mid + 0xc, 0x3f80_0000);
+        for (imp, src, out) in [
+            (0x44bu32, 0x414u32, 0x45eu32),
+            (0x463, 0x459, 0x470),
+            (0x475, 0x484, 0x491),
+        ] {
+            let s = rd(g, src);
+            let x = g.call(t(g, imp, 941), 0, &[s]).eax;
+            g.write::<u32>(w(out), x);
+        }
+        let a = rd(g, 0x48c);
+        g.write::<u32>(rd(g, 0x496), w(0x49c));
+        g.call(t(g, 0x4a1, 723), 0, &[a]);
+        let a = rd(g, 0x4b4);
+        g.call(t(g, 0x4ae, 724), 0, &[a]);
+        g.write::<u32>(rd(g, 0x4c1), w(0x4ca));
+        if g.read::<u16>(w(0x4d1)) != 0 && esi.cast_signed() >= 0 {
+            part_draw_0183(
+                g,
+                img,
+                f,
+                b,
+                &PartDraw0183 {
+                    colour: (0x4fc, 0x524),
+                    m233: [
+                        (0x4f2, 0x4f8, 0),
+                        (0x54b, 0x542, 0x530),
+                        (0x579, 0x570, 0x55b),
+                    ],
+                    mat: 0x586,
+                    lift: Some((0x5d7, 0x5d1)),
+                    mat2: 0x5e4,
+                    m231: (0x626, 0x5f6, 0x5fc),
+                    m230: (0x639, 0x634, 0x63f),
+                    holder: (0x64c, 0x654),
+                    lock: (0x659, 0x679),
+                    run: (0x66b, 0x65e),
+                    half: 0x68a,
+                },
+            );
+        }
+        if g.read::<u16>(w(0x691)) != 0 && edi.cast_signed() >= 0 {
+            part_draw_0183(
+                g,
+                img,
+                f,
+                b,
+                &PartDraw0183 {
+                    colour: (0x6bc, 0x6e4),
+                    m233: [
+                        (0x6b2, 0x6b8, 0),
+                        (0x70b, 0x702, 0x6f0),
+                        (0x739, 0x730, 0x71b),
+                    ],
+                    mat: 0x746,
+                    lift: None,
+                    mat2: 0x746,
+                    m231: (0x78a, 0x780, 0x790),
+                    m230: (0x7a3, 0x79e, 0x7a9),
+                    holder: (0x7b6, 0x7be),
+                    lock: (0x7c3, 0x7e3),
+                    run: (0x7d5, 0x7c8),
+                    half: 0x7f4,
+                },
+            );
+        }
+        kind = rd(g, 0x7f9);
+    }
+    if kind == 0x183 {
+        let a = rd(g, 0x80d);
+        // call width: 2
+        g.call(t(g, 0x805, 211), 0, &[a, 0]);
+        let a = rd(g, 0x822);
+        // call width: 2
+        g.call(t(g, 0x81a, 213), 0, &[a, 0]);
+        let a = rd(g, 0x835);
+        g.call(t(g, 0x82f, 214), 0, &[a]);
+        let k = rd(g, 0x843).wrapping_add(1);
+        g.write::<u32>(w(0x843), k);
+    } else {
+        g.write::<u32>(w(0x86b), kind.wrapping_add(1));
+    }
+    Ret::eax(0)
+}
+
+/// [`draw_0183`] (2172 bytes, 1 overlay).
+pub const DRAW_0183: Sig = Sig {
+    len: 2172,
+    hash: 0x56d7_91fc_18e3_d3f6,
+    calls: &[
+        (0x1f3, Callee::Import("_libm_sse2_sqrt_precise")),
+        // __security_check_cookie
+        (0x858, Callee::Any),
+        (0x874, Callee::Any),
+    ],
+    imports: &[],
+};

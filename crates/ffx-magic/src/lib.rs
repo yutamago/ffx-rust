@@ -3318,6 +3318,7 @@ ports! {
     "r40 load step 0174" => r40::LOAD_0174, r40::load_0174;
     "r40 set-up 0183" => r40::SETUP_0183, r40::setup_0183;
     "r40 camera task 0183" => r40::CAMERA_TASK_0183, r40::camera_task_0183;
+    "r40 draw 0183" => r40::DRAW_0183, r40::draw_0183;
     // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
