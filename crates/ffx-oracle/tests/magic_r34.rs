@@ -1035,9 +1035,9 @@ fn walk_plans() {
             }
         }
         junk_ops(&mut t, f, &[at(0x913)]);
-        let rs: [f32; 6] = [0.01, 1.0e6, 3.0, 8.0, 20.0, 0.5];
+        let rs: [f32; 10] = [0.01, 1.0e6, 3.0, 8.0, 20.0, 0.5, 1.5, 2.5, 5.0, 12.0];
         // (aim index, i, n, bytes, enable, R index, flag, slot 324, V x)
-        let cases: [(u32, i32, i32, [u8; 3], u32, usize, u32, u32, f32); 16] = [
+        let mut cases: Vec<(u32, i32, i32, [u8; 3], u32, usize, u32, u32, f32)> = vec![
             (0, 0, 3, [1, 2, 3], 0, 0, 0, 0, 0.0),
             (u32::MAX, 0, 3, [1, 2, 3], 0, 0, 0, 0, 0.0),
             (u32::MAX, 1, 3, [1, 2, 3], 1, 0, 1, 0, 5.0),
@@ -1055,6 +1055,13 @@ fn walk_plans() {
             (u32::MAX, 0, 4, [2, 2, 2], 1, 3, 1, 2, 6.0),
             (u32::MAX, 0, 4, [7, 0, 1], 1, 2, 0, 3, 3.5),
         ];
+        // the reach's tests near their edges: more reaches and points
+        for r in 6..10usize {
+            for (j, vx) in [-4.0f32, -1.5, 0.75, 2.25, 6.5].into_iter().enumerate() {
+                let fl = u32::try_from(j % 2).unwrap_or(0);
+                cases.push((u32::MAX, 1, 4, [0, 2, 7], 1, r, fl, 0, vx));
+            }
+        }
         for (k, (aim, i, cnt, bytes, en, ri, fl, s324, vx)) in (0u32..).zip(cases) {
             junk(&mut t, s + 0x700, 0x260, k);
             t.set_u32(st(0x928), aim);
@@ -1078,6 +1085,7 @@ fn walk_plans() {
                 t.set_u32(SCRATCH + 0x50 + 4 * j as u32, v.to_bits());
             }
             t.stub(324, move |_, _| s324);
+            t.set_u32(ROT, (0.3 * k as f32 - 1.0).to_bits());
             let e = ownb::ENTRY_ESP;
             let e1 = ((e - 4) & !7) - 0xe8;
             let q_w = e - (e1 + 0x5c);
@@ -1256,6 +1264,209 @@ fn walk_turn_starts() {
                     })
                 });
             }
+        }
+    }
+}
+
+/// `magic_0391` 0x10003630 and `magic_0448` 0x100061b0
+/// (`r34::walk_reset_0391`, `walk_reset_0448`): the first step (the plan
+/// and the motion block, in a battle and not) and a later one; the
+/// distance giving a few steps, the 300 cap, NaN.
+#[test]
+fn walk_resets() {
+    for (n, plan_rva, rva) in [(391u16, 0x2050u32, 0x3630u32), (448, 0x5800, 0x61b0)] {
+        let Some(mut t) = twin(n) else { return };
+        aim_stubs(&mut t);
+        for (s, x) in [(251u32, 0.75f64), (19, 1.25)] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+            t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+        }
+        for s in [215u32, 413] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        let plan = t.at(plan_rva);
+        let f = t.at(rva);
+        let s = SCRATCH + 0x1_0000;
+        let (i_at, motion): (u32, &[u32]) = if n == 391 {
+            (0x910, &[0xa7, 0xac, 0xb8, 0xc2, 0xec, 0xf2, 0xfc, 0x106])
+        } else {
+            (0x90c, &[0xa4, 0xa9, 0xb5, 0xbf, 0xe9, 0xef, 0xf9, 0x103])
+        };
+        let battle: [u32; 2] = if n == 391 { [0xa1, 0xe1] } else { [0x9e, 0xde] };
+        // (first step, battle, the battle character's x and z)
+        let cases: [(bool, u32, f32, f32); 6] = [
+            (true, 0, 3.0, 4.0),
+            (true, 1, -20.0, 7.5),
+            (false, 0, 1.0e6, 0.0),
+            (false, 1, 0.25, -0.5),
+            (true, 0, f32::NAN, 1.0),
+            (false, 0, 60.0, 80.0),
+        ];
+        for (k, (first, war, x, z)) in (0u32..).zip(cases) {
+            plan_env(&mut t, n, plan, s, 1, k);
+            t.set_u32(s + i_at, u32::from(!first) * 2);
+            junk_ops(&mut t, f, motion);
+            for o in battle {
+                t.set_u32(t.img.word(f + o), war);
+            }
+            for (j, v) in [x, 0.75 + k as f32, z].into_iter().enumerate() {
+                t.set_u32(SCRATCH + 0x50 + 4 * j as u32, v.to_bits());
+            }
+            let e = ownb::ENTRY_ESP;
+            let frame = if n == 391 { 0x88 } else { 0x20 };
+            let pe = ((e - 4) & !7) - frame - 4;
+            let q_w = e - ((((pe - 4) & !7) - 0xe8) + 0x5c);
+            ownb::dirty_stack(&mut t, rva + k, &[q_w]);
+            ownb::reset_counters(&mut t);
+            t.check(f, Call::this(s), &[], Eax::Checked, move |g, img, fr| {
+                Ret::eax(if n == 391 {
+                    r34::walk_reset_0391(g, img, fr.at, fr.esp, fr.ecx)
+                } else {
+                    r34::walk_reset_0448(g, img, fr.at, fr.esp, fr.ecx)
+                })
+            });
+        }
+    }
+}
+
+/// `magic_0391` 0x10003990 and `magic_0448` 0x10007100
+/// (`r34::walk_task_0391`, `walk_task_0448`): every state (and one past
+/// the table), near and far, the curve done with steps left and not, the
+/// handle call at step 23; the turn's easing count above 0 and not.
+#[test]
+fn walk_tasks() {
+    use ffx_magic::sl_host;
+    for (n, rva) in [(391u16, 0x3990u32), (448, 0x7100)] {
+        let Some(mut t) = twin(n) else { return };
+        drop_stubs(&mut t);
+        for (s, x) in [(251u32, 0.75f64), (19, 1.25)] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+            t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+        }
+        rec(&mut t, 268, 3, |_, a| 0x0268_0000 ^ a[1]);
+        rec(&mut t, 306, 3, |_, a| 0x0306_0000 ^ a[2]);
+        rec(&mut t, 393, 3, |_, a| 0x0393_0000 ^ a[1] ^ a[2]);
+        rec(&mut t, 213, 2, |_, a| 0x0213_0000 ^ a[1]);
+        rec(&mut t, 34, 2, |_, a| 0x0034_0000 ^ a[1]);
+        for s in [215u32, 413] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        let f = t.at(rva);
+        let s = SCRATCH + 0x1_0000;
+        // `*G_S` is the steps' and curves' `W` too: `S = W + 0x280`
+        let ws = s - 0x280;
+        t.set_u32(t.img.word(f + 0x1f), ws);
+        let (plan_rva, step_rva, curve_rva, drop_rva, spark_rva) = if n == 391 {
+            (0x2050u32, 0x2ab0u32, 0x2de0u32, 0x2bf0u32, 0x31d0u32)
+        } else {
+            (0x5800, 0x64d0, 0x68d0, 0x6700, 0x6c80)
+        };
+        let plan = t.at(plan_rva);
+        let (step, curve, drop, spark) = (
+            t.at(step_rva),
+            t.at(curve_rva),
+            t.at(drop_rva),
+            t.at(spark_rva),
+        );
+        // the walk state block `W` of the steps and curves
+        let (w_step, w_curve) = if n == 391 {
+            (0x72u32, 0x1c5u32)
+        } else {
+            (0x19d, 0x1c4)
+        };
+        t.set_u32(t.img.word(step + w_step), ws);
+        t.set_u32(t.img.word(curve + w_curve), ws);
+        if n == 448 {
+            t.set_u32(t.img.word(drop + 0x11), SCRATCH + 0x9000);
+        }
+        let take = t
+            .img
+            .rel32_target(drop + if n == 391 { 0x79 } else { 0x49 });
+        // the hosted object (as `walk_turn_starts`)
+        let ho = t.img.rel32_target(spark + 0x15a);
+        let l = if n == 391 {
+            &sl_host::L0391
+        } else {
+            &sl_host::L0448
+        };
+        let hw = |t: &Twin, o: u32| t.img.word(ho + o);
+        let sp = t.img.rel32_target(ho + l.calls.0);
+        t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(sp + 0x29), SCRATCH + 0x200);
+        rec(&mut t, 714, 5, |_, a| a[2] ^ 0x714);
+        rec(&mut t, 941, 1, move |_, _| SCRATCH + 0x400);
+        t.set_u32(hw(&t, l.host.0), SCRATCH + 0x300);
+        t.set_u32(hw(&t, l.host.1), SCRATCH + 0x340);
+        let pa = t.img.rel32_target(ho + l.calls.2);
+        let nodes = t.img.word(pa + 0x27) - 8;
+        let st = |o: u32| s + if n == 448 { o - 4 } else { o };
+        let node = SCRATCH + 0x5800;
+        // (state, i, count, curve steps left, easing count, caster x)
+        let cases: [(u32, i32, i32, i32, i32, f32); 14] = [
+            (0, 0, 3, 5, 0, 0.0),
+            (0, 1, 3, 5, 4, 0.0),
+            (1, 1, 3, 5, 0, 0.0),
+            (1, 1, 3, 0, 2, 900.0),
+            (1, 1, 3, 5, 0, 900.0),
+            (2, 1, 3, 1, 0, 0.0),
+            (2, 3, 3, 1, 3, 0.0),
+            (2, 1, 3, 0x18, 0, 0.0),
+            (2, 1, 3, 30, 1, 0.0),
+            (3, 0, 3, 5, 0, 0.0),
+            (4, 1, 3, 5, 6, 0.0),
+            (4, 1, 3, 0, 0, 900.0),
+            (4, 1, 3, 5, 0, 900.0),
+            (7, 1, 3, 5, 5, 0.0),
+        ];
+        for (k, (state, i, cnt, left, ease, cx)) in (0u32..).zip(cases) {
+            // 0448: after a step the plan's never-written `Q.w` holds the
+            // step's own frame word (the original reads it, the port 0:
+            // brief 2026-10-24), so no start right after a step here (the
+            // starts are tested on their own in `walk_turn_starts`)
+            let (left, cx) = if n == 448 && (state == 1 || state == 4) {
+                (left.max(5), 900.0)
+            } else {
+                (left, cx)
+            };
+            plan_env(&mut t, n, plan, s, i, k);
+            t.set_u32(st(0x910), i as u32);
+            t.set_u32(st(0x914), cnt as u32);
+            t.set_u32(st(0x924), state);
+            t.set_u32(st(0x920), ease as u32);
+            // the step and curve counts (`S + 0x918`/`+0x91c` in 0391)
+            let (c_at, tot_at) = if n == 391 {
+                (0x918, 0x91c)
+            } else {
+                (0x914, 0x918)
+            };
+            t.set_u32(s + c_at, left as u32);
+            t.set_u32(s + tot_at, 40);
+            for (j, v) in [cx, 0.75, -1.0 + 0.5 * k as f32].into_iter().enumerate() {
+                t.set_u32(SCRATCH + 0x50 + 4 * j as u32, v.to_bits());
+            }
+            pool_74(&mut t, take, SCRATCH + 0x8000, 3, &[], 0, k);
+            for j in 0..8 {
+                t.set_u32(nodes + 12 * j, 0x0dd0_0000 + j);
+                t.set_u32(nodes + 12 * j + 4, 0x0ee0_0000 + j);
+                t.set_u32(nodes + 12 * j + 8, 0);
+            }
+            t.set_u16(t.img.word(pa + 0x04), 3);
+            t.set_u32(hw(&t, l.list.0), 0);
+            t.set_u32(hw(&t, l.list.1), 0);
+            t.write(node, &[0x3c; 0x60]);
+            let e = ownb::ENTRY_ESP;
+            // the plan's Q.w under each caller (the task's internal callees
+            // run at E1 - 4)
+            let e1 = ((e - 4) & !7) - 0x30;
+            let ce = e1 - 4;
+            let reset_frame = if n == 391 { 0x88 } else { 0x20 };
+            let zero: Vec<u32> = [ce - 0x18, ce - 0xc, ((ce - 4) & !7) - reset_frame - 4]
+                .into_iter()
+                .map(|pe| e - ((((pe - 4) & !7) - 0xe8) + 0x5c))
+                .collect();
+            ownb::dirty_stack(&mut t, rva + k, &zero);
+            ownb::reset_counters(&mut t);
+            t.check_entry(f, Call::default(), &[node], Eax::Checked);
         }
     }
 }

@@ -2193,3 +2193,475 @@ pub const SPARK_START_0448: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The motion block of the walk resets (as in [`turn_block`], the motion
+/// table `anim` given): operands `[G_BATTLE, G_ME, its copy, G_ANIM,
+/// -1 word, slot table, G_BATTLE again, the answer, -1, 0, 1, u16 for 0,
+/// u16 for 1]`.
+fn motion_block<G: Game>(g: &mut G, img: &Image, f: u32, anim: u32, ops: &[u32; 13]) {
+    let w = |o: u32| img.word(f + o);
+    let me = g.read::<u32>(w(ops[1]));
+    g.write::<u32>(w(ops[2]), me);
+    g.write::<u32>(w(ops[3]), anim);
+    g.write::<u32>(w(ops[4]), u32::MAX);
+    let slot = if g.read::<u32>(w(ops[0])) == 0 {
+        215
+    } else {
+        413
+    };
+    let r = g
+        .call(crate::runtime::slot_target(g, w(ops[5]), slot), 0, &[me])
+        .eax;
+    g.write::<u32>(w(ops[7]), r);
+    g.write::<u32>(w(ops[8]), u32::MAX);
+    g.write::<u32>(w(ops[9]), 0);
+    g.write::<u32>(w(ops[10]), 1);
+    if g.read::<u32>(w(ops[6])) == 0 {
+        g.write::<u16>(w(ops[11]), 0);
+    } else {
+        g.write::<u16>(w(ops[12]), 1);
+    }
+}
+
+/// The walk's first-step set-up shared by the resets (`i = S + i_at` 0):
+/// the walker at the caster (slot 262 into `S + 0x7a0`, `w` 1.0), the walk
+/// plan, `S + 0x740` = `S + 0x730`, `S + count_at` = 6, `S + on_at` = 1,
+/// the motion block with the table the immediate `+anim_imm`.
+#[allow(clippy::too_many_arguments)]
+fn reset_head<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    s: u32,
+    plan: (u32, u32),
+    [s262, caster, anim_imm]: [u32; 3],
+    [count_at, on_at]: [u32; 2],
+    ops: &[u32; 13],
+    walk: fn(&mut G, &Image, u32, u32, u32) -> u32,
+) {
+    let w = |o: u32| img.word(f + o);
+    let p = s + 0x7a0;
+    let chr = g.read::<u32>(w(caster));
+    g.call(
+        crate::runtime::slot_target(g, w(s262), 262),
+        0,
+        &[chr, p, p + 4, p + 8],
+    );
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    walk(g, img, img.rel32_target(f + plan.0), plan.1, s);
+    for k4 in 0..4 {
+        let x = g.read::<u32>(s + 0x730 + 4 * k4);
+        g.write::<u32>(s + 0x740 + 4 * k4, x);
+    }
+    g.write::<u32>(s + count_at, 6);
+    g.write::<u32>(s + on_at, 1);
+    motion_block(g, img, f, img.word(f + anim_imm), ops);
+}
+
+/// The battle character's place `D` (slot 262 `(*G_A, ..)` at `d`, `w`
+/// 1.0) and the step count from the flat (`dy` too when `full`) distance
+/// to `S + 0x750`: `trunc(dist / K)` at most 300, plus 1, into `S +
+/// steps` and `S + steps - 4`; then `S + 0x770` = `S + 0x760`, `S + 0x7b0`
+/// = `(D, 1)`, `S + 0x7c0` = `S + 0x770`, `S + 0x7a0` = `S + 0x750`.
+/// Returns `S + 0x75c` (the last word moved).
+#[allow(clippy::too_many_arguments)]
+fn reset_tail<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    s: u32,
+    d: u32,
+    [s262, caster, k]: [u32; 3],
+    steps: u32,
+    full: bool,
+) -> u32 {
+    use crate::sb_sse::{add, div, mul, sub};
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let chr = g.read::<u32>(w(caster));
+    g.call(
+        crate::runtime::slot_target(g, w(s262), 262),
+        0,
+        &[chr, d, d + 4, d + 8],
+    );
+    let dx = sub(rf(g, d), rf(g, s + 0x750));
+    let dz = sub(rf(g, d + 8), rf(g, s + 0x758));
+    let sq = if full {
+        let dy = sub(rf(g, d + 4), rf(g, s + 0x754));
+        add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz))
+    } else {
+        g.write::<u32>(d + 0xc, 0x3f80_0000);
+        add(mul(dz, dz), mul(dx, dx))
+    };
+    let dist = f64::from(sq).sqrt() as f32;
+    // `cvttss2si` (the integer indefinite 0x80000000 for NaN or out of range)
+    let q = div(dist, rf(g, w(k)));
+    let n = if q.is_nan() || q >= 2_147_483_648.0 || q < -2_147_483_648.0 {
+        i32::MIN
+    } else {
+        q as i32
+    };
+    let n = n.min(300) + 1;
+    g.write::<i32>(s + steps, n);
+    g.write::<i32>(s + steps - 4, n);
+    for k4 in 0..4 {
+        let x = g.read::<u32>(s + 0x760 + 4 * k4);
+        g.write::<u32>(s + 0x770 + 4 * k4, x);
+    }
+    for k4 in 0..3 {
+        let x = g.read::<u32>(d + 4 * k4);
+        g.write::<u32>(s + 0x7b0 + 4 * k4, x);
+    }
+    g.write::<u32>(s + 0x7bc, 0x3f80_0000);
+    for k4 in 0..4 {
+        let x = g.read::<u32>(s + 0x770 + 4 * k4);
+        g.write::<u32>(s + 0x7c0 + 4 * k4, x);
+    }
+    let mut last = 0;
+    for k4 in 0..4 {
+        last = g.read::<u32>(s + 0x750 + 4 * k4);
+        g.write::<u32>(s + 0x7a0 + 4 * k4, last);
+    }
+    last
+}
+
+/// `magic_0391`'s walk reset (0x10003630, 864 bytes; internal, `ecx` = the
+/// walk state `S`; an 8-aligned /GS frame, `E1` the aligned `esp` after
+/// `sub esp, 0x80` and two pushes). At the first step (`S + 0x910` 0): the
+/// walker at the caster, the plan ([`walk_plan_0391`]), `S + 0x740` = `S +
+/// 0x730`, `S + 0x920` = 6, `S + 0x934` = 1, the motion block. Always: the
+/// caster's place `D` (`E1 + 0x10`) and the step count from its flat
+/// distance to `S + 0x750` (into `S + 0x91c`, `+0x918`), the points moved
+/// on ([`reset_tail`]); `S + 0x780` = `(0, 0, 0)` plus the point `(0, 0,
+/// -3.5)` turned by Y `S + 0x734` (slots 235, 328, 329 into `E1 + 0x40`,
+/// 229 into `E1 + 0x30`, 248), `w` 1.0. Returns slot 248's `eax`.
+pub fn walk_reset_0391<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let e1 = (esp.wrapping_sub(4) & !7).wrapping_sub(0x80 + 8);
+    if g.read::<u32>(s + 0x910) == 0 {
+        reset_head(
+            g,
+            img,
+            f,
+            s,
+            (0x57, e1.wrapping_sub(4)),
+            [0x37, 0x3e, 0xbc],
+            [0x920, 0x934],
+            &[
+                0xa1, 0xa7, 0xac, 0xb8, 0xc2, 0xb2, 0xe1, 0xec, 0xf2, 0xfc, 0x106, 0x110, 0x119,
+            ],
+            walk_plan_0391,
+        );
+    }
+    let d = e1 + 0x10;
+    reset_tail(g, img, f, s, d, [0x12d, 0x133, 0x184], 0x91c, false);
+    let yaw = g.read::<u32>(s + 0x734);
+    g.write::<u32>(e1 + 0xc, yaw);
+    let o = s + 0x780;
+    let (m, u, wv) = (e1 + 0x40, e1 + 0x20, e1 + 0x30);
+    for k4 in 0..4 {
+        g.write::<u32>(o + 4 * k4, 0);
+    }
+    for (k4, x) in (0u32..).zip([0, 0, 0xc060_0000, 0x3f80_0000]) {
+        g.write::<u32>(u + 4 * k4, x);
+    }
+    // call width: 5 (slot 262's words stay under it)
+    g.call(
+        t(g, 0x276, 235),
+        0,
+        &[m, g.read::<u32>(w(0x133)), d, d + 4, d + 8],
+    );
+    g.call(t(g, 0x2dd, 328), 0, &[m, m, 0]);
+    g.call(t(g, 0x2fe, 329), 0, &[m, m, yaw]);
+    g.call(t(g, 0x31a, 229), 0, &[wv, m, u]);
+    let eax = g.call(t(g, 0x334, 248), 0, &[o, o, wv]).eax;
+    g.write::<u32>(o + 0xc, 0x3f80_0000);
+    eax
+}
+
+/// [`walk_reset_0391`] (864 bytes, 1 overlay).
+pub const WALK_RESET_0391: Sig = Sig {
+    len: 864,
+    hash: 0x687d_8c1a_401a_408e,
+    calls: &[
+        (0x57, Callee::Sig(&WALK_PLAN_0391)),
+        (0x173, Callee::Import("_libm_sse2_sqrt_precise")),
+        // __security_check_cookie
+        (0x358, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0448`'s walk reset (0x100061b0, 641 bytes; internal, `ecx` = the
+/// walk state `S`; an 8-aligned /GS frame, `E1` the aligned `esp` after
+/// `sub esp, 0x18` and two pushes): [`walk_reset_0391`]'s first-step
+/// set-up on 0448's words (`S + 0x90c` 0; [`walk_plan_0448`]; `S + 0x91c`
+/// = 6, `S + 0x930` = 1), the step count from the full distance (`y`
+/// too; into `S + 0x918`, `+0x914`) and the points moved on, no turned
+/// point. Returns `S + 0x75c`.
+pub fn walk_reset_0448<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, s: u32) -> u32 {
+    let e1 = (esp.wrapping_sub(4) & !7).wrapping_sub(0x18 + 8);
+    if g.read::<u32>(s + 0x90c) == 0 {
+        reset_head(
+            g,
+            img,
+            f,
+            s,
+            (0x54, e1.wrapping_sub(4)),
+            [0x34, 0x3b, 0xb9],
+            [0x91c, 0x930],
+            &[
+                0x9e, 0xa4, 0xa9, 0xb5, 0xbf, 0xaf, 0xde, 0xe9, 0xef, 0xf9, 0x103, 0x10d, 0x116,
+            ],
+            walk_plan_0448,
+        );
+    }
+    reset_tail(g, img, f, s, e1 + 0xc, [0x12a, 0x130, 0x192], 0x918, true)
+}
+
+/// [`walk_reset_0448`] (641 bytes, 1 overlay).
+pub const WALK_RESET_0448: Sig = Sig {
+    len: 641,
+    hash: 0x10f3_c99b_e3c0_4c91,
+    calls: &[
+        (0x54, Callee::Sig(&WALK_PLAN_0448)),
+        (0x181, Callee::Import("_libm_sse2_sqrt_precise")),
+        // __security_check_cookie
+        (0x279, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0448` 0x10007100's operands against `magic_0391` 0x10003990's.
+const TASK_0448: Shift = Shift {
+    runs: &[(0x91, 0x16), (0x163, 0x19), (0x1ff, 0x2f)],
+    moved: &[],
+};
+
+/// `magic_0391`'s walk task (0x10003990, 892 bytes; cdecl `(node)`, a task
+/// callback; an 8-aligned /GS frame, `E1` the aligned `esp` after `sub
+/// esp, 0x28` and two pushes). The walk state `S = *G_S + 0x280` runs the
+/// state `S + 0x924` (a jump table; above 4 none):
+/// - 0: the walk reset ([`walk_reset_0391`]), the step up, state 1;
+/// - 1: a walk step ([`walk_step_0391`]); when the caster (slot 262) is
+///   within `K` of `S + 0x770` (flat) or the step says done, the spark
+///   start ([`spark_start_0391`]) and state 2;
+/// - 2: a curve step ([`curve_step_0391`]): done, the next state 0 while
+///   steps are left, else slot 213 when idle
+///   ([`call_213_idle`](crate::s4_small::call_213_idle), `edx` 0) and the
+///   node's byte `+0x56` = 1; not done, at the step count 23 the handle
+///   call ([`handle_393`](crate::s4_small::handle_393), `edx` 0, the
+///   caster's place, 0x100), `S + 0x740` = `S + 0x730`, `S + 0x920` = 10;
+/// - 3: the walk reset, state 4;
+/// - 4: a walk step; near `S + 0x750` or done, the turn start
+///   ([`turn_start_0391`]) and state 2.
+///
+/// Then while the count `S + 0x920` is above 0 it steps down and the
+/// caster turns (slot 34 `(*G_A, K - v)`, wrapped) by `v = (1 - t) c + t
+/// a` (`t = count / K2`, `a` the facing `S + 0x724`, `c` = `S + 0x744`
+/// unwrapped towards it; wrapped). Returns slot 34's `eax`, or the count.
+pub fn walk_task_0391<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    walk_task(g, img, fr, false)
+}
+
+/// [`walk_task_0391`] in `magic_0448` (0x10007100, 936 bytes): the state
+/// words 4 bytes lower, the distances in all three axes, `edx` 2 for the
+/// handle call, the 0448 callees; the operands at [`TASK_0448`]'s places.
+pub fn walk_task_0448<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    walk_task(g, img, fr, true)
+}
+
+#[allow(clippy::too_many_lines)] // the five states, in order
+fn walk_task<G: Game>(g: &mut G, img: &Image, fr: &Frame, copy: bool) -> Ret {
+    use crate::ob_model::wrap_once;
+    use crate::sb_sse::{add, div, mul, sub};
+    let f = fr.at;
+    let at = |o: u32| if copy { TASK_0448.at(o) } else { o };
+    let w = |o: u32| img.word(f + at(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| crate::runtime::slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + at(o));
+    let s = g.read::<u32>(w(0x1f)).wrapping_add(0x280);
+    let st = |o: u32| s + if copy { o - 4 } else { o };
+    let e1 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x28 + 8);
+    // the internal callees' return address, under nothing pushed
+    let esp = e1.wrapping_sub(4);
+    let node = fr.arg(g, 0);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    // the caster's distance to `S + to` (`full`: in all three axes)
+    let near = |g: &mut G, [s262, caster]: [u32; 2], to: u32, k_op: u32| {
+        let p = e1 + 0xc;
+        let chr = g.read::<u32>(w(caster));
+        g.call(t(g, s262, 262), 0, &[chr, p, p + 4, p + 8]);
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+        let dz = sub(rf(g, p + 8), rf(g, s + to + 8));
+        let dx = sub(rf(g, p), rf(g, s + to));
+        let sq = if copy {
+            let dy = sub(rf(g, p + 4), rf(g, s + to + 4));
+            add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz))
+        } else {
+            add(mul(dz, dz), mul(dx, dx))
+        };
+        let d = f64::from(sq).sqrt() as f32;
+        k(g, k_op) > d
+    };
+    let walk_step = if copy { walk_step_0448 } else { walk_step_0391 };
+    let walk_reset = if copy {
+        walk_reset_0448
+    } else {
+        walk_reset_0391
+    };
+    let mut eased = false;
+    match g.read::<u32>(st(0x924)) {
+        0 => {
+            walk_reset(g, img, call(0x46), esp, s);
+            let i = g.read::<u32>(st(0x910));
+            g.write::<u32>(st(0x910), i.wrapping_add(1));
+            g.write::<u32>(st(0x924), 1);
+            eased = true;
+        }
+        1 => {
+            let done = walk_step(g, img, call(0x62), esp, s);
+            if near(g, [0x68, 0x7f], 0x770, 0xd1) || done == 1 {
+                let spark = if copy {
+                    spark_start_0448
+                } else {
+                    spark_start_0391
+                };
+                spark(g, img, call(0xe6), esp, s);
+                g.write::<u32>(st(0x924), 2);
+            }
+            eased = true;
+        }
+        2 => {
+            let curve = if copy {
+                curve_step_0448
+            } else {
+                curve_step_0391
+            };
+            if curve(g, img, call(0xf2), esp, s) == 1 {
+                if g.read::<i32>(st(0x910)) < g.read::<i32>(st(0x914)) {
+                    g.write::<u32>(st(0x924), 0);
+                } else {
+                    let idle = Frame {
+                        at: call(0x11b),
+                        esp,
+                        eax: 1,
+                        edx: 0,
+                        ..Frame::default()
+                    };
+                    crate::s4_small::call_213_idle(g, img, &idle);
+                    g.write::<u8>(node + 0x56, 1);
+                }
+            } else if g.read::<u32>(st(0x918)) == 0x17 {
+                let v = e1 + 0x1c;
+                let chr = g.read::<u32>(w(0x14b));
+                g.call(t(g, 0x145, 262), 0, &[chr, v, v + 4, v + 8]);
+                g.write::<u32>(v + 0xc, 0x3f80_0000);
+                // push V, 0x100 over slot 262's words: the return address at E1 - 0x1c
+                let hs = e1.wrapping_sub(0x1c);
+                for (i, x) in (1u32..).zip([v, 0x100, chr, v, v + 4, v + 8]) {
+                    g.write::<u32>(hs + 4 * i, x);
+                }
+                let h = Frame {
+                    at: call(0x171),
+                    esp: hs,
+                    ecx: w(0x164),
+                    edx: if copy { 2 } else { 0 },
+                    ..Frame::default()
+                };
+                crate::s4_small::handle_393(g, img, &h);
+                for k4 in 0..4 {
+                    let x = g.read::<u32>(s + 0x730 + 4 * k4);
+                    g.write::<u32>(s + 0x740 + 4 * k4, x);
+                }
+                g.write::<u32>(st(0x920), 10);
+            }
+            eased = true;
+        }
+        3 => {
+            walk_reset(g, img, call(0x1ba), esp, s);
+            g.write::<u32>(st(0x924), 4);
+            eased = true;
+        }
+        4 => {
+            let done = walk_step(g, img, call(0x1d0), esp, s);
+            if near(g, [0x1d6, 0x1ed], 0x750, 0x23f) || done == 1 {
+                let turn = if copy {
+                    turn_start_0448
+                } else {
+                    turn_start_0391
+                };
+                turn(g, img, call(0x250), esp, s);
+                g.write::<u32>(st(0x924), 2);
+            }
+            eased = true;
+        }
+        _ => {}
+    }
+    // the easing's `1` (the prologue's operand, or the one reloaded after
+    // a state)
+    let one = k(g, if eased { 0x262 } else { 0x18 });
+    let n = g.read::<i32>(st(0x920));
+    if n <= 0 {
+        return Ret::eax(n.cast_unsigned());
+    }
+    let n = n - 1;
+    g.write::<i32>(st(0x920), n);
+    let a = rf(g, s + 0x724);
+    let (hi, lo) = (k(g, 0x280), k(g, 0x278));
+    let c = unwrap_to(a, rf(g, s + 0x744), hi, lo);
+    #[allow(clippy::cast_precision_loss)] // `cvtdq2ps`
+    let tt = div(n as f32, k(g, 0x2e8));
+    let v = add(mul(sub(one, tt), c), mul(tt, a));
+    let v = wrap_once(g, img, f, v, [0x280, 0x2fc, 0x278, 0x2fc].map(at));
+    let x = sub(k(g, 0x31c), v);
+    let x = wrap_once(g, img, f, x, [0x280, 0x2fc, 0x278, 0x2fc].map(at));
+    let caster = g.read::<u32>(w(0x34b));
+    Ret::eax(g.call(t(g, 0x339, 34), 0, &[caster, x.to_bits()]).eax)
+}
+
+/// [`walk_task_0391`] (892 bytes, 1 overlay).
+pub const WALK_TASK_0391: Sig = Sig {
+    len: 892,
+    hash: 0x37ca_e72a_3b41_41c6,
+    calls: &[
+        (0x46, Callee::Sig(&WALK_RESET_0391)),
+        (0x62, Callee::Sig(&WALK_STEP_0391)),
+        (0xc2, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xe6, Callee::Sig(&SPARK_START_0391)),
+        (0xf2, Callee::Sig(&CURVE_STEP_0391)),
+        (0x11b, Callee::Sig(&crate::s4_small::CALL_213_IDLE)),
+        (0x171, Callee::Sig(&crate::s4_small::HANDLE_393)),
+        (0x1ba, Callee::Sig(&WALK_RESET_0391)),
+        (0x1d0, Callee::Sig(&WALK_STEP_0391)),
+        (0x230, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x250, Callee::Sig(&TURN_START_0391)),
+        // __security_check_cookie
+        (0x35d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`walk_task_0448`] (936 bytes, 1 overlay).
+pub const WALK_TASK_0448: Sig = Sig {
+    len: 936,
+    hash: 0xa2fa_0949_88cd_3be9,
+    calls: &[
+        (0x46, Callee::Sig(&WALK_RESET_0448)),
+        (0x62, Callee::Sig(&WALK_STEP_0448)),
+        (0xd8, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xfc, Callee::Sig(&SPARK_START_0448)),
+        (0x108, Callee::Sig(&CURVE_STEP_0448)),
+        (0x131, Callee::Sig(&crate::s4_small::CALL_213_IDLE)),
+        (0x18a, Callee::Sig(&crate::s4_small::HANDLE_393)),
+        (0x1d3, Callee::Sig(&WALK_RESET_0448)),
+        (0x1e9, Callee::Sig(&WALK_STEP_0448)),
+        (0x25f, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x27f, Callee::Sig(&TURN_START_0448)),
+        // __security_check_cookie
+        (0x38c, Callee::Any),
+    ],
+    imports: &[],
+};
