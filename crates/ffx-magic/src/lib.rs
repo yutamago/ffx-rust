@@ -3315,6 +3315,13 @@ ports! {
     "r38 load step 0380" => r38::LOAD_0380, r38::load_0380;
     "r38 actor step 0298" => r38::ACTOR_STEP_0298, r38::actor_step_0298;
     "r38 load step 0298" => r38::LOAD_0298, r38::load_0298;
+    "r38 task 0430" => r38::TASK_0430, r38::task_0430;
+    "r38 spark 0430" => r38::SPARK_0430, r38::spark_0430;
+    "r38 ring object 0430" => r38::RING_OBJECT_0430, r38::ring_object_0430;
+    "r38 part matrix 0430" => r38::PART_MATRIX_0430, r38::part_matrix_0430;
+    "r38 objects 0430" => r38::OBJECTS_0430, r38::objects_0430;
+    "r38 summon matrix 0430" => r38::SUMMON_MATRIX_0430, r38::summon_matrix_0430;
+    "r38 glow draw 0430" => r38::GLOW_DRAW_0430, r38::glow_draw_0430;
     // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5168,6 +5175,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r38 start-up 0380", &r38::START_UP_0380),
     ("r38 pose 0298", &r38::POSE_0298),
     ("r38 start-up 0298", &r38::START_UP_0298),
+    ("r38 effect end 0430", &r38::EFFECT_END_0430),
     // round 38 (magic-r38): end of INTERNAL
 ];
 
