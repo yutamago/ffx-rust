@@ -1714,3 +1714,73 @@ fn objects_start_0434() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0434` 0x10007580 (`r45::turn_start_0434`) and 0x10007770
+/// (`r45::turn_end_0434`): the task list empty and not; the end with and
+/// without its node (given back, the lock as the game left it). Slots
+/// 277, 15, 16, 17 answer floats in ST0; the turns write what they read.
+#[test]
+fn turns_0434() {
+    let Some(mut t) = sa::twin(434) else { return };
+    let img = t.img.clone();
+    all_stubs(&mut t);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    rec(&mut t, 829, 5, |_, a| 0x0829_0000 ^ a[0]);
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[3, 1, 4, 1]);
+    let s = SCRATCH + 0x1_0000;
+    let start = t.at(0x7580);
+    let end = t.at(0x7770);
+    let ws = |o: u32| img.word(start + o);
+    let we = |o: u32| img.word(end + o);
+    t.set_u32(ws(0x7), s);
+    t.set_u32(ws(0x9a), sel);
+    for i in 0..0x14 {
+        t.set_u32(ws(0xa4) + 4 * i, 0x0c00 + 3 * i);
+    }
+    summon_stubs::prime(&mut t, start, SCRATCH + 0x4_0000);
+    for k in 0..3u32 {
+        junk(&mut t, s, 0x1b00, k);
+        floats(&mut t, s + 0xc60, 0x10, k);
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(ws(0x1a3), if k == 1 { 0 } else { tail });
+        t.set_u32(ws(0x1bc), tail);
+        magic_r11::pools(&mut t, start, 488);
+        ownb::dirty_stack(&mut t, 0x7580 + k, &[]);
+        t.check_entry(start, Call::default(), &[], Eax::Checked);
+    }
+    let give = t.img.rel32_target(end + 0x18a);
+    let lock = SCRATCH + 0x5e0;
+    t.set_u32(we(0x18f), lock);
+    t.set_u32(we(0x1a8), SCRATCH + 0x6000);
+    for (k, has) in (0u32..).zip([true, false, true]) {
+        junk(&mut t, s, 0x1b00, k);
+        floats(&mut t, s + 0xc60, 0x10, k + 1);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        t.set_u32(s + 0x1a60, if has { node } else { 0 });
+        t.set_u32(lock, 0x77 + k);
+        ownb::dirty_stack(&mut t, 0x7770 + k, &[]);
+        t.check_entry(end, Call::default(), &[], Eax::Checked);
+    }
+}

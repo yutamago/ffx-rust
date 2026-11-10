@@ -2483,3 +2483,179 @@ pub const OBJECTS_START_0434: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Operand offsets of [`scaled_turn_0434`]: slot 235's table, the
+/// selection and character table (twice), slot 277's table and `K`, slots
+/// 15, 16, 17, 330, 328, 329's tables; and whether slot 16's product has
+/// its operands swapped (`v * M[5]`).
+struct TurnOps0434 {
+    s235: u32,
+    chr: [(u32, u32); 2],
+    s277: u32,
+    k: u32,
+    scales: [u32; 3],
+    turns: [u32; 3],
+    swapped: bool,
+}
+
+/// `magic_0434`'s scaled turn of the matrix `M = S + 0xc20`: slot 235
+/// `(M)`; the selected character's slot 277 scale times `K` on `M`'s
+/// diagonal, each then times slots 15, 16, 17 of the character; turned by
+/// slots 330, 328, 329 with `S + 0xc88`, `S + 0xc80`, `S + 0xc84`. Each
+/// call passes the words the original leaves on the stack. Returns slot
+/// 329's `eax`.
+fn scaled_turn_0434<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, o: &TurnOps0434) -> u32 {
+    let w = |x: u32| img.word(f + x);
+    let t = |g: &G, x: u32, n: u32| slot_target(g, w(x), n);
+    let chr = |g: &G, (sel, table): (u32, u32)| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    };
+    let m = s + 0xc20;
+    let mut st = Pushes::default();
+    st.push(m);
+    st.call(g, t(g, o.s235, 235), 0);
+    st.push(chr(g, o.chr[0]));
+    let v = st0_f32(st.call(g, t(g, o.s277, 277), 0).st0);
+    let v = mul(v, g.read::<f32>(w(o.k)));
+    for d in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + d, v);
+    }
+    let c = chr(g, o.chr[1]);
+    for (i, (op, d)) in o.scales.iter().zip([0u32, 0x14, 0x28]).enumerate() {
+        st.push(c);
+        let x = st0_f32(st.call(g, t(g, *op, 15 + i as u32), 0).st0);
+        let y = if i == 1 && o.swapped {
+            mul(x, g.read::<f32>(m + d))
+        } else {
+            mul(g.read::<f32>(m + d), x)
+        };
+        g.write::<f32>(m + d, y);
+    }
+    st.pop(4);
+    let mut eax = 0;
+    for (op, slot, d) in [
+        (o.turns[0], 330, 0xc88u32),
+        (o.turns[1], 328, 0xc80),
+        (o.turns[2], 329, 0xc84),
+    ] {
+        st.set_top(g.read::<u32>(s + d));
+        st.push_all(&[m, m]);
+        eax = st.call(g, t(g, op, slot), 0).eax;
+        st.pop(2);
+    }
+    eax
+}
+
+/// `magic_0434`'s scaled turn start (0x10007580, 488 bytes; a table entry,
+/// no arguments): with `S = *G_S`, the spin `S + 0x1a74` 0.157, `+0x1a78`
+/// 15, `+0x1a7c` 48, `+0x1a6c`, `+0x1a70` 0; the angles `S + 0xc80`,
+/// `+0xc84`, `+0xc8c` from `S + 0xc60`, `+0xc64`, `+0xc6c` and `+0xc88`
+/// `-pi/2`; `S + 0xc94` less `K`; the matrix turned
+/// ([`scaled_turn_0434`]); a task node (no record) into `S + 0x1a60`
+/// appended to the list. Returns the node.
+pub fn turn_start_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x7));
+    for (d, v) in [
+        (0x1a74u32, 0x3e20_d97cu32),
+        (0x1a78, 0xf),
+        (0x1a7c, 0x30),
+        (0x1a6c, 0),
+        (0x1a70, 0),
+    ] {
+        g.write::<u32>(s + d, v);
+    }
+    for (dst, src) in [(0xc80u32, 0xc60u32), (0xc84, 0xc64), (0xc8c, 0xc6c)] {
+        let x = g.read::<u32>(s + src);
+        g.write::<u32>(s + dst, x);
+    }
+    g.write::<u32>(s + 0xc88, 0xbfc9_0fdb);
+    let y = sub(g.read::<f32>(s + 0xc94), g.read::<f32>(w(0x7d)));
+    g.write::<f32>(s + 0xc94, y);
+    let ops = TurnOps0434 {
+        s235: 0x63,
+        chr: [(0x9a, 0xa4), (0xd4, 0xde)],
+        s277: 0xa9,
+        k: 0xc1,
+        scales: [0xe3, 0xfa, 0x116],
+        turns: [0x133, 0x15f, 0x181],
+        swapped: false,
+    };
+    scaled_turn_0434(g, img, f, s, &ops);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x19d), w(0x198));
+    let listed = g.read::<u32>(w(0x1a3)) != 0;
+    g.write::<u32>(s + 0x1a60, node);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(0x1bc));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(w(0x1c6), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x1d8), node);
+        g.write::<u32>(w(0x1dd), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`turn_start_0434`] (the `rel32`: the pool take).
+pub const TURN_START_0434: Sig = Sig {
+    len: 488,
+    hash: 0x327e_4abe_3707_321b,
+    calls: &[(0x19d, Callee::Sig(&crate::sa_pool::TAKE))],
+    imports: &[],
+};
+
+/// `magic_0434`'s scaled turn end (0x10007770, 468 bytes; a table entry,
+/// no arguments): with `S = *G_S`, the angles `S + 0xc80..+0xc9c` from
+/// `S + 0xc60..`; the matrix turned ([`scaled_turn_0434`], slot 16's
+/// product swapped); when `S + 0x1a60` holds a node, it goes back to its
+/// pool ([`give_back`](crate::sa_pool::give_back)), `S + 0x1a60` 0, and
+/// slot 829 `((*G_M) + 0x30, 0, 0, 0, 0)` runs with the lock `**G_L` 1.
+/// Returns the lock pointer, or slot 329's `eax` without a node.
+pub fn turn_end_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x7));
+    for i in 0..8u32 {
+        let x = g.read::<u32>(s + 0xc60 + 4 * i);
+        g.write::<u32>(s + 0xc80 + 4 * i, x);
+    }
+    let ops = TurnOps0434 {
+        s235: 0x6d,
+        chr: [(0x82, 0x8c), (0xbc, 0xc6)],
+        s277: 0x91,
+        k: 0xa9,
+        scales: [0xcb, 0xe2, 0xf1],
+        turns: [0x11b, 0x147, 0x169],
+        swapped: true,
+    };
+    let eax = scaled_turn_0434(g, img, f, s, &ops);
+    let node = g.read::<u32>(s + 0x1a60);
+    if node == 0 {
+        return Ret::eax(eax);
+    }
+    crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x18a), node);
+    let lock = g.read::<u32>(w(0x18f));
+    g.write::<u32>(s + 0x1a60, 0);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let m = g.read::<u32>(w(0x1a8)).wrapping_add(0x30);
+    // call width: 5
+    g.call(slot_target(g, w(0x1b7), 829), 0, &[m, 0, 0, 0, 0]);
+    let lock = g.read::<u32>(w(0x1c4));
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`turn_end_0434`] (the `rel32`: the give-back).
+pub const TURN_END_0434: Sig = Sig {
+    len: 468,
+    hash: 0xa965_4a14_57a1_80e5,
+    calls: &[(0x18a, Callee::Sig(&crate::sa_pool::GIVE_BACK))],
+    imports: &[],
+};
