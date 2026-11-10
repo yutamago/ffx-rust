@@ -1617,6 +1617,13 @@ fn state_0430(t: &mut Twin, k: u32) -> u32 {
     ] {
         t.set_u32(s + o, (v + k as f32 * 0.5).to_bits());
     }
+    // the summon matrix's place and the angles it copies: real floats
+    for i in 0..8u32 {
+        t.set_u32(
+            s + 0xc44 + 4 * i,
+            (0.25 * i as f32 - 0.5 + k as f32).to_bits(),
+        );
+    }
     t.set_u32(0x100f_f7ac, s);
     s
 }
@@ -1660,8 +1667,11 @@ fn task_0430() {
             m.w32(a[1], 2);
             party
         });
-        let s = state_0430(&mut t, k);
-        let _ = s;
+        state_0430(&mut t, k);
+        if k == 3 {
+            // the selected actors at the bound
+            t.write(SCRATCH + 0x180, &[0x20, 0x20]);
+        }
         // the scripts: the first's context `w(0x2e)` done or running
         let op = |t: &Twin, o: u32| t.img.word(f + o);
         let ctx1 = op(&t, 0x2e);
@@ -1676,7 +1686,11 @@ fn task_0430() {
             junk(&mut t, at, 0x20, k + o);
             t.set_u32(at + 0x14, 1);
         }
-        let _ = (ms, rigs);
+        let _ = ms;
+        t.set_u32(op(&t, 0x26), 0x0026_0000 + k);
+        // the first camera rig sets the camera
+        let rig = t.img.word(rigs + 0x14);
+        t.set_u32(rig + 0x64, 1);
         // the end's flags and actors
         let ew = |t: &Twin, o: u32| t.img.word(end + o);
         for o in [0x60u32, 0xbd, 0x112, 0x1b5, 0x20b] {
@@ -1684,7 +1698,7 @@ fn task_0430() {
             t.set_u32(at, flag);
         }
         t.set_u32(ew(&t, 0xb4), 0x00b4_0000);
-        t.set_u32(ew(&t, 0xc6), 3 + 0x40 * flag);
+        t.set_u32(ew(&t, 0xc6), if k == 3 { 0x20 } else { 3 + 0x40 * flag });
         t.set_u32(ew(&t, 0x213), 5 + 0x40 * flag);
         t.set_u32(ew(&t, 0x235), 0x0235_0000);
         t.set_u16(ew(&t, 0x168), u16::try_from(flag).unwrap_or(0));
@@ -1773,6 +1787,14 @@ fn objects_0430() {
         for sl in [15u32, 16, 17] {
             t.stub_st0(sl, move |_, a| 0.5 + f64::from(a[0] & 3) + f64::from(sl));
         }
+        // the draw descriptor (a frame local) copied where the comparison
+        // sees it
+        rec(&mut t, 567, 5, |m, a| {
+            for i in 0..0x14 {
+                m.w32(SCRATCH + 0x7000 + 4 * i, m.r32(a[1] + 4 * i));
+            }
+            0x567
+        });
         t.set_u32(s + 0xec4, [0u32, 0, 0, 0, 3, 0, 0xffff_fff0][k as usize]);
         // the draw descriptor's never-written words read 0 on both sides
         ownb::dirty_stack(&mut t, rva + k, &[0x148, 0x120, 0x104]);
@@ -1817,5 +1839,158 @@ fn part_matrix_0430() {
         });
         ownb::dirty_stack(&mut t, 0x2a60 + k, &[]);
         t.check_entry(f, Call::default(), &[a, b], Eax::Checked);
+    }
+}
+
+/// `magic_0393` 0x10002e50 (`r38::rise_start_0393`): `S + 0x1eec` -1 and
+/// not, `S + 0x1ee8` 6 and not.
+#[test]
+fn rise_start_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x2e50);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0xa1);
+    magic_r11::object_start_auto(&mut t, start);
+    for (s, n) in [(632u32, 3usize), (219, 2), (257, 2), (215, 1), (278, 3)] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ if n > 1 { a[1] << 4 } else { 0 }
+        });
+    }
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(&t, 0x4c), sel);
+    for i in 0..0x20u32 {
+        t.set_u32(w(&t, 0x57) + 4 * i, 0x00a0_0000 + i);
+    }
+    for (k, (e, six)) in (0u32..).zip([(u32::MAX, 6u32), (2, 6), (0, 5), (u32::MAX, 0)]) {
+        let s = SCRATCH + 0x1_0000;
+        junk(&mut t, s, 0x2000, k);
+        for c in 0..4u32 {
+            t.set_u32(s + 0x1c10 + 4 * c, (1.5 + c as f32 - k as f32).to_bits());
+        }
+        t.set_u32(s + 0x1eec, e);
+        t.set_u32(s + 0x1ee8, six);
+        t.set_u32(w(&t, 0x4), s);
+        t.write(sel, &[3, 5 + k as u8, 7, 9]);
+        t.set_u32(w(&t, 0x7b), 0x7b00 + k);
+        t.set_u32(w(&t, 0xcf), 0xcf00 + k);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0393` 0x100039a0 (`r38::rise_0393`): the counter below, at
+/// and above 1 (the sparks first, set up as `rise_0450`'s test); the
+/// object listed and not; slot 390's answer in the table, not with slot
+/// 534 non-zero and zero; outside a battle (actor below 0x20, at it) and
+/// in one; the ring with two free nodes, the task list empty and not.
+#[test]
+fn rise_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x39a0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let sp = t.img.rel32_target(f + 0x19);
+    let sop = |t: &Twin, o: u32| t.img.word(sp + o);
+    let t140 = t.img.rel32_target(sp + 0x1b);
+    let t74 = t.img.rel32_target(sp + 0xe2);
+    let calls = SCRATCH + 0x88;
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * 0.5 + f64::from(k) * 0.125
+    });
+    rec(&mut t, 314, 1, |_, a| a[0] ^ 0x314);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(sp + 0x64);
+    magic_r11::object_start_auto(&mut t, start);
+    let start = t.img.rel32_target(f + 0x184);
+    magic_r11::object_start_auto(&mut t, start);
+    for (s, k) in [(713u32, 1usize), (296, 2), (257, 2)] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    let table = w(&t, 0x125);
+    let table: Vec<u32> = (0..8)
+        .map(|i| t.img.word(table + 4 * i))
+        .take_while(|&v| v != u32::MAX)
+        .collect();
+    let hit = table.last().copied().unwrap_or(0);
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x0b), b);
+    let list = w(&t, 0xd0);
+    t.set_u32(w(&t, 0xde), SCRATCH + 0x5900);
+    let actor = SCRATCH + 0x5a00;
+    t.set_u32(w(&t, 0x2cf), actor);
+    let sel = SCRATCH + 0x5b00;
+    t.set_u32(w(&t, 0x106), sel);
+    for i in 0..0x40 {
+        t.set_u32(w(&t, 0x308) + 4 * i, 0x00c0_0000 + i);
+    }
+    let other = SCRATCH + 0x5f0;
+    for (k, (counter, listed, battle, a, (r390, r534), tasks)) in [
+        (-1i32, false, 0u32, 3u8, (hit, 0u32), false),
+        (0, true, 0, 3, (hit, 0), false),
+        (0, false, 0, 0x20, (0x390, 1), true),
+        (0, true, 1, 5, (0x390, 0), true),
+        (0, true, 0, 0x1f, (0x390, 0), false),
+        (2, false, 0, 3, (hit, 0), false),
+        (1, true, 0, 3, (0x390, 2), true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rec(&mut t, 390, 1, move |_, _| r390);
+        rec(&mut t, 534, 1, move |_, a| r534 * a[0].max(1));
+        t.set_u32(calls, 0);
+        t.write(b, &vec![0x3b + k as u8; 0x2000]);
+        for c in 0..12u32 {
+            t.set_u32(
+                b + 0x1c30 + 4 * c,
+                (1.0 + 0.5 * c as f32 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(b + 0x1ef4, counter.cast_unsigned());
+        t.set_u32(b + sop(&t, 0x10), 5);
+        let p = SCRATCH + 0x700;
+        t.set_u32(sop(&t, 0xf2), p);
+        t.set_u32(p + 0x1c, 0x001c_001c);
+        let objs_at = SCRATCH + 0x1_4000;
+        t.write(objs_at, &vec![0x3c; 0x280]);
+        t.set_u32(t.img.word(t140 + 0x01), 0);
+        t.set_u32(t.img.word(t140 + 0x09), 2);
+        t.set_u32(t.img.word(t140 + 0x16), objs_at);
+        for i in 0..2 {
+            t.set_u32(objs_at + 0x140 * i + 0x130, 0);
+            t.set_u16(objs_at + 0x140 * i + 0x124, 0x8000);
+        }
+        let spr = SCRATCH + 0x1_6000;
+        t.write(spr, &vec![0x3d; 0x74 * 4]);
+        t.set_u32(t.img.word(t74 + 0x08), 0);
+        t.set_u32(t.img.word(t74 + 0x0f), 4);
+        t.set_u32(t.img.word(t74 + 0x37), spr);
+        t.set_u32(t.img.word(t74 + 0x2b), 0);
+        for i in 0..4 {
+            t.set_u32(spr + 0x74 * i + 0x6c, 0);
+        }
+        let node = SCRATCH + 0x5880;
+        t.write(list, &[0; 0x10]);
+        t.write(node, &[0; 0xc]);
+        if listed {
+            t.set_u32(list, node);
+            t.set_u32(list + 4, node);
+            t.set_u32(list + 0xc, 1);
+            t.set_u32(node + 8, b + 0x130);
+        }
+        let (cnt, head) = (w(&t, 0x191), w(&t, 0x231));
+        magic_r11::ring(&mut t, cnt, head, 2, SCRATCH + 0x1800);
+        t.write(other, &[0x44; 0x20]);
+        t.set_u32(w(&t, 0x298), if tasks { other } else { 0 });
+        t.set_u32(w(&t, 0x2ac), other);
+        t.set_u32(w(&t, 0x2c8), battle);
+        t.write(sel, &[9 + k as u8, a]);
+        t.set_u8(actor + 1, a);
+        let c = Call {
+            eax: 0x00ea_0000 + k as u32,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
     }
 }

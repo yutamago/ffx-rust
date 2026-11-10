@@ -3322,6 +3322,8 @@ ports! {
     "r38 objects 0430" => r38::OBJECTS_0430, r38::objects_0430;
     "r38 summon matrix 0430" => r38::SUMMON_MATRIX_0430, r38::summon_matrix_0430;
     "r38 glow draw 0430" => r38::GLOW_DRAW_0430, r38::glow_draw_0430;
+    "r38 rise start 0393" => r38::RISE_START_0393, r38::rise_start_0393;
+    "r38 rise 0393" => r38::RISE_0393, r38::rise_0393;
     // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
