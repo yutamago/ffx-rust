@@ -87,6 +87,7 @@ pub mod r35;
 pub mod r36;
 pub mod r37;
 pub mod r37b;
+pub mod r39;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3290,6 +3291,9 @@ ports! {
     "r37 camera task 0570" => r37::CAMERA_TASK_0570, r37::camera_task_0570;
     "r37 main task 0533" => r37b::MAIN_TASK_0533, r37b::main_task_0533;
     // round 37 (magic-r37): end
+    // round 39 (magic-r39)
+    "r39 scene task 0519" => r39::SCENE_TASK_0519, r39::scene_task_0519;
+    // round 39 (magic-r39): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
