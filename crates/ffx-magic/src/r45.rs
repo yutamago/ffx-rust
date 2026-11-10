@@ -635,3 +635,219 @@ pub const LIGHT_SETUP_0348: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0348`'s packed sprite (0x10006a10, 291 bytes; a task callback,
+/// cdecl `(node)`; a /GS frame of 0x8c bytes): `magic_0350`'s
+/// ([`packed_0350`](crate::r38::packed_0350)) with one counter: with the
+/// state `S = *G_S`, while `S + 0xd17c` is not above 0 the node goes back
+/// to the pool (the give-back's `eax` returned); else it counts down and
+/// the fade is the new value times 80 over `S + 0xd178` (a zero divisor
+/// gives 0, where the original faults); the angle `S + 0xd174 -= DA`,
+/// plus `T` below 0; slot 719 `(P, 2, 6)` gives the descriptor `(lo,
+/// hi)`; slot 235 `(M)` (`ebp - 0x44`), slot 210 `(*G_O2, M2)` (`ebp -
+/// 0x84`); the texture drawn
+/// ([`packed_texture`](crate::s5_misc::packed_texture), `ecx` = `*G_O`
+/// read before slot 719, `(-, M, lo, hi, 0, angle, n)`; the first word is
+/// the `ecx` slot 210 leaves, which the callee does not read: 0 here).
+/// Returns the draw's `eax`.
+pub fn packed_0348<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x15));
+    let left = g.read::<i32>(s + 0xd17c);
+    if left <= 0 {
+        let node = fr.arg(g, 0);
+        return Ret::eax(crate::sa_pool::give_back(
+            g,
+            img,
+            img.rel32_target(f + 0x2f),
+            node,
+        ));
+    }
+    let left = left - 1;
+    g.write::<i32>(s + 0xd17c, left);
+    let n = left
+        .wrapping_mul(80)
+        .checked_div(g.read::<i32>(s + 0xd178))
+        .unwrap_or(0);
+    let angle = sub(g.read::<f32>(s + 0xd174), k(g, 0x61));
+    g.write::<f32>(s + 0xd174, angle);
+    // comiss 0, a; jbe: only below 0 (ordered)
+    if 0.0 > angle {
+        g.write::<f32>(s + 0xd174, add(angle, k(g, 0x7f)));
+    }
+    let o = g.read::<u32>(w(0x99));
+    // call width: 3
+    let d = g
+        .call(slot_target(g, w(0x8c), 719), 0, &[w(0xa4), 2, 6])
+        .eax;
+    let (lo, hi) = (g.read::<u32>(d), g.read::<u32>(d + 4));
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, m2) = (ebp.wrapping_sub(0x44), ebp.wrapping_sub(0x84));
+    g.call(slot_target(g, w(0xb4), 235), 0, &[m]);
+    let a = g.read::<u32>(w(0xce));
+    g.call(slot_target(g, w(0xc8), 210), 0, &[a, m2]);
+    let angle = g.read::<u32>(s + 0xd174);
+    // the frame, ebx/esi/edi, n, 8 bytes and four pushes, the return
+    // address
+    let esp = ebp.wrapping_sub(0xb8);
+    for (i, v) in (1u32..).zip([0, m, lo, hi, 0, angle, n.cast_unsigned()]) {
+        g.write::<u32>(esp + 4 * i, v);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x10b),
+        esp,
+        ecx: o,
+        ..Frame::default()
+    };
+    crate::s5_misc::packed_texture(g, img, &callee)
+}
+
+/// [`packed_0348`] (the `rel32`s: the give-back, the cookie checks, the
+/// texture).
+pub const PACKED_0348: Sig = Sig {
+    len: 291,
+    hash: 0x4659_91ee_202d_087d,
+    calls: &[
+        (0x2f, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x39, Callee::Any),
+        (0x10b, Callee::Sig(&crate::s5_misc::PACKED_TEXTURE)),
+        (0x11b, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0348`'s glow start (0x10006810, 293 bytes; a table entry, no
+/// arguments; a /GS frame of 0x14 bytes): the state block `S = *G_S`
+/// starts as an effect object
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), scale `*K`,
+/// index 0, value 0) at `S + 0xd20..` with `y` less `K1` and the yaw
+/// `+0xc4` = `S + 0xd14`; the light record `L = S + 0xd098` gets `L +
+/// 0x10..` = `L..`, `L + 0x20..` = `(0, 0, 0, a)` and `+0x34`, `+0x30` 30,
+/// where `a` is a frame word the original never writes (`[ebp - 8]`);
+/// then a scale task over `S + 0xced8` (30 frames, scales `K2`, `K3`:
+/// [`scale_task_edx`](crate::s4_small::scale_task_edx)). Returns the
+/// task's node.
+pub fn glow_start_0348<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let scale = g.read::<f32>(w(0x14));
+    let s = g.read::<u32>(w(0x1b));
+    crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x29), s, scale, 0, 0);
+    for i in 0..4u32 {
+        let x = g.read::<u32>(s + 0xd20 + 4 * i);
+        g.write::<u32>(s + 0xd0 + 4 * i, x);
+    }
+    let yaw = g.read::<u32>(s + 0xd14);
+    let y = sub(g.read::<f32>(s + 0xd4), g.read::<f32>(w(0x6f)));
+    g.write::<u32>(s + 0xc4, yaw);
+    g.write::<f32>(s + 0xd4, y);
+    // junk read: [ebp-0x8] never written; 0 (brief 2026-10-24)
+    let a = 0u32;
+    let l = s + 0xd098;
+    for i in 0..4u32 {
+        let x = g.read::<u32>(l + 4 * i);
+        g.write::<u32>(l + 0x10 + 4 * i, x);
+    }
+    for (i, x) in (0u32..).zip([0, 0, 0, a]) {
+        g.write::<u32>(l + 0x20 + 4 * i, x);
+    }
+    g.write::<u32>(l + 0x34, 0x1e);
+    g.write::<u32>(l + 0x30, 0x1e);
+    let mut xmm = fr.xmm;
+    xmm[1] = u128::from(g.read::<u32>(w(0x7f)));
+    xmm[2] = u128::from(g.read::<u32>(w(0x77)));
+    let st = Frame {
+        at: img.rel32_target(f + 0x10f),
+        esp: fr.esp.wrapping_sub(0x24),
+        ecx: s + 0xced8,
+        edx: 0x1e,
+        xmm,
+        ..*fr
+    };
+    crate::s4_small::scale_task_edx(g, img, &st)
+}
+
+/// [`glow_start_0348`] (the `rel32`s: the object start, the scale task,
+/// the cookie check).
+pub const GLOW_START_0348: Sig = Sig {
+    len: 293,
+    hash: 0xdf30_9be7_4ec9_107b,
+    calls: &[
+        (0x29, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x10f, Callee::Sig(&crate::s4_small::SCALE_TASK_EDX)),
+        (0x11d, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0348`'s orbs start (0x10006e40, 609 bytes; a table entry, no
+/// arguments; a /GS frame of 0x14 bytes): with the state block `S =
+/// *G_S`, five objects `O = S + 0x720 + 0x130 i` start
+/// ([`start_object_anim`](crate::s4_misc::start_object_anim), scale `*K`,
+/// index 4, value `A[i] - 45`), each with the yaw `+0xc4` = `S + 0xd14`,
+/// the callback `+0x104` = `CB` and `+0x120` = `B[i]` (`A`, `B` word
+/// tables in the DLL's data); four light records `L` (`S + 0xcfb8`,
+/// `+0xcff0`, `+0xd028`, `+0xd060`) get `L + 0x10..` = `L..` and a colour
+/// at `L + 0x20..` (the first `L..` = `(2.79, 0)` set first, colour
+/// `(0.7, 0, u, a)`; then `(0, 0, 0, a)` twice and `(1.5, 1.4, 1.3, a)`,
+/// where `u` and `a` are frame words the original never writes, `[ebp -
+/// 0xc]` and `[ebp - 8]`), and their counts (100, 30, 30, 100 in `+0x34`
+/// and `+0x30`); slot 8 `(*G_D, 0)`. Returns slot 8's `eax`.
+pub fn orbs_start_0348<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x13));
+    let start = img.rel32_target(f + 0x3b);
+    for i in 0..5u32 {
+        let o = s + 0x720 + 0x130 * i;
+        let value = g.read::<u32>(w(0x23) + 4 * i).wrapping_sub(0x2d);
+        let scale = g.read::<f32>(w(0x2b));
+        crate::s4_misc::start_object_anim(g, img, start, o, scale, 4, value);
+        let yaw = g.read::<u32>(s + 0xd14);
+        g.write::<u32>(o + 0xc4, yaw);
+        g.write::<u32>(o + 0x104, w(0x51));
+        let b = g.read::<u32>(w(0x57) + 4 * i);
+        g.write::<u32>(o + 0x120, b);
+    }
+    // junk read: [ebp-0xc] never written; 0 (brief 2026-10-24)
+    let u = 0u32;
+    // junk read: [ebp-0x8] never written; 0 (brief 2026-10-24)
+    let a = 0u32;
+    g.write::<u32>(s + 0xcfb8, 0x4032_b8c3);
+    g.write::<u32>(s + 0xcfbc, 0);
+    let lights: [(u32, [u32; 4], u32); 4] = [
+        (0xcfb8, [0x3f32_b8c0, 0, u, a], 0x64),
+        (0xcff0, [0, 0, 0, a], 0x1e),
+        (0xd028, [0, 0, 0, a], 0x1e),
+        (0xd060, [0x3fc0_0000, 0x3fb3_3333, 0x3fa6_6666, a], 0x64),
+    ];
+    for (l, colour, n) in lights {
+        let l = s + l;
+        for i in 0..4u32 {
+            let x = g.read::<u32>(l + 4 * i);
+            g.write::<u32>(l + 0x10 + 4 * i, x);
+        }
+        for (i, x) in (0u32..).zip(colour) {
+            g.write::<u32>(l + 0x20 + 4 * i, x);
+        }
+        g.write::<u32>(l + 0x34, n);
+        g.write::<u32>(l + 0x30, n);
+    }
+    let d = g.read::<u32>(w(0x247));
+    let eax = g.call(slot_target(g, w(0x202), 8), 0, &[d, 0]).eax;
+    Ret::eax(eax)
+}
+
+/// [`orbs_start_0348`] (the `rel32`s: the object start, the cookie
+/// check).
+pub const ORBS_START_0348: Sig = Sig {
+    len: 609,
+    hash: 0x95c4_8308_7da2_046a,
+    calls: &[
+        (0x3b, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x259, Callee::Any),
+    ],
+    imports: &[],
+};

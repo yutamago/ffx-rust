@@ -548,3 +548,111 @@ fn light_setup_0348() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0348` 0x10006a10 (`r45::packed_0348`): as `magic_r38.rs`'s
+/// packed test: the counter run out (the node given back), counting down
+/// (a negative divisor; a zero one faults in the original), the angle
+/// wrapping and not, the texture filled and not.
+#[test]
+fn packed_0348() {
+    let Some(mut t) = sa::twin(348) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6a10);
+    let give = t.img.rel32_target(f + 0x2f);
+    let desc = SCRATCH + 0x700;
+    rec(&mut t, 719, 3, move |_, _| desc);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, 0x2350_0000 ^ i);
+        }
+        0x235
+    });
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[1] + 4 * i, a[0] ^ i);
+        }
+        0x210
+    });
+    let answer = SCRATCH + 0x7e0;
+    rec(&mut t, 885, 7, move |m, _| m.r32(answer));
+    rec(&mut t, 905, 9, |m, a| {
+        let c = m.r32(SCRATCH + 0xb20);
+        m.w32(SCRATCH + 0xb20, c + 1);
+        0x0905_0000 ^ a[0]
+    });
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    let draw = t.img.rel32_target(f + 0x10b);
+    t.set_u32(t.img.word(draw + 0x3c), SCRATCH + 0x7f0);
+    t.set_u32(SCRATCH + 0x7f0, 0x5a5a_0001);
+    // (count, divisor, angle, filled)
+    for (k, (c, total, angle, filled)) in (0u32..).zip([
+        (0i32, 9i32, 1.0f32, 0u32),
+        (-2, 9, 1.0, 1),
+        (5, 9, 1.0, 1),
+        (5, 7, -0.25, 0),
+        (1, 9, 0.0, 1),
+        (2, 4, 3.0, 1),
+        (9, -3, -5.0, 7),
+    ]) {
+        let s = SCRATCH + 0x1_0000;
+        junk(&mut t, s + 0xd000, 0x200, k);
+        t.set_u32(t.img.word(f + 0x15), s);
+        t.set_u32(s + 0xd17c, c.cast_unsigned());
+        t.set_u32(s + 0xd178, total.cast_unsigned());
+        setf(&mut t, s + 0xd174, angle);
+        t.set_u32(desc, 0x1234_5678 ^ k);
+        t.set_u32(desc + 4, 0x9abc_def0 ^ k);
+        t.set_u32(answer, filled);
+        t.set_u32(t.img.word(f + 0x99), SCRATCH + 0x3000 + 0x10 * k);
+        t.set_u32(t.img.word(f + 0xce), 0x0ce0_0000 + k);
+        junk(&mut t, SCRATCH + 0x3000, 0x900, k);
+        t.set_u32(SCRATCH + 0x3830 + 0x10 * k, 0x0830_0000 + k);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x6a10 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+    assert!(t.u32(SCRATCH + 0xb20) > 0, "the texture was drawn");
+}
+
+/// `magic_0348` 0x10006810 (`r45::glow_start_0348`) and 0x10006e40
+/// (`r45::orbs_start_0348`): the scale task's list empty and not; the
+/// frame words the originals never write (`[ebp - 8]`, `[ebp - 0xc]`)
+/// pinned to 0 (brief 2026-10-24).
+#[test]
+fn glow_orbs_start_0348() {
+    let Some(mut t) = sa::twin(348) else { return };
+    let img = t.img.clone();
+    all_stubs(&mut t);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 8, 2, |_, a| 0x0008_0000 ^ a[0]);
+    let s = SCRATCH + 0x1_0000;
+    for (rva, gs) in [(0x6810u32, 0x1bu32), (0x6e40, 0x13)] {
+        let f = t.at(rva);
+        let w = |o: u32| img.word(f + o);
+        summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+        t.set_u32(w(gs), s);
+        let st = t.img.rel32_target(t.at(0x6810) + 0x10f);
+        let head = t.img.word(st + 0x79);
+        for k in 0..3u32 {
+            junk(&mut t, s, 0xd200, k);
+            floats(&mut t, s + 0xd10, 0x8, k);
+            floats(&mut t, s + 0xd20, 0x4, k + 2);
+            let tail = SCRATCH + 0x1800;
+            junk(&mut t, tail, 0x20, k);
+            t.set_u32(head, if k == 1 { 0 } else { tail });
+            t.set_u32(t.img.word(st + 0x91), tail);
+            if rva == 0x6e40 {
+                t.set_u32(w(0x247), 0x0d0d_0000 + k);
+            }
+            magic_r11::pools(&mut t, f, 609);
+            ownb::dirty_stack(&mut t, rva + k, &[0xc, 0x10]);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
