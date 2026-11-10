@@ -91,6 +91,7 @@ pub mod r38;
 pub mod r39;
 pub mod r39b;
 pub mod r40;
+pub mod r42;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3363,6 +3364,10 @@ ports! {
     "r40 frame 0185" => r40::FRAME_0185, r40::frame_0185;
     "r40 group task 0178" => r40::GROUP_TASK_0178, r40::group_task_0178;
     // round 40 (magic-r40): end
+    // round 42 (magic-r42)
+    "r42 matrix visit thunk 0186" => r42::JMP_MATRIX_VISIT_0186, r42::jmp_matrix_visit_0186;
+    "r42 records task 0072" => r42::RECORDS_TASK_0072, r42::records_task_0072;
+    // round 42 (magic-r42): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -3752,6 +3757,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r40 spark sprites 0185", &r40::SPRITES_0185),
     ("r40 spark sprites 0184", &r40::SPRITES_0184),
     // round 40 (magic-r40): end of INTERNAL
+    // round 42 (magic-r42)
+    ("r42 matrix visit 0186", &r42::MATRIX_VISIT_0186),
+    ("r42 screen set-up 0152", &r42::SCREEN_SETUP_0152),
+    // round 42 (magic-r42): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
     ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),
