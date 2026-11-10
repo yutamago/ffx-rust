@@ -593,3 +593,184 @@ fn summon_main_case(n: u16, rva: u32, is_0609: bool) {
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
+
+/// `magic_0577` 0x1000b530 (`r35::spark_task_0577`): every state waiting
+/// and going on, the fade above and below its bounds, the parts' flags
+/// both ways, the sparks' flags agreeing and not (on into 10000), 10000
+/// itself and the states past the table.
+#[test]
+fn spark_task_0577() {
+    let Some(mut t) = twin(577) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0xb530);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x248
+    });
+    rec(&mut t, 210, 2, |_, a| SCRATCH + 0x5000 + (a[0] & 0xf0));
+    // slot 324 (a random number) takes no words: a counter
+    let seed = SCRATCH + 0x7e0;
+    rec(&mut t, 324, 0, move |m, _| {
+        let x = m.r32(seed).wrapping_mul(0x0101_0101).wrapping_add(0x2b7);
+        m.w32(seed, x);
+        x >> 8
+    });
+    // slot 531 writes the target's position (the centre reads it back)
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 + (a[0] & 7) as f32);
+        }
+        0x531
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25)] {
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    // the bones' function table: matrices from slots 32..35
+    let bone = call(&t, 0xa25);
+    let table = t.img.word(bone + 0x103);
+    for i in 0..4u32 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * (32 + i));
+        rec(&mut t, 32 + i, 2, move |m, a| {
+            for j in 0..16 {
+                let x = 0.125 * j as f32 - rf(m, a[1]) + i as f32;
+                wf(m, a[0] + 4 * j, x);
+            }
+            (i << 16) ^ a[1]
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    // the small node's vtable (the bones' cursor) visits through the stub
+    let small = call(&t, 0x409);
+    let svt = t.img.word(small + 0x44);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    // (state, the wait, the fade word R + 0x304, a float scale, the parts'
+    // flag bits, the sparks agree)
+    let cases: [(u32, i32, i32, f32, u8, bool); 30] = [
+        (0, 0, 0, 0.0, 0, false),
+        (1, 3, 0, 0.0, 0, false),
+        (1, 0, 0, 0.0, 0, false),
+        (2, 1, 0, 0.0, 0, false),
+        (2, 0, 0, 0.0, 0, false),
+        (0x14, 0, 0, 0.5, 0, false),
+        (0x15, 0, 0, -1.9, 0, false),
+        (0x15, 0, 0, 5.0, 0, false),
+        (0x16, 0, -100, -1.5, 0, false),
+        (0x16, 0, -10, 9.0, 4, false),
+        (0x16, 0, -40, 9.0, 0, false),
+        (0x33, 11, -50, 0.0, 0, false),
+        (0x33, 10, -20, 0.0, 4, false),
+        (0x33, 2, -20, 0.0, 0, false),
+        (0x34, 0, -40, 0.0, 0, false),
+        (0x34, 0, -31, 0.0, 0, false),
+        (0x35, 1, 0, 0.0, 0, false),
+        (0x35, 0, 0, 0.0, 0, false),
+        (0x1f, 11, 0, 0.0, 0, false),
+        (0x1f, 10, 0, 0.0, 0, false),
+        (0x20, 1, 0, 0.0, 0, false),
+        (0x20, 0, 0, 0.0, 0, false),
+        (0x20, 0, 0, 0.0, 4, false),
+        (0xb, 0, 0, -1.0, 0, false),
+        (0xb, 0, 0, 9.0, 0, false),
+        (0xb, 0, 0, 9.0, 4, true),
+        (0x3d, 0, 0, 0.0, 0, true),
+        (0x2710, 0, 0, 0.0, 0, false),
+        (0x2711, 0, 0, 0.0, 0, false),
+        (0x3e, 0, 0, 0.0, 0, false),
+    ];
+    for (k, (state, wait, fade, x, bits, agree)) in (0u32..).zip(cases) {
+        t.write(r, &[0; 0x2000]);
+        for o in (0x68u32..0x88).step_by(4) {
+            t.set_u32(r + o, (x + o as f32 / 64.0).to_bits());
+        }
+        for o in [0x1a8u32, 0x200, 0x2a4, 0x2a8, 0x2ac, 0x88] {
+            t.set_u32(r + o, (1.5f32 + o as f32 / 256.0).to_bits());
+        }
+        // the move's two points and words the states clear or set bytes of
+        for o in (0x40u32..0x60).step_by(4) {
+            t.set_u32(
+                r + o,
+                (0.75f32 * (o - 0x40) as f32 / 4.0 - 1.0 + k as f32).to_bits(),
+            );
+        }
+        t.set_u32(r + 0xd20, 0x5d5d_5d5d);
+        t.set_u8(r + 0x456, 0x5d);
+        t.set_u8(r + 0x89d, 0x5d);
+        t.set_u32(r + 0x60, state);
+        t.set_u32(r + 0x64, wait.cast_unsigned());
+        t.set_u32(r + 0x304, fade.cast_unsigned());
+        t.set_u32(r + 0xfc, SCRATCH + 0x5800);
+        t.set_u32(r + 0xd28, SCRATCH + 0x5900);
+        t.set_u32(r + 0x30c, class);
+        t.set_u32(svt + 0x1c, magic::TRAPS + 16 * visit);
+        for o in [0x9f0u32, 0xaf0, 0xbf0] {
+            t.set_u8(r + o + 0xe8, bits);
+        }
+        t.set_u8(r + 0xcd8, bits);
+        t.set_u8(r + 0xbd8, bits);
+        for j in 0..20u32 {
+            let v = if agree {
+                0x4e20
+            } else if j == 7 {
+                0x20
+            } else {
+                0xffff
+            };
+            t.set_u32(r + 0xd4c + 0xe4 * j, v);
+        }
+        // the end's nodes under a parent
+        let p = SCRATCH + 0x5c00;
+        t.write(p, &[0; 0x20]);
+        t.set_u32(p + 0x10, p);
+        t.set_u32(p + 0xc, p);
+        t.set_u16(p + 0x18, 9);
+        for o in [0x8a0u32, 0x608, 0x4bc, 0x140, 0x30c, 0xa8] {
+            t.set_u32(r + o + 0x14, if state == 0x2710 { p } else { 0 });
+            t.set_u32(r + o + 4, p);
+            t.set_u32(r + o + 8, p);
+        }
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        // the particle and effect nodes' lists: empty
+        for (c, op) in [(0x4e1u32, 0x26u32), (0x4f4, 0x18)] {
+            let l = t.img.word(t.img.rel32_target(f + c) + op);
+            t.set_u32(l + 0x10, l);
+            t.set_u32(l + 0xc, l);
+        }
+        // the static list: empty or with a last child
+        let list = t.img.word(f + 0x402);
+        let kid = SCRATCH + 0x5e00;
+        t.write(kid, &[0x21; 0x40]);
+        t.set_u32(list + 0x10, if k % 3 == 1 { kid } else { list });
+        t.set_u32(list + 0xc, list);
+        t.set_u16(list + 0x18, 2);
+        // the centre's targets: three (the prime block's count would run
+        // for ever)
+        let centre = t.img.rel32_target(f + 0xaf4);
+        let n = t.img.word(centre + 0x48);
+        t.set_u32(n, 3);
+        ownb::dirty_stack(&mut t, 0xb530 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
