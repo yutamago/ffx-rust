@@ -480,6 +480,29 @@ fn scene_twin(n: u16, at: u32, map: &[(u32, u32)]) -> Option<(Twin, u32)> {
     let mut t = twin(n)?;
     all_stubs(&mut t);
     let f = t.at(at);
+    // the scene's other slots log their argument words (answers distinct
+    // per slot); the tests override some
+    for (slot, n) in [
+        (211u32, 2usize),
+        (214, 1),
+        (220, 3),
+        (222, 4),
+        (237, 4),
+        (267, 1),
+        (269, 3),
+        (270, 5),
+        (271, 1),
+        (276, 2),
+        (278, 3),
+        (306, 3),
+        (311, 1),
+        (331, 1),
+        (332, 1),
+        (334, 1),
+        (713, 1),
+    ] {
+        rec(&mut t, slot, n, move |_, a| a[0] ^ (0x0abc_0000 | slot));
+    }
     rec(&mut t, 225, 1, |m, _| m.r32(A225));
     rec(&mut t, 227, 1, |m, _| m.r32(A227));
     rec(&mut t, 253, 0, |m, _| m.r32(A253));
@@ -768,14 +791,29 @@ fn scene_state_10(dll: u16, at: u32, map: &[(u32, u32)]) {
         cases.push(scene(0x10, &[(0x1a55, 1), (n10, n)]));
     }
     // parts P6 and P4 and the records the clear at 0xc2 zeroes: junk
-    let parts = [0x1035_3310u32, 0x1035_1410];
+    let parts = [w(&t, 0x2b30), w(&t, 0x2cdb)];
     let recs0 = t.img.word(f + mp(map, 0x2bd7));
+    let (beams, colours, cleared) = (w(&t, 0x1d02), w(&t, 0x2765), w(&t, 0x2ab8));
+    let (stops, end) = (w(&t, 0x2b9e), w(&t, 0x2bf3));
     for cs in &mut cases {
         for p in parts {
-            for o in (0x40..0x80).step_by(4) {
+            for o in (0x1c..0x80).step_by(4) {
                 cs.mem.push((p + o, 0x5a5a_0000 + o));
             }
         }
+        // the beams' parts, the first ring entries (alive), the entries the
+        // clear at 0xfa zeroes, P5's halfwords, the words past the records
+        for i in 0..3u32 {
+            for o in (0..0x30).step_by(4) {
+                cs.mem.push((beams + 0x80 * i + o, 0x6b6b_0000 + o + i));
+            }
+            cs.mem.push((colours - 4 + 0x3c * i, 0x1234_5600 + i));
+            cs.mem.push((cleared + 0x3c * i, 0x4400 + i));
+            cs.mem.push((cleared - 0x18 + 0x3c * i, 0x5500 + i));
+            cs.mem.push((stops + 0x80 * i, 0x7777_0000 + i));
+        }
+        cs.mem.push((end, 0x99));
+        cs.mem.push((end - 0x24, 0x9a));
         // (the twelfth left free: the pushed sparks take it)
         for i in (0..0x20u32).filter(|&i| i != 11) {
             cs.mem.push((recs0 + 0xa8 * i, 0x77 + i));
@@ -785,7 +823,9 @@ fn scene_state_10(dll: u16, at: u32, map: &[(u32, u32)]) {
     // the ring index at its wrap; more pushed bursts (other randoms)
     cases.push(scene(0x10, &[(0x1a55, 1), (n10, 0x14), (0x1f23, 0x1ff)]));
     cases.push(scene(0x10, &[(0x1a55, 1), (n10, 0x16), (0x1f23, 0x1ff)]));
-    for n in [0x34u32, 0x35, 0x36, 0x37, 0x38, 0x54, 0x55, 0x56, 0x57] {
+    for n in [
+        0x34u32, 0x35, 0x36, 0x37, 0x38, 0x54, 0x55, 0x56, 0x57, 0x23, 0xb4,
+    ] {
         cases.push(scene(0x10, &[(0x1a55, 1), (n10, n)]));
     }
     // ring entries alive (ageing past and before their life)
@@ -967,6 +1007,19 @@ fn scene_state_0(dll: u16, at: u32, map: &[(u32, u32)]) {
             // (no flags there)
             cs.set.retain(|(o, _)| *o != fa && *o != fb);
         }
+    }
+    // the centre the first model takes
+    let (c0, c1) = (
+        t.img.word(f + mp(map, 0x266)),
+        t.img.word(f + mp(map, 0x27d)),
+    );
+    for cs in &mut cases {
+        cs.mem.extend([
+            (c0, 0x3fc0_0000),
+            (c0 + 4, 0x4010_0000),
+            (c1, 0xbf40_0000),
+            (c1 + 4, 0x3f80_0000),
+        ]);
     }
     for (k, cs) in (0u32..).zip(&mut cases) {
         // the first model's sound record and centre
