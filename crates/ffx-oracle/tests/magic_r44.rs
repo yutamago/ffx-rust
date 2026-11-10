@@ -669,8 +669,11 @@ fn motion_stubs(t: &mut Twin) {
         }
         0x232
     });
+    // 229 also logs the vector's words (tiny junk would round away)
     rec(t, 229, 3, |m, a| {
         for i in 0..4 {
+            let raw = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x7e60 + 4 * i, raw);
             let x = rf(m, a[1] + 4 * i) + 2.0 * rf(m, a[2] + 4 * i);
             wf(m, a[0] + 4 * i, x);
         }
@@ -714,7 +717,9 @@ fn motion_0184() {
     }
     let at = w(&t, 0x750);
     t.set_u32(at, table);
-    // the scatter's records: free (its own test covers the rest)
+    // the scatter's records (first_free's range): two free on odd cases
+    let ff = t.img.rel32_target(t.at(0x1280) + 0x22);
+    let (rec_start, rec_end) = (t.img.word(ff + 0x3), t.img.word(ff + 0x12));
     // (gate +0x15, slot 225, gate +0x42, gate +0x6d, slot 227, F, flags)
     let cases: [(u32, u32, u32, u32, u32, u32, [u16; 2]); 22] = [
         (0, 1, 1, 1, 1, 0x90, [1, 1]),
@@ -749,7 +754,7 @@ fn motion_0184() {
         t.set_u32(SCRATCH + 0x7e34, a227);
         for (i, o) in [0x231u32, 0x327].into_iter().enumerate() {
             let at = w(&t, o);
-            t.set_u16(at, flags[i] * (2 + k as u16));
+            t.set_u32(at, u32::from(flags[i] * (2 + k as u16)) | 0x5a5a_0000);
         }
         // the globals it reads and writes: floats (no NaNs), the angle
         for o in [
@@ -768,6 +773,14 @@ fn motion_0184() {
         t.set_u16(at, 0x1234 + 0x1111 * k as u16);
         let at = w(&t, 0x94d);
         t.set_u16(at, 0x0ab0 + k as u16);
+        let mut p = rec_start;
+        let mut i = 0u32;
+        while p < rec_end {
+            let free = k % 2 == 1 && (i == 1 || i == 3);
+            t.set_u16(p, if free { 0xffff } else { i as u16 });
+            p += 0x18;
+            i += 1;
+        }
         ownb::dirty_stack(&mut t, 0x1990 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
