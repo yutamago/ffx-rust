@@ -1360,3 +1360,186 @@ fn spawn_0250() {
         t.check_entry(f, Call::default(), &[s], Eax::Checked);
     }
 }
+
+/// What `magic_0420`'s set-up needs: the zero globals primed, its node
+/// parents (`P` and the second one) empty lists or holding a node, the
+/// particle node's slots, slot 215's model, 12's height, 719's handles.
+fn setup_0420_stubs(t: &mut Twin, f: u32) {
+    all_stubs(t);
+    let pn = t.img.rel32_target(f + 0x1af);
+    node_slots(t, pn);
+    rec(t, 12, 1, |_, a| 0x12 ^ a[0]);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
+    rec(t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
+    rec(t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    rec(t, 237, 4, |_, a| 0x237 ^ a[0]);
+    rec(t, 306, 3, |_, a| 0x306 ^ a[2]);
+    // the throw aim's square root (an import)
+    summon_stubs::prime(t, f, SCRATCH + 0x4_0000);
+}
+
+/// Junk in the words `setup_0420` stores and the parents' links.
+fn setup_0420_state(t: &mut Twin, f: u32, k: u32, held: bool) {
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let p = w(t, 0x45);
+    empty_list(t, p);
+    let q = w(t, 0x51f);
+    empty_list(t, q);
+    if held {
+        let last = SCRATCH + 0x6100;
+        t.write(last, &[0x6c; 0x20]);
+        t.set_u32(p + 0x10, last);
+        t.set_u32(q + 0x10, last);
+    }
+    // the task ring's last node and flags
+    let ring_last = SCRATCH + 0x6200;
+    t.write(ring_last, &[0x6d; 0x20]);
+    t.set_u32(w(t, 0x545), ring_last);
+    t.set_u32(w(t, 0x5a7), 0x5a5a_5a5b + k);
+    junk_ops(
+        t,
+        f,
+        &[
+            0x36c, 0x376, 0x3d9, 0x5bd, 0x606, 0x654, 0x65e, 0x5ff, 0x64d,
+        ],
+    );
+    for (o, n) in [(0x23a, 8u32), (0x250, 8)] {
+        junk(t, w(t, o), n, k + o);
+    }
+    t.set_u32(w(t, 0x75), 0x0075_0000 + k);
+    t.set_u8(w(t, 0x443), 3 + k as u8);
+    t.set_u16(w(t, 0x240), 5 + k as u16);
+}
+
+/// `magic_0420` 0x100069d0 (`r43::setup_0420`, internal): the parents
+/// empty and holding a node.
+#[test]
+fn setup_0420() {
+    let Some(mut t) = sa::twin(420) else { return };
+    let f = t.at(0x69d0);
+    setup_0420_stubs(&mut t, f);
+    for (k, held) in [false, true].into_iter().enumerate() {
+        setup_0420_state(&mut t, f, k as u32, held);
+        ownb::dirty_stack(&mut t, 0x69d0 + k as u32, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r43::setup_0420(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0420` 0x10007040 (`r43::task_0420`): states 0 to 4 (2 and 4
+/// waiting and answered, 3 before its timer, at it and with a NaN), a
+/// state past the table.
+#[test]
+fn task_0420() {
+    let Some(mut t) = sa::twin(420) else { return };
+    let f = t.at(0x7040);
+    let setup = t.img.rel32_target(f + 0x90);
+    setup_0420_stubs(&mut t, setup);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let ok = SCRATCH + 0x7e80;
+    rec(&mut t, 240, 1, move |m, _| m.r32(ok));
+    for (s, n) in [(228u32, 2usize), (213, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+    }
+    let k_at = w(0xaf);
+    let kk = f32::from_bits(t.u32(k_at));
+    // (state, answer, timer)
+    let cases: [(u16, u32, f32); 11] = [
+        (0, 0, 0.0),
+        (1, 0, 0.0),
+        (2, 0, 0.0),
+        (2, 1, 0.0),
+        (3, 0, kk - 1.0),
+        (3, 0, kk),
+        (3, 0, f32::NAN),
+        (4, 0, 0.0),
+        (4, 1, 0.0),
+        (5, 0, 0.0),
+        (0x20, 0, 0.0),
+    ];
+    for (k, (state, answer, timer)) in (0u32..).zip(cases) {
+        setup_0420_state(&mut t, setup, k, k & 1 == 1);
+        t.set_u16(w(0x5), state);
+        t.set_u32(ok, answer);
+        setf(&mut t, w(0xa8), timer);
+        t.set_u32(w(0x30), 0x0030_0000 + k);
+        let task = task_at(&mut t, SCRATCH + 0x1000);
+        ownb::dirty_stack(&mut t, 0x7040 + k, &[]);
+        let call = Call {
+            eax: 0x5a5a_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0420` 0x100066e0 (`r43::object_task_0420`): the clock below and
+/// at its mark (and NaN); state 0 idle and going on, 1 (the set-up, the
+/// parent empty and holding a node), 2 idle, counting and ending (the
+/// byte wrapping to 0), a negative state and one past the cases.
+#[test]
+fn object_task_0420() {
+    let Some(mut t) = sa::twin(420) else { return };
+    let f = t.at(0x66e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let pn = t.img.rel32_target(f + 0x208);
+    node_slots(&mut t, pn);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[1]);
+    for (s, n) in [(306u32, 3usize), (239, 3), (779, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let p = w(0xc6);
+    let tb = SCRATCH + 0x8000;
+    let mark = f32::from_bits(t.u32(w(0x2a)));
+    // (state, clock, +0x524, +0x520, byte +0x2e3, parent holds a node)
+    let cases: [(i16, f32, u16, u16, u8, bool); 10] = [
+        (0, 0.0, 0, 0, 0, false),
+        (0, 0.0, 3, 0, 0, false),
+        (1, 0.0, 0, 0, 0, true),
+        (2, 0.0, 0, 0, 0x20, false),
+        (2, 0.0, 0, 1, 0x20, false),
+        (2, 0.0, 0, 1, 0x10, false),
+        (1, mark, 0, 1, 0x10, false),
+        (1, f32::NAN, 0, 0, 0, false),
+        (-3, 0.0, 0, 0, 0, false),
+        (7, 0.0, 0, 0, 0, false),
+    ];
+    for (k, (state, clock, b524, b520, byte, held)) in (0u32..).zip(cases) {
+        junk(&mut t, tb, 0x800, k);
+        t.set_u16(tb + 0x538, state.cast_unsigned());
+        // the clock: K added before the mark is compared
+        let step = f32::from_bits(t.u32(w(0x23)));
+        setf(&mut t, tb + 0x7e4, clock - step);
+        t.set_u16(tb + 0x524, b524);
+        t.set_u16(tb + 0x520, b520);
+        t.set_u8(tb + 0x2e3, byte);
+        // the node `T + 0x2bc` the end unlinks: under a parent of its own
+        let n = tb + 0x2bc;
+        let par = SCRATCH + 0x6300;
+        empty_list(&mut t, par);
+        t.set_u32(n + 0x14, par);
+        t.set_u32(n + 4, par);
+        t.set_u32(n + 8, par);
+        t.set_u32(par + 0xc, n);
+        t.set_u32(par + 0x10, n);
+        t.set_u16(par + 0x18, 1);
+        for o in [0x1eb, 0x272, 0x1b1] {
+            empty_list(&mut t, w(o));
+        }
+        empty_list(&mut t, p);
+        if held {
+            let last = SCRATCH + 0x6100;
+            t.write(last, &[0x6c; 0x20]);
+            t.set_u32(p + 0x10, last);
+        }
+        junk_ops(&mut t, f, &[0x2b6, 0x2c5]);
+        let task = task_at(&mut t, tb);
+        ownb::dirty_stack(&mut t, 0x66e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

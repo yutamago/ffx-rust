@@ -3405,6 +3405,8 @@ ports! {
     "r43 load step 0250" => r43::LOAD_0250, r43::load_0250;
     "r43 caster record 0250" => r43::CASTER_RECORD_0250, r43::caster_record_0250;
     "r43 spawn 0250" => r43::SPAWN_0250, r43::spawn_0250;
+    "r43 task 0420" => r43::TASK_0420, r43::task_0420;
+    "r43 object task 0420" => r43::OBJECT_TASK_0420, r43::object_task_0420;
     // round 43 (magic-r43): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5343,6 +5345,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 43 (magic-r43)
     ("r43 object set-up 0445", &r43::OBJECT_SETUP_0445),
     ("r43 start-up 0250", &r43::START_UP_0250),
+    ("r43 set-up 0420", &r43::SETUP_0420),
     // round 43 (magic-r43): end of INTERNAL
 ];
 
