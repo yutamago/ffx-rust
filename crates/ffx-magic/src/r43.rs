@@ -4907,3 +4907,87 @@ pub const FLIGHT_0394: Sig = Sig {
     calls: &[(0x2e8, Callee::Sig(&SPARKS_0394)), (0x301, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0251`'s object step (0x100050e0, 239 bytes; a task callback,
+/// cdecl `(S)`; no frame of its own). With `n = *G_N` records of 0xdc
+/// bytes at `G_R`: whether one has its first word 0; the objects run
+/// ([`run_objects`](crate::l5_objhost::run_objects)); unless they report
+/// 1 with flag 0x8000 of `*G_F` set and no record free, that is all
+/// (their `eax`). Else each actor `i < n` gets its mode 0
+/// ([`actor_mode`](crate::sa_script::actor_mode)) and is shown again
+/// (slot 296 `(t, 0)` for a party member outside a battle, else slot 257
+/// `(chr, 1)` of the character table); `S + 0x14` = 3 and `S[2] + 0x10` =
+/// the next callback; the grid drawn ([`draw_grid`](crate::sb_misc::draw_grid))
+/// and the part programs run (a tail jump into
+/// [`part_programs`](crate::m0251::part_programs)).
+pub fn object_step_0251<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let n = g.read::<i32>(w(0x7));
+    let mut none_free = 1u32;
+    let mut rec = w(0x17);
+    for _ in 0..n.max(0) {
+        if g.read::<u32>(rec) == 0 {
+            none_free = 0;
+            break;
+        }
+        rec = rec.wrapping_add(0xdc);
+    }
+    // push ebp; push esi; push edi; call
+    let r = crate::l5_objhost::run_objects(g, img, call(0x34), fr.esp.wrapping_sub(0x10));
+    if r != 1 || g.read::<u32>(w(0x43)) & 0x8000 == 0 || none_free != r {
+        return Ret::eax(r);
+    }
+    for i in 0..n.max(0).cast_unsigned() {
+        let am = Frame {
+            at: call(0x65),
+            esp: fr.esp.wrapping_sub(0x10),
+            ecx: i,
+            edx: 0,
+            ..Frame::default()
+        };
+        crate::sa_script::actor_mode(g, img, &am);
+        let list = g.read::<u32>(w(0x72));
+        let party = if g.read::<u32>(w(0x6b)) == 0 {
+            let t = u32::from(g.read::<u8>(list.wrapping_add(i)));
+            (t < 0x20).then_some(t)
+        } else {
+            None
+        };
+        if let Some(t) = party {
+            // call width: 2
+            g.call(slot_target(g, w(0x8f), 296), 0, &[t, 0]);
+        } else {
+            let b = u32::from(g.read::<u8>(list.wrapping_add(i)));
+            let c = g.read::<u32>(w(0xae).wrapping_add(4 * b));
+            // call width: 2
+            g.call(slot_target(g, w(0xb6), 257), 0, &[c, 1]);
+        }
+    }
+    let s = fr.arg(g, 0);
+    g.write::<u32>(s.wrapping_add(0x14), 3);
+    let s8 = g.read::<u32>(s.wrapping_add(8));
+    g.write::<u32>(s8.wrapping_add(0x10), w(0xda));
+    crate::sb_misc::draw_grid(g, img, call(0xdf));
+    let pp = Frame {
+        at: call(0xe7),
+        esp: fr.esp,
+        ..Frame::default()
+    };
+    crate::m0251::part_programs(g, img, &pp)
+}
+
+/// [`object_step_0251`] (the `rel32`s: the objects, the actor mode, the
+/// grid and the part programs' tail jump).
+pub const OBJECT_STEP_0251: Sig = Sig {
+    len: 239,
+    hash: 0xf420_ed28_9cd0_c68d,
+    calls: &[
+        (0x34, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x65, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0xdf, Callee::Sig(&crate::sb_misc::DRAW_GRID)),
+        (0xe7, Callee::Sig(&crate::m0251::PART_PROGRAMS)),
+    ],
+    imports: &[],
+};

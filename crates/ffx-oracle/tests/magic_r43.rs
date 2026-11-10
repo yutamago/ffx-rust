@@ -1715,24 +1715,37 @@ fn landing_0394() {
     let st = t.img.rel32_target(f + 0x1ad);
     magic_r11::pools(&mut t, st, 150);
     let o = SCRATCH + 0x1000;
-    for (k, near) in [true, false, true].into_iter().enumerate() {
+    // (near, the mark's x and z): the mark close, far, and at 26-28 off
+    // along each axis and both (the distance's terms matter there)
+    for (k, (near, mx, mz)) in [
+        (true, -1.75f32, 0.25f32),
+        (false, 900.0, 0.0),
+        (true, -1.75, 0.25),
+        (true, -28.0, 0.0),
+        (true, 0.0, -28.0),
+        (true, -20.0, -20.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let k = k as u32;
         let gs = t.img.word(f + 0x1a);
         let s = block_0394(&mut t, gs, k);
         // a plain yaw
         setf(&mut t, s + 0xc84, 0.5 + k as f32);
-        if near {
-            // the caster placed where the place lands
-            for (i, v) in [-1.75f32, 0.0, 0.25].into_iter().enumerate() {
-                setf(&mut t, s + 0xb40 + 4 * i as u32, v);
-            }
-        } else {
-            setf(&mut t, s + 0xb40, 900.0);
-        }
+        setf(&mut t, s + 0xb40, mx);
+        setf(&mut t, s + 0xb44, 0.0);
+        setf(&mut t, s + 0xb48, mz);
         junk(&mut t, o, 0x60, k);
         t.set_u32(t.img.word(f + 0x38), 0x0000_0040 + k);
         ownb::dirty_stack(&mut t, 0x4b80 + k, &[]);
-        let eax = if near { Eax::Checked } else { Eax::Junk };
+        // (the far path's eax is the import's leftover; the last three
+        // cases sit near the mark, either side: their memory tells)
+        let eax = if near && k < 3 {
+            Eax::Checked
+        } else {
+            Eax::Junk
+        };
         t.check_entry(f, Call::default(), &[o], eax);
     }
 }
@@ -1760,10 +1773,11 @@ fn turn_step_0394() {
         f32::from_bits(t.u32(w(0x17))),
     );
     // (angle, counter, target byte, monster flag)
-    let cases: [(f32, u32, u8, u32); 6] = [
+    let cases: [(f32, u32, u8, u32); 7] = [
         (hi + 1.0, 20, 3, 0),
         (lo - 1.0, 11, 3, 0),
         (0.0, 11, 0x25, 0),
+        (0.0, 11, 0x20, 0),
         (0.0, 11, 3, 1),
         (0.0, 1, 3, 0),
         (0.0, 0, 3, 0),
@@ -1773,7 +1787,7 @@ fn turn_step_0394() {
         setf(&mut t, s + 0xaf0, a);
         setf(&mut t, s + 0xaf4, -a);
         t.set_u32(s + 0xc90, n);
-        t.write(sel, &[b]);
+        t.write(sel, &[b, 0x5a]);
         t.set_u32(w(0x1d7), mon);
         let node = SCRATCH + 0x900;
         magic_hi::lone_node(&mut t, give, node);
@@ -1802,9 +1816,18 @@ fn flight_0394() {
     let pool = SCRATCH + 0x5000;
     let grounded = SCRATCH + 0x7e60;
     rec(&mut t, 11, 1, move |m, _| m.r32(grounded));
+    // the party member's place, read through its pointer
+    rec(&mut t, 255, 2, |m, a| {
+        for i in 0..3 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(SCRATCH + 0x7e70 + 4 * i, v);
+        }
+        0x255
+    });
     // (counter, records free, battle flag, me, grounded)
-    let cases: [(i32, u32, u32, i32, u32); 8] = [
+    let cases: [(i32, u32, u32, i32, u32); 9] = [
         (30, 8, 0, 3, 0),
+        (29, 8, 0, 0x20, 0),
         (16, 8, 1, 3, 0),
         (15, 8, 0, 0x30, 1),
         (14, 1, 0, 3, 0),
@@ -1841,4 +1864,83 @@ fn flight_0394() {
     t.check(sp, Call::default(), &[], Eax::Checked, |g, img, fr| {
         ffx_magic::r43::sparks_0394(g, img, fr)
     });
+}
+
+/// `magic_0251` 0x100050e0 (`r43::object_step_0251`): the objects running
+/// (an empty list: 1) with flag 0x8000 clear, set with a free record, set
+/// with none free (the actors shown again: a party member, a monster and
+/// a member past 0x20, a battle), no records at all.
+#[test]
+fn object_step_0251() {
+    let Some(mut t) = sa::twin(251) else { return };
+    let f = t.at(0x50e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    summon_stubs::prime(&mut t, f, SCRATCH + 0x4_0000);
+    let ro = t.img.rel32_target(f + 0x34);
+    let wr = |o: u32| img.word(ro + o);
+    for (s, n) in [
+        (296u32, 2usize),
+        (257, 2),
+        (210, 2),
+        (211, 2),
+        (217, 2),
+        (255, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let list = SCRATCH + 0x180;
+    t.write(list, &[3, 0x25, 0x20, 1]);
+    t.set_u32(w(0x72), list);
+    for i in 0..0x30 {
+        t.set_u32(w(0xae) + 4 * i, 0x0c00 + i);
+    }
+    let recs = w(0x17);
+    // the grid's and the part programs' counts (1) and records
+    for at in [0xdf, 0xe7] {
+        let c = t.img.rel32_target(f + at);
+        let (n_at, r_at) = (t.img.word(c + 0x08), t.img.word(c + 0x0f));
+        t.set_u32(n_at, 1);
+        t.set_u32(r_at, SCRATCH + 0x5000);
+    }
+    t.write(SCRATCH + 0x5000, &[0x22; 0x80]);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| a[0] ^ 0x77);
+    rec(&mut t, 779, 2, |_, a| 0x0779_0000 ^ a[0]);
+    // (flag, a record free, records, battle)
+    let cases: [(u32, bool, u32, u32); 5] = [
+        (0, false, 4, 0),
+        (0x8000, true, 4, 0),
+        (0x8000, false, 4, 0),
+        (0x8000, false, 3, 1),
+        (0x8000, false, 0, 0),
+    ];
+    for (k, (flag, free, n, battle)) in (0u32..).zip(cases) {
+        // run_objects: an empty list, its pointer globals
+        t.set_u32(wr(0x1a), 0);
+        t.set_u32(wr(0x25), SCRATCH + 0x60);
+        let l = wr(0x7c);
+        t.write(l, &[0; 0x10]);
+        t.set_u32(wr(0x14), 0);
+        t.set_u32(w(0x7), n);
+        for i in 0..4 {
+            t.set_u32(recs + 0xdc * i, u32::from(!(free && i == 2)));
+        }
+        t.set_u32(w(0x43), flag | 0x11);
+        t.set_u32(w(0x6b), battle);
+        let s = SCRATCH + 0x1000;
+        junk(&mut t, s, 0x20, k);
+        let s8 = SCRATCH + 0x1100;
+        junk(&mut t, s8, 0x20, k + 1);
+        t.set_u32(s + 8, s8);
+        ownb::dirty_stack(&mut t, 0x50e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[s], Eax::Checked);
+    }
+    // both ways of showing the actors reached
+    for (sl, n) in [(296u32, 1u32), (257, 2)] {
+        let c = t.u32(SCRATCH + 0x2_0000 + 0x80 * sl);
+        assert!(c >= n, "slot {sl}: {c} calls");
+    }
 }
