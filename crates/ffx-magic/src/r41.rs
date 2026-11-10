@@ -3375,3 +3375,255 @@ pub const SHARD_0269: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0269`'s shard draw (0x10001b40, 427 bytes; internal: `ecx` =
+/// the shard's matrix `R`, `dl` = its alpha byte, the stack `(i)`; an
+/// `ebp` /GS frame): `h` = slot 719 `(D, 4, 0)`; slots 723 `(ebp - 0xcc)`
+/// and 724 `(C)` (`C` = `ebp - 0x8c`), slot 231 `(W, C, R)` (`W` =
+/// `ebp - 0x4c`); the sprite record's words (`W` twice, the texture word,
+/// the alpha byte); slot 772 `(h, i)` gives the 64-bit handle; with the
+/// game lock 1 around each: when slot 773 knows it, slots 819 `(handle,
+/// P, REC)` (`P` = `ebp - 0xf0`) and 775 `(handle)`; else slot 820
+/// `(handle, P, REC, slot 776 (byte) | slot 777 (*G_E))`. Returns the
+/// lock's address.
+#[allow(clippy::too_many_arguments)] // the original's registers
+pub fn shard_draw_0269<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    esp: u32,
+    r: u32,
+    alpha: u8,
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let i = g.read::<u32>(esp + 4);
+    // call width: 3
+    let h = g.call(slot(g, 0x14, 719), 0, &[w(0x26), 4, 0]).eax;
+    g.write::<u32>(at(0xd4), h);
+    // call width: 1
+    g.call(slot(g, 0x32, 723), 0, &[at(0xcc)]);
+    // call width: 1
+    g.call(slot(g, 0x5b, 724), 0, &[at(0x8c)]);
+    // call width: 3
+    g.call(slot(g, 0x77, 231), 0, &[at(0x4c), at(0x8c), r]);
+    g.write::<u32>(w(0x87), at(0x4c));
+    let tex = g.read::<u32>(w(0x8c));
+    g.write::<u32>(w(0x91), tex);
+    g.write::<u32>(w(0x9f), at(0x4c));
+    g.write::<u8>(w(0xaa), alpha);
+    // call width: 2
+    let hd = g.call(slot(g, 0xa4, 772), 0, &[h, i]);
+    let (lo, hi) = (hd.eax, hd.edx);
+    g.write::<u32>(at(0xd0), hi);
+    let lock = g.read::<u32>(w(0xb9));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let known = g.call(slot(g, 0xc9, 773), 0, &[lo, hi]).eax;
+    let lock = g.read::<u32>(w(0xe1));
+    g.write::<u32>(lock, saved);
+    let saved = if known != 0 {
+        g.write::<u32>(lock, 1);
+        // call width: 4
+        g.call(slot(g, 0xfb, 819), 0, &[lo, hi, at(0xf0), w(0xef)]);
+        let lock = g.read::<u32>(w(0x110));
+        g.write::<u32>(lock, 1);
+        // call width: 2
+        g.call(slot(g, 0x11c, 775), 0, &[lo, hi]);
+        saved
+    } else {
+        let b = u32::from(g.read::<u8>(w(0x131)));
+        // call width: 1
+        let x = g.call(slot(g, 0x137, 776), 0, &[b]).eax;
+        let e = g.read::<u32>(w(0x154));
+        // call width: 1
+        let y = g.call(slot(g, 0x145, 777), 0, &[e]).eax;
+        let lock = g.read::<u32>(w(0x15e));
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        // call width: 5
+        g.call(slot(g, 0x177, 820), 0, &[lo, hi, at(0xf0), w(0x16b), x | y]);
+        saved
+    };
+    let lock = g.read::<u32>(w(0x194));
+    g.write::<u32>(lock, saved);
+    lock
+}
+
+/// [`shard_draw_0269`] (the `rel32`: the cookie check).
+pub const SHARD_DRAW_0269: Sig = Sig {
+    len: 427,
+    hash: 0x7c3e_e602_90c9_7f81,
+    calls: &[(0x1a3, Callee::Any)],
+    imports: &[],
+};
+
+/// `|f64(x)|` (`cvtps2pd`, then `andpd` with the mask at `mask`).
+fn abs_f64<G: Game>(g: &G, x: f32, mask: u32) -> f64 {
+    f64::from_bits(f64::from(x).to_bits() & g.read::<u64>(mask))
+}
+
+/// `magic_0269`'s shards step (0x10002050, 1020 bytes; no arguments; a
+/// /GS frame aligned to 8, `S` its `esp` after the saved registers, the
+/// scale matrix `M` at `S + 0x58` (slot 235, 0.4 on its diagonal) and
+/// the shard's matrix `R` at `S + 0x18`). For each of the 128 shards (0x60
+/// bytes from `*G_S`) with a time `+0x58`: fading (`+0x5c` 1) the time
+/// steps down and the alpha is `(t << 7) / 20`, else 0x80; the three
+/// angles `+0..+8` turn by `+0x10..+0x18`, each wrapped once; the fall
+/// `+0x40 += +0x44`, the place `+0x20..+0x28 += +0x30..+0x38` (the height
+/// with `+0x34 + fall`), `+0x30`/`+0x38` scaled by `+0x4c`. At the floor
+/// `+0x48` (not below it): the place pulled back along the speed by `K -
+/// |y - floor| / |dy|` (when neither `+0x34` nor `dy` is 0), the height
+/// the floor, with a spin `|+0x54| > K'` two randoms (slot 314 `(spin)`)
+/// added to the speeds and the spin scaled, three new turns (slot 314),
+/// the bounce `+0x34 = -(+0x50 dy)`, and while `+0x44` is above it the
+/// speeds scaled and `+0x34`, `+0x44` cleared; `+0x40` 0, `+0x5c` 1.
+/// Then `R` = `M` turned by the angles (slots 328, 329, 330) moved to the
+/// place, and the shard drawn ([`shard_draw_0269`] with the alpha byte).
+/// Returns the last draw's `eax` (slot 235's with none).
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn shards_step_0269<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32_at(g, w(o));
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x98);
+    let s0 = a.wrapping_sub(8);
+    let l = |o: u32| s0.wrapping_add(o);
+    let base = g.read::<u32>(w(0x1d));
+    let m = l(0x58);
+    // call width: 1
+    let mut eax = g.call(slot(g, 0x28, 235), 0, &[m]).eax;
+    for o in [0x80u32, 0x6c, 0x58] {
+        g.write::<u32>(l(o), 0x3ecc_cccd);
+    }
+    let rot = l(0x18);
+    // the constants in registers: loaded before the loop, again after
+    // each draw (other operands, the same globals)
+    let mut ops = (0x40u32, 0x48u32, 0x38u32);
+    for j in 0..0x80u32 {
+        let s = base.wrapping_add(0x60 * j);
+        let (hi, step) = (k(g, ops.0), k(g, ops.1));
+        let mask = w(ops.2);
+        let time = g.read::<u32>(s + 0x58);
+        if time == 0 {
+            continue;
+        }
+        if g.read::<u32>(s + 0x5c) == 1 {
+            let t = time.wrapping_sub(1);
+            g.write::<u32>(s + 0x58, t);
+            let v = (t << 7).cast_signed() / 20;
+            eax = v.cast_unsigned();
+            g.write::<u32>(l(0x10), eax);
+        } else {
+            g.write::<u8>(l(0x10), 0x80);
+        }
+        let lo = k(g, 0xb2);
+        for o in [0u32, 4, 8] {
+            let v = add(f32_at(g, s + o), f32_at(g, s + 0x10 + o));
+            put(g, s + o, crate::m0018::wrap(v, hi, lo, step));
+        }
+        let fall = add(f32_at(g, s + 0x44), f32_at(g, s + 0x40));
+        put(g, s + 0x40, fall);
+        let x = add(f32_at(g, s + 0x20), f32_at(g, s + 0x30));
+        let vy = f32_at(g, s + 0x34);
+        let dy = add(fall, vy);
+        put(g, s + 0x20, x);
+        let z = add(f32_at(g, s + 0x28), f32_at(g, s + 0x38));
+        let y = add(f32_at(g, s + 0x24), dy);
+        put(g, l(0x14), dy);
+        put(g, s + 0x28, z);
+        put(g, s + 0x24, y);
+        let damp = f32_at(g, s + 0x4c);
+        put(g, s + 0x30, mul(damp, f32_at(g, s + 0x30)));
+        let damp = f32_at(g, s + 0x4c);
+        put(g, s + 0x38, mul(damp, f32_at(g, s + 0x38)));
+        let floor = f32_at(g, s + 0x48);
+        // comiss y, floor; jb: below (or unordered) skips the bounce
+        if !(y < floor || y.is_nan() || floor.is_nan()) {
+            #[allow(clippy::float_cmp)] // ucomiss's exact tests
+            let flat = vy == 0.0 || dy == 0.0;
+            if !flat {
+                let over = sub(y, floor);
+                let r = abs_f64(g, over, mask) / abs_f64(g, dy, mask);
+                #[allow(clippy::cast_possible_truncation)] // cvtpd2ps
+                let back = (g.read::<f64>(w(0x1b7)) - r) as f32;
+                let x = sub(f32_at(g, s + 0x20), mul(f32_at(g, s + 0x30), back));
+                let zb = mul(f32_at(g, s + 0x38), back);
+                put(g, s + 0x20, x);
+                let z = sub(f32_at(g, s + 0x28), zb);
+                put(g, s + 0x28, z);
+            }
+            eax = g.read::<u32>(s + 0x48);
+            g.write::<u32>(s + 0x24, eax);
+            let spin = f32_at(g, s + 0x54);
+            if abs_f64(g, spin, mask) > g.read::<f64>(w(0x207)) {
+                let rnd = |g: &mut G, op: u32, x: u32| {
+                    // call width: 1
+                    let out = g.call(slot(g, op, 314), 0, &[x]);
+                    (out.eax, crate::m0018::st0_f32(out.st0))
+                };
+                let (_, r) = rnd(g, 0x20e, spin.to_bits());
+                put(g, s + 0x30, add(f32_at(g, s + 0x30), r));
+                let spin = g.read::<u32>(s + 0x54);
+                let (_, r) = rnd(g, 0x230, spin);
+                put(g, s + 0x38, add(f32_at(g, s + 0x38), r));
+                put(g, s + 0x54, mul(f32_at(g, s + 0x54), k(g, 0x26b)));
+            }
+            for (o, op) in [(0x10u32, 0x275u32), (0x14, 0x28d), (0x18, 0x2a4)] {
+                // call width: 1
+                let out = g.call(slot(g, op, 314), 0, &[0x3ef1_463b]);
+                put(g, s + o, crate::m0018::st0_f32(out.st0));
+            }
+            let b = mul(f32_at(g, s + 0x50), f32_at(g, l(0x14)));
+            let b = f32::from_bits(b.to_bits() ^ g.read::<u32>(w(0x2ce)));
+            put(g, s + 0x34, b);
+            let lim = f64::from_bits(f64::from(b).to_bits() & g.read::<u64>(w(0x2e4)));
+            if f64::from(f32_at(g, s + 0x44)) > lim {
+                put(g, s + 0x30, mul(f32_at(g, s + 0x30), k(g, 0x2fa)));
+                g.write::<u32>(s + 0x34, 0);
+                put(g, s + 0x38, mul(f32_at(g, s + 0x38), k(g, 0x313)));
+                g.write::<u32>(s + 0x44, 0);
+            }
+            g.write::<u32>(s + 0x40, 0);
+            g.write::<u32>(s + 0x5c, 1);
+        }
+        // call width: 3
+        let ang = g.read::<u32>(s);
+        g.call(slot(g, 0x347, 328), 0, &[rot, m, ang]);
+        let ang = g.read::<u32>(s + 4);
+        // call width: 3
+        g.call(slot(g, 0x367, 329), 0, &[rot, rot, ang]);
+        let ang = g.read::<u32>(s + 8);
+        // call width: 3
+        g.call(slot(g, 0x387, 330), 0, &[rot, rot, ang]);
+        let alpha = g.read::<u8>(l(0x10));
+        for (i, o) in (0u32..).zip([0x20u32, 0x24, 0x28, 0x2c]) {
+            let v = g.read::<u32>(s + o);
+            g.write::<u32>(rot + 0x30 + 4 * i, v);
+        }
+        // push edi; call: the draw's word
+        g.write::<u32>(s0.wrapping_sub(4), j);
+        eax = shard_draw_0269(
+            g,
+            img,
+            img.rel32_target(f + 0x3b6),
+            s0.wrapping_sub(8),
+            rot,
+            alpha,
+        );
+        ops = (0x3c6, 0x3be, 0x3ce);
+    }
+    Ret::eax(eax)
+}
+
+/// [`shards_step_0269`] (the `rel32`s: the draw, the cookie check).
+pub const SHARDS_STEP_0269: Sig = Sig {
+    len: 1020,
+    hash: 0x6586_9615_a39b_1b62,
+    calls: &[(0x3b6, Callee::Sig(&SHARD_DRAW_0269)), (0x3f4, Callee::Any)],
+    imports: &[],
+};

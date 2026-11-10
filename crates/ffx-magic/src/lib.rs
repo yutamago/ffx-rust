@@ -3366,6 +3366,7 @@ ports! {
     "r41 load step 0269" => r41::LOAD_0269, r41::load_0269;
     "r41 launch 0269" => r41::LAUNCH_0269, r41::launch_0269;
     "r41 shard 0269" => r41::SHARD_0269, r41::shard_0269;
+    "r41 shards step 0269" => r41::SHARDS_STEP_0269, r41::shards_step_0269;
     // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5284,6 +5285,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r41 spark 0370", &r41::SPARK_0370),
     ("r41 spark 0376", &r41::SPARK_0376),
     ("r41 start-up 0269", &r41::START_UP_0269),
+    ("r41 shard draw 0269", &r41::SHARD_DRAW_0269),
     // round 41 (magic-r41): end of INTERNAL
 ];
 

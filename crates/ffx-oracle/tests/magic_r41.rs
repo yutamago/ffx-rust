@@ -1611,6 +1611,8 @@ fn launch_0269() {
             t.set_u32(img.word(deal + 0x46) + 0x1c * i, 2);
         }
         junk(&mut t, w(0x260), 8, k);
+        // the strike record (its index, count and strikes reset)
+        junk_ops(&mut t, f, &[0x287, 0x2a4, 0x2ae]);
         for o in [0x26u32, 0xae, 0x125, 0x1a6, 0x20d] {
             t.set_u32(w(o), 0x0000_0040 + o);
         }
@@ -1700,5 +1702,107 @@ fn shard_0269() {
         t.set_u32(node + 0x14, count.cast_unsigned());
         ownb::dirty_stack(&mut t, 0x1cf0 + k, &[]);
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0269` 0x10002050 (`r41::shards_step_0269`) with its draw
+/// 0x10001b40 (`r41::shard_draw_0269`): live shards fading and not, in
+/// the air and at the floor (pulled back or flat, spinning or not, the
+/// bounce damped or not), slot 773 knowing the handle and not.
+#[test]
+fn shards_step_0269() {
+    let Some(mut t) = twin(269) else { return };
+    let f = t.at(0x2050);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let draw = img.rel32_target(f + 0x3b6);
+    let dw = |o: u32| img.word(draw + o);
+    let shards = SCRATCH + 0x1_0000;
+    all_stubs(&mut t);
+    filler_16(&mut t, 235);
+    for s in [328u32, 329, 330] {
+        rec(&mut t, s, 3, move |m, a| {
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16u32 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + ang * (i + 1) as f32 / 8.0;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    let rnd = SCRATCH + 0xa00;
+    rec(&mut t, 314, 1, move |m, a| {
+        let c = m.r32(rnd);
+        m.w32(rnd, c + 1);
+        0x0314_0000 ^ a[0] ^ c
+    });
+    t.stub_st0(314, move |m, a| {
+        f64::from(m.r32(rnd) % 5) * 0.375 + f64::from(f32::from_bits(a[0]))
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    rec(&mut t, 723, 1, |_, a| 0x0723_0000 ^ a[0]);
+    rec(&mut t, 724, 1, |m, a| {
+        for i in 0..16u32 {
+            wf(m, a[0] + 4 * i, i as f32 * 0.25 - 1.0);
+        }
+        0x724
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        let mut v = 0u32;
+        for i in 0..16u32 {
+            v = v.rotate_left(3) ^ m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+        }
+        for i in 0..16u32 {
+            m.w32(a[0] + 4 * i, v ^ i);
+        }
+        0x231
+    });
+    rec(&mut t, 772, 2, |_, a| a[0] ^ (a[1] << 4));
+    t.stub_edx(772, |_, a| a[1] ^ 0x77);
+    rec(&mut t, 773, 2, |_, a| a[1] & 1);
+    let lock = SCRATCH + 0x7f40;
+    for (s, n) in [(775u32, 2usize), (776, 1), (777, 1), (819, 4), (820, 5)] {
+        rec(&mut t, s, n, move |m, a| (s << 16) ^ a[0] ^ m.r32(lock));
+    }
+    for o in [0xb9u32, 0xe1, 0x110, 0x15e, 0x194] {
+        t.set_u32(dw(o), lock);
+    }
+    t.set_u32(dw(0x8c), 0x0000_8c8c);
+    t.set_u32(dw(0x154), 0x0000_1541);
+    t.set_u32(w(0x1d), shards);
+    let floor = 2.0f32;
+    // (index, time, fading, y, vy, fall step, spin, the bounce's +0x44)
+    let live: [(u32, u32, u32, f32, f32, f32, f32, f32); 7] = [
+        (0, 30, 1, 0.5, 0.25, 0.1, 0.0, 0.0),
+        (3, 12, 0, 1.75, 0.5, 0.25, 4.0, 9.0),
+        (4, 7, 1, 2.5, 0.0, 0.0, 0.01, 0.0),
+        (9, 1, 1, 1.9, -0.25, 0.5, -3.0, 0.1),
+        (10, 5, 0, 3.0, 0.75, -0.75, 0.5, 0.0),
+        (64, 2, 0, 2.0, 0.125, 0.0, 6.0, 0.25),
+        (127, 9, 1, -1.0, 0.25, 0.25, 0.0, 0.0),
+    ];
+    for k in 0..2u32 {
+        t.set_u32(lock, 0x40 + k);
+        for i in 0..0x80u32 {
+            let s = shards + 0x60 * i;
+            junk(&mut t, s, 0x60, k + i);
+            t.set_u32(s + 0x58, 0);
+        }
+        for (n, &(i, time, fading, y, vy, fall, spin, f44)) in (0u32..).zip(&live) {
+            let s = shards + 0x60 * i;
+            floats(&mut t, s, 0x16, k + n);
+            setf(&mut t, s + 0x24, y);
+            setf(&mut t, s + 0x34, vy);
+            setf(&mut t, s + 0x40, 0.0);
+            setf(&mut t, s + 0x44, if k == 0 { fall } else { f44 });
+            setf(&mut t, s + 0x48, floor);
+            setf(&mut t, s + 0x4c, 0.9);
+            setf(&mut t, s + 0x50, 0.5);
+            setf(&mut t, s + 0x54, spin);
+            t.set_u32(s + 0x58, time);
+            t.set_u32(s + 0x5c, fading);
+        }
+        ownb::dirty_stack(&mut t, 0x2050 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
