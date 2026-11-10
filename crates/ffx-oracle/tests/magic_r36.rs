@@ -169,7 +169,7 @@ fn cameras_in(n: u16) {
             let sc = SCRATCH + 0x1000 + 0x400 * j;
             // the eye and aim tracks
             for (tf, state, alt, keys) in [
-                (c - 0x18, i % 8, (i / 8) % 2, sc),
+                (c - 0x18, i % 8, (i / 8) % 3, sc),
                 (c - 0x58, (3 * i + 1) % 8, (i / 4) % 2, sc + 0x100),
             ] {
                 floats(&mut t, keys, 0x40, i + 5);
@@ -183,6 +183,7 @@ fn cameras_in(n: u16) {
                 t.set_u32(tf + 0x3c, state);
                 let (time, step, left) = match (state, alt) {
                     (1, 0) => (0.25, 0.25, 3),
+                    (1, 2) => (0.75, 0.25, 3),
                     (1, _) => (0.9, 0.25, 3),
                     (_, 0) => (0.5, 0.125, 3),
                     _ => (0.375, 0.25, 1),
@@ -192,16 +193,20 @@ fn cameras_in(n: u16) {
                 t.set_u32(tf + 0x34, left);
             }
             // the roll
-            let (state, alt) = (i % 3, (i / 3) % 4);
+            let (state, alt) = (i % 3, (i / 3) % 6);
             let rk = sc + 0x200;
             floats(&mut t, rk, 8, i + 9);
             t.set_u32(c + 0x28, rk);
-            t.set_u32(c + 0x3c, 5);
+            // a single frame (alts 4, 5): the blend is its end exactly
+            t.set_u32(c + 0x3c, if alt >= 4 { 1 } else { 5 });
             t.set_u32(c + 0x40, state);
-            t.set_u32(c + 0x38, if alt == 0 { 1 } else { 3 });
+            t.set_u32(c + 0x38, [1, 3, 3, 3, 2, 2][alt as usize]);
             let (from, to) = match (state, alt) {
                 (1, 1) => (k2 + 1.5, k2 + 0.5),
                 (1, 2) => (k4 - 1.25, k4 - 0.5),
+                (1, 4) => (0.5, k2),
+                (1, 5) => (0.5, k4),
+                (_, 4) => (0.5, k2 + 0.001),
                 (1, _) => (0.5, -1.0),
                 _ => (1.25, 0.5),
             };
@@ -227,6 +232,7 @@ fn cameras_in(n: u16) {
             t.set_u32(c + 0x6c, i % 3);
             t.set_u32(c + 0x70, (i + 1) % 2);
             t.set_u8(c + 0x80, [1u8, 0, 5][(i % 3) as usize]);
+            t.set_u8(c + 0x81, 0x5a);
             t.set_u32(
                 c + 0x7c,
                 u32::from(i % 4 != 3) * (1 + u32::from(i % 5 == 4)),
@@ -734,5 +740,212 @@ fn start_up_0515() {
             ownb::dirty_stack(&mut t, 0x4230 + k, &[]);
             t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
         }
+    }
+}
+
+/// A free ring of `n` nodes (0x20 bytes) at `at` for the task pool take
+/// at `take` (its head and count globals).
+fn ring(t: &mut Twin, take: u32, at: u32, n: u32) {
+    for i in 0..n {
+        let node = at + 0x20 * i;
+        t.write(node, &[0x5a; 0x20]);
+        t.set_u32(node, at + 0x20 * ((i + n - 1) % n));
+        t.set_u32(node + 4, at + 0x20 * ((i + 1) % n));
+    }
+    t.set_u32(t.img.word(take + 0x17), at);
+    t.set_u16(t.img.word(take + 0x04), n as u16);
+}
+
+/// The matrix and draw slots of `magic_0165`'s glow and sparks.
+fn stubs_0165(t: &mut Twin) {
+    all_stubs(t);
+    for s in [723u32, 724, 235] {
+        rec(t, s, 1, move |m, a| {
+            for i in 0..16 {
+                let v = (i as f32 + 1.0) * if s == 235 { 1.0 } else { 0.5 };
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x10);
+        }
+        0x230
+    });
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    // the bone point
+    rec(t, 237, 4, |m, a| {
+        for i in 0..4 {
+            wf(m, a[3] + 4 * i, (a[1] & 0xff) as f32 * 0.125 + i as f32);
+        }
+        0x237
+    });
+    // the sprite draw: its five words and the draw struct's first words
+    logp(t, 567, 5, Some((1, 12)), 0x0567_0000);
+    for s in [234u32, 248] {
+        rec(t, s, 3, move |m, a| {
+            for i in 0..3 {
+                let v =
+                    rf(m, a[1] + 4 * i) + if s == 248 { 1.0 } else { -0.5 } * rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[2] + 4 * i) + 0.25;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(t, 773, 4, |_, a| (a[3] >> 1) & 1);
+    rec(t, 776, 1, |_, a| a[0] << 4);
+    rec(t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
+    rec(t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, |_, a| {
+        f64::from(f32::from_bits(a[0])) * 0.375 - 0.03125
+    });
+}
+
+/// `magic_0165` 0x100025b0 (`r36::glow_0165`, an entry): the fade count
+/// positive (counted down), 0 and negative.
+#[test]
+fn glow_0165() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x25b0);
+    stubs_0165(&mut t);
+    let o = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x1e), o);
+    for (k, n) in [(0u32, 7i32), (1, 0), (2, -45), (3, 1), (4, 21)] {
+        floats(&mut t, o + 0x980, 16, k);
+        t.set_u32(o + 0x5f18, n.cast_unsigned());
+        t.set_u32(t.img.word(f + 0x3a), 0x0e0e_0000 + k);
+        t.set_u32(t.img.word(f + 0x2f9), 0x0cc0_0000 + k);
+        ownb::dirty_stack(&mut t, 0x25b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0165` 0x10002a00 (`r36::spark_task_0165`, an entry): waiting,
+/// the trail shrinking with sparks taken (and none free, none left), the
+/// task's end.
+#[test]
+fn spark_task_0165() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x2a00);
+    stubs_0165(&mut t);
+    let o = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x17), o);
+    let tr = t.img.rel32_target(f + 0xb5);
+    t.set_u32(t.img.word(tr + 0x463), SCRATCH + 0x9000);
+    t.set_u32(t.img.word(tr + 0x520), 0x0cc0_0cc0);
+    let table = SCRATCH + 0x8000;
+    rec(&mut t, 941, 1, move |_, _| table);
+    t.write(table, &[0; 0x100]);
+    t.set_u16(table + 6, 3);
+    let take = t.img.rel32_target(f + 0xd2);
+    let pool = SCRATCH + 0xa000;
+    let x = SCRATCH + 0x9100;
+    t.set_u32(t.img.word(f + 0xe2), x);
+    t.set_u32(x + 4, 0x4a4d_0001);
+    // the end's pairs, parts and give-back
+    let give = t.img.rel32_target(f + 0x2a2);
+    let _ = give;
+    // (wait, steps, sparks left, a free pool record)
+    for (k, (wait, steps, left, free)) in [
+        (5i32, 4i32, 3i32, true),
+        (1, 4, 2, true),
+        (0, 3, 1, false),
+        (0, 6, 0, true),
+        (0, 2, -1, true),
+        (0, 1, 2, true),
+        (1, 0, 2, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let tobj = o + 0x5cb8;
+        t.write(tobj, &[0x33; 0x230]);
+        t.set_u32(tobj, 0x0a00 + k);
+        t.set_u32(tobj + 4, 1);
+        t.set_u16(tobj + 8, (k % 3) as u16);
+        t.set_u16(tobj + 0xa, 0x100);
+        for j in 0..32u32 {
+            for (i, v) in (0u32..).zip([j as f32 * 0.5, 1.0, -(j as f32), 1.0]) {
+                setf(&mut t, tobj + 0xc + 16 * j + 4 * i, v);
+            }
+        }
+        t.write(tobj + 0x20c, &[10, 200, 0, 0x80, 250, 3, 128, 0x40]);
+        setf(&mut t, tobj + 0x214, 1.5);
+        setf(&mut t, tobj + 0x218, 0.25);
+        setf(&mut t, tobj + 0x21c, 0.75);
+        t.set_u32(tobj + 0x220, k * 5);
+        t.set_u32(o + 0x5f0c, wait.cast_unsigned());
+        t.set_u32(o + 0x5edc, steps.cast_unsigned());
+        t.set_u32(o + 0x5f10, left.cast_unsigned());
+        // the spark pool: 3 records, the first free or none
+        t.set_u32(t.img.word(take + 0x08), 0);
+        t.set_u32(t.img.word(take + 0x0f), 3);
+        t.set_u32(t.img.word(take + 0x37), pool);
+        for r in 0..3u32 {
+            floats(&mut t, pool + 0x74 * r, 0x1d, k + r);
+            t.set_u32(pool + 0x74 * r + 0x6c, u32::from(!free || r > 0));
+        }
+        // the task: a lone node
+        let task = SCRATCH + 0x1000 + 0x40 * k;
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, task);
+        ownb::dirty_stack(&mut t, 0x2a00 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0165` 0x10003080 (`r36::objects_0165`, an entry): the first
+/// object in the list or not, the task list empty or not.
+#[test]
+fn objects_0165() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x3080);
+    all_stubs(&mut t);
+    magic_r11::pools(&mut t, f, 656);
+    magic_r11::object_slots(&mut t);
+    for call in [0x5du32, 0xd5] {
+        let start = t.img.rel32_target(f + call);
+        magic_r11::object_start_auto(&mut t, start);
+    }
+    let o = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x3), o);
+    let p = SCRATCH + 0x9100;
+    t.set_u32(t.img.word(f + 0x20), p);
+    let list = t.img.word(f + 0x12);
+    let (head, tail) = (t.img.word(f + 0x1cc), t.img.word(f + 0x1b7));
+    for k in 0..4u32 {
+        floats(&mut t, o, 0x1800, k);
+        t.set_u32(o + 0x5f1c, k % 3);
+        // the list: its node holds the object or another one
+        let node = SCRATCH + 0x9200;
+        t.write(node, &[0; 0x20]);
+        t.set_u32(list, node);
+        t.set_u32(node + 8, if k % 2 == 0 { o + 0x260 } else { o + 0x100 });
+        magic_r11::pools(&mut t, f, 656);
+        let old = SCRATCH + 0x9300;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(head, if k < 2 { old } else { 0 });
+        t.set_u32(tail, if k < 2 { old } else { 0 });
+        ownb::dirty_stack(&mut t, 0x3080 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

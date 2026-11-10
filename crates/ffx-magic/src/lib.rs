@@ -3293,6 +3293,9 @@ ports! {
     // round 36 (magic-r36)
     "r36 draw 0515" => r36::DRAW_0515, r36::draw_0515;
     "r36 start-up 0515" => r36::START_UP_0515, r36::start_up_0515;
+    "r36 glow 0165" => r36::GLOW_0165, r36::glow_0165;
+    "r36 spark task 0165" => r36::SPARK_TASK_0165, r36::spark_task_0165;
+    "r36 objects 0165" => r36::OBJECTS_0165, r36::objects_0165;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
