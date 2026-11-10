@@ -2055,13 +2055,15 @@ fn curve_task_0251() {
     );
     let tb = SCRATCH + 0x2000;
     // (delay, steps, script done, angle)
-    let cases: [(i32, i32, u32, f32); 6] = [
+    // (`T + 0xc8` is 0.5: `hi - 0.5` lands on the bound, which stays)
+    let cases: [(i32, i32, u32, f32); 7] = [
         (3, 5, 0, 0.0),
         (0, 5, 0, 0.0),
         (0, 1, 1, 0.0),
         (0, 0, 0, 0.0),
         (0, 4, 0, hi + 0.5),
-        (0, 4, 1, lo - 0.5),
+        (0, 4, 1, lo - 1.0),
+        (0, 4, 0, hi - 0.5),
     ];
     for (k, (delay, steps, done, angle)) in (0u32..).zip(cases) {
         junk(&mut t, tb, 0xe0, k);
@@ -2080,6 +2082,54 @@ fn curve_task_0251() {
         magic_hi::lone_node(&mut t, give, node);
         t.set_u32(node + 0x14, tb);
         ownb::dirty_stack(&mut t, 0x51d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
+
+/// `magic_0348` 0x10006580 (`r43::end_task_0348`, cdecl `(node)`): the
+/// script running or ended, the motion waiting or done; both done (the
+/// lights and models, the node given back).
+#[test]
+fn end_task_0348() {
+    let Some(mut t) = twin(348) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6580);
+    let run = t.img.rel32_target(f + 0xc);
+    let ms = t.img.rel32_target(f + 0x13);
+    let lm = t.img.rel32_target(f + 0x27);
+    let give = t.img.rel32_target(f + 0x32);
+    for (s, n) in [
+        (590u32, 2usize),
+        (589, 2),
+        (296, 2),
+        (941, 1),
+        (772, 2),
+        (779, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let bytes = SCRATCH + 0x600;
+    t.write(bytes, &[3, 5, 7, 9]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 2);
+        bytes
+    });
+    // (script mode, motion done)
+    for (k, (mode, done)) in (0u32..).zip([(4u8, false), (0, false), (4, true), (0, true)]) {
+        let s = SCRATCH + 0x1_0000;
+        junk(&mut t, s, 0xd200, k);
+        t.set_u32(t.img.word(f + 0x07), s);
+        // the lights' block (its own global)
+        let e = SCRATCH + 0x3000;
+        t.set_u32(t.img.word(lm + 0x6), e - t.img.word(lm + 0xe));
+        t.write(e, &[0x5a; 0x240]);
+        t.set_u32(e + 0x228, 0);
+        t.set_u8(t.img.word(run + 0x01), mode);
+        t.set_u32(t.img.word(run + 0x07), 0x0bad_0007);
+        magic_hi::motion(&mut t, ms, done);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        ownb::dirty_stack(&mut t, 0x6580 + k, &[]);
         t.check_entry(f, Call::default(), &[node], Eax::Checked);
     }
 }

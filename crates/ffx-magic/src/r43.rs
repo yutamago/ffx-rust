@@ -5162,3 +5162,50 @@ pub const CURVE_TASK_0251: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0348`'s end task (0x10006580, 58 bytes; a task callback, cdecl
+/// `(N)`, a pool node): as [`task_0350`](crate::r38::task_0350) without
+/// its block and words: the script ([`run`](crate::sa_script::run)) and
+/// the motion step ([`motion_step`](crate::s3_motion::motion_step)); when
+/// both report 1, `*G_S + 0xd180` = 1, the lights and models
+/// ([`lights_models`](crate::m0348::lights_models)) and the node goes back
+/// to the pool (a tail jump into [`give_back`](crate::sa_pool::give_back)).
+/// Returns the give-back's `eax`, or the motion step's.
+pub fn end_task_0348<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = g.read::<u32>(img.word(f + 0x07));
+    let script = crate::sa_script::run(g, img, img.rel32_target(f + 0xc));
+    let motion = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x13));
+    if script != 1 || motion != 1 {
+        return Ret::eax(motion);
+    }
+    g.write::<u32>(s.wrapping_add(0xd180), 1);
+    // push ebp, esi, edi; the call
+    let lm = Frame {
+        at: img.rel32_target(f + 0x27),
+        esp: fr.esp.wrapping_sub(0x10),
+        ..*fr
+    };
+    crate::m0348::lights_models(g, img, &lm);
+    let node = fr.arg(g, 0);
+    Ret::eax(crate::sa_pool::give_back(
+        g,
+        img,
+        img.rel32_target(f + 0x32),
+        node,
+    ))
+}
+
+/// [`end_task_0348`] (the `rel32`s: the script, the motion step, the
+/// lights and models, the give-back's tail jump).
+pub const END_TASK_0348: Sig = Sig {
+    len: 58,
+    hash: 0x16e8_2eb7_08a4_6dc7,
+    calls: &[
+        (0xc, Callee::Sig(&crate::sa_script::RUN)),
+        (0x13, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x27, Callee::Sig(&crate::m0348::LIGHTS_MODELS)),
+        (0x32, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+    ],
+    imports: &[],
+};
