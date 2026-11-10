@@ -2032,3 +2032,150 @@ fn sparks_and_start_0353() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0353` 0x10002840 (`r36::lit_task_0353`, an entry) with its
+/// flicker (0x100025d0), lit draw (0x10001640) and falloff (0x10001520):
+/// the flicker counting down, starting anew, rising and held; parts with
+/// points inside, at and outside the light's radius; no parts.
+#[test]
+fn lit_task_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x2840);
+    all_stubs(&mut t);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x19), s);
+    let fl = t.img.rel32_target(f + 0x26);
+    t.set_u32(t.img.word(fl + 0x1a), s);
+    let ld = t.img.rel32_target(f + 0xad);
+    let m = SCRATCH + 0x4000;
+    t.set_u32(t.img.word(ld + 0x23), m);
+    rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
+    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 0.5 + 0.25);
+    // the light's colour words (four pointers)
+    logp(&mut t, 857, 2, Some((2, 1)), 0x0857_0000);
+    for (s9, n9) in [(559u32, 3usize), (558, 1)] {
+        rec(&mut t, s9, n9, move |m, a| {
+            m.w32(a[0], 0x0559_0000 ^ s9);
+            0x559
+        });
+    }
+    for (s9, n9) in [(723u32, 1usize), (724, 1), (230, 2)] {
+        rec(&mut t, s9, n9, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, (i + s9 % 7) as f32 * 0.25);
+            }
+            s9
+        });
+    }
+    rec(&mut t, 231, 3, |m, a| {
+        let v: Vec<f32> = (0..16)
+            .map(|i| rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i))
+            .collect();
+        for (i, x) in (0u32..).zip(v) {
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * (i + 12)) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    // the offset from the light
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = rf(m, a[2] + 4 * i) - rf(m, a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x234
+    });
+    rec(&mut t, 545, 0, |_, _| SCRATCH + 0x4800);
+    let bufs = SCRATCH + 0x2_0000 - 0x6_0000;
+    rec(&mut t, 562, 0, move |_, _| bufs);
+    // the parts: records and matrices from slot 941
+    let recs = SCRATCH + 0x5000;
+    rec(&mut t, 941, 1, move |_, a| recs + 0x100 * (a[0] & 7));
+    let pts = bufs.wrapping_add(0x6_0000);
+    for k in 0..5u32 {
+        floats(&mut t, s + 0x1300, 0x100 / 4, k);
+        let (flag, count, level) = [
+            (0u32, 3u32, 0.5f32),
+            (0, 1, 0.5),
+            (1, 0, 100.0),
+            (1, 0, 200.0),
+            (0, 2, 3.0),
+        ][k as usize];
+        t.set_u32(s + 0x13dc, flag);
+        t.set_u32(s + 0x13d4, count);
+        t.set_u32(s + 0x13d8, 4);
+        setf(&mut t, s + 0x13cc, level);
+        setf(&mut t, s + 0x13d0, 6.0);
+        // the light at the origin, its radius the level
+        for i in 0..4 {
+            setf(&mut t, s + 0x13ac + 4 * i, 0.0);
+            setf(&mut t, s + 0x13bc + 4 * i, 0.25 * i as f32);
+        }
+        // the model: k % 3 parts, each two ids
+        t.write(m, &[0; 0x40]);
+        t.set_u16(m + 4, (k % 3) as u16);
+        for p in 0..2u32 {
+            t.set_u32(m + 0x10 + 0x10 * p, 2 * p);
+            t.set_u32(m + 0x14 + 0x10 * p, 2 * p + 1);
+        }
+        for r in 0..4u32 {
+            let rr = recs + 0x100 * r;
+            floats(&mut t, rr, 0x40, r + k);
+            t.set_u32(rr + 4, 0x40);
+            t.set_u16(rr + 0x10, 3);
+            t.set_u16(rr + 0x12, 2 + r as u16);
+            // groups: kind 0x10 with one extra, then plain ones
+            t.set_u8(rr + 0x41, 0x10);
+            t.set_u16(rr + 0x42, 1);
+            t.set_u8(rr + 0x41 + 0x3c, 0x11);
+            t.set_u16(rr + 0x42 + 0x3c, 2);
+        }
+        for i in 0..8u32 {
+            let d = [0.5f32, 2.0, 0.1, 10.0][(i % 4) as usize];
+            setf(&mut t, pts + 0x10 * i, d);
+            setf(&mut t, pts + 0x10 * i + 4, 0.0);
+            setf(&mut t, pts + 0x10 * i + 8, 0.25);
+        }
+        let task = SCRATCH + 0x1000;
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, task);
+        ownb::dirty_stack(&mut t, 0x2840 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0353` 0x10002950 (`r36::lit_start_0353`, an entry): the free
+/// ring with several nodes and one, the busy list empty and not.
+#[test]
+fn lit_start_0353() {
+    let Some(mut t) = twin(353) else { return };
+    let f = t.at(0x2950);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x13), s);
+    for k in 0..3u32 {
+        floats(&mut t, s + 0x1300, 0x100 / 4, k);
+        let (count, head) = (w(&t, 0x36), w(&t, 0x7e));
+        magic_r11::ring(
+            &mut t,
+            count,
+            head,
+            [4u16, 1, 2][k as usize],
+            SCRATCH + 0x9000,
+        );
+        let (first, last) = (w(&t, 0xe5), w(&t, 0xfc));
+        let old = SCRATCH + 0x9400;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(first, if k == 1 { 0 } else { old });
+        t.set_u32(last, if k == 1 { 0 } else { old });
+        ownb::dirty_stack(&mut t, 0x2950 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

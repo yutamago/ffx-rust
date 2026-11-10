@@ -3770,3 +3770,432 @@ pub const SUMMON_START_0353: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0353`'s light falloff (internal: `ecx` = `n` floats out, `edx`
+/// = `n` points of 16 bytes, cdecl `(n, R)`; an 8-aligned /GS frame `T`):
+/// for each point, slot 234 `(T + 0x1c, R + 0x10, point)` the offset to
+/// the light `R`; `len` its length (`_libm_sse2_sqrt_precise`, as a
+/// double); within the radius `R + 0x20` the weight `1 - (r - len) / K`
+/// while `r - len` is below `K` (operand `+0xaf`), else 0; outside it 1.
+/// The argument word `n` counts down to 0. Returns `R + 0x20` (`R` for
+/// no points).
+fn falloff_0353<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, out: u32, pts: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    // push ebp; and esp, -8; sub esp, 0x24; push ebx, esi, edi
+    let t = (esp.wrapping_sub(4) & !7).wrapping_sub(0x24 + 12);
+    let n_at = esp + 4;
+    let rec = g.read::<u32>(esp + 8);
+    if g.read::<i32>(n_at) <= 0 {
+        return rec;
+    }
+    let (mut out, mut pt) = (out, pts);
+    let r = rec + 0x20;
+    loop {
+        let one = f32_at(g, w(0x44));
+        put(g, t + 0x10, one);
+        // call width: 3
+        g.call(slot_target(g, w(0x5d), 234), 0, &[t + 0x1c, r - 0x10, pt]);
+        let (x, y, z) = (
+            f32_at(g, t + 0x1c),
+            f32_at(g, t + 0x20),
+            f32_at(g, t + 0x24),
+        );
+        let s = add(add(mul(y, y), mul(x, x)), mul(z, z));
+        #[allow(clippy::cast_possible_truncation)] // cvtsd2ss
+        let len = f64::from(s).sqrt() as f32;
+        let radius = f32_at(g, r);
+        let v = if radius > len {
+            let d = sub(radius, len);
+            let k = f32_at(g, w(0xaf));
+            if k > d {
+                let v = mul(sub(f32_at(g, w(0xc0)), div(d, k)), f32_at(g, t + 0x10));
+                put(g, t + 0x10, v);
+                v
+            } else {
+                0.0
+            }
+        } else {
+            f32_at(g, t + 0x10)
+        };
+        put(g, out, v);
+        out += 4;
+        pt += 0x10;
+        let n = g.read::<i32>(n_at).wrapping_sub(1);
+        g.write::<i32>(n_at, n);
+        g.write::<u32>(t + 0x14, out);
+        if n == 0 {
+            return r;
+        }
+    }
+}
+
+/// [`falloff_0353`] (the `rel32`s: `_libm_sse2_sqrt_precise`, the cookie
+/// check).
+pub const FALLOFF_0353: Sig = Sig {
+    len: 288,
+    hash: 0xfb5a_f206_09eb_2fab,
+    calls: &[
+        (0x96, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x118, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0353`'s lit model draw (internal, cdecl `(V, W, -, D)`; a
+/// cookie frame, `L(o)` = `ebp - o`): slot 559 `(L(0x160), L(0x164),
+/// L(0x15c))`, 558 `(L(0x54))`, the screen and camera matrices (723,
+/// 724), slot 230 `(L(0xd4), slot 545 ())`, four slot 562 buffers (the
+/// second + 0x60000 the points, the fourth + 0xf0000 the weights). For
+/// each of the model `*G_M`'s `u16 +4` parts (16 bytes from `+0x10`):
+/// the part's matrices (slot 941 of its two ids) combined with `V`, `W`
+/// and the frame's by slot 231, slot 229 `(D + 0x10, L(0x94), D)` its
+/// light point, and the falloff ([`falloff_0353`]) of its `i16 +0x12`
+/// points; its groups are walked to the end. Then slot 382 `(0, 0)`.
+/// Returns slot 382's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn lit_draw_0353<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let a0 = g.read::<u32>(esp + 4);
+    let a1 = g.read::<u32>(esp + 8);
+    let d = g.read::<u32>(esp + 0x10);
+    g.write::<u32>(l(0x170), a0);
+    let m = g.read::<u32>(w(0x23));
+    g.write::<u32>(l(0x16c), a1);
+    g.write::<u32>(l(0x168), d);
+    g.write::<u32>(l(0x174), m);
+    // call width: 3
+    g.call(slot(g, 0x47, 559), 0, &[l(0x160), l(0x164), l(0x15c)]);
+    // call width: 1
+    g.call(slot(g, 0x64, 558), 0, &[l(0x54)]);
+    // call width: 1
+    g.call(slot(g, 0x78, 723), 0, &[l(0x154)]);
+    // call width: 1
+    g.call(slot(g, 0x8c, 724), 0, &[l(0x114)]);
+    // call width: 0
+    let r = g.call(slot(g, 0x99, 545), 0, &[]).eax;
+    // call width: 2
+    g.call(slot(g, 0xae, 230), 0, &[l(0xd4), r]);
+    // call width: 0
+    g.call(slot(g, 0xbb, 562), 0, &[]);
+    // call width: 0
+    let pts = g
+        .call(slot(g, 0xcb, 562), 0, &[])
+        .eax
+        .wrapping_add(0x6_0000);
+    g.write::<u32>(l(0x164), pts);
+    // call width: 0
+    g.call(slot(g, 0xd9, 562), 0, &[]);
+    // call width: 0
+    let out = g
+        .call(slot(g, 0xf2, 562), 0, &[])
+        .eax
+        .wrapping_add(0xf_0000);
+    g.write::<u32>(l(0x15c), out);
+    let mut part = m + 0x10;
+    g.write::<u32>(l(0x158), part);
+    if g.read::<u16>(m + 4) != 0 {
+        g.write::<u32>(l(0x160), d + 0x10);
+        let mut i = 0u32;
+        loop {
+            let id = g.read::<u32>(part);
+            // call width: 1
+            let p = g.call(slot(g, 0x131, 941), 0, &[id]).eax;
+            let groups = g.read::<u32>(p + 4).wrapping_add(p);
+            let id = g.read::<u32>(part + 4);
+            // call width: 1
+            let mv = g.call(slot(g, 0x141, 941), 0, &[id]).eax;
+            // call width: 3
+            g.call(slot(g, 0x16c, 231), 0, &[l(0x94), a0, mv]);
+            // call width: 3
+            g.call(slot(g, 0x18b, 231), 0, &[l(0x44), l(0x114), l(0x94)]);
+            // call width: 3
+            g.call(slot(g, 0x1a7, 231), 0, &[l(0x44), l(0x154), l(0x44)]);
+            let id = g.read::<u32>(g.read::<u32>(l(0x158)) + 4);
+            // call width: 1
+            let mw = g.call(slot(g, 0x1bd, 941), 0, &[id]).eax;
+            // call width: 3
+            g.call(slot(g, 0x1d5, 231), 0, &[l(0x44), a1, mw]);
+            // call width: 3
+            g.call(slot(g, 0x1f1, 231), 0, &[l(0x44), l(0xd4), l(0x44)]);
+            let (dp, dd) = (g.read::<u32>(l(0x160)), g.read::<u32>(l(0x168)));
+            // call width: 3
+            g.call(slot(g, 0x20e, 229), 0, &[dp, l(0x94), dd]);
+            let n = i32::from(g.read::<i16>(p + 0x12)).cast_unsigned();
+            let (o, pt) = (g.read::<u32>(l(0x15c)), g.read::<u32>(l(0x164)));
+            // add esp, 8: slot 229's first word stays; push D, n; call
+            // sub esp, 0x174; three pushes; the three words; the return address
+            let csp = esp.wrapping_sub(4 + 0x174 + 12 + 0xc + 4);
+            g.write::<u32>(csp + 4, n);
+            g.write::<u32>(csp + 8, dd);
+            g.write::<u32>(csp + 0xc, dd);
+            falloff_0353(g, img, img.rel32_target(f + 0x23b), csp, o, pt);
+            // the part's groups walked (nothing written)
+            let mut left = i32::from(g.read::<i16>(p + 0x10));
+            let mut gp = groups;
+            while left > 0 {
+                let mut next = gp + 0x20;
+                if g.read::<u8>(gp + 1) == 0x10 {
+                    let k = i32::from(g.read::<i16>(gp + 2));
+                    if k > 0 {
+                        next = next.wrapping_add((k * 28).cast_unsigned());
+                    }
+                }
+                left = left.wrapping_sub(i32::from(g.read::<i16>(gp + 2)));
+                gp = next;
+            }
+            let count = u32::from(g.read::<u16>(g.read::<u32>(l(0x174)) + 4));
+            part = g.read::<u32>(l(0x158)) + 0x10;
+            i += 1;
+            g.write::<u32>(l(0x158), part);
+            if i.cast_signed() >= count.cast_signed() {
+                break;
+            }
+        }
+    }
+    // call width: 2
+    g.call(slot(g, 0x29c, 382), 0, &[0, 0]).eax
+}
+
+/// [`lit_draw_0353`] (the `rel32`s: the falloff, the cookie check).
+pub const LIT_DRAW_0353: Sig = Sig {
+    len: 704,
+    hash: 0x8ff0_faf9_9782_9066,
+    calls: &[(0x23b, Callee::Sig(&FALLOFF_0353)), (0x2b8, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0353`'s light flicker (internal, no arguments; a cookie frame,
+/// `L(o)` = `ebp - o`; `S = *G_S`): while `S + 0x13dc` is 0, the
+/// countdown `S + 0x13d4`; at 0 a new peak (slot 404 `(20)` plus the
+/// constant at operand `+0x5d` into `S + 0x13d0`) and a new length `20 +
+/// rand() % 21` (both counts), the flag set; the level `S + 0x13cc` is
+/// `2 q p K h` (`p` the count's share, `q = 1 - p`, the end points 0).
+/// With the flag set the level rises by the constant at `+0x239`, held at
+/// 190 above the one at `+0x240` (the flag stays 1, else 0). Then slot
+/// 857 `(*G_V, name, &x, &y, &z, &w)` for six names: the first with the
+/// colour `S + 0x13bc..` and the level, the others with zeros. Returns
+/// the flag.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn flicker_0353<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let v = g.read::<u32>(w(0x13));
+    let s = g.read::<u32>(w(0x1a));
+    let flag = if g.read::<u32>(s + 0x13dc) == 0 {
+        let c = g.read::<u32>(s + 0x13d4).wrapping_sub(1);
+        g.write::<u32>(s + 0x13d4, c);
+        if c == 0 {
+            // sub esp, 0x18; push ebx, esi, edi; push ecx: the argument
+            let arg = ebp.wrapping_sub(0x18 + 12 + 4);
+            g.write::<u32>(arg, 0x41a0_0000);
+            // call width: 1
+            let r = g.call(slot(g, 0x3d, 404), 0, &[0x41a0_0000]).st0;
+            put(g, l(0x18), crate::m0018::st0_f32(r));
+            let h = add(f32_at(g, l(0x18)), f32_at(g, w(0x5d)));
+            put(g, s + 0x13d0, h);
+            let n = g.rand().cast_signed() % 0x15 + 0x14;
+            g.write::<u32>(s + 0x13dc, 1);
+            g.write::<i32>(s + 0x13d8, n);
+            g.write::<i32>(s + 0x13d4, n);
+        }
+        let p = div(
+            cvt(g.read::<u32>(s + 0x13d4)),
+            cvt(g.read::<u32>(s + 0x13d8)),
+        );
+        let q = sub(f32_at(g, w(0xb0)), p);
+        let a = mul(mul(mul(q, p), f32_at(g, w(0xc7))), f32_at(g, s + 0x13d0));
+        let b = mul(mul(q, q), 0.0);
+        let c = mul(mul(p, p), 0.0);
+        put(g, s + 0x13cc, add(add(a, b), c));
+        0
+    } else {
+        let x = add(f32_at(g, s + 0x13cc), f32_at(g, w(0x239)));
+        put(g, s + 0x13cc, x);
+        if x > f32_at(g, w(0x240)) {
+            g.write::<u32>(s + 0x13cc, 0x433e_0000);
+            1
+        } else {
+            0
+        }
+    };
+    let (px, py, pz, pw) = (l(0x14), l(0x10), l(0xc), l(0x8));
+    for (i, x) in (0u32..).zip([0x13bcu32, 0x13c0, 0x13c4, 0x13cc]) {
+        let v = g.read::<u32>(s + x);
+        g.write::<u32>([px, py, pz, pw][i as usize], v);
+    }
+    // call width: 6
+    g.call(slot(g, 0x124, 857), 0, &[v, w(0x141), px, py, pz, pw]);
+    for (gi, name) in [
+        (0x159u32, 0x180u32),
+        (0x198, 0x19d),
+        (0x1be, 0x1c3),
+        (0x1e1, 0x1e6),
+        (0x1fc, 0x210),
+    ] {
+        if gi == 0x159 {
+            for p in [pw, pz, py, px] {
+                g.write::<u32>(p, 0);
+            }
+        }
+        // call width: 6
+        g.call(slot(g, gi, 857), 0, &[v, w(name), px, py, pz, pw]);
+    }
+    flag
+}
+
+/// [`flicker_0353`] (the `rel32`: the cookie check; `rand`).
+pub const FLICKER_0353: Sig = Sig {
+    len: 609,
+    hash: 0xc234_1741_18bd_445e,
+    calls: &[(0x225, Callee::Any)],
+    imports: &[(0x6e, "rand")],
+};
+
+/// `magic_0353`'s lit task (cdecl `(task)`, a task callback; a cookie
+/// frame, `L(o)` = `ebp - o`; `S = *G_S`): the flicker ([`flicker_0353`]),
+/// the matrices `L(0x84)` (slot 210 `(*G_V, ..)`) and `L(0x44)` (slot 13),
+/// the scaled camera ([`scaled_camera`](crate::m0052::scaled_camera) into
+/// `L(0xc4)`), the view's ranges (slots 357, 356), the lit draw
+/// ([`lit_draw_0353`] `(L(0x84), L(0x44), -, S + 0x13ac)`), the ranges
+/// reset; when the flicker's flag is up the task goes back to the pool
+/// ([`give_back`](crate::sa_pool::give_back)) and `S + 0x13e0` = 0.
+/// Returns slot 356's `eax`, or the give-back's.
+///
+/// `magic_0353` 0x10002840 (259 bytes).
+pub fn lit_task_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(w(0x19));
+    g.write::<u32>(l(0xc8), task);
+    // sub esp, 0xc8; push ebx, esi, edi: `B`
+    let b = ebp.wrapping_sub(0xc8 + 12);
+    let flag = flicker_0353(g, img, img.rel32_target(f + 0x26), b - 4);
+    let v = g.read::<u32>(w(0x41));
+    // call width: 2
+    g.call(slot(g, 0x2c, 210), 0, &[v, l(0x84)]);
+    let v = g.read::<u32>(w(0x52));
+    // call width: 2
+    g.call(slot(g, 0x4c, 13), 0, &[v, l(0x44)]);
+    // the four words pushed for slots 210 and 13 stay under the camera
+    for (i, x) in (1u32..).zip([l(0x84), g.read::<u32>(w(0x41)), l(0x44), v]) {
+        g.write::<u32>(b - 4 * i, x);
+    }
+    crate::m0052::scaled_camera(g, img, img.rel32_target(f + 0x62), l(0xc4), b - 0x14);
+    let v = g.read::<u32>(w(0x6d));
+    // call width: 3
+    g.call(slot(g, 0x67, 357), 0, &[v, u32::MAX, 0x3c00]);
+    // call width: 3
+    g.call(slot(g, 0x82, 356), 0, &[v, u32::MAX, 0x2ee0]);
+    // add esp, 0x24: one word stays; push S + 0x13ac, ecx, L(0x44), L(0x84)
+    for (i, x) in (2u32..).zip([s + 0x13ac, 0, l(0x44), l(0x84)]) {
+        g.write::<u32>(b - 4 * i, x);
+    }
+    lit_draw_0353(g, img, img.rel32_target(f + 0xad), b - 0x18);
+    // call width: 3
+    g.call(slot(g, 0xb2, 357), 0, &[v, u32::MAX, u32::MAX]);
+    // call width: 3
+    let eax = g.call(slot(g, 0xc4, 356), 0, &[v, u32::MAX, u32::MAX]).eax;
+    if flag != 1 {
+        return Ret::eax(eax);
+    }
+    let task = g.read::<u32>(l(0xc8));
+    let r = crate::sa_pool::give_back(g, img, img.rel32_target(f + 0xe4), task);
+    g.write::<u32>(s + 0x13e0, 0);
+    Ret::eax(r)
+}
+
+/// [`lit_task_0353`] (the `rel32`s: the flicker, the scaled camera, the
+/// lit draw, the give-back, the cookie check).
+pub const LIT_TASK_0353: Sig = Sig {
+    len: 259,
+    hash: 0xb49b_96df_e12f_c593,
+    calls: &[
+        (0x26, Callee::Sig(&FLICKER_0353)),
+        (0x62, Callee::Sig(&crate::m0052::SCALED_CAMERA)),
+        (0xad, Callee::Sig(&LIT_DRAW_0353)),
+        (0xe4, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0xfb, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0353`'s lit start (a table entry, no arguments; a cookie frame):
+/// `S = *G_S`: the light `S + 0x13ac` = `(0, 0, -90000, 1)`, the
+/// countdown `S + 0x13d4` 1, the level and the flag 0; a task (the lit
+/// task's callback at operand `+0xd4`) taken from the DLL's free ring
+/// (`u16 *G_N`, `*G_FREE`; an empty ring makes the original write to
+/// address 0x14) into `S + 0x13e0`, appended to the busy list; slot 855
+/// `(*G_V, 1)`. Returns slot 855's `eax`.
+///
+/// `magic_0353` 0x10002950 (322 bytes).
+pub fn lit_start_0353<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let s = g.read::<u32>(w(0x13));
+    g.write::<u64>(ebp - 0x14, 0);
+    g.write::<u64>(s + 0x13ac, 0);
+    let mut free = g.read::<u16>(w(0x36));
+    g.write::<u32>(ebp - 0xc, 0xc7af_c800);
+    g.write::<u32>(ebp - 0x8, 0x3f80_0000);
+    let far = g.read::<u64>(ebp - 0xc);
+    g.write::<u64>(s + 0x13b4, far);
+    g.write::<u32>(s + 0x13d4, 1);
+    g.write::<u32>(s + 0x13cc, 0);
+    g.write::<u32>(s + 0x13dc, 0);
+    let mut t = 0u32;
+    if free != 0 {
+        t = g.read::<u32>(w(0x7e));
+        let (prev, next) = (g.read::<u32>(t), g.read::<u32>(t + 4));
+        g.write::<u32>(prev + 4, next);
+        let (next, prev) = (g.read::<u32>(t + 4), g.read::<u32>(t));
+        g.write::<u32>(next, prev);
+        if free > 1 {
+            let next = g.read::<u32>(t + 4);
+            g.write::<u32>(w(0x9b), next);
+        } else {
+            g.write::<u32>(w(0xa3), 0);
+        }
+        free = free.wrapping_sub(1);
+        for o in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(t + o, 0);
+        }
+        g.write::<u32>(t + 8, t);
+        g.write::<u32>(t + 0x10, w(0xd4));
+        g.write::<u8>(t + 0x18, 0);
+        g.write::<u16>(w(0xdf), free);
+    }
+    let listed = g.read::<u32>(w(0xe5)) != 0;
+    g.write::<u32>(s + 0x13e0, t);
+    g.write::<u32>(t.wrapping_add(4), 0);
+    if listed {
+        let last = g.read::<u32>(w(0xfc));
+        g.write::<u32>(t, last);
+        g.write::<u32>(last.wrapping_add(4), t);
+    } else {
+        g.write::<u32>(t, 0);
+        g.write::<u32>(w(0x10f), t);
+    }
+    g.write::<u32>(t.wrapping_add(8), t);
+    let v = g.read::<u32>(w(0x125));
+    g.write::<u32>(w(0x12b), t);
+    // call width: 2
+    Ret::eax(g.call(slot_target(g, w(0x114), 855), 0, &[v, 1]).eax)
+}
+
+/// [`lit_start_0353`] (the `rel32`: the cookie check).
+pub const LIT_START_0353: Sig = Sig {
+    len: 322,
+    hash: 0x8215_f4ca_d7c9_f549,
+    calls: &[(0x13a, Callee::Any)],
+    imports: &[],
+};

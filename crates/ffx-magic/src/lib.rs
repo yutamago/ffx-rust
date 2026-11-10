@@ -3309,6 +3309,8 @@ ports! {
     "r36 effect set-up 0353" => r36::EFFECT_SETUP_0353, r36::effect_setup_0353;
     "r36 spark task 0353" => r36::SPARK_TASK_0353, r36::spark_task_0353;
     "r36 summon start 0353" => r36::SUMMON_START_0353, r36::summon_start_0353;
+    "r36 lit task 0353" => r36::LIT_TASK_0353, r36::lit_task_0353;
+    "r36 lit start 0353" => r36::LIT_START_0353, r36::lit_start_0353;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4085,6 +4087,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r36 streaks 0515", &r36::STREAKS_0515),
     ("r36 texture 0098", &r36::TEXTURE_0098),
     ("r36 close 0353", &r36::CLOSE_0353),
+    ("r36 falloff 0353", &r36::FALLOFF_0353),
+    ("r36 lit draw 0353", &r36::LIT_DRAW_0353),
+    ("r36 flicker 0353", &r36::FLICKER_0353),
     // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
