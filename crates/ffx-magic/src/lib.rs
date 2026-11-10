@@ -83,6 +83,7 @@ pub mod r31;
 pub mod r32;
 pub mod r33;
 pub mod r34;
+pub mod r36;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3289,6 +3290,10 @@ ports! {
     "r34 cue start 0205" => r34::CUE_START_0205, r34::cue_start_0205;
     "r34 effect task 0205" => r34::EFFECT_TASK_0205, r34::effect_task_0205;
     // round 34 (magic-r34): end
+    // round 36 (magic-r36)
+    "r36 draw 0515" => r36::DRAW_0515, r36::draw_0515;
+    "r36 start-up 0515" => r36::START_UP_0515, r36::start_up_0515;
+    // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
     "reel game phases" => s8_misc::REEL_GAME_PHASES, s8_misc::reel_game_phases;
@@ -4058,6 +4063,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r34 spark 0205", &r34::SPARK_0205),
     ("r34 target set-up 0205", &r34::TARGET_SETUP_0205),
     // round 34 (magic-r34): end of INTERNAL
+    // round 36 (magic-r36)
+    ("r36 cameras 0515", &r36::CAMERAS_0515),
+    ("r36 trails 0515", &r36::TRAILS_0515),
+    ("r36 streaks 0515", &r36::STREAKS_0515),
+    // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
     ("r15 actor point 0104", &r15::ACTOR_POINT_0104),
