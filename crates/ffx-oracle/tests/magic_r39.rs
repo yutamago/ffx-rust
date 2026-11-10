@@ -39,6 +39,7 @@ const BUSY: u32 = SCRATCH + 0x7f10;
 const LOCK: u32 = SCRATCH + 0x7f14;
 const HOLDER: u32 = SCRATCH + 0x7f18;
 const TABLE: u32 = SCRATCH + 0x7e00;
+const SINES: u32 = SCRATCH + 0x1_0000;
 
 /// One case of [`scene_task_0519`]: the globals by operand (on top of the
 /// defaults), the key slot 261 answers, the busy mode, slot 225's and
@@ -296,12 +297,23 @@ fn scene_twin(n: u16, at: u32) -> Option<(Twin, u32)> {
         m.w32(SCRATCH + 0x7f30, k.wrapping_add(1));
         f64::from(k % 7) * 0.375 - 0.5
     });
-    for (op, at) in [(0xb1u32, BUSY), (0xe3, LOCK)] {
+    for (op, at) in [(0xb1u32, BUSY), (0xe3, LOCK), (0x10f8, SINES)] {
         let g = t.img.word(f + op);
         if t.u32(g) == 0 {
             t.set_u32(g, at);
         }
     }
+    // a sine table of 0x1000 floats
+    let sines: Vec<u8> = (0..0x1000u32)
+        .flat_map(|i| ((i as f32 * 0.001_533_98).sin()).to_bits().to_le_bytes())
+        .collect();
+    t.write(SINES, &sines);
+    // slot 711 sees the lock word set
+    rec(&mut t, 711, 3, |m, _| {
+        let l = m.r32(LOCK);
+        m.w32(SCRATCH + 0x7f38, l);
+        0x711
+    });
     Some((t, f))
 }
 
@@ -520,5 +532,75 @@ fn scene_0515_states_9_d() {
             (0.75 * i as f32 - 2.0).to_bits(),
         );
     }
+    run_scene(&mut t, f, cases);
+}
+
+/// `magic_0515` state 0x10 (`r39b`): the set-up, busy, slot 220 at 0,
+/// the beams at 0x14, bursts at frames with and without pushed sparks and
+/// past them, the ring's ageing and colours, the copies at 0x96, the
+/// shrinking ring with and without the halfwords, the fade, the clear at
+/// 0xfa, parts at 0xb8, 0xc2, 0x112, and the step into state 0x15.
+#[test]
+fn scene_0515_state_10() {
+    let Some((mut t, f)) = scene_twin(515, 0x4ce0) else {
+        return;
+    };
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let n10 = 0x1cc0u32;
+    let mut cases = vec![
+        scene(0x10, &[(0x1a55, 0), (n10, 0)]),
+        Scene {
+            a253: 0,
+            ..scene(0x10, &[(0x1a55, 0)])
+        },
+    ];
+    for n in [
+        0x14u32, 0x15, 0x16, 0x34, 0x40, 0x59, 0x77, 0x78, 0x96, 0x9a, 0xb3, 0xb7, 0xb8, 0xbe,
+        0xc2, 0xdc, 0xdd, 0xf9, 0xfa, 0x112, 0x12f, 0x13,
+    ] {
+        cases.push(scene(0x10, &[(0x1a55, 1), (n10, n)]));
+    }
+    // ring entries alive (ageing past and before their life)
+    let ring = w(&t, 0x26b0);
+    for cs in &mut cases {
+        for i in 0..6u32 {
+            let p = ring + 0x3c * i;
+            cs.mem.extend([(p - 8, i & 1), (p, 5 + i), (p + 4, 7)]);
+        }
+    }
+    // the models' places and records
+    let m = w(&t, 0x1cf8);
+    for i in 0..12u32 {
+        t.set_u32(
+            m + 0xcc * (i / 4) + 4 * (i % 4),
+            (0.75 * i as f32 - 2.0).to_bits(),
+        );
+    }
+    for (s, k) in [
+        (232u32, 0.5f32),
+        (233, 1.5),
+        (229, 0.25),
+        (248, -0.75),
+        (234, 2.0),
+        (266, 1.25),
+    ] {
+        rec(&mut t, s, if s == 232 { 2 } else { 3 }, move |m, a| {
+            for i in 0..4 {
+                let v = f32::from_bits(m.r32(a[1] + 4 * i)) * k + i as f32;
+                m.w32(a[0] + 4 * i, v.to_bits());
+            }
+            s
+        });
+    }
+    // the axes' matrices (slot 247 into a local)
+    rec(&mut t, 247, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(
+                a[0] + 4 * i,
+                (0.125 * i as f32 - (a[1] & 7) as f32).to_bits(),
+            );
+        }
+        0x247
+    });
     run_scene(&mut t, f, cases);
 }
