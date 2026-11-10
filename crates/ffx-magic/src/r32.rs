@@ -9,14 +9,14 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// Where a copy's operands sit: `(start, delta)` runs over the model's
 /// offsets (the last run starting at or below an offset applies), and
 /// single offsets moved out of order (`(model, copy)`).
-struct Shift {
-    runs: &'static [(u32, i32)],
-    moved: &'static [(u32, u32)],
+pub(crate) struct Shift {
+    pub(crate) runs: &'static [(u32, i32)],
+    pub(crate) moved: &'static [(u32, u32)],
 }
 
 impl Shift {
     /// The copy's offset of the model's operand `o`.
-    fn at(&self, o: u32) -> u32 {
+    pub(crate) fn at(&self, o: u32) -> u32 {
         if let Some(&(_, c)) = self.moved.iter().find(|&&(m, _)| m == o) {
             return c;
         }

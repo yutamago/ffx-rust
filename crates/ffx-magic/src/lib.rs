@@ -82,6 +82,7 @@ pub mod r30;
 pub mod r31;
 pub mod r32;
 pub mod r33;
+pub mod r34;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3272,6 +3273,22 @@ ports! {
     // round 33 (magic-r33): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
+    // round 34 (magic-r34)
+    "r34 turn 0162" => r34::TURN_0162, r34::turn_0162;
+    "r34 task 0162" => r34::TASK_0162, r34::task_0162;
+    "r34 load step 0162" => r34::LOAD_0162, r34::load_0162;
+    "r34 load step 0391" => r34::LOAD_0391, r34::load_0391;
+    "r34 load step 0448" => r34::LOAD_0448, r34::load_0448;
+    "r34 walk task 0391" => r34::WALK_TASK_0391, r34::walk_task_0391;
+    "r34 walk task 0448" => r34::WALK_TASK_0448, r34::walk_task_0448;
+    "r34 main task 0284" => r34::MAIN_TASK_0284, r34::main_task_0284;
+    "r34 objhost start 0434" => r34::START_0434, l5_objhost::start;
+    "r34 effect task 0424" => r34::EFFECT_TASK_0424, r34::effect_task_0424;
+    "r34 load step 0430" => r34::LOAD_0430, r34::load_0430;
+    "r34 host start 0431" => r34::HOST_START_0431, r34::host_start_0431;
+    "r34 cue start 0205" => r34::CUE_START_0205, r34::cue_start_0205;
+    "r34 effect task 0205" => r34::EFFECT_TASK_0205, r34::effect_task_0205;
+    // round 34 (magic-r34): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
     "reel game phases" => s8_misc::REEL_GAME_PHASES, s8_misc::reel_game_phases;
@@ -4009,6 +4026,38 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     // round 33 (magic-r33): end of INTERNAL
     ("m0482 insert", &m0482::INSERT),
     ("r14 insert 0387", &r14::INSERT_0387),
+    // round 34 (magic-r34)
+    ("r34 place pair 0162", &r34::PLACE_PAIR_0162),
+    ("r34 start-up 0162", &r34::START_UP_0162),
+    ("r34 walk start 0391", &r34::WALK_START_0391),
+    ("r34 walk start 0448", &r34::WALK_START_0448),
+    ("r34 start-up 0391", &r34::START_UP_0391),
+    ("r34 start-up 0448", &r34::START_UP_0448),
+    ("r34 circle hit 0391", &r34::CIRCLE_HIT_0391),
+    ("r34 circle hit 0448", &r34::CIRCLE_HIT_0448),
+    ("r34 walk aim 0391", &r34::WALK_AIM_0391),
+    ("r34 walk aim 0448", &r34::WALK_AIM_0448),
+    ("r34 walk step 0391", &r34::WALK_STEP_0391),
+    ("r34 walk step 0448", &r34::WALK_STEP_0448),
+    ("r34 spark drop 0391", &r34::DROP_0391_SIG),
+    ("r34 spark drop 0448", &r34::DROP_0448_SIG),
+    ("r34 curve step 0391", &r34::CURVE_STEP_0391),
+    ("r34 curve step 0448", &r34::CURVE_STEP_0448),
+    ("r34 walk plan 0391", &r34::WALK_PLAN_0391),
+    ("r34 walk plan 0448", &r34::WALK_PLAN_0448),
+    ("r34 turn start 0391", &r34::TURN_START_0391),
+    ("r34 turn start 0448", &r34::TURN_START_0448),
+    ("r34 spark start 0391", &r34::SPARK_START_0391),
+    ("r34 spark start 0448", &r34::SPARK_START_0448),
+    ("r34 walk reset 0391", &r34::WALK_RESET_0391),
+    ("r34 walk reset 0448", &r34::WALK_RESET_0448),
+    ("r34 check targets 0434", &r34::CHECK_TARGETS_0434),
+    ("r34 place pair 0430", &r34::PLACE_PAIR_0430),
+    ("r34 start 0430", &r34::START_0430),
+    ("r34 start-up 0205", &r34::START_UP_0205),
+    ("r34 spark 0205", &r34::SPARK_0205),
+    ("r34 target set-up 0205", &r34::TARGET_SETUP_0205),
+    // round 34 (magic-r34): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
     ("r15 actor point 0104", &r15::ACTOR_POINT_0104),
