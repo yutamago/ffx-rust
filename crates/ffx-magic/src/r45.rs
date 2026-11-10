@@ -1275,3 +1275,346 @@ pub const OBJECT_PLACE_0431: Sig = Sig {
     calls: &[(0x1aa, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0266`'s fading sprite (0x10002500, 374 bytes; internal, no
+/// arguments; a /GS frame: the matrices `M1` at `ebp - 0x44`, `M2` at
+/// `ebp - 0x84`, `M3` at `ebp - 0xc4`, `M4` at `ebp - 0x104`). The fade
+/// state `*G_MODE` with its counter `*G_N`:
+/// - 0: fading in, `n = (32 - c) * 128 / 32` (`c` the counter less one,
+///   stored; at 0 the mode becomes 1 and the counter 32);
+/// - 1: holding, `n = 0x80` while the counter counts down (at 0 the mode
+///   becomes 2 and the counter 32);
+/// - 2: fading out, `n = c * 128 / 32` (at 0 the mode becomes 3);
+/// - else nothing: the original returns the mode less 2.
+///
+/// Then slot 235 `(M1)`, slot 210 `(*G_C, M2)`, slot 13 `(*G_C, M3)`, the
+/// scaled camera ([`scaled_camera`](crate::m0052::scaled_camera), `M4`),
+/// the angle `*G_A += K` (less `T` above `T`), slot 719 `(P, 2, 3)`'s
+/// descriptor `(lo, hi)` and the sprite
+/// ([`packed_sprite`](crate::o6_fam_pairs6::packed_sprite), `ecx` =
+/// `*G_C`, `(-, M1, lo, hi, 0, -, n)`; the first word the `ecx` slot 719
+/// leaves and the sixth a word the original never writes, both unread by
+/// the sprite: 0 here). Returns the sprite's `eax`.
+pub fn fading_sprite_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    // `shl 7; cdq; and edx, 0x1f; add; sar 5`: a division by 32 toward 0
+    let fade = |x: u32| {
+        let m = x << 7;
+        (m.wrapping_add((m.cast_signed() >> 31).cast_unsigned() & 0x1f)).cast_signed() >> 5
+    };
+    let mode = g.read::<u32>(w(0x14));
+    let n = match mode {
+        0 => {
+            let c = g.read::<u32>(w(0x6f)).wrapping_sub(1);
+            g.write::<u32>(w(0x84), c);
+            if c == 0 {
+                g.write::<u32>(w(0x94), 1);
+                g.write::<u32>(w(0x9e), 0x20);
+            }
+            fade(0x20u32.wrapping_sub(c))
+        }
+        1 => {
+            let c = g.read::<u32>(w(0x56)).wrapping_sub(1);
+            g.write::<u32>(w(0x56), c);
+            if c == 0 {
+                g.write::<u32>(w(0x63), 2);
+                g.write::<u32>(w(0x9e), 0x20);
+            }
+            0x80
+        }
+        2 => {
+            let c = g.read::<u32>(w(0x2a)).wrapping_sub(1);
+            g.write::<u32>(w(0x3a), c);
+            if c == 0 {
+                g.write::<u32>(w(0x4a), 3);
+            }
+            fade(c)
+        }
+        _ => return Ret::eax(mode.wrapping_sub(2)),
+    };
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m1, m2, m3, m4) = (
+        ebp.wrapping_sub(0x44),
+        ebp.wrapping_sub(0x84),
+        ebp.wrapping_sub(0xc4),
+        ebp.wrapping_sub(0x104),
+    );
+    g.call(t(g, 0xac, 235), 0, &[m1]);
+    let c = g.read::<u32>(w(0xc6));
+    g.call(t(g, 0xc0, 210), 0, &[c, m2]);
+    let c = g.read::<u32>(w(0xe0));
+    g.call(t(g, 0xda, 13), 0, &[c, m3]);
+    // the frame, esi and edi, the return address
+    crate::m0052::scaled_camera(
+        g,
+        img,
+        img.rel32_target(f + 0xf3),
+        m4,
+        ebp.wrapping_sub(0x110),
+    );
+    let a = add(g.read::<f32>(w(0xfb)), k(g, 0x103));
+    g.write::<f32>(w(0x11c), a);
+    let lim = k(g, 0x10b);
+    // comiss a, T; jbe: only above (ordered)
+    if a > lim {
+        g.write::<f32>(w(0x12a), sub(a, lim));
+    }
+    let owner = g.read::<u32>(w(0x111));
+    let d = g.call(t(g, 0x12f, 719), 0, &[w(0x13e), 2, 3]).eax;
+    let (lo, hi) = (g.read::<u32>(d), g.read::<u32>(d + 4));
+    // the frame, esi and edi, n, 8 bytes and four pushes, the return
+    // address
+    let esp = ebp.wrapping_sub(0x12c);
+    for (i, x) in (1u32..).zip([0, m1, lo, hi, 0, 0, n.cast_unsigned()]) {
+        g.write::<u32>(esp + 4 * i, x);
+    }
+    let sprite = Frame {
+        at: img.rel32_target(f + 0x15f),
+        esp,
+        ecx: owner,
+        ..Frame::default()
+    };
+    crate::o6_fam_pairs6::packed_sprite(g, img, &sprite)
+}
+
+/// [`fading_sprite_0266`] (the `rel32`s: the scaled camera, the sprite,
+/// the cookie check).
+pub const FADING_SPRITE_0266: Sig = Sig {
+    len: 374,
+    hash: 0x6272_3dbb_cb44_ee64,
+    calls: &[
+        (0xf3, Callee::Sig(&crate::m0052::SCALED_CAMERA)),
+        (
+            0x15f,
+            Callee::Sig(&crate::o6_fam_pairs6::PACKED_SPRITE_0266_1310),
+        ),
+        (0x16e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0266`'s actors' step (0x10001f10, 655 bytes; internal, no
+/// arguments; a /GS frame: the matrices `M` at `ebp - 0x94`, `M2` at
+/// `ebp - 0x54`, the point `V` at `ebp - 0x14`):
+/// - while `*G_WAIT` is positive it counts down: 0;
+/// - the timer `*G_T` counts down while positive; at 0 it returns 1;
+/// - else slot 235 `(M)` and, for each actor `i` below `*G_N`, its record
+///   `R` (0x88 apart from `G_R`, `R` pointing at its counter): while the
+///   counter is positive it drops and the spin `R - 4` grows by `K1`; the
+///   angles `R - 0x3c` and `R - 0x1c` grow by the spin and wrap once
+///   (above `HI` less `T`, below `LO` plus `T`); the height `R - 0xc`
+///   rises by `K3` (by `*G_T / K2 * K3` while the timer is at most 30);
+///   `M2` = slot 330 `(M2, M, R[-0x1c])`, slots 328 and 329 by `R[-0x24]`
+///   and `R[-0x20]`, `V` = slot 229 `(V, M2, R - 0x14)`; the actor's
+///   matrix `A = R - 0x84` ([`actor_scale`](crate::sa_misc::actor_scale),
+///   `ecx` = `i`) turned by slots 330, 328, 329 (`R[-0x3c]`, `R[-0x44]`,
+///   `R[-0x40]`); its place `R - 0x54..` = `R - 0x34..` plus `V`.
+///   Returns 0.
+///
+/// Each slot call passes the words the original leaves on the stack.
+#[allow(clippy::too_many_lines)] // the timers and the per-actor steps
+pub fn actors_step_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let wait = g.read::<u32>(w(0x14));
+    if wait.cast_signed() > 0 {
+        g.write::<u32>(w(0x1e), wait.wrapping_sub(1));
+        return Ret::eax(0);
+    }
+    let mut timer = g.read::<u32>(w(0x33));
+    if timer.cast_signed() > 0 {
+        timer = timer.wrapping_sub(1);
+        g.write::<u32>(w(0x3d), timer);
+    }
+    if timer == 0 {
+        return Ret::eax(1);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, m2, v) = (
+        ebp.wrapping_sub(0x94),
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0x14),
+    );
+    // (the registers the original saves stay under the calls' words)
+    let mut st = Pushes::default();
+    st.push(m);
+    st.call(g, t(g, 0x61, 235), 0);
+    st.pop(1);
+    let n = g.read::<u32>(w(0x74));
+    let (hi, tt, lo, k3) = (k(g, 0x82), k(g, 0x8a), k(g, 0xc9), k(g, 0x92));
+    let wrap = |a: f32| {
+        // comiss a, HI; jbe / comiss LO, a; jbe (NaN kept)
+        if a > hi {
+            sub(a, tt)
+        } else if lo > a {
+            add(a, tt)
+        } else {
+            a
+        }
+    };
+    let scale = img.rel32_target(f + 0x1c0);
+    // the constants the loop reloads (`+0x226`, `+0x22e`, `+0x272`) are
+    // these globals again
+    let mut r = w(0x99);
+    let mut i = 0u32;
+    while n.cast_signed() > 0 && i.cast_signed() < g.read::<u32>(w(0x24d)).cast_signed() {
+        let c = g.read::<u32>(r);
+        if c.cast_signed() > 0 {
+            let spin = add(g.read::<f32>(r - 4), k(g, 0xaf));
+            g.write::<u32>(r, c - 1);
+            g.write::<f32>(r - 4, spin);
+        }
+        let a = wrap(add(g.read::<f32>(r - 4), g.read::<f32>(r - 0x3c)));
+        g.write::<f32>(r - 0x3c, a);
+        let b = wrap(add(g.read::<f32>(r - 4), g.read::<f32>(r - 0x1c)));
+        let tm = g.read::<u32>(w(0x105));
+        g.write::<f32>(r - 0x1c, b);
+        let y = if tm.cast_signed() > 0x1e {
+            add(g.read::<f32>(r - 0xc), k3)
+        } else {
+            #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+            let x = div(tm.cast_signed() as f32, k(g, 0x129));
+            add(mul(x, k3), g.read::<f32>(r - 0xc))
+        };
+        g.write::<f32>(r - 0xc, y);
+        let word = |g: &G, d: u32| g.read::<u32>(r - d);
+        st.push(word(g, 0x1c));
+        st.push_all(&[m, m2]);
+        st.call(g, t(g, 0x152, 330), 0);
+        st.pop(2);
+        st.set_top(word(g, 0x24));
+        st.push_all(&[m2, m2]);
+        st.call(g, t(g, 0x171, 328), 0);
+        st.pop(2);
+        st.set_top(word(g, 0x20));
+        st.push_all(&[m2, m2]);
+        st.call(g, t(g, 0x190, 329), 0);
+        st.push_all(&[r - 0x14, m2, v]);
+        st.call(g, t(g, 0x1a9, 229), 0);
+        let a_m = r - 0x84;
+        crate::sa_misc::actor_scale(g, img, scale, i, a_m);
+        st.pop(5);
+        for (op, slot, d) in [(0x1ca, 330, 0x3c), (0x1e6, 328, 0x44), (0x202, 329, 0x40)] {
+            st.set_top(word(g, d));
+            st.push_all(&[a_m, a_m]);
+            st.call(g, t(g, op, slot), 0);
+            st.pop(2);
+        }
+        st.pop(1);
+        for (d, s, vd) in [(0x54u32, 0x34u32, 0u32), (0x50, 0x30, 4), (0x4c, 0x2c, 8)] {
+            let x = add(g.read::<f32>(r - s), g.read::<f32>(v + vd));
+            g.write::<f32>(r - d, x);
+        }
+        i += 1;
+        r += 0x88;
+    }
+    Ret::eax(0)
+}
+
+/// [`actors_step_0266`] (the `rel32`s: the cookie checks, the actor's
+/// scale).
+pub const ACTORS_STEP_0266: Sig = Sig {
+    len: 655,
+    hash: 0x6f89_bbac_ee63_0f32,
+    calls: &[
+        (0x2a, Callee::Any),
+        (0x50, Callee::Any),
+        (0x1c0, Callee::Sig(&crate::sa_misc::ACTOR_SCALE)),
+        (0x287, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0266`'s frame (0x10001e00, 258 bytes; a callback, no arguments;
+/// a /GS frame, the point `V` at `ebp - 0x14`): the fading sprite
+/// ([`fading_sprite_0266`]); the caster's place (slot 262 `(*G_C, &V)`)
+/// into the object block `O..` (`w` 1.0); the object's script
+/// ([`obj_script`](crate::l5_objhost::obj_script), `ecx` = `O`; its
+/// answer the flag bit 15 of `O + 0x30`), the actors' step
+/// ([`actors_step_0266`]), the motion
+/// ([`motion_step`](crate::s3_motion::motion_step)) and the objects
+/// ([`run_objects`](crate::l5_objhost::run_objects)). When all four answer
+/// 1: slot 399 `(*G_C, 0)`, every actor's mode reset
+/// ([`actor_mode`](crate::sa_script::actor_mode), `edx` 0), slot 214
+/// `(*G_D)` and the grid drawn ([`draw_grid`](crate::sb_misc::draw_grid)),
+/// whose `eax` is returned; else the objects' answer.
+pub fn frame_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    // the frame, ebx/esi/edi, the return address
+    let inner = ebp.wrapping_sub(0x24);
+    let sprite = Frame {
+        at: call(0x14),
+        esp: inner,
+        ..*fr
+    };
+    fading_sprite_0266(g, img, &sprite);
+    let v = ebp.wrapping_sub(0x14);
+    let c = g.read::<u32>(w(0x2b));
+    g.call(t(g, 0x25, 262), 0, &[c, v, v + 4, v + 8]);
+    let o = w(0x5a);
+    let x = g.read::<u32>(v);
+    g.write::<u32>(w(0x40), x);
+    let y = g.read::<u32>(v + 4);
+    g.write::<u32>(w(0x4d), y);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    let z = g.read::<u32>(v + 8);
+    g.write::<u32>(w(0x69), z);
+    g.write::<u32>(w(0x6f), 0x3f80_0000);
+    crate::l5_objhost::obj_script(g, img, call(0x78), o);
+    // the script's `eax`: the object's flag bit 15 (`+0x30 >> 15`)
+    let script = u32::from(g.read::<u16>(o + 0x30) >> 15);
+    let step = Frame {
+        at: call(0x7f),
+        esp: inner,
+        ..*fr
+    };
+    let actors = actors_step_0266(g, img, &step).eax;
+    let motion = crate::s3_motion::motion_step(g, img, call(0x86));
+    let eax = crate::l5_objhost::run_objects(g, img, call(0x8d), inner);
+    if eax != 1 || actors != 1 || motion != 1 || script != 1 {
+        return Ret::eax(eax);
+    }
+    let c = g.read::<u32>(w(0xab));
+    g.call(t(g, 0xa3, 399), 0, &[c, 0]);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0xbe)).cast_signed() {
+        let mode = Frame {
+            at: call(0xc9),
+            esp: inner,
+            ecx: i,
+            edx: 0,
+            ..*fr
+        };
+        crate::sa_script::actor_mode(g, img, &mode);
+        i += 1;
+    }
+    let d = g.read::<u32>(w(0xdd));
+    g.call(t(g, 0xd7, 214), 0, &[d]);
+    Ret::eax(crate::sb_misc::draw_grid(g, img, call(0xed)))
+}
+
+/// [`frame_0266`] (the `rel32`s: its callees and the cookie check).
+pub const FRAME_0266: Sig = Sig {
+    len: 258,
+    hash: 0xa100_5b02_9269_cb6b,
+    calls: &[
+        (0x14, Callee::Sig(&FADING_SPRITE_0266)),
+        (0x78, Callee::Sig(&crate::l5_objhost::OBJ_SCRIPT)),
+        (0x7f, Callee::Sig(&ACTORS_STEP_0266)),
+        (0x86, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x8d, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0xc9, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0xed, Callee::Sig(&crate::sb_misc::DRAW_GRID)),
+        (0xfa, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -1018,3 +1018,281 @@ fn object_place_0431() {
         t.check_entry(f, Call::default(), &[o], Eax::Checked);
     }
 }
+
+/// `magic_0266` 0x10002500 (`r45::fading_sprite_0266`, internal): each
+/// mode with its counter running out and not, a mode past 2 and a
+/// negative one; the angle wrapping and not; slot 885 answering. The
+/// camera rows (544) and the sprite (885, 905) write and hash what they
+/// get.
+#[test]
+fn fading_sprite_0266() {
+    let Some(mut t) = sa::twin(266) else { return };
+    let f = t.at(0x2500);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    t.stub(544, |m, a| {
+        for j in 0..4 {
+            let v = (a[0] * 4 + j) as f32 * 0.75 - 3.0;
+            m.w32(a[1] + 4 * j, v.to_bits());
+        }
+        0x544
+    });
+    t.stub(553, |m, a| {
+        let mut x = 0x553u32;
+        for r in 0..4u32 {
+            for j in 0..4u32 {
+                x = x.rotate_left(3) ^ m.r32(a[1 + r as usize] + 4 * j);
+            }
+        }
+        m.w32(SCRATCH + 0x3f18, x);
+        x
+    });
+    for (s, n) in [(235u32, 1usize), (210, 2), (13, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            let p = if s == 235 { a[0] } else { a[1] };
+            for i in 0..16 {
+                m.w32(p + 4 * i, (s << 16) ^ i);
+            }
+            s
+        });
+    }
+    let sp = t.img.rel32_target(f + 0x15f);
+    let lock = SCRATCH + 0x3f00;
+    t.set_u32(t.img.word(sp + 0x51), lock);
+    t.stub(885, move |m, a| {
+        let mut x = 0x885 ^ m.r32(lock).rotate_left(13);
+        for (i, w) in (0u32..).zip(&a[..6]) {
+            x = x.rotate_left(7) ^ *w;
+            m.w32(a[6] + 4 * i, x);
+        }
+        x | 1
+    });
+    t.stub(905, |m, a| {
+        let mut x = 0x905u32;
+        for (i, w) in (0u32..).zip(&a[..9]) {
+            x = x.rotate_left(5) ^ *w ^ i;
+        }
+        for i in 0..16 {
+            x = x.rotate_left(3) ^ m.r32(a[2] + 4 * i);
+        }
+        for i in 0..4 {
+            x = x.rotate_left(3) ^ m.r32(a[7] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x3f14, x);
+        x
+    });
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    let desc = SCRATCH + 0x700;
+    rec(&mut t, 719, 3, move |_, _| desc);
+    let owner = SCRATCH + 0x4000;
+    t.set_u32(w(0x111), owner);
+    let lim = f32::from_bits(t.u32(w(0x10b)));
+    // (mode, counter, the angle)
+    for (k, (mode, c, a)) in (0u32..).zip([
+        (0u32, 9u32, 0.5f32),
+        (0, 1, lim),
+        (1, 5, 1.0),
+        (1, 1, -2.0),
+        (2, 17, lim - 0.01),
+        (2, 1, 0.0),
+        (3, 4, 0.0),
+        (u32::MAX, 4, 0.0),
+    ]) {
+        t.set_u32(w(0x14), mode);
+        t.set_u32(w(0x6f), c);
+        setf(&mut t, w(0xfb), a);
+        t.write(owner, &[0x2d; 0x840]);
+        t.set_u32(owner + 0x830, 0x0083_0000 + k);
+        t.set_u32(desc, 0x1234_5678 ^ (k << 9));
+        t.set_u32(desc + 4, 0x0000_0003 ^ k);
+        t.set_u32(lock, 0x55 + k);
+        ownb::dirty_stack(&mut t, 0x2500 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::fading_sprite_0266(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0266` 0x10001f10 (`r45::actors_step_0266`, internal): the wait
+/// counting down, the timer running out, no actors, and three actors
+/// with their counters, spins and angles wrapping both ways; the timer
+/// above and below 30. The matrix slots write what they read; 277 and
+/// 15..17 answer floats in ST0.
+#[test]
+fn actors_step_0266() {
+    let Some(mut t) = sa::twin(266) else { return };
+    let f = t.at(0x1f10);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * rf(m, a[2] + 4 * i) + 0.25;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    let sc = t.img.rel32_target(f + 0x1c0);
+    let sel = SCRATCH + 0x180;
+    for o in [0x28u32, 0x74] {
+        t.set_u32(t.img.word(sc + o), sel);
+    }
+    t.write(sel, &[3, 1, 4, 1, 5, 9, 2, 6]);
+    for i in 0..0x30 {
+        t.set_u32(t.img.word(sc + 0x33) + 4 * i, 0x0c00 + 3 * i);
+        t.set_u32(t.img.word(sc + 0x7f) + 4 * i, 0x0d00 + 5 * i);
+    }
+    let hi = f32::from_bits(t.u32(w(0x82)));
+    let lo = f32::from_bits(t.u32(w(0xc9)));
+    let recs = w(0x99) - 0x84;
+    // (wait, timer, actors)
+    for (k, (wait, timer, n)) in (0u32..).zip([
+        (2i32, 5i32, 3u32),
+        (0, 1, 3),
+        (0, 0, 3),
+        (0, 9, 0),
+        (0, 40, 3),
+        (0, 12, 3),
+        (0, -3, 2),
+    ]) {
+        t.set_u32(w(0x14), wait.cast_unsigned());
+        t.set_u32(w(0x33), timer.cast_unsigned());
+        t.set_u32(w(0x74), n);
+        junk(&mut t, recs, 0x88 * 3, k);
+        for j in 0..3u32 {
+            let r = recs + 0x84 + 0x88 * j;
+            floats(&mut t, r - 0x84, 0x20, k + j);
+            t.set_u32(r, (k + j) % 3);
+            setf(&mut t, r - 4, 0.25 * j as f32 - 0.25);
+            setf(&mut t, r - 0x3c, [hi - 0.1, lo + 0.1, 0.5][j as usize]);
+            setf(&mut t, r - 0x1c, [lo + 0.1, hi - 0.1, -0.5][j as usize]);
+        }
+        ownb::dirty_stack(&mut t, 0x1f10 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::actors_step_0266(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0266` 0x10001e00 (`r45::frame_0266`): the four answers all 1
+/// (the actors' modes reset, the grid drawn) and each of them not 1 in
+/// turn (the object's script waiting with its flag clear, the actors'
+/// timer running, the motion waiting, the objects busy).
+#[test]
+fn frame_0266() {
+    let Some(mut t) = sa::twin(266) else { return };
+    let f = t.at(0x1e00);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+        }
+        0x262
+    });
+    for (s, n) in [
+        (399u32, 2usize),
+        (214, 1),
+        (210, 2),
+        (211, 2),
+        (217, 2),
+        (255, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    for s in [277u32, 15, 16, 17] {
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    t.stub(885, |_, a| a[0] | 1);
+    // the actors' matrix slots write what they read
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) * rf(m, a[2] + 4 * i) + 0.25;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    // the sprite's mode past 2 (nothing drawn), the actors' wait 0
+    let fs = call(0x14);
+    t.set_u32(t.img.word(fs + 0x14), 7);
+    let st = call(0x7f);
+    t.set_u32(t.img.word(st + 0x14), 0);
+    t.set_u32(t.img.word(st + 0x74), 0);
+    let motion = call(0x86);
+    let ro = call(0x8d);
+    let list = t.img.word(ro + 0x7c);
+    let o = w(0x5a);
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[3, 1, 4, 1, 5, 9, 2, 6]);
+    let am = call(0xc9);
+    t.set_u32(t.img.word(am + 0x15), sel);
+    for i in 0..0x30 {
+        t.set_u32(t.img.word(am + 0x2e) + 4 * i, 0x0c00 + 3 * i);
+    }
+    let dg = call(0xed);
+    t.set_u32(t.img.word(dg + 0x08), 0);
+    // (script flag, actors' timer, motion done, objects busy)
+    for (k, (flag, timer, done, busy)) in (0u32..).zip([
+        (true, 1u32, 1u32, false),
+        (false, 1, 1, false),
+        (true, 5, 1, false),
+        (true, 1, 0, false),
+        (true, 1, 1, true),
+    ]) {
+        junk(&mut t, o, 0x40, k);
+        t.set_u16(o + 0x30, if flag { 0x8000 } else { 0x0001 });
+        t.set_u32(o + 0x2c, 9);
+        t.set_u32(o + 0x10, 0);
+        t.set_u32(t.img.word(st + 0x33), timer);
+        t.set_u32(t.img.word(motion + 0x02), done);
+        t.set_u16(t.img.word(motion + 0x11), 5);
+        let n = SCRATCH + 0x9f00;
+        let obj = SCRATCH + 0xa000;
+        t.set_u32(n + 8, obj);
+        t.set_u16(obj + 0x124, 0x8001);
+        t.set_u32(list + 8, if busy { n } else { 0 });
+        t.set_u32(t.img.word(ro + 0x14), if busy { n } else { 0 });
+        t.set_u32(w(0xbe), 2);
+        ownb::dirty_stack(&mut t, 0x1e00 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
