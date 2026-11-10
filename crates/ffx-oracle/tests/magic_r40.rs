@@ -1377,7 +1377,7 @@ fn stubs_0185(t: &mut Twin) {
     rec(t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
     rec(t, 777, 1, |_, a| 0x0777_0000 ^ a[0]);
     // 875/873 log the sprite record they get (its 0x20 bytes) and the
-    // lock; 775 the lock
+    // lock (where the stand-in table makes them traps); 775 the lock
     for s in [875u32, 873] {
         rec(t, s, 4, move |m, a| {
             let l = m.r32(SCRATCH + 0x7f00);
@@ -1517,6 +1517,7 @@ fn sprites_0185() {
             Ret::eax(0)
         });
     }
+    assert!(t.u32(SCRATCH + 0x7f74) != 0, "no handle asked");
 }
 
 /// `magic_0185` 0x10001090 (`r40::setup_0185`): no targets and three.
@@ -1653,4 +1654,98 @@ fn frame_0185() {
         }
     }
     case(&mut t, 0xde, 1, [0, 0, 0], 0);
+}
+
+/// `magic_0178` 0x100066e0 (`r40::group_task_0178`): the timer below and
+/// past its mark; state 0 waiting and not, 1, 2 (no count, the byte
+/// counting down and reaching 0), others; the static list empty and not.
+#[test]
+fn group_task_0178() {
+    let Some(mut t) = twin(178) else { return };
+    all_stubs(&mut t);
+    rec(&mut t, 941, 1, |_, _| SCRATCH + 0x7c00);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x7c00 + 4 * i, 0x9000 + i);
+    }
+    rec(&mut t, 714, 5, |_, _| 0x714);
+    rec(&mut t, 779, 2, |m, a| m.r32(SCRATCH + 0x7f00) ^ a[0]);
+    rec(&mut t, 239, 3, |_, a| 0x0239_0000 ^ a[0]);
+    let f = t.at(0x66e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the particle node's globals and the unlink's lock
+    let pn = t.at(0x3590);
+    let wrapper = t.img.rel32_target(pn + 0x88);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(t.img.word(wrapper + 0x04), lock);
+    t.set_u32(t.img.word(pn + 0x45), SCRATCH + 0x7f10);
+    let ul = t.at(0x3e30);
+    for o in [0x45u32, 0x65] {
+        t.set_u32(t.img.word(ul + o), lock);
+    }
+    let owner = SCRATCH + 0x7e00;
+    t.write(owner, &[0x2e; 0x40]);
+    t.set_u32(w(&t, 0x1cf), owner);
+    let task = SCRATCH + 0x100;
+    let r = SCRATCH + 0x1_0000;
+    let (node, prev, next) = (SCRATCH + 0x140, SCRATCH + 0x180, SCRATCH + 0x1c0);
+    let statics = w(&t, 0xdf);
+    let mut k = 0u32;
+    for (state, timer, wait, count, byte) in [
+        (0u16, 0.0f32, 0u16, 0u16, 0u8),
+        (0, 0.0, 1, 0, 0),
+        (1, 0.0, 0, 0, 0),
+        (2, 0.0, 0, 0, 0x30),
+        (2, 0.0, 0, 3, 0x30),
+        (2, 0.0, 0, 3, 0x10),
+        (5, 0.0, 0, 0, 0),
+        (1, 1.0e9, 0, 3, 0x10),
+    ] {
+        k += 1;
+        junk(&mut t, r, 0x800, k);
+        t.set_u32(r + 0x7e4, timer.to_bits());
+        t.set_u16(r + 0x538, state);
+        t.set_u16(r + 0x524, wait);
+        t.set_u16(r + 0x520, count);
+        t.set_u8(r + 0x2e3, byte);
+        // the node the state-2 end unlinks: a child of a parent
+        let child = SCRATCH + 0x3000;
+        let parent = SCRATCH + 0x3100;
+        t.write(child, &[0x31; 0x40]);
+        t.write(parent, &[0x32; 0x40]);
+        t.set_u32(r + 0x2bc, child);
+        t.set_u32(child + 0x14, parent);
+        t.set_u32(child + 4, parent);
+        t.set_u32(child + 8, parent);
+        t.set_u32(parent + 0xc, child);
+        t.set_u32(parent + 0x10, child);
+        t.set_u16(parent + 0x18, 1);
+        // the static list empty or with a last node
+        t.write(statics, &[0; 0x20]);
+        let last = if k.is_multiple_of(2) {
+            statics
+        } else {
+            SCRATCH + 0x3200
+        };
+        t.set_u32(statics + 0x10, last);
+        t.set_u32(statics + 0xc, statics);
+        t.write(SCRATCH + 0x3200, &[0x33; 0x20]);
+        // the other lists the nodes join: empty
+        for o in [0x1ebu32, 0x244] {
+            let l = w(&t, o);
+            t.write(l, &[0; 0x20]);
+            t.set_u32(l + 0xc, l);
+            t.set_u32(l + 0x10, l);
+        }
+        junk_ops(&mut t, f, &[0x288, 0x297, 0x169, 0x181, 0x191, 0x291]);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.write(node, &[0x3c; 0x20]);
+        t.set_u32(node + 4, prev);
+        t.set_u32(node + 8, next);
+        t.write(prev, &[0x4d; 0x20]);
+        t.write(next, &[0x5e; 0x20]);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x66e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
 }
