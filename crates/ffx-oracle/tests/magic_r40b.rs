@@ -221,8 +221,8 @@ fn load_0174() {
         }
         let recs = op(&t, 0x202) - 4;
         junk(&mut t, recs, 3 * 0x160, k);
+        // one global for both tests (+0x2e4, +0x324)
         t.set_u32(op(&t, 0x2e4), flag);
-        t.set_u32(op(&t, 0x324), flag ^ (k & 1));
         t.set_u32(op(&t, 0x2ea), 0x027f_0000 + k);
         junk_ops(&mut t, start, &[0x143, 0x353, 0x35c, 0x2ef, 0x32f, 0x349]);
         let (count, head) = (op(&t, 0x363), op(&t, 0x372));
@@ -270,7 +270,7 @@ fn summon_frame_0174() {
         t.set_u32(op(&t, hits, 0x16), on);
         t.set_u32(op(&t, hits, 0x3f), n);
         let sel = SCRATCH + 0x5000;
-        t.write(sel, &[2, 1, 0, 3]);
+        t.write(sel, &[2, 1, 3, 1]);
         t.set_u32(op(&t, hits, 0x7d), sel);
         for i in 0..4 {
             t.set_u32(op(&t, hits, 0x88) + 4 * i, 0x0c0c_0100 + i);
@@ -279,11 +279,12 @@ fn summon_frame_0174() {
         junk(&mut t, recs - 0xd4, 3 * 0x160 + 0xd4, k);
         for i in 0..3u32 {
             let r = recs + 0x160 * i;
-            let hit = (i + k).is_multiple_of(3);
+            // every record but the second one hit, its count by case
+            let hit = i != 1;
             t.set_u32(r + 0x84, u32::from(hit));
             t.set_u32(
                 r + 0x80,
-                [3u32, 1, 0, 0xffff_fffd, 0xffff_fff8][((i + k) % 5) as usize],
+                [3u32, 1, 0, 0xffff_fffd, 0xffff_fff8][((i + 2 * k) % 5) as usize],
             );
             t.set_u32(
                 r + 0x7c,

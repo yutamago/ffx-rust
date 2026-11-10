@@ -795,7 +795,8 @@ fn lists_0179(t: &mut Twin) {
         let l = t.img.word(f + o);
         t.set_u32(l + 0xc, l);
         t.set_u32(l + 0x10, l);
-        t.set_u16(l + 0x18, 0);
+        // a count with both bytes set (the halfword reads)
+        t.set_u16(l + 0x18, 0x0305);
     }
     // the parts' owner block the particle nodes read
     // the ring's flag word (bit 0 cleared) junk
@@ -1093,5 +1094,139 @@ fn start_up_0179() {
         t.set_u32(w(&t, 0x7d4), SCRATCH + 0x6c00);
         ownb::dirty_stack(&mut t, 0x72a0 + k, &[]);
         t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
+
+/// The stubs of `magic_0183`'s tests: every slot logs its first word; 218
+/// a target list, 217 a position, 216 a height (ST0), 233 `a = b + c` (a
+/// float third word added to four lanes), 229 `a = M[0..4] / 2 + b`, 244 a
+/// matrix by its angle, 225/227 the load answers.
+fn stubs_0183(t: &mut Twin) {
+    all_stubs(t);
+    let list = SCRATCH + 0x7e80;
+    t.write(list, &[3, 1, 2, 0]);
+    rec(t, 218, 2, move |_, _| list);
+    rec(t, 217, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.5 * i as f32 + (a[0] & 0xf) as f32);
+        }
+        0x217
+    });
+    rec(t, 216, 1, |_, a| 0x216 ^ a[0]);
+    t.stub_st0(216, |_, a| 1.25 + f64::from(a[0] & 7));
+    rec(t, 233, 3, |m, a| {
+        let k = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let b = f32::from_bits(m.r32(a[1] + 4 * i));
+            let x = if b.is_finite() { b * 0.5 + k } else { k };
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) * 0.5 + f32::from_bits(m.r32(a[2] + 4 * i));
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(t, 244, 2, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                0.25 * i as f32 + (a[1] & 0xff) as f32 * 0.01,
+            );
+        }
+        0x244
+    });
+    rec(t, 225, 1, |m, _| m.r32(SCRATCH + 0x7f60));
+    rec(t, 227, 1, |m, _| m.r32(SCRATCH + 0x7f64));
+    rec(t, 212, 2, |_, a| 0x0212_0000 ^ a[0]);
+    let table = SCRATCH + 0x7c00;
+    for i in 0..8 {
+        t.set_u32(table + 4 * i, 0x9000 + i);
+    }
+    rec(t, 941, 1, move |_, _| table);
+    rec(t, 714, 5, |_, _| 0x714);
+}
+
+/// `magic_0183` 0x10001090 (`r40::setup_0183`).
+#[test]
+fn setup_0183() {
+    let Some(mut t) = twin(183) else { return };
+    stubs_0183(&mut t);
+    let f = t.at(0x1090);
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(t.img.word(f + 0x155), lock);
+    let start = t.img.rel32_target(f + 0x1d4);
+    t.set_u32(t.img.word(start + 0x04), lock);
+    for k in 0..3u32 {
+        t.set_u32(lock, 0x40 + k);
+        junk_ops(&mut t, f, &[0xe5, 0xeb, 0x113, 0x216, 0x21c, 0x222]);
+        t.set_u32(t.img.word(f + 0x1a6), SCRATCH + 0x7f20);
+        t.set_u32(t.img.word(f + 0x1d9), SCRATCH + 0x7f20);
+        ownb::dirty_stack(&mut t, 0x1090 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0183` 0x10001350 (`r40::camera_task_0183`): the load steps
+/// (busy, asked, not loaded), every kind, the frames 0, 1, 0x1d, 0x1e,
+/// 0x31, 0x32, 0x45, 0x46 and past, the height above and below the top,
+/// the camera id set and not.
+#[test]
+fn camera_task_0183() {
+    let Some(mut t) = twin(183) else { return };
+    stubs_0183(&mut t);
+    let f = t.at(0x1350);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let mut k = 0u32;
+    let mut case =
+        |t: &mut Twin, kind: u32, flags: [u32; 3], answers: [u32; 2], top: f32, id: u32| {
+            k += 1;
+            t.set_u32(w(t, 0x12), flags[0]);
+            t.set_u32(w(t, 0x3f), flags[1]);
+            t.set_u32(w(t, 0x6a), flags[2]);
+            t.set_u32(SCRATCH + 0x7f60, answers[0]);
+            t.set_u32(SCRATCH + 0x7f64, answers[1]);
+            t.set_u32(w(t, 0x97), kind);
+            t.set_u32(w(t, 0x2ff), top.to_bits());
+            t.set_u32(w(t, 0x407), id);
+            for o in [
+                0x249u32, 0x259, 0x261, 0x269, 0x276, 0x2a1, 0x2ba, 0x2cb, 0x14d, 0x18b, 0x21f,
+                0x367, 0x37f, 0x39d, 0x3bb,
+            ] {
+                t.set_u32(
+                    w(t, o),
+                    (0.25 * (o % 13) as f32 - 1.0 + k as f32 * 0.125).to_bits(),
+                );
+            }
+            t.set_u16(w(t, 0x118), 0xfff0 + k as u16);
+            junk_ops(t, f, &[0x39, 0x92, 0x5b, 0x427, 0x48d, 0x47b, 0x493]);
+            ownb::dirty_stack(t, 0x1350 + k, &[]);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        };
+    case(&mut t, 0xbf, [0, 0, 0], [1, 1], 9.0, 0);
+    case(&mut t, 0xbf, [0, 0, 0], [0, 0], 9.0, 0);
+    case(&mut t, 0xbf, [0, 1, 0], [0, 2], 9.0, 0);
+    for kind in [0x47u32, 0x60, 0x83, 0x50] {
+        case(&mut t, kind, [1, 1, 1], [0, 1], 9.0, 0);
+    }
+    for n in [
+        0u32,
+        1,
+        0x1d,
+        0x1e,
+        0x31,
+        0x32,
+        0x45,
+        0x46,
+        0x47,
+        0xffff_fff0,
+    ] {
+        for (top, id) in [(100.0f32, u32::MAX), (-100.0, 5), (-100.0, u32::MAX)] {
+            case(&mut t, 0xbf + n, [1, 1, 1], [0, 1], top, id);
+        }
     }
 }
