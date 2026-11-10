@@ -63,7 +63,24 @@ impl Scene {
 
     /// Slot 276 through `call_276` (`mov ecx, M`).
     fn alt(&self) -> bool {
-        self.kind == 611
+        matches!(self.kind, 611 | 668)
+    }
+
+    /// The copies that ring the actors where `magic_0515` places its parts
+    /// (and take state 3's other differences): `magic_0667` and `0668`.
+    fn rings(&self) -> bool {
+        matches!(self.kind, 667 | 668)
+    }
+
+    /// This copy's own offsets of what `magic_0515` lacks in state 3: the
+    /// first ring's base and count, the closing ring's count and base, the
+    /// sizes' divisor and addend.
+    fn ring_ops_3(&self) -> [u32; 6] {
+        if self.kind == 668 {
+            [0x410, 0x40b, 0x90b, 0x92f, 0x942, 0x94d]
+        } else {
+            [0x5c9, 0x5c1, 0xac7, 0xaeb, 0xafe, 0xb09]
+        }
     }
 
     /// The run of constant stores from `from` to `to` (one block).
@@ -2006,10 +2023,11 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         let r = kf(g, img, c, 0x614);
         ring(g, img, c, 0x629, (rec(0x624), 3), r, (0, 0x8000));
         let r = kf(g, img, c, 0x636);
-        if c.kind == 667 {
+        if c.rings() {
             // the actors' ring (`G_N` of them) instead of the placed parts
-            let n = g.read::<u32>(c.raw(img, 0x5c1));
-            ring(g, img, c, 0x63c, (c.raw(img, 0x5c9), n), r, (0, 0));
+            let [base, count, ..] = c.ring_ops_3();
+            let n = g.read::<u32>(c.raw(img, count));
+            ring(g, img, c, 0x63c, (c.raw(img, base), n), r, (0, 0));
         } else {
             placed(g, img, c, 0x63c, r, (0, 0x8000));
         }
@@ -2039,7 +2057,7 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     } else {
         div((0x3c - e) as f32, kf(g, img, c, 0x6eb))
     };
-    let (fade_at, out) = if c.kind == 667 {
+    let (fade_at, out) = if c.rings() {
         (local(c, 0x18), local(c, 0x14))
     } else {
         (local(c, 0x14), local(c, 0x18))
@@ -2078,7 +2096,12 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
                 let ang = i32::from(g.read::<i16>(m.wrapping_sub(0x26)));
                 let y = sub(g.read::<f32>(m + 4), lift);
                 let z = add(g.read::<f32>(m + 8), g.read::<f32>(v + 8));
-                let x = add(g.read::<f32>(v), g.read::<f32>(m));
+                // (0668 adds them the other way round)
+                let x = if c.kind == 668 {
+                    add(g.read::<f32>(m), g.read::<f32>(v))
+                } else {
+                    add(g.read::<f32>(v), g.read::<f32>(m))
+                };
                 let index = g.read::<u32>(ix);
                 #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
                 let turn = ((-0x4000i32).wrapping_sub(ang) as f32).to_bits();
@@ -2166,12 +2189,13 @@ fn state_3_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     let word = c.gw(g, img, 0xb31) << 8;
     g.write::<f32>(out, s);
     let r = mul(s, kf(g, img, c, 0xb4d));
-    let (s, count) = if c.kind == 667 {
+    let (s, count) = if c.rings() {
         // the actors' ring; the sizes by `fade / K + K'`
-        let n = g.read::<u32>(c.raw(img, 0xac7));
-        ring(g, img, c, 0xb52, (c.raw(img, 0xaeb), n), r, (word, 0));
-        let k = crate::sb_sse::div(g.read::<f32>(fade_at), g.read::<f32>(c.raw(img, 0xafe)));
-        let s2 = add(k, g.read::<f32>(c.raw(img, 0xb09)));
+        let [_, _, count, base, kd, ka] = c.ring_ops_3();
+        let n = g.read::<u32>(c.raw(img, count));
+        ring(g, img, c, 0xb52, (c.raw(img, base), n), r, (word, 0));
+        let k = crate::sb_sse::div(g.read::<f32>(fade_at), g.read::<f32>(c.raw(img, kd)));
+        let s2 = add(k, g.read::<f32>(c.raw(img, ka)));
         g.write::<f32>(out, s2);
         (s2, n.cast_signed())
     } else {
@@ -2451,7 +2475,7 @@ fn state_17_0515<G: Game>(g: &mut G, img: &Image, c: &Scene) {
             let x = c.gw(g, img, last.1);
             call_slot(g, img, c, (last.0, 211), &[x, 0]);
         };
-        let r = if c.kind == 667 {
+        let r = if c.rings() {
             rec(0x3668)
         } else if c.gw(g, img, 0x34fc) != 0 {
             flag(
@@ -2870,7 +2894,7 @@ fn state_0_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         c.stores(g, img, 0x177, 0x181);
         crate::s4_misc::actors_296(g, img, &c.frame(img, 0x182, 0));
         slot_222(g, img, c, (0x187, 0x19c), 0, 0x1d);
-        if c.gw(g, img, 0x1a7) != 0 || c.gw(g, img, 0x1b0) != 0 {
+        if c.kind == 611 && (c.gw(g, img, 0x1a7) != 0 || c.gw(g, img, 0x1b0) != 0) {
             for (op, m, k) in [
                 (0x1b8u32, 0x1c8u32, 4u32),
                 (0x1cf, 0x1e2, 5),
@@ -2897,8 +2921,13 @@ fn state_0_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     let eax = call_slot(g, img, c, (0x281, 332), &[rec(0x286)]);
     crate::sa_misc::repeat_309(g, img, c.target(img, 0x296), eax);
     crate::sa_misc::record_296(g, img, c.target(img, 0x2a2), rec(0x29d), 0);
-    g.write::<u32>(c.s.wrapping_sub(4), 0);
-    crate::s4_small::records_296_with(g, img, &c.frame(img, 0x2a9, 1));
+    if c.kind == 668 {
+        // (`push ecx`: records_296_off reads no argument)
+        crate::s4_small::records_296_off(g, img, &c.frame(img, 0x2a9, 1));
+    } else {
+        g.write::<u32>(c.s.wrapping_sub(4), 0);
+        crate::s4_small::records_296_with(g, img, &c.frame(img, 0x2a9, 1));
+    }
     for (call, r) in [(0x2b8u32, 0x2b3u32), (0x2c4, 0x2bf), (0x2d0, 0x2cb)] {
         crate::sa_misc::record_296(g, img, c.target(img, call), rec(r), 0);
     }
@@ -2974,7 +3003,13 @@ fn once_15_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
     fr.ecx = 1;
     crate::s4_misc::actors_296(g, img, &fr);
     let r = kf(g, img, c, 0x2dc4);
-    placed(g, img, c, 0x2dcd, r, (0, 0));
+    if c.kind == 668 {
+        // the actors' ring instead of the placed parts
+        let n = g.read::<u32>(c.raw(img, 0x2d6a));
+        ring(g, img, c, 0x2dcd, (c.raw(img, 0x2d74), n), r, (0, 0));
+    } else {
+        placed(g, img, c, 0x2dcd, r, (0, 0));
+    }
 }
 
 /// State 0x15 of `magic_0611` (`+0x2bb9`): once, [`once_15_0611`]; while
@@ -3021,7 +3056,11 @@ fn state_15_0611<G: Game>(g: &mut G, img: &Image, c: &Scene) {
         spline(g, img, c, 0x2ead, (rec(0x2e7c), rec(0x2e68)), words);
         n = half(g, img, c, 0x2eb3);
     }
-    let tail = c.with(&MAP_15_0611_TAIL);
+    let tail = c.with(if c.kind == 668 {
+        &MAP_15_0668_TAIL
+    } else {
+        &MAP_15_0611_TAIL
+    });
     tail_15(g, img, &tail, n);
 }
 
@@ -3329,14 +3368,23 @@ static MAP_END_0667: [(u32, u32); 4] = [
     (0x3eab, 0x3cfb),
 ];
 /// `magic_0667`'s states that are `magic_0515`'s shifted.
-static SHIFT_0667: [(u32, [(u32, u32); 1]); 7] = [
-    (1, [(0x48d, 0x412)]),
-    (6, [(0xc27, 0xbd7)]),
-    (8, [(0xe8a, 0xe3a)]),
-    (9, [(0x130c, 0x12bc)]),
-    (0xd, [(0x1835, 0x17e5)]),
-    (0x10, [(0x1a52, 0x1a02)]),
-    (0x64, [(0x3daf, 0x3bff)]),
+static SHIFT_0667: [(u32, &[(u32, u32)]); 7] = [
+    (1, &[(0x48d, 0x412)]),
+    (6, &[(0xc27, 0xbd7)]),
+    (8, &[(0xe8a, 0xe3a)]),
+    (9, &[(0x130c, 0x12bc)]),
+    (0xd, &[(0x1835, 0x17e5)]),
+    (
+        0x10,
+        &[
+            (0x1a52, 0x1a02),
+            (0x2148, 0x20f8),
+            (0x2150, 0x2100),
+            (0x2158, 0x2108),
+            (0x2160, 0x2110),
+        ],
+    ),
+    (0x64, &[(0x3daf, 0x3bff)]),
 ];
 
 /// The scene task of `magic_0667` (0x10004af0, 15901 bytes): the same
@@ -3543,6 +3591,294 @@ pub const SCENE_TASK_0667: Sig = Sig {
         (0x3d5a, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
         (0x3d68, Callee::Sig(&crate::r36::CAMERAS_0515)),
         (0x3d7a, Callee::Any), // __security_check_cookie (CRT)
+    ],
+    imports: &[],
+};
+
+/// `magic_0668`'s state 0 against `magic_0611`'s (no flags block).
+static MAP_0_0668: [(u32, u32); 4] = [
+    (0x15c, 0x15c),
+    (0x16a, 0x166),
+    (0x21f, 0x1a1),
+    (0x2a8, 0x229),
+];
+/// `magic_0668`'s state 3 against `magic_0515`'s (as `magic_0667`'s, with
+/// `call_276`).
+static MAP_3_0668: [(u32, u32); 41] = [
+    (0x4c3, 0x29a),
+    (0x564, 0x330),
+    (0x57a, 0x346),
+    (0x630, 0x404),
+    (0x632, 0x3f9),
+    (0x63a, 0x408),
+    (0x63b, 0x414),
+    (0x6c8, 0x4a1),
+    (0x6d7, 0x4b0),
+    (0x6f5, 0x4ce),
+    (0x70d, 0x4e6),
+    (0x712, 0x4eb),
+    (0x72f, 0x508),
+    (0x743, 0x51c),
+    (0x760, 0x534),
+    (0x7ee, 0x5c0),
+    (0x7fd, 0x5d1),
+    (0x887, 0x65b),
+    (0x8e8, 0x6bc),
+    (0x946, 0x71a),
+    (0x977, 0x74b),
+    (0x97f, 0x753),
+    (0xaf2, 0x8c6),
+    (0xafa, 0x8ce),
+    (0xb02, 0x8d6),
+    (0xb28, 0x8fc),
+    (0xb36, 0x90f),
+    (0xb3e, 0x919),
+    (0xb49, 0x924),
+    (0xb51, 0x933),
+    (0xb5c, 0x938),
+    (0xb62, 0x946),
+    (0xb67, 0x953),
+    (0xb6f, 0x961),
+    (0xb80, 0x971),
+    (0xbd3, 0x9c4),
+    (0xbdd, 0x9ce),
+    (0xbe4, 0x9d5),
+    (0xbf0, 0x9e0),
+    (0xc08, 0x9f8),
+    (0xc12, 0xa02),
+];
+/// `magic_0668`'s state 0x15 head against `magic_0611`'s.
+static MAP_15_0668: [(u32, u32); 3] = [(0x2bb9, 0x2b59), (0x2dc9, 0x2d70), (0x2dcc, 0x2d78)];
+/// `magic_0668`'s state 0x15 from the count's reading.
+static MAP_15_0668_TAIL: [(u32, u32); 1] = [(0x2fa3, 0x2e66)];
+/// `magic_0668`'s states 0x17, 0x18, 0x64 and end against `magic_0515`'s.
+static MAP_17_0668: [(u32, u32); 3] = [(0x3202, 0x30c5), (0x33a0, 0x3260), (0x3667, 0x33ba)];
+static MAP_18_0668: [(u32, u32); 3] = [(0x3961, 0x36b4), (0x3af8, 0x3849), (0x3b00, 0x3850)];
+static MAP_64_0668: [(u32, u32); 2] = [(0x3daf, 0x3aff), (0x3e44, 0x3b89)];
+static MAP_END_0668: [(u32, u32); 5] = [
+    (0x3e5f, 0x3ba4),
+    (0x3e72, 0x3bc0),
+    (0x3e87, 0x3bd5),
+    (0x3e9b, 0x3be9),
+    (0x3eab, 0x3bf9),
+];
+/// `magic_0668`'s states that are `magic_0515`'s shifted (9 with one
+/// alignment filler less).
+static SHIFT_0668: [(u32, &[(u32, u32)]); 6] = [
+    (1, &[(0x48d, 0x264)]),
+    (6, &[(0xc27, 0xa17)]),
+    (8, &[(0xe8a, 0xc7a)]),
+    (9, &[(0x130c, 0x10fc), (0x161f, 0x1412), (0x1740, 0x1530)]),
+    (0xd, &[(0x1835, 0x1625)]),
+    (
+        0x10,
+        &[
+            (0x1a52, 0x1842),
+            (0x2148, 0x1f38),
+            (0x2150, 0x1f40),
+            (0x2158, 0x1f48),
+            (0x2160, 0x1f50),
+        ],
+    ),
+];
+
+/// The scene task of `magic_0668` (0x10004ad0, 15641 bytes): `magic_0611`'s
+/// states 0 and 0x15 (without the flags block, with `records_296_off`,
+/// ringing the actors instead of placing the parts), `magic_0667`'s
+/// states 3 (with `call_276`, its sum the other way round) and 0x17, the
+/// others `magic_0515`'s with their operands moved.
+pub fn scene_task_0668<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x108);
+    let c = Scene {
+        f: fr.at,
+        s: a.wrapping_sub(8),
+        map: &[],
+        kind: 668,
+    };
+    if let Exit::Out = prologue(g, img, &c) {
+        return Ret::eax(0);
+    }
+    let state = c.gw(g, img, 0x141);
+    let shifted = SHIFT_0668
+        .iter()
+        .find(|(s, _)| *s == state)
+        .map(|(_, m)| c.with(m));
+    match (state, shifted) {
+        (0, _) => state_0_0611(g, img, &c.with(&MAP_0_0668)),
+        (1, Some(s)) => state_1(g, img, &s),
+        (3, _) => state_3_0515(g, img, &c.with(&MAP_3_0668)),
+        (6, Some(s)) => state_6(g, img, &s),
+        (8, Some(s)) => state_8(g, img, &s),
+        (9, Some(s)) => state_9(g, img, &s),
+        (0xd, Some(s)) => state_d(g, img, &s),
+        (0x10, Some(s)) => state_10(g, img, &s),
+        (0x15, _) => state_15_0611(g, img, &c.with(&MAP_15_0668)),
+        (0x17, _) => state_17_0515(g, img, &c.with(&MAP_17_0668)),
+        (0x18, _) => state_18(g, img, &c.with(&MAP_18_0668)),
+        (0x64, _) => state_64(g, img, &c.with(&MAP_64_0668)),
+        _ => {}
+    }
+    end(g, img, &c.with(&MAP_END_0668));
+    Ret::eax(0)
+}
+
+/// [`scene_task_0668`] (15641 bytes, 1 overlay).
+pub const SCENE_TASK_0668: Sig = Sig {
+    len: 15641,
+    hash: 0x8281_103b_2bb4_5cbd,
+    calls: &[
+        (0x17e, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x1fe, Callee::Sig(&crate::sa_misc::BLOCK_331)),
+        (0x218, Callee::Sig(&crate::sa_misc::REPEAT_309)),
+        (0x224, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x22a, Callee::Sig(&crate::s4_small::RECORDS_296_OFF)),
+        (0x239, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x245, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x251, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x318, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x322, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x32c, Callee::Sig(&crate::s4_small::CALL_276)),
+        (0x366, Callee::Sig(&crate::sa_misc::BLOCK_331)),
+        (0x380, Callee::Sig(&crate::sa_misc::RECORDS_295)),
+        (0x38c, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x398, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3a4, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3ab, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x3ba, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3c9, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3d8, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3f5, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x415, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x470, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x4db, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x631, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x6a8, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x709, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x764, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x773, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x782, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x7cd, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x7f3, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0x82c, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x86c, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x88e, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0x934, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0xa5c, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0xa66, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0xa6b, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xa70, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xa77, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0xb35, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0xb4d, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xb52, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xc02, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xc28, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xc95, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0xc9a, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0xc9f, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0xccc, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0xcfd, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0xd45, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xd6d, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xda0, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xdda, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xdfa, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe2b, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe72, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xe9e, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0xecf, Callee::Sig(&crate::s6_misc::SPARKS_ON_MODEL)),
+        (0xfa0, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x1012, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x108e, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x1143, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x1197, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x11a9, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x11eb, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x125e, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x127e, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x12a4, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x14a5, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x14f8, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x157e, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x15c5, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x1640, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x166e, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x167d, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x168c, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x169c, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x16a1, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x16c0, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x16f5, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x1781, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x1806, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x185c, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x1861, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x1872, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x1891, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x18ee, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x1a2b, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x1b96, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x1bfb, Callee::Import("_CIatan2")),
+        (0x22e8, Callee::Sig(&crate::sa_misc::RECORD_FREE)),
+        (0x233a, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x26c5, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x289e, Callee::Sig(&crate::s4_misc::REGISTER_PARTS_B)),
+        (0x2925, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x29c2, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x2a80, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x2ad0, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x2b93, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x2b98, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x2bc7, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x2c85, Callee::Sig(&crate::s6_misc::LIVE_PARTS_AXES)),
+        (0x2c95, Callee::Sig(&crate::s6_misc::LIVE_PARTS_AXES)),
+        (0x2cf1, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x2cfe, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x2d52, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x2d5c, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x2d79, Callee::Sig(&crate::s6_misc::PARTS_RING)),
+        (0x2da0, Callee::Sig(&crate::sa_misc::SLOT306)),
+        (0x2dbb, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x2e59, Callee::Sig(&crate::s7_misc::SPLINE_OBJECT)),
+        (0x2eaf, Callee::Sig(&crate::sa_misc::SPREAD_SET)),
+        (0x2ef3, Callee::Sig(&crate::sa_misc::SPREAD_SET)),
+        (0x2f25, Callee::Sig(&crate::s4_misc::FLOAT_307)),
+        (0x2f74, Callee::Sig(&crate::s4_misc::CALL_239)),
+        (0x2ff5, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x3058, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x3096, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x30df, Callee::Sig(&crate::sa_misc::REGISTER_COUNTED)),
+        (0x30e4, Callee::Sig(&crate::s4_misc::RECORDS_CLEAR)),
+        (0x30e9, Callee::Sig(&crate::sa_misc::REGISTER_RECORDS)),
+        (0x30ee, Callee::Sig(&crate::sa_misc::RECORDS_CLEAR)),
+        (0x30f3, Callee::Sig(&crate::s4_misc::MODELS_295)),
+        (0x3245, Callee::Sig(&crate::s4_misc::REPEAT_310)),
+        (0x33b6, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x33c0, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x33e9, Callee::Sig(&crate::s4_misc::FREE_RECORD)),
+        (0x3686, Callee::Sig(&crate::s4_misc::CALL_239)),
+        (0x36d0, Callee::Sig(&crate::s4_misc::ACTORS_296)),
+        (0x37f3, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x37ff, Callee::Sig(&crate::sa_misc::TURN_MATRIX)),
+        (0x3809, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS_FROM)),
+        (0x382d, Callee::Sig(&crate::s4_misc::CALL_220)),
+        (0x3837, Callee::Sig(&crate::sa_misc::SLOT306)),
+        (0x387a, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3887, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3984, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x39a6, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3a34, Callee::Sig(&crate::sa_misc::RECORD_296)),
+        (0x3a41, Callee::Sig(&crate::sa_misc::SOUND_START)),
+        (0x3ab9, Callee::Sig(&crate::s6_misc::PART_MOTION)),
+        (0x3b6b, Callee::Sig(&crate::sa_misc::PLACE_RECORDS)),
+        (0x3b7b, Callee::Sig(&crate::sa_misc::PLACE_RECORDS)),
+        (0x3b85, Callee::Sig(&crate::s4_small::CALL_276)),
+        (0x3b8a, Callee::Sig(&crate::s4_misc::MODELS_276)),
+        (0x3c39, Callee::Sig(&crate::s6_misc::CAMERA_TRACKS)),
+        (0x3c48, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
+        (0x3c58, Callee::Sig(&crate::s6_misc::PARTS_AXES)),
+        (0x3c66, Callee::Sig(&crate::r36::CAMERAS_0515)),
+        (0x3c78, Callee::Any), // __security_check_cookie (CRT)
     ],
     imports: &[],
 };
