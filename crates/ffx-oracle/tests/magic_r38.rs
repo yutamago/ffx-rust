@@ -328,3 +328,253 @@ fn start_up_0316() {
     let load = t.at(0x12b0);
     load_cases(&mut t, load, &|t| start_up_0316_setup(t, f, 2, true));
 }
+
+/// `magic_0361`'s event slots: the rc/rcef functions answer from their
+/// words and write what the game writes (503 a point, 500/235 matrices,
+/// 236/498/231/494 matrices mixed from what they read, 496/504/464 scale
+/// in place, 477/497 floats), each read input feeding the answer.
+fn stubs_0361(t: &mut Twin) {
+    all_stubs(t);
+    filler(t, 235, 1, 16);
+    filler(t, 500, 1, 16);
+    for (s, n) in [
+        (456u32, 3usize),
+        (461, 2),
+        (450, 2),
+        (449, 2),
+        (434, 2),
+        (446, 2),
+        (447, 2),
+        (507, 2),
+        (508, 2),
+        (501, 1),
+        (502, 1),
+        (481, 1),
+        (480, 2),
+    ] {
+        rec(t, s, n, move |_, a| {
+            (s << 16) ^ a[0] ^ a.get(1).copied().unwrap_or(0).rotate_left(5)
+        });
+    }
+    rec(t, 503, 2, |m, a| {
+        for i in 0..4u32 {
+            wf(
+                m,
+                a[1] + 4 * i,
+                (a[0] & 0xff) as f32 * 0.25 + i as f32 * 1.5 - 3.0,
+            );
+        }
+        0x503
+    });
+    for (s, scale) in [(464u32, 0.5f32), (496, -0.75)] {
+        rec(t, s, 1, move |m, a| {
+            for i in 0..4u32 {
+                let v = rf(m, a[0] + 4 * i) * scale + i as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 504, 1, |m, a| {
+        for i in 0..12u32 {
+            let v = rf(m, a[0] + 4 * i) * 3.0 - 1.0;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x504
+    });
+    rec(t, 499, 3, |m, a| {
+        let mut x = 0x499u32;
+        for i in 0..8u32 {
+            x = x.rotate_left(3) ^ m.r32(a[1 + (i / 4) as usize] + 4 * (i % 4));
+        }
+        m.w32(SCRATCH + 0xb04, x);
+        // the hold word the step reads again after the call
+        let hold = m.r32(SCRATCH + 0xb00);
+        m.w32(0x100a_b3d8, hold);
+        x
+    });
+    rec(t, 236, 3, |m, a| {
+        for i in 0..16u32 {
+            wf(
+                m,
+                a[2] + 4 * i,
+                (a[0] & 0xf) as f32 + i as f32 * 0.5 + a[1] as f32,
+            );
+        }
+        0x236
+    });
+    rec(t, 498, 4, |m, a| {
+        for i in 0..16u32 {
+            let v = rf(m, a[3] + 4 * (i % 4)) * (i + 1) as f32 + (a[1] & 0xf) as f32;
+            wf(m, a[2] + 4 * i, v);
+        }
+        0x498
+    });
+    rec(t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * (15 - i));
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(t, 494, 4, |m, a| {
+        for i in 0..16u32 {
+            let v =
+                rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * (i % 4)) * 2.0 - rf(m, a[3] + 4 * (i % 4));
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x494
+    });
+    rec(t, 484, 3, |m, a| {
+        let mut x = 0x484u32 ^ a[2];
+        for i in 0..12u32 {
+            x = x.rotate_left(5) ^ m.r32(a[1] + 4 * i);
+        }
+        x
+    });
+    for (s, base) in [(477u32, 0.625f64), (497, 2.0)] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| {
+            base + f64::from(f32::from_bits(a[0]).abs().min(64.0)) * 0.5 + f64::from(a[0] & 3)
+        });
+    }
+}
+
+/// The event block `*G_E` (caster `+0x198`, target `+0x1a0`) and the
+/// event's record (`i` at `+0xac`, its word at `+0x2c + 16 i`).
+fn event_0361(t: &mut Twin, f: u32, op: u32, i: u32, word: i32) -> u32 {
+    let e = SCRATCH + 0x2000;
+    junk(t, e + 0x180, 0x40, 3);
+    t.set_u32(e + 0x198, 0x47);
+    t.set_u32(e + 0x1a0, 0x53);
+    t.set_u32(t.img.word(f + op), e);
+    let ev = SCRATCH + 0x2400;
+    junk(t, ev, 0x100, i);
+    t.set_u32(ev + 0xac, i);
+    t.set_u32(ev + 0x2c + 16 * i, word.cast_unsigned());
+    ev
+}
+
+/// The place `V` (`0x100ab420`), velocity `U` (`+0x58`) and path `S`
+/// (`+0x68`) globals and the matrix `M` (`0x100ab3e0`).
+fn motion_0361(t: &mut Twin, v: [f32; 4], u: [f32; 4], s: [f32; 4], k: u32) {
+    for i in 0..4u32 {
+        t.set_u32(0x100a_b420 + 4 * i, v[i as usize].to_bits());
+        t.set_u32(0x100a_b478 + 4 * i, u[i as usize].to_bits());
+        t.set_u32(0x100a_b488 + 4 * i, s[i as usize].to_bits());
+    }
+    junk(t, 0x100a_b3e0, 0x40, k);
+}
+
+/// `magic_0361` 0x10001cb0 (`r38::aim_0361`, cdecl `(ev)`).
+#[test]
+fn aim_0361() {
+    let Some(mut t) = twin(361) else { return };
+    stubs_0361(&mut t);
+    let f = t.at(0x1cb0);
+    assert_eq!(t.img.word(f + 0x11), 0x100a_b350);
+    for k in 0..3u32 {
+        let ev = event_0361(&mut t, f, 0x11, k, 1);
+        t.set_u32(0x100a_b3dc, 0x77);
+        motion_0361(&mut t, [9.0; 4], [7.0; 4], [5.0; 4], k);
+        ownb::dirty_stack(&mut t, 0x1cb0 + k, &[]);
+        t.check_entry(f, Call::default(), &[ev], Eax::Checked);
+    }
+}
+
+/// `magic_0361` 0x100027d0 (`r38::fade_in_0361`, cdecl `(ev)`): held or
+/// not (and held by slot 499), the count below 10, at 10 and past it.
+#[test]
+fn fade_in_0361() {
+    let Some(mut t) = twin(361) else { return };
+    stubs_0361(&mut t);
+    let f = t.at(0x27d0);
+    // (hold, count, hold after slot 499)
+    for (k, (hold, n, later)) in (0u32..).zip([
+        (0u32, 0i32, 0u32),
+        (0, 9, 0),
+        (0, 10, 0),
+        (0, 10, 1),
+        (1, 10, 1),
+        (1, 3, 1),
+        (0, -4, 0),
+        (0, 25, 0),
+    ]) {
+        let ev = event_0361(&mut t, f, 0x11, k % 3, 1);
+        t.set_u32(0x100a_b3d8, hold);
+        t.set_u32(SCRATCH + 0xb00, later);
+        t.set_u32(0x100a_b3dc, n.cast_unsigned());
+        ownb::dirty_stack(&mut t, 0x27d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[ev], Eax::Checked);
+    }
+}
+
+/// `magic_0361` 0x100023b0 (`r38::flight_0361`, cdecl `(ev)`): `V.y` and
+/// `S.y` above, at and below 0 and NaN; the first bounce and later ones;
+/// the count reaching 3 and not.
+#[test]
+fn flight_0361() {
+    let Some(mut t) = twin(361) else { return };
+    stubs_0361(&mut t);
+    let f = t.at(0x23b0);
+    // (V.y + U.y, S.y + that, count)
+    for (k, (vy, sy, n)) in (0u32..).zip([
+        (1.5f32, 2.0f32, 0i32),
+        (1.5, 2.0, 1),
+        (1.5, 2.0, 2),
+        (0.0, -1.5, 2),
+        (-0.0, 0.0, 0),
+        (-0.5, 4.0, 0),
+        (2.0, -2.5, 0),
+        (f32::NAN, 1.0, 0),
+        (1.0, f32::NAN, 2),
+        (3.0, 1.0, 7),
+    ]) {
+        let ev = event_0361(&mut t, f, 0x15, k % 3, 1);
+        let u = [0.5, 0.25, -0.75, 1.25];
+        let v = [2.0 + k as f32, vy - 0.25, 1.5, -2.0];
+        let s = [3.0, sy - (vy - 0.25 + 0.25), -1.0, 0.5 * k as f32];
+        motion_0361(&mut t, v, u, s, k);
+        t.set_u32(0x100a_b3dc, n.cast_unsigned());
+        ownb::dirty_stack(&mut t, 0x23b0 + k, &[]);
+        t.check_entry(f, Call::default(), &[ev], Eax::Checked);
+    }
+}
+
+/// `magic_0361` 0x10001df0 (`r38::throw_0361`, cdecl `(ev)`): the count
+/// below 5, 5..9, at 10 and past it; the record's word positive, 0 and
+/// negative; held or not.
+#[test]
+fn throw_0361() {
+    let Some(mut t) = twin(361) else { return };
+    stubs_0361(&mut t);
+    let f = t.at(0x1df0);
+    // (count, the record's word, hold)
+    for (k, (n, word, hold)) in (0u32..).zip([
+        (0i32, 1i32, 0u32),
+        (4, 0, 0),
+        (5, -3, 0),
+        (7, 2, 1),
+        (9, 0, 0),
+        (10, 5, 0),
+        (10, 0, 1),
+        (11, 1, 1),
+        (30, -1, 0),
+        (-2, 7, 1),
+    ]) {
+        let ev = event_0361(&mut t, f, 0x14, k % 3, word);
+        motion_0361(
+            &mut t,
+            [1.0, 2.0 + k as f32, -3.0, 0.5],
+            [0.25, -0.5, 0.75, 1.5],
+            [4.0, 1.0, 2.5, -1.0],
+            k,
+        );
+        t.set_u32(0x100a_b3dc, n.cast_unsigned());
+        t.set_u32(0x100a_b3d8, hold);
+        t.set_u32(SCRATCH + 0xb00, hold);
+        junk(&mut t, 0x100a_b438, 0x10, k);
+        ownb::dirty_stack(&mut t, 0x1df0 + k, &[]);
+        t.check_entry(f, Call::default(), &[ev], Eax::Checked);
+    }
+}

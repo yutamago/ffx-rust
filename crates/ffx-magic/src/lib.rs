@@ -3295,6 +3295,10 @@ ports! {
     "r38 spark tick 0316" => r38::SPARK_TICK_0316, r38::spark_tick_0316;
     "r38 spark ring 0316" => r38::SPARK_RING_0316, r38::spark_ring_0316;
     "r38 load step 0316" => r38::LOAD_0316, r38::load_0316;
+    "r38 aim 0361" => r38::AIM_0361, r38::aim_0361;
+    "r38 fade-in 0361" => r38::FADE_IN_0361, r38::fade_in_0361;
+    "r38 flight 0361" => r38::FLIGHT_0361, r38::flight_0361;
+    "r38 throw 0361" => r38::THROW_0361, r38::throw_0361;
     // round 38 (magic-r38): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
