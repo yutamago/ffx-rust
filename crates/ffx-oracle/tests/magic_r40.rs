@@ -1375,7 +1375,14 @@ fn stubs_0185(t: &mut Twin) {
     });
     rec(t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f78));
     rec(t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
-    rec(t, 777, 1, |_, a| 0x0777_0000 ^ a[0]);
+    // 777 reads the sprite's matrix
+    rec(t, 777, 1, |m, a| {
+        let mut x = 0x0777_0000 ^ a[0];
+        for i in 0..16 {
+            x = x.rotate_left(3) ^ m.r32(a[0] + 4 * i);
+        }
+        x
+    });
     // 875/873 log the sprite record they get (its 0x20 bytes) and the
     // lock (where the stand-in table makes them traps); 775 the lock
     for s in [875u32, 873] {
@@ -1418,7 +1425,7 @@ fn records_0185(t: &mut Twin, k: u32) {
         t.set_u32(rec + 0x10, (1.0 + 0.25 * i as f32).to_bits());
         t.set_u16(
             rec + 0x14,
-            [0x1f0u16, 0x100, 0x7f00, 0xffff][((i + k) % 4) as usize],
+            [0x1f0u16, 0x100, 0x3000, 0xffff][((i + k) % 4) as usize],
         );
         // free, frame 0, 1, or the last one (the record freed after it)
         let last = t.u32(t.img.word(sp + 0x22e)) as u16;
@@ -1780,7 +1787,7 @@ fn sprites_0184() {
             t.set_u32(rec + 0x10, (1.0 + 0.25 * i as f32).to_bits());
             t.set_u16(
                 rec + 0x14,
-                [0x1f0u16, 0x100, 0x7f00, 0xffff][((i + k) % 4) as usize],
+                [0x1f0u16, 0x100, 0x3000, 0xffff][((i + k) % 4) as usize],
             );
             t.set_u16(
                 at,
