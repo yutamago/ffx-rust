@@ -3449,6 +3449,7 @@ ports! {
     "r45 objects start 0431" => r45::OBJECTS_START_0431, r45::objects_start_0431;
     "r45 object place 0431" => r45::OBJECT_PLACE_0431, r45::object_place_0431;
     "r45 frame 0266" => r45::FRAME_0266, r45::frame_0266;
+    "r45 load step 0266" => r45::LOAD_0266, r45::load_0266;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5406,6 +5407,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 fading sprite 0266", &r45::FADING_SPRITE_0266),
     ("r45 actors step 0266", &r45::ACTORS_STEP_0266),
     ("r45 sparks 0266", &r45::SPARKS_0266),
+    ("r45 start-up 0266", &r45::START_UP_0266),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
