@@ -2678,7 +2678,7 @@ fn summon_task_0317() {
     let lights = w(&t, 0x52e);
     // (state, count, lights, flags, aim, answer, flag byte)
     let cases: [(u32, u32, u32, [u32; 2], f32, u32, u8); 22] = [
-        (0, 0, 0, [0; 2], 0.0, 0, 0),
+        (0, 5, 0, [0; 2], 0.0, 0, 0),
         (3, 5, 0, [0; 2], 0.0, 0, 0),
         (0xa, 7, 0, [0; 2], 0.0, 0, 0),
         (11, 0xbd, 0, [0; 2], 0.0, 0, 0),
@@ -2723,7 +2723,212 @@ fn summon_task_0317() {
         setf(&mut t, aim, a);
         t.set_u32(answer, ans);
         t.set_u8(w(&t, 0x56), bit);
+        // the scene nodes, their records and models dirty; the lights'
+        // records (model, object, flag); the handles and light flags
+        t.write(w(&t, 0x102), &[0x5a; 0x2a0]);
+        t.write(w(&t, 0xf2), &[0x5a; 0x70]);
+        t.write(w(&t, 0x558), &[0x5a; 0x298]);
+        for i in 0..2u32 {
+            let e = w(&t, 0x565) + 0x98 * i;
+            t.set_u32(e, 0x0abc_0000 + i);
+            t.set_u32(e - 4, 0x0def_0000 + i);
+            t.set_u8(e + 0x3c, (i + k) as u8 & 1);
+            t.set_u32(e - 0x54 + 0x90, (i + k) & 1);
+        }
+        t.set_u32(w(&t, 0x943), 0x0123_4567);
+        t.set_u32(w(&t, 0x97c), 0x0765_4321);
+        t.set_u32(w(&t, 0xa68), 0x1357_9bdf);
         ownb::dirty_stack(&mut t, 0x6bc0 + k, &[]);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// Empty lists (first and last themselves, no children) at the words of
+/// `ops` in the function at `f`.
+fn empty_lists(t: &mut Twin, f: u32, ops: &[u32]) {
+    for &op in ops {
+        let l = t.img.word(f + op);
+        t.set_u32(l + 0xc, l);
+        t.set_u32(l + 0x10, l);
+        t.set_u16(l + 0x18, 0);
+    }
+}
+
+/// `magic_0295` 0x100075d0 (`r36::summon_task_0295`, an entry): every
+/// state of the table and past it, slot 411 answering 0 and not, the
+/// timer below and at its marks, each case running on into the next.
+#[test]
+fn summon_task_0295() {
+    let Some(mut t) = twin(295) else { return };
+    let f = t.at(0x75d0);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let answer = SCRATCH + 0x148;
+    rec(&mut t, 411, 1, move |m, _| m.r32(answer));
+    for s in [228u32, 239, 325] {
+        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[1]);
+    }
+    let rt = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    let (sn, nu, pn, eb) = (rt(&t, 0x66), rt(&t, 0x96), rt(&t, 0x1f2), rt(&t, 0x209));
+    empty_lists(
+        &mut t,
+        f,
+        &[0x17e, 0x198, 0x19d, 0x1a2, 0x286, 0x2d2, 0x2e2, 0x2e7],
+    );
+    empty_lists(&mut t, sn, &[0x16]);
+    empty_lists(&mut t, nu, &[0x1b]);
+    empty_lists(&mut t, pn, &[0x26]);
+    empty_lists(&mut t, eb, &[0x18]);
+    // the particle nodes' program owner
+    let owner = SCRATCH + 0x3800;
+    floats(&mut t, owner, 0x20, 0);
+    t.set_u32(owner + 0x10, 3);
+    t.set_u32(t.img.word(pn + 0x0d), owner);
+    let task = SCRATCH + 0x1000;
+    let r = SCRATCH + 0x1100;
+    let node = SCRATCH + 0x1200;
+    // (state, timer, answer)
+    let cases: [(u32, f32, u32); 24] = [
+        (0, 0.0, 0),
+        (1, 0.0, 0),
+        (0xa, 0.0, 1),
+        (0x14, 0.0, 0),
+        (0x14, 0.0, 1),
+        (0x1e, 0.5, 1),
+        (0x1e, 0.97, 1),
+        (0x1e, 2.0, 0),
+        (0x28, 0.0, 0),
+        (0x28, 0.0, 1),
+        (0x28, 0.5, 1),
+        (0x29, 0.0, 1),
+        (0x29, 0.5, 0),
+        (0x32, 0.3, 1),
+        (0x32, 0.37, 1),
+        (0x33, 0.5, 1),
+        (0x33, 1.5, 0),
+        (0x33, 1.5, 1),
+        (0x3c, 0.0, 0),
+        (0x3d, 0.0, 1),
+        (0x3e, 0.0, 1),
+        (0x2710, 0.0, 0),
+        (0x2711, 0.0, 0),
+        (0x3f, 0.0, 0),
+    ];
+    for (k, (state, timer, ans)) in (0u32..).zip(cases) {
+        t.write(r, &[0; 0x40]);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(node + 4, SCRATCH + 0x1300);
+        t.set_u32(node + 8, SCRATCH + 0x1340);
+        t.set_u32(r + 0x18, state);
+        setf(&mut t, r + 0x20, timer);
+        setf(&mut t, r + 0x1c, 0.25 * k as f32);
+        t.set_u32(answer, ans);
+        ownb::dirty_stack(&mut t, 0x75d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0295` 0x10001900 (`r36::sparks_0295`, an entry): the walk
+/// stopped and run; sparks spawned (both rings, one wrapping), the node
+/// leaving with no sparks out, the draw alone; sparks alive and not,
+/// fading in below and to 1.
+#[test]
+fn sparks_0295() {
+    let Some(mut t) = twin(295) else { return };
+    let f = t.at(0x1900);
+    all_stubs(&mut t);
+    let vt = SCRATCH + 0x880;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 1001);
+    rec(&mut t, 1001, 1, |m, a| {
+        let at = SCRATCH + 0x7b0;
+        let v = m.r32(at).rotate_left(5) ^ m.r32(a[0]) ^ m.r32(a[0] + 4) ^ a[0];
+        m.w32(at, v);
+        0x1001
+    });
+    let rnd = SCRATCH + 0x14c;
+    rec(&mut t, 324, 0, move |m, _| {
+        let s = m.r32(rnd).wrapping_mul(1_103_515_245).wrapping_add(12345);
+        m.w32(rnd, s);
+        s >> 8
+    });
+    t.stub_st0(307, move |m, _| f64::from(m.r32(rnd) & 0xff) / 256.0);
+    for (s, n) in [(229u32, 3usize), (234, 3), (230, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + 0.125 * (s % 5) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    // the locks of the stream and the leave
+    let lock = SCRATCH + 0x7e0;
+    let sb = t.img.rel32_target(f + 0x499);
+    let lv = t.img.rel32_target(f + 0x560);
+    for (g, op) in [(sb, 0x27u32), (sb, 0x42), (lv, 0x6b), (lv, 0x90)] {
+        t.set_u32(t.img.word(g + op), lock);
+    }
+    let grp = SCRATCH + 0x1000;
+    let n = SCRATCH + 0x2000;
+    let (c1, c2) = (SCRATCH + 0x2400, SCRATCH + 0x2600);
+    let base = SCRATCH + 0x8000;
+    let table = SCRATCH + 0x2800;
+    let k_clock = f32::from_bits(t.img.word(t.img.word(f + 0xb3)));
+    // (modes equal, clock, sparks out, ring head, used)
+    let cases: [(bool, f32, u32, u16, u16); 5] = [
+        (true, 0.0, 0, 0, 0),
+        (false, 0.0, 0, 0, 0),
+        (false, 0.0, 3, 6, 8),
+        (false, k_clock, 0, 0, 0),
+        (false, k_clock, 2, 2, 5),
+    ];
+    for (k, (same, clock, out, head, used)) in (0u32..).zip(cases) {
+        t.write(n, &[0; 0x60]);
+        t.set_u32(grp, n);
+        t.set_u8(grp + 4, 0x40);
+        t.set_u8(grp + 5, 3);
+        t.set_u8(n + 0x1a, if same { 3 } else { 1 });
+        t.set_u32(n + 0x10, n);
+        t.set_u32(n + 0xc, n);
+        for c in [c1, c2] {
+            t.set_u32(c, vt);
+            floats(&mut t, c + 0x9c, 0x14, k);
+        }
+        t.set_u32(n + 0x48, c1);
+        t.set_u32(n + 0x4c, c2);
+        setf(&mut t, n + 0x58, clock);
+        t.set_u32(n + 0x5c, out);
+        floats(&mut t, n + 0x38, 4, k);
+        // the ring: 8 sparks of 0x30 bytes
+        t.set_u16(n + 0x1c, 8);
+        t.set_u16(n + 0x1e, 0x30);
+        t.set_u32(n + 0x20, base);
+        t.set_u16(n + 0x30, head);
+        t.set_u16(n + 0x32, used);
+        t.set_u16(n + 0x34, 1);
+        t.set_u32(n + 0x24, base + 0x30);
+        t.set_u32(n + 0x28, base);
+        t.set_u16(n + 0x2c, 3);
+        t.set_u16(n + 0x2e, 2);
+        t.set_u32(n + 0x50, table);
+        t.set_u32(n + 0x54, table);
+        t.write(table, &[0; 0x10]);
+        for i in 0..8u32 {
+            let e = base + 0x30 * i;
+            floats(&mut t, e, 12, i + k);
+            t.set_u32(e + 0x10, 0x0000_ffff);
+            t.set_u32(e + 0x24, i & 1);
+            t.set_u8(e + 0x2b, [0u8, 1, 4, 0x80][(i % 4) as usize]);
+            setf(
+                &mut t,
+                e + 0x2c,
+                [0.5f32, 0.95, 1.0, 0.1][((i + k) % 4) as usize],
+            );
+        }
+        t.set_u32(rnd, 0x1234 + 77 * k);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x1900 + k, &[]);
+        t.check_entry(f, Call::default(), &[grp], Eax::Checked);
     }
 }
