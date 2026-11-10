@@ -5162,3 +5162,1051 @@ pub const SUMMON_TASK_0533: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0570`'s summon task (0x1000b3e0, 4953 bytes; a task callback
+/// `(A)`, cdecl; an aligned /GS frame `E` of 0x8c bytes below three
+/// pushes). The record `R = A[4]` keeps the state `R + 0x18`, two floats
+/// `R + 0x1c`/`R + 0x20` and the counts `R + 0x28`/`R + 0x2c` (both up at
+/// every exit; `R + 0x2c` is the wait most states test). States leave in
+/// one of three ways: on (the state steps by one), wait (the state stays)
+/// or again (the next state runs in the same call). By the state:
+/// - 0: slots 719/306, the small node, an effect node, the colour node,
+///   then 0xa: the colour block's words (`0.5 - v`), on;
+/// - 0xc: after 10 calls the summon's nodes, model node, slot 211, the
+///   value, the show, slot 6, the model state, slot 366 unless the flag,
+///   the matrices (slots 230/325/229), an owned and a particle node; 0x1e;
+/// - 0x1e, 0x1f, 0x20 (after 0x50, 0x50, 0x5a calls): appends, slot 262,
+///   owned, particle and effect nodes; the static node and its move, 0x3c;
+/// - 0x3c, 0x3d: the root node and the light; the big, small and static
+///   nodes, three appends, an owned node, particle nodes and the bone;
+/// - 0x46..0x49: slot 546, the hide, slot 6, the scale's fall, 0x64;
+/// - 0x14..0x16, 0x64..0x67: the value, the parts' bits, slots 229, 538,
+///   255, 228, the static node, slots 719 and the node's start, an effect
+///   node, the floats;
+/// - 0x50, 0x51, 0x5a..0x5f: the model's place, slot 411 (on to 0x5a),
+///   slots 719/306, the frees, slots 229/255/670/228, the bones' loop, the
+///   effect and particle nodes, the move start;
+/// - 0x3e, 0x32..0x34, 0x28, 0x29, 0x68, 0x60: slot 234, the effect node
+///   and the free, slot 313, the camera words, then 10000 (again), 0x2711
+///   and 0x2712: the parts freed, the static node leaves (slot 846), the
+///   two models set up, the task unlinked.
+///
+/// Returns `eax` as the original leaves it.
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn summon_task_0570<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0x5f), n);
+    let abs = |g: &mut G, a: u32, b: u32| abs_stores(g, img, f, a, b);
+    // push ebp; and esp, -8; sub esp, 0x8c; three pushes
+    let e0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x8c);
+    g.write::<u32>(e0 + 0x88, g.read::<u32>(w(0xd)) ^ e0);
+    let base = e0.wrapping_sub(0xc);
+    let c = Ctx570 { f, base };
+    let l = |o: u32| base.wrapping_add(o);
+    let below = base.wrapping_sub(4);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    g.write::<u32>(l(0x14), r);
+    let at = |o: u32| r.wrapping_add(o);
+    let rf = |g: &G, o: u32| g.read::<f32>(at(o));
+    let wait = |g: &G, n: i32| g.read::<i32>(at(0x2c)) < n;
+    let set = |g: &mut G, s: u32| g.write::<u32>(at(0x18), s);
+    let up = |g: &mut G| {
+        let s = g.read::<u32>(at(0x18)).wrapping_add(1);
+        g.write::<u32>(at(0x18), s);
+    };
+    let reset = |g: &mut G| g.write::<u32>(at(0x2c), 0);
+    let flag = |g: &mut G, o: u32, or: u32, and: u32| {
+        let x = (g.read::<u32>(w(o)) | or) & and;
+        g.write::<u32>(w(o), x);
+    };
+    let table = w(0x49);
+    let mut state = g.read::<u32>(at(0x18));
+    // (eax, on): `on` steps the state before the counts go up
+    let (eax, on) = loop {
+        if state > 0x2710 {
+            if state == 0x2711 {
+                abs(g, 0x1234, 0x123e);
+                break (0, true);
+            }
+            if state == 0x2712 {
+                break (end_0570(g, img, &c, task), false);
+            }
+            break (state.wrapping_sub(0x2712), false);
+        }
+        if state == 0x2710 {
+            up(g);
+            reset(g);
+            abs(g, 0x1234, 0x123e);
+            break (0x2710, true);
+        }
+        if state > 0x68 {
+            break (state, false);
+        }
+        let idx = img.word(table + state) & 0xff;
+        match state {
+            0x3e => {
+                if wait(g, 8) {
+                    break (idx, false);
+                }
+                abs(g, 0x68, 0xb8);
+                // call width: 3
+                g.call(slot(g, 234), 0, &[w(0xc4), w(0xbf), w(0x64)]);
+                flag(g, 0xcc, 0, !1);
+                abs(g, 0xd8, 0xf6);
+                let rec = l(0x28);
+                let words = [w(0xfa), w(0x102), w(0x10a), w(0x112), w(0x11a), 2];
+                for (i, x) in (0u32..).zip(words) {
+                    g.write::<u32>(rec + 4 * i, x);
+                }
+                crate::sb_nodes::effect_node(g, img, call(0x127), rec);
+                let node = g.read::<u32>(rec);
+                g.write::<u32>(node, w(0x135));
+                flag(g, 0x13b, 1, !0);
+                abs(g, 0x140, 0x14a);
+                g.write::<u32>(l(0x10), w(0x14e));
+                let ff = Frame {
+                    at: call(0x153),
+                    esp: below,
+                    ecx: l(0x10),
+                    ..Frame::default()
+                };
+                crate::nodes::free_then_unlink(g, img, &ff);
+                reset(g);
+                set(g, 0x32);
+            }
+            0x32..=0x34 => {
+                if state == 0x32 {
+                    set(g, 0x33);
+                }
+                if state <= 0x33 {
+                    up(g);
+                    reset(g);
+                }
+                set(g, 0x28);
+            }
+            0x28 => {
+                // call width: 1
+                let eax = g.call(slot(g, 313), 0, &[2]).eax;
+                if eax != 0 {
+                    break (eax, false);
+                }
+                up(g);
+            }
+            0x29 => {
+                reset(g);
+                set(g, 0x46);
+            }
+            0x68 => {
+                let x = add(rf(g, 0x20), k(g, 0x1bb));
+                g.write::<f32>(w(0x1c3), x);
+                let y = sub(k(g, 0x1cb), rf(g, 0x1c));
+                g.write::<f32>(w(0x1d8), y);
+                if wait(g, 0x1e) {
+                    break (idx, false);
+                }
+                set(g, 0x5a);
+            }
+            0x60 => {
+                if wait(g, 0x7d) {
+                    break (idx, false);
+                }
+                set(g, 0x2710);
+            }
+            0 | 0xa => {
+                let mut eax = idx;
+                if state == 0 {
+                    eax = start_0570(g, img, &c);
+                    set(g, 0xa);
+                }
+                colour_block_0570(g, img, f);
+                break (eax, true);
+            }
+            0xc => {
+                if wait(g, 0xa) {
+                    break (idx, false);
+                }
+                let eax = summon_0570(g, img, &c);
+                reset(g);
+                set(g, 0x1e);
+                break (eax, false);
+            }
+            0x1e => {
+                if wait(g, 0x50) {
+                    break (idx, false);
+                }
+                let eax = rise_0570(g, img, &c);
+                reset(g);
+                break (eax, true);
+            }
+            0xb => {
+                reset(g);
+                break (idx, true);
+            }
+            0x1f => break (idx, !wait(g, 0x50)),
+            0x20 => {
+                if wait(g, 0x5a) {
+                    break (idx, false);
+                }
+                // push ecx (the state, unread); push V
+                let sp = base.wrapping_sub(8);
+                g.write::<u32>(sp, w(0x861));
+                g.write::<u32>(sp + 4, state);
+                let sf = Frame {
+                    at: call(0x86b),
+                    esp: sp.wrapping_sub(4),
+                    ecx: w(0x866),
+                    ..Frame::default()
+                };
+                let eax = crate::s4_misc::static_node(g, img, &sf).eax;
+                let speed = u128::from(g.read::<u32>(w(0x873)));
+                abs(g, 0x87d, 0x8e1);
+                // the static node keeps `ecx`
+                let mf = Frame {
+                    at: call(0x8e2),
+                    esp: below,
+                    ecx: w(0x866),
+                    eax,
+                    xmm: [0, 0, speed, speed],
+                    ..Frame::default()
+                };
+                let eax = crate::s4_small::move_setup(g, img, &mf).eax;
+                set(g, 0x3c);
+                break (eax, false);
+            }
+            0x3c => {
+                if wait(g, 0x75) {
+                    break (idx, false);
+                }
+                crate::m0070::node_init_root(g, img, call(0x902), w(0x8fd));
+                let level = u128::from(g.read::<u32>(w(0x90a)));
+                abs(g, 0x90e, 0x95e);
+                let lf = Frame {
+                    at: call(0x95f),
+                    esp: below,
+                    xmm: [0, level, 0, 0],
+                    ..Frame::default()
+                };
+                let eax = crate::s4_small::light_on(g, img, &lf).eax;
+                reset(g);
+                break (eax, true);
+            }
+            0x3d => {
+                if wait(g, 7) {
+                    break (idx, false);
+                }
+                break (statics_0570(g, img, &c), true);
+            }
+            0x46 => {
+                if wait(g, 0x22) {
+                    break (idx, false);
+                }
+                let m = g.read::<u32>(w(0xb3f));
+                // call width: 1
+                break (g.call(slot(g, 546), 0, &[m]).eax, true);
+            }
+            0x47 => {
+                crate::m0070::hide_model(g, img, call(0xb59), w(0xb54));
+                let m = g.read::<u32>(w(0xb66));
+                // call width: 2
+                let eax = g.call(slot(g, 6), 0, &[m, 0]).eax;
+                g.write::<u32>(at(0x1c), ONE);
+                g.write::<u32>(at(0x20), 0x3c23_d70a);
+                break (eax, true);
+            }
+            0x48 | 0x49 => {
+                if state == 0x48 {
+                    up(g);
+                }
+                let v = mul(rf(g, 0x1c), k(g, 0xb91));
+                g.write::<f32>(at(0x1c), v);
+                let x = sub(k(g, 0xb9e), v);
+                g.write::<f32>(w(0xbaa), x);
+                if !wait(g, 0x74) {
+                    reset(g);
+                    set(g, 0x64);
+                }
+                break (idx, false);
+            }
+            0x14 => {
+                let eax = crate::m0042::set_value(g, img, call(0xbd6), w(0xbd1), 0xde);
+                abs(g, 0xbda, 0xbe4);
+                reset(g);
+                break (eax, true);
+            }
+            0x15 => {
+                if wait(g, 2) {
+                    break (idx, false);
+                }
+                flag(g, 0xbfc, 2, !0);
+                flag(g, 0xc03, 2, !0);
+                break (idx, true);
+            }
+            0x16 => {
+                if !wait(g, 0x59) {
+                    abs(g, 0xc17, 0xc21);
+                    set(g, 0x64);
+                }
+                break (idx, false);
+            }
+            0x64 => {
+                abs(g, 0xc2d, 0xc37);
+                reset(g);
+                break (idx, true);
+            }
+            0x65 => {
+                if wait(g, 1) {
+                    break (idx, false);
+                }
+                break (lift_0570(g, img, &c), true);
+            }
+            0x66 => {
+                if wait(g, 0xc) {
+                    break (idx, false);
+                }
+                break (lights_0570(g, img, &c), true);
+            }
+            0x67 => {
+                if wait(g, 0xc) {
+                    break (idx, false);
+                }
+                g.write::<u32>(at(0x1c), 0x4000_0000);
+                g.write::<u32>(at(0x20), 0xbf00_0000);
+                reset(g);
+                break (idx, true);
+            }
+            0x50 => {
+                let eax = crate::m0070::model_position(g, img, call(0xe01), w(0xdfc));
+                let x = sub(k(g, 0xe09), k(g, 0xe11));
+                abs(g, 0xe15, 0xe29);
+                g.write::<f32>(w(0xe2d), x);
+                let x = add(k(g, 0xe35), k(g, 0xe3d));
+                g.write::<f32>(w(0xe45), x);
+                reset(g);
+                break (eax, true);
+            }
+            0x51 => {
+                let b = u32::from(g.read::<u8>(w(0xe60)));
+                let x = sub(k(g, 0xe59), k(g, 0xe68));
+                g.write::<f32>(w(0xe76), x);
+                // call width: 1
+                let eax = g.call(slot(g, 411), 0, &[b]).eax;
+                if eax != 0 {
+                    set(g, 0x5a);
+                }
+                break (eax, false);
+            }
+            0x5a => {
+                // call width: 3
+                let h = g.call(slot(g, 719), 0, &[w(0xea9), 5, 0]).eax;
+                // call width: 3
+                let eax = g.call(slot(g, 306), 0, &[7, 1, h]).eax;
+                abs(g, 0xec7, 0xed1);
+                break (eax, true);
+            }
+            0x5b => {
+                let eax = frees_0570(g, img, &c);
+                reset(g);
+                break (eax, true);
+            }
+            0x5c => {
+                if wait(g, 0x20) {
+                    break (idx, false);
+                }
+                let eax = bones_0570(g, img, &c);
+                reset(g);
+                break (eax, true);
+            }
+            0x5d => {
+                if wait(g, 0x35) {
+                    break (idx, false);
+                }
+                // push 5; push ecx (the state, unread); B; A
+                let words = [w(0x10fb), w(0x10f6), state, 5];
+                let eax = c.effect(g, img, (0x1105, w(0x1100)), words);
+                flag(g, 0x110e, 1, !0);
+                abs(g, 0x1113, 0x111d);
+                break (eax, true);
+            }
+            0x5e => {
+                if wait(g, 0x3c) {
+                    break (idx, false);
+                }
+                abs(g, 0x113b, 0x1177);
+                c.particle(g, img, (0x1178, w(0x1132)), (w(0x1137), 8));
+                // push 4; push ecx (the leftover, unread: 0); B; A
+                let words = [w(0x1188), w(0x1183), 0, 4];
+                let eax = c.effect(g, img, (0x1192, w(0x118d)), words);
+                flag(g, 0x119b, 1, !0);
+                abs(g, 0x11a0, 0x11aa);
+                break (eax, true);
+            }
+            0x5f => {
+                if wait(g, 0x64) {
+                    break (idx, false);
+                }
+                abs(g, 0x11bd, 0x1203);
+                let rec = l(0x14);
+                for (i, x) in (0u32..).zip([w(0x1207), 0, 0x3d4c_cccd, ONE]) {
+                    g.write::<u32>(rec + 4 * i, x);
+                }
+                break (crate::sa_misc::move_start(g, rec), true);
+            }
+            _ => break (idx, false),
+        }
+        state = g.read::<u32>(at(0x18));
+    };
+    if on {
+        up(g);
+    }
+    for o in [0x28u32, 0x2c] {
+        let x = g.read::<u32>(at(o)).wrapping_add(1);
+        g.write::<u32>(at(o), x);
+    }
+    Ret::eax(eax)
+}
+
+/// [`summon_task_0570`]'s code offset and frame `E` (after the pushes).
+struct Ctx570 {
+    f: u32,
+    base: u32,
+}
+
+impl Ctx570 {
+    /// The DLL's node list (operand `+0x4af`).
+    fn list(&self, img: &Image) -> u32 {
+        img.word(self.f + 0x4af)
+    }
+
+    /// `magic_0570`'s node append at 0x10008c00 (69 bytes) through the
+    /// call at `c`, the list in `edx`.
+    fn append<G: Game>(&self, g: &mut G, img: &Image, c: u32, node: u32) {
+        let t = img.rel32_target(self.f + c);
+        crate::sb_misc::node_append(g, img, t, node, self.list(img), 0);
+    }
+
+    /// The other append (0x10008c50, 63 bytes).
+    fn append_a<G: Game>(&self, g: &mut G, img: &Image, c: u32, node: u32) {
+        let t = img.rel32_target(self.f + c);
+        crate::sa_misc::node_append(g, img, t, node, self.list(img), 0);
+    }
+
+    /// An owned node (`ecx`) appended under the list with four stack
+    /// words at `sp` (the call `c`).
+    fn owned<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        (c, ecx): (u32, u32),
+        words: [u32; 4],
+        sp: u32,
+    ) {
+        for (i, v) in (0u32..).zip(words) {
+            g.write::<u32>(sp + 4 * i, v);
+        }
+        let of = Frame {
+            at: img.rel32_target(self.f + c),
+            esp: sp.wrapping_sub(4),
+            ecx,
+            edx: self.list(img),
+            ..Frame::default()
+        };
+        crate::sa_misc::node_append_owned(g, img, &of);
+    }
+
+    /// A particle node (`ecx`) with `(a, -, -, n)` (the middle words the
+    /// frame's) four words below `E`. Returns its `eax`.
+    fn particle<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        (c, ecx): (u32, u32),
+        (a, n): (u32, u32),
+    ) -> u32 {
+        let sp = self.base.wrapping_sub(0x10);
+        g.write::<u32>(sp, a);
+        g.write::<u32>(sp + 0xc, n);
+        let pf = Frame {
+            at: img.rel32_target(self.f + c),
+            esp: sp.wrapping_sub(4),
+            ecx,
+            ..Frame::default()
+        };
+        crate::s3_nodes::particle_node_with(g, img, &pf)
+    }
+
+    /// An effect node (`ecx`) with four stack words below `E`. Returns
+    /// the node.
+    fn effect<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        (c, ecx): (u32, u32),
+        words: [u32; 4],
+    ) -> u32 {
+        let sp = self.base.wrapping_sub(0x10);
+        for (i, v) in (0u32..).zip(words) {
+            g.write::<u32>(sp + 4 * i, v);
+        }
+        let ef = Frame {
+            at: img.rel32_target(self.f + c),
+            esp: sp.wrapping_sub(4),
+            ecx,
+            ..Frame::default()
+        };
+        crate::s3_nodes::effect_node_with(g, img, &ef)
+    }
+
+    /// A group word `[E + 0x10]` = `node` freed and unlinked (the call
+    /// `c1`), then the part `node` freed (`c2`). Returns the free's `eax`.
+    fn free<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        node: u32,
+        (c1, c2): (u32, u32),
+        eax: u32,
+    ) -> u32 {
+        let grp = self.base + 0x10;
+        g.write::<u32>(grp, node);
+        let ff = Frame {
+            at: img.rel32_target(self.f + c1),
+            esp: self.base.wrapping_sub(4),
+            ecx: grp,
+            eax,
+            ..Frame::default()
+        };
+        let eax = crate::nodes::free_then_unlink(g, img, &ff).eax;
+        crate::m0070::free_part(g, img, img.rel32_target(self.f + c2), node, eax)
+    }
+}
+
+/// [`summon_task_0570`]'s state 0: slots 719/306, the small node, an
+/// effect node, the colour node. Returns the colour node's `eax`.
+fn start_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    use crate::r25::abs_stores;
+    let (f, base) = (c.f, c.base);
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0x2dc), n);
+    // call width: 3
+    let h = g.call(slot(g, 719), 0, &[w(0x2eb), 5, 0]).eax;
+    // call width: 3
+    g.call(slot(g, 306), 0, &[7, 0, h]);
+    g.write::<u32>(base.wrapping_sub(4), w(0x30f));
+    crate::m0070::node_init_small(g, img, call(0x319), w(0x314), w(0x30a), w(0x30f));
+    abs_stores(g, img, f, 0x320, 0x32a);
+    abs_stores(g, img, f, 0x33c, 0x350);
+    // push 0; push ecx (the leftover, unread: 0); B; A
+    c.effect(g, img, (0x351, w(0x338)), [w(0x333), w(0x32e), 0, 0]);
+    let fl = g.read::<u32>(w(0x356)) | 7;
+    abs_stores(g, img, f, 0x367, 0x371);
+    g.write::<u32>(w(0x372), fl);
+    let grp = base + 0x14;
+    g.write::<u32>(grp, w(0x37a));
+    g.write::<u32>(grp + 4, w(0x382));
+    abs_stores(g, img, f, 0x386, 0x390);
+    let cf = Frame {
+        at: call(0x391),
+        esp: base.wrapping_sub(4),
+        ecx: grp,
+        ..Frame::default()
+    };
+    crate::s3_misc::colour_node(g, img, &cf)
+}
+
+/// [`summon_task_0570`]'s state 0xa: the colour node's block (`0.5 - v`).
+fn colour_block_0570<G: Game>(g: &mut G, img: &Image, f: u32) {
+    use crate::r25::abs_stores;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let half = k(g, 0x3a0);
+    let rest = |g: &G, o: u32| sub(half, k(g, o));
+    let x = rest(g, 0x3ab);
+    let fl = g.read::<u32>(w(0x3b1)) & !1;
+    g.write::<u32>(w(0x3b1), fl);
+    abs_stores(g, img, f, 0x3b6, 0x3d4);
+    g.write::<f32>(w(0x3d8), x);
+    let x = rest(g, 0x3e3);
+    abs_stores(g, img, f, 0x3e7, 0x40f);
+    g.write::<f32>(w(0x413), x);
+    let x = rest(g, 0x41e);
+    abs_stores(g, img, f, 0x422, 0x436);
+    g.write::<f32>(w(0x43a), x);
+    let x = rest(g, 0x445);
+    g.write::<f32>(w(0x44d), x);
+    let x = rest(g, 0x458);
+    g.write::<f32>(w(0x460), x);
+    let x = rest(g, 0x46b);
+    let y = rest(g, 0x473);
+    g.write::<f32>(w(0x47b), x);
+    let x = sub(k(g, 0x483), k(g, 0x48b));
+    g.write::<f32>(w(0x493), y);
+    g.write::<f32>(w(0x49b), x);
+}
+
+/// [`summon_task_0570`]'s state 0xc past its wait. Returns the particle
+/// node's `eax`.
+fn summon_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    use crate::r25::abs_stores;
+    let (f, base) = (c.f, c.base);
+    let l = |o: u32| base.wrapping_add(o);
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0x59b), n);
+    c.append(g, img, 0x4b9, w(0x4b4));
+    let x = g.read::<u32>(w(0x4c1));
+    g.write::<u32>(w(0x4c9), x);
+    let x = add(k(g, 0x4d1), k(g, 0x4d9));
+    abs_stores(g, img, f, 0x4e2, 0x4ec);
+    g.write::<f32>(w(0x4f0), x);
+    let x = add(k(g, 0x4f8), k(g, 0x500));
+    g.write::<f32>(w(0x508), x);
+    c.append_a(g, img, 0x50d, w(0x4de));
+    abs_stores(g, img, f, 0x516, 0x534);
+    c.append(g, img, 0x535, w(0x512));
+    let owned = [w(0x545), w(0x540), w(0x53b), w(0x512)];
+    c.owned(g, img, (0x54f, w(0x54a)), owned, base.wrapping_sub(0x10));
+    // the owned node's last word stays under the model node's
+    let m = g.read::<u32>(w(0x55d));
+    let sp = base.wrapping_sub(8);
+    g.write::<u32>(sp, m);
+    let mf = Frame {
+        at: call(0x562),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0x557),
+        edx: c.list(img),
+        ..Frame::default()
+    };
+    crate::s4_misc::model_node_with(g, img, &mf);
+    let af = Frame {
+        at: call(0x571),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0x56c),
+        edx: w(0x567),
+        ..Frame::default()
+    };
+    crate::s4_small::attach_211(g, img, &af);
+    crate::m0042::set_value(g, img, call(0x580), w(0x57b), 0xb0);
+    // the show's cursor `[E + 0x1c]`: the model, the byte 0xff
+    g.write::<u32>(l(0x1c), w(0x58c));
+    g.write::<u8>(l(0x20), 0xff);
+    crate::m0070::show(g, img, call(0x596), l(0x1c));
+    let m = g.read::<u32>(w(0x5a3));
+    // call width: 2
+    g.call(slot(g, 6), 0, &[m, 1]);
+    g.write::<u32>(l(0x14), w(0x5b7));
+    g.write::<u32>(l(0x18), w(0x5bf));
+    crate::m0070::model_state(g, img, call(0x5c4), l(0x14));
+    c.append(g, img, 0x5d3, w(0x5ce));
+    if g.read::<u8>(w(0x5d9)) & 1 == 0 {
+        let m = g.read::<u32>(w(0x5ec));
+        // call width: 2
+        g.call(slot(g, 366), 0, &[m, w(0x5e6)]);
+    }
+    let x = sub(k(g, 0x5ff), k(g, 0x607));
+    g.write::<f32>(w(0x61e), x);
+    abs_stores(g, img, f, 0x622, 0x62c);
+    let (v, m50, m80) = (l(0x40), l(0x50), l(0x80));
+    for (i, x) in (0u32..).zip([0, 0, 0, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 2
+    g.call(slot(g, 230), 0, &[m50, w(0x610)]);
+    // call width: 2
+    g.call(slot(g, 325), 0, &[m80, w(0x65c)]);
+    // call width: 3
+    g.call(slot(g, 229), 0, &[v, m50, v]);
+    let x = add(g.read::<f32>(v), k(g, 0x694));
+    g.write::<f32>(w(0x6a9), x);
+    let x = add(g.read::<f32>(l(0x48)), k(g, 0x6b7));
+    g.write::<f32>(w(0x6bf), x);
+    c.append(g, img, 0x6c4, w(0x6a1));
+    abs_stores(g, img, f, 0x6dd, 0x705);
+    let owned = [w(0x6d4), w(0x6cf), w(0x6ca), w(0x6a1)];
+    c.owned(g, img, (0x706, w(0x6d9)), owned, base.wrapping_sub(0x10));
+    abs_stores(g, img, f, 0x70d, 0x714);
+    c.particle(g, img, (0x720, w(0x71b)), (w(0x6d9), 0))
+}
+
+/// [`summon_task_0570`]'s state 0x1e past its wait: two appends, slot
+/// 262, an owned, a particle and an effect node. Returns the effect
+/// node.
+fn rise_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    use crate::r25::abs_stores;
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    abs_stores(g, img, f, 0x74e, 0x758);
+    c.append(g, img, 0x759, w(0x74a));
+    let m = g.read::<u32>(w(0x779));
+    // call width: 4
+    g.call(
+        slot_target(g, w(0x75e), 262),
+        0,
+        &[m, w(0x773), w(0x76e), w(0x763)],
+    );
+    let x = sub(k(g, 0x783), k(g, 0x78b));
+    abs_stores(g, img, f, 0x799, 0x7a3);
+    g.write::<f32>(w(0x7a7), x);
+    c.append(g, img, 0x7ac, w(0x795));
+    abs_stores(g, img, f, 0x7c5, 0x7ed);
+    // slot 262's words stay under the owned node's
+    let owned = [w(0x7bc), w(0x7b7), w(0x7b2), w(0x795)];
+    c.owned(g, img, (0x7ee, w(0x7c1)), owned, c.base.wrapping_sub(0x20));
+    abs_stores(g, img, f, 0x7f5, 0x7fc);
+    c.particle(g, img, (0x808, w(0x803)), (w(0x7c1), 1));
+    // push 1; push ecx (the leftover, unread: 0); B; A
+    let eax = c.effect(g, img, (0x822, w(0x81d)), [w(0x818), w(0x813), 0, 1]);
+    let fl = g.read::<u32>(w(0x82b)) | 1;
+    g.write::<u32>(w(0x82b), fl);
+    abs_stores(g, img, f, 0x830, 0x83a);
+    eax
+}
+
+/// [`summon_task_0570`]'s state 0x3d past its wait: the big, small and
+/// static nodes, three appends, an owned node, particle nodes, the bone.
+/// Returns the last particle node's `eax`.
+fn statics_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    use crate::r25::abs_stores;
+    let (f, base) = (c.f, c.base);
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let grp = base + 0x14;
+    for (i, x) in (0u32..).zip([w(0x981), w(0x989), w(0x991), w(0x999), w(0x9a1)]) {
+        g.write::<u32>(grp + 4 * i, x);
+    }
+    crate::m0070::node_init_big(g, grp);
+    let x = g.read::<u32>(w(0x9ab));
+    let sp = base.wrapping_sub(4);
+    g.write::<u32>(sp, w(0x9b0));
+    abs_stores(g, img, f, 0x9be, 0x9c8);
+    g.write::<u32>(w(0x9c9), x);
+    abs_stores(g, img, f, 0x9cd, 0x9d7);
+    crate::m0070::node_init_small(g, img, call(0x9d8), w(0x9ba), w(0x9b5), w(0x9b0));
+    abs_stores(g, img, f, 0x9dc, 0x9fa);
+    let lf = Frame {
+        at: call(0x9fb),
+        esp: sp.wrapping_sub(4),
+        ..Frame::default()
+    };
+    let r = crate::s4_small::static_link_845(g, img, &lf);
+    if let Some(t) = r.jump {
+        g.call(t, 0, &[]);
+    }
+    c.append(g, img, 0xa0d, w(0xa08));
+    abs_stores(g, img, f, 0xa16, 0xa3e);
+    c.append_a(g, img, 0xa3f, w(0xa12));
+    abs_stores(g, img, f, 0xa48, 0xa66);
+    c.append(g, img, 0xa67, w(0xa44));
+    abs_stores(g, img, f, 0xa80, 0xaa8);
+    let owned = [w(0xa77), w(0xa72), w(0xa6d), w(0xa44)];
+    c.owned(g, img, (0xaa9, w(0xa7c)), owned, base.wrapping_sub(0x10));
+    abs_stores(g, img, f, 0xab0, 0xab7);
+    c.particle(g, img, (0xac3, w(0xabe)), (w(0xa7c), 7));
+    let p = g.read::<u32>(w(0xac8));
+    abs_stores(g, img, f, 0xacc, 0xaf4);
+    g.write::<u32>(p + 0x28, 0x3e01_0625);
+    let bf = Frame {
+        at: call(0xb04),
+        esp: base.wrapping_sub(4),
+        ecx: w(0xaf8),
+        ..Frame::default()
+    };
+    crate::s4_small::bone_rate(g, img, &bf);
+    let eax = c.particle(g, img, (0xb18, w(0xb0e)), (w(0xb13), 4));
+    abs_stores(g, img, f, 0xb1f, 0xb29);
+    eax
+}
+
+/// [`summon_task_0570`]'s state 0x65 past its wait: the vector `(0, -,
+/// -50, 1)` through slot 229, its `y` lowered, slot 538's answer kept,
+/// slot 255 on it, the parts' bits cleared, slot 228. Returns slot 228's
+/// `eax`.
+fn lift_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0xc59), n);
+    let v = c.base + 0x40;
+    // `E + 0x44` is never written before slot 229 reads it (junk read:
+    // the port uses 0, brief 2026-10-24)
+    for (i, x) in (0u32..).zip([0, 0, 0xc248_0000, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 3
+    g.call(slot(g, 229), 0, &[v, w(0xc53), v]);
+    let x = sub(g.read::<f32>(v + 4), g.read::<f32>(w(0xc87)));
+    let m = g.read::<u32>(w(0xc97));
+    g.write::<f32>(v + 4, x);
+    // call width: 2
+    let eax = g.call(slot(g, 538), 0, &[m, 0]).eax;
+    g.write::<u32>(w(0xcb3), eax);
+    crate::m0070::part_call(g, img, img.rel32_target(f + 0xcb8), 255, [eax, w(0xcae), v]);
+    for o in [0xcc3u32, 0xcca] {
+        let fl = g.read::<u32>(w(o)) & !2;
+        g.write::<u32>(w(o), fl);
+    }
+    let m = g.read::<u32>(w(0xcdc));
+    // call width: 2
+    g.call(slot(g, 228), 0, &[m, 0xb1]).eax
+}
+
+/// [`summon_task_0570`]'s state 0x66 past its wait: the static node,
+/// slots 719 twice, the node's start and an effect node. Returns the
+/// effect node.
+fn lights_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    use crate::r25::abs_stores;
+    let (f, base) = (c.f, c.base);
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0xd07), n);
+    // push b; push a; sub esp, 0xc (the three words the frame's)
+    let sp = base.wrapping_sub(0x14);
+    g.write::<u32>(sp + 0xc, w(0xcfa));
+    g.write::<u32>(sp + 0x10, w(0xcf5));
+    let sf = Frame {
+        at: call(0xd02),
+        esp: sp.wrapping_sub(4),
+        ..Frame::default()
+    };
+    crate::s4_small::static_node_args(g, img, &sf);
+    // call width: 3
+    let a = g.call(slot(g, 719), 0, &[w(0xd19), 9, 0]).eax;
+    g.write::<u32>(w(0xd23), a);
+    // call width: 3
+    let b = g.call(slot(g, 719), 0, &[w(0xd37), 9, 0]).eax;
+    let rate = u128::from(g.read::<u32>(w(0xd41)));
+    g.write::<u32>(w(0xd4e), b);
+    abs_stores(g, img, f, 0xd52, 0xda2);
+    let nf = Frame {
+        at: call(0xda3),
+        esp: base.wrapping_sub(4),
+        ecx: w(0xd49),
+        xmm: [0, rate, 0, 0],
+        ..Frame::default()
+    };
+    crate::sa_misc::node_start(g, img, &nf);
+    // push 3; push ecx (the leftover, unread: 0); B; A
+    let eax = c.effect(g, img, (0xdba, w(0xdb5)), [w(0xdb0), w(0xdab), 0, 3]);
+    let fl = g.read::<u32>(w(0xdc3)) | 1;
+    g.write::<u32>(w(0xdc3), fl);
+    abs_stores(g, img, f, 0xdc8, 0xdd2);
+    eax
+}
+
+/// [`summon_task_0570`]'s state 0x5b: three parts freed, the vector `(0,
+/// 0, 30, 1)` through slot 229 and slot 255, slots 670, 228 and 670 (the
+/// camera words between). Returns the last slot's `eax`.
+fn frees_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let slot = |g: &G, n: u32| slot_target(g, w(0xf33), n);
+    // the first free's `eax` is the dispatch's (the state's table byte)
+    let mut eax = img.word(w(0x49) + 0x5b) & 0xff;
+    for (n, c1, c2) in [
+        (0xedeu32, 0xee3u32, 0xeedu32),
+        (0xef9, 0xefe, 0xf08),
+        (0xf14, 0xf19, 0xf23),
+    ] {
+        eax = c.free(g, img, w(n), (c1, c2), eax);
+    }
+    let v = c.base + 0x40;
+    for (i, x) in (0u32..).zip([0, 0, 0x41f0_0000, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 3
+    let eax = g.call(slot(g, 229), 0, &[v, w(0xf2d), v]).eax;
+    crate::m0070::part_call(g, img, img.rel32_target(f + 0xf6c), 255, [eax, w(0xf67), v]);
+    let m = g.read::<u32>(w(0xf79));
+    // call width: 2
+    g.call(slot(g, 670), 0, &[m, 0]);
+    let m = g.read::<u32>(w(0xf91));
+    crate::r25::abs_stores(g, img, f, 0xf95, 0xfc7);
+    // call width: 2
+    g.call(slot(g, 228), 0, &[m, 0xb3]);
+    let m = g.read::<u32>(w(0xfd8));
+    // call width: 2
+    g.call(slot(g, 670), 0, &[m, 0]).eax
+}
+
+/// [`summon_task_0570`]'s state 0x5c past its wait: an append, then for
+/// each of the bones (0x14c-byte owners from `+0x1047` to `+0x10ce`, 0x2c
+/// nodes, 0x100 particle nodes, a table of words): an append, slot 237,
+/// the owned node and a particle node. Returns the last particle node's
+/// `eax`.
+fn bones_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570) -> u32 {
+    let (f, base) = (c.f, c.base);
+    let w = |o: u32| img.word(f + o);
+    c.append(g, img, 0x1008, w(0x1003));
+    crate::r25::abs_stores(g, img, f, 0x100c, 0x1034);
+    let cur = base + 0x10;
+    g.write::<u32>(cur, w(0x103d));
+    let (mut part, mut node, mut owner) = (w(0x1035), w(0x1042), w(0x1047));
+    loop {
+        c.append(g, img, 0x1058, node);
+        let p = g.read::<u32>(cur);
+        let pv = g.read::<u32>(p);
+        let m = g.read::<u32>(w(0x106f));
+        // call width: 4
+        g.call(slot_target(g, w(0x1069), 237), 0, &[m, pv, 0, node + 0x1c]);
+        g.write::<u32>(node + 0x28, ONE);
+        // slot 237's words stay under the owned node's
+        let words = [w(0x1087), node, w(0x1081), w(0x107c)];
+        c.owned(g, img, (0x109a, owner), words, base.wrapping_sub(0x20));
+        g.write::<u8>(owner + 0x148, 1);
+        let eax = c.particle(g, img, (0x10b1, part), (owner, 5));
+        let p = g.read::<u32>(cur).wrapping_add(4);
+        g.write::<u32>(cur, p);
+        owner = owner.wrapping_add(0x14c);
+        node = node.wrapping_add(0x2c);
+        part = part.wrapping_add(0x100);
+        if owner.cast_signed() >= w(0x10ce).cast_signed() {
+            return eax;
+        }
+    }
+}
+
+/// [`summon_task_0570`]'s state 0x2712: the part freed, the static node
+/// leaves (slot 846), the light node leaves, the two models' parts (slots
+/// 531, 255) and set-ups, the task unlinked. Returns the task node's next.
+fn end_0570<G: Game>(g: &mut G, img: &Image, c: &Ctx570, task: u32) -> u32 {
+    let (f, base) = (c.f, c.base);
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let grp = base + 0x14;
+    g.write::<u32>(grp, w(0x22a));
+    // `eax` is 0 here (0x2712 - 0x2711 - 1)
+    let ff = Frame {
+        at: call(0x22f),
+        esp: base.wrapping_sub(4),
+        ecx: grp,
+        ..Frame::default()
+    };
+    let eax = crate::nodes::free_then_unlink(g, img, &ff).eax;
+    let eax = crate::m0070::free_part(g, img, call(0x239), w(0x234), eax);
+    let lf = Frame {
+        at: call(0x23e),
+        esp: base.wrapping_sub(4),
+        eax,
+        ..Frame::default()
+    };
+    let r = crate::s4_small::static_leave_846(g, img, &lf);
+    let mut eax = match r.jump {
+        Some(t) => g.call(t, 0, &[]).eax,
+        None => r.eax,
+    };
+    eax = crate::sa_misc::leave(g, w(0x243), eax);
+    let v = base + 0x40;
+    // (the parts' calls' operands, the leave's, the set-up's, a cleared word)
+    for (n1, c531, n2, c255, n3, setup, clear) in [
+        (
+            0x251u32, 0x256u32, 0x25fu32, 0x264u32, 0x269u32, 0x27bu32, None,
+        ),
+        (0x284, 0x289, 0x292, 0x297, 0x29c, 0x2b8, Some(0x2a2u32)),
+    ] {
+        eax = crate::m0070::part_call(g, img, call(c531), 531, [eax, w(n1), v]);
+        eax = crate::m0070::part_call(g, img, call(c255), 255, [eax, w(n2), v]);
+        if let Some(o) = clear {
+            g.write::<u32>(w(o), 0);
+        }
+        // the leave keeps `ecx`, the node
+        let node = w(n3);
+        crate::sa_misc::leave(g, node, eax);
+        g.write::<u32>(grp, node);
+        let mf = Frame {
+            at: call(setup),
+            esp: base.wrapping_sub(4),
+            ecx: grp,
+            ..Frame::default()
+        };
+        eax = crate::sa_summon::model_setup(g, img, &mf).eax;
+    }
+    crate::h6_setup::unlink_task(g, task)
+}
+
+/// [`summon_task_0570`] (the `rel32`s: its callees in order,
+/// `__security_check_cookie`).
+pub const SUMMON_TASK_0570: Sig = Sig {
+    len: 4953,
+    hash: 0xc5d3_089f_cfb4_4d99,
+    calls: &[
+        (0x127, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x153, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x22f, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x239, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x23e, Callee::Sig(&crate::s4_small::STATIC_LEAVE_846)),
+        (0x248, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x256, Callee::Sig(&crate::m0070::PART_CALL_531)),
+        (0x264, Callee::Sig(&crate::m0070::PART_CALL_255)),
+        (0x26e, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x27b, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x289, Callee::Sig(&crate::m0070::PART_CALL_531)),
+        (0x297, Callee::Sig(&crate::m0070::PART_CALL_255)),
+        (0x2ab, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x2b8, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x319, Callee::Sig(&crate::m0070::NODE_INIT_SMALL)),
+        (0x351, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x391, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x4b9, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x50d, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0x535, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x54f, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x562, Callee::Sig(&crate::s4_misc::MODEL_NODE_WITH)),
+        (0x571, Callee::Sig(&crate::s4_small::ATTACH_211)),
+        (0x580, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0x596, Callee::Sig(&crate::m0070::SHOW)),
+        (0x5c4, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x5d3, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x6c4, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x706, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x720, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x759, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x7ac, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x7ee, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x808, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x822, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x86b, Callee::Sig(&crate::s4_misc::STATIC_NODE)),
+        (0x8e2, Callee::Sig(&crate::s4_small::MOVE_SETUP)),
+        (0x902, Callee::Sig(&crate::m0070::NODE_INIT_ROOT)),
+        (0x95f, Callee::Sig(&crate::s4_small::LIGHT_ON)),
+        (0x9a6, Callee::Sig(&crate::m0070::NODE_INIT_BIG)),
+        (0x9d8, Callee::Sig(&crate::m0070::NODE_INIT_SMALL)),
+        (0x9fb, Callee::Sig(&crate::s4_small::STATIC_LINK_845)),
+        (0xa0d, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xa3f, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0xa67, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xaa9, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xac3, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xb04, Callee::Sig(&crate::s4_small::BONE_RATE)),
+        (0xb18, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xb59, Callee::Sig(&crate::m0070::HIDE_MODEL)),
+        (0xbd6, Callee::Sig(&crate::m0042::SET_VALUE)),
+        (0xcb8, Callee::Sig(&crate::m0070::PART_CALL_255)),
+        (0xd02, Callee::Sig(&crate::s4_small::STATIC_NODE_ARGS)),
+        (0xda3, Callee::Sig(&crate::sa_misc::NODE_START)),
+        (0xdba, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0xe01, Callee::Sig(&crate::m0070::MODEL_POSITION)),
+        (0xee3, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0xeed, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xefe, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0xf08, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xf19, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0xf23, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xf6c, Callee::Sig(&crate::m0070::PART_CALL_255)),
+        (0x1008, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x1058, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x109a, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x10b1, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x1105, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1178, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x1192, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1224, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0x1254, Callee::Any),
+    ],
+    imports: &[],
+};

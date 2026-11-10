@@ -1265,3 +1265,219 @@ fn summon_task_0533() {
         t.check_entry(f, call, &[a], Eax::Checked);
     }
 }
+
+/// `magic_0570` 0x1000b3e0 (`r35::summon_task_0570`): every state waiting
+/// and going on (the chains 0x3e -> 0x32 -> 0x28 -> 0x29 -> 0x46, 0x68 ->
+/// 0x5a, 0x60 -> 10000), slots 313 and 411 both ways, the slot-366 flag
+/// both ways, the parts' bit 0 both ways, 10000, 0x2711, the end and the
+/// states past the table.
+#[test]
+fn summon_task_0570() {
+    let Some(mut t) = twin(570) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0xb3e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 313, 1, move |m, _| m.r32(answer));
+    rec(&mut t, 411, 1, move |m, a| m.r32(answer) ^ a[0]);
+    rec(&mut t, 538, 2, |_, a| 0x0538_0000 ^ a[0]);
+    // slot 255 keeps the vector it is given
+    rec(&mut t, 255, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(SCRATCH + 0x7c0 + 4 * i, x);
+        }
+        0x255
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, 0.25 * i as f32 - 1.0 + (a[1] & 3) as f32);
+        }
+        0x230
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..3 {
+            wf(m, a[3] + 4 * i, 0.5 * i as f32 + (a[1] & 7) as f32);
+        }
+        0x237
+    });
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [
+        (12u32, -1.5f64),
+        (333, 0.75),
+        (282, 2.25),
+        (277, 4.0),
+        (307, 0.625),
+    ] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the owned nodes' vtable visits through a stub; the bone's table
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let vt = t.img.word(call(&t, 0x54f) + 5);
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    let bone = t.img.rel32_target(call(&t, 0xb04) + 0x15);
+    let table = t.img.word(bone + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    // `E + 0x44`, read before written (state 0x65): 0 as the port
+    let base = ((ownb::ENTRY_ESP - 4) & !7) - 0x98;
+    let junk_at = ownb::ENTRY_ESP - (base + 0x44);
+    // (state, the wait `R + 0x2c`, the slots' answer, the flag byte, the
+    // parts' bit 0)
+    let cases: [(u32, i32, u32, u8, u8); 66] = [
+        (0, 0, 0, 0, 0),
+        (0xa, 0, 0, 0, 0),
+        (0xb, 0, 0, 0, 0),
+        (0xc, 9, 0, 0, 0),
+        (0xc, 0xa, 0, 0, 0),
+        (0xc, 0xa, 0, 1, 1),
+        (0x1e, 0x4f, 0, 0, 0),
+        (0x1e, 0x50, 0, 0, 0),
+        (0x1f, 0x4f, 0, 0, 0),
+        (0x1f, 0x50, 0, 0, 0),
+        (0x20, 0x59, 0, 0, 0),
+        (0x20, 0x5a, 0, 0, 0),
+        (0x3c, 0x74, 0, 0, 0),
+        (0x3c, 0x75, 0, 0, 0),
+        (0x3d, 6, 0, 0, 0),
+        (0x3d, 7, 0, 0, 0),
+        (0x3e, 7, 0, 0, 0),
+        (0x3e, 8, 0, 0, 0),
+        (0x3e, 8, 3, 0, 0),
+        (0x32, 0, 0, 0, 0),
+        (0x33, 0, 5, 0, 0),
+        (0x34, 0, 0, 0, 0),
+        (0x28, 0, 1, 0, 0),
+        (0x28, 0, 0, 0, 0),
+        (0x29, 0x30, 0, 0, 0),
+        (0x46, 0x21, 0, 0, 0),
+        (0x46, 0x22, 0, 0, 0),
+        (0x47, 0, 0, 0, 0),
+        (0x47, 0, 0, 0, 1),
+        (0x48, 0x73, 0, 0, 0),
+        (0x48, 0x74, 0, 0, 0),
+        (0x49, 0x73, 0, 0, 0),
+        (0x49, 0x74, 0, 0, 0),
+        (0x14, 0, 0, 0, 0),
+        (0x15, 1, 0, 0, 0),
+        (0x15, 2, 0, 0, 0),
+        (0x16, 0x58, 0, 0, 0),
+        (0x16, 0x59, 0, 0, 0),
+        (0x64, 0, 0, 0, 0),
+        (0x65, 0, 0, 0, 0),
+        (0x65, 1, 0, 0, 0),
+        (0x65, 1, 0, 0, 1),
+        (0x66, 0xb, 0, 0, 0),
+        (0x66, 0xc, 0, 0, 0),
+        (0x67, 0xb, 0, 0, 0),
+        (0x67, 0xc, 0, 0, 0),
+        (0x68, 0x1d, 0, 0, 0),
+        (0x68, 0x1e, 0, 0, 0),
+        (0x60, 0x7c, 0, 0, 0),
+        (0x60, 0x7d, 0, 0, 0),
+        (0x50, 0, 0, 0, 0),
+        (0x51, 0, 0, 0, 0),
+        (0x51, 0, 0x40, 0, 0),
+        (0x5a, 0, 0, 0, 0),
+        (0x5b, 0, 0, 0, 0),
+        (0x5b, 0, 0, 0, 1),
+        (0x5c, 0x1f, 0, 0, 0),
+        (0x5c, 0x20, 0, 0, 0),
+        (0x5d, 0x34, 0, 0, 0),
+        (0x5d, 0x35, 0, 0, 0),
+        (0x5e, 0x3b, 0, 0, 0),
+        (0x5e, 0x3c, 0, 0, 0),
+        (0x5f, 0x63, 0, 0, 0),
+        (0x5f, 0x64, 0, 0, 0),
+        (0x2712, 0, 0, 0, 1),
+        (0x2712, 0, 0, 0, 0),
+    ];
+    let more: [(u32, i32, u32, u8, u8); 6] = [
+        (0x2710, 0, 0, 0, 0),
+        (0x2711, 0, 0, 0, 0),
+        (0x2713, 0, 0, 0, 0),
+        (0x100, 0, 0, 0, 0),
+        (5, 0, 0, 0, 0),
+        (0xffff_fff0, 0, 0, 0, 0),
+    ];
+    for (k, (state, wait, ans, fl, bit)) in (0u32..).zip(cases.into_iter().chain(more)) {
+        t.write(r, &[0; 0x100]);
+        t.set_u32(r + 0x18, state);
+        set_f(&mut t, r + 0x1c, 0.75 + k as f32);
+        set_f(&mut t, r + 0x20, -0.5 * k as f32);
+        t.set_u32(r + 0x28, 0x100 + k);
+        t.set_u32(r + 0x2c, wait.cast_unsigned());
+        t.set_u32(answer, ans);
+        t.set_u8(w(&t, 0x5d9), fl);
+        // the flag words the states set and clear bits of
+        for (i, o) in (0u32..).zip([
+            0xccu32, 0x13b, 0x356, 0x3b1, 0x82b, 0xbfc, 0xc03, 0xcc3, 0xcca, 0xdc3, 0x110e, 0x119b,
+        ]) {
+            t.set_u32(w(&t, o), 0x5a5a_0f00 ^ (k << 4) ^ i);
+        }
+        for o in [0x251u32, 0x25f, 0x284, 0x292, 0xcae, 0xf67] {
+            t.set_u8(w(&t, o) + 0x90, bit);
+        }
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        // the DLL's list empty or with a last child; the particle and
+        // effect nodes' lists empty
+        let list = w(&t, 0x4af);
+        let kid = SCRATCH + 0x5e00;
+        t.write(kid, &[0x21; 0x40]);
+        t.set_u32(list + 0x10, if k % 3 == 1 { kid } else { list });
+        t.set_u32(list + 0xc, list);
+        t.set_u16(list + 0x18, 2);
+        for (c, op) in [(0x720u32, 0x26u32), (0x351, 0x1e)] {
+            let l = t.img.word(call(&t, c) + op);
+            t.set_u32(l + 0x10, l);
+            t.set_u32(l + 0xc, l);
+        }
+        // the bone's node (an owned node of state 0x1e): its vtable, empty
+        // lists, its three objects
+        let bn = w(&t, 0xaf8);
+        t.write(bn, &[0; 0x150]);
+        t.set_u32(bn, vt);
+        t.set_u32(bn + 0x10, bn);
+        t.set_u32(bn + 0xc, bn);
+        t.set_u8(bn + 0x148, 1);
+        for (i, o) in (0u32..).zip([0x13cu32, 0x140, 0x144]) {
+            let obj = SCRATCH + 0x6000 + 0x100 * i;
+            t.write(obj, &[0; 0x100]);
+            t.set_u32(obj + 0x10, obj);
+            t.set_u32(obj + 0xc, obj);
+            set_f(&mut t, obj + 0x28, 0.5);
+            t.set_u32(bn + o, obj);
+        }
+        ownb::dirty_stack(&mut t, 0xb3e0 + k, &[junk_at]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}

@@ -3280,6 +3280,7 @@ ports! {
     "r35 burst task 0577" => r35::BURST_TASK_0577, r35::burst_task_0577;
     "r35 scene task 0577" => r35::SCENE_TASK_0577, r35::scene_task_0577;
     "r35 summon task 0533" => r35::SUMMON_TASK_0533, r35::summon_task_0533;
+    "r35 summon task 0570" => r35::SUMMON_TASK_0570, r35::summon_task_0570;
     // round 35 (magic-r35): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
