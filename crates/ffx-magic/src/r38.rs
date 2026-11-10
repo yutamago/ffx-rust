@@ -4617,3 +4617,167 @@ pub const RISE_0393: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0393`'s caster drop step (0x10003e40, 884 bytes; an overlay
+/// table entry, no arguments; an `ebp` /GS frame, `L` `ebp - 0x14`): with
+/// the block `B = *G_B` and its counter `n = B + 0x1efc`: nothing while
+/// `n` is at most 0 (returns `n`); else `n` one less, `s = n / K`, `B +
+/// 0x1ba0` = `B + 0x1c30 s + B + 0x1c10 (K0 - s)` (`w` 1.0); the yaw `B +
+/// 0x1b94` plus `K1`, wrapped once (less `T` past `H`, plus `T2` below
+/// `Lo`); the matrix `M = B + 0x1b50` rebuilt as in
+/// [`caster_start_0450`](crate::r16::caster_start_0450) (slots 235, 277
+/// `(*G_T)` times `K2`, 15-17 `(*G_T)`, 330, 328, 329 with the angles `B
+/// + 0x1b98`, `+0x1b90`, `+0x1b94`). Once `n` is 0: outside a battle
+/// with the actor `a = *G_A` below 0x20 slots 217 and 255 `(a, L)`; slot
+/// 211 `(*G_T, 0)`; the actor record (`*G_A`, the table `+0x27c`, -1,
+/// slot 215 or in a battle 413 `(*G_A)`, -1, 0, 1, the halfword 0 or in
+/// a battle 1); object `B` started
+/// ([`start_object_at`](crate::s4_misc::start_object_at): scale `*K3`,
+/// index 0, owners 0), `B + 0xd0..` = `B + 0x1c10..`, its yaw `B + 0xc4`
+/// = `B + 0x1ee0`, `B + 0xd4` less `K4`; the scale task
+/// ([`scale_task`](crate::s4_misc::scale_task): `ecx` `B + 0x1e08`,
+/// scales `K4` and `K0`, count 0), whose `eax` is returned (else slot
+/// 329's).
+///
+/// The start pushes the `ecx` 1 as its third word, which it does not
+/// read.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn drop_0393<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let b = g.read::<u32>(w(0x13));
+    let at = |o: u32| b.wrapping_add(o);
+    let n = g.read::<u32>(at(0x1efc));
+    if n.cast_signed() <= 0 {
+        return Ret::eax(n);
+    }
+    let n = n.wrapping_sub(1);
+    let s = div(crate::sb_sse::cvt(n), k(g, 0x39));
+    g.write::<u32>(at(0x1efc), n);
+    let km = sub(k(g, 0x31), s);
+    let p = |g: &G, o: u32| g.read::<f32>(at(o));
+    let x = add(mul(p(g, 0x1c30), s), mul(km, p(g, 0x1c10)));
+    let y = add(mul(p(g, 0x1c34), s), mul(p(g, 0x1c14), km));
+    let z = add(mul(p(g, 0x1c38), s), mul(p(g, 0x1c18), km));
+    g.write::<f32>(at(0x1ba0), x);
+    g.write::<f32>(at(0x1ba4), y);
+    g.write::<u32>(at(0x1bac), ONE);
+    g.write::<f32>(at(0x1ba8), z);
+    let mut a = add(p(g, 0x1b94), k(g, 0xc8));
+    // `comiss` + `jbe`: an unordered yaw stays
+    if a > k(g, 0xcf) {
+        a = sub(a, k(g, 0xd9));
+    } else if k(g, 0xe3) > a {
+        a = add(a, k(g, 0xf0));
+    }
+    let slot = |g: &G, n: u32| slot_target(g, w(0xf5), n);
+    let m = at(0x1b50);
+    g.write::<f32>(at(0x1b94), a);
+    // call width: 1
+    g.call(slot(g, 235), 0, &[m]);
+    let tt = g.read::<u32>(w(0x119));
+    // call width: 1
+    let sc = mul(st0_f32(g.call(slot(g, 277), 0, &[tt]).st0), k(g, 0x131));
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + o, sc);
+    }
+    let t = g.read::<u32>(w(0x14a));
+    // call width: 1
+    let r = st0_f32(g.call(slot(g, 15), 0, &[t]).st0);
+    let v = mul(g.read::<f32>(m), r);
+    g.write::<f32>(m, v);
+    // call width: 1
+    let r = st0_f32(g.call(slot(g, 16), 0, &[t]).st0);
+    let v = mul(g.read::<f32>(m + 0x14), r);
+    g.write::<f32>(m + 0x14, v);
+    // call width: 1
+    let r = st0_f32(g.call(slot(g, 17), 0, &[t]).st0);
+    let v = mul(r, g.read::<f32>(m + 0x28));
+    g.write::<f32>(m + 0x28, v);
+    let mut eax = 0;
+    for (n, o) in [(330u32, 0x1b98u32), (328, 0x1b90), (329, 0x1b94)] {
+        let a = g.read::<u32>(at(o));
+        // call width: 3
+        eax = g.call(slot(g, n), 0, &[m, m, a]).eax;
+    }
+    if g.read::<u32>(at(0x1efc)) != 0 {
+        return Ret::eax(eax);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = ebp.wrapping_sub(0x14);
+    let tt = g.read::<u32>(w(0x214));
+    if g.read::<u32>(w(0x20d)) == 0 {
+        let a = g.read::<u32>(w(0x21c));
+        if a.cast_signed() < 0x20 {
+            for n in [217u32, 255] {
+                // call width: 2
+                g.call(slot(g, n), 0, &[a, l]);
+            }
+        }
+    }
+    // call width: 2
+    g.call(slot(g, 211), 0, &[tt, 0]);
+    let a = g.read::<u32>(w(0x25d));
+    g.write::<u32>(w(0x26c), a);
+    g.write::<u32>(w(0x278), w(0x27c));
+    g.write::<u32>(w(0x282), u32::MAX);
+    let n = if g.read::<u32>(w(0x266)) == 0 {
+        215
+    } else {
+        413
+    };
+    // call width: 1
+    let r = g.call(slot(g, n), 0, &[a]).eax;
+    let battle = g.read::<u32>(w(0x2a1)) != 0;
+    g.write::<u32>(w(0x2ac), r);
+    g.write::<u32>(w(0x2b2), u32::MAX);
+    g.write::<u32>(w(0x2bc), 0);
+    g.write::<u32>(w(0x2c6), 1);
+    if battle {
+        g.write::<u16>(w(0x2d9), 1);
+    } else {
+        g.write::<u16>(w(0x2d0), 0);
+    }
+    crate::s4_misc::start_object_at(g, img, img.rel32_target(f + 0x2ef), b, k(g, 0x2e1), 0, 0, 0);
+    for c in [0u32, 4, 8, 0xc] {
+        let v = g.read::<u32>(at(0x1c10 + c));
+        g.write::<u32>(at(0xd0 + c), v);
+    }
+    let y = sub(p(g, 0xd4), k(g, 0x2fd));
+    let yaw = g.read::<u32>(at(0x1ee0));
+    g.write::<u32>(at(0xc4), yaw);
+    g.write::<f32>(at(0xd4), y);
+    // ebp, the 0x18 bytes, ebx/esi/edi; the start's four words; push 0
+    let e = fr.esp.wrapping_sub(0x28);
+    for (i, v) in (1u32..).zip([0u32, 0, 1, 0]) {
+        g.write::<u32>(e.wrapping_sub(0x14 - 4 * i), v);
+    }
+    g.write::<u32>(e.wrapping_sub(0x14), 0);
+    let task = Frame {
+        at: img.rel32_target(f + 0x35c),
+        esp: e.wrapping_sub(0x18),
+        ecx: at(0x1e08),
+        xmm: [
+            crate::Xmm::f32(y).reg(),
+            u128::from(g.read::<u32>(w(0x2fd))),
+            u128::from(g.read::<u32>(w(0x305))),
+            0,
+        ],
+        ..*fr
+    };
+    crate::s4_misc::scale_task(g, img, &task)
+}
+
+/// [`drop_0393`] (884 bytes, 1 overlay).
+pub const DROP_0393: Sig = Sig {
+    len: 884,
+    hash: 0x68f3_7e47_8f63_f68c,
+    calls: &[
+        (0x2ef, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x35c, Callee::Sig(&crate::s4_misc::SCALE_TASK)),
+        // __security_check_cookie
+        (0x36c, Callee::Any),
+    ],
+    imports: &[],
+};

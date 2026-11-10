@@ -1302,6 +1302,14 @@ fn waits_0380() {
         // the second actor (byte 9) stands where the bone's aim points:
         // its facing test answers 1
         let aimed = SCRATCH + 0x2_0000 + 0x900 * 9;
+        // the bone's reference point straight behind (a quarter turn, so
+        // the heading's sign shows)
+        rec(&mut t, 237, 4, |m, a| {
+            for i in 0..4u32 {
+                wf(m, a[3] + 4 * i, [3.5f32, 0.0, -10.0, 1.0][i as usize]);
+            }
+            0x0237_0000 ^ a[1]
+        });
         rec(&mut t, 229, 3, |m, a| {
             for i in 0..4u32 {
                 wf(m, a[0] + 4 * i, [3.5f32, 4.0, 5.25, 1.0][i as usize]);
@@ -1698,8 +1706,9 @@ fn task_0430() {
             t.set_u32(at, flag);
         }
         t.set_u32(ew(&t, 0xb4), 0x00b4_0000);
-        t.set_u32(ew(&t, 0xc6), if k == 3 { 0x20 } else { 3 + 0x40 * flag });
-        t.set_u32(ew(&t, 0x213), 5 + 0x40 * flag);
+        t.set_u32(ew(&t, 0xc6), 3 + 0x40 * flag);
+        // the same global as `+0xc6`: the actor at the bound in one case
+        t.set_u32(ew(&t, 0x213), if k == 3 { 0x20 } else { 5 + 0x40 * flag });
         t.set_u32(ew(&t, 0x235), 0x0235_0000);
         t.set_u16(ew(&t, 0x168), u16::try_from(flag).unwrap_or(0));
         t.set_u16(ew(&t, 0x18a), u16::try_from(k & 1).unwrap_or(0));
@@ -1913,6 +1922,7 @@ fn rise_0393() {
         .take_while(|&v| v != u32::MAX)
         .collect();
     let hit = table.last().copied().unwrap_or(0);
+    let first = table.first().copied().unwrap_or(0);
     let b = SCRATCH + 0x1_0000;
     t.set_u32(w(&t, 0x0b), b);
     let list = w(&t, 0xd0);
@@ -1933,6 +1943,7 @@ fn rise_0393() {
         (0, true, 0, 0x1f, (0x390, 0), false),
         (2, false, 0, 3, (hit, 0), false),
         (1, true, 0, 3, (0x390, 2), true),
+        (0, true, 0, 3, (first, 0), true),
     ]
     .into_iter()
     .enumerate()
@@ -1948,6 +1959,9 @@ fn rise_0393() {
             );
         }
         t.set_u32(b + 0x1ef4, counter.cast_unsigned());
+        // the listed object's flags with bit 15; the callback word
+        t.set_u16(b + 0x130 + 0x124, 0x8123 + k as u16);
+        t.set_u32(SCRATCH + 0x5900, 0x5900 + k as u32);
         t.set_u32(b + sop(&t, 0x10), 5);
         let p = SCRATCH + 0x700;
         t.set_u32(sop(&t, 0xf2), p);
@@ -1992,5 +2006,86 @@ fn rise_0393() {
             ..Call::default()
         };
         t.check_entry(f, c, &[], Eax::Checked);
+    }
+}
+
+/// `magic_0393` 0x10003e40 (`r38::drop_0393`): the counter below 0, at 0,
+/// above 1 and at 1 (the end: outside a battle with the actor below,
+/// at and above 0x20, in one); the yaw past half a turn both ways and
+/// not.
+#[test]
+fn drop_0393() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x3e40);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    magic_r11::pools(&mut t, f, 884);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x2ef);
+    magic_r11::object_start_auto(&mut t, start);
+    for (s, v) in [(277u32, 0.75f64), (15, 0.5), (16, -0.25), (17, 2.0)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0xf));
+    }
+    for (s, k) in [(235u32, 1usize), (330, 3), (328, 3), (329, 3)] {
+        rec(&mut t, s, k, move |m, a| {
+            let n = m.r32(SCRATCH + 0x7c00);
+            m.w32(SCRATCH + 0x7c00, n + 1);
+            for i in 0..12 {
+                let v = m.r32(a[0].wrapping_add(4 * i));
+                m.w32(SCRATCH + 0x7c04 + 0x30 * (n % 8) + 4 * i, v);
+            }
+            (s << 16) ^ a[0] ^ if k > 2 { a[2] } else { 0 }
+        });
+    }
+    for s in [217u32, 255] {
+        rec(&mut t, s, 2, move |m, a| {
+            let v = m.r32(a[1]);
+            m.w32(SCRATCH + 0x7f00 + 4 * (s & 1), v ^ a[0]);
+            m.w32(a[1], (s << 16) ^ a[0]);
+            s
+        });
+    }
+    for (s, k) in [(211u32, 2usize), (215, 1), (413, 1)] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(w(&t, 0x13), b);
+    for (k, (n, yaw, battle, a)) in [
+        (0i32, 0.5f32, 0u32, 3u32),
+        (-2, 0.5, 0, 3),
+        (5, 3.0, 0, 3),
+        (3, -3.5, 0, 3),
+        (1, 0.5, 0, 3),
+        (1, 3.0, 0, 0x20),
+        (1, -3.5, 0, 0x1f),
+        (1, 0.5, 1, 3),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.set_u32(SCRATCH + 0x7c00, 0);
+        junk(&mut t, b, 0x2000, k as u32);
+        for c in 0..16u32 {
+            t.set_u32(
+                b + 0x1c10 + 4 * c,
+                (1.0 + 0.5 * c as f32 + k as f32).to_bits(),
+            );
+        }
+        for c in 0..4u32 {
+            t.set_u32(b + 0x1b90 + 4 * c, (0.25 * c as f32 - 0.5).to_bits());
+        }
+        t.set_u32(b + 0x1b94, yaw.to_bits());
+        t.set_u32(b + 0x1efc, n.cast_unsigned());
+        t.set_u32(w(&t, 0x20d), battle);
+        t.set_u32(w(&t, 0x2a1), battle);
+        t.set_u32(w(&t, 0x266), battle);
+        t.set_u32(w(&t, 0x21c), a);
+        t.set_u32(w(&t, 0x25d), 0x25d0 + k as u32);
+        t.set_u32(w(&t, 0x214), 0x2140 + k as u32);
+        for o in [0x119u32, 0x14a] {
+            t.set_u32(w(&t, o), 0x00ab_0000 + o + k as u32);
+        }
+        ownb::dirty_stack(&mut t, 0x3e40 + k as u32, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
