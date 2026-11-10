@@ -3360,6 +3360,9 @@ ports! {
     "r41 embers 0376" => r41::EMBERS_0376, r41::embers_0376;
     "r41 burst 0376" => r41::BURST_0376, r41::burst_0376;
     "r41 start 0376" => r41::START_0376, r41::start_0376;
+    "r41 release 0269" => r41::RELEASE_0269, r41::release_0269;
+    "r41 task 0269" => r41::TASK_0269, r41::task_0269;
+    "r41 strike 0269" => r41::STRIKE_0269, r41::strike_0269;
     // round 41 (magic-r41): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

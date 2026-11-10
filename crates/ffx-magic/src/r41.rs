@@ -2590,3 +2590,259 @@ pub const START_0376: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0269`'s release (0x100025c0, 297 bytes; no arguments; reached
+/// by a tail jump from [`task_0269`]): `h` = slot 719 `(D, 4, 0)`; the
+/// 128 parts of `h` unregistered (slot 772 `(h, i)`'s 64-bit handle to
+/// slot 779 with the game lock 1); then the node `*G_N` goes back to the
+/// pool as [`give_back`](crate::sa_pool::give_back) does it, inlined (its
+/// children through `give_back` itself, the pool's globals at the
+/// operands here). Returns the `eax` the original leaves (the free count
+/// in the low half).
+pub fn release_0269<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // call width: 3
+    let h = g.call(slot_target(g, w(0x8), 719), 0, &[w(0x1a), 4, 0]).eax;
+    for i in 0..0x80u32 {
+        // call width: 2
+        let out = g.call(slot_target(g, w(0x32), 772), 0, &[h, i]);
+        let lock = g.read::<u32>(w(0x42));
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        // call width: 2
+        g.call(slot_target(g, w(0x4b), 779), 0, &[out.eax, out.edx]);
+        let lock = g.read::<u32>(w(0x5e));
+        g.write::<u32>(lock, saved);
+    }
+    let node = g.read::<u32>(w(0x72));
+    let mut eax = g.read::<u32>(node + 8);
+    if g.read::<u32>(eax + 0xc) != 0 {
+        loop {
+            let child = g.read::<u32>(node + 8);
+            let next = g.read::<u32>(child + 0xc);
+            g.write::<u32>(child + 0xc, 0);
+            let c = g.read::<u32>(node + 8);
+            eax = crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x91), c);
+            g.write::<u32>(node + 8, next);
+            if g.read::<u32>(next + 0xc) == 0 {
+                break;
+            }
+        }
+    }
+    let prev = g.read::<u32>(node);
+    if prev != 0 {
+        eax = g.read::<u32>(node + 4);
+        g.write::<u32>(prev + 4, eax);
+    }
+    let next = g.read::<u32>(node + 4);
+    if next != 0 {
+        eax = g.read::<u32>(node);
+        g.write::<u32>(next, eax);
+    }
+    let mut cur = g.read::<u32>(w(0xb7));
+    if cur == node {
+        cur = g.read::<u32>(node + 4);
+    }
+    if g.read::<u32>(w(0xc4)) == node {
+        eax = g.read::<u32>(node);
+        g.write::<u32>(w(0xcd), eax);
+    }
+    if g.read::<u32>(w(0xd3)) == node {
+        eax = g.read::<u32>(node + 4);
+        g.write::<u32>(w(0xdd), eax);
+    }
+    let head = g.read::<u32>(w(0xe3));
+    if head == 0 {
+        g.write::<u32>(node + 4, node);
+        g.write::<u32>(node, node);
+    } else {
+        g.write::<u32>(node + 4, head);
+        eax = g.read::<u32>(head);
+        g.write::<u32>(node, eax);
+        g.write::<u32>(head, node);
+    }
+    let count = g.read::<u16>(w(0xfd)).wrapping_add(1);
+    if count == 0x100 {
+        cur = 0;
+    }
+    g.write::<u32>(w(0x103), node);
+    g.write::<u16>(w(0x11a), count);
+    g.write::<u32>(w(0x120), cur);
+    Ret::eax((eax & 0xffff_0000) | u32::from(count))
+}
+
+/// [`release_0269`] (the `rel32`: the give-back).
+pub const RELEASE_0269: Sig = Sig {
+    len: 297,
+    hash: 0x8790_1d26_03f3_b956,
+    calls: &[(0x91, Callee::Sig(&crate::sa_pool::GIVE_BACK))],
+    imports: &[],
+};
+
+/// `magic_0269`'s task (0x10001ac0, 114 bytes; a task callback, cdecl
+/// `(node)`): the motion step ([`motion_step`](crate::s3_motion::motion_step))
+/// and the objects ([`run_objects`](crate::l5_objhost::run_objects));
+/// when both answer 1, slot 213 `(chr, 0)` for each of the `*G_N`
+/// selected characters (`G_SELF` for -1, else the selection's byte), the
+/// node's `+0x14` = 3, its task's `+0x10` the next callback (the
+/// immediate `+0x65`), and the release ([`release_0269`], a tail jump).
+/// Returns the release's `eax`, else the objects'.
+pub fn task_0269<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x5));
+    // push ebp, esi, the return address
+    let at = img.rel32_target(f + 0xc);
+    let r = crate::l5_objhost::run_objects(g, img, at, fr.esp.wrapping_sub(12));
+    if r != 1 || s != 1 {
+        return Ret::eax(r);
+    }
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0x1d)) {
+        let chr = if i == u32::MAX {
+            g.read::<u32>(w(0x29))
+        } else {
+            u32::from(g.read::<u8>(g.read::<u32>(w(0x30)).wrapping_add(i)))
+        };
+        // call width: 2
+        g.call(slot_target(g, w(0x3c), 213), 0, &[chr, 0]);
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(w(0x4e)) {
+            break;
+        }
+    }
+    let node = fr.arg(g, 0);
+    g.write::<u32>(node + 0x14, 3);
+    let task = g.read::<u32>(node + 8);
+    g.write::<u32>(task + 0x10, w(0x65));
+    let rel = Frame {
+        at: img.rel32_target(f + 0x6b),
+        ..*fr
+    };
+    release_0269(g, img, &rel)
+}
+
+/// [`task_0269`] (the `rel32`s: the motion step, the objects, the
+/// release).
+pub const TASK_0269: Sig = Sig {
+    len: 114,
+    hash: 0x83e6_35a8_181d_d672,
+    calls: &[
+        (0x5, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xc, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x6b, Callee::Sig(&RELEASE_0269)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0269`'s strike (0x10002450, 360 bytes; a pool node's callback,
+/// cdecl `(node)`, `R = node[0x14]`): while `R + 4` counts down nothing
+/// else; with `R + 8` (the strikes left) at 0 the node goes back to the
+/// pool ([`give_back`](crate::sa_pool::give_back)). Else for the target
+/// `t` = the signed byte of the order table at `R[0]`: a flash object
+/// ([`pool_take_140`](crate::sb_misc::pool_take_140), started by
+/// [`start_object_at`](crate::s4_misc::start_object_at) with index 1 at
+/// scale `K`, placed at the target ([`actor_point`](crate::s4_misc::actor_point),
+/// mode 1), turned by [`target_angle`](crate::m0163::target_angle), its
+/// character byte `+0x120`) and a bolt object (index 2, owner 2, at the
+/// character's point from slot 262 with its height from slot 12, `w`
+/// 1.0, turned the same way, its height less `K'`); then `R[0]` steps,
+/// `R + 4` = `rand % 7 + 7`, `R + 8` counts down. Returns the count, the
+/// give-back's `eax`, or `rand / 7`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn strike_0269<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32_at(g, w(o));
+    let node = fr.arg(g, 0);
+    let r = g.read::<u32>(node + 0x14);
+    let c = g.read::<i32>(r + 4);
+    if c > 0 {
+        g.write::<i32>(r + 4, c - 1);
+        return Ret::eax((c - 1).cast_unsigned());
+    }
+    if g.read::<u32>(r + 8) == 0 {
+        let back = img.rel32_target(f + 0x24);
+        return Ret::eax(crate::sa_pool::give_back(g, img, back, node));
+    }
+    let idx = g.read::<u32>(r);
+    let t = i32::from(g.read::<i8>(w(0x33).wrapping_add(idx))).cast_unsigned();
+    // push ebp; sub esp, 0xc; edi, ebx, esi: the frame's words
+    let ebp = fr.esp.wrapping_sub(4);
+    let regs = ebp.wrapping_sub(0xc + 0xc);
+    let take = img.rel32_target(f + 0x39);
+    let angle =
+        |g: &mut G, call: u32| crate::m0163::target_angle(g, img, img.rel32_target(f + call), t);
+    let obj = crate::sb_misc::pool_take_140(g, img, take);
+    if obj != 0 {
+        let start = img.rel32_target(f + 0x58);
+        crate::s4_misc::start_object_at(g, img, start, obj, k(g, 0x47), 1, 0, w(0x4c));
+        // the start's four words stay; push 1; call: the mode
+        let sp = regs.wrapping_sub(0x14);
+        g.write::<u32>(sp, 1);
+        let ap = Frame {
+            at: img.rel32_target(f + 0x67),
+            esp: sp.wrapping_sub(4),
+            ecx: t,
+            edx: obj + 0xd0,
+            ..Frame::default()
+        };
+        crate::s4_misc::actor_point(g, img, &ap);
+        let a = angle(g, 0x71);
+        put(g, obj + 0xc4, a);
+        let chr = if t == u32::MAX {
+            g.read::<u32>(w(0x83))
+        } else {
+            u32::from(g.read::<u8>(g.read::<u32>(w(0x8a)).wrapping_add(t)))
+        };
+        g.write::<u32>(obj + 0x120, chr);
+    }
+    let obj2 = crate::sb_misc::pool_take_140(g, img, img.rel32_target(f + 0x99));
+    if obj2 != 0 {
+        let start = img.rel32_target(f + 0xbc);
+        crate::s4_misc::start_object_at(g, img, start, obj2, k(g, 0xae), 2, 2, 0);
+        let p = obj2 + 0xd0;
+        let chr = if t == u32::MAX {
+            g.read::<u32>(w(0xd3))
+        } else {
+            let b = u32::from(g.read::<u8>(g.read::<u32>(w(0xda)).wrapping_add(t)));
+            g.read::<u32>(w(0xe5).wrapping_add(4 * b))
+        };
+        // call width: 4
+        g.call(slot_target(g, w(0xee), 262), 0, &[chr, p, p + 4, p + 8]);
+        // call width: 1
+        let y = crate::m0018::st0_f32(g.call(slot_target(g, w(0x104), 12), 0, &[chr]).st0);
+        put(g, p + 4, y);
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+        let a = angle(g, 0x122);
+        put(g, obj2 + 0xc4, a);
+        let h = sub(f32_at(g, obj2 + 0xd4), k(g, 0x13d));
+        put(g, obj2 + 0xd4, h);
+    }
+    let n = g.read::<u32>(r).wrapping_add(1);
+    g.write::<u32>(r, n);
+    let x = g.rand().cast_signed();
+    g.write::<i32>(r + 4, x % 7 + 7);
+    let left = g.read::<u32>(r + 8).wrapping_sub(1);
+    g.write::<u32>(r + 8, left);
+    Ret::eax((x / 7).cast_unsigned())
+}
+
+/// [`strike_0269`] (the `rel32`s: the pool, the object starts, the
+/// actor's point, the angles; `rand`).
+pub const STRIKE_0269: Sig = Sig {
+    len: 360,
+    hash: 0x330c_af65_6f31_c47a,
+    calls: &[
+        (0x24, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x39, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0x58, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x67, Callee::Sig(&crate::s4_misc::ACTOR_POINT)),
+        (0x71, Callee::Sig(&crate::m0163::TARGET_ANGLE)),
+        (0x99, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0xbc, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x122, Callee::Sig(&crate::m0163::TARGET_ANGLE)),
+    ],
+    imports: &[(0x14d, "rand")],
+};
