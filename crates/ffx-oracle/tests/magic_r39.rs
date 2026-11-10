@@ -282,6 +282,74 @@ const M611: [(u32, u32); 24] = [
     (0x3e72, 0x3d80),
     (0x4000, 0x4000),
 ];
+
+/// `magic_0667`'s scene task against `magic_0515`'s (state 3's count of
+/// actors is its own global: `0xb58` stands for it).
+const M667: [(u32, u32); 63] = [
+    (0x15c, 0x15c),
+    (0x171, 0x16a),
+    (0x1ef, 0x16f),
+    (0x1f2, 0x178),
+    (0x22c, 0x1b1),
+    (0x48d, 0x412),
+    (0x4c3, 0x448),
+    (0x630, 0x5b5),
+    (0x63a, 0x5c7),
+    (0x63b, 0x5cd),
+    (0x6c8, 0x65a),
+    (0x6d7, 0x669),
+    (0x6f5, 0x687),
+    (0x70d, 0x69f),
+    (0x712, 0x6a4),
+    (0x72f, 0x6c1),
+    (0x743, 0x6d5),
+    (0x75d, 0x6ed),
+    (0x887, 0x817),
+    (0x8e8, 0x878),
+    (0x946, 0x8d6),
+    (0x977, 0x907),
+    (0x97f, 0x90f),
+    (0xaf2, 0xa82),
+    (0xafa, 0xa8a),
+    (0xb02, 0xa92),
+    (0xb28, 0xab8),
+    (0xb36, 0xacb),
+    (0xb3e, 0xad5),
+    (0xb49, 0xae0),
+    (0xb51, 0xaef),
+    (0xb58, 0xac7),
+    (0xb59, 0xaf7),
+    (0xb5c, 0xaf4),
+    (0xb62, 0xb02),
+    (0xb67, 0xb0f),
+    (0xb6f, 0xb1d),
+    (0xb80, 0xb30),
+    (0xbd3, 0xb83),
+    (0xbdd, 0xb8d),
+    (0xbe4, 0xb94),
+    (0xc08, 0xbb8),
+    (0xc12, 0xbc2),
+    (0xc27, 0xbd7),
+    (0xe8a, 0xe3a),
+    (0x130c, 0x12bc),
+    (0x1835, 0x17e5),
+    (0x1a52, 0x1a02),
+    (0x2d69, 0x2d19),
+    (0x2ebf, 0x2e76),
+    (0x2ec2, 0x2e7e),
+    (0x3202, 0x31be),
+    (0x3399, 0x3357),
+    (0x33a0, 0x3360),
+    (0x3667, 0x34ba),
+    (0x3961, 0x37b4),
+    (0x3af8, 0x3949),
+    (0x3b00, 0x3950),
+    (0x3daf, 0x3bff),
+    (0x3e5f, 0x3caf),
+    (0x3e87, 0x3cd7),
+    (0x3e9b, 0x3ceb),
+    (0x3eab, 0x3cfb),
+];
 /// The 0515 scene task's control words: slot 253's and 313's answers (253
 /// answering 0 makes the game busy).
 const A253: u32 = SCRATCH + 0x7f20;
@@ -793,11 +861,15 @@ fn scene_state_0(dll: u16, at: u32, map: &[(u32, u32)]) {
         scene(0, &[(once, 1), (n0, 0x1)]),
         scene(0, &[(once, 1), (n0, 0x8001)]),
     ];
-    // the records slot 296 goes over (with 0): two
+    // the records slot 296 goes over (with 0, or `_off` in 0667): two
     let with = t.img.rel32_target(f + mp(map, 0x22d));
-    let n_with = t.img.word(with + 7);
+    let n_with = t.img.word(with + if dll == 667 { 8 } else { 7 });
     for cs in &mut cases {
         cs.mem.push((n_with, 2));
+        if dll == 667 {
+            // (no flags there)
+            cs.set.retain(|(o, _)| *o != fa && *o != fb);
+        }
     }
     for (k, cs) in (0u32..).zip(&mut cases) {
         // the first model's sound record and centre
@@ -1008,6 +1080,22 @@ fn scene_state_17(dll: u16, at: u32, map: &[(u32, u32)]) {
             ]);
         }
     }
+    // the records slot 296 goes over: two; the actor byte's neighbours
+    // (0667 has no camera flags)
+    let n_with = if dll == 667 {
+        None
+    } else {
+        let with = t.img.rel32_target(f + mp(map, 0x3631));
+        Some(t.img.word(with + 7))
+    };
+    for cs in &mut cases {
+        if let Some(n) = n_with {
+            cs.mem.push((n, 2));
+        } else {
+            cs.set.retain(|(o, _)| !flags.contains(o));
+        }
+        cs.mem.push((SCRATCH + 0x7614, 0x5a5a_5a5a));
+    }
     rec(&mut t, 290, 2, |m, a| {
         for i in 0..4 {
             m.w32(
@@ -1210,4 +1298,67 @@ fn native(t: &Twin, f: u32, state: u32, set: &[(u32, u32)]) -> Scene {
     let mut cs = scene(state, &[]);
     cs.mem = set.iter().map(|&(op, v)| (t.img.word(f + op), v)).collect();
     cs
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_states`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_states() {
+    scene_states(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_states_6_8`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_states_6_8() {
+    scene_states_6_8(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_states_9_d`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_states_9_d() {
+    scene_states_9_d(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_10`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_10() {
+    scene_state_10(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_18`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_18() {
+    scene_state_18(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_0`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_0() {
+    scene_state_0(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_3`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_3() {
+    scene_state_3(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_15`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_15() {
+    scene_state_15(667, 0x4af0, &M667);
+}
+
+/// `magic_0667` 0x10004af0 (`r39b::scene_task_0667`): `scene_0515_state_17`'s
+/// cases on the copy.
+#[test]
+fn scene_0667_state_17() {
+    scene_state_17(667, 0x4af0, &M667);
 }
