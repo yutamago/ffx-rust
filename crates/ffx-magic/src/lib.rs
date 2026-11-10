@@ -3298,6 +3298,8 @@ ports! {
     "r36 objects 0165" => r36::OBJECTS_0165, r36::objects_0165;
     "r36 fade step 0098" => r36::FADE_STEP_0098, r36::fade_step_0098;
     "r36 start-up 0098" => r36::START_UP_0098, r36::start_up_0098;
+    "r36 start-up 0284" => r36::START_UP_0284, r36::start_up_0284;
+    "r36 load step 0284" => r36::LOAD_0284, r36::load_0284;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;

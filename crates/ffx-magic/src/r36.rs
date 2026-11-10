@@ -1977,3 +1977,420 @@ pub const START_UP_0098: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Where the code of [`start_up_0284`]'s two inlined task takes differs:
+/// the operands of the free count (read, stored), the free head (read,
+/// moved on, cleared), the callback, the busy list's first (tested,
+/// set) and last (read, set), and the kind byte.
+struct TaskTake {
+    count: [u32; 2],
+    head: [u32; 3],
+    callback: u32,
+    first: [u32; 2],
+    last: [u32; 2],
+    kind: u8,
+}
+
+/// Takes a node off a free ring (count `u16`, head) and appends it to the
+/// busy list, as `magic_0284`'s start-up has it inlined twice (an empty
+/// ring gives the node 0, whose words the original writes: it faults
+/// there, and so does the port).
+fn task_take<G: Game>(g: &mut G, img: &Image, f: u32, ops: &TaskTake) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let mut count = g.read::<u16>(w(ops.count[0]));
+    let node = if count == 0 {
+        0
+    } else {
+        let node = g.read::<u32>(w(ops.head[0]));
+        let (prev, next) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+        g.write::<u32>(prev + 4, next);
+        let (next, prev) = (g.read::<u32>(node + 4), g.read::<u32>(node));
+        g.write::<u32>(next, prev);
+        if count > 1 {
+            let next = g.read::<u32>(node + 4);
+            g.write::<u32>(w(ops.head[1]), next);
+        } else {
+            g.write::<u32>(w(ops.head[2]), 0);
+        }
+        count = count.wrapping_sub(1);
+        for o in [0u32, 4, 0xc, 0x14] {
+            g.write::<u32>(node + o, 0);
+        }
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 0x10, w(ops.callback));
+        g.write::<u8>(node + 0x18, 0);
+        g.write::<u16>(w(ops.count[1]), count);
+        node
+    };
+    let listed = g.read::<u32>(w(ops.first[0])) != 0;
+    g.write::<u8>(node.wrapping_add(0x18), ops.kind);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let last = g.read::<u32>(w(ops.last[0]));
+        g.write::<u32>(node, last);
+        g.write::<u32>(last.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(ops.first[1]), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(ops.last[1]), node);
+    node
+}
+
+/// An angle `v` brought into `-K2..K3` by a turn `K1` (`comiss` +
+/// `jbe`: an unordered `v` stays), as [`start_up_0284`] has it.
+fn wrap_turn(v: f32, (k3, k1, k2): (f32, f32, f32)) -> Option<f32> {
+    if v > k3 {
+        Some(sub(v, k1))
+    } else if k2 > v {
+        Some(add(v, k1))
+    } else {
+        None
+    }
+}
+
+/// `magic_0284`'s start-up (an overlay table entry, cdecl `(actor)`; a
+/// cookie frame, `L(o)` = `ebp - o`). The work buffers and the part
+/// (slot 719 `(table, 8, 0)`,
+/// [`part_init`](crate::l5_objhost::part_init)), the 0x80 sparks
+/// cleared. The caster's facing `a1 = K - slot 333 (actor)` and `a2 =
+/// a1 - K'` (each wrapped by a turn), the point `P` (slot 262, `y` lowered
+/// by a constant) and the turn `L(0x94)` (slots 235, 328 `0`, 329 `a1`)
+/// placing the offset `(0, 0, -13)` (slots 229, 248). Fourteen ring
+/// objects ([`pool_take_140`](crate::sb_misc::pool_take_140), started by
+/// [`start_object_at`](crate::s4_misc::start_object_at) with the owner
+/// counting up by 3): at `P` raised by the table at operand `+0x2ba`
+/// (index 0..4 cycling), facing `a1`, turned by slot 404's angles and
+/// `a2` into their emitters' axes, the emitter set up
+/// ([`emitter_setup`](crate::s7_misc::emitter_setup)) with the callback
+/// at `+0x3d8`, listed at operand `+0x40a`. The dealt order
+/// ([`deal`](crate::sb_misc::deal) into `L(0x40)`), then one smoke object
+/// per target (`*G_N`): at `P` raised by the table at `rand() % 5`, the
+/// target's point (slot 262 on the actor or the target's character) and
+/// height (slot 268), jittered by slot 314 `(1)`, `(4)`, `(1)`, its
+/// emitter set up with the callback at `+0x5bd` and listed at `+0x5d8`,
+/// the order key growing by `2 + rand() % 3`. Then the effect words, the
+/// summon's model (slot 215, or 413 with the flag), two tasks taken
+/// ([`task_take`]) and the pool reset
+/// ([`pool_reset_take`](crate::o6_fam_pool::pool_reset_take)). Returns 0.
+///
+/// `magic_0284` 0x10001340 (2132 bytes).
+#[allow(clippy::too_many_lines)] // the original's set-up, in order
+pub fn start_up_0284<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, at: u32, n: u32| slot_target(g, w(at), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let l = |o: u32| ebp.wrapping_sub(o);
+    // sub esp, 0x128; push ebx, esi, edi: the calls' return address below
+    let sp = ebp.wrapping_sub(0x134 + 4);
+    stores(g, img, f, &[0x27, 0x31, 0x3b]);
+    // call width: 3
+    let part = g.call(t(g, 0x14, 719), 0, &[w(0x23), 8, 0]).eax;
+    g.write::<u32>(w(0x4b), part);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x50));
+    stores(g, img, f, &[0x57]);
+    for k in 0..0x80u32 {
+        g.write::<u32>(w(0x62) + 0x140 * k, 0);
+    }
+    let actor = g.read::<u32>(w(0x8b));
+    for (o, x) in [
+        (0x34u32, 0u32),
+        (0x30, 0),
+        (0x2c, 0xc316_0000),
+        (0x28, 0x3f80_0000),
+    ] {
+        g.write::<u32>(l(o), x);
+    }
+    g.write::<u32>(w(0xab), 0);
+    stores(g, img, f, &[0xaf]);
+    g.write::<u32>(l(0x120), 0x14);
+    // call width: 1
+    let facing = crate::m0018::st0_f32(g.call(t(g, 0x80, 333), 0, &[actor]).st0);
+    put(g, l(0x118), facing);
+    let turn = (f32_at(g, w(0xdf)), f32_at(g, w(0xe7)), f32_at(g, w(0xef)));
+    let a1 = sub(f32_at(g, w(0xcf)), f32_at(g, l(0x118)));
+    put(g, l(0x124), a1);
+    let a1 = wrap_turn(a1, turn).map_or(a1, |v| {
+        put(g, l(0x124), v);
+        v
+    });
+    let a2 = sub(a1, f32_at(g, w(0x11e)));
+    put(g, l(0x128), a2);
+    if let Some(v) = wrap_turn(a2, turn) {
+        put(g, l(0x128), v);
+    }
+    // call width: 1
+    g.call(t(g, 0x14e, 235), 0, &[l(0x114)]);
+    let actor = g.read::<u32>(w(0x16d));
+    for (o, x) in [
+        (0x24u32, 0u32),
+        (0x20, 0),
+        (0x1c, 0xc150_0000),
+        (0x18, 0x3f80_0000),
+    ] {
+        g.write::<u32>(l(o), x);
+    }
+    // call width: 4
+    g.call(t(g, 0x167, 262), 0, &[actor, l(0x14), l(0x10), l(0xc)]);
+    let y = sub(f32_at(g, l(0x10)), f32_at(g, w(0x196)));
+    g.write::<u32>(l(0x8), 0x3f80_0000);
+    put(g, l(0x10), y);
+    // call width: 1
+    g.call(t(g, 0x1a2, 235), 0, &[l(0x94)]);
+    // call width: 3
+    g.call(t(g, 0x1c9, 328), 0, &[l(0x94), l(0x94), 0]);
+    let a1 = g.read::<u32>(l(0x124));
+    // call width: 3
+    g.call(t(g, 0x1ee, 329), 0, &[l(0x94), l(0x94), a1]);
+    g.write::<u32>(l(0x18), 0x3f80_0000);
+    // call width: 3
+    g.call(t(g, 0x20a, 229), 0, &[l(0x44), l(0x94), l(0x24)]);
+    // call width: 3
+    g.call(t(g, 0x227, 248), 0, &[l(0x14), l(0x14), l(0x44)]);
+    g.write::<u32>(l(0x8), 0x3f80_0000);
+    g.write::<u32>(l(0x118), 0);
+    // the ring objects
+    let mut row = 0u32;
+    let mut e = w(0x244);
+    loop {
+        let s = crate::sb_misc::pool_take_140(g, img, img.rel32_target(f + 0x249));
+        if s == 0 {
+            break;
+        }
+        let owner = g.read::<u32>(l(0x120));
+        crate::s4_misc::start_object_at(
+            g,
+            img,
+            img.rel32_target(f + 0x26d),
+            s,
+            f32_at(g, w(0x25b)),
+            1,
+            owner,
+            0,
+        );
+        copy_words(g, l(0x14), s + 0xd0, 4);
+        let a1 = g.read::<u32>(l(0x124));
+        g.write::<u32>(s + 0xc4, a1);
+        let y = add(f32_at(g, w(0x2ba) + 4 * row), f32_at(g, s + 0xd4));
+        g.write::<u32>(sp, 0x4248_0000);
+        put(g, s + 0xd4, y);
+        copy_words(g, s + 0xd0, e - 4, 4);
+        // call width: 1
+        let r = g.call(t(g, 0x2fc, 404), 0, &[0x4248_0000]).st0;
+        put(g, l(0x11c), crate::m0018::st0_f32(r));
+        let pitch = sub(f32_at(g, w(0x312)), f32_at(g, l(0x11c)));
+        g.write::<u32>(sp, 0x3fc9_0fdb);
+        put(g, l(0x30), pitch);
+        // call width: 1
+        let r = g.call(t(g, 0x31f, 404), 0, &[0x3fc9_0fdb]).st0;
+        put(g, l(0x11c), crate::m0018::st0_f32(r));
+        let mut yaw = add(f32_at(g, l(0x11c)), f32_at(g, l(0x128)));
+        if yaw > f32_at(g, w(0x353)) {
+            yaw = sub(yaw, f32_at(g, w(0x35d)));
+        } else if f32_at(g, w(0x367)) > yaw {
+            yaw = add(yaw, f32_at(g, w(0x374)));
+        }
+        // call width: 3
+        g.call(t(g, 0x38d, 329), 0, &[l(0xd4), l(0x114), yaw.to_bits()]);
+        // call width: 3
+        g.call(t(g, 0x3ac, 229), 0, &[e + 0x23c, l(0xd4), l(0x34)]);
+        let owner = g.read::<u32>(l(0x120));
+        g.write::<u32>(e + 0x26c, owner);
+        let n = g.read::<u32>(l(0x118));
+        let emitter = e - 0x10;
+        g.write::<u32>(e + 0x25c, w(0x3d8));
+        g.write::<u32>(e + 0x260, 0);
+        g.write::<u32>(e + 0x270, n);
+        let setup = Frame {
+            at: img.rel32_target(f + 0x3ed),
+            esp: sp,
+            eax: n,
+            ecx: emitter,
+            edx: 0,
+            xmm: [0; 4],
+        };
+        crate::s7_misc::emitter_setup(g, img, &setup);
+        row = if row + 1 > 4 { 0 } else { row + 1 };
+        let n = g.read::<u32>(l(0x118));
+        let owner = g.read::<u32>(l(0x120));
+        g.write::<u32>(l(0x120), owner.wrapping_add(3));
+        g.write::<u32>(w(0x40a).wrapping_add(n.wrapping_mul(4)), emitter);
+        e += 0x288;
+        g.write::<u32>(l(0x118), n.wrapping_add(1));
+        if n.wrapping_add(1).cast_signed() >= 0xe {
+            break;
+        }
+    }
+    crate::sb_misc::deal(g, img, img.rel32_target(f + 0x428), sp, l(0x40));
+    // the smoke objects, one per target
+    g.write::<u32>(l(0x118), 0x17);
+    g.write::<u32>(l(0x120), 0);
+    if g.read::<i32>(w(0x440)) > 0 {
+        let mut i = 0u32;
+        let mut e = w(0x44b);
+        loop {
+            copy_words(g, l(0x14), e - 0x244, 4);
+            let who = i32::from(g.read::<i8>(l(0x40).wrapping_add(i)));
+            g.write::<i32>(l(0x124), who);
+            let k = g.rand().cast_signed() % 5;
+            let y = add(
+                f32_at(g, w(0x4a2).wrapping_add(k.cast_unsigned().wrapping_mul(4))),
+                f32_at(g, e - 0x240),
+            );
+            put(g, e - 0x240, y);
+            let m = if who == -1 {
+                g.read::<u32>(w(0x4bc))
+            } else {
+                let sel = g.read::<u32>(w(0x4c3));
+                let c = u32::from(g.read::<u8>(sel.wrapping_add(who.cast_unsigned())));
+                g.read::<u32>(w(0x4ce).wrapping_add(4 * c))
+            };
+            g.write::<u32>(l(0x128), m);
+            // call width: 4
+            g.call(t(g, 0x4e3, 262), 0, &[m, e - 4, e, e + 4]);
+            let m = g.read::<u32>(l(0x128));
+            // call width: 3
+            g.call(t(g, 0x4f4, 268), 0, &[m, 6, l(0x54)]);
+            let h = g.read::<u32>(l(0x50));
+            g.write::<u32>(e, h);
+            g.write::<u32>(e + 8, 0x3f80_0000);
+            let jitter = |g: &mut G, op: u32, x: u32, at: u32| {
+                g.write::<u32>(sp, x);
+                // call width: 1
+                let r = g.call(t(g, op, 314), 0, &[x]).st0;
+                put(g, l(0x11c), crate::m0018::st0_f32(r));
+                add(f32_at(g, at), f32_at(g, l(0x11c)))
+            };
+            let v = jitter(g, 0x50e, 0x3f80_0000, e - 4);
+            g.write::<u32>(sp, 0x4080_0000);
+            put(g, e - 4, v);
+            let v = jitter(g, 0x542, 0x4080_0000, e);
+            g.write::<u32>(sp, 0x3f80_0000);
+            put(g, e, v);
+            let v = jitter(g, 0x56c, 0x3f80_0000, e + 4);
+            let key = g.read::<u32>(l(0x118));
+            g.write::<u32>(e + 0x2c, key);
+            let who = g.read::<u32>(l(0x124));
+            let emitter = e - 0x250;
+            put(g, e + 4, v);
+            g.write::<u32>(e + 0x1c, 0);
+            g.write::<u32>(e + 0x20, w(0x5bd));
+            g.write::<u32>(e + 0x30, who);
+            let setup = Frame {
+                at: img.rel32_target(f + 0x5c5),
+                esp: sp,
+                eax: who,
+                ecx: emitter,
+                edx: 0,
+                xmm: [0; 4],
+            };
+            crate::s7_misc::emitter_setup(g, img, &setup);
+            let n = g.read::<u32>(l(0x120));
+            e += 0x288;
+            g.write::<u32>(w(0x5d8).wrapping_add(n.wrapping_mul(4)), emitter);
+            let step = g.rand().cast_signed() % 3;
+            let key = g
+                .read::<u32>(l(0x118))
+                .wrapping_add(2)
+                .wrapping_add(step.cast_unsigned());
+            i = n.wrapping_add(1);
+            g.write::<u32>(l(0x120), i);
+            g.write::<u32>(l(0x118), key);
+            if i.cast_signed() >= g.read::<i32>(w(0x604)) {
+                break;
+            }
+        }
+    }
+    // the effect words and the summon's model
+    let flag = g.read::<u32>(w(0x612)) != 0;
+    g.write::<u16>(w(0x619), 0);
+    let summon = g.read::<u32>(w(0x61e));
+    g.write::<u32>(w(0x623), summon);
+    stores(
+        g,
+        img,
+        f,
+        &[
+            0x62d, 0x637, 0x641, 0x64b, 0x655, 0x65f, 0x669, 0x673, 0x67d, 0x687,
+        ],
+    );
+    let slot = if flag { 413 } else { 215 };
+    // call width: 1
+    let model = g.call(t(g, 0x629, slot), 0, &[summon]).eax;
+    let flag = g.read::<u32>(w(0x6a8)) != 0;
+    g.write::<u32>(w(0x6b3), model);
+    stores(g, img, f, &[0x6b7, 0x6c1]);
+    g.write::<u32>(w(0x6cd), 1);
+    if flag {
+        g.write::<u16>(w(0x6e0), 1);
+    } else {
+        g.write::<u16>(w(0x6d7), 0);
+    }
+    task_take(
+        g,
+        img,
+        f,
+        &TaskTake {
+            count: [0x6e7, 0x757],
+            head: [0x6fb, 0x718, 0x720],
+            callback: 0x74c,
+            first: [0x75d, 0x783],
+            last: [0x770, 0x791],
+            kind: 1,
+        },
+    );
+    crate::o6_fam_pool::pool_reset_take(g, img, img.rel32_target(f + 0x796), w(0x788));
+    task_take(
+        g,
+        img,
+        f,
+        &TaskTake {
+            count: [0x79d, 0x808],
+            head: [0x7ac, 0x7c9, 0x7d1],
+            callback: 0x7fd,
+            first: [0x80e, 0x837],
+            last: [0x824, 0x845],
+            kind: 2,
+        },
+    );
+    Ret::eax(0)
+}
+
+/// [`start_up_0284`] (the `rel32`s: the part set-up, the pool take, the
+/// object start, the emitter set-up twice, the deal, the pool reset, the
+/// cookie check; `rand` twice).
+pub const START_UP_0284: Sig = Sig {
+    len: 2132,
+    hash: 0x9f62_ec76_37d5_8a5c,
+    calls: &[
+        (0x50, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x249, Callee::Sig(&crate::sb_misc::POOL_TAKE_140)),
+        (0x26d, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x3ed, Callee::Sig(&crate::s7_misc::EMITTER_SETUP)),
+        (0x428, Callee::Sig(&crate::sb_misc::DEAL)),
+        (0x5c5, Callee::Sig(&crate::s7_misc::EMITTER_SETUP)),
+        (
+            0x796,
+            Callee::Sig(&crate::o6_fam_pool::POOL_RESET_TAKE_0284_3430),
+        ),
+        (0x84c, Callee::Any),
+    ],
+    imports: &[(0x491, "rand"), (0x5de, "rand")],
+};
+
+/// `magic_0284`'s load step (0x10001210, 118 bytes): the shared step
+/// ([`load_step`](crate::r9_load::load_step)) with [`start_up_0284`].
+pub fn load_0284<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0284)
+}
+
+/// [`load_0284`].
+pub const LOAD_0284: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0284))],
+    imports: &[],
+};

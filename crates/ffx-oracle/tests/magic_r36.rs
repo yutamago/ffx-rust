@@ -835,7 +835,34 @@ fn stubs_0165(t: &mut Twin) {
         0x237
     });
     // the sprite draw: its five words and the draw struct's first words
-    logp(t, 567, 5, Some((1, 12)), 0x0567_0000);
+    // the draw struct (0x50 bytes), its colour and its sprite matrix
+    t.stub(567, |m, a| {
+        let mut at = m.r32(PLOG);
+        let mut put = |m: &mut dyn StubMem, v: u32| {
+            m.w32(PLOG + 4 + at % 0x3ff0, v);
+            at += 4;
+        };
+        put(m, 0x5300_0567);
+        for w in &a[..5] {
+            put(m, *w);
+        }
+        let d = a[1];
+        for i in 0..0x14 {
+            let v = m.r32(d + 4 * i);
+            put(m, v);
+        }
+        let (c, mx) = (m.r32(d + 0x24), m.r32(d + 0x28));
+        for i in 0..4 {
+            let v = m.r32(c + 4 * i);
+            put(m, v);
+        }
+        for i in 0..16 {
+            let v = m.r32(mx + 4 * i);
+            put(m, v);
+        }
+        m.w32(PLOG, at);
+        0x0567_0000 ^ a[0]
+    });
     for s in [234u32, 248] {
         rec(t, s, 3, move |m, a| {
             for i in 0..3 {
@@ -846,9 +873,11 @@ fn stubs_0165(t: &mut Twin) {
             s
         });
     }
+    // the point turned: its words and every word of the matrix mixed in
     rec(t, 229, 3, |m, a| {
+        let mix = (0..16).fold(0u32, |x, i| x.rotate_left(5) ^ m.r32(a[1] + 4 * i));
         for i in 0..4 {
-            let v = rf(m, a[2] + 4 * i) + 0.25;
+            let v = rf(m, a[2] + 4 * i) + 0.25 + (mix.rotate_left(i) & 0xff) as f32;
             wf(m, a[0] + 4 * i, v);
         }
         0x229
@@ -859,8 +888,11 @@ fn stubs_0165(t: &mut Twin) {
     rec(t, 776, 1, |_, a| a[0] << 4);
     rec(t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
     rec(t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
-    t.stub_st0(314, |_, a| {
-        f64::from(f32::from_bits(a[0])) * 0.375 - 0.03125
+    // a spread that changes per call (its count at SCRATCH + 0x2_7600)
+    t.stub_st0(314, |m, a| {
+        let k = m.r32(SCRATCH + 0x2_7600);
+        m.w32(SCRATCH + 0x2_7600, k + 1);
+        f64::from(f32::from_bits(a[0])) * 0.375 - 0.03125 + f64::from(k % 7) * 0.125
     });
 }
 
@@ -979,6 +1011,10 @@ fn objects_0165() {
     let (head, tail) = (t.img.word(f + 0x1cc), t.img.word(f + 0x1b7));
     for k in 0..4u32 {
         floats(&mut t, o, 0x1800, k);
+        // the model objects' flags: bit 0 set (cleared for the one at `O + 0x5f1c`)
+        for j in 0..4 {
+            t.set_u16(o + 0x124 + 0x130 * j, 0xffff);
+        }
         t.set_u32(o + 0x5f1c, k % 3);
         // the list: its node holds the object or another one
         let node = SCRATCH + 0x9200;
@@ -1260,5 +1296,151 @@ fn start_up_0098() {
         }
         ownb::dirty_stack(&mut t, 0x2ba0 + k, &[]);
         t.check_entry(f, Call::default(), &[0x0abc_0000 + k], Eax::Checked);
+    }
+}
+
+/// `magic_0284` 0x10001340 (`r36::start_up_0284`, an entry) and its load
+/// step (0x10001210, `r36::load_0284`): the facing wrapped either way or
+/// not, the ring objects (all fourteen, or the pool running out), the
+/// smoke objects per target (the actor's own and a character's point),
+/// the model by either slot, the task list empty or not.
+#[test]
+fn start_up_0284() {
+    let Some(mut t) = twin(284) else { return };
+    let f = t.at(0x1340);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    magic_r11::pools(&mut t, f, 2132);
+    let start = t.img.rel32_target(f + 0x26d);
+    magic_r11::object_start_auto(&mut t, start);
+    // the actors' points and heights, the angles, the turns
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 0.5 + i as f32);
+        }
+        0x262
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(
+                m,
+                a[2] + 4 * i,
+                (a[0] & 0xf) as f32 + 0.25 * i as f32 + a[1] as f32,
+            );
+        }
+        0x268
+    });
+    let facing = SCRATCH + 0x110;
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |m, _| f64::from(rf(m, facing)));
+    rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
+    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 0.5 - 0.25);
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, |m, a| {
+        let k = m.r32(SCRATCH + 0x2_7600);
+        m.w32(SCRATCH + 0x2_7600, k + 1);
+        f64::from(f32::from_bits(a[0])) * 0.375 + f64::from(k % 5) * 0.125
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) * 0.5 + (a[2] & 0xff) as f32 + s as f32 * 0.01;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    for s in [229u32, 248] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..4 {
+                let v = rf(m, a[2] + 4 * i) + rf(m, a[1] + 4 * i) * 0.25 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 324, 0, |m, _| {
+        let s = m
+            .r32(SCRATCH + 0x2_7604)
+            .wrapping_mul(1_103_515_245)
+            .wrapping_add(12345);
+        m.w32(SCRATCH + 0x2_7604, s);
+        s >> 8
+    });
+    // the ring objects' pool (0x140-byte records)
+    let take = t.img.rel32_target(f + 0x249);
+    let tw = |t: &Twin, o: u32| t.img.word(take + o);
+    let recs = SCRATCH + 0x1_0000;
+    t.set_u32(tw(&t, 0x16), recs);
+    // the deal: three kinds of two each
+    let deal = t.img.rel32_target(f + 0x428);
+    t.set_u32(t.img.word(deal + 0x17), 3);
+    for i in 0..3 {
+        t.set_u32(t.img.word(deal + 0x46) + 0x1c * i, 2);
+    }
+    // the emitters' aim: its task pool
+    let es = t.img.rel32_target(f + 0x3ed);
+    let aim = t.img.rel32_target(es + 0xc1);
+    let atake = t.img.rel32_target(aim + 0x1be);
+    // the selection and the characters
+    let sel = SCRATCH + 0x600;
+    t.set_u32(w(&t, 0x4c3), sel);
+    t.write(sel, &[3, 5, 7, 1, 2, 4]);
+    for i in 0..8 {
+        t.set_u32(w(&t, 0x4ce) + 4 * i, 0x00c0_0000 + i);
+    }
+    let load = t.at(0x1210);
+    let (w225, r227) = (SCRATCH + 0x120, SCRATCH + 0x124);
+    rec(&mut t, 225, 1, move |m, _| m.r32(w225));
+    rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[1]);
+    rec(&mut t, 227, 1, move |m, _| m.r32(r227));
+    // the start-up itself (4 cases), then through the load step: waiting,
+    // asked and not loaded, loaded (the start-up runs)
+    for k in 0..7u32 {
+        let (count, f_val) = [(18u32, 0.5f32), (9, 4.0), (16, -4.0), (14, 1.25)][(k % 4) as usize];
+        setf(&mut t, facing, f_val);
+        t.set_u32(tw(&t, 0x09), count);
+        t.set_u32(tw(&t, 0x01), 0);
+        for i in 0..count {
+            let r = recs + 0x140 * i;
+            t.write(r, &[0x2a; 0x140]);
+            t.set_u32(r + 0x130, 0);
+            t.set_u16(r + 0x124, 0x7fff);
+        }
+        // the targets: the count, their dealt order lives in the frame
+        t.set_u32(w(&t, 0x440), [3u32, 0, 2, 1][(k % 4) as usize]);
+        t.set_u32(w(&t, 0x4bc), 0x0abc_0000 + k);
+        t.set_u32(w(&t, 0x612), k & 1);
+        t.set_u32(w(&t, 0x6a8), (k >> 1) & 1);
+        // the aim's task take (the same ring as the start-up's own takes
+        // in this DLL, or another)
+        let (ac, ah) = (t.img.word(atake + 0x04), t.img.word(atake + 0x17));
+        magic_r11::ring(&mut t, ac, ah, 40, SCRATCH + 0xe000);
+        // the task ring (shared by the two takes and the reset's take)
+        let (tc, th) = (w(&t, 0x6e7), w(&t, 0x6fb));
+        if (tc, th) != (ac, ah) {
+            magic_r11::ring(&mut t, tc, th, 8, SCRATCH + 0x9000);
+        }
+        let (first, last) = (w(&t, 0x75d), w(&t, 0x770));
+        let old = SCRATCH + 0x9400;
+        t.write(old, &[0x41; 0x20]);
+        t.set_u32(first, if k % 2 == 0 { old } else { 0 });
+        t.set_u32(last, if k % 2 == 0 { old } else { 0 });
+        ownb::dirty_stack(&mut t, 0x1340 + k, &[]);
+        if k < 4 {
+            t.check_entry(f, Call::default(), &[0x0dd0_0000 + k], Eax::Checked);
+        } else {
+            t.set_u32(w225, u32::from(k == 4));
+            t.set_u32(r227, u32::from(k == 6) * 2);
+            t.set_u32(t.img.word(load + 0x18), u32::from(k == 5));
+            t.check_entry(load, Call::default(), &[0x0dd0_0000 + k], Eax::Checked);
+        }
     }
 }
