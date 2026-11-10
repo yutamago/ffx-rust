@@ -1668,3 +1668,135 @@ fn check_targets_0434() {
         }
     }
 }
+
+/// `magic_0424` 0x10006f20 (`r34::effect_task_0424`): every state before
+/// and after its frame count (0 and 0x46 with their node set-ups, 0x47's
+/// id list with ids known and new, 0x48 to 0x50 to 0x51 and its node,
+/// 0x3c, 0x3d's motions, 0x3e's light block into 10000's unlink), and a
+/// state no table names.
+#[test]
+fn effect_task_0424() {
+    use magic::StubMem;
+    let Some(mut t) = twin(424) else { return };
+    // the float slots (333, 15..17, 277) answer in ST0
+    model_stubs(&mut t);
+    // the colour node's unit block: slot 790's float
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.1);
+    let f = t.at(0x6f20);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the part record's start (as `magic_0424.rs`)
+    let pr = t.img.rel32_target(f + 0x484);
+    let plist = SCRATCH + 0x700;
+    for i in 0..4 {
+        t.set_u32(plist + 4 * i, 0x0900_0000 + i);
+    }
+    rec(&mut t, 941, 1, move |_, _| plist);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    rec(&mut t, 325, 2, |m: &mut dyn StubMem, a: &[u32]| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x0325);
+        }
+        0x325
+    });
+    let sp = t.img.rel32_target(pr + 0x88);
+    t.set_u32(t.img.word(sp + 0x04), SCRATCH + 0x600);
+    t.set_u32(t.img.word(pr + 0x45), SCRATCH + 0x640);
+    let table = SCRATCH + 0x3000;
+    for k in 0..0x20 {
+        t.set_u32(table + 4 * k, 0x0e00_0000 + k);
+    }
+    t.set_u32(w(&t, 0x445), table);
+    // the model list (two models), the id list for 0x47
+    let models = SCRATCH + 0x3400;
+    t.write(models, &[2, 0, 3, 0, 5, 0, 7, 0]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        models
+    });
+    let ids = SCRATCH + 0x3500;
+    t.write(ids, &[4, 9, 4, 6, 1]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], m.r32(SCRATCH + 0x3600));
+        ids
+    });
+    let recs = w(&t, 0x65a);
+    for (i, id) in [6u32, 2, 1].into_iter().enumerate() {
+        t.set_u32(recs + 0x98 * i as u32, id);
+    }
+    let node = SCRATCH + 0x9000;
+    let s = SCRATCH + 0xa000;
+    let (e, nx, pv) = (SCRATCH + 0xb000, SCRATCH + 0xb100, SCRATCH + 0xb200);
+    // (state, frame count, the 0x47 list's length, G_N)
+    let cases: [(u32, u32, u32, i32); 22] = [
+        (0, 1, 0, 0),
+        (0, 5, 0, 2),
+        (0x46, 3, 0, 0),
+        (0x47, 0x31, 3, 2),
+        (0x47, 0x32, 0, 2),
+        (0x47, 0x32, 5, 3),
+        (0x47, 0x40, 4, 0),
+        (0x48, 3, 0, 0),
+        (0x48, 4, 0, 0),
+        (0x50, 9, 0, 0),
+        (0x51, 0x51, 0, 0),
+        (0x51, 0x52, 0, 0),
+        (0x51, 0x60, 0, 1),
+        (0x3c, 2, 0, 0),
+        (0x3d, 0x4f, 0, 0),
+        (0x3d, 0x50, 0, 0),
+        (0x3d, 0x51, 3, 0),
+        (0x3e, 0xe, 0, 0),
+        (0x3e, 0xf, 0, 0),
+        (0x2710, 7, 0, 0),
+        (0x99, 7, 0, 0),
+        (0x49, 1, 0, 0),
+    ];
+    for (k, (state, cnt, idn, nrec)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x100, k);
+        t.set_u32(node + 4, s);
+        t.set_u32(node, e);
+        t.write(e, &[0x1e; 0x10]);
+        t.set_u32(e + 4, nx);
+        t.set_u32(e + 8, pv);
+        t.write(nx, &[0x2e; 0x10]);
+        t.write(pv, &[0x3e; 0x10]);
+        t.set_u32(s + 0x18, state);
+        t.set_u32(s + 0x1c, cnt);
+        t.set_u32(SCRATCH + 0x3600, idn);
+        t.set_u32(w(&t, 0x647), nrec as u32);
+        // 0x3d's listed ids
+        t.set_u16(s + 0x68, (k % 4) as u16);
+        for i in 0..4u32 {
+            t.set_u16(s + 0x28 + 2 * i, 0x30 + i as u16);
+        }
+        // the node 0x51 appends: its parent's last child (the parent itself
+        // when empty)
+        let last = if k % 2 == 0 {
+            w(&t, 0x1d2)
+        } else {
+            SCRATCH + 0xb300
+        };
+        t.set_u32(w(&t, 0x1c5), last);
+        t.write(SCRATCH + 0xb300, &[0x4e; 0x10]);
+        // the light block's words
+        let lb = w(&t, 0x5a);
+        for i in 0..0x40u32 {
+            t.set_u32(lb + 4 * i, (0.125 * (i + k) as f32).to_bits());
+        }
+        // the parents the nodes join: empty child lists (self-linked)
+        for op in [0x34d, 0x2aa, 0x3dd, 0x459, 0x285, 0x1b9] {
+            let p = w(&t, op);
+            t.set_u32(p + 0xc, p);
+            t.set_u32(p + 0x10, p);
+            t.set_u16(p + 0x18, 0);
+        }
+        junk_ops(&mut t, f, &[0x26e, 0x5ec]);
+        let centre = t.img.rel32_target(f + 0x2c3);
+        t.set_u32(t.img.word(centre + 0x55), k % 3);
+        ownb::dirty_stack(&mut t, 0x6f20 + k, &[]);
+        ownb::reset_counters(&mut t);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}
