@@ -1558,3 +1558,161 @@ pub const OBJECTS_0165: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`texture_0098`]'s draw operands
+/// ([`texture_tail`](crate::r16::texture_tail)).
+const TAIL_0098: crate::r16::TexTail = crate::r16::TexTail {
+    lock: [0x16b, 0x1c0],
+    slot885: 0x1a8,
+    xy: [0x1d8, 0x1ff],
+    scale: [0x212, 0x23f],
+    bytes: [
+        (0x225, 0x230),
+        (0x246, 0x25f),
+        (0x26e, 0x282),
+        (0x291, 0x2a2),
+    ],
+    hi: 0x2bc,
+    k2: 0x2d6,
+    lock879: 0x332,
+    d: 0x369,
+    one: 0x377,
+    slot879: 0x392,
+    unlock879: 0x3b1,
+};
+
+/// `magic_0098`'s screen fade texture (internal, no register arguments:
+/// the `xmm0` it saves at `ebp - 0x120` is overwritten before it is
+/// read; a cookie frame, `L(o)` = `ebp - o`): slot 719 `(*G_N, 2, 3)`
+/// gives `T`, slot 235 `(A)` and `(B)`; the draw record's words (the
+/// fade level `*G_F` times the constant at operand `+0x79`, truncated,
+/// into its alpha byte; the buffers, counts and colours, two halfwords
+/// and a byte) and slot 825 `(*G_X)` (`E`); then the texture's draw
+/// ([`texture_tail`](crate::r16::texture_tail), as `magic_0661`'s).
+/// Each slot call sees the words the earlier ones left on the stack.
+/// Returns the lock pointer (0 when slot 885 does not answer).
+///
+/// `magic_0098` 0x10001b00 (977 bytes).
+pub fn texture_0098<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r11_fades::stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, at: u32, n: u32| slot_target(g, w(at), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let mut st = crate::pushes::Pushes::default();
+    st.push_all(&[3, 2]);
+    g.write::<u32>(ebp - 0x120, fr.xmm_f32(0).to_bits());
+    let fade = g.read::<u32>(w(0x2f));
+    st.push(g.read::<u32>(w(0x37)));
+    g.write::<u32>(ebp - 0x118, fade);
+    // call width: 12 (Pushes caps the words at 12)
+    let tex = st.call(g, t(g, 0x14, 719), 0).eax;
+    st.push(w(0x4c));
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x47, 235), 0);
+    st.push(w(0x61));
+    // call width: 12 (Pushes caps the words at 12)
+    st.call(g, t(g, 0x5c, 235), 0);
+    let alpha = mul(f32_at(g, ebp - 0x118), f32_at(g, w(0x79)));
+    let mut edx = g.read::<u32>(w(0x7f));
+    st.push(g.read::<u32>(w(0x85)));
+    g.write::<u32>(w(0x8f), edx);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov [G], al`
+    g.write::<u8>(w(0x94), crate::sb_sse::cvtt(alpha) as u8);
+    let v = g.read::<u32>(w(0x99));
+    g.write::<u32>(w(0x9e), v);
+    let v = g.read::<u32>(w(0xa3));
+    g.write::<u32>(w(0xa8), v);
+    let sum = g.read::<u32>(w(0xad)).wrapping_add(g.read::<u32>(w(0xb3)));
+    stores(g, img, f, &[0xb7]);
+    edx = edx.wrapping_add(sum);
+    stores(g, img, f, &[0xc8, 0xd2, 0xdc]);
+    #[allow(clippy::cast_possible_truncation)] // the u16 and byte immediates
+    {
+        g.write::<u16>(w(0xe9), w(0xed) as u16);
+        g.write::<u8>(w(0xf1), w(0xf5) as u8);
+    }
+    stores(g, img, f, &[0xf6, 0x100, 0x10a]);
+    #[allow(clippy::cast_possible_truncation)] // the u16 immediates
+    {
+        g.write::<u16>(w(0x117), w(0x11b) as u16);
+        g.write::<u16>(w(0x120), w(0x124) as u16);
+    }
+    g.write::<u32>(w(0x12e), edx);
+    // call width: 12 (Pushes caps the words at 12)
+    let e = st.call(g, t(g, 0xc4, 825), 0).eax;
+    g.write::<u32>(ebp - 0x120, e);
+    // `ecx` at slot 885: `wy`; at slot 879: `wy << 16`
+    let v = u64::from(g.read::<u32>(tex)) | (u64::from(g.read::<u32>(tex + 4)) << 32);
+    let wy = u32::from(1u16 << ((v >> 30) & 15));
+    crate::r16::texture_tail(g, img, f, ebp, (tex, e), [wy, wy << 16], &TAIL_0098)
+}
+
+/// [`texture_0098`] (the `rel32`: the cookie check).
+pub const TEXTURE_0098: Sig = Sig {
+    len: 977,
+    hash: 0x6c33_e8ab_0e86_0ad8,
+    calls: &[(0x3c9, Callee::Any)],
+    imports: &[],
+};
+
+/// `magic_0098`'s screen fade step (an overlay table entry, cdecl, no
+/// arguments): while slot 253 says the scene runs, the fade level
+/// `*G_F` steps down by one of two constants (by the flag `*G_D`); it is
+/// held within `0..K` (`comiss` + `ja`/`jbe`: an unordered level stays).
+/// Slot 38 `(*G_V, level, 0)` and slot 275 `(1)`, then the texture
+/// ([`texture_0098`]). Returns 0 when the level is the constant at
+/// operand `+0x99` (`ucomiss`: equal and ordered), else 1.
+///
+/// `magic_0098` 0x10002160 (172 bytes).
+pub fn fade_step_0098<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // call width: 0
+    let on = g.call(slot_target(g, w(0x1), 253), 0, &[]).eax;
+    let mut x = f32_at(g, w(0x11));
+    if on != 0 {
+        let k = if g.read::<u32>(w(0x1b)) != 0 {
+            0x26
+        } else {
+            0x30
+        };
+        x = sub(x, f32_at(g, w(k)));
+        put(g, w(0x38), x);
+    }
+    let top = f32_at(g, w(0x48));
+    if 0.0 > x {
+        x = 0.0;
+        put(g, w(0x58), x);
+    } else if x > top {
+        x = top;
+        put(g, w(0x58), x);
+    }
+    let v = g.read::<u32>(w(0x71));
+    // call width: 3
+    g.call(slot_target(g, w(0x5d), 38), 0, &[v, x.to_bits(), 0]);
+    // call width: 4 (the earlier call's words still pushed)
+    g.call(slot_target(g, w(0x78), 275), 0, &[1, v, x.to_bits(), 0]);
+    let tex = Frame {
+        at: img.rel32_target(f + 0x8a),
+        esp: fr.esp - 4,
+        eax: 0,
+        ecx: 0,
+        edx: 0,
+        xmm: [0; 4],
+    };
+    texture_0098(g, img, &tex);
+    let level = f32_at(g, w(0x92));
+    // `ucomiss` + `jp`: 0 only for an ordered equal
+    #[allow(clippy::float_cmp)] // the original's exact compare
+    let differs = level != f32_at(g, w(0x99));
+    Ret::eax(u32::from(differs))
+}
+
+/// [`fade_step_0098`] (the `rel32`: [`texture_0098`]).
+pub const FADE_STEP_0098: Sig = Sig {
+    len: 172,
+    hash: 0x72e2_fa3d_e1a6_fbaa,
+    calls: &[(0x8a, Callee::Sig(&TEXTURE_0098))],
+    imports: &[],
+};

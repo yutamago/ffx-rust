@@ -342,11 +342,20 @@ fn logd(t: &mut Twin, slot: u32, n: usize) {
             m.r32(d) >> 16,
             m.r32(d + 4),
             m.r32(d + 8),
+            m.r32(d + 0xc),
             m.r32(d + 0x10),
             m.r32(d + 0x1c),
-            m.r32(d + 0x18) & 0xff,
+            m.r32(d + 0x18),
+            // the lock word while it draws
+            m.r32(SCRATCH + 0x2_7400),
         ];
         for v in fields {
+            put(m, v);
+        }
+        // the matrix buffer it draws with
+        let buf = m.r32(d + 0x10);
+        for i in 0..16 {
+            let v = m.r32(buf + 4 * i);
             put(m, v);
         }
         m.w32(PLOG, at);
@@ -477,6 +486,8 @@ fn trails_in(n: u16, at: u32) {
             setf(&mut t, e - 0x4, step2);
             t.set_u32(e, 3 * j);
         }
+        // a model word past the last record (the loop must stop before it)
+        t.set_u32(end - 0x24, SCRATCH + 0x6000);
         // slot 773's buffers (one 0 in turn), slot 886's answers (0 in case 6)
         t.set_u32(ANS2, 0);
         t.set_u32(ANS2 + 0x1c, 0);
@@ -711,7 +722,41 @@ fn start_up_0515() {
             0x024a_0000,
             0x018b_0046,
         ];
+        // the globals it writes, junk first (u16 stores leave the upper half)
+        let junk_at = |t: &mut Twin, op: u32, k: u32| {
+            let at = t.img.word(f + op);
+            t.set_u32(at, 0x5a5a_5a5a ^ op ^ k);
+        };
+        let blocks = t.img.word(f + 0x6df);
         for k in 0..6u32 {
+            for op in (0x54fu32..=0x60f)
+                .step_by(6)
+                .chain((0x652..=0x6be).step_by(6))
+                .chain([
+                    0x13, 0x61a, 0x64a, 0x6c3, 0x6c8, 0x6ea, 0x6f4, 0x778, 0x77e, 0x788,
+                ])
+            {
+                junk_at(&mut t, op, k);
+            }
+            for i in 0..3 {
+                t.set_u32(blocks + 0x190 * i, 0x0b0b_0000 + i);
+            }
+            t.set_u32(t.img.word(f + 0x6d2), k % 3);
+            for i in 0..0x100 {
+                t.set_u32(t.img.word(f + 0x702) + 0x4c * i, 0x0c0c_0000 + i);
+            }
+            let (tr, tr_end) = (t.img.word(f + 0x71d), t.img.word(f + 0x734));
+            let mut a = tr;
+            while a < tr_end {
+                t.set_u32(a - 0x24, 0x0d0d_0000 + a);
+                t.set_u32(a, 0x0e0e_0000 + a);
+                a += 0xa8;
+            }
+            for i in 0..0x200 {
+                let a = t.img.word(f + 0x740) + 0x3c * i;
+                t.set_u32(a - 0x18, 0x0f0f_0000 + i);
+                t.set_u32(a, 0x0f1f_0000 + i);
+            }
             let answers: Vec<u32> = (0..6u32)
                 .map(|j| {
                     if (j + k) % 2 == 0 {
@@ -946,6 +991,102 @@ fn objects_0165() {
         t.set_u32(head, if k < 2 { old } else { 0 });
         t.set_u32(tail, if k < 2 { old } else { 0 });
         ownb::dirty_stack(&mut t, 0x3080 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0098` 0x10002160 (`r36::fade_step_0098`, an entry) and its
+/// texture (0x10001b00, `r36::texture_0098`): the scene running or not,
+/// either step, the level held at 0 and at the top, ending on the
+/// constant; the texture's widths, slot 885 answering 0 and 1, offsets of
+/// either sign, colour sums below 0, inside and above their bound.
+#[test]
+fn fade_step_0098() {
+    let Some(mut t) = twin(98) else { return };
+    let f = t.at(0x2160);
+    let x = t.img.rel32_target(f + 0x8a);
+    let w = |t: &Twin, o: u32| t.img.word(x + o);
+    all_stubs(&mut t);
+    let tex = SCRATCH + 0x7000;
+    rec(&mut t, 719, 3, move |_, _| tex);
+    for (s, k) in [(235u32, 1usize), (825, 1), (38, 3), (275, 1)] {
+        rec(&mut t, s, k, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 879, 10, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[4] + 4 * i);
+            m.w32(SCRATCH + 0x7c00 + 4 * i, v);
+        }
+        0x879
+    });
+    let answer = SCRATCH + 0x718;
+    rec(&mut t, 885, 7, move |m, a| {
+        for i in 0..8 {
+            m.w32(a[6] + 4 * i, 0x0885_0000 + i);
+        }
+        m.r32(answer)
+    });
+    let on = SCRATCH + 0x71c;
+    t.stub(253, move |m, _| m.r32(on));
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(w(&t, 0x16b), lock);
+    t.set_u32(lock, 0x00a1_0000);
+    let colours = w(&t, 0x230);
+    let level = t.img.word(f + 0x11);
+    let (top, end) = (kf(&t, f, 0x48), kf(&t, f, 0x99));
+    // (scene on, flag, level, texture lo/hi, x, y, colour bytes, answer)
+    let cases: [(u32, u32, f32, u32, u32, i32, i32, [u8; 8], u32); 6] = [
+        (0, 0, 0.5, 0, 0, 0, 0, [0; 8], 0),
+        (
+            1,
+            1,
+            0.75,
+            0x1234_5678,
+            3,
+            0x0012_3456,
+            -0x0003_2100,
+            [0x10, 0x20, 0x30, 0x40, 0x80, 0xff, 0x7f, 0x01],
+            1,
+        ),
+        (
+            1,
+            0,
+            -2.0,
+            0xbfff_ffff,
+            1,
+            -0x0abc_def0,
+            0x0765_4321,
+            [0xff, 0x00, 0x90, 0xfe, 0x81, 0x7f, 0x05, 0x00],
+            1,
+        ),
+        (
+            0,
+            0,
+            top + 1.0,
+            0x0400_0000,
+            0x10,
+            0x100,
+            -0x100,
+            [1, 2, 3, 4, 5, 6, 7, 8],
+            1,
+        ),
+        (0, 1, end, 0x0800_0000, 2, 5, 7, [9; 8], 1),
+        (1, 0, f32::NAN, 0, 0, 0, 0, [0; 8], 0),
+    ];
+    for (k, (run, flag, lv, lo, hi, xo, yo, bytes, ans)) in (0u32..).zip(cases) {
+        t.set_u32(on, run);
+        t.set_u32(t.img.word(f + 0x1b), flag);
+        setf(&mut t, level, lv);
+        t.set_u32(tex, lo);
+        t.set_u32(tex + 4, hi);
+        t.set_u32(w(&t, 0x1d8), xo.cast_unsigned());
+        t.set_u32(w(&t, 0x1ff), yo.cast_unsigned());
+        t.write(colours, &bytes);
+        t.set_u32(answer, ans);
+        for o in [0x37u32, 0x7f, 0x85, 0x99, 0xa3, 0xad, 0xb3] {
+            t.set_u32(w(&t, o), 0x00ab_0000 + o + k);
+        }
+        ownb::dirty_stack(&mut t, 0x2160 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

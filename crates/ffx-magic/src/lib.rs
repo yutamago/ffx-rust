@@ -3296,6 +3296,7 @@ ports! {
     "r36 glow 0165" => r36::GLOW_0165, r36::glow_0165;
     "r36 spark task 0165" => r36::SPARK_TASK_0165, r36::spark_task_0165;
     "r36 objects 0165" => r36::OBJECTS_0165, r36::objects_0165;
+    "r36 fade step 0098" => r36::FADE_STEP_0098, r36::fade_step_0098;
     // round 36 (magic-r36): end
     // round 8, shared-8 (s8_misc)
     "camera rigs step" => s8_misc::CAMERA_RIGS_STEP, s8_misc::camera_rigs_step;
@@ -4070,6 +4071,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r36 cameras 0515", &r36::CAMERAS_0515),
     ("r36 trails 0515", &r36::TRAILS_0515),
     ("r36 streaks 0515", &r36::STREAKS_0515),
+    ("r36 texture 0098", &r36::TEXTURE_0098),
     // round 36 (magic-r36): end of INTERNAL
     // round 15 (magic-r15)
     ("r15 light set-up 0686", &r15::LIGHT_SETUP_0686),
