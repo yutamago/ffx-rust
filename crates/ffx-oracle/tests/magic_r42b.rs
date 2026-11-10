@@ -570,3 +570,167 @@ fn start_up_0178() {
     }
     assert!(t.u32(ownb::LOG) > 0x100, "the start-up's calls");
 }
+
+/// The stubs of `magic_0203`'s tests: the summon stubs, slot 324 a mask
+/// from `MASK_0203`, 307 a float in ST0 by its call count, 713 and 388
+/// logged.
+const MASK_0203: u32 = SCRATCH + 0x7f40;
+
+/// Empty rings at the lists the operands `ops` of `f` name (where 0).
+fn rings_0203(t: &mut Twin, f: u32, ops: &[u32]) {
+    for &o in ops {
+        let p = t.img.word(f + o);
+        if t.u32(p + 0x10) == 0 {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+        }
+    }
+}
+
+fn stubs_0203(t: &mut Twin) {
+    all_stubs(t);
+    summon_stubs::float_matrix_stubs(t);
+    summon_stubs::vector_stubs(t);
+    summon_stubs::summon_stubs(t);
+    rec(t, 324, 0, |m, _| {
+        let k = m.r32(MASK_0203 + 4);
+        m.w32(MASK_0203 + 4, k + 1);
+        m.r32(MASK_0203).rotate_left(k)
+    });
+    rec(t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, |m, _| {
+        let k = m.r32(MASK_0203 + 8);
+        m.w32(MASK_0203 + 8, k + 1);
+        0.125 + f64::from(k % 7) * 0.375
+    });
+    for (s, n) in [(713u32, 1usize), (388, 3)] {
+        rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+}
+
+/// A node at `node` under `parent` (0: none) with the neighbours `prev`
+/// and `next`.
+fn child_0203(t: &mut Twin, node: u32, parent: u32, prev: u32, next: u32) {
+    t.set_u32(node + 4, prev);
+    t.set_u32(node + 8, next);
+    t.set_u32(node + 0x14, parent);
+}
+
+/// `magic_0203` 0x100079b0 (`r42::end_task_0203`): state 0 waiting
+/// (below the end, NaN) and going on (the part's parent and flag both
+/// ways, masks over 0..3 parts), 10000 with bit 2 of `R + 0x448` clear
+/// and set (the six nodes with and without parents, the parent their
+/// neighbour or not), other states.
+#[test]
+fn end_task_0203() {
+    let Some(mut t) = twin(203) else { return };
+    stubs_0203(&mut t);
+    let f = t.at(0x79b0);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    rings_0203(&mut t, f, &[0x118]);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let parent = SCRATCH + 0x3800;
+    let other = SCRATCH + 0x3900;
+    let parts = SCRATCH + 0x3a00;
+    let end = f32::from_bits(t.u32(t.img.word(f + 0x57)));
+    // (state, timer, count of parts, mask, flags byte +0x448, part flag
+    // +0xe8, parents: 0 none, 1 the parent with it its neighbours, 2 the
+    // parent with another node as neighbours)
+    let cases: [(u32, f32, u32, u32, u8, u8, u32); 12] = [
+        (0, 0.0, 0, 0, 0, 0, 1),
+        (0, f32::NAN, 0, 0, 0, 0, 1),
+        (0, end, 0, 0, 0, 0, 1),
+        (0, end + 1.0, 2, 0b11, 4, 0, 1),
+        (0, end + 1.0, 3, 0b101, 0, 4, 2),
+        (0, end + 1.0, 0, 7, 4, 4, 0),
+        (0, end + 1.0, 0xffff_fffe, 7, 0, 0, 1),
+        (0x2710, 0.0, 0, 0, 0, 0, 1),
+        (0x2710, 0.0, 0, 0, 4, 0, 1),
+        (0x2710, 0.0, 0, 0, 4, 0, 2),
+        (0x2710, 0.0, 0, 0, 4, 0, 0),
+        (5, 0.0, 0, 0, 4, 0, 1),
+    ];
+    for (k, (state, timer, count, mask, fl, pfl, pk)) in (0u32..).zip(cases) {
+        t.write(r, &[0x3c ^ k as u8; 0x500]);
+        t.write(parent, &[0; 0x20]);
+        t.write(other, &[0x6e; 0x40]);
+        t.set_u32(r + 0x48c, state);
+        t.set_u32(r + 0x38, (timer - 0.25).to_bits());
+        t.set_u32(r + 0x474, 0.25f32.to_bits());
+        t.set_u32(r + 0x488, count);
+        t.set_u8(r + 0x448, fl);
+        t.set_u32(r + 0x480, 0x40 + k);
+        t.set_u32(MASK_0203, mask);
+        t.set_u32(MASK_0203 + 4, 0);
+        for i in 0..3u32 {
+            let p = parts + 0x80 * (i + 1);
+            t.set_u32(parts + 4 * i, p);
+            t.set_u32(p + 0x50, 0x0050_0000 + i + 0x10 * k);
+        }
+        t.set_u32(r + 0x460, parts);
+        for n in [0x18u32, 0x44, 0x9c, 0x70, 0xc8, 0x214, 0x360] {
+            let nd = r + n;
+            match pk {
+                0 => child_0203(&mut t, nd, 0, nd, nd),
+                1 => child_0203(&mut t, nd, parent, parent, parent),
+                _ => child_0203(&mut t, nd, parent, other, other + 0x20),
+            }
+        }
+        t.set_u16(parent + 0x18, 9);
+        t.set_u8(r + 0x360 + 0xe8, pfl);
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        ownb::dirty_stack(&mut t, 0x79b0 + k, &[]);
+        let call = Call {
+            eax: 0x00ea_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[a], Eax::Checked);
+    }
+}
+
+/// `magic_0203` 0x10007de0 (`r42::summon_setup_0203`): the parent's and
+/// the static list's lists empty and not, slot 324's bit 10 both ways.
+#[test]
+fn summon_setup_0203() {
+    let Some(mut t) = twin(203) else { return };
+    stubs_0203(&mut t);
+    let f = t.at(0x7de0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    rings_0203(&mut t, f, &[0x1c6, 0x319, 0x358]);
+    let o = SCRATCH + 0x1_0000;
+    let v = SCRATCH + 0x3400;
+    let plast = w(&t, 0x75);
+    let parent = w(&t, 0x82);
+    let slast = w(&t, 0x22);
+    let other = SCRATCH + 0x3900;
+    for k in 0..3u32 {
+        t.write(o, &[0x3c ^ k as u8; 0x500]);
+        t.write(other, &[0x6e ^ k as u8; 0x40]);
+        ownb::floats(&mut t, v, &[1.5, -2.0 + k as f32, 0.25, 1.0]);
+        t.set_u32(plast, if k == 1 { other } else { parent });
+        t.set_u32(slast, other + 0x20);
+        t.set_u32(w(&t, 0x3d), 0x5d5d_5d50 + k);
+        t.set_u32(MASK_0203, if k == 2 { 0x400 } else { 0x3ff });
+        t.set_u32(MASK_0203 + 4, 0);
+        ownb::dirty_stack(&mut t, 0x7de0 + k, &[]);
+        let call = Call {
+            ecx: o,
+            edx: v,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            call,
+            &[0x0001_2000 + k, SCRATCH + 0x3a00, 3 + k],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(r42::summon_setup_0203(g, img, fr)),
+        );
+    }
+}
