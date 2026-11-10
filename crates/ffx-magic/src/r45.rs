@@ -1618,3 +1618,120 @@ pub const FRAME_0266: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0266`'s two sparks (0x100021a0, 855 bytes; internal, no
+/// arguments; a /GS frame: the offset `V` at `ebp - 0x24`, the point `P`
+/// at `ebp - 0x14`): while `*G_N` is positive it counts down and two
+/// sparks are taken from the DLL's ring
+/// ([`ring_take`](crate::sa_misc::ring_take); none left ends it with 0):
+/// `P` = slot 237 `(*G_C, 0x3e, &V, &P)` with `V` = `(-200, 0, 0, 1)`
+/// (`P.w` 1.0); each spark gets its handle (the first `(*G_H)[1]`, the
+/// second slot 719 `(PART, 9, 0)`), `u16 +0xa` 0x200, `+0x4` 1, `u16
+/// +0x8` 0xffff, its place `P + frnd(5)` per axis (`+0x18` 1.0), three
+/// spins `(slot 307 () - K1) * K2`, `+0x28` `frnd(pi)` (the first) or 0
+/// (the second), `+0x2c` 0.17, byte `+0x47` 0 and the life `n = 32 +
+/// (rand() % 33 & !1)` (the second `24 + (rand() % 25 & !1)`) in `+0x34`
+/// with `+-n / 2` in `+0x38`, `+0x3c`. Returns `-n / 2` of the
+/// second spark, or the answer that ended it (0, or `*G_N` when not
+/// positive).
+#[allow(clippy::too_many_lines)] // two sparks, as the original
+pub fn sparks_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let n = g.read::<u32>(w(0x11));
+    if n.cast_signed() <= 0 {
+        return Ret::eax(n);
+    }
+    g.write::<u32>(w(0x20), n.wrapping_sub(1));
+    let take = img.rel32_target(f + 0x25);
+    let spark = crate::sa_misc::ring_take(g, img, take);
+    if spark == 0 {
+        return Ret::eax(0);
+    }
+    let ebp = fr.esp.wrapping_sub(4);
+    let (v, p) = (ebp.wrapping_sub(0x24), ebp.wrapping_sub(0x14));
+    for (i, x) in (0u32..).zip([0xc348_0000, 0, 0, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    let c = g.read::<u32>(w(0x45));
+    g.call(t(g, 0x3d, 237), 0, &[c, 0x3e, v, p]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let frnd = |g: &mut G, o: u32, x: u32| st0_f32(g.call(t(g, o, 314), 0, &[x]).st0);
+    let spin = |g: &mut G, o: u32, k1: u32, k2: u32| {
+        let r = st0_f32(g.call(t(g, o, 307), 0, &[]).st0);
+        mul(sub(r, k(g, k1)), k(g, k2))
+    };
+    let life = |g: &mut G, s: u32, m: u32, base: u32| {
+        // rand() % m, its low bit cleared, plus `base`; half of it either way
+        let r = g.rand().cast_signed() % m.cast_signed();
+        let l = (r & !1) + base.cast_signed();
+        g.write::<u8>(s + 0x47, 0);
+        g.write::<i32>(s + 0x34, l);
+        let half = l / 2;
+        g.write::<i32>(s + 0x38, half);
+        g.write::<i32>(s + 0x3c, -half);
+        (-half).cast_unsigned()
+    };
+    let place = |g: &mut G, s: u32, ops: [u32; 3]| {
+        let x = frnd(g, ops[0], 0x40a0_0000);
+        let x = add(g.read::<f32>(p), x);
+        g.write::<f32>(s + 0xc, x);
+        let y = frnd(g, ops[1], 0x40a0_0000);
+        let y = add(g.read::<f32>(p + 4), y);
+        g.write::<f32>(s + 0x10, y);
+        let z = frnd(g, ops[2], 0x40a0_0000);
+        let z = add(g.read::<f32>(p + 8), z);
+        g.write::<u32>(s + 0x18, 0x3f80_0000);
+        g.write::<f32>(s + 0x14, z);
+    };
+    let h = g.read::<u32>(g.read::<u32>(w(0x6e)).wrapping_add(4));
+    g.write::<u32>(spark, h);
+    g.write::<u16>(spark + 0xa, 0x200);
+    g.write::<u32>(spark + 4, 1);
+    g.write::<u16>(spark + 8, 0xffff);
+    place(g, spark, [0x88, 0xba, 0xe0]);
+    for (o, d, k1, k2) in [(0x106, 0x1c, 0x12a, 0x137), (0x12f, 0x20, 0x154, 0x161)] {
+        let x = spin(g, o, k1, k2);
+        g.write::<f32>(spark + d, x);
+    }
+    let x = spin(g, 0x159, 0x17e, 0x192);
+    g.write::<f32>(spark + 0x24, x);
+    let a = frnd(g, 0x183, 0x4049_0fdb);
+    g.write::<f32>(spark + 0x28, a);
+    g.write::<u32>(spark + 0x2c, 0x3e2e_147b);
+    life(g, spark, 0x21, 0x20);
+    let spark = crate::sa_misc::ring_take(g, img, img.rel32_target(f + 0x1d9));
+    if spark == 0 {
+        return Ret::eax(0);
+    }
+    let h = g.call(t(g, 0x1e9, 719), 0, &[w(0x1f8), 9, 0]).eax;
+    g.write::<u32>(spark, h);
+    g.write::<u16>(spark + 0xa, 0x200);
+    g.write::<u32>(spark + 4, 1);
+    g.write::<u16>(spark + 8, 0xffff);
+    place(g, spark, [0x20a, 0x239, 0x25f]);
+    for (o, d, k1, k2) in [(0x285, 0x1c, 0x2ac, 0x2b9), (0x2b1, 0x20, 0x2d6, 0x2e3)] {
+        let x = spin(g, o, k1, k2);
+        g.write::<f32>(spark + d, x);
+    }
+    let x = spin(g, 0x2db, 0x300, 0x316);
+    g.write::<u32>(spark + 0x28, 0);
+    g.write::<u32>(spark + 0x2c, 0x3e2e_147b);
+    g.write::<f32>(spark + 0x24, x);
+    Ret::eax(life(g, spark, 0x19, 0x18))
+}
+
+/// [`sparks_0266`] (the `rel32`s: the two ring takes, the cookie check;
+/// `rand` twice).
+pub const SPARKS_0266: Sig = Sig {
+    len: 855,
+    hash: 0x1d8e_bf77_2806_6d8e,
+    calls: &[
+        (0x25, Callee::Sig(&crate::sa_misc::RING_TAKE)),
+        (0x1d9, Callee::Sig(&crate::sa_misc::RING_TAKE)),
+        (0x34f, Callee::Any),
+    ],
+    imports: &[(0x1b2, "rand"), (0x321, "rand")],
+};

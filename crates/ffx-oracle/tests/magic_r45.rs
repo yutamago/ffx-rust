@@ -1270,6 +1270,9 @@ fn frame_0266() {
     }
     let dg = call(0xed);
     t.set_u32(t.img.word(dg + 0x08), 0);
+    // the caster and `*G_D` (b6 test gap: both read 0 before)
+    t.set_u32(w(0x2b), 0x0c0c_0044);
+    t.set_u32(w(0xdd), 0x0ddd_0000);
     // (script flag, actors' timer, motion done, objects busy)
     for (k, (flag, timer, done, busy)) in (0u32..).zip([
         (true, 1u32, 1u32, false),
@@ -1294,5 +1297,72 @@ fn frame_0266() {
         t.set_u32(w(0xbe), 2);
         ownb::dirty_stack(&mut t, 0x1e00 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0266` 0x100021a0 (`r45::sparks_0266`, internal): the count run
+/// out (and negative), the ring with room for both sparks, for one, for
+/// none; `frnd` (314) and slot 307 answer stepping floats in ST0, `rand`
+/// is the game's.
+#[test]
+fn sparks_0266() {
+    let Some(mut t) = sa::twin(266) else { return };
+    let f = t.at(0x21a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[2] + 4 * i) * 0.5 + (a[1] & 0xf) as f32;
+            wf(m, a[3] + 4 * i, v);
+        }
+        0x237
+    });
+    let k = SCRATCH + 0x7e10;
+    for s in [314u32, 307] {
+        rec(&mut t, s, 0, move |m, _| {
+            let c = m.r32(k);
+            m.w32(k, c + 1);
+            (s << 16) ^ c
+        });
+        // (slot 307 takes no words: it sees whatever the stack holds)
+        t.stub_st0(s, move |m, a| {
+            let x = if s == 314 {
+                f64::from(f32::from_bits(a[0]))
+            } else {
+                1.5
+            };
+            x * 0.125 * f64::from(m.r32(k) % 7) - 0.25
+        });
+    }
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    let take = t.img.rel32_target(f + 0x25);
+    let tw = |o: u32| img.word(take + o);
+    let ring = SCRATCH + 0x5000;
+    t.set_u32(tw(0x16), ring);
+    let hp = SCRATCH + 0x700;
+    t.set_u32(w(0x6e), hp);
+    t.set_u32(t.img.word(f + 0x45), 0x0c0c_0045);
+    // (count, ring entries, free)
+    for (c, (n, entries, free)) in (0u32..).zip([
+        (0i32, 4u32, 4u32),
+        (-2, 4, 4),
+        (3, 4, 4),
+        (1, 4, 1),
+        (2, 4, 0),
+        (5, 4, 2),
+    ]) {
+        t.set_u32(w(0x11), n.cast_unsigned());
+        junk(&mut t, ring, 0x50 * entries, c);
+        for i in 0..entries {
+            t.set_u32(ring + 0x50 * i + 0x48, u32::from(i >= free));
+        }
+        t.set_u32(tw(0x09), entries);
+        t.set_u32(tw(0x01), 0);
+        t.set_u32(hp + 4, 0x0ade_0000 + c);
+        ownb::dirty_stack(&mut t, 0x21a0 + c, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::sparks_0266(g, img, fr)
+        });
     }
 }

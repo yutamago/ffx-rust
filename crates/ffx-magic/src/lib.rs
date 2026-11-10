@@ -5405,6 +5405,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 actor motions 0431", &r45::ACTOR_MOTIONS_0431),
     ("r45 fading sprite 0266", &r45::FADING_SPRITE_0266),
     ("r45 actors step 0266", &r45::ACTORS_STEP_0266),
+    ("r45 sparks 0266", &r45::SPARKS_0266),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
