@@ -3319,6 +3319,8 @@ ports! {
     "r40 set-up 0183" => r40::SETUP_0183, r40::setup_0183;
     "r40 camera task 0183" => r40::CAMERA_TASK_0183, r40::camera_task_0183;
     "r40 draw 0183" => r40::DRAW_0183, r40::draw_0183;
+    "r40 spark task 0185" => r40::SPARK_TASK_0185, r40::spark_task_0185;
+    "r40 set-up 0185" => r40::SETUP_0185, r40::setup_0185;
     // round 40 (magic-r40): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -3705,6 +3707,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r40 throw start 0179", &r40::THROW_START_0179),
     ("r40 hits 0174", &r40::HITS_0174),
     ("r40 start-up 0174", &r40::START_UP_0174),
+    ("r40 spark burst 0185", &r40::SPARK_BURST_0185),
+    ("r40 spark sprites 0185", &r40::SPRITES_0185),
     // round 40 (magic-r40): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),

@@ -1185,6 +1185,9 @@ fn camera_task_0183() {
     let mut case =
         |t: &mut Twin, kind: u32, flags: [u32; 3], answers: [u32; 2], top: f32, id: u32| {
             k += 1;
+            // junk first: the gates' flags share their globals with the
+            // counts (+0x12/+0x39, +0x3f/+0x5b, +0x6a/+0x92)
+            junk_ops(t, f, &[0x39, 0x92, 0x5b, 0x427, 0x48d, 0x47b, 0x493]);
             t.set_u32(w(t, 0x12), flags[0]);
             t.set_u32(w(t, 0x3f), flags[1]);
             t.set_u32(w(t, 0x6a), flags[2]);
@@ -1202,8 +1205,8 @@ fn camera_task_0183() {
                     (0.25 * (o % 13) as f32 - 1.0 + k as f32 * 0.125).to_bits(),
                 );
             }
-            t.set_u16(w(t, 0x118), 0xfff0 + k as u16);
-            junk_ops(t, f, &[0x39, 0x92, 0x5b, 0x427, 0x48d, 0x47b, 0x493]);
+            // the angle halfword with junk above it
+            t.set_u32(w(t, 0x118), 0x5a5a_fff0 + k);
             ownb::dirty_stack(t, 0x1350 + k, &[]);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
         };
@@ -1326,4 +1329,193 @@ fn draw_0183() {
     case(&mut t, 0xbf + 0x5a, [1, 0], 1);
     case(&mut t, 0x183, [0, 0], 1);
     case(&mut t, 0x183, [1, 1], 1);
+}
+
+/// The stubs of `magic_0185`'s tests ([`stubs_0183`]'s, the same family)
+/// and its sprite slots: 241 a "random" float to its pointer, 247 a
+/// matrix by its angle, 772 a handle (negative on odd calls), 773 the
+/// ready answer, 776/777 two words.
+fn stubs_0185(t: &mut Twin) {
+    stubs_0183(t);
+    rec(t, 241, 1, |m, a| {
+        let k = m.r32(SCRATCH + 0x7f70).wrapping_add(1);
+        m.w32(SCRATCH + 0x7f70, k);
+        wf(m, a[0], (k % 5) as f32 * 0.375 - 0.5);
+        0x241
+    });
+    rec(t, 247, 2, |m, a| {
+        for i in 0..16 {
+            wf(
+                m,
+                a[0] + 4 * i,
+                0.125 * i as f32 + (a[1] & 0xff) as f32 * 0.01,
+            );
+        }
+        0x247
+    });
+    rec(t, 772, 2, |m, a| {
+        let k = m.r32(SCRATCH + 0x7f74).wrapping_add(1);
+        m.w32(SCRATCH + 0x7f74, k);
+        if k & 1 == 0 { a[0] } else { 0x8000_0000 | a[0] }
+    });
+    rec(t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f78));
+    rec(t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    rec(t, 777, 1, |_, a| 0x0777_0000 ^ a[0]);
+    for s in [875u32, 873, 775] {
+        rec(t, s, 2, move |_, a| (s << 16) ^ a[0]);
+    }
+}
+
+/// `magic_0185`'s spark records (operands of the sprite loop at
+/// 0x100015a0): every other one free, the frames and timers varied.
+fn records_0185(t: &mut Twin, k: u32) {
+    let sp = t.at(0x15a0);
+    let first = t.img.word(sp + 0x1d);
+    let end = t.img.word(sp + 0x243);
+    let mut i = 0u32;
+    let mut at = first;
+    while at < end {
+        let rec = at - 0x16;
+        for j in 0..4u32 {
+            t.set_u32(rec + 4 * j, (0.5 * j as f32 + i as f32).to_bits());
+        }
+        t.set_u32(rec + 0x10, (1.0 + 0.25 * i as f32).to_bits());
+        t.set_u16(
+            rec + 0x14,
+            [0x1f0u16, 0x100, 0x7f00, 0xffff][((i + k) % 4) as usize],
+        );
+        t.set_u16(
+            at,
+            if (i + k) % 3 == 2 {
+                0xffff
+            } else {
+                ((i + k) % 3) as u16
+            },
+        );
+        i += 1;
+        at += 0x18;
+    }
+}
+
+/// `magic_0185` 0x10001a00 (`r40::spark_task_0185`, with
+/// `spark_burst_0185`): the load steps, every kind, the frames inside
+/// and outside the bursts, the records full and not.
+#[test]
+fn spark_task_0185() {
+    let Some(mut t) = twin(185) else { return };
+    stubs_0185(&mut t);
+    let f = t.at(0x1a00);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let burst = t.img.rel32_target(f + 0x102);
+    let take = t.img.rel32_target(burst + 0x92);
+    let first = t.img.word(take + 0x3);
+    let end = t.img.word(take + 0x12);
+    let mut k = 0u32;
+    let mut case = |t: &mut Twin, kind: u32, flags: [u32; 3], answers: [u32; 2], free: u32| {
+        k += 1;
+        // junk first: the gates' flags share their globals with the counts
+        junk_ops(t, f, &[0x39, 0x8e, 0x5b]);
+        t.set_u32(w(t, 0x12), flags[0]);
+        t.set_u32(w(t, 0x3f), flags[1]);
+        t.set_u32(w(t, 0x6a), flags[2]);
+        t.set_u32(SCRATCH + 0x7f60, answers[0]);
+        t.set_u32(SCRATCH + 0x7f64, answers[1]);
+        t.set_u32(w(t, 0x93), kind);
+        // `free` free records, the rest used
+        let mut at = first;
+        let mut n = 0;
+        while at < end {
+            t.write(at - 0x16, &[0x5c; 0x18]);
+            t.set_u16(at, if n < free { 0xffff } else { 1 });
+            n += 1;
+            at += 0x18;
+        }
+        for o in [0x71u32, 0x86, 0xbb, 0x137, 0x148, 0x16f, 0x1ac] {
+            t.set_u32(
+                t.img.word(burst + o),
+                (0.5 + (o % 7) as f32 * 0.25).to_bits(),
+            );
+        }
+        t.set_u32(t.img.word(burst + 0x11), 0x1000 + k);
+        ownb::dirty_stack(t, 0x1a00 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    };
+    case(&mut t, 0x30, [0, 0, 0], [1, 1], 9);
+    case(&mut t, 0x30, [0, 0, 0], [0, 0], 9);
+    case(&mut t, 0x30, [0, 1, 0], [0, 2], 9);
+    for (kind, free) in [
+        (0x24u32, 9u32),
+        (0x8f, 2),
+        (0xa1, 0),
+        (0x27, 9),
+        (0x28, 9),
+        (0x4a, 3),
+        (0x4b, 9),
+    ] {
+        case(&mut t, kind, [1, 1, 1], [0, 1], free);
+    }
+}
+
+/// `magic_0185` 0x100015a0 (`r40::sprites_0185`, internal; its `eax` is
+/// junk): the records free and used, ready and not, the timers below and
+/// past the frame's length, the last frame.
+#[test]
+fn sprites_0185() {
+    let Some(mut t) = twin(185) else { return };
+    stubs_0185(&mut t);
+    let f = t.at(0x15a0);
+    let lock = SCRATCH + 0x7f00;
+    for o in [0xfcu32, 0x12b, 0x15e, 0x17b, 0x1bd, 0x1ee] {
+        t.set_u32(t.img.word(f + o), lock);
+    }
+    t.set_u32(t.img.word(f + 0xdd), SCRATCH + 0x7f80);
+    for k in 0..4u32 {
+        records_0185(&mut t, k);
+        t.set_u32(SCRATCH + 0x7f78, k & 1);
+        t.set_u32(lock, 0x40 + k);
+        ownb::dirty_stack(&mut t, 0x15a0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Junk, |g, img, fr| {
+            r40::sprites_0185(g, img, fr.at, fr.esp);
+            Ret::eax(0)
+        });
+    }
+}
+
+/// `magic_0185` 0x10001090 (`r40::setup_0185`): no targets and three.
+#[test]
+fn setup_0185() {
+    let Some(mut t) = twin(185) else { return };
+    stubs_0185(&mut t);
+    let f = t.at(0x1090);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 246, 1, |_, a| 0x246 ^ a[0]);
+    t.stub_st0(246, |_, a| 3.5 + f64::from(a[0] & 3));
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + (a[0] & 7) as f32);
+        }
+        0x210
+    });
+    let lock = SCRATCH + 0x7f00;
+    t.set_u32(w(&t, 0x345), lock);
+    let start = t.img.rel32_target(f + 0x3c4);
+    t.set_u32(t.img.word(start + 0x04), lock);
+    for (k, n) in [(0u32, 0u32), (1, 3)] {
+        t.set_u32(lock, 0x40 + k);
+        junk_ops(&mut t, f, &[0x90, 0x5e, 0x28, 0x43a, 0x440, 0x446, 0x337]);
+        t.set_u32(w(&t, 0x9b), n);
+        for o in [0x396u32, 0x3c9, 0x3fd] {
+            t.set_u32(w(&t, o), SCRATCH + 0x7f20);
+        }
+        for o in [0x114u32, 0x129, 0x1ec, 0x1fc, 0x20c] {
+            let at = w(&t, o);
+            for j in 0..2u32 {
+                t.set_u32(at + 4 * j, (1.5 + j as f32 + k as f32).to_bits());
+            }
+        }
+        let recs = w(&t, 0xa4) - 8;
+        junk(&mut t, recs, 3 * 0x88 + 0x48, k);
+        ownb::dirty_stack(&mut t, 0x1090 + k, &[]);
+        t.check_entry(f, Call::default(), &[0x00ac_0000 + k], Eax::Checked);
+    }
 }
