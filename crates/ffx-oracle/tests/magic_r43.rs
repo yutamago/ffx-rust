@@ -1997,3 +1997,89 @@ fn weapon_frame_0385() {
         t.check_entry(f, Call::default(), &[s], Eax::Checked);
     }
 }
+
+/// `magic_0251` 0x100051d0 (`r43::curve_task_0251`): the delay running;
+/// steps left (the parameter grows) with the script waiting; the last
+/// step with the script done (the node given back); no steps; the angle
+/// wrapping both ways.
+#[test]
+fn curve_task_0251() {
+    let Some(mut t) = sa::twin(251) else { return };
+    let f = t.at(0x51d0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x248
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    for s in [328u32, 329, 330] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * (i % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    let give = t.img.rel32_target(f + 0x2a9);
+    // the actor scale's selection and objects
+    let asc = t.img.rel32_target(f + 0x209);
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[1, 3, 2, 5, 4, 6, 7, 0]);
+    for o in [0x28, 0x74] {
+        t.set_u32(t.img.word(asc + o), sel);
+    }
+    for o in [0x33, 0x7f] {
+        for i in 0..8 {
+            t.set_u32(t.img.word(asc + o) + 4 * i, 0x0b00 + i);
+        }
+    }
+    let (hi, lo) = (
+        f32::from_bits(t.u32(w(0x1d2))),
+        f32::from_bits(t.u32(w(0x1e6))),
+    );
+    let tb = SCRATCH + 0x2000;
+    // (delay, steps, script done, angle)
+    let cases: [(i32, i32, u32, f32); 6] = [
+        (3, 5, 0, 0.0),
+        (0, 5, 0, 0.0),
+        (0, 1, 1, 0.0),
+        (0, 0, 0, 0.0),
+        (0, 4, 0, hi + 0.5),
+        (0, 4, 1, lo - 0.5),
+    ];
+    for (k, (delay, steps, done, angle)) in (0u32..).zip(cases) {
+        junk(&mut t, tb, 0xe0, k);
+        floats(&mut t, tb + 0x60, 0x18, k);
+        t.set_u32(tb + 0xd0, delay.cast_unsigned());
+        t.set_u32(tb + 0xcc, steps.cast_unsigned());
+        setf(&mut t, tb + 0xc0, 0.125 * k as f32);
+        setf(&mut t, tb + 0xc4, 0.25);
+        setf(&mut t, tb + 0xc8, 0.5);
+        setf(&mut t, tb + 0x60, angle);
+        t.set_u32(tb + 0xd4, 2 + k);
+        // the motion script: done (1), or waiting (`+0x18` 3)
+        t.set_u32(tb + 0x14, done);
+        t.set_u16(tb + 0x18, 3);
+        let node = SCRATCH + 0x900;
+        magic_hi::lone_node(&mut t, give, node);
+        t.set_u32(node + 0x14, tb);
+        ownb::dirty_stack(&mut t, 0x51d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[node], Eax::Checked);
+    }
+}

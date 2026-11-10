@@ -5048,3 +5048,117 @@ pub const WEAPON_FRAME_0385: Sig = Sig {
     calls: &[(0x172, Callee::Any)],
     imports: &[],
 };
+
+/// One coordinate of a cubic Bezier as `magic_0251`'s curve task computes
+/// it: `((((u t) u) K) p1 + ((u u) u) p0) + ((t t) u) K p2) + (t t) t p3`,
+/// each step one `f32` rounding in this order.
+#[allow(clippy::many_single_char_names)] // the curve's own terms
+fn bezier_0251(u: f32, t: f32, k: f32, p: [f32; 4]) -> f32 {
+    let tt = mul(t, t);
+    let a = mul(mul(mul(mul(u, t), u), k), p[1]);
+    let b = mul(mul(mul(u, u), u), p[0]);
+    let c = mul(mul(mul(tt, u), k), p[2]);
+    let d = mul(mul(tt, t), p[3]);
+    add(add(add(a, b), c), d)
+}
+
+/// `magic_0251`'s curve task (0x100051d0, 701 bytes; a task callback,
+/// cdecl `(S)`; a /GS `ebp` frame, the point `v` at `ebp - 0x14`). With
+/// `T = S[0x14]`: while the delay `T + 0xd0` is above 0 it counts down
+/// (that is all; its new value returned). Else the steps `T + 0xcc`
+/// count down; while some are left the parameter `t = T + 0xc0` grows by
+/// `T + 0xc4`, else it is 1 (`K`); `v` = the cubic Bezier of the control
+/// points `T + 0x80`, `+0x90`, `+0xa0`, `+0xb0` ([`bezier_0251`]) moved by
+/// `T + 0x70` (slot 248); the angle `T + 0x60 += T + 0xc8` wrapped; the
+/// matrix `T + 0x20` of the actor `T[0xd4]`
+/// ([`actor_scale`](crate::sa_misc::actor_scale)) turned (slots 330, 328,
+/// 329 by `T + 0x68`, `+0x60`, `+0x64`); `T + 0x50..` = `v` (`w` 1.0);
+/// the motion script ([`motion_script`](crate::s4_misc::motion_script));
+/// when it reports 1 with no steps left, `T + 0xd8` = 1 and the node `S`
+/// goes back to the pool ([`give_back`](crate::sa_pool::give_back)).
+/// Returns the last call's `eax`.
+pub fn curve_task_0251<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    let call = |o: u32| img.rel32_target(f + o);
+    let s = fr.arg(g, 0);
+    let t = g.read::<u32>(s.wrapping_add(0x14));
+    let at = |o: u32| t.wrapping_add(o);
+    let delay = g.read::<i32>(at(0xd0));
+    if delay > 0 {
+        g.write::<i32>(at(0xd0), delay - 1);
+        return Ret::eax((delay - 1).cast_unsigned());
+    }
+    let n = g.read::<i32>(at(0xcc));
+    if n > 0 {
+        g.write::<i32>(at(0xcc), n - 1);
+    }
+    let one = k(g, 0x55);
+    let p = if g.read::<i32>(at(0xcc)) > 0 {
+        let p = add(g.read::<f32>(at(0xc4)), g.read::<f32>(at(0xc0)));
+        g.write::<f32>(at(0xc0), p);
+        p
+    } else {
+        one
+    };
+    let u = sub(one, p);
+    let k2 = k(g, 0x7c);
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    for j in 0..3u32 {
+        let c = |i: u32| g.read::<f32>(at(0x80 + 0x10 * i + 4 * j));
+        let x = bezier_0251(u, p, k2, [c(0), c(1), c(2), c(3)]);
+        g.write::<f32>(v + 4 * j, x);
+    }
+    // call width: 3
+    g.call(slot_target(g, w(0xd1), 248), 0, &[v, at(0x70), v]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    let r = add(g.read::<f32>(at(0xc8)), g.read::<f32>(at(0x60)));
+    // comiss r, hi; jbe: above only (ordered)
+    let r = if r > k(g, 0x1d2) {
+        sub(r, k(g, 0x1dc))
+    } else if k(g, 0x1e6) > r {
+        add(r, k(g, 0x1f3))
+    } else {
+        r
+    };
+    g.write::<f32>(at(0x60), r);
+    let m = at(0x20);
+    let actor = g.read::<u32>(at(0xd4));
+    crate::sa_misc::actor_scale(g, img, call(0x209), actor, m);
+    for (table, slot, o) in [
+        (0x213u32, 330u32, 0x68u32),
+        (0x22d, 328, 0x60),
+        (0x249, 329, 0x64),
+    ] {
+        let a = g.read::<u32>(at(o));
+        // call width: 3
+        g.call(slot_target(g, w(table), slot), 0, &[m, m, a]);
+    }
+    for i in 0..4u32 {
+        let x = g.read::<u32>(v + 4 * i);
+        g.write::<u32>(at(0x50 + 4 * i), x);
+    }
+    let eax = crate::s4_misc::motion_script(g, img, call(0x28d), t);
+    if eax != 1 || g.read::<i32>(at(0xcc)) > 0 {
+        return Ret::eax(eax);
+    }
+    g.write::<u32>(at(0xd8), eax);
+    Ret::eax(crate::sa_pool::give_back(g, img, call(0x2a9), s))
+}
+
+/// [`curve_task_0251`] (the `rel32`s: the actor's matrix, the motion
+/// script, the give-back, the cookie checks).
+pub const CURVE_TASK_0251: Sig = Sig {
+    len: 701,
+    hash: 0x8e38_75a9_7746_3ee3,
+    calls: &[
+        (0x31, Callee::Any),
+        (0x209, Callee::Sig(&crate::sa_misc::ACTOR_SCALE)),
+        (0x28d, Callee::Sig(&crate::s4_misc::MOTION_SCRIPT)),
+        (0x2a9, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x2b5, Callee::Any),
+    ],
+    imports: &[],
+};
