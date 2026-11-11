@@ -2148,7 +2148,27 @@ fn facing_tris_0431() {
         (0, 1, 0, 100.0, 50.0),
         (1, 1, 0, 6.0, 0.5),
         (0, 1, 1, 100.0, 2.0),
+        (0, 0, 0, 2.0, 50.0),
+        (0, 0, 0, 4.0, 50.0),
+        (0, 0, 0, 6.0, 50.0),
+        (0, 0, 0, 8.0, 50.0),
+        (0, 1, 0, 100.0, 50.0),
+        (0, 1, 0, 100.0, 50.0),
+        (0, 1, 0, 100.0, 50.0),
     ]) {
+        // (b17 test gap: narrow aim windows in the last three, so the
+        // normal's yaw and pitch decide)
+        let narrow = k >= 18;
+        let win = [
+            (1.2f32, -1.2f32, 0.9f32),
+            (2.5, 0.8, 0.6),
+            (-0.5, -2.5, 0.3),
+            (1.2, -0.5, 0.9),
+        ];
+        let (k6, k7, k8) = win[if narrow { (k - 17) as usize } else { 0 }];
+        setf(&mut t, w(0x3d1), k6);
+        setf(&mut t, w(0x3db), k7);
+        setf(&mut t, w(0x3f1), k8);
         junk(&mut t, set, 0x40, k);
         t.write(set + 4, &2u16.to_le_bytes());
         for i in 0..2u32 {
@@ -2265,7 +2285,8 @@ fn tri_pick_0431() {
     );
     t.set_u32(w(0x1a), set);
     t.set_u32(wt(0x47), set);
-    for (k, (prims, spread)) in (0u32..).zip([(2i16, 1.0f32), (8, 1.0), (8, 40.0)]) {
+    // (b17 test gap: exactly three primitives)
+    for (k, (prims, spread)) in (0u32..).zip([(2i16, 1.0f32), (8, 1.0), (8, 40.0), (3, 1.0)]) {
         junk(&mut t, set, 0x40, k);
         t.write(set + 4, &1u16.to_le_bytes());
         t.set_u32(set + 0x10, 1);
