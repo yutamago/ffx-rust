@@ -3456,6 +3456,7 @@ ports! {
     "r46 summon main 0164" => r46::SUMMON_MAIN_0164, r46::summon_main_0164;
     "r46 main task 0042" => r46::MAIN_TASK_0042, r46::main_task_0042;
     "r46 main task 0071" => r46::MAIN_TASK_0071, r46::main_task_0071;
+    "r46 scene task 0071" => r46::SCENE_TASK_0071, r46::scene_task_0071;
     // round 46 (magic-r46): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

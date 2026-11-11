@@ -3747,3 +3747,438 @@ pub const MAIN_TASK_0071: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0071`'s scene task (0x100084c0, 3369 bytes with its tables; a
+/// task callback `(A)`, cdecl; an aligned /GS frame `E` of 0x48 bytes
+/// below two pushes; the record `R = A[4]`, its state `R + 0x18`, counts
+/// `R + 0x28`/`R + 0x2c` (the wait) up at every exit). By the state:
+/// - 0: slots 719 and 306, two summon model nodes, the root node and a
+///   colour node; on into 0xa;
+/// - 0xa: the fade's words (`K - G` each), a pair under the DLL's parent
+///   `P`, the big node, an effect node, the static node, a node and its
+///   insert, a particle node; on (the wait reset);
+/// - 0xb: past its wait slot 228 `(*G, 0x58)`, on to 0x14;
+/// - 0x14: past its wait slot 268 into the vector `V`, the static list's
+///   node, a node under `P` placed `K` of the way to the target, the
+///   direction scaled by `max(K', K'' + dy) / |(dx, dz)|`, slot 234,
+///   nodes, slot 325, a pair, a particle node, the fade's words; on into
+///   0x15;
+/// - 0x15, 0x3c, 0x3d: when slot 411 answers, slot 228 (0x59, 0x5a, 0x5b);
+///   0x15 then slot 237 into `V`, the vector node, slot 719 twice (state
+///   0x3c), 0x3c on, 0x3d to 10000;
+/// - 10000: when slot 411 answers, the list unlinked, the summon's model
+///   set-up, the task unlinked.
+///
+/// Returns `eax` as the original leaves it.
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn scene_task_0071<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    // push ebp; and esp, -8; sub esp, 0x48; the cookie; two pushes
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x48);
+    g.write::<u32>(e + 0x44, g.read::<u32>(w(0xa)) ^ e);
+    let base = e.wrapping_sub(8);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let at = |o: u32| r.wrapping_add(o);
+    let count = |g: &G| g.read::<i32>(at(0x2c));
+    let set = |g: &mut G, s: u32| g.write::<u32>(at(0x18), s);
+    let up = |g: &mut G| {
+        let s = g.read::<u32>(at(0x18)).wrapping_add(1);
+        g.write::<u32>(at(0x18), s);
+    };
+    // slot 411 `(*G)` (operands `i`, `x`) and, when it answers, slot 228
+    // `(*G', n)`
+    let gate = |g: &mut G, (i, x): (u32, u32), (j, y, n): (u32, u32, u32)| {
+        let m = gw(g, x);
+        // call width: 1
+        let a = g.call(slot(g, i, 411), 0, &[m]).eax;
+        if a == 0 {
+            return None;
+        }
+        let m = gw(g, y);
+        // call width: 2
+        Some(g.call(slot(g, j, 228), 0, &[m, n]).eax)
+    };
+    let mut state = g.read::<u32>(at(0x18));
+    let eax = loop {
+        // `eax`: the byte table's index up to 0x14, else the state less
+        // the cases' subtractions (10000 in all)
+        let idx = if state <= 0x14 {
+            img.word(w(0x3a) + state) & 0xff
+        } else {
+            state.wrapping_sub(0x2710)
+        };
+        match state {
+            0xb => {
+                if count(g) < 0x28 {
+                    break idx;
+                }
+                let m = gw(g, 0x58);
+                // call width: 2
+                g.call(slot(g, 0x50, 228), 0, &[m, 0x58]);
+                g.write::<u32>(at(0x2c), 0);
+                set(g, 0x14);
+                state = 0x14;
+            }
+            0x14 => {
+                if count(g) < 0x14 {
+                    break idx;
+                }
+                aim_0071(g, img, f, base);
+                up(g);
+                state = g.read::<u32>(at(0x18));
+            }
+            0 | 0xa => {
+                if state == 0 {
+                    // call width: 3
+                    let h = g.call(slot(g, 0x6e5, 719), 0, &[w(0x6f4), 5, 0]).eax;
+                    // call width: 3
+                    g.call(slot(g, 0x6ff, 306), 0, &[7, 0, h]);
+                    let grp = base + 0x34;
+                    for (i, (n, x, b)) in [(0x71fu32, 0x727u32, 0x710u32), (0x752, 0x75a, 0x746)]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let v = if i == 0 {
+                            gw(g, b)
+                        } else {
+                            u32::from(g.read::<u8>(w(b)))
+                        };
+                        for (j, y) in (0u32..).zip([w(n), w(x), v]) {
+                            g.write::<u32>(grp + 4 * j, y);
+                        }
+                        g.write::<u8>(grp + 0xc, 0);
+                        let (run, c) = if i == 0 {
+                            (0x734, 0x73f)
+                        } else {
+                            (0x767, 0x772)
+                        };
+                        crate::r25::abs_stores(g, img, f, run, run + 10);
+                        crate::sa_summon::model_node_init(g, img, call(c), grp);
+                    }
+                    crate::m0070::node_init_root(g, img, call(0x77c), w(0x777));
+                    let cg = base + 0xc;
+                    g.write::<u32>(cg, w(0x788));
+                    g.write::<u32>(cg + 4, w(0x790));
+                    crate::r25::abs_stores(g, img, f, 0x794, 0x79e);
+                    let cf = Frame {
+                        at: call(0x79f),
+                        esp: base.wrapping_sub(4),
+                        ecx: cg,
+                        ..Frame::default()
+                    };
+                    crate::s3_misc::colour_node(g, img, &cf);
+                    set(g, 0xa);
+                }
+                let eax = build_0071(g, img, f, base);
+                g.write::<u32>(at(0x2c), 0);
+                up(g);
+                break eax;
+            }
+            0x15 => {
+                let Some(_) = gate(g, (0xbd1, 0xbd7), (0xbef, 0xbf7, 0x59)) else {
+                    break 0;
+                };
+                // slot 237 `(*G, 0x122, 0, V)`
+                let v = base + 0x34;
+                let m = gw(g, 0xc1c);
+                // call width: 4
+                g.call(slot(g, 0xc09, 237), 0, &[m, 0x122, 0, v]);
+                // push V; sub esp, 0xc: the vector node `(_, _, _, V)`
+                g.write::<u32>(base.wrapping_sub(4), v);
+                let vf = Frame {
+                    at: call(0xc2e),
+                    esp: base.wrapping_sub(0x14),
+                    ..Frame::default()
+                };
+                crate::o4_ctor::vec_ctor(g, img, &vf);
+                for (i, a, s) in [(0xc33u32, 0xc42u32, 0xc4cu32), (0xc51, 0xc60, 0xc67)] {
+                    // call width: 3
+                    let h = g.call(slot(g, i, 719), 0, &[w(a), 9, 0]).eax;
+                    g.write::<u32>(w(s), h);
+                }
+                let eax = gw(g, 0xc67);
+                set(g, 0x3c);
+                break eax;
+            }
+            0x3c => {
+                let Some(eax) = gate(g, (0xcb3, 0xcb9), (0xccd, 0xcd5, 0x5a)) else {
+                    break 0;
+                };
+                up(g);
+                break eax;
+            }
+            0x3d => {
+                let Some(eax) = gate(g, (0xc78, 0xc7e), (0xc92, 0xc9a, 0x5b)) else {
+                    break 0;
+                };
+                set(g, 0x2710);
+                break eax;
+            }
+            0x2710 => {
+                let m = gw(g, 0x698);
+                // call width: 1
+                let a = g.call(slot(g, 0x692, 411), 0, &[m]).eax;
+                if a == 0 {
+                    break 0;
+                }
+                crate::l3_common::list_unlink_current(g, img, call(0x6b0), a);
+                let rec = base + 0xc;
+                g.write::<u32>(rec, w(0x6bc));
+                let mf = Frame {
+                    at: call(0x6c1),
+                    esp: base.wrapping_sub(4),
+                    ecx: rec,
+                    ..Frame::default()
+                };
+                crate::sa_summon::model_setup(g, img, &mf);
+                break crate::h6_setup::unlink_task(g, task);
+            }
+            _ => break idx,
+        }
+    };
+    for o in [0x28u32, 0x2c] {
+        let v = g.read::<u32>(at(o)).wrapping_add(1);
+        g.write::<u32>(at(o), v);
+    }
+    Ret::eax(eax)
+}
+
+/// `K - G` (operands `k`, `x`) into the operand `d`'s word.
+fn k_minus<G: Game>(g: &mut G, img: &Image, f: u32, (k, x, d): (u32, u32, u32)) {
+    let w = |o: u32| img.word(f + o);
+    let v = sub(g.read::<f32>(w(k)), g.read::<f32>(w(x)));
+    g.write::<f32>(w(d), v);
+}
+
+/// [`scene_task_0071`]'s state 0xa: the fade's words (`K - G`), a node
+/// after `P`'s last and one after it, the big node, an effect node and
+/// its flag, the static node, a node and its insert, a particle node
+/// `[a, b, c, *G, e, 6]`. Returns the particle node's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn build_0071<G: Game>(g: &mut G, img: &Image, f: u32, base: u32) -> u32 {
+    use crate::r25::abs_stores;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let abs = |g: &mut G, a: u32, b: u32| abs_stores(g, img, f, a, b);
+    let km = |g: &mut G, x: u32, d: u32| k_minus(g, img, f, (0x7ae, x, d));
+    km(g, 0x7b9, 0x7e1);
+    let old = gw(g, 0x7be);
+    let v = gw(g, 0x7c4) & !1;
+    g.write::<u32>(w(0x7c4), v);
+    abs(g, 0x7c9, 0x7dd);
+    km(g, 0x7ec, 0x81c);
+    abs(g, 0x7f0, 0x818);
+    km(g, 0x827, 0x856);
+    abs(g, 0x82b, 0x852);
+    km(g, 0x861, 0x891);
+    abs(g, 0x865, 0x88d);
+    km(g, 0x89c, 0x8a9);
+    g.write::<u32>(w(0x8a1), old);
+    km(g, 0x8b4, 0x8c4);
+    km(g, 0x8bc, 0x8dc);
+    let x = sub(g.read::<f32>(w(0x8cc)), g.read::<f32>(w(0x8d4)));
+    g.write::<f32>(w(0x8e4), x);
+    if old == w(0x8e9) {
+        abs(g, 0x8ef, 0x8f9);
+    } else {
+        g.write::<u32>(old.wrapping_add(4), w(0x8fe));
+    }
+    let n = g.read::<u16>(w(0x904));
+    abs(g, 0x90f, 0x97c);
+    after_known(g, img, f, w(0x909), (0x97e, 0x984, 0x990));
+    abs(g, 0x9a0, 0x9aa);
+    g.write::<u16>(w(0x9ac), n.wrapping_add(2));
+    abs(g, 0x9b0, 0x9e2);
+    let rec = base + 0x34;
+    for (i, o) in (0u32..).zip([0x9e6u32, 0x9ee, 0x9f6, 0x9fe, 0xa06]) {
+        g.write::<u32>(rec + 4 * i, w(o));
+    }
+    crate::m0070::node_init_big_table(g, img, call(0xa0b), rec);
+    let x = gw(g, 0xa10);
+    g.write::<u32>(w(0xa19), x);
+    abs(g, 0xa1d, 0xa27);
+    for (i, o) in (0u32..).zip([0xa2bu32, 0xa33, 0xa3b, 0xa43, 0xa4b]) {
+        g.write::<u32>(rec + 4 * i, w(o));
+    }
+    g.write::<u32>(rec + 0x14, 0);
+    crate::sb_nodes::effect_node(g, img, call(0xa58), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0xa63));
+    let fl = gw(g, 0xa69) | 1;
+    g.write::<u32>(w(0xa69), fl);
+    abs(g, 0xa6e, 0xa78);
+    // push ecx (unread): the static node
+    crate::m0071::static_node(g, img, call(0xa79));
+    let old = gw(g, 0xa7e);
+    abs(g, 0xa85, 0xade);
+    after_old(g, img, f, old, (0xadf, 0xae4, 0xaea, 0xaf9));
+    let n = g.read::<u16>(w(0xb00)).wrapping_add(1);
+    g.write::<u16>(w(0xb00), n);
+    abs(g, 0xb08, 0xb44);
+    let grp = base + 0x14;
+    for (i, o) in (0u32..).zip([0xb48u32, 0xb50, 0xb58, 0xb60, 0xb68, 0xb70]) {
+        g.write::<u32>(grp + 4 * i, w(o));
+    }
+    let nf = Frame {
+        at: call(0xb75),
+        esp: base.wrapping_sub(4),
+        ecx: grp,
+        ..Frame::default()
+    };
+    crate::nodes::node_insert(g, img, &nf);
+    let x = gw(g, 0xb7a);
+    abs(g, 0xb82, 0xb89);
+    for (i, v) in (0u32..).zip([w(0xb8d), w(0xb95), w(0xb9d), x, w(0xba9), 6]) {
+        g.write::<u32>(grp + 4 * i, v);
+    }
+    abs(g, 0xbb5, 0xbbf);
+    crate::sb_nodes::particle_node(g, img, call(0xbc0), grp)
+}
+
+/// [`scene_task_0071`]'s state 0x14 past its wait: slot 268 into `V`
+/// (`base + 0x34`, `w` 1.0), the static list's node, a node under `P`
+/// placed `K` of the way from `V` to the target `T` (`d = (T - V) K`), the
+/// flat direction `(-dz, 0, dx)` scaled by `max(K', K'' + dy) /
+/// |(dx, dz)|` (by 0 when the length is 0), slot 234, nodes, slot 325, a
+/// pair, a particle node `[a, b, c, *G, e, 0]`, the fade's words.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn aim_0071<G: Game>(g: &mut G, img: &Image, f: u32, base: u32) {
+    use crate::r25::abs_stores;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let slot = |g: &G, op: u32, n: u32| slot_target(g, w(op), n);
+    let abs = |g: &mut G, a: u32, b: u32| abs_stores(g, img, f, a, b);
+    let v = base + 0x34;
+    let m = gw(g, 0x92);
+    // call width: 3
+    g.call(slot(g, 0x8a, 268), 0, &[m, 0x11, v]);
+    // the static list's node (its old last's `+4` always it)
+    let old = gw(g, 0x9f);
+    g.write::<u32>(w(0xa4), old);
+    g.write::<u32>(v + 0xc, ONE);
+    abs(g, 0xb0, 0xd8);
+    g.write::<u32>(old.wrapping_add(4), w(0xdb));
+    let last = gw(g, 0xe0);
+    let x = gw(g, 0xe6) & !1;
+    g.write::<u32>(w(0xe6), x);
+    abs(g, 0xee, 0x133);
+    after_old(g, img, f, last, (0x134, 0x139, 0x13f, 0x14e));
+    // the node `K` of the way from `V` to the target
+    let vf = |g: &G, i: u32| g.read::<f32>(v + 4 * i);
+    let kk = k(g, 0x164);
+    let dx = mul(sub(k(g, 0x156), vf(g, 0)), kk);
+    let dz = mul(sub(k(g, 0x16c), vf(g, 2)), kk);
+    let n = g.read::<u16>(w(0x185)).wrapping_add(1);
+    g.write::<u16>(w(0x185), n);
+    abs(g, 0x189, 0x193);
+    g.write::<f32>(base + 0xc, dx);
+    g.write::<f32>(w(0x1aa), dx);
+    g.write::<f32>(w(0x1b2), add(dx, vf(g, 0)));
+    let y = vf(g, 1);
+    let dy = mul(sub(k(g, 0x174), y), kk);
+    g.write::<f32>(w(0x1c4), dz);
+    g.write::<f32>(base + 0x2c, dy);
+    g.write::<f32>(w(0x1da), dy);
+    g.write::<f32>(w(0x1e2), add(y, dy));
+    g.write::<f32>(w(0x1f3), add(dz, vf(g, 2)));
+    // xorps with the sign mask: -dz
+    let ndz = f32::from_bits(dz.to_bits() ^ g.read::<u32>(w(0x1fd)));
+    g.write::<f32>(base + 0x30, ndz);
+    let len = f64::from(add(mul(dx, dx), mul(dz, dz))).sqrt() as f32;
+    let ndy = f32::from_bits(dy.to_bits() ^ g.read::<u32>(w(0x237)));
+    let mut s = sub(k(g, 0x223), ndy);
+    let floor = k(g, 0x243);
+    // comiss K', s; jbe: unordered keeps `s`
+    if floor > s {
+        s = floor;
+    }
+    // ucomiss len, 0; lahf; test ah, 0x44; jnp: divides unless `len == 0`
+    let q = if len == 0.0 { len } else { div(s, len) };
+    let a = mul(ndz, q);
+    abs(g, 0x276, 0x280);
+    g.write::<f32>(w(0x284), a);
+    let b = mul(q, 0.0);
+    abs(g, 0x28f, 0x2a3);
+    g.write::<f32>(w(0x2a7), b);
+    let c = mul(g.read::<f32>(base + 0xc), q);
+    abs(g, 0x2b5, 0x2c9);
+    g.write::<f32>(w(0x2cd), c);
+    abs(g, 0x2d1, 0x303);
+    // call width: 3
+    g.call(slot(g, 0x269, 234), 0, &[w(0x30f), w(0x30a), w(0x272)]);
+    let last = gw(g, 0x316);
+    let fl = g.read::<u16>(w(0x31d)) | 1;
+    g.write::<u16>(w(0x31d), fl);
+    abs(g, 0x325, 0x374);
+    after_old(g, img, f, last, (0x375, 0x37a, 0x380, 0x38f));
+    let n = g.read::<u16>(w(0x39b)).wrapping_add(1);
+    g.write::<u16>(w(0x39b), n);
+    abs(g, 0x39f, 0x3b3);
+    // call width: 2
+    g.call(slot(g, 0x394, 325), 0, &[w(0x3bf), w(0x3ba)]);
+    let last = gw(g, 0x3c6);
+    abs(g, 0x3cd, 0x408);
+    after_old(g, img, f, last, (0x409, 0x40e, 0x414, 0x423));
+    let n = g.read::<u16>(w(0x429));
+    abs(g, 0x434, 0x4ab);
+    after_known(g, img, f, w(0x42e), (0x4ad, 0x4b3, 0x4bf));
+    g.write::<u16>(w(0x4cd), n.wrapping_add(2));
+    let x = gw(g, 0x4d2);
+    abs(g, 0x4da, 0x513);
+    let rec = base + 0x14;
+    for (i, v) in (0u32..).zip([w(0x517), w(0x51f), w(0x527), x, w(0x533), 0]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    abs(g, 0x53f, 0x549);
+    crate::sb_nodes::particle_node(g, img, call(0x54a), rec);
+    // the fade's words
+    let km = |g: &mut G, x: u32, d: u32| k_minus(g, img, f, (0x552, x, d));
+    km(g, 0x55d, 0x57a);
+    let fl = (gw(g, 0x562) & !1) | 4;
+    abs(g, 0x56c, 0x576);
+    km(g, 0x585, 0x5b5);
+    abs(g, 0x589, 0x5b1);
+    km(g, 0x5c0, 0x5f0);
+    abs(g, 0x5c4, 0x5ec);
+    g.write::<u32>(w(0x600), fl);
+    km(g, 0x5fb, 0x612);
+    abs(g, 0x604, 0x60e);
+    km(g, 0x61d, 0x625);
+    km(g, 0x630, 0x638);
+    let x = sub(k(g, 0x640), k(g, 0x648));
+    g.write::<f32>(w(0x650), x);
+    km(g, 0x65b, 0x663);
+}
+
+/// [`scene_task_0071`] (the `rel32`s: its callees in order, the root's
+/// import, `__security_check_cookie`).
+pub const SCENE_TASK_0071: Sig = Sig {
+    len: 3369,
+    hash: 0xf8ec_e604_bde0_fbd6,
+    calls: &[
+        (0x21b, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x54a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x6b0, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x6c1, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x73f, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x772, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x77c, Callee::Sig(&crate::m0070::NODE_INIT_ROOT)),
+        (0x79f, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0xa0b, Callee::Sig(&crate::m0070::NODE_INIT_BIG_TABLE)),
+        (0xa58, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0xa79, Callee::Sig(&crate::m0071::STATIC_NODE)),
+        (0xb75, Callee::Sig(&crate::nodes::INSERT)),
+        (0xbc0, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0xc2e, Callee::Sig(&crate::o4_ctor::VEC_CTOR_0071_7530)),
+        (0xcf6, Callee::Any),
+    ],
+    imports: &[],
+};
