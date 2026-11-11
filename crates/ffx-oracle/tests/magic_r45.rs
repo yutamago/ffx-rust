@@ -2591,10 +2591,31 @@ fn start_up_0392() {
 /// below the top; angles wrapping both ways.
 #[test]
 fn actors_tilt_0392() {
-    let Some(mut t) = sa::twin(392) else { return };
-    let f = t.at(0x3180);
+    actors_tilt(392, 0x3180, 0x4c10, [0x210, 0x216, 0x224, 0xd0], None);
+}
+
+/// `magic_0449` 0x10006eb0 (`r45::actors_tilt_0392` through
+/// `r45::ACTORS_TILT_0449`): the same cases on its layout (the records
+/// moving, a stopped actor put at its point, slot 255 by its index).
+#[test]
+fn actors_tilt_0449() {
+    actors_tilt(
+        449,
+        0x6eb0,
+        0x4f40,
+        [0x221, 0x231, 0x23f, 0xf9],
+        Some(0x22b),
+    );
+}
+
+/// `ops`: the actor's mode's `rel32`, `G_A`, the selection, `lo`; `point`
+/// the actor's point's `rel32`.
+fn actors_tilt(n: u16, rva: u32, base: u32, ops: [u32; 4], point: Option<u32>) {
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(rva);
     let img = t.img.clone();
     let w = |o: u32| img.word(f + o);
+    let [o_mode, o_a, o_sel, o_lo] = ops;
     all_stubs(&mut t);
     rec(&mut t, 235, 1, |m, a| {
         for i in 0..16 {
@@ -2624,10 +2645,15 @@ fn actors_tilt_0392() {
         rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
     }
     let sel = SCRATCH + 0x180;
-    t.set_u32(w(0x224), sel);
+    t.set_u32(w(o_sel), sel);
     t.write(sel, &[3, 1, 4, 2]);
-    t.set_u32(w(0x216), 0x0a0a_0216);
-    let am = t.img.rel32_target(f + 0x210);
+    t.set_u32(w(o_a), 0x0a0a_0216);
+    if let Some(p) = point {
+        let at = t.img.rel32_target(f + p);
+        t.set_u32(t.img.word(at + 0x2), 0);
+        t.set_u32(t.img.word(at + 0xc), sel);
+    }
+    let am = t.img.rel32_target(f + o_mode);
     t.set_u32(t.img.word(am + 0x15), sel);
     for i in 0..0x14 {
         t.set_u32(t.img.word(am + 0x2e) + 4 * i, 0x0d00 + i);
@@ -2636,7 +2662,7 @@ fn actors_tilt_0392() {
     t.set_u32(w(0x13), s);
     let (hi, lo) = (
         f32::from_bits(t.u32(w(0x30))),
-        f32::from_bits(t.u32(w(0xd0))),
+        f32::from_bits(t.u32(w(o_lo))),
     );
     // per case: the actor count and per actor (count, spin flag, matrix flag)
     let cases: [(u32, [(i32, u32, u32); 3]); 4] = [
@@ -2649,9 +2675,10 @@ fn actors_tilt_0392() {
     for (k, (n, recs)) in (0u32..).zip(cases) {
         t.set_u32(w(0x22), n);
         for (j, (c, spin, mat)) in (0u32..).zip(recs) {
-            let r = s + 0x4c10 + 0xe0 * j;
+            let r = s + base + 0xe0 * j;
             junk(&mut t, r, 0xe0, k + j);
             floats(&mut t, r, 0x38, k + j);
+            floats(&mut t, r + 0xb0, 0x20, k + j + 2);
             t.set_u32(r + 0xd0, c.cast_unsigned());
             t.set_u32(r + 0xd4, 6 + j);
             t.set_u32(r + 0xdc, spin);
@@ -2661,7 +2688,7 @@ fn actors_tilt_0392() {
             setf(&mut t, r + 0x94, lo - 1.0);
             setf(&mut t, r + 0x98, 0.25 * j as f32);
         }
-        ownb::dirty_stack(&mut t, 0x3180 + k, &[]);
+        ownb::dirty_stack(&mut t, rva + k, &[]);
         let call = Call {
             eax: 0x0eaa_0000 + k,
             ..Call::default()

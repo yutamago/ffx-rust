@@ -3818,39 +3818,113 @@ pub const LOAD_0392: Sig = Sig {
 /// `(*G_A, b, 0)` runs (`b` its selection byte). Each slot call passes
 /// the words the original leaves on the stack. Returns the last value in
 /// `eax` (the frame's cookie word `cookie ^ ebp` with no actors).
-#[allow(clippy::too_many_lines)] // the counts, the angles, the matrix
 pub fn actors_tilt_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    // `magic_0449`'s copy (0x10006eb0) has its records at `S + 0x4f40`,
+    // moves them by `R + 0xb0..+0xb8` (which grows by `R + 0xc0..`) with
+    // no height limit, puts a stopped actor at `R + 0x70`
+    // ([`actor_index_to_point`](crate::s4_small::actor_index_to_point))
+    // and saves one register more
+    let layout = if img.word(fr.at + 0x1c) == 0x4f40 {
+        TiltLayout {
+            base: 0x4f40,
+            ops: [
+                0x7, 0x13, 0x22, 0x30, 0x38, 0x77, 0xf9, 0x179, 0x195, 0x1b4, 0x1d3, 0x1e9, 0x221,
+                0x231, 0x23f, 0x24b,
+            ],
+            point: Some(0x22b),
+            saved: 3,
+        }
+    } else {
+        TiltLayout {
+            base: 0x4c10,
+            ops: [
+                0x7, 0x13, 0x22, 0x30, 0x38, 0xb4, 0xd0, 0x162, 0x181, 0x1a3, 0x1c5, 0x1db, 0x210,
+                0x216, 0x224, 0x230,
+            ],
+            point: None,
+            saved: 2,
+        }
+    };
+    actors_tilt_with(g, img, fr, &layout)
+}
+
+/// Where a copy of [`actors_tilt_0392`] keeps its records, its operands
+/// (the cookie, `G_S`, `G_N`, the wrap's `hi`, `tw`, `K`, `lo`, slots
+/// 235, 330, 328, 329, 231, the actor's mode, `G_A`, the selection, slot
+/// 239), the `rel32` of its actor's point (which also means the moving
+/// records) and how many registers it saves.
+struct TiltLayout {
+    base: u32,
+    ops: [u32; 16],
+    point: Option<u32>,
+    saved: u32,
+}
+
+/// [`actors_tilt_0392`] on the layout `l`.
+#[allow(clippy::too_many_lines)] // the counts, the angles, the matrix
+fn actors_tilt_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TiltLayout) -> Ret {
     let f = fr.at;
+    let [
+        cookie,
+        g_s,
+        g_n,
+        o_hi,
+        o_tw,
+        o_k,
+        o_lo,
+        s235,
+        s330,
+        s328,
+        s329,
+        s231,
+        o_mode,
+        o_a,
+        o_sel,
+        s239,
+    ] = l.ops;
     let w = |o: u32| img.word(f + o);
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let m = fr.esp.wrapping_sub(4).wrapping_sub(0x44);
-    let mut r = g.read::<u32>(w(0x13)).wrapping_add(0x4c10);
+    let mut r = g.read::<u32>(w(g_s)).wrapping_add(l.base);
     // the frame's cookie word, `cookie ^ ebp`, until an actor runs
-    let mut eax = g.read::<u32>(w(0x7)) ^ fr.esp.wrapping_sub(4);
+    let mut eax = g.read::<u32>(w(cookie)) ^ fr.esp.wrapping_sub(4);
     let mut i = 0u32;
-    while i.cast_signed() < g.read::<u32>(w(0x22)).cast_signed() {
+    while i.cast_signed() < g.read::<u32>(w(g_n)).cast_signed() {
         let c = g.read::<u32>(r + 0xd0);
         eax = c;
         if c.cast_signed() > 0 {
             eax = c - 1;
             g.write::<u32>(r + 0xd0, eax);
             if g.read::<u32>(r + 0xdc) == 1 {
-                let spin = add(g.read::<f32>(r + 0xc4), g.read::<f32>(r + 0xb4));
-                g.write::<f32>(r + 0xb4, spin);
-                let h = add(g.read::<f32>(r + 0x34), spin);
-                g.write::<f32>(r + 0x34, h);
-                let top = g.read::<f32>(r + 0xa4);
-                // comiss h, top; jbe: kept unless above (ordered)
-                if h > top {
-                    g.write::<f32>(r + 0x34, top);
+                if l.point.is_some() {
+                    for d in [0u32, 4, 8] {
+                        let v = add(g.read::<f32>(r + 0xc0 + d), g.read::<f32>(r + 0xb0 + d));
+                        g.write::<f32>(r + 0xb0 + d, v);
+                    }
+                    let x = add(g.read::<f32>(r + 0xb0), g.read::<f32>(r + 0x30));
+                    g.write::<f32>(r + 0x30, x);
+                    for d in [4u32, 8] {
+                        let v = add(g.read::<f32>(r + 0x30 + d), g.read::<f32>(r + 0xb0 + d));
+                        g.write::<f32>(r + 0x30 + d, v);
+                    }
+                } else {
+                    let spin = add(g.read::<f32>(r + 0xc4), g.read::<f32>(r + 0xb4));
+                    g.write::<f32>(r + 0xb4, spin);
+                    let h = add(g.read::<f32>(r + 0x34), spin);
+                    g.write::<f32>(r + 0x34, h);
+                    let top = g.read::<f32>(r + 0xa4);
+                    // comiss h, top; jbe: kept unless above (ordered)
+                    if h > top {
+                        g.write::<f32>(r + 0x34, top);
+                    }
                 }
                 let n = crate::sb_sse::cvt(g.read::<u32>(r + 0xd0));
                 let total = crate::sb_sse::cvt(g.read::<u32>(r + 0xd4));
                 let tt = div(n, total);
-                let u = sub(k(g, 0xb4), tt);
+                let u = sub(k(g, o_k), tt);
                 let zero_t = mul(tt, 0.0);
-                let (hi, tw, lo) = (k(g, 0x30), k(g, 0x38), k(g, 0xd0));
+                let (hi, tw, lo) = (k(g, o_hi), k(g, o_tw), k(g, o_lo));
                 let wrap = |a: f32| {
                     if a > hi {
                         sub(a, tw)
@@ -3867,12 +3941,10 @@ pub fn actors_tilt_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 if g.read::<u32>(r + 0xd8) == 1 {
                     let mut st = Pushes::default();
                     st.push(m);
-                    st.call(g, t(g, 0x162, 235), 0);
-                    for (op, slot, d) in [
-                        (0x181, 330, 0x88u32),
-                        (0x1a3, 328, 0x80),
-                        (0x1c5, 329, 0x84),
-                    ] {
+                    st.call(g, t(g, s235, 235), 0);
+                    for (op, slot, d) in
+                        [(s330, 330, 0x88u32), (s328, 328, 0x80), (s329, 329, 0x84)]
+                    {
                         if slot != 330 {
                             st.pop(2);
                         }
@@ -3881,7 +3953,7 @@ pub fn actors_tilt_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                         st.call(g, t(g, op, slot), 0);
                     }
                     st.push_all(&[m, r, r + 0x40]);
-                    st.call(g, t(g, 0x1db, 231), 0);
+                    st.call(g, t(g, s231, 231), 0);
                 }
                 for j in 0..4u32 {
                     eax = g.read::<u32>(r + 0x30 + 4 * j);
@@ -3890,17 +3962,25 @@ pub fn actors_tilt_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             if g.read::<u32>(r + 0xd0) == 0 {
                 let mode = Frame {
-                    at: img.rel32_target(f + 0x210),
-                    // push ebp; sub esp, 0x44; push esi; push edi; the call
-                    esp: fr.esp.wrapping_sub(0x54),
+                    at: img.rel32_target(f + o_mode),
+                    // push ebp; sub esp, 0x44; the saved registers; the call
+                    esp: fr.esp.wrapping_sub(0x4c + 4 * l.saved),
                     ecx: i,
                     edx: 0,
                     ..Frame::default()
                 };
                 crate::sa_script::actor_mode(g, img, &mode);
-                let c = g.read::<u32>(w(0x216));
-                let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x224)).wrapping_add(i)));
-                eax = g.call(t(g, 0x230, 239), 0, &[c, b, 0]).eax;
+                if let Some(p) = l.point {
+                    let point = Frame {
+                        at: img.rel32_target(f + p),
+                        edx: r + 0x70,
+                        ..mode
+                    };
+                    crate::s4_small::actor_index_to_point(g, img, &point);
+                }
+                let c = g.read::<u32>(w(o_a));
+                let b = u32::from(g.read::<u8>(g.read::<u32>(w(o_sel)).wrapping_add(i)));
+                eax = g.call(t(g, s239, 239), 0, &[c, b, 0]).eax;
             }
         }
         i += 1;
@@ -3917,6 +3997,18 @@ pub const ACTORS_TILT_0392: Sig = Sig {
     calls: &[
         (0x210, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
         (0x26e, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`actors_tilt_0392`]'s copy in `magic_0449` (0x10006eb0, 664 bytes).
+pub const ACTORS_TILT_0449: Sig = Sig {
+    len: 664,
+    hash: 0xa7ae_0c17_d8f9_58d4,
+    calls: &[
+        (0x221, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0x22b, Callee::Sig(&crate::s4_small::ACTOR_INDEX_TO_POINT)),
+        (0x290, Callee::Any),
     ],
     imports: &[],
 };
