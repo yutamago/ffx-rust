@@ -3655,10 +3655,23 @@ fn bone_place_0387() {
         SCRATCH + 0x300,
         SCRATCH + 0x400,
     );
+    let rot = t.img.word(t.img.word(f + 0x3c));
+    let table = SCRATCH + 0x1_0000;
+    let words: Vec<u8> = (0..0x1000u32)
+        .flat_map(|i| (i as f32 / 4096.0 - 0.5).to_bits().to_le_bytes())
+        .collect();
+    t.write(table, &words);
+    let rf_at = t.img.rel32_target(rot + 11);
+    t.set_u32(t.img.word(rf_at + 0x17), table);
     for k in 0..3u32 {
         junk(&mut t, b, 0x80, k);
         floats(&mut t, b + 0x2c, 4, k);
-        floats(&mut t, b + 0x4c, 4, k + 2);
+        // (b34 test gap: the rotation's angles and its sine table, and
+        // the constant `K`, set)
+        for (d, x) in [(0u32, 0x1230u32), (4, 0x4560), (8, 0x7890)] {
+            t.set_u32(b + 0x4c + d, x * (k + 1));
+        }
+        t.set_u32(t.img.word(f + 0x95), 0x3f40_0000 + k);
         t.set_u32(b + 0x6c, p);
         floats(&mut t, p + 0x9c, 16, k + 4);
         junk(&mut t, to, 0x10, k);
