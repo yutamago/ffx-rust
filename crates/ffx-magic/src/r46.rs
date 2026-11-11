@@ -4204,7 +4204,7 @@ impl Ctx70 {
         g.read::<f32>(self.w(img, o))
     }
 
-    fn call(&self, img: &Image, o: u32) -> u32 {
+    fn target(&self, img: &Image, o: u32) -> u32 {
         img.rel32_target(self.f + o)
     }
 
@@ -4265,12 +4265,26 @@ impl Ctx70 {
 
     /// A sb append: the node (operand `n`) under the list (operand `p`).
     fn sb<G: Game>(&self, g: &mut G, img: &Image, (c, n, p): (u32, u32, u32)) -> u32 {
-        crate::sb_misc::node_append(g, img, self.call(img, c), self.w(img, n), self.w(img, p), 0)
+        crate::sb_misc::node_append(
+            g,
+            img,
+            self.target(img, c),
+            self.w(img, n),
+            self.w(img, p),
+            0,
+        )
     }
 
     /// A sa append: the node (operand `n`) under the list (operand `p`).
     fn sa<G: Game>(&self, g: &mut G, img: &Image, (c, n, p): (u32, u32, u32)) -> u32 {
-        crate::sa_misc::node_append(g, img, self.call(img, c), self.w(img, n), self.w(img, p), 0)
+        crate::sa_misc::node_append(
+            g,
+            img,
+            self.target(img, c),
+            self.w(img, n),
+            self.w(img, p),
+            0,
+        )
     }
 
     /// An owned node (operand `n`, the list operand `p`) with its four
@@ -4288,7 +4302,7 @@ impl Ctx70 {
             g.write::<u32>(sp + 4 * i, v);
         }
         let of = Frame {
-            at: self.call(img, c),
+            at: self.target(img, c),
             esp: sp.wrapping_sub(4),
             ecx: self.w(img, n),
             edx: self.w(img, p),
@@ -4311,7 +4325,7 @@ impl Ctx70 {
         g.write::<u32>(sp, a);
         g.write::<u32>(sp + 0xc, n);
         let pf = Frame {
-            at: self.call(img, c),
+            at: self.target(img, c),
             esp: sp.wrapping_sub(4),
             ecx: self.w(img, p),
             ..Frame::default()
@@ -4336,7 +4350,7 @@ impl Ctx70 {
         g.write::<u32>(sp + 4, self.w(img, b));
         g.write::<u32>(sp + 0xc, d);
         let ef = Frame {
-            at: self.call(img, c),
+            at: self.target(img, c),
             esp: sp.wrapping_sub(4),
             ecx: self.w(img, e),
             ..Frame::default()
@@ -4353,7 +4367,7 @@ impl Ctx70 {
         let p = self.base + o;
         g.write::<u32>(p, self.w(img, x));
         let ff = Frame {
-            at: self.call(img, c),
+            at: self.target(img, c),
             esp: self.base.wrapping_sub(4),
             ecx: p,
             eax,
@@ -4363,7 +4377,7 @@ impl Ctx70 {
     }
 
     fn free_part<G: Game>(&self, g: &mut G, img: &Image, (c, p): (u32, u32), eax: u32) -> u32 {
-        crate::m0070::free_part(g, img, self.call(img, c), self.w(img, p), eax)
+        crate::m0070::free_part(g, img, self.target(img, c), self.w(img, p), eax)
     }
 
     /// A light (the call at `c`) with `xmm1` the float at operand `kx`
@@ -4372,7 +4386,7 @@ impl Ctx70 {
         let level = u128::from(self.gw(g, img, kx));
         self.abs(g, img, run.0, run.1);
         let lf = Frame {
-            at: self.call(img, c),
+            at: self.target(img, c),
             esp: self.base.wrapping_sub(4),
             xmm: [0, level, 0, 0],
             ..Frame::default()
@@ -4493,7 +4507,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 // push ecx (unread); push the value: the static node
                 g.write::<u32>(base.wrapping_sub(8), c.w(img, 0x74f));
                 let sf = Frame {
-                    at: c.call(img, 0x759),
+                    at: c.target(img, 0x759),
                     esp: base.wrapping_sub(0xc),
                     ecx: c.w(img, 0x754),
                     ..Frame::default()
@@ -4502,7 +4516,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 let x = u128::from(c.gw(g, img, 0x761));
                 c.abs(g, img, 0x76b, 0x7cf);
                 let mf = Frame {
-                    at: c.call(img, 0x7d0),
+                    at: c.target(img, 0x7d0),
                     esp: base.wrapping_sub(4),
                     ecx: c.w(img, 0x754),
                     eax,
@@ -4515,7 +4529,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             0x3c | 0x3d => {
                 if state == 0x3c && !wait(g, 0x75) {
-                    crate::m0070::node_init_root(g, img, c.call(img, 0x7ec), c.w(img, 0x7e7));
+                    crate::m0070::node_init_root(g, img, c.target(img, 0x7ec), c.w(img, 0x7e7));
                     c.light_on(g, img, 0x849, 0x7f4, (0x7f8, 0x848));
                     c.up(g);
                     g.write::<u32>(c.at(0x30), 0);
@@ -4602,7 +4616,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 if wait(g, 0x36) {
                     break (idx, false);
                 }
-                crate::m0070::hide_model(g, img, c.call(img, 0xfd8), c.w(img, 0xfd3));
+                crate::m0070::hide_model(g, img, c.target(img, 0xfd8), c.w(img, 0xfd3));
                 let m = c.gw(g, img, 0xfe5);
                 // call width: 2
                 g.call(c.slot(g, img, 0xfdd, 6), 0, &[m, 0]);
@@ -4643,7 +4657,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             0x14 => {
                 let eax =
-                    crate::m0042::set_value(g, img, c.call(img, 0x10c6), c.w(img, 0x10c1), 0xde);
+                    crate::m0042::set_value(g, img, c.target(img, 0x10c6), c.w(img, 0x10c1), 0xde);
                 c.abs(g, img, 0x10ca, 0x10d4);
                 g.write::<u32>(c.at(0x30), 0);
                 break (eax, true);
@@ -4698,7 +4712,7 @@ pub fn main_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             0x50 => {
                 let eax =
-                    crate::m0070::model_position(g, img, c.call(img, 0x12a4), c.w(img, 0x129f));
+                    crate::m0070::model_position(g, img, c.target(img, 0x12a4), c.w(img, 0x129f));
                 let x = sub(c.k(g, img, 0x12ac), c.k(g, img, 0x12b4));
                 c.abs(g, img, 0x12b8, 0x12cc);
                 g.write::<f32>(c.w(img, 0x12d0), x);
@@ -4789,7 +4803,7 @@ fn main_start_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let w = |o: u32| c.w(img, o);
     c.s719_306(g, img, (0x180, 0x18f, 0x19a), 0);
     g.write::<u32>(c.base.wrapping_sub(4), w(0x1b3));
-    crate::m0070::node_init_small(g, img, c.call(img, 0x1bd), w(0x1b8), w(0x1ae), w(0x1b3));
+    crate::m0070::node_init_small(g, img, c.target(img, 0x1bd), w(0x1b8), w(0x1ae), w(0x1b3));
     c.abs(g, img, 0x1c4, 0x1ce);
     c.abs(g, img, 0x1e0, 0x1f4);
     let sp = c.base.wrapping_sub(0x10);
@@ -4797,7 +4811,7 @@ fn main_start_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     g.write::<u32>(sp + 4, w(0x1d2));
     g.write::<u32>(sp + 0xc, 0);
     let ef = Frame {
-        at: c.call(img, 0x1f5),
+        at: c.target(img, 0x1f5),
         esp: sp.wrapping_sub(4),
         ecx: w(0x1dc),
         ..Frame::default()
@@ -4811,7 +4825,7 @@ fn main_start_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     g.write::<u32>(cg + 4, w(0x226));
     c.abs(g, img, 0x22a, 0x234);
     let cf = Frame {
-        at: c.call(img, 0x235),
+        at: c.target(img, 0x235),
         esp: c.base.wrapping_sub(4),
         ecx: cg,
         ..Frame::default()
@@ -4870,7 +4884,7 @@ fn show_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     // the model node `(*G)` over slot 228's first word
     g.write::<u32>(base.wrapping_sub(8), c.gw(g, img, 0x431));
     let mf = Frame {
-        at: c.call(img, 0x436),
+        at: c.target(img, 0x436),
         esp: base.wrapping_sub(0xc),
         ecx: w(0x42b),
         edx: w(0x383),
@@ -4878,7 +4892,7 @@ fn show_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     };
     crate::s4_misc::model_node_with(g, img, &mf);
     let af = Frame {
-        at: c.call(img, 0x445),
+        at: c.target(img, 0x445),
         esp: base.wrapping_sub(0xc),
         ecx: w(0x440),
         edx: w(0x43b),
@@ -4888,15 +4902,15 @@ fn show_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let cur = base + 0x18;
     g.write::<u32>(cur, w(0x451));
     g.write::<u8>(cur + 4, 0xff);
-    crate::m0070::show(g, img, c.call(img, 0x45b), cur);
+    crate::m0070::show(g, img, c.target(img, 0x45b), cur);
     let m = c.gw(g, img, 0x468);
     // call width: 2
     g.call(c.slot(g, img, 0x460, 6), 0, &[m, 1]);
-    crate::m0042::set_value(g, img, c.call(img, 0x47f), w(0x47a), 0xb0);
+    crate::m0042::set_value(g, img, c.target(img, 0x47f), w(0x47a), 0xb0);
     let rec = base + 0x10;
     g.write::<u32>(rec, w(0x48b));
     g.write::<u32>(rec + 4, w(0x493));
-    crate::m0070::model_state(g, img, c.call(img, 0x498), rec);
+    crate::m0070::model_state(g, img, c.target(img, 0x498), rec);
     c.sb(g, img, (0x4a7, 0x4a2, 0x49d));
     if g.read::<u8>(w(0x4ad)) & 1 == 0 {
         let m = c.gw(g, img, 0x4c0);
@@ -4992,7 +5006,7 @@ fn lights_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let b = c.byte(g, img, 0x999);
     // call width: 2 (one of the particle node's words stays under it)
     let h = g.call(c.slot(g, img, 0x9a4, 219), 0, &[b, 0]).eax;
-    crate::m0070::static_child(g, img, c.call(img, 0x9b5), h);
+    crate::m0070::static_child(g, img, c.target(img, 0x9b5), h);
     let eax = c.free(g, img, (0x9c9, 0x9c4), 0xc, h);
     let eax = c.free_part(g, img, (0x9d3, 0x9ce), eax);
     let _ = eax;
@@ -5046,7 +5060,7 @@ fn main_nodes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     g.call(c.slot(g, img, 0xbc9, 325), 0, &[w(0xbd9), w(0xbce)]);
     c.abs(g, img, 0xbe2, 0xbf6);
     let lf = Frame {
-        at: c.call(img, 0xbf7),
+        at: c.target(img, 0xbf7),
         esp: base.wrapping_sub(8),
         ..Frame::default()
     };
@@ -5070,7 +5084,7 @@ fn main_nodes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     g.write::<u32>(base.wrapping_sub(0xc), w(0xccc));
     c.abs(g, img, 0xcd0, 0xce4);
     let bf = Frame {
-        at: c.call(img, 0xce5),
+        at: c.target(img, 0xce5),
         esp: base.wrapping_sub(0x10),
         ecx: w(0xcc7),
         ..Frame::default()
@@ -5081,7 +5095,7 @@ fn main_nodes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let h = g.call(c.slot(g, img, 0xcf7, 219), 0, &[b, 0]).eax;
     g.write::<u32>(w(0xd10), h);
     c.abs(g, img, 0xd14, 0xd1e);
-    crate::m0070::root_child(g, img, c.call(img, 0xd1f), w(0xd0b), w(0xd06), 0);
+    crate::m0070::root_child(g, img, c.target(img, 0xd1f), w(0xd0b), w(0xd06), 0);
     c.abs(g, img, 0xd2d, 0xd4b);
     // call width: 3
     g.call(c.slot(g, img, 0xd24, 676), 0, &[w(0xd54), 2, 0x80]);
@@ -5089,7 +5103,7 @@ fn main_nodes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let sp = base.wrapping_sub(0x14);
     g.write::<u32>(sp + 8, w(0xd5e));
     let cf = Frame {
-        at: c.call(img, 0xd66),
+        at: c.target(img, 0xd66),
         esp: sp.wrapping_sub(4),
         ..Frame::default()
     };
@@ -5115,7 +5129,7 @@ fn bones_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70, eax: u32) -> u32 {
     // sub esp, 8; push x: the big node
     g.write::<u32>(base.wrapping_sub(0xc), w(0xde4));
     let bf = Frame {
-        at: c.call(img, 0xde9),
+        at: c.target(img, 0xde9),
         esp: base.wrapping_sub(0x10),
         ecx: w(0xddf),
         ..Frame::default()
@@ -5126,20 +5140,20 @@ fn bones_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70, eax: u32) -> u32 {
     c.abs(g, img, 0xe09, 0xe13);
     let parent = w(0xdf6);
     g.write::<u32>(base.wrapping_sub(4), w(0xdfb));
-    crate::m0070::node_init_small(g, img, c.call(img, 0xe14), w(0xe00), parent, w(0xdfb));
+    crate::m0070::node_init_small(g, img, c.target(img, 0xe14), w(0xe00), parent, w(0xdfb));
     g.write::<u32>(base.wrapping_sub(4), w(0xe21));
     c.abs(g, img, 0xe25, 0xe43);
-    crate::m0070::node_init_small(g, img, c.call(img, 0xe44), w(0xe1c), parent, w(0xe21));
+    crate::m0070::node_init_small(g, img, c.target(img, 0xe44), w(0xe1c), parent, w(0xe21));
     c.abs(g, img, 0xe4b, 0xe55);
     c.abs(g, img, 0xe60, 0xe74);
     // `(a, b)`: `a` the small node as its set-up leaves `ecx`
-    crate::m0070::root_child(g, img, c.call(img, 0xe75), w(0xe5c), w(0xe1c), w(0xe56));
+    crate::m0070::root_child(g, img, c.target(img, 0xe75), w(0xe5c), w(0xe1c), w(0xe56));
     let p = c.gw(g, img, 0xe7a);
     g.write::<u32>(w(0xe80), w(0xe5c));
     c.abs(g, img, 0xe84, 0xec0);
     g.write::<u32>(p.wrapping_add(0x28), 0x3e01_0625);
     let rf = Frame {
-        at: c.call(img, 0xed0),
+        at: c.target(img, 0xed0),
         esp: base.wrapping_sub(4),
         ecx: w(0xec4),
         ..Frame::default()
@@ -5158,7 +5172,7 @@ fn statics_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     g.write::<u32>(base.wrapping_sub(4), w(0x1198));
     g.write::<u32>(base.wrapping_sub(8), w(0x119d));
     let sf = Frame {
-        at: c.call(img, 0x11a5),
+        at: c.target(img, 0x11a5),
         esp: base.wrapping_sub(0x18),
         ..Frame::default()
     };
@@ -5171,7 +5185,7 @@ fn statics_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let rate = u128::from(c.gw(g, img, 0x11e4));
     c.abs(g, img, 0x11f5, 0x1245);
     let nf = Frame {
-        at: c.call(img, 0x1246),
+        at: c.target(img, 0x1246),
         esp: base.wrapping_sub(4),
         ecx: w(0x11ec),
         xmm: [0, rate, 0, 0],
@@ -5208,7 +5222,7 @@ fn frees_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let cur = base + 0xc;
     g.write::<u32>(cur, w(0x13d2));
     let lf = Frame {
-        at: c.call(img, 0x13d7),
+        at: c.target(img, 0x13d7),
         esp: base.wrapping_sub(4),
         ecx: cur,
         ..Frame::default()
@@ -5218,7 +5232,7 @@ fn frees_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     c.abs(g, img, 0x13ed, 0x140b);
     c.s228(g, img, 0x13e9, b, 0xdf);
     let h = c.gw(g, img, 0x1415);
-    crate::m0042::release(g, img, c.call(img, 0x141a), h);
+    crate::m0042::release(g, img, c.target(img, 0x141a), h);
     let m = c.gw(g, img, 0x1425);
     // call width: 1
     g.call(c.slot(g, img, 0x141f, 3), 0, &[m]);
@@ -5227,7 +5241,7 @@ fn frees_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     c.abs(g, img, 0x144b, 0x1473);
     c.s228(g, img, 0x142f, m, 0xb3);
     let h = c.gw(g, img, 0x147d);
-    let eax = crate::m0042::release(g, img, c.call(img, 0x1485), h);
+    let eax = crate::m0042::release(g, img, c.target(img, 0x1485), h);
     g.write::<u32>(c.at(0x30), 0);
     eax
 }
@@ -5247,7 +5261,7 @@ fn ring_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
     let list = w(0x14f1);
     let mut eax;
     loop {
-        crate::sb_misc::node_append(g, img, c.call(img, 0x14f8), node, list, 0);
+        crate::sb_misc::node_append(g, img, c.target(img, 0x14f8), node, list, 0);
         let v = g.read::<u32>(cur);
         let m = c.gw(g, img, 0x150f);
         // call width: 4
@@ -5259,7 +5273,7 @@ fn ring_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
             g.write::<u32>(sp + 4 * i, x);
         }
         let of = Frame {
-            at: c.call(img, 0x153a),
+            at: c.target(img, 0x153a),
             esp: sp.wrapping_sub(4),
             ecx: owner,
             edx: w(0x152c),
@@ -5271,7 +5285,7 @@ fn ring_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70) -> u32 {
         g.write::<u32>(sp, owner);
         g.write::<u32>(sp + 0xc, 5);
         let pf = Frame {
-            at: c.call(img, 0x1551),
+            at: c.target(img, 0x1551),
             esp: sp.wrapping_sub(4),
             ecx: part,
             ..Frame::default()
@@ -5301,7 +5315,7 @@ fn end_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70, task: u32) -> u32 {
     let eax = c.free(g, img, (0xcc, 0xc7), 0x10, 0);
     let eax = c.free_part(g, img, (0xd6, 0xd1), eax);
     let lf = Frame {
-        at: c.call(img, 0xdb),
+        at: c.target(img, 0xdb),
         esp: base.wrapping_sub(4),
         eax,
         ..Frame::default()
@@ -5329,8 +5343,8 @@ fn end_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70, task: u32) -> u32 {
             Some((0x13d, 0x147)),
         ),
     ] {
-        eax = crate::m0070::part_call(g, img, c.call(img, c531), 531, [eax, w(o531), v]);
-        eax = crate::m0070::part_call(g, img, c.call(img, c255), 255, [eax, w(o255), v]);
+        eax = crate::m0070::part_call(g, img, c.target(img, c531), 531, [eax, w(o531), v]);
+        eax = crate::m0070::part_call(g, img, c.target(img, c255), 255, [eax, w(o255), v]);
         if let Some((a, b)) = run {
             c.abs(g, img, a, b);
         }
@@ -5341,7 +5355,7 @@ fn end_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx70, task: u32) -> u32 {
         let rec = base + 0x10;
         g.write::<u32>(rec, node);
         let mf = Frame {
-            at: c.call(img, cs),
+            at: c.target(img, cs),
             esp: base.wrapping_sub(4),
             ecx: rec,
             ..Frame::default()

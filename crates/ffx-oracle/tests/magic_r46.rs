@@ -1514,6 +1514,18 @@ fn main_task_0070() {
     for (k, (state, wait, ans, v, empty)) in (0u32..).zip(cases) {
         junk(&mut t, r, 0x60, k);
         t.set_u32(r + 0x18, state);
+        // (states without a wait get one: their resets show)
+        let wait = if wait == 0
+            && [
+                0u32, 0xa, 0xb, 0xc, 0x14, 0x28, 0x29, 0x50, 0x51, 0x5a, 0x5b, 0x64, 0x2710,
+                0x2711, 0x2712,
+            ]
+            .contains(&state)
+        {
+            0x200 + k.cast_signed()
+        } else {
+            wait
+        };
         t.set_u32(r + 0x30, wait.cast_unsigned());
         set_f(&mut t, r + 0x20, 1.25 + k as f32 / 16.0);
         set_f(&mut t, r + 0x24, -0.75 + k as f32 / 32.0);
@@ -1548,7 +1560,11 @@ fn main_task_0070() {
         );
         for (i, op) in (0u32..).zip([0x1fau32, 0x255, 0x6fc, 0x8f4, 0xfb4, 0x10ec, 0x10f3, 0x1166])
         {
-            t.set_u32(w(&t, op), 0x5a5a_0f0f ^ (k << 4) ^ (i << 8));
+            t.set_u32(w(&t, op), 0x5a5a_0f0d ^ (k << 4) ^ (i << 8));
+        }
+        // the fade's words the states compute (junk first)
+        for (i, op) in (0u32..).zip([0x27cu32, 0x2b7, 0x2de, 0x2f1, 0x304, 0x31f, 0x337, 0x33f]) {
+            t.set_u32(w(&t, op), 0x6e6e_0000 ^ (k << 8) ^ i);
         }
         ownb::dirty_stack(&mut t, 0xb6e0 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
