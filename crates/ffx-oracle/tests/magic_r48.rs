@@ -3042,6 +3042,12 @@ fn pulse_step_0387() {
         floats(&mut t, n + 0x98, 1, k);
         floats(&mut t, n + 0xb8, 3, k + 2);
         setf(&mut t, n + 0xbc, bc);
+        // (b21 test gaps: N[0x20] an integer apart from N[0x24], N[0xc0]
+        // across the wait's bound from N[0xbc], the owner record's +0x290)
+        t.set_u32(n + 0x20, 3 + k);
+        setf(&mut t, n + 0xc0, -bc);
+        t.set_u32(n + 0x290, SCRATCH + 0x1800);
+        setf(&mut t, SCRATCH + 0x1800 + 0x28, 8.0);
         floats(&mut t, n + 0x1e8, 16, k + 3);
         setf(&mut t, dot, bias);
         t.set_u32(n + 0x2c, o);
