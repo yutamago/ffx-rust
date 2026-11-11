@@ -2227,3 +2227,164 @@ fn camera_task_0042() {
         );
     }
 }
+
+/// `magic_0164` 0x10009760 (`r44::summon_task_0164`, a task callback):
+/// every state of the byte table (the waits below and at their bounds,
+/// slot 520's modes), 400..402 (the flag both ways), 410..412, 700 (four
+/// modes), 10000, gaps and states above.
+#[test]
+fn summon_task_0164() {
+    let Some(mut t) = twin(164) else { return };
+    let f = t.at(0x9760);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let call = |t: &Twin, o: u32| t.img.rel32_target(f + o);
+    // the summon start's set-up: its stubs (and every slot answering)
+    let su = t.at(SETUP_0164.at);
+    let (fourth, class) = setup_stubs(&mut t, su, &SETUP_0164);
+    for (s, n) in [
+        (718u32, 1usize),
+        (282, 1),
+        (281, 1),
+        (283, 2),
+        (287, 1),
+        (30, 1),
+        (36, 2),
+        (228, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            let second = if n > 1 { a[1] } else { 0 };
+            (s << 16) ^ a[0] ^ second.rotate_left(9)
+        });
+    }
+    t.stub_st0(282, |_, a| f64::from(a[0] & 0x7) * 0.25);
+    rec(&mut t, 520, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0xa14);
+        m.w32(SCRATCH + 0xa14, k + 1);
+        m.r32(SCRATCH + 0xa10 + 8 * (k & 1))
+    });
+    rec(&mut t, 288, 2, |m, a| {
+        m.w32(a[1], 7);
+        SCRATCH + 0x7a0
+    });
+    t.write(SCRATCH + 0x7a0, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    rec(&mut t, 390, 1, |_, a| {
+        [0x106a, 0x10f8, 0x10fa, 7, 9, 11, 3][(a[0] % 7) as usize]
+    });
+    rec(&mut t, 307, 0, |m, _| m.r32(SCRATCH + 0x7e40));
+    t.stub_st0(307, |m, _| {
+        f64::from(m.r32(SCRATCH + 0x7e40) & 0xff) * 0.01 + 0.25
+    });
+    let task = SCRATCH + 0x100;
+    let r = SCRATCH + 0x200;
+    // the static parents and lists the states append to
+    let parents = [
+        w(&t, 0x63),
+        w(&t, 0x7c),
+        w(&t, 0x9a),
+        w(&t, 0xe0),
+        w(&t, 0x196),
+        w(&t, 0x21a),
+    ];
+    let sl = call(&t, 0x77);
+    let sl_last = t.img.word(sl + 0x1);
+    let sn = call(&t, 0x3aa);
+    // (state, the wait `R + 0x38`, slot 520's two answers, the flag)
+    let cases: [(u32, u32, u32, u32, u8); 36] = [
+        (0, 0, 0, 0, 0),
+        (100, 0, 0x024f_000a, 0, 0),
+        (101, 0, 7, 0, 0),
+        (102, 3, 0, 0, 0),
+        (102, 0x10, 0, 0, 0),
+        (103, 3, 0, 0, 0),
+        (103, 0x14, 0, 0, 0),
+        (104, 3, 0, 0, 0),
+        (104, 0xa, 0, 0, 0),
+        (105, 0, 0, 0, 0),
+        (106, 0, 0, 0, 0),
+        (150, 0, 0, 0, 0),
+        (151, 0, 0, 0, 0),
+        (152, 0, 0, 0, 0),
+        (160, 0, 0, 0, 0),
+        (161, 0, 0, 0, 0),
+        (180, 0, 0, 0, 0),
+        (181, 0, 0, 0, 0),
+        (200, 0, 0x024b_0005, 0, 0),
+        (200, 0, 0x024f_000a, 0, 0),
+        (200, 0, 3, 0, 0),
+        (201, 0, 0, 0, 0),
+        (0x190, 0, 0x024b_0005, 0, 0),
+        (0x190, 0, 7, 0, 0),
+        (0x191, 0, 0, 0, 1),
+        (0x192, 0, 0, 0, 0),
+        (0x192, 0, 0, 0, 1),
+        (0x19a, 0, 0, 0, 0),
+        (0x19b, 0, 0, 0, 0),
+        (0x19c, 5, 0, 0, 0),
+        (0x19c, 0x28, 0, 0, 0),
+        (0x2bc, 0, 0x0237_0000, 0x0238_0000, 0),
+        (0x2bc, 0, 0x0238_0000, 1, 0),
+        (0x2bc, 0, 0x024f_000a, 1, 0),
+        (0x2bc, 0, 3, 1, 0),
+        (0x2710, 0, 0, 0, 0),
+    ];
+    let more: [(u32, u32, u32, u32, u8); 3] =
+        [(7, 0, 0, 0, 0), (0x1a0, 0, 0, 0, 0), (0x3000, 0, 0, 0, 0)];
+    for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases.into_iter().chain(more)) {
+        junk(&mut t, r, 0x60, k);
+        for o in [0x1cu32, 0x20, 0x24, 0x28, 0x2c] {
+            t.set_u32(r + o, (0.75 + 0.125 * (o + k) as f32).to_bits());
+        }
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x38, n38);
+        t.set_u32(r + 0x3c, 0x40 + k);
+        t.set_u32(task + 4, r);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+        t.set_u32(task, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for &p in &parents {
+            t.set_u32(p + 0x10, p);
+            t.set_u32(p + 0xc, p);
+            t.set_u16(p + 0x18, 1);
+        }
+        for (last, blk) in [
+            (sl_last, SCRATCH + 0x7480),
+            (t.img.word(sn + 0x24), SCRATCH + 0x74c0),
+        ] {
+            junk(&mut t, blk, 0x20, k);
+            t.set_u32(last, blk);
+        }
+        t.set_u32(SCRATCH + 0xa10, r1);
+        t.set_u32(SCRATCH + 0xa18, r2);
+        t.set_u32(SCRATCH + 0xa14, 0);
+        t.set_u32(SCRATCH + 0x7e40, 0x31 + 7 * k);
+        let fl = w(&t, 0xc7c);
+        t.set_u32(fl, u32::from(flag) | 0x0300);
+        t.set_u32(fourth, class);
+        // the summon's block for the start (two models)
+        let blk = t.img.word(t.at(0x8e40) + 0x11);
+        summon_block(&mut t, &SETUP_0164, blk, 2, k, None);
+        // the effect whose time is left, the models compared with
+        let fx = w(&t, 0xba);
+        junk(&mut t, fx, 0x100, k);
+        t.set_u8(fx + 0x90, (k & 1) as u8);
+        let models = w(&t, 0x142);
+        for (j, who) in (0u32..).zip([9u32, 4, 8]) {
+            t.set_u32(models + 0x274 * j, who);
+        }
+        let nm = w(&t, 0x12a);
+        t.set_u32(nm, 3);
+        // the floats the states move (no NaNs)
+        for op in [
+            0x32fu32, 0x6eb, 0x85f, 0x924, 0x939, 0x94e, 0x9a7, 0x9c4, 0x9d9, 0xa2c, 0xa52, 0xb6f,
+            0xc85, 0xcdc, 0x245, 0x255, 0x268,
+        ] {
+            let at = w(&t, op);
+            t.set_u32(at, (1.5f32 + op as f32 / 256.0).to_bits());
+        }
+        ownb::dirty_stack(&mut t, 0x9760 + k, &[]);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
