@@ -1,0 +1,341 @@
+//! Round 50's ports (the last rows of `magic_0387`): the DLL's own code
+//! written out, in tested pieces.
+
+use crate::runtime::slot_target;
+use crate::sb_sse::{add, cvtt, div, mul, sub};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
+
+/// The operands one point of [`strip_mesh_0387`] reads (offsets in the
+/// function: the slot table words of its slot 325 calls, the constants).
+struct PointOps {
+    /// slot 325: the next point `T` from the data
+    next: u32,
+    /// the alpha scale (the points that write a quad record)
+    alpha: Option<u32>,
+    side_z: u32,
+    side_x: u32,
+    drop: u32,
+    /// slot 325: the middle vertex
+    v0: u32,
+    width_a: u32,
+    /// slot 325: the vertex on the `+` side
+    v1: u32,
+    width_b: u32,
+    /// slot 325: the vertex on the `-` side
+    v2: u32,
+}
+
+/// The strip's first point (+0x192; no quad yet).
+const FIRST: PointOps = PointOps {
+    next: 0x19c,
+    alpha: None,
+    side_z: 0x222,
+    side_x: 0x22a,
+    drop: 0x268,
+    v0: 0x26e,
+    width_a: 0x2a6,
+    v1: 0x2dd,
+    width_b: 0x2f4,
+    v2: 0x36e,
+};
+
+/// Every later point (+0x3fc; its `-` vertex in the first point's code).
+const NEXT: PointOps = PointOps {
+    next: 0x406,
+    alpha: Some(0x488),
+    side_z: 0x490,
+    side_x: 0x4a1,
+    drop: 0x577,
+    v0: 0x591,
+    width_a: 0x5b4,
+    v1: 0x5eb,
+    width_b: 0x602,
+    v2: 0x36e,
+};
+
+/// The last point (+0x64d; its record ends the list).
+const LAST: PointOps = PointOps {
+    next: 0x657,
+    alpha: Some(0x6e1),
+    side_z: 0x6e9,
+    side_x: 0x6fa,
+    drop: 0x7a5,
+    v0: 0x7b2,
+    width_a: 0x7f0,
+    v1: 0x81a,
+    width_b: 0x837,
+    v2: 0x891,
+};
+
+/// A quad record `X` (0x30 bytes, two halves of `(colour, C)` pairs and
+/// four `u16` vertex numbers) joining the previous point's vertices `k -
+/// 3..k` with this point's `k..k + 3`: `X + 0`, `+8`, `+0x18`, `+0x20` =
+/// `col`, the words after them `c`; the numbers `(k - 3, k - 2, k, k +
+/// 1)` at `+0x10` and `(k - 3, k - 1, k, k + 2)` at `+0x28`.
+#[allow(clippy::cast_possible_truncation)] // `u16` stores of the numbers
+fn quad<G: Game>(g: &mut G, x: u32, k: u32, col: u32, c: u32) {
+    for o in [0x20, 0x18, 8, 0] {
+        g.write::<u32>(x + o, col);
+    }
+    for o in [0x24, 0x1c, 0xc, 4] {
+        g.write::<u32>(x + o, c);
+    }
+    let n = |d: i32| k.wrapping_add_signed(d) as u16;
+    for (o, d) in [(0x10, -3), (0x12, -2), (0x14, 0), (0x16, 1)] {
+        g.write::<u16>(x + o, n(d));
+    }
+    for (o, d) in [(0x28, -3), (0x2a, -1), (0x2c, 0), (0x2e, 2)] {
+        g.write::<u16>(x + o, n(d));
+    }
+}
+
+/// One point of [`strip_mesh_0387`] (`b` the frame base, `P` at `b +
+/// 0xc8` the current point, `vc` its three vertices, `dc` the next
+/// point's data): `T` (`b + 0xf8`) = the next point (slot 325); the
+/// direction `(dx, dz) = (T - P) / |T - P|` (x and z, the length through
+/// `_libm_sse2_sqrt_precise` of the double); with `quad = (X, k, I, c)`
+/// the record at `X` ([`quad`], its colour `trunc(E[0x3e4] K P.w) << 24 |
+/// E[0x3f0]`) and `u16 I[2] += 2`; then `U` (`b + 0xd8`) = `P` lowered
+/// by `K3` in y goes to `vc`, and `W` (`b + 0xe8`) = `U` moved by `P.w
+/// (dz Ka Kc, dx Kb Kc')` in x and z to `vc + 0x10` and the other way to
+/// `vc + 0x20` (slot 325 each).
+#[allow(clippy::too_many_arguments)]
+fn point<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    b: u32,
+    ops: &PointOps,
+    vc: u32,
+    dc: u32,
+    quad_at: Option<(u32, u32, u32, u32)>,
+) {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let (p, t, u, v) = (b + 0xc8, b + 0xf8, b + 0xd8, b + 0xe8);
+    // call width: 2
+    g.call(slot_target(g, w(ops.next), 325), 0, &[t, dc]);
+    let dx = sub(rf(g, t), rf(g, p));
+    let dz = sub(rf(g, t + 8), rf(g, p + 8));
+    // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+    #[allow(clippy::cast_possible_truncation)] // `cvtsd2ss`
+    let len = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt() as f32;
+    let (nx, nz) = (div(dx, len), div(dz, len));
+    if let (Some(k), Some((x, n, i, c))) = (ops.alpha, quad_at) {
+        let e = g.read::<u32>(b + 0x1c);
+        let alpha = cvtt(mul(mul(rf(g, e + 0x3e4), rf(g, w(k))), rf(g, p + 0xc)));
+        let col = (alpha.cast_unsigned() << 24) | g.read::<u32>(e + 0x3f0);
+        quad(g, x, n, col, c);
+        let q = g.read::<u16>(i + 2).wrapping_add(2);
+        g.write::<u16>(i + 2, q);
+    }
+    let side_a = mul(nz, rf(g, w(ops.side_z)));
+    let side_b = mul(nx, rf(g, w(ops.side_x)));
+    for o in [0, 8, 0xc] {
+        let x = g.read::<u32>(p + o);
+        g.write::<u32>(u + o, x);
+    }
+    let y = sub(rf(g, p + 4), rf(g, w(ops.drop)));
+    g.write::<f32>(u + 4, y);
+    // call width: 2
+    g.call(slot_target(g, w(ops.v0), 325), 0, &[vc, u]);
+    let a2 = mul(side_a, rf(g, w(ops.width_a)));
+    let y = g.read::<u32>(u + 4);
+    g.write::<u32>(v + 4, y);
+    let x = add(mul(rf(g, p + 0xc), a2), rf(g, u));
+    g.write::<f32>(v, x);
+    let b2 = mul(side_b, rf(g, w(ops.width_b)));
+    let z = add(mul(rf(g, p + 0xc), b2), rf(g, u + 8));
+    g.write::<f32>(v + 8, z);
+    // call width: 2
+    g.call(slot_target(g, w(ops.v1), 325), 0, &[vc + 0x10, v]);
+    let half = rf(g, p + 0xc);
+    let x = sub(rf(g, u), mul(half, a2));
+    g.write::<f32>(v, x);
+    let z = sub(rf(g, u + 8), mul(half, b2));
+    g.write::<f32>(v + 8, z);
+    // call width: 2
+    g.call(slot_target(g, w(ops.v2), 325), 0, &[vc + 0x20, v]);
+}
+
+/// `magic_0387`'s strip mesh (0x10003d00, 2470 bytes; internal, `ecx` =
+/// the effect `E`, `edx` = the strip `S`; a 16-aligned frame, `b` its
+/// base below the saved `esi`/`edi`). The cursor `L` (`b + 0x40`) gets
+/// `S`'s window ([`strip_window`](crate::s4_small::strip_window): `u16
+/// L[4]` the head's points `n`, `L[6]` the rest's `r`, `L[8]` and
+/// `L[0xc]` their data, 16-byte points `(x, y, z, half width)`); the
+/// matrices `M1 = b + 0x108` and `M2 = b + 0x158` come from slot 231 on
+/// two pairs of DLL globals. The DLL's mesh buffer `H` gets its header
+/// (`u16 H[0x12]` = 3 `S[0x26]`, the vertices `V` at `H + 0x2f` rounded
+/// down to 16, the records' block `I` after `u16 H[0x12]` (signed) 16-byte
+/// vertices, rounded up to 4; `H[4]`, `H[8]` their offsets from `H`), and
+/// `I` its own (`0x400`, 0, 0 at `+0`, `+8`, `+0xc`).
+///
+/// `P` = the head's first point; then each later point of the head
+/// (`n - 1`), each of the rest (`r`) and the one after them (the window's
+/// end) give `P`'s three vertices ([`point`]: the first one none, the
+/// others a quad record each at `I + 0x10 + 0x30 i`); after each but the
+/// last, `b + 0x148` = `P` and `P` = the point (slot 325). The last
+/// record's byte `+0x31` = 0xff. Slot 308 `(H, R)` draws the mesh with
+/// the request `R` at `b + 0x50` (`0x404`, `*G_A`, byte `0x44`, ...,
+/// `M1` four times, `M2`, `*G_B`, `V`; words `+0x14` and bytes `+9..=+0xb`
+/// left as the frame holds them, as the original leaves them); its `eax`
+/// goes to `*G_B` and is returned.
+///
+/// With `n` 0 or 1 the original ends in `jmp $` (+0x190) after the
+/// headers: it spins for ever, and so does the port (callers check only
+/// that the window holds 2 points; a window that wraps after its first
+/// point reaches it).
+pub fn strip_mesh_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (e, s) = (fr.ecx, fr.edx);
+    let a = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x198);
+    let b = a.wrapping_sub(8);
+    // the cookie word (`ds:__security_cookie ^ esp`)
+    let cookie = g.read::<u32>(w(0xd)) ^ a;
+    g.write::<u32>(b + 0x19c, cookie);
+    g.write::<u32>(b + 0x1c, e);
+    let l = b + 0x40;
+    g.write::<u32>(l, s);
+    crate::s4_small::strip_window(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x2b),
+            esp: b.wrapping_sub(4),
+            ecx: l,
+            ..Frame::default()
+        },
+    );
+    let (m1, m2) = (b + 0x108, b + 0x158);
+    // call width: 3
+    g.call(slot_target(g, w(0x42), 231), 0, &[m1, w(0x3c), w(0x30)]);
+    // call width: 3
+    g.call(slot_target(g, w(0x64), 231), 0, &[m2, w(0x5e), w(0x59)]);
+    let h = w(0x7e);
+    let (verts, i) = mesh_header(g, img, f, h, s);
+    // `W`'s w
+    g.write::<u32>(b + 0xf4, 0x3f80_0000);
+    let c = g.read::<u32>(e + 0x3f4);
+    let rest = i32::from(g.read::<u16>(l + 6));
+    let head = g.read::<u32>(l + 8);
+    let p = b + 0xc8;
+    for o in [0, 4, 8, 0xc] {
+        let x = g.read::<u32>(head + o);
+        g.write::<u32>(p + o, x);
+    }
+    let mut left = i32::from(g.read::<u16>(l + 4)) - 1;
+    if left <= 0 {
+        // `jmp $`: the original never comes back
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+    let (mut vc, mut x, mut k, mut dc) = (verts, i + 0x10, 0u32, head + 0x10);
+    // after each point but the last: `b + 0x148` = `P`, `P` = `T`
+    let step = |g: &mut G, vc: &mut u32, k: &mut u32, dc: &mut u32| {
+        // call width: 2
+        g.call(slot_target(g, w(0x397), 325), 0, &[b + 0x148, p]);
+        // call width: 2
+        g.call(slot_target(g, w(0x3b9), 325), 0, &[p, b + 0xf8]);
+        *vc = vc.wrapping_add(0x30);
+        *k = k.wrapping_add(3);
+        *dc = dc.wrapping_add(0x10);
+    };
+    point(g, img, f, b, &FIRST, vc, dc, None);
+    step(g, &mut vc, &mut k, &mut dc);
+    left -= 1;
+    let mut pass = 0;
+    loop {
+        if left > 0 {
+            point(g, img, f, b, &NEXT, vc, dc, Some((x, k, i, c)));
+            x = x.wrapping_add(0x30);
+            step(g, &mut vc, &mut k, &mut dc);
+            left -= 1;
+            continue;
+        }
+        pass += 1;
+        if pass >= 2 {
+            break;
+        }
+        left = rest;
+        dc = g.read::<u32>(l + 0xc);
+    }
+    point(g, img, f, b, &LAST, vc, dc, Some((x, k, i, c)));
+    g.write::<u8>(x + 0x31, 0xff);
+    let eax = draw(g, img, f, b, h, verts);
+    g.write::<u32>(w(0x995), eax);
+    Ret::eax(eax)
+}
+
+/// [`strip_mesh_0387`]'s mesh buffer header (`h` the buffer, `s` the
+/// strip; the 64-bit `adc` halves of the original are dead): returns the
+/// vertices `V` and the records' block `I`.
+fn mesh_header<G: Game>(g: &mut G, img: &Image, f: u32, h: u32, s: u32) -> (u32, u32) {
+    let w = |o: u32| img.word(f + o);
+    let win = g.read::<u16>(s + 0x26);
+    g.write::<u16>(h + 0x12, win.wrapping_mul(3));
+    let verts = h.wrapping_add(0x2f) & !0xf;
+    let n3 = i32::from(g.read::<i16>(h + 0x12)).cast_unsigned();
+    let i = verts.wrapping_add(n3 << 4).wrapping_add(3) & !3;
+    g.write::<u32>(h, 0);
+    g.write::<u32>(h + 4, i.wrapping_sub(w(0xc1)));
+    g.write::<u32>(h + 8, verts.wrapping_sub(w(0xcb)));
+    g.write::<u32>(h + 0xc, 0);
+    g.write::<u32>(h + 0x14, 0x44_0000);
+    g.write::<u32>(h + 0x1c, 0);
+    g.write::<u16>(h + 0x10, 1);
+    g.write::<u32>(i, 0x400);
+    g.write::<u32>(i + 8, 0);
+    g.write::<u32>(i + 0xc, 0);
+    (verts, i)
+}
+
+/// [`strip_mesh_0387`]'s draw: the request `R` at `b + 0x50` and slot 308
+/// `(h, R)` (its `eax`).
+fn draw<G: Game>(g: &mut G, img: &Image, f: u32, b: u32, h: u32, verts: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let (m1, m2) = (b + 0x108, b + 0x158);
+    let r = b + 0x50;
+    let ga = g.read::<u32>(g.read::<u32>(w(0x8cc)));
+    let gb = g.read::<u32>(w(0x932));
+    for (o, v) in [
+        (0, 0x404),
+        (4, ga),
+        (0xc, 0),
+        (0x10, 0),
+        (0x18, 0x8080_8080),
+        (0x1c, 0),
+        (0x20, m1),
+        (0x24, m1),
+        (0x28, m1),
+        (0x2c, m1),
+        (0x30, m2),
+        (0x34, gb),
+        (0x38, verts),
+        (0x3c, 0),
+        (0x40, 0),
+        (0x44, 0),
+    ] {
+        g.write::<u32>(r + o, v);
+    }
+    g.write::<u8>(r + 8, 0x44);
+    // call width: 2
+    g.call(slot_target(g, w(0x943), 308), 0, &[h, r]).eax
+}
+
+/// [`strip_mesh_0387`] (the `rel32`s: the strip window, three
+/// `_libm_sse2_sqrt_precise`, the cookie check).
+pub const STRIP_MESH_0387: Sig = Sig {
+    len: 2470,
+    hash: 0xe462_843a_901c_395c,
+    calls: &[
+        (0x2b, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0x1f2, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x45c, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x6ad, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x99e, Callee::Any),
+    ],
+    imports: &[],
+};

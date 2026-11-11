@@ -99,6 +99,7 @@ pub mod r45;
 pub mod r46;
 pub mod r47;
 pub mod r48;
+pub mod r50;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -5566,6 +5567,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r48 triangle pick 0431", &r48::TRI_PICK_0431),
     ("r48 orbs aim 0431", &r48::ORBS_AIM_0431),
     // round 48 (magic-r48): end of INTERNAL
+    // round 50 (magic-r50)
+    ("r50 strip mesh 0387", &r50::STRIP_MESH_0387),
+    // round 50 (magic-r50): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
