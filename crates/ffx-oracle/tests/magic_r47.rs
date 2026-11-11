@@ -1442,9 +1442,13 @@ fn image_visit_0297() {
     }
     rec(&mut t, 277, 1, |_, a| 0x0277_0000 ^ a[0]);
     t.stub_st0(277, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
-    // the image: slot 941 hands out a buffer
+    // the image: slot 941 hands out a buffer; for the mesh's one part a
+    // part whose first strip ends it
     let image = SCRATCH + 0x2_0800;
-    rec(&mut t, 941, 1, move |_, _| image);
+    let part = SCRATCH + 0x2_0c00;
+    rec(&mut t, 941, 1, move |_, a| {
+        if a[0] == 0x00ee_0000 { part } else { image }
+    });
     rec(&mut t, 857, 6, |m, a| {
         for i in 0..4 {
             let x = m.r32(a[2 + i]);
@@ -1464,10 +1468,13 @@ fn image_visit_0297() {
         let at = w(&t, o);
         t.set_u32(at, lock);
     }
-    let tab = w(&t, 0x25b);
+    // the byte table (the global holds its address)
+    let tab = SCRATCH + 0x2_0f00;
     for i in 0..0x20u32 {
         t.set_u8(tab + i, (i as i8 * 3 - 40) as u8);
     }
+    let at = w(&t, 0x25b);
+    t.set_u32(at, tab);
     let c = SCRATCH + 0x5c0;
     t.set_u32(c + 0x28, 0x2828_0000);
     let at = w(&t, 0x613);
@@ -1480,7 +1487,7 @@ fn image_visit_0297() {
     let model = SCRATCH + 0x1700;
     // (same mode, paused, life, bits, step, fade, base, parent, 885)
     #[allow(clippy::type_complexity)]
-    let cases: [(bool, u32, u16, u16, f32, f32, u16, bool, u32); 9] = [
+    let cases: [(bool, u32, u16, u16, f32, f32, u16, bool, u32); 10] = [
         (true, 0, 5, 0xf, 0.5, 0.5, 0x40, false, 1),
         (false, 0, 0, 0xf, 0.5, 0.5, 0x40, true, 1),
         (false, 0, 5, 0xf, 0.5, 0.25, 0x40, false, 1),
@@ -1490,6 +1497,7 @@ fn image_visit_0297() {
         (false, 1, 5, 0x6, 4.0, 0.25, 0x30, false, 0),
         (false, 0, 5, 0x4, -4.0, 0.25, 0x30, false, 1),
         (false, 0, 5, 0x8, 0.5, 0.06, 0x08, false, 1),
+        (false, 1, 5, 0x8, 0.5, 0.9375, 0x30, false, 1),
     ];
     for (k, (same, paused, life, bits, step, fade, base, with_parent, ok)) in (0u32..).zip(cases) {
         junk(&mut t, n, 0xc0, k);
@@ -1504,7 +1512,12 @@ fn image_visit_0297() {
         t.set_u32(n + 0x8c, cam);
         floats(&mut t, cam + 0x9c, 0x10, 1.0 + k as f32);
         t.set_u32(n + 0x90, model);
-        t.write(model, &[0; 0x10]);
+        t.write(model, &[0; 0x20]);
+        t.set_u8(model + 4, u8::from(k % 2 == 1));
+        t.set_u32(model + 0x10, 0x00ee_0000);
+        t.write(part, &[0x31; 0x40]);
+        t.set_u32(part + 4, 0x10);
+        t.set_u8(part + 0x11, 0xff);
         t.set_u32(n + 0x80, 0x0001_3456 + k);
         t.set_u16(n + 0xba, life);
         t.set_u16(n + 0xb4, bits);
@@ -1537,5 +1550,104 @@ fn image_visit_0297() {
         t.set_u32(SCRATCH + 0x7f40, ok);
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[g], Eax::Checked);
+    }
+}
+
+/// `magic_0297` 0x10007520 (`r47::summon_task_0297`, a task step): every
+/// state (0 running into 10, 11 with either flag and slot 20/411 at 0 or
+/// not, 20, 21 and 23 before and after their counts, 22 with the model id
+/// 0 or not, 10000, states without a case below 20 and above 23).
+#[test]
+fn summon_task_0297() {
+    let Some(mut t) = twin(297) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x7520);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // slot 719's records (read back by the set-up)
+    let p = SCRATCH + 0x2_1000;
+    for i in 0..4 {
+        t.set_u32(p + 4 * i, 0x7190_0000 + 0x1111 * i);
+    }
+    rec(&mut t, 719, 3, move |_, a| p + 4 * (a[1] & 1));
+    for s in [20u32, 411] {
+        rec(&mut t, s, 1, move |m, a| {
+            m.r32(SCRATCH + 0x7f50) ^ (a[0] & 0xf0)
+        });
+    }
+    for s in [333u32, 277] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
+    }
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], (a[0] & 0xf) as f32 * 0.25 + 0.5);
+        0x601
+    });
+    rec(&mut t, 14, 2, |m, a| {
+        for i in 0..3 {
+            wf(m, a[1] + 4 * i, 0.25 * i as f32 + 0.5);
+        }
+        0x14
+    });
+    // the particle nodes' owner (a global the game sets)
+    let pnw = t.img.rel32_target(f + 0x799);
+    let owner = SCRATCH + 0x2_1100;
+    junk(&mut t, owner, 0x40, 3);
+    let at = t.img.word(pnw + 0xd);
+    t.set_u32(at, owner);
+    let task = SCRATCH + 0x7c00;
+    let r = SCRATCH + 0x7c40;
+    let node = SCRATCH + 0x7c80;
+    let (prev, next) = (SCRATCH + 0x7cc0, SCRATCH + 0x7d00);
+    // (state, counter, flag byte, slot 20/411's answer)
+    for (k, (state, count, flag, answer)) in (0u32..).zip([
+        (0u32, 0u32, 1u8, 1u32),
+        (0xa, 3, 0, 1),
+        (0xb, 3, 1, 0),
+        (0xb, 3, 1, 1),
+        (0xb, 3, 0, 1),
+        (0x14, 0x13, 0, 1),
+        (0x14, 0x14, 1, 1),
+        (0x15, 0x7c, 0, 1),
+        (0x15, 0x7d, 0, 1),
+        (0x16, 0, 1, 0),
+        (0x16, 0, 0, 2),
+        (0x17, 0xd1, 0, 1),
+        (0x17, 0xd2, 1, 1),
+        (0x2710, 0, 0, 1),
+        (5, 0, 0, 1),
+        (0x13, 0, 0, 1),
+        (0x30, 0, 0, 1),
+    ]) {
+        t.write(task, &[0x31; 0x20]);
+        junk(&mut t, r, 0x40, k);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x28, count);
+        junk(&mut t, node, 0x20, k + 1);
+        t.set_u32(node + 4, prev);
+        t.set_u32(node + 8, next);
+        junk(&mut t, prev, 0x20, k + 2);
+        junk(&mut t, next, 0x20, k + 3);
+        let at = w(&t, 0x4d);
+        t.set_u32(at, u32::from(flag) | 0x5a00);
+        t.set_u32(SCRATCH + 0x7f50, answer);
+        // the scene's two list heads, empty (one with a child for odd k)
+        for o in [0x116u32, 0x230] {
+            let head = w(&t, o);
+            junk(&mut t, head, 0x40, k);
+            t.set_u32(head + 0xc, head);
+            t.set_u32(head + 0x10, head);
+            t.set_u16(head + 0x18, 0);
+            if k % 2 == 1 {
+                let c = SCRATCH + 0x7e00 + 0x40 * (o & 1);
+                junk(&mut t, c, 0x40, k);
+                t.set_u32(head + 0xc, c);
+                t.set_u32(head + 0x10, c);
+                t.set_u16(head + 0x18, 1);
+            }
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }

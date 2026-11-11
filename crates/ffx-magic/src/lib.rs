@@ -3520,6 +3520,7 @@ ports! {
     "r47 shards start 0348" => r47::SHARDS_START_0348, r47::shards_start_0348;
     "r47 visit thunk 0297" => r47::VISIT_THUNK_0297, r47::visit_thunk_0297;
     "r47 image thunk 0297" => r47::IMAGE_THUNK_0297, r47::image_thunk_0297;
+    "r47 summon task 0297" => r47::SUMMON_TASK_0297, r47::summon_task_0297;
     // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
