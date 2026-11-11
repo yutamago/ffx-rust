@@ -2659,3 +2659,95 @@ pub const TURN_END_0434: Sig = Sig {
     calls: &[(0x18a, Callee::Sig(&crate::sa_pool::GIVE_BACK))],
     imports: &[],
 };
+
+/// `magic_0434`'s sparks (0x10006bd0, 527 bytes; a callback, cdecl
+/// `(O)`; a /GS frame, the point `P` at `ebp - 0x14`): slot 268 `(T[b],
+/// 12, &P)` (`b` the selection's byte, `P.w` 1.0); `O + 0x2c` counts down
+/// while positive and the fade is `c * 128 / 80` (toward 0); then two
+/// records of the DLL's pool ([`pool_take`](crate::sb_misc::pool_take);
+/// none left ends it with 0): the handle slot 719 `(PART, 9, 0)` in
+/// `+0x30`, `+0x34` 1, `u16 +0x38` 0xffff, `u16 +0x3a` 0x200; the place
+/// `P` with `x` and `z` plus `frnd(2)`; the spins `+0x10` `frnd(0.03)`,
+/// `+0x14` `frnd(0.04) + K`, `+0x18` `frnd(0.03)`, `+0x1c` `frnd(pi)`,
+/// `+0x20`, `+0x28` the first and third times `K2`, `+0x24` 0.003,
+/// `+0x2c` 1.0, `+0x3c` `frnd(0.025) + K`, `+0x4c` 32, `+0x50` 0 and the
+/// fade byte `+0x6b`. Returns the last `frnd`'s `eax`.
+pub fn sparks_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let o = fr.arg(g, 0);
+    let p = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x1b))));
+    let chr = g.read::<u32>(w(0x27).wrapping_add(4 * b));
+    g.call(t(g, 0x2c, 268), 0, &[chr, 0xc, p]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let mut c = g.read::<u32>(o.wrapping_add(0x2c));
+    if c.cast_signed() > 0 {
+        c -= 1;
+        g.write::<u32>(o.wrapping_add(0x2c), c);
+    }
+    // `shl 7; imul 0x66666667; sar 5` and the sign fix: c * 128 / 80
+    #[allow(clippy::cast_possible_truncation)] // a byte of it
+    let fade = (c.wrapping_shl(7).cast_signed() / 80) as u8;
+    let frnd = |g: &mut G, op: u32, x: u32| {
+        let out = g.call(t(g, op, 314), 0, &[x]);
+        (st0_f32(out.st0), out.eax)
+    };
+    let take = img.rel32_target(f + 0x64);
+    let mut eax = 0;
+    for _ in 0..2 {
+        let s = crate::sb_misc::pool_take(g, img, take);
+        if s == 0 {
+            return Ret::eax(0);
+        }
+        let h = g.call(t(g, 0x74, 719), 0, &[w(0x83), 9, 0]).eax;
+        g.write::<u32>(s + 0x30, h);
+        g.write::<u32>(s + 0x34, 1);
+        g.write::<u16>(s + 0x38, 0xffff);
+        g.write::<u16>(s + 0x3a, 0x200);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(p + 4 * i);
+            g.write::<u32>(s + 4 * i, x);
+        }
+        let (r, _) = frnd(g, 0xa9, 0x4000_0000);
+        let x = add(g.read::<f32>(s), r);
+        g.write::<f32>(s, x);
+        let (r, _) = frnd(g, 0xee, 0x4000_0000);
+        let z = add(g.read::<f32>(s + 8), r);
+        g.write::<f32>(s + 8, z);
+        let (r, _) = frnd(g, 0x113, 0x3cf5_c28f);
+        g.write::<f32>(s + 0x10, r);
+        let (r, _) = frnd(g, 0x12f, 0x3d23_d70a);
+        g.write::<f32>(s + 0x14, add(r, k(g, 0x14e)));
+        let (r, _) = frnd(g, 0x153, 0x3cf5_c28f);
+        g.write::<f32>(s + 0x18, r);
+        let (r, _) = frnd(g, 0x16f, 0x4049_0fdb);
+        g.write::<f32>(s + 0x1c, r);
+        let x = mul(g.read::<f32>(s + 0x10), k(g, 0x18e));
+        g.write::<u32>(s + 0x24, 0x3b44_9ba6);
+        g.write::<f32>(s + 0x20, x);
+        let x = mul(g.read::<f32>(s + 0x18), k(g, 0x1ac));
+        g.write::<u32>(s + 0x2c, 0x3f80_0000);
+        g.write::<f32>(s + 0x28, x);
+        let (r, e) = frnd(g, 0x193, 0x3ccc_cccd);
+        eax = e;
+        g.write::<u32>(s + 0x4c, 0x20);
+        g.write::<u32>(s + 0x50, 0);
+        g.write::<u8>(s + 0x6b, fade);
+        g.write::<f32>(s + 0x3c, add(r, k(g, 0x1da)));
+    }
+    Ret::eax(eax)
+}
+
+/// [`sparks_0434`] (the `rel32`s: the pool take, the cookie check).
+pub const SPARKS_0434: Sig = Sig {
+    len: 527,
+    hash: 0x61c1_8f0f_c1ce_ae3c,
+    calls: &[
+        (0x64, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x207, Callee::Any),
+    ],
+    imports: &[],
+};

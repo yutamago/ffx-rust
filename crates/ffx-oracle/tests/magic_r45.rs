@@ -1784,3 +1784,55 @@ fn turns_0434() {
         t.check_entry(end, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0434` 0x10006bd0 (`r45::sparks_0434`): the counter positive,
+/// zero and negative; the pool with room for both sparks, one, none.
+#[test]
+fn sparks_0434() {
+    let Some(mut t) = sa::twin(434) else { return };
+    let f = t.at(0x6bd0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(m, a[2] + 4 * i, (a[0] & 0xf) as f32 * 0.5 + i as f32);
+        }
+        0x268
+    });
+    let k = SCRATCH + 0x7e10;
+    rec(&mut t, 314, 1, move |m, a| {
+        let c = m.r32(k);
+        m.w32(k, c + 1);
+        0x0314_0000 ^ a[0] ^ c
+    });
+    t.stub_st0(314, move |m, a| {
+        f64::from(f32::from_bits(a[0])) * 0.125 * f64::from(m.r32(k) % 7) - 0.25
+    });
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    let take = t.img.rel32_target(f + 0x64);
+    let tw = |o: u32| img.word(take + o);
+    let recs = SCRATCH + 0x5000;
+    t.set_u32(tw(0x37), recs);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x1b), sel);
+    for i in 0..0x14 {
+        t.set_u32(w(0x27) + 4 * i, 0x0c00 + 3 * i);
+    }
+    let o = SCRATCH + 0x1000;
+    // (counter, free records)
+    for (c, (cnt, free)) in (0u32..).zip([(40i32, 2u32), (1, 4), (0, 1), (-5, 0), (79, 3)]) {
+        junk(&mut t, o, 0x40, c);
+        t.set_u32(o + 0x2c, cnt.cast_unsigned());
+        t.write(sel, &[c as u8 + 1, 0x5a]);
+        for i in 0..4 {
+            t.write(recs + 0x74 * i, &[0x5a; 0x74]);
+            t.set_u32(recs + 0x74 * i + 0x6c, u32::from(i >= free));
+        }
+        t.set_u32(tw(0x0f), 4);
+        t.set_u32(tw(0x08), 0);
+        t.set_u32(tw(0x2b), 0);
+        ownb::dirty_stack(&mut t, 0x6bd0 + c, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+}

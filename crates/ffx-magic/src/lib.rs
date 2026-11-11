@@ -3455,6 +3455,7 @@ ports! {
     "r45 objects start 0434" => r45::OBJECTS_START_0434, r45::objects_start_0434;
     "r45 turn start 0434" => r45::TURN_START_0434, r45::turn_start_0434;
     "r45 turn end 0434" => r45::TURN_END_0434, r45::turn_end_0434;
+    "r45 sparks 0434" => r45::SPARKS_0434, r45::sparks_0434;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
