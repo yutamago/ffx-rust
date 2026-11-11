@@ -2309,3 +2309,111 @@ pub const SHARDS_START_0348: Sig = Sig {
     calls: &[(0x2a, Callee::Sig(&SHARDS_0348))],
     imports: &[],
 };
+
+/// `magic_0297`'s summon node visit (0x10002f70, 438 bytes; thiscall,
+/// `ecx` = the group; a /GS `ebp` frame, the place `L` at `ebp - 0x14`,
+/// a group of its own at `ebp - 0x1c`). The node walk
+/// ([`walk`](crate::nodes::walk)); when it ran (the flag set), for the
+/// owner `N`: its camera node `C` (`+0x14c`) visited through its vtable
+/// with the local group (`C`, the mode), `L` = `C`'s facing
+/// ([`facing_int`](crate::sa_misc::facing_int)) with `x`, `z` 0, the
+/// shape function `TAB[byte N+0x148]` `(N + 0x5c, L)` (`ecx` = `L`),
+/// slot 233 `(N + 0x1c + 0x10 i, N + 0x5c + 0x10 i, 0.001)` for `i` 0..3,
+/// slot 262 `(C+0x54's handle, N + 0x4c, +0x50, +0x54)` with `w` 1, `L`
+/// into `+0x11c`, slot 325 `(N + 0x12c, G_V)`, `+0x138` scaled by `K`,
+/// slot 230 `(N + 0xdc, N + 0x5c)` and `(N + 0x9c, N + 0x1c)`. Returns
+/// the last slot's `eax`, else the walk's.
+pub fn visit_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(w(0x7)) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let this = fr.ecx;
+    // (`eax` holds the cookie when the walk starts)
+    let (eax, tail) = crate::nodes::walk(g, this, this, cookie);
+    let Some(n) = tail else {
+        return Ret::eax(eax);
+    };
+    let c = g.read::<u32>(n + 0x14c);
+    let mode = g.read::<u8>(this + 5);
+    let grp = ebp.wrapping_sub(0x1c);
+    g.write::<u32>(grp, c);
+    g.write::<u8>(grp + 5, mode);
+    let method = g.read::<u32>(g.read::<u32>(c) + 0x1c);
+    g.call(method, grp, &[grp]);
+    let c = g.read::<u32>(n + 0x14c);
+    let l = ebp.wrapping_sub(0x14);
+    // three pushes and the visit's word under the call: its return
+    // address at ebp - 0x30
+    crate::sa_misc::facing_int(
+        g,
+        img,
+        img.rel32_target(f + 0x80),
+        c,
+        l,
+        ebp.wrapping_sub(0x30),
+    );
+    g.write::<u32>(l + 8, 0);
+    g.write::<u32>(l, 0);
+    let shape = g.read::<u32>(w(0x9f) + 4 * u32::from(g.read::<u8>(n + 0x148)));
+    let v = n + 0x5c;
+    g.call(shape, l, &[v, l]);
+    for (op, i) in [(0xabu32, 0u32), (0xd9, 1), (0xf8, 2)] {
+        // call width: 3
+        g.call(
+            t(g, op, 233),
+            0,
+            &[n + 0x1c + 0x10 * i, v + 0x10 * i, 0x3a83_126f],
+        );
+    }
+    let h = g.read::<u32>(g.read::<u32>(n + 0x14c) + 0x54);
+    let p = n + 0x4c;
+    // call width: 4
+    g.call(t(g, 0x116, 262), 0, &[h, p, p + 4, p + 8]);
+    g.write::<u32>(n + 0x58, ONE);
+    for i in 0..4u32 {
+        let x = g.read::<u32>(l + 4 * i);
+        g.write::<u32>(n + 0x11c + 4 * i, x);
+    }
+    // call width: 2
+    g.call(t(g, 0x14c, 325), 0, &[n + 0x12c, w(0x146)]);
+    let x = mul(g.read::<f32>(n + 0x138), g.read::<f32>(w(0x16c)));
+    g.write::<f32>(n + 0x138, x);
+    // call width: 2
+    g.call(t(g, 0x179, 230), 0, &[n + 0xdc, v]);
+    // call width: 2
+    let eax = g.call(t(g, 0x196, 230), 0, &[n + 0x9c, n + 0x1c]).eax;
+    Ret::eax(eax)
+}
+
+/// [`visit_0297`] (the `rel32`s: the facing, the cookie check).
+pub const VISIT_0297: Sig = Sig {
+    len: 438,
+    hash: 0x8ae4_36dc_be2a_9e81,
+    calls: &[
+        (0x80, Callee::Sig(&crate::sa_misc::FACING_INT)),
+        (0x1ae, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0297`'s visit thunk (0x10003130, 12 bytes; a vtable's `+0x1c`):
+/// its stack word into `ecx`, then [`visit_0297`] (a tail jump).
+pub fn visit_thunk_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 8),
+        ecx: fr.arg(g, 0),
+        ..*fr
+    };
+    visit_0297(g, img, &callee)
+}
+
+/// [`visit_thunk_0297`].
+pub const VISIT_THUNK_0297: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[(8, Callee::Sig(&VISIT_0297))],
+    imports: &[],
+};

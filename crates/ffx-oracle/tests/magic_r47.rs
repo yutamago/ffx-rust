@@ -23,7 +23,7 @@ mod ownb;
 #[path = "magic/sa.rs"]
 mod sa;
 
-use magic::{Call, Eax, SCRATCH, StubMem, Twin};
+use magic::{Call, Eax, SCRATCH, StubMem, TRAPS, Twin};
 use ownb::rec;
 
 fn twin(n: u16) -> Option<Twin> {
@@ -74,6 +74,13 @@ fn junk_ops(t: &mut Twin, f: u32, ops: &[u32], k: u32) {
 fn all_stubs(t: &mut Twin) {
     for s in 0..1024u32 {
         t.stub(s, move |_, a| a.first().copied().unwrap_or(0) ^ (s << 20));
+    }
+}
+
+/// `n` floats at `at`: `x0 + 0.25 i` (no NaNs).
+fn floats(t: &mut Twin, at: u32, n: u32, x0: f32) {
+    for i in 0..n {
+        t.set_u32(at + 4 * i, (x0 + 0.25 * i as f32).to_bits());
     }
 }
 
@@ -1307,5 +1314,93 @@ fn shards_0348() {
         t.set_u32(SCRATCH + 0x7f44, r883);
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0297` 0x10003130 (`r47::visit_thunk_0297`) running 0x10002f70
+/// (`r47::visit_0297`): the group's mode equal to the owner's (the walk
+/// stops), no children and two (their vtables' visits), the camera node
+/// facing by slot 333 or 601, two shape functions (the table's entries
+/// routed to stubs).
+#[test]
+fn visit_0297() {
+    let Some(mut t) = twin(297) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x3130);
+    let v = t.at(0x2f70);
+    // the visits through vtables and the shape table: stubs that log the
+    // group they get and its node
+    for s in [1001u32, 1002, 1003, 1004] {
+        let n = if s < 1003 { 1 } else { 2 };
+        rec(&mut t, s, n, move |m, a| {
+            let k = m.r32(SCRATCH + 0x3800);
+            m.w32(SCRATCH + 0x3800, k + 1);
+            m.w32(SCRATCH + 0x3810 + 4 * (k % 16), m.r32(a[0]) ^ (s << 20));
+            if s == 1003 || s == 1004 {
+                wf(m, a[1] + 4, 1.5 + k as f32);
+            }
+            0x1000 + k + s
+        });
+    }
+    let class = SCRATCH + 0x3900;
+    t.set_u32(class + 0x1c, TRAPS + 16 * 1001);
+    let cam_class = SCRATCH + 0x3940;
+    t.set_u32(cam_class + 0x1c, TRAPS + 16 * 1002);
+    let tab = t.img.word(v + 0x9f);
+    for i in 0..4 {
+        t.set_u32(tab + 4 * i, TRAPS + 16 * (1003 + (i & 1)));
+    }
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.5 - 1.0);
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], (a[0] & 0xf) as f32 * 0.25 + 0.5);
+        0x601
+    });
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            let x = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0;
+            m.w32(a[1 + i as usize], x.to_bits());
+        }
+        0x262
+    });
+    for (s, n) in [(233u32, 3usize), (230, 2), (325, 2)] {
+        rec(&mut t, s, n, move |m, a| {
+            log16(m, a[1]);
+            0x0abc_0000 | s
+        });
+    }
+    let g = SCRATCH + 0x100;
+    let n = SCRATCH + 0x1000;
+    let c = SCRATCH + 0x1400;
+    // (the group's mode against the owner's, children, facing flag, shape)
+    for (k, (same, kids, face, shape)) in (0u32..).zip([
+        (true, 2u32, 0u8, 0u8),
+        (false, 0, 1, 1),
+        (false, 2, 0, 2),
+        (false, 1, 1, 3),
+    ]) {
+        junk(&mut t, n, 0x160, k);
+        junk(&mut t, c, 0xa0, k + 7);
+        t.write(g, &[0x5a, 0x5a, 0x5a, 0x5a, 0x33, 4, 0x77, 0x77]);
+        t.set_u32(g, n);
+        t.set_u8(n + 0x1a, if same { 4 } else { 9 });
+        // the children (0x40 apart), circular through the owner
+        let child = |i: u32| SCRATCH + 0x1200 + 0x40 * i;
+        for i in 0..kids {
+            junk(&mut t, child(i), 0x40, k + i);
+            t.set_u32(child(i), class);
+            let next = if i + 1 < kids { child(i + 1) } else { n };
+            t.set_u32(child(i) + 8, next);
+        }
+        t.set_u32(n + 0x10, if kids == 0 { n } else { child(0) });
+        t.set_u32(n + 0x14c, c);
+        t.set_u8(n + 0x148, shape);
+        t.set_u32(c, cam_class);
+        t.set_u32(c + 0x54, 0x00c0_0000 + k);
+        t.set_u32(c + 0x50, 0x00d0_0000 + k);
+        t.set_u8(c + 0x90, face);
+        floats(&mut t, n + 0x5c, 0x30, -1.0 + k as f32);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[g], Eax::Checked);
     }
 }
