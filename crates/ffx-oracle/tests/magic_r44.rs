@@ -2291,8 +2291,8 @@ fn summon_task_0164() {
     // (state, the wait `R + 0x38`, slot 520's two answers, the flag)
     let cases: [(u32, u32, u32, u32, u8); 36] = [
         (0, 0, 0, 0, 0),
-        (100, 0, 0x024f_000a, 0, 0),
-        (101, 0, 7, 0, 0),
+        (100, 5, 0x024f_000a, 0, 0),
+        (101, 7, 7, 0, 0),
         (102, 3, 0, 0, 0),
         (102, 0x10, 0, 0, 0),
         (103, 3, 0, 0, 0),
@@ -2336,7 +2336,8 @@ fn summon_task_0164() {
     for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases.into_iter().chain(more)) {
         for i in 0..0x1800u32 {
             let x = 1.25 + ((i * 13 + k) % 61) as f32 * 0.0625;
-            t.set_u32(lo + 4 * i, x.to_bits());
+            // (low mantissa bits set: halfword stores of 0 show)
+            t.set_u32(lo + 4 * i, x.to_bits() | (0x101 + (i & 0x7f)));
         }
         // pointers the paths follow: the leaving node, the current list node
         let at = w(&t, 0xd2a);
