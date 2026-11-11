@@ -3477,7 +3477,8 @@ fn object_start_0396() {
         t.set_u32(w(0x2), on);
         junk(&mut t, s + 0x700, 0x180, k);
         floats(&mut t, s + 0xbe0, 4, k);
-        junk(&mut t, s + 0xf00, 0x40, k);
+        // (b32 test gap: the record's last words junked too)
+        junk(&mut t, s + 0xf00, 0x80, k);
         setf(&mut t, s + 0x2450, yaw);
         magic_r11::pools(&mut t, f, 295);
         ownb::dirty_stack(&mut t, 0x4e60 + k, &[]);
