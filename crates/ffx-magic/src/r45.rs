@@ -3065,3 +3065,188 @@ pub const GLIDE_START_0392: Sig = Sig {
     calls: &[(0xa9, Callee::Import("_libm_sse2_sqrt_precise"))],
     imports: &[],
 };
+
+/// The character `magic_0392`'s code names for an actor `i` (operands of
+/// the code at `f`): `*G_C` for -1, else `T[sel[i]]`.
+fn actor_chr_0392<G: Game>(
+    g: &G,
+    img: &Image,
+    f: u32,
+    i: u32,
+    (me, sel, table): (u32, u32, u32),
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    if i == u32::MAX {
+        g.read::<u32>(w(me))
+    } else {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    }
+}
+
+/// `magic_0392`'s nearest actor (0x10001540, 496 bytes; internal, no
+/// arguments; an aligned /GS frame, `E` its base: the points `A` at `E +
+/// 0x10`, `C` at `E + 0x20`): with `S = *G_S`, each actor `i` below
+/// `*G_N` puts its place into `A` (slot 262) and its distance from `S +
+/// 0xf70..` (`_libm_sse2_sqrt_precise` of the double) is compared with
+/// the nearest so far (from `K`; a strictly smaller one wins, the first
+/// is actor 0); then the caster's place into `C`, the nearest actor's
+/// into `A` again, and `S + 0x5378` = `K1 - atan2(A.z - C.z, A.x - C.x)`
+/// (`_CIatan2` of the doubles) wrapped once, `S + 0x537c` the actor. The
+/// original's `eax` is the `_CIatan2` import's leftover (junk; 0 here).
+pub fn nearest_actor_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x34);
+    let (a, c) = (e + 0x10, e + 0x20);
+    let s = g.read::<u32>(w(0x1f));
+    let mut best = g.read::<f32>(w(0x18));
+    let mut pick = 0u32;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0x31)).cast_signed() {
+        let chr = actor_chr_0392(g, img, f, i, (0x46, 0x4d, 0x58));
+        g.call(t(g, 0x6d, 262), 0, &[chr, a, a + 4, a + 8]);
+        let dx = sub(g.read::<f32>(s + 0xf70), g.read::<f32>(a));
+        let dy = sub(g.read::<f32>(s + 0xf74), g.read::<f32>(a + 4));
+        let dz = sub(g.read::<f32>(s + 0xf78), g.read::<f32>(a + 8));
+        g.write::<u32>(a + 0xc, 0x3f80_0000);
+        let sum = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+        // _libm_sse2_sqrt_precise of the double, rounded back to f32
+        #[allow(clippy::cast_possible_truncation)]
+        let d = f64::from(sum).sqrt() as f32;
+        // comiss best, d; jbe: only strictly nearer (ordered)
+        if best > d {
+            best = d;
+            pick = i;
+        }
+        i += 1;
+    }
+    let caster = g.read::<u32>(w(0x104));
+    g.call(t(g, 0xfe, 262), 0, &[caster, c, c + 4, c + 8]);
+    g.write::<u32>(c + 0xc, 0x3f80_0000);
+    let chr = actor_chr_0392(g, img, f, pick, (0x121, 0x128, 0x133));
+    g.call(t(g, 0x148, 262), 0, &[chr, a, a + 4, a + 8]);
+    let dz = sub(g.read::<f32>(a + 8), g.read::<f32>(c + 8));
+    let dx = sub(g.read::<f32>(a), g.read::<f32>(c));
+    // fstp qword; cvtpd2ps
+    #[allow(clippy::cast_possible_truncation)]
+    let ang = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let y = sub(g.read::<f32>(w(0x19c)), ang);
+    let y = wrap_once(g, img, f, y, [0x1ab, 0x1b5, 0x1bf, 0x1cc]);
+    g.write::<u32>(s + 0x537c, pick);
+    g.write::<f32>(s + 0x5378, y);
+    Ret::eax(0)
+}
+
+/// [`nearest_actor_0392`] (the `rel32`s: `_libm_sse2_sqrt_precise`,
+/// `_CIatan2`, the cookie check).
+pub const NEAREST_ACTOR_0392: Sig = Sig {
+    len: 496,
+    hash: 0x29e3_06bd_3b12_7b77,
+    calls: &[
+        (0xc6, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x18a, Callee::Import("_CIatan2")),
+        (0x1e8, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0392`'s glide target (0x10001730, 493 bytes; internal, no
+/// arguments; an aligned /GS frame, `E` its base after the pushes: the
+/// place `P` at `E + 4`, the offset `V` at `E + 0x14`, the turned `O` at
+/// `E + 0x24`, the matrix `M` at `E + 0x34`). With `S = *G_S` and the
+/// actor `i = S + 0x537c`: its place `P` (slot 262), `V` = `(0, 0, s +
+/// K, 1)` with `s` the actor's scale
+/// ([`actor_scale_by`](crate::s4_small::actor_scale_by)), `M` = slot 235
+/// turned by X 0 and Y `S + 0x5378` (slots 328, 329), `O` = `M V` (slot
+/// 229), `P += O` (slot 248); `S + 0xf80..` = `(P.x, S[0xf74], P.z, 1)`
+/// and the steps `n` = the distance from `S + 0xf70..` in `x`/`z`
+/// (`_libm_sse2_sqrt_precise` of the double; the `y` term is `S[0xf74]`
+/// less itself) over `K2`, truncated, at least 9, into `S + 0x5380` and
+/// `+0x5384`. Each slot call passes the words the original leaves on the
+/// stack. Returns `n`.
+pub fn glide_target_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x7c);
+    let (p, v, o, m) = (e + 4, e + 0x14, e + 0x24, e + 0x34);
+    let s = g.read::<u32>(w(0x17));
+    let i = g.read::<u32>(s + 0x537c);
+    let chr = actor_chr_0392(g, img, f, i, (0x27, 0x2e, 0x39));
+    let mut st = Pushes::default();
+    st.push_all(&[p + 8, p + 4, p, chr]);
+    st.call(g, t(g, 0x4e, 262), 0);
+    let yaw = g.read::<u32>(s + 0x5378);
+    let i = g.read::<u32>(s + 0x537c);
+    g.write::<u32>(e + 0x10, 0x3f80_0000);
+    g.write::<u32>(e, yaw);
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    let sc = Frame {
+        at: img.rel32_target(f + 0x87),
+        ecx: i,
+        ..Frame::default()
+    };
+    let r = crate::s4_small::actor_scale_by(g, img, &sc);
+    let r = r.xmm0.map_or(0.0, |x| f32::from_bits(x.reg() as u32));
+    let d = add(r, g.read::<f32>(w(0x8f)));
+    st.push(m);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    g.write::<f32>(v + 8, d);
+    st.call(g, t(g, 0x99, 235), 0);
+    st.pop(4);
+    st.set_top(0);
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0xc4, 328), 0);
+    st.pop(2);
+    st.set_top(g.read::<u32>(e));
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0xe5, 329), 0);
+    st.push_all(&[v, m, o]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    st.call(g, t(g, 0x101, 229), 0);
+    st.push_all(&[o, p, p]);
+    st.call(g, t(g, 0x121, 248), 0);
+    let y = g.read::<f32>(s + 0xf74);
+    let dx = sub(g.read::<f32>(s + 0xf70), g.read::<f32>(p));
+    let dy = sub(y, y);
+    g.write::<f32>(e, y);
+    let dz = sub(g.read::<f32>(s + 0xf78), g.read::<f32>(p + 8));
+    let sum = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+    // _libm_sse2_sqrt_precise of the double, rounded back to f32
+    #[allow(clippy::cast_possible_truncation)]
+    let d = f64::from(sum).sqrt() as f32;
+    let px = g.read::<u32>(p);
+    g.write::<u32>(s + 0xf80, px);
+    let k = div(d, g.read::<f32>(w(0x19d)));
+    g.write::<f32>(s + 0xf84, y);
+    // cvttss2si (0x80000000 for NaN and out of range)
+    #[allow(clippy::cast_possible_truncation)]
+    let n = if k.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&k) {
+        i32::MIN
+    } else {
+        k as i32
+    };
+    let n = n.max(9);
+    let pz = g.read::<u32>(p + 8);
+    g.write::<u32>(s + 0xf88, pz);
+    g.write::<u32>(s + 0xf8c, 0x3f80_0000);
+    g.write::<i32>(s + 0x5380, n);
+    g.write::<i32>(s + 0x5384, n);
+    Ret::eax(n.cast_unsigned())
+}
+
+/// [`glide_target_0392`] (the `rel32`s: the actor's scale,
+/// `_libm_sse2_sqrt_precise`, the cookie check).
+pub const GLIDE_TARGET_0392: Sig = Sig {
+    len: 493,
+    hash: 0x1204_43f9_8b68_bdaf,
+    calls: &[
+        (0x87, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x17d, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x1e5, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -2049,3 +2049,144 @@ fn glide_start_0392() {
         });
     }
 }
+
+/// `magic_0392` 0x10001540 (`r45::nearest_actor_0392`, internal): no
+/// actors (actor 0 picked), one, and four with the nearest first, last
+/// and tied; the aim wrapping both ways and not.
+#[test]
+fn nearest_actor_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x1540);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    // slot 262: the place from the character's low byte
+    let near = SCRATCH + 0x7e40;
+    rec(&mut t, 262, 4, move |m, a| {
+        let c = a[0] & 0xff;
+        let d = if c == m.r32(near) {
+            0.5
+        } else {
+            c as f32 * 1.25 + 2.0
+        };
+        for i in 1..4 {
+            wf(m, a[i], d * i as f32 - 1.0);
+        }
+        0x262
+    });
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x4d), sel);
+    t.write(sel, &[3, 1, 4, 2, 5]);
+    for i in 0..0x14 {
+        t.set_u32(w(0x58) + 4 * i, 0x0c00 + i);
+    }
+    t.set_u32(w(0x46), 0x0c00 + 9);
+    t.set_u32(w(0x104), 0x0c00 + 7);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1f), s);
+    // (actors, the near one's character byte)
+    for (k, (n, nb)) in (0u32..).zip([(0u32, 0u32), (1, 3), (4, 3), (4, 2), (4, 0x99), (3, 4)]) {
+        t.set_u32(w(0x31), n);
+        t.set_u32(near, nb);
+        junk(&mut t, s + 0x5370, 0x20, k);
+        floats(&mut t, s + 0xf70, 4, k);
+        ownb::dirty_stack(&mut t, 0x1540 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Junk, |g, img, fr| {
+            ffx_magic::r45::nearest_actor_0392(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0392` 0x10001730 (`r45::glide_target_0392`, internal): the
+/// caster (-1) and actors near and far (fewer than 9 steps and more); the
+/// actor's scale from slot 251 (party) and slots 17/19.
+#[test]
+fn glide_target_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x1730);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let far = SCRATCH + 0x7e30;
+    rec(&mut t, 262, 4, move |m, a| {
+        let d = f32::from_bits(m.r32(far));
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 0.25 + d * i as f32);
+        }
+        0x262
+    });
+    for s in [251u32, 17, 19] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x248
+    });
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x2e), sel);
+    t.write(sel, &[3, 1, 0x24, 2, 5]);
+    for i in 0..0x30 {
+        t.set_u32(w(0x39) + 4 * i, 0x0c00 + 3 * i);
+    }
+    t.set_u32(w(0x27), 0x0ca0_0027);
+    let sc = t.img.rel32_target(f + 0x87);
+    let scw = |o: u32| img.word(sc + o);
+    t.set_u32(scw(0x5), sel);
+    t.set_u32(scw(0x16), 0x24);
+    for i in 0..0x30 {
+        t.set_u32(scw(0x5a) + 4 * i, 0x0d00 + 3 * i);
+    }
+    t.set_u32(scw(0x4d), 0x0da0_004d);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x17), s);
+    // (actor, distance scale, battle flag)
+    for (k, (i, d, done)) in (0u32..).zip([
+        (u32::MAX, 0.5f32, 0u32),
+        (0, 3.0, 0),
+        (2, 10.0, 0),
+        (1, 40.0, 1),
+        (u32::MAX, 400.0, 1),
+    ]) {
+        junk(&mut t, s + 0x5370, 0x20, k);
+        floats(&mut t, s + 0xf70, 4, k);
+        junk(&mut t, s + 0xf80, 0x10, k);
+        t.set_u32(s + 0x537c, i);
+        setf(&mut t, s + 0x5378, 0.75 * k as f32 - 1.0);
+        setf(&mut t, far, d);
+        t.set_u32(scw(0xe), done);
+        ownb::dirty_stack(&mut t, 0x1730 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::glide_target_0392(g, img, fr)
+        });
+    }
+}

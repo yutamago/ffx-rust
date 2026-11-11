@@ -5421,6 +5421,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 bone matrix 0434", &r45::BONE_MATRIX_0434),
     ("r45 start-up 0397", &r45::START_UP_0397),
     ("r45 glide start 0392", &r45::GLIDE_START_0392),
+    ("r45 nearest actor 0392", &r45::NEAREST_ACTOR_0392),
+    ("r45 glide target 0392", &r45::GLIDE_TARGET_0392),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
