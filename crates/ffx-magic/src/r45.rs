@@ -5848,3 +5848,85 @@ pub const OBJECTS_START_0396: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0431`'s glow draw (0x100033e0, 439 bytes; internal, `ecx` =
+/// the object; a 16-aligned /GS frame, `ebp` = `(entry esp - 0xc) &
+/// !0xf`: the record `R` at `ebp - 0x1c0`, the matrices `M3` at `ebp -
+/// 0x148`, `M1` at `- 0x108`, `M5` at `- 0xc8`, `M4` at `- 0x88`, `M2` at
+/// `- 0x48`). `R` = `(0x1c, slot 562 (), u16 0x8044, 0, ...)` with the
+/// colour `0x80 0x80 0x80` and the alpha `S[0xd0c] 128 / 20` (`S =
+/// *G_S`); `M1` = slot 723, `M2` = slot 724, `M3` = slot 231 `(M3, M2,
+/// obj)`, `M4` the scaled camera
+/// ([`scaled_camera`](crate::m0052::scaled_camera)), `M5` = slot 230
+/// `(M5, slot 545 ())`; `R + 0x20..` = `(M3, M4, M5, obj)`; then slot 567
+/// `(*G_E, R, obj, M2, M1)`. Each slot call passes the words the original
+/// leaves on the stack. Returns slot 567's `eax`.
+pub fn glow_draw_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(0xc) & !0xf;
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (r, m3, m1, m5, m4, m2) = (
+        at(0x1c0),
+        at(0x148),
+        at(0x108),
+        at(0xc8),
+        at(0x88),
+        at(0x48),
+    );
+    let obj = fr.ecx;
+    let s = g.read::<u32>(w(0x34));
+    g.write::<u32>(r, 0x1c);
+    let h = g.call(t(g, 0x27, 562), 0, &[]).eax;
+    let a = g.read::<u32>(s + 0xd0c);
+    g.write::<u32>(r + 4, h);
+    for d in [0xcu32, 0x10, 0x14] {
+        g.write::<u32>(r + d, 0);
+    }
+    // shl 7; a signed / 20 (imul 0x66666667, sar 3)
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    g.write::<u8>(r + 0x1b, ((a << 7).cast_signed() / 20) as u8);
+    for d in [0x40u32, 0x44, 0x48] {
+        g.write::<u32>(r + d, 0);
+    }
+    g.write::<u16>(r + 8, 0x8044);
+    g.write::<u8>(r + 0xa, 0);
+    g.write::<u16>(r + 0x18, 0x8080);
+    g.write::<u8>(r + 0x1a, 0x80);
+    for d in [0x1cu32, 0x34, 0x38, 0x3c] {
+        g.write::<u32>(r + d, 0);
+    }
+    g.write::<u16>(r + 0x4c, 0x80);
+    let mut st = Pushes::default();
+    st.push(m1);
+    st.call(g, t(g, 0x9d, 723), 0);
+    st.push(m2);
+    st.call(g, t(g, 0xff, 724), 0);
+    st.push_all(&[obj, m2, m3]);
+    st.call(g, t(g, 0x118, 231), 0);
+    // sub esp, 0x1c8; esi, edi; five words; the call
+    crate::m0052::scaled_camera(g, img, img.rel32_target(f + 0x12b), m4, at(0x1e8));
+    let x = st.call(g, t(g, 0x130, 545), 0).eax;
+    st.push_all(&[x, m5]);
+    st.call(g, t(g, 0x145, 230), 0);
+    g.write::<u32>(r + 0x20, m3);
+    g.write::<u32>(r + 0x24, m4);
+    g.write::<u32>(r + 0x28, m5);
+    let e = g.read::<u32>(w(0x18f));
+    g.write::<u32>(r + 0x2c, obj);
+    st.push_all(&[m1, m2, obj, r, e]);
+    Ret::eax(st.call(g, t(g, 0x189, 567), 0).eax)
+}
+
+/// [`glow_draw_0431`] (the `rel32`s: the scaled camera, the cookie
+/// check).
+pub const GLOW_DRAW_0431: Sig = Sig {
+    len: 439,
+    hash: 0x384e_57f0_c412_4d8f,
+    calls: &[
+        (0x12b, Callee::Sig(&crate::m0052::SCALED_CAMERA)),
+        (0x1ac, Callee::Any),
+    ],
+    imports: &[],
+};

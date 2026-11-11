@@ -3546,3 +3546,65 @@ fn objects_start_0396() {
         t.check_entry(f, call, &[], Eax::Checked);
     }
 }
+
+/// `magic_0431` 0x100033e0 (`r45::glow_draw_0431`, internal): the alpha
+/// count positive, 0 and negative; the matrices filled by their slots.
+#[test]
+fn glow_draw_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x33e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    for s in [723u32, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(
+                    m,
+                    a[0] + 4 * i,
+                    (i as f32 + 1.0) * if s == 723 { 1.0 } else { 0.5 },
+                );
+            }
+            s
+        });
+    }
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + 1.0;
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(&mut t, 544, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, a[0] as f32 + i as f32 * 0.25);
+        }
+        0x544
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, a[1] ^ i);
+        }
+        0x230
+    });
+    for (s, n) in [(562u32, 0usize), (545, 0), (553, 5), (567, 5)] {
+        rec(&mut t, s, n, move |_, a| {
+            (s << 16) ^ a.first().copied().unwrap_or(0)
+        });
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x34), s);
+    for (k, a) in (0u32..).zip([20u32, 0, 7, u32::MAX - 4]) {
+        junk(&mut t, s + 0xd00, 0x20, k);
+        t.set_u32(s + 0xd0c, a);
+        t.set_u32(w(0x18f), 0x0e0e_018f + k);
+        ownb::dirty_stack(&mut t, 0x33e0 + k, &[]);
+        let call = Call {
+            ecx: SCRATCH + 0x2000 + k,
+            ..Call::default()
+        };
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::glow_draw_0431(g, img, fr)
+        });
+    }
+}
