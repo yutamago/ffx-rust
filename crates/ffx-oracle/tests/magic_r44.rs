@@ -2205,9 +2205,15 @@ fn camera_task_0042() {
         t.set_u32(r + 0x2c4 + 0xc, r + 0x2c4);
         t.set_u32(r + 0x374 + 0x14, 0);
         // the flag words
-        for o in [0x17bu32, 0x5ef, 0x70d, 0x84e] {
+        // (bit 0 clear where it is set, set where it is cleared)
+        for (o, v) in [
+            (0x17bu32, 0x5a5a_5a50u32),
+            (0x5ef, 0x5a5a_5a40),
+            (0x70d, 0x5a5a_5a44),
+            (0x84e, 0x5a5a_5a51),
+        ] {
             let at = w(&t, o);
-            t.set_u32(at, 0x5a5a_5a50 ^ o);
+            t.set_u32(at, v ^ (k << 8));
         }
         magic_h6::scrub(&mut t);
         t.check_entry(
