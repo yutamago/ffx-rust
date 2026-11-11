@@ -3461,6 +3461,7 @@ ports! {
     "r45 glide step 0392" => r45::GLIDE_STEP_0392, r45::glide_step_0392;
     "r45 glide run 0392" => r45::GLIDE_RUN_0392, r45::glide_run_0392;
     "r45 summon place 0392" => r45::SUMMON_PLACE_0392, r45::summon_place_0392;
+    "r45 objhost start 0392" => r45::START_0392, l5_objhost::start;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5425,6 +5426,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 glide start 0392", &r45::GLIDE_START_0392),
     ("r45 nearest actor 0392", &r45::NEAREST_ACTOR_0392),
     ("r45 glide target 0392", &r45::GLIDE_TARGET_0392),
+    ("r45 throw aim 0392", &r45::THROW_AIM_0392),
+    ("r45 aim set-up 0392", &r45::AIM_SETUP_0392),
     // round 45 (magic-r45): end of INTERNAL
 ];
 

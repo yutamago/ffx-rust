@@ -3413,3 +3413,230 @@ pub const SUMMON_PLACE_0392: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0392`'s throw aim (0x10001aa0, 873 bytes; internal, no
+/// arguments; an aligned /GS frame, `E` its base after the pushes: the
+/// place `P` at `E + 8`, the offset `V` at `E + 0x18`, the turned `O` at
+/// `E + 0x28`, the matrix `M` at `E + 0x38`). With `S = *G_S` and the
+/// actor `i = S + 0x537c`: its place `P` (slot 262) with `y` = `S +
+/// 0xf74`, `V` = `(0, h, s + K, 1)` (`h` -80, or -30 when `S + 0x539c` is
+/// not -1; `s` the actor's scale,
+/// [`actor_scale_by`](crate::s4_small::actor_scale_by)), `M` = slot 235
+/// turned by X 0 and Y `S + 0x5378`, `P += M V` (slots 229, 248); `S +
+/// 0xfa0..` = `(P, 1)`, `S + 0xfb4` = the yaw; the steps `n` = the
+/// distance from `S + 0xf90..` (`_libm_sse2_sqrt_precise`) times `K2`,
+/// truncated, at least 35, into `S + 0x538c` and `+0x5390`; the actors'
+/// mean `T = S + 0xfc0` ([`mean_position`](crate::sb_misc::mean_position))
+/// with `T.y` = `S + 0xf74` when slot 520's id is `0x18b0046`, else the
+/// first selected character's slot 12 height; then from `d = T - P`:
+/// `S + 0xfb0` = `atan2(d.y, |d.xz|)` (the square root's double) and
+/// `S + 0xfb4` = `K3 - atan2(d.z, d.x)` wrapped once, `S + 0xfb8` 0. Each slot
+/// call passes the words the original leaves on the stack. The
+/// original's `eax` is the `_CIatan2` import's leftover (junk; 0 here).
+#[allow(clippy::too_many_lines)] // the place, the steps, the aim
+pub fn throw_aim_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x80);
+    let (p, v, o, m) = (e + 8, e + 0x18, e + 0x28, e + 0x38);
+    let s = g.read::<u32>(w(0x1a));
+    let h = if g.read::<u32>(s + 0x539c) == u32::MAX {
+        0xc2a0_0000u32
+    } else {
+        0xc1f0_0000
+    };
+    g.write::<u32>(v + 4, h);
+    let i = g.read::<u32>(s + 0x537c);
+    let chr = actor_chr_0392(g, img, f, i, (0x44, 0x4b, 0x56));
+    let mut st = Pushes::default();
+    st.push_all(&[p + 8, p + 4, p, chr]);
+    st.call(g, t(g, 0x6b, 262), 0);
+    let yaw = g.read::<u32>(s + 0x5378);
+    let i = g.read::<u32>(s + 0x537c);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(e, yaw);
+    g.write::<u32>(v, 0);
+    let sc = Frame {
+        at: img.rel32_target(f + 0x9c),
+        ecx: i,
+        ..Frame::default()
+    };
+    let r = crate::s4_small::actor_scale_by(g, img, &sc);
+    let r = r.xmm0.map_or(0.0, |x| f32::from_bits(x.reg() as u32));
+    let d = add(r, k(g, 0xa4));
+    st.push(m);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    g.write::<f32>(v + 8, d);
+    let y = g.read::<u32>(s + 0xf74);
+    g.write::<u32>(p + 4, y);
+    st.call(g, t(g, 0xae, 235), 0);
+    st.pop(4);
+    st.set_top(0);
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0xe7, 328), 0);
+    st.pop(2);
+    st.set_top(g.read::<u32>(e));
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0x108, 329), 0);
+    st.push_all(&[v, m, o]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    st.call(g, t(g, 0x124, 229), 0);
+    st.push_all(&[o, p, p]);
+    st.call(g, t(g, 0x144, 248), 0);
+    let (px, py, pz) = (g.read::<f32>(p), g.read::<f32>(p + 4), g.read::<f32>(p + 8));
+    g.write::<f32>(s + 0xfa0, px);
+    g.write::<f32>(s + 0xfa4, py);
+    g.write::<f32>(s + 0xfa8, pz);
+    g.write::<u32>(s + 0xfac, 0x3f80_0000);
+    let yaw = g.read::<u32>(s + 0x5378);
+    g.write::<u32>(s + 0xfb4, yaw);
+    let dx = sub(g.read::<f32>(s + 0xf90), px);
+    let dy = sub(g.read::<f32>(s + 0xf94), py);
+    let dz = sub(g.read::<f32>(s + 0xf98), pz);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let sum = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+    // _libm_sse2_sqrt_precise of the double, rounded back to f32
+    #[allow(clippy::cast_possible_truncation)]
+    let dist = f64::from(sum).sqrt() as f32;
+    let kn = mul(dist, k(g, 0x1e8));
+    // cvttss2si (0x80000000 for NaN and out of range)
+    #[allow(clippy::cast_possible_truncation)]
+    let n = if kn.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&kn) {
+        i32::MIN
+    } else {
+        kn as i32
+    };
+    let n = n.max(0x23);
+    g.write::<i32>(s + 0x538c, n);
+    g.write::<i32>(s + 0x5390, n);
+    let tp = s + 0xfc0;
+    crate::sb_misc::mean_position(g, img, img.rel32_target(f + 0x208), e.wrapping_sub(0xc), tp);
+    if g.call(t(g, 0x20d, 520), 0, &[]).eax == 0x018b_0046 {
+        let y = g.read::<u32>(s + 0xf74);
+        g.write::<u32>(tp + 4, y);
+    } else {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x22f))));
+        let c = g.read::<u32>(w(0x239).wrapping_add(4 * b));
+        let v = st0_f32(g.call(t(g, 0x23e, 12), 0, &[c]).st0);
+        g.write::<f32>(tp + 4, v);
+    }
+    let dy = sub(g.read::<f32>(tp + 4), g.read::<f32>(p + 4));
+    let dx = sub(g.read::<f32>(tp), g.read::<f32>(p));
+    let dz = sub(g.read::<f32>(tp + 8), g.read::<f32>(p + 8));
+    let flat = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt();
+    // fstp qword; cvtpd2ps
+    #[allow(clippy::cast_possible_truncation)]
+    let pitch = g.atan2(f64::from(dy), flat) as f32;
+    g.write::<f32>(s + 0xfb0, pitch);
+    #[allow(clippy::cast_possible_truncation)]
+    let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let y = sub(k(g, 0x30f), a);
+    let y = wrap_once(g, img, f, y, [0x31e, 0x328, 0x332, 0x33f]);
+    g.write::<f32>(s + 0xfb4, y);
+    g.write::<u32>(s + 0xfb8, 0);
+    Ret::eax(0)
+}
+
+/// [`throw_aim_0392`] (the `rel32`s: the actor's scale, the square
+/// roots, the mean, `_CIatan2` twice, the cookie check).
+pub const THROW_AIM_0392: Sig = Sig {
+    len: 873,
+    hash: 0xc631_90b3_5c2b_cbe3,
+    calls: &[
+        (0x9c, Callee::Sig(&crate::s4_small::ACTOR_SCALE_BY)),
+        (0x1d7, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x208, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x2a9, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2bc, Callee::Import("_CIatan2")),
+        (0x2fd, Callee::Import("_CIatan2")),
+        (0x361, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0392`'s aim set-up (0x10004100, 254 bytes; internal, no
+/// arguments): `*G_S` = the block `B`; the caster's place (slot 262
+/// `(*G_C, ...)` into `G_P..`, `w` 1.0); the index of slot 520's id in
+/// the DLL's -1-ended table into `G_I`; the nearest actor, the glide
+/// target and start, the throw aim ([`nearest_actor_0392`],
+/// [`glide_target_0392`], [`glide_start_0392`], [`throw_aim_0392`]);
+/// then slot 523 `(k, a_k)` for `k` 0..3 (`a_0` the actor `*G_J` as
+/// [`glide_run_0392`] picks it, then three words). Each slot call passes
+/// the words the original leaves on the stack. Returns the last slot's
+/// `eax`.
+pub fn aim_setup_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let c = g.read::<u32>(w(0x1e));
+    g.write::<u32>(w(0x24), w(0x28));
+    g.call(t(g, 0x1, 262), 0, &[c, w(0x18), w(0x13), w(0xe)]);
+    g.write::<u32>(w(0x35), 0x3f80_0000);
+    let id = g.call(t(g, 0x2f, 520), 0, &[]).eax;
+    let i = crate::r34::find_word(g, w(0x54), id);
+    g.write::<u32>(w(0x76), i);
+    // push esi; push edi; the call
+    let inner = Frame {
+        esp: fr.esp.wrapping_sub(0xc),
+        ..*fr
+    };
+    for (op, port) in [
+        (
+            0x7b,
+            nearest_actor_0392 as fn(&mut G, &Image, &Frame) -> Ret,
+        ),
+        (0x80, glide_target_0392),
+        (0x85, glide_start_0392),
+        (0x8a, throw_aim_0392),
+    ] {
+        let call = Frame {
+            at: img.rel32_target(f + op),
+            ..inner
+        };
+        port(g, img, &call);
+    }
+    let j = g.read::<u32>(w(0x90));
+    let a = if j == u32::MAX {
+        g.read::<u32>(w(0x9c))
+    } else {
+        u32::from(g.read::<u8>(g.read::<u32>(w(0xa3)).wrapping_add(j)))
+    };
+    let mut st = Pushes::default();
+    st.push_all(&[a, 0]);
+    st.call(g, t(g, 0xad, 523), 0);
+    let mut eax = 0;
+    for (k, (op, x)) in (1u32..).zip([(0xc2, 0xbd), (0xd7, 0xd2), (0xec, 0xe7)]) {
+        st.push_all(&[g.read::<u32>(w(x)), k]);
+        eax = st.call(g, t(g, op, 523), 0).eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`aim_setup_0392`] (the `rel32`s: the four steps).
+pub const AIM_SETUP_0392: Sig = Sig {
+    len: 254,
+    hash: 0x128f_cdc6_f92b_2119,
+    calls: &[
+        (0x7b, Callee::Sig(&NEAREST_ACTOR_0392)),
+        (0x80, Callee::Sig(&GLIDE_TARGET_0392)),
+        (0x85, Callee::Sig(&GLIDE_START_0392)),
+        (0x8a, Callee::Sig(&THROW_AIM_0392)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0392`'s object host start (0x100010a0, 292 bytes):
+/// [`start`](crate::l5_objhost::start)'s `magic_0610` shape calling
+/// [`aim_setup_0392`].
+pub const START_0392: Sig = Sig {
+    len: 292,
+    hash: 0x8728_2a0b_a314_536e,
+    calls: &[
+        (0x0d, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+        (0xc7, Callee::Sig(&AIM_SETUP_0392)),
+    ],
+    imports: &[],
+};

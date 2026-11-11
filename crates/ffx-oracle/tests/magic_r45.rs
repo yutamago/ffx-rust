@@ -2306,3 +2306,193 @@ fn summon_place_0392() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// The slots and globals `magic_0392`'s aim functions read: places from
+/// the character (slot 262, spread by `far`), scales (251, 17, 19), the
+/// matrix slots, slot 12's height, slot 520's id, the selection and
+/// character tables of the code at `fs` (each `(sel, table)` pair), the
+/// mean's actors.
+fn aim_0392_setup(t: &mut Twin, fs: &[(u32, u32, u32)], far: u32, id: u32) {
+    let img = t.img.clone();
+    all_stubs(t);
+    rec(t, 262, 4, move |m, a| {
+        let d = f32::from_bits(m.r32(far));
+        let c = a[0] & 0xff;
+        wf(m, a[1], (c as f32 - 3.0) * d);
+        wf(m, a[2], c as f32 * 0.5 - 1.0);
+        wf(m, a[3], (c % 3) as f32 * 2.0 + d);
+        0x262
+    });
+    for s in [251u32, 17, 19, 12] {
+        rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    rec(t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    rec(t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let v = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x248
+    });
+    rec(t, 520, 0, move |_, _| id);
+    rec(t, 523, 2, |_, a| 0x0523_0000 ^ a[0] ^ a[1]);
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[3, 1, 0x24, 2, 5]);
+    for &(f, so, to) in fs {
+        let w = |o: u32| img.word(f + o);
+        t.set_u32(w(so), sel);
+        for i in 0..0x30 {
+            t.set_u32(w(to) + 4 * i, 0x0c00 + 3 * i);
+        }
+    }
+}
+
+/// `magic_0392` 0x10001aa0 (`r45::throw_aim_0392`, internal): the caster
+/// (-1) and actors, near (35 steps) and far; slot 520's id the special
+/// one and not; `S + 0x539c` -1 and not.
+#[test]
+fn throw_aim_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x1aa0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let far = SCRATCH + 0x7e30;
+    let s = SCRATCH + 0x1_0000;
+    let mp = t.img.rel32_target(f + 0x208);
+    let mw = |o: u32| img.word(mp + o);
+    let sc = t.img.rel32_target(f + 0x9c);
+    let scw = |o: u32| img.word(sc + o);
+    // (actor, spread, special id, 539c)
+    for (k, (i, d, special, x)) in (0u32..).zip([
+        (u32::MAX, 0.5f32, true, u32::MAX),
+        (0, 3.0, false, 2),
+        (2, 10.0, true, 5),
+        (1, 40.0, false, u32::MAX),
+        (u32::MAX, 0.25, false, 0),
+    ]) {
+        aim_0392_setup(
+            &mut t,
+            &[(f, 0x4b, 0x56), (f, 0x22f, 0x239), (sc, 0x5, 0x5a)],
+            far,
+            if special { 0x018b_0046 } else { 0x7777_0001 },
+        );
+        t.set_u32(w(0x1a), s);
+        t.set_u32(w(0x44), 0x0ca0_0044);
+        t.set_u32(scw(0x16), 0x24);
+        t.set_u32(scw(0x4d), 0x0da0_004d);
+        t.set_u32(scw(0xe), k & 1);
+        t.set_u32(mw(0x11), 1 + k % 3);
+        t.set_u32(mw(0x46), 0x0c0c);
+        t.set_u32(mw(0x4d), SCRATCH + 0x180);
+        for j in 0..8u32 {
+            t.set_u32(mw(0x58) + 4 * j, 0xc400 + j);
+        }
+        junk(&mut t, s + 0xf90, 0x40, k);
+        floats(&mut t, s + 0xf90, 4, k);
+        junk(&mut t, s + 0x5370, 0x40, k);
+        t.set_u32(s + 0x537c, i);
+        t.set_u32(s + 0x539c, x);
+        setf(&mut t, s + 0x5378, 0.75 * k as f32 - 1.0);
+        setf(&mut t, far, d);
+        ownb::dirty_stack(&mut t, 0x1aa0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Junk, |g, img, fr| {
+            ffx_magic::r45::throw_aim_0392(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0392` 0x10004100 (`r45::aim_setup_0392`, internal): slot 520's
+/// id in the table and not; the aim actor -1 and an actor.
+#[test]
+fn aim_setup_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x4100);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let c = |o: u32| img.rel32_target(f + o);
+    let (na, gt, ta) = (c(0x7b), c(0x80), c(0x8a));
+    let far = SCRATCH + 0x7e30;
+    let table = w(0x54);
+    let mut last = 0;
+    while t.u32(table + 4 * (last + 1)) != u32::MAX {
+        last += 1;
+    }
+    let found = t.u32(table + 4 * last);
+    let mp = t.img.rel32_target(ta + 0x208);
+    let mw = |o: u32| img.word(mp + o);
+    for (k, (id, j)) in (0u32..).zip([(found, u32::MAX), (0x7777_0001, 2), (found, 1)]) {
+        aim_0392_setup(
+            &mut t,
+            &[
+                (na, 0x4d, 0x58),
+                (na, 0x128, 0x133),
+                (gt, 0x2e, 0x39),
+                (ta, 0x4b, 0x56),
+                (ta, 0x22f, 0x239),
+            ],
+            far,
+            id,
+        );
+        t.set_u32(w(0x1e), 0x0ca0_001e);
+        t.set_u32(w(0x90), j);
+        t.set_u32(w(0xa3), SCRATCH + 0x180);
+        t.set_u32(w(0x9c), 0x0a0a_009c);
+        for o in [0xbdu32, 0xd2, 0xe7] {
+            t.set_u32(w(o), 0x0b00_0000 + o);
+        }
+        t.set_u32(t.img.word(na + 0x31), 3);
+        t.set_u32(mw(0x11), 2);
+        t.set_u32(mw(0x4d), SCRATCH + 0x180);
+        for i in 0..8u32 {
+            t.set_u32(mw(0x58) + 4 * i, 0xc400 + i);
+        }
+        let s = t.img.word(f + 0x28);
+        junk(&mut t, s + 0xf60, 0x80, k);
+        junk(&mut t, s + 0x5370, 0x40, k);
+        t.set_u32(s + 0x537c, 1);
+        setf(&mut t, far, 2.0 + k as f32);
+        ownb::dirty_stack(&mut t, 0x4100 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::aim_setup_0392(g, img, fr)
+        });
+        // the object host start 0x100010a0 (`l5_objhost::start` through
+        // `r45::START_0392`) that runs it
+        for (sl, n) in [(720u32, 2usize), (718, 3), (222, 7), (221, 11)] {
+            rec(&mut t, sl, n, move |_, a| (sl << 16) ^ a[0]);
+        }
+        rec(&mut t, 790, 0, |_, _| 0x790);
+        t.stub_st0(790, |_, _| 0.1);
+        let st = t.at(0x10a0);
+        let payloads = t.img.word(st + 0x81);
+        t.write(payloads, &vec![0xa5; 12 * 0x3ff]);
+        junk(&mut t, s + 0xf60, 0x80, k);
+        ownb::dirty_stack(&mut t, 0x10a0 + k, &[]);
+        t.check_entry(st, Call::default(), &[], Eax::Checked);
+    }
+}
