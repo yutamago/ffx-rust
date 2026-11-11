@@ -4024,3 +4024,89 @@ pub const ORBS_AIM_0431: Sig = Sig {
     ],
     imports: &[(0x732, "rand")],
 };
+
+/// `magic_0431`'s orbs' set-up (0x100031b0, 555 bytes; a table
+/// callback, no arguments; a /GS frame, the point at `ebp - 0x14`): four
+/// sounds (slot 0 `(id)`, slot 26 `(id, 1)`, their handles in four
+/// globals with the bytes 0x20..0x23, slot 10 `(handle, 0)`; ids 0x3019
+/// and three times 0x301f); `*G_N` = 5; with `M = *G_S + 0x720`: slot 210
+/// `(A1, M)` (or, for a zero `M`, the actor's point through slots 217 and
+/// 255 when `*G_B` is clear and the actor below 0x20), slot 211 `(A1, M)`,
+/// slot 210 `(*G_C, M)`; the actors' motions
+/// ([`actor_motions_0431`](crate::r45::actor_motions_0431)), the orbs' aim
+/// ([`orbs_aim_0431`]), slot 257 `(A1, 1)`; `S[0xd04]` 0 and a task node
+/// (callback the orbs' start, [`take`](crate::sa_pool::take)) goes last
+/// on the task list, kept at `S[0xc64]`. Returns the node.
+pub fn orbs_setup_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    for (id, ops, byte) in [
+        (
+            0x3019u32,
+            (0x11u32, 0x23u32, 0x3cu32, 0x43u32, 0x36u32),
+            0x20u8,
+        ),
+        (0x301f, (0x50, 0x5f, 0x78, 0x7f, 0x72), 0x21),
+        (0x301f, (0x8c, 0x9b, 0xb4, 0xbb, 0xae), 0x22),
+        (0x301f, (0xc8, 0xd7, 0xf3, 0xfa, 0xed), 0x23),
+    ] {
+        let h = g.call(t(g, ops.0, 0), 0, &[id]).eax;
+        g.call(t(g, ops.1, 26), 0, &[id, 1]);
+        g.write::<u8>(w(ops.2), byte);
+        g.write::<u32>(w(ops.3), h);
+        g.call(t(g, ops.4, 10), 0, &[h, 0]);
+    }
+    let s = g.read::<u32>(w(0x107));
+    let m = s.wrapping_add(0x720);
+    let sel = g.read::<u32>(w(0x115));
+    g.write::<u32>(w(0x11b), 5);
+    let who = u32::from(g.read::<u8>(sel + 1));
+    let a1 = g.read::<u32>(w(0x12d).wrapping_add(4 * who));
+    if m == 0 {
+        if g.read::<u32>(w(0x14b)) == 0 && who.cast_signed() < 0x20 {
+            let pt = ebp.wrapping_sub(0x14);
+            g.call(t(g, 0x15c, 217), 0, &[who, pt]);
+            g.call(t(g, 0x16e, 255), 0, &[who, pt]);
+        }
+    } else {
+        g.call(t(g, 0x136, 210), 0, &[a1, m]);
+    }
+    g.call(t(g, 0x17f, 211), 0, &[a1, m]);
+    let cm = g.read::<u32>(w(0x195));
+    g.call(t(g, 0x18e, 210), 0, &[cm, m]);
+    crate::r45::actor_motions_0431(g, img, img.rel32_target(f + 0x1a2));
+    orbs_aim_0431(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x1a7),
+            // the slot 211 and 210 calls' four words still pushed
+            esp: ebp.wrapping_sub(0x38),
+            ..Frame::default()
+        },
+    );
+    let who = u32::from(g.read::<u8>(g.read::<u32>(w(0x1ac)) + 1));
+    let a1 = g.read::<u32>(w(0x1b9).wrapping_add(4 * who));
+    g.call(t(g, 0x1be, 257), 0, &[a1, 1]);
+    g.write::<u32>(s + 0xd04, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x1e0), w(0x1d1));
+    g.write::<u32>(s + 0xc64, node);
+    crate::r32::append_last(g, img, f, node, [0x1e6, 0x1ff, 0x211, 0x21b], 0);
+    Ret::eax(node)
+}
+
+/// [`orbs_setup_0431`] (the `rel32`s: the actors' motions, the orbs' aim,
+/// the pool take, the cookie check).
+pub const ORBS_SETUP_0431: Sig = Sig {
+    len: 555,
+    hash: 0x5acb_03ca_aed3_0830,
+    calls: &[
+        (0x1a2, Callee::Sig(&crate::r45::ACTOR_MOTIONS_0431)),
+        (0x1a7, Callee::Sig(&ORBS_AIM_0431)),
+        (0x1e0, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x223, Callee::Any),
+    ],
+    imports: &[],
+};

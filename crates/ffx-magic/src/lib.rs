@@ -3524,6 +3524,7 @@ ports! {
     "r48 load step 0396" => r48::LOAD_0396, r48::load_0396;
     "r48 landing 0397" => r48::LANDING_0397, r48::landing_0397;
     "r48 orbs start 0431" => r48::ORBS_START_0431, r48::orbs_start_0431;
+    "r48 orbs set-up 0431" => r48::ORBS_SETUP_0431, r48::orbs_setup_0431;
     // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
