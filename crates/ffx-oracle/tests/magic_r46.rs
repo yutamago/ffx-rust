@@ -1037,3 +1037,140 @@ fn main_task_0042() {
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
+
+/// `magic_0071` 0x100076e0 (`r46::main_task_0071`): state 0 with the
+/// light's flag both ways (slot 333 or 601), 0xa waiting and stepping for
+/// each of its three steps (the last on), 0xb and 0x32 on both sides of
+/// their bounds (0xb into 0x32 into the end), the parts' flags both ways
+/// and parents or not, 10000, the states between and past; `P`'s list
+/// empty and not.
+#[test]
+fn main_task_0071() {
+    let Some(mut t) = twin(71) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0x76e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 248, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x248
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * f32::from_bits(a[2]);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let p = w(&t, 0x11a);
+    // (state, `R + 0x38`, the bound's side, the flag bits, lists empty)
+    let mut cases: Vec<(u32, u32, bool, u8, bool)> = vec![
+        (0, 0, true, 0, true),
+        (0, 0, true, 1, false),
+        (0, 0, false, 1, true),
+        (0xa, 0, false, 0, true),
+        (0xa, 0, true, 0, false),
+        (0xa, 1, true, 0, true),
+        (0xa, 2, true, 0, true),
+        (0xb, 0, false, 0, true),
+        (0xb, 0, true, 0, true),
+        (0xb, 0, true, 4, false),
+        (0x32, 0, false, 0, true),
+        (0x32, 0, true, 0, true),
+        (0x32, 0, true, 4, false),
+        (0x2710, 0, true, 0, true),
+        (0x2711, 0, true, 0, true),
+        (5, 0, true, 0, true),
+        (0x33, 0, true, 0, true),
+        (0x1000, 0, true, 0, true),
+    ];
+    cases.push((0xc, 0, true, 0, true));
+    for (k, (state, step, go, bits, empty)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x60, k);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x38, step);
+        set_f(&mut t, r + 0x2c, 0.5 + k as f32 / 8.0);
+        set_f(&mut t, r + 0x28, 1.0);
+        t.set_u32(a, SCRATCH + 0x3600);
+        t.set_u32(a + 4, r);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        // `P`'s list empty or with a last child
+        let blk = SCRATCH + 0x7800;
+        junk(&mut t, blk, 0x20, k);
+        t.set_u32(p + 0x10, if empty { p } else { blk });
+        t.set_u32(p + 0xc, p);
+        t.set_u16(p + 0x18, 3);
+        // the particle and effect nodes' lists: empty
+        for op in [0x31du32, 0x35c, 0x77b, 0xa93, 0xc33, 0xd6e] {
+            let l = w(&t, op);
+            t.set_u32(l + 0x10, l);
+            t.set_u32(l + 0xc, l);
+        }
+        // the light's flag (bit 0)
+        let fl = w(&t, 0x58d);
+        t.set_u8(fl, bits | 0xa0);
+        // the bounds: 0xb's `K >= G`, 0x32's `G >= K`, 0xa's `G - t >= s K`
+        let kb = f32::from_bits(t.u32(w(&t, 0x29)));
+        let gb = w(&t, 0x43);
+        set_f(&mut t, gb, if go { kb - 1.0 } else { kb + 1.0 });
+        let k32 = f32::from_bits(t.u32(w(&t, 0xba)));
+        let g32 = w(&t, 0xb3);
+        set_f(&mut t, g32, if go { k32 + 1.0 } else { k32 - 1.0 });
+        let gt = w(&t, 0xae0);
+        set_f(&mut t, gt, if go { 1000.0 } else { -1000.0 });
+        // the eight parts: every other one with a parent, its flag bit 2
+        // by the case
+        let p0 = w(&t, 0x3cf);
+        for i in 0..8u32 {
+            let part = p0 + 0x100 * i;
+            let n = part - 4;
+            let par = SCRATCH + 0x6000 + 0x40 * i;
+            t.write(par, &[0; 0x40]);
+            if i % 2 == 0 {
+                t.set_u32(n + 0x14, par);
+                t.set_u32(n + 4, par);
+                t.set_u32(n + 8, par);
+                t.set_u32(par + 0x10, n);
+                t.set_u32(par + 0xc, n);
+                t.set_u16(par + 0x18, 1);
+            } else {
+                t.set_u32(n + 0x14, 0);
+            }
+            t.set_u32(part + 0x4c, 0x4c00 + i + (k << 8));
+            t.set_u8(part + 0xe4, if i % 3 == 0 { bits } else { 0 });
+        }
+        let env = SCRATCH + 0x7a80;
+        for op in [0x3e1u32, 0x449] {
+            t.set_u32(w(&t, op), env);
+        }
+        t.set_u32(env, 0x1111);
+        junk_floats(
+            &mut t,
+            f,
+            &[0x398, 0x5bf, 0x5ee, 0x8d7, 0x906, 0x2d0, 0x72e, 0xa46],
+            k,
+        );
+        ownb::dirty_stack(&mut t, 0x76e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
