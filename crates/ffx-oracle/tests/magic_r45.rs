@@ -3587,11 +3587,19 @@ fn glow_draw_0431() {
         }
         0x230
     });
-    for (s, n) in [(562u32, 0usize), (545, 0), (553, 5), (567, 5)] {
+    for (s, n) in [(562u32, 0usize), (545, 0), (553, 5)] {
         rec(&mut t, s, n, move |_, a| {
             (s << 16) ^ a.first().copied().unwrap_or(0)
         });
     }
+    // (b33 test gap: the record's words checked through slot 567's answer)
+    rec(&mut t, 567, 5, |m, a| {
+        let mut x = 0x567u32;
+        for i in 0..0x14 {
+            x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+        }
+        x
+    });
     let s = SCRATCH + 0x1_0000;
     t.set_u32(w(0x34), s);
     for (k, a) in (0u32..).zip([20u32, 0, 7, u32::MAX - 4]) {
