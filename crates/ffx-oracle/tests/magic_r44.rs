@@ -2108,3 +2108,116 @@ fn scene_0042() {
         t.check_entry(f, Call::default(), &[SCRATCH + 0x7c00 + k], Eax::Checked);
     }
 }
+
+/// `magic_0042` 0x100085b0 (`r44::camera_task_0042`, a task callback):
+/// every state of the byte table (each wait below and at its bound, state
+/// 92's fade on both sides, state 100's shake with the byte above and at
+/// 2, state 101's count at and below 128), a gap of the table, 10000,
+/// above it and a negative state.
+#[test]
+fn camera_task_0042() {
+    let Some(mut t) = twin(42) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x85b0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    // the slots as data flow
+    for s in [285u32, 286] {
+        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[0] ^ (a[1] >> 3));
+    }
+    rec(&mut t, 307, 0, |m, _| m.r32(SCRATCH + 0x7e40));
+    t.stub_st0(307, |m, _| {
+        f64::from(m.r32(SCRATCH + 0x7e40) & 0xff) * 0.01 + 0.25
+    });
+    rec(&mut t, 250, 2, |_, a| 0x0250_0000 ^ a[0] ^ (a[1] >> 7));
+    rec(&mut t, 557, 0, |_, _| 0x0557_0003);
+    rec(&mut t, 560, 1, |_, a| 0x0560_0000 ^ a[0]);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[1] << 8));
+    rec(&mut t, 306, 3, |_, a| {
+        0x0306_0000 ^ a[0] ^ (a[1] << 4) ^ a[2]
+    });
+    let task = SCRATCH + 0x100;
+    let node = SCRATCH + 0x180;
+    let r = SCRATCH + 0x1_0000;
+    let st_at = w(&t, 0x23);
+    // (state, R + 0x20 before the step, R + 0x1c, byte R + 0x390, R + 0x310)
+    let cases: [(u32, u32, f32, u8, u32); 30] = [
+        (0, 3, 0.0, 0, 0),
+        (1, 3, 0.0, 0, 0),
+        (1, 0x27, 0.0, 0, 0),
+        (81, 3, 0.0, 0, 0),
+        (2, 3, 0.0, 0, 0),
+        (90, 3, 0.0, 0, 0),
+        (91, 3, 0.0, 0, 0),
+        (92, 3, -5.0, 0, 0),
+        (92, 3, 20.0, 0, 0),
+        (92, 3, 200.0, 0, 0),
+        (10, 3, 0.0, 0, 0),
+        (11, 3, 0.0, 0, 0),
+        (100, 3, 0.0, 9, 4),
+        (100, 3, 0.0, 2, 4),
+        (100, 3, 0.0, 1, 0x7f),
+        (101, 3, 0.0, 0, 0x7e),
+        (101, 3, 0.0, 0, 0x7f),
+        (20, 3, 0.0, 0, 0),
+        (21, 3, 0.0, 0, 0),
+        (60, 3, 0.0, 0, 0),
+        (61, 3, 0.0, 0, 0),
+        (62, 3, 0.0, 0, 0),
+        (70, 3, 0.0, 0, 0),
+        (80, 3, 0.0, 0, 0),
+        (110, 3, 0.0, 0, 0),
+        (111, 3, 0.0, 0, 0),
+        (111, 0xe, 0.0, 0, 0),
+        (7, 3, 0.0, 0, 0),
+        (10000, 3, 0.0, 0, 0),
+        (0x2711, 3, 0.0, 0, 0),
+    ];
+    let more: [(u32, u32, f32, u8, u32); 2] = [(0x70, 3, 0.0, 0, 0), (0xffff_fff0, 3, 0.0, 0, 0)];
+    for (k, (st, cnt, x1c, b, c310)) in (0u32..).zip(cases.into_iter().chain(more)) {
+        // the record: floats, then the words the case sets
+        for i in 0..0x100u32 {
+            let x = ((i * 29 + k * 7) % 97) as f32 * 0.0625 - 3.0 + (i % 5 + 1) as f32 * 1.0e-4;
+            t.set_u32(r + 4 * i, x.to_bits());
+        }
+        t.set_u32(r + 0x20, cnt);
+        t.set_u32(r + 0x1c, x1c.to_bits());
+        t.set_u8(r + 0x390, b);
+        t.set_u8(r + 0x391, 0x5a);
+        t.set_u32(r + 0x310, c310);
+        t.set_u32(task, node);
+        t.set_u32(task + 4, r);
+        let (nx, pv) = (SCRATCH + 0x1c0, SCRATCH + 0x1e0);
+        t.write(node, &[0x44; 0x20]);
+        t.set_u32(node + 4, nx);
+        t.set_u32(node + 8, pv);
+        t.write(nx, &[0x45; 0x10]);
+        t.write(pv, &[0x46; 0x10]);
+        t.set_u32(st_at, st);
+        t.set_u32(SCRATCH + 0x7e40, 0x31 + 7 * k);
+        // the lists the nodes join: empty, the leaving node without a parent
+        for o in [0x5dbu32, 0x691] {
+            let list = w(&t, o);
+            t.set_u32(list + 0x10, list);
+            t.set_u32(list + 0xc, list);
+            t.set_u16(list + 0x18, 1);
+        }
+        t.set_u32(r + 0x2c4 + 0x10, r + 0x2c4);
+        t.set_u32(r + 0x2c4 + 0xc, r + 0x2c4);
+        t.set_u32(r + 0x374 + 0x14, 0);
+        // the flag words
+        for o in [0x17bu32, 0x5ef, 0x70d, 0x84e] {
+            let at = w(&t, o);
+            t.set_u32(at, 0x5a5a_5a50 ^ o);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(
+            f,
+            Call {
+                eax: 0x0eee_0000 + k,
+                ..Call::default()
+            },
+            &[task],
+            Eax::Checked,
+        );
+    }
+}

@@ -3420,6 +3420,7 @@ ports! {
     "r44 stage task 0150" => r44::STAGE_TASK_0150, r44::stage_task_0150;
     "r44 node sparks thunk 0071" => r44::JMP_NODE_SPARKS_0071, r44::jmp_node_sparks_0071;
     "r44 scene 0042" => r44::SCENE_0042, r44::scene_0042;
+    "r44 camera task 0042" => r44::CAMERA_TASK_0042, r44::camera_task_0042;
     // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
