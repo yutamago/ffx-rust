@@ -4708,3 +4708,440 @@ pub const SUMMON_DRAW_0434: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The world bounds of [`mesh_0267`] (min, max; `comiss`: an unordered
+/// side keeps the bound).
+struct Box3 {
+    min: [f32; 3],
+    max: [f32; 3],
+}
+
+impl Box3 {
+    fn add(&mut self, p: [f32; 3]) {
+        for i in 0..3 {
+            if self.min[i] > p[i] {
+                self.min[i] = p[i];
+            }
+        }
+        for i in 0..3 {
+            if p[i] > self.max[i] {
+                self.max[i] = p[i];
+            }
+        }
+    }
+}
+
+/// The screen bounds and ranges [`mesh_0267`]'s corners map through:
+/// `(min_x, min_y, range_x, range_y)` of the projected points and the uv
+/// window `(u_min, u_max, v_min, v_max)` of the shifted ones.
+struct Uv0267 {
+    min: (f32, f32),
+    range: (f32, f32),
+    u: (f32, f32),
+    v: (f32, f32),
+}
+
+/// One corner of a [`mesh_0267`] face: the point `G` (16 bytes from the
+/// vertex record the face names, slot 325 earlier), its uv from the
+/// normal's bend `(1 - n)² K + (1 - n) n K' + n²` times the screen point,
+/// placed in the uv window and scaled by `G.w`; its position `(G.x K'',
+/// G.y K''', G.z)`. `ops` = the loads of `[K, K'` (x), `K, K'` (y), the
+/// two 1.0s, `G.w` twice, `K'', K''']`. Returns the position.
+#[allow(clippy::too_many_arguments)] // the corner's inputs
+fn corner_0267<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (gp, nrm, scr): (u32, u32, u32),
+    uvw: &Uv0267,
+    (uv, pos): (u32, u32),
+    ops: [u32; 10],
+) -> [f32; 3] {
+    let k = |g: &G, o: u32| g.read::<f32>(img.word(f + o));
+    let one = k(g, ops[4]);
+    let bend = |g: &G, n: f32, ka: u32, kb: u32| {
+        let o = sub(one, n);
+        add(
+            add(mul(mul(o, o), k(g, ka)), mul(mul(o, n), k(g, kb))),
+            mul(n, n),
+        )
+    };
+    let (nx, ny) = (g.read::<f32>(nrm), g.read::<f32>(nrm + 4));
+    let a = bend(g, nx, ops[0], ops[1]);
+    let b = bend(g, ny, ops[2], ops[3]);
+    let tx = div(sub(mul(a, g.read::<f32>(scr)), uvw.min.0), uvw.range.0);
+    let ty = div(sub(mul(b, g.read::<f32>(scr + 4)), uvw.min.1), uvw.range.1);
+    let gw = k(g, ops[6]);
+    let u = mul(add(mul(sub(one, tx), uvw.u.0), mul(tx, uvw.u.1)), gw);
+    g.write::<f32>(uv, u);
+    let one_v = k(g, ops[5]);
+    let gw = k(g, ops[7]);
+    let v = mul(add(mul(sub(one_v, ty), uvw.v.0), mul(ty, uvw.v.1)), gw);
+    g.write::<f32>(uv + 4, v);
+    let p = [
+        mul(g.read::<f32>(gp), k(g, ops[8])),
+        mul(g.read::<f32>(gp + 4), k(g, ops[9])),
+        g.read::<f32>(gp + 8),
+    ];
+    for (i, x) in (0u32..).zip(p) {
+        g.write::<f32>(pos + 4 * i, x);
+    }
+    p
+}
+
+/// `magic_0267`'s mesh (0x100015b0, 3914 bytes; internal: `ecx` = the
+/// model `M`, `edx` = a matrix `Y`, cdecl `(X, alpha, mode)`; an `ebp`
+/// frame: the view `A` at `ebp - 0x11c`, the camera `B` at `ebp - 0xdc`,
+/// `C` at `ebp - 0x5c`, `D` at `ebp - 0x9c`). The handle `H` = slot 772
+/// `(0x10b, M)` and the mesh `S` = slot 773 `(H)` with the lock held; no
+/// mesh: [`mesh_register_0267`] `(H)` and its answer. Else `G1 = X`
+/// (230), `C = B Y` (231), `D = C`, `G2 = D`; five work buffers off slot
+/// 562. In mode 1 the model's points (three `i16`, `w` 1) go to the third
+/// buffer, through both transforms ([`transform_points`](crate::m0267::transform_points)
+/// into the first and second), and the normals (three `i16` times `K`,
+/// through `G1`, `x` and `y` made positive) to the fifth. The second
+/// buffer's points bound the screen `(min, range)`; the first's, shifted
+/// by `K1` and scaled by `K2`, go to the fourth and bound the uv window.
+/// Each group (`i16 +2` faces of 0x1c bytes, kind 1 drawn; packet `P` =
+/// slot 887 `(S, i)`, slot 886 `(S, i, 3 n, 3 n)` 0 returns 0; slot 903
+/// `(P, 1)`; the buffers of slots 898, 901, 900, 902 with the first `3
+/// n` words and halfwords cleared): per face the three points into `G3`,
+/// `G4`, `G5` (slot 325), three corners ([`corner_0267`]) into the
+/// positions (the world bounds following), uvs, colours `(1, 1, 1,
+/// alpha K)`, indices `3 i ..`, and after each face slot 382 `(0, 0)` and
+/// the other packet header (`0x7000000c`). At the end slot 893 `(S)`'s
+/// matrix `= Y` (230) `* G_V` (231) with its last column `(0, 0, 0, 1)`,
+/// the bounds into slots 890 and 891's, slot 892 `(S, 0)`, slot 884 `(H,
+/// 1)` and slot 775 `(H)` with the lock held. Returns the lock's global
+/// word.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn mesh_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let cookie = gw(g, 0xa) ^ ebp;
+    g.write::<u32>(lf(8), cookie);
+    let (m, y) = (fr.ecx, fr.edx);
+    let (x, alpha_in, mode) = (fr.arg(g, 0), fr.arg(g, 1), fr.arg(g, 2));
+    let (big, small) = (k(g, 0x17), k(g, 0x4f));
+    let mut wb = Box3 {
+        min: [big; 3],
+        max: [small; 3],
+    };
+    // call width: 2
+    let h = g.call(t(g, 0x29, 772), 0, &[0x10b, m]);
+    let (lo, hi) = (h.eax, h.edx);
+    let lock = gw(g, 0x8b);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    let s = g.call(t(g, 0x9a, 773), 0, &[lo, hi]).eax;
+    let lock = gw(g, 0xb5);
+    g.write::<u32>(lock, saved);
+    if s == 0 {
+        // push hi; push lo: the call's return address at ebp - 0x1b8
+        let esp = lf(0x1b8);
+        g.write::<u32>(esp + 4, lo);
+        g.write::<u32>(esp + 8, hi);
+        let rf = Frame {
+            at: call(0xd7),
+            esp,
+            ecx: m,
+            ..*fr
+        };
+        return mesh_register_0267(g, img, &rf);
+    }
+    let (a, b, c, d) = (lf(0x11c), lf(0xdc), lf(0x5c), lf(0x9c));
+    // call width: 1
+    g.call(t(g, 0xf6, 723), 0, &[a]);
+    // call width: 1
+    g.call(t(g, 0x10d, 724), 0, &[b]);
+    g.write::<u32>(lf(0xc), ONE);
+    // call width: 2
+    g.call(t(g, 0x125, 230), 0, &[w(0x13d), x]);
+    let mut grp = g.read::<u32>(m + 4).wrapping_add(m);
+    let verts = g.read::<u32>(m + 8).wrapping_add(m);
+    let nrms = g.read::<u32>(m + 0xc).wrapping_add(m);
+    // call width: 3
+    g.call(t(g, 0x180, 231), 0, &[c, b, y]);
+    // call width: 2
+    g.call(t(g, 0x19b, 230), 0, &[d, c]);
+    // call width: 2
+    g.call(t(g, 0x1af, 230), 0, &[w(0x1b4), d]);
+    for o in [0x2cu32, 0x28, 0x24] {
+        g.write::<u32>(lf(o), 0);
+    }
+    let mut bufs = [0u32; 5];
+    for (i, (op, add_)) in (0u32..).zip([
+        (0x1c1u32, 0u32),
+        (0x1e7, 0x1_0000),
+        (0x1fb, 0x2_0000),
+        (0x214, 0x3_0000),
+        (0x22d, 0x4_0000),
+    ]) {
+        // call width: 0
+        bufs[i as usize] = g.call(t(g, op, 562), 0, &[]).eax.wrapping_add(add_);
+    }
+    let [b0, b1, b2, b3, b4] = bufs;
+    let npts = |g: &G| i32::from(g.read::<i16>(m + 0x12));
+    if mode == 1 {
+        let mut i = 0i32;
+        while i < npts(g) {
+            let i4 = i.cast_unsigned();
+            for q in 0..3u32 {
+                // cvtdq2ps of an i16: exact
+                let v = f32::from(g.read::<i16>(verts + 6 * i4 + 2 * q));
+                g.write::<f32>(b2 + 0x10 * i4 + 4 * q, v);
+            }
+            g.write::<u32>(b2 + 0x10 * i4 + 0xc, ONE);
+            i += 1;
+        }
+        // push C; push B1; push n: the call's return address at ebp - 0x1bc
+        let esp = lf(0x1bc);
+        for (i, v) in (1u32..).zip([npts(g).cast_unsigned(), b1, c]) {
+            g.write::<u32>(esp + 4 * i, v);
+        }
+        let tf = Frame {
+            at: call(0x2e1),
+            esp,
+            ecx: b2,
+            edx: b0,
+            ..*fr
+        };
+        crate::m0267::transform_points(g, img, &tf);
+        g.write::<u32>(lf(0xc), ONE);
+        let q = lf(0x18);
+        let mut j = 0i32;
+        let mut out = b4;
+        while j < i32::from(g.read::<i16>(m + 0x14)) {
+            let j4 = j.cast_unsigned();
+            let kn = k(g, 0x315);
+            for qi in 0..3u32 {
+                let v = mul(f32::from(g.read::<i16>(nrms + 6 * j4 + 2 * qi)), kn);
+                g.write::<f32>(q + 4 * qi, v);
+            }
+            // call width: 3
+            g.call(t(g, 0x357, 229), 0, &[out, w(0x360), q]);
+            for o in [0u32, 4] {
+                // `andpd` of the double: the f32's sign cleared, exactly
+                let v = g.read::<f32>(out + o).abs();
+                g.write::<f32>(out + o, v);
+            }
+            out += 0x10;
+            j += 1;
+        }
+    }
+    // the screen bounds of the second buffer
+    let (mut min_x, mut max_x) = (k(g, 0x3e6), k(g, 0x3ee));
+    let (mut min_y, mut max_y) = (min_x, max_x);
+    for i in 0..npts(g).max(0).cast_unsigned() {
+        let (px, py) = (
+            g.read::<f32>(b1 + 0x10 * i),
+            g.read::<f32>(b1 + 0x10 * i + 4),
+        );
+        if min_x > px {
+            min_x = px;
+        }
+        if px > max_x {
+            max_x = px;
+        }
+        if min_y > py {
+            min_y = py;
+        }
+        if py > max_y {
+            max_y = py;
+        }
+    }
+    let range = (sub(max_x, min_x), sub(max_y, min_y));
+    // the uv window of the first, shifted and scaled into the fourth
+    let (mut u_min, mut u_max) = (k(g, 0x459), k(g, 0x465));
+    let (mut v_min, mut v_max) = (u_min, u_max);
+    if npts(g) > 0 {
+        let (k1x, k2, k1y) = (k(g, 0x4b7), k(g, 0x4bf), k(g, 0x4c7));
+        let mut i = 0u32;
+        while i.cast_signed() < npts(g) {
+            let u = mul(sub(g.read::<f32>(b0 + 0x10 * i), k1x), k2);
+            let v = mul(sub(g.read::<f32>(b0 + 0x10 * i + 4), k1y), k2);
+            g.write::<f32>(b3 + 0x10 * i, u);
+            g.write::<f32>(b3 + 0x10 * i + 4, v);
+            if u_min > u {
+                u_min = u;
+            }
+            if u > u_max {
+                u_max = u;
+            }
+            if v_min > v {
+                v_min = v;
+            }
+            if v > v_max {
+                v_max = v;
+            }
+            i += 1;
+        }
+    }
+    let uvw = Uv0267 {
+        min: (min_x, min_y),
+        range,
+        u: (u_min, u_max),
+        v: (v_min, v_max),
+    };
+    let mut left = i32::from(g.read::<i16>(m + 0x10));
+    let mut gi = 0u32;
+    let mut index = 0u32;
+    let alpha = mul(crate::sb_sse::cvt(alpha_in), k(g, 0x6a6));
+    let mut run = 0u32;
+    while left > 0 {
+        let mut face = grp + 0x10;
+        // call width: 2
+        let p = g.call(t(g, 0x596, 887), 0, &[s, gi]).eax;
+        let n3 = i32::from(g.read::<i16>(grp + 2))
+            .wrapping_mul(3)
+            .cast_unsigned();
+        // call width: 4
+        if g.call(t(g, 0x5a9, 886), 0, &[s, gi, n3, n3]).eax == 0 {
+            return Ret::eax(0);
+        }
+        // call width: 2
+        g.call(t(g, 0x5d2, 903), 0, &[p, 1]);
+        // call width: 1
+        let mut pos = g.call(t(g, 0x5e2, 898), 0, &[p]).eax;
+        // call width: 1
+        let mut uv = g.call(t(g, 0x5f1, 901), 0, &[p]).eax;
+        // call width: 1
+        let mut col = g.call(t(g, 0x60b, 900), 0, &[p]).eax;
+        // call width: 1
+        let idx = g.call(t(g, 0x623, 902), 0, &[p]).eax;
+        let mut i = 0i32;
+        while i < i32::from(g.read::<i16>(grp + 2)).wrapping_mul(3) {
+            let i4 = i.cast_unsigned();
+            g.write::<u32>(pos + 4 * i4, 0);
+            g.write::<u16>(idx + 2 * i4, 0);
+            i += 1;
+        }
+        if g.read::<i8>(grp + 1) == 1 {
+            let mut at = idx;
+            let mut fi = 0u32;
+            while fi.cast_signed() < i32::from(g.read::<i16>(grp + 2)) {
+                let gs = [w(0x6f0), w(0x707), w(0x71a)];
+                for (j, (op, gp)) in (0u32..).zip([0x6dfu32, 0x6fb, 0x70e].into_iter().zip(gs)) {
+                    let vi = u32::from(g.read::<u16>(face + 0xc + 2 * j)) << 4;
+                    // call width: 2
+                    g.call(t(g, op, 325), 0, &[gp, b0.wrapping_add(vi)]);
+                }
+                // (the 1.0 of corner a's `w` loads and the uv window's sides:
+                // one load for both there, two in the others)
+                for (j, (gp, ops)) in (0u32..).zip([
+                    (
+                        gs[0],
+                        [
+                            0x76eu32, 0x776, 0x7a4, 0x7ac, 0x72a, 0x72a, 0x816, 0x82f, 0x844, 0x85e,
+                        ],
+                    ),
+                    (
+                        gs[1],
+                        [
+                            0x980, 0x988, 0x9af, 0x9b7, 0x919, 0x998, 0xa18, 0xa31, 0xa46, 0xa5b,
+                        ],
+                    ),
+                    (
+                        gs[2],
+                        [
+                            0xb69, 0xb71, 0xb98, 0xba0, 0xb01, 0xb81, 0xc01, 0xc1a, 0xc2f, 0xc44,
+                        ],
+                    ),
+                ]) {
+                    let ni = (u32::from(g.read::<u16>(face + 0x14 + 2 * j)) << 4).wrapping_add(b4);
+                    let si = (u32::from(g.read::<u16>(face + 0xc + 2 * j)) << 4).wrapping_add(b1);
+                    let pt = corner_0267(
+                        g,
+                        img,
+                        f,
+                        (gp, ni, si),
+                        &uvw,
+                        (uv + 8 * j, pos + 0xc * j),
+                        ops,
+                    );
+                    wb.add(pt);
+                    for q in 0..3u32 {
+                        g.write::<u32>(col + 0x10 * j + 4 * q, ONE);
+                    }
+                    g.write::<f32>(col + 0x10 * j + 0xc, alpha);
+                }
+                col += 0x30;
+                pos += 0x24;
+                uv += 0x18;
+                let base = fi.wrapping_mul(3);
+                for i in 0..3u32 {
+                    #[allow(clippy::cast_possible_truncation)] // the halfword store
+                    g.write::<u16>(at + 2 * i, base.wrapping_add(i) as u16);
+                }
+                at += 6;
+                run += 1;
+                if run >= 1 {
+                    // call width: 2
+                    g.call(t(g, 0xd43, 382), 0, &[0, 0]);
+                    run = 0;
+                    index = index.wrapping_sub(1) & 1;
+                    let hb = if index & 1 != 0 { w(0xd76) } else { w(0xd71) };
+                    for o in [0u32, 4, 8, 0xc] {
+                        g.write::<u32>(hb + o, 0);
+                    }
+                    g.write::<u32>(hb, 0x7000_000c);
+                }
+                fi += 1;
+                face += 0x1c;
+            }
+        }
+        left = left.wrapping_sub(i32::from(g.read::<i16>(grp + 2)));
+        gi += 1;
+        grp = face;
+    }
+    // call width: 1
+    let mm = g.call(t(g, 0xdf7, 893), 0, &[s]).eax;
+    // call width: 1
+    let bmin = g.call(t(g, 0xe0c, 890), 0, &[s]).eax;
+    // call width: 1
+    let bmax = g.call(t(g, 0xe20, 891), 0, &[s]).eax;
+    // call width: 2
+    g.call(t(g, 0xe39, 230), 0, &[mm, y]);
+    // call width: 3
+    g.call(t(g, 0xe56, 231), 0, &[mm, gw(g, 0xe5d), mm]);
+    for (o, v) in [(0xcu32, 0u32), (0x1c, 0), (0x2c, 0), (0x3c, ONE)] {
+        g.write::<u32>(mm + o, v);
+    }
+    for i in 0..3u32 {
+        g.write::<f32>(bmin + 4 * i, wb.min[i as usize]);
+        g.write::<f32>(bmax + 4 * i, wb.max[i as usize]);
+    }
+    // call width: 2
+    g.call(t(g, 0xedc, 892), 0, &[s, 0]);
+    // call width: 3
+    g.call(t(g, 0xef1, 884), 0, &[lo, hi, 1]);
+    let lock = gw(g, 0xf0d);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    g.call(t(g, 0xf23, 775), 0, &[lo, hi]);
+    let lock = gw(g, 0xf31);
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`mesh_0267`] (the `rel32`s: the registration, the point transform,
+/// the cookie check twice).
+pub const MESH_0267: Sig = Sig {
+    len: 3914,
+    hash: 0x70c_f389_0132_4c08,
+    calls: &[
+        (0xd7, Callee::Sig(&MESH_REGISTER_0267)),
+        (0xe6, Callee::Any),
+        (0x2e1, Callee::Sig(&crate::m0267::TRANSFORM_POINTS)),
+        (0xf42, Callee::Any),
+    ],
+    imports: &[],
+};
