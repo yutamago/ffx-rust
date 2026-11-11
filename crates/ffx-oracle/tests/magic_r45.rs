@@ -2572,3 +2572,89 @@ fn start_up_0392() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0392` 0x10003180 (`r45::actors_tilt_0392`, internal): no
+/// actors, and three with counts positive (spinning and not, with and
+/// without the matrix), reaching 0 and not positive; heights above and
+/// below the top; angles wrapping both ways.
+#[test]
+fn actors_tilt_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x3180);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(&mut t, 239, 3, |_, a| 0x0239_0000 ^ a[1]);
+    for (s, n) in [(210u32, 2usize), (211, 2), (217, 2), (255, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x224), sel);
+    t.write(sel, &[3, 1, 4, 2]);
+    t.set_u32(w(0x216), 0x0a0a_0216);
+    let am = t.img.rel32_target(f + 0x210);
+    t.set_u32(t.img.word(am + 0x15), sel);
+    for i in 0..0x14 {
+        t.set_u32(t.img.word(am + 0x2e) + 4 * i, 0x0d00 + i);
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x13), s);
+    let (hi, lo) = (
+        f32::from_bits(t.u32(w(0x30))),
+        f32::from_bits(t.u32(w(0xd0))),
+    );
+    // per case: the actor count and per actor (count, spin flag, matrix flag)
+    let cases: [(u32, [(i32, u32, u32); 3]); 4] = [
+        (0, [(3, 1, 1); 3]),
+        (3, [(5, 1, 1), (3, 0, 1), (-1, 1, 1)]),
+        (3, [(1, 1, 1), (4, 1, 0), (0, 1, 1)]),
+        (2, [(1, 0, 0), (9, 1, 1), (2, 1, 1)]),
+    ];
+    for (k, (n, recs)) in (0u32..).zip(cases) {
+        t.set_u32(w(0x22), n);
+        for (j, (c, spin, mat)) in (0u32..).zip(recs) {
+            let r = s + 0x4c10 + 0xe0 * j;
+            junk(&mut t, r, 0xe0, k + j);
+            floats(&mut t, r, 0x38, k + j);
+            t.set_u32(r + 0xd0, c.cast_unsigned());
+            t.set_u32(r + 0xd4, 6 + j);
+            t.set_u32(r + 0xdc, spin);
+            t.set_u32(r + 0xd8, mat);
+            setf(&mut t, r + 0xa4, 0.5 * (k + j) as f32 - 1.0);
+            setf(&mut t, r + 0x90, hi + 1.0);
+            setf(&mut t, r + 0x94, lo - 1.0);
+            setf(&mut t, r + 0x98, 0.25 * j as f32);
+        }
+        ownb::dirty_stack(&mut t, 0x3180 + k, &[]);
+        let call = Call {
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        };
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::actors_tilt_0392(g, img, fr)
+        });
+    }
+}

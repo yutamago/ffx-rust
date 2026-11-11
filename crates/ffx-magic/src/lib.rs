@@ -5430,6 +5430,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 throw aim 0392", &r45::THROW_AIM_0392),
     ("r45 aim set-up 0392", &r45::AIM_SETUP_0392),
     ("r45 start-up 0392", &r45::START_UP_0392),
+    ("r45 actors tilt 0392", &r45::ACTORS_TILT_0392),
     // round 45 (magic-r45): end of INTERNAL
 ];
 

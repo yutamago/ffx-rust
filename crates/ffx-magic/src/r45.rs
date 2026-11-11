@@ -3743,3 +3743,120 @@ pub const LOAD_0392: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0392))],
     imports: &[],
 };
+
+/// `magic_0392`'s actors' tilt (0x10003180, 630 bytes; internal, no
+/// arguments; a /GS frame, the matrix `M` at `ebp - 0x44`): for each
+/// actor `i` below `*G_N` with its record `R = S + 0x4c10 + 0xe0 i` (`S =
+/// *G_S`) whose count `R + 0xd0` is positive: the count drops; with `R +
+/// 0xdc` 1, the spin `R + 0xb4 += R[0xc4]`, the height `R + 0x34 +=` it
+/// (kept at most `R[0xa4]`), `t` = count / `R[0xd4]` and the angles `R +
+/// 0x80..+0x88` = `R[0x90..] (K - t) + 0 t` wrapped once; with `R + 0xd8`
+/// also 1, `M` = slot 235 turned by Z, X, Y (slots 330, 328, 329 by `R +
+/// 0x88`, `+0x80`, `+0x84`) and `R + 0x40` = slot 231 `(R + 0x40, R,
+/// M)`; then `R + 0x70..` = `R + 0x30..`. At count 0 the actor's mode is reset
+/// ([`actor_mode`](crate::sa_script::actor_mode), `edx` 0) and slot 239
+/// `(*G_A, b, 0)` runs (`b` its selection byte). Each slot call passes
+/// the words the original leaves on the stack. Returns the last value in
+/// `eax` (the frame's cookie word `cookie ^ ebp` with no actors).
+#[allow(clippy::too_many_lines)] // the counts, the angles, the matrix
+pub fn actors_tilt_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let m = fr.esp.wrapping_sub(4).wrapping_sub(0x44);
+    let mut r = g.read::<u32>(w(0x13)).wrapping_add(0x4c10);
+    // the frame's cookie word, `cookie ^ ebp`, until an actor runs
+    let mut eax = g.read::<u32>(w(0x7)) ^ fr.esp.wrapping_sub(4);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0x22)).cast_signed() {
+        let c = g.read::<u32>(r + 0xd0);
+        eax = c;
+        if c.cast_signed() > 0 {
+            eax = c - 1;
+            g.write::<u32>(r + 0xd0, eax);
+            if g.read::<u32>(r + 0xdc) == 1 {
+                let spin = add(g.read::<f32>(r + 0xc4), g.read::<f32>(r + 0xb4));
+                g.write::<f32>(r + 0xb4, spin);
+                let h = add(g.read::<f32>(r + 0x34), spin);
+                g.write::<f32>(r + 0x34, h);
+                let top = g.read::<f32>(r + 0xa4);
+                // comiss h, top; jbe: kept unless above (ordered)
+                if h > top {
+                    g.write::<f32>(r + 0x34, top);
+                }
+                let n = crate::sb_sse::cvt(g.read::<u32>(r + 0xd0));
+                let total = crate::sb_sse::cvt(g.read::<u32>(r + 0xd4));
+                let tt = div(n, total);
+                let u = sub(k(g, 0xb4), tt);
+                let zero_t = mul(tt, 0.0);
+                let (hi, tw, lo) = (k(g, 0x30), k(g, 0x38), k(g, 0xd0));
+                let wrap = |a: f32| {
+                    if a > hi {
+                        sub(a, tw)
+                    } else if lo > a {
+                        add(a, tw)
+                    } else {
+                        a
+                    }
+                };
+                for d in [0u32, 4, 8] {
+                    let a = wrap(add(mul(g.read::<f32>(r + 0x90 + d), u), zero_t));
+                    g.write::<f32>(r + 0x80 + d, a);
+                }
+                if g.read::<u32>(r + 0xd8) == 1 {
+                    let mut st = Pushes::default();
+                    st.push(m);
+                    st.call(g, t(g, 0x162, 235), 0);
+                    for (op, slot, d) in [
+                        (0x181, 330, 0x88u32),
+                        (0x1a3, 328, 0x80),
+                        (0x1c5, 329, 0x84),
+                    ] {
+                        if slot != 330 {
+                            st.pop(2);
+                        }
+                        st.set_top(g.read::<u32>(r + d));
+                        st.push_all(&[m, m]);
+                        st.call(g, t(g, op, slot), 0);
+                    }
+                    st.push_all(&[m, r, r + 0x40]);
+                    st.call(g, t(g, 0x1db, 231), 0);
+                }
+                for j in 0..4u32 {
+                    eax = g.read::<u32>(r + 0x30 + 4 * j);
+                    g.write::<u32>(r + 0x70 + 4 * j, eax);
+                }
+            }
+            if g.read::<u32>(r + 0xd0) == 0 {
+                let mode = Frame {
+                    at: img.rel32_target(f + 0x210),
+                    // push ebp; sub esp, 0x44; push esi; push edi; the call
+                    esp: fr.esp.wrapping_sub(0x54),
+                    ecx: i,
+                    edx: 0,
+                    ..Frame::default()
+                };
+                crate::sa_script::actor_mode(g, img, &mode);
+                let c = g.read::<u32>(w(0x216));
+                let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x224)).wrapping_add(i)));
+                eax = g.call(t(g, 0x230, 239), 0, &[c, b, 0]).eax;
+            }
+        }
+        i += 1;
+        r += 0xe0;
+    }
+    Ret::eax(eax)
+}
+
+/// [`actors_tilt_0392`] (the `rel32`s: the actor's mode, the cookie
+/// check).
+pub const ACTORS_TILT_0392: Sig = Sig {
+    len: 630,
+    hash: 0xc670_3397_2b45_5d2b,
+    calls: &[
+        (0x210, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0x26e, Callee::Any),
+    ],
+    imports: &[],
+};
