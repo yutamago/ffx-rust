@@ -1404,3 +1404,138 @@ fn visit_0297() {
         t.check_entry(f, Call::default(), &[g], Eax::Checked);
     }
 }
+
+/// `magic_0297` 0x10003d20 (`r47::image_thunk_0297`) running 0x100034f0
+/// (`r47::image_visit_0297`): the walk stopping, the life running out,
+/// the scale stepping (clamped up and down), the fade bytes (in the
+/// middle, from below 0, past 0x100), nothing left (the node leaving its
+/// parent or with none), paused or not, the draw with and without the
+/// fade, slot 885 answering 0 or not.
+#[test]
+fn image_visit_0297() {
+    let Some(mut t) = twin(297) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x3d20);
+    let v = t.at(0x34f0);
+    let w = |t: &Twin, o: u32| t.img.word(v + o);
+    for s in [544u32, 588, 327] {
+        rec(&mut t, s, 2, move |m, a| {
+            for i in 0..4 {
+                wf(
+                    m,
+                    a[1] + 4 * i,
+                    s as f32 * 0.01 + i as f32 - (a[0] & 3) as f32,
+                );
+            }
+            s
+        });
+    }
+    for (s, n) in [(232u32, 2usize), (233, 3), (229, 3), (231, 3)] {
+        rec(&mut t, s, n, move |m, a| {
+            log16(m, a[1]);
+            for i in 0..4 {
+                let x = rf(m, a[1] + 4 * i) * 0.5 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 277, 1, |_, a| 0x0277_0000 ^ a[0]);
+    t.stub_st0(277, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    // the image: slot 941 hands out a buffer
+    let image = SCRATCH + 0x2_0800;
+    rec(&mut t, 941, 1, move |_, _| image);
+    rec(&mut t, 857, 6, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[2 + i]);
+            m.w32(SCRATCH + 0x7f60 + 4 * i as u32, x);
+        }
+        0x857
+    });
+    rec(&mut t, 885, 7, |m, a| {
+        m.w32(a[6], a[0] ^ 0x885);
+        m.r32(SCRATCH + 0x7f40)
+    });
+    // the mesh packets' work block
+    let block = SCRATCH + 0x3_0000;
+    rec(&mut t, 264, 1, move |_, _| block);
+    let lock = SCRATCH + 0x4100;
+    for o in [0x773u32, 0x7a1] {
+        let at = w(&t, o);
+        t.set_u32(at, lock);
+    }
+    let tab = w(&t, 0x25b);
+    for i in 0..0x20u32 {
+        t.set_u8(tab + i, (i as i8 * 3 - 40) as u8);
+    }
+    let c = SCRATCH + 0x5c0;
+    t.set_u32(c + 0x28, 0x2828_0000);
+    let at = w(&t, 0x613);
+    t.set_u32(at, c);
+    let g = SCRATCH + 0x100;
+    let n = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x1300;
+    let obj = SCRATCH + 0x1400;
+    let cam = SCRATCH + 0x1500;
+    let model = SCRATCH + 0x1700;
+    // (same mode, paused, life, bits, step, fade, base, parent, 885)
+    #[allow(clippy::type_complexity)]
+    let cases: [(bool, u32, u16, u16, f32, f32, u16, bool, u32); 9] = [
+        (true, 0, 5, 0xf, 0.5, 0.5, 0x40, false, 1),
+        (false, 0, 0, 0xf, 0.5, 0.5, 0x40, true, 1),
+        (false, 0, 5, 0xf, 0.5, 0.25, 0x40, false, 1),
+        (false, 0, 5, 0xd, -0.5, -0.25, 0x20, true, 0),
+        (false, 0, 5, 0x8, 0.5, -0.5, 0x20, false, 1),
+        (false, 1, 5, 0xc, 0.25, 2.5, 0x30, false, 1),
+        (false, 1, 5, 0x6, 4.0, 0.25, 0x30, false, 0),
+        (false, 0, 5, 0x4, -4.0, 0.25, 0x30, false, 1),
+        (false, 0, 5, 0x8, 0.5, 0.06, 0x08, false, 1),
+    ];
+    for (k, (same, paused, life, bits, step, fade, base, with_parent, ok)) in (0u32..).zip(cases) {
+        junk(&mut t, n, 0xc0, k);
+        junk(&mut t, image, 0x180, k);
+        junk(&mut t, parent, 0x20, k);
+        t.write(g, &[0x5a, 0x5a, 0x5a, 0x5a, 0x33, 4, 0x77, 0x77]);
+        t.set_u32(g, n);
+        t.set_u8(n + 0x1a, if same { 4 } else { 9 });
+        t.set_u32(n + 0x10, n);
+        t.set_u32(n + 0x88, obj);
+        t.set_u32(obj + 0x54, 0x00e0_0000 + k);
+        t.set_u32(n + 0x8c, cam);
+        floats(&mut t, cam + 0x9c, 0x10, 1.0 + k as f32);
+        t.set_u32(n + 0x90, model);
+        t.write(model, &[0; 0x10]);
+        t.set_u32(n + 0x80, 0x0001_3456 + k);
+        t.set_u16(n + 0xba, life);
+        t.set_u16(n + 0xb4, bits);
+        t.set_u16(n + 0xb8, base);
+        t.set_u16(n + 0xb0, 0x0123);
+        t.set_u8(n + 0xbc, 0x45);
+        t.set_u32(n + 0xac, 0x00ac_0000 + k);
+        for (o, x) in [
+            (0xa0u32, step),
+            (0x94, 1.0),
+            (0x9c, 2.0),
+            (0xa4, fade),
+            (0xa8, 0.125),
+            (0x98, 0.75),
+        ] {
+            t.set_u32(n + o, x.to_bits());
+        }
+        // the parent with this node its only child (or none)
+        if with_parent {
+            t.set_u32(n + 0x14, parent);
+            t.set_u32(n + 4, parent);
+            t.set_u32(n + 8, parent);
+            t.set_u16(parent + 0x18, 1);
+        } else {
+            t.set_u32(n + 0x14, 0);
+        }
+        let at = w(&t, 0x72);
+        t.set_u32(at, paused);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(SCRATCH + 0x7f40, ok);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[g], Eax::Checked);
+    }
+}

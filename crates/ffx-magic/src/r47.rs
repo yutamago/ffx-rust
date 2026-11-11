@@ -2417,3 +2417,304 @@ pub const VISIT_THUNK_0297: Sig = Sig {
     calls: &[(8, Callee::Sig(&VISIT_0297))],
     imports: &[],
 };
+
+/// `magic_0297`'s image node visit (0x100034f0, 2028 bytes; thiscall,
+/// `ecx` = the group; a 16-aligned /GS frame, `S` = `esp` after the two
+/// pushes). The node walk ([`walk`](crate::nodes::walk), `ecx` the owner
+/// for every visit); when it ran, for the owner `N`:
+/// - unpaused (`*G_P` 0): its life `u16 +0xba` counts down; at 0 the node
+///   leaves ([`leave`](crate::sa_misc::leave)) and its model (`*(+0x88) +
+///   0x54`) is released (slots 357 and 356 `(h, -1, -1)`, the end); with
+///   bit 2 of `u16 +0xb4` the scale `+0x94` steps by `+0xa0` up to the
+///   limit `+0x9c` (then the bit is cleared);
+/// - two colours 1.0 in the frame; with bit 1, slots 355 and 354 `(h,
+///   -1)`;
+/// - with bit 3 the fade: (unpaused) `+0xa4 -= +0xa8`, `c = (+0xa4 K)`
+///   truncated, `b = u16 +0xb8`: the bytes `3 + (i & 0xe0) +
+///   TAB[i & 0x1f]` of slot 941 `(+0xac)`'s image get `(i - c) / b K`
+///   (truncated) for `i` from `max(c, 0)` below `b + c` and 0x100, then 0
+///   up to 0x100; the image is loaded (slot 425 `(N + 0x1c, u16 +0xb0, 4,
+///   byte +0xbc, 0, 0, 16, 16)`, slot 421 `(0)`, slot 423 `(N + 0x1c,
+///   +0xac)`); with nothing left drawn the node leaves its parent
+///   ([`leave_parent`](crate::nodes::leave_parent)) and is released as
+///   above;
+/// - else the draw: the view rows (slot 544 `(i, &M[i])`), the camera rows
+///   (slot 588, `w` 0), slot 327 `(V, *(+0x8c) + 0x9c)`; `V`'s three rows
+///   normalised and negated (slots 232, 233 `-1`), `R` rows through `V`
+///   (slot 229), `V = V G * (+0x8c's)` (slot 231); the scale slot 277
+///   `(h)`; the packet record (`+0x80`, `+0x84`, `M`, `R`, the colours,
+///   `V`, the model `+0x90`, `+0x78` of `*G_C`, the sizes `(+0x98 s K +
+///   +0x94 s K)` and `+0x94 s K`) for the mesh packets
+///   ([`mesh_packets_0426`](crate::r26::mesh_packets_0426)); the fade
+///   floats (`c` and `b`, or -99999 each) and the sizes over `K'` for
+///   slot 857 `(h, NAME, ...)`; slot 885 `(u16 +0x80 & 0x3fff, 0x13, 0,
+///   0, 0, 0, &BUF)` with the lock held, and slot 906 `(h, NAME2, BUF or
+///   0)`.
+///
+/// Returns the last slot's `eax`, else the walk's.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn image_visit_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -16; sub esp, 0x268; two pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x268);
+    let cookie = gw(g, 0xd) ^ b0;
+    g.write::<u32>(b0 + 0x264, cookie);
+    let s = b0.wrapping_sub(8);
+    let this = fr.ecx;
+    let owner = g.read::<u32>(this);
+    // (`eax` holds the cookie when the walk starts)
+    let (eax, tail) = crate::nodes::walk(g, this, owner, cookie);
+    let Some(n) = tail else {
+        return Ret::eax(eax);
+    };
+    let model = |g: &G| g.read::<u32>(g.read::<u32>(n + 0x88) + 0x54);
+    let release = |g: &mut G| {
+        let h = model(g);
+        // call width: 3
+        g.call(t(g, 0xac, 357), 0, &[h, u32::MAX, u32::MAX]);
+        // call width: 3
+        Ret::eax(g.call(t(g, 0xbc, 356), 0, &[h, u32::MAX, u32::MAX]).eax)
+    };
+    let mut paused = gw(g, 0x72);
+    if paused == 0 {
+        let life = g.read::<u16>(n + 0xba);
+        g.write::<u16>(n + 0xba, life.wrapping_sub(1));
+        if life == 0 {
+            crate::sa_misc::leave(g, n, 0);
+            return release(g);
+        }
+        let bits = g.read::<u16>(n + 0xb4);
+        if bits & 4 != 0 {
+            let step = g.read::<f32>(n + 0xa0);
+            let x = add(step, g.read::<f32>(n + 0x94));
+            g.write::<f32>(n + 0x94, x);
+            let limit = g.read::<f32>(n + 0x9c);
+            let past = if step > 0.0 { x > limit } else { limit > x };
+            if past {
+                g.write::<u16>(n + 0xb4, bits & 0xfffb);
+                g.write::<f32>(n + 0x94, limit);
+            }
+        }
+    }
+    let (col_a, col_b) = (s + 0xa8, s + 0x98);
+    for i in 0..4u32 {
+        g.write::<u32>(col_a + 4 * i, ONE);
+        g.write::<u32>(col_b + 4 * i, ONE);
+    }
+    if g.read::<u16>(n + 0xb4) & 2 != 0 {
+        let h = model(g);
+        // call width: 2
+        g.call(t(g, 0x191, 355), 0, &[h, u32::MAX]);
+        let h = model(g);
+        // call width: 2
+        g.call(t(g, 0x1a9, 354), 0, &[h, u32::MAX]);
+        paused = gw(g, 0x1b7);
+    }
+    if g.read::<u16>(n + 0xb4) & 8 != 0 {
+        if paused == 0 {
+            let x = sub(g.read::<f32>(n + 0xa4), g.read::<f32>(n + 0xa8));
+            g.write::<f32>(n + 0xa4, x);
+        }
+        let c = cvtt(mul(g.read::<f32>(n + 0xa4), k(g, 0x1f3)));
+        let base = i32::from(g.read::<u16>(n + 0xb8));
+        let end = base.wrapping_add(c);
+        let mut i = c.max(0);
+        let mut from = i.wrapping_sub(c);
+        let put = |g: &mut G, i: i32, (op, tab): (u32, u32), v: u8| {
+            let a = g.call(t(g, op, 941), 0, &[g.read::<u32>(n + 0xac)]).eax;
+            let tab = gw(g, tab);
+            let d = i32::from(g.read::<i8>(tab.wrapping_add((i & 0x1f).cast_unsigned())));
+            let at = a
+                .wrapping_add(d.cast_unsigned())
+                .wrapping_add((i & 0xe0).cast_unsigned())
+                .wrapping_add(3);
+            g.write::<u8>(at, v);
+        };
+        if c < 0x100 {
+            while i < end {
+                #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+                let x = mul(div(from as f32, base as f32), k(g, 0x26b));
+                from += 1;
+                // call width: 1
+                put(g, i, (0x235, 0x25b), cvtt(x).to_le_bytes()[0]);
+                i += 1;
+                if i >= 0x100 {
+                    break;
+                }
+            }
+        }
+        let left = if i < 0x100 { 0x100 - i } else { 0 };
+        while i < 0x100 {
+            // call width: 1
+            put(g, i, (0x2c1, 0x2d5), 0);
+            i += 1;
+        }
+        let pic = n + 0x1c;
+        let thunk = |g: &G, at: u32| {
+            let th = call(at);
+            slot_target(g, img.word(th + 1), img.word(th + 7) / 4)
+        };
+        let words = [
+            pic,
+            u32::from(g.read::<u16>(n + 0xb0)),
+            4,
+            u32::from(g.read::<u8>(n + 0xbc)),
+            0,
+            0,
+            0x10,
+            0x10,
+        ];
+        // call width: 8
+        g.call(thunk(g, 0x31c), 0, &words);
+        // call width: 1
+        g.call(thunk(g, 0x323), 0, &[0]);
+        let a = g.read::<u32>(n + 0xac);
+        // call width: 2
+        g.call(thunk(g, 0x332), 0, &[pic, a]);
+        if left >= 0x100 {
+            let parent = g.read::<u32>(n + 0x14);
+            if parent != 0 {
+                crate::nodes::leave_parent(g, n, parent);
+            }
+            return release(g);
+        }
+    }
+    // the draw: the view rows, the camera rows
+    let (m, r, v) = (s + 0x128, s + 0xf8, s + 0xb8);
+    for (i, op) in (0u32..).zip([0x3a6u32, 0x3bd, 0x3d4, 0x3eb]) {
+        // call width: 2
+        g.call(t(g, op, 544), 0, &[i, m + 0x10 * i]);
+    }
+    for (i, op) in (0u32..).zip([0x402u32, 0x419, 0x43b]) {
+        if i > 0 {
+            g.write::<u32>(r + 0x10 * i - 4, 0);
+        }
+        // call width: 2
+        g.call(t(g, op, 588), 0, &[i, r + 0x10 * i]);
+    }
+    let cam = g.read::<u32>(n + 0x8c).wrapping_add(0x9c);
+    g.write::<u32>(r + 0x2c, 0);
+    // call width: 2
+    g.call(t(g, 0x469, 327), 0, &[v, cam]);
+    for (i, (o232, o233)) in (0u32..).zip([(0x48du32, 0x4adu32), (0x4c6, 0x4e6), (0x4ff, 0x51f)]) {
+        let row = v + 0x10 * i;
+        // call width: 2
+        g.call(t(g, o232, 232), 0, &[row, row]);
+        // call width: 3
+        g.call(t(g, o233, 233), 0, &[row, row, 0xbf80_0000]);
+    }
+    for (i, op) in (0u32..).zip([0x547u32, 0x56f, 0x597]) {
+        let row = r + 0x10 * i;
+        // call width: 3
+        g.call(t(g, op, 229), 0, &[row, v, row]);
+    }
+    let cam = g.read::<u32>(n + 0x8c).wrapping_add(0x9c);
+    // call width: 3
+    g.call(t(g, 0x5c0, 231), 0, &[v, w(0x5ba), cam]);
+    let h = model(g);
+    // call width: 1
+    let scale = st0_f32(g.call(t(g, 0x5d9, 277), 0, &[h]).st0);
+    g.write::<f32>(s + 0xa4, scale);
+    // the packet record at S + 0x20
+    let rec = s + 0x20;
+    for (o, from) in [(0x48u32, 0x90u32), (8, 0x80), (0xc, 0x84)] {
+        let x = g.read::<u32>(n + from);
+        g.write::<u32>(rec + o, x);
+    }
+    let c = gw(g, 0x613);
+    let x = g.read::<u32>(c + 0x28);
+    g.write::<u32>(rec + 0x58, x);
+    for (o, p) in [
+        (0x44u32, v),
+        (0x30, col_a),
+        (0x4c, col_b),
+        (0x10, m),
+        (0x14, r),
+    ] {
+        g.write::<u32>(rec + o, p);
+    }
+    let a = mul(mul(g.read::<f32>(n + 0x98), scale), k(g, 0x660));
+    let bsz = mul(mul(g.read::<f32>(n + 0x94), scale), k(g, 0x668));
+    let sum = add(a, bsz);
+    g.write::<f32>(rec + 0x54, bsz);
+    g.write::<f32>(rec + 0x50, sum);
+    crate::r26::mesh_packets_0426(g, img, call(0x697), rec);
+    let fl = s + 0x88;
+    let x = div(g.read::<f32>(rec + 0x50), k(g, 0x6ac));
+    g.write::<f32>(fl, x);
+    let y = div(g.read::<f32>(rec + 0x54), k(g, 0x6c3));
+    g.write::<f32>(fl + 4, y);
+    if g.read::<u16>(n + 0xb4) & 8 != 0 {
+        let c = cvtt(mul(g.read::<f32>(n + 0xa4), k(g, 0x6de)));
+        #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+        let c = c as f32;
+        g.write::<f32>(fl + 8, c);
+        let b = f32::from(g.read::<u16>(n + 0xb8));
+        g.write::<f32>(fl + 0xc, b);
+    } else {
+        g.write::<u32>(fl + 8, 0xc7c3_4f80);
+        g.write::<u32>(fl + 0xc, 0xc7c3_4f80);
+    }
+    let h = model(g);
+    // call width: 6
+    g.call(
+        t(g, 0x754, 857),
+        0,
+        &[h, w(0x74c), fl, fl + 4, fl + 8, fl + 0xc],
+    );
+    let id = u32::from(g.read::<u16>(n + 0x80) & 0x3fff);
+    let lock = gw(g, 0x773);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let buf = s + 0x168;
+    // call width: 7
+    let ok = g
+        .call(t(g, 0x788, 885), 0, &[id, 0x13, 0, 0, 0, 0, buf])
+        .eax;
+    let lock = gw(g, 0x7a1);
+    g.write::<u32>(lock, saved);
+    let x = if ok == 0 { 0 } else { buf };
+    let h = model(g);
+    // call width: 3
+    Ret::eax(g.call(t(g, 0x7c9, 906), 0, &[h, w(0x7c1), x]).eax)
+}
+
+/// [`image_visit_0297`] (the `rel32`s: the node leave, the slot thunks,
+/// the mesh packets, the cookie check).
+pub const IMAGE_VISIT_0297: Sig = Sig {
+    len: 2028,
+    hash: 0x60c3_8491_8172_2217,
+    calls: &[
+        (0x9c, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x31c, Callee::Sig(&crate::s5_misc::THUNK_425)),
+        (0x323, Callee::Sig(&crate::s5_misc::THUNK_421)),
+        (0x332, Callee::Sig(&crate::s5_misc::THUNK_423)),
+        (0x697, Callee::Sig(&crate::r30::MESH_PACKETS_0297)),
+        (0x7e4, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0297`'s image visit thunk (0x10003d20, 12 bytes; a vtable's
+/// `+0x1c`): its stack word into `ecx`, then [`image_visit_0297`].
+pub fn image_thunk_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 8),
+        ecx: fr.arg(g, 0),
+        ..*fr
+    };
+    image_visit_0297(g, img, &callee)
+}
+
+/// [`image_thunk_0297`].
+pub const IMAGE_THUNK_0297: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[(8, Callee::Sig(&IMAGE_VISIT_0297))],
+    imports: &[],
+};
