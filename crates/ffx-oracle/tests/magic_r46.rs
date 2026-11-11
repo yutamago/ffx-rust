@@ -98,6 +98,15 @@ fn camera_task_0070() {
         m.w32(SCRATCH + 0x7e30, i + 1);
         m.r32(SCRATCH + 0x7e40 + 4 * (i % 3))
     });
+    // slot 255 (the part call) keeps the place it is handed (slot 520's
+    // nudge shows)
+    rec(&mut t, 255, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(SCRATCH + 0x7e60 + 4 * i, x);
+        }
+        0x255
+    });
     rec(&mut t, 292, 1, |m, a| {
         for i in 0..4 {
             wf(m, a[0] + 4 * i, 1.25 * i as f32 - 3.0);
@@ -280,7 +289,6 @@ fn camera_task_0070() {
         t.set_u32(r + 0x34, 0x100 + k);
         t.set_u32(r + 0x38, cs.wait.cast_unsigned());
         t.set_u32(r + 0x3c, 0x30 + k);
-        t.set_u8(w(&t, 0x113), cs.flag);
         t.set_u32(SCRATCH + 0x7af0, cs.count);
         t.set_u32(SCRATCH + 0x7e30, 0);
         for (i, x) in (0u32..).zip(cs.s520) {
@@ -297,6 +305,9 @@ fn camera_task_0070() {
         for (i, o) in (0u32..).zip([0x2bau32, 0xa69, 0xbbe, 0xddb, 0x1497]) {
             t.set_u32(w(&t, o), 0x5a5a_0f0e ^ (k << 4) ^ i);
         }
+        // (the slot-666 flag byte is the low byte of `+0x2ba`'s word: after
+        // it)
+        t.set_u8(w(&t, 0x113), 0x5e ^ cs.flag);
         // slot 520's cut word, the release's handle, slot 228's byte
         t.set_u32(w(&t, 0x1b3), 0x0003_1234 + (k << 8));
         t.set_u32(w(&t, 0x2f3), 0x0f00_0000 + k);
@@ -331,7 +342,7 @@ fn camera_task_0070() {
             0x1266, 0x1398, 0x1692, 0x16aa, 0x16c2, 0x1013, 0x11ac,
         ]) {
             let at = w(&t, o);
-            set_f(&mut t, at, 1.5 * i as f32 - 4.0 + 0.125 * k as f32);
+            set_f(&mut t, at, 1.5 * i as f32 - 3.9 + 0.125 * k as f32);
         }
         // the light's level (one global for the three states; after the
         // floats, `+0xa28` names it too): below, far above, or equal to
