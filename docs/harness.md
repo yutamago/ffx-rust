@@ -1439,8 +1439,10 @@ FFX_HARNESS_EXE=rust FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh --audio   # ff
 
 The audio list is event-besaid (music, Wakka's voice, footsteps),
 battle-attack (sound effects, the victory fanfare), menu-browse (menu
-sounds), battle-ifrit (a summon) and movie-fmv (a movie's user stream,
-since 2026-10-28). `FFX_RUST_AUDIO=1` runs the Rust sound engine in place
+sounds), battle-ifrit (a summon), movie-fmv (a movie's user stream,
+since 2026-10-28) and battle-shout (since 2026-11-12: a shout on the Shout
+channel and a 32 kHz battle voice, each started with `call` in
+battle-attack's first command window; `tools/replays/battle-shout.txt`). `FFX_RUST_AUDIO=1` runs the Rust sound engine in place
 of FMOD (`docs/formats/audio-platform.md`). The references are two original-code
 captures per replay in `~/ffx-work/replay-audio` (`FFX_REPLAY_AUDIO`;
 never in git, about 15 MB a capture). `--record` plays the original code

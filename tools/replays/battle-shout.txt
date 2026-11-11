@@ -1,0 +1,48 @@
+# Mixer coverage (M5 WP4, 2026-11-12): the Shout channel and a 32 kHz
+# battle voice, which no other replay plays (docs/formats/audio-platform.md,
+# "Residue"). battle-attack's start: save slot 1 (ffx_001), the salvage
+# ship's first battle (battle field 3, Tidus and Rikku), its first command
+# window (phase byte 0x0112a8e0 = 1); the battle then waits for input, so
+# nothing but the two lines changes the mix.
+#
+# 1. A shout: `MsSoundStreamPlay(0, 0)` (0x007a0820, the battle's own path,
+#    system_01 worker 4 through Native_706d): speaker 0 (Tidus), line 0,
+#    g_BtlShoutStreams (0x00c42510) gives stream 1, and
+#    `SndStartShoutStream(1, 0x3f, 0x7f)` plays the Shout bank's
+#    `210101td` (ffx_us_voice_btl_iop_bank00.fsb, System::playSound on the
+#    Shout channel). The reply is the function's: 0 played, -1 a shout
+#    still loading.
+# 2. A battle voice: `SndStandbyStream(0x23)` (0x00887570; VoiceIDMapper
+#    0x23 = 210701rk, Rikku, ffx_us_voice_btl), then `SndStartStream()`
+#    (0x00887630), as Native_VoiceStandby_End and Native_7065_BtlStreamStart
+#    run a party line. The 2101xx..2108xx lines are the 32 kHz voice samples
+#    (resampled to 48 kHz by the mixer).
+#
+# Traced: g_TkSndVoiceFlags and the next three words (0x0132ff10: voice
+# read, shout busy, stream busy, standby voice), the battle phase.
+# Record with `tools/replays/run-all.sh --audio --record battle-shout`
+# (two original runs that agree sample for sample); the levels wav-compare
+# prints show whether the two lines were heard (not silent).
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+wait 10
+battle 3 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+trace 0x0132ff10:16 0x0112a8e0:1
+wait 30
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
+audiomark start
+read 0x00c42510 8
+call 0x007a0820 0 0
+wait 150
+read 0x0132ff10 16
+call 0x00887570 0x23
+wait 90
+read 0x0132ff10 16
+call 0x00887630
+wait 180
+read 0x0132ff10 16
+shot $OUT\battle-shout-1.bmp
+audiomark end
