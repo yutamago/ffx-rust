@@ -4301,3 +4301,273 @@ pub const ORBS_TASK_0431: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s pulse step (0x1000ab90, 1546 bytes; the callback of
+/// [`pulse_init_0387`], cdecl `(T)`, `N = T[4]`; an aligned /GS frame `A`,
+/// `S = A - 0x38`: `W` at `S + 0x14`, `Z` at `S + 0x24`). By the state
+/// `N[0x18]` (0..0x11 through a byte table), the wait `N[0x1c]` down by
+/// one at every return:
+/// - 0 becomes 1; 1: once `N[0x110]` is at most 0x4000, 0x10 (run on);
+/// - 0x10: `N[0x13c]` 0, `N[0x140] = N[0x20] << 13`, `N[0xe8]` -0.25,
+///   `N[0x24] = frnd - K` (slot 307), 0x11 (run on); 0x11: unless
+///   `N[0xbc]` is at or above `-N[0x24]`, 0x20 (run on);
+/// - 0x20: `N + 0x34` = the owner's bone 0x11 (slot 268, `w` 1); `V =
+///   (0, K2 / N[0x28c][0x28], 0, 0)` through `N + 0x1e8` (slot 229) adds
+///   to `N[0xb8]`, `N[0xc0]`; `N[0x24]` = their length
+///   (`_libm_sse2_sqrt_precise`), `N[0x28]` 1; the burst at `N + 0x520`
+///   starts ([`burst_setup_0387`] from `N + 0x14c`); 0x21;
+/// - 0x21: `N[0x24] += K3`; `W` = slot 234 `(W, N + 0x34, N + 0x60)`, its
+///   length `l`, normalised (slot 232); `Z` = `N + 0xb8` normalised; with
+///   `d` = slot 394 `(W, Z)` below 0 or `l` not above `K4`, state 0x50
+///   (run on); else `N[0x3e4] = K6 - N[0x28]`, `N[0x28] *= K5`, `W = Z K5 +
+///   W K7` normalised (slot 232) and scaled by `N[0x24]` (slot 233) into
+///   `N + 0xb8`;
+/// - 0x50: the node `N + 0x4f0` unlinked
+///   ([`unlink`](crate::m0042::unlink)), slot 779 `(N[0x510], 0)` with
+///   `**G_LOCK` 1, `N + 0xc8` and `N + 0x120` leave (`N[0xb8..0xc4]` 0
+///   between), `N[0x98] *= (frnd - K8) K9 + K10) K11` (slot 307), the
+///   particle node `N + 0x3f0`
+///   ([`particle_node_with`](crate::s3_nodes::particle_node_with),
+///   `(N + 0x14c, -, -, 5)`), the glow `P = N[0x30]` takes `N[0x98]`
+///   (`P[0x1c..0x2c]`, byte `P[0x30] |= 1`), 0x51 and the wait 20;
+/// - 0x51: once the wait is out, `N[0x538]` = 0x1000, state 0x1000 (run
+///   on); 0x1000: once byte `N[0x4d8]` has bit 4 and `N[0x538]` bit
+///   0x2000: five nodes leave, `T[0]` is unlinked, state 0x2000.
+///
+/// Returns the last value in `eax` (the cookie word `*G_COOKIE ^ (A -
+/// 0x30)` where nothing else was loaded).
+#[allow(clippy::too_many_lines)] // the states
+pub fn pulse_step_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s = a.wrapping_sub(0x38);
+    let (wv, zv) = (s + 0x14, s + 0x24);
+    let end = |g: &mut G, eax: u32| {
+        let c = g.read::<u32>(n + 0x1c);
+        g.write::<u32>(n + 0x1c, c.wrapping_sub(1));
+        Ret::eax(eax)
+    };
+    let mut eax = g.read::<u32>(w(0xa)) ^ a.wrapping_sub(0x30);
+    loop {
+        let state = g.read::<u32>(n + 0x18);
+        match state {
+            0 | 1 => {
+                if state == 0 {
+                    g.write::<u32>(n + 0x18, 1);
+                }
+                eax = 1;
+                if g.read::<u32>(n + 0x110).cast_signed() > 0x4000 {
+                    return end(g, eax);
+                }
+                g.write::<u32>(n + 0x18, 0x10);
+            }
+            2..=0xf => return end(g, 4),
+            0x10 | 0x11 => {
+                if state == 0x10 {
+                    g.write::<u32>(n + 0x13c, 0);
+                    let x = g.read::<u32>(n + 0x20) << 13;
+                    g.write::<u32>(n + 0x140, x);
+                    g.write::<u32>(n + 0xe8, 0xbe80_0000);
+                    let r = g.call(t(g, 0x7f, 307), 0, &[]);
+                    eax = r.eax;
+                    let x = st0_f32(r.st0);
+                    g.write::<f32>(s + 0x10, x);
+                    let v = sub(x, c(g, 0xa3));
+                    let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                    g.write::<u32>(n + 0x18, st);
+                    g.write::<f32>(n + 0x24, v);
+                } else {
+                    eax = 3;
+                }
+                let neg = f32::from_bits(g.read::<u32>(n + 0x24) ^ g.read::<u32>(w(0xb7)));
+                // comiss N[0xbc], -N[0x24]; jae: at or above (ordered) waits
+                if rf(g, n + 0xbc) >= neg {
+                    return end(g, eax);
+                }
+                g.write::<u32>(n + 0x18, 0x20);
+            }
+            0x20 => {
+                let q = n + 0x34;
+                let o = g.read::<u32>(n + 0x2c);
+                g.call(t(g, 0x1f7, 268), 0, &[g.read::<u32>(o + 0x54), 0x11, q]);
+                g.write::<u32>(q + 0xc, ONE);
+                g.write::<u32>(wv, 0);
+                let p = g.read::<u32>(n + 0x28c);
+                let y = div(c(g, 0x207), rf(g, p + 0x28));
+                g.write::<f32>(wv + 4, y);
+                g.write::<u32>(wv + 8, 0);
+                g.write::<u32>(wv + 0xc, 0);
+                g.call(t(g, 0x23a, 229), 0, &[wv, n + 0x1e8, wv]);
+                let x = add(rf(g, n + 0xb8), rf(g, wv));
+                g.write::<f32>(n + 0xb8, x);
+                let z = add(rf(g, n + 0xc0), rf(g, wv + 8));
+                g.write::<f32>(n + 0xc0, z);
+                let (bx, by) = (rf(g, n + 0xb8), rf(g, n + 0xbc));
+                let l2 = add(add(mul(bx, bx), mul(by, by)), mul(z, z));
+                #[allow(clippy::cast_possible_truncation)]
+                let l = f64::from(l2).sqrt() as f32;
+                g.write::<f32>(n + 0x24, l);
+                g.write::<u32>(n + 0x28, ONE);
+                let r = burst_setup_0387(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x2d4),
+                        esp: s.wrapping_sub(4),
+                        ecx: n + 0x520,
+                        edx: n + 0x14c,
+                        ..Frame::default()
+                    },
+                );
+                let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                g.write::<u32>(n + 0x18, st);
+                return end(g, r.eax);
+            }
+            0x21 => {
+                let v = add(rf(g, n + 0x24), c(g, 0xf9));
+                g.write::<f32>(n + 0x24, v);
+                g.call(t(g, 0x10b, 234), 0, &[wv, n + 0x34, n + 0x60]);
+                let (w0, w1, w2) = (rf(g, wv), rf(g, wv + 4), rf(g, wv + 8));
+                let l2 = add(add(mul(w1, w1), mul(w0, w0)), mul(w2, w2));
+                #[allow(clippy::cast_possible_truncation)]
+                let l = f64::from(l2).sqrt() as f32;
+                g.write::<f32>(s + 0xc, l);
+                g.call(t(g, 0x158, 232), 0, &[wv, wv]);
+                g.call(t(g, 0x177, 232), 0, &[zv, n + 0xb8]);
+                let r = g.call(t(g, 0x18e, 394), 0, &[wv, zv]);
+                eax = r.eax;
+                let d = st0_f32(r.st0);
+                g.write::<f32>(s + 0x10, d);
+                // comiss 0, d; ja: below 0 (ordered) gives up; comiss K4, l;
+                // jb: bends when below or unordered
+                if 0.0 > d || c(g, 0x1af) >= l {
+                    g.write::<u32>(n + 0x18, 0x50);
+                    continue;
+                }
+                let k5 = c(g, 0x2f8);
+                let k7 = c(g, 0x308);
+                let r28 = rf(g, n + 0x28);
+                let left = sub(c(g, 0x300), r28);
+                g.write::<f32>(n + 0x28, mul(r28, k5));
+                g.write::<f32>(n + 0x3e4, left);
+                for i in 0..4u32 {
+                    let x = add(mul(rf(g, zv + 4 * i), k5), mul(rf(g, wv + 4 * i), k7));
+                    g.write::<f32>(wv + 4 * i, x);
+                }
+                g.call(t(g, 0x33c, 232), 0, &[wv, wv]);
+                let sc = g.read::<u32>(n + 0x24);
+                let r = g.call(t(g, 0x3c0, 233), 0, &[wv, wv, sc]);
+                for i in 0..3u32 {
+                    let x = g.read::<u32>(wv + 4 * i);
+                    g.write::<u32>(n + 0xb8 + 4 * i, x);
+                }
+                return end(g, r.eax);
+            }
+            0x50 => {
+                let rr = s + 0xc;
+                g.write::<u32>(rr, n + 0x4f0);
+                crate::m0042::unlink(g, img, img.rel32_target(f + 0x425), rr);
+                let lock = g.read::<u32>(w(0x42a));
+                let saved = g.read::<u32>(lock);
+                g.write::<u32>(lock, 1);
+                let part = g.read::<u32>(n + 0x510);
+                g.call(t(g, 0x43d, 779), 0, &[part, 0]);
+                let lock = g.read::<u32>(w(0x44d));
+                g.write::<u32>(lock, saved);
+                crate::sa_misc::leave(g, n + 0xc8, 0);
+                for off in [0xc4u32, 0xc0, 0xbc, 0xb8] {
+                    g.write::<u32>(n + off, 0);
+                }
+                crate::sa_misc::leave(g, n + 0x120, 0);
+                let x = st0_f32(g.call(t(g, 0x495, 307), 0, &[]).st0);
+                g.write::<f32>(s + 0xc, x);
+                let k = mul(
+                    add(mul(sub(x, c(g, 0x4af)), c(g, 0x4c3)), c(g, 0x4d1)),
+                    c(g, 0x4d9),
+                );
+                let sz = mul(k, rf(g, n + 0x98));
+                g.write::<f32>(n + 0x98, sz);
+                let esp = s.wrapping_sub(0x14);
+                g.write::<u32>(esp + 4, n + 0x14c);
+                g.write::<u32>(esp + 0x10, 5);
+                crate::s3_nodes::particle_node_with(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x4ee),
+                        esp,
+                        ecx: n + 0x3f0,
+                        ..Frame::default()
+                    },
+                );
+                let sz = rf(g, n + 0x98);
+                let p = g.read::<u32>(n + 0x30);
+                let a3 = mul(sz, c(g, 0x504));
+                let b = g.read::<u8>(p + 0x30) | 1;
+                g.write::<u8>(p + 0x30, b);
+                let a1 = mul(sz, c(g, 0x513));
+                g.write::<f32>(p + 0x1c, sz);
+                g.write::<f32>(p + 0x24, a3);
+                g.write::<u32>(p + 0x2c, 0x41a0_0000);
+                g.write::<f32>(p + 0x20, sub(a3, sz));
+                g.write::<f32>(p + 0x28, sub(a1, a3));
+                let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                g.write::<u32>(n + 0x18, st);
+                g.write::<u32>(n + 0x1c, 0x14);
+                return end(g, p);
+            }
+            0x51 => {
+                if g.read::<u32>(n + 0x1c).cast_signed() > 0 {
+                    return end(g, eax);
+                }
+                g.write::<u32>(n + 0x538, 0x1000);
+                g.write::<u32>(n + 0x18, 0x1000);
+            }
+            0x1000 => {
+                if g.read::<u8>(n + 0x4d8) & 4 == 0 || g.read::<u32>(n + 0x538) & 0x2000 == 0 {
+                    return end(g, eax);
+                }
+                for off in [0x14c, 0xf4, 0x70, 0x298, 0x44] {
+                    crate::sa_misc::leave(g, n + off, 0);
+                }
+                let eax = unlink_task(g, tk);
+                g.write::<u32>(n + 0x18, 0x2000);
+                return end(g, eax);
+            }
+            _ => return end(g, eax),
+        }
+    }
+}
+
+/// [`pulse_step_0387`] (the `rel32`s: `_libm_sse2_sqrt_precise` twice,
+/// the burst set-up, the unlink, node leaves, the particle node, the
+/// cookie checks).
+pub const PULSE_STEP_0387: Sig = Sig {
+    len: 1546,
+    hash: 0x8997_1998_d5c7_6477,
+    calls: &[
+        (0x149, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2b3, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x2d4, Callee::Sig(&BURST_SETUP_0387)),
+        (0x2e7, Callee::Any),
+        (0x405, Callee::Any),
+        (0x425, Callee::Sig(&crate::m0042::UNLINK)),
+        (0x45d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x490, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x4ee, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x556, Callee::Any),
+        (0x582, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x58d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x595, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5a0, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5a8, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5d9, Callee::Any),
+    ],
+    imports: &[],
+};

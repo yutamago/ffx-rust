@@ -2896,3 +2896,189 @@ fn orbs_task_0431() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0387` 0x1000ab90 (`r48::pulse_step_0387`): every state (0 and
+/// 1 with `N[0x110]` low and high, 0x10 into 0x11 waiting and on into
+/// 0x20 and the burst, 0x21 giving up on each test and bending, 0x50,
+/// 0x51 waiting and out, 0x1000 closed and open, a state in the byte
+/// table's gap, unknown ones).
+#[test]
+fn pulse_step_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xab90);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let bs = img.rel32_target(f + 0x2d4);
+    let wb = |o: u32| img.word(bs + o);
+    let pw = img.rel32_target(f + 0x4ee);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    for (s, n) in [(941u32, 1), (719, 3), (779, 2)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        f64::from(k as f32 * 0.125 + 0.2)
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(m, a[2] + 4 * i, (a[0] & 7) as f32 * 0.5 + i as f32);
+        }
+        0x268
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[2] + 4 * i) - rf(m, a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x234
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        let v: Vec<f32> = (0..3).map(|i| rf(m, a[1] + 4 * i)).collect();
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+        for i in 0..3 {
+            wf(m, a[0] + 4 * i as u32, v[i] / n);
+        }
+        let x = rf(m, a[1] + 12);
+        wf(m, a[0] + 12, x);
+        0x232
+    });
+    let dot = SCRATCH + 0x3_e200;
+    rec(&mut t, 394, 2, |_, _| 0x394);
+    t.stub_st0(394, move |m, a| {
+        let x = rf(m, a[0]) * rf(m, a[1]) + rf(m, a[0] + 4) * rf(m, a[1] + 4) + rf(m, dot);
+        f64::from(x)
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        let s = f32::from_bits(a[2]);
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * s;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x233
+    });
+    particle_globals(&mut t, bs, 0x272);
+    particle_globals(&mut t, pw, 0x35);
+    junk_ops(&mut t, bs, &[0x134, 0x217]);
+    junk_ops(&mut t, pw, &[0x0d]);
+    let ops = [
+        0xa3u32, 0x207, 0xf9, 0x1af, 0x2f8, 0x300, 0x308, 0x4af, 0x4c3, 0x4d1, 0x4d9, 0x504, 0x513,
+    ];
+    junk_ops(&mut t, f, &ops);
+    for (op, x) in [
+        (0xa3u32, 0.75f32),
+        (0x207, 6.0),
+        (0xf9, 0.25),
+        (0x1af, 0.1),
+        (0x2f8, 0.875),
+        (0x300, 1.0),
+        (0x308, 0.125),
+        (0x4af, 0.5),
+        (0x4c3, 0.25),
+        (0x4d1, 1.0),
+        (0x4d9, 0.5),
+        (0x504, 0.75),
+        (0x513, 1.25),
+    ] {
+        setf(&mut t, w(op), x);
+    }
+    t.set_u32(w(0xb7), 0x8000_0000);
+    let lock = SCRATCH + 0x5f0;
+    t.set_u32(w(0x42a), lock);
+    let (tk, d, prev, next, n, o, p) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x1400,
+    );
+    let root = wb(0x57);
+    let plist = wb(0x259);
+    // (state, wait, N[0x110], N[0xbc], the dot's bias, gate byte, N[0x538])
+    for (k, (state, wait, lvl, bc, bias, gate, flags)) in (0u32..).zip([
+        (0u32, 2u32, 0x4000u32, -9.0f32, 0.0f32, 4u8, 0x2000u32),
+        (1, 2, 0x4001, -9.0, 0.0, 4, 0x2000),
+        (0x10, 2, 0, 9.0, 0.0, 4, 0x2000),
+        (0x11, 2, 0, -9.0, 0.0, 4, 0x2000),
+        (0x21, 2, 0, 0.0, -50.0, 4, 0x2000),
+        (0x21, 2, 0, 0.0, 50.0, 4, 0x2000),
+        (0x21, 2, 0, 0.0, 50.0, 4, 0x2000),
+        (0x50, 2, 0, 0.0, 0.0, 4, 0x2000),
+        (0x51, 2, 0, 0.0, 0.0, 4, 0x2000),
+        (0x51, 0, 0, 0.0, 0.0, 4, 0x2000),
+        (0x1000, 0, 0, 0.0, 0.0, 0xfb, 0x2000),
+        (0x1000, 0, 0, 0.0, 0.0, 4, 0xdfff),
+        (0x1000, 0, 0, 0.0, 0.0, 4, 0x2000),
+        (5, 0, 0, 0.0, 0.0, 4, 0x2000),
+        (0x30, 0, 0, 0.0, 0.0, 4, 0x2000),
+    ]) {
+        junk(&mut t, n, 0x600, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, wait);
+        t.set_u32(n + 0x110, lvl);
+        floats(&mut t, n + 0x20, 4, k);
+        floats(&mut t, n + 0x34, 0x10, k + 1);
+        // (one bend case with no length: `N + 0x60` = `N + 0x34`)
+        if k == 5 {
+            for i in 0..4u32 {
+                let x = t.u32(n + 0x34 + 4 * i);
+                t.set_u32(n + 0x60 + 4 * i, x);
+            }
+        }
+        floats(&mut t, n + 0x98, 1, k);
+        floats(&mut t, n + 0xb8, 3, k + 2);
+        setf(&mut t, n + 0xbc, bc);
+        floats(&mut t, n + 0x1e8, 16, k + 3);
+        setf(&mut t, dot, bias);
+        t.set_u32(n + 0x2c, o);
+        t.set_u32(o + 0x54, 0x0b00_0054);
+        t.set_u32(n + 0x28c, p);
+        setf(&mut t, p + 0x28, 2.0);
+        t.set_u32(n + 0x30, p + 0x100);
+        junk(&mut t, p + 0x100, 0x40, k);
+        t.write(n + 0x4d8, &[gate]);
+        t.set_u32(n + 0x538, flags);
+        // the burst's source, the unlinked node, the leaves
+        t.set_u32(n + 0x14c + 0x140, SCRATCH + 0x1600);
+        t.set_u32(n + 0x14c + 0x144, SCRATCH + 0x1700);
+        junk(&mut t, SCRATCH + 0x1600, 0x200, k);
+        for off in [0x4f0u32, 0xc8, 0x120, 0x14c, 0xf4, 0x70, 0x298, 0x44] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        let (node, parent) = (n + 0x4f0, SCRATCH + 0x300);
+        t.set_u32(node + 0x14, parent);
+        t.set_u32(node + 4, parent);
+        t.set_u32(node + 8, parent);
+        t.set_u32(parent + 0xc, node);
+        t.set_u32(parent + 0x10, node);
+        t.set_u16(parent + 0x18, 3);
+        t.set_u32(lock, 0x77 + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, root);
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, plist);
+        t.set_u32(wb(0x22), SCRATCH + 0x200);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0xab90 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
