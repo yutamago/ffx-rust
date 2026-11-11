@@ -38,7 +38,7 @@
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |
 //! | `gfxcapture <dir>` | the layer's recording so far (`capture.ffxgfx`, `calls.txt`) |
 //! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
-//! | `quit` | ends the process |
+//! | `quit` | ends the process (after writing the `--profile` file: [`profile_at_quit`]) |
 //!
 //! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
 //! (answered `err`): `snapshot`, `fpucw`, the
@@ -1374,7 +1374,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             Ok(format!("ok {frames} frames"))
         }
         "quit" => {
-            quit();
+            quit(shared);
             Ok("ok".into())
         }
         // the replay player's closing line: no call log here
@@ -1386,13 +1386,47 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
     }
 }
 
+/// Where `quit` writes the profile, and the `ffx.sym` it names
+/// `FFX.exe`'s functions by ([`profile_at_quit`]).
+static PROFILE: OnceLock<(std::path::PathBuf, std::path::PathBuf)> = OnceLock::new();
+
+/// Has `quit` write the run's profile (`ffx-rust --profile FILE` under the
+/// harness: the process ends there, before the program's own report) to
+/// `path`, the `FFX.exe` functions named from the `ffx.sym` at `sym`.
+pub fn profile_at_quit(path: std::path::PathBuf, sym: std::path::PathBuf) {
+    let _ = PROFILE.set((path, sym));
+}
+
+/// Writes the profile [`profile_at_quit`] asked for: every Unicorn function
+/// of every thread, running or ended (`crate::report::functions_tsv`),
+/// through a temporary file, so a reader never sees half of it.
+fn write_profile(shared: &Shared) {
+    let Some((path, sym)) = PROFILE.get() else {
+        return;
+    };
+    let syms = crate::report::Symbols::read(sym);
+    let functions = crate::report::functions(shared, &shared.profile(), &syms);
+    let tmp = path.with_extension("part");
+    let r = std::fs::write(&tmp, crate::report::functions_tsv(&functions))
+        .and_then(|()| std::fs::rename(&tmp, path));
+    match r {
+        Ok(()) => eprintln!(
+            "profile: {} functions in Unicorn, {}",
+            functions.len(),
+            path.display()
+        ),
+        Err(e) => eprintln!("profile {}: {e}", path.display()),
+    }
+}
+
 /// Ends the process at once (the hook's `quit` does the same: the game's
 /// own shutdown from the harness thread can deadlock).
-fn quit() {
+fn quit(shared: &Shared) {
     // the overlays' Rust/Unicorn call counts (the report is never written)
     for line in crate::library::summary() {
         eprintln!("{line}");
     }
+    write_profile(shared);
     eprintln!(
         "harness: {} seeded jobs, {} cloth waits",
         SEEDED_JOBS.load(Ordering::Relaxed),

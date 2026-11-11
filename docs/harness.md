@@ -203,6 +203,100 @@ order given) that reached each. Each hit is one
 write since 2026-10-25 (before, `writeln!` could split a line and other
 threads' lines landed inside it).
 
+### The stage 1 gate in the hooked game
+
+M5 stage 1's gate (`docs/rewrite-plan.md`) wants no original `.text`
+code running across the main, extra and audio lists, the movie libraries
+that stage 2 replaces excepted. In the 32-bit hooked game (2026-11-11,
+m5-wp2-coverage):
+
+```bash
+FFX_MAGIC_RUST=1 tools/coverage-run.sh --rust            # main + extra lists, then the audio list
+COVERAGE_DRY=1 tools/coverage-run.sh --rust              # the plan only, no game
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD python3 -I tools/coverage.py report DIR/*.hits
+```
+
+- **Hooks.** Every hook is on (the replay player without `original`),
+  with the overlays' Rust ports (`FFX_MAGIC_RUST=1` unless set; other
+  environment, such as `FFX_RUST_AUDIO`, passes through `run-game.sh` as
+  usual). The hook is built once at the start (`FFX_NO_BUILD=1` for the
+  launches).
+- **Candidates.** `coverage.py candidates --rust`: every function of the
+  dump (`tools/progress.py`, 57,003 on 2026-11-11) but the 836 in the
+  movie libraries (libvpx, mkvparser, libogg, libVorbis: the ranges of
+  `docs/formats/platform.md`, "Code", kept in `tools/unicorn-report.py`),
+  56,167 lines. The hook arms only an entry whose first byte is still the
+  original's, so the 23,873 hooked entries stay unarmed and about 32,300
+  are armed (the dropped and dead functions among them). Each hit is
+  therefore a function that ran its original code from its entry.
+- **Runs.** `run-all.sh --list` and `--extra --list` give the replays (28),
+  then the audio list (`--audio --list`, 5) runs again with
+  `FFX_AUDIO_WAV` (tag `<replay>-audio`; `COVERAGE_AUDIO=0` leaves it
+  out). No coverage sessions unless save slots are given. Each run gets
+  1,800 s, one game after the other in one slot (`in-game-slot.sh`);
+  traces are recorded but not compared (`run-all.sh` does that).
+- **Output.** `symbols/coverage.txt` is left alone. Each run's hits stay in
+  `$COVERAGE_DIR/<tag>.hits` (default `%TEMP%\ffx-coverage`), and
+  `coverage.py report` names them by module (`progress.py`'s rules; the
+  movie libraries apart) with the runs that reached each, in
+  `rust-report.txt`; the last line counts the distinct hits: the gate
+  passes at 0.
+- **What it can't see.** A hooked entry is never armed, so an original that
+  runs behind its hook (a wrapper calling its trampoline) does not show,
+  nor does code entered other than at a dump function's start. Overlay code
+  is outside `FFX.exe` and not part of this gate (its Rust/Unicorn counts
+  are in the hook log's overlay lines). ffx-rust's profile below sees
+  every basic block instead.
+
+### Unicorn coverage in ffx-rust
+
+`ffx-rust --profile FILE` (`docs/host.md`) lists every function that ran
+in Unicorn: `FFX.exe`'s `.text` by `ffx.sym`, the C runtime DLLs by their
+nearest export, the spell overlays by their nearest entry, by basic blocks
+(module, start, name, calls, blocks, clock samples). It is the stage 1 and
+stage 2 gates' measurement in `ffx-rust.exe`, where every emulated block
+is seen, not only function entries. Through the harness (2026-11-11,
+m5-wp2-coverage):
+
+```bash
+FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh            # main list
+FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh --extra    # extra list (devsaves included)
+FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh --audio    # audio list
+python3 -I tools/unicorn-report.py RUN/rust/*.profile.tsv [--gate] [--top 0] [--tsv FILE]
+```
+
+- `tools/run-game.sh --rust` with `FFX_HOST_PROFILE=1` adds
+  `--profile ffx-rust.profile.tsv` (in the game or instance folder) and
+  `--sym` the checkout's `symbols/ffx.sym`; `FFX_HOST_PROFILE=<file>` (a
+  WSL path) writes that file instead. Without `--rust` it is ignored with
+  a note. `FFX_RUN_GAME_DRY=1` prints the program, its arguments and
+  `WSLENV` and starts nothing. `Game::launch` passes the environment on,
+  so a test or replay that sets `FFX_HOST_PROFILE` gets the file too.
+- Under the harness the test's `quit` ends the process before
+  `ffx-rust`'s own report, so `quit` writes the profile first (every
+  thread's, running or ended; through a `.part` file and a rename) and
+  notes `profile: N functions in Unicorn, <path>` in `ffx-rust.log`. A
+  game killed instead (a replay's timeout, a crash) leaves none.
+- `run-all.sh` with `FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1` copies each
+  replay's file from its slot's folder to `<run>/rust/<replay>.profile.tsv`
+  (a path in `FFX_HOST_PROFILE` becomes `1`: the replays run side by
+  side) and at the end prints `tools/unicorn-report.py --brief` over them:
+  functions and blocks per replay and module, the sums, the `FFX.exe`
+  functions, and the gate line; the full report and the summed rows go to
+  `<run>/rust/unicorn-report.txt` and `unicorn-summed.tsv`. The exit code
+  stays the comparison's.
+- `tools/unicorn-report.py` reads saved TSVs too. Modules: `FFX.exe`, the
+  movie libraries (counted apart: stage 2), `MSVCR110`, `MSVCP110`, the
+  overlays (each `magic_*.dll`; an overlay function is its file and offset,
+  since every load maps it at a fresh address) and other. `FFX.exe` rows
+  are named again by the `ffx.sym` function containing their start
+  (`--no-sym` keeps them), so a profile written without `ffx.sym` still
+  sums by function. `--gate` exits 1 when an `FFX.exe` function outside
+  the movie libraries ran; `--self-test` runs its unit tests.
+- Profiling costs time: a block hook on every thread. The replays' 3,600 s
+  (`FFX_REPLAY_TIMEOUT`) leave room for it; nobody has timed a whole list
+  with it yet.
+
 ## Hook-hit mode
 
 Coverage mode skips every byte a hook owns, so it cannot say which ported
@@ -2394,7 +2488,9 @@ records).
   host-pointer fixes (`docs/host.md`, "The stage 3 gate on PC2"). The i686
   build, which ended a few seconds past its third frame in an abort inside
   Unicorn's 32-bit translator, was dropped on 2026-10-31.
-- **Ending it.** `quit` ends the process (`TerminateProcess`).
+- **Ending it.** `quit` ends the process (`TerminateProcess`), after
+  writing the Unicorn profile when `--profile` asked for one ("Unicorn
+  coverage in ffx-rust", above).
 
 ## Tests
 

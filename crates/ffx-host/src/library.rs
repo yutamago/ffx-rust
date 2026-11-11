@@ -41,6 +41,11 @@ use crate::table::{Args, Conv, Ret};
 /// The overlays loaded now.
 static LOADED: Mutex<Vec<Dll>> = Mutex::new(Vec::new());
 
+/// Every overlay mapped so far, freed ones too (name, base, size): a freed
+/// range is never reused, so the profile's blocks find their overlay here
+/// after `FreeLibrary` ([`function_at`]).
+static MAPPED: RwLock<Vec<(String, u32, u32)>> = RwLock::new(Vec::new());
+
 /// Whether `name` is a file this layer loads: a DLL under the game
 /// folder's `magicFiles`.
 fn is_overlay(name: &str) -> bool {
@@ -75,6 +80,9 @@ fn load(e: &mut Exec, name: &str) -> Option<u32> {
     if let Err(why) = e.sync_regions() {
         crate::log::note(&format!("LoadLibraryA({name}): {why}"));
         return None;
+    }
+    if let Ok(mut m) = MAPPED.write() {
+        m.push((file.to_string(), dll.base, dll.size));
     }
     let mut mem = e.mem();
     for imp in &dll.imports {
@@ -637,6 +645,48 @@ pub fn summary() -> Vec<String> {
         ));
     }
     out
+}
+
+/// The overlay function holding `addr` (any overlay mapped so far, freed
+/// ones too): the overlay's file name, its base and the nearest entry at
+/// or below `addr` (an export, a stored callback, a table entry: the
+/// addresses [`bind_ports`] offered), else the base. For the profile
+/// (`crate::report::functions`).
+#[must_use]
+pub fn function_at(addr: u32) -> Option<(String, u32, u32)> {
+    let (name, base) = MAPPED
+        .read()
+        .ok()?
+        .iter()
+        .find(|(_, b, size)| addr.wrapping_sub(*b) < *size)
+        .map(|(n, b, _)| (n.clone(), *b))?;
+    let mut start = base;
+    if let (Ok(c), Ok(bound)) = (COUNTED.read(), BOUND.read())
+        && let Some(o) = c.iter().find(|o| o.base == base)
+    {
+        let rust = o.rust.iter().filter_map(|&i| bound.get(i)).map(|b| b.at);
+        if let Some(best) = o
+            .unicorn
+            .keys()
+            .copied()
+            .chain(rust)
+            .filter(|&a| a <= addr)
+            .max()
+        {
+            start = best;
+        }
+    }
+    Some((name, base, start))
+}
+
+/// Every bound overlay entry (its `int3` runs a Rust port: the profile's
+/// block there is the trap, not overlay code).
+#[must_use]
+pub fn bound_entries() -> std::collections::HashSet<u32> {
+    BOUND
+        .read()
+        .map(|b| b.iter().map(|b| b.at).collect())
+        .unwrap_or_default()
 }
 
 /// The loaded overlay holding `addr`, as `name+off` (reports).

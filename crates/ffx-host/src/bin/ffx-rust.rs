@@ -15,8 +15,11 @@
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
 //! function that ran in Unicorn with its calls and time (`--cover`
-//! implied); `--routes` where each import went (Rust, DLL, missing);
-//! `--ports` every port that ran, with its calls.
+//! implied; under the harness the file is written at the test's `quit`,
+//! which ends the process before this program's report); `--routes` where
+//! each import went (Rust, DLL, missing); `--ports` every port that ran,
+//! with its calls. `--sym` defaults to `FFX_HOST_SYM`, else
+//! `symbols/ffx.sym`, else `ffx.sym` beside the executable.
 //!
 //! The game directory defaults to `FFX_GAME_DIR`, then the directory of
 //! this executable. The run's report goes to stdout. Development build:
@@ -30,7 +33,7 @@ use std::time::{Duration, Instant};
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
-    let mut sym = PathBuf::from("symbols/ffx.sym");
+    let mut sym: Option<PathBuf> = None;
     let mut budget: Option<Duration> = None;
     let mut cover = false;
     let mut lenient = false;
@@ -46,7 +49,7 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--game-dir" => game = args.next().map(PathBuf::from),
-            "--sym" => sym = args.next().map_or(sym, PathBuf::from),
+            "--sym" => sym = args.next().map(PathBuf::from).or(sym),
             "--budget" => {
                 budget = args
                     .next()
@@ -78,6 +81,9 @@ fn main() -> ExitCode {
             }
         }
     }
+    let sym = sym
+        .or_else(ffx_host::report::Symbols::locate)
+        .unwrap_or_else(|| PathBuf::from("symbols/ffx.sym"));
     let game = game.or_else(|| {
         std::env::current_exe()
             .ok()
@@ -112,6 +118,11 @@ fn main() -> ExitCode {
     if let Err(e) = ffx_host::harness::start(exec.shared()) {
         eprintln!("harness: {e}");
         return ExitCode::FAILURE;
+    }
+    if harness && let Some(p) = &profile {
+        // the test's `quit` ends the process: the profile is written there
+        let abs = |p: &PathBuf| std::path::absolute(p).unwrap_or_else(|_| p.clone());
+        ffx_host::harness::profile_at_quit(abs(p), abs(&sym));
     }
     if cover && let Err(e) = exec.cover() {
         eprintln!("cover: {e}");
