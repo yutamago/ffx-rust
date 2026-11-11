@@ -3640,3 +3640,106 @@ pub const START_0392: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0392`'s start-up (0x10003d60, 778 bytes; internal, no
+/// arguments, run by its load step): the actors' table `T` (16 words)
+/// cleared, four words set; slot 719 `(PART, 8, 0)` into `G_H`, slot 711
+/// `(h, P2, 0)` with the lock `**G_L` 1, slot 710 `(ENV, h, BUF,
+/// 0x40000)`; four words 0; the model's mesh flags
+/// ([`mesh_flags`](crate::o4_fam4::mesh_flags), `h`); `S + 0x5398` = slot
+/// 622 `(*G_X, b)` (`b` the selection's byte); slot 537 `(*G_A, 2, 0, a,
+/// 10, 4)` (`a` the actor `S + 0x537c` as [`glide_run_0392`] picks it);
+/// `S + 0x5394` -1, `S + 0x53a0` 0, a block of words, slot 271 `(4)`; two
+/// task nodes (kinds 1 and 2) appended to the task list
+/// ([`take_pair_0266`]'s shape). Each slot call passes the words the
+/// original leaves on the stack. Returns 0.
+pub fn start_up_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    for o in [0xfu32, 0x17, 0x1f, 0x27, 0x2f, 0x37, 0x3f, 0x47] {
+        g.write::<u32>(w(o), 0);
+        g.write::<u32>(w(o) + 4, 0);
+    }
+    let mut st = Pushes::default();
+    st.push_all(&[0, 8, w(0x54)]);
+    g.write::<u32>(w(0x5a), 0);
+    for (dst, src) in [(0x64, 0x68), (0x6e, 0x72), (0x78, 0x7c)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    let h = st.call(g, t(g, 0x1, 719), 0).eax;
+    let lock = g.read::<u32>(w(0x84));
+    g.write::<u32>(w(0x8b), h);
+    let saved = g.read::<u32>(lock);
+    st.push_all(&[0, w(0x92), h]);
+    g.write::<u32>(lock, 1);
+    st.call(g, t(g, 0x98, 711), 0);
+    let lock = g.read::<u32>(w(0xab));
+    g.write::<u32>(lock, saved);
+    let h = g.read::<u32>(w(0xc2));
+    st.push_all(&[0x4_0000, w(0xbc), h, w(0xcd)]);
+    st.call(g, t(g, 0xb7, 710), 0);
+    let model = g.read::<u32>(w(0xd5));
+    for o in [0xdbu32, 0xe5, 0xef, 0xf9] {
+        g.write::<u32>(w(o), 0);
+    }
+    crate::o4_fam4::mesh_flags(g, img, img.rel32_target(f + 0x102), model);
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x107))));
+    let s = g.read::<u32>(w(0x10d));
+    st.push_all(&[b, g.read::<u32>(w(0x11c))]);
+    let r = st.call(g, t(g, 0x116, 622), 0).eax;
+    st.pop(12);
+    let i = g.read::<u32>(s + 0x537c);
+    g.write::<u32>(s + 0x5398, r);
+    let c = g.read::<u32>(w(0x139));
+    let a = if i == u32::MAX {
+        c
+    } else {
+        u32::from(g.read::<u8>(g.read::<u32>(w(0x147)).wrapping_add(i)))
+    };
+    st.push_all(&[4, 0xa, a, 0, 2, c]);
+    st.call(g, t(g, 0x157, 537), 0);
+    g.write::<u32>(s + 0x5394, u32::MAX);
+    g.write::<u32>(s + 0x53a0, 0);
+    g.write::<u32>(w(0x183), 1);
+    g.write::<u32>(w(0x18d), w(0x191));
+    g.write::<u32>(w(0x197), 0);
+    g.write::<u16>(w(0x1a2), 0);
+    g.write::<u8>(w(0x1aa), 1);
+    st.push(4);
+    st.call(g, t(g, 0x169, 271), 0);
+    take_pair_0266(
+        g,
+        img,
+        f,
+        [
+            0x1bc, 0x1d9, 0x1fe, 0x223, 0x22e, 0x234, 0, 0x248, 0x25d, 0x286, 0x28e, 0x2bf, 0x2ca,
+            0x234, 0x2f9, 0x2e9,
+        ],
+        1,
+        2,
+    );
+    Ret::eax(0)
+}
+
+/// [`start_up_0392`] (the `rel32`: the mesh flags).
+pub const START_UP_0392: Sig = Sig {
+    len: 778,
+    hash: 0xb43d_ce96_d4be_4d56,
+    calls: &[(0x102, Callee::Sig(&crate::o4_fam4::MESH_FLAGS_0392_4070))],
+    imports: &[],
+};
+
+/// `magic_0392`'s load step (0x100012c0, the 118-byte shape) running
+/// [`start_up_0392`].
+pub fn load_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0392)
+}
+
+/// [`load_0392`].
+pub const LOAD_0392: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0392))],
+    imports: &[],
+};

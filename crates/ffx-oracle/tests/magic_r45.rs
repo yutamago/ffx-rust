@@ -2415,6 +2415,8 @@ fn throw_aim_0392() {
         }
         junk(&mut t, s + 0xf90, 0x40, k);
         floats(&mut t, s + 0xf90, 4, k);
+        // (b16 test gap: the caster's y and z differ)
+        floats(&mut t, s + 0xf70, 4, k + 7);
         junk(&mut t, s + 0x5370, 0x40, k);
         t.set_u32(s + 0x537c, i);
         t.set_u32(s + 0x539c, x);
@@ -2494,5 +2496,79 @@ fn aim_setup_0392() {
         junk(&mut t, s + 0xf60, 0x80, k);
         ownb::dirty_stack(&mut t, 0x10a0 + k, &[]);
         t.check_entry(st, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0392` 0x10003d60 (`r45::start_up_0392`, internal) and its load
+/// step 0x100012c0 (`r45::load_0392`): the task list empty and not, the
+/// free ring with room for more nodes and for just the two; the actor -1
+/// and not;
+/// the model with a part the mesh flags change.
+#[test]
+fn start_up_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x3d60);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let setup = |t: &mut Twin, k: u32, listed: bool, free: u16| {
+        all_stubs(t);
+        for (s, n) in [(711u32, 3usize), (710, 4), (622, 2), (537, 6), (271, 1)] {
+            rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
+        }
+        let model = SCRATCH + 0x6000;
+        rec(t, 719, 3, move |_, _| model);
+        // the model: one entry with one part of the flagged kind
+        let (table, ent) = (SCRATCH + 0x6100, SCRATCH + 0x6200);
+        t.write(model, &[0; 0x20]);
+        t.set_u16(model + 0xa, 1);
+        t.set_u32(model + 0x18, table);
+        t.set_u32(table, ent);
+        t.write(ent, &[0; 0x40]);
+        t.set_u16(ent + 6, 1);
+        t.set_u16(ent + 0x10, 0x18);
+        t.set_u32(ent + 0x18 + 0x10, 0x3520 | 0x4000);
+        t.set_u32(ent + 0x18 + 4, 0x10);
+        t.set_u8(ent + 0x2c, 0x48);
+        let lock = SCRATCH + 0x5e0;
+        t.set_u32(w(0x84), lock);
+        t.set_u32(lock, 0x77 + k);
+        let sel = SCRATCH + 0x180;
+        t.set_u32(w(0x107), sel);
+        t.set_u32(w(0x147), sel);
+        t.write(sel, &[3, 1, 4, 2]);
+        t.set_u32(w(0x11c), 0x0a0a_011c);
+        t.set_u32(w(0x139), 0x0a0a_0139);
+        let s = w(0x7c);
+        junk(t, s + 0x5370, 0x40, k);
+        t.set_u32(s + 0x537c, if k == 1 { u32::MAX } else { k });
+        magic_r11::ring(t, w(0x1bc), w(0x1d9), free, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x234), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x248), SCRATCH + 0x600);
+        junk_ops(t, f, &[0x5a, 0xdb, 0x197, 0x1a2, 0x1aa, 0x8b]);
+    };
+    // (a ring of one node makes the original write through address 0)
+    for (k, (listed, free)) in (0u32..).zip([(false, 4u16), (true, 4), (true, 2), (false, 2)]) {
+        setup(&mut t, k, listed, free);
+        ownb::dirty_stack(&mut t, 0x3d60 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::start_up_0392(g, img, fr)
+        });
+    }
+    let load = t.at(0x12c0);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        setup(&mut t, 2, true, 4);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let at = t.img.word(load + 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = t.img.word(load + o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        ownb::dirty_stack(&mut t, 0x12c0, &[]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
