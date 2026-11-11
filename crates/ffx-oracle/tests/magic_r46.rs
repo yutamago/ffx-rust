@@ -1153,6 +1153,10 @@ fn main_task_0071() {
             -1000.0
         };
         set_f(&mut t, gt, gval);
+        // (0x32's word is 0xa's `G` too: 0xb and 0x32 cases set it last)
+        if state == 0xb || state == 0x32 {
+            set_f(&mut t, g32, if run32 { k32 + 1.0 } else { k32 - 1.0 });
+        }
         // the eight parts: every other one with a parent, its flag bit 2
         // by the case
         let p0 = w(&t, 0x3cf);
@@ -1317,6 +1321,13 @@ fn scene_task_0071() {
             t.set_u32(w(&t, op), 0x5a5a_0f0f ^ (k << 4) ^ (i << 8));
         }
         t.set_u16(w(&t, 0x31d), 0x5a5e ^ (k as u16));
+        // the fade's words the states compute (junk first)
+        for (i, op) in (0u32..).zip([
+            0x57au32, 0x5b5, 0x5f0, 0x612, 0x625, 0x638, 0x650, 0x663, 0x7e1, 0x81c, 0x856, 0x891,
+            0x8a9, 0x8c4, 0x8dc, 0x8e4,
+        ]) {
+            t.set_u32(w(&t, op), 0x6e6e_0000 ^ (k << 8) ^ i);
+        }
         // the target: on `V` (length 0) or off it; the floor above `K''
         // + dy` or not
         let (tx, tz) = if v & 1 != 0 {
