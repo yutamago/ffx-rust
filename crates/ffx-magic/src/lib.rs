@@ -98,6 +98,7 @@ pub mod r44;
 pub mod r45;
 pub mod r46;
 pub mod r47;
+pub mod r49;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3451,6 +3452,11 @@ ports! {
     "r44 summon task 0164" => r44::SUMMON_TASK_0164, r44::summon_task_0164;
     "r44 summon task 0155" => r44::SUMMON_TASK_0155, r44::summon_task_0155;
     // round 44 (magic-r44): end
+    // round 49 (magic-r49)
+    "r49 curves start 2 0396" => r49::CURVES_START2_0396, r49::curves_start2_0396;
+    "r49 curves 0396" => r49::CURVES_0396, r49::curves_0396;
+    "r49 curves task 0396" => r49::CURVES_TASK_0396, r49::curves_task_0396;
+    // round 49 (magic-r49): end
     // round 46 (magic-r46)
     "r46 camera task 0070" => r46::CAMERA_TASK_0070, r46::camera_task_0070;
     "r46 main task 0152" => r46::MAIN_TASK_0152, r46::main_task_0152;
@@ -5486,6 +5492,9 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r43 set-up 0420", &r43::SETUP_0420),
     ("r43 sparks 0394", &r43::SPARKS_0394),
     // round 43 (magic-r43): end of INTERNAL
+    // round 49 (magic-r49)
+    ("r49 curves start 0396", &r49::CURVES_START_0396),
+    // round 49 (magic-r49): end of INTERNAL
     // round 45 (magic-r45)
     ("r45 actors pass 0392", &r45::ACTORS_PASS_0392),
     ("r45 packed sprite 0431", &r45::PACKED_SPRITE_0431),
