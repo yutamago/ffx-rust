@@ -228,6 +228,24 @@ pub fn calls(base: u32) -> Option<(u64, u64)> {
     Some((rust, emu))
 }
 
+/// The entries of the overlay loaded at `base` (every address the game
+/// can enter its code by, as [`bind_ports`] offered them), sorted, each
+/// with the name of the port bound there or `None` for one left to
+/// Unicorn (tests: every overlay binds every entry).
+#[must_use]
+pub fn bindings(base: u32) -> Option<Vec<(u32, Option<&'static str>)>> {
+    let (c, bound) = (COUNTED.read().ok()?, BOUND.read().ok()?);
+    let o = c.iter().find(|o| o.base == base)?;
+    let mut out: Vec<(u32, Option<&'static str>)> = o
+        .rust
+        .iter()
+        .map(|&i| (bound[i].at, Some(ffx_magic::PORTS[bound[i].port].0)))
+        .chain(o.unicorn.keys().map(|&at| (at, None)))
+        .collect();
+    out.sort_unstable_by_key(|e| e.0);
+    Some(out)
+}
+
 /// What an overlay's ports need besides its image: where its `rand`,
 /// libm and `_CIatan2` imports go (the game's own, as the DLL's IAT).
 #[derive(Debug)]
